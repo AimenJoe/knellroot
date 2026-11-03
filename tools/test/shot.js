@@ -36,15 +36,15 @@ async function main() {
   // 1 보스 아레나: 쿼터뷰 → 앞으로 걷기 → 락온 → 전환 중·전환 뒤 → 공격 → 회피 → 해제.
   await page.keyboard.press('Digit1'); await page.waitForTimeout(400);
   await shot('01-quarter');
-  // 쿼터뷰 요 비교(랩 값 cam.quarter.yaw, 표 다섯째 줄(0부터 4)): 기본 35 → 0 → 45. Ctrl = 10배.
+  // 쿼터뷰 요 비교(랩 값 cam.quarter.yaw, 표 다섯째 줄 = 0부터 4): 기본 35 → 0 → 45 → 35.
+  // 누름은 틱(16ms)마다 하나만 들어가므로 사이를 띄운다. Ctrl(10배)은 헤드리스에서 안 잡혀 쓰지 않는다.
+  const tap = async (key, n) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.waitForTimeout(30); } };
   await page.keyboard.press('F1'); await page.waitForTimeout(100);
-  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
-  await page.keyboard.down('Control'); for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowLeft'); await page.keyboard.up('Control');
-  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowLeft');
+  await tap('ArrowDown', 4);
+  await tap('ArrowLeft', 35);
   await page.keyboard.press('F1'); await page.waitForTimeout(400); await shot('01a-yaw0');
   await page.keyboard.press('F1'); await page.waitForTimeout(100);
-  await page.keyboard.down('Control'); for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight'); await page.keyboard.up('Control');
-  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
+  await tap('ArrowRight', 45);
   await page.keyboard.press('F1'); await page.waitForTimeout(400); await shot('01b-yaw45');
   await page.keyboard.press('F1'); await page.waitForTimeout(100);
   await page.keyboard.press('KeyR'); // 기본값(35)으로
