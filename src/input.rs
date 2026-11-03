@@ -151,8 +151,101 @@ const MENU_STICK_OFF: f32 = 0.3;
 /// 패드 스틱(`gamepads`) → `Actions` 축(x 오른쪽, y 위). 그 크레이트는 이미 "위 = +"로 준다(웹 플러그인이 축 1·3을 뒤집는다,
 /// 문서: "negative values representing down") — 그래서 그대로. 첫 게임은 화면 아래가 +인 축을 써서 `-ly`였고, 그 줄을 가져와
 /// 여기서는 위아래가 뒤집혔다(Android 핸드헬드에서 왼쪽 스틱이 엉뚱한 쪽, D패드는 멀쩡 — 사장 2026-11-03, 0014).
+#[cfg_attr(target_os = "android", allow(dead_code))]
 pub fn stick((x, y): (f32, f32)) -> Vec2 {
     vec2(x, y)
+}
+
+/// 패드 버튼(위치 이름 — A·B 글자는 기기마다 다르다). 데스크톱·웹은 `gamepads` 크레이트, Android는 패치한 miniquad의 키.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+pub enum Pad {
+    South,
+    East,
+    West,
+    North,
+    L1,
+    R1,
+    L2,
+    R2,
+    L3,
+    R3,
+    Start,
+    Select,
+}
+
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+const PADS: [Pad; 12] = [
+    Pad::South,
+    Pad::East,
+    Pad::West,
+    Pad::North,
+    Pad::L1,
+    Pad::R1,
+    Pad::L2,
+    Pad::R2,
+    Pad::L3,
+    Pad::R3,
+    Pad::Start,
+    Pad::Select,
+];
+
+/// Android: 패치한 miniquad가 패드 버튼 키코드(KEYCODE_BUTTON_*)를 쓰지 않는 F13~F24로 넘긴다(PATCHED.md).
+/// 시험이 패치 표와 맞는지 보려고 시험 빌드에서도 컴파일한다.
+#[cfg(any(target_os = "android", test))]
+impl Pad {
+    fn key(self) -> KeyCode {
+        match self {
+            Pad::South => KeyCode::F13,
+            Pad::East => KeyCode::F14,
+            Pad::West => KeyCode::F15,
+            Pad::North => KeyCode::F16,
+            Pad::L1 => KeyCode::F17,
+            Pad::R1 => KeyCode::F18,
+            Pad::L2 => KeyCode::F19,
+            Pad::R2 => KeyCode::F20,
+            Pad::L3 => KeyCode::F21,
+            Pad::R3 => KeyCode::F22,
+            Pad::Start => KeyCode::F23,
+            Pad::Select => KeyCode::F24,
+        }
+    }
+}
+
+/// Android 패드 축(패치한 miniquad의 `joystick_axes`: [왼쪽 X, 왼쪽 Y, 오른쪽 X(Z), 오른쪽 Y(RZ), HAT X, HAT Y], **아래가 +y**)
+/// → (이동, 조준), 우리 축(위가 +y). 왼쪽 스틱이 서 있으면 HAT(D패드)을 이동으로.
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+fn android_axes(ax: [f32; 6]) -> (Vec2, Vec2) {
+    let dead = |v: Vec2| {
+        if v.length() > tuning::STICK_DEADZONE {
+            v
+        } else {
+            Vec2::ZERO
+        }
+    };
+    let mut mv = dead(vec2(ax[0], -ax[1]));
+    if mv == Vec2::ZERO {
+        mv = vec2(ax[4].round(), -ax[5].round()).normalize_or_zero();
+    }
+    (mv, dead(vec2(ax[2], -ax[3])))
+}
+
+/// 메뉴 스틱: 한 번 넘을 때만 눌림(히스테리시스 — 쥐고 있으면 반복하지 않는다). `held`는 지금 기울어 있는 쪽.
+fn menu_from_stick(held: &mut Vec2, st: Vec2, a: &mut Actions) {
+    let was = *held;
+    let mut now = was;
+    for (v, cur) in [(st.x, &mut now.x), (st.y, &mut now.y)] {
+        if v.abs() > MENU_STICK_ON {
+            *cur = v.signum();
+        } else if v.abs() < MENU_STICK_OFF {
+            *cur = 0.0;
+        }
+    }
+    a.menu_up |= now.y > 0.0 && was.y <= 0.0;
+    a.menu_down |= now.y < 0.0 && was.y >= 0.0;
+    a.menu_left |= now.x < 0.0 && was.x >= 0.0;
+    a.menu_right |= now.x > 0.0 && was.x <= 0.0;
+    *held = now;
 }
 
 pub struct Input {
@@ -188,7 +281,8 @@ impl Input {
     /// 프레임마다 한 번. 눌림은 OR로 모으고, 이동(상태)은 마지막 값으로 덮는다. `menu`면 터치는 탭만.
     pub fn poll(&mut self, lab_open: bool, menu: bool) {
         let mut a = Actions::default();
-        let used_keys = get_last_key_pressed().is_some();
+        // Android에 키보드를 붙이는 일은 드물고, 패드 버튼·D패드도 키로 들어온다 — 키보드로 세지 않는다(안내 글이 키 글자로 바뀌지 않게).
+        let used_keys = !cfg!(target_os = "android") && get_last_key_pressed().is_some();
         let mut used_pad = false;
         // 키보드 이동.
         let mut m = Vec2::ZERO;
@@ -300,32 +394,44 @@ impl Input {
                 // 0019: Start = 멈춤(예전엔 개발 시나리오 넘기기 — 키보드 1~7·터치 SC로 남김).
                 a.pause |= pad.is_just_pressed(Button::RightCenterCluster);
                 // 메뉴 스틱: 한 번 넘을 때만.
-                let st = stick(pad.left_stick());
-                let was = self.menu_stick;
-                let mut now = was;
-                for (v, slot) in [(st.x, 0), (st.y, 1)] {
-                    let cur = if slot == 0 { &mut now.x } else { &mut now.y };
-                    if v.abs() > MENU_STICK_ON {
-                        *cur = v.signum();
-                    } else if v.abs() < MENU_STICK_OFF {
-                        *cur = 0.0;
-                    }
-                }
-                if now.y > 0.0 && was.y <= 0.0 {
-                    a.menu_up = true;
-                }
-                if now.y < 0.0 && was.y >= 0.0 {
-                    a.menu_down = true;
-                }
-                if now.x < 0.0 && was.x >= 0.0 {
-                    a.menu_left = true;
-                }
-                if now.x > 0.0 && was.x <= 0.0 {
-                    a.menu_right = true;
-                }
-                self.menu_stick = now;
+                menu_from_stick(&mut self.menu_stick, stick(pad.left_stick()), &mut a);
                 used_pad |= pad.all_just_pressed().next().is_some();
             }
+        }
+
+        // Android(0022): `gamepads`가 빠지고, 패치한 miniquad가 패드 버튼을 F13~F24 키로, 스틱·HAT을 `joystick_axes`로 넘긴다
+        // (third_party/miniquad/PATCHED.md, 첫 게임 nail 0075·0143). D패드가 키코드로 오는 기기는 화살표 키 — 위의 키보드 줄이 받는다.
+        // 버튼 배치는 데스크톱 패드와 같다.
+        #[cfg(target_os = "android")]
+        {
+            let (mv, r) = android_axes(macroquad::miniquad::native::joystick_axes());
+            if mv != Vec2::ZERO {
+                m = mv;
+                used_pad = true;
+            }
+            if r != Vec2::ZERO {
+                aim = r;
+                used_pad = true;
+            }
+            let j = |p: Pad| is_key_pressed(p.key());
+            a.attack |= j(Pad::West);
+            a.dodge |= j(Pad::South);
+            a.lock |= j(Pad::R3);
+            a.turn_cw |= j(Pad::R1);
+            a.turn_ccw |= !lab_open && j(Pad::L1);
+            a.lab_toggle |= j(Pad::Select);
+            a.lab_fast |= is_key_down(Pad::L1.key());
+            a.lab_reset |= j(Pad::North);
+            a.lab_export |= j(Pad::East);
+            a.lab_store |= j(Pad::L2);
+            a.lab_swap |= j(Pad::R2);
+            a.confirm |= j(Pad::South);
+            a.back |= j(Pad::East) || is_key_pressed(KeyCode::Back);
+            a.pause |= j(Pad::Start);
+            menu_from_stick(&mut self.menu_stick, mv, &mut a);
+            let arrows = [KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right];
+            used_pad |=
+                PADS.iter().any(|p| is_key_down(p.key())) || arrows.iter().any(|k| is_key_down(*k));
         }
 
         // 터치: 스틱은 키·패드가 0일 때만, 눌림은 OR.
@@ -420,5 +526,65 @@ mod tests {
     fn pushing_a_stick_up_means_forward() {
         assert_eq!(stick((0.0, 1.0)), vec2(0.0, 1.0));
         assert_eq!(stick((-1.0, 0.0)), vec2(-1.0, 0.0));
+    }
+
+    /// Android 스틱(0022): 패치한 miniquad는 아래가 +y — 위로 밀면 앞(+y)으로. 데드존 안 떨림은 0, 스틱이 서 있으면 HAT.
+    #[test]
+    fn android_sticks_push_up_for_forward_and_fall_back_to_the_hat() {
+        assert_eq!(android_axes([0.0; 6]), (Vec2::ZERO, Vec2::ZERO));
+        assert_eq!(
+            android_axes([0.1, -0.1, 0.15, 0.0, 0.0, 0.0]),
+            (Vec2::ZERO, Vec2::ZERO)
+        );
+        let (mv, aim) = android_axes([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(mv, vec2(0.0, 1.0), "left stick up = forward");
+        assert_eq!(aim, vec2(1.0, 0.0), "right stick right = aim right");
+        let (mv, _) = android_axes([0.0, 0.0, 0.0, 0.0, -1.0, 1.0]);
+        assert!(
+            (mv - vec2(-1.0, -1.0).normalize()).length() < 1e-5,
+            "hat down-left"
+        );
+        let (mv, _) = android_axes([0.5, 0.0, 0.0, 0.0, 0.0, -1.0]);
+        assert_eq!(mv, vec2(0.5, 0.0), "the stick wins over the hat");
+    }
+
+    /// Android 패드 버튼: 패치한 miniquad 표(KEYCODE_BUTTON_* → F13~F24)와 `Pad::key`가 같은 짝이고 겹치지 않는다(nail 0075).
+    #[test]
+    fn android_pad_keys_match_patched_miniquad() {
+        let table = include_str!("../third_party/miniquad/src/native/android/keycodes.rs");
+        let name = |p: Pad| match p {
+            Pad::South => "BUTTON_A",
+            Pad::East => "BUTTON_B",
+            Pad::West => "BUTTON_X",
+            Pad::North => "BUTTON_Y",
+            Pad::L1 => "BUTTON_L1",
+            Pad::R1 => "BUTTON_R1",
+            Pad::L2 => "BUTTON_L2",
+            Pad::R2 => "BUTTON_R2",
+            Pad::L3 => "BUTTON_THUMBL",
+            Pad::R3 => "BUTTON_THUMBR",
+            Pad::Start => "BUTTON_START",
+            Pad::Select => "BUTTON_SELECT",
+        };
+        let mut seen = Vec::new();
+        for p in PADS {
+            let k = p.key();
+            assert!(!seen.contains(&k), "{p:?} key clash");
+            seen.push(k);
+            let line = table
+                .lines()
+                .find(|l| l.trim_end().ends_with(&format!("// KEYCODE_{}", name(p))))
+                .unwrap_or_else(|| panic!("KEYCODE_{} not in the patched table", name(p)));
+            assert!(line.contains(&format!("KeyCode::{k:?}")), "{p:?}: {line}");
+        }
+    }
+
+    /// Android 키 반복: 패치한 miniquad가 반복 이벤트의 repeat 플래그를 넘긴다(안 그러면 누르고 있는 동안 계속 새 누름, nail 0171).
+    #[test]
+    fn android_key_repeat_reaches_macroquad() {
+        let java = include_str!("../third_party/miniquad/java/MainActivity.java");
+        assert!(java.contains("QuadNative.surfaceOnKeyDown(keyCode, event.getRepeatCount() > 0)"));
+        let rs = include_str!("../third_party/miniquad/src/native/android.rs");
+        assert!(rs.contains(".key_down_event(keycode, self.keymods, repeat)"));
     }
 }

@@ -1,8 +1,10 @@
 name: deploy-web
-# 웹 빌드·배포(nail deploy-web.yml에서 가져옴, Knellroot 0005):
-# - main push: fmt·clippy(두 갈래)·test·wasm 빌드·조립·헤드리스 스크린숏 → Netlify 운영 주소(시크릿이 있을 때만).
-#   v0.1.0 전까지는 운영 주소가 곧 개발판이라 개발 기능(랩·시나리오)을 켠 채 올린다(0005). 마일스톤을 닫으면 nail 0193처럼 갈래를 나눈다.
-# - PR: 같은 빌드를 pr-<번호> 별칭에(포크 PR은 시크릿이 없어 건너뜀).
+# 웹 빌드·배포(nail deploy-web.yml에서 가져옴, Knellroot 0005·0022). 갈래(nail 0193, v0.1.0부터):
+# - main push: 운영판 — 개발 기능을 뺀 빌드(--no-default-features)를 Netlify 운영 주소에.
+# - release/** push: 개발판 — 개발 기능(랩·개발 항목)을 켠 빌드를 같은 사이트의 별칭 `dev`(dev--knellroot.netlify.app)에.
+#   운영과 주소(= 브라우저 저장소)가 달라 기록이 섞이지 않는다. 올린 뒤 그 주소의 build.txt가 이 커밋인지 확인한다.
+# - PR: 개발판을 pr-<번호> 별칭에(포크 PR은 시크릿이 없어 건너뜀).
+# 어느 갈래든 fmt·clippy(두 갈래)·test·wasm·조립·헤드리스 연기 시험을 먼저 돈다.
 # 배포는 사장이 정한다(main에 push하면 바로 올라간다).
 # 액션 버전: Node 24로 도는 메이저(checkout·setup-node·upload-artifact v7, rust-cache v2 — v7의 깨지는 변경(pull_request_target 포크 checkout 거부, NODE_AUTH_TOKEN 대체값 제거)은 이 워크플로에 해당 없음, upload-artifact v7 archive 기본 true) — Node 20 액션은 2026-06-16부터 강제로 Node 24, 2026-09-23 제거(GitHub changelog 2025-09-19). upload-artifact v5는 아직 node20.
 on:
@@ -24,22 +26,33 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown, aarch64-linux-android
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+
+      # 운영판은 개발 기능을 뺀다(nail 0193). 다른 갈래는 기본값(dev).
+      - name: Build flavor
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            echo "FEATURES=--no-default-features" >> "$GITHUB_ENV"; echo "FLAVOR=release" >> "$GITHUB_ENV"
+          else
+            echo "FEATURES=" >> "$GITHUB_ENV"; echo "FLAVOR=dev" >> "$GITHUB_ENV"
+          fi
 
       - run: cargo fmt --all -- --check
       # 두 갈래 다 경고가 없어야 한다(dev 전용 코드가 운영판에서 죽은 코드가 되지 않게).
       - run: cargo clippy --target wasm32-unknown-unknown -- -D warnings
       - run: cargo clippy --target wasm32-unknown-unknown --no-default-features -- -D warnings
+      # Android에서만 깨지는 것(cfg(target_os = "android") 경로·의존성)을 APK 빌드 전에(0022). NDK 없이 된다.
+      - run: cargo clippy --target aarch64-linux-android --no-default-features -- -D warnings
       - name: Install Linux libs for host tests
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev libudev-dev pkg-config
       - run: cargo test
-      - run: cargo build --release --target wasm32-unknown-unknown
+      - run: cargo build --release --target wasm32-unknown-unknown $FEATURES
 
       - name: Assemble publish dir
         run: |
-          sh tools/web/assemble.sh dist "$GITHUB_SHA"
+          sh tools/web/assemble.sh dist "$GITHUB_SHA" "$FLAVOR"
           ls -la dist
       - uses: actions/upload-artifact@v7
         with:
@@ -55,8 +68,16 @@ jobs:
         run: |
           npm init -y >/dev/null && npm install --no-audit --no-fund playwright@1.47.2 >/dev/null
           npx playwright install --with-deps chromium
-          node tools/test/shot.js dist shots
-          node tools/test/touch.js dist shots
+          # 연기 시험은 개발 항목(문 앞·시나리오)을 쓴다 — 운영판이면 개발판을 따로 빌드해 돈다(배포물은 그대로).
+          if [ "$FLAVOR" = "release" ]; then
+            cargo build --release --target wasm32-unknown-unknown
+            sh tools/web/assemble.sh smoke "$GITHUB_SHA" dev
+            dir=smoke
+          else
+            dir=dist
+          fi
+          node tools/test/shot.js $dir shots
+          node tools/test/touch.js $dir shots
       - uses: actions/upload-artifact@v7
         with:
           name: shots
@@ -66,6 +87,22 @@ jobs:
       - name: Deploy production
         if: env.NETLIFY_SITE_ID != '' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: npx netlify-cli@23 deploy --dir=dist --prod --message="${{ github.sha }}"
+      # 개발판(nail 0193): 운영(--prod)은 건드리지 않는다. 올린 뒤 별칭 주소의 build.txt가 이 커밋인지 확인한다(아니면 실패).
+      - name: Deploy dev (alias)
+        if: env.NETLIFY_SITE_ID != '' && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')
+        run: |
+          npx netlify-cli@23 deploy --dir=dist --alias=dev --message="${{ github.ref_name }} ${{ github.sha }}" --json > deploy.json
+          cat deploy.json
+          url=$(node -e 'const j=require("./deploy.json"); const u=(j.deploy_url||"").replace(/\/$/,""); console.log(u.includes("://dev--") ? u : "https://dev--"+j.site_name+".netlify.app")')
+          for i in 1 2 3 4 5 6; do
+            got=$(curl -fsS "$url/build.txt?t=$(date +%s)" || true)
+            echo "try $i: $got"
+            case "$got" in "$GITHUB_SHA"*) ok=1; break;; esac
+            sleep 10
+          done
+          if [ -z "$ok" ]; then echo "::error::$url 이 이 커밋($GITHUB_SHA)을 가리키지 않는다"; exit 1; fi
+          echo "### 개발판: $url (${GITHUB_SHA:0:7})" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Deploy PR preview
         if: env.NETLIFY_SITE_ID != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
         run: npx netlify-cli@23 deploy --dir=dist --alias="pr-${{ github.event.number }}"

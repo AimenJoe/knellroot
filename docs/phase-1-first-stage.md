@@ -31,9 +31,12 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 오래 켜기(0020) | `tools/test/leak.js` | macroquad 텔레메트리가 텍스처를 흘리던 것을 걷어 냄. 탐침: 살아 있는 텍스처·버퍼·wasm 메모리를 10초마다 — 스테이지 120초·잡몹 80 90초 평평 |
 | 손맛 손질(0020) | `camera.rs`, `world.rs`, `render.rs` | 흔들림은 각(거리 무관), 맞으면 몸이 젖혀짐, 회피는 적을 뚫음, 땅 돌리기 좌우 = 캐릭터의 좌우 |
 | 글꼴 | `assets/fonts/GowunBatang-UI-*.ttf`, `tools/fonts/subset_ui.py` | 0021: 후보 열하나(`docs/art/font-candidates-{pixel,serif}.png`) 중 사장이 고운바탕·함렛으로 좁힘 → 호환성으로 고운바탕(한글 11,172자·굵기 따로 된 파일). 표 글자만 서브셋 두 파일 190KB(Galmuri 330KB보다 작음) |
+| v0.1.0·APK(0022) | `.github/workflows/build-android.yml`·`release.yml`, `third_party/miniquad`, `android/res`, `tools/icons/make_icons.py` | nail CI를 가져옴(비공개 에셋 단계 뺌). Android 패드는 nail의 패치 miniquad. 갈래: main = 운영(개발 기능 없음), `release/v0.2` = 개발판(웹 별칭 `dev`·APK 미리 보기 `dev`) |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+- [ ] **APK 서명 키 고정**: GitHub 레포 Settings → Secrets and variables → Actions → `ANDROID_DEBUG_KEYSTORE_B64`(값은 세션이 만들어 둔 파일, 또는 `docs/release.md`의 명령으로). 없으면 7일 쉰 뒤 키가 바뀌어 덮어 설치가 안 된다.
+- [ ] 핸드헬드에 v0.1.0 APK 설치 — 패드 버튼·두 스틱·D패드·Start(멈춤)가 다 먹는지(0022).
 - [ ] 고운바탕이 핸드헬드 화면(작은 화면·1배)에서 읽히는지(0021).
 - [ ] 핸드헬드에서 오래 켜 두기(10분 이상) — 꺼지지 않는지(0020).
 - [ ] 돌리기 좌우가 캐릭터 기준으로 자연스러운지, 회피로 떼를 빠져나가는 느낌, 맞을 때 흔들림 크기(0020).

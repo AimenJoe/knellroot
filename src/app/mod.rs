@@ -459,6 +459,20 @@ impl App {
             .menu(&items, self.cursor, cx, f.oy + f.h * TITLE_MENU_Y);
         self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 3.4);
         self.controls_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.0);
+        // 버전 글자(오른쪽 위) — 받은 판이 무엇인지 사진 한 장으로 알게. 개발판은 표시를 붙인다.
+        let ver = if cfg!(feature = "dev") {
+            concat!("v", env!("CARGO_PKG_VERSION"), " dev")
+        } else {
+            concat!("v", env!("CARGO_PKG_VERSION"))
+        };
+        let w = self.ui.width(ver, 1.0);
+        self.ui.text(
+            ver,
+            f.ox + f.w - w - self.ui.px(0.6),
+            f.oy + self.ui.px(0.5),
+            1.0,
+            DIM,
+        );
     }
 
     fn draw_pause(&mut self, f: &Frame) {

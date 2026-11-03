@@ -1,9 +1,9 @@
 [package]
 name = "knellroot"
-version = "0.0.1"
+version = "0.1.0"
 authors = ["Beardworks"]
 edition = "2021"
-description = "Knellroot — 레트로 로우폴리 3D ARPG(쿼터뷰 떼싸움 + 락온 보스전) PoC"
+description = "Knellroot — 레트로 로우폴리 3D ARPG(쿼터뷰 떼싸움 + 락온 보스전)"
 publish = false
 
 [features]
@@ -25,7 +25,36 @@ gamepads = { version = "0.1.7", default-features = false }
 # 시험만: i18n 표의 모든 글자가 글꼴에 있는지(첫 게임 규칙).
 ttf-parser = "0.25"
 
+# Android APK(0022, KB guides/macroquad-android-apk-github-actions.md). CI(build-android.yml)에서만 cargo-quad-apk로 빌드한다.
+[package.metadata.android]
+package_name = "io.github.aimenjoe.knellroot"
+label = "Knellroot"
+# compileSdk / targetSdk: GitHub 러너와 cargo-quad-apk 기본값(36).
+android_version = 36
+target_sdk_version = 36
+# Android 8.0. 게이밍 핸드헬드는 11+.
+min_sdk_version = 26
+# 실기 핸드헬드는 arm64.
+build_targets = ["aarch64-linux-android"]
+fullscreen = true
+# 모델·글꼴은 바이너리에 들어 있어(build.rs·include_bytes!) assets 폴더가 필요 없다.
+# 앱 아이콘: tools/icons/make_icons.py가 만든 mipmap(옛 아이콘 + Android 8+ 적응형).
+res = "android/res"
+icon = "@mipmap/ic_launcher"
+# 덮어 설치 판정용 정수. 릴리스마다 하나씩 올린다(버전 숫자에서 만들지 않는다 — 작아질 수 있다, nail release.md).
+version_code = 1
+
+[package.metadata.android.activity_attributes]
+"android:screenOrientation" = "sensorLandscape"
+# targetSdk 31+에서 intent-filter가 있는 액티비티는 exported를 꼭 적어야 Android 12+에 설치된다(nail 0074).
+"android:exported" = "true"
+
 [profile.release]
 opt-level = "z"
 lto = true
 codegen-units = 1
+
+# Android 게임패드 버튼·스틱·키 반복을 받도록 고친 miniquad 0.4.11 — 첫 게임 nail의 패치본 그대로(0022, third_party/miniquad/PATCHED.md).
+# miniquad를 올리면 PATCHED.md대로 다시 넣고 `cargo test`의 android_* 시험을 본다.
+[patch.crates-io]
+miniquad = { path = "third_party/miniquad" }

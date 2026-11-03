@@ -1,6 +1,8 @@
 # Knellroot(넬루트) — 레트로 로우폴리 3D ARPG PoC
 
 쿼터뷰로 떼를 상대하다가, 락온을 누르면 숄더뷰로 내려가 보스와 1:1. Rust + macroquad(첫 게임 [nail-under-the-roots](https://github.com/AimenJoe/nail-under-the-roots)와 같은 스택).
+**v0.1.0**(2026-11-03): 웹 https://knellroot.netlify.app · Android APK는 GitHub Releases. 개발판: https://dev--knellroot.netlify.app.
+
 지금은 **1단계: 첫 스테이지 "침묵의 성소" 초안**이다(0019): 타이틀·멈춤·결과 화면, 입구 → 뿌리의 뜰(물결 셋) → 성소 문 → 잠든 문지기와 결투, Blender로 만든 로우폴리 모델과 화로 불빛. 소리는 아직 없다. PoC(카메라 리그 둘·땅 돌리기·랩)는 닫고 개발판에 남겼다.
 
 - 무엇을 만드나: `docs/concept.md`

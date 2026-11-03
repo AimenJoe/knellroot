@@ -1,0 +1,77 @@
+name: release
+# 버전 올리기 = 릴리스(nail release.yml에서 가져옴 — PC 묶음은 아직 없다). main에서 Cargo.toml의 version이 새 값이고
+# docs/releases/v<버전>.md(릴리스 본문)가 있으면 태그 v<버전>을 만들고 APK를 빌드해 GitHub Release에 붙인다.
+# 태그가 이미 있거나 본문이 없으면 아무것도 안 한다.
+# 왜 따로: 세션 git 프록시는 태그 push를 받지 않는다. 또 GITHUB_TOKEN으로 만든 태그는 다른 워크플로를 깨우지 않아서
+# build-android를 여기서 직접 부른다(workflow_call). KB reference/github-actions/release-from-version-bump.md.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'docs/releases/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+    inputs:
+      drop:
+        description: '지울 Release·태그(예: v0.1.1). 잘못 낸 버전을 거둘 때만(사장 결정). 비우면 평소처럼 릴리스만 본다'
+        required: false
+        default: ''
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # 잘못 낸 버전 거두기: 세션은 태그·Release를 지울 수 없어서 수동 실행 입력으로.
+  drop:
+    if: github.event_name == 'workflow_dispatch' && inputs.drop != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.drop }}
+        run: |
+          case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "태그 모양이 아님: $TAG"; exit 1 ;; esac
+          gh release delete "$TAG" --cleanup-tag --yes
+          echo "### $TAG Release·태그를 지웠다" >> "$GITHUB_STEP_SUMMARY"
+
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # 태그 push
+    outputs:
+      tag: ${{ steps.t.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: t
+        run: |
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          tag="v$v"
+          if [ ! -f "docs/releases/$tag.md" ]; then
+            echo "docs/releases/$tag.md 없음: 릴리스하지 않는다"
+            exit 0
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "$tag 이미 있음: 릴리스하지 않는다"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "$tag (docs/releases/$tag.md)" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "### $tag 태그를 만들었다 → APK 빌드·Release" >> "$GITHUB_STEP_SUMMARY"
+
+  apk:
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    permissions:
+      contents: write   # Release 만들기
+    uses: ./.github/workflows/build-android.yml
+    with:
+      release_tag: ${{ needs.tag.outputs.tag }}
+    secrets: inherit
