@@ -5,7 +5,9 @@
 - 옛 아이콘: mipmap-<밀도>/ic_launcher.png(48~192px, 둥근 네모 바탕 + 그림).
 - 적응형(Android 8+): mipmap-anydpi-v26/ic_launcher.xml = 배경(바탕색 한 장) + 앞 그림(108dp 칸의 가운데 66dp 안 — 원으로 깎여도 다 보이게).
 Cargo.toml [package.metadata.android]의 res = "android/res", icon = "@mipmap/ic_launcher"."""
+import math
 import os
+import random
 
 from PIL import Image, ImageDraw
 
@@ -28,7 +30,7 @@ ROOT_D = (74, 51, 64)
 # 앞 그림이 108dp 칸에서 차지할 크기(dp) — 66dp 안전 원 안에 들게.
 ADAPTIVE_ART_DP = 60
 
-# 32×32 그림 — 문자는 모양만(h 종 고리 · b 종 몸 · l 입술 · c 추 · r 뿌리). 음영·외곽선은 `art()`가 모양에서 계산한다:
+# 32×32 그림 — 문자는 모양만(h 종 고리 · b 종 몸 · l 입술 · c 추). 뿌리는 `roots()`가 기른다. 음영·외곽선은 `art()`가 모양에서 계산한다:
 # 빛은 왼쪽 위에서 — 줄마다 그 덩어리의 왼쪽 끝은 밝게, 오른쪽은 그늘, 입술은 한 단 어둡게. 둘레에 1px 외곽선.
 SHAPE = [
     "",
@@ -49,18 +51,18 @@ SHAPE = [
     "      llllllllllllllllllll",
     "      llllllllllllllllllll",
     "              cccc",
-    "               rr",
-    "               rr",
-    "              rrrr",
-    "             rr  rr",
-    "            rr rr rr",
-    "           rr  rr  rr",
-    "          rr   rr   rr",
-    "         rr    r     rr",
-    "        rr    rr      rr",
-    "       rr     r        rr",
-    "      r      rr         r",
-    "     r       r           r",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
     "",
     "",
 ]
@@ -70,6 +72,7 @@ HI = (255, 222, 150)        # 종의 가장 밝은 빛
 MID_HI = (238, 178, 82)
 SHADE = (184, 116, 42)
 ROOT_L = (150, 104, 124)    # 뿌리 빛 쪽
+ROOT_SEED = 57  # 시드 몇 개를 나란히 보고 고름(곧은뿌리가 가운데로 길고 곁뿌리가 고르게)
 
 
 def lerp(c0, c1, t):
@@ -100,14 +103,56 @@ def shade_of(ch, x, x0, x1, y, rows):
         return EMBER if t < 0.5 else SHADE
     if ch == 'c':
         return EMBER if x == x0 else AMBER
-    if ch == 'r':
-        if x1 == x0:
-            return ROOT_C
-        return ROOT_L if x == x0 else ROOT_D
     raise ValueError(ch)
 
 
-def art():
+def roots(seed=ROOT_SEED):
+    """종 입술 밑에서 뿌리를 기른다: 여러 곳에서 나와 바깥으로 퍼지며 내려가고, 굵게 시작해 1px로 가늘어지며,
+    조금씩 비틀리고 중간에 곁가지가 갈라진다. 시드 고정(같은 그림). 돌려주는 것은 칠할 칸의 집합."""
+    rng = random.Random(seed)
+    cells = set()
+
+    def stamp(x, y, w):
+        if w <= 1.15:
+            xx, yy = int(math.floor(x)), int(math.floor(y))
+            if 1 <= xx <= 30 and yy <= 29:
+                cells.add((xx, yy))
+            return
+        r = w / 2
+        for yy in range(int(math.floor(y - r)), int(math.ceil(y + r)) + 1):
+            for xx in range(int(math.floor(x - r)), int(math.ceil(x + r)) + 1):
+                if (xx + 0.5 - x) ** 2 + (yy + 0.5 - y) ** 2 <= r * r and 1 <= xx <= 30 and yy <= 29:
+                    cells.add((xx, yy))
+
+    def grow(x, y, ang, length, width, depth):
+        steps = int(length / 0.25)
+        branch_at = {int(steps * rng.uniform(0.3, 0.6))} if depth > 0 else set()
+        for i in range(steps):
+            t = i / steps
+            stamp(x, y, max(width * (1 - t) ** 0.8, 1.0))
+            # 흙을 더듬듯 조금씩 비틀리고, 아래(pi/2)로 살짝 끌린다.
+            ang += rng.uniform(-0.14, 0.14) + (math.pi / 2 - ang) * 0.012
+            x += math.cos(ang) * 0.25
+            y += math.sin(ang) * 0.25
+            if i in branch_at:
+                side = 1 if math.cos(ang) >= 0 else -1  # 바깥쪽으로 갈라진다
+                if rng.random() < 0.35:
+                    side = -side
+                grow(x, y, ang + side * rng.uniform(0.5, 0.8), length * (1 - t) * 0.6, max(width * (1 - t) * 0.6, 1.0), depth - 1)
+
+    # (나오는 x, 방향(아래 = pi/2에서 더하는 각), 길이, 굵기, 곁가지 깊이)
+    for x0, da, length, width, depth in [
+        (15.5, 0.06, 12.5, 2.6, 2),   # 곧은뿌리
+        (12.5, 0.42, 11.5, 2.0, 1),
+        (19.0, -0.42, 11.5, 2.0, 1),
+        (10.0, 0.9, 9.5, 1.6, 1),
+        (21.5, -0.9, 9.5, 1.6, 1),
+    ]:
+        grow(x0, 17.6, math.pi / 2 + da, length, width, depth)
+    return cells
+
+
+def art(seed=ROOT_SEED):
     img = Image.new('RGBA', (32, 32), (0, 0, 0, 0))
     rows_of = {}
     for y, row in enumerate(ART):
@@ -126,6 +171,15 @@ def art():
                 x += 1
             for xx in range(x0, x):
                 img.putpixel((xx, y), shade_of(ch, xx, x0, x - 1, y, rows_of[ch]) + (255,))
+    # 뿌리: 빛은 왼쪽 위 — 왼쪽·위가 비면 밝게, 오른쪽·아래가 비면 그늘, 안쪽은 가운데 색. 종 위에는 칠하지 않는다.
+    rc = roots(seed)
+    for (x, y) in rc:
+        if img.getpixel((x, y))[3]:
+            continue
+        lit = (x - 1, y) not in rc or (x, y - 1) not in rc
+        dark = (x + 1, y) not in rc or (x, y + 1) not in rc
+        col = ROOT_L if lit and not dark else ROOT_D if dark and not lit else ROOT_C
+        img.putpixel((x, y), col + (255,))
     # 1px 외곽선: 그림 칸에 닿는(상하좌우) 빈 칸.
     filled = {(x, y) for y in range(32) for x in range(32) if img.getpixel((x, y))[3]}
     for y in range(32):
