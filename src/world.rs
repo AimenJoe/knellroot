@@ -111,9 +111,16 @@ pub enum PState {
         t: f32,
         dir: Vec3,
     },
+    /// 휘두르기. `dir` = 내딛는 쪽(누른 순간의 입력, 없으면 바라보는 쪽, 0018).
     Attack {
         t: f32,
         swing: u32,
+        dir: Vec3,
+    },
+    /// 맞아서 경직(0018): 못 움직이고 못 친다. 밀려난 속도는 빠르게 준다.
+    Hurt {
+        t: f32,
+        dur: f32,
     },
     /// 땅 돌리기: 발을 딛고 비튼다(`turn.plant s` 동안 못 움직인다 — 공짜가 아니다).
     Turn {
@@ -134,6 +141,12 @@ pub struct Player {
     pub dodge_cd: f32,
     /// 땅 돌리기 대기(초).
     pub turn_cd: f32,
+    /// 스태미나(0018)와 마지막으로 쓴 뒤 지난 초, 모자라서 막혔을 때 HUD 막대를 깜빡이는 남은 초.
+    pub stamina: f32,
+    pub stamina_idle: f32,
+    pub stamina_denied: f32,
+    /// 경직 중 또 맞은 횟수(0 = 첫 경직) — 경직 길이가 반씩 준다.
+    pub stun_chain: i32,
     /// 마지막 쏟음(땅 돌리기가 멈춘 순간)에서 지난 초 — 렌더의 쟁반 테.
     pub since_spill: f32,
     pub swings: u32,
@@ -261,6 +274,10 @@ impl World {
                 hurt: 0.0,
                 dodge_cd: 0.0,
                 turn_cd: 0.0,
+                stamina: crate::tuning::SPECS[crate::tuning::idx(P::StaminaMax)].def,
+                stamina_idle: 0.0,
+                stamina_denied: 0.0,
+                stun_chain: 0,
                 since_spill: f32::MAX,
                 swings: 0,
             },
@@ -511,6 +528,23 @@ impl World {
         let pl = &mut self.player;
         pl.hurt = (pl.hurt - dt).max(0.0);
         pl.dodge_cd = (pl.dodge_cd - dt).max(0.0);
+        // 스태미나: 마지막으로 쓴 뒤 `stamina.regen delay s`가 지나야 찬다.
+        pl.stamina_denied = (pl.stamina_denied - dt).max(0.0);
+        pl.stamina_idle += dt;
+        if pl.stamina_idle >= t[P::StaminaDelay] {
+            pl.stamina = (pl.stamina + t[P::StaminaRegen] * dt).min(t[P::StaminaMax]);
+        }
+        // 행동은 스태미나가 조금이라도 있으면 된다(소울류처럼 0까지 쓰고 끝). 없으면 막히고 막대가 깜빡인다.
+        let spend = |pl: &mut Player, cost: f32| -> bool {
+            if pl.stamina > 0.0 {
+                pl.stamina = (pl.stamina - cost).max(0.0);
+                pl.stamina_idle = 0.0;
+                true
+            } else {
+                pl.stamina_denied = 0.4;
+                false
+            }
+        };
         pl.turn_cd = (pl.turn_cd - dt).max(0.0);
         pl.since_spill = (pl.since_spill + dt).min(f32::MAX);
         let world_move = move_to_world(a.move_dir, basis, pl.pos);
@@ -538,7 +572,7 @@ impl World {
         // 상태 전이.
         match pl.state {
             PState::Idle => {
-                if a.dodge && pl.dodge_cd <= 0.0 {
+                if a.dodge && pl.dodge_cd <= 0.0 && spend(pl, t[P::StaminaDodge]) {
                     let dir = if world_move.length_squared() > 1e-4 {
                         world_move.normalize()
                     } else {
@@ -546,22 +580,44 @@ impl World {
                     };
                     pl.state = PState::Dodge { t: 0.0, dir };
                     pl.dodge_cd = t[P::DodgeTime] + 0.15;
-                } else if a.attack {
+                } else if a.attack && !a.dodge && spend(pl, t[P::StaminaAttack]) {
                     pl.swings += 1;
-                    pl.state = PState::Attack {
-                        t: 0.0,
-                        swing: pl.swings,
-                    };
                     // 휘두르는 쪽을 그 자리에서 정한다: 자동 조준 > 조준 스틱 > 지금 바라보는 쪽.
                     if let Some(d) = auto_dir.or(aim) {
                         pl.facing = d.x.atan2(d.z);
                     }
+                    // 내딛는 쪽은 누른 순간의 입력(없으면 휘두르는 쪽, 0018).
+                    let dir = if world_move.length_squared() > 1e-4 {
+                        world_move.normalize()
+                    } else {
+                        pl.facing_dir()
+                    };
+                    pl.state = PState::Attack {
+                        t: 0.0,
+                        swing: pl.swings,
+                        dir,
+                    };
                 }
             }
-            PState::Attack { t: e, swing } => {
+            PState::Hurt { t: e, dur } => {
+                pl.state = if e + dt >= dur {
+                    PState::Idle
+                } else {
+                    PState::Hurt { t: e + dt, dur }
+                };
+            }
+            PState::Attack {
+                t: e,
+                swing,
+                dir: ldir,
+            } => {
                 let total = t[P::AttackStartup] + t[P::AttackActive] + t[P::AttackRecovery];
                 // 회피는 활성 구간이 끝난 뒤부터 후딜레이를 끊는다(캔슬 창 = 무기 성격).
-                if a.dodge && pl.dodge_cd <= 0.0 && e >= t[P::AttackStartup] + t[P::AttackActive] {
+                if a.dodge
+                    && pl.dodge_cd <= 0.0
+                    && e >= t[P::AttackStartup] + t[P::AttackActive]
+                    && spend(pl, t[P::StaminaDodge])
+                {
                     let dir = if world_move.length_squared() > 1e-4 {
                         world_move.normalize()
                     } else {
@@ -572,7 +628,11 @@ impl World {
                 } else if e + dt >= total {
                     pl.state = PState::Idle;
                 } else {
-                    pl.state = PState::Attack { t: e + dt, swing };
+                    pl.state = PState::Attack {
+                        t: e + dt,
+                        swing,
+                        dir: ldir,
+                    };
                 }
             }
             PState::Dodge { t: e, dir } => {
@@ -596,13 +656,17 @@ impl World {
             PState::Dodge { dir, .. } => {
                 pl.vel = dir * (t[P::DodgeDist] / t[P::DodgeTime]);
             }
-            PState::Attack { t: e, .. } => {
-                // 스윙 중엔 멈추되 선딜 동안 짧게 전진(lunge).
-                pl.vel = if e < t[P::AttackStartup] {
-                    pl.facing_dir() * 3.0
+            PState::Attack { t: e, dir, .. } => {
+                // 선딜 + 활성 동안 `attack.lunge m`만큼 입력한 쪽으로 내딛고, 후딜에는 선다(0018).
+                let reach = t[P::AttackStartup] + t[P::AttackActive];
+                pl.vel = if e < reach {
+                    dir * (t[P::AttackLunge] / reach.max(1e-3))
                 } else {
                     Vec3::ZERO
                 };
+            }
+            PState::Hurt { .. } => {
+                pl.vel *= (1.0 - KNOCK_DECAY * dt).max(0.0);
             }
             PState::Turn { .. } => pl.vel = Vec3::ZERO,
             PState::Idle => {
@@ -620,7 +684,7 @@ impl World {
 
         // 바라보기: 락온이면 대상, 조준 스틱을 쥐면 그 쪽(움직이며 다른 쪽을 볼 수 있다, 0014), 아니면 이동 방향. 스윙 중엔 고정.
         let want_yaw = match (basis, pl.state) {
-            (_, PState::Attack { .. } | PState::Turn { .. }) => None,
+            (_, PState::Attack { .. } | PState::Turn { .. } | PState::Hurt { .. }) => None,
             (Basis::Lock(tg), _) => {
                 let d = tg - pl.pos;
                 Some(d.x.atan2(d.z))
@@ -646,7 +710,7 @@ impl World {
 
     /// 플레이어 스윙의 활성 구간에 범위·부채꼴 안의 적을 한 스윙에 한 번씩 때린다.
     fn apply_strike(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
-        let PState::Attack { t: e, swing } = self.player.state else {
+        let PState::Attack { t: e, swing, .. } = self.player.state else {
             return;
         };
         if e < t[P::AttackStartup] || e >= t[P::AttackStartup] + t[P::AttackActive] {
@@ -756,7 +820,8 @@ impl World {
 
     fn tick_enemies(&mut self, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
         let p = self.player.pos;
-        let mut hurt_player = false;
+        // 플레이어를 친 적의 자리(첫 하나) — 밀려나는 쪽.
+        let mut hurt_player: Option<Vec3> = None;
         for en in &mut self.enemies {
             if !en.alive() {
                 continue;
@@ -825,7 +890,7 @@ impl World {
                         };
                         let reach = en.reach + PLAYER_RADIUS;
                         if dist <= reach && dir.dot(en.facing_dir()) >= arc {
-                            hurt_player = true;
+                            hurt_player.get_or_insert(en.pos);
                         }
                     }
                     en.state = if e + dt >= 0.2 {
@@ -853,9 +918,23 @@ impl World {
                 EState::Dead => {}
             }
         }
-        if hurt_player && !self.player.invulnerable() {
-            self.player.hp -= 1;
-            self.player.hurt = 0.6;
+        if let (Some(from), false) = (hurt_player, self.player.invulnerable()) {
+            let pl = &mut self.player;
+            pl.hp -= 1;
+            // 맞은 뒤 무적은 짧게(예전 0.6초 — 그 동안 다시 맞을 수 없어 경직 줄이기가 쓸 데가 없었다).
+            pl.hurt = t[P::HitIframes];
+            // 경직(0018): 경직 중 또 맞으면 반씩 — 떼에 갇혀 계속 맞아도 손을 놓치지 않게.
+            pl.stun_chain = if matches!(pl.state, PState::Hurt { .. }) {
+                pl.stun_chain + 1
+            } else {
+                0
+            };
+            let dur = t[P::HitStun] * 0.5f32.powi(pl.stun_chain);
+            if dur > 0.0 {
+                pl.state = PState::Hurt { t: 0.0, dur };
+            }
+            let away = vec3(pl.pos.x - from.x, 0.0, pl.pos.z - from.z).normalize_or_zero();
+            pl.vel = away * t[P::HitKnock] * KNOCK_DECAY;
             ev.push(Event::PlayerHurt);
         }
     }
@@ -1566,6 +1645,139 @@ mod tests {
             );
         }
         assert!(w.player.facing_dir().x < -0.99 && w.player.vel.z < -1.0);
+    }
+
+    /// 휘두르며 입력한 쪽으로 `attack.lunge m` 내딛는다(0018) — 휘두르는 쪽(자동 조준)과 달라도.
+    #[test]
+    fn an_attack_steps_toward_the_held_direction() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.view_yaw = Some(0.0); // 화면 오른쪽 = +x
+        w.step(
+            &Actions {
+                attack: true,
+                move_dir: vec2(1.0, 0.0),
+                ..Default::default()
+            },
+            &t,
+        );
+        let reach = t[P::AttackStartup] + t[P::AttackActive];
+        for _ in 0..((reach / TICK_DT) as usize + 5) {
+            w.step(
+                &Actions {
+                    move_dir: vec2(1.0, 0.0),
+                    ..Default::default()
+                },
+                &t,
+            );
+        }
+        let lunge = t[P::AttackLunge];
+        assert!(
+            (w.player.pos.x - lunge).abs() < 0.1 && w.player.pos.z.abs() < 1e-3,
+            "{:?}",
+            w.player.pos
+        );
+    }
+
+    fn hit_by_swing(w: &mut World, t: &Tuning) -> Vec<Event> {
+        let i = w.enemies.len();
+        w.spawn_mob(w.player.pos + vec3(0.0, 0.0, -1.0));
+        w.enemies[i].facing = 0.0; // +z = 플레이어 쪽
+        w.enemies[i].state = EState::Swing { t: 0.0 };
+        let ev = w.step(&Actions::default(), t);
+        w.enemies[i].state = EState::Dead;
+        ev
+    }
+
+    /// 맞으면 잠깐 경직(못 움직임) — 경직 중 또 맞으면 반씩 짧아지고, 경직이 풀린 뒤 맞으면 다시 처음 길이(0018).
+    #[test]
+    fn a_hit_stuns_briefly_and_hits_during_the_stun_halve_it() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        let ev = hit_by_swing(&mut w, &t);
+        assert!(ev.contains(&Event::PlayerHurt));
+        let PState::Hurt { dur: d0, .. } = w.player.state else {
+            panic!("{:?}", w.player.state)
+        };
+        assert!((d0 - t[P::HitStun]).abs() < 1e-4);
+        // 경직 중엔 걷지 못한다(밀려난 것만 줄어든다).
+        let before = w.player.pos;
+        for _ in 0..3 {
+            w.step(
+                &Actions {
+                    move_dir: vec2(1.0, 0.0),
+                    ..Default::default()
+                },
+                &t,
+            );
+        }
+        assert!((w.player.pos.x - before.x).abs() < 1e-3);
+        // 무적이 끝나고 아직 경직 중일 때 또 맞는다 → 반.
+        while w.player.hurt > 0.0 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(matches!(w.player.state, PState::Hurt { .. }));
+        hit_by_swing(&mut w, &t);
+        let PState::Hurt { dur: d1, .. } = w.player.state else {
+            panic!()
+        };
+        assert!((d1 - d0 * 0.5).abs() < 1e-4, "{d1} vs {d0}");
+        // 풀린 뒤 맞으면 다시 처음 길이.
+        for _ in 0..60 {
+            w.step(&Actions::default(), &t);
+        }
+        assert_eq!(w.player.state, PState::Idle);
+        hit_by_swing(&mut w, &t);
+        let PState::Hurt { dur: d2, .. } = w.player.state else {
+            panic!()
+        };
+        assert!((d2 - d0).abs() < 1e-4);
+    }
+
+    /// 회피·공격은 스태미나를 쓰고, 없으면 막히며(막대가 깜빡인다) 마지막 사용 뒤 잠깐 쉬면 다시 찬다(0018).
+    #[test]
+    fn stamina_gates_dodges_and_comes_back_after_a_pause() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        let full = w.player.stamina;
+        let dodge = Actions {
+            dodge: true,
+            ..Default::default()
+        };
+        let mut dodges = 0;
+        for _ in 0..600 {
+            if w.player.state == PState::Idle && w.player.dodge_cd <= 0.0 {
+                let before = w.player.stamina;
+                w.step(&dodge, &t);
+                if matches!(w.player.state, PState::Dodge { .. }) {
+                    dodges += 1;
+                    assert!(w.player.stamina < before);
+                } else {
+                    break;
+                }
+            } else {
+                w.step(&Actions::default(), &t);
+            }
+            if w.player.stamina <= 0.0 {
+                break;
+            }
+        }
+        let max_dodges = (full / t[P::StaminaDodge]).ceil() as i32;
+        assert!(dodges <= max_dodges && dodges >= 2, "{dodges}");
+        // 다 쓰면 막히고 막대가 깜빡인다.
+        while !(w.player.state == PState::Idle && w.player.dodge_cd <= 0.0) {
+            w.step(&Actions::default(), &t);
+        }
+        if w.player.stamina <= 0.0 {
+            w.step(&dodge, &t);
+            assert!(!matches!(w.player.state, PState::Dodge { .. }));
+            assert!(w.player.stamina_denied > 0.0);
+        }
+        // 쉬면 찬다.
+        for _ in 0..((t[P::StaminaDelay] + full / t[P::StaminaRegen]) / TICK_DT) as usize + 10 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!((w.player.stamina - t[P::StaminaMax]).abs() < 1e-3);
     }
 
     #[test]

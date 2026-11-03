@@ -256,6 +256,7 @@ impl Renderer {
         let pcol = match w.player.state {
             _ if w.player.hurt > 0.0 && (w.time * 20.0) as i32 % 2 == 0 => WHITE,
             PState::Dodge { .. } => Color::new(0.6, 0.9, 1.0, 0.6),
+            PState::Hurt { .. } => Color::new(0.95, 0.45, 0.4, 1.0),
             PState::Attack { .. } => Color::new(1.0, 0.85, 0.5, 1.0),
             PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
             PState::Idle => Color::new(0.85, 0.75, 0.55, 1.0),
@@ -452,6 +453,24 @@ impl Renderer {
             20.0,
             LIGHTGRAY,
         );
+        // 스태미나 막대(0018): 모자라서 막히면 잠깐 붉게 깜빡인다(막은 이유가 보이게 — KB action-reuse-gating).
+        let pl = &w.player;
+        let max = crate::tuning::SPECS[crate::tuning::idx(crate::tuning::P::StaminaMax)]
+            .def
+            .max(1.0);
+        let k = (pl.stamina / max).clamp(0.0, 1.0);
+        let (bx, by, bw, bh) = (ox + 10.0, oy + 50.0, 180.0, 6.0);
+        draw_rectangle(bx, by, bw, bh, Color::new(0.1, 0.1, 0.1, 0.8));
+        let blink = pl.stamina_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
+        let col = if blink {
+            Color::new(1.0, 0.3, 0.25, 1.0)
+        } else {
+            Color::new(0.55, 0.85, 0.45, 1.0)
+        };
+        draw_rectangle(bx, by, bw * k, bh, col);
+        if blink {
+            draw_rectangle_lines(bx - 1.0, by - 1.0, bw + 2.0, bh + 2.0, 2.0, col);
+        }
         // 측정 줄(P5): 폰에서도 보이게 터치 판정 위에.
         draw_text(
             format!(
@@ -464,7 +483,7 @@ impl Renderer {
                 self.batch.last_vertices
             ),
             ox + 10.0,
-            oy + 62.0,
+            oy + 74.0,
             16.0,
             YELLOW,
         );
@@ -474,14 +493,14 @@ impl Renderer {
         draw_text(
             format!("checks: {}", entry.checks),
             ox + 10.0,
-            oy + 80.0,
+            oy + 92.0,
             16.0,
             GRAY,
         );
         draw_text(
             "WASD move  J/Space attack  K/Shift dodge  Q/E turn  L/Tab lock-on  F1 lab  1-7 scenario",
             ox + 10.0,
-            oy + 98.0,
+            oy + 110.0,
             16.0,
             GRAY,
         );

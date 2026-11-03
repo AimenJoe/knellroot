@@ -78,6 +78,15 @@ pub enum P {
     Haze,
     AimRange,
     AimCone,
+    AttackLunge,
+    HitStun,
+    HitIframes,
+    HitKnock,
+    StaminaMax,
+    StaminaRegen,
+    StaminaDelay,
+    StaminaDodge,
+    StaminaAttack,
     RenderModel,
 }
 
@@ -108,7 +117,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 60] = [
+pub const SPECS: [Spec; 69] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -557,6 +566,73 @@ pub const SPECS: [Spec; 60] = [
         360.0,
         5.0
     ),
+    // 손맛·생존(0018): 공격은 입력한 쪽으로 이만큼(m) 내딛으며(선딜+활성 동안), 맞으면 경직(초) — 경직 중 또 맞으면 반씩 줄고,
+    // 맞은 뒤 무적(초)·밀림(m). 스태미나: 최대·초당 회복·마지막 사용 뒤 회복이 시작되기까지(초)·회피/공격 값.
+    spec!(
+        AttackLunge,
+        "attack.lunge m",
+        "ATTACK_LUNGE",
+        0.5,
+        0.0,
+        2.0,
+        0.05
+    ),
+    spec!(HitStun, "hurt.stun s", "HIT_STUN", 0.35, 0.0, 1.0, 0.05),
+    spec!(
+        HitIframes,
+        "hurt.iframes s",
+        "HIT_IFRAMES",
+        0.15,
+        0.0,
+        1.0,
+        0.05
+    ),
+    spec!(HitKnock, "hurt.knock m", "HIT_KNOCK", 0.6, 0.0, 3.0, 0.1),
+    spec!(
+        StaminaMax,
+        "stamina.max",
+        "STAMINA_MAX",
+        100.0,
+        10.0,
+        300.0,
+        5.0
+    ),
+    spec!(
+        StaminaRegen,
+        "stamina.regen /s",
+        "STAMINA_REGEN",
+        45.0,
+        5.0,
+        200.0,
+        5.0
+    ),
+    spec!(
+        StaminaDelay,
+        "stamina.regen delay s",
+        "STAMINA_DELAY",
+        0.6,
+        0.0,
+        3.0,
+        0.1
+    ),
+    spec!(
+        StaminaDodge,
+        "stamina.dodge cost",
+        "STAMINA_DODGE",
+        30.0,
+        0.0,
+        100.0,
+        1.0
+    ),
+    spec!(
+        StaminaAttack,
+        "stamina.attack cost",
+        "STAMINA_ATTACK",
+        12.0,
+        0.0,
+        100.0,
+        1.0
+    ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(
         RenderModel,
@@ -636,7 +712,7 @@ impl Tuning {
     }
 }
 
-fn idx(p: P) -> usize {
+pub fn idx(p: P) -> usize {
     // SPECS 순서로 찾는다. 57개라 선형이어도 된다(틱마다 수십 번).
     SPECS.iter().position(|s| s.p == p).expect("P not in SPECS")
 }

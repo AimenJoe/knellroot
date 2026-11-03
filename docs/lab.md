@@ -18,6 +18,7 @@ KB `guides/poc-and-lab-before-content.md`의 구현. 첫 게임은 수치 한 �
 | Lock-on | range·lose dist | 1 보스 | 언제 잡히고 언제 풀리나 |
 | Enemy | mob speed·telegraph / boss telegraph·swing arc | 1·2 | 예고를 읽고 피할 수 있나 |
 | Render | face shade / horizon haze | 2 떼, 5 쟁반 | 상자가 입체로 읽히나(0 = 민짜), 지평선 아지랑이가 돌 때 덜 어지럽게 하나(0 = 끔) |
+| Feel (0018) | attack lunge / hurt stun·iframes·knock / stamina max·regen·delay·dodge·attack | 1 보스, 2 떼 | 내딛기가 손에 붙나, 맞으면 멈칫하나(답답하지 않게), 스태미나가 판단을 만드나 |
 | Spike (0013) | render.model 0 상자 / 1 glTF 시험 모델 | 6·7 성능 | 그리기 호출·cpu ms가 몇인가(측정용 — 값 얼리기 대상 아님) |
 | Turn (0012) | turn camera·overshoot·settle·snap kick·plant·cooldown / spill range·slide per m·max·outward·stagger / boss mass·stagger / slam dmg·stagger | 5 쟁반, 2 떼 | 돌릴 때 멀미 없나, 쏟아지는 게 시원한가, 남발되지 않나 |
 | Camera(0007~0011) | lock yaw max·near slow·pull out·**look ahead**·**quarter lead**·**blend turn x**·**blend exit x**·move.hold after unlock·**quarter yaw mode**(0 고정·1 따라감·2 90° 단위) | 1 보스, 3 기둥 | 보스에 바짝 붙어 돌 때 멀미 vs 보스가 화면 밖으로 빠짐, 기둥에서 풀려 나오는 속도 |
