@@ -1,11 +1,11 @@
-# blight (임시 이름) — 레트로 로우폴리 3D ARPG PoC
+# Knellroot(넬루트) — 레트로 로우폴리 3D ARPG PoC
 
 쿼터뷰로 떼를 상대하다가, 락온을 누르면 숄더뷰로 내려가 보스와 1:1. Rust + macroquad(첫 게임 [nail-under-the-roots](https://github.com/AimenJoe/nail-under-the-roots)와 같은 스택).
 지금은 **PoC + Lab** 단계다: 상자 플레이어·보스·잡몹, 카메라 리그 둘, 실행 중 수치를 바꾸는 랩. 그림·소리·모델은 아직 없다.
 
 - 무엇을 만드나: `docs/concept.md`
 - 지금 어디까지·무엇을 판정하나: `docs/phase-0-poc.md`(**구현 상태**·**사람이 할 일**)
-- 랩: `docs/lab.md` · 왜 그렇게 정했나: `docs/decisions/`
+- 랩: `docs/lab.md` · 배포: `docs/release.md` · 왜 그렇게 정했나: `docs/decisions/`
 - 이 대화에서 나온 것: `docs/research/chatgpt-2026-11-03-brainstorm.md`
 
 ## 실행

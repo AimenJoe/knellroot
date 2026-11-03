@@ -1,0 +1,68 @@
+name: deploy-web
+# 웹 빌드·배포(nail deploy-web.yml에서 가져옴, Knellroot 0005):
+# - main push: fmt·clippy(두 갈래)·test·wasm 빌드·조립·헤드리스 스크린숏 → Netlify 운영 주소(시크릿이 있을 때만).
+#   v0.1.0 전까지는 운영 주소가 곧 개발판이라 개발 기능(랩·시나리오)을 켠 채 올린다(0005). 마일스톤을 닫으면 nail 0193처럼 갈래를 나눈다.
+# - PR: 같은 빌드를 pr-<번호> 별칭에(포크 PR은 시크릿이 없어 건너뜀).
+# 배포는 사장이 정한다(main에 push하면 바로 올라간다).
+on:
+  push:
+    branches: [main, 'release/**']
+  pull_request:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all -- --check
+      # 두 갈래 다 경고가 없어야 한다(dev 전용 코드가 운영판에서 죽은 코드가 되지 않게).
+      - run: cargo clippy --target wasm32-unknown-unknown -- -D warnings
+      - run: cargo clippy --target wasm32-unknown-unknown --no-default-features -- -D warnings
+      - name: Install Linux libs for host tests
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev libudev-dev pkg-config
+      - run: cargo test
+      - run: cargo build --release --target wasm32-unknown-unknown
+
+      - name: Assemble publish dir
+        run: |
+          sh tools/web/assemble.sh dist "$GITHUB_SHA"
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # 연기 시험(nail 0169 R7): 헤드리스 Chromium으로 시나리오 넷·락온·랩을 돌려 콘솔 에러·패닉을 잡고 스크린숏을 남긴다.
+      - name: Headless smoke + screenshots
+        run: |
+          npm init -y >/dev/null && npm install --no-audit --no-fund playwright@1.47.2 >/dev/null
+          npx playwright install --with-deps chromium
+          node tools/test/shot.js dist shots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shots
+          path: shots
+
+      # Netlify 시크릿이 설정되기 전에는 아래 단계가 건너뛰어진다(빌드 검증만). KB reference/netlify/deploy-from-ci.md.
+      - name: Deploy production
+        if: env.NETLIFY_SITE_ID != '' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: npx netlify-cli@23 deploy --dir=dist --prod --message="${{ github.sha }}"
+      - name: Deploy PR preview
+        if: env.NETLIFY_SITE_ID != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
+        run: npx netlify-cli@23 deploy --dir=dist --alias="pr-${{ github.event.number }}"

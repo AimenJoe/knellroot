@@ -1,0 +1,9 @@
+# Netlify 헤더. 페이지·build.txt는 늘 새로 확인(파일 이름에 해시가 없어 immutable 캐시는 금지 — KB reference/netlify/deploy-from-ci.md).
+/index.html
+  Cache-Control: no-cache
+/
+  Cache-Control: no-cache
+/build.txt
+  Cache-Control: no-cache
+/*.wasm
+  Content-Type: application/wasm

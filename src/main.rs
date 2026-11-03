@@ -1,4 +1,4 @@
-//! 임시 이름 blight — 레트로 로우폴리 3D ARPG PoC. 쿼터뷰 떼싸움 ↔ 락온 보스전(숄더뷰).
+//! Knellroot — 레트로 로우폴리 3D ARPG PoC. 쿼터뷰 떼싸움 ↔ 락온 보스전(숄더뷰).
 //!
 //! 루프: 프레임마다 입력 폴링 → 고정 타임스텝 60Hz 틱 N번(월드 → 카메라) → 가변 렌더(보간).
 //! 경계(nail에서 가져온 규칙): 입력은 `Actions`만, 수치는 `tuning.rs`만, 월드는 카메라·소리·메뉴를 모른다.
@@ -25,7 +25,7 @@ use world::Event;
 
 fn window_conf() -> Conf {
     Conf {
-        window_title: "blight PoC".to_owned(),
+        window_title: "Knellroot PoC".to_owned(),
         window_width: 1280,
         window_height: 720,
         high_dpi: true,

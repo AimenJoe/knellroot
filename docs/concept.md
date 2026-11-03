@@ -1,4 +1,4 @@
-# blight(임시 이름) — 컨셉 (one-pager, 초안 2026-11-03)
+# Knellroot — 컨셉 (one-pager, 초안 2026-11-03)
 
 > 기준 문서. 세계관·이름은 **초안**이다(`docs/decisions/0004`). 바뀌면 여기와 결정 기록을 함께 고친다. 현재 단계는 PoC(`phase-0-poc.md`).
 

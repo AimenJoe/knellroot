@@ -59,14 +59,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
-name = "blight"
-version = "0.0.1"
-dependencies = [
- "gamepads",
- "macroquad",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -332,6 +324,14 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "knellroot"
+version = "0.0.1"
+dependencies = [
+ "gamepads",
+ "macroquad",
 ]
 
 [[package]]

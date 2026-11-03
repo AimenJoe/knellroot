@@ -1,4 +1,4 @@
-# CLAUDE.md — blight (임시 이름)
+# CLAUDE.md — Knellroot
 
 레트로 로우폴리 3D ARPG. 쿼터뷰 떼싸움 + 락온 숄더뷰 보스전. Rust + macroquad. 웹 먼저, PC, 나중에 Android 핸드헬드(컨트롤러).
 
@@ -8,7 +8,7 @@
 3. `docs/lab.md` — 랩이 무엇을 재고 값이 `tuning.rs`로 어떻게 가는가
 4. `docs/decisions/` — 왜 그렇게 정했나. 바꾸려면 새 번호로
 
-세션이 끝나면 "구현 상태"·"사람이 할 일"을 갱신하고 커밋한다. 기여·배포 규칙은 첫 게임(`nail-under-the-roots`의 `CONTRIBUTING.md`·`docs/release.md`)을 따르되 아직 배포는 없다.
+세션이 끝나면 "구현 상태"·"사람이 할 일"을 갱신하고 커밋한다. 배포는 `docs/release.md`(웹 = Netlify, main push = 배포, **배포는 사장이 정한다**). 기여 규칙은 첫 게임 `CONTRIBUTING.md`를 따른다. 이름·v0.1.0 조건은 `docs/decisions/0005`.
 
 ## 지식 베이스(KB)
 일반 지식은 **github.com/AimenJoe/KB**. 세션에 KB를 붙이고 `maps/gamedev.md` → 노트를 먼저 읽는다. 이 프로젝트와 바로 닿는 것:

@@ -2,3 +2,7 @@
 /dist
 /assets/vendor/
 /shots/
+/.netlify/
+/node_modules/
+/package.json
+/package-lock.json

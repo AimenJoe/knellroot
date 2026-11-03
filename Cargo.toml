@@ -1,9 +1,9 @@
 [package]
-name = "blight"
+name = "knellroot"
 version = "0.0.1"
 authors = ["Beardworks"]
 edition = "2021"
-description = "임시 이름 blight — 레트로 로우폴리 3D ARPG(쿼터뷰 떼싸움 + 락온 보스전) PoC"
+description = "Knellroot — 레트로 로우폴리 3D ARPG(쿼터뷰 떼싸움 + 락온 보스전) PoC"
 publish = false
 
 [features]
