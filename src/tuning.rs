@@ -91,16 +91,6 @@ pub const SPECS: [Spec; 33] = [
         85.0,
         1.0
     ),
-    spec!(Shade, "render.face shade", "SHADE", 0.45, 0.0, 1.0, 0.05),
-    spec!(
-        CamQYaw,
-        "cam.quarter.yaw deg",
-        "CAM_Q_YAW_DEG",
-        35.0,
-        -60.0,
-        60.0,
-        1.0
-    ),
     spec!(
         CamQDist,
         "cam.quarter.dist",
@@ -127,6 +117,15 @@ pub const SPECS: [Spec; 33] = [
         1.0,
         30.0,
         0.5
+    ),
+    spec!(
+        CamQYaw,
+        "cam.quarter.yaw deg",
+        "CAM_Q_YAW_DEG",
+        35.0,
+        -60.0,
+        60.0,
+        1.0
     ),
     spec!(
         CamLDist,
@@ -307,6 +306,7 @@ pub const SPECS: [Spec; 33] = [
         360.0,
         10.0
     ),
+    spec!(Shade, "render.face shade", "SHADE", 0.45, 0.0, 1.0, 0.05),
 ];
 
 /// 실행 중 값. `SPECS`의 기본값으로 시작하고 랩이 바꾼다. 로직·카메라·렌더는 이것만 읽는다.
