@@ -153,12 +153,6 @@ pub enum PState {
         t: f32,
         dur: f32,
     },
-    /// 땅 돌리기: 발을 딛고 비튼다(`turn.plant s` 동안 못 움직인다 — 공짜가 아니다). 그동안 몸이 `from` → `to`(요)로 돈다(0023).
-    Turn {
-        t: f32,
-        from: f32,
-        to: f32,
-    },
 }
 
 pub struct Player {
@@ -556,8 +550,7 @@ impl World {
         pl.turn_cd = (pl.turn_cd - dt).max(0.0);
         pl.since_spill = (pl.since_spill + dt).min(f32::MAX);
         let world_move = move_to_world(a.move_dir, basis, pl.pos);
-        // 땅 돌리기(0012): 쿼터뷰에서만, 서 있거나 스윙 후딜레이(회피와 같은 캔슬 자리)에서. ↻이 ↺보다 먼저(둘 다면 하나만).
-        // 땅 돌리기(0012·0023): 쿼터뷰에서만, 서 있거나 스윙 후딜레이(회피와 같은 캔슬 자리)에서. 오른쪽 버튼이 왼쪽보다 먼저.
+        // 땅 돌리기(0012·0028): 쿼터뷰에서만, 서 있거나 걷거나 스윙 후딜레이(회피와 같은 캔슬 자리)에서. 오른쪽 버튼이 왼쪽보다 먼저.
         let turn = (a.turn_right || a.turn_left).then_some(a.turn_right);
         let can_turn = target.is_none()
             && pl.turn_cd <= 0.0
@@ -567,20 +560,18 @@ impl World {
                 _ => false,
             };
         if let (Some(right), true) = (turn, can_turn) {
-            // 캐릭터 기준 90°(0028): 몸이 제 오른쪽(왼쪽)으로 돌아서고 화면도 같은 쪽으로 90° 돈다.
-            let plan = plan_turn(right, pl.facing);
-            pl.state = PState::Turn {
-                t: 0.0,
-                from: pl.facing,
-                to: plan.facing,
-            };
+            // 화면만 버튼 쪽으로 90°(0028): 캐릭터는 손대지 않는다 — 멈추지도 돌지도 않는다.
+            let quarters = turn_quarters(right);
             pl.turn_cd = t[P::TurnCooldown];
             // 쏟는 쪽: 카메라가 도는 쪽(+ = 시계).
-            let cw = plan.quarters > 0;
-            self.turn_now = Some((plan.quarters, cw));
-            // 쥔 스틱은 곧바로 새 화면 기준 — 몸과 화면이 같이 돌았으니 그대로 새 정면으로 직진한다(0028).
-            // 예전엔 돌기 전 기준을 붙잡아(0010) 돌린 뒤 엉뚱한 쪽으로 걸었다.
-            self.hold = None;
+            self.turn_now = Some((quarters, quarters > 0));
+            // 쥔 스틱은 돌기 전 기준을 붙잡는다 — 놓을 때까지 같은 쪽(지도 위)으로 계속 걷는다. 놓았다 다시 밀면 새 화면 기준.
+            let fwd = match basis {
+                Basis::Quarter { yaw } => crate::camera::quarter_forward(yaw),
+                Basis::Frozen(f) => f,
+                Basis::Lock(_) => unreachable!("락온 중에는 돌리지 않는다"),
+            };
+            self.hold = stick_on.then_some((fwd, f32::NEG_INFINITY));
         }
 
         // 상태 전이.
@@ -724,17 +715,6 @@ impl World {
                     PState::Parry { t: e + dt }
                 };
             }
-            PState::Turn { t: e, from, to } => {
-                let e2 = e + dt;
-                let k = (e2 / t[P::TurnPlant].max(1e-3)).clamp(0.0, 1.0);
-                pl.facing = from + angle_diff(to, from) * k;
-                if e2 >= t[P::TurnPlant] {
-                    pl.facing = to;
-                    pl.state = PState::Idle;
-                } else {
-                    pl.state = PState::Turn { t: e2, from, to };
-                }
-            }
         }
 
         // 이동.
@@ -754,7 +734,7 @@ impl World {
             PState::Hurt { .. } => {
                 pl.vel *= (1.0 - KNOCK_DECAY * dt).max(0.0);
             }
-            PState::Turn { .. } | PState::Parry { .. } | PState::Land { .. } => pl.vel = Vec3::ZERO,
+            PState::Parry { .. } | PState::Land { .. } => pl.vel = Vec3::ZERO,
             PState::Jump { .. } if world_move.length_squared() < 1e-4 => {
                 // 공중에서 손을 놓으면 뛰기 전 속도 그대로(멈추는 쪽으로 조종하지 않는다).
             }
@@ -787,7 +767,6 @@ impl World {
             (
                 _,
                 PState::Attack { .. }
-                | PState::Turn { .. }
                 | PState::Hurt { .. }
                 | PState::Parry { .. }
                 | PState::Jump { .. }
@@ -1118,33 +1097,18 @@ impl World {
     }
 }
 
-/// 땅 돌리기 계획(0028): 카메라가 도는 90° 칸 수와 캐릭터의 새 요.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct TurnPlan {
-    /// + = 요 +90°(화면에서 땅이 시계 방향 — 왼쪽 버튼), - = 요 -90°(오른쪽 버튼). 늘 ±1.
-    pub quarters: i32,
-    /// 캐릭터의 새 요 = 누르기 전 캐릭터의 오른쪽(왼쪽) 면.
-    pub facing: f32,
-}
-
-/// 캐릭터 기준으로 90°(0028, 0023을 고침): 오른쪽 버튼이면 캐릭터가 제 오른쪽으로 90° 돌아서고, 화면도 같은 쪽으로 90° 돈다
-/// (화면 오른쪽에 있던 것이 위로). 몸과 화면이 같은 각만큼 도니 캐릭터가 화면에서 보는 쪽은 그대로 — 쥔 스틱 그대로 새 정면으로
-/// 직진한다. 0023은 "오른쪽 면이 화면 위"로 맞춰서 걷던 쪽에 따라 화면이 0°·90°·180°, 도는 쪽도 바뀌었다.
-pub fn plan_turn(right: bool, facing: f32) -> TurnPlan {
-    use std::f32::consts::FRAC_PI_2;
-    // 요가 줄면 오른쪽으로 돈다(위에서 보아 시계): 북(π) → 동(π/2). 카메라 요 -90°도 같은 회전(화면 오른쪽 → 위).
-    let (quarters, turn) = if right {
-        (-1, -FRAC_PI_2)
+/// 땅 돌리기(0028): 카메라가 도는 90° 칸 수. 오른쪽 버튼 = 요 -90°(화면 오른쪽에 있던 것이 위로), 왼쪽 = +90°.
+/// 늘 한 칸 — 캐릭터가 어디를 보든 같다. 캐릭터는 돌리지 않는다.
+pub fn turn_quarters(right: bool) -> i32 {
+    if right {
+        -1
     } else {
-        (1, FRAC_PI_2)
-    };
-    TurnPlan {
-        quarters,
-        facing: angle_diff(facing + turn, 0.0),
+        1
     }
 }
 
-/// `a - b`를 -π..π로.
+/// `a - b`를 -π..π로(시험만 쓴다).
+#[cfg(test)]
 fn angle_diff(a: f32, b: f32) -> f32 {
     let mut d = (a - b) % std::f32::consts::TAU;
     if d > std::f32::consts::PI {
@@ -1697,30 +1661,22 @@ mod tests {
         assert_eq!(w.enemies[0].exposed, 0.0);
     }
 
-    /// 0028: 캐릭터 기준 90° — 오른쪽 버튼이면 몸이 제 오른쪽으로 90°, 화면도 늘 오른쪽으로 90°(요 -90°). 바라보는 쪽과 무관.
+    /// 0028: 화면만 버튼 쪽으로 늘 90°(오른쪽 = 요 -90°, 화면 오른쪽에 있던 것이 위로), 캐릭터가 어디를 보든 같다.
     #[test]
-    fn a_turn_is_always_ninety_degrees_the_buttons_way_for_body_and_screen() {
-        use std::f32::consts::{FRAC_PI_2, PI};
-        let close = |a: f32, b: f32| angle_diff(a, b).abs() < 1e-3;
-        for facing in [PI, 0.0, FRAC_PI_2, -FRAC_PI_2, PI - 0.5, 0.7] {
-            let r = plan_turn(true, facing);
-            assert_eq!(r.quarters, -1, "{facing}");
-            assert!(close(r.facing, facing - FRAC_PI_2), "{facing}: {r:?}");
-            let l = plan_turn(false, facing);
-            assert_eq!(l.quarters, 1, "{facing}");
-            assert!(close(l.facing, facing + FRAC_PI_2), "{facing}: {l:?}");
-        }
-        // 북(π)을 보고 오른쪽 → 동쪽을 보고, 화면이 오른쪽으로 90°라 동쪽이 화면 위.
-        assert!(close(plan_turn(true, PI).facing, FRAC_PI_2));
+    fn a_turn_is_always_ninety_degrees_the_buttons_way() {
+        assert_eq!(turn_quarters(true), -1);
+        assert_eq!(turn_quarters(false), 1);
+        // 화면 위가 북(요 0)이면 오른쪽 버튼 뒤 동쪽이 화면 위.
         assert!(crate::camera::quarter_forward(-90.0).dot(vec3(1.0, 0.0, 0.0)) > 0.999);
     }
 
+    /// 0028: 돌리기는 캐릭터를 건드리지 않는다 — 서 있으면 바라보는 쪽도 그대로.
     #[test]
-    fn turning_turns_the_body_to_the_new_front() {
+    fn turning_leaves_the_body_alone() {
         let t = Tuning::default();
         let mut w = World::new("test", 20.0);
         w.view_yaw = Some(0.0);
-        w.player.facing = 0.0; // 화면 아래(카메라 쪽)를 본다
+        w.player.facing = 0.0;
         let ev = w.step(
             &Actions {
                 turn_right: true,
@@ -1729,15 +1685,11 @@ mod tests {
             &t,
         );
         assert!(ev.contains(&Event::Turn { quarters: -1 }), "{ev:?}");
-        for _ in 0..((t[P::TurnPlant] / TICK_DT).ceil() as usize + 2) {
+        assert_eq!(w.player.state, PState::Idle);
+        for _ in 0..30 {
             w.step(&Actions::default(), &t);
         }
-        // 캐릭터의 오른쪽이던 서쪽(-x)을 본다.
-        assert!(
-            w.player.facing_dir().dot(vec3(-1.0, 0.0, 0.0)) > 0.999,
-            "{}",
-            w.player.facing
-        );
+        assert_eq!(w.player.facing, 0.0);
     }
 
     #[test]
@@ -1946,7 +1898,7 @@ mod tests {
     }
 
     #[test]
-    fn turning_has_a_cooldown_plants_the_player_and_is_off_while_locked() {
+    fn turning_has_a_cooldown_keeps_the_player_walking_and_is_off_while_locked() {
         let t = Tuning::default();
         let mut w = world_with_boss();
         let walk = Actions {
@@ -1960,9 +1912,13 @@ mod tests {
             },
             &t,
         );
-        assert!(matches!(w.player.state, PState::Turn { .. }));
+        let v = w.player.vel;
         w.step(&walk, &t);
-        assert_eq!(w.player.vel, Vec3::ZERO, "planted while twisting");
+        assert!(
+            w.player.vel.length() >= v.length() - 1e-4,
+            "keeps walking: {v} -> {}",
+            w.player.vel
+        );
         let ev = w.step(&turn(true), &t);
         assert!(
             !ev.iter().any(|e| matches!(e, Event::Turn { .. })),
@@ -2012,10 +1968,10 @@ mod tests {
         );
     }
 
-    /// 0028: 어느 쪽으로 걷다 누르든 쥔 스틱 그대로 새 정면(돌기 전 캐릭터의 오른쪽·왼쪽)으로 직진한다 — 몸과 화면이 같이 90° 도니까.
-    /// (0023은 위로 걸을 때만 그랬다: 오른쪽으로 걷다 오른쪽 버튼이면 화면이 180° 돌고 쥔 스틱이 왔던 길로 되돌아갔다.)
+    /// 0028(사장: "북쪽으로 계속"): 쥔 스틱은 놓을 때까지 돌기 전과 같은 쪽(지도 위)으로 계속 걷는다 — 멈추거나 꺾이지 않는다.
+    /// 놓았다 다시 밀면 새 화면 기준(위 = 돌기 전 화면의 오른쪽·왼쪽).
     #[test]
-    fn after_a_turn_the_held_stick_walks_straight_to_the_new_front() {
+    fn after_a_turn_the_held_stick_keeps_walking_the_same_way_until_let_go() {
         let t = Tuning::default();
         let yaw0 = 35.0;
         for stick in [
@@ -2025,7 +1981,7 @@ mod tests {
             vec2(-1.0, 0.0),
         ] {
             for right in [true, false] {
-                let mut w = World::new("test", 30.0);
+                let mut w = World::new("test", 40.0);
                 w.view_yaw = Some(yaw0);
                 let go = Actions {
                     move_dir: stick,
@@ -2034,12 +1990,8 @@ mod tests {
                 for _ in 0..30 {
                     w.step(&go, &t);
                 }
-                let f = w.player.facing_dir();
-                let want = if right {
-                    f.cross(Vec3::Y)
-                } else {
-                    -f.cross(Vec3::Y)
-                };
+                let before = w.player.vel.normalize();
+                let facing = w.player.facing;
                 let ev = w.step(
                     &Actions {
                         turn_right: right,
@@ -2050,16 +2002,33 @@ mod tests {
                 );
                 let q = if right { -1 } else { 1 };
                 assert!(ev.contains(&Event::Turn { quarters: q }), "{ev:?}");
-                w.view_yaw = Some(yaw0 + 90.0 * q as f32); // 앱이 카메라에서 넘기는 새 방위(입력 기준은 즉시)
-                let plant = (t[P::TurnPlant] / TICK_DT).ceil() as usize;
-                for _ in 0..plant + 12 {
+                let new_yaw = yaw0 + 90.0 * q as f32;
+                w.view_yaw = Some(new_yaw); // 앱이 카메라에서 넘기는 새 방위
+                let mut slowest = f32::MAX;
+                for _ in 0..120 {
                     w.step(&go, &t);
+                    slowest = slowest.min(w.player.vel.length());
+                    assert!(
+                        w.player.vel.normalize().dot(before) > 0.999,
+                        "stick {stick} right {right}: veered {:?}",
+                        w.player.vel
+                    );
                 }
-                let v = w.player.vel.normalize();
-                assert!(
-                    v.dot(want) > 0.98 && w.player.facing_dir().dot(want) > 0.98,
-                    "stick {stick} right {right}: walks {v:?}, wants {want:?}"
-                );
+                assert!(slowest > t[P::MoveSpeed] * 0.99, "never slowed: {slowest}");
+                assert!(angle_diff(w.player.facing, facing).abs() < 1e-3);
+                // 놓았다 다시 위로: 새 화면 위로.
+                w.step(&Actions::default(), &t);
+                for _ in 0..40 {
+                    w.step(
+                        &Actions {
+                            move_dir: vec2(0.0, 1.0),
+                            ..Default::default()
+                        },
+                        &t,
+                    );
+                }
+                let up = crate::camera::quarter_forward(new_yaw);
+                assert!(w.player.vel.normalize().dot(up) > 0.98, "new screen up");
             }
         }
     }
