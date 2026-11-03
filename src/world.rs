@@ -489,6 +489,25 @@ impl World {
                 }
             }
         };
+        // 조준(오른쪽 스틱, 0014): 이동과 같은 기준으로 월드 방향. 락온이면 쓰지 않는다(대상을 본다).
+        let aim = if target.is_none() && a.aim.length() > AIM_STICK {
+            let w = move_to_world(a.aim.normalize(), basis, self.player.pos);
+            (w.length_squared() > 1e-6).then(|| w.normalize())
+        } else {
+            None
+        };
+        // 공격 자동 조준(0014): 락온이 아니면 휘두르는 순간 `aim.auto range m` 안의 가장 가까운 적을 본다.
+        // 조준 스틱을 쥐고 있으면 그 쪽 `aim.auto cone deg` 안에서만 고른다(멀리 있는 적을 일부러 겨눌 수 있게).
+        let auto_dir = if target.is_none() && a.attack {
+            nearest_in_reach(
+                &self.enemies,
+                self.player.pos,
+                t[P::AimRange],
+                aim.map(|d| (d, (t[P::AimCone] * 0.5).to_radians().cos())),
+            )
+        } else {
+            None
+        };
         let pl = &mut self.player;
         pl.hurt = (pl.hurt - dt).max(0.0);
         pl.dodge_cd = (pl.dodge_cd - dt).max(0.0);
@@ -533,6 +552,10 @@ impl World {
                         t: 0.0,
                         swing: pl.swings,
                     };
+                    // 휘두르는 쪽을 그 자리에서 정한다: 자동 조준 > 조준 스틱 > 지금 바라보는 쪽.
+                    if let Some(d) = auto_dir.or(aim) {
+                        pl.facing = d.x.atan2(d.z);
+                    }
                 }
             }
             PState::Attack { t: e, swing } => {
@@ -595,13 +618,14 @@ impl World {
         }
         pl.pos += pl.vel * dt;
 
-        // 바라보기: 락온이면 대상, 아니면 이동 방향으로 돈다. 스윙 중엔 고정.
+        // 바라보기: 락온이면 대상, 조준 스틱을 쥐면 그 쪽(움직이며 다른 쪽을 볼 수 있다, 0014), 아니면 이동 방향. 스윙 중엔 고정.
         let want_yaw = match (basis, pl.state) {
             (_, PState::Attack { .. } | PState::Turn { .. }) => None,
             (Basis::Lock(tg), _) => {
                 let d = tg - pl.pos;
                 Some(d.x.atan2(d.z))
             }
+            _ if aim.is_some() => aim.map(|d| d.x.atan2(d.z)),
             (Basis::Quarter { .. } | Basis::Frozen(_), _) if world_move.length_squared() > 1e-4 => {
                 Some(world_move.x.atan2(world_move.z))
             }
@@ -922,6 +946,31 @@ impl World {
             }
         }
     }
+}
+
+/// 조준 스틱이 이보다 세면 "겨누는 중".
+const AIM_STICK: f32 = 0.35;
+
+/// `reach` 안의 가장 가까운 산 적 쪽(XZ 단위). `cone`이 있으면 (방향, cos 반각) 안의 적만.
+fn nearest_in_reach(
+    enemies: &[Enemy],
+    from: Vec3,
+    reach: f32,
+    cone: Option<(Vec3, f32)>,
+) -> Option<Vec3> {
+    enemies
+        .iter()
+        .filter(|e| e.alive())
+        .filter_map(|e| {
+            let d = vec3(e.pos.x - from.x, 0.0, e.pos.z - from.z);
+            let dist = d.length() - e.radius;
+            let dir = d.normalize_or_zero();
+            let ok =
+                dist <= reach && dir != Vec3::ZERO && cone.is_none_or(|(c, cos)| dir.dot(c) >= cos);
+            ok.then_some((dist, dir))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, d)| d)
 }
 
 /// 넉백 속도가 초당 이만큼씩 줄어든다(틱마다 `1 - k·dt`) — 그래서 처음 속도 v의 넉백은 모두 합쳐 v/k만큼 민다.
@@ -1428,6 +1477,95 @@ mod tests {
             ev.extend(w.step(&Actions::default(), &t));
         }
         assert!(ev.contains(&Event::LockOn) && w.lock.is_some());
+    }
+
+    fn swing_at(w: &mut World, aim: Vec2) {
+        let t = Tuning::default();
+        w.step(
+            &Actions {
+                attack: true,
+                aim,
+                ..Default::default()
+            },
+            &t,
+        );
+    }
+
+    #[test]
+    fn an_attack_turns_to_the_nearest_enemy_within_reach() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.view_yaw = Some(0.0);
+        w.spawn_mob(vec3(2.0, 0.0, 0.0)); // 가까운 적(오른쪽)
+        w.spawn_mob(vec3(0.0, 0.0, -2.5)); // 조금 먼 적(앞)
+        w.player.facing = std::f32::consts::PI; // -z를 본다
+        swing_at(&mut w, Vec2::ZERO);
+        assert!(
+            w.player.facing_dir().x > 0.99,
+            "{:?}",
+            w.player.facing_dir()
+        );
+        // 범위 밖이면 돌지 않는다.
+        let mut w = World::new("test", 30.0);
+        w.spawn_mob(vec3(t[P::AimRange] + 2.0, 0.0, 0.0));
+        w.player.facing = std::f32::consts::PI;
+        swing_at(&mut w, Vec2::ZERO);
+        assert!(w.player.facing_dir().z < -0.99);
+    }
+
+    #[test]
+    fn with_the_aim_stick_held_the_attack_picks_the_nearest_enemy_that_way() {
+        let mut w = World::new("test", 30.0);
+        w.view_yaw = Some(0.0); // 화면 위 = -z
+        w.spawn_mob(vec3(1.5, 0.0, 0.0)); // 가장 가깝지만 오른쪽
+        w.spawn_mob(vec3(0.0, 0.0, -2.5)); // 스틱 쪽(위)
+        swing_at(&mut w, vec2(0.0, 1.0));
+        assert!(
+            w.player.facing_dir().z < -0.99,
+            "{:?}",
+            w.player.facing_dir()
+        );
+        // 그 쪽에 적이 없으면 스틱 쪽 그대로.
+        let mut w = World::new("test", 30.0);
+        w.view_yaw = Some(0.0);
+        w.spawn_mob(vec3(1.5, 0.0, 0.0));
+        swing_at(&mut w, vec2(-1.0, 0.0));
+        assert!(
+            w.player.facing_dir().x < -0.99,
+            "{:?}",
+            w.player.facing_dir()
+        );
+    }
+
+    #[test]
+    fn the_right_stick_turns_the_player_without_moving() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.view_yaw = Some(0.0);
+        w.player.facing = std::f32::consts::PI;
+        for _ in 0..30 {
+            w.step(
+                &Actions {
+                    aim: vec2(1.0, 0.0),
+                    ..Default::default()
+                },
+                &t,
+            );
+        }
+        assert!(w.player.facing_dir().x > 0.99);
+        assert!(w.player.pos.length() < 1e-4);
+        // 걸으면서 다른 쪽을 본다.
+        for _ in 0..30 {
+            w.step(
+                &Actions {
+                    move_dir: vec2(0.0, 1.0),
+                    aim: vec2(-1.0, 0.0),
+                    ..Default::default()
+                },
+                &t,
+            );
+        }
+        assert!(w.player.facing_dir().x < -0.99 && w.player.vel.z < -1.0);
     }
 
     #[test]

@@ -77,6 +77,8 @@ pub enum P {
     SlamStagger,
     Haze,
     RenderModel,
+    AimRange,
+    AimCone,
 }
 
 pub struct Spec {
@@ -106,7 +108,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 58] = [
+pub const SPECS: [Spec; 60] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -545,6 +547,25 @@ pub const SPECS: [Spec; 58] = [
         0.0,
         1.0,
         1.0
+    ),
+    // 조준(0014): 공격 순간 이 거리(적 몸 가장자리까지, m) 안의 가장 가까운 적을 본다. 조준 스틱을 쥐면 그 쪽 부채꼴(전체 각) 안에서만.
+    spec!(
+        AimRange,
+        "aim.auto range m",
+        "AIM_RANGE",
+        3.0,
+        0.0,
+        8.0,
+        0.25
+    ),
+    spec!(
+        AimCone,
+        "aim.auto cone deg",
+        "AIM_CONE",
+        90.0,
+        10.0,
+        360.0,
+        5.0
     ),
 ];
 

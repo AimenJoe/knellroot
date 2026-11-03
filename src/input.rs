@@ -2,7 +2,7 @@
 //! 프레임마다 `poll()`로 읽고 눌림(edge)은 래치에 모아 두며, 로직 틱의 `take()`가 소비한다.
 //!
 //! 기본 배치(패드 W3C 표준 자리 / 키보드):
-//!   이동 = 왼쪽 스틱·십자 / WASD·화살표
+//!   이동 = 왼쪽 스틱·십자 / WASD·화살표      조준 = 오른쪽 스틱(바라보는 쪽, 공격은 가까운 적 자동 조준, 0014)
 //!   공격 = X(왼쪽) / J·Space      회피 = A(아래) / K·LShift      락온 = 오른쪽 스틱 클릭 / L·Tab
 //!   땅 돌리기(쟁반, 0012) = LB ↺ · RB ↻ / Q ↺ · E ↻ (Fez처럼 어깨 버튼, 락온은 다크소울처럼 R3로 옮겼다)
 //!   랩 열기 = Select / F1          랩 안: 십자(↑↓ 고르기, ←→ 바꾸기), LB = 10배(랩이 열려 있으면 ↺ 대신), Y = 초기화, B·X키 = 내보내기,
@@ -71,6 +71,8 @@ const DEV: bool = cfg!(feature = "dev");
 pub struct Actions {
     /// 이동. x = 오른쪽, y = 위(앞). 길이 0..=1.
     pub move_dir: Vec2,
+    /// 조준(오른쪽 스틱, 0014). 이동과 같은 축. 0이면 겨누지 않음.
+    pub aim: Vec2,
     pub attack: bool,
     pub dodge: bool,
     pub lock: bool,
@@ -90,6 +92,13 @@ pub struct Actions {
     pub lab_swap: bool,
     /// 개발 시나리오 번호(1부터). `Start`는 다음 시나리오(0).
     pub scenario: Option<u8>,
+}
+
+/// 패드 스틱(`gamepads`) → `Actions` 축(x 오른쪽, y 위). 그 크레이트는 이미 "위 = +"로 준다(웹 플러그인이 축 1·3을 뒤집는다,
+/// 문서: "negative values representing down") — 그래서 그대로. 첫 게임은 화면 아래가 +인 축을 써서 `-ly`였고, 그 줄을 가져와
+/// 여기서는 위아래가 뒤집혔다(Android 핸드헬드에서 왼쪽 스틱이 엉뚱한 쪽, D패드는 멀쩡 — 사장 2026-11-03, 0014).
+pub fn stick((x, y): (f32, f32)) -> Vec2 {
+    vec2(x, y)
 }
 
 pub struct Input {
@@ -126,6 +135,8 @@ impl Input {
         let mut used_pad = false;
         // 키보드 이동.
         let mut m = Vec2::ZERO;
+        #[allow(unused_mut)]
+        let mut aim = Vec2::ZERO;
         if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) {
             m.x -= 1.0;
         }
@@ -174,10 +185,14 @@ impl Input {
         {
             self.pads.poll();
             for pad in self.pads.all() {
-                let (lx, ly) = pad.left_stick();
-                let st = vec2(lx, -ly);
+                let st = stick(pad.left_stick());
                 if st.length() > tuning::STICK_DEADZONE {
                     m = st;
+                    used_pad = true;
+                }
+                let r = stick(pad.right_stick());
+                if r.length() > tuning::STICK_DEADZONE {
+                    aim = r;
                     used_pad = true;
                 }
                 if pad.is_currently_pressed(Button::DPadLeft) {
@@ -249,8 +264,12 @@ impl Input {
             m = m.normalize();
         }
         a.move_dir = m;
+        if aim.length() > 1.0 {
+            aim = aim.normalize();
+        }
         self.latch = Actions {
             move_dir: m,
+            aim,
             attack: self.latch.attack | a.attack,
             dodge: self.latch.dodge | a.dodge,
             lock: self.latch.lock | a.lock,
@@ -275,9 +294,22 @@ impl Input {
         let a = self.latch;
         self.latch = Actions {
             move_dir: a.move_dir,
+            aim: a.aim,
             lab_fast: a.lab_fast,
             ..Actions::default()
         };
         a
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// gamepads 크레이트 축: 위로 밀면 y > 0(문서) → 앞으로 걷는다.
+    #[test]
+    fn pushing_a_stick_up_means_forward() {
+        assert_eq!(stick((0.0, 1.0)), vec2(0.0, 1.0));
+        assert_eq!(stick((-1.0, 0.0)), vec2(-1.0, 0.0));
     }
 }

@@ -81,6 +81,7 @@ async fn main() {
                 }
                 Actions {
                     move_dir: a.move_dir,
+                    aim: a.aim,
                     attack: a.attack,
                     dodge: a.dodge,
                     lock: a.lock,
