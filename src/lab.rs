@@ -64,8 +64,13 @@ impl Lab {
         None
     }
 
-    pub fn draw(&self, t: &Tuning) {
+    /// `touch`면 폰 화면에 맞춘 한 줄짜리(고른 값 하나 + 아래 줄 버튼은 `touch.rs`가 그린다).
+    pub fn draw(&self, t: &Tuning, touch: bool) {
         if !self.open {
+            return;
+        }
+        if touch {
+            self.draw_compact(t);
             return;
         }
         let sw = screen_width();
@@ -123,5 +128,50 @@ impl Lab {
             16.0,
             SKYBLUE,
         );
+    }
+
+    fn draw_compact(&self, t: &Tuning) {
+        let (sw, sh) = (screen_width(), screen_height());
+        let u = sw.min(sh);
+        let s = &SPECS[self.cursor];
+        let v = t.get(self.cursor);
+        let text = format!(
+            "{}/{}  {}  {}{}   [{}] {}",
+            self.cursor + 1,
+            SPECS.len(),
+            s.name,
+            value_text(v, s.step),
+            if (v - s.def).abs() > 1e-6 { " *" } else { "" },
+            if self.using_b { "B" } else { "A" },
+            self.note
+        );
+        // 오른쪽 위 dev 버튼 앞까지 들어가게 글자를 줄인다(폰 가로 폭에서 메모가 길면 버튼에 닿았다).
+        let avail = sw - crate::touch::dev_buttons_width(sw, sh) - 16.0;
+        let mut size = (u * 0.06).max(14.0);
+        let mut m = measure_text(&text, None, size as u16, 1.0);
+        if m.width > avail {
+            size = (size * avail / m.width).max(9.0);
+            m = measure_text(&text, None, size as u16, 1.0);
+        }
+        let x = ((avail - m.width) * 0.5).max(8.0);
+        let y = crate::touch::lab_row_y(sw, sh) - crate::touch::lab_button_radius(sw, sh) - 8.0;
+        draw_rectangle(
+            x - 8.0,
+            y - size,
+            m.width + 16.0,
+            size * 1.4,
+            Color::new(0.0, 0.0, 0.0, 0.7),
+        );
+        draw_text(&text, x, y, size, YELLOW);
+    }
+}
+
+fn value_text(v: f32, step: f32) -> String {
+    if step >= 1.0 {
+        format!("{v:.0}")
+    } else if step >= 0.1 {
+        format!("{v:.2}")
+    } else {
+        format!("{v:.3}")
     }
 }

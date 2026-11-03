@@ -10,6 +10,7 @@ mod input;
 mod lab;
 mod render;
 mod scenario;
+mod touch;
 mod tuning;
 mod world;
 
@@ -46,7 +47,7 @@ async fn main() {
     let mut acc = 0.0f32;
 
     loop {
-        input.poll();
+        input.poll(lab.open);
         let dt = get_frame_time().min(MAX_FRAME_DT);
         acc += dt;
         while acc >= TICK_DT {
@@ -101,8 +102,19 @@ async fn main() {
             acc -= TICK_DT;
         }
         let alpha = (acc / TICK_DT).clamp(0.0, 1.0);
-        renderer.draw(&world, &cam, alpha, &t, scenario::entry(sc));
-        lab.draw(&t);
+        let overlay = input.overlay(lab.open);
+        renderer.draw(
+            &world,
+            &cam,
+            alpha,
+            &t,
+            scenario::entry(sc),
+            overlay.is_some(),
+        );
+        lab.draw(&t, overlay.is_some());
+        if let Some(o) = &overlay {
+            touch::draw(o, world.lock_target().is_some());
+        }
         next_frame().await;
     }
 }

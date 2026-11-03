@@ -18,7 +18,16 @@ impl Renderer {
         Renderer { rt }
     }
 
-    pub fn draw(&mut self, w: &World, cam: &Camera, alpha: f32, t: &Tuning, entry: &Entry) {
+    /// `touch`면 HUD의 키 안내 줄을 빼고(손가락에는 안 맞는 글), 랩 터치 줄 자리를 비운다.
+    pub fn draw(
+        &mut self,
+        w: &World,
+        cam: &Camera,
+        alpha: f32,
+        t: &Tuning,
+        entry: &Entry,
+        touch: bool,
+    ) {
         let aspect = INTERNAL_W as f32 / INTERNAL_H as f32;
         set_camera(&cam.to_camera3d(self.rt.clone(), aspect));
         clear_background(Color::new(0.07, 0.06, 0.08, 1.0));
@@ -170,10 +179,14 @@ impl Renderer {
         set_default_camera();
         clear_background(BLACK);
         let (sw, sh) = (screen_width(), screen_height());
-        let scale = (sw / INTERNAL_W as f32)
-            .min(sh / INTERNAL_H as f32)
+        // 정수 배율은 물리 픽셀로 센다: 폰(DPR 3)의 논리 844×390에서는 논리로 세면 1배(480×270)라 화면 반이 검정이었다.
+        // 물리 2532×1170이면 4배 = 1920×1080 물리 = 논리 640×360. 데스크톱(DPR 1)은 전과 같다.
+        let dpi = screen_dpi_scale().max(0.01);
+        let scale = ((sw * dpi) / INTERNAL_W as f32)
+            .min((sh * dpi) / INTERNAL_H as f32)
             .floor()
-            .max(1.0);
+            .max(1.0)
+            / dpi;
         let (dw, dh) = (INTERNAL_W as f32 * scale, INTERNAL_H as f32 * scale);
         let (ox, oy) = (((sw - dw) * 0.5).floor(), ((sh - dh) * 0.5).floor());
         draw_texture_ex(
@@ -187,10 +200,10 @@ impl Renderer {
                 ..Default::default()
             },
         );
-        self.hud(w, cam, ox, oy, entry);
+        self.hud(w, cam, ox, oy, entry, touch);
     }
 
-    fn hud(&self, w: &World, cam: &Camera, ox: f32, oy: f32, entry: &Entry) {
+    fn hud(&self, w: &World, cam: &Camera, ox: f32, oy: f32, entry: &Entry, touch: bool) {
         let mode = match cam.mode {
             Mode::Quarter => "QUARTER",
             Mode::Lock => "LOCK-ON",
@@ -219,6 +232,9 @@ impl Renderer {
             20.0,
             LIGHTGRAY,
         );
+        if touch {
+            return;
+        }
         draw_text(
             format!("checks: {}", entry.checks),
             ox + 10.0,

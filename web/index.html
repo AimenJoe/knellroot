@@ -15,6 +15,18 @@
   <script src="mq_js_bundle.js"></script>
   <!-- gamepads 크레이트 플러그인(nail에서 두 곳 고친 복사본: 버전 정수, 비표준 매핑 허용). -->
   <script src="macroquad-gamepads-0.1.js"></script>
-  <script>load("knellroot.wasm");</script>
+  <script>
+    // 처음 장치가 터치인지(폰·태블릿): 아무것도 만지기 전 첫 화면부터 터치 버튼을 보이게(src/input.rs initial_device).
+    miniquad_add_plugin({
+      name: "knell_device",
+      version: 1,
+      register_plugin: function (importObject) {
+        importObject.env.knell_coarse_pointer = function () {
+          try { return window.matchMedia("(pointer: coarse)").matches ? 1 : 0; } catch (e) { return 0; }
+        };
+      }
+    });
+    load("knellroot.wasm");
+  </script>
 </body>
 </html>

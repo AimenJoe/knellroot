@@ -49,11 +49,13 @@ jobs:
         with:
           node-version: 22
       # 연기 시험(nail 0169 R7): 헤드리스 Chromium으로 시나리오 넷·락온·랩을 돌려 콘솔 에러·패닉을 잡고 스크린숏을 남긴다.
+      # 터치(0006): 가로 폰(844×390, DPR 3)으로 스틱·버튼·랩 터치판.
       - name: Headless smoke + screenshots
         run: |
           npm init -y >/dev/null && npm install --no-audit --no-fund playwright@1.47.2 >/dev/null
           npx playwright install --with-deps chromium
           node tools/test/shot.js dist shots
+          node tools/test/touch.js dist shots
       - uses: actions/upload-artifact@v4
         with:
           name: shots

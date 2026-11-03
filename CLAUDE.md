@@ -22,13 +22,13 @@
 **프로젝트 기록(TODO·실험 결과·결정)은 이 레포에, 프로젝트가 사라져도 유용한 지식은 KB에**(KB `CLAUDE.md` 규칙: frontmatter·verified·지도·`tools/kb.py check && index`).
 
 ## 코드 규칙(첫 게임에서 가져옴 — KB `second-game-project-day-one`)
-- 입력은 `Actions`만. `KeyCode`·패드 버튼은 `input.rs` 밖에 없다. 눌림은 래치, 틱이 소비.
+- 입력은 `Actions`만. `KeyCode`·패드 버튼은 `input.rs` 밖에 없다(터치는 `touch.rs`, `input.rs`만 부른다, 0006). 눌림은 래치, 틱이 소비. 터치 버튼 자리를 바꾸면 `tools/test/touch.js`의 `layout()`도.
 - 로직 고정 60Hz(`TICK_DT`), 렌더는 보간. 히트스톱은 로직 시계만(`World::hitstop`).
 - 수치는 `tuning.rs` 한 곳. 랩이 바꾸는 값은 `P` + `SPECS` 한 줄씩. 랩의 export를 붙여 넣는 곳도 여기. 코드에 타별 숫자 금지.
 - `world.rs`는 카메라·소리·메뉴를 모른다. `Basis`(입력 기준)와 `Event`로만 바깥과 만난다. 틱은 단계 메서드 순서(`tick_lock → tick_player → apply_strike → tick_enemies → collide → cleanup`) — 새 메커닉은 맞는 단계에.
 - 카메라는 `camera.rs`: 원하는 리그를 매 프레임 계산 + 모드가 바뀌면 지금 리그에서 보간. **입력 기준은 월드가 즉시 바꾸고 카메라만 늦게 간다.** `Camera3D`는 `up: Vec3::Y`를 매번 적는다(기본 z-up).
 - 좌표: y-up, XZ 평면 이동, 1 단위 = 1m, 플레이어 키 1.8. 쿼터뷰의 화면 위 = 월드 -z.
-- 렌더는 월드를 읽기만. 내부 해상도 `INTERNAL_W×H` 렌더 타깃 → 정수 배율 → HUD는 화면 패스.
+- 렌더는 월드를 읽기만. 내부 해상도 `INTERNAL_W×H` 렌더 타깃 → 정수 배율(물리 픽셀로 센다, 0006) → HUD는 화면 패스.
 - 개발 시나리오는 `scenario.rs` 표 한 줄(`checks`에 그것이 보는 PoC 번호). feature `dev`(기본 켬)로 가린다. 운영판 = `--no-default-features`.
 - 새 메커닉 = 단위 테스트 하나 이상(규칙을 이름으로 읽히게). 소리·그림 핸들을 로직에 넣지 않는다 — 그래서 시나리오 넷을 600틱씩 돌리는 시험이 있다.
 - 글: 지금은 개발 전용 화면뿐이라 영어 ASCII(기본 폰트). 플레이어가 보는 글이 생기는 순간 `i18n/<언어>.rs` 키-필드 구조로(첫 게임 규칙).

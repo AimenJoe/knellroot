@@ -6,12 +6,65 @@
 //!   공격 = X(왼쪽) / J·Space      회피 = A(아래) / K·LShift      락온 = RB·오른쪽 스틱 클릭 / L·Tab
 //!   랩 열기 = Select / F1          랩 안: 십자(↑↓ 고르기, ←→ 바꾸기), LB = 10배, Y = 초기화, B = 내보내기,
 //!   LT = 슬롯에 담기, RT = A/B 바꾸기, Start/1~4 = 시나리오 바꾸기(dev 기능)
+//!   터치(`touch.rs`, 0006) = 왼쪽 반 가상 스틱 + 오른쪽 아래 공격·회피·락온, 오른쪽 위 랩·시나리오(dev).
+//!
+//! 지금 쓰는 장치(`Device`)는 마지막으로 만진 것. 터치 오버레이는 장치가 터치일 때만 그린다(nail 0036·0172).
+use std::sync::atomic::{AtomicU8, Ordering};
+
 use macroquad::prelude::*;
 
 #[cfg(not(target_os = "android"))]
 use gamepads::{Button, Gamepads};
 
+use crate::touch::{Overlay, Touch};
 use crate::tuning;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Device {
+    Keys,
+    Pad,
+    Touch,
+}
+
+static DEVICE: AtomicU8 = AtomicU8::new(u8::MAX);
+
+pub fn device() -> Device {
+    match DEVICE.load(Ordering::Relaxed) {
+        u8::MAX => initial_device(),
+        1 => Device::Pad,
+        2 => Device::Touch,
+        _ => Device::Keys,
+    }
+}
+
+fn set_device(d: Device) {
+    DEVICE.store(d as u8, Ordering::Relaxed);
+}
+
+/// 아무것도 만지기 전: 손가락이 주 포인터인 기기(폰·태블릿 브라우저)면 터치 — 첫 화면부터 버튼이 보이게.
+fn initial_device() -> Device {
+    #[cfg(target_arch = "wasm32")]
+    {
+        extern "C" {
+            fn knell_coarse_pointer() -> u32;
+        }
+        // SAFETY: 인자 없이 정수를 돌려주는 JS 함수(web/index.html의 knell_device 플러그인).
+        if unsafe { knell_coarse_pointer() } != 0 {
+            return Device::Touch;
+        }
+        Device::Keys
+    }
+    #[cfg(target_os = "android")]
+    {
+        Device::Touch
+    }
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    {
+        Device::Keys
+    }
+}
+
+const DEV: bool = cfg!(feature = "dev");
 
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
 pub struct Actions {
@@ -37,6 +90,7 @@ pub struct Actions {
 
 pub struct Input {
     latch: Actions,
+    touch: Touch,
     #[cfg(not(target_os = "android"))]
     pads: Gamepads,
     /// 이동 반복 억제용: 십자키는 틱마다 반복이 아니라 눌림만 받는다(랩 커서).
@@ -45,17 +99,27 @@ pub struct Input {
 
 impl Input {
     pub fn new() -> Self {
+        // 손가락을 마우스로 흉내 내지 않는다(nail 0199: 켜 두면 짚는 순간 클릭이 된다).
+        simulate_mouse_with_touch(false);
         Input {
             latch: Actions::default(),
+            touch: Touch::default(),
             #[cfg(not(target_os = "android"))]
             pads: Gamepads::new(),
             _pad_seen: false,
         }
     }
 
+    /// 터치 장치일 때 렌더가 그릴 오버레이.
+    pub fn overlay(&self, lab_open: bool) -> Option<Overlay> {
+        (device() == Device::Touch).then(|| self.touch.overlay(DEV, lab_open))
+    }
+
     /// 프레임마다 한 번. 눌림은 OR로 모으고, 이동(상태)은 마지막 값으로 덮는다.
-    pub fn poll(&mut self) {
+    pub fn poll(&mut self, lab_open: bool) {
         let mut a = Actions::default();
+        let used_keys = get_last_key_pressed().is_some();
+        let mut used_pad = false;
         // 키보드 이동.
         let mut m = Vec2::ZERO;
         if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) {
@@ -100,6 +164,7 @@ impl Input {
                 let st = vec2(lx, -ly);
                 if st.length() > tuning::STICK_DEADZONE {
                     m = st;
+                    used_pad = true;
                 }
                 if pad.is_currently_pressed(Button::DPadLeft) {
                     m.x -= 1.0;
@@ -130,7 +195,36 @@ impl Input {
                 if pad.is_just_pressed(Button::RightCenterCluster) {
                     a.scenario = Some(0);
                 }
+                used_pad |= pad.all_just_pressed().next().is_some();
             }
+        }
+
+        // 터치: 스틱은 키·패드가 0일 때만, 눌림은 OR.
+        let t = self.touch.read(get_frame_time(), DEV, lab_open);
+        if m == Vec2::ZERO {
+            m = t.move_dir;
+        }
+        a.attack |= t.attack;
+        a.dodge |= t.dodge;
+        a.lock |= t.lock;
+        a.lab_toggle |= t.lab_toggle;
+        a.lab_up |= t.lab_up;
+        a.lab_down |= t.lab_down;
+        a.lab_left |= t.lab_left;
+        a.lab_right |= t.lab_right;
+        a.lab_reset |= t.lab_reset;
+        a.lab_store |= t.lab_store;
+        a.lab_swap |= t.lab_swap;
+        if t.scenario_next {
+            a.scenario = Some(0);
+        }
+        // 지금 쓰는 장치 = 마지막으로 만진 것.
+        if t.active {
+            set_device(Device::Touch);
+        } else if used_pad {
+            set_device(Device::Pad);
+        } else if used_keys {
+            set_device(Device::Keys);
         }
 
         if m.length() > 1.0 {
