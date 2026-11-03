@@ -8,6 +8,7 @@
 mod camera;
 mod input;
 mod lab;
+mod model;
 mod render;
 mod scenario;
 mod text;
@@ -46,8 +47,15 @@ async fn main() {
     let mut lab = Lab::new();
     let mut renderer = Renderer::new();
     let mut acc = 0.0f32;
+    // 측정(P5, 0013): 우리 코드가 쓴 CPU 시간(틱 + 그리기)과 프레임 시간을 1초씩 모은다. 그리기 호출 수는 30프레임마다 한 프레임을 잡아 센다.
+    let mut perf = render::Perf::default();
+    let (mut cpu_sum, mut cpu_max, mut frame_sum, mut frames) = (0.0f64, 0.0f64, 0.0f64, 0u32);
 
     loop {
+        let cpu_start = get_time();
+        if frames % 30 == 0 {
+            macroquad::telemetry::capture_frame();
+        }
         input.poll(lab.open);
         let dt = get_frame_time().min(MAX_FRAME_DT);
         acc += dt;
@@ -115,6 +123,9 @@ async fn main() {
         text::warm();
         let alpha = (acc / TICK_DT).clamp(0.0, 1.0);
         let overlay = input.overlay(lab.open);
+        if frames % 30 == 2 {
+            perf.draws = macroquad::telemetry::drawcalls().len();
+        }
         renderer.draw(
             &world,
             &cam,
@@ -122,10 +133,24 @@ async fn main() {
             &t,
             scenario::entry(sc),
             overlay.is_some(),
+            &perf,
         );
         lab.draw(&t, overlay.is_some());
         if let Some(o) = &overlay {
             touch::draw(o, world.lock_target().is_some(), world.turn_ready(&t));
+        }
+        let cpu = get_time() - cpu_start;
+        cpu_sum += cpu;
+        cpu_max = cpu_max.max(cpu);
+        frame_sum += get_frame_time() as f64;
+        frames += 1;
+        if frames % 60 == 0 {
+            perf.cpu_avg_ms = (cpu_sum / 60.0 * 1000.0) as f32;
+            perf.cpu_max_ms = (cpu_max * 1000.0) as f32;
+            perf.frame_avg_ms = (frame_sum / 60.0 * 1000.0) as f32;
+            cpu_sum = 0.0;
+            cpu_max = 0.0;
+            frame_sum = 0.0;
         }
         next_frame().await;
     }

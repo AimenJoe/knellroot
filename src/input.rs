@@ -159,6 +159,8 @@ impl Input {
             KeyCode::Key3,
             KeyCode::Key4,
             KeyCode::Key5,
+            KeyCode::Key6,
+            KeyCode::Key7,
         ]
         .iter()
         .enumerate()

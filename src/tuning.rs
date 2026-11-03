@@ -76,6 +76,7 @@ pub enum P {
     SlamDamage,
     SlamStagger,
     Haze,
+    RenderModel,
 }
 
 pub struct Spec {
@@ -105,7 +106,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 57] = [
+pub const SPECS: [Spec; 58] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -535,6 +536,16 @@ pub const SPECS: [Spec; 57] = [
     // 지평선 아지랑이(0012): 화면 위쪽 이 몫만큼 먼 곳이 하늘빛으로 옅어진다. 카메라는 기울지 않고 수직축으로만 돌아서
     // 이 띠는 진짜 지평선처럼 늘 수평이고 회전 중에도 제자리 — 땅에 고정된 지평선이 멀미를 줄인다(Hemmerich 2020). 0 = 끔.
     spec!(Haze, "render.horizon haze", "HAZE", 0.3, 0.0, 0.6, 0.05),
+    // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
+    spec!(
+        RenderModel,
+        "render.model 0box 1gltf",
+        "RENDER_MODEL",
+        0.0,
+        0.0,
+        1.0,
+        1.0
+    ),
 ];
 
 /// 땅 돌리기의 두 구간(초): 90°+지나침까지 가는 시간, 90°로 되돌아오는 시간. 카메라(`Camera::turn`)와 월드(쏟는 때)가
@@ -605,7 +616,7 @@ impl Tuning {
 }
 
 fn idx(p: P) -> usize {
-    // SPECS 순서로 찾는다. 30개라 선형이어도 된다(틱마다 수십 번).
+    // SPECS 순서로 찾는다. 57개라 선형이어도 된다(틱마다 수십 번).
     SPECS.iter().position(|s| s.p == p).expect("P not in SPECS")
 }
 
@@ -631,6 +642,29 @@ mod tests {
         }
         let names: std::collections::HashSet<_> = SPECS.iter().map(|s| s.konst).collect();
         assert_eq!(names.len(), SPECS.len(), "duplicate const names");
+    }
+
+    /// 값 얼리기(0013): 기본값은 `docs/tuning-frozen.txt`와 같아야 한다. 바꾸려면 랩 A/B → export → 판정(사람) → 결정 기록 →
+    /// 이 파일을 함께 고친다(`FREEZE_WRITE=1 cargo test frozen` 이 지금 기본값으로 다시 쓴다). 대화로 기본값이 줄줄이 바뀌던 것을 막는다.
+    #[test]
+    fn frozen_defaults_match_the_snapshot() {
+        let now = Tuning::default().export();
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/tuning-frozen.txt");
+        if std::env::var("FREEZE_WRITE").is_ok() {
+            std::fs::write(path, &now).unwrap();
+        }
+        let frozen = std::fs::read_to_string(path).expect("docs/tuning-frozen.txt");
+        let diff: Vec<_> = now
+            .lines()
+            .zip(frozen.lines())
+            .filter(|(a, b)| a != b)
+            .map(|(a, b)| format!("now    {a}\nfrozen {b}"))
+            .collect();
+        assert!(
+            diff.is_empty() && now.lines().count() == frozen.lines().count(),
+            "기본값이 얼린 값과 다르다 — 판정·결정 기록 없이 바꾸지 않는다(0013):\n{}",
+            diff.join("\n")
+        );
     }
 
     #[test]

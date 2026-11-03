@@ -13,6 +13,9 @@ dev = []
 
 [dependencies]
 macroquad = { version = "0.4.16" }
+# P4 스파이크(0013): glTF 읽기. 기본 기능(import = 파일·image 크레이트)은 끄고 JSON + 접근자만 — data URI는 base64로 직접 푼다.
+gltf = { version = "1.4.1", default-features = false, features = ["utils", "names"] }
+base64 = "0.22"
 
 # nail과 같은 까닭: gamepads 0.1.7은 Android에서 컴파일되지 않는다(패드는 miniquad 패치가 키로 넘긴다).
 [target.'cfg(not(target_os = "android"))'.dependencies]

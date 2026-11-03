@@ -10,6 +10,8 @@ pub enum Scenario {
     Pillars,
     Empty,
     Tray,
+    Stress40,
+    Stress80,
 }
 
 pub struct Entry {
@@ -19,7 +21,7 @@ pub struct Entry {
     pub checks: &'static str,
 }
 
-pub const LIST: [Entry; 5] = [
+pub const LIST: [Entry; 7] = [
     Entry {
         scenario: Scenario::Boss,
         name: "boss arena",
@@ -44,6 +46,16 @@ pub const LIST: [Entry; 5] = [
         scenario: Scenario::Tray,
         name: "tray spill",
         checks: "P6 turn the ground: spill, stagger, wall slam, no sickness",
+    },
+    Entry {
+        scenario: Scenario::Stress40,
+        name: "stress 40",
+        checks: "P5 perf: 40 mobs (lab render.model 1 = gltf), cpu ms / draws",
+    },
+    Entry {
+        scenario: Scenario::Stress80,
+        name: "stress 80",
+        checks: "P5 perf: 80 mobs (lab render.model 1 = gltf), cpu ms / draws",
     },
 ];
 
@@ -105,6 +117,8 @@ pub fn build(s: Scenario) -> World {
             w
         }
         Scenario::Empty => World::new("empty", 16.0),
+        Scenario::Stress40 => stress(40),
+        Scenario::Stress80 => stress(80),
         Scenario::Tray => {
             // 둘러싸인 자리: 안쪽(3m)·가운데(5m)·바깥(7m) 고리 + 바깥 고리 곁 기둥 넷(쏟아진 적이 부딪히게).
             let mut w = World::new("tray", 12.0);
@@ -120,6 +134,24 @@ pub fn build(s: Scenario) -> World {
             w
         }
     }
+}
+
+/// 성능 시험(P5): 넓은 아레나에 잡몹 `n`마리를 고리 몇 겹으로, 기둥 넷. 쫓아와 뭉치는 것까지 재는 게 실제 싸움에 가깝다.
+fn stress(n: usize) -> World {
+    let mut w = World::new("stress", 22.0);
+    let rings = n.div_ceil(20);
+    for i in 0..n {
+        let ring = i % rings;
+        let k = i / rings;
+        let per = n.div_ceil(rings);
+        let a = (k as f32 + 0.5 * ring as f32) / per as f32 * std::f32::consts::TAU;
+        let r = 8.0 + ring as f32 * 3.0;
+        w.spawn_mob(vec3(a.cos() * r, 0.0, a.sin() * r));
+    }
+    for (x, z) in [(10.0, 10.0), (-10.0, 10.0), (10.0, -10.0), (-10.0, -10.0)] {
+        w.obstacles.push(pillar(x, z, 1.6, 4.0));
+    }
+    w
 }
 
 #[cfg(test)]

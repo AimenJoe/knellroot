@@ -1,8 +1,9 @@
 //! 그리기. 월드를 읽기만 한다. 3D 패스는 내부 해상도 렌더 타깃(PS1 느낌)에, HUD는 화면 패스에.
-//! 상자·구만 쓴다(모델 로더는 PoC P4의 일). 바닥 예고는 삼각형 부채꼴 `Mesh`를 매 프레임 만든다(정점은 어차피 매 프레임 올라간다).
+//! 상자·구, 그리고 P4 스파이크의 glTF 시험 모델(`model.rs`, CPU에서 부위 행렬을 곱해 한 배치로 — `ModelBatch`). 바닥 예고는 삼각형 부채꼴 `Mesh`를 매 프레임 만든다(정점은 어차피 매 프레임 올라간다).
 use macroquad::prelude::*;
 
 use crate::camera::{Camera, Mode, CAM_MIN_DIST};
+use crate::model::Model;
 use crate::scenario::Entry;
 use crate::tuning::{Tuning, INTERNAL_H, INTERNAL_W, PLAYER_HEIGHT, PLAYER_RADIUS};
 use crate::world::{EState, PState, World};
@@ -11,6 +12,19 @@ pub struct Renderer {
     rt: RenderTarget,
     /// 상자마다 지금 진하기(1 = 불투명). 가리면 부드럽게 옅어지고 풀리면 돌아온다(0008).
     fade: Vec<f32>,
+    /// P4 시험 모델과 그 텍스처(처음 쓸 때 올린다).
+    critter: Option<(Model, Texture2D)>,
+    pose: Vec<Mat4>,
+    batch: ModelBatch,
+}
+
+/// 측정값(HUD 한 줄, P5): 우리 코드가 한 프레임에 쓴 CPU 시간(평균·최대, 지난 1초), 그리기 호출 수, 모델 정점 수.
+#[derive(Clone, Copy, Default, Debug)]
+pub struct Perf {
+    pub cpu_avg_ms: f32,
+    pub cpu_max_ms: f32,
+    pub frame_avg_ms: f32,
+    pub draws: usize,
 }
 
 impl Renderer {
@@ -20,10 +34,32 @@ impl Renderer {
         Renderer {
             rt,
             fade: Vec::new(),
+            critter: None,
+            pose: Vec::new(),
+            batch: ModelBatch::default(),
         }
     }
 
+    fn critter(&mut self) -> Option<&(Model, Texture2D)> {
+        if self.critter.is_none() {
+            match Model::from_bytes(crate::model::TEST_CRITTER.as_bytes()) {
+                Ok(m) => {
+                    let png = m.texture_png.clone().unwrap_or_default();
+                    let tex = Texture2D::from_file_with_format(&png, Some(ImageFormat::Png));
+                    tex.set_filter(FilterMode::Nearest);
+                    self.critter = Some((m, tex));
+                }
+                Err(e) => {
+                    error!("test model: {e}");
+                    return None;
+                }
+            }
+        }
+        self.critter.as_ref()
+    }
+
     /// `touch`면 HUD의 키 안내 줄을 빼고(손가락에는 안 맞는 글), 랩 터치 줄 자리를 비운다.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
         w: &World,
@@ -32,6 +68,7 @@ impl Renderer {
         t: &Tuning,
         entry: &Entry,
         touch: bool,
+        perf: &Perf,
     ) {
         let aspect = INTERNAL_W as f32 / INTERNAL_H as f32;
         set_camera(&cam.to_camera3d(self.rt.clone(), aspect));
@@ -171,7 +208,25 @@ impl Renderer {
                     );
                 }
             }
-            actor(p, en.facing_dir(), en.radius, h, col, shade, tilt);
+            let as_model = !en.boss && t[crate::tuning::P::RenderModel] >= 0.5;
+            if as_model && self.critter().is_some() {
+                let (m, tex) = self.critter.as_ref().unwrap();
+                // 발을 축으로 기울기 → 바라보는 쪽(모델 앞 = +Z) → 키에 맞춘 크기. 걷기는 적마다 위상을 어긋나게.
+                let inst = Mat4::from_translation(p)
+                    * Mat4::from_quat(tilt)
+                    * Mat4::from_rotation_y(en.facing)
+                    * Mat4::from_scale(Vec3::splat(h / 1.4));
+                let phase = (en.pos.x * 0.37 + en.pos.z * 0.61).rem_euclid(1.0);
+                m.pose(m.anim("walk"), w.time + phase, &mut self.pose);
+                let tint = if en.hurt > 0.0 {
+                    WHITE
+                } else {
+                    Color::new(1.0, 1.0, 1.0, 1.0)
+                };
+                self.batch.push(m, tex, &self.pose, inst, tint, shade);
+            } else {
+                actor(p, en.facing_dir(), en.radius, h, col, shade, tilt);
+            }
             if en.boss {
                 // 체력 띠(머리 위).
                 let k = en.hp as f32 / en.max_hp as f32;
@@ -189,6 +244,7 @@ impl Renderer {
                 );
             }
         }
+        self.batch.flush();
         let pcol = match w.player.state {
             _ if w.player.hurt > 0.0 && (w.time * 20.0) as i32 % 2 == 0 => WHITE,
             PState::Dodge { .. } => Color::new(0.6, 0.9, 1.0, 0.6),
@@ -329,10 +385,20 @@ impl Renderer {
                 ..Default::default()
             },
         );
-        self.hud(w, cam, ox, oy, entry, touch);
+        self.hud(w, cam, ox, oy, entry, touch, perf);
     }
 
-    fn hud(&self, w: &World, cam: &Camera, ox: f32, oy: f32, entry: &Entry, touch: bool) {
+    #[allow(clippy::too_many_arguments)]
+    fn hud(
+        &self,
+        w: &World,
+        cam: &Camera,
+        ox: f32,
+        oy: f32,
+        entry: &Entry,
+        touch: bool,
+        perf: &Perf,
+    ) {
         let mode = match cam.mode {
             Mode::Quarter => "QUARTER",
             Mode::Lock => "LOCK-ON",
@@ -375,20 +441,35 @@ impl Renderer {
             20.0,
             LIGHTGRAY,
         );
+        // 측정 줄(P5): 폰에서도 보이게 터치 판정 위에.
+        draw_text(
+            format!(
+                "cpu {:.1}ms (max {:.1})  frame {:.1}ms  draws {}  verts {}",
+                perf.cpu_avg_ms,
+                perf.cpu_max_ms,
+                perf.frame_avg_ms,
+                perf.draws,
+                self.batch.last_vertices
+            ),
+            ox + 10.0,
+            oy + 62.0,
+            16.0,
+            YELLOW,
+        );
         if touch {
             return;
         }
         draw_text(
             format!("checks: {}", entry.checks),
             ox + 10.0,
-            oy + 66.0,
+            oy + 80.0,
             16.0,
             GRAY,
         );
         draw_text(
-            "WASD move  J/Space attack  K/Shift dodge  Q/E turn  L/Tab lock-on  F1 lab  1-5 scenario",
+            "WASD move  J/Space attack  K/Shift dodge  Q/E turn  L/Tab lock-on  F1 lab  1-7 scenario",
             ox + 10.0,
-            oy + 86.0,
+            oy + 98.0,
             16.0,
             GRAY,
         );
@@ -412,6 +493,81 @@ fn draw_haze(w: f32, h: f32, frac: f32) {
         indices: vec![0, 1, 2, 0, 2, 3],
         texture: None,
     });
+}
+
+/// 모델 인스턴스를 한 배치로 모은다(P4·P5): 부위 행렬 × 정점을 CPU에서 곱하고, 면마다 고정 빛 음영을 정점 색에 굽는다
+/// (`shaded_box`와 같은 식). macroquad는 그리기 호출 하나에 정점 10,000·색인 5,000 **미만**만 받고 넘치면 잘라 버린다
+/// (0.4.16 `quad_gl.rs` `geometry`, `Conf::draw_call_*_capacity` 기본값 — 처음엔 40마리를 한 덩어리로 보내 아무것도 안 그려졌다).
+/// 그래서 메시 단위로 그 아래에서 끊어 보낸다.
+const MAX_DRAW_VERTICES: usize = 10_000;
+const MAX_DRAW_INDICES: usize = 5_000;
+
+#[derive(Default)]
+pub struct ModelBatch {
+    tex: Option<Texture2D>,
+    vertices: Vec<Vertex>,
+    indices: Vec<u16>,
+    /// 지난 프레임에 보낸 모델 정점 수(HUD).
+    pub last_vertices: usize,
+    this_frame: usize,
+}
+
+impl ModelBatch {
+    pub fn push(
+        &mut self,
+        m: &Model,
+        tex: &Texture2D,
+        pose: &[Mat4],
+        inst: Mat4,
+        tint: Color,
+        shade: f32,
+    ) {
+        if self.tex.as_ref() != Some(tex) {
+            self.send();
+            self.tex = Some(tex.clone());
+        }
+        let l = LIGHT_DIR.normalize();
+        for (i, node) in m.nodes.iter().enumerate() {
+            let Some(mi) = node.mesh else { continue };
+            let mesh = &m.meshes[mi];
+            if self.vertices.len() + mesh.pos.len() >= MAX_DRAW_VERTICES
+                || self.indices.len() + mesh.idx.len() >= MAX_DRAW_INDICES
+            {
+                self.send();
+            }
+            let mat = inst * pose[i];
+            let base = self.vertices.len() as u16;
+            for k in 0..mesh.pos.len() {
+                let p = mat.transform_point3(mesh.pos[k]);
+                let n = mat.transform_vector3(mesh.nrm[k]).normalize_or_zero();
+                let f = 1.0 - shade + shade * n.dot(l).max(0.0);
+                let c = Color::new(tint.r * f, tint.g * f, tint.b * f, tint.a);
+                self.vertices
+                    .push(Vertex::new(p.x, p.y, p.z, mesh.uv[k].x, mesh.uv[k].y, c));
+            }
+            self.indices
+                .extend(mesh.idx.iter().map(|&j| base + j as u16));
+        }
+    }
+
+    fn send(&mut self) {
+        if self.vertices.is_empty() {
+            return;
+        }
+        self.this_frame += self.vertices.len();
+        draw_mesh(&Mesh {
+            vertices: std::mem::take(&mut self.vertices),
+            indices: std::mem::take(&mut self.indices),
+            texture: self.tex.clone(),
+        });
+    }
+
+    /// 프레임마다 한 번(모은 것을 보내고 수를 HUD로).
+    pub fn flush(&mut self) {
+        self.send();
+        self.last_vertices = self.this_frame;
+        self.this_frame = 0;
+    }
 }
 
 /// 가린 기둥의 면 진하기(0 = 안 보임). 윤곽선은 따로 남는다.
