@@ -408,6 +408,8 @@ impl Renderer {
                 PState::Dodge { t: e, .. } => (&["dodge", "walk"], e),
                 PState::Hurt { t: e, .. } => (&["hurt", "idle"], e),
                 PState::Turn { t: e, .. } => (&["turn", "idle"], e),
+                // 패링 동작이 아직 없다 — 공격 동작의 드는 자세(앞 0.08초)로 막는다.
+                PState::Parry { .. } => (&["parry", "attack"], 0.08),
                 PState::Idle if speed > 0.5 => (&["walk"], w.time * (speed / 4.0).clamp(0.6, 1.6)),
                 PState::Idle => (&["idle"], w.time),
             };
@@ -447,6 +449,7 @@ impl Renderer {
                 PState::Hurt { .. } => Color::new(0.95, 0.45, 0.4, 1.0),
                 PState::Attack { .. } => Color::new(1.0, 0.85, 0.5, 1.0),
                 PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
+                PState::Parry { .. } => Color::new(0.7, 0.85, 1.0, 1.0),
                 PState::Idle => Color::new(0.85, 0.75, 0.55, 1.0),
             };
             actor(
@@ -475,6 +478,48 @@ impl Renderer {
                     w.player.facing,
                     t[crate::tuning::P::AttackArc],
                     Color::new(1.0, 0.95, 0.7, 0.35),
+                );
+            }
+        }
+        // 패링(0025): 창이 열린 동안 앞에 옅은 푸른 반달, 성공하면 둘레로 퍼지는 흰 고리.
+        if let PState::Parry { t: e } = w.player.state {
+            if e < t[crate::tuning::P::ParryWindow] {
+                sector(
+                    pp + Vec3::Y * 0.8,
+                    1.4,
+                    w.player.facing,
+                    150.0,
+                    Color::new(0.6, 0.85, 1.0, 0.35),
+                );
+                ring(
+                    pp + Vec3::Y * 0.8,
+                    1.4,
+                    w.player.facing,
+                    150.0,
+                    Color::new(0.75, 0.9, 1.0, 0.8),
+                );
+            }
+        }
+        if w.player.since_parry < 0.35 {
+            let k = (w.player.since_parry / 0.35).clamp(0.0, 1.0);
+            ring(
+                pp + Vec3::Y * 0.05,
+                0.6 + 2.4 * k,
+                0.0,
+                360.0,
+                Color::new(0.85, 0.95, 1.0, 0.9 * (1.0 - k)),
+            );
+        }
+        // 드러난 적(치명타 기회): 발밑에 금빛 고리가 깜빡인다.
+        for en in &w.enemies {
+            if en.exposed > 0.0 && en.alive() && (w.time * 10.0) as i32 % 2 == 0 {
+                let p = en.prev.lerp(en.pos, alpha);
+                ring(
+                    p,
+                    en.radius + 0.45,
+                    0.0,
+                    360.0,
+                    Color::new(1.0, 0.82, 0.35, 0.85),
                 );
             }
         }
@@ -711,6 +756,11 @@ fn telegraph(p: Vec3, facing: f32, k: f32, shape: TeleShape) {
             sector(p, r, facing, 360.0, with_a(TELE, 0.1));
             ring(p, r * k, facing, 360.0, fill);
             ring(p, r, facing, 360.0, edge);
+            // 패링으로 못 받는다 = 가운데 X(색이 아니라 모양으로, nail 0187 · KB timing-parry).
+            let x = r.min(2.0) * 0.45;
+            let y = Vec3::Y * 0.04;
+            line(p + y + vec3(-x, 0.0, -x), p + y + vec3(x, 0.0, x), edge);
+            line(p + y + vec3(-x, 0.0, x), p + y + vec3(x, 0.0, -x), edge);
         }
     }
 }

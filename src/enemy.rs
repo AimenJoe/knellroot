@@ -102,6 +102,8 @@ pub struct Enemy {
     pub sway_t: f32,
     /// 죽은 뒤 지난 초(렌더가 쓰러뜨리고 지운다).
     pub dead_t: f32,
+    /// 패링당해 드러난 남은 초(0025) — 이동안 맞는 한 대가 치명타.
+    pub exposed: f32,
 }
 
 /// 한 틱의 결과(월드가 피해·이벤트로 바꾼다).
@@ -138,6 +140,7 @@ impl Enemy {
             sway: Vec3::ZERO,
             sway_t: 0.0,
             dead_t: 0.0,
+            exposed: 0.0,
         }
     }
 
@@ -165,6 +168,11 @@ impl Enemy {
         } else {
             1.0
         }
+    }
+
+    /// 패링으로 튕길 수 있는 공격인가(0025). 퍼지는 뿌리 파동은 못 받는다 — 피해야 한다(예고 고리 가운데 X, nail 0187).
+    pub fn parryable(&self) -> bool {
+        self.atk != Atk::Wave
     }
 
     /// 지금 공격의 예고 길이(초).
@@ -277,6 +285,7 @@ impl Enemy {
         }
         let d = self.def();
         self.hurt = (self.hurt - dt).max(0.0);
+        self.exposed = (self.exposed - dt).max(0.0);
         self.sway_t += dt;
         // 넉백은 빠르게 줄어든다.
         self.pos += self.knock * dt;

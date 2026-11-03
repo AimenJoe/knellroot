@@ -22,16 +22,19 @@ const server = http.createServer((req, res) => {
 
 // src/touch.rs layout()과 같은 식(논리 px). 바꾸면 함께.
 function layout(lab) {
-  const u = Math.min(W, H), r = u * 0.09, atkR = r * 1.5, dodgeR = r * 1.1, lockR = r * 0.85, turnR = r * 0.8;
+  const u = Math.min(W, H), r = u * 0.09, atkR = r * 1.5, dodgeR = r * 1.1, lockR = r * 0.85, turnR = r * 0.8, parryR = r * 0.9;
   const atk = [W - atkR * 1.3, H - atkR * 1.3];
   const lock = [atk[0], atk[1] - (atkR + lockR + r * 0.45)];
-  const cwX = lock[0] - (lockR + turnR + r * 0.4);
+  const pa = Math.PI / 6, pd = atkR + parryR + r * 0.4;
+  const turnY = lock[1] - r * 0.5;
+  const cwX = lock[0] - (lockR + turnR + r * 1.4);
   const b = {
     attack: atk,
     dodge: [atk[0] - (atkR + dodgeR + r * 0.5), H - dodgeR * 1.2],
+    parry: [atk[0] - Math.cos(pa) * pd, atk[1] - Math.sin(pa) * pd],
     lock,
-    turn_right: [cwX, lock[1]],
-    turn_left: [cwX - (turnR * 2 + r * 0.4), lock[1]],
+    turn_right: [cwX, turnY],
+    turn_left: [cwX - (turnR * 2 + r * 0.4), turnY],
     pause: [W - r * 0.7 * 1.4, r * 0.7 * 1.4],
     lab: [W - r * 0.7 * 4.0, r * 0.7 * 1.4],
     scenario: [W - r * 0.7 * 6.6, r * 0.7 * 1.4],
@@ -66,7 +69,7 @@ async function main() {
   {
     const dpi = 3, sc = Math.max(1, Math.floor(Math.min(W * dpi / 480, H * dpi / 270))) / dpi;
     const dh = 270 * sc, oy = Math.floor((H - dh) / 2), px = 13 * sc;  // ui::GLYPH
-    await tap([W / 2, oy + dh * 0.42 + px * 0.5]);  // app::TITLE_MENU_Y
+    await tap([W / 2, oy + dh * 0.37 + px * 0.5]);  // app::TITLE_MENU_Y
   }
   await page.waitForTimeout(1200);
   await shot('t01-first-screen');

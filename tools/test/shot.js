@@ -34,7 +34,7 @@ async function main() {
   await canvas.click({ position: { x: 640, y: 360 } });
   const shot = (name) => page.screenshot({ path: path.join(OUT, name + '.png') });
   const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.waitForTimeout(60); } };
-  // 0 첫 스테이지(0019): 타이틀 → 시작 이야기 → 입구 → 뜰(첫 물결) → 멈춤 → 타이틀 → 개발: 문 앞 → 깨어남 → 결투(락온).
+  // 0 첫 스테이지(0019): 타이틀 → 시작 이야기 → 입구 → 뜰(첫 물결) → 멈춤 → 타이틀 → 개발: 문 앞 → 깨어남 → 결투(락온) → 멈춤 → 조작 설정.
   await shot('00-title');
   await press('Enter'); await page.waitForTimeout(1500); await shot('00a-intro');
   await page.waitForTimeout(5000); await shot('00b-entrance');
@@ -43,14 +43,18 @@ async function main() {
   for (let i = 0; i < 5; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(260); }
   await shot('00d-fight');
   await press('Escape'); await page.waitForTimeout(300); await shot('00e-pause');
-  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
-  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(800); await shot('00f-gate');
+  await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(800); await shot('00f-gate');
   await page.keyboard.down('KeyW'); await page.waitForTimeout(2200); await page.keyboard.up('KeyW');
   await page.waitForTimeout(800); await shot('00g-waking');
   await page.waitForTimeout(1500); await press('KeyL'); await page.waitForTimeout(900); await shot('00h-boss-lock');
-  // 개발 시나리오로(멈춤 → 타이틀로 → 넷째 줄 "DEV: PoC scenarios").
-  await press('Escape'); await page.waitForTimeout(200); await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
-  await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(400);
+  // 조작 설정(0024): 멈춤 → 둘째 줄.
+  await press('Escape'); await page.waitForTimeout(200); await press('ArrowDown', 1); await press('Enter'); await page.waitForTimeout(300);
+  await shot('00i-controls');
+  await press('Escape'); await page.waitForTimeout(200);
+  // 개발 시나리오로(멈춤 → 타이틀로 → 다섯째 줄 "DEV: PoC scenarios").
+  await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(400);
   // 1 보스 아레나: 쿼터뷰 → 앞으로 걷기 → 락온 → 전환 중·전환 뒤 → 공격 → 회피 → 해제.
   await page.keyboard.press('Digit1'); await page.waitForTimeout(400);
   await shot('01-quarter');
@@ -73,7 +77,8 @@ async function main() {
   await page.keyboard.down('KeyD'); await page.waitForTimeout(600); await page.keyboard.up('KeyD'); await shot('04-lock-strafe');
   for (let i = 0; i < 6; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(250); }
   await shot('05-attack');
-  await page.keyboard.press('KeyK'); await page.waitForTimeout(120); await shot('06-dodge');
+  await page.keyboard.press('Space'); await page.waitForTimeout(120); await shot('06-dodge');
+  await page.waitForTimeout(400); await page.keyboard.press('KeyK'); await page.waitForTimeout(60); await shot('06b-parry');
   await page.waitForTimeout(1500); await shot('07-boss-telegraph');
   await page.keyboard.press('KeyL'); await page.waitForTimeout(150); await shot('08-unlock-blending');
   // 2 떼.

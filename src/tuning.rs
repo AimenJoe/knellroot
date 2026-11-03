@@ -23,6 +23,8 @@ pub const SHAKE_DOWN: f32 = 0.15;
 pub const SHAKE_TURN: f32 = 0.2;
 pub const SHAKE_SLAM: f32 = 0.35;
 pub const SHAKE_ROUSE: f32 = 0.6;
+pub const SHAKE_PARRY: f32 = 0.5;
+pub const SHAKE_CRIT: f32 = 0.45;
 
 pub const PLAYER_HP: i32 = 5;
 pub const STICK_DEADZONE: f32 = 0.2;
@@ -94,6 +96,13 @@ pub enum P {
     StaminaDelay,
     StaminaDodge,
     StaminaAttack,
+    ParryWindow,
+    ParryTime,
+    ParryStamina,
+    ParryStagger,
+    ParryBossStagger,
+    ParryReach,
+    ParryCrit,
     RenderModel,
 }
 
@@ -124,7 +133,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 65] = [
+pub const SPECS: [Spec; 72] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -618,6 +627,65 @@ pub const SPECS: [Spec; 65] = [
         12.0,
         0.0,
         100.0,
+        1.0
+    ),
+    // 패링(0025, KB concepts/timing-parry.md): 누른 뒤 `parry.window s` 안에 앞쪽에서 닿는 근접 공격을 튕긴다. 창은 짧게
+    // (KB: 0.1~0.2초, Sekiro ≈ 0.2초는 커뮤니티 측정). 헛치면 `parry.time s`까지 못 움직인다 — 연타가 공짜가 되지 않게.
+    spec!(
+        ParryWindow,
+        "parry.window s",
+        "PARRY_WINDOW",
+        0.18,
+        0.05,
+        0.5,
+        0.01
+    ),
+    spec!(ParryTime, "parry.time s", "PARRY_TIME", 0.5, 0.1, 1.5, 0.05),
+    spec!(
+        ParryStamina,
+        "parry.stamina cost",
+        "PARRY_STAMINA",
+        15.0,
+        0.0,
+        100.0,
+        1.0
+    ),
+    // 튕긴 적은 휘청(예고 끊김)하고 그동안 다음 한 대가 치명타(+`parry.crit`).
+    spec!(
+        ParryStagger,
+        "parry.stagger s",
+        "PARRY_STAGGER",
+        1.2,
+        0.0,
+        3.0,
+        0.05
+    ),
+    spec!(
+        ParryBossStagger,
+        "parry.boss stagger s",
+        "PARRY_BOSS_STAGGER",
+        0.8,
+        0.0,
+        3.0,
+        0.05
+    ),
+    // 곧게 오는 돌진은 몸에 닿기 이만큼(m) 앞에서부터 받는다(nail PARRY_REACH 0258 — 닿는 순간만 받으면 늦다).
+    spec!(
+        ParryReach,
+        "parry.reach m",
+        "PARRY_REACH",
+        1.0,
+        0.0,
+        3.0,
+        0.1
+    ),
+    spec!(
+        ParryCrit,
+        "parry.crit bonus",
+        "PARRY_CRIT",
+        2.0,
+        0.0,
+        10.0,
         1.0
     ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.

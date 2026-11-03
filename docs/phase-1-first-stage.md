@@ -32,9 +32,13 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 손맛 손질(0020·0023) | `camera.rs`, `world.rs`, `render.rs` | 흔들림은 각(거리 무관), 맞으면 몸이 젖혀짐, 회피는 적을 뚫음. 땅 돌리기 = 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면, 몸도 돌고 쥔 스틱은 바로 새 정면으로 직진(`world::plan_turn`, 0023) |
 | 글꼴 | `assets/fonts/GowunBatang-UI-*.ttf`, `tools/fonts/subset_ui.py` | 0021: 후보 열하나(`docs/art/font-candidates-{pixel,serif}.png`) 중 사장이 고운바탕·함렛으로 좁힘 → 호환성으로 고운바탕(한글 11,172자·굵기 따로 된 파일). 표 글자만 서브셋 두 파일 190KB(Galmuri 330KB보다 작음) |
 | v0.1.0·APK(0022) | `.github/workflows/build-android.yml`·`release.yml`, `third_party/miniquad`, `android/res`, `tools/icons/make_icons.py` | nail CI를 가져옴(비공개 에셋 단계 뺌). Android 패드는 nail의 패치 miniquad. 갈래: main = 운영(개발 기능 없음), `release/v0.2` = 개발판(웹 별칭 `dev`·APK 미리 보기 `dev`) |
+| 키 배치·다시 붙이기(0024) | `input.rs` `Bindings`·`KEYS`·`Pad`, `app/controls.rs`, `prefs.rs`, web/index.html | 소울라이크식(회피 B·Space, 패링 LB·K, 돌리기 LT·RT·Q·E, 락온 R3·L), 공격만 X·J. 타이틀·멈춤의 "조작 설정"에서 바꾸고 언어와 함께 저장 |
+| 패링(0025) | `world.rs` `PState::Parry`·`tick_enemies`, `enemy.rs` `exposed`·`parryable`, `render.rs` | 창 0.18초·앞쪽 근접만·헛치면 0.5초 묶임·스태미나 15. 튕기면 휘청 + 드러남(다음 한 대 치명타 +2). 파동은 못 받음(예고 가운데 X). 터치 방패 버튼 |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+- [ ] 새 배치(회피 B, 패링 LB, 돌리기 LT·RT)가 손에 맞는지, 패링 창 0.18초가 맞는지(랩 `parry.window s`) — 잔재·가시짐승 돌진·문지기 부채꼴로(0024·0025).
+- [ ] 조작 설정에서 키·버튼을 바꾸고 새로고침(웹)·다시 켜기(APK) 뒤에도 남는지(0024).
 - [ ] **APK 서명 키 고정**: GitHub 레포 Settings → Secrets and variables → Actions → `ANDROID_DEBUG_KEYSTORE_B64`(값은 세션이 만들어 둔 파일, 또는 `docs/release.md`의 명령으로). 없으면 7일 쉰 뒤 키가 바뀌어 덮어 설치가 안 된다.
 - [ ] 핸드헬드에 v0.1.0 APK 설치 — 패드 버튼·두 스틱·D패드·Start(멈춤)가 다 먹는지(0022).
 - [ ] 고운바탕이 핸드헬드 화면(작은 화면·1배)에서 읽히는지(0021).

@@ -14,8 +14,10 @@ use macroquad::prelude::*;
 pub enum Kind {
     Attack,
     Dodge,
+    /// 패링(0025): 방패 그림, 공격 왼쪽 위.
+    Parry,
     Lock,
-    /// 땅 돌리기(0017): 누르는 쪽으로 카메라가 돈다. 오른쪽 = 땅이 화면에서 시계 방향(먼 쪽이 오른쪽으로).
+    /// 땅 돌리기(0023): 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면.
     TurnLeft,
     TurnRight,
     /// 멈춤(0019): 오른쪽 위.
@@ -52,6 +54,7 @@ pub struct Read {
     pub move_dir: Vec2,
     pub attack: bool,
     pub dodge: bool,
+    pub parry: bool,
     pub lock: bool,
     pub turn_right: bool,
     pub turn_left: bool,
@@ -111,9 +114,14 @@ pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool) -> Vec<Button> {
     let dodge_r = r * 1.1;
     let lock_r = r * 0.85;
     let turn_r = r * 0.8;
+    let parry_r = r * 0.9;
     let atk = vec2(w - atk_r * 1.3, h - atk_r * 1.3);
     let lock = vec2(atk.x, atk.y - (atk_r + lock_r + r * 0.45));
-    let cw_x = lock.x - (lock_r + turn_r + r * 0.4);
+    // 패링(0025): 공격에서 왼쪽 위 30°(공격 → 회피 → 패링 → 락온이 엄지 둘레의 부채꼴). 돌리기 줄은 그 위로 비켜 선다.
+    let pa = std::f32::consts::PI / 6.0;
+    let parry = atk + vec2(-pa.cos(), -pa.sin()) * (atk_r + parry_r + r * 0.4);
+    let turn_y = lock.y - r * 0.5;
+    let cw_x = lock.x - (lock_r + turn_r + r * 1.4);
     let ccw_x = cw_x - (turn_r * 2.0 + r * 0.4);
     let mut b = vec![
         Button {
@@ -127,17 +135,22 @@ pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool) -> Vec<Button> {
             kind: Kind::Dodge,
         },
         Button {
+            center: parry,
+            radius: parry_r,
+            kind: Kind::Parry,
+        },
+        Button {
             center: lock,
             radius: lock_r,
             kind: Kind::Lock,
         },
         Button {
-            center: vec2(cw_x, lock.y),
+            center: vec2(cw_x, turn_y),
             radius: turn_r,
             kind: Kind::TurnRight,
         },
         Button {
-            center: vec2(ccw_x, lock.y),
+            center: vec2(ccw_x, turn_y),
             radius: turn_r,
             kind: Kind::TurnLeft,
         },
@@ -337,8 +350,8 @@ fn press(a: &mut Read, k: Kind) {
     match k {
         Kind::Attack => a.attack = true,
         Kind::Dodge => a.dodge = true,
+        Kind::Parry => a.parry = true,
         Kind::Lock => a.lock = true,
-        // 카메라가 오른쪽으로 돌면 땅은 화면에서 시계 방향(0017).
         Kind::TurnLeft => a.turn_left = true,
         Kind::TurnRight => a.turn_right = true,
         Kind::Pause => a.pause = true,
@@ -421,6 +434,20 @@ fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
             for dx in [-s * 0.45, s * 0.25] {
                 draw_line(c.x + dx, c.y - s * 0.6, c.x + dx + s * 0.6, c.y, th, col);
                 draw_line(c.x + dx + s * 0.6, c.y, c.x + dx, c.y + s * 0.6, th, col);
+            }
+        }
+        Kind::Parry => {
+            // 방패: 위가 넓고 아래가 뾰족한 오각형 윤곽.
+            let pts = [
+                vec2(-0.7, -0.75),
+                vec2(0.7, -0.75),
+                vec2(0.7, 0.05),
+                vec2(0.0, 0.85),
+                vec2(-0.7, 0.05),
+            ];
+            for i in 0..pts.len() {
+                let (p, q) = (c + pts[i] * s, c + pts[(i + 1) % pts.len()] * s);
+                draw_line(p.x, p.y, q.x, q.y, th, col);
             }
         }
         Kind::Lock => {

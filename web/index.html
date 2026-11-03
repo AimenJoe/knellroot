@@ -24,6 +24,13 @@
         importObject.env.knell_coarse_pointer = function () {
           try { return window.matchMedia("(pointer: coarse)").matches ? 1 : 0; } catch (e) { return 0; }
         };
+        // 설정 저장(src/prefs.rs, 0024): 정수 칸 i ↔ localStorage "knell.pref.i". 없으면 0. 막히면(사생활 보호 모드 등) 저장하지 않는다.
+        importObject.env.knell_pref_get = function (i) {
+          try { var v = parseInt(window.localStorage.getItem("knell.pref." + i), 10); return isNaN(v) ? 0 : (v >>> 0); } catch (e) { return 0; }
+        };
+        importObject.env.knell_pref_set = function (i, v) {
+          try { window.localStorage.setItem("knell.pref." + i, String(v >>> 0)); } catch (e) {}
+        };
       }
     });
     load("knellroot.wasm");

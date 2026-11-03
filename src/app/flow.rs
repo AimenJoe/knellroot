@@ -14,6 +14,10 @@ pub enum Scene {
     Result {
         won: bool,
     },
+    /// 조작 설정(0024). `from_pause`면 뒤로 = 멈춤, 아니면 타이틀.
+    Controls {
+        from_pause: bool,
+    },
     /// 개발 시나리오(PoC 아레나). 개발판에만.
     #[cfg(feature = "dev")]
     Sandbox,
@@ -22,7 +26,10 @@ pub enum Scene {
 impl Scene {
     /// 메뉴 입력을 받는 장면(터치는 탭만, 패드 십자키는 커서).
     pub fn is_menu(self) -> bool {
-        matches!(self, Scene::Title | Scene::Pause | Scene::Result { .. })
+        matches!(
+            self,
+            Scene::Title | Scene::Pause | Scene::Result { .. } | Scene::Controls { .. }
+        )
     }
 
     /// 월드가 도는 장면.
@@ -39,6 +46,7 @@ impl Scene {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TitleItem {
     Start,
+    Controls,
     Language,
     #[cfg(feature = "dev")]
     Sandbox,
@@ -49,7 +57,7 @@ pub enum TitleItem {
 
 pub fn title_items() -> Vec<TitleItem> {
     #[allow(unused_mut)]
-    let mut v = vec![TitleItem::Start, TitleItem::Language];
+    let mut v = vec![TitleItem::Start, TitleItem::Controls, TitleItem::Language];
     #[cfg(feature = "dev")]
     v.extend([TitleItem::SkipToGate, TitleItem::Sandbox]);
     v
@@ -58,11 +66,17 @@ pub fn title_items() -> Vec<TitleItem> {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PauseItem {
     Resume,
+    Controls,
     Restart,
     ToTitle,
 }
 
-pub const PAUSE_ITEMS: [PauseItem; 3] = [PauseItem::Resume, PauseItem::Restart, PauseItem::ToTitle];
+pub const PAUSE_ITEMS: [PauseItem; 4] = [
+    PauseItem::Resume,
+    PauseItem::Controls,
+    PauseItem::Restart,
+    PauseItem::ToTitle,
+];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ResultItem {
@@ -84,10 +98,12 @@ pub fn after_stage(out: StageOut) -> Option<Scene> {
 /// 끝 장면을 이만큼(초) 보여 준 뒤 결과 창.
 pub const ENDING_TIME: f32 = 1.6;
 
-/// 뒤로(B·Esc): 멈춤 → 계속, 결과·타이틀은 그대로.
+/// 뒤로(B·Esc): 멈춤 → 계속, 조작 설정 → 온 곳, 결과·타이틀은 그대로.
 pub fn back(scene: Scene) -> Scene {
     match scene {
         Scene::Pause => Scene::Play,
+        Scene::Controls { from_pause: true } => Scene::Pause,
+        Scene::Controls { from_pause: false } => Scene::Title,
         s => s,
     }
 }
@@ -105,6 +121,7 @@ pub fn pause(scene: Scene) -> Scene {
 pub fn choose_pause(item: PauseItem) -> (Scene, bool) {
     match item {
         PauseItem::Resume => (Scene::Play, false),
+        PauseItem::Controls => (Scene::Controls { from_pause: true }, false),
         PauseItem::Restart => (Scene::Play, true),
         PauseItem::ToTitle => (Scene::Title, true),
     }
@@ -155,5 +172,13 @@ mod tests {
         assert_eq!(choose_pause(PauseItem::ToTitle), (Scene::Title, true));
         assert_eq!(choose_result(ResultItem::Retry), (Scene::Play, true));
         assert_eq!(title_items()[0], TitleItem::Start);
+        assert_eq!(
+            choose_pause(PauseItem::Controls),
+            (Scene::Controls { from_pause: true }, false),
+            "the run is kept"
+        );
+        assert_eq!(back(Scene::Controls { from_pause: true }), Scene::Pause);
+        assert_eq!(back(Scene::Controls { from_pause: false }), Scene::Title);
+        assert!(Scene::Controls { from_pause: true }.is_menu());
     }
 }

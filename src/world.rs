@@ -107,6 +107,14 @@ pub enum Event {
     Rouse {
         at: Vec3,
     },
+    /// 패링 성공(0025): 적의 근접 공격을 튕겼다.
+    Parry {
+        at: Vec3,
+    },
+    /// 패링으로 드러난 적에게 치명타(0025).
+    Crit {
+        at: Vec3,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -126,6 +134,10 @@ pub enum PState {
     Hurt {
         t: f32,
         dur: f32,
+    },
+    /// 패링(0025): `parry.window s` 동안 앞쪽 근접 공격을 튕긴다. 헛치면 `parry.time s`까지 못 움직인다. 튕기면 바로 풀린다.
+    Parry {
+        t: f32,
     },
     /// 땅 돌리기: 발을 딛고 비튼다(`turn.plant s` 동안 못 움직인다 — 공짜가 아니다). 그동안 몸이 `from` → `to`(요)로 돈다(0023).
     Turn {
@@ -155,6 +167,8 @@ pub struct Player {
     pub stun_chain: i32,
     /// 마지막 쏟음(땅 돌리기가 멈춘 순간)에서 지난 초 — 렌더의 쟁반 테.
     pub since_spill: f32,
+    /// 마지막 패링 성공에서 지난 초(렌더의 번쩍임).
+    pub since_parry: f32,
     pub swings: u32,
 }
 
@@ -218,6 +232,7 @@ impl World {
                 stamina_denied: 0.0,
                 stun_chain: 0,
                 since_spill: f32::MAX,
+                since_parry: f32::MAX,
                 swings: 0,
             },
             enemies: Vec::new(),
@@ -276,6 +291,11 @@ impl World {
         }
     }
 
+    /// 패링 창이 열려 있나(0025).
+    pub fn parry_open(&self, t: &Tuning) -> bool {
+        matches!(self.player.state, PState::Parry { t: e } if e < t[P::ParryWindow])
+    }
+
     #[cfg(test)]
     pub fn basis(&self) -> Basis {
         match self.lock_target() {
@@ -297,6 +317,7 @@ impl World {
                 move_dir: a.move_dir,
                 attack: self.held.attack | a.attack,
                 dodge: self.held.dodge | a.dodge,
+                parry: self.held.parry | a.parry,
                 lock: self.held.lock | a.lock,
                 turn_right: self.held.turn_right | a.turn_right,
                 turn_left: self.held.turn_left | a.turn_left,
@@ -313,6 +334,7 @@ impl World {
         let merged = Actions {
             attack: a.attack | held.attack,
             dodge: a.dodge | held.dodge,
+            parry: a.parry | held.parry,
             lock: a.lock | held.lock,
             turn_right: a.turn_right | held.turn_right,
             turn_left: a.turn_left | held.turn_left,
@@ -430,7 +452,7 @@ impl World {
         };
         // 공격 자동 조준(0014): 락온이 아니면 휘두르는 순간 `aim.auto range m` 안의 가장 가까운 적을 본다.
         // 조준 스틱을 쥐고 있으면 그 쪽 `aim.auto cone deg` 안에서만 고른다(멀리 있는 적을 일부러 겨눌 수 있게).
-        let auto_dir = if target.is_none() && a.attack {
+        let auto_dir = if target.is_none() && (a.attack || a.parry) {
             nearest_in_reach(
                 &self.enemies,
                 self.player.pos,
@@ -443,6 +465,7 @@ impl World {
         let pl = &mut self.player;
         pl.hurt = (pl.hurt - dt).max(0.0);
         pl.dodge_cd = (pl.dodge_cd - dt).max(0.0);
+        pl.since_parry = (pl.since_parry + dt).min(f32::MAX);
         // 스태미나: 마지막으로 쓴 뒤 `stamina.regen delay s`가 지나야 찬다.
         pl.stamina_denied = (pl.stamina_denied - dt).max(0.0);
         pl.stamina_idle += dt;
@@ -505,6 +528,12 @@ impl World {
                     };
                     pl.state = PState::Dodge { t: 0.0, dir };
                     pl.dodge_cd = t[P::DodgeTime] + 0.15;
+                } else if a.parry && spend(pl, t[P::ParryStamina]) {
+                    // 패링(0025): 가까운 적 쪽으로 돌아서 막는다(공격 자동 조준과 같은 고르기).
+                    if let Some(d) = auto_dir.or(aim) {
+                        pl.facing = d.x.atan2(d.z);
+                    }
+                    pl.state = PState::Parry { t: 0.0 };
                 } else if a.attack && !a.dodge && spend(pl, t[P::StaminaAttack]) {
                     pl.swings += 1;
                     // 휘두르는 쪽을 그 자리에서 정한다: 자동 조준 > 조준 스틱 > 지금 바라보는 쪽.
@@ -554,6 +583,14 @@ impl World {
                     };
                     pl.state = PState::Dodge { t: 0.0, dir };
                     pl.dodge_cd = t[P::DodgeTime] + 0.15;
+                } else if a.parry
+                    && e >= t[P::AttackStartup] + t[P::AttackActive]
+                    && spend(pl, t[P::ParryStamina])
+                {
+                    if let Some(d) = auto_dir.or(aim) {
+                        pl.facing = d.x.atan2(d.z);
+                    }
+                    pl.state = PState::Parry { t: 0.0 };
                 } else if e + dt >= total {
                     pl.state = PState::Idle;
                 } else {
@@ -570,6 +607,13 @@ impl World {
                 } else {
                     pl.state = PState::Dodge { t: e + dt, dir };
                 }
+            }
+            PState::Parry { t: e } => {
+                pl.state = if e + dt >= t[P::ParryTime] {
+                    PState::Idle
+                } else {
+                    PState::Parry { t: e + dt }
+                };
             }
             PState::Turn { t: e, from, to } => {
                 let e2 = e + dt;
@@ -601,7 +645,7 @@ impl World {
             PState::Hurt { .. } => {
                 pl.vel *= (1.0 - KNOCK_DECAY * dt).max(0.0);
             }
-            PState::Turn { .. } => pl.vel = Vec3::ZERO,
+            PState::Turn { .. } | PState::Parry { .. } => pl.vel = Vec3::ZERO,
             PState::Idle => {
                 let want = world_move * t[P::MoveSpeed];
                 let diff = want - pl.vel;
@@ -617,7 +661,13 @@ impl World {
 
         // 바라보기: 락온이면 대상, 조준 스틱을 쥐면 그 쪽(움직이며 다른 쪽을 볼 수 있다, 0014), 아니면 이동 방향. 스윙 중엔 고정.
         let want_yaw = match (basis, pl.state) {
-            (_, PState::Attack { .. } | PState::Turn { .. } | PState::Hurt { .. }) => None,
+            (
+                _,
+                PState::Attack { .. }
+                | PState::Turn { .. }
+                | PState::Hurt { .. }
+                | PState::Parry { .. },
+            ) => None,
             (Basis::Lock(tg), _) => {
                 let d = tg - pl.pos;
                 Some(d.x.atan2(d.z))
@@ -670,7 +720,15 @@ impl World {
                 continue;
             }
             en.hit_by = swing;
-            en.hp -= 1;
+            // 패링으로 드러난 적은 한 대가 치명타(0025).
+            let crit = en.exposed > 0.0;
+            en.hp -= 1 + if crit { t[P::ParryCrit] as i32 } else { 0 };
+            if crit {
+                en.exposed = 0.0;
+                ev.push(Event::Crit {
+                    at: en.pos + Vec3::Y * en.height * 0.6,
+                });
+            }
             en.hurt = 0.15;
             en.knock = dir * t[P::Knockback] * if en.boss { 0.25 } else { 1.0 };
             ev.push(Event::Hit {
@@ -754,18 +812,68 @@ impl World {
 
     fn tick_enemies(&mut self, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
         let p = self.player.pos;
+        let parrying = self.parry_open(t);
+        let facing = self.player.facing_dir();
+        // 앞쪽에서 오는가(패링은 바라보는 쪽 반원 안만 — 위치 선정도 기술, KB timing-parry).
+        let in_front = |at: Vec3| {
+            let d = vec3(at.x - p.x, 0.0, at.z - p.z).normalize_or_zero();
+            d.dot(facing) > PARRY_FRONT
+        };
         // 플레이어를 친 적의 자리(첫 하나) — 밀려나는 쪽.
         let mut hurt_player: Option<Vec3> = None;
-        for en in &mut self.enemies {
+        let mut parried: Vec<usize> = Vec::new();
+        for (i, en) in self.enemies.iter_mut().enumerate() {
             let out = en.tick(p, dt);
             if out.hit {
-                hurt_player.get_or_insert(en.pos);
+                if parrying && en.parryable() && in_front(en.pos) {
+                    parried.push(i);
+                } else {
+                    hurt_player.get_or_insert(en.pos);
+                }
             }
             if out.roused {
                 ev.push(Event::Rouse {
                     at: en.pos + Vec3::Y * en.height * 0.6,
                 });
             }
+        }
+        // 곧게 오는 돌진은 닿기 조금 앞(`parry.reach m`)에서부터 받는다(nail PARRY_REACH 0258).
+        if parrying {
+            for (i, en) in self.enemies.iter().enumerate() {
+                if let EState::Charge { dir, .. } = en.state {
+                    let to = vec3(p.x - en.pos.x, 0.0, p.z - en.pos.z);
+                    let near = to.length() <= en.radius + PLAYER_RADIUS + t[P::ParryReach];
+                    let coming = dir.dot(to.normalize_or_zero()) > 0.5;
+                    if !en.landed && near && coming && in_front(en.pos) && !parried.contains(&i) {
+                        parried.push(i);
+                    }
+                }
+            }
+        }
+        if !parried.is_empty() {
+            for &i in &parried {
+                let en = &mut self.enemies[i];
+                let dur = if en.boss {
+                    t[P::ParryBossStagger]
+                } else {
+                    t[P::ParryStagger]
+                };
+                let away = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z).normalize_or_zero();
+                en.landed = true;
+                en.state = EState::Stagger { t: 0.0, dur };
+                en.exposed = dur;
+                en.knock = away * PARRY_PUSH * KNOCK_DECAY * if en.boss { 0.3 } else { 1.0 };
+                en.sway = away * 0.8;
+                en.sway_t = 0.0;
+                ev.push(Event::Parry {
+                    at: en.pos + Vec3::Y * en.height * 0.6,
+                });
+            }
+            // 튕기면 곧바로 움직일 수 있다(반격하라고) — 세상은 한 박자 멈춘다(명중보다 크게, KB).
+            self.player.state = PState::Idle;
+            self.player.since_parry = 0.0;
+            self.hitstop = self.hitstop.max(t[P::Hitstop] * PARRY_HITSTOP);
+            // 같은 틱에 다른 적에게 맞은 것은 그대로 맞는다(떼 속 패링은 하나만 막는다).
         }
         if let (Some(from), false) = (hurt_player, self.player.invulnerable()) {
             let pl = &mut self.player;
@@ -928,6 +1036,13 @@ fn angle_diff(a: f32, b: f32) -> f32 {
     }
     d
 }
+
+/// 패링: 바라보는 쪽과 적 쪽의 내적이 이보다 커야 막는다(≈ 앞 156°).
+const PARRY_FRONT: f32 = 0.2;
+/// 튕긴 적을 미는 거리(m).
+const PARRY_PUSH: f32 = 0.8;
+/// 패링 성공의 히트스톱 = 타격 히트스톱 × 이만큼(명중보다 크게).
+const PARRY_HITSTOP: f32 = 2.5;
 
 /// 이보다 빠르게(m/s) 움직이던 중이면 입력을 놓았어도 그 쪽으로 내딛는다.
 const LUNGE_MOVING: f32 = 1.0;
@@ -1181,6 +1296,166 @@ mod tests {
         let ev = w.step(&Actions::default(), &t);
         assert!(!ev.contains(&Event::PlayerHurt));
         assert_eq!(w.player.hp, PLAYER_HP);
+    }
+
+    /// 패링 시험용: 잡몹 하나를 플레이어 바로 앞(-z)에 두고 내려치기를 막 휘두르게.
+    fn mob_swinging_in_front(t: &Tuning) -> World {
+        let mut w = World::new("test", 20.0);
+        w.spawn_mob(vec3(0.0, 0.0, -1.2));
+        let en = &mut w.enemies[0];
+        en.facing = 0.0; // +z = 플레이어 쪽
+        en.atk = Atk::Smash;
+        en.state = EState::Tele { t: en.tele_dur() };
+        w.player.facing = std::f32::consts::PI; // -z = 적 쪽
+        let _ = t;
+        w
+    }
+
+    /// 0025: 창 안에 앞에서 오는 근접 공격은 튕긴다 — 피해 없음, 적은 휘청·드러남, 플레이어는 바로 풀린다.
+    #[test]
+    fn a_parry_in_the_window_deflects_a_blow_from_the_front() {
+        let t = Tuning::default();
+        let mut w = mob_swinging_in_front(&t);
+        let mut ev = w.step(
+            &Actions {
+                parry: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        for _ in 0..30 {
+            if ev.iter().any(|e| matches!(e, Event::Parry { .. })) {
+                break;
+            }
+            ev = w.step(&Actions::default(), &t);
+        }
+        assert!(
+            ev.iter().any(|e| matches!(e, Event::Parry { .. })),
+            "parried"
+        );
+        assert_eq!(w.player.hp, PLAYER_HP);
+        assert!(matches!(w.enemies[0].state, EState::Stagger { .. }));
+        assert!(w.enemies[0].exposed > 0.0);
+        assert_eq!(w.player.state, PState::Idle, "free to riposte");
+    }
+
+    #[test]
+    fn a_parry_does_not_cover_your_back_or_a_root_wave() {
+        let t = Tuning::default();
+        // 등 뒤.
+        let mut w = mob_swinging_in_front(&t);
+        w.player.facing = 0.0; // 적을 등진다
+        w.player.state = PState::Parry { t: 0.0 };
+        let mut hurt = false;
+        for _ in 0..30 {
+            hurt |= w.step(&Actions::default(), &t).contains(&Event::PlayerHurt);
+        }
+        assert!(hurt, "a blow from behind lands");
+        // 파동(못 받는 공격).
+        let mut w = world_with_boss();
+        let en = &mut w.enemies[0];
+        en.pos = vec3(0.0, 0.0, -2.0);
+        en.atk = Atk::Wave;
+        en.state = EState::Wave { t: 0.0 };
+        en.landed = false;
+        w.player.facing = std::f32::consts::PI;
+        let mut hurt = false;
+        for _ in 0..60 {
+            if !matches!(w.player.state, PState::Parry { .. } | PState::Hurt { .. }) {
+                w.player.state = PState::Parry { t: 0.0 };
+            }
+            hurt |= w.step(&Actions::default(), &t).contains(&Event::PlayerHurt);
+        }
+        assert!(hurt, "the root wave cannot be parried");
+    }
+
+    /// 헛치면 `parry.time s`까지 묶인다(연타가 공짜가 되지 않게) — 스태미나도 쓴다.
+    #[test]
+    fn a_whiffed_parry_roots_you_and_costs_stamina() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        let before = w.player.stamina;
+        w.step(
+            &Actions {
+                parry: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(matches!(w.player.state, PState::Parry { .. }));
+        assert!(w.player.stamina < before);
+        let mv = Actions {
+            move_dir: vec2(0.0, 1.0),
+            ..Default::default()
+        };
+        let start = w.player.pos;
+        for _ in 0..((t[P::ParryTime] / TICK_DT) as usize - 2) {
+            w.step(&mv, &t);
+        }
+        assert!(
+            (w.player.pos - start).length() < 1e-4,
+            "rooted while recovering"
+        );
+        for _ in 0..6 {
+            w.step(&mv, &t);
+        }
+        assert_eq!(w.player.state, PState::Idle);
+    }
+
+    /// 곧게 오는 돌진은 몸에 닿기 전(`parry.reach m`)에 받는다.
+    #[test]
+    fn a_charge_is_parried_just_before_it_lands() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.spawn(Kind::Thorn, vec3(0.0, 0.0, -3.0));
+        let en = &mut w.enemies[0];
+        en.atk = Atk::Charge;
+        en.state = EState::Charge {
+            t: 0.0,
+            dir: vec3(0.0, 0.0, 1.0),
+        };
+        en.facing = 0.0;
+        w.player.facing = std::f32::consts::PI;
+        let mut parried = false;
+        for _ in 0..40 {
+            let near = (w.enemies[0].pos - w.player.pos).length()
+                < 0.45 + PLAYER_RADIUS + t[P::ParryReach];
+            let a = Actions {
+                parry: near && !matches!(w.player.state, PState::Parry { .. }),
+                ..Default::default()
+            };
+            let ev = w.step(&a, &t);
+            if ev.iter().any(|e| matches!(e, Event::Parry { .. })) {
+                parried = true;
+                break;
+            }
+        }
+        assert!(parried);
+        assert_eq!(w.player.hp, PLAYER_HP);
+    }
+
+    /// 드러난 적에게는 한 대가 치명타(+`parry.crit`), 그 뒤엔 보통.
+    #[test]
+    fn an_exposed_enemy_takes_a_critical_hit_once() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.spawn_boss(vec3(0.0, 0.0, -1.5));
+        idle(&mut w);
+        w.enemies[0].exposed = 1.0;
+        let hp = w.enemies[0].hp;
+        let mut ev = w.step(
+            &Actions {
+                attack: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        for _ in 0..30 {
+            ev.extend(w.step(&Actions::default(), &t));
+        }
+        assert!(ev.iter().any(|e| matches!(e, Event::Crit { .. })));
+        assert_eq!(w.enemies[0].hp, hp - 1 - t[P::ParryCrit] as i32);
+        assert_eq!(w.enemies[0].exposed, 0.0);
     }
 
     /// 0023: 버튼 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면(화면 위)이 되고, 캐릭터도 그쪽을 본다.

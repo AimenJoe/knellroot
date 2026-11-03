@@ -22,7 +22,7 @@
 **프로젝트 기록(TODO·실험 결과·결정)은 이 레포에, 프로젝트가 사라져도 유용한 지식은 KB에**(KB `CLAUDE.md` 규칙: frontmatter·verified·지도·`tools/kb.py check && index`).
 
 ## 코드 규칙(첫 게임에서 가져옴 — KB `second-game-project-day-one`)
-- 입력은 `Actions`만. `KeyCode`·패드 버튼은 `input.rs` 밖에 없다(터치는 `touch.rs`, `input.rs`만 부른다, 0006). Android 패드는 패치한 miniquad(`third_party/miniquad`, `[patch.crates-io]`, nail에서 가져옴)가 버튼을 F13~F24 키로·스틱을 `joystick_axes`로 넘긴다 — miniquad를 올리면 `PATCHED.md`대로 다시 넣고 `cargo test`의 `android_*`를 본다(0022). 커밋 전에 `cargo clippy --target aarch64-linux-android -- -D warnings`(NDK 없이 됨). 눌림은 래치, 틱이 소비. 터치 버튼 자리를 바꾸면 `tools/test/touch.js`의 `layout()`도.
+- 입력은 `Actions`만. `KeyCode`·패드 버튼은 `input.rs` 밖에 없다(터치는 `touch.rs`, `input.rs`만 부른다, 0006). Android 패드는 패치한 miniquad(`third_party/miniquad`, `[patch.crates-io]`, nail에서 가져옴)가 버튼을 F13~F24 키로·스틱을 `joystick_axes`로 넘긴다 — miniquad를 올리면 `PATCHED.md`대로 다시 넣고 `cargo test`의 `android_*`를 본다(0022). 커밋 전에 `cargo clippy --target aarch64-linux-android -- -D warnings`(NDK 없이 됨). 게임 동작의 키·버튼은 `input::Bindings`(설정에서 바꿈, 0024 — 소울라이크식, 공격만 X·J), 화면에 버튼 이름을 쓸 때는 `input::prompt(Act)`(지금 장치·지금 배치) — 글에 키 이름을 박지 않는다. 설정 저장은 `prefs.rs`(웹 localStorage·네이티브 `prefs.txt`, 칸을 뒤에만 붙인다). 눌림은 래치, 틱이 소비. 터치 버튼 자리를 바꾸면 `tools/test/touch.js`의 `layout()`도.
 - 로직 고정 60Hz(`TICK_DT`), 렌더는 보간. 히트스톱은 로직 시계만(`World::hitstop`).
 - 수치는 `tuning.rs` 한 곳. 랩이 바꾸는 값은 `P` + `SPECS` 한 줄씩. 랩의 export를 붙여 넣는 곳도 여기. 코드에 타별 숫자 금지.
 - `world.rs`는 카메라·소리·메뉴를 모른다. `Basis`(입력 기준)와 `Event`로만 바깥과 만난다. 틱은 단계 메서드 순서(`tick_lock → tick_player → apply_strike → apply_turn → tick_enemies → collide → cleanup`) — 새 메커닉은 맞는 단계에.

@@ -2,6 +2,7 @@
 //! 월드는 메뉴를 모르고, 스테이지(`stage`)는 월드를 지켜보며 진행만 하고, 앱이 둘을 묶어 카메라·그림·글로 보낸다.
 //!
 //! 루프: 프레임마다 입력 폴링 → 고정 60Hz 틱 N번(장면 → 월드 → 스테이지 → 카메라) → 가변 렌더(보간) → 글·메뉴(화면 패스).
+pub mod controls;
 pub mod flow;
 
 use macroquad::prelude::*;
@@ -22,7 +23,7 @@ use crate::world::{Event, World};
 use flow::{PauseItem, ResultItem, Scene, TitleItem};
 
 /// 타이틀 메뉴 첫 줄의 자리(화면 높이 비율) — `tools/test/touch.js`가 같은 값으로 탭한다.
-const TITLE_MENU_Y: f32 = 0.42;
+const TITLE_MENU_Y: f32 = 0.37;
 
 /// 지금 만든 스테이지(나중에 스테이지 고르기가 생기면 여기서 고른다).
 const FIRST_STAGE: &StageDef = &sanctuary::DEF;
@@ -46,6 +47,9 @@ pub struct App {
     acc: f32,
     /// 개발 줄(F3).
     dev_overlay: bool,
+    /// 조작 설정 화면(0024)과 지난 프레임의 칸 자리(탭: (자리, 줄, 칸)).
+    ctl: controls::Controls,
+    ctl_rects: Vec<(Rect, usize, usize)>,
     perf: Perf,
     sums: (f64, f64, f64, u32),
 }
@@ -53,6 +57,13 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let t = Tuning::default();
+        // 저장한 설정(0024): 언어·키 배치.
+        if let Some(p) = crate::prefs::load() {
+            if let Some(l) = p.lang {
+                i18n::set_lang(l);
+            }
+            input::set_bindings(p.bindings);
+        }
         let (run, world) = StageRun::start(FIRST_STAGE);
         let cam = Camera::new(world.player.pos, &t);
         App {
@@ -72,6 +83,8 @@ impl App {
             ending: 0.0,
             acc: 0.0,
             dev_overlay: false,
+            ctl: controls::Controls::default(),
+            ctl_rects: Vec::new(),
             perf: Perf::default(),
             sums: (0.0, 0.0, 0.0, 0),
         }
@@ -84,10 +97,25 @@ impl App {
         self.cam = Camera::new(self.world.player.pos, &self.t);
     }
 
+    /// 설정을 저장한다(언어·키 배치를 바꿀 때마다).
+    fn save_prefs(&self) {
+        crate::prefs::save(&crate::prefs::Prefs {
+            lang: Some(i18n::lang()),
+            bindings: input::bindings(),
+        });
+    }
+
+    fn next_lang(&mut self) {
+        i18n::set_lang(i18n::lang().next());
+        self.save_prefs();
+    }
+
     fn go(&mut self, scene: Scene) {
         if scene != self.scene {
             self.cursor = 0;
             self.menu_rects.clear();
+            self.ctl = controls::Controls::default();
+            self.ctl_rects.clear();
         }
         self.scene = scene;
     }
@@ -150,7 +178,7 @@ impl App {
                 let items = flow::title_items();
                 let lang_row = items.iter().position(|i| *i == TitleItem::Language);
                 if (a.menu_left || a.menu_right) && Some(self.cursor) == lang_row {
-                    i18n::set_lang(i18n::lang().next());
+                    self.next_lang();
                 }
                 if let Some(i) = self.menu_pick(&a, items.len()) {
                     match items[i] {
@@ -158,7 +186,8 @@ impl App {
                             self.restart();
                             self.go(Scene::Play);
                         }
-                        TitleItem::Language => i18n::set_lang(i18n::lang().next()),
+                        TitleItem::Controls => self.go(Scene::Controls { from_pause: false }),
+                        TitleItem::Language => self.next_lang(),
                         #[cfg(feature = "dev")]
                         TitleItem::SkipToGate => {
                             self.restart();
@@ -190,6 +219,27 @@ impl App {
                         self.restart();
                     }
                     self.go(next);
+                }
+            }
+            Scene::Controls { .. } => {
+                let b = input::bindings();
+                let mut out = self.ctl.tick(&a, b, TICK_DT);
+                if self.ctl.capture.is_none() {
+                    if let Some(p) = a.tap {
+                        if let Some(&(_, row, col)) =
+                            self.ctl_rects.iter().find(|(r, _, _)| r.contains(p))
+                        {
+                            out = self.ctl.pick(row, col, b);
+                        }
+                    }
+                }
+                match out {
+                    controls::Out::Stay => {}
+                    controls::Out::Changed(nb) => {
+                        input::set_bindings(nb);
+                        self.save_prefs();
+                    }
+                    controls::Out::Back => self.go(flow::back(self.scene)),
                 }
             }
             Scene::Result { .. } => {
@@ -266,7 +316,8 @@ impl App {
         let (cam, t) = (&mut self.cam, &self.t);
         self.world.view_yaw = Some(cam.quarter_yaw_deg(t));
         use crate::tuning::{
-            SHAKE_DOWN, SHAKE_HIT, SHAKE_HURT, SHAKE_ROUSE, SHAKE_SLAM, SHAKE_TURN,
+            SHAKE_CRIT, SHAKE_DOWN, SHAKE_HIT, SHAKE_HURT, SHAKE_PARRY, SHAKE_ROUSE, SHAKE_SLAM,
+            SHAKE_TURN,
         };
         for e in self.world.step(a, t) {
             let kick = match e {
@@ -280,6 +331,8 @@ impl App {
                 }
                 Event::Slam { .. } => SHAKE_SLAM,
                 Event::Rouse { .. } => SHAKE_ROUSE,
+                Event::Parry { .. } => SHAKE_PARRY,
+                Event::Crit { .. } => SHAKE_CRIT,
                 Event::Swing | Event::LockOn | Event::LockOff => 0.0,
             };
             cam.trauma = (cam.trauma + kick).min(1.0);
@@ -337,6 +390,7 @@ impl App {
                 self.draw_pause(&f);
             }
             Scene::Result { won } => self.draw_result(&f, won),
+            Scene::Controls { .. } => self.draw_controls(&f),
             #[cfg(feature = "dev")]
             Scene::Sandbox => hud::draw(&self.ui, &f, &self.world, None),
         }
@@ -406,16 +460,25 @@ impl App {
         );
     }
 
+    /// 키 안내 한 줄(지금 장치·지금 배치의 글자, 0024).
+    fn hint_line(&self, pairs: &[(Act, &str)], cx: f32, y: f32) {
+        let named: Vec<(String, &str)> =
+            pairs.iter().map(|(a, v)| (input::prompt(*a), *v)).collect();
+        let refs: Vec<(&str, &str)> = named.iter().map(|(k, v)| (k.as_str(), *v)).collect();
+        self.ui.hints(&refs, cx, y);
+    }
+
     fn controls_hint(&self, cx: f32, y: f32) {
         let s = s();
-        self.ui.hints(
+        self.hint_line(
             &[
-                (input::prompt(Act::Move), s.verb_move),
-                (input::prompt(Act::Attack), s.verb_attack),
-                (input::prompt(Act::Dodge), s.verb_dodge),
-                (input::prompt(Act::Turn), s.verb_turn),
-                (input::prompt(Act::Lock), s.verb_lock),
-                (input::prompt(Act::Pause), s.verb_pause),
+                (Act::Move, s.verb_move),
+                (Act::Attack, s.verb_attack),
+                (Act::Dodge, s.verb_dodge),
+                (Act::Parry, s.verb_parry),
+                (Act::Turn, s.verb_turn),
+                (Act::Lock, s.verb_lock),
+                (Act::Pause, s.verb_pause),
             ],
             cx,
             y,
@@ -424,11 +487,8 @@ impl App {
 
     fn menu_hint(&self, cx: f32, y: f32) {
         let s = s();
-        self.ui.hints(
-            &[
-                (input::prompt(Act::Choose), s.verb_choose),
-                (input::prompt(Act::Confirm), s.verb_confirm),
-            ],
+        self.hint_line(
+            &[(Act::Choose, s.verb_choose), (Act::Confirm, s.verb_confirm)],
             cx,
             y,
         );
@@ -446,6 +506,7 @@ impl App {
             .iter()
             .map(|i| match i {
                 TitleItem::Start => s.menu_start.to_string(),
+                TitleItem::Controls => s.menu_controls.to_string(),
                 TitleItem::Language => fill(s.menu_language, &[s.lang_name]),
                 // 개발 전용(영어 그대로, 0013).
                 #[cfg(feature = "dev")]
@@ -486,6 +547,7 @@ impl App {
             .map(|i| {
                 match i {
                     PauseItem::Resume => s.menu_resume,
+                    PauseItem::Controls => s.menu_controls,
                     PauseItem::Restart => s.menu_restart,
                     PauseItem::ToTitle => s.menu_to_title,
                 }
@@ -495,6 +557,80 @@ impl App {
         self.menu_rects = self.ui.menu(&items, self.cursor, cx, f.oy + f.h * 0.45);
         self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 3.4);
         self.controls_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.0);
+    }
+
+    /// 조작 설정(0024): 동작 | 키보드 | 패드 표, 고른 칸은 호박색, 기다리는 칸은 "누르세요… n".
+    fn draw_controls(&mut self, f: &Frame) {
+        let s = s();
+        self.ui.dim(0.7);
+        let cx = f.ox + f.w * 0.5;
+        let px = self.ui.px(1.0);
+        self.ui
+            .text_center(s.controls_title, cx, f.oy + f.h * 0.07, 2.0, INK);
+        let (x_name, x_key, x_pad) = (f.ox + f.w * 0.16, f.ox + f.w * 0.56, f.ox + f.w * 0.78);
+        let mut y = f.oy + f.h * 0.19;
+        self.ui.text_center(s.controls_keyboard, x_key, y, 1.0, DIM);
+        self.ui.text_center(s.controls_pad, x_pad, y, 1.0, DIM);
+        y += px * 1.4;
+        let b = input::bindings();
+        let gap = px * 1.32;
+        self.ctl_rects.clear();
+        let rows = controls::rows();
+        for (i, row) in rows.iter().enumerate() {
+            let sel = i == self.ctl.row;
+            match row {
+                controls::Row::Bind(bind) => {
+                    let name = match bind {
+                        input::Bind::Attack => s.verb_attack,
+                        input::Bind::Dodge => s.verb_dodge,
+                        input::Bind::Parry => s.verb_parry,
+                        input::Bind::Lock => s.verb_lock,
+                        input::Bind::TurnLeft => s.verb_turn_left,
+                        input::Bind::TurnRight => s.verb_turn_right,
+                    };
+                    self.ui
+                        .text(name, x_name, y, 1.0, if sel { AMBER } else { INK });
+                    for (col, x) in [(0usize, x_key), (1usize, x_pad)] {
+                        let on = sel && self.ctl.col == col;
+                        let label = match (on, self.ctl.capture) {
+                            (true, Some(left)) => {
+                                fill(s.controls_press, &[&format!("{}", left.ceil() as i32)])
+                            }
+                            _ if col == 0 => input::key_name(b.keys[*bind as usize]).to_string(),
+                            _ => b.pad(*bind).name().to_string(),
+                        };
+                        let w = self.ui.width(&label, 1.0).max(px * 3.0);
+                        let r = Rect::new(x - w * 0.5 - px * 0.5, y - px * 0.2, w + px, px * 1.4);
+                        if on {
+                            draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.88, 0.6, 0.23, 0.18));
+                        }
+                        self.ui
+                            .text_center(&label, x, y, 1.0, if on { AMBER } else { INK });
+                        self.ctl_rects.push((r, i, col));
+                    }
+                }
+                controls::Row::Reset | controls::Row::Back => {
+                    let label = if *row == controls::Row::Reset {
+                        s.controls_reset
+                    } else {
+                        s.controls_back
+                    };
+                    let yy = y + px * 0.4;
+                    let w = self.ui.width(label, 1.0);
+                    let r = Rect::new(cx - w * 0.5 - px, yy - px * 0.2, w + px * 2.0, px * 1.4);
+                    if sel {
+                        draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.88, 0.6, 0.23, 0.18));
+                    }
+                    self.ui
+                        .text_center(label, cx, yy, 1.0, if sel { AMBER } else { INK });
+                    self.ctl_rects.push((r, i, 0));
+                }
+            }
+            y += gap;
+        }
+        self.ui
+            .text_center(s.controls_fixed, cx, f.oy + f.h - px * 3.2, 1.0, DIM);
+        self.menu_hint(cx, f.oy + f.h - px * 1.8);
     }
 
     fn draw_result(&mut self, f: &Frame, won: bool) {

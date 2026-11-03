@@ -19,6 +19,8 @@ use macroquad::prelude::*;
 #[cfg(not(target_os = "android"))]
 use gamepads::{Button, Gamepads};
 
+use std::sync::Mutex;
+
 use crate::touch::{Overlay, Touch};
 use crate::tuning;
 
@@ -77,6 +79,8 @@ pub struct Actions {
     pub aim: Vec2,
     pub attack: bool,
     pub dodge: bool,
+    /// 패링(0025): 누른 뒤 짧은 창 안에 앞쪽에서 오는 근접 공격을 튕긴다.
+    pub parry: bool,
     pub lock: bool,
     /// 땅 돌리기 오른쪽·왼쪽 버튼(0012·0023): 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면이 되게 몸과 화면이 돈다
     /// (`world::plan_turn` — 화면이 몇 칸 도는지는 캐릭터가 바라보는 쪽으로 정한다).
@@ -106,14 +110,18 @@ pub struct Actions {
     pub tap: Option<Vec2>,
     /// 개발: 측정·안내 줄 켜고 끄기(F3).
     pub dev_overlay: bool,
+    /// 키 다시 붙이기(0024): 이번에 처음 눌린, 배치표에 올릴 수 있는 키(`KEYS`의 자리)·패드 버튼(Start·Select 빼고).
+    pub pressed_key: Option<u8>,
+    pub pressed_pad: Option<Pad>,
 }
 
-/// 화면에 키 그림을 쓸 행동(글에 키 이름을 박지 않는다 — 지금 장치에 맞춰 여기서, nail 0036).
+/// 화면에 키 그림을 쓸 행동(글에 키 이름을 박지 않는다 — 지금 장치·지금 배치에서, nail 0036·0024).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Act {
     Move,
     Attack,
     Dodge,
+    Parry,
     Turn,
     Lock,
     Pause,
@@ -122,25 +130,190 @@ pub enum Act {
 }
 
 /// 지금 장치의 키 그림(ASCII — 글꼴 상관없이). 터치는 화면 버튼이 곧 안내라 빈 글.
-pub fn prompt(act: Act) -> &'static str {
+pub fn prompt(act: Act) -> String {
+    let b = bindings();
+    let name = |x: Bind| match device() {
+        Device::Pad => b.pad(x).name().to_string(),
+        _ => key_name(b.keys[x as usize]).to_string(),
+    };
     match (device(), act) {
-        (Device::Touch, _) => "",
-        (Device::Pad, Act::Move) => "LS",
-        (Device::Pad, Act::Attack) => "X",
-        (Device::Pad, Act::Dodge) => "A",
-        (Device::Pad, Act::Turn) => "LB/RB",
-        (Device::Pad, Act::Lock) => "R3",
-        (Device::Pad, Act::Pause) => "START",
-        (Device::Pad, Act::Choose) => "D-PAD",
-        (Device::Pad, Act::Confirm) => "A",
-        (Device::Keys, Act::Move) => "WASD",
-        (Device::Keys, Act::Attack) => "J",
-        (Device::Keys, Act::Dodge) => "K",
-        (Device::Keys, Act::Turn) => "Q/E",
-        (Device::Keys, Act::Lock) => "L",
-        (Device::Keys, Act::Pause) => "ESC",
-        (Device::Keys, Act::Choose) => "W/S",
-        (Device::Keys, Act::Confirm) => "ENTER",
+        (Device::Touch, _) => String::new(),
+        (_, Act::Attack) => name(Bind::Attack),
+        (_, Act::Dodge) => name(Bind::Dodge),
+        (_, Act::Parry) => name(Bind::Parry),
+        (_, Act::Lock) => name(Bind::Lock),
+        (_, Act::Turn) => format!("{}/{}", name(Bind::TurnLeft), name(Bind::TurnRight)),
+        (Device::Pad, Act::Move) => "LS".into(),
+        (Device::Pad, Act::Pause) => "START".into(),
+        (Device::Pad, Act::Choose) => "D-PAD".into(),
+        (Device::Pad, Act::Confirm) => "A".into(),
+        (_, Act::Move) => "WASD".into(),
+        (_, Act::Pause) => "ESC".into(),
+        (_, Act::Choose) => "W/S".into(),
+        (_, Act::Confirm) => "ENTER".into(),
+    }
+}
+
+/// 다시 붙일 수 있는 게임 동작(0024). 이동·확인·뒤로·멈춤은 고정 — 배치를 망쳐도 메뉴로 돌아올 길이 남게
+/// (KB concepts/controller-layout-and-remapping.md). 값 = 배치표의 자리(저장 칸 순서) — 바꾸지 않는다.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Bind {
+    Attack = 0,
+    Dodge = 1,
+    Parry = 2,
+    Lock = 3,
+    TurnLeft = 4,
+    TurnRight = 5,
+}
+
+pub const BINDS: [Bind; 6] = [
+    Bind::Attack,
+    Bind::Dodge,
+    Bind::Parry,
+    Bind::Lock,
+    Bind::TurnLeft,
+    Bind::TurnRight,
+];
+
+/// 배치표에 올릴 수 있는 키(저장 번호 = 이 표의 자리 — 뒤에만 붙인다). 이동(WASD·화살표)·Enter·Esc·Backspace·P(멈춤)·
+/// F1·F3(개발)·숫자(개발 시나리오)는 고정이라 없다.
+pub const KEYS: [(KeyCode, &str); 30] = [
+    (KeyCode::J, "J"),
+    (KeyCode::K, "K"),
+    (KeyCode::L, "L"),
+    (KeyCode::I, "I"),
+    (KeyCode::U, "U"),
+    (KeyCode::O, "O"),
+    (KeyCode::H, "H"),
+    (KeyCode::N, "N"),
+    (KeyCode::M, "M"),
+    (KeyCode::Q, "Q"),
+    (KeyCode::E, "E"),
+    (KeyCode::R, "R"),
+    (KeyCode::F, "F"),
+    (KeyCode::G, "G"),
+    (KeyCode::T, "T"),
+    (KeyCode::Y, "Y"),
+    (KeyCode::Z, "Z"),
+    (KeyCode::X, "X"),
+    (KeyCode::C, "C"),
+    (KeyCode::V, "V"),
+    (KeyCode::B, "B"),
+    (KeyCode::Space, "SPACE"),
+    (KeyCode::LeftShift, "SHIFT"),
+    (KeyCode::RightShift, "R-SHIFT"),
+    (KeyCode::Tab, "TAB"),
+    (KeyCode::LeftControl, "CTRL"),
+    (KeyCode::LeftAlt, "ALT"),
+    (KeyCode::Semicolon, ";"),
+    (KeyCode::Comma, ","),
+    (KeyCode::Period, "."),
+];
+
+fn key_index(k: KeyCode) -> u8 {
+    KEYS.iter().position(|(c, _)| *c == k).unwrap_or(0) as u8
+}
+
+pub fn key_name(i: u8) -> &'static str {
+    KEYS.get(i as usize).map_or("?", |k| k.1)
+}
+
+/// 동작 → (키 하나, 패드 버튼 하나). 겹치면 맞바꾼다(빈 동작이 생기지 않게).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Bindings {
+    pub keys: [u8; 6],
+    pub pads: [Pad; 6],
+}
+
+impl Bindings {
+    /// 기본(0024): 소울라이크식 — 회피 B·Space, 패링 LB, 땅 돌리기 LT·RT, 락온 R3. 공격만 X·J(사장: "공격만 우리식").
+    pub fn default_layout() -> Bindings {
+        Bindings {
+            keys: [
+                key_index(KeyCode::J),
+                key_index(KeyCode::Space),
+                key_index(KeyCode::K),
+                key_index(KeyCode::L),
+                key_index(KeyCode::Q),
+                key_index(KeyCode::E),
+            ],
+            pads: [Pad::West, Pad::East, Pad::L1, Pad::R3, Pad::L2, Pad::R2],
+        }
+    }
+
+    pub fn key(&self, b: Bind) -> KeyCode {
+        KEYS[(self.keys[b as usize] as usize).min(KEYS.len() - 1)].0
+    }
+
+    pub fn pad(&self, b: Bind) -> Pad {
+        self.pads[b as usize]
+    }
+
+    /// `b`에 키 `k`를 붙인다. 다른 동작이 쓰던 키면 그 동작은 `b`가 쓰던 키를 받는다.
+    pub fn set_key(&mut self, b: Bind, k: u8) {
+        let old = self.keys[b as usize];
+        if let Some(other) = self.keys.iter().position(|x| *x == k) {
+            self.keys[other] = old;
+        }
+        self.keys[b as usize] = k;
+    }
+
+    pub fn set_pad(&mut self, b: Bind, p: Pad) {
+        let old = self.pads[b as usize];
+        if let Some(other) = self.pads.iter().position(|x| *x == p) {
+            self.pads[other] = old;
+        }
+        self.pads[b as usize] = p;
+    }
+
+    /// 저장 칸(키 여섯 + 패드 여섯, 0 = 없음이라 1을 더한다).
+    pub fn encode(&self) -> [u32; 12] {
+        let mut v = [0u32; 12];
+        for i in 0..6 {
+            v[i] = self.keys[i] as u32 + 1;
+            v[6 + i] = PADS.iter().position(|p| *p == self.pads[i]).unwrap_or(0) as u32 + 1;
+        }
+        v
+    }
+
+    /// 칸이 비었거나(0) 범위 밖이거나 겹치면 기본값.
+    pub fn decode(v: &[u32]) -> Bindings {
+        let d = Bindings::default_layout();
+        if v.len() < 12 {
+            return d;
+        }
+        let mut b = d;
+        for i in 0..6 {
+            let (k, p) = (v[i], v[6 + i]);
+            if k == 0 || k as usize > KEYS.len() || p == 0 || p as usize > PADS.len() {
+                return d;
+            }
+            b.keys[i] = (k - 1) as u8;
+            b.pads[i] = PADS[(p - 1) as usize];
+        }
+        let dup = |xs: &[u8]| (0..xs.len()).any(|i| xs[i + 1..].contains(&xs[i]));
+        let pads: Vec<u8> = b.pads.iter().map(|p| *p as u8).collect();
+        if dup(&b.keys) || dup(&pads) {
+            return d;
+        }
+        b
+    }
+}
+
+static BINDINGS: Mutex<Option<Bindings>> = Mutex::new(None);
+
+/// 지금 배치(설정에서 바꾼다).
+pub fn bindings() -> Bindings {
+    BINDINGS
+        .lock()
+        .ok()
+        .and_then(|g| *g)
+        .unwrap_or_else(Bindings::default_layout)
+}
+
+pub fn set_bindings(b: Bindings) {
+    if let Ok(mut g) = BINDINGS.lock() {
+        *g = Some(b);
     }
 }
 
@@ -158,7 +331,6 @@ pub fn stick((x, y): (f32, f32)) -> Vec2 {
 
 /// 패드 버튼(위치 이름 — A·B 글자는 기기마다 다르다). 데스크톱·웹은 `gamepads` 크레이트, Android는 패치한 miniquad의 키.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
 pub enum Pad {
     South,
     East,
@@ -174,8 +346,7 @@ pub enum Pad {
     Select,
 }
 
-#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
-const PADS: [Pad; 12] = [
+pub const PADS: [Pad; 12] = [
     Pad::South,
     Pad::East,
     Pad::West,
@@ -189,6 +360,49 @@ const PADS: [Pad; 12] = [
     Pad::Start,
     Pad::Select,
 ];
+
+impl Pad {
+    /// 화면 글(Xbox 글자 — 위치 기준이라 닌텐도 패드는 A/B가 반대로 보인다, KB 함정).
+    pub fn name(self) -> &'static str {
+        match self {
+            Pad::South => "A",
+            Pad::East => "B",
+            Pad::West => "X",
+            Pad::North => "Y",
+            Pad::L1 => "LB",
+            Pad::R1 => "RB",
+            Pad::L2 => "LT",
+            Pad::R2 => "RT",
+            Pad::L3 => "LS",
+            Pad::R3 => "RS",
+            Pad::Start => "START",
+            Pad::Select => "SELECT",
+        }
+    }
+
+    /// 배치표에 올릴 수 있나(Start·Select는 멈춤·개발 랩으로 고정).
+    pub fn bindable(self) -> bool {
+        !matches!(self, Pad::Start | Pad::Select)
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn button(self) -> Button {
+        match self {
+            Pad::South => Button::ActionDown,
+            Pad::East => Button::ActionRight,
+            Pad::West => Button::ActionLeft,
+            Pad::North => Button::ActionUp,
+            Pad::L1 => Button::FrontLeftUpper,
+            Pad::R1 => Button::FrontRightUpper,
+            Pad::L2 => Button::FrontLeftLower,
+            Pad::R2 => Button::FrontRightLower,
+            Pad::L3 => Button::LeftStick,
+            Pad::R3 => Button::RightStick,
+            Pad::Start => Button::RightCenterCluster,
+            Pad::Select => Button::LeftCenterCluster,
+        }
+    }
+}
 
 /// Android: 패치한 miniquad가 패드 버튼 키코드(KEYCODE_BUTTON_*)를 쓰지 않는 F13~F24로 넘긴다(PATCHED.md).
 /// 시험이 패치 표와 맞는지 보려고 시험 빌드에서도 컴파일한다.
@@ -300,11 +514,19 @@ impl Input {
         if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
             m.y -= 1.0;
         }
-        a.attack = is_key_pressed(KeyCode::J) || is_key_pressed(KeyCode::Space);
-        a.dodge = is_key_pressed(KeyCode::K) || is_key_pressed(KeyCode::LeftShift);
-        a.lock = is_key_pressed(KeyCode::L) || is_key_pressed(KeyCode::Tab);
-        a.turn_left = is_key_pressed(KeyCode::Q);
-        a.turn_right = is_key_pressed(KeyCode::E);
+        // 게임 동작은 배치표에서(0024).
+        let bind = bindings();
+        let kp = |x: Bind| is_key_pressed(bind.key(x));
+        a.attack = kp(Bind::Attack);
+        a.dodge = kp(Bind::Dodge);
+        a.parry = kp(Bind::Parry);
+        a.lock = kp(Bind::Lock);
+        a.turn_left = kp(Bind::TurnLeft);
+        a.turn_right = kp(Bind::TurnRight);
+        a.pressed_key = KEYS
+            .iter()
+            .position(|(k, _)| is_key_pressed(*k))
+            .map(|i| i as u8);
         a.lab_toggle = is_key_pressed(KeyCode::F1);
         a.dev_overlay = is_key_pressed(KeyCode::F3);
         a.menu_up = is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W);
@@ -369,12 +591,20 @@ impl Input {
                 if pad.is_currently_pressed(Button::DPadDown) {
                     m.y -= 1.0;
                 }
-                a.attack |= pad.is_just_pressed(Button::ActionLeft);
-                a.dodge |= pad.is_just_pressed(Button::ActionDown);
-                a.lock |= pad.is_just_pressed(Button::RightStick);
-                a.turn_right |= pad.is_just_pressed(Button::FrontRightUpper);
-                // 랩이 열려 있으면 LB는 10배 단계다(누르고 십자) — 돌리기로 같이 읽지 않는다.
-                a.turn_left |= !lab_open && pad.is_just_pressed(Button::FrontLeftUpper);
+                let pj = |x: Bind| pad.is_just_pressed(bind.pad(x).button());
+                a.attack |= pj(Bind::Attack);
+                a.dodge |= pj(Bind::Dodge);
+                a.lock |= pj(Bind::Lock);
+                // 랩이 열려 있으면 어깨·트리거는 랩 단계(LB 10배·LT 담기·RT 바꾸기)다 — 패링·돌리기로 같이 읽지 않는다.
+                a.parry |= !lab_open && pj(Bind::Parry);
+                a.turn_left |= !lab_open && pj(Bind::TurnLeft);
+                a.turn_right |= !lab_open && pj(Bind::TurnRight);
+                if a.pressed_pad.is_none() {
+                    a.pressed_pad = PADS
+                        .iter()
+                        .copied()
+                        .find(|p| p.bindable() && pad.is_just_pressed(p.button()));
+                }
                 a.lab_toggle |= pad.is_just_pressed(Button::LeftCenterCluster);
                 a.lab_up |= pad.is_just_pressed(Button::DPadUp);
                 a.lab_down |= pad.is_just_pressed(Button::DPadDown);
@@ -414,11 +644,16 @@ impl Input {
                 used_pad = true;
             }
             let j = |p: Pad| is_key_pressed(p.key());
-            a.attack |= j(Pad::West);
-            a.dodge |= j(Pad::South);
-            a.lock |= j(Pad::R3);
-            a.turn_right |= j(Pad::R1);
-            a.turn_left |= !lab_open && j(Pad::L1);
+            let pj = |x: Bind| j(bind.pad(x));
+            a.attack |= pj(Bind::Attack);
+            a.dodge |= pj(Bind::Dodge);
+            a.lock |= pj(Bind::Lock);
+            a.parry |= !lab_open && pj(Bind::Parry);
+            a.turn_left |= !lab_open && pj(Bind::TurnLeft);
+            a.turn_right |= !lab_open && pj(Bind::TurnRight);
+            if a.pressed_pad.is_none() {
+                a.pressed_pad = PADS.iter().copied().find(|p| p.bindable() && j(*p));
+            }
             a.lab_toggle |= j(Pad::Select);
             a.lab_fast |= is_key_down(Pad::L1.key());
             a.lab_reset |= j(Pad::North);
@@ -443,6 +678,7 @@ impl Input {
         }
         a.attack |= t.attack;
         a.dodge |= t.dodge;
+        a.parry |= t.parry;
         a.lock |= t.lock;
         a.turn_right |= t.turn_right;
         a.turn_left |= t.turn_left;
@@ -478,6 +714,7 @@ impl Input {
             aim,
             attack: self.latch.attack | a.attack,
             dodge: self.latch.dodge | a.dodge,
+            parry: self.latch.parry | a.parry,
             lock: self.latch.lock | a.lock,
             turn_right: self.latch.turn_right | a.turn_right,
             turn_left: self.latch.turn_left | a.turn_left,
@@ -501,6 +738,8 @@ impl Input {
             pause: self.latch.pause | a.pause,
             tap: a.tap.or(self.latch.tap),
             dev_overlay: self.latch.dev_overlay | a.dev_overlay,
+            pressed_key: a.pressed_key.or(self.latch.pressed_key),
+            pressed_pad: a.pressed_pad.or(self.latch.pressed_pad),
         };
     }
 

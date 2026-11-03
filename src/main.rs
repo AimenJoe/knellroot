@@ -15,6 +15,7 @@ mod input;
 mod lab;
 mod model;
 mod models;
+mod prefs;
 mod render;
 #[cfg(feature = "dev")]
 mod scenario;
