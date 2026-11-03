@@ -586,9 +586,13 @@ impl World {
                     if let Some(d) = auto_dir.or(aim) {
                         pl.facing = d.x.atan2(d.z);
                     }
-                    // 내딛는 쪽은 누른 순간의 입력(없으면 휘두르는 쪽, 0018).
+                    // 내딛는 쪽 = 진행 방향(0018): 누른 순간의 이동 입력, 없으면 아직 움직이던 쪽, 서 있으면 바라보는 쪽.
+                    // 휘두르는 쪽(바라보는 쪽 — 자동 조준·조준 스틱)과는 따로다.
+                    let moving = vec3(pl.vel.x, 0.0, pl.vel.z);
                     let dir = if world_move.length_squared() > 1e-4 {
                         world_move.normalize()
+                    } else if moving.length() > LUNGE_MOVING {
+                        moving.normalize()
                     } else {
                         pl.facing_dir()
                     };
@@ -1026,6 +1030,9 @@ impl World {
         }
     }
 }
+
+/// 이보다 빠르게(m/s) 움직이던 중이면 입력을 놓았어도 그 쪽으로 내딛는다.
+const LUNGE_MOVING: f32 = 1.0;
 
 /// 조준 스틱이 이보다 세면 "겨누는 중".
 const AIM_STICK: f32 = 0.35;
@@ -1677,6 +1684,47 @@ mod tests {
             "{:?}",
             w.player.pos
         );
+    }
+
+    /// 진행 방향으로 내딛는다(0018): 옆으로 걷다 치면 옆으로 — 휘두르는 쪽(가까운 적)은 앞이어도. 입력을 막 놓아도 움직이던 쪽으로.
+    #[test]
+    fn the_lunge_follows_the_travel_direction_not_the_swing_direction() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.view_yaw = Some(0.0); // 화면 위 = -z, 오른쪽 = +x
+        w.spawn_mob(vec3(0.0, 0.0, -2.0)); // 앞에 적 → 휘두르는 쪽은 앞
+        w.enemies[0].state = EState::Recover { t: -1000.0 };
+        let right = Actions {
+            move_dir: vec2(1.0, 0.0),
+            ..Default::default()
+        };
+        for _ in 0..20 {
+            w.step(&right, &t);
+        }
+        let x0 = w.player.pos.x;
+        let to_enemy = (w.enemies[0].pos - w.player.pos).normalize();
+        // 입력을 놓는 틱에 공격: 아직 오른쪽으로 움직이던 중.
+        w.step(
+            &Actions {
+                attack: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(
+            w.player.facing_dir().dot(to_enemy) > 0.99,
+            "swing faces the enemy"
+        );
+        for _ in 0..12 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(
+            w.player.pos.x - x0 > t[P::AttackLunge] * 0.8,
+            "{} -> {}",
+            x0,
+            w.player.pos.x
+        );
+        assert!(w.player.pos.z.abs() < 0.05);
     }
 
     fn hit_by_swing(w: &mut World, t: &Tuning) -> Vec<Event> {

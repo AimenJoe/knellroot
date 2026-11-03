@@ -8,13 +8,13 @@
 - 연속 경직 줄이기는 격투 게임의 hitstun deterioration·MMO의 diminishing returns와 같은 생각(2차: SSBWiki·Warcraft wiki·gamedev.net 글). 스태미나 수치 근거는 찾지 못했다 — 랩 값으로 두고 판정에서 정한다.
 
 ## 결정
-- **공격 내딛기**: 누른 순간의 입력(이동 스틱) 쪽으로, 입력이 없으면 휘두르는 쪽으로 선딜 + 활성 동안 `attack.lunge m`(0.5m). 휘두르는 쪽(자동 조준)과 내딛는 쪽이 다를 수 있다. 예전: 선딜 동안 바라보는 쪽으로 3 m/s(코드 안 숫자, ≈ 0.24m).
+- **공격 내딛기 = 진행 방향**(사장: "앞뿐만 아니라 진행 방향, 공격 방향은 바라보는 방향이니"): 누른 순간의 이동 입력 → 없으면 아직 움직이던 쪽(1 m/s 넘게) → 서 있으면 바라보는 쪽으로, 선딜 + 활성 동안 `attack.lunge m`(0.5m). 휘두르는 쪽(바라보는 쪽 — 자동 조준·조준 스틱)과는 따로다. 예전: 선딜 동안 바라보는 쪽으로 3 m/s(코드 안 숫자, ≈ 0.24m).
 - **피격 경직**: `PState::Hurt`(`hurt.stun s` 0.35초) — 못 움직이고 못 친다, 때린 적 반대쪽으로 `hurt.knock m`(0.6m) 밀림. **경직 중에 또 맞으면 반**(0.35 → 0.175 → …), 풀린 뒤 맞으면 다시 처음 길이. 맞은 뒤 무적 `hurt.iframes s` 0.6 → **0.15초** — 0.6초면 경직(0.35초) 안에 다시 맞을 수 없어 "반씩 줄기"가 생길 수 없었다(떼에게 더 자주 맞는다 — P1·P3 판정에서 볼 것).
 - **스태미나**: 최대 100, 회피 30·공격 12, 마지막 사용 뒤 0.6초 쉬면 초당 45 회복. 조금이라도 있으면 행동은 된다(0까지 쓰고 끝, 소울류). 없으면 막히고 HUD 막대가 0.4초 붉게 깜빡인다. 땅 돌리기는 스태미나를 안 쓴다(대기가 따로 있다).
 - 랩 값 9개 추가(`attack.lunge m`·`hurt.*`·`stamina.*`, 기존 얼린 값은 그대로).
 
 ## 시험
-`an_attack_steps_toward_the_held_direction`, `a_hit_stuns_briefly_and_hits_during_the_stun_halve_it`(경직 중 이동 없음·반·풀린 뒤 처음 길이), `stamina_gates_dodges_and_comes_back_after_a_pause`.
+`an_attack_steps_toward_the_held_direction`, `the_lunge_follows_the_travel_direction_not_the_swing_direction`(옆으로 걷다 앞의 적을 치면 휘두르기는 적 쪽, 내딛기는 옆, 입력을 막 놓아도), `a_hit_stuns_briefly_and_hits_during_the_stun_halve_it`(경직 중 이동 없음·반·풀린 뒤 처음 길이), `stamina_gates_dodges_and_comes_back_after_a_pause`.
 
 ## 다시 볼 조건
 - 떼 속에서 경직이 답답하면 `hurt.stun s`를 줄이거나 경직 중 회피 캔슬을 연다(스태미나를 쓰게).
