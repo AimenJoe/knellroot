@@ -10,6 +10,7 @@ mod input;
 mod lab;
 mod render;
 mod scenario;
+mod text;
 mod touch;
 mod tuning;
 mod world;
@@ -110,6 +111,8 @@ async fn main() {
             cam.update(TICK_DT, &t, world.player.pos, target, &world.obstacles);
             acc -= TICK_DT;
         }
+        // 글자 아틀라스를 그리기 전에 다 굽는다(프레임 중간에 키우면 앞서 쌓은 글자가 지워진 텍스처를 가리킨다).
+        text::warm();
         let alpha = (acc / TICK_DT).clamp(0.0, 1.0);
         let overlay = input.overlay(lab.open);
         renderer.draw(

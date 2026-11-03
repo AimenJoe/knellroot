@@ -164,10 +164,10 @@ impl Lab {
         );
         // 오른쪽 위 dev 버튼 앞까지 들어가게 글자를 줄인다(폰 가로 폭에서 메모가 길면 버튼에 닿았다).
         let avail = sw - crate::touch::dev_buttons_width(sw, sh) - 16.0;
-        let mut size = (u * 0.06).max(14.0);
+        let mut size = crate::text::fit((u * 0.06).max(14.0));
         let mut m = measure_text(&text, None, size as u16, 1.0);
         if m.width > avail {
-            size = (size * avail / m.width).max(9.0);
+            size = crate::text::fit(size * avail / m.width);
             m = measure_text(&text, None, size as u16, 1.0);
         }
         let x = ((avail - m.width) * 0.5).max(8.0);

@@ -441,7 +441,7 @@ fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
                 Kind::LabStore => "B",
                 _ => "A/B",
             };
-            let size = (r * 0.7).max(12.0);
+            let size = crate::text::fit((r * 0.7).max(12.0));
             let m = measure_text(text, None, size as u16, 1.0);
             draw_text(text, c.x - m.width * 0.5, c.y + m.height * 0.4, size, col);
         }
