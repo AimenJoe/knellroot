@@ -92,10 +92,6 @@ impl App {
     /// 한 프레임.
     pub fn frame(&mut self) {
         let cpu_start = get_time();
-        let frames = self.sums.3;
-        if frames.is_multiple_of(30) {
-            macroquad::telemetry::capture_frame();
-        }
         self.input.poll(self.lab.open, self.scene.is_menu());
         let dt = get_frame_time().min(MAX_FRAME_DT);
         self.acc += dt;
@@ -106,11 +102,11 @@ impl App {
         }
         // 글자 아틀라스를 그리기 전에 다 굽는다(프레임 중간에 키우면 앞서 쌓은 글자가 지워진 텍스처를 가리킨다).
         crate::text::warm();
-        if frames % 30 == 2 {
-            self.perf.draws = macroquad::telemetry::drawcalls().len();
-            self.perf.draws_max = self.perf.draws_max.max(self.perf.draws);
-        }
         self.draw();
+        // 그리기 호출 수는 우리 배치가 보낸 수로 센다. macroquad `telemetry::capture_frame`은 잡은 프레임의 호출마다
+        // 128×128 텍스처를 만들고 지우지 않아(0.4.16 `telemetry::track_drawcall`) 오래 켜 두면 GPU 메모리가 차서 꺼졌다(0020).
+        self.perf.draws = self.renderer.batches();
+        self.perf.draws_max = self.perf.draws_max.max(self.perf.draws);
         let cpu = get_time() - cpu_start;
         let (cs, cm, fs, n) = &mut self.sums;
         *cs += cpu;
@@ -266,20 +262,24 @@ impl App {
     fn step_world(&mut self, a: &Actions) {
         let (cam, t) = (&mut self.cam, &self.t);
         self.world.view_yaw = Some(cam.quarter_yaw_deg(t));
+        use crate::tuning::{
+            SHAKE_DOWN, SHAKE_HIT, SHAKE_HURT, SHAKE_ROUSE, SHAKE_SLAM, SHAKE_TURN,
+        };
         for e in self.world.step(a, t) {
-            match e {
-                Event::Hit { .. } => cam.trauma = (cam.trauma + 0.25).min(1.0),
-                Event::PlayerHurt => cam.trauma = (cam.trauma + 0.5).min(1.0),
-                Event::EnemyDown { .. } => cam.trauma = (cam.trauma + 0.15).min(1.0),
+            let kick = match e {
+                Event::Hit { .. } => SHAKE_HIT,
+                Event::PlayerHurt => SHAKE_HURT,
+                Event::EnemyDown { .. } => SHAKE_DOWN,
                 // 땅 돌리기: 카메라가 90° 돈다(입력 기준은 다음 틱부터 새 방위 — 쥔 스틱은 월드가 그대로 둔다).
                 Event::Turn { cw } => {
                     cam.turn(cw, t);
-                    cam.trauma = (cam.trauma + 0.2).min(1.0);
+                    SHAKE_TURN
                 }
-                Event::Slam { .. } => cam.trauma = (cam.trauma + 0.35).min(1.0),
-                Event::Rouse { .. } => cam.trauma = (cam.trauma + 0.6).min(1.0),
-                Event::Swing | Event::LockOn | Event::LockOff => {}
-            }
+                Event::Slam { .. } => SHAKE_SLAM,
+                Event::Rouse { .. } => SHAKE_ROUSE,
+                Event::Swing | Event::LockOn | Event::LockOff => 0.0,
+            };
+            cam.trauma = (cam.trauma + kick).min(1.0);
         }
         self.follow_camera();
     }
@@ -384,7 +384,7 @@ impl App {
         }
         draw_text(
             format!(
-                "{} {mode}{} cam {:.0}deg fps {}  cpu {:.1}ms (max {:.1})  frame {:.1}ms  draws {} (max {})  verts {}",
+                "{} {mode}{} cam {:.0}deg fps {}  cpu {:.1}ms (max {:.1})  frame {:.1}ms  batches {} (max {})  verts {}",
                 self.world.name,
                 self.cam.blending().map(|e| format!(" blend {e:.2}s")).unwrap_or_default(),
                 self.cam.azimuth_deg(),

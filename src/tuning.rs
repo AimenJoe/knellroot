@@ -13,6 +13,17 @@ pub const INTERNAL_H: u32 = 270;
 /// 플레이어 키(m). 카메라 높이·주시점의 기준.
 pub const PLAYER_HEIGHT: f32 = 1.8;
 pub const PLAYER_RADIUS: f32 = 0.35;
+/// 화면 흔들림(0020): trauma 1이면 카메라가 이 각(도)만큼 흔들린다 — 거리에 곱해 쿼터뷰(20m)·락온(7m)에서 화면 크기가 같다.
+/// 예전엔 월드 ±0.25m 고정이라 20m 쿼터뷰에서 1px 남짓(사장: "피격 시에도 흔들림 있어야지").
+pub const SHAKE_DEG: f32 = 1.6;
+/// 사건마다 더하는 trauma(크기는 제곱으로 쓴다).
+pub const SHAKE_HIT: f32 = 0.25;
+pub const SHAKE_HURT: f32 = 0.75;
+pub const SHAKE_DOWN: f32 = 0.15;
+pub const SHAKE_TURN: f32 = 0.2;
+pub const SHAKE_SLAM: f32 = 0.35;
+pub const SHAKE_ROUSE: f32 = 0.6;
+
 pub const PLAYER_HP: i32 = 5;
 pub const STICK_DEADZONE: f32 = 0.2;
 

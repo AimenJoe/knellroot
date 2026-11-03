@@ -29,8 +29,8 @@ pub struct Perf {
     pub cpu_avg_ms: f32,
     pub cpu_max_ms: f32,
     pub frame_avg_ms: f32,
+    /// 배치가 보낸 횟수(모델·지형). 예전엔 macroquad telemetry로 셌다 — 그게 텍스처를 흘렸다(0020).
     pub draws: usize,
-    /// 장면을 띄운 뒤 잰 가장 많은 그리기 호출(macroquad 호출 칸 = GPU 버퍼 수, 줄지 않는다).
     pub draws_max: usize,
 }
 
@@ -101,6 +101,11 @@ impl Renderer {
     /// 지난 프레임에 보낸 모델 정점 수(개발 줄).
     pub fn vertices(&self) -> usize {
         self.batch.last_vertices
+    }
+
+    /// 지난 프레임에 배치가 보낸 횟수(그리기 호출의 큰 몫, 개발 줄). 진짜 GL 호출 수는 `tools/test/leak.js`가 잰다.
+    pub fn batches(&self) -> usize {
+        self.batch.last_sends
     }
 
     /// 3D 패스를 렌더 타깃에 그리고 화면에 정수 배율로 올린다. 글은 돌려준 `Frame`에 맞춰 바깥에서.
@@ -411,7 +416,24 @@ impl Renderer {
             let dur = e.duration(anim);
             let at = if looped { at } else { at.min(dur * 0.999) };
             e.model.pose(anim, at, &mut self.pose);
-            let inst = Mat4::from_translation(pp) * Mat4::from_rotation_y(pl.facing);
+            // 맞으면 몸이 밀리는 쪽으로 젖혀졌다 떨며 돌아온다(0020) — 발을 축으로, 경직 동안.
+            let recoil = match pl.state {
+                PState::Hurt { t: e, dur } => {
+                    let left = (1.0 - e / dur.max(1e-3)).clamp(0.0, 1.0);
+                    let away = vec3(pl.vel.x, 0.0, pl.vel.z).normalize_or_zero();
+                    let jitter = (w.time * 70.0).sin() * 0.08 * left;
+                    let ang = RECOIL * left * left + jitter;
+                    if away.length() > 0.5 {
+                        Quat::from_axis_angle(Vec3::Y.cross(away).normalize(), ang)
+                    } else {
+                        Quat::IDENTITY
+                    }
+                }
+                _ => Quat::IDENTITY,
+            };
+            let inst = Mat4::from_translation(pp)
+                * Mat4::from_quat(recoil)
+                * Mat4::from_rotation_y(pl.facing);
             let tint = if blink {
                 Color::new(1.8, 1.8, 1.8, a)
             } else {
@@ -600,6 +622,8 @@ impl Renderer {
     }
 }
 
+/// 맞았을 때 몸이 젖혀지는 각(라디안, 경직 처음).
+const RECOIL: f32 = 0.35;
 /// 죽은 적이 넘어져 사라지는 데 걸리는 초.
 const DEATH_TIME: f32 = 1.2;
 /// 문이 다 열리는 초(스테이지가 `gate_open`을 이만큼까지 올린다).
@@ -746,9 +770,11 @@ pub struct Batch {
     tex: Option<Texture2D>,
     vertices: Vec<Vertex>,
     indices: Vec<u16>,
-    /// 지난 프레임에 보낸 정점 수(개발 줄).
+    /// 지난 프레임에 보낸 정점 수·보낸 횟수(개발 줄).
     pub last_vertices: usize,
     this_frame: usize,
+    pub last_sends: usize,
+    sends: usize,
 }
 
 fn to_u8(x: f32) -> u8 {
@@ -887,6 +913,7 @@ impl Batch {
             return;
         }
         self.this_frame += self.vertices.len();
+        self.sends += 1;
         draw_mesh(&Mesh {
             vertices: std::mem::take(&mut self.vertices),
             indices: std::mem::take(&mut self.indices),
@@ -899,6 +926,8 @@ impl Batch {
         self.send();
         self.last_vertices = self.this_frame;
         self.this_frame = 0;
+        self.last_sends = self.sends;
+        self.sends = 0;
     }
 }
 

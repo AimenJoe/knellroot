@@ -21,6 +21,7 @@ node tools/test/shot.js dist shots
 터치(폰·태블릿 브라우저, 가로): 왼쪽 반 = 스틱, 오른쪽 아래 = 공격·회피·락온, 오른쪽 위 = SC(시나리오)·LAB.
 ```sh
 node tools/test/touch.js dist shots   # 가로 폰 터치 연기 시험
+node tools/test/leak.js dist 120 stage   # 오래 켜기: 살아 있는 GL 텍스처·버퍼·wasm 메모리(0020). stress = 잡몹 80
 ```
 
 ## 커밋 전

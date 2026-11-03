@@ -427,8 +427,13 @@ impl Camera {
         rig.pos += self.push;
         // 흔들림: trauma² 크기의 무작위 오프셋(로직 시계를 쓰므로 히트스톱 중엔 멈춘다).
         self.trauma = (self.trauma - dt * 2.5).max(0.0);
-        let a = self.trauma * self.trauma * 0.25;
-        self.shake = vec3(rand::gen_range(-a, a), rand::gen_range(-a, a), 0.0);
+        // 크기는 각으로(0020): 카메라 거리 × tan(각) — 먼 쿼터뷰에서도 화면에서 보이게. 카메라의 오른쪽·위로 민다(위치·주시점 같이 = 화면 평행 이동).
+        let fwd = rig.look - rig.pos;
+        let dist = fwd.length().max(1.0);
+        let right = fwd.cross(Vec3::Y).normalize_or_zero();
+        let up = right.cross(fwd / dist);
+        let a = self.trauma * self.trauma * dist * crate::tuning::SHAKE_DEG.to_radians().tan();
+        self.shake = right * rand::gen_range(-a, a) + up * rand::gen_range(-a, a);
         self.rig = rig;
     }
 

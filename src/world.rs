@@ -462,7 +462,12 @@ impl World {
         pl.since_spill = (pl.since_spill + dt).min(f32::MAX);
         let world_move = move_to_world(a.move_dir, basis, pl.pos);
         // 땅 돌리기(0012): 쿼터뷰에서만, 서 있거나 스윙 후딜레이(회피와 같은 캔슬 자리)에서. ↻이 ↺보다 먼저(둘 다면 하나만).
-        let turn = (a.turn_cw || a.turn_ccw).then_some(a.turn_cw);
+        // 버튼의 좌우 = 캐릭터의 좌우(0020): 캐릭터가 화면 아래(카메라 쪽)를 보고 있으면 뒤집는다 — 북쪽으로 걸을 때와
+        // 남쪽으로 걸을 때 "오른쪽"이 화면에서 반대라, 화면 기준으로 고정하면 남쪽을 볼 때 거꾸로 느껴졌다(사장 2026-11-03).
+        let turn = (a.turn_cw || a.turn_ccw).then(|| match basis {
+            Basis::Quarter { yaw } => turn_for_facing(a.turn_cw, pl.facing_dir(), yaw),
+            _ => a.turn_cw,
+        });
         let can_turn = target.is_none()
             && pl.turn_cd <= 0.0
             && match pl.state {
@@ -789,7 +794,9 @@ impl World {
                     self.enemies[j].pos += push;
                 }
             }
-            if self.enemies[i].alive() {
+            // 회피 중에는 적을 뚫고 지나간다(0020: 떼 사이에 끼어 죽지 않게). 끝났을 때 겹쳐 있으면 다음 틱에 밀려 나온다.
+            let passing = matches!(self.player.state, PState::Dodge { .. });
+            if self.enemies[i].alive() && !passing {
                 let d = self.player.pos - self.enemies[i].pos;
                 let min = self.enemies[i].radius + PLAYER_RADIUS;
                 let len = d.length();
@@ -857,6 +864,17 @@ impl World {
                 }
             }
         }
+    }
+}
+
+/// 땅 돌리기 버튼(오른쪽 = `right`) → 실제 방향(`cw`). 캐릭터가 화면 위쪽 반을 보면 그대로, 아래쪽 반(카메라 쪽)을 보면 뒤집는다(0020).
+/// 딱 옆을 보면(내적 0) 그대로.
+pub fn turn_for_facing(right: bool, facing: Vec3, view_yaw_deg: f32) -> bool {
+    let up = crate::camera::quarter_forward(view_yaw_deg);
+    if facing.dot(up) < 0.0 {
+        !right
+    } else {
+        right
     }
 }
 
@@ -1112,6 +1130,71 @@ mod tests {
         let ev = w.step(&Actions::default(), &t);
         assert!(!ev.contains(&Event::PlayerHurt));
         assert_eq!(w.player.hp, PLAYER_HP);
+    }
+
+    #[test]
+    fn turn_buttons_follow_the_characters_left_and_right() {
+        // 화면 위를 보면(북쪽으로 걸음) 오른쪽 버튼 = 오른쪽, 화면 아래(카메라 쪽)를 보면 뒤집힌다.
+        let up = crate::camera::quarter_forward(35.0);
+        assert!(turn_for_facing(true, up, 35.0));
+        assert!(!turn_for_facing(true, -up, 35.0));
+        assert!(turn_for_facing(false, -up, 35.0));
+        // 월드에서: 카메라 쪽을 보고 오른쪽 버튼 → 왼쪽으로 돈다.
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.view_yaw = Some(0.0);
+        w.player.facing = 0.0; // +z = 화면 아래
+        let ev = w.step(&turn(true), &t);
+        assert!(ev.contains(&Event::Turn { cw: false }), "{ev:?}");
+    }
+
+    #[test]
+    fn a_dodge_passes_through_enemies_but_walking_does_not() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.view_yaw = Some(0.0);
+        w.spawn_mob(vec3(0.0, 0.0, -1.5));
+        idle(&mut w);
+        let a = Actions {
+            move_dir: vec2(0.0, 1.0),
+            dodge: true,
+            ..Default::default()
+        };
+        w.step(&a, &t);
+        for _ in 0..30 {
+            w.step(
+                &Actions {
+                    move_dir: vec2(0.0, 1.0),
+                    ..Default::default()
+                },
+                &t,
+            );
+            idle(&mut w);
+        }
+        assert!(
+            w.player.pos.z < -1.5 - 0.3,
+            "dodged through: z {}",
+            w.player.pos.z
+        );
+        // 걸어서는 못 지나간다.
+        let mut w = World::new("test", 20.0);
+        w.view_yaw = Some(0.0);
+        w.spawn_mob(vec3(0.0, 0.0, -1.5));
+        for _ in 0..60 {
+            w.step(
+                &Actions {
+                    move_dir: vec2(0.0, 1.0),
+                    ..Default::default()
+                },
+                &t,
+            );
+            idle(&mut w);
+        }
+        assert!(
+            w.player.pos.z > -1.5,
+            "walking is blocked: z {}",
+            w.player.pos.z
+        );
     }
 
     fn turn(cw: bool) -> Actions {

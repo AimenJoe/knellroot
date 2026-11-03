@@ -28,9 +28,15 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 글 | `i18n/`, `ui.rs`, `hud.rs` | 한국어·영어. HUD: 체력 마름모·스태미나·목표·구역 카드·시작 이야기·보스 띠 |
 | 모델 | `assets/models/*.glb`, `build.rs`, `models.rs`, `tools/art/blender/` | Blender 4.0 bpy 스크립트가 원본(상자 부위 + 뼈에 붙인 강체 + 64×64 아틀라스). 미리보기 `docs/art/previews/`. 없으면 상자 |
 | 지형·빛 | `scenery.rs`, `render.rs` `lit` | 한 번 굽기. 바탕 + 달빛 + 화로(7m, 거리 제곱). 배우는 1.35배 밝게. 가리는 벽 칸·소품은 옅게 |
+| 오래 켜기(0020) | `tools/test/leak.js` | macroquad 텔레메트리가 텍스처를 흘리던 것을 걷어 냄. 탐침: 살아 있는 텍스처·버퍼·wasm 메모리를 10초마다 — 스테이지 120초·잡몹 80 90초 평평 |
+| 손맛 손질(0020) | `camera.rs`, `world.rs`, `render.rs` | 흔들림은 각(거리 무관), 맞으면 몸이 젖혀짐, 회피는 적을 뚫음, 땅 돌리기 좌우 = 캐릭터의 좌우 |
+| 글꼴 후보 | `docs/art/font-candidates-{pixel,serif}.png` | 픽셀 여섯(Galmuri 셋·물마루·네오둥근모·둥근모꼴)·명조 다섯을 게임 화면 위에. 고르는 것은 사장 |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+- [ ] **글꼴 고르기**: `docs/art/font-candidates-pixel.png`·`font-candidates-serif.png` — 본문·제목을 따로 골라도 된다(예: 제목 명조 + 본문 픽셀).
+- [ ] 핸드헬드에서 오래 켜 두기(10분 이상) — 꺼지지 않는지(0020).
+- [ ] 돌리기 좌우가 캐릭터 기준으로 자연스러운지, 회피로 떼를 빠져나가는 느낌, 맞을 때 흔들림 크기(0020).
 - [ ] https://knellroot.netlify.app (배포한 뒤) — 시작부터 핵까지 한 판: S1~S4 느낌을 한 줄씩.
 - [ ] 핸드헬드에서 같은 판 + F3 대신 개발판 개발 줄로 P5(셋째 물결)를 사진 한 장.
 - [ ] 그림 방향: 지금 모델(상자 부위·어두운 팔레트)이 "레트로 로우폴리"로 맞는지, t3ssel8r 쪽으로 더 갈지(`docs/research/2026-11-03-t3ssel8r-style.md`).
