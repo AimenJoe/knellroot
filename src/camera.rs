@@ -1030,9 +1030,33 @@ mod turn_probe {
         assert!((wrap((c.quarter_yaw_deg(&t) - before).to_radians())).abs() < 1e-4);
     }
 
+    /// 두 리그 사이 카메라 회전을 카메라 축으로 나눈 것(°/s): (팬 = 위축 둘레, 기울기 = 오른쪽 축 둘레, 롤 = 시선축 둘레).
+    /// 롤은 화면이 제자리에서 도는 것 — 수평축 회전이라 멀미를 더 부른다(KB 카메라 노트). 시선 회전(°/s)은 롤을 못 본다.
+    pub fn axis_rates(a: &Rig, b: &Rig, dt: f32) -> (f32, f32, f32) {
+        let basis = |r: &Rig| {
+            let f = (r.look - r.pos).normalize();
+            let x = f.cross(Vec3::Y).normalize();
+            let u = x.cross(f);
+            Mat3::from_cols(x, u, -f)
+        };
+        let (m0, m1) = (basis(a), basis(b));
+        let q = Quat::from_mat3(&(m1 * m0.transpose()));
+        let (axis, ang) = q.to_axis_angle();
+        let w = axis * (ang.to_degrees() / dt);
+        // 카메라 축(m0의 열)으로 나눈다.
+        (
+            w.dot(m0.y_axis).abs(),
+            w.dot(m0.x_axis).abs(),
+            w.dot(m0.z_axis).abs(),
+        )
+    }
+
     struct Probe {
         /// 가장 빠른 시선 회전(°/s).
         peak: f32,
+        /// 가장 빠른 롤(화면이 제자리에서 도는 것, °/s)과 팬(옆으로 훑기, °/s).
+        roll: f32,
+        pan: f32,
         /// 되돌아올 때 반대 방향으로 가장 빠른 방위 회전(°/s).
         back: f32,
         /// 가장 멀리 간 방위(°, 90이면 지나침 없음).
@@ -1044,8 +1068,13 @@ mod turn_probe {
     }
 
     fn one(turn_time: f32, over: f32, settle: f32) -> Probe {
+        one_at(Tuning::default()[P::CamQPitch], turn_time, over, settle)
+    }
+
+    fn one_at(pitch: f32, turn_time: f32, over: f32, settle: f32) -> Probe {
         let mut t = Tuning::default();
         for (p, v) in [
+            (P::CamQPitch, pitch),
             (P::TurnTime, turn_time),
             (P::TurnOver, over),
             (P::TurnSettle, settle),
@@ -1063,6 +1092,8 @@ mod turn_probe {
         let start = azi(&c.rig);
         let mut pr = Probe {
             peak: 0.0,
+            roll: 0.0,
+            pan: 0.0,
             back: 0.0,
             reach: 0.0,
             secs: 0.0,
@@ -1088,6 +1119,9 @@ mod turn_probe {
             pr.peak = pr
                 .peak
                 .max(d0.dot(d1).clamp(-1.0, 1.0).acos().to_degrees() * 60.0);
+            let (pan, _, roll) = axis_rates(&prev, &c.rig, 1.0 / 60.0);
+            pr.pan = pr.pan.max(pan);
+            pr.roll = pr.roll.max(roll);
             // ↻ = 방위 +: 반대(−)로 도는 빠르기가 되돌아오기.
             let step = wrap(azi(&c.rig) - azi(&prev)).to_degrees() * 60.0;
             pr.back = pr.back.max(-step);
@@ -1138,6 +1172,32 @@ mod turn_probe {
             "reaches {}",
             p.reach
         );
+    }
+
+    /// 지상각을 낮추면 롤(화면이 제자리에서 도는 것)이 줄고 팬이 는다 — 45°에서 같아진다(롤 = 방위 회전 × sin 지상각).
+    #[test]
+    fn a_lower_pitch_turns_roll_into_pan() {
+        let d = Tuning::default();
+        let mut last_roll = f32::MAX;
+        for pitch in [70.0, 60.0, 55.0, 50.0, 45.0, 44.0, 40.0, 30.0] {
+            let p = one_at(pitch, d[P::TurnTime], d[P::TurnOver], d[P::TurnSettle]);
+            println!(
+                "pitch {pitch:4.0}°: roll {:5.0}°/s, pan {:5.0}°/s (look {:5.0}°/s)",
+                p.roll, p.pan, p.peak
+            );
+            assert!(p.roll < last_roll, "roll shrinks as the pitch drops");
+            last_roll = p.roll;
+            let r = f32::to_radians(pitch);
+            assert!(
+                (p.roll / p.pan - r.tan()).abs() < 0.08,
+                "roll/pan = tan(pitch): {} vs {}",
+                p.roll / p.pan,
+                r.tan()
+            );
+        }
+        // 기본 지상각(44°)에서는 롤이 팬보다 작다.
+        let p = one(d[P::TurnTime], d[P::TurnOver], d[P::TurnSettle]);
+        assert!(p.roll < p.pan, "roll {} pan {}", p.roll, p.pan);
     }
 
     #[test]

@@ -74,6 +74,7 @@ pub enum P {
     SpillBossStagger,
     SlamDamage,
     SlamStagger,
+    Haze,
 }
 
 pub struct Spec {
@@ -103,12 +104,12 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 55] = [
+pub const SPECS: [Spec; 56] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
         "CAM_Q_PITCH_DEG",
-        50.0,
+        44.0,
         20.0,
         85.0,
         1.0
@@ -520,6 +521,9 @@ pub const SPECS: [Spec; 55] = [
         3.0,
         0.1
     ),
+    // 지평선 아지랑이(0012): 화면 위쪽 이 몫만큼 먼 곳이 하늘빛으로 옅어진다. 카메라는 기울지 않고 수직축으로만 돌아서
+    // 이 띠는 진짜 지평선처럼 늘 수평이고 회전 중에도 제자리 — 땅에 고정된 지평선이 멀미를 줄인다(Hemmerich 2020). 0 = 끔.
+    spec!(Haze, "render.horizon haze", "HAZE", 0.3, 0.0, 0.6, 0.05),
 ];
 
 /// 실행 중 값. `SPECS`의 기본값으로 시작하고 랩이 바꾼다. 로직·카메라·렌더는 이것만 읽는다.

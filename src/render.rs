@@ -289,6 +289,19 @@ impl Renderer {
             );
         }
 
+        // 지평선 아지랑이(0012): 렌더 타깃 위쪽을 하늘빛으로 옅게 — 위 끝은 짙고 아래로 사라진다. 화면에 고정된 수평 띠라
+        // 땅 돌리기(수직축 회전) 중에도 기울거나 움직이지 않는다(진짜 지평선과 같은 움직임).
+        let haze = t[crate::tuning::P::Haze];
+        if haze > 0.0 {
+            set_camera(&Camera2D {
+                zoom: vec2(2.0 / INTERNAL_W as f32, 2.0 / INTERNAL_H as f32),
+                target: vec2(INTERNAL_W as f32 * 0.5, INTERNAL_H as f32 * 0.5),
+                render_target: Some(self.rt.clone()),
+                ..Default::default()
+            });
+            draw_haze(INTERNAL_W as f32, INTERNAL_H as f32, haze);
+        }
+
         // 화면 패스: 정수 배율로 가운데에.
         set_default_camera();
         clear_background(BLACK);
@@ -378,6 +391,25 @@ impl Renderer {
             GRAY,
         );
     }
+}
+
+/// 하늘빛 아지랑이 띠: 위 끝 진하기 0.9에서 `frac × h` 아래로 0이 된다. 렌더 타깃은 화면에 뒤집혀(`flip_y`) 나가므로
+/// 이 2D 좌표의 y = h 쪽이 화면 위다(처음엔 y = 0에 그려 화면 아래에 깔렸다 — 스크린숏으로 잡음).
+fn draw_haze(w: f32, h: f32, frac: f32) {
+    let sky = Color::new(0.2, 0.2, 0.26, 0.9);
+    let clear = Color::new(0.2, 0.2, 0.26, 0.0);
+    let band = h * (1.0 - frac);
+    let v = |x: f32, y: f32, c: Color| Vertex::new(x, y, 0.0, 0.0, 0.0, c);
+    draw_mesh(&Mesh {
+        vertices: vec![
+            v(0.0, h, sky),
+            v(w, h, sky),
+            v(w, band, clear),
+            v(0.0, band, clear),
+        ],
+        indices: vec![0, 1, 2, 0, 2, 3],
+        texture: None,
+    });
 }
 
 /// 가린 기둥의 면 진하기(0 = 안 보임). 윤곽선은 따로 남는다.
