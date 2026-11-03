@@ -12,13 +12,13 @@ KB `guides/poc-and-lab-before-content.md`의 구현. 첫 게임은 수치 한 �
 ## 값(`tuning.rs` `SPECS` 순서) — 랩의 "랩"들
 | 랩 | 값 | 어울리는 시나리오 | 묻는 것 |
 |---|---|---|---|
-| Camera | quarter pitch·dist·fov·follow·**yaw** / lock dist·height·shoulder·fov·look mix·**frame x**·yaw / blend / collide r | 1 보스, 3 기둥 | 전환이 튀지 않나, 멀미 없나, 플레이어가 1/3에 서나, 벽에서 당겨지나 |
+| Camera | quarter pitch·dist·fov·follow·**yaw** / lock dist·height·shoulder·fov·look ahead·**frame x**·yaw / blend / collide r | 1 보스, 3 기둥 | 전환이 튀지 않나, 멀미 없나, 플레이어가 1/3에 서나, 벽에서 당겨지나 |
 | Movement | speed·accel·turn / dodge dist·time | 4 빈 방, 2 떼 | 떼 사이를 빠져나가는 손맛, 회피가 공짜가 아닌가 |
 | Combat | attack startup·active·recovery·range·arc / hitstop·knockback | 2 떼, 1 보스 | 한 방이 묵직한가, 범위가 읽히나 |
 | Lock-on | range·lose dist | 1 보스 | 언제 잡히고 언제 풀리나 |
 | Enemy | mob speed·telegraph / boss telegraph·swing arc | 1·2 | 예고를 읽고 피할 수 있나 |
 | Render | face shade | 2 떼 | 상자가 입체로 읽히나(0 = 민짜) |
-| Camera(0007) | lock yaw max·near slow·pull out | 1 보스, 3 기둥 | 보스에 바짝 붙어 돌 때 멀미 vs 보스가 화면 밖으로 빠짐, 기둥에서 풀려 나오는 속도 |
+| Camera(0007·0008) | lock yaw max·near slow·pull out·**look ahead**·**quarter lead** | 1 보스, 3 기둥 | 보스에 바짝 붙어 돌 때 멀미 vs 보스가 화면 밖으로 빠짐, 기둥에서 풀려 나오는 속도 |
 
 ## 기록
 값을 정하면 결정 기록 한 줄(어느 날, 누가, A/B 무엇과 비교해 무엇을 골랐나). 판정은 사람. `cargo test`의 시험은 "규칙"(한 스윙 한 번, 락온 기준 즉시, 당기기 최소 거리)만 본다 — 손맛은 못 잰다.

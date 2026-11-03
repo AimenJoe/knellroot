@@ -28,7 +28,7 @@ pub enum P {
     CamLHeight,
     CamLShoulder,
     CamLFov,
-    CamLLookMix,
+    CamLLookAhead,
     CamLFrame,
     CamLYawLag,
     CamBlend,
@@ -55,6 +55,7 @@ pub enum P {
     CamLYawMax,
     CamLNear,
     CamPullOut,
+    CamQLead,
 }
 
 pub struct Spec {
@@ -84,7 +85,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 36] = [
+pub const SPECS: [Spec; 37] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -167,13 +168,13 @@ pub const SPECS: [Spec; 36] = [
         1.0
     ),
     spec!(
-        CamLLookMix,
-        "cam.lock.look mix",
-        "CAM_L_LOOK_MIX",
-        0.4,
+        CamLLookAhead,
+        "cam.lock.look ahead m",
+        "CAM_L_LOOK_AHEAD",
+        3.0,
         0.0,
-        1.0,
-        0.05
+        10.0,
+        0.25
     ),
     spec!(
         CamLFrame,
@@ -336,6 +337,15 @@ pub const SPECS: [Spec; 36] = [
         0.5,
         20.0,
         0.5
+    ),
+    spec!(
+        CamQLead,
+        "cam.quarter.lead s",
+        "CAM_Q_LEAD",
+        0.22,
+        0.0,
+        0.6,
+        0.02
     ),
 ];
 

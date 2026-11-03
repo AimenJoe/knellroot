@@ -52,6 +52,9 @@ pub struct Camera {
     yaw: f32,
     /// 상자에서 밀어낸 만큼(부드럽게 따라간다). 0 = 밀 것 없음.
     push: Vec3,
+    /// 직전 플레이어 자리와 부드럽게 한 속도(쿼터뷰 앞서 보기, 0008).
+    last_player: Option<Vec3>,
+    vel: Vec3,
     /// 락온 주시점(부드럽게 따라간다). 대상에 바짝 붙어 돌면 플레이어↔대상 사이 점이 초당 수백 도로 돌았다(0007).
     look: Option<Vec3>,
     /// 화면 흔들림(trauma 0..1, 제곱으로 쓴다).
@@ -72,6 +75,8 @@ impl Camera {
             follow: player,
             yaw: 0.0,
             push: Vec3::ZERO,
+            last_player: None,
+            vel: Vec3::ZERO,
             look: None,
             trauma: 0.0,
             shake: Vec3::ZERO,
@@ -119,10 +124,13 @@ impl Camera {
                 let pos = player - fwd * t[P::CamLDist]
                     + Vec3::Y * t[P::CamLHeight]
                     + right * t[P::CamLShoulder];
-                let a = player + Vec3::Y * (PLAYER_HEIGHT * 0.6);
-                let b = tg + Vec3::Y * (PLAYER_HEIGHT * 0.6);
-                // 주시점을 옆으로 밀어야 플레이어가 화면 1/3로 간다(카메라만 어깨로 옮기면 몇 도밖에 안 돈다).
-                let look = a.lerp(b, t[P::CamLLookMix]) + right * t[P::CamLFrame];
+                let _ = tg; // 방향은 요(대상 쪽)가 정한다.
+                            // 주시점 = 플레이어 앞 일정 거리(대상과의 사이 점이 아니다): 대상에 다가가도 카메라가 고개를 숙이며 플레이어가
+                            // 화면 위로 떠오르지 않는다(예전 사이 점: 다가가면 −5° → −11°, 0008). 옆으로 밀어야 플레이어가 화면 1/3에 선다.
+                let look = player
+                    + Vec3::Y * (PLAYER_HEIGHT * 0.6)
+                    + fwd * t[P::CamLLookAhead]
+                    + right * t[P::CamLFrame];
                 Rig {
                     pos,
                     look,
@@ -155,8 +163,20 @@ impl Camera {
         obstacles: &[Aabb],
     ) {
         // 추적점·요는 전환과 무관하게 늘 따라간다(전환이 끝난 뒤 튀지 않게).
+        // 쿼터뷰는 가는 쪽을 앞서 본다: 따라가기 지연(속도/지연율만큼 뒤)을 넘게 앞을 노려, 걷는 동안 플레이어가 가는 반대편에 머문다.
+        // 예전엔 위로 걸으면 플레이어가 화면 위로 밀려(+0.15) 가는 쪽이 덜 보였다(0008). 회피 같은 짧은 돌진은 부드러운 속도라 덜 탄다.
+        let raw = self
+            .last_player
+            .map_or(Vec3::ZERO, |l| (player - l) / dt.max(1e-4));
+        self.last_player = Some(player);
+        self.vel = self.vel.lerp(raw, 1.0 - (-6.0 * dt).exp());
+        let lead = if self.mode == Mode::Quarter {
+            (self.vel * t[P::CamQLead]).clamp_length_max(1.5)
+        } else {
+            Vec3::ZERO
+        };
         let k = 1.0 - (-t[P::CamQLag] * dt).exp();
-        self.follow = self.follow.lerp(player, k);
+        self.follow = self.follow.lerp(player + lead, k);
         if let Some(tg) = target {
             let d = tg - player;
             let dist = vec2(d.x, d.z).length();
@@ -282,19 +302,48 @@ pub fn push_out(p: Vec3, r: f32, obstacles: &[Aabb], prev: Vec3) -> Vec3 {
     q
 }
 
-/// 머리 → 카메라 선분을 가리는 상자들(렌더가 옅게 그린다).
-pub fn occluders(head: Vec3, cam: Vec3, obstacles: &[Aabb]) -> Vec<usize> {
-    let len = head.distance(cam);
-    if len < 1e-4 {
-        return Vec::new();
-    }
-    let dir = (cam - head) / len;
+/// 카메라에서 `points`(플레이어 몸 여러 점, 락온 대상) 중 하나라도 가리는 상자들(렌더가 옅게 그린다).
+/// 머리 한 점만 보면 다리·몸통·대상을 가리는 기둥이 그대로였다(사장 실기, 0008).
+pub fn occluders(points: &[Vec3], cam: Vec3, obstacles: &[Aabb]) -> Vec<usize> {
     obstacles
         .iter()
         .enumerate()
-        .filter(|(_, b)| b.ray(head, dir).is_some_and(|t| t < len))
+        .filter(|(_, b)| {
+            points.iter().any(|&p| {
+                let len = p.distance(cam);
+                len > 1e-4 && b.ray(cam, (p - cam) / len).is_some_and(|t| t < len)
+            })
+        })
         .map(|(i, _)| i)
         .collect()
+}
+
+/// 가림을 볼 점들: 발·허리·머리 × 가운데·좌우(카메라 기준 옆으로 `half`), 그리고 대상이 있으면 대상의 허리·머리.
+pub fn view_points(
+    player: Vec3,
+    height: f32,
+    half: f32,
+    cam: Vec3,
+    target: Option<(Vec3, f32)>,
+) -> Vec<Vec3> {
+    let side = {
+        let f = vec3(player.x - cam.x, 0.0, player.z - cam.z);
+        if f.length_squared() > 1e-6 {
+            f.normalize().cross(Vec3::Y) * half
+        } else {
+            Vec3::X * half
+        }
+    };
+    let mut v = Vec::with_capacity(12);
+    for h in [0.15, 0.5, 0.95] {
+        let c = player + Vec3::Y * (height * h);
+        v.extend_from_slice(&[c, c + side, c - side]);
+    }
+    if let Some((tg, th)) = target {
+        v.push(tg + Vec3::Y * (th * 0.5));
+        v.push(tg + Vec3::Y * (th * 0.9));
+    }
+    v
 }
 
 #[cfg(test)]
@@ -312,7 +361,15 @@ mod tests {
         };
         let cam = vec3(0.0, 6.0, 7.0);
         assert_eq!(push_out(cam, 0.3, &[low], cam), cam);
-        assert_eq!(occluders(head, cam, &[low]), vec![0]);
+        assert_eq!(occluders(&[head], cam, &[low]), vec![0]);
+        // 발만 가리는 낮은 상자도 몸 여러 점으로 보면 잡힌다(머리 한 점으로는 못 잡는다).
+        let ankle = Aabb {
+            min: vec3(-1.0, 0.0, 0.4),
+            max: vec3(1.0, 0.9, 0.6),
+        };
+        let pts = view_points(Vec3::ZERO, 1.8, 0.3, cam, None);
+        assert!(occluders(&[head], cam, &[ankle]).is_empty());
+        assert_eq!(occluders(&pts, cam, &[ankle]), vec![0]);
         // 카메라 구가 벽 면에 닿았다(중심은 밖): 가장 가까운 점에서 멀어지는 쪽으로 반지름만큼.
         let wall = Aabb {
             min: vec3(-5.0, 0.0, 4.0),
@@ -486,5 +543,76 @@ mod motion_probe {
         probe(Scenario::Pillars, false, true);
         probe(Scenario::Boss, true, true);
         probe(Scenario::Pillars, true, true);
+    }
+}
+
+#[cfg(test)]
+mod frame_probe {
+    //! 0008: 걷는 방향·자리에 따라 플레이어가 화면에서 밀리던 것. `cargo test frame_probe -- --nocapture`로 표를 본다.
+    use super::*;
+    use crate::input::Actions;
+    use crate::scenario::{build, Scenario};
+
+    fn ndc(r: &Rig, p: Vec3) -> Vec2 {
+        let m = Mat4::perspective_rh_gl(r.fov, 16.0 / 9.0, 0.1, 200.0)
+            * Mat4::look_at_rh(r.pos, r.look, Vec3::Y);
+        let c = m * p.extend(1.0);
+        vec2(c.x / c.w, c.y / c.w)
+    }
+
+    /// 2.5초 걸은 뒤의 (화면 위치, 카메라 기울기°)와 걷는 동안 기울기의 폭.
+    fn walk(lock: bool, stick: Vec2) -> (Vec2, f32) {
+        let t = Tuning::default();
+        let mut w = build(Scenario::Boss);
+        w.player.pos = vec3(0.0, 0.0, 6.0);
+        w.player.prev = w.player.pos;
+        w.enemies[0].state = crate::world::EState::Recover { t: -1000.0 };
+        let mut c = Camera::new(w.player.pos, &t);
+        if lock {
+            w.step(
+                &Actions {
+                    lock: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            c.set_mode(Mode::Lock, w.lock_target(), w.player.pos);
+        }
+        for _ in 0..60 {
+            c.update(1.0 / 60.0, &t, w.player.pos, w.lock_target(), &w.obstacles);
+        }
+        let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+        for _ in 0..150 {
+            w.step(
+                &Actions {
+                    move_dir: stick,
+                    ..Default::default()
+                },
+                &t,
+            );
+            c.update(1.0 / 60.0, &t, w.player.pos, w.lock_target(), &w.obstacles);
+            let pitch = (c.rig.look - c.rig.pos).normalize().y.asin().to_degrees();
+            lo = lo.min(pitch);
+            hi = hi.max(pitch);
+        }
+        let n = ndc(&c.rig, w.player.pos + Vec3::Y * 0.9);
+        println!(
+            "lock={lock} stick={stick:?}: screen ({:+.2}, {:+.2}), pitch range {:.1}°",
+            n.x,
+            n.y,
+            hi - lo
+        );
+        (n, hi - lo)
+    }
+
+    #[test]
+    fn quarter_view_looks_ahead_and_lock_on_keeps_its_tilt_while_approaching() {
+        // 쿼터뷰: 위로 걸으면 플레이어가 가운데보다 아래(가는 쪽이 보인다), 아래로 걸으면 위.
+        let (up, _) = walk(false, vec2(0.0, 1.0));
+        let (down, _) = walk(false, vec2(0.0, -1.0));
+        assert!(up.y < 0.02 && down.y > 0.05, "up {up:?} down {down:?}");
+        // 락온: 보스 쪽으로 걸어 다가가도 카메라 기울기가 거의 그대로(예전 −5° → −11°).
+        let (_, range) = walk(true, vec2(0.0, 1.0));
+        assert!(range < 2.5, "pitch range {range}");
     }
 }

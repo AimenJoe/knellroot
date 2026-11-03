@@ -9,13 +9,18 @@ use crate::world::{EState, PState, World};
 
 pub struct Renderer {
     rt: RenderTarget,
+    /// 상자마다 지금 진하기(1 = 불투명). 가리면 부드럽게 옅어지고 풀리면 돌아온다(0008).
+    fade: Vec<f32>,
 }
 
 impl Renderer {
     pub fn new() -> Self {
         let rt = render_target(INTERNAL_W, INTERNAL_H);
         rt.texture.set_filter(FilterMode::Nearest);
-        Renderer { rt }
+        Renderer {
+            rt,
+            fade: Vec::new(),
+        }
     }
 
     /// `touch`면 HUD의 키 안내 줄을 빼고(손가락에는 안 맞는 글), 랩 터치 줄 자리를 비운다.
@@ -32,8 +37,14 @@ impl Renderer {
         set_camera(&cam.to_camera3d(self.rt.clone(), aspect));
         clear_background(Color::new(0.07, 0.06, 0.08, 1.0));
 
-        // 바닥 + 격자(거리감).
+        // 바닥 + 격자(거리감). 경기장 밖도 어두운 땅으로 — 끝에 가면 검은 허공이 화면을 채워 어색했다(0008).
         let a = w.arena;
+        draw_plane(
+            Vec3::Y * -0.02,
+            vec2(a * 4.0, a * 4.0),
+            None,
+            Color::new(0.11, 0.1, 0.09, 1.0),
+        );
         draw_plane(
             Vec3::ZERO,
             vec2(a, a),
@@ -63,11 +74,30 @@ impl Renderer {
             );
         }
         let shade = t[crate::tuning::P::Shade];
-        // 플레이어 머리 → 카메라를 가리는 기둥은 배우 뒤에 옅게(카메라를 당기지 않는다, 0007).
-        let head = w.player.pos + Vec3::Y * (PLAYER_HEIGHT * 0.8);
-        let hidden = crate::camera::occluders(head, cam.rig.pos, &w.obstacles);
+        // 카메라에서 플레이어 몸(발·허리·머리 × 좌우)과 락온 대상을 가리는 기둥은 배우 뒤에 옅게(카메라를 당기지 않는다, 0007·0008).
+        let tg = w
+            .lock
+            .and_then(|i| w.enemies.get(i))
+            .filter(|e| e.alive())
+            .map(|e| (e.pos, e.height));
+        let pts = crate::camera::view_points(
+            w.player.pos,
+            PLAYER_HEIGHT,
+            PLAYER_RADIUS + 0.15,
+            cam.rig.pos,
+            tg,
+        );
+        let hidden = crate::camera::occluders(&pts, cam.rig.pos, &w.obstacles);
+        if self.fade.len() != w.obstacles.len() {
+            self.fade = vec![1.0; w.obstacles.len()];
+        }
+        let k = 1.0 - (-10.0 * get_frame_time()).exp();
+        for (i, f) in self.fade.iter_mut().enumerate() {
+            let want = if hidden.contains(&i) { FADED } else { 1.0 };
+            *f += (want - *f) * k;
+        }
         for (i, b) in w.obstacles.iter().enumerate() {
-            if hidden.contains(&i) {
+            if self.fade[i] < 0.98 {
                 continue;
             }
             shaded_box(
@@ -181,15 +211,19 @@ impl Renderer {
             );
         }
 
-        for &i in &hidden {
-            let b = &w.obstacles[i];
-            shaded_box(
+        // 옅어진(옅어지는) 기둥은 맨 나중에: 면은 거의 투명하게, 윤곽만 밝게 남겨 자리가 보이게.
+        for (i, b) in w.obstacles.iter().enumerate() {
+            let f = self.fade[i];
+            if f >= 0.98 {
+                continue;
+            }
+            shaded_box(b.center(), b.size(), Color::new(0.35, 0.32, 0.3, f), shade);
+            let edge = (1.0 - f) / (1.0 - FADED);
+            draw_cube_wires(
                 b.center(),
                 b.size(),
-                Color::new(0.35, 0.32, 0.3, 0.3),
-                shade,
+                Color::new(0.9, 0.85, 0.8, 0.12 + 0.2 * edge),
             );
-            draw_cube_wires(b.center(), b.size(), Color::new(0.9, 0.85, 0.8, 0.35));
         }
 
         // 화면 패스: 정수 배율로 가운데에.
@@ -268,6 +302,9 @@ impl Renderer {
         );
     }
 }
+
+/// 가린 기둥의 면 진하기(0 = 안 보임). 윤곽선은 따로 남는다.
+const FADED: f32 = 0.08;
 
 /// 상자 몸 + 작은 코. `dir`은 바라보는 단위 벡터(XZ).
 fn actor(p: Vec3, dir: Vec3, r: f32, h: f32, col: Color, shade: f32) {
