@@ -88,7 +88,7 @@ async function main() {
   await tap(b.lab); await page.waitForTimeout(100);
   await tap(b.scenario); await page.waitForTimeout(800);
   await shot('t07-next-scenario');
-  // 땅 돌리기 오른쪽 ↷(0012·0015): 도는 중 · 다 돈 뒤(버튼이 대기로 옅어짐).
+  // 땅 돌리기 오른쪽 ↷(0012·0017 — 카메라가 오른쪽으로): 도는 중 · 다 돈 뒤(버튼이 대기로 옅어짐).
   await tap(b.turn_right); await page.waitForTimeout(120);
   await shot('t08-turn-cw');
   await page.waitForTimeout(600);

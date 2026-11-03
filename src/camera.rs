@@ -1030,7 +1030,29 @@ mod turn_probe {
     use crate::input::Actions;
     use crate::scenario::{build, Scenario};
 
-    /// 오른쪽 버튼(0015) = `turn(false)`: 플레이어 앞(화면 아래, 가까운 쪽)에 있던 땅이 화면 오른쪽으로 간다.
+    /// 오른쪽 버튼(0017) = `turn(true)`: 카메라가 자기 오른쪽으로 돈다(카메라 자리가 돌기 전 화면 오른쪽 쪽으로 간다).
+    #[test]
+    fn a_clockwise_turn_swings_the_camera_to_its_right() {
+        let t = Tuning::default();
+        let mut c = Camera::new(Vec3::ZERO, &t);
+        for _ in 0..30 {
+            c.update(1.0 / 60.0, &t, Vec3::ZERO, None, &[]);
+        }
+        let before = c.rig.pos;
+        let right = quarter_forward(c.quarter_yaw_deg(&t)).cross(Vec3::Y);
+        c.turn(true, &t);
+        for _ in 0..10 {
+            c.update(1.0 / 60.0, &t, Vec3::ZERO, None, &[]);
+        }
+        assert!(
+            (c.rig.pos - before).dot(right) > 0.5,
+            "{:?} -> {:?}",
+            before,
+            c.rig.pos
+        );
+    }
+
+    /// 왼쪽 버튼 = `turn(false)`: 플레이어 앞(화면 아래, 가까운 쪽)에 있던 땅이 화면 오른쪽으로 간다(0015 때의 뜻, 시험은 남긴다).
     #[test]
     fn a_counter_clockwise_turn_moves_the_near_side_of_the_ground_to_the_right() {
         let t = Tuning::default();

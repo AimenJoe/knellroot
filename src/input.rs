@@ -4,7 +4,7 @@
 //! 기본 배치(패드 W3C 표준 자리 / 키보드):
 //!   이동 = 왼쪽 스틱·십자 / WASD·화살표      조준 = 오른쪽 스틱(바라보는 쪽, 공격은 가까운 적 자동 조준, 0014)
 //!   공격 = X(왼쪽) / J·Space      회피 = A(아래) / K·LShift      락온 = 오른쪽 스틱 클릭 / L·Tab
-//!   땅 돌리기(쟁반, 0012) = LB·Q 왼쪽 / RB·E 오른쪽 — 누르는 쪽으로 쟁반의 가까운 쪽(화면 아래)이 간다(0015: 오른쪽 = 땅은 화면에서 반시계).
+//!   땅 돌리기(쟁반, 0012) = LB·Q 왼쪽 / RB·E 오른쪽 — 누르는 쪽으로 카메라가 돈다(0017: 오른쪽 = 땅은 화면에서 시계 방향, 먼 쪽이 오른쪽으로).
 //!   Fez처럼 어깨 버튼, 락온은 다크소울처럼 R3로 옮겼다.
 //!   랩 열기 = Select / F1          랩 안: 십자(↑↓ 고르기, ←→ 바꾸기), LB = 10배(랩이 열려 있으면 왼쪽 돌리기 대신), Y = 초기화, B·X키 = 내보내기,
 //!   LT = 슬롯에 담기, RT = A/B 바꾸기, Start/1~4 = 시나리오 바꾸기(dev 기능)
@@ -77,8 +77,8 @@ pub struct Actions {
     pub attack: bool,
     pub dodge: bool,
     pub lock: bool,
-    /// 땅을 시계 방향(화면에서 보아)으로 90° 돌리기 / 반시계(0012). 왼쪽 버튼 = 가까운 쪽이 왼쪽으로 = 땅은 시계 방향(`turn_cw`),
-    /// 오른쪽 버튼 = `turn_ccw`(0015 — 예전엔 반대라 손과 거꾸로 느껴졌다).
+    /// 땅을 시계 방향(화면에서 보아)으로 90° 돌리기 / 반시계(0012). 오른쪽 버튼 = 카메라가 오른쪽으로 = 땅은 시계 방향(`turn_cw`),
+    /// 왼쪽 버튼 = `turn_ccw`(0017 — 사장이 "카메라가 오른쪽으로"를 골랐다. 0015의 "가까운 쪽 기준"을 되돌림).
     pub turn_cw: bool,
     pub turn_ccw: bool,
     pub lab_toggle: bool,
@@ -154,8 +154,8 @@ impl Input {
         a.attack = is_key_pressed(KeyCode::J) || is_key_pressed(KeyCode::Space);
         a.dodge = is_key_pressed(KeyCode::K) || is_key_pressed(KeyCode::LeftShift);
         a.lock = is_key_pressed(KeyCode::L) || is_key_pressed(KeyCode::Tab);
-        a.turn_cw = is_key_pressed(KeyCode::Q);
-        a.turn_ccw = is_key_pressed(KeyCode::E);
+        a.turn_ccw = is_key_pressed(KeyCode::Q);
+        a.turn_cw = is_key_pressed(KeyCode::E);
         a.lab_toggle = is_key_pressed(KeyCode::F1);
         a.lab_up = is_key_pressed(KeyCode::Up);
         a.lab_down = is_key_pressed(KeyCode::Down);
@@ -212,9 +212,9 @@ impl Input {
                 a.attack |= pad.is_just_pressed(Button::ActionLeft);
                 a.dodge |= pad.is_just_pressed(Button::ActionDown);
                 a.lock |= pad.is_just_pressed(Button::RightStick);
-                a.turn_ccw |= pad.is_just_pressed(Button::FrontRightUpper);
+                a.turn_cw |= pad.is_just_pressed(Button::FrontRightUpper);
                 // 랩이 열려 있으면 LB는 10배 단계다(누르고 십자) — 돌리기로 같이 읽지 않는다.
-                a.turn_cw |= !lab_open && pad.is_just_pressed(Button::FrontLeftUpper);
+                a.turn_ccw |= !lab_open && pad.is_just_pressed(Button::FrontLeftUpper);
                 a.lab_toggle |= pad.is_just_pressed(Button::LeftCenterCluster);
                 a.lab_up |= pad.is_just_pressed(Button::DPadUp);
                 a.lab_down |= pad.is_just_pressed(Button::DPadDown);

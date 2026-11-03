@@ -1,7 +1,7 @@
 //! 터치 조작(nail `input.rs` read_touch·TouchOverlay에서 가져옴, 0006). `input.rs`만 이 모듈을 부른다.
 //!
 //! - 화면 왼쪽 반에서 시작한 손가락 = 떠다니는 가상 스틱(손가락을 댄 자리가 중심).
-//! - 오른쪽 아래 버튼: 공격(가장 크게)·회피(왼쪽 아래)·락온(위), 락온 왼쪽에 땅 돌리기 왼쪽·오른쪽(0012·0015 — 누르는 쪽으로 쟁반의 가까운 쪽이 간다).
+//! - 오른쪽 아래 버튼: 공격(가장 크게)·회피(왼쪽 아래)·락온(위), 락온 왼쪽에 땅 돌리기 왼쪽·오른쪽(0012·0017 — 누르는 쪽으로 카메라가 돈다).
 //!   그림은 글자 대신 선 그림(언어를 타지 않는다, nail 0172).
 //! - dev 기능: 오른쪽 위 랩·시나리오 버튼, 랩이 열리면 위쪽 줄에 ▲▼−+·담기·바꾸기·초기화(−+는 누르고 있으면 반복).
 //! - 장치가 터치일 때만 그린다(마지막으로 만진 것이 화면). 키·패드를 만지면 사라진다(nail 0036·0172).
@@ -15,7 +15,7 @@ pub enum Kind {
     Attack,
     Dodge,
     Lock,
-    /// 땅 돌리기(0015): 누르는 쪽으로 쟁반의 가까운 쪽(화면 아래)이 간다. 왼쪽 = 땅이 화면에서 시계 방향.
+    /// 땅 돌리기(0017): 누르는 쪽으로 카메라가 돈다. 오른쪽 = 땅이 화면에서 시계 방향(먼 쪽이 오른쪽으로).
     TurnLeft,
     TurnRight,
     Lab,
@@ -296,9 +296,9 @@ fn press(a: &mut Read, k: Kind) {
         Kind::Attack => a.attack = true,
         Kind::Dodge => a.dodge = true,
         Kind::Lock => a.lock = true,
-        // 가까운 쪽이 왼쪽으로 가면 땅은 화면에서 시계 방향(0015).
-        Kind::TurnLeft => a.turn_cw = true,
-        Kind::TurnRight => a.turn_ccw = true,
+        // 카메라가 오른쪽으로 돌면 땅은 화면에서 시계 방향(0017).
+        Kind::TurnLeft => a.turn_ccw = true,
+        Kind::TurnRight => a.turn_cw = true,
         Kind::Lab => a.lab_toggle = true,
         Kind::Scenario => a.scenario_next = true,
         Kind::LabUp => a.lab_up = true,
@@ -395,12 +395,11 @@ fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
             }
         }
         Kind::TurnLeft | Kind::TurnRight => {
-            // 아래쪽 반원 화살표: 쟁반의 가까운 쪽이 누르는 쪽으로 간다(0015). 반원은 반대쪽 끝에서 아래를 지나 누르는 쪽 끝으로,
-            // 화살촉은 그 끝에서 위로. 예전 ↺ ↻은 오른쪽 버튼이 가까운 쪽을 왼쪽으로 보내 손과 반대로 느껴졌다.
+            // 위쪽 반원 화살표(↶ ↷): 반대쪽 끝에서 위를 지나 누르는 쪽 끝으로, 화살촉은 아래로 — 먼 쪽이 그쪽으로 = 카메라가 그쪽으로 돈다(0017).
             let side = if k == Kind::TurnRight { 1.0 } else { -1.0 };
             let rad = s * 0.75;
             let n = 14;
-            let at = |a: f32| c + vec2(a.cos() * side, a.sin()) * rad - vec2(0.0, rad * 0.35);
+            let at = |a: f32| c + vec2(a.cos() * side, -a.sin()) * rad + vec2(0.0, rad * 0.35);
             for i in 0..n {
                 let (u, v) = (
                     std::f32::consts::PI * (1.0 - i as f32 / n as f32),
@@ -409,12 +408,12 @@ fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
                 let (p, q) = (at(u), at(v));
                 draw_line(p.x, p.y, q.x, q.y, th, col);
             }
-            let tip = at(0.0) - vec2(0.0, s * 0.15);
+            let tip = at(0.0) + vec2(0.0, s * 0.15);
             let h = s * 0.45;
             draw_triangle(
-                tip - vec2(0.0, h * 0.6),
-                tip + vec2(-h * 0.55, h * 0.4),
-                tip + vec2(h * 0.55, h * 0.4),
+                tip + vec2(0.0, h * 0.6),
+                tip + vec2(-h * 0.55, -h * 0.4),
+                tip + vec2(h * 0.55, -h * 0.4),
                 col,
             );
         }
@@ -503,15 +502,15 @@ mod tests {
         );
     }
 
-    /// 오른쪽 버튼 = 땅이 화면에서 반시계(가까운 쪽이 오른쪽으로, 0015) — 카메라 쪽 뜻은 camera 시험이 본다.
+    /// 오른쪽 버튼 = 카메라가 오른쪽으로 = 땅이 화면에서 시계 방향(0017) — 카메라 쪽 뜻은 camera 시험이 본다.
     #[test]
-    fn the_right_turn_button_turns_the_ground_counter_clockwise() {
+    fn the_right_turn_button_swings_the_camera_right() {
         let mut a = Read::default();
         press(&mut a, Kind::TurnRight);
-        assert!(a.turn_ccw && !a.turn_cw);
+        assert!(a.turn_cw && !a.turn_ccw);
         let mut a = Read::default();
         press(&mut a, Kind::TurnLeft);
-        assert!(a.turn_cw && !a.turn_ccw);
+        assert!(a.turn_ccw && !a.turn_cw);
         // 오른쪽 버튼이 화면 오른쪽에 있다.
         let b = layout(844.0, 390.0, false, false);
         let x = |k| b.iter().find(|x| x.kind == k).unwrap().center.x;
