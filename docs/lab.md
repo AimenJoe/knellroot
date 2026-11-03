@@ -18,7 +18,7 @@ KB `guides/poc-and-lab-before-content.md`의 구현. 첫 게임은 수치 한 �
 | Lock-on | range·lose dist | 1 보스 | 언제 잡히고 언제 풀리나 |
 | Enemy | mob speed·telegraph / boss telegraph·swing arc | 1·2 | 예고를 읽고 피할 수 있나 |
 | Render | face shade | 2 떼 | 상자가 입체로 읽히나(0 = 민짜) |
-| Camera(0007·0008) | lock yaw max·near slow·pull out·**look ahead**·**quarter lead** | 1 보스, 3 기둥 | 보스에 바짝 붙어 돌 때 멀미 vs 보스가 화면 밖으로 빠짐, 기둥에서 풀려 나오는 속도 |
+| Camera(0007·0008·0009) | lock yaw max·near slow·pull out·**look ahead**·**quarter lead**·**blend turn x** | 1 보스, 3 기둥 | 보스에 바짝 붙어 돌 때 멀미 vs 보스가 화면 밖으로 빠짐, 기둥에서 풀려 나오는 속도 |
 
 ## 기록
 값을 정하면 결정 기록 한 줄(어느 날, 누가, A/B 무엇과 비교해 무엇을 골랐나). 판정은 사람. `cargo test`의 시험은 "규칙"(한 스윙 한 번, 락온 기준 즉시, 당기기 최소 거리)만 본다 — 손맛은 못 잰다.

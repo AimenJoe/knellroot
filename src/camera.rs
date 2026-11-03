@@ -31,21 +31,79 @@ pub struct Rig {
     pub fov: f32,
 }
 
-impl Rig {
-    fn lerp(a: Rig, b: Rig, t: f32) -> Rig {
-        Rig {
-            pos: a.pos.lerp(b.pos, t),
-            look: a.look.lerp(b.look, t),
-            fov: a.fov + (b.fov - a.fov) * t,
+/// 리그를 중심점(플레이어를 따라가는 점) 둘레의 궤도로 본 것. 전환은 이것을 보간한다(0009):
+/// 위치를 직선으로 옮기면 카메라가 반대편으로 넘어갈 때 플레이어 머리 위를 가로질러 시선이 뒤집혔다(990°/s).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Orbit {
+    /// 카메라 자리의 방위(라디안, atan2(dx, dz)).
+    yaw: f32,
+    /// 올려본 각(라디안).
+    elev: f32,
+    dist: f32,
+    /// 주시점 − 중심점을 카메라 앞(수평)·오른쪽·위 축으로 잰 것 — 요와 함께 돈다.
+    look: Vec3,
+    fov: f32,
+}
+
+impl Orbit {
+    fn axes(yaw: f32) -> (Vec3, Vec3) {
+        // 카메라 → 중심 수평 방향 = 카메라 자리 방위의 반대.
+        let fwd = -vec3(yaw.sin(), 0.0, yaw.cos());
+        (fwd, fwd.cross(Vec3::Y))
+    }
+
+    fn from_rig(r: &Rig, pivot: Vec3) -> Orbit {
+        let d = r.pos - pivot;
+        let dist = d.length().max(1e-3);
+        let yaw = d.x.atan2(d.z);
+        let (fwd, right) = Orbit::axes(yaw);
+        let l = r.look - pivot;
+        Orbit {
+            yaw,
+            elev: (d.y / dist).clamp(-1.0, 1.0).asin(),
+            dist,
+            look: vec3(l.dot(fwd), l.dot(right), l.y),
+            fov: r.fov,
         }
     }
+
+    fn to_rig(self, pivot: Vec3) -> Rig {
+        let (fwd, right) = Orbit::axes(self.yaw);
+        let h = self.dist * self.elev.cos();
+        let pos = pivot
+            + vec3(
+                self.yaw.sin() * h,
+                self.dist * self.elev.sin(),
+                self.yaw.cos() * h,
+            );
+        Rig {
+            pos,
+            look: pivot + fwd * self.look.x + right * self.look.y + Vec3::Y * self.look.z,
+            fov: self.fov,
+        }
+    }
+}
+
+fn wrap(mut a: f32) -> f32 {
+    while a > std::f32::consts::PI {
+        a -= std::f32::consts::TAU;
+    }
+    while a < -std::f32::consts::PI {
+        a += std::f32::consts::TAU;
+    }
+    a
+}
+
+fn smoothstep(x: f32) -> f32 {
+    let x = x.clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
 }
 
 pub struct Camera {
     pub mode: Mode,
     pub rig: Rig,
-    /// 전환 중이면 (출발 리그, 경과 시간).
-    blend: Option<(Rig, f32)>,
+    /// 전환 중이면 (출발 궤도, 경과 시간, 이번 전환 길이 — 첫 갱신에 돌 각도로 정한다).
+    blend: Option<(Orbit, f32, Option<f32>)>,
     /// 쿼터뷰 추적점(플레이어를 지연 추적).
     follow: Vec3,
     /// 락온 요(라디안, 대상 방향을 지연 추적).
@@ -98,7 +156,7 @@ impl Camera {
             }
         }
         self.mode = mode;
-        self.blend = Some((self.rig, 0.0));
+        self.blend = Some((Orbit::from_rig(&self.rig, self.follow), 0.0, None));
     }
 
     /// 카메라가 플레이어 머리에 얼마나 가까운가(가림 당기기 뒤). 렌더가 가까우면 플레이어를 옅게.
@@ -109,7 +167,7 @@ impl Camera {
     }
 
     pub fn blending(&self) -> Option<f32> {
-        self.blend.map(|(_, e)| e)
+        self.blend.map(|(_, e, _)| e)
     }
 
     /// 원하는 리그(전환·충돌 전).
@@ -214,16 +272,30 @@ impl Camera {
             self.look = None;
         }
         let mut rig = want;
-        if let Some((from, elapsed)) = self.blend {
+        if let Some((from, elapsed, dur)) = self.blend {
+            // 궤도로 보간: 방위는 짧은 쪽으로 돌고, 높이 각·거리·주시점·FOV는 따로. 돌 각도가 크면 그만큼 길게
+            // (`cam.blend s` × (1 + 각/180° × `cam.blend turn`)), 방위는 위치보다 살짝 늦게 시작한다(먼저 내려오고 돈다).
+            let to = Orbit::from_rig(&want, self.follow);
+            let dyaw = wrap(to.yaw - from.yaw);
+            let d = dur.unwrap_or_else(|| {
+                t[P::CamBlend] * (1.0 + dyaw.abs() / std::f32::consts::PI * t[P::CamBlendTurn])
+            });
             let e = elapsed + dt;
-            let d = t[P::CamBlend].max(1e-3);
             if e >= d {
                 self.blend = None;
             } else {
-                let x = e / d;
-                let s = x * x * (3.0 - 2.0 * x); // smoothstep = ease in-out
-                rig = Rig::lerp(from, want, s);
-                self.blend = Some((from, e));
+                let x = e / d.max(1e-3);
+                let s = smoothstep(x);
+                let sy = smoothstep((x - 0.15) / 0.85);
+                let o = Orbit {
+                    yaw: from.yaw + dyaw * sy,
+                    elev: from.elev + (to.elev - from.elev) * s,
+                    dist: from.dist + (to.dist - from.dist) * s,
+                    look: from.look.lerp(to.look, s),
+                    fov: from.fov + (to.fov - from.fov) * s,
+                };
+                rig = o.to_rig(self.follow);
+                self.blend = Some((from, e, Some(d)));
             }
         }
         // 충돌: 카메라 구가 상자 **안에** 들 때만 가장 얕은 면 밖으로 밀어낸다(머리 쪽으로 당기지 않는다 — 옆으로 미끄러져
@@ -614,5 +686,84 @@ mod frame_probe {
         // 락온: 보스 쪽으로 걸어 다가가도 카메라 기울기가 거의 그대로(예전 −5° → −11°).
         let (_, range) = walk(true, vec2(0.0, 1.0));
         assert!(range < 2.5, "pitch range {range}");
+    }
+}
+
+#[cfg(test)]
+mod switch_probe {
+    //! 0009: 락온·해제 전환이 플레이어 자리(대상과의 방향)에 따라 부자연스럽던 것. `cargo test switch_probe -- --nocapture`.
+    use super::*;
+    use crate::input::Actions;
+    use crate::scenario::{build, Scenario};
+
+    /// 보스(0,0,-8) 둘레의 여러 방향에서 락온 → 1초 → 해제. 전환 동안 시선 회전 최대(°/s), 카메라 속도 최대(m/s),
+    /// 카메라와 플레이어 머리의 가장 가까운 거리(m).
+    pub fn run(print: bool) -> Vec<(f32, f32, f32, f32)> {
+        let t = Tuning::default();
+        let mut out = Vec::new();
+        for deg in (0..360).step_by(45) {
+            let a = (deg as f32).to_radians();
+            let mut w = build(Scenario::Boss);
+            let boss = w.enemies[0].pos;
+            w.player.pos = boss + vec3(a.sin(), 0.0, a.cos()) * 6.0;
+            w.player.prev = w.player.pos;
+            w.enemies[0].state = crate::world::EState::Recover { t: -1000.0 };
+            let mut c = Camera::new(w.player.pos, &t);
+            for _ in 0..60 {
+                c.update(1.0 / 60.0, &t, w.player.pos, None, &w.obstacles);
+            }
+            let (mut wmax, mut vmax, mut dmin) = (0.0f32, 0.0f32, f32::MAX);
+            let mut prev = c.rig;
+            for tick in 0..150 {
+                let lock = tick == 0 || tick == 75;
+                w.step(
+                    &Actions {
+                        lock,
+                        ..Default::default()
+                    },
+                    &t,
+                );
+                let tg = w.lock_target();
+                c.set_mode(
+                    if tg.is_some() {
+                        Mode::Lock
+                    } else {
+                        Mode::Quarter
+                    },
+                    tg,
+                    w.player.pos,
+                );
+                c.update(1.0 / 60.0, &t, w.player.pos, tg, &w.obstacles);
+                let d0 = (prev.look - prev.pos).normalize();
+                let d1 = (c.rig.look - c.rig.pos).normalize();
+                wmax = wmax.max(d0.dot(d1).clamp(-1.0, 1.0).acos().to_degrees() * 60.0);
+                vmax = vmax.max(c.rig.pos.distance(prev.pos) * 60.0);
+                dmin = dmin.min(
+                    c.rig
+                        .pos
+                        .distance(w.player.pos + Vec3::Y * (PLAYER_HEIGHT * 0.8)),
+                );
+                prev = c.rig;
+            }
+            if print {
+                println!("player at {deg:>3}° around boss: turn max {wmax:6.1} deg/s  cam speed max {vmax:5.1} m/s  closest to head {dmin:4.2} m");
+            }
+            out.push((deg as f32, wmax, vmax, dmin));
+        }
+        out
+    }
+
+    /// 플레이어가 대상의 어느 쪽에 있든 전환이 비슷하게 부드럽다(고치기 전: 270~990°/s, 머리에서 3.3m까지 스침).
+    #[test]
+    fn lock_switch_is_smooth_from_every_side_of_the_target() {
+        let rows = run(true);
+        let worst = rows.iter().map(|r| r.1).fold(0.0, f32::max);
+        let best = rows.iter().map(|r| r.1).fold(f32::MAX, f32::min);
+        assert!(worst < 280.0, "turn max {worst}");
+        assert!(worst < best * 1.8, "side matters too much: {best}..{worst}");
+        assert!(
+            rows.iter().all(|r| r.3 > 4.0),
+            "camera grazes the head: {rows:?}"
+        );
     }
 }

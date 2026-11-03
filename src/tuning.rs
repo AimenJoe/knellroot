@@ -56,6 +56,7 @@ pub enum P {
     CamLNear,
     CamPullOut,
     CamQLead,
+    CamBlendTurn,
 }
 
 pub struct Spec {
@@ -85,7 +86,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 37] = [
+pub const SPECS: [Spec; 38] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -194,7 +195,7 @@ pub const SPECS: [Spec; 37] = [
         30.0,
         0.5
     ),
-    spec!(CamBlend, "cam.blend s", "CAM_BLEND", 0.3, 0.05, 1.0, 0.05),
+    spec!(CamBlend, "cam.blend s", "CAM_BLEND", 0.4, 0.05, 1.0, 0.05),
     spec!(
         CamCollideRadius,
         "cam.collide r",
@@ -346,6 +347,15 @@ pub const SPECS: [Spec; 37] = [
         0.0,
         0.6,
         0.02
+    ),
+    spec!(
+        CamBlendTurn,
+        "cam.blend turn x",
+        "CAM_BLEND_TURN",
+        2.0,
+        0.0,
+        3.0,
+        0.1
     ),
 ];
 
