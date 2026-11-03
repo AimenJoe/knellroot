@@ -134,8 +134,8 @@ pub struct Player {
     pub dodge_cd: f32,
     /// 땅 돌리기 대기(초).
     pub turn_cd: f32,
-    /// 마지막 땅 돌리기에서 지난 초(렌더의 쟁반 테 — 카메라가 다 돌 때까지 보이게).
-    pub since_turn: f32,
+    /// 마지막 쏟음(땅 돌리기가 멈춘 순간)에서 지난 초 — 렌더의 쟁반 테.
+    pub since_spill: f32,
     pub swings: u32,
 }
 
@@ -162,6 +162,8 @@ pub enum EState {
     Recover {
         t: f32,
     },
+    /// 땅이 도는 동안 실려 간다: 발을 떼지 못하고 버틴다(쫓지도 치지도 못함, 예고도 끊김). 멈추는 순간 휘청으로(0012).
+    Carried,
     /// 휘청(CC): 쫓지도 치지도 못한다. 예고·스윙 중이었어도 끊긴다.
     Stagger {
         t: f32,
@@ -239,6 +241,8 @@ pub struct World {
     hold: Option<(Vec3, f32)>,
     /// 이번 틱에 땅을 돌렸다(`cw`) — `apply_turn`이 쏟는다.
     turn_now: Option<bool>,
+    /// 돌리는 중: (방향, 멈추기까지 남은 초). 0이 되는 틱에 쏟는다 — 히트스톱 중에도 줄어든다(카메라 시계와 맞춘다).
+    spill_at: Option<(bool, f32)>,
     /// 히트스톱 동안 들어온 눌림(공격·회피·락온·돌리기). 멈춤이 풀리는 틱에 낸다 — 버리면 멈춘 순간 누른 버튼이 사라진다.
     held: Actions,
 }
@@ -257,7 +261,7 @@ impl World {
                 hurt: 0.0,
                 dodge_cd: 0.0,
                 turn_cd: 0.0,
-                since_turn: f32::MAX,
+                since_spill: f32::MAX,
                 swings: 0,
             },
             enemies: Vec::new(),
@@ -273,6 +277,7 @@ impl World {
             last_lock_fwd: None,
             hold: None,
             turn_now: None,
+            spill_at: None,
             held: Actions::default(),
         }
     }
@@ -351,6 +356,9 @@ impl World {
     pub fn step(&mut self, a: &Actions, t: &Tuning) -> Vec<Event> {
         let mut ev = Vec::new();
         let dt = TICK_DT;
+        if let Some((_, left)) = &mut self.spill_at {
+            *left -= dt;
+        }
         if self.hitstop > 0.0 {
             self.hitstop -= dt;
             self.held = Actions {
@@ -485,7 +493,7 @@ impl World {
         pl.hurt = (pl.hurt - dt).max(0.0);
         pl.dodge_cd = (pl.dodge_cd - dt).max(0.0);
         pl.turn_cd = (pl.turn_cd - dt).max(0.0);
-        pl.since_turn = (pl.since_turn + dt).min(f32::MAX);
+        pl.since_spill = (pl.since_spill + dt).min(f32::MAX);
         let world_move = move_to_world(a.move_dir, basis, pl.pos);
         // 땅 돌리기(0012): 쿼터뷰에서만, 서 있거나 스윙 후딜레이(회피와 같은 캔슬 자리)에서. ↻이 ↺보다 먼저(둘 다면 하나만).
         let turn = (a.turn_cw || a.turn_ccw).then_some(a.turn_cw);
@@ -499,7 +507,6 @@ impl World {
         if let (Some(cw), true) = (turn, can_turn) {
             pl.state = PState::Turn { t: 0.0, cw };
             pl.turn_cd = t[P::TurnCooldown];
-            pl.since_turn = 0.0;
             self.turn_now = Some(cw);
             // 화면이 돌아도 쥔 스틱은 돌기 전 기준 그대로(0010과 같은 규칙) — 놓거나 `move.hold` 초가 지나면 새 화면 기준.
             if stick_on {
@@ -660,15 +667,31 @@ impl World {
         }
     }
 
-    /// 땅 돌리기의 쏟음(0012). 쟁반을 돌리면 위의 물건은 관성으로 제자리에 남으려 한다 → 바닥 기준으로는 돌린 쪽의 반대로,
-    /// 축(주인공)에서 멀수록 많이 미끄러진다(속도 = 각속도 × 거리). 바깥 몫(`spill.outward share`)을 섞어 "쏟아지는" 것처럼.
-    /// 범위 안의 적은 모두 휘청 — 가까운 적은 덜 밀려 바로 칠 수 있고, 먼 적은 멀리 밀려 벽에 부딪힐 수 있다. 보스는 무거워서 덜.
+    /// 땅 돌리기(0012). 누른 틱에 `Event::Turn`(카메라가 돈다), 그리고 카메라가 90°에 닿아 **멈추는 순간** 쏟는다:
+    /// 돌던 쟁반이 급정거하면 위의 물건은 관성으로 돌던 쪽으로 계속 간다(버스가 서면 몸이 앞으로 쏠리듯 — 사장 "시작할 때가 아니라
+    /// 멈출 때 흔들리는 것"). 축(주인공)에서 멀수록 많이 미끄러진다(속도 = 각속도 × 거리), 바깥 몫(`spill.outward share`)을 섞어
+    /// "쏟아지게". 범위 안의 적은 모두 휘청 — 가까운 적은 덜 밀려 바로 칠 수 있고, 먼 적은 멀리 밀려 벽에 부딪힐 수 있다. 보스는 무거워서 덜.
     fn apply_turn(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
-        let Some(cw) = self.turn_now.take() else {
+        if let Some(cw) = self.turn_now.take() {
+            ev.push(Event::Turn { cw });
+            self.spill_at = Some((cw, crate::tuning::turn_land_secs(t)));
+            // 도는 동안 범위 안의 적은 땅에 실려 버틴다 — 안 그러면 1초 동안 쫓아와 곁에 뭉쳐, 멈출 때 쏟을 거리가 없었다.
+            let p = self.player.pos;
+            for en in &mut self.enemies {
+                if en.alive() && vec2(en.pos.x - p.x, en.pos.z - p.z).length() <= t[P::SpillRange] {
+                    en.state = EState::Carried;
+                }
+            }
+        }
+        let Some((cw, left)) = self.spill_at else {
             return;
         };
-        ev.push(Event::Turn { cw });
-        // 비트는 순간 세상이 한 박자 멈춘다(시동 정지 — KB special-move-impact "시간").
+        if left > 1e-6 {
+            return;
+        }
+        self.spill_at = None;
+        self.player.since_spill = 0.0;
+        // 멈추는 순간 세상이 한 박자 멈춘다(카메라의 "탁"과 같은 틱 — KB special-move-impact "시간").
         self.hitstop = self.hitstop.max(t[P::Hitstop]);
         let p = self.player.pos;
         for en in &mut self.enemies {
@@ -678,6 +701,9 @@ impl World {
             let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
             let r = d.length();
             if r > t[P::SpillRange] {
+                if en.state == EState::Carried {
+                    en.state = EState::Chase;
+                }
                 continue;
             }
             let mass = if en.boss { t[P::SpillBossMass] } else { 1.0 };
@@ -696,9 +722,11 @@ impl World {
             } else {
                 t[P::SpillStagger]
             };
-            if dur > 0.0 {
-                en.state = EState::Stagger { t: 0.0, dur };
-            }
+            en.state = if dur > 0.0 {
+                EState::Stagger { t: 0.0, dur }
+            } else {
+                EState::Chase
+            };
         }
     }
 
@@ -790,6 +818,7 @@ impl World {
                         EState::Recover { t: e + dt }
                     };
                 }
+                EState::Carried => {}
                 EState::Stagger { t: e, dur } => {
                     en.state = if e + dt >= dur {
                         EState::Chase
@@ -901,16 +930,16 @@ pub const KNOCK_DECAY: f32 = 10.0;
 const SLAM_SPEED: f32 = 2.0;
 
 /// 쏟아지는 방향(XZ 단위). `d` = 축(주인공) → 적. 화면 시계 방향 돌리기의 접선은 (−d.z, d.x)라(카메라 요 +90°와 같은 회전),
-/// 관성으로 남는 쪽은 그 반대 (d.z, −d.x). 반시계면 다시 반대. 바깥 몫 `out`을 섞는다.
+/// 멈출 때 관성으로 계속 가는 쪽이 그 접선. 반시계면 반대. 바깥 몫 `out`을 섞는다.
 pub fn spill_dir(d: Vec3, cw: bool, out: f32) -> Vec3 {
     let r = vec3(d.x, 0.0, d.z).length().max(1e-6);
     let n = vec3(d.x, 0.0, d.z) / r;
-    let back = if cw {
-        vec3(n.z, 0.0, -n.x)
-    } else {
+    let along = if cw {
         vec3(-n.z, 0.0, n.x)
+    } else {
+        vec3(n.z, 0.0, -n.x)
     };
-    (back * (1.0 - out) + n * out).normalize_or_zero()
+    (along * (1.0 - out) + n * out).normalize_or_zero()
 }
 
 /// 락온이 풀린 뒤 이만큼보다 세게 쥐고 있으면 "쥔 그대로"로 본다(놓으면 쿼터뷰 기준).
@@ -1131,25 +1160,60 @@ mod tests {
         }
     }
 
-    /// 화면 시계 방향(요 35°, 화면 위 = `quarter_forward(35)`): 화면 위에 선 적은 바닥 기준 화면 왼쪽(돌린 쪽의 반대)으로 쏟아진다.
+    /// 시험용: 적이 쫓지도 치지도 않게 세워 둔다.
+    fn idle(w: &mut World) {
+        for e in &mut w.enemies {
+            e.state = EState::Recover { t: -1000.0 };
+        }
+    }
+
+    /// 돌리고 멈추는(쏟는) 틱까지.
+    fn turn_until_spill(w: &mut World, cw: bool, t: &Tuning) -> Vec<Event> {
+        let mut ev = w.step(&turn(cw), t);
+        for _ in 0..600 {
+            if w.spill_at.is_none() {
+                break;
+            }
+            ev.extend(w.step(&Actions::default(), t));
+        }
+        ev
+    }
+
+    /// 화면 시계 방향(요 35°, 화면 위 = `quarter_forward(35)`): 돌다가 **멈추는 순간** 화면 위에 선 적이 돌던 쪽(화면 오른쪽)으로
+    /// 쏟아진다(급정거 — 관성으로 계속 간다). 도는 동안엔 그대로.
     #[test]
-    fn turning_spills_enemies_against_the_turn_and_farther_ones_slide_more() {
+    fn turning_spills_enemies_along_the_turn_when_it_stops_and_farther_ones_slide_more() {
         let t = Tuning::default();
         let mut w = World::new("test", 30.0);
         w.view_yaw = Some(35.0);
         let up = crate::camera::quarter_forward(35.0);
-        let left = -up.cross(Vec3::Y);
+        let right = up.cross(Vec3::Y);
         w.spawn_mob(up * 3.0);
         w.spawn_mob(up * 7.0);
+        idle(&mut w);
         let ev = w.step(&turn(true), &t);
         assert!(ev.contains(&Event::Turn { cw: true }));
+        // 도는 동안(멈추기 전)엔 아무도 밀리지 않는다.
+        let half = (crate::tuning::turn_land_secs(&t) * 0.5 / TICK_DT) as usize;
+        for _ in 0..half {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(w.enemies[1].pos.distance(up * 7.0) < 1e-4);
+        assert!(!matches!(w.enemies[1].state, EState::Stagger { .. }));
+        for _ in 0..600 {
+            if w.spill_at.is_none() {
+                break;
+            }
+            w.step(&Actions::default(), &t);
+        }
+        assert!(matches!(w.enemies[1].state, EState::Stagger { .. }));
         for _ in 0..40 {
             w.step(&Actions::default(), &t);
         }
         let near = w.enemies[0].pos - up * 3.0;
         let far = w.enemies[1].pos - up * 7.0;
         assert!(
-            near.dot(left) > 0.3 && far.dot(left) > 0.3,
+            near.dot(right) > 0.3 && far.dot(right) > 0.3,
             "{near:?} {far:?}"
         );
         assert!(far.length() > near.length() * 1.8, "{near:?} {far:?}");
@@ -1159,23 +1223,34 @@ mod tests {
         let mut w2 = World::new("test", 30.0);
         w2.view_yaw = Some(35.0);
         w2.spawn_mob(up * 7.0);
-        w2.step(&turn(false), &t);
+        idle(&mut w2);
+        turn_until_spill(&mut w2, false, &t);
         for _ in 0..40 {
             w2.step(&Actions::default(), &t);
         }
-        assert!((w2.enemies[0].pos - up * 7.0).dot(left) < -0.3);
+        assert!((w2.enemies[0].pos - up * 7.0).dot(right) < -0.3);
     }
 
     #[test]
-    fn turning_staggers_everyone_in_range_and_cuts_their_telegraph() {
+    fn turning_staggers_everyone_in_range_when_it_stops_and_cuts_their_telegraph() {
         let t = Tuning::default();
         let mut w = World::new("test", 30.0);
         w.spawn_mob(vec3(0.0, 0.0, -1.2));
         w.spawn_mob(vec3(0.0, 0.0, t[P::SpillRange] + 2.0));
-        w.enemies[0].state = EState::Tele { t: 0.4 };
+        idle(&mut w);
         w.step(&turn(true), &t);
+        while w.spill_at.is_some_and(|(_, left)| left > 2.0 * TICK_DT) {
+            w.step(&Actions::default(), &t);
+        }
+        w.enemies[0].state = EState::Tele { t: 0.4 };
+        for _ in 0..600 {
+            if w.spill_at.is_none() {
+                break;
+            }
+            w.step(&Actions::default(), &t);
+        }
         assert!(matches!(w.enemies[0].state, EState::Stagger { .. }));
-        assert!(matches!(w.enemies[1].state, EState::Chase));
+        assert!(!matches!(w.enemies[1].state, EState::Stagger { .. }));
         // 휘청 동안은 치지 못한다(가까이 붙어 있어도).
         let mut hurt = false;
         for _ in 0..((t[P::SpillStagger] / TICK_DT) as usize - 2) {
@@ -1184,13 +1259,38 @@ mod tests {
         assert!(!hurt);
     }
 
+    /// 도는 동안엔 범위 안의 적이 실려 버틴다: 쫓아오지도 치지도 못한다(멈추면 휘청).
+    #[test]
+    fn while_the_ground_turns_the_enemies_on_it_are_carried_and_cannot_close_in() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.spawn_mob(vec3(0.0, 0.0, -1.5));
+        w.spawn_mob(vec3(0.0, 0.0, -5.0));
+        w.spawn_mob(vec3(0.0, 0.0, t[P::SpillRange] + 3.0));
+        w.step(&turn(true), &t);
+        let mut hurt = false;
+        while w.spill_at.is_some_and(|(_, left)| left > TICK_DT) {
+            hurt |= w.step(&Actions::default(), &t).contains(&Event::PlayerHurt);
+        }
+        assert!(!hurt);
+        assert_eq!(w.enemies[0].state, EState::Carried);
+        assert!(w.enemies[1].pos.distance(vec3(0.0, 0.0, -5.0)) < 1e-4);
+        // 범위 밖은 그대로 쫓아온다.
+        assert!(w.enemies[2].pos.z < t[P::SpillRange] + 3.0 - 1.0);
+        for _ in 0..5 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(matches!(w.enemies[1].state, EState::Stagger { .. }));
+    }
+
     #[test]
     fn the_boss_is_heavy_it_barely_slides_and_staggers_briefly() {
         let t = Tuning::default();
         let mut w = World::new("test", 30.0);
         w.spawn_boss(vec3(0.0, 0.0, -6.0));
         w.spawn_mob(vec3(0.0, 0.0, 6.0));
-        w.step(&turn(true), &t);
+        idle(&mut w);
+        turn_until_spill(&mut w, true, &t);
         // 보스 휘청(0.3초)이 끝나기 전에 잰다 — 그 뒤엔 다시 쫓아온다.
         for _ in 0..15 {
             w.step(&Actions::default(), &t);
@@ -1251,14 +1351,15 @@ mod tests {
     fn a_spilled_enemy_that_hits_a_pillar_is_slammed_once() {
         let t = Tuning::default();
         let mut w = World::new("test", 30.0);
-        w.view_yaw = Some(0.0); // 화면 위 = -z, ↻이면 쏟아지는 쪽 = -x(+ 바깥)
+        w.view_yaw = Some(0.0); // 화면 위 = -z, ↻이 멈추면 쏟아지는 쪽 = +x(화면 오른쪽, + 바깥)
         w.spawn_mob(vec3(0.0, 0.0, -7.0));
         w.obstacles.push(Aabb {
-            min: vec3(-3.0, 0.0, -9.0),
-            max: vec3(-1.0, 3.0, -6.0),
+            min: vec3(1.0, 0.0, -9.0),
+            max: vec3(3.0, 3.0, -6.0),
         });
+        idle(&mut w);
         let mut slams = 0;
-        let mut ev = w.step(&turn(true), &t);
+        let mut ev = turn_until_spill(&mut w, true, &t);
         for _ in 0..60 {
             slams += ev
                 .iter()

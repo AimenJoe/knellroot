@@ -446,7 +446,7 @@ pub const SPECS: [Spec; 57] = [
         TurnCooldown,
         "turn.cooldown s",
         "TURN_COOLDOWN",
-        2.5,
+        4.0,
         0.0,
         10.0,
         0.25
@@ -536,6 +536,21 @@ pub const SPECS: [Spec; 57] = [
     // 이 띠는 진짜 지평선처럼 늘 수평이고 회전 중에도 제자리 — 땅에 고정된 지평선이 멀미를 줄인다(Hemmerich 2020). 0 = 끔.
     spec!(Haze, "render.horizon haze", "HAZE", 0.3, 0.0, 0.6, 0.05),
 ];
+
+/// 땅 돌리기의 두 구간(초): 90°+지나침까지 가는 시간, 90°로 되돌아오는 시간. 카메라(`Camera::turn`)와 월드(쏟는 때)가
+/// 같은 식을 쓴다 — 월드는 카메라를 모르지만 "멈추는 순간"을 같이 알아야 한다(0012).
+pub fn turn_phases(t: &Tuning) -> (f32, f32) {
+    let over = t[P::TurnOver];
+    let go = t[P::TurnTime] * (90.0 + over) / 90.0;
+    let settle = if over > 0.0 { t[P::TurnSettle] } else { 0.0 };
+    (go, settle)
+}
+
+/// 돌리기 시작에서 90°에 닿아 멈추기까지(초).
+pub fn turn_land_secs(t: &Tuning) -> f32 {
+    let (go, settle) = turn_phases(t);
+    go + settle
+}
 
 /// 실행 중 값. `SPECS`의 기본값으로 시작하고 랩이 바꾼다. 로직·카메라·렌더는 이것만 읽는다.
 #[derive(Clone, PartialEq, Debug)]

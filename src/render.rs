@@ -144,7 +144,8 @@ impl Renderer {
                 Color::new(0.5, 0.35, 0.25, 1.0)
             };
             let col = if en.hurt > 0.0 { WHITE } else { base };
-            let crouch = matches!(en.state, EState::Tele { .. });
+            // 예고 중에는 웅크리고, 땅에 실려 가는 동안엔 버티느라 조금 웅크린다.
+            let crouch = matches!(en.state, EState::Tele { .. } | EState::Carried);
             let mut h = if crouch { en.height * 0.85 } else { en.height };
             let mut tilt = Quat::IDENTITY;
             if let EState::Stagger { t: e, dur } = en.state {
@@ -223,10 +224,11 @@ impl Renderer {
                 );
             }
         }
-        // 땅 돌리기(0012): 쟁반의 테 — 범위 고리가 밝게 떴다 옅어지고, 안쪽 물결이 바깥으로 퍼진다(어디까지 쏟아지는지 배우게).
-        let shown = t[crate::tuning::P::TurnTime].max(t[crate::tuning::P::TurnPlant]) + 0.15;
-        if w.player.since_turn < shown {
-            let k = (w.player.since_turn / shown).clamp(0.0, 1.0);
+        // 땅 돌리기(0012): 쟁반의 테 — 멈추는 순간 범위 고리가 밝게 떴다 옅어지고, 안쪽 물결이 바깥으로 퍼진다(어디까지 쏟아지는지 배우게).
+        // 멈추는 순간(쏟는 틱)부터 0.5초.
+        let shown = 0.5;
+        if w.player.since_spill < shown {
+            let k = (w.player.since_spill / shown).clamp(0.0, 1.0);
             let range = t[crate::tuning::P::SpillRange];
             ring(
                 pp,

@@ -211,8 +211,7 @@ impl Camera {
         self.q_azimuth = Some(wrap(cur + if cw { q } else { -q }));
         // 지나쳤다 돌아오기(`turn.overshoot deg`): 90°+α까지 같은 빠르기로 가고(그래서 그만큼 길게), `turn.settle s` 동안 90°로 되돌아와 선다.
         let over = t[P::TurnOver].to_radians();
-        let go = t[P::TurnTime] * (q + over) / q;
-        let settle = if over > 0.0 { t[P::TurnSettle] } else { 0.0 };
+        let (go, settle) = crate::tuning::turn_phases(t);
         self.blend = Some((
             Orbit::from_rig(&self.rig, self.follow),
             0.0,
@@ -1234,6 +1233,42 @@ mod turn_probe {
             kicked = kicked.max(c.trauma - before);
         }
         assert!(kicked > d[P::TurnSnap] * 0.8, "lands with a kick: {kicked}");
+    }
+
+    /// 카메라가 90°에 닿는 "탁"과 월드가 적을 쏟는 틱이 같다(±1틱) — 앱과 같은 순서로 돌려 본다.
+    #[test]
+    fn the_enemies_spill_on_the_same_tick_the_camera_lands() {
+        let t = Tuning::default();
+        let mut w = build(Scenario::Tray);
+        let mut c = Camera::new(w.player.pos, &t);
+        let (mut kick_tick, mut spill_tick) = (None, None);
+        for tick in 0..200u32 {
+            w.view_yaw = Some(c.quarter_yaw_deg(&t));
+            for e in w.step(
+                &Actions {
+                    turn_cw: tick == 5,
+                    ..Default::default()
+                },
+                &t,
+            ) {
+                if let crate::world::Event::Turn { cw } = e {
+                    c.turn(cw, &t);
+                }
+            }
+            if w.player.since_spill == 0.0 && spill_tick.is_none() {
+                spill_tick = Some(tick);
+            }
+            let before = c.trauma;
+            c.update(1.0 / 60.0, &t, w.player.pos, None, &w.obstacles);
+            if c.trauma > before + 0.1 && kick_tick.is_none() {
+                kick_tick = Some(tick);
+            }
+        }
+        let (k, s) = (kick_tick.unwrap(), spill_tick.unwrap());
+        assert!(
+            k.abs_diff(s) <= 1,
+            "camera lands at tick {k}, enemies spill at {s}"
+        );
     }
 
     #[test]
