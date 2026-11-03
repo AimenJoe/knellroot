@@ -112,6 +112,16 @@ fn yaw_mode(t: &Tuning) -> YawMode {
 /// 모드 전환에서 방위가 위치보다 늦게 시작하는 몫(먼저 내려오고 돈다, 0009).
 const YAW_DELAY: f32 = 0.15;
 
+/// 전환에서 방위가 도는 모양.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Curve {
+    /// 모드 전환: 전체 길이의 이 몫만큼 늦게 시작하는 smoothstep.
+    Delay(f32),
+    /// 땅 돌리기(0012): `go`초 동안 목표 + `over`(라디안)까지 smoothstep, 남은 시간 동안 목표로 되돌아온다
+    /// (둘 다 끝에서 속도 0 — 한 번 멈췄다 되돌아오는 반동).
+    Over { go: f32, over: f32 },
+}
+
 fn smoothstep(x: f32) -> f32 {
     let x = x.clamp(0.0, 1.0);
     x * x * (3.0 - 2.0 * x)
@@ -121,7 +131,7 @@ pub struct Camera {
     pub mode: Mode,
     pub rig: Rig,
     /// 전환 중이면 (출발 궤도, 경과 시간, 이번 전환 길이 — 없으면 첫 갱신에 돌 각도로 정한다, 방위 늦춤 몫).
-    blend: Option<(Orbit, f32, Option<f32>, f32)>,
+    blend: Option<(Orbit, f32, Option<f32>, Curve)>,
     /// 쿼터뷰 추적점(플레이어를 지연 추적).
     follow: Vec3,
     /// 락온 요(라디안, 대상 방향을 지연 추적).
@@ -188,7 +198,7 @@ impl Camera {
             Orbit::from_rig(&self.rig, self.follow),
             0.0,
             None,
-            YAW_DELAY,
+            Curve::Delay(YAW_DELAY),
         ));
     }
 
@@ -199,11 +209,15 @@ impl Camera {
         let q = std::f32::consts::FRAC_PI_2;
         let cur = self.quarter_yaw_deg(t).to_radians();
         self.q_azimuth = Some(wrap(cur + if cw { q } else { -q }));
+        // 지나쳤다 돌아오기(`turn.overshoot deg`): 90°+α까지 같은 빠르기로 가고(그래서 그만큼 길게), `turn.settle s` 동안 90°로 되돌아와 선다.
+        let over = t[P::TurnOver].to_radians();
+        let go = t[P::TurnTime] * (q + over) / q;
+        let settle = if over > 0.0 { t[P::TurnSettle] } else { 0.0 };
         self.blend = Some((
             Orbit::from_rig(&self.rig, self.follow),
             0.0,
-            Some(t[P::TurnTime]),
-            0.0,
+            Some(go + settle),
+            Curve::Over { go, over },
         ));
     }
 
@@ -340,7 +354,7 @@ impl Camera {
             self.look = None;
         }
         let mut rig = want;
-        if let Some((from, elapsed, dur, delay)) = self.blend {
+        if let Some((from, elapsed, dur, curve)) = self.blend {
             // 궤도로 보간: 방위는 짧은 쪽으로 돌고, 높이 각·거리·주시점·FOV는 따로. 돌 각도가 크면 그만큼 길게
             // (`cam.blend s` × (1 + 각/180° × `cam.blend turn`)), 방위는 위치보다 살짝 늦게 시작한다(먼저 내려오고 돈다).
             let to = Orbit::from_rig(&want, self.follow);
@@ -362,16 +376,26 @@ impl Camera {
             } else {
                 let x = e / d.max(1e-3);
                 let s = smoothstep(x);
-                let sy = smoothstep((x - delay) / (1.0 - delay));
+                let yaw = match curve {
+                    Curve::Delay(delay) => dyaw * smoothstep((x - delay) / (1.0 - delay)),
+                    Curve::Over { go, over } => {
+                        let o = over * dyaw.signum();
+                        if e < go {
+                            (dyaw + o) * smoothstep(e / go)
+                        } else {
+                            dyaw + o - o * smoothstep((e - go) / (d - go).max(1e-3))
+                        }
+                    }
+                };
                 let o = Orbit {
-                    yaw: from.yaw + dyaw * sy,
+                    yaw: from.yaw + yaw,
                     elev: from.elev + (to.elev - from.elev) * s,
                     dist: from.dist + (to.dist - from.dist) * s,
                     look: from.look.lerp(to.look, s),
                     fov: from.fov + (to.fov - from.fov) * s,
                 };
                 rig = o.to_rig(self.follow);
-                self.blend = Some((from, e, Some(d), delay));
+                self.blend = Some((from, e, Some(d), curve));
             }
         }
         // 충돌: 카메라 구가 상자 **안에** 들 때만 가장 얕은 면 밖으로 밀어낸다(머리 쪽으로 당기지 않는다 — 옆으로 미끄러져
@@ -1000,19 +1024,46 @@ mod turn_probe {
         assert!((wrap((c.quarter_yaw_deg(&t) - before).to_radians())).abs() < 1e-4);
     }
 
-    /// (가장 빠른 시선 회전 °/s, 다 도는 데 걸린 초, 카메라-주시점 거리 흔들림 m)
-    fn one(turn_time: f32) -> (f32, f32, f32) {
+    struct Probe {
+        /// 가장 빠른 시선 회전(°/s).
+        peak: f32,
+        /// 되돌아올 때 반대 방향으로 가장 빠른 방위 회전(°/s).
+        back: f32,
+        /// 가장 멀리 간 방위(°, 90이면 지나침 없음).
+        reach: f32,
+        /// 다 도는 데 걸린 초.
+        secs: f32,
+        /// 카메라-주시점 거리 흔들림(m).
+        wobble: f32,
+    }
+
+    fn one(turn_time: f32, over: f32, settle: f32) -> Probe {
         let mut t = Tuning::default();
-        let i = crate::tuning::SPECS
-            .iter()
-            .position(|s| s.p == P::TurnTime)
-            .unwrap();
-        t.set(i, turn_time);
+        for (p, v) in [
+            (P::TurnTime, turn_time),
+            (P::TurnOver, over),
+            (P::TurnSettle, settle),
+        ] {
+            let i = crate::tuning::SPECS.iter().position(|s| s.p == p).unwrap();
+            t.set(i, v);
+        }
         let mut w = build(Scenario::Tray);
         let mut c = Camera::new(w.player.pos, &t);
         let mut prev = c.rig;
-        let (mut peak, mut secs, mut dmin, mut dmax) = (0.0f32, 0.0f32, f32::MAX, 0.0f32);
-        for tick in 0..90 {
+        let azi = |r: &Rig| {
+            let d = r.pos - r.look;
+            d.x.atan2(d.z)
+        };
+        let start = azi(&c.rig);
+        let mut pr = Probe {
+            peak: 0.0,
+            back: 0.0,
+            reach: 0.0,
+            secs: 0.0,
+            wobble: 0.0,
+        };
+        let (mut dmin, mut dmax) = (f32::MAX, 0.0f32);
+        for tick in 0..120 {
             w.view_yaw = Some(c.quarter_yaw_deg(&t));
             for e in w.step(
                 &Actions {
@@ -1028,9 +1079,15 @@ mod turn_probe {
             c.update(1.0 / 60.0, &t, w.player.pos, None, &w.obstacles);
             let d0 = (prev.look - prev.pos).normalize();
             let d1 = (c.rig.look - c.rig.pos).normalize();
-            peak = peak.max(d0.dot(d1).clamp(-1.0, 1.0).acos().to_degrees() * 60.0);
+            pr.peak = pr
+                .peak
+                .max(d0.dot(d1).clamp(-1.0, 1.0).acos().to_degrees() * 60.0);
+            // ↻ = 방위 +: 반대(−)로 도는 빠르기가 되돌아오기.
+            let step = wrap(azi(&c.rig) - azi(&prev)).to_degrees() * 60.0;
+            pr.back = pr.back.max(-step);
+            pr.reach = pr.reach.max(wrap(azi(&c.rig) - start).to_degrees());
             if c.blending().is_some() {
-                secs += 1.0 / 60.0;
+                pr.secs += 1.0 / 60.0;
             }
             if tick > 10 {
                 let d = c.rig.pos.distance(c.rig.look);
@@ -1039,19 +1096,72 @@ mod turn_probe {
             }
             prev = c.rig;
         }
-        (peak, secs, dmax - dmin)
+        pr.wobble = dmax - dmin;
+        pr
     }
 
     #[test]
     fn the_turn_is_no_faster_than_the_lock_switch_and_keeps_its_distance() {
+        let d = Tuning::default();
         for tt in [0.25, 0.3, 0.4, 0.5, 0.6] {
-            let (peak, secs, wobble) = one(tt);
-            println!("turn {tt:.2}s: peak {peak:5.0}°/s, takes {secs:.2}s, distance wobble {wobble:.3} m");
+            let p = one(tt, 0.0, d[P::TurnSettle]);
+            println!(
+                "turn {tt:.2}s: peak {:5.0}°/s, takes {:.2}s, distance wobble {:.3} m",
+                p.peak, p.secs, p.wobble
+            );
         }
-        let (peak, secs, wobble) = one(Tuning::default()[P::TurnTime]);
+        for (over, settle) in [
+            (5.0, 0.2),
+            (10.0, 0.2),
+            (10.0, 0.3),
+            (15.0, 0.25),
+            (20.0, 0.3),
+        ] {
+            let p = one(d[P::TurnTime], over, settle);
+            println!(
+                "overshoot {over:4.0}° settle {settle:.2}s: peak {:5.0}°/s, reaches {:5.1}°, back {:4.0}°/s, takes {:.2}s",
+                p.peak, p.reach, p.back, p.secs
+            );
+        }
+        let p = one(d[P::TurnTime], d[P::TurnOver], d[P::TurnSettle]);
         // 기준: 락온 전환 최악 260°/s(0009). 플레이어가 누른 회전이라 예측되지만, 그보다 빠르지는 않게.
-        assert!(peak < 260.0, "peak {peak}");
-        assert!(secs <= Tuning::default()[P::TurnTime] + 0.02, "{secs}");
-        assert!(wobble < 0.05, "orbit keeps the distance: {wobble}");
+        assert!(p.peak < 260.0, "peak {}", p.peak);
+        assert!(p.wobble < 0.05, "orbit keeps the distance: {}", p.wobble);
+        assert!(
+            (p.reach - 90.0 - d[P::TurnOver]).abs() < 1.5,
+            "reaches {}",
+            p.reach
+        );
+    }
+
+    #[test]
+    fn an_overshooting_turn_goes_past_ninety_comes_back_gently_and_ends_on_ninety() {
+        let p = one(0.4, 10.0, 0.25);
+        assert!(p.reach > 99.0 && p.reach < 101.0, "{}", p.reach);
+        assert!(
+            p.back > 10.0 && p.back < 100.0,
+            "comes back, slowly: {}",
+            p.back
+        );
+        assert!(p.peak < 260.0);
+        let mut t = Tuning::default();
+        let i = crate::tuning::SPECS
+            .iter()
+            .position(|s| s.p == P::TurnOver)
+            .unwrap();
+        t.set(i, 10.0);
+        let mut c = Camera::new(Vec3::ZERO, &t);
+        let before = c.quarter_yaw_deg(&t);
+        c.turn(true, &t);
+        for _ in 0..90 {
+            c.update(1.0 / 60.0, &t, Vec3::ZERO, None, &[]);
+        }
+        assert!(c.blending().is_none());
+        let d = c.rig.pos - c.rig.look;
+        let end = d.x.atan2(d.z).to_degrees();
+        assert!(
+            (wrap((end - before - 90.0).to_radians())).abs() < 0.01,
+            "{before} -> {end}"
+        );
     }
 }

@@ -61,6 +61,8 @@ pub enum P {
     MoveHoldMax,
     CamQYawMode,
     TurnTime,
+    TurnOver,
+    TurnSettle,
     TurnPlant,
     TurnCooldown,
     SpillRange,
@@ -101,7 +103,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 53] = [
+pub const SPECS: [Spec; 55] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -401,6 +403,24 @@ pub const SPECS: [Spec; 53] = [
     ),
     // 쟁반 돌리기(P6, 0012): 주인공이 땅을 90° 비튼다 — 화면이 돌고, 둘레의 적은 관성으로 반대쪽·바깥으로 쏟아져 휘청인다.
     spec!(TurnTime, "turn.camera s", "TURN_TIME", 0.4, 0.1, 1.0, 0.05),
+    spec!(
+        TurnOver,
+        "turn.overshoot deg",
+        "TURN_OVER",
+        10.0,
+        0.0,
+        30.0,
+        1.0
+    ),
+    spec!(
+        TurnSettle,
+        "turn.settle s",
+        "TURN_SETTLE",
+        0.25,
+        0.05,
+        0.6,
+        0.05
+    ),
     spec!(
         TurnPlant,
         "turn.plant s",
