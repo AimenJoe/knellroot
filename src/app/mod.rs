@@ -21,6 +21,9 @@ use crate::ui::{self, Ui, AMBER, DIM, INK};
 use crate::world::{Event, World};
 use flow::{PauseItem, ResultItem, Scene, TitleItem};
 
+/// 타이틀 메뉴 첫 줄의 자리(화면 높이 비율) — `tools/test/touch.js`가 같은 값으로 탭한다.
+const TITLE_MENU_Y: f32 = 0.42;
+
 /// 지금 만든 스테이지(나중에 스테이지 고르기가 생기면 여기서 고른다).
 const FIRST_STAGE: &StageDef = &sanctuary::DEF;
 
@@ -435,7 +438,7 @@ impl App {
         let s = s();
         self.ui.dim(0.45);
         let cx = f.ox + f.w * 0.5;
-        let y = f.oy + f.h * 0.2;
+        let y = f.oy + f.h * 0.13;
         self.ui.text_center(s.game_title, cx, y, 3.0, AMBER);
         self.ui
             .text_center(s.title_subtitle, cx, y + self.ui.px(3.0) * 1.2, 1.0, DIM);
@@ -451,7 +454,9 @@ impl App {
                 TitleItem::Sandbox => "DEV: PoC scenarios".to_string(),
             })
             .collect();
-        self.menu_rects = self.ui.menu(&items, self.cursor, cx, f.oy + f.h * 0.52);
+        self.menu_rects = self
+            .ui
+            .menu(&items, self.cursor, cx, f.oy + f.h * TITLE_MENU_Y);
         self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 3.4);
         self.controls_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.0);
     }

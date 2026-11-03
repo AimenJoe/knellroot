@@ -65,8 +65,8 @@ async function main() {
   // 타이틀(0019): 첫 줄 "시작"을 탭(뗄 때 누른다). 자리는 `app::draw_title`·`ui::menu`와 같은 셈.
   {
     const dpi = 3, sc = Math.max(1, Math.floor(Math.min(W * dpi / 480, H * dpi / 270))) / dpi;
-    const dh = 270 * sc, oy = Math.floor((H - dh) / 2), px = 12 * sc;
-    await tap([W / 2, oy + dh * 0.52 + px * 0.5]);
+    const dh = 270 * sc, oy = Math.floor((H - dh) / 2), px = 13 * sc;  // ui::GLYPH
+    await tap([W / 2, oy + dh * 0.42 + px * 0.5]);  // app::TITLE_MENU_Y
   }
   await page.waitForTimeout(1200);
   await shot('t01-first-screen');

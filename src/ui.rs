@@ -1,4 +1,5 @@
-//! 화면 글·메뉴(0019). 플레이어가 보는 글은 Galmuri11 Condensed(픽셀 글꼴, 12px 격자)로 정수 배율에 찍는다 —
+//! 화면 글·메뉴(0019·0021). 플레이어가 보는 글은 고운바탕(명조, OFL — 표 글자만 남긴 서브셋 `tools/fonts/subset_ui.py`)으로,
+//! 큰 제목(2배 이상)은 굵게. 크기는 렌더 배율에 맞춘다 —
 //! 렌더 배율(`Ui::scale`)과 같은 배수라 게임 화면의 픽셀과 굵기가 맞는다. 개발 화면(랩·측정 줄)은 기본 글꼴 그대로(`text.rs`).
 //!
 //! 메뉴는 커서 없이(위·아래 + 확인), 터치는 항목을 뗄 때 누른다(`Actions::tap`). 그리는 함수가 항목 자리를 돌려주고
@@ -10,11 +11,12 @@ use macroquad::prelude::*;
 
 use crate::i18n::{self, Lang, Strings};
 
-/// Galmuri11 Condensed의 기본 격자(px).
-pub const GLYPH: f32 = 12.0;
+/// 본문 글 크기(렌더 1배 기준 px). 명조라 픽셀 격자가 아니다 — 1배(480×270 창)에서도 읽히게 13.
+pub const GLYPH: f32 = 13.0;
 
 pub struct Ui {
     font: Font,
+    bold: Font,
     /// 정수 배율(렌더 타깃과 같은 값). 글 크기는 `GLYPH × 배수 × scale`.
     pub scale: f32,
     warmed: (u32, f32),
@@ -27,13 +29,17 @@ pub const SHADOW: Color = Color::new(0.03, 0.03, 0.04, 0.9);
 
 impl Ui {
     pub fn new() -> Self {
-        let font =
-            load_ttf_font_from_bytes(include_bytes!("../assets/fonts/Galmuri11-Condensed.ttf"))
-                .expect("Galmuri font");
-        let mut font = font;
-        font.set_filter(FilterMode::Nearest);
+        let load = |bytes: &[u8]| {
+            let mut f = load_ttf_font_from_bytes(bytes).expect("UI font");
+            // 명조는 픽셀 격자가 아니라 부드럽게(고밀도 화면의 소수 배율에서도 매끈하게).
+            f.set_filter(FilterMode::Linear);
+            f
+        };
+        let font = load(include_bytes!("../assets/fonts/GowunBatang-UI-Regular.ttf"));
+        let bold = load(include_bytes!("../assets/fonts/GowunBatang-UI-Bold.ttf"));
         Ui {
             font,
+            bold,
             scale: 1.0,
             warmed: (0, 0.0),
         }
@@ -62,6 +68,18 @@ impl Ui {
         for k in [1.0, 2.0, 3.0] {
             let size = (self.px(k) * dpi).ceil() as u16;
             self.font.populate_font_cache(&chars, size);
+            if k >= 2.0 {
+                self.bold.populate_font_cache(&chars, size);
+            }
+        }
+    }
+
+    /// 큰 제목(2배 이상)은 굵게.
+    fn face(&self, k: f32) -> &Font {
+        if k >= 2.0 {
+            &self.bold
+        } else {
+            &self.font
         }
     }
 
@@ -72,7 +90,7 @@ impl Ui {
 
     fn params(&self, k: f32, color: Color) -> TextParams<'_> {
         TextParams {
-            font: Some(&self.font),
+            font: Some(self.face(k)),
             font_size: self.px(k) as u16,
             font_scale: 1.0,
             color,
@@ -81,7 +99,7 @@ impl Ui {
     }
 
     pub fn width(&self, s: &str, k: f32) -> f32 {
-        measure_text(s, Some(&self.font), self.px(k) as u16, 1.0).width
+        measure_text(s, Some(self.face(k)), self.px(k) as u16, 1.0).width
     }
 
     /// 그림자를 깐 글(어두운 배경·밝은 배경 어디서나 읽히게). `y`는 글줄의 위.

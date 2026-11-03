@@ -4,7 +4,7 @@
 //! - 숫자가 들어가는 글은 `{0}`·`{1}` + `fill()`. 문장을 조각으로 잇지 않는다.
 //! - 데이터 표(스테이지·적·구역)는 글 대신 `Tr`(표에서 글을 고르는 함수)을 들고, 그릴 때 `tr()`로 꺼낸다. 월드는 언어를 모른다.
 //! - 키 이름(J·Space·X …)은 글에 박지 않는다 — 동사만 여기, 키 그림은 `input::prompt`가 지금 장치에 맞춰 붙인다.
-//! - 글꼴은 Galmuri11 Condensed(한글 2,350자 + 라틴, OFL). 시험이 표의 모든 글자가 글꼴에 있는지 본다.
+//! - 글꼴은 고운바탕(OFL) 서브셋 — 표 글자만 들어 있다(0021). 새 글자를 쓰면 `tools/fonts/subset_ui.py`를 다시 돌린다(시험이 잡는다).
 //! - 지금 두 언어(한국어·영어). 구조는 첫 게임처럼 열한 언어까지 그대로 늘어난다(파일 하나 + `Lang` 한 줄).
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -165,15 +165,19 @@ mod tests {
     /// 모든 언어의 모든 글자가 글꼴에 있다(없으면 빈 칸으로 찍힌다).
     #[test]
     fn every_string_is_drawable_with_the_font() {
-        let font = include_bytes!("../../assets/fonts/Galmuri11-Condensed.ttf");
-        let face = ttf_parser::Face::parse(font, 0).unwrap();
-        for l in Lang::ALL {
-            for text in all(l.strings()).into_iter().chain([UI_GLYPHS]) {
-                for c in text.chars() {
-                    assert!(
+        for font in [
+            &include_bytes!("../../assets/fonts/GowunBatang-UI-Regular.ttf")[..],
+            include_bytes!("../../assets/fonts/GowunBatang-UI-Bold.ttf"),
+        ] {
+            let face = ttf_parser::Face::parse(font, 0).unwrap();
+            for l in Lang::ALL {
+                for text in all(l.strings()).into_iter().chain([UI_GLYPHS]) {
+                    for c in text.chars() {
+                        assert!(
                         c.is_whitespace() || face.glyph_index(c).is_some(),
-                        "{l:?}: {c:?} in {text:?} not in Galmuri"
+                        "{l:?}: {c:?} in {text:?} not in the UI font — tools/fonts/subset_ui.py"
                     );
+                    }
                 }
             }
         }

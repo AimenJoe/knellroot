@@ -40,7 +40,7 @@ src/app/         장면(타이틀·싸움·멈춤·끝·결과)과 루프, flow.
 src/stage/       글자 지도 → 레벨 + 진행 대본, sanctuary.rs = 첫 스테이지
 src/species.rs   적 종류 표, enemy.rs = 행동(근접·돌진·문지기)
 src/scenery.rs   지형 굽기(바닥·벽·소품 + 빛), models.rs = GLB 목록(build.rs)
-src/hud.rs ui.rs i18n/   HUD·메뉴·글(한국어·영어, Galmuri11)
+src/hud.rs ui.rs i18n/   HUD·메뉴·글(한국어·영어, 고운바탕 서브셋 — tools/fonts/subset_ui.py)
 src/input.rs     Actions (KeyCode·패드 버튼은 이 파일 밖에 없음)
 src/tuning.rs    수치 전부 + 랩이 바꾸는 표 SPECS
 src/world.rs     규칙 하나: 플레이어·적·락온·타격 (카메라·소리·메뉴를 모른다)

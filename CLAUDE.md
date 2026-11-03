@@ -34,7 +34,7 @@
 - 적 종류는 `species.rs` 표(수치·행동 방식·모델 이름), 행동은 `enemy.rs`. 새 종류 = `Kind` 한 줄 + 표 한 줄. 예고 모양은 `TeleShape`(원판·부채꼴·띠·고리). 잠든 적은 `Enemy::active()`가 거짓.
 - 개발 시나리오는 `scenario.rs` 표 한 줄(`checks`에 그것이 보는 PoC 번호) — 타이틀의 개발 항목으로 들어간다. feature `dev`(기본 켬)로 가린다. 운영판 = `--no-default-features`.
 - 새 메커닉 = 단위 테스트 하나 이상(규칙을 이름으로 읽히게). 소리·그림 핸들을 로직에 넣지 않는다 — 그래서 시나리오 일곱을 600틱씩 돌리는 시험이 있다.
-- 글: 플레이어가 보는 글은 `i18n/<언어>.rs`(한국어·영어) 키-필드 표에만(`Strings`, 데이터 표는 `Tr`, 숫자는 `{0}` + `fill`). 글꼴은 Galmuri11 Condensed — 시험이 모든 글자를 본다, 표 밖 기호는 `i18n::UI_GLYPHS`. 화면 글·메뉴는 `ui.rs`(정수 배율 = 렌더 배율, 커서 없이, 터치는 뗄 때), 싸움 HUD는 `hud.rs`. 개발 전용 화면(랩·개발 줄 F3)만 영어 기본 글꼴.
+- 글: 플레이어가 보는 글은 `i18n/<언어>.rs`(한국어·영어) 키-필드 표에만(`Strings`, 데이터 표는 `Tr`, 숫자는 `{0}` + `fill`). 글꼴은 고운바탕(보통·굵게, 0021) **서브셋 — 표에 있는 글자만 들어 있다**: 새 글자를 쓰면 `python3 tools/fonts/subset_ui.py <원본 Regular> <원본 Bold>`(원본은 Google Fonts, 레포에 넣지 않음), 시험이 모든 글자를 본다, 표 밖 기호는 `i18n::UI_GLYPHS`. 가변 글꼴은 쓰지 않는다(fontdue가 축을 못 고름). 화면 글·메뉴는 `ui.rs`(정수 배율 = 렌더 배율, 커서 없이, 터치는 뗄 때), 싸움 HUD는 `hud.rs`. 개발 전용 화면(랩·개발 줄 F3)만 영어 기본 글꼴.
 - 그림·모델: 손으로 PNG·GLB를 고치지 않는다. 모델 원본은 Blender bpy 스크립트 `tools/art/blender/<이름>.py`(공용 `common.py`: 상자 부위·뼈에 붙인 강체·64×64 아틀라스·동작) → `blender -b -P` → `assets/models/<이름>.glb`(+ 미리보기 `docs/art/previews/`, 검사 `check_glb.py`). GLB는 `build.rs`가 바이너리에 넣고 `models.rs`가 이름으로 찾는다 — 없으면 상자. 부위 이름 `glow_*` = 스스로 빛남. 상태 → 동작 이름은 `render::enemy_anim`·`player`. 지형은 `scenery.rs`가 한 번 굽는다(빛은 정점 색, `render::lit`). 에셋 출처는 `assets/LICENSES.md`. AI를 쓴 곳은 숨기지 않는다.
 
 ## 하지 않는 것
