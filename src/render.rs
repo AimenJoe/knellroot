@@ -327,7 +327,14 @@ impl Renderer {
             .map(|e| format!(" blending {e:.2}s"))
             .unwrap_or_default();
         draw_text(
-            format!("{} [{}]{}   fps {}", entry.name, mode, blend, get_fps()),
+            format!(
+                "{} [{}]{}   cam {:.0}deg   fps {}",
+                entry.name,
+                mode,
+                blend,
+                cam.azimuth_deg(),
+                get_fps()
+            ),
             ox + 10.0,
             oy + 22.0,
             20.0,

@@ -233,6 +233,12 @@ impl Camera {
             .distance(player + Vec3::Y * (PLAYER_HEIGHT * 0.8))
     }
 
+    /// 지금 카메라가 선 방위(도, 0..360). HUD가 보인다 — 랩 값이 먹는지 눈으로 재기.
+    pub fn azimuth_deg(&self) -> f32 {
+        let d = self.rig.pos - self.rig.look;
+        d.x.atan2(d.z).to_degrees().rem_euclid(360.0)
+    }
+
     pub fn blending(&self) -> Option<f32> {
         self.blend.map(|(_, e, _, _)| e)
     }

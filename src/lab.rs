@@ -77,7 +77,11 @@ impl Lab {
         let w = 420.0_f32.min(sw * 0.45);
         let x = sw - w - 8.0;
         let line = 18.0;
-        let h = line * (SPECS.len() as f32 + 4.0) + 16.0;
+        // 값이 화면보다 많으면(55개 — 720px에 38줄) 커서를 따라 창을 굴린다. 예전엔 위 38줄만 그려 아래 값을 골라도 안 보였다.
+        let rows =
+            (((screen_height() - 42.0 - line * 3.5) / line).floor() as usize).clamp(5, SPECS.len());
+        let start = window_start(self.cursor, SPECS.len(), rows);
+        let h = line * (rows as f32 + 4.0) + 16.0;
         draw_rectangle(x, 8.0, w, h, Color::new(0.0, 0.0, 0.0, 0.75));
         draw_text(
             "LAB  up/down pick  left/right change (Ctrl/LB x10)  R reset",
@@ -93,8 +97,8 @@ impl Lab {
             16.0,
             GRAY,
         );
-        for (i, s) in SPECS.iter().enumerate() {
-            let y = 42.0 + line * (i as f32 + 1.5);
+        for (i, s) in SPECS.iter().enumerate().skip(start).take(rows) {
+            let y = 42.0 + line * ((i - start) as f32 + 1.5);
             let sel = i == self.cursor;
             let v = t.get(i);
             let changed = (v - s.def).abs() > 1e-6;
@@ -116,10 +120,23 @@ impl Lab {
             };
             draw_text(&vs, x + w - 70.0, y, 16.0, col);
         }
-        let y = 42.0 + line * (SPECS.len() as f32 + 2.5);
+        let y = 42.0 + line * (rows as f32 + 2.5);
+        let below = SPECS.len() - start - rows;
         draw_text(
             format!(
-                "slot: {}   {}",
+                "{}/{}{}{}   slot: {}   {}",
+                self.cursor + 1,
+                SPECS.len(),
+                if start > 0 {
+                    format!("  ^{start} more")
+                } else {
+                    String::new()
+                },
+                if below > 0 {
+                    format!("  v{below} more")
+                } else {
+                    String::new()
+                },
                 if self.using_b { "B" } else { "A" },
                 self.note
             ),
@@ -166,6 +183,14 @@ impl Lab {
     }
 }
 
+/// 굴리는 목록의 첫 줄: 커서를 가운데쯤에 두되 끝에서는 멈춘다.
+fn window_start(cursor: usize, len: usize, rows: usize) -> usize {
+    if len <= rows {
+        return 0;
+    }
+    cursor.saturating_sub(rows / 2).min(len - rows)
+}
+
 fn value_text(v: f32, step: f32) -> String {
     if step >= 1.0 {
         format!("{v:.0}")
@@ -173,5 +198,25 @@ fn value_text(v: f32, step: f32) -> String {
         format!("{v:.2}")
     } else {
         format!("{v:.3}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_lab_list_scrolls_so_the_picked_value_is_always_on_screen() {
+        for rows in [5, 20, 38] {
+            for cursor in 0..SPECS.len() {
+                let start = window_start(cursor, SPECS.len(), rows);
+                assert!(
+                    cursor >= start && cursor < start + rows,
+                    "{cursor} {start} {rows}"
+                );
+                assert!(start + rows <= SPECS.len());
+            }
+        }
+        assert_eq!(window_start(3, 10, 20), 0);
     }
 }
