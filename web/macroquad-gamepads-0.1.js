@@ -1,0 +1,7 @@
+// gamepads 0.1.7 macroquad 플러그인. 원본: https://github.com/fornwall/gamepads/blob/main/js/macroquad-gamepads-0.1.js (2026-10-24)
+// 수정 2곳:
+// (2) `r.mapping!=="standard"` 조건 제거. 원본은 표준 매핑이 아닌 패드를 통째로 무시하는데, Android Chrome의 블루투스 패드와
+//     핸드헬드 내장 패드는 mapping이 ""로 잡히는 경우가 많다. 비표준 패드도 표준 인덱스(버튼 0~16, 축 0~3) 가정으로 받는다.
+// (1) version:"0.1.7" → version:65543. 크레이트의 gamepads_crate_version()은 (major<<24)+(minor<<16)+patch 정수를
+// 돌려주는데 원본 JS는 문자열을 넣어 mq_js_bundle이 매 로드마다 "version mismatch"를 콘솔에 찍는다. 크레이트를 올리면 이 숫자도 갱신.
+miniquad_add_plugin({name:"gamepads",version:65543,register_plugin:function(e,l){const u=8;const m=36;const p=.04;globalThis.addEventListener(`gamepadconnected`,()=>{});e.env.getGamepads=n=>{const e=navigator.getGamepads();const t=l?l.memory:wasm_memory;const a=new Float32Array(t.buffer);const s=new Uint32Array(t.buffer);const o=new Uint8Array(t.buffer);for(const[i,r]of e.slice(0,u).entries()){let e=n+m*i+1;if(!r||!r.connected){o[e]=0;continue}o[e++]=1;o[e++]=r.buttons.length;o[e++]=r.axes.length;let t=0;for(const[c,f]of r.buttons.entries()){if(c<17&&f.pressed)t|=1<<c}s[e/4]=t;e+=4;for(const[c,d]of r.axes.slice(0,6).entries()){if(c<4){const g=c===1||c===3?-1:1;a[e/4]=Math.abs(d)<p?0:g*(d-Math.sign(d)*p)/(1-p)}else{if(Math.abs(d)<.05&&a[e/4]<.05){}else{a[e/4]=Math.abs(d)+1<p?0:(d+1)*.5}}e+=4}}};e.env.playEffect=(t,e,n,a,s)=>{const o=navigator.getGamepads().find(e=>e?.index===t);o?.vibrationActuator?.playEffect("dual-rumble",{duration:e,startDelay:n,strongMagnitude:a,weakMagnitude:s})}}});

@@ -1,0 +1,68 @@
+// 헤드리스 Chromium으로 웹 빌드를 띄워 시나리오마다 키를 넣고 스크린숏을 남긴다(nail tools/test/smoke.js를 줄인 것).
+//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/shot.js dist shots
+// 콘솔 에러·패닉이 있으면 종료 코드 1. 눈으로 볼 것: 카메라 전환, 예고 부채꼴, 랩 패널.
+const { chromium } = require('playwright');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const DIST = path.resolve(process.argv[2] || 'dist');
+const OUT = path.resolve(process.argv[3] || 'shots');
+const PORT = 8131;
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm' };
+// 알려진 잡음: mq_js_bundle의 quad_net 플러그인이 strict 모드에서 register_plugin= 대입(무해, nail web/README.md).
+const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
+
+const server = http.createServer((req, res) => {
+  const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
+  if (!f.startsWith(DIST) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
+  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
+  fs.createReadStream(f).pipe(res);
+});
+
+async function main() {
+  fs.mkdirSync(OUT, { recursive: true });
+  await new Promise((r) => server.listen(PORT, r));
+  const browser = await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  const errors = [];
+  page.on('console', (m) => { if (m.type() === 'error' && !KNOWN_NOISE.some((k) => k.test(m.text()))) errors.push(m.text()); });
+  page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
+  await page.goto(`http://localhost:${PORT}/`);
+  await page.waitForTimeout(2500);
+  const canvas = page.locator('#glcanvas');
+  await canvas.click({ position: { x: 640, y: 360 } });
+  const shot = (name) => page.screenshot({ path: path.join(OUT, name + '.png') });
+  // 1 보스 아레나: 쿼터뷰 → 앞으로 걷기 → 락온 → 전환 중·전환 뒤 → 공격 → 회피 → 해제.
+  await page.keyboard.press('Digit1'); await page.waitForTimeout(400);
+  await shot('01-quarter');
+  await page.keyboard.down('KeyW'); await page.waitForTimeout(900); await page.keyboard.up('KeyW');
+  await page.keyboard.press('KeyL'); await page.waitForTimeout(120); await shot('02-lock-blending');
+  await page.waitForTimeout(700); await shot('03-lock-on');
+  await page.keyboard.down('KeyD'); await page.waitForTimeout(600); await page.keyboard.up('KeyD'); await shot('04-lock-strafe');
+  for (let i = 0; i < 6; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(250); }
+  await shot('05-attack');
+  await page.keyboard.press('KeyK'); await page.waitForTimeout(120); await shot('06-dodge');
+  await page.waitForTimeout(1500); await shot('07-boss-telegraph');
+  await page.keyboard.press('KeyL'); await page.waitForTimeout(150); await shot('08-unlock-blending');
+  // 2 떼.
+  await page.keyboard.press('Digit2'); await page.waitForTimeout(1500); await shot('09-horde');
+  // 3 기둥 + 락온(카메라 당기기).
+  await page.keyboard.press('Digit3'); await page.waitForTimeout(300);
+  await page.keyboard.down('KeyS'); await page.waitForTimeout(1200); await page.keyboard.up('KeyS');
+  await page.keyboard.press('KeyL'); await page.waitForTimeout(800); await shot('10-pillars-lock');
+  // 랩 패널.
+  await page.keyboard.press('F1'); await page.waitForTimeout(200);
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(300); await shot('11-lab');
+  await page.keyboard.press('KeyE'); await page.waitForTimeout(200);
+  await browser.close();
+  server.close();
+  for (const n of fs.readdirSync(OUT)) {
+    const sz = fs.statSync(path.join(OUT, n)).size;
+    console.log(`${n}\t${sz} bytes`);
+  }
+  if (errors.length) { console.error('console errors:\n' + errors.join('\n')); process.exit(1); }
+  console.log('ok');
+}
+main().catch((e) => { console.error(e); process.exit(1); });

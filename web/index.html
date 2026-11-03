@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>blight PoC</title>
+  <style>
+    html, body, canvas { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; position: absolute; background: black; z-index: 0;
+      touch-action: none; overscroll-behavior: none; user-select: none; }
+  </style>
+</head>
+<body>
+  <canvas id="glcanvas" tabindex="1"></canvas>
+  <!-- 레포 복사본(핫링크 금지, nail web/README.md). macroquad 0.4.16과 같은 줄기. -->
+  <script src="mq_js_bundle.js"></script>
+  <!-- gamepads 크레이트 플러그인(nail에서 두 곳 고친 복사본: 버전 정수, 비표준 매핑 허용). -->
+  <script src="macroquad-gamepads-0.1.js"></script>
+  <script>load("blight.wasm");</script>
+</body>
+</html>

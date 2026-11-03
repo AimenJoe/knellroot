@@ -1,0 +1,4 @@
+# 웹 빌드(nail과 같은 까닭): gamepads 크레이트가 JS 호스트 함수를 `#[link(wasm_import_module)]` 없이 선언해
+# rust-lld가 미정의 심볼을 에러로 본다. `env` 모듈 import로 바꾼다.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--import-undefined"]

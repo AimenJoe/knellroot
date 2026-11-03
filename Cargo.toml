@@ -1,0 +1,24 @@
+[package]
+name = "blight"
+version = "0.0.1"
+authors = ["Beardworks"]
+edition = "2021"
+description = "임시 이름 blight — 레트로 로우폴리 3D ARPG(쿼터뷰 떼싸움 + 락온 보스전) PoC"
+publish = false
+
+[features]
+# dev: 랩·개발 시나리오 전환 키. 운영판은 --no-default-features (nail 0193의 규칙 그대로).
+default = ["dev"]
+dev = []
+
+[dependencies]
+macroquad = { version = "0.4.16" }
+
+# nail과 같은 까닭: gamepads 0.1.7은 Android에서 컴파일되지 않는다(패드는 miniquad 패치가 키로 넘긴다).
+[target.'cfg(not(target_os = "android"))'.dependencies]
+gamepads = { version = "0.1.7", default-features = false }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
