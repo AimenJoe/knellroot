@@ -188,6 +188,9 @@ pub struct Enemy {
     pub hit_by: u32,
     /// 땅 돌리기로 쏟아지는 중 — 이때 벽에 부딪히면 벽 쿵(한 번).
     pub spilling: bool,
+    /// 휘청 몸짓(렌더가 기울인다): 쏟아진 쪽(XZ) × 세기 0..1, 그리고 그때부터 지난 초. 벽 쿵이면 반대로 튄다.
+    pub sway: Vec3,
+    pub sway_t: f32,
 }
 
 impl Enemy {
@@ -236,6 +239,8 @@ pub struct World {
     hold: Option<(Vec3, f32)>,
     /// 이번 틱에 땅을 돌렸다(`cw`) — `apply_turn`이 쏟는다.
     turn_now: Option<bool>,
+    /// 히트스톱 동안 들어온 눌림(공격·회피·락온·돌리기). 멈춤이 풀리는 틱에 낸다 — 버리면 멈춘 순간 누른 버튼이 사라진다.
+    held: Actions,
 }
 
 impl World {
@@ -268,6 +273,7 @@ impl World {
             last_lock_fwd: None,
             hold: None,
             turn_now: None,
+            held: Actions::default(),
         }
     }
 
@@ -287,6 +293,8 @@ impl World {
             knock: Vec3::ZERO,
             hit_by: 0,
             spilling: false,
+            sway: Vec3::ZERO,
+            sway_t: 0.0,
         });
     }
 
@@ -306,6 +314,8 @@ impl World {
             knock: Vec3::ZERO,
             hit_by: 0,
             spilling: false,
+            sway: Vec3::ZERO,
+            sway_t: 0.0,
         });
     }
 
@@ -343,6 +353,15 @@ impl World {
         let dt = TICK_DT;
         if self.hitstop > 0.0 {
             self.hitstop -= dt;
+            self.held = Actions {
+                move_dir: a.move_dir,
+                attack: self.held.attack | a.attack,
+                dodge: self.held.dodge | a.dodge,
+                lock: self.held.lock | a.lock,
+                turn_cw: self.held.turn_cw | a.turn_cw,
+                turn_ccw: self.held.turn_ccw | a.turn_ccw,
+                ..Actions::default()
+            };
             // 보간이 미끄러지지 않게 prev를 지금으로.
             self.player.prev = self.player.pos;
             for e in &mut self.enemies {
@@ -350,6 +369,16 @@ impl World {
             }
             return ev;
         }
+        let held = std::mem::take(&mut self.held);
+        let merged = Actions {
+            attack: a.attack | held.attack,
+            dodge: a.dodge | held.dodge,
+            lock: a.lock | held.lock,
+            turn_cw: a.turn_cw | held.turn_cw,
+            turn_ccw: a.turn_ccw | held.turn_ccw,
+            ..*a
+        };
+        let a = &merged;
         self.time += dt;
         self.player.prev = self.player.pos;
         for e in &mut self.enemies {
@@ -639,6 +668,8 @@ impl World {
             return;
         };
         ev.push(Event::Turn { cw });
+        // 비트는 순간 세상이 한 박자 멈춘다(시동 정지 — KB special-move-impact "시간").
+        self.hitstop = self.hitstop.max(t[P::Hitstop]);
         let p = self.player.pos;
         for en in &mut self.enemies {
             if !en.alive() {
@@ -652,8 +683,13 @@ impl World {
             let mass = if en.boss { t[P::SpillBossMass] } else { 1.0 };
             let slide = (r * t[P::SpillPerM]).min(t[P::SpillMax]) / mass;
             if r > 1e-3 {
-                en.knock = spill_dir(d, cw, t[P::SpillOut]) * slide * KNOCK_DECAY;
+                let dir = spill_dir(d, cw, t[P::SpillOut]);
+                en.knock = dir * slide * KNOCK_DECAY;
                 en.spilling = slide > 0.05;
+                // 몸짓 세기: 많이 미끄러질수록 크게, 가까운 적·보스도 보일 만큼은(0.35).
+                let max = t[P::SpillMax].max(1e-3);
+                en.sway = dir * (slide / max).clamp(0.35, 1.0);
+                en.sway_t = 0.0;
             }
             let dur = if en.boss {
                 t[P::SpillBossStagger]
@@ -674,6 +710,7 @@ impl World {
                 continue;
             }
             en.hurt = (en.hurt - dt).max(0.0);
+            en.sway_t += dt;
             // 넉백은 빠르게 줄어든다.
             en.pos += en.knock * dt;
             en.knock *= (1.0 - KNOCK_DECAY * dt).max(0.0);
@@ -819,6 +856,9 @@ impl World {
             }
             en.spilling = false;
             en.knock = Vec3::ZERO;
+            // 몸은 부딪힌 쪽에서 되튄다.
+            en.sway = -en.sway.normalize_or_zero();
+            en.sway_t = 0.0;
             en.hp -= t[P::SlamDamage].round() as i32;
             en.hurt = 0.15;
             if let EState::Stagger { t: e, dur } = en.state {
@@ -1193,6 +1233,7 @@ mod tests {
         // 대기가 끝나도 락온 중엔 안 된다.
         w.player.turn_cd = 0.0;
         w.player.state = PState::Idle;
+        w.hitstop = 0.0;
         w.step(
             &Actions {
                 lock: true,
@@ -1266,6 +1307,26 @@ mod tests {
         }
         let new_up = crate::camera::quarter_forward(125.0);
         assert!(w.player.vel.normalize().dot(new_up) > 0.98);
+    }
+
+    #[test]
+    fn a_press_during_hitstop_is_kept_for_when_the_world_moves_again() {
+        let t = Tuning::default();
+        let mut w = world_with_boss();
+        w.hitstop = 0.1;
+        w.step(
+            &Actions {
+                lock: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.lock.is_none(), "frozen");
+        let mut ev = Vec::new();
+        for _ in 0..10 {
+            ev.extend(w.step(&Actions::default(), &t));
+        }
+        assert!(ev.contains(&Event::LockOn) && w.lock.is_some());
     }
 
     #[test]

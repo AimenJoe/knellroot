@@ -145,8 +145,32 @@ impl Renderer {
             };
             let col = if en.hurt > 0.0 { WHITE } else { base };
             let crouch = matches!(en.state, EState::Tele { .. });
-            let h = if crouch { en.height * 0.85 } else { en.height };
-            actor(p, en.facing_dir(), en.radius, h, col, shade);
+            let mut h = if crouch { en.height * 0.85 } else { en.height };
+            let mut tilt = Quat::IDENTITY;
+            if let EState::Stagger { t: e, dur } = en.state {
+                let left = ((dur - e) / 0.25).clamp(0.0, 1.0);
+                let v = lean(en.sway, en.sway_t, w.time, left);
+                if v.length() > 1e-4 {
+                    tilt = Quat::from_axis_angle(Vec3::Y.cross(v).normalize(), v.length());
+                }
+                // 움찔: 처음 순간 눌렸다 펴진다.
+                h *= 1.0 - 0.2 * en.sway.length() * (-12.0 * en.sway_t).exp();
+            }
+            // 끌린 자국: 미끄러지는 동안 발 뒤에 흙.
+            let speed = en.knock.length();
+            if speed > 1.5 {
+                let back = -en.knock / speed;
+                for i in 1..=3 {
+                    let k = i as f32;
+                    draw_cube(
+                        p + back * (0.22 * k) + Vec3::Y * 0.03,
+                        vec3(0.22, 0.05, 0.22) * (1.0 - 0.2 * k),
+                        None,
+                        Color::new(0.55, 0.48, 0.38, 0.8 - 0.2 * k),
+                    );
+                }
+            }
+            actor(p, en.facing_dir(), en.radius, h, col, shade, tilt);
             if en.boss {
                 // 체력 띠(머리 위).
                 let k = en.hp as f32 / en.max_hp as f32;
@@ -181,6 +205,7 @@ impl Renderer {
             PLAYER_HEIGHT,
             pcol,
             shade,
+            Quat::IDENTITY,
         );
         // 스윙 부채꼴(활성 구간만).
         if let PState::Attack { t: e, .. } = w.player.state {
@@ -351,21 +376,62 @@ impl Renderer {
 /// 가린 기둥의 면 진하기(0 = 안 보임). 윤곽선은 따로 남는다.
 const FADED: f32 = 0.08;
 
-/// 상자 몸 + 작은 코. `dir`은 바라보는 단위 벡터(XZ).
-fn actor(p: Vec3, dir: Vec3, r: f32, h: f32, col: Color, shade: f32) {
+/// 휘청 기울기(가장 큰 각, 라디안). 세기 1(가장 멀리 미끄러진 적)이 이만큼 꺾인다.
+const LEAN_MAX: f32 = 0.6;
+/// 비틀비틀 작은 원 흔들림(라디안).
+const DIZZY: f32 = 0.1;
+
+/// 휘청 몸짓: 머리가 기우는 쪽(XZ) × 각(라디안). 버스가 급정거할 때처럼 발은 바닥에 끌리고 몸은 미끄러지는 쪽으로 꺾인다 —
+/// 빠르게 기울었다 앞뒤로 두어 번 흔들리며 잦아들고(감쇠 진동), 휘청이 끝날 때까지 작게 원을 그린다(`left` 1 → 0이면 사라짐).
+/// `sway` = 쏟아진 쪽 × 세기, `t` = 그때부터 지난 초, `clock` = 원 흔들림 위상.
+pub fn lean(sway: Vec3, t: f32, clock: f32, left: f32) -> Vec3 {
+    let k = sway.length();
+    if k < 1e-4 {
+        return Vec3::ZERO;
+    }
+    let dir = sway / k;
+    // 감쇠 진동(초당 두 번): 0.125초에 가장 크게(≈ 0.7), 0.375초에 반대로 한 번, 1초면 거의 선다.
+    let swing = (-3.0 * t).exp() * (std::f32::consts::TAU * 2.0 * t).sin();
+    let (s, c) = (clock * 9.0).sin_cos();
+    dir * (LEAN_MAX * k * swing) + vec3(c, 0.0, s) * (DIZZY * left)
+}
+
+/// 상자 몸 + 작은 코. `dir`은 바라보는 단위 벡터(XZ). `tilt`는 발(바닥 가운데)을 축으로 몸 전체를 기울인다.
+fn actor(p: Vec3, dir: Vec3, r: f32, h: f32, col: Color, shade: f32, tilt: Quat) {
     let body = vec3(r * 2.0, h, r * 2.0);
-    shaded_box(p + Vec3::Y * (h * 0.5), body, col, shade);
-    draw_cube_wires(
-        p + Vec3::Y * (h * 0.5),
-        body,
-        Color::new(0.05, 0.05, 0.05, 1.0),
-    );
-    shaded_box(
+    let center = p + Vec3::Y * (h * 0.5);
+    shaded_box_rot(center, body, col, shade, tilt, p);
+    box_wires(center, body, Color::new(0.05, 0.05, 0.05, 1.0), tilt, p);
+    shaded_box_rot(
         p + dir * (r + 0.1) + Vec3::Y * (h * 0.8),
         vec3(0.2, 0.2, 0.2),
         Color::new(0.1, 0.1, 0.1, 1.0),
         shade,
+        tilt,
+        p,
     );
+}
+
+/// 돌린 상자의 모서리 12개(`draw_cube_wires`는 축 정렬뿐).
+fn box_wires(center: Vec3, size: Vec3, col: Color, rot: Quat, pivot: Vec3) {
+    let h = size * 0.5;
+    let at = |x: f32, y: f32, z: f32| pivot + rot * (center + h * vec3(x, y, z) - pivot);
+    for (a, b) in [
+        ((-1., -1., -1.), (1., -1., -1.)),
+        ((-1., 1., -1.), (1., 1., -1.)),
+        ((-1., -1., 1.), (1., -1., 1.)),
+        ((-1., 1., 1.), (1., 1., 1.)),
+        ((-1., -1., -1.), (-1., 1., -1.)),
+        ((1., -1., -1.), (1., 1., -1.)),
+        ((-1., -1., 1.), (-1., 1., 1.)),
+        ((1., -1., 1.), (1., 1., 1.)),
+        ((-1., -1., -1.), (-1., -1., 1.)),
+        ((1., -1., -1.), (1., -1., 1.)),
+        ((-1., 1., -1.), (-1., 1., 1.)),
+        ((1., 1., -1.), (1., 1., 1.)),
+    ] {
+        draw_line_3d(at(a.0, a.1, a.2), at(b.0, b.1, b.2), col);
+    }
 }
 
 /// 고정 빛 방향(위·약간 앞·오른쪽). 면마다 `1 - shade + shade * max(0, n·l)`을 곱한다 — 기본 셰이더가 normal을 안 읽어 정점 색으로 굽는다
@@ -374,6 +440,11 @@ const LIGHT_DIR: Vec3 = Vec3::new(0.35, 0.8, 0.45);
 
 /// 면마다 음영이 다른 상자. 축 정렬. 정점 24개(면마다 넷), 매 프레임 만들어 보낸다(정점은 어차피 매 프레임 올라간다).
 fn shaded_box(center: Vec3, size: Vec3, col: Color, shade: f32) {
+    shaded_box_rot(center, size, col, shade, Quat::IDENTITY, center);
+}
+
+/// `shaded_box`를 `pivot` 둘레로 `rot`만큼 돌린 것. 음영도 돌린 면의 방향으로(빛은 고정).
+fn shaded_box_rot(center: Vec3, size: Vec3, col: Color, shade: f32, rot: Quat, pivot: Vec3) {
     let h = size * 0.5;
     let l = LIGHT_DIR.normalize();
     let faces: [(Vec3, Vec3, Vec3); 6] = [
@@ -387,11 +458,11 @@ fn shaded_box(center: Vec3, size: Vec3, col: Color, shade: f32) {
     let mut vertices = Vec::with_capacity(24);
     let mut indices = Vec::with_capacity(36);
     for (n, u, v) in faces {
-        let k = 1.0 - shade + shade * n.dot(l).max(0.0);
+        let k = 1.0 - shade + shade * (rot * n).dot(l).max(0.0);
         let c = Color::new(col.r * k, col.g * k, col.b * k, col.a);
         let base = vertices.len() as u16;
         for (su, sv) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
-            let p = center + n * h + u * h * su + v * h * sv;
+            let p = pivot + rot * (center + n * h + u * h * su + v * h * sv - pivot);
             vertices.push(Vertex::new(p.x, p.y, p.z, 0.0, 0.0, c));
         }
         // 뒷면 컬링이 없어 감기 방향은 상관없다.
@@ -474,4 +545,31 @@ fn ring(c: Vec3, r: f32, yaw: f32, arc: f32, col: Color) {
         indices,
         texture: None,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_spilled_enemy_leans_the_way_it_slides_then_rocks_back_and_settles() {
+        let sway = vec3(1.0, 0.0, 0.0);
+        // 처음엔 미끄러지는 쪽으로 크게(머리가 그쪽으로).
+        let peak = (1..30)
+            .map(|i| lean(sway, i as f32 / 60.0, 0.0, 0.0).x)
+            .fold(f32::MIN, f32::max);
+        assert!(peak > 0.3, "visible lean: {peak} rad");
+        // 그다음 반대로 한 번 흔들린다.
+        let back = (15..60)
+            .map(|i| lean(sway, i as f32 / 60.0, 0.0, 0.0).x)
+            .fold(f32::MAX, f32::min);
+        assert!(back < -0.1, "rocks back: {back}");
+        // 휘청이 끝날 즈음엔 거의 서 있다.
+        assert!(lean(sway, 1.0, 0.0, 0.0).length() < 0.05);
+        // 세기가 약하면(가까운 적·보스) 작게.
+        let small = (1..30)
+            .map(|i| lean(sway * 0.35, i as f32 / 60.0, 0.0, 0.0).x)
+            .fold(f32::MIN, f32::max);
+        assert!(small < peak * 0.5);
+    }
 }
