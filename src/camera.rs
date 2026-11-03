@@ -1030,6 +1030,22 @@ mod turn_probe {
     use crate::input::Actions;
     use crate::scenario::{build, Scenario};
 
+    /// 오른쪽 버튼(0015) = `turn(false)`: 플레이어 앞(화면 아래, 가까운 쪽)에 있던 땅이 화면 오른쪽으로 간다.
+    #[test]
+    fn a_counter_clockwise_turn_moves_the_near_side_of_the_ground_to_the_right() {
+        let t = Tuning::default();
+        let mut c = Camera::new(Vec3::ZERO, &t);
+        let before = c.quarter_yaw_deg(&t);
+        let near = -quarter_forward(before); // 화면 아래 쪽 땅
+        c.turn(false, &t);
+        let right = quarter_forward(c.quarter_yaw_deg(&t)).cross(Vec3::Y);
+        assert!(
+            near.dot(right) > 0.999,
+            "{before} -> {}",
+            c.quarter_yaw_deg(&t)
+        );
+    }
+
     #[test]
     fn a_clockwise_turn_puts_what_was_screen_up_on_screen_right() {
         let t = Tuning::default();

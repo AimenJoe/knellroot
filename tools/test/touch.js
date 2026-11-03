@@ -30,8 +30,8 @@ function layout(lab) {
     attack: atk,
     dodge: [atk[0] - (atkR + dodgeR + r * 0.5), H - dodgeR * 1.2],
     lock,
-    turn_cw: [cwX, lock[1]],
-    turn_ccw: [cwX - (turnR * 2 + r * 0.4), lock[1]],
+    turn_right: [cwX, lock[1]],
+    turn_left: [cwX - (turnR * 2 + r * 0.4), lock[1]],
     lab: [W - r * 0.7 * 1.4, r * 0.7 * 1.4],
     scenario: [W - r * 0.7 * 4.0, r * 0.7 * 1.4],
   };
@@ -88,8 +88,8 @@ async function main() {
   await tap(b.lab); await page.waitForTimeout(100);
   await tap(b.scenario); await page.waitForTimeout(800);
   await shot('t07-next-scenario');
-  // 땅 돌리기 ↻(0012): 도는 중 · 다 돈 뒤(버튼이 대기로 옅어짐).
-  await tap(b.turn_cw); await page.waitForTimeout(120);
+  // 땅 돌리기 오른쪽 ↷(0012·0015): 도는 중 · 다 돈 뒤(버튼이 대기로 옅어짐).
+  await tap(b.turn_right); await page.waitForTimeout(120);
   await shot('t08-turn-cw');
   await page.waitForTimeout(600);
   await shot('t09-after-turn');

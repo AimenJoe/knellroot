@@ -17,7 +17,7 @@ cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.s
 # 헤드리스 스크린숏(Playwright + Chromium): 시나리오 다섯·락온·랩 패널·땅 돌리기
 node tools/test/shot.js dist shots
 ```
-조작(키보드 / 패드): WASD·화살표 / 왼쪽 스틱 이동 · 오른쪽 스틱 조준(공격은 가까운 적 자동 조준) · J·Space / X 공격 · K·Shift / A 회피 · Q·E / LB·RB 땅 돌리기 ↺↻ · L·Tab / R3 락온 · F1 / Select 랩 · 1~7 / Start 시나리오(6·7 = 성능 측정).
+조작(키보드 / 패드): WASD·화살표 / 왼쪽 스틱 이동 · 오른쪽 스틱 조준(공격은 가까운 적 자동 조준) · J·Space / X 공격 · K·Shift / A 회피 · Q·E / LB·RB 땅 돌리기 왼쪽·오른쪽(누르는 쪽으로 가까운 땅이 간다, 0015) · L·Tab / R3 락온 · F1 / Select 랩 · 1~7 / Start 시나리오(6·7 = 성능 측정).
 터치(폰·태블릿 브라우저, 가로): 왼쪽 반 = 스틱, 오른쪽 아래 = 공격·회피·락온, 오른쪽 위 = SC(시나리오)·LAB.
 ```sh
 node tools/test/touch.js dist shots   # 가로 폰 터치 연기 시험
