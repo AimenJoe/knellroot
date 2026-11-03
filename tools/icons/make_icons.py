@@ -50,7 +50,7 @@ SHAPE = [
     "       bbbbbbbbbbbbbbbbbb",
     "      llllllllllllllllllll",
     "      llllllllllllllllllll",
-    "              cccc",
+    "",
     "",
     "",
     "",
@@ -72,7 +72,8 @@ HI = (255, 222, 150)        # 종의 가장 밝은 빛
 MID_HI = (238, 178, 82)
 SHADE = (184, 116, 42)
 ROOT_L = (150, 104, 124)    # 뿌리 빛 쪽
-ROOT_SEED = 57  # 시드 몇 개를 나란히 보고 고름(곧은뿌리가 가운데로 길고 곁뿌리가 고르게)
+STYLE = 'clapper'  # 'clapper' = 또렷한 방울에서 뿌리가 돋음(사장 2026-11-03: 방울이 모호하다 → 둘을 비교해 고름) · 'knot' = 방울 대신 뿌리 매듭(촉수처럼 보여 안 씀)
+ROOT_SEED = 23  # 시드 몇 개를 나란히 보고 고름
 
 
 def lerp(c0, c1, t):
@@ -106,7 +107,20 @@ def shade_of(ch, x, x0, x1, y, rows):
     raise ValueError(ch)
 
 
-def roots(seed=ROOT_SEED):
+def clapper():
+    """또렷한 방울(종의 추): 입술 밑 한 줄(외곽선 자리) 띄워 6×4 둥근 공, 왼쪽 위 빛. 뿌리가 이 공에서 돋는다."""
+    out = {}
+    shape = [" #### ", "######", "######", " #### "]
+    for j, row in enumerate(shape):
+        for i, ch in enumerate(row):
+            if ch == '#':
+                x, y = 13 + i, 18 + j
+                col = HI if (i, j) in ((1, 0), (1, 1), (0, 1)) else EMBER if (i, j) in ((2, 0), (2, 1)) else SHADE if (i >= 4 or j == 3) else AMBER
+                out[(x, y)] = col
+    return out
+
+
+def roots(seed=ROOT_SEED, style=None):
     """종 입술 밑에서 뿌리를 기른다: 여러 곳에서 나와 바깥으로 퍼지며 내려가고, 굵게 시작해 1px로 가늘어지며,
     조금씩 비틀리고 중간에 곁가지가 갈라진다. 시드 고정(같은 그림). 돌려주는 것은 칠할 칸의 집합."""
     rng = random.Random(seed)
@@ -140,19 +154,34 @@ def roots(seed=ROOT_SEED):
                     side = -side
                 grow(x, y, ang + side * rng.uniform(0.5, 0.8), length * (1 - t) * 0.6, max(width * (1 - t) * 0.6, 1.0), depth - 1)
 
-    # (나오는 x, 방향(아래 = pi/2에서 더하는 각), 길이, 굵기, 곁가지 깊이)
-    for x0, da, length, width, depth in [
-        (15.5, 0.06, 12.5, 2.6, 2),   # 곧은뿌리
-        (12.5, 0.42, 11.5, 2.0, 1),
-        (19.0, -0.42, 11.5, 2.0, 1),
-        (10.0, 0.9, 9.5, 1.6, 1),
-        (21.5, -0.9, 9.5, 1.6, 1),
-    ]:
-        grow(x0, 17.6, math.pi / 2 + da, length, width, depth)
+    if style == 'knot':
+        # 방울 자리의 뿌리 매듭 하나에서 사방(아래 반원)으로 퍼진다.
+        cx, cy = 16.0, 20.0
+        for xx in range(12, 20):
+            for yy in range(18, 23):
+                if ((xx + 0.5 - cx) / 2.7) ** 2 + ((yy + 0.5 - cy) / 2.1) ** 2 <= 1.0:
+                    cells.add((xx, yy))
+        # 매듭 아래 반원 둘레에서 바깥으로(나오는 각 = 뻗는 각).
+        for da, length, width, depth in [(0.0, 9.5, 2.2, 2), (0.5, 9.5, 1.9, 1), (-0.5, 9.5, 1.9, 1), (1.05, 8.5, 1.6, 1), (-1.05, 8.5, 1.6, 1)]:
+            ang = math.pi / 2 + da
+            grow(cx + math.cos(ang) * 2.2, cy + math.sin(ang) * 1.7, ang, length, width, depth)
+    else:
+        # (나오는 x, 방향(아래 = pi/2에서 더하는 각), 길이, 굵기, 곁가지 깊이) — 'clapper'면 방울 밑에서 시작.
+        y0 = 22.2 if style == 'clapper' else 17.6
+        for x0, da, length, width, depth in [
+            (15.5, 0.06, 8.0 if style == 'clapper' else 12.5, 2.6, 2),   # 곧은뿌리
+            (12.5, 0.42, 11.5, 2.0, 1),
+            (19.0, -0.42, 11.5, 2.0, 1),
+            (10.0, 0.9, 9.5, 1.6, 1),
+            (21.5, -0.9, 9.5, 1.6, 1),
+        ]:
+            if style == 'clapper':
+                x0 = 16.0 + (x0 - 15.75) * 0.35
+            grow(x0, y0, math.pi / 2 + da, length, width, depth)
     return cells
 
 
-def art(seed=ROOT_SEED):
+def art(seed=ROOT_SEED, style=None):
     img = Image.new('RGBA', (32, 32), (0, 0, 0, 0))
     rows_of = {}
     for y, row in enumerate(ART):
@@ -172,7 +201,12 @@ def art(seed=ROOT_SEED):
             for xx in range(x0, x):
                 img.putpixel((xx, y), shade_of(ch, xx, x0, x - 1, y, rows_of[ch]) + (255,))
     # 뿌리: 빛은 왼쪽 위 — 왼쪽·위가 비면 밝게, 오른쪽·아래가 비면 그늘, 안쪽은 가운데 색. 종 위에는 칠하지 않는다.
-    rc = roots(seed)
+    style = style or STYLE
+    if style == 'clapper':
+        # 방울: 입술 밑 둥근 공(5×4), 왼쪽 위 빛.
+        for (x, y), c in clapper().items():
+            img.putpixel((x, y), c + (255,))
+    rc = roots(seed, style)
     for (x, y) in rc:
         if img.getpixel((x, y))[3]:
             continue
