@@ -108,7 +108,7 @@ pub const SPECS: [Spec; 55] = [
         CamQPitch,
         "cam.quarter.pitch deg",
         "CAM_Q_PITCH_DEG",
-        55.0,
+        50.0,
         20.0,
         85.0,
         1.0
@@ -117,7 +117,7 @@ pub const SPECS: [Spec; 55] = [
         CamQDist,
         "cam.quarter.dist",
         "CAM_Q_DIST",
-        14.0,
+        20.0,
         4.0,
         30.0,
         0.5
@@ -402,7 +402,7 @@ pub const SPECS: [Spec; 55] = [
         1.0
     ),
     // 쟁반 돌리기(P6, 0012): 주인공이 땅을 90° 비튼다 — 화면이 돌고, 둘레의 적은 관성으로 반대쪽·바깥으로 쏟아져 휘청인다.
-    spec!(TurnTime, "turn.camera s", "TURN_TIME", 0.4, 0.1, 1.0, 0.05),
+    spec!(TurnTime, "turn.camera s", "TURN_TIME", 0.6, 0.1, 1.0, 0.05),
     spec!(
         TurnOver,
         "turn.overshoot deg",
@@ -610,6 +610,7 @@ mod tests {
         assert_eq!(t.get(0), SPECS[0].max);
         let e = t.export();
         assert!(e.contains("CAM_Q_PITCH_DEG: f32 = 85.000;\n"));
-        assert!(e.contains("CAM_Q_DIST: f32 = 14.000;  // (default)"));
+        let dist = SPECS[idx(P::CamQDist)].def;
+        assert!(e.contains(&format!("CAM_Q_DIST: f32 = {dist:.3};  // (default)")));
     }
 }
