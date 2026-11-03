@@ -78,10 +78,10 @@ pub struct Actions {
     pub attack: bool,
     pub dodge: bool,
     pub lock: bool,
-    /// 땅을 시계 방향(화면에서 보아)으로 90° 돌리기 / 반시계(0012). 오른쪽 버튼 = 카메라가 오른쪽으로 = 땅은 시계 방향(`turn_cw`),
-    /// 왼쪽 버튼 = `turn_ccw`(0017 — 사장이 "카메라가 오른쪽으로"를 골랐다. 0015의 "가까운 쪽 기준"을 되돌림).
-    pub turn_cw: bool,
-    pub turn_ccw: bool,
+    /// 땅 돌리기 오른쪽·왼쪽 버튼(0012·0023): 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면이 되게 몸과 화면이 돈다
+    /// (`world::plan_turn` — 화면이 몇 칸 도는지는 캐릭터가 바라보는 쪽으로 정한다).
+    pub turn_right: bool,
+    pub turn_left: bool,
     pub lab_toggle: bool,
     pub lab_up: bool,
     pub lab_down: bool,
@@ -303,8 +303,8 @@ impl Input {
         a.attack = is_key_pressed(KeyCode::J) || is_key_pressed(KeyCode::Space);
         a.dodge = is_key_pressed(KeyCode::K) || is_key_pressed(KeyCode::LeftShift);
         a.lock = is_key_pressed(KeyCode::L) || is_key_pressed(KeyCode::Tab);
-        a.turn_ccw = is_key_pressed(KeyCode::Q);
-        a.turn_cw = is_key_pressed(KeyCode::E);
+        a.turn_left = is_key_pressed(KeyCode::Q);
+        a.turn_right = is_key_pressed(KeyCode::E);
         a.lab_toggle = is_key_pressed(KeyCode::F1);
         a.dev_overlay = is_key_pressed(KeyCode::F3);
         a.menu_up = is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W);
@@ -372,9 +372,9 @@ impl Input {
                 a.attack |= pad.is_just_pressed(Button::ActionLeft);
                 a.dodge |= pad.is_just_pressed(Button::ActionDown);
                 a.lock |= pad.is_just_pressed(Button::RightStick);
-                a.turn_cw |= pad.is_just_pressed(Button::FrontRightUpper);
+                a.turn_right |= pad.is_just_pressed(Button::FrontRightUpper);
                 // 랩이 열려 있으면 LB는 10배 단계다(누르고 십자) — 돌리기로 같이 읽지 않는다.
-                a.turn_ccw |= !lab_open && pad.is_just_pressed(Button::FrontLeftUpper);
+                a.turn_left |= !lab_open && pad.is_just_pressed(Button::FrontLeftUpper);
                 a.lab_toggle |= pad.is_just_pressed(Button::LeftCenterCluster);
                 a.lab_up |= pad.is_just_pressed(Button::DPadUp);
                 a.lab_down |= pad.is_just_pressed(Button::DPadDown);
@@ -417,8 +417,8 @@ impl Input {
             a.attack |= j(Pad::West);
             a.dodge |= j(Pad::South);
             a.lock |= j(Pad::R3);
-            a.turn_cw |= j(Pad::R1);
-            a.turn_ccw |= !lab_open && j(Pad::L1);
+            a.turn_right |= j(Pad::R1);
+            a.turn_left |= !lab_open && j(Pad::L1);
             a.lab_toggle |= j(Pad::Select);
             a.lab_fast |= is_key_down(Pad::L1.key());
             a.lab_reset |= j(Pad::North);
@@ -444,8 +444,8 @@ impl Input {
         a.attack |= t.attack;
         a.dodge |= t.dodge;
         a.lock |= t.lock;
-        a.turn_cw |= t.turn_cw;
-        a.turn_ccw |= t.turn_ccw;
+        a.turn_right |= t.turn_right;
+        a.turn_left |= t.turn_left;
         a.lab_toggle |= t.lab_toggle;
         a.lab_up |= t.lab_up;
         a.lab_down |= t.lab_down;
@@ -479,8 +479,8 @@ impl Input {
             attack: self.latch.attack | a.attack,
             dodge: self.latch.dodge | a.dodge,
             lock: self.latch.lock | a.lock,
-            turn_cw: self.latch.turn_cw | a.turn_cw,
-            turn_ccw: self.latch.turn_ccw | a.turn_ccw,
+            turn_right: self.latch.turn_right | a.turn_right,
+            turn_left: self.latch.turn_left | a.turn_left,
             lab_toggle: self.latch.lab_toggle | a.lab_toggle,
             lab_up: self.latch.lab_up | a.lab_up,
             lab_down: self.latch.lab_down | a.lab_down,

@@ -29,7 +29,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 모델 | `assets/models/*.glb`, `build.rs`, `models.rs`, `tools/art/blender/` | Blender 4.0 bpy 스크립트가 원본(상자 부위 + 뼈에 붙인 강체 + 64×64 아틀라스). 미리보기 `docs/art/previews/`. 없으면 상자 |
 | 지형·빛 | `scenery.rs`, `render.rs` `lit` | 한 번 굽기. 바탕 + 달빛 + 화로(7m, 거리 제곱). 배우는 1.35배 밝게. 가리는 벽 칸·소품은 옅게 |
 | 오래 켜기(0020) | `tools/test/leak.js` | macroquad 텔레메트리가 텍스처를 흘리던 것을 걷어 냄. 탐침: 살아 있는 텍스처·버퍼·wasm 메모리를 10초마다 — 스테이지 120초·잡몹 80 90초 평평 |
-| 손맛 손질(0020) | `camera.rs`, `world.rs`, `render.rs` | 흔들림은 각(거리 무관), 맞으면 몸이 젖혀짐, 회피는 적을 뚫음, 땅 돌리기 좌우 = 캐릭터의 좌우 |
+| 손맛 손질(0020·0023) | `camera.rs`, `world.rs`, `render.rs` | 흔들림은 각(거리 무관), 맞으면 몸이 젖혀짐, 회피는 적을 뚫음. 땅 돌리기 = 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면, 몸도 돌고 쥔 스틱은 바로 새 정면으로 직진(`world::plan_turn`, 0023) |
 | 글꼴 | `assets/fonts/GowunBatang-UI-*.ttf`, `tools/fonts/subset_ui.py` | 0021: 후보 열하나(`docs/art/font-candidates-{pixel,serif}.png`) 중 사장이 고운바탕·함렛으로 좁힘 → 호환성으로 고운바탕(한글 11,172자·굵기 따로 된 파일). 표 글자만 서브셋 두 파일 190KB(Galmuri 330KB보다 작음) |
 | v0.1.0·APK(0022) | `.github/workflows/build-android.yml`·`release.yml`, `third_party/miniquad`, `android/res`, `tools/icons/make_icons.py` | nail CI를 가져옴(비공개 에셋 단계 뺌). Android 패드는 nail의 패치 miniquad. 갈래: main = 운영(개발 기능 없음), `release/v0.2` = 개발판(웹 별칭 `dev`·APK 미리 보기 `dev`) |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
@@ -39,7 +39,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 - [ ] 핸드헬드에 v0.1.0 APK 설치 — 패드 버튼·두 스틱·D패드·Start(멈춤)가 다 먹는지(0022).
 - [ ] 고운바탕이 핸드헬드 화면(작은 화면·1배)에서 읽히는지(0021).
 - [ ] 핸드헬드에서 오래 켜 두기(10분 이상) — 꺼지지 않는지(0020).
-- [ ] 돌리기 좌우가 캐릭터 기준으로 자연스러운지, 회피로 떼를 빠져나가는 느낌, 맞을 때 흔들림 크기(0020).
+- [ ] 땅 돌리기: 돌린 쪽이 정면이 되고 바로 직진되는지, 옆을 볼 때의 180°·몸만 돌기가 헷갈리지 않는지(0023). 회피로 떼를 빠져나가는 느낌, 맞을 때 흔들림 크기(0020).
 - [ ] https://knellroot.netlify.app (배포한 뒤) — 시작부터 핵까지 한 판: S1~S4 느낌을 한 줄씩.
 - [ ] 핸드헬드에서 같은 판 + F3 대신 개발판 개발 줄로 P5(셋째 물결)를 사진 한 장.
 - [ ] 그림 방향: 지금 모델(상자 부위·어두운 팔레트)이 "레트로 로우폴리"로 맞는지, t3ssel8r 쪽으로 더 갈지(`docs/research/2026-11-03-t3ssel8r-style.md`).

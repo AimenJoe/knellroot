@@ -641,9 +641,24 @@ pub fn turn_phases(t: &Tuning) -> (f32, f32) {
     (go, settle)
 }
 
-/// 돌리기 시작에서 90°에 닿아 멈추기까지(초).
-pub fn turn_land_secs(t: &Tuning) -> f32 {
+/// 180°로 돌 때(0023) 가는 시간을 이만큼 늘린다(90°와 같은 빠르기면 너무 빠르다 — 0.8초에 180°는 어지럽다).
+pub const TURN_HALF_MUL: f32 = 1.6;
+/// 카메라는 그대로고 몸만 돌아설 때(0023, 왼쪽을 보고 오른쪽 버튼): 쏟기까지 `turn.camera s`의 이만큼.
+pub const TURN_SPIN_ONLY: f32 = 0.4;
+
+/// 카메라가 `quarters`칸(90°씩) 도는 한 번의 (가는 초, 되돌아오는 초). 0칸이면 몸만(되돌아오기 없음).
+pub fn turn_phases_q(t: &Tuning, quarters: i32) -> (f32, f32) {
     let (go, settle) = turn_phases(t);
+    match quarters.abs() {
+        0 => (t[P::TurnTime] * TURN_SPIN_ONLY, 0.0),
+        1 => (go, settle),
+        _ => (go * TURN_HALF_MUL, settle),
+    }
+}
+
+/// `quarters`칸 돌기 시작에서 멈추기(쏟기)까지(초).
+pub fn turn_land_secs_q(t: &Tuning, quarters: i32) -> f32 {
+    let (go, settle) = turn_phases_q(t, quarters);
     go + settle
 }
 

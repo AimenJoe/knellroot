@@ -53,8 +53,8 @@ pub struct Read {
     pub attack: bool,
     pub dodge: bool,
     pub lock: bool,
-    pub turn_cw: bool,
-    pub turn_ccw: bool,
+    pub turn_right: bool,
+    pub turn_left: bool,
     pub lab_toggle: bool,
     pub scenario_next: bool,
     pub lab_up: bool,
@@ -339,8 +339,8 @@ fn press(a: &mut Read, k: Kind) {
         Kind::Dodge => a.dodge = true,
         Kind::Lock => a.lock = true,
         // 카메라가 오른쪽으로 돌면 땅은 화면에서 시계 방향(0017).
-        Kind::TurnLeft => a.turn_ccw = true,
-        Kind::TurnRight => a.turn_cw = true,
+        Kind::TurnLeft => a.turn_left = true,
+        Kind::TurnRight => a.turn_right = true,
         Kind::Pause => a.pause = true,
         Kind::Lab => a.lab_toggle = true,
         Kind::Scenario => a.scenario_next = true,
@@ -563,10 +563,10 @@ mod tests {
     fn the_right_turn_button_swings_the_camera_right() {
         let mut a = Read::default();
         press(&mut a, Kind::TurnRight);
-        assert!(a.turn_cw && !a.turn_ccw);
+        assert!(a.turn_right && !a.turn_left);
         let mut a = Read::default();
         press(&mut a, Kind::TurnLeft);
-        assert!(a.turn_ccw && !a.turn_cw);
+        assert!(a.turn_left && !a.turn_right);
         // 오른쪽 버튼이 화면 오른쪽에 있다.
         let b = layout(844.0, 390.0, false, false);
         let x = |k| b.iter().find(|x| x.kind == k).unwrap().center.x;

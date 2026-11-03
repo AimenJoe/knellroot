@@ -172,8 +172,8 @@ mod tests {
                     attack: i % 20 == 0,
                     lock: i == 30,
                     dodge: i % 90 == 0,
-                    turn_cw: i % 150 == 10,
-                    turn_ccw: i % 150 == 80,
+                    turn_right: i % 150 == 10,
+                    turn_left: i % 150 == 80,
                     ..Default::default()
                 };
                 w.step(&a, &t);

@@ -119,7 +119,8 @@ enum Curve {
     Delay(f32),
     /// 땅 돌리기(0012): `go`초 동안 목표 + `over`(라디안)까지 smoothstep, 남은 시간 동안 목표로 되돌아온다
     /// (둘 다 끝에서 속도 0 — 한 번 멈췄다 되돌아오는 반동).
-    Over { go: f32, over: f32 },
+    /// `dir` = 도는 쪽(±1) — 180°에서 "짧은 쪽"이 정해지지 않아 따로 든다(0023).
+    Over { go: f32, over: f32, dir: f32 },
 }
 
 fn smoothstep(x: f32) -> f32 {
@@ -202,21 +203,29 @@ impl Camera {
         ));
     }
 
-    /// 땅 돌리기(0012): 쿼터뷰 방위를 90° 돌린다. 화면에서 보아 시계 방향(`cw`) = 요 +90° — 화면 위에 있던 것이 화면 오른쪽으로 간다.
-    /// 플레이어가 누른 것이라 예측된다: 길이는 `turn.camera s`로 고정, 방위만 돈다(높이·거리는 그대로라 늦춤 없이).
+    /// 땅 돌리기(0012·0023): 쿼터뷰 방위를 `quarters` × 90° 돌린다. + = 요 +90° — 화면 위에 있던 것이 화면 오른쪽으로 간다
+    /// (화면 왼쪽에 있던 것이 위로). 0이면 돌지 않고(몸만 돌아선다), ±2면 180°를 그 쪽으로.
+    /// 플레이어가 누른 것이라 예측된다: 길이는 `turn.camera s`로 고정(180°는 `TURN_HALF_MUL`배), 방위만 돈다.
     /// 락온 중에는 부르지 않는다(월드가 막는다).
-    pub fn turn(&mut self, cw: bool, t: &Tuning) {
+    pub fn turn(&mut self, quarters: i32, t: &Tuning) {
+        if quarters == 0 {
+            return;
+        }
         let q = std::f32::consts::FRAC_PI_2;
         let cur = self.quarter_yaw_deg(t).to_radians();
-        self.q_azimuth = Some(wrap(cur + if cw { q } else { -q }));
-        // 지나쳤다 돌아오기(`turn.overshoot deg`): 90°+α까지 같은 빠르기로 가고(그래서 그만큼 길게), `turn.settle s` 동안 90°로 되돌아와 선다.
+        self.q_azimuth = Some(wrap(cur + q * quarters as f32));
+        // 지나쳤다 돌아오기(`turn.overshoot deg`): 목표+α까지 같은 빠르기로 가고(그래서 그만큼 길게), `turn.settle s` 동안 목표로 되돌아와 선다.
         let over = t[P::TurnOver].to_radians();
-        let (go, settle) = crate::tuning::turn_phases(t);
+        let (go, settle) = crate::tuning::turn_phases_q(t, quarters);
         self.blend = Some((
             Orbit::from_rig(&self.rig, self.follow),
             0.0,
             Some(go + settle),
-            Curve::Over { go, over },
+            Curve::Over {
+                go,
+                over,
+                dir: quarters.signum() as f32,
+            },
         ));
     }
 
@@ -363,7 +372,13 @@ impl Camera {
             // 궤도로 보간: 방위는 짧은 쪽으로 돌고, 높이 각·거리·주시점·FOV는 따로. 돌 각도가 크면 그만큼 길게
             // (`cam.blend s` × (1 + 각/180° × `cam.blend turn`)), 방위는 위치보다 살짝 늦게 시작한다(먼저 내려오고 돈다).
             let to = Orbit::from_rig(&want, self.follow);
-            let dyaw = wrap(to.yaw - from.yaw);
+            let mut dyaw = wrap(to.yaw - from.yaw);
+            // 땅 돌리기는 정한 쪽으로(180°면 짧은 쪽이 매 프레임 뒤집힐 수 있다).
+            if let Curve::Over { dir, .. } = curve {
+                if dyaw.abs() > 1.0 && dyaw.signum() != dir {
+                    dyaw += dir * std::f32::consts::TAU;
+                }
+            }
             // 쿼터뷰로 돌아갈 때는 더 빨리(`cam.blend exit x`, 0.7 — 0.5는 464°/s까지 올라 멀미 쪽): 넓게 보는 것은 빨리 돌아와야 한다(0010).
             let exit = if self.mode == Mode::Quarter {
                 t[P::CamBlendExit]
@@ -389,7 +404,7 @@ impl Camera {
                 let s = smoothstep(x);
                 let yaw = match curve {
                     Curve::Delay(delay) => dyaw * smoothstep((x - delay) / (1.0 - delay)),
-                    Curve::Over { go, over } => {
+                    Curve::Over { go, over, .. } => {
                         let o = over * dyaw.signum();
                         if e < go {
                             (dyaw + o) * smoothstep(e / go)
@@ -1036,6 +1051,46 @@ mod turn_probe {
     use crate::scenario::{build, Scenario};
 
     /// 오른쪽 버튼(0017) = `turn(true)`: 카메라가 자기 오른쪽으로 돈다(카메라 자리가 돌기 전 화면 오른쪽 쪽으로 간다).
+    /// 180°(0023, 오른쪽을 보고 오른쪽 버튼)는 정한 쪽으로 끝까지 돌고 반대로 튀지 않는다 — "짧은 쪽"이 매 프레임 뒤집힐 수 있다.
+    #[test]
+    fn a_half_turn_goes_the_chosen_way_and_ends_half_round() {
+        let t = Tuning::default();
+        for q in [2, -2] {
+            let mut c = Camera::new(Vec3::ZERO, &t);
+            for _ in 0..30 {
+                c.update(1.0 / 60.0, &t, Vec3::ZERO, None, &[]);
+            }
+            let azi = |c: &Camera| {
+                let d = c.rig.pos - c.rig.look;
+                d.x.atan2(d.z)
+            };
+            let start = azi(&c);
+            c.turn(q, &t);
+            let (mut total, mut prev, mut against) = (0.0f32, start, 0.0f32);
+            for _ in 0..240 {
+                c.update(1.0 / 60.0, &t, Vec3::ZERO, None, &[]);
+                let step = wrap(azi(&c) - prev);
+                prev = azi(&c);
+                total += step;
+                if step.signum() != q.signum() as f32 {
+                    against += step.abs();
+                }
+            }
+            assert!(
+                (total.abs().to_degrees() - 180.0).abs() < 2.0
+                    && total.signum() == q.signum() as f32,
+                "q {q}: turned {}°",
+                total.to_degrees()
+            );
+            // 반대쪽으로 간 것은 지나쳤다 돌아오는 몫(`turn.overshoot deg`)뿐.
+            assert!(
+                against.to_degrees() < t[P::TurnOver] + 2.0,
+                "q {q}: back {}°",
+                against.to_degrees()
+            );
+        }
+    }
+
     #[test]
     fn a_clockwise_turn_swings_the_camera_to_its_right() {
         let t = Tuning::default();
@@ -1045,7 +1100,7 @@ mod turn_probe {
         }
         let before = c.rig.pos;
         let right = quarter_forward(c.quarter_yaw_deg(&t)).cross(Vec3::Y);
-        c.turn(true, &t);
+        c.turn(1, &t);
         for _ in 0..10 {
             c.update(1.0 / 60.0, &t, Vec3::ZERO, None, &[]);
         }
@@ -1064,7 +1119,7 @@ mod turn_probe {
         let mut c = Camera::new(Vec3::ZERO, &t);
         let before = c.quarter_yaw_deg(&t);
         let near = -quarter_forward(before); // 화면 아래 쪽 땅
-        c.turn(false, &t);
+        c.turn(-1, &t);
         let right = quarter_forward(c.quarter_yaw_deg(&t)).cross(Vec3::Y);
         assert!(
             near.dot(right) > 0.999,
@@ -1078,14 +1133,14 @@ mod turn_probe {
         let t = Tuning::default();
         let mut c = Camera::new(Vec3::ZERO, &t);
         let before = c.quarter_yaw_deg(&t);
-        c.turn(true, &t);
+        c.turn(1, &t);
         let after = c.quarter_yaw_deg(&t);
         let right = quarter_forward(after).cross(Vec3::Y);
         assert!(
             right.dot(quarter_forward(before)) > 0.999,
             "{before} -> {after}"
         );
-        c.turn(false, &t);
+        c.turn(-1, &t);
         assert!((wrap((c.quarter_yaw_deg(&t) - before).to_radians())).abs() < 1e-4);
     }
 
@@ -1161,15 +1216,16 @@ mod turn_probe {
         let (mut dmin, mut dmax) = (f32::MAX, 0.0f32);
         for tick in 0..120 {
             w.view_yaw = Some(c.quarter_yaw_deg(&t));
+            // 기본 자세(화면 위를 봄)에서 왼쪽 버튼 = 화면 왼쪽이 정면 = 방위 +90°(0023).
             for e in w.step(
                 &Actions {
-                    turn_cw: tick == 10,
+                    turn_left: tick == 10,
                     ..Default::default()
                 },
                 &t,
             ) {
-                if let crate::world::Event::Turn { cw } = e {
-                    c.turn(cw, &t);
+                if let crate::world::Event::Turn { quarters } = e {
+                    c.turn(quarters, &t);
                 }
             }
             c.update(1.0 / 60.0, &t, w.player.pos, None, &w.obstacles);
@@ -1268,7 +1324,7 @@ mod turn_probe {
             p.reach, p.back, p.roll, p.pan, p.secs
         );
         let mut c = Camera::new(Vec3::ZERO, &d);
-        c.turn(true, &d);
+        c.turn(1, &d);
         let mut kicked = 0.0f32;
         for _ in 0..120 {
             let before = c.trauma;
@@ -1289,13 +1345,13 @@ mod turn_probe {
             w.view_yaw = Some(c.quarter_yaw_deg(&t));
             for e in w.step(
                 &Actions {
-                    turn_cw: tick == 5,
+                    turn_right: tick == 5,
                     ..Default::default()
                 },
                 &t,
             ) {
-                if let crate::world::Event::Turn { cw } = e {
-                    c.turn(cw, &t);
+                if let crate::world::Event::Turn { quarters } = e {
+                    c.turn(quarters, &t);
                 }
             }
             if w.player.since_spill == 0.0 && spill_tick.is_none() {
@@ -1332,7 +1388,7 @@ mod turn_probe {
         t.set(i, 10.0);
         let mut c = Camera::new(Vec3::ZERO, &t);
         let before = c.quarter_yaw_deg(&t);
-        c.turn(true, &t);
+        c.turn(1, &t);
         for _ in 0..90 {
             c.update(1.0 / 60.0, &t, Vec3::ZERO, None, &[]);
         }

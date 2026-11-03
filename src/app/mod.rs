@@ -256,8 +256,8 @@ impl App {
             attack: a.attack,
             dodge: a.dodge,
             lock: a.lock,
-            turn_cw: a.turn_cw,
-            turn_ccw: a.turn_ccw,
+            turn_right: a.turn_right,
+            turn_left: a.turn_left,
             ..Actions::default()
         }
     }
@@ -274,8 +274,8 @@ impl App {
                 Event::PlayerHurt => SHAKE_HURT,
                 Event::EnemyDown { .. } => SHAKE_DOWN,
                 // 땅 돌리기: 카메라가 90° 돈다(입력 기준은 다음 틱부터 새 방위 — 쥔 스틱은 월드가 그대로 둔다).
-                Event::Turn { cw } => {
-                    cam.turn(cw, t);
+                Event::Turn { quarters } => {
+                    cam.turn(quarters, t);
                     SHAKE_TURN
                 }
                 Event::Slam { .. } => SHAKE_SLAM,
