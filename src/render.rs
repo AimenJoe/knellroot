@@ -63,7 +63,13 @@ impl Renderer {
             );
         }
         let shade = t[crate::tuning::P::Shade];
-        for b in &w.obstacles {
+        // 플레이어 머리 → 카메라를 가리는 기둥은 배우 뒤에 옅게(카메라를 당기지 않는다, 0007).
+        let head = w.player.pos + Vec3::Y * (PLAYER_HEIGHT * 0.8);
+        let hidden = crate::camera::occluders(head, cam.rig.pos, &w.obstacles);
+        for (i, b) in w.obstacles.iter().enumerate() {
+            if hidden.contains(&i) {
+                continue;
+            }
             shaded_box(
                 b.center(),
                 b.size(),
@@ -173,6 +179,17 @@ impl Renderer {
                 360.0,
                 Color::new(1.0, 0.9, 0.3, 0.8),
             );
+        }
+
+        for &i in &hidden {
+            let b = &w.obstacles[i];
+            shaded_box(
+                b.center(),
+                b.size(),
+                Color::new(0.35, 0.32, 0.3, 0.3),
+                shade,
+            );
+            draw_cube_wires(b.center(), b.size(), Color::new(0.9, 0.85, 0.8, 0.35));
         }
 
         // 화면 패스: 정수 배율로 가운데에.

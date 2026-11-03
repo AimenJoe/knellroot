@@ -52,6 +52,9 @@ pub enum P {
     BossTele,
     BossSwingArc,
     Shade,
+    CamLYawMax,
+    CamLNear,
+    CamPullOut,
 }
 
 pub struct Spec {
@@ -81,7 +84,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 33] = [
+pub const SPECS: [Spec; 36] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -307,6 +310,33 @@ pub const SPECS: [Spec; 33] = [
         10.0
     ),
     spec!(Shade, "render.face shade", "SHADE", 0.45, 0.0, 1.0, 0.05),
+    spec!(
+        CamLYawMax,
+        "cam.lock.yaw max deg/s",
+        "CAM_L_YAW_MAX_DEG",
+        90.0,
+        20.0,
+        360.0,
+        5.0
+    ),
+    spec!(
+        CamLNear,
+        "cam.lock.near slow m",
+        "CAM_L_NEAR",
+        3.0,
+        0.0,
+        8.0,
+        0.25
+    ),
+    spec!(
+        CamPullOut,
+        "cam.pull out 1/s",
+        "CAM_PULL_OUT",
+        4.0,
+        0.5,
+        20.0,
+        0.5
+    ),
 ];
 
 /// 실행 중 값. `SPECS`의 기본값으로 시작하고 랩이 바꾼다. 로직·카메라·렌더는 이것만 읽는다.
