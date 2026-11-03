@@ -28,51 +28,112 @@ ROOT_D = (74, 51, 64)
 # 앞 그림이 108dp 칸에서 차지할 크기(dp) — 66dp 안전 원 안에 들게.
 ADAPTIVE_ART_DP = 60
 
-# 32×32 그림(문자 = 색). 종: 머리 고리·몸·입술, 아래 추, 그 아래 뿌리가 갈라진다.
-ART = [
-    "................................",
-    "...............ee...............",
-    "..............e..e..............",
-    "..............e..e..............",
-    "...............ee...............",
-    "............aaaaaaaa............",
-    "...........aeeaaaaaaa...........",
-    "..........aeeaaaaaaaad..........",
-    "..........aeaaaaaaaaad..........",
-    ".........aeeaaaaaaaaaad.........",
-    ".........aeaaaaaaaaaaad.........",
-    ".........aeaaaaaaaaaaad.........",
-    "........aeeaaaaaaaaaaaad........",
-    "........aeaaaaaaaaaaaaad........",
-    ".......aeeaaaaaaaaaaaaaad.......",
-    "......aaaaaaaaaaaaaaaaaaaa......",
-    ".....dddddddddddddddddddddd.....",
-    "...............ee...............",
-    "...............rr...............",
-    "...............rr...............",
-    "..............rrrr..............",
-    ".............rr..rr.............",
-    "............rr.rr.rr............",
-    "...........rr..rr..rr...........",
-    "..........rr..rr....rr..........",
-    ".........rr...r......rr.........",
-    "........rr...rr.......rr........",
-    ".......kr....r.........rk.......",
-    "......k.....kr..........k.......",
-    ".....k......k............k......",
-    "............k...................",
-    "................................",
+# 32×32 그림 — 문자는 모양만(h 종 고리 · b 종 몸 · l 입술 · c 추 · r 뿌리). 음영·외곽선은 `art()`가 모양에서 계산한다:
+# 빛은 왼쪽 위에서 — 줄마다 그 덩어리의 왼쪽 끝은 밝게, 오른쪽은 그늘, 입술은 한 단 어둡게. 둘레에 1px 외곽선.
+SHAPE = [
+    "",
+    "               hh",
+    "              h  h",
+    "              h  h",
+    "               hh",
+    "            bbbbbbbb",
+    "           bbbbbbbbbb",
+    "          bbbbbbbbbbbb",
+    "          bbbbbbbbbbbb",
+    "         bbbbbbbbbbbbbb",
+    "         bbbbbbbbbbbbbb",
+    "         bbbbbbbbbbbbbb",
+    "        bbbbbbbbbbbbbbbb",
+    "        bbbbbbbbbbbbbbbb",
+    "       bbbbbbbbbbbbbbbbbb",
+    "      llllllllllllllllllll",
+    "      llllllllllllllllllll",
+    "              cccc",
+    "               rr",
+    "               rr",
+    "              rrrr",
+    "             rr  rr",
+    "            rr rr rr",
+    "           rr  rr  rr",
+    "          rr   rr   rr",
+    "         rr    r     rr",
+    "        rr    rr      rr",
+    "       rr     r        rr",
+    "      r      rr         r",
+    "     r       r           r",
+    "",
+    "",
 ]
-COLORS = {'a': AMBER, 'e': EMBER, 'd': DARK_AMBER, 'r': ROOT_C, 'k': ROOT_D}
+ART = [row.ljust(32) for row in SHAPE]
+OUTLINE = (12, 10, 14)
+HI = (255, 222, 150)        # 종의 가장 밝은 빛
+MID_HI = (238, 178, 82)
+SHADE = (184, 116, 42)
+ROOT_L = (150, 104, 124)    # 뿌리 빛 쪽
+
+
+def lerp(c0, c1, t):
+    return tuple(int(c0[i] + (c1[i] - c0[i]) * t) for i in range(3))
+
+
+def shade_of(ch, x, x0, x1, y, rows):
+    """그 줄에서 이 칸이 속한 덩어리의 [x0, x1] 안 자리로 색을 고른다."""
+    n = max(x1 - x0, 1)
+    t = (x - x0) / n
+    if ch == 'b':
+        top = rows.index(y) / max(len(rows) - 1, 1)  # 위가 조금 밝다
+        if x == x0 or (t < 0.16 and top < 0.6):
+            return HI if t < 0.08 else EMBER
+        if t < 0.3:
+            return MID_HI
+        if t > 0.8:
+            return DARK_AMBER
+        if t > 0.62:
+            return SHADE
+        return lerp(AMBER, MID_HI, 0.25 * (1 - top))
+    if ch == 'l':
+        last = y == rows[-1]
+        if t < 0.12:
+            return SHADE if last else AMBER
+        return lerp(DARK_AMBER, (96, 56, 22), 0.6) if last else (t > 0.6 and DARK_AMBER or SHADE)
+    if ch == 'h':
+        return EMBER if t < 0.5 else SHADE
+    if ch == 'c':
+        return EMBER if x == x0 else AMBER
+    if ch == 'r':
+        if x1 == x0:
+            return ROOT_C
+        return ROOT_L if x == x0 else ROOT_D
+    raise ValueError(ch)
 
 
 def art():
     img = Image.new('RGBA', (32, 32), (0, 0, 0, 0))
+    rows_of = {}
     for y, row in enumerate(ART):
         assert len(row) == 32, (y, len(row))
-        for x, c in enumerate(row):
-            if c in COLORS:
-                img.putpixel((x, y), COLORS[c] + (255,))
+        for ch in set(row) - {' '}:
+            rows_of.setdefault(ch, []).append(y)
+    for y, row in enumerate(ART):
+        x = 0
+        while x < 32:
+            ch = row[x]
+            if ch == ' ':
+                x += 1
+                continue
+            x0 = x
+            while x < 32 and row[x] == ch:
+                x += 1
+            for xx in range(x0, x):
+                img.putpixel((xx, y), shade_of(ch, xx, x0, x - 1, y, rows_of[ch]) + (255,))
+    # 1px 외곽선: 그림 칸에 닿는(상하좌우) 빈 칸.
+    filled = {(x, y) for y in range(32) for x in range(32) if img.getpixel((x, y))[3]}
+    for y in range(32):
+        for x in range(32):
+            if (x, y) in filled:
+                continue
+            if any((x + dx, y + dy) in filled for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                img.putpixel((x, y), OUTLINE + (255,))
     return img
 
 
