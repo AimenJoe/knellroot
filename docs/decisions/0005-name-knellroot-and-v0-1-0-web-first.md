@@ -12,7 +12,7 @@
 ## v0.1.0 "첫 웹 판" — 조건표
 | # | 조건 | 누가 |
 |---|---|---|
-| 1 | Netlify 사이트 + 시크릿 둘, main push로 올라가고 `build.txt`로 확인 | 사장(사이트·시크릿), Claude(워크플로) |
+| 1 | ~~Netlify 사이트 + 시크릿 둘, main push로 올라가고 `build.txt`로 확인~~ **끝**(2026-11-03: 사이트 `knellroot`·시크릿 둘, 커밋 6693d62가 https://knellroot.netlify.app 에 올라감, `build.txt` 일치, wasm `application/wasm`) | 사장(사이트·시크릿), Claude(워크플로) |
 | 2 | PoC P1·P2·P3 실기 판정 통과(`phase-0-poc.md`) — 상자 그대로 | 사장(+한 사람) |
 | 3 | 랩에서 고른 카메라·이동·공격 값을 `tuning.rs`에 옮기고 결정 기록 | Claude |
 | 4 | 패드로 처음부터 끝까지(시나리오 넷) 되고, 터치는 안 돼도 된다 | 사장 |
