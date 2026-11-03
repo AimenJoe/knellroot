@@ -379,6 +379,12 @@ impl Camera {
             let e = elapsed + dt;
             if e >= d {
                 self.blend = None;
+                // 땅 돌리기가 90°에 닿는 순간 "탁" — 되돌아오기만으로는 끝이 무르다(사장 "마지막 순간 스냅이 약하다").
+                if let Curve::Over { over, .. } = curve {
+                    if over > 0.0 {
+                        self.trauma = (self.trauma + t[P::TurnSnap]).min(1.0);
+                    }
+                }
             } else {
                 let x = e / d.max(1e-3);
                 let s = smoothstep(x);
@@ -408,7 +414,10 @@ impl Camera {
         // 들어갈 때 당길 거리가 한 틱에 몇 m씩 바뀌어 튄다). 가리기만 하는 것은 렌더가 옅게 그린다(`occluders`).
         // 예전엔 선분이 막히면 그 앞으로 한 틱에 당겨 600 m/s로 튀었다(0007). 풀릴 때만 천천히.
         let r = t[P::CamCollideRadius];
-        let want_push = push_out(rig.pos, r, obstacles, self.rig.pos) - rig.pos;
+        // 가는 기둥은 밀지 않는다 — 카메라가 뚫고 지나가고 렌더가 옅게 그린다(`occluders`). 락온 거리 7m에서 카메라가 기둥을 돌아
+        // 나가며 한 틱 133~169°/s로 꺾였다(0012). 밀어낼 것은 벽처럼 넓은 상자뿐.
+        let solid: Vec<Aabb> = obstacles.iter().copied().filter(|b| !is_thin(b)).collect();
+        let want_push = push_out(rig.pos, r, &solid, self.rig.pos) - rig.pos;
         // 미는 것은 바로(늦으면 카메라 중심이 상자 안에 들어가 면 고르기로 튄다 — 밖에서 미는 것은 연속이라 바로 해도 매끄럽다),
         // 풀리는 것만 천천히.
         if want_push.length_squared() >= self.push.length_squared() {
@@ -439,6 +448,14 @@ impl Camera {
             z_far: 200.0,
         }
     }
+}
+
+/// 바닥 면이 이 폭(m) 이하인 상자는 "가는 기둥" — 카메라를 밀지 않고 옅게 뚫고 지나간다.
+pub const THIN: f32 = 2.5;
+
+pub fn is_thin(b: &Aabb) -> bool {
+    let s = b.size();
+    s.x <= THIN && s.z <= THIN
 }
 
 /// 구(`p`, `r`)를 겹친 상자 밖으로 민 자리. 구의 중심이 상자 밖이면 가장 가까운 점에서 멀어지는 쪽으로 민다 —
@@ -1201,8 +1218,27 @@ mod turn_probe {
     }
 
     #[test]
+    fn the_default_turn_lands_with_a_kick() {
+        let d = Tuning::default();
+        let p = one(d[P::TurnTime], d[P::TurnOver], d[P::TurnSettle]);
+        println!(
+            "default: reaches {:.1}°, back {:.0}°/s, roll {:.0}°/s, pan {:.0}°/s, takes {:.2}s",
+            p.reach, p.back, p.roll, p.pan, p.secs
+        );
+        let mut c = Camera::new(Vec3::ZERO, &d);
+        c.turn(true, &d);
+        let mut kicked = 0.0f32;
+        for _ in 0..120 {
+            let before = c.trauma;
+            c.update(1.0 / 60.0, &d, Vec3::ZERO, None, &[]);
+            kicked = kicked.max(c.trauma - before);
+        }
+        assert!(kicked > d[P::TurnSnap] * 0.8, "lands with a kick: {kicked}");
+    }
+
+    #[test]
     fn an_overshooting_turn_goes_past_ninety_comes_back_gently_and_ends_on_ninety() {
-        let p = one(0.4, 10.0, 0.25);
+        let p = one(Tuning::default()[P::TurnTime], 10.0, 0.25);
         assert!(p.reach > 99.0 && p.reach < 101.0, "{}", p.reach);
         assert!(
             p.back > 10.0 && p.back < 100.0,

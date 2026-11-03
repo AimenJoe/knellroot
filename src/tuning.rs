@@ -63,6 +63,7 @@ pub enum P {
     TurnTime,
     TurnOver,
     TurnSettle,
+    TurnSnap,
     TurnPlant,
     TurnCooldown,
     SpillRange,
@@ -104,12 +105,12 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 56] = [
+pub const SPECS: [Spec; 57] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
         "CAM_Q_PITCH_DEG",
-        44.0,
+        40.0,
         20.0,
         85.0,
         1.0
@@ -154,7 +155,7 @@ pub const SPECS: [Spec; 56] = [
         CamLDist,
         "cam.lock.dist",
         "CAM_L_DIST",
-        4.5,
+        7.0,
         1.5,
         12.0,
         0.25
@@ -163,7 +164,7 @@ pub const SPECS: [Spec; 56] = [
         CamLHeight,
         "cam.lock.height",
         "CAM_L_HEIGHT",
-        2.0,
+        2.5,
         0.5,
         6.0,
         0.1
@@ -199,7 +200,7 @@ pub const SPECS: [Spec; 56] = [
         CamLFrame,
         "cam.lock.frame x",
         "CAM_L_FRAME",
-        1.0,
+        1.3,
         -3.0,
         3.0,
         0.1
@@ -403,12 +404,12 @@ pub const SPECS: [Spec; 56] = [
         1.0
     ),
     // 쟁반 돌리기(P6, 0012): 주인공이 땅을 90° 비튼다 — 화면이 돌고, 둘레의 적은 관성으로 반대쪽·바깥으로 쏟아져 휘청인다.
-    spec!(TurnTime, "turn.camera s", "TURN_TIME", 0.6, 0.1, 1.0, 0.05),
+    spec!(TurnTime, "turn.camera s", "TURN_TIME", 0.8, 0.1, 1.0, 0.05),
     spec!(
         TurnOver,
         "turn.overshoot deg",
         "TURN_OVER",
-        10.0,
+        12.0,
         0.0,
         30.0,
         1.0
@@ -417,9 +418,19 @@ pub const SPECS: [Spec; 56] = [
         TurnSettle,
         "turn.settle s",
         "TURN_SETTLE",
-        0.25,
+        0.15,
         0.05,
         0.6,
+        0.05
+    ),
+    // 되돌아와 90°에 닿는 순간의 "탁"(카메라 흔들림 trauma). 0 = 없음.
+    spec!(
+        TurnSnap,
+        "turn.snap kick",
+        "TURN_SNAP",
+        0.35,
+        0.0,
+        1.0,
         0.05
     ),
     spec!(
