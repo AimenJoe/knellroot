@@ -188,7 +188,13 @@ impl Renderer {
             }
         }
         let pp = w.player.prev.lerp(w.player.pos, alpha);
-        shadow(pp, PLAYER_RADIUS * 1.3);
+        // 그림자는 땅에, 높이 뜰수록 작고 옅게 — 쿼터뷰에서 높이를 읽는 단서(0027).
+        let lift = (w.player.air / JUMP_SHADOW_H).clamp(0.0, 1.0);
+        shadow_k(
+            pp,
+            PLAYER_RADIUS * 1.3 * (1.0 - 0.45 * lift),
+            1.0 - 0.5 * lift,
+        );
 
         // 스테이지 물건: 문·핵.
         if let Some(run) = v.stage {
@@ -408,8 +414,15 @@ impl Renderer {
                 PState::Dodge { t: e, .. } => (&["dodge", "walk"], e),
                 PState::Hurt { t: e, .. } => (&["hurt", "idle"], e),
                 PState::Turn { t: e, .. } => (&["turn", "idle"], e),
-                // 패링 동작이 아직 없다 — 공격 동작의 드는 자세(앞 0.08초)로 막는다.
-                PState::Parry { .. } => (&["parry", "attack"], 0.08),
+                PState::Parry { t: e } => (&["parry", "attack"], e),
+                // 공중(0027): 방랑자의 jump·plunge·land 동작(없는 모델이면 회피·공격 자세로).
+                PState::Jump { plunge: false, .. } => (&["jump", "dodge", "idle"], 0.1),
+                // 내려찍기: 떨어지는 동안 칼을 들고 있다가 땅에 가까우면 꽂는 자세로.
+                PState::Jump { plunge: true, .. } => (
+                    &["plunge", "attack"],
+                    if pl.air < 0.35 { 0.29 } else { 0.12 },
+                ),
+                PState::Land { t: e, .. } => (&["land", "idle"], e),
                 PState::Idle if speed > 0.5 => (&["walk"], w.time * (speed / 4.0).clamp(0.6, 1.6)),
                 PState::Idle => (&["idle"], w.time),
             };
@@ -433,7 +446,7 @@ impl Renderer {
                 }
                 _ => Quat::IDENTITY,
             };
-            let inst = Mat4::from_translation(pp)
+            let inst = Mat4::from_translation(pp + Vec3::Y * pl.air)
                 * Mat4::from_quat(recoil)
                 * Mat4::from_rotation_y(pl.facing);
             let tint = if blink {
@@ -450,10 +463,11 @@ impl Renderer {
                 PState::Attack { .. } => Color::new(1.0, 0.85, 0.5, 1.0),
                 PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
                 PState::Parry { .. } => Color::new(0.7, 0.85, 1.0, 1.0),
+                PState::Jump { .. } | PState::Land { .. } => Color::new(0.9, 0.8, 0.6, 1.0),
                 PState::Idle => Color::new(0.85, 0.75, 0.55, 1.0),
             };
             actor(
-                pp,
+                pp + Vec3::Y * pl.air,
                 pl.facing_dir(),
                 PLAYER_RADIUS,
                 PLAYER_HEIGHT,
@@ -497,6 +511,20 @@ impl Renderer {
                     w.player.facing,
                     150.0,
                     Color::new(0.75, 0.9, 1.0, 0.8),
+                );
+            }
+        }
+        // 내려찍기(0027): 내려앉은 자리에서 범위만큼 퍼지는 고리(`plunge.range m`).
+        if let PState::Land { t: e, dur } = w.player.state {
+            if (dur - t[crate::tuning::P::PlungeLand]).abs() < 1e-4 && e < 0.25 {
+                let k = e / 0.25;
+                let r = t[crate::tuning::P::PlungeRange] * (0.4 + 0.6 * k);
+                ring(
+                    pp,
+                    r,
+                    0.0,
+                    360.0,
+                    Color::new(1.0, 0.85, 0.55, 0.9 * (1.0 - k)),
                 );
             }
         }
@@ -1103,14 +1131,22 @@ fn shaded_box_rot(center: Vec3, size: Vec3, col: Color, shade: f32, rot: Quat, p
 }
 
 fn shadow(p: Vec3, r: f32) {
+    shadow_k(p, r, 1.0);
+}
+
+/// 그림자(진하기 `k`배).
+fn shadow_k(p: Vec3, r: f32, k: f32) {
     sector(
         p + Vec3::Y * 0.01,
         r,
         0.0,
         360.0,
-        Color::new(0.0, 0.0, 0.0, 0.35),
+        Color::new(0.0, 0.0, 0.0, 0.35 * k),
     );
 }
+
+/// 이 높이(m)에서 그림자가 가장 작다.
+const JUMP_SHADOW_H: f32 = 1.2;
 
 /// 바닥 부채꼴(가운데 `c`, 반지름 `r`, 가운데 각 `yaw`, 벌림 `arc`도). 삼각형 팬 Mesh 하나.
 fn sector(c: Vec3, r: f32, yaw: f32, arc: f32, col: Color) {

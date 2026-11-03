@@ -18,6 +18,7 @@ pub const KO: Strings = Strings {
     verb_turn: "땅 돌리기",
     verb_lock: "락온",
     verb_parry: "패링",
+    verb_jump: "점프",
     verb_turn_left: "땅 돌리기 왼쪽",
     verb_turn_right: "땅 돌리기 오른쪽",
     menu_controls: "조작 설정",

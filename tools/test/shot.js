@@ -79,6 +79,8 @@ async function main() {
   await shot('05-attack');
   await page.keyboard.press('Space'); await page.waitForTimeout(120); await shot('06-dodge');
   await page.waitForTimeout(400); await page.keyboard.press('KeyK'); await page.waitForTimeout(60); await shot('06b-parry');
+  await page.waitForTimeout(600); await page.keyboard.press('KeyF'); await page.waitForTimeout(200); await shot('06c-jump');
+  await page.keyboard.press('KeyJ'); await page.waitForTimeout(250); await shot('06d-plunge');
   await page.waitForTimeout(1500); await shot('07-boss-telegraph');
   await page.keyboard.press('KeyL'); await page.waitForTimeout(150); await shot('08-unlock-blending');
   // 2 떼.

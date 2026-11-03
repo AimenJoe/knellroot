@@ -115,6 +115,10 @@ pub enum Event {
     Crit {
         at: Vec3,
     },
+    /// 내려찍기가 땅에 닿았다(0027).
+    Plunge {
+        at: Vec3,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -138,6 +142,16 @@ pub enum PState {
     /// 패링(0025): `parry.window s` 동안 앞쪽 근접 공격을 튕긴다. 헛치면 `parry.time s`까지 못 움직인다. 튕기면 바로 풀린다.
     Parry {
         t: f32,
+    },
+    /// 공중(0027): 뛰기 전 속도를 잇고 조금만 조종한다. `plunge`면 내려앉을 때 둘레를 친다.
+    Jump {
+        t: f32,
+        plunge: bool,
+    },
+    /// 내려앉은 뒤 짧은 빈틈(`jump.land s`, 내려찍기면 `plunge.land s`).
+    Land {
+        t: f32,
+        dur: f32,
     },
     /// 땅 돌리기: 발을 딛고 비튼다(`turn.plant s` 동안 못 움직인다 — 공짜가 아니다). 그동안 몸이 `from` → `to`(요)로 돈다(0023).
     Turn {
@@ -169,6 +183,9 @@ pub struct Player {
     pub since_spill: f32,
     /// 마지막 패링 성공에서 지난 초(렌더의 번쩍임).
     pub since_parry: f32,
+    /// 땅에서 뜬 높이(m)와 위 속도(0027). 충돌·카메라는 땅 자리(`pos`, y = 0)를 쓰고 렌더만 띄운다.
+    pub air: f32,
+    pub vy: f32,
     pub swings: u32,
 }
 
@@ -176,6 +193,10 @@ impl Player {
     pub fn facing_dir(&self) -> Vec3 {
         let (s, c) = self.facing.sin_cos();
         vec3(s, 0.0, c)
+    }
+    /// 공중에 떠 있나.
+    pub fn airborne(&self) -> bool {
+        matches!(self.state, PState::Jump { .. })
     }
     pub fn invulnerable(&self) -> bool {
         matches!(self.state, PState::Dodge { .. }) || self.hurt > 0.0
@@ -209,6 +230,8 @@ pub struct World {
     turn_now: Option<(i32, bool)>,
     /// 돌리는 중: (방향, 멈추기까지 남은 초). 0이 되는 틱에 쏟는다 — 히트스톱 중에도 줄어든다(카메라 시계와 맞춘다).
     spill_at: Option<(bool, f32)>,
+    /// 이번 틱에 내려찍기가 땅에 닿았다 — `apply_strike`가 친다(0027).
+    plunge_now: bool,
     /// 히트스톱 동안 들어온 눌림(공격·회피·락온·돌리기). 멈춤이 풀리는 틱에 낸다 — 버리면 멈춘 순간 누른 버튼이 사라진다.
     held: Actions,
 }
@@ -233,6 +256,8 @@ impl World {
                 stun_chain: 0,
                 since_spill: f32::MAX,
                 since_parry: f32::MAX,
+                air: 0.0,
+                vy: 0.0,
                 swings: 0,
             },
             enemies: Vec::new(),
@@ -250,6 +275,7 @@ impl World {
             turn_now: None,
             spill_at: None,
             held: Actions::default(),
+            plunge_now: false,
         }
     }
 
@@ -291,6 +317,45 @@ impl World {
         }
     }
 
+    /// 내려찍기(0027): 내려앉은 자리 둘레 `plunge.range m` 안의 적을 친다 — 드러난 적이면 치명타도.
+    fn plunge(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
+        let p = self.player.pos;
+        self.player.swings += 1;
+        let swing = self.player.swings;
+        let mut hit = false;
+        for en in &mut self.enemies {
+            if !en.active() {
+                continue;
+            }
+            let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+            if d.length() - en.radius > t[P::PlungeRange] {
+                continue;
+            }
+            let crit = en.exposed > 0.0;
+            en.hp -= t[P::PlungeDamage] as i32 + if crit { t[P::ParryCrit] as i32 } else { 0 };
+            en.exposed = 0.0;
+            en.hit_by = swing;
+            en.hurt = 0.15;
+            en.knock = d.normalize_or_zero() * t[P::Knockback] * if en.boss { 0.25 } else { 1.2 };
+            if en.hp <= 0 {
+                en.state = EState::Dead;
+                self.kills += 1;
+                ev.push(Event::EnemyDown { at: en.pos });
+            }
+            let at = en.pos + Vec3::Y * en.height * 0.6;
+            ev.push(if crit {
+                Event::Crit { at }
+            } else {
+                Event::Hit { at }
+            });
+            hit = true;
+        }
+        ev.push(Event::Plunge { at: p });
+        if hit {
+            self.hitstop = self.hitstop.max(t[P::Hitstop] * 1.5);
+        }
+    }
+
     /// 패링 창이 열려 있나(0025).
     pub fn parry_open(&self, t: &Tuning) -> bool {
         matches!(self.player.state, PState::Parry { t: e } if e < t[P::ParryWindow])
@@ -318,6 +383,7 @@ impl World {
                 attack: self.held.attack | a.attack,
                 dodge: self.held.dodge | a.dodge,
                 parry: self.held.parry | a.parry,
+                jump: self.held.jump | a.jump,
                 lock: self.held.lock | a.lock,
                 turn_right: self.held.turn_right | a.turn_right,
                 turn_left: self.held.turn_left | a.turn_left,
@@ -335,6 +401,7 @@ impl World {
             attack: a.attack | held.attack,
             dodge: a.dodge | held.dodge,
             parry: a.parry | held.parry,
+            jump: a.jump | held.jump,
             lock: a.lock | held.lock,
             turn_right: a.turn_right | held.turn_right,
             turn_left: a.turn_left | held.turn_left,
@@ -450,9 +517,12 @@ impl World {
         } else {
             None
         };
+        // 공중에서 누른 공격 = 내려찍기(0027) — 자동 조준도 같이.
+        let pressed_plunge =
+            a.attack && matches!(self.player.state, PState::Jump { plunge: false, .. });
         // 공격 자동 조준(0014): 락온이 아니면 휘두르는 순간 `aim.auto range m` 안의 가장 가까운 적을 본다.
         // 조준 스틱을 쥐고 있으면 그 쪽 `aim.auto cone deg` 안에서만 고른다(멀리 있는 적을 일부러 겨눌 수 있게).
-        let auto_dir = if target.is_none() && (a.attack || a.parry) {
+        let auto_dir = if target.is_none() && (a.attack || a.parry || pressed_plunge) {
             nearest_in_reach(
                 &self.enemies,
                 self.player.pos,
@@ -518,6 +588,7 @@ impl World {
         }
 
         // 상태 전이.
+        let mut landed_plunge = false;
         match pl.state {
             PState::Idle => {
                 if a.dodge && pl.dodge_cd <= 0.0 && spend(pl, t[P::StaminaDodge]) {
@@ -528,6 +599,14 @@ impl World {
                     };
                     pl.state = PState::Dodge { t: 0.0, dir };
                     pl.dodge_cd = t[P::DodgeTime] + 0.15;
+                } else if a.jump && spend(pl, t[P::JumpStamina]) {
+                    // 점프(0027): 뛰기 전 속도를 그대로 잇는다(달리다 뛰면 멀리).
+                    pl.state = PState::Jump {
+                        t: 0.0,
+                        plunge: false,
+                    };
+                    pl.vy = crate::tuning::jump_ballistics(t).0;
+                    pl.air = 0.0;
                 } else if a.parry && spend(pl, t[P::ParryStamina]) {
                     // 패링(0025): 가까운 적 쪽으로 돌아서 막는다(공격 자동 조준과 같은 고르기).
                     if let Some(d) = auto_dir.or(aim) {
@@ -608,6 +687,40 @@ impl World {
                     pl.state = PState::Dodge { t: e + dt, dir };
                 }
             }
+            PState::Jump { t: e, plunge } => {
+                let mut plunge = plunge;
+                if a.attack && !plunge && spend(pl, t[P::StaminaAttack]) {
+                    plunge = true;
+                    if let Some(d) = auto_dir.or(aim) {
+                        pl.facing = d.x.atan2(d.z);
+                    }
+                }
+                // 포물선을 그대로(틱마다 위치 = v·dt − g·dt²/2) — 앞 오일러 적분은 높이가 6% 모자랐다.
+                let g =
+                    crate::tuning::jump_ballistics(t).1 * if plunge { PLUNGE_FALL } else { 1.0 };
+                pl.air += pl.vy * dt - 0.5 * g * dt * dt;
+                pl.vy -= g * dt;
+                if pl.air <= 0.0 && e > 0.0 {
+                    pl.air = 0.0;
+                    pl.vy = 0.0;
+                    let dur = if plunge {
+                        t[P::PlungeLand]
+                    } else {
+                        t[P::JumpLand]
+                    };
+                    pl.state = PState::Land { t: 0.0, dur };
+                    landed_plunge = plunge;
+                } else {
+                    pl.state = PState::Jump { t: e + dt, plunge };
+                }
+            }
+            PState::Land { t: e, dur } => {
+                pl.state = if e + dt >= dur {
+                    PState::Idle
+                } else {
+                    PState::Land { t: e + dt, dur }
+                };
+            }
             PState::Parry { t: e } => {
                 pl.state = if e + dt >= t[P::ParryTime] {
                     PState::Idle
@@ -645,7 +758,21 @@ impl World {
             PState::Hurt { .. } => {
                 pl.vel *= (1.0 - KNOCK_DECAY * dt).max(0.0);
             }
-            PState::Turn { .. } | PState::Parry { .. } => pl.vel = Vec3::ZERO,
+            PState::Turn { .. } | PState::Parry { .. } | PState::Land { .. } => pl.vel = Vec3::ZERO,
+            PState::Jump { .. } if world_move.length_squared() < 1e-4 => {
+                // 공중에서 손을 놓으면 뛰기 전 속도 그대로(멈추는 쪽으로 조종하지 않는다).
+            }
+            PState::Jump { .. } => {
+                // 공중: 뛰기 전 속도를 잇고 `jump.air control x`만큼만 바꾼다.
+                let want = world_move * t[P::MoveSpeed];
+                let diff = want - pl.vel;
+                let max = t[P::MoveAccel] * t[P::JumpAirControl] * dt;
+                pl.vel += if diff.length() > max {
+                    diff.normalize() * max
+                } else {
+                    diff
+                };
+            }
             PState::Idle => {
                 let want = world_move * t[P::MoveSpeed];
                 let diff = want - pl.vel;
@@ -666,7 +793,9 @@ impl World {
                 PState::Attack { .. }
                 | PState::Turn { .. }
                 | PState::Hurt { .. }
-                | PState::Parry { .. },
+                | PState::Parry { .. }
+                | PState::Jump { .. }
+                | PState::Land { .. },
             ) => None,
             (Basis::Lock(tg), _) => {
                 let d = tg - pl.pos;
@@ -689,10 +818,14 @@ impl World {
             let max = t[P::TurnSpeed].to_radians() * dt;
             pl.facing += diff.clamp(-max, max);
         }
+        self.plunge_now |= landed_plunge;
     }
 
     /// 플레이어 스윙의 활성 구간에 범위·부채꼴 안의 적을 한 스윙에 한 번씩 때린다.
     fn apply_strike(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
+        if std::mem::take(&mut self.plunge_now) {
+            self.plunge(t, ev);
+        }
         let PState::Attack { t: e, swing, .. } = self.player.state else {
             return;
         };
@@ -813,6 +946,7 @@ impl World {
     fn tick_enemies(&mut self, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
         let p = self.player.pos;
         let parrying = self.parry_open(t);
+        let airborne_high = self.player.airborne() && self.player.air > t[P::JumpClear];
         let facing = self.player.facing_dir();
         // 앞쪽에서 오는가(패링은 바라보는 쪽 반원 안만 — 위치 선정도 기술, KB timing-parry).
         let in_front = |at: Vec3| {
@@ -824,7 +958,9 @@ impl World {
         let mut parried: Vec<usize> = Vec::new();
         for (i, en) in self.enemies.iter_mut().enumerate() {
             let out = en.tick(p, dt);
-            if out.hit {
+            // 바닥을 훑는 파동은 높이 떠 있으면 넘는다(0027).
+            let jumped = en.atk == Atk::Wave && airborne_high;
+            if out.hit && !jumped {
                 if parrying && en.parryable() && in_front(en.pos) {
                     parried.push(i);
                 } else {
@@ -1036,6 +1172,9 @@ fn angle_diff(a: f32, b: f32) -> f32 {
     }
     d
 }
+
+/// 내려찍기는 이만큼 빨리 떨어진다(공중에서 누르면 곧장 내리꽂게).
+const PLUNGE_FALL: f32 = 2.5;
 
 /// 패링: 바라보는 쪽과 적 쪽의 내적이 이보다 커야 막는다(≈ 앞 156°).
 const PARRY_FRONT: f32 = 0.2;
@@ -1296,6 +1435,124 @@ mod tests {
         let ev = w.step(&Actions::default(), &t);
         assert!(!ev.contains(&Event::PlayerHurt));
         assert_eq!(w.player.hp, PLAYER_HP);
+    }
+
+    /// 0027: 점프는 체공 시간 뒤에 내려앉고(포물선), 스태미나를 쓰고, 공중에서 또 뛸 수 없다.
+    #[test]
+    fn a_jump_rises_and_lands_after_its_air_time() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        let st = w.player.stamina;
+        w.step(
+            &Actions {
+                jump: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.player.airborne());
+        assert!(w.player.stamina < st);
+        let mut peak = 0.0f32;
+        let mut ticks = 1;
+        while w.player.airborne() && ticks < 200 {
+            // 공중에서 또 눌러도 다시 뛰지 않는다.
+            w.step(
+                &Actions {
+                    jump: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            peak = peak.max(w.player.air);
+            ticks += 1;
+        }
+        let air = ticks as f32 * TICK_DT;
+        assert!((peak - t[P::JumpHeight]).abs() < 0.05, "peak {peak}");
+        assert!((air - t[P::JumpTime]).abs() < 0.05, "air {air}s");
+        assert!(matches!(w.player.state, PState::Land { .. }));
+        assert_eq!(w.player.air, 0.0);
+    }
+
+    #[test]
+    fn a_running_jump_carries_its_speed() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.view_yaw = Some(0.0);
+        let run = Actions {
+            move_dir: vec2(0.0, 1.0),
+            ..Default::default()
+        };
+        for _ in 0..60 {
+            w.step(&run, &t);
+        }
+        let v = w.player.vel.length();
+        let z0 = w.player.pos.z;
+        w.step(&Actions { jump: true, ..run }, &t);
+        // 손을 놓아도 공중에서는 거의 그대로 간다.
+        while w.player.airborne() {
+            w.step(&Actions::default(), &t);
+        }
+        let flew = z0 - w.player.pos.z;
+        assert!(flew > v * t[P::JumpTime] * 0.6, "flew {flew} m at {v} m/s");
+    }
+
+    /// 높이 떠 있으면 바닥을 훑는 뿌리 파동을 넘는다(엘든 링: 점프로 낮은 공격 피하기). 땅에 있으면 맞는다.
+    #[test]
+    fn a_high_jump_clears_the_root_wave() {
+        let t = Tuning::default();
+        for jump in [true, false] {
+            let mut w = world_with_boss();
+            let en = &mut w.enemies[0];
+            en.pos = vec3(0.0, 0.0, -3.0);
+            en.atk = Atk::Wave;
+            en.state = EState::Wave { t: 0.0 };
+            en.landed = false;
+            let mut hurt = false;
+            for i in 0..40 {
+                // 앞(-3m)에서 퍼지는 파동이 닿기 조금 전(9 m/s → 약 0.3초)에 뛴다.
+                let a = Actions {
+                    jump: jump && i == 8,
+                    ..Default::default()
+                };
+                hurt |= w.step(&a, &t).contains(&Event::PlayerHurt);
+            }
+            assert_eq!(hurt, !jump, "jump {jump}");
+        }
+    }
+
+    /// 공중에서 공격 = 내려찍기: 내려앉는 순간 둘레의 적을 `plunge.damage`만큼.
+    #[test]
+    fn a_plunge_hits_everyone_around_the_landing_spot() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.spawn_mob(vec3(1.0, 0.0, 0.0));
+        w.spawn_mob(vec3(-1.0, 0.0, 0.3));
+        w.spawn_mob(vec3(0.0, 0.0, 6.0)); // 멀다
+        idle(&mut w);
+        w.step(
+            &Actions {
+                jump: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        w.step(
+            &Actions {
+                attack: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        let mut ev = Vec::new();
+        for _ in 0..120 {
+            idle(&mut w);
+            ev.extend(w.step(&Actions::default(), &t));
+        }
+        assert!(ev.iter().any(|e| matches!(e, Event::Plunge { .. })));
+        let dmg = t[P::PlungeDamage] as i32;
+        assert_eq!(w.enemies[0].hp, w.enemies[0].max_hp - dmg);
+        assert_eq!(w.enemies[1].hp, w.enemies[1].max_hp - dmg);
+        assert_eq!(w.enemies[2].hp, w.enemies[2].max_hp, "out of range");
     }
 
     /// 패링 시험용: 잡몹 하나를 플레이어 바로 앞(-z)에 두고 내려치기를 막 휘두르게.

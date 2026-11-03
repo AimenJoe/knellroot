@@ -25,6 +25,7 @@ pub const SHAKE_SLAM: f32 = 0.35;
 pub const SHAKE_ROUSE: f32 = 0.6;
 pub const SHAKE_PARRY: f32 = 0.5;
 pub const SHAKE_CRIT: f32 = 0.45;
+pub const SHAKE_PLUNGE: f32 = 0.4;
 
 pub const PLAYER_HP: i32 = 5;
 pub const STICK_DEADZONE: f32 = 0.2;
@@ -103,6 +104,15 @@ pub enum P {
     ParryBossStagger,
     ParryReach,
     ParryCrit,
+    JumpHeight,
+    JumpTime,
+    JumpStamina,
+    JumpAirControl,
+    JumpClear,
+    JumpLand,
+    PlungeDamage,
+    PlungeRange,
+    PlungeLand,
     RenderModel,
 }
 
@@ -133,7 +143,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 72] = [
+pub const SPECS: [Spec; 81] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -688,6 +698,74 @@ pub const SPECS: [Spec; 72] = [
         10.0,
         1.0
     ),
+    // 점프(0027): 높이·체공 시간에서 처음 속도·중력을 만든다(포물선). 뛰기 전 속도를 잇고 공중에선 조금만 조종.
+    // `jump.clear m`보다 높이 떠 있으면 바닥을 훑는 뿌리 파동을 넘는다(엘든 링: 점프로 낮은 공격 피하기).
+    spec!(
+        JumpHeight,
+        "jump.height m",
+        "JUMP_HEIGHT",
+        0.9,
+        0.2,
+        3.0,
+        0.05
+    ),
+    spec!(JumpTime, "jump.air s", "JUMP_TIME", 0.55, 0.2, 1.5, 0.05),
+    spec!(
+        JumpStamina,
+        "jump.stamina cost",
+        "JUMP_STAMINA",
+        12.0,
+        0.0,
+        100.0,
+        1.0
+    ),
+    spec!(
+        JumpAirControl,
+        "jump.air control x",
+        "JUMP_AIR_CONTROL",
+        0.3,
+        0.0,
+        1.0,
+        0.05
+    ),
+    spec!(
+        JumpClear,
+        "jump.clear m",
+        "JUMP_CLEAR",
+        0.35,
+        0.0,
+        2.0,
+        0.05
+    ),
+    spec!(JumpLand, "jump.land s", "JUMP_LAND", 0.1, 0.0, 1.0, 0.02),
+    // 내려찍기: 공중에서 공격 → 내려앉는 순간 둘레를 친다(묵직하게 — 피해 2, 넉백, 히트스톱).
+    spec!(
+        PlungeDamage,
+        "plunge.damage",
+        "PLUNGE_DAMAGE",
+        2.0,
+        1.0,
+        10.0,
+        1.0
+    ),
+    spec!(
+        PlungeRange,
+        "plunge.range m",
+        "PLUNGE_RANGE",
+        1.6,
+        0.5,
+        4.0,
+        0.1
+    ),
+    spec!(
+        PlungeLand,
+        "plunge.land s",
+        "PLUNGE_LAND",
+        0.35,
+        0.0,
+        1.5,
+        0.05
+    ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(
         RenderModel,
@@ -707,6 +785,12 @@ pub fn turn_phases(t: &Tuning) -> (f32, f32) {
     let go = t[P::TurnTime] * (90.0 + over) / 90.0;
     let settle = if over > 0.0 { t[P::TurnSettle] } else { 0.0 };
     (go, settle)
+}
+
+/// 점프 포물선(0027): (처음 위 속도, 중력). 높이 h·체공 T → v = 4h/T, g = 8h/T².
+pub fn jump_ballistics(t: &Tuning) -> (f32, f32) {
+    let (h, air) = (t[P::JumpHeight], t[P::JumpTime].max(0.05));
+    (4.0 * h / air, 8.0 * h / (air * air))
 }
 
 /// 180°로 돌 때(0023) 가는 시간을 이만큼 늘린다(90°와 같은 빠르기면 너무 빠르다 — 0.8초에 180°는 어지럽다).

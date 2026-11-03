@@ -305,6 +305,8 @@ impl App {
             aim: a.aim,
             attack: a.attack,
             dodge: a.dodge,
+            parry: a.parry,
+            jump: a.jump,
             lock: a.lock,
             turn_right: a.turn_right,
             turn_left: a.turn_left,
@@ -316,8 +318,8 @@ impl App {
         let (cam, t) = (&mut self.cam, &self.t);
         self.world.view_yaw = Some(cam.quarter_yaw_deg(t));
         use crate::tuning::{
-            SHAKE_CRIT, SHAKE_DOWN, SHAKE_HIT, SHAKE_HURT, SHAKE_PARRY, SHAKE_ROUSE, SHAKE_SLAM,
-            SHAKE_TURN,
+            SHAKE_CRIT, SHAKE_DOWN, SHAKE_HIT, SHAKE_HURT, SHAKE_PARRY, SHAKE_PLUNGE, SHAKE_ROUSE,
+            SHAKE_SLAM, SHAKE_TURN,
         };
         for e in self.world.step(a, t) {
             let kick = match e {
@@ -333,6 +335,7 @@ impl App {
                 Event::Rouse { .. } => SHAKE_ROUSE,
                 Event::Parry { .. } => SHAKE_PARRY,
                 Event::Crit { .. } => SHAKE_CRIT,
+                Event::Plunge { .. } => SHAKE_PLUNGE,
                 Event::Swing | Event::LockOn | Event::LockOff => 0.0,
             };
             cam.trauma = (cam.trauma + kick).min(1.0);
@@ -476,6 +479,7 @@ impl App {
                 (Act::Attack, s.verb_attack),
                 (Act::Dodge, s.verb_dodge),
                 (Act::Parry, s.verb_parry),
+                (Act::Jump, s.verb_jump),
                 (Act::Turn, s.verb_turn),
                 (Act::Lock, s.verb_lock),
                 (Act::Pause, s.verb_pause),
@@ -587,6 +591,7 @@ impl App {
                         input::Bind::Lock => s.verb_lock,
                         input::Bind::TurnLeft => s.verb_turn_left,
                         input::Bind::TurnRight => s.verb_turn_right,
+                        input::Bind::Jump => s.verb_jump,
                     };
                     self.ui
                         .text(name, x_name, y, 1.0, if sel { AMBER } else { INK });

@@ -16,6 +16,8 @@ pub enum Kind {
     Dodge,
     /// 패링(0025): 방패 그림, 공격 왼쪽 위.
     Parry,
+    /// 점프(0027): 위 화살표, 회피 왼쪽.
+    Jump,
     Lock,
     /// 땅 돌리기(0023): 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면.
     TurnLeft,
@@ -55,6 +57,7 @@ pub struct Read {
     pub attack: bool,
     pub dodge: bool,
     pub parry: bool,
+    pub jump: bool,
     pub lock: bool,
     pub turn_right: bool,
     pub turn_left: bool,
@@ -115,6 +118,7 @@ pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool) -> Vec<Button> {
     let lock_r = r * 0.85;
     let turn_r = r * 0.8;
     let parry_r = r * 0.9;
+    let jump_r = r * 0.85;
     let atk = vec2(w - atk_r * 1.3, h - atk_r * 1.3);
     let lock = vec2(atk.x, atk.y - (atk_r + lock_r + r * 0.45));
     // 패링(0025): 공격에서 왼쪽 위 30°(공격 → 회피 → 패링 → 락온이 엄지 둘레의 부채꼴). 돌리기 줄은 그 위로 비켜 선다.
@@ -138,6 +142,15 @@ pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool) -> Vec<Button> {
             center: parry,
             radius: parry_r,
             kind: Kind::Parry,
+        },
+        // 점프(0027): 회피 왼쪽, 같은 높이.
+        Button {
+            center: vec2(
+                atk.x - (atk_r + dodge_r + r * 0.5) - (dodge_r + jump_r + r * 0.4),
+                h - jump_r * 1.25,
+            ),
+            radius: jump_r,
+            kind: Kind::Jump,
         },
         Button {
             center: lock,
@@ -351,6 +364,7 @@ fn press(a: &mut Read, k: Kind) {
         Kind::Attack => a.attack = true,
         Kind::Dodge => a.dodge = true,
         Kind::Parry => a.parry = true,
+        Kind::Jump => a.jump = true,
         Kind::Lock => a.lock = true,
         Kind::TurnLeft => a.turn_left = true,
         Kind::TurnRight => a.turn_right = true,
@@ -435,6 +449,20 @@ fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
                 draw_line(c.x + dx, c.y - s * 0.6, c.x + dx + s * 0.6, c.y, th, col);
                 draw_line(c.x + dx + s * 0.6, c.y, c.x + dx, c.y + s * 0.6, th, col);
             }
+        }
+        Kind::Jump => {
+            // 위 화살표 + 바닥 줄(뛰어오르기).
+            draw_line(c.x, c.y + s * 0.5, c.x, c.y - s * 0.7, th, col);
+            draw_line(c.x - s * 0.5, c.y - s * 0.2, c.x, c.y - s * 0.7, th, col);
+            draw_line(c.x + s * 0.5, c.y - s * 0.2, c.x, c.y - s * 0.7, th, col);
+            draw_line(
+                c.x - s * 0.7,
+                c.y + s * 0.8,
+                c.x + s * 0.7,
+                c.y + s * 0.8,
+                th,
+                col,
+            );
         }
         Kind::Parry => {
             // 방패: 위가 넓고 아래가 뾰족한 오각형 윤곽.

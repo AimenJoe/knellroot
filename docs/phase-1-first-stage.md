@@ -34,10 +34,12 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | v0.1.0·APK(0022) | `.github/workflows/build-android.yml`·`release.yml`, `third_party/miniquad`, `android/res`, `tools/icons/make_icons.py` | nail CI를 가져옴(비공개 에셋 단계 뺌). Android 패드는 nail의 패치 miniquad. 갈래: main = 운영(개발 기능 없음), `release/v0.2` = 개발판(웹 별칭 `dev`·APK 미리 보기 `dev`) |
 | 키 배치·다시 붙이기(0024) | `input.rs` `Bindings`·`KEYS`·`Pad`, `app/controls.rs`, `prefs.rs`, web/index.html | 소울라이크식(회피 B·Space, 패링 LB·K, 돌리기 LT·RT·Q·E, 락온 R3·L), 공격만 X·J. 타이틀·멈춤의 "조작 설정"에서 바꾸고 언어와 함께 저장 |
 | 패링(0025) | `world.rs` `PState::Parry`·`tick_enemies`, `enemy.rs` `exposed`·`parryable`, `render.rs` | 창 0.18초·앞쪽 근접만·헛치면 0.5초 묶임·스태미나 15. 튕기면 휘청 + 드러남(다음 한 대 치명타 +2). 파동은 못 받음(예고 가운데 X). 터치 방패 버튼 |
+| 점프·내려찍기(0027) | `world.rs` `PState::Jump`·`Land`·`plunge`, `tuning.rs` `Jump*`·`Plunge*`, `render.rs`, `wanderer.py` | A / F. 높이 0.9m·체공 0.55초(탄도 정확 적분)·스태미나 12, 뛰기 전 속도를 잇고 조종 ×0.3. 0.35m 위면 뿌리 파동을 넘음(무적은 없음). 공중 공격 = 내려찍기(×2.5로 떨어져 둘레 1.6m에 2, 착지 빈틈 0.35초). 그림자가 높이로 작아짐. 소모품 퀵슬롯은 뺌 |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
-- [ ] 아이템 설계 초안 `docs/design/items.md`(0026) — 이름·수치·첫 소모품 둘·장신구 여섯·무기 넷이 괜찮은지, 구현 순서 A~F.
+- [ ] 아이템 설계 초안 `docs/design/items.md`(0026·0027) — 이름·수치·장신구 여섯·무기 넷이 괜찮은지, 구현 순서(A 화로·등잔부터).
+- [ ] 점프(0027): 높이 0.9m·체공 0.55초가 둔하거나 붕 뜨지 않는지(랩 `jump.*`), 그림자로 높이가 읽히는지, 문지기 파동을 뛰어넘기·내려찍기로 떼 한가운데 들어가기가 재미있는지 — 회피보다 늘 낫다면 착지 빈틈을 올린다.
 - [ ] 새 배치(회피 B, 패링 LB, 돌리기 LT·RT)가 손에 맞는지, 패링 창 0.18초가 맞는지(랩 `parry.window s`) — 잔재·가시짐승 돌진·문지기 부채꼴로(0024·0025).
 - [ ] 조작 설정에서 키·버튼을 바꾸고 새로고침(웹)·다시 켜기(APK) 뒤에도 남는지(0024).
 - [ ] **APK 서명 키 고정**: GitHub 레포 Settings → Secrets and variables → Actions → `ANDROID_DEBUG_KEYSTORE_B64`(값은 세션이 만들어 둔 파일, 또는 `docs/release.md`의 명령으로). 없으면 7일 쉰 뒤 키가 바뀌어 덮어 설치가 안 된다.
