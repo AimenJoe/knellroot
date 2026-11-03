@@ -6,8 +6,9 @@
 //!   공격 = X(왼쪽) / J·Space      회피 = A(아래) / K·LShift      락온 = 오른쪽 스틱 클릭 / L·Tab
 //!   땅 돌리기(쟁반, 0012) = LB·Q 왼쪽 / RB·E 오른쪽 — 누르는 쪽으로 카메라가 돈다(0017: 오른쪽 = 땅은 화면에서 시계 방향, 먼 쪽이 오른쪽으로).
 //!   Fez처럼 어깨 버튼, 락온은 다크소울처럼 R3로 옮겼다.
+//!   멈춤 = Start / Esc·P · 메뉴 = 십자·왼쪽 스틱(한 번씩)·A 확인·B 뒤로 / 화살표·WASD·Enter·Esc(0019)
 //!   랩 열기 = Select / F1          랩 안: 십자(↑↓ 고르기, ←→ 바꾸기), LB = 10배(랩이 열려 있으면 왼쪽 돌리기 대신), Y = 초기화, B·X키 = 내보내기,
-//!   LT = 슬롯에 담기, RT = A/B 바꾸기, Start/1~4 = 시나리오 바꾸기(dev 기능)
+//!   LT = 슬롯에 담기, RT = A/B 바꾸기, 1~7 = 시나리오 바꾸기(dev 기능)
 //!   터치(`touch.rs`, 0006) = 왼쪽 반 가상 스틱 + 오른쪽 아래 공격·회피·락온·↶↷, 오른쪽 위 랩·시나리오(dev).
 //!
 //! 지금 쓰는 장치(`Device`)는 마지막으로 만진 것. 터치 오버레이는 장치가 터치일 때만 그린다(nail 0036·0172).
@@ -92,9 +93,60 @@ pub struct Actions {
     pub lab_export: bool,
     pub lab_store: bool,
     pub lab_swap: bool,
-    /// 개발 시나리오 번호(1부터). `Start`는 다음 시나리오(0).
+    /// 개발 시나리오 번호(1부터). 0 = 다음 시나리오(터치 SC).
     pub scenario: Option<u8>,
+    /// 메뉴(0019): 위·아래·왼·오른(눌림, 스틱은 한 번 넘을 때만), 확인·뒤로, 멈춤, 터치 탭 자리.
+    pub menu_up: bool,
+    pub menu_down: bool,
+    pub menu_left: bool,
+    pub menu_right: bool,
+    pub confirm: bool,
+    pub back: bool,
+    pub pause: bool,
+    pub tap: Option<Vec2>,
+    /// 개발: 측정·안내 줄 켜고 끄기(F3).
+    pub dev_overlay: bool,
 }
+
+/// 화면에 키 그림을 쓸 행동(글에 키 이름을 박지 않는다 — 지금 장치에 맞춰 여기서, nail 0036).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Act {
+    Move,
+    Attack,
+    Dodge,
+    Turn,
+    Lock,
+    Pause,
+    Choose,
+    Confirm,
+}
+
+/// 지금 장치의 키 그림(ASCII — 글꼴 상관없이). 터치는 화면 버튼이 곧 안내라 빈 글.
+pub fn prompt(act: Act) -> &'static str {
+    match (device(), act) {
+        (Device::Touch, _) => "",
+        (Device::Pad, Act::Move) => "LS",
+        (Device::Pad, Act::Attack) => "X",
+        (Device::Pad, Act::Dodge) => "A",
+        (Device::Pad, Act::Turn) => "LB/RB",
+        (Device::Pad, Act::Lock) => "R3",
+        (Device::Pad, Act::Pause) => "START",
+        (Device::Pad, Act::Choose) => "D-PAD",
+        (Device::Pad, Act::Confirm) => "A",
+        (Device::Keys, Act::Move) => "WASD",
+        (Device::Keys, Act::Attack) => "J",
+        (Device::Keys, Act::Dodge) => "K",
+        (Device::Keys, Act::Turn) => "Q/E",
+        (Device::Keys, Act::Lock) => "L",
+        (Device::Keys, Act::Pause) => "ESC",
+        (Device::Keys, Act::Choose) => "W/S",
+        (Device::Keys, Act::Confirm) => "ENTER",
+    }
+}
+
+/// 메뉴용 스틱: 한 번 넘을 때만 눌림(히스테리시스 — 쥐고 있으면 반복하지 않는다).
+const MENU_STICK_ON: f32 = 0.6;
+const MENU_STICK_OFF: f32 = 0.3;
 
 /// 패드 스틱(`gamepads`) → `Actions` 축(x 오른쪽, y 위). 그 크레이트는 이미 "위 = +"로 준다(웹 플러그인이 축 1·3을 뒤집는다,
 /// 문서: "negative values representing down") — 그래서 그대로. 첫 게임은 화면 아래가 +인 축을 써서 `-ly`였고, 그 줄을 가져와
@@ -105,6 +157,8 @@ pub fn stick((x, y): (f32, f32)) -> Vec2 {
 
 pub struct Input {
     latch: Actions,
+    /// 메뉴 스틱이 기울어 있는 쪽(히스테리시스).
+    menu_stick: Vec2,
     touch: Touch,
     #[cfg(not(target_os = "android"))]
     pads: Gamepads,
@@ -118,6 +172,7 @@ impl Input {
         simulate_mouse_with_touch(false);
         Input {
             latch: Actions::default(),
+            menu_stick: Vec2::ZERO,
             touch: Touch::default(),
             #[cfg(not(target_os = "android"))]
             pads: Gamepads::new(),
@@ -130,8 +185,8 @@ impl Input {
         (device() == Device::Touch).then(|| self.touch.overlay(DEV, lab_open))
     }
 
-    /// 프레임마다 한 번. 눌림은 OR로 모으고, 이동(상태)은 마지막 값으로 덮는다.
-    pub fn poll(&mut self, lab_open: bool) {
+    /// 프레임마다 한 번. 눌림은 OR로 모으고, 이동(상태)은 마지막 값으로 덮는다. `menu`면 터치는 탭만.
+    pub fn poll(&mut self, lab_open: bool, menu: bool) {
         let mut a = Actions::default();
         let used_keys = get_last_key_pressed().is_some();
         let mut used_pad = false;
@@ -157,6 +212,17 @@ impl Input {
         a.turn_ccw = is_key_pressed(KeyCode::Q);
         a.turn_cw = is_key_pressed(KeyCode::E);
         a.lab_toggle = is_key_pressed(KeyCode::F1);
+        a.dev_overlay = is_key_pressed(KeyCode::F3);
+        a.menu_up = is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W);
+        a.menu_down = is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S);
+        a.menu_left = is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A);
+        a.menu_right = is_key_pressed(KeyCode::Right) || is_key_pressed(KeyCode::D);
+        a.confirm = is_key_pressed(KeyCode::Enter)
+            || is_key_pressed(KeyCode::KpEnter)
+            || is_key_pressed(KeyCode::Space)
+            || is_key_pressed(KeyCode::J);
+        a.back = is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Backspace);
+        a.pause = is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::P);
         a.lab_up = is_key_pressed(KeyCode::Up);
         a.lab_down = is_key_pressed(KeyCode::Down);
         a.lab_left = is_key_pressed(KeyCode::Left);
@@ -225,15 +291,47 @@ impl Input {
                 a.lab_export |= pad.is_just_pressed(Button::ActionRight);
                 a.lab_store |= pad.is_just_pressed(Button::FrontLeftLower);
                 a.lab_swap |= pad.is_just_pressed(Button::FrontRightLower);
-                if pad.is_just_pressed(Button::RightCenterCluster) {
-                    a.scenario = Some(0);
+                a.menu_up |= pad.is_just_pressed(Button::DPadUp);
+                a.menu_down |= pad.is_just_pressed(Button::DPadDown);
+                a.menu_left |= pad.is_just_pressed(Button::DPadLeft);
+                a.menu_right |= pad.is_just_pressed(Button::DPadRight);
+                a.confirm |= pad.is_just_pressed(Button::ActionDown);
+                a.back |= pad.is_just_pressed(Button::ActionRight);
+                // 0019: Start = 멈춤(예전엔 개발 시나리오 넘기기 — 키보드 1~7·터치 SC로 남김).
+                a.pause |= pad.is_just_pressed(Button::RightCenterCluster);
+                // 메뉴 스틱: 한 번 넘을 때만.
+                let st = stick(pad.left_stick());
+                let was = self.menu_stick;
+                let mut now = was;
+                for (v, slot) in [(st.x, 0), (st.y, 1)] {
+                    let cur = if slot == 0 { &mut now.x } else { &mut now.y };
+                    if v.abs() > MENU_STICK_ON {
+                        *cur = v.signum();
+                    } else if v.abs() < MENU_STICK_OFF {
+                        *cur = 0.0;
+                    }
                 }
+                if now.y > 0.0 && was.y <= 0.0 {
+                    a.menu_up = true;
+                }
+                if now.y < 0.0 && was.y >= 0.0 {
+                    a.menu_down = true;
+                }
+                if now.x < 0.0 && was.x >= 0.0 {
+                    a.menu_left = true;
+                }
+                if now.x > 0.0 && was.x <= 0.0 {
+                    a.menu_right = true;
+                }
+                self.menu_stick = now;
                 used_pad |= pad.all_just_pressed().next().is_some();
             }
         }
 
         // 터치: 스틱은 키·패드가 0일 때만, 눌림은 OR.
-        let t = self.touch.read(get_frame_time(), DEV, lab_open);
+        let t = self.touch.read(get_frame_time(), DEV, lab_open, menu);
+        a.pause |= t.pause;
+        a.tap = t.tap;
         if m == Vec2::ZERO {
             m = t.move_dir;
         }
@@ -288,6 +386,15 @@ impl Input {
             lab_store: self.latch.lab_store | a.lab_store,
             lab_swap: self.latch.lab_swap | a.lab_swap,
             scenario: a.scenario.or(self.latch.scenario),
+            menu_up: self.latch.menu_up | a.menu_up,
+            menu_down: self.latch.menu_down | a.menu_down,
+            menu_left: self.latch.menu_left | a.menu_left,
+            menu_right: self.latch.menu_right | a.menu_right,
+            confirm: self.latch.confirm | a.confirm,
+            back: self.latch.back | a.back,
+            pause: self.latch.pause | a.pause,
+            tap: a.tap.or(self.latch.tap),
+            dev_overlay: self.latch.dev_overlay | a.dev_overlay,
         };
     }
 

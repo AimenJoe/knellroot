@@ -1,0 +1,137 @@
+//! 싸움 화면의 글·막대(0019). 그린 화면(`render::Frame`) 안에 같은 정수 배율로 붙인다. 월드·스테이지를 읽기만 한다.
+//!
+//! 자리: 왼쪽 위 체력(마름모)·스태미나 · 오른쪽 위 목표 · 가운데 위 구역 카드 · 아래 가운데 보스 띠 · 가운데 시작 이야기.
+use macroquad::prelude::*;
+
+use crate::i18n::{self, tr};
+use crate::render::Frame;
+use crate::stage::{StageRun, CARD_TIME, INTRO_TIME};
+use crate::tuning::{idx, P, PLAYER_HP, SPECS};
+use crate::ui::{Ui, AMBER, DIM, INK};
+use crate::world::World;
+
+const HP_ON: Color = Color::new(0.88, 0.6, 0.23, 1.0);
+const HP_OFF: Color = Color::new(0.2, 0.18, 0.17, 0.9);
+const STAMINA: Color = Color::new(0.55, 0.78, 0.5, 1.0);
+const DENIED: Color = Color::new(1.0, 0.3, 0.25, 1.0);
+const BOSS: Color = Color::new(0.72, 0.62, 0.42, 1.0);
+const BOSS_ROUSED: Color = Color::new(0.95, 0.55, 0.2, 1.0);
+const BAR_BG: Color = Color::new(0.05, 0.05, 0.06, 0.85);
+
+/// 0..1 → 들어올 때·나갈 때 `edge`초씩 부드럽게(카드·이야기).
+fn fade_in_out(left: f32, total: f32, edge: f32) -> f32 {
+    let shown = total - left;
+    (shown / edge).min(left / edge).clamp(0.0, 1.0)
+}
+
+/// 화면 px 하나(렌더 배율).
+fn u(f: &Frame) -> f32 {
+    f.scale
+}
+
+pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>) {
+    let s = u(f);
+    let (x0, y0) = (f.ox + 8.0 * s, f.oy + 8.0 * s);
+    // 체력: 마름모.
+    let pl = &w.player;
+    let max_hp = PLAYER_HP.max(pl.hp);
+    for i in 0..max_hp {
+        let c = vec2(x0 + 4.0 * s + i as f32 * 10.0 * s, y0 + 4.0 * s);
+        let col = if i < pl.hp { HP_ON } else { HP_OFF };
+        let r = 3.5 * s;
+        draw_triangle(c + vec2(0.0, -r), c + vec2(r, 0.0), c + vec2(0.0, r), col);
+        draw_triangle(c + vec2(0.0, -r), c + vec2(-r, 0.0), c + vec2(0.0, r), col);
+    }
+    // 스태미나(0018): 모자라서 막히면 잠깐 붉게 깜빡인다(막은 이유가 보이게 — KB action-reuse-gating).
+    let smax = SPECS[idx(P::StaminaMax)].def.max(1.0);
+    let k = (pl.stamina / smax).clamp(0.0, 1.0);
+    let (bx, by, bw, bh) = (x0, y0 + 11.0 * s, 60.0 * s, 2.0 * s);
+    draw_rectangle(bx, by, bw, bh, BAR_BG);
+    let blink = pl.stamina_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
+    draw_rectangle(bx, by, bw * k, bh, if blink { DENIED } else { STAMINA });
+
+    let Some(run) = run else { return };
+    let cx = f.ox + f.w * 0.5;
+    // 목표(오른쪽 위).
+    if let Some(o) = run.objective {
+        let text = format!("◇ {}", tr(o));
+        let tw = ui.width(&text, 1.0);
+        ui.text(&text, f.ox + f.w - tw - 8.0 * s, y0, 1.0, INK);
+    }
+    // 구역 카드(가운데 위): 이름 + 가는 줄.
+    if let Some((name, left)) = run.card {
+        let a = fade_in_out(left, CARD_TIME.max(left), 0.5);
+        let y = f.oy + f.h * 0.16;
+        let text = tr(name);
+        let col = Color::new(INK.r, INK.g, INK.b, a);
+        ui.text_center(text, cx, y, 2.0, col);
+        let tw = ui.width(text, 2.0);
+        let ly = y + ui.px(2.0) * 1.15;
+        draw_rectangle(
+            cx - tw * 0.5,
+            ly,
+            tw,
+            s,
+            Color::new(AMBER.r, AMBER.g, AMBER.b, a * 0.7),
+        );
+    }
+    // 시작 이야기(가운데): 스테이지 이름 + 두 줄.
+    if run.intro > 0.0 {
+        let a = fade_in_out(run.intro, INTRO_TIME, 0.8);
+        let y = f.oy + f.h * 0.34;
+        ui.text_center(
+            tr(run.def.name),
+            cx,
+            y,
+            2.0,
+            Color::new(AMBER.r, AMBER.g, AMBER.b, a),
+        );
+        let gap = ui.px(1.0) * 1.6;
+        let (l1, l2) = run.def.intro;
+        ui.text_center(
+            tr(l1),
+            cx,
+            y + ui.px(2.0) * 1.6,
+            1.0,
+            Color::new(INK.r, INK.g, INK.b, a),
+        );
+        ui.text_center(
+            tr(l2),
+            cx,
+            y + ui.px(2.0) * 1.6 + gap,
+            1.0,
+            Color::new(DIM.r, DIM.g, DIM.b, a),
+        );
+    }
+    // 보스 띠(아래 가운데): 이름 + 막대(깨어나면 색이 달아오른다).
+    if let Some((k, roused)) = run.boss_bar(w) {
+        let boss = run.boss.and_then(|i| w.enemies.get(i));
+        let name = boss.map(|b| tr(b.def().name)).unwrap_or("");
+        let bw = f.w * 0.5;
+        let bh = 3.0 * s;
+        let by = f.oy + f.h - 18.0 * s;
+        let bx = cx - bw * 0.5;
+        ui.text(name, bx, by - ui.px(1.0) - 2.0 * s, 1.0, INK);
+        draw_rectangle(bx - s, by - s, bw + 2.0 * s, bh + 2.0 * s, BAR_BG);
+        draw_rectangle(bx, by, bw * k, bh, if roused { BOSS_ROUSED } else { BOSS });
+    }
+}
+
+/// 끝 화면 아래 줄: 걸린 시간·쓰러뜨린 수.
+pub fn clear_line(run: &StageRun, w: &World) -> String {
+    let secs = run.time as u32;
+    let time = format!("{}:{:02}", secs / 60, secs % 60);
+    i18n::fill(i18n::s().clear_sub, &[&time, &w.kills.to_string()])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cards_fade_in_and_out() {
+        assert_eq!(fade_in_out(3.0, 3.0, 0.5), 0.0);
+        assert_eq!(fade_in_out(1.5, 3.0, 0.5), 1.0);
+        assert!(fade_in_out(0.1, 3.0, 0.5) < 0.3);
+    }
+}

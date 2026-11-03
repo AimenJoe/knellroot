@@ -1,6 +1,6 @@
 // 헤드리스 Chromium으로 웹 빌드를 띄워 시나리오마다 키를 넣고 스크린숏을 남긴다(nail tools/test/smoke.js를 줄인 것).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/shot.js dist shots
-// 콘솔 에러·패닉이 있으면 종료 코드 1. 눈으로 볼 것: 카메라 전환, 예고 부채꼴, 랩 패널.
+// 콘솔 에러·패닉이 있으면 종료 코드 1. 눈으로 볼 것: 첫 스테이지(타이틀·이야기·뜰·멈춤·문지기), 카메라 전환, 예고, 랩 패널.
 const { chromium } = require('playwright');
 const http = require('http');
 const fs = require('fs');
@@ -33,6 +33,24 @@ async function main() {
   const canvas = page.locator('#glcanvas');
   await canvas.click({ position: { x: 640, y: 360 } });
   const shot = (name) => page.screenshot({ path: path.join(OUT, name + '.png') });
+  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.waitForTimeout(60); } };
+  // 0 첫 스테이지(0019): 타이틀 → 시작 이야기 → 입구 → 뜰(첫 물결) → 멈춤 → 타이틀 → 개발: 문 앞 → 깨어남 → 결투(락온).
+  await shot('00-title');
+  await press('Enter'); await page.waitForTimeout(1500); await shot('00a-intro');
+  await page.waitForTimeout(5000); await shot('00b-entrance');
+  await page.keyboard.down('KeyW'); await page.waitForTimeout(3500); await page.keyboard.up('KeyW');
+  await page.waitForTimeout(900); await shot('00c-courtyard');
+  for (let i = 0; i < 5; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(260); }
+  await shot('00d-fight');
+  await press('Escape'); await page.waitForTimeout(300); await shot('00e-pause');
+  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(800); await shot('00f-gate');
+  await page.keyboard.down('KeyW'); await page.waitForTimeout(2200); await page.keyboard.up('KeyW');
+  await page.waitForTimeout(800); await shot('00g-waking');
+  await page.waitForTimeout(1500); await press('KeyL'); await page.waitForTimeout(900); await shot('00h-boss-lock');
+  // 개발 시나리오로(멈춤 → 타이틀로 → 넷째 줄 "DEV: PoC scenarios").
+  await press('Escape'); await page.waitForTimeout(200); await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(400);
   // 1 보스 아레나: 쿼터뷰 → 앞으로 걷기 → 락온 → 전환 중·전환 뒤 → 공격 → 회피 → 해제.
   await page.keyboard.press('Digit1'); await page.waitForTimeout(400);
   await shot('01-quarter');

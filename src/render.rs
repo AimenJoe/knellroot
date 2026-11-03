@@ -1,24 +1,29 @@
-//! 그리기. 월드를 읽기만 한다. 3D 패스는 내부 해상도 렌더 타깃(PS1 느낌)에, HUD는 화면 패스에.
-//! 상자·구, 그리고 P4 스파이크의 glTF 시험 모델(`model.rs`, CPU에서 부위 행렬을 곱해 한 배치로 — `ModelBatch`). 바닥 예고는 삼각형 부채꼴 `Mesh`를 매 프레임 만든다(정점은 어차피 매 프레임 올라간다).
+//! 그리기. 월드를 읽기만 한다. 3D 패스는 내부 해상도 렌더 타깃(PS1 느낌)에, 글·메뉴는 화면 패스(`hud.rs`·`app`).
+//!
+//! 스테이지(0019): 굽힌 지형(`scenery.rs`) + 모델(`models.rs` 목록, 상태 → 동작 이름) + 빛(달빛 + 화로, 정점 색). 모델이 없는 종류는
+//! 상자로. 개발 시나리오(스테이지 없음)는 PoC의 회색 아레나 그대로.
+//! 바닥 예고는 모양마다(원판·부채꼴·띠·고리, `TeleShape`) 옅은 면 + 테두리, 채움이 자라 테두리에 닿는 순간 공격(nail 0186~0188).
 use macroquad::prelude::*;
 
-use crate::camera::{Camera, Mode, CAM_MIN_DIST};
-use crate::model::Model;
-use crate::scenario::Entry;
-use crate::tuning::{Tuning, INTERNAL_H, INTERNAL_W, PLAYER_HEIGHT, PLAYER_RADIUS};
-use crate::world::{EState, PState, World};
+use crate::camera::{Camera, CAM_MIN_DIST};
+use crate::models::{Entry, Library};
+use crate::scenery::Scenery;
+use crate::stage::{Light, Phase, StageRun};
+use crate::tuning::{Tuning, INTERNAL_H, INTERNAL_W, PLAYER_HEIGHT, PLAYER_RADIUS, TICK_DT};
+use crate::world::{Aabb, Atk, EState, Enemy, PState, TeleShape, World};
 
 pub struct Renderer {
     rt: RenderTarget,
-    /// 상자마다 지금 진하기(1 = 불투명). 가리면 부드럽게 옅어지고 풀리면 돌아온다(0008).
+    /// 시나리오 상자마다 지금 진하기(1 = 불투명). 가리면 부드럽게 옅어지고 풀리면 돌아온다(0008).
     fade: Vec<f32>,
-    /// P4 시험 모델과 그 텍스처(처음 쓸 때 올린다).
-    critter: Option<(Model, Texture2D)>,
+    pub lib: Library,
+    /// 굽힌 스테이지(어느 레벨인지 = 지도 글의 주소).
+    scenery: Option<(usize, Scenery)>,
     pose: Vec<Mat4>,
-    batch: ModelBatch,
+    batch: Batch,
 }
 
-/// 측정값(HUD 한 줄, P5): 우리 코드가 한 프레임에 쓴 CPU 시간(평균·최대, 지난 1초), 그리기 호출 수, 모델 정점 수.
+/// 측정값(개발 줄, P5): 우리 코드가 한 프레임에 쓴 CPU 시간(평균·최대, 지난 1초), 그리기 호출 수, 모델 정점 수.
 #[derive(Clone, Copy, Default, Debug)]
 pub struct Perf {
     pub cpu_avg_ms: f32,
@@ -29,6 +34,56 @@ pub struct Perf {
     pub draws_max: usize,
 }
 
+/// 그린 화면의 자리(글·메뉴가 같은 배율로 붙는다).
+#[derive(Clone, Copy, Debug)]
+pub struct Frame {
+    pub ox: f32,
+    pub oy: f32,
+    pub w: f32,
+    pub h: f32,
+    /// 정수 배율(논리 px 기준 — 물리 픽셀로 센 정수를 DPI로 나눈 값).
+    pub scale: f32,
+}
+
+/// 한 프레임에 그릴 것.
+pub struct View<'a> {
+    pub world: &'a World,
+    pub cam: &'a Camera,
+    pub alpha: f32,
+    pub t: &'a Tuning,
+    pub stage: Option<&'a StageRun>,
+}
+
+/// 예고 색(붉은 계열 하나 — 붉은색은 위험에만, 그림 팔레트에는 없다).
+const TELE: Color = Color::new(0.85, 0.15, 0.1, 1.0);
+
+fn with_a(c: Color, a: f32) -> Color {
+    Color::new(c.r, c.g, c.b, a)
+}
+
+/// 빛(정점 색에 곱할 rgb): 바탕 + 달빛(고정 방향) + 가까운 화로(거리 제곱으로 준다, 면이 그쪽을 볼수록 밝다).
+pub fn lit(p: Vec3, n: Vec3, lights: &[Light]) -> Vec3 {
+    let l = LIGHT_DIR.normalize();
+    let mut c = AMBIENT + MOON * n.dot(l).max(0.0);
+    for li in lights {
+        let d = li.pos - p;
+        let dist = d.length();
+        if dist >= li.radius {
+            continue;
+        }
+        let att = (1.0 - dist / li.radius).powi(2);
+        let facing = 0.35 + 0.65 * n.dot(d / dist.max(1e-3)).max(0.0);
+        c += vec3(li.color.r, li.color.g, li.color.b) * (FIRE * att * facing);
+    }
+    c
+}
+
+const AMBIENT: Vec3 = Vec3::new(0.26, 0.27, 0.35);
+const MOON: Vec3 = Vec3::new(0.42, 0.45, 0.58);
+const FIRE: f32 = 1.5;
+/// 움직이는 모델에 곱하는 밝기(배경과 떼어 읽히게).
+const ACTOR_LIFT: f32 = 1.35;
+
 impl Renderer {
     pub fn new() -> Self {
         let rt = render_target(INTERNAL_W, INTERNAL_H);
@@ -36,84 +91,26 @@ impl Renderer {
         Renderer {
             rt,
             fade: Vec::new(),
-            critter: None,
+            lib: Library::default(),
+            scenery: None,
             pose: Vec::new(),
-            batch: ModelBatch::default(),
+            batch: Batch::default(),
         }
     }
 
-    fn critter(&mut self) -> Option<&(Model, Texture2D)> {
-        if self.critter.is_none() {
-            match Model::from_bytes(crate::model::TEST_CRITTER.as_bytes()) {
-                Ok(m) => {
-                    let png = m.texture_png.clone().unwrap_or_default();
-                    let tex = Texture2D::from_file_with_format(&png, Some(ImageFormat::Png));
-                    tex.set_filter(FilterMode::Nearest);
-                    self.critter = Some((m, tex));
-                }
-                Err(e) => {
-                    error!("test model: {e}");
-                    return None;
-                }
-            }
-        }
-        self.critter.as_ref()
+    /// 지난 프레임에 보낸 모델 정점 수(개발 줄).
+    pub fn vertices(&self) -> usize {
+        self.batch.last_vertices
     }
 
-    /// `touch`면 HUD의 키 안내 줄을 빼고(손가락에는 안 맞는 글), 랩 터치 줄 자리를 비운다.
-    #[allow(clippy::too_many_arguments)]
-    pub fn draw(
-        &mut self,
-        w: &World,
-        cam: &Camera,
-        alpha: f32,
-        t: &Tuning,
-        entry: &Entry,
-        touch: bool,
-        perf: &Perf,
-    ) {
+    /// 3D 패스를 렌더 타깃에 그리고 화면에 정수 배율로 올린다. 글은 돌려준 `Frame`에 맞춰 바깥에서.
+    pub fn draw(&mut self, v: &View) -> Frame {
+        let (w, cam, alpha, t) = (v.world, v.cam, v.alpha, v.t);
         let aspect = INTERNAL_W as f32 / INTERNAL_H as f32;
         set_camera(&cam.to_camera3d(self.rt.clone(), aspect));
-        clear_background(Color::new(0.07, 0.06, 0.08, 1.0));
+        clear_background(Color::new(0.035, 0.035, 0.05, 1.0));
 
-        // 바닥 + 격자(거리감). 경기장 밖도 어두운 땅으로 — 끝에 가면 검은 허공이 화면을 채워 어색했다(0008).
-        let a = w.arena;
-        draw_plane(
-            Vec3::Y * -0.02,
-            vec2(a * 4.0, a * 4.0),
-            None,
-            Color::new(0.11, 0.1, 0.09, 1.0),
-        );
-        draw_plane(
-            Vec3::ZERO,
-            vec2(a, a),
-            None,
-            Color::new(0.22, 0.2, 0.18, 1.0),
-        );
-        draw_grid_ex(
-            ((a * 2.0) as u32).max(2),
-            1.0,
-            Color::new(0.3, 0.27, 0.24, 1.0),
-            Color::new(0.26, 0.24, 0.21, 1.0),
-            Vec3::Y * 0.005,
-            Quat::IDENTITY,
-        );
-        // 아레나 벽(낮은 턱).
-        for (x, z, sx, sz) in [
-            (0.0, -a, a * 2.0, 0.3),
-            (0.0, a, a * 2.0, 0.3),
-            (-a, 0.0, 0.3, a * 2.0),
-            (a, 0.0, 0.3, a * 2.0),
-        ] {
-            draw_cube(
-                vec3(x, 0.3, z),
-                vec3(sx, 0.6, sz),
-                None,
-                Color::new(0.16, 0.14, 0.13, 1.0),
-            );
-        }
-        let shade = t[crate::tuning::P::Shade];
-        // 카메라에서 플레이어 몸(발·허리·머리 × 좌우)과 락온 대상을 가리는 기둥은 배우 뒤에 옅게(카메라를 당기지 않는다, 0007·0008).
+        // 가림 판정점: 플레이어 몸(발·허리·머리 × 좌우)과 락온 대상.
         let tg = w
             .lock
             .and_then(|i| w.enemies.get(i))
@@ -126,154 +123,324 @@ impl Renderer {
             cam.rig.pos,
             tg,
         );
-        let hidden = crate::camera::occluders(&pts, cam.rig.pos, &w.obstacles);
-        if self.fade.len() != w.obstacles.len() {
-            self.fade = vec![1.0; w.obstacles.len()];
-        }
         let k = 1.0 - (-10.0 * get_frame_time()).exp();
-        for (i, f) in self.fade.iter_mut().enumerate() {
-            let want = if hidden.contains(&i) { FADED } else { 1.0 };
-            *f += (want - *f) * k;
-        }
-        for (i, b) in w.obstacles.iter().enumerate() {
-            if self.fade[i] < 0.98 {
-                continue;
+        let lights: Vec<Light> = match v.stage {
+            Some(run) => {
+                let key = run.def.map.as_ptr() as usize;
+                if self.scenery.as_ref().is_none_or(|(k, _)| *k != key) {
+                    self.scenery = Some((key, Scenery::bake(&run.level, &mut self.lib)));
+                }
+                let sc = &mut self.scenery.as_mut().unwrap().1;
+                draw_plane(
+                    Vec3::Y * -0.03,
+                    vec2(sc.extent, sc.extent),
+                    None,
+                    Color::new(0.03, 0.03, 0.045, 1.0),
+                );
+                let boxes: Vec<Aabb> = sc.pieces.iter().filter_map(|p| p.aabb).collect();
+                let hidden = crate::camera::occluders(&pts, cam.rig.pos, &boxes);
+                let mut bi = 0;
+                for p in &mut sc.pieces {
+                    let want = match p.aabb {
+                        Some(_) => {
+                            let h = hidden.contains(&bi);
+                            bi += 1;
+                            if h {
+                                FADED
+                            } else {
+                                1.0
+                            }
+                        }
+                        None => 1.0,
+                    };
+                    p.fade += (want - p.fade) * k;
+                    if p.fade >= 0.98 {
+                        self.batch.raw(&p.verts, &p.idx, p.tex.as_ref(), 1.0);
+                    }
+                }
+                self.batch.send();
+                sc.lights.clone()
             }
-            shaded_box(
-                b.center(),
-                b.size(),
-                Color::new(0.35, 0.32, 0.3, 1.0),
-                shade,
-            );
-            box_wires(
-                b.center(),
-                b.size(),
-                Color::new(0.12, 0.1, 0.1, 1.0),
-                Quat::IDENTITY,
-                b.center(),
-            );
-        }
+            None => {
+                self.sandbox_floor(w, &pts, cam.rig.pos, k, t);
+                Vec::new()
+            }
+        };
 
-        // 바닥 예고·그림자(먼저, 배우보다 아래).
+        // 바닥 예고·그림자(배우보다 먼저).
         for en in &w.enemies {
             if !en.alive() {
                 continue;
             }
             let p = en.prev.lerp(en.pos, alpha);
             shadow(p, en.radius * 1.2);
-            if let Some(k) = en.telegraph(t) {
-                let arc = if en.boss {
-                    t[crate::tuning::P::BossSwingArc]
-                } else {
-                    360.0
-                };
-                let r = en.reach + PLAYER_RADIUS;
-                // 옅은 면 + 테두리, 채움이 가운데서 자라 테두리에 닿는 순간 공격(nail 0186~0188).
-                sector(p, r, en.facing, arc, Color::new(0.85, 0.15, 0.1, 0.18));
-                sector(p, r * k, en.facing, arc, Color::new(0.85, 0.15, 0.1, 0.45));
-                ring(p, r, en.facing, arc, Color::new(0.85, 0.15, 0.1, 0.6));
+            if let Some((k, shape)) = en.telegraph() {
+                telegraph(p, en.facing, k, shape);
+            }
+            if let Some(front) = en.wave_front() {
+                ring(p, front, 0.0, 360.0, with_a(TELE, 0.75));
+                ring(p, (front - 0.5).max(0.1), 0.0, 360.0, with_a(TELE, 0.3));
             }
         }
         let pp = w.player.prev.lerp(w.player.pos, alpha);
         shadow(pp, PLAYER_RADIUS * 1.3);
 
-        // 배우: 상자 몸 + 코(바라보는 쪽).
+        // 스테이지 물건: 문·핵.
+        if let Some(run) = v.stage {
+            self.stage_props(run, w, &lights);
+        }
+
+        // 적.
         for en in &w.enemies {
-            if !en.alive() {
+            let fall = if en.alive() {
+                0.0
+            } else {
+                (en.dead_t / DEATH_TIME).min(1.0)
+            };
+            if fall >= 1.0 {
                 continue;
             }
-            let p = en.prev.lerp(en.pos, alpha);
+            self.enemy(en, w, alpha, v.stage, &lights, fall);
+        }
+        // 플레이어.
+        self.player(w, cam, pp, t, &lights);
+        self.batch.flush();
+
+        self.overlays(w, pp, alpha, t);
+        // 모아 둔 선(윤곽선·예고 옆선)을 한꺼번에 — 옅은 덩어리보다 먼저(그 뒤의 선이 가려지지 않게).
+        flush_lines();
+
+        // 옅어진 덩어리는 맨 나중에: 면은 거의 투명하게.
+        match v.stage {
+            Some(_) => {
+                let sc = &self.scenery.as_ref().unwrap().1;
+                for p in sc.pieces.iter().filter(|p| p.fade < 0.98) {
+                    self.batch.raw(&p.verts, &p.idx, p.tex.as_ref(), p.fade);
+                }
+                self.batch.send();
+            }
+            None => self.sandbox_faded(w, t),
+        }
+
+        // 지평선 아지랑이(0012): 렌더 타깃 위쪽을 하늘빛으로 옅게 — 화면에 고정된 수평 띠라 땅 돌리기 중에도 기울지 않는다.
+        let haze = t[crate::tuning::P::Haze];
+        if haze > 0.0 {
+            set_camera(&Camera2D {
+                zoom: vec2(2.0 / INTERNAL_W as f32, 2.0 / INTERNAL_H as f32),
+                target: vec2(INTERNAL_W as f32 * 0.5, INTERNAL_H as f32 * 0.5),
+                render_target: Some(self.rt.clone()),
+                ..Default::default()
+            });
+            draw_haze(INTERNAL_W as f32, INTERNAL_H as f32, haze);
+        }
+        self.present()
+    }
+
+    /// 렌더 타깃을 화면 가운데에 정수 배율로.
+    fn present(&self) -> Frame {
+        set_default_camera();
+        clear_background(BLACK);
+        let (sw, sh) = (screen_width(), screen_height());
+        // 정수 배율은 물리 픽셀로 센다: 폰(DPR 3)의 논리 844×390에서는 논리로 세면 1배(480×270)라 화면 반이 검정이었다(0006).
+        let dpi = screen_dpi_scale().max(0.01);
+        let scale = ((sw * dpi) / INTERNAL_W as f32)
+            .min((sh * dpi) / INTERNAL_H as f32)
+            .floor()
+            .max(1.0)
+            / dpi;
+        let (dw, dh) = (INTERNAL_W as f32 * scale, INTERNAL_H as f32 * scale);
+        let (ox, oy) = (((sw - dw) * 0.5).floor(), ((sh - dh) * 0.5).floor());
+        draw_texture_ex(
+            &self.rt.texture,
+            ox,
+            oy,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(vec2(dw, dh)),
+                flip_y: true,
+                ..Default::default()
+            },
+        );
+        Frame {
+            ox,
+            oy,
+            w: dw,
+            h: dh,
+            scale,
+        }
+    }
+
+    /// 문(열리면 땅으로 가라앉거나 `open` 동작)과 핵(문지기가 남긴 것, 떠서 돈다).
+    fn stage_props(&mut self, run: &StageRun, w: &World, lights: &[Light]) {
+        if let Some((g, c)) = run.level.gate {
+            let k = (run.gate_open / GATE_TIME).clamp(0.0, 1.0);
+            if k < 1.0 {
+                match self.lib.get("gate") {
+                    Some(e) => {
+                        let open = e.pick(&["open"]);
+                        let sink = if open.is_some() { 0.0 } else { k * 4.6 };
+                        e.model
+                            .pose(open, k * e.duration(open) * 0.999, &mut self.pose);
+                        let inst = Mat4::from_translation(c - Vec3::Y * sink);
+                        self.batch.model(e, &self.pose, inst, WHITE, lights, 1.0);
+                    }
+                    None => {
+                        let mut b = g;
+                        b.max.y -= k * 4.5;
+                        shaded_box(b.center(), b.size(), Color::new(0.25, 0.2, 0.22, 1.0), 0.6);
+                    }
+                }
+            }
+        }
+        if let (Some(core), Phase::Core) = (run.core, run.phase) {
+            let bob = (w.time * 2.0).sin() * 0.15;
+            let p = core + Vec3::Y * (0.9 + bob);
+            match self.lib.get("core_crystal") {
+                Some(e) => {
+                    let a = e.pick(&["pulse", "idle"]);
+                    e.model.pose(a, w.time, &mut self.pose);
+                    let inst = Mat4::from_translation(p) * Mat4::from_rotation_y(w.time * 1.2);
+                    self.batch.model(e, &self.pose, inst, WHITE, lights, 1.0);
+                }
+                None => shaded_box(p, Vec3::splat(0.45), Color::new(1.0, 0.7, 0.3, 1.0), 0.2),
+            }
+            ring(
+                core,
+                1.0 + 0.15 * (w.time * 3.0).sin(),
+                0.0,
+                360.0,
+                Color::new(1.0, 0.75, 0.35, 0.6),
+            );
+        }
+    }
+
+    fn enemy(
+        &mut self,
+        en: &Enemy,
+        w: &World,
+        alpha: f32,
+        stage: Option<&StageRun>,
+        lights: &[Light],
+        fall: f32,
+    ) {
+        let p = en.prev.lerp(en.pos, alpha);
+        let mut tilt = Quat::IDENTITY;
+        let mut squash = 1.0;
+        if let EState::Stagger { t: e, dur } = en.state {
+            let left = ((dur - e) / 0.25).clamp(0.0, 1.0);
+            let v = lean(en.sway, en.sway_t, w.time, left);
+            if v.length() > 1e-4 {
+                tilt = Quat::from_axis_angle(Vec3::Y.cross(v).normalize(), v.length());
+            }
+            // 움찔: 처음 순간 눌렸다 펴진다.
+            squash = 1.0 - 0.2 * en.sway.length() * (-12.0 * en.sway_t).exp();
+        }
+        // 죽음: 뒤로 넘어지며 가라앉는다.
+        if fall > 0.0 {
+            let back = -en.facing_dir();
+            tilt = Quat::from_axis_angle(Vec3::Y.cross(back).normalize(), fall.min(0.5) * 2.6);
+        }
+        let sink = Vec3::Y * (-0.6 * (fall - 0.5).max(0.0) * 2.0);
+        // 끌린 자국: 미끄러지는 동안 발 뒤에 흙.
+        let speed = en.knock.length();
+        if speed > 1.5 && fall == 0.0 {
+            let back = -en.knock / speed;
+            for i in 1..=3 {
+                let k = i as f32;
+                draw_cube(
+                    p + back * (0.22 * k) + Vec3::Y * 0.03,
+                    vec3(0.22, 0.05, 0.22) * (1.0 - 0.2 * k),
+                    None,
+                    Color::new(0.45, 0.4, 0.33, 0.8 - 0.2 * k),
+                );
+            }
+        }
+        let flash = en.hurt > 0.0;
+        let model = en.def().model;
+        // 문지기가 깨어나는 동안 눈·핵이 밝아진다.
+        let glow = match (en.state, stage) {
+            (EState::Dormant, Some(run)) => 0.15 + 0.85 * run.wake_progress(),
+            _ if en.roused => 1.0,
+            _ => 0.85,
+        };
+        if let Some(e) = self.lib.get(model) {
+            let (anim, at) = enemy_anim(en, e, w.time, stage);
+            e.model.pose(anim, at, &mut self.pose);
+            let inst = Mat4::from_translation(p + sink)
+                * Mat4::from_quat(tilt)
+                * Mat4::from_rotation_y(en.facing)
+                * Mat4::from_scale(vec3(1.0, squash, 1.0));
+            let tint = if flash {
+                Color::new(1.8, 1.8, 1.8, 1.0)
+            } else {
+                WHITE
+            };
+            self.batch.model(e, &self.pose, inst, tint, lights, glow);
+        } else {
             let base = if en.boss {
                 Color::new(0.45, 0.2, 0.5, 1.0)
             } else {
                 Color::new(0.5, 0.35, 0.25, 1.0)
             };
-            let col = if en.hurt > 0.0 { WHITE } else { base };
-            // 예고 중에는 웅크리고, 땅에 실려 가는 동안엔 버티느라 조금 웅크린다.
+            let col = if flash { WHITE } else { base };
             let crouch = matches!(en.state, EState::Tele { .. } | EState::Carried);
-            let mut h = if crouch { en.height * 0.85 } else { en.height };
-            let mut tilt = Quat::IDENTITY;
-            if let EState::Stagger { t: e, dur } = en.state {
-                let left = ((dur - e) / 0.25).clamp(0.0, 1.0);
-                let v = lean(en.sway, en.sway_t, w.time, left);
-                if v.length() > 1e-4 {
-                    tilt = Quat::from_axis_angle(Vec3::Y.cross(v).normalize(), v.length());
-                }
-                // 움찔: 처음 순간 눌렸다 펴진다.
-                h *= 1.0 - 0.2 * en.sway.length() * (-12.0 * en.sway_t).exp();
-            }
-            // 끌린 자국: 미끄러지는 동안 발 뒤에 흙.
-            let speed = en.knock.length();
-            if speed > 1.5 {
-                let back = -en.knock / speed;
-                for i in 1..=3 {
-                    let k = i as f32;
-                    draw_cube(
-                        p + back * (0.22 * k) + Vec3::Y * 0.03,
-                        vec3(0.22, 0.05, 0.22) * (1.0 - 0.2 * k),
-                        None,
-                        Color::new(0.55, 0.48, 0.38, 0.8 - 0.2 * k),
-                    );
-                }
-            }
-            let as_model = !en.boss && t[crate::tuning::P::RenderModel] >= 0.5;
-            if as_model && self.critter().is_some() {
-                let (m, tex) = self.critter.as_ref().unwrap();
-                // 발을 축으로 기울기 → 바라보는 쪽(모델 앞 = +Z) → 키에 맞춘 크기. 걷기는 적마다 위상을 어긋나게.
-                let inst = Mat4::from_translation(p)
-                    * Mat4::from_quat(tilt)
-                    * Mat4::from_rotation_y(en.facing)
-                    * Mat4::from_scale(Vec3::splat(h / 1.4));
-                let phase = (en.pos.x * 0.37 + en.pos.z * 0.61).rem_euclid(1.0);
-                m.pose(m.anim("walk"), w.time + phase, &mut self.pose);
-                let tint = if en.hurt > 0.0 {
-                    WHITE
-                } else {
-                    Color::new(1.0, 1.0, 1.0, 1.0)
-                };
-                self.batch.push(m, tex, &self.pose, inst, tint, shade);
-            } else {
-                actor(p, en.facing_dir(), en.radius, h, col, shade, tilt);
-            }
-            if en.boss {
-                // 체력 띠(머리 위).
-                let k = en.hp as f32 / en.max_hp as f32;
-                draw_cube(
-                    p + Vec3::Y * (en.height + 0.4),
-                    vec3(2.0, 0.08, 0.08),
-                    None,
-                    Color::new(0.1, 0.1, 0.1, 1.0),
-                );
-                draw_cube(
-                    p + Vec3::Y * (en.height + 0.4) - Vec3::X * (1.0 - k),
-                    vec3(2.0 * k, 0.1, 0.1),
-                    None,
-                    RED,
-                );
-            }
+            let h = en.height * if crouch { 0.85 } else { 1.0 } * squash;
+            actor(p + sink, en.facing_dir(), en.radius, h, col, 0.6, tilt);
         }
-        self.batch.flush();
-        let pcol = match w.player.state {
-            _ if w.player.hurt > 0.0 && (w.time * 20.0) as i32 % 2 == 0 => WHITE,
-            PState::Dodge { .. } => Color::new(0.6, 0.9, 1.0, 0.6),
-            PState::Hurt { .. } => Color::new(0.95, 0.45, 0.4, 1.0),
-            PState::Attack { .. } => Color::new(1.0, 0.85, 0.5, 1.0),
-            PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
-            PState::Idle => Color::new(0.85, 0.75, 0.55, 1.0),
-        };
+    }
+
+    fn player(&mut self, w: &World, cam: &Camera, pp: Vec3, t: &Tuning, lights: &[Light]) {
+        let pl = &w.player;
+        // 무적 깜빡임: 짝수 프레임은 밝게.
+        let blink = pl.hurt > 0.0 && (w.time * 20.0) as i32 % 2 == 0;
         // 카메라가 몸에 닿을 만큼 가까우면 옅게(가림 당기기의 마지막 수단).
         let close = (cam.closeness(pp) - CAM_MIN_DIST).clamp(0.0, 1.0);
-        let pcol = Color::new(pcol.r, pcol.g, pcol.b, pcol.a * (0.25 + 0.75 * close));
-        actor(
-            pp,
-            w.player.facing_dir(),
-            PLAYER_RADIUS,
-            PLAYER_HEIGHT,
-            pcol,
-            shade,
-            Quat::IDENTITY,
-        );
-        // 스윙 부채꼴(활성 구간만).
+        let a = 0.25 + 0.75 * close;
+        if let Some(e) = self.lib.get("wanderer") {
+            let speed = (pl.pos - pl.prev).length() / TICK_DT;
+            let (names, at): (&[&str], f32) = match pl.state {
+                PState::Attack { t: e, .. } => (&["attack"], e),
+                PState::Dodge { t: e, .. } => (&["dodge", "walk"], e),
+                PState::Hurt { t: e, .. } => (&["hurt", "idle"], e),
+                PState::Turn { t: e, .. } => (&["turn", "idle"], e),
+                PState::Idle if speed > 0.5 => (&["walk"], w.time * (speed / 4.0).clamp(0.6, 1.6)),
+                PState::Idle => (&["idle"], w.time),
+            };
+            let anim = e.pick(names);
+            let looped = matches!(pl.state, PState::Idle);
+            let dur = e.duration(anim);
+            let at = if looped { at } else { at.min(dur * 0.999) };
+            e.model.pose(anim, at, &mut self.pose);
+            let inst = Mat4::from_translation(pp) * Mat4::from_rotation_y(pl.facing);
+            let tint = if blink {
+                Color::new(1.8, 1.8, 1.8, a)
+            } else {
+                Color::new(1.0, 1.0, 1.0, a)
+            };
+            self.batch.model(e, &self.pose, inst, tint, lights, 1.0);
+        } else {
+            let pcol = match pl.state {
+                _ if blink => WHITE,
+                PState::Dodge { .. } => Color::new(0.6, 0.9, 1.0, 0.6),
+                PState::Hurt { .. } => Color::new(0.95, 0.45, 0.4, 1.0),
+                PState::Attack { .. } => Color::new(1.0, 0.85, 0.5, 1.0),
+                PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
+                PState::Idle => Color::new(0.85, 0.75, 0.55, 1.0),
+            };
+            actor(
+                pp,
+                pl.facing_dir(),
+                PLAYER_RADIUS,
+                PLAYER_HEIGHT,
+                with_a(pcol, pcol.a * a),
+                t[crate::tuning::P::Shade],
+                Quat::IDENTITY,
+            );
+        }
+    }
+
+    /// 배우 위에 얹는 것: 스윙 부채꼴·쟁반 테·휘청 별·락온 표시.
+    fn overlays(&self, w: &World, pp: Vec3, alpha: f32, t: &Tuning) {
         if let PState::Attack { t: e, .. } = w.player.state {
             let (s0, s1) = (
                 t[crate::tuning::P::AttackStartup],
@@ -285,12 +452,11 @@ impl Renderer {
                     t[crate::tuning::P::AttackRange],
                     w.player.facing,
                     t[crate::tuning::P::AttackArc],
-                    Color::new(1.0, 0.95, 0.7, 0.5),
+                    Color::new(1.0, 0.95, 0.7, 0.35),
                 );
             }
         }
-        // 땅 돌리기(0012): 쟁반의 테 — 멈추는 순간 범위 고리가 밝게 떴다 옅어지고, 안쪽 물결이 바깥으로 퍼진다(어디까지 쏟아지는지 배우게).
-        // 멈추는 순간(쏟는 틱)부터 0.5초.
+        // 땅 돌리기(0012): 쟁반의 테 — 멈추는 순간 범위 고리가 밝게 떴다 옅어지고, 안쪽 물결이 바깥으로 퍼진다.
         let shown = 0.5;
         if w.player.since_spill < shown {
             let k = (w.player.since_spill / shown).clamp(0.0, 1.0);
@@ -327,11 +493,20 @@ impl Renderer {
                 }
             }
         }
-        // 락온 표시: 대상 머리 위 작은 구 + 땅의 고리.
+        // 락온 표시: 대상 머리 위 작은 마름모 + 땅의 고리.
         if let Some(tg) = w.lock.and_then(|i| w.enemies.get(i)).filter(|e| e.alive()) {
             let p = tg.prev.lerp(tg.pos, alpha);
             let bob = (w.time * 4.0).sin() * 0.1;
-            draw_sphere_wires(p + Vec3::Y * (tg.height + 0.9 + bob), 0.25, None, YELLOW);
+            let top = p + Vec3::Y * (tg.height + 0.9 + bob);
+            let s = 0.25;
+            for (a, b) in [
+                (Vec3::X, Vec3::Y),
+                (Vec3::Y, -Vec3::X),
+                (-Vec3::X, -Vec3::Y),
+                (-Vec3::Y, Vec3::X),
+            ] {
+                line(top + a * s, top + b * s, YELLOW);
+            }
             ring(
                 p,
                 tg.radius + 0.3,
@@ -340,13 +515,77 @@ impl Renderer {
                 Color::new(1.0, 0.9, 0.3, 0.8),
             );
         }
+    }
 
-        // 모아 둔 선(윤곽선·예고 옆선)을 한꺼번에 — 옅은 기둥보다 먼저(그 뒤의 선이 가려지지 않게).
-        flush_lines();
-
-        // 옅어진(옅어지는) 기둥은 맨 나중에: 면은 거의 투명하게, 윤곽만 밝게 남겨 자리가 보이게.
+    /// 개발 시나리오의 바닥(PoC 아레나): 판 + 격자 + 낮은 턱 + 회색 기둥(가리면 옅게).
+    fn sandbox_floor(&mut self, w: &World, pts: &[Vec3], cam_pos: Vec3, k: f32, t: &Tuning) {
+        let a = w.arena;
+        draw_plane(
+            Vec3::Y * -0.02,
+            vec2(a * 4.0, a * 4.0),
+            None,
+            Color::new(0.11, 0.1, 0.09, 1.0),
+        );
+        draw_plane(
+            Vec3::ZERO,
+            vec2(a, a),
+            None,
+            Color::new(0.22, 0.2, 0.18, 1.0),
+        );
+        draw_grid_ex(
+            ((a * 2.0) as u32).max(2),
+            1.0,
+            Color::new(0.3, 0.27, 0.24, 1.0),
+            Color::new(0.26, 0.24, 0.21, 1.0),
+            Vec3::Y * 0.005,
+            Quat::IDENTITY,
+        );
+        for (x, z, sx, sz) in [
+            (0.0, -a, a * 2.0, 0.3),
+            (0.0, a, a * 2.0, 0.3),
+            (-a, 0.0, 0.3, a * 2.0),
+            (a, 0.0, 0.3, a * 2.0),
+        ] {
+            draw_cube(
+                vec3(x, 0.3, z),
+                vec3(sx, 0.6, sz),
+                None,
+                Color::new(0.16, 0.14, 0.13, 1.0),
+            );
+        }
+        let shade = t[crate::tuning::P::Shade];
+        let hidden = crate::camera::occluders(pts, cam_pos, &w.obstacles);
+        if self.fade.len() != w.obstacles.len() {
+            self.fade = vec![1.0; w.obstacles.len()];
+        }
+        for (i, f) in self.fade.iter_mut().enumerate() {
+            let want = if hidden.contains(&i) { FADED } else { 1.0 };
+            *f += (want - *f) * k;
+        }
         for (i, b) in w.obstacles.iter().enumerate() {
-            let f = self.fade[i];
+            if self.fade[i] < 0.98 {
+                continue;
+            }
+            shaded_box(
+                b.center(),
+                b.size(),
+                Color::new(0.35, 0.32, 0.3, 1.0),
+                shade,
+            );
+            box_wires(
+                b.center(),
+                b.size(),
+                Color::new(0.12, 0.1, 0.1, 1.0),
+                Quat::IDENTITY,
+                b.center(),
+            );
+        }
+    }
+
+    fn sandbox_faded(&self, w: &World, t: &Tuning) {
+        let shade = t[crate::tuning::P::Shade];
+        for (i, b) in w.obstacles.iter().enumerate() {
+            let f = self.fade.get(i).copied().unwrap_or(1.0);
             if f >= 0.98 {
                 continue;
             }
@@ -358,152 +597,121 @@ impl Renderer {
                 Color::new(0.9, 0.85, 0.8, 0.12 + 0.2 * edge),
             );
         }
-
-        // 지평선 아지랑이(0012): 렌더 타깃 위쪽을 하늘빛으로 옅게 — 위 끝은 짙고 아래로 사라진다. 화면에 고정된 수평 띠라
-        // 땅 돌리기(수직축 회전) 중에도 기울거나 움직이지 않는다(진짜 지평선과 같은 움직임).
-        let haze = t[crate::tuning::P::Haze];
-        if haze > 0.0 {
-            set_camera(&Camera2D {
-                zoom: vec2(2.0 / INTERNAL_W as f32, 2.0 / INTERNAL_H as f32),
-                target: vec2(INTERNAL_W as f32 * 0.5, INTERNAL_H as f32 * 0.5),
-                render_target: Some(self.rt.clone()),
-                ..Default::default()
-            });
-            draw_haze(INTERNAL_W as f32, INTERNAL_H as f32, haze);
-        }
-
-        // 화면 패스: 정수 배율로 가운데에.
-        set_default_camera();
-        clear_background(BLACK);
-        let (sw, sh) = (screen_width(), screen_height());
-        // 정수 배율은 물리 픽셀로 센다: 폰(DPR 3)의 논리 844×390에서는 논리로 세면 1배(480×270)라 화면 반이 검정이었다.
-        // 물리 2532×1170이면 4배 = 1920×1080 물리 = 논리 640×360. 데스크톱(DPR 1)은 전과 같다.
-        let dpi = screen_dpi_scale().max(0.01);
-        let scale = ((sw * dpi) / INTERNAL_W as f32)
-            .min((sh * dpi) / INTERNAL_H as f32)
-            .floor()
-            .max(1.0)
-            / dpi;
-        let (dw, dh) = (INTERNAL_W as f32 * scale, INTERNAL_H as f32 * scale);
-        let (ox, oy) = (((sw - dw) * 0.5).floor(), ((sh - dh) * 0.5).floor());
-        draw_texture_ex(
-            &self.rt.texture,
-            ox,
-            oy,
-            WHITE,
-            DrawTextureParams {
-                dest_size: Some(vec2(dw, dh)),
-                flip_y: true,
-                ..Default::default()
-            },
-        );
-        self.hud(w, cam, ox, oy, entry, touch, perf);
     }
+}
 
-    #[allow(clippy::too_many_arguments)]
-    fn hud(
-        &self,
-        w: &World,
-        cam: &Camera,
-        ox: f32,
-        oy: f32,
-        entry: &Entry,
-        touch: bool,
-        perf: &Perf,
-    ) {
-        let mode = match cam.mode {
-            Mode::Quarter => "QUARTER",
-            Mode::Lock => "LOCK-ON",
-        };
-        let blend = cam
-            .blending()
-            .map(|e| format!(" blending {e:.2}s"))
-            .unwrap_or_default();
-        draw_text(
-            format!(
-                "{} [{}]{}   cam {:.0}deg   fps {}",
-                entry.name,
-                mode,
-                blend,
-                cam.azimuth_deg(),
-                get_fps()
-            ),
-            ox + 10.0,
-            oy + 22.0,
-            20.0,
-            WHITE,
-        );
-        draw_text(
-            format!(
-                "{}: hp {}   kills {}   enemies {}   turn {}",
-                w.name,
-                w.player.hp,
-                w.kills,
-                w.enemies.iter().filter(|e| e.alive()).count(),
-                if w.lock_target().is_some() {
-                    "-".to_string()
-                } else if w.player.turn_cd > 0.0 {
-                    format!("{:.1}s", w.player.turn_cd)
-                } else {
-                    "ready".to_string()
-                }
-            ),
-            ox + 10.0,
-            oy + 44.0,
-            20.0,
-            LIGHTGRAY,
-        );
-        // 스태미나 막대(0018): 모자라서 막히면 잠깐 붉게 깜빡인다(막은 이유가 보이게 — KB action-reuse-gating).
-        let pl = &w.player;
-        let max = crate::tuning::SPECS[crate::tuning::idx(crate::tuning::P::StaminaMax)]
-            .def
-            .max(1.0);
-        let k = (pl.stamina / max).clamp(0.0, 1.0);
-        let (bx, by, bw, bh) = (ox + 10.0, oy + 50.0, 180.0, 6.0);
-        draw_rectangle(bx, by, bw, bh, Color::new(0.1, 0.1, 0.1, 0.8));
-        let blink = pl.stamina_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
-        let col = if blink {
-            Color::new(1.0, 0.3, 0.25, 1.0)
-        } else {
-            Color::new(0.55, 0.85, 0.45, 1.0)
-        };
-        draw_rectangle(bx, by, bw * k, bh, col);
-        if blink {
-            draw_rectangle_lines(bx - 1.0, by - 1.0, bw + 2.0, bh + 2.0, 2.0, col);
+/// 죽은 적이 넘어져 사라지는 데 걸리는 초.
+const DEATH_TIME: f32 = 1.2;
+/// 문이 다 열리는 초(스테이지가 `gate_open`을 이만큼까지 올린다).
+const GATE_TIME: f32 = 1.5;
+
+/// 적 상태 → (동작, 그 동작의 몇 초). 후보 이름을 차례로 찾고(모델마다 가진 동작이 다르다), 예고 동안은 진행에 맞춰 든다:
+/// `_windup` 동작이면 예고 전체에, 한 동작(`attack`)이면 앞 절반이 예고 · 뒤 절반이 치기.
+fn enemy_anim(en: &Enemy, e: &Entry, clock: f32, stage: Option<&StageRun>) -> (Option<usize>, f32) {
+    let phase = (en.pos.x * 0.37 + en.pos.z * 0.61).rem_euclid(1.0);
+    let moving = (en.pos - en.prev).length() > 0.005;
+    let windup: &[&str] = match en.atk {
+        Atk::Charge => &["charge_windup", "attack"],
+        Atk::Slam => &["slam", "attack"],
+        Atk::Wave => &["wave", "slam", "attack"],
+        Atk::Smash => &["attack"],
+    };
+    let once = |names: &[&str], k: f32| {
+        let a = e.pick(names);
+        (a, k.clamp(0.0, 0.999) * e.duration(a))
+    };
+    let is_windup =
+        |a: Option<usize>| a.is_some_and(|i| e.model.anims[i].name.ends_with("_windup"));
+    match en.state {
+        EState::Dormant => {
+            let w = stage.map(|s| s.wake_progress()).unwrap_or(0.0);
+            match e.pick(&["wake"]) {
+                Some(a) => (Some(a), w.clamp(0.0, 0.999) * e.duration(Some(a))),
+                None => (e.pick(&["idle"]), 0.0),
+            }
         }
-        // 측정 줄(P5): 폰에서도 보이게 터치 판정 위에.
-        draw_text(
-            format!(
-                "cpu {:.1}ms (max {:.1})  frame {:.1}ms  draws {} (max {})  verts {}",
-                perf.cpu_avg_ms,
-                perf.cpu_max_ms,
-                perf.frame_avg_ms,
-                perf.draws,
-                perf.draws_max,
-                self.batch.last_vertices
-            ),
-            ox + 10.0,
-            oy + 74.0,
-            16.0,
-            YELLOW,
-        );
-        if touch {
-            return;
+        EState::Chase if moving => (e.pick(&["walk", "run", "idle"]), clock * 1.0 + phase),
+        EState::Chase => (e.pick(&["idle", "walk"]), clock + phase),
+        EState::Tele { t } => {
+            let k = t / en.tele_dur().max(1e-3);
+            let a = e.pick(windup);
+            if is_windup(a) {
+                once(windup, k)
+            } else {
+                once(windup, k * 0.5)
+            }
         }
-        draw_text(
-            format!("checks: {}", entry.checks),
-            ox + 10.0,
-            oy + 92.0,
-            16.0,
-            GRAY,
-        );
-        draw_text(
-            "WASD move  J/Space attack  K/Shift dodge  Q/E turn  L/Tab lock-on  F1 lab  1-7 scenario",
-            ox + 10.0,
-            oy + 110.0,
-            16.0,
-            GRAY,
-        );
+        EState::Swing { t } => {
+            let a = e.pick(windup);
+            if is_windup(a) {
+                once(&["attack"], 0.5 + t * 2.0)
+            } else {
+                once(windup, 0.5 + t * 2.0)
+            }
+        }
+        EState::Charge { .. } => (e.pick(&["charge", "run", "walk"]), clock * 1.5),
+        EState::Wave { t } => once(&["wave", "slam", "attack"], 0.5 + t),
+        EState::Recover { t } => match e.pick(&["recover"]) {
+            Some(a) => (Some(a), t.min(e.duration(Some(a)) * 0.999)),
+            None => (e.pick(&["idle"]), clock + phase),
+        },
+        EState::Carried | EState::Stagger { .. } => once(&["hurt", "idle"], 0.3),
+        EState::Dead => once(&["hurt", "idle"], 0.999),
+    }
+}
+
+/// 바닥 예고 하나: 옅은 면 + 테두리, 채움이 자라 테두리에 닿는 순간 공격. 원판·부채꼴·고리는 가운데부터, 띠는 가운데 줄에서 양옆으로.
+fn telegraph(p: Vec3, facing: f32, k: f32, shape: TeleShape) {
+    let bg = with_a(TELE, 0.16);
+    let fill = with_a(TELE, 0.42);
+    let edge = with_a(TELE, 0.7);
+    match shape {
+        TeleShape::Disc { r } => {
+            sector(p, r, facing, 360.0, bg);
+            sector(p, r * k, facing, 360.0, fill);
+            ring(p, r, facing, 360.0, edge);
+        }
+        TeleShape::Sector { r, arc } => {
+            sector(p, r, facing, arc, bg);
+            sector(p, r * k, facing, arc, fill);
+            ring(p, r, facing, arc, edge);
+        }
+        TeleShape::Lane { len, w } => {
+            let (s, c) = facing.sin_cos();
+            let dir = vec3(s, 0.0, c);
+            lane(p, dir, len, w, bg);
+            lane(p, dir, len, w * k, fill);
+            lane_edge(p, dir, len, w, edge);
+        }
+        TeleShape::Ring { r } => {
+            sector(p, r, facing, 360.0, with_a(TELE, 0.1));
+            ring(p, r * k, facing, 360.0, fill);
+            ring(p, r, facing, 360.0, edge);
+        }
+    }
+}
+
+/// 바닥 띠(시작 `p`, 방향 `dir`, 길이 `len`, 폭 `w`).
+fn lane(p: Vec3, dir: Vec3, len: f32, w: f32, col: Color) {
+    let side = vec3(-dir.z, 0.0, dir.x) * (w * 0.5);
+    let y = Vec3::Y * 0.02;
+    let a = p + y - side;
+    let b = p + y + side;
+    let v = |q: Vec3| Vertex::new(q.x, q.y, q.z, 0.0, 0.0, col);
+    draw_mesh(&Mesh {
+        vertices: vec![v(a), v(b), v(b + dir * len), v(a + dir * len)],
+        indices: vec![0, 1, 2, 0, 2, 3],
+        texture: None,
+    });
+}
+
+fn lane_edge(p: Vec3, dir: Vec3, len: f32, w: f32, col: Color) {
+    let side = vec3(-dir.z, 0.0, dir.x) * (w * 0.5);
+    let y = Vec3::Y * 0.03;
+    let (a, b) = (p + y - side, p + y + side);
+    let (c, d) = (b + dir * len, a + dir * len);
+    for (x, z) in [(a, b), (b, c), (c, d), (d, a)] {
+        line(x, z, col);
     }
 }
 
@@ -526,62 +734,155 @@ fn draw_haze(w: f32, h: f32, frac: f32) {
     });
 }
 
-/// 모델 인스턴스를 한 배치로 모은다(P4·P5): 부위 행렬 × 정점을 CPU에서 곱하고, 면마다 고정 빛 음영을 정점 색에 굽는다
-/// (`shaded_box`와 같은 식). macroquad는 그리기 호출 하나에 정점 10,000·색인 5,000 **미만**만 받고 넘치면 잘라 버린다
+/// 모델·굽힌 덩어리를 한 배치로 모은다(P4·P5): 부위 행렬 × 정점을 CPU에서 곱하고 빛(`lit`)을 정점 색에 굽는다.
+/// macroquad는 그리기 호출 하나에 정점 10,000·색인 5,000 **미만**만 받고 넘치면 잘라 버린다
 /// (0.4.16 `quad_gl.rs` `geometry`, `Conf::draw_call_*_capacity` 기본값 — 처음엔 40마리를 한 덩어리로 보내 아무것도 안 그려졌다).
-/// 그래서 메시 단위로 그 아래에서 끊어 보낸다.
+/// 그래서 그 아래에서 끊어 보낸다. 텍스처가 바뀌어도 끊는다.
 const MAX_DRAW_VERTICES: usize = 10_000;
 const MAX_DRAW_INDICES: usize = 5_000;
 
 #[derive(Default)]
-pub struct ModelBatch {
+pub struct Batch {
     tex: Option<Texture2D>,
     vertices: Vec<Vertex>,
     indices: Vec<u16>,
-    /// 지난 프레임에 보낸 모델 정점 수(HUD).
+    /// 지난 프레임에 보낸 정점 수(개발 줄).
     pub last_vertices: usize,
     this_frame: usize,
 }
 
-impl ModelBatch {
-    pub fn push(
-        &mut self,
-        m: &Model,
-        tex: &Texture2D,
+fn to_u8(x: f32) -> u8 {
+    (x.clamp(0.0, 1.0) * 255.0) as u8
+}
+
+impl Batch {
+    /// 모델 한 자세를 정점으로(빛을 구워서). `glow_` 부위는 빛 대신 `tint`만(스스로 빛남). 굽기(`scenery`)와 매 프레임이 같이 쓴다.
+    pub fn bake_model(
+        verts: &mut Vec<Vertex>,
+        idx: &mut Vec<u16>,
+        e: &Entry,
         pose: &[Mat4],
         inst: Mat4,
         tint: Color,
-        shade: f32,
+        lights: &[Light],
     ) {
-        if self.tex.as_ref() != Some(tex) {
-            self.send();
-            self.tex = Some(tex.clone());
-        }
-        let l = LIGHT_DIR.normalize();
+        Self::bake_glow(verts, idx, e, pose, inst, tint, lights, 1.0);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn bake_glow(
+        verts: &mut Vec<Vertex>,
+        idx: &mut Vec<u16>,
+        e: &Entry,
+        pose: &[Mat4],
+        inst: Mat4,
+        tint: Color,
+        lights: &[Light],
+        glow: f32,
+    ) {
+        let m = &e.model;
         for (i, node) in m.nodes.iter().enumerate() {
             let Some(mi) = node.mesh else { continue };
             let mesh = &m.meshes[mi];
-            if self.vertices.len() + mesh.pos.len() >= MAX_DRAW_VERTICES
-                || self.indices.len() + mesh.idx.len() >= MAX_DRAW_INDICES
-            {
-                self.send();
-            }
             let mat = inst * pose[i];
-            let base = self.vertices.len() as u16;
+            let base = verts.len() as u16;
+            let bright = e.glow.get(i).copied().unwrap_or(false);
             for k in 0..mesh.pos.len() {
                 let p = mat.transform_point3(mesh.pos[k]);
-                let n = mat.transform_vector3(mesh.nrm[k]).normalize_or_zero();
-                let f = 1.0 - shade + shade * n.dot(l).max(0.0);
-                let c = Color::new(tint.r * f, tint.g * f, tint.b * f, tint.a);
-                self.vertices
-                    .push(Vertex::new(p.x, p.y, p.z, mesh.uv[k].x, mesh.uv[k].y, c));
+                let f = if bright {
+                    Vec3::splat(glow)
+                } else {
+                    let n = mat.transform_vector3(mesh.nrm[k]).normalize_or_zero();
+                    lit(p, n, lights)
+                };
+                let c = Color::from_rgba(
+                    to_u8(tint.r * f.x),
+                    to_u8(tint.g * f.y),
+                    to_u8(tint.b * f.z),
+                    to_u8(tint.a),
+                );
+                verts.push(Vertex::new(p.x, p.y, p.z, mesh.uv[k].x, mesh.uv[k].y, c));
             }
-            self.indices
-                .extend(mesh.idx.iter().map(|&j| base + j as u16));
+            idx.extend(mesh.idx.iter().map(|&j| base + j as u16));
         }
     }
 
-    fn send(&mut self) {
+    fn room(&mut self, tex: Option<&Texture2D>, nv: usize, ni: usize) {
+        if self.tex.as_ref() != tex {
+            self.send();
+            self.tex = tex.cloned();
+        }
+        if self.vertices.len() + nv >= MAX_DRAW_VERTICES
+            || self.indices.len() + ni >= MAX_DRAW_INDICES
+        {
+            self.send();
+        }
+    }
+
+    /// 움직이는 모델 하나(빛은 가까운 화로만 센다).
+    pub fn model(
+        &mut self,
+        e: &Entry,
+        pose: &[Mat4],
+        inst: Mat4,
+        tint: Color,
+        lights: &[Light],
+        glow: f32,
+    ) {
+        let at = inst.transform_point3(Vec3::ZERO);
+        let near: Vec<Light> = lights
+            .iter()
+            .filter(|l| l.pos.distance(at) < l.radius + 3.0)
+            .copied()
+            .collect();
+        let (nv, ni) = e
+            .model
+            .meshes
+            .iter()
+            .fold((0, 0), |(a, b), m| (a + m.pos.len(), b + m.idx.len()));
+        self.room(Some(&e.tex), nv, ni);
+        // 배우는 바닥보다 조금 밝게(어두운 성소에서 실루엣이 묻히지 않게 — 무대 조명처럼).
+        let lift = Color::new(
+            tint.r * ACTOR_LIFT,
+            tint.g * ACTOR_LIFT,
+            tint.b * ACTOR_LIFT,
+            tint.a,
+        );
+        Self::bake_glow(
+            &mut self.vertices,
+            &mut self.indices,
+            e,
+            pose,
+            inst,
+            lift,
+            &near,
+            glow,
+        );
+    }
+
+    /// 이미 구운 덩어리(`alpha`를 곱해서 — 가린 벽을 옅게).
+    pub fn raw(&mut self, verts: &[Vertex], idx: &[u16], tex: Option<&Texture2D>, alpha: f32) {
+        if verts.len() >= MAX_DRAW_VERTICES || idx.len() >= MAX_DRAW_INDICES {
+            // 한 덩어리가 한도를 넘으면 굽는 쪽이 나눠야 한다(바닥은 줄마다).
+            warn!("piece too big: {} verts", verts.len());
+            return;
+        }
+        self.room(tex, verts.len(), idx.len());
+        let base = self.vertices.len() as u16;
+        if alpha >= 0.999 {
+            self.vertices.extend_from_slice(verts);
+        } else {
+            let a = to_u8(alpha);
+            self.vertices.extend(verts.iter().map(|v| {
+                let mut v = *v;
+                v.color[3] = ((v.color[3] as u16 * a as u16) / 255) as u8;
+                v
+            }));
+        }
+        self.indices.extend(idx.iter().map(|&j| base + j));
+    }
+
+    pub fn send(&mut self) {
         if self.vertices.is_empty() {
             return;
         }
@@ -593,7 +894,7 @@ impl ModelBatch {
         });
     }
 
-    /// 프레임마다 한 번(모은 것을 보내고 수를 HUD로).
+    /// 프레임마다 한 번(모은 것을 보내고 수를 개발 줄로).
     pub fn flush(&mut self) {
         self.send();
         self.last_vertices = self.this_frame;

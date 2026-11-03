@@ -8,7 +8,6 @@ use macroquad::prelude::*;
 #[derive(Clone, Debug)]
 pub struct Node {
     /// Blockbench 그룹 이름(시험·디버그에서 부위를 찾는다).
-    #[cfg_attr(not(test), allow(dead_code))]
     pub name: String,
     pub parent: Option<usize>,
     pub t: Vec3,
@@ -272,6 +271,7 @@ fn sample(c: &Channel, t: f32) -> Vec4 {
 }
 
 /// 시험용 모델(코드로 찍은 Blockbench 꼴 — `tools/art/make_test_model.py`). 바이너리에 넣어 웹에서 파일을 따로 받지 않는다.
+#[cfg(test)]
 pub const TEST_CRITTER: &str = include_str!("../assets/models/test_critter.gltf");
 
 #[cfg(test)]

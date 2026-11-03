@@ -18,6 +18,8 @@ pub enum Kind {
     /// 땅 돌리기(0017): 누르는 쪽으로 카메라가 돈다. 오른쪽 = 땅이 화면에서 시계 방향(먼 쪽이 오른쪽으로).
     TurnLeft,
     TurnRight,
+    /// 멈춤(0019): 오른쪽 위.
+    Pause,
     Lab,
     Scenario,
     LabUp,
@@ -62,6 +64,9 @@ pub struct Read {
     pub lab_reset: bool,
     pub lab_store: bool,
     pub lab_swap: bool,
+    pub pause: bool,
+    /// 메뉴 모드에서 손가락을 거의 움직이지 않고 뗀 자리(논리 px) — 메뉴는 뗄 때 누른다(nail 0199).
+    pub tap: Option<Vec2>,
     /// 화면에 손가락이 있었다(버튼·스틱이 아니어도) → 장치 = 터치.
     pub active: bool,
 }
@@ -91,7 +96,12 @@ pub struct Touch {
     stick: Option<Stick>,
     known: Vec<u64>,
     repeat: Option<Repeat>,
+    /// 메뉴 모드: 손가락마다 (id, 처음 자리, 멀리 움직였나).
+    taps: Vec<(u64, Vec2, bool)>,
 }
+
+/// 이보다 덜 움직이고 떼면 탭(논리 px).
+const TAP_SLOP: f32 = 24.0;
 
 /// 버튼 배치. `w`·`h`는 논리 px. 오른손 엄지가 쉬는 오른쪽 아래에 공격(지름 ≈ 짧은 변의 27%), 그 둘레에 회피·락온.
 pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool) -> Vec<Button> {
@@ -132,15 +142,21 @@ pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool) -> Vec<Button> {
             kind: Kind::TurnLeft,
         },
     ];
+    // 멈춤: 오른쪽 위 끝(개발 버튼은 그 왼쪽으로).
+    let s = r * 0.7;
+    b.push(Button {
+        center: vec2(w - s * 1.4, s * 1.4),
+        radius: s,
+        kind: Kind::Pause,
+    });
     if dev {
-        let s = r * 0.7;
         b.push(Button {
-            center: vec2(w - s * 1.4, s * 1.4),
+            center: vec2(w - s * 4.0, s * 1.4),
             radius: s,
             kind: Kind::Lab,
         });
         b.push(Button {
-            center: vec2(w - s * 4.0, s * 1.4),
+            center: vec2(w - s * 6.6, s * 1.4),
             radius: s,
             kind: Kind::Scenario,
         });
@@ -184,7 +200,7 @@ pub fn lab_button_radius(w: f32, h: f32) -> f32 {
 /// 오른쪽 위 dev 버튼(시나리오·랩)이 차지하는 폭 — 랩 글이 그 앞에서 멈춘다.
 pub fn dev_buttons_width(w: f32, h: f32) -> f32 {
     let s = w.min(h) * 0.09 * 0.7;
-    s * 5.0 + 8.0
+    s * 7.6 + 8.0
 }
 
 pub fn stick_radius(w: f32, h: f32) -> f32 {
@@ -192,7 +208,8 @@ pub fn stick_radius(w: f32, h: f32) -> f32 {
 }
 
 impl Touch {
-    pub fn read(&mut self, dt: f32, dev: bool, lab_open: bool) -> Read {
+    /// `menu`면 스틱·버튼 없이 탭만(메뉴 화면).
+    pub fn read(&mut self, dt: f32, dev: bool, lab_open: bool, menu: bool) -> Read {
         let mut a = Read::default();
         let dpi = screen_dpi_scale().max(0.01);
         let touches: Vec<macroquad::input::Touch> = touches()
@@ -203,6 +220,31 @@ impl Touch {
             })
             .collect();
         a.active = !touches.is_empty();
+        if menu {
+            self.stick = None;
+            self.repeat = None;
+            self.known.clear();
+            for t in &touches {
+                let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
+                match self.taps.iter_mut().find(|x| x.0 == t.id) {
+                    Some(x) => {
+                        x.2 |= (t.position - x.1).length() > TAP_SLOP;
+                        if ended {
+                            if !x.2 {
+                                a.tap = Some(t.position);
+                            }
+                            let id = t.id;
+                            self.taps.retain(|x| x.0 != id);
+                        }
+                    }
+                    None if !ended => self.taps.push((t.id, t.position, false)),
+                    None => a.tap = Some(t.position),
+                }
+            }
+            self.taps.retain(|x| touches.iter().any(|t| t.id == x.0));
+            return a;
+        }
+        self.taps.clear();
         if touches.is_empty() && self.stick.is_none() && self.known.is_empty() {
             self.repeat = None;
             return a;
@@ -299,6 +341,7 @@ fn press(a: &mut Read, k: Kind) {
         // 카메라가 오른쪽으로 돌면 땅은 화면에서 시계 방향(0017).
         Kind::TurnLeft => a.turn_ccw = true,
         Kind::TurnRight => a.turn_cw = true,
+        Kind::Pause => a.pause = true,
         Kind::Lab => a.lab_toggle = true,
         Kind::Scenario => a.scenario_next = true,
         Kind::LabUp => a.lab_up = true,
@@ -430,6 +473,19 @@ fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
         Kind::LabPlus => {
             draw_line(c.x - s * 0.7, c.y, c.x + s * 0.7, c.y, th * 1.4, col);
             draw_line(c.x, c.y - s * 0.7, c.x, c.y + s * 0.7, th * 1.4, col);
+        }
+        Kind::Pause => {
+            // 두 줄(멈춤).
+            for dx in [-s * 0.3, s * 0.3] {
+                draw_line(
+                    c.x + dx,
+                    c.y - s * 0.55,
+                    c.x + dx,
+                    c.y + s * 0.55,
+                    th * 1.6,
+                    col,
+                );
+            }
         }
         Kind::Lab | Kind::Scenario | Kind::LabReset | Kind::LabStore | Kind::LabSwap => {
             let text = match k {

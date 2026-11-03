@@ -21,6 +21,10 @@ base64 = "0.22"
 [target.'cfg(not(target_os = "android"))'.dependencies]
 gamepads = { version = "0.1.7", default-features = false }
 
+[dev-dependencies]
+# 시험만: i18n 표의 모든 글자가 글꼴에 있는지(첫 게임 규칙).
+ttf-parser = "0.25"
+
 [profile.release]
 opt-level = "z"
 lto = true

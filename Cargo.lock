@@ -388,6 +388,7 @@ dependencies = [
  "gamepads",
  "gltf",
  "macroquad",
+ "ttf-parser",
 ]
 
 [[package]]

@@ -47,10 +47,6 @@ pub enum P {
     Knockback,
     LockRange,
     LockLose,
-    MobSpeed,
-    MobTele,
-    BossTele,
-    BossSwingArc,
     Shade,
     CamLYawMax,
     CamLNear,
@@ -117,7 +113,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 69] = [
+pub const SPECS: [Spec; 65] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -321,26 +317,6 @@ pub const SPECS: [Spec; 69] = [
         4.0,
         60.0,
         1.0
-    ),
-    spec!(MobSpeed, "mob.speed", "MOB_SPEED", 3.5, 0.5, 10.0, 0.25),
-    spec!(MobTele, "mob.telegraph s", "MOB_TELE", 0.5, 0.1, 2.0, 0.05),
-    spec!(
-        BossTele,
-        "boss.telegraph s",
-        "BOSS_TELE",
-        0.9,
-        0.2,
-        3.0,
-        0.05
-    ),
-    spec!(
-        BossSwingArc,
-        "boss.swing arc deg",
-        "BOSS_SWING_ARC_DEG",
-        110.0,
-        30.0,
-        360.0,
-        10.0
     ),
     spec!(Shade, "render.face shade", "SHADE", 0.45, 0.0, 1.0, 0.05),
     spec!(

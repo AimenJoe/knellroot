@@ -102,6 +102,10 @@ pub enum Event {
     Slam {
         at: Vec3,
     },
+    /// 보스가 체력 반 아래로 깨어났다(핵이 밝아지고 빨라진다).
+    Rouse {
+        at: Vec3,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -162,75 +166,8 @@ impl Player {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum EState {
-    Chase,
-    /// 공격 예고. 다 차면 휘두른다.
-    Tele {
-        t: f32,
-    },
-    Swing {
-        t: f32,
-    },
-    Recover {
-        t: f32,
-    },
-    /// 땅이 도는 동안 실려 간다: 발을 떼지 못하고 버틴다(쫓지도 치지도 못함, 예고도 끊김). 멈추는 순간 휘청으로(0012).
-    Carried,
-    /// 휘청(CC): 쫓지도 치지도 못한다. 예고·스윙 중이었어도 끊긴다.
-    Stagger {
-        t: f32,
-        dur: f32,
-    },
-    Dead,
-}
-
-pub struct Enemy {
-    pub pos: Vec3,
-    pub prev: Vec3,
-    pub facing: f32,
-    pub hp: i32,
-    pub max_hp: i32,
-    pub boss: bool,
-    pub radius: f32,
-    pub height: f32,
-    /// 공격이 닿는 거리.
-    pub reach: f32,
-    pub state: EState,
-    pub hurt: f32,
-    pub knock: Vec3,
-    /// 마지막으로 맞은 스윙 번호(한 스윙에 한 번만).
-    pub hit_by: u32,
-    /// 땅 돌리기로 쏟아지는 중 — 이때 벽에 부딪히면 벽 쿵(한 번).
-    pub spilling: bool,
-    /// 휘청 몸짓(렌더가 기울인다): 쏟아진 쪽(XZ) × 세기 0..1, 그리고 그때부터 지난 초. 벽 쿵이면 반대로 튄다.
-    pub sway: Vec3,
-    pub sway_t: f32,
-}
-
-impl Enemy {
-    pub fn alive(&self) -> bool {
-        self.state != EState::Dead
-    }
-    pub fn facing_dir(&self) -> Vec3 {
-        let (s, c) = self.facing.sin_cos();
-        vec3(s, 0.0, c)
-    }
-    /// 예고 진행 0..1(없으면 None). 렌더가 바닥 예고를 채운다.
-    pub fn telegraph(&self, t: &Tuning) -> Option<f32> {
-        match self.state {
-            EState::Tele { t: e } => {
-                let d = if self.boss {
-                    t[P::BossTele]
-                } else {
-                    t[P::MobTele]
-                };
-                Some((e / d).clamp(0.0, 1.0))
-            }
-            _ => None,
-        }
-    }
-}
+pub use crate::enemy::{Atk, EState, Enemy, TeleShape};
+use crate::species::Kind;
 
 pub struct World {
     pub name: &'static str,
@@ -299,46 +236,22 @@ impl World {
         }
     }
 
-    pub fn spawn_mob(&mut self, pos: Vec3) {
-        self.enemies.push(Enemy {
-            pos,
-            prev: pos,
-            facing: 0.0,
-            hp: 2,
-            max_hp: 2,
-            boss: false,
-            radius: 0.35,
-            height: 1.4,
-            reach: 1.3,
-            state: EState::Chase,
-            hurt: 0.0,
-            knock: Vec3::ZERO,
-            hit_by: 0,
-            spilling: false,
-            sway: Vec3::ZERO,
-            sway_t: 0.0,
-        });
+    /// 종류 표(`species.rs`)의 적 하나를 세운다.
+    pub fn spawn(&mut self, kind: Kind, pos: Vec3) -> usize {
+        self.enemies.push(Enemy::new(kind, pos));
+        self.enemies.len() - 1
     }
 
+    /// 잡몹(뿌리의 잔재) — 개발 시나리오·시험용.
+    #[cfg(any(test, feature = "dev"))]
+    pub fn spawn_mob(&mut self, pos: Vec3) {
+        self.spawn(Kind::Husk, pos);
+    }
+
+    /// 보스(문지기) — 개발 시나리오·시험용.
+    #[cfg(any(test, feature = "dev"))]
     pub fn spawn_boss(&mut self, pos: Vec3) {
-        self.enemies.push(Enemy {
-            pos,
-            prev: pos,
-            facing: 0.0,
-            hp: 30,
-            max_hp: 30,
-            boss: true,
-            radius: 0.9,
-            height: 3.2,
-            reach: 3.2,
-            state: EState::Chase,
-            hurt: 0.0,
-            knock: Vec3::ZERO,
-            hit_by: 0,
-            spilling: false,
-            sway: Vec3::ZERO,
-            sway_t: 0.0,
-        });
+        self.spawn(Kind::Warden, pos);
     }
 
     pub fn lock_target(&self) -> Option<Vec3> {
@@ -441,7 +354,7 @@ impl World {
         let f = self.player.facing_dir();
         let mut best: Option<(f32, usize)> = None;
         for (i, e) in self.enemies.iter().enumerate() {
-            if !e.alive() {
+            if !e.active() {
                 continue;
             }
             let d = e.pos - p;
@@ -728,7 +641,7 @@ impl World {
         let half = (t[P::AttackArc] * 0.5).to_radians().cos();
         let mut stop = false;
         for en in &mut self.enemies {
-            if !en.alive() || en.hit_by == swing {
+            if !en.active() || en.hit_by == swing {
                 continue;
             }
             let d = en.pos - p;
@@ -770,7 +683,8 @@ impl World {
             // 도는 동안 범위 안의 적은 땅에 실려 버틴다 — 안 그러면 1초 동안 쫓아와 곁에 뭉쳐, 멈출 때 쏟을 거리가 없었다.
             let p = self.player.pos;
             for en in &mut self.enemies {
-                if en.alive() && vec2(en.pos.x - p.x, en.pos.z - p.z).length() <= t[P::SpillRange] {
+                if en.active() && vec2(en.pos.x - p.x, en.pos.z - p.z).length() <= t[P::SpillRange]
+                {
                     en.state = EState::Carried;
                 }
             }
@@ -787,7 +701,7 @@ impl World {
         self.hitstop = self.hitstop.max(t[P::Hitstop]);
         let p = self.player.pos;
         for en in &mut self.enemies {
-            if !en.alive() {
+            if !en.active() {
                 continue;
             }
             let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
@@ -827,99 +741,14 @@ impl World {
         // 플레이어를 친 적의 자리(첫 하나) — 밀려나는 쪽.
         let mut hurt_player: Option<Vec3> = None;
         for en in &mut self.enemies {
-            if !en.alive() {
-                continue;
+            let out = en.tick(p, dt);
+            if out.hit {
+                hurt_player.get_or_insert(en.pos);
             }
-            en.hurt = (en.hurt - dt).max(0.0);
-            en.sway_t += dt;
-            // 넉백은 빠르게 줄어든다.
-            en.pos += en.knock * dt;
-            en.knock *= (1.0 - KNOCK_DECAY * dt).max(0.0);
-            if en.knock.length() < SLAM_SPEED {
-                en.spilling = false;
-            }
-            let d = p - en.pos;
-            let dist = d.length();
-            let dir = if dist > 1e-4 { d / dist } else { Vec3::Z };
-            let stand = if en.boss {
-                en.reach - 0.6
-            } else {
-                en.reach - 0.3
-            };
-            match en.state {
-                EState::Chase => {
-                    en.facing = dir.x.atan2(dir.z);
-                    if dist > stand {
-                        let sp = if en.boss {
-                            t[P::MobSpeed] * 0.8
-                        } else {
-                            t[P::MobSpeed]
-                        };
-                        en.pos += dir * sp * dt;
-                    } else {
-                        en.state = EState::Tele { t: 0.0 };
-                    }
-                }
-                EState::Tele { t: e } => {
-                    // 예고 동안 느리게 따라 돈다(끝 0.1초는 고정 — 읽은 대로 맞는다).
-                    let dur = if en.boss {
-                        t[P::BossTele]
-                    } else {
-                        t[P::MobTele]
-                    };
-                    if e < dur - 0.1 {
-                        let want = dir.x.atan2(dir.z);
-                        let mut diff = want - en.facing;
-                        while diff > std::f32::consts::PI {
-                            diff -= std::f32::consts::TAU;
-                        }
-                        while diff < -std::f32::consts::PI {
-                            diff += std::f32::consts::TAU;
-                        }
-                        en.facing += diff.clamp(-2.0 * dt, 2.0 * dt);
-                    }
-                    en.state = if e + dt >= dur {
-                        EState::Swing { t: 0.0 }
-                    } else {
-                        EState::Tele { t: e + dt }
-                    };
-                }
-                EState::Swing { t: e } => {
-                    if e == 0.0 {
-                        // 닿는가: 거리 + 부채꼴(보스) / 거리(잡몹).
-                        let arc = if en.boss {
-                            (t[P::BossSwingArc] * 0.5).to_radians().cos()
-                        } else {
-                            -1.0
-                        };
-                        let reach = en.reach + PLAYER_RADIUS;
-                        if dist <= reach && dir.dot(en.facing_dir()) >= arc {
-                            hurt_player.get_or_insert(en.pos);
-                        }
-                    }
-                    en.state = if e + dt >= 0.2 {
-                        EState::Recover { t: 0.0 }
-                    } else {
-                        EState::Swing { t: e + dt }
-                    };
-                }
-                EState::Recover { t: e } => {
-                    let dur = if en.boss { 1.0 } else { 0.6 };
-                    en.state = if e + dt >= dur {
-                        EState::Chase
-                    } else {
-                        EState::Recover { t: e + dt }
-                    };
-                }
-                EState::Carried => {}
-                EState::Stagger { t: e, dur } => {
-                    en.state = if e + dt >= dur {
-                        EState::Chase
-                    } else {
-                        EState::Stagger { t: e + dt, dur }
-                    };
-                }
-                EState::Dead => {}
+            if out.roused {
+                ev.push(Event::Rouse {
+                    at: en.pos + Vec3::Y * en.height * 0.6,
+                });
             }
         }
         if let (Some(from), false) = (hurt_player, self.player.invulnerable()) {
@@ -1046,7 +875,7 @@ fn nearest_in_reach(
 ) -> Option<Vec3> {
     enemies
         .iter()
-        .filter(|e| e.alive())
+        .filter(|e| e.active())
         .filter_map(|e| {
             let d = vec3(e.pos.x - from.x, 0.0, e.pos.z - from.z);
             let dist = d.length() - e.radius;
@@ -1061,8 +890,6 @@ fn nearest_in_reach(
 
 /// 넉백 속도가 초당 이만큼씩 줄어든다(틱마다 `1 - k·dt`) — 그래서 처음 속도 v의 넉백은 모두 합쳐 v/k만큼 민다.
 pub const KNOCK_DECAY: f32 = 10.0;
-/// 쏟아지는 적이 이보다 느려지면 멈춘 것으로 본다(그 뒤 벽에 닿아도 벽 쿵이 아니다).
-const SLAM_SPEED: f32 = 2.0;
 
 /// 쏟아지는 방향(XZ 단위). `d` = 축(주인공) → 적. 화면 시계 방향 돌리기의 접선은 (−d.z, d.x)라(카메라 요 +90°와 같은 회전),
 /// 멈출 때 관성으로 계속 가는 쪽이 그 접선. 반시계면 반대. 바깥 몫 `out`을 섞는다.
@@ -1250,7 +1077,7 @@ mod tests {
             hits += ev.iter().filter(|e| matches!(e, Event::Hit { .. })).count();
         }
         assert_eq!(hits, 1);
-        assert_eq!(w.enemies[0].hp, 1);
+        assert_eq!(w.enemies[0].hp, w.enemies[0].max_hp - 1);
     }
 
     #[test]
@@ -1503,7 +1330,10 @@ mod tests {
             ev = w.step(&Actions::default(), &t);
         }
         assert_eq!(slams, 1);
-        assert_eq!(w.enemies[0].hp, 2 - t[P::SlamDamage] as i32);
+        assert_eq!(
+            w.enemies[0].hp,
+            w.enemies[0].max_hp - t[P::SlamDamage] as i32
+        );
     }
 
     #[test]

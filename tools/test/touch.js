@@ -32,8 +32,9 @@ function layout(lab) {
     lock,
     turn_right: [cwX, lock[1]],
     turn_left: [cwX - (turnR * 2 + r * 0.4), lock[1]],
-    lab: [W - r * 0.7 * 1.4, r * 0.7 * 1.4],
-    scenario: [W - r * 0.7 * 4.0, r * 0.7 * 1.4],
+    pause: [W - r * 0.7 * 1.4, r * 0.7 * 1.4],
+    lab: [W - r * 0.7 * 4.0, r * 0.7 * 1.4],
+    scenario: [W - r * 0.7 * 6.6, r * 0.7 * 1.4],
   };
   if (lab) {
     const k = r * 0.62, gap = k * 2.5, names = ['up', 'down', 'minus', 'plus', 'reset', 'store', 'swap'];
@@ -60,6 +61,14 @@ async function main() {
   await page.goto(`http://localhost:${PORT}/`);
   await page.waitForTimeout(2500);
   let b = layout(false);
+  await shot('t00-title');
+  // 타이틀(0019): 첫 줄 "시작"을 탭(뗄 때 누른다). 자리는 `app::draw_title`·`ui::menu`와 같은 셈.
+  {
+    const dpi = 3, sc = Math.max(1, Math.floor(Math.min(W * dpi / 480, H * dpi / 270))) / dpi;
+    const dh = 270 * sc, oy = Math.floor((H - dh) / 2), px = 12 * sc;
+    await tap([W / 2, oy + dh * 0.52 + px * 0.5]);
+  }
+  await page.waitForTimeout(1200);
   await shot('t01-first-screen');
   // 스틱: 왼쪽 아래에 대고 위로 끌어 0.8초 걷기.
   const s0 = [W * 0.2, H * 0.7];
