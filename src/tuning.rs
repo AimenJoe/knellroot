@@ -57,6 +57,8 @@ pub enum P {
     CamPullOut,
     CamQLead,
     CamBlendTurn,
+    CamBlendExit,
+    MoveHoldMax,
 }
 
 pub struct Spec {
@@ -86,7 +88,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 38] = [
+pub const SPECS: [Spec; 40] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -356,6 +358,24 @@ pub const SPECS: [Spec; 38] = [
         0.0,
         3.0,
         0.1
+    ),
+    spec!(
+        CamBlendExit,
+        "cam.blend exit x",
+        "CAM_BLEND_EXIT",
+        0.7,
+        0.1,
+        1.5,
+        0.05
+    ),
+    spec!(
+        MoveHoldMax,
+        "move.hold after unlock s",
+        "MOVE_HOLD_MAX",
+        0.6,
+        0.0,
+        2.0,
+        0.05
     ),
 ];
 

@@ -77,6 +77,9 @@ pub enum Basis {
         yaw: f32,
     },
     Lock(Vec3),
+    /// 락온을 푼 뒤 스틱을 쥐고 있는 동안: 풀던 순간의 락온 앞(대상 쪽)을 그대로 쓴다(0010). 화면은 아직 숄더뷰에서
+    /// 돌아오는 중이라 곧바로 쿼터뷰 기준으로 바꾸면 쥔 그대로의 스틱이 최대 170° 다른 쪽을 가리켰다.
+    Frozen(Vec3),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -191,6 +194,10 @@ pub struct World {
     /// 랩 값의 틱 복사본(step이 받은 Tuning에서).
     lock_range: f32,
     lock_lose: f32,
+    /// 지난 틱의 락온 앞(수평 단위), 락온이 아니면 None — 풀리는 틱에 `hold`로 넘긴다.
+    last_lock_fwd: Option<Vec3>,
+    /// 풀린 뒤 쥔 스틱의 기준(앞, 경과 초). 스틱을 놓거나 `move.hold after unlock s`가 지나면 끝.
+    hold: Option<(Vec3, f32)>,
 }
 
 impl World {
@@ -217,6 +224,8 @@ impl World {
             kills: 0,
             lock_range: 18.0,
             lock_lose: 26.0,
+            last_lock_fwd: None,
+            hold: None,
         }
     }
 
@@ -351,18 +360,41 @@ impl World {
     fn tick_player(&mut self, a: &Actions, t: &Tuning, dt: f32) {
         self.lock_range = t[P::LockRange];
         self.lock_lose = t[P::LockLose];
-        let pl = &mut self.player;
-        pl.hurt = (pl.hurt - dt).max(0.0);
-        pl.dodge_cd = (pl.dodge_cd - dt).max(0.0);
-        // 입력 기준: 쿼터뷰는 화면(= 월드 고정 요), 락온은 대상 기준.
-        let basis = match self
+        // 입력 기준: 쿼터뷰는 화면(= 월드 고정 요), 락온은 대상 기준, 락온을 푼 뒤 쥔 스틱은 풀던 순간 그대로(0010).
+        let target = self
             .lock
             .and_then(|i| self.enemies.get(i))
             .filter(|e| e.alive())
-        {
-            Some(e) => Basis::Lock(e.pos),
-            None => Basis::Quarter { yaw: t[P::CamQYaw] },
+            .map(|e| e.pos);
+        let stick_on = a.move_dir.length() > HOLD_STICK;
+        let basis = match target {
+            Some(tg) => {
+                let d = vec3(tg.x - self.player.pos.x, 0.0, tg.z - self.player.pos.z);
+                self.last_lock_fwd = (d.length_squared() > 1e-4).then(|| d.normalize());
+                self.hold = None;
+                Basis::Lock(tg)
+            }
+            None => {
+                if let Some(f) = self.last_lock_fwd.take() {
+                    if stick_on {
+                        self.hold = Some((f, 0.0));
+                    }
+                }
+                match self.hold {
+                    Some((f, held)) if stick_on && held < t[P::MoveHoldMax] => {
+                        self.hold = Some((f, held + dt));
+                        Basis::Frozen(f)
+                    }
+                    _ => {
+                        self.hold = None;
+                        Basis::Quarter { yaw: t[P::CamQYaw] }
+                    }
+                }
+            }
         };
+        let pl = &mut self.player;
+        pl.hurt = (pl.hurt - dt).max(0.0);
+        pl.dodge_cd = (pl.dodge_cd - dt).max(0.0);
         let world_move = move_to_world(a.move_dir, basis, pl.pos);
 
         // 상태 전이.
@@ -443,7 +475,7 @@ impl World {
                 let d = tg - pl.pos;
                 Some(d.x.atan2(d.z))
             }
-            (Basis::Quarter { .. }, _) if world_move.length_squared() > 1e-4 => {
+            (Basis::Quarter { .. } | Basis::Frozen(_), _) if world_move.length_squared() > 1e-4 => {
                 Some(world_move.x.atan2(world_move.z))
             }
             _ => None,
@@ -664,6 +696,9 @@ impl World {
     }
 }
 
+/// 락온이 풀린 뒤 이만큼보다 세게 쥐고 있으면 "쥔 그대로"로 본다(놓으면 쿼터뷰 기준).
+const HOLD_STICK: f32 = 0.3;
+
 /// 스틱 벡터(x 오른쪽, y 앞)를 월드 이동 벡터로. 쿼터뷰: 화면 위 = -z. 락온: 앞 = 대상 쪽, 오른쪽 = 그 둘레.
 pub fn move_to_world(stick: Vec2, basis: Basis, player: Vec3) -> Vec3 {
     if stick.length_squared() < 1e-6 {
@@ -674,6 +709,7 @@ pub fn move_to_world(stick: Vec2, basis: Basis, player: Vec3) -> Vec3 {
             let f = crate::camera::quarter_forward(yaw);
             (f, f.cross(Vec3::Y))
         }
+        Basis::Frozen(f) => (f, f.cross(Vec3::Y)),
         Basis::Lock(tg) => {
             let d = vec3(tg.x - player.x, 0.0, tg.z - player.z);
             let f = if d.length_squared() > 1e-4 {
@@ -745,6 +781,76 @@ mod tests {
         );
         assert!(ev.contains(&Event::LockOff));
         assert!(matches!(w.basis(), Basis::Quarter { .. }));
+    }
+
+    #[test]
+    fn releasing_lock_while_holding_the_stick_keeps_walking_the_same_way_until_the_stick_is_let_go()
+    {
+        let t = Tuning::default();
+        let mut w = world_with_boss();
+        w.player.pos = vec3(0.0, 0.0, -14.0); // 보스(0,-8) 위쪽 — 쿼터뷰 기준과 락온 기준이 거의 반대
+        w.step(
+            &Actions {
+                lock: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        let back = Actions {
+            move_dir: vec2(0.0, -1.0),
+            ..Default::default()
+        }; // 보스에게서 물러나기
+        for _ in 0..30 {
+            w.step(&back, &t);
+        }
+        let before = w.player.vel.normalize();
+        // 쥔 채로 풀기: 걷는 방향이 그대로.
+        w.step(&Actions { lock: true, ..back }, &t);
+        for _ in 0..5 {
+            w.step(&back, &t);
+        }
+        assert!(w.lock.is_none());
+        assert!(
+            w.player.vel.normalize().dot(before) > 0.98,
+            "{:?} vs {before:?}",
+            w.player.vel
+        );
+        // 놓았다 다시 쥐면 쿼터뷰 기준(화면 아래 = 반대쪽).
+        w.step(&Actions::default(), &t);
+        for _ in 0..30 {
+            w.step(&back, &t);
+        }
+        let quarter_down = move_to_world(
+            vec2(0.0, -1.0),
+            Basis::Quarter { yaw: t[P::CamQYaw] },
+            w.player.pos,
+        );
+        assert!(w.player.vel.normalize().dot(quarter_down) > 0.98);
+    }
+
+    #[test]
+    fn the_unlock_hold_ends_by_itself_after_the_hold_time() {
+        let t = Tuning::default();
+        let mut w = world_with_boss();
+        w.player.pos = vec3(0.0, 0.0, -14.0);
+        w.step(
+            &Actions {
+                lock: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        let back = Actions {
+            move_dir: vec2(0.0, -1.0),
+            ..Default::default()
+        };
+        w.step(&back, &t);
+        w.step(&Actions { lock: true, ..back }, &t);
+        let ticks = (t[P::MoveHoldMax] / TICK_DT).ceil() as usize + 2;
+        for _ in 0..ticks {
+            w.step(&back, &t);
+        }
+        assert!(w.hold.is_none());
     }
 
     #[test]

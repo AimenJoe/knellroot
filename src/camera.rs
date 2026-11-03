@@ -277,8 +277,16 @@ impl Camera {
             // (`cam.blend s` × (1 + 각/180° × `cam.blend turn`)), 방위는 위치보다 살짝 늦게 시작한다(먼저 내려오고 돈다).
             let to = Orbit::from_rig(&want, self.follow);
             let dyaw = wrap(to.yaw - from.yaw);
+            // 쿼터뷰로 돌아갈 때는 더 빨리(`cam.blend exit x`, 0.7 — 0.5는 464°/s까지 올라 멀미 쪽): 넓게 보는 것은 빨리 돌아와야 한다(0010).
+            let exit = if self.mode == Mode::Quarter {
+                t[P::CamBlendExit]
+            } else {
+                1.0
+            };
             let d = dur.unwrap_or_else(|| {
-                t[P::CamBlend] * (1.0 + dyaw.abs() / std::f32::consts::PI * t[P::CamBlendTurn])
+                t[P::CamBlend]
+                    * exit
+                    * (1.0 + dyaw.abs() / std::f32::consts::PI * t[P::CamBlendTurn])
             });
             let e = elapsed + dt;
             if e >= d {
@@ -452,6 +460,30 @@ mod tests {
         // 중심이 상자 안: 직전 카메라가 있던 쪽(-z)으로 나간다 — 더 얕은 +z 쪽이 아니라.
         let p = push_out(vec3(0.0, 1.4, 4.7), 0.3, &[wall], vec3(0.0, 1.4, 3.0));
         assert!((p.z - 3.7).abs() < 1e-4, "{p:?}");
+    }
+
+    #[test]
+    fn going_back_to_quarter_view_is_faster_than_locking_on() {
+        let t = Tuning::default();
+        let player = Vec3::ZERO;
+        let boss = vec3(0.0, 0.0, 6.0); // 화면 아래쪽 — 크게 돈다
+        let mut c = Camera::new(player, &t);
+        let mut ticks = |c: &mut Camera, mode: Mode, tg: Option<Vec3>| {
+            c.set_mode(mode, tg, player);
+            let mut n = 0;
+            c.update(1.0 / 60.0, &t, player, tg, &[]);
+            while c.blending().is_some() && n < 600 {
+                c.update(1.0 / 60.0, &t, player, tg, &[]);
+                n += 1;
+            }
+            n
+        };
+        let enter = ticks(&mut c, Mode::Lock, Some(boss));
+        let exit = ticks(&mut c, Mode::Quarter, None);
+        assert!(
+            exit * 10 <= enter * 8,
+            "enter {enter} ticks, exit {exit} ticks"
+        );
     }
 
     #[test]
@@ -759,7 +791,8 @@ mod switch_probe {
         let rows = run(true);
         let worst = rows.iter().map(|r| r.1).fold(0.0, f32::max);
         let best = rows.iter().map(|r| r.1).fold(f32::MAX, f32::min);
-        assert!(worst < 280.0, "turn max {worst}");
+        // 해제가 더 빨라(0010, exit 0.7) 최악은 해제 쪽 — 들어갈 때는 260°/s 안쪽.
+        assert!(worst < 340.0, "turn max {worst}");
         assert!(worst < best * 1.8, "side matters too much: {best}..{worst}");
         assert!(
             rows.iter().all(|r| r.3 > 4.0),
