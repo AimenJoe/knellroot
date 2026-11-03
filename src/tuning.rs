@@ -59,6 +59,7 @@ pub enum P {
     CamBlendTurn,
     CamBlendExit,
     MoveHoldMax,
+    CamQYawMode,
 }
 
 pub struct Spec {
@@ -88,7 +89,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 40] = [
+pub const SPECS: [Spec; 41] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -376,6 +377,15 @@ pub const SPECS: [Spec; 40] = [
         0.0,
         2.0,
         0.05
+    ),
+    spec!(
+        CamQYawMode,
+        "cam.quarter.yaw mode 0fix 1fol 2snap",
+        "CAM_Q_YAW_MODE",
+        2.0,
+        0.0,
+        2.0,
+        1.0
     ),
 ];
 

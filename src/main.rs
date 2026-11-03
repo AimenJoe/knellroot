@@ -80,6 +80,7 @@ async fn main() {
             } else {
                 a
             };
+            world.view_yaw = Some(cam.quarter_yaw_deg(&t));
             for e in world.step(&a, &t) {
                 match e {
                     Event::Hit { .. } => cam.trauma = (cam.trauma + 0.25).min(1.0),

@@ -194,6 +194,8 @@ pub struct World {
     /// 랩 값의 틱 복사본(step이 받은 Tuning에서).
     lock_range: f32,
     lock_lose: f32,
+    /// 쿼터뷰 화면 위를 정하는 카메라 방위(도). 앱이 매 틱 카메라에서 넘긴다(0011 — 락온을 풀면 돌 수 있다). None = 랩 값.
+    pub view_yaw: Option<f32>,
     /// 지난 틱의 락온 앞(수평 단위), 락온이 아니면 None — 풀리는 틱에 `hold`로 넘긴다.
     last_lock_fwd: Option<Vec3>,
     /// 풀린 뒤 쥔 스틱의 기준(앞, 경과 초). 스틱을 놓거나 `move.hold after unlock s`가 지나면 끝.
@@ -224,6 +226,7 @@ impl World {
             kills: 0,
             lock_range: 18.0,
             lock_lose: 26.0,
+            view_yaw: None,
             last_lock_fwd: None,
             hold: None,
         }
@@ -387,7 +390,9 @@ impl World {
                     }
                     _ => {
                         self.hold = None;
-                        Basis::Quarter { yaw: t[P::CamQYaw] }
+                        Basis::Quarter {
+                            yaw: self.view_yaw.unwrap_or(t[P::CamQYaw]),
+                        }
                     }
                 }
             }

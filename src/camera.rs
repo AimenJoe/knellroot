@@ -94,6 +94,21 @@ fn wrap(mut a: f32) -> f32 {
     a
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum YawMode {
+    Fixed,
+    Follow,
+    Snap90,
+}
+
+fn yaw_mode(t: &Tuning) -> YawMode {
+    match t[P::CamQYawMode].round() as i32 {
+        0 => YawMode::Fixed,
+        1 => YawMode::Follow,
+        _ => YawMode::Snap90,
+    }
+}
+
 fn smoothstep(x: f32) -> f32 {
     let x = x.clamp(0.0, 1.0);
     x * x * (3.0 - 2.0 * x)
@@ -110,6 +125,10 @@ pub struct Camera {
     yaw: f32,
     /// 상자에서 밀어낸 만큼(부드럽게 따라간다). 0 = 밀 것 없음.
     push: Vec3,
+    /// 쿼터뷰 카메라 방위(라디안). None = 랩 값 `cam.quarter.yaw` 그대로(고정 방식, 또는 아직 락온을 푼 적 없음).
+    q_azimuth: Option<f32>,
+    /// 방금 락온을 풀었다: 풀던 순간의 락온 카메라 방위(라디안). 다음 갱신에서 방식에 따라 `q_azimuth`로.
+    unlock_azimuth: Option<f32>,
     /// 직전 플레이어 자리와 부드럽게 한 속도(쿼터뷰 앞서 보기, 0008).
     last_player: Option<Vec3>,
     vel: Vec3,
@@ -133,6 +152,8 @@ impl Camera {
             follow: player,
             yaw: 0.0,
             push: Vec3::ZERO,
+            q_azimuth: None,
+            unlock_azimuth: None,
             last_player: None,
             vel: Vec3::ZERO,
             look: None,
@@ -155,8 +176,20 @@ impl Camera {
                 self.yaw = d.x.atan2(d.z);
             }
         }
+        if mode == Mode::Quarter && self.mode == Mode::Lock {
+            // 락온 카메라는 대상 반대편(요 + 180°)에 있다.
+            self.unlock_azimuth = Some(self.yaw + std::f32::consts::PI);
+        }
         self.mode = mode;
         self.blend = Some((Orbit::from_rig(&self.rig, self.follow), 0.0, None));
+    }
+
+    /// 지금 쿼터뷰 방위(도). 입력 기준(`world::Basis::Quarter`)도 이것을 쓴다 — 월드에 매 틱 넘긴다(0011).
+    pub fn quarter_yaw_deg(&self, t: &Tuning) -> f32 {
+        match (yaw_mode(t), self.q_azimuth) {
+            (YawMode::Fixed, _) | (_, None) => t[P::CamQYaw],
+            (_, Some(a)) => a.to_degrees(),
+        }
     }
 
     /// 카메라가 플레이어 머리에 얼마나 가까운가(가림 당기기 뒤). 렌더가 가까우면 플레이어를 옅게.
@@ -199,7 +232,7 @@ impl Camera {
                 let pitch = t[P::CamQPitch].to_radians();
                 let d = t[P::CamQDist];
                 // 요를 돌려 상자의 두 면이 보이게(축 정렬이면 정면 한 면만 보여 납작하다). 화면 위 = `quarter_forward`.
-                let (sy, cy) = t[P::CamQYaw].to_radians().sin_cos();
+                let (sy, cy) = self.quarter_yaw_deg(t).to_radians().sin_cos();
                 let pos =
                     self.follow + vec3(d * pitch.cos() * sy, d * pitch.sin(), d * pitch.cos() * cy);
                 Rig {
@@ -220,6 +253,20 @@ impl Camera {
         target: Option<Vec3>,
         obstacles: &[Aabb],
     ) {
+        // 락온을 풀면 쿼터뷰 방위를 방식에 따라 정한다(0011): 고정 = 랩 값, 따라감 = 락온하던 방향 그대로(돌아가며 돌지 않는다),
+        // 90° 단위 = 랩 값 + 90°×k 중 락온 방향에 가장 가까운 것(최대 45°만 돈다, 지도 방향은 넷뿐).
+        if let Some(a) = self.unlock_azimuth.take() {
+            self.q_azimuth = match yaw_mode(t) {
+                YawMode::Fixed => None,
+                YawMode::Follow => Some(wrap(a)),
+                YawMode::Snap90 => {
+                    let base = t[P::CamQYaw].to_radians();
+                    let q = std::f32::consts::FRAC_PI_2;
+                    let k = (wrap(a - base) / q).round();
+                    Some(wrap(base + k * q))
+                }
+            };
+        }
         // 추적점·요는 전환과 무관하게 늘 따라간다(전환이 끝난 뒤 튀지 않게).
         // 쿼터뷰는 가는 쪽을 앞서 본다: 따라가기 지연(속도/지연율만큼 뒤)을 넘게 앞을 노려, 걷는 동안 플레이어가 가는 반대편에 머문다.
         // 예전엔 위로 걸으면 플레이어가 화면 위로 밀려(+0.15) 가는 쪽이 덜 보였다(0008). 회피 같은 짧은 돌진은 부드러운 속도라 덜 탄다.
@@ -797,6 +844,114 @@ mod switch_probe {
         assert!(
             rows.iter().all(|r| r.3 > 4.0),
             "camera grazes the head: {rows:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod yaw_mode_probe {
+    //! 0011: 쿼터뷰 방위 방식(고정 / 락온 방향 따라감 / 90° 단위)을 보스 둘레 8방향에서 비교.
+    //! `cargo test yaw_mode_probe -- --nocapture`로 표를 본다. 락온 → 해제 → 다시 락온 → 해제(두 번째 들어감은 돌아간 쿼터뷰에서).
+    use super::*;
+    use crate::input::Actions;
+    use crate::scenario::{build, Scenario};
+
+    #[derive(Default, Debug, Clone, Copy)]
+    struct Row {
+        enter: f32,
+        exit: f32,
+        exit_secs: f32,
+        enter2: f32,
+    }
+
+    fn one(mode: f32, deg: f32) -> Row {
+        let mut t = Tuning::default();
+        let i = crate::tuning::SPECS
+            .iter()
+            .position(|s| s.p == P::CamQYawMode)
+            .unwrap();
+        t.set(i, mode);
+        let a = deg.to_radians();
+        let mut w = build(Scenario::Boss);
+        let boss = w.enemies[0].pos;
+        w.player.pos = boss + vec3(a.sin(), 0.0, a.cos()) * 6.0;
+        w.player.prev = w.player.pos;
+        w.enemies[0].state = crate::world::EState::Recover { t: -1000.0 };
+        let mut c = Camera::new(w.player.pos, &t);
+        for _ in 0..60 {
+            c.update(1.0 / 60.0, &t, w.player.pos, None, &w.obstacles);
+        }
+        let mut row = Row::default();
+        let mut prev = c.rig;
+        for tick in 0..300 {
+            let lock = tick % 75 == 0;
+            w.view_yaw = Some(c.quarter_yaw_deg(&t));
+            w.step(
+                &Actions {
+                    lock,
+                    ..Default::default()
+                },
+                &t,
+            );
+            let tg = w.lock_target();
+            c.set_mode(
+                if tg.is_some() {
+                    Mode::Lock
+                } else {
+                    Mode::Quarter
+                },
+                tg,
+                w.player.pos,
+            );
+            c.update(1.0 / 60.0, &t, w.player.pos, tg, &w.obstacles);
+            let d0 = (prev.look - prev.pos).normalize();
+            let d1 = (c.rig.look - c.rig.pos).normalize();
+            let turn = d0.dot(d1).clamp(-1.0, 1.0).acos().to_degrees() * 60.0;
+            match tick / 75 {
+                0 => row.enter = row.enter.max(turn),
+                1 => {
+                    row.exit = row.exit.max(turn);
+                    if c.blending().is_some() {
+                        row.exit_secs += 1.0 / 60.0;
+                    }
+                }
+                2 => row.enter2 = row.enter2.max(turn),
+                _ => {}
+            }
+            prev = c.rig;
+        }
+        row
+    }
+
+    fn table(mode: f32) -> Vec<Row> {
+        (0..8).map(|k| one(mode, k as f32 * 45.0)).collect()
+    }
+
+    #[test]
+    fn snap_and_follow_turn_less_on_release_than_fixed() {
+        let names = ["fixed", "follow", "snap90"];
+        let mut worst_exit = [0.0f32; 3];
+        for (m, name) in names.iter().enumerate() {
+            let rows = table(m as f32);
+            let max = |f: fn(&Row) -> f32| rows.iter().map(f).fold(0.0, f32::max);
+            worst_exit[m] = max(|r| r.exit);
+            println!(
+                "{name:>7}: enter max {:5.0}°/s | exit max {:5.0}°/s, exit takes up to {:.2}s | 2nd enter max {:5.0}°/s",
+                max(|r| r.enter),
+                max(|r| r.exit),
+                max(|r| r.exit_secs),
+                max(|r| r.enter2)
+            );
+        }
+        assert!(
+            worst_exit[2] < worst_exit[0] * 0.8,
+            "snap90 {:?} vs fixed",
+            worst_exit
+        );
+        assert!(
+            worst_exit[1] <= worst_exit[2] + 1.0,
+            "follow {:?}",
+            worst_exit
         );
     }
 }
