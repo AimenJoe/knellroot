@@ -4,7 +4,7 @@ name: deploy-web
 #   v0.1.0 전까지는 운영 주소가 곧 개발판이라 개발 기능(랩·시나리오)을 켠 채 올린다(0005). 마일스톤을 닫으면 nail 0193처럼 갈래를 나눈다.
 # - PR: 같은 빌드를 pr-<번호> 별칭에(포크 PR은 시크릿이 없어 건너뜀).
 # 배포는 사장이 정한다(main에 push하면 바로 올라간다).
-# 액션 버전: Node 24로 도는 메이저(checkout·setup-node·upload-artifact v6, rust-cache v2) — Node 20 액션은 2026-06-16부터 강제로 Node 24, 2026-09-23 제거(GitHub changelog 2025-09-19). upload-artifact v5는 아직 node20이라 v6.
+# 액션 버전: Node 24로 도는 메이저(checkout·setup-node·upload-artifact v7, rust-cache v2 — v7의 깨지는 변경(pull_request_target 포크 checkout 거부, NODE_AUTH_TOKEN 대체값 제거)은 이 워크플로에 해당 없음, upload-artifact v7 archive 기본 true) — Node 20 액션은 2026-06-16부터 강제로 Node 24, 2026-09-23 제거(GitHub changelog 2025-09-19). upload-artifact v5는 아직 node20.
 on:
   push:
     branches: [main, 'release/**']
@@ -21,7 +21,7 @@ jobs:
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -41,12 +41,12 @@ jobs:
         run: |
           sh tools/web/assemble.sh dist "$GITHUB_SHA"
           ls -la dist
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: web-dist
           path: dist
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       # 연기 시험(nail 0169 R7): 헤드리스 Chromium으로 시나리오 넷·락온·랩을 돌려 콘솔 에러·패닉을 잡고 스크린숏을 남긴다.
@@ -57,7 +57,7 @@ jobs:
           npx playwright install --with-deps chromium
           node tools/test/shot.js dist shots
           node tools/test/touch.js dist shots
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: shots
           path: shots
