@@ -76,9 +76,9 @@ pub enum P {
     SlamDamage,
     SlamStagger,
     Haze,
-    RenderModel,
     AimRange,
     AimCone,
+    RenderModel,
 }
 
 pub struct Spec {
@@ -538,16 +538,6 @@ pub const SPECS: [Spec; 60] = [
     // 지평선 아지랑이(0012): 화면 위쪽 이 몫만큼 먼 곳이 하늘빛으로 옅어진다. 카메라는 기울지 않고 수직축으로만 돌아서
     // 이 띠는 진짜 지평선처럼 늘 수평이고 회전 중에도 제자리 — 땅에 고정된 지평선이 멀미를 줄인다(Hemmerich 2020). 0 = 끔.
     spec!(Haze, "render.horizon haze", "HAZE", 0.3, 0.0, 0.6, 0.05),
-    // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
-    spec!(
-        RenderModel,
-        "render.model 0box 1gltf",
-        "RENDER_MODEL",
-        0.0,
-        0.0,
-        1.0,
-        1.0
-    ),
     // 조준(0014): 공격 순간 이 거리(적 몸 가장자리까지, m) 안의 가장 가까운 적을 본다. 조준 스틱을 쥐면 그 쪽 부채꼴(전체 각) 안에서만.
     spec!(
         AimRange,
@@ -566,6 +556,16 @@ pub const SPECS: [Spec; 60] = [
         10.0,
         360.0,
         5.0
+    ),
+    // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
+    spec!(
+        RenderModel,
+        "render.model 0box 1gltf",
+        "RENDER_MODEL",
+        0.0,
+        0.0,
+        1.0,
+        1.0
     ),
 ];
 
@@ -686,6 +686,12 @@ mod tests {
             "기본값이 얼린 값과 다르다 — 판정·결정 기록 없이 바꾸지 않는다(0013):\n{}",
             diff.join("\n")
         );
+    }
+
+    /// 사람에게 "랩을 열고 ↑ 한 번 = `render.model`"로 안내한다(0013) — 새 값은 그 앞에 넣는다.
+    #[test]
+    fn render_model_stays_the_last_lab_entry() {
+        assert_eq!(SPECS.last().unwrap().p, P::RenderModel);
     }
 
     #[test]

@@ -126,6 +126,7 @@ async fn main() {
         let overlay = input.overlay(lab.open);
         if frames % 30 == 2 {
             perf.draws = macroquad::telemetry::drawcalls().len();
+            perf.draws_max = perf.draws_max.max(perf.draws);
         }
         renderer.draw(
             &world,

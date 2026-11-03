@@ -25,6 +25,8 @@ pub struct Perf {
     pub cpu_max_ms: f32,
     pub frame_avg_ms: f32,
     pub draws: usize,
+    /// 장면을 띄운 뒤 잰 가장 많은 그리기 호출(macroquad 호출 칸 = GPU 버퍼 수, 줄지 않는다).
+    pub draws_max: usize,
 }
 
 impl Renderer {
@@ -143,7 +145,13 @@ impl Renderer {
                 Color::new(0.35, 0.32, 0.3, 1.0),
                 shade,
             );
-            draw_cube_wires(b.center(), b.size(), Color::new(0.12, 0.1, 0.1, 1.0));
+            box_wires(
+                b.center(),
+                b.size(),
+                Color::new(0.12, 0.1, 0.1, 1.0),
+                Quat::IDENTITY,
+                b.center(),
+            );
         }
 
         // 바닥 예고·그림자(먼저, 배우보다 아래).
@@ -332,6 +340,9 @@ impl Renderer {
             );
         }
 
+        // 모아 둔 선(윤곽선·예고 옆선)을 한꺼번에 — 옅은 기둥보다 먼저(그 뒤의 선이 가려지지 않게).
+        flush_lines();
+
         // 옅어진(옅어지는) 기둥은 맨 나중에: 면은 거의 투명하게, 윤곽만 밝게 남겨 자리가 보이게.
         for (i, b) in w.obstacles.iter().enumerate() {
             let f = self.fade[i];
@@ -444,11 +455,12 @@ impl Renderer {
         // 측정 줄(P5): 폰에서도 보이게 터치 판정 위에.
         draw_text(
             format!(
-                "cpu {:.1}ms (max {:.1})  frame {:.1}ms  draws {}  verts {}",
+                "cpu {:.1}ms (max {:.1})  frame {:.1}ms  draws {} (max {})  verts {}",
                 perf.cpu_avg_ms,
                 perf.cpu_max_ms,
                 perf.frame_avg_ms,
                 perf.draws,
+                perf.draws_max,
                 self.batch.last_vertices
             ),
             ox + 10.0,
@@ -609,7 +621,26 @@ fn actor(p: Vec3, dir: Vec3, r: f32, h: f32, col: Color, shade: f32, tilt: Quat)
     );
 }
 
-/// 돌린 상자의 모서리 12개(`draw_cube_wires`는 축 정렬뿐).
+thread_local! {
+    /// 이 프레임에 그을 선(나중에 한꺼번에). 면(삼각형)과 선을 번갈아 그리면 macroquad가 그리기 호출을 그때마다 끊는다 —
+    /// 배우마다 면 → 윤곽선 → 코라서 잡몹 80이면 호출 ~180, 다 모여 예고를 띄우면 더. macroquad는 호출 칸마다 GPU 버퍼
+    /// (정점 10,000개분 ≈ 400KB)를 잡고 줄이지 않아, 오래 두면 핸드헬드가 죽었다(사장 2026-11-03, 0016). 선을 모아 한 번에 그린다.
+    static LINES: std::cell::RefCell<Vec<(Vec3, Vec3, Color)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn line(a: Vec3, b: Vec3, col: Color) {
+    LINES.with(|l| l.borrow_mut().push((a, b, col)));
+}
+
+fn flush_lines() {
+    LINES.with(|l| {
+        for (a, b, c) in l.borrow_mut().drain(..) {
+            draw_line_3d(a, b, c);
+        }
+    });
+}
+
+/// 돌린 상자의 모서리 12개(`draw_cube_wires`는 축 정렬뿐). 바로 긋지 않고 `line`으로 모은다.
 fn box_wires(center: Vec3, size: Vec3, col: Color, rot: Quat, pivot: Vec3) {
     let h = size * 0.5;
     let at = |x: f32, y: f32, z: f32| pivot + rot * (center + h * vec3(x, y, z) - pivot);
@@ -627,7 +658,7 @@ fn box_wires(center: Vec3, size: Vec3, col: Color, rot: Quat, pivot: Vec3) {
         ((-1., 1., -1.), (-1., 1., 1.)),
         ((1., 1., -1.), (1., 1., 1.)),
     ] {
-        draw_line_3d(at(a.0, a.1, a.2), at(b.0, b.1, b.2), col);
+        line(at(a.0, a.1, a.2), at(b.0, b.1, b.2), col);
     }
 }
 
@@ -734,7 +765,7 @@ fn ring(c: Vec3, r: f32, yaw: f32, arc: f32, col: Color) {
         // 부채꼴이면 양 옆 변도 긋는다.
         for a in [yaw - half, yaw + half] {
             let (s, k) = a.sin_cos();
-            draw_line_3d(vec3(c.x, y, c.z), vec3(c.x + s * r, y, c.z + k * r), col);
+            line(vec3(c.x, y, c.z), vec3(c.x + s * r, y, c.z + k * r), col);
         }
     }
     draw_mesh(&Mesh {
