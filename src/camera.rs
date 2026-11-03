@@ -5,6 +5,12 @@ use macroquad::prelude::*;
 
 use crate::tuning::{Tuning, P, PLAYER_HEIGHT};
 
+/// 쿼터뷰에서 화면 위가 가리키는 월드 방향(XZ 단위 벡터). 입력 기준(`world::Basis::Quarter`)과 카메라가 같은 식을 쓴다.
+pub fn quarter_forward(yaw_deg: f32) -> Vec3 {
+    let (s, c) = yaw_deg.to_radians().sin_cos();
+    vec3(-s, 0.0, -c)
+}
+
 /// 당겨도 머리에서 이보다 가까이는 안 온다(몸 안에 들어가면 화면이 몸 색으로 찬다). 이보다 가까우면 렌더가 플레이어를 옅게 그린다.
 pub const CAM_MIN_DIST: f32 = 1.2;
 use crate::world::Aabb;
@@ -118,7 +124,10 @@ impl Camera {
             _ => {
                 let pitch = t[P::CamQPitch].to_radians();
                 let d = t[P::CamQDist];
-                let pos = self.follow + vec3(0.0, d * pitch.sin(), d * pitch.cos());
+                // 요를 돌려 상자의 두 면이 보이게(축 정렬이면 정면 한 면만 보여 납작하다). 화면 위 = `quarter_forward`.
+                let (sy, cy) = t[P::CamQYaw].to_radians().sin_cos();
+                let pos =
+                    self.follow + vec3(d * pitch.cos() * sy, d * pitch.sin(), d * pitch.cos() * cy);
                 Rig {
                     pos,
                     look: self.follow + Vec3::Y * 0.5,

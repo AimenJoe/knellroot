@@ -36,6 +36,19 @@ async function main() {
   // 1 보스 아레나: 쿼터뷰 → 앞으로 걷기 → 락온 → 전환 중·전환 뒤 → 공격 → 회피 → 해제.
   await page.keyboard.press('Digit1'); await page.waitForTimeout(400);
   await shot('01-quarter');
+  // 쿼터뷰 요 비교(랩 값 cam.quarter.yaw, 표 다섯째 줄(0부터 4)): 기본 35 → 0 → 45. Ctrl = 10배.
+  await page.keyboard.press('F1'); await page.waitForTimeout(100);
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
+  await page.keyboard.down('Control'); for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowLeft'); await page.keyboard.up('Control');
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('F1'); await page.waitForTimeout(400); await shot('01a-yaw0');
+  await page.keyboard.press('F1'); await page.waitForTimeout(100);
+  await page.keyboard.down('Control'); for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight'); await page.keyboard.up('Control');
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('F1'); await page.waitForTimeout(400); await shot('01b-yaw45');
+  await page.keyboard.press('F1'); await page.waitForTimeout(100);
+  await page.keyboard.press('KeyR'); // 기본값(35)으로
+  await page.keyboard.press('F1'); await page.waitForTimeout(400); await shot('01c-yaw35');
   await page.keyboard.down('KeyW'); await page.waitForTimeout(900); await page.keyboard.up('KeyW');
   await page.keyboard.press('KeyL'); await page.waitForTimeout(120); await shot('02-lock-blending');
   await page.waitForTimeout(700); await shot('03-lock-on');

@@ -23,6 +23,7 @@ pub enum P {
     CamQDist,
     CamQFov,
     CamQLag,
+    CamQYaw,
     CamLDist,
     CamLHeight,
     CamLShoulder,
@@ -50,6 +51,7 @@ pub enum P {
     MobTele,
     BossTele,
     BossSwingArc,
+    Shade,
 }
 
 pub struct Spec {
@@ -79,7 +81,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 31] = [
+pub const SPECS: [Spec; 33] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -87,6 +89,16 @@ pub const SPECS: [Spec; 31] = [
         55.0,
         20.0,
         85.0,
+        1.0
+    ),
+    spec!(Shade, "render.face shade", "SHADE", 0.45, 0.0, 1.0, 0.05),
+    spec!(
+        CamQYaw,
+        "cam.quarter.yaw deg",
+        "CAM_Q_YAW_DEG",
+        35.0,
+        -60.0,
+        60.0,
         1.0
     ),
     spec!(

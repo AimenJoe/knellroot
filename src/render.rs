@@ -53,8 +53,14 @@ impl Renderer {
                 Color::new(0.16, 0.14, 0.13, 1.0),
             );
         }
+        let shade = t[crate::tuning::P::Shade];
         for b in &w.obstacles {
-            draw_cube(b.center(), b.size(), None, Color::new(0.35, 0.32, 0.3, 1.0));
+            shaded_box(
+                b.center(),
+                b.size(),
+                Color::new(0.35, 0.32, 0.3, 1.0),
+                shade,
+            );
             draw_cube_wires(b.center(), b.size(), Color::new(0.12, 0.1, 0.1, 1.0));
         }
 
@@ -95,7 +101,7 @@ impl Renderer {
             let col = if en.hurt > 0.0 { WHITE } else { base };
             let crouch = matches!(en.state, EState::Tele { .. });
             let h = if crouch { en.height * 0.85 } else { en.height };
-            actor(p, en.facing_dir(), en.radius, h, col);
+            actor(p, en.facing_dir(), en.radius, h, col, shade);
             if en.boss {
                 // 체력 띠(머리 위).
                 let k = en.hp as f32 / en.max_hp as f32;
@@ -128,6 +134,7 @@ impl Renderer {
             PLAYER_RADIUS,
             PLAYER_HEIGHT,
             pcol,
+            shade,
         );
         // 스윙 부채꼴(활성 구간만).
         if let PState::Attack { t: e, .. } = w.player.state {
@@ -230,20 +237,56 @@ impl Renderer {
 }
 
 /// 상자 몸 + 작은 코. `dir`은 바라보는 단위 벡터(XZ).
-fn actor(p: Vec3, dir: Vec3, r: f32, h: f32, col: Color) {
+fn actor(p: Vec3, dir: Vec3, r: f32, h: f32, col: Color, shade: f32) {
     let body = vec3(r * 2.0, h, r * 2.0);
-    draw_cube(p + Vec3::Y * (h * 0.5), body, None, col);
+    shaded_box(p + Vec3::Y * (h * 0.5), body, col, shade);
     draw_cube_wires(
         p + Vec3::Y * (h * 0.5),
         body,
         Color::new(0.05, 0.05, 0.05, 1.0),
     );
-    draw_cube(
+    shaded_box(
         p + dir * (r + 0.1) + Vec3::Y * (h * 0.8),
         vec3(0.2, 0.2, 0.2),
-        None,
         Color::new(0.1, 0.1, 0.1, 1.0),
+        shade,
     );
+}
+
+/// 고정 빛 방향(위·약간 앞·오른쪽). 면마다 `1 - shade + shade * max(0, n·l)`을 곱한다 — 기본 셰이더가 normal을 안 읽어 정점 색으로 굽는다
+/// (KB reference/macroquad/3d-rendering.md). shade 0이면 민짜(전처럼), 1이면 그늘진 면이 검정에 가깝다.
+const LIGHT_DIR: Vec3 = Vec3::new(0.35, 0.8, 0.45);
+
+/// 면마다 음영이 다른 상자. 축 정렬. 정점 24개(면마다 넷), 매 프레임 만들어 보낸다(정점은 어차피 매 프레임 올라간다).
+fn shaded_box(center: Vec3, size: Vec3, col: Color, shade: f32) {
+    let h = size * 0.5;
+    let l = LIGHT_DIR.normalize();
+    let faces: [(Vec3, Vec3, Vec3); 6] = [
+        (Vec3::Y, Vec3::X, Vec3::Z),
+        (Vec3::NEG_Y, Vec3::Z, Vec3::X),
+        (Vec3::Z, Vec3::X, Vec3::NEG_Y),
+        (Vec3::NEG_Z, Vec3::NEG_Y, Vec3::X),
+        (Vec3::X, Vec3::NEG_Y, Vec3::Z),
+        (Vec3::NEG_X, Vec3::Z, Vec3::NEG_Y),
+    ];
+    let mut vertices = Vec::with_capacity(24);
+    let mut indices = Vec::with_capacity(36);
+    for (n, u, v) in faces {
+        let k = 1.0 - shade + shade * n.dot(l).max(0.0);
+        let c = Color::new(col.r * k, col.g * k, col.b * k, col.a);
+        let base = vertices.len() as u16;
+        for (su, sv) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+            let p = center + n * h + u * h * su + v * h * sv;
+            vertices.push(Vertex::new(p.x, p.y, p.z, 0.0, 0.0, c));
+        }
+        // 뒷면 컬링이 없어 감기 방향은 상관없다.
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
 }
 
 fn shadow(p: Vec3, r: f32) {

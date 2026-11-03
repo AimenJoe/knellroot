@@ -72,7 +72,10 @@ impl Aabb {
 /// 입력 기준. 락온이면 스틱 앞 = 대상 쪽, 옆 = 대상 둘레. 카메라가 늦게 도착해도 기준은 즉시 바뀐다.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Basis {
-    Quarter,
+    /// 쿼터뷰: 화면 위 = 카메라 요(도)가 가리키는 쪽. 요는 `tuning`의 값이라 월드가 직접 읽는다.
+    Quarter {
+        yaw: f32,
+    },
     Lock(Vec3),
 }
 
@@ -264,7 +267,7 @@ impl World {
     pub fn basis(&self) -> Basis {
         match self.lock_target() {
             Some(p) => Basis::Lock(p),
-            None => Basis::Quarter,
+            None => Basis::Quarter { yaw: 0.0 },
         }
     }
 
@@ -358,7 +361,7 @@ impl World {
             .filter(|e| e.alive())
         {
             Some(e) => Basis::Lock(e.pos),
-            None => Basis::Quarter,
+            None => Basis::Quarter { yaw: t[P::CamQYaw] },
         };
         let world_move = move_to_world(a.move_dir, basis, pl.pos);
 
@@ -440,7 +443,7 @@ impl World {
                 let d = tg - pl.pos;
                 Some(d.x.atan2(d.z))
             }
-            (Basis::Quarter, _) if world_move.length_squared() > 1e-4 => {
+            (Basis::Quarter { .. }, _) if world_move.length_squared() > 1e-4 => {
                 Some(world_move.x.atan2(world_move.z))
             }
             _ => None,
@@ -667,7 +670,10 @@ pub fn move_to_world(stick: Vec2, basis: Basis, player: Vec3) -> Vec3 {
         return Vec3::ZERO;
     }
     let (fwd, right) = match basis {
-        Basis::Quarter => (vec3(0.0, 0.0, -1.0), vec3(1.0, 0.0, 0.0)),
+        Basis::Quarter { yaw } => {
+            let f = crate::camera::quarter_forward(yaw);
+            (f, f.cross(Vec3::Y))
+        }
         Basis::Lock(tg) => {
             let d = vec3(tg.x - player.x, 0.0, tg.z - player.z);
             let f = if d.length_squared() > 1e-4 {
@@ -693,7 +699,7 @@ mod tests {
 
     #[test]
     fn quarter_basis_moves_up_toward_minus_z_and_lock_basis_toward_target() {
-        let m = move_to_world(vec2(0.0, 1.0), Basis::Quarter, Vec3::ZERO);
+        let m = move_to_world(vec2(0.0, 1.0), Basis::Quarter { yaw: 0.0 }, Vec3::ZERO);
         assert!(m.z < -0.99 && m.x.abs() < 1e-6);
         let m = move_to_world(vec2(0.0, 1.0), Basis::Lock(vec3(5.0, 0.0, 0.0)), Vec3::ZERO);
         assert!(m.x > 0.99, "forward is toward the target: {m:?}");
@@ -703,6 +709,18 @@ mod tests {
             Vec3::ZERO,
         );
         assert!(r.x > 0.99, "right of a target in -z is +x: {r:?}");
+    }
+
+    #[test]
+    fn quarter_basis_follows_the_camera_yaw_so_stick_up_is_screen_up() {
+        // 요 90°: 카메라가 +x 쪽에서 본다 → 화면 위 = -x.
+        let m = move_to_world(vec2(0.0, 1.0), Basis::Quarter { yaw: 90.0 }, Vec3::ZERO);
+        assert!(m.x < -0.99 && m.z.abs() < 1e-4, "{m:?}");
+        let r = move_to_world(vec2(1.0, 0.0), Basis::Quarter { yaw: 90.0 }, Vec3::ZERO);
+        assert!(
+            r.z < -0.99,
+            "right of screen is -z when looking from +x: {r:?}"
+        );
     }
 
     #[test]
@@ -726,7 +744,7 @@ mod tests {
             &t,
         );
         assert!(ev.contains(&Event::LockOff));
-        assert_eq!(w.basis(), Basis::Quarter);
+        assert!(matches!(w.basis(), Basis::Quarter { .. }));
     }
 
     #[test]
