@@ -37,6 +37,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+- [ ] 아이템 설계 초안 `docs/design/items.md`(0026) — 이름·수치·첫 소모품 둘·장신구 여섯·무기 넷이 괜찮은지, 구현 순서 A~F.
 - [ ] 새 배치(회피 B, 패링 LB, 돌리기 LT·RT)가 손에 맞는지, 패링 창 0.18초가 맞는지(랩 `parry.window s`) — 잔재·가시짐승 돌진·문지기 부채꼴로(0024·0025).
 - [ ] 조작 설정에서 키·버튼을 바꾸고 새로고침(웹)·다시 켜기(APK) 뒤에도 남는지(0024).
 - [ ] **APK 서명 키 고정**: GitHub 레포 Settings → Secrets and variables → Actions → `ANDROID_DEBUG_KEYSTORE_B64`(값은 세션이 만들어 둔 파일, 또는 `docs/release.md`의 명령으로). 없으면 7일 쉰 뒤 키가 바뀌어 덮어 설치가 안 된다.
