@@ -109,6 +109,9 @@ fn yaw_mode(t: &Tuning) -> YawMode {
     }
 }
 
+/// 모드 전환에서 방위가 위치보다 늦게 시작하는 몫(먼저 내려오고 돈다, 0009).
+const YAW_DELAY: f32 = 0.15;
+
 fn smoothstep(x: f32) -> f32 {
     let x = x.clamp(0.0, 1.0);
     x * x * (3.0 - 2.0 * x)
@@ -117,8 +120,8 @@ fn smoothstep(x: f32) -> f32 {
 pub struct Camera {
     pub mode: Mode,
     pub rig: Rig,
-    /// 전환 중이면 (출발 궤도, 경과 시간, 이번 전환 길이 — 첫 갱신에 돌 각도로 정한다).
-    blend: Option<(Orbit, f32, Option<f32>)>,
+    /// 전환 중이면 (출발 궤도, 경과 시간, 이번 전환 길이 — 없으면 첫 갱신에 돌 각도로 정한다, 방위 늦춤 몫).
+    blend: Option<(Orbit, f32, Option<f32>, f32)>,
     /// 쿼터뷰 추적점(플레이어를 지연 추적).
     follow: Vec3,
     /// 락온 요(라디안, 대상 방향을 지연 추적).
@@ -181,15 +184,32 @@ impl Camera {
             self.unlock_azimuth = Some(self.yaw + std::f32::consts::PI);
         }
         self.mode = mode;
-        self.blend = Some((Orbit::from_rig(&self.rig, self.follow), 0.0, None));
+        self.blend = Some((
+            Orbit::from_rig(&self.rig, self.follow),
+            0.0,
+            None,
+            YAW_DELAY,
+        ));
+    }
+
+    /// 땅 돌리기(0012): 쿼터뷰 방위를 90° 돌린다. 화면에서 보아 시계 방향(`cw`) = 요 +90° — 화면 위에 있던 것이 화면 오른쪽으로 간다.
+    /// 플레이어가 누른 것이라 예측된다: 길이는 `turn.camera s`로 고정, 방위만 돈다(높이·거리는 그대로라 늦춤 없이).
+    /// 락온 중에는 부르지 않는다(월드가 막는다).
+    pub fn turn(&mut self, cw: bool, t: &Tuning) {
+        let q = std::f32::consts::FRAC_PI_2;
+        let cur = self.quarter_yaw_deg(t).to_radians();
+        self.q_azimuth = Some(wrap(cur + if cw { q } else { -q }));
+        self.blend = Some((
+            Orbit::from_rig(&self.rig, self.follow),
+            0.0,
+            Some(t[P::TurnTime]),
+            0.0,
+        ));
     }
 
     /// 지금 쿼터뷰 방위(도). 입력 기준(`world::Basis::Quarter`)도 이것을 쓴다 — 월드에 매 틱 넘긴다(0011).
     pub fn quarter_yaw_deg(&self, t: &Tuning) -> f32 {
-        match (yaw_mode(t), self.q_azimuth) {
-            (YawMode::Fixed, _) | (_, None) => t[P::CamQYaw],
-            (_, Some(a)) => a.to_degrees(),
-        }
+        self.q_azimuth.map_or(t[P::CamQYaw], f32::to_degrees)
     }
 
     /// 카메라가 플레이어 머리에 얼마나 가까운가(가림 당기기 뒤). 렌더가 가까우면 플레이어를 옅게.
@@ -200,7 +220,7 @@ impl Camera {
     }
 
     pub fn blending(&self) -> Option<f32> {
-        self.blend.map(|(_, e, _)| e)
+        self.blend.map(|(_, e, _, _)| e)
     }
 
     /// 원하는 리그(전환·충돌 전).
@@ -256,8 +276,9 @@ impl Camera {
         // 락온을 풀면 쿼터뷰 방위를 방식에 따라 정한다(0011): 고정 = 랩 값, 따라감 = 락온하던 방향 그대로(돌아가며 돌지 않는다),
         // 90° 단위 = 랩 값 + 90°×k 중 락온 방향에 가장 가까운 것(최대 45°만 돈다, 지도 방향은 넷뿐).
         if let Some(a) = self.unlock_azimuth.take() {
+            // 고정 = 락온 해제로는 돌지 않는다(땅 돌리기로 정한 방위는 그대로, 0012).
             self.q_azimuth = match yaw_mode(t) {
-                YawMode::Fixed => None,
+                YawMode::Fixed => self.q_azimuth,
                 YawMode::Follow => Some(wrap(a)),
                 YawMode::Snap90 => {
                     let base = t[P::CamQYaw].to_radians();
@@ -319,7 +340,7 @@ impl Camera {
             self.look = None;
         }
         let mut rig = want;
-        if let Some((from, elapsed, dur)) = self.blend {
+        if let Some((from, elapsed, dur, delay)) = self.blend {
             // 궤도로 보간: 방위는 짧은 쪽으로 돌고, 높이 각·거리·주시점·FOV는 따로. 돌 각도가 크면 그만큼 길게
             // (`cam.blend s` × (1 + 각/180° × `cam.blend turn`)), 방위는 위치보다 살짝 늦게 시작한다(먼저 내려오고 돈다).
             let to = Orbit::from_rig(&want, self.follow);
@@ -341,7 +362,7 @@ impl Camera {
             } else {
                 let x = e / d.max(1e-3);
                 let s = smoothstep(x);
-                let sy = smoothstep((x - 0.15) / 0.85);
+                let sy = smoothstep((x - delay) / (1.0 - delay));
                 let o = Orbit {
                     yaw: from.yaw + dyaw * sy,
                     elev: from.elev + (to.elev - from.elev) * s,
@@ -350,7 +371,7 @@ impl Camera {
                     fov: from.fov + (to.fov - from.fov) * s,
                 };
                 rig = o.to_rig(self.follow);
-                self.blend = Some((from, e, Some(d)));
+                self.blend = Some((from, e, Some(d), delay));
             }
         }
         // 충돌: 카메라 구가 상자 **안에** 들 때만 가장 얕은 면 밖으로 밀어낸다(머리 쪽으로 당기지 않는다 — 옆으로 미끄러져
@@ -515,7 +536,7 @@ mod tests {
         let player = Vec3::ZERO;
         let boss = vec3(0.0, 0.0, 6.0); // 화면 아래쪽 — 크게 돈다
         let mut c = Camera::new(player, &t);
-        let mut ticks = |c: &mut Camera, mode: Mode, tg: Option<Vec3>| {
+        let ticks = |c: &mut Camera, mode: Mode, tg: Option<Vec3>| {
             c.set_mode(mode, tg, player);
             let mut n = 0;
             c.update(1.0 / 60.0, &t, player, tg, &[]);
@@ -953,5 +974,84 @@ mod yaw_mode_probe {
             "follow {:?}",
             worst_exit
         );
+    }
+}
+
+#[cfg(test)]
+mod turn_probe {
+    //! 0012: 땅 돌리기 카메라. `cargo test turn_probe -- --nocapture`로 회전 시간별 표를 본다.
+    use super::*;
+    use crate::input::Actions;
+    use crate::scenario::{build, Scenario};
+
+    #[test]
+    fn a_clockwise_turn_puts_what_was_screen_up_on_screen_right() {
+        let t = Tuning::default();
+        let mut c = Camera::new(Vec3::ZERO, &t);
+        let before = c.quarter_yaw_deg(&t);
+        c.turn(true, &t);
+        let after = c.quarter_yaw_deg(&t);
+        let right = quarter_forward(after).cross(Vec3::Y);
+        assert!(
+            right.dot(quarter_forward(before)) > 0.999,
+            "{before} -> {after}"
+        );
+        c.turn(false, &t);
+        assert!((wrap((c.quarter_yaw_deg(&t) - before).to_radians())).abs() < 1e-4);
+    }
+
+    /// (가장 빠른 시선 회전 °/s, 다 도는 데 걸린 초, 카메라-주시점 거리 흔들림 m)
+    fn one(turn_time: f32) -> (f32, f32, f32) {
+        let mut t = Tuning::default();
+        let i = crate::tuning::SPECS
+            .iter()
+            .position(|s| s.p == P::TurnTime)
+            .unwrap();
+        t.set(i, turn_time);
+        let mut w = build(Scenario::Tray);
+        let mut c = Camera::new(w.player.pos, &t);
+        let mut prev = c.rig;
+        let (mut peak, mut secs, mut dmin, mut dmax) = (0.0f32, 0.0f32, f32::MAX, 0.0f32);
+        for tick in 0..90 {
+            w.view_yaw = Some(c.quarter_yaw_deg(&t));
+            for e in w.step(
+                &Actions {
+                    turn_cw: tick == 10,
+                    ..Default::default()
+                },
+                &t,
+            ) {
+                if let crate::world::Event::Turn { cw } = e {
+                    c.turn(cw, &t);
+                }
+            }
+            c.update(1.0 / 60.0, &t, w.player.pos, None, &w.obstacles);
+            let d0 = (prev.look - prev.pos).normalize();
+            let d1 = (c.rig.look - c.rig.pos).normalize();
+            peak = peak.max(d0.dot(d1).clamp(-1.0, 1.0).acos().to_degrees() * 60.0);
+            if c.blending().is_some() {
+                secs += 1.0 / 60.0;
+            }
+            if tick > 10 {
+                let d = c.rig.pos.distance(c.rig.look);
+                dmin = dmin.min(d);
+                dmax = dmax.max(d);
+            }
+            prev = c.rig;
+        }
+        (peak, secs, dmax - dmin)
+    }
+
+    #[test]
+    fn the_turn_is_no_faster_than_the_lock_switch_and_keeps_its_distance() {
+        for tt in [0.25, 0.3, 0.4, 0.5, 0.6] {
+            let (peak, secs, wobble) = one(tt);
+            println!("turn {tt:.2}s: peak {peak:5.0}°/s, takes {secs:.2}s, distance wobble {wobble:.3} m");
+        }
+        let (peak, secs, wobble) = one(Tuning::default()[P::TurnTime]);
+        // 기준: 락온 전환 최악 260°/s(0009). 플레이어가 누른 회전이라 예측되지만, 그보다 빠르지는 않게.
+        assert!(peak < 260.0, "peak {peak}");
+        assert!(secs <= Tuning::default()[P::TurnTime] + 0.02, "{secs}");
+        assert!(wobble < 0.05, "orbit keeps the distance: {wobble}");
     }
 }

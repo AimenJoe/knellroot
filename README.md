@@ -14,10 +14,10 @@
 cargo run --release
 # 웹
 cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && python3 -m http.server -d dist 8080
-# 헤드리스 스크린숏(Playwright + Chromium): 시나리오 넷·락온·랩 패널
+# 헤드리스 스크린숏(Playwright + Chromium): 시나리오 다섯·락온·랩 패널·땅 돌리기
 node tools/test/shot.js dist shots
 ```
-조작(키보드 / 패드): WASD·화살표 / 왼쪽 스틱 이동 · J·Space / X 공격 · K·Shift / A 회피 · L·Tab / RB 락온 · F1 / Select 랩 · 1~4 / Start 시나리오.
+조작(키보드 / 패드): WASD·화살표 / 왼쪽 스틱 이동 · J·Space / X 공격 · K·Shift / A 회피 · Q·E / LB·RB 땅 돌리기 ↺↻ · L·Tab / R3 락온 · F1 / Select 랩 · 1~5 / Start 시나리오.
 터치(폰·태블릿 브라우저, 가로): 왼쪽 반 = 스틱, 오른쪽 아래 = 공격·회피·락온, 오른쪽 위 = SC(시나리오)·LAB.
 ```sh
 node tools/test/touch.js dist shots   # 가로 폰 터치 연기 시험
@@ -41,7 +41,7 @@ src/world.rs     규칙 하나: 플레이어·적·락온·타격 (카메라·�
 src/camera.rs    리그 둘(쿼터뷰·락온) + 보간 + 당기기
 src/render.rs    내부 해상도 렌더 타깃 → 정수 배율, 바닥 예고·그림자·HUD
 src/lab.rs       실행 중 수치 바꾸기·A/B·내보내기
-src/scenario.rs  개발 시나리오 넷
+src/scenario.rs  개발 시나리오 다섯
 src/touch.rs     터치: 가상 스틱·버튼·랩 터치판(0006)
 web/             index.html + macroquad JS 번들 복사본(핫링크 금지)
 tools/           web/assemble.sh · test/shot.js

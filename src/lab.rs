@@ -87,7 +87,7 @@ impl Lab {
             WHITE,
         );
         draw_text(
-            "E export  C store B  V swap A/B  1-4/Start scenario  F1 close",
+            "X export  C store B  V swap A/B  1-5/Start scenario  F1 close",
             x + 8.0,
             42.0,
             16.0,

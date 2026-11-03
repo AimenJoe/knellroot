@@ -68,7 +68,14 @@ async function main() {
   await page.keyboard.press('F1'); await page.waitForTimeout(200);
   for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
   await page.waitForTimeout(300); await shot('11-lab');
-  await page.keyboard.press('KeyE'); await page.waitForTimeout(200);
+  await page.keyboard.press('KeyX'); await page.waitForTimeout(200);
+  await page.keyboard.press('F1'); await page.waitForTimeout(100);
+  // 쟁반 돌리기(0012): 시나리오 5에서 E(↻) — 도는 중 · 쏟아지는 중 · 다 돈 뒤, 대기 중 Q(↺)는 안 먹는다.
+  await page.keyboard.press('Digit5'); await page.waitForTimeout(500); await shot('12-tray');
+  await page.keyboard.press('KeyE'); await page.waitForTimeout(100); await shot('13-turn-mid');
+  await page.waitForTimeout(200); await shot('14-turn-spill');
+  await page.waitForTimeout(500); await shot('15-turn-done');
+  await page.keyboard.press('KeyQ'); await page.waitForTimeout(300); await shot('16-turn-cooldown');
   await browser.close();
   server.close();
   for (const n of fs.readdirSync(OUT)) {

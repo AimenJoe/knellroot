@@ -75,6 +75,8 @@ async fn main() {
                     attack: a.attack,
                     dodge: a.dodge,
                     lock: a.lock,
+                    turn_cw: a.turn_cw,
+                    turn_ccw: a.turn_ccw,
                     ..Actions::default()
                 }
             } else {
@@ -86,6 +88,12 @@ async fn main() {
                     Event::Hit { .. } => cam.trauma = (cam.trauma + 0.25).min(1.0),
                     Event::PlayerHurt => cam.trauma = (cam.trauma + 0.5).min(1.0),
                     Event::EnemyDown { .. } => cam.trauma = (cam.trauma + 0.15).min(1.0),
+                    // 땅 돌리기: 카메라가 90° 돈다(입력 기준은 다음 틱부터 새 방위 — 쥔 스틱은 월드가 그대로 둔다).
+                    Event::Turn { cw } => {
+                        cam.turn(cw, &t);
+                        cam.trauma = (cam.trauma + 0.2).min(1.0);
+                    }
+                    Event::Slam { .. } => cam.trauma = (cam.trauma + 0.35).min(1.0),
                     Event::Swing | Event::LockOn | Event::LockOff => {}
                 }
             }
@@ -114,7 +122,7 @@ async fn main() {
         );
         lab.draw(&t, overlay.is_some());
         if let Some(o) = &overlay {
-            touch::draw(o, world.lock_target().is_some());
+            touch::draw(o, world.lock_target().is_some(), world.turn_ready(&t));
         }
         next_frame().await;
     }

@@ -1,7 +1,8 @@
 //! 터치 조작(nail `input.rs` read_touch·TouchOverlay에서 가져옴, 0006). `input.rs`만 이 모듈을 부른다.
 //!
 //! - 화면 왼쪽 반에서 시작한 손가락 = 떠다니는 가상 스틱(손가락을 댄 자리가 중심).
-//! - 오른쪽 아래 버튼: 공격(가장 크게)·회피(왼쪽 아래)·락온(위). 그림은 글자 대신 선 그림(언어를 타지 않는다, nail 0172).
+//! - 오른쪽 아래 버튼: 공격(가장 크게)·회피(왼쪽 아래)·락온(위), 락온 왼쪽에 땅 돌리기 ↺ ↻(0012 — 왼쪽이 반시계).
+//!   그림은 글자 대신 선 그림(언어를 타지 않는다, nail 0172).
 //! - dev 기능: 오른쪽 위 랩·시나리오 버튼, 랩이 열리면 위쪽 줄에 ▲▼−+·담기·바꾸기·초기화(−+는 누르고 있으면 반복).
 //! - 장치가 터치일 때만 그린다(마지막으로 만진 것이 화면). 키·패드를 만지면 사라진다(nail 0036·0172).
 //!
@@ -14,6 +15,8 @@ pub enum Kind {
     Attack,
     Dodge,
     Lock,
+    TurnCcw,
+    TurnCw,
     Lab,
     Scenario,
     LabUp,
@@ -47,6 +50,8 @@ pub struct Read {
     pub attack: bool,
     pub dodge: bool,
     pub lock: bool,
+    pub turn_cw: bool,
+    pub turn_ccw: bool,
     pub lab_toggle: bool,
     pub scenario_next: bool,
     pub lab_up: bool,
@@ -94,7 +99,11 @@ pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool) -> Vec<Button> {
     let atk_r = r * 1.5;
     let dodge_r = r * 1.1;
     let lock_r = r * 0.85;
+    let turn_r = r * 0.8;
     let atk = vec2(w - atk_r * 1.3, h - atk_r * 1.3);
+    let lock = vec2(atk.x, atk.y - (atk_r + lock_r + r * 0.45));
+    let cw_x = lock.x - (lock_r + turn_r + r * 0.4);
+    let ccw_x = cw_x - (turn_r * 2.0 + r * 0.4);
     let mut b = vec![
         Button {
             center: atk,
@@ -107,9 +116,19 @@ pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool) -> Vec<Button> {
             kind: Kind::Dodge,
         },
         Button {
-            center: vec2(atk.x, atk.y - (atk_r + lock_r + r * 0.45)),
+            center: lock,
             radius: lock_r,
             kind: Kind::Lock,
+        },
+        Button {
+            center: vec2(cw_x, lock.y),
+            radius: turn_r,
+            kind: Kind::TurnCw,
+        },
+        Button {
+            center: vec2(ccw_x, lock.y),
+            radius: turn_r,
+            kind: Kind::TurnCcw,
         },
     ];
     if dev {
@@ -276,6 +295,8 @@ fn press(a: &mut Read, k: Kind) {
         Kind::Attack => a.attack = true,
         Kind::Dodge => a.dodge = true,
         Kind::Lock => a.lock = true,
+        Kind::TurnCw => a.turn_cw = true,
+        Kind::TurnCcw => a.turn_ccw = true,
         Kind::Lab => a.lab_toggle = true,
         Kind::Scenario => a.scenario_next = true,
         Kind::LabUp => a.lab_up = true,
@@ -298,8 +319,8 @@ pub fn stick_vector(d: Vec2, radius: f32) -> Vec2 {
     v / len * ((len - DEAD) / (1.0 - DEAD)).min(1.0)
 }
 
-/// 터치 오버레이 그리기(화면 패스). `locked`면 락온 버튼을 채운다.
-pub fn draw(o: &Overlay, locked: bool) {
+/// 터치 오버레이 그리기(화면 패스). `locked`면 락온 버튼을 채운다. `turn` = 땅 돌리기 준비 0..1 — 차오르는 동안 옅고, 다 차면 밝다.
+pub fn draw(o: &Overlay, locked: bool, turn: f32) {
     let line = Color::new(1.0, 1.0, 1.0, 0.4);
     let fill = Color::new(1.0, 1.0, 1.0, 0.12);
     if let Some((origin, pos)) = o.stick {
@@ -315,15 +336,26 @@ pub fn draw(o: &Overlay, locked: bool) {
         } else {
             fill
         };
+        let is_turn = matches!(b.kind, Kind::TurnCw | Kind::TurnCcw);
         draw_circle(b.center.x, b.center.y, b.radius, f);
+        if is_turn && turn < 1.0 {
+            // 대기: 차오르는 몫만큼 아래부터 채운다(그림은 옅게).
+            draw_circle(
+                b.center.x,
+                b.center.y,
+                b.radius * turn.clamp(0.0, 1.0),
+                Color::new(1.0, 1.0, 1.0, 0.08),
+            );
+        }
         draw_circle_lines(b.center.x, b.center.y, b.radius, 2.0, line);
-        icon(b.kind, b.center, b.radius);
+        let dim = if is_turn && turn < 1.0 { 0.35 } else { 1.0 };
+        icon(b.kind, b.center, b.radius, dim);
     }
 }
 
 /// 픽토그램(선 그림). 플레이어용 셋은 글자 없이, dev 버튼만 짧은 ASCII.
-fn icon(k: Kind, c: Vec2, r: f32) {
-    let col = Color::new(1.0, 1.0, 1.0, 0.85);
+fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
+    let col = Color::new(1.0, 1.0, 1.0, 0.85 * dim);
     let s = r * 0.5;
     let th = (r * 0.09).max(2.0);
     match k {
@@ -359,6 +391,33 @@ fn icon(k: Kind, c: Vec2, r: f32) {
                     col,
                 );
             }
+        }
+        Kind::TurnCw | Kind::TurnCcw => {
+            // 둥근 화살표: 3/4 원호 + 끝의 화살촉. 시계 방향이면 화살촉이 시계 쪽을 본다(화면 y는 아래가 +).
+            let sign = if k == Kind::TurnCw { 1.0 } else { -1.0 };
+            let rad = s * 0.8;
+            let n = 14;
+            let (a0, a1) = (-std::f32::consts::FRAC_PI_2, std::f32::consts::PI);
+            let at = |a: f32| c + vec2(a.cos() * sign, a.sin()) * rad;
+            for i in 0..n {
+                let (u, v) = (
+                    a0 + (a1 - a0) * i as f32 / n as f32,
+                    a0 + (a1 - a0) * (i + 1) as f32 / n as f32,
+                );
+                let (p, q) = (at(u), at(v));
+                draw_line(p.x, p.y, q.x, q.y, th, col);
+            }
+            // 화살촉: 원호 끝(a1)에서 진행 방향(각이 커지는 쪽)으로.
+            let tip = at(a1);
+            let tan = vec2(-a1.sin() * sign, a1.cos());
+            let side = vec2(-tan.y, tan.x);
+            let h = s * 0.45;
+            draw_triangle(
+                tip + tan * h * 0.6,
+                tip - tan * h * 0.4 + side * h * 0.55,
+                tip - tan * h * 0.4 - side * h * 0.55,
+                col,
+            );
         }
         Kind::LabUp | Kind::LabDown => {
             let d = if k == Kind::LabUp { -1.0 } else { 1.0 };

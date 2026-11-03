@@ -22,12 +22,16 @@ const server = http.createServer((req, res) => {
 
 // src/touch.rs layout()과 같은 식(논리 px). 바꾸면 함께.
 function layout(lab) {
-  const u = Math.min(W, H), r = u * 0.09, atkR = r * 1.5, dodgeR = r * 1.1, lockR = r * 0.85;
+  const u = Math.min(W, H), r = u * 0.09, atkR = r * 1.5, dodgeR = r * 1.1, lockR = r * 0.85, turnR = r * 0.8;
   const atk = [W - atkR * 1.3, H - atkR * 1.3];
+  const lock = [atk[0], atk[1] - (atkR + lockR + r * 0.45)];
+  const cwX = lock[0] - (lockR + turnR + r * 0.4);
   const b = {
     attack: atk,
     dodge: [atk[0] - (atkR + dodgeR + r * 0.5), H - dodgeR * 1.2],
-    lock: [atk[0], atk[1] - (atkR + lockR + r * 0.45)],
+    lock,
+    turn_cw: [cwX, lock[1]],
+    turn_ccw: [cwX - (turnR * 2 + r * 0.4), lock[1]],
     lab: [W - r * 0.7 * 1.4, r * 0.7 * 1.4],
     scenario: [W - r * 0.7 * 4.0, r * 0.7 * 1.4],
   };
@@ -84,6 +88,11 @@ async function main() {
   await tap(b.lab); await page.waitForTimeout(100);
   await tap(b.scenario); await page.waitForTimeout(800);
   await shot('t07-next-scenario');
+  // 땅 돌리기 ↻(0012): 도는 중 · 다 돈 뒤(버튼이 대기로 옅어짐).
+  await tap(b.turn_cw); await page.waitForTimeout(120);
+  await shot('t08-turn-cw');
+  await page.waitForTimeout(600);
+  await shot('t09-after-turn');
   await browser.close();
   server.close();
   for (const n of fs.readdirSync(OUT).filter((n) => n.startsWith('t0'))) console.log(`${n}\t${fs.statSync(path.join(OUT, n)).size} bytes`);

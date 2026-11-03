@@ -3,10 +3,11 @@
 //!
 //! 기본 배치(패드 W3C 표준 자리 / 키보드):
 //!   이동 = 왼쪽 스틱·십자 / WASD·화살표
-//!   공격 = X(왼쪽) / J·Space      회피 = A(아래) / K·LShift      락온 = RB·오른쪽 스틱 클릭 / L·Tab
-//!   랩 열기 = Select / F1          랩 안: 십자(↑↓ 고르기, ←→ 바꾸기), LB = 10배, Y = 초기화, B = 내보내기,
+//!   공격 = X(왼쪽) / J·Space      회피 = A(아래) / K·LShift      락온 = 오른쪽 스틱 클릭 / L·Tab
+//!   땅 돌리기(쟁반, 0012) = LB ↺ · RB ↻ / Q ↺ · E ↻ (Fez처럼 어깨 버튼, 락온은 다크소울처럼 R3로 옮겼다)
+//!   랩 열기 = Select / F1          랩 안: 십자(↑↓ 고르기, ←→ 바꾸기), LB = 10배(랩이 열려 있으면 ↺ 대신), Y = 초기화, B·X키 = 내보내기,
 //!   LT = 슬롯에 담기, RT = A/B 바꾸기, Start/1~4 = 시나리오 바꾸기(dev 기능)
-//!   터치(`touch.rs`, 0006) = 왼쪽 반 가상 스틱 + 오른쪽 아래 공격·회피·락온, 오른쪽 위 랩·시나리오(dev).
+//!   터치(`touch.rs`, 0006) = 왼쪽 반 가상 스틱 + 오른쪽 아래 공격·회피·락온·↺↻, 오른쪽 위 랩·시나리오(dev).
 //!
 //! 지금 쓰는 장치(`Device`)는 마지막으로 만진 것. 터치 오버레이는 장치가 터치일 때만 그린다(nail 0036·0172).
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -73,6 +74,9 @@ pub struct Actions {
     pub attack: bool,
     pub dodge: bool,
     pub lock: bool,
+    /// 땅을 시계 방향(화면에서 보아)으로 90° 돌리기 / 반시계(0012).
+    pub turn_cw: bool,
+    pub turn_ccw: bool,
     pub lab_toggle: bool,
     pub lab_up: bool,
     pub lab_down: bool,
@@ -137,6 +141,8 @@ impl Input {
         a.attack = is_key_pressed(KeyCode::J) || is_key_pressed(KeyCode::Space);
         a.dodge = is_key_pressed(KeyCode::K) || is_key_pressed(KeyCode::LeftShift);
         a.lock = is_key_pressed(KeyCode::L) || is_key_pressed(KeyCode::Tab);
+        a.turn_ccw = is_key_pressed(KeyCode::Q);
+        a.turn_cw = is_key_pressed(KeyCode::E);
         a.lab_toggle = is_key_pressed(KeyCode::F1);
         a.lab_up = is_key_pressed(KeyCode::Up);
         a.lab_down = is_key_pressed(KeyCode::Down);
@@ -144,12 +150,18 @@ impl Input {
         a.lab_right = is_key_pressed(KeyCode::Right);
         a.lab_fast = is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl);
         a.lab_reset = is_key_pressed(KeyCode::R);
-        a.lab_export = is_key_pressed(KeyCode::E);
+        a.lab_export = is_key_pressed(KeyCode::X);
         a.lab_store = is_key_pressed(KeyCode::C);
         a.lab_swap = is_key_pressed(KeyCode::V);
-        for (i, k) in [KeyCode::Key1, KeyCode::Key2, KeyCode::Key3, KeyCode::Key4]
-            .iter()
-            .enumerate()
+        for (i, k) in [
+            KeyCode::Key1,
+            KeyCode::Key2,
+            KeyCode::Key3,
+            KeyCode::Key4,
+            KeyCode::Key5,
+        ]
+        .iter()
+        .enumerate()
         {
             if is_key_pressed(*k) {
                 a.scenario = Some(i as u8 + 1);
@@ -180,8 +192,10 @@ impl Input {
                 }
                 a.attack |= pad.is_just_pressed(Button::ActionLeft);
                 a.dodge |= pad.is_just_pressed(Button::ActionDown);
-                a.lock |= pad.is_just_pressed(Button::FrontRightUpper)
-                    || pad.is_just_pressed(Button::RightStick);
+                a.lock |= pad.is_just_pressed(Button::RightStick);
+                a.turn_cw |= pad.is_just_pressed(Button::FrontRightUpper);
+                // 랩이 열려 있으면 LB는 10배 단계다(누르고 십자) — 돌리기로 같이 읽지 않는다.
+                a.turn_ccw |= !lab_open && pad.is_just_pressed(Button::FrontLeftUpper);
                 a.lab_toggle |= pad.is_just_pressed(Button::LeftCenterCluster);
                 a.lab_up |= pad.is_just_pressed(Button::DPadUp);
                 a.lab_down |= pad.is_just_pressed(Button::DPadDown);
@@ -207,6 +221,8 @@ impl Input {
         a.attack |= t.attack;
         a.dodge |= t.dodge;
         a.lock |= t.lock;
+        a.turn_cw |= t.turn_cw;
+        a.turn_ccw |= t.turn_ccw;
         a.lab_toggle |= t.lab_toggle;
         a.lab_up |= t.lab_up;
         a.lab_down |= t.lab_down;
@@ -236,6 +252,8 @@ impl Input {
             attack: self.latch.attack | a.attack,
             dodge: self.latch.dodge | a.dodge,
             lock: self.latch.lock | a.lock,
+            turn_cw: self.latch.turn_cw | a.turn_cw,
+            turn_ccw: self.latch.turn_ccw | a.turn_ccw,
             lab_toggle: self.latch.lab_toggle | a.lab_toggle,
             lab_up: self.latch.lab_up | a.lab_up,
             lab_down: self.latch.lab_down | a.lab_down,

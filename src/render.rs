@@ -168,6 +168,7 @@ impl Renderer {
             _ if w.player.hurt > 0.0 && (w.time * 20.0) as i32 % 2 == 0 => WHITE,
             PState::Dodge { .. } => Color::new(0.6, 0.9, 1.0, 0.6),
             PState::Attack { .. } => Color::new(1.0, 0.85, 0.5, 1.0),
+            PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
             PState::Idle => Color::new(0.85, 0.75, 0.55, 1.0),
         };
         // 카메라가 몸에 닿을 만큼 가까우면 옅게(가림 당기기의 마지막 수단).
@@ -195,6 +196,43 @@ impl Renderer {
                     t[crate::tuning::P::AttackArc],
                     Color::new(1.0, 0.95, 0.7, 0.5),
                 );
+            }
+        }
+        // 땅 돌리기(0012): 쟁반의 테 — 범위 고리가 밝게 떴다 옅어지고, 안쪽 물결이 바깥으로 퍼진다(어디까지 쏟아지는지 배우게).
+        let shown = t[crate::tuning::P::TurnTime].max(t[crate::tuning::P::TurnPlant]) + 0.15;
+        if w.player.since_turn < shown {
+            let k = (w.player.since_turn / shown).clamp(0.0, 1.0);
+            let range = t[crate::tuning::P::SpillRange];
+            ring(
+                pp,
+                range,
+                0.0,
+                360.0,
+                Color::new(0.7, 0.95, 0.75, 0.8 * (1.0 - k)),
+            );
+            ring(
+                pp,
+                range * (0.25 + 0.75 * k),
+                0.0,
+                360.0,
+                Color::new(0.7, 0.95, 0.75, 0.5 * (1.0 - k)),
+            );
+        }
+        // 휘청: 머리 위를 도는 작은 별 셋.
+        for en in &w.enemies {
+            if let EState::Stagger { t: e, dur } = en.state {
+                let p = en.prev.lerp(en.pos, alpha);
+                let fade = ((dur - e) / 0.2).clamp(0.0, 1.0);
+                for i in 0..3 {
+                    let a = w.time * 6.0 + i as f32 * std::f32::consts::TAU / 3.0;
+                    let r = en.radius + 0.15;
+                    draw_cube(
+                        p + vec3(a.cos() * r, en.height + 0.3, a.sin() * r),
+                        Vec3::splat(0.16),
+                        None,
+                        Color::new(1.0, 0.92, 0.35, fade),
+                    );
+                }
             }
         }
         // 락온 표시: 대상 머리 위 작은 구 + 땅의 고리.
@@ -272,11 +310,18 @@ impl Renderer {
         );
         draw_text(
             format!(
-                "{}: hp {}   kills {}   enemies {}",
+                "{}: hp {}   kills {}   enemies {}   turn {}",
                 w.name,
                 w.player.hp,
                 w.kills,
-                w.enemies.iter().filter(|e| e.alive()).count()
+                w.enemies.iter().filter(|e| e.alive()).count(),
+                if w.lock_target().is_some() {
+                    "-".to_string()
+                } else if w.player.turn_cd > 0.0 {
+                    format!("{:.1}s", w.player.turn_cd)
+                } else {
+                    "ready".to_string()
+                }
             ),
             ox + 10.0,
             oy + 44.0,
@@ -294,7 +339,7 @@ impl Renderer {
             GRAY,
         );
         draw_text(
-            "WASD move  J/Space attack  K/Shift dodge  L/Tab lock-on  F1 lab  1-4 scenario",
+            "WASD move  J/Space attack  K/Shift dodge  Q/E turn  L/Tab lock-on  F1 lab  1-5 scenario",
             ox + 10.0,
             oy + 86.0,
             16.0,

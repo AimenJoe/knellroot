@@ -60,6 +60,18 @@ pub enum P {
     CamBlendExit,
     MoveHoldMax,
     CamQYawMode,
+    TurnTime,
+    TurnPlant,
+    TurnCooldown,
+    SpillRange,
+    SpillPerM,
+    SpillMax,
+    SpillOut,
+    SpillStagger,
+    SpillBossMass,
+    SpillBossStagger,
+    SlamDamage,
+    SlamStagger,
 }
 
 pub struct Spec {
@@ -89,7 +101,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 41] = [
+pub const SPECS: [Spec; 53] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -386,6 +398,107 @@ pub const SPECS: [Spec; 41] = [
         0.0,
         2.0,
         1.0
+    ),
+    // 쟁반 돌리기(P6, 0012): 주인공이 땅을 90° 비튼다 — 화면이 돌고, 둘레의 적은 관성으로 반대쪽·바깥으로 쏟아져 휘청인다.
+    spec!(TurnTime, "turn.camera s", "TURN_TIME", 0.4, 0.1, 1.0, 0.05),
+    spec!(
+        TurnPlant,
+        "turn.plant s",
+        "TURN_PLANT",
+        0.25,
+        0.0,
+        0.8,
+        0.05
+    ),
+    spec!(
+        TurnCooldown,
+        "turn.cooldown s",
+        "TURN_COOLDOWN",
+        2.5,
+        0.0,
+        10.0,
+        0.25
+    ),
+    spec!(
+        SpillRange,
+        "spill.range m",
+        "SPILL_RANGE",
+        8.0,
+        2.0,
+        20.0,
+        0.5
+    ),
+    spec!(
+        SpillPerM,
+        "spill.slide per m",
+        "SPILL_PER_M",
+        0.35,
+        0.0,
+        1.5,
+        0.05
+    ),
+    spec!(
+        SpillMax,
+        "spill.slide max m",
+        "SPILL_MAX",
+        3.0,
+        0.0,
+        8.0,
+        0.25
+    ),
+    spec!(
+        SpillOut,
+        "spill.outward share",
+        "SPILL_OUT",
+        0.35,
+        0.0,
+        1.0,
+        0.05
+    ),
+    spec!(
+        SpillStagger,
+        "spill.stagger s",
+        "SPILL_STAGGER",
+        0.9,
+        0.0,
+        3.0,
+        0.1
+    ),
+    spec!(
+        SpillBossMass,
+        "spill.boss mass",
+        "SPILL_BOSS_MASS",
+        6.0,
+        1.0,
+        20.0,
+        0.5
+    ),
+    spec!(
+        SpillBossStagger,
+        "spill.boss stagger s",
+        "SPILL_BOSS_STAGGER",
+        0.3,
+        0.0,
+        2.0,
+        0.05
+    ),
+    spec!(
+        SlamDamage,
+        "spill.slam dmg",
+        "SLAM_DAMAGE",
+        1.0,
+        0.0,
+        5.0,
+        1.0
+    ),
+    spec!(
+        SlamStagger,
+        "spill.slam stagger +s",
+        "SLAM_STAGGER",
+        0.8,
+        0.0,
+        3.0,
+        0.1
     ),
 ];
 

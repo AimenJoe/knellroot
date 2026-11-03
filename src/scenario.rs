@@ -9,6 +9,7 @@ pub enum Scenario {
     Horde,
     Pillars,
     Empty,
+    Tray,
 }
 
 pub struct Entry {
@@ -18,7 +19,7 @@ pub struct Entry {
     pub checks: &'static str,
 }
 
-pub const LIST: [Entry; 4] = [
+pub const LIST: [Entry; 5] = [
     Entry {
         scenario: Scenario::Boss,
         name: "boss arena",
@@ -38,6 +39,11 @@ pub const LIST: [Entry; 4] = [
         scenario: Scenario::Empty,
         name: "empty",
         checks: "movement lab (speed, accel, turn, dodge)",
+    },
+    Entry {
+        scenario: Scenario::Tray,
+        name: "tray spill",
+        checks: "P6 turn the ground: spill, stagger, wall slam, no sickness",
     },
 ];
 
@@ -99,6 +105,20 @@ pub fn build(s: Scenario) -> World {
             w
         }
         Scenario::Empty => World::new("empty", 16.0),
+        Scenario::Tray => {
+            // 둘러싸인 자리: 안쪽(3m)·가운데(5m)·바깥(7m) 고리 + 바깥 고리 곁 기둥 넷(쏟아진 적이 부딪히게).
+            let mut w = World::new("tray", 12.0);
+            for (n, r) in [(4, 3.0), (6, 5.0), (8, 7.0)] {
+                for i in 0..n {
+                    let a = (i as f32 + 0.5) / n as f32 * std::f32::consts::TAU;
+                    w.spawn_mob(vec3(a.cos() * r, 0.0, a.sin() * r));
+                }
+            }
+            for (x, z) in [(6.5, 6.5), (-6.5, 6.5), (6.5, -6.5), (-6.5, -6.5)] {
+                w.obstacles.push(pillar(x, z, 1.4, 3.0));
+            }
+            w
+        }
     }
 }
 
@@ -120,6 +140,8 @@ mod tests {
                     attack: i % 20 == 0,
                     lock: i == 30,
                     dodge: i % 90 == 0,
+                    turn_cw: i % 150 == 10,
+                    turn_ccw: i % 150 == 80,
                     ..Default::default()
                 };
                 w.step(&a, &t);

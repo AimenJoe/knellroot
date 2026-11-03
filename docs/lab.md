@@ -6,8 +6,8 @@ KB `guides/poc-and-lab-before-content.md`의 구현. 첫 게임은 수치 한 �
 1. `F1`(Select)로 랩을 연다. 게임은 계속 돈다(이동·공격·회피·락온은 그대로 들어간다).
 2. ↑↓로 값을 고르고 ←→로 바꾼다(Ctrl/LB = 10배). 바로 반영된다. `R`(Y)은 그 값만 기본값으로.
 3. `C`(LT)로 지금 값들을 **슬롯 B**에 담고, `V`(RT)로 A/B를 번갈아 느낀다. "둘 중 어느 쪽"이 "이 값이 맞나"보다 답이 쉽다.
-4. `E`(B)로 내보내기 → 콘솔에 `pub const NAME: f32 = 값;` 줄들(기본값과 같은 줄은 `(default)` 표시). 사람이 `src/tuning.rs`의 `SPECS` `def`에 옮겨 적고 커밋한다. **게임이 저장 파일을 읽지 않는다**(진실은 하나).
-5. 시나리오 `1~4`(Start = 다음)로 상황을 바꾼다. 랩마다 어울리는 시나리오가 있다.
+4. `X`(패드 B)로 내보내기(E는 땅 돌리기 ↻, 0012) → 콘솔에 `pub const NAME: f32 = 값;` 줄들(기본값과 같은 줄은 `(default)` 표시). 사람이 `src/tuning.rs`의 `SPECS` `def`에 옮겨 적고 커밋한다. **게임이 저장 파일을 읽지 않는다**(진실은 하나).
+5. 시나리오 `1~5`(Start = 다음)로 상황을 바꾼다. 랩마다 어울리는 시나리오가 있다.
 
 ## 값(`tuning.rs` `SPECS` 순서) — 랩의 "랩"들
 | 랩 | 값 | 어울리는 시나리오 | 묻는 것 |
@@ -18,6 +18,7 @@ KB `guides/poc-and-lab-before-content.md`의 구현. 첫 게임은 수치 한 �
 | Lock-on | range·lose dist | 1 보스 | 언제 잡히고 언제 풀리나 |
 | Enemy | mob speed·telegraph / boss telegraph·swing arc | 1·2 | 예고를 읽고 피할 수 있나 |
 | Render | face shade | 2 떼 | 상자가 입체로 읽히나(0 = 민짜) |
+| Turn (0012) | turn camera·plant·cooldown / spill range·slide per m·max·outward·stagger / boss mass·stagger / slam dmg·stagger | 5 쟁반, 2 떼 | 돌릴 때 멀미 없나, 쏟아지는 게 시원한가, 남발되지 않나 |
 | Camera(0007~0011) | lock yaw max·near slow·pull out·**look ahead**·**quarter lead**·**blend turn x**·**blend exit x**·move.hold after unlock·**quarter yaw mode**(0 고정·1 따라감·2 90° 단위) | 1 보스, 3 기둥 | 보스에 바짝 붙어 돌 때 멀미 vs 보스가 화면 밖으로 빠짐, 기둥에서 풀려 나오는 속도 |
 
 ## 기록
