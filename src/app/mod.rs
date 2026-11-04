@@ -305,6 +305,7 @@ impl App {
             aim: a.aim,
             attack: a.attack,
             attack_held: a.attack_held,
+            flask: a.flask,
             dodge: a.dodge,
             parry: a.parry,
             jump: a.jump,
@@ -339,6 +340,7 @@ impl App {
                 Event::Plunge { .. } => SHAKE_PLUNGE,
                 Event::Smash { .. } => SHAKE_SMASH,
                 Event::Charged => SHAKE_CHARGED,
+                Event::Gulp { .. } | Event::FlaskDenied => 0.0,
                 Event::Swing | Event::LockOn | Event::LockOff => 0.0,
             };
             cam.trauma = (cam.trauma + kick).min(1.0);
@@ -483,6 +485,7 @@ impl App {
                 (Act::Dodge, s.verb_dodge),
                 (Act::Parry, s.verb_parry),
                 (Act::Jump, s.verb_jump),
+                (Act::Flask, s.verb_flask),
                 (Act::Turn, s.verb_turn),
                 (Act::Lock, s.verb_lock),
                 (Act::Pause, s.verb_pause),
@@ -575,14 +578,17 @@ impl App {
         self.ui
             .text_center(s.controls_title, cx, f.oy + f.h * 0.07, 2.0, INK);
         let (x_name, x_key, x_pad) = (f.ox + f.w * 0.16, f.ox + f.w * 0.56, f.ox + f.w * 0.78);
-        let mut y = f.oy + f.h * 0.19;
+        let mut y = f.oy + f.h * 0.17;
         self.ui.text_center(s.controls_keyboard, x_key, y, 1.0, DIM);
         self.ui.text_center(s.controls_pad, x_pad, y, 1.0, DIM);
         y += px * 1.4;
         let b = input::bindings();
-        let gap = px * 1.32;
         self.ctl_rects.clear();
         let rows = controls::rows();
+        // 줄 간격은 아래 고정 안내(`controls_fixed`) 위까지 들어가게 줄인다 — 동작이 늘어도(0031 등잔) 겹치지 않게.
+        let bottom = f.oy + f.h - px * 3.2 - px * 1.2;
+        let fit = (bottom - y) / (rows.len() as f32 - 1.0 + 0.4);
+        let gap = (px * 1.32).min(fit);
         for (i, row) in rows.iter().enumerate() {
             let sel = i == self.ctl.row;
             match row {
@@ -595,6 +601,7 @@ impl App {
                         input::Bind::TurnLeft => s.verb_turn_left,
                         input::Bind::TurnRight => s.verb_turn_right,
                         input::Bind::Jump => s.verb_jump,
+                        input::Bind::Flask => s.verb_flask,
                     };
                     self.ui
                         .text(name, x_name, y, 1.0, if sel { AMBER } else { INK });

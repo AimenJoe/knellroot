@@ -22,7 +22,7 @@ const server = http.createServer((req, res) => {
 
 // src/touch.rs layout()과 같은 식(논리 px). 바꾸면 함께.
 function layout(lab) {
-  const u = Math.min(W, H), r = u * 0.09, atkR = r * 1.5, dodgeR = r * 1.1, lockR = r * 0.85, turnR = r * 0.8, parryR = r * 0.9, jumpR = r * 0.85;
+  const u = Math.min(W, H), r = u * 0.09, atkR = r * 1.5, dodgeR = r * 1.1, lockR = r * 0.85, turnR = r * 0.8, parryR = r * 0.9, jumpR = r * 0.85, flaskR = r * 0.75;
   const atk = [W - atkR * 1.3, H - atkR * 1.3];
   const lock = [atk[0], atk[1] - (atkR + lockR + r * 0.45)];
   const pa = Math.PI / 6, pd = atkR + parryR + r * 0.4;
@@ -33,6 +33,7 @@ function layout(lab) {
     dodge: [atk[0] - (atkR + dodgeR + r * 0.5), H - dodgeR * 1.2],
     parry: [atk[0] - Math.cos(pa) * pd, atk[1] - Math.sin(pa) * pd],
     jump: [atk[0] - (atkR + dodgeR + r * 0.5) - (dodgeR + jumpR + r * 0.4), H - jumpR * 1.25],
+    flask: [atk[0] - (atkR + dodgeR + r * 0.5) - (dodgeR + jumpR + r * 0.4), (H - jumpR * 1.25 + turnY) * 0.5],
     lock,
     turn_right: [cwX, turnY],
     turn_left: [cwX - (turnR * 2 + r * 0.4), turnY],

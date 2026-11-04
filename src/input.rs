@@ -85,6 +85,8 @@ pub struct Actions {
     pub parry: bool,
     /// 점프(0027). 공중에서 공격 = 내려찍기.
     pub jump: bool,
+    /// 등잔 마시기(0031).
+    pub flask: bool,
     pub lock: bool,
     /// 땅 돌리기 오른쪽·왼쪽 버튼(0012·0028): 캐릭터 기준 90° — 몸이 제 오른쪽(왼쪽)으로 돌아서고 화면도 같은 쪽으로 90°
     /// (`world::plan_turn`).
@@ -127,6 +129,7 @@ pub enum Act {
     Dodge,
     Parry,
     Jump,
+    Flask,
     Turn,
     Lock,
     Pause,
@@ -147,6 +150,7 @@ pub fn prompt(act: Act) -> String {
         (_, Act::Dodge) => name(Bind::Dodge),
         (_, Act::Parry) => name(Bind::Parry),
         (_, Act::Jump) => name(Bind::Jump),
+        (_, Act::Flask) => name(Bind::Flask),
         (_, Act::Lock) => name(Bind::Lock),
         (_, Act::Turn) => format!("{}/{}", name(Bind::TurnLeft), name(Bind::TurnRight)),
         (Device::Pad, Act::Move) => "LS".into(),
@@ -172,9 +176,14 @@ pub enum Bind {
     TurnRight = 5,
     /// 0027 — 저장 칸은 뒤에 붙는다(`Bindings::encode`).
     Jump = 6,
+    /// 등잔 마시기(0031, RB·R).
+    Flask = 7,
 }
 
-pub const BINDS: [Bind; 7] = [
+/// 다시 붙일 수 있는 동작 수.
+pub const NB: usize = 8;
+
+pub const BINDS: [Bind; NB] = [
     Bind::Attack,
     Bind::Dodge,
     Bind::Parry,
@@ -182,6 +191,7 @@ pub const BINDS: [Bind; 7] = [
     Bind::TurnLeft,
     Bind::TurnRight,
     Bind::Jump,
+    Bind::Flask,
 ];
 
 /// 배치표에 올릴 수 있는 키(저장 번호 = 이 표의 자리 — 뒤에만 붙인다). 이동(WASD·화살표)·Enter·Esc·Backspace·P(멈춤)·
@@ -230,8 +240,8 @@ pub fn key_name(i: u8) -> &'static str {
 /// 동작 → (키 하나, 패드 버튼 하나). 겹치면 맞바꾼다(빈 동작이 생기지 않게).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Bindings {
-    pub keys: [u8; 7],
-    pub pads: [Pad; 7],
+    pub keys: [u8; NB],
+    pub pads: [Pad; NB],
 }
 
 impl Bindings {
@@ -246,6 +256,7 @@ impl Bindings {
                 key_index(KeyCode::Q),
                 key_index(KeyCode::E),
                 key_index(KeyCode::F),
+                key_index(KeyCode::R),
             ],
             pads: [
                 Pad::West,
@@ -255,6 +266,7 @@ impl Bindings {
                 Pad::L2,
                 Pad::R2,
                 Pad::South,
+                Pad::R1,
             ],
         }
     }
@@ -286,19 +298,22 @@ impl Bindings {
 
     /// 저장 칸: 처음 여섯 동작의 키 여섯 + 패드 여섯(0024의 칸 그대로), 그 뒤에 붙인 동작마다 (키, 패드)(0027 점프).
     /// 0 = 없음이라 1을 더한다.
-    pub fn encode(&self) -> [u32; 14] {
-        let mut v = [0u32; 14];
+    pub fn encode(&self) -> [u32; 2 * NB] {
+        let mut v = [0u32; 2 * NB];
         let pad_cell = |p: Pad| PADS.iter().position(|x| *x == p).unwrap_or(0) as u32 + 1;
         for i in 0..6 {
             v[i] = self.keys[i] as u32 + 1;
             v[6 + i] = pad_cell(self.pads[i]);
         }
-        v[12] = self.keys[6] as u32 + 1;
-        v[13] = pad_cell(self.pads[6]);
+        for i in 6..NB {
+            v[12 + 2 * (i - 6)] = self.keys[i] as u32 + 1;
+            v[13 + 2 * (i - 6)] = pad_cell(self.pads[i]);
+        }
         v
     }
 
-    /// 칸이 비었거나(0) 범위 밖이거나 겹치면 기본값. 뒤에 붙인 동작(점프)의 칸만 비었으면(옛 저장) 그 동작만 기본값.
+    /// 칸이 비었거나(0) 범위 밖이거나 겹치면 기본값. 뒤에 붙인 동작(점프 0027·등잔 0031)의 칸만 비었으면(옛 저장) 그 동작만
+    /// 기본값 — 그 기본 키·버튼을 사용자가 이미 다른 동작에 붙였으면 비어 있는 첫 키·버튼을 준다(배치가 통째로 날아가지 않게).
     pub fn decode(v: &[u32]) -> Bindings {
         let d = Bindings::default_layout();
         if v.len() < 12 {
@@ -316,9 +331,33 @@ impl Bindings {
             b.keys[i] = k;
             b.pads[i] = p;
         }
-        if let Some((k, p)) = v.get(12).zip(v.get(13)).and_then(|(k, p)| read(*k, *p)) {
-            b.keys[6] = k;
-            b.pads[6] = p;
+        let mut fresh = Vec::new();
+        for i in 6..NB {
+            let (ck, cp) = (12 + 2 * (i - 6), 13 + 2 * (i - 6));
+            match v.get(ck).zip(v.get(cp)).and_then(|(k, p)| read(*k, *p)) {
+                Some((k, p)) => {
+                    b.keys[i] = k;
+                    b.pads[i] = p;
+                }
+                None => fresh.push(i),
+            }
+        }
+        for &i in &fresh {
+            let others = |j: usize| j != i && !(fresh.contains(&j) && j > i);
+            if (0..NB).any(|j| others(j) && b.keys[j] == b.keys[i]) {
+                if let Some(k) = (0..KEYS.len() as u8).find(|k| !b.keys.contains(k)) {
+                    b.keys[i] = k;
+                }
+            }
+            if (0..NB).any(|j| others(j) && b.pads[j] == b.pads[i]) {
+                if let Some(p) = PADS
+                    .iter()
+                    .copied()
+                    .find(|p| p.bindable() && !b.pads.contains(p))
+                {
+                    b.pads[i] = p;
+                }
+            }
         }
         let dup = |xs: &[u8]| (0..xs.len()).any(|i| xs[i + 1..].contains(&xs[i]));
         let pads: Vec<u8> = b.pads.iter().map(|p| *p as u8).collect();
@@ -551,6 +590,8 @@ impl Input {
         a.dodge = kp(Bind::Dodge);
         a.parry = kp(Bind::Parry);
         a.jump = kp(Bind::Jump);
+        // 랩이 열려 있으면 R은 랩 되돌리기다 — 등잔으로 같이 읽지 않는다.
+        a.flask = !lab_open && kp(Bind::Flask);
         a.lock = kp(Bind::Lock);
         a.turn_left = kp(Bind::TurnLeft);
         a.turn_right = kp(Bind::TurnRight);
@@ -630,6 +671,7 @@ impl Input {
                 a.lock |= pj(Bind::Lock);
                 // 랩이 열려 있으면 어깨·트리거는 랩 단계(LB 10배·LT 담기·RT 바꾸기)다 — 패링·돌리기로 같이 읽지 않는다.
                 a.parry |= !lab_open && pj(Bind::Parry);
+                a.flask |= !lab_open && pj(Bind::Flask);
                 a.turn_left |= !lab_open && pj(Bind::TurnLeft);
                 a.turn_right |= !lab_open && pj(Bind::TurnRight);
                 if a.pressed_pad.is_none() {
@@ -684,6 +726,7 @@ impl Input {
             a.jump |= pj(Bind::Jump);
             a.lock |= pj(Bind::Lock);
             a.parry |= !lab_open && pj(Bind::Parry);
+            a.flask |= !lab_open && pj(Bind::Flask);
             a.turn_left |= !lab_open && pj(Bind::TurnLeft);
             a.turn_right |= !lab_open && pj(Bind::TurnRight);
             if a.pressed_pad.is_none() {
@@ -716,6 +759,7 @@ impl Input {
         a.dodge |= t.dodge;
         a.parry |= t.parry;
         a.jump |= t.jump;
+        a.flask |= t.flask;
         a.lock |= t.lock;
         a.turn_right |= t.turn_right;
         a.turn_left |= t.turn_left;
@@ -754,6 +798,7 @@ impl Input {
             dodge: self.latch.dodge | a.dodge,
             parry: self.latch.parry | a.parry,
             jump: self.latch.jump | a.jump,
+            flask: self.latch.flask | a.flask,
             lock: self.latch.lock | a.lock,
             turn_right: self.latch.turn_right | a.turn_right,
             turn_left: self.latch.turn_left | a.turn_left,

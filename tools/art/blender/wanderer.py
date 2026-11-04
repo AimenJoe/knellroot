@@ -230,6 +230,21 @@ def acts(m):
                 "arm_l": {"r": (-4, -4, 0)}, "cloak": {"r": (6, 0, 0)}}),
     ], linear=(0.06,))
 
+    # 0031 drink 0.8초: 왼손을 들어(0.35초에 입에 닿음 = 삼키는 순간) 고개를 젖혔다가 내린다. 칼은 오른손에 쉬는 자세 그대로.
+    sip = {"body": {"r": (-4, 0, 0)}, "head": {"r": (-24, 0, 0)},
+           "arm_l": {"r": (-112, -6, -40)}, "arm_r": {"r": (-12, 6, 0)}, "hand_r": rest_hand,
+           "cloak": {"r": (4, 0, 0)}}
+    m.action("drink", 0.8, [
+        (0.0, {"body": {"r": (3, 0, 0)}, "arm_l": {"r": (-4, -4, 0)}, "arm_r": {"r": (-12, 6, 0)},
+               "hand_r": rest_hand, "cloak": {"r": (6, 0, 0)}}),
+        (0.25, {"body": {"r": (2, 0, 0)}, "head": {"r": (-8, 0, 0)},
+                "arm_l": {"r": (-95, -6, -30)}, "arm_r": {"r": (-12, 6, 0)}, "hand_r": rest_hand}),
+        (0.35, sip),
+        (0.55, sip),
+        (0.8, {"body": {"r": (3, 0, 0)}, "head": {"r": (0, 0, 0)}, "arm_l": {"r": (-4, -4, 0)},
+               "arm_r": {"r": (-12, 6, 0)}, "hand_r": rest_hand, "cloak": {"r": (6, 0, 0)}}),
+    ])
+
     # land 0.15초: 내려앉아 무릎을 굽혔다 편다.
     m.action("land", 0.15, [
         (0.0, {"root": {"l": (0, 0, -0.16)}, "body": {"r": (22, 0, 0)}, "head": {"r": (6, 0, 0)},
@@ -243,7 +258,8 @@ def acts(m):
 
 PREVIEWS = [("idle", 0.0, ""), ("attack", 0.15, "_attack"), ("parry", 0.1, "_parry"),
             ("jump", 0.1, "_jump"), ("plunge", 0.06, "_plunge_up"), ("plunge", 0.29, "_plunge_down"),
-            ("charge", 0.3, "_charge"), ("heavy", 0.18, "_heavy")]
+            ("charge", 0.3, "_charge"), ("heavy", 0.18, "_heavy"),
+            ("drink", 0.4, "_drink")]
 CHECK = [("walk", 0.0), ("walk", 0.2), ("attack", 0.08), ("attack", 0.18), ("dodge", 0.15), ("hurt", 0.06), ("turn", 0.06), ("turn", 0.16)]
 
 

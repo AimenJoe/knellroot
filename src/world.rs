@@ -3,7 +3,7 @@
 use macroquad::prelude::*;
 
 use crate::input::Actions;
-use crate::tuning::{Tuning, P, PLAYER_HP, PLAYER_RADIUS, TICK_DT};
+use crate::tuning::{Tuning, FLASK_CHARGES, P, PLAYER_HP, PLAYER_RADIUS, TICK_DT};
 
 /// 축 정렬 상자(기둥·벽). 충돌·카메라 당기기에 쓴다.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -121,6 +121,12 @@ pub enum Event {
     },
     /// 강공격이 다 모였다(0030) — 떼면 센 것이 나간다는 신호.
     Charged,
+    /// 등잔을 삼켰다(0031) — 체력이 올랐다.
+    Gulp {
+        at: Vec3,
+    },
+    /// 등잔을 눌렀지만 못 마신다(가득이거나 0) — HUD가 횟수를 깜빡인다.
+    FlaskDenied,
     /// 강타가 맞았다(0030).
     Smash {
         at: Vec3,
@@ -164,6 +170,12 @@ pub enum PState {
     Charging {
         t: f32,
     },
+    /// 등잔 마시기(0031): `flask.raise s` 동안 들고 그 순간 삼킨다(`gulped`), `flask.time s`에 끝. 느리게 걷는다.
+    /// 삼키기 전에 회피·피격이면 끊기고 등잔은 그대로. 마시는 동안의 누름은 버린다(연타가 쌓이지 않게).
+    Drink {
+        t: f32,
+        gulped: bool,
+    },
     /// 강타. `full` = 다 모았다(피해 + 덤, 휘청 길게, 보스도 휘청).
     Heavy {
         t: f32,
@@ -203,6 +215,10 @@ pub struct Player {
     pub since_parry: f32,
     /// 공격 버튼을 한 번 누른 뒤 놓지 않고 쥔 시간(초, 0030). 연타 중 휘두르기 도중에 누른 짧은 누름이 모으기로 새지 않게.
     pub attack_hold: f32,
+    /// 남은 등잔(0031), 끝난 뒤 누름을 버리는 남은 초, 못 마셔 깜빡이는 남은 초(HUD).
+    pub flask: i32,
+    pub flask_lock: f32,
+    pub flask_denied: f32,
     /// 땅에서 뜬 높이(m)와 위 속도(0027). 충돌·카메라는 땅 자리(`pos`, y = 0)를 쓰고 렌더만 띄운다.
     pub air: f32,
     pub vy: f32,
@@ -254,6 +270,9 @@ pub struct World {
     plunge_now: bool,
     /// 이번 틱에 강공격이 다 모였다(`Event::Charged`를 `apply_strike`가 낸다).
     charged_now: bool,
+    /// 이번 틱에 등잔을 삼켰다·못 마셨다(사건은 `apply_strike`가 낸다).
+    gulp_now: bool,
+    flask_denied_now: bool,
     /// 히트스톱 동안 들어온 눌림(공격·회피·락온·돌리기). 멈춤이 풀리는 틱에 낸다 — 버리면 멈춘 순간 누른 버튼이 사라진다.
     held: Actions,
 }
@@ -279,6 +298,9 @@ impl World {
                 since_spill: f32::MAX,
                 since_parry: f32::MAX,
                 attack_hold: 0.0,
+                flask: FLASK_CHARGES,
+                flask_lock: 0.0,
+                flask_denied: 0.0,
                 air: 0.0,
                 vy: 0.0,
                 swings: 0,
@@ -300,6 +322,8 @@ impl World {
             held: Actions::default(),
             plunge_now: false,
             charged_now: false,
+            gulp_now: false,
+            flask_denied_now: false,
         }
     }
 
@@ -578,6 +602,8 @@ impl World {
             }
         };
         pl.turn_cd = (pl.turn_cd - dt).max(0.0);
+        pl.flask_lock = (pl.flask_lock - dt).max(0.0);
+        pl.flask_denied = (pl.flask_denied - dt).max(0.0);
         // 새 누름이면 0부터, 쥐고 있으면 늘고, 놓으면 0.
         pl.attack_hold = if a.attack || !a.attack_held {
             0.0
@@ -660,6 +686,44 @@ impl World {
                         swing: pl.swings,
                         dir,
                     };
+                } else if a.flask && pl.flask_lock <= 0.0 {
+                    // 등잔(0031): 가득이거나 0이면 몸짓 없이 깜빡만(빈 병 몸짓으로 묶지 않는다 — 급할 때 연타해도).
+                    if pl.flask > 0 && pl.hp < PLAYER_HP {
+                        pl.state = PState::Drink {
+                            t: 0.0,
+                            gulped: false,
+                        };
+                    } else {
+                        pl.flask_denied = 0.6;
+                        self.flask_denied_now = true;
+                    }
+                }
+            }
+            PState::Drink { t: e, gulped } => {
+                // 다시 누르기는 버린다. 삼키기 전 회피는 끊기(등잔 그대로) — 어깨 버튼 실수는 회피 한 번으로 무른다.
+                if !gulped && a.dodge && pl.dodge_cd <= 0.0 && spend(pl, t[P::StaminaDodge]) {
+                    let dir = if world_move.length_squared() > 1e-4 {
+                        world_move.normalize()
+                    } else {
+                        -pl.facing_dir()
+                    };
+                    pl.state = PState::Dodge { t: 0.0, dir };
+                    pl.dodge_cd = t[P::DodgeTime] + 0.15;
+                } else {
+                    let e2 = e + dt;
+                    let mut gulped = gulped;
+                    if !gulped && e2 >= t[P::FlaskRaise] {
+                        gulped = true;
+                        pl.flask -= 1;
+                        pl.hp = (pl.hp + t[P::FlaskHeal].round() as i32).min(PLAYER_HP);
+                        self.gulp_now = true;
+                    }
+                    if e2 >= t[P::FlaskTime] {
+                        pl.state = PState::Idle;
+                        pl.flask_lock = t[P::FlaskLock];
+                    } else {
+                        pl.state = PState::Drink { t: e2, gulped };
+                    }
                 }
             }
             PState::Hurt { t: e, dur } => {
@@ -886,8 +950,13 @@ impl World {
                     diff
                 };
             }
-            PState::Idle => {
-                let want = world_move * t[P::MoveSpeed];
+            PState::Idle | PState::Drink { .. } => {
+                let slow = if matches!(pl.state, PState::Drink { .. }) {
+                    t[P::FlaskWalk]
+                } else {
+                    1.0
+                };
+                let want = world_move * t[P::MoveSpeed] * slow;
                 let diff = want - pl.vel;
                 let max = t[P::MoveAccel] * dt;
                 pl.vel += if diff.length() > max {
@@ -942,6 +1011,14 @@ impl World {
         }
         if std::mem::take(&mut self.charged_now) {
             ev.push(Event::Charged);
+        }
+        if std::mem::take(&mut self.gulp_now) {
+            ev.push(Event::Gulp {
+                at: self.player.pos + Vec3::Y * 1.2,
+            });
+        }
+        if std::mem::take(&mut self.flask_denied_now) {
+            ev.push(Event::FlaskDenied);
         }
         // 평타와 강타(0030)는 같은 규칙에 값만 다르다.
         let s = match self.player.state {
@@ -1180,6 +1257,9 @@ impl World {
             let dur = t[P::HitStun] * 0.5f32.powi(pl.stun_chain);
             if dur > 0.0 {
                 pl.state = PState::Hurt { t: 0.0, dur };
+            } else if matches!(pl.state, PState::Drink { .. }) {
+                // 맞으면 마시기는 끊긴다(삼키기 전이면 등잔 그대로, 0031).
+                pl.state = PState::Idle;
             }
             let away = vec3(pl.pos.x - from.x, 0.0, pl.pos.z - from.z).normalize_or_zero();
             pl.vel = away * t[P::HitKnock] * KNOCK_DECAY;
@@ -2395,6 +2475,156 @@ mod tests {
                 e.state = EState::Recover { t: -1000.0 };
             }
         }
+    }
+
+    /// 등잔 시험용: 한 번 누른 뒤 `ticks`틱 그대로(누름 없음). 사건을 모은다.
+    fn drink(w: &mut World, t: &Tuning, ticks: usize) -> Vec<Event> {
+        let mut ev = w.step(
+            &Actions {
+                flask: true,
+                ..Default::default()
+            },
+            t,
+        );
+        for _ in 0..ticks {
+            ev.extend(w.step(&Actions::default(), t));
+        }
+        ev
+    }
+
+    /// 0031: 한 모금 = 체력 + `flask.heal`(가득을 넘지 않는다), 등잔 −1, 삼키는 순간 한 번.
+    #[test]
+    fn a_sip_heals_and_spends_one_charge() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.player.hp = 1;
+        let ev = drink(&mut w, &t, 80); // 마시기 0.8초 + 누름 버리기 0.3초를 넘게
+        assert_eq!(w.player.hp, 1 + t[P::FlaskHeal] as i32);
+        assert_eq!(w.player.flask, FLASK_CHARGES - 1);
+        assert_eq!(
+            ev.iter()
+                .filter(|e| matches!(e, Event::Gulp { .. }))
+                .count(),
+            1
+        );
+        w.player.hp = PLAYER_HP - 1;
+        drink(&mut w, &t, 80);
+        assert_eq!(w.player.hp, PLAYER_HP, "never above full");
+    }
+
+    /// 0031: 가득이거나 등잔이 0이면 몸짓 없이 깜빡만 — 등잔·자세 그대로.
+    #[test]
+    fn a_full_or_empty_flask_press_does_nothing_but_flash() {
+        let t = Tuning::default();
+        for (hp, charges) in [(PLAYER_HP, FLASK_CHARGES), (1, 0)] {
+            let mut w = World::new("test", 20.0);
+            w.player.hp = hp;
+            w.player.flask = charges;
+            let ev = drink(&mut w, &t, 0);
+            assert_eq!(w.player.state, PState::Idle, "hp {hp} charges {charges}");
+            assert_eq!(w.player.flask, charges);
+            assert!(ev.contains(&Event::FlaskDenied));
+            assert!(w.player.flask_denied > 0.0);
+        }
+    }
+
+    /// 0031(사장 "물약이 더 큰 문제 아냐?"): RB 연타 — 누름 1~9틱 × 사이 2~14틱 × 3초. 마시기는 끊기지 않고(들어간 만큼 삼킨다),
+    /// 마신 수는 3초 ÷ (`flask.time` + `flask.lock`)을 넘지 않는다(누름이 쌓여 연달아 마시지 않는다). 가득이면 0번.
+    #[test]
+    fn mashing_the_flask_sips_one_at_a_time() {
+        let t = Tuning::default();
+        let ticks = 180;
+        let most = (ticks as f32 * TICK_DT / (t[P::FlaskTime] + t[P::FlaskLock])).ceil() as usize;
+        for press in 1..=9usize {
+            for gap in 2..=14usize {
+                for full in [false, true] {
+                    let mut w = World::new("test", 20.0);
+                    w.player.flask = 10;
+                    let (mut starts, mut gulps, mut was) = (0, 0, false);
+                    for i in 0..ticks {
+                        if !full {
+                            w.player.hp = 1; // 늘 다쳐 있다(급한 상황)
+                        }
+                        let k = i % (press + gap);
+                        let ev = w.step(
+                            &Actions {
+                                flask: k == 0,
+                                ..Default::default()
+                            },
+                            &t,
+                        );
+                        gulps += ev
+                            .iter()
+                            .filter(|e| matches!(e, Event::Gulp { .. }))
+                            .count();
+                        let now = matches!(w.player.state, PState::Drink { .. });
+                        starts += (now && !was) as usize;
+                        was = now;
+                    }
+                    let tag = format!("press {press} gap {gap} full {full}");
+                    if full {
+                        assert_eq!(starts, 0, "{tag}");
+                    } else {
+                        assert!(starts >= 1 && starts <= most, "{tag}: {starts} > {most}");
+                        // 끝까지 간 마시기는 모두 삼켰다(다시 누르기로 끊기지 않는다) — 마지막 것은 아직 들고 있을 수 있다.
+                        assert!(
+                            gulps + 1 >= starts && gulps <= starts,
+                            "{tag}: {starts} starts {gulps} gulps"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// 0031: 삼키기 전 회피는 끊기 — 등잔·체력 그대로(어깨 버튼 실수를 무른다). 삼킨 뒤 회피는 안 먹는다.
+    #[test]
+    fn a_dodge_before_the_gulp_takes_the_flask_back() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.player.hp = 1;
+        drink(&mut w, &t, 5);
+        w.player.dodge_cd = 0.0;
+        w.step(
+            &Actions {
+                dodge: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(matches!(w.player.state, PState::Dodge { .. }));
+        assert_eq!((w.player.flask, w.player.hp), (FLASK_CHARGES, 1));
+        // 삼킨 뒤에는 회피로 끊기지 않는다.
+        let mut w = World::new("test", 20.0);
+        w.player.hp = 1;
+        drink(&mut w, &t, (t[P::FlaskRaise] / TICK_DT) as usize + 3);
+        w.player.dodge_cd = 0.0;
+        w.step(
+            &Actions {
+                dodge: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(matches!(w.player.state, PState::Drink { gulped: true, .. }));
+    }
+
+    /// 0031: 삼키기 전에 맞으면 끊기고 등잔 그대로(대가는 맞은 피해와 시간).
+    #[test]
+    fn a_hit_before_the_gulp_keeps_the_flask() {
+        let t = Tuning::default();
+        let mut w = mob_swinging_in_front(&t);
+        w.player.hp = 3;
+        let mut hurt = drink(&mut w, &t, 0).contains(&Event::PlayerHurt);
+        for _ in 0..((t[P::FlaskRaise] / TICK_DT) as usize - 2) {
+            if hurt {
+                break;
+            }
+            hurt |= w.step(&Actions::default(), &t).contains(&Event::PlayerHurt);
+        }
+        assert!(hurt, "the blow landed before the gulp");
+        assert!(!matches!(w.player.state, PState::Drink { .. }));
+        assert_eq!((w.player.flask, w.player.hp), (FLASK_CHARGES, 2));
     }
 
     /// 0030(사장 "급하면 막 연타할텐데"): 연타는 모으기로 새지 않는다 — 누름 길이 1~9틱(≤0.15초) × 사이 2~14틱,

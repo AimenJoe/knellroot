@@ -90,6 +90,8 @@ pub struct Strings {
     pub verb_lock: &'static str,
     pub verb_parry: &'static str,
     pub verb_jump: &'static str,
+    /// 등잔 마시기(0031).
+    pub verb_flask: &'static str,
     /// 싸움 안내 줄의 공격(0030: 꾹 쥐면 강공격).
     pub verb_attack_hint: &'static str,
     pub verb_turn_left: &'static str,
@@ -147,6 +149,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.verb_lock,
         s.verb_parry,
         s.verb_jump,
+        s.verb_flask,
         s.verb_attack_hint,
         s.verb_turn_left,
         s.verb_turn_right,

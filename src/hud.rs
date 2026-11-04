@@ -6,7 +6,7 @@ use macroquad::prelude::*;
 use crate::i18n::{self, tr};
 use crate::render::Frame;
 use crate::stage::{StageRun, CARD_TIME, INTRO_TIME};
-use crate::tuning::{idx, P, PLAYER_HP, SPECS};
+use crate::tuning::{idx, FLASK_CHARGES, P, PLAYER_HP, SPECS};
 use crate::ui::{Ui, AMBER, DIM, INK};
 use crate::world::World;
 
@@ -14,6 +14,9 @@ const HP_ON: Color = Color::new(0.88, 0.6, 0.23, 1.0);
 const HP_OFF: Color = Color::new(0.2, 0.18, 0.17, 0.9);
 const STAMINA: Color = Color::new(0.55, 0.78, 0.5, 1.0);
 const DENIED: Color = Color::new(1.0, 0.3, 0.25, 1.0);
+/// 등잔(0031): 놋쇠 몸 + 불.
+const FLASK_ON: Color = Color::new(0.62, 0.5, 0.32, 1.0);
+const FLASK_FLAME: Color = Color::new(1.0, 0.8, 0.35, 1.0);
 const BOSS: Color = Color::new(0.72, 0.62, 0.42, 1.0);
 const BOSS_ROUSED: Color = Color::new(0.95, 0.55, 0.2, 1.0);
 const BAR_BG: Color = Color::new(0.05, 0.05, 0.06, 0.85);
@@ -49,6 +52,28 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>) {
     draw_rectangle(bx, by, bw, bh, BAR_BG);
     let blink = pl.stamina_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
     draw_rectangle(bx, by, bw * k, bh, if blink { DENIED } else { STAMINA });
+    // 등잔(0031): 남은 것은 불 켠 등잔, 쓴 것은 꺼진 등잔. 못 마시면(가득·0) 잠깐 깜빡인다.
+    let fblink = pl.flask_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
+    for i in 0..FLASK_CHARGES.max(pl.flask) {
+        let (lx, ly) = (x0 + i as f32 * 9.0 * s, y0 + 16.0 * s);
+        let lit = i < pl.flask;
+        let body = match (fblink, lit) {
+            (true, _) => DENIED,
+            (false, true) => FLASK_ON,
+            (false, false) => HP_OFF,
+        };
+        draw_rectangle(lx, ly + 3.0 * s, 5.0 * s, 4.0 * s, body);
+        draw_rectangle(lx + 1.0 * s, ly + 2.0 * s, 3.0 * s, 1.0 * s, body);
+        if lit {
+            let c = vec2(lx + 2.5 * s, ly + 0.5 * s);
+            draw_triangle(
+                c + vec2(0.0, -1.5 * s),
+                c + vec2(1.3 * s, 1.5 * s),
+                c + vec2(-1.3 * s, 1.5 * s),
+                FLASK_FLAME,
+            );
+        }
+    }
 
     let Some(run) = run else { return };
     let cx = f.ox + f.w * 0.5;

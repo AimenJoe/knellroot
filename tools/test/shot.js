@@ -84,6 +84,8 @@ async function main() {
   // 강공격(0030): J를 꾹 — 모으기 고리, 떼면 강타.
   await page.waitForTimeout(600); await page.keyboard.down('KeyJ'); await page.waitForTimeout(800); await shot('06e-charge');
   await page.keyboard.up('KeyJ'); await page.waitForTimeout(130); await shot('06f-heavy');
+  // 등잔(0031): R — 다쳤으면 마시고, 가득이면 HUD 등잔이 깜빡인다.
+  await page.waitForTimeout(700); await page.keyboard.press('KeyR'); await page.waitForTimeout(380); await shot('06g-flask');
   await page.waitForTimeout(1500); await shot('07-boss-telegraph');
   await page.keyboard.press('KeyL'); await page.waitForTimeout(150); await shot('08-unlock-blending');
   // 2 떼.

@@ -31,6 +31,8 @@ pub const SHAKE_SMASH: f32 = 0.5;
 pub const SHAKE_CHARGED: f32 = 0.12;
 
 pub const PLAYER_HP: i32 = 5;
+/// 등잔 횟수(0031). 화로에서 다시 찬다 — 화로 전까지는 스테이지를 새로 시작할 때. 성장으로 늘린다(items.md 2).
+pub const FLASK_CHARGES: i32 = 3;
 pub const STICK_DEADZONE: f32 = 0.2;
 
 /// 랩에서 바꾸는 값. 새 값 = 여기 한 줄 + `SPECS` 한 줄.
@@ -130,6 +132,11 @@ pub enum P {
     HeavyBossStagger,
     HeavyStamina,
     HeavyHoldStart,
+    FlaskHeal,
+    FlaskRaise,
+    FlaskTime,
+    FlaskLock,
+    FlaskWalk,
     RenderModel,
 }
 
@@ -160,7 +167,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 95] = [
+pub const SPECS: [Spec; 100] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -907,6 +914,28 @@ pub const SPECS: [Spec; 95] = [
         0.1,
         0.6,
         0.01
+    ),
+    // 등잔(0031): 한 모금에 체력, 들기(이 전에 회피·피격이면 끊기고 등잔 그대로), 전체 길이, 끝난 뒤 누름을 버리는 시간, 마시며 걷는 빠르기 배율.
+    spec!(FlaskHeal, "flask.heal", "FLASK_HEAL", 2.0, 1.0, 5.0, 1.0),
+    spec!(
+        FlaskRaise,
+        "flask.raise s",
+        "FLASK_RAISE",
+        0.35,
+        0.05,
+        1.0,
+        0.05
+    ),
+    spec!(FlaskTime, "flask.time s", "FLASK_TIME", 0.8, 0.2, 2.0, 0.05),
+    spec!(FlaskLock, "flask.lock s", "FLASK_LOCK", 0.3, 0.0, 1.0, 0.05),
+    spec!(
+        FlaskWalk,
+        "flask.walk x",
+        "FLASK_WALK",
+        0.35,
+        0.0,
+        1.0,
+        0.05
     ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(

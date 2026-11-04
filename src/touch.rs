@@ -18,6 +18,8 @@ pub enum Kind {
     Parry,
     /// 점프(0027): 위 화살표, 회피 왼쪽.
     Jump,
+    /// 등잔(0031): 등잔 그림, 점프 위(돌리기 줄과 점프 사이).
+    Flask,
     Lock,
     /// 땅 돌리기(0023): 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면.
     TurnLeft,
@@ -60,6 +62,8 @@ pub struct Read {
     pub dodge: bool,
     pub parry: bool,
     pub jump: bool,
+    /// 등잔(0031).
+    pub flask: bool,
     pub lock: bool,
     pub turn_right: bool,
     pub turn_left: bool,
@@ -123,6 +127,7 @@ pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool) -> Vec<Button> {
     let turn_r = r * 0.8;
     let parry_r = r * 0.9;
     let jump_r = r * 0.85;
+    let flask_r = r * 0.75;
     let atk = vec2(w - atk_r * 1.3, h - atk_r * 1.3);
     let lock = vec2(atk.x, atk.y - (atk_r + lock_r + r * 0.45));
     // 패링(0025): 공격에서 왼쪽 위 30°(공격 → 회피 → 패링 → 락온이 엄지 둘레의 부채꼴). 돌리기 줄은 그 위로 비켜 선다.
@@ -131,6 +136,10 @@ pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool) -> Vec<Button> {
     let turn_y = lock.y - r * 0.5;
     let cw_x = lock.x - (lock_r + turn_r + r * 1.4);
     let ccw_x = cw_x - (turn_r * 2.0 + r * 0.4);
+    let jump = vec2(
+        atk.x - (atk_r + dodge_r + r * 0.5) - (dodge_r + jump_r + r * 0.4),
+        h - jump_r * 1.25,
+    );
     let mut b = vec![
         Button {
             center: atk,
@@ -149,12 +158,15 @@ pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool) -> Vec<Button> {
         },
         // 점프(0027): 회피 왼쪽, 같은 높이.
         Button {
-            center: vec2(
-                atk.x - (atk_r + dodge_r + r * 0.5) - (dodge_r + jump_r + r * 0.4),
-                h - jump_r * 1.25,
-            ),
+            center: jump,
             radius: jump_r,
             kind: Kind::Jump,
+        },
+        // 등잔(0031): 점프 위, 돌리기 줄과의 가운데 — 엄지가 공격에서 멀리 가야 닿아 실수로 덜 누른다.
+        Button {
+            center: vec2(jump.x, (jump.y + turn_y) * 0.5),
+            radius: flask_r,
+            kind: Kind::Flask,
         },
         Button {
             center: lock,
@@ -381,6 +393,7 @@ fn press(a: &mut Read, k: Kind) {
         Kind::Dodge => a.dodge = true,
         Kind::Parry => a.parry = true,
         Kind::Jump => a.jump = true,
+        Kind::Flask => a.flask = true,
         Kind::Lock => a.lock = true,
         Kind::TurnLeft => a.turn_left = true,
         Kind::TurnRight => a.turn_right = true,
@@ -479,6 +492,39 @@ fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
                 th,
                 col,
             );
+        }
+        Kind::Flask => {
+            // 등잔: 둥근 몸 + 목 + 불꽃.
+            let body = [
+                vec2(-0.6, 0.15),
+                vec2(0.6, 0.15),
+                vec2(0.45, 0.8),
+                vec2(-0.45, 0.8),
+            ];
+            for i in 0..body.len() {
+                let (p, q) = (c + body[i] * s, c + body[(i + 1) % body.len()] * s);
+                draw_line(p.x, p.y, q.x, q.y, th, col);
+            }
+            draw_line(
+                c.x - s * 0.2,
+                c.y + s * 0.15,
+                c.x - s * 0.2,
+                c.y - s * 0.1,
+                th,
+                col,
+            );
+            draw_line(
+                c.x + s * 0.2,
+                c.y + s * 0.15,
+                c.x + s * 0.2,
+                c.y - s * 0.1,
+                th,
+                col,
+            );
+            draw_line(c.x, c.y - s * 0.3, c.x - s * 0.22, c.y - s * 0.55, th, col);
+            draw_line(c.x - s * 0.22, c.y - s * 0.55, c.x, c.y - s * 0.85, th, col);
+            draw_line(c.x, c.y - s * 0.85, c.x + s * 0.22, c.y - s * 0.55, th, col);
+            draw_line(c.x + s * 0.22, c.y - s * 0.55, c.x, c.y - s * 0.3, th, col);
         }
         Kind::Parry => {
             // 방패: 위가 넓고 아래가 뾰족한 오각형 윤곽.

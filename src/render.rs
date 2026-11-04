@@ -414,6 +414,8 @@ impl Renderer {
                 // 강공격(0030): 모으는 동안 칼을 뒤로 끌어 든 자세(없는 모델이면 공격 첫 자세), 떼면 크게 내려친다.
                 PState::Charging { t: e } => (&["charge", "attack"], e),
                 PState::Heavy { t: e, .. } => (&["heavy", "attack"], e),
+                // 등잔(0031): 왼손으로 들어 입에 대고(들기 = `flask.raise s`) 내린다.
+                PState::Drink { t: e, .. } => (&["drink", "idle"], e),
                 PState::Dodge { t: e, .. } => (&["dodge", "walk"], e),
                 PState::Hurt { t: e, .. } => (&["hurt", "idle"], e),
                 PState::Turn { t: e, .. } => (&["turn", "idle"], e),
@@ -466,6 +468,7 @@ impl Renderer {
                 PState::Attack { .. } => Color::new(1.0, 0.85, 0.5, 1.0),
                 PState::Charging { .. } => Color::new(1.0, 0.7, 0.35, 1.0),
                 PState::Heavy { .. } => Color::new(1.0, 0.6, 0.3, 1.0),
+                PState::Drink { .. } => Color::new(0.75, 0.9, 0.6, 1.0),
                 PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
                 PState::Parry { .. } => Color::new(0.7, 0.85, 1.0, 1.0),
                 PState::Jump { .. } | PState::Land { .. } => Color::new(0.9, 0.8, 0.6, 1.0),
@@ -535,6 +538,19 @@ impl Renderer {
                     } else {
                         Color::new(1.0, 0.9, 0.65, 0.35)
                     },
+                );
+            }
+        }
+        // 등잔(0031): 삼키는 순간 따뜻한 빛이 발밑에서 퍼진다.
+        if let PState::Drink { t: e, gulped: true } = w.player.state {
+            let k = ((e - t[crate::tuning::P::FlaskRaise]) / 0.35).clamp(0.0, 1.0);
+            if k < 1.0 {
+                ring(
+                    pp + Vec3::Y * (0.05 + 0.8 * k),
+                    0.5 + 0.6 * k,
+                    0.0,
+                    360.0,
+                    Color::new(1.0, 0.82, 0.45, 0.8 * (1.0 - k)),
                 );
             }
         }
