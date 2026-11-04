@@ -22,6 +22,7 @@ mod render;
 mod scenario;
 mod scenery;
 mod secondary;
+mod shade;
 mod species;
 mod stage;
 mod text;

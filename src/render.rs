@@ -97,6 +97,16 @@ thread_local! {
     };
 }
 
+thread_local! {
+    /// 지형 굽기 동안만 있는 달빛 가림 높이 지도(0044, `Scenery::bake`가 넣고 뺀다).
+    static BAKE_SHADE: std::cell::RefCell<Option<crate::shade::Occluders>> = const { std::cell::RefCell::new(None) };
+}
+
+/// 굽기 동안 달빛 그림자를 켠다(None = 끔).
+pub fn set_bake_shade(o: Option<crate::shade::Occluders>) {
+    BAKE_SHADE.with(|s| *s.borrow_mut() = o);
+}
+
 pub fn look() -> Look {
     LOOK.with(|l| l.get())
 }
@@ -116,6 +126,10 @@ pub fn lit(p: Vec3, n: Vec3, lights: &[Light]) -> Vec3 {
     let toon = look().toon;
     let l = LIGHT_DIR.normalize();
     let mut d = n.dot(l).max(0.0);
+    // 지형을 굽는 동안은 달빛 그림자(0044): 막히면 달빛 몫만 뺀다(화로 빛은 그대로).
+    if d > 0.0 {
+        d *= BAKE_SHADE.with(|s| s.borrow().as_ref().map_or(1.0, |o| o.vis(p + n * 0.05, l)));
+    }
     if toon {
         d = band(d, 2.0);
     }
@@ -1479,9 +1493,10 @@ fn box_wires(center: Vec3, size: Vec3, col: Color, rot: Quat, pivot: Vec3) {
     }
 }
 
-/// 고정 빛 방향(위·약간 앞·오른쪽). 면마다 `1 - shade + shade * max(0, n·l)`을 곱한다 — 기본 셰이더가 normal을 안 읽어 정점 색으로 굽는다
+/// 고정 빛 방향 = 달(0044: 왼쪽 앞 위 45° — 벽·단·기둥의 그림자가 뜰 바닥 오른쪽·뒤로 떨어져 쿼터뷰에서 보이게;
+/// 예전 오른쪽 앞에서는 그림자가 벽 바깥으로 떨어졌다). 면마다 `1 - shade + shade * max(0, n·l)`을 곱한다 — 기본 셰이더가 normal을 안 읽어 정점 색으로 굽는다
 /// (KB reference/macroquad/3d-rendering.md). shade 0이면 민짜(전처럼), 1이면 그늘진 면이 검정에 가깝다.
-const LIGHT_DIR: Vec3 = Vec3::new(0.35, 0.8, 0.45);
+const LIGHT_DIR: Vec3 = Vec3::new(-0.55, 0.65, 0.35);
 
 /// 면마다 음영이 다른 상자. 축 정렬. 정점 24개(면마다 넷), 매 프레임 만들어 보낸다(정점은 어차피 매 프레임 올라간다).
 fn shaded_box(center: Vec3, size: Vec3, col: Color, shade: f32) {

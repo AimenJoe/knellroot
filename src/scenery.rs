@@ -8,6 +8,7 @@ use macroquad::prelude::*;
 use crate::ground::Ground;
 use crate::models::Library;
 use crate::render::{lit, Batch};
+use crate::shade::Occluders;
 use crate::stage::{Level, Light, PropKind, CELL, WALL_H};
 use crate::tuning::GROUND_STEP;
 use crate::world::Aabb;
@@ -163,11 +164,91 @@ impl Scenery {
     pub fn bake(lv: &Level, lib: &mut Library) -> Scenery {
         let lights = lv.lights.clone();
         let mut pieces = Vec::new();
-        // 바닥: 칸마다 1m 석판 넷(틈 = 회반죽 판), 몇 칸은 이끼. 땅 높이를 따른다(경사로는 기운다, 0043). 정점 한도 아래로 줄마다 덩어리.
         let gnd = lv.ground();
+        // 벽 칸 꼭대기(곁 바닥이 올라가 있으면 그만큼 높게, 0043) — 벽 그림과 달빛 가림이 같이 쓴다.
+        let wall_top = |x: usize, z: usize| -> f32 {
+            let floor = neighbors(x, z)
+                .filter(|&(nx, nz)| lv.walkable(nx, nz))
+                .map(|(nx, nz)| gnd.center(nx, nz).y)
+                .fold(0.0f32, f32::max);
+            lv.height(x, z)
+                .unwrap_or(floor + WALL_H * (0.8 + 0.35 * hash(x, z, 3)))
+                .max(floor + 0.5)
+        };
+        // 달빛 가림 높이 지도(0044): 0.25m 칸마다 가장 높은 단단한 것.
+        let res = 0.25;
+        let origin = vec2(-(lv.w as f32) * CELL * 0.5, -(lv.h as f32) * CELL * 0.5);
+        let (ow, oh) = (
+            (lv.w as f32 * CELL / res) as usize,
+            (lv.h as f32 * CELL / res) as usize,
+        );
+        let mut occ = Occluders::new(origin, res, ow, oh);
+        for j in 0..oh {
+            for i in 0..ow {
+                let c = occ.center(i, j);
+                let (x, z) = (
+                    ((c.x - origin.x) / CELL) as usize,
+                    ((c.y - origin.y) / CELL) as usize,
+                );
+                let y = match lv.cell(x, z) {
+                    _ if lv.walkable(x, z) => gnd.height_in(x, z, vec3(c.x, 0.0, c.y)),
+                    b'#' => Some(wall_top(x, z)),
+                    _ => lv.height(x, z),
+                };
+                if let Some(y) = y {
+                    occ.raise(i, j, y);
+                }
+            }
+        }
+        for pr in &lv.props {
+            let half = pr.kind.half();
+            if half != Vec2::ZERO {
+                let c = vec2(pr.pos.x, pr.pos.z);
+                occ.raise_box(c - half, c + half, pr.pos.y + pr.kind.height());
+            }
+        }
+        // 바닥 빛 지도(0044): 칸마다 달빛(가림)·화로를 미리 — 바닥은 색 × 이 텍스처(가장 가까운 픽셀 → 또렷한 그림자 경계).
+        // 텍스처는 0..1이라 빛의 반을 담고 바닥 색을 두 배로 칠한다(화로 곁은 1보다 밝다).
+        crate::render::set_bake_shade(Some(occ.clone()));
+        let mut lm = vec![0u8; ow * oh * 4];
+        for j in 0..oh {
+            for i in 0..ow {
+                let c = occ.center(i, j);
+                let (x, z) = (
+                    ((c.x - origin.x) / CELL) as usize,
+                    ((c.y - origin.y) / CELL) as usize,
+                );
+                if !lv.walkable(x, z) {
+                    continue;
+                }
+                let p = vec3(
+                    c.x,
+                    gnd.height_in(x, z, vec3(c.x, 0.0, c.y)).unwrap_or(0.0),
+                    c.y,
+                );
+                let l = lit(p, slope_normal(&gnd, x, z), &lights) * 0.5;
+                let k = (j * ow + i) * 4;
+                lm[k] = to_u8(l.x);
+                lm[k + 1] = to_u8(l.y);
+                lm[k + 2] = to_u8(l.z);
+                lm[k + 3] = 255;
+            }
+        }
+        let lightmap = Texture2D::from_rgba8(ow as u16, oh as u16, &lm);
+        lightmap.set_filter(FilterMode::Nearest);
+        let uv_of = |v: Vec3| {
+            vec2(
+                (v.x - origin.x) / (ow as f32 * res),
+                (v.z - origin.y) / (oh as f32 * res),
+            )
+        };
+        // 바닥: 칸마다 1m 석판 넷(틈 = 회반죽 판), 몇 칸은 이끼. 땅 높이를 따른다(경사로는 기운다, 0043). 정점 한도 아래로 줄마다 덩어리.
+        // 빛은 빛 지도 텍스처(0044) — 바닥 판은 색만(두 배), 옹벽·테는 정점 빛(따로 덩어리).
         let gy = |x: usize, z: usize, p: Vec3| gnd.height_in(x, z, p).unwrap_or(0.0);
         for z in 0..lv.h {
             let mut p = empty(None);
+            p.tex = Some(lightmap.clone());
+            let mut sides = empty(None);
             for x in 0..lv.w {
                 if !lv.walkable(x, z) {
                     continue;
@@ -175,8 +256,7 @@ impl Scenery {
                 let c = lv.at(x, z);
                 let h = CELL * 0.5;
                 let on = |v: Vec3| vec3(v.x, v.y + gy(x, z, v), v.z);
-                let n = slope_normal(&gnd, x, z);
-                quad(
+                quad_lm(
                     &mut p,
                     [
                         on(c + vec3(-h, 0.0, -h)),
@@ -184,9 +264,8 @@ impl Scenery {
                         on(c + vec3(h, 0.0, h)),
                         on(c + vec3(-h, 0.0, h)),
                     ],
-                    n,
                     MORTAR,
-                    &lights,
+                    &uv_of,
                 );
                 for (i, (sx, sz)) in [(-0.5, -0.5), (0.5, -0.5), (-0.5, 0.5), (0.5, 0.5)]
                     .into_iter()
@@ -201,7 +280,7 @@ impl Scenery {
                     let col = mul(base, 0.8 + 0.35 * r);
                     let o = c + vec3(sx, 0.012 + 0.01 * r, sz);
                     let g = 0.46 - 0.03 * hash(x, z, i as u32 + 7);
-                    quad(
+                    quad_lm(
                         &mut p,
                         [
                             on(o + vec3(-g, 0.0, -g)),
@@ -209,9 +288,8 @@ impl Scenery {
                             on(o + vec3(g, 0.0, g)),
                             on(o + vec3(-g, 0.0, g)),
                         ],
-                        n,
                         col,
-                        &lights,
+                        &uv_of,
                     );
                 }
                 // 옹벽과 턱 테(0043): 이웃 칸(걷는 칸·허공)보다 높으면 그 변에 이웃을 바라보는 면, 걸음보다 높으면 위 모서리에 밝은 테.
@@ -237,7 +315,7 @@ impl Scenery {
                         continue;
                     }
                     wall_face(
-                        &mut p,
+                        &mut sides,
                         [
                             a + Vec3::Y * la,
                             b + Vec3::Y * lb,
@@ -251,7 +329,7 @@ impl Scenery {
                     if (ha - la).max(hb - lb) > GROUND_STEP {
                         let inset = -d * 0.12;
                         quad(
-                            &mut p,
+                            &mut sides,
                             [
                                 a + Vec3::Y * (ha + 0.03),
                                 b + Vec3::Y * (hb + 0.03),
@@ -268,6 +346,9 @@ impl Scenery {
             if !p.verts.is_empty() {
                 pieces.push(p);
             }
+            if !sides.verts.is_empty() {
+                pieces.push(sides);
+            }
         }
         // 벽: 칸마다 덩어리 하나(높이를 조금씩 — 무너진 성벽). 칸마다 가림 상자.
         for z in 0..lv.h {
@@ -277,15 +358,7 @@ impl Scenery {
                 }
                 let c = lv.at(x, z);
                 let h = CELL * 0.5;
-                // 곁 바닥이 올라가 있으면(0043) 벽도 그만큼 높게 — 단 위에서도 벽으로 보이게.
-                let floor = neighbors(x, z)
-                    .filter(|&(nx, nz)| lv.walkable(nx, nz))
-                    .map(|(nx, nz)| gnd.center(nx, nz).y)
-                    .fold(0.0f32, f32::max);
-                let top = lv
-                    .height(x, z)
-                    .unwrap_or(floor + WALL_H * (0.8 + 0.35 * hash(x, z, 3)))
-                    .max(floor + 0.5);
+                let top = wall_top(x, z);
                 // 곁에 꺼진 땅이 있으면 벽도 그 바닥까지 내려 그린다(0035).
                 let foot = neighbors(x, z)
                     .filter_map(|(nx, nz)| {
@@ -473,6 +546,7 @@ impl Scenery {
             }
             pieces.push(p);
         }
+        crate::render::set_bake_shade(None);
         Scenery {
             pieces,
             lights,
@@ -480,6 +554,27 @@ impl Scenery {
             void_y,
         }
     }
+}
+
+/// 빛 지도를 입은 바닥 판(0044): 정점 색 = 바탕색 × 2(빛 지도가 빛의 반을 담는다), UV = 월드 XZ.
+fn quad_lm(p: &mut Piece, corners: [Vec3; 4], col: Color, uv: &dyn Fn(Vec3) -> Vec2) {
+    let base = p.verts.len() as u16;
+    let c2 = Color::new(
+        (col.r * 2.0).min(1.0),
+        (col.g * 2.0).min(1.0),
+        (col.b * 2.0).min(1.0),
+        col.a,
+    );
+    for c in corners {
+        let t = uv(c);
+        p.verts.push(Vertex::new(c.x, c.y, c.z, t.x, t.y, c2));
+    }
+    p.idx
+        .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+}
+
+fn to_u8(x: f32) -> u8 {
+    (x.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
 /// 칸 바닥의 법선(경사로는 기운다).

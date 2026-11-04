@@ -49,6 +49,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 해상도 640×360(0041) | `tuning.rs` `INTERNAL_*`·`UI_REF_H`, `render.rs` `Frame::ui`, `ui.rs` `hints` | 720p ×2·1080p ×3에 꽉 참, 방랑자 20 → 27px. UI는 480×270 기준 배율 그대로. 조작 안내는 넘치면 두 줄 |
 | UI 규칙(0042) | `ui.rs` `key`·`fit`·`wrap`·`check`, `app/mod.rs` 안내, `hud.rs` `under_menu` | nail 방식: 메뉴 안내만 + 키캡, 넘치면 "…", 긴 글은 줄바꿈, 개발 F4 넘침 검사(두 언어 0) |
 | 걸을 수 있는 높낮이(0043) | `ground.rs`, `world.rs` `ground`·`collide`·`way`, `stage` `with_heights`·`ground`·`settle`, `scenery.rs` 옹벽·테, `sanctuary.rs` `HEIGHTS` | 경사로 + 0.5m 턱 점프(1m는 벽), 어디서든 뛰어내림, 적은 경사로로만(거리 지도), 높이 차 0.75m 넘으면 안 닿음. 성소 전체 높낮이 |
+| 구운 달빛 그림자(0044) | `shade.rs`, `render.rs` `lit`·`set_bake_shade`·`LIGHT_DIR`, `scenery.rs` 빛 지도 | 0.25m 가림 높이 지도 + 광선, 바닥은 빛 지도 텍스처(픽셀 그림자), 벽·소품은 정점. 달은 왼쪽 앞 위 45° |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
