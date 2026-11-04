@@ -31,6 +31,8 @@ pub struct Hit {
     pub knock: f32,
     /// 동작 이름(`wanderer.glb`) — 없으면 `attack`.
     pub anim: &'static str,
+    /// 캔슬 시점(0057): 활성 뒤 후딜레이의 이만큼(비율)이 지나야 다음 행동으로 끊는다 — 0 = 활성 끝나자마자. 무기 성격.
+    pub cancel: f32,
 }
 
 /// 강타(공격 꾹, 0030).
@@ -56,6 +58,8 @@ pub struct Heavy {
     pub breaks_primed: Option<f32>,
     pub anim_charge: &'static str,
     pub anim_heavy: &'static str,
+    /// 캔슬 시점(0057): 강타의 활성 뒤 후딜레이 비율.
+    pub cancel: f32,
 }
 
 /// RB.
@@ -150,6 +154,7 @@ const fn hit(
         poise,
         knock: 1.0,
         anim,
+        cancel: 0.0,
     }
 }
 
@@ -170,6 +175,7 @@ const SWORD_COMBO: [Hit; 3] = [
     hit(1.0, 1.0, 1.0, 1.0, 1, 1.0, "attack2"),
     Hit {
         knock: 1.6,
+        cancel: 0.15,
         ..hit(1.2, 1.25, 0.45, 1.6, 2, 2.0, "attack3")
     },
 ];
@@ -178,11 +184,13 @@ const SWORD_COMBO: [Hit; 3] = [
 const HAMMER_COMBO: [Hit; 2] = [
     Hit {
         knock: 1.5,
+        cancel: 0.4,
         ..hit(1.7, 1.15, 1.25, 1.4, 2, 3.0, "hammer1")
     },
     Hit {
         shape: Shape::Circle,
         knock: 2.0,
+        cancel: 0.5,
         ..hit(2.0, 1.1, 1.0, 1.2, 3, 4.0, "hammer2")
     },
 ];
@@ -218,6 +226,7 @@ pub const WEAPONS: [Weapon; 4] = [
             breaks_primed: None,
             anim_charge: "charge",
             anim_heavy: "heavy",
+            cancel: 0.2,
         }),
         rb: Rb::Magic(MAGIC),
         grenade: None,
@@ -252,6 +261,7 @@ pub const WEAPONS: [Weapon; 4] = [
             breaks_primed: Some(0.6),
             anim_charge: "hammer_charge",
             anim_heavy: "hammer_slam",
+            cancel: 0.55,
         }),
         rb: Rb::Magic(Bolt {
             speed: 0.65,
@@ -294,6 +304,7 @@ pub const WEAPONS: [Weapon; 4] = [
             breaks_primed: None,
             anim_charge: "staff_charge",
             anim_heavy: "staff_release",
+            cancel: 0.0,
         }),
         rb: Rb::Magic(Bolt {
             speed: 1.3,

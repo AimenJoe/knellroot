@@ -193,6 +193,17 @@ pub struct Blast {
     pub age: f32,
 }
 
+/// 미리 받아 두는 다음 행동(0057).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Next {
+    Attack,
+    Dodge,
+    Parry,
+    Jump,
+    Cast,
+    Flask,
+}
+
 /// 마법 탄(0048): 곧게 날아 처음 닿는 깨어 있는 적 하나를 치고 사라진다. 벽·기둥·높은 땅에 닿아도 사라진다.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bolt {
@@ -327,10 +338,12 @@ pub struct Player {
     pub weapon: weapons::Id,
     /// RB를 한 번 누른 뒤 쥔 시간(0056, `attack_hold`와 같은 셈).
     pub cast_hold: f32,
-    /// 콤보: 다음 타 번호와 그 타를 이어 갈 남은 초, 미리 받아 둔 누름의 남은 초.
+    /// 미리 받아 둔 다음 행동과 남은 초(0057 — 후딜레이를 끊는 캔슬 시점에 나간다).
+    pub pending: Option<Next>,
+    pub pending_left: f32,
+    /// 콤보: 다음 타 번호와 그 타를 이어 갈 남은 초.
     pub combo_next: u8,
     pub combo_left: f32,
-    pub buffer: f32,
     /// 원거리 무기: 탄창의 볼트, 장전 남은 초(0 = 장전 중 아님), 수류탄(소수 = 다시 차는 중).
     pub ammo: u8,
     pub reload: f32,
@@ -439,9 +452,10 @@ impl World {
                 cast_denied: 0.0,
                 weapon: weapons::Id::Sword,
                 cast_hold: 0.0,
+                pending: None,
+                pending_left: 0.0,
                 combo_next: 0,
                 combo_left: 0.0,
-                buffer: 0.0,
                 ammo: 0,
                 reload: 0.0,
                 grenades: 0.0,
@@ -485,13 +499,138 @@ impl World {
             .any(|e| e.active() && e.pos.distance(self.player.pos) <= self.lock_range)
     }
 
+    /// 캔슬(0057, KB `action-roguelite-for-solo-dev` "캔슬 창이 곧 무기 성격"): 새 누름(회피 > 패링 > 점프 > 공격 > 마법 > 등잔)을
+    /// `attack.buffer s` 동안 받아 둔다. 지금 동작이 그 행동을 직접 받는 자리(서 있음, 모으는 중의 회피·패링, 공중의 공격 = 내려찍기,
+    /// 삼키기 전 회피)면 그대로 넘기고, 아니면 동작의 **캔슬 시점**이 오고 그 행동을 지금 할 수 있을 때 후딜레이를 끊어(서 있음으로)
+    /// 넘긴다. 캔슬 시점: 평타 = 활성 뒤 + 후딜 × 타의 `cancel`(다음 타는 `combo.link`도), 강타 = 활성 뒤 + 후딜 × 강타의 `cancel`,
+    /// 회피 = `dodge.cancel x`, 쏘기·던지기 = 손을 떠난 뒤, 착지 = `land.cancel x`, 마시기 = 삼킨 뒤(등잔은 빼고). 패링 헛침·맞음·돌리기·공중은 못 끊는다.
+    fn cancel_or_buffer(&mut self, a: &Actions, t: &Tuning, dt: f32) -> Actions {
+        let wpn = self.player.weapon.def();
+        let pressed = if a.dodge {
+            Some(Next::Dodge)
+        } else if a.parry {
+            Some(Next::Parry)
+        } else if a.jump {
+            Some(Next::Jump)
+        } else if a.attack {
+            Some(Next::Attack)
+        } else if a.cast {
+            Some(Next::Cast)
+        } else if a.flask {
+            Some(Next::Flask)
+        } else {
+            None
+        };
+        let pl = &mut self.player;
+        pl.pending_left = (pl.pending_left - dt).max(0.0);
+        if pressed.is_some() {
+            pl.pending = pressed;
+            pl.pending_left = t[P::AttackBuffer];
+        }
+        if pl.pending_left <= 0.0 {
+            pl.pending = None;
+        }
+        // 마시는 동안의 등잔 누름은 버린다(0031 — 연타가 쌓이지 않게).
+        if matches!(pl.state, PState::Drink { .. }) && pl.pending == Some(Next::Flask) {
+            pl.pending = None;
+        }
+        let mut out = Actions {
+            attack: false,
+            dodge: false,
+            parry: false,
+            jump: false,
+            cast: false,
+            flask: false,
+            ..*a
+        };
+        let Some(n) = pl.pending else {
+            return out;
+        };
+        let set = |out: &mut Actions| match n {
+            Next::Attack => out.attack = true,
+            Next::Dodge => out.dodge = true,
+            Next::Parry => out.parry = true,
+            Next::Jump => out.jump = true,
+            Next::Cast => out.cast = true,
+            Next::Flask => out.flask = true,
+        };
+        // 지금 동작이 직접 받는 누름.
+        let own = match pl.state {
+            PState::Idle => true,
+            PState::Charging { .. } => matches!(n, Next::Dodge | Next::Parry),
+            PState::CastCharge { .. } => n == Next::Dodge,
+            PState::Drink { gulped: false, .. } => n == Next::Dodge,
+            PState::Jump { plunge: false, .. } => n == Next::Attack,
+            _ => false,
+        };
+        if own {
+            // 직접 받는 자리면 한 번만 넘긴다(되든 막히든 — 막힌 누름을 계속 다시 넣으면 스태미나가 차는 순간 원치 않은 회피가 나갔다).
+            set(&mut out);
+            pl.pending = None;
+            return out;
+        }
+        // 그 행동을 지금 할 수 있나(못 하면 끊지 않고 기다린다 — 끊고 아무것도 안 나가면 손해).
+        let can = match n {
+            Next::Dodge => pl.dodge_cd <= 0.0 && pl.stamina > 0.0,
+            Next::Parry | Next::Jump => pl.stamina > 0.0,
+            Next::Attack => {
+                if wpn.grenade.is_some() {
+                    pl.grenades >= 1.0
+                } else {
+                    pl.stamina > 0.0
+                }
+            }
+            Next::Cast => match wpn.rb {
+                Rb::Magic(_) => pl.mana >= 1.0,
+                Rb::Shot { .. } => pl.ammo >= 1,
+            },
+            Next::Flask => pl.flask > 0 && pl.hp < PLAYER_HP && pl.flask_lock <= 0.0,
+        };
+        let ready = match pl.state {
+            PState::Attack { t: e, hit, .. } => {
+                let (s0, a0, r0) = hit_times(t, wpn, hit);
+                let k = wpn.combo.get(hit as usize).map_or(0.0, |h| h.cancel);
+                let base = s0 + a0 + r0 * k;
+                let last = hit as usize + 1 >= wpn.combo.len();
+                if n == Next::Attack && !last {
+                    e >= base.max(s0 + a0 + r0 * t[P::ComboLink])
+                } else {
+                    e >= base
+                }
+            }
+            PState::Heavy { t: e, .. } => {
+                let (s0, a0, r0) = heavy_times(t, wpn);
+                e >= s0 + a0 + r0 * wpn.heavy.map_or(0.0, |h| h.cancel)
+            }
+            PState::Dodge { t: e, .. } => e >= t[P::DodgeTime] * t[P::DodgeCancel],
+            PState::Cast { fired, .. } => fired,
+            PState::Throw { thrown, .. } => thrown,
+            PState::Land { t: e, dur } => e >= dur * t[P::LandCancel],
+            PState::Drink { gulped, .. } => gulped,
+            _ => false,
+        };
+        if ready && can {
+            if let PState::Attack { hit, .. } = pl.state {
+                // 다음 타로 잇는다(마지막 타 뒤면 처음부터).
+                let last = hit as usize + 1 >= wpn.combo.len();
+                pl.combo_next = if last { 0 } else { hit + 1 };
+                pl.combo_left = if last { 0.0 } else { t[P::ComboKeep] };
+            }
+            if matches!(pl.state, PState::Drink { .. }) {
+                pl.flask_lock = t[P::FlaskLock];
+            }
+            pl.state = PState::Idle;
+            set(&mut out);
+        }
+        out
+    }
+
     /// 무기를 바꾼다(0051): 콤보는 처음부터, 원거리 무기는 탄창·수류탄 가득.
     pub fn set_weapon(&mut self, id: weapons::Id) {
         let pl = &mut self.player;
         pl.weapon = id;
         pl.combo_next = 0;
         pl.combo_left = 0.0;
-        pl.buffer = 0.0;
         pl.reload = 0.0;
         let w = id.def();
         pl.ammo = match w.rb {
@@ -713,6 +852,10 @@ impl World {
 
 impl World {
     fn tick_player(&mut self, a: &Actions, t: &Tuning, dt: f32) {
+        // 캔슬(0057): 누름은 미리 받아 두고, 지금 동작의 캔슬 시점이 오면 후딜레이를 끊고 그 행동으로 넘어간다.
+        let cancelled = self.cancel_or_buffer(a, t, dt);
+        let a = &cancelled;
+        let started_from = std::mem::discriminant(&self.player.state);
         self.lock_range = t[P::LockRange];
         self.lock_lose = t[P::LockLose];
         // 입력 기준: 쿼터뷰는 화면(= 월드 고정 요), 락온은 대상 기준, 락온을 푼 뒤 쥔 스틱은 풀던 순간 그대로(0010).
@@ -814,7 +957,6 @@ impl World {
         let pl = &mut self.player;
         // 콤보·원거리 무기 시계(0051).
         pl.combo_left = (pl.combo_left - dt).max(0.0);
-        pl.buffer = (pl.buffer - dt).max(0.0);
         if let Rb::Shot { mag, .. } = wpn.rb {
             if pl.reload > 0.0 {
                 pl.reload -= dt;
@@ -1060,34 +1202,9 @@ impl World {
                 let (s0, a0, r0) = hit_times(t, wpn, hit);
                 let total = s0 + a0 + r0;
                 let after = e >= s0 + a0;
-                if a.attack {
-                    pl.buffer = t[P::AttackBuffer];
-                }
                 let last = hit as usize + 1 >= wpn.combo.len();
-                // 회피는 활성 구간이 끝난 뒤부터 후딜레이를 끊는다(캔슬 창 = 무기 성격).
-                if a.dodge && pl.dodge_cd <= 0.0 && after && spend(pl, t[P::StaminaDodge]) {
-                    let dir = if world_move.length_squared() > 1e-4 {
-                        world_move.normalize()
-                    } else {
-                        -pl.facing_dir()
-                    };
-                    pl.state = PState::Dodge { t: 0.0, dir };
-                    pl.dodge_cd = t[P::DodgeTime] + 0.15;
-                } else if a.parry && after && spend(pl, t[P::ParryStamina]) {
-                    if let Some(d) = auto_dir.or(aim) {
-                        pl.facing = d.x.atan2(d.z);
-                    }
-                    pl.state = PState::Parry { t: 0.0 };
-                } else if a.cast && matches!(wpn.rb, Rb::Magic(_)) && pl.mana >= 1.0 && after {
-                    // 마법(0048)도 회피처럼 평타 후딜을 끊는다 — 베고 바로 쏘기.
-                    pl.mana -= 1.0;
-                    pl.facing = cast_dir.x.atan2(cast_dir.z);
-                    pl.state = PState::Cast {
-                        t: 0.0,
-                        dir: cast_dir,
-                        fired: false,
-                    };
-                } else if a.attack_held
+                // 회피·패링·점프·마법·다음 타는 캔슬(0057, `cancel_or_buffer`)이 맡는다 — 여기서는 모으기와 끝만.
+                if a.attack_held
                     && pl.attack_hold >= t[P::HeavyHoldStart]
                     && after
                     && wpn.heavy.is_some()
@@ -1095,28 +1212,6 @@ impl World {
                     // 강공격(0030): 평타는 누르는 순간 나갔고, 한 번 누른 채 `heavy.hold start s`를 쥐고 있으면(활성이 끝난 뒤) 모으기로.
                     // "그 순간 눌려 있나"만 보면 연타 중 휘두르기 도중의 짧은 누름이 활성 끝에 걸려 모으기로 샜다.
                     pl.state = PState::Charging { t: 0.0 };
-                } else if pl.buffer > 0.0
-                    && !last
-                    && e >= s0 + a0 + r0 * t[P::ComboLink]
-                    && spend(pl, t[P::StaminaAttack])
-                {
-                    // 콤보(0051): 후딜 앞부분이 지나면 미리 받아 둔 누름으로 다음 타. 다시 겨눈다.
-                    pl.buffer = 0.0;
-                    pl.swings += 1;
-                    if let Some(d) = auto_dir.or(aim) {
-                        pl.facing = d.x.atan2(d.z);
-                    }
-                    let dir = if world_move.length_squared() > 1e-4 {
-                        world_move.normalize()
-                    } else {
-                        pl.facing_dir()
-                    };
-                    pl.state = PState::Attack {
-                        t: 0.0,
-                        swing: pl.swings,
-                        dir,
-                        hit: hit + 1,
-                    };
                 } else if e + dt >= total {
                     pl.state = PState::Idle;
                     // 마지막 타 뒤에는 처음으로, 아니면 잠깐 다음 타를 기억한다.
@@ -1503,6 +1598,11 @@ impl World {
             }
         }
         self.plunge_now |= landed_plunge;
+        // 받아 둔 행동이 쓰였다(새 동작이 시작됐다) — 끝나서 서게 된 것(`Idle`)이면 남겨 둔다(다음 틱에 나간다).
+        let now = std::mem::discriminant(&self.player.state);
+        if now != started_from && !matches!(self.player.state, PState::Idle) {
+            self.player.pending = None;
+        }
         if fire.is_some() {
             self.cast_fire = fire;
         }
@@ -3790,6 +3890,185 @@ mod tests {
         }
     }
 
+    /// 0057 시험: (누름, 바라는 상태).
+    type Check = (Actions, fn(&PState) -> bool);
+
+    /// 0057: 누른 틱부터 몇 틱 뒤에 상태가 바뀌었나(못 바뀌면 None).
+    fn ticks_until(
+        w: &mut World,
+        t: &Tuning,
+        a: Actions,
+        want: fn(&PState) -> bool,
+        max: usize,
+    ) -> Option<usize> {
+        w.step(&a, t);
+        if want(&w.player.state) {
+            return Some(0);
+        }
+        for i in 1..max {
+            w.step(&Actions::default(), t);
+            if want(&w.player.state) {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    /// 0057: 평타의 후딜레이는 다음 행동(회피·패링·점프·마법)으로 끊긴다 — 활성 구간이 끝나면 바로, 그 전에 누르면 받아 뒀다가 그때.
+    #[test]
+    fn attack_recovery_cancels_into_any_next_action() {
+        let t = Tuning::default();
+        let w0 = weapons::Id::Sword.def();
+        let (s0, a0, r0) = hit_times(&t, w0, 0);
+        let active_end = ((s0 + a0) / TICK_DT).ceil() as usize;
+        let checks: [Check; 4] = [
+            (
+                Actions {
+                    dodge: true,
+                    ..Default::default()
+                },
+                |s| matches!(s, PState::Dodge { .. }),
+            ),
+            (
+                Actions {
+                    parry: true,
+                    ..Default::default()
+                },
+                |s| matches!(s, PState::Parry { .. }),
+            ),
+            (
+                Actions {
+                    jump: true,
+                    ..Default::default()
+                },
+                |s| matches!(s, PState::Jump { .. }),
+            ),
+            (
+                Actions {
+                    cast: true,
+                    ..Default::default()
+                },
+                |s| matches!(s, PState::Cast { .. }),
+            ),
+        ];
+        for (press, want) in checks {
+            let mut w = World::new("test", 30.0);
+            w.step(
+                &Actions {
+                    attack: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            // 활성 중에 누른다 → 활성이 끝나는 틱 즈음에 나간다(후딜레이 전부를 기다리지 않는다).
+            let got = ticks_until(&mut w, &t, press, want, 60).expect("cancelled");
+            assert!(got <= active_end + 1, "{press:?}: {got} ticks");
+            assert!(
+                ((got as f32) * TICK_DT) < s0 + a0 + r0 - TICK_DT,
+                "before the recovery ends"
+            );
+        }
+    }
+
+    /// 0057: 회피의 뒷부분(`dodge.cancel x` 뒤)은 공격·점프로 끊긴다 — 회피 초반에 누른 것은 받아 뒀다가 그때.
+    #[test]
+    fn a_dodge_flows_into_an_attack_or_a_jump() {
+        let t = Tuning::default();
+        let cancel_at = (t[P::DodgeTime] * t[P::DodgeCancel] / TICK_DT).ceil() as usize;
+        let checks: [Check; 2] = [
+            (
+                Actions {
+                    attack: true,
+                    ..Default::default()
+                },
+                |s| matches!(s, PState::Attack { .. }),
+            ),
+            (
+                Actions {
+                    jump: true,
+                    ..Default::default()
+                },
+                |s| matches!(s, PState::Jump { .. }),
+            ),
+        ];
+        for (press, want) in checks {
+            let mut w = World::new("test", 30.0);
+            w.step(
+                &Actions {
+                    dodge: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            assert!(matches!(w.player.state, PState::Dodge { .. }));
+            let got = ticks_until(&mut w, &t, press, want, 60).expect("flows");
+            assert!(
+                got + 1 >= cancel_at.saturating_sub(1) && got <= cancel_at + 1,
+                "{press:?}: {got} vs {cancel_at}"
+            );
+        }
+    }
+
+    /// 0057: 캔슬 시점은 무기 성격 — 망치는 후딜레이의 앞부분이 지나야 끊긴다(검보다 늦게).
+    #[test]
+    fn a_hammer_commits_longer_than_a_sword() {
+        let t = Tuning::default();
+        let when = |id: weapons::Id| {
+            let mut w = World::new("test", 30.0);
+            w.set_weapon(id);
+            w.step(
+                &Actions {
+                    attack: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            // 회피를 연타한다(너무 일찍 한 번 누른 것은 `attack.buffer s`가 지나면 사라진다 — 무거운 무기의 대가).
+            (1..120)
+                .find(|_| {
+                    w.step(
+                        &Actions {
+                            dodge: true,
+                            ..Default::default()
+                        },
+                        &t,
+                    );
+                    matches!(w.player.state, PState::Dodge { .. })
+                })
+                .expect("cancels at some point")
+        };
+        let (sword, hammer) = (when(weapons::Id::Sword), when(weapons::Id::Hammer));
+        let h = weapons::Id::Hammer.def();
+        let (s0, a0, r0) = hit_times(&t, h, 0);
+        let want = ((s0 + a0 + r0 * h.combo[0].cancel) / TICK_DT).ceil() as usize;
+        assert!(hammer > sword, "hammer {hammer} vs sword {sword}");
+        assert!(hammer + 2 >= want, "{hammer} vs {want}");
+    }
+
+    /// 0057: 한 번 누른 회피는 한 번만 — 받아 둔 누름이 쓰이면 지운다.
+    #[test]
+    fn one_press_is_one_action() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        let mut dodges = 0;
+        let mut was = false;
+        for i in 0..90 {
+            w.step(
+                &Actions {
+                    dodge: i == 0,
+                    ..Default::default()
+                },
+                &t,
+            );
+            let now = matches!(w.player.state, PState::Dodge { .. });
+            if now && !was {
+                dodges += 1;
+            }
+            was = now;
+        }
+        assert_eq!(dodges, 1);
+    }
+
     /// 0051: 자세 막대가 다 차면 깨진다 — 휘청 + 드러남(다음 한 대 치명타), 깬 뒤 잠깐은 다시 안 찬다.
     #[test]
     fn filling_the_poise_bar_breaks_the_enemy() {
@@ -4080,7 +4359,7 @@ mod tests {
         );
         assert!(matches!(w.player.state, PState::Dodge { .. }));
         assert_eq!((w.player.flask, w.player.hp), (FLASK_CHARGES, 1));
-        // 삼킨 뒤에는 회피로 끊기지 않는다.
+        // 0057: 삼킨 뒤에는 내리는 동작(후딜레이)을 회피로 끊는다 — 등잔·체력은 이미 바뀌었다(0031의 "삼킨 뒤 회피는 안 먹는다"를 바꿈).
         let mut w = World::new("test", 20.0);
         w.player.hp = 1;
         drink(&mut w, &t, (t[P::FlaskRaise] / TICK_DT) as usize + 3);
@@ -4092,7 +4371,11 @@ mod tests {
             },
             &t,
         );
-        assert!(matches!(w.player.state, PState::Drink { gulped: true, .. }));
+        assert!(matches!(w.player.state, PState::Dodge { .. }));
+        assert_eq!(
+            (w.player.flask, w.player.hp),
+            (FLASK_CHARGES - 1, 1 + t[P::FlaskHeal].round() as i32)
+        );
     }
 
     /// 0031: 삼키기 전에 맞으면 끊기고 등잔 그대로(대가는 맞은 피해와 시간).

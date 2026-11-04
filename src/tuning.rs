@@ -215,6 +215,8 @@ pub enum P {
     PoiseBreakDamage,
     CastHoldStart,
     CastCharge,
+    DodgeCancel,
+    LandCancel,
     RenderModel,
 }
 
@@ -245,7 +247,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 135] = [
+pub const SPECS: [Spec; 137] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1261,6 +1263,25 @@ pub const SPECS: [Spec; 135] = [
         0.7,
         0.1,
         2.0,
+        0.05
+    ),
+    // 캔슬(0057): 회피는 이 비율이 지나면(무적이 그만큼 일찍 끝난다) 다음 행동으로, 착지 빈틈도 이 비율 뒤에.
+    spec!(
+        DodgeCancel,
+        "dodge.cancel x",
+        "DODGE_CANCEL",
+        0.7,
+        0.0,
+        1.0,
+        0.05
+    ),
+    spec!(
+        LandCancel,
+        "land.cancel x",
+        "LAND_CANCEL",
+        0.5,
+        0.0,
+        1.0,
         0.05
     ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
