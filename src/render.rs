@@ -5,7 +5,7 @@
 //! 바닥 예고는 모양마다(원판·부채꼴·띠·고리, `TeleShape`) 옅은 면 + 테두리, 채움이 자라 테두리에 닿는 순간 공격(nail 0186~0188).
 use macroquad::prelude::*;
 
-use crate::camera::{Camera, CAM_MIN_DIST};
+use crate::camera::{occlusion, Camera, Mode, CAM_MIN_DIST};
 use crate::models::{Entry, Library};
 use crate::scenery::Scenery;
 use crate::secondary::{Rig, Secondary};
@@ -26,6 +26,8 @@ pub struct Renderer {
     sec: Secondary,
     sec_rig: Option<Rig>,
     sec_extra: Vec<(usize, Quat, Vec3)>,
+    /// 락온 중 과녁을 가릴 때의 진하기(0040, 부드럽게 따라간다).
+    lock_fade: f32,
 }
 
 /// 측정값(개발 줄, P5): 우리 코드가 한 프레임에 쓴 CPU 시간(평균·최대, 지난 1초), 그리기 호출 수, 모델 정점 수.
@@ -177,6 +179,7 @@ impl Renderer {
             sec: Secondary::default(),
             sec_rig: None,
             sec_extra: Vec::new(),
+            lock_fade: 1.0,
         }
     }
 
@@ -517,7 +520,21 @@ impl Renderer {
         let blink = pl.hurt > 0.0 && (w.time * 20.0) as i32 % 2 == 0;
         // 카메라가 몸에 닿을 만큼 가까우면 옅게(가림 당기기의 마지막 수단).
         let close = (cam.closeness(pp) - CAM_MIN_DIST).clamp(0.0, 1.0);
-        let a = 0.25 + 0.75 * close;
+        // 락온 중 몸이 과녁을 가리면 옅게(0040): 카메라를 어깨 너머로 비켜 둬도 가까운 큰 대상은 다 비켜나지 못한다.
+        let hide = match w.lock.and_then(|i| w.enemies.get(i)).filter(|e| e.alive()) {
+            Some(e) if cam.mode == Mode::Lock => occlusion(
+                cam.rig.pos,
+                pp + Vec3::Y * (pl.air + PLAYER_HEIGHT * 0.45),
+                PLAYER_RADIUS * 1.2,
+                e.pos + Vec3::Y * (e.height * 0.5),
+                e.radius.max(e.height * 0.4),
+            ),
+            _ => 0.0,
+        };
+        let want =
+            1.0 - (1.0 - t[crate::tuning::P::RenderLockFade]) * (hide / 0.35).clamp(0.0, 1.0);
+        self.lock_fade += (want - self.lock_fade) * (1.0 - (-10.0 * get_frame_time()).exp());
+        let a = (0.25 + 0.75 * close) * self.lock_fade;
         if let Some(e) = self.lib.get("wanderer") {
             let speed = (pl.pos - pl.prev).length() / TICK_DT;
             let (names, at): (&[&str], f32) = match pl.state {

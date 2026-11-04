@@ -167,6 +167,7 @@ pub enum P {
     AnimHeadGain,
     AnimLeanGain,
     AnimSquash,
+    RenderLockFade,
     RenderModel,
 }
 
@@ -197,7 +198,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 109] = [
+pub const SPECS: [Spec; 110] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -256,7 +257,7 @@ pub const SPECS: [Spec; 109] = [
         CamLHeight,
         "cam.lock.height",
         "CAM_L_HEIGHT",
-        2.5,
+        3.0,
         0.5,
         6.0,
         0.1
@@ -265,7 +266,7 @@ pub const SPECS: [Spec; 109] = [
         CamLShoulder,
         "cam.lock.shoulder",
         "CAM_L_SHOULDER",
-        0.8,
+        1.6,
         -2.0,
         2.0,
         0.1
@@ -292,7 +293,7 @@ pub const SPECS: [Spec; 109] = [
         CamLFrame,
         "cam.lock.frame x",
         "CAM_L_FRAME",
-        1.3,
+        2.3,
         -3.0,
         3.0,
         0.1
@@ -1036,6 +1037,16 @@ pub const SPECS: [Spec; 109] = [
         0.1
     ),
     spec!(AnimSquash, "anim.squash", "ANIM_SQUASH", 1.0, 0.0, 3.0, 0.1),
+    // 락온 중 방랑자가 과녁을 가리면 이만큼 옅게(0040, 1 = 끔). 카메라를 비켜 둬도 가까운 큰 대상은 다 못 비켜난다.
+    spec!(
+        RenderLockFade,
+        "render.lock fade",
+        "RENDER_LOCK_FADE",
+        0.45,
+        0.1,
+        1.0,
+        0.05
+    ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(
         RenderModel,

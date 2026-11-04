@@ -22,6 +22,20 @@ pub enum Mode {
     Lock,
 }
 
+/// 눈에서 볼 때 가까운 공(가운데·반지름)이 먼 공을 얼마나 가리나(0..1, 각도 원판 둘의 겹침 근사). 0040: 락온 중
+/// 방랑자가 과녁을 가리면 옅게 — 렌더가 쓴다. 가까운 쪽이 더 멀리 있으면 0.
+pub fn occlusion(eye: Vec3, near_c: Vec3, near_r: f32, far_c: Vec3, far_r: f32) -> f32 {
+    let (dn, df) = (near_c - eye, far_c - eye);
+    let (ln, lf) = (dn.length(), df.length());
+    if ln < 1e-3 || lf <= ln {
+        return 0.0;
+    }
+    let sep = dn.angle_between(df);
+    let an = (near_r / ln).min(1.0).asin();
+    let af = (far_r / lf).min(1.0).asin();
+    (1.0 - sep / (an + af)).clamp(0.0, 1.0)
+}
+
 /// 카메라의 세 값. 셋을 같은 곡선으로 보간한다(피치·거리·FOV를 따로 바꾸지 않기 — Nesky 16).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rig {
@@ -564,6 +578,18 @@ pub fn view_points(
 mod tests {
     use super::*;
 
+    /// 0040: 바로 뒤에서 보면 가리고, 옆으로 비키면 안 가리고, 가까운 쪽이 더 멀면(대상 뒤) 안 가린다.
+    #[test]
+    fn occlusion_is_about_the_eye_line_and_order() {
+        let eye = vec3(0.0, 2.0, 7.0);
+        let boss = vec3(0.0, 1.5, -6.0);
+        assert!(occlusion(eye, vec3(0.0, 1.6, 0.0), 0.5, boss, 1.5) > 0.6);
+        assert_eq!(occlusion(eye, vec3(4.0, 1.6, 0.0), 0.5, boss, 1.5), 0.0);
+        assert_eq!(occlusion(eye, vec3(0.0, 1.6, -9.0), 0.5, boss, 1.5), 0.0);
+        let half = occlusion(eye, vec3(0.9, 1.6, 0.0), 0.5, boss, 1.5);
+        assert!(half > 0.0 && half < 0.6, "partly: {half}");
+    }
+
     #[test]
     fn camera_is_pushed_out_only_when_inside_a_box_and_a_box_that_merely_hides_the_view_is_an_occluder(
     ) {
@@ -927,7 +953,8 @@ mod switch_probe {
         let best = rows.iter().map(|r| r.1).fold(f32::MAX, f32::min);
         // 해제가 더 빨라(0010, exit 0.7) 최악은 해제 쪽 — 들어갈 때는 260°/s 안쪽.
         assert!(worst < 340.0, "turn max {worst}");
-        assert!(worst < best * 1.8, "side matters too much: {best}..{worst}");
+        // 0040: 어깨를 비켜 둔 만큼(1.6m) 먼 쪽으로 도는 전환이 길어져 1.8배 → 2.1배(최악 절대값은 위 340°/s 그대로).
+        assert!(worst < best * 2.1, "side matters too much: {best}..{worst}");
         assert!(
             rows.iter().all(|r| r.3 > 4.0),
             "camera grazes the head: {rows:?}"
