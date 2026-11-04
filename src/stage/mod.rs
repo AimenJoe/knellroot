@@ -5,6 +5,7 @@ pub mod sanctuary;
 
 use macroquad::prelude::*;
 
+use crate::ground::{Cell, Ground};
 use crate::i18n::Tr;
 use crate::species::Kind;
 use crate::tuning::{FLASK_CHARGES, PLAYER_HP};
@@ -91,9 +92,11 @@ pub struct Level {
     pub player_start: Vec3,
     /// 문(닫히면 막는 상자)과 그 가운데.
     pub gate: Option<(Aabb, Vec3)>,
-    /// 배경 높낮이(0035, 그림만): 칸마다 높이(m). 바깥 칸은 바위 단(+)·꺼진 땅(-), 벽 칸은 벽 꼭대기. None = 기본(바닥 0·벽 무작위·바깥 허공).
-    /// 걸을 수 있는 칸은 늘 None — 월드는 평평한 땅 하나 그대로(높낮이 2단계는 다음 구역).
+    /// 높낮이(0035 그림 → 0043 걸을 수 있게): 칸마다 높이(m). 바닥 칸은 땅 높이, 바깥 칸은 바위 단(+)·꺼진 땅(-),
+    /// 벽 칸은 벽 꼭대기. None = 기본(바닥 0·벽 무작위·바깥 허공).
     pub heights: Vec<Option<f32>>,
+    /// 경사로 칸(0043): 이웃 높이를 이어 준다(`ground`).
+    pub ramps: Vec<bool>,
 }
 
 impl Level {
@@ -145,6 +148,7 @@ impl Level {
             player_start: Vec3::ZERO,
             gate: None,
             heights: vec![None; w * h],
+            ramps: vec![false; w * h],
         };
         let mut gate_cells = Vec::new();
         for (z, row) in rows.iter().enumerate() {
@@ -232,17 +236,107 @@ impl Level {
         lv
     }
 
-    /// 배경 높이 격자를 얹는다(0035): 지도와 같은 크기의 글자 격자, `0`~`9` = (숫자 − 2)m(`2` = 바닥 높이), `.` = 기본.
+    /// 높이 격자를 얹는다(0035·0043): 지도와 같은 크기의 글자 격자. 한 글자 = 0.5m 단위 높이 — 36진수 `v`(`0`~`9`, `a`~`z`)
+    /// → (v − 4) × 0.5m(`4` = 바닥 0, `5` = +0.5, `6` = +1, `8` = +2, `c` = +4, `0` = −2). `/` = 경사로(높이는 이웃이 정한다),
+    /// `.` = 기본.
     pub fn with_heights(mut self, grid: &str) -> Level {
         let rows: Vec<&str> = grid.lines().filter(|l| !l.trim().is_empty()).collect();
         for (z, row) in rows.iter().enumerate().take(self.h) {
             for (x, c) in row.chars().enumerate().take(self.w) {
-                if let Some(d) = c.to_digit(10) {
-                    self.heights[z * self.w + x] = Some(d as f32 - 2.0);
+                if c == '/' {
+                    self.ramps[z * self.w + x] = true;
+                } else if let Some(v) = c.to_digit(36) {
+                    self.heights[z * self.w + x] = Some((v as f32 - 4.0) * 0.5);
                 }
             }
         }
         self
+    }
+
+    /// 소품·불빛·시작 자리를 땅 높이에 올려놓는다(0043 — 높이 격자를 얹은 뒤 한 번).
+    pub fn settle(mut self) -> Level {
+        let g = self.ground();
+        for p in &mut self.props {
+            p.pos.y = g.height(p.pos);
+        }
+        for l in &mut self.lights {
+            l.pos.y += g.height(l.pos);
+        }
+        self.player_start.y = g.height(self.player_start);
+        for m in &mut self.marks {
+            m.1.y = g.height(m.1);
+        }
+        self
+    }
+
+    /// 걸을 수 있는 칸인가.
+    pub fn walkable(&self, x: usize, z: usize) -> bool {
+        self.cell(x, z) == b'.'
+    }
+
+    /// 걸을 수 있는 땅(0043): 바닥 칸은 높이(없으면 0), 경사로 칸은 같은 줄(가로 또는 세로)로 이어진 경사로 묶음의
+    /// 양 끝 이웃 높이를 곧게 잇는다(높이 차가 큰 쪽 축). 벽·바깥은 `Solid`.
+    pub fn ground(&self) -> Ground {
+        let flat = |x: usize, z: usize| -> Option<f32> {
+            (self.walkable(x, z) && !self.ramps[z * self.w + x])
+                .then(|| self.heights[z * self.w + x].unwrap_or(0.0))
+        };
+        let mut cells = Vec::with_capacity(self.w * self.h);
+        for z in 0..self.h {
+            for x in 0..self.w {
+                if !self.walkable(x, z) {
+                    cells.push(Cell::Solid);
+                    continue;
+                }
+                if !self.ramps[z * self.w + x] {
+                    cells.push(Cell::Flat(flat(x, z).unwrap_or(0.0)));
+                    continue;
+                }
+                // 경사로 묶음의 양 끝 이웃(축마다): (낮은 쪽 끝 높이, 높은 쪽 끝 높이, 이 칸의 자리, 묶음 길이).
+                let run = |x_axis: bool| -> Option<(f32, f32, usize, usize)> {
+                    let (len, pos) = if x_axis { (self.w, x) } else { (self.h, z) };
+                    let idx = |i: usize| if x_axis { (i, z) } else { (x, i) };
+                    let is_ramp = |i: usize| {
+                        let (cx, cz) = idx(i);
+                        self.walkable(cx, cz) && self.ramps[cz * self.w + cx]
+                    };
+                    let mut a = pos;
+                    while a > 0 && is_ramp(a - 1) {
+                        a -= 1;
+                    }
+                    let mut b = pos;
+                    while b + 1 < len && is_ramp(b + 1) {
+                        b += 1;
+                    }
+                    let lo = (a > 0)
+                        .then(|| idx(a - 1))
+                        .and_then(|(cx, cz)| flat(cx, cz))?;
+                    let hi = (b + 1 < len)
+                        .then(|| idx(b + 1))
+                        .and_then(|(cx, cz)| flat(cx, cz))?;
+                    Some((lo, hi, pos - a, b - a + 1))
+                };
+                let pick = match (run(true), run(false)) {
+                    (Some(a), Some(b)) => Some(if (a.1 - a.0).abs() >= (b.1 - b.0).abs() {
+                        (true, a)
+                    } else {
+                        (false, b)
+                    }),
+                    (Some(a), None) => Some((true, a)),
+                    (None, Some(b)) => Some((false, b)),
+                    (None, None) => None,
+                };
+                cells.push(match pick {
+                    Some((x_axis, (lo, hi, i, n))) => Cell::Ramp {
+                        x_axis,
+                        from: lo + (hi - lo) * i as f32 / n as f32,
+                        to: lo + (hi - lo) * (i + 1) as f32 / n as f32,
+                    },
+                    None => Cell::Flat(0.0),
+                });
+            }
+        }
+        Ground::new(self.w, self.h, CELL, cells)
     }
 
     /// 칸의 배경 높이(0035).
@@ -369,10 +463,11 @@ impl StageRun {
     pub fn start(def: &'static StageDef) -> (StageRun, World) {
         let mut level = Level::parse(def.map);
         if let Some(g) = def.heights {
-            level = level.with_heights(g);
+            level = level.with_heights(g).settle();
         }
         let mut w = World::new("stage", level.half_extent());
         w.obstacles = level.obstacles();
+        w.ground = Some(level.ground());
         if let Some((g, _)) = level.gate {
             w.obstacles.push(g);
         }
@@ -708,7 +803,7 @@ mod tests {
 
     /// 0035: 배경 높이 격자는 지도와 같은 크기이고, 걸을 수 있는 칸·문·표지 칸에는 높이가 없다(월드는 평평한 땅 그대로).
     #[test]
-    fn background_heights_match_the_map_and_never_touch_walkable_cells() {
+    fn heights_match_the_map_and_every_ramp_joins_two_levels() {
         let g = sanctuary::DEF.heights.expect("sanctuary has heights");
         let map: Vec<&str> = sanctuary::DEF
             .map
@@ -720,13 +815,28 @@ mod tests {
         for (z, (m, h)) in map.iter().zip(&hs).enumerate() {
             assert_eq!(m.chars().count(), h.chars().count(), "row {z} width");
             for (x, (mc, hc)) in m.chars().zip(h.chars()).enumerate() {
-                if hc != '.' {
-                    assert!(hc.is_ascii_digit(), "row {z} col {x}: {hc:?}");
-                    assert!(mc == ' ' || mc == '#', "row {z} col {x}: height on {mc:?}");
+                assert!(
+                    hc == '.' || hc == '/' || hc.is_digit(36),
+                    "row {z} col {x}: {hc:?}"
+                );
+                if hc == '/' {
+                    assert!(mc != ' ' && mc != '#', "row {z} col {x}: ramp on {mc:?}");
                 }
             }
         }
         let (run, _) = StageRun::start(&sanctuary::DEF);
+        let ground = run.level.ground();
+        for z in 0..run.level.h {
+            for x in 0..run.level.w {
+                if run.level.ramps[z * run.level.w + x] {
+                    assert!(
+                        matches!(ground.at(x, z), Cell::Ramp { from, to, .. } if from != to),
+                        "ramp at row {z} col {x} joins two different levels: {:?}",
+                        ground.at(x, z)
+                    );
+                }
+            }
+        }
         assert!(
             run.level.heights.iter().any(|h| h.is_some_and(|v| v > 0.0)),
             "some rise"
@@ -735,6 +845,58 @@ mod tests {
             run.level.heights.iter().any(|h| h.is_some_and(|v| v < 0.0)),
             "some sink"
         );
+    }
+
+    /// 0043: 플레이어는 모든 바닥 칸에 갈 수 있고(걸음·경사로 + 0.5m 턱 점프 + 뛰어내리기), 모든 스폰·보스 표지에서
+    /// 적이 걸어서(경사로로만) 플레이어 시작 자리·문 앞까지 온다 — 높낮이가 길을 끊지 않았나.
+    #[test]
+    fn every_floor_is_reachable_and_every_spawn_can_walk_to_the_fight() {
+        let (run, _) = StageRun::start(&sanctuary::DEF);
+        let lv = &run.level;
+        let g = lv.ground();
+        // 플레이어 규칙: 이웃 칸 가운데 높이로 — 오르기는 점프 높이(0.9m) 안의 0.5m까지, 내리기는 아무리 깊어도.
+        let start = g.cell_of(lv.player_start).unwrap();
+        let mut seen = vec![false; lv.w * lv.h];
+        let mut q = vec![start];
+        seen[start.1 * lv.w + start.0] = true;
+        while let Some((x, z)) = q.pop() {
+            let here = g.center(x, z).y;
+            for (dx, dz) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
+                let (nx, nz) = (x as i32 + dx, z as i32 + dz);
+                if nx < 0 || nz < 0 || nx as usize >= lv.w || nz as usize >= lv.h {
+                    continue;
+                }
+                let (nx, nz) = (nx as usize, nz as usize);
+                if seen[nz * lv.w + nx] || matches!(g.at(nx, nz), Cell::Solid) {
+                    continue;
+                }
+                if g.center(nx, nz).y - here <= 0.5 + 1e-3 {
+                    seen[nz * lv.w + nx] = true;
+                    q.push((nx, nz));
+                }
+            }
+        }
+        for z in 0..lv.h {
+            for x in 0..lv.w {
+                if lv.walkable(x, z) {
+                    assert!(seen[z * lv.w + x], "player cannot reach row {z} col {x}");
+                }
+            }
+        }
+        // 적 규칙: 거리 지도(`Ground::flow`)로 — 시작 자리와 문 앞(뜰 쪽) 어디서든.
+        let gate = lv.gate.unwrap().1 + vec3(0.0, 0.0, CELL * 2.0);
+        for goal in [lv.player_start, gate] {
+            let dist = g.flow(goal);
+            for (c, at) in &lv.marks {
+                if c.is_ascii_lowercase() || c.is_ascii_uppercase() && *c != 'R' {
+                    let (x, z) = g.cell_of(*at).unwrap();
+                    assert!(
+                        dist[z * lv.w + x] != u16::MAX,
+                        "spawn {c} at row {z} col {x} cannot walk to {goal:?}"
+                    );
+                }
+            }
+        }
     }
 
     /// 끝까지 걸어 본다(적을 지우는 손을 대신해 월드를 직접 만진다): 입구 → 물결 → 문 열림 → 성소(문 닫힘·깨어남) → 결투 → 핵 → 클리어.

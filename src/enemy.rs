@@ -102,6 +102,8 @@ pub struct Enemy {
     pub dead_t: f32,
     /// 패링당해 드러난 남은 초(0025) — 이동안 맞는 한 대가 치명타.
     pub exposed: f32,
+    /// 높낮이(0043): 곧게 못 가면 월드가 주는 다음 칸 가운데(거리 지도) — 그쪽으로 걷고 공격을 고르지 않는다.
+    pub way: Option<Vec3>,
 }
 
 /// 한 틱의 결과(월드가 피해·이벤트로 바꾼다).
@@ -139,6 +141,7 @@ impl Enemy {
             sway_t: 0.0,
             dead_t: 0.0,
             exposed: 0.0,
+            way: None,
         }
     }
 
@@ -302,10 +305,20 @@ impl Enemy {
         match self.state {
             EState::Dormant | EState::Dead => {}
             EState::Chase => {
-                self.turn_toward(dir, 6.0, dt);
-                match self.choose(dist) {
-                    Some(atk) => self.start(atk),
-                    None => self.pos += dir * speed * dt,
+                if let Some(w) = self.way {
+                    let to = vec3(w.x - self.pos.x, 0.0, w.z - self.pos.z);
+                    let l = to.length();
+                    if l > 0.05 {
+                        let d = to / l;
+                        self.turn_toward(d, 6.0, dt);
+                        self.pos += d * (speed * dt).min(l);
+                    }
+                } else {
+                    self.turn_toward(dir, 6.0, dt);
+                    match self.choose(dist) {
+                        Some(atk) => self.start(atk),
+                        None => self.pos += dir * speed * dt,
+                    }
                 }
             }
             EState::Tele { t: e } => {

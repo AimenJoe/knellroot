@@ -48,9 +48,11 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 락온 구도(0040) | `tuning.rs` `cam.lock.*`, `camera.rs` `occlusion`, `render.rs` `lock_fade` | 어깨 1.6·주시점 밀기 2.3·높이 3.0. 그래도 방랑자가 과녁을 가리면 0.45까지 옅게(랩 `render.lock fade`). 0009 전환 기준 1.8 → 2.1배 |
 | 해상도 640×360(0041) | `tuning.rs` `INTERNAL_*`·`UI_REF_H`, `render.rs` `Frame::ui`, `ui.rs` `hints` | 720p ×2·1080p ×3에 꽉 참, 방랑자 20 → 27px. UI는 480×270 기준 배율 그대로. 조작 안내는 넘치면 두 줄 |
 | UI 규칙(0042) | `ui.rs` `key`·`fit`·`wrap`·`check`, `app/mod.rs` 안내, `hud.rs` `under_menu` | nail 방식: 메뉴 안내만 + 키캡, 넘치면 "…", 긴 글은 줄바꿈, 개발 F4 넘침 검사(두 언어 0) |
+| 걸을 수 있는 높낮이(0043) | `ground.rs`, `world.rs` `ground`·`collide`·`way`, `stage` `with_heights`·`ground`·`settle`, `scenery.rs` 옹벽·테, `sanctuary.rs` `HEIGHTS` | 경사로 + 0.5m 턱 점프(1m는 벽), 어디서든 뛰어내림, 적은 경사로로만(거리 지도), 높이 차 0.75m 넘으면 안 닿음. 성소 전체 높낮이 |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+- [ ] **높낮이(0043)**: 성소의 단·경사로·꺼진 광장이 싸움에 재미를 더하는지(디딤단·높은 단으로 피하기가 너무 쉽지 않은지), 턱이 화면에서 읽히는지, 0.5m 턱 점프가 손에 맞는지.
 - [ ] **해상도 640×360(0041)**: 핸드헬드에서 화면이 꽉 차는지, 글이 같은 크기로 읽히는지, 개발 시나리오 7(잡몹 80) cpu·fps가 버티는지. 쿼터뷰 카메라 각은 랩 `cam.quarter.pitch`를 35° 안팎으로 보고 정하기.
 - [ ] **동작(0039)**: 개발판에서 달리다 멈추기·방향 바꾸기·점프 착지·공격·강타·맞기가 "실감나게 귀여운지". 과하거나 약하면 랩 F1 `anim.tail gain`·`anim.tail damp`(작을수록 출렁)·`anim.head gain`·`anim.lean gain`·`anim.squash`(0 = 끔)로 보고 알려 주기.
 - [ ] **Meshy 방랑자(0038)**: 개발판에서 새 몸·동작(특히 걷기 뒤뚱·공격·강타·회피 구르기)이 마음에 드는지(`docs/art/meshy-0038/result-v2/`). 쿼터뷰에서는 거의 뒤통수(두건)만 보인다 — 괜찮은지.

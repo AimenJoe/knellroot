@@ -2,8 +2,11 @@
 //! 틱은 단계 메서드 순서(nail 0169 R1): tick_lock → tick_player → apply_strike → apply_turn → tick_enemies → collide → cleanup.
 use macroquad::prelude::*;
 
+use crate::ground::Ground;
 use crate::input::Actions;
-use crate::tuning::{Tuning, FLASK_CHARGES, P, PLAYER_HP, PLAYER_RADIUS, TICK_DT};
+use crate::tuning::{
+    Tuning, FLASK_CHARGES, GROUND_STEP, HIT_DY, P, PLAYER_HP, PLAYER_RADIUS, TICK_DT,
+};
 
 /// 축 정렬 상자(기둥·벽). 충돌·카메라 당기기에 쓴다.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -231,6 +234,7 @@ impl Player {
         vec3(s, 0.0, c)
     }
     /// 공중에 떠 있나.
+    #[cfg(test)]
     pub fn airborne(&self) -> bool {
         matches!(self.state, PState::Jump { .. })
     }
@@ -248,6 +252,9 @@ pub struct World {
     pub enemies: Vec<Enemy>,
     pub lock: Option<usize>,
     pub obstacles: Vec<Aabb>,
+    /// 걸을 수 있는 높낮이(0043). None = 평평한 땅(y 0). 있으면 배우의 `pos.y` = 발밑 땅 높이(`collide`가 맞춘다),
+    /// 플레이어의 몸 높이 = `pos.y + air`.
+    pub ground: Option<Ground>,
     /// 아레나 반폭(정사각형, 원점 가운데).
     pub arena: f32,
     pub hitstop: f32,
@@ -310,6 +317,7 @@ impl World {
             enemies: Vec::new(),
             lock: None,
             obstacles: Vec::new(),
+            ground: None,
             arena,
             hitstop: 0.0,
             time: 0.0,
@@ -375,7 +383,7 @@ impl World {
         let swing = self.player.swings;
         let mut hit = false;
         for en in &mut self.enemies {
-            if !en.active() {
+            if !en.active() || (en.pos.y - p.y).abs() > HIT_DY {
                 continue;
             }
             let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
@@ -1007,6 +1015,16 @@ impl World {
             let max = t[P::TurnSpeed].to_radians() * dt;
             pl.facing += diff.clamp(-max, max);
         }
+        // 점프가 아닌 동작(회피·공격 …) 중에 턱에서 떨어졌다(0043): 동작은 그대로, 몸만 떨어진다.
+        if !matches!(pl.state, PState::Jump { .. }) && pl.air > 0.0 {
+            let g = crate::tuning::jump_ballistics(t).1;
+            pl.air += pl.vy * dt - 0.5 * g * dt * dt;
+            pl.vy -= g * dt;
+            if pl.air <= 0.0 {
+                pl.air = 0.0;
+                pl.vy = 0.0;
+            }
+        }
         self.plunge_now |= landed_plunge;
     }
 
@@ -1067,6 +1085,7 @@ impl World {
             ev.push(Event::Swing);
         }
         let p = self.player.pos;
+        let body = p.y + self.player.air;
         let f = self.player.facing_dir();
         let half = (s.arc * 0.5).to_radians().cos();
         let mut stop = false;
@@ -1075,7 +1094,11 @@ impl World {
             if !en.active() || en.hit_by == swing {
                 continue;
             }
-            let d = en.pos - p;
+            // 높이가 다른 층의 적에게는 칼이 안 닿는다(0043).
+            if (en.pos.y - body).abs() > HIT_DY {
+                continue;
+            }
+            let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
             let dist = d.length() - en.radius;
             if dist > s.range {
                 continue;
@@ -1183,8 +1206,19 @@ impl World {
 
     fn tick_enemies(&mut self, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
         let p = self.player.pos;
+        let body = p.y + self.player.air;
         let parrying = self.parry_open(t);
-        let airborne_high = self.player.airborne() && self.player.air > t[P::JumpClear];
+        // 높낮이(0043): 곧게 못 가거나 높이가 다른 층이면 거리 지도를 따라 돌아간다(못 가면 그 자리에서 기다린다).
+        if let Some(g) = &self.ground {
+            let dist = g.flow(p);
+            for en in &mut self.enemies {
+                en.way = if (body - en.pos.y).abs() <= HIT_DY && g.straight_walkable(en.pos, p) {
+                    None
+                } else {
+                    Some(g.next_step(&dist, en.pos).unwrap_or(en.pos))
+                };
+            }
+        }
         let facing = self.player.facing_dir();
         // 앞쪽에서 오는가(패링은 바라보는 쪽 반원 안만 — 위치 선정도 기술, KB timing-parry).
         let in_front = |at: Vec3| {
@@ -1196,9 +1230,11 @@ impl World {
         let mut parried: Vec<usize> = Vec::new();
         for (i, en) in self.enemies.iter_mut().enumerate() {
             let out = en.tick(p, dt);
-            // 바닥을 훑는 파동은 높이 떠 있으면 넘는다(0027).
-            let jumped = en.atk == Atk::Wave && airborne_high;
-            if out.hit && !jumped {
+            // 바닥을 훑는 파동은 높이 떠 있으면 넘는다(0027) — 높은 단 위도 마찬가지(0043).
+            let above = body - en.pos.y;
+            let jumped = en.atk == Atk::Wave && above > t[P::JumpClear];
+            let reach = above.abs() <= HIT_DY;
+            if out.hit && !jumped && reach {
                 if parrying && en.parryable() && in_front(en.pos) {
                     parried.push(i);
                 } else {
@@ -1282,6 +1318,7 @@ impl World {
                     continue;
                 }
                 let d = self.enemies[j].pos - self.enemies[i].pos;
+                let d = vec3(d.x, 0.0, d.z);
                 let min = self.enemies[i].radius + self.enemies[j].radius;
                 let len = d.length();
                 if len < min && len > 1e-4 {
@@ -1294,6 +1331,7 @@ impl World {
             let passing = matches!(self.player.state, PState::Dodge { .. });
             if self.enemies[i].alive() && !passing {
                 let d = self.player.pos - self.enemies[i].pos;
+                let d = vec3(d.x, 0.0, d.z);
                 let min = self.enemies[i].radius + PLAYER_RADIUS;
                 let len = d.length();
                 if len < min && len > 1e-4 {
@@ -1303,21 +1341,46 @@ impl World {
         }
         let arena = self.arena;
         let obstacles = &self.obstacles;
-        let clamp = |p: Vec3, r: f32| -> Vec3 {
+        let ground = self.ground.as_ref();
+        // 높낮이(0043): 발 높이 `feet`에서 걸을 수 없는 칸 밖으로 민 뒤, y = 그 자리 땅 높이.
+        let clamp = |p: Vec3, r: f32, feet: f32, step_up: f32, can_drop: bool| -> Vec3 {
             let mut q = p;
             for b in obstacles {
                 q = b.push_circle(q, r);
             }
-            vec3(
+            if let Some(g) = ground {
+                q = g.push_circle(q, r, feet, step_up, can_drop);
+            }
+            let q = vec3(
                 q.x.clamp(-arena + r, arena - r),
                 0.0,
                 q.z.clamp(-arena + r, arena - r),
-            )
+            );
+            vec3(q.x, ground.map_or(0.0, |g| g.height(q)), q.z)
         };
-        self.player.pos = clamp(self.player.pos, PLAYER_RADIUS);
+        let pl = &mut self.player;
+        let old = pl.pos.y;
+        let feet = old + pl.air;
+        let step_up = if pl.air > 0.0 { 0.0 } else { GROUND_STEP };
+        pl.pos = clamp(pl.pos, PLAYER_RADIUS, feet, step_up, true);
+        // 몸 높이는 이어진다: 땅이 꺼지면(뛰어내림) 그만큼 떠서 떨어지고, 단에 뛰어오르면 그 위에 선다.
+        let jumping = matches!(pl.state, PState::Jump { .. });
+        if jumping || pl.air > 0.0 {
+            pl.air = (feet - pl.pos.y).max(0.0);
+        } else if pl.pos.y < old - GROUND_STEP {
+            pl.air = old - pl.pos.y;
+            pl.vy = 0.0;
+            if matches!(pl.state, PState::Idle | PState::Land { .. }) {
+                pl.state = PState::Jump {
+                    t: TICK_DT,
+                    plunge: false,
+                };
+            }
+        }
         for en in &mut self.enemies {
-            let q = clamp(en.pos, en.radius);
-            let blocked = q.distance(en.pos) > 1e-3;
+            let feet = en.pos.y;
+            let q = clamp(en.pos, en.radius, feet, GROUND_STEP, false);
+            let blocked = vec2(q.x - en.pos.x, q.z - en.pos.z).length() > 1e-3;
             en.pos = q;
             if !(blocked && en.spilling && en.alive()) {
                 continue;
@@ -3011,6 +3074,176 @@ mod tests {
             w.step(&Actions::default(), &t);
         }
         assert!((w.player.stamina - t[P::StaminaMax]).abs() < 1e-3);
+    }
+
+    /// 높낮이 시험 마당(0043): 5×6칸(2m). 맨 윗줄(가장 -z)은 높이 `ledge`인 단, 나머지는 바닥 0.
+    fn ledge_yard(ledge: f32) -> World {
+        use crate::ground::Cell::Flat;
+        let mut cells = vec![Flat(0.0); 5 * 6];
+        for c in cells.iter_mut().take(5) {
+            *c = Flat(ledge);
+        }
+        let mut w = World::new("test", 30.0);
+        w.ground = Some(Ground::new(5, 6, 2.0, cells));
+        w.view_yaw = Some(0.0);
+        w.player.pos = vec3(0.0, 0.0, 3.0);
+        w
+    }
+
+    fn up() -> Actions {
+        Actions {
+            move_dir: vec2(0.0, 1.0),
+            ..Default::default()
+        }
+    }
+
+    /// 걸어서는 0.5m 턱에 막히고, 달려와 뛰면 올라선다(사장: "경사로 + 낮은 턱 점프").
+    #[test]
+    fn a_low_ledge_blocks_walking_and_a_jump_climbs_it() {
+        let t = Tuning::default();
+        let mut w = ledge_yard(0.5);
+        for _ in 0..150 {
+            w.step(&up(), &t);
+        }
+        assert_eq!(w.player.pos.y, 0.0, "walking stays below");
+        let edge = -6.0 + 2.0; // 단 칸의 아래 변(z)
+        assert!(
+            w.player.pos.z > edge,
+            "stopped at the ledge: z {}",
+            w.player.pos.z
+        );
+        // 조금 물러났다가 달려와 뛴다.
+        w.player.pos.z = edge + 2.0;
+        for _ in 0..10 {
+            w.step(&up(), &t);
+        }
+        w.step(&Actions { jump: true, ..up() }, &t);
+        while w.player.airborne() {
+            w.step(&up(), &t);
+        }
+        // 내려앉은 뒤에는 손을 놓는다(시험 격자 밖으로 걸어 나가지 않게).
+        for _ in 0..30 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(
+            (w.player.pos.y - 0.5).abs() < 1e-4 && w.player.air == 0.0,
+            "stands on the ledge: y {} air {}",
+            w.player.pos.y,
+            w.player.air
+        );
+        assert!(w.player.pos.z < edge);
+    }
+
+    /// 1m 벼랑은 점프(0.9m)로도 못 오른다.
+    #[test]
+    fn a_tall_cliff_cannot_be_jumped() {
+        let t = Tuning::default();
+        let mut w = ledge_yard(1.0);
+        let edge = -4.0;
+        w.player.pos.z = edge + 2.0;
+        for _ in 0..10 {
+            w.step(&up(), &t);
+        }
+        w.step(&Actions { jump: true, ..up() }, &t);
+        while w.player.airborne() {
+            w.step(&up(), &t);
+        }
+        assert_eq!(w.player.pos.y, 0.0);
+        assert!(w.player.pos.z > edge);
+    }
+
+    /// 단 위에서 걸어 나가면 떨어져 아래에 선다(몸 높이는 이어진다).
+    #[test]
+    fn walking_off_a_ledge_falls_and_lands_below() {
+        let t = Tuning::default();
+        let mut w = ledge_yard(1.0);
+        w.player.pos = vec3(0.0, 1.0, -5.0);
+        w.step(&Actions::default(), &t);
+        assert_eq!(w.player.pos.y, 1.0);
+        let down = Actions {
+            move_dir: vec2(0.0, -1.0),
+            ..Default::default()
+        };
+        let mut flew = false;
+        let mut lowest_body = f32::MAX;
+        for _ in 0..90 {
+            let body = w.player.pos.y + w.player.air;
+            w.step(&down, &t);
+            let now = w.player.pos.y + w.player.air;
+            assert!(
+                now <= body + 1e-4 && body - now < 0.5,
+                "body height is continuous: {body} → {now}"
+            );
+            flew |= w.player.air > 0.2;
+            lowest_body = lowest_body.min(now);
+        }
+        assert!(flew, "fell through the air");
+        assert_eq!((w.player.pos.y, w.player.air), (0.0, 0.0));
+    }
+
+    /// 1m 단 위의 플레이어: 아래 잔재의 발톱도, 플레이어의 칼도 닿지 않는다. 경사로가 없으면 적은 아래에서 기다린다.
+    #[test]
+    fn different_levels_do_not_trade_blows() {
+        let t = Tuning::default();
+        // 아래 잔재는 1m 단 위에 가만히 선 플레이어를 못 친다.
+        let mut w = ledge_yard(1.0);
+        w.player.pos = vec3(0.0, 1.0, -4.4);
+        let i = w.spawn(Kind::Husk, vec3(0.0, 0.0, -3.0));
+        for _ in 0..400 {
+            w.step(&Actions::default(), &t);
+        }
+        assert_eq!(w.player.hp, PLAYER_HP);
+        assert!(
+            w.enemies[i].pos.y == 0.0 && w.enemies[i].pos.z > -4.0,
+            "the husk stays below: {:?}",
+            w.enemies[i].pos
+        );
+        // 단 끝에서 아래 잔재 쪽으로 휘둘러도 안 닿는다(수평으로는 닿는 거리).
+        let mut w = ledge_yard(1.0);
+        w.player.pos = vec3(0.0, 1.0, -4.5);
+        w.player.facing = 0.0;
+        let i = w.spawn(Kind::Husk, vec3(0.0, 0.0, -3.2));
+        w.enemies[i].state = EState::Dormant;
+        w.step(
+            &Actions {
+                attack: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        for _ in 0..40 {
+            w.step(&Actions::default(), &t);
+        }
+        assert_eq!(w.enemies[i].hp, w.enemies[i].max_hp);
+    }
+
+    /// 경사로가 있으면 적은 돌아서 단 위로 올라온다.
+    #[test]
+    fn enemies_take_the_ramp_up_to_the_player() {
+        use crate::ground::Cell::{Flat, Ramp};
+        let t = Tuning::default();
+        let mut w = ledge_yard(1.0);
+        // 맨 오른쪽 열 둘째 줄을 경사로(0 → 1, -z 쪽이 높다)로.
+        if let Some(g) = &mut w.ground {
+            g.cells[5 + 4] = Ramp {
+                x_axis: false,
+                from: 1.0,
+                to: 0.0,
+            };
+            g.cells[4] = Flat(1.0);
+        }
+        w.player.pos = vec3(-4.0, 1.0, -5.0);
+        let i = w.spawn(Kind::Husk, vec3(-4.0, 0.0, 3.0));
+        let mut climbed = false;
+        for _ in 0..900 {
+            w.step(&Actions::default(), &t);
+            climbed |= w.enemies[i].pos.y > 0.99 && w.enemies[i].pos.z < -4.0;
+            if w.player.hp < PLAYER_HP {
+                break;
+            }
+        }
+        assert!(climbed, "climbed the ramp: {:?}", w.enemies[i].pos);
+        assert!(w.player.hp < PLAYER_HP, "and reached the player");
     }
 
     #[test]

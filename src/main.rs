@@ -9,6 +9,7 @@
 mod app;
 mod camera;
 mod enemy;
+mod ground;
 mod hud;
 mod i18n;
 mod input;

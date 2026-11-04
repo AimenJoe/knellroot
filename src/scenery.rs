@@ -5,9 +5,11 @@
 //! 가림: 벽 칸·소품마다 상자를 들고 있어, 카메라와 플레이어 사이를 막으면 그 덩어리만 옅게 그린다(0008의 기둥 옅어짐 그대로).
 use macroquad::prelude::*;
 
+use crate::ground::Ground;
 use crate::models::Library;
 use crate::render::{lit, Batch};
 use crate::stage::{Level, Light, PropKind, CELL, WALL_H};
+use crate::tuning::GROUND_STEP;
 use crate::world::Aabb;
 
 /// 굽힌 덩어리 하나(정점은 이미 빛을 받았다).
@@ -50,6 +52,9 @@ const WALL_TOP: Color = Color::new(0.23, 0.22, 0.32, 1.0);
 const ROCK: Color = Color::new(0.27, 0.26, 0.36, 1.0);
 const ROCK_TOP: Color = Color::new(0.19, 0.27, 0.27, 1.0);
 const PIT: Color = Color::new(0.12, 0.12, 0.19, 1.0);
+/// 걸을 수 있는 층의 옹벽(0043)과 턱 가장자리의 밝은 테(쿼터뷰에서 턱이 읽히게 — 0035 "다음"의 플레이 후기).
+const LEDGE: Color = Color::new(0.33, 0.32, 0.44, 1.0);
+const RIM: Color = Color::new(0.62, 0.60, 0.70, 1.0);
 
 fn mul(c: Color, k: f32) -> Color {
     Color::new(c.r * k, c.g * k, c.b * k, c.a)
@@ -158,24 +163,28 @@ impl Scenery {
     pub fn bake(lv: &Level, lib: &mut Library) -> Scenery {
         let lights = lv.lights.clone();
         let mut pieces = Vec::new();
-        // 바닥: 칸마다 1m 석판 넷(틈 = 회반죽 판), 몇 칸은 이끼. 정점 한도 아래로 줄마다 덩어리.
+        // 바닥: 칸마다 1m 석판 넷(틈 = 회반죽 판), 몇 칸은 이끼. 땅 높이를 따른다(경사로는 기운다, 0043). 정점 한도 아래로 줄마다 덩어리.
+        let gnd = lv.ground();
+        let gy = |x: usize, z: usize, p: Vec3| gnd.height_in(x, z, p).unwrap_or(0.0);
         for z in 0..lv.h {
             let mut p = empty(None);
             for x in 0..lv.w {
-                if lv.cell(x, z) != b'.' {
+                if !lv.walkable(x, z) {
                     continue;
                 }
                 let c = lv.at(x, z);
                 let h = CELL * 0.5;
+                let on = |v: Vec3| vec3(v.x, v.y + gy(x, z, v), v.z);
+                let n = slope_normal(&gnd, x, z);
                 quad(
                     &mut p,
                     [
-                        c + vec3(-h, 0.0, -h),
-                        c + vec3(h, 0.0, -h),
-                        c + vec3(h, 0.0, h),
-                        c + vec3(-h, 0.0, h),
+                        on(c + vec3(-h, 0.0, -h)),
+                        on(c + vec3(h, 0.0, -h)),
+                        on(c + vec3(h, 0.0, h)),
+                        on(c + vec3(-h, 0.0, h)),
                     ],
-                    Vec3::Y,
+                    n,
                     MORTAR,
                     &lights,
                 );
@@ -195,15 +204,65 @@ impl Scenery {
                     quad(
                         &mut p,
                         [
-                            o + vec3(-g, 0.0, -g),
-                            o + vec3(g, 0.0, -g),
-                            o + vec3(g, 0.0, g),
-                            o + vec3(-g, 0.0, g),
+                            on(o + vec3(-g, 0.0, -g)),
+                            on(o + vec3(g, 0.0, -g)),
+                            on(o + vec3(g, 0.0, g)),
+                            on(o + vec3(-g, 0.0, g)),
                         ],
-                        Vec3::Y,
+                        n,
                         col,
                         &lights,
                     );
+                }
+                // 옹벽과 턱 테(0043): 이웃 칸(걷는 칸·허공)보다 높으면 그 변에 이웃을 바라보는 면, 걸음보다 높으면 위 모서리에 밝은 테.
+                for (nx, nz) in neighbors(x, z) {
+                    let d = vec3(nx as f32 - x as f32, 0.0, nz as f32 - z as f32);
+                    let e = c + d * h;
+                    let side = vec3(d.z, 0.0, -d.x) * h;
+                    let (a, b) = (e - side, e + side);
+                    let below = |v: Vec3| -> Option<f32> {
+                        if lv.walkable(nx, nz) {
+                            Some(gy(nx, nz, v))
+                        } else if lv.cell(nx, nz) == b' ' && lv.height(nx, nz).is_none() {
+                            Some(0.0f32.min(gy(x, z, v)) - 0.5)
+                        } else {
+                            None // 벽·바위 단·꺼진 땅은 제 그림이 맡는다.
+                        }
+                    };
+                    let (Some(la), Some(lb)) = (below(a), below(b)) else {
+                        continue;
+                    };
+                    let (ha, hb) = (gy(x, z, a), gy(x, z, b));
+                    if ha <= la + 1e-3 && hb <= lb + 1e-3 {
+                        continue;
+                    }
+                    wall_face(
+                        &mut p,
+                        [
+                            a + Vec3::Y * la,
+                            b + Vec3::Y * lb,
+                            b + Vec3::Y * hb,
+                            a + Vec3::Y * ha,
+                        ],
+                        d,
+                        LEDGE,
+                        &lights,
+                    );
+                    if (ha - la).max(hb - lb) > GROUND_STEP {
+                        let inset = -d * 0.12;
+                        quad(
+                            &mut p,
+                            [
+                                a + Vec3::Y * (ha + 0.03),
+                                b + Vec3::Y * (hb + 0.03),
+                                b + inset + Vec3::Y * (hb + 0.03),
+                                a + inset + Vec3::Y * (ha + 0.03),
+                            ],
+                            Vec3::Y,
+                            RIM,
+                            &lights,
+                        );
+                    }
                 }
             }
             if !p.verts.is_empty() {
@@ -218,10 +277,15 @@ impl Scenery {
                 }
                 let c = lv.at(x, z);
                 let h = CELL * 0.5;
+                // 곁 바닥이 올라가 있으면(0043) 벽도 그만큼 높게 — 단 위에서도 벽으로 보이게.
+                let floor = neighbors(x, z)
+                    .filter(|&(nx, nz)| lv.walkable(nx, nz))
+                    .map(|(nx, nz)| gnd.center(nx, nz).y)
+                    .fold(0.0f32, f32::max);
                 let top = lv
                     .height(x, z)
-                    .unwrap_or(WALL_H * (0.8 + 0.35 * hash(x, z, 3)))
-                    .max(0.5);
+                    .unwrap_or(floor + WALL_H * (0.8 + 0.35 * hash(x, z, 3)))
+                    .max(floor + 0.5);
                 // 곁에 꺼진 땅이 있으면 벽도 그 바닥까지 내려 그린다(0035).
                 let foot = neighbors(x, z)
                     .filter_map(|(nx, nz)| {
@@ -335,6 +399,7 @@ impl Scenery {
                                 Some(v) => v.min(0.0),
                                 None => continue,
                             },
+                            _ if lv.walkable(nx, nz) => gnd.center(nx, nz).y,
                             _ => 0.0,
                         };
                         if top <= hgt + 1e-3 {
@@ -382,8 +447,8 @@ impl Scenery {
             let half = pr.kind.half();
             let hh = pr.kind.height();
             let aabb = (half != Vec2::ZERO).then(|| Aabb {
-                min: vec3(pr.pos.x - half.x, 0.0, pr.pos.z - half.y),
-                max: vec3(pr.pos.x + half.x, hh, pr.pos.z + half.y),
+                min: vec3(pr.pos.x - half.x, pr.pos.y, pr.pos.z - half.y),
+                max: vec3(pr.pos.x + half.x, pr.pos.y + hh, pr.pos.z + half.y),
             });
             let mut p = empty(aabb);
             if let Some(e) = lib.get(pr.kind.model()) {
@@ -399,8 +464,8 @@ impl Scenery {
                 };
                 block(
                     &mut p,
-                    vec3(pr.pos.x - s.x, 0.0, pr.pos.z - s.y),
-                    vec3(pr.pos.x + s.x, hh, pr.pos.z + s.y),
+                    vec3(pr.pos.x - s.x, pr.pos.y, pr.pos.z - s.y),
+                    vec3(pr.pos.x + s.x, pr.pos.y + hh, pr.pos.z + s.y),
                     prop_color(pr.kind),
                     WALL_TOP,
                     &lights,
@@ -415,6 +480,51 @@ impl Scenery {
             void_y,
         }
     }
+}
+
+/// 칸 바닥의 법선(경사로는 기운다).
+fn slope_normal(g: &Ground, x: usize, z: usize) -> Vec3 {
+    match g.at(x, z) {
+        crate::ground::Cell::Ramp { x_axis, from, to } => {
+            let s = (to - from) / CELL;
+            if x_axis {
+                vec3(-s, 1.0, 0.0).normalize()
+            } else {
+                vec3(0.0, 1.0, -s).normalize()
+            }
+        }
+        _ => Vec3::Y,
+    }
+}
+
+/// 세운 면 하나(바깥 `out` 쪽을 본다): 아래 두 점이 어둡고 위가 밝게 — 깊이가 읽히게(꺼진 땅 벼랑과 같은 식).
+fn wall_face(p: &mut Piece, c: [Vec3; 4], out: Vec3, col: Color, lights: &[Light]) {
+    let base = p.verts.len() as u16;
+    for (i, v) in c.iter().enumerate() {
+        let l = lit(*v, out, lights) * if i < 2 { 0.55 } else { 1.0 };
+        p.verts.push(Vertex::new(
+            v.x,
+            v.y,
+            v.z,
+            0.0,
+            0.0,
+            Color::new(col.r * l.x, col.g * l.y, col.b * l.z, 1.0),
+        ));
+    }
+    p.idx.extend_from_slice(&[
+        base,
+        base + 1,
+        base + 2,
+        base,
+        base + 2,
+        base + 3,
+        base,
+        base + 2,
+        base + 1,
+        base,
+        base + 3,
+        base + 2,
+    ]);
 }
 
 /// 위·아래·왼·오른 이웃 칸(지도 밖은 뺀다 — `cell`이 바깥을 ' '로 돌려주지만 높이가 없어 건너뛴다).

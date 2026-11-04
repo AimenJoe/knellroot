@@ -15,6 +15,12 @@ pub const INTERNAL_H: u32 = 360;
 pub const UI_REF_H: f32 = 270.0;
 /// 플레이어 키(m). 카메라 높이·주시점의 기준.
 pub const PLAYER_HEIGHT: f32 = 1.8;
+// 걸을 수 있는 높낮이(0043, `ground.rs`).
+/// 걸어서 오르내리는 높이(m) — 이보다 높은 칸은 벽(점프로 발이 거기까지 오르면 넘는다), 적에게는 이보다 낮은 칸도 벽.
+pub const GROUND_STEP: f32 = 0.3;
+/// 치고 맞는 높이 차 한도(m): 이보다 위·아래에 있는 것은 칼도 발톱도 안 닿는다(0.5m 턱 너머는 닿고, 1m 단 너머는 안 닿는다).
+pub const HIT_DY: f32 = 0.75;
+
 // 2차 동작 층의 고정값(0039). 랩 값은 `anim.*`.
 /// 머리: 조금 늦고 덜 출렁인다(Hz, 감쇠비).
 pub const SEC_HEAD_HZ: f32 = 3.5;
