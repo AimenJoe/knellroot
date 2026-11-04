@@ -44,9 +44,11 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 귀여운 방랑자(0036) | `common.py` `Geo.blob`·파스텔 재질·아틀라스 128, `wanderer.py`, `main.rs` 인덱스 용량 | 2.3등신·둥근 라벤더 후드(곰 귀)·얼굴(눈·볼·앞머리)·민트 망토, 매끈한 음영(정점 공유), 디테일(후드 테·꽃 핀·단추·허리의 작은 종·끝동·장화 접단). 그리기 인덱스 용량 5,000 → 15,000(넘친 몸·다리가 잘렸다) |
 | 그림 방향 "색 = 생명"(0037) | `docs/art/direction.md`, `wanderer.py`(B 작은 동물), `common.py` `PAL`, `scenery.rs`·`render.rs` 색 | 방랑자 = 두건 쓴 너구리(2등신·눈 크고 낮게·입 없음·꼬리 흔들림). 세계는 해 질 녘 남보라, 침식은 잿빛 + 보라 뿌리, 외곽선 자두빛. 모델 열둘 다시 내보냄. 적 다시 빚기는 2단계 |
 | Meshy 방랑자(0038) | `tools/art/sources/meshy/`, `meshy_convert.py`, `common.py` `external`·`merge_textures`, `wanderer.py` | Gemini 그림 → Meshy(CC BY 4.0) → 줄이기·색 굽기 → 부위로 잘라 지금 뼈·동작 17에 붙임(정점 2,235). 걷기 뒤뚱·통통, 목은 두건 가장자리에서. 락온 카메라 비켜두기는 0009 시험과 부딪혀 보류 |
+| 실감나게 귀여운 동작(0039) | `secondary.rs`, `model.rs` `pose_with`, `render.rs`, `wanderer.py` `sq`, `motion_strips.py` | 원칙(KB `believable-cute-character-motion`): 판정 시각은 그대로, 끝맺음·부피 지키는 찌그러짐·늦게 따라오는 꼬리·머리(감쇠 스프링 층)·가속 쪽 기울기·착지 튐. 랩 `anim.*` |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+- [ ] **동작(0039)**: 개발판에서 달리다 멈추기·방향 바꾸기·점프 착지·공격·강타·맞기가 "실감나게 귀여운지". 과하거나 약하면 랩 F1 `anim.tail gain`·`anim.tail damp`(작을수록 출렁)·`anim.head gain`·`anim.lean gain`·`anim.squash`(0 = 끔)로 보고 알려 주기.
 - [ ] **Meshy 방랑자(0038)**: 개발판에서 새 몸·동작(특히 걷기 뒤뚱·공격·강타·회피 구르기)이 마음에 드는지(`docs/art/meshy-0038/result-v2/`). 쿼터뷰에서는 거의 뒤통수(두건)만 보인다 — 괜찮은지.
 - [ ] **락온 카메라 비켜두기(0038)**: 랩 F1 `cam.lock.shoulder`·`frame x`·`height`로 1.6 / 2.3 / 3.0을 해 보고 정하기. 정하면 0009의 "어느 쪽에서든 1.8배" 기준을 2.1배로 풀어도 되는지(최악 258°/s는 한계 340 안).
 - [ ] 아이템 설계 초안 `docs/design/items.md`(0026·0027) — 이름·수치·장신구 여섯·무기 넷이 괜찮은지, 구현 순서(A 화로·등잔부터).

@@ -712,9 +712,10 @@ class Model:
             ad.action = bpy.data.actions[action]
         self.scene.frame_set(int(round(t * FPS)))
 
-    def preview(self, path, action=None, t=0.0, size=320, yaw=-35.0, elev=32.0, floor=True):
+    def preview(self, path, action=None, t=0.0, size=320, yaw=-35.0, elev=32.0, floor=True, frame=None):
         """Workbench(텍스처 색) 직교 렌더. 카메라는 앞(-Y)에서 오른쪽(-X)으로 yaw도, 위로 elev도.
-        모델의 경계 상자에 맞춰 화면을 채운다."""
+        모델의 경계 상자에 맞춰 화면을 채운다. frame=(가운데 Vector, ortho_scale)을 주면 그 화면에 고정(동작 띠 — 크기 변화가 보이게).
+        돌려주는 것 = 쓴 (가운데, ortho_scale)."""
         sc = self.scene
         self.pose_at(action, t)
         dg = bpy.context.evaluated_depsgraph_get()
@@ -725,7 +726,7 @@ class Model:
             pts += [mw @ v.co for v in oe.data.vertices]
         lo = Vector([min(p[i] for p in pts) for i in range(3)])
         hi = Vector([max(p[i] for p in pts) for i in range(3)])
-        c = (lo + hi) / 2
+        c = (lo + hi) / 2 if frame is None else frame[0]
         ya, ea = math.radians(yaw), math.radians(elev)
         d = Vector((math.sin(ya) * math.cos(ea), -math.cos(ya) * math.cos(ea), math.sin(ea)))
         cam = sc.camera
@@ -745,7 +746,7 @@ class Model:
         for p in pts:
             q = ci @ p
             ext = max(ext, abs(q.x), abs(q.y))
-        cam.data.ortho_scale = max(ext * 2 * 1.12, 0.5)
+        cam.data.ortho_scale = max(ext * 2 * 1.12, 0.5) if frame is None else frame[1]
         if floor and "preview_floor" not in bpy.data.objects:
             bpy.ops.mesh.primitive_plane_add(size=1, location=(0, 0, -0.002))
             fl = bpy.context.object
@@ -776,6 +777,7 @@ class Model:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         bpy.ops.render.render(write_still=True)
         print(f"[knellroot] preview {path}")
+        return c.copy(), cam.data.ortho_scale
 
 
 def out_dirs():

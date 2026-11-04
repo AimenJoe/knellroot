@@ -12,6 +12,27 @@ pub const INTERNAL_W: u32 = 480;
 pub const INTERNAL_H: u32 = 270;
 /// 플레이어 키(m). 카메라 높이·주시점의 기준.
 pub const PLAYER_HEIGHT: f32 = 1.8;
+// 2차 동작 층의 고정값(0039). 랩 값은 `anim.*`.
+/// 머리: 조금 늦고 덜 출렁인다(Hz, 감쇠비).
+pub const SEC_HEAD_HZ: f32 = 3.5;
+pub const SEC_HEAD_DAMP: f32 = 0.55;
+/// 몸 기울기: 가속하는 쪽으로 — 거의 출렁이지 않게.
+pub const SEC_LEAN_HZ: f32 = 2.5;
+pub const SEC_LEAN_DAMP: f32 = 0.8;
+/// 늦음(m) → 기울기 변위 배율. 몸은 반대쪽(가속하는 쪽)으로.
+pub const SEC_LEAN_K: f32 = 0.5;
+/// 덩어리가 늦게 따라올 수 있는 거리 한도(덩어리까지 거리에 대한 비).
+pub const SEC_LAG_MAX: f32 = 0.7;
+/// 찌그러짐 스프링: 착지에 찌그러졌다 한 번 늘어나며 선다(부피 그대로, Lasseter 1987).
+pub const SEC_SQUASH_HZ: f32 = 3.5;
+pub const SEC_SQUASH_DAMP: f32 = 0.3;
+/// 착지 속도(m/s)마다 찌그러짐 속도(1/s).
+pub const SEC_SQUASH_IMPULSE: f32 = 1.4;
+/// 세로 속도(m/s)마다 늘어남(공중).
+pub const SEC_STRETCH_PER_SPEED: f32 = 0.018;
+/// 찌그러짐·늘어남 한도(세로 배율 1 ± 이 값).
+pub const SEC_SQUASH_MAX: f32 = 0.3;
+
 pub const PLAYER_RADIUS: f32 = 0.35;
 /// 화면 흔들림(0020): trauma 1이면 카메라가 이 각(도)만큼 흔들린다 — 거리에 곱해 쿼터뷰(20m)·락온(7m)에서 화면 크기가 같다.
 /// 예전엔 월드 ±0.25m 고정이라 20m 쿼터뷰에서 1px 남짓(사장: "피격 시에도 흔들림 있어야지").
@@ -140,6 +161,12 @@ pub enum P {
     RenderToon,
     RenderRim,
     RenderOutline,
+    AnimTailGain,
+    AnimTailHz,
+    AnimTailDamp,
+    AnimHeadGain,
+    AnimLeanGain,
+    AnimSquash,
     RenderModel,
 }
 
@@ -170,7 +197,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 103] = [
+pub const SPECS: [Spec; 109] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -961,6 +988,54 @@ pub const SPECS: [Spec; 103] = [
         3.0,
         0.25
     ),
+    // 2차 동작 층(0039, `secondary.rs`): 꼬리·머리가 늦게 따라오고, 몸은 가속하는 쪽으로 기울고, 점프·착지에 늘어나고 찌그러진다.
+    // 이득 0 = 끔. 꼬리는 출렁이게(감쇠비 낮게).
+    spec!(
+        AnimTailGain,
+        "anim.tail gain",
+        "ANIM_TAIL_GAIN",
+        1.0,
+        0.0,
+        3.0,
+        0.1
+    ),
+    spec!(
+        AnimTailHz,
+        "anim.tail hz",
+        "ANIM_TAIL_HZ",
+        2.4,
+        0.5,
+        8.0,
+        0.1
+    ),
+    spec!(
+        AnimTailDamp,
+        "anim.tail damp",
+        "ANIM_TAIL_DAMP",
+        0.3,
+        0.05,
+        1.5,
+        0.05
+    ),
+    spec!(
+        AnimHeadGain,
+        "anim.head gain",
+        "ANIM_HEAD_GAIN",
+        1.0,
+        0.0,
+        3.0,
+        0.1
+    ),
+    spec!(
+        AnimLeanGain,
+        "anim.lean gain",
+        "ANIM_LEAN_GAIN",
+        1.0,
+        0.0,
+        3.0,
+        0.1
+    ),
+    spec!(AnimSquash, "anim.squash", "ANIM_SQUASH", 1.0, 0.0, 3.0, 0.1),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(
         RenderModel,

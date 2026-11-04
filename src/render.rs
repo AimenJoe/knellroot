@@ -8,6 +8,7 @@ use macroquad::prelude::*;
 use crate::camera::{Camera, CAM_MIN_DIST};
 use crate::models::{Entry, Library};
 use crate::scenery::Scenery;
+use crate::secondary::{Rig, Secondary};
 use crate::stage::{Light, Phase, StageRun};
 use crate::tuning::{Tuning, INTERNAL_H, INTERNAL_W, PLAYER_HEIGHT, PLAYER_RADIUS, TICK_DT};
 use crate::world::{Aabb, Atk, EState, Enemy, PState, TeleShape, World};
@@ -21,6 +22,10 @@ pub struct Renderer {
     scenery: Option<(usize, Scenery)>,
     pose: Vec<Mat4>,
     batch: Batch,
+    /// 방랑자의 2차 동작 층(0039): 상태·부위(처음 그릴 때 모델에서 찾음)·이번 프레임 덧붙이기.
+    sec: Secondary,
+    sec_rig: Option<Rig>,
+    sec_extra: Vec<(usize, Quat, Vec3)>,
 }
 
 /// 측정값(개발 줄, P5): 우리 코드가 한 프레임에 쓴 CPU 시간(평균·최대, 지난 1초), 그리기 호출 수, 모델 정점 수.
@@ -169,6 +174,9 @@ impl Renderer {
             scenery: None,
             pose: Vec::new(),
             batch: Batch::default(),
+            sec: Secondary::default(),
+            sec_rig: None,
+            sec_extra: Vec::new(),
         }
     }
 
@@ -549,7 +557,19 @@ impl Renderer {
             let looped = matches!(pl.state, PState::Idle);
             let dur = e.duration(anim);
             let at = if looped { at } else { at.min(dur * 0.999) };
-            e.model.pose(anim, at, &mut self.pose);
+            // 키프레임 동작 위에 2차 동작(0039): 꼬리·머리가 늦게 따라오고 몸은 가속하는 쪽으로, 점프·착지에 늘어나고 찌그러진다.
+            let rig = *self.sec_rig.get_or_insert_with(|| Rig::of(&e.model));
+            self.sec.update(
+                &rig,
+                get_frame_time(),
+                pp,
+                pl.facing,
+                pl.air,
+                pl.vy,
+                t,
+                &mut self.sec_extra,
+            );
+            e.model.pose_with(anim, at, &self.sec_extra, &mut self.pose);
             // 맞으면 몸이 밀리는 쪽으로 젖혀졌다 떨며 돌아온다(0020) — 발을 축으로, 경직 동안.
             let recoil = match pl.state {
                 PState::Hurt { t: e, dur } => {

@@ -20,6 +20,7 @@ mod render;
 #[cfg(feature = "dev")]
 mod scenario;
 mod scenery;
+mod secondary;
 mod species;
 mod stage;
 mod text;

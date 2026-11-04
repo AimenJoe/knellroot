@@ -212,6 +212,18 @@ impl Model {
 
     /// 애니메이션 `anim`의 `t`초(고리) 자세 → 노드마다 모델 공간 행렬.
     pub fn pose(&self, anim: Option<usize>, t: f32, out: &mut Vec<Mat4>) {
+        self.pose_with(anim, t, &[], out);
+    }
+
+    /// `pose` + 덧붙이기(0039): `extra`의 노드는 자기 피벗(노드 원점)을 축으로 **모델 공간**에서 돌리고 키운다
+    /// (자식도 따라간다). 키프레임 동작 위에 얹는 절차 층(`secondary.rs`) — 동작 표는 그대로 둔다.
+    pub fn pose_with(
+        &self,
+        anim: Option<usize>,
+        t: f32,
+        extra: &[(usize, Quat, Vec3)],
+        out: &mut Vec<Mat4>,
+    ) {
         let mut local: Vec<(Vec3, Quat, Vec3)> =
             self.nodes.iter().map(|n| (n.t, n.r, n.s)).collect();
         if let Some(a) = anim.and_then(|i| self.anims.get(i)) {
@@ -239,7 +251,45 @@ impl Model {
                 Some(p) => out[p] * m,
                 None => m,
             };
+            for &(n, q, k) in extra {
+                if n == i {
+                    let pivot = out[i].w_axis.truncate();
+                    out[i] = Mat4::from_translation(pivot)
+                        * Mat4::from_scale_rotation_translation(k, q, Vec3::ZERO)
+                        * Mat4::from_translation(-pivot)
+                        * out[i];
+                }
+            }
         }
+    }
+
+    pub fn node(&self, name: &str) -> Option<usize> {
+        self.nodes.iter().position(|n| n.name == name)
+    }
+
+    /// 쉬는 자세에서 노드 `i` 아래 메시 정점의 가운데(모델 공간) — 2차 동작이 "늦게 따라오는 덩어리" 자리로 쓴다.
+    pub fn rest_centroid_under(&self, i: usize) -> Option<Vec3> {
+        let mut pose = Vec::new();
+        self.pose(None, 0.0, &mut pose);
+        let under = |mut n: usize| loop {
+            if n == i {
+                return true;
+            }
+            match self.nodes[n].parent {
+                Some(p) => n = p,
+                None => return false,
+            }
+        };
+        let (mut sum, mut cnt) = (Vec3::ZERO, 0usize);
+        for (n, node) in self.nodes.iter().enumerate() {
+            if let (Some(m), true) = (node.mesh, under(n)) {
+                for p in &self.meshes[m].pos {
+                    sum += pose[n].transform_point3(*p);
+                    cnt += 1;
+                }
+            }
+        }
+        (cnt > 0).then(|| sum / cnt as f32)
     }
 }
 

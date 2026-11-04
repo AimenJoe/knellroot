@@ -17,7 +17,10 @@ yaw = float(argv[3]) if len(argv) > 3 else -35.0
 elev = float(argv[4]) if len(argv) > 4 else 25.0
 os.makedirs(out, exist_ok=True)
 m = mod.make()
+# 화면은 쉬는 자세에 맞춰 한 번 정하고(조금 넓게) 모든 칸에 고정 — 찌그러짐·늘어남·내려앉음이 보이게.
+c, o = m.preview(os.path.join(out, "_rest.png"), None, 0.0, size=200, yaw=yaw, elev=elev)
+frame = (c, o * 1.35)
 for name, dur, loop in m.actions:
     for k in range(n):
         t = dur * k / (n if loop else n - 1)
-        m.preview(os.path.join(out, f"{name}_{k}.png"), name, t, size=200, yaw=yaw, elev=elev)
+        m.preview(os.path.join(out, f"{name}_{k}.png"), name, t, size=200, yaw=yaw, elev=elev, frame=frame)
