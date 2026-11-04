@@ -50,9 +50,11 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | UI 규칙(0042) | `ui.rs` `key`·`fit`·`wrap`·`check`, `app/mod.rs` 안내, `hud.rs` `under_menu` | nail 방식: 메뉴 안내만 + 키캡, 넘치면 "…", 긴 글은 줄바꿈, 개발 F4 넘침 검사(두 언어 0) |
 | 걸을 수 있는 높낮이(0043) | `ground.rs`, `world.rs` `ground`·`collide`·`way`, `stage` `with_heights`·`ground`·`settle`, `scenery.rs` 옹벽·테, `sanctuary.rs` `HEIGHTS` | 경사로 + 0.5m 턱 점프(1m는 벽), 어디서든 뛰어내림, 적은 경사로로만(거리 지도), 높이 차 0.75m 넘으면 안 닿음. 성소 전체 높낮이 |
 | 구운 달빛 그림자(0044) | `shade.rs`, `render.rs` `lit`·`set_bake_shade`·`LIGHT_DIR`, `scenery.rs` 빛 지도 | 0.25m 가림 높이 지도 + 광선, 바닥은 빛 지도 텍스처(픽셀 그림자), 벽·소품은 정점. 달은 왼쪽 앞 위 45° |
+| 캐릭터 실시간 그림자(0045) | `render.rs` `shadow_pass`·`FLOOR_FRAGMENT`·`Batch::casters`, 랩 `render.actor shadow` | 달 쪽 정사영 가림판 256²(0.125m 픽셀)을 바닥 재질이 읽는다, 원판(접촉)은 그대로 |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+- [ ] **빛·그림자(0044·0045)**: 달이 왼쪽 앞에서 오는 해 질 녘 분위기·픽셀 그림자가 마음에 드는지, 화면이 너무 어둡지 않은지. **핸드헬드에서 개발 시나리오 7(잡몹 80)** cpu·fps를 `render.actor shadow` 1/0으로.
 - [ ] **높낮이(0043)**: 성소의 단·경사로·꺼진 광장이 싸움에 재미를 더하는지(디딤단·높은 단으로 피하기가 너무 쉽지 않은지), 턱이 화면에서 읽히는지, 0.5m 턱 점프가 손에 맞는지.
 - [ ] **해상도 640×360(0041)**: 핸드헬드에서 화면이 꽉 차는지, 글이 같은 크기로 읽히는지, 개발 시나리오 7(잡몹 80) cpu·fps가 버티는지. 쿼터뷰 카메라 각은 랩 `cam.quarter.pitch`를 35° 안팎으로 보고 정하기.
 - [ ] **동작(0039)**: 개발판에서 달리다 멈추기·방향 바꾸기·점프 착지·공격·강타·맞기가 "실감나게 귀여운지". 과하거나 약하면 랩 F1 `anim.tail gain`·`anim.tail damp`(작을수록 출렁)·`anim.head gain`·`anim.lean gain`·`anim.squash`(0 = 끔)로 보고 알려 주기.

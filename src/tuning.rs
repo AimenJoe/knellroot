@@ -177,6 +177,7 @@ pub enum P {
     AnimLeanGain,
     AnimSquash,
     RenderLockFade,
+    RenderActorShadow,
     RenderModel,
 }
 
@@ -207,7 +208,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 110] = [
+pub const SPECS: [Spec; 111] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1055,6 +1056,16 @@ pub const SPECS: [Spec; 110] = [
         0.1,
         1.0,
         0.05
+    ),
+    // 캐릭터 실시간 그림자(0045): 1 = 달 쪽 가림판으로 바닥에 그림자, 0 = 끔(원판만 — 핸드헬드에서 무거우면).
+    spec!(
+        RenderActorShadow,
+        "render.actor shadow",
+        "RENDER_ACTOR_SHADOW",
+        1.0,
+        0.0,
+        1.0,
+        1.0
     ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(

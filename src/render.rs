@@ -3,7 +3,9 @@
 //! 스테이지(0019): 굽힌 지형(`scenery.rs`) + 모델(`models.rs` 목록, 상태 → 동작 이름) + 빛(달빛 + 화로, 정점 색). 모델이 없는 종류는
 //! 상자로. 개발 시나리오(스테이지 없음)는 PoC의 회색 아레나 그대로.
 //! 바닥 예고는 모양마다(원판·부채꼴·띠·고리, `TeleShape`) 옅은 면 + 테두리, 채움이 자라 테두리에 닿는 순간 공격(nail 0186~0188).
+use macroquad::camera::Camera as _;
 use macroquad::prelude::*;
+use miniquad::{UniformDesc, UniformType};
 
 use crate::camera::{occlusion, Camera, Mode, CAM_MIN_DIST};
 use crate::models::{Entry, Library};
@@ -30,6 +32,15 @@ pub struct Renderer {
     sec_extra: Vec<(usize, Quat, Vec3)>,
     /// 락온 중 과녁을 가릴 때의 진하기(0040, 부드럽게 따라간다).
     lock_fade: f32,
+    /// 캐릭터 실시간 그림자(0045): 달 쪽 정사영으로 찍은 가림판(저해상도, 가장 가까운 픽셀) + 그 재질 둘.
+    shadow_rt: Option<RenderTarget>,
+    mask_mat: Option<Material>,
+    floor_mat: Option<Material>,
+    shadow_tried: bool,
+    /// 이번 프레임 가림판의 빛 공간 행렬(없으면 바닥은 그림자 없이).
+    light_vp: Option<Mat4>,
+    /// 가림판 가운데(지난 프레임의 플레이어 자리).
+    shadow_center: Vec3,
 }
 
 /// 측정값(개발 줄, P5): 우리 코드가 한 프레임에 쓴 CPU 시간(평균·최대, 지난 1초), 그리기 호출 수, 모델 정점 수.
@@ -197,6 +208,12 @@ impl Renderer {
             sec_rig: None,
             sec_extra: Vec::new(),
             lock_fade: 1.0,
+            shadow_rt: None,
+            mask_mat: None,
+            floor_mat: None,
+            shadow_tried: false,
+            light_vp: None,
+            shadow_center: Vec3::ZERO,
         }
     }
 
@@ -213,6 +230,13 @@ impl Renderer {
     /// 3D 패스를 렌더 타깃에 그리고 화면에 정수 배율로 올린다. 글은 돌려준 `Frame`에 맞춰 바깥에서.
     pub fn draw(&mut self, v: &View) -> Frame {
         let (w, cam, alpha, t) = (v.world, v.cam, v.alpha, v.t);
+        // 캐릭터 그림자 가림판(0045): 지난 프레임에 모은 배우 실루엣을 달 쪽에서 찍는다(한 프레임 늦음 — 16ms는 안 보인다).
+        self.light_vp = None;
+        if t[crate::tuning::P::RenderActorShadow] >= 0.5 && v.stage.is_some() {
+            self.shadow_pass();
+        }
+        self.batch.casters.clear();
+        self.batch.caster_idx.clear();
         let aspect = INTERNAL_W as f32 / INTERNAL_H as f32;
         let c3 = cam.to_camera3d(self.rt.clone(), aspect);
         set_look(Look {
@@ -255,8 +279,27 @@ impl Renderer {
                 );
                 let boxes: Vec<Aabb> = sc.pieces.iter().filter_map(|p| p.aabb).collect();
                 let hidden = crate::camera::occluders(&pts, cam.rig.pos, &boxes);
+                // 빛 지도 바닥(0044)은 캐릭터 그림자 가림판을 읽는 재질로(0045). 가림판이 없으면 기본 재질 그대로.
+                let floor = match (&self.floor_mat, &self.shadow_rt, self.light_vp) {
+                    (Some(m), Some(rt), Some(vp)) => {
+                        m.set_uniform("LightVP", vp);
+                        m.set_texture("ShadowMask", rt.texture.clone());
+                        Some(m)
+                    }
+                    _ => None,
+                };
+                if let Some(m) = floor {
+                    gl_use_material(m);
+                }
+                for p in sc.pieces.iter().filter(|p| p.lightmap) {
+                    self.batch.raw(&p.verts, &p.idx, p.tex.as_ref(), 1.0);
+                }
+                self.batch.send();
+                if floor.is_some() {
+                    gl_use_default_material();
+                }
                 let mut bi = 0;
-                for p in &mut sc.pieces {
+                for p in sc.pieces.iter_mut().filter(|p| !p.lightmap) {
                     let want = match p.aabb {
                         Some(_) => {
                             let h = hidden.contains(&bi);
@@ -312,6 +355,9 @@ impl Renderer {
             self.stage_props(run, w, &lights);
         }
 
+        // 적·플레이어는 그림자 가림판의 실루엣도 남긴다(0045 — 다음 프레임 가림판).
+        self.batch.casting = true;
+        self.shadow_center = w.player.pos;
         // 적.
         for en in &w.enemies {
             let fall = if en.alive() {
@@ -326,6 +372,7 @@ impl Renderer {
         }
         // 플레이어.
         self.player(w, cam, pp, t, &lights);
+        self.batch.casting = false;
         self.batch.flush();
 
         self.overlays(w, pp, alpha, t);
@@ -1093,6 +1140,10 @@ pub struct Batch {
     outline: Vec<Vertex>,
     outline_idx: Vec<u16>,
     outline_mat: Option<Material>,
+    /// 켜져 있으면 `model`이 그리는 배우의 실루엣(월드 자리, 흰색)을 모은다 — 그림자 가림판(0045).
+    pub casting: bool,
+    pub casters: Vec<Vertex>,
+    pub caster_idx: Vec<u16>,
     outline_tried: bool,
 }
 
@@ -1207,6 +1258,21 @@ impl Batch {
             glow,
             true,
         );
+        if self.casting && tint.a > 0.5 && self.casters.len() + nv < MAX_DRAW_VERTICES {
+            let m = &e.model;
+            for (i, node) in m.nodes.iter().enumerate() {
+                let Some(mi) = node.mesh else { continue };
+                let mesh = &m.meshes[mi];
+                let mat = inst * pose[i];
+                let base = self.casters.len() as u16;
+                self.casters.extend(mesh.pos.iter().map(|q| {
+                    let p = mat.transform_point3(*q);
+                    Vertex::new(p.x, p.y, p.z, 0.0, 0.0, WHITE)
+                }));
+                self.caster_idx
+                    .extend(mesh.idx.iter().map(|&j| base + j as u16));
+            }
+        }
         let k = look();
         if k.outline_px > 0.0 && tint.a > 0.99 {
             // 화면 1px = 그 거리에서 이만큼(m): 2·거리·tan(시야/2) / 내부 세로.
@@ -1406,6 +1472,129 @@ fn outline_material() -> Option<Material> {
     )
     .map_err(|e| {
         warn!("outline material: {e:?}");
+    })
+    .ok()
+}
+
+/// 그림자 가림판(0045): 한 변 칸 수와 덮는 넓이(m). 0.125m 칸 — 바닥 빛 지도(0.25m)보다 촘촘해 캐릭터 실루엣이 읽힌다.
+const SHADOW_RES: u32 = 256;
+const SHADOW_SPAN: f32 = 32.0;
+
+impl Renderer {
+    /// 지난 프레임의 배우 실루엣을 달 쪽 정사영으로 가림판에 찍는다. 재질을 못 만들면(Metal 등) 끈다 — 바닥은 그림자 없이.
+    fn shadow_pass(&mut self) {
+        if !self.shadow_tried {
+            self.shadow_tried = true;
+            self.mask_mat = flat_material(MASK_FRAGMENT, &[], &[]);
+            self.floor_mat = flat_material(
+                FLOOR_FRAGMENT,
+                &[UniformDesc::new("LightVP", UniformType::Mat4)],
+                &["ShadowMask"],
+            );
+            if self.mask_mat.is_some() && self.floor_mat.is_some() {
+                let rt = render_target(SHADOW_RES, SHADOW_RES);
+                rt.texture.set_filter(FilterMode::Nearest);
+                self.shadow_rt = Some(rt);
+            }
+        }
+        let (Some(rt), Some(mask)) = (&self.shadow_rt, &self.mask_mat) else {
+            return;
+        };
+        let c = self.shadow_center;
+        let lc = Camera3D {
+            position: c + LIGHT_DIR.normalize() * 40.0,
+            target: c,
+            up: Vec3::Y,
+            fovy: SHADOW_SPAN,
+            aspect: Some(1.0),
+            projection: Projection::Orthographics,
+            render_target: Some(rt.clone()),
+            ..Default::default()
+        };
+        set_camera(&lc);
+        clear_background(BLACK);
+        if !self.batch.casters.is_empty() {
+            gl_use_material(mask);
+            draw_mesh(&Mesh {
+                vertices: self.batch.casters.clone(),
+                indices: self.batch.caster_idx.clone(),
+                texture: None,
+            });
+            gl_use_default_material();
+        }
+        self.light_vp = Some(lc.matrix());
+    }
+}
+
+/// 가림판: 무엇이든 흰색.
+const MASK_FRAGMENT: &str = r#"#version 100
+precision mediump float;
+varying lowp vec4 color;
+varying lowp vec2 uv;
+varying mediump vec3 sp;
+void main() {
+    gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+}"#;
+
+/// 바닥: 색 × 빛 지도(0044) × 캐릭터 그림자(가림판, 빛 공간 자리로 읽는다).
+const FLOOR_FRAGMENT: &str = r#"#version 100
+precision mediump float;
+varying lowp vec4 color;
+varying lowp vec2 uv;
+varying mediump vec3 sp;
+uniform sampler2D Texture;
+uniform sampler2D ShadowMask;
+void main() {
+    vec4 c = color * texture2D(Texture, uv);
+    float s = 0.0;
+    if (sp.x > 0.0 && sp.x < 1.0 && sp.y > 0.0 && sp.y < 1.0) {
+        s = texture2D(ShadowMask, sp.xy).r;
+    }
+    gl_FragColor = vec4(c.rgb * (1.0 - 0.5 * s), c.a);
+}"#;
+
+/// 두 재질이 같이 쓰는 꼭짓점 셰이더: 월드 자리를 빛 공간(`LightVP`, 없으면 단위)으로도 넘긴다.
+const SHADOW_VERTEX: &str = r#"#version 100
+attribute vec3 position;
+attribute vec2 texcoord;
+attribute vec4 color0;
+varying lowp vec4 color;
+varying lowp vec2 uv;
+varying mediump vec3 sp;
+uniform mat4 Model;
+uniform mat4 Projection;
+uniform mat4 LightVP;
+void main() {
+    vec4 w = Model * vec4(position, 1.0);
+    gl_Position = Projection * w;
+    color = color0 / 255.0;
+    uv = texcoord;
+    vec4 l = LightVP * w;
+    sp = vec3(l.xy * 0.5 + 0.5, l.z);
+}"#;
+
+fn flat_material(fragment: &str, uniforms: &[UniformDesc], textures: &[&str]) -> Option<Material> {
+    let mut u = uniforms.to_vec();
+    if !u.iter().any(|d| d.name == "LightVP") {
+        u.push(UniformDesc::new("LightVP", UniformType::Mat4));
+    }
+    load_material(
+        ShaderSource::Glsl {
+            vertex: SHADOW_VERTEX,
+            fragment,
+        },
+        MaterialParams {
+            pipeline_params: PipelineParams {
+                depth_write: true,
+                depth_test: Comparison::LessOrEqual,
+                ..Default::default()
+            },
+            uniforms: u,
+            textures: textures.iter().map(|t| t.to_string()).collect(),
+        },
+    )
+    .map_err(|e| {
+        warn!("shadow material: {e:?}");
     })
     .ok()
 }

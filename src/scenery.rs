@@ -21,6 +21,8 @@ pub struct Piece {
     /// 가림 판정 상자(None이면 가리지 않는다 — 바닥).
     pub aabb: Option<Aabb>,
     pub fade: f32,
+    /// 빛 지도 바닥(0044) — 캐릭터 그림자 재질로 그린다(0045).
+    pub lightmap: bool,
 }
 
 pub struct Scenery {
@@ -157,6 +159,7 @@ fn empty(aabb: Option<Aabb>) -> Piece {
         tex: None,
         aabb,
         fade: 1.0,
+        lightmap: false,
     }
 }
 
@@ -248,6 +251,7 @@ impl Scenery {
         for z in 0..lv.h {
             let mut p = empty(None);
             p.tex = Some(lightmap.clone());
+            p.lightmap = true;
             let mut sides = empty(None);
             for x in 0..lv.w {
                 if !lv.walkable(x, z) {
