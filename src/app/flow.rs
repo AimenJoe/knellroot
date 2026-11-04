@@ -48,6 +48,8 @@ pub enum TitleItem {
     Start,
     Controls,
     Language,
+    /// 전체 화면 켜고 끄기(0046) — 쓸 수 있는 기기에서만(웹·데스크톱).
+    Fullscreen,
     #[cfg(feature = "dev")]
     Sandbox,
     /// 개발: 문 앞에서 시작(보스만).
@@ -55,9 +57,11 @@ pub enum TitleItem {
     SkipToGate,
 }
 
-pub fn title_items() -> Vec<TitleItem> {
-    #[allow(unused_mut)]
+pub fn title_items(fullscreen: bool) -> Vec<TitleItem> {
     let mut v = vec![TitleItem::Start, TitleItem::Controls, TitleItem::Language];
+    if fullscreen {
+        v.push(TitleItem::Fullscreen);
+    }
     #[cfg(feature = "dev")]
     v.extend([TitleItem::SkipToGate, TitleItem::Sandbox]);
     v
@@ -171,7 +175,9 @@ mod tests {
         assert_eq!(choose_pause(PauseItem::Restart), (Scene::Play, true));
         assert_eq!(choose_pause(PauseItem::ToTitle), (Scene::Title, true));
         assert_eq!(choose_result(ResultItem::Retry), (Scene::Play, true));
-        assert_eq!(title_items()[0], TitleItem::Start);
+        assert_eq!(title_items(false)[0], TitleItem::Start);
+        assert!(!title_items(false).contains(&TitleItem::Fullscreen));
+        assert!(title_items(true).contains(&TitleItem::Fullscreen));
         assert_eq!(
             choose_pause(PauseItem::Controls),
             (Scene::Controls { from_pause: true }, false),

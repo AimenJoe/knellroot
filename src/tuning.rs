@@ -178,6 +178,7 @@ pub enum P {
     AnimSquash,
     RenderLockFade,
     RenderActorShadow,
+    HeavyChargeWalk,
     RenderModel,
 }
 
@@ -208,7 +209,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 111] = [
+pub const SPECS: [Spec; 112] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1066,6 +1067,16 @@ pub const SPECS: [Spec; 111] = [
         0.0,
         1.0,
         1.0
+    ),
+    // 강공격을 모으는 동안 걷는 빠르기(0047): 걷기의 배율 — 0이면 예전처럼 제자리(0030).
+    spec!(
+        HeavyChargeWalk,
+        "heavy.charge walk x",
+        "HEAVY_CHARGE_WALK",
+        0.4,
+        0.0,
+        1.0,
+        0.05
     ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(

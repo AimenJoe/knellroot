@@ -69,9 +69,10 @@ async function main() {
   await shot('t00-title');
   // 타이틀(0019): 첫 줄 "시작"을 탭(뗄 때 누른다). 자리는 `app::draw_title`·`ui::menu`와 같은 셈.
   {
-    // 내부 640×360(0041), UI 배율 = 렌더 배율 × 360/270.
-    const dpi = 3, sc = Math.max(1, Math.floor(Math.min(W * dpi / 640, H * dpi / 360))) / dpi;
-    const dh = 360 * sc, oy = Math.floor((H - dh) / 2), px = 13 * sc * 360 / 270;  // ui::GLYPH × Frame::ui
+    // 화면에 맞춘 내부 해상도(0046, render::fit_internal): 배율 = 높이/360 반올림, 줄 수 = 높이/배율, UI 배율 = 그린 높이/270.
+    const dpi = 3, s = Math.max(1, Math.min(Math.round(H * dpi / 360), Math.floor(W * dpi / 480)));
+    const w = Math.floor(W * dpi / s), rows = Math.min(Math.floor(H * dpi / s), Math.floor(w * 3 / 4));
+    const dh = rows * s / dpi, oy = Math.floor((H - dh) / 2), px = 13 * dh / 270;  // ui::GLYPH × Frame::ui
     await tap([W / 2, oy + dh * 0.37 + px * 0.5]);  // app::TITLE_MENU_Y
   }
   await page.waitForTimeout(1200);

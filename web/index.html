@@ -31,6 +31,33 @@
         importObject.env.knell_pref_set = function (i, v) {
           try { window.localStorage.setItem("knell.pref." + i, String(v >>> 0)); } catch (e) {}
         };
+        // 전체 화면(src/screen.rs, 0046 — nail 0269와 같은 방식): 문서 전체를 올리고, 들어간 뒤 가로 잠금을 시도(Android Chrome), 안 되면 조용히.
+        // 브라우저는 사용자 입력 직후에만 허락한다 — 게임이 메뉴를 고른 그 프레임에 부른다.
+        function fsEnabled() { return !!(document.fullscreenEnabled || document.webkitFullscreenEnabled); }
+        function fsActive() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+        function lockLandscape() {
+          try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(function () {}); } catch (e) {}
+        }
+        function enterFs() {
+          var el = document.documentElement;
+          var req = el.requestFullscreen || el.webkitRequestFullscreen;
+          try {
+            var p = req && req.call(el, { navigationUI: "hide" });
+            if (p && p.then) p.then(lockLandscape).catch(function () {}); else lockLandscape();
+          } catch (e) {}
+        }
+        importObject.env.knell_fs_enabled = function () { return fsEnabled() ? 1 : 0; };
+        importObject.env.knell_fs_active = function () { return fsActive() ? 1 : 0; };
+        importObject.env.knell_fs_toggle = function () {
+          try {
+            if (fsActive()) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else enterFs();
+          } catch (e) {}
+        };
+        importObject.env.knell_fs_touch_enter = function () {
+          var coarse = false;
+          try { coarse = window.matchMedia("(pointer: coarse)").matches; } catch (e) {}
+          if (coarse && fsEnabled() && !fsActive()) enterFs();
+        };
       }
     });
     load("knellroot.wasm");

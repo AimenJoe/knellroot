@@ -16,3 +16,6 @@ miniquad를 올릴 때는 새 원본을 받아 같은 패치를 다시 넣는다
   넘겨(`key_down_event(…, false)`) macroquad의 `is_key_pressed`가 누르고 있는 내내 다시 참이 됐다 — 땅파기·강타 모으기가 안 됐다.
   `java/MainActivity.java` `onKey`가 `surfaceOnKeyDown(keyCode, repeat)`로 플래그를 넘기고, `QuadNative.java`·`src/native/android.rs`
   (`Message::KeyDown { repeat }`)가 `key_down_event`까지 전한다. 웹(`event.repeat`)·데스크톱과 같아졌다.
+- 몰입 모드(Knellroot 0046): `java/MainActivity.java` `setFullScreen` — API 30+에서 원본은 `setDecorFitsSystemWindows(false)`만 해서
+  바가 숨지 않고 내용이 바 밑까지 그려질 뿐이었다. `getInsetsController()`로 상태·내비게이션 바를 `hide`하고
+  `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`(쓸면 잠깐 보였다 다시 숨음), 끌 때는 `show`. import `WindowInsetsController`.

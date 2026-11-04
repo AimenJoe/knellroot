@@ -28,6 +28,8 @@ pub const KO: Strings = Strings {
     verb_turn_left: "땅 돌리기 왼쪽",
     verb_turn_right: "땅 돌리기 오른쪽",
     menu_controls: "조작 설정",
+    menu_fullscreen_on: "전체 화면: 켬",
+    menu_fullscreen_off: "전체 화면: 끔",
     controls_title: "조작",
     controls_keyboard: "키보드",
     controls_pad: "패드",

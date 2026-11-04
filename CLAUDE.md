@@ -28,7 +28,7 @@
 - `world.rs`는 카메라·소리·메뉴를 모른다. `Basis`(입력 기준)와 `Event`로만 바깥과 만난다. 틱은 단계 메서드 순서(`tick_lock → tick_player → apply_strike → apply_turn → tick_enemies → collide → cleanup`) — 새 메커닉은 맞는 단계에.
 - 카메라는 `camera.rs`: 원하는 리그를 매 프레임 계산 + 모드가 바뀌면 지금 리그에서 보간. **입력 기준은 월드가 즉시 바꾸고 카메라만 늦게 간다.** `Camera3D`는 `up: Vec3::Y`를 매번 적는다(기본 z-up).
 - 좌표: y-up, XZ 평면 이동, 1 단위 = 1m, 플레이어 키 1.8. 쿼터뷰의 화면 위 = 월드 -z.
-- 렌더는 월드를 읽기만. 내부 해상도 `INTERNAL_W×H` 렌더 타깃 → 정수 배율(물리 픽셀로 센다, 0006) → HUD는 화면 패스.
+- 렌더는 월드를 읽기만. 렌더 타깃 → 정수 배율(물리 픽셀로 센다, 0006) → HUD는 화면 패스. 렌더 타깃 크기는 화면에 맞춘다(`render::fit_internal` — 배율은 높이 / `INTERNAL_H` 반올림, 크기는 화면 / 배율, 0046) — 내부 해상도를 상수로 박지 않는다. Android는 몰입 모드(패치한 miniquad `setFullScreen`, `PATCHED.md`).
 - 장면은 `app/`(타이틀·싸움·멈춤·끝·결과): 흐름은 `app/flow.rs` 순수 함수(시험), `app/mod.rs`는 그대로 한다. 새 장면 = `Scene` 한 줄 + flow 함수 + 그림 함수.
 - 스테이지는 `stage/`: 글자 지도 → `Level`(벽·소품·불빛·문·표지), 진행 대본 `StageRun`(구역·물결·문·보스·핵). 새 스테이지 = `stage/<이름>.rs`의 `StageDef` 하나. 월드는 스테이지를 모른다 — 스테이지가 월드를 지켜보며 적을 세우고 문을 여닫는다.
 - 적 종류는 `species.rs` 표(수치·행동 방식·모델 이름), 행동은 `enemy.rs`. 새 종류 = `Kind` 한 줄 + 표 한 줄. 예고 모양은 `TeleShape`(원판·부채꼴·띠·고리). 잠든 적은 `Enemy::active()`가 거짓.

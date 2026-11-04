@@ -182,7 +182,7 @@ impl App {
         }
         match self.scene {
             Scene::Title => {
-                let items = flow::title_items();
+                let items = flow::title_items(crate::screen::supported());
                 let lang_row = items.iter().position(|i| *i == TitleItem::Language);
                 if (a.menu_left || a.menu_right) && Some(self.cursor) == lang_row {
                     self.next_lang();
@@ -190,11 +190,13 @@ impl App {
                 if let Some(i) = self.menu_pick(&a, items.len()) {
                     match items[i] {
                         TitleItem::Start => {
+                            crate::screen::touch_enter();
                             self.restart();
                             self.go(Scene::Play);
                         }
                         TitleItem::Controls => self.go(Scene::Controls { from_pause: false }),
                         TitleItem::Language => self.next_lang(),
+                        TitleItem::Fullscreen => crate::screen::toggle(),
                         #[cfg(feature = "dev")]
                         TitleItem::SkipToGate => {
                             self.restart();
@@ -512,12 +514,18 @@ impl App {
         self.ui.text_center(s.game_title, cx, y, 3.0, AMBER);
         self.ui
             .text_center(s.title_subtitle, cx, y + self.ui.px(3.0) * 1.2, 1.0, DIM);
-        let items: Vec<String> = flow::title_items()
+        let items: Vec<String> = flow::title_items(crate::screen::supported())
             .iter()
             .map(|i| match i {
                 TitleItem::Start => s.menu_start.to_string(),
                 TitleItem::Controls => s.menu_controls.to_string(),
                 TitleItem::Language => fill(s.menu_language, &[s.lang_name]),
+                TitleItem::Fullscreen => if crate::screen::active() {
+                    s.menu_fullscreen_on
+                } else {
+                    s.menu_fullscreen_off
+                }
+                .to_string(),
                 // 개발 전용(영어 그대로, 0013).
                 #[cfg(feature = "dev")]
                 TitleItem::SkipToGate => "DEV: skip to the sanctum gate".to_string(),

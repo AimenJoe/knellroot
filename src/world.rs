@@ -938,10 +938,7 @@ impl World {
             PState::Hurt { .. } => {
                 pl.vel *= (1.0 - KNOCK_DECAY * dt).max(0.0);
             }
-            PState::Turn { .. }
-            | PState::Parry { .. }
-            | PState::Land { .. }
-            | PState::Charging { .. } => pl.vel = Vec3::ZERO,
+            PState::Turn { .. } | PState::Parry { .. } | PState::Land { .. } => pl.vel = Vec3::ZERO,
             PState::Heavy { t: e, dir, .. } => {
                 let reach = t[P::HeavyStartup] + t[P::HeavyActive];
                 pl.vel = if e < reach {
@@ -964,11 +961,12 @@ impl World {
                     diff
                 };
             }
-            PState::Idle | PState::Drink { .. } => {
-                let slow = if matches!(pl.state, PState::Drink { .. }) {
-                    t[P::FlaskWalk]
-                } else {
-                    1.0
+            PState::Idle | PState::Drink { .. } | PState::Charging { .. } => {
+                // 마시는 동안·강공격을 모으는 동안(0047)은 느리게 걷는다.
+                let slow = match pl.state {
+                    PState::Drink { .. } => t[P::FlaskWalk],
+                    PState::Charging { .. } => t[P::HeavyChargeWalk],
+                    _ => 1.0,
                 };
                 let want = world_move * t[P::MoveSpeed] * slow;
                 let diff = want - pl.vel;
@@ -991,7 +989,7 @@ impl World {
                 | PState::Turn { .. }
                 | PState::Hurt { .. }
                 | PState::Parry { .. }
-                | PState::Jump { .. }
+                | PState::Jump { plunge: true, .. }
                 | PState::Land { .. },
             ) => None,
             (Basis::Lock(tg), _) => {
@@ -2491,6 +2489,70 @@ mod tests {
             let charged = ev.iter().filter(|e| matches!(e, Event::Charged)).count();
             assert_eq!(charged, want_full as usize);
         }
+    }
+
+    /// 0047: 모으는 동안 느리게 걷는다(제자리가 아니다) — 걷기의 `heavy.charge walk x`배쯤.
+    #[test]
+    fn charging_walks_slowly() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.view_yaw = Some(0.0);
+        let walk = Actions {
+            move_dir: vec2(0.0, 1.0),
+            ..Default::default()
+        };
+        w.step(
+            &Actions {
+                attack: true,
+                attack_held: true,
+                ..walk
+            },
+            &t,
+        );
+        let hold = Actions {
+            attack_held: true,
+            ..walk
+        };
+        for _ in 0..120 {
+            if matches!(w.player.state, PState::Charging { .. }) {
+                break;
+            }
+            w.step(&hold, &t);
+        }
+        assert!(matches!(w.player.state, PState::Charging { .. }));
+        for _ in 0..30 {
+            w.step(&hold, &t);
+        }
+        assert!(matches!(w.player.state, PState::Charging { .. }));
+        let v = w.player.vel.length();
+        let want = t[P::MoveSpeed] * t[P::HeavyChargeWalk];
+        assert!((v - want).abs() < want * 0.1, "{v} m/s, want {want}");
+    }
+
+    /// 0047: 뛰어 있는 동안에도 스틱 쪽으로 몸을 돌린다(공중에서 내려찍기를 겨눈다). 내려찍기가 시작되면 고정.
+    #[test]
+    fn a_jump_turns_toward_the_stick() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.view_yaw = Some(0.0);
+        let f0 = w.player.facing;
+        w.step(
+            &Actions {
+                jump: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        let side = Actions {
+            move_dir: vec2(1.0, 0.0),
+            ..Default::default()
+        };
+        for _ in 0..20 {
+            w.step(&side, &t);
+        }
+        assert!(w.player.airborne());
+        let turned = angle_diff(w.player.facing, f0).abs();
+        assert!(turned > 1.0, "turned {turned} rad in the air");
     }
 
     /// 0030: 다 모은 강타 = `heavy.damage` + 덤, 잡몹은 길게 휘청(예고를 끊는다), 보스는 다 모았을 때만 짧게.

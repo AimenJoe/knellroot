@@ -914,4 +914,16 @@ mod tests {
         let rs = include_str!("../third_party/miniquad/src/native/android.rs");
         assert!(rs.contains(".key_down_event(keycode, self.keymods, repeat)"));
     }
+
+    /// Android 몰입 모드(0046): API 30+에서 바를 실제로 숨기는 패치가 남아 있고, 앱이 전체 화면을 켠다.
+    #[test]
+    fn android_fullscreen_hides_the_system_bars() {
+        let java = include_str!("../third_party/miniquad/java/MainActivity.java");
+        assert!(java.contains(
+            "c.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars())"
+        ));
+        assert!(java.contains("BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE"));
+        let main = include_str!("main.rs");
+        assert!(main.contains(r#"fullscreen: cfg!(target_os = "android")"#));
+    }
 }

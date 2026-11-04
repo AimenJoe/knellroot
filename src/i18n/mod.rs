@@ -103,6 +103,9 @@ pub struct Strings {
     pub verb_turn_left: &'static str,
     pub verb_turn_right: &'static str,
     pub menu_controls: &'static str,
+    /// 타이틀의 전체 화면 줄(0046, 지금 상태를 보인다).
+    pub menu_fullscreen_on: &'static str,
+    pub menu_fullscreen_off: &'static str,
     pub controls_title: &'static str,
     pub controls_keyboard: &'static str,
     pub controls_pad: &'static str,
@@ -163,6 +166,8 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.verb_turn_left,
         s.verb_turn_right,
         s.menu_controls,
+        s.menu_fullscreen_on,
+        s.menu_fullscreen_off,
         s.controls_title,
         s.controls_keyboard,
         s.controls_pad,

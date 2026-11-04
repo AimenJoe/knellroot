@@ -21,6 +21,7 @@ mod render;
 #[cfg(feature = "dev")]
 mod scenario;
 mod scenery;
+mod screen;
 mod secondary;
 mod shade;
 mod species;
@@ -40,6 +41,9 @@ fn window_conf() -> macroquad::conf::Conf {
             window_width: 1280,
             window_height: 720,
             high_dpi: true,
+            // Android는 처음부터 몰입 모드(0046): miniquad는 이 값이 참일 때만 시작·복귀 때 바를 숨긴다
+            // (`Cargo.toml`의 `fullscreen = true`는 매니페스트 테마뿐이라 내비게이션 바가 남았다).
+            fullscreen: cfg!(target_os = "android"),
             ..Default::default()
         },
         // 그리기 한 번의 인덱스 용량(0036): 기본 5,000은 둥근 방랑자 한 벌(≈ 7,800)보다 작아 넘친 부위(몸·다리)가 조용히 잘렸다.

@@ -19,6 +19,8 @@ use crate::world::{Aabb, Atk, EState, Enemy, PState, TeleShape, World};
 
 pub struct Renderer {
     rt: RenderTarget,
+    /// 렌더 타깃 크기와 정수 배율(물리 px) — 화면에 맞춰 바뀐다(0046).
+    rt_size: (u32, u32, u32),
     /// 시나리오 상자마다 지금 진하기(1 = 불투명). 가리면 부드럽게 옅어지고 풀리면 돌아온다(0008).
     fade: Vec<f32>,
     pub lib: Library,
@@ -61,7 +63,7 @@ pub struct Frame {
     pub oy: f32,
     pub w: f32,
     pub h: f32,
-    /// UI 배율(글·HUD): 렌더 정수 배율(논리 px — 물리 픽셀로 센 정수를 DPI로 나눈 값) × INTERNAL_H / `UI_REF_H`.
+    /// UI 배율(글·HUD): 그린 화면 높이(논리 px) / `UI_REF_H`(0046 — 전에는 렌더 정수 배율 × INTERNAL_H / `UI_REF_H`).
     /// 480×270 기준으로 짠 UI가 화면에서 같은 크기로 보인다(0041).
     pub ui: f32,
 }
@@ -94,6 +96,8 @@ pub struct Look {
     /// 카메라 자리와 세로 시야각(라디안) — 가장자리 빛·외곽선 두께.
     pub eye: Vec3,
     pub fovy: f32,
+    /// 렌더 타깃의 줄 수(0046 — 화면에 따라 바뀐다, 외곽선 두께를 내부 px로 셀 때).
+    pub rows: f32,
 }
 
 thread_local! {
@@ -104,6 +108,7 @@ thread_local! {
             outline_px: 0.0,
             eye: Vec3::ZERO,
             fovy: 1.0,
+            rows: INTERNAL_H as f32,
         })
     };
 }
@@ -184,21 +189,42 @@ const FIRE: f32 = 1.5;
 /// 움직이는 모델에 곱하는 밝기(배경과 떼어 읽히게).
 const ACTOR_LIFT: f32 = 1.35;
 
+/// 깊이 버퍼가 붙은 렌더 타깃(0033).
+fn make_rt(w: u32, h: u32) -> RenderTarget {
+    // 깊이 버퍼를 붙인다(0033): `render_target`의 기본값은 깊이 없음이라, `Camera3D`가 깊이 시험을 켜도 붙은 버퍼가 없어
+    // 그린 순서로만 덮였다 — 모델 부위 상자끼리도. 외곽선(키운 뒷면)도 깊이가 있어야 몸 뒤로 숨는다.
+    let rt = render_target_ex(
+        w,
+        h,
+        RenderTargetParams {
+            depth: true,
+            ..Default::default()
+        },
+    );
+    rt.texture.set_filter(FilterMode::Nearest);
+    rt
+}
+
+/// 화면(물리 px)에 맞춘 내부 해상도와 정수 배율(0046): 배율은 높이가 `INTERNAL_H`에 가장 가깝게(반올림) 고르고,
+/// 내부 해상도는 그 배율로 화면을 채우는 크기 — 픽셀은 늘 정수배로 고르고 검은 테두리는 배율보다 작다.
+/// 폭은 높이의 4:3~21:9 사이로 묶는다(세로 폰·아주 넓은 창은 나머지가 테두리). 세로 시야각은 그대로라 넓은 화면은 옆을 더 본다.
+pub fn fit_internal(sw: f32, sh: f32) -> (u32, u32, u32) {
+    let by_h = (sh / INTERNAL_H as f32).round();
+    let by_w = (sw / (INTERNAL_H as f32 * 4.0 / 3.0)).floor();
+    let s = by_h.min(by_w).max(1.0) as u32;
+    let mut w = ((sw / s as f32).floor() as u32).max(1);
+    let mut h = ((sh / s as f32).floor() as u32).max(1);
+    w = w.min(h * 21 / 9).max(1);
+    h = h.min(w * 3 / 4).max(1);
+    (w, h, s)
+}
+
 impl Renderer {
     pub fn new() -> Self {
-        // 깊이 버퍼를 붙인다(0033): `render_target`의 기본값은 깊이 없음이라, `Camera3D`가 깊이 시험을 켜도 붙은 버퍼가 없어
-        // 그린 순서로만 덮였다 — 모델 부위 상자끼리도. 외곽선(키운 뒷면)도 깊이가 있어야 몸 뒤로 숨는다.
-        let rt = render_target_ex(
-            INTERNAL_W,
-            INTERNAL_H,
-            RenderTargetParams {
-                depth: true,
-                ..Default::default()
-            },
-        );
-        rt.texture.set_filter(FilterMode::Nearest);
+        let rt = make_rt(INTERNAL_W, INTERNAL_H);
         Renderer {
             rt,
+            rt_size: (INTERNAL_W, INTERNAL_H, 1),
             fade: Vec::new(),
             lib: Library::default(),
             scenery: None,
@@ -237,7 +263,8 @@ impl Renderer {
         }
         self.batch.casters.clear();
         self.batch.caster_idx.clear();
-        let aspect = INTERNAL_W as f32 / INTERNAL_H as f32;
+        let (iw, ih) = self.fit_screen();
+        let aspect = iw as f32 / ih as f32;
         let c3 = cam.to_camera3d(self.rt.clone(), aspect);
         set_look(Look {
             toon: t[crate::tuning::P::RenderToon] >= 0.5,
@@ -245,6 +272,7 @@ impl Renderer {
             outline_px: t[crate::tuning::P::RenderOutline],
             eye: c3.position,
             fovy: c3.fovy,
+            rows: ih as f32,
         });
         set_camera(&c3);
         clear_background(Color::new(0.07, 0.07, 0.12, 1.0));
@@ -395,14 +423,28 @@ impl Renderer {
         let haze = t[crate::tuning::P::Haze];
         if haze > 0.0 {
             set_camera(&Camera2D {
-                zoom: vec2(2.0 / INTERNAL_W as f32, 2.0 / INTERNAL_H as f32),
-                target: vec2(INTERNAL_W as f32 * 0.5, INTERNAL_H as f32 * 0.5),
+                zoom: vec2(2.0 / iw as f32, 2.0 / ih as f32),
+                target: vec2(iw as f32 * 0.5, ih as f32 * 0.5),
                 render_target: Some(self.rt.clone()),
                 ..Default::default()
             });
-            draw_haze(INTERNAL_W as f32, INTERNAL_H as f32, haze);
+            draw_haze(iw as f32, ih as f32, haze);
         }
         self.present()
+    }
+
+    /// 렌더 타깃을 지금 화면에 맞춘다(0046) — 크기가 바뀐 프레임에만 새로 만든다. 돌려주는 것은 내부 해상도.
+    fn fit_screen(&mut self) -> (u32, u32) {
+        // 정수 배율은 물리 픽셀로 센다: 폰(DPR 3)의 논리 844×390에서는 논리로 세면 1배라 화면 반이 검정이었다(0006).
+        let dpi = screen_dpi_scale().max(0.01);
+        let fit = fit_internal(screen_width() * dpi, screen_height() * dpi);
+        if fit != self.rt_size {
+            if (fit.0, fit.1) != (self.rt_size.0, self.rt_size.1) {
+                self.rt = make_rt(fit.0, fit.1);
+            }
+            self.rt_size = fit;
+        }
+        (fit.0, fit.1)
     }
 
     /// 렌더 타깃을 화면 가운데에 정수 배율로.
@@ -410,14 +452,10 @@ impl Renderer {
         set_default_camera();
         clear_background(BLACK);
         let (sw, sh) = (screen_width(), screen_height());
-        // 정수 배율은 물리 픽셀로 센다: 폰(DPR 3)의 논리 844×390에서는 논리로 세면 1배(480×270)라 화면 반이 검정이었다(0006).
         let dpi = screen_dpi_scale().max(0.01);
-        let scale = ((sw * dpi) / INTERNAL_W as f32)
-            .min((sh * dpi) / INTERNAL_H as f32)
-            .floor()
-            .max(1.0)
-            / dpi;
-        let (dw, dh) = (INTERNAL_W as f32 * scale, INTERNAL_H as f32 * scale);
+        let (iw, ih, s) = self.rt_size;
+        let scale = s as f32 / dpi;
+        let (dw, dh) = (iw as f32 * scale, ih as f32 * scale);
         let (ox, oy) = (((sw - dw) * 0.5).floor(), ((sh - dh) * 0.5).floor());
         draw_texture_ex(
             &self.rt.texture,
@@ -435,7 +473,8 @@ impl Renderer {
             oy,
             w: dw,
             h: dh,
-            ui: scale * INTERNAL_H as f32 / UI_REF_H,
+            // 그린 화면 높이에 비례(0046): 화면에 맞춘 내부 해상도는 높이가 360이 아닐 수 있다(브라우저 창 323줄 등).
+            ui: dh / UI_REF_H,
         }
     }
 
@@ -1277,7 +1316,7 @@ impl Batch {
         if k.outline_px > 0.0 && tint.a > 0.99 {
             // 화면 1px = 그 거리에서 이만큼(m): 2·거리·tan(시야/2) / 내부 세로.
             let dist = k.eye.distance(at).max(0.5);
-            let w = k.outline_px * 2.0 * dist * (k.fovy * 0.5).tan() / INTERNAL_H as f32;
+            let w = k.outline_px * 2.0 * dist * (k.fovy * 0.5).tan() / k.rows;
             Self::hull(
                 &mut self.outline,
                 &mut self.outline_idx,
@@ -1807,6 +1846,26 @@ fn ring(c: Vec3, r: f32, yaw: f32, arc: f32, col: Color) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0046: 흔한 화면은 테두리 없이 정수 배율로 꽉 차고, 브라우저 창(주소창만큼 낮은 높이)도 테두리가 배율보다 작다.
+    #[test]
+    fn the_internal_resolution_fills_the_screen_with_integer_pixels() {
+        assert_eq!(fit_internal(1920.0, 1080.0), (640, 360, 3));
+        assert_eq!(fit_internal(1280.0, 720.0), (640, 360, 2));
+        assert_eq!(fit_internal(3840.0, 2160.0), (640, 360, 6));
+        // 0041의 고정 640×360은 이 창에서 ×2(1280×720)라 둘레가 넓게 검었다.
+        let (w, h, s) = fit_internal(1920.0, 969.0);
+        assert_eq!(s, 3);
+        assert!(1920 - w * s < s && 969 - h * s < s, "{w}×{h}×{s}");
+        // 20:9 폰·16:10 핸드헬드는 옆·위아래를 더 본다(세로 시야각 그대로).
+        assert_eq!(fit_internal(2400.0, 1080.0), (800, 360, 3));
+        assert_eq!(fit_internal(1920.0, 1200.0), (640, 400, 3));
+        // 세로 폰은 4:3까지만 — 나머지는 테두리.
+        let (w, h, _) = fit_internal(1170.0, 2532.0);
+        assert!(h * 4 <= w * 3 + 4, "{w}×{h}");
+        // 아주 작은 창도 0이 되지 않는다.
+        assert!(fit_internal(10.0, 10.0).0 >= 1);
+    }
 
     #[test]
     fn a_spilled_enemy_leans_the_way_it_slides_then_rocks_back_and_settles() {

@@ -28,6 +28,8 @@ pub const EN: Strings = Strings {
     verb_turn_left: "Turn left",
     verb_turn_right: "Turn right",
     menu_controls: "Controls",
+    menu_fullscreen_on: "Fullscreen: On",
+    menu_fullscreen_off: "Fullscreen: Off",
     controls_title: "Controls",
     controls_keyboard: "Keyboard",
     controls_pad: "Gamepad",

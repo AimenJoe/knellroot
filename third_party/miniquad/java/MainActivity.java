@@ -12,6 +12,7 @@ import android.view.View;
 import android.view.Surface;
 import android.view.Window;
 import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.WindowManager.LayoutParams;
 import android.view.SurfaceView;
 import android.view.SurfaceHolder;
@@ -349,6 +350,13 @@ public class MainActivity extends Activity {
                         }
                         if (Build.VERSION.SDK_INT >= 30) {
                             getWindow().setDecorFitsSystemWindows(false);
+                            // Knellroot 패치(0046): 30+에서는 위 줄만으로 바가 숨지 않는다 — 내용이 바 밑까지 그려질 뿐.
+                            // 몰입 모드(developer.android.com/develop/ui/views/layout/immersive): 바를 숨기고, 가장자리를 쓸면 잠깐 보였다 다시 숨는다.
+                            WindowInsetsController c = getWindow().getInsetsController();
+                            if (c != null) {
+                                c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                                c.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                            }
                         } else {
                             int uiOptions = View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
                             decorView.setSystemUiVisibility(uiOptions);
@@ -357,6 +365,10 @@ public class MainActivity extends Activity {
                     else {
                         if (Build.VERSION.SDK_INT >= 30) {
                             getWindow().setDecorFitsSystemWindows(true);
+                            WindowInsetsController c = getWindow().getInsetsController();
+                            if (c != null) {
+                                c.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                            }
                         } else {
                           decorView.setSystemUiVisibility(0);
                         }
