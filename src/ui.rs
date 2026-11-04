@@ -17,7 +17,11 @@ pub const GLYPH: f32 = 13.0;
 /// 글자 하나를 굽는 크기의 상한(물리 px, 0049). 더 크게 보일 글은 이 크기로 구워 `font_scale`로 늘린다.
 /// 화면 크기로 다 구우면 한글 수백 자 × 크기 셋이 아틀라스를 4096²~8192²로 키웠고, 폰 GPU(낮은 정밀도 uv)에서
 /// 글자가 검게 나왔다(KB `reference/macroquad/text-rendering-and-browser-frame-rate.md`). 1080p 본문(52px)은 그대로 굽는다.
-const BAKE_MAX: f32 = 56.0;
+///
+/// 0054: 상한만으로는 모자랐다 — 전체 화면을 켜고 끌 때마다(창 높이 → UI 배율이 바뀜) 새 크기로 또 구워 아틀라스가 다시 4096²로 컸고
+/// 폰에서 글자가 다시 검어졌다. 그래서 **화면 크기와 상관없이 한 크기로만** 굽는다(물리 `BAKE`px 가까이, 글자 크기 정수) —
+/// 창이 바뀌어도 새로 굽는 글자가 없다. 보이는 크기는 모두 `font_scale`.
+const BAKE: f32 = 48.0;
 
 pub struct Ui {
     font: Font,
@@ -103,10 +107,8 @@ impl Ui {
     /// 프레임마다(그리기 전). 배율·언어·DPI가 바뀌었을 때만 굽는다.
     pub fn begin(&mut self, scale: f32) {
         self.scale = scale.max(1.0);
-        let key = (
-            (self.scale * 10.0) as u32 * 10 + i18n::lang() as u32,
-            screen_dpi_scale(),
-        );
+        // 굽는 크기는 DPI만 따른다(0054) — 배율이 바뀌어도 다시 굽지 않는다.
+        let key = (i18n::lang() as u32, screen_dpi_scale());
         if key == self.warmed {
             return;
         }
@@ -140,7 +142,7 @@ impl Ui {
         GLYPH * k * self.scale
     }
 
-    /// 굽는 크기(논리 px, 정수)와 늘리는 배(0049): 물리 px로 `BAKE_MAX`를 넘게 굽지 않는다.
+    /// 굽는 크기(논리 px, 정수)와 늘리는 배(0049·0054): 굽는 크기는 DPI로만 정하고 보이는 크기는 배로.
     fn sizing(&self, k: f32) -> (u16, f32) {
         bake_size(self.px(k), screen_dpi_scale())
     }
@@ -366,10 +368,9 @@ pub fn hit(rects: &[Rect], p: Vec2) -> Option<usize> {
     rects.iter().position(|r| r.contains(p))
 }
 
-/// 논리 크기 `want`를 그릴 때 굽는 크기(논리 px, 정수)와 늘리는 배 — 굽는 물리 크기 ≤ `BAKE_MAX`.
+/// 논리 크기 `want`를 그릴 때 굽는 크기(논리 px, 정수)와 늘리는 배 — 굽는 크기는 DPI로만 정한다(물리 ≈ `BAKE`px, 0054).
 pub fn bake_size(want: f32, dpi: f32) -> (u16, f32) {
-    let cap = (BAKE_MAX / dpi.max(0.01)).floor().max(1.0);
-    let fs = want.round().clamp(1.0, cap);
+    let fs = (BAKE / dpi.max(0.01)).round().max(1.0);
     (fs as u16, want / fs)
 }
 
@@ -386,22 +387,21 @@ mod tests {
 
     /// 0049: 굽는 물리 크기는 상한을 넘지 않고, 늘린 결과는 원하는 크기와 같다. 1080p 본문(52px)은 늘리지 않는다.
     #[test]
-    fn glyphs_bake_small_and_scale_up() {
-        for (want, dpi) in [
-            (52.0, 1.0),
-            (104.0, 1.0),
-            (17.33, 3.0),
-            (34.7, 2.625),
-            (156.0, 1.0),
-        ] {
-            let (fs, k) = bake_size(want, dpi);
-            assert!(
-                (fs as f32 * dpi).ceil() <= BAKE_MAX + 1.0,
-                "{want} @ {dpi}: bakes {fs}"
-            );
-            assert!((fs as f32 * k - want).abs() < 1e-3);
+    fn glyphs_bake_at_one_size_whatever_the_screen() {
+        // 0054: 같은 DPI면 어떤 크기를 그리든 굽는 크기는 하나(창을 바꿔도 새로 굽지 않는다), 물리 ≈ 48px.
+        for dpi in [1.0, 1.5, 2.0, 2.625, 3.0] {
+            let sizes: Vec<u16> = [13.0, 17.3, 20.0, 34.7, 52.0, 104.0, 156.0]
+                .iter()
+                .map(|w| bake_size(*w, dpi).0)
+                .collect();
+            assert!(sizes.windows(2).all(|x| x[0] == x[1]), "{dpi}: {sizes:?}");
+            let phys = (sizes[0] as f32 * dpi).ceil();
+            assert!((phys - BAKE).abs() <= dpi + 1.0, "{dpi}: bakes {phys}px");
+            for w in [17.3, 52.0] {
+                let (fs, k) = bake_size(w, dpi);
+                assert!((fs as f32 * k - w).abs() < 1e-3);
+            }
         }
-        assert_eq!(bake_size(52.0, 1.0), (52, 1.0));
     }
 
     #[test]
