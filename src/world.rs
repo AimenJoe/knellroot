@@ -5,7 +5,8 @@ use macroquad::prelude::*;
 use crate::ground::Ground;
 use crate::input::Actions;
 use crate::tuning::{
-    Tuning, FLASK_CHARGES, GROUND_STEP, HIT_DY, P, PLAYER_HP, PLAYER_RADIUS, TICK_DT,
+    Tuning, BOLT_HEIGHT, BOLT_RADIUS, CAST_CHARGES, FLASK_CHARGES, GROUND_STEP, HIT_DY, P,
+    PLAYER_HP, PLAYER_RADIUS, TICK_DT,
 };
 
 /// 축 정렬 상자(기둥·벽). 충돌·카메라 당기기에 쓴다.
@@ -134,6 +135,23 @@ pub enum Event {
     Smash {
         at: Vec3,
     },
+    /// 마법 탄이 나갔다(0048).
+    Cast {
+        at: Vec3,
+    },
+    /// 칸이 모자라 마법을 못 쐈다(0048) — HUD 칸이 깜빡인다.
+    CastDenied,
+}
+
+/// 마법 탄(0048): 곧게 날아 처음 닿는 깨어 있는 적 하나를 치고 사라진다. 벽·기둥·높은 땅에 닿아도 사라진다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bolt {
+    pub pos: Vec3,
+    pub prev: Vec3,
+    /// 단위 방향(수평).
+    pub dir: Vec3,
+    /// 남은 거리(m).
+    pub left: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -186,6 +204,13 @@ pub enum PState {
         dir: Vec3,
         full: bool,
     },
+    /// 마법(0048): `cast.startup s`에 탄이 나가고(`fired`) `cast.time s`에 끝. 쏘는 동안 느리게 걷고 몸은 쏘는 쪽에 고정,
+    /// 나간 뒤에는 회피로 끊는다.
+    Cast {
+        t: f32,
+        dir: Vec3,
+        fired: bool,
+    },
     /// 땅 돌리기: 발을 딛고 비튼다(`turn.plant s` 동안 못 움직인다 — 공짜가 아니다). 그동안 몸이 `from` → `to`(요)로 돈다(0023).
     Turn {
         t: f32,
@@ -226,6 +251,9 @@ pub struct Player {
     pub air: f32,
     pub vy: f32,
     pub swings: u32,
+    /// 마법 칸(0048, 0..=`CAST_CHARGES`): 근접으로 맞히면 차고 쏘면 1 준다. 못 쏴서 깜빡이는 남은 초(HUD).
+    pub mana: f32,
+    pub cast_denied: f32,
 }
 
 impl Player {
@@ -279,6 +307,13 @@ pub struct World {
     charged_now: bool,
     /// 이번 틱에 상호작용을 눌렀고 손이 비어 있다(0032) — 스테이지가 읽는다(월드는 쉼터를 모른다).
     pub interact: bool,
+    /// 지금 점프 버튼이 상호작용이 되는 자리인가(0048) — 스테이지가 매 틱 적는다(쉼터 곁이고 깨어 있는 적이 가까이 없다).
+    pub interact_here: bool,
+    /// 날고 있는 마법 탄(0048).
+    pub bolts: Vec<Bolt>,
+    /// 이번 틱에 쏜 쪽 — `tick_bolts`가 탄을 세운다.
+    cast_fire: Option<Vec3>,
+    cast_denied_now: bool,
     /// 이번 틱에 등잔을 삼켰다·못 마셨다(사건은 `apply_strike`가 낸다).
     gulp_now: bool,
     flask_denied_now: bool,
@@ -313,6 +348,8 @@ impl World {
                 air: 0.0,
                 vy: 0.0,
                 swings: 0,
+                mana: CAST_CHARGES,
+                cast_denied: 0.0,
             },
             enemies: Vec::new(),
             lock: None,
@@ -333,6 +370,10 @@ impl World {
             plunge_now: false,
             charged_now: false,
             interact: false,
+            interact_here: false,
+            bolts: Vec::new(),
+            cast_fire: None,
+            cast_denied_now: false,
             gulp_now: false,
             flask_denied_now: false,
         }
@@ -394,6 +435,8 @@ impl World {
             en.hp -= t[P::PlungeDamage] as i32 + if crit { t[P::ParryCrit] as i32 } else { 0 };
             en.exposed = 0.0;
             en.hit_by = swing;
+            // 근접으로 맞히면 마법 칸이 찬다(0048).
+            self.player.mana = (self.player.mana + t[P::CastPerHit]).min(CAST_CHARGES);
             en.hurt = 0.15;
             en.knock = d.normalize_or_zero() * t[P::Knockback] * if en.boss { 0.25 } else { 1.2 };
             if en.hp <= 0 {
@@ -443,6 +486,7 @@ impl World {
                 dodge: self.held.dodge | a.dodge,
                 parry: self.held.parry | a.parry,
                 jump: self.held.jump | a.jump,
+                cast: self.held.cast | a.cast,
                 lock: self.held.lock | a.lock,
                 turn_right: self.held.turn_right | a.turn_right,
                 turn_left: self.held.turn_left | a.turn_left,
@@ -461,13 +505,21 @@ impl World {
             dodge: a.dodge | held.dodge,
             parry: a.parry | held.parry,
             jump: a.jump | held.jump,
+            cast: a.cast | held.cast,
             lock: a.lock | held.lock,
             turn_right: a.turn_right | held.turn_right,
             turn_left: a.turn_left | held.turn_left,
             ..*a
         };
+        let idle = matches!(self.player.state, PState::Idle);
+        // 점프 버튼이 상호작용도 한다(0048): 쉼터 곁이고 안전하면 쉬기, 아니면 점프.
+        let via_jump = merged.jump && self.interact_here && idle;
+        self.interact = (merged.interact || via_jump) && idle;
+        let merged = Actions {
+            jump: merged.jump && !via_jump,
+            ..merged
+        };
         let a = &merged;
-        self.interact = a.interact && matches!(self.player.state, PState::Idle);
         self.time += dt;
         self.player.prev = self.player.pos;
         for e in &mut self.enemies {
@@ -476,6 +528,7 @@ impl World {
         self.tick_lock(a, &mut ev);
         self.tick_player(a, t, dt);
         self.apply_strike(t, &mut ev);
+        self.tick_bolts(t, dt, &mut ev);
         self.apply_turn(t, &mut ev);
         self.tick_enemies(t, dt, &mut ev);
         self.collide(t, &mut ev);
@@ -592,8 +645,22 @@ impl World {
         } else {
             None
         };
+        // 마법 쏘는 쪽(0048): 조준 스틱 > 락온 대상 > `cast.range m` 안의 가장 가까운 적 > 바라보는 쪽.
+        let cast_dir = if a.cast {
+            let lock_dir = target.map(|tg| {
+                let d = vec3(tg.x - self.player.pos.x, 0.0, tg.z - self.player.pos.z);
+                d.normalize_or_zero()
+            });
+            aim.or(lock_dir.filter(|d| d.length_squared() > 0.5))
+                .or_else(|| nearest_in_reach(&self.enemies, self.player.pos, t[P::CastRange], None))
+                .unwrap_or_else(|| self.player.facing_dir())
+        } else {
+            self.player.facing_dir()
+        };
+        let mut fire: Option<Vec3> = None;
         let pl = &mut self.player;
         pl.hurt = (pl.hurt - dt).max(0.0);
+        pl.cast_denied = (pl.cast_denied - dt).max(0.0);
         pl.dodge_cd = (pl.dodge_cd - dt).max(0.0);
         pl.since_parry = (pl.since_parry + dt).min(f32::MAX);
         // 스태미나: 마지막으로 쓴 뒤 `stamina.regen delay s`가 지나야 찬다.
@@ -698,6 +765,19 @@ impl World {
                         swing: pl.swings,
                         dir,
                     };
+                } else if a.cast {
+                    if pl.mana >= 1.0 {
+                        pl.mana -= 1.0;
+                        pl.facing = cast_dir.x.atan2(cast_dir.z);
+                        pl.state = PState::Cast {
+                            t: 0.0,
+                            dir: cast_dir,
+                            fired: false,
+                        };
+                    } else {
+                        pl.cast_denied = 0.6;
+                        self.cast_denied_now = true;
+                    }
                 } else if a.flask && pl.flask_lock <= 0.0 {
                     // 등잔(0031): 가득이거나 0이면 몸짓 없이 깜빡만(빈 병 몸짓으로 묶지 않는다 — 급할 때 연타해도).
                     if pl.flask > 0 && pl.hp < PLAYER_HP {
@@ -772,6 +852,16 @@ impl World {
                         pl.facing = d.x.atan2(d.z);
                     }
                     pl.state = PState::Parry { t: 0.0 };
+                } else if a.cast && pl.mana >= 1.0 && e >= t[P::AttackStartup] + t[P::AttackActive]
+                {
+                    // 마법(0048)도 회피처럼 평타 후딜을 끊는다 — 베고 바로 쏘기.
+                    pl.mana -= 1.0;
+                    pl.facing = cast_dir.x.atan2(cast_dir.z);
+                    pl.state = PState::Cast {
+                        t: 0.0,
+                        dir: cast_dir,
+                        fired: false,
+                    };
                 } else if a.attack_held
                     && pl.attack_hold >= t[P::HeavyHoldStart]
                     && e >= t[P::AttackStartup] + t[P::AttackActive]
@@ -855,6 +945,29 @@ impl World {
                         swing,
                         dir: ldir,
                         full,
+                    };
+                }
+            }
+            PState::Cast { t: e, dir, fired } => {
+                if fired && a.dodge && pl.dodge_cd <= 0.0 && spend(pl, t[P::StaminaDodge]) {
+                    let ddir = if world_move.length_squared() > 1e-4 {
+                        world_move.normalize()
+                    } else {
+                        -pl.facing_dir()
+                    };
+                    pl.state = PState::Dodge { t: 0.0, dir: ddir };
+                    pl.dodge_cd = t[P::DodgeTime] + 0.15;
+                } else {
+                    let e2 = e + dt;
+                    let mut fired = fired;
+                    if !fired && e2 >= t[P::CastStartup] {
+                        fired = true;
+                        fire = Some(dir);
+                    }
+                    pl.state = if e2 >= t[P::CastTime] {
+                        PState::Idle
+                    } else {
+                        PState::Cast { t: e2, dir, fired }
                     };
                 }
             }
@@ -961,11 +1074,12 @@ impl World {
                     diff
                 };
             }
-            PState::Idle | PState::Drink { .. } | PState::Charging { .. } => {
-                // 마시는 동안·강공격을 모으는 동안(0047)은 느리게 걷는다.
+            PState::Idle | PState::Drink { .. } | PState::Charging { .. } | PState::Cast { .. } => {
+                // 마시는 동안·강공격을 모으는 동안(0047)·마법을 쏘는 동안(0048)은 느리게 걷는다.
                 let slow = match pl.state {
                     PState::Drink { .. } => t[P::FlaskWalk],
                     PState::Charging { .. } => t[P::HeavyChargeWalk],
+                    PState::Cast { .. } => t[P::CastWalk],
                     _ => 1.0,
                 };
                 let want = world_move * t[P::MoveSpeed] * slow;
@@ -990,6 +1104,7 @@ impl World {
                 | PState::Hurt { .. }
                 | PState::Parry { .. }
                 | PState::Jump { plunge: true, .. }
+                | PState::Cast { .. }
                 | PState::Land { .. },
             ) => None,
             (Basis::Lock(tg), _) => {
@@ -1024,6 +1139,98 @@ impl World {
             }
         }
         self.plunge_now |= landed_plunge;
+        if fire.is_some() {
+            self.cast_fire = fire;
+        }
+    }
+
+    /// 마법 탄(0048): 이번 틱에 쏜 것을 세우고, 날리고, 벽·땅·적에 닿으면 지운다. 적에게는 `cast.damage`(드러난 적은 치명타),
+    /// 밀림은 평타의 반, 칸은 채우지 않는다(근접만 채운다).
+    fn tick_bolts(&mut self, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
+        if std::mem::take(&mut self.cast_denied_now) {
+            ev.push(Event::CastDenied);
+        }
+        if let Some(dir) = self.cast_fire.take() {
+            let pl = &self.player;
+            let pos = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT) + dir * (PLAYER_RADIUS + 0.2);
+            self.bolts.push(Bolt {
+                pos,
+                prev: pos,
+                dir,
+                left: t[P::CastRange],
+            });
+            ev.push(Event::Cast { at: pos });
+        }
+        let step = t[P::CastSpeed] * dt;
+        let mut keep = Vec::with_capacity(self.bolts.len());
+        for mut b in std::mem::take(&mut self.bolts) {
+            b.prev = b.pos;
+            let mut len = step.min(b.left);
+            // 벽·기둥: 이번 걸음 안에서 먼저 닿는 상자까지만.
+            let mut gone = false;
+            for o in &self.obstacles {
+                if let Some(d) = o.ray(b.pos, b.dir) {
+                    if d <= len {
+                        len = d;
+                        gone = true;
+                    }
+                }
+            }
+            let to = b.pos + b.dir * len;
+            // 적: 걸음 선분에서 가장 가까운 깨어 있는 적(높이가 몸 안).
+            let mut best: Option<(usize, f32)> = None;
+            for (i, en) in self.enemies.iter().enumerate() {
+                if !en.active() || b.pos.y < en.pos.y - 0.2 || b.pos.y > en.pos.y + en.height + 0.2
+                {
+                    continue;
+                }
+                let c = vec3(en.pos.x, b.pos.y, en.pos.z);
+                let k = (c - b.pos).dot(b.dir).clamp(0.0, len);
+                let near = b.pos + b.dir * k;
+                if near.distance(c) <= en.radius + BOLT_RADIUS && best.is_none_or(|(_, bk)| k < bk)
+                {
+                    best = Some((i, k));
+                }
+            }
+            if let Some((i, k)) = best {
+                let en = &mut self.enemies[i];
+                let crit = en.exposed > 0.0;
+                en.hp -=
+                    t[P::CastDamage].round() as i32 + if crit { t[P::ParryCrit] as i32 } else { 0 };
+                en.exposed = 0.0;
+                en.hurt = 0.15;
+                en.knock = b.dir * t[P::Knockback] * if en.boss { 0.1 } else { 0.5 };
+                let at = b.pos + b.dir * k;
+                ev.push(if crit {
+                    Event::Crit { at }
+                } else {
+                    Event::Hit { at }
+                });
+                if en.hp <= 0 {
+                    en.state = EState::Dead;
+                    self.kills += 1;
+                    ev.push(Event::EnemyDown { at: en.pos });
+                }
+                continue;
+            }
+            b.pos = to;
+            b.left -= len;
+            // 땅: 탄보다 높은 땅(턱·벽 칸)에 들어가면 사라진다.
+            if let Some(g) = &self.ground {
+                let solid = g.cell_of(b.pos).is_none_or(|(x, z)| {
+                    g.height_in(x, z, b.pos).is_none_or(|h| h > b.pos.y - 0.1)
+                });
+                gone |= solid;
+            }
+            if !gone
+                && b.left > 1e-3
+                && b.pos.x.abs() <= self.arena + 2.0
+                && b.pos.z.abs() <= self.arena + 2.0
+            {
+                keep.push(b);
+            }
+        }
+        self.bolts = keep;
     }
 
     /// 플레이어 스윙의 활성 구간에 범위·부채꼴 안의 적을 한 스윙에 한 번씩 때린다.
@@ -1106,6 +1313,8 @@ impl World {
                 continue;
             }
             en.hit_by = swing;
+            // 근접으로 맞히면 마법 칸이 찬다(0048, HLD·Death's Door — 원거리만 쏘며 버티지 않게).
+            self.player.mana = (self.player.mana + t[P::CastPerHit]).min(CAST_CHARGES);
             // 패링으로 드러난 적은 한 대가 치명타(0025).
             let crit = en.exposed > 0.0;
             en.hp -= s.damage + if crit { t[P::ParryCrit] as i32 } else { 0 };
@@ -2489,6 +2698,117 @@ mod tests {
             let charged = ev.iter().filter(|e| matches!(e, Event::Charged)).count();
             assert_eq!(charged, want_full as usize);
         }
+    }
+
+    fn press(t: &Tuning, w: &mut World, a: Actions, ticks: usize) -> Vec<Event> {
+        let mut ev = w.step(&a, t);
+        for _ in 1..ticks {
+            ev.extend(w.step(&Actions::default(), t));
+        }
+        ev
+    }
+
+    /// 0048: RB 마법 — 한 칸을 쓰고 탄이 날아가 앞의 적을 친다(자동 조준).
+    #[test]
+    fn a_cast_spends_a_charge_and_the_bolt_hits() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.spawn_mob(vec3(1.0, 0.0, -6.0));
+        w.enemies[0].hp = 9;
+        idle(&mut w);
+        let ev = press(
+            &t,
+            &mut w,
+            Actions {
+                cast: true,
+                ..Default::default()
+            },
+            90,
+        );
+        assert!(ev.iter().any(|e| matches!(e, Event::Cast { .. })));
+        assert_eq!(w.player.mana, CAST_CHARGES - 1.0);
+        assert_eq!(w.enemies[0].hp, 9 - t[P::CastDamage].round() as i32);
+        assert!(w.bolts.is_empty());
+        assert!(matches!(w.player.state, PState::Idle));
+    }
+
+    /// 0048: 칸이 모자라면 쏘지 않고(몸짓 없음) 칸이 깜빡인다. 근접으로 맞히면 `cast.per hit`씩 찬다.
+    #[test]
+    fn melee_hits_refill_the_magic_and_an_empty_cast_is_denied() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.player.mana = 0.5;
+        let ev = press(
+            &t,
+            &mut w,
+            Actions {
+                cast: true,
+                ..Default::default()
+            },
+            2,
+        );
+        assert!(ev.iter().any(|e| matches!(e, Event::CastDenied)));
+        assert!(matches!(w.player.state, PState::Idle));
+        assert!(w.player.cast_denied > 0.0);
+        w.spawn_mob(vec3(0.0, 0.0, -1.2));
+        w.enemies[0].hp = 50;
+        w.enemies[0].max_hp = 50;
+        idle(&mut w);
+        press(
+            &t,
+            &mut w,
+            Actions {
+                attack: true,
+                ..Default::default()
+            },
+            40,
+        );
+        assert_eq!(w.enemies[0].hp, 49);
+        assert!((w.player.mana - (0.5 + t[P::CastPerHit])).abs() < 1e-4);
+    }
+
+    /// 0048: 탄은 기둥에 막힌다.
+    #[test]
+    fn a_bolt_stops_at_a_pillar() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.obstacles.push(Aabb {
+            min: vec3(-1.0, 0.0, -3.5),
+            max: vec3(1.0, 3.0, -2.5),
+        });
+        w.spawn_mob(vec3(0.0, 0.0, -6.0));
+        w.enemies[0].hp = 9;
+        idle(&mut w);
+        press(
+            &t,
+            &mut w,
+            Actions {
+                cast: true,
+                ..Default::default()
+            },
+            90,
+        );
+        assert_eq!(w.enemies[0].hp, 9);
+        assert!(w.bolts.is_empty());
+    }
+
+    /// 0048: 점프 버튼이 상호작용도 한다 — 스테이지가 "여기서 쉴 수 있다"고 적은 자리면 쉬기(뛰지 않음), 아니면 점프.
+    #[test]
+    fn the_jump_button_interacts_where_the_stage_allows() {
+        let t = Tuning::default();
+        let jump = Actions {
+            jump: true,
+            ..Default::default()
+        };
+        let mut w = World::new("test", 30.0);
+        w.interact_here = true;
+        w.step(&jump, &t);
+        assert!(w.interact);
+        assert!(!matches!(w.player.state, PState::Jump { .. }));
+        let mut w = World::new("test", 30.0);
+        w.step(&jump, &t);
+        assert!(!w.interact);
+        assert!(matches!(w.player.state, PState::Jump { .. }));
     }
 
     /// 0047: 모으는 동안 느리게 걷는다(제자리가 아니다) — 걷기의 `heavy.charge walk x`배쯤.

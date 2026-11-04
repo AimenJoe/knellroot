@@ -354,6 +354,7 @@ impl App {
                 Event::Smash { .. } => SHAKE_SMASH,
                 Event::Charged => SHAKE_CHARGED,
                 Event::Gulp { .. } | Event::FlaskDenied => 0.0,
+                Event::Cast { .. } | Event::CastDenied => 0.0,
                 Event::Swing | Event::LockOn | Event::LockOff => 0.0,
             };
             cam.trauma = (cam.trauma + kick).min(1.0);
@@ -607,9 +608,9 @@ impl App {
                         input::Bind::Lock => s.verb_lock,
                         input::Bind::TurnLeft => s.verb_turn_left,
                         input::Bind::TurnRight => s.verb_turn_right,
-                        input::Bind::Jump => s.verb_jump,
+                        input::Bind::Jump => s.verb_jump_interact,
                         input::Bind::Flask => s.verb_flask,
-                        input::Bind::Interact => s.verb_interact,
+                        input::Bind::Cast => s.verb_cast,
                     };
                     let name = self.ui.fit(name, x_key - x_name - px * 2.5, 1.0);
                     self.ui

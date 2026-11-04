@@ -582,6 +582,8 @@ impl StageRun {
             .enemies
             .iter()
             .any(|e| e.active() && vec2(e.pos.x - pp.x, e.pos.z - pp.z).length() <= REST_SAFE);
+        // 점프 버튼이 다음 틱부터 쉬기가 되는 자리(0048): 곁이고 안전할 때만 — 적이 가까우면 그대로 점프.
+        w.interact_here = self.near_rest.is_some() && self.rest_safe;
         if let (Some(i), true) = (self.near_rest, w.interact) {
             if self.rest_safe {
                 self.rest(w, i);
@@ -676,6 +678,7 @@ impl StageRun {
         let pl = &mut w.player;
         pl.hp = PLAYER_HP;
         pl.flask = FLASK_CHARGES;
+        pl.mana = crate::tuning::CAST_CHARGES;
         pl.stamina = crate::tuning::SPECS[crate::tuning::idx(crate::tuning::P::StaminaMax)].def;
         let back = match self.phase {
             Phase::Entrance | Phase::Waves(_) => Phase::Entrance,

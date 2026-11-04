@@ -92,7 +92,10 @@ pub struct Strings {
     /// 등잔 마시기(0031).
     pub verb_flask: &'static str,
     /// 상호작용(0032).
-    pub verb_interact: &'static str,
+    /// 마법(0048, RB).
+    pub verb_cast: &'static str,
+    /// 조작 설정의 점프 줄 — 점프 버튼이 상호작용도 한다(0048).
+    pub verb_jump_interact: &'static str,
     /// 쉼터(0032): 곁에서 뜨는 동사, 적이 가까울 때, 쉰 뒤, 다시 일어선 뒤.
     pub rest_verb: &'static str,
     pub rest_blocked: &'static str,
@@ -157,7 +160,8 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.verb_parry,
         s.verb_jump,
         s.verb_flask,
-        s.verb_interact,
+        s.verb_cast,
+        s.verb_jump_interact,
         s.rest_verb,
         s.rest_blocked,
         s.rested,

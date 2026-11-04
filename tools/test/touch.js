@@ -34,6 +34,7 @@ function layout(lab) {
     parry: [atk[0] - Math.cos(pa) * pd, atk[1] - Math.sin(pa) * pd],
     jump: [atk[0] - (atkR + dodgeR + r * 0.5) - (dodgeR + jumpR + r * 0.4), H - jumpR * 1.25],
     flask: [atk[0] - (atkR + dodgeR + r * 0.5) - (dodgeR + jumpR + r * 0.4), (H - jumpR * 1.25 + turnY) * 0.5],
+    cast: [atk[0] - (atkR + dodgeR + r * 0.5) - (dodgeR + jumpR + r * 0.4) - (jumpR * 2 + r * 0.4), H - jumpR * 1.25],
     lock,
     turn_right: [cwX, turnY],
     turn_left: [cwX - (turnR * 2 + r * 0.4), turnY],

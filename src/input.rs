@@ -87,8 +87,10 @@ pub struct Actions {
     pub jump: bool,
     /// 등잔 마시기(0031).
     pub flask: bool,
-    /// 상호작용(0032): 쉼터에서 쉬기.
+    /// 상호작용(0032): 쉼터에서 쉬기 — 패드·키보드는 점프 버튼이 같이 한다(0048, 월드가 가른다). 터치만 따로 버튼.
     pub interact: bool,
+    /// 마법(0048): 조준 스틱 쪽(안 쥐면 락온·자동 조준·바라보는 쪽)으로 탄 하나.
+    pub cast: bool,
     pub lock: bool,
     /// 땅 돌리기 오른쪽·왼쪽 버튼(0012·0028): 캐릭터 기준 90° — 몸이 제 오른쪽(왼쪽)으로 돌아서고 화면도 같은 쪽으로 90°
     /// (`world::plan_turn`).
@@ -142,7 +144,8 @@ pub fn prompt(act: Act) -> String {
     };
     match (device(), act) {
         (Device::Touch, _) => String::new(),
-        (_, Act::Interact) => name(Bind::Interact),
+        // 상호작용은 점프 버튼이 같이 한다(0048).
+        (_, Act::Interact) => name(Bind::Jump),
         (Device::Pad, Act::Choose) => "D-PAD".into(),
         (Device::Pad, Act::Confirm) => "A".into(),
         (_, Act::Choose) => "W/S".into(),
@@ -164,8 +167,8 @@ pub enum Bind {
     Jump = 6,
     /// 등잔 마시기(0031, RB·R).
     Flask = 7,
-    /// 상호작용(0032 — 쉼터에서 쉬기, Y·G).
-    Interact = 8,
+    /// 마법(0048, RB·U) — 0032의 상호작용 칸을 물려받았다(상호작용은 점프 버튼이 같이 한다). 저장 칸 뜻이 바뀌어 prefs MAGIC을 올렸다.
+    Cast = 8,
 }
 
 /// 다시 붙일 수 있는 동작 수.
@@ -180,7 +183,7 @@ pub const BINDS: [Bind; NB] = [
     Bind::TurnRight,
     Bind::Jump,
     Bind::Flask,
-    Bind::Interact,
+    Bind::Cast,
 ];
 
 /// 배치표에 올릴 수 있는 키(저장 번호 = 이 표의 자리 — 뒤에만 붙인다). 이동(WASD·화살표)·Enter·Esc·Backspace·P(멈춤)·
@@ -246,7 +249,7 @@ impl Bindings {
                 key_index(KeyCode::E),
                 key_index(KeyCode::F),
                 key_index(KeyCode::R),
-                key_index(KeyCode::G),
+                key_index(KeyCode::U),
             ],
             pads: [
                 Pad::West,
@@ -256,8 +259,8 @@ impl Bindings {
                 Pad::L2,
                 Pad::R2,
                 Pad::South,
-                Pad::R1,
                 Pad::North,
+                Pad::R1,
             ],
         }
     }
@@ -525,6 +528,8 @@ pub struct Input {
     latch: Actions,
     /// 메뉴 스틱이 기울어 있는 쪽(히스테리시스).
     menu_stick: Vec2,
+    /// 마법을 누른 뒤 땅 돌리기 누름을 버리는 남은 초(0048).
+    cast_guard: f32,
     touch: Touch,
     #[cfg(not(target_os = "android"))]
     pads: Gamepads,
@@ -539,6 +544,7 @@ impl Input {
         Input {
             latch: Actions::default(),
             menu_stick: Vec2::ZERO,
+            cast_guard: 0.0,
             touch: Touch::default(),
             #[cfg(not(target_os = "android"))]
             pads: Gamepads::new(),
@@ -588,7 +594,7 @@ impl Input {
         a.jump = kp(Bind::Jump);
         // 랩이 열려 있으면 R은 랩 되돌리기다 — 등잔으로 같이 읽지 않는다.
         a.flask = !lab_open && kp(Bind::Flask);
-        a.interact = !lab_open && kp(Bind::Interact);
+        a.cast = !lab_open && kp(Bind::Cast);
         a.lock = kp(Bind::Lock);
         a.turn_left = kp(Bind::TurnLeft);
         a.turn_right = kp(Bind::TurnRight);
@@ -670,7 +676,7 @@ impl Input {
                 // 랩이 열려 있으면 어깨·트리거는 랩 단계(LB 10배·LT 담기·RT 바꾸기)다 — 패링·돌리기로 같이 읽지 않는다.
                 a.parry |= !lab_open && pj(Bind::Parry);
                 a.flask |= !lab_open && pj(Bind::Flask);
-                a.interact |= !lab_open && pj(Bind::Interact);
+                a.cast |= !lab_open && pj(Bind::Cast);
                 a.turn_left |= !lab_open && pj(Bind::TurnLeft);
                 a.turn_right |= !lab_open && pj(Bind::TurnRight);
                 if a.pressed_pad.is_none() {
@@ -726,7 +732,7 @@ impl Input {
             a.lock |= pj(Bind::Lock);
             a.parry |= !lab_open && pj(Bind::Parry);
             a.flask |= !lab_open && pj(Bind::Flask);
-            a.interact |= !lab_open && pj(Bind::Interact);
+            a.cast |= !lab_open && pj(Bind::Cast);
             a.turn_left |= !lab_open && pj(Bind::TurnLeft);
             a.turn_right |= !lab_open && pj(Bind::TurnRight);
             if a.pressed_pad.is_none() {
@@ -761,6 +767,15 @@ impl Input {
         a.jump |= t.jump;
         a.flask |= t.flask;
         a.interact |= t.interact;
+        a.cast |= t.cast;
+        // 마법 직후의 돌리기 누름은 버린다(0048: RB 바로 밑이 RT).
+        self.cast_guard = (self.cast_guard - get_frame_time()).max(0.0);
+        if a.cast {
+            self.cast_guard = tuning::CAST_TURN_GUARD;
+        } else if self.cast_guard > 0.0 {
+            a.turn_left = false;
+            a.turn_right = false;
+        }
         a.lock |= t.lock;
         a.turn_right |= t.turn_right;
         a.turn_left |= t.turn_left;
@@ -801,6 +816,7 @@ impl Input {
             jump: self.latch.jump | a.jump,
             flask: self.latch.flask | a.flask,
             interact: self.latch.interact | a.interact,
+            cast: self.latch.cast | a.cast,
             lock: self.latch.lock | a.lock,
             turn_right: self.latch.turn_right | a.turn_right,
             turn_left: self.latch.turn_left | a.turn_left,

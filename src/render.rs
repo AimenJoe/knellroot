@@ -77,6 +77,10 @@ pub struct View<'a> {
     pub stage: Option<&'a StageRun>,
 }
 
+/// 마법 탄(0048): 방랑자 두건의 라벤더 — 붉은색(위험)과 겹치지 않게.
+const BOLT_CORE: Color = Color::new(0.92, 0.88, 1.0, 1.0);
+const BOLT_GLOW: Color = Color::new(0.7, 0.6, 1.0, 0.45);
+
 /// 예고 색(붉은 계열 하나 — 붉은색은 위험에만, 그림 팔레트에는 없다).
 const TELE: Color = Color::new(0.85, 0.15, 0.1, 1.0);
 
@@ -659,6 +663,8 @@ impl Renderer {
                     e,
                 ),
                 PState::Parry { t: e } => (&["parry", "attack"], e),
+                // 마법(0048): 손을 앞으로 내미는 자세(전용 동작이 생기기 전엔 패링 자세).
+                PState::Cast { t: e, .. } => (&["cast", "parry", "attack"], e),
                 // 공중(0027): 방랑자의 jump·plunge·land 동작(없는 모델이면 회피·공격 자세로).
                 PState::Jump { plunge: false, .. } => (&["jump", "dodge", "idle"], 0.1),
                 // 내려찍기: 떨어지는 동안 칼을 들고 있다가 땅에 가까우면 꽂는 자세로.
@@ -732,6 +738,7 @@ impl Renderer {
                 PState::Drink { .. } => Color::new(0.75, 0.9, 0.6, 1.0),
                 PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
                 PState::Parry { .. } => Color::new(0.7, 0.85, 1.0, 1.0),
+                PState::Cast { .. } => Color::new(0.75, 0.7, 1.0, 1.0),
                 PState::Jump { .. } | PState::Land { .. } => Color::new(0.9, 0.8, 0.6, 1.0),
                 PState::Idle => Color::new(0.85, 0.75, 0.55, 1.0),
             };
@@ -747,8 +754,15 @@ impl Renderer {
         }
     }
 
-    /// 배우 위에 얹는 것: 스윙 부채꼴·쟁반 테·휘청 별·락온 표시.
+    /// 배우 위에 얹는 것: 스윙 부채꼴·쟁반 테·휘청 별·락온 표시·마법 탄.
     fn overlays(&self, w: &World, pp: Vec3, alpha: f32, t: &Tuning) {
+        // 마법 탄(0048): 라벤더 빛 덩이 + 짧은 꼬리(보간 자리).
+        for b in &w.bolts {
+            let p = b.prev.lerp(b.pos, alpha);
+            draw_cube(p, Vec3::splat(0.32), None, BOLT_CORE);
+            draw_cube(p, Vec3::splat(0.5), None, BOLT_GLOW);
+            draw_line_3d(p - b.dir * 0.9, p, BOLT_GLOW);
+        }
         if let PState::Attack { t: e, .. } = w.player.state {
             let (s0, s1) = (
                 t[crate::tuning::P::AttackStartup],

@@ -6,7 +6,7 @@ use macroquad::prelude::*;
 use crate::i18n::{self, tr};
 use crate::render::Frame;
 use crate::stage::{StageRun, CARD_TIME, INTRO_TIME};
-use crate::tuning::{idx, FLASK_CHARGES, P, PLAYER_HP, SPECS};
+use crate::tuning::{idx, CAST_CHARGES, FLASK_CHARGES, P, PLAYER_HP, SPECS};
 use crate::ui::{Ui, AMBER, DIM, INK};
 use crate::world::World;
 
@@ -17,6 +17,8 @@ const DENIED: Color = Color::new(1.0, 0.3, 0.25, 1.0);
 /// 등잔(0031): 놋쇠 몸 + 불.
 const FLASK_ON: Color = Color::new(0.62, 0.5, 0.32, 1.0);
 const FLASK_FLAME: Color = Color::new(1.0, 0.8, 0.35, 1.0);
+/// 마법 칸(0048): 라벤더(탄과 같은 색).
+const MANA: Color = Color::new(0.75, 0.66, 1.0, 1.0);
 const BOSS: Color = Color::new(0.72, 0.62, 0.42, 1.0);
 const BOSS_ROUSED: Color = Color::new(0.95, 0.55, 0.2, 1.0);
 const BAR_BG: Color = Color::new(0.05, 0.05, 0.06, 0.85);
@@ -73,6 +75,22 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
                 c + vec2(-1.3 * s, 1.5 * s),
                 FLASK_FLAME,
             );
+        }
+    }
+    // 마법 칸(0048): 등잔 오른쪽에 둥근 칸 셋 — 찬 만큼 채워지고, 못 쏘면 깜빡인다. 근접으로 맞히면 찬다.
+    let mblink = pl.cast_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
+    let mx0 = x0 + FLASK_CHARGES.max(pl.flask) as f32 * 9.0 * s + 6.0 * s;
+    for i in 0..CAST_CHARGES as i32 {
+        let c = vec2(mx0 + 3.0 * s + i as f32 * 8.0 * s, y0 + 20.5 * s);
+        let fill = (pl.mana - i as f32).clamp(0.0, 1.0);
+        draw_circle(c.x, c.y, 3.0 * s, if mblink { DENIED } else { HP_OFF });
+        if fill > 0.0 && !mblink {
+            let col = if fill >= 1.0 {
+                MANA
+            } else {
+                Color::new(MANA.r, MANA.g, MANA.b, 0.55)
+            };
+            draw_circle(c.x, c.y, 3.0 * s * fill.sqrt(), col);
         }
     }
 

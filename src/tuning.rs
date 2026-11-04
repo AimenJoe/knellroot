@@ -63,6 +63,13 @@ pub const SHAKE_CHARGED: f32 = 0.12;
 pub const PLAYER_HP: i32 = 5;
 /// 등잔 횟수(0031). 화로에서 다시 찬다 — 화로 전까지는 스테이지를 새로 시작할 때. 성장으로 늘린다(items.md 2).
 pub const FLASK_CHARGES: i32 = 3;
+/// 마법 칸(0048): 근접으로 맞히면 `cast.per hit`씩 차고, 쉼터에서 가득. 한 번 쏘면 한 칸.
+pub const CAST_CHARGES: f32 = 3.0;
+/// 마법 탄 반지름(m)과 쏘는 높이(몸 위 m).
+pub const BOLT_RADIUS: f32 = 0.35;
+pub const BOLT_HEIGHT: f32 = 1.0;
+/// 마법을 쏜 직후 땅 돌리기 누름을 버리는 시간(초) — RB 바로 밑이 RT(돌리기)라 잘못 눌러 세상이 도는 것을 막는다(0048).
+pub const CAST_TURN_GUARD: f32 = 0.25;
 pub const STICK_DEADZONE: f32 = 0.2;
 
 /// 랩에서 바꾸는 값. 새 값 = 여기 한 줄 + `SPECS` 한 줄.
@@ -179,6 +186,13 @@ pub enum P {
     RenderLockFade,
     RenderActorShadow,
     HeavyChargeWalk,
+    CastDamage,
+    CastSpeed,
+    CastRange,
+    CastPerHit,
+    CastStartup,
+    CastTime,
+    CastWalk,
     RenderModel,
 }
 
@@ -209,7 +223,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 112] = [
+pub const SPECS: [Spec; 119] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1078,6 +1092,46 @@ pub const SPECS: [Spec; 112] = [
         1.0,
         0.05
     ),
+    // 마법(0048, RB): 피해·탄 빠르기·닿는 거리, 근접 한 대가 채우는 칸, 쏘기까지·끝까지의 시간, 쏘는 동안 걷기 배율.
+    spec!(CastDamage, "cast.damage", "CAST_DAMAGE", 1.0, 1.0, 5.0, 1.0),
+    spec!(
+        CastSpeed,
+        "cast.speed m/s",
+        "CAST_SPEED",
+        16.0,
+        4.0,
+        40.0,
+        1.0
+    ),
+    spec!(
+        CastRange,
+        "cast.range m",
+        "CAST_RANGE",
+        12.0,
+        3.0,
+        30.0,
+        0.5
+    ),
+    spec!(
+        CastPerHit,
+        "cast.per hit",
+        "CAST_PER_HIT",
+        0.25,
+        0.0,
+        1.0,
+        0.05
+    ),
+    spec!(
+        CastStartup,
+        "cast.startup s",
+        "CAST_STARTUP",
+        0.12,
+        0.0,
+        0.6,
+        0.02
+    ),
+    spec!(CastTime, "cast.time s", "CAST_TIME", 0.4, 0.1, 1.5, 0.05),
+    spec!(CastWalk, "cast.walk x", "CAST_WALK", 0.5, 0.0, 1.0, 0.05),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(
         RenderModel,

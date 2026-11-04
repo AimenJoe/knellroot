@@ -2,12 +2,14 @@
 //! (web/index.html `knell_device` 플러그인의 `knell_pref_get`·`knell_pref_set`, 키 "knell.pref.<칸>"),
 //! 데스크톱·Android는 기록 폴더의 `prefs.txt` 한 줄(칸 값을 빈칸으로).
 //!
-//! 칸: 0 표식(MAGIC), 1 언어(0 = 저장 전), 2..18 키 배치(`Bindings::encode` — 14..16은 0027에 붙인 점프, 16..18은 0031 등잔, 18..20은 0032 상호작용). 0은 "없음". 표식이 다르면 통째로 기본값.
+//! 칸: 0 표식(MAGIC), 1 언어(0 = 저장 전), 2..18 키 배치(`Bindings::encode` — 14..16은 0027에 붙인 점프, 16..18은 0031 등잔, 18..20은 0032 상호작용 → 0048 마법). 0은 "없음". 표식이 다르면 통째로 기본값.
 //! 칸을 뒤에 붙이면 옛 저장은 0 = 기본값으로 읽으니 MAGIC은 그대로, 칸 뜻이 바뀌면 올린다.
 use crate::i18n::Lang;
 use crate::input::Bindings;
 
-const MAGIC: u32 = 0x4B4E_0001;
+/// 0x…0002(0048): 18..20 칸이 상호작용 → 마법으로 바뀌고 등잔·마법의 기본 버튼이 바뀌었다. 옛 표식(0x…0001)은 언어만 살리고 배치는 기본값.
+const MAGIC: u32 = 0x4B4E_0002;
+const MAGIC_V1: u32 = 0x4B4E_0001;
 const CELLS: usize = 20;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -40,6 +42,12 @@ fn encode(p: &Prefs) -> [u32; CELLS] {
 }
 
 fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
+    if v[0] == MAGIC_V1 {
+        return Some(Prefs {
+            lang: lang_from(v[1]),
+            bindings: Bindings::default_layout(),
+        });
+    }
     if v[0] != MAGIC {
         return None;
     }
@@ -180,7 +188,7 @@ mod tests {
         let got = decode(&old).unwrap().bindings;
         assert_eq!(got.keys[..6], b.keys[..6]);
         assert_eq!(got.pads[Bind::Jump as usize], Pad::South);
-        // 0031 전 저장(등잔 칸이 0): 등잔만 기본값(R·RB).
+        // 0031 전 저장(등잔 칸이 0): 등잔만 기본값(R·Y, 0048).
         let plain = Prefs {
             lang: Some(Lang::En),
             bindings: Bindings::default_layout(),
@@ -197,6 +205,14 @@ mod tests {
         assert_eq!(got.pads[..7], b.pads[..7]);
         assert_eq!(b.pads[Bind::Parry as usize], Pad::R1);
         assert_ne!(got.pads[Bind::Flask as usize], Pad::R1);
+        // 0048 전 저장(표식 0x…0001 — 18..20 칸이 상호작용이었다): 언어는 살리고 배치는 기본값(등잔 Y·마법 RB).
+        let mut v1 = encode(&p);
+        v1[0] = MAGIC_V1;
+        let got = decode(&v1).unwrap();
+        assert_eq!(got.lang, Some(Lang::En));
+        assert_eq!(got.bindings, Bindings::default_layout());
+        assert_eq!(got.bindings.pad(Bind::Flask), Pad::North);
+        assert_eq!(got.bindings.pad(Bind::Cast), Pad::R1);
     }
 
     #[cfg(not(target_arch = "wasm32"))]

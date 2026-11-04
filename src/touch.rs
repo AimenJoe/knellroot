@@ -22,6 +22,8 @@ pub enum Kind {
     Flask,
     /// 상호작용(0032): 쉼터 곁일 때만, 락온 위 — 모닥불 그림.
     Interact,
+    /// 마법(0048): 별 그림, 점프 왼쪽(아래 줄 끝). 터치는 조준 스틱이 없어 자동 조준.
+    Cast,
     Lock,
     /// 땅 돌리기(0023): 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면.
     TurnLeft,
@@ -68,6 +70,7 @@ pub struct Read {
     pub flask: bool,
     /// 상호작용(0032).
     pub interact: bool,
+    pub cast: bool,
     pub lock: bool,
     pub turn_right: bool,
     pub turn_left: bool,
@@ -167,6 +170,12 @@ pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool, interact: bool) -> Vec<
             center: jump,
             radius: jump_r,
             kind: Kind::Jump,
+        },
+        // 마법(0048): 점프 왼쪽, 같은 높이 — 아래 줄이 공격·회피·점프·마법.
+        Button {
+            center: vec2(jump.x - (jump_r * 2.0 + r * 0.4), jump.y),
+            radius: jump_r,
+            kind: Kind::Cast,
         },
         // 등잔(0031): 점프 위, 돌리기 줄과의 가운데 — 엄지가 공격에서 멀리 가야 닿아 실수로 덜 누른다.
         Button {
@@ -410,6 +419,7 @@ fn press(a: &mut Read, k: Kind) {
         Kind::Jump => a.jump = true,
         Kind::Flask => a.flask = true,
         Kind::Interact => a.interact = true,
+        Kind::Cast => a.cast = true,
         Kind::Lock => a.lock = true,
         Kind::TurnLeft => a.turn_left = true,
         Kind::TurnRight => a.turn_right = true,
@@ -541,6 +551,23 @@ fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
             draw_line(c.x - s * 0.22, c.y - s * 0.55, c.x, c.y - s * 0.85, th, col);
             draw_line(c.x, c.y - s * 0.85, c.x + s * 0.22, c.y - s * 0.55, th, col);
             draw_line(c.x + s * 0.22, c.y - s * 0.55, c.x, c.y - s * 0.3, th, col);
+        }
+        Kind::Cast => {
+            // 마법: 네 갈래 별(가는 마름모 둘).
+            let pts = [
+                vec2(0.0, -0.9),
+                vec2(0.22, -0.22),
+                vec2(0.9, 0.0),
+                vec2(0.22, 0.22),
+                vec2(0.0, 0.9),
+                vec2(-0.22, 0.22),
+                vec2(-0.9, 0.0),
+                vec2(-0.22, -0.22),
+            ];
+            for i in 0..pts.len() {
+                let (p, q) = (c + pts[i] * s, c + pts[(i + 1) % pts.len()] * s);
+                draw_line(p.x, p.y, q.x, q.y, th, col);
+            }
         }
         Kind::Parry => {
             // 방패: 위가 넓고 아래가 뾰족한 오각형 윤곽.
