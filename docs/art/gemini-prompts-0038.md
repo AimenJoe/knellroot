@@ -72,3 +72,57 @@ underground sanctum at dusk: deep indigo stone, broken pillars, purple roots cre
 Around the lamp, colors come back faintly (moss turns green, a flower turns pink). In the distance, a faded
 ash-grey husk watches. Far below, a bell glows amber. Calm, lonely, tender. Soft dark plum outlines.
 ```
+
+---
+
+## Meshy에 넣을 그림 (Gemini → Meshy Image to 3D)
+
+위의 시트는 **Claude가 보고 스크립트로 옮기는** 용도다. Meshy에 넣을 그림은 조건이 다르다:
+- **한 장에 하나, 정면, A-pose, 민짜 흰 바탕, 고른 빛**(Meshy 문서: 앞을 보는 중립 자세, 한 대상, 1040px 넘게, 바탕을 지움. Multi-view는 최대 4장 — **방향마다 따로 된 그림**, 한 장짜리 시트가 아니다).
+- **외곽선·평면색 대신 입체 렌더처럼**: 그림자 단계로 부피가 읽혀야 깊이를 잡는다. 굵은 외곽선은 면에 그려진 선이나 이상한 홈으로 나온다(추정 — 직접 확인 전).
+- **칼·등잔은 빼고**: 가는 것은 몸에 붙거나 녹는다. 칼은 우리 쪽 따로 된 부위.
+- 순서: ① 정면 한 장(가장 중요, 한 장만으로도 됨) → ② 같은 대화에서 뒤·옆 → Meshy Multi-view에 ①②. 시트로 받았으면 Claude에게 주면 방향별로 잘라 준다.
+- 참고 그림 `meshy-0038/wanderer_front.png`는 **색·비율만** — 모양은 상자라 그대로 따라 하면 안 된다고 적는다.
+
+### 공통 덩어리(Meshy용, 매번 맨 앞)
+```
+[PURPOSE] A single reference image for an image-to-3D tool. Render ONE character only, full body, centered,
+facing the camera straight on (front view), neutral A-pose: standing straight, legs slightly apart,
+arms held down and out about 30 degrees away from the body so they don't touch it. Nothing in the hands.
+Style: a cute stylized 3D figure like a soft vinyl toy or clay figurine, smooth rounded chunky shapes,
+matte pastel materials, soft even studio lighting from the front, gentle shading so the volume is readable,
+no outlines, no hard cast shadow, no floor, no pedestal, no text, no logo. Pure plain white background.
+Square image, the character fills about 80% of the height.
+
+[WORLD RULES] "Color is life." Living things are soft pastel and warm (lavender, mint, peach, cream, a little gold).
+Things eaten by the purple roots have lost their color: faded ash-lavender grey with dark purple roots growing
+out of cracks. Cute proportions: about 2 heads tall, big head, big eyes set LOW on the face and close together,
+NO mouth, small blush under the eyes, short chubby arms and legs, round mitten paws.
+```
+
+### 방랑자 — 새 대화
+```
+[CHARACTER] The wanderer: a small young raccoon cub. Round caramel-brown head, cream muzzle, small dark nose,
+a soft brown mask ring around each big glossy dark eye (one white highlight each), no mouth, pink inside the ears.
+A small lavender hood on the back of the head with the round ears poking out of it. Short mint-green bell-shaped
+cloak with a cream hem that does NOT cover the arms, a peach knitted scarf, a tiny gold bell at the chest,
+small warm-brown boots. A fluffy striped tail (caramel and brown rings, cream tip) sticking out to one side
+so it is visible from the front. Use the attached image ONLY for colors and proportions; its blocky shapes are
+a placeholder — make everything round and soft.
+```
+
+### 잔재 — 새 대화
+```
+[CHARACTER] A "root husk": a small round woodland creature the size of a raccoon cub, eaten by the roots.
+ALL color drained: faded ash-lavender grey, matte like dry clay with a few shallow cracks. One eye is an empty
+dark hollow, the other a tiny amber ember dot. Two thin dark-purple roots sprout from the top of the head and
+one purple root vein runs across the body. Droopy ears, slumped shoulders but still in the A-pose. No mouth,
+no base under the feet. Sad and a little eerie, never gory.
+```
+
+### 뒤·옆 (같은 대화에서 정면을 받은 뒤)
+```
+Now render exactly the same character, same scale, same lighting, same white background, same A-pose,
+seen from directly behind (back view). Then a separate image seen from its left side (side view, facing left).
+Do not change any colors, proportions or details.
+```
