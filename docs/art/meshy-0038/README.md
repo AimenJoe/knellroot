@@ -44,5 +44,7 @@ Smooth rounded stylized body, sharp angular roots, muted pastel grey with purple
 ## 받은 뒤
 Meshy 결과(고폴리·한 덩어리 메시)는 그대로 게임에 넣지 않는다. 지금 파이프라인은 뼈마다 붙은 강체 부위(`common.py`)라, 결과를 **형태 참고**로 스크립트 비율·곡률을 다시 잡는다. 결과 GLB를 `assets/vendor/`(커밋 안 함)에 두고 알려 주면 비교 그림을 찍는다.
 
-## 라이선스 — 쓰기 전에 확인
-무료 플랜 결과물의 권리는 출처마다 다르게 적혀 있다(도움말: CC BY 4.0 / 블로그: 개인·학습용). 공개 레포·배포 게임에 넣기 전에 Meshy 약관(Terms)에서 지금 플랜의 조건을 확인한다.
+## 라이선스·다운로드 — 요금 페이지 확인(2026-11-04, https://www.meshy.ai/pricing)
+- 무료: 다운로드 **월 10개, Meshy 6 Lite로 만든 모델만**(Meshy 6 정식은 못 받는다). 결과는 CC BY 4.0 — 상업 사용 가능, 출처 표기("Meshy로 만듦, CC BY 4.0"). 공개 레포에 넣어도 된다.
+- Pro 월 $20(첫 달 $10): 다운로드 무제한, "Private & Customer owned".
+- 형식: GLB로 받는다(텍스처 포함, 리깅 없이).
