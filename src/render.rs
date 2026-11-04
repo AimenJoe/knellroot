@@ -822,6 +822,22 @@ impl Renderer {
                 );
             }
         }
+        // 수류탄 겨누기(0055): 떨굴 자리에 폭발 반지름 고리.
+        if let PState::Throw {
+            to,
+            thrown: false,
+            t: e,
+        } = w.player.state
+        {
+            if let Some(g) = w.player.weapon.def().grenade {
+                if e >= t[crate::tuning::P::ThrowStartup] * 0.99 {
+                    let y = w.ground.as_ref().map_or(0.0, |gr| gr.height(to));
+                    let c = vec3(to.x, y + 0.08, to.z);
+                    ring(c, g.radius, 0.0, 360.0, Color::new(1.0, 0.82, 0.45, 0.8));
+                    draw_line_3d(pp + Vec3::Y * 1.0, c, Color::new(1.0, 0.82, 0.45, 0.35));
+                }
+            }
+        }
         // 금 간 땅(망치 여진): 터질 때가 가까울수록 진해지는 고리.
         for c in &w.cracks {
             let k = (1.0 - c.left / 1.5).clamp(0.0, 1.0);

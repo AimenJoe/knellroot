@@ -23,6 +23,9 @@ const MANA: Color = Color::new(0.75, 0.66, 1.0, 1.0);
 const AMMO: Color = Color::new(0.95, 0.82, 0.55, 1.0);
 const BOSS: Color = Color::new(0.72, 0.62, 0.42, 1.0);
 const BOSS_ROUSED: Color = Color::new(0.95, 0.55, 0.2, 1.0);
+/// 자세 막대(0055): 밝은 크림, 깨지면 금빛.
+const POISE: Color = Color::new(0.92, 0.88, 0.78, 0.9);
+const POISE_BROKEN: Color = Color::new(1.0, 0.82, 0.3, 1.0);
 const BAR_BG: Color = Color::new(0.05, 0.05, 0.06, 0.85);
 
 /// 0..1 → 들어올 때·나갈 때 `edge`초씩 부드럽게(카드·이야기).
@@ -219,6 +222,18 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
         ui.text(name, bx, by - ui.px(1.0) - 2.0 * s, 1.0, INK);
         draw_rectangle(bx - s, by - s, bw + 2.0 * s, bh + 2.0 * s, BAR_BG);
         draw_rectangle(bx, by, bw * k, bh, if roused { BOSS_ROUSED } else { BOSS });
+        // 자세 막대(0051·0055): 체력 띠 아래 가는 줄 — 차오를수록 밝게, 깨지면(폭딜 창) 금빛으로 깜빡인다.
+        if let Some(b) = boss {
+            let py = by + bh + 2.0 * s;
+            let ph = 1.5 * s;
+            draw_rectangle(bx - s, py - s * 0.5, bw + 2.0 * s, ph + s, BAR_BG);
+            if b.broken > 0.0 {
+                let on = (w.time * 10.0) as i32 % 2 == 0;
+                draw_rectangle(bx, py, bw, ph, if on { POISE_BROKEN } else { POISE });
+            } else {
+                draw_rectangle(bx, py, bw * b.poise_frac, ph, POISE);
+            }
+        }
     }
 }
 

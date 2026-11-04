@@ -549,7 +549,7 @@ impl World {
                 continue;
             }
             let crit = en.exposed > 0.0;
-            en.hp -= t[P::PlungeDamage] as i32 + if crit { t[P::ParryCrit] as i32 } else { 0 };
+            en.hp -= hurt_by(en, t[P::PlungeDamage] as i32, crit, t);
             en.exposed = 0.0;
             en.hit_by = swing;
             // 근접으로 맞히면 마법 칸이 찬다(0048).
@@ -1224,6 +1224,19 @@ impl World {
                     };
                     pl.state = PState::Dodge { t: 0.0, dir: ddir };
                     pl.dodge_cd = t[P::DodgeTime] + 0.15;
+                } else if !done && e + dt >= t[P::ThrowStartup] && a.attack_held {
+                    // 꾹 쥐면 겨누기(0055): 손을 든 채 멈추고, 떨굴 자리 = 조준 스틱·이동 쪽(없으면 바라보는 쪽) 가장 멀리.
+                    // 떼면 그 자리로. 톡(손을 떠나기 전에 뗌)은 자동 조준 자리(0051).
+                    let dir = aim
+                        .or((world_move.length_squared() > 1e-4).then(|| world_move.normalize()))
+                        .unwrap_or_else(|| pl.facing_dir());
+                    pl.facing = dir.x.atan2(dir.z);
+                    let far = wpn.grenade.map_or(8.0, |g| g.far);
+                    pl.state = PState::Throw {
+                        t: t[P::ThrowStartup] - 1e-4,
+                        to: pl.pos + dir * far,
+                        thrown: false,
+                    };
                 } else {
                     let e2 = e + dt;
                     let mut done = done;
@@ -1452,6 +1465,8 @@ impl World {
         // 자세 막대(0051): 깬 뒤 잠금이 풀리고, 맞지 않은 지 오래면 줄어든다.
         for en in &mut self.enemies {
             en.poise_lock = (en.poise_lock - dt).max(0.0);
+            en.broken = (en.broken - dt).max(0.0);
+            en.poise_frac = (en.poise / poise_max(en, t).max(0.01)).clamp(0.0, 1.0);
             en.poise_idle += dt;
             if en.poise_idle >= t[P::PoiseDelay] {
                 en.poise = (en.poise - t[P::PoiseDecay] * dt).max(0.0);
@@ -1548,7 +1563,7 @@ impl World {
                 }
                 let en = &mut self.enemies[i];
                 let crit = en.exposed > 0.0;
-                en.hp -= b.def.damage + if crit { t[P::ParryCrit] as i32 } else { 0 };
+                en.hp -= hurt_by(en, b.def.damage, crit, t);
                 en.exposed = 0.0;
                 en.hurt = 0.15;
                 en.knock = b.dir * t[P::Knockback] * if en.boss { 0.1 } else { 0.5 };
@@ -1674,7 +1689,7 @@ impl World {
                 continue;
             }
             let crit = en.exposed > 0.0;
-            en.hp -= damage + if crit { t[P::ParryCrit] as i32 } else { 0 };
+            en.hp -= hurt_by(en, damage, crit, t);
             en.exposed = 0.0;
             en.hurt = 0.15;
             en.knock = d.normalize_or_zero() * t[P::Knockback] * if en.boss { 0.2 } else { 1.4 };
@@ -1826,7 +1841,7 @@ impl World {
             self.player.mana = (self.player.mana + t[P::CastPerHit]).min(CAST_CHARGES);
             // 패링으로 드러난 적은 한 대가 치명타(0025).
             let crit = en.exposed > 0.0;
-            en.hp -= s.damage + if crit { t[P::ParryCrit] as i32 } else { 0 };
+            en.hp -= hurt_by(en, s.damage, crit, t);
             if crit {
                 en.exposed = 0.0;
                 ev.push(Event::Crit {
@@ -2238,6 +2253,16 @@ pub fn poise_max(en: &Enemy, t: &Tuning) -> f32 {
     }
 }
 
+/// 플레이어가 주는 피해(0055): 드러난 적은 치명타 덤, 자세가 깨진 동안은 × `poise.break damage x`(올림) — 폭딜 창.
+fn hurt_by(en: &Enemy, base: i32, crit: bool, t: &Tuning) -> i32 {
+    let d = base + if crit { t[P::ParryCrit] as i32 } else { 0 };
+    if en.broken > 0.0 {
+        (d as f32 * t[P::PoiseBreakDamage]).ceil() as i32
+    } else {
+        d
+    }
+}
+
 /// 자세 피해를 준다(0051). 다 차면(또는 `primed` 비율을 넘은 적을 무거운 타가 치면) 깨진다: 휘청 + 드러남(다음 한 대 치명타).
 fn add_poise(en: &mut Enemy, amount: f32, primed: Option<f32>, t: &Tuning, ev: &mut Vec<Event>) {
     if amount <= 0.0 || en.poise_lock > 0.0 || !en.alive() {
@@ -2257,6 +2282,7 @@ fn add_poise(en: &mut Enemy, amount: f32, primed: Option<f32>, t: &Tuning, ev: &
         };
         en.state = EState::Stagger { t: 0.0, dur };
         en.exposed = en.exposed.max(dur);
+        en.broken = dur;
         ev.push(Event::Break {
             at: en.pos + Vec3::Y * en.height * 0.7,
         });
@@ -3572,6 +3598,45 @@ mod tests {
         assert!(w.bombs.is_empty());
     }
 
+    /// 0055: 쇠뇌 X를 꾹 쥐면 손을 든 채 겨누다가 떼면 가장 먼 자리로 던진다(톡은 가까운 자동 조준 자리).
+    #[test]
+    fn holding_the_grenade_aims_far() {
+        let t = Tuning::default();
+        let g = weapons::Id::Crossbow.def().grenade.unwrap();
+        let mut w = World::new("test", 40.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        let hold = Actions {
+            attack_held: true,
+            move_dir: vec2(1.0, 0.0),
+            ..Default::default()
+        };
+        w.view_yaw = Some(0.0);
+        w.step(
+            &Actions {
+                attack: true,
+                ..hold
+            },
+            &t,
+        );
+        for _ in 0..40 {
+            w.step(&hold, &t);
+        }
+        let PState::Throw {
+            to, thrown: false, ..
+        } = w.player.state
+        else {
+            panic!("aiming: {:?}", w.player.state)
+        };
+        let d = vec3(to.x - w.player.pos.x, 0.0, to.z - w.player.pos.z).length();
+        assert!((d - g.far).abs() < 0.2, "aims at the far ring: {d}");
+        let mut ev = Vec::new();
+        for _ in 0..3 {
+            ev.extend(w.step(&Actions::default(), &t));
+        }
+        assert!(ev.iter().any(|e| matches!(e, Event::Throw)));
+        assert_eq!(w.bombs.len(), 1);
+    }
+
     /// 0051: 자세 막대가 다 차면 깨진다 — 휘청 + 드러남(다음 한 대 치명타), 깬 뒤 잠깐은 다시 안 찬다.
     #[test]
     fn filling_the_poise_bar_breaks_the_enemy() {
@@ -3586,6 +3651,14 @@ mod tests {
         assert!(ev.iter().any(|e| matches!(e, Event::Break { .. })));
         assert!(matches!(w.enemies[i].state, EState::Stagger { .. }));
         assert!(w.enemies[i].exposed > 0.0);
+        // 0055: 깨진 동안은 모든 타격이 × `poise.break damage x`(폭딜 창) — 첫 대는 치명타 덤까지.
+        assert!(w.enemies[i].broken > 0.0);
+        let base = 2;
+        let want = (base as f32 * t[P::PoiseBreakDamage]).ceil() as i32;
+        assert_eq!(hurt_by(&w.enemies[i], base, false, &t), want);
+        assert!(hurt_by(&w.enemies[i], base, true, &t) > want);
+        w.enemies[i].broken = 0.0;
+        assert_eq!(hurt_by(&w.enemies[i], base, false, &t), base);
         let before = w.enemies[i].poise;
         add_poise(&mut w.enemies[i], max, None, &t, &mut ev);
         assert_eq!(w.enemies[i].poise, before, "locked after a break");

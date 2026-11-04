@@ -107,6 +107,9 @@ pub struct Enemy {
     pub poise: f32,
     pub poise_lock: f32,
     pub poise_idle: f32,
+    /// 자세가 깨진 동안 남은 초 — 그동안 받는 피해 × `poise.break damage x`(폭딜 창, 0055). 막대가 찬 비율(HUD, 매 틱).
+    pub broken: f32,
+    pub poise_frac: f32,
     /// 높낮이(0043): 곧게 못 가면 월드가 주는 다음 칸 가운데(거리 지도) — 그쪽으로 걷고 공격을 고르지 않는다.
     pub way: Option<Vec3>,
 }
@@ -149,6 +152,8 @@ impl Enemy {
             poise: 0.0,
             poise_lock: 0.0,
             poise_idle: 0.0,
+            broken: 0.0,
+            poise_frac: 0.0,
             way: None,
         }
     }

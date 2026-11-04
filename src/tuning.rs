@@ -212,6 +212,7 @@ pub enum P {
     PoiseDecay,
     ThrowStartup,
     ThrowTime,
+    PoiseBreakDamage,
     RenderModel,
 }
 
@@ -242,7 +243,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 132] = [
+pub const SPECS: [Spec; 133] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1231,6 +1232,16 @@ pub const SPECS: [Spec; 132] = [
         0.02
     ),
     spec!(ThrowTime, "throw.time s", "THROW_TIME", 0.5, 0.1, 1.5, 0.05),
+    // 자세가 깨진 동안 받는 피해 배율(0055 — 폭딜 창, 올림).
+    spec!(
+        PoiseBreakDamage,
+        "poise.break damage x",
+        "POISE_BREAK_DAMAGE",
+        1.5,
+        1.0,
+        4.0,
+        0.25
+    ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(
         RenderModel,
