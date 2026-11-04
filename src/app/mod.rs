@@ -416,6 +416,8 @@ impl App {
             aim: a.aim,
             attack: a.attack,
             attack_held: a.attack_held,
+            cast: a.cast,
+            cast_held: a.cast_held,
             flask: a.flask,
             dodge: a.dodge,
             parry: a.parry,

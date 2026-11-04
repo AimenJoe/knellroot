@@ -213,6 +213,8 @@ pub enum P {
     ThrowStartup,
     ThrowTime,
     PoiseBreakDamage,
+    CastHoldStart,
+    CastCharge,
     RenderModel,
 }
 
@@ -243,7 +245,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 133] = [
+pub const SPECS: [Spec; 135] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1241,6 +1243,25 @@ pub const SPECS: [Spec; 133] = [
         1.0,
         4.0,
         0.25
+    ),
+    // 원거리 강공격(0056): RB를 한 번 누른 채 이만큼 쥐면(쏜 뒤) 모으기로, 다 모이는 시간.
+    spec!(
+        CastHoldStart,
+        "cast.hold start s",
+        "CAST_HOLD_START",
+        0.25,
+        0.05,
+        1.0,
+        0.05
+    ),
+    spec!(
+        CastCharge,
+        "cast.charge s",
+        "CAST_CHARGE",
+        0.7,
+        0.1,
+        2.0,
+        0.05
     ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(

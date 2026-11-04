@@ -700,6 +700,13 @@ impl Renderer {
                     (&["xbow_shoot", "cast", "attack"], e)
                 }
                 PState::Cast { t: e, .. } => (&["cast", "parry", "attack"], e),
+                // 원거리 강공격 모으기(0056): 쇠뇌는 어깨에 대고 시위를 당긴 채, 마법은 두 손을 모아 빛을 키우는 자세를 쥔다.
+                PState::CastCharge { t: e }
+                    if matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) =>
+                {
+                    (&["xbow_charge", "xbow_shoot", "cast"], e)
+                }
+                PState::CastCharge { t: e } => (&["cast_charge", "cast", "parry"], e),
                 // 공중(0027): 방랑자의 jump·plunge·land 동작(없는 모델이면 회피·공격 자세로).
                 PState::Jump { plunge: false, .. } => (&["jump", "dodge", "idle"], 0.1),
                 // 내려찍기: 떨어지는 동안 칼을 들고 있다가 땅에 가까우면 꽂는 자세로.
@@ -781,7 +788,9 @@ impl Renderer {
                 PState::Drink { .. } => Color::new(0.75, 0.9, 0.6, 1.0),
                 PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
                 PState::Parry { .. } => Color::new(0.7, 0.85, 1.0, 1.0),
-                PState::Cast { .. } | PState::Throw { .. } => Color::new(0.75, 0.7, 1.0, 1.0),
+                PState::Cast { .. } | PState::Throw { .. } | PState::CastCharge { .. } => {
+                    Color::new(0.75, 0.7, 1.0, 1.0)
+                }
                 PState::Jump { .. } | PState::Land { .. } => Color::new(0.9, 0.8, 0.6, 1.0),
                 PState::Idle => Color::new(0.85, 0.75, 0.55, 1.0),
             };
@@ -803,7 +812,7 @@ impl Renderer {
         for b in &w.bolts {
             let p = b.prev.lerp(b.pos, alpha);
             let (core, glow) = BOLT_LOOKS[(b.def.look as usize).min(BOLT_LOOKS.len() - 1)];
-            let k = if b.def.look == 3 { 0.6 } else { 1.0 };
+            let k = if b.def.look == 3 { 0.6 } else { 1.0 } * b.def.scale;
             draw_cube(p, Vec3::splat(0.32 * k), None, core);
             draw_cube(p, Vec3::splat(0.5 * k), None, glow);
             draw_line_3d(p - b.dir * 0.9, p, glow);
@@ -821,6 +830,25 @@ impl Renderer {
                     Color::new(1.0, 0.75, 0.3, 1.0),
                 );
             }
+        }
+        // 원거리 강공격 모으기(0056): 손에 빛이 자라고 발밑 고리가 차오른다(근접 강공격과 같은 문법), 다 모이면 깜빡인다.
+        if let PState::CastCharge { t: e } = w.player.state {
+            let full = t[crate::tuning::P::CastCharge].max(1e-3);
+            let k = (e / full).clamp(0.0, 1.0);
+            let (core, glow) = BOLT_LOOKS[(wpn_look(w) as usize).min(BOLT_LOOKS.len() - 1)];
+            let hand = pp
+                + Vec3::Y * (w.player.air + crate::tuning::BOLT_HEIGHT)
+                + w.player.facing_dir() * 0.45;
+            let size = 0.15 + 0.35 * k;
+            draw_cube(hand, Vec3::splat(size), None, core);
+            draw_cube(hand, Vec3::splat(size * 1.6), None, glow);
+            let col = if k >= 1.0 && (w.time * 12.0) as i32 % 2 == 0 {
+                with_a(core, 0.95)
+            } else {
+                with_a(glow, 0.3 + 0.5 * k)
+            };
+            ring(pp + Vec3::Y * 0.05, 0.9, 0.0, 360.0, with_a(glow, 0.25));
+            ring(pp + Vec3::Y * 0.05, 0.2 + 0.7 * k, 0.0, 360.0, col);
         }
         // 수류탄 겨누기(0055): 떨굴 자리에 폭발 반지름 고리.
         if let PState::Throw {
@@ -2033,4 +2061,9 @@ mod move_anim_tests {
         assert_eq!(move_anim(vec3(0.0, 0.0, -1.0), facing, true)[0], "walk");
         assert_eq!(move_anim(vec3(1.0, 0.0, 0.0), facing, false)[0], "walk");
     }
+}
+
+/// 든 무기의 모은 탄 색(0056).
+fn wpn_look(w: &World) -> u8 {
+    w.player.weapon.def().charged.look
 }

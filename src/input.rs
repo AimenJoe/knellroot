@@ -91,6 +91,8 @@ pub struct Actions {
     pub interact: bool,
     /// 마법(0048): 조준 스틱 쪽(안 쥐면 락온·자동 조준·바라보는 쪽)으로 탄 하나.
     pub cast: bool,
+    /// RB를 쥐고 있나(상태, 0056 원거리 강공격 모으기).
+    pub cast_held: bool,
     pub lock: bool,
     /// 땅 돌리기 오른쪽·왼쪽 버튼(0012·0028): 캐릭터 기준 90° — 몸이 제 오른쪽(왼쪽)으로 돌아서고 화면도 같은 쪽으로 90°
     /// (`world::plan_turn`).
@@ -596,6 +598,7 @@ impl Input {
         // 랩이 열려 있으면 R은 랩 되돌리기다 — 등잔으로 같이 읽지 않는다.
         a.flask = !lab_open && kp(Bind::Flask);
         a.cast = !lab_open && kp(Bind::Cast);
+        a.cast_held = !lab_open && is_key_down(bind.key(Bind::Cast));
         a.lock = kp(Bind::Lock);
         a.turn_left = kp(Bind::TurnLeft);
         a.turn_right = kp(Bind::TurnRight);
@@ -678,6 +681,7 @@ impl Input {
                 a.parry |= !lab_open && pj(Bind::Parry);
                 a.flask |= !lab_open && pj(Bind::Flask);
                 a.cast |= !lab_open && pj(Bind::Cast);
+                a.cast_held |= !lab_open && pad.is_currently_pressed(bind.pad(Bind::Cast).button());
                 a.turn_left |= !lab_open && pj(Bind::TurnLeft);
                 a.turn_right |= !lab_open && pj(Bind::TurnRight);
                 if a.pressed_pad.is_none() {
@@ -734,6 +738,7 @@ impl Input {
             a.parry |= !lab_open && pj(Bind::Parry);
             a.flask |= !lab_open && pj(Bind::Flask);
             a.cast |= !lab_open && pj(Bind::Cast);
+            a.cast_held |= !lab_open && is_key_down(bind.pad(Bind::Cast).key());
             a.turn_left |= !lab_open && pj(Bind::TurnLeft);
             a.turn_right |= !lab_open && pj(Bind::TurnRight);
             if a.pressed_pad.is_none() {
@@ -769,6 +774,7 @@ impl Input {
         a.flask |= t.flask;
         a.interact |= t.interact;
         a.cast |= t.cast;
+        a.cast_held |= t.cast_held;
         // 마법 직후의 돌리기 누름은 버린다(0048: RB 바로 밑이 RT).
         self.cast_guard = (self.cast_guard - get_frame_time()).max(0.0);
         if a.cast {
@@ -812,6 +818,7 @@ impl Input {
             aim,
             attack: self.latch.attack | a.attack,
             attack_held: a.attack_held,
+            cast_held: a.cast_held,
             dodge: self.latch.dodge | a.dodge,
             parry: self.latch.parry | a.parry,
             jump: self.latch.jump | a.jump,
@@ -850,20 +857,41 @@ impl Input {
     /// 로직 틱이 소비. 눌림은 지워지고 상태(이동·누르고 있음)는 남는다.
     pub fn take(&mut self) -> Actions {
         let a = self.latch;
-        self.latch = Actions {
-            move_dir: a.move_dir,
-            aim: a.aim,
-            attack_held: a.attack_held,
-            lab_fast: a.lab_fast,
-            ..Actions::default()
-        };
+        self.latch = carry(&a);
         a
+    }
+}
+
+/// 틱이 눌림을 가져간 뒤 다음 틱에 남는 것: 이동·조준·쥐고 있음(상태). 눌림은 한 번만.
+/// 0056: RB를 쥐고 있음을 빠뜨려 한 프레임의 둘째 틱부터 원거리 모으기가 끊겼다.
+fn carry(a: &Actions) -> Actions {
+    Actions {
+        move_dir: a.move_dir,
+        aim: a.aim,
+        attack_held: a.attack_held,
+        cast_held: a.cast_held,
+        lab_fast: a.lab_fast,
+        ..Actions::default()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0056: 쥐고 있는 상태(공격·RB)는 틱이 눌림을 가져가도 남는다 — 한 프레임에 틱이 여럿이어도 모으기가 끊기지 않게.
+    #[test]
+    fn held_buttons_survive_take() {
+        let first = Actions {
+            attack_held: true,
+            cast_held: true,
+            cast: true,
+            ..Default::default()
+        };
+        let second = carry(&first);
+        assert!(!second.cast, "a press is taken once");
+        assert!(second.cast_held && second.attack_held, "held stays");
+    }
 
     /// gamepads 크레이트 축: 위로 밀면 y > 0(문서) → 앞으로 걷는다.
     #[test]

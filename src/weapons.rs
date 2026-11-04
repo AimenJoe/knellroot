@@ -87,6 +87,8 @@ pub struct Bolt {
     pub stagger: f32,
     /// 그림 색(0 = 마법 라벤더, 1 = 무거운 탄 놋쇠, 2 = 꿰뚫는 탄 민트, 3 = 쇠뇌 볼트).
     pub look: u8,
+    /// 크기 배율(그림·맞는 반지름, 모은 탄은 크다 — 0056).
+    pub scale: f32,
 }
 
 /// 원거리 무기의 X(0048: 근접 무기의 마법 자리를 수류탄이 맞바꾼다).
@@ -123,6 +125,8 @@ pub struct Weapon {
     pub heavy: Option<Heavy>,
     pub rb: Rb,
     pub grenade: Option<Grenade>,
+    /// RB를 쥐어 다 모은 탄(0056): 근접 무기 = 모은 마법, 원거리 무기 = 모은 사격. 덜 모았으면 피해·자세 피해 반, 꿰뚫기·휘청 없음.
+    pub charged: Bolt,
     /// 방랑자 모델에서 이 무기 부위 이름(다른 무기 부위는 숨긴다).
     pub node: &'static str,
 }
@@ -157,6 +161,7 @@ const MAGIC: Bolt = Bolt {
     pierce: false,
     stagger: 0.0,
     look: 0,
+    scale: 1.0,
 };
 
 /// 순례자의 검 — 기준. 3연타: 가로 → 되돌려 가로 → 내디디며 찌르기(좁고 길게, 자세 피해 큼).
@@ -216,6 +221,17 @@ pub const WEAPONS: [Weapon; 4] = [
         }),
         rb: Rb::Magic(MAGIC),
         grenade: None,
+        // 모은 마법: 크고 꿰뚫는 빛 덩이.
+        charged: Bolt {
+            speed: 1.2,
+            range: 1.3,
+            damage: 3,
+            poise: 4.0,
+            pierce: true,
+            stagger: 0.6,
+            scale: 1.8,
+            ..MAGIC
+        },
         node: "sword",
     },
     Weapon {
@@ -247,6 +263,17 @@ pub const WEAPONS: [Weapon; 4] = [
             ..MAGIC
         }),
         grenade: None,
+        // 모은 무거운 탄: 느리고 크다, 맞으면 오래 휘청·자세 피해 큼.
+        charged: Bolt {
+            speed: 0.6,
+            range: 0.8,
+            damage: 4,
+            poise: 8.0,
+            stagger: 1.0,
+            look: 1,
+            scale: 2.2,
+            ..MAGIC
+        },
         node: "w_hammer",
     },
     Weapon {
@@ -276,6 +303,17 @@ pub const WEAPONS: [Weapon; 4] = [
             ..MAGIC
         }),
         grenade: None,
+        // 모은 꿰뚫는 탄: 빠르고 멀리, 줄 선 적을 다 꿰뚫는다.
+        charged: Bolt {
+            speed: 1.6,
+            range: 1.7,
+            damage: 3,
+            poise: 3.0,
+            pierce: true,
+            look: 2,
+            scale: 1.5,
+            ..MAGIC
+        },
         node: "w_staff",
     },
     Weapon {
@@ -291,6 +329,7 @@ pub const WEAPONS: [Weapon; 4] = [
                 pierce: false,
                 stagger: 0.0,
                 look: 3,
+                scale: 1.0,
             },
             mag: 4,
             reload: 1.2,
@@ -306,6 +345,17 @@ pub const WEAPONS: [Weapon; 4] = [
             near: 7.0,
             far: 11.0,
         }),
+        // 모은 사격: 시위를 끝까지 당긴 무거운 볼트 — 꿰뚫고 밀어낸다(수류탄도 맞히면 터진다).
+        charged: Bolt {
+            speed: 2.2,
+            range: 1.8,
+            damage: 5,
+            poise: 6.0,
+            pierce: true,
+            stagger: 0.4,
+            look: 3,
+            scale: 1.6,
+        },
         node: "w_crossbow",
     },
 ];

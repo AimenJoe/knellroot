@@ -262,6 +262,11 @@ pub enum PState {
         /// 딱 맞춰 뗐다(지팡이, 0051).
         perfect: bool,
     },
+    /// 원거리 강공격 모으기(0056): RB로 한 발 쏜 뒤에도 쥐고 있으면. `cast.charge s`에 다 모인다, 떼면 모은 탄(덜 모았으면 약하게).
+    /// 느리게 걷고 겨누는 쪽으로 돈다. 회피로 끊는다(칸·볼트는 떼는 순간에만 쓴다).
+    CastCharge {
+        t: f32,
+    },
     /// 수류탄 던지기(0051, 원거리 무기의 X): `throw.startup s`에 손을 떠난다.
     Throw {
         t: f32,
@@ -320,6 +325,8 @@ pub struct Player {
     pub cast_denied: f32,
     /// 든 무기(0051, `weapons.rs` 표).
     pub weapon: weapons::Id,
+    /// RB를 한 번 누른 뒤 쥔 시간(0056, `attack_hold`와 같은 셈).
+    pub cast_hold: f32,
     /// 콤보: 다음 타 번호와 그 타를 이어 갈 남은 초, 미리 받아 둔 누름의 남은 초.
     pub combo_next: u8,
     pub combo_left: f32,
@@ -391,8 +398,8 @@ pub struct World {
     pub blasts: Vec<Blast>,
     /// 이번 틱에 손을 떠난 수류탄(던질 자리).
     throw_to: Option<Vec3>,
-    /// 이번 틱에 쏜 쪽 — `tick_bolts`가 탄을 세운다.
-    cast_fire: Option<Vec3>,
+    /// 이번 틱에 쏜 쪽과 세기(0 = 보통, 1 = 덜 모음, 2 = 다 모음, 0056) — `tick_bolts`가 탄을 세운다.
+    cast_fire: Option<(Vec3, u8)>,
     cast_denied_now: bool,
     /// 이번 틱에 등잔을 삼켰다·못 마셨다(사건은 `apply_strike`가 낸다).
     gulp_now: bool,
@@ -431,6 +438,7 @@ impl World {
                 mana: CAST_CHARGES,
                 cast_denied: 0.0,
                 weapon: weapons::Id::Sword,
+                cast_hold: 0.0,
                 combo_next: 0,
                 combo_left: 0.0,
                 buffer: 0.0,
@@ -764,7 +772,8 @@ impl World {
             None
         };
         // 마법 쏘는 쪽(0048): 조준 스틱 > 락온 대상 > `cast.range m` 안의 가장 가까운 적 > 바라보는 쪽.
-        let cast_dir = if a.cast {
+        let charging_cast = matches!(self.player.state, PState::CastCharge { .. });
+        let cast_dir = if a.cast || charging_cast {
             let lock_dir = target.map(|tg| {
                 let d = vec3(tg.x - self.player.pos.x, 0.0, tg.z - self.player.pos.z);
                 d.normalize_or_zero()
@@ -799,7 +808,7 @@ impl World {
                 p0 + self.player.facing_dir() * g.near
             }
         });
-        let mut fire: Option<Vec3> = None;
+        let mut fire: Option<(Vec3, u8)> = None;
         let mut thrown: Option<Vec3> = None;
         let was_dodging = matches!(self.player.state, PState::Dodge { .. });
         let pl = &mut self.player;
@@ -847,6 +856,16 @@ impl World {
             0.0
         } else {
             pl.attack_hold + dt
+        };
+        pl.cast_hold = if a.cast || !a.cast_held {
+            0.0
+        } else {
+            pl.cast_hold + dt
+        };
+        // 원거리 강공격(0056)을 모을 수 있나 — 떼는 순간 칸(마법)·볼트(쇠뇌) 하나를 쓴다.
+        let can_charge_cast = match wpn.rb {
+            Rb::Magic(_) => pl.mana >= 1.0,
+            Rb::Shot { .. } => pl.ammo >= 1,
         };
         pl.since_spill = (pl.since_spill + dt).min(f32::MAX);
         let world_move = move_to_world(a.move_dir, basis, pl.pos);
@@ -1202,13 +1221,59 @@ impl World {
                     };
                     if !fired && e2 >= t[P::CastStartup] * k {
                         fired = true;
-                        fire = Some(dir);
+                        fire = Some((dir, 0));
                     }
-                    pl.state = if e2 >= t[P::CastTime] * k {
+                    pl.state = if fired
+                        && a.cast_held
+                        && pl.cast_hold >= t[P::CastHoldStart]
+                        && can_charge_cast
+                    {
+                        // 원거리 강공격(0056): 쏜 뒤에도 쥐고 있으면 모으기로(평타 → 강타와 같은 틀, 0030).
+                        PState::CastCharge { t: 0.0 }
+                    } else if e2 >= t[P::CastTime] * k {
                         PState::Idle
                     } else {
                         PState::Cast { t: e2, dir, fired }
                     };
+                }
+            }
+            PState::CastCharge { t: e } => {
+                let full = t[P::CastCharge];
+                if a.dodge && pl.dodge_cd <= 0.0 && spend(pl, t[P::StaminaDodge]) {
+                    let ddir = if world_move.length_squared() > 1e-4 {
+                        world_move.normalize()
+                    } else {
+                        -pl.facing_dir()
+                    };
+                    pl.state = PState::Dodge { t: 0.0, dir: ddir };
+                    pl.dodge_cd = t[P::DodgeTime] + 0.15;
+                } else if a.cast_held && can_charge_cast {
+                    self.charged_now |= e < full && e + dt >= full;
+                    pl.state = PState::CastCharge { t: e + dt };
+                } else if can_charge_cast {
+                    // 떼면 모은 탄 — 칸·볼트 하나, 다 모았으면 무기 표의 `charged`, 덜 모았으면 약하게. 쏘는 동작의 뒷부분으로 이어진다.
+                    match wpn.rb {
+                        Rb::Magic(_) => pl.mana -= 1.0,
+                        Rb::Shot { reload, .. } => {
+                            pl.ammo -= 1;
+                            if pl.ammo == 0 {
+                                pl.reload = reload;
+                            }
+                        }
+                    }
+                    pl.facing = cast_dir.x.atan2(cast_dir.z);
+                    fire = Some((cast_dir, if e >= full { 2 } else { 1 }));
+                    let k = match wpn.rb {
+                        Rb::Shot { time, .. } => time,
+                        Rb::Magic(_) => 1.0,
+                    };
+                    pl.state = PState::Cast {
+                        t: t[P::CastStartup] * k,
+                        dir: cast_dir,
+                        fired: true,
+                    };
+                } else {
+                    pl.state = PState::Idle;
                 }
             }
             PState::Throw {
@@ -1367,6 +1432,7 @@ impl World {
             | PState::Drink { .. }
             | PState::Charging { .. }
             | PState::Cast { .. }
+            | PState::CastCharge { .. }
             | PState::Throw { .. } => {
                 // 마시는 동안·강공격을 모으는 동안(0047)·마법을 쏘는 동안(0048)은 느리게 걷는다.
                 let slow = match pl.state {
@@ -1374,7 +1440,9 @@ impl World {
                     PState::Charging { .. } => {
                         t[P::HeavyChargeWalk] * wpn.heavy.map_or(1.0, |h| h.walk)
                     }
-                    PState::Cast { .. } | PState::Throw { .. } => t[P::CastWalk],
+                    PState::Cast { .. } | PState::Throw { .. } | PState::CastCharge { .. } => {
+                        t[P::CastWalk]
+                    }
                     _ => 1.0,
                 };
                 let want = world_move * t[P::MoveSpeed] * slow;
@@ -1476,12 +1544,23 @@ impl World {
             b.age += dt;
         }
         self.blasts.retain(|b| b.age < BLAST_SHOW);
-        if let Some(dir) = self.cast_fire.take() {
+        if let Some((dir, power)) = self.cast_fire.take() {
             let pl = &self.player;
             let pos = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT) + dir * (PLAYER_RADIUS + 0.2);
-            let def = match wpn.rb {
-                Rb::Magic(b) => b,
-                Rb::Shot { bolt, .. } => bolt,
+            let c = wpn.charged;
+            let def = match (power, wpn.rb) {
+                (0, Rb::Magic(b)) => b,
+                (0, Rb::Shot { bolt, .. }) => bolt,
+                // 덜 모은 탄(0056): 모은 탄의 반 — 꿰뚫기·휘청 없음.
+                (1, _) => weapons::Bolt {
+                    damage: (c.damage + 1) / 2,
+                    poise: c.poise * 0.5,
+                    pierce: false,
+                    stagger: 0.0,
+                    scale: 1.0 + (c.scale - 1.0) * 0.4,
+                    ..c
+                },
+                _ => c,
             };
             self.bolts.push(Bolt {
                 pos,
@@ -1549,7 +1628,7 @@ impl World {
                 }
                 let c = vec3(en.pos.x, b.pos.y, en.pos.z);
                 let k = (c - b.pos).dot(b.dir).clamp(0.0, len);
-                if (b.pos + b.dir * k).distance(c) <= en.radius + BOLT_RADIUS {
+                if (b.pos + b.dir * k).distance(c) <= en.radius + BOLT_RADIUS * b.def.scale {
                     struck.push((i, k));
                 }
             }
@@ -3635,6 +3714,80 @@ mod tests {
         }
         assert!(ev.iter().any(|e| matches!(e, Event::Throw)));
         assert_eq!(w.bombs.len(), 1);
+    }
+
+    /// RB를 누른 채 쥔다: 한 발 쏘고 모으기로 들어가 `ticks`틱 쥔 뒤 뗀다 — 뗀 직후의 탄들.
+    fn charge_cast(w: &mut World, t: &Tuning, ticks: usize) -> Vec<Bolt> {
+        let held = Actions {
+            cast_held: true,
+            ..Default::default()
+        };
+        w.step(&Actions { cast: true, ..held }, t);
+        for _ in 0..200 {
+            if matches!(w.player.state, PState::CastCharge { .. }) {
+                break;
+            }
+            w.step(&held, t);
+        }
+        assert!(
+            matches!(w.player.state, PState::CastCharge { .. }),
+            "{:?}",
+            w.player.state
+        );
+        for _ in 0..ticks {
+            w.step(&held, t);
+        }
+        w.bolts.clear();
+        w.step(&Actions::default(), t);
+        w.bolts.clone()
+    }
+
+    /// 0056: RB를 쥐면 한 발 쏜 뒤 모으기 — 다 모아 떼면 무기 표의 모은 탄(크고 세다), 칸을 하나 더 쓴다.
+    #[test]
+    fn holding_rb_charges_a_stronger_magic_bolt() {
+        let t = Tuning::default();
+        let full = (t[P::CastCharge] / TICK_DT).ceil() as usize + 2;
+        let mut w = World::new("test", 40.0);
+        let got = charge_cast(&mut w, &t, full);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].def, weapons::Id::Sword.def().charged);
+        assert_eq!(
+            w.player.mana,
+            CAST_CHARGES - 2.0,
+            "one for the tap, one for the charge"
+        );
+        // 덜 모으고 떼면 약하게(반 피해, 꿰뚫기 없음).
+        let mut w = World::new("test", 40.0);
+        let got = charge_cast(&mut w, &t, 3);
+        let c = weapons::Id::Sword.def().charged;
+        assert_eq!(got[0].def.damage, (c.damage + 1) / 2);
+        assert!(!got[0].def.pierce);
+    }
+
+    /// 0056: 쇠뇌는 모은 사격 — 볼트 하나를 쓰고 꿰뚫는다. 볼트가 없으면 모으지 않는다.
+    #[test]
+    fn the_crossbow_charges_a_piercing_shot() {
+        let t = Tuning::default();
+        let full = (t[P::CastCharge] / TICK_DT).ceil() as usize + 2;
+        let mut w = World::new("test", 40.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        let mag = w.player.ammo;
+        let got = charge_cast(&mut w, &t, full);
+        assert!(
+            got[0].def.pierce && got[0].def.damage == weapons::Id::Crossbow.def().charged.damage
+        );
+        assert_eq!(w.player.ammo, mag - 2);
+        // 볼트가 다 떨어지면 쥐어도 모으기로 가지 않는다.
+        w.player.ammo = 1;
+        let held = Actions {
+            cast_held: true,
+            ..Default::default()
+        };
+        w.step(&Actions { cast: true, ..held }, &t);
+        for _ in 0..80 {
+            w.step(&held, &t);
+            assert!(!matches!(w.player.state, PState::CastCharge { .. }));
+        }
     }
 
     /// 0051: 자세 막대가 다 차면 깨진다 — 휘청 + 드러남(다음 한 대 치명타), 깬 뒤 잠깐은 다시 안 찬다.
