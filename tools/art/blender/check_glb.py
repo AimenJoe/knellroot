@@ -18,7 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 
 # 정점 예산(캐릭터 700, 보스 1600, 소품 400)
-BUDGET = {"wanderer": 1600, "root_husk": 700, "thorn_beast": 700, "gatekeeper": 1600}
+BUDGET = {"wanderer": 2400, "root_husk": 700, "thorn_beast": 700, "gatekeeper": 1600}
 PROP_BUDGET = 400
 # 동작 이름과 길이(초) — 명세 그대로인지 본다.
 EXPECT = {

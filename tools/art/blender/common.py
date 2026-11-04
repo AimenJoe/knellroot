@@ -101,6 +101,8 @@ SMALL = [
     ("p_gold", "#f2cf7e", "soft"),
     ("p_lamp", "#f0d9a6", "soft"),
     ("p_cream", "#f6ead2", "soft"),
+    ("p_hair", "#e6b48c", "soft"),
+    ("p_sky", "#a9d4f0", "soft"),
 ]
 # 큰 칸: blocks(돌 쌓기)·bark(뿌리 결)·door(널빤지 + 청동 띠)
 BIG = [
@@ -115,7 +117,12 @@ def _cell_rects():
     """재질 이름 → {'side': (x0, y0, size), 'top': (...)}(픽셀, 위에서부터)."""
     rects = {}
     for i, (name, _, _) in enumerate(SMALL):
-        cx, row = i % 16, (i // 16) * 2
+        if i < 32:
+            cx, row = i % 16, (i // 16) * 2
+        else:
+            # 서른셋째부터는 큰 칸 오른쪽 빈 자리(x 64.., y 32..)에 여덟씩.
+            j = i - 32
+            cx, row = 8 + j % 8, 4 + (j // 8) * 2
         rects[name] = {"side": (cx * 8, row * 8, 8), "top": (cx * 8, (row + 1) * 8, 8)}
     for i, (name, _, _) in enumerate(BIG):
         cx, row = i % 2, i // 2
