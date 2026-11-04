@@ -26,6 +26,9 @@ pub const SHAKE_ROUSE: f32 = 0.6;
 pub const SHAKE_PARRY: f32 = 0.5;
 pub const SHAKE_CRIT: f32 = 0.45;
 pub const SHAKE_PLUNGE: f32 = 0.4;
+/// 강타가 맞았을 때(0030) — 평타·내려찍기보다 크게. 다 모였을 때는 작은 "탁".
+pub const SHAKE_SMASH: f32 = 0.5;
+pub const SHAKE_CHARGED: f32 = 0.12;
 
 pub const PLAYER_HP: i32 = 5;
 pub const STICK_DEADZONE: f32 = 0.2;
@@ -113,6 +116,19 @@ pub enum P {
     PlungeDamage,
     PlungeRange,
     PlungeLand,
+    HeavyCharge,
+    HeavyStartup,
+    HeavyActive,
+    HeavyRecovery,
+    HeavyDamage,
+    HeavyFullBonus,
+    HeavyRange,
+    HeavyArc,
+    HeavyLunge,
+    HeavyKnock,
+    HeavyStagger,
+    HeavyBossStagger,
+    HeavyStamina,
     RenderModel,
 }
 
@@ -143,7 +159,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 81] = [
+pub const SPECS: [Spec; 94] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -765,6 +781,121 @@ pub const SPECS: [Spec; 81] = [
         0.0,
         1.5,
         0.05
+    ),
+    // 강공격(0030): 평타 뒤 쥐고 있으면 모으기, 떼면 강타. 다 모으는 시간.
+    spec!(
+        HeavyCharge,
+        "heavy.charge s",
+        "HEAVY_CHARGE",
+        0.5,
+        0.1,
+        2.0,
+        0.05
+    ),
+    spec!(
+        HeavyStartup,
+        "heavy.startup s",
+        "HEAVY_STARTUP",
+        0.06,
+        0.0,
+        0.4,
+        0.02
+    ),
+    spec!(
+        HeavyActive,
+        "heavy.active s",
+        "HEAVY_ACTIVE",
+        0.12,
+        0.02,
+        0.4,
+        0.02
+    ),
+    spec!(
+        HeavyRecovery,
+        "heavy.recovery s",
+        "HEAVY_RECOVERY",
+        0.4,
+        0.0,
+        1.2,
+        0.05
+    ),
+    // 덜 모으고 떼도 이만큼, 다 모으면 + `heavy.full bonus`.
+    spec!(
+        HeavyDamage,
+        "heavy.damage",
+        "HEAVY_DAMAGE",
+        2.0,
+        1.0,
+        8.0,
+        1.0
+    ),
+    spec!(
+        HeavyFullBonus,
+        "heavy.full bonus",
+        "HEAVY_FULL_BONUS",
+        1.0,
+        0.0,
+        5.0,
+        1.0
+    ),
+    spec!(HeavyRange, "heavy.range", "HEAVY_RANGE", 2.2, 0.5, 5.0, 0.1),
+    spec!(
+        HeavyArc,
+        "heavy.arc deg",
+        "HEAVY_ARC",
+        160.0,
+        30.0,
+        360.0,
+        10.0
+    ),
+    spec!(
+        HeavyLunge,
+        "heavy.lunge m",
+        "HEAVY_LUNGE",
+        0.6,
+        0.0,
+        3.0,
+        0.1
+    ),
+    // 넉백 배율(평타 `knockback` 기준).
+    spec!(
+        HeavyKnock,
+        "heavy.knock x",
+        "HEAVY_KNOCK",
+        2.0,
+        0.0,
+        5.0,
+        0.25
+    ),
+    // 다 모은 강타의 휘청. 덜 모으면 반.
+    spec!(
+        HeavyStagger,
+        "heavy.stagger s",
+        "HEAVY_STAGGER",
+        0.8,
+        0.0,
+        3.0,
+        0.1
+    ),
+    // 보스는 다 모은 강타에만.
+    spec!(
+        HeavyBossStagger,
+        "heavy.boss stagger s",
+        "HEAVY_BOSS_STAGGER",
+        0.25,
+        0.0,
+        2.0,
+        0.05
+    ),
+    // 떼는 순간 든다(평타 값은 이미 냈다).
+    spec!(
+        HeavyStamina,
+        "heavy.stamina",
+        "HEAVY_STAMINA",
+        15.0,
+        0.0,
+        60.0,
+        1.0
     ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(

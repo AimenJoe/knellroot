@@ -304,6 +304,7 @@ impl App {
             move_dir: a.move_dir,
             aim: a.aim,
             attack: a.attack,
+            attack_held: a.attack_held,
             dodge: a.dodge,
             parry: a.parry,
             jump: a.jump,
@@ -318,8 +319,8 @@ impl App {
         let (cam, t) = (&mut self.cam, &self.t);
         self.world.view_yaw = Some(cam.quarter_yaw_deg(t));
         use crate::tuning::{
-            SHAKE_CRIT, SHAKE_DOWN, SHAKE_HIT, SHAKE_HURT, SHAKE_PARRY, SHAKE_PLUNGE, SHAKE_ROUSE,
-            SHAKE_SLAM, SHAKE_TURN,
+            SHAKE_CHARGED, SHAKE_CRIT, SHAKE_DOWN, SHAKE_HIT, SHAKE_HURT, SHAKE_PARRY,
+            SHAKE_PLUNGE, SHAKE_ROUSE, SHAKE_SLAM, SHAKE_SMASH, SHAKE_TURN,
         };
         for e in self.world.step(a, t) {
             let kick = match e {
@@ -336,6 +337,8 @@ impl App {
                 Event::Parry { .. } => SHAKE_PARRY,
                 Event::Crit { .. } => SHAKE_CRIT,
                 Event::Plunge { .. } => SHAKE_PLUNGE,
+                Event::Smash { .. } => SHAKE_SMASH,
+                Event::Charged => SHAKE_CHARGED,
                 Event::Swing | Event::LockOn | Event::LockOff => 0.0,
             };
             cam.trauma = (cam.trauma + kick).min(1.0);
@@ -476,7 +479,7 @@ impl App {
         self.hint_line(
             &[
                 (Act::Move, s.verb_move),
-                (Act::Attack, s.verb_attack),
+                (Act::Attack, s.verb_attack_hint),
                 (Act::Dodge, s.verb_dodge),
                 (Act::Parry, s.verb_parry),
                 (Act::Jump, s.verb_jump),

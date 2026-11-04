@@ -19,6 +19,7 @@ pub const EN: Strings = Strings {
     verb_lock: "Lock on",
     verb_parry: "Parry",
     verb_jump: "Jump",
+    verb_attack_hint: "Attack (hold: heavy)",
     verb_turn_left: "Turn left",
     verb_turn_right: "Turn right",
     menu_controls: "Controls",

@@ -119,6 +119,12 @@ pub enum Event {
     Plunge {
         at: Vec3,
     },
+    /// 강공격이 다 모였다(0030) — 떼면 센 것이 나간다는 신호.
+    Charged,
+    /// 강타가 맞았다(0030).
+    Smash {
+        at: Vec3,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -152,6 +158,18 @@ pub enum PState {
     Land {
         t: f32,
         dur: f32,
+    },
+    /// 강공격 모으기(0030): 평타의 활성 구간이 끝날 때 아직 공격을 쥐고 있으면. 서서(돌아볼 수는 있다) `heavy.charge s`까지 모은다.
+    /// 떼면 늘 강타(덜 모았으면 약하게). 회피·패링으로 끊는다.
+    Charging {
+        t: f32,
+    },
+    /// 강타. `full` = 다 모았다(피해 + 덤, 휘청 길게, 보스도 휘청).
+    Heavy {
+        t: f32,
+        swing: u32,
+        dir: Vec3,
+        full: bool,
     },
     /// 땅 돌리기: 발을 딛고 비튼다(`turn.plant s` 동안 못 움직인다 — 공짜가 아니다). 그동안 몸이 `from` → `to`(요)로 돈다(0023).
     Turn {
@@ -232,6 +250,8 @@ pub struct World {
     spill_at: Option<(bool, f32)>,
     /// 이번 틱에 내려찍기가 땅에 닿았다 — `apply_strike`가 친다(0027).
     plunge_now: bool,
+    /// 이번 틱에 강공격이 다 모였다(`Event::Charged`를 `apply_strike`가 낸다).
+    charged_now: bool,
     /// 히트스톱 동안 들어온 눌림(공격·회피·락온·돌리기). 멈춤이 풀리는 틱에 낸다 — 버리면 멈춘 순간 누른 버튼이 사라진다.
     held: Actions,
 }
@@ -276,6 +296,7 @@ impl World {
             spill_at: None,
             held: Actions::default(),
             plunge_now: false,
+            charged_now: false,
         }
     }
 
@@ -666,6 +687,9 @@ impl World {
                         pl.facing = d.x.atan2(d.z);
                     }
                     pl.state = PState::Parry { t: 0.0 };
+                } else if a.attack_held && e >= t[P::AttackStartup] + t[P::AttackActive] {
+                    // 강공격(0030): 평타는 누르는 순간 나갔고, 활성이 끝날 때까지 쥐고 있으면 모으기로(톡 누름 0.08~0.15초는 이보다 짧다).
+                    pl.state = PState::Charging { t: 0.0 };
                 } else if e + dt >= total {
                     pl.state = PState::Idle;
                 } else {
@@ -673,6 +697,75 @@ impl World {
                         t: e + dt,
                         swing,
                         dir: ldir,
+                    };
+                }
+            }
+            PState::Charging { t: e } => {
+                if a.dodge && pl.dodge_cd <= 0.0 && spend(pl, t[P::StaminaDodge]) {
+                    let dir = if world_move.length_squared() > 1e-4 {
+                        world_move.normalize()
+                    } else {
+                        -pl.facing_dir()
+                    };
+                    pl.state = PState::Dodge { t: 0.0, dir };
+                    pl.dodge_cd = t[P::DodgeTime] + 0.15;
+                } else if a.parry && spend(pl, t[P::ParryStamina]) {
+                    if let Some(d) = auto_dir.or(aim) {
+                        pl.facing = d.x.atan2(d.z);
+                    }
+                    pl.state = PState::Parry { t: 0.0 };
+                } else if a.attack_held {
+                    let full = t[P::HeavyCharge];
+                    self.charged_now |= e < full && e + dt >= full;
+                    pl.state = PState::Charging { t: e + dt };
+                } else if spend(pl, t[P::HeavyStamina]) {
+                    // 떼면 강타 — 자동 조준·조준 스틱 쪽으로, 내딛는 쪽은 이동 입력(없으면 바라보는 쪽).
+                    if let Some(d) = auto_dir.or(aim) {
+                        pl.facing = d.x.atan2(d.z);
+                    }
+                    let dir = if world_move.length_squared() > 1e-4 {
+                        world_move.normalize()
+                    } else {
+                        pl.facing_dir()
+                    };
+                    pl.swings += 1;
+                    pl.state = PState::Heavy {
+                        t: 0.0,
+                        swing: pl.swings,
+                        dir,
+                        full: e >= t[P::HeavyCharge],
+                    };
+                } else {
+                    pl.state = PState::Idle;
+                }
+            }
+            PState::Heavy {
+                t: e,
+                swing,
+                dir: ldir,
+                full,
+            } => {
+                let total = t[P::HeavyStartup] + t[P::HeavyActive] + t[P::HeavyRecovery];
+                if a.dodge
+                    && pl.dodge_cd <= 0.0
+                    && e >= t[P::HeavyStartup] + t[P::HeavyActive]
+                    && spend(pl, t[P::StaminaDodge])
+                {
+                    let dir = if world_move.length_squared() > 1e-4 {
+                        world_move.normalize()
+                    } else {
+                        -pl.facing_dir()
+                    };
+                    pl.state = PState::Dodge { t: 0.0, dir };
+                    pl.dodge_cd = t[P::DodgeTime] + 0.15;
+                } else if e + dt >= total {
+                    pl.state = PState::Idle;
+                } else {
+                    pl.state = PState::Heavy {
+                        t: e + dt,
+                        swing,
+                        dir: ldir,
+                        full,
                     };
                 }
             }
@@ -754,7 +847,18 @@ impl World {
             PState::Hurt { .. } => {
                 pl.vel *= (1.0 - KNOCK_DECAY * dt).max(0.0);
             }
-            PState::Turn { .. } | PState::Parry { .. } | PState::Land { .. } => pl.vel = Vec3::ZERO,
+            PState::Turn { .. }
+            | PState::Parry { .. }
+            | PState::Land { .. }
+            | PState::Charging { .. } => pl.vel = Vec3::ZERO,
+            PState::Heavy { t: e, dir, .. } => {
+                let reach = t[P::HeavyStartup] + t[P::HeavyActive];
+                pl.vel = if e < reach {
+                    dir * (t[P::HeavyLunge] / reach.max(1e-3))
+                } else {
+                    Vec3::ZERO
+                };
+            }
             PState::Jump { .. } if world_move.length_squared() < 1e-4 => {
                 // 공중에서 손을 놓으면 뛰기 전 속도 그대로(멈추는 쪽으로 조종하지 않는다).
             }
@@ -787,6 +891,7 @@ impl World {
             (
                 _,
                 PState::Attack { .. }
+                | PState::Heavy { .. }
                 | PState::Turn { .. }
                 | PState::Hurt { .. }
                 | PState::Parry { .. }
@@ -822,26 +927,61 @@ impl World {
         if std::mem::take(&mut self.plunge_now) {
             self.plunge(t, ev);
         }
-        let PState::Attack { t: e, swing, .. } = self.player.state else {
-            return;
+        if std::mem::take(&mut self.charged_now) {
+            ev.push(Event::Charged);
+        }
+        // 평타와 강타(0030)는 같은 규칙에 값만 다르다.
+        let s = match self.player.state {
+            PState::Attack { t: e, swing, .. } => Strike {
+                e,
+                swing,
+                startup: t[P::AttackStartup],
+                active: t[P::AttackActive],
+                range: t[P::AttackRange],
+                arc: t[P::AttackArc],
+                damage: 1,
+                knock: 1.0,
+                heavy: None,
+            },
+            PState::Heavy {
+                t: e, swing, full, ..
+            } => Strike {
+                e,
+                swing,
+                startup: t[P::HeavyStartup],
+                active: t[P::HeavyActive],
+                range: t[P::HeavyRange],
+                arc: t[P::HeavyArc],
+                damage: t[P::HeavyDamage].round() as i32
+                    + if full {
+                        t[P::HeavyFullBonus].round() as i32
+                    } else {
+                        0
+                    },
+                knock: t[P::HeavyKnock],
+                heavy: Some(full),
+            },
+            _ => return,
         };
-        if e < t[P::AttackStartup] || e >= t[P::AttackStartup] + t[P::AttackActive] {
+        let (e, swing) = (s.e, s.swing);
+        if e < s.startup || e >= s.startup + s.active {
             return;
         }
-        if e < t[P::AttackStartup] + TICK_DT {
+        if e < s.startup + TICK_DT {
             ev.push(Event::Swing);
         }
         let p = self.player.pos;
         let f = self.player.facing_dir();
-        let half = (t[P::AttackArc] * 0.5).to_radians().cos();
+        let half = (s.arc * 0.5).to_radians().cos();
         let mut stop = false;
+        let mut heavy_hit = false;
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing {
                 continue;
             }
             let d = en.pos - p;
             let dist = d.length() - en.radius;
-            if dist > t[P::AttackRange] {
+            if dist > s.range {
                 continue;
             }
             let dir = if d.length() > 1e-4 { d.normalize() } else { f };
@@ -851,7 +991,7 @@ impl World {
             en.hit_by = swing;
             // 패링으로 드러난 적은 한 대가 치명타(0025).
             let crit = en.exposed > 0.0;
-            en.hp -= 1 + if crit { t[P::ParryCrit] as i32 } else { 0 };
+            en.hp -= s.damage + if crit { t[P::ParryCrit] as i32 } else { 0 };
             if crit {
                 en.exposed = 0.0;
                 ev.push(Event::Crit {
@@ -859,10 +999,26 @@ impl World {
                 });
             }
             en.hurt = 0.15;
-            en.knock = dir * t[P::Knockback] * if en.boss { 0.25 } else { 1.0 };
+            en.knock = dir * t[P::Knockback] * s.knock * if en.boss { 0.25 } else { 1.0 };
             ev.push(Event::Hit {
                 at: en.pos + Vec3::Y * en.height * 0.6,
             });
+            if let Some(full) = s.heavy {
+                // 강타는 적의 상태를 바꾼다(KB: 모으기는 시간을 내준 만큼 — 휘청이 예고를 끊는다). 보스는 다 모았을 때만.
+                let dur = match (en.boss, full) {
+                    (true, true) => t[P::HeavyBossStagger],
+                    (true, false) => 0.0,
+                    (false, true) => t[P::HeavyStagger],
+                    (false, false) => t[P::HeavyStagger] * 0.5,
+                };
+                if dur > 0.0 {
+                    en.state = EState::Stagger { t: 0.0, dur };
+                }
+                ev.push(Event::Smash {
+                    at: en.pos + Vec3::Y * en.height * 0.5,
+                });
+                heavy_hit = true;
+            }
             stop = true;
             if en.hp <= 0 {
                 en.state = EState::Dead;
@@ -871,7 +1027,7 @@ impl World {
             }
         }
         if stop {
-            self.hitstop = t[P::Hitstop];
+            self.hitstop = t[P::Hitstop] * if heavy_hit { HEAVY_HITSTOP } else { 1.0 };
         }
     }
 
@@ -1144,6 +1300,23 @@ fn angle_diff(a: f32, b: f32) -> f32 {
     }
     d
 }
+
+/// 한 번의 휘두르기(평타·강타, 0030).
+struct Strike {
+    e: f32,
+    swing: u32,
+    startup: f32,
+    active: f32,
+    range: f32,
+    arc: f32,
+    damage: i32,
+    knock: f32,
+    /// 강타면 Some(다 모았나).
+    heavy: Option<bool>,
+}
+
+/// 강타의 히트스톱 = 타격 히트스톱 × 이만큼(평타보다 무겁게, 패링보다는 짧게).
+const HEAVY_HITSTOP: f32 = 2.0;
 
 /// 내려찍기는 이만큼 빨리 떨어진다(공중에서 누르면 곧장 내리꽂게).
 const PLUNGE_FALL: f32 = 2.5;
@@ -2065,6 +2238,184 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// 강공격 시험용: 누름 + 쥐기를 `ticks`틱, 그 뒤 놓고 `after`틱. 지나간 상태·사건을 모은다.
+    fn hold_attack(
+        w: &mut World,
+        t: &Tuning,
+        ticks: usize,
+        after: usize,
+    ) -> (Vec<PState>, Vec<Event>) {
+        let (mut st, mut ev) = (Vec::new(), Vec::new());
+        for i in 0..ticks + after {
+            let held = i < ticks;
+            ev.extend(w.step(
+                &Actions {
+                    attack: i == 0,
+                    attack_held: held,
+                    ..Default::default()
+                },
+                t,
+            ));
+            st.push(w.player.state);
+        }
+        (st, ev)
+    }
+
+    /// 0030: 톡 누름(사람 0.08~0.15초)은 평타 하나 — 모으기로 들어가지 않는다(평타는 누르는 순간, KB melee 노트).
+    #[test]
+    fn a_tap_is_a_light_attack_and_never_charges() {
+        let t = Tuning::default();
+        for ticks in 1..=9 {
+            let mut w = World::new("test", 20.0);
+            let (st, _) = hold_attack(&mut w, &t, ticks, 60);
+            assert!(
+                matches!(st[0], PState::Attack { .. }),
+                "pressed {ticks}: {:?}",
+                st[0]
+            );
+            assert!(
+                !st.iter()
+                    .any(|s| matches!(s, PState::Charging { .. } | PState::Heavy { .. })),
+                "held {ticks} ticks"
+            );
+        }
+    }
+
+    /// 0030: 쥐고 있으면 평타의 활성이 끝난 뒤 모으기, 떼면 늘 강타 — 다 모았으면 `full`, 다 모이는 틱에 `Charged` 한 번.
+    #[test]
+    fn holding_charges_and_letting_go_always_swings_a_heavy() {
+        let t = Tuning::default();
+        let into = ((t[P::AttackStartup] + t[P::AttackActive]) / TICK_DT).ceil() as usize + 1;
+        let full = (t[P::HeavyCharge] / TICK_DT).ceil() as usize;
+        for (extra, want_full) in [(3, false), (full + 5, true)] {
+            let mut w = World::new("test", 20.0);
+            let (st, ev) = hold_attack(&mut w, &t, into + extra, 3);
+            assert!(
+                st.iter().any(|s| matches!(s, PState::Charging { .. })),
+                "charged"
+            );
+            let heavy = st.iter().find_map(|s| match s {
+                PState::Heavy { full, .. } => Some(*full),
+                _ => None,
+            });
+            assert_eq!(heavy, Some(want_full), "extra {extra}");
+            let charged = ev.iter().filter(|e| matches!(e, Event::Charged)).count();
+            assert_eq!(charged, want_full as usize);
+        }
+    }
+
+    /// 0030: 다 모은 강타 = `heavy.damage` + 덤, 잡몹은 길게 휘청(예고를 끊는다), 보스는 다 모았을 때만 짧게.
+    #[test]
+    fn a_full_heavy_hits_hard_and_staggers() {
+        let t = Tuning::default();
+        let full = (t[P::HeavyCharge] / TICK_DT).ceil() as usize;
+        for boss in [false, true] {
+            for charged in [false, true] {
+                let mut w = World::new("test", 20.0);
+                if boss {
+                    w.spawn_boss(vec3(0.0, 0.0, -1.5));
+                } else {
+                    w.spawn_mob(vec3(0.0, 0.0, -1.2));
+                    w.enemies[0].hp = 50;
+                    w.enemies[0].max_hp = 50;
+                }
+                idle(&mut w);
+                let hp0 = w.enemies[0].hp;
+                // 모으기에 들어설 때까지 쥔다(평타가 맞으면 히트스톱으로 틱이 멈추니 틱 수로 세지 않는다).
+                let mut ev = w.step(
+                    &Actions {
+                        attack: true,
+                        attack_held: true,
+                        ..Default::default()
+                    },
+                    &t,
+                );
+                let hold = Actions {
+                    attack_held: true,
+                    ..Default::default()
+                };
+                for _ in 0..120 {
+                    if matches!(w.player.state, PState::Charging { .. }) {
+                        break;
+                    }
+                    ev.extend(w.step(&hold, &t));
+                }
+                for _ in 0..if charged { full + 2 } else { 3 } {
+                    ev.extend(w.step(&hold, &t));
+                }
+                assert!(matches!(w.player.state, PState::Charging { .. }));
+                // 평타 한 대는 이미 맞았다. 이제 놓는다.
+                let hp1 = w.enemies[0].hp;
+                assert_eq!(hp0 - hp1, 1, "the light hit first");
+                assert!(!ev.iter().any(|e| matches!(e, Event::Smash { .. })));
+                let mut ev = Vec::new();
+                let mut staggered = false;
+                for _ in 0..30 {
+                    ev.extend(w.step(&Actions::default(), &t));
+                    staggered |= matches!(w.enemies[0].state, EState::Stagger { .. });
+                    idle_unless_staggered(&mut w);
+                }
+                assert!(
+                    ev.iter().any(|e| matches!(e, Event::Smash { .. })),
+                    "boss {boss} charged {charged}"
+                );
+                let want = t[P::HeavyDamage] as i32
+                    + if charged {
+                        t[P::HeavyFullBonus] as i32
+                    } else {
+                        0
+                    };
+                assert_eq!(hp1 - w.enemies[0].hp, want, "boss {boss} charged {charged}");
+                assert_eq!(staggered, !boss || charged, "boss {boss} charged {charged}");
+            }
+        }
+    }
+
+    /// `idle`과 같지만 휘청은 그대로 둔다(강타의 휘청을 보려고).
+    fn idle_unless_staggered(w: &mut World) {
+        for e in &mut w.enemies {
+            if !matches!(e.state, EState::Stagger { .. }) {
+                e.state = EState::Recover { t: -1000.0 };
+            }
+        }
+    }
+
+    /// 0030: 모으는 중에도 회피로 끊는다(강타는 나가지 않는다).
+    #[test]
+    fn a_dodge_cancels_the_charge() {
+        let t = Tuning::default();
+        let into = ((t[P::AttackStartup] + t[P::AttackActive]) / TICK_DT).ceil() as usize + 1;
+        let mut w = World::new("test", 20.0);
+        hold_attack(&mut w, &t, into + 5, 0);
+        assert!(matches!(w.player.state, PState::Charging { .. }));
+        w.player.dodge_cd = 0.0;
+        w.step(
+            &Actions {
+                dodge: true,
+                attack_held: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(matches!(w.player.state, PState::Dodge { .. }));
+    }
+
+    /// 0030(KB melee 노트 "모으기는 시간을 내준 만큼"): 평타 + 다 모은 강타의 초당 피해가 같은 시간 평타만 친 것보다 확실히 크다.
+    #[test]
+    fn a_full_heavy_pays_back_the_time_it_takes() {
+        let t = Tuning::default();
+        let light = t[P::AttackStartup] + t[P::AttackActive] + t[P::AttackRecovery];
+        let heavy_time = t[P::AttackStartup]
+            + t[P::AttackActive]
+            + t[P::HeavyCharge]
+            + t[P::HeavyStartup]
+            + t[P::HeavyActive]
+            + t[P::HeavyRecovery];
+        let heavy_dmg = 1.0 + t[P::HeavyDamage] + t[P::HeavyFullBonus];
+        let (h, l) = (heavy_dmg / heavy_time, 1.0 / light);
+        assert!(h > l * 1.2, "heavy {h:.2}/s vs light {l:.2}/s");
     }
 
     #[test]

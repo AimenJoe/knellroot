@@ -411,6 +411,9 @@ impl Renderer {
             let speed = (pl.pos - pl.prev).length() / TICK_DT;
             let (names, at): (&[&str], f32) = match pl.state {
                 PState::Attack { t: e, .. } => (&["attack"], e),
+                // 강공격(0030): 모으는 동안 칼을 뒤로 끌어 든 자세(없는 모델이면 공격 첫 자세), 떼면 크게 내려친다.
+                PState::Charging { t: e } => (&["charge", "attack"], e),
+                PState::Heavy { t: e, .. } => (&["heavy", "attack"], e),
                 PState::Dodge { t: e, .. } => (&["dodge", "walk"], e),
                 PState::Hurt { t: e, .. } => (&["hurt", "idle"], e),
                 PState::Turn { t: e, .. } => (&["turn", "idle"], e),
@@ -461,6 +464,8 @@ impl Renderer {
                 PState::Dodge { .. } => Color::new(0.6, 0.9, 1.0, 0.6),
                 PState::Hurt { .. } => Color::new(0.95, 0.45, 0.4, 1.0),
                 PState::Attack { .. } => Color::new(1.0, 0.85, 0.5, 1.0),
+                PState::Charging { .. } => Color::new(1.0, 0.7, 0.35, 1.0),
+                PState::Heavy { .. } => Color::new(1.0, 0.6, 0.3, 1.0),
                 PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
                 PState::Parry { .. } => Color::new(0.7, 0.85, 1.0, 1.0),
                 PState::Jump { .. } | PState::Land { .. } => Color::new(0.9, 0.8, 0.6, 1.0),
@@ -492,6 +497,44 @@ impl Renderer {
                     w.player.facing,
                     t[crate::tuning::P::AttackArc],
                     Color::new(1.0, 0.95, 0.7, 0.35),
+                );
+            }
+        }
+        // 강공격(0030): 모으는 동안 발밑 고리가 안쪽에서 차오르고, 다 차면 금빛으로 깜빡인다. 강타의 활성 구간엔 넓은 부채꼴.
+        if let PState::Charging { t: e } = w.player.state {
+            let full = t[crate::tuning::P::HeavyCharge].max(1e-3);
+            let k = (e / full).clamp(0.0, 1.0);
+            let col = if k >= 1.0 {
+                let on = (w.time * 12.0) as i32 % 2 == 0;
+                Color::new(1.0, 0.85, 0.35, if on { 0.95 } else { 0.55 })
+            } else {
+                Color::new(1.0, 0.7, 0.4, 0.35 + 0.4 * k)
+            };
+            ring(
+                pp + Vec3::Y * 0.05,
+                0.9,
+                0.0,
+                360.0,
+                with_a(col, col.a * 0.5),
+            );
+            ring(pp + Vec3::Y * 0.05, 0.2 + 0.7 * k, 0.0, 360.0, col);
+        }
+        if let PState::Heavy { t: e, full, .. } = w.player.state {
+            let (s0, s1) = (
+                t[crate::tuning::P::HeavyStartup],
+                t[crate::tuning::P::HeavyStartup] + t[crate::tuning::P::HeavyActive],
+            );
+            if e >= s0 && e < s1 {
+                sector(
+                    pp + Vec3::Y * 0.9,
+                    t[crate::tuning::P::HeavyRange],
+                    w.player.facing,
+                    t[crate::tuning::P::HeavyArc],
+                    if full {
+                        Color::new(1.0, 0.8, 0.4, 0.45)
+                    } else {
+                        Color::new(1.0, 0.9, 0.65, 0.35)
+                    },
                 );
             }
         }

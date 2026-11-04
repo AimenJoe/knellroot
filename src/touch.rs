@@ -55,6 +55,8 @@ pub struct Overlay {
 pub struct Read {
     pub move_dir: Vec2,
     pub attack: bool,
+    /// 공격 버튼을 짚고 있나(강공격 모으기, 0030).
+    pub attack_held: bool,
     pub dodge: bool,
     pub parry: bool,
     pub jump: bool,
@@ -102,6 +104,8 @@ pub struct Touch {
     stick: Option<Stick>,
     known: Vec<u64>,
     repeat: Option<Repeat>,
+    /// 공격 버튼을 짚은 손가락(강공격 모으기, 0030).
+    attack_finger: Option<u64>,
     /// 메뉴 모드: 손가락마다 (id, 처음 자리, 멀리 움직였나).
     taps: Vec<(u64, Vec2, bool)>,
 }
@@ -249,6 +253,7 @@ impl Touch {
         if menu {
             self.stick = None;
             self.repeat = None;
+            self.attack_finger = None;
             self.known.clear();
             for t in &touches {
                 let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
@@ -273,6 +278,7 @@ impl Touch {
         self.taps.clear();
         if touches.is_empty() && self.stick.is_none() && self.known.is_empty() {
             self.repeat = None;
+            self.attack_finger = None;
             return a;
         }
         let (w, h) = (screen_width(), screen_height());
@@ -289,6 +295,9 @@ impl Touch {
                     .find(|b| (t.position - b.center).length() <= b.radius * 1.25)
                 {
                     press(&mut a, b.kind);
+                    if b.kind == Kind::Attack && !ended {
+                        self.attack_finger = Some(t.id);
+                    }
                     if matches!(b.kind, Kind::LabMinus | Kind::LabPlus) && !ended {
                         self.repeat = Some(Repeat {
                             id: t.id,
@@ -321,6 +330,13 @@ impl Touch {
         }
         // Ended를 못 받고 사라진 손가락(탭 전환 등) 정리.
         self.known.retain(|id| touches.iter().any(|t| t.id == *id));
+        // 공격 손가락이 아직 화면에 있으면 쥐고 있는 것(버튼 밖으로 미끄러져도 — 떼야 강타가 나간다).
+        self.attack_finger = self.attack_finger.filter(|id| {
+            touches.iter().any(|t| {
+                t.id == *id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
+            })
+        });
+        a.attack_held = self.attack_finger.is_some();
         if self
             .stick
             .is_some_and(|s| !touches.iter().any(|t| t.id == s.id))

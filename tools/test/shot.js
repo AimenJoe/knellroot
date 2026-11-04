@@ -81,6 +81,9 @@ async function main() {
   await page.waitForTimeout(400); await page.keyboard.press('KeyK'); await page.waitForTimeout(60); await shot('06b-parry');
   await page.waitForTimeout(600); await page.keyboard.press('KeyF'); await page.waitForTimeout(200); await shot('06c-jump');
   await page.keyboard.press('KeyJ'); await page.waitForTimeout(250); await shot('06d-plunge');
+  // 강공격(0030): J를 꾹 — 모으기 고리, 떼면 강타.
+  await page.waitForTimeout(600); await page.keyboard.down('KeyJ'); await page.waitForTimeout(800); await shot('06e-charge');
+  await page.keyboard.up('KeyJ'); await page.waitForTimeout(130); await shot('06f-heavy');
   await page.waitForTimeout(1500); await shot('07-boss-telegraph');
   await page.keyboard.press('KeyL'); await page.waitForTimeout(150); await shot('08-unlock-blending');
   // 2 떼.

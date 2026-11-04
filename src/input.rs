@@ -78,6 +78,8 @@ pub struct Actions {
     /// 조준(오른쪽 스틱, 0014). 이동과 같은 축. 0이면 겨누지 않음.
     pub aim: Vec2,
     pub attack: bool,
+    /// 공격 버튼을 쥐고 있나(상태, 강공격 모으기 0030). 눌림 `attack`과 달리 틱이 지우지 않는다.
+    pub attack_held: bool,
     pub dodge: bool,
     /// 패링(0025): 누른 뒤 짧은 창 안에 앞쪽에서 오는 근접 공격을 튕긴다.
     pub parry: bool,
@@ -545,6 +547,7 @@ impl Input {
         let bind = bindings();
         let kp = |x: Bind| is_key_pressed(bind.key(x));
         a.attack = kp(Bind::Attack);
+        a.attack_held = is_key_down(bind.key(Bind::Attack));
         a.dodge = kp(Bind::Dodge);
         a.parry = kp(Bind::Parry);
         a.jump = kp(Bind::Jump);
@@ -621,6 +624,7 @@ impl Input {
                 }
                 let pj = |x: Bind| pad.is_just_pressed(bind.pad(x).button());
                 a.attack |= pj(Bind::Attack);
+                a.attack_held |= pad.is_currently_pressed(bind.pad(Bind::Attack).button());
                 a.dodge |= pj(Bind::Dodge);
                 a.jump |= pj(Bind::Jump);
                 a.lock |= pj(Bind::Lock);
@@ -675,6 +679,7 @@ impl Input {
             let j = |p: Pad| is_key_pressed(p.key());
             let pj = |x: Bind| j(bind.pad(x));
             a.attack |= pj(Bind::Attack);
+            a.attack_held |= is_key_down(bind.pad(Bind::Attack).key());
             a.dodge |= pj(Bind::Dodge);
             a.jump |= pj(Bind::Jump);
             a.lock |= pj(Bind::Lock);
@@ -707,6 +712,7 @@ impl Input {
             m = t.move_dir;
         }
         a.attack |= t.attack;
+        a.attack_held |= t.attack_held;
         a.dodge |= t.dodge;
         a.parry |= t.parry;
         a.jump |= t.jump;
@@ -744,6 +750,7 @@ impl Input {
             move_dir: m,
             aim,
             attack: self.latch.attack | a.attack,
+            attack_held: a.attack_held,
             dodge: self.latch.dodge | a.dodge,
             parry: self.latch.parry | a.parry,
             jump: self.latch.jump | a.jump,
@@ -781,6 +788,7 @@ impl Input {
         self.latch = Actions {
             move_dir: a.move_dir,
             aim: a.aim,
+            attack_held: a.attack_held,
             lab_fast: a.lab_fast,
             ..Actions::default()
         };
