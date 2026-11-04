@@ -470,6 +470,13 @@ impl World {
         }
     }
 
+    /// 락온할 깨어 있는 적이 락온 거리 안에 있나(0053 — 터치 락온 버튼을 띄울지).
+    pub fn lock_candidate(&self) -> bool {
+        self.enemies
+            .iter()
+            .any(|e| e.active() && e.pos.distance(self.player.pos) <= self.lock_range)
+    }
+
     /// 무기를 바꾼다(0051): 콤보는 처음부터, 원거리 무기는 탄창·수류탄 가득.
     pub fn set_weapon(&mut self, id: weapons::Id) {
         let pl = &mut self.player;

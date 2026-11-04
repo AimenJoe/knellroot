@@ -22,15 +22,16 @@
 **프로젝트 기록(TODO·실험 결과·결정)은 이 레포에, 프로젝트가 사라져도 유용한 지식은 KB에**(KB `CLAUDE.md` 규칙: frontmatter·verified·지도·`tools/kb.py check && index`).
 
 ## 코드 규칙(첫 게임에서 가져옴 — KB `second-game-project-day-one`)
-- 입력은 `Actions`만. `KeyCode`·패드 버튼은 `input.rs` 밖에 없다(터치는 `touch.rs`, `input.rs`만 부른다, 0006). Android 패드는 패치한 miniquad(`third_party/miniquad`, `[patch.crates-io]`, nail에서 가져옴)가 버튼을 F13~F24 키로·스틱을 `joystick_axes`로 넘긴다 — miniquad를 올리면 `PATCHED.md`대로 다시 넣고 `cargo test`의 `android_*`를 본다(0022). 커밋 전에 `cargo clippy --target aarch64-linux-android -- -D warnings`(NDK 없이 됨). 게임 동작의 키·버튼은 `input::Bindings`(설정에서 바꿈, 0024 — 소울라이크식, 공격만 X·J. 0048: 마법 RB·U, 등잔 Y·R, 상호작용은 점프 버튼이 같이 — 스테이지가 `World::interact_here`로 자리를 알린다. 저장 칸 뜻을 바꾸면 prefs `MAGIC`을 올린다), 화면에 버튼 이름을 쓸 때는 `input::prompt(Act)`(지금 장치·지금 배치) — 글에 키 이름을 박지 않는다. 설정 저장은 `prefs.rs`(웹 localStorage·네이티브 `prefs.txt`, 칸을 뒤에만 붙인다). 눌림은 래치, 틱이 소비. 터치 버튼 자리를 바꾸면 `tools/test/touch.js`의 `layout()`도.
+- 입력은 `Actions`만. `KeyCode`·패드 버튼은 `input.rs` 밖에 없다(터치는 `touch.rs`, `input.rs`만 부른다, 0006). Android 패드는 패치한 miniquad(`third_party/miniquad`, `[patch.crates-io]`, nail에서 가져옴)가 버튼을 F13~F24 키로·스틱을 `joystick_axes`로 넘긴다 — miniquad를 올리면 `PATCHED.md`대로 다시 넣고 `cargo test`의 `android_*`를 본다(0022). 커밋 전에 `cargo clippy --target aarch64-linux-android -- -D warnings`(NDK 없이 됨). 게임 동작의 키·버튼은 `input::Bindings`(설정에서 바꿈, 0024 — 소울라이크식, 공격만 X·J. 0048: 마법 RB·U, 등잔 Y·R, 상호작용은 점프 버튼이 같이 — 스테이지가 `World::interact_here`로 자리를 알린다. 저장 칸 뜻을 바꾸면 prefs `MAGIC`을 올린다), 화면에 버튼 이름을 쓸 때는 `input::prompt(Act)`(지금 장치·지금 배치) — 글에 키 이름을 박지 않는다. 설정 저장은 `prefs.rs`(웹 localStorage·네이티브 `prefs.txt`, 칸을 뒤에만 붙인다). 눌림은 래치, 틱이 소비. 터치 버튼 자리를 바꾸면 `tools/test/touch.js`의 `layout()`도. 터치 배치는 공격 둘레 호 + 상황 버튼(`touch::Ctx` — 뜰 때만, 다른 버튼을 밀지 않는다, 0053). 타이틀·멈춤 메뉴 줄을 바꾸면 `tools/test/shot.js`·`leak.js`의 메뉴 길도(0052).
 - 로직 고정 60Hz(`TICK_DT`), 렌더는 보간. 히트스톱은 로직 시계만(`World::hitstop`).
 - 수치는 `tuning.rs` 한 곳. 랩이 바꾸는 값은 `P` + `SPECS` 한 줄씩. 랩의 export를 붙여 넣는 곳도 여기. 코드에 타별 숫자 금지.
 - `world.rs`는 카메라·소리·메뉴를 모른다. `Basis`(입력 기준)와 `Event`로만 바깥과 만난다. 틱은 단계 메서드 순서(`tick_lock → tick_player → apply_strike → apply_turn → tick_enemies → collide → cleanup`) — 새 메커닉은 맞는 단계에.
 - 카메라는 `camera.rs`: 원하는 리그를 매 프레임 계산 + 모드가 바뀌면 지금 리그에서 보간. **입력 기준은 월드가 즉시 바꾸고 카메라만 늦게 간다.** `Camera3D`는 `up: Vec3::Y`를 매번 적는다(기본 z-up).
 - 좌표: y-up, XZ 평면 이동, 1 단위 = 1m, 플레이어 키 1.8. 쿼터뷰의 화면 위 = 월드 -z.
 - 렌더는 월드를 읽기만. 렌더 타깃 → 정수 배율(물리 픽셀로 센다, 0006) → HUD는 화면 패스. 렌더 타깃 크기는 화면에 맞춘다(`render::fit_internal` — 배율은 높이 / `INTERNAL_H` 반올림, 크기는 화면 / 배율, 0046) — 내부 해상도를 상수로 박지 않는다. Android는 몰입 모드(패치한 miniquad `setFullScreen`, `PATCHED.md`).
-- 장면은 `app/`(타이틀·싸움·멈춤·끝·결과): 흐름은 `app/flow.rs` 순수 함수(시험), `app/mod.rs`는 그대로 한다. 새 장면 = `Scene` 한 줄 + flow 함수 + 그림 함수.
+- 장면은 `app/`(타이틀·싸움·멈춤·끝·결과·설정·조작·DEV — 0052): 흐름은 `app/flow.rs` 순수 함수(시험), `app/mod.rs`는 그대로 한다. 새 장면 = `Scene` 한 줄 + flow 함수 + 그림 함수.
 - 스테이지는 `stage/`: 글자 지도 → `Level`(벽·소품·불빛·문·표지), 진행 대본 `StageRun`(구역·물결·문·보스·핵). 새 스테이지 = `stage/<이름>.rs`의 `StageDef` 하나. 월드는 스테이지를 모른다 — 스테이지가 월드를 지켜보며 적을 세우고 문을 여닫는다.
+- 무기는 `weapons.rs` 표(0051): 줄 = (X 콤보·강타, RB 마법/사격, 수류탄), 시간·거리는 랩 `attack.*`·`heavy.*`에 곱하는 배율, 동작 이름은 `wanderer.py`, 모델 부위는 오른손 뼈(든 것만 보인다). 새 무기 = `Id` 한 줄 + 표 한 줄 + 동작 + 부위 + 글. 자세 막대는 `world::add_poise` 한 곳.
 - 적 종류는 `species.rs` 표(수치·행동 방식·모델 이름), 행동은 `enemy.rs`. 새 종류 = `Kind` 한 줄 + 표 한 줄. 예고 모양은 `TeleShape`(원판·부채꼴·띠·고리). 잠든 적은 `Enemy::active()`가 거짓.
 - 개발 시나리오는 `scenario.rs` 표 한 줄(`checks`에 그것이 보는 PoC 번호) — 타이틀의 개발 항목으로 들어간다. feature `dev`(기본 켬)로 가린다. 운영판 = `--no-default-features`.
 - 새 메커닉 = 단위 테스트 하나 이상(규칙을 이름으로 읽히게). 소리·그림 핸들을 로직에 넣지 않는다 — 그래서 시나리오 일곱을 600틱씩 돌리는 시험이 있다.

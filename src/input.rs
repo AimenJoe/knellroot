@@ -553,8 +553,9 @@ impl Input {
     }
 
     /// 터치에 상호작용 버튼을 띄울까(0032 — 쉼터 곁일 때만, 앱이 틱마다 알려 준다).
-    pub fn set_interact_shown(&mut self, on: bool) {
-        self.touch.interact_shown = on;
+    /// 터치의 상황 버튼(0053): 앱이 매 프레임 넘긴다.
+    pub fn set_touch_ctx(&mut self, ctx: crate::touch::Ctx) {
+        self.touch.ctx = ctx;
     }
 
     /// 터치 장치일 때 렌더가 그릴 오버레이.

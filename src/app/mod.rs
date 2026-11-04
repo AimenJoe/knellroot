@@ -148,9 +148,14 @@ impl App {
     /// 한 프레임.
     pub fn frame(&mut self) {
         let cpu_start = get_time();
-        // 쉼터 곁이면 터치에 상호작용 버튼(0032).
-        self.input
-            .set_interact_shown(self.scene == Scene::Play && self.run.near_rest.is_some());
+        // 터치의 상황 버튼(0053): 쉼터 곁이면 점프가 쉬기, 락온할 적이 있거나 락온 중이면 락온, 마실 수 있으면 등잔.
+        let play = self.scene.ticks_world();
+        let pl = &self.world.player;
+        self.input.set_touch_ctx(crate::touch::Ctx {
+            rest: play && self.world.interact_here,
+            lock: play && (self.world.lock.is_some() || self.world.lock_candidate()),
+            flask: play && pl.flask > 0 && pl.hp < crate::tuning::PLAYER_HP,
+        });
         self.input.poll(self.lab.open, self.scene.is_menu());
         let dt = get_frame_time().min(MAX_FRAME_DT);
         self.acc += dt;

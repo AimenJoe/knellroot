@@ -20,31 +20,29 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(f).pipe(res);
 });
 
-// src/touch.rs layout()과 같은 식(논리 px). 바꾸면 함께.
+// src/touch.rs layout()과 같은 식(논리 px, 0053). 바꾸면 함께. 락온·등잔은 상황 버튼(뜰 때만) — 자리는 늘 같다.
 function layout(lab) {
-  const u = Math.min(W, H), r = u * 0.09, atkR = r * 1.5, dodgeR = r * 1.1, lockR = r * 0.85, turnR = r * 0.8, parryR = r * 0.9, jumpR = r * 0.85, flaskR = r * 0.75;
-  const atk = [W - atkR * 1.3, H - atkR * 1.3];
-  const lock = [atk[0], atk[1] - (atkR + lockR + r * 0.45)];
-  const pa = Math.PI / 6, pd = atkR + parryR + r * 0.4;
-  const turnY = lock[1] - r * 0.5;
-  const cwX = lock[0] - (lockR + turnR + r * 1.4);
+  const u = Math.min(W, H, 520), r = u * 0.09;
+  const atk = [W - u * 0.238, H - u * 0.21];
+  const at = (deg, dist) => { const a = deg * Math.PI / 180; return [atk[0] + Math.cos(a) * u * dist, atk[1] - Math.sin(a) * u * dist]; };
+  const turn = at(118, 0.44);
   const b = {
     attack: atk,
-    dodge: [atk[0] - (atkR + dodgeR + r * 0.5), H - dodgeR * 1.2],
-    parry: [atk[0] - Math.cos(pa) * pd, atk[1] - Math.sin(pa) * pd],
-    jump: [atk[0] - (atkR + dodgeR + r * 0.5) - (dodgeR + jumpR + r * 0.4), H - jumpR * 1.25],
-    flask: [atk[0] - (atkR + dodgeR + r * 0.5) - (dodgeR + jumpR + r * 0.4), (H - jumpR * 1.25 + turnY) * 0.5],
-    cast: [atk[0] - (atkR + dodgeR + r * 0.5) - (dodgeR + jumpR + r * 0.4) - (jumpR * 2 + r * 0.4), H - jumpR * 1.25],
-    lock,
-    turn_right: [cwX, turnY],
-    turn_left: [cwX - (turnR * 2 + r * 0.4), turnY],
+    dodge: at(188, 0.26),
+    parry: at(146, 0.26),
+    cast: at(104, 0.26),
+    jump: at(62, 0.26),
+    turn_left: [turn[0] - u * 0.08, turn[1]],
+    turn_right: [turn[0] + u * 0.08, turn[1]],
+    lock: at(80, 0.44),
+    flask: at(150, 0.44),
     pause: [W - r * 0.7 * 1.4, r * 0.7 * 1.4],
     lab: [W - r * 0.7 * 4.0, r * 0.7 * 1.4],
     scenario: [W - r * 0.7 * 6.6, r * 0.7 * 1.4],
   };
   if (lab) {
     const k = r * 0.62, gap = k * 2.5, names = ['up', 'down', 'minus', 'plus', 'reset', 'store', 'swap'];
-    const x0 = Math.max(W * 0.5 - gap * (names.length - 1) * 0.5, k * 1.3), y = u * 0.30;
+    const x0 = Math.max(W * 0.5 - gap * (names.length - 1) * 0.5, k * 1.3), y = u * 0.21;
     names.forEach((n, i) => { b['lab_' + n] = [x0 + gap * i, y]; });
   }
   return b;

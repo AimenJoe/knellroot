@@ -20,10 +20,10 @@ pub enum Kind {
     Jump,
     /// 등잔(0031): 등잔 그림, 점프 위(돌리기 줄과 점프 사이).
     Flask,
-    /// 상호작용(0032): 쉼터 곁일 때만, 락온 위 — 모닥불 그림.
-    Interact,
-    /// 마법(0048): 별 그림, 점프 왼쪽(아래 줄 끝). 터치는 조준 스틱이 없어 자동 조준.
+    /// 마법(0048): 별 그림, 공격 위 호. 터치는 조준 스틱이 없어 자동 조준.
     Cast,
+    /// 그림만(0053): 쉼터 곁의 점프 버튼에 그리는 모닥불.
+    Rest,
     Lock,
     /// 땅 돌리기(0023): 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면.
     TurnLeft,
@@ -54,6 +54,8 @@ pub struct Overlay {
     pub stick: Option<(Vec2, Vec2)>,
     pub stick_radius: f32,
     pub buttons: Vec<Button>,
+    /// 쉼터 곁(0053): 점프 버튼에 모닥불을 그린다.
+    pub rest: bool,
 }
 
 /// 터치가 이번 프레임에 만든 입력.
@@ -117,95 +119,101 @@ pub struct Touch {
     repeat: Option<Repeat>,
     /// 공격 버튼을 짚은 손가락(강공격 모으기, 0030).
     attack_finger: Option<u64>,
-    /// 상호작용 버튼을 띄우나(0032, 앱이 정한다).
-    pub interact_shown: bool,
+    /// 상황 버튼(0053, 앱이 매 프레임 정한다).
+    pub ctx: Ctx,
     /// 메뉴 모드: 손가락마다 (id, 처음 자리, 멀리 움직였나).
     taps: Vec<(u64, Vec2, bool)>,
 }
 
+/// 버튼 크기·거리의 기준(짧은 변)의 상한(논리 px) — 태블릿에서 버튼이 너무 커지지 않게.
+const TOUCH_U_MAX: f32 = 520.0;
+
 /// 이보다 덜 움직이고 떼면 탭(논리 px).
 const TAP_SLOP: f32 = 24.0;
 
-/// 버튼 배치. `w`·`h`는 논리 px. 오른손 엄지가 쉬는 오른쪽 아래에 공격(지름 ≈ 짧은 변의 27%), 그 둘레에 회피·락온.
-pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool, interact: bool) -> Vec<Button> {
-    let u = w.min(h);
+/// 상황 버튼(0053): 쓸 수 있을 때만 정해 둔 자리에 뜬다 — 다른 버튼을 밀지 않는다(Apple HIG Game controls: 쓸 수 없으면 숨겨 어수선함을 줄인다).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Ctx {
+    /// 쉼터 곁이고 안전하다 — 점프 버튼이 모닥불 그림이 되고 쉬기를 한다(0048: 점프 = 상호작용).
+    pub rest: bool,
+    /// 락온할 적이 가까이 있거나 이미 락온 중.
+    pub lock: bool,
+    /// 마실 수 있다(체력이 가득이 아니고 등잔이 남았다).
+    pub flask: bool,
+}
+
+impl Ctx {
+    #[cfg(test)]
+    pub const ALL: Ctx = Ctx {
+        rest: true,
+        lock: true,
+        flask: true,
+    };
+}
+
+/// 버튼 배치(0053, `docs/decisions/0053`). `w`·`h`는 논리 px, 기준은 짧은 변 `u`(태블릿에서 너무 커지지 않게 상한).
+/// 오른손 엄지가 쉬는 오른쪽 아래에 공격(지름 ≈ 0.27u), 그 둘레 첫째 호(거리 0.26u)에 자주 쓰는 넷 — 회피·패링·마법·점프 —
+/// 둘째 호(0.44u)에 돌리기 캡슐과 상황 버튼(락온·등잔). 각도는 공격 가운데에서 180° = 왼쪽, 90° = 위.
+pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool, ctx: Ctx) -> Vec<Button> {
+    let u = w.min(h).min(TOUCH_U_MAX);
     let r = u * 0.09;
-    let atk_r = r * 1.5;
-    let dodge_r = r * 1.1;
-    let lock_r = r * 0.85;
-    let turn_r = r * 0.8;
-    let parry_r = r * 0.9;
-    let jump_r = r * 0.85;
-    let flask_r = r * 0.75;
-    let atk = vec2(w - atk_r * 1.3, h - atk_r * 1.3);
-    let lock = vec2(atk.x, atk.y - (atk_r + lock_r + r * 0.45));
-    // 패링(0025): 공격에서 왼쪽 위 30°(공격 → 회피 → 패링 → 락온이 엄지 둘레의 부채꼴). 돌리기 줄은 그 위로 비켜 선다.
-    let pa = std::f32::consts::PI / 6.0;
-    let parry = atk + vec2(-pa.cos(), -pa.sin()) * (atk_r + parry_r + r * 0.4);
-    let turn_y = lock.y - r * 0.5;
-    let cw_x = lock.x - (lock_r + turn_r + r * 1.4);
-    let ccw_x = cw_x - (turn_r * 2.0 + r * 0.4);
-    let jump = vec2(
-        atk.x - (atk_r + dodge_r + r * 0.5) - (dodge_r + jump_r + r * 0.4),
-        h - jump_r * 1.25,
-    );
+    let atk = vec2(w - u * 0.238, h - u * 0.21);
+    let at = |deg: f32, dist: f32| {
+        let a = deg.to_radians();
+        atk + vec2(a.cos(), -a.sin()) * (u * dist)
+    };
     let mut b = vec![
         Button {
             center: atk,
-            radius: atk_r,
+            radius: u * 0.135,
             kind: Kind::Attack,
         },
         Button {
-            center: vec2(atk.x - (atk_r + dodge_r + r * 0.5), h - dodge_r * 1.2),
-            radius: dodge_r,
+            center: at(188.0, 0.26),
+            radius: u * 0.085,
             kind: Kind::Dodge,
         },
         Button {
-            center: parry,
-            radius: parry_r,
+            center: at(146.0, 0.26),
+            radius: u * 0.0775,
             kind: Kind::Parry,
         },
-        // 점프(0027): 회피 왼쪽, 같은 높이.
         Button {
-            center: jump,
-            radius: jump_r,
-            kind: Kind::Jump,
-        },
-        // 마법(0048): 점프 왼쪽, 같은 높이 — 아래 줄이 공격·회피·점프·마법.
-        Button {
-            center: vec2(jump.x - (jump_r * 2.0 + r * 0.4), jump.y),
-            radius: jump_r,
+            center: at(104.0, 0.26),
+            radius: u * 0.0775,
             kind: Kind::Cast,
         },
-        // 등잔(0031): 점프 위, 돌리기 줄과의 가운데 — 엄지가 공격에서 멀리 가야 닿아 실수로 덜 누른다.
         Button {
-            center: vec2(jump.x, (jump.y + turn_y) * 0.5),
-            radius: flask_r,
-            kind: Kind::Flask,
-        },
-        Button {
-            center: lock,
-            radius: lock_r,
-            kind: Kind::Lock,
-        },
-        Button {
-            center: vec2(cw_x, turn_y),
-            radius: turn_r,
-            kind: Kind::TurnRight,
-        },
-        Button {
-            center: vec2(ccw_x, turn_y),
-            radius: turn_r,
-            kind: Kind::TurnLeft,
+            center: at(62.0, 0.26),
+            radius: u * 0.0725,
+            kind: Kind::Jump,
         },
     ];
-    // 상호작용(0032): 쉼터 곁에서만 락온 위에 뜬다.
-    if interact {
-        let ir = r * 0.8;
+    // 땅 돌리기: 둘을 한 캡슐로(왼쪽 반 = 왼쪽으로, 오른쪽 반 = 오른쪽으로) — 그림이 캡슐 테두리로 묶는다.
+    let turn = at(118.0, 0.44);
+    let tr = u * 0.065;
+    b.push(Button {
+        center: turn - vec2(u * 0.08, 0.0),
+        radius: tr,
+        kind: Kind::TurnLeft,
+    });
+    b.push(Button {
+        center: turn + vec2(u * 0.08, 0.0),
+        radius: tr,
+        kind: Kind::TurnRight,
+    });
+    if ctx.lock {
         b.push(Button {
-            center: vec2(lock.x, lock.y - (lock_r + ir + r * 0.6)),
-            radius: ir,
-            kind: Kind::Interact,
+            center: at(80.0, 0.44),
+            radius: u * 0.065,
+            kind: Kind::Lock,
+        });
+    }
+    if ctx.flask {
+        b.push(Button {
+            center: at(150.0, 0.44),
+            radius: u * 0.0625,
+            kind: Kind::Flask,
         });
     }
     // 멈춤: 오른쪽 위 끝(개발 버튼은 그 왼쪽으로).
@@ -256,11 +264,11 @@ pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool, interact: bool) -> Vec<
 
 /// 랩 터치 줄의 높이(가운데 y)와 버튼 반지름. HUD 두 줄 아래, 랩 글은 이 줄 바로 위(`lab.rs draw_compact`).
 pub fn lab_row_y(w: f32, h: f32) -> f32 {
-    w.min(h) * 0.30
+    w.min(h).min(TOUCH_U_MAX) * 0.21
 }
 
 pub fn lab_button_radius(w: f32, h: f32) -> f32 {
-    w.min(h) * 0.09 * 0.62
+    w.min(h).min(TOUCH_U_MAX) * 0.09 * 0.62
 }
 
 /// 오른쪽 위 dev 버튼(시나리오·랩)이 차지하는 폭 — 랩 글이 그 앞에서 멈춘다.
@@ -318,7 +326,7 @@ impl Touch {
             return a;
         }
         let (w, h) = (screen_width(), screen_height());
-        let buttons = layout(w, h, dev, lab_open, self.interact_shown);
+        let buttons = layout(w, h, dev, lab_open, self.ctx);
         for t in &touches {
             let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
             if !self.known.contains(&t.id) {
@@ -406,7 +414,8 @@ impl Touch {
         Overlay {
             stick: self.stick.map(|s| (s.origin, s.pos)),
             stick_radius: stick_radius(w, h),
-            buttons: layout(w, h, dev, lab_open, self.interact_shown),
+            buttons: layout(w, h, dev, lab_open, self.ctx),
+            rest: self.ctx.rest,
         }
     }
 }
@@ -418,8 +427,8 @@ fn press(a: &mut Read, k: Kind) {
         Kind::Parry => a.parry = true,
         Kind::Jump => a.jump = true,
         Kind::Flask => a.flask = true,
-        Kind::Interact => a.interact = true,
         Kind::Cast => a.cast = true,
+        Kind::Rest => a.jump = true,
         Kind::Lock => a.lock = true,
         Kind::TurnLeft => a.turn_left = true,
         Kind::TurnRight => a.turn_right = true,
@@ -456,6 +465,37 @@ pub fn draw(o: &Overlay, locked: bool, turn: f32) {
         draw_circle(knob.x, knob.y, o.stick_radius * 0.4, fill);
         draw_circle_lines(knob.x, knob.y, o.stick_radius * 0.4, 2.0, line);
     }
+    // 돌리기 둘을 한 캡슐로 묶는 테(0053).
+    let tl = o.buttons.iter().find(|b| b.kind == Kind::TurnLeft);
+    let trn = o.buttons.iter().find(|b| b.kind == Kind::TurnRight);
+    if let (Some(l), Some(r)) = (tl, trn) {
+        let pad = l.radius * 0.25;
+        let rr = l.radius + pad;
+        draw_rectangle(
+            l.center.x,
+            l.center.y - rr,
+            r.center.x - l.center.x,
+            rr * 2.0,
+            Color::new(1.0, 1.0, 1.0, 0.06),
+        );
+        draw_line(
+            l.center.x,
+            l.center.y - rr,
+            r.center.x,
+            r.center.y - rr,
+            2.0,
+            line,
+        );
+        draw_line(
+            l.center.x,
+            l.center.y + rr,
+            r.center.x,
+            r.center.y + rr,
+            2.0,
+            line,
+        );
+        draw_arc_left_right(l.center, r.center, rr, line);
+    }
     for b in &o.buttons {
         let on = b.kind == Kind::Lock && locked;
         let f = if on {
@@ -476,7 +516,31 @@ pub fn draw(o: &Overlay, locked: bool, turn: f32) {
         }
         draw_circle_lines(b.center.x, b.center.y, b.radius, 2.0, line);
         let dim = if is_turn && turn < 1.0 { 0.35 } else { 1.0 };
-        icon(b.kind, b.center, b.radius, dim);
+        let kind = if b.kind == Kind::Jump && o.rest {
+            Kind::Rest
+        } else {
+            b.kind
+        };
+        icon(kind, b.center, b.radius, dim);
+    }
+}
+
+/// 캡슐 양끝의 반원 테(선 조각으로).
+fn draw_arc_left_right(l: Vec2, r: Vec2, rr: f32, col: Color) {
+    let n = 10;
+    for (c, from) in [(l, 90.0f32), (r, -90.0f32)] {
+        for i in 0..n {
+            let a0 = (from + 180.0 * i as f32 / n as f32).to_radians();
+            let a1 = (from + 180.0 * (i + 1) as f32 / n as f32).to_radians();
+            draw_line(
+                c.x + rr * a0.cos(),
+                c.y - rr * a0.sin(),
+                c.x + rr * a1.cos(),
+                c.y - rr * a1.sin(),
+                2.0,
+                col,
+            );
+        }
     }
 }
 
@@ -583,7 +647,7 @@ fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
                 draw_line(p.x, p.y, q.x, q.y, th, col);
             }
         }
-        Kind::Interact => {
+        Kind::Rest => {
             // 모닥불: 엇갈린 장작 둘 + 불꽃.
             draw_line(
                 c.x - s * 0.7,
@@ -700,7 +764,7 @@ mod tests {
             (390.0, 844.0),
         ] {
             for lab in [false, true] {
-                let b = layout(w, h, true, lab, true);
+                let b = layout(w, h, true, lab, Ctx::ALL);
                 for x in &b {
                     assert!(
                         x.center.x - x.radius >= 0.0 && x.center.x + x.radius <= w,
@@ -731,13 +795,32 @@ mod tests {
     #[test]
     fn attack_is_the_biggest_button_and_meets_the_minimum_touch_size() {
         // 플랫폼 최소 터치 크기 44pt(지름) — 가장 작은 가로 폰에서도.
-        let b = layout(667.0, 375.0, true, true, true);
+        let b = layout(667.0, 375.0, true, true, Ctx::ALL);
         let atk = b.iter().find(|x| x.kind == Kind::Attack).unwrap();
         assert!(b.iter().all(|x| x.radius <= atk.radius));
         assert!(
             b.iter().all(|x| x.radius * 2.0 >= 44.0 * 0.8),
             "smallest {:?}",
             b.iter().map(|x| x.radius).fold(f32::MAX, f32::min)
+        );
+    }
+
+    /// 0053: 상황 버튼이 켜지고 꺼져도 늘 있는 버튼의 자리는 그대로다(엄지가 외운 자리가 밀리지 않게).
+    #[test]
+    fn contextual_buttons_never_move_the_others() {
+        let all = layout(844.0, 390.0, false, false, Ctx::ALL);
+        let none = layout(844.0, 390.0, false, false, Ctx::default());
+        for x in &none {
+            let y = all.iter().find(|y| y.kind == x.kind).unwrap();
+            assert_eq!(x.center, y.center, "{:?}", x.kind);
+        }
+        assert!(!none
+            .iter()
+            .any(|x| matches!(x.kind, Kind::Lock | Kind::Flask)));
+        assert_eq!(
+            none.iter().filter(|x| x.kind != Kind::Pause).count(),
+            7,
+            "attack + 4 + turn pair"
         );
     }
 
@@ -751,7 +834,7 @@ mod tests {
         press(&mut a, Kind::TurnLeft);
         assert!(a.turn_left && !a.turn_right);
         // 오른쪽 버튼이 화면 오른쪽에 있다.
-        let b = layout(844.0, 390.0, false, false, false);
+        let b = layout(844.0, 390.0, false, false, Ctx::default());
         let x = |k| b.iter().find(|x| x.kind == k).unwrap().center.x;
         assert!(x(Kind::TurnRight) > x(Kind::TurnLeft));
     }
