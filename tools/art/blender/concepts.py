@@ -122,4 +122,5 @@ def main():
         print("[concept]", name)
 
 
-main()
+if __name__ == "__main__":
+    main()
