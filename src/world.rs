@@ -5,9 +5,11 @@ use macroquad::prelude::*;
 use crate::ground::Ground;
 use crate::input::Actions;
 use crate::tuning::{
-    Tuning, BOLT_HEIGHT, BOLT_RADIUS, CAST_CHARGES, FLASK_CHARGES, GROUND_STEP, HIT_DY, P,
-    PLAYER_HP, PLAYER_RADIUS, TICK_DT,
+    Tuning, BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH,
+    BOMB_SKID, CAST_CHARGES, FLASK_CHARGES, GROUND_STEP, HIT_DY, P, PLAYER_HP, PLAYER_RADIUS,
+    TICK_DT,
 };
+use crate::weapons::{self, Rb, Shape};
 
 /// 축 정렬 상자(기둥·벽). 충돌·카메라 당기기에 쓴다.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -141,6 +143,54 @@ pub enum Event {
     },
     /// 칸이 모자라 마법을 못 쐈다(0048) — HUD 칸이 깜빡인다.
     CastDenied,
+    /// 적의 자세가 깨졌다(0051) — 휘청 + 드러남.
+    Break {
+        at: Vec3,
+    },
+    /// 망치 강타의 금 간 땅이 여진으로 터졌다(0051).
+    Aftershock {
+        at: Vec3,
+    },
+    /// 수류탄이 터졌다(0051).
+    Boom {
+        at: Vec3,
+    },
+    /// 지팡이 강타를 딱 맞춰 뗐다(0051).
+    Perfect {
+        at: Vec3,
+    },
+    /// 수류탄을 던졌다(0051).
+    Throw,
+}
+
+/// 금 간 땅(0051, 망치 여진): `left`초 뒤 둘레를 친다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Crack {
+    pub pos: Vec3,
+    pub left: f32,
+    pub radius: f32,
+    pub damage: i32,
+    pub poise: f32,
+}
+
+/// 수류탄(0051): 포물선으로 날아 땅에서 튕기다 도화선이 다하면(또는 쇠뇌 볼트에 맞으면) 터진다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bomb {
+    pub pos: Vec3,
+    pub prev: Vec3,
+    pub vel: Vec3,
+    pub fuse: f32,
+    pub radius: f32,
+    pub damage: i32,
+    pub poise: f32,
+}
+
+/// 폭발 고리(그림만 — 렌더가 읽는다).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Blast {
+    pub pos: Vec3,
+    pub radius: f32,
+    pub age: f32,
 }
 
 /// 마법 탄(0048): 곧게 날아 처음 닿는 깨어 있는 적 하나를 치고 사라진다. 벽·기둥·높은 땅에 닿아도 사라진다.
@@ -152,6 +202,10 @@ pub struct Bolt {
     pub dir: Vec3,
     /// 남은 거리(m).
     pub left: f32,
+    /// 무기 표의 탄 모양(피해·자세 피해·꿰뚫기·휘청·색, 0051).
+    pub def: weapons::Bolt,
+    /// 이미 맞힌 적(꿰뚫는 탄, 번호 비트).
+    pub hits: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -166,6 +220,8 @@ pub enum PState {
         t: f32,
         swing: u32,
         dir: Vec3,
+        /// 콤보의 몇째 타(0051, 무기 표 `combo`).
+        hit: u8,
     },
     /// 맞아서 경직(0018): 못 움직이고 못 친다. 밀려난 속도는 빠르게 준다.
     Hurt {
@@ -203,6 +259,14 @@ pub enum PState {
         swing: u32,
         dir: Vec3,
         full: bool,
+        /// 딱 맞춰 뗐다(지팡이, 0051).
+        perfect: bool,
+    },
+    /// 수류탄 던지기(0051, 원거리 무기의 X): `throw.startup s`에 손을 떠난다.
+    Throw {
+        t: f32,
+        to: Vec3,
+        thrown: bool,
     },
     /// 마법(0048): `cast.startup s`에 탄이 나가고(`fired`) `cast.time s`에 끝. 쏘는 동안 느리게 걷고 몸은 쏘는 쪽에 고정,
     /// 나간 뒤에는 회피로 끊는다.
@@ -254,6 +318,16 @@ pub struct Player {
     /// 마법 칸(0048, 0..=`CAST_CHARGES`): 근접으로 맞히면 차고 쏘면 1 준다. 못 쏴서 깜빡이는 남은 초(HUD).
     pub mana: f32,
     pub cast_denied: f32,
+    /// 든 무기(0051, `weapons.rs` 표).
+    pub weapon: weapons::Id,
+    /// 콤보: 다음 타 번호와 그 타를 이어 갈 남은 초, 미리 받아 둔 누름의 남은 초.
+    pub combo_next: u8,
+    pub combo_left: f32,
+    pub buffer: f32,
+    /// 원거리 무기: 탄창의 볼트, 장전 남은 초(0 = 장전 중 아님), 수류탄(소수 = 다시 차는 중).
+    pub ammo: u8,
+    pub reload: f32,
+    pub grenades: f32,
 }
 
 impl Player {
@@ -311,6 +385,12 @@ pub struct World {
     pub interact_here: bool,
     /// 날고 있는 마법 탄(0048).
     pub bolts: Vec<Bolt>,
+    /// 금 간 땅(망치 여진)·날고 있는 수류탄·폭발 고리(0051).
+    pub cracks: Vec<Crack>,
+    pub bombs: Vec<Bomb>,
+    pub blasts: Vec<Blast>,
+    /// 이번 틱에 손을 떠난 수류탄(던질 자리).
+    throw_to: Option<Vec3>,
     /// 이번 틱에 쏜 쪽 — `tick_bolts`가 탄을 세운다.
     cast_fire: Option<Vec3>,
     cast_denied_now: bool,
@@ -350,6 +430,13 @@ impl World {
                 swings: 0,
                 mana: CAST_CHARGES,
                 cast_denied: 0.0,
+                weapon: weapons::Id::Sword,
+                combo_next: 0,
+                combo_left: 0.0,
+                buffer: 0.0,
+                ammo: 0,
+                reload: 0.0,
+                grenades: 0.0,
             },
             enemies: Vec::new(),
             lock: None,
@@ -372,10 +459,33 @@ impl World {
             interact: false,
             interact_here: false,
             bolts: Vec::new(),
+            cracks: Vec::new(),
+            bombs: Vec::new(),
+            blasts: Vec::new(),
+            throw_to: None,
             cast_fire: None,
             cast_denied_now: false,
             gulp_now: false,
             flask_denied_now: false,
+        }
+    }
+
+    /// 무기를 바꾼다(0051): 콤보는 처음부터, 원거리 무기는 탄창·수류탄 가득.
+    pub fn set_weapon(&mut self, id: weapons::Id) {
+        let pl = &mut self.player;
+        pl.weapon = id;
+        pl.combo_next = 0;
+        pl.combo_left = 0.0;
+        pl.buffer = 0.0;
+        pl.reload = 0.0;
+        let w = id.def();
+        pl.ammo = match w.rb {
+            Rb::Shot { mag, .. } => mag,
+            Rb::Magic(_) => 0,
+        };
+        pl.grenades = w.grenade.map_or(0.0, |g| g.count as f32);
+        if !matches!(pl.state, PState::Hurt { .. } | PState::Jump { .. }) {
+            pl.state = PState::Idle;
         }
     }
 
@@ -437,6 +547,7 @@ impl World {
             en.hit_by = swing;
             // 근접으로 맞히면 마법 칸이 찬다(0048).
             self.player.mana = (self.player.mana + t[P::CastPerHit]).min(CAST_CHARGES);
+            add_poise(en, 2.0, None, t, ev);
             en.hurt = 0.15;
             en.knock = d.normalize_or_zero() * t[P::Knockback] * if en.boss { 0.25 } else { 1.2 };
             if en.hp <= 0 {
@@ -657,8 +768,49 @@ impl World {
         } else {
             self.player.facing_dir()
         };
+        // 수류탄을 떨굴 자리(0051): 조준 스틱 쪽 가까운 거리 > 락온 대상 > 먼 거리 안 가장 가까운 적 > 바라보는 쪽.
+        let wpn = self.player.weapon.def();
+        let throw_to = wpn.grenade.map(|g| {
+            let p0 = self.player.pos;
+            let clamp_to = |q: Vec3| {
+                let d = vec3(q.x - p0.x, 0.0, q.z - p0.z);
+                let n = d.length().clamp(2.0, g.far);
+                p0 + d.normalize_or(self.player.facing_dir()) * n
+            };
+            if let Some(d) = aim {
+                p0 + d * g.near
+            } else if let Some(tg) = target {
+                clamp_to(tg)
+            } else if let Some(d) = nearest_in_reach(&self.enemies, p0, g.far, None) {
+                let e = self
+                    .enemies
+                    .iter()
+                    .filter(|e| e.active())
+                    .min_by(|a, b| a.pos.distance(p0).total_cmp(&b.pos.distance(p0)));
+                e.map_or(p0 + d * g.near, |e| clamp_to(e.pos))
+            } else {
+                p0 + self.player.facing_dir() * g.near
+            }
+        });
         let mut fire: Option<Vec3> = None;
+        let mut thrown: Option<Vec3> = None;
+        let was_dodging = matches!(self.player.state, PState::Dodge { .. });
         let pl = &mut self.player;
+        // 콤보·원거리 무기 시계(0051).
+        pl.combo_left = (pl.combo_left - dt).max(0.0);
+        pl.buffer = (pl.buffer - dt).max(0.0);
+        if let Rb::Shot { mag, .. } = wpn.rb {
+            if pl.reload > 0.0 {
+                pl.reload -= dt;
+                if pl.reload <= 0.0 {
+                    pl.reload = 0.0;
+                    pl.ammo = mag;
+                }
+            }
+        }
+        if let Some(g) = wpn.grenade {
+            pl.grenades = (pl.grenades + dt / g.cooldown.max(0.1)).min(g.count as f32);
+        }
         pl.hurt = (pl.hurt - dt).max(0.0);
         pl.cast_denied = (pl.cast_denied - dt).max(0.0);
         pl.dodge_cd = (pl.dodge_cd - dt).max(0.0);
@@ -698,7 +850,10 @@ impl World {
             && pl.turn_cd <= 0.0
             && match pl.state {
                 PState::Idle => true,
-                PState::Attack { t: e, .. } => e >= t[P::AttackStartup] + t[P::AttackActive],
+                PState::Attack { t: e, hit, .. } => {
+                    let (s0, a0, _) = hit_times(t, pl.weapon.def(), hit);
+                    e >= s0 + a0
+                }
                 _ => false,
             };
         if let (Some(right), true) = (turn, can_turn) {
@@ -744,6 +899,24 @@ impl World {
                         pl.facing = d.x.atan2(d.z);
                     }
                     pl.state = PState::Parry { t: 0.0 };
+                } else if a.attack && !a.dodge && wpn.grenade.is_some() {
+                    // 원거리 무기의 X = 수류탄(0048·0051): 남아 있으면 던지고, 없으면 칸이 깜빡인다.
+                    if pl.grenades >= 1.0 {
+                        pl.grenades -= 1.0;
+                        let to = throw_to.unwrap_or(pl.pos);
+                        let d = vec3(to.x - pl.pos.x, 0.0, to.z - pl.pos.z);
+                        if d.length() > 0.1 {
+                            pl.facing = d.x.atan2(d.z);
+                        }
+                        pl.state = PState::Throw {
+                            t: 0.0,
+                            to,
+                            thrown: false,
+                        };
+                    } else {
+                        pl.cast_denied = 0.6;
+                        self.cast_denied_now = true;
+                    }
                 } else if a.attack && !a.dodge && spend(pl, t[P::StaminaAttack]) {
                     pl.swings += 1;
                     // 휘두르는 쪽을 그 자리에서 정한다: 자동 조준 > 조준 스틱 > 지금 바라보는 쪽.
@@ -760,11 +933,38 @@ impl World {
                     } else {
                         pl.facing_dir()
                     };
+                    // 콤보(0051): 끝난 지 `combo.keep s` 안이면 다음 타부터.
+                    let hit = if pl.combo_left > 0.0 {
+                        pl.combo_next
+                    } else {
+                        0
+                    };
+                    pl.combo_left = 0.0;
                     pl.state = PState::Attack {
                         t: 0.0,
                         swing: pl.swings,
                         dir,
+                        hit,
                     };
+                } else if a.cast && matches!(wpn.rb, Rb::Shot { .. }) {
+                    // 원거리 무기의 RB = 사격(0051): 탄창이 비면 장전이 끝날 때까지 못 쏜다.
+                    if let Rb::Shot { reload, .. } = wpn.rb {
+                        if pl.ammo > 0 {
+                            pl.ammo -= 1;
+                            if pl.ammo == 0 {
+                                pl.reload = reload;
+                            }
+                            pl.facing = cast_dir.x.atan2(cast_dir.z);
+                            pl.state = PState::Cast {
+                                t: 0.0,
+                                dir: cast_dir,
+                                fired: false,
+                            };
+                        } else {
+                            pl.cast_denied = 0.6;
+                            self.cast_denied_now = true;
+                        }
+                    }
                 } else if a.cast {
                     if pl.mana >= 1.0 {
                         pl.mana -= 1.0;
@@ -829,14 +1029,17 @@ impl World {
                 t: e,
                 swing,
                 dir: ldir,
+                hit,
             } => {
-                let total = t[P::AttackStartup] + t[P::AttackActive] + t[P::AttackRecovery];
+                let (s0, a0, r0) = hit_times(t, wpn, hit);
+                let total = s0 + a0 + r0;
+                let after = e >= s0 + a0;
+                if a.attack {
+                    pl.buffer = t[P::AttackBuffer];
+                }
+                let last = hit as usize + 1 >= wpn.combo.len();
                 // 회피는 활성 구간이 끝난 뒤부터 후딜레이를 끊는다(캔슬 창 = 무기 성격).
-                if a.dodge
-                    && pl.dodge_cd <= 0.0
-                    && e >= t[P::AttackStartup] + t[P::AttackActive]
-                    && spend(pl, t[P::StaminaDodge])
-                {
+                if a.dodge && pl.dodge_cd <= 0.0 && after && spend(pl, t[P::StaminaDodge]) {
                     let dir = if world_move.length_squared() > 1e-4 {
                         world_move.normalize()
                     } else {
@@ -844,16 +1047,12 @@ impl World {
                     };
                     pl.state = PState::Dodge { t: 0.0, dir };
                     pl.dodge_cd = t[P::DodgeTime] + 0.15;
-                } else if a.parry
-                    && e >= t[P::AttackStartup] + t[P::AttackActive]
-                    && spend(pl, t[P::ParryStamina])
-                {
+                } else if a.parry && after && spend(pl, t[P::ParryStamina]) {
                     if let Some(d) = auto_dir.or(aim) {
                         pl.facing = d.x.atan2(d.z);
                     }
                     pl.state = PState::Parry { t: 0.0 };
-                } else if a.cast && pl.mana >= 1.0 && e >= t[P::AttackStartup] + t[P::AttackActive]
-                {
+                } else if a.cast && matches!(wpn.rb, Rb::Magic(_)) && pl.mana >= 1.0 && after {
                     // 마법(0048)도 회피처럼 평타 후딜을 끊는다 — 베고 바로 쏘기.
                     pl.mana -= 1.0;
                     pl.facing = cast_dir.x.atan2(cast_dir.z);
@@ -864,18 +1063,45 @@ impl World {
                     };
                 } else if a.attack_held
                     && pl.attack_hold >= t[P::HeavyHoldStart]
-                    && e >= t[P::AttackStartup] + t[P::AttackActive]
+                    && after
+                    && wpn.heavy.is_some()
                 {
                     // 강공격(0030): 평타는 누르는 순간 나갔고, 한 번 누른 채 `heavy.hold start s`를 쥐고 있으면(활성이 끝난 뒤) 모으기로.
                     // "그 순간 눌려 있나"만 보면 연타 중 휘두르기 도중의 짧은 누름이 활성 끝에 걸려 모으기로 샜다.
                     pl.state = PState::Charging { t: 0.0 };
+                } else if pl.buffer > 0.0
+                    && !last
+                    && e >= s0 + a0 + r0 * t[P::ComboLink]
+                    && spend(pl, t[P::StaminaAttack])
+                {
+                    // 콤보(0051): 후딜 앞부분이 지나면 미리 받아 둔 누름으로 다음 타. 다시 겨눈다.
+                    pl.buffer = 0.0;
+                    pl.swings += 1;
+                    if let Some(d) = auto_dir.or(aim) {
+                        pl.facing = d.x.atan2(d.z);
+                    }
+                    let dir = if world_move.length_squared() > 1e-4 {
+                        world_move.normalize()
+                    } else {
+                        pl.facing_dir()
+                    };
+                    pl.state = PState::Attack {
+                        t: 0.0,
+                        swing: pl.swings,
+                        dir,
+                        hit: hit + 1,
+                    };
                 } else if e + dt >= total {
                     pl.state = PState::Idle;
+                    // 마지막 타 뒤에는 처음으로, 아니면 잠깐 다음 타를 기억한다.
+                    pl.combo_next = if last { 0 } else { hit + 1 };
+                    pl.combo_left = if last { 0.0 } else { t[P::ComboKeep] };
                 } else {
                     pl.state = PState::Attack {
                         t: e + dt,
                         swing,
                         dir: ldir,
+                        hit,
                     };
                 }
             }
@@ -894,10 +1120,12 @@ impl World {
                     }
                     pl.state = PState::Parry { t: 0.0 };
                 } else if a.attack_held {
-                    let full = t[P::HeavyCharge];
+                    let full = t[P::HeavyCharge] * wpn.heavy.map_or(1.0, |h| h.charge);
                     self.charged_now |= e < full && e + dt >= full;
                     pl.state = PState::Charging { t: e + dt };
                 } else if spend(pl, t[P::HeavyStamina]) {
+                    let h = wpn.heavy.expect("charging only with a heavy");
+                    let full_at = t[P::HeavyCharge] * h.charge;
                     // 떼면 강타 — 자동 조준·조준 스틱 쪽으로, 내딛는 쪽은 이동 입력(없으면 바라보는 쪽).
                     if let Some(d) = auto_dir.or(aim) {
                         pl.facing = d.x.atan2(d.z);
@@ -912,7 +1140,9 @@ impl World {
                         t: 0.0,
                         swing: pl.swings,
                         dir,
-                        full: e >= t[P::HeavyCharge],
+                        full: e >= full_at,
+                        // 지팡이(0051): 다 모인 뒤 창 안에 떼면 딱 맞춤.
+                        perfect: h.perfect.is_some_and(|w| e >= full_at && e <= full_at + w),
                     };
                 } else {
                     pl.state = PState::Idle;
@@ -923,13 +1153,11 @@ impl World {
                 swing,
                 dir: ldir,
                 full,
+                perfect,
             } => {
-                let total = t[P::HeavyStartup] + t[P::HeavyActive] + t[P::HeavyRecovery];
-                if a.dodge
-                    && pl.dodge_cd <= 0.0
-                    && e >= t[P::HeavyStartup] + t[P::HeavyActive]
-                    && spend(pl, t[P::StaminaDodge])
-                {
+                let (s0, a0, r0) = heavy_times(t, wpn);
+                let total = s0 + a0 + r0;
+                if a.dodge && pl.dodge_cd <= 0.0 && e >= s0 + a0 && spend(pl, t[P::StaminaDodge]) {
                     let dir = if world_move.length_squared() > 1e-4 {
                         world_move.normalize()
                     } else {
@@ -945,6 +1173,7 @@ impl World {
                         swing,
                         dir: ldir,
                         full,
+                        perfect,
                     };
                 }
             }
@@ -960,14 +1189,49 @@ impl World {
                 } else {
                     let e2 = e + dt;
                     let mut fired = fired;
-                    if !fired && e2 >= t[P::CastStartup] {
+                    let k = match wpn.rb {
+                        Rb::Shot { time, .. } => time,
+                        Rb::Magic(_) => 1.0,
+                    };
+                    if !fired && e2 >= t[P::CastStartup] * k {
                         fired = true;
                         fire = Some(dir);
                     }
-                    pl.state = if e2 >= t[P::CastTime] {
+                    pl.state = if e2 >= t[P::CastTime] * k {
                         PState::Idle
                     } else {
                         PState::Cast { t: e2, dir, fired }
+                    };
+                }
+            }
+            PState::Throw {
+                t: e,
+                to,
+                thrown: done,
+            } => {
+                if done && a.dodge && pl.dodge_cd <= 0.0 && spend(pl, t[P::StaminaDodge]) {
+                    let ddir = if world_move.length_squared() > 1e-4 {
+                        world_move.normalize()
+                    } else {
+                        -pl.facing_dir()
+                    };
+                    pl.state = PState::Dodge { t: 0.0, dir: ddir };
+                    pl.dodge_cd = t[P::DodgeTime] + 0.15;
+                } else {
+                    let e2 = e + dt;
+                    let mut done = done;
+                    if !done && e2 >= t[P::ThrowStartup] {
+                        done = true;
+                        thrown = Some(to);
+                    }
+                    pl.state = if e2 >= t[P::ThrowTime] {
+                        PState::Idle
+                    } else {
+                        PState::Throw {
+                            t: e2,
+                            to,
+                            thrown: done,
+                        }
                     };
                 }
             }
@@ -1039,11 +1303,14 @@ impl World {
             PState::Dodge { dir, .. } => {
                 pl.vel = dir * (t[P::DodgeDist] / t[P::DodgeTime]);
             }
-            PState::Attack { t: e, dir, .. } => {
-                // 선딜 + 활성 동안 `attack.lunge m`만큼 입력한 쪽으로 내딛고, 후딜에는 선다(0018).
-                let reach = t[P::AttackStartup] + t[P::AttackActive];
+            PState::Attack { t: e, dir, hit, .. } => {
+                // 선딜 + 활성 동안 `attack.lunge m` × 타의 배율만큼 입력한 쪽으로 내딛고, 후딜에는 선다(0018·0051).
+                let (s0, a0, _) = hit_times(t, wpn, hit);
+                let reach = s0 + a0;
+                let lunge =
+                    t[P::AttackLunge] * wpn.combo.get(hit as usize).map_or(1.0, |h| h.lunge);
                 pl.vel = if e < reach {
-                    dir * (t[P::AttackLunge] / reach.max(1e-3))
+                    dir * (lunge / reach.max(1e-3))
                 } else {
                     Vec3::ZERO
                 };
@@ -1053,9 +1320,11 @@ impl World {
             }
             PState::Turn { .. } | PState::Parry { .. } | PState::Land { .. } => pl.vel = Vec3::ZERO,
             PState::Heavy { t: e, dir, .. } => {
-                let reach = t[P::HeavyStartup] + t[P::HeavyActive];
+                let (s0, a0, _) = heavy_times(t, wpn);
+                let reach = s0 + a0;
+                let lunge = t[P::HeavyLunge] * wpn.heavy.map_or(1.0, |h| h.lunge);
                 pl.vel = if e < reach {
-                    dir * (t[P::HeavyLunge] / reach.max(1e-3))
+                    dir * (lunge / reach.max(1e-3))
                 } else {
                     Vec3::ZERO
                 };
@@ -1074,12 +1343,18 @@ impl World {
                     diff
                 };
             }
-            PState::Idle | PState::Drink { .. } | PState::Charging { .. } | PState::Cast { .. } => {
+            PState::Idle
+            | PState::Drink { .. }
+            | PState::Charging { .. }
+            | PState::Cast { .. }
+            | PState::Throw { .. } => {
                 // 마시는 동안·강공격을 모으는 동안(0047)·마법을 쏘는 동안(0048)은 느리게 걷는다.
                 let slow = match pl.state {
                     PState::Drink { .. } => t[P::FlaskWalk],
-                    PState::Charging { .. } => t[P::HeavyChargeWalk],
-                    PState::Cast { .. } => t[P::CastWalk],
+                    PState::Charging { .. } => {
+                        t[P::HeavyChargeWalk] * wpn.heavy.map_or(1.0, |h| h.walk)
+                    }
+                    PState::Cast { .. } | PState::Throw { .. } => t[P::CastWalk],
                     _ => 1.0,
                 };
                 let want = world_move * t[P::MoveSpeed] * slow;
@@ -1105,6 +1380,7 @@ impl World {
                 | PState::Parry { .. }
                 | PState::Jump { plunge: true, .. }
                 | PState::Cast { .. }
+                | PState::Throw { .. }
                 | PState::Land { .. },
             ) => None,
             (Basis::Lock(tg), _) => {
@@ -1142,30 +1418,83 @@ impl World {
         if fire.is_some() {
             self.cast_fire = fire;
         }
+        if thrown.is_some() {
+            self.throw_to = thrown;
+        }
+        // 원거리 무기는 회피하면 한 발 장전(0051, PoE2 착상) — 회피를 공격 리듬에 넣는다.
+        if !was_dodging && matches!(self.player.state, PState::Dodge { .. }) {
+            if let Rb::Shot { mag, .. } = wpn.rb {
+                let pl = &mut self.player;
+                if pl.ammo < mag {
+                    pl.ammo += 1;
+                    if pl.ammo == mag {
+                        pl.reload = 0.0;
+                    }
+                }
+            }
+        }
     }
 
-    /// 마법 탄(0048): 이번 틱에 쏜 것을 세우고, 날리고, 벽·땅·적에 닿으면 지운다. 적에게는 `cast.damage`(드러난 적은 치명타),
-    /// 밀림은 평타의 반, 칸은 채우지 않는다(근접만 채운다).
+    /// 날아가는 것·늦게 터지는 것(0048·0051): 마법 탄·쇠뇌 볼트, 수류탄, 금 간 땅(망치 여진), 자세 막대가 줄기, 폭발 고리.
+    /// 탄은 이번 틱에 쏜 것을 세우고 날려 벽·땅·적에 닿으면 지운다(꿰뚫는 탄은 적을 지나간다). 칸은 채우지 않는다(근접만 채운다).
     fn tick_bolts(&mut self, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
         if std::mem::take(&mut self.cast_denied_now) {
             ev.push(Event::CastDenied);
         }
+        let wpn = self.player.weapon.def();
+        // 자세 막대(0051): 깬 뒤 잠금이 풀리고, 맞지 않은 지 오래면 줄어든다.
+        for en in &mut self.enemies {
+            en.poise_lock = (en.poise_lock - dt).max(0.0);
+            en.poise_idle += dt;
+            if en.poise_idle >= t[P::PoiseDelay] {
+                en.poise = (en.poise - t[P::PoiseDecay] * dt).max(0.0);
+            }
+        }
+        for b in &mut self.blasts {
+            b.age += dt;
+        }
+        self.blasts.retain(|b| b.age < BLAST_SHOW);
         if let Some(dir) = self.cast_fire.take() {
             let pl = &self.player;
             let pos = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT) + dir * (PLAYER_RADIUS + 0.2);
+            let def = match wpn.rb {
+                Rb::Magic(b) => b,
+                Rb::Shot { bolt, .. } => bolt,
+            };
             self.bolts.push(Bolt {
                 pos,
                 prev: pos,
                 dir,
-                left: t[P::CastRange],
+                left: t[P::CastRange] * def.range,
+                def,
+                hits: 0,
             });
             ev.push(Event::Cast { at: pos });
+        }
+        if let (Some(to), Some(g)) = (self.throw_to.take(), wpn.grenade) {
+            // 포물선: 날아가는 시간을 거리로 정하고(가까우면 낮게·빨리) 그 시간에 `to`에 닿는 속도.
+            let pl = &self.player;
+            let from = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT);
+            let ground_to = self.ground.as_ref().map_or(0.0, |gr| gr.height(to));
+            let flat = vec3(to.x - from.x, 0.0, to.z - from.z);
+            let tf = (flat.length() / 10.0).clamp(0.45, 0.9);
+            let vy = (ground_to + 0.2 - from.y + 0.5 * BOMB_GRAVITY * tf * tf) / tf;
+            self.bombs.push(Bomb {
+                pos: from,
+                prev: from,
+                vel: flat / tf + Vec3::Y * vy,
+                fuse: g.fuse,
+                radius: g.radius,
+                damage: g.damage,
+                poise: g.poise,
+            });
+            ev.push(Event::Throw);
         }
         let step = t[P::CastSpeed] * dt;
         let mut keep = Vec::with_capacity(self.bolts.len());
         for mut b in std::mem::take(&mut self.bolts) {
             b.prev = b.pos;
-            let mut len = step.min(b.left);
+            let mut len = (step * b.def.speed).min(b.left);
             // 벽·기둥: 이번 걸음 안에서 먼저 닿는 상자까지만.
             let mut gone = false;
             for o in &self.obstacles {
@@ -1176,27 +1505,43 @@ impl World {
                     }
                 }
             }
-            let to = b.pos + b.dir * len;
-            // 적: 걸음 선분에서 가장 가까운 깨어 있는 적(높이가 몸 안).
-            let mut best: Option<(usize, f32)> = None;
+            // 쇠뇌 볼트가 수류탄을 맞히면 그 자리에서 터진다(0051, PoE2 착상).
+            if b.def.look == 3 {
+                for bomb in &mut self.bombs {
+                    let k = (bomb.pos - b.pos).dot(b.dir).clamp(0.0, len);
+                    if (b.pos + b.dir * k).distance(bomb.pos) <= BOMB_SHOT_REACH {
+                        bomb.fuse = 0.0;
+                        gone = true;
+                    }
+                }
+            }
+            // 적: 걸음 선분에서 맞는 깨어 있는 적(높이가 몸 안). 꿰뚫는 탄은 모두, 아니면 가장 가까운 하나.
+            let mut struck: Vec<(usize, f32)> = Vec::new();
             for (i, en) in self.enemies.iter().enumerate() {
-                if !en.active() || b.pos.y < en.pos.y - 0.2 || b.pos.y > en.pos.y + en.height + 0.2
+                if !en.active()
+                    || (i < 64 && b.hits & (1 << i) != 0)
+                    || b.pos.y < en.pos.y - 0.2
+                    || b.pos.y > en.pos.y + en.height + 0.2
                 {
                     continue;
                 }
                 let c = vec3(en.pos.x, b.pos.y, en.pos.z);
                 let k = (c - b.pos).dot(b.dir).clamp(0.0, len);
-                let near = b.pos + b.dir * k;
-                if near.distance(c) <= en.radius + BOLT_RADIUS && best.is_none_or(|(_, bk)| k < bk)
-                {
-                    best = Some((i, k));
+                if (b.pos + b.dir * k).distance(c) <= en.radius + BOLT_RADIUS {
+                    struck.push((i, k));
                 }
             }
-            if let Some((i, k)) = best {
+            struck.sort_by(|a, b| a.1.total_cmp(&b.1));
+            if !b.def.pierce {
+                struck.truncate(1);
+            }
+            for &(i, k) in &struck {
+                if i < 64 {
+                    b.hits |= 1 << i;
+                }
                 let en = &mut self.enemies[i];
                 let crit = en.exposed > 0.0;
-                en.hp -=
-                    t[P::CastDamage].round() as i32 + if crit { t[P::ParryCrit] as i32 } else { 0 };
+                en.hp -= b.def.damage + if crit { t[P::ParryCrit] as i32 } else { 0 };
                 en.exposed = 0.0;
                 en.hurt = 0.15;
                 en.knock = b.dir * t[P::Knockback] * if en.boss { 0.1 } else { 0.5 };
@@ -1206,14 +1551,23 @@ impl World {
                 } else {
                     Event::Hit { at }
                 });
+                if b.def.stagger > 0.0 && !en.boss && en.hp > 0 {
+                    en.state = EState::Stagger {
+                        t: 0.0,
+                        dur: b.def.stagger,
+                    };
+                }
+                add_poise(en, b.def.poise, None, t, ev);
                 if en.hp <= 0 {
                     en.state = EState::Dead;
                     self.kills += 1;
                     ev.push(Event::EnemyDown { at: en.pos });
                 }
+            }
+            if !b.def.pierce && !struck.is_empty() {
                 continue;
             }
-            b.pos = to;
+            b.pos += b.dir * len;
             b.left -= len;
             // 땅: 탄보다 높은 땅(턱·벽 칸)에 들어가면 사라진다.
             if let Some(g) = &self.ground {
@@ -1231,6 +1585,106 @@ impl World {
             }
         }
         self.bolts = keep;
+
+        // 수류탄(0051): 중력으로 날다 땅에서 튕기고(줄어드는 위·옆 속도) 벽에서 되튄다, 도화선이 다하면 터진다.
+        let mut booms: Vec<(Vec3, f32, i32, f32)> = Vec::new();
+        for bomb in &mut self.bombs {
+            bomb.prev = bomb.pos;
+            bomb.fuse -= dt;
+            bomb.vel.y -= BOMB_GRAVITY * dt;
+            let next = bomb.pos + bomb.vel * dt;
+            if self.obstacles.iter().any(|o| {
+                next.x > o.min.x
+                    && next.x < o.max.x
+                    && next.z > o.min.z
+                    && next.z < o.max.z
+                    && next.y < o.max.y
+            }) {
+                bomb.vel.x *= -BOMB_SKID;
+                bomb.vel.z *= -BOMB_SKID;
+            } else {
+                bomb.pos = next;
+            }
+            let floor = self.ground.as_ref().map_or(0.0, |g| g.height(bomb.pos)) + 0.15;
+            if bomb.pos.y < floor {
+                bomb.pos.y = floor;
+                if bomb.vel.y < 0.0 {
+                    bomb.vel.y = -bomb.vel.y * BOMB_BOUNCE;
+                    bomb.vel.x *= BOMB_SKID;
+                    bomb.vel.z *= BOMB_SKID;
+                }
+            }
+            if bomb.fuse <= 0.0 {
+                booms.push((bomb.pos, bomb.radius, bomb.damage, bomb.poise));
+            }
+        }
+        self.bombs.retain(|b| b.fuse > 0.0);
+        for (at, radius, damage, poise) in booms {
+            self.burst(at, radius, damage, poise, t, ev);
+            self.blasts.push(Blast {
+                pos: at,
+                radius,
+                age: 0.0,
+            });
+            ev.push(Event::Boom { at });
+        }
+        // 금 간 땅(0051): 시간이 되면 둘레를 친다(땅 돌리기 중에도 시계는 간다 — 돌리고 떨구기).
+        let mut quakes = Vec::new();
+        for c in &mut self.cracks {
+            c.left -= dt;
+            if c.left <= 0.0 {
+                quakes.push(*c);
+            }
+        }
+        self.cracks.retain(|c| c.left > 0.0);
+        for c in quakes {
+            self.burst(c.pos, c.radius, c.damage, c.poise, t, ev);
+            self.blasts.push(Blast {
+                pos: c.pos,
+                radius: c.radius,
+                age: 0.0,
+            });
+            ev.push(Event::Aftershock { at: c.pos });
+        }
+    }
+
+    /// 둘레 피해(수류탄·여진): 반지름 안의 깨어 있는 적(높이 차 `HIT_DY` 안)에게 피해·자세 피해·바깥으로 밀기.
+    fn burst(
+        &mut self,
+        at: Vec3,
+        radius: f32,
+        damage: i32,
+        poise: f32,
+        t: &Tuning,
+        ev: &mut Vec<Event>,
+    ) {
+        for en in &mut self.enemies {
+            if !en.active() || (en.pos.y - at.y).abs() > HIT_DY + 0.3 {
+                continue;
+            }
+            let d = vec3(en.pos.x - at.x, 0.0, en.pos.z - at.z);
+            if d.length() - en.radius > radius {
+                continue;
+            }
+            let crit = en.exposed > 0.0;
+            en.hp -= damage + if crit { t[P::ParryCrit] as i32 } else { 0 };
+            en.exposed = 0.0;
+            en.hurt = 0.15;
+            en.knock = d.normalize_or_zero() * t[P::Knockback] * if en.boss { 0.2 } else { 1.4 };
+            let hit_at = en.pos + Vec3::Y * en.height * 0.6;
+            ev.push(if crit {
+                Event::Crit { at: hit_at }
+            } else {
+                Event::Hit { at: hit_at }
+            });
+            add_poise(en, poise, None, t, ev);
+            if en.hp <= 0 {
+                en.state = EState::Dead;
+                self.kills += 1;
+                ev.push(Event::EnemyDown { at: en.pos });
+            }
+        }
+        self.hitstop = self.hitstop.max(t[P::Hitstop]);
     }
 
     /// 플레이어 스윙의 활성 구간에 범위·부채꼴 안의 적을 한 스윙에 한 번씩 때린다.
@@ -1249,37 +1703,63 @@ impl World {
         if std::mem::take(&mut self.flask_denied_now) {
             ev.push(Event::FlaskDenied);
         }
-        // 평타와 강타(0030)는 같은 규칙에 값만 다르다.
+        // 평타와 강타(0030)는 같은 규칙에 값만 다르다 — 무기 표의 타(0051)가 랩 기준값에 곱한다.
+        let wpn = self.player.weapon.def();
         let s = match self.player.state {
-            PState::Attack { t: e, swing, .. } => Strike {
-                e,
-                swing,
-                startup: t[P::AttackStartup],
-                active: t[P::AttackActive],
-                range: t[P::AttackRange],
-                arc: t[P::AttackArc],
-                damage: 1,
-                knock: 1.0,
-                heavy: None,
-            },
+            PState::Attack {
+                t: e, swing, hit, ..
+            } => {
+                let Some(h) = wpn.combo.get(hit as usize) else {
+                    return;
+                };
+                let (s0, a0, _) = hit_times(t, wpn, hit);
+                Strike {
+                    e,
+                    swing,
+                    startup: s0,
+                    active: a0,
+                    range: t[P::AttackRange] * h.reach,
+                    arc: t[P::AttackArc] * h.arc,
+                    circle: h.shape == Shape::Circle,
+                    damage: h.damage,
+                    poise: h.poise,
+                    knock: h.knock,
+                    heavy: None,
+                    perfect: false,
+                }
+            }
             PState::Heavy {
-                t: e, swing, full, ..
-            } => Strike {
-                e,
+                t: e,
                 swing,
-                startup: t[P::HeavyStartup],
-                active: t[P::HeavyActive],
-                range: t[P::HeavyRange],
-                arc: t[P::HeavyArc],
-                damage: t[P::HeavyDamage].round() as i32
-                    + if full {
-                        t[P::HeavyFullBonus].round() as i32
-                    } else {
-                        0
-                    },
-                knock: t[P::HeavyKnock],
-                heavy: Some(full),
-            },
+                full,
+                perfect,
+                ..
+            } => {
+                let Some(h) = wpn.heavy else {
+                    return;
+                };
+                let (s0, a0, _) = heavy_times(t, wpn);
+                Strike {
+                    e,
+                    swing,
+                    startup: s0,
+                    active: a0,
+                    range: t[P::HeavyRange] * h.reach,
+                    arc: t[P::HeavyArc] * h.arc,
+                    circle: h.shape == Shape::Circle,
+                    damage: h.damage
+                        + if full {
+                            t[P::HeavyFullBonus].round() as i32
+                        } else {
+                            0
+                        }
+                        + perfect as i32,
+                    poise: h.poise * if perfect { 1.5 } else { 1.0 },
+                    knock: t[P::HeavyKnock] * if perfect { 1.5 } else { 1.0 },
+                    heavy: Some(full),
+                    perfect,
+                }
+            }
             _ => return,
         };
         let (e, swing) = (s.e, s.swing);
@@ -1288,7 +1768,29 @@ impl World {
         }
         if e < s.startup + TICK_DT {
             ev.push(Event::Swing);
+            if s.heavy.is_some() {
+                // 망치 강타(0051): 친 자리에 금이 가고 늦게 여진, 지팡이는 딱 맞춤 번쩍.
+                if let Some((delay, radius, damage, poise)) = wpn.heavy.and_then(|h| h.aftershock) {
+                    self.cracks.push(Crack {
+                        pos: self.player.pos,
+                        left: delay,
+                        radius,
+                        damage,
+                        poise,
+                    });
+                }
+                if s.perfect {
+                    ev.push(Event::Perfect {
+                        at: self.player.pos + Vec3::Y * 1.0,
+                    });
+                }
+            }
         }
+        let primed = if s.heavy.is_some() {
+            wpn.heavy.and_then(|h| h.breaks_primed)
+        } else {
+            None
+        };
         let p = self.player.pos;
         let body = p.y + self.player.air;
         let f = self.player.facing_dir();
@@ -1309,7 +1811,7 @@ impl World {
                 continue;
             }
             let dir = if d.length() > 1e-4 { d.normalize() } else { f };
-            if dir.dot(f) < half {
+            if !s.circle && dir.dot(f) < half {
                 continue;
             }
             en.hit_by = swing;
@@ -1326,6 +1828,7 @@ impl World {
             }
             en.hurt = 0.15;
             en.knock = dir * t[P::Knockback] * s.knock * if en.boss { 0.25 } else { 1.0 };
+            add_poise(en, s.poise, primed, t, ev);
             ev.push(Event::Hit {
                 at: en.pos + Vec3::Y * en.height * 0.6,
             });
@@ -1689,10 +2192,68 @@ struct Strike {
     active: f32,
     range: f32,
     arc: f32,
+    /// 몸 둘레 원(회전·내려찍기, 0051) — 각을 보지 않는다.
+    circle: bool,
     damage: i32,
+    poise: f32,
     knock: f32,
     /// 강타면 Some(다 모았나).
     heavy: Option<bool>,
+    perfect: bool,
+}
+
+/// 콤보 한 타의 선딜·활성·후딜(0051: 랩 평타 × 무기 표의 `time`).
+pub fn hit_times(t: &Tuning, w: &weapons::Weapon, hit: u8) -> (f32, f32, f32) {
+    let k = w.combo.get(hit as usize).map_or(1.0, |h| h.time);
+    (
+        t[P::AttackStartup] * k,
+        t[P::AttackActive] * k,
+        t[P::AttackRecovery] * k,
+    )
+}
+
+/// 강타의 선딜·활성·후딜(랩 강타 × 무기 표의 `time`).
+pub fn heavy_times(t: &Tuning, w: &weapons::Weapon) -> (f32, f32, f32) {
+    let k = w.heavy.map_or(1.0, |h| h.time);
+    (
+        t[P::HeavyStartup] * k,
+        t[P::HeavyActive] * k,
+        t[P::HeavyRecovery] * k,
+    )
+}
+
+/// 자세 막대의 크기(0051): 잡몹 = 바탕 + 체력 × 배, 보스는 따로.
+pub fn poise_max(en: &Enemy, t: &Tuning) -> f32 {
+    if en.boss {
+        t[P::PoiseBoss]
+    } else {
+        t[P::PoiseBase] + en.max_hp as f32 * t[P::PoisePerHp]
+    }
+}
+
+/// 자세 피해를 준다(0051). 다 차면(또는 `primed` 비율을 넘은 적을 무거운 타가 치면) 깨진다: 휘청 + 드러남(다음 한 대 치명타).
+fn add_poise(en: &mut Enemy, amount: f32, primed: Option<f32>, t: &Tuning, ev: &mut Vec<Event>) {
+    if amount <= 0.0 || en.poise_lock > 0.0 || !en.alive() {
+        return;
+    }
+    let max = poise_max(en, t);
+    let was_primed = primed.is_some_and(|k| en.poise >= max * k);
+    en.poise += amount;
+    en.poise_idle = 0.0;
+    if en.poise >= max || was_primed {
+        en.poise = 0.0;
+        en.poise_lock = t[P::PoiseLock];
+        let dur = if en.boss {
+            t[P::PoiseBreakBoss]
+        } else {
+            t[P::PoiseBreak]
+        };
+        en.state = EState::Stagger { t: 0.0, dur };
+        en.exposed = en.exposed.max(dur);
+        ev.push(Event::Break {
+            at: en.pos + Vec3::Y * en.height * 0.7,
+        });
+    }
 }
 
 /// 강타의 히트스톱 = 타격 히트스톱 × 이만큼(평타보다 무겁게, 패링보다는 짧게).
@@ -2809,6 +3370,224 @@ mod tests {
         w.step(&jump, &t);
         assert!(!w.interact);
         assert!(matches!(w.player.state, PState::Jump { .. }));
+    }
+
+    fn mob_with(w: &mut World, at: Vec3, hp: i32) -> usize {
+        w.spawn_mob(at);
+        let i = w.enemies.len() - 1;
+        w.enemies[i].hp = hp;
+        w.enemies[i].max_hp = hp;
+        i
+    }
+
+    /// 0051: 연타하면 검은 1 → 2 → 3타로 이어지고, 마지막 타 뒤에는 처음으로 돌아간다.
+    #[test]
+    fn mashing_the_sword_runs_its_three_hit_combo() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        mob_with(&mut w, vec3(0.0, 0.0, -1.3), 99);
+        idle(&mut w);
+        let mut seen = Vec::new();
+        for i in 0..240 {
+            let a = Actions {
+                attack: i % 6 == 0,
+                ..Default::default()
+            };
+            w.step(&a, &t);
+            idle(&mut w);
+            w.player.stamina = 100.0;
+            if let PState::Attack { hit, .. } = w.player.state {
+                if seen.last() != Some(&hit) {
+                    seen.push(hit);
+                }
+            }
+        }
+        assert!(seen.windows(3).any(|x| x == [0, 1, 2]), "{seen:?}");
+        assert!(seen.windows(2).any(|x| x == [2, 0]), "wraps: {seen:?}");
+    }
+
+    /// 0051: 망치 강타는 친 자리에 금을 내고, 늦게 여진이 둘레를 다시 친다.
+    #[test]
+    fn the_hammer_slam_leaves_an_aftershock() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.set_weapon(weapons::Id::Hammer);
+        let far = mob_with(&mut w, vec3(0.0, 0.0, 8.0), 50);
+        idle(&mut w);
+        w.step(
+            &Actions {
+                attack: true,
+                attack_held: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        let hold = Actions {
+            attack_held: true,
+            ..Default::default()
+        };
+        for _ in 0..200 {
+            w.player.stamina = 100.0;
+            w.step(&hold, &t);
+            if matches!(w.player.state, PState::Charging { t: e } if e > 1.0) {
+                break;
+            }
+        }
+        let mut ev = Vec::new();
+        for _ in 0..30 {
+            ev.extend(w.step(&Actions::default(), &t));
+        }
+        assert_eq!(w.cracks.len(), 1, "a crack under the slam");
+        // 여진 자리로 적을 옮겨 두고 기다린다.
+        w.enemies[far].pos = w.cracks[0].pos + vec3(0.8, 0.0, 0.0);
+        idle(&mut w);
+        for _ in 0..150 {
+            ev.extend(w.step(&Actions::default(), &t));
+            idle(&mut w);
+        }
+        assert!(ev.iter().any(|e| matches!(e, Event::Aftershock { .. })));
+        assert!(w.enemies[far].hp < 50, "aftershock hits");
+        assert!(w.cracks.is_empty());
+    }
+
+    /// 0051: 지팡이는 다 모인 뒤 짧은 창 안에 떼야 "딱 맞춤", 늦게 떼면 보통 강타.
+    #[test]
+    fn the_staff_rewards_a_perfectly_timed_release() {
+        let t = Tuning::default();
+        let w0 = weapons::Id::Staff.def();
+        let full = t[P::HeavyCharge] * w0.heavy.unwrap().charge;
+        for (extra, want) in [(0.05, true), (0.6, false)] {
+            let mut w = World::new("test", 30.0);
+            w.set_weapon(weapons::Id::Staff);
+            w.step(
+                &Actions {
+                    attack: true,
+                    attack_held: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            let hold = Actions {
+                attack_held: true,
+                ..Default::default()
+            };
+            let mut charged_for = 0.0;
+            for _ in 0..400 {
+                w.player.stamina = 100.0;
+                w.step(&hold, &t);
+                if let PState::Charging { t: e } = w.player.state {
+                    charged_for = e;
+                    if e >= full + extra {
+                        break;
+                    }
+                }
+            }
+            assert!(charged_for >= full);
+            w.step(&Actions::default(), &t);
+            let got = matches!(w.player.state, PState::Heavy { perfect: true, .. });
+            assert_eq!(got, want, "released {extra}s after full");
+        }
+    }
+
+    /// 0051: 쇠뇌 — RB는 탄창에서 쏘고, 비면 장전 뒤 가득, 회피하면 한 발 장전. 칸(마법)은 쓰지 않는다.
+    #[test]
+    fn the_crossbow_shoots_from_a_magazine_and_reloads() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 40.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        let (mag, reload) = match weapons::Id::Crossbow.def().rb {
+            Rb::Shot { mag, reload, .. } => (mag, reload),
+            _ => unreachable!(),
+        };
+        assert_eq!(w.player.ammo, mag);
+        let mana = w.player.mana;
+        let cast = Actions {
+            cast: true,
+            ..Default::default()
+        };
+        for _ in 0..mag {
+            press(&t, &mut w, cast, 40);
+        }
+        assert_eq!(w.player.ammo, 0);
+        assert_eq!(w.player.mana, mana, "no magic spent");
+        let ev = press(&t, &mut w, cast, 2);
+        assert!(ev.iter().any(|e| matches!(e, Event::CastDenied)), "empty");
+        // 회피 한 번 = 한 발.
+        press(
+            &t,
+            &mut w,
+            Actions {
+                dodge: true,
+                ..Default::default()
+            },
+            2,
+        );
+        assert_eq!(w.player.ammo, 1);
+        // 장전이 끝나면 가득.
+        press(
+            &t,
+            &mut w,
+            Actions::default(),
+            (reload / TICK_DT) as usize + 10,
+        );
+        assert_eq!(w.player.ammo, mag);
+    }
+
+    /// 0051: 쇠뇌의 X = 수류탄 — 날아가 도화선이 다하면 둘레를 친다(셀 수 있고 다시 찬다).
+    #[test]
+    fn a_grenade_flies_bounces_and_blows_up() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 40.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        let g = weapons::Id::Crossbow.def().grenade.unwrap();
+        let m = mob_with(&mut w, vec3(0.0, 0.0, -5.0), 20);
+        idle(&mut w);
+        let mut ev = w.step(
+            &Actions {
+                attack: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!((w.player.grenades - (g.count as f32 - 1.0)).abs() < 0.05);
+        for _ in 0..((g.fuse + 0.6) / TICK_DT) as usize {
+            ev.extend(w.step(&Actions::default(), &t));
+            idle(&mut w);
+            w.enemies[m].pos = vec3(0.0, 0.0, -5.0);
+        }
+        assert!(ev.iter().any(|e| matches!(e, Event::Throw)));
+        assert!(ev.iter().any(|e| matches!(e, Event::Boom { .. })));
+        assert!(
+            w.enemies[m].hp <= 20 - g.damage,
+            "blast hits: {}",
+            w.enemies[m].hp
+        );
+        assert!(w.bombs.is_empty());
+    }
+
+    /// 0051: 자세 막대가 다 차면 깨진다 — 휘청 + 드러남(다음 한 대 치명타), 깬 뒤 잠깐은 다시 안 찬다.
+    #[test]
+    fn filling_the_poise_bar_breaks_the_enemy() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        let i = mob_with(&mut w, vec3(0.0, 0.0, -3.0), 99);
+        let max = poise_max(&w.enemies[i], &t);
+        let mut ev = Vec::new();
+        add_poise(&mut w.enemies[i], max * 0.5, None, &t, &mut ev);
+        assert!(ev.is_empty());
+        add_poise(&mut w.enemies[i], max * 0.6, None, &t, &mut ev);
+        assert!(ev.iter().any(|e| matches!(e, Event::Break { .. })));
+        assert!(matches!(w.enemies[i].state, EState::Stagger { .. }));
+        assert!(w.enemies[i].exposed > 0.0);
+        let before = w.enemies[i].poise;
+        add_poise(&mut w.enemies[i], max, None, &t, &mut ev);
+        assert_eq!(w.enemies[i].poise, before, "locked after a break");
+        // 망치처럼 "깨지기 직전"을 깨는 타는 반만 차 있어도 깬다.
+        let j = mob_with(&mut w, vec3(2.0, 0.0, -3.0), 99);
+        let mut ev = Vec::new();
+        add_poise(&mut w.enemies[j], max * 0.7, None, &t, &mut ev);
+        add_poise(&mut w.enemies[j], 0.1, Some(0.6), &t, &mut ev);
+        assert!(ev.iter().any(|e| matches!(e, Event::Break { .. })));
     }
 
     /// 0047: 모으는 동안 느리게 걷는다(제자리가 아니다) — 걷기의 `heavy.charge walk x`배쯤.

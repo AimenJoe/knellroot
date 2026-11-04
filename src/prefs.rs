@@ -10,12 +10,19 @@ use crate::input::Bindings;
 /// 0x…0002(0048): 18..20 칸이 상호작용 → 마법으로 바뀌고 등잔·마법의 기본 버튼이 바뀌었다. 옛 표식(0x…0001)은 언어만 살리고 배치는 기본값.
 const MAGIC: u32 = 0x4B4E_0002;
 const MAGIC_V1: u32 = 0x4B4E_0001;
-const CELLS: usize = 20;
+/// 20 화면 흔들림(0..=10, +1로 — 0 = 저장 전 = 10), 21 든 무기(무기 표 자리 +1) — 0052·0051, 뒤에 붙인 칸이라 MAGIC 그대로.
+const CELLS: usize = 22;
+/// 화면 흔들림 기본값(10 = 100%).
+pub const SHAKE_DEFAULT: u8 = 10;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Prefs {
     pub lang: Option<Lang>,
     pub bindings: Bindings,
+    /// 화면 흔들림 0..=10(설정, 0052).
+    pub shake: u8,
+    /// 든 무기(무기 표의 자리, 0051).
+    pub weapon: u8,
 }
 
 fn lang_code(l: Lang) -> u32 {
@@ -37,8 +44,18 @@ fn encode(p: &Prefs) -> [u32; CELLS] {
     let mut v = [0u32; CELLS];
     v[0] = MAGIC;
     v[1] = p.lang.map_or(0, lang_code);
-    v[2..].copy_from_slice(&p.bindings.encode());
+    v[2..20].copy_from_slice(&p.bindings.encode());
+    v[20] = p.shake.min(10) as u32 + 1;
+    v[21] = p.weapon as u32 + 1;
     v
+}
+
+fn shake_from(c: u32) -> u8 {
+    if c == 0 {
+        SHAKE_DEFAULT
+    } else {
+        (c - 1).min(10) as u8
+    }
 }
 
 fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
@@ -46,6 +63,8 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
         return Some(Prefs {
             lang: lang_from(v[1]),
             bindings: Bindings::default_layout(),
+            shake: SHAKE_DEFAULT,
+            weapon: 0,
         });
     }
     if v[0] != MAGIC {
@@ -53,7 +72,9 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
     }
     Some(Prefs {
         lang: lang_from(v[1]),
-        bindings: Bindings::decode(&v[2..]),
+        bindings: Bindings::decode(&v[2..20]),
+        shake: shake_from(v[20]),
+        weapon: v[21].saturating_sub(1).min(255) as u8,
     })
 }
 
@@ -175,6 +196,8 @@ mod tests {
         let p = Prefs {
             lang: Some(Lang::En),
             bindings: b,
+            shake: 4,
+            weapon: 2,
         };
         assert_eq!(decode(&encode(&p)), Some(p));
         assert_eq!(decode(&[0; CELLS]), None, "nothing saved yet");
@@ -192,6 +215,8 @@ mod tests {
         let plain = Prefs {
             lang: Some(Lang::En),
             bindings: Bindings::default_layout(),
+            shake: SHAKE_DEFAULT,
+            weapon: 0,
         };
         let mut old = encode(&plain);
         old[16..].fill(0);
@@ -213,6 +238,13 @@ mod tests {
         assert_eq!(got.bindings, Bindings::default_layout());
         assert_eq!(got.bindings.pad(Bind::Flask), Pad::North);
         assert_eq!(got.bindings.pad(Bind::Cast), Pad::R1);
+        // 0052 전 저장(흔들림·무기 칸이 0): 흔들림 기본값 10, 무기는 첫째(검).
+        let mut old = encode(&p);
+        old[20] = 0;
+        old[21] = 0;
+        let got = decode(&old).unwrap();
+        assert_eq!((got.shake, got.weapon), (SHAKE_DEFAULT, 0));
+        assert_eq!(decode(&encode(&p)).unwrap().shake, 4);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -224,6 +256,8 @@ mod tests {
         let prefs = Prefs {
             lang: Some(Lang::Ko),
             bindings: Bindings::default_layout(),
+            shake: 7,
+            weapon: 1,
         };
         assert!(store::write_to(&p, &encode(&prefs)));
         assert_eq!(decode(&store::read_from(&p)), Some(prefs));

@@ -14,10 +14,17 @@ pub enum Scene {
     Result {
         won: bool,
     },
-    /// 조작 설정(0024). `from_pause`면 뒤로 = 멈춤, 아니면 타이틀.
+    /// 조작 설정(0024). 뒤로 = 설정(0052).
     Controls {
         from_pause: bool,
     },
+    /// 설정(0052, nail 0269의 틀): 언어·전체 화면·화면 흔들림·조작. `from_pause`면 뒤로 = 멈춤, 아니면 타이틀.
+    Settings {
+        from_pause: bool,
+    },
+    /// 개발 메뉴(0052, nail `Scene::Dev`): 문 앞에서 시작·PoC 시나리오 목록. 개발판에만.
+    #[cfg(feature = "dev")]
+    Dev,
     /// 개발 시나리오(PoC 아레나). 개발판에만.
     #[cfg(feature = "dev")]
     Sandbox,
@@ -28,8 +35,21 @@ impl Scene {
     pub fn is_menu(self) -> bool {
         matches!(
             self,
-            Scene::Title | Scene::Pause | Scene::Result { .. } | Scene::Controls { .. }
-        )
+            Scene::Title
+                | Scene::Pause
+                | Scene::Result { .. }
+                | Scene::Controls { .. }
+                | Scene::Settings { .. }
+        ) || self.is_dev()
+    }
+
+    #[cfg(feature = "dev")]
+    fn is_dev(self) -> bool {
+        self == Scene::Dev
+    }
+    #[cfg(not(feature = "dev"))]
+    fn is_dev(self) -> bool {
+        false
     }
 
     /// 월드가 도는 장면.
@@ -46,41 +66,59 @@ impl Scene {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TitleItem {
     Start,
-    Controls,
-    Language,
-    /// 전체 화면 켜고 끄기(0046) — 쓸 수 있는 기기에서만(웹·데스크톱).
-    Fullscreen,
+    /// 설정(0052): 언어·전체 화면·흔들림·조작이 여기로 모였다(타이틀에 흩어져 있었다).
+    Settings,
+    /// 개발 메뉴(0052). 개발판에만.
     #[cfg(feature = "dev")]
-    Sandbox,
-    /// 개발: 문 앞에서 시작(보스만).
-    #[cfg(feature = "dev")]
-    SkipToGate,
+    Dev,
 }
 
-pub fn title_items(fullscreen: bool) -> Vec<TitleItem> {
-    let mut v = vec![TitleItem::Start, TitleItem::Controls, TitleItem::Language];
-    if fullscreen {
-        v.push(TitleItem::Fullscreen);
-    }
+pub fn title_items() -> Vec<TitleItem> {
+    #[allow(unused_mut)]
+    let mut v = vec![TitleItem::Start, TitleItem::Settings];
     #[cfg(feature = "dev")]
-    v.extend([TitleItem::SkipToGate, TitleItem::Sandbox]);
+    v.push(TitleItem::Dev);
     v
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PauseItem {
     Resume,
-    Controls,
+    /// 무기 바꾸기(0051): 좌우·확인으로 다음 무기(쉼터 메뉴가 생기면 그리로).
+    Weapon,
+    Settings,
     Restart,
     ToTitle,
 }
 
-pub const PAUSE_ITEMS: [PauseItem; 4] = [
+pub const PAUSE_ITEMS: [PauseItem; 5] = [
     PauseItem::Resume,
-    PauseItem::Controls,
+    PauseItem::Weapon,
+    PauseItem::Settings,
     PauseItem::Restart,
     PauseItem::ToTitle,
 ];
+
+/// 설정 줄(0052). 값 줄은 좌우·확인으로 바꾸고, 누르는 줄은 확인으로 들어간다.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SettingsRow {
+    Language,
+    /// 쓸 수 있는 기기에서만(웹·데스크톱, 0046).
+    Fullscreen,
+    /// 화면 흔들림 0..=10.
+    Shake,
+    Controls,
+    Back,
+}
+
+pub fn settings_rows(fullscreen: bool) -> Vec<SettingsRow> {
+    let mut v = vec![SettingsRow::Language];
+    if fullscreen {
+        v.push(SettingsRow::Fullscreen);
+    }
+    v.extend([SettingsRow::Shake, SettingsRow::Controls, SettingsRow::Back]);
+    v
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ResultItem {
@@ -106,8 +144,11 @@ pub const ENDING_TIME: f32 = 1.6;
 pub fn back(scene: Scene) -> Scene {
     match scene {
         Scene::Pause => Scene::Play,
-        Scene::Controls { from_pause: true } => Scene::Pause,
-        Scene::Controls { from_pause: false } => Scene::Title,
+        Scene::Controls { from_pause } => Scene::Settings { from_pause },
+        Scene::Settings { from_pause: true } => Scene::Pause,
+        Scene::Settings { from_pause: false } => Scene::Title,
+        #[cfg(feature = "dev")]
+        Scene::Dev => Scene::Title,
         s => s,
     }
 }
@@ -125,7 +166,8 @@ pub fn pause(scene: Scene) -> Scene {
 pub fn choose_pause(item: PauseItem) -> (Scene, bool) {
     match item {
         PauseItem::Resume => (Scene::Play, false),
-        PauseItem::Controls => (Scene::Controls { from_pause: true }, false),
+        PauseItem::Weapon => (Scene::Pause, false),
+        PauseItem::Settings => (Scene::Settings { from_pause: true }, false),
         PauseItem::Restart => (Scene::Play, true),
         PauseItem::ToTitle => (Scene::Title, true),
     }
@@ -175,16 +217,23 @@ mod tests {
         assert_eq!(choose_pause(PauseItem::Restart), (Scene::Play, true));
         assert_eq!(choose_pause(PauseItem::ToTitle), (Scene::Title, true));
         assert_eq!(choose_result(ResultItem::Retry), (Scene::Play, true));
-        assert_eq!(title_items(false)[0], TitleItem::Start);
-        assert!(!title_items(false).contains(&TitleItem::Fullscreen));
-        assert!(title_items(true).contains(&TitleItem::Fullscreen));
+        assert_eq!(title_items()[0], TitleItem::Start);
         assert_eq!(
-            choose_pause(PauseItem::Controls),
-            (Scene::Controls { from_pause: true }, false),
+            choose_pause(PauseItem::Settings),
+            (Scene::Settings { from_pause: true }, false),
             "the run is kept"
         );
-        assert_eq!(back(Scene::Controls { from_pause: true }), Scene::Pause);
-        assert_eq!(back(Scene::Controls { from_pause: false }), Scene::Title);
+        assert_eq!(choose_pause(PauseItem::Weapon), (Scene::Pause, false));
+        // 0052: 조작 → 설정 → 온 곳.
+        assert_eq!(
+            back(Scene::Controls { from_pause: true }),
+            Scene::Settings { from_pause: true }
+        );
+        assert_eq!(back(Scene::Settings { from_pause: true }), Scene::Pause);
+        assert_eq!(back(Scene::Settings { from_pause: false }), Scene::Title);
         assert!(Scene::Controls { from_pause: true }.is_menu());
+        assert!(Scene::Settings { from_pause: false }.is_menu());
+        assert!(!settings_rows(false).contains(&SettingsRow::Fullscreen));
+        assert_eq!(settings_rows(true).last(), Some(&SettingsRow::Back));
     }
 }

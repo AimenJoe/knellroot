@@ -70,6 +70,12 @@ pub const BOLT_RADIUS: f32 = 0.35;
 pub const BOLT_HEIGHT: f32 = 1.0;
 /// 마법을 쏜 직후 땅 돌리기 누름을 버리는 시간(초) — RB 바로 밑이 RT(돌리기)라 잘못 눌러 세상이 도는 것을 막는다(0048).
 pub const CAST_TURN_GUARD: f32 = 0.25;
+/// 수류탄(0051): 중력(m/s²), 땅에서 튕길 때 남는 위·옆 속도 비, 쇠뇌 볼트가 수류탄을 맞히는 거리(m), 폭발 고리가 보이는 초.
+pub const BOMB_GRAVITY: f32 = 22.0;
+pub const BOMB_BOUNCE: f32 = 0.4;
+pub const BOMB_SKID: f32 = 0.6;
+pub const BOMB_SHOT_REACH: f32 = 0.8;
+pub const BLAST_SHOW: f32 = 0.45;
 pub const STICK_DEADZONE: f32 = 0.2;
 
 /// 랩에서 바꾸는 값. 새 값 = 여기 한 줄 + `SPECS` 한 줄.
@@ -193,6 +199,19 @@ pub enum P {
     CastStartup,
     CastTime,
     CastWalk,
+    ComboKeep,
+    ComboLink,
+    AttackBuffer,
+    PoiseBase,
+    PoisePerHp,
+    PoiseBoss,
+    PoiseBreak,
+    PoiseBreakBoss,
+    PoiseLock,
+    PoiseDelay,
+    PoiseDecay,
+    ThrowStartup,
+    ThrowTime,
     RenderModel,
 }
 
@@ -223,7 +242,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 119] = [
+pub const SPECS: [Spec; 132] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1132,6 +1151,86 @@ pub const SPECS: [Spec; 119] = [
     ),
     spec!(CastTime, "cast.time s", "CAST_TIME", 0.4, 0.1, 1.5, 0.05),
     spec!(CastWalk, "cast.walk x", "CAST_WALK", 0.5, 0.0, 1.0, 0.05),
+    // 콤보(0051): 콤보가 끝난 뒤 이 초 안에 누르면 다음 타부터, 후딜의 이만큼(비율)이 지나야 다음 타로 잇는다, 누름을 미리 받아 두는 초.
+    spec!(
+        ComboKeep,
+        "combo.keep s",
+        "COMBO_KEEP",
+        0.45,
+        0.0,
+        1.5,
+        0.05
+    ),
+    spec!(ComboLink, "combo.link x", "COMBO_LINK", 0.3, 0.0, 1.0, 0.05),
+    spec!(
+        AttackBuffer,
+        "attack.buffer s",
+        "ATTACK_BUFFER",
+        0.3,
+        0.0,
+        1.0,
+        0.05
+    ),
+    // 자세 막대(0051): 잡몹 크기 = 바탕 + 체력 × 배, 보스는 따로. 깨지면 휘청(잡몹·보스), 깬 뒤 안 차는 초, 줄기 시작까지·줄어드는 빠르기.
+    spec!(PoiseBase, "poise.base", "POISE_BASE", 3.0, 0.5, 20.0, 0.5),
+    spec!(
+        PoisePerHp,
+        "poise.per hp",
+        "POISE_PER_HP",
+        0.6,
+        0.0,
+        3.0,
+        0.1
+    ),
+    spec!(PoiseBoss, "poise.boss", "POISE_BOSS", 20.0, 2.0, 80.0, 1.0),
+    spec!(
+        PoiseBreak,
+        "poise.break s",
+        "POISE_BREAK",
+        1.5,
+        0.2,
+        4.0,
+        0.1
+    ),
+    spec!(
+        PoiseBreakBoss,
+        "poise.break boss s",
+        "POISE_BREAK_BOSS",
+        1.0,
+        0.2,
+        4.0,
+        0.1
+    ),
+    spec!(PoiseLock, "poise.lock s", "POISE_LOCK", 3.0, 0.0, 10.0, 0.5),
+    spec!(
+        PoiseDelay,
+        "poise.delay s",
+        "POISE_DELAY",
+        2.0,
+        0.0,
+        10.0,
+        0.25
+    ),
+    spec!(
+        PoiseDecay,
+        "poise.decay /s",
+        "POISE_DECAY",
+        1.0,
+        0.0,
+        10.0,
+        0.25
+    ),
+    // 수류탄 던지기(0051, 쇠뇌의 X): 손을 떠나는 순간, 끝.
+    spec!(
+        ThrowStartup,
+        "throw.startup s",
+        "THROW_STARTUP",
+        0.2,
+        0.0,
+        0.8,
+        0.02
+    ),
+    spec!(ThrowTime, "throw.time s", "THROW_TIME", 0.5, 0.1, 1.5, 0.05),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(
         RenderModel,

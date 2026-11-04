@@ -102,6 +102,11 @@ pub struct Enemy {
     pub dead_t: f32,
     /// 패링당해 드러난 남은 초(0025) — 이동안 맞는 한 대가 치명타.
     pub exposed: f32,
+    /// 자세 막대(0051, PoE2 Heavy Stun): 자세 피해로 차고, 다 차면 깨진다(휘청 + 드러남). 깬 뒤 `poise_lock`초는 안 찬다,
+    /// 맞지 않은 지 `poise.delay s`가 지나면 줄어든다.
+    pub poise: f32,
+    pub poise_lock: f32,
+    pub poise_idle: f32,
     /// 높낮이(0043): 곧게 못 가면 월드가 주는 다음 칸 가운데(거리 지도) — 그쪽으로 걷고 공격을 고르지 않는다.
     pub way: Option<Vec3>,
 }
@@ -141,6 +146,9 @@ impl Enemy {
             sway_t: 0.0,
             dead_t: 0.0,
             exposed: 0.0,
+            poise: 0.0,
+            poise_lock: 0.0,
+            poise_idle: 0.0,
             way: None,
         }
     }

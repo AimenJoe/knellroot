@@ -74,7 +74,7 @@ async function main() {
   await page.waitForTimeout(2500);
   await page.locator('#glcanvas').click({ position: { x: 640, y: 360 } });
   const press = async (k, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(k); await page.waitForTimeout(60); } };
-  if (MODE === 'stress') { await press('ArrowDown', 5); await press('Enter'); await page.waitForTimeout(300); await press('Digit7'); }
+  if (MODE === 'stress') { await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300); await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300); await press('Digit7'); }
   else { await press('Enter'); }
   const t0 = Date.now();
   let next = 0, i = 0;

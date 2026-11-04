@@ -77,9 +77,25 @@ pub struct View<'a> {
     pub stage: Option<&'a StageRun>,
 }
 
-/// 마법 탄(0048): 방랑자 두건의 라벤더 — 붉은색(위험)과 겹치지 않게.
-const BOLT_CORE: Color = Color::new(0.92, 0.88, 1.0, 1.0);
-const BOLT_GLOW: Color = Color::new(0.7, 0.6, 1.0, 0.45);
+/// 탄의 색(0048·0051, `weapons::Bolt::look`): 마법 라벤더, 무거운 탄 놋쇠, 꿰뚫는 탄 민트, 쇠뇌 볼트 밝은 나무 — 붉은색(위험)은 쓰지 않는다.
+const BOLT_LOOKS: [(Color, Color); 4] = [
+    (
+        Color::new(0.92, 0.88, 1.0, 1.0),
+        Color::new(0.7, 0.6, 1.0, 0.45),
+    ),
+    (
+        Color::new(1.0, 0.86, 0.55, 1.0),
+        Color::new(0.9, 0.65, 0.3, 0.45),
+    ),
+    (
+        Color::new(0.85, 1.0, 0.92, 1.0),
+        Color::new(0.45, 0.9, 0.7, 0.45),
+    ),
+    (
+        Color::new(0.95, 0.85, 0.65, 1.0),
+        Color::new(0.8, 0.65, 0.4, 0.3),
+    ),
+];
 
 /// 예고 색(붉은 계열 하나 — 붉은색은 위험에만, 그림 팔레트에는 없다).
 const TELE: Color = Color::new(0.85, 0.15, 0.1, 1.0);
@@ -644,11 +660,27 @@ impl Renderer {
         let a = (0.25 + 0.75 * close) * self.lock_fade;
         if let Some(e) = self.lib.get("wanderer") {
             let speed = (pl.pos - pl.prev).length() / TICK_DT;
+            let wpn = pl.weapon.def();
+            let hv = wpn.heavy;
+            let combo_anim = |hit: u8| wpn.combo.get(hit as usize).map_or("attack", |h| h.anim);
+            let owned: [&str; 3];
             let (names, at): (&[&str], f32) = match pl.state {
-                PState::Attack { t: e, .. } => (&["attack"], e),
-                // 강공격(0030): 모으는 동안 칼을 뒤로 끌어 든 자세(없는 모델이면 공격 첫 자세), 떼면 크게 내려친다.
-                PState::Charging { t: e } => (&["charge", "attack"], e),
-                PState::Heavy { t: e, .. } => (&["heavy", "attack"], e),
+                // 콤보(0051): 무기 표의 타마다 동작(없는 모델이면 평타).
+                PState::Attack { t: e, hit, .. } => {
+                    owned = [combo_anim(hit), "attack", "attack"];
+                    (&owned, e)
+                }
+                // 강공격(0030): 모으는 동안 칼을 뒤로 끌어 든 자세(없는 모델이면 공격 첫 자세), 떼면 크게 내려친다 — 무기마다(0051).
+                PState::Charging { t: e } => {
+                    owned = [hv.map_or("charge", |h| h.anim_charge), "charge", "attack"];
+                    (&owned, e)
+                }
+                PState::Heavy { t: e, .. } => {
+                    owned = [hv.map_or("heavy", |h| h.anim_heavy), "heavy", "attack"];
+                    (&owned, e)
+                }
+                // 수류탄(0051): 오른손으로 아래에서 위로 던진다.
+                PState::Throw { t: e, .. } => (&["throw", "cast", "attack"], e),
                 // 등잔(0031): 왼손으로 들어 입에 대고(들기 = `flask.raise s`) 내린다.
                 PState::Drink { t: e, .. } => (&["drink", "idle"], e),
                 PState::Dodge { t: e, .. } => (&["dodge", "walk"], e),
@@ -664,6 +696,9 @@ impl Renderer {
                 ),
                 PState::Parry { t: e } => (&["parry", "attack"], e),
                 // 마법(0048): 손을 앞으로 내미는 자세(전용 동작이 생기기 전엔 패링 자세).
+                PState::Cast { t: e, .. } if matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) => {
+                    (&["xbow_shoot", "cast", "attack"], e)
+                }
                 PState::Cast { t: e, .. } => (&["cast", "parry", "attack"], e),
                 // 공중(0027): 방랑자의 jump·plunge·land 동작(없는 모델이면 회피·공격 자세로).
                 PState::Jump { plunge: false, .. } => (&["jump", "dodge", "idle"], 0.1),
@@ -695,6 +730,14 @@ impl Renderer {
                 t,
                 &mut self.sec_extra,
             );
+            // 든 무기만 보인다(0051): 다른 무기 부위는 크기 0.
+            for w2 in crate::weapons::WEAPONS.iter() {
+                if w2.id != pl.weapon {
+                    if let Some(n) = e.model.node(w2.node) {
+                        self.sec_extra.push((n, Quat::IDENTITY, Vec3::ZERO));
+                    }
+                }
+            }
             e.model.pose_with(anim, at, &self.sec_extra, &mut self.pose);
             // 맞으면 몸이 밀리는 쪽으로 젖혀졌다 떨며 돌아온다(0020) — 발을 축으로, 경직 동안.
             let recoil = match pl.state {
@@ -738,7 +781,7 @@ impl Renderer {
                 PState::Drink { .. } => Color::new(0.75, 0.9, 0.6, 1.0),
                 PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
                 PState::Parry { .. } => Color::new(0.7, 0.85, 1.0, 1.0),
-                PState::Cast { .. } => Color::new(0.75, 0.7, 1.0, 1.0),
+                PState::Cast { .. } | PState::Throw { .. } => Color::new(0.75, 0.7, 1.0, 1.0),
                 PState::Jump { .. } | PState::Land { .. } => Color::new(0.9, 0.8, 0.6, 1.0),
                 PState::Idle => Color::new(0.85, 0.75, 0.55, 1.0),
             };
@@ -759,28 +802,79 @@ impl Renderer {
         // 마법 탄(0048): 라벤더 빛 덩이 + 짧은 꼬리(보간 자리).
         for b in &w.bolts {
             let p = b.prev.lerp(b.pos, alpha);
-            draw_cube(p, Vec3::splat(0.32), None, BOLT_CORE);
-            draw_cube(p, Vec3::splat(0.5), None, BOLT_GLOW);
-            draw_line_3d(p - b.dir * 0.9, p, BOLT_GLOW);
+            let (core, glow) = BOLT_LOOKS[(b.def.look as usize).min(BOLT_LOOKS.len() - 1)];
+            let k = if b.def.look == 3 { 0.6 } else { 1.0 };
+            draw_cube(p, Vec3::splat(0.32 * k), None, core);
+            draw_cube(p, Vec3::splat(0.5 * k), None, glow);
+            draw_line_3d(p - b.dir * 0.9, p, glow);
         }
-        if let PState::Attack { t: e, .. } = w.player.state {
-            let (s0, s1) = (
-                t[crate::tuning::P::AttackStartup],
-                t[crate::tuning::P::AttackStartup] + t[crate::tuning::P::AttackActive],
-            );
-            if e >= s0 && e < s1 {
-                sector(
-                    pp + Vec3::Y * 0.9,
-                    t[crate::tuning::P::AttackRange],
-                    w.player.facing,
-                    t[crate::tuning::P::AttackArc],
-                    Color::new(1.0, 0.95, 0.7, 0.35),
+        // 수류탄(0051): 어두운 덩이 + 도화선이 짧아질수록 빨리 깜빡이는 불.
+        for bm in &w.bombs {
+            let p = bm.prev.lerp(bm.pos, alpha);
+            draw_cube(p, Vec3::splat(0.3), None, Color::new(0.25, 0.2, 0.18, 1.0));
+            let hz = 4.0 + 10.0 * (1.0 - (bm.fuse / 1.5).clamp(0.0, 1.0));
+            if (w.time * hz) as i32 % 2 == 0 {
+                draw_cube(
+                    p + Vec3::Y * 0.2,
+                    Vec3::splat(0.14),
+                    None,
+                    Color::new(1.0, 0.75, 0.3, 1.0),
                 );
+            }
+        }
+        // 금 간 땅(망치 여진): 터질 때가 가까울수록 진해지는 고리.
+        for c in &w.cracks {
+            let k = (1.0 - c.left / 1.5).clamp(0.0, 1.0);
+            ring(
+                c.pos + Vec3::Y * 0.06,
+                c.radius,
+                0.0,
+                360.0,
+                Color::new(1.0, 0.75, 0.4, 0.2 + 0.5 * k),
+            );
+            ring(
+                c.pos + Vec3::Y * 0.06,
+                c.radius * k,
+                0.0,
+                360.0,
+                Color::new(1.0, 0.85, 0.5, 0.35),
+            );
+        }
+        // 폭발 고리: 퍼지며 옅어진다.
+        for b in &w.blasts {
+            let k = (b.age / crate::tuning::BLAST_SHOW).clamp(0.0, 1.0);
+            ring(
+                b.pos + Vec3::Y * 0.1,
+                b.radius * (0.4 + 0.6 * k),
+                0.0,
+                360.0,
+                Color::new(1.0, 0.8, 0.45, 0.9 * (1.0 - k)),
+            );
+        }
+        let wpn = w.player.weapon.def();
+        if let PState::Attack { t: e, hit, .. } = w.player.state {
+            let (s0, a0, _) = crate::world::hit_times(t, wpn, hit);
+            if let Some(h) = wpn.combo.get(hit as usize) {
+                if e >= s0 && e < s0 + a0 {
+                    let arc = if h.shape == crate::weapons::Shape::Circle {
+                        360.0
+                    } else {
+                        t[crate::tuning::P::AttackArc] * h.arc
+                    };
+                    sector(
+                        pp + Vec3::Y * 0.9,
+                        t[crate::tuning::P::AttackRange] * h.reach,
+                        w.player.facing,
+                        arc,
+                        Color::new(1.0, 0.95, 0.7, 0.35),
+                    );
+                }
             }
         }
         // 강공격(0030): 모으는 동안 발밑 고리가 안쪽에서 차오르고, 다 차면 금빛으로 깜빡인다. 강타의 활성 구간엔 넓은 부채꼴.
         if let PState::Charging { t: e } = w.player.state {
-            let full = t[crate::tuning::P::HeavyCharge].max(1e-3);
+            let full =
+                (t[crate::tuning::P::HeavyCharge] * wpn.heavy.map_or(1.0, |h| h.charge)).max(1e-3);
             let k = (e / full).clamp(0.0, 1.0);
             let col = if k >= 1.0 {
                 let on = (w.time * 12.0) as i32 % 2 == 0;
@@ -797,17 +891,22 @@ impl Renderer {
             );
             ring(pp + Vec3::Y * 0.05, 0.2 + 0.7 * k, 0.0, 360.0, col);
         }
-        if let PState::Heavy { t: e, full, .. } = w.player.state {
-            let (s0, s1) = (
-                t[crate::tuning::P::HeavyStartup],
-                t[crate::tuning::P::HeavyStartup] + t[crate::tuning::P::HeavyActive],
+        if let (PState::Heavy { t: e, full, .. }, Some(h)) = (w.player.state, wpn.heavy) {
+            let (s0, a0, _) = crate::world::heavy_times(t, wpn);
+            let (s1, arc) = (
+                s0 + a0,
+                if h.shape == crate::weapons::Shape::Circle {
+                    360.0
+                } else {
+                    t[crate::tuning::P::HeavyArc] * h.arc
+                },
             );
             if e >= s0 && e < s1 {
                 sector(
                     pp + Vec3::Y * 0.9,
-                    t[crate::tuning::P::HeavyRange],
+                    t[crate::tuning::P::HeavyRange] * h.reach,
                     w.player.facing,
-                    t[crate::tuning::P::HeavyArc],
+                    arc,
                     if full {
                         Color::new(1.0, 0.8, 0.4, 0.45)
                     } else {

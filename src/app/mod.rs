@@ -19,8 +19,9 @@ use crate::stage::{sanctuary, StageDef, StageRun};
 use crate::touch;
 use crate::tuning::{Tuning, MAX_FRAME_DT, TICK_DT};
 use crate::ui::{self, Ui, AMBER, DIM, INK};
+use crate::weapons;
 use crate::world::{Event, World};
-use flow::{PauseItem, ResultItem, Scene, TitleItem};
+use flow::{PauseItem, ResultItem, Scene, SettingsRow, TitleItem};
 
 /// 타이틀 메뉴 첫 줄의 자리(화면 높이 비율) — `tools/test/touch.js`가 같은 값으로 탭한다.
 const TITLE_MENU_Y: f32 = 0.37;
@@ -52,19 +53,28 @@ pub struct App {
     ctl_rects: Vec<(Rect, usize, usize)>,
     perf: Perf,
     sums: (f64, f64, f64, u32),
+    /// 든 무기(0051) — 다시 시작해도 그대로, 설정과 함께 저장.
+    weapon: weapons::Id,
+    /// 화면 흔들림 0..=10(설정, 0052).
+    shake: u8,
 }
 
 impl App {
     pub fn new() -> Self {
         let t = Tuning::default();
-        // 저장한 설정(0024): 언어·키 배치.
+        // 저장한 설정(0024·0052): 언어·키 배치·흔들림·무기.
+        let mut weapon = weapons::Id::Sword;
+        let mut shake = crate::prefs::SHAKE_DEFAULT;
         if let Some(p) = crate::prefs::load() {
             if let Some(l) = p.lang {
                 i18n::set_lang(l);
             }
             input::set_bindings(p.bindings);
+            shake = p.shake;
+            weapon = weapons::IDS[(p.weapon as usize).min(weapons::IDS.len() - 1)];
         }
-        let (run, world) = StageRun::start(FIRST_STAGE);
+        let (run, mut world) = StageRun::start(FIRST_STAGE);
+        world.set_weapon(weapon);
         let cam = Camera::new(world.player.pos, &t);
         App {
             scene: Scene::Title,
@@ -87,6 +97,8 @@ impl App {
             ctl_rects: Vec::new(),
             perf: Perf::default(),
             sums: (0.0, 0.0, 0.0, 0),
+            weapon,
+            shake,
         }
     }
 
@@ -94,7 +106,15 @@ impl App {
         let (run, world) = StageRun::start(FIRST_STAGE);
         self.run = run;
         self.world = world;
+        self.world.set_weapon(self.weapon);
         self.cam = Camera::new(self.world.player.pos, &self.t);
+    }
+
+    /// 무기를 바꾼다(0051, 멈춤 메뉴): 지금 판에 바로, 저장.
+    fn next_weapon(&mut self, step: i32) {
+        self.weapon = self.weapon.next(step);
+        self.world.set_weapon(self.weapon);
+        self.save_prefs();
     }
 
     /// 설정을 저장한다(언어·키 배치를 바꿀 때마다).
@@ -102,6 +122,11 @@ impl App {
         crate::prefs::save(&crate::prefs::Prefs {
             lang: Some(i18n::lang()),
             bindings: input::bindings(),
+            shake: self.shake,
+            weapon: weapons::IDS
+                .iter()
+                .position(|w| *w == self.weapon)
+                .unwrap_or(0) as u8,
         });
     }
 
@@ -182,11 +207,7 @@ impl App {
         }
         match self.scene {
             Scene::Title => {
-                let items = flow::title_items(crate::screen::supported());
-                let lang_row = items.iter().position(|i| *i == TitleItem::Language);
-                if (a.menu_left || a.menu_right) && Some(self.cursor) == lang_row {
-                    self.next_lang();
-                }
+                let items = flow::title_items();
                 if let Some(i) = self.menu_pick(&a, items.len()) {
                     match items[i] {
                         TitleItem::Start => {
@@ -194,22 +215,86 @@ impl App {
                             self.restart();
                             self.go(Scene::Play);
                         }
-                        TitleItem::Controls => self.go(Scene::Controls { from_pause: false }),
-                        TitleItem::Language => self.next_lang(),
-                        TitleItem::Fullscreen => crate::screen::toggle(),
+                        TitleItem::Settings => self.go(Scene::Settings { from_pause: false }),
                         #[cfg(feature = "dev")]
-                        TitleItem::SkipToGate => {
+                        TitleItem::Dev => self.go(Scene::Dev),
+                    }
+                }
+                self.follow_camera();
+            }
+            Scene::Settings { from_pause } => {
+                let rows = flow::settings_rows(crate::screen::supported());
+                let row = rows.get(self.cursor).copied();
+                let step = a.menu_right as i32 - a.menu_left as i32;
+                if a.back || a.pause {
+                    self.go(flow::back(self.scene));
+                    return;
+                }
+                if step != 0 {
+                    match row {
+                        Some(SettingsRow::Language) => self.next_lang(),
+                        Some(SettingsRow::Shake) => {
+                            self.shake = (self.shake as i32 + step).clamp(0, 10) as u8;
+                            self.save_prefs();
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some(i) = self.menu_pick(&a, rows.len()) {
+                    match rows[i] {
+                        SettingsRow::Language => self.next_lang(),
+                        SettingsRow::Fullscreen => crate::screen::toggle(),
+                        SettingsRow::Shake => {
+                            self.shake = if self.shake >= 10 { 0 } else { self.shake + 1 };
+                            self.save_prefs();
+                        }
+                        SettingsRow::Controls => self.go(Scene::Controls { from_pause }),
+                        SettingsRow::Back => self.go(flow::back(self.scene)),
+                    }
+                }
+                if !from_pause {
+                    self.follow_camera();
+                }
+            }
+            #[cfg(feature = "dev")]
+            Scene::Dev => {
+                let items = dev_items();
+                if a.back || a.pause {
+                    self.go(Scene::Title);
+                    return;
+                }
+                let step = a.menu_right as i32 - a.menu_left as i32;
+                if step != 0 {
+                    match items.get(self.cursor) {
+                        Some(DevItem::Scenario) => {
+                            self.sc = if step > 0 {
+                                scenario::next(self.sc)
+                            } else {
+                                (0..scenario::LIST.len() - 1)
+                                    .fold(self.sc, |s, _| scenario::next(s))
+                            }
+                        }
+                        Some(DevItem::Weapon) => self.next_weapon(step),
+                        _ => {}
+                    }
+                }
+                if let Some(i) = self.menu_pick(&a, items.len()) {
+                    match items[i] {
+                        DevItem::Gate => {
                             self.restart();
                             self.run.dev_skip_to_gate(&mut self.world);
                             self.cam = Camera::new(self.world.player.pos, &self.t);
                             self.go(Scene::Play);
                         }
-                        #[cfg(feature = "dev")]
-                        TitleItem::Sandbox => {
-                            self.world = scenario::build(self.sc);
+                        DevItem::Scenario => {
+                            let sc = self.sc;
+                            self.world = scenario::build(sc);
+                            self.world.set_weapon(self.weapon);
                             self.cam = Camera::new(self.world.player.pos, &self.t);
                             self.go(Scene::Sandbox);
                         }
+                        DevItem::Weapon => self.next_weapon(1),
+                        DevItem::Back => self.go(Scene::Title),
                     }
                 }
                 self.follow_camera();
@@ -222,7 +307,14 @@ impl App {
                         flow::back(self.scene)
                     };
                     self.go(next);
+                } else if (a.menu_left || a.menu_right)
+                    && flow::PAUSE_ITEMS.get(self.cursor) == Some(&PauseItem::Weapon)
+                {
+                    self.next_weapon(if a.menu_right { 1 } else { -1 });
                 } else if let Some(i) = self.menu_pick(&a, flow::PAUSE_ITEMS.len()) {
+                    if flow::PAUSE_ITEMS[i] == PauseItem::Weapon {
+                        self.next_weapon(1);
+                    }
                     let (next, rebuild) = flow::choose_pause(flow::PAUSE_ITEMS[i]);
                     if rebuild {
                         self.restart();
@@ -287,7 +379,7 @@ impl App {
             #[cfg(feature = "dev")]
             Scene::Sandbox => {
                 if a.pause {
-                    self.go(Scene::Title);
+                    self.go(Scene::Dev);
                     return;
                 }
                 if let Some(n) = a.scenario {
@@ -297,6 +389,7 @@ impl App {
                         scenario::by_number(n).unwrap_or(self.sc)
                     };
                     self.world = scenario::build(self.sc);
+                    self.world.set_weapon(self.weapon);
                     self.cam = Camera::new(self.world.player.pos, &self.t);
                 }
                 let a = self.lab_filter(a);
@@ -354,10 +447,14 @@ impl App {
                 Event::Smash { .. } => SHAKE_SMASH,
                 Event::Charged => SHAKE_CHARGED,
                 Event::Gulp { .. } | Event::FlaskDenied => 0.0,
-                Event::Cast { .. } | Event::CastDenied => 0.0,
+                Event::Cast { .. } | Event::CastDenied | Event::Throw => 0.0,
+                Event::Break { .. } => SHAKE_SMASH,
+                Event::Aftershock { .. } | Event::Boom { .. } => SHAKE_PLUNGE,
+                Event::Perfect { .. } => SHAKE_CHARGED,
                 Event::Swing | Event::LockOn | Event::LockOff => 0.0,
             };
-            cam.trauma = (cam.trauma + kick).min(1.0);
+            // 화면 흔들림 설정(0052): 0..=10 → 0..100%.
+            cam.trauma = (cam.trauma + kick * self.shake as f32 / 10.0).min(1.0);
         }
         self.follow_camera();
     }
@@ -413,6 +510,14 @@ impl App {
             }
             Scene::Result { won } => self.draw_result(&f, won),
             Scene::Controls { .. } => self.draw_controls(&f),
+            Scene::Settings { from_pause } => {
+                if from_pause {
+                    hud::draw(&self.ui, &f, &self.world, Some(&self.run), true);
+                }
+                self.draw_settings(&f);
+            }
+            #[cfg(feature = "dev")]
+            Scene::Dev => self.draw_dev_menu(&f),
             #[cfg(feature = "dev")]
             Scene::Sandbox => hud::draw(&self.ui, &f, &self.world, None, false),
         }
@@ -515,23 +620,14 @@ impl App {
         self.ui.text_center(s.game_title, cx, y, 3.0, AMBER);
         self.ui
             .text_center(s.title_subtitle, cx, y + self.ui.px(3.0) * 1.2, 1.0, DIM);
-        let items: Vec<String> = flow::title_items(crate::screen::supported())
+        let items: Vec<String> = flow::title_items()
             .iter()
             .map(|i| match i {
                 TitleItem::Start => s.menu_start.to_string(),
-                TitleItem::Controls => s.menu_controls.to_string(),
-                TitleItem::Language => fill(s.menu_language, &[s.lang_name]),
-                TitleItem::Fullscreen => if crate::screen::active() {
-                    s.menu_fullscreen_on
-                } else {
-                    s.menu_fullscreen_off
-                }
-                .to_string(),
+                TitleItem::Settings => s.menu_settings.to_string(),
                 // 개발 전용(영어 그대로, 0013).
                 #[cfg(feature = "dev")]
-                TitleItem::SkipToGate => "DEV: skip to the sanctum gate".to_string(),
-                #[cfg(feature = "dev")]
-                TitleItem::Sandbox => "DEV: PoC scenarios".to_string(),
+                TitleItem::Dev => "DEV".to_string(),
             })
             .collect();
         self.menu_rects = self
@@ -562,17 +658,68 @@ impl App {
             .text_center(s.pause_title, cx, f.oy + f.h * 0.25, 2.0, INK);
         let items: Vec<String> = flow::PAUSE_ITEMS
             .iter()
-            .map(|i| {
-                match i {
-                    PauseItem::Resume => s.menu_resume,
-                    PauseItem::Controls => s.menu_controls,
-                    PauseItem::Restart => s.menu_restart,
-                    PauseItem::ToTitle => s.menu_to_title,
-                }
-                .to_string()
+            .map(|i| match i {
+                PauseItem::Resume => s.menu_resume.to_string(),
+                PauseItem::Weapon => fill(s.menu_weapon, &[weapon_name(self.weapon)]),
+                PauseItem::Settings => s.menu_settings.to_string(),
+                PauseItem::Restart => s.menu_restart.to_string(),
+                PauseItem::ToTitle => s.menu_to_title.to_string(),
             })
             .collect();
         self.menu_rects = self.ui.menu(&items, self.cursor, cx, f.oy + f.h * 0.45);
+        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
+    }
+
+    /// 설정(0052): 값 줄은 "이름: 값", 좌우·확인으로 바꾼다.
+    fn draw_settings(&mut self, f: &Frame) {
+        let s = s();
+        self.ui.dim(0.6);
+        let cx = f.ox + f.w * 0.5;
+        self.ui
+            .text_center(s.settings_title, cx, f.oy + f.h * 0.2, 2.0, INK);
+        let items: Vec<String> = flow::settings_rows(crate::screen::supported())
+            .iter()
+            .map(|r| match r {
+                SettingsRow::Language => fill(s.menu_language, &[s.lang_name]),
+                SettingsRow::Fullscreen => if crate::screen::active() {
+                    s.menu_fullscreen_on
+                } else {
+                    s.menu_fullscreen_off
+                }
+                .to_string(),
+                SettingsRow::Shake => {
+                    fill(s.menu_shake, &[&format!("{}%", self.shake as u32 * 10)])
+                }
+                SettingsRow::Controls => s.menu_controls.to_string(),
+                SettingsRow::Back => s.controls_back.to_string(),
+            })
+            .collect();
+        self.menu_rects = self.ui.menu(&items, self.cursor, cx, f.oy + f.h * 0.38);
+        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
+    }
+
+    /// 개발 메뉴(0052): 개발판에만, 영어 그대로(0013).
+    #[cfg(feature = "dev")]
+    fn draw_dev_menu(&mut self, f: &Frame) {
+        self.ui.dim(0.6);
+        let cx = f.ox + f.w * 0.5;
+        self.ui.text_center("DEV", cx, f.oy + f.h * 0.1, 2.0, AMBER);
+        let items: Vec<String> = dev_items()
+            .iter()
+            .map(|d| match d {
+                DevItem::Gate => "start at the sanctum gate (boss)".to_string(),
+                DevItem::Scenario => format!("PoC: < {} >", scenario::entry(self.sc).name),
+                DevItem::Weapon => format!("weapon: < {:?} >", self.weapon),
+                DevItem::Back => "back".to_string(),
+            })
+            .collect();
+        self.menu_rects = self.ui.menu(&items, self.cursor, cx, f.oy + f.h * 0.3);
+        if let Some(DevItem::Scenario) = dev_items().get(self.cursor) {
+            let e = scenario::entry(self.sc);
+            let checks = self.ui.fit(e.checks, f.w * 0.9, 1.0);
+            self.ui
+                .text_center(&checks, cx, f.oy + f.h * 0.78, 1.0, DIM);
+        }
         self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
     }
 
@@ -692,4 +839,36 @@ impl App {
         self.menu_rects = self.ui.menu(&items, self.cursor, cx, f.oy + f.h * 0.55);
         self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.0, f.w * 0.94);
     }
+}
+
+/// 무기 이름(0051, i18n 표).
+fn weapon_name(id: weapons::Id) -> &'static str {
+    let s = s();
+    match id {
+        weapons::Id::Sword => s.weapon_sword,
+        weapons::Id::Hammer => s.weapon_hammer,
+        weapons::Id::Staff => s.weapon_staff,
+        weapons::Id::Crossbow => s.weapon_crossbow,
+    }
+}
+
+/// 개발 메뉴 줄(0052).
+#[cfg(feature = "dev")]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum DevItem {
+    Gate,
+    Weapon,
+    /// PoC 시나리오(좌우로 고르고 확인으로 들어간다).
+    Scenario,
+    Back,
+}
+
+#[cfg(feature = "dev")]
+fn dev_items() -> Vec<DevItem> {
+    vec![
+        DevItem::Gate,
+        DevItem::Weapon,
+        DevItem::Scenario,
+        DevItem::Back,
+    ]
 }

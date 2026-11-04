@@ -1,0 +1,351 @@
+//! 무기 표(0051). 무기 = 공격의 **모양**(KB `concepts/action-rpg-stats-and-equipment.md`): 콤보의 타마다 시간·거리·각·피해·자세 피해,
+//! 강타, RB(근접 무기 = 마법 탄, 원거리 무기 = 사격), 원거리 무기의 X(수류탄). 0048: 무기 한 줄 = (X, RB) 짝.
+//!
+//! 시간·거리·각·내딛기는 랩의 기준값(`attack.*`·`heavy.*`, `tuning.rs`)에 곱하는 **배율** — 손맛의 바탕은 랩 한 곳에서 맞추고,
+//! 무기는 그 위의 모양만 갖는다(코드에 타별 숫자를 박지 않는다). 피해·자세 피해는 정수·점수 그대로.
+//! 새 무기 = `Id` 한 줄 + `WEAPONS` 한 줄 + 동작(`tools/art/blender/wanderer.py`) + 모델 부위(같은 파일, 오른손 뼈) + 글(i18n).
+
+/// 판정 모양.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Shape {
+    /// 앞쪽 부채꼴(각 = `arc`).
+    Arc,
+    /// 몸 둘레 원(회전 베기·내려찍기).
+    Circle,
+}
+
+/// 콤보 한 타.
+#[derive(Clone, Copy, Debug)]
+pub struct Hit {
+    /// 선딜·활성·후딜 모두에 곱한다(1 = 랩 평타 그대로, 클수록 느리다).
+    pub time: f32,
+    /// 거리·각·내딛기 배율.
+    pub reach: f32,
+    pub arc: f32,
+    pub lunge: f32,
+    pub shape: Shape,
+    pub damage: i32,
+    /// 자세 피해(0051 — 적의 자세 막대를 채운다).
+    pub poise: f32,
+    /// 넉백 배율.
+    pub knock: f32,
+    /// 동작 이름(`wanderer.glb`) — 없으면 `attack`.
+    pub anim: &'static str,
+}
+
+/// 강타(공격 꾹, 0030).
+#[derive(Clone, Copy, Debug)]
+pub struct Heavy {
+    /// 선딜·활성·후딜 배율, 다 모으는 시간 배율.
+    pub time: f32,
+    pub charge: f32,
+    pub reach: f32,
+    pub arc: f32,
+    pub lunge: f32,
+    pub shape: Shape,
+    /// 덜 모았을 때 피해(다 모으면 + `heavy.full bonus`).
+    pub damage: i32,
+    pub poise: f32,
+    /// 모으는 동안 걷기 배율(0047의 `heavy.charge walk x`에 곱한다).
+    pub walk: f32,
+    /// 친 자리에 금이 가고 이 초 뒤 둘레를 다시 친다(망치 여진, PoE2 지진 착상): (늦음 s, 반지름 m, 피해, 자세 피해).
+    pub aftershock: Option<(f32, f32, i32, f32)>,
+    /// 다 모인 뒤 이 초 안에 떼면 "딱 맞춤" — 피해 +1·자세 피해 ×1.5·둘레 넉백(지팡이, PoE2 착상).
+    pub perfect: Option<f32>,
+    /// 자세 막대가 이만큼(0..1) 넘게 찬 적은 바로 깬다(망치 — PoE2의 "깨지기 직전" 적 즉시 깨기).
+    pub breaks_primed: Option<f32>,
+    pub anim_charge: &'static str,
+    pub anim_heavy: &'static str,
+}
+
+/// RB.
+#[derive(Clone, Copy, Debug)]
+pub enum Rb {
+    /// 근접 무기의 마법 탄(0048: 칸 3, 근접으로 맞히면 찬다).
+    Magic(Bolt),
+    /// 원거리 무기의 사격: 탄창, 다 쓰면 `reload` 초 뒤 가득, 회피하면 한 발 장전(PoE2 착상). 칸은 쓰지 않는다.
+    Shot {
+        bolt: Bolt,
+        mag: u8,
+        reload: f32,
+        /// `cast.startup`·`cast.time` 배율(쏘기는 마법보다 빠르다).
+        time: f32,
+    },
+}
+
+/// 날아가는 탄의 모양.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bolt {
+    /// `cast.speed`·`cast.range` 배율.
+    pub speed: f32,
+    pub range: f32,
+    pub damage: i32,
+    pub poise: f32,
+    /// 적을 꿰뚫고 계속 간다.
+    pub pierce: bool,
+    /// 맞은 적이 이 초 휘청(0 = 없음).
+    pub stagger: f32,
+    /// 그림 색(0 = 마법 라벤더, 1 = 무거운 탄 놋쇠, 2 = 꿰뚫는 탄 민트, 3 = 쇠뇌 볼트).
+    pub look: u8,
+}
+
+/// 원거리 무기의 X(0048: 근접 무기의 마법 자리를 수류탄이 맞바꾼다).
+#[derive(Clone, Copy, Debug)]
+pub struct Grenade {
+    /// 도화선(초) — 땅을 튕기다 이 시간에 터진다. 쇠뇌 볼트에 맞으면 바로.
+    pub fuse: f32,
+    /// 한 번에 가질 수 있는 수, 하나가 다시 차는 초.
+    pub count: u8,
+    pub cooldown: f32,
+    pub radius: f32,
+    pub damage: i32,
+    pub poise: f32,
+    /// 던지는 거리(톡 = 자동 조준 자리까지 이 안에서, 꾹 = 가장 멀리).
+    pub near: f32,
+    pub far: f32,
+}
+
+/// 무기 이름표.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Id {
+    Sword,
+    Hammer,
+    Staff,
+    Crossbow,
+}
+
+pub const IDS: [Id; 4] = [Id::Sword, Id::Hammer, Id::Staff, Id::Crossbow];
+
+pub struct Weapon {
+    pub id: Id,
+    /// X 연타(근접 무기). 원거리 무기는 비어 있고 X가 수류탄.
+    pub combo: &'static [Hit],
+    pub heavy: Option<Heavy>,
+    pub rb: Rb,
+    pub grenade: Option<Grenade>,
+    /// 방랑자 모델에서 이 무기 부위 이름(다른 무기 부위는 숨긴다).
+    pub node: &'static str,
+}
+
+const fn hit(
+    time: f32,
+    reach: f32,
+    arc: f32,
+    lunge: f32,
+    damage: i32,
+    poise: f32,
+    anim: &'static str,
+) -> Hit {
+    Hit {
+        time,
+        reach,
+        arc,
+        lunge,
+        shape: Shape::Arc,
+        damage,
+        poise,
+        knock: 1.0,
+        anim,
+    }
+}
+
+const MAGIC: Bolt = Bolt {
+    speed: 1.0,
+    range: 1.0,
+    damage: 1,
+    poise: 1.0,
+    pierce: false,
+    stagger: 0.0,
+    look: 0,
+};
+
+/// 순례자의 검 — 기준. 3연타: 가로 → 되돌려 가로 → 내디디며 찌르기(좁고 길게, 자세 피해 큼).
+const SWORD_COMBO: [Hit; 3] = [
+    hit(1.0, 1.0, 1.0, 1.0, 1, 1.0, "attack"),
+    hit(1.0, 1.0, 1.0, 1.0, 1, 1.0, "attack2"),
+    Hit {
+        knock: 1.6,
+        ..hit(1.2, 1.25, 0.45, 1.6, 2, 2.0, "attack3")
+    },
+];
+
+/// 종치기 망치 — 느리고 넓은 2타(한 걸음씩 나아감, 자세 피해 큼), 강타는 뛰어올라 둥근 내려찍기 + 여진.
+const HAMMER_COMBO: [Hit; 2] = [
+    Hit {
+        knock: 1.5,
+        ..hit(1.7, 1.15, 1.25, 1.4, 2, 3.0, "hammer1")
+    },
+    Hit {
+        shape: Shape::Circle,
+        knock: 2.0,
+        ..hit(2.0, 1.1, 1.0, 1.2, 3, 4.0, "hammer2")
+    },
+];
+
+/// 순례자 지팡이 — 빠른 4연타, 넷째는 둘레 회전 마무리(느림).
+const STAFF_COMBO: [Hit; 4] = [
+    hit(0.7, 1.15, 0.8, 0.7, 1, 0.6, "staff1"),
+    hit(0.7, 1.15, 0.8, 0.7, 1, 0.6, "staff2"),
+    hit(0.75, 1.2, 0.9, 0.8, 1, 0.8, "staff3"),
+    Hit {
+        shape: Shape::Circle,
+        knock: 1.8,
+        ..hit(1.3, 1.25, 1.0, 0.4, 2, 2.0, "staff4")
+    },
+];
+
+pub const WEAPONS: [Weapon; 4] = [
+    Weapon {
+        id: Id::Sword,
+        combo: &SWORD_COMBO,
+        heavy: Some(Heavy {
+            time: 1.0,
+            charge: 1.0,
+            reach: 1.0,
+            arc: 1.0,
+            lunge: 1.0,
+            shape: Shape::Arc,
+            damage: 2,
+            poise: 3.0,
+            walk: 1.0,
+            aftershock: None,
+            perfect: None,
+            breaks_primed: None,
+            anim_charge: "charge",
+            anim_heavy: "heavy",
+        }),
+        rb: Rb::Magic(MAGIC),
+        grenade: None,
+        node: "sword",
+    },
+    Weapon {
+        id: Id::Hammer,
+        combo: &HAMMER_COMBO,
+        heavy: Some(Heavy {
+            time: 1.3,
+            charge: 1.4,
+            reach: 1.0,
+            arc: 1.0,
+            lunge: 2.2,
+            shape: Shape::Circle,
+            damage: 3,
+            poise: 6.0,
+            walk: 0.75,
+            aftershock: Some((1.5, 2.6, 2, 3.0)),
+            perfect: None,
+            breaks_primed: Some(0.6),
+            anim_charge: "hammer_charge",
+            anim_heavy: "hammer_slam",
+        }),
+        rb: Rb::Magic(Bolt {
+            speed: 0.65,
+            range: 0.6,
+            damage: 2,
+            poise: 3.0,
+            stagger: 0.5,
+            look: 1,
+            ..MAGIC
+        }),
+        grenade: None,
+        node: "w_hammer",
+    },
+    Weapon {
+        id: Id::Staff,
+        combo: &STAFF_COMBO,
+        heavy: Some(Heavy {
+            time: 0.9,
+            charge: 0.9,
+            reach: 1.0,
+            arc: 1.0,
+            lunge: 0.5,
+            shape: Shape::Circle,
+            damage: 2,
+            poise: 2.5,
+            walk: 1.2,
+            aftershock: None,
+            perfect: Some(0.15),
+            breaks_primed: None,
+            anim_charge: "staff_charge",
+            anim_heavy: "staff_release",
+        }),
+        rb: Rb::Magic(Bolt {
+            speed: 1.3,
+            range: 1.2,
+            pierce: true,
+            look: 2,
+            ..MAGIC
+        }),
+        grenade: None,
+        node: "w_staff",
+    },
+    Weapon {
+        id: Id::Crossbow,
+        combo: &[],
+        heavy: None,
+        rb: Rb::Shot {
+            bolt: Bolt {
+                speed: 1.7,
+                range: 1.4,
+                damage: 2,
+                poise: 1.5,
+                pierce: false,
+                stagger: 0.0,
+                look: 3,
+            },
+            mag: 4,
+            reload: 1.2,
+            time: 0.6,
+        },
+        grenade: Some(Grenade {
+            fuse: 1.5,
+            count: 2,
+            cooldown: 4.0,
+            radius: 2.2,
+            damage: 3,
+            poise: 5.0,
+            near: 7.0,
+            far: 11.0,
+        }),
+        node: "w_crossbow",
+    },
+];
+
+impl Id {
+    pub fn def(self) -> &'static Weapon {
+        WEAPONS
+            .iter()
+            .find(|w| w.id == self)
+            .expect("WEAPONS has every Id")
+    }
+
+    /// 다음 무기(바꾸기 줄).
+    pub fn next(self, step: i32) -> Id {
+        let i = IDS.iter().position(|x| *x == self).unwrap_or(0) as i32;
+        IDS[(i + step).rem_euclid(IDS.len() as i32) as usize]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_id_has_one_row_and_melee_weapons_have_a_combo() {
+        for id in IDS {
+            assert_eq!(WEAPONS.iter().filter(|w| w.id == id).count(), 1, "{id:?}");
+            let w = id.def();
+            match w.rb {
+                Rb::Magic(_) => assert!(
+                    !w.combo.is_empty() && w.grenade.is_none(),
+                    "{id:?}: melee = X combo + RB magic"
+                ),
+                Rb::Shot { mag, .. } => assert!(
+                    mag > 0 && w.grenade.is_some(),
+                    "{id:?}: ranged = RB shot + X grenade"
+                ),
+            }
+        }
+        assert_eq!(Id::Crossbow.next(1), Id::Sword);
+        assert_eq!(Id::Sword.next(-1), Id::Crossbow);
+    }
+}

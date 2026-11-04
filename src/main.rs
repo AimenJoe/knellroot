@@ -30,6 +30,7 @@ mod text;
 mod touch;
 mod tuning;
 mod ui;
+mod weapons;
 mod world;
 
 use macroquad::prelude::*;
