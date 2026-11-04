@@ -139,6 +139,8 @@ fn rim(p: Vec3, n: Vec3, k: Look) -> Vec3 {
 const RIM: Vec3 = Vec3::new(0.55, 0.62, 0.85);
 /// 외곽선 색(거의 검정, 살짝 푸른).
 const OUTLINE: Color = Color::new(0.02, 0.02, 0.035, 1.0);
+/// 외곽선 껍데기를 카메라에서 미는 거리(m) — 이보다 가까이 겹친 부위 사이에는 선을 긋지 않는다.
+const OUTLINE_PUSH: f32 = 0.18;
 
 const AMBIENT: Vec3 = Vec3::new(0.26, 0.27, 0.35);
 const MOON: Vec3 = Vec3::new(0.42, 0.45, 0.58);
@@ -217,7 +219,7 @@ impl Renderer {
                 }
                 let sc = &mut self.scenery.as_mut().unwrap().1;
                 draw_plane(
-                    Vec3::Y * -0.03,
+                    Vec3::Y * sc.void_y,
                     vec2(sc.extent, sc.extent),
                     None,
                     Color::new(0.03, 0.03, 0.045, 1.0),
@@ -1153,7 +1155,15 @@ impl Batch {
             // 화면 1px = 그 거리에서 이만큼(m): 2·거리·tan(시야/2) / 내부 세로.
             let dist = k.eye.distance(at).max(0.5);
             let w = k.outline_px * 2.0 * dist * (k.fovy * 0.5).tan() / INTERNAL_H as f32;
-            Self::hull(&mut self.outline, &mut self.outline_idx, e, pose, inst, w);
+            Self::hull(
+                &mut self.outline,
+                &mut self.outline_idx,
+                e,
+                pose,
+                inst,
+                w,
+                k.eye,
+            );
             if self.outline.len() >= MAX_DRAW_VERTICES - 2000 {
                 self.send_outline();
             }
@@ -1162,6 +1172,9 @@ impl Batch {
 
     /// 외곽선 껍데기(0033): 부위마다 상자를 가운데에서 `w`(m)만큼 바깥으로 키운 것. 부위가 상자라 축마다 부호로 민다(면마다 정점이 따로라
     /// 법선으로 밀면 모서리가 벌어진다).
+    /// 껍데기는 카메라에서 `OUTLINE_PUSH`만큼 뒤로 민다 — 부위 사이 선은 뒤 부위가 그만큼 떨어져 있을 때만 남고(작은 배우가
+    /// 안쪽 선으로 까매지지 않게), 바닥·배경 앞의 바깥 테는 그대로.
+    #[allow(clippy::too_many_arguments)]
     fn hull(
         verts: &mut Vec<Vertex>,
         idx: &mut Vec<u16>,
@@ -1169,6 +1182,7 @@ impl Batch {
         pose: &[Mat4],
         inst: Mat4,
         w: f32,
+        eye: Vec3,
     ) {
         let m = &e.model;
         for (i, node) in m.nodes.iter().enumerate() {
@@ -1196,6 +1210,7 @@ impl Batch {
                 let d = *p - c;
                 let q = *p + vec3(sign(d.x), sign(d.y), sign(d.z)) * w;
                 let q = mat.transform_point3(q);
+                let q = q + (q - eye).normalize_or_zero() * OUTLINE_PUSH;
                 verts.push(Vertex::new(q.x, q.y, q.z, 0.0, 0.0, OUTLINE));
             }
             idx.extend(mesh.idx.iter().map(|&j| base + j as u16));

@@ -91,6 +91,9 @@ pub struct Level {
     pub player_start: Vec3,
     /// 문(닫히면 막는 상자)과 그 가운데.
     pub gate: Option<(Aabb, Vec3)>,
+    /// 배경 높낮이(0035, 그림만): 칸마다 높이(m). 바깥 칸은 바위 단(+)·꺼진 땅(-), 벽 칸은 벽 꼭대기. None = 기본(바닥 0·벽 무작위·바깥 허공).
+    /// 걸을 수 있는 칸은 늘 None — 월드는 평평한 땅 하나 그대로(높낮이 2단계는 다음 구역).
+    pub heights: Vec<Option<f32>>,
 }
 
 impl Level {
@@ -141,6 +144,7 @@ impl Level {
             marks: Vec::new(),
             player_start: Vec3::ZERO,
             gate: None,
+            heights: vec![None; w * h],
         };
         let mut gate_cells = Vec::new();
         for (z, row) in rows.iter().enumerate() {
@@ -228,6 +232,28 @@ impl Level {
         lv
     }
 
+    /// 배경 높이 격자를 얹는다(0035): 지도와 같은 크기의 글자 격자, `0`~`9` = (숫자 − 2)m(`2` = 바닥 높이), `.` = 기본.
+    pub fn with_heights(mut self, grid: &str) -> Level {
+        let rows: Vec<&str> = grid.lines().filter(|l| !l.trim().is_empty()).collect();
+        for (z, row) in rows.iter().enumerate().take(self.h) {
+            for (x, c) in row.chars().enumerate().take(self.w) {
+                if let Some(d) = c.to_digit(10) {
+                    self.heights[z * self.w + x] = Some(d as f32 - 2.0);
+                }
+            }
+        }
+        self
+    }
+
+    /// 칸의 배경 높이(0035).
+    pub fn height(&self, x: usize, z: usize) -> Option<f32> {
+        if x < self.w && z < self.h {
+            self.heights[z * self.w + x]
+        } else {
+            None
+        }
+    }
+
     /// 부딪힘 상자: 벽 + 소품(+ 닫힌 문은 따로).
     pub fn obstacles(&self) -> Vec<Aabb> {
         let mut v = self.walls.clone();
@@ -248,6 +274,8 @@ impl Level {
 pub struct StageDef {
     pub name: Tr,
     pub map: &'static str,
+    /// 배경 높낮이 격자(0035, 그림만 — `Level::with_heights`). 없으면 평평.
+    pub heights: Option<&'static str>,
     /// 구역: (이름, 이 행보다 위(작은 z)로 들어가면).
     pub zones: &'static [(Tr, usize)],
     /// 물결: (스폰 표지, 종류) 묶음 — 앞 물결이 이만큼 남으면 다음 물결.
@@ -339,7 +367,10 @@ pub const INTRO_TIME: f32 = 6.0;
 impl StageRun {
     /// 레벨을 세우고 월드를 만든다.
     pub fn start(def: &'static StageDef) -> (StageRun, World) {
-        let level = Level::parse(def.map);
+        let mut level = Level::parse(def.map);
+        if let Some(g) = def.heights {
+            level = level.with_heights(g);
+        }
         let mut w = World::new("stage", level.half_extent());
         w.obstacles = level.obstacles();
         if let Some((g, _)) = level.gate {
@@ -673,6 +704,37 @@ mod tests {
             && start.x < wb.max.x
             && start.z > wb.min.z
             && start.z < wb.max.z)));
+    }
+
+    /// 0035: 배경 높이 격자는 지도와 같은 크기이고, 걸을 수 있는 칸·문·표지 칸에는 높이가 없다(월드는 평평한 땅 그대로).
+    #[test]
+    fn background_heights_match_the_map_and_never_touch_walkable_cells() {
+        let g = sanctuary::DEF.heights.expect("sanctuary has heights");
+        let map: Vec<&str> = sanctuary::DEF
+            .map
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+        let hs: Vec<&str> = g.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert_eq!(map.len(), hs.len(), "rows");
+        for (z, (m, h)) in map.iter().zip(&hs).enumerate() {
+            assert_eq!(m.chars().count(), h.chars().count(), "row {z} width");
+            for (x, (mc, hc)) in m.chars().zip(h.chars()).enumerate() {
+                if hc != '.' {
+                    assert!(hc.is_ascii_digit(), "row {z} col {x}: {hc:?}");
+                    assert!(mc == ' ' || mc == '#', "row {z} col {x}: height on {mc:?}");
+                }
+            }
+        }
+        let (run, _) = StageRun::start(&sanctuary::DEF);
+        assert!(
+            run.level.heights.iter().any(|h| h.is_some_and(|v| v > 0.0)),
+            "some rise"
+        );
+        assert!(
+            run.level.heights.iter().any(|h| h.is_some_and(|v| v < 0.0)),
+            "some sink"
+        );
     }
 
     /// 끝까지 걸어 본다(적을 지우는 손을 대신해 월드를 직접 만진다): 입구 → 물결 → 문 열림 → 성소(문 닫힘·깨어남) → 결투 → 핵 → 클리어.

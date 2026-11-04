@@ -25,6 +25,8 @@ pub struct Scenery {
     pub lights: Vec<Light>,
     /// 바깥 허공 판의 반폭.
     pub extent: f32,
+    /// 허공 판의 높이(가장 깊은 꺼진 땅보다 아래, 0035).
+    pub void_y: f32,
 }
 
 /// 칸 자리로 정하는 0..1 값(같은 지도 = 같은 그림).
@@ -43,6 +45,10 @@ const SLAB: Color = Color::new(0.30, 0.29, 0.28, 1.0);
 const SLAB_MOSS: Color = Color::new(0.20, 0.25, 0.18, 1.0);
 const WALL: Color = Color::new(0.33, 0.31, 0.30, 1.0);
 const WALL_TOP: Color = Color::new(0.20, 0.19, 0.19, 1.0);
+/// 배경 높낮이(0035): 바위 단 옆면·윗면(이끼 낀 흙), 꺼진 땅 바닥(어둡게).
+const ROCK: Color = Color::new(0.24, 0.22, 0.21, 1.0);
+const ROCK_TOP: Color = Color::new(0.17, 0.19, 0.15, 1.0);
+const PIT: Color = Color::new(0.13, 0.13, 0.15, 1.0);
 
 fn mul(c: Color, k: f32) -> Color {
     Color::new(c.r * k, c.g * k, c.b * k, c.a)
@@ -211,8 +217,19 @@ impl Scenery {
                 }
                 let c = lv.at(x, z);
                 let h = CELL * 0.5;
-                let top = WALL_H * (0.8 + 0.35 * hash(x, z, 3));
-                let min = vec3(c.x - h, 0.0, c.z - h);
+                let top = lv
+                    .height(x, z)
+                    .unwrap_or(WALL_H * (0.8 + 0.35 * hash(x, z, 3)))
+                    .max(0.5);
+                // 곁에 꺼진 땅이 있으면 벽도 그 바닥까지 내려 그린다(0035).
+                let foot = neighbors(x, z)
+                    .filter_map(|(nx, nz)| {
+                        (lv.cell(nx, nz) == b' ')
+                            .then(|| lv.height(nx, nz))
+                            .flatten()
+                    })
+                    .fold(0.0f32, f32::min);
+                let min = vec3(c.x - h, foot, c.z - h);
                 let max = vec3(c.x + h, top, c.z + h);
                 let mut p = empty(Some(Aabb { min, max }));
                 let shade = 0.85 + 0.25 * hash(x, z, 5);
@@ -235,6 +252,127 @@ impl Scenery {
                     );
                 }
                 pieces.push(p);
+            }
+        }
+        // 배경 높낮이(0035): 바깥 칸마다 높으면 바위 단(가림 상자 — 앞을 막으면 옅게), 낮으면 꺼진 바닥 + 이웃보다 낮은 쪽 벼랑면.
+        let mut void_y: f32 = -0.03;
+        for z in 0..lv.h {
+            for x in 0..lv.w {
+                if lv.cell(x, z) != b' ' {
+                    continue;
+                }
+                let Some(hgt) = lv.height(x, z) else { continue };
+                let c = lv.at(x, z);
+                let hh = CELL * 0.5;
+                if hgt > 0.0 {
+                    let min = vec3(c.x - hh, 0.0, c.z - hh);
+                    let max = vec3(c.x + hh, hgt, c.z + hh);
+                    let mut p = empty(Some(Aabb { min, max }));
+                    let shade = 0.85 + 0.25 * hash(x, z, 21);
+                    block(
+                        &mut p,
+                        min,
+                        max,
+                        mul(ROCK, shade),
+                        mul(ROCK_TOP, shade),
+                        &lights,
+                    );
+                    if hash(x, z, 22) > 0.55 {
+                        let s = 0.25 + 0.35 * hash(x, z, 23);
+                        let o = vec3(
+                            c.x + (hash(x, z, 24) - 0.5),
+                            hgt,
+                            c.z + (hash(x, z, 25) - 0.5),
+                        );
+                        block(
+                            &mut p,
+                            o - vec3(s, 0.0, s),
+                            o + vec3(s, s, s),
+                            mul(ROCK, shade * 0.9),
+                            ROCK_TOP,
+                            &lights,
+                        );
+                    }
+                    pieces.push(p);
+                } else {
+                    void_y = void_y.min(hgt - 0.5);
+                    let mut p = empty(None);
+                    let k = 0.7 + 0.3 * hash(x, z, 26);
+                    quad(
+                        &mut p,
+                        [
+                            vec3(c.x - hh, hgt, c.z - hh),
+                            vec3(c.x + hh, hgt, c.z - hh),
+                            vec3(c.x + hh, hgt, c.z + hh),
+                            vec3(c.x - hh, hgt, c.z + hh),
+                        ],
+                        Vec3::Y,
+                        mul(PIT, k),
+                        &lights,
+                    );
+                    // 떨어진 돌덩이 몇 개(깊이 단서).
+                    if hash(x, z, 27) > 0.5 {
+                        let s = 0.2 + 0.3 * hash(x, z, 28);
+                        let o = vec3(
+                            c.x + (hash(x, z, 29) - 0.5) * 1.2,
+                            hgt,
+                            c.z + (hash(x, z, 30) - 0.5) * 1.2,
+                        );
+                        block(
+                            &mut p,
+                            o - vec3(s, 0.0, s),
+                            o + vec3(s, s * 0.8, s),
+                            mul(WALL, 0.6 * k),
+                            mul(WALL_TOP, k),
+                            &lights,
+                        );
+                    }
+                    // 벼랑면: 이웃이 더 높으면(걷는 바닥 0·덜 꺼진 땅) 그 경계에 이 칸을 바라보는 면.
+                    for (nx, nz) in neighbors(x, z) {
+                        let top = match lv.cell(nx, nz) {
+                            b' ' => match lv.height(nx, nz) {
+                                Some(v) => v.min(0.0),
+                                None => continue,
+                            },
+                            _ => 0.0,
+                        };
+                        if top <= hgt + 1e-3 {
+                            continue;
+                        }
+                        let d = vec3(nx as f32 - x as f32, 0.0, nz as f32 - z as f32);
+                        let e = c + d * hh;
+                        let side = vec3(d.z, 0.0, -d.x) * hh;
+                        // 위 모서리는 벽돌빛 그대로, 바닥 쪽은 어둡게 — 깊이가 읽히게.
+                        let base = p.verts.len() as u16;
+                        let corners = [
+                            e - side + Vec3::Y * hgt,
+                            e + side + Vec3::Y * hgt,
+                            e + side + Vec3::Y * top,
+                            e - side + Vec3::Y * top,
+                        ];
+                        for (i, v) in corners.iter().enumerate() {
+                            let l = lit(*v, -d, &lights) * if i < 2 { 0.3 } else { 1.0 };
+                            let col = mul(WALL, 0.9 * k);
+                            p.verts.push(Vertex::new(
+                                v.x,
+                                v.y,
+                                v.z,
+                                0.0,
+                                0.0,
+                                Color::new(col.r * l.x, col.g * l.y, col.b * l.z, 1.0),
+                            ));
+                        }
+                        p.idx.extend_from_slice(&[
+                            base,
+                            base + 1,
+                            base + 2,
+                            base,
+                            base + 2,
+                            base + 3,
+                        ]);
+                    }
+                    pieces.push(p);
+                }
             }
         }
         // 소품: 모델이 있으면 첫 자세를 굽고, 없으면 상자.
@@ -273,8 +411,19 @@ impl Scenery {
             pieces,
             lights,
             extent: lv.half_extent() * 3.0,
+            void_y,
         }
     }
+}
+
+/// 위·아래·왼·오른 이웃 칸(지도 밖은 뺀다 — `cell`이 바깥을 ' '로 돌려주지만 높이가 없어 건너뛴다).
+fn neighbors(x: usize, z: usize) -> impl Iterator<Item = (usize, usize)> {
+    [(0i32, -1i32), (0, 1), (-1, 0), (1, 0)]
+        .into_iter()
+        .filter_map(move |(dx, dz)| {
+            let (nx, nz) = (x as i32 + dx, z as i32 + dz);
+            (nx >= 0 && nz >= 0).then_some((nx as usize, nz as usize))
+        })
 }
 
 fn prop_color(k: PropKind) -> Color {
