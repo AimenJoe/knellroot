@@ -40,15 +40,16 @@ fn hash(x: usize, z: usize, k: u32) -> f32 {
     (h & 0xffff) as f32 / 65535.0
 }
 
-const MORTAR: Color = Color::new(0.09, 0.085, 0.09, 1.0);
-const SLAB: Color = Color::new(0.30, 0.29, 0.28, 1.0);
-const SLAB_MOSS: Color = Color::new(0.20, 0.25, 0.18, 1.0);
-const WALL: Color = Color::new(0.33, 0.31, 0.30, 1.0);
-const WALL_TOP: Color = Color::new(0.20, 0.19, 0.19, 1.0);
+// 0037 "색 = 생명": 세계는 해 질 녘 남보라(살아 있는 것만 파스텔·불빛만 따뜻하게) — 옛 숯빛·돌빛에서.
+const MORTAR: Color = Color::new(0.09, 0.09, 0.14, 1.0);
+const SLAB: Color = Color::new(0.31, 0.30, 0.41, 1.0);
+const SLAB_MOSS: Color = Color::new(0.21, 0.31, 0.31, 1.0);
+const WALL: Color = Color::new(0.37, 0.36, 0.48, 1.0);
+const WALL_TOP: Color = Color::new(0.23, 0.22, 0.32, 1.0);
 /// 배경 높낮이(0035): 바위 단 옆면·윗면(이끼 낀 흙), 꺼진 땅 바닥(어둡게).
-const ROCK: Color = Color::new(0.24, 0.22, 0.21, 1.0);
-const ROCK_TOP: Color = Color::new(0.17, 0.19, 0.15, 1.0);
-const PIT: Color = Color::new(0.13, 0.13, 0.15, 1.0);
+const ROCK: Color = Color::new(0.27, 0.26, 0.36, 1.0);
+const ROCK_TOP: Color = Color::new(0.19, 0.27, 0.27, 1.0);
+const PIT: Color = Color::new(0.12, 0.12, 0.19, 1.0);
 
 fn mul(c: Color, k: f32) -> Color {
     Color::new(c.r * k, c.g * k, c.b * k, c.a)

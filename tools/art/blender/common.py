@@ -36,15 +36,16 @@ FRAME_STEP = 3
 # ---------------------------------------------------------------- 팔레트
 # 붉은색은 위험 예고에만 쓴다 — 여기에는 채도 높은 빨강이 없다.
 PAL = {
-    "charcoal": "#1b1a1f",
-    "slate": "#2a2c33",
-    "stone": "#5a5752",
-    "lstone": "#8a857c",
-    "brown": "#7a6048",
-    "bone": "#b8a98a",
-    "moss": "#3d4a35",
-    "root": "#4a3340",
-    "droot": "#2e2229",
+    # 0037 "색 = 생명": 세계는 해 질 녘(숯빛 검정 대신 짙은 남보라), 침식은 바랜 잿빛 + 보라 뿌리, 불빛만 따뜻하게.
+    "charcoal": "#262739",
+    "slate": "#34364f",
+    "stone": "#5f5c7a",
+    "lstone": "#8f8ba3",
+    "brown": "#7a6260",
+    "bone": "#b9b3c4",
+    "moss": "#3f6d6a",
+    "root": "#6b4a7e",
+    "droot": "#4a3340",
     "amber": "#e09a3a",
     "ember": "#f2c46d",
     "teal": "#3f6b6a",
@@ -81,10 +82,10 @@ SMALL = [
     ("teal", PAL["teal"], "cloth"),
     ("steel", PAL["steel"], "metal"),
     # 어두운 청동: 바랜 갈색을 숯빛 쪽으로(종).
-    ("bronze", "#55463a", "metal"),
+    ("bronze", "#6a5a6e", "metal"),
     # 후드 속 그늘: 숯빛보다 한 단계 더 어둡게, 무늬 없음.
-    ("shadow", "#100f13", "flat"),
-    ("wood", "#5e4a38", "grain"),
+    ("shadow", "#14131d", "flat"),
+    ("wood", "#5e4a50", "grain"),
     # 0036 파스텔(귀여운 쪽): 무늬·가장자리 그늘 없이 거의 단색(`soft`) — 블록 테두리가 마인크래프트처럼 보였다.
     ("p_hood", "#b9a7e0", "soft"),
     ("p_hood_in", "#8f7fbf", "soft"),
@@ -106,13 +107,14 @@ SMALL = [
     # 0037 침식 = 색을 잃음: 살아 있던 파스텔이 바랜 잿빛 라벤더로.
     ("f_ash", "#a29eb0", "soft"),
     ("f_ash_d", "#6f6a80", "soft"),
+    ("p_mask", "#86675c", "soft"),
 ]
 # 큰 칸: blocks(돌 쌓기)·bark(뿌리 결)·door(널빤지 + 청동 띠)
 BIG = [
     ("wall", PAL["stone"], "blocks"),
     ("wall_light", PAL["lstone"], "blocks"),
     ("bark", PAL["root"], "bark"),
-    ("door", "#4f3f31", "door"),
+    ("door", "#4f4052", "door"),
 ]
 
 
@@ -162,7 +164,7 @@ def _paint_cell(px, x0, y0, size, base, pattern, rng, top):
                 k += 0.05 if (x * 3 + y * 5) % 7 == 0 else 0.0
             elif pattern == "speck":
                 if rng.random() < 0.12:
-                    c = mix(base, hexrgb("#5b6b48"), 0.7)
+                    c = mix(base, hexrgb("#5f8f86"), 0.7)
             elif pattern == "streak":
                 k += 0.07 * math.sin(x * 1.9 + math.sin(y * 0.7) * 1.3)
             elif pattern == "grain":
@@ -204,7 +206,7 @@ def _paint_cell(px, x0, y0, size, base, pattern, rng, top):
                 if x % 5 == 0:
                     k *= 0.7
                 if y in (3, 4, 11, 12):
-                    c = hexrgb("#55463a")
+                    c = hexrgb("#6a5a6e")
                     k = 1.0 + (0.15 if y in (3, 11) else 0.0)
                     if x % 5 == 2:
                         c = hexrgb(PAL["steel"])

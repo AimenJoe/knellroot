@@ -137,13 +137,14 @@ fn rim(p: Vec3, n: Vec3, k: Look) -> Vec3 {
 }
 
 const RIM: Vec3 = Vec3::new(0.55, 0.62, 0.85);
-/// 외곽선 색(거의 검정, 살짝 푸른).
-const OUTLINE: Color = Color::new(0.02, 0.02, 0.035, 1.0);
+/// 외곽선 색(0037: 검정 대신 짙은 자두빛 — 부드러운 외곽선).
+const OUTLINE: Color = Color::new(0.13, 0.07, 0.16, 1.0);
 /// 외곽선 껍데기를 카메라에서 미는 거리(m) — 이보다 가까이 겹친 부위 사이에는 선을 긋지 않는다.
 const OUTLINE_PUSH: f32 = 0.18;
 
-const AMBIENT: Vec3 = Vec3::new(0.26, 0.27, 0.35);
-const MOON: Vec3 = Vec3::new(0.42, 0.45, 0.58);
+// 0037: 해 질 녘 — 바탕빛은 보랏빛을 조금, 달빛은 차갑게(파스텔 주인공이 그 위에서 선다).
+const AMBIENT: Vec3 = Vec3::new(0.29, 0.28, 0.40);
+const MOON: Vec3 = Vec3::new(0.44, 0.45, 0.62);
 const FIRE: f32 = 1.5;
 /// 움직이는 모델에 곱하는 밝기(배경과 떼어 읽히게).
 const ACTOR_LIFT: f32 = 1.35;
@@ -194,7 +195,7 @@ impl Renderer {
             fovy: c3.fovy,
         });
         set_camera(&c3);
-        clear_background(Color::new(0.035, 0.035, 0.05, 1.0));
+        clear_background(Color::new(0.07, 0.07, 0.12, 1.0));
 
         // 가림 판정점: 플레이어 몸(발·허리·머리 × 좌우)과 락온 대상.
         let tg = w
@@ -222,7 +223,7 @@ impl Renderer {
                     Vec3::Y * sc.void_y,
                     vec2(sc.extent, sc.extent),
                     None,
-                    Color::new(0.03, 0.03, 0.045, 1.0),
+                    Color::new(0.06, 0.06, 0.10, 1.0),
                 );
                 let boxes: Vec<Aabb> = sc.pieces.iter().filter_map(|p| p.aabb).collect();
                 let hidden = crate::camera::occluders(&pts, cam.rig.pos, &boxes);
@@ -999,8 +1000,8 @@ fn lane_edge(p: Vec3, dir: Vec3, len: f32, w: f32, col: Color) {
 /// 하늘빛 아지랑이 띠: 위 끝 진하기 0.9에서 `frac × h` 아래로 0이 된다. 렌더 타깃은 화면에 뒤집혀(`flip_y`) 나가므로
 /// 이 2D 좌표의 y = h 쪽이 화면 위다(처음엔 y = 0에 그려 화면 아래에 깔렸다 — 스크린숏으로 잡음).
 fn draw_haze(w: f32, h: f32, frac: f32) {
-    let sky = Color::new(0.2, 0.2, 0.26, 0.9);
-    let clear = Color::new(0.2, 0.2, 0.26, 0.0);
+    let sky = Color::new(0.22, 0.21, 0.33, 0.9);
+    let clear = Color::new(0.22, 0.21, 0.33, 0.0);
     let band = h * (1.0 - frac);
     let v = |x: f32, y: f32, c: Color| Vertex::new(x, y, 0.0, 0.0, 0.0, c);
     draw_mesh(&Mesh {
