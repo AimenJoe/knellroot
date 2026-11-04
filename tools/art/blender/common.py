@@ -103,6 +103,9 @@ SMALL = [
     ("p_cream", "#f6ead2", "soft"),
     ("p_hair", "#e6b48c", "soft"),
     ("p_sky", "#a9d4f0", "soft"),
+    # 0037 침식 = 색을 잃음: 살아 있던 파스텔이 바랜 잿빛 라벤더로.
+    ("f_ash", "#a29eb0", "soft"),
+    ("f_ash_d", "#6f6a80", "soft"),
 ]
 # 큰 칸: blocks(돌 쌓기)·bark(뿌리 결)·door(널빤지 + 청동 띠)
 BIG = [
