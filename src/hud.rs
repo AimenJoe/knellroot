@@ -27,9 +27,9 @@ fn fade_in_out(left: f32, total: f32, edge: f32) -> f32 {
     (shown / edge).min(left / edge).clamp(0.0, 1.0)
 }
 
-/// 화면 px 하나(렌더 배율).
+/// UI px 하나(480×270 기준 UI 배율, 0041).
 fn u(f: &Frame) -> f32 {
-    f.scale
+    f.ui
 }
 
 pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>) {

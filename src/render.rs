@@ -10,7 +10,9 @@ use crate::models::{Entry, Library};
 use crate::scenery::Scenery;
 use crate::secondary::{Rig, Secondary};
 use crate::stage::{Light, Phase, StageRun};
-use crate::tuning::{Tuning, INTERNAL_H, INTERNAL_W, PLAYER_HEIGHT, PLAYER_RADIUS, TICK_DT};
+use crate::tuning::{
+    Tuning, INTERNAL_H, INTERNAL_W, PLAYER_HEIGHT, PLAYER_RADIUS, TICK_DT, UI_REF_H,
+};
 use crate::world::{Aabb, Atk, EState, Enemy, PState, TeleShape, World};
 
 pub struct Renderer {
@@ -48,8 +50,9 @@ pub struct Frame {
     pub oy: f32,
     pub w: f32,
     pub h: f32,
-    /// 정수 배율(논리 px 기준 — 물리 픽셀로 센 정수를 DPI로 나눈 값).
-    pub scale: f32,
+    /// UI 배율(글·HUD): 렌더 정수 배율(논리 px — 물리 픽셀로 센 정수를 DPI로 나눈 값) × INTERNAL_H / `UI_REF_H`.
+    /// 480×270 기준으로 짠 UI가 화면에서 같은 크기로 보인다(0041).
+    pub ui: f32,
 }
 
 /// 한 프레임에 그릴 것.
@@ -371,7 +374,7 @@ impl Renderer {
             oy,
             w: dw,
             h: dh,
-            scale,
+            ui: scale * INTERNAL_H as f32 / UI_REF_H,
         }
     }
 

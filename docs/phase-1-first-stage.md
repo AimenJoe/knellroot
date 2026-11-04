@@ -46,9 +46,11 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | Meshy 방랑자(0038) | `tools/art/sources/meshy/`, `meshy_convert.py`, `common.py` `external`·`merge_textures`, `wanderer.py` | Gemini 그림 → Meshy(CC BY 4.0) → 줄이기·색 굽기 → 부위로 잘라 지금 뼈·동작 17에 붙임(정점 2,235). 걷기 뒤뚱·통통, 목은 두건 가장자리에서. 락온은 0040 |
 | 실감나게 귀여운 동작(0039) | `secondary.rs`, `model.rs` `pose_with`, `render.rs`, `wanderer.py` `sq`, `motion_strips.py` | 원칙(KB `believable-cute-character-motion`): 판정 시각은 그대로, 끝맺음·부피 지키는 찌그러짐·늦게 따라오는 꼬리·머리(감쇠 스프링 층)·가속 쪽 기울기·착지 튐. 랩 `anim.*` |
 | 락온 구도(0040) | `tuning.rs` `cam.lock.*`, `camera.rs` `occlusion`, `render.rs` `lock_fade` | 어깨 1.6·주시점 밀기 2.3·높이 3.0. 그래도 방랑자가 과녁을 가리면 0.45까지 옅게(랩 `render.lock fade`). 0009 전환 기준 1.8 → 2.1배 |
+| 해상도 640×360(0041) | `tuning.rs` `INTERNAL_*`·`UI_REF_H`, `render.rs` `Frame::ui`, `ui.rs` `hints` | 720p ×2·1080p ×3에 꽉 참, 방랑자 20 → 27px. UI는 480×270 기준 배율 그대로. 조작 안내는 넘치면 두 줄 |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+- [ ] **해상도 640×360(0041)**: 핸드헬드에서 화면이 꽉 차는지, 글이 같은 크기로 읽히는지, 개발 시나리오 7(잡몹 80) cpu·fps가 버티는지. 쿼터뷰 카메라 각은 랩 `cam.quarter.pitch`를 35° 안팎으로 보고 정하기.
 - [ ] **동작(0039)**: 개발판에서 달리다 멈추기·방향 바꾸기·점프 착지·공격·강타·맞기가 "실감나게 귀여운지". 과하거나 약하면 랩 F1 `anim.tail gain`·`anim.tail damp`(작을수록 출렁)·`anim.head gain`·`anim.lean gain`·`anim.squash`(0 = 끔)로 보고 알려 주기.
 - [ ] **Meshy 방랑자(0038)**: 개발판에서 새 몸·동작(특히 걷기 뒤뚱·공격·강타·회피 구르기)이 마음에 드는지(`docs/art/meshy-0038/result-v2/`). 쿼터뷰에서는 거의 뒤통수(두건)만 보인다 — 괜찮은지.
 - [ ] **락온 구도(0040)**: 어깨 너머로 더 비킨 구도가 답답하거나 치우치지 않은지, 방랑자가 옅어지는 게 자연스러운지(깜빡이듯 들락거리지 않는지) — 랩 `cam.lock.*`·`render.lock fade`.

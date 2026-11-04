@@ -393,7 +393,7 @@ impl App {
             t: &self.t,
             stage,
         });
-        self.ui.begin(f.scale);
+        self.ui.begin(f.ui);
         let overlay = self.input.overlay(self.lab.open);
         match self.scene {
             Scene::Title => self.draw_title(&f),
@@ -476,14 +476,15 @@ impl App {
     }
 
     /// 키 안내 한 줄(지금 장치·지금 배치의 글자, 0024).
-    fn hint_line(&self, pairs: &[(Act, &str)], cx: f32, y: f32) {
+    /// 넓으면 여러 줄(마지막 줄이 `y`) — 맨 윗줄 y를 돌려준다.
+    fn hint_line(&self, pairs: &[(Act, &str)], cx: f32, y: f32, max_w: f32) -> f32 {
         let named: Vec<(String, &str)> =
             pairs.iter().map(|(a, v)| (input::prompt(*a), *v)).collect();
         let refs: Vec<(&str, &str)> = named.iter().map(|(k, v)| (k.as_str(), *v)).collect();
-        self.ui.hints(&refs, cx, y);
+        self.ui.hints(&refs, cx, y, max_w)
     }
 
-    fn controls_hint(&self, cx: f32, y: f32) {
+    fn controls_hint(&self, cx: f32, y: f32, max_w: f32) -> f32 {
         let s = s();
         self.hint_line(
             &[
@@ -499,16 +500,18 @@ impl App {
             ],
             cx,
             y,
-        );
+            max_w,
+        )
     }
 
-    fn menu_hint(&self, cx: f32, y: f32) {
+    fn menu_hint(&self, cx: f32, y: f32, max_w: f32) -> f32 {
         let s = s();
         self.hint_line(
             &[(Act::Choose, s.verb_choose), (Act::Confirm, s.verb_confirm)],
             cx,
             y,
-        );
+            max_w,
+        )
     }
 
     fn draw_title(&mut self, f: &Frame) {
@@ -535,8 +538,9 @@ impl App {
         self.menu_rects = self
             .ui
             .menu(&items, self.cursor, cx, f.oy + f.h * TITLE_MENU_Y);
-        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 3.4);
-        self.controls_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.0);
+        // 화면 폭의 94% 안(창 가장자리에 붙지 않게) — 넘치면 두 줄, 메뉴 안내는 그 위로(0041).
+        let top = self.controls_hint(cx, f.oy + f.h - self.ui.px(1.0) * 1.35, f.w * 0.94);
+        self.menu_hint(cx, top - self.ui.px(1.0) * 1.4, f.w * 0.94);
         // 버전 글자(오른쪽 위) — 받은 판이 무엇인지 사진 한 장으로 알게. 개발판은 표시를 붙인다.
         let ver = if cfg!(feature = "dev") {
             concat!("v", env!("CARGO_PKG_VERSION"), " dev")
@@ -572,8 +576,9 @@ impl App {
             })
             .collect();
         self.menu_rects = self.ui.menu(&items, self.cursor, cx, f.oy + f.h * 0.45);
-        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 3.4);
-        self.controls_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.0);
+        // 화면 폭의 94% 안(창 가장자리에 붙지 않게) — 넘치면 두 줄, 메뉴 안내는 그 위로(0041).
+        let top = self.controls_hint(cx, f.oy + f.h - self.ui.px(1.0) * 1.35, f.w * 0.94);
+        self.menu_hint(cx, top - self.ui.px(1.0) * 1.4, f.w * 0.94);
     }
 
     /// 조작 설정(0024): 동작 | 키보드 | 패드 표, 고른 칸은 호박색, 기다리는 칸은 "누르세요… n".
@@ -653,7 +658,7 @@ impl App {
         }
         self.ui
             .text_center(s.controls_fixed, cx, f.oy + f.h - px * 3.2, 1.0, DIM);
-        self.menu_hint(cx, f.oy + f.h - px * 1.8);
+        self.menu_hint(cx, f.oy + f.h - px * 1.8, f.w * 0.94);
     }
 
     fn draw_result(&mut self, f: &Frame, won: bool) {
@@ -682,6 +687,6 @@ impl App {
             })
             .collect();
         self.menu_rects = self.ui.menu(&items, self.cursor, cx, f.oy + f.h * 0.55);
-        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.0);
+        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.0, f.w * 0.94);
     }
 }

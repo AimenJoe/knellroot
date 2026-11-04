@@ -7,9 +7,12 @@ use std::ops::Index;
 pub const TICK_DT: f32 = 1.0 / 60.0;
 /// 한 프레임에 돌리는 로직 시간 상한(탭 전환 뒤 폭주 방지).
 pub const MAX_FRAME_DT: f32 = 0.1;
-/// 내부 해상도(PS1 느낌). 정수 배율로 키운다.
-pub const INTERNAL_W: u32 = 480;
-pub const INTERNAL_H: u32 = 270;
+/// 내부 해상도(PS1 느낌). 정수 배율로 키운다. 0041: 480×270 → 640×360 — 720p(×2)·1080p(×3)·1440p(×4)·4K(×6)
+/// 모두 정수 배율로 꽉 차고(480×270은 720p에서 ×2로 둘레가 검었다), 캐릭터가 20 → 27px(쿼터뷰)이라 동작이 읽힌다.
+pub const INTERNAL_W: u32 = 640;
+pub const INTERNAL_H: u32 = 360;
+/// UI(글·HUD)는 480×270 기준으로 짰다 — UI 배율 = 렌더 배율 × INTERNAL_H / 이 값이라 화면 속 글 크기는 해상도를 올려도 같다(0041).
+pub const UI_REF_H: f32 = 270.0;
 /// 플레이어 키(m). 카메라 높이·주시점의 기준.
 pub const PLAYER_HEIGHT: f32 = 1.8;
 // 2차 동작 층의 고정값(0039). 랩 값은 `anim.*`.

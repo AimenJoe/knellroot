@@ -11,7 +11,7 @@ use macroquad::prelude::*;
 
 use crate::i18n::{self, Lang, Strings};
 
-/// 본문 글 크기(렌더 1배 기준 px). 명조라 픽셀 격자가 아니다 — 1배(480×270 창)에서도 읽히게 13.
+/// 본문 글 크기(UI 1배 = 480×270 기준 px, 0041). 명조라 픽셀 격자가 아니다 — 1배(480×270 창)에서도 읽히게 13.
 pub const GLYPH: f32 = 13.0;
 
 pub struct Ui {
@@ -146,17 +146,38 @@ impl Ui {
     }
 
     /// 키 안내 한 줄: [(키, 동사)]. 터치(키 그림 없음)면 그리지 않는다.
-    pub fn hints(&self, pairs: &[(&str, &str)], cx: f32, y: f32) {
-        if pairs.iter().all(|(k, _)| k.is_empty()) {
-            return;
-        }
-        let line = pairs
+    /// `max_w`보다 넓으면 여러 줄로 나눈다(마지막 줄이 `y`, 앞줄은 위로). 쓴 맨 윗줄의 y를 돌려준다 —
+    /// 위에 다른 안내를 겹치지 않게 놓는다(0041: 테두리가 없어진 720p에서 한 줄 안내가 창 밖으로 잘렸다).
+    pub fn hints(&self, pairs: &[(&str, &str)], cx: f32, y: f32, max_w: f32) -> f32 {
+        let items: Vec<String> = pairs
             .iter()
             .filter(|(k, _)| !k.is_empty())
             .map(|(k, v)| format!("{k} {v}"))
-            .collect::<Vec<_>>()
-            .join("   ");
-        self.text_center(&line, cx, y, 1.0, DIM);
+            .collect();
+        if items.is_empty() {
+            return y;
+        }
+        let sep = "   ";
+        let mut lines: Vec<String> = vec![String::new()];
+        for it in items {
+            let last = lines.last_mut().unwrap();
+            let cand = if last.is_empty() {
+                it.clone()
+            } else {
+                format!("{last}{sep}{it}")
+            };
+            if last.is_empty() || self.width(&cand, 1.0) <= max_w {
+                *last = cand;
+            } else {
+                lines.push(it);
+            }
+        }
+        let gap = self.px(1.0) * 1.25;
+        let top = y - gap * (lines.len() - 1) as f32;
+        for (i, l) in lines.iter().enumerate() {
+            self.text_center(l, cx, top + gap * i as f32, 1.0, DIM);
+        }
+        top
     }
 
     /// 화면 전체를 어둡게(메뉴 뒤).
