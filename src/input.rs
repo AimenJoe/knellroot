@@ -84,7 +84,8 @@ pub struct Actions {
     /// 점프(0027). 공중에서 공격 = 내려찍기.
     pub jump: bool,
     pub lock: bool,
-    /// 땅 돌리기 오른쪽·왼쪽 버튼(0012·0028): 화면만 그쪽으로 90°(`world::turn_quarters`). 캐릭터는 그대로 움직인다.
+    /// 땅 돌리기 오른쪽·왼쪽 버튼(0012·0028): 캐릭터 기준 90° — 몸이 제 오른쪽(왼쪽)으로 돌아서고 화면도 같은 쪽으로 90°
+    /// (`world::plan_turn`).
     pub turn_right: bool,
     pub turn_left: bool,
     pub lab_toggle: bool,

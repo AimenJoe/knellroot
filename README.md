@@ -19,7 +19,7 @@ cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.s
 # 헤드리스 스크린숏(Playwright + Chromium): 시나리오 다섯·락온·랩 패널·땅 돌리기
 node tools/test/shot.js dist shots
 ```
-조작(키보드 / 패드, 기본 — 타이틀·멈춤의 "조작 설정"에서 바꾼다, 0024): WASD·화살표 / 왼쪽 스틱 이동 · 오른쪽 스틱 조준(공격은 가까운 적 자동 조준) · J / X 공격 · Space / B 회피 · K / LB 패링(0025) · F / A 점프(공중에서 공격 = 내려찍기, 0027) · Q·E / LT·RT 땅 돌리기 왼쪽·오른쪽(화면만 그쪽으로 90°, 캐릭터는 그대로, 0028) · L / R3 락온 · Esc·P / Start 멈춤 · 메뉴는 위·아래 + Enter / A. 개발판: F1 / Select 랩 · F3 개발 줄 · 타이틀의 "DEV" 항목(성소 문 앞에서 시작, PoC 시나리오 1~7 — 6·7 = 성능 측정).
+조작(키보드 / 패드, 기본 — 타이틀·멈춤의 "조작 설정"에서 바꾼다, 0024): WASD·화살표 / 왼쪽 스틱 이동 · 오른쪽 스틱 조준(공격은 가까운 적 자동 조준) · J / X 공격 · Space / B 회피 · K / LB 패링(0025) · F / A 점프(공중에서 공격 = 내려찍기, 0027) · Q·E / LT·RT 땅 돌리기 왼쪽·오른쪽(캐릭터와 화면이 그쪽으로 90°, 0028) · L / R3 락온 · Esc·P / Start 멈춤 · 메뉴는 위·아래 + Enter / A. 개발판: F1 / Select 랩 · F3 개발 줄 · 타이틀의 "DEV" 항목(성소 문 앞에서 시작, PoC 시나리오 1~7 — 6·7 = 성능 측정).
 터치(폰·태블릿 브라우저, 가로): 왼쪽 반 = 스틱, 오른쪽 아래 = 공격·회피·점프·패링·땅 돌리기·락온, 오른쪽 위 = SC(시나리오)·LAB.
 ```sh
 node tools/test/touch.js dist shots   # 가로 폰 터치 연기 시험

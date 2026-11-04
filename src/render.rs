@@ -413,6 +413,7 @@ impl Renderer {
                 PState::Attack { t: e, .. } => (&["attack"], e),
                 PState::Dodge { t: e, .. } => (&["dodge", "walk"], e),
                 PState::Hurt { t: e, .. } => (&["hurt", "idle"], e),
+                PState::Turn { t: e, .. } => (&["turn", "idle"], e),
                 PState::Parry { t: e } => (&["parry", "attack"], e),
                 // 공중(0027): 방랑자의 jump·plunge·land 동작(없는 모델이면 회피·공격 자세로).
                 PState::Jump { plunge: false, .. } => (&["jump", "dodge", "idle"], 0.1),
@@ -460,6 +461,7 @@ impl Renderer {
                 PState::Dodge { .. } => Color::new(0.6, 0.9, 1.0, 0.6),
                 PState::Hurt { .. } => Color::new(0.95, 0.45, 0.4, 1.0),
                 PState::Attack { .. } => Color::new(1.0, 0.85, 0.5, 1.0),
+                PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
                 PState::Parry { .. } => Color::new(0.7, 0.85, 1.0, 1.0),
                 PState::Jump { .. } | PState::Land { .. } => Color::new(0.9, 0.8, 0.6, 1.0),
                 PState::Idle => Color::new(0.85, 0.75, 0.55, 1.0),
