@@ -1,5 +1,7 @@
 # Meshy 참고 그림·프롬프트 (0038 제안 단계)
 
+> **2026-11-04 갱신**: 사장이 Gemini로 그림을 만들어 Meshy에 넣는다. 지금 쓰는 프롬프트는 `../gemini-prompts-0038.md`의 "Meshy에 넣을 그림 — t3ssel8r 쪽"이다. 아래 Text to 3D 프롬프트는 Meshy에 글로 바로 넣을 때만. `*_tiny.png` = 지금 모델을 게임 크기(20px·50px)로 줄여 본 것(`tools/art/tiny_preview.py`).
+
 **AI 사용 표시**: 이 폴더의 그림은 이 레포의 Blender 스크립트(`tools/art/blender/meshy_refs.py`, Claude가 씀)로 찍었다. Meshy로 만든 결과를 쓰면 출처에 "Meshy(AI)"라고 적는다.
 
 ## 그림
@@ -36,7 +38,7 @@ Smooth rounded stylized body, sharp angular roots, muted pastel grey with purple
 - 스타일: 실사 말고 스타일라이즈(카툰·로우폴리 계열).
 - Topology Triangle, 목표 폴리곤 3,000~5,000(게임 예산 2,400보다 넉넉히 받고 우리가 줄인다).
 - Symmetry 켬. 포즈 옵션이 있으면 A-pose.
-- 텍스처: PBR 끄거나 base color만. 우리 렌더는 조명 없이 정점·아틀라스 색만 쓴다.
+- 텍스처: **base color 켬**(t3ssel8r 쪽은 손으로 칠한 텍스처가 절반이다 — 우리가 128px로 줄인다), 금속·거칠기 같은 PBR 맵은 끔.
 - 받을 형식: GLB.
 
 ## 받은 뒤

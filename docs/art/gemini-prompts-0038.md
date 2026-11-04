@@ -75,54 +75,88 @@ ash-grey husk watches. Far below, a bell glows amber. Calm, lonely, tender. Soft
 
 ---
 
-## Meshy에 넣을 그림 (Gemini → Meshy Image to 3D)
+## Meshy에 넣을 그림 — t3ssel8r 쪽 (Gemini → Meshy Image to 3D → 우리 렌더)
 
-위의 시트는 **Claude가 보고 스크립트로 옮기는** 용도다. Meshy에 넣을 그림은 조건이 다르다:
-- **한 장에 하나, 정면, A-pose, 민짜 흰 바탕, 고른 빛**(Meshy 문서: 앞을 보는 중립 자세, 한 대상, 1040px 넘게, 바탕을 지움. Multi-view는 최대 4장 — **방향마다 따로 된 그림**, 한 장짜리 시트가 아니다).
-- **외곽선·평면색 대신 입체 렌더처럼**: 그림자 단계로 부피가 읽혀야 깊이를 잡는다. 굵은 외곽선은 면에 그려진 선이나 이상한 홈으로 나온다(추정 — 직접 확인 전).
-- **칼·등잔은 빼고**: 가는 것은 몸에 붙거나 녹는다. 칼은 우리 쪽 따로 된 부위.
-- 순서: ① 정면 한 장(가장 중요, 한 장만으로도 됨) → ② 같은 대화에서 뒤·옆 → Meshy Multi-view에 ①②. 시트로 받았으면 Claude에게 주면 방향별로 잘라 준다.
-- 참고 그림 `meshy-0038/wanderer_front.png`는 **색·비율만** — 모양은 상자라 그대로 따라 하면 안 된다고 적는다.
+> 사장: "3d 모델링을 다른 툴에 맡긴다면, 다시 우리 t3ssel8r 스타일로 만들 수 있는 거 아니여? 디테일 살려서?" → "제미나이 프롬프트도 t3ssel8r 쪽으로 고쳐줘."
+> 배경: `docs/research/2026-11-03-t3ssel8r-style.md`. 그 룩의 픽셀·1px 외곽선·띠 빛·팔레트는 **우리 렌더가** 만든다. 그래서 Gemini 그림은 **픽셀 아트가 아니라**, 낮은 해상도로 찍었을 때 잘 읽히는 **로우폴리 모델 + 손으로 칠한 텍스처**처럼 그린다.
+
+### 왜 이렇게 쓰나
+- **크기**: 지금 카메라로 방랑자는 쿼터뷰 약 20px·락온 약 50px(계산, `tools/art/tiny_preview.py`로 본 것: 20px에서 눈은 검은 점 둘, 두건은 한 줄, 칼·뿌리·호박색 눈은 사라진다). → **디테일 = 큰 색 덩어리**: 귀·두건·꼬리·종·뿌리를 과장하고 작은 무늬는 뺀다.
+- **빛은 그림에 굽지 않는다**: 우리 렌더가 툰 빛(띠 2~3단)과 림을 얹는다. 그림에 짙은 음영이 있으면 Meshy가 텍스처에 구워 음영이 두 번 든다. 그래서 **고르고 평평한 빛**, 아주 옅은 AO만. (Meshy가 깊이를 잡을 단서는 실루엣·여러 방향 그림으로 준다.)
+- **텍스처는 넓은 평면색**: 재질마다 2~3톤, 털 결·잡음·작은 무늬 없음 — 128px로 줄여도 뭉개지지 않게.
+- **둥근 = 살아 있음, 각진 = 뿌리**(0037): 살아 있는 몸은 적은 면이지만 매끈하게, 뿌리는 각지고 면이 보이게.
+- Meshy 입력 조건(문서): 한 장에 하나, 정면, A-pose, 민짜 바탕, 1040px 넘게, 방향마다 따로 된 그림(최대 4장).
+
+### 순서
+1. 새 대화 + 참고 그림 `docs/art/meshy-0038/<이름>_front.png`(색·비율만) + **공통 + 캐릭터** → 정면.
+2. 받은 그림을 `python3 tools/art/tiny_preview.py <그림>`으로 20px·50px에서 본다. 얼굴·특징이 안 남으면 "make X bigger"로 다시.
+3. 같은 대화에서 **뒤·옆** → Meshy Multi-view(정면·옆·뒤). Meshy는 Texture 켬(base color), PBR 맵 끔, Triangle 3~5k, Symmetry 켬, A-pose, GLB.
+4. GLB를 Claude에게 → 부위 자르기·줄이기·텍스처 128 → 게임 화면 480×270에서 지금 모델과 나란히.
 
 ### 공통 덩어리(Meshy용, 매번 맨 앞)
 ```
-[PURPOSE] A single reference image for an image-to-3D tool. Render ONE character only, full body, centered,
-facing the camera straight on (front view), neutral A-pose: standing straight, legs slightly apart,
-arms held down and out about 30 degrees away from the body so they don't touch it. Nothing in the hands.
-Style: a cute stylized 3D figure like a soft vinyl toy or clay figurine, smooth rounded chunky shapes,
-matte pastel materials, soft even studio lighting from the front, gentle shading so the volume is readable,
-no outlines, no hard cast shadow, no floor, no pedestal, no text, no logo. Pure plain white background.
-Square image, the character fills about 80% of the height.
+[PURPOSE] One reference image for an image-to-3D tool. The 3D model will be shown very small in a retro
+low-resolution game (the character is only 20 to 50 pixels tall on screen, rendered with pixel-art style toon
+lighting and 1-pixel outlines added by the game). So design it to READ AT TINY SIZE.
+Render ONE character only, full body, centered, straight front view, neutral A-pose: standing straight, legs
+slightly apart, arms down and out about 30 degrees so they don't touch the body. Nothing in the hands.
+Style: a stylized low-poly 3D game model with a hand-painted texture. Few big simple forms, chunky and
+exaggerated proportions, a strong clear silhouette. Details are PAINTED as large flat color areas, not sculpted.
+Each material uses only 2 or 3 flat tones. No fur strands, no texture noise, no small patterns, no tiny accessories.
+Lighting: flat, even and shadowless, like an unlit model; at most a very faint ambient occlusion. No highlights
+except painted eye highlights. No outlines. NOT pixel art, NOT voxel. No floor, no pedestal, no text, no logo.
+Pure plain white background. Square image, the character fills about 80% of the height.
 
-[WORLD RULES] "Color is life." Living things are soft pastel and warm (lavender, mint, peach, cream, a little gold).
-Things eaten by the purple roots have lost their color: faded ash-lavender grey with dark purple roots growing
-out of cracks. Cute proportions: about 2 heads tall, big head, big eyes set LOW on the face and close together,
-NO mouth, small blush under the eyes, short chubby arms and legs, round mitten paws.
+[WORLD RULES] "Color is life." Living things are soft pastel and warm (lavender, mint, peach, cream, a little gold),
+with smooth rounded forms. Things eaten by the purple roots have lost their color: faded ash-lavender grey, and the
+dark purple roots growing out of them are the only sharp, angular, faceted shapes. Danger is the only red.
+Cute proportions: about 2 heads tall, big head, big eyes set LOW on the face and close together, NO mouth,
+short chubby arms and legs, round mitten paws.
 ```
 
 ### 방랑자 — 새 대화
 ```
-[CHARACTER] The wanderer: a small young raccoon cub. Round caramel-brown head, cream muzzle, small dark nose,
-a soft brown mask ring around each big glossy dark eye (one white highlight each), no mouth, pink inside the ears.
-A small lavender hood on the back of the head with the round ears poking out of it. Short mint-green bell-shaped
-cloak with a cream hem that does NOT cover the arms, a peach knitted scarf, a tiny gold bell at the chest,
-small warm-brown boots. A fluffy striped tail (caramel and brown rings, cream tip) sticking out to one side
-so it is visible from the front. Use the attached image ONLY for colors and proportions; its blocky shapes are
-a placeholder — make everything round and soft.
+[CHARACTER] The wanderer: a small young raccoon cub. Big round caramel-brown head. The face must read at 20 pixels:
+a wide dark-brown mask band across both eyes, two LARGE glossy black eyes inside it with one big white highlight
+each, a cream muzzle patch below, a dark nose dot, no mouth, a soft pink blush dot under each eye.
+Big round ears with pink insides poking out of a chunky lavender hood that frames the head as one clear color block.
+A short mint-green bell-shaped cloak with a cream hem (arms stay free), a thick peach scarf, an OVERSIZED gold bell
+at the chest, chunky warm-brown boots. A big fluffy tail with 3 wide rings (caramel, dark brown, cream tip),
+sticking out to one side so it is visible from the front.
+Use the attached image ONLY for colors and proportions; its blocky shapes are a placeholder — make every living
+form round and soft.
 ```
 
 ### 잔재 — 새 대화
 ```
 [CHARACTER] A "root husk": a small round woodland creature the size of a raccoon cub, eaten by the roots.
-ALL color drained: faded ash-lavender grey, matte like dry clay with a few shallow cracks. One eye is an empty
-dark hollow, the other a tiny amber ember dot. Two thin dark-purple roots sprout from the top of the head and
-one purple root vein runs across the body. Droopy ears, slumped shoulders but still in the A-pose. No mouth,
-no base under the feet. Sad and a little eerie, never gory.
+All its color drained: one flat faded ash-lavender grey, matte like dry clay, with 2 or 3 big painted cracks.
+One eye is an empty dark hollow; the other is a LARGE bright amber ember with a glow, the brightest spot on the body.
+Two thick, tall, angular dark-purple roots grow out of the top of its head like a broken crown (clearly visible in
+silhouette), and one thick purple root vein runs diagonally across its chest. Droopy ears, slumped shoulders but
+still in the A-pose. No mouth, no base under the feet. Sad and a little eerie, never gory.
+```
+
+### 가시짐승 — 새 대화(시안 그림 없음 — 참고 그림 없이, 또는 잔재 결과를 붙여 같은 세계로)
+```
+[CHARACTER] A "thorn beast": a round, stocky little boar about as big as the raccoon cub's whole body, standing on
+four short stubby legs (for this one the pose is a neutral four-legged stance, side by side legs, head forward).
+Faded ash-lavender grey body with a blunt rounded snout. A tall mane of big angular dark-purple thorn-roots runs
+along its back — the only sharp shapes, clearly readable in silhouette. One LARGE bright amber ember eye on each side.
+```
+
+### 잠들지 않는 문지기(보스) — 새 대화
+```
+[CHARACTER] The "sleepless warden": a big heavy guardian about three times the raccoon cub's height, made of a few
+big rounded old stone blocks (soft indigo-grey stone, simple painted stone seams, no fine cracks). A crown of thick
+angular dark-purple roots grows from its head and down its shoulders. In the middle of its chest, a LARGE glowing
+warm amber core — the brightest thing on it. Long heavy arms in the A-pose, the right one ending in a big round
+stone club. Two small amber eye slits. Imposing but with a gentle, sleepy face.
 ```
 
 ### 뒤·옆 (같은 대화에서 정면을 받은 뒤)
 ```
-Now render exactly the same character, same scale, same lighting, same white background, same A-pose,
-seen from directly behind (back view). Then a separate image seen from its left side (side view, facing left).
-Do not change any colors, proportions or details.
+Now render exactly the same character as a separate image, same scale, same flat lighting, same white background,
+same pose, seen from directly behind (back view). Then another separate image seen from its left side
+(side view, facing left). Do not change any colors, proportions or details.
 ```
