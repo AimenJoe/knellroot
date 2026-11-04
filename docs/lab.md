@@ -21,6 +21,7 @@ KB `guides/poc-and-lab-before-content.md`의 구현. 첫 게임은 수치 한 �
 | Feel (0018) | attack lunge / hurt stun·iframes·knock / stamina max·regen·delay·dodge·attack | 1 보스, 2 떼 | 내딛기가 손에 붙나, 맞으면 멈칫하나(답답하지 않게), 스태미나가 판단을 만드나 |
 | Spike (0013) | render.model 0 상자 / 1 glTF 시험 모델 | 6·7 성능 | 그리기 호출·cpu ms가 몇인가(측정용 — 값 얼리기 대상 아님) |
 | Heavy (0030) | heavy hold start·charge·startup·active·recovery·damage·full bonus·range·arc·lunge·knock·stagger·boss stagger·stamina | 2 떼, 1 보스 | 꾹이 실수로 모이지 않나, 다 모은 강타가 시원한가, 꾹만 남지 않나 |
+| Look (0033) | render toon·rim·outline px | 7 잡몹 80(비용), 1 보스(모양) | 외곽선·툰이 화풍에 맞나, 폰에서 외곽선 비용 |
 | Flask (0031) | flask heal·raise·time·lock·walk | 2 떼, 1 보스 | 0.8초가 떼 속에서 쓸 만한가, 연타해도 한 모금씩인가 |
 | Turn (0012·0029) | turn camera·overshoot·settle·snap kick·plant·cooldown / spill range·slide per m·max·outward·stagger / boss mass·stagger / slam dmg·stagger | 5 쟁반, 2 떼 | 돌릴 때 멀미 없나, 쏟아지는 게 시원한가, 남발되지 않나 |
 | Camera(0007~0011) | lock yaw max·near slow·pull out·**look ahead**·**quarter lead**·**blend turn x**·**blend exit x**·move.hold after unlock·**quarter yaw mode**(0 고정·1 따라감·2 90° 단위) | 1 보스, 3 기둥 | 보스에 바짝 붙어 돌 때 멀미 vs 보스가 화면 밖으로 빠짐, 기둥에서 풀려 나오는 속도 |

@@ -137,6 +137,9 @@ pub enum P {
     FlaskTime,
     FlaskLock,
     FlaskWalk,
+    RenderToon,
+    RenderRim,
+    RenderOutline,
     RenderModel,
 }
 
@@ -167,7 +170,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 100] = [
+pub const SPECS: [Spec; 103] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -936,6 +939,27 @@ pub const SPECS: [Spec; 100] = [
         0.0,
         1.0,
         0.05
+    ),
+    // 모델 다듬기 실험(0033): 빛을 단계로 끊기(달빛 2단·화로 3단 — 지형은 다시 굽는다), 배우 가장자리 빛(카메라에서 비스듬한 면),
+    // 배우 외곽선 두께(내부 해상도 px, 부위 상자를 키운 뒷면 — 0 = 끔).
+    spec!(
+        RenderToon,
+        "render.toon 0off 1on",
+        "RENDER_TOON",
+        1.0,
+        0.0,
+        1.0,
+        1.0
+    ),
+    spec!(RenderRim, "render.rim", "RENDER_RIM", 0.35, 0.0, 1.5, 0.05),
+    spec!(
+        RenderOutline,
+        "render.outline px",
+        "RENDER_OUTLINE",
+        1.0,
+        0.0,
+        3.0,
+        0.25
     ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(

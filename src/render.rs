@@ -61,22 +61,84 @@ fn with_a(c: Color, a: f32) -> Color {
     Color::new(c.r, c.g, c.b, a)
 }
 
+/// 빛을 어떻게 굽나(0033) — 렌더가 프레임마다 정한다(지형 굽기도 같은 값을 본다).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Look {
+    /// 빛을 단계로 끊는다(툰): 달빛 2단, 화로 3단.
+    pub toon: bool,
+    /// 배우 가장자리 빛 세기(카메라에서 비스듬한 면일수록, 차가운 달빛 색).
+    pub rim: f32,
+    /// 배우 외곽선 두께(내부 해상도 px). 0 = 끔.
+    pub outline_px: f32,
+    /// 카메라 자리와 세로 시야각(라디안) — 가장자리 빛·외곽선 두께.
+    pub eye: Vec3,
+    pub fovy: f32,
+}
+
+thread_local! {
+    static LOOK: std::cell::Cell<Look> = const {
+        std::cell::Cell::new(Look {
+            toon: false,
+            rim: 0.0,
+            outline_px: 0.0,
+            eye: Vec3::ZERO,
+            fovy: 1.0,
+        })
+    };
+}
+
+pub fn look() -> Look {
+    LOOK.with(|l| l.get())
+}
+
+pub fn set_look(l: Look) {
+    LOOK.with(|c| c.set(l));
+}
+
+/// `x`(0..1)를 `n`단으로(반올림).
+fn band(x: f32, n: f32) -> f32 {
+    (x * n).round() / n
+}
+
 /// 빛(정점 색에 곱할 rgb): 바탕 + 달빛(고정 방향) + 가까운 화로(거리 제곱으로 준다, 면이 그쪽을 볼수록 밝다).
+/// 툰(0033)이면 달빛은 2단, 화로 세기는 3단으로 끊는다 — 둥근 그러데이션 대신 또렷한 빛 웅덩이.
 pub fn lit(p: Vec3, n: Vec3, lights: &[Light]) -> Vec3 {
+    let toon = look().toon;
     let l = LIGHT_DIR.normalize();
-    let mut c = AMBIENT + MOON * n.dot(l).max(0.0);
+    let mut d = n.dot(l).max(0.0);
+    if toon {
+        d = band(d, 2.0);
+    }
+    let mut c = AMBIENT + MOON * d;
     for li in lights {
-        let d = li.pos - p;
-        let dist = d.length();
+        let dv = li.pos - p;
+        let dist = dv.length();
         if dist >= li.radius {
             continue;
         }
-        let att = (1.0 - dist / li.radius).powi(2);
-        let facing = 0.35 + 0.65 * n.dot(d / dist.max(1e-3)).max(0.0);
+        let mut att = (1.0 - dist / li.radius).powi(2);
+        if toon {
+            att = band(att, 3.0);
+        }
+        let facing = 0.35 + 0.65 * n.dot(dv / dist.max(1e-3)).max(0.0);
         c += vec3(li.color.r, li.color.g, li.color.b) * (FIRE * att * facing);
     }
     c
 }
+
+/// 가장자리 빛(0033): 카메라에서 비스듬히 돌아선 면일수록(`1 - n·v`의 제곱) 차가운 빛을 더한다 — 어두운 바닥 위 실루엣.
+fn rim(p: Vec3, n: Vec3, k: Look) -> Vec3 {
+    if k.rim <= 0.0 {
+        return Vec3::ZERO;
+    }
+    let v = (k.eye - p).normalize_or_zero();
+    let e = 1.0 - n.dot(v).max(0.0);
+    RIM * (k.rim * e * e)
+}
+
+const RIM: Vec3 = Vec3::new(0.55, 0.62, 0.85);
+/// 외곽선 색(거의 검정, 살짝 푸른).
+const OUTLINE: Color = Color::new(0.02, 0.02, 0.035, 1.0);
 
 const AMBIENT: Vec3 = Vec3::new(0.26, 0.27, 0.35);
 const MOON: Vec3 = Vec3::new(0.42, 0.45, 0.58);
@@ -86,7 +148,16 @@ const ACTOR_LIFT: f32 = 1.35;
 
 impl Renderer {
     pub fn new() -> Self {
-        let rt = render_target(INTERNAL_W, INTERNAL_H);
+        // 깊이 버퍼를 붙인다(0033): `render_target`의 기본값은 깊이 없음이라, `Camera3D`가 깊이 시험을 켜도 붙은 버퍼가 없어
+        // 그린 순서로만 덮였다 — 모델 부위 상자끼리도. 외곽선(키운 뒷면)도 깊이가 있어야 몸 뒤로 숨는다.
+        let rt = render_target_ex(
+            INTERNAL_W,
+            INTERNAL_H,
+            RenderTargetParams {
+                depth: true,
+                ..Default::default()
+            },
+        );
         rt.texture.set_filter(FilterMode::Nearest);
         Renderer {
             rt,
@@ -112,7 +183,15 @@ impl Renderer {
     pub fn draw(&mut self, v: &View) -> Frame {
         let (w, cam, alpha, t) = (v.world, v.cam, v.alpha, v.t);
         let aspect = INTERNAL_W as f32 / INTERNAL_H as f32;
-        set_camera(&cam.to_camera3d(self.rt.clone(), aspect));
+        let c3 = cam.to_camera3d(self.rt.clone(), aspect);
+        set_look(Look {
+            toon: t[crate::tuning::P::RenderToon] >= 0.5,
+            rim: t[crate::tuning::P::RenderRim],
+            outline_px: t[crate::tuning::P::RenderOutline],
+            eye: c3.position,
+            fovy: c3.fovy,
+        });
+        set_camera(&c3);
         clear_background(Color::new(0.035, 0.035, 0.05, 1.0));
 
         // 가림 판정점: 플레이어 몸(발·허리·머리 × 좌우)과 락온 대상.
@@ -131,7 +210,8 @@ impl Renderer {
         let k = 1.0 - (-10.0 * get_frame_time()).exp();
         let lights: Vec<Light> = match v.stage {
             Some(run) => {
-                let key = run.def.map.as_ptr() as usize;
+                // 툰을 켜고 끄면 지형을 다시 굽는다(빛이 정점에 구워져 있다, 0033).
+                let key = run.def.map.as_ptr() as usize + look().toon as usize;
                 if self.scenery.as_ref().is_none_or(|(k, _)| *k != key) {
                     self.scenery = Some((key, Scenery::bake(&run.level, &mut self.lib)));
                 }
@@ -932,6 +1012,11 @@ pub struct Batch {
     this_frame: usize,
     pub last_sends: usize,
     sends: usize,
+    /// 외곽선(0033): 배우 부위 상자를 키운 뒷면 — 앞면을 버리는 재질로 따로 보낸다.
+    outline: Vec<Vertex>,
+    outline_idx: Vec<u16>,
+    outline_mat: Option<Material>,
+    outline_tried: bool,
 }
 
 fn to_u8(x: f32) -> u8 {
@@ -949,7 +1034,7 @@ impl Batch {
         tint: Color,
         lights: &[Light],
     ) {
-        Self::bake_glow(verts, idx, e, pose, inst, tint, lights, 1.0);
+        Self::bake_glow(verts, idx, e, pose, inst, tint, lights, 1.0, false);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -962,8 +1047,10 @@ impl Batch {
         tint: Color,
         lights: &[Light],
         glow: f32,
+        actor: bool,
     ) {
         let m = &e.model;
+        let look = look();
         for (i, node) in m.nodes.iter().enumerate() {
             let Some(mi) = node.mesh else { continue };
             let mesh = &m.meshes[mi];
@@ -976,7 +1063,8 @@ impl Batch {
                     Vec3::splat(glow)
                 } else {
                     let n = mat.transform_vector3(mesh.nrm[k]).normalize_or_zero();
-                    lit(p, n, lights)
+                    let r = if actor { rim(p, n, look) } else { Vec3::ZERO };
+                    lit(p, n, lights) + r
                 };
                 let c = Color::from_rgba(
                     to_u8(tint.r * f.x),
@@ -1040,7 +1128,84 @@ impl Batch {
             lift,
             &near,
             glow,
+            true,
         );
+        let k = look();
+        if k.outline_px > 0.0 && tint.a > 0.99 {
+            // 화면 1px = 그 거리에서 이만큼(m): 2·거리·tan(시야/2) / 내부 세로.
+            let dist = k.eye.distance(at).max(0.5);
+            let w = k.outline_px * 2.0 * dist * (k.fovy * 0.5).tan() / INTERNAL_H as f32;
+            Self::hull(&mut self.outline, &mut self.outline_idx, e, pose, inst, w);
+            if self.outline.len() >= MAX_DRAW_VERTICES - 2000 {
+                self.send_outline();
+            }
+        }
+    }
+
+    /// 외곽선 껍데기(0033): 부위마다 상자를 가운데에서 `w`(m)만큼 바깥으로 키운 것. 부위가 상자라 축마다 부호로 민다(면마다 정점이 따로라
+    /// 법선으로 밀면 모서리가 벌어진다).
+    fn hull(
+        verts: &mut Vec<Vertex>,
+        idx: &mut Vec<u16>,
+        e: &Entry,
+        pose: &[Mat4],
+        inst: Mat4,
+        w: f32,
+    ) {
+        let m = &e.model;
+        for (i, node) in m.nodes.iter().enumerate() {
+            let Some(mi) = node.mesh else { continue };
+            if e.glow.get(i).copied().unwrap_or(false) {
+                continue;
+            }
+            let mesh = &m.meshes[mi];
+            if mesh.pos.is_empty() {
+                continue;
+            }
+            let mat = inst * pose[i];
+            let c = mesh.pos.iter().copied().sum::<Vec3>() / mesh.pos.len() as f32;
+            let base = verts.len() as u16;
+            let sign = |x: f32| {
+                if x > 1e-5 {
+                    1.0
+                } else if x < -1e-5 {
+                    -1.0
+                } else {
+                    0.0
+                }
+            };
+            for p in &mesh.pos {
+                let d = *p - c;
+                let q = *p + vec3(sign(d.x), sign(d.y), sign(d.z)) * w;
+                let q = mat.transform_point3(q);
+                verts.push(Vertex::new(q.x, q.y, q.z, 0.0, 0.0, OUTLINE));
+            }
+            idx.extend(mesh.idx.iter().map(|&j| base + j as u16));
+        }
+    }
+
+    /// 외곽선을 앞면 버리기 재질로 보낸다(GL에서만 — Metal이면 만들지 않고 끈다).
+    fn send_outline(&mut self) {
+        if self.outline.is_empty() {
+            return;
+        }
+        if !self.outline_tried {
+            self.outline_tried = true;
+            self.outline_mat = outline_material();
+        }
+        let verts = std::mem::take(&mut self.outline);
+        let idx = std::mem::take(&mut self.outline_idx);
+        if let Some(mat) = &self.outline_mat {
+            gl_use_material(mat);
+            self.this_frame += verts.len();
+            self.sends += 1;
+            draw_mesh(&Mesh {
+                vertices: verts,
+                indices: idx,
+                texture: None,
+            });
+            gl_use_default_material();
+        }
     }
 
     /// 이미 구운 덩어리(`alpha`를 곱해서 — 가린 벽을 옅게).
@@ -1081,12 +1246,59 @@ impl Batch {
     /// 프레임마다 한 번(모은 것을 보내고 수를 개발 줄로).
     pub fn flush(&mut self) {
         self.send();
+        self.send_outline();
         self.last_vertices = self.this_frame;
         self.this_frame = 0;
         self.last_sends = self.sends;
         self.sends = 0;
     }
 }
+
+/// 외곽선 재질(0033): macroquad 기본 3D 셰이더 그대로, 앞면을 버리고(키운 상자의 뒷면만 남아 몸 둘레에 테가 된다) 깊이는 쓴다.
+fn outline_material() -> Option<Material> {
+    let ctx = unsafe { get_internal_gl().quad_context };
+    if ctx.info().backend != miniquad::Backend::OpenGl {
+        return None;
+    }
+    const VERTEX: &str = r#"#version 100
+    attribute vec3 position;
+    attribute vec2 texcoord;
+    attribute vec4 color0;
+    varying lowp vec4 color;
+    uniform mat4 Model;
+    uniform mat4 Projection;
+    void main() {
+        gl_Position = Projection * Model * vec4(position, 1);
+        color = color0 / 255.0;
+    }"#;
+    const FRAGMENT: &str = r#"#version 100
+    varying lowp vec4 color;
+    void main() {
+        gl_FragColor = color;
+    }"#;
+    load_material(
+        ShaderSource::Glsl {
+            vertex: VERTEX,
+            fragment: FRAGMENT,
+        },
+        MaterialParams {
+            pipeline_params: PipelineParams {
+                depth_write: true,
+                depth_test: Comparison::LessOrEqual,
+                cull_face: OUTLINE_CULL,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    )
+    .map_err(|e| {
+        warn!("outline material: {e:?}");
+    })
+    .ok()
+}
+
+/// 키운 상자에서 버릴 면. 렌더 타깃이 위아래를 뒤집으면 감김이 바뀌어 반대가 된다 — 스크린숏으로 정했다(0033).
+const OUTLINE_CULL: miniquad::CullFace = miniquad::CullFace::Front;
 
 /// 가린 기둥의 면 진하기(0 = 안 보임). 윤곽선은 따로 남는다.
 const FADED: f32 = 0.08;
