@@ -327,6 +327,8 @@ class Model:
         self.rig = None
         self.objects = {}
         self.actions = []
+        # 평소엔 크기 0으로 숨는 뼈(손에 드는 소품 — 그 동작만 's': 1로 꺼낸다).
+        self.hidden = set()
 
     # --- 만들기
     def bone(self, name, head, parent=None):
@@ -371,6 +373,10 @@ class Model:
         for pb in rig.pose.bones:
             pb.rotation_mode = "QUATERNION"
 
+    def hide(self, bone):
+        """이 뼈(와 그 아래 부위)는 동작이 's'를 주지 않으면 크기 0 — 소품을 그 동작에서만 보인다."""
+        self.hidden.add(bone)
+
     # --- 동작
     def action(self, name, dur, keys, loop=False, linear=()):
         """keys: [(초, {뼈: {'r': (x,y,z)도, 'l': (x,y,z)m 월드 축, 's': 배율}})].
@@ -397,7 +403,7 @@ class Model:
                 f = int(round(t * FPS))
                 r = pose.get("r", rest["r"])
                 l = pose.get("l", rest["l"])
-                s = pose.get("s", rest["s"])
+                s = pose.get("s", 0.0 if bn in self.hidden else rest["s"])
                 Rw = Euler([math.radians(a) for a in r], "XYZ").to_matrix()
                 q = (Rbi @ Rw @ Rb).to_quaternion()
                 if prev_q is not None and prev_q.dot(q) < 0:

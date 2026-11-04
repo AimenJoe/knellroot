@@ -518,7 +518,15 @@ impl Renderer {
                 PState::Drink { t: e, .. } => (&["drink", "idle"], e),
                 PState::Dodge { t: e, .. } => (&["dodge", "walk"], e),
                 PState::Hurt { t: e, .. } => (&["hurt", "idle"], e),
-                PState::Turn { t: e, .. } => (&["turn", "idle"], e),
+                // 0034: 도는 쪽으로 윗몸이 먼저 감긴다(오른쪽 = 요가 준다).
+                PState::Turn { t: e, from, to } => (
+                    if crate::world::turn_is_right(from, to) {
+                        &["turn_r", "turn", "idle"]
+                    } else {
+                        &["turn_l", "turn", "idle"]
+                    },
+                    e,
+                ),
                 PState::Parry { t: e } => (&["parry", "attack"], e),
                 // 공중(0027): 방랑자의 jump·plunge·land 동작(없는 모델이면 회피·공격 자세로).
                 PState::Jump { plunge: false, .. } => (&["jump", "dodge", "idle"], 0.1),
@@ -528,7 +536,10 @@ impl Renderer {
                     if pl.air < 0.35 { 0.29 } else { 0.12 },
                 ),
                 PState::Land { t: e, .. } => (&["land", "idle"], e),
-                PState::Idle if speed > 0.5 => (&["walk"], w.time * (speed / 4.0).clamp(0.6, 1.6)),
+                PState::Idle if speed > 0.5 => (
+                    move_anim(pl.pos - pl.prev, pl.facing_dir(), w.lock.is_some()),
+                    w.time * (speed / 4.0).clamp(0.6, 1.6),
+                ),
                 PState::Idle => (&["idle"], w.time),
             };
             let anim = e.pick(names);
@@ -551,7 +562,14 @@ impl Renderer {
                 }
                 _ => Quat::IDENTITY,
             };
-            let inst = Mat4::from_translation(pp + Vec3::Y * pl.air)
+            // 강공격이 다 모이면 몸이 잘게 떤다(떼라는 신호, 0034).
+            let tremble = match pl.state {
+                PState::Charging { t: e } if e >= t[crate::tuning::P::HeavyCharge] => {
+                    vec3((w.time * 61.0).sin(), 0.0, (w.time * 47.0).cos()) * 0.018
+                }
+                _ => Vec3::ZERO,
+            };
+            let inst = Mat4::from_translation(pp + Vec3::Y * pl.air + tremble)
                 * Mat4::from_quat(recoil)
                 * Mat4::from_rotation_y(pl.facing);
             let tint = if blink {
@@ -1254,6 +1272,29 @@ impl Batch {
     }
 }
 
+/// 걷는 동작 고르기(0034): 락온 중엔 몸이 대상을 보니 걷는 쪽이 옆이면 게걸음(`strafe_l`·`strafe_r`), 뒤면 뒷걸음.
+/// 락온이 아니면 늘 앞으로 걷는다(몸이 걷는 쪽을 본다). 없는 모델이면 `walk`로.
+pub fn move_anim(step: Vec3, facing: Vec3, locked: bool) -> &'static [&'static str] {
+    if !locked {
+        return &["walk"];
+    }
+    let v = vec3(step.x, 0.0, step.z);
+    let fwd = v.dot(facing);
+    // 오른쪽 = 앞 × 위(카메라·입력과 같은 축).
+    let side = v.dot(facing.cross(Vec3::Y));
+    if side.abs() > fwd.abs() * 1.2 {
+        if side > 0.0 {
+            &["strafe_r", "walk"]
+        } else {
+            &["strafe_l", "walk"]
+        }
+    } else if fwd < 0.0 {
+        &["walk_back", "walk"]
+    } else {
+        &["walk"]
+    }
+}
+
 /// 외곽선 재질(0033): macroquad 기본 3D 셰이더 그대로, 앞면을 버리고(키운 상자의 뒷면만 남아 몸 둘레에 테가 된다) 깊이는 쓴다.
 fn outline_material() -> Option<Material> {
     let ctx = unsafe { get_internal_gl().quad_context };
@@ -1525,5 +1566,21 @@ mod tests {
             .map(|i| lean(sway * 0.35, i as f32 / 60.0, 0.0, 0.0).x)
             .fold(f32::MIN, f32::max);
         assert!(small < peak * 0.5);
+    }
+}
+
+#[cfg(test)]
+mod move_anim_tests {
+    use super::*;
+
+    /// 0034: 락온 중 옆으로 걸으면 게걸음(오른쪽 = 앞 × 위), 뒤로 걸으면 뒷걸음, 락온이 아니면 늘 걷기.
+    #[test]
+    fn locked_on_sideways_steps_strafe_and_backwards_walks_back() {
+        let facing = vec3(0.0, 0.0, -1.0); // 북을 본다 → 오른쪽 = +x
+        assert_eq!(move_anim(vec3(1.0, 0.0, 0.0), facing, true)[0], "strafe_r");
+        assert_eq!(move_anim(vec3(-1.0, 0.0, 0.1), facing, true)[0], "strafe_l");
+        assert_eq!(move_anim(vec3(0.1, 0.0, 1.0), facing, true)[0], "walk_back");
+        assert_eq!(move_anim(vec3(0.0, 0.0, -1.0), facing, true)[0], "walk");
+        assert_eq!(move_anim(vec3(1.0, 0.0, 0.0), facing, false)[0], "walk");
     }
 }

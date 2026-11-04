@@ -901,6 +901,8 @@ impl World {
             PState::Turn { t: e, from, to } => {
                 let e2 = e + dt;
                 let k = (e2 / t[P::TurnPlant].max(1e-3)).clamp(0.0, 1.0);
+                // 천천히-빠르게-천천히(0034): 낮췄다가 휙 돌고 선다 — 동작 `turn_r`·`turn_l`과 같은 박자.
+                let k = k * k * (3.0 - 2.0 * k);
                 pl.facing = from + angle_diff(to, from) * k;
                 if e2 >= t[P::TurnPlant] {
                     pl.facing = to;
@@ -1368,6 +1370,17 @@ pub struct TurnPlan {
     pub quarters: i32,
     /// 캐릭터의 새 요 = 누르기 전 캐릭터의 오른쪽(왼쪽) 면.
     pub facing: f32,
+}
+
+/// 땅 돌리기에서 몸이 오른쪽으로 도나(위에서 보아 시계 = 요가 준다) — 렌더가 `turn_r`·`turn_l`을 고른다(0034).
+pub fn turn_is_right(from: f32, to: f32) -> bool {
+    let mut d = (to - from) % std::f32::consts::TAU;
+    if d > std::f32::consts::PI {
+        d -= std::f32::consts::TAU;
+    } else if d < -std::f32::consts::PI {
+        d += std::f32::consts::TAU;
+    }
+    d < 0.0
 }
 
 /// 캐릭터 기준으로 90°(0028, 0023을 고침): 오른쪽 버튼이면 캐릭터가 제 오른쪽으로 90° 돌아서고, 화면도 같은 쪽으로 90° 돈다
@@ -1955,6 +1968,18 @@ mod tests {
         assert!(ev.iter().any(|e| matches!(e, Event::Crit { .. })));
         assert_eq!(w.enemies[0].hp, hp - 1 - t[P::ParryCrit] as i32);
         assert_eq!(w.enemies[0].exposed, 0.0);
+    }
+
+    /// 0034: 오른쪽 버튼의 몸 돌기는 `turn_is_right`(렌더가 `turn_r`을 고른다), 왼쪽은 아니다.
+    #[test]
+    fn the_turn_animation_side_follows_the_button() {
+        use std::f32::consts::PI;
+        for facing in [PI, 0.0, 1.0, -2.5] {
+            let r = plan_turn(true, facing);
+            assert!(turn_is_right(facing, r.facing), "{facing}");
+            let l = plan_turn(false, facing);
+            assert!(!turn_is_right(facing, l.facing), "{facing}");
+        }
     }
 
     /// 0028: 캐릭터 기준 90° — 오른쪽 버튼이면 몸이 제 오른쪽으로 90°, 화면도 늘 오른쪽으로 90°(요 -90°). 바라보는 쪽과 무관.
