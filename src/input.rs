@@ -118,6 +118,8 @@ pub struct Actions {
     pub tap: Option<Vec2>,
     /// 개발: 측정·안내 줄 켜고 끄기(F3).
     pub dev_overlay: bool,
+    /// 개발: 글자 넘침 검사 켜고 끄기(F4, `ui::check`).
+    pub ui_check: bool,
     /// 키 다시 붙이기(0024): 이번에 처음 눌린, 배치표에 올릴 수 있는 키(`KEYS`의 자리)·패드 버튼(Start·Select 빼고).
     pub pressed_key: Option<u8>,
     pub pressed_pad: Option<Pad>,
@@ -126,16 +128,7 @@ pub struct Actions {
 /// 화면에 키 그림을 쓸 행동(글에 키 이름을 박지 않는다 — 지금 장치·지금 배치에서, nail 0036·0024).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Act {
-    Move,
-    Attack,
-    Dodge,
-    Parry,
-    Jump,
-    Flask,
     Interact,
-    Turn,
-    Lock,
-    Pause,
     Choose,
     Confirm,
 }
@@ -149,20 +142,9 @@ pub fn prompt(act: Act) -> String {
     };
     match (device(), act) {
         (Device::Touch, _) => String::new(),
-        (_, Act::Attack) => name(Bind::Attack),
-        (_, Act::Dodge) => name(Bind::Dodge),
-        (_, Act::Parry) => name(Bind::Parry),
-        (_, Act::Jump) => name(Bind::Jump),
-        (_, Act::Flask) => name(Bind::Flask),
         (_, Act::Interact) => name(Bind::Interact),
-        (_, Act::Lock) => name(Bind::Lock),
-        (_, Act::Turn) => format!("{}/{}", name(Bind::TurnLeft), name(Bind::TurnRight)),
-        (Device::Pad, Act::Move) => "LS".into(),
-        (Device::Pad, Act::Pause) => "START".into(),
         (Device::Pad, Act::Choose) => "D-PAD".into(),
         (Device::Pad, Act::Confirm) => "A".into(),
-        (_, Act::Move) => "WASD".into(),
-        (_, Act::Pause) => "ESC".into(),
         (_, Act::Choose) => "W/S".into(),
         (_, Act::Confirm) => "ENTER".into(),
     }
@@ -202,7 +184,7 @@ pub const BINDS: [Bind; NB] = [
 ];
 
 /// 배치표에 올릴 수 있는 키(저장 번호 = 이 표의 자리 — 뒤에만 붙인다). 이동(WASD·화살표)·Enter·Esc·Backspace·P(멈춤)·
-/// F1·F3(개발)·숫자(개발 시나리오)는 고정이라 없다.
+/// F1·F3·F4(개발)·숫자(개발 시나리오)는 고정이라 없다.
 pub const KEYS: [(KeyCode, &str); 30] = [
     (KeyCode::J, "J"),
     (KeyCode::K, "K"),
@@ -616,6 +598,7 @@ impl Input {
             .map(|i| i as u8);
         a.lab_toggle = is_key_pressed(KeyCode::F1);
         a.dev_overlay = is_key_pressed(KeyCode::F3);
+        a.ui_check = is_key_pressed(KeyCode::F4);
         a.menu_up = is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W);
         a.menu_down = is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S);
         a.menu_left = is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A);
@@ -841,6 +824,7 @@ impl Input {
             pause: self.latch.pause | a.pause,
             tap: a.tap.or(self.latch.tap),
             dev_overlay: self.latch.dev_overlay | a.dev_overlay,
+            ui_check: self.latch.ui_check | a.ui_check,
             pressed_key: a.pressed_key.or(self.latch.pressed_key),
             pressed_pad: a.pressed_pad.or(self.latch.pressed_pad),
         };

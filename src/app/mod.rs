@@ -173,6 +173,10 @@ impl App {
         if a.dev_overlay {
             self.dev_overlay = !self.dev_overlay;
         }
+        #[cfg(feature = "dev")]
+        if a.ui_check {
+            crate::ui::check::toggle();
+        }
         if a.lab_toggle {
             self.lab.open = !self.lab.open;
         }
@@ -398,16 +402,16 @@ impl App {
         match self.scene {
             Scene::Title => self.draw_title(&f),
             Scene::Play | Scene::Ending { .. } => {
-                hud::draw(&self.ui, &f, &self.world, Some(&self.run))
+                hud::draw(&self.ui, &f, &self.world, Some(&self.run), false)
             }
             Scene::Pause => {
-                hud::draw(&self.ui, &f, &self.world, Some(&self.run));
+                hud::draw(&self.ui, &f, &self.world, Some(&self.run), true);
                 self.draw_pause(&f);
             }
             Scene::Result { won } => self.draw_result(&f, won),
             Scene::Controls { .. } => self.draw_controls(&f),
             #[cfg(feature = "dev")]
-            Scene::Sandbox => hud::draw(&self.ui, &f, &self.world, None),
+            Scene::Sandbox => hud::draw(&self.ui, &f, &self.world, None, false),
         }
         if self.scene.ticks_world() {
             self.lab.draw(&self.t, overlay.is_some());
@@ -422,6 +426,11 @@ impl App {
         if self.dev_overlay || self.dev_sandbox() {
             self.draw_dev(&f);
         }
+        #[cfg(feature = "dev")]
+        crate::ui::check::end_frame(
+            Rect::new(0.0, 0.0, screen_width(), screen_height()),
+            Rect::new(f.ox, f.oy, f.w, f.h),
+        );
     }
 
     fn dev_sandbox(&self) -> bool {
@@ -476,42 +485,23 @@ impl App {
     }
 
     /// 키 안내 한 줄(지금 장치·지금 배치의 글자, 0024).
-    /// 넓으면 여러 줄(마지막 줄이 `y`) — 맨 윗줄 y를 돌려준다.
-    fn hint_line(&self, pairs: &[(Act, &str)], cx: f32, y: f32, max_w: f32) -> f32 {
+    /// 넓으면 `fit`으로 자른다(키는 키캡).
+    fn hint_line(&self, pairs: &[(Act, &str)], cx: f32, y: f32, max_w: f32) {
         let named: Vec<(String, &str)> =
             pairs.iter().map(|(a, v)| (input::prompt(*a), *v)).collect();
         let refs: Vec<(&str, &str)> = named.iter().map(|(k, v)| (k.as_str(), *v)).collect();
         self.ui.hints(&refs, cx, y, max_w)
     }
 
-    fn controls_hint(&self, cx: f32, y: f32, max_w: f32) -> f32 {
-        let s = s();
-        self.hint_line(
-            &[
-                (Act::Move, s.verb_move),
-                (Act::Attack, s.verb_attack_hint),
-                (Act::Dodge, s.verb_dodge),
-                (Act::Parry, s.verb_parry),
-                (Act::Jump, s.verb_jump),
-                (Act::Flask, s.verb_flask),
-                (Act::Turn, s.verb_turn),
-                (Act::Lock, s.verb_lock),
-                (Act::Pause, s.verb_pause),
-            ],
-            cx,
-            y,
-            max_w,
-        )
-    }
-
-    fn menu_hint(&self, cx: f32, y: f32, max_w: f32) -> f32 {
+    /// 메뉴 안내(고르기·확인). 전체 조작 줄은 두지 않는다 — 조작 설정 화면에 있다(nail 0153: 안내는 짧게).
+    fn menu_hint(&self, cx: f32, y: f32, max_w: f32) {
         let s = s();
         self.hint_line(
             &[(Act::Choose, s.verb_choose), (Act::Confirm, s.verb_confirm)],
             cx,
             y,
             max_w,
-        )
+        );
     }
 
     fn draw_title(&mut self, f: &Frame) {
@@ -538,9 +528,7 @@ impl App {
         self.menu_rects = self
             .ui
             .menu(&items, self.cursor, cx, f.oy + f.h * TITLE_MENU_Y);
-        // 화면 폭의 94% 안(창 가장자리에 붙지 않게) — 넘치면 두 줄, 메뉴 안내는 그 위로(0041).
-        let top = self.controls_hint(cx, f.oy + f.h - self.ui.px(1.0) * 1.35, f.w * 0.94);
-        self.menu_hint(cx, top - self.ui.px(1.0) * 1.4, f.w * 0.94);
+        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
         // 버전 글자(오른쪽 위) — 받은 판이 무엇인지 사진 한 장으로 알게. 개발판은 표시를 붙인다.
         let ver = if cfg!(feature = "dev") {
             concat!("v", env!("CARGO_PKG_VERSION"), " dev")
@@ -576,9 +564,7 @@ impl App {
             })
             .collect();
         self.menu_rects = self.ui.menu(&items, self.cursor, cx, f.oy + f.h * 0.45);
-        // 화면 폭의 94% 안(창 가장자리에 붙지 않게) — 넘치면 두 줄, 메뉴 안내는 그 위로(0041).
-        let top = self.controls_hint(cx, f.oy + f.h - self.ui.px(1.0) * 1.35, f.w * 0.94);
-        self.menu_hint(cx, top - self.ui.px(1.0) * 1.4, f.w * 0.94);
+        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
     }
 
     /// 조작 설정(0024): 동작 | 키보드 | 패드 표, 고른 칸은 호박색, 기다리는 칸은 "누르세요… n".
@@ -606,7 +592,8 @@ impl App {
             match row {
                 controls::Row::Bind(bind) => {
                     let name = match bind {
-                        input::Bind::Attack => s.verb_attack,
+                        // 꾹 눌러 강공격(0030)은 여기서 알린다 — 타이틀의 긴 조작 줄을 걷었다(nail 0153).
+                        input::Bind::Attack => s.verb_attack_hint,
                         input::Bind::Dodge => s.verb_dodge,
                         input::Bind::Parry => s.verb_parry,
                         input::Bind::Lock => s.verb_lock,
@@ -616,8 +603,9 @@ impl App {
                         input::Bind::Flask => s.verb_flask,
                         input::Bind::Interact => s.verb_interact,
                     };
+                    let name = self.ui.fit(name, x_key - x_name - px * 2.5, 1.0);
                     self.ui
-                        .text(name, x_name, y, 1.0, if sel { AMBER } else { INK });
+                        .text(&name, x_name, y, 1.0, if sel { AMBER } else { INK });
                     for (col, x) in [(0usize, x_key), (1usize, x_pad)] {
                         let on = sel && self.ctl.col == col;
                         let label = match (on, self.ctl.capture) {
@@ -670,11 +658,17 @@ impl App {
             self.ui.text_center(s.clear_title, cx, y, 2.0, AMBER);
             let line = hud::clear_line(&self.run, &self.world);
             self.ui
-                .text_center(&line, cx, y + self.ui.px(2.0) * 1.6, 1.0, INK);
+                .text_center_wrapped(&line, cx, y + self.ui.px(2.0) * 1.6, 1.0, INK, f.w * 0.9);
         } else {
             self.ui.text_center(s.defeat_title, cx, y, 2.0, INK);
-            self.ui
-                .text_center(s.defeat_sub, cx, y + self.ui.px(2.0) * 1.6, 1.0, DIM);
+            self.ui.text_center_wrapped(
+                s.defeat_sub,
+                cx,
+                y + self.ui.px(2.0) * 1.6,
+                1.0,
+                DIM,
+                f.w * 0.9,
+            );
         }
         let items: Vec<String> = flow::RESULT_ITEMS
             .iter()

@@ -27,6 +27,56 @@ pub const DIM: Color = Color::new(0.62, 0.58, 0.52, 1.0);
 pub const AMBER: Color = Color::new(0.88, 0.6, 0.23, 1.0);
 pub const SHADOW: Color = Color::new(0.03, 0.03, 0.04, 0.9);
 
+/// 키캡(nail 0153): 글 속 키·버튼 이름을 이 두 표식 사이에 두면(`key`) 테두리 있는 작은 칸 + 밝은 글로 그린다.
+/// 표식은 사용 영역 글자라 폰트에 없고 그리지 않는다. `text`·`width`가 알아보니 가운데 맞춤·`fit`·`wrap`이 그대로 된다.
+pub const KEY_OPEN: char = '\u{E000}';
+pub const KEY_CLOSE: char = '\u{E001}';
+pub const KEY_TEXT: Color = Color::new(1.0, 0.93, 0.78, 1.0);
+const KEY_FILL: Color = Color::new(0.08, 0.06, 0.10, 0.85);
+const KEY_EDGE: Color = Color::new(0.62, 0.50, 0.38, 1.0);
+/// 키캡 안쪽 여백·칸 사이 틈(글 크기에 대한 비).
+const KEY_PAD: f32 = 0.28;
+const KEY_GAP: f32 = 0.12;
+
+/// 키·버튼 이름을 키캡 표식으로 감싼다.
+pub fn key(name: &str) -> String {
+    format!("{KEY_OPEN}{name}{KEY_CLOSE}")
+}
+
+/// 표식을 뺀 글(넘침 검사·시험 — 운영판에는 없다).
+#[cfg(any(feature = "dev", test))]
+pub fn plain(s: &str) -> String {
+    s.chars()
+        .filter(|c| *c != KEY_OPEN && *c != KEY_CLOSE)
+        .collect()
+}
+
+/// (조각, 키캡인가). 닫는 표식이 없으면(잘린 글) 끝까지 키캡.
+fn key_segments(s: &str) -> Vec<(String, bool)> {
+    let mut out: Vec<(String, bool)> = Vec::new();
+    let mut cur = String::new();
+    let mut in_key = false;
+    for c in s.chars() {
+        match c {
+            KEY_OPEN if !in_key => {
+                if !cur.is_empty() {
+                    out.push((std::mem::take(&mut cur), false));
+                }
+                in_key = true;
+            }
+            KEY_CLOSE if in_key => {
+                out.push((std::mem::take(&mut cur), true));
+                in_key = false;
+            }
+            _ => cur.push(c),
+        }
+    }
+    if !cur.is_empty() {
+        out.push((cur, in_key));
+    }
+    out
+}
+
 impl Ui {
     pub fn new() -> Self {
         let load = |bytes: &[u8]| {
@@ -98,16 +148,132 @@ impl Ui {
         }
     }
 
-    pub fn width(&self, s: &str, k: f32) -> f32 {
+    fn plain_w(&self, s: &str, k: f32) -> f32 {
         measure_text(s, Some(self.face(k)), self.px(k) as u16, 1.0).width
     }
 
+    /// 글 폭(키캡이면 칸 여백까지).
+    pub fn width(&self, s: &str, k: f32) -> f32 {
+        if !s.contains(KEY_OPEN) {
+            return self.plain_w(s, k);
+        }
+        let px = self.px(k);
+        key_segments(s)
+            .iter()
+            .map(|(seg, is_key)| {
+                if *is_key {
+                    self.plain_w(seg, k) + px * (2.0 * KEY_PAD + KEY_GAP)
+                } else {
+                    self.plain_w(seg, k)
+                }
+            })
+            .sum()
+    }
+
     /// 그림자를 깐 글(어두운 배경·밝은 배경 어디서나 읽히게). `y`는 글줄의 위.
+    /// 키캡(`key`)이 든 글은 키를 칸 + 밝은 글로, 나머지가 흐린 색이면 본문 색으로 올린다(nail 0153: 밝은 바닥에서 안내가 묻혔다).
     pub fn text(&self, s: &str, x: f32, y: f32, k: f32, color: Color) {
+        #[cfg(feature = "dev")]
+        if color.a > 0.05 {
+            check::text(&plain(s), Rect::new(x, y, self.width(s, k), self.px(k)));
+        }
+        if !s.contains(KEY_OPEN) {
+            self.plain_text(s, x, y, k, color);
+            return;
+        }
+        let dim = (color.r + color.g + color.b) / 3.0 < 0.7;
+        let body = if dim {
+            Color { a: color.a, ..INK }
+        } else {
+            color
+        };
+        let px = self.px(k);
+        let mut cx = x;
+        for (seg, is_key) in key_segments(s) {
+            if is_key {
+                let w = self.plain_w(&seg, k) + 2.0 * KEY_PAD * px;
+                let (ry, rh) = (y - px * 0.08, px * 1.16);
+                draw_rectangle(
+                    cx,
+                    ry,
+                    w,
+                    rh,
+                    Color {
+                        a: KEY_FILL.a * color.a,
+                        ..KEY_FILL
+                    },
+                );
+                draw_rectangle_lines(
+                    cx,
+                    ry,
+                    w,
+                    rh,
+                    self.scale.max(1.0),
+                    Color {
+                        a: color.a,
+                        ..KEY_EDGE
+                    },
+                );
+                self.plain_text(
+                    &seg,
+                    cx + KEY_PAD * px,
+                    y,
+                    k,
+                    Color {
+                        a: color.a,
+                        ..KEY_TEXT
+                    },
+                );
+                cx += w + KEY_GAP * px;
+            } else {
+                self.plain_text(&seg, cx, y, k, body);
+                cx += self.plain_w(&seg, k);
+            }
+        }
+    }
+
+    fn plain_text(&self, s: &str, x: f32, y: f32, k: f32, color: Color) {
         let base = y + self.px(k) * 0.85;
         let o = self.scale * k;
         draw_text_ex(s, x + o, base + o, self.params(k, SHADOW));
         draw_text_ex(s, x, base, self.params(k, color));
+    }
+
+    /// 폭에 안 맞으면 뒤를 잘라 "…"를 붙인다(nail `fit`). 언어마다 길이가 달라 고정 칸에서 넘칠 때의 마지막 안전장치.
+    pub fn fit(&self, s: &str, max_w: f32, k: f32) -> String {
+        if self.width(s, k) <= max_w {
+            return s.to_string();
+        }
+        #[cfg(feature = "dev")]
+        check::cut(&plain(s), max_w);
+        let mut cut: Vec<char> = s.chars().collect();
+        while !cut.is_empty() {
+            cut.pop();
+            let t: String = cut.iter().collect::<String>().trim_end().to_string() + "…";
+            if self.width(&t, k) <= max_w {
+                return t;
+            }
+        }
+        "…".to_string()
+    }
+
+    /// 가운데 맞춘 긴 글: `max_w`에서 줄을 바꿔(`wrap`) 아래로 쌓는다. 다음 줄의 y를 돌려준다.
+    pub fn text_center_wrapped(
+        &self,
+        s: &str,
+        cx: f32,
+        y: f32,
+        k: f32,
+        color: Color,
+        max_w: f32,
+    ) -> f32 {
+        let gap = self.px(k) * 1.45;
+        let mut yy = y;
+        for line in wrap(self, s, max_w, k) {
+            self.text_center(&line, cx, yy, k, color);
+            yy += gap;
+        }
+        yy
     }
 
     pub fn text_center(&self, s: &str, cx: f32, y: f32, k: f32, color: Color) {
@@ -145,39 +311,20 @@ impl Ui {
         rects
     }
 
-    /// 키 안내 한 줄: [(키, 동사)]. 터치(키 그림 없음)면 그리지 않는다.
-    /// `max_w`보다 넓으면 여러 줄로 나눈다(마지막 줄이 `y`, 앞줄은 위로). 쓴 맨 윗줄의 y를 돌려준다 —
-    /// 위에 다른 안내를 겹치지 않게 놓는다(0041: 테두리가 없어진 720p에서 한 줄 안내가 창 밖으로 잘렸다).
-    pub fn hints(&self, pairs: &[(&str, &str)], cx: f32, y: f32, max_w: f32) -> f32 {
-        let items: Vec<String> = pairs
+    /// 키 안내 한 줄: [(키, 동사)] — 키는 키캡. 터치(키 그림 없음)면 그리지 않는다. 넓으면 `fit`으로 자른다
+    /// (nail: 안내는 짧게 — 타이틀·멈춤은 고르기·확인·뒤로만, 전체 조작은 조작 설정 화면에).
+    pub fn hints(&self, pairs: &[(&str, &str)], cx: f32, y: f32, max_w: f32) {
+        let line = pairs
             .iter()
             .filter(|(k, _)| !k.is_empty())
-            .map(|(k, v)| format!("{k} {v}"))
-            .collect();
-        if items.is_empty() {
-            return y;
+            .map(|(k, v)| format!("{} {v}", key(k)))
+            .collect::<Vec<_>>()
+            .join("   ");
+        if line.is_empty() {
+            return;
         }
-        let sep = "   ";
-        let mut lines: Vec<String> = vec![String::new()];
-        for it in items {
-            let last = lines.last_mut().unwrap();
-            let cand = if last.is_empty() {
-                it.clone()
-            } else {
-                format!("{last}{sep}{it}")
-            };
-            if last.is_empty() || self.width(&cand, 1.0) <= max_w {
-                *last = cand;
-            } else {
-                lines.push(it);
-            }
-        }
-        let gap = self.px(1.0) * 1.25;
-        let top = y - gap * (lines.len() - 1) as f32;
-        for (i, l) in lines.iter().enumerate() {
-            self.text_center(l, cx, top + gap * i as f32, 1.0, DIM);
-        }
-        top
+        let line = self.fit(&line, max_w, 1.0);
+        self.text_center(&line, cx, y, 1.0, DIM);
     }
 
     /// 화면 전체를 어둡게(메뉴 뒤).
@@ -232,5 +379,226 @@ mod tests {
             hit(&[Rect::new(0.0, 0.0, 10.0, 10.0)], vec2(5.0, 5.0)),
             Some(0)
         );
+    }
+}
+
+/// 줄바꿈(nail `wrap`). 띄어쓰기가 있는 글(한국어·영어)은 단어 단위, 띄어쓰기가 없는 글(일본어·중국어)은 글자 단위 + 금칙.
+pub fn wrap(ui: &Ui, s: &str, max_w: f32, k: f32) -> Vec<String> {
+    wrap_with(s, max_w, |t| ui.width(t, k))
+}
+
+/// 한자·가나·전각 문장부호: 이 글자 앞뒤에서는 띄어쓰기 없이도 줄을 바꿀 수 있다.
+fn is_cjk(c: char) -> bool {
+    matches!(c as u32, 0x3000..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0xFF00..=0xFFEF)
+        || c == '…'
+}
+
+/// 금칙: 줄 맨 앞에 오면 안 되는 글자(닫는 부호·구두점·작은 가나·장음).
+fn no_line_start(c: char) -> bool {
+    "、。，．！？：；）」』】〕…ー〜・ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ!?,.:;)".contains(c)
+}
+
+/// 금칙: 줄 맨 끝에 오면 안 되는 글자(여는 부호).
+fn no_line_end(c: char) -> bool {
+    "（「『【〔(".contains(c)
+}
+
+/// 측정 함수를 받는 줄바꿈(시험용으로 분리).
+pub fn wrap_with(s: &str, max_w: f32, measure: impl Fn(&str) -> f32) -> Vec<String> {
+    let mut units: Vec<(String, bool)> = Vec::new();
+    let mut space = false;
+    for c in s.chars() {
+        if c == ' ' {
+            space = true;
+            continue;
+        }
+        let joins_prev = !space
+            && units
+                .last()
+                .is_some_and(|(u, _)| !is_cjk(c) && !u.chars().last().is_some_and(is_cjk));
+        if joins_prev {
+            units.last_mut().unwrap().0.push(c);
+        } else {
+            units.push((c.to_string(), space));
+        }
+        space = false;
+    }
+    // 한 조각이 혼자서도 줄보다 길면 글자 단위로 쪼갠다.
+    let units: Vec<(String, bool)> = units
+        .into_iter()
+        .flat_map(|(u, sp)| {
+            if measure(&u) <= max_w {
+                return vec![(u, sp)];
+            }
+            let mut parts: Vec<(String, bool)> = Vec::new();
+            for c in u.chars() {
+                match parts.last_mut() {
+                    Some((p, _)) if measure(&format!("{p}{c}")) <= max_w => p.push(c),
+                    _ => parts.push((c.to_string(), parts.is_empty() && sp)),
+                }
+            }
+            parts
+        })
+        .collect();
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for (u, sp) in units {
+        let joined = if cur.is_empty() {
+            u.clone()
+        } else if sp {
+            format!("{cur} {u}")
+        } else {
+            format!("{cur}{u}")
+        };
+        let starts_badly = u.chars().next().is_some_and(no_line_start);
+        if cur.is_empty() || measure(&joined) <= max_w || starts_badly {
+            cur = joined;
+            continue;
+        }
+        let mut carry = String::new();
+        if let Some(last) = cur.chars().last().filter(|c| no_line_end(*c)) {
+            cur.pop();
+            carry.push(last);
+        }
+        lines.push(cur.trim_end().to_string());
+        cur = carry + &u;
+    }
+    if !cur.is_empty() {
+        lines.push(cur);
+    }
+    lines
+}
+
+/// 개발 빌드의 글자 넘침 검사(nail 0089, F4로 켬/끔). 그린 글 칸을 프레임마다 모아 화면 밖·게임 화면 밖·겹침·`fit` 잘림을
+/// 콘솔에 한 번씩 찍는다(웹은 브라우저 콘솔). 헤드리스로 화면 × 언어를 돌며 모으면 사람 눈 전에 거른다.
+#[cfg(feature = "dev")]
+pub mod check {
+    use macroquad::logging::warn;
+    use macroquad::prelude::Rect;
+    use std::cell::RefCell;
+    use std::collections::HashSet;
+
+    #[derive(Default)]
+    struct State {
+        on: bool,
+        texts: Vec<(String, Rect)>,
+        seen: HashSet<String>,
+    }
+
+    thread_local! {
+        static S: RefCell<State> = RefCell::new(State::default());
+    }
+
+    pub fn on() -> bool {
+        S.with(|s| s.borrow().on)
+    }
+
+    pub fn toggle() {
+        S.with(|s| {
+            let mut s = s.borrow_mut();
+            s.on = !s.on;
+            s.seen.clear();
+            warn!("[ui-check] {}", if s.on { "on" } else { "off" });
+        });
+    }
+
+    pub(super) fn text(t: &str, r: Rect) {
+        if t.trim().is_empty() || !on() {
+            return;
+        }
+        S.with(|s| s.borrow_mut().texts.push((t.to_string(), r)));
+    }
+
+    pub(super) fn cut(t: &str, max_w: f32) {
+        if on() {
+            report(format!("cut ({max_w:.0}px) {t}"));
+        }
+    }
+
+    fn report(msg: String) {
+        S.with(|s| {
+            let mut s = s.borrow_mut();
+            if s.seen.insert(msg.clone()) {
+                warn!("[ui-check] {}", msg);
+            }
+        });
+    }
+
+    /// 두 칸이 1px 넘게 겹치는가(맞닿은 줄은 겹침이 아니다).
+    fn overlap(a: Rect, b: Rect) -> bool {
+        let w = a.right().min(b.right()) - a.x.max(b.x);
+        let h = a.bottom().min(b.bottom()) - a.y.max(b.y);
+        w > 1.5 && h > 1.5
+    }
+
+    /// 프레임 끝에: 모은 칸을 화면(`screen`)·게임 화면(`game`, 정수 배율로 올린 렌더 타깃)과 견주고 비운다.
+    pub fn end_frame(screen: Rect, game: Rect) {
+        if !on() {
+            return;
+        }
+        let texts = S.with(|s| std::mem::take(&mut s.borrow_mut().texts));
+        for (i, (t, r)) in texts.iter().enumerate() {
+            for (name, f) in [("off-screen", screen), ("past-game", game)] {
+                if r.x < f.x - 0.5
+                    || r.y < f.y - 0.5
+                    || r.right() > f.right() + 0.5
+                    || r.bottom() > f.bottom() + 0.5
+                {
+                    report(format!("{name} x{:.0} y{:.0} w{:.0} {t}", r.x, r.y, r.w));
+                    break;
+                }
+            }
+            for (u, q) in texts.iter().skip(i + 1) {
+                if u != t && overlap(*r, *q) {
+                    report(format!("overlap {t} <> {u}"));
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod wrap_tests {
+    use super::*;
+
+    fn w(s: &str) -> f32 {
+        s.chars().count() as f32
+    }
+
+    #[test]
+    fn wraps_words_with_spaces() {
+        assert_eq!(wrap_with("aa bb cc", 5.0, w), vec!["aa bb", "cc"]);
+        assert_eq!(wrap_with("abcdefgh", 3.0, w), vec!["abc", "def", "gh"]);
+        assert_eq!(
+            wrap_with("뿌리가 닿은 곳마다", 6.0, w),
+            vec!["뿌리가 닿은", "곳마다"]
+        );
+    }
+
+    #[test]
+    fn wraps_cjk_by_character_with_kinsoku() {
+        assert_eq!(
+            wrap_with("あいうえお。かき", 5.0, w),
+            vec!["あいうえお。", "かき"]
+        );
+        assert_eq!(
+            wrap_with("あいうえ（かき）", 5.0, w),
+            vec!["あいうえ", "（かき）"]
+        );
+    }
+
+    /// 키캡 조각(nail 0153): 표식 사이가 키, 잘려 닫는 표식이 없으면 끝까지 키.
+    #[test]
+    fn key_segments_split_keys() {
+        let t = format!("{} 고르기   {} 확인", key("W/S"), key("ENTER"));
+        let segs = key_segments(&t);
+        assert_eq!(segs[0], ("W/S".to_string(), true));
+        assert_eq!(segs[1], (" 고르기   ".to_string(), false));
+        assert_eq!(segs[2], ("ENTER".to_string(), true));
+        assert_eq!(
+            key_segments(&format!("A {KEY_OPEN}En")),
+            vec![("A ".into(), false), ("En".into(), true)]
+        );
+        assert_eq!(plain(&t), "W/S 고르기   ENTER 확인");
     }
 }

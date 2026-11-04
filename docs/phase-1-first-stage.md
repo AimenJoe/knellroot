@@ -47,7 +47,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 실감나게 귀여운 동작(0039) | `secondary.rs`, `model.rs` `pose_with`, `render.rs`, `wanderer.py` `sq`, `motion_strips.py` | 원칙(KB `believable-cute-character-motion`): 판정 시각은 그대로, 끝맺음·부피 지키는 찌그러짐·늦게 따라오는 꼬리·머리(감쇠 스프링 층)·가속 쪽 기울기·착지 튐. 랩 `anim.*` |
 | 락온 구도(0040) | `tuning.rs` `cam.lock.*`, `camera.rs` `occlusion`, `render.rs` `lock_fade` | 어깨 1.6·주시점 밀기 2.3·높이 3.0. 그래도 방랑자가 과녁을 가리면 0.45까지 옅게(랩 `render.lock fade`). 0009 전환 기준 1.8 → 2.1배 |
 | 해상도 640×360(0041) | `tuning.rs` `INTERNAL_*`·`UI_REF_H`, `render.rs` `Frame::ui`, `ui.rs` `hints` | 720p ×2·1080p ×3에 꽉 참, 방랑자 20 → 27px. UI는 480×270 기준 배율 그대로. 조작 안내는 넘치면 두 줄 |
-| 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
+| UI 규칙(0042) | `ui.rs` `key`·`fit`·`wrap`·`check`, `app/mod.rs` 안내, `hud.rs` `under_menu` | nail 방식: 메뉴 안내만 + 키캡, 넘치면 "…", 긴 글은 줄바꿈, 개발 F4 넘침 검사(두 언어 0) |
+| 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
 - [ ] **해상도 640×360(0041)**: 핸드헬드에서 화면이 꽉 차는지, 글이 같은 크기로 읽히는지, 개발 시나리오 7(잡몹 80) cpu·fps가 버티는지. 쿼터뷰 카메라 각은 랩 `cam.quarter.pitch`를 35° 안팎으로 보고 정하기.

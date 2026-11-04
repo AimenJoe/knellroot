@@ -32,7 +32,8 @@ fn u(f: &Frame) -> f32 {
     f.ui
 }
 
-pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>) {
+/// `under_menu`: 메뉴(멈춤)가 위에 뜬다 — 아래 가운데 보스 띠는 메뉴 안내와 겹쳐 그리지 않는다(KB hud-readability: 창이 덮는 HUD는 뺀다).
+pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: bool) {
     let s = u(f);
     let (x0, y0) = (f.ox + 8.0 * s, f.oy + 8.0 * s);
     // 체력: 마름모.
@@ -127,25 +128,28 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>) {
             2.0,
             Color::new(AMBER.r, AMBER.g, AMBER.b, a),
         );
-        let gap = ui.px(1.0) * 1.6;
+        // 긴 언어에서도 화면 안에(nail `wrap`): 넘치면 줄을 바꿔 아래로 쌓는다.
         let (l1, l2) = run.def.intro;
-        ui.text_center(
+        let max_w = f.w * 0.9;
+        let y2 = ui.text_center_wrapped(
             tr(l1),
             cx,
             y + ui.px(2.0) * 1.6,
             1.0,
             Color::new(INK.r, INK.g, INK.b, a),
+            max_w,
         );
-        ui.text_center(
+        ui.text_center_wrapped(
             tr(l2),
             cx,
-            y + ui.px(2.0) * 1.6 + gap,
+            y2 + ui.px(1.0) * 0.15,
             1.0,
             Color::new(DIM.r, DIM.g, DIM.b, a),
+            max_w,
         );
     }
     // 보스 띠(아래 가운데): 이름 + 막대(깨어나면 색이 달아오른다).
-    if let Some((k, roused)) = run.boss_bar(w) {
+    if let Some((k, roused)) = run.boss_bar(w).filter(|_| !under_menu) {
         let boss = run.boss.and_then(|i| w.enemies.get(i));
         let name = boss.map(|b| tr(b.def().name)).unwrap_or("");
         let bw = f.w * 0.5;
