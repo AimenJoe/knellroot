@@ -35,7 +35,10 @@ zs = [v.co.z for v in ob.data.vertices]
 xs = [v.co.x for v in ob.data.vertices]
 ys = [v.co.y for v in ob.data.vertices]
 k = height / (max(zs) - min(zs))
-cx, cy = (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2
+# 가운데는 머리(위 45%)로 잡는다 — 옆으로 뻗은 꼬리가 상자 가운데를 끌고 간다(방랑자 v1: 12cm).
+top = [v.co for v in ob.data.vertices if v.co.z > min(zs) + 0.55 * (max(zs) - min(zs))]
+cx = (max(c.x for c in top) + min(c.x for c in top)) / 2
+cy = (max(c.y for c in top) + min(c.y for c in top)) / 2
 for v in ob.data.vertices:
     v.co.x = (v.co.x - cx) * k
     v.co.y = (v.co.y - cy) * k

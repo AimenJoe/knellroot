@@ -4,6 +4,8 @@
 - 상자(직육면체·위가 좁은 상자·기운 상자)만으로 부위를 만든다. 부위 = 메시 오브젝트 하나 = glTF 노드 하나.
 - 뼈(아마추어)에 부위를 parent_type='BONE'으로 붙인다 — 강체. 정점 가중치·스키닝 없음.
 - 텍스처는 파일마다 하나: 64×64 아틀라스(코드로 찍음, 가장 가까운 픽셀). 모든 부위가 재질 하나를 같이 쓴다.
+- 예외(0038): 바깥 메시(Meshy로 만든 몸)를 `Model.external`로 부위마다 잘라 같은 식으로 뼈에 붙이고,
+  그 텍스처와 아틀라스를 `merge_textures`가 한 장으로 합친다(로더는 이미지 하나만 읽는다).
 - 동작(Action)마다 glTF 애니메이션 하나(이름 그대로). 100fps로 찍어 0.43초 같은 길이가 정확히 프레임에 맞는다.
 
 좌표: 단위 m, 블렌더 Z 위, 발·바닥 = z 0. 캐릭터 앞 = 블렌더 -Y(내보내면 glTF +Z).
@@ -399,6 +401,95 @@ def geo_object(geo, mat):
     return obj
 
 
+# ---------------------------------------------------------------- 바깥 메시(0038)
+def import_split(path, classify, names):
+    """한 덩어리 메시 GLB(Meshy → `meshy_convert.py`로 줄이고 색을 구운 것, 텍스처 하나)를 가져와
+    면 가운데 자리 `classify(Vector) -> 이름`으로 부위 오브젝트(names)마다 나눈다. 강체 부위라 잘린 면은 이어 붙이지 않는다.
+    돌려주는 것: ({이름: 오브젝트}, 텍스처 이미지)."""
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=path)
+    new = [o for o in bpy.data.objects if o not in before]
+    src = next(o for o in new if o.type == "MESH")
+    me = src.data.copy()
+    me.transform(src.matrix_world)
+    # glTF에서 온 법선은 "사용자 법선"으로 붙어 와 면마다 매끈/각짐을 무시한다 → 지우고 블렌더가 다시 계산하게.
+    tmp = bpy.data.objects.new("_split_tmp", me)
+    bpy.context.scene.collection.objects.link(tmp)
+    bpy.ops.object.select_all(action="DESELECT")
+    tmp.select_set(True)
+    bpy.context.view_layer.objects.active = tmp
+    if me.has_custom_normals:
+        bpy.ops.mesh.customdata_custom_splitnormals_clear()
+    if hasattr(me, "use_auto_smooth"):
+        me.use_auto_smooth = False
+    bpy.data.objects.remove(tmp)
+    # 줄이면서 접힌 곳(귀·주름)은 면 법선과 매끈한 정점 법선이 반대일 수 있다 → 그 면만 각지게(외곽선 컬링·검사 `check_glb`의 뒤집힌 면).
+    for poly in me.polygons:
+        if any(poly.normal.dot(me.vertices[i].normal) < 0.0 for i in poly.vertices):
+            poly.use_smooth = False
+    img = next(n.image for m in me.materials for n in m.node_tree.nodes if n.type == "TEX_IMAGE" and n.image)
+    parts = {}
+    for name in names:
+        pm = me.copy()
+        bm = bmesh.new()
+        bm.from_mesh(pm)
+        dead = [f for f in bm.faces if classify(f.calc_center_median()) != name]
+        bmesh.ops.delete(bm, geom=dead, context="FACES")
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+        bm.to_mesh(pm)
+        bm.free()
+        if not pm.polygons:
+            continue
+        o = bpy.data.objects.new(name, pm)
+        bpy.context.scene.collection.objects.link(o)
+        parts[name] = o
+    for o in new:
+        bpy.data.objects.remove(o)
+    return parts, img
+
+
+def merge_textures(ext_objs, ext_img, atlas_objs, atlas_img, name):
+    """로더는 첫 이미지 하나만 읽는다(`src/model.rs`) → 바깥 텍스처(W×H)와 코드 아틀라스(ATLAS²)를 (2W)×H 한 장으로:
+    바깥은 왼쪽 반, 아틀라스는 오른쪽 위 모서리. UV를 옮기고 모든 부위가 새 재질 하나를 쓴다."""
+    import numpy as np
+
+    W, H = ext_img.size
+    A = atlas_img.size[0]
+    assert H >= A
+    CW, CH = 2 * W, H
+    out = np.zeros((CH, CW, 4), dtype=np.float32)
+    out[:, :, 3] = 1.0
+    e = np.array(ext_img.pixels[:], dtype=np.float32).reshape(H, W, 4)  # 블렌더 이미지는 아래 줄부터
+    a = np.array(atlas_img.pixels[:], dtype=np.float32).reshape(A, A, 4)
+    out[:, :W] = e
+    out[CH - A:, W:W + A] = a
+    img = bpy.data.images.new(name + "_tex", CW, CH, alpha=False)
+    img.pixels.foreach_set(out.ravel())
+    img.file_format = "PNG"
+    img.pack()
+    mat = bpy.data.materials.new(name + "_mat")
+    mat.use_nodes = True
+    nt = mat.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
+    bsdf.inputs["Roughness"].default_value = 1.0
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = img
+    tex.interpolation = "Closest"
+    nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+
+    def remap(o, f):
+        for d in o.data.uv_layers.active.data:
+            d.uv = f(d.uv.x, d.uv.y)
+        o.data.materials.clear()
+        o.data.materials.append(mat)
+
+    for o in ext_objs:
+        remap(o, lambda u, v: (u * W / CW, v))
+    for o in atlas_objs:
+        remap(o, lambda u, v: ((W + u * A) / CW, (CH - A + v * A) / CH))
+    return mat
+
+
 # ---------------------------------------------------------------- 모델
 def reset_scene():
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -417,6 +508,8 @@ class Model:
         self.scene = reset_scene()
         self.mat = make_material(name)
         self.geos = []
+        self.ext = []  # (이름, 뼈, 오브젝트) — 바깥 메시 부위(0038)
+        self.ext_img = None
         self.bones = []  # (이름, 머리(피벗), 부모)
         self.rig = None
         self.objects = {}
@@ -435,10 +528,24 @@ class Model:
         self.geos.append(g)
         return g
 
+    def external(self, path, classify, parts, img_name=None):
+        """바깥 메시를 부위로 나눠 뼈에 붙인다. parts: {부위 이름: 뼈}. 텍스처는 build에서 아틀라스와 한 장으로 합친다."""
+        objs, img = import_split(path, classify, list(parts))
+        self.ext_img = img
+        for name, o in objs.items():
+            self.ext.append((name, parts[name], o))
+        return objs
+
     def build(self):
         for g in self.geos:
             if g.quads:
                 self.objects[g.name] = geo_object(g, self.mat)
+        for name, _, o in self.ext:
+            self.objects[name] = o
+        if self.ext:
+            atlas = self.mat.node_tree.nodes["Image Texture"].image
+            merge_textures([o for _, _, o in self.ext], self.ext_img,
+                           [self.objects[g.name] for g in self.geos if g.name in self.objects], atlas, self.name)
         if not self.bones:
             return
         arm = bpy.data.armatures.new(self.name + "_rig")
@@ -457,13 +564,12 @@ class Model:
             if parent:
                 b.parent = eb[parent]
         bpy.ops.object.mode_set(mode="OBJECT")
-        for g in self.geos:
-            if g.bone and g.name in self.objects:
-                o = self.objects[g.name]
+        for bone_name, o in [(g.bone, self.objects.get(g.name)) for g in self.geos] + [(b, o) for _, b, o in self.ext]:
+            if bone_name and o is not None:
                 mw = o.matrix_world.copy()
                 o.parent = rig
                 o.parent_type = "BONE"
-                o.parent_bone = g.bone
+                o.parent_bone = bone_name
                 o.matrix_world = mw
         self.rig = rig
         for pb in rig.pose.bones:

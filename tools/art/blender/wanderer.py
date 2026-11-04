@@ -18,7 +18,95 @@ def v(*xs):
     return tuple(x * S for x in xs)
 
 
+# 0038: 몸은 Meshy(AI) 모델 — Gemini 그림 → Meshy Image to 3D(CC BY 4.0) → `meshy_convert.py`로 줄이고 색을 구운 것.
+MESHY_LOW = os.path.join(C.REPO, "tools", "art", "sources", "meshy", "raccoon_v1_low.glb")
+CX = 0.0  # 몸 가운데 x(머리로 맞춘 뒤 — 두 손끝이 ±0.35로 맞는다)
+# 부위 이름 → 뼈
+MESHY_PARTS = {"head_geo": "head", "body_geo": "body", "arm_l_geo": "arm_l", "arm_r_geo": "arm_r",
+               "leg_l_geo": "leg_l", "leg_r_geo": "leg_r", "tail_geo": "tail"}
+
+
+# 팔 = 어깨 → 손끝 선분 둘레의 원기둥(목도리 끝·옷자락이 섞이지 않게). (어깨, 손끝, 반지름), x는 CX 기준.
+ARM = ((0.235, -0.07, 0.42), (0.30, -0.085, 0.30), 0.072)  # 장갑 손 + 소매 끝
+
+
+def _seg_dist(p, a, b):
+    from mathutils import Vector
+    a, b = Vector(a), Vector(b)
+    ab = b - a
+    t = max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
+    return (p - (a + ab * t)).length
+
+
+def classify(c):
+    """면 가운데 자리 → 부위(앞 = -Y, 캐릭터 왼쪽 = +X, 키 1.4m). 치수는 높이 띠마다 정점을 찍어 본 것."""
+    from mathutils import Vector
+    x, y, z = c.x - CX, c.y, c.z
+    if z > 0.628:  # 두건 아래 가장자리 — 목도리는 몸에 남겨 고개를 젖혀도 자른 자리가 덜 드러난다
+        return "head_geo"
+    if z < 0.125:
+        return "leg_l_geo" if x > 0 else "leg_r_geo"
+    (sx, sy, sz), (hx, hy, hz), r = ARM
+    p = Vector((x, y, z))
+    if _seg_dist(p, (-sx, sy, sz), (-hx, hy, hz)) < r:
+        return "arm_r_geo"
+    if _seg_dist(p, (sx, sy, sz), (hx, hy, hz)) < r:
+        return "arm_l_geo"
+    if z < 0.62 and (y > 0.17 or (y > 0.06 and x > 0.14)):
+        return "tail_geo"
+    return "body_geo"
+
+
+# 뼈 자리(새 몸, 키 1.4m). 손은 장갑 가운데, 어깨는 소매 위.
+HAND = (0.29, -0.085, 0.31)
+SHOULDER = (0.185, -0.05, 0.52)
+
+
 def make():
+    """0038: Meshy 몸 + 코드로 만든 칼·등잔. 뼈 이름·동작 표는 0037과 같다."""
+    m = C.Model(NAME)
+    m.loc_scale = 0.55
+    hx, hy, hz = HAND
+    sx, sy, sz = SHOULDER
+    m.bone("root", (0, 0, 0))
+    m.bone("body", (0, 0, 0.13), "root")
+    m.bone("head", (0, -0.02, 0.62), "body")
+    m.bone("arm_l", (sx, sy, sz), "body")
+    m.bone("arm_r", (-sx, sy, sz), "body")
+    m.bone("hand_r", (-hx, hy, hz), "arm_r")
+    m.bone("hand_l", (hx, hy, hz), "arm_l")
+    m.bone("leg_l", (0.08, -0.07, 0.125), "root")
+    m.bone("leg_r", (-0.08, -0.07, 0.125), "root")
+    m.bone("cloak", (0, 0.15, 0.50), "body")  # 0037 동작 표가 부르는 뼈 — 새 몸에는 따로 흔들 망토가 없다
+    m.bone("tail", (0.10, 0.16, 0.24), "body")
+    m.bone("lamp", (hx, hy - 0.05, hz - 0.04), "hand_l")
+    m.hide("lamp")
+
+    m.external(MESHY_LOW, classify, MESHY_PARTS)
+
+    # 칼(오른손) — 0037과 같은 꼴, 손 자리만 새 몸에 맞춤.
+    g = m.geo("sword", "hand_r")
+    x0, y0, z0 = -hx, hy, hz
+    g.blob((x0, y0 + 0.06, z0), (0.05, 0.04, 0.05), "p_gold", r=0.9, n=2)  # 칼자루 끝 구슬
+    g.box((x0, y0, z0), (0.035, 0.09, 0.035), "p_boot")  # 손잡이
+    g.blob((x0, y0 - 0.06, z0), (0.15, 0.035, 0.05), "p_gold", r=0.8, n=2)  # 코등이
+    g.box((x0, y0 - 0.31, z0), (0.06, 0.46, 0.022), "p_steel")  # 칼날
+    g.box((x0, y0 - 0.29, z0), (0.016, 0.38, 0.026), "p_white")  # 날 가운데 밝은 줄
+    g.box((x0, y0 - 0.575, z0), (0.06, 0.022, 0.08), "p_steel", rot=(90, 0, 0), taper=(0.15, 1))  # 칼끝
+
+    # 등잔(왼손, 마실 때만 — 0031).
+    g = m.geo("lamp_geo", "lamp")
+    g.blob((hx, hy - 0.06, hz - 0.10), (0.115, 0.115, 0.115), "p_lamp", r=0.7, n=3, taper=(0.75, 0.75))
+    g = m.geo("glow_lamp", "lamp")
+    g.box((hx, hy - 0.06, hz - 0.02), (0.045, 0.045, 0.07), "ember", taper=(0.4, 0.4))
+
+    m.build()
+    acts(m)
+    return m
+
+
+def make_blocks():
+    """0037 코드 모델(둥근 상자). 0038부터 쓰지 않는다 — 비교·되돌리기용으로 남긴다."""
     m = C.Model(NAME)
     # 0037 B "작은 동물 방랑자": 둥근 너구리 얼굴(눈 둘레 무늬·크림 주둥이)·두건 밖 귀·줄무늬 꼬리, 콩 모양 민트 망토, 복숭아 목도리,
     # 짧은 팔·작은 장화, 허리의 작은 금빛 종. 2등신, 눈은 크고 낮게, 입 없음(docs/art/direction.md).
@@ -107,8 +195,8 @@ def acts(m):
     m.action("idle", 1.2, [
         (0.0, {"root": {"l": (0, 0, 0)}, "body": {"r": (3, 0, 0)}, "head": {"r": (-2, 0, 0)},
                "arm_l": {"r": (-4, -4, 0)}, "arm_r": {"r": (-12, 6, 0)}, "hand_r": rest_hand,
-               "cloak": {"r": (6, 0, 0)}, "tail": {"r": (0, 0, -10)}}),
-        (0.6, {"tail": {"r": (0, 0, 10)}, "root": {"l": (0, 0, -0.018)}, "body": {"r": (5, 0, 0)}, "head": {"r": (0, 0, 0)},
+               "cloak": {"r": (6, 0, 0)}, "tail": {"r": (0, 0, -14)}}),
+        (0.6, {"tail": {"r": (0, 0, 14)}, "root": {"l": (0, 0, -0.018)}, "body": {"r": (5, 0, 0)}, "head": {"r": (0, 4, 0)},
                "arm_l": {"r": (-2, -6, 0)}, "arm_r": {"r": (-10, 8, 0)}, "hand_r": {"r": (54, 0, 0)},
                "cloak": {"r": (9, 0, 0)}}),
     ], loop=True)
@@ -116,13 +204,14 @@ def acts(m):
     # walk 0.8초 고리: 다리 ±28°, 팔은 반대로, 지날 때 몸이 오른다
     st = 28
     def walk_key(s):
-        return {"root": {"l": (0, 0, 0)}, "body": {"r": (6, 0, 4 * s)},
+        # 0038: 뒤뚱 — 내딛는 발 쪽으로 몸이 기울고(Y) 머리는 반대로 조금 버틴다, 꼬리는 크게 반대로.
+        return {"root": {"l": (0, 0, 0)}, "body": {"r": (6, -7 * s, 4 * s)},
                 "leg_l": {"r": (-st * s, 0, 0)}, "leg_r": {"r": (st * s, 0, 0)},
                 "arm_l": {"r": (18 * s, -4, 0)}, "arm_r": {"r": (-16 - 12 * s, 6, 0)}, "hand_r": rest_hand,
-                "head": {"r": (-3, 0, -3 * s)}, "cloak": {"r": (14, 0, -3 * s)}, "tail": {"r": (-8, 0, 16 * s)}}
+                "head": {"r": (-3, 4 * s, -3 * s)}, "cloak": {"r": (14, 0, -3 * s)}, "tail": {"r": (-8, 6 * s, 24 * s)}}
     def pass_key():
-        return {"root": {"l": (0, 0, 0.035)}, "body": {"r": (6, 0, 0)}, "leg_l": {"r": (0, 0, 0)},
-                "leg_r": {"r": (0, 0, 0)}, "cloak": {"r": (20, 0, 0)}}
+        return {"root": {"l": (0, 0, 0.05)}, "body": {"r": (6, 0, 0)}, "leg_l": {"r": (0, 0, 0)},
+                "leg_r": {"r": (0, 0, 0)}, "cloak": {"r": (20, 0, 0)}, "head": {"r": (-6, 0, 0)}}
     m.action("walk", 0.8, [(0.0, walk_key(1)), (0.2, pass_key()), (0.4, walk_key(-1)), (0.6, pass_key())], loop=True)
 
     # attack 0.43초: 0~0.08 칼을 오른쪽 뒤로 당김, 0.08~0.18 앞을 가로질러 베기(오른쪽 → 왼쪽, 조금 위에서 아래로), 0.18~0.43 돌아옴
