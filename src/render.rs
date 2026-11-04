@@ -394,7 +394,7 @@ impl Renderer {
                 Color::new(0.5, 0.35, 0.25, 1.0)
             };
             let col = if flash { WHITE } else { base };
-            let crouch = matches!(en.state, EState::Tele { .. } | EState::Carried);
+            let crouch = matches!(en.state, EState::Tele { .. });
             let h = en.height * if crouch { 0.85 } else { 1.0 } * squash;
             actor(p + sink, en.facing_dir(), en.radius, h, col, 0.6, tilt);
         }
@@ -752,7 +752,7 @@ fn enemy_anim(en: &Enemy, e: &Entry, clock: f32, stage: Option<&StageRun>) -> (O
             Some(a) => (Some(a), t.min(e.duration(Some(a)) * 0.999)),
             None => (e.pick(&["idle"]), clock + phase),
         },
-        EState::Carried | EState::Stagger { .. } => once(&["hurt", "idle"], 0.3),
+        EState::Stagger { .. } => once(&["hurt", "idle"], 0.3),
         EState::Dead => once(&["hurt", "idle"], 0.999),
     }
 }

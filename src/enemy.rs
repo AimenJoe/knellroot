@@ -62,8 +62,6 @@ pub enum EState {
     Recover {
         t: f32,
     },
-    /// 땅이 도는 동안 실려 간다(0012).
-    Carried,
     /// 휘청(CC).
     Stagger {
         t: f32,
@@ -302,7 +300,7 @@ impl Enemy {
         let dir = if dist > 1e-4 { to / dist } else { Vec3::Z };
         let speed = d.speed * if self.roused { ROUSED_SPEED } else { 1.0 };
         match self.state {
-            EState::Dormant | EState::Carried | EState::Dead => {}
+            EState::Dormant | EState::Dead => {}
             EState::Chase => {
                 self.turn_toward(dir, 6.0, dt);
                 match self.choose(dist) {

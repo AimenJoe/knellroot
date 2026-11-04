@@ -482,7 +482,7 @@ pub const SPECS: [Spec; 81] = [
         SpillPerM,
         "spill.slide per m",
         "SPILL_PER_M",
-        0.35,
+        0.05,
         0.0,
         1.5,
         0.05
@@ -491,7 +491,7 @@ pub const SPECS: [Spec; 81] = [
         SpillMax,
         "spill.slide max m",
         "SPILL_MAX",
-        3.0,
+        0.25,
         0.0,
         8.0,
         0.25
@@ -509,7 +509,7 @@ pub const SPECS: [Spec; 81] = [
         SpillStagger,
         "spill.stagger s",
         "SPILL_STAGGER",
-        0.9,
+        0.3,
         0.0,
         3.0,
         0.1
@@ -527,7 +527,7 @@ pub const SPECS: [Spec; 81] = [
         SpillBossStagger,
         "spill.boss stagger s",
         "SPILL_BOSS_STAGGER",
-        0.3,
+        0.1,
         0.0,
         2.0,
         0.05
@@ -536,7 +536,7 @@ pub const SPECS: [Spec; 81] = [
         SlamDamage,
         "spill.slam dmg",
         "SLAM_DAMAGE",
-        1.0,
+        0.0,
         0.0,
         5.0,
         1.0
@@ -545,7 +545,7 @@ pub const SPECS: [Spec; 81] = [
         SlamStagger,
         "spill.slam stagger +s",
         "SLAM_STAGGER",
-        0.8,
+        0.0,
         0.0,
         3.0,
         0.1

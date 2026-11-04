@@ -882,15 +882,8 @@ impl World {
     fn apply_turn(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
         if let Some((quarters, cw)) = self.turn_now.take() {
             ev.push(Event::Turn { quarters });
+            // 도는 동안 적은 그대로 움직인다(0029: 예전엔 범위 안의 적을 실어 붙잡았다 — 1초 가까이 묶는 CC였다).
             self.spill_at = Some((cw, crate::tuning::turn_land_secs_q(t, quarters)));
-            // 도는 동안 범위 안의 적은 땅에 실려 버틴다 — 안 그러면 1초 동안 쫓아와 곁에 뭉쳐, 멈출 때 쏟을 거리가 없었다.
-            let p = self.player.pos;
-            for en in &mut self.enemies {
-                if en.active() && vec2(en.pos.x - p.x, en.pos.z - p.z).length() <= t[P::SpillRange]
-                {
-                    en.state = EState::Carried;
-                }
-            }
         }
         let Some((cw, left)) = self.spill_at else {
             return;
@@ -910,9 +903,6 @@ impl World {
             let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
             let r = d.length();
             if r > t[P::SpillRange] {
-                if en.state == EState::Carried {
-                    en.state = EState::Chase;
-                }
                 continue;
             }
             let mass = if en.boss { t[P::SpillBossMass] } else { 1.0 };
@@ -1836,7 +1826,6 @@ mod tests {
         for _ in 0..half {
             w.step(&Actions::default(), &t);
         }
-        assert!(w.enemies[1].pos.distance(up * 7.0) < 1e-4);
         assert!(!matches!(w.enemies[1].state, EState::Stagger { .. }));
         for _ in 0..600 {
             if w.spill_at.is_none() {
@@ -1845,28 +1834,30 @@ mod tests {
             w.step(&Actions::default(), &t);
         }
         assert!(matches!(w.enemies[1].state, EState::Stagger { .. }));
-        for _ in 0..40 {
+        // 0029: 밀림은 조금(먼 적도 `spill.slide max m`까지) — 휘청(0.3초)이 끝나기 전에 잰다.
+        let (near0, far0) = (w.enemies[0].pos, w.enemies[1].pos);
+        for _ in 0..15 {
             w.step(&Actions::default(), &t);
         }
-        let near = w.enemies[0].pos - up * 3.0;
-        let far = w.enemies[1].pos - up * 7.0;
+        let near = w.enemies[0].pos - near0;
+        let far = w.enemies[1].pos - far0;
         assert!(
-            near.dot(right) > 0.3 && far.dot(right) > 0.3,
+            near.dot(right) > 0.05 && far.dot(right) > 0.1,
             "{near:?} {far:?}"
         );
-        assert!(far.length() > near.length() * 1.8, "{near:?} {far:?}");
-        // 바깥 몫: 먼 적은 축에서도 멀어진다.
-        assert!(w.enemies[1].pos.length() > 7.0);
+        assert!(far.length() > near.length() * 1.5, "{near:?} {far:?}");
+        assert!(far.length() <= t[P::SpillMax] + 1e-3, "{far:?}");
         // 반시계면 반대쪽.
         let mut w2 = World::new("test", 30.0);
         w2.view_yaw = Some(35.0);
         w2.spawn_mob(up * 7.0);
         idle(&mut w2);
         turn_until_spill(&mut w2, false, &t);
-        for _ in 0..40 {
+        let at = w2.enemies[0].pos;
+        for _ in 0..15 {
             w2.step(&Actions::default(), &t);
         }
-        assert!((w2.enemies[0].pos - up * 7.0).dot(right) < -0.3);
+        assert!((w2.enemies[0].pos - at).dot(right) < -0.1);
     }
 
     #[test]
@@ -1874,7 +1865,7 @@ mod tests {
         let t = Tuning::default();
         let mut w = World::new("test", 30.0);
         w.spawn_mob(vec3(0.0, 0.0, -1.2));
-        w.spawn_mob(vec3(0.0, 0.0, t[P::SpillRange] + 2.0));
+        w.spawn_mob(vec3(0.0, 0.0, t[P::SpillRange] + 6.0));
         idle(&mut w);
         w.step(&turn(true), &t);
         while w.spill_at.is_some_and(|(_, left)| left > 2.0 * TICK_DT) {
@@ -1897,28 +1888,30 @@ mod tests {
         assert!(!hurt);
     }
 
-    /// 도는 동안엔 범위 안의 적이 실려 버틴다: 쫓아오지도 치지도 못한다(멈추면 휘청).
+    /// 0029: 도는 동안 적을 붙잡지 않는다 — 그대로 쫓아온다. 멈출 때 범위 안이면 짧게 휘청할 뿐.
     #[test]
-    fn while_the_ground_turns_the_enemies_on_it_are_carried_and_cannot_close_in() {
+    fn while_the_ground_turns_the_enemies_keep_coming() {
         let t = Tuning::default();
         let mut w = World::new("test", 30.0);
-        w.spawn_mob(vec3(0.0, 0.0, -1.5));
         w.spawn_mob(vec3(0.0, 0.0, -5.0));
-        w.spawn_mob(vec3(0.0, 0.0, t[P::SpillRange] + 3.0));
         w.step(&turn(true), &t);
-        let mut hurt = false;
         while w.spill_at.is_some_and(|(_, left)| left > TICK_DT) {
-            hurt |= w.step(&Actions::default(), &t).contains(&Event::PlayerHurt);
-        }
-        assert!(!hurt);
-        assert_eq!(w.enemies[0].state, EState::Carried);
-        assert!(w.enemies[1].pos.distance(vec3(0.0, 0.0, -5.0)) < 1e-4);
-        // 범위 밖은 그대로 쫓아온다.
-        assert!(w.enemies[2].pos.z < t[P::SpillRange] + 3.0 - 1.0);
-        for _ in 0..5 {
             w.step(&Actions::default(), &t);
         }
-        assert!(matches!(w.enemies[1].state, EState::Stagger { .. }));
+        assert!(
+            w.enemies[0].pos.z > -5.0 + 1.0,
+            "closed in: {:?}",
+            w.enemies[0].pos
+        );
+        for _ in 0..3 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(matches!(w.enemies[0].state, EState::Stagger { .. }));
+        // 휘청은 짧다.
+        for _ in 0..((t[P::SpillStagger] / TICK_DT) as usize + 2) {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(!matches!(w.enemies[0].state, EState::Stagger { .. }));
     }
 
     #[test]
@@ -1929,14 +1922,15 @@ mod tests {
         w.spawn_mob(vec3(0.0, 0.0, 6.0));
         idle(&mut w);
         turn_until_spill(&mut w, true, &t);
-        // 보스 휘청(0.3초)이 끝나기 전에 잰다 — 그 뒤엔 다시 쫓아온다.
-        for _ in 0..15 {
+        // 멈춘 자리에서 잰다(도는 동안 둘 다 쫓아왔다). 보스 휘청(0.1초)이 끝나기 전에.
+        let (b0, m0) = (w.enemies[0].pos, w.enemies[1].pos);
+        for _ in 0..5 {
             w.step(&Actions::default(), &t);
         }
-        let boss = (w.enemies[0].pos - vec3(0.0, 0.0, -6.0)).length();
-        let mob = (w.enemies[1].pos - vec3(0.0, 0.0, 6.0)).length();
+        let boss = (w.enemies[0].pos - b0).length();
+        let mob = (w.enemies[1].pos - m0).length();
         assert!(boss * 3.0 < mob, "boss {boss} mob {mob}");
-        for _ in 0..15 {
+        for _ in 0..8 {
             w.step(&Actions::default(), &t);
         }
         let EState::Stagger { .. } = w.enemies[1].state else {
@@ -1985,9 +1979,18 @@ mod tests {
         assert_eq!(w.turn_ready(&t), 0.0);
     }
 
+    /// 기본값(0029)은 밀림이 짧아 거의 부딪히지 않는다 — 랩에서 밀림·벽 피해를 키웠을 때의 규칙을 본다.
     #[test]
     fn a_spilled_enemy_that_hits_a_pillar_is_slammed_once() {
-        let t = Tuning::default();
+        let mut t = Tuning::default();
+        for (p, v) in [
+            (P::SpillPerM, 0.35),
+            (P::SpillMax, 3.0),
+            (P::SlamDamage, 1.0),
+        ] {
+            let i = crate::tuning::SPECS.iter().position(|s| s.p == p).unwrap();
+            t.set(i, v);
+        }
         let mut w = World::new("test", 30.0);
         w.view_yaw = Some(0.0); // 화면 위 = -z, ↻이 멈추면 쏟아지는 쪽 = +x(화면 오른쪽, + 바깥)
         w.spawn_mob(vec3(0.0, 0.0, -7.0));
