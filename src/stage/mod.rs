@@ -7,7 +7,8 @@ use macroquad::prelude::*;
 
 use crate::i18n::Tr;
 use crate::species::Kind;
-use crate::world::{Aabb, EState, World};
+use crate::tuning::{FLASK_CHARGES, PLAYER_HP};
+use crate::world::{Aabb, EState, PState, World};
 
 /// 지도 한 칸(m).
 pub const CELL: f32 = 2.0;
@@ -124,7 +125,7 @@ impl Level {
         (self.w.max(self.h) as f32) * CELL * 0.5
     }
 
-    /// 글자 지도 → 레벨. 표지: `#` 벽 · `.` 바닥 · ` ` 바깥 · `P` 시작 · `G` 문 · `i` 기둥 · `r` 뿌리 · `b` 화로 · `u` 돌무더기 ·
+    /// 글자 지도 → 레벨. 표지: `#` 벽 · `.` 바닥 · ` ` 바깥 · `P` 시작 · `G` 문 · `i` 기둥 · `r` 뿌리 · `b` 화로 · `R` 쉼터 화로(0032, 화로 + 표지) · `u` 돌무더기 ·
     /// `w` 무너진 벽 조각 · `L` 종 · 그 밖의 글자는 바닥 + 표지(스폰 등, `marks`).
     pub fn parse(map: &str) -> Level {
         let rows: Vec<&str> = map.lines().filter(|l| !l.trim().is_empty()).collect();
@@ -173,7 +174,10 @@ impl Level {
                         pos: p,
                         yaw: 0.0,
                     }),
-                    'b' => {
+                    'b' | 'R' => {
+                        if c == 'R' {
+                            lv.marks.push(('R', p));
+                        }
                         lv.props.push(Prop {
                             kind: PropKind::Brazier,
                             pos: p,
@@ -281,7 +285,14 @@ pub enum StageOut {
     Playing,
     Cleared,
     Defeated,
+    /// 쓰러졌지만 마지막으로 쉰 쉼터에서 다시 일어섰다(0032) — 앱은 카메라만 그 자리로.
+    Respawned,
 }
+
+/// 쉼터 곁(m): 이 안이면 "쉬기"가 뜬다.
+pub const REST_REACH: f32 = 2.4;
+/// 이 안에 깨어 있는 적이 있으면 쉴 수 없다(m).
+pub const REST_SAFE: f32 = 10.0;
 
 /// 문지기가 깨어나는 데 걸리는 시간(초) — 이름 카드·`wake` 동작.
 pub const WAKE_TIME: f32 = 2.0;
@@ -311,6 +322,15 @@ pub struct StageRun {
     pub core: Option<Vec3>,
     pub time: f32,
     first_card: bool,
+    /// 쉼터 화로들(지도 `R`).
+    pub rests: Vec<Vec3>,
+    /// 마지막으로 쉰 쉼터와, 쓰러지면 되돌아갈 진행 단계(쉰 때의 단계 — 물결 전이면 입구, 물결을 끝냈으면 문 앞).
+    pub rest_at: Option<(usize, Phase)>,
+    /// 곁에 있는 쉼터(HUD·터치 버튼), 지금 쉴 수 있나(가까운 깨어 있는 적이 없다).
+    pub near_rest: Option<usize>,
+    pub rest_safe: bool,
+    /// 마지막으로 쉰 뒤 지난 초(렌더의 퍼지는 빛).
+    pub since_rest: f32,
 }
 
 /// 시작 이야기 길이(초).
@@ -343,7 +363,13 @@ impl StageRun {
             core: None,
             time: 0.0,
             first_card: false,
+            rests: Vec::new(),
+            rest_at: None,
+            near_rest: None,
+            rest_safe: true,
+            since_rest: f32::MAX,
         };
+        run.rests = run.level.marks_of('R').collect();
         // 보스는 처음부터 잠든 채 성소에 있다(보인다 — 기대감).
         if let Some(p) = run.level.marks_of(def.boss.0).next() {
             let i = w.spawn(def.boss.1, p);
@@ -409,8 +435,33 @@ impl StageRun {
         } else {
             self.gate_open = (self.gate_open + dt).min(1.5);
         }
+        self.since_rest = (self.since_rest + dt).min(f32::MAX);
         if w.player.hp <= 0 {
-            return StageOut::Defeated;
+            // 쉼터에서 쉰 적이 있으면 거기서 다시(0032) — 없으면 끝.
+            return match self.rest_at {
+                Some((i, back)) => {
+                    self.respawn(w, i, back);
+                    StageOut::Respawned
+                }
+                None => StageOut::Defeated,
+            };
+        }
+        // 쉼터(0032): 곁이면 "쉬기", 깨어 있는 적이 가까우면 막는다.
+        let pp = w.player.pos;
+        self.near_rest = self
+            .rests
+            .iter()
+            .position(|r| vec2(r.x - pp.x, r.z - pp.z).length() <= REST_REACH);
+        self.rest_safe = !w
+            .enemies
+            .iter()
+            .any(|e| e.active() && vec2(e.pos.x - pp.x, e.pos.z - pp.z).length() <= REST_SAFE);
+        if let (Some(i), true) = (self.near_rest, w.interact) {
+            if self.rest_safe {
+                self.rest(w, i);
+            } else {
+                self.card = Some((|s| s.rest_blocked, 1.6));
+            }
         }
         // 구역 카드: 시작 이야기가 끝나면 첫 구역, 그다음은 새 구역에 처음 들어설 때.
         let z = self.zone_at(w.player.pos);
@@ -494,6 +545,68 @@ impl StageRun {
         StageOut::Playing
     }
 
+    /// 쉬기(0032): 체력·등잔·스태미나 가득, 이 쉼터가 다시 일어설 곳. 되돌아갈 단계 = 지금(물결 중이면 물결 전부터).
+    fn rest(&mut self, w: &mut World, i: usize) {
+        let pl = &mut w.player;
+        pl.hp = PLAYER_HP;
+        pl.flask = FLASK_CHARGES;
+        pl.stamina = crate::tuning::SPECS[crate::tuning::idx(crate::tuning::P::StaminaMax)].def;
+        let back = match self.phase {
+            Phase::Entrance | Phase::Waves(_) => Phase::Entrance,
+            _ => Phase::GateOpen,
+        };
+        self.rest_at = Some((i, back));
+        self.since_rest = 0.0;
+        self.card = Some((|s| s.rested, 2.4));
+    }
+
+    /// 쓰러진 뒤 쉼터에서 다시(0032): 플레이어는 쉼터 곁에 가득 찬 채로, 진행은 쉬던 때로 — 물결은 처음부터(뜰에 들어서면
+    /// 다시 온다), 문지기는 잠든 채 가득. 문지기만 남기고 다른 적은 지운다(문지기는 시작할 때 처음 세워 번호 0).
+    fn respawn(&mut self, w: &mut World, i: usize, back: Phase) {
+        let at = self.rests[i];
+        w.enemies.retain(|e| e.boss);
+        self.boss = (!w.enemies.is_empty()).then_some(0);
+        if let (Some(b), Some(home)) = (self.boss, self.level.marks_of(self.def.boss.0).next()) {
+            let max = w.enemies[b].max_hp;
+            let e = &mut w.enemies[b];
+            e.hp = max;
+            e.state = EState::Dormant;
+            e.roused = false;
+            e.exposed = 0.0;
+            e.knock = Vec3::ZERO;
+            e.pos = home;
+            e.prev = home;
+        }
+        self.wave_ids.clear();
+        w.lock = None;
+        w.hitstop = 0.0;
+        let pl = &mut w.player;
+        pl.pos = at + vec3(0.0, 0.0, 1.4);
+        pl.prev = pl.pos;
+        pl.vel = Vec3::ZERO;
+        pl.state = PState::Idle;
+        pl.air = 0.0;
+        pl.hurt = 1.0;
+        self.rest(w, i);
+        self.since_rest = f32::MAX;
+        match back {
+            Phase::Entrance => {
+                self.phase = Phase::Entrance;
+                self.set_gate(w, true);
+                self.objective = None;
+            }
+            _ => {
+                self.phase = Phase::GateOpen;
+                self.set_gate(w, false);
+                self.objective = Some(self.def.obj_gate);
+            }
+        }
+        self.rest_at = Some((i, back));
+        self.zone = self.zone_at(w.player.pos);
+        self.core = None;
+        self.card = Some((|s| s.respawned, CARD_TIME));
+    }
+
     /// 개발: 물결을 건너뛰고 문 앞으로(문이 열린 채) — 보스만 다시 볼 때.
     #[cfg(feature = "dev")]
     pub fn dev_skip_to_gate(&mut self, w: &mut World) {
@@ -535,6 +648,7 @@ mod tests {
     use super::*;
     use crate::input::Actions;
     use crate::tuning::Tuning;
+    use crate::tuning::{FLASK_CHARGES, PLAYER_HP};
 
     #[test]
     fn the_sanctuary_map_parses_into_walls_props_lights_gate_and_marks() {
@@ -606,6 +720,131 @@ mod tests {
         assert_eq!(run.phase, Phase::Core);
         w.player.pos = run.core.unwrap();
         assert_eq!(step(&mut run, &mut w), StageOut::Cleared);
+    }
+
+    /// 시험용: 한 틱(월드 → 스테이지).
+    fn tick(run: &mut StageRun, w: &mut World, a: Actions) -> StageOut {
+        w.step(&a, &Tuning::default());
+        run.tick(w, 1.0 / 60.0)
+    }
+
+    fn rest_now(run: &mut StageRun, w: &mut World, i: usize) -> StageOut {
+        w.player.pos = run.rests[i] + vec3(0.0, 0.0, 1.0);
+        w.player.prev = w.player.pos;
+        tick(
+            run,
+            w,
+            Actions {
+                interact: true,
+                ..Default::default()
+            },
+        )
+    }
+
+    /// 입구 쪽 쉼터(시작 자리에서 가장 가까운 것).
+    fn entrance_rest(run: &StageRun) -> usize {
+        let s = run.level.player_start;
+        (0..run.rests.len())
+            .min_by(|a, b| {
+                run.rests[*a]
+                    .distance(s)
+                    .total_cmp(&run.rests[*b].distance(s))
+            })
+            .unwrap()
+    }
+
+    /// 0032: 성소 지도에 쉼터 둘(입구·문 앞), 곁에서 상호작용 = 체력·등잔 가득 + 다시 일어설 곳.
+    #[test]
+    fn resting_refills_and_marks_the_rest_site() {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        assert_eq!(run.rests.len(), 2);
+        let i = entrance_rest(&run);
+        w.player.hp = 1;
+        w.player.flask = 0;
+        rest_now(&mut run, &mut w, i);
+        assert_eq!(run.near_rest, Some(i));
+        assert_eq!((w.player.hp, w.player.flask), (PLAYER_HP, FLASK_CHARGES));
+        assert_eq!(run.rest_at, Some((i, Phase::Entrance)));
+    }
+
+    /// 0032: 깨어 있는 적이 `REST_SAFE` 안이면 쉴 수 없다(잠든 문지기는 괜찮다).
+    #[test]
+    fn you_cannot_rest_with_an_awake_enemy_close() {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        let i = entrance_rest(&run);
+        w.spawn(Kind::Husk, run.rests[i] + vec3(3.0, 0.0, 0.0));
+        w.player.hp = 1;
+        rest_now(&mut run, &mut w, i);
+        assert!(!run.rest_safe);
+        assert_eq!(run.rest_at, None);
+        assert_eq!(w.player.hp, 1);
+    }
+
+    /// 0032: 쉰 뒤 쓰러지면 끝이 아니라 그 쉼터에서 — 가득 찬 채, 물결은 처음부터(다시 뜰에 들어서면 온다), 문지기는 잠든 채.
+    #[test]
+    fn falling_after_a_rest_rises_at_the_rest_site_and_the_waves_start_over() {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        let i = entrance_rest(&run);
+        rest_now(&mut run, &mut w, i);
+        // 뜰로 → 물결.
+        w.player.pos = run.level.at(run.level.w / 2, run.def.zones[1].1 - 2);
+        tick(&mut run, &mut w, Actions::default());
+        assert!(matches!(run.phase, Phase::Waves(0)));
+        assert!(w.enemies.iter().any(|e| !e.boss));
+        w.player.hp = 0;
+        w.player.flask = 0;
+        assert_eq!(
+            tick(&mut run, &mut w, Actions::default()),
+            StageOut::Respawned
+        );
+        assert_eq!(run.phase, Phase::Entrance);
+        assert!(w.player.pos.distance(run.rests[i]) < REST_REACH);
+        assert_eq!((w.player.hp, w.player.flask), (PLAYER_HP, FLASK_CHARGES));
+        assert!(w.enemies.iter().all(|e| e.boss), "waves cleared away");
+        assert_eq!(w.enemies[run.boss.unwrap()].state, EState::Dormant);
+        assert!(run.gate_closed);
+        // 다시 뜰에 들어서면 첫 물결이 다시 온다.
+        w.player.pos = run.level.at(run.level.w / 2, run.def.zones[1].1 - 2);
+        tick(&mut run, &mut w, Actions::default());
+        assert!(matches!(run.phase, Phase::Waves(0)));
+    }
+
+    /// 0032: 물결을 끝내고 문 앞 쉼터에서 쉬었으면 결투에서 쓰러져도 문 앞부터 — 문은 열려 있고, 문지기는 잠든 채 가득.
+    #[test]
+    fn falling_in_the_duel_after_the_gate_rest_restarts_the_duel_only() {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        w.player.pos = run.level.at(run.level.w / 2, run.def.zones[1].1 - 2);
+        tick(&mut run, &mut w, Actions::default());
+        for _ in 0..run.def.waves.len() + 1 {
+            for e in w.enemies.iter_mut().filter(|e| !e.boss) {
+                e.state = EState::Dead;
+            }
+            tick(&mut run, &mut w, Actions::default());
+        }
+        assert_eq!(run.phase, Phase::GateOpen);
+        let gate_rest = 1 - entrance_rest(&run);
+        rest_now(&mut run, &mut w, gate_rest);
+        assert_eq!(run.rest_at, Some((gate_rest, Phase::GateOpen)));
+        // 성소로 → 깨어남 → 결투.
+        let (g, _) = run.level.gate.unwrap();
+        w.player.pos = vec3(0.0, 0.0, g.min.z - 3.0);
+        for _ in 0..((WAKE_TIME * 60.0) as usize + 4) {
+            w.player.hp = PLAYER_HP;
+            tick(&mut run, &mut w, Actions::default());
+        }
+        assert_eq!(run.phase, Phase::Duel);
+        let b = run.boss.unwrap();
+        w.enemies[b].hp = 3;
+        w.player.hp = 0;
+        assert_eq!(
+            tick(&mut run, &mut w, Actions::default()),
+            StageOut::Respawned
+        );
+        assert_eq!(run.phase, Phase::GateOpen);
+        assert!(!run.gate_closed);
+        let boss = &w.enemies[run.boss.unwrap()];
+        assert_eq!((boss.hp, boss.state), (boss.max_hp, EState::Dormant));
+        assert!(w.player.pos.distance(run.rests[gate_rest]) < REST_REACH);
     }
 
     #[test]

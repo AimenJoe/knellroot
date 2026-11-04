@@ -89,7 +89,7 @@ pub const RESULT_ITEMS: [ResultItem; 2] = [ResultItem::Retry, ResultItem::ToTitl
 /// 스테이지가 이렇게 끝나면 어디로. 이어지는 중이면 그대로.
 pub fn after_stage(out: StageOut) -> Option<Scene> {
     match out {
-        StageOut::Playing => None,
+        StageOut::Playing | StageOut::Respawned => None,
         StageOut::Cleared => Some(Scene::Ending { won: true }),
         StageOut::Defeated => Some(Scene::Ending { won: false }),
     }

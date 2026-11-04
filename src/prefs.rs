@@ -2,13 +2,13 @@
 //! (web/index.html `knell_device` 플러그인의 `knell_pref_get`·`knell_pref_set`, 키 "knell.pref.<칸>"),
 //! 데스크톱·Android는 기록 폴더의 `prefs.txt` 한 줄(칸 값을 빈칸으로).
 //!
-//! 칸: 0 표식(MAGIC), 1 언어(0 = 저장 전), 2..18 키 배치(`Bindings::encode` — 14..16은 0027에 붙인 점프, 16..18은 0031 등잔). 0은 "없음". 표식이 다르면 통째로 기본값.
+//! 칸: 0 표식(MAGIC), 1 언어(0 = 저장 전), 2..18 키 배치(`Bindings::encode` — 14..16은 0027에 붙인 점프, 16..18은 0031 등잔, 18..20은 0032 상호작용). 0은 "없음". 표식이 다르면 통째로 기본값.
 //! 칸을 뒤에 붙이면 옛 저장은 0 = 기본값으로 읽으니 MAGIC은 그대로, 칸 뜻이 바뀌면 올린다.
 use crate::i18n::Lang;
 use crate::input::Bindings;
 
 const MAGIC: u32 = 0x4B4E_0001;
-const CELLS: usize = 18;
+const CELLS: usize = 20;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Prefs {
@@ -186,14 +186,12 @@ mod tests {
             bindings: Bindings::default_layout(),
         };
         let mut old = encode(&plain);
-        old[16] = 0;
-        old[17] = 0;
+        old[16..].fill(0);
         let got = decode(&old).unwrap().bindings;
         assert_eq!(got, Bindings::default_layout());
         // 사용자가 R1을 이미 다른 동작(패링)에 붙여 둔 옛 저장이면: 배치는 그대로, 등잔은 비어 있는 버튼.
         let mut old = encode(&p);
-        old[16] = 0;
-        old[17] = 0;
+        old[16..].fill(0);
         let got = decode(&old).unwrap().bindings;
         assert_eq!(got.keys[..7], b.keys[..7]);
         assert_eq!(got.pads[..7], b.pads[..7]);

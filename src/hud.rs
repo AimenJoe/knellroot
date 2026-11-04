@@ -76,6 +76,22 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>) {
     }
 
     let Some(run) = run else { return };
+    // 쉼터 곁(0032): 아래 가운데에 "키 쉬기", 적이 가까우면 막혔다고.
+    if run.near_rest.is_some() {
+        let y = f.oy + f.h * 0.78;
+        let cx = f.ox + f.w * 0.5;
+        if run.rest_safe {
+            let key = crate::input::prompt(crate::input::Act::Interact);
+            let text = if key.is_empty() {
+                s_rest().to_string()
+            } else {
+                format!("{key}  {}", s_rest())
+            };
+            ui.text_center(&text, cx, y, 1.0, AMBER);
+        } else {
+            ui.text_center(i18n::s().rest_blocked, cx, y, 1.0, DIM);
+        }
+    }
     let cx = f.ox + f.w * 0.5;
     // 목표(오른쪽 위).
     if let Some(o) = run.objective {
@@ -147,6 +163,11 @@ pub fn clear_line(run: &StageRun, w: &World) -> String {
     let secs = run.time as u32;
     let time = format!("{}:{:02}", secs / 60, secs % 60);
     i18n::fill(i18n::s().clear_sub, &[&time, &w.kills.to_string()])
+}
+
+/// 쉼터 동사(0032).
+fn s_rest() -> &'static str {
+    i18n::s().rest_verb
 }
 
 #[cfg(test)]

@@ -303,6 +303,26 @@ impl Renderer {
                 }
             }
         }
+        // 쉼터(0032): 발밑 테 — 아직 안 쉰 곳은 옅게, 다시 일어설 곳은 금빛으로 숨 쉬듯. 쉬는 순간 빛이 퍼진다.
+        for (i, r) in run.rests.iter().enumerate() {
+            let home = run.rest_at.is_some_and(|(j, _)| j == i);
+            let col = if home {
+                Color::new(1.0, 0.8, 0.4, 0.55 + 0.25 * (w.time * 2.0).sin())
+            } else {
+                Color::new(0.9, 0.7, 0.45, 0.25)
+            };
+            ring(*r, 1.0, 0.0, 360.0, col);
+            if home && run.since_rest < 0.8 {
+                let k = run.since_rest / 0.8;
+                ring(
+                    *r + Vec3::Y * (0.6 * k),
+                    1.0 + 2.5 * k,
+                    0.0,
+                    360.0,
+                    Color::new(1.0, 0.85, 0.5, 0.9 * (1.0 - k)),
+                );
+            }
+        }
         if let (Some(core), Phase::Core) = (run.core, run.phase) {
             let bob = (w.time * 2.0).sin() * 0.15;
             let p = core + Vec3::Y * (0.9 + bob);

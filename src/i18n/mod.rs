@@ -92,6 +92,13 @@ pub struct Strings {
     pub verb_jump: &'static str,
     /// 등잔 마시기(0031).
     pub verb_flask: &'static str,
+    /// 상호작용(0032).
+    pub verb_interact: &'static str,
+    /// 쉼터(0032): 곁에서 뜨는 동사, 적이 가까울 때, 쉰 뒤, 다시 일어선 뒤.
+    pub rest_verb: &'static str,
+    pub rest_blocked: &'static str,
+    pub rested: &'static str,
+    pub respawned: &'static str,
     /// 싸움 안내 줄의 공격(0030: 꾹 쥐면 강공격).
     pub verb_attack_hint: &'static str,
     pub verb_turn_left: &'static str,
@@ -150,6 +157,11 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.verb_parry,
         s.verb_jump,
         s.verb_flask,
+        s.verb_interact,
+        s.rest_verb,
+        s.rest_blocked,
+        s.rested,
+        s.respawned,
         s.verb_attack_hint,
         s.verb_turn_left,
         s.verb_turn_right,

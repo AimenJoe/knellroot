@@ -87,6 +87,8 @@ pub struct Actions {
     pub jump: bool,
     /// 등잔 마시기(0031).
     pub flask: bool,
+    /// 상호작용(0032): 쉼터에서 쉬기.
+    pub interact: bool,
     pub lock: bool,
     /// 땅 돌리기 오른쪽·왼쪽 버튼(0012·0028): 캐릭터 기준 90° — 몸이 제 오른쪽(왼쪽)으로 돌아서고 화면도 같은 쪽으로 90°
     /// (`world::plan_turn`).
@@ -130,6 +132,7 @@ pub enum Act {
     Parry,
     Jump,
     Flask,
+    Interact,
     Turn,
     Lock,
     Pause,
@@ -151,6 +154,7 @@ pub fn prompt(act: Act) -> String {
         (_, Act::Parry) => name(Bind::Parry),
         (_, Act::Jump) => name(Bind::Jump),
         (_, Act::Flask) => name(Bind::Flask),
+        (_, Act::Interact) => name(Bind::Interact),
         (_, Act::Lock) => name(Bind::Lock),
         (_, Act::Turn) => format!("{}/{}", name(Bind::TurnLeft), name(Bind::TurnRight)),
         (Device::Pad, Act::Move) => "LS".into(),
@@ -178,10 +182,12 @@ pub enum Bind {
     Jump = 6,
     /// 등잔 마시기(0031, RB·R).
     Flask = 7,
+    /// 상호작용(0032 — 쉼터에서 쉬기, Y·G).
+    Interact = 8,
 }
 
 /// 다시 붙일 수 있는 동작 수.
-pub const NB: usize = 8;
+pub const NB: usize = 9;
 
 pub const BINDS: [Bind; NB] = [
     Bind::Attack,
@@ -192,6 +198,7 @@ pub const BINDS: [Bind; NB] = [
     Bind::TurnRight,
     Bind::Jump,
     Bind::Flask,
+    Bind::Interact,
 ];
 
 /// 배치표에 올릴 수 있는 키(저장 번호 = 이 표의 자리 — 뒤에만 붙인다). 이동(WASD·화살표)·Enter·Esc·Backspace·P(멈춤)·
@@ -257,6 +264,7 @@ impl Bindings {
                 key_index(KeyCode::E),
                 key_index(KeyCode::F),
                 key_index(KeyCode::R),
+                key_index(KeyCode::G),
             ],
             pads: [
                 Pad::West,
@@ -267,6 +275,7 @@ impl Bindings {
                 Pad::R2,
                 Pad::South,
                 Pad::R1,
+                Pad::North,
             ],
         }
     }
@@ -555,6 +564,11 @@ impl Input {
         }
     }
 
+    /// 터치에 상호작용 버튼을 띄울까(0032 — 쉼터 곁일 때만, 앱이 틱마다 알려 준다).
+    pub fn set_interact_shown(&mut self, on: bool) {
+        self.touch.interact_shown = on;
+    }
+
     /// 터치 장치일 때 렌더가 그릴 오버레이.
     pub fn overlay(&self, lab_open: bool) -> Option<Overlay> {
         (device() == Device::Touch).then(|| self.touch.overlay(DEV, lab_open))
@@ -592,6 +606,7 @@ impl Input {
         a.jump = kp(Bind::Jump);
         // 랩이 열려 있으면 R은 랩 되돌리기다 — 등잔으로 같이 읽지 않는다.
         a.flask = !lab_open && kp(Bind::Flask);
+        a.interact = !lab_open && kp(Bind::Interact);
         a.lock = kp(Bind::Lock);
         a.turn_left = kp(Bind::TurnLeft);
         a.turn_right = kp(Bind::TurnRight);
@@ -672,6 +687,7 @@ impl Input {
                 // 랩이 열려 있으면 어깨·트리거는 랩 단계(LB 10배·LT 담기·RT 바꾸기)다 — 패링·돌리기로 같이 읽지 않는다.
                 a.parry |= !lab_open && pj(Bind::Parry);
                 a.flask |= !lab_open && pj(Bind::Flask);
+                a.interact |= !lab_open && pj(Bind::Interact);
                 a.turn_left |= !lab_open && pj(Bind::TurnLeft);
                 a.turn_right |= !lab_open && pj(Bind::TurnRight);
                 if a.pressed_pad.is_none() {
@@ -727,6 +743,7 @@ impl Input {
             a.lock |= pj(Bind::Lock);
             a.parry |= !lab_open && pj(Bind::Parry);
             a.flask |= !lab_open && pj(Bind::Flask);
+            a.interact |= !lab_open && pj(Bind::Interact);
             a.turn_left |= !lab_open && pj(Bind::TurnLeft);
             a.turn_right |= !lab_open && pj(Bind::TurnRight);
             if a.pressed_pad.is_none() {
@@ -760,6 +777,7 @@ impl Input {
         a.parry |= t.parry;
         a.jump |= t.jump;
         a.flask |= t.flask;
+        a.interact |= t.interact;
         a.lock |= t.lock;
         a.turn_right |= t.turn_right;
         a.turn_left |= t.turn_left;
@@ -799,6 +817,7 @@ impl Input {
             parry: self.latch.parry | a.parry,
             jump: self.latch.jump | a.jump,
             flask: self.latch.flask | a.flask,
+            interact: self.latch.interact | a.interact,
             lock: self.latch.lock | a.lock,
             turn_right: self.latch.turn_right | a.turn_right,
             turn_left: self.latch.turn_left | a.turn_left,

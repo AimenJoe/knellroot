@@ -123,6 +123,9 @@ impl App {
     /// 한 프레임.
     pub fn frame(&mut self) {
         let cpu_start = get_time();
+        // 쉼터 곁이면 터치에 상호작용 버튼(0032).
+        self.input
+            .set_interact_shown(self.scene == Scene::Play && self.run.near_rest.is_some());
         self.input.poll(self.lab.open, self.scene.is_menu());
         let dt = get_frame_time().min(MAX_FRAME_DT);
         self.acc += dt;
@@ -266,6 +269,10 @@ impl App {
                 let a = self.lab_filter(a);
                 self.step_world(&a);
                 let out = self.run.tick(&mut self.world, TICK_DT);
+                if out == crate::stage::StageOut::Respawned {
+                    // 쉼터에서 다시 일어섰다(0032): 카메라를 그 자리로 바로(멀리서 날아오지 않게).
+                    self.cam = Camera::new(self.world.player.pos, &self.t);
+                }
                 if let Some(next) = flow::after_stage(out) {
                     self.ending = 0.0;
                     self.go(next);
@@ -602,6 +609,7 @@ impl App {
                         input::Bind::TurnRight => s.verb_turn_right,
                         input::Bind::Jump => s.verb_jump,
                         input::Bind::Flask => s.verb_flask,
+                        input::Bind::Interact => s.verb_interact,
                     };
                     self.ui
                         .text(name, x_name, y, 1.0, if sel { AMBER } else { INK });

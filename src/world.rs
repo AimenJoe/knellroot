@@ -270,6 +270,8 @@ pub struct World {
     plunge_now: bool,
     /// 이번 틱에 강공격이 다 모였다(`Event::Charged`를 `apply_strike`가 낸다).
     charged_now: bool,
+    /// 이번 틱에 상호작용을 눌렀고 손이 비어 있다(0032) — 스테이지가 읽는다(월드는 쉼터를 모른다).
+    pub interact: bool,
     /// 이번 틱에 등잔을 삼켰다·못 마셨다(사건은 `apply_strike`가 낸다).
     gulp_now: bool,
     flask_denied_now: bool,
@@ -322,6 +324,7 @@ impl World {
             held: Actions::default(),
             plunge_now: false,
             charged_now: false,
+            interact: false,
             gulp_now: false,
             flask_denied_now: false,
         }
@@ -456,6 +459,7 @@ impl World {
             ..*a
         };
         let a = &merged;
+        self.interact = a.interact && matches!(self.player.state, PState::Idle);
         self.time += dt;
         self.player.prev = self.player.pos;
         for e in &mut self.enemies {

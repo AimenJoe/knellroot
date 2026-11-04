@@ -20,6 +20,8 @@ pub enum Kind {
     Jump,
     /// 등잔(0031): 등잔 그림, 점프 위(돌리기 줄과 점프 사이).
     Flask,
+    /// 상호작용(0032): 쉼터 곁일 때만, 락온 위 — 모닥불 그림.
+    Interact,
     Lock,
     /// 땅 돌리기(0023): 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면.
     TurnLeft,
@@ -64,6 +66,8 @@ pub struct Read {
     pub jump: bool,
     /// 등잔(0031).
     pub flask: bool,
+    /// 상호작용(0032).
+    pub interact: bool,
     pub lock: bool,
     pub turn_right: bool,
     pub turn_left: bool,
@@ -110,6 +114,8 @@ pub struct Touch {
     repeat: Option<Repeat>,
     /// 공격 버튼을 짚은 손가락(강공격 모으기, 0030).
     attack_finger: Option<u64>,
+    /// 상호작용 버튼을 띄우나(0032, 앱이 정한다).
+    pub interact_shown: bool,
     /// 메뉴 모드: 손가락마다 (id, 처음 자리, 멀리 움직였나).
     taps: Vec<(u64, Vec2, bool)>,
 }
@@ -118,7 +124,7 @@ pub struct Touch {
 const TAP_SLOP: f32 = 24.0;
 
 /// 버튼 배치. `w`·`h`는 논리 px. 오른손 엄지가 쉬는 오른쪽 아래에 공격(지름 ≈ 짧은 변의 27%), 그 둘레에 회피·락온.
-pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool) -> Vec<Button> {
+pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool, interact: bool) -> Vec<Button> {
     let u = w.min(h);
     let r = u * 0.09;
     let atk_r = r * 1.5;
@@ -184,6 +190,15 @@ pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool) -> Vec<Button> {
             kind: Kind::TurnLeft,
         },
     ];
+    // 상호작용(0032): 쉼터 곁에서만 락온 위에 뜬다.
+    if interact {
+        let ir = r * 0.8;
+        b.push(Button {
+            center: vec2(lock.x, lock.y - (lock_r + ir + r * 0.6)),
+            radius: ir,
+            kind: Kind::Interact,
+        });
+    }
     // 멈춤: 오른쪽 위 끝(개발 버튼은 그 왼쪽으로).
     let s = r * 0.7;
     b.push(Button {
@@ -294,7 +309,7 @@ impl Touch {
             return a;
         }
         let (w, h) = (screen_width(), screen_height());
-        let buttons = layout(w, h, dev, lab_open);
+        let buttons = layout(w, h, dev, lab_open, self.interact_shown);
         for t in &touches {
             let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
             if !self.known.contains(&t.id) {
@@ -382,7 +397,7 @@ impl Touch {
         Overlay {
             stick: self.stick.map(|s| (s.origin, s.pos)),
             stick_radius: stick_radius(w, h),
-            buttons: layout(w, h, dev, lab_open),
+            buttons: layout(w, h, dev, lab_open, self.interact_shown),
         }
     }
 }
@@ -394,6 +409,7 @@ fn press(a: &mut Read, k: Kind) {
         Kind::Parry => a.parry = true,
         Kind::Jump => a.jump = true,
         Kind::Flask => a.flask = true,
+        Kind::Interact => a.interact = true,
         Kind::Lock => a.lock = true,
         Kind::TurnLeft => a.turn_left = true,
         Kind::TurnRight => a.turn_right = true,
@@ -540,6 +556,29 @@ fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
                 draw_line(p.x, p.y, q.x, q.y, th, col);
             }
         }
+        Kind::Interact => {
+            // 모닥불: 엇갈린 장작 둘 + 불꽃.
+            draw_line(
+                c.x - s * 0.7,
+                c.y + s * 0.75,
+                c.x + s * 0.7,
+                c.y + s * 0.35,
+                th,
+                col,
+            );
+            draw_line(
+                c.x + s * 0.7,
+                c.y + s * 0.75,
+                c.x - s * 0.7,
+                c.y + s * 0.35,
+                th,
+                col,
+            );
+            draw_line(c.x, c.y + s * 0.25, c.x - s * 0.4, c.y - s * 0.2, th, col);
+            draw_line(c.x - s * 0.4, c.y - s * 0.2, c.x, c.y - s * 0.85, th, col);
+            draw_line(c.x, c.y - s * 0.85, c.x + s * 0.4, c.y - s * 0.2, th, col);
+            draw_line(c.x + s * 0.4, c.y - s * 0.2, c.x, c.y + s * 0.25, th, col);
+        }
         Kind::Lock => {
             // 조준 고리 + 십자.
             draw_circle_lines(c.x, c.y, s * 0.7, th, col);
@@ -634,7 +673,7 @@ mod tests {
             (390.0, 844.0),
         ] {
             for lab in [false, true] {
-                let b = layout(w, h, true, lab);
+                let b = layout(w, h, true, lab, true);
                 for x in &b {
                     assert!(
                         x.center.x - x.radius >= 0.0 && x.center.x + x.radius <= w,
@@ -665,7 +704,7 @@ mod tests {
     #[test]
     fn attack_is_the_biggest_button_and_meets_the_minimum_touch_size() {
         // 플랫폼 최소 터치 크기 44pt(지름) — 가장 작은 가로 폰에서도.
-        let b = layout(667.0, 375.0, true, true);
+        let b = layout(667.0, 375.0, true, true, true);
         let atk = b.iter().find(|x| x.kind == Kind::Attack).unwrap();
         assert!(b.iter().all(|x| x.radius <= atk.radius));
         assert!(
@@ -685,7 +724,7 @@ mod tests {
         press(&mut a, Kind::TurnLeft);
         assert!(a.turn_left && !a.turn_right);
         // 오른쪽 버튼이 화면 오른쪽에 있다.
-        let b = layout(844.0, 390.0, false, false);
+        let b = layout(844.0, 390.0, false, false, false);
         let x = |k| b.iter().find(|x| x.kind == k).unwrap().center.x;
         assert!(x(Kind::TurnRight) > x(Kind::TurnLeft));
     }
