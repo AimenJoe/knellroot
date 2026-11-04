@@ -697,7 +697,11 @@ mod framing_tests {
         let px = ndc_x(&c.rig, player + Vec3::Y * 0.9);
         let bx = ndc_x(&c.rig, boss + Vec3::Y * 1.6);
         println!("player ndc x {px}, boss ndc x {bx}, rig {:?}", c.rig);
-        assert!(px < -0.15, "player should sit left of center: {px}");
+        // 0050: 조금만 왼쪽(사장: "너무 왼쪽으로 치우쳐 있어") — 가운데 가까이, 그래도 과녁을 덜 가리게 왼쪽.
+        assert!(
+            px < -0.05 && px > -0.2,
+            "player should sit a little left of center: {px}"
+        );
         assert!(bx > px, "target right of the player: {bx} vs {px}");
     }
 }
@@ -954,7 +958,10 @@ mod switch_probe {
         // 해제가 더 빨라(0010, exit 0.7) 최악은 해제 쪽 — 들어갈 때는 260°/s 안쪽.
         assert!(worst < 340.0, "turn max {worst}");
         // 0040: 어깨를 비켜 둔 만큼(1.6m) 먼 쪽으로 도는 전환이 길어져 1.8배 → 2.1배(최악 절대값은 위 340°/s 그대로).
-        assert!(worst < best * 2.1, "side matters too much: {best}..{worst}");
+        // 0050: 높이 4.5·어깨 0.8에서 최악은 258 → 237°/s로 줄었는데 가장 순한 쪽이 124 → 98°/s로 더 순해져 배수만 2.4가 됐다 —
+        // 배수 2.5 + 최악 260°/s(0040 때 값)로 본다.
+        assert!(worst < 260.0, "turn max {worst} (0040: 258)");
+        assert!(worst < best * 2.5, "side matters too much: {best}..{worst}");
         assert!(
             rows.iter().all(|r| r.3 > 4.0),
             "camera grazes the head: {rows:?}"

@@ -9,10 +9,15 @@
 //! 커지면 옛 텍스처가 지워져 WebGL 에러가 났다(`text.rs`, 2026-11-03).
 use macroquad::prelude::*;
 
-use crate::i18n::{self, Lang, Strings};
+use crate::i18n::{self, Strings};
 
 /// 본문 글 크기(UI 1배 = 480×270 기준 px, 0041). 명조라 픽셀 격자가 아니다 — 1배(480×270 창)에서도 읽히게 13.
 pub const GLYPH: f32 = 13.0;
+
+/// 글자 하나를 굽는 크기의 상한(물리 px, 0049). 더 크게 보일 글은 이 크기로 구워 `font_scale`로 늘린다.
+/// 화면 크기로 다 구우면 한글 수백 자 × 크기 셋이 아틀라스를 4096²~8192²로 키웠고, 폰 GPU(낮은 정밀도 uv)에서
+/// 글자가 검게 나왔다(KB `reference/macroquad/text-rendering-and-browser-frame-rate.md`). 1080p 본문(52px)은 그대로 굽는다.
+const BAKE_MAX: f32 = 56.0;
 
 pub struct Ui {
     font: Font,
@@ -106,22 +111,19 @@ impl Ui {
             return;
         }
         self.warmed = key;
+        // 본문(1배)만, 지금 언어의 표 글자 + ASCII만 미리 굽는다(0049). 큰 제목(굵게)은 글자가 적어 처음 그릴 때 굽는다 —
+        // 본문이 다 들어간 아틀라스에 자리가 남아 커지지 않는다(커지면 그 프레임의 글이 지운 텍스처를 본다, `text.rs`).
         let mut chars: Vec<char> = (32u8..127).map(char::from).collect();
-        for l in Lang::ALL {
-            for c in all_text(l.strings()).chars() {
-                if !chars.contains(&c) {
-                    chars.push(c);
-                }
+        for c in all_text(i18n::lang().strings()).chars() {
+            if !chars.contains(&c) {
+                chars.push(c);
             }
         }
+        let (fs, _) = self.sizing(1.0);
         let dpi = screen_dpi_scale();
-        for k in [1.0, 2.0, 3.0] {
-            let size = (self.px(k) * dpi).ceil() as u16;
-            self.font.populate_font_cache(&chars, size);
-            if k >= 2.0 {
-                self.bold.populate_font_cache(&chars, size);
-            }
-        }
+        // macroquad는 `ceil(font_size × dpi)`로 굽는다 — 그리는 크기와 같은 셈이어야 구운 것을 쓴다.
+        self.font
+            .populate_font_cache(&chars, (fs as f32 * dpi).ceil() as u16);
     }
 
     /// 큰 제목(2배 이상)은 굵게.
@@ -138,18 +140,25 @@ impl Ui {
         GLYPH * k * self.scale
     }
 
+    /// 굽는 크기(논리 px, 정수)와 늘리는 배(0049): 물리 px로 `BAKE_MAX`를 넘게 굽지 않는다.
+    fn sizing(&self, k: f32) -> (u16, f32) {
+        bake_size(self.px(k), screen_dpi_scale())
+    }
+
     fn params(&self, k: f32, color: Color) -> TextParams<'_> {
+        let (fs, scale) = self.sizing(k);
         TextParams {
             font: Some(self.face(k)),
-            font_size: self.px(k) as u16,
-            font_scale: 1.0,
+            font_size: fs,
+            font_scale: scale,
             color,
             ..Default::default()
         }
     }
 
     fn plain_w(&self, s: &str, k: f32) -> f32 {
-        measure_text(s, Some(self.face(k)), self.px(k) as u16, 1.0).width
+        let (fs, scale) = self.sizing(k);
+        measure_text(s, Some(self.face(k)), fs, scale).width
     }
 
     /// 글 폭(키캡이면 칸 여백까지).
@@ -357,6 +366,13 @@ pub fn hit(rects: &[Rect], p: Vec2) -> Option<usize> {
     rects.iter().position(|r| r.contains(p))
 }
 
+/// 논리 크기 `want`를 그릴 때 굽는 크기(논리 px, 정수)와 늘리는 배 — 굽는 물리 크기 ≤ `BAKE_MAX`.
+pub fn bake_size(want: f32, dpi: f32) -> (u16, f32) {
+    let cap = (BAKE_MAX / dpi.max(0.01)).floor().max(1.0);
+    let fs = want.round().clamp(1.0, cap);
+    (fs as u16, want / fs)
+}
+
 /// 표의 모든 글 + 기호(글자 굽기).
 pub fn all_text(s: &Strings) -> String {
     let mut v = i18n::all(s).concat();
@@ -367,6 +383,26 @@ pub fn all_text(s: &Strings) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0049: 굽는 물리 크기는 상한을 넘지 않고, 늘린 결과는 원하는 크기와 같다. 1080p 본문(52px)은 늘리지 않는다.
+    #[test]
+    fn glyphs_bake_small_and_scale_up() {
+        for (want, dpi) in [
+            (52.0, 1.0),
+            (104.0, 1.0),
+            (17.33, 3.0),
+            (34.7, 2.625),
+            (156.0, 1.0),
+        ] {
+            let (fs, k) = bake_size(want, dpi);
+            assert!(
+                (fs as f32 * dpi).ceil() <= BAKE_MAX + 1.0,
+                "{want} @ {dpi}: bakes {fs}"
+            );
+            assert!((fs as f32 * k - want).abs() < 1e-3);
+        }
+        assert_eq!(bake_size(52.0, 1.0), (52, 1.0));
+    }
 
     #[test]
     fn menu_cursor_wraps_both_ways() {

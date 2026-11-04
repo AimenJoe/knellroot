@@ -44,7 +44,8 @@ async function main() {
   await shot('00d-fight');
   await press('Escape'); await page.waitForTimeout(300); await shot('00e-pause');
   await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300);
-  await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(800); await shot('00f-gate');
+  // 타이틀: 시작·조작 설정·언어·전체 화면(0046)·DEV 문 앞·DEV 시나리오.
+  await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(800); await shot('00f-gate');
   await page.keyboard.down('KeyW'); await page.waitForTimeout(2200); await page.keyboard.up('KeyW');
   await page.waitForTimeout(800); await shot('00g-waking');
   await page.waitForTimeout(1500); await press('KeyL'); await page.waitForTimeout(900); await shot('00h-boss-lock');
@@ -54,7 +55,7 @@ async function main() {
   await press('Escape'); await page.waitForTimeout(200);
   // 개발 시나리오로(멈춤 → 타이틀로 → 다섯째 줄 "DEV: PoC scenarios").
   await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300);
-  await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(400);
+  await press('ArrowDown', 5); await press('Enter'); await page.waitForTimeout(400);
   // 1 보스 아레나: 쿼터뷰 → 앞으로 걷기 → 락온 → 전환 중·전환 뒤 → 공격 → 회피 → 해제.
   await page.keyboard.press('Digit1'); await page.waitForTimeout(400);
   await shot('01-quarter');

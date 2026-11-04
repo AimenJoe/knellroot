@@ -282,7 +282,7 @@ pub const SPECS: [Spec; 119] = [
         CamLHeight,
         "cam.lock.height",
         "CAM_L_HEIGHT",
-        3.0,
+        4.5,
         0.5,
         6.0,
         0.1
@@ -291,7 +291,7 @@ pub const SPECS: [Spec; 119] = [
         CamLShoulder,
         "cam.lock.shoulder",
         "CAM_L_SHOULDER",
-        1.6,
+        0.8,
         -2.0,
         2.0,
         0.1
@@ -318,7 +318,7 @@ pub const SPECS: [Spec; 119] = [
         CamLFrame,
         "cam.lock.frame x",
         "CAM_L_FRAME",
-        2.3,
+        1.0,
         -3.0,
         3.0,
         0.1
