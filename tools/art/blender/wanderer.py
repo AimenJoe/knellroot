@@ -13,65 +13,67 @@ NAME = "wanderer"
 
 def make():
     m = C.Model(NAME)
+    # 0036: 귀여운 파스텔 2.3등신 — 둥근 후드(고양이 귀 같은 두 혹)·보이는 얼굴(동그란 눈·볼)·작은 종 모양 망토·짧은 팔다리.
+    # 뼈 이름은 그대로(동작 표를 같이 쓴다), 자리만 작은 몸에 맞게. 동작의 위치 이동은 몸에 맞게 줄인다.
+    m.loc_scale = 0.62
     # 뼈(피벗). 오른쪽 = -X.
     m.bone("root", (0, 0, 0))
-    m.bone("body", (0, 0, 0.92), "root")
-    m.bone("head", (0, 0, 1.47), "body")
-    m.bone("arm_l", (0.27, 0, 1.40), "body")
-    m.bone("arm_r", (-0.27, 0, 1.40), "body")
-    m.bone("hand_r", (-0.30, -0.02, 0.84), "arm_r")
-    m.bone("leg_l", (0.11, 0, 0.88), "root")
-    m.bone("leg_r", (-0.11, 0, 0.88), "root")
-    m.bone("cloak", (0, 0.15, 1.38), "body")
+    m.bone("body", (0, 0, 0.42), "root")
+    m.bone("head", (0, 0, 0.86), "body")
+    m.bone("arm_l", (0.22, 0, 0.80), "body")
+    m.bone("arm_r", (-0.22, 0, 0.80), "body")
+    m.bone("hand_r", (-0.25, -0.02, 0.52), "arm_r")
+    m.bone("leg_l", (0.10, 0, 0.40), "root")
+    m.bone("leg_r", (-0.10, 0, 0.40), "root")
+    m.bone("cloak", (0, 0.13, 0.82), "body")
     # 0034: 왼손과 등잔(마실 때만 보인다).
-    m.bone("hand_l", (0.30, -0.01, 0.85), "arm_l")
-    m.bone("lamp", (0.30, -0.06, 0.80), "hand_l")
+    m.bone("hand_l", (0.25, -0.01, 0.52), "arm_l")
+    m.bone("lamp", (0.25, -0.06, 0.47), "hand_l")
     m.hide("lamp")
 
     g = m.geo("body_geo", "body")
-    g.box((0, 0, 1.17), (0.44, 0.28, 0.52), "slate", taper=(0.9, 0.92), drop=("-z",))  # 몸통 망토
-    g.box((0, 0, 0.97), (0.47, 0.31, 0.08), "brown", drop=("-z",))  # 띠
-    g.box((0, 0, 0.84), (0.42, 0.28, 0.20), "slate", taper=(0.95, 0.95))  # 허리 아래 자락
-    g.box((0.14, -0.16, 0.93), (0.09, 0.05, 0.10), "bone", drop=("-z", "+y"))  # 띠 주머니(뼈 장식)
-    g.box((0, 0.02, 1.37), (0.56, 0.36, 0.14), "charcoal", taper=(0.72, 0.8))  # 어깨 덧망토
-    g.box((0, -0.01, 1.45), (0.36, 0.30, 0.09), "teal", drop=("-z",))  # 목도리
-    g.box((0.10, -0.17, 1.27), (0.10, 0.04, 0.24), "teal", rot=(0, 8, 0), drop=("+y",))  # 목도리 끝
+    g.blob((0, 0, 0.63), (0.44, 0.36, 0.44), "p_cloak", r=0.55, taper=(0.74, 0.78))  # 종 모양 망토 몸
+    g.blob((0, 0, 0.47), (0.47, 0.39, 0.07), "p_belt", r=0.6, n=3)  # 허리띠
+    g.blob((0.12, -0.19, 0.46), (0.08, 0.05, 0.08), "p_cream", r=0.7, n=2)  # 띠 주머니
+    g.blob((0, -0.01, 0.84), (0.40, 0.34, 0.11), "p_scarf", r=0.6, n=3)  # 목도리
+    g.blob((0.11, -0.17, 0.72), (0.09, 0.05, 0.19), "p_scarf", r=0.6, n=3, rot=(0, 10, 0))  # 목도리 끝
 
     g = m.geo("head_geo", "head")
-    g.box((0, 0.01, 1.62), (0.34, 0.35, 0.31), "slate", taper=(0.7, 0.74), shift=(0, 0.035), drop=("-z",))  # 후드(위가 좁고 뒤로 기움)
-    g.box((0, 0.14, 1.71), (0.13, 0.14, 0.12), "slate", rot=(-35, 0, 0), taper=(0.6, 0.6))  # 후드 끝(뒤로 처짐)
-    g.box((0, -0.16, 1.73), (0.31, 0.06, 0.07), "charcoal")  # 후드 챙
-    g.box((0, -0.156, 1.59), (0.23, 0.04, 0.20), "shadow", drop=("+y",))  # 얼굴 그늘
-    g = m.geo("glow_eyes", "head")
-    for x in (0.05, -0.05):
-        g.box((x, -0.178, 1.615), (0.035, 0.02, 0.025), "ember", drop=("+y",))
+    g.blob((0, -0.08, 1.10), (0.46, 0.42, 0.40), "p_skin", r=0.95, n=4)  # 얼굴(둥글게, 후드보다 앞으로)
+    g.blob((0, 0.08, 1.20), (0.62, 0.50, 0.60), "p_hood", r=0.8, n=4)  # 후드(얼굴 뒤·위·옆을 감싼다)
+    for x in (0.17, -0.17):
+        g.blob((x, 0.05, 1.49), (0.13, 0.11, 0.15), "p_hood", r=0.8, n=3, rot=(0, 0, 0))  # 귀 같은 혹
+    g.blob((0, 0.27, 1.40), (0.15, 0.16, 0.15), "p_hood", r=0.8, n=3, rot=(-30, 0, 0))  # 후드 끝(뒤로 처짐)
+    for x in (0.09, -0.09):
+        g.blob((x, -0.285, 1.10), (0.075, 0.03, 0.10), "p_eye", r=0.95, n=2)  # 눈
+        g.box((x - 0.012 * (1 if x > 0 else -1), -0.302, 1.125), (0.025, 0.01, 0.03), "p_white", drop=("+y",))  # 눈빛
+        g.blob((x * 1.75, -0.262, 1.035), (0.075, 0.02, 0.035), "p_blush", r=0.9, n=2)  # 볼
 
     for side, sx in (("l", 1), ("r", -1)):
         g = m.geo(f"arm_{side}_geo", f"arm_{side}")
-        g.box((0.295 * sx, 0, 1.24), (0.13, 0.15, 0.32), "slate", taper=(0.9, 0.9))  # 소매
-        g.box((0.30 * sx, 0, 1.00), (0.11, 0.12, 0.24), "brown")  # 토시
-        g.box((0.30 * sx, -0.01, 0.85), (0.09, 0.10, 0.08), "charcoal", top=False)  # 장갑
+        g.blob((0.25 * sx, 0, 0.68), (0.13, 0.14, 0.27), "p_cloak", r=0.6, n=3, taper=(0.9, 0.9))  # 소매
+        g.blob((0.255 * sx, -0.01, 0.52), (0.115, 0.115, 0.10), "p_skin", r=0.95, n=3)  # 손(벙어리장갑처럼)
 
     g = m.geo("sword", "hand_r")
     y0 = -0.02
-    g.box((-0.30, y0 + 0.07, 0.84), (0.05, 0.04, 0.05), "steel")  # 칼자루 끝
-    g.box((-0.30, y0, 0.84), (0.035, 0.11, 0.035), "brown")  # 손잡이
-    g.box((-0.30, y0 - 0.07, 0.84), (0.17, 0.03, 0.045), "steel")  # 코등이
-    g.box((-0.30, y0 - 0.45, 0.84), (0.065, 0.72, 0.022), "steel")  # 칼날
-    g.box((-0.30, y0 - 0.86, 0.84), (0.065, 0.022, 0.10), "steel", rot=(90, 0, 0), taper=(0.15, 1))  # 칼끝
+    g.blob((-0.25, y0 + 0.06, 0.52), (0.05, 0.04, 0.05), "p_gold", r=0.9, n=2)  # 칼자루 끝 구슬
+    g.box((-0.25, y0, 0.52), (0.035, 0.09, 0.035), "p_boot")  # 손잡이
+    g.blob((-0.25, y0 - 0.06, 0.52), (0.16, 0.035, 0.05), "p_gold", r=0.8, n=2)  # 코등이
+    g.box((-0.25, y0 - 0.36, 0.52), (0.065, 0.54, 0.022), "p_steel")  # 칼날
+    g.box((-0.25, y0 - 0.67, 0.52), (0.065, 0.022, 0.09), "p_steel", rot=(90, 0, 0), taper=(0.15, 1))  # 칼끝
 
     for side, sx in (("l", 1), ("r", -1)):
         g = m.geo(f"leg_{side}_geo", f"leg_{side}")
-        g.box((0.11 * sx, 0, 0.62), (0.14, 0.16, 0.50), "charcoal", drop=("+z",))  # 바지
-        g.box((0.11 * sx, -0.03, 0.17), (0.16, 0.24, 0.34), "brown", drop=("-z",))  # 장화
+        g.blob((0.10 * sx, 0, 0.30), (0.14, 0.15, 0.22), "p_pants", r=0.5, n=2)  # 바지
+        g.blob((0.10 * sx, -0.025, 0.09), (0.17, 0.22, 0.18), "p_boot", r=0.55, n=3)  # 장화
 
     g = m.geo("lamp_geo", "lamp")
-    g.box((0.30, -0.07, 0.74), (0.10, 0.10, 0.10), "bone", taper=(0.75, 0.75))  # 등잔 몸(놋쇠빛)
+    g.blob((0.25, -0.07, 0.42), (0.10, 0.10, 0.10), "p_lamp", r=0.7, n=3, taper=(0.75, 0.75))  # 등잔 몸
     g = m.geo("glow_lamp", "lamp")
-    g.box((0.30, -0.07, 0.81), (0.04, 0.04, 0.06), "ember", taper=(0.4, 0.4))  # 불꽃
+    g.box((0.25, -0.07, 0.49), (0.04, 0.04, 0.06), "ember", taper=(0.4, 0.4))  # 불꽃
 
     g = m.geo("cloak_geo", "cloak")
-    g.box((0, 0.165, 1.00), (0.48, 0.06, 0.74), "slate", taper=(0.82, 1), drop=("+z",))  # 등 망토
+    g.blob((0, 0.17, 0.62), (0.40, 0.06, 0.42), "p_hood", r=0.5, n=3, taper=(0.8, 1))  # 등 망토
 
     m.build()
     acts(m)
@@ -294,7 +296,7 @@ def acts(m):
     ])
 
 
-PREVIEWS = [("idle", 0.0, ""), ("attack", 0.15, "_attack"), ("parry", 0.1, "_parry"),
+PREVIEWS = [("idle", 0.0, ""), ("idle", 0.0, "_front"), ("attack", 0.15, "_attack"), ("parry", 0.1, "_parry"),
             ("jump", 0.1, "_jump"), ("plunge", 0.06, "_plunge_up"), ("plunge", 0.29, "_plunge_down"),
             ("charge", 0.3, "_charge"), ("heavy", 0.18, "_heavy"),
             ("drink", 0.4, "_drink"), ("turn_r", 0.13, "_turn"), ("strafe_l", 0.15, "_strafe")]
@@ -305,7 +307,9 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, check_dir=None):
     m = make()
     path = m.export(models_dir)
     for act, t, suffix in PREVIEWS:
-        m.preview(os.path.join(preview_dir, f"{NAME}{suffix}.png"), act, t)
+        # 얼굴을 보려고 정면에 가깝게 한 장(0036).
+        kw = {"yaw": -8.0, "elev": 14.0} if suffix == "_front" else {}
+        m.preview(os.path.join(preview_dir, f"{NAME}{suffix}.png"), act, t, **kw)
     if check_dir:
         for act, t in CHECK:
             m.preview(os.path.join(check_dir, f"{NAME}_{act}_{int(t * 100):03d}.png"), act, t)

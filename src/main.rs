@@ -30,12 +30,18 @@ mod world;
 
 use macroquad::prelude::*;
 
-fn window_conf() -> Conf {
-    Conf {
-        window_title: "Knellroot".to_owned(),
-        window_width: 1280,
-        window_height: 720,
-        high_dpi: true,
+fn window_conf() -> macroquad::conf::Conf {
+    macroquad::conf::Conf {
+        miniquad_conf: Conf {
+            window_title: "Knellroot".to_owned(),
+            window_width: 1280,
+            window_height: 720,
+            high_dpi: true,
+            ..Default::default()
+        },
+        // 그리기 한 번의 인덱스 용량(0036): 기본 5,000은 둥근 방랑자 한 벌(≈ 7,800)보다 작아 넘친 부위(몸·다리)가 조용히 잘렸다.
+        // 정점 용량은 그대로(10,000). `render::MAX_DRAW_INDICES`와 같이 바꾼다.
+        draw_call_index_capacity: render::DRAW_CALL_INDICES,
         ..Default::default()
     }
 }

@@ -1019,8 +1019,10 @@ fn draw_haze(w: f32, h: f32, frac: f32) {
 /// macroquad는 그리기 호출 하나에 정점 10,000·색인 5,000 **미만**만 받고 넘치면 잘라 버린다
 /// (0.4.16 `quad_gl.rs` `geometry`, `Conf::draw_call_*_capacity` 기본값 — 처음엔 40마리를 한 덩어리로 보내 아무것도 안 그려졌다).
 /// 그래서 그 아래에서 끊어 보낸다. 텍스처가 바뀌어도 끊는다.
-const MAX_DRAW_VERTICES: usize = 10_000;
-const MAX_DRAW_INDICES: usize = 5_000;
+pub const MAX_DRAW_VERTICES: usize = 10_000;
+/// 창 설정의 그리기 인덱스 용량(`main.rs window_conf`, 0036 — 기본 5,000에서 올림).
+pub const DRAW_CALL_INDICES: usize = 15_000;
+pub const MAX_DRAW_INDICES: usize = DRAW_CALL_INDICES;
 
 #[derive(Default)]
 pub struct Batch {

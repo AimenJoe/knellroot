@@ -62,9 +62,9 @@ def mix(a, b, t):
 
 
 # ---------------------------------------------------------------- 아틀라스
-# 64×64. 위 절반(y 0..31, 위에서부터) = 8px 칸 8×4 — 재질마다 옆면 칸 + 윗면 칸(조금 밝게).
-# 아래 절반(y 32..63) = 16px 큰 칸 4×2 — 넓은 면(벽·문)용 재질 넷, 옆면 + 윗면.
-ATLAS = 64
+# 128×128(0036에서 64 → 128). 위(y 0..31, 위에서부터) = 8px 칸 16×4 — 재질마다 옆면 칸 + 윗면 칸(조금 밝게), 한 줄에 열여섯.
+# 그 아래(y 32..63) = 16px 큰 칸 4×2 — 넓은 면(벽·문)용 재질 넷, 옆면 + 윗면. 나머지는 빈 칸.
+ATLAS = 128
 # (이름, 색, 무늬). 무늬: noise·cloth·leather·speck·streak·glow·metal·flat·grain
 SMALL = [
     ("charcoal", PAL["charcoal"], "noise"),
@@ -85,6 +85,22 @@ SMALL = [
     # 후드 속 그늘: 숯빛보다 한 단계 더 어둡게, 무늬 없음.
     ("shadow", "#100f13", "flat"),
     ("wood", "#5e4a38", "grain"),
+    # 0036 파스텔(귀여운 쪽): 무늬·가장자리 그늘 없이 거의 단색(`soft`) — 블록 테두리가 마인크래프트처럼 보였다.
+    ("p_hood", "#b9a7e0", "soft"),
+    ("p_hood_in", "#8f7fbf", "soft"),
+    ("p_cloak", "#a6dcc6", "soft"),
+    ("p_scarf", "#f5b39b", "soft"),
+    ("p_skin", "#fde4d2", "soft"),
+    ("p_blush", "#f4a3b4", "soft"),
+    ("p_eye", "#3a2b45", "soft"),
+    ("p_white", "#fffaf3", "soft"),
+    ("p_boot", "#c79a80", "soft"),
+    ("p_pants", "#8f88bd", "soft"),
+    ("p_belt", "#ebc47c", "soft"),
+    ("p_steel", "#dde7f1", "soft"),
+    ("p_gold", "#f2cf7e", "soft"),
+    ("p_lamp", "#f0d9a6", "soft"),
+    ("p_cream", "#f6ead2", "soft"),
 ]
 # 큰 칸: blocks(돌 쌓기)·bark(뿌리 결)·door(널빤지 + 청동 띠)
 BIG = [
@@ -99,7 +115,7 @@ def _cell_rects():
     """재질 이름 → {'side': (x0, y0, size), 'top': (...)}(픽셀, 위에서부터)."""
     rects = {}
     for i, (name, _, _) in enumerate(SMALL):
-        cx, row = i % 8, (i // 8) * 2
+        cx, row = i % 16, (i // 16) * 2
         rects[name] = {"side": (cx * 8, row * 8, 8), "top": (cx * 8, (row + 1) * 8, 8)}
     for i, (name, _, _) in enumerate(BIG):
         cx, row = i % 2, i // 2
@@ -155,6 +171,8 @@ def _paint_cell(px, x0, y0, size, base, pattern, rng, top):
                 k = 1.0 + 0.02 * n
             elif pattern == "flat":
                 k = 1.0 + 0.015 * n
+            elif pattern == "soft":
+                k = 1.0 + 0.008 * n
             elif pattern == "blocks":
                 h = size // 2
                 course = y // h
@@ -181,7 +199,9 @@ def _paint_cell(px, x0, y0, size, base, pattern, rng, top):
                     if x % 5 == 2:
                         c = hexrgb(PAL["steel"])
                         k = 0.75
-            if edge and pattern != "glow":
+            if pattern == "soft":
+                pass
+            elif edge and pattern != "glow":
                 k *= 0.78
             elif edge:
                 k *= 0.88
@@ -190,7 +210,7 @@ def _paint_cell(px, x0, y0, size, base, pattern, rng, top):
 
 def atlas_pixels():
     """64×64 RGBA 행렬(위에서부터). 같은 입력이면 늘 같은 그림."""
-    px = [[(1.0, 0.0, 1.0)] * ATLAS for _ in range(ATLAS)]
+    px = [[(0.5, 0.5, 0.5)] * ATLAS for _ in range(ATLAS)]
     for name, col, pat in SMALL + BIG:
         rng = random.Random(sum(map(ord, name)) * 7919)
         x0, y0, s = RECTS[name]["side"]
@@ -251,7 +271,7 @@ class Geo:
     def __init__(self, name, bone=None):
         self.name = name
         self.bone = bone
-        self.quads = []  # (네 점, 네 UV)
+        self.quads = []  # (네 점, 네 UV, 부드럽게)
 
     def box(self, c, s, mat, rot=(0, 0, 0), taper=(1, 1), shift=(0, 0), drop=(), pivot=None, top=True):
         """c 가운데, s 크기(x,y,z). taper = 윗면(+z) 크기 배율, shift = 윗면을 x·y로 민다(기운 상자).
@@ -280,7 +300,54 @@ class Geo:
             u0, v0, u1, v1 = cell_uv(mat, face)
             pts = [corner(*k) for k in corners]
             uvs = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
-            self.quads.append((pts, uvs))
+            self.quads.append((pts, uvs, False))
+        return self
+
+    def blob(self, c, s, mat, r=0.5, n=4, rot=(0, 0, 0), pivot=None, taper=(1, 1), drop_bottom=False):
+        """둥근 덩어리(0036): 크기 s 상자의 모서리를 반지름 `r × (가장 짧은 반폭)`으로 굴린 것(r 1 ≈ 공·알약). 면마다 n×n 격자,
+        정점을 이웃 면과 함께 써서 음영이 매끈하다(부드러운 법선). 색은 칸 가운데 하나(파스텔 `soft` 칸과 쓴다).
+        taper = 윗면(+z) 쪽 x·y 배율(아래에서 위로 고르게), drop_bottom = 아래 면 빼기."""
+        hx, hy, hz = (v * 0.5 for v in s)
+        rr = min(hx, hy, hz) * max(0.0, min(1.0, r))
+        inner = (hx - rr, hy - rr, hz - rr)
+        R = Euler([math.radians(a) for a in rot], "XYZ").to_matrix()
+        cv = Vector(c)
+        pv = Vector(pivot) if pivot is not None else cv
+        x0, y0, sz = RECTS[mat]["side"]
+        uv = ((x0 + sz / 2) / ATLAS, 1.0 - (y0 + sz / 2) / ATLAS)
+
+        def at(p):
+            q = [max(-inner[i], min(inner[i], p[i])) for i in range(3)]
+            d = Vector((p[0] - q[0], p[1] - q[1], p[2] - q[2]))
+            if d.length > 1e-9:
+                d = d.normalized() * rr
+            v = Vector(q) + d
+            k = (v.z + hz) / (2 * hz) if hz > 0 else 0.0
+            v.x *= 1 + (taper[0] - 1) * k
+            v.y *= 1 + (taper[1] - 1) * k
+            return pv + R @ (cv + v - pv)
+
+        # 모서리 가까이 촘촘히(사인 간격) — 둥근 곳에 점이 모이게.
+        ts = [math.sin(math.pi / 2 * (2 * i / n - 1)) for i in range(n + 1)]
+        half = (hx, hy, hz)
+        for axis in range(3):
+            for sign in (-1, 1):
+                if drop_bottom and axis == 2 and sign < 0:
+                    continue
+                a1, a2 = [i for i in range(3) if i != axis]
+                for i in range(n):
+                    for j in range(n):
+                        quad = []
+                        for di, dj in ((0, 0), (1, 0), (1, 1), (0, 1)):
+                            p = [0.0, 0.0, 0.0]
+                            p[axis] = sign * half[axis]
+                            p[a1] = ts[i + di] * half[a1]
+                            p[a2] = ts[j + dj] * half[a2]
+                            quad.append(at(p))
+                        # 바깥에서 보아 반시계가 되게 — `_FACES`와 같은 감김(+x·+z·−y는 그대로, 나머지는 뒤집기).
+                        if (sign > 0) == (axis == 1):
+                            quad.reverse()
+                        self.quads.append((quad, [uv] * 4, True))
         return self
 
     def verts(self):
@@ -291,10 +358,25 @@ def geo_object(geo, mat):
     me = bpy.data.meshes.new(geo.name)
     bm = bmesh.new()
     uvl = bm.loops.layers.uv.new("UVMap")
-    for pts, uvs in geo.quads:
-        vs = [bm.verts.new(p) for p in pts]
-        f = bm.faces.new(vs)
-        f.smooth = False
+    shared = {}
+    for pts, uvs, smooth in geo.quads:
+        if smooth:
+            # 둥근 덩어리는 정점을 같이 쓴다(매끈한 법선). 같은 자리 = 같은 정점.
+            vs = []
+            for p in pts:
+                key = (round(p[0], 5), round(p[1], 5), round(p[2], 5))
+                if key not in shared:
+                    shared[key] = bm.verts.new(p)
+                vs.append(shared[key])
+            if len(set(vs)) < 4:
+                continue
+        else:
+            vs = [bm.verts.new(p) for p in pts]
+        try:
+            f = bm.faces.new(vs)
+        except ValueError:
+            continue
+        f.smooth = smooth
         for loop, uv in zip(f.loops, uvs):
             loop[uvl].uv = uv
     bm.to_mesh(me)
@@ -329,6 +411,8 @@ class Model:
         self.actions = []
         # 평소엔 크기 0으로 숨는 뼈(손에 드는 소품 — 그 동작만 's': 1로 꺼낸다).
         self.hidden = set()
+        # 동작의 'l'(위치) 배율 — 몸이 작아져도 같은 동작 표를 쓴다(0036 방랑자 2.3등신: 웅크림이 땅을 뚫지 않게).
+        self.loc_scale = 1.0
 
     # --- 만들기
     def bone(self, name, head, parent=None):
@@ -402,7 +486,7 @@ class Model:
             for t, pose in ks:
                 f = int(round(t * FPS))
                 r = pose.get("r", rest["r"])
-                l = pose.get("l", rest["l"])
+                l = tuple(v * self.loc_scale for v in pose.get("l", rest["l"]))
                 s = pose.get("s", 0.0 if bn in self.hidden else rest["s"])
                 Rw = Euler([math.radians(a) for a in r], "XYZ").to_matrix()
                 q = (Rbi @ Rw @ Rb).to_quaternion()

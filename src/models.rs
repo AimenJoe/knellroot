@@ -75,6 +75,19 @@ impl Library {
 mod tests {
     use super::*;
 
+    /// 0036: 모델 한 벌이 그리기 한 번의 용량 안에 든다 — 넘치면 macroquad가 조용히 잘라 뒤쪽 부위가 사라진다
+    /// (둥근 방랑자의 몸·다리가 그랬다, 인덱스 ≈ 7,800 > 기본 5,000).
+    #[test]
+    fn every_bundled_model_fits_one_draw_call() {
+        for (name, bytes) in FILES {
+            let m = Model::from_bytes(bytes).unwrap();
+            let v: usize = m.meshes.iter().map(|x| x.pos.len()).sum();
+            let i: usize = m.meshes.iter().map(|x| x.idx.len()).sum();
+            assert!(v < crate::render::MAX_DRAW_VERTICES, "{name}: {v} vertices");
+            assert!(i < crate::render::MAX_DRAW_INDICES, "{name}: {i} indices");
+        }
+    }
+
     /// 들어 있는 모든 모델이 읽히고, 동작 길이가 0보다 크다(Blender에서 내보낸 꼴이 로더와 맞는지).
     #[test]
     fn every_bundled_model_parses() {
