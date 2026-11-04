@@ -201,6 +201,8 @@ pub struct Player {
     pub since_spill: f32,
     /// 마지막 패링 성공에서 지난 초(렌더의 번쩍임).
     pub since_parry: f32,
+    /// 공격 버튼을 한 번 누른 뒤 놓지 않고 쥔 시간(초, 0030). 연타 중 휘두르기 도중에 누른 짧은 누름이 모으기로 새지 않게.
+    pub attack_hold: f32,
     /// 땅에서 뜬 높이(m)와 위 속도(0027). 충돌·카메라는 땅 자리(`pos`, y = 0)를 쓰고 렌더만 띄운다.
     pub air: f32,
     pub vy: f32,
@@ -276,6 +278,7 @@ impl World {
                 stun_chain: 0,
                 since_spill: f32::MAX,
                 since_parry: f32::MAX,
+                attack_hold: 0.0,
                 air: 0.0,
                 vy: 0.0,
                 swings: 0,
@@ -575,6 +578,12 @@ impl World {
             }
         };
         pl.turn_cd = (pl.turn_cd - dt).max(0.0);
+        // 새 누름이면 0부터, 쥐고 있으면 늘고, 놓으면 0.
+        pl.attack_hold = if a.attack || !a.attack_held {
+            0.0
+        } else {
+            pl.attack_hold + dt
+        };
         pl.since_spill = (pl.since_spill + dt).min(f32::MAX);
         let world_move = move_to_world(a.move_dir, basis, pl.pos);
         // 땅 돌리기(0012): 쿼터뷰에서만, 서 있거나 스윙 후딜레이(회피와 같은 캔슬 자리)에서. ↻이 ↺보다 먼저(둘 다면 하나만).
@@ -687,8 +696,12 @@ impl World {
                         pl.facing = d.x.atan2(d.z);
                     }
                     pl.state = PState::Parry { t: 0.0 };
-                } else if a.attack_held && e >= t[P::AttackStartup] + t[P::AttackActive] {
-                    // 강공격(0030): 평타는 누르는 순간 나갔고, 활성이 끝날 때까지 쥐고 있으면 모으기로(톡 누름 0.08~0.15초는 이보다 짧다).
+                } else if a.attack_held
+                    && pl.attack_hold >= t[P::HeavyHoldStart]
+                    && e >= t[P::AttackStartup] + t[P::AttackActive]
+                {
+                    // 강공격(0030): 평타는 누르는 순간 나갔고, 한 번 누른 채 `heavy.hold start s`를 쥐고 있으면(활성이 끝난 뒤) 모으기로.
+                    // "그 순간 눌려 있나"만 보면 연타 중 휘두르기 도중의 짧은 누름이 활성 끝에 걸려 모으기로 샜다.
                     pl.state = PState::Charging { t: 0.0 };
                 } else if e + dt >= total {
                     pl.state = PState::Idle;
@@ -2287,7 +2300,9 @@ mod tests {
     #[test]
     fn holding_charges_and_letting_go_always_swings_a_heavy() {
         let t = Tuning::default();
-        let into = ((t[P::AttackStartup] + t[P::AttackActive]) / TICK_DT).ceil() as usize + 1;
+        let into = ((t[P::AttackStartup] + t[P::AttackActive]).max(t[P::HeavyHoldStart]) / TICK_DT)
+            .ceil() as usize
+            + 1;
         let full = (t[P::HeavyCharge] / TICK_DT).ceil() as usize;
         for (extra, want_full) in [(3, false), (full + 5, true)] {
             let mut w = World::new("test", 20.0);
@@ -2382,11 +2397,50 @@ mod tests {
         }
     }
 
+    /// 0030(사장 "급하면 막 연타할텐데"): 연타는 모으기로 새지 않는다 — 누름 길이 1~9틱(≤0.15초) × 사이 2~14틱,
+    /// 누르는 때가 휘두르기의 어느 자리에 걸리든. 예전(쥐고 있나만 봄)엔 휘두르기 도중의 짧은 누름이 활성 끝에 걸려 강타가 나갔다.
+    #[test]
+    fn mashing_never_charges_a_heavy() {
+        let t = Tuning::default();
+        for press in 1..=9usize {
+            for gap in 2..=14usize {
+                let mut w = World::new("test", 20.0);
+                let period = press + gap;
+                let mut swings = 0;
+                for i in 0..240 {
+                    let k = i % period;
+                    w.player.stamina = 100.0; // 스태미나가 바닥나 멈추지 않게(연타만 본다)
+                    w.step(
+                        &Actions {
+                            attack: k == 0,
+                            attack_held: k < press,
+                            ..Default::default()
+                        },
+                        &t,
+                    );
+                    assert!(
+                        !matches!(
+                            w.player.state,
+                            PState::Charging { .. } | PState::Heavy { .. }
+                        ),
+                        "press {press} gap {gap} tick {i}"
+                    );
+                    if matches!(w.player.state, PState::Attack { t: e, .. } if e == 0.0) {
+                        swings += 1;
+                    }
+                }
+                assert!(swings >= 3, "press {press} gap {gap}: {swings} swings");
+            }
+        }
+    }
+
     /// 0030: 모으는 중에도 회피로 끊는다(강타는 나가지 않는다).
     #[test]
     fn a_dodge_cancels_the_charge() {
         let t = Tuning::default();
-        let into = ((t[P::AttackStartup] + t[P::AttackActive]) / TICK_DT).ceil() as usize + 1;
+        let into = ((t[P::AttackStartup] + t[P::AttackActive]).max(t[P::HeavyHoldStart]) / TICK_DT)
+            .ceil() as usize
+            + 1;
         let mut w = World::new("test", 20.0);
         hold_attack(&mut w, &t, into + 5, 0);
         assert!(matches!(w.player.state, PState::Charging { .. }));
@@ -2407,8 +2461,7 @@ mod tests {
     fn a_full_heavy_pays_back_the_time_it_takes() {
         let t = Tuning::default();
         let light = t[P::AttackStartup] + t[P::AttackActive] + t[P::AttackRecovery];
-        let heavy_time = t[P::AttackStartup]
-            + t[P::AttackActive]
+        let heavy_time = (t[P::AttackStartup] + t[P::AttackActive]).max(t[P::HeavyHoldStart])
             + t[P::HeavyCharge]
             + t[P::HeavyStartup]
             + t[P::HeavyActive]

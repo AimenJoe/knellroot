@@ -129,6 +129,7 @@ pub enum P {
     HeavyStagger,
     HeavyBossStagger,
     HeavyStamina,
+    HeavyHoldStart,
     RenderModel,
 }
 
@@ -159,7 +160,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 94] = [
+pub const SPECS: [Spec; 95] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -896,6 +897,16 @@ pub const SPECS: [Spec; 94] = [
         0.0,
         60.0,
         1.0
+    ),
+    // 한 번 누른 채 이만큼 쥐어야 모으기로(0030). 사람 톡 누름 0.08~0.15초(KB)보다 넉넉히 — 연타가 새지 않게.
+    spec!(
+        HeavyHoldStart,
+        "heavy.hold start s",
+        "HEAVY_HOLD_START",
+        0.25,
+        0.1,
+        0.6,
+        0.01
     ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(

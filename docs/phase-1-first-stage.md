@@ -35,7 +35,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 키 배치·다시 붙이기(0024) | `input.rs` `Bindings`·`KEYS`·`Pad`, `app/controls.rs`, `prefs.rs`, web/index.html | 소울라이크식(회피 B·Space, 패링 LB·K, 돌리기 LT·RT·Q·E, 락온 R3·L), 공격만 X·J. 타이틀·멈춤의 "조작 설정"에서 바꾸고 언어와 함께 저장 |
 | 패링(0025) | `world.rs` `PState::Parry`·`tick_enemies`, `enemy.rs` `exposed`·`parryable`, `render.rs` | 창 0.18초·앞쪽 근접만·헛치면 0.5초 묶임·스태미나 15. 튕기면 휘청 + 드러남(다음 한 대 치명타 +2). 파동은 못 받음(예고 가운데 X). 터치 방패 버튼 |
 | 점프·내려찍기(0027) | `world.rs` `PState::Jump`·`Land`·`plunge`, `tuning.rs` `Jump*`·`Plunge*`, `render.rs`, `wanderer.py` | A / F. 높이 0.9m·체공 0.55초(탄도 정확 적분)·스태미나 12, 뛰기 전 속도를 잇고 조종 ×0.3. 0.35m 위면 뿌리 파동을 넘음(무적은 없음). 공중 공격 = 내려찍기(×2.5로 떨어져 둘레 1.6m에 2, 착지 빈틈 0.35초). 그림자가 높이로 작아짐. 소모품 퀵슬롯은 뺌 |
-| 강공격(0030) | `world.rs` `PState::Charging`·`Heavy`·`Strike`, `input.rs` `attack_held`, `touch.rs`, `tuning.rs` `Heavy*`, `wanderer.py` charge·heavy | 평타는 누르는 순간, 활성 끝(0.18초)까지 쥐면 모으기, 떼면 늘 강타. 다 모으면(0.5초) 피해 3·잡몹 휘청 0.8초·보스 0.25초, 덜 모으면 2·0.4초. 범위 2.2·160°·넉백 ×2. 발밑 고리가 차오르고 다 차면 금빛 깜빡. 등잔 마시기는 RB / R로(설계) |
+| 강공격(0030) | `world.rs` `PState::Charging`·`Heavy`·`Strike`, `input.rs` `attack_held`, `touch.rs`, `tuning.rs` `Heavy*`, `wanderer.py` charge·heavy | 평타는 누르는 순간, 한 번 누른 채 0.25초 쥐면 모으기(연타는 새지 않음), 떼면 늘 강타. 다 모으면(0.5초) 피해 3·잡몹 휘청 0.8초·보스 0.25초, 덜 모으면 2·0.4초. 범위 2.2·160°·넉백 ×2. 발밑 고리가 차오르고 다 차면 금빛 깜빡. 등잔 마시기는 RB / R로(설계) |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
