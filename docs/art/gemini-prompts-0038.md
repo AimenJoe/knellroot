@@ -154,26 +154,45 @@ warm amber core — the brightest thing on it. Long heavy arms in the A-pose, th
 stone club. Two small amber eye slits. Imposing but with a gentle, sleepy face.
 ```
 
-### 잠들지 않는 문지기 — 0061 판(t3ssel8r 풍, 2026-11-05 — 위 판 대신 이것)
-> 0060 W3 첫 차례. 바뀐 것: 둥근 돌 → **면이 또렷한 각진 돌**(0061 체크리스트 1·3: 툰 띠와 밝은 모서리 선이 면·볼록 모서리에서 나온다, 0037: 뿌리에 먹힌 것은 각졌다).
-> 크기: 방랑자 키의 약 3배 → 쿼터뷰 약 60px·락온 약 150px(방랑자 20·50px 기준). 얼굴은 60px에서 호박색 눈 틈 둘 + 가슴 핵 하나만 남으면 된다.
-> 받은 정면을 `python3 tools/art/tiny_preview.py <그림>`으로 60px에서 보고, 핵·눈·뿌리 왕관이 안 남으면 "make X bigger".
+### 잠들지 않는 문지기 — 0061 판 v2(귀여운 둥근 돌, 2026-11-05 — 위 판들 대신 이것)
+> v1(각진 돌 블록 + 작은 머리 + 지금 상자 모델 참조)은 사장 판정 "덜 귀여워" — 마인크래프트식 골렘이 나왔다. 원인: 공통 덩어리의 2등신·큰 머리를 예외로 꺼 버렸고, 상자 모델 참조가 블록 쪽으로 끌었다(0036: 상자 + 면 법선 = 마인크래프트 인상).
+> v2: **귀여움 문법이 먼저**(머리 = 키의 반, 큰 눈 낮게, 입 없음, 둥근 실루엣), t3ssel8r 결은 "큰 면 몇 개로 된 둥근 조약돌"로, 뾰족한 것은 뿌리만(0037).
+> 참조 이미지: `docs/art/meshy-0038/wanderer_front.png`(방랑자 — 같은 세계의 귀여움 문법), 상자 문지기 그림은 붙이지 않는다.
 ```
-[CHARACTER] The "sleepless warden": a big heavy guardian about three times the raccoon cub's height, built from a few
-big chunky FACETED stone blocks: large flat planes with crisp straight edges and slightly chamfered corners, like
-low-poly carved stone (soft indigo-grey stone in 2 flat tones, one lighter tone painted along the top edges,
-simple painted seams between blocks, no fine cracks, no noise). Broad blocky shoulders, a small block head sunk
-between them. A crown of thick angular dark-purple roots grows from its head and runs down both shoulders — sharp,
-faceted, clearly readable in silhouette. In the middle of its chest, a LARGE glowing warm amber core set in a
-diamond-shaped socket — the brightest thing on it. Long heavy arms in the A-pose, the right one ending in a big
-blocky stone club with flat faces. Two small amber eye slits. Imposing, ancient and calm, with a sleepy face.
-EXCEPTIONS to the rules above, for this boss only: it is NOT 2 heads tall and does NOT have a big head — a big
-heavy body with a small head; it is about 60 to 150 pixels tall on screen, not 20 to 50; the club is part of its
-right arm (carved from the same stone), not something held, so the hands rule does not apply.
+Attached: our player character, a raccoon cub. Do NOT draw the raccoon. Draw a DIFFERENT character in the same cute
+style and proportion grammar: big head, big eyes set low, no mouth, chunky rounded limbs, soft simple shapes.
+
+[PURPOSE] One reference image for an image-to-3D tool. The 3D model will be shown small in a retro
+low-resolution game (this boss is about 60 to 150 pixels tall on screen, rendered with pixel-art style toon
+lighting and 1-pixel outlines added by the game). So design it to READ AT SMALL SIZE.
+Render ONE character only, full body, centered, straight front view, neutral A-pose: standing straight, legs
+slightly apart, arms down and out about 30 degrees so they don't touch the body.
+Style: a stylized low-poly 3D game model with a hand-painted texture. Few big simple forms, chunky and
+exaggerated proportions, a strong clear silhouette. Details are PAINTED as large flat color areas, not sculpted.
+Each material uses only 2 or 3 flat tones. No texture noise, no small patterns, no tiny accessories.
+Lighting: flat, even and shadowless, like an unlit model; at most a very faint ambient occlusion. No highlights
+except painted eye highlights. No outlines. NOT pixel art, NOT voxel, NOT Minecraft-like. No floor, no pedestal,
+no text, no logo. Pure plain white background. Square image, the character fills about 80% of the height.
+
+[WORLD RULES] "Color is life." Living things are soft pastel and warm (lavender, mint, peach, cream, a little gold),
+with smooth rounded forms. Things eaten by the purple roots have lost their color: faded ash-lavender grey, and the
+dark purple roots growing out of them are the only sharp, angular, faceted shapes. Danger is the only red.
+Cute proportions: big head, big eyes set LOW on the face and close together, NO mouth, short chubby arms and legs,
+round mitten paws.
+
+[CHARACTER] The "sleepless warden": a big, round, sleepy stone guardian, like a giant chubby pebble creature that
+fell asleep guarding a door. About three times the raccoon cub's height. Cute boss proportions: a huge round head
+merged into a round bean-shaped body (the head is about half of its height), very short stubby legs, short thick
+arms ending in big round stone mittens — the right mitten is bigger and heavier, made for slamming the ground.
+Its stone is made of a FEW big gently faceted planes, like a polished low-poly river pebble: a ROUNDED silhouette,
+NOT bricks, NOT square blocks, NOT a robot. Faded ash-lavender grey stone in 2 flat tones (its color was drained).
+Face: two big round glowing amber eyes set LOW and close together, with heavy sleepy half-closed stone eyelids,
+no mouth, two tiny teal moss patches like blush under the eyes. On top of its head, a small crown of angular
+dark-purple roots like little antlers (the only sharp shapes), and one thin root vine draped across its body like
+a crack. On its round belly, a big glowing warm amber core in a diamond-shaped socket — the brightest thing on it.
+Imposing because of its size and weight, but cute enough that you want to hug it.
 ```
-- 참조 이미지(권장): `docs/art/previews/gatekeeper.png`(지금 게임 모델) — 색·부위(가슴 핵·뿌리·이끼 낀 어깨)를 맞추는 용. 붙일 때 맨 앞에 "Attached: the current low-poly model of this character in our game. Keep its colors and parts (amber chest core, purple roots, mossy teal shoulder tops), but redesign the shapes as described below." 한 줄.
-- Meshy: 위 "순서" 그대로(Multi-view 정면·옆·뒤, Texture base color, PBR 끔, Triangle 3~5k, Symmetry, A-pose, GLB). **Smooth/부드럽게 다듬는 옵션은 끈다**(면이 뭉개진다).
-- 받은 뒤(Claude): 면 수를 줄이고 **면마다 평평한 법선**, 부위 자르기(몸·머리·팔 둘·곤봉·핵 `glow_core`·뿌리 왕관), 지금 문지기 동작(내려치기·돌진·파동·깨어남)을 옮긴다. 판정은 게임 안 쿼터뷰·락온 스크린숏.
+- 나머지는 v1과 같다: 60px로 줄여 보기 → 뒤·옆 → Meshy(부드럽게 끔 — 다만 이번엔 둥근 조약돌이라 결과가 너무 매끈하면 "faceted"를 더 세게).
 
 ### 뒤·옆 (같은 대화에서 정면을 받은 뒤)
 ```
