@@ -1,4 +1,10 @@
-"""잠들지 않는 문지기(첫 보스, 키 3.2m): 뿌리에 감긴 돌 갑옷의 수호자. 가슴의 큰 호박빛 핵(glow_core, 뼈 `core`에 따로 —
+"""잠들지 않는 문지기(첫 보스, 키 3.2m).
+
+0060 W3·0061(2026-11-05): 몸은 Meshy(AI) 모델 v2 "졸린 조약돌" — 나노바나나 그림(`tools/art/sources/ai/knellroot/warden_v2_*.png`) →
+Meshy 7.1 Image to 3D(무료, CC BY 4.0) → `meshy_convert.py ... 3.2 2200 256`(줄이기 + 새 UV + 색 굽기) → 여기서 면 자리로 부위를 잘라
+옛 뼈·동작에 붙인다. 핵(`glow_core`)·눈(`glow_eyes`)은 따로 잘라 스스로 빛나게. 옛 상자 문지기는 `make_blocks()`(되돌리기·비교용).
+
+옛 설명(상자 문지기): 뿌리에 감긴 돌 갑옷의 수호자. 가슴의 큰 호박빛 핵(glow_core, 뼈 `core`에 따로 —
 게임이 체력 반 아래에서 밝게 할 수 있다), 오른손에 돌판 몽둥이(뼈 `club`), 작은 머리에 눈(glow_eyes).
 
 명세 뼈(root·body·head·arm_l·arm_r·leg_l·leg_r·core)에 무릎 뼈 shin_l·shin_r와 손목 뼈 club을 더했다 —
@@ -14,8 +20,105 @@ import common as C  # noqa: E402
 
 NAME = "gatekeeper"
 
+MESHY_LOW = os.path.join(C.REPO, "tools", "art", "sources", "meshy", "warden_v2_low.glb")
+# 부위 이름 → 뼈(옛 동작 표의 뼈 그대로 — 오른쪽 큰 주먹이 옛 몽둥이 뼈 `club`).
+MESHY_PARTS = {"head_geo": "head", "body_geo": "body", "arm_l_geo": "arm_l", "arm_r_geo": "arm_r", "club_geo": "club",
+               "leg_l_geo": "leg_l", "leg_r_geo": "leg_r", "shin_l_geo": "shin_l", "shin_r_geo": "shin_r",
+               "glow_core": "core", "glow_eyes": "head"}
+# 치수(키 3.2m, 앞 = -Y, 캐릭터 왼쪽 = +X) — 정면·옆 직교 렌더에 눈금을 그어 잰 것.
+NECK_Z = 1.70  # 머리(뿌리 왕관 포함) 아래 끝
+HIP_Z = 0.36  # 다리 위 끝
+FOOT_Z = 0.14  # 발(정강이 뼈 — 무릎 꿇기·걸음에 따로 움직인다)
+SHOULDER = (1.02, 0.12, 1.56)
+WRIST = (1.24, 0.10, 0.80)  # 이 아래가 주먹(오른쪽 = `club`)
+HAND = (1.30, 0.08, 0.45)
+ARM_R = 0.40
+EYE = (0.40, 2.21)  # 눈 가운데(±x, z) — 앞면만
+EYE_R = (0.17, 0.11)
+CORE = (0.0, 1.12)  # 배 핵 마름모 가운데(x, z) — 반 너비·반 높이
+CORE_R = (0.28, 0.36)
+
+
+def _seg_dist(p, a, b):
+    from mathutils import Vector
+    a, b = Vector(a), Vector(b)
+    ab = b - a
+    t = max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
+    return (p - (a + ab * t)).length
+
+
+def classify(c):
+    """면 가운데 자리 → 부위."""
+    from mathutils import Vector
+    x, y, z = c.x, c.y, c.z
+    ax = abs(x)
+    if z > NECK_Z:
+        ex, ez = EYE
+        rx, rz = EYE_R
+        if y < -0.5 and ((ax - ex) / rx) ** 2 + ((z - ez) / rz) ** 2 <= 1.0:
+            return "glow_eyes"
+        return "head_geo"
+    sx, sy, sz = SHOULDER
+    hx, hy, hz = HAND
+    p = Vector((ax, y, z))
+    if ax > 0.9 and _seg_dist(p, (sx, sy, sz), (hx, hy, hz)) < ARM_R:
+        side = "l" if x > 0 else "r"
+        if side == "r" and z < WRIST[2]:
+            return "club_geo"
+        return f"arm_{side}_geo"
+    if z < HIP_Z and ax < 0.85:
+        side = "l" if x > 0 else "r"
+        return f"shin_{side}_geo" if z < FOOT_Z else f"leg_{side}_geo"
+    cx, cz = CORE
+    rx, rz = CORE_R
+    if y < -0.4 and abs(x - cx) / rx + abs(z - cz) / rz <= 1.0:
+        return "glow_core"
+    return "body_geo"
+
+
+STONE_K = 0.72  # 돌(채도 낮은 칸)만 이만큼 어둡게 — Meshy 색이 밝은 회색이라 해 질 녘 성소에서 혼자 하얗게 떴다(0037: 바랜 잿빛 라벤더)
+STONE_SAT = 0.18  # 이보다 채도가 낮으면 돌로 본다(호박색 눈·핵, 이끼, 보라 뿌리는 그대로)
+
+
+def darken_stone(img):
+    """바깥 텍스처의 돌 칸만 어둡게(원본 파일은 그대로 — 게임용 사본만)."""
+    import numpy as np
+    px = np.array(img.pixels[:], dtype=np.float32).reshape(-1, 4)
+    rgb = px[:, :3]
+    mx, mn = rgb.max(axis=1), rgb.min(axis=1)
+    sat = np.where(mx > 1e-4, (mx - mn) / np.maximum(mx, 1e-4), 0.0)
+    stone = sat < STONE_SAT
+    rgb[stone] *= STONE_K
+    px[:, :3] = rgb
+    img.pixels.foreach_set(px.ravel())
+    img.update()
+
 
 def make():
+    """0060 W3: Meshy 몸(졸린 조약돌), 뼈 이름·동작 표는 옛 문지기 그대로 — 뼈 자리만 새 비율에."""
+    m = C.Model(NAME)
+    sx, sy, sz = SHOULDER
+    wx, wy, wz = WRIST
+    m.bone("root", (0, 0, 0))
+    m.bone("body", (0, 0, HIP_Z), "root")
+    m.bone("core", (CORE[0], -0.62, CORE[1]), "body")
+    m.bone("head", (0, -0.05, NECK_Z), "body")
+    m.bone("arm_l", (sx, sy, sz), "body")
+    m.bone("arm_r", (-sx, sy, sz), "body")
+    m.bone("club", (-wx, wy, wz), "arm_r")
+    m.bone("leg_l", (0.40, 0.05, HIP_Z), "root")
+    m.bone("leg_r", (-0.40, 0.05, HIP_Z), "root")
+    m.bone("shin_l", (0.40, 0.05, FOOT_Z + 0.05), "leg_l")
+    m.bone("shin_r", (-0.40, 0.05, FOOT_Z + 0.05), "leg_r")
+    m.external(MESHY_LOW, classify, MESHY_PARTS)
+    darken_stone(m.ext_img)
+    m.build()
+    acts(m)
+    return m
+
+
+def make_blocks():
+    """옛 상자 문지기(0033~0037). 0060 W3부터 쓰지 않는다 — 비교·되돌리기용."""
     m = C.Model(NAME)
     m.bone("root", (0, 0, 0))
     m.bone("body", (0, 0, 1.35), "root")

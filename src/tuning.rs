@@ -1331,7 +1331,7 @@ pub const SPECS: [Spec; 142] = [
         RenderEdgeCrease,
         "render.edge crease",
         "RENDER_EDGE_CREASE",
-        0.35,
+        0.6,
         0.05,
         1.5,
         0.05
