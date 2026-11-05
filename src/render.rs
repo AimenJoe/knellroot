@@ -51,7 +51,13 @@ pub struct Renderer {
     edge_uniform: Vec4,
     /// 주위 환경(0063): 높이 안개 등.
     backdrop: crate::backdrop::Backdrop,
+    /// 장비 창 인형(0067 D): 방랑자만 그리는 작은 렌더 타깃(처음 쓸 때 만든다).
+    doll_rt: Option<RenderTarget>,
 }
+
+/// 인형 렌더 타깃 크기(내부 px) — 게임 화면과 같은 도트 굵기로 보이게 작게 굽고 정수배로 늘린다.
+pub const DOLL_W: u32 = 64;
+pub const DOLL_H: u32 = 96;
 
 /// 화면 공간 선 둘(0061 t3ssel8r 풍): 불투명 기하를 한 번 더 그린 법선 타깃(rg = 화면 법선 xy, ba = 선형 깊이 16비트)과 재질 둘.
 struct EdgeFx {
@@ -281,7 +287,80 @@ impl Renderer {
             edge_ready: false,
             edge_uniform: Vec4::ZERO,
             backdrop: Default::default(),
+            doll_rt: None,
         }
+    }
+
+    /// 장비 창의 인형(0067 D, 디아블로식): 방랑자만(든 무기만 보이게) 고정 카메라로 작은 타깃에 그리고, 화면 `dest`에 붙인다.
+    /// `spin` = 몸 방향(라디안), `time` = 숨쉬기 동작 시간. 모델이 없으면 아무것도 그리지 않는다(창이 초상 없이 그대로).
+    /// 화면 패스 중에 불러도 된다: 카메라를 바꿨다가 기본 카메라로 돌려놓는다.
+    pub fn draw_doll(&mut self, weapon: crate::weapons::Id, dest: Rect, spin: f32, time: f32) {
+        let rt = self
+            .doll_rt
+            .get_or_insert_with(|| make_rt(DOLL_W, DOLL_H))
+            .clone();
+        let Some(e) = self.lib.get("wanderer") else {
+            return;
+        };
+        // 든 무기만 보인다(0051): 다른 무기 부위는 크기 0.
+        let mut hide: Vec<(usize, Quat, Vec3)> = Vec::new();
+        for w in crate::weapons::WEAPONS.iter() {
+            if w.id != weapon {
+                if let Some(n) = e.model.node(w.node) {
+                    hide.push((n, Quat::IDENTITY, Vec3::ZERO));
+                }
+            }
+        }
+        e.model
+            .pose_with(e.pick(&["idle"]), time, &hide, &mut self.pose);
+        // 키 1.8 몸이 칸에 꽉 차게: 가슴 높이를 보고 조금 위에서.
+        let cam = Camera3D {
+            position: vec3(0.0, 1.35, 4.6),
+            target: vec3(0.0, 0.85, 0.0),
+            up: Vec3::Y,
+            fovy: 0.48,
+            aspect: Some(DOLL_W as f32 / DOLL_H as f32),
+            projection: Projection::Perspective,
+            render_target: Some(rt.clone()),
+            ..Default::default()
+        };
+        let saved = look();
+        set_look(Look {
+            eye: cam.position,
+            fovy: cam.fovy,
+            rows: DOLL_H as f32,
+            ..saved
+        });
+        set_camera(&cam);
+        clear_background(Color::new(0.0, 0.0, 0.0, 0.0));
+        // 쉼터 불빛 하나를 앞 왼쪽 위에(어두운 성소의 화로처럼 — 인형이 묻히지 않게).
+        let fire = crate::stage::Light {
+            pos: vec3(-1.6, 2.2, 2.4),
+            color: Color::new(1.0, 0.62, 0.25, 1.0),
+            radius: 6.0,
+        };
+        self.batch.model(
+            e,
+            &self.pose,
+            Mat4::from_rotation_y(spin),
+            WHITE,
+            &[fire],
+            1.0,
+        );
+        self.batch.flush();
+        set_look(saved);
+        set_default_camera();
+        draw_texture_ex(
+            &rt.texture,
+            dest.x,
+            dest.y,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(vec2(dest.w, dest.h)),
+                flip_y: true,
+                ..Default::default()
+            },
+        );
     }
 
     /// 지난 프레임에 보낸 모델 정점 수(개발 줄).

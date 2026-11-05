@@ -137,6 +137,102 @@ impl Stats {
     }
 }
 
+/// 장비 창의 상태 줄(0067): 무엇을 보이나·어느 쪽이 좋은가. 글·단위는 앱이(i18n).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Line {
+    MaxHp,
+    Flask,
+    Heal,
+    Dmg,
+    Taken,
+    AtkSpeed,
+    DodgeCost,
+    Parry,
+    KillStamina,
+    Ember,
+}
+
+pub const LINES: [Line; 10] = [
+    Line::MaxHp,
+    Line::Flask,
+    Line::Heal,
+    Line::Dmg,
+    Line::Taken,
+    Line::AtkSpeed,
+    Line::DodgeCost,
+    Line::Parry,
+    Line::KillStamina,
+    Line::Ember,
+];
+
+/// 바꾸면 어떻게 되나(좋아짐·나빠짐 — 화면은 색 + 화살표 + 숫자로, 색만으로 말하지 않는다).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Change {
+    Same,
+    Better,
+    Worse,
+}
+
+impl Line {
+    pub fn value(self, s: &Stats) -> f32 {
+        match self {
+            Line::MaxHp => s.max_hp as f32,
+            Line::Flask => s.flask as f32,
+            Line::Heal => s.heal as f32,
+            Line::Dmg => s.dmg as f32,
+            Line::Taken => s.taken as f32,
+            Line::AtkSpeed => s.atk_speed,
+            Line::DodgeCost => s.dodge_cost,
+            Line::Parry => s.parry,
+            Line::KillStamina => s.kill_stamina,
+            Line::Ember => s.ember,
+        }
+    }
+
+    /// 늘 보이는 줄(나머지는 보정이 있을 때만 — KB: 줄이 늘면 칸이 넘친다).
+    pub fn always(self) -> bool {
+        matches!(self, Line::MaxHp | Line::Flask | Line::AtkSpeed)
+    }
+
+    /// 작을수록 좋은 줄(받는 피해·회피 기력).
+    fn lower_is_better(self) -> bool {
+        matches!(self, Line::Taken | Line::DodgeCost)
+    }
+
+    pub fn change(self, now: &Stats, then: &Stats) -> Change {
+        let (a, b) = (self.value(now), self.value(then));
+        if (a - b).abs() < 1e-4 {
+            Change::Same
+        } else if (b > a) != self.lower_is_better() {
+            Change::Better
+        } else {
+            Change::Worse
+        }
+    }
+}
+
+/// 보일 줄: 늘 보이는 줄 + 지금(또는 바꾼 뒤) 기본값과 다른 줄. `then`이 있으면 줄마다 바꾼 뒤 값과 변화.
+/// 상태 한 줄: 줄 · 지금 값 · (바꾼 뒤 값, 변화).
+pub type Row = (Line, f32, Option<(f32, Change)>);
+
+pub fn lines(now: &Stats, then: Option<&Stats>) -> Vec<Row> {
+    let base = Stats::default();
+    LINES
+        .into_iter()
+        .filter(|l| {
+            let differs = |s: &Stats| (l.value(s) - l.value(&base)).abs() > 1e-4;
+            l.always() || differs(now) || then.is_some_and(differs)
+        })
+        .map(|l| {
+            (
+                l,
+                l.value(now),
+                then.map(|t| (l.value(t), l.change(now, t))),
+            )
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,5 +288,24 @@ mod tests {
             "slower swings last longer"
         );
         assert_eq!(o[P::AttackRange], t[P::AttackRange], "reach untouched");
+    }
+
+    #[test]
+    fn status_lines_show_the_basics_and_only_lines_that_a_change_touches() {
+        let base = Stats::default();
+        let shown: Vec<Line> = lines(&base, None).iter().map(|l| l.0).collect();
+        assert_eq!(shown, vec![Line::MaxHp, Line::Flask, Line::AtkSpeed]);
+        // 맞바꿈 장신구(피해 +1 · 공속 −15%): 둘 다 보이고 하나는 좋아짐, 하나는 나빠짐.
+        let hand = Stats::compute(&[crate::charms::def(crate::charms::Id::Hand).mods]);
+        let preview = lines(&base, Some(&hand));
+        let dmg = preview.iter().find(|l| l.0 == Line::Dmg).unwrap();
+        assert_eq!(dmg.2.unwrap().1, Change::Better);
+        let spd = preview.iter().find(|l| l.0 == Line::AtkSpeed).unwrap();
+        assert_eq!(spd.2.unwrap().1, Change::Worse);
+        // 작을수록 좋은 줄: 받는 피해가 늘면 나빠짐, 회피 기력이 줄면 좋아짐.
+        let feet = Stats::compute(&[crate::charms::def(crate::charms::Id::Feet).mods]);
+        assert_eq!(Line::Taken.change(&base, &feet), Change::Worse);
+        assert_eq!(Line::DodgeCost.change(&base, &feet), Change::Better);
+        assert_eq!(Line::MaxHp.change(&base, &feet), Change::Same);
     }
 }

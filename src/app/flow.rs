@@ -16,8 +16,12 @@ pub enum Scene {
     },
     /// 조작 설정(0024). 설정에서 연다(0052).
     Controls,
-    /// 장비(0064 M3): 무기 + 장신구 세 칸. 멈춤 "장비"에서, 뒤로 = 멈춤.
+    /// 장비(0064 M3 → 0067 D 인형): 무기 + 장신구 세 칸. 멈춤 "장비"에서, 뒤로 = 멈춤.
     Equip,
+    /// 장비 칸의 후보 목록(0067): 장비 창 위에 얹는다 — 닫으면 그 칸으로.
+    EquipPick {
+        slot: u8,
+    },
     /// 핵 고르기(0064 M4): 문지기를 이긴 끝 장면 뒤, 결과 전. 하나를 골라야 넘어간다.
     Core,
     /// 쉼터 화로(0064 M4): 쉬면 열린다 — 잔불로 장신구·등잔 기름을 산다. 뒤로 = 싸움.
@@ -47,6 +51,7 @@ impl Scene {
             Scene::Title
                 | Scene::Pause
                 | Scene::Equip
+                | Scene::EquipPick { .. }
                 | Scene::Core
                 | Scene::Shop
                 | Scene::Ask(_)
@@ -73,7 +78,9 @@ impl Scene {
             Scene::Play | Scene::Ending { .. } => Layer::Game,
             #[cfg(feature = "dev")]
             Scene::Sandbox => Layer::Game,
-            Scene::Pause | Scene::Equip | Scene::Settings => Layer::Window { hud: true },
+            Scene::Pause | Scene::Equip | Scene::EquipPick { .. } | Scene::Settings => {
+                Layer::Window { hud: true }
+            }
             // 가게는 잔불을 제가 보인다(KB hud-readability: 창이 같은 정보면 밑 HUD를 그리지 않는다).
             Scene::Shop
             | Scene::Core
@@ -329,6 +336,7 @@ pub fn back(scene: Scene) -> Go {
     match scene {
         Scene::Pause
         | Scene::Equip
+        | Scene::EquipPick { .. }
         | Scene::Shop
         | Scene::Ask(_)
         | Scene::Controls

@@ -5,6 +5,7 @@
 mod ask;
 pub mod controls;
 mod controls_screen;
+mod equip;
 pub mod flow;
 mod menu;
 mod pause;
@@ -372,8 +373,9 @@ impl App {
         match self.scene() {
             Scene::Title => self.tick_title(a),
             Scene::Ask(k) => self.tick_ask(&a, k),
+            Scene::Equip => self.tick_equip(&a),
+            Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
             s @ (Scene::Pause
-            | Scene::Equip
             | Scene::Settings
             | Scene::Shop
             | Scene::Core
@@ -413,7 +415,6 @@ impl App {
     fn menu_of(&self, scene: Scene) -> Option<menu::Menu> {
         match scene {
             Scene::Pause => Some(self.pause_menu()),
-            Scene::Equip => Some(self.equip_menu()),
             Scene::Settings => Some(self.settings_menu()),
             Scene::Shop => Some(self.shop_menu()),
             Scene::Core => Some(self.core_menu()),
@@ -421,9 +422,13 @@ impl App {
             Scene::Slots { load } => Some(self.slots_menu(load)),
             #[cfg(feature = "dev")]
             Scene::Dev => Some(self.dev_menu()),
-            Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Controls | Scene::Ask(_) => {
-                None
-            }
+            Scene::Title
+            | Scene::Play
+            | Scene::Ending { .. }
+            | Scene::Controls
+            | Scene::Ask(_)
+            | Scene::Equip
+            | Scene::EquipPick { .. } => None,
             #[cfg(feature = "dev")]
             Scene::Sandbox => None,
         }
@@ -433,7 +438,6 @@ impl App {
     fn act(&mut self, scene: Scene, out: menu::Out) {
         match scene {
             Scene::Pause => self.pause_act(out),
-            Scene::Equip => self.equip_act(out),
             Scene::Settings => self.settings_act(out),
             Scene::Shop => self.shop_act(out),
             Scene::Core => self.core_act(out),
@@ -442,8 +446,13 @@ impl App {
             Scene::Slots { .. } => {}
             #[cfg(feature = "dev")]
             Scene::Dev => self.dev_act(out),
-            Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Controls | Scene::Ask(_) => {
-            }
+            Scene::Title
+            | Scene::Play
+            | Scene::Ending { .. }
+            | Scene::Controls
+            | Scene::Ask(_)
+            | Scene::Equip
+            | Scene::EquipPick { .. } => {}
             #[cfg(feature = "dev")]
             Scene::Sandbox => {}
         }
@@ -516,6 +525,12 @@ impl App {
             Scene::Title => self.draw_title(f),
             Scene::Ask(k) => self.draw_ask(f, k),
             Scene::Controls => self.draw_controls(f),
+            Scene::Equip => self.draw_equip(f, self.cursor, None),
+            Scene::EquipPick { slot } => {
+                // 칸 커서는 아래 칸(장비 창)의 것.
+                let at = self.stack.under().map_or(slot as usize, |e| e.cursor);
+                self.draw_equip(f, at, Some(slot as usize));
+            }
             s => {
                 if let Some(m) = self.menu_of(s) {
                     self.draw_menu(f, &m);
