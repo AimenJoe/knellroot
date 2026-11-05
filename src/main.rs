@@ -10,6 +10,7 @@ mod app;
 mod backdrop;
 mod camera;
 mod enemy;
+mod flora;
 mod ground;
 mod hud;
 mod i18n;

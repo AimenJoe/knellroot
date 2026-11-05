@@ -71,6 +71,10 @@ const ROCK: Color = Color::new(0.27, 0.26, 0.36, 1.0);
 const ROCK_TOP: Color = Color::new(0.19, 0.27, 0.27, 1.0);
 const PIT: Color = Color::new(0.12, 0.12, 0.19, 1.0);
 /// 걸을 수 있는 층의 옹벽(0043)과 턱 가장자리의 밝은 테(쿼터뷰에서 턱이 읽히게 — 0035 "다음"의 플레이 후기).
+/// 식생(0063 E3): 바위 단 칸마다 나무·덤불이 설 몫, 걸을 수 있는 쪽 벽 면마다 뿌리가 탈 몫.
+const TREE_SHARE: f32 = 0.22;
+const BUSH_SHARE: f32 = 0.35;
+const ROOT_SHARE: f32 = 0.16;
 const LEDGE: Color = Color::new(0.33, 0.32, 0.44, 1.0);
 const RIM: Color = Color::new(0.62, 0.60, 0.70, 1.0);
 
@@ -526,6 +530,23 @@ impl Scenery {
                         &lights,
                     );
                 }
+                // 벽을 타는 뿌리(0063 E3): 걸을 수 있는 쪽 면에 몇 줄기 — 벽과 같은 덩어리라 같이 옅어진다.
+                for (i, (nx, nz)) in neighbors(x, z).enumerate() {
+                    if !lv.walkable(nx, nz) || hash(x, z, 40 + i as u32) > ROOT_SHARE {
+                        continue;
+                    }
+                    let out = (lv.at(nx, nz) - c).normalize_or_zero();
+                    let along = Vec3::Y.cross(out) * (hash(x, z, 50 + i as u32) - 0.5) * CELL * 0.6;
+                    let face = c + out * h + along;
+                    crate::flora::wall_root(
+                        &mut p,
+                        vec3(face.x, top, face.z),
+                        out,
+                        gnd.center(nx, nz).y,
+                        (x * 131 + z * 17 + i) as u32,
+                        &lights,
+                    );
+                }
                 pieces.push(p);
             }
         }
@@ -567,6 +588,22 @@ impl Scenery {
                             ROCK_TOP,
                             &lights,
                         );
+                    }
+                    // 식생(0063 E3): 바위 단 위에 나무 몇 그루·덤불. 나무는 가림 상자를 넓혀 앞을 막으면 같이 옅어진다.
+                    let on = vec3(
+                        c.x + (hash(x, z, 32) - 0.5) * CELL * 0.5,
+                        hgt,
+                        c.z + (hash(x, z, 33) - 0.5) * CELL * 0.5,
+                    );
+                    let seed = (x * 977 + z * 131) as u32;
+                    if hash(x, z, 30) < TREE_SHARE {
+                        let b = crate::flora::tree(&mut p, on, seed, &lights);
+                        if let Some(a) = p.aabb.as_mut() {
+                            a.min = a.min.min(b.min);
+                            a.max = a.max.max(b.max);
+                        }
+                    } else if hash(x, z, 31) < BUSH_SHARE {
+                        crate::flora::bush(&mut p, on, seed, 0.5 + 0.4 * hash(x, z, 34), &lights);
                     }
                     pieces.push(p);
                 } else {
