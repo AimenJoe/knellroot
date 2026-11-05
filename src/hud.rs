@@ -40,6 +40,18 @@ fn u(f: &Frame) -> f32 {
 }
 
 /// `under_menu`: 메뉴(멈춤)가 위에 뜬다 — 아래 가운데 보스 띠는 메뉴 안내와 겹쳐 그리지 않는다(KB hud-readability: 창이 덮는 HUD는 뺀다).
+/// 커서 조준 표시(0058): 고리 + 가운데 점, 어두운 테두리로 어느 바닥에서도 보이게. 크기 단계 0 작게·1 보통·2 크게.
+/// 붉은색(위험)은 쓰지 않는다 — 적의 예고와 섞이지 않게.
+pub fn draw_reticle(f: &Frame, at: Vec2, size: u8) {
+    let r = [3.0, 4.5, 6.5][(size as usize).min(2)] * f.ui;
+    let w = (f.ui * 0.9).max(1.0);
+    let shade = Color::new(0.05, 0.04, 0.06, 0.75);
+    draw_circle_lines(at.x, at.y, r, w + 2.0, shade);
+    draw_circle_lines(at.x, at.y, r, w, INK);
+    draw_circle(at.x, at.y, w + 1.0, shade);
+    draw_circle(at.x, at.y, w * 0.6, INK);
+}
+
 pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: bool) {
     let s = u(f);
     let (x0, y0) = (f.ox + 8.0 * s, f.oy + 8.0 * s);

@@ -107,16 +107,29 @@ pub enum SettingsRow {
     Fullscreen,
     /// 화면 흔들림 0..=10.
     Shake,
+    /// 마우스 조준 켬/끔·커서 쉼 시간·조준 표시 크기(0058) — 마우스가 있을 법한 기기에서만.
+    MouseAim,
+    CursorRest,
+    Reticle,
     Controls,
     Back,
 }
 
-pub fn settings_rows(fullscreen: bool) -> Vec<SettingsRow> {
+/// 조작 설정은 늘 끝에서 둘째(`tools/test/shot.js`가 위로 두 번 간다).
+pub fn settings_rows(fullscreen: bool, mouse: bool) -> Vec<SettingsRow> {
     let mut v = vec![SettingsRow::Language];
     if fullscreen {
         v.push(SettingsRow::Fullscreen);
     }
-    v.extend([SettingsRow::Shake, SettingsRow::Controls, SettingsRow::Back]);
+    v.push(SettingsRow::Shake);
+    if mouse {
+        v.extend([
+            SettingsRow::MouseAim,
+            SettingsRow::CursorRest,
+            SettingsRow::Reticle,
+        ]);
+    }
+    v.extend([SettingsRow::Controls, SettingsRow::Back]);
     v
 }
 
@@ -233,7 +246,11 @@ mod tests {
         assert_eq!(back(Scene::Settings { from_pause: false }), Scene::Title);
         assert!(Scene::Controls { from_pause: true }.is_menu());
         assert!(Scene::Settings { from_pause: false }.is_menu());
-        assert!(!settings_rows(false).contains(&SettingsRow::Fullscreen));
-        assert_eq!(settings_rows(true).last(), Some(&SettingsRow::Back));
+        assert!(!settings_rows(false, true).contains(&SettingsRow::Fullscreen));
+        assert!(!settings_rows(true, false).contains(&SettingsRow::MouseAim));
+        for (f, m) in [(false, false), (true, true), (true, false)] {
+            let r = settings_rows(f, m);
+            assert_eq!(r[r.len() - 2..], [SettingsRow::Controls, SettingsRow::Back]);
+        }
     }
 }

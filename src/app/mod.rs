@@ -57,12 +57,16 @@ pub struct App {
     weapon: weapons::Id,
     /// 화면 흔들림 0..=10(설정, 0052).
     shake: u8,
+    /// 지난 프레임에 그린 화면 자리(커서 → 땅, 0058).
+    frame: Option<Frame>,
+    /// OS 커서를 숨겼나(싸움 중 마우스 조준이면 숨기고 조준 표시를 그린다, 0058).
+    mouse_hidden: bool,
 }
 
 impl App {
     pub fn new() -> Self {
         let t = Tuning::default();
-        // 저장한 설정(0024·0052): 언어·키 배치·흔들림·무기.
+        // 저장한 설정(0024·0052·0058): 언어·키 배치·흔들림·무기·마우스 조준.
         let mut weapon = weapons::Id::Sword;
         let mut shake = crate::prefs::SHAKE_DEFAULT;
         if let Some(p) = crate::prefs::load() {
@@ -70,6 +74,7 @@ impl App {
                 i18n::set_lang(l);
             }
             input::set_bindings(p.bindings);
+            input::set_mouse_aim(p.mouse);
             shake = p.shake;
             weapon = weapons::IDS[(p.weapon as usize).min(weapons::IDS.len() - 1)];
         }
@@ -99,6 +104,8 @@ impl App {
             sums: (0.0, 0.0, 0.0, 0),
             weapon,
             shake,
+            frame: None,
+            mouse_hidden: false,
         }
     }
 
@@ -122,12 +129,27 @@ impl App {
         crate::prefs::save(&crate::prefs::Prefs {
             lang: Some(i18n::lang()),
             bindings: input::bindings(),
+            mouse: input::mouse_aim(),
             shake: self.shake,
             weapon: weapons::IDS
                 .iter()
                 .position(|w| *w == self.weapon)
                 .unwrap_or(0) as u8,
         });
+    }
+
+    /// 마우스 조준 줄(0058): 켬/끔은 뒤집기, 쉼 시간·표시 크기는 좌우로 한 칸(끝에서 돈다), 저장.
+    fn step_mouse(&mut self, row: SettingsRow, step: i32) {
+        let mut m = input::mouse_aim();
+        let cycle = |v: u8, n: usize| (v as i32 + step).rem_euclid(n as i32) as u8;
+        match row {
+            SettingsRow::MouseAim => m.on = !m.on,
+            SettingsRow::CursorRest => m.rest = cycle(m.rest, input::REST_SECS.len()),
+            SettingsRow::Reticle => m.size = cycle(m.size, input::RETICLE_SIZES as usize),
+            _ => return,
+        }
+        input::set_mouse_aim(m);
+        self.save_prefs();
     }
 
     fn next_lang(&mut self) {
@@ -157,6 +179,15 @@ impl App {
             flask: play && pl.flask > 0 && pl.hp < crate::tuning::PLAYER_HP,
         });
         self.input.poll(self.lab.open, self.scene.is_menu());
+        // 싸움 중 마우스 조준이면 OS 커서 대신 조준 표시(0058). 랩은 마우스를 쓰지 않지만 화살표가 보이게 둔다.
+        let hide = play
+            && !self.lab.open
+            && input::mouse_aim().on
+            && input::device() == input::Device::Keys;
+        if hide != self.mouse_hidden {
+            show_mouse(!hide);
+            self.mouse_hidden = hide;
+        }
         let dt = get_frame_time().min(MAX_FRAME_DT);
         self.acc += dt;
         while self.acc >= TICK_DT {
@@ -228,7 +259,7 @@ impl App {
                 self.follow_camera();
             }
             Scene::Settings { from_pause } => {
-                let rows = flow::settings_rows(crate::screen::supported());
+                let rows = flow::settings_rows(crate::screen::supported(), input::has_mouse());
                 let row = rows.get(self.cursor).copied();
                 let step = a.menu_right as i32 - a.menu_left as i32;
                 if a.back || a.pause {
@@ -242,6 +273,11 @@ impl App {
                             self.shake = (self.shake as i32 + step).clamp(0, 10) as u8;
                             self.save_prefs();
                         }
+                        Some(
+                            r @ (SettingsRow::MouseAim
+                            | SettingsRow::CursorRest
+                            | SettingsRow::Reticle),
+                        ) => self.step_mouse(r, step),
                         _ => {}
                     }
                 }
@@ -253,6 +289,9 @@ impl App {
                             self.shake = if self.shake >= 10 { 0 } else { self.shake + 1 };
                             self.save_prefs();
                         }
+                        r @ (SettingsRow::MouseAim
+                        | SettingsRow::CursorRest
+                        | SettingsRow::Reticle) => self.step_mouse(r, 1),
                         SettingsRow::Controls => self.go(Scene::Controls { from_pause }),
                         SettingsRow::Back => self.go(flow::back(self.scene)),
                     }
@@ -370,6 +409,7 @@ impl App {
                     return;
                 }
                 let a = self.lab_filter(a);
+                let a = self.cursor_aim(a);
                 self.step_world(&a);
                 let out = self.run.tick(&mut self.world, TICK_DT);
                 if out == crate::stage::StageOut::Respawned {
@@ -398,9 +438,34 @@ impl App {
                     self.cam = Camera::new(self.world.player.pos, &self.t);
                 }
                 let a = self.lab_filter(a);
+                let a = self.cursor_aim(a);
                 self.step_world(&a);
             }
         }
+    }
+
+    /// 커서 → 땅 위의 점(0058): 지난 프레임 화면 자리로 NDC, 카메라 리그의 시선이 플레이어 발 높이 면에 닿는 점.
+    /// 락온 중이면 쓰지 않는다(오른쪽 스틱처럼 — 대상을 본다). 화면 밖이면 없음.
+    fn cursor_aim(&self, mut a: Actions) -> Actions {
+        a.aim_at = None;
+        let (Some(c), Some(f)) = (a.cursor, self.frame) else {
+            return a;
+        };
+        if self.world.lock_target().is_some() || f.w < 1.0 || f.h < 1.0 {
+            return a;
+        }
+        let ndc = vec2(
+            (c.x - f.ox) / f.w * 2.0 - 1.0,
+            1.0 - (c.y - f.oy) / f.h * 2.0,
+        );
+        if ndc.x.abs() > 1.0 || ndc.y.abs() > 1.0 {
+            return a;
+        }
+        let rig = &self.cam.rig;
+        let dir = crate::camera::screen_ray(rig, f.w / f.h, ndc);
+        a.aim_at = crate::camera::ground_hit(rig.pos, dir, self.world.player.pos.y)
+            .map(|p| vec2(p.x, p.z));
+        a
     }
 
     /// 랩이 열려 있으면 커서 키는 랩이 먹고, 이동·공격·회피·락온은 그대로 게임으로(바꾸며 바로 느끼기).
@@ -414,6 +479,7 @@ impl App {
         Actions {
             move_dir: a.move_dir,
             aim: a.aim,
+            cursor: a.cursor,
             attack: a.attack,
             attack_held: a.attack_held,
             cast: a.cast,
@@ -504,6 +570,7 @@ impl App {
             t: &self.t,
             stage,
         });
+        self.frame = Some(f);
         self.ui.begin(f.ui);
         let overlay = self.input.overlay(self.lab.open);
         match self.scene {
@@ -529,6 +596,11 @@ impl App {
             Scene::Sandbox => hud::draw(&self.ui, &f, &self.world, None, false),
         }
         if self.scene.ticks_world() {
+            if self.mouse_hidden && self.world.lock_target().is_none() {
+                if let Some(c) = self.input.cursor() {
+                    hud::draw_reticle(&f, c, input::mouse_aim().size);
+                }
+            }
             self.lab.draw(&self.t, overlay.is_some());
             if let Some(o) = &overlay {
                 touch::draw(
@@ -680,11 +752,15 @@ impl App {
     /// 설정(0052): 값 줄은 "이름: 값", 좌우·확인으로 바꾼다.
     fn draw_settings(&mut self, f: &Frame) {
         let s = s();
+        let mouse = input::mouse_aim();
         self.ui.dim(0.6);
         let cx = f.ox + f.w * 0.5;
-        self.ui
-            .text_center(s.settings_title, cx, f.oy + f.h * 0.2, 2.0, INK);
-        let items: Vec<String> = flow::settings_rows(crate::screen::supported())
+        let rows = flow::settings_rows(crate::screen::supported(), input::has_mouse());
+        // 마우스 줄 셋(0058)이 붙으면 제목·메뉴를 올리고 줄 간격을 아래 안내 위까지로 줄인다.
+        let many = rows.len() > 5;
+        let title_y = f.oy + f.h * if many { 0.1 } else { 0.2 };
+        self.ui.text_center(s.settings_title, cx, title_y, 2.0, INK);
+        let items: Vec<String> = rows
             .iter()
             .map(|r| match r {
                 SettingsRow::Language => fill(s.menu_language, &[s.lang_name]),
@@ -697,12 +773,30 @@ impl App {
                 SettingsRow::Shake => {
                     fill(s.menu_shake, &[&format!("{}%", self.shake as u32 * 10)])
                 }
+                SettingsRow::MouseAim => if mouse.on {
+                    s.menu_mouse_aim_on
+                } else {
+                    s.menu_mouse_aim_off
+                }
+                .to_string(),
+                SettingsRow::CursorRest => {
+                    fill(s.menu_cursor_rest, &[&format!("{}", mouse.rest_secs())])
+                }
+                SettingsRow::Reticle => fill(
+                    s.menu_reticle,
+                    &[[s.reticle_small, s.reticle_medium, s.reticle_large]
+                        [(mouse.size as usize).min(2)]],
+                ),
                 SettingsRow::Controls => s.menu_controls.to_string(),
                 SettingsRow::Back => s.controls_back.to_string(),
             })
             .collect();
-        self.menu_rects = self.ui.menu(&items, self.cursor, cx, f.oy + f.h * 0.38);
-        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
+        let hint_y = f.oy + f.h - self.ui.px(1.0) * 2.2;
+        let top = f.oy + f.h * if many { 0.24 } else { 0.38 };
+        self.menu_rects =
+            self.ui
+                .menu_in(&items, self.cursor, cx, top, hint_y - self.ui.px(1.0) * 0.6);
+        self.menu_hint(cx, hint_y, f.w * 0.94);
     }
 
     /// 개발 메뉴(0052): 개발판에만, 영어 그대로(0013).
@@ -788,11 +882,11 @@ impl App {
                         self.ctl_rects.push((r, i, col));
                     }
                 }
-                controls::Row::Reset | controls::Row::Back => {
-                    let label = if *row == controls::Row::Reset {
-                        s.controls_reset
-                    } else {
-                        s.controls_back
+                controls::Row::Preset(_) | controls::Row::Back => {
+                    let label = match row {
+                        controls::Row::Preset(controls::Preset::Mouse) => s.controls_preset_mouse,
+                        controls::Row::Preset(controls::Preset::Keys) => s.controls_preset_keys,
+                        _ => s.controls_back,
                     };
                     let yy = y + px * 0.4;
                     let w = self.ui.width(label, 1.0);

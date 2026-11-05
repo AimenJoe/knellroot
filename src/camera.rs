@@ -483,6 +483,55 @@ impl Camera {
     }
 }
 
+/// 화면 점(NDC: x 오른쪽·y 위, -1..1)을 지나는 시선의 방향(0058 커서 조준) — `to_camera3d`와 같은 원근(세로 `fov`, 가로는 `aspect`배).
+/// 흔들림은 빼고 리그로만(겨누는 점이 흔들림을 따라 떨지 않게).
+pub fn screen_ray(rig: &Rig, aspect: f32, ndc: Vec2) -> Vec3 {
+    let f = (rig.look - rig.pos).normalize_or(Vec3::NEG_Z);
+    let r = f.cross(Vec3::Y).normalize_or(Vec3::X);
+    let u = r.cross(f);
+    let k = (rig.fov * 0.5).tan();
+    (f + r * (ndc.x * k * aspect) + u * (ndc.y * k)).normalize()
+}
+
+/// 시선이 높이 `y`의 수평면에 닿는 점. 위로 가거나 평행이면 없음.
+pub fn ground_hit(origin: Vec3, dir: Vec3, y: f32) -> Option<Vec3> {
+    (dir.y < -1e-4)
+        .then(|| (y - origin.y) / dir.y)
+        .filter(|t| *t > 0.0)
+        .map(|t| origin + dir * t)
+}
+
+#[cfg(test)]
+mod ray_tests {
+    use super::*;
+
+    fn rig() -> Rig {
+        Rig {
+            pos: vec3(0.0, 10.0, 10.0),
+            look: Vec3::ZERO,
+            fov: 40f32.to_radians(),
+        }
+    }
+
+    /// 화면 가운데는 카메라가 보는 점, 오른쪽은 +x, 위는 먼 쪽(-z) — 쿼터뷰의 화면 위 = 월드 -z(좌표 규칙).
+    #[test]
+    fn the_screen_centre_hits_the_look_point_and_up_is_farther() {
+        let r = rig();
+        let at = |n: Vec2| ground_hit(r.pos, screen_ray(&r, 16.0 / 9.0, n), 0.0).unwrap();
+        assert!(at(Vec2::ZERO).length() < 1e-3);
+        assert!(at(vec2(0.5, 0.0)).x > 1.0);
+        assert!(at(vec2(0.0, 0.5)).z < -1.0);
+        assert!(at(vec2(0.0, -0.5)).z > 1.0);
+    }
+
+    #[test]
+    fn a_ray_above_the_horizon_hits_nothing() {
+        let r = rig();
+        assert!(ground_hit(r.pos, screen_ray(&r, 1.0, vec2(0.0, 1.0)), 0.0).is_some());
+        assert!(ground_hit(r.pos, vec3(0.0, 0.2, -1.0).normalize(), 0.0).is_none());
+    }
+}
+
 /// 바닥 면이 이 폭(m) 이하인 상자는 "가는 기둥" — 카메라를 밀지 않고 옅게 뚫고 지나간다.
 pub const THIN: f32 = 2.5;
 

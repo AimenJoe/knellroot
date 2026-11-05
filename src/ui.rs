@@ -294,7 +294,26 @@ impl Ui {
 
     /// 세로 메뉴. 고른 줄은 호박색 + 앞에 표지. 항목 자리(탭 판정용)를 돌려준다.
     pub fn menu(&self, items: &[String], cursor: usize, cx: f32, y: f32) -> Vec<Rect> {
-        let gap = self.px(1.0) * 1.9;
+        self.menu_gap(items, cursor, cx, y, self.px(1.0) * 1.9)
+    }
+
+    /// 줄이 많은 메뉴(설정, 0058): `top`..`bottom` 안에 들게 줄 간격을 줄인다(1.3줄 아래로는 줄이지 않는다).
+    pub fn menu_in(
+        &self,
+        items: &[String],
+        cursor: usize,
+        cx: f32,
+        top: f32,
+        bottom: f32,
+    ) -> Vec<Rect> {
+        let px = self.px(1.0);
+        let gap = (px * 1.9)
+            .min((bottom - top) / items.len().max(1) as f32)
+            .max(px * 1.3);
+        self.menu_gap(items, cursor, cx, top, gap)
+    }
+
+    fn menu_gap(&self, items: &[String], cursor: usize, cx: f32, y: f32, gap: f32) -> Vec<Rect> {
         let mut rects = Vec::new();
         for (i, it) in items.iter().enumerate() {
             let yy = y + gap * i as f32;

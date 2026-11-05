@@ -72,8 +72,17 @@ async function main() {
   page.on('console', (m) => { if (m.type() === 'error' && !/register_plugin/.test(m.text())) errors.push(m.text()); });
   await page.goto(`http://localhost:${PORT}/`);
   await page.waitForTimeout(2500);
-  await page.locator('#glcanvas').click({ position: { x: 640, y: 360 } });
+  await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
   const press = async (k, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(k); await page.waitForTimeout(60); } };
+  // 키보드만 배치로(0058 — 이 스크립트는 J·K·L로 싸운다. 새로 설치한 판의 기본은 키보드+마우스):
+  // 타이틀 → 설정(둘째) → 조작(끝에서 둘째, 위로 두 번) → "키보드만 배치로"(끝에서 둘째) → 돌아가기 둘.
+  const keyboardOnly = async () => {
+    await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
+    await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(300);
+    await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(200);
+    await press('Escape'); await page.waitForTimeout(200); await press('Escape'); await page.waitForTimeout(300);
+  };
+  await keyboardOnly();
   if (MODE === 'stress') { await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300); await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300); await press('Digit7'); }
   else { await press('Enter'); }
   const t0 = Date.now();

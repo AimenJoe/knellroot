@@ -5,13 +5,14 @@
 //! 칸: 0 표식(MAGIC), 1 언어(0 = 저장 전), 2..18 키 배치(`Bindings::encode` — 14..16은 0027에 붙인 점프, 16..18은 0031 등잔, 18..20은 0032 상호작용 → 0048 마법). 0은 "없음". 표식이 다르면 통째로 기본값.
 //! 칸을 뒤에 붙이면 옛 저장은 0 = 기본값으로 읽으니 MAGIC은 그대로, 칸 뜻이 바뀌면 올린다.
 use crate::i18n::Lang;
-use crate::input::Bindings;
+use crate::input::{Bindings, MouseAim, REST_SECS, RETICLE_SIZES};
 
 /// 0x…0002(0048): 18..20 칸이 상호작용 → 마법으로 바뀌고 등잔·마법의 기본 버튼이 바뀌었다. 옛 표식(0x…0001)은 언어만 살리고 배치는 기본값.
 const MAGIC: u32 = 0x4B4E_0002;
 const MAGIC_V1: u32 = 0x4B4E_0001;
 /// 20 화면 흔들림(0..=10, +1로 — 0 = 저장 전 = 10), 21 든 무기(무기 표 자리 +1) — 0052·0051, 뒤에 붙인 칸이라 MAGIC 그대로.
-const CELLS: usize = 22;
+/// 22 마우스 조준(1 끔·2 켬, 0 = 저장 전 = 켬), 23 커서 쉼(`REST_SECS` 자리 +1), 24 조준 표시 크기(+1) — 0058, 뒤에 붙인 칸이라 MAGIC 그대로.
+const CELLS: usize = 25;
 /// 화면 흔들림 기본값(10 = 100%).
 pub const SHAKE_DEFAULT: u8 = 10;
 
@@ -23,6 +24,8 @@ pub struct Prefs {
     pub shake: u8,
     /// 든 무기(무기 표의 자리, 0051).
     pub weapon: u8,
+    /// 마우스 조준(0058).
+    pub mouse: MouseAim,
 }
 
 fn lang_code(l: Lang) -> u32 {
@@ -47,7 +50,28 @@ fn encode(p: &Prefs) -> [u32; CELLS] {
     v[2..20].copy_from_slice(&p.bindings.encode());
     v[20] = p.shake.min(10) as u32 + 1;
     v[21] = p.weapon as u32 + 1;
+    v[22] = p.mouse.on as u32 + 1;
+    v[23] = p.mouse.rest as u32 + 1;
+    v[24] = p.mouse.size as u32 + 1;
     v
+}
+
+/// 0058 칸 셋: 0(저장 전·옛 저장)이나 범위 밖이면 기본값.
+fn mouse_from(on: u32, rest: u32, size: u32) -> MouseAim {
+    let d = MouseAim::default();
+    let pick = |c: u32, n: usize, def: u8| match c {
+        1.. if (c as usize) <= n => (c - 1) as u8,
+        _ => def,
+    };
+    MouseAim {
+        on: match on {
+            1 => false,
+            2 => true,
+            _ => d.on,
+        },
+        rest: pick(rest, REST_SECS.len(), d.rest),
+        size: pick(size, RETICLE_SIZES as usize, d.size),
+    }
 }
 
 fn shake_from(c: u32) -> u8 {
@@ -65,6 +89,7 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
             bindings: Bindings::default_layout(),
             shake: SHAKE_DEFAULT,
             weapon: 0,
+            mouse: MouseAim::default(),
         });
     }
     if v[0] != MAGIC {
@@ -75,6 +100,7 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
         bindings: Bindings::decode(&v[2..20]),
         shake: shake_from(v[20]),
         weapon: v[21].saturating_sub(1).min(255) as u8,
+        mouse: mouse_from(v[22], v[23], v[24]),
     })
 }
 
@@ -187,6 +213,7 @@ pub fn save(p: &Prefs) {
 mod tests {
     use super::*;
     use crate::input::{Bind, Pad};
+    use macroquad::prelude::MouseButton;
 
     #[test]
     fn prefs_round_trip_and_unknown_storage_reads_as_defaults() {
@@ -198,6 +225,11 @@ mod tests {
             bindings: b,
             shake: 4,
             weapon: 2,
+            mouse: MouseAim {
+                on: false,
+                rest: 3,
+                size: 0,
+            },
         };
         assert_eq!(decode(&encode(&p)), Some(p));
         assert_eq!(decode(&[0; CELLS]), None, "nothing saved yet");
@@ -217,6 +249,7 @@ mod tests {
             bindings: Bindings::default_layout(),
             shake: SHAKE_DEFAULT,
             weapon: 0,
+            mouse: MouseAim::default(),
         };
         let mut old = encode(&plain);
         old[16..].fill(0);
@@ -247,6 +280,36 @@ mod tests {
         assert_eq!(decode(&encode(&p)).unwrap().shake, 4);
     }
 
+    /// 0058: 마우스 버튼 칸이 저장되고(키 칸 뒤 번호), 마우스 조준 칸 셋이 0058 전 저장(0)이나 범위 밖이면 기본값(켬·1초·보통).
+    #[test]
+    fn mouse_slots_and_mouse_aim_cells_round_trip() {
+        use crate::input::{Slot, NSLOTS};
+        let mut b = Bindings::keyboard_only();
+        b.set_key(Bind::Parry, (NSLOTS - 1) as u8);
+        assert_eq!(b.key(Bind::Parry), Slot::Mouse(MouseButton::Middle));
+        let p = Prefs {
+            lang: Some(Lang::Ko),
+            bindings: b,
+            shake: SHAKE_DEFAULT,
+            weapon: 0,
+            mouse: MouseAim {
+                on: true,
+                rest: 2,
+                size: 2,
+            },
+        };
+        assert_eq!(decode(&encode(&p)), Some(p));
+        let mut old = encode(&p);
+        old[22..].fill(0);
+        assert_eq!(decode(&old).unwrap().mouse, MouseAim::default());
+        old[23] = 99;
+        old[24] = 99;
+        assert_eq!(decode(&old).unwrap().mouse, MouseAim::default());
+        let mut bad = encode(&p);
+        bad[2] = NSLOTS as u32 + 1;
+        assert_eq!(decode(&bad).unwrap().bindings, Bindings::default_layout());
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn the_native_prefs_file_round_trips() {
@@ -258,6 +321,7 @@ mod tests {
             bindings: Bindings::default_layout(),
             shake: 7,
             weapon: 1,
+            mouse: MouseAim::default(),
         };
         assert!(store::write_to(&p, &encode(&prefs)));
         assert_eq!(decode(&store::read_from(&p)), Some(prefs));

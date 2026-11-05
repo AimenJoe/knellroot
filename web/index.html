@@ -16,6 +16,14 @@
   <!-- gamepads 크레이트 플러그인(nail에서 두 곳 고친 복사본: 버전 정수, 비표준 매핑 허용). -->
   <script src="macroquad-gamepads-0.1.js"></script>
   <script>
+    // 마우스로 싸울 때(0058): 캔버스 위 오른쪽 클릭(= 마법)에 브라우저 메뉴가 뜨지 않게, 휠 클릭(= 락온)에 자동 스크롤이 켜지지 않게.
+    // 번들(mq_js_bundle.js)은 고치지 않는다 — 그 이벤트는 그대로 게임으로 간다.
+    (function () {
+      var c = document.getElementById("glcanvas");
+      c.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+      c.addEventListener("mousedown", function (e) { if (e.button === 1) e.preventDefault(); });
+      c.addEventListener("auxclick", function (e) { if (e.button === 1) e.preventDefault(); });
+    })();
     // 처음 장치가 터치인지(폰·태블릿): 아무것도 만지기 전 첫 화면부터 터치 버튼을 보이게(src/input.rs initial_device).
     miniquad_add_plugin({
       name: "knell_device",

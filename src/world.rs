@@ -893,7 +893,17 @@ impl World {
             }
         };
         // 조준(오른쪽 스틱, 0014): 이동과 같은 기준으로 월드 방향. 락온이면 쓰지 않는다(대상을 본다).
-        let aim = if target.is_none() && a.aim.length() > AIM_STICK {
+        // 커서(0058): 앱이 땅에 비춘 점이 있으면 스틱 대신 그 점 쪽 — 마우스는 오른쪽 스틱과 같은 일을 한다.
+        let aim_point = a
+            .aim_at
+            .filter(|_| target.is_none())
+            .map(|q| vec3(q.x, self.player.pos.y, q.y));
+        let aim = if target.is_some() {
+            None
+        } else if let Some(q) = aim_point {
+            let d = vec3(q.x - self.player.pos.x, 0.0, q.z - self.player.pos.z);
+            (d.length() > CURSOR_DEAD_M).then(|| d.normalize())
+        } else if a.aim.length() > AIM_STICK {
             let w = move_to_world(a.aim.normalize(), basis, self.player.pos);
             (w.length_squared() > 1e-6).then(|| w.normalize())
         } else {
@@ -936,7 +946,10 @@ impl World {
                 let n = d.length().clamp(2.0, g.far);
                 p0 + d.normalize_or(self.player.facing_dir()) * n
             };
-            if let Some(d) = aim {
+            if let Some(q) = aim_point.filter(|_| aim.is_some()) {
+                // 커서는 자리까지 준다(0058): 그 자리로, 2m..먼 거리 안으로.
+                clamp_to(q)
+            } else if let Some(d) = aim {
                 p0 + d * g.near
             } else if let Some(tg) = target {
                 clamp_to(tg)
@@ -950,6 +963,14 @@ impl World {
             } else {
                 p0 + self.player.facing_dir() * g.near
             }
+        });
+        // 꾹 쥐어 겨누는 수류탄(0055)도 커서가 있으면 그 자리(0058) — 없으면 가장 멀리.
+        let hold_throw_to = wpn.grenade.and_then(|g| {
+            let p0 = self.player.pos;
+            aim_point.filter(|_| aim.is_some()).map(|q| {
+                let d = vec3(q.x - p0.x, 0.0, q.z - p0.z);
+                p0 + d.normalize_or(self.player.facing_dir()) * d.length().clamp(2.0, g.far)
+            })
         });
         let mut fire: Option<(Vec3, u8)> = None;
         let mut thrown: Option<Vec3> = None;
@@ -1394,7 +1415,7 @@ impl World {
                     let far = wpn.grenade.map_or(8.0, |g| g.far);
                     pl.state = PState::Throw {
                         t: t[P::ThrowStartup] - 1e-4,
-                        to: pl.pos + dir * far,
+                        to: hold_throw_to.unwrap_or(pl.pos + dir * far),
                         thrown: false,
                     };
                 } else {
@@ -2486,6 +2507,8 @@ const LUNGE_MOVING: f32 = 1.0;
 
 /// 조준 스틱이 이보다 세면 "겨누는 중".
 const AIM_STICK: f32 = 0.35;
+/// 커서 점이 플레이어에게서 이만큼(m) 안이면 겨누지 않는다(0058 — 발밑을 가리키면 방향이 마구 돈다).
+const CURSOR_DEAD_M: f32 = 0.5;
 
 /// `reach` 안의 가장 가까운 산 적 쪽(XZ 단위). `cone`이 있으면 (방향, cos 반각) 안의 적만.
 fn nearest_in_reach(
@@ -3503,6 +3526,79 @@ mod tests {
         assert_eq!(w.enemies[0].hp, 9 - t[P::CastDamage].round() as i32);
         assert!(w.bolts.is_empty());
         assert!(matches!(w.player.state, PState::Idle));
+    }
+
+    /// 0058: 커서를 비춘 땅 위의 점은 오른쪽 스틱처럼 겨눈다 — 가까운 적(자동 조준)이 아니라 커서 쪽 적을 맞힌다.
+    /// 락온 중이면 커서는 쓰지 않는다(대상을 본다 — 스틱과 같다).
+    #[test]
+    fn the_cursor_point_aims_like_the_right_stick_and_lock_on_ignores_it() {
+        let t = Tuning::default();
+        let cast_at = |lock: bool| {
+            let mut w = World::new("test", 30.0);
+            w.spawn_mob(vec3(0.0, 0.0, -4.0)); // 가까운 앞쪽(자동 조준·락온이 고를 적)
+            w.spawn_mob(vec3(7.0, 0.0, 0.0)); // 커서 쪽
+            for e in &mut w.enemies {
+                e.hp = 9;
+            }
+            idle(&mut w);
+            if lock {
+                press(
+                    &t,
+                    &mut w,
+                    Actions {
+                        lock: true,
+                        ..Default::default()
+                    },
+                    2,
+                );
+                assert!(w.lock.is_some());
+            }
+            press(
+                &t,
+                &mut w,
+                Actions {
+                    cast: true,
+                    aim_at: Some(vec2(7.0, 0.0)),
+                    ..Default::default()
+                },
+                90,
+            );
+            (w.enemies[0].hp, w.enemies[1].hp)
+        };
+        let (near, cursor) = cast_at(false);
+        assert_eq!(near, 9, "the near enemy is left alone");
+        assert!(cursor < 9, "the bolt went the cursor's way");
+        let (near, cursor) = cast_at(true);
+        assert!(
+            near < 9 && cursor == 9,
+            "locked: the target, not the cursor"
+        );
+    }
+
+    /// 0058: 커서는 자리까지 준다 — 수류탄 톡은 커서 자리에(2m..먼 거리로 자른다).
+    #[test]
+    fn a_tossed_grenade_lands_at_the_cursor() {
+        let t = Tuning::default();
+        let g = weapons::Id::Crossbow.def().grenade.unwrap();
+        let mut w = World::new("test", 40.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        w.view_yaw = Some(0.0);
+        let p0 = w.player.pos;
+        let want = vec2(p0.x + 4.0, p0.z + 3.0);
+        w.step(
+            &Actions {
+                attack: true,
+                aim_at: Some(want),
+                ..Default::default()
+            },
+            &t,
+        );
+        let to = match w.player.state {
+            PState::Throw { to, .. } => to,
+            ref s => panic!("{s:?}"),
+        };
+        assert!(vec2(to.x, to.z).distance(want) < 0.05, "{to:?}");
+        assert!(want.distance(vec2(p0.x, p0.z)) < g.far);
     }
 
     /// 0048: 칸이 모자라면 쏘지 않고(몸짓 없음) 칸이 깜빡인다. 근접으로 맞히면 `cast.per hit`씩 찬다.

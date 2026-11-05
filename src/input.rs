@@ -1,11 +1,10 @@
 //! 입력 레이어(nail 규칙 그대로): 이 파일 밖에서는 `KeyCode`도 패드 버튼도 보지 않는다.
 //! 프레임마다 `poll()`로 읽고 눌림(edge)은 래치에 모아 두며, 로직 틱의 `take()`가 소비한다.
 //!
-//! 기본 배치(패드 W3C 표준 자리 / 키보드):
-//!   이동 = 왼쪽 스틱·십자 / WASD·화살표      조준 = 오른쪽 스틱(바라보는 쪽, 공격은 가까운 적 자동 조준, 0014)
-//!   공격 = X(왼쪽) / J·Space      회피 = A(아래) / K·LShift      락온 = 오른쪽 스틱 클릭 / L·Tab
-//!   땅 돌리기(쟁반, 0012) = LB·Q 왼쪽 / RB·E 오른쪽 — 누르는 쪽으로 카메라가 돈다(0017: 오른쪽 = 땅은 화면에서 시계 방향, 먼 쪽이 오른쪽으로).
-//!   Fez처럼 어깨 버튼, 락온은 다크소울처럼 R3로 옮겼다.
+//! 기본 배치(패드 W3C 표준 자리 / 키보드+마우스 0058 / 키보드만 0024·0048) — 표는 `Bindings::default_layout`·`keyboard_only`:
+//!   이동 = 왼쪽 스틱·십자 / WASD(·화살표)      조준 = 오른쪽 스틱 / 커서(최근 만진 것만, 0058) — 안 쓰면 자동 조준(0014)
+//!   공격 X / 왼쪽 클릭 / J      마법 RB / 오른쪽 클릭 / U      회피 B / Space      패링 LB / L-Shift / K
+//!   락온 R3 / 휠 클릭 / L      땅 돌리기 LT·RT / Q·E      점프·상호작용 A / F      등잔 Y / R
 //!   멈춤 = Start / Esc·P · 메뉴 = 십자·왼쪽 스틱(한 번씩)·A 확인·B 뒤로 / 화살표·WASD·Enter·Esc(0019)
 //!   랩 열기 = Select / F1          랩 안: 십자(↑↓ 고르기, ←→ 바꾸기), LB = 10배(랩이 열려 있으면 왼쪽 돌리기 대신), Y = 초기화, B·X키 = 내보내기,
 //!   LT = 슬롯에 담기, RT = A/B 바꾸기, 1~7 = 시나리오 바꾸기(dev 기능)
@@ -77,6 +76,10 @@ pub struct Actions {
     pub move_dir: Vec2,
     /// 조준(오른쪽 스틱, 0014). 이동과 같은 축. 0이면 겨누지 않음.
     pub aim: Vec2,
+    /// 커서(0058): 마우스 조준이 켜져 있고 최근(`MouseAim::rest_secs`) 마우스를 만졌을 때만 화면 자리(논리 px). 상태 — 틱이 지우지 않는다.
+    pub cursor: Option<Vec2>,
+    /// 커서를 비춘 땅 위의 점(월드 x·z) — 앱이 카메라로 `cursor`에서 채운다(0058). 있으면 월드는 오른쪽 스틱처럼 그쪽을 겨눈다.
+    pub aim_at: Option<Vec2>,
     pub attack: bool,
     /// 공격 버튼을 쥐고 있나(상태, 강공격 모으기 0030). 눌림 `attack`과 달리 틱이 지우지 않는다.
     pub attack_held: bool,
@@ -223,12 +226,62 @@ pub const KEYS: [(KeyCode, &str); 30] = [
     (KeyCode::Period, "."),
 ];
 
+/// 배치표에 올릴 수 있는 마우스 버튼(0058). 저장 번호는 `KEYS` 뒤에 이어진다(`KEYS.len()` + 이 표의 자리 — 뒤에만 붙인다).
+/// 옆 버튼(M4·M5)은 miniquad `MouseButton`에 없다.
+pub const MICE: [(MouseButton, &str); 3] = [
+    (MouseButton::Left, "LMB"),
+    (MouseButton::Right, "RMB"),
+    (MouseButton::Middle, "MMB"),
+];
+
+/// 키 칸에 올릴 수 있는 것의 수(키 + 마우스 버튼).
+pub const NSLOTS: usize = KEYS.len() + MICE.len();
+
+/// 키 칸의 한 자리: 키 또는 마우스 버튼.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Slot {
+    Key(KeyCode),
+    Mouse(MouseButton),
+}
+
+impl Slot {
+    pub fn of(i: u8) -> Slot {
+        let i = (i as usize).min(NSLOTS - 1);
+        match KEYS.get(i) {
+            Some(k) => Slot::Key(k.0),
+            None => Slot::Mouse(MICE[i - KEYS.len()].0),
+        }
+    }
+
+    fn down(self) -> bool {
+        match self {
+            Slot::Key(k) => is_key_down(k),
+            Slot::Mouse(m) => is_mouse_button_down(m),
+        }
+    }
+
+    fn pressed(self) -> bool {
+        match self {
+            Slot::Key(k) => is_key_pressed(k),
+            Slot::Mouse(m) => is_mouse_button_pressed(m),
+        }
+    }
+}
+
 fn key_index(k: KeyCode) -> u8 {
     KEYS.iter().position(|(c, _)| *c == k).unwrap_or(0) as u8
 }
 
+fn mouse_index(m: MouseButton) -> u8 {
+    (KEYS.len() + MICE.iter().position(|(c, _)| *c == m).unwrap_or(0)) as u8
+}
+
 pub fn key_name(i: u8) -> &'static str {
-    KEYS.get(i as usize).map_or("?", |k| k.1)
+    let i = i as usize;
+    KEYS.get(i)
+        .map(|k| k.1)
+        .or_else(|| MICE.get(i.wrapping_sub(KEYS.len())).map(|m| m.1))
+        .unwrap_or("?")
 }
 
 /// 동작 → (키 하나, 패드 버튼 하나). 겹치면 맞바꾼다(빈 동작이 생기지 않게).
@@ -239,8 +292,28 @@ pub struct Bindings {
 }
 
 impl Bindings {
-    /// 기본(0024): 소울라이크식 — 회피 B·Space, 패링 LB, 땅 돌리기 LT·RT, 락온 R3, 점프 A·F(0027, 엘든 링). 공격만 X·J(사장: "공격만 우리식").
+    /// 기본 = 키보드+마우스(0058, 새로 설치한 판): 왼쪽 클릭 공격·오른쪽 클릭 마법(커서 쪽)·휠 클릭 락온·L-Shift 패링,
+    /// 왼손은 그대로(Space 회피·F 점프·R 등잔·Q/E 땅 돌리기 — 마우스가 오른손을 가져가도 땅 돌리기는 남는다). 패드 칸은 `keyboard_only`와 같다.
     pub fn default_layout() -> Bindings {
+        Bindings {
+            keys: [
+                mouse_index(MouseButton::Left),
+                key_index(KeyCode::Space),
+                key_index(KeyCode::LeftShift),
+                mouse_index(MouseButton::Middle),
+                key_index(KeyCode::Q),
+                key_index(KeyCode::E),
+                key_index(KeyCode::F),
+                key_index(KeyCode::R),
+                mouse_index(MouseButton::Right),
+            ],
+            ..Bindings::keyboard_only()
+        }
+    }
+
+    /// 키보드만(0024): 소울라이크식 — 회피 B·Space, 패링 LB, 땅 돌리기 LT·RT, 락온 R3, 점프 A·F(0027, 엘든 링). 공격만 X·J(사장: "공격만 우리식").
+    /// 오른손은 J·K·L·U(패드의 오른쪽 넷처럼). 조작 설정의 "키보드만 배치로".
+    pub fn keyboard_only() -> Bindings {
         Bindings {
             keys: [
                 key_index(KeyCode::J),
@@ -267,8 +340,15 @@ impl Bindings {
         }
     }
 
-    pub fn key(&self, b: Bind) -> KeyCode {
-        KEYS[(self.keys[b as usize] as usize).min(KEYS.len() - 1)].0
+    /// 키 칸(키 또는 마우스 버튼, 0058).
+    pub fn key(&self, b: Bind) -> Slot {
+        Slot::of(self.keys[b as usize])
+    }
+
+    /// 키 칸 쓰는 것이 마우스 버튼인가(시험).
+    #[cfg(test)]
+    pub fn uses_mouse(&self) -> bool {
+        self.keys.iter().any(|k| *k as usize >= KEYS.len())
     }
 
     pub fn pad(&self, b: Bind) -> Pad {
@@ -316,7 +396,7 @@ impl Bindings {
             return d;
         }
         let read = |k: u32, p: u32| -> Option<(u8, Pad)> {
-            (k != 0 && k as usize <= KEYS.len() && p != 0 && p as usize <= PADS.len())
+            (k != 0 && k as usize <= NSLOTS && p != 0 && p as usize <= PADS.len())
                 .then(|| ((k - 1) as u8, PADS[(p - 1) as usize]))
         };
         let mut b = d;
@@ -341,7 +421,7 @@ impl Bindings {
         for &i in &fresh {
             let others = |j: usize| j != i && !(fresh.contains(&j) && j > i);
             if (0..NB).any(|j| others(j) && b.keys[j] == b.keys[i]) {
-                if let Some(k) = (0..KEYS.len() as u8).find(|k| !b.keys.contains(k)) {
+                if let Some(k) = (0..NSLOTS as u8).find(|k| !b.keys.contains(k)) {
                     b.keys[i] = k;
                 }
             }
@@ -362,6 +442,64 @@ impl Bindings {
         }
         b
     }
+}
+
+/// 마우스 조준 설정(0058): 켬/끔, 커서가 쉰 뒤 자동 조준으로 돌아가기까지(`REST_SECS`의 자리), 조준 표시 크기(0 작게·1 보통·2 크게).
+/// 쿼터뷰에서 마우스는 패드의 오른쪽 스틱과 같은 일을 한다 — 커서는 OS 커서 그대로라 감도 칸은 없다(빠르기는 OS·DPI).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct MouseAim {
+    pub on: bool,
+    pub rest: u8,
+    pub size: u8,
+}
+
+/// 커서 쉼 시간 고르기(초). 기본은 자리 1(1초).
+pub const REST_SECS: [f32; 4] = [0.5, 1.0, 2.0, 4.0];
+/// 조준 표시 크기 단계 수.
+pub const RETICLE_SIZES: u8 = 3;
+
+impl Default for MouseAim {
+    fn default() -> Self {
+        MouseAim {
+            on: true,
+            rest: 1,
+            size: 1,
+        }
+    }
+}
+
+impl MouseAim {
+    pub fn rest_secs(&self) -> f32 {
+        REST_SECS[(self.rest as usize).min(REST_SECS.len() - 1)]
+    }
+}
+
+static MOUSE_AIM: Mutex<Option<MouseAim>> = Mutex::new(None);
+
+pub fn mouse_aim() -> MouseAim {
+    MOUSE_AIM.lock().ok().and_then(|g| *g).unwrap_or_default()
+}
+
+pub fn set_mouse_aim(m: MouseAim) {
+    if let Ok(mut g) = MOUSE_AIM.lock() {
+        *g = Some(m);
+    }
+}
+
+/// 마우스가 있을 법한 기기인가(설정의 마우스 줄을 보일지): Android·손가락이 주 포인터인 브라우저는 아니다.
+pub fn has_mouse() -> bool {
+    !cfg!(target_os = "android") && initial_device() != Device::Touch
+}
+
+/// 터치 뒤 이만큼(초)은 마우스 이벤트를 터치가 흉내 낸 것으로 본다(모바일 브라우저의 호환 마우스 이벤트) — 장치·탭으로 세지 않는다.
+const MOUSE_AFTER_TOUCH: f32 = 1.0;
+/// 이만큼(논리 px) 움직여야 "마우스를 만졌다"로 센다(떨림·흔들림은 빼고).
+const MOUSE_MOVE_PX: f32 = 2.0;
+
+/// 커서를 조준에 쓸까(0058, 순수 — 시험): 마우스 조준이 켜져 있고, 지금 장치가 키보드(+마우스)이고, 마우스를 만진 지 쉼 시간 안.
+/// 키보드만으로 하는 사람의 쉬는 마우스는 조준을 빼앗지 않는다 — 패드에서 오른쪽 스틱을 놓은 것과 같다.
+pub fn cursor_live(on: bool, device: Device, since_mouse: f32, rest: f32) -> bool {
+    on && device == Device::Keys && since_mouse < rest
 }
 
 static BINDINGS: Mutex<Option<Bindings>> = Mutex::new(None);
@@ -532,6 +670,11 @@ pub struct Input {
     menu_stick: Vec2,
     /// 마법을 누른 뒤 땅 돌리기 누름을 버리는 남은 초(0048).
     cast_guard: f32,
+    /// 마우스(0058): 지금 자리, 마지막으로 "만졌다"고 센 자리(천천히 끌어도 쌓여서 넘게), 만진 뒤 지난 초, 마지막 터치 뒤 지난 초.
+    mouse_pos: Vec2,
+    mouse_anchor: Option<Vec2>,
+    since_mouse: f32,
+    since_touch: f32,
     touch: Touch,
     #[cfg(not(target_os = "android"))]
     pads: Gamepads,
@@ -547,6 +690,10 @@ impl Input {
             latch: Actions::default(),
             menu_stick: Vec2::ZERO,
             cast_guard: 0.0,
+            mouse_pos: Vec2::ZERO,
+            mouse_anchor: None,
+            since_mouse: f32::MAX,
+            since_touch: f32::MAX,
             touch: Touch::default(),
             #[cfg(not(target_os = "android"))]
             pads: Gamepads::new(),
@@ -558,6 +705,12 @@ impl Input {
     /// 터치의 상황 버튼(0053): 앱이 매 프레임 넘긴다.
     pub fn set_touch_ctx(&mut self, ctx: crate::touch::Ctx) {
         self.touch.ctx = ctx;
+    }
+
+    /// 조준에 쓰는 커서 자리(0058) — 조준 표시를 그릴 때. `poll`과 같은 규칙.
+    pub fn cursor(&self) -> Option<Vec2> {
+        let m = mouse_aim();
+        cursor_live(m.on, device(), self.since_mouse, m.rest_secs()).then_some(self.mouse_pos)
     }
 
     /// 터치 장치일 때 렌더가 그릴 오버레이.
@@ -589,22 +742,27 @@ impl Input {
         }
         // 게임 동작은 배치표에서(0024).
         let bind = bindings();
-        let kp = |x: Bind| is_key_pressed(bind.key(x));
+        let kp = |x: Bind| bind.key(x).pressed();
         a.attack = kp(Bind::Attack);
-        a.attack_held = is_key_down(bind.key(Bind::Attack));
+        a.attack_held = bind.key(Bind::Attack).down();
         a.dodge = kp(Bind::Dodge);
         a.parry = kp(Bind::Parry);
         a.jump = kp(Bind::Jump);
         // 랩이 열려 있으면 R은 랩 되돌리기다 — 등잔으로 같이 읽지 않는다.
         a.flask = !lab_open && kp(Bind::Flask);
         a.cast = !lab_open && kp(Bind::Cast);
-        a.cast_held = !lab_open && is_key_down(bind.key(Bind::Cast));
+        a.cast_held = !lab_open && bind.key(Bind::Cast).down();
         a.lock = kp(Bind::Lock);
         a.turn_left = kp(Bind::TurnLeft);
         a.turn_right = kp(Bind::TurnRight);
         a.pressed_key = KEYS
             .iter()
             .position(|(k, _)| is_key_pressed(*k))
+            .or_else(|| {
+                MICE.iter()
+                    .position(|(m, _)| is_mouse_button_pressed(*m))
+                    .map(|i| KEYS.len() + i)
+            })
             .map(|i| i as u8);
         a.lab_toggle = is_key_pressed(KeyCode::F1);
         a.dev_overlay = is_key_pressed(KeyCode::F3);
@@ -797,14 +955,42 @@ impl Input {
         if t.scenario_next {
             a.scenario = Some(0);
         }
+        // 마우스(0058): 움직이거나 누르면 "만졌다". 터치 직후의 마우스 이벤트는 터치가 흉내 낸 것일 수 있어 세지 않는다.
+        let fdt = get_frame_time();
+        self.since_touch = if t.active {
+            0.0
+        } else {
+            (self.since_touch + fdt).min(f32::MAX)
+        };
+        let mp = Vec2::from(mouse_position());
+        let mouse_real = !cfg!(target_os = "android") && self.since_touch > MOUSE_AFTER_TOUCH;
+        let clicked = MICE.iter().any(|(m, _)| is_mouse_button_pressed(*m));
+        // 첫 프레임의 자리는 기준만 잡는다(켜자마자 "만졌다"가 되지 않게).
+        let anchor = *self.mouse_anchor.get_or_insert(mp);
+        let used_mouse = mouse_real && ((mp - anchor).length() > MOUSE_MOVE_PX || clicked);
+        if mouse_real {
+            self.mouse_pos = mp;
+        }
+        if used_mouse {
+            self.since_mouse = 0.0;
+            self.mouse_anchor = Some(mp);
+        } else {
+            self.since_mouse = (self.since_mouse + fdt).min(f32::MAX);
+        }
+        // 메뉴는 마우스 왼쪽을 뗄 때 탭(터치와 같은 규칙, nail 0199).
+        if menu && mouse_real && a.tap.is_none() && is_mouse_button_released(MouseButton::Left) {
+            a.tap = Some(mp);
+        }
         // 지금 쓰는 장치 = 마지막으로 만진 것.
         if t.active {
             set_device(Device::Touch);
         } else if used_pad {
             set_device(Device::Pad);
-        } else if used_keys {
+        } else if used_keys || used_mouse {
             set_device(Device::Keys);
         }
+        let ma = mouse_aim();
+        a.cursor = cursor_live(ma.on, device(), self.since_mouse, ma.rest_secs()).then_some(mp);
 
         if m.length() > 1.0 {
             m = m.normalize();
@@ -816,6 +1002,8 @@ impl Input {
         self.latch = Actions {
             move_dir: m,
             aim,
+            cursor: a.cursor,
+            aim_at: None,
             attack: self.latch.attack | a.attack,
             attack_held: a.attack_held,
             cast_held: a.cast_held,
@@ -868,6 +1056,7 @@ fn carry(a: &Actions) -> Actions {
     Actions {
         move_dir: a.move_dir,
         aim: a.aim,
+        cursor: a.cursor,
         attack_held: a.attack_held,
         cast_held: a.cast_held,
         lab_fast: a.lab_fast,
@@ -891,6 +1080,41 @@ mod tests {
         let second = carry(&first);
         assert!(!second.cast, "a press is taken once");
         assert!(second.cast_held && second.attack_held, "held stays");
+    }
+
+    /// 0058: 커서는 마우스 조준이 켜져 있고, 장치가 키보드(+마우스)이고, 만진 지 쉼 시간 안일 때만 조준한다.
+    /// 키보드만으로 하는 사람의 쉬는 마우스·패드·터치는 조준을 빼앗지 않는다.
+    #[test]
+    fn a_recently_touched_cursor_aims_and_a_resting_one_falls_back_to_auto() {
+        let rest = MouseAim::default().rest_secs();
+        assert_eq!(rest, 1.0);
+        assert!(cursor_live(true, Device::Keys, 0.0, rest));
+        assert!(cursor_live(true, Device::Keys, 0.9, rest));
+        assert!(!cursor_live(true, Device::Keys, 1.0, rest), "rested");
+        assert!(
+            !cursor_live(true, Device::Keys, f32::MAX, rest),
+            "never touched"
+        );
+        assert!(
+            !cursor_live(false, Device::Keys, 0.0, rest),
+            "mouse aim off"
+        );
+        assert!(!cursor_live(true, Device::Pad, 0.0, rest));
+        assert!(!cursor_live(true, Device::Touch, 0.0, rest));
+    }
+
+    /// 0058: 키 칸 번호는 키 표 뒤에 마우스 버튼이 이어지고, 이름은 ASCII(어느 글꼴로도).
+    #[test]
+    fn mouse_buttons_follow_the_keys_in_the_slot_numbers() {
+        assert_eq!(Slot::of(0), Slot::Key(KEYS[0].0));
+        assert_eq!(Slot::of(KEYS.len() as u8), Slot::Mouse(MouseButton::Left));
+        assert_eq!(key_name(KEYS.len() as u8 + 1), "RMB");
+        assert_eq!(key_name(NSLOTS as u8), "?");
+        let mut b = Bindings::default_layout();
+        b.set_key(Bind::Dodge, mouse_index(MouseButton::Left));
+        assert_eq!(b.key(Bind::Dodge), Slot::Mouse(MouseButton::Left));
+        assert_eq!(b.key(Bind::Attack), Slot::Key(KeyCode::Space), "swapped");
+        assert_eq!(Bindings::decode(&b.encode()), b);
     }
 
     /// gamepads 크레이트 축: 위로 밀면 y > 0(문서) → 앞으로 걷는다.

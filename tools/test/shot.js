@@ -31,9 +31,19 @@ async function main() {
   await page.goto(`http://localhost:${PORT}/`);
   await page.waitForTimeout(2500);
   const canvas = page.locator('#glcanvas');
-  await canvas.click({ position: { x: 640, y: 360 } });
+  // 모서리를 눌러 초점만(가운데를 누르면 메뉴 줄을 탭한다 — 마우스도 메뉴를 뗄 때 탭, 0058).
+  await canvas.click({ position: { x: 4, y: 4 } });
   const shot = (name) => page.screenshot({ path: path.join(OUT, name + '.png') });
   const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.waitForTimeout(60); } };
+  // 키보드만 배치로(0058 — 이 스크립트는 J·K·L로 싸운다. 새로 설치한 판의 기본은 키보드+마우스):
+  // 타이틀 → 설정(둘째) → 조작(끝에서 둘째, 위로 두 번) → "키보드만 배치로"(끝에서 둘째) → 돌아가기 둘.
+  const keyboardOnly = async () => {
+    await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
+    await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(300);
+    await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(200);
+    await press('Escape'); await page.waitForTimeout(200); await press('Escape'); await page.waitForTimeout(300);
+  };
+  await keyboardOnly();
   // 0 첫 스테이지(0019): 타이틀 → 시작 이야기 → 입구 → 뜰(첫 물결) → 멈춤 → 타이틀 → 개발: 문 앞 → 깨어남 → 결투(락온) → 멈춤 → 조작 설정.
   await shot('00-title');
   await press('Enter'); await page.waitForTimeout(1500); await shot('00a-intro');
