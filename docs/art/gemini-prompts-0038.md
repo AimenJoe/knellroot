@@ -145,6 +145,42 @@ Faded ash-lavender grey body with a blunt rounded snout. A tall mane of big angu
 along its back — the only sharp shapes, clearly readable in silhouette. One LARGE bright amber ember eye on each side.
 ```
 
+### 가시짐승 — v2(귀여움 문법, 2026-11-05 — 위 판 대신 이것)
+> 문지기 v2와 같은 틀: 참조 = 방랑자(`docs/art/meshy-0038/wanderer_front.png`), 귀여움 문법 먼저, 뾰족한 것은 뿌리만(0037·0061).
+> 네발짐승이라 A-pose 대신 네 발로 선 자세, **3/4 앞**(정면만이면 몸 길이가 안 보인다 — Meshy가 네발짐승에 어느 각을 잘 받는지는 확인 못 함, 안 되면 옆모습으로 다시).
+> 잔재는 0038 때 받은 `tools/art/sources/ai/knellroot/husk_v1_front.png`이 이미 귀여움 문법에 맞아 그대로 Meshy에 넣는다(새 그림 없음).
+```
+Attached: our player character, a raccoon cub. Do NOT draw the raccoon. Draw a DIFFERENT character in the same cute
+style and proportion grammar: big head, big eyes, no mouth, chunky rounded body and stubby legs, soft simple shapes.
+
+[PURPOSE] One reference image for an image-to-3D tool. The 3D model will be shown very small in a retro
+low-resolution game (this creature is only 20 to 50 pixels tall on screen, rendered with pixel-art style toon
+lighting and 1-pixel outlines added by the game). So design it to READ AT TINY SIZE.
+Render ONE creature only, full body, centered, seen from a three-quarter front view (about 45 degrees), standing
+still on all four legs, legs slightly apart and clearly separated, head forward. Nothing in its mouth or on its back
+except what is described.
+Style: a stylized low-poly 3D game model with a hand-painted texture. Few big simple forms, chunky and
+exaggerated proportions, a strong clear silhouette. Details are PAINTED as large flat color areas, not sculpted.
+Each material uses only 2 or 3 flat tones. No fur strands, no texture noise, no small patterns, no tiny accessories.
+Lighting: flat, even and shadowless, like an unlit model; at most a very faint ambient occlusion. No highlights
+except painted eye highlights. No outlines. NOT pixel art, NOT voxel, NOT Minecraft-like. No floor, no pedestal,
+no text, no logo. Pure plain white background. Square image, the creature fills about 80% of the width.
+
+[WORLD RULES] "Color is life." Living things are soft pastel and warm (lavender, mint, peach, cream, a little gold),
+with smooth rounded forms. Things eaten by the purple roots have lost their color: faded ash-lavender grey, and the
+dark purple roots growing out of them are the only sharp, angular, faceted shapes. Danger is the only red.
+Cute proportions: big head, big eyes, NO mouth, short chubby legs.
+
+[CHARACTER] The "thorn beast": a round, chubby little boar piglet, about as big as the raccoon cub's whole body,
+eaten by the roots. A big round head with a short blunt rounded snout (two small nostril dots, no mouth, no tusks),
+a round bean-shaped body, four very short stubby legs with round hooves, a tiny curly tail. All its color drained:
+faded ash-lavender grey in 2 flat tones, one big painted crack on its side. One LARGE bright amber ember eye on each
+side of the head, set low, the brightest spots on it. Along its back runs a tall mane of big angular dark-purple
+thorn-roots — a row of 5 or 6 sharp spikes from the top of the head to the rump, the only sharp shapes, clearly
+readable in silhouette. It charges in straight lines, so it leans slightly forward, but it still looks like a
+lost, sad little piglet rather than a monster.
+```
+
 ### 잠들지 않는 문지기(보스) — 새 대화
 ```
 [CHARACTER] The "sleepless warden": a big heavy guardian about three times the raccoon cub's height, made of a few
