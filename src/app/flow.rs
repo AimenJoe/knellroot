@@ -238,9 +238,15 @@ mod tests {
         assert_eq!(choose_result(ResultItem::Retry), (Scene::Play, true));
         assert_eq!(title_items(false)[0], TitleItem::Start);
         assert_eq!(title_items(false)[1], TitleItem::Settings);
-        assert!(!title_items(false).contains(&TitleItem::NewGame), "nothing to erase");
+        assert!(
+            !title_items(false).contains(&TitleItem::NewGame),
+            "nothing to erase"
+        );
         // 기록이 있어도 시작(이어하기)·설정 자리는 그대로, 새로 하기는 그 뒤.
-        assert_eq!(title_items(true)[..2], [TitleItem::Start, TitleItem::Settings]);
+        assert_eq!(
+            title_items(true)[..2],
+            [TitleItem::Start, TitleItem::Settings]
+        );
         assert_eq!(title_items(true)[2], TitleItem::NewGame);
         assert_eq!(
             choose_pause(PauseItem::Settings),

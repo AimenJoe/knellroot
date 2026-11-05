@@ -1025,22 +1025,49 @@ mod tests {
         // 문 앞 쉼터에서 쉰 기록(문이 열린 뒤) → 새 판에서 이어하기 = 그 쉼터 곁, 문은 열려 있고 물결은 없다.
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
         let last = run.rests.len() - 1;
-        run.resume(&mut w, crate::save::RunAt { rest: last, gate_open: true });
+        run.resume(
+            &mut w,
+            crate::save::RunAt {
+                rest: last,
+                gate_open: true,
+            },
+        );
         assert_eq!(run.phase, Phase::GateOpen);
         assert!(!run.gate_closed);
         assert_eq!(run.intro, 0.0, "no opening story when continuing");
         let at = run.rests[last];
         assert!(vec2(w.player.pos.x - at.x, w.player.pos.z - at.z).length() < 2.0);
-        assert_eq!(run.run_at(), Some(crate::save::RunAt { rest: last, gate_open: true }));
-        assert!(w.enemies.iter().all(|e| e.boss), "only the sleeping gatekeeper");
+        assert_eq!(
+            run.run_at(),
+            Some(crate::save::RunAt {
+                rest: last,
+                gate_open: true
+            })
+        );
+        assert!(
+            w.enemies.iter().all(|e| e.boss),
+            "only the sleeping gatekeeper"
+        );
         // 입구 쉼터·물결 전 기록이면 입구 단계.
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
-        run.resume(&mut w, crate::save::RunAt { rest: 0, gate_open: false });
+        run.resume(
+            &mut w,
+            crate::save::RunAt {
+                rest: 0,
+                gate_open: false,
+            },
+        );
         assert_eq!(run.phase, Phase::Entrance);
         assert!(run.gate_closed);
         // 지도에 없는 쉼터 번호면 아무것도 하지 않는다(처음부터).
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
-        run.resume(&mut w, crate::save::RunAt { rest: 99, gate_open: true });
+        run.resume(
+            &mut w,
+            crate::save::RunAt {
+                rest: 99,
+                gate_open: true,
+            },
+        );
         assert_eq!(run.phase, Phase::Entrance);
         assert_eq!(run.run_at(), None);
     }

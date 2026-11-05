@@ -203,7 +203,8 @@ mod tests {
 
     #[test]
     fn a_record_round_trips_keeps_unknown_keys_and_skips_broken_lines() {
-        let text = "embers=12\nfuture.key=hello = world\n\nbroken line\n=nokey\n# comment\nclears=x\n";
+        let text =
+            "embers=12\nfuture.key=hello = world\n\nbroken line\n=nokey\n# comment\nclears=x\n";
         let r = Record::parse(text);
         assert_eq!(r.num("embers"), Some(12));
         assert_eq!(r.get("future.key"), Some("hello = world"));
@@ -223,7 +224,10 @@ mod tests {
     fn progress_keeps_the_rest_site_and_drops_it_when_the_run_ends() {
         let mut p = Progress::default();
         assert!(!p.has_any(), "nothing yet");
-        p.run = Some(RunAt { rest: 1, gate_open: true });
+        p.run = Some(RunAt {
+            rest: 1,
+            gate_open: true,
+        });
         let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
         assert_eq!(back.run, p.run);
         assert!(back.has_any());
@@ -241,7 +245,10 @@ mod tests {
 
     #[test]
     fn an_empty_or_garbage_store_reads_as_a_fresh_start() {
-        assert_eq!(Progress::from_record(Record::parse("")), Progress::default());
+        assert_eq!(
+            Progress::from_record(Record::parse("")),
+            Progress::default()
+        );
         let p = Progress::from_record(Record::parse("\u{0}\u{1}garbage"));
         assert_eq!((p.embers, p.clears, p.run), (0, 0, None));
     }
@@ -253,7 +260,10 @@ mod tests {
         std::env::set_var("KNELL_SAVE_DIR", &dir);
         let mut p = Progress::default();
         p.embers = 7;
-        p.run = Some(RunAt { rest: 0, gate_open: false });
+        p.run = Some(RunAt {
+            rest: 0,
+            gate_open: false,
+        });
         assert!(save(&p));
         let got = load();
         assert_eq!((got.embers, got.run), (7, p.run));
