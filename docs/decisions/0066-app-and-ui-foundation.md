@@ -84,3 +84,14 @@ R6은 UI 밖이고 v0.3.0 판정(R1~R4 손맛)과 섞이면 안 되니 판정 �
 - Xbox Accessibility Guideline 112 — https://devdocs.xbox.com/gaming/accessibility/xbox-accessibility-guidelines/112
 - Microsoft, Gamepad and remote control interactions — https://learn.microsoft.com/windows/uwp/design/input/gamepad-and-remote-interactions
 - Casey Muratori, Immediate-Mode GUI (2005) — https://caseymuratori.com/blog_0001 · Sol, IMGUI 3장 — https://solhsa.com/imgui/ch03.html
+
+## 구현(2026-11-05)
+- **R1** `app/stack.rs`(순수, 시험 둘) + `flow::Go`·`Layer`·`focus`. 닫으면 연 줄로 돌아오는 고침 때문에 헤드리스 길 넷을 고쳤다(`save.js` 새로 하기 취소 뒤, `shot.js`·`leak.js` "키보드만" 뒤 타이틀 커서가 "설정", `shot.js` 조작 → 멈춤 뒤, `mouse.js` 설정 → DEV).
+- **R2 + R4를 한 커밋으로**: 옛 가운데 목록은 "이름 … 값"을 나눠 그릴 수 없어(글이 "언어: {0}" 한 덩어리) R2만 따로 하면 임시 글을 만들어야 했다. 그래서 줄 표 몰이꾼과 창 틀을 같이 넣었다.
+  - `app/menu.rs`: `Menu`(제목·줄·폭·닫힘·지갑·제목 아래 한 줄·설명), `Out`(고름·좌우), `Hit`(줄·◀▶·▲▼·닫기·조작 칸), `hits_of`·`first_hit`(순수, 시험 — ◀▶·▲▼가 줄을 이긴다), `menu_input`(뒤로는 여기서 `flow::back`), `draw_menu`.
+  - 화면 파일: `pause.rs`(멈춤·장비), `settings.rs`(설정·DEV), `shop.rs`(가게·핵·결과), `ask.rs`(묻는 창 — 아래 칸을 그 커서로 깔고, 누를 자리는 제 단추 + 창 밖만). `App::menu_of`·`act` 두 match에 `_` 없음.
+  - `tick_scene` 340줄 → 목록 화면은 한 줄(`tick_menu`). 입력과 그림이 같은 `Menu`를 쓴다.
+  - `ui.rs`: `panel`·`close`·`button(s)`·`list`(`Row`: 그냥·◀ 값 ▶·→, 흐림)·`title_arrows`(넘치면 ▲▼를 제목 줄에 — nail 0239, 줄 자리를 먹지 않게)·`u`, F4 검사에 `past-panel`·`forget`(묻는 창이 덮은 글은 겹침이 아니다).
+  - 글: 값 줄은 이름만(`menu_language` "언어" …) + 값 글(`value_on/off`·`value_secs`·`grow_count`·`shop_item` "잔불 {0}"), 기호 ◀ → 를 `UI_GLYPHS`에.
+- 덤으로 고친 것: 시작 이야기 글이 창 밑에 비쳤다(`hud` — 창 밑에서는 그리지 않는다). 창이 열린 동안 카메라 따라가기는 한 규칙("판 위의 멈춤 아래가 아니면")으로 — 결과·타이틀에서 연 조작 창에서도 카메라가 마저 자리 잡는다.
+- 확인: 단위 시험 203, 헤드리스 여섯(shot·save·touch·mouse·pwa·leak), F4 넘침 검사 한국어·영어 0건, 스크린숏 `docs/art/ui-0066/`.

@@ -254,7 +254,8 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
         );
     }
     // 시작 이야기(가운데): 스테이지 이름 + 두 줄.
-    if run.intro > 0.0 {
+    // 시작 이야기도 창 밑에서는 그리지 않는다(창 면이 비쳐 글이 겹쳤다, 0066).
+    if run.intro > 0.0 && !under_menu {
         let a = fade_in_out(run.intro, INTRO_TIME, 0.8);
         let y = f.oy + f.h * 0.34;
         ui.text_center(

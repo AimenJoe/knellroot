@@ -2,8 +2,13 @@
 //! 월드는 메뉴를 모르고, 스테이지(`stage`)는 월드를 지켜보며 진행만 하고, 앱이 둘을 묶어 카메라·그림·글로 보낸다.
 //!
 //! 루프: 프레임마다 입력 폴링 → 고정 60Hz 틱 N번(장면 → 월드 → 스테이지 → 카메라) → 가변 렌더(보간) → 글·메뉴(화면 패스).
+mod ask;
 pub mod controls;
 pub mod flow;
+mod menu;
+mod pause;
+mod settings;
+mod shop;
 mod stack;
 
 use macroquad::prelude::*;
@@ -23,6 +28,8 @@ use crate::ui::{self, Ui, AMBER, DIM, INK};
 use crate::weapons;
 use crate::world::{Event, World};
 use flow::{Go, Layer, PauseItem, ResultItem, Scene, SettingsRow, TitleItem};
+use menu::Hit;
+use pause::next_charm;
 
 /// 타이틀 메뉴 첫 줄의 자리(화면 높이 비율) — `tools/test/touch.js`가 같은 값으로 탭한다.
 const TITLE_MENU_Y: f32 = 0.37;
@@ -39,7 +46,7 @@ pub struct App {
     stack: stack::Stack,
     cursor: usize,
     /// 지난 프레임에 그린 메뉴 줄·▲▼ 자리(탭 판정).
-    menu_hits: ui::MenuHits,
+    hits: Vec<(Rect, Hit)>,
     /// 지금 화면의 굴리는 목록 창(메뉴·조작 설정 공통, 장면이 바뀌면 처음부터).
     view: ui::ListView,
     input: Input,
@@ -56,9 +63,8 @@ pub struct App {
     acc: f32,
     /// 개발 줄(F3).
     dev_overlay: bool,
-    /// 조작 설정 화면(0024)과 지난 프레임의 칸 자리(탭: (자리, 줄, 칸)).
+    /// 조작 설정 화면(0024).
     ctl: controls::Controls,
-    ctl_rects: Vec<(Rect, usize, usize)>,
     perf: Perf,
     sums: (f64, f64, f64, u32),
     /// 든 무기(0051) — 다시 시작해도 그대로, 설정과 함께 저장.
@@ -89,42 +95,6 @@ pub struct App {
 /// 알림이 떠 있는 시간(초).
 const TOAST_TIME: f32 = 3.5;
 
-/// 장비 창 줄(0064 M3): 무기, 장신구 세 칸, 돌아가기.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum EquipRow {
-    Weapon,
-    Charm(usize),
-    Back,
-}
-
-fn equip_rows() -> Vec<EquipRow> {
-    let mut v = vec![EquipRow::Weapon];
-    v.extend((0..crate::charms::SLOTS).map(EquipRow::Charm));
-    v.push(EquipRow::Back);
-    v
-}
-
-/// 칸 `slot`에 낄 수 있는 다음(`step` ±1) 장신구: 빈 칸 + 가진 것 가운데 다른 칸에 없는 것(표 순서), 끝에서 감는다.
-fn next_charm(
-    owned: &[crate::charms::Id],
-    worn: &[Option<crate::charms::Id>; crate::charms::SLOTS],
-    slot: usize,
-    step: i32,
-) -> Option<crate::charms::Id> {
-    let mut opts: Vec<Option<crate::charms::Id>> = vec![None];
-    for d in crate::charms::TABLE.iter() {
-        let elsewhere = worn
-            .iter()
-            .enumerate()
-            .any(|(j, w)| j != slot && *w == Some(d.id));
-        if owned.contains(&d.id) && !elsewhere {
-            opts.push(Some(d.id));
-        }
-    }
-    let at = opts.iter().position(|o| *o == worn[slot]).unwrap_or(0) as i32;
-    opts[(at + step).rem_euclid(opts.len() as i32) as usize]
-}
-
 impl App {
     pub fn new() -> Self {
         let t = Tuning::default();
@@ -149,7 +119,7 @@ impl App {
         App {
             stack: stack::Stack::new(Scene::Title),
             cursor: 0,
-            menu_hits: ui::MenuHits::default(),
+            hits: Vec::new(),
             view: ui::ListView::default(),
             input: Input::new(),
             lab: Lab::new(),
@@ -165,7 +135,6 @@ impl App {
             acc: 0.0,
             dev_overlay: false,
             ctl: controls::Controls::default(),
-            ctl_rects: Vec::new(),
             perf: Perf::default(),
             sums: (0.0, 0.0, 0.0, 0),
             weapon,
@@ -419,9 +388,8 @@ impl App {
         if let Some((cursor, view)) = self.stack.go(go, self.cursor, self.view) {
             self.cursor = cursor;
             self.view = view;
-            self.menu_hits = ui::MenuHits::default();
+            self.hits.clear();
             self.ctl = controls::Controls::default();
-            self.ctl_rects.clear();
         }
     }
 
@@ -476,21 +444,6 @@ impl App {
         }
     }
 
-    /// 메뉴 한 틱: 커서·굴리기·탭·확인 → 고른 줄. 굴리기 = 끌기·휠·▲▼ 탭(창을 옮기고 커서를 창 안으로).
-    fn menu_pick(&mut self, a: &Actions, n: usize) -> Option<usize> {
-        ui::menu_input(&mut self.cursor, n, a.menu_up, a.menu_down);
-        let arrow = a.tap.and_then(|p| self.menu_hits.arrow_at(p));
-        self.view
-            .scroll((a.drag, a.wheel + arrow.unwrap_or(0)), &mut self.cursor, n);
-        if let (Some(p), None) = (a.tap, arrow) {
-            if let Some(i) = ui::hit(&self.menu_hits.rows, p) {
-                self.cursor = i;
-                return Some(i);
-            }
-        }
-        a.confirm.then_some(self.cursor.min(n.saturating_sub(1)))
-    }
-
     /// 화면 아래 안내 줄 위까지(메뉴가 굴리는 아래 끝).
     fn menu_bottom(&self, f: &Frame) -> f32 {
         f.oy + f.h - self.ui.px(1.0) * 2.8
@@ -543,224 +496,31 @@ impl App {
                         TitleItem::Dev => self.go(Go::Open(Scene::Dev)),
                     }
                 }
-                self.follow_camera();
             }
-            Scene::Settings => {
-                let rows = flow::settings_rows(crate::screen::supported(), input::has_mouse());
-                let row = rows.get(self.cursor).copied();
-                let step = a.menu_right as i32 - a.menu_left as i32;
-                if a.back || a.pause {
-                    self.go(flow::back(self.scene()));
-                    return;
-                }
-                if step != 0 {
-                    match row {
-                        Some(SettingsRow::Language) => self.next_lang(),
-                        Some(SettingsRow::Shake) => {
-                            self.shake = (self.shake as i32 + step).clamp(0, 10) as u8;
-                            self.save_prefs();
-                        }
-                        Some(SettingsRow::Volume) => {
-                            self.set_volume((self.volume as i32 + step).clamp(0, 10) as u8)
-                        }
-                        Some(
-                            r @ (SettingsRow::MouseAim
-                            | SettingsRow::CursorRest
-                            | SettingsRow::Reticle),
-                        ) => self.step_mouse(r, step),
-                        _ => {}
-                    }
-                }
-                if let Some(i) = self.menu_pick(&a, rows.len()) {
-                    match rows[i] {
-                        SettingsRow::Language => self.next_lang(),
-                        SettingsRow::Fullscreen => crate::screen::toggle(),
-                        SettingsRow::Shake => {
-                            self.shake = if self.shake >= 10 { 0 } else { self.shake + 1 };
-                            self.save_prefs();
-                        }
-                        SettingsRow::Volume => self.set_volume(if self.volume >= 10 {
-                            0
-                        } else {
-                            self.volume + 1
-                        }),
-                        r @ (SettingsRow::MouseAim
-                        | SettingsRow::CursorRest
-                        | SettingsRow::Reticle) => self.step_mouse(r, 1),
-                        SettingsRow::Controls => self.go(Go::Open(Scene::Controls)),
-                        SettingsRow::Back => self.go(flow::back(self.scene())),
-                    }
-                }
-                if !self.stack.holds(Scene::Pause) {
-                    self.follow_camera();
-                }
-            }
+            Scene::Ask(k) => self.tick_ask(&a, k),
+            s @ (Scene::Pause
+            | Scene::Equip
+            | Scene::Settings
+            | Scene::Shop
+            | Scene::Core
+            | Scene::Result { .. }) => self.tick_menu(&a, s),
             #[cfg(feature = "dev")]
-            Scene::Dev => {
-                let items = dev_items();
-                if a.back || a.pause {
-                    self.go(Go::Back);
-                    return;
-                }
-                let step = a.menu_right as i32 - a.menu_left as i32;
-                if step != 0 {
-                    match items.get(self.cursor) {
-                        Some(DevItem::Scenario) => {
-                            self.sc = if step > 0 {
-                                scenario::next(self.sc)
-                            } else {
-                                (0..scenario::LIST.len() - 1)
-                                    .fold(self.sc, |s, _| scenario::next(s))
-                            }
-                        }
-                        Some(DevItem::Weapon) => self.next_weapon(step),
-                        _ => {}
-                    }
-                }
-                if let Some(i) = self.menu_pick(&a, items.len()) {
-                    match items[i] {
-                        DevItem::Gate => {
-                            self.restart();
-                            self.run.dev_skip_to_gate(&mut self.world);
-                            self.cam = Camera::new(self.world.player.pos, &self.t);
-                            self.go(Go::Root(Scene::Play));
-                        }
-                        DevItem::Scenario => {
-                            let sc = self.sc;
-                            self.world = scenario::build(sc);
-                            self.world.set_weapon(self.weapon);
-                            self.cam = Camera::new(self.world.player.pos, &self.t);
-                            self.go(Go::Root(Scene::Sandbox));
-                        }
-                        DevItem::Weapon => self.next_weapon(1),
-                        DevItem::Back => self.go(Go::Back),
-                    }
-                }
-                self.follow_camera();
-            }
-            Scene::Pause => {
-                if a.pause || a.back {
-                    let next = if a.pause {
-                        flow::pause(self.scene())
-                    } else {
-                        flow::back(self.scene())
-                    };
-                    self.go(next);
-                } else if (a.menu_left || a.menu_right)
-                    && flow::PAUSE_ITEMS.get(self.cursor) == Some(&PauseItem::Weapon)
-                {
-                    self.next_weapon(if a.menu_right { 1 } else { -1 });
-                } else if let Some(i) = self.menu_pick(&a, flow::PAUSE_ITEMS.len()) {
-                    let (next, rebuild) = flow::choose_pause(flow::PAUSE_ITEMS[i]);
-                    if rebuild {
-                        self.restart();
-                    }
-                    self.go(next);
-                }
-            }
-            Scene::Core => {
-                // 핵 고르기(0064 M4): 하나를 골라야 결과로(뒤로는 건너뛰지 않는다).
-                let opts = self.progress.growth.options();
-                if let Some(i) = self.menu_pick(&a, opts.len()) {
-                    self.progress.growth.add(opts[i]);
-                    self.world.apply_stats(self.progress.stats(), true);
-                    self.persist();
-                    self.go(Go::Root(Scene::Result { won: true }));
-                }
-                self.follow_camera();
-            }
-            Scene::Shop => {
-                let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
-                if a.back || a.pause {
-                    self.go(flow::back(self.scene()));
-                    return;
-                }
-                if let Some(i) = self.menu_pick(&a, wares.len() + 1) {
-                    match wares.get(i).copied() {
-                        // 모자라면 묻지 않고 알림만(nail 가게와 같다 — 흐린 줄).
-                        Some((_, price)) if self.world.embers < price => {
-                            self.toast = Some((s().shop_poor.to_string(), 1.6));
-                            self.snd(crate::sfx::Id::Deny);
-                        }
-                        Some(_) => self.ask(flow::Ask::Buy(i)),
-                        None => self.go(flow::back(self.scene())),
-                    }
-                }
-                self.follow_camera();
-            }
-            Scene::Ask(k) => {
-                if a.back || a.pause {
-                    self.go(flow::back(self.scene()));
-                    return;
-                }
-                if let Some(i) = self.menu_pick(&a, 2) {
-                    let yes = i == 0;
-                    let (next, rebuild) = flow::answer(k, yes);
-                    if yes {
-                        match k {
-                            flow::Ask::NewGame => {
-                                crate::save::wipe();
-                                self.progress = crate::save::Progress::default();
-                                self.saved = self.progress.clone();
-                                crate::screen::touch_enter();
-                            }
-                            flow::Ask::Buy(w) => {
-                                let wares = crate::growth::wares(
-                                    &self.progress.owned,
-                                    &self.progress.growth,
-                                );
-                                if let Some(&w) = wares.get(w) {
-                                    self.buy(w);
-                                }
-                            }
-                            flow::Ask::Restart | flow::Ask::ToTitle => {}
-                        }
-                    }
-                    if rebuild {
-                        self.restart();
-                    }
-                    self.go(next);
-                }
-                if matches!(k, flow::Ask::Buy(_) | flow::Ask::NewGame) {
-                    self.follow_camera();
-                }
-            }
-            Scene::Equip => {
-                let rows = equip_rows();
-                let step = a.menu_right as i32 - a.menu_left as i32;
-                if a.back || a.pause {
-                    self.go(flow::back(self.scene()));
-                    return;
-                }
-                if step != 0 {
-                    match rows.get(self.cursor) {
-                        Some(EquipRow::Weapon) => self.next_weapon(step),
-                        Some(EquipRow::Charm(i)) => self.step_charm(*i, step),
-                        _ => {}
-                    }
-                } else if let Some(i) = self.menu_pick(&a, rows.len()) {
-                    match rows[i] {
-                        EquipRow::Weapon => self.next_weapon(1),
-                        EquipRow::Charm(slot) => self.step_charm(slot, 1),
-                        EquipRow::Back => self.go(flow::back(self.scene())),
-                    }
-                }
-            }
+            Scene::Dev => self.tick_menu(&a, Scene::Dev),
             Scene::Controls => {
                 let b = input::bindings();
                 let mut out = self.ctl.tick(&a, b, TICK_DT);
                 if self.ctl.capture.is_none() {
                     // 굴리기(끌기·휠·▲▼)는 메뉴와 같다 — 커서 = 고른 줄.
-                    let arrow = a.tap.and_then(|p| self.menu_hits.arrow_at(p));
+                    let tap = a.tap.and_then(|p| self.hit_at(p));
+                    let arrow = match tap {
+                        Some(Hit::Scroll(d)) => d,
+                        _ => 0,
+                    };
                     let n = controls::rows().len();
                     self.view
-                        .scroll((a.drag, a.wheel + arrow.unwrap_or(0)), &mut self.ctl.row, n);
-                    if let (Some(p), None) = (a.tap, arrow) {
-                        if let Some(&(_, row, col)) =
-                            self.ctl_rects.iter().find(|(r, _, _)| r.contains(p))
-                        {
-                            out = self.ctl.pick(row, col, b);
-                        }
+                        .scroll((a.drag, a.wheel + arrow), &mut self.ctl.row, n);
+                    if let Some(Hit::Cell(row, col)) = tap {
+                        out = self.ctl.pick(row, col, b);
                     }
                 }
                 match out {
@@ -770,15 +530,6 @@ impl App {
                         self.save_prefs();
                     }
                     controls::Out::Back => self.go(flow::back(self.scene())),
-                }
-            }
-            Scene::Result { .. } => {
-                if let Some(i) = self.menu_pick(&a, flow::RESULT_ITEMS.len()) {
-                    let (next, rebuild) = flow::choose_result(flow::RESULT_ITEMS[i]);
-                    if rebuild {
-                        self.restart();
-                    }
-                    self.go(next);
                 }
             }
             Scene::Ending { won } => {
@@ -850,10 +601,60 @@ impl App {
                 self.step_world(&a);
             }
         }
+        // 창이 열린 동안 카메라는 계속 따라간다(타이틀 바탕·가게·핵 고르기) — 판 위의 멈춤 아래에서는 그대로 선다.
+        if self.scene().is_menu() && !self.stack.holds(Scene::Pause) {
+            self.follow_camera();
+        }
     }
 
     /// 커서 → 땅 위의 점(0058): 지난 프레임 화면 자리로 NDC, 카메라 리그의 시선이 플레이어 발 높이 면에 닿는 점.
     /// 락온 중이면 쓰지 않는다(오른쪽 스틱처럼 — 대상을 본다). 화면 밖이면 없음.
+    /// 목록 화면 한 틱(0066): 줄 표 → 입력 → 화면의 고름.
+    fn tick_menu(&mut self, a: &Actions, scene: Scene) {
+        if let Some(m) = self.menu_of(scene) {
+            if let Some(out) = self.menu_input(a, &m) {
+                self.act(scene, out);
+            }
+        }
+    }
+
+    /// 장면의 줄 표(목록 화면만 — 제 그림을 갖는 화면은 `None`). `_` 없는 match: 새 장면이면 컴파일러가 묻는다.
+    fn menu_of(&self, scene: Scene) -> Option<menu::Menu> {
+        match scene {
+            Scene::Pause => Some(self.pause_menu()),
+            Scene::Equip => Some(self.equip_menu()),
+            Scene::Settings => Some(self.settings_menu()),
+            Scene::Shop => Some(self.shop_menu()),
+            Scene::Core => Some(self.core_menu()),
+            Scene::Result { won } => Some(self.result_menu(won)),
+            #[cfg(feature = "dev")]
+            Scene::Dev => Some(self.dev_menu()),
+            Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Controls | Scene::Ask(_) => {
+                None
+            }
+            #[cfg(feature = "dev")]
+            Scene::Sandbox => None,
+        }
+    }
+
+    /// 목록 화면의 고름을 그 화면에(뒤로는 몰이꾼이 한다).
+    fn act(&mut self, scene: Scene, out: menu::Out) {
+        match scene {
+            Scene::Pause => self.pause_act(out),
+            Scene::Equip => self.equip_act(out),
+            Scene::Settings => self.settings_act(out),
+            Scene::Shop => self.shop_act(out),
+            Scene::Core => self.core_act(out),
+            Scene::Result { .. } => self.result_act(out),
+            #[cfg(feature = "dev")]
+            Scene::Dev => self.dev_act(out),
+            Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Controls | Scene::Ask(_) => {
+            }
+            #[cfg(feature = "dev")]
+            Scene::Sandbox => {}
+        }
+    }
+
     fn cursor_aim(&self, mut a: Actions) -> Actions {
         a.aim_at = None;
         let (Some(c), Some(f)) = (a.cursor, self.frame) else {
@@ -983,30 +784,8 @@ impl App {
         self.frame = Some(f);
         self.ui.begin(f.ui);
         let overlay = self.input.overlay(self.lab.open);
-        // 창 밑의 HUD는 장면의 자리(`Scene::layer`)가 정한다 — 판 위에서 연 창만(0066).
-        if self.scene().layer() == (Layer::Window { hud: true }) && self.stack.base() == Scene::Play
-        {
-            hud::draw(&self.ui, &f, &self.world, Some(&self.run), true);
-        }
-        match self.scene() {
-            Scene::Title => self.draw_title(&f),
-            Scene::Play | Scene::Ending { .. } => {
-                hud::draw(&self.ui, &f, &self.world, Some(&self.run), false)
-            }
-            Scene::Pause => self.draw_pause(&f),
-            Scene::Equip => self.draw_equip(&f),
-            Scene::Core => self.draw_core(&f),
-            // 가게 창이 잔불을 보여 주니 밑의 HUD는 그리지 않는다(KB `hud-readability-and-quick-slots`).
-            Scene::Shop => self.draw_shop(&f),
-            Scene::Ask(k) => self.draw_ask(&f, k),
-            Scene::Result { won } => self.draw_result(&f, won),
-            Scene::Controls => self.draw_controls(&f),
-            Scene::Settings => self.draw_settings(&f),
-            #[cfg(feature = "dev")]
-            Scene::Dev => self.draw_dev_menu(&f),
-            #[cfg(feature = "dev")]
-            Scene::Sandbox => hud::draw(&self.ui, &f, &self.world, None, false),
-        }
+        self.hits.clear();
+        self.draw_layered(&f, self.scene());
         if matches!(
             self.scene(),
             Scene::Play | Scene::Ending { .. } | Scene::Shop | Scene::Title
@@ -1042,6 +821,31 @@ impl App {
     }
 
     /// 갈 곳이 화면 밖이면(`GOAL_ARROW_DELAY` 넘게) 가장자리 화살(0060 W1). 화면 안에 들어오면 빛기둥이 맡는다.
+    /// 장면을 제 자리(`Scene::layer`, 0066)에 그린다: 싸움 화면은 HUD, 판 위에서 연 창은 밑에 HUD를 깔고,
+    /// 묻는 창은 아래 칸을 그대로 깐다(`draw_ask`). 목록 화면은 줄 표(`menu_of`)를 몰이꾼이 그린다.
+    fn draw_layered(&mut self, f: &Frame, scene: Scene) {
+        match scene.layer() {
+            Layer::Game => {
+                let run = matches!(scene, Scene::Play | Scene::Ending { .. }).then_some(&self.run);
+                hud::draw(&self.ui, f, &self.world, run, false);
+            }
+            Layer::Window { hud: true } if self.stack.base() == Scene::Play => {
+                hud::draw(&self.ui, f, &self.world, Some(&self.run), true);
+            }
+            Layer::Screen | Layer::Window { .. } | Layer::Modal => {}
+        }
+        match scene {
+            Scene::Title => self.draw_title(f),
+            Scene::Ask(k) => self.draw_ask(f, k),
+            Scene::Controls => self.draw_controls(f),
+            s => {
+                if let Some(m) = self.menu_of(s) {
+                    self.draw_menu(f, &m);
+                }
+            }
+        }
+    }
+
     fn draw_goal_arrow(&mut self, f: &Frame) {
         let mark = self.run.goal().and_then(|g| {
             let (ndc, front) =
@@ -1154,7 +958,7 @@ impl App {
             })
             .collect();
         let bottom = self.menu_bottom(f);
-        self.menu_hits = self.ui.menu(
+        let hits = self.ui.menu(
             &items,
             self.cursor,
             &mut self.view,
@@ -1162,6 +966,7 @@ impl App {
             f.oy + f.h * TITLE_MENU_Y,
             bottom,
         );
+        self.push_hits(&hits);
         self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
         // 버전 글자(오른쪽 위) — 받은 판이 무엇인지 사진 한 장으로 알게. 개발판은 표시를 붙인다.
         let ver = if cfg!(feature = "dev") {
@@ -1177,216 +982,6 @@ impl App {
             1.0,
             DIM,
         );
-    }
-
-    fn draw_pause(&mut self, f: &Frame) {
-        let s = s();
-        self.ui.dim(0.55);
-        let cx = f.ox + f.w * 0.5;
-        self.ui
-            .text_center(s.pause_title, cx, f.oy + f.h * 0.25, 2.0, INK);
-        let items: Vec<String> = flow::PAUSE_ITEMS
-            .iter()
-            .map(|i| match i {
-                PauseItem::Resume => s.menu_resume.to_string(),
-                PauseItem::Weapon => fill(s.menu_equip, &[weapon_name(self.weapon)]),
-                PauseItem::Settings => s.menu_settings.to_string(),
-                PauseItem::Restart => s.menu_restart.to_string(),
-                PauseItem::ToTitle => s.menu_to_title.to_string(),
-            })
-            .collect();
-        let bottom = self.menu_bottom(f);
-        self.menu_hits = self.ui.menu(
-            &items,
-            self.cursor,
-            &mut self.view,
-            cx,
-            f.oy + f.h * 0.45,
-            bottom,
-        );
-        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
-    }
-
-    /// 장비(0064 M3): 무기 줄 + 장신구 세 칸 + 돌아가기, 아래에 고른 칸의 설명.
-    fn draw_equip(&mut self, f: &Frame) {
-        let s = s();
-        self.ui.dim(0.6);
-        let cx = f.ox + f.w * 0.5;
-        self.ui
-            .text_center(s.equip_title, cx, f.oy + f.h * 0.14, 2.0, INK);
-        let rows = equip_rows();
-        let items: Vec<String> = rows
-            .iter()
-            .map(|r| match r {
-                EquipRow::Weapon => fill(s.menu_weapon, &[weapon_name(self.weapon)]),
-                EquipRow::Charm(i) => {
-                    let name = self.progress.worn[*i]
-                        .map_or(s.charm_empty, |id| tr(crate::charms::def(id).name));
-                    fill(s.menu_charm_slot, &[&(i + 1).to_string(), name])
-                }
-                EquipRow::Back => s.controls_back.to_string(),
-            })
-            .collect();
-        let bottom = self.menu_bottom(f) - self.ui.px(1.0) * 2.4;
-        self.menu_hits = self.ui.menu(
-            &items,
-            self.cursor,
-            &mut self.view,
-            cx,
-            f.oy + f.h * 0.3,
-            bottom,
-        );
-        // 설명 줄: 고른 칸의 장신구, 아직 하나도 없으면 얻는 곳.
-        let desc = match rows.get(self.cursor) {
-            _ if self.progress.owned.is_empty() => Some(s.equip_none_yet),
-            Some(EquipRow::Charm(i)) => {
-                self.progress.worn[*i].map(|id| tr(crate::charms::def(id).desc))
-            }
-            _ => None,
-        };
-        if let Some(d) = desc {
-            self.ui.text_center_wrapped(
-                d,
-                cx,
-                bottom + self.ui.px(1.0) * 0.6,
-                1.0,
-                AMBER,
-                f.w * 0.9,
-            );
-        }
-        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
-    }
-
-    /// 핵 고르기(0064 M4): 제목 + 갈래 셋(지금/상한).
-    fn draw_core(&mut self, f: &Frame) {
-        let s = s();
-        self.ui.dim(0.6);
-        let cx = f.ox + f.w * 0.5;
-        let y = f.oy + f.h * 0.2;
-        self.ui.text_center(s.core_title, cx, y, 2.0, AMBER);
-        self.ui
-            .text_center(s.core_sub, cx, y + self.ui.px(2.0) * 1.3, 1.0, DIM);
-        let g = self.progress.growth;
-        let items: Vec<String> = g
-            .options()
-            .iter()
-            .map(|&p| {
-                let name = match p {
-                    crate::growth::Pick::Hp => s.grow_hp,
-                    crate::growth::Pick::Flask => s.grow_flask,
-                    crate::growth::Pick::Heal => s.grow_heal,
-                };
-                let n = (g.count(p) + 1).to_string();
-                let m = crate::growth::cap(p).to_string();
-                fill(s.grow_line, &[name, &n, &m])
-            })
-            .collect();
-        let bottom = self.menu_bottom(f);
-        self.menu_hits = self.ui.menu(
-            &items,
-            self.cursor,
-            &mut self.view,
-            cx,
-            f.oy + f.h * 0.42,
-            bottom,
-        );
-        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
-    }
-
-    /// 쉼터 화로(0064 M4): 가진 잔불 + 살 것(값) + 떠나기, 아래에 고른 것의 설명.
-    fn draw_shop(&mut self, f: &Frame) {
-        let s = s();
-        self.ui.dim(0.6);
-        let cx = f.ox + f.w * 0.5;
-        let y = f.oy + f.h * 0.14;
-        self.ui.text_center(s.shop_title, cx, y, 2.0, AMBER);
-        let have = self.world.embers.to_string();
-        self.ui.text_center(
-            &fill(s.shop_embers, &[&have]),
-            cx,
-            y + self.ui.px(2.0) * 1.3,
-            1.0,
-            INK,
-        );
-        let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
-        let name = |w: crate::growth::Ware| match w {
-            crate::growth::Ware::Charm(id) => tr(crate::charms::def(id).name),
-            crate::growth::Ware::Oil => s.shop_oil,
-        };
-        let mut items: Vec<String> = wares
-            .iter()
-            .map(|&(w, price)| fill(s.shop_item, &[name(w), &price.to_string()]))
-            .collect();
-        items.push(s.shop_leave.to_string());
-        let bottom = self.menu_bottom(f) - self.ui.px(1.0) * 2.4;
-        let have = self.world.embers;
-        let dim: Vec<bool> = wares.iter().map(|&(_, price)| have < price).collect();
-        self.menu_hits = self.ui.menu_dimmed(
-            &items,
-            &dim,
-            self.cursor,
-            &mut self.view,
-            cx,
-            f.oy + f.h * 0.34,
-            bottom,
-        );
-        let desc = match wares.get(self.cursor) {
-            Some((crate::growth::Ware::Charm(id), _)) => Some(tr(crate::charms::def(*id).desc)),
-            Some((crate::growth::Ware::Oil, _)) => Some(s.shop_oil_d),
-            None if wares.is_empty() => Some(s.shop_empty),
-            None => None,
-        };
-        if let Some(d) = desc {
-            self.ui.text_center_wrapped(
-                d,
-                cx,
-                bottom + self.ui.px(1.0) * 0.6,
-                1.0,
-                AMBER,
-                f.w * 0.9,
-            );
-        }
-        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
-    }
-
-    /// 묻는 창: 무엇을 잃는지 한 줄 + 줄 둘(하는 일 이름 / 취소). 뒤에 온 곳을 흐리게 깐다.
-    fn draw_ask(&mut self, f: &Frame, k: flow::Ask) {
-        let s = s();
-        // 멈춤에서 왔으면 HUD를 깔고 흐리게. 가게 목록은 깔지 않는다(글이 겹쳐 읽기 어려웠다 — knellroot에는 nail의 창 틀이 없다).
-        if self.stack.under().map(|e| e.scene) == Some(Scene::Pause) {
-            hud::draw(&self.ui, f, &self.world, Some(&self.run), true);
-        }
-        self.ui.dim(0.7);
-        let cx = f.ox + f.w * 0.5;
-        let (q, yes) = match k {
-            flow::Ask::NewGame => (s.ask_new_game.to_string(), s.ask_new_game_yes),
-            flow::Ask::Restart => (s.ask_restart.to_string(), s.menu_restart),
-            flow::Ask::ToTitle => (s.ask_to_title.to_string(), s.menu_to_title),
-            flow::Ask::Buy(i) => {
-                let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
-                let (name, price) = match wares.get(i) {
-                    Some((crate::growth::Ware::Charm(id), p)) => {
-                        (tr(crate::charms::def(*id).name), *p)
-                    }
-                    Some((crate::growth::Ware::Oil, p)) => (s.shop_oil, *p),
-                    None => ("", 0),
-                };
-                (fill(s.ask_buy, &[name, &price.to_string()]), s.ask_buy_yes)
-            }
-        };
-        self.ui
-            .text_center_wrapped(&q, cx, f.oy + f.h * 0.3, 1.0, INK, f.w * 0.8);
-        let items = vec![yes.to_string(), s.ask_cancel.to_string()];
-        let bottom = self.menu_bottom(f);
-        self.menu_hits = self.ui.menu(
-            &items,
-            self.cursor,
-            &mut self.view,
-            cx,
-            f.oy + f.h * 0.48,
-            bottom,
-        );
-        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
     }
 
     /// 알림(0064 M3): 화면 위 가운데, 끝 0.6초에 옅어진다.
@@ -1410,94 +1005,6 @@ impl App {
         }
     }
 
-    /// 설정(0052): 값 줄은 "이름: 값", 좌우·확인으로 바꾼다.
-    fn draw_settings(&mut self, f: &Frame) {
-        let s = s();
-        let mouse = input::mouse_aim();
-        self.ui.dim(0.6);
-        let cx = f.ox + f.w * 0.5;
-        let rows = flow::settings_rows(crate::screen::supported(), input::has_mouse());
-        // 마우스 줄 셋(0058)이 붙으면 제목·메뉴를 올리고 줄 간격을 아래 안내 위까지로 줄인다.
-        let many = rows.len() > 5;
-        let title_y = f.oy + f.h * if many { 0.1 } else { 0.2 };
-        self.ui.text_center(s.settings_title, cx, title_y, 2.0, INK);
-        let items: Vec<String> = rows
-            .iter()
-            .map(|r| match r {
-                SettingsRow::Language => fill(s.menu_language, &[s.lang_name]),
-                SettingsRow::Fullscreen => if crate::screen::active() {
-                    s.menu_fullscreen_on
-                } else {
-                    s.menu_fullscreen_off
-                }
-                .to_string(),
-                SettingsRow::Shake => {
-                    fill(s.menu_shake, &[&format!("{}%", self.shake as u32 * 10)])
-                }
-                SettingsRow::Volume => {
-                    fill(s.menu_volume, &[&format!("{}%", self.volume as u32 * 10)])
-                }
-                SettingsRow::MouseAim => if mouse.on {
-                    s.menu_mouse_aim_on
-                } else {
-                    s.menu_mouse_aim_off
-                }
-                .to_string(),
-                SettingsRow::CursorRest => {
-                    fill(s.menu_cursor_rest, &[&format!("{}", mouse.rest_secs())])
-                }
-                SettingsRow::Reticle => fill(
-                    s.menu_reticle,
-                    &[[s.reticle_small, s.reticle_medium, s.reticle_large]
-                        [(mouse.size as usize).min(2)]],
-                ),
-                SettingsRow::Controls => s.menu_controls.to_string(),
-                SettingsRow::Back => s.controls_back.to_string(),
-            })
-            .collect();
-        let hint_y = f.oy + f.h - self.ui.px(1.0) * 2.2;
-        let top = f.oy + f.h * if many { 0.24 } else { 0.38 };
-        let bottom = hint_y - self.ui.px(1.0) * 0.6;
-        self.menu_hits = self
-            .ui
-            .menu(&items, self.cursor, &mut self.view, cx, top, bottom);
-        self.menu_hint(cx, hint_y, f.w * 0.94);
-    }
-
-    /// 개발 메뉴(0052): 개발판에만, 영어 그대로(0013).
-    #[cfg(feature = "dev")]
-    fn draw_dev_menu(&mut self, f: &Frame) {
-        self.ui.dim(0.6);
-        let cx = f.ox + f.w * 0.5;
-        self.ui.text_center("DEV", cx, f.oy + f.h * 0.1, 2.0, AMBER);
-        let items: Vec<String> = dev_items()
-            .iter()
-            .map(|d| match d {
-                DevItem::Gate => "start at the sanctum gate (boss)".to_string(),
-                DevItem::Scenario => format!("PoC: < {} >", scenario::entry(self.sc).name),
-                DevItem::Weapon => format!("weapon: < {:?} >", self.weapon),
-                DevItem::Back => "back".to_string(),
-            })
-            .collect();
-        // 아래 PoC 설명 줄(0.78) 위까지.
-        let bottom = f.oy + f.h * 0.76;
-        self.menu_hits = self.ui.menu(
-            &items,
-            self.cursor,
-            &mut self.view,
-            cx,
-            f.oy + f.h * 0.3,
-            bottom,
-        );
-        if let Some(DevItem::Scenario) = dev_items().get(self.cursor) {
-            let e = scenario::entry(self.sc);
-            let checks = self.ui.fit(e.checks, f.w * 0.9, 1.0);
-            self.ui
-                .text_center(&checks, cx, f.oy + f.h * 0.78, 1.0, DIM);
-        }
-        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
-    }
-
     /// 조작 설정(0024): 동작 | 키보드 | 패드 표, 고른 칸은 호박색, 기다리는 칸은 "누르세요… n".
     fn draw_controls(&mut self, f: &Frame) {
         let s = s();
@@ -1512,7 +1019,6 @@ impl App {
         self.ui.text_center(s.controls_pad, x_pad, y, 1.0, DIM);
         y += px * 1.4;
         let b = input::bindings();
-        self.ctl_rects.clear();
         let rows = controls::rows();
         // 줄 간격은 아래 고정 안내(`controls_fixed`) 위까지 들어가게 조금 줄이고(1.32 → 1.15줄), 그래도 넘치면 굴린다(메뉴와 같은 `ListView`).
         let bottom = f.oy + f.h - px * 3.2 - px * 1.2;
@@ -1563,7 +1069,7 @@ impl App {
                         }
                         self.ui
                             .text_center(&label, x, y, 1.0, if on { AMBER } else { INK });
-                        self.ctl_rects.push((r, i, col));
+                        self.hits.push((r, Hit::Cell(i, col)));
                     }
                 }
                 controls::Row::Preset(_) | controls::Row::Back => {
@@ -1580,7 +1086,7 @@ impl App {
                     }
                     self.ui
                         .text_center(label, cx, yy, 1.0, if sel { AMBER } else { INK });
-                    self.ctl_rects.push((r, i, 0));
+                    self.hits.push((r, Hit::Cell(i, 0)));
                 }
             }
             y += gap;
@@ -1592,56 +1098,15 @@ impl App {
             y_top - px * 0.95,
             y_top + gap * fits as f32 - px * 0.15,
         );
-        self.menu_hits = ui::MenuHits {
-            rows: Vec::new(),
-            arrows,
-        };
+        // ▲▼는 칸보다 먼저(겹치면 굴리기가 이긴다).
+        for (r, d) in arrows.iter().zip([-1, 1]) {
+            if let Some(r) = r {
+                self.hits.insert(0, (*r, Hit::Scroll(d)));
+            }
+        }
         self.ui
             .text_center(s.controls_fixed, cx, f.oy + f.h - px * 3.2, 1.0, DIM);
         self.menu_hint(cx, f.oy + f.h - px * 1.8, f.w * 0.94);
-    }
-
-    fn draw_result(&mut self, f: &Frame, won: bool) {
-        let s = s();
-        self.ui.dim(0.6);
-        let cx = f.ox + f.w * 0.5;
-        let y = f.oy + f.h * 0.28;
-        if won {
-            self.ui.text_center(s.clear_title, cx, y, 2.0, AMBER);
-            let line = hud::clear_line(&self.run, &self.world);
-            self.ui
-                .text_center_wrapped(&line, cx, y + self.ui.px(2.0) * 1.6, 1.0, INK, f.w * 0.9);
-        } else {
-            self.ui.text_center(s.defeat_title, cx, y, 2.0, INK);
-            self.ui.text_center_wrapped(
-                s.defeat_sub,
-                cx,
-                y + self.ui.px(2.0) * 1.6,
-                1.0,
-                DIM,
-                f.w * 0.9,
-            );
-        }
-        let items: Vec<String> = flow::RESULT_ITEMS
-            .iter()
-            .map(|i| {
-                match i {
-                    ResultItem::Retry => s.menu_retry,
-                    ResultItem::ToTitle => s.menu_to_title,
-                }
-                .to_string()
-            })
-            .collect();
-        let bottom = self.menu_bottom(f);
-        self.menu_hits = self.ui.menu(
-            &items,
-            self.cursor,
-            &mut self.view,
-            cx,
-            f.oy + f.h * 0.55,
-            bottom,
-        );
-        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.0, f.w * 0.94);
     }
 }
 
@@ -1654,25 +1119,4 @@ fn weapon_name(id: weapons::Id) -> &'static str {
         weapons::Id::Staff => s.weapon_staff,
         weapons::Id::Crossbow => s.weapon_crossbow,
     }
-}
-
-/// 개발 메뉴 줄(0052).
-#[cfg(feature = "dev")]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum DevItem {
-    Gate,
-    Weapon,
-    /// PoC 시나리오(좌우로 고르고 확인으로 들어간다).
-    Scenario,
-    Back,
-}
-
-#[cfg(feature = "dev")]
-fn dev_items() -> Vec<DevItem> {
-    vec![
-        DevItem::Gate,
-        DevItem::Weapon,
-        DevItem::Scenario,
-        DevItem::Back,
-    ]
 }

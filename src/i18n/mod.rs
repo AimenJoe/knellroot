@@ -92,7 +92,7 @@ pub struct Strings {
     pub grow_hp: &'static str,
     pub grow_flask: &'static str,
     pub grow_heal: &'static str,
-    pub grow_line: &'static str,
+    pub grow_count: &'static str,
     pub shop_title: &'static str,
     pub shop_embers: &'static str,
     pub shop_item: &'static str,
@@ -159,11 +159,14 @@ pub struct Strings {
     pub weapon_staff: &'static str,
     pub weapon_crossbow: &'static str,
     /// 타이틀의 전체 화면 줄(0046, 지금 상태를 보인다).
-    pub menu_fullscreen_on: &'static str,
-    pub menu_fullscreen_off: &'static str,
+    /// 창 안 줄의 이름(값은 오른쪽 칸 — 0066).
+    pub menu_fullscreen: &'static str,
+    pub value_on: &'static str,
+    pub value_off: &'static str,
+    /// 초 값(`{0}`).
+    pub value_secs: &'static str,
     /// 설정의 마우스 조준 줄(0058): 켬/끔, 커서가 쉰 뒤 자동 조준까지 "{0}초", 조준 표시 크기 "{0}" + 크기 셋.
-    pub menu_mouse_aim_on: &'static str,
-    pub menu_mouse_aim_off: &'static str,
+    pub menu_mouse_aim: &'static str,
     pub menu_cursor_rest: &'static str,
     pub menu_reticle: &'static str,
     pub reticle_small: &'static str,
@@ -235,7 +238,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.grow_hp,
         s.grow_flask,
         s.grow_heal,
-        s.grow_line,
+        s.grow_count,
         s.shop_title,
         s.shop_embers,
         s.shop_item,
@@ -287,15 +290,16 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.weapon_hammer,
         s.weapon_staff,
         s.weapon_crossbow,
-        s.menu_fullscreen_on,
-        s.menu_fullscreen_off,
+        s.menu_fullscreen,
+        s.value_on,
+        s.value_off,
+        s.value_secs,
         s.controls_title,
         s.controls_keyboard,
         s.controls_pad,
         s.controls_preset_mouse,
         s.controls_preset_keys,
-        s.menu_mouse_aim_on,
-        s.menu_mouse_aim_off,
+        s.menu_mouse_aim,
         s.menu_cursor_rest,
         s.menu_reticle,
         s.reticle_small,
@@ -340,7 +344,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
 }
 
 /// 표 밖에서 화면에 찍는 기호(메뉴 표지 등). 글꼴 시험이 같이 본다.
-pub const UI_GLYPHS: &str = "◆◇…·▲▼▶";
+pub const UI_GLYPHS: &str = "◆◇…·▲▼▶◀→";
 
 #[cfg(test)]
 mod tests {

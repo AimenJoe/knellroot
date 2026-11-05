@@ -42,6 +42,8 @@ async function main() {
     await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(300);
     await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(200);
     await press('Escape'); await page.waitForTimeout(200); await press('Escape'); await page.waitForTimeout(300);
+    // 닫으면 연 줄로 돌아온다(0066 장면 스택): 타이틀 커서는 "설정"에 있다 → 위로 한 번 = 시작.
+    await press('ArrowUp'); await page.waitForTimeout(100);
   };
   await keyboardOnly();
   // 0 첫 스테이지(0019): 타이틀 → 시작 이야기 → 입구 → 뜰(첫 물결) → 멈춤 → 타이틀 → 개발: 문 앞 → 깨어남 → 결투(락온) → 멈춤 → 조작 설정.
@@ -69,7 +71,8 @@ async function main() {
   await shot('00i-controls');
   await press('Escape'); await page.waitForTimeout(200); await press('Escape'); await page.waitForTimeout(200);
   // 개발 시나리오로(멈춤 → 타이틀로 → 묻는 창 → DEV → 첫 PoC).
-  await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(300);
+  // 닫으면 연 줄로(0066): 조작 → 설정 → 멈춤의 "설정"(셋째)에 커서가 있다 → 아래로 둘 = 타이틀로.
+  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
   await shot('00j-dev');

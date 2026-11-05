@@ -36,6 +36,64 @@ pub const DIM: Color = Color::new(0.62, 0.58, 0.52, 1.0);
 pub const AMBER: Color = Color::new(0.88, 0.6, 0.23, 1.0);
 pub const SHADOW: Color = Color::new(0.03, 0.03, 0.04, 0.9);
 
+/// 창 틀(0066, nail `ui::panel`의 꼴과 색): 어두운 면 + 청동 테두리, 고른 줄은 조금 밝은 면.
+pub const PANEL: Color = Color::new(0.07, 0.05, 0.09, 0.94);
+pub const PANEL_LIGHT: Color = Color::new(0.16, 0.11, 0.14, 1.0);
+pub const BORDER: Color = Color::new(0.55, 0.40, 0.28, 1.0);
+
+/// 창 안 목록의 한 줄(0066, nail `menu_list`·`setting_row`): 이름은 왼쪽, 값은 오른쪽.
+#[derive(Debug, Clone, Default)]
+pub struct Row {
+    pub label: String,
+    /// 오른쪽 값(값·값어치). 비면 그리지 않는다.
+    pub value: String,
+    pub kind: RowKind,
+    /// 지금 고를 수 없음(흐리게 — 가게에서 잔불이 모자란 물건).
+    pub dim: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RowKind {
+    /// 누르는 줄(값이 있으면 오른쪽에 그대로).
+    #[default]
+    Plain,
+    /// 좌우로 바꾸는 값: ◀ 값 ▶(화살표를 누르면 바뀐다).
+    Step,
+    /// 다른 창으로 가는 줄: 값 자리에 →.
+    Go,
+}
+
+impl Row {
+    pub fn plain(label: impl Into<String>) -> Self {
+        Row {
+            label: label.into(),
+            ..Row::default()
+        }
+    }
+    pub fn value(label: impl Into<String>, value: impl Into<String>) -> Self {
+        Row {
+            label: label.into(),
+            value: value.into(),
+            ..Row::default()
+        }
+    }
+    pub fn step(label: impl Into<String>, value: impl Into<String>) -> Self {
+        Row {
+            kind: RowKind::Step,
+            ..Row::value(label, value)
+        }
+    }
+    pub fn go(label: impl Into<String>) -> Self {
+        Row {
+            kind: RowKind::Go,
+            ..Row::plain(label)
+        }
+    }
+    pub fn dimmed(self, dim: bool) -> Self {
+        Row { dim, ..self }
+    }
+}
+
 /// 키캡(nail 0153): 글 속 키·버튼 이름을 이 두 표식 사이에 두면(`key`) 테두리 있는 작은 칸 + 밝은 글로 그린다.
 /// 표식은 사용 영역 글자라 폰트에 없고 그리지 않는다. `text`·`width`가 알아보니 가운데 맞춤·`fit`·`wrap`이 그대로 된다.
 pub const KEY_OPEN: char = '\u{E000}';
@@ -367,7 +425,11 @@ impl Ui {
             y0 - px * 0.95,
             y0 + gap * fits as f32 - px * 0.15,
         );
-        MenuHits { rows, arrows }
+        MenuHits {
+            steps: vec![None; rows.len()],
+            rows,
+            arrows,
+        }
     }
 
     /// 굴리는 목록의 ▲(위에 더 있음)·▼(아래에 더 있음): `y_up`·`y_down` 줄에, 없는 쪽은 그리지 않는다. 누를 자리.
@@ -410,6 +472,186 @@ impl Ui {
         self.text_center(&line, cx, y, 1.0, DIM);
     }
 
+    /// 480×270 기준 px `n`의 화면 px(창 틀·여백).
+    pub fn u(&self, n: f32) -> f32 {
+        n * self.scale
+    }
+
+    /// 창 틀(0066, nail `ui::panel`): 면 + 테두리, 제목이 있으면 왼쪽 위에 호박색 + 아래 선. 안쪽 글이 시작하는 y를 돌려준다.
+    /// 제목은 오른쪽 닫기 단추 자리(`close`)를 비우고 `fit`한다.
+    pub fn panel(&self, r: Rect, title: Option<&str>) -> f32 {
+        let u = self.scale;
+        draw_rectangle(r.x, r.y, r.w, r.h, PANEL);
+        draw_rectangle_lines(r.x, r.y, r.w, r.h, u.max(1.0), BORDER);
+        #[cfg(feature = "dev")]
+        check::frame(r);
+        match title {
+            Some(t) => {
+                let ty = r.y + u * 6.0;
+                let t = self.fit(t, r.w - u * 40.0, 1.0);
+                self.text(&t, r.x + u * 9.0, ty, 1.0, AMBER);
+                let ly = (ty + self.px(1.0) + u * 5.0).round();
+                draw_line(
+                    r.x + u * 5.0,
+                    ly,
+                    r.x + r.w - u * 5.0,
+                    ly,
+                    u.max(1.0),
+                    BORDER,
+                );
+                ly + u * 6.0
+            }
+            None => r.y + u * 8.0,
+        }
+    }
+
+    /// 닫기 단추(nail `close_button`, 0198): 창 오른쪽 위 작은 칸에 ✕(선 둘). 누를 자리(그림보다 넉넉히)를 돌려준다 —
+    /// 앱은 이 자리와 창 밖 탭을 "뒤로"로 읽는다(터치만으로도 나갈 길).
+    pub fn close(&self, panel: Rect) -> Rect {
+        let u = self.scale;
+        let c = vec2(panel.x + panel.w - u * 13.0, panel.y + u * 13.0);
+        let h = u * 7.0;
+        draw_rectangle(c.x - h, c.y - h, h * 2.0, h * 2.0, PANEL_LIGHT);
+        draw_rectangle_lines(c.x - h, c.y - h, h * 2.0, h * 2.0, u.max(1.0), BORDER);
+        let a = u * 3.5;
+        let w = (u * 1.2).max(1.0);
+        draw_line(c.x - a, c.y - a, c.x + a, c.y + a, w, INK);
+        draw_line(c.x - a, c.y + a, c.x + a, c.y - a, w, INK);
+        Rect::new(c.x - h * 2.0, c.y - h * 2.0, h * 4.0, h * 4.0)
+    }
+
+    /// 눌리는 단추(nail `button`, 0157): 오른쪽 아래 그림자 위에 얹힌 면, 위·왼쪽 밝은 모서리. 고르면 면이 밝고 테두리가 호박색.
+    pub fn button(&self, r: Rect, label: &str, sel: bool) {
+        let u = self.scale;
+        draw_rectangle(
+            r.x + u * 2.0,
+            r.y + u * 2.0,
+            r.w,
+            r.h,
+            Color::new(0.02, 0.01, 0.03, 0.9),
+        );
+        draw_rectangle(r.x, r.y, r.w, r.h, if sel { PANEL_LIGHT } else { PANEL });
+        let edge = if sel { AMBER } else { BORDER };
+        let hi = Color { a: 0.45, ..edge };
+        draw_rectangle(r.x + u, r.y + u, r.w - u * 2.0, u, hi);
+        draw_rectangle(r.x + u, r.y + u, u, r.h - u * 2.0, hi);
+        draw_rectangle_lines(r.x, r.y, r.w, r.h, u.max(1.0), edge);
+        let label = self.fit(label, r.w - u * 6.0, 1.0);
+        let px = self.px(1.0);
+        self.text_center(
+            &label,
+            r.x + r.w * 0.5,
+            r.y + (r.h - px) * 0.5,
+            1.0,
+            if sel { INK } else { DIM },
+        );
+    }
+
+    /// 창 안 목록(0066, nail `menu_list`·`setting_row`): `area` 안에 줄을 왼쪽 맞춤으로, 고른 줄은 밝은 면 + ▶.
+    /// 값은 오른쪽(`Step`이면 ◀ 값 ▶, `Go`면 →). 넘치면 `menu`처럼 굴린다(▲▼, 창은 `view`).
+    pub fn list(&self, rows: &[Row], cursor: usize, view: &mut ListView, area: Rect) -> MenuHits {
+        let px = self.px(1.0);
+        let u = self.scale;
+        let n = rows.len();
+        let row_h = px * 1.75;
+        // 넘치면 들어가는 만큼만 — ▲▼는 목록이 아니라 창 제목 줄에(`title_arrows`, nail 0239: 줄 자리를 먹지 않게).
+        let fits = ((area.h + 1.0) / row_h).floor().max(1.0) as usize;
+        let y0 = area.y;
+        let first = view.window(cursor, n, fits, row_h);
+        let none = Rect::new(0.0, 0.0, 0.0, 0.0);
+        let mut hits = MenuHits {
+            rows: vec![none; n],
+            steps: vec![None; n],
+            arrows: [None, None],
+        };
+        for (i, row) in rows.iter().enumerate().skip(first).take(fits) {
+            let r = Rect::new(area.x, y0 + row_h * (i - first) as f32, area.w, row_h);
+            let sel = i == cursor;
+            let ty = r.y + (row_h - px) * 0.5;
+            if sel {
+                draw_rectangle(r.x, r.y, r.w, r.h, PANEL_LIGHT);
+                self.text("▶", r.x + u * 4.0, ty, 1.0, AMBER);
+            }
+            let fade = |c: Color| if row.dim { Color { a: 0.4, ..c } } else { c };
+            let ink = fade(if sel { INK } else { DIM });
+            let mark = fade(if sel { AMBER } else { DIM });
+            let right = r.x + r.w - u * 6.0;
+            let label_x = r.x + u * 4.0 + px * 1.1;
+            // 값 칸의 왼쪽 끝(이름은 그 앞까지 `fit`).
+            let value_left = match row.kind {
+                RowKind::Step => {
+                    let arrow = self.width("▶", 1.0) + u * 6.0;
+                    let vw = self.width(&row.value, 1.0).max(px * 3.0) + u * 6.0;
+                    let ra = Rect::new(right - arrow, r.y, arrow, row_h);
+                    let la = Rect::new(ra.x - vw - arrow, r.y, arrow, row_h);
+                    self.text("◀", la.x + u * 3.0, ty, 1.0, mark);
+                    self.text_center(&row.value, la.x + arrow + vw * 0.5, ty, 1.0, ink);
+                    self.text("▶", ra.x + u * 3.0, ty, 1.0, mark);
+                    hits.steps[i] = Some([la, ra]);
+                    la.x
+                }
+                RowKind::Go => {
+                    let w = self.width("→", 1.0);
+                    self.text("→", right - w, ty, 1.0, mark);
+                    right - w
+                }
+                RowKind::Plain if row.value.is_empty() => right,
+                RowKind::Plain => {
+                    let w = self.width(&row.value, 1.0);
+                    self.text(&row.value, right - w, ty, 1.0, ink);
+                    right - w
+                }
+            };
+            let label = self.fit(&row.label, value_left - label_x - u * 6.0, 1.0);
+            self.text(&label, label_x, ty, 1.0, ink);
+            hits.rows[i] = r;
+        }
+        hits
+    }
+
+    /// 창 제목 줄의 ▲▼(nail 0239): 목록이 넘칠 때만, 닫기 단추 왼쪽에. 더 갈 수 없는 쪽은 흐리게. 누를 자리(열린 쪽만).
+    pub fn title_arrows(&self, view: &ListView, n: usize, panel: Rect) -> [Option<Rect>; 2] {
+        let (up, down) = view.more(n);
+        let mut out = [None, None];
+        if !(up || down) {
+            return out;
+        }
+        let u = self.scale;
+        let y = panel.y + u * 6.0;
+        for (k, (open, glyph, dx)) in [(up, "▲", 54.0), (down, "▼", 36.0)].into_iter().enumerate()
+        {
+            let x = panel.x + panel.w - u * dx;
+            let c = if open { DIM } else { Color { a: 0.3, ..DIM } };
+            self.text(glyph, x, y, 1.0, c);
+            if open {
+                out[k] = Some(Rect::new(x - u * 4.0, y - u * 4.0, u * 18.0, u * 22.0));
+            }
+        }
+        out
+    }
+
+    /// 단추 줄(묻는 창, nail `draw_shop_ask`): `labels`를 `area` 가로로 나란히. 누를 자리를 돌려준다.
+    pub fn buttons(&self, labels: &[&str], cursor: usize, area: Rect) -> MenuHits {
+        let u = self.scale;
+        let n = labels.len().max(1) as f32;
+        let gap = u * 10.0;
+        let w = (area.w - gap * (n - 1.0)) / n;
+        let rows: Vec<Rect> = labels
+            .iter()
+            .enumerate()
+            .map(|(i, l)| {
+                let r = Rect::new(area.x + (w + gap) * i as f32, area.y, w, area.h);
+                self.button(r, l, i == cursor);
+                r
+            })
+            .collect();
+        MenuHits {
+            steps: vec![None; rows.len()],
+            rows,
+            arrows: [None, None],
+        }
+    }
+
     /// 화면 전체를 어둡게(메뉴 뒤).
     pub fn dim(&self, a: f32) {
         draw_rectangle(
@@ -427,18 +669,9 @@ impl Ui {
 #[derive(Debug, Default, Clone)]
 pub struct MenuHits {
     pub rows: Vec<Rect>,
+    /// 줄마다 ◀·▶ 누를 자리(`RowKind::Step`인 줄만, 0066).
+    pub steps: Vec<Option<[Rect; 2]>>,
     pub arrows: [Option<Rect>; 2],
-}
-
-impl MenuHits {
-    /// 탭 자리 → ▲(-1)·▼(+1)이면 굴리기. ▲▼가 줄 칸과 겹치면 ▲▼가 이긴다.
-    pub fn arrow_at(&self, p: Vec2) -> Option<i32> {
-        self.arrows
-            .iter()
-            .zip([-1, 1])
-            .find(|(r, _)| r.is_some_and(|r| r.contains(p)))
-            .map(|(_, d)| d)
-    }
 }
 
 /// 굴리는 목록의 창(nail 0199를 가져옴, Knellroot 메뉴 공통): 보이는 첫 줄을 기억한다. 키·패드 커서는 창이 따라가고(`window`),
@@ -525,11 +758,6 @@ pub fn menu_input(cursor: &mut usize, n: usize, up: bool, down: bool) {
     }
 }
 
-/// 탭 자리가 어느 줄인가.
-pub fn hit(rects: &[Rect], p: Vec2) -> Option<usize> {
-    rects.iter().position(|r| r.contains(p))
-}
-
 /// 논리 크기 `want`를 그릴 때 굽는 크기(논리 px, 정수)와 늘리는 배 — 굽는 크기는 DPI로만 정한다(물리 ≈ `BAKE`px, 0054).
 pub fn bake_size(want: f32, dpi: f32) -> (u16, f32) {
     let fs = (BAKE / dpi.max(0.01)).round().max(1.0);
@@ -612,10 +840,6 @@ mod tests {
         assert_eq!(c, 2);
         menu_input(&mut c, 3, false, true);
         assert_eq!(c, 0);
-        assert_eq!(
-            hit(&[Rect::new(0.0, 0.0, 10.0, 10.0)], vec2(5.0, 5.0)),
-            Some(0)
-        );
     }
 }
 
@@ -719,6 +943,8 @@ pub mod check {
     struct State {
         on: bool,
         texts: Vec<(String, Rect)>,
+        /// 창 틀(0066): 그 안에서 시작한 글이 테두리를 넘으면 알린다.
+        frames: Vec<Rect>,
         seen: HashSet<String>,
     }
 
@@ -744,6 +970,21 @@ pub mod check {
             return;
         }
         S.with(|s| s.borrow_mut().texts.push((t.to_string(), r)));
+    }
+
+    /// 지금까지 모은 글을 잊는다 — 묻는 창이 아래 창을 덮을 때(가려진 글은 겹침이 아니다, 0066).
+    pub fn forget() {
+        S.with(|s| {
+            let mut s = s.borrow_mut();
+            s.texts.clear();
+            s.frames.clear();
+        });
+    }
+
+    pub(super) fn frame(r: Rect) {
+        if on() {
+            S.with(|s| s.borrow_mut().frames.push(r));
+        }
     }
 
     pub(super) fn cut(t: &str, max_w: f32) {
@@ -773,7 +1014,21 @@ pub mod check {
         if !on() {
             return;
         }
-        let texts = S.with(|s| std::mem::take(&mut s.borrow_mut().texts));
+        let (texts, frames) = S.with(|s| {
+            let mut s = s.borrow_mut();
+            (std::mem::take(&mut s.texts), std::mem::take(&mut s.frames))
+        });
+        for (t, r) in &texts {
+            let start = macroquad::prelude::vec2(r.x + 0.5, r.y + 0.5);
+            if let Some(f) = frames.iter().find(|f| f.contains(start)) {
+                if r.right() > f.right() + 0.5 || r.bottom() > f.bottom() + 0.5 {
+                    report(format!(
+                        "past-panel x{:.0} y{:.0} w{:.0} {t}",
+                        r.x, r.y, r.w
+                    ));
+                }
+            }
+        }
         for (i, (t, r)) in texts.iter().enumerate() {
             for (name, f) in [("off-screen", screen), ("past-game", game)] {
                 if r.x < f.x - 0.5

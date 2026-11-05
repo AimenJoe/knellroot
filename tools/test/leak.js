@@ -81,6 +81,8 @@ async function main() {
     await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(300);
     await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(200);
     await press('Escape'); await page.waitForTimeout(200); await press('Escape'); await page.waitForTimeout(300);
+    // 닫으면 연 줄로 돌아온다(0066 장면 스택): 타이틀 커서는 "설정"에 있다 → 위로 한 번 = 시작.
+    await press('ArrowUp'); await page.waitForTimeout(100);
   };
   await keyboardOnly();
   if (MODE === 'stress') { await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300); await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300); await press('Digit7'); }
