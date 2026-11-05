@@ -192,6 +192,7 @@ dark-purple roots like little antlers (the only sharp shapes), and one thin root
 a crack. On its round belly, a big glowing warm amber core in a diamond-shaped socket — the brightest thing on it.
 Imposing because of its size and weight, but cute enough that you want to hug it.
 ```
+- **받은 것(2026-11-05, 사장 — 나노바나나, AI 생성)**: `tools/art/sources/ai/knellroot/warden_v2_sheet.png`(정면·뒤·옆 + 뒤·옆 한 번 더). 잘라 낸 것 `warden_v2_front/back/side.png`(1100² 흰 바탕, 높이 80%), 60·150px 미리보기 `warden_v2_front_tiny.png` — 60px에서 눈 둘·이끼 볼·배 핵·뿌리 왕관이 남는다. 뒷모습은 왼팔이 몸에 가려 거의 안 보여 정면·옆과 조금 어긋난다 → Meshy엔 정면 + 옆 먼저.
 - 나머지는 v1과 같다: 60px로 줄여 보기 → 뒤·옆 → Meshy(부드럽게 끔 — 다만 이번엔 둥근 조약돌이라 결과가 너무 매끈하면 "faceted"를 더 세게).
 
 ### 뒤·옆 (같은 대화에서 정면을 받은 뒤)

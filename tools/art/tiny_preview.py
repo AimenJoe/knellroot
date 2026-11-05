@@ -1,6 +1,6 @@
 """그림 한 장을 게임 화면 크기로 줄여 본다(0038): 이 캐릭터가 쿼터뷰(키 약 20px)·락온(약 50px)에서 무엇이 남는가.
 
-    python3 tools/art/tiny_preview.py <그림.png> [-o 결과.png] [--colors 16]
+    python3 tools/art/tiny_preview.py <그림.png> [-o 결과.png] [--colors 16] [--heights 60 150]   # 문지기(방랑자 키 약 3배)는 60·150
 
 바탕은 네 귀퉁이 색으로 보고 지운다(흰 바탕·회색 바탕). 줄이기 → 색 수 줄이기 → 1px 자두빛 외곽선 → 픽셀 그대로 키우기.
 Meshy에 넣기 전에 Gemini 그림을 거르는 용도. 렌더러의 진짜 모습(빛 띠·원근)은 아니다 — 크기 감만.
@@ -53,11 +53,13 @@ def main():
     ap.add_argument("image")
     ap.add_argument("-o", "--out", default=None)
     ap.add_argument("--colors", type=int, default=16)
+    ap.add_argument("--heights", type=int, nargs="+", default=list(HEIGHTS))
     a = ap.parse_args()
+    heights = tuple(a.heights)
     sub = cut_out(Image.open(a.image))
     tiles = [sub.resize((round(sub.width * SHOW / sub.height), SHOW), Image.Resampling.LANCZOS)]
-    k = max(1, SHOW // (max(HEIGHTS) + 2))  # 두 크기를 같은 배율로 — 실제 크기 차이가 보이게
-    for h in HEIGHTS:
+    k = max(1, SHOW // (max(heights) + 2))  # 두 크기를 같은 배율로 — 실제 크기 차이가 보이게
+    for h in heights:
         t = tiny(sub, h, a.colors)
         tiles.append(t.resize((t.width * k, t.height * k), Image.Resampling.NEAREST))
     bg = (44, 36, 66)  # 해 질 녘 남보라 바닥 비슷하게
