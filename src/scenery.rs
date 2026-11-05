@@ -49,6 +49,19 @@ fn hash(x: usize, z: usize, k: u32) -> f32 {
 const MORTAR: Color = Color::new(0.09, 0.09, 0.14, 1.0);
 const SLAB: Color = Color::new(0.31, 0.30, 0.41, 1.0);
 const SLAB_MOSS: Color = Color::new(0.21, 0.31, 0.31, 1.0);
+/// 바닥 다듬기(0060 W2·0061): 빠진 석판 자리의 흙, 풀 다발 밑동·끝(바랜 청록 — 해 질 녘의 옅은 생명, 0037).
+const DIRT: Color = Color::new(0.22, 0.19, 0.24, 1.0);
+const GRASS_ROOT: Color = Color::new(0.17, 0.27, 0.26, 1.0);
+const GRASS_TIP: Color = Color::new(0.47, 0.66, 0.53, 1.0);
+/// 석판 옆면 어둡기, 벽 밑 그늘(세기·닿는 거리 m).
+/// 바닥은 걷는 면(0) 아래로 판다 — 예고·그림자·고리(바닥 위 2~3cm)가 석판에 묻히지 않게. 회반죽 깊이, 석판 꼭대기 범위(음수), 들린 변(0을 넘지 않는다).
+const MORTAR_Y: f32 = -0.08;
+const SLAB_LOW: f32 = -0.05;
+const SLAB_HIGH: f32 = -0.015;
+const SLAB_LIFT: f32 = 0.03;
+const SLAB_SIDE: f32 = 0.62;
+const WALL_AO: f32 = 0.45;
+const WALL_AO_R: f32 = 0.6;
 const WALL: Color = Color::new(0.37, 0.36, 0.48, 1.0);
 const WALL_TOP: Color = Color::new(0.23, 0.22, 0.32, 1.0);
 /// 배경 높낮이(0035): 바위 단 옆면·윗면(이끼 낀 흙), 꺼진 땅 바닥(어둡게).
@@ -235,7 +248,26 @@ impl Scenery {
                     gnd.height_in(x, z, vec3(c.x, 0.0, c.y)).unwrap_or(0.0),
                     c.y,
                 );
-                let l = lit(p, slope_normal(&gnd, x, z), &lights) * 0.5;
+                // 벽 밑 그늘(0060 W2): 이웃이 벽 칸이면 그 변까지의 거리로 어둡게 — 바닥이 벽에 닿는 자리가 읽히게.
+                let cc = lv.at(x, z);
+                let (fx, fz) = (c.x - (cc.x - CELL * 0.5), c.y - (cc.z - CELL * 0.5));
+                let wall = |dx: i32, dz: i32| {
+                    let (nx, nz) = (x as i32 + dx, z as i32 + dz);
+                    nx >= 0 && nz >= 0 && lv.cell(nx as usize, nz as usize) == b'#'
+                };
+                let mut near = f32::MAX;
+                for (dx, dz, d) in [
+                    (-1, 0, fx),
+                    (1, 0, CELL - fx),
+                    (0, -1, fz),
+                    (0, 1, CELL - fz),
+                ] {
+                    if wall(dx, dz) {
+                        near = near.min(d);
+                    }
+                }
+                let ao = 1.0 - WALL_AO * (1.0 - (near / WALL_AO_R).min(1.0));
+                let l = lit(p, slope_normal(&gnd, x, z), &lights) * 0.5 * ao;
                 let k = (j * ow + i) * 4;
                 lm[k] = to_u8(l.x);
                 lm[k + 1] = to_u8(l.y);
@@ -269,37 +301,130 @@ impl Scenery {
                 quad_lm(
                     &mut p,
                     [
-                        on(c + vec3(-h, 0.0, -h)),
-                        on(c + vec3(h, 0.0, -h)),
-                        on(c + vec3(h, 0.0, h)),
-                        on(c + vec3(-h, 0.0, h)),
+                        on(c + vec3(-h, MORTAR_Y, -h)),
+                        on(c + vec3(h, MORTAR_Y, -h)),
+                        on(c + vec3(h, MORTAR_Y, h)),
+                        on(c + vec3(-h, MORTAR_Y, h)),
                     ],
                     MORTAR,
                     &uv_of,
                 );
-                for (i, (sx, sz)) in [(-0.5, -0.5), (0.5, -0.5), (-0.5, 0.5), (0.5, 0.5)]
-                    .into_iter()
-                    .enumerate()
-                {
-                    let r = hash(x, z, i as u32);
+                // 석판(0060 W2·0061): 칸마다 1m 넷 — 짝 둘은 가끔 하나로 붙고(긴 판), 꼭대기는 걷는 면 아래 1.5~5cm로 들쭉날쭉, 몇은 한쪽이 들리고,
+                // 몇은 빠져 흙 + 풀. 옆면이 있어 카메라 쪽 모서리에 밝은 선(0061 화면 공간 선)이 붙는다.
+                let merge_top = hash(x, z, 50) < 0.28;
+                let merge_bot = hash(x, z, 51) < 0.28;
+                let mut slabs: Vec<(Vec3, Vec2, u32)> = Vec::new();
+                for (row, merged) in [(-0.5f32, merge_top), (0.5f32, merge_bot)] {
+                    let k = if row < 0.0 { 0 } else { 2 };
+                    if merged {
+                        slabs.push((vec3(0.0, 0.0, row), vec2(0.95, 0.45), k));
+                    } else {
+                        slabs.push((vec3(-0.5, 0.0, row), vec2(0.45, 0.45), k));
+                        slabs.push((vec3(0.5, 0.0, row), vec2(0.45, 0.45), k + 1));
+                    }
+                }
+                for (off, half, i) in slabs {
+                    let r = hash(x, z, i);
+                    let o = c + off;
+                    let g = half - vec2(0.03, 0.03) * hash(x, z, i + 7);
+                    if hash(x, z, i + 31) > 0.93 {
+                        // 빠진 석판: 흙 + 풀 두 다발.
+                        quad_lm(
+                            &mut p,
+                            [
+                                on(o + vec3(-g.x, MORTAR_Y + 0.01, -g.y)),
+                                on(o + vec3(g.x, MORTAR_Y + 0.01, -g.y)),
+                                on(o + vec3(g.x, MORTAR_Y + 0.01, g.y)),
+                                on(o + vec3(-g.x, MORTAR_Y + 0.01, g.y)),
+                            ],
+                            DIRT,
+                            &uv_of,
+                        );
+                        for t in 0..3 {
+                            let a = vec3(
+                                hash(x, z, i + 40 + t) - 0.5,
+                                0.0,
+                                hash(x, z, i + 44 + t) - 0.5,
+                            );
+                            tuft(
+                                &mut sides,
+                                on(o + a * g.x + Vec3::Y * MORTAR_Y),
+                                x * 7 + i as usize,
+                                z * 3 + t as usize,
+                                &lights,
+                            );
+                        }
+                        continue;
+                    }
                     let base = if hash(x / 2, z / 2, 99) > 0.8 && r > 0.4 {
                         SLAB_MOSS
                     } else {
                         SLAB
                     };
                     let col = mul(base, 0.8 + 0.35 * r);
-                    let o = c + vec3(sx, 0.012 + 0.01 * r, sz);
-                    let g = 0.46 - 0.03 * hash(x, z, i as u32 + 7);
-                    quad_lm(
-                        &mut p,
-                        [
-                            on(o + vec3(-g, 0.0, -g)),
-                            on(o + vec3(g, 0.0, -g)),
-                            on(o + vec3(g, 0.0, g)),
-                            on(o + vec3(-g, 0.0, g)),
-                        ],
-                        col,
-                        &uv_of,
+                    let top = SLAB_LOW + (SLAB_HIGH - SLAB_LOW) * hash(x, z, i + 13);
+                    // 몇은 한쪽 변이 들린다(빛 띠가 달라지고 모서리가 선다).
+                    let lift = if hash(x, z, i + 17) > 0.85 {
+                        SLAB_LIFT
+                    } else {
+                        0.0
+                    };
+                    let tilt_x = hash(x, z, i + 19) > 0.5;
+                    let ys = |sx: f32, sz: f32| {
+                        let up = if tilt_x { sx } else { sz };
+                        (top + if up > 0.0 { lift } else { 0.0 }).min(0.0)
+                    };
+                    let corner = |sx: f32, sz: f32| on(o + vec3(sx * g.x, ys(sx, sz), sz * g.y));
+                    let foot = |sx: f32, sz: f32| on(o + vec3(sx * g.x, MORTAR_Y, sz * g.y));
+                    let tops = [
+                        corner(-1.0, -1.0),
+                        corner(1.0, -1.0),
+                        corner(1.0, 1.0),
+                        corner(-1.0, 1.0),
+                    ];
+                    quad_lm(&mut p, tops, col, &uv_of);
+                    let side = mul(col, SLAB_SIDE);
+                    for (a, b, n) in [
+                        ((-1.0, -1.0), (1.0, -1.0), Vec3::NEG_Z),
+                        ((1.0, -1.0), (1.0, 1.0), Vec3::X),
+                        ((1.0, 1.0), (-1.0, 1.0), Vec3::Z),
+                        ((-1.0, 1.0), (-1.0, -1.0), Vec3::NEG_X),
+                    ] {
+                        quad_lm_n(
+                            &mut p,
+                            [
+                                foot(a.0, a.1),
+                                foot(b.0, b.1),
+                                corner(b.0, b.1),
+                                corner(a.0, a.1),
+                            ],
+                            side,
+                            &uv_of,
+                            n,
+                        );
+                    }
+                }
+                // 벽 밑 풀(0060 W2): 벽 칸에 닿은 변마다 반쯤, 변을 따라 아무 자리에.
+                for (k, (dx, dz)) in [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let (nx, nz) = (x as i32 + dx, z as i32 + dz);
+                    if nx < 0 || nz < 0 || lv.cell(nx as usize, nz as usize) != b'#' {
+                        continue;
+                    }
+                    if hash(x, z, 60 + k as u32) > 0.5 {
+                        continue;
+                    }
+                    let along = (hash(x, z, 64 + k as u32) - 0.5) * (CELL - 0.4);
+                    let d = vec3(dx as f32, 0.0, dz as f32);
+                    let pos = c + d * (h - 0.15) + vec3(d.z, 0.0, d.x) * along;
+                    tuft(
+                        &mut sides,
+                        on(pos + Vec3::Y * MORTAR_Y),
+                        x * 5 + k,
+                        z * 11 + k,
+                        &lights,
                     );
                 }
                 // 옹벽과 턱 테(0043): 이웃 칸(걷는 칸·허공)보다 높으면 그 변에 이웃을 바라보는 면, 걸음보다 높으면 위 모서리에 밝은 테.
@@ -566,6 +691,60 @@ impl Scenery {
             extent: lv.half_extent() * 3.0,
             void_y,
         }
+    }
+}
+
+/// 빛 지도를 입은 세운 면(석판 옆면, 0060 W2): 법선을 주는 판.
+fn quad_lm_n(p: &mut Piece, corners: [Vec3; 4], col: Color, uv: &dyn Fn(Vec3) -> Vec2, n: Vec3) {
+    let base = p.verts.len() as u16;
+    let c2 = Color::new(
+        (col.r * 2.0).min(1.0),
+        (col.g * 2.0).min(1.0),
+        (col.b * 2.0).min(1.0),
+        col.a,
+    );
+    for c in corners {
+        let t = uv(c);
+        p.verts
+            .push(with_normal(Vertex::new(c.x, c.y, c.z, t.x, t.y, c2), n));
+    }
+    p.idx
+        .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+}
+
+/// 풀 한 다발(0060 W2, t3ssel8r 풍): 굵은 세모 잎 일곱(화면에서 1px = 약 3.5cm라 잎 폭 10cm·키 30~50cm) — 밑동은 어둡고 끝은 밝게, 법선은 위(바닥과 같은 빛, 잎끼리 선이 서지 않게).
+/// `sx`·`sz`는 모양을 고르는 씨앗(같은 지도 = 같은 풀).
+fn tuft(p: &mut Piece, at: Vec3, sx: usize, sz: usize, lights: &[Light]) {
+    for b in 0..7u32 {
+        let ang = std::f32::consts::TAU * (b as f32 / 7.0 + hash(sx, sz, 200 + b) * 0.3);
+        let (s, c) = ang.sin_cos();
+        let dir = vec3(c, 0.0, s);
+        let side = vec3(-s, 0.0, c) * 0.06;
+        let r = 0.03 + 0.1 * hash(sx, sz, 210 + b);
+        let hgt = 0.3 + 0.2 * hash(sx, sz, 220 + b);
+        let lean = 0.08 + 0.12 * hash(sx, sz, 230 + b);
+        let foot = at + dir * r;
+        let tip = foot + dir * lean + Vec3::Y * hgt;
+        let base = p.verts.len() as u16;
+        for (q, col) in [
+            (foot - side, GRASS_ROOT),
+            (foot + side, GRASS_ROOT),
+            (tip, GRASS_TIP),
+        ] {
+            let l = lit(q, Vec3::Y, lights);
+            p.verts.push(with_normal(
+                Vertex::new(
+                    q.x,
+                    q.y,
+                    q.z,
+                    0.0,
+                    0.0,
+                    Color::new(col.r * l.x, col.g * l.y, col.b * l.z, 1.0),
+                ),
+                Vec3::Y,
+            ));
+        }
+        p.idx.extend_from_slice(&[base, base + 1, base + 2]);
     }
 }
 
