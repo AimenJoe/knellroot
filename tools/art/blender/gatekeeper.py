@@ -80,20 +80,6 @@ STONE_K = 0.72  # 돌(채도 낮은 칸)만 이만큼 어둡게 — Meshy 색이
 STONE_SAT = 0.18  # 이보다 채도가 낮으면 돌로 본다(호박색 눈·핵, 이끼, 보라 뿌리는 그대로)
 
 
-def darken_stone(img):
-    """바깥 텍스처의 돌 칸만 어둡게(원본 파일은 그대로 — 게임용 사본만)."""
-    import numpy as np
-    px = np.array(img.pixels[:], dtype=np.float32).reshape(-1, 4)
-    rgb = px[:, :3]
-    mx, mn = rgb.max(axis=1), rgb.min(axis=1)
-    sat = np.where(mx > 1e-4, (mx - mn) / np.maximum(mx, 1e-4), 0.0)
-    stone = sat < STONE_SAT
-    rgb[stone] *= STONE_K
-    px[:, :3] = rgb
-    img.pixels.foreach_set(px.ravel())
-    img.update()
-
-
 def make():
     """0060 W3: Meshy 몸(졸린 조약돌), 뼈 이름·동작 표는 옛 문지기 그대로 — 뼈 자리만 새 비율에."""
     m = C.Model(NAME)
@@ -111,7 +97,7 @@ def make():
     m.bone("shin_l", (0.40, 0.05, FOOT_Z + 0.05), "leg_l")
     m.bone("shin_r", (-0.40, 0.05, FOOT_Z + 0.05), "leg_r")
     m.external(MESHY_LOW, classify, MESHY_PARTS)
-    darken_stone(m.ext_img)
+    C.darken_grey(m.ext_img, STONE_K, STONE_SAT)
     m.build()
     acts(m)
     return m

@@ -448,6 +448,20 @@ def import_split(path, classify, names):
     return parts, img
 
 
+def darken_grey(img, k, sat_max):
+    """바깥 텍스처(Meshy)의 잿빛 칸(채도 < sat_max)만 k배 어둡게 — 원본 파일은 그대로, 게임용 사본만.
+    Meshy 색은 밝은 회색이라 해 질 녘 성소에서 혼자 하얗게 뜬다(0037: 바랜 잿빛 라벤더). 호박빛·보라 뿌리·이끼는 그대로."""
+    import numpy as np
+    px = np.array(img.pixels[:], dtype=np.float32).reshape(-1, 4)
+    rgb = px[:, :3]
+    mx, mn = rgb.max(axis=1), rgb.min(axis=1)
+    sat = np.where(mx > 1e-4, (mx - mn) / np.maximum(mx, 1e-4), 0.0)
+    rgb[sat < sat_max] *= k
+    px[:, :3] = rgb
+    img.pixels.foreach_set(px.ravel())
+    img.update()
+
+
 def merge_textures(ext_objs, ext_img, atlas_objs, atlas_img, name):
     """로더는 첫 이미지 하나만 읽는다(`src/model.rs`) → 바깥 텍스처(W×H)와 코드 아틀라스(ATLAS²)를 (2W)×H 한 장으로:
     바깥은 왼쪽 반, 아틀라스는 오른쪽 위 모서리. UV를 옮기고 모든 부위가 새 재질 하나를 쓴다."""

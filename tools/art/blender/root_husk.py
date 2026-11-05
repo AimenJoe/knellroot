@@ -1,5 +1,8 @@
-"""뿌리의 잔재(기본 적, 키 1.5m): 뿌리에 덮인 구부정한 껍데기. 얼굴 없음 — 가슴 틈의 어두운 호박빛(glow_core)만.
-긴 팔, 뼈 조각·이끼가 군데군데.
+"""뿌리의 잔재(기본 적, 키 1.5m — 뿌리 왕관 포함).
+
+지금(0060 W3): Meshy 몸 — 색을 잃은 둥근 아기곰 같은 것, 머리에 보라 뿌리 왕관, 한쪽 눈은 빈 구멍·한쪽은 호박빛 불씨(glow_eye),
+가슴을 가로지르는 뿌리 줄기. 원본 `tools/art/sources/meshy/husk_v2.glb`(Meshy 6 Lite, CC BY 4.0) → `meshy_convert.py ... 1.5 700 128`.
+옛 상자 몸(구부정한 껍데기, 가슴 틈의 빛)은 `make_blocks()`에 남긴다.
 
     blender --background --python tools/art/blender/root_husk.py
 """
@@ -11,8 +14,68 @@ import common as C  # noqa: E402
 
 NAME = "root_husk"
 
+MESHY_LOW = os.path.join(C.REPO, "tools", "art", "sources", "meshy", "husk_v2_low.glb")
+MESHY_PARTS = {"head_geo": "head", "body_geo": "body", "arm_l_geo": "arm_l", "arm_r_geo": "arm_r",
+               "leg_l_geo": "leg_l", "leg_r_geo": "leg_r", "glow_eye": "head"}
+# 치수(키 1.5m, 앞 = -Y, 캐릭터 왼쪽 = +X) — 정면·옆 직교 렌더에 눈금을 그어 잰 것.
+NECK_Z = 0.665  # 머리 아래 끝(머리와 몸 사이 가장 좁은 곳)
+HIP_Z = 0.19  # 다리 위 끝(가랑이 0.13 + 조금)
+SHOULDER = (0.22, 0.0, 0.60)
+HAND = (0.53, 0.0, 0.27)
+ARM_R = 0.13
+ARM_X = 0.26  # 이보다 바깥만 팔(몸통 옆면은 몸)
+EYE = (-0.13, 0.90)  # 불씨 눈 가운데(x, z) — 캐릭터 오른쪽 눈, 앞면만
+EYE_R = (0.085, 0.11)
+GREY_K = 0.6  # 잿빛 몸을 이만큼 어둡게 — 그대로면 뜰에서 유령처럼 하얗게 떴다(문지기 0.72보다 더: 작고 여럿이라 바닥 위에서 튄다)
+GREY_SAT = 0.18
+
+
+def _seg_dist(p, a, b):
+    from mathutils import Vector
+    a, b = Vector(a), Vector(b)
+    ab = b - a
+    t = max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
+    return (p - (a + ab * t)).length
+
+
+def classify(c):
+    """면 가운데 자리 → 부위."""
+    from mathutils import Vector
+    x, y, z = c.x, c.y, c.z
+    ax = abs(x)
+    if z > NECK_Z:
+        ex, ez = EYE
+        rx, rz = EYE_R
+        if y < -0.15 and ((x - ex) / rx) ** 2 + ((z - ez) / rz) ** 2 <= 1.0:
+            return "glow_eye"
+        return "head_geo"
+    side = "l" if x > 0 else "r"
+    if ax > ARM_X and _seg_dist(Vector((ax, y, z)), SHOULDER, HAND) < ARM_R:
+        return f"arm_{side}_geo"
+    if z < HIP_Z and y < 0.2:  # 꼬리(뒤 +Y)는 몸
+        return f"leg_{side}_geo"
+    return "body_geo"
+
 
 def make():
+    """0060 W3: Meshy 몸, 뼈 이름·동작은 옛 잔재 그대로 — 뼈 자리만 새 비율에(머리가 크고 팔다리가 짧다)."""
+    m = C.Model(NAME)
+    sx, sy, sz = SHOULDER
+    m.bone("root", (0, 0, 0))
+    m.bone("body", (0, 0, HIP_Z), "root")
+    m.bone("head", (0, 0.0, NECK_Z), "body")
+    m.bone("arm_l", (sx, sy, sz), "body")
+    m.bone("arm_r", (-sx, sy, sz), "body")
+    m.bone("leg_l", (0.12, 0, HIP_Z), "root")
+    m.bone("leg_r", (-0.12, 0, HIP_Z), "root")
+    m.external(MESHY_LOW, classify, MESHY_PARTS)
+    C.darken_grey(m.ext_img, GREY_K, GREY_SAT)
+    m.build()
+    acts(m)
+    return m
+
+
+def make_blocks():
     m = C.Model(NAME)
     m.bone("root", (0, 0, 0))
     m.bone("body", (0, 0, 0.76), "root")
@@ -81,28 +144,29 @@ def acts(m):
                 "body": {"r": (2, 0, 0)}, "arm_l": {"r": (-6, -4, 0)}, "arm_r": {"r": (0, 4, 0)}}),
     ], loop=True)
 
-    # attack 1.3초: 0~0.5 두 팔을 머리 위로, 0.5~0.7 내려찍기, 0.7~1.3 돌아옴
+    # attack 1.3초: 0~0.5 두 팔을 머리 위로(머리가 커서 바깥으로 벌려 든다), 0.5~0.7 내려찍기, 0.7~1.3 돌아옴.
+    # 새 몸(0060 W3)은 머리가 몸만 해서 옛 값(몸 40°·엉덩이 −16cm)이면 얼굴부터 땅에 박혔다 → 몸은 반쯤만 숙이고 머리로 끄덕인다.
     m.action("attack", 1.3, [
         (0.0, base),
-        (0.5, {"root": {"l": (0, 0.06, 0.02)}, "body": {"r": (-26, 0, 0)}, "head": {"r": (-20, 0, 0)},
-               "arm_l": {"r": (-168, -12, 0)}, "arm_r": {"r": (-168, 12, 0)},
-               "leg_l": {"r": (-10, 0, 0)}, "leg_r": {"r": (12, 0, 0)}}),
-        (0.62, {"root": {"l": (0, -0.08, -0.12)}, "body": {"r": (34, 0, 0)}, "head": {"r": (14, 0, 0)},
-                "arm_l": {"r": (-62, -6, 0)}, "arm_r": {"r": (-62, 6, 0)},
-                "leg_l": {"r": (-26, 0, 0)}, "leg_r": {"r": (18, 0, 0)}}),
-        (0.7, {"root": {"l": (0, -0.08, -0.16)}, "body": {"r": (40, 0, 0)}, "head": {"r": (18, 0, 0)},
-               "arm_l": {"r": (-48, -6, 0)}, "arm_r": {"r": (-48, 6, 0)},
-               "leg_l": {"r": (-28, 0, 0)}, "leg_r": {"r": (20, 0, 0)}}),
-        (0.95, {"root": {"l": (0, -0.06, -0.12)}, "body": {"r": (34, 0, 0)}, "head": {"r": (12, 0, 0)},
-                "arm_l": {"r": (-42, -6, 0)}, "arm_r": {"r": (-44, 6, 0)},
-                "leg_l": {"r": (-24, 0, 0)}, "leg_r": {"r": (18, 0, 0)}}),
+        (0.5, {"root": {"l": (0, 0.04, 0.02)}, "body": {"r": (-14, 0, 0)}, "head": {"r": (-12, 0, 0)},
+               "arm_l": {"r": (-160, -24, 0)}, "arm_r": {"r": (-160, 24, 0)},
+               "leg_l": {"r": (-8, 0, 0)}, "leg_r": {"r": (10, 0, 0)}}),
+        (0.62, {"root": {"l": (0, -0.05, -0.04)}, "body": {"r": (16, 0, 0)}, "head": {"r": (12, 0, 0)},
+                "arm_l": {"r": (-70, -8, 0)}, "arm_r": {"r": (-70, 8, 0)},
+                "leg_l": {"r": (-16, 0, 0)}, "leg_r": {"r": (12, 0, 0)}}),
+        (0.7, {"root": {"l": (0, -0.05, -0.06)}, "body": {"r": (20, 0, 0)}, "head": {"r": (14, 0, 0)},
+               "arm_l": {"r": (-58, -8, 0)}, "arm_r": {"r": (-58, 8, 0)},
+               "leg_l": {"r": (-18, 0, 0)}, "leg_r": {"r": (14, 0, 0)}}),
+        (0.95, {"root": {"l": (0, -0.04, -0.05)}, "body": {"r": (16, 0, 0)}, "head": {"r": (10, 0, 0)},
+                "arm_l": {"r": (-50, -8, 0)}, "arm_r": {"r": (-52, 8, 0)},
+                "leg_l": {"r": (-14, 0, 0)}, "leg_r": {"r": (12, 0, 0)}}),
         (1.3, base),
     ], linear=(0.5,))
 
-    # hurt 0.3초: 뒤로 꺾임
+    # hurt 0.3초: 뒤로 꺾임(큰 머리가 젖혀진다)
     m.action("hurt", 0.3, [
         (0.0, base),
-        (0.05, {"root": {"l": (0, 0.06, 0)}, "body": {"r": (-20, 4, 0)}, "head": {"r": (-25, 0, 8)},
+        (0.05, {"root": {"l": (0, 0.05, 0)}, "body": {"r": (-12, 4, 0)}, "head": {"r": (-16, 0, 8)},
                 "arm_l": {"r": (14, -20, 0)}, "arm_r": {"r": (18, 22, 0)}}),
         (0.3, base),
     ])

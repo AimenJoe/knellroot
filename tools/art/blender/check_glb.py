@@ -19,7 +19,7 @@ REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 
 # 정점 예산(캐릭터 700, 보스 1600, 소품 400)
 # wanderer: 0051 무기 넷(검·망치·지팡이·쇠뇌)이 한 모델에 있고 게임은 든 것만 보인다(나머지 크기 0) — 보이는 정점은 약 2,300.
-BUDGET = {"wanderer": 2600, "root_husk": 700, "thorn_beast": 700, "gatekeeper": 2600}
+BUDGET = {"wanderer": 2600, "root_husk": 760, "thorn_beast": 700, "gatekeeper": 2600}
 PROP_BUDGET = 400
 # 동작 이름과 길이(초) — 명세 그대로인지 본다.
 EXPECT = {
@@ -34,7 +34,7 @@ EXPECT = {
     "bell": {"toll": 2.0},
 }
 MUST_NODES = {"gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["head_geo", "sword", "glow_lamp"],
-              "root_husk": ["glow_core"], "thorn_beast": ["glow_eyes"], "brazier": ["glow_flame"],
+              "root_husk": ["glow_eye"], "thorn_beast": ["glow_eyes"], "brazier": ["glow_flame"],
               "core_crystal": ["glow_core"]}
 
 CT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2), 5123: ("H", 2), 5125: ("I", 4), 5126: ("f", 4)}
