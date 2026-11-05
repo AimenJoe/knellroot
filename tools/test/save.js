@@ -117,8 +117,8 @@ async function main() {
   // 커서는 "취소"에서 — 그대로 확인하면 지우지 않고 타이틀로.
   await press('Enter'); await page.waitForTimeout(400);
   if ((await record()) === null) fail('cancel must not erase');
-  // 다시: 새로 하기(맨 끝) → 위로 한 번 = "기록 지우기".
-  await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300);
+  // 다시: 취소하면 커서는 연 줄(새로 하기)로 돌아와 있다(0066 장면 스택) → 확인 → 위로 한 번 = "기록 지우기".
+  await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter');
   await page.waitForTimeout(800);
   r = await record();

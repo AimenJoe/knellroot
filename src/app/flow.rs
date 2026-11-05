@@ -14,10 +14,8 @@ pub enum Scene {
     Result {
         won: bool,
     },
-    /// 조작 설정(0024). 뒤로 = 설정(0052).
-    Controls {
-        from_pause: bool,
-    },
+    /// 조작 설정(0024). 설정에서 연다(0052).
+    Controls,
     /// 장비(0064 M3): 무기 + 장신구 세 칸. 멈춤 "장비"에서, 뒤로 = 멈춤.
     Equip,
     /// 핵 고르기(0064 M4): 문지기를 이긴 끝 장면 뒤, 결과 전. 하나를 골라야 넘어간다.
@@ -27,10 +25,8 @@ pub enum Scene {
     /// 묻는 창(KB `controller-layout-and-remapping` "되돌릴 수 없는 메뉴 항목은 한 번 묻는다", nail 0274·가게 묻는 창):
     /// 줄 둘(하는 일 이름 / 취소) + 무엇을 잃는지 한 줄. 뒤로 = 취소(온 곳).
     Ask(Ask),
-    /// 설정(0052, nail 0269의 틀): 언어·전체 화면·화면 흔들림·조작. `from_pause`면 뒤로 = 멈춤, 아니면 타이틀.
-    Settings {
-        from_pause: bool,
-    },
+    /// 설정(0052, nail 0269의 틀): 언어·전체 화면·화면 흔들림·조작. 타이틀·멈춤에서 연다 — 닫으면 연 곳(스택, 0066).
+    Settings,
     /// 개발 메뉴(0052, nail `Scene::Dev`): 문 앞에서 시작·PoC 시나리오 목록. 개발판에만.
     #[cfg(feature = "dev")]
     Dev,
@@ -51,8 +47,8 @@ impl Scene {
                 | Scene::Shop
                 | Scene::Ask(_)
                 | Scene::Result { .. }
-                | Scene::Controls { .. }
-                | Scene::Settings { .. }
+                | Scene::Controls
+                | Scene::Settings
         ) || self.is_dev()
     }
 
@@ -65,6 +61,24 @@ impl Scene {
         false
     }
 
+    /// 무엇 위에 그리나(0066, nail 0235 R21 — `_` 없는 match: 새 장면이면 컴파일러가 묻는다).
+    pub fn layer(self) -> Layer {
+        match self {
+            Scene::Title => Layer::Screen,
+            Scene::Play | Scene::Ending { .. } => Layer::Game,
+            #[cfg(feature = "dev")]
+            Scene::Sandbox => Layer::Game,
+            Scene::Pause | Scene::Equip | Scene::Settings => Layer::Window { hud: true },
+            // 가게는 잔불을 제가 보인다(KB hud-readability: 창이 같은 정보면 밑 HUD를 그리지 않는다).
+            Scene::Shop | Scene::Core | Scene::Result { .. } | Scene::Controls => {
+                Layer::Window { hud: false }
+            }
+            #[cfg(feature = "dev")]
+            Scene::Dev => Layer::Window { hud: false },
+            Scene::Ask(_) => Layer::Modal,
+        }
+    }
+
     /// 월드가 도는 장면.
     pub fn ticks_world(self) -> bool {
         match self {
@@ -73,6 +87,39 @@ impl Scene {
             Scene::Sandbox => true,
             _ => false,
         }
+    }
+}
+
+/// 장면이 그리는 자리(0066).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Layer {
+    /// 화면 하나를 다 쓴다(타이틀: 키 아트 위 목록).
+    Screen,
+    /// 싸움 화면(HUD).
+    Game,
+    /// 창: 판 위에서 열렸으면 밑에 HUD를 깐다(`hud`일 때).
+    Window { hud: bool },
+    /// 묻는 창: 아래 칸을 그대로 깔고 어둡게, 그 위에.
+    Modal,
+}
+
+/// 장면을 바꾸는 방법(0066, 장면 스택 — Nystrom "pushdown automata"): 위에 얹기 · 꺼내기(뒤로) · 처음부터.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Go {
+    Stay,
+    /// 지금 장면 위에 연다(닫으면 지금 장면 · 지금 커서로 돌아온다).
+    Open(Scene),
+    /// 위 칸을 닫는다. 맨 아래 칸이면 그대로.
+    Back,
+    /// 스택을 비우고 이 장면부터.
+    Root(Scene),
+}
+
+/// 창을 열 때 처음 포커스(0066 — Microsoft 패드 지침 "처음 포커스는 뜻이 있는 자리"): 묻는 창은 `ask_default`, 그 밖은 첫 줄.
+pub fn focus(scene: Scene) -> usize {
+    match scene {
+        Scene::Ask(k) => ask_default(k),
+        _ => 0,
     }
 }
 
@@ -97,16 +144,16 @@ pub fn ask_default(k: Ask) -> usize {
     }
 }
 
-/// 묻는 창의 답 → (다음 장면, 판을 다시 세우나). 취소 = 온 곳.
-pub fn answer(k: Ask, yes: bool) -> (Scene, bool) {
+/// 묻는 창의 답 → (어디로, 판을 다시 세우나). 취소 = 닫기(온 곳).
+pub fn answer(k: Ask, yes: bool) -> (Go, bool) {
     if !yes {
-        return (back(Scene::Ask(k)), false);
+        return (Go::Back, false);
     }
     match k {
-        Ask::NewGame => (Scene::Play, true),
-        Ask::Restart => (Scene::Play, true),
-        Ask::ToTitle => (Scene::Title, true),
-        Ask::Buy(_) => (Scene::Shop, false),
+        Ask::NewGame => (Go::Root(Scene::Play), true),
+        Ask::Restart => (Go::Root(Scene::Play), true),
+        Ask::ToTitle => (Go::Root(Scene::Title), true),
+        Ask::Buy(_) => (Go::Back, false),
     }
 }
 
@@ -219,48 +266,49 @@ pub fn after_ending(won: bool, can_grow: bool) -> Scene {
     }
 }
 
-/// 뒤로(B·Esc): 멈춤 → 계속, 조작 설정 → 온 곳, 결과·타이틀은 그대로.
-pub fn back(scene: Scene) -> Scene {
+/// 뒤로(B·Esc): 연 창은 닫는다(스택에서 꺼내 연 곳으로). 골라야 끝나는 창(핵 고르기·결과)·타이틀·싸움은 그대로(0066).
+pub fn back(scene: Scene) -> Go {
     match scene {
-        Scene::Pause => Scene::Play,
-        Scene::Equip => Scene::Pause,
-        Scene::Shop => Scene::Play,
-        Scene::Ask(Ask::NewGame) => Scene::Title,
-        Scene::Ask(Ask::Restart | Ask::ToTitle) => Scene::Pause,
-        Scene::Ask(Ask::Buy(_)) => Scene::Shop,
-        Scene::Controls { from_pause } => Scene::Settings { from_pause },
-        Scene::Settings { from_pause: true } => Scene::Pause,
-        Scene::Settings { from_pause: false } => Scene::Title,
+        Scene::Pause
+        | Scene::Equip
+        | Scene::Shop
+        | Scene::Ask(_)
+        | Scene::Controls
+        | Scene::Settings => Go::Back,
         #[cfg(feature = "dev")]
-        Scene::Dev => Scene::Title,
-        s => s,
+        Scene::Dev => Go::Back,
+        Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Core | Scene::Result { .. } => {
+            Go::Stay
+        }
+        #[cfg(feature = "dev")]
+        Scene::Sandbox => Go::Stay,
     }
 }
 
-/// 멈춤 버튼: 싸움 중이면 멈춤, 멈춤이면 계속.
-pub fn pause(scene: Scene) -> Scene {
+/// 멈춤 버튼: 싸움 중이면 멈춤을 열고, 멈춤이면 닫는다.
+pub fn pause(scene: Scene) -> Go {
     match scene {
-        Scene::Play => Scene::Pause,
-        Scene::Pause => Scene::Play,
-        s => s,
+        Scene::Play => Go::Open(Scene::Pause),
+        Scene::Pause => Go::Back,
+        _ => Go::Stay,
     }
 }
 
-/// 이 장면에서 고르면: (다음 장면, 스테이지를 새로 세우나).
-pub fn choose_pause(item: PauseItem) -> (Scene, bool) {
+/// 이 장면에서 고르면: (어디로, 스테이지를 새로 세우나).
+pub fn choose_pause(item: PauseItem) -> (Go, bool) {
     match item {
-        PauseItem::Resume => (Scene::Play, false),
-        PauseItem::Weapon => (Scene::Equip, false),
-        PauseItem::Settings => (Scene::Settings { from_pause: true }, false),
-        PauseItem::Restart => (Scene::Ask(Ask::Restart), false),
-        PauseItem::ToTitle => (Scene::Ask(Ask::ToTitle), false),
+        PauseItem::Resume => (Go::Back, false),
+        PauseItem::Weapon => (Go::Open(Scene::Equip), false),
+        PauseItem::Settings => (Go::Open(Scene::Settings), false),
+        PauseItem::Restart => (Go::Open(Scene::Ask(Ask::Restart)), false),
+        PauseItem::ToTitle => (Go::Open(Scene::Ask(Ask::ToTitle)), false),
     }
 }
 
-pub fn choose_result(item: ResultItem) -> (Scene, bool) {
+pub fn choose_result(item: ResultItem) -> (Go, bool) {
     match item {
-        ResultItem::Retry => (Scene::Play, true),
-        ResultItem::ToTitle => (Scene::Title, true),
+        ResultItem::Retry => (Go::Root(Scene::Play), true),
+        ResultItem::ToTitle => (Go::Root(Scene::Title), true),
     }
 }
 
@@ -284,48 +332,51 @@ mod tests {
     }
 
     #[test]
-    fn pause_toggles_and_back_resumes() {
-        assert_eq!(pause(Scene::Play), Scene::Pause);
-        assert_eq!(pause(Scene::Pause), Scene::Play);
-        assert_eq!(back(Scene::Pause), Scene::Play);
-        assert_eq!(pause(Scene::Title), Scene::Title);
-        assert_eq!(
-            back(Scene::Result { won: false }),
-            Scene::Result { won: false }
-        );
+    fn pause_opens_and_back_closes() {
+        assert_eq!(pause(Scene::Play), Go::Open(Scene::Pause));
+        assert_eq!(pause(Scene::Pause), Go::Back);
+        assert_eq!(back(Scene::Pause), Go::Back);
+        assert_eq!(pause(Scene::Title), Go::Stay);
+        // 골라야 끝나는 창은 뒤로로 건너뛰지 않는다.
+        assert_eq!(back(Scene::Result { won: false }), Go::Stay);
+        assert_eq!(back(Scene::Core), Go::Stay);
+        assert_eq!(back(Scene::Title), Go::Stay);
     }
 
     #[test]
     fn menus_rebuild_the_stage_except_resume() {
-        assert_eq!(choose_pause(PauseItem::Resume), (Scene::Play, false));
+        assert_eq!(choose_pause(PauseItem::Resume), (Go::Back, false));
         // 버리는 일은 한 번 묻는다(KB): 처음부터·타이틀로 → 묻는 창, 답해야 판을 다시 세운다.
         assert_eq!(
             choose_pause(PauseItem::Restart),
-            (Scene::Ask(Ask::Restart), false)
+            (Go::Open(Scene::Ask(Ask::Restart)), false)
         );
         assert_eq!(
             choose_pause(PauseItem::ToTitle),
-            (Scene::Ask(Ask::ToTitle), false)
+            (Go::Open(Scene::Ask(Ask::ToTitle)), false)
         );
-        assert_eq!(answer(Ask::Restart, true), (Scene::Play, true));
-        assert_eq!(answer(Ask::ToTitle, true), (Scene::Title, true));
-        assert_eq!(answer(Ask::NewGame, true), (Scene::Play, true));
-        assert_eq!(answer(Ask::Buy(2), true), (Scene::Shop, false));
+        assert_eq!(answer(Ask::Restart, true), (Go::Root(Scene::Play), true));
+        assert_eq!(answer(Ask::ToTitle, true), (Go::Root(Scene::Title), true));
+        assert_eq!(answer(Ask::NewGame, true), (Go::Root(Scene::Play), true));
+        assert_eq!(
+            answer(Ask::Buy(2), true),
+            (Go::Back, false),
+            "back to the shop"
+        );
         for k in [Ask::Restart, Ask::ToTitle, Ask::NewGame, Ask::Buy(0)] {
-            assert_eq!(
-                answer(k, false),
-                (back(Scene::Ask(k)), false),
-                "cancel goes back"
-            );
+            assert_eq!(answer(k, false), (Go::Back, false), "cancel closes");
+            assert_eq!(back(Scene::Ask(k)), Go::Back);
+            assert_eq!(Scene::Ask(k).layer(), Layer::Modal);
         }
-        assert_eq!(back(Scene::Ask(Ask::NewGame)), Scene::Title);
-        assert_eq!(back(Scene::Ask(Ask::ToTitle)), Scene::Pause);
-        assert_eq!(back(Scene::Ask(Ask::Buy(1))), Scene::Shop);
-        // 커서: 버리는 일은 취소에서, 사기는 사기에서.
-        assert_eq!(ask_default(Ask::NewGame), 1);
-        assert_eq!(ask_default(Ask::Restart), 1);
-        assert_eq!(ask_default(Ask::Buy(0)), 0);
-        assert_eq!(choose_result(ResultItem::Retry), (Scene::Play, true));
+        // 커서: 버리는 일은 취소에서, 사기는 사기에서 — 여는 순간의 포커스(0066).
+        assert_eq!(focus(Scene::Ask(Ask::NewGame)), 1);
+        assert_eq!(focus(Scene::Ask(Ask::Restart)), 1);
+        assert_eq!(focus(Scene::Ask(Ask::Buy(0))), 0);
+        assert_eq!(focus(Scene::Pause), 0);
+        assert_eq!(
+            choose_result(ResultItem::Retry),
+            (Go::Root(Scene::Play), true)
+        );
         assert_eq!(title_items(false)[0], TitleItem::Start);
         assert_eq!(title_items(false)[1], TitleItem::Settings);
         assert!(
@@ -340,31 +391,37 @@ mod tests {
         assert_eq!(title_items(true).last(), Some(&TitleItem::NewGame));
         assert_eq!(
             choose_pause(PauseItem::Settings),
-            (Scene::Settings { from_pause: true }, false),
+            (Go::Open(Scene::Settings), false),
             "the run is kept"
         );
-        assert_eq!(choose_pause(PauseItem::Weapon), (Scene::Equip, false));
-        assert_eq!(back(Scene::Equip), Scene::Pause);
-        // 0064 M4: 이기면 핵 고르기(고를 것이 남았을 때만), 지면 결과. 핵 고르기는 뒤로로 건너뛰지 않는다. 화로 → 싸움.
+        assert_eq!(
+            choose_pause(PauseItem::Weapon),
+            (Go::Open(Scene::Equip), false)
+        );
+        // 0064 M4: 이기면 핵 고르기(고를 것이 남았을 때만), 지면 결과.
         assert_eq!(after_ending(true, true), Scene::Core);
         assert_eq!(after_ending(true, false), Scene::Result { won: true });
         assert_eq!(after_ending(false, true), Scene::Result { won: false });
-        assert_eq!(back(Scene::Core), Scene::Core);
-        assert_eq!(back(Scene::Shop), Scene::Play);
-        // 0052: 조작 → 설정 → 온 곳.
-        assert_eq!(
-            back(Scene::Controls { from_pause: true }),
-            Scene::Settings { from_pause: true }
-        );
-        assert_eq!(back(Scene::Settings { from_pause: true }), Scene::Pause);
-        assert_eq!(back(Scene::Settings { from_pause: false }), Scene::Title);
-        assert!(Scene::Controls { from_pause: true }.is_menu());
-        assert!(Scene::Settings { from_pause: false }.is_menu());
+        assert!(Scene::Controls.is_menu());
+        assert!(Scene::Settings.is_menu());
         assert!(!settings_rows(false, true).contains(&SettingsRow::Fullscreen));
         assert!(!settings_rows(true, false).contains(&SettingsRow::MouseAim));
         for (f, m) in [(false, false), (true, true), (true, false)] {
             let r = settings_rows(f, m);
             assert_eq!(r[r.len() - 2..], [SettingsRow::Controls, SettingsRow::Back]);
         }
+    }
+
+    #[test]
+    fn layers_put_the_hud_only_under_windows_that_lack_it() {
+        assert_eq!(Scene::Title.layer(), Layer::Screen);
+        assert_eq!(Scene::Play.layer(), Layer::Game);
+        assert_eq!(Scene::Pause.layer(), Layer::Window { hud: true });
+        assert_eq!(
+            Scene::Shop.layer(),
+            Layer::Window { hud: false },
+            "shows its own embers"
+        );
+        assert_eq!(Scene::Core.layer(), Layer::Window { hud: false });
     }
 }

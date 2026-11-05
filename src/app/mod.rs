@@ -4,6 +4,7 @@
 //! 루프: 프레임마다 입력 폴링 → 고정 60Hz 틱 N번(장면 → 월드 → 스테이지 → 카메라) → 가변 렌더(보간) → 글·메뉴(화면 패스).
 pub mod controls;
 pub mod flow;
+mod stack;
 
 use macroquad::prelude::*;
 
@@ -21,7 +22,7 @@ use crate::tuning::{Tuning, MAX_FRAME_DT, TICK_DT};
 use crate::ui::{self, Ui, AMBER, DIM, INK};
 use crate::weapons;
 use crate::world::{Event, World};
-use flow::{PauseItem, ResultItem, Scene, SettingsRow, TitleItem};
+use flow::{Go, Layer, PauseItem, ResultItem, Scene, SettingsRow, TitleItem};
 
 /// 타이틀 메뉴 첫 줄의 자리(화면 높이 비율) — `tools/test/touch.js`가 같은 값으로 탭한다.
 const TITLE_MENU_Y: f32 = 0.37;
@@ -34,7 +35,8 @@ const GOAL_ARROW_INSET: f32 = 0.12;
 const FIRST_STAGE: &StageDef = &sanctuary::DEF;
 
 pub struct App {
-    scene: Scene,
+    /// 장면 스택(0066): 맨 위가 지금 장면, 아래 칸은 커서·창을 맡아 둔다. 지금 칸의 커서·창은 `cursor`·`view`.
+    stack: stack::Stack,
     cursor: usize,
     /// 지난 프레임에 그린 메뉴 줄·▲▼ 자리(탭 판정).
     menu_hits: ui::MenuHits,
@@ -145,7 +147,7 @@ impl App {
         let cam = Camera::new(world.player.pos, &t);
         let progress = crate::save::load();
         App {
-            scene: Scene::Title,
+            stack: stack::Stack::new(Scene::Title),
             cursor: 0,
             menu_hits: ui::MenuHits::default(),
             view: ui::ListView::default(),
@@ -318,8 +320,7 @@ impl App {
 
     /// 묻는 창을 연다(커서는 버리는 일이면 취소에서).
     fn ask(&mut self, k: flow::Ask) {
-        self.go(Scene::Ask(k));
-        self.cursor = flow::ask_default(k);
+        self.go(Go::Open(Scene::Ask(k)));
     }
 
     /// 화로 가게에서 산다(0064 M4): 잔불이 모자라면 알림만.
@@ -408,29 +409,34 @@ impl App {
         self.save_prefs();
     }
 
-    fn go(&mut self, scene: Scene) {
-        if scene != self.scene {
-            self.cursor = 0;
+    /// 지금 장면(스택 맨 위).
+    fn scene(&self) -> Scene {
+        self.stack.top()
+    }
+
+    /// 장면을 바꾼다(0066): 지금 칸의 커서·창을 스택에 맡기고, 새 맨 위의 것(연 창이면 처음 포커스, 닫았으면 연 자리)을 받는다.
+    fn go(&mut self, go: Go) {
+        if let Some((cursor, view)) = self.stack.go(go, self.cursor, self.view) {
+            self.cursor = cursor;
+            self.view = view;
             self.menu_hits = ui::MenuHits::default();
-            self.view = ui::ListView::default();
             self.ctl = controls::Controls::default();
             self.ctl_rects.clear();
         }
-        self.scene = scene;
     }
 
     /// 한 프레임.
     pub fn frame(&mut self) {
         let cpu_start = get_time();
         // 터치의 상황 버튼(0053): 쉼터 곁이면 점프가 쉬기, 락온할 적이 있거나 락온 중이면 락온, 마실 수 있으면 등잔.
-        let play = self.scene.ticks_world();
+        let play = self.scene().ticks_world();
         let pl = &self.world.player;
         self.input.set_touch_ctx(crate::touch::Ctx {
             rest: play && self.world.interact_here,
             lock: play && (self.world.lock.is_some() || self.world.lock_candidate()),
             flask: play && pl.flask > 0 && pl.hp < pl.max_hp,
         });
-        self.input.poll(self.lab.open, self.scene.is_menu());
+        self.input.poll(self.lab.open, self.scene().is_menu());
         // 싸움 중 마우스 조준이면 OS 커서 대신 조준 표시(0058). 랩은 마우스를 쓰지 않지만 화살표가 보이게 둔다.
         let hide = play
             && !self.lab.open
@@ -491,14 +497,14 @@ impl App {
     }
 
     fn tick(&mut self, a: Actions) {
-        let (scene0, cursor0, back0) = (self.scene, self.cursor, a.back || a.pause);
+        let (scene0, cursor0, back0) = (self.scene(), self.cursor, a.back || a.pause);
         let played0 = self.sfx.as_ref().map_or(0, |s| s.played());
         self.tick_scene(a);
         // 메뉴 소리(0064 M5, KB `game-audio-without-a-composer` "메뉴 소리는 한 곳에서"): 그 사이에 다른 소리(사기·안 됨 등)가
         // 나지 않았을 때만 — 뒤로 > 확인(장면이 바뀜) > 커서.
         let quiet = self.sfx.as_ref().map_or(0, |s| s.played()) == played0;
         if scene0.is_menu() && quiet {
-            if self.scene != scene0 {
+            if self.scene() != scene0 {
                 self.snd(if back0 {
                     crate::sfx::Id::UiBack
                 } else {
@@ -521,7 +527,7 @@ impl App {
         if a.lab_toggle {
             self.lab.open = !self.lab.open;
         }
-        match self.scene {
+        match self.scene() {
             Scene::Title => {
                 let items = flow::title_items(self.progress.has_any());
                 if let Some(i) = self.menu_pick(&a, items.len()) {
@@ -529,22 +535,22 @@ impl App {
                         TitleItem::Start => {
                             crate::screen::touch_enter();
                             self.continue_run();
-                            self.go(Scene::Play);
+                            self.go(Go::Root(Scene::Play));
                         }
                         TitleItem::NewGame => self.ask(flow::Ask::NewGame),
-                        TitleItem::Settings => self.go(Scene::Settings { from_pause: false }),
+                        TitleItem::Settings => self.go(Go::Open(Scene::Settings)),
                         #[cfg(feature = "dev")]
-                        TitleItem::Dev => self.go(Scene::Dev),
+                        TitleItem::Dev => self.go(Go::Open(Scene::Dev)),
                     }
                 }
                 self.follow_camera();
             }
-            Scene::Settings { from_pause } => {
+            Scene::Settings => {
                 let rows = flow::settings_rows(crate::screen::supported(), input::has_mouse());
                 let row = rows.get(self.cursor).copied();
                 let step = a.menu_right as i32 - a.menu_left as i32;
                 if a.back || a.pause {
-                    self.go(flow::back(self.scene));
+                    self.go(flow::back(self.scene()));
                     return;
                 }
                 if step != 0 {
@@ -581,11 +587,11 @@ impl App {
                         r @ (SettingsRow::MouseAim
                         | SettingsRow::CursorRest
                         | SettingsRow::Reticle) => self.step_mouse(r, 1),
-                        SettingsRow::Controls => self.go(Scene::Controls { from_pause }),
-                        SettingsRow::Back => self.go(flow::back(self.scene)),
+                        SettingsRow::Controls => self.go(Go::Open(Scene::Controls)),
+                        SettingsRow::Back => self.go(flow::back(self.scene())),
                     }
                 }
-                if !from_pause {
+                if !self.stack.holds(Scene::Pause) {
                     self.follow_camera();
                 }
             }
@@ -593,7 +599,7 @@ impl App {
             Scene::Dev => {
                 let items = dev_items();
                 if a.back || a.pause {
-                    self.go(Scene::Title);
+                    self.go(Go::Back);
                     return;
                 }
                 let step = a.menu_right as i32 - a.menu_left as i32;
@@ -617,17 +623,17 @@ impl App {
                             self.restart();
                             self.run.dev_skip_to_gate(&mut self.world);
                             self.cam = Camera::new(self.world.player.pos, &self.t);
-                            self.go(Scene::Play);
+                            self.go(Go::Root(Scene::Play));
                         }
                         DevItem::Scenario => {
                             let sc = self.sc;
                             self.world = scenario::build(sc);
                             self.world.set_weapon(self.weapon);
                             self.cam = Camera::new(self.world.player.pos, &self.t);
-                            self.go(Scene::Sandbox);
+                            self.go(Go::Root(Scene::Sandbox));
                         }
                         DevItem::Weapon => self.next_weapon(1),
-                        DevItem::Back => self.go(Scene::Title),
+                        DevItem::Back => self.go(Go::Back),
                     }
                 }
                 self.follow_camera();
@@ -635,9 +641,9 @@ impl App {
             Scene::Pause => {
                 if a.pause || a.back {
                     let next = if a.pause {
-                        flow::pause(self.scene)
+                        flow::pause(self.scene())
                     } else {
-                        flow::back(self.scene)
+                        flow::back(self.scene())
                     };
                     self.go(next);
                 } else if (a.menu_left || a.menu_right)
@@ -649,10 +655,7 @@ impl App {
                     if rebuild {
                         self.restart();
                     }
-                    match next {
-                        Scene::Ask(k) => self.ask(k),
-                        _ => self.go(next),
-                    }
+                    self.go(next);
                 }
             }
             Scene::Core => {
@@ -662,14 +665,14 @@ impl App {
                     self.progress.growth.add(opts[i]);
                     self.world.apply_stats(self.progress.stats(), true);
                     self.persist();
-                    self.go(Scene::Result { won: true });
+                    self.go(Go::Root(Scene::Result { won: true }));
                 }
                 self.follow_camera();
             }
             Scene::Shop => {
                 let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
                 if a.back || a.pause {
-                    self.go(flow::back(self.scene));
+                    self.go(flow::back(self.scene()));
                     return;
                 }
                 if let Some(i) = self.menu_pick(&a, wares.len() + 1) {
@@ -680,14 +683,14 @@ impl App {
                             self.snd(crate::sfx::Id::Deny);
                         }
                         Some(_) => self.ask(flow::Ask::Buy(i)),
-                        None => self.go(flow::back(self.scene)),
+                        None => self.go(flow::back(self.scene())),
                     }
                 }
                 self.follow_camera();
             }
             Scene::Ask(k) => {
                 if a.back || a.pause {
-                    self.go(flow::back(self.scene));
+                    self.go(flow::back(self.scene()));
                     return;
                 }
                 if let Some(i) = self.menu_pick(&a, 2) {
@@ -726,7 +729,7 @@ impl App {
                 let rows = equip_rows();
                 let step = a.menu_right as i32 - a.menu_left as i32;
                 if a.back || a.pause {
-                    self.go(flow::back(self.scene));
+                    self.go(flow::back(self.scene()));
                     return;
                 }
                 if step != 0 {
@@ -739,11 +742,11 @@ impl App {
                     match rows[i] {
                         EquipRow::Weapon => self.next_weapon(1),
                         EquipRow::Charm(slot) => self.step_charm(slot, 1),
-                        EquipRow::Back => self.go(flow::back(self.scene)),
+                        EquipRow::Back => self.go(flow::back(self.scene())),
                     }
                 }
             }
-            Scene::Controls { .. } => {
+            Scene::Controls => {
                 let b = input::bindings();
                 let mut out = self.ctl.tick(&a, b, TICK_DT);
                 if self.ctl.capture.is_none() {
@@ -766,7 +769,7 @@ impl App {
                         input::set_bindings(nb);
                         self.save_prefs();
                     }
-                    controls::Out::Back => self.go(flow::back(self.scene)),
+                    controls::Out::Back => self.go(flow::back(self.scene())),
                 }
             }
             Scene::Result { .. } => {
@@ -783,12 +786,12 @@ impl App {
                 self.follow_camera();
                 if self.ending >= flow::ENDING_TIME {
                     let grow = !self.progress.growth.options().is_empty();
-                    self.go(flow::after_ending(won, grow));
+                    self.go(Go::Root(flow::after_ending(won, grow)));
                 }
             }
             Scene::Play => {
                 if a.pause {
-                    self.go(flow::pause(self.scene));
+                    self.go(flow::pause(self.scene()));
                     return;
                 }
                 let a = self.lab_filter(a);
@@ -804,7 +807,7 @@ impl App {
                 );
                 if self.run.take_rested() {
                     self.snd(crate::sfx::Id::Rest);
-                    self.go(Scene::Shop);
+                    self.go(Go::Open(Scene::Shop));
                 }
                 // 문지기가 깨어나는 순간(0064 M5): 낮은 땅울림.
                 let waking = matches!(self.run.phase, crate::stage::Phase::Waking(_));
@@ -822,13 +825,14 @@ impl App {
                 }
                 if let Some(next) = flow::after_stage(out) {
                     self.ending = 0.0;
-                    self.go(next);
+                    self.go(Go::Root(next));
                 }
             }
             #[cfg(feature = "dev")]
             Scene::Sandbox => {
                 if a.pause {
-                    self.go(Scene::Dev);
+                    self.go(Go::Root(Scene::Title));
+                    self.go(Go::Open(Scene::Dev));
                     return;
                 }
                 if let Some(n) = a.scenario {
@@ -959,7 +963,7 @@ impl App {
     }
 
     fn in_stage(&self) -> bool {
-        match self.scene {
+        match self.scene() {
             #[cfg(feature = "dev")]
             Scene::Sandbox => false,
             _ => true,
@@ -979,46 +983,40 @@ impl App {
         self.frame = Some(f);
         self.ui.begin(f.ui);
         let overlay = self.input.overlay(self.lab.open);
-        match self.scene {
+        // 창 밑의 HUD는 장면의 자리(`Scene::layer`)가 정한다 — 판 위에서 연 창만(0066).
+        if self.scene().layer() == (Layer::Window { hud: true }) && self.stack.base() == Scene::Play
+        {
+            hud::draw(&self.ui, &f, &self.world, Some(&self.run), true);
+        }
+        match self.scene() {
             Scene::Title => self.draw_title(&f),
             Scene::Play | Scene::Ending { .. } => {
                 hud::draw(&self.ui, &f, &self.world, Some(&self.run), false)
             }
-            Scene::Pause => {
-                hud::draw(&self.ui, &f, &self.world, Some(&self.run), true);
-                self.draw_pause(&f);
-            }
-            Scene::Equip => {
-                hud::draw(&self.ui, &f, &self.world, Some(&self.run), true);
-                self.draw_equip(&f);
-            }
+            Scene::Pause => self.draw_pause(&f),
+            Scene::Equip => self.draw_equip(&f),
             Scene::Core => self.draw_core(&f),
             // 가게 창이 잔불을 보여 주니 밑의 HUD는 그리지 않는다(KB `hud-readability-and-quick-slots`).
             Scene::Shop => self.draw_shop(&f),
             Scene::Ask(k) => self.draw_ask(&f, k),
             Scene::Result { won } => self.draw_result(&f, won),
-            Scene::Controls { .. } => self.draw_controls(&f),
-            Scene::Settings { from_pause } => {
-                if from_pause {
-                    hud::draw(&self.ui, &f, &self.world, Some(&self.run), true);
-                }
-                self.draw_settings(&f);
-            }
+            Scene::Controls => self.draw_controls(&f),
+            Scene::Settings => self.draw_settings(&f),
             #[cfg(feature = "dev")]
             Scene::Dev => self.draw_dev_menu(&f),
             #[cfg(feature = "dev")]
             Scene::Sandbox => hud::draw(&self.ui, &f, &self.world, None, false),
         }
         if matches!(
-            self.scene,
+            self.scene(),
             Scene::Play | Scene::Ending { .. } | Scene::Shop | Scene::Title
         ) {
             self.draw_toast(&f);
         }
-        if self.scene == Scene::Play {
+        if self.scene() == Scene::Play {
             self.draw_goal_arrow(&f);
         }
-        if self.scene.ticks_world() {
+        if self.scene().ticks_world() {
             if self.mouse_hidden && self.world.lock_target().is_none() {
                 if let Some(c) = self.input.cursor() {
                     hud::draw_reticle(&f, c, input::mouse_aim().size);
@@ -1065,7 +1063,7 @@ impl App {
 
     fn dev_sandbox(&self) -> bool {
         #[cfg(feature = "dev")]
-        if self.scene == Scene::Sandbox {
+        if self.scene() == Scene::Sandbox {
             return true;
         }
         false
@@ -1080,7 +1078,7 @@ impl App {
         };
         let y = f.oy + f.h - 40.0;
         #[cfg(feature = "dev")]
-        if self.scene == Scene::Sandbox {
+        if self.scene() == Scene::Sandbox {
             let e = scenario::entry(self.sc);
             draw_text(
                 format!(
@@ -1355,7 +1353,7 @@ impl App {
     fn draw_ask(&mut self, f: &Frame, k: flow::Ask) {
         let s = s();
         // 멈춤에서 왔으면 HUD를 깔고 흐리게. 가게 목록은 깔지 않는다(글이 겹쳐 읽기 어려웠다 — knellroot에는 nail의 창 틀이 없다).
-        if flow::back(Scene::Ask(k)) == Scene::Pause {
+        if self.stack.under().map(|e| e.scene) == Some(Scene::Pause) {
             hud::draw(&self.ui, f, &self.world, Some(&self.run), true);
         }
         self.ui.dim(0.7);
@@ -1397,7 +1395,11 @@ impl App {
             let a = (t / 0.6).min(1.0);
             let cx = f.ox + f.w * 0.5;
             // 화로 가게에서는 목록을 가리지 않게 맨 위에.
-            let y = if self.scene == Scene::Shop { 0.04 } else { 0.3 };
+            let y = if self.scene() == Scene::Shop {
+                0.04
+            } else {
+                0.3
+            };
             self.ui.text_center(
                 text,
                 cx,
