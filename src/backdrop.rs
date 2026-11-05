@@ -612,6 +612,83 @@ impl Backdrop {
     }
 }
 
+/// 잔불 조각(0064 M1): 도는 작은 팔면체(위는 밝은 호박, 아래는 짙게) + 빛무리 판. 스스로 빛나는 것이라 빛을 받지 않는다.
+const EMBER_SIZE: f32 = 0.13;
+const EMBER_HALO: f32 = 0.55;
+const EMBER_TOP: Color = Color::new(1.0, 0.78, 0.32, 1.0);
+const EMBER_BOTTOM: Color = Color::new(0.85, 0.42, 0.14, 1.0);
+const EMBER_GLOW: Color = Color::new(1.0, 0.7, 0.3, 0.9);
+
+impl Backdrop {
+    /// 떨어진 잔불 조각들(월드 `drops`).
+    pub fn embers(
+        &mut self,
+        batch: &mut Batch,
+        drops: &[crate::ember::Ember],
+        right: Vec3,
+        up: Vec3,
+        time: f32,
+    ) {
+        if drops.is_empty() {
+            return;
+        }
+        let mut verts = Vec::new();
+        let mut idx = Vec::new();
+        let mut halos = Vec::new();
+        let mut halo_idx = Vec::new();
+        for (k, e) in drops.iter().enumerate() {
+            let spin = time * 3.0 + k as f32 * 1.7;
+            let (sx, sz) = (spin.cos() * EMBER_SIZE, spin.sin() * EMBER_SIZE);
+            let ring = [
+                e.pos + vec3(sx, 0.0, sz),
+                e.pos + vec3(-sz, 0.0, sx),
+                e.pos + vec3(-sx, 0.0, -sz),
+                e.pos + vec3(sz, 0.0, -sx),
+            ];
+            let (top, bottom) = (
+                e.pos + Vec3::Y * EMBER_SIZE * 1.4,
+                e.pos - Vec3::Y * EMBER_SIZE * 1.4,
+            );
+            for i in 0..4 {
+                let (a, b) = (ring[i], ring[(i + 1) % 4]);
+                let base = verts.len() as u16;
+                for (p, c) in [
+                    (top, EMBER_TOP),
+                    (a, EMBER_TOP),
+                    (b, EMBER_TOP),
+                    (bottom, EMBER_BOTTOM),
+                    (b, EMBER_BOTTOM),
+                    (a, EMBER_BOTTOM),
+                ] {
+                    verts.push(Vertex::new(p.x, p.y, p.z, 0.0, 0.0, c));
+                }
+                idx.extend_from_slice(&[base, base + 1, base + 2, base + 3, base + 4, base + 5]);
+            }
+            billboard(
+                &mut halos,
+                &mut halo_idx,
+                e.pos,
+                right,
+                up,
+                EMBER_HALO,
+                EMBER_GLOW,
+            );
+        }
+        let tex = self
+            .halo_tex
+            .get_or_insert_with(|| {
+                let t = Texture2D::from_rgba8(8, 8, &halo_pixels(8));
+                t.set_filter(FilterMode::Nearest);
+                t
+            })
+            .clone();
+        batch.raw(&halos, &halo_idx, Some(&tex), 1.0);
+        batch.send();
+        batch.raw(&verts, &idx, None, 1.0);
+        batch.send();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

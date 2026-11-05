@@ -65,6 +65,18 @@ pub const PLAYER_HP: i32 = 5;
 pub const FLASK_CHARGES: i32 = 3;
 /// 마법 칸(0048): 근접으로 맞히면 `cast.per hit`씩 차고, 쉼터에서 가득. 한 번 쏘면 한 칸.
 pub const CAST_CHARGES: f32 = 3.0;
+/// 잔불(0064 M1, `ember.rs`): 한 번에 흩는 조각 수 상한, 튀는 빠르기(옆·위 m/s)·중력·튀어 오름 비, 자석이 켜지는 때(초)·
+/// 닿는 거리(m)·끌림 가속(m/s²)·최고 빠르기, 줍는 거리(m). 적마다 떨구는 값은 `species.rs`의 `embers`.
+pub const EMBER_PIECES: u32 = 6;
+pub const EMBER_POP_SIDE: f32 = 2.2;
+pub const EMBER_POP_UP: f32 = 4.5;
+pub const EMBER_GRAVITY: f32 = 16.0;
+pub const EMBER_BOUNCE: f32 = 0.35;
+pub const EMBER_DELAY: f32 = 0.35;
+pub const EMBER_MAGNET_R: f32 = 6.0;
+pub const EMBER_PULL: f32 = 40.0;
+pub const EMBER_PULL_MAX: f32 = 16.0;
+pub const EMBER_PICK_R: f32 = 0.7;
 /// 마법 탄 반지름(m)과 쏘는 높이(몸 위 m).
 pub const BOLT_RADIUS: f32 = 0.35;
 pub const BOLT_HEIGHT: f32 = 1.0;

@@ -70,6 +70,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 웹 로딩·PWA(0062) | `web/index.html` 덮개·`fetch` 감싸기·`knell_loading`, `src/main.rs` `loaded`, `web/manifest.webmanifest`·`sw.js`·`icons/`(`make_icons.py` `web_icons`), `assemble.sh`, `tools/test/pwa.js` | 종 + 막대(wasm 바이트, 첫 프레임 뒤 걷음, 실패면 붉게), 홈 화면 설치(가로 전체 화면), 두 번째 실행부터 오프라인, 새 판은 다음 실행부터 |
 | 주위 환경(0063) | `backdrop.rs`(`fog`·`motes`·`sky`), `flora.rs`, `scenery.rs` `walk_min`·식생 몫, `render.rs` `haze_by_pitch` | 걷는 땅 아래 높이 안개(흐르는 점 무늬), 반딧불·달빛 먼지, 숄더뷰 하늘 띠·산등성이 세 겹·뿌리 아치·달(남서 골짜기), 바위 단의 나무·덤불, 벽을 타는 뿌리, 아지랑이는 쿼터뷰에서만 |
 | 기록(0064 M2) | `save.rs`, `app/mod.rs` `continue_run`·`sync_progress`·`persist`, `StageRun::resume`·`run_at`, `web/index.html` `knell_save_*`, `tools/test/save.js` | 타이틀 이어하기(쉰 쉼터에서)·새로 하기(두 번), 쉬면·판을 끝내면·처음부터 하면 바뀐 것만 씀 |
+| 잔불(0064 M1) | `ember.rs`, `world.rs` `tick_embers`·`embers`·`drops`, `species.rs` `embers`, `backdrop.rs` `embers`, `hud.rs` | 쓰러지면 튀어나오고 0.35초 뒤 끌려와 주움, 가진 수는 기록에 — 쓰러져도 그대로 |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
@@ -85,6 +86,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 7. [ ] **분위기(S4)**: 어둡고 조용한 성소 + 호박색 불빛, 캐릭터가 바닥에 묻히지 않는지. 빛·그림자(0044·0045), 화면 선(0061), 하늘·뿌리 아치·나무·벽 뿌리(0063), 이야기 글(시작 두 줄·구역 이름·결과 — `src/i18n/ko.rs`).
 
 ### A2. v0.3.0(0064) — 들어간 것부터
+- [ ] **잔불(M1)**: 튀어나오고 끌려오는 손맛(너무 빠르거나 멀리서 끌리지 않는지), HUD 수가 보이는지. 쓰러져도 그대로인지.
 - [ ] **기록(M2)**: 쉼터에서 쉬고 새로고침(웹)·다시 켜기(APK) → 타이틀 "이어하기"로 그 쉼터에서. 새로 하기가 한 번에 지우지 않는지.
 
 ### B. 핸드헬드(Android APK — P5)

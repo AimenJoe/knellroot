@@ -47,6 +47,8 @@ pub struct Def {
     pub wave_speed: f32,
     pub behavior: Behavior,
     pub boss: bool,
+    /// 쓰러지면 떨구는 잔불(0064 M1).
+    pub embers: u32,
     /// 모델(`assets/models/<이름>.glb`).
     pub model: &'static str,
 }
@@ -71,6 +73,7 @@ pub static HUSK: Def = Def {
     wave_speed: 0.0,
     behavior: Behavior::Melee,
     boss: false,
+    embers: 2,
     model: "root_husk",
 };
 
@@ -94,6 +97,7 @@ pub static THORN: Def = Def {
     wave_speed: 0.0,
     behavior: Behavior::Charger,
     boss: false,
+    embers: 3,
     model: "thorn_beast",
 };
 
@@ -117,6 +121,7 @@ pub static WARDEN: Def = Def {
     wave_speed: 9.0,
     behavior: Behavior::Warden,
     boss: true,
+    embers: 40,
     model: "gatekeeper",
 };
 

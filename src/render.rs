@@ -511,6 +511,9 @@ impl Renderer {
             }
             None => self.sandbox_faded(w, t),
         }
+        // 잔불 조각(0064 M1) — 스테이지·개발 시나리오 둘 다.
+        self.backdrop
+            .embers(&mut self.batch, &w.drops, cam_right, cam_up, w.time);
 
         // 지평선 아지랑이(0012): 렌더 타깃 위쪽을 하늘빛으로 옅게 — 화면에 고정된 수평 띠라 땅 돌리기 중에도 기울지 않는다.
         // 하늘이 보이는 숄더뷰에서는 아지랑이를 걷는다(0063 E2): 화면 위 = 하늘이라 띠가 달·산등성이를 지운다.

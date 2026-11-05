@@ -113,6 +113,10 @@ pub enum Event {
     Rouse {
         at: Vec3,
     },
+    /// 잔불을 주웠다(0064 M1) — 조각 하나의 값.
+    Ember {
+        value: u32,
+    },
     /// 패링 성공(0025): 적의 근접 공격을 튕겼다.
     Parry {
         at: Vec3,
@@ -405,6 +409,11 @@ pub struct World {
     pub interact_here: bool,
     /// 날고 있는 마법 탄(0048).
     pub bolts: Vec<Bolt>,
+    /// 잔불(0064 M1): 가진 수(쓰러져도 잃지 않는다 — 앱이 기록에서 넣고 기록으로 옮긴다)와 바닥에 떨어진 조각.
+    pub embers: u32,
+    pub drops: Vec<crate::ember::Ember>,
+    /// 마지막으로 잔불을 주운 시각(`time`) — HUD가 수를 잠깐 키운다.
+    pub ember_at: f32,
     /// 금 간 땅(망치 여진)·날고 있는 수류탄·폭발 고리(0051).
     pub cracks: Vec<Crack>,
     pub bombs: Vec<Bomb>,
@@ -481,6 +490,9 @@ impl World {
             interact: false,
             interact_here: false,
             bolts: Vec::new(),
+            embers: 0,
+            drops: Vec::new(),
+            ember_at: f32::MIN,
             cracks: Vec::new(),
             bombs: Vec::new(),
             blasts: Vec::new(),
@@ -798,7 +810,37 @@ impl World {
         self.tick_enemies(t, dt, &mut ev);
         self.collide(t, &mut ev);
         self.cleanup(&mut ev);
+        self.tick_embers(dt, &mut ev);
         ev
+    }
+
+    /// 잔불(0064 M1): 막 쓰러진 적은 제 값을 흩고, 바닥의 조각은 튀고·끌리고·주워진다.
+    fn tick_embers(&mut self, dt: f32, ev: &mut Vec<Event>) {
+        for (i, en) in self.enemies.iter_mut().enumerate() {
+            if !en.alive() && !en.dropped {
+                en.dropped = true;
+                let seed = (self.time * 1000.0) as u32 ^ (i as u32).wrapping_mul(2654435761);
+                self.drops
+                    .extend(crate::ember::scatter(en.pos, en.def().embers, seed));
+            }
+        }
+        let to = self.player.pos + Vec3::Y * 0.9;
+        let ground = self.ground.as_ref();
+        let mut got = 0;
+        self.drops.retain_mut(|e| {
+            let g = ground.map_or(0.0, |g| g.height(e.pos));
+            if crate::ember::step(e, to, g, dt) {
+                got += e.value;
+                ev.push(Event::Ember { value: e.value });
+                false
+            } else {
+                true
+            }
+        });
+        if got > 0 {
+            self.embers += got;
+            self.ember_at = self.time;
+        }
     }
 
     fn tick_lock(&mut self, a: &Actions, ev: &mut Vec<Event>) {
@@ -2578,6 +2620,30 @@ pub fn move_to_world(stick: Vec2, basis: Basis, player: Vec3) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_fallen_enemy_drops_its_embers_once_and_they_come_to_the_player() {
+        let mut w = World::new("t", 20.0);
+        w.player.pos = Vec3::ZERO;
+        let i = w.spawn(crate::species::Kind::Thorn, vec3(3.0, 0.0, 0.0));
+        w.enemies[i].hp = 0;
+        w.enemies[i].state = crate::enemy::EState::Dead;
+        let t = crate::tuning::Tuning::default();
+        let a = Actions::default();
+        let mut picked = 0;
+        for _ in 0..180 {
+            for e in w.step(&a, &t) {
+                if let Event::Ember { value } = e {
+                    picked += value;
+                }
+            }
+        }
+        let want = crate::species::def(crate::species::Kind::Thorn).embers;
+        assert_eq!(picked, want, "every piece reaches the player");
+        assert_eq!(w.embers, want);
+        assert!(w.drops.is_empty());
+        assert!(w.enemies[i].dropped, "dropped once, not every tick");
+    }
 
     fn world_with_boss() -> World {
         let mut w = World::new("test", 20.0);

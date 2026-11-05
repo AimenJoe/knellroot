@@ -9,6 +9,7 @@
 mod app;
 mod backdrop;
 mod camera;
+mod ember;
 mod enemy;
 mod flora;
 mod ground;

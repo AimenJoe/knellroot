@@ -99,6 +99,8 @@ pub struct Enemy {
     pub sway: Vec3,
     pub sway_t: f32,
     /// 죽은 뒤 지난 초(렌더가 쓰러뜨리고 지운다).
+    /// 잔불을 떨궜나(0064 M1 — 쓰러진 틱에 한 번).
+    pub dropped: bool,
     pub dead_t: f32,
     /// 패링당해 드러난 남은 초(0025) — 이동안 맞는 한 대가 치명타.
     pub exposed: f32,
@@ -148,6 +150,7 @@ impl Enemy {
             sway: Vec3::ZERO,
             sway_t: 0.0,
             dead_t: 0.0,
+            dropped: false,
             exposed: 0.0,
             poise: 0.0,
             poise_lock: 0.0,

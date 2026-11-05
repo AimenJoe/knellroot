@@ -133,6 +133,8 @@ impl App {
         self.run = run;
         self.world = world;
         self.world.set_weapon(self.weapon);
+        // 잔불은 판을 넘어 남는다(0064 M1).
+        self.world.embers = self.progress.embers;
         self.cam = Camera::new(self.world.player.pos, &self.t);
     }
 
@@ -148,6 +150,7 @@ impl App {
     /// 판에서 기록할 것을 옮기고(쉰 쉼터·끝낸 판), 바뀌었으면 쓴다.
     fn sync_progress(&mut self, out: crate::stage::StageOut) {
         self.progress.run = self.run.run_at();
+        self.progress.embers = self.world.embers;
         if out == crate::stage::StageOut::Cleared {
             self.progress.run = None;
             self.progress.clears += 1;
@@ -597,7 +600,7 @@ impl App {
                 Event::Plunge { .. } => SHAKE_PLUNGE,
                 Event::Smash { .. } => SHAKE_SMASH,
                 Event::Charged => SHAKE_CHARGED,
-                Event::Gulp { .. } | Event::FlaskDenied => 0.0,
+                Event::Gulp { .. } | Event::FlaskDenied | Event::Ember { .. } => 0.0,
                 Event::Cast { .. } | Event::CastDenied | Event::Throw => 0.0,
                 Event::Break { .. } => SHAKE_SMASH,
                 Event::Aftershock { .. } | Event::Boom { .. } => SHAKE_PLUNGE,

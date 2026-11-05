@@ -26,6 +26,10 @@ const BOSS_ROUSED: Color = Color::new(0.95, 0.55, 0.2, 1.0);
 /// 자세 막대(0055): 밝은 크림, 깨지면 금빛.
 const POISE: Color = Color::new(0.92, 0.88, 0.78, 0.9);
 const POISE_BROKEN: Color = Color::new(1.0, 0.82, 0.3, 1.0);
+/// 잔불 수(0064 M1)와 주웠을 때 커지는 시간(초).
+const EMBER: Color = Color::new(1.0, 0.74, 0.32, 1.0);
+const EMBER_POP: f32 = 0.35;
+
 const BAR_BG: Color = Color::new(0.05, 0.05, 0.06, 0.85);
 
 /// 0..1 → 들어올 때·나갈 때 `edge`초씩 부드럽게(카드·이야기).
@@ -115,6 +119,32 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
                 FLASK_FLAME,
             );
         }
+    }
+    // 잔불(0064 M1): 등잔 줄 아래에 호박 마름모 + 수. 주우면 잠깐 커진다. 하나도 없으면 그리지 않는다.
+    if w.embers > 0 {
+        let pop = 1.0 + 0.35 * (1.0 - ((w.time - w.ember_at) / EMBER_POP).clamp(0.0, 1.0));
+        let c = vec2(x0 + 3.0 * s, y0 + 33.0 * s);
+        let r = 3.0 * s * pop;
+        draw_triangle(
+            c + vec2(0.0, -r),
+            c + vec2(r * 0.8, 0.0),
+            c + vec2(0.0, r),
+            EMBER,
+        );
+        draw_triangle(
+            c + vec2(0.0, -r),
+            c + vec2(-r * 0.8, 0.0),
+            c + vec2(0.0, r),
+            EMBER,
+        );
+        let k = 0.8 * pop.min(1.15);
+        ui.text(
+            &w.embers.to_string(),
+            x0 + 9.0 * s,
+            c.y - ui.px(k) * 0.55,
+            k,
+            EMBER,
+        );
     }
     // 마법 칸(0048): 등잔 오른쪽에 둥근 칸 셋 — 찬 만큼 채워지고, 못 쏘면 깜빡인다. 근접으로 맞히면 찬다.
     // 원거리 무기(0051)는 그 자리에 탄창(세운 막대 — 장전 중이면 아래에서 차오른다) + 수류탄(둥근 칸).
