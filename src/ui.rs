@@ -292,31 +292,36 @@ impl Ui {
         self.text(s, cx - w * 0.5, y, k, color);
     }
 
-    /// 세로 메뉴. 고른 줄은 호박색 + 앞에 표지. 항목 자리(탭 판정용)를 돌려준다.
-    pub fn menu(&self, items: &[String], cursor: usize, cx: f32, y: f32) -> Vec<Rect> {
-        self.menu_gap(items, cursor, cx, y, self.px(1.0) * 1.9)
-    }
-
-    /// 줄이 많은 메뉴(설정, 0058): `top`..`bottom` 안에 들게 줄 간격을 줄인다(1.3줄 아래로는 줄이지 않는다).
-    pub fn menu_in(
+    /// 세로 메뉴(`top`..`bottom` 안). 고른 줄은 호박색 + 앞에 표지. 줄이 많으면 간격을 조금 줄이고(1.9 → 1.6줄),
+    /// 그래도 넘치면 굴린다 — 보이는 줄만 그리고 위·아래에 더 있으면 ▲▼(누를 수 있다). 창은 `view`가 기억한다(nail 0199).
+    /// 돌려주는 줄 자리는 항목마다(안 보이는 줄은 빈 사각형 — 탭이 닿지 않는다).
+    pub fn menu(
         &self,
         items: &[String],
         cursor: usize,
+        view: &mut ListView,
         cx: f32,
         top: f32,
         bottom: f32,
-    ) -> Vec<Rect> {
+    ) -> MenuHits {
         let px = self.px(1.0);
-        let gap = (px * 1.9)
-            .min((bottom - top) / items.len().max(1) as f32)
-            .max(px * 1.3);
-        self.menu_gap(items, cursor, cx, top, gap)
-    }
-
-    fn menu_gap(&self, items: &[String], cursor: usize, cx: f32, y: f32, gap: f32) -> Vec<Rect> {
-        let mut rects = Vec::new();
-        for (i, it) in items.iter().enumerate() {
-            let yy = y + gap * i as f32;
+        let n = items.len();
+        let avail = (bottom - top).max(px);
+        let gap = (px * 1.9).min(avail / n.max(1) as f32).max(px * 1.6);
+        let (fits, y0) = if gap * n as f32 <= avail + 1.0 {
+            (n, top)
+        } else {
+            // ▲▼ 자리를 빼고 들어가는 줄 수.
+            let arrow = px * 0.9;
+            (
+                ((avail - arrow * 2.0) / gap).floor().max(1.0) as usize,
+                top + arrow,
+            )
+        };
+        let first = view.window(cursor, n, fits, gap);
+        let mut rows = vec![Rect::new(0.0, 0.0, 0.0, 0.0); n];
+        for (i, it) in items.iter().enumerate().skip(first).take(fits) {
+            let yy = y0 + gap * (i - first) as f32;
             let w = self.width(it, 1.0);
             let sel = i == cursor;
             if sel {
@@ -325,20 +330,46 @@ impl Ui {
                     cx - w * 0.5 - pad * 2.0,
                     yy - pad * 0.4,
                     w + pad * 4.0,
-                    self.px(1.0) + pad * 0.8,
+                    px + pad * 0.8,
                     Color::new(0.88, 0.6, 0.23, 0.14),
                 );
                 self.text("◆", cx - w * 0.5 - pad * 3.4, yy, 1.0, AMBER);
             }
             self.text_center(it, cx, yy, 1.0, if sel { AMBER } else { INK });
-            rects.push(Rect::new(
-                cx - w * 0.5 - self.px(1.5),
-                yy - gap * 0.25,
-                w + self.px(3.0),
-                gap,
-            ));
+            rows[i] = Rect::new(cx - w * 0.5 - px * 1.5, yy - gap * 0.25, w + px * 3.0, gap);
         }
-        rects
+        let arrows = self.scroll_arrows(
+            view,
+            n,
+            cx,
+            y0 - px * 0.95,
+            y0 + gap * fits as f32 - px * 0.15,
+        );
+        MenuHits { rows, arrows }
+    }
+
+    /// 굴리는 목록의 ▲(위에 더 있음)·▼(아래에 더 있음): `y_up`·`y_down` 줄에, 없는 쪽은 그리지 않는다. 누를 자리.
+    pub fn scroll_arrows(
+        &self,
+        view: &ListView,
+        n: usize,
+        cx: f32,
+        y_up: f32,
+        y_down: f32,
+    ) -> [Option<Rect>; 2] {
+        let px = self.px(1.0);
+        let (up, down) = view.more(n);
+        let mut out = [None, None];
+        for (k, (on, glyph, y)) in [(up, "▲", y_up), (down, "▼", y_down)]
+            .into_iter()
+            .enumerate()
+        {
+            if on {
+                self.text_center(glyph, cx, y, 0.8, DIM);
+                out[k] = Some(Rect::new(cx - px * 2.5, y - px * 0.3, px * 5.0, px * 1.2));
+            }
+        }
+        out
     }
 
     /// 키 안내 한 줄: [(키, 동사)] — 키는 키캡. 터치(키 그림 없음)면 그리지 않는다. 넓으면 `fit`으로 자른다
@@ -370,6 +401,96 @@ impl Ui {
 }
 
 /// 메뉴 입력 한 틱: 위·아래로 커서, 확인·탭이면 고른 줄.
+/// 메뉴가 그린 자리: 항목마다 줄(안 보이면 빈 사각형), ▲·▼(있을 때).
+#[derive(Debug, Default, Clone)]
+pub struct MenuHits {
+    pub rows: Vec<Rect>,
+    pub arrows: [Option<Rect>; 2],
+}
+
+impl MenuHits {
+    /// 탭 자리 → ▲(-1)·▼(+1)이면 굴리기. ▲▼가 줄 칸과 겹치면 ▲▼가 이긴다.
+    pub fn arrow_at(&self, p: Vec2) -> Option<i32> {
+        self.arrows
+            .iter()
+            .zip([-1, 1])
+            .find(|(r, _)| r.is_some_and(|r| r.contains(p)))
+            .map(|(_, d)| d)
+    }
+}
+
+/// 굴리는 목록의 창(nail 0199를 가져옴, Knellroot 메뉴 공통): 보이는 첫 줄을 기억한다. 키·패드 커서는 창이 따라가고(`window`),
+/// 손가락 끌기·휠·▲▼는 창을 직접 옮기고 커서를 창 안으로 데려온다(`scroll`).
+/// 커서는 창 가장자리에서 한 줄 띄운다(목록 끝이 아니면) — 다음 줄이 보여야 더 있는 줄 안다(게임 UI 관례, 2차).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ListView {
+    pub first: usize,
+    /// 지난번 그릴 때 들어간 줄 수와 줄 높이(논리 px).
+    fits: usize,
+    row_h: f32,
+    /// 줄 하나가 안 된 끌기 거리(논리 px).
+    acc: f32,
+}
+
+impl ListView {
+    fn margin(&self) -> usize {
+        usize::from(self.fits >= 3)
+    }
+
+    /// 그릴 때: 이번에 들어가는 줄 수·줄 높이를 적고, 커서가 창(가장자리 여유 포함) 밖이면 창을 옮긴다. 보이는 첫 줄.
+    pub fn window(&mut self, cursor: usize, n: usize, fits: usize, row_h: f32) -> usize {
+        self.fits = fits.max(1);
+        self.row_h = row_h;
+        let m = self.margin();
+        if cursor < self.first + m {
+            self.first = cursor.saturating_sub(m);
+        }
+        if cursor + m >= self.first + self.fits {
+            self.first = cursor + m + 1 - self.fits;
+        }
+        self.first = self.first.min(n.saturating_sub(self.fits));
+        self.first
+    }
+
+    /// 위·아래에 가려진 줄이 있나(▲▼).
+    pub fn more(&self, n: usize) -> (bool, bool) {
+        (self.first > 0, self.first + self.fits.max(1) < n)
+    }
+
+    /// 끌기(논리 px, 위로 끌면 +)와 칸(휠·▲▼, 아래로 +)만큼 창을 옮기고 커서를 창 안(가장자리 여유 포함)에 둔다. 창이 움직였으면 참.
+    pub fn scroll(&mut self, (drag, steps): (f32, i32), cursor: &mut usize, n: usize) -> bool {
+        let row_h = self.row_h.max(1.0);
+        // 방향을 바꾸면 남은 거리는 버린다(반대로 끄는 첫 줄이 늦게 오지 않게).
+        if self.acc * drag < 0.0 {
+            self.acc = 0.0;
+        }
+        self.acc += drag;
+        let mut rows = steps;
+        while self.acc >= row_h {
+            self.acc -= row_h;
+            rows += 1;
+        }
+        while self.acc <= -row_h {
+            self.acc += row_h;
+            rows -= 1;
+        }
+        if rows == 0 || n == 0 {
+            return false;
+        }
+        let fits = self.fits.max(1);
+        let max_first = n.saturating_sub(fits) as i32;
+        let first = (self.first as i32 + rows).clamp(0, max_first) as usize;
+        let moved = first != self.first;
+        self.first = first;
+        let m = self.margin();
+        let lo = if first > 0 { first + m } else { first };
+        let last = (first + fits - 1).min(n - 1);
+        let hi = if first + fits < n { last - m } else { last };
+        *cursor = (*cursor).clamp(lo, hi.max(lo));
+        moved
+    }
+}
+
 pub fn menu_input(cursor: &mut usize, n: usize, up: bool, down: bool) {
     if n == 0 {
         return;
@@ -402,6 +523,45 @@ pub fn all_text(s: &Strings) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// 굴리는 목록(nail 0199 + 가장자리 한 줄 여유): 줄 높이만큼 끌면 한 줄, 끝에서 멈추고, 커서는 창 안(가장자리에서 한 줄 띄워)으로.
+    /// 키 커서는 창이 따라가되 다음 줄이 보이게 한 줄 앞서 굴린다.
+    #[test]
+    fn list_view_scrolls_by_drag_and_keeps_a_row_of_margin() {
+        let mut v = ListView::default();
+        let mut cur = 0;
+        assert_eq!(v.window(cur, 10, 4, 12.0), 0);
+        assert_eq!(v.more(10), (false, true));
+        assert!(!v.scroll((8.0, 0), &mut cur, 10), "less than a row: stays");
+        assert!(v.scroll((8.0, 0), &mut cur, 10));
+        assert_eq!(
+            (v.first, cur),
+            (1, 2),
+            "the rest piles up; the cursor comes in one row from the top"
+        );
+        assert_eq!(
+            v.window(cur, 10, 4, 12.0),
+            1,
+            "and the next draw keeps the window"
+        );
+        assert!(v.scroll((0.0, 99), &mut cur, 10));
+        assert_eq!((v.first, cur), (6, 7), "stops at the end (10 - 4)");
+        assert_eq!(v.more(10), (true, false));
+        assert!(!v.scroll((0.0, 1), &mut cur, 10));
+        assert!(v.scroll((-24.0, 0), &mut cur, 10));
+        assert_eq!(v.first, 4);
+        // 키로 내려가면 커서가 창 맨 아래 줄에 닿기 전에(한 줄 앞서) 창이 내려간다.
+        let mut v = ListView::default();
+        assert_eq!(v.window(2, 10, 4, 12.0), 0);
+        assert_eq!(v.window(3, 10, 4, 12.0), 1);
+        assert_eq!(
+            v.window(9, 10, 4, 12.0),
+            6,
+            "the last row may sit on the edge"
+        );
+        assert_eq!(v.window(0, 10, 4, 12.0), 0);
+        assert_eq!(v.window(9, 3, 4, 12.0), 0, "everything fits: 0");
+    }
+
     use super::*;
 
     /// 0049: 굽는 물리 크기는 상한을 넘지 않고, 늘린 결과는 원하는 크기와 같다. 1080p 본문(52px)은 늘리지 않는다.

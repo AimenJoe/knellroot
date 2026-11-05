@@ -123,6 +123,9 @@ pub struct Actions {
     pub back: bool,
     pub pause: bool,
     pub tap: Option<Vec2>,
+    /// 메뉴 굴리기: 손가락 끌기(논리 px, 위로 끌면 +)·마우스 휠(칸, 아래로 +). 틱마다 소비(`ui::ListView::scroll`).
+    pub drag: f32,
+    pub wheel: i32,
     /// 개발: 측정·안내 줄 켜고 끄기(F3).
     pub dev_overlay: bool,
     /// 개발: 글자 넘침 검사 켜고 끄기(F4, `ui::check`).
@@ -977,6 +980,14 @@ impl Input {
         } else {
             self.since_mouse = (self.since_mouse + fdt).min(f32::MAX);
         }
+        // 메뉴 굴리기: 휠은 부호만 한 칸(기기마다 값 크기가 다르다, KB gamepad-and-android-input).
+        if menu && mouse_real {
+            let wy = mouse_wheel().1;
+            if wy.abs() > 0.0 {
+                a.wheel = if wy > 0.0 { -1 } else { 1 };
+            }
+        }
+        a.drag = t.drag;
         // 메뉴는 마우스 왼쪽을 뗄 때 탭(터치와 같은 규칙, nail 0199).
         if menu && mouse_real && a.tap.is_none() && is_mouse_button_released(MouseButton::Left) {
             a.tap = Some(mp);
@@ -1035,6 +1046,8 @@ impl Input {
             back: self.latch.back | a.back,
             pause: self.latch.pause | a.pause,
             tap: a.tap.or(self.latch.tap),
+            drag: self.latch.drag + a.drag,
+            wheel: self.latch.wheel + a.wheel,
             dev_overlay: self.latch.dev_overlay | a.dev_overlay,
             ui_check: self.latch.ui_check | a.ui_check,
             pressed_key: a.pressed_key.or(self.latch.pressed_key),

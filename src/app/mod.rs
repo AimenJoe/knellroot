@@ -32,8 +32,10 @@ const FIRST_STAGE: &StageDef = &sanctuary::DEF;
 pub struct App {
     scene: Scene,
     cursor: usize,
-    /// 지난 프레임에 그린 메뉴 줄 자리(탭 판정).
-    menu_rects: Vec<Rect>,
+    /// 지난 프레임에 그린 메뉴 줄·▲▼ 자리(탭 판정).
+    menu_hits: ui::MenuHits,
+    /// 지금 화면의 굴리는 목록 창(메뉴·조작 설정 공통, 장면이 바뀌면 처음부터).
+    view: ui::ListView,
     input: Input,
     t: Tuning,
     lab: Lab,
@@ -84,7 +86,8 @@ impl App {
         App {
             scene: Scene::Title,
             cursor: 0,
-            menu_rects: Vec::new(),
+            menu_hits: ui::MenuHits::default(),
+            view: ui::ListView::default(),
             input: Input::new(),
             lab: Lab::new(),
             renderer: Renderer::new(),
@@ -160,7 +163,8 @@ impl App {
     fn go(&mut self, scene: Scene) {
         if scene != self.scene {
             self.cursor = 0;
-            self.menu_rects.clear();
+            self.menu_hits = ui::MenuHits::default();
+            self.view = ui::ListView::default();
             self.ctl = controls::Controls::default();
             self.ctl_rects.clear();
         }
@@ -218,16 +222,24 @@ impl App {
         }
     }
 
-    /// 메뉴 한 틱: 커서·탭·확인 → 고른 줄.
+    /// 메뉴 한 틱: 커서·굴리기·탭·확인 → 고른 줄. 굴리기 = 끌기·휠·▲▼ 탭(창을 옮기고 커서를 창 안으로).
     fn menu_pick(&mut self, a: &Actions, n: usize) -> Option<usize> {
         ui::menu_input(&mut self.cursor, n, a.menu_up, a.menu_down);
-        if let Some(p) = a.tap {
-            if let Some(i) = ui::hit(&self.menu_rects, p) {
+        let arrow = a.tap.and_then(|p| self.menu_hits.arrow_at(p));
+        self.view
+            .scroll((a.drag, a.wheel + arrow.unwrap_or(0)), &mut self.cursor, n);
+        if let (Some(p), None) = (a.tap, arrow) {
+            if let Some(i) = ui::hit(&self.menu_hits.rows, p) {
                 self.cursor = i;
                 return Some(i);
             }
         }
         a.confirm.then_some(self.cursor.min(n.saturating_sub(1)))
+    }
+
+    /// 화면 아래 안내 줄 위까지(메뉴가 굴리는 아래 끝).
+    fn menu_bottom(&self, f: &Frame) -> f32 {
+        f.oy + f.h - self.ui.px(1.0) * 2.8
     }
 
     fn tick(&mut self, a: Actions) {
@@ -370,7 +382,12 @@ impl App {
                 let b = input::bindings();
                 let mut out = self.ctl.tick(&a, b, TICK_DT);
                 if self.ctl.capture.is_none() {
-                    if let Some(p) = a.tap {
+                    // 굴리기(끌기·휠·▲▼)는 메뉴와 같다 — 커서 = 고른 줄.
+                    let arrow = a.tap.and_then(|p| self.menu_hits.arrow_at(p));
+                    let n = controls::rows().len();
+                    self.view
+                        .scroll((a.drag, a.wheel + arrow.unwrap_or(0)), &mut self.ctl.row, n);
+                    if let (Some(p), None) = (a.tap, arrow) {
                         if let Some(&(_, row, col)) =
                             self.ctl_rects.iter().find(|(r, _, _)| r.contains(p))
                         {
@@ -709,9 +726,15 @@ impl App {
                 TitleItem::Dev => "DEV".to_string(),
             })
             .collect();
-        self.menu_rects = self
-            .ui
-            .menu(&items, self.cursor, cx, f.oy + f.h * TITLE_MENU_Y);
+        let bottom = self.menu_bottom(f);
+        self.menu_hits = self.ui.menu(
+            &items,
+            self.cursor,
+            &mut self.view,
+            cx,
+            f.oy + f.h * TITLE_MENU_Y,
+            bottom,
+        );
         self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
         // 버전 글자(오른쪽 위) — 받은 판이 무엇인지 사진 한 장으로 알게. 개발판은 표시를 붙인다.
         let ver = if cfg!(feature = "dev") {
@@ -745,7 +768,15 @@ impl App {
                 PauseItem::ToTitle => s.menu_to_title.to_string(),
             })
             .collect();
-        self.menu_rects = self.ui.menu(&items, self.cursor, cx, f.oy + f.h * 0.45);
+        let bottom = self.menu_bottom(f);
+        self.menu_hits = self.ui.menu(
+            &items,
+            self.cursor,
+            &mut self.view,
+            cx,
+            f.oy + f.h * 0.45,
+            bottom,
+        );
         self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
     }
 
@@ -793,9 +824,10 @@ impl App {
             .collect();
         let hint_y = f.oy + f.h - self.ui.px(1.0) * 2.2;
         let top = f.oy + f.h * if many { 0.24 } else { 0.38 };
-        self.menu_rects =
-            self.ui
-                .menu_in(&items, self.cursor, cx, top, hint_y - self.ui.px(1.0) * 0.6);
+        let bottom = hint_y - self.ui.px(1.0) * 0.6;
+        self.menu_hits = self
+            .ui
+            .menu(&items, self.cursor, &mut self.view, cx, top, bottom);
         self.menu_hint(cx, hint_y, f.w * 0.94);
     }
 
@@ -814,7 +846,16 @@ impl App {
                 DevItem::Back => "back".to_string(),
             })
             .collect();
-        self.menu_rects = self.ui.menu(&items, self.cursor, cx, f.oy + f.h * 0.3);
+        // 아래 PoC 설명 줄(0.78) 위까지.
+        let bottom = f.oy + f.h * 0.76;
+        self.menu_hits = self.ui.menu(
+            &items,
+            self.cursor,
+            &mut self.view,
+            cx,
+            f.oy + f.h * 0.3,
+            bottom,
+        );
         if let Some(DevItem::Scenario) = dev_items().get(self.cursor) {
             let e = scenario::entry(self.sc);
             let checks = self.ui.fit(e.checks, f.w * 0.9, 1.0);
@@ -840,11 +881,21 @@ impl App {
         let b = input::bindings();
         self.ctl_rects.clear();
         let rows = controls::rows();
-        // 줄 간격은 아래 고정 안내(`controls_fixed`) 위까지 들어가게 줄인다 — 동작이 늘어도(0031 등잔) 겹치지 않게.
+        // 줄 간격은 아래 고정 안내(`controls_fixed`) 위까지 들어가게 조금 줄이고(1.32 → 1.15줄), 그래도 넘치면 굴린다(메뉴와 같은 `ListView`).
         let bottom = f.oy + f.h - px * 3.2 - px * 1.2;
-        let fit = (bottom - y) / (rows.len() as f32 - 1.0 + 0.4);
-        let gap = (px * 1.32).min(fit);
-        for (i, row) in rows.iter().enumerate() {
+        let n = rows.len();
+        let gap = (px * 1.32)
+            .min((bottom - y) / (n as f32 - 1.0 + 0.4))
+            .max(px * 1.15);
+        let fits = if gap * (n as f32 - 1.0 + 0.4) <= bottom - y + 1.0 {
+            n
+        } else {
+            y += px * 0.9; // ▲ 자리
+            ((bottom - y - px * 0.9) / gap).floor().max(1.0) as usize
+        };
+        let first = self.view.window(self.ctl.row, n, fits, gap);
+        let y_top = y;
+        for (i, row) in rows.iter().enumerate().skip(first).take(fits) {
             let sel = i == self.ctl.row;
             match row {
                 controls::Row::Bind(bind) => {
@@ -901,6 +952,17 @@ impl App {
             }
             y += gap;
         }
+        let arrows = self.ui.scroll_arrows(
+            &self.view,
+            n,
+            cx,
+            y_top - px * 0.95,
+            y_top + gap * fits as f32 - px * 0.15,
+        );
+        self.menu_hits = ui::MenuHits {
+            rows: Vec::new(),
+            arrows,
+        };
         self.ui
             .text_center(s.controls_fixed, cx, f.oy + f.h - px * 3.2, 1.0, DIM);
         self.menu_hint(cx, f.oy + f.h - px * 1.8, f.w * 0.94);
@@ -937,7 +999,15 @@ impl App {
                 .to_string()
             })
             .collect();
-        self.menu_rects = self.ui.menu(&items, self.cursor, cx, f.oy + f.h * 0.55);
+        let bottom = self.menu_bottom(f);
+        self.menu_hits = self.ui.menu(
+            &items,
+            self.cursor,
+            &mut self.view,
+            cx,
+            f.oy + f.h * 0.55,
+            bottom,
+        );
         self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.0, f.w * 0.94);
     }
 }

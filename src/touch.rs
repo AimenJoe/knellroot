@@ -89,6 +89,8 @@ pub struct Read {
     pub pause: bool,
     /// 메뉴 모드에서 손가락을 거의 움직이지 않고 뗀 자리(논리 px) — 메뉴는 뗄 때 누른다(nail 0199).
     pub tap: Option<Vec2>,
+    /// 메뉴 모드에서 손가락을 탭 범위 넘게 움직였으면 이번 프레임에 끈 거리(논리 px, 위로 끌면 + — 아래 줄이 드러난다). 끈 손가락은 뗄 때 탭이 아니다.
+    pub drag: f32,
     /// 화면에 손가락이 있었다(버튼·스틱이 아니어도) → 장치 = 터치.
     pub active: bool,
 }
@@ -124,8 +126,8 @@ pub struct Touch {
     cast_finger: Option<u64>,
     /// 상황 버튼(0053, 앱이 매 프레임 정한다).
     pub ctx: Ctx,
-    /// 메뉴 모드: 손가락마다 (id, 처음 자리, 멀리 움직였나).
-    taps: Vec<(u64, Vec2, bool)>,
+    /// 메뉴 모드: 손가락마다 (id, 처음 자리, 멀리 움직였나 = 끌기, 지난 자리).
+    taps: Vec<(u64, Vec2, bool, Vec2)>,
 }
 
 /// 버튼 크기·거리의 기준(짧은 변)의 상한(논리 px) — 태블릿에서 버튼이 너무 커지지 않게.
@@ -307,7 +309,14 @@ impl Touch {
                 let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
                 match self.taps.iter_mut().find(|x| x.0 == t.id) {
                     Some(x) => {
+                        let was = x.2;
                         x.2 |= (t.position - x.1).length() > TAP_SLOP;
+                        // 끌기는 탭 범위를 넘은 뒤부터 — 넘는 순간엔 처음 자리부터 센다(손가락과 목록이 같이 간다).
+                        if x.2 {
+                            let from = if was { x.3.y } else { x.1.y };
+                            a.drag += from - t.position.y;
+                        }
+                        x.3 = t.position;
                         if ended {
                             if !x.2 {
                                 a.tap = Some(t.position);
@@ -316,7 +325,7 @@ impl Touch {
                             self.taps.retain(|x| x.0 != id);
                         }
                     }
-                    None if !ended => self.taps.push((t.id, t.position, false)),
+                    None if !ended => self.taps.push((t.id, t.position, false, t.position)),
                     None => a.tap = Some(t.position),
                 }
             }
