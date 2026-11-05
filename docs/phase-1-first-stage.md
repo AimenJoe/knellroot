@@ -26,8 +26,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 화면 공간 선(0061) | `render.rs` `EdgeFx`·`normal_pass`·`edge_fx`, `scenery::with_normal`, `Batch::record` | 법선 패스(뷰 법선 + 선형 깊이) → 이웃 넷: 깊이가 끊기는 앞쪽은 어두운 선, 볼록 모서리는 밝은 선. 랩 `render.edge*` 다섯(덧붙임). GL만 |
 | 길 안내(0060 W1) | `stage::StageRun::goal`, `render.rs` `beam`·`GUIDE_*`, `hud::draw_goal_arrow`, `camera::world_to_ndc`·`edge_marker` | 문이 열리면(그리고 핵이 남으면) 그 자리에 호박색 빛기둥 + 빛, 화면 밖 1초면 가장자리 화살, 목표 글 "열린 문으로 성소에 들어가라" |
 | 굴리는 목록(0059) | `ui.rs` `ListView`·`Ui::menu`, `touch.rs` 끌기, `input.rs` 휠 | 모든 메뉴·조작 설정이 넘치면 굴린다: 보이는 줄 + ▲▼(누름), 키 커서는 창이 따라가고 가장자리 한 줄 여유, 손가락 끌기(탭 범위 넘으면, 뗄 때 탭 아님)·휠·▲▼는 창을 옮긴다. 지금 메뉴는 넘치지 않아(UI가 화면 높이 비례) 줄이 늘 때 켜진다 |
-| 키보드+마우스(0058) | `input.rs`, `app/mod.rs` `cursor_aim`, `camera.rs` `screen_ray`, `hud.rs` `draw_reticle` | 기본 배치: 왼쪽 클릭 공격·오른쪽 클릭 마법·휠 클릭 락온·L-Shift 패링, 왼손 그대로(땅 돌리기 Q·E 남김). 마우스 = 오른쪽 스틱: 쿼터뷰에서 커서를 비춘 땅 위 점 쪽으로 겨눔(수류탄은 그 자리), 만진 지 1초(설정 0.5·1·2·4) 지나면 자동 조준, 락온 중엔 안 씀. 싸움 중 OS 커서 대신 조준 표시(작게·보통·크게). 조작 설정에 "키보드+마우스 배치로·키보드만 배치로", 메뉴는 왼쪽 클릭을 뗄 때 탭. 웹 오른쪽 클릭 메뉴·휠 클릭 자동 스크롤 막음. 감도 칸 없음(OS 커서). 시험: 쉼 규칙·슬롯 번호·커서 조준·락온 무시·수류탄 자리·프리셋·prefs, 헤드리스 `tools/test/mouse.js` |
-| 장면 | `app/mod.rs`, `app/flow.rs` | 흐름은 순수 함수 + 시험 셋. 메뉴는 위·아래 + 확인, 터치는 뗄 때 탭, 언어 줄은 좌우로도 바뀐다. 멈춤: Esc·P / Start / 터치 오른쪽 위 |
+| 키보드+마우스(0058) | `input.rs`, `app/play.rs` `cursor_aim`, `camera.rs` `screen_ray`, `hud.rs` `draw_reticle` | 기본 배치: 왼쪽 클릭 공격·오른쪽 클릭 마법·휠 클릭 락온·L-Shift 패링, 왼손 그대로(땅 돌리기 Q·E 남김). 마우스 = 오른쪽 스틱: 쿼터뷰에서 커서를 비춘 땅 위 점 쪽으로 겨눔(수류탄은 그 자리), 만진 지 1초(설정 0.5·1·2·4) 지나면 자동 조준, 락온 중엔 안 씀. 싸움 중 OS 커서 대신 조준 표시(작게·보통·크게). 조작 설정에 "키보드+마우스 배치로·키보드만 배치로", 메뉴는 왼쪽 클릭을 뗄 때 탭. 웹 오른쪽 클릭 메뉴·휠 클릭 자동 스크롤 막음. 감도 칸 없음(OS 커서). 시험: 쉼 규칙·슬롯 번호·커서 조준·락온 무시·수류탄 자리·프리셋·prefs, 헤드리스 `tools/test/mouse.js` |
+| 장면 | `app/mod.rs`·`app/stack.rs`(0066), `app/flow.rs` | 흐름은 순수 함수 + 시험 셋. 메뉴는 위·아래 + 확인, 터치는 뗄 때 탭, 언어 줄은 좌우로도 바뀐다. 멈춤: Esc·P / Start / 터치 오른쪽 위 |
 | 스테이지 | `stage/mod.rs`, `stage/sanctuary.rs` | 글자 지도 37×25칸(칸 2m). 벽은 줄마다 상자 하나로 합쳐 부딪힘. 진행은 `Phase`(입구 → 물결 n → 문 열림 → 깨어남 → 결투 → 핵 → 끝). 시험: 지도 읽기·입구에서 클리어까지·쓰러지면 끝 |
 | 종류 표 | `species.rs`, `enemy.rs` | 잔재 체력 3·2.6m/s·원판 0.55초 / 가시짐승 체력 2·3.8m/s·7m 안 돌진(띠 0.65초, 13m/s × 0.5초) / 문지기 체력 40·부채꼴 110° 0.9초·돌진 11m·세 번째마다 파동(1초 예고, 9m까지 9m/s), 반 아래 예고 ×0.75 |
 | 글 | `i18n/`, `ui.rs`, `hud.rs` | 한국어·영어. HUD: 체력 마름모·스태미나·목표·구역 카드·시작 이야기·보스 띠 |
@@ -65,15 +65,15 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 폭딜 창·수류탄 겨누기(0055) | `world.rs` `hurt_by`·`Enemy::broken`·`poise_frac`, `hud.rs` 보스 자세 막대, `PState::Throw` 겨누기 | 깨진 동안 모든 타격 ×1.5, 보스 띠 아래 자세 막대(깨지면 금빛), 쇠뇌 X 꾹 = 겨눠 멀리 |
 | 원거리 강공격(0056) | `world.rs` `PState::CastCharge`, `weapons.rs` `charged`·`Bolt::scale`, `input.rs` `cast_held`·`carry`, `touch.rs` 마법 손가락, `wanderer.py` cast_charge·xbow_charge | RB 톡 = 한 발, 쥐면 모으기 → 떼면 모은 탄(칸·볼트 하나, 다 모으면 크고 꿰뚫음) |
 | 캔슬(0057) | `world.rs` `cancel_or_buffer`·`Player::pending`·`Next`, `weapons.rs` 타·강타 `cancel`, 랩 `dodge.cancel x`·`land.cancel x` | 후딜레이를 다음 행동(회피·패링·점프·공격·마법·등잔)으로 끊음, 0.3초 받아 두기, 끊는 시점은 무기 성격(망치 늦게) |
-| 설정·개발 메뉴(0052) | `app/flow.rs` `Scene::Settings`·`Dev`·`SettingsRow`, `app/mod.rs`, `prefs.rs` 칸 20·21 | 타이틀 = 시작·설정·DEV. 설정 = 언어·전체 화면·흔들림·조작. 멈춤 = 계속·무기·설정·처음부터·타이틀로 |
+| 설정·개발 메뉴(0052) | `app/flow.rs` `Scene::Settings`·`Dev`·`SettingsRow`, `app/settings.rs`, `prefs.rs` 칸 20·21 | 타이틀 = 시작·설정·DEV. 설정 = 언어·전체 화면·흔들림·조작. 멈춤 = 계속·무기·설정·처음부터·타이틀로 |
 | 터치 배치(0053) | `touch.rs` `layout`·`Ctx`, `tools/test/touch.js` | 공격 + 둘레 호 넷(회피·패링·마법·점프/쉬기) + 돌리기 캡슐, 락온·등잔은 쓸 수 있을 때만 |
 | 웹 로딩·PWA(0062) | `web/index.html` 덮개·`fetch` 감싸기·`knell_loading`, `src/main.rs` `loaded`, `web/manifest.webmanifest`·`sw.js`·`icons/`(`make_icons.py` `web_icons`), `assemble.sh`, `tools/test/pwa.js` | 종 + 막대(wasm 바이트, 첫 프레임 뒤 걷음, 실패면 붉게), 홈 화면 설치(가로 전체 화면), 두 번째 실행부터 오프라인, 새 판은 다음 실행부터 |
 | 주위 환경(0063) | `backdrop.rs`(`fog`·`motes`·`sky`), `flora.rs`, `scenery.rs` `walk_min`·식생 몫, `render.rs` `haze_by_pitch` | 걷는 땅 아래 높이 안개(흐르는 점 무늬), 반딧불·달빛 먼지, 숄더뷰 하늘 띠·산등성이 세 겹·뿌리 아치·달(남서 골짜기), 바위 단의 나무·덤불, 벽을 타는 뿌리, 아지랑이는 쿼터뷰에서만 |
-| 기록(0064 M2) | `save.rs`, `app/mod.rs` `continue_run`·`sync_progress`·`persist`, `StageRun::resume`·`run_at`, `web/index.html` `knell_save_*`, `tools/test/save.js` | 타이틀 이어하기(쉰 쉼터에서)·새로 하기(두 번), 쉬면·판을 끝내면·처음부터 하면 바뀐 것만 씀 |
+| 기록(0064 M2) | `save.rs`, `app/progress.rs` `continue_run`·`sync_progress`·`persist`, `StageRun::resume`·`run_at`, `web/index.html` `knell_save_*`, `tools/test/save.js` | 타이틀 이어하기(쉰 쉼터에서)·새로 하기(두 번), 쉬면·판을 끝내면·처음부터 하면 바뀐 것만 씀 |
 | 잔불(0064 M1) | `ember.rs`, `world.rs` `tick_embers`·`embers`·`drops`, `species.rs` `embers`, `backdrop.rs` `embers`, `hud.rs` | 쓰러지면 튀어나오고 0.35초 뒤 끌려와 주움, 가진 수는 기록에 — 쓰러져도 그대로 |
-| 장신구(0064 M3) | `stats.rs`·`charms.rs`, `World::stats`·`apply_stats`, `Player::max_hp`·`flask_max`, `StageRun` 상자(`C`)·`take_opened`, `app/mod.rs` 장비 창·`gain_charm`·알림 | 세 칸, 여섯 가운데 상자 둘·문지기 하나에서 얻음, 멈춤 → 장비에서 갈아 끼움, 능력치는 한 곳에서 합침 |
-| 성장(0064 M4) | `growth.rs`, `Scene::Core`·`Scene::Shop`, `StageRun::take_rested`·`shop_ready`, `app/mod.rs` `buy`·`draw_core`·`draw_shop` | 문지기를 이기면 핵 고르기(체력·등잔·회복), 쉬면 화로 가게(장신구 셋·등잔 기름), 살 것이 있으면 쉼터가 빛남 |
-| 소리(0064 M5) | `sfx.rs`, `app/mod.rs` `world_sounds`·`set_sfx`·메뉴 소리, `prefs.rs` 칸 25, `assets/sfx/` | 효과음 16(CC0)·합성 8(패링·예고 넷·깨어남·쉼터·등잔)·성소 환경음, 설정 소리 크기 |
+| 장신구(0064 M3) | `stats.rs`·`charms.rs`, `World::stats`·`apply_stats`, `Player::max_hp`·`flask_max`, `StageRun` 상자(`C`)·`take_opened`, `app/pause.rs` 장비 창·`app/progress.rs` `gain_charm`·알림 | 세 칸, 여섯 가운데 상자 둘·문지기 하나에서 얻음, 멈춤 → 장비에서 갈아 끼움, 능력치는 한 곳에서 합침 |
+| 성장(0064 M4) | `growth.rs`, `Scene::Core`·`Scene::Shop`, `StageRun::take_rested`·`shop_ready`, `app/progress.rs` `buy`·`app/shop.rs` `core_menu`·`shop_menu` | 문지기를 이기면 핵 고르기(체력·등잔·회복), 쉬면 화로 가게(장신구 셋·등잔 기름), 살 것이 있으면 쉼터가 빛남 |
+| 소리(0064 M5) | `sfx.rs`, `app/play.rs` `world_sounds`·`app/mod.rs` `set_sfx`·메뉴 소리, `prefs.rs` 칸 25, `assets/sfx/` | 효과음 16(CC0)·합성 8(패링·예고 넷·깨어남·쉼터·등잔)·성소 환경음, 설정 소리 크기 |
 | 묻는 창·UI 맞추기(0065) | `Scene::Ask`·`flow::answer`·`ask_default`, `ui.menu_dimmed`, `Sfx::played` | 새로 하기·처음부터·타이틀로·사기는 한 번 묻는다(취소에서), 가게는 못 사는 것 흐리게·HUD 없음, 메뉴 소리 겹치지 않게, 저장 실패 알림 |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 

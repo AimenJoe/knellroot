@@ -94,4 +94,5 @@ R6은 UI 밖이고 v0.3.0 판정(R1~R4 손맛)과 섞이면 안 되니 판정 �
   - `ui.rs`: `panel`·`close`·`button(s)`·`list`(`Row`: 그냥·◀ 값 ▶·→, 흐림)·`title_arrows`(넘치면 ▲▼를 제목 줄에 — nail 0239, 줄 자리를 먹지 않게)·`u`, F4 검사에 `past-panel`·`forget`(묻는 창이 덮은 글은 겹침이 아니다).
   - 글: 값 줄은 이름만(`menu_language` "언어" …) + 값 글(`value_on/off`·`value_secs`·`grow_count`·`shop_item` "잔불 {0}"), 기호 ◀ → 를 `UI_GLYPHS`에.
 - 덤으로 고친 것: 시작 이야기 글이 창 밑에 비쳤다(`hud` — 창 밑에서는 그리지 않는다). 창이 열린 동안 카메라 따라가기는 한 규칙("판 위의 멈춤 아래가 아니면")으로 — 결과·타이틀에서 연 조작 창에서도 카메라가 마저 자리 잡는다.
+- **R3** 파일 나누기(함수 몸 그대로, 이름 목록으로 스크립트가 옮김): `tick_scene`의 남은 갈래를 `tick_title`·`tick_controls`·`tick_play`·`tick_sandbox`로, 파일 `title.rs`·`controls_screen.rs`(조작 표 화면 — 표 규칙은 `controls.rs`)·`play.rs`(싸움 틱·조준·랩·카메라·길 안내·개발 줄·월드 소리)·`progress.rs`(이어하기·기록·장신구·사기·저장). `app/mod.rs` 1,676 → 545줄, `tick_scene` 340 → 35줄. 옛 경로는 `docs/phase-1-first-stage.md` 일곱 곳을 고쳤다.
 - 확인: 단위 시험 203, 헤드리스 여섯(shot·save·touch·mouse·pwa·leak), F4 넘침 검사 한국어·영어 0건, 스크린숏 `docs/art/ui-0066/`.
