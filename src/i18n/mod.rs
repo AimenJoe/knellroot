@@ -115,7 +115,7 @@ pub struct Strings {
     pub menu_continue: &'static str,
     /// 슬롯 창(0066, KB `roguelite-save-slots-and-continue`): 제목 둘, 줄 이름 "{0}" = 번호, 요약 "{0}" 완주 · "{1}" 잔불 · "{2}" 장신구,
     /// 빈 슬롯, 단추(시작·덮어쓰기·이어하기·지우기)와 두 번째 누름을 묻는 글.
-    /// 장비 창(0067): 상태 머리글, 든 무기 표시, 바뀌는 것 없음, 빈 칸 설명,
+    /// 장비 창(0067): 상태 머리글, 장비 중인 무기 표시, 바뀌는 것 없음, 빈 칸 설명,
     /// 상태 줄 이름 열과 등잔 횟수 "{0}", 무기 설명 넷.
     pub equip_status: &'static str,
     pub equip_held: &'static str,

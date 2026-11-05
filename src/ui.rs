@@ -52,6 +52,8 @@ pub struct Row {
     pub dim: bool,
     /// 이름 앞에 그림 자리를 둔다(`list_icon`이 그 칸, 그림은 부른 쪽이 — 0068 아이템 아이콘).
     pub icon: bool,
+    /// 오른쪽 값을 작은 표지로(조금 작은 글 — "장비 중" 같은 표시가 이름을 잘라 먹지 않게).
+    pub tag: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -96,6 +98,9 @@ impl Row {
     }
     pub fn with_icon(self, icon: bool) -> Self {
         Row { icon, ..self }
+    }
+    pub fn tagged(self) -> Self {
+        Row { tag: true, ..self }
     }
 }
 
@@ -602,8 +607,16 @@ impl Ui {
                 }
                 RowKind::Plain if row.value.is_empty() => right,
                 RowKind::Plain => {
-                    let w = self.width(&row.value, 1.0);
-                    self.text(&row.value, right - w, ty, 1.0, ink);
+                    let k = if row.tag { 0.8 } else { 1.0 };
+                    let w = self.width(&row.value, k);
+                    let y = ty + (px - self.px(k)) * 0.5;
+                    self.text(
+                        &row.value,
+                        right - w,
+                        y,
+                        k,
+                        if row.tag { mark } else { ink },
+                    );
                     right - w
                 }
             };

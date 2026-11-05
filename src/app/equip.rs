@@ -231,7 +231,7 @@ impl App {
         self.hits.push((x, Hit::Close));
         let bottom = panel.y + panel.h - u * 8.0;
         // 왼쪽(인형·칸)과 오른쪽(상태·후보) 사이 세로 선.
-        let split = panel.x + panel.w * 0.58;
+        let split = panel.x + panel.w * 0.55;
         draw_line(split, top, split, bottom, u.max(1.0), ui::BORDER);
         let (lx, lw) = (panel.x + u * 8.0, split - panel.x - u * 16.0);
         let (rx, rw) = (split + u * 10.0, panel.x + panel.w - split - u * 18.0);
@@ -361,7 +361,9 @@ impl App {
                                 .unwrap_or_default(),
                             _ => String::new(),
                         };
-                        ui::Row::value(self.cand_name(c), mark).with_icon(true)
+                        ui::Row::value(self.cand_name(c), mark)
+                            .with_icon(true)
+                            .tagged()
                     })
                     .collect();
                 let list_top = top + px * 1.5;

@@ -38,7 +38,7 @@ pub const EN: Strings = Strings {
     chest_verb: "Open",
     menu_continue: "Continue",
     equip_status: "Status",
-    equip_held: "Held",
+    equip_held: "Equipped",
     equip_no_change: "No change",
     equip_empty_d: "Wear nothing here",
     stat_max_hp: "Max HP",
@@ -52,7 +52,8 @@ pub const EN: Strings = Strings {
     stat_parry: "Parry window",
     stat_kill: "Stamina on kill",
     stat_ember: "Embers",
-    weapon_sword_d: "3-hit combo · charged wide slash · magic bolt. The baseline blade",
+    weapon_sword_d:
+        "3-hit combo · charged wide slash · magic bolt. The plain blade most pilgrims carry",
     weapon_hammer_d:
         "Slow, wide 2-hit combo · leaping slam with aftershock · heavy bolt. Breaks posture",
     weapon_staff_d:
