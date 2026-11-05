@@ -366,7 +366,22 @@ impl Renderer {
                     }
                 }
                 self.batch.send();
-                sc.lights.clone()
+                let mut lights = sc.lights.clone();
+                // 갈 곳(0060 W1)에 호박색 빛 — 곁의 모델이 같이 물든다("호박색 불빛 = 갈 길").
+                if let Some(g) = run.goal() {
+                    let pulse = 0.85 + 0.15 * (w.time * GUIDE_PULSE).sin();
+                    lights.push(Light {
+                        pos: g + Vec3::Y * 1.5,
+                        color: Color::new(
+                            GUIDE_COLOR.r * pulse,
+                            GUIDE_COLOR.g * pulse,
+                            GUIDE_COLOR.b * pulse,
+                            1.0,
+                        ),
+                        radius: GUIDE_LIGHT_R,
+                    });
+                }
+                lights
             }
             None => {
                 self.sandbox_floor(w, &pts, cam.rig.pos, k, t);
@@ -539,6 +554,29 @@ impl Renderer {
                     Color::new(1.0, 0.85, 0.5, 0.9 * (1.0 - k)),
                 );
             }
+        }
+        // 갈 곳의 빛기둥(0060 W1): 멀리서도 보이는 세로 기둥 둘(바깥 옅게·안쪽 밝게) + 발밑 고리, 숨 쉬듯.
+        if let Some(g) = run.goal() {
+            let pulse = 0.5 + 0.5 * (w.time * GUIDE_PULSE).sin();
+            beam(
+                g,
+                GUIDE_BEAM_R,
+                GUIDE_BEAM_H,
+                with_a(GUIDE_COLOR, 0.16 + 0.08 * pulse),
+            );
+            beam(
+                g,
+                GUIDE_BEAM_R * 0.45,
+                GUIDE_BEAM_H * 0.8,
+                with_a(GUIDE_COLOR, 0.3 + 0.15 * pulse),
+            );
+            ring(
+                g,
+                GUIDE_BEAM_R + 0.4 + 0.3 * pulse,
+                0.0,
+                360.0,
+                with_a(GUIDE_COLOR, 0.7),
+            );
         }
         if let (Some(core), Phase::Core) = (run.core, run.phase) {
             let bob = (w.time * 2.0).sin() * 0.15;
@@ -1176,6 +1214,13 @@ impl Renderer {
 const RECOIL: f32 = 0.35;
 /// 죽은 적이 넘어져 사라지는 데 걸리는 초.
 const DEATH_TIME: f32 = 1.2;
+/// 갈 곳 빛(0060 W1): 색(화로와 같은 호박색 — 스테이지 내내 "이 빛 = 갈 길"), 숨 쉬는 빠르기(rad/s), 빛기둥 반지름·높이(m), 곁 모델을 물들이는 빛 반지름(m).
+const GUIDE_COLOR: Color = Color::new(1.0, 0.68, 0.3, 1.0);
+const GUIDE_PULSE: f32 = 2.4;
+const GUIDE_BEAM_R: f32 = 1.4;
+const GUIDE_BEAM_H: f32 = 9.0;
+const GUIDE_LIGHT_R: f32 = 8.0;
+
 /// 문이 다 열리는 초(스테이지가 `gate_open`을 이만큼까지 올린다).
 const GATE_TIME: f32 = 1.5;
 
@@ -1953,6 +1998,37 @@ fn sector(c: Vec3, r: f32, yaw: f32, arc: f32, col: Color) {
     }
     for i in 0..n {
         indices.extend_from_slice(&[0, (i + 1) as u16, (i + 2) as u16]);
+    }
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
+}
+
+/// 세로 빛기둥(0060 W1): 열린 원통, 아래가 `col`의 투명도·위로 갈수록 사라진다. 앞뒤 면이 다 보이게 감김을 둘 다.
+fn beam(c: Vec3, r: f32, h: f32, col: Color) {
+    let n = 16;
+    let mut vertices = Vec::with_capacity((n + 1) * 2);
+    let mut indices = Vec::with_capacity(n * 12);
+    let top = Color::new(col.r, col.g, col.b, 0.0);
+    for i in 0..=n {
+        let a = std::f32::consts::TAU * i as f32 / n as f32;
+        let (s, k) = a.sin_cos();
+        vertices.push(Vertex::new(c.x + s * r, c.y, c.z + k * r, 0.0, 0.0, col));
+        vertices.push(Vertex::new(
+            c.x + s * r,
+            c.y + h,
+            c.z + k * r,
+            0.0,
+            0.0,
+            top,
+        ));
+    }
+    for i in 0..n {
+        let b = (i * 2) as u16;
+        indices.extend_from_slice(&[b, b + 1, b + 2, b + 1, b + 3, b + 2]);
+        indices.extend_from_slice(&[b, b + 2, b + 1, b + 1, b + 2, b + 3]);
     }
     draw_mesh(&Mesh {
         vertices,

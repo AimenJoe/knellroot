@@ -26,6 +26,10 @@ use flow::{PauseItem, ResultItem, Scene, SettingsRow, TitleItem};
 /// 타이틀 메뉴 첫 줄의 자리(화면 높이 비율) — `tools/test/touch.js`가 같은 값으로 탭한다.
 const TITLE_MENU_Y: f32 = 0.37;
 
+/// 가장자리 화살(0060 W1): 갈 곳이 화면 밖에 이만큼(초) 있으면 띄운다(문이 열리는 순간·잠깐 돌아본 것엔 안 뜨게), 테두리에서 들인 몫(NDC).
+const GOAL_ARROW_DELAY: f32 = 1.0;
+const GOAL_ARROW_INSET: f32 = 0.12;
+
 /// 지금 만든 스테이지(나중에 스테이지 고르기가 생기면 여기서 고른다).
 const FIRST_STAGE: &StageDef = &sanctuary::DEF;
 
@@ -63,6 +67,8 @@ pub struct App {
     frame: Option<Frame>,
     /// OS 커서를 숨겼나(싸움 중 마우스 조준이면 숨기고 조준 표시를 그린다, 0058).
     mouse_hidden: bool,
+    /// 갈 곳이 화면 밖에 있은 초(0060 W1 — 잠깐 뒤에 가장자리 화살).
+    goal_off: f32,
 }
 
 impl App {
@@ -109,6 +115,7 @@ impl App {
             shake,
             frame: None,
             mouse_hidden: false,
+            goal_off: 0.0,
         }
     }
 
@@ -612,6 +619,9 @@ impl App {
             #[cfg(feature = "dev")]
             Scene::Sandbox => hud::draw(&self.ui, &f, &self.world, None, false),
         }
+        if self.scene == Scene::Play {
+            self.draw_goal_arrow(&f);
+        }
         if self.scene.ticks_world() {
             if self.mouse_hidden && self.world.lock_target().is_none() {
                 if let Some(c) = self.input.cursor() {
@@ -635,6 +645,26 @@ impl App {
             Rect::new(0.0, 0.0, screen_width(), screen_height()),
             Rect::new(f.ox, f.oy, f.w, f.h),
         );
+    }
+
+    /// 갈 곳이 화면 밖이면(`GOAL_ARROW_DELAY` 넘게) 가장자리 화살(0060 W1). 화면 안에 들어오면 빛기둥이 맡는다.
+    fn draw_goal_arrow(&mut self, f: &Frame) {
+        let mark = self.run.goal().and_then(|g| {
+            let (ndc, front) =
+                crate::camera::world_to_ndc(&self.cam.rig, f.w / f.h.max(1.0), g + Vec3::Y);
+            crate::camera::edge_marker(ndc, front, GOAL_ARROW_INSET)
+        });
+        self.goal_off = match mark {
+            Some(_) => self.goal_off + get_frame_time(),
+            None => 0.0,
+        };
+        if let (Some((at, ang)), true) = (mark, self.goal_off > GOAL_ARROW_DELAY) {
+            let p = vec2(
+                f.ox + (at.x + 1.0) * 0.5 * f.w,
+                f.oy + (1.0 - at.y) * 0.5 * f.h,
+            );
+            hud::draw_goal_arrow(f, p, -ang, self.world.time);
+        }
     }
 
     fn dev_sandbox(&self) -> bool {

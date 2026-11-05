@@ -493,6 +493,35 @@ pub fn screen_ray(rig: &Rig, aspect: f32, ndc: Vec2) -> Vec3 {
     (f + r * (ndc.x * k * aspect) + u * (ndc.y * k)).normalize()
 }
 
+/// 월드 점 → 화면 NDC(`screen_ray`의 거꾸로, 0060 W1 길 안내). 카메라 뒤면 `false`와 함께, 방향만 맞게 뒤집은 값.
+pub fn world_to_ndc(rig: &Rig, aspect: f32, p: Vec3) -> (Vec2, bool) {
+    let f = (rig.look - rig.pos).normalize_or(Vec3::NEG_Z);
+    let r = f.cross(Vec3::Y).normalize_or(Vec3::X);
+    let u = r.cross(f);
+    let k = (rig.fov * 0.5).tan();
+    let d = p - rig.pos;
+    let z = d.dot(f);
+    let v = vec2(d.dot(r) / (k * aspect), d.dot(u) / k);
+    if z > 1e-3 {
+        (v / z, true)
+    } else {
+        // 뒤에 있으면 화면 밖 먼 곳으로 — 가장자리 화살이 그쪽을 가리키게(위아래는 가까운 바닥 쪽이 아래).
+        (v.normalize_or(Vec2::NEG_Y) * 1e3, false)
+    }
+}
+
+/// 화면 밖 표시 자리(0060 W1, nail 0159 `exit_at`과 같은 장치): 점이 화면 안(가장자리 `inset` 안쪽)이면 없음,
+/// 밖이면 가운데에서 그 점으로 가는 선이 안쪽 테두리에 닿는 자리와 그 방향(라디안, NDC — x 오른쪽·y 위).
+pub fn edge_marker(ndc: Vec2, in_front: bool, inset: f32) -> Option<(Vec2, f32)> {
+    let lim = 1.0 - inset;
+    if in_front && ndc.x.abs() <= lim && ndc.y.abs() <= lim {
+        return None;
+    }
+    let d = ndc.normalize_or(Vec2::NEG_Y);
+    let t = (lim / d.x.abs().max(1e-6)).min(lim / d.y.abs().max(1e-6));
+    Some((d * t, d.y.atan2(d.x)))
+}
+
 /// 시선이 높이 `y`의 수평면에 닿는 점. 위로 가거나 평행이면 없음.
 pub fn ground_hit(origin: Vec3, dir: Vec3, y: f32) -> Option<Vec3> {
     (dir.y < -1e-4)
@@ -522,6 +551,26 @@ mod ray_tests {
         assert!(at(vec2(0.5, 0.0)).x > 1.0);
         assert!(at(vec2(0.0, 0.5)).z < -1.0);
         assert!(at(vec2(0.0, -0.5)).z > 1.0);
+    }
+
+    /// 0060 W1: 화면으로 다시 비추면 시선의 점으로 돌아온다. 화면 안이면 화살 없음, 밖이면 테두리 위 그쪽, 뒤에 있어도 그쪽.
+    #[test]
+    fn a_goal_off_screen_gets_an_edge_arrow_pointing_at_it() {
+        let r = rig();
+        let n = vec2(0.4, -0.3);
+        let p = ground_hit(r.pos, screen_ray(&r, 1.5, n), 0.0).unwrap();
+        let (back, front) = world_to_ndc(&r, 1.5, p);
+        assert!(front && (back - n).length() < 1e-3, "{back:?}");
+        assert_eq!(edge_marker(back, true, 0.1), None, "on screen: no arrow");
+        let (far_right, _) = world_to_ndc(&r, 1.5, vec3(40.0, 0.0, 0.0));
+        let (at, ang) = edge_marker(far_right, true, 0.1).unwrap();
+        assert!((at.x - 0.9).abs() < 1e-3 && at.y.abs() <= 0.9, "{at:?}");
+        assert!(ang.abs() < 0.6, "points right: {ang}");
+        // 카메라 뒤(쿼터뷰 화면 아래 = 월드 +z 쪽 멀리)는 아래 가장자리.
+        let (behind, front) = world_to_ndc(&r, 1.5, vec3(0.0, 0.0, 40.0));
+        assert!(!front);
+        let (at, _) = edge_marker(behind, front, 0.1).unwrap();
+        assert!((at.y + 0.9).abs() < 1e-3, "{at:?}");
     }
 
     #[test]

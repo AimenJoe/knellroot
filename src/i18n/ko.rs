@@ -64,7 +64,7 @@ pub const KO: Strings = Strings {
     intro_1: "땅 밑에서 종이 울린다. 아무도 치지 않는 종이.",
     intro_2: "뿌리가 닿은 곳마다, 죽은 것이 일어선다.",
     obj_courtyard: "뜰의 잔재를 쓰러뜨려라",
-    obj_gate_open: "성소의 문이 열렸다",
+    obj_gate_open: "열린 문으로 성소에 들어가라",
     obj_core: "핵을 거두어라",
     boss_warden: "잠들지 않는 문지기",
     boss_wakes: "문지기가 눈을 뜬다",

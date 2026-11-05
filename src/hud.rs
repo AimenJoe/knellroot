@@ -40,6 +40,28 @@ fn u(f: &Frame) -> f32 {
 }
 
 /// `under_menu`: 메뉴(멈춤)가 위에 뜬다 — 아래 가운데 보스 띠는 메뉴 안내와 겹쳐 그리지 않는다(KB hud-readability: 창이 덮는 HUD는 뺀다).
+/// 갈 곳이 화면 밖일 때 가장자리 화살(0060 W1, nail 0159 출구 표시와 같은 장치): `at` 화면 자리, `ang` 화면 방향(라디안, y 아래),
+/// 호박색 삼각형이 바깥을 가리키고 안쪽에 작은 마름모(갈 곳), 어두운 테두리로 어느 바닥 위에서도, 맥박. 색만이 아니라 모양으로 읽힌다.
+pub fn draw_goal_arrow(f: &Frame, at: Vec2, ang: f32, time: f32) {
+    let s = f.ui * (7.0 + 1.0 * (time * 4.0).sin());
+    let d = vec2(ang.cos(), ang.sin());
+    let n = vec2(-d.y, d.x);
+    // 길쭉한 화살촉(길이 2 : 폭 1.1) — 작은 크기에서도 어느 쪽인지 읽히게.
+    let tip = at + d * s * 1.2;
+    let (l, r) = (
+        at - d * s * 0.8 + n * s * 0.55,
+        at - d * s * 0.8 - n * s * 0.55,
+    );
+    let shade = Color::new(0.05, 0.04, 0.06, 0.8);
+    let grow = |p: Vec2| at + (p - at) * 1.35;
+    draw_triangle(grow(tip), grow(l), grow(r), shade);
+    draw_triangle(tip, l, r, AMBER);
+    let c = at - d * s * 1.9;
+    let k = s * 0.45;
+    draw_poly(c.x, c.y, 4, k + f.ui * 1.2, 0.0, shade);
+    draw_poly(c.x, c.y, 4, k, 0.0, AMBER);
+}
+
 /// 커서 조준 표시(0058): 고리 + 가운데 점, 어두운 테두리로 어느 바닥에서도 보이게. 크기 단계 0 작게·1 보통·2 크게.
 /// 붉은색(위험)은 쓰지 않는다 — 적의 예고와 섞이지 않게.
 pub fn draw_reticle(f: &Frame, at: Vec2, size: u8) {

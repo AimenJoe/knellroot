@@ -64,7 +64,7 @@ pub const EN: Strings = Strings {
     intro_1: "Beneath the earth a bell is ringing. No one rings it.",
     intro_2: "Wherever the roots reach, the dead rise.",
     obj_courtyard: "Put down the husks in the courtyard",
-    obj_gate_open: "The sanctum gate has opened",
+    obj_gate_open: "Enter the sanctum through the open gate",
     obj_core: "Take the core",
     boss_warden: "The Sleepless Warden",
     boss_wakes: "The warden opens its eyes",

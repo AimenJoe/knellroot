@@ -762,6 +762,16 @@ impl StageRun {
         }
     }
 
+    /// 지금 가야 할 곳(0060 W1 길 안내): 문이 열렸으면 문, 핵이 남았으면 핵. 싸우는 동안·입구 길은 없음.
+    /// 렌더는 여기에 호박색 빛기둥을, HUD는 화면 밖이면 가장자리 화살을 그린다.
+    pub fn goal(&self) -> Option<Vec3> {
+        match self.phase {
+            Phase::GateOpen => self.level.gate.map(|(_, c)| c),
+            Phase::Core => self.core,
+            _ => None,
+        }
+    }
+
     /// 문지기가 깨어나는 진행(0..1, 렌더의 `wake` 동작). 깨어나기 전 0, 다 깨면 1.
     pub fn wake_progress(&self) -> f32 {
         match self.phase {
@@ -928,12 +938,15 @@ mod tests {
         }
         assert_eq!(run.phase, Phase::GateOpen);
         assert!(!run.gate_closed);
+        // 0060 W1: 문이 열리면 갈 곳 = 문. 싸우는 동안은 없다.
+        assert_eq!(run.goal(), run.level.gate.map(|(_, c)| c));
         // 성소 안으로.
         let (g, _) = run.level.gate.unwrap();
         w.player.pos = vec3(0.0, 0.0, g.min.z - 3.0);
         step(&mut run, &mut w);
         assert!(matches!(run.phase, Phase::Waking(_)));
         assert!(run.gate_closed);
+        assert_eq!(run.goal(), None, "no guide while the fight is on");
         for _ in 0..((WAKE_TIME * 60.0) as usize + 2) {
             w.player.hp = 5;
             step(&mut run, &mut w);
@@ -945,6 +958,7 @@ mod tests {
         w.enemies[b].state = EState::Dead;
         step(&mut run, &mut w);
         assert_eq!(run.phase, Phase::Core);
+        assert_eq!(run.goal(), run.core, "then the core");
         w.player.pos = run.core.unwrap();
         assert_eq!(step(&mut run, &mut w), StageOut::Cleared);
     }
