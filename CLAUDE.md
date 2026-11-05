@@ -1,10 +1,10 @@
 # CLAUDE.md — Knellroot
 
-레트로 로우폴리 3D ARPG. 쿼터뷰 떼싸움 + 락온 숄더뷰 보스전. Rust + macroquad. 웹 먼저, PC, 나중에 Android 핸드헬드(컨트롤러).
+레트로 로우폴리 3D ARPG. 쿼터뷰 떼싸움 + 락온 숄더뷰 보스전. Rust + macroquad. 웹 먼저, Android 핸드헬드(컨트롤러, v0.1.0부터 APK — 0022), PC는 아직.
 
 ## 먼저 읽을 것
 1. `docs/concept.md` — 무엇을 만드는가(세계관은 초안, 바뀔 수 있다)
-2. `docs/phase-1-first-stage.md` — 지금 단계(첫 스테이지 "침묵의 성소" 초안, 0019 — v0.2.0으로 닫음 0060, 다음 마일스톤 v0.3.0 "남는 판" 제안 0064). 끝의 **"구현 상태"와 "사람이 할 일"**이 현재 위치다. PoC(`docs/phase-0-poc.md`)는 닫았다. **기본값은 얼려 있다(0013, `docs/tuning-frozen.txt`) — 판정 없이 바꾸지 않는다**
+2. `docs/phase-1-first-stage.md` — 지금 단계(첫 스테이지 "침묵의 성소" 초안, 0019 — v0.2.0으로 닫음 0060, 지금 마일스톤 v0.3.0 "남는 판" 0064(구현·판정 전) + 앱·UI 기초 설계 0066). 끝의 **"구현 상태"와 "사람이 할 일"**이 현재 위치다. PoC(`docs/phase-0-poc.md`)는 닫았다. **기본값은 얼려 있다(0013, `docs/tuning-frozen.txt`) — 판정 없이 바꾸지 않는다**
 3. `docs/lab.md` — 랩이 무엇을 재고 값이 `tuning.rs`로 어떻게 가는가
 4. `docs/decisions/` — 왜 그렇게 정했나. 바꾸려면 새 번호로
 
@@ -39,7 +39,7 @@
 - UI(0042, nail 방식): 안내는 짧게(메뉴 안내만, 전체 조작은 조작 설정 화면), 키 이름은 키캡 `ui::key`, 고정 칸은 `ui.fit`, 긴 글은 `ui::wrap`·`text_center_wrapped`, UI 크기는 `Frame::ui`(480×270 기준, 0041). 새 화면은 개발 빌드 **F4**(넘침 검사 `ui::check`)를 켜고 한국어·영어로 — 콘솔 `[ui-check]`가 없어야 한다. **넘치는 목록은 굴린다(0059)**: 메뉴는 `ui.menu(…, &mut ListView, cx, top, bottom)` — 위·아래 끝만 주면 넘칠 때 보이는 줄 + ▲▼, 키 커서는 창이 따라가고(가장자리 한 줄 여유) 끌기 `Actions::drag`·휠 `Actions::wheel`·▲▼ 탭은 창을 옮긴다. 화면마다 줄 간격을 줄여 맞추지 않는다.
 - 글: 플레이어가 보는 글은 `i18n/<언어>.rs`(한국어·영어) 키-필드 표에만(`Strings`, 데이터 표는 `Tr`, 숫자는 `{0}` + `fill`). 글꼴은 고운바탕(보통·굵게, 0021) **서브셋 — 표에 있는 글자만 들어 있다**: 새 글자를 쓰면 `python3 tools/fonts/subset_ui.py <원본 Regular> <원본 Bold>`(원본은 Google Fonts, 레포에 넣지 않음), 시험이 모든 글자를 본다, 표 밖 기호는 `i18n::UI_GLYPHS`. 가변 글꼴은 쓰지 않는다(fontdue가 축을 못 고름). 화면 글·메뉴는 `ui.rs`(UI 배율 `Frame::ui`, 커서 없이, 터치는 뗄 때), 싸움 HUD는 `hud.rs`. 개발 전용 화면(랩·개발 줄 F3)만 영어 기본 글꼴.
 - **그림 기준은 t3ssel8r 풍 3D 도트(0061, 사장: 늘)**: 모델링할 때마다 0061 체크리스트 — **귀여움 문법이 먼저**(0036: 큰 머리·큰 눈 낮게·입 없음·둥근 실루엣, 보스도), 큰 면 몇 개의 둥근 덩어리(상자 + 면 법선은 마인크래프트 인상), 각진 것은 뿌리만(0037), 실루엣 + 큰 색 덩어리, 밝은 선이 붙을 볼록 모서리는 뿌리·핵·테에, 게임 거리의 px 크기 먼저, 판정은 게임 안 스크린숏.
-- 그림·모델: 손으로 PNG·GLB를 고치지 않는다. 모델 원본은 Blender bpy 스크립트 `tools/art/blender/<이름>.py`(공용 `common.py`: 상자 부위·뼈에 붙인 강체·64×64 아틀라스·동작) → `blender -b -P` → `assets/models/<이름>.glb`(+ 미리보기 `docs/art/previews/`, 검사 `check_glb.py`). GLB는 `build.rs`가 바이너리에 넣고 `models.rs`가 이름으로 찾는다 — 없으면 상자. 부위 이름 `glow_*` = 스스로 빛남. 상태 → 동작 이름은 `render::enemy_anim`·`player`. 지형은 `scenery.rs`가 한 번 굽는다(빛은 정점 색, `render::lit`). 에셋 출처는 `assets/LICENSES.md`. AI를 쓴 곳은 숨기지 않는다.
+- 그림·모델: 손으로 PNG·GLB를 고치지 않는다. 모델 원본은 Blender bpy 스크립트 `tools/art/blender/<이름>.py`(공용 `common.py`: 상자 부위·뼈에 붙인 강체·128×128 아틀라스·동작. 적·문지기·방랑자의 2단계는 Meshy 메시를 줄이고 색을 굽고 부위로 자른다 — KB `guides/ai-mesh-to-rigid-part-model.md`, 0038·0060) → `blender -b -P` → `assets/models/<이름>.glb`(+ 미리보기 `docs/art/previews/`, 검사 `check_glb.py`). GLB는 `build.rs`가 바이너리에 넣고 `models.rs`가 이름으로 찾는다 — 없으면 상자. 부위 이름 `glow_*` = 스스로 빛남. 상태 → 동작 이름은 `render::enemy_anim`·`player`. 지형은 `scenery.rs`가 한 번 굽는다(빛은 정점 색, `render::lit`). 에셋 출처는 `assets/LICENSES.md`. AI를 쓴 곳은 숨기지 않는다.
 - 주위 환경(0063)은 `backdrop.rs`(렌더의 일부)·`flora.rs`(굽는 지형에 얹는 나무·덤불·벽 뿌리 — 잎은 흔든 이십면체, 각진 것은 뿌리만, 걷는 칸에는 두지 않는다): 높이 안개는 걷는 땅 아래에만(`Scenery::walk_min`), 하늘·산등성이·달은 땅보다 먼저·법선 패스 밖, 먼 클립(200m) 안에(시험). 아지랑이는 카메라 숙임으로(`haze_by_pitch`).
 - 기록(0064 M2)은 `save.rs`: 키=값 줄(`save::key` 이름은 바꾸지 않는다, 모르는 키는 지킨다). **슬롯 셋(0066)**: 웹 localStorage `knell.save.0..2` + 마지막 슬롯 `knell.slot`, 네이티브 `save0..2.txt` + `slot.txt`(슬롯 1 = 옛 한 칸). 타이틀 [이어하기]·시작하기 → 슬롯 창(`app/slots.rs`, 결정은 `flow::slot_focus`·`slot_step`·`slot_pick`), 덮어쓰기·지우기는 두 번. 설정은 슬롯 밖, 든 무기는 기록(`weapon`). 앱은 판에서 옮겨(`sync_progress`) 바뀌었을 때만 쓴다(`persist`). 판을 넘어 남는 것을 새로 만들면 `Progress`에 칸 + 키 하나 + 시험. 설정(`prefs`)과 섞지 않는다.
 - 능력치(0064 M3)는 `stats.rs` 한 곳: `Stats::compute(&[Mods])`(합·곱·상한), 월드는 `World::stats`만 — 최대 체력·등잔은 `Player::max_hp`·`flask_max`(상수 `PLAYER_HP`·`FLASK_CHARGES`는 기본값일 뿐), 랩 값은 `Stats::tune`이 휜 사본. 장신구는 `charms.rs` 표(기록 키는 바꾸지 않는다). 새 보정 = `Mods` 칸 + compute 한 줄 + 쓰는 곳 + 시험.

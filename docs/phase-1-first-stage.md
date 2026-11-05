@@ -8,7 +8,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 - 적: 뿌리의 잔재(느린 근접 떼), 가시짐승(곧은 돌진), 잠들지 않는 문지기(보스: 부채꼴 내려치기·돌진·뿌리 파동, 반 아래에서 빨라짐)
 - 그림: 바닥 석판·무너진 벽·기둥·뿌리·화로 불빛(정점 빛), Blender 모델(방랑자·잔재·가시짐승·문지기·소품), 예고 모양 넷(원판·부채꼴·띠·고리)
 - 글: 한국어·영어(고운바탕 서브셋, 0021), 키 그림은 지금 장치에 맞춰
-- 하지 않는 것: 소리, 저장, 스테이지 둘째, 레벨 편집기, 개발 메뉴 안의 랩(랩은 F1 그대로)
+- 하지 않는 것(1단계 처음 범위): 소리, 저장, 스테이지 둘째, 레벨 편집기, 개발 메뉴 안의 랩(랩은 F1 그대로). 소리·저장은 v0.3.0(0064)에서 들어왔다.
 
 ## 판정(사람)
 | # | 질문 | 기준 |
@@ -36,13 +36,13 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 오래 켜기(0020) | `tools/test/leak.js` | macroquad 텔레메트리가 텍스처를 흘리던 것을 걷어 냄. 탐침: 살아 있는 텍스처·버퍼·wasm 메모리를 10초마다 — 스테이지 120초·잡몹 80 90초 평평 |
 | 손맛 손질(0020·0023·0028·0029) | `camera.rs`, `world.rs`, `render.rs` | 흔들림은 각(거리 무관), 맞으면 몸이 젖혀짐, 회피는 적을 뚫음. 땅 돌리기 = 캐릭터 기준 90°: 몸이 제 오른쪽(왼쪽)으로 90°, 화면도 늘 그쪽으로 90°, 쥔 스틱 그대로 새 정면으로 직진(`world::plan_turn`, 0028 — 0023은 화면이 0°·90°·180°로 갈렸다). 쏟기는 짧은 휘청만(도는 동안 붙잡지 않음, 밀림 0.25m·휘청 0.3초·벽 쿵 피해 없음, 0029) |
 | 글꼴 | `assets/fonts/GowunBatang-UI-*.ttf`, `tools/fonts/subset_ui.py` | 0021: 후보 열하나(`docs/art/font-candidates-{pixel,serif}.png`) 중 사장이 고운바탕·함렛으로 좁힘 → 호환성으로 고운바탕(한글 11,172자·굵기 따로 된 파일). 표 글자만 서브셋 두 파일 190KB(Galmuri 330KB보다 작음) |
-| v0.1.0·APK(0022) | `.github/workflows/build-android.yml`·`release.yml`, `third_party/miniquad`, `android/res`, `tools/icons/make_icons.py` | nail CI를 가져옴(비공개 에셋 단계 뺌). Android 패드는 nail의 패치 miniquad. 갈래: main = 운영(개발 기능 없음), `release/v0.2` = 개발판(웹 별칭 `dev`·APK 미리 보기 `dev`) |
+| v0.1.0·APK(0022) | `.github/workflows/build-android.yml`·`release.yml`, `third_party/miniquad`, `android/res`, `tools/icons/make_icons.py` | nail CI를 가져옴(비공개 에셋 단계 뺌). Android 패드는 nail의 패치 miniquad. 갈래: main = 운영(개발 기능 없음), `release/v0.3` = 개발판(v0.2.0 배포 뒤, 웹 별칭 `dev`·APK 미리 보기 `dev`) |
 | 키 배치·다시 붙이기(0024) | `input.rs` `Bindings`·`KEYS`·`Pad`, `app/controls.rs`, `prefs.rs`, web/index.html | 소울라이크식(회피 B·Space, 패링 LB·K, 돌리기 LT·RT·Q·E, 락온 R3·L), 공격만 X·J. 타이틀·멈춤의 "조작 설정"에서 바꾸고 언어와 함께 저장 |
 | 패링(0025) | `world.rs` `PState::Parry`·`tick_enemies`, `enemy.rs` `exposed`·`parryable`, `render.rs` | 창 0.18초·앞쪽 근접만·헛치면 0.5초 묶임·스태미나 15. 튕기면 휘청 + 드러남(다음 한 대 치명타 +2). 파동은 못 받음(예고 가운데 X). 터치 방패 버튼 |
 | 점프·내려찍기(0027) | `world.rs` `PState::Jump`·`Land`·`plunge`, `tuning.rs` `Jump*`·`Plunge*`, `render.rs`, `wanderer.py` | A / F. 높이 0.9m·체공 0.55초(탄도 정확 적분)·스태미나 12, 뛰기 전 속도를 잇고 조종 ×0.3. 0.35m 위면 뿌리 파동을 넘음(무적은 없음). 공중 공격 = 내려찍기(×2.5로 떨어져 둘레 1.6m에 2, 착지 빈틈 0.35초). 그림자가 높이로 작아짐. 소모품 퀵슬롯은 뺌 |
-| 강공격(0030) | `world.rs` `PState::Charging`·`Heavy`·`Strike`, `input.rs` `attack_held`, `touch.rs`, `tuning.rs` `Heavy*`, `wanderer.py` charge·heavy | 평타는 누르는 순간, 한 번 누른 채 0.25초 쥐면 모으기(연타는 새지 않음), 떼면 늘 강타. 다 모으면(0.5초) 피해 3·잡몹 휘청 0.8초·보스 0.25초, 덜 모으면 2·0.4초. 범위 2.2·160°·넉백 ×2. 발밑 고리가 차오르고 다 차면 금빛 깜빡. 등잔 마시기는 RB / R로(설계) |
-| 등잔(0031) | `world.rs` `PState::Drink`, `input.rs` `Bind::Flask`, `prefs.rs`, `hud.rs`, `touch.rs`, `tuning.rs` `Flask*`·`FLASK_CHARGES`, `wanderer.py` drink | R / RB 한 번 = 한 모금(0.8초, 0.35초에 삼켜 체력 +2), 셋. 삼키기 전 회피·피격이면 등잔 그대로, 연타·가득·0은 안전하게(누름 버림·깜빡만). 화로 전이라 스테이지를 새로 시작하면 다시 참 |
-| 쉼터(0032) | `stage/mod.rs` `rest`·`respawn`·`StageOut::Respawned`, 지도 `R`, `input.rs` `Bind::Interact`, `hud.rs`, `touch.rs` | 입구·문 앞 둘. 곁에서 G / Y = 체력·등잔 가득 + 다시 일어설 곳(깨어 있는 적 10m 안이면 못 쉼). 쉬었으면 쓰러져도 그 쉼터에서 — 진행은 쉬던 때로(물결 처음부터 / 문 앞·문지기 가득). 기록은 아직 없다 |
+| 강공격(0030) | `world.rs` `PState::Charging`·`Heavy`·`Strike`, `input.rs` `attack_held`, `touch.rs`, `tuning.rs` `Heavy*`, `wanderer.py` charge·heavy | 평타는 누르는 순간, 한 번 누른 채 0.25초 쥐면 모으기(연타는 새지 않음), 떼면 늘 강타. 다 모으면(0.5초) 피해 3·잡몹 휘청 0.8초·보스 0.25초, 덜 모으면 2·0.4초. 범위 2.2·160°·넉백 ×2. 발밑 고리가 차오르고 다 차면 금빛 깜빡. 등잔 마시기는 Y / R(0048) |
+| 등잔(0031) | `world.rs` `PState::Drink`, `input.rs` `Bind::Flask`, `prefs.rs`, `hud.rs`, `touch.rs`, `tuning.rs` `Flask*`·`FLASK_CHARGES`, `wanderer.py` drink | R / Y 한 번 = 한 모금(0048)(0.8초, 0.35초에 삼켜 체력 +2), 셋. 삼키기 전 회피·피격이면 등잔 그대로, 연타·가득·0은 안전하게(누름 버림·깜빡만). 쉼터(0032)에서 쉬면·스테이지를 새로 시작하면 다시 참 |
+| 쉼터(0032) | `stage/mod.rs` `rest`·`respawn`·`StageOut::Respawned`, 지도 `R`, `input.rs` `Bind::Interact`, `hud.rs`, `touch.rs` | 입구·문 앞 둘. 곁에서 점프 버튼(0048) = 체력·등잔 가득 + 다시 일어설 곳(깨어 있는 적 10m 안이면 못 쉼). 쉬었으면 쓰러져도 그 쉼터에서 — 진행은 쉬던 때로(물결 처음부터 / 문 앞·문지기 가득). 쉰 쉼터는 기록에 남는다(0064 M2, 슬롯 0066) |
 | 모델 다듬기 1(0033) | `render.rs` `render_target_ex(depth)`·`Look`·`lit`·`rim`·`Batch::hull`·`outline_material` | **3D 렌더 타깃에 깊이 버퍼가 없었다**(그린 순서로만 덮임 — 부위 상자·벽이 엉켜 보이던 원인) → 붙임. 툰 빛(달빛 2단·화로 3단)·가장자리 빛 0.35·배우 1px 외곽선(키운 상자 뒷면), 랩 `render.toon`·`render.rim`·`render.outline px`. 외곽선은 배우 정점 ×2 |
 | 방랑자 동작(0034) | `wanderer.py`, `render.rs` `move_anim`, `world.rs` `turn_is_right` | 락온 게걸음·뒷걸음, 모으기(두 손·낮게, 다 모이면 떨림)·강타(내디디며 낮게), 땅 돌리기 휙(낮췄다 윗몸이 먼저, 몸 돌기 천천히-빠르게-천천히), 등잔을 왼손에 들고 마시기 |
 | 배경 높낮이 1단계(0035) | `stage` `StageDef::heights`·`Level::with_heights`, `scenery.rs` 바위 단·꺼진 땅, 성소 `HEIGHTS` | 그림만(월드는 평평). 성소 둘레 +2~+7m 바위 단, 입구 다리 양옆 −2m 낭떠러지. 외곽선 껍데기를 카메라에서 0.18m 밀어 작은 배우의 안쪽 선을 줄임 |
@@ -101,5 +101,5 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 9. [ ] **fps(P5: 데스크톱 60 / Android 30)**: 뜰 셋째 물결과 개발 시나리오 7(잡몹 80)의 개발 줄(F3) 사진. 낮으면 랩(F1)에서 하나씩 끄고 다시 — `render.edge`(0061)·`render.actor shadow`(0045)·`render.fog`·`render.motes`·`render.sky`·`render.flora`(0063). 해상도 640×360이 꽉 차는지(0041).
 
 ### C. 문서(시간 날 때)
-10. [ ] 아이템 설계 초안 `docs/design/items.md`(0026·0027) — v0.3.0 후보(0064).
+10. [ ] 아이템 설계 초안 `docs/design/items.md`(0026·0027) — v0.3.0(0064)에서 장신구·성장·잔불로 들어갔다.
 11. [ ] 굴리는 목록(0059)은 넘치는 메뉴가 생기면 폰에서 끄는 빠르기·탭 범위.
