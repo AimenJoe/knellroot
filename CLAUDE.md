@@ -39,6 +39,7 @@
 - 글: 플레이어가 보는 글은 `i18n/<언어>.rs`(한국어·영어) 키-필드 표에만(`Strings`, 데이터 표는 `Tr`, 숫자는 `{0}` + `fill`). 글꼴은 고운바탕(보통·굵게, 0021) **서브셋 — 표에 있는 글자만 들어 있다**: 새 글자를 쓰면 `python3 tools/fonts/subset_ui.py <원본 Regular> <원본 Bold>`(원본은 Google Fonts, 레포에 넣지 않음), 시험이 모든 글자를 본다, 표 밖 기호는 `i18n::UI_GLYPHS`. 가변 글꼴은 쓰지 않는다(fontdue가 축을 못 고름). 화면 글·메뉴는 `ui.rs`(UI 배율 `Frame::ui`, 커서 없이, 터치는 뗄 때), 싸움 HUD는 `hud.rs`. 개발 전용 화면(랩·개발 줄 F3)만 영어 기본 글꼴.
 - **그림 기준은 t3ssel8r 풍 3D 도트(0061, 사장: 늘)**: 모델링할 때마다 0061 체크리스트 — **귀여움 문법이 먼저**(0036: 큰 머리·큰 눈 낮게·입 없음·둥근 실루엣, 보스도), 큰 면 몇 개의 둥근 덩어리(상자 + 면 법선은 마인크래프트 인상), 각진 것은 뿌리만(0037), 실루엣 + 큰 색 덩어리, 밝은 선이 붙을 볼록 모서리는 뿌리·핵·테에, 게임 거리의 px 크기 먼저, 판정은 게임 안 스크린숏.
 - 그림·모델: 손으로 PNG·GLB를 고치지 않는다. 모델 원본은 Blender bpy 스크립트 `tools/art/blender/<이름>.py`(공용 `common.py`: 상자 부위·뼈에 붙인 강체·64×64 아틀라스·동작) → `blender -b -P` → `assets/models/<이름>.glb`(+ 미리보기 `docs/art/previews/`, 검사 `check_glb.py`). GLB는 `build.rs`가 바이너리에 넣고 `models.rs`가 이름으로 찾는다 — 없으면 상자. 부위 이름 `glow_*` = 스스로 빛남. 상태 → 동작 이름은 `render::enemy_anim`·`player`. 지형은 `scenery.rs`가 한 번 굽는다(빛은 정점 색, `render::lit`). 에셋 출처는 `assets/LICENSES.md`. AI를 쓴 곳은 숨기지 않는다.
+- 주위 환경(0063)은 `backdrop.rs`(렌더의 일부): 높이 안개는 걷는 땅 아래에만(`Scenery::walk_min`), 하늘·산등성이·달은 땅보다 먼저·법선 패스 밖, 먼 클립(200m) 안에(시험). 아지랑이는 카메라 숙임으로(`haze_by_pitch`).
 - 웹 로딩·PWA(0062): 덮개는 `web/index.html`(글 없음, wasm 바이트로 진행, 첫 프레임 뒤 `main.rs` `loaded`), 서비스 워커 `web/sw.js`는 캐시 = 빌드 아이디·`skipWaiting` 없음. `web/`에 파일을 더하면 `sw.js` `PRECACHE`와 `assemble.sh`도, 시험은 `tools/test/pwa.js`. 아이콘은 `tools/icons/make_icons.py`.
 
 ## 하지 않는 것

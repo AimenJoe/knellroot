@@ -32,6 +32,8 @@ pub struct Scenery {
     pub extent: f32,
     /// 허공 판의 높이(가장 깊은 꺼진 땅보다 아래, 0035).
     pub void_y: f32,
+    /// 걸을 수 있는 가장 낮은 땅(높이 안개는 이보다 아래에만, 0063).
+    pub walk_min: f32,
 }
 
 /// 칸 자리로 정하는 0..1 값(같은 지도 = 같은 그림).
@@ -690,8 +692,23 @@ impl Scenery {
             lights,
             extent: lv.half_extent() * 3.0,
             void_y,
+            walk_min: walk_min(&lv.ground()),
         }
     }
+}
+
+/// 걸을 수 있는 칸 가운데 가장 낮은 땅(경사로는 낮은 끝). 걸을 칸이 없으면 0.
+fn walk_min(g: &Ground) -> f32 {
+    use crate::ground::Cell;
+    g.cells
+        .iter()
+        .filter_map(|c| match *c {
+            Cell::Solid => None,
+            Cell::Flat(h) => Some(h),
+            Cell::Ramp { from, to, .. } => Some(from.min(to)),
+        })
+        .reduce(f32::min)
+        .unwrap_or(0.0)
 }
 
 /// 빛 지도를 입은 세운 면(석판 옆면, 0060 W2): 법선을 주는 판.

@@ -49,6 +49,8 @@ pub struct Renderer {
     /// 이번 프레임에 법선 패스를 그렸나(선 재질을 쓸까).
     edge_ready: bool,
     edge_uniform: Vec4,
+    /// 주위 환경(0063): 높이 안개 등.
+    backdrop: crate::backdrop::Backdrop,
 }
 
 /// 화면 공간 선 둘(0061 t3ssel8r 풍): 불투명 기하를 한 번 더 그린 법선 타깃(rg = 화면 법선 xy, ba = 선형 깊이 16비트)과 재질 둘.
@@ -278,6 +280,7 @@ impl Renderer {
             edge_tried: false,
             edge_ready: false,
             edge_uniform: Vec4::ZERO,
+            backdrop: Default::default(),
         }
     }
 
@@ -313,7 +316,22 @@ impl Renderer {
             rows: ih as f32,
         });
         set_camera(&c3);
-        clear_background(Color::new(0.07, 0.07, 0.12, 1.0));
+        clear_background(crate::backdrop::ZENITH);
+        // 원경(0063 E2): 하늘 띠·달·산등성이 — 스테이지에서만, 땅보다 먼저(법선 패스에는 넣지 않는다).
+        let fwd = (c3.target - c3.position).normalize_or_zero();
+        let cam_right = fwd.cross(Vec3::Y).normalize_or_zero();
+        let cam_up = cam_right.cross(fwd);
+        if let Some(run) = v.stage {
+            let base = self.scenery.as_ref().map_or(-2.5, |(_, sc)| sc.void_y);
+            self.backdrop.sky(
+                &mut self.batch,
+                c3.position,
+                cam_right,
+                cam_up,
+                run.level.half_extent(),
+                base,
+            );
+        }
 
         // 가림 판정점: 플레이어 몸(발·허리·머리 × 좌우)과 락온 대상.
         let tg = w
@@ -345,7 +363,7 @@ impl Renderer {
                     Vec3::Y * sc.void_y,
                     vec2(sc.extent, sc.extent),
                     None,
-                    Color::new(0.06, 0.06, 0.10, 1.0),
+                    crate::backdrop::FOG_DEEP,
                 );
                 let boxes: Vec<Aabb> = sc.pieces.iter().filter_map(|p| p.aabb).collect();
                 let hidden = crate::camera::occluders(&pts, cam.rig.pos, &boxes);
@@ -473,12 +491,25 @@ impl Renderer {
                     self.batch.raw(&p.verts, &p.idx, p.tex.as_ref(), p.fade);
                 }
                 self.batch.send();
+                // 높이 안개(0063 E1): 걷는 땅 아래만 — 카메라가 보는 곳(플레이어) 둘레.
+                self.backdrop.fog(
+                    &mut self.batch,
+                    w.player.pos,
+                    sc.walk_min,
+                    sc.void_y,
+                    w.time,
+                );
+                // 떠다니는 것(0063 E4): 반딧불·달빛 먼지 — 카메라를 보는 작은 판.
+                self.backdrop
+                    .motes(&mut self.batch, w.player.pos, cam_right, cam_up, w.time);
             }
             None => self.sandbox_faded(w, t),
         }
 
         // 지평선 아지랑이(0012): 렌더 타깃 위쪽을 하늘빛으로 옅게 — 화면에 고정된 수평 띠라 땅 돌리기 중에도 기울지 않는다.
-        let haze = t[crate::tuning::P::Haze];
+        // 하늘이 보이는 숄더뷰에서는 아지랑이를 걷는다(0063 E2): 화면 위 = 하늘이라 띠가 달·산등성이를 지운다.
+        // 내려다보는 쿼터뷰(화면 위 = 먼 땅)에서만 다 — 카메라 숙임으로 부드럽게(전환 중에도 튀지 않게).
+        let haze = t[crate::tuning::P::Haze] * haze_by_pitch(fwd.y);
         if haze > 0.0 {
             set_camera(&Camera2D {
                 zoom: vec2(2.0 / iw as f32, 2.0 / ih as f32),
@@ -1424,6 +1455,13 @@ fn lane_edge(p: Vec3, dir: Vec3, len: f32, w: f32, col: Color) {
     }
 }
 
+/// 아지랑이 세기 배(0063): 카메라 앞 방향의 y(내려다볼수록 −)로 — 쿼터뷰(숙임 ≈ 35°, −0.57) 1, 숄더뷰(≈ 19°, −0.33) 0.
+fn haze_by_pitch(fwd_y: f32) -> f32 {
+    ((-fwd_y - HAZE_PITCH.0) / (HAZE_PITCH.1 - HAZE_PITCH.0)).clamp(0.0, 1.0)
+}
+/// 아지랑이가 0 → 다 켜지는 카메라 숙임(앞 방향 −y).
+const HAZE_PITCH: (f32, f32) = (0.36, 0.52);
+
 /// 하늘빛 아지랑이 띠: 위 끝 진하기 0.9에서 `frac × h` 아래로 0이 된다. 렌더 타깃은 화면에 뒤집혀(`flip_y`) 나가므로
 /// 이 2D 좌표의 y = h 쪽이 화면 위다(처음엔 y = 0에 그려 화면 아래에 깔렸다 — 스크린숏으로 잡음).
 fn draw_haze(w: f32, h: f32, frac: f32) {
@@ -2182,7 +2220,7 @@ fn box_wires(center: Vec3, size: Vec3, col: Color, rot: Quat, pivot: Vec3) {
 /// 고정 빛 방향 = 달(0044: 왼쪽 앞 위 45° — 벽·단·기둥의 그림자가 뜰 바닥 오른쪽·뒤로 떨어져 쿼터뷰에서 보이게;
 /// 예전 오른쪽 앞에서는 그림자가 벽 바깥으로 떨어졌다). 면마다 `1 - shade + shade * max(0, n·l)`을 곱한다 — 기본 셰이더가 normal을 안 읽어 정점 색으로 굽는다
 /// (KB reference/macroquad/3d-rendering.md). shade 0이면 민짜(전처럼), 1이면 그늘진 면이 검정에 가깝다.
-const LIGHT_DIR: Vec3 = Vec3::new(-0.55, 0.65, 0.35);
+pub const LIGHT_DIR: Vec3 = Vec3::new(-0.55, 0.65, 0.35);
 
 /// 면마다 음영이 다른 상자. 축 정렬. 정점 24개(면마다 넷), 매 프레임 만들어 보낸다(정점은 어차피 매 프레임 올라간다).
 fn shaded_box(center: Vec3, size: Vec3, col: Color, shade: f32) {
@@ -2337,6 +2375,16 @@ mod tests {
     use super::*;
 
     /// 0046: 흔한 화면은 테두리 없이 정수 배율로 꽉 차고, 브라우저 창(주소창만큼 낮은 높이)도 테두리가 배율보다 작다.
+    #[test]
+    fn haze_is_full_looking_down_in_the_quarter_view_and_gone_in_the_shoulder_view() {
+        let quarter = -(35f32.to_radians().sin());
+        let shoulder = -(19f32.to_radians().sin());
+        assert_eq!(haze_by_pitch(quarter), 1.0);
+        assert_eq!(haze_by_pitch(shoulder), 0.0);
+        let mid = haze_by_pitch((quarter + shoulder) * 0.5);
+        assert!(mid > 0.0 && mid < 1.0);
+    }
+
     #[test]
     fn the_internal_resolution_fills_the_screen_with_integer_pixels() {
         assert_eq!(fit_internal(1920.0, 1080.0), (640, 360, 3));

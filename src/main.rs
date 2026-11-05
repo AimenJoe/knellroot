@@ -7,6 +7,7 @@
 #![allow(clippy::new_without_default)]
 
 mod app;
+mod backdrop;
 mod camera;
 mod enemy;
 mod ground;
