@@ -1,6 +1,7 @@
 // 기록 시험(0064 M2): 헤드리스 Chromium으로
 //   1) 기록이 없으면 타이틀 = 시작·설정(새로 하기 없음), 2) 기록을 심어 두면 = 이어하기·설정·새로 하기,
 //   3) 이어하기 → 기록의 쉼터(문 앞)에서 선다(스크린숏), 4) 멈춤 → 처음부터 → 기록에서 판 안의 자리가 지워지고 남는 것은 그대로,
+//   3a) 쉼터에서 쉬면 화로 가게 — 잔불로 장신구를 사면 기록에(0064 M4).
 //   5) 새로 하기(타이틀 맨 끝 — 이 시험은 DEV 줄이 있는 개발판)는 한 번 더 눌러야 기록을 지운다. 그 사이 장비 창에서 장신구를 끼면 기록에 남는지(0064 M3).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/save.js dist shots
 const { chromium } = require('playwright');
@@ -47,7 +48,7 @@ async function main() {
   if ((await record()) !== null) fail('a fresh browser already has a record');
 
   // 2) 문 앞 쉼터(번호 0 — 지도 위에서부터 첫 R)에서 쉰 기록 + 잔불·끝낸 판 + 나중 칸(모르는 키).
-  await page.evaluate((k) => localStorage.setItem(k, 'v=1\nembers=12\nclears=1\nrun.rest=0\nrun.gate=1\nfuture.key=keep\ncharm.owned=shell,ear\ncharm.worn=shell,,\n'), KEY);
+  await page.evaluate((k) => localStorage.setItem(k, 'v=1\nembers=30\nclears=1\nrun.rest=0\nrun.gate=1\nfuture.key=keep\ncharm.owned=shell,ear\ncharm.worn=shell,,\n'), KEY);
   await page.reload();
   await ready();
   await page.waitForTimeout(600);
@@ -59,14 +60,24 @@ async function main() {
   await page.waitForTimeout(1500);
   await shot('save-2-continued-at-gate');
 
-  // 3b) 장비(0064 M3): 멈춤 → 둘째 줄(장비) → 장신구 2칸에 종지기의 귀 → 기록.
+  // 3a) 쉼터 화로(0064 M4): 곁에서 점프 버튼(F) = 쉬기 → 가게 → 첫 줄(잔불 주머니 25) 사기 → 떠나기.
+  await press('KeyF'); await page.waitForTimeout(600);
+  await shot('save-2a-shop');
+  await press('Enter'); await page.waitForTimeout(400);
+  await shot('save-2a-shop-bought');
+  r = await record();
+  console.log('가게에서 산 뒤 기록:', JSON.stringify(r));
+  if (!/charm\.owned=[^\n]*pouch/.test(r) || !/embers=5\n/.test(r)) fail('buying must spend embers and keep the charm');
+  await press('Escape'); await page.waitForTimeout(300);
+
+  // 3b) 장비(0064 M3): 멈춤 → 둘째 줄(장비) → 장신구 3칸(산 주머니가 2칸에 들어갔다)에 종지기의 귀 → 기록.
   await press('Escape'); await page.waitForTimeout(200);
   await press('ArrowDown', 1); await press('Enter'); await page.waitForTimeout(300);
-  await press('ArrowDown', 2); await press('ArrowRight'); await page.waitForTimeout(300);
+  await press('ArrowDown', 3); await press('ArrowRight'); await page.waitForTimeout(300);
   await shot('save-2b-equip');
   r = await record();
   console.log('장신구를 낀 뒤 기록:', JSON.stringify(r));
-  if (!/charm\.worn=shell,ear,/.test(r)) fail('equipping a charm must be saved');
+  if (!/charm\.worn=shell,pouch,ear/.test(r)) fail('equipping a charm must be saved');
   await press('Escape'); await page.waitForTimeout(200);
   await press('Escape'); await page.waitForTimeout(300);
 
@@ -79,7 +90,7 @@ async function main() {
   r = await record();
   console.log('처음부터 뒤 기록:', JSON.stringify(r));
   if (!r || /run\.rest=/.test(r)) fail('restart should drop the run position');
-  if (!/embers=12/.test(r) || !/clears=1/.test(r)) fail('restart must keep what stays');
+  if (!/embers=5\n/.test(r) || !/clears=1/.test(r)) fail('restart must keep what stays');
   if (!/future\.key=keep/.test(r)) fail('unknown keys must survive a write');
 
   // 5) 타이틀로 → 새로 하기(셋째 줄) 한 번 = 확인 글만, 두 번 = 지움.
@@ -98,7 +109,7 @@ async function main() {
   await page.waitForTimeout(800);
   r = await record();
   console.log('새로 하기 뒤 기록:', JSON.stringify(r));
-  if (r !== null && /embers=12/.test(r)) fail('new game must erase the record');
+  if (r !== null && /embers=5\n/.test(r)) fail('new game must erase the record');
 
   if (errors.length) { console.error('콘솔 에러:\n' + errors.join('\n')); process.exitCode = 1; }
   await browser.close();

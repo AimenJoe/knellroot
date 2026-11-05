@@ -24,6 +24,11 @@ pub mod key {
     pub const CHARMS_WORN: &str = "charm.worn";
     /// 연 상자 번호들("0,2") — 판을 넘어 남는다(한 번 연 상자는 다시 비어 있다).
     pub const CHESTS: &str = "chests";
+    /// 성장(M4): 핵으로 고른 횟수(갈래마다), 가게에서 산 등잔 기름.
+    pub const GROW_HP: &str = "grow.hp";
+    pub const GROW_FLASK: &str = "grow.flask";
+    pub const GROW_HEAL: &str = "grow.heal";
+    pub const SHOP_OIL: &str = "shop.oil";
 }
 
 /// 글 기록(키 → 값). 모르는 키도 지키며 들고 다닌다.
@@ -94,6 +99,7 @@ pub struct Progress {
     pub owned: Vec<crate::charms::Id>,
     pub worn: [Option<crate::charms::Id>; crate::charms::SLOTS],
     pub chests: Vec<u32>,
+    pub growth: crate::growth::Growth,
     /// 원래 기록(모르는 키를 지키려고 — 쓸 때 이 위에 덮는다).
     base: Record,
 }
@@ -114,7 +120,15 @@ impl Progress {
             .collect();
         chests.sort();
         chests.dedup();
+        let small = |k: &str| r.num(k).unwrap_or(0).min(u8::MAX as u32) as u8;
+        let growth = crate::growth::Growth {
+            hp: small(key::GROW_HP),
+            flask: small(key::GROW_FLASK),
+            heal: small(key::GROW_HEAL),
+            oil: r.num(key::SHOP_OIL) == Some(1),
+        };
         Progress {
+            growth,
             embers: r.num(key::EMBERS).unwrap_or(0),
             clears: r.num(key::CLEARS).unwrap_or(0),
             run,
@@ -134,6 +148,10 @@ impl Progress {
         r.set(key::CHARMS_WORN, crate::charms::encode_worn(&self.worn));
         let chests: Vec<String> = self.chests.iter().map(|c| c.to_string()).collect();
         r.set(key::CHESTS, chests.join(","));
+        r.set(key::GROW_HP, self.growth.hp);
+        r.set(key::GROW_FLASK, self.growth.flask);
+        r.set(key::GROW_HEAL, self.growth.heal);
+        r.set(key::SHOP_OIL, self.growth.oil as u8);
         match self.run {
             Some(at) => {
                 r.set(key::RUN_REST, at.rest);
@@ -149,12 +167,18 @@ impl Progress {
 
     /// 이어할 것이 있나(타이틀 "이어하기"): 판 밖의 것이 하나라도 쌓였거나 판 안의 자리가 있으면.
     pub fn has_any(&self) -> bool {
-        self.run.is_some() || self.embers > 0 || self.clears > 0 || !self.owned.is_empty()
+        self.run.is_some()
+            || self.embers > 0
+            || self.clears > 0
+            || !self.owned.is_empty()
+            || self.growth != crate::growth::Growth::default()
     }
 
-    /// 낀 장신구로 합친 능력치(성장은 M4에서 더한다).
+    /// 낀 장신구 + 성장으로 합친 능력치.
     pub fn stats(&self) -> crate::stats::Stats {
-        crate::stats::Stats::compute(&crate::charms::mods(&self.worn))
+        let mut mods = crate::charms::mods(&self.worn);
+        mods.push(self.growth.mods());
+        crate::stats::Stats::compute(&mods)
     }
 }
 
@@ -280,6 +304,12 @@ mod tests {
         p.owned = vec![Id::Shell, Id::Ear];
         p.worn = [None, Some(Id::Ear), None];
         p.chests = vec![0, 2];
+        p.growth = crate::growth::Growth {
+            hp: 2,
+            flask: 1,
+            heal: 0,
+            oil: true,
+        };
         let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
         assert_eq!(
             (back.owned.clone(), back.worn, back.chests.clone()),
@@ -287,6 +317,14 @@ mod tests {
         );
         assert!(back.has_any());
         assert_eq!(back.stats().parry, 0.06, "the worn charm counts");
+        assert_eq!(back.growth, p.growth);
+        let base = crate::stats::Stats::default();
+        assert_eq!(back.stats().max_hp, base.max_hp + 2);
+        assert_eq!(
+            back.stats().flask,
+            base.flask + 2,
+            "a core pick and the oil"
+        );
     }
 
     #[test]

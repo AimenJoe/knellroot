@@ -467,6 +467,9 @@ pub struct StageRun {
     pub chest_open: Vec<bool>,
     pub near_chest: Option<usize>,
     opened: Option<usize>,
+    /// 이번 틱에 쉬었다(0064 M4 — 앱이 화로 가게를 연다), 잔불로 살 것이 있다(앱이 정한다 — 쉼터가 빛난다).
+    rested: bool,
+    pub shop_ready: bool,
 }
 
 /// 시작 이야기 길이(초).
@@ -512,6 +515,8 @@ impl StageRun {
             chest_open: Vec::new(),
             near_chest: None,
             opened: None,
+            rested: false,
+            shop_ready: false,
         };
         run.rests = run.level.marks_of('R').collect();
         run.chests = run.level.marks_of('C').collect();
@@ -620,6 +625,7 @@ impl StageRun {
         } else if let (Some(i), true) = (self.near_rest, w.interact) {
             if self.rest_safe {
                 self.rest(w, i);
+                self.rested = true;
             } else {
                 self.card = Some((|s| s.rest_blocked, 1.6));
             }
@@ -767,6 +773,11 @@ impl StageRun {
         self.zone = self.zone_at(w.player.pos);
         self.core = None;
         self.card = Some((|s| s.respawned, CARD_TIME));
+    }
+
+    /// 이번 틱에 쉬었나(0064 M4) — 앱이 한 번 가져가 화로 가게를 연다(쓰러진 뒤 다시 서는 것은 아니다).
+    pub fn take_rested(&mut self) -> bool {
+        std::mem::take(&mut self.rested)
     }
 
     /// 이번 틱에 연 상자(0064 M3) — 앱이 한 번 가져가 장신구·잔불을 준다.

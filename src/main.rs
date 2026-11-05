@@ -14,6 +14,7 @@ mod ember;
 mod enemy;
 mod flora;
 mod ground;
+mod growth;
 mod hud;
 mod i18n;
 mod input;

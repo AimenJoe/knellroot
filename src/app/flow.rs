@@ -20,6 +20,10 @@ pub enum Scene {
     },
     /// 장비(0064 M3): 무기 + 장신구 세 칸. 멈춤 "장비"에서, 뒤로 = 멈춤.
     Equip,
+    /// 핵 고르기(0064 M4): 문지기를 이긴 끝 장면 뒤, 결과 전. 하나를 골라야 넘어간다.
+    Core,
+    /// 쉼터 화로(0064 M4): 쉬면 열린다 — 잔불로 장신구·등잔 기름을 산다. 뒤로 = 싸움.
+    Shop,
     /// 설정(0052, nail 0269의 틀): 언어·전체 화면·화면 흔들림·조작. `from_pause`면 뒤로 = 멈춤, 아니면 타이틀.
     Settings {
         from_pause: bool,
@@ -40,6 +44,8 @@ impl Scene {
             Scene::Title
                 | Scene::Pause
                 | Scene::Equip
+                | Scene::Core
+                | Scene::Shop
                 | Scene::Result { .. }
                 | Scene::Controls { .. }
                 | Scene::Settings { .. }
@@ -163,11 +169,21 @@ pub fn after_stage(out: StageOut) -> Option<Scene> {
 /// 끝 장면을 이만큼(초) 보여 준 뒤 결과 창.
 pub const ENDING_TIME: f32 = 1.6;
 
+/// 끝 장면 뒤(0064 M4): 이겼고 고를 성장이 남았으면 핵 고르기, 아니면 결과.
+pub fn after_ending(won: bool, can_grow: bool) -> Scene {
+    if won && can_grow {
+        Scene::Core
+    } else {
+        Scene::Result { won }
+    }
+}
+
 /// 뒤로(B·Esc): 멈춤 → 계속, 조작 설정 → 온 곳, 결과·타이틀은 그대로.
 pub fn back(scene: Scene) -> Scene {
     match scene {
         Scene::Pause => Scene::Play,
         Scene::Equip => Scene::Pause,
+        Scene::Shop => Scene::Play,
         Scene::Controls { from_pause } => Scene::Settings { from_pause },
         Scene::Settings { from_pause: true } => Scene::Pause,
         Scene::Settings { from_pause: false } => Scene::Title,
@@ -260,6 +276,12 @@ mod tests {
         );
         assert_eq!(choose_pause(PauseItem::Weapon), (Scene::Equip, false));
         assert_eq!(back(Scene::Equip), Scene::Pause);
+        // 0064 M4: 이기면 핵 고르기(고를 것이 남았을 때만), 지면 결과. 핵 고르기는 뒤로로 건너뛰지 않는다. 화로 → 싸움.
+        assert_eq!(after_ending(true, true), Scene::Core);
+        assert_eq!(after_ending(true, false), Scene::Result { won: true });
+        assert_eq!(after_ending(false, true), Scene::Result { won: false });
+        assert_eq!(back(Scene::Core), Scene::Core);
+        assert_eq!(back(Scene::Shop), Scene::Play);
         // 0052: 조작 → 설정 → 온 곳.
         assert_eq!(
             back(Scene::Controls { from_pause: true }),

@@ -234,6 +234,27 @@ impl App {
         self.toast = Some((fill(s().toast_charm, &[name]), TOAST_TIME));
     }
 
+    /// 화로 가게에서 산다(0064 M4): 잔불이 모자라면 알림만.
+    fn buy(&mut self, (ware, price): (crate::growth::Ware, u32)) {
+        let s = s();
+        if self.world.embers < price {
+            self.toast = Some((s.shop_poor.to_string(), 1.6));
+            return;
+        }
+        self.world.embers -= price;
+        self.progress.embers = self.world.embers;
+        match ware {
+            crate::growth::Ware::Charm(id) => self.gain_charm(id),
+            crate::growth::Ware::Oil => {
+                self.progress.growth.oil = true;
+                // 쉼터에서 막 쉬었으니 늘어난 등잔도 가득.
+                self.world.apply_stats(self.progress.stats(), true);
+                self.toast = Some((fill(s.toast_bought, &[s.shop_oil]), TOAST_TIME));
+            }
+        }
+        self.persist();
+    }
+
     /// 장비 창에서 칸을 바꾼다.
     fn step_charm(&mut self, slot: usize, step: i32) {
         self.progress.worn[slot] =
@@ -522,6 +543,31 @@ impl App {
                     self.go(next);
                 }
             }
+            Scene::Core => {
+                // 핵 고르기(0064 M4): 하나를 골라야 결과로(뒤로는 건너뛰지 않는다).
+                let opts = self.progress.growth.options();
+                if let Some(i) = self.menu_pick(&a, opts.len()) {
+                    self.progress.growth.add(opts[i]);
+                    self.world.apply_stats(self.progress.stats(), true);
+                    self.persist();
+                    self.go(Scene::Result { won: true });
+                }
+                self.follow_camera();
+            }
+            Scene::Shop => {
+                let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
+                if a.back || a.pause {
+                    self.go(flow::back(self.scene));
+                    return;
+                }
+                if let Some(i) = self.menu_pick(&a, wares.len() + 1) {
+                    match wares.get(i).copied() {
+                        Some(w) => self.buy(w),
+                        None => self.go(flow::back(self.scene)),
+                    }
+                }
+                self.follow_camera();
+            }
             Scene::Equip => {
                 let rows = equip_rows();
                 let step = a.menu_right as i32 - a.menu_left as i32;
@@ -582,7 +628,8 @@ impl App {
                 self.ending += TICK_DT;
                 self.follow_camera();
                 if self.ending >= flow::ENDING_TIME {
-                    self.go(Scene::Result { won });
+                    let grow = !self.progress.growth.options().is_empty();
+                    self.go(flow::after_ending(won, grow));
                 }
             }
             Scene::Play => {
@@ -595,6 +642,15 @@ impl App {
                 self.step_world(&a);
                 let out = self.run.tick(&mut self.world, TICK_DT);
                 self.sync_progress(out);
+                // 쉼터 화로(0064 M4): 쉬면 가게가 열린다. 살 것이 있으면 쉼터가 빛난다.
+                self.run.shop_ready = crate::growth::can_buy(
+                    self.world.embers,
+                    &self.progress.owned,
+                    &self.progress.growth,
+                );
+                if self.run.take_rested() {
+                    self.go(Scene::Shop);
+                }
                 if let Some((_, t)) = &mut self.toast {
                     *t -= TICK_DT;
                 }
@@ -773,6 +829,11 @@ impl App {
                 hud::draw(&self.ui, &f, &self.world, Some(&self.run), true);
                 self.draw_equip(&f);
             }
+            Scene::Core => self.draw_core(&f),
+            Scene::Shop => {
+                hud::draw(&self.ui, &f, &self.world, Some(&self.run), true);
+                self.draw_shop(&f);
+            }
             Scene::Result { won } => self.draw_result(&f, won),
             Scene::Controls { .. } => self.draw_controls(&f),
             Scene::Settings { from_pause } => {
@@ -786,7 +847,7 @@ impl App {
             #[cfg(feature = "dev")]
             Scene::Sandbox => hud::draw(&self.ui, &f, &self.world, None, false),
         }
-        if matches!(self.scene, Scene::Play | Scene::Ending { .. }) {
+        if matches!(self.scene, Scene::Play | Scene::Ending { .. } | Scene::Shop) {
             self.draw_toast(&f);
         }
         if self.scene == Scene::Play {
@@ -1034,15 +1095,106 @@ impl App {
         self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
     }
 
+    /// 핵 고르기(0064 M4): 제목 + 갈래 셋(지금/상한).
+    fn draw_core(&mut self, f: &Frame) {
+        let s = s();
+        self.ui.dim(0.6);
+        let cx = f.ox + f.w * 0.5;
+        let y = f.oy + f.h * 0.2;
+        self.ui.text_center(s.core_title, cx, y, 2.0, AMBER);
+        self.ui
+            .text_center(s.core_sub, cx, y + self.ui.px(2.0) * 1.3, 1.0, DIM);
+        let g = self.progress.growth;
+        let items: Vec<String> = g
+            .options()
+            .iter()
+            .map(|&p| {
+                let name = match p {
+                    crate::growth::Pick::Hp => s.grow_hp,
+                    crate::growth::Pick::Flask => s.grow_flask,
+                    crate::growth::Pick::Heal => s.grow_heal,
+                };
+                let n = (g.count(p) + 1).to_string();
+                let m = crate::growth::cap(p).to_string();
+                fill(s.grow_line, &[name, &n, &m])
+            })
+            .collect();
+        let bottom = self.menu_bottom(f);
+        self.menu_hits = self.ui.menu(
+            &items,
+            self.cursor,
+            &mut self.view,
+            cx,
+            f.oy + f.h * 0.42,
+            bottom,
+        );
+        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
+    }
+
+    /// 쉼터 화로(0064 M4): 가진 잔불 + 살 것(값) + 떠나기, 아래에 고른 것의 설명.
+    fn draw_shop(&mut self, f: &Frame) {
+        let s = s();
+        self.ui.dim(0.6);
+        let cx = f.ox + f.w * 0.5;
+        let y = f.oy + f.h * 0.14;
+        self.ui.text_center(s.shop_title, cx, y, 2.0, AMBER);
+        let have = self.world.embers.to_string();
+        self.ui.text_center(
+            &fill(s.shop_embers, &[&have]),
+            cx,
+            y + self.ui.px(2.0) * 1.3,
+            1.0,
+            INK,
+        );
+        let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
+        let name = |w: crate::growth::Ware| match w {
+            crate::growth::Ware::Charm(id) => tr(crate::charms::def(id).name),
+            crate::growth::Ware::Oil => s.shop_oil,
+        };
+        let mut items: Vec<String> = wares
+            .iter()
+            .map(|&(w, price)| fill(s.shop_item, &[name(w), &price.to_string()]))
+            .collect();
+        items.push(s.shop_leave.to_string());
+        let bottom = self.menu_bottom(f) - self.ui.px(1.0) * 2.4;
+        self.menu_hits = self.ui.menu(
+            &items,
+            self.cursor,
+            &mut self.view,
+            cx,
+            f.oy + f.h * 0.34,
+            bottom,
+        );
+        let desc = match wares.get(self.cursor) {
+            Some((crate::growth::Ware::Charm(id), _)) => Some(tr(crate::charms::def(*id).desc)),
+            Some((crate::growth::Ware::Oil, _)) => Some(s.shop_oil_d),
+            None if wares.is_empty() => Some(s.shop_empty),
+            None => None,
+        };
+        if let Some(d) = desc {
+            self.ui.text_center_wrapped(
+                d,
+                cx,
+                bottom + self.ui.px(1.0) * 0.6,
+                1.0,
+                AMBER,
+                f.w * 0.9,
+            );
+        }
+        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
+    }
+
     /// 알림(0064 M3): 화면 위 가운데, 끝 0.6초에 옅어진다.
     fn draw_toast(&self, f: &Frame) {
         if let Some((text, t)) = &self.toast {
             let a = (t / 0.6).min(1.0);
             let cx = f.ox + f.w * 0.5;
+            // 화로 가게에서는 목록을 가리지 않게 맨 위에.
+            let y = if self.scene == Scene::Shop { 0.04 } else { 0.3 };
             self.ui.text_center(
                 text,
                 cx,
-                f.oy + f.h * 0.3,
+                f.oy + f.h * y,
                 1.2,
                 Color::new(AMBER.r, AMBER.g, AMBER.b, a),
             );

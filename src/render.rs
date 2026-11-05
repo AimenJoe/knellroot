@@ -701,6 +701,17 @@ impl Renderer {
         // 쉼터(0032): 발밑 테 — 아직 안 쉰 곳은 옅게, 다시 일어설 곳은 금빛으로 숨 쉬듯. 쉬는 순간 빛이 퍼진다.
         for (i, r) in run.rests.iter().enumerate() {
             let home = run.rest_at.is_some_and(|(j, _)| j == i);
+            // 잔불로 살 것이 있으면(0064 M4) 쉼터마다 호박빛 테가 하나 더 숨 쉰다 — 쓸 곳이 보이게.
+            if run.shop_ready {
+                let k = 0.5 + 0.5 * (w.time * 3.0 + i as f32).sin();
+                ring(
+                    *r,
+                    1.5 + 0.3 * k,
+                    0.0,
+                    360.0,
+                    Color::new(1.0, 0.7, 0.3, 0.25 + 0.3 * k),
+                );
+            }
             let col = if home {
                 Color::new(1.0, 0.8, 0.4, 0.55 + 0.25 * (w.time * 2.0).sin())
             } else {

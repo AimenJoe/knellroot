@@ -72,6 +72,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 기록(0064 M2) | `save.rs`, `app/mod.rs` `continue_run`·`sync_progress`·`persist`, `StageRun::resume`·`run_at`, `web/index.html` `knell_save_*`, `tools/test/save.js` | 타이틀 이어하기(쉰 쉼터에서)·새로 하기(두 번), 쉬면·판을 끝내면·처음부터 하면 바뀐 것만 씀 |
 | 잔불(0064 M1) | `ember.rs`, `world.rs` `tick_embers`·`embers`·`drops`, `species.rs` `embers`, `backdrop.rs` `embers`, `hud.rs` | 쓰러지면 튀어나오고 0.35초 뒤 끌려와 주움, 가진 수는 기록에 — 쓰러져도 그대로 |
 | 장신구(0064 M3) | `stats.rs`·`charms.rs`, `World::stats`·`apply_stats`, `Player::max_hp`·`flask_max`, `StageRun` 상자(`C`)·`take_opened`, `app/mod.rs` 장비 창·`gain_charm`·알림 | 세 칸, 여섯 가운데 상자 둘·문지기 하나에서 얻음, 멈춤 → 장비에서 갈아 끼움, 능력치는 한 곳에서 합침 |
+| 성장(0064 M4) | `growth.rs`, `Scene::Core`·`Scene::Shop`, `StageRun::take_rested`·`shop_ready`, `app/mod.rs` `buy`·`draw_core`·`draw_shop` | 문지기를 이기면 핵 고르기(체력·등잔·회복), 쉬면 화로 가게(장신구 셋·등잔 기름), 살 것이 있으면 쉼터가 빛남 |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
@@ -88,6 +89,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 
 ### A2. v0.3.0(0064) — 들어간 것부터
 - [ ] **잔불(M1)**: 튀어나오고 끌려오는 손맛(너무 빠르거나 멀리서 끌리지 않는지), HUD 수가 보이는지. 쓰러져도 그대로인지.
+- [ ] **성장(M4)**: 쉼터에서 쉬면 가게가 열리는 게 귀찮지 않은지(쉴 때마다), 값(25·35·45·80)이 한 판에 하나쯤인지, 문지기를 이기고 고르는 핵이 기쁜지.
 - [ ] **장신구(M3)**: 입구 상자(시작 자리 북쪽)·뜰 동쪽 끝 상자를 열어 보기, 멈춤 → 장비에서 갈아 끼우기. 장신구마다 느낌이 달라지는지(특히 가벼운 발·무거운 손의 맞바꿈), 설명 글이 알아듣기 쉬운지.
 - [ ] **기록(M2)**: 쉼터에서 쉬고 새로고침(웹)·다시 켜기(APK) → 타이틀 "이어하기"로 그 쉼터에서. 새로 하기가 한 번에 지우지 않는지.
 
