@@ -19,6 +19,11 @@ pub mod key {
     pub const RUN_REST: &str = "run.rest";
     /// 그 쉼터에서 다시 서면 문이 열린 뒤부터인가(1) 입구부터인가(0) — 0032의 되돌아갈 단계.
     pub const RUN_GATE: &str = "run.gate";
+    /// 장신구(M3): 가진 것("shell,ear")·낀 것(세 칸 "shell,,ear") — `charms.rs`의 키.
+    pub const CHARMS_OWNED: &str = "charm.owned";
+    pub const CHARMS_WORN: &str = "charm.worn";
+    /// 연 상자 번호들("0,2") — 판을 넘어 남는다(한 번 연 상자는 다시 비어 있다).
+    pub const CHESTS: &str = "chests";
 }
 
 /// 글 기록(키 → 값). 모르는 키도 지키며 들고 다닌다.
@@ -86,6 +91,9 @@ pub struct Progress {
     pub embers: u32,
     pub clears: u32,
     pub run: Option<RunAt>,
+    pub owned: Vec<crate::charms::Id>,
+    pub worn: [Option<crate::charms::Id>; crate::charms::SLOTS],
+    pub chests: Vec<u32>,
     /// 원래 기록(모르는 키를 지키려고 — 쓸 때 이 위에 덮는다).
     base: Record,
 }
@@ -96,10 +104,23 @@ impl Progress {
             rest: i as usize,
             gate_open: r.num(key::RUN_GATE) == Some(1),
         });
+        let owned = crate::charms::decode_owned(r.get(key::CHARMS_OWNED).unwrap_or(""));
+        let worn = crate::charms::decode_worn(r.get(key::CHARMS_WORN).unwrap_or(""), &owned);
+        let mut chests: Vec<u32> = r
+            .get(key::CHESTS)
+            .unwrap_or("")
+            .split(',')
+            .filter_map(|c| c.trim().parse().ok())
+            .collect();
+        chests.sort();
+        chests.dedup();
         Progress {
             embers: r.num(key::EMBERS).unwrap_or(0),
             clears: r.num(key::CLEARS).unwrap_or(0),
             run,
+            owned,
+            worn,
+            chests,
             base: r,
         }
     }
@@ -109,6 +130,10 @@ impl Progress {
         r.set(key::VERSION, 1);
         r.set(key::EMBERS, self.embers);
         r.set(key::CLEARS, self.clears);
+        r.set(key::CHARMS_OWNED, crate::charms::encode_owned(&self.owned));
+        r.set(key::CHARMS_WORN, crate::charms::encode_worn(&self.worn));
+        let chests: Vec<String> = self.chests.iter().map(|c| c.to_string()).collect();
+        r.set(key::CHESTS, chests.join(","));
         match self.run {
             Some(at) => {
                 r.set(key::RUN_REST, at.rest);
@@ -124,7 +149,12 @@ impl Progress {
 
     /// 이어할 것이 있나(타이틀 "이어하기"): 판 밖의 것이 하나라도 쌓였거나 판 안의 자리가 있으면.
     pub fn has_any(&self) -> bool {
-        self.run.is_some() || self.embers > 0 || self.clears > 0
+        self.run.is_some() || self.embers > 0 || self.clears > 0 || !self.owned.is_empty()
+    }
+
+    /// 낀 장신구로 합친 능력치(성장은 M4에서 더한다).
+    pub fn stats(&self) -> crate::stats::Stats {
+        crate::stats::Stats::compute(&crate::charms::mods(&self.worn))
     }
 }
 
@@ -244,6 +274,22 @@ mod tests {
     }
 
     #[test]
+    fn charms_and_opened_chests_survive_the_record() {
+        use crate::charms::Id;
+        let mut p = Progress::default();
+        p.owned = vec![Id::Shell, Id::Ear];
+        p.worn = [None, Some(Id::Ear), None];
+        p.chests = vec![0, 2];
+        let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        assert_eq!(
+            (back.owned.clone(), back.worn, back.chests.clone()),
+            (p.owned, p.worn, p.chests)
+        );
+        assert!(back.has_any());
+        assert_eq!(back.stats().parry, 0.06, "the worn charm counts");
+    }
+
+    #[test]
     fn an_empty_or_garbage_store_reads_as_a_fresh_start() {
         assert_eq!(
             Progress::from_record(Record::parse("")),
@@ -251,6 +297,7 @@ mod tests {
         );
         let p = Progress::from_record(Record::parse("\u{0}\u{1}garbage"));
         assert_eq!((p.embers, p.clears, p.run), (0, 0, None));
+        assert!(p.owned.is_empty() && p.chests.is_empty());
     }
 
     #[cfg(not(target_arch = "wasm32"))]

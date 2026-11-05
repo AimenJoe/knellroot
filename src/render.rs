@@ -660,6 +660,44 @@ impl Renderer {
                 }
             }
         }
+        // 장신구 상자(0064 M3): 짙은 나무 궤 + 호박빛 자물쇠(닫힌 것만 숨 쉬듯), 열리면 뚜껑이 뒤로 젖혀지고 빛이 꺼진다.
+        for (i, c) in run.chests.iter().enumerate() {
+            let open = run.chest_open.get(i).copied().unwrap_or(false);
+            shadow(*c, 0.6);
+            let body = Color::new(0.36, 0.25, 0.22, 1.0);
+            let band = Color::new(0.55, 0.42, 0.3, 1.0);
+            shaded_box(*c + Vec3::Y * 0.27, vec3(0.86, 0.54, 0.56), body, 0.85);
+            shaded_box(*c + Vec3::Y * 0.27, vec3(0.9, 0.12, 0.6), band, 0.85);
+            let lid_c = *c + Vec3::Y * 0.6;
+            if open {
+                let hinge = *c + vec3(0.0, 0.54, -0.28);
+                shaded_box_rot(
+                    lid_c,
+                    vec3(0.88, 0.14, 0.58),
+                    body,
+                    0.85,
+                    Quat::from_rotation_x(-1.9),
+                    hinge,
+                );
+            } else {
+                shaded_box(lid_c, vec3(0.88, 0.14, 0.58), body, 0.85);
+                let pulse = 0.75 + 0.25 * (w.time * 2.4 + i as f32).sin();
+                let lock = Color::new(1.0, 0.72 * pulse + 0.1, 0.3, 1.0);
+                shaded_box(
+                    *c + vec3(0.0, 0.46, 0.29),
+                    vec3(0.14, 0.16, 0.04),
+                    lock,
+                    1.0,
+                );
+                ring(
+                    *c,
+                    0.9,
+                    0.0,
+                    360.0,
+                    Color::new(1.0, 0.75, 0.35, 0.3 * pulse),
+                );
+            }
+        }
         // 쉼터(0032): 발밑 테 — 아직 안 쉰 곳은 옅게, 다시 일어설 곳은 금빛으로 숨 쉬듯. 쉬는 순간 빛이 퍼진다.
         for (i, r) in run.rests.iter().enumerate() {
             let home = run.rest_at.is_some_and(|(j, _)| j == i);

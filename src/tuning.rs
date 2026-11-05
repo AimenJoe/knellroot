@@ -1468,6 +1468,10 @@ impl Tuning {
         let s = &SPECS[i];
         self.v[i] = value.clamp(s.min, s.max);
     }
+    /// 능력치가 휜 값(0064 M3, `stats::Stats::tune`) — 랩 범위로 묶지 않는다(장신구가 범위를 넘을 수 있다).
+    pub fn bend(&mut self, p: P, value: f32) {
+        self.v[idx(p)] = value;
+    }
     pub fn reset(&mut self, i: usize) {
         self.v[i] = SPECS[i].def;
     }

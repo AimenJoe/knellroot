@@ -1,0 +1,196 @@
+//! 능력치 합치기(0064 M3, KB `concepts/action-rpg-stats-and-equipment.md`): `Stats = 기본 + Σ장신구 + 성장` 한 곳.
+//! 더하기(체력·등잔·피해)는 합, 배율(공격 속도·회피 비용·잔불)은 곱, 끝에 상한·하한으로 극단 조합을 막는다.
+//! 월드는 `Stats`만 읽는다 — 체력·등잔 수는 여기서, 랩 값(회피 비용·패링 창·공격 시간)은 `tune`이 휘어서 넘긴다
+//! (회피 비용을 쓰는 곳이 여덟이라 한 곳에서 휜다).
+use crate::tuning::{Tuning, FLASK_CHARGES, P, PLAYER_HP};
+
+/// 보정 하나(장신구 한 줄·성장 한 칸). 기본값 = 아무것도 안 바꿈.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Mods {
+    /// 최대 체력 +.
+    pub hp: i32,
+    /// 등잔 횟수 +.
+    pub flask: i32,
+    /// 등잔 한 모금 회복 +.
+    pub heal: i32,
+    /// 주는 피해 +(타마다).
+    pub dmg: i32,
+    /// 받는 피해 +(맞을 때마다).
+    pub taken: i32,
+    /// 공격 빠르기 배(1 = 그대로, 0.85 = 15% 느림 — 선딜·활성·후딜·모으기 시간이 1/배).
+    pub atk_speed: f32,
+    /// 회피 스태미나 배.
+    pub dodge_cost: f32,
+    /// 패링 창 +(초).
+    pub parry: f32,
+    /// 적이 쓰러질 때마다 스태미나 +.
+    pub kill_stamina: f32,
+    /// 잔불 배.
+    pub ember: f32,
+}
+
+impl Default for Mods {
+    fn default() -> Self {
+        Mods {
+            hp: 0,
+            flask: 0,
+            heal: 0,
+            dmg: 0,
+            taken: 0,
+            atk_speed: 1.0,
+            dodge_cost: 1.0,
+            parry: 0.0,
+            kill_stamina: 0.0,
+            ember: 1.0,
+        }
+    }
+}
+
+/// 합친 능력치.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Stats {
+    pub max_hp: i32,
+    pub flask: i32,
+    pub heal: i32,
+    pub dmg: i32,
+    pub taken: i32,
+    pub atk_speed: f32,
+    pub dodge_cost: f32,
+    pub parry: f32,
+    pub kill_stamina: f32,
+    pub ember: f32,
+}
+
+/// 상한·하한(극단 조합을 막는다 — KB).
+const HP_RANGE: (i32, i32) = (1, 10);
+const FLASK_RANGE: (i32, i32) = (0, 8);
+const ATK_SPEED_RANGE: (f32, f32) = (0.6, 1.8);
+const DODGE_COST_RANGE: (f32, f32) = (0.3, 2.0);
+const PARRY_MAX: f32 = 0.15;
+
+impl Default for Stats {
+    fn default() -> Self {
+        Stats::compute(&[])
+    }
+}
+
+impl Stats {
+    pub fn compute(mods: &[Mods]) -> Stats {
+        let mut s = Stats {
+            max_hp: PLAYER_HP,
+            flask: FLASK_CHARGES,
+            heal: 0,
+            dmg: 0,
+            taken: 0,
+            atk_speed: 1.0,
+            dodge_cost: 1.0,
+            parry: 0.0,
+            kill_stamina: 0.0,
+            ember: 1.0,
+        };
+        for m in mods {
+            s.max_hp += m.hp;
+            s.flask += m.flask;
+            s.heal += m.heal;
+            s.dmg += m.dmg;
+            s.taken += m.taken;
+            s.atk_speed *= m.atk_speed;
+            s.dodge_cost *= m.dodge_cost;
+            s.parry += m.parry;
+            s.kill_stamina += m.kill_stamina;
+            s.ember *= m.ember;
+        }
+        s.max_hp = s.max_hp.clamp(HP_RANGE.0, HP_RANGE.1);
+        s.flask = s.flask.clamp(FLASK_RANGE.0, FLASK_RANGE.1);
+        s.heal = s.heal.max(0);
+        s.dmg = s.dmg.max(0);
+        s.taken = s.taken.max(0);
+        s.atk_speed = s.atk_speed.clamp(ATK_SPEED_RANGE.0, ATK_SPEED_RANGE.1);
+        s.dodge_cost = s.dodge_cost.clamp(DODGE_COST_RANGE.0, DODGE_COST_RANGE.1);
+        s.parry = s.parry.clamp(0.0, PARRY_MAX);
+        s.kill_stamina = s.kill_stamina.max(0.0);
+        s.ember = s.ember.max(0.0);
+        s
+    }
+
+    /// 랩 값을 이 능력치로 휜 사본(로직은 이것을 읽는다). 기본 능력치면 그대로.
+    pub fn tune(&self, t: &Tuning) -> Tuning {
+        let mut o = t.clone();
+        if *self == Stats::default() {
+            return o;
+        }
+        o.bend(P::StaminaDodge, t[P::StaminaDodge] * self.dodge_cost);
+        o.bend(P::ParryWindow, t[P::ParryWindow] + self.parry);
+        o.bend(P::FlaskHeal, t[P::FlaskHeal] + self.heal as f32);
+        for p in [
+            P::AttackStartup,
+            P::AttackActive,
+            P::AttackRecovery,
+            P::HeavyCharge,
+            P::HeavyStartup,
+            P::HeavyActive,
+            P::HeavyRecovery,
+        ] {
+            o.bend(p, t[p] / self.atk_speed);
+        }
+        o
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stats_add_sums_multiply_rates_and_clamp_extremes() {
+        let base = Stats::default();
+        assert_eq!((base.max_hp, base.flask), (PLAYER_HP, FLASK_CHARGES));
+        let a = Mods {
+            hp: 1,
+            atk_speed: 0.85,
+            ..Mods::default()
+        };
+        let b = Mods {
+            hp: 2,
+            dmg: 1,
+            atk_speed: 0.85,
+            ..Mods::default()
+        };
+        let s = Stats::compute(&[a, b]);
+        assert_eq!(s.max_hp, PLAYER_HP + 3);
+        assert_eq!(s.dmg, 1);
+        assert!((s.atk_speed - 0.85 * 0.85).abs() < 1e-6, "rates multiply");
+        // 극단은 묶인다.
+        let silly = Mods {
+            hp: 50,
+            flask: -9,
+            atk_speed: 0.1,
+            parry: 1.0,
+            ..Mods::default()
+        };
+        let s = Stats::compute(&[silly]);
+        assert_eq!((s.max_hp, s.flask), (HP_RANGE.1, 0));
+        assert_eq!(s.atk_speed, ATK_SPEED_RANGE.0);
+        assert_eq!(s.parry, PARRY_MAX);
+    }
+
+    #[test]
+    fn tuning_bends_dodge_cost_parry_window_and_attack_times() {
+        let t = Tuning::default();
+        assert_eq!(Stats::default().tune(&t), t, "default stats change nothing");
+        let s = Stats::compute(&[Mods {
+            dodge_cost: 0.7,
+            parry: 0.06,
+            atk_speed: 0.85,
+            ..Mods::default()
+        }]);
+        let o = s.tune(&t);
+        assert!((o[P::StaminaDodge] - t[P::StaminaDodge] * 0.7).abs() < 1e-4);
+        assert!((o[P::ParryWindow] - (t[P::ParryWindow] + 0.06)).abs() < 1e-6);
+        assert!(
+            o[P::AttackRecovery] > t[P::AttackRecovery],
+            "slower swings last longer"
+        );
+        assert_eq!(o[P::AttackRange], t[P::AttackRange], "reach untouched");
+    }
+}

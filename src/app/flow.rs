@@ -18,6 +18,8 @@ pub enum Scene {
     Controls {
         from_pause: bool,
     },
+    /// 장비(0064 M3): 무기 + 장신구 세 칸. 멈춤 "장비"에서, 뒤로 = 멈춤.
+    Equip,
     /// 설정(0052, nail 0269의 틀): 언어·전체 화면·화면 흔들림·조작. `from_pause`면 뒤로 = 멈춤, 아니면 타이틀.
     Settings {
         from_pause: bool,
@@ -37,6 +39,7 @@ impl Scene {
             self,
             Scene::Title
                 | Scene::Pause
+                | Scene::Equip
                 | Scene::Result { .. }
                 | Scene::Controls { .. }
                 | Scene::Settings { .. }
@@ -76,21 +79,22 @@ pub enum TitleItem {
     Dev,
 }
 
-/// 타이틀 줄. 설정은 늘 둘째(`tools/test/shot.js`가 아래로 한 번 간다), 새로 하기는 기록이 있을 때 설정 뒤에.
+/// 타이틀 줄. 설정은 늘 둘째·DEV는 셋째(헤드리스 시험의 길), 새로 하기는 기록이 있을 때 맨 끝에.
 pub fn title_items(has_save: bool) -> Vec<TitleItem> {
+    #[allow(unused_mut)]
     let mut v = vec![TitleItem::Start, TitleItem::Settings];
+    #[cfg(feature = "dev")]
+    v.push(TitleItem::Dev);
     if has_save {
         v.push(TitleItem::NewGame);
     }
-    #[cfg(feature = "dev")]
-    v.push(TitleItem::Dev);
     v
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PauseItem {
     Resume,
-    /// 무기 바꾸기(0051): 좌우·확인으로 다음 무기(쉼터 메뉴가 생기면 그리로).
+    /// 장비(0064 M3, 0051의 무기 줄): 좌우 = 다음 무기(전처럼), 확인 = 장비 창(무기 + 장신구 세 칸).
     Weapon,
     Settings,
     Restart,
@@ -163,6 +167,7 @@ pub const ENDING_TIME: f32 = 1.6;
 pub fn back(scene: Scene) -> Scene {
     match scene {
         Scene::Pause => Scene::Play,
+        Scene::Equip => Scene::Pause,
         Scene::Controls { from_pause } => Scene::Settings { from_pause },
         Scene::Settings { from_pause: true } => Scene::Pause,
         Scene::Settings { from_pause: false } => Scene::Title,
@@ -185,7 +190,7 @@ pub fn pause(scene: Scene) -> Scene {
 pub fn choose_pause(item: PauseItem) -> (Scene, bool) {
     match item {
         PauseItem::Resume => (Scene::Play, false),
-        PauseItem::Weapon => (Scene::Pause, false),
+        PauseItem::Weapon => (Scene::Equip, false),
         PauseItem::Settings => (Scene::Settings { from_pause: true }, false),
         PauseItem::Restart => (Scene::Play, true),
         PauseItem::ToTitle => (Scene::Title, true),
@@ -247,13 +252,14 @@ mod tests {
             title_items(true)[..2],
             [TitleItem::Start, TitleItem::Settings]
         );
-        assert_eq!(title_items(true)[2], TitleItem::NewGame);
+        assert_eq!(title_items(true).last(), Some(&TitleItem::NewGame));
         assert_eq!(
             choose_pause(PauseItem::Settings),
             (Scene::Settings { from_pause: true }, false),
             "the run is kept"
         );
-        assert_eq!(choose_pause(PauseItem::Weapon), (Scene::Pause, false));
+        assert_eq!(choose_pause(PauseItem::Weapon), (Scene::Equip, false));
+        assert_eq!(back(Scene::Equip), Scene::Pause);
         // 0052: 조작 → 설정 → 온 곳.
         assert_eq!(
             back(Scene::Controls { from_pause: true }),

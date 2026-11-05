@@ -9,6 +9,7 @@
 mod app;
 mod backdrop;
 mod camera;
+mod charms;
 mod ember;
 mod enemy;
 mod flora;
@@ -30,6 +31,7 @@ mod secondary;
 mod shade;
 mod species;
 mod stage;
+mod stats;
 mod text;
 mod touch;
 mod tuning;

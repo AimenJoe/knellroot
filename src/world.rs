@@ -317,6 +317,9 @@ pub struct Player {
     pub turn_cd: f32,
     /// 스태미나(0018)와 마지막으로 쓴 뒤 지난 초, 모자라서 막혔을 때 HUD 막대를 깜빡이는 남은 초.
     pub stamina: f32,
+    /// 최대 체력·등잔 횟수(0064 M3 — `World::stats`가 정한다, `apply_stats`).
+    pub max_hp: i32,
+    pub flask_max: i32,
     pub stamina_idle: f32,
     pub stamina_denied: f32,
     /// 경직 중 또 맞은 횟수(0 = 첫 경직) — 경직 길이가 반씩 준다.
@@ -412,6 +415,8 @@ pub struct World {
     /// 잔불(0064 M1): 가진 수(쓰러져도 잃지 않는다 — 앱이 기록에서 넣고 기록으로 옮긴다)와 바닥에 떨어진 조각.
     pub embers: u32,
     pub drops: Vec<crate::ember::Ember>,
+    /// 합친 능력치(0064 M3 — 장신구·성장). 앱이 `apply_stats`로 넣는다.
+    pub stats: crate::stats::Stats,
     /// 마지막으로 잔불을 주운 시각(`time`) — HUD가 수를 잠깐 키운다.
     pub ember_at: f32,
     /// 금 간 땅(망치 여진)·날고 있는 수류탄·폭발 고리(0051).
@@ -445,6 +450,8 @@ impl World {
                 dodge_cd: 0.0,
                 turn_cd: 0.0,
                 stamina: crate::tuning::SPECS[crate::tuning::idx(P::StaminaMax)].def,
+                max_hp: PLAYER_HP,
+                flask_max: FLASK_CHARGES,
                 stamina_idle: 0.0,
                 stamina_denied: 0.0,
                 stun_chain: 0,
@@ -492,6 +499,7 @@ impl World {
             bolts: Vec::new(),
             embers: 0,
             drops: Vec::new(),
+            stats: crate::stats::Stats::default(),
             ember_at: f32::MIN,
             cracks: Vec::new(),
             bombs: Vec::new(),
@@ -596,7 +604,7 @@ impl World {
                 Rb::Magic(_) => pl.mana >= 1.0,
                 Rb::Shot { .. } => pl.ammo >= 1,
             },
-            Next::Flask => pl.flask > 0 && pl.hp < PLAYER_HP && pl.flask_lock <= 0.0,
+            Next::Flask => pl.flask > 0 && pl.hp < pl.max_hp && pl.flask_lock <= 0.0,
         };
         let ready = match pl.state {
             PState::Attack { t: e, hit, .. } => {
@@ -656,6 +664,21 @@ impl World {
     }
 
     /// 종류 표(`species.rs`)의 적 하나를 세운다.
+    /// 능력치를 바꾼다(0064 M3 — 장신구를 갈아 끼우거나 성장했을 때). 체력·등잔은 새 최대를 넘지 않게, `refill`이면 가득.
+    pub fn apply_stats(&mut self, s: crate::stats::Stats, refill: bool) {
+        self.stats = s;
+        let pl = &mut self.player;
+        pl.max_hp = s.max_hp;
+        pl.flask_max = s.flask;
+        if refill {
+            pl.hp = s.max_hp;
+            pl.flask = s.flask;
+        } else {
+            pl.hp = pl.hp.min(s.max_hp);
+            pl.flask = pl.flask.min(s.flask);
+        }
+    }
+
     pub fn spawn(&mut self, kind: Kind, pos: Vec3) -> usize {
         self.enemies.push(Enemy::new(kind, pos));
         self.enemies.len() - 1
@@ -708,7 +731,7 @@ impl World {
                 continue;
             }
             let crit = en.exposed > 0.0;
-            en.hp -= hurt_by(en, t[P::PlungeDamage] as i32, crit, t);
+            en.hp -= hurt_by(en, self.stats.dmg + t[P::PlungeDamage] as i32, crit, t);
             en.exposed = 0.0;
             en.hit_by = swing;
             // 근접으로 맞히면 마법 칸이 찬다(0048).
@@ -750,6 +773,9 @@ impl World {
 
     /// 한 틱. 히트스톱 중엔 로직 시계만 멈춘다.
     pub fn step(&mut self, a: &Actions, t: &Tuning) -> Vec<Event> {
+        // 장신구·성장이 휜 랩 값(0064 M3) — 이 틱의 로직은 이것만 읽는다.
+        let tuned = self.stats.tune(t);
+        let t = &tuned;
         let mut ev = Vec::new();
         let dt = TICK_DT;
         if let Some((_, left)) = &mut self.spill_at {
@@ -810,18 +836,25 @@ impl World {
         self.tick_enemies(t, dt, &mut ev);
         self.collide(t, &mut ev);
         self.cleanup(&mut ev);
-        self.tick_embers(dt, &mut ev);
+        self.tick_embers(t, dt, &mut ev);
         ev
     }
 
     /// 잔불(0064 M1): 막 쓰러진 적은 제 값을 흩고, 바닥의 조각은 튀고·끌리고·주워진다.
-    fn tick_embers(&mut self, dt: f32, ev: &mut Vec<Event>) {
+    fn tick_embers(&mut self, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
         for (i, en) in self.enemies.iter_mut().enumerate() {
             if !en.alive() && !en.dropped {
                 en.dropped = true;
                 let seed = (self.time * 1000.0) as u32 ^ (i as u32).wrapping_mul(2654435761);
+                // 잔불 주머니(0064 M3): 값에 배.
+                let value = (en.def().embers as f32 * self.stats.ember).round() as u32;
                 self.drops
-                    .extend(crate::ember::scatter(en.pos, en.def().embers, seed));
+                    .extend(crate::ember::scatter(en.pos, value, seed));
+                // 굶주린 뿌리: 쓰러질 때마다 스태미나.
+                if self.stats.kill_stamina > 0.0 {
+                    let pl = &mut self.player;
+                    pl.stamina = (pl.stamina + self.stats.kill_stamina).min(t[P::StaminaMax]);
+                }
             }
         }
         let to = self.player.pos + Vec3::Y * 0.9;
@@ -1211,7 +1244,7 @@ impl World {
                     }
                 } else if a.flask && pl.flask_lock <= 0.0 {
                     // 등잔(0031): 가득이거나 0이면 몸짓 없이 깜빡만(빈 병 몸짓으로 묶지 않는다 — 급할 때 연타해도).
-                    if pl.flask > 0 && pl.hp < PLAYER_HP {
+                    if pl.flask > 0 && pl.hp < pl.max_hp {
                         pl.state = PState::Drink {
                             t: 0.0,
                             gulped: false,
@@ -1238,7 +1271,7 @@ impl World {
                     if !gulped && e2 >= t[P::FlaskRaise] {
                         gulped = true;
                         pl.flask -= 1;
-                        pl.hp = (pl.hp + t[P::FlaskHeal].round() as i32).min(PLAYER_HP);
+                        pl.hp = (pl.hp + t[P::FlaskHeal].round() as i32).min(pl.max_hp);
                         self.gulp_now = true;
                     }
                     if e2 >= t[P::FlaskTime] {
@@ -1805,7 +1838,7 @@ impl World {
                 }
                 let en = &mut self.enemies[i];
                 let crit = en.exposed > 0.0;
-                en.hp -= hurt_by(en, b.def.damage, crit, t);
+                en.hp -= hurt_by(en, self.stats.dmg + b.def.damage, crit, t);
                 en.exposed = 0.0;
                 en.hurt = 0.15;
                 en.knock = b.dir * t[P::Knockback] * if en.boss { 0.1 } else { 0.5 };
@@ -1931,7 +1964,7 @@ impl World {
                 continue;
             }
             let crit = en.exposed > 0.0;
-            en.hp -= hurt_by(en, damage, crit, t);
+            en.hp -= hurt_by(en, self.stats.dmg + damage, crit, t);
             en.exposed = 0.0;
             en.hurt = 0.15;
             en.knock = d.normalize_or_zero() * t[P::Knockback] * if en.boss { 0.2 } else { 1.4 };
@@ -2083,7 +2116,7 @@ impl World {
             self.player.mana = (self.player.mana + t[P::CastPerHit]).min(CAST_CHARGES);
             // 패링으로 드러난 적은 한 대가 치명타(0025).
             let crit = en.exposed > 0.0;
-            en.hp -= hurt_by(en, s.damage, crit, t);
+            en.hp -= hurt_by(en, self.stats.dmg + s.damage, crit, t);
             if crit {
                 en.exposed = 0.0;
                 ev.push(Event::Crit {
@@ -2260,8 +2293,9 @@ impl World {
             // 같은 틱에 다른 적에게 맞은 것은 그대로 맞는다(떼 속 패링은 하나만 막는다).
         }
         if let (Some(from), false) = (hurt_player, self.player.invulnerable()) {
+            let taken = 1 + self.stats.taken;
             let pl = &mut self.player;
-            pl.hp -= 1;
+            pl.hp -= taken;
             // 맞은 뒤 무적은 짧게(예전 0.6초 — 그 동안 다시 맞을 수 없어 경직 줄이기가 쓸 데가 없었다).
             pl.hurt = t[P::HitIframes];
             // 경직(0018): 경직 중 또 맞으면 반씩 — 떼에 갇혀 계속 맞아도 손을 놓치지 않게.
@@ -2620,6 +2654,35 @@ pub fn move_to_world(stick: Vec2, basis: Basis, player: Vec3) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn charms_raise_the_health_cap_and_make_hits_hurt_more() {
+        use crate::charms::{def, Id};
+        use crate::stats::Stats;
+        let mut w = World::new("t", 20.0);
+        // 단단한 껍질 + 가벼운 발: 최대 체력 +1, 받는 피해 +1.
+        w.apply_stats(
+            Stats::compute(&[def(Id::Shell).mods, def(Id::Feet).mods]),
+            true,
+        );
+        assert_eq!(w.player.max_hp, crate::tuning::PLAYER_HP + 1);
+        assert_eq!(w.player.hp, w.player.max_hp, "refilled");
+        // 장신구를 빼면 체력은 새 최대를 넘지 않는다.
+        w.apply_stats(Stats::default(), false);
+        assert_eq!(w.player.hp, crate::tuning::PLAYER_HP);
+        // 받는 피해: 같은 한 대가 1 대신 2.
+        w.apply_stats(Stats::compute(&[def(Id::Feet).mods]), true);
+        let before = w.player.hp;
+        w.spawn(crate::species::Kind::Husk, vec3(0.6, 0.0, 0.0));
+        let t = crate::tuning::Tuning::default();
+        for _ in 0..240 {
+            w.step(&Actions::default(), &t);
+            if w.player.hp < before {
+                break;
+            }
+        }
+        assert_eq!(before - w.player.hp, 2);
+    }
 
     #[test]
     fn a_fallen_enemy_drops_its_embers_once_and_they_come_to_the_player() {

@@ -8,7 +8,6 @@ use macroquad::prelude::*;
 use crate::ground::{Cell, Ground};
 use crate::i18n::Tr;
 use crate::species::Kind;
-use crate::tuning::{FLASK_CHARGES, PLAYER_HP};
 use crate::world::{Aabb, EState, PState, World};
 
 /// 지도 한 칸(m).
@@ -382,7 +381,17 @@ pub struct StageDef {
     pub obj_gate: Tr,
     pub obj_core: Tr,
     pub boss_wakes: Tr,
+    /// 상자(지도 `C`, 위에서부터 차례)마다 든 장신구(0064 M3). 이미 가졌으면 잔불 `CHEST_EMBERS`.
+    pub chest_charms: &'static [crate::charms::Id],
+    /// 문지기를 처음 이겼을 때 주는 장신구.
+    pub boss_charm: Option<crate::charms::Id>,
 }
+
+/// 상자 곁(m)과, 든 장신구를 이미 가졌을 때 대신 주는 잔불.
+pub const CHEST_REACH: f32 = 1.8;
+pub const CHEST_EMBERS: u32 = 15;
+/// 상자 부딪힘 상자 반폭(가로·세로 m).
+const CHEST_HALF: Vec3 = Vec3::new(0.45, 0.5, 0.3);
 
 /// 진행 단계.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -453,6 +462,11 @@ pub struct StageRun {
     pub rest_safe: bool,
     /// 마지막으로 쉰 뒤 지난 초(렌더의 퍼지는 빛).
     pub since_rest: f32,
+    /// 장신구 상자(0064 M3): 자리, 열렸나(기록에서 — 한 번 연 상자는 판을 넘어 비어 있다), 곁의 닫힌 상자, 이번 틱에 연 상자(앱이 가져간다).
+    pub chests: Vec<Vec3>,
+    pub chest_open: Vec<bool>,
+    pub near_chest: Option<usize>,
+    opened: Option<usize>,
 }
 
 /// 시작 이야기 길이(초).
@@ -494,8 +508,20 @@ impl StageRun {
             near_rest: None,
             rest_safe: true,
             since_rest: f32::MAX,
+            chests: Vec::new(),
+            chest_open: Vec::new(),
+            near_chest: None,
+            opened: None,
         };
         run.rests = run.level.marks_of('R').collect();
+        run.chests = run.level.marks_of('C').collect();
+        run.chest_open = vec![false; run.chests.len()];
+        for c in &run.chests {
+            w.obstacles.push(crate::world::Aabb {
+                min: *c - vec3(CHEST_HALF.x, 0.0, CHEST_HALF.z),
+                max: *c + vec3(CHEST_HALF.x, CHEST_HALF.y * 2.0, CHEST_HALF.z),
+            });
+        }
         // 보스는 처음부터 잠든 채 성소에 있다(보인다 — 기대감).
         if let Some(p) = run.level.marks_of(def.boss.0).next() {
             let i = w.spawn(def.boss.1, p);
@@ -582,9 +608,16 @@ impl StageRun {
             .enemies
             .iter()
             .any(|e| e.active() && vec2(e.pos.x - pp.x, e.pos.z - pp.z).length() <= REST_SAFE);
-        // 점프 버튼이 다음 틱부터 쉬기가 되는 자리(0048): 곁이고 안전할 때만 — 적이 가까우면 그대로 점프.
-        w.interact_here = self.near_rest.is_some() && self.rest_safe;
-        if let (Some(i), true) = (self.near_rest, w.interact) {
+        // 상자(0064 M3): 곁의 닫힌 상자는 적이 가까워도 연다(쉬기와 달리 몸이 묶이지 않는다).
+        self.near_chest = self.chests.iter().enumerate().position(|(i, c)| {
+            !self.chest_open[i] && vec2(c.x - pp.x, c.z - pp.z).length() <= CHEST_REACH
+        });
+        // 점프 버튼이 다음 틱부터 쉬기·열기가 되는 자리(0048): 곁이고(쉬기는 안전할 때만) — 아니면 그대로 점프.
+        w.interact_here = (self.near_rest.is_some() && self.rest_safe) || self.near_chest.is_some();
+        if let (Some(i), true) = (self.near_chest, w.interact) {
+            self.chest_open[i] = true;
+            self.opened = Some(i);
+        } else if let (Some(i), true) = (self.near_rest, w.interact) {
             if self.rest_safe {
                 self.rest(w, i);
             } else {
@@ -676,8 +709,8 @@ impl StageRun {
     /// 쉬기(0032): 체력·등잔·스태미나 가득, 이 쉼터가 다시 일어설 곳. 되돌아갈 단계 = 지금(물결 중이면 물결 전부터).
     fn rest(&mut self, w: &mut World, i: usize) {
         let pl = &mut w.player;
-        pl.hp = PLAYER_HP;
-        pl.flask = FLASK_CHARGES;
+        pl.hp = pl.max_hp;
+        pl.flask = pl.flask_max;
         pl.mana = crate::tuning::CAST_CHARGES;
         pl.stamina = crate::tuning::SPECS[crate::tuning::idx(crate::tuning::P::StaminaMax)].def;
         let back = match self.phase {
@@ -734,6 +767,20 @@ impl StageRun {
         self.zone = self.zone_at(w.player.pos);
         self.core = None;
         self.card = Some((|s| s.respawned, CARD_TIME));
+    }
+
+    /// 이번 틱에 연 상자(0064 M3) — 앱이 한 번 가져가 장신구·잔불을 준다.
+    pub fn take_opened(&mut self) -> Option<usize> {
+        self.opened.take()
+    }
+
+    /// 기록의 연 상자들(판을 넘어 비어 있다).
+    pub fn set_opened(&mut self, opened: &[u32]) {
+        for &i in opened {
+            if let Some(o) = self.chest_open.get_mut(i as usize) {
+                *o = true;
+            }
+        }
     }
 
     /// 기록할 판 안의 자리(0064 M2): 마지막으로 쉰 쉼터와 되돌아갈 단계. 쉰 적이 없으면 없다(다음은 입구부터).
@@ -1020,6 +1067,35 @@ mod tests {
     }
 
     /// 0032: 성소 지도에 쉼터 둘(입구·문 앞), 곁에서 상호작용 = 체력·등잔 가득 + 다시 일어설 곳.
+    #[test]
+    fn a_chest_opens_once_with_the_interact_button_and_stays_open_from_the_record() {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        assert_eq!(
+            run.chests.len(),
+            sanctuary::DEF.chest_charms.len(),
+            "a charm per chest"
+        );
+        run.intro = 0.0;
+        let c = run.chests[1];
+        w.player.pos = c + vec3(0.0, 0.0, 1.2);
+        w.player.prev = w.player.pos;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.near_chest, Some(1));
+        assert!(w.interact_here, "the jump button opens it");
+        w.interact = true;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.take_opened(), Some(1));
+        assert_eq!(run.take_opened(), None, "taken once");
+        w.interact = true;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.take_opened(), None, "an open chest stays open");
+        assert_eq!(run.near_chest, None);
+        // 기록에서 연 상자는 새 판에서도 열려 있다.
+        let (mut run, _) = StageRun::start(&sanctuary::DEF);
+        run.set_opened(&[0, 9]);
+        assert_eq!(run.chest_open, vec![true, false]);
+    }
+
     #[test]
     fn resuming_from_a_record_stands_at_that_rest_site_with_the_same_progress() {
         // 문 앞 쉼터에서 쉰 기록(문이 열린 뒤) → 새 판에서 이어하기 = 그 쉼터 곁, 문은 열려 있고 물결은 없다.

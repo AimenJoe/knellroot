@@ -9,7 +9,7 @@ use macroquad::prelude::*;
 
 use crate::camera::{Camera, Mode};
 use crate::hud;
-use crate::i18n::{self, fill, s};
+use crate::i18n::{self, fill, s, tr};
 use crate::input::{self, Act, Actions, Input};
 use crate::lab::Lab;
 use crate::render::{Frame, Perf, Renderer, View};
@@ -74,6 +74,47 @@ pub struct App {
     saved: crate::save::Progress,
     /// 타이틀 "새로 하기"를 한 번 눌렀다(한 번 더 = 기록 지우기). 커서가 움직이면 풀린다.
     new_armed: bool,
+    /// 잠깐 뜨는 알림(0064 M3 — 상자에서 얻은 것 등)과 남은 초.
+    toast: Option<(String, f32)>,
+}
+
+/// 알림이 떠 있는 시간(초).
+const TOAST_TIME: f32 = 3.5;
+
+/// 장비 창 줄(0064 M3): 무기, 장신구 세 칸, 돌아가기.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum EquipRow {
+    Weapon,
+    Charm(usize),
+    Back,
+}
+
+fn equip_rows() -> Vec<EquipRow> {
+    let mut v = vec![EquipRow::Weapon];
+    v.extend((0..crate::charms::SLOTS).map(EquipRow::Charm));
+    v.push(EquipRow::Back);
+    v
+}
+
+/// 칸 `slot`에 낄 수 있는 다음(`step` ±1) 장신구: 빈 칸 + 가진 것 가운데 다른 칸에 없는 것(표 순서), 끝에서 감는다.
+fn next_charm(
+    owned: &[crate::charms::Id],
+    worn: &[Option<crate::charms::Id>; crate::charms::SLOTS],
+    slot: usize,
+    step: i32,
+) -> Option<crate::charms::Id> {
+    let mut opts: Vec<Option<crate::charms::Id>> = vec![None];
+    for d in crate::charms::TABLE.iter() {
+        let elsewhere = worn
+            .iter()
+            .enumerate()
+            .any(|(j, w)| j != slot && *w == Some(d.id));
+        if owned.contains(&d.id) && !elsewhere {
+            opts.push(Some(d.id));
+        }
+    }
+    let at = opts.iter().position(|o| *o == worn[slot]).unwrap_or(0) as i32;
+    opts[(at + step).rem_euclid(opts.len() as i32) as usize]
 }
 
 impl App {
@@ -125,6 +166,7 @@ impl App {
             progress: progress.clone(),
             saved: progress,
             new_armed: false,
+            toast: None,
         }
     }
 
@@ -133,8 +175,10 @@ impl App {
         self.run = run;
         self.world = world;
         self.world.set_weapon(self.weapon);
-        // 잔불은 판을 넘어 남는다(0064 M1).
+        // 잔불은 판을 넘어 남는다(0064 M1). 장신구·성장은 능력치로, 연 상자는 비어 있다(M3).
         self.world.embers = self.progress.embers;
+        self.world.apply_stats(self.progress.stats(), true);
+        self.run.set_opened(&self.progress.chests);
         self.cam = Camera::new(self.world.player.pos, &self.t);
     }
 
@@ -150,11 +194,51 @@ impl App {
     /// 판에서 기록할 것을 옮기고(쉰 쉼터·끝낸 판), 바뀌었으면 쓴다.
     fn sync_progress(&mut self, out: crate::stage::StageOut) {
         self.progress.run = self.run.run_at();
-        self.progress.embers = self.world.embers;
+        // 상자(0064 M3): 든 장신구를 얻는다(이미 가졌으면 잔불).
+        if let Some(i) = self.run.take_opened() {
+            self.progress.chests.push(i as u32);
+            match self.run.def.chest_charms.get(i).copied() {
+                Some(id) if !self.progress.owned.contains(&id) => self.gain_charm(id),
+                _ => {
+                    self.world.embers += crate::stage::CHEST_EMBERS;
+                    let n = crate::stage::CHEST_EMBERS.to_string();
+                    self.toast = Some((fill(s().toast_embers, &[&n]), TOAST_TIME));
+                }
+            }
+        }
         if out == crate::stage::StageOut::Cleared {
             self.progress.run = None;
+            // 문지기를 처음 이기면 장신구 하나.
+            if self.progress.clears == 0 {
+                if let Some(id) = self.run.def.boss_charm {
+                    if !self.progress.owned.contains(&id) {
+                        self.gain_charm(id);
+                    }
+                }
+            }
             self.progress.clears += 1;
         }
+        self.progress.embers = self.world.embers;
+        self.persist();
+    }
+
+    /// 장신구를 얻는다: 가진 것에 넣고, 빈 칸이 있으면 바로 끼운다(얻자마자 효과가 보이게). 알림.
+    fn gain_charm(&mut self, id: crate::charms::Id) {
+        self.progress.owned.push(id);
+        self.progress.owned.sort();
+        if let Some(slot) = self.progress.worn.iter_mut().find(|w| w.is_none()) {
+            *slot = Some(id);
+            self.world.apply_stats(self.progress.stats(), false);
+        }
+        let name = tr(crate::charms::def(id).name);
+        self.toast = Some((fill(s().toast_charm, &[name]), TOAST_TIME));
+    }
+
+    /// 장비 창에서 칸을 바꾼다.
+    fn step_charm(&mut self, slot: usize, step: i32) {
+        self.progress.worn[slot] =
+            next_charm(&self.progress.owned, &self.progress.worn, slot, step);
+        self.world.apply_stats(self.progress.stats(), false);
         self.persist();
     }
 
@@ -228,7 +312,7 @@ impl App {
         self.input.set_touch_ctx(crate::touch::Ctx {
             rest: play && self.world.interact_here,
             lock: play && (self.world.lock.is_some() || self.world.lock_candidate()),
-            flask: play && pl.flask > 0 && pl.hp < crate::tuning::PLAYER_HP,
+            flask: play && pl.flask > 0 && pl.hp < pl.max_hp,
         });
         self.input.poll(self.lab.open, self.scene.is_menu());
         // 싸움 중 마우스 조준이면 OS 커서 대신 조준 표시(0058). 랩은 마우스를 쓰지 않지만 화살표가 보이게 둔다.
@@ -431,14 +515,32 @@ impl App {
                 {
                     self.next_weapon(if a.menu_right { 1 } else { -1 });
                 } else if let Some(i) = self.menu_pick(&a, flow::PAUSE_ITEMS.len()) {
-                    if flow::PAUSE_ITEMS[i] == PauseItem::Weapon {
-                        self.next_weapon(1);
-                    }
                     let (next, rebuild) = flow::choose_pause(flow::PAUSE_ITEMS[i]);
                     if rebuild {
                         self.restart();
                     }
                     self.go(next);
+                }
+            }
+            Scene::Equip => {
+                let rows = equip_rows();
+                let step = a.menu_right as i32 - a.menu_left as i32;
+                if a.back || a.pause {
+                    self.go(flow::back(self.scene));
+                    return;
+                }
+                if step != 0 {
+                    match rows.get(self.cursor) {
+                        Some(EquipRow::Weapon) => self.next_weapon(step),
+                        Some(EquipRow::Charm(i)) => self.step_charm(*i, step),
+                        _ => {}
+                    }
+                } else if let Some(i) = self.menu_pick(&a, rows.len()) {
+                    match rows[i] {
+                        EquipRow::Weapon => self.next_weapon(1),
+                        EquipRow::Charm(slot) => self.step_charm(slot, 1),
+                        EquipRow::Back => self.go(flow::back(self.scene)),
+                    }
                 }
             }
             Scene::Controls { .. } => {
@@ -493,6 +595,10 @@ impl App {
                 self.step_world(&a);
                 let out = self.run.tick(&mut self.world, TICK_DT);
                 self.sync_progress(out);
+                if let Some((_, t)) = &mut self.toast {
+                    *t -= TICK_DT;
+                }
+                self.toast = self.toast.take().filter(|(_, t)| *t > 0.0);
                 if out == crate::stage::StageOut::Respawned {
                     // 쉼터에서 다시 일어섰다(0032): 카메라를 그 자리로 바로(멀리서 날아오지 않게).
                     self.cam = Camera::new(self.world.player.pos, &self.t);
@@ -663,6 +769,10 @@ impl App {
                 hud::draw(&self.ui, &f, &self.world, Some(&self.run), true);
                 self.draw_pause(&f);
             }
+            Scene::Equip => {
+                hud::draw(&self.ui, &f, &self.world, Some(&self.run), true);
+                self.draw_equip(&f);
+            }
             Scene::Result { won } => self.draw_result(&f, won),
             Scene::Controls { .. } => self.draw_controls(&f),
             Scene::Settings { from_pause } => {
@@ -675,6 +785,9 @@ impl App {
             Scene::Dev => self.draw_dev_menu(&f),
             #[cfg(feature = "dev")]
             Scene::Sandbox => hud::draw(&self.ui, &f, &self.world, None, false),
+        }
+        if matches!(self.scene, Scene::Play | Scene::Ending { .. }) {
+            self.draw_toast(&f);
         }
         if self.scene == Scene::Play {
             self.draw_goal_arrow(&f);
@@ -853,7 +966,7 @@ impl App {
             .iter()
             .map(|i| match i {
                 PauseItem::Resume => s.menu_resume.to_string(),
-                PauseItem::Weapon => fill(s.menu_weapon, &[weapon_name(self.weapon)]),
+                PauseItem::Weapon => fill(s.menu_equip, &[weapon_name(self.weapon)]),
                 PauseItem::Settings => s.menu_settings.to_string(),
                 PauseItem::Restart => s.menu_restart.to_string(),
                 PauseItem::ToTitle => s.menu_to_title.to_string(),
@@ -869,6 +982,71 @@ impl App {
             bottom,
         );
         self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
+    }
+
+    /// 장비(0064 M3): 무기 줄 + 장신구 세 칸 + 돌아가기, 아래에 고른 칸의 설명.
+    fn draw_equip(&mut self, f: &Frame) {
+        let s = s();
+        self.ui.dim(0.6);
+        let cx = f.ox + f.w * 0.5;
+        self.ui
+            .text_center(s.equip_title, cx, f.oy + f.h * 0.14, 2.0, INK);
+        let rows = equip_rows();
+        let items: Vec<String> = rows
+            .iter()
+            .map(|r| match r {
+                EquipRow::Weapon => fill(s.menu_weapon, &[weapon_name(self.weapon)]),
+                EquipRow::Charm(i) => {
+                    let name = self.progress.worn[*i]
+                        .map_or(s.charm_empty, |id| tr(crate::charms::def(id).name));
+                    fill(s.menu_charm_slot, &[&(i + 1).to_string(), name])
+                }
+                EquipRow::Back => s.controls_back.to_string(),
+            })
+            .collect();
+        let bottom = self.menu_bottom(f) - self.ui.px(1.0) * 2.4;
+        self.menu_hits = self.ui.menu(
+            &items,
+            self.cursor,
+            &mut self.view,
+            cx,
+            f.oy + f.h * 0.3,
+            bottom,
+        );
+        // 설명 줄: 고른 칸의 장신구, 아직 하나도 없으면 얻는 곳.
+        let desc = match rows.get(self.cursor) {
+            _ if self.progress.owned.is_empty() => Some(s.equip_none_yet),
+            Some(EquipRow::Charm(i)) => {
+                self.progress.worn[*i].map(|id| tr(crate::charms::def(id).desc))
+            }
+            _ => None,
+        };
+        if let Some(d) = desc {
+            self.ui.text_center_wrapped(
+                d,
+                cx,
+                bottom + self.ui.px(1.0) * 0.6,
+                1.0,
+                AMBER,
+                f.w * 0.9,
+            );
+        }
+        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
+    }
+
+    /// 알림(0064 M3): 화면 위 가운데, 끝 0.6초에 옅어진다.
+    fn draw_toast(&self, f: &Frame) {
+        if let Some((text, t)) = &self.toast {
+            let a = (t / 0.6).min(1.0);
+            let cx = f.ox + f.w * 0.5;
+            self.ui.text_center(
+                text,
+                cx,
+                f.oy + f.h * 0.3,
+                1.2,
+                Color::new(AMBER.r, AMBER.g, AMBER.b, a),
+            );
+        }
     }
 
     /// 설정(0052): 값 줄은 "이름: 값", 좌우·확인으로 바꾼다.

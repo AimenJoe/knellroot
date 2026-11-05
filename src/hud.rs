@@ -6,7 +6,7 @@ use macroquad::prelude::*;
 use crate::i18n::{self, tr};
 use crate::render::Frame;
 use crate::stage::{StageRun, CARD_TIME, INTRO_TIME};
-use crate::tuning::{idx, CAST_CHARGES, FLASK_CHARGES, P, PLAYER_HP, SPECS};
+use crate::tuning::{idx, CAST_CHARGES, P, SPECS};
 use crate::ui::{Ui, AMBER, DIM, INK};
 use crate::weapons::Rb;
 use crate::world::World;
@@ -83,7 +83,7 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
     let (x0, y0) = (f.ox + 8.0 * s, f.oy + 8.0 * s);
     // 체력: 마름모.
     let pl = &w.player;
-    let max_hp = PLAYER_HP.max(pl.hp);
+    let max_hp = pl.max_hp.max(pl.hp);
     for i in 0..max_hp {
         let c = vec2(x0 + 4.0 * s + i as f32 * 10.0 * s, y0 + 4.0 * s);
         let col = if i < pl.hp { HP_ON } else { HP_OFF };
@@ -100,7 +100,7 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
     draw_rectangle(bx, by, bw * k, bh, if blink { DENIED } else { STAMINA });
     // 등잔(0031): 남은 것은 불 켠 등잔, 쓴 것은 꺼진 등잔. 못 마시면(가득·0) 잠깐 깜빡인다.
     let fblink = pl.flask_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
-    for i in 0..FLASK_CHARGES.max(pl.flask) {
+    for i in 0..pl.flask_max.max(pl.flask) {
         let (lx, ly) = (x0 + i as f32 * 9.0 * s, y0 + 16.0 * s);
         let lit = i < pl.flask;
         let body = match (fblink, lit) {
@@ -149,7 +149,7 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
     // 마법 칸(0048): 등잔 오른쪽에 둥근 칸 셋 — 찬 만큼 채워지고, 못 쏘면 깜빡인다. 근접으로 맞히면 찬다.
     // 원거리 무기(0051)는 그 자리에 탄창(세운 막대 — 장전 중이면 아래에서 차오른다) + 수류탄(둥근 칸).
     let mblink = pl.cast_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
-    let mx0 = x0 + FLASK_CHARGES.max(pl.flask) as f32 * 9.0 * s + 6.0 * s;
+    let mx0 = x0 + pl.flask_max.max(pl.flask) as f32 * 9.0 * s + 6.0 * s;
     let wpn = pl.weapon.def();
     let pip = |i: i32, fill: f32, col: Color| {
         let c = vec2(mx0 + 3.0 * s + i as f32 * 8.0 * s, y0 + 20.5 * s);
@@ -204,8 +204,17 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
     }
 
     let Some(run) = run else { return };
-    // 쉼터 곁(0032): 아래 가운데에 "키 쉬기", 적이 가까우면 막혔다고.
-    if run.near_rest.is_some() {
+    // 상자 곁(0064 M3): "키 열기"(쉼터보다 먼저 — 같은 버튼이 상자를 연다).
+    if run.near_chest.is_some() && !under_menu {
+        let key = crate::input::prompt(crate::input::Act::Interact);
+        let verb = i18n::s().chest_verb;
+        let text = if key.is_empty() {
+            verb.to_string()
+        } else {
+            format!("{key}  {verb}")
+        };
+        ui.text_center(&text, f.ox + f.w * 0.5, f.oy + f.h * 0.78, 1.0, AMBER);
+    } else if run.near_rest.is_some() {
         let y = f.oy + f.h * 0.78;
         let cx = f.ox + f.w * 0.5;
         if run.rest_safe {
@@ -228,7 +237,7 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
         ui.text(&text, f.ox + f.w - tw - 8.0 * s, y0, 1.0, INK);
     }
     // 구역 카드(가운데 위): 이름 + 가는 줄.
-    if let Some((name, left)) = run.card {
+    if let Some((name, left)) = run.card.filter(|_| !under_menu) {
         let a = fade_in_out(left, CARD_TIME.max(left), 0.5);
         let y = f.oy + f.h * 0.16;
         let text = tr(name);

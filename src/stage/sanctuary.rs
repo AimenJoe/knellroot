@@ -2,8 +2,9 @@
 //! 문이 열리면 북쪽 닫힌 성소 → 잠든 문지기가 깨어난다 → 쓰러뜨리면 남는 핵을 거둔다.
 //!
 //! 지도 글자는 `Level::parse` 주석. 스폰 표지: `a` 첫 물결 잔재 · `h` 둘째 물결 잔재 · `T` 둘째 물결 가시짐승 ·
-//! `c` 셋째 물결 잔재 · `U` 셋째 물결 가시짐승 · `W` 문지기 · `R` 쉼터 화로(0032 — 입구 하나, 성소 문 앞 하나). 한 칸 = 2m, 위 = 북(-z).
+//! `c` 셋째 물결 잔재 · `U` 셋째 물결 가시짐승 · `W` 문지기 · `R` 쉼터 화로(0032 — 입구 하나, 성소 문 앞 하나) · `C` 장신구 상자(0064 M3 — 뜰 동쪽 끝·입구 방). 한 칸 = 2m, 위 = 북(-z).
 use super::StageDef;
+use crate::charms::Id as Charm;
 use crate::species::Kind;
 
 pub static DEF: StageDef = StageDef {
@@ -26,6 +27,9 @@ pub static DEF: StageDef = StageDef {
     obj_gate: |s| s.obj_gate_open,
     obj_core: |s| s.obj_core,
     boss_wakes: |s| s.boss_wakes,
+    // 상자(지도 `C`, 위에서부터 차례)와 문지기를 처음 이겼을 때의 장신구(0064 M3). 나머지 셋은 쉼터에서 잔불로(M4).
+    chest_charms: &[Charm::Ear, Charm::Shell],
+    boss_charm: Some(Charm::Hand),
 };
 
 const MAP: &str = "
@@ -51,7 +55,7 @@ const MAP: &str = "
 #..h..............h..c..#
 #.......c..T.....a......#
 #..i....r.......r...i...#
-#....u.....h.....u......#
+#....u.....h.....u.....C#
 #.c.................U...#
 #.......i.......i....w..#
 #..r..h.......c......r..#
@@ -61,7 +65,7 @@ const MAP: &str = "
          #.....#         
          #u...r#         
       ####.....####      
-      #r.........u#      
+      #r....C....u#      
       #...w...R...#      
       #b....P.....#      
       #..u......r.#      
