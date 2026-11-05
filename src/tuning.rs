@@ -222,6 +222,10 @@ pub enum P {
     RenderEdgeLight,
     RenderEdgeDepth,
     RenderEdgeCrease,
+    RenderFog,
+    RenderMotes,
+    RenderSky,
+    RenderFlora,
     RenderModel,
 }
 
@@ -252,7 +256,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 142] = [
+pub const SPECS: [Spec; 146] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1335,6 +1339,43 @@ pub const SPECS: [Spec; 142] = [
         0.05,
         1.5,
         0.05
+    ),
+    // 주위 환경(0063): 핸드헬드 fps(P5)를 보며 하나씩 끄고 켜 본다 — 안개 판·떠다니는 것·하늘과 원경·식생(식생은 끄면 지형을 다시 굽는다).
+    spec!(
+        RenderFog,
+        "render.fog 0off 1on",
+        "RENDER_FOG",
+        1.0,
+        0.0,
+        1.0,
+        1.0
+    ),
+    spec!(
+        RenderMotes,
+        "render.motes 0off 1on",
+        "RENDER_MOTES",
+        1.0,
+        0.0,
+        1.0,
+        1.0
+    ),
+    spec!(
+        RenderSky,
+        "render.sky 0off 1on",
+        "RENDER_SKY",
+        1.0,
+        0.0,
+        1.0,
+        1.0
+    ),
+    spec!(
+        RenderFlora,
+        "render.flora 0off 1on",
+        "RENDER_FLORA",
+        1.0,
+        0.0,
+        1.0,
+        1.0
     ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
     spec!(

@@ -321,7 +321,7 @@ impl Renderer {
         let fwd = (c3.target - c3.position).normalize_or_zero();
         let cam_right = fwd.cross(Vec3::Y).normalize_or_zero();
         let cam_up = cam_right.cross(fwd);
-        if let Some(run) = v.stage {
+        if let Some(run) = v.stage.filter(|_| t[crate::tuning::P::RenderSky] >= 0.5) {
             let base = self.scenery.as_ref().map_or(-2.5, |(_, sc)| sc.void_y);
             self.backdrop.sky(
                 &mut self.batch,
@@ -354,9 +354,11 @@ impl Renderer {
         let lights: Vec<Light> = match v.stage {
             Some(run) => {
                 // 툰을 켜고 끄면 지형을 다시 굽는다(빛이 정점에 구워져 있다, 0033).
-                let key = run.def.map.as_ptr() as usize + look().toon as usize;
+                // 식생(0063)을 끄고 켜도 다시 굽는다.
+                let flora = t[crate::tuning::P::RenderFlora] >= 0.5;
+                let key = run.def.map.as_ptr() as usize + look().toon as usize + 2 * flora as usize;
                 if self.scenery.as_ref().is_none_or(|(k, _)| *k != key) {
-                    self.scenery = Some((key, Scenery::bake(&run.level, &mut self.lib)));
+                    self.scenery = Some((key, Scenery::bake(&run.level, &mut self.lib, flora)));
                 }
                 let sc = &mut self.scenery.as_mut().unwrap().1;
                 draw_plane(
@@ -492,16 +494,20 @@ impl Renderer {
                 }
                 self.batch.send();
                 // 높이 안개(0063 E1): 걷는 땅 아래만 — 카메라가 보는 곳(플레이어) 둘레.
-                self.backdrop.fog(
-                    &mut self.batch,
-                    w.player.pos,
-                    sc.walk_min,
-                    sc.void_y,
-                    w.time,
-                );
+                if t[crate::tuning::P::RenderFog] >= 0.5 {
+                    self.backdrop.fog(
+                        &mut self.batch,
+                        w.player.pos,
+                        sc.walk_min,
+                        sc.void_y,
+                        w.time,
+                    );
+                }
                 // 떠다니는 것(0063 E4): 반딧불·달빛 먼지 — 카메라를 보는 작은 판.
-                self.backdrop
-                    .motes(&mut self.batch, w.player.pos, cam_right, cam_up, w.time);
+                if t[crate::tuning::P::RenderMotes] >= 0.5 {
+                    self.backdrop
+                        .motes(&mut self.batch, w.player.pos, cam_right, cam_up, w.time);
+                }
             }
             None => self.sandbox_faded(w, t),
         }

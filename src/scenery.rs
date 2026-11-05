@@ -189,7 +189,7 @@ fn empty(aabb: Option<Aabb>) -> Piece {
 }
 
 impl Scenery {
-    pub fn bake(lv: &Level, lib: &mut Library) -> Scenery {
+    pub fn bake(lv: &Level, lib: &mut Library, flora: bool) -> Scenery {
         let lights = lv.lights.clone();
         let mut pieces = Vec::new();
         let gnd = lv.ground();
@@ -532,7 +532,7 @@ impl Scenery {
                 }
                 // 벽을 타는 뿌리(0063 E3): 걸을 수 있는 쪽 면에 몇 줄기 — 벽과 같은 덩어리라 같이 옅어진다.
                 for (i, (nx, nz)) in neighbors(x, z).enumerate() {
-                    if !lv.walkable(nx, nz) || hash(x, z, 40 + i as u32) > ROOT_SHARE {
+                    if !flora || !lv.walkable(nx, nz) || hash(x, z, 40 + i as u32) > ROOT_SHARE {
                         continue;
                     }
                     let out = (lv.at(nx, nz) - c).normalize_or_zero();
@@ -596,7 +596,8 @@ impl Scenery {
                         c.z + (hash(x, z, 33) - 0.5) * CELL * 0.5,
                     );
                     let seed = (x * 977 + z * 131) as u32;
-                    if hash(x, z, 30) < TREE_SHARE {
+                    if !flora {
+                    } else if hash(x, z, 30) < TREE_SHARE {
                         let b = crate::flora::tree(&mut p, on, seed, &lights);
                         if let Some(a) = p.aabb.as_mut() {
                             a.min = a.min.min(b.min);
