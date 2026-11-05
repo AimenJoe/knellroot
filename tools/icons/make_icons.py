@@ -277,7 +277,23 @@ def main():
     prev.alpha_composite(full.resize((192, 192), Image.LANCZOS), (192 + 24, 0))
     os.makedirs(os.path.join(ROOT, 'docs', 'art'), exist_ok=True)
     prev.save(os.path.join(ROOT, 'docs', 'art', 'app-icon.png'))
+    web_icons(src)
     print('icons written')
+
+
+def web_icons(src):
+    """웹 PWA(0062): web/icons/ — 매니페스트 192·512(둥근 네모, 바탕 투명 둘레), 마스커블 512(바탕 꽉 + 그림은 가운데 안전 원 60%),
+    iPhone apple-touch-icon 180(투명 없이 꽉 — iOS가 둥글게 깎는다), 로딩 화면의 종 그림 128(그림만, 4배 픽셀 그대로)."""
+    d = os.path.join(ROOT, 'web', 'icons')
+    os.makedirs(d, exist_ok=True)
+    legacy(src, 192).save(os.path.join(d, 'icon-192.png'))
+    legacy(src, 512).save(os.path.join(d, 'icon-512.png'))
+    for size, k, name in ((512, 0.60, 'maskable-512.png'), (180, 0.80, 'apple-touch-icon.png')):
+        full = background(size)
+        n = int(size * k) // 32 * 32 or int(size * k)
+        full.alpha_composite(src.resize((n, n), Image.NEAREST), ((size - n) // 2, (size - n) // 2))
+        full.convert('RGB').save(os.path.join(d, name))
+    src.resize((128, 128), Image.NEAREST).save(os.path.join(d, 'bell-128.png'))
 
 
 if __name__ == '__main__':

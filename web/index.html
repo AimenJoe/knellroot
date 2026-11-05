@@ -4,13 +4,87 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Knellroot</title>
+  <!-- PWA(0062, KB reference/web/pwa-install-fullscreen-orientation.md): 홈 화면에 깔면 주소창 없이 가로 전체 화면. -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#12121f">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Knellroot">
   <style>
     html, body, canvas { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; position: absolute; background: black; z-index: 0;
       touch-action: none; overscroll-behavior: none; user-select: none; }
+    /* 로딩 화면(0062): 글 없이 — 앱 아이콘의 호박색 종이 흔들리고 아래 막대가 찬다. 바탕은 게임의 지우는 색(0.07, 0.07, 0.12). */
+    #knell-load { position: fixed; inset: 0; z-index: 10; background: #12121f; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 28px; transition: opacity 0.35s ease-out; }
+    #knell-load.done { opacity: 0; pointer-events: none; }
+    #knell-load img { width: 96px; height: 96px; image-rendering: pixelated; transform-origin: 50% 12%;
+      animation: knell-swing 1.6s ease-in-out infinite; }
+    #knell-load .bar { width: 160px; height: 6px; background: #2a2a3d; }
+    #knell-load .bar i { display: block; height: 100%; width: 0; background: #f0a640; transition: width 0.2s linear; }
+    #knell-load.fail .bar i { background: #b04848; }
+    #knell-load.fail img { animation: none; filter: grayscale(1); }
+    @keyframes knell-swing { 0%, 100% { transform: rotate(-9deg); } 50% { transform: rotate(9deg); } }
+    @media (prefers-reduced-motion: reduce) { #knell-load img { animation: none; } }
   </style>
 </head>
 <body>
   <canvas id="glcanvas" tabindex="1"></canvas>
+  <div id="knell-load" role="progressbar" aria-label="Knellroot" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+    <img src="icons/bell-128.png" alt=""><div class="bar"><i></i></div>
+  </div>
+  <script>
+    // 로딩 진행(0062): 오래 걸리는 것은 knellroot.wasm 하나(모델·글꼴·소리는 바이너리 안) — 그 바이트로 막대를 0~90%까지,
+    // 나머지는 컴파일·첫 프레임. Content-Length가 없거나(압축) 틀려도 막대가 거꾸로 가지 않게 max(길이, 받은 양 × 1.05), 95%에서 멈춘다.
+    // 번들의 load()가 fetch를 쓰므로 fetch를 감싼다 — 번들은 고치지 않는다. 다 그린 뒤 knell_loaded(src/main.rs)가 걷는다.
+    (function () {
+      var root = document.getElementById("knell-load"), fill = root.querySelector(".bar i"), shown = 0;
+      function show(p) {
+        p = Math.max(shown, Math.min(p, 0.95)); shown = p;
+        fill.style.width = (p * 100).toFixed(1) + "%"; root.setAttribute("aria-valuenow", Math.round(p * 100));
+      }
+      window.knellLoad = {
+        show: show,
+        done: function () {
+          fill.style.width = "100%"; root.classList.add("done");
+          setTimeout(function () { root.remove(); }, 400);
+        },
+        fail: function () { root.classList.add("fail"); }
+      };
+      var realFetch = window.fetch.bind(window);
+      window.fetch = function (input, init) {
+        var url = typeof input === "string" ? input : (input && input.url) || "";
+        var p = realFetch(input, init);
+        if (!/\.wasm(\?|$)/.test(url)) return p;
+        return p.then(function (res) {
+          if (!res.ok || !res.body || !window.ReadableStream) { show(0.6); return res; }
+          var total = parseInt(res.headers.get("Content-Length") || "0", 10) || 0, got = 0, reader = res.body.getReader();
+          var body = new ReadableStream({
+            pull: function (ctl) {
+              return reader.read().then(function (r) {
+                if (r.done) { show(0.9); ctl.close(); return; }
+                got += r.value.byteLength; ctl.enqueue(r.value);
+                show(0.9 * got / Math.max(total, got * 1.05));
+              });
+            },
+            cancel: function (why) { return reader.cancel(why); }
+          });
+          var h = new Headers(res.headers); h.delete("Content-Length");
+          return new Response(body, { status: res.status, statusText: res.statusText, headers: h });
+        }, function (e) { window.knellLoad.fail(); throw e; });
+      };
+      // 번들은 wasm 컴파일·시작 실패를 console.error(Error)로만 알린다 — 걷기 전에 그게 오면 막대를 붉게(멈춘 줄 알지 않게).
+      var live = true, realError = console.error;
+      console.error = function (e) { if (live && e instanceof Error) window.knellLoad.fail(); return realError.apply(console, arguments); };
+      var done = window.knellLoad.done;
+      window.knellLoad.done = function () { live = false; done(); };
+      // 첫 프레임 전의 패닉(requestAnimationFrame 안)은 잡히지 않은 오류로 온다 — 번들을 읽은 뒤에 듣는다(번들 자신의 알려진 잡음,
+      // quad_net의 register_plugin ReferenceError는 읽는 그때 나서 세지 않는다).
+      window.knellLoad.watch = function () { window.addEventListener("error", function () { if (live) window.knellLoad.fail(); }); };
+    })();
+  </script>
   <!-- 레포 복사본(핫링크 금지, nail web/README.md). macroquad 0.4.16과 같은 줄기. -->
   <script src="mq_js_bundle.js"></script>
   <!-- gamepads 크레이트 플러그인(nail에서 두 곳 고친 복사본: 버전 정수, 비표준 매핑 허용). -->
@@ -68,7 +142,21 @@
         };
       }
     });
+    miniquad_add_plugin({
+      name: "knell_loading",
+      version: 1,
+      register_plugin: function (importObject) {
+        importObject.env.knell_loaded = function () { window.knellLoad.done(); };
+      }
+    });
+    window.knellLoad.watch();
     load("knellroot.wasm");
+    // 서비스 워커(0062, web/sw.js): 두 번째 실행부터 오프라인으로도. https·localhost에서만, PR 미리 보기(pr-N--)에는 깔지 않는다
+    // (같은 출처의 다른 판과 캐시가 섞이지 않게). 새 판은 다음 실행부터 — 실행 중에 바꾸지 않는다.
+    if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost") &&
+        !/^pr-\d+--/.test(location.hostname)) {
+      window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
+    }
   </script>
 </body>
 </html>

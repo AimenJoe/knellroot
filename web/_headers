@@ -1,9 +1,15 @@
-# Netlify 헤더. 페이지·build.txt는 늘 새로 확인(파일 이름에 해시가 없어 immutable 캐시는 금지 — KB reference/netlify/deploy-from-ci.md).
+# Netlify 헤더. 페이지·build.txt·서비스 워커·매니페스트는 늘 새로 확인(파일 이름에 해시가 없어 immutable 캐시는 금지 — KB reference/netlify/deploy-from-ci.md,
+# 서비스 워커를 오래 두면 새 판이 안 깔린다 — 0062).
 /index.html
   Cache-Control: no-cache
 /
   Cache-Control: no-cache
 /build.txt
   Cache-Control: no-cache
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache
+  Content-Type: application/manifest+json
 /*.wasm
   Content-Type: application/wasm

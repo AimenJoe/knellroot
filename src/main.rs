@@ -57,8 +57,24 @@ fn window_conf() -> macroquad::conf::Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     let mut app = app::App::new();
+    app.frame();
+    next_frame().await;
+    // 첫 프레임이 그려졌다 — 웹 로딩 화면을 걷는다(0062, web/index.html `knell_loading`).
+    loaded();
     loop {
         app.frame();
         next_frame().await;
+    }
+}
+
+/// 웹: 로딩 화면(종·막대)을 걷어 달라고 페이지에 알린다. 다른 플랫폼은 할 일 없음.
+fn loaded() {
+    #[cfg(target_arch = "wasm32")]
+    {
+        extern "C" {
+            fn knell_loaded();
+        }
+        // SAFETY: 인자·반환 없는 JS 함수(web/index.html의 knell_loading 플러그인).
+        unsafe { knell_loaded() };
     }
 }
