@@ -304,6 +304,21 @@ impl Ui {
         top: f32,
         bottom: f32,
     ) -> MenuHits {
+        self.menu_dimmed(items, &[], cursor, view, cx, top, bottom)
+    }
+
+    /// `menu`와 같고, `dim[i]`가 참인 줄은 흐리게(지금 고를 수 없는 것 — 가게에서 잔불이 모자란 물건, nail 가게와 같은 규칙).
+    #[allow(clippy::too_many_arguments)]
+    pub fn menu_dimmed(
+        &self,
+        items: &[String],
+        dim: &[bool],
+        cursor: usize,
+        view: &mut ListView,
+        cx: f32,
+        top: f32,
+        bottom: f32,
+    ) -> MenuHits {
         let px = self.px(1.0);
         let n = items.len();
         let avail = (bottom - top).max(px);
@@ -335,7 +350,14 @@ impl Ui {
                 );
                 self.text("◆", cx - w * 0.5 - pad * 3.4, yy, 1.0, AMBER);
             }
-            self.text_center(it, cx, yy, 1.0, if sel { AMBER } else { INK });
+            let off = dim.get(i).copied().unwrap_or(false);
+            let col = match (sel, off) {
+                (true, false) => AMBER,
+                (true, true) => Color::new(AMBER.r, AMBER.g, AMBER.b, 0.5),
+                (false, false) => INK,
+                (false, true) => Color::new(INK.r, INK.g, INK.b, 0.4),
+            };
+            self.text_center(it, cx, yy, 1.0, col);
             rows[i] = Rect::new(cx - w * 0.5 - px * 1.5, yy - gap * 0.25, w + px * 3.0, gap);
         }
         let arrows = self.scroll_arrows(

@@ -2,7 +2,7 @@
 //   1) 기록이 없으면 타이틀 = 시작·설정(새로 하기 없음), 2) 기록을 심어 두면 = 이어하기·설정·새로 하기,
 //   3) 이어하기 → 기록의 쉼터(문 앞)에서 선다(스크린숏), 4) 멈춤 → 처음부터 → 기록에서 판 안의 자리가 지워지고 남는 것은 그대로,
 //   3a) 쉼터에서 쉬면 화로 가게 — 잔불로 장신구를 사면 기록에(0064 M4).
-//   5) 새로 하기(타이틀 맨 끝 — 이 시험은 DEV 줄이 있는 개발판)는 한 번 더 눌러야 기록을 지운다. 그 사이 장비 창에서 장신구를 끼면 기록에 남는지(0064 M3).
+//   5) 새로 하기(타이틀 맨 끝 — 이 시험은 DEV 줄이 있는 개발판)는 묻는 창(커서는 취소, KB)에서 "기록 지우기"를 골라야 지운다. 처음부터·타이틀로·사기도 묻는다. 그 사이 장비 창에서 장신구를 끼면 기록에 남는지(0064 M3).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/save.js dist shots
 const { chromium } = require('playwright');
 const http = require('http');
@@ -63,6 +63,9 @@ async function main() {
   // 3a) 쉼터 화로(0064 M4): 곁에서 점프 버튼(F) = 쉬기 → 가게 → 첫 줄(잔불 주머니 25) 사기 → 떠나기.
   await press('KeyF'); await page.waitForTimeout(600);
   await shot('save-2a-shop');
+  // 사기 전에 묻는 창(nail 가게 — 커서는 "사기"에서).
+  await press('Enter'); await page.waitForTimeout(300);
+  await shot('save-2a-shop-ask');
   await press('Enter'); await page.waitForTimeout(400);
   await shot('save-2a-shop-bought');
   r = await record();
@@ -86,6 +89,10 @@ async function main() {
   await page.waitForTimeout(200);
   await press('ArrowDown', 3);
   await press('Enter');
+  await page.waitForTimeout(300);
+  // 처음부터는 묻는 창(커서는 "취소" — 그냥 확인하면 아무 일 없다), 위로 한 번 = "처음부터".
+  await shot('save-3a-restart-ask');
+  await press('ArrowUp'); await press('Enter');
   await page.waitForTimeout(800);
   r = await record();
   console.log('처음부터 뒤 기록:', JSON.stringify(r));
@@ -98,14 +105,21 @@ async function main() {
   await page.waitForTimeout(200);
   await press('ArrowDown', 4);
   await press('Enter');
+  await page.waitForTimeout(300);
+  await press('ArrowUp'); await press('Enter');
   await page.waitForTimeout(600);
   // 타이틀: 이어하기·설정·DEV(개발판)·새로 하기(맨 끝).
   await press('ArrowDown', 3);
   await press('Enter');
   await page.waitForTimeout(300);
-  await shot('save-3-new-game-armed');
-  if ((await record()) === null) fail('one press must not erase');
-  await press('Enter');
+  await shot('save-3-new-game-ask');
+  if ((await record()) === null) fail('opening the question must not erase');
+  // 커서는 "취소"에서 — 그대로 확인하면 지우지 않고 타이틀로.
+  await press('Enter'); await page.waitForTimeout(400);
+  if ((await record()) === null) fail('cancel must not erase');
+  // 다시: 새로 하기(맨 끝) → 위로 한 번 = "기록 지우기".
+  await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowUp'); await press('Enter');
   await page.waitForTimeout(800);
   r = await record();
   console.log('새로 하기 뒤 기록:', JSON.stringify(r));

@@ -214,7 +214,7 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
             format!("{key}  {verb}")
         };
         ui.text_center(&text, f.ox + f.w * 0.5, f.oy + f.h * 0.78, 1.0, AMBER);
-    } else if run.near_rest.is_some() {
+    } else if run.near_rest.is_some() && !under_menu {
         let y = f.oy + f.h * 0.78;
         let cx = f.ox + f.w * 0.5;
         if run.rest_safe {

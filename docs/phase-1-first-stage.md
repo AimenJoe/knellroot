@@ -74,6 +74,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 장신구(0064 M3) | `stats.rs`·`charms.rs`, `World::stats`·`apply_stats`, `Player::max_hp`·`flask_max`, `StageRun` 상자(`C`)·`take_opened`, `app/mod.rs` 장비 창·`gain_charm`·알림 | 세 칸, 여섯 가운데 상자 둘·문지기 하나에서 얻음, 멈춤 → 장비에서 갈아 끼움, 능력치는 한 곳에서 합침 |
 | 성장(0064 M4) | `growth.rs`, `Scene::Core`·`Scene::Shop`, `StageRun::take_rested`·`shop_ready`, `app/mod.rs` `buy`·`draw_core`·`draw_shop` | 문지기를 이기면 핵 고르기(체력·등잔·회복), 쉬면 화로 가게(장신구 셋·등잔 기름), 살 것이 있으면 쉼터가 빛남 |
 | 소리(0064 M5) | `sfx.rs`, `app/mod.rs` `world_sounds`·`set_sfx`·메뉴 소리, `prefs.rs` 칸 25, `assets/sfx/` | 효과음 16(CC0)·합성 8(패링·예고 넷·깨어남·쉼터·등잔)·성소 환경음, 설정 소리 크기 |
+| 묻는 창·UI 맞추기(0065) | `Scene::Ask`·`flow::answer`·`ask_default`, `ui.menu_dimmed`, `Sfx::played` | 새로 하기·처음부터·타이틀로·사기는 한 번 묻는다(취소에서), 가게는 못 사는 것 흐리게·HUD 없음, 메뉴 소리 겹치지 않게, 저장 실패 알림 |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일

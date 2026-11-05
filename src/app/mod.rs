@@ -78,8 +78,8 @@ pub struct App {
     /// 기록(0064 M2): 지금 것과 마지막으로 쓴 것(바뀌었을 때만 쓴다).
     progress: crate::save::Progress,
     saved: crate::save::Progress,
-    /// 타이틀 "새로 하기"를 한 번 눌렀다(한 번 더 = 기록 지우기). 커서가 움직이면 풀린다.
-    new_armed: bool,
+    /// 저장에 실패한 채인가(실패가 시작될 때 한 번만 알린다 — KB `roguelite-save-slots-and-continue`).
+    save_failed: bool,
     /// 잠깐 뜨는 알림(0064 M3 — 상자에서 얻은 것 등)과 남은 초.
     toast: Option<(String, f32)>,
 }
@@ -178,7 +178,7 @@ impl App {
             goal_off: 0.0,
             progress: progress.clone(),
             saved: progress,
-            new_armed: false,
+            save_failed: false,
             toast: None,
         }
     }
@@ -316,6 +316,12 @@ impl App {
         self.toast = Some((fill(s().toast_charm, &[name]), TOAST_TIME));
     }
 
+    /// 묻는 창을 연다(커서는 버리는 일이면 취소에서).
+    fn ask(&mut self, k: flow::Ask) {
+        self.go(Scene::Ask(k));
+        self.cursor = flow::ask_default(k);
+    }
+
     /// 화로 가게에서 산다(0064 M4): 잔불이 모자라면 알림만.
     fn buy(&mut self, (ware, price): (crate::growth::Ware, u32)) {
         let s = s();
@@ -350,9 +356,13 @@ impl App {
     /// 바뀐 것이 있으면 쓴다. 못 쓰면(사생활 보호 모드 등) 다음에 또 바뀔 때까지 다시 시도하지 않는다.
     fn persist(&mut self) {
         if self.progress != self.saved {
-            if !crate::save::save(&self.progress) {
+            let ok = crate::save::save(&self.progress);
+            // 실패가 시작될 때 한 번만 알린다(저장할 때마다 알리면 화면을 덮는다).
+            if !ok && !self.save_failed {
                 warn!("save failed");
+                self.toast = Some((s().save_failed.to_string(), TOAST_TIME));
             }
+            self.save_failed = !ok;
             self.saved = self.progress.clone();
         }
     }
@@ -482,9 +492,12 @@ impl App {
 
     fn tick(&mut self, a: Actions) {
         let (scene0, cursor0, back0) = (self.scene, self.cursor, a.back || a.pause);
+        let played0 = self.sfx.as_ref().map_or(0, |s| s.played());
         self.tick_scene(a);
-        // 메뉴 소리(0064 M5): 메뉴 장면에서 커서가 움직이면 딸깍, 장면이 바뀌면 확인·뒤로.
-        if scene0.is_menu() {
+        // 메뉴 소리(0064 M5, KB `game-audio-without-a-composer` "메뉴 소리는 한 곳에서"): 그 사이에 다른 소리(사기·안 됨 등)가
+        // 나지 않았을 때만 — 뒤로 > 확인(장면이 바뀜) > 커서.
+        let quiet = self.sfx.as_ref().map_or(0, |s| s.played()) == played0;
+        if scene0.is_menu() && quiet {
             if self.scene != scene0 {
                 self.snd(if back0 {
                     crate::sfx::Id::UiBack
@@ -511,28 +524,14 @@ impl App {
         match self.scene {
             Scene::Title => {
                 let items = flow::title_items(self.progress.has_any());
-                let was = self.cursor;
-                let pick = self.menu_pick(&a, items.len());
-                if self.cursor != was {
-                    self.new_armed = false;
-                }
-                if let Some(i) = pick {
+                if let Some(i) = self.menu_pick(&a, items.len()) {
                     match items[i] {
                         TitleItem::Start => {
                             crate::screen::touch_enter();
                             self.continue_run();
                             self.go(Scene::Play);
                         }
-                        TitleItem::NewGame if !self.new_armed => self.new_armed = true,
-                        TitleItem::NewGame => {
-                            self.new_armed = false;
-                            crate::save::wipe();
-                            self.progress = crate::save::Progress::default();
-                            self.saved = self.progress.clone();
-                            crate::screen::touch_enter();
-                            self.restart();
-                            self.go(Scene::Play);
-                        }
+                        TitleItem::NewGame => self.ask(flow::Ask::NewGame),
                         TitleItem::Settings => self.go(Scene::Settings { from_pause: false }),
                         #[cfg(feature = "dev")]
                         TitleItem::Dev => self.go(Scene::Dev),
@@ -650,7 +649,10 @@ impl App {
                     if rebuild {
                         self.restart();
                     }
-                    self.go(next);
+                    match next {
+                        Scene::Ask(k) => self.ask(k),
+                        _ => self.go(next),
+                    }
                 }
             }
             Scene::Core => {
@@ -672,11 +674,53 @@ impl App {
                 }
                 if let Some(i) = self.menu_pick(&a, wares.len() + 1) {
                     match wares.get(i).copied() {
-                        Some(w) => self.buy(w),
+                        // 모자라면 묻지 않고 알림만(nail 가게와 같다 — 흐린 줄).
+                        Some((_, price)) if self.world.embers < price => {
+                            self.toast = Some((s().shop_poor.to_string(), 1.6));
+                            self.snd(crate::sfx::Id::Deny);
+                        }
+                        Some(_) => self.ask(flow::Ask::Buy(i)),
                         None => self.go(flow::back(self.scene)),
                     }
                 }
                 self.follow_camera();
+            }
+            Scene::Ask(k) => {
+                if a.back || a.pause {
+                    self.go(flow::back(self.scene));
+                    return;
+                }
+                if let Some(i) = self.menu_pick(&a, 2) {
+                    let yes = i == 0;
+                    let (next, rebuild) = flow::answer(k, yes);
+                    if yes {
+                        match k {
+                            flow::Ask::NewGame => {
+                                crate::save::wipe();
+                                self.progress = crate::save::Progress::default();
+                                self.saved = self.progress.clone();
+                                crate::screen::touch_enter();
+                            }
+                            flow::Ask::Buy(w) => {
+                                let wares = crate::growth::wares(
+                                    &self.progress.owned,
+                                    &self.progress.growth,
+                                );
+                                if let Some(&w) = wares.get(w) {
+                                    self.buy(w);
+                                }
+                            }
+                            flow::Ask::Restart | flow::Ask::ToTitle => {}
+                        }
+                    }
+                    if rebuild {
+                        self.restart();
+                    }
+                    self.go(next);
+                }
+                if matches!(k, flow::Ask::Buy(_) | flow::Ask::NewGame) {
+                    self.follow_camera();
+                }
             }
             Scene::Equip => {
                 let rows = equip_rows();
@@ -949,10 +993,9 @@ impl App {
                 self.draw_equip(&f);
             }
             Scene::Core => self.draw_core(&f),
-            Scene::Shop => {
-                hud::draw(&self.ui, &f, &self.world, Some(&self.run), true);
-                self.draw_shop(&f);
-            }
+            // 가게 창이 잔불을 보여 주니 밑의 HUD는 그리지 않는다(KB `hud-readability-and-quick-slots`).
+            Scene::Shop => self.draw_shop(&f),
+            Scene::Ask(k) => self.draw_ask(&f, k),
             Scene::Result { won } => self.draw_result(&f, won),
             Scene::Controls { .. } => self.draw_controls(&f),
             Scene::Settings { from_pause } => {
@@ -966,7 +1009,10 @@ impl App {
             #[cfg(feature = "dev")]
             Scene::Sandbox => hud::draw(&self.ui, &f, &self.world, None, false),
         }
-        if matches!(self.scene, Scene::Play | Scene::Ending { .. } | Scene::Shop) {
+        if matches!(
+            self.scene,
+            Scene::Play | Scene::Ending { .. } | Scene::Shop | Scene::Title
+        ) {
             self.draw_toast(&f);
         }
         if self.scene == Scene::Play {
@@ -1102,7 +1148,6 @@ impl App {
             .map(|i| match i {
                 TitleItem::Start if has => s.menu_continue.to_string(),
                 TitleItem::Start => s.menu_start.to_string(),
-                TitleItem::NewGame if self.new_armed => s.menu_new_confirm.to_string(),
                 TitleItem::NewGame => s.menu_new_game.to_string(),
                 TitleItem::Settings => s.menu_settings.to_string(),
                 // 개발 전용(영어 그대로, 0013).
@@ -1276,8 +1321,11 @@ impl App {
             .collect();
         items.push(s.shop_leave.to_string());
         let bottom = self.menu_bottom(f) - self.ui.px(1.0) * 2.4;
-        self.menu_hits = self.ui.menu(
+        let have = self.world.embers;
+        let dim: Vec<bool> = wares.iter().map(|&(_, price)| have < price).collect();
+        self.menu_hits = self.ui.menu_dimmed(
             &items,
+            &dim,
             self.cursor,
             &mut self.view,
             cx,
@@ -1300,6 +1348,46 @@ impl App {
                 f.w * 0.9,
             );
         }
+        self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
+    }
+
+    /// 묻는 창: 무엇을 잃는지 한 줄 + 줄 둘(하는 일 이름 / 취소). 뒤에 온 곳을 흐리게 깐다.
+    fn draw_ask(&mut self, f: &Frame, k: flow::Ask) {
+        let s = s();
+        // 멈춤에서 왔으면 HUD를 깔고 흐리게. 가게 목록은 깔지 않는다(글이 겹쳐 읽기 어려웠다 — knellroot에는 nail의 창 틀이 없다).
+        if flow::back(Scene::Ask(k)) == Scene::Pause {
+            hud::draw(&self.ui, f, &self.world, Some(&self.run), true);
+        }
+        self.ui.dim(0.7);
+        let cx = f.ox + f.w * 0.5;
+        let (q, yes) = match k {
+            flow::Ask::NewGame => (s.ask_new_game.to_string(), s.ask_new_game_yes),
+            flow::Ask::Restart => (s.ask_restart.to_string(), s.menu_restart),
+            flow::Ask::ToTitle => (s.ask_to_title.to_string(), s.menu_to_title),
+            flow::Ask::Buy(i) => {
+                let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
+                let (name, price) = match wares.get(i) {
+                    Some((crate::growth::Ware::Charm(id), p)) => {
+                        (tr(crate::charms::def(*id).name), *p)
+                    }
+                    Some((crate::growth::Ware::Oil, p)) => (s.shop_oil, *p),
+                    None => ("", 0),
+                };
+                (fill(s.ask_buy, &[name, &price.to_string()]), s.ask_buy_yes)
+            }
+        };
+        self.ui
+            .text_center_wrapped(&q, cx, f.oy + f.h * 0.3, 1.0, INK, f.w * 0.8);
+        let items = vec![yes.to_string(), s.ask_cancel.to_string()];
+        let bottom = self.menu_bottom(f);
+        self.menu_hits = self.ui.menu(
+            &items,
+            self.cursor,
+            &mut self.view,
+            cx,
+            f.oy + f.h * 0.48,
+            bottom,
+        );
         self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
     }
 

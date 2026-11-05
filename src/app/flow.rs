@@ -24,6 +24,9 @@ pub enum Scene {
     Core,
     /// 쉼터 화로(0064 M4): 쉬면 열린다 — 잔불로 장신구·등잔 기름을 산다. 뒤로 = 싸움.
     Shop,
+    /// 묻는 창(KB `controller-layout-and-remapping` "되돌릴 수 없는 메뉴 항목은 한 번 묻는다", nail 0274·가게 묻는 창):
+    /// 줄 둘(하는 일 이름 / 취소) + 무엇을 잃는지 한 줄. 뒤로 = 취소(온 곳).
+    Ask(Ask),
     /// 설정(0052, nail 0269의 틀): 언어·전체 화면·화면 흔들림·조작. `from_pause`면 뒤로 = 멈춤, 아니면 타이틀.
     Settings {
         from_pause: bool,
@@ -46,6 +49,7 @@ impl Scene {
                 | Scene::Equip
                 | Scene::Core
                 | Scene::Shop
+                | Scene::Ask(_)
                 | Scene::Result { .. }
                 | Scene::Controls { .. }
                 | Scene::Settings { .. }
@@ -69,6 +73,40 @@ impl Scene {
             Scene::Sandbox => true,
             _ => false,
         }
+    }
+}
+
+/// 묻는 일.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Ask {
+    /// 타이틀 "새로 하기": 기록을 지운다.
+    NewGame,
+    /// 멈춤 "처음부터": 쉼터 자리를 버린다.
+    Restart,
+    /// 멈춤 "타이틀로": 마지막 쉼 뒤의 진행을 버린다.
+    ToTitle,
+    /// 화로 가게: 이 물건(살 수 있는 것 목록의 자리)을 산다.
+    Buy(usize),
+}
+
+/// 묻는 창의 커서 처음 자리: 버리는 일은 "취소"(1)에서 — 연타가 실행되지 않게(KB). 사기는 nail 가게처럼 "사기"(0)에서.
+pub fn ask_default(k: Ask) -> usize {
+    match k {
+        Ask::Buy(_) => 0,
+        _ => 1,
+    }
+}
+
+/// 묻는 창의 답 → (다음 장면, 판을 다시 세우나). 취소 = 온 곳.
+pub fn answer(k: Ask, yes: bool) -> (Scene, bool) {
+    if !yes {
+        return (back(Scene::Ask(k)), false);
+    }
+    match k {
+        Ask::NewGame => (Scene::Play, true),
+        Ask::Restart => (Scene::Play, true),
+        Ask::ToTitle => (Scene::Title, true),
+        Ask::Buy(_) => (Scene::Shop, false),
     }
 }
 
@@ -187,6 +225,9 @@ pub fn back(scene: Scene) -> Scene {
         Scene::Pause => Scene::Play,
         Scene::Equip => Scene::Pause,
         Scene::Shop => Scene::Play,
+        Scene::Ask(Ask::NewGame) => Scene::Title,
+        Scene::Ask(Ask::Restart | Ask::ToTitle) => Scene::Pause,
+        Scene::Ask(Ask::Buy(_)) => Scene::Shop,
         Scene::Controls { from_pause } => Scene::Settings { from_pause },
         Scene::Settings { from_pause: true } => Scene::Pause,
         Scene::Settings { from_pause: false } => Scene::Title,
@@ -211,8 +252,8 @@ pub fn choose_pause(item: PauseItem) -> (Scene, bool) {
         PauseItem::Resume => (Scene::Play, false),
         PauseItem::Weapon => (Scene::Equip, false),
         PauseItem::Settings => (Scene::Settings { from_pause: true }, false),
-        PauseItem::Restart => (Scene::Play, true),
-        PauseItem::ToTitle => (Scene::Title, true),
+        PauseItem::Restart => (Scene::Ask(Ask::Restart), false),
+        PauseItem::ToTitle => (Scene::Ask(Ask::ToTitle), false),
     }
 }
 
@@ -257,8 +298,33 @@ mod tests {
     #[test]
     fn menus_rebuild_the_stage_except_resume() {
         assert_eq!(choose_pause(PauseItem::Resume), (Scene::Play, false));
-        assert_eq!(choose_pause(PauseItem::Restart), (Scene::Play, true));
-        assert_eq!(choose_pause(PauseItem::ToTitle), (Scene::Title, true));
+        // 버리는 일은 한 번 묻는다(KB): 처음부터·타이틀로 → 묻는 창, 답해야 판을 다시 세운다.
+        assert_eq!(
+            choose_pause(PauseItem::Restart),
+            (Scene::Ask(Ask::Restart), false)
+        );
+        assert_eq!(
+            choose_pause(PauseItem::ToTitle),
+            (Scene::Ask(Ask::ToTitle), false)
+        );
+        assert_eq!(answer(Ask::Restart, true), (Scene::Play, true));
+        assert_eq!(answer(Ask::ToTitle, true), (Scene::Title, true));
+        assert_eq!(answer(Ask::NewGame, true), (Scene::Play, true));
+        assert_eq!(answer(Ask::Buy(2), true), (Scene::Shop, false));
+        for k in [Ask::Restart, Ask::ToTitle, Ask::NewGame, Ask::Buy(0)] {
+            assert_eq!(
+                answer(k, false),
+                (back(Scene::Ask(k)), false),
+                "cancel goes back"
+            );
+        }
+        assert_eq!(back(Scene::Ask(Ask::NewGame)), Scene::Title);
+        assert_eq!(back(Scene::Ask(Ask::ToTitle)), Scene::Pause);
+        assert_eq!(back(Scene::Ask(Ask::Buy(1))), Scene::Shop);
+        // 커서: 버리는 일은 취소에서, 사기는 사기에서.
+        assert_eq!(ask_default(Ask::NewGame), 1);
+        assert_eq!(ask_default(Ask::Restart), 1);
+        assert_eq!(ask_default(Ask::Buy(0)), 0);
         assert_eq!(choose_result(ResultItem::Retry), (Scene::Play, true));
         assert_eq!(title_items(false)[0], TitleItem::Start);
         assert_eq!(title_items(false)[1], TitleItem::Settings);

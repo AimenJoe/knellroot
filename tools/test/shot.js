@@ -53,8 +53,10 @@ async function main() {
   for (let i = 0; i < 5; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(260); }
   await shot('00d-fight');
   await press('Escape'); await page.waitForTimeout(300); await shot('00e-pause');
-  // 멈춤(0052): 계속·무기·설정·다시 시작·타이틀로. 타이틀: 시작·설정·DEV. DEV: 문 앞·무기·PoC 일곱·돌아가기.
+  // 멈춤(0052): 계속·장비·설정·처음부터·타이틀로. 타이틀: 시작·설정·DEV. DEV: 문 앞·무기·PoC 일곱·돌아가기.
+  // 타이틀로는 묻는 창(0064 — 커서가 "취소"에서 시작): 위로 한 번 = "타이틀로".
   await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
   await press('Enter'); await page.waitForTimeout(800); await shot('00f-gate');
   await page.keyboard.down('KeyW'); await page.waitForTimeout(2200); await page.keyboard.up('KeyW');
@@ -66,8 +68,9 @@ async function main() {
   await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(300);
   await shot('00i-controls');
   await press('Escape'); await page.waitForTimeout(200); await press('Escape'); await page.waitForTimeout(200);
-  // 개발 시나리오로(멈춤 → 타이틀로 → DEV → 첫 PoC).
+  // 개발 시나리오로(멈춤 → 타이틀로 → 묻는 창 → DEV → 첫 PoC).
   await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
   await shot('00j-dev');
   await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(400);  // DEV: 문 앞·무기·PoC(첫째 = 보스 아레나)·돌아가기

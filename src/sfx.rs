@@ -164,6 +164,8 @@ pub struct Sfx {
     /// 설정의 크기 0..1.
     volume: Cell<f32>,
     last: RefCell<Vec<(Id, f64, usize)>>,
+    /// 지금까지 낸 소리 수(앱의 메뉴 소리가 겹치지 않게 본다).
+    played: Cell<u32>,
 }
 
 impl Sfx {
@@ -193,6 +195,7 @@ impl Sfx {
             ambience_on: Cell::new(false),
             volume: Cell::new(0.8),
             last: RefCell::new(Vec::new()),
+            played: Cell::new(0),
         }
     }
 
@@ -205,7 +208,12 @@ impl Sfx {
         }
     }
 
+    pub fn played(&self) -> u32 {
+        self.played.get()
+    }
+
     pub fn play(&self, id: Id) {
+        self.played.set(self.played.get().wrapping_add(1));
         let vol = self.volume.get();
         if vol <= 0.0 {
             return;

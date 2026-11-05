@@ -76,6 +76,16 @@ pub struct Strings {
     pub game_title: &'static str,
     pub title_subtitle: &'static str,
     pub menu_start: &'static str,
+    /// 묻는 창(KB — 하는 일 이름 / 취소, 무엇을 잃는지 한 줄)·저장 실패 알림.
+    pub ask_new_game: &'static str,
+    pub ask_new_game_yes: &'static str,
+    pub ask_restart: &'static str,
+    pub ask_to_title: &'static str,
+    pub ask_buy: &'static str,
+    pub ask_buy_yes: &'static str,
+    pub ask_cancel: &'static str,
+    pub save_failed: &'static str,
+
     /// 성장(0064 M4): 핵 고르기·쉼터 화로 가게.
     pub core_title: &'static str,
     pub core_sub: &'static str,
@@ -106,7 +116,6 @@ pub struct Strings {
     /// 기록이 있을 때의 시작(0064 M2)·새로 하기·그 확인.
     pub menu_continue: &'static str,
     pub menu_new_game: &'static str,
-    pub menu_new_confirm: &'static str,
     /// "언어: {0}"
     pub menu_language: &'static str,
     pub menu_resume: &'static str,
@@ -213,6 +222,14 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.game_title,
         s.title_subtitle,
         s.menu_start,
+        s.ask_new_game,
+        s.ask_new_game_yes,
+        s.ask_restart,
+        s.ask_to_title,
+        s.ask_buy,
+        s.ask_buy_yes,
+        s.ask_cancel,
+        s.save_failed,
         s.core_title,
         s.core_sub,
         s.grow_hp,
@@ -238,7 +255,6 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.chest_verb,
         s.menu_continue,
         s.menu_new_game,
-        s.menu_new_confirm,
         s.menu_language,
         s.menu_resume,
         s.menu_restart,
