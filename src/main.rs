@@ -29,6 +29,7 @@ mod scenario;
 mod scenery;
 mod screen;
 mod secondary;
+mod sfx;
 mod shade;
 mod species;
 mod stage;
@@ -64,6 +65,8 @@ fn window_conf() -> macroquad::conf::Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     let mut app = app::App::new();
+    // 소리(0064 M5): 파일은 바이너리 안, 합성은 여기서 — 첫 프레임 전에 올린다(웹은 브라우저가 뒤에서 푼다).
+    app.set_sfx(sfx::Sfx::load().await);
     app.frame();
     next_frame().await;
     // 첫 프레임이 그려졌다 — 웹 로딩 화면을 걷는다(0062, web/index.html `knell_loading`).

@@ -141,6 +141,8 @@ pub struct Strings {
     pub menu_settings: &'static str,
     pub settings_title: &'static str,
     pub menu_shake: &'static str,
+    /// 소리 크기(0064 M5).
+    pub menu_volume: &'static str,
     /// 멈춤의 무기 줄(0051, "{0}" = 무기 이름)과 무기 이름.
     pub menu_weapon: &'static str,
     pub weapon_sword: &'static str,
@@ -263,6 +265,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.menu_settings,
         s.settings_title,
         s.menu_shake,
+        s.menu_volume,
         s.menu_weapon,
         s.weapon_sword,
         s.weapon_hammer,

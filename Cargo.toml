@@ -12,7 +12,7 @@ default = ["dev"]
 dev = []
 
 [dependencies]
-macroquad = { version = "0.4.16" }
+macroquad = { version = "0.4.16", features = ["audio"] }
 # P4 스파이크(0013): glTF 읽기. 기본 기능(import = 파일·image 크레이트)은 끄고 JSON + 접근자만 — data URI는 base64로 직접 푼다.
 gltf = { version = "1.4.1", default-features = false, features = ["utils", "names"] }
 base64 = "0.22"

@@ -12,7 +12,10 @@ const MAGIC: u32 = 0x4B4E_0002;
 const MAGIC_V1: u32 = 0x4B4E_0001;
 /// 20 화면 흔들림(0..=10, +1로 — 0 = 저장 전 = 10), 21 든 무기(무기 표 자리 +1) — 0052·0051, 뒤에 붙인 칸이라 MAGIC 그대로.
 /// 22 마우스 조준(1 끔·2 켬, 0 = 저장 전 = 켬), 23 커서 쉼(`REST_SECS` 자리 +1), 24 조준 표시 크기(+1) — 0058, 뒤에 붙인 칸이라 MAGIC 그대로.
-const CELLS: usize = 25;
+/// 25 소리 크기(0..=10, +1로 — 0 = 저장 전 = `VOLUME_DEFAULT`) — 0064 M5, 뒤에 붙인 칸이라 MAGIC 그대로.
+const CELLS: usize = 26;
+/// 소리 크기 기본값(8 = 80%).
+pub const VOLUME_DEFAULT: u8 = 8;
 /// 화면 흔들림 기본값(10 = 100%).
 pub const SHAKE_DEFAULT: u8 = 10;
 
@@ -26,6 +29,8 @@ pub struct Prefs {
     pub weapon: u8,
     /// 마우스 조준(0058).
     pub mouse: MouseAim,
+    /// 소리 크기 0..=10(0064 M5).
+    pub volume: u8,
 }
 
 fn lang_code(l: Lang) -> u32 {
@@ -53,6 +58,7 @@ fn encode(p: &Prefs) -> [u32; CELLS] {
     v[22] = p.mouse.on as u32 + 1;
     v[23] = p.mouse.rest as u32 + 1;
     v[24] = p.mouse.size as u32 + 1;
+    v[25] = p.volume.min(10) as u32 + 1;
     v
 }
 
@@ -90,6 +96,7 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
             shake: SHAKE_DEFAULT,
             weapon: 0,
             mouse: MouseAim::default(),
+            volume: VOLUME_DEFAULT,
         });
     }
     if v[0] != MAGIC {
@@ -101,6 +108,10 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
         shake: shake_from(v[20]),
         weapon: v[21].saturating_sub(1).min(255) as u8,
         mouse: mouse_from(v[22], v[23], v[24]),
+        volume: match v[25] {
+            0 => VOLUME_DEFAULT,
+            c => (c - 1).min(10) as u8,
+        },
     })
 }
 
@@ -236,6 +247,7 @@ mod tests {
                 rest: 3,
                 size: 0,
             },
+            volume: 3,
         };
         assert_eq!(decode(&encode(&p)), Some(p));
         assert_eq!(decode(&[0; CELLS]), None, "nothing saved yet");
@@ -256,6 +268,7 @@ mod tests {
             shake: SHAKE_DEFAULT,
             weapon: 0,
             mouse: MouseAim::default(),
+            volume: VOLUME_DEFAULT,
         };
         let mut old = encode(&plain);
         old[16..].fill(0);
@@ -303,11 +316,17 @@ mod tests {
                 rest: 2,
                 size: 2,
             },
+            volume: 0,
         };
         assert_eq!(decode(&encode(&p)), Some(p));
         let mut old = encode(&p);
         old[22..].fill(0);
         assert_eq!(decode(&old).unwrap().mouse, MouseAim::default());
+        assert_eq!(
+            decode(&old).unwrap().volume,
+            VOLUME_DEFAULT,
+            "0064 M5 전 저장 = 기본 크기"
+        );
         old[23] = 99;
         old[24] = 99;
         assert_eq!(decode(&old).unwrap().mouse, MouseAim::default());
@@ -328,6 +347,7 @@ mod tests {
             shake: 7,
             weapon: 1,
             mouse: MouseAim::default(),
+            volume: 10,
         };
         assert!(store::write_to(&p, &encode(&prefs)));
         assert_eq!(decode(&store::read_from(&p)), Some(prefs));

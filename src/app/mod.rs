@@ -63,6 +63,12 @@ pub struct App {
     weapon: weapons::Id,
     /// 화면 흔들림 0..=10(설정, 0052).
     shake: u8,
+    /// 소리(0064 M5): 크기 0..=10, 소리 묶음(main이 올린 뒤 `set_sfx`), 지난 틱의 회피·적 예고(시작한 순간만 소리).
+    volume: u8,
+    sfx: Option<crate::sfx::Sfx>,
+    was_dodging: bool,
+    tele_was: Vec<bool>,
+    was_waking: bool,
     /// 지난 프레임에 그린 화면 자리(커서 → 땅, 0058).
     frame: Option<Frame>,
     /// OS 커서를 숨겼나(싸움 중 마우스 조준이면 숨기고 조준 표시를 그린다, 0058).
@@ -123,6 +129,7 @@ impl App {
         // 저장한 설정(0024·0052·0058): 언어·키 배치·흔들림·무기·마우스 조준.
         let mut weapon = weapons::Id::Sword;
         let mut shake = crate::prefs::SHAKE_DEFAULT;
+        let mut volume = crate::prefs::VOLUME_DEFAULT;
         if let Some(p) = crate::prefs::load() {
             if let Some(l) = p.lang {
                 i18n::set_lang(l);
@@ -130,6 +137,7 @@ impl App {
             input::set_bindings(p.bindings);
             input::set_mouse_aim(p.mouse);
             shake = p.shake;
+            volume = p.volume;
             weapon = weapons::IDS[(p.weapon as usize).min(weapons::IDS.len() - 1)];
         }
         let (run, mut world) = StageRun::start(FIRST_STAGE);
@@ -160,6 +168,11 @@ impl App {
             sums: (0.0, 0.0, 0.0, 0),
             weapon,
             shake,
+            volume,
+            sfx: None,
+            was_dodging: false,
+            tele_was: Vec::new(),
+            was_waking: false,
             frame: None,
             mouse_hidden: false,
             goal_off: 0.0,
@@ -182,6 +195,74 @@ impl App {
         self.cam = Camera::new(self.world.player.pos, &self.t);
     }
 
+    /// 소리 묶음을 받는다(0064 M5 — main이 올린 뒤). 환경음을 튼다.
+    pub fn set_sfx(&mut self, sfx: crate::sfx::Sfx) {
+        sfx.set_volume(self.volume as f32 / 10.0);
+        sfx.ambience(true);
+        self.sfx = Some(sfx);
+    }
+
+    fn snd(&self, id: crate::sfx::Id) {
+        if let Some(s) = &self.sfx {
+            s.play(id);
+        }
+    }
+
+    fn set_volume(&mut self, v: u8) {
+        self.volume = v;
+        if let Some(s) = &self.sfx {
+            s.set_volume(v as f32 / 10.0);
+        }
+        self.save_prefs();
+        self.snd(crate::sfx::Id::UiMove);
+    }
+
+    /// 월드 사건·상태 변화 → 소리(0064 M5). 월드는 소리를 모른다 — 여기서만 듣는다.
+    fn world_sounds(&mut self, events: &[Event]) {
+        use crate::sfx::Id;
+        for e in events {
+            let id = match e {
+                Event::Swing => Id::Swing,
+                Event::Hit { .. } | Event::Crit { .. } => Id::Hit,
+                Event::Plunge { .. } | Event::Smash { .. } | Event::Aftershock { .. } => Id::Hit,
+                Event::Break { .. } | Event::Boom { .. } => Id::Hit,
+                Event::EnemyDown { .. } => Id::Die,
+                Event::PlayerHurt => Id::Hurt,
+                Event::Parry { .. } => Id::Parry,
+                Event::Ember { .. } => Id::Ember,
+                Event::Gulp { .. } => Id::Gulp,
+                Event::FlaskDenied | Event::CastDenied => Id::Deny,
+                _ => continue,
+            };
+            self.snd(id);
+        }
+        // 회피를 시작한 틱.
+        let dodging = matches!(self.world.player.state, crate::world::PState::Dodge { .. });
+        if dodging && !self.was_dodging {
+            self.snd(Id::Dodge);
+        }
+        self.was_dodging = dodging;
+        // 적의 예고가 시작한 틱: 모양마다 다른 소리(소리만 듣고도 가르게, 0064 R4).
+        let n = self.world.enemies.len();
+        self.tele_was.resize(n, false);
+        let mut cues = Vec::new();
+        for (i, en) in self.world.enemies.iter().enumerate() {
+            let tele = en.telegraph();
+            if let (Some((_, shape)), false) = (tele, self.tele_was[i]) {
+                cues.push(match shape {
+                    crate::enemy::TeleShape::Disc { .. } => Id::TeleDisk,
+                    crate::enemy::TeleShape::Sector { .. } => Id::TeleFan,
+                    crate::enemy::TeleShape::Lane { .. } => Id::TeleLane,
+                    crate::enemy::TeleShape::Ring { .. } => Id::TeleRing,
+                });
+            }
+            self.tele_was[i] = tele.is_some();
+        }
+        for id in cues {
+            self.snd(id);
+        }
+    }
+
     /// 이어하기(0064 M2): 새 판을 세우고, 기록에 쉼터가 있으면 거기서.
     fn continue_run(&mut self) {
         self.restart();
@@ -196,6 +277,7 @@ impl App {
         self.progress.run = self.run.run_at();
         // 상자(0064 M3): 든 장신구를 얻는다(이미 가졌으면 잔불).
         if let Some(i) = self.run.take_opened() {
+            self.snd(crate::sfx::Id::Chest);
             self.progress.chests.push(i as u32);
             match self.run.def.chest_charms.get(i).copied() {
                 Some(id) if !self.progress.owned.contains(&id) => self.gain_charm(id),
@@ -239,8 +321,10 @@ impl App {
         let s = s();
         if self.world.embers < price {
             self.toast = Some((s.shop_poor.to_string(), 1.6));
+            self.snd(crate::sfx::Id::Deny);
             return;
         }
+        self.snd(crate::sfx::Id::Buy);
         self.world.embers -= price;
         self.progress.embers = self.world.embers;
         match ware {
@@ -287,6 +371,7 @@ impl App {
             bindings: input::bindings(),
             mouse: input::mouse_aim(),
             shake: self.shake,
+            volume: self.volume,
             weapon: weapons::IDS
                 .iter()
                 .position(|w| *w == self.weapon)
@@ -396,6 +481,23 @@ impl App {
     }
 
     fn tick(&mut self, a: Actions) {
+        let (scene0, cursor0, back0) = (self.scene, self.cursor, a.back || a.pause);
+        self.tick_scene(a);
+        // 메뉴 소리(0064 M5): 메뉴 장면에서 커서가 움직이면 딸깍, 장면이 바뀌면 확인·뒤로.
+        if scene0.is_menu() {
+            if self.scene != scene0 {
+                self.snd(if back0 {
+                    crate::sfx::Id::UiBack
+                } else {
+                    crate::sfx::Id::UiConfirm
+                });
+            } else if self.cursor != cursor0 {
+                self.snd(crate::sfx::Id::UiMove);
+            }
+        }
+    }
+
+    fn tick_scene(&mut self, a: Actions) {
         if a.dev_overlay {
             self.dev_overlay = !self.dev_overlay;
         }
@@ -453,6 +555,9 @@ impl App {
                             self.shake = (self.shake as i32 + step).clamp(0, 10) as u8;
                             self.save_prefs();
                         }
+                        Some(SettingsRow::Volume) => {
+                            self.set_volume((self.volume as i32 + step).clamp(0, 10) as u8)
+                        }
                         Some(
                             r @ (SettingsRow::MouseAim
                             | SettingsRow::CursorRest
@@ -469,6 +574,11 @@ impl App {
                             self.shake = if self.shake >= 10 { 0 } else { self.shake + 1 };
                             self.save_prefs();
                         }
+                        SettingsRow::Volume => self.set_volume(if self.volume >= 10 {
+                            0
+                        } else {
+                            self.volume + 1
+                        }),
                         r @ (SettingsRow::MouseAim
                         | SettingsRow::CursorRest
                         | SettingsRow::Reticle) => self.step_mouse(r, 1),
@@ -649,8 +759,15 @@ impl App {
                     &self.progress.growth,
                 );
                 if self.run.take_rested() {
+                    self.snd(crate::sfx::Id::Rest);
                     self.go(Scene::Shop);
                 }
+                // 문지기가 깨어나는 순간(0064 M5): 낮은 땅울림.
+                let waking = matches!(self.run.phase, crate::stage::Phase::Waking(_));
+                if waking && !self.was_waking {
+                    self.snd(crate::sfx::Id::Wake);
+                }
+                self.was_waking = waking;
                 if let Some((_, t)) = &mut self.toast {
                     *t -= TICK_DT;
                 }
@@ -745,7 +862,8 @@ impl App {
             SHAKE_CHARGED, SHAKE_CRIT, SHAKE_DOWN, SHAKE_HIT, SHAKE_HURT, SHAKE_PARRY,
             SHAKE_PLUNGE, SHAKE_ROUSE, SHAKE_SLAM, SHAKE_SMASH, SHAKE_TURN,
         };
-        for e in self.world.step(a, t) {
+        let events = self.world.step(a, t);
+        for &e in &events {
             let kick = match e {
                 Event::Hit { .. } => SHAKE_HIT,
                 Event::PlayerHurt => SHAKE_HURT,
@@ -772,6 +890,7 @@ impl App {
             // 화면 흔들림 설정(0052): 0..=10 → 0..100%.
             cam.trauma = (cam.trauma + kick * self.shake as f32 / 10.0).min(1.0);
         }
+        self.world_sounds(&events);
         self.follow_camera();
     }
 
@@ -1224,6 +1343,9 @@ impl App {
                 .to_string(),
                 SettingsRow::Shake => {
                     fill(s.menu_shake, &[&format!("{}%", self.shake as u32 * 10)])
+                }
+                SettingsRow::Volume => {
+                    fill(s.menu_volume, &[&format!("{}%", self.volume as u32 * 10)])
                 }
                 SettingsRow::MouseAim => if mouse.on {
                     s.menu_mouse_aim_on

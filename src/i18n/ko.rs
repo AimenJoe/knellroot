@@ -58,6 +58,7 @@ pub const KO: Strings = Strings {
     menu_settings: "설정",
     settings_title: "설정",
     menu_shake: "화면 흔들림: {0}",
+    menu_volume: "소리 크기: {0}",
     menu_weapon: "무기: {0}",
     weapon_sword: "순례자의 검",
     weapon_hammer: "종치기 망치",

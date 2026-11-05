@@ -43,6 +43,7 @@
 - 기록(0064 M2)은 `save.rs`: 키=값 줄(`save::key` 이름은 바꾸지 않는다, 모르는 키는 지킨다), 웹 localStorage `knell.save.0`·네이티브 `save0.txt`. 앱은 판에서 옮겨(`sync_progress`) 바뀌었을 때만 쓴다(`persist`). 판을 넘어 남는 것을 새로 만들면 `Progress`에 칸 + 키 하나 + 시험. 설정(`prefs`)과 섞지 않는다.
 - 능력치(0064 M3)는 `stats.rs` 한 곳: `Stats::compute(&[Mods])`(합·곱·상한), 월드는 `World::stats`만 — 최대 체력·등잔은 `Player::max_hp`·`flask_max`(상수 `PLAYER_HP`·`FLASK_CHARGES`는 기본값일 뿐), 랩 값은 `Stats::tune`이 휜 사본. 장신구는 `charms.rs` 표(기록 키는 바꾸지 않는다). 새 보정 = `Mods` 칸 + compute 한 줄 + 쓰는 곳 + 시험.
 - 성장(0064 M4)은 `growth.rs`(핵 고르기 갈래·상한, 화로 가게 `SHOP` 표): 이기면 `Scene::Core`, 쉬면 `Scene::Shop`. 능력치는 장신구와 같은 `Stats::compute`로.
+- 소리(0064 M5)는 `sfx.rs`(앱만 안다): 파일 표 `FILES`(`assets/sfx`, CC0 — 출처는 LICENSES) + 합성(`synth`·`ambience`, 순수 함수라 시험). 앱 `world_sounds`가 `Event`·상태 변화(회피 시작·예고 시작·깨어남)를 듣고 낸다 — 월드에 소리를 넣지 않는다. 예고 소리는 모양마다 달라야 한다(시험).
 - 웹 로딩·PWA(0062): 덮개는 `web/index.html`(글 없음, wasm 바이트로 진행, 첫 프레임 뒤 `main.rs` `loaded`), 서비스 워커 `web/sw.js`는 캐시 = 빌드 아이디·`skipWaiting` 없음. `web/`에 파일을 더하면 `sw.js` `PRECACHE`와 `assemble.sh`도, 시험은 `tools/test/pwa.js`. 아이콘은 `tools/icons/make_icons.py`.
 
 ## 하지 않는 것
