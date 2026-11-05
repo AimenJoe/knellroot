@@ -217,6 +217,11 @@ pub enum P {
     CastCharge,
     DodgeCancel,
     LandCancel,
+    RenderEdge,
+    RenderEdgeDark,
+    RenderEdgeLight,
+    RenderEdgeDepth,
+    RenderEdgeCrease,
     RenderModel,
 }
 
@@ -247,7 +252,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 137] = [
+pub const SPECS: [Spec; 142] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1282,6 +1287,53 @@ pub const SPECS: [Spec; 137] = [
         0.5,
         0.0,
         1.0,
+        0.05
+    ),
+    // 화면 공간 선 둘(0061 t3ssel8r 풍): 법선 패스에서 — 깊이가 끊기는 앞쪽 픽셀은 어둡게(물체 가장자리), 법선이 꺾이는 볼록 모서리는 밝게.
+    // 깊이 문턱은 거리에 대한 비(0.06 = 그 거리의 6% 넘게 뒤가 멀면 가장자리), 꺾임 문턱은 이웃 법선(화면 xy) 차의 길이.
+    spec!(
+        RenderEdge,
+        "render.edge 0off 1on",
+        "RENDER_EDGE",
+        1.0,
+        0.0,
+        1.0,
+        1.0
+    ),
+    spec!(
+        RenderEdgeDark,
+        "render.edge dark",
+        "RENDER_EDGE_DARK",
+        0.75,
+        0.0,
+        1.0,
+        0.05
+    ),
+    spec!(
+        RenderEdgeLight,
+        "render.edge light",
+        "RENDER_EDGE_LIGHT",
+        0.45,
+        0.0,
+        1.0,
+        0.05
+    ),
+    spec!(
+        RenderEdgeDepth,
+        "render.edge depth",
+        "RENDER_EDGE_DEPTH",
+        0.06,
+        0.01,
+        0.3,
+        0.01
+    ),
+    spec!(
+        RenderEdgeCrease,
+        "render.edge crease",
+        "RENDER_EDGE_CREASE",
+        0.35,
+        0.05,
+        1.5,
         0.05
     ),
     // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.

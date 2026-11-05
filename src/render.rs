@@ -43,6 +43,20 @@ pub struct Renderer {
     light_vp: Option<Mat4>,
     /// 가림판 가운데(지난 프레임의 플레이어 자리).
     shadow_center: Vec3,
+    /// 화면 공간 선 둘(0061): 법선 패스 타깃·재질과 선 재질. 못 만들면(Metal 등) 끈다.
+    edge: Option<EdgeFx>,
+    edge_tried: bool,
+    /// 이번 프레임에 법선 패스를 그렸나(선 재질을 쓸까).
+    edge_ready: bool,
+    edge_uniform: Vec4,
+}
+
+/// 화면 공간 선 둘(0061 t3ssel8r 풍): 불투명 기하를 한 번 더 그린 법선 타깃(rg = 화면 법선 xy, ba = 선형 깊이 16비트)과 재질 둘.
+struct EdgeFx {
+    rt: RenderTarget,
+    size: (u32, u32),
+    normal_mat: Material,
+    edge_mat: Material,
 }
 
 /// 측정값(개발 줄, P5): 우리 코드가 한 프레임에 쓴 CPU 시간(평균·최대, 지난 1초), 그리기 호출 수, 모델 정점 수.
@@ -260,6 +274,10 @@ impl Renderer {
             shadow_tried: false,
             light_vp: None,
             shadow_center: Vec3::ZERO,
+            edge: None,
+            edge_tried: false,
+            edge_ready: false,
+            edge_uniform: Vec4::ZERO,
         }
     }
 
@@ -311,6 +329,10 @@ impl Renderer {
             tg,
         );
         let k = 1.0 - (-10.0 * get_frame_time()).exp();
+        // 법선 패스에 다시 그릴 불투명 기하를 모은다(0061) — 지형·소품·배우까지, 옅은 덩어리·효과는 빼고.
+        let edges_on = t[crate::tuning::P::RenderEdge] >= 0.5;
+        self.batch.record = edges_on;
+        self.batch.recorded.clear();
         let lights: Vec<Light> = match v.stage {
             Some(run) => {
                 // 툰을 켜고 끄면 지형을 다시 굽는다(빛이 정점에 구워져 있다, 0033).
@@ -437,6 +459,7 @@ impl Renderer {
         self.player(w, cam, pp, t, &lights);
         self.batch.casting = false;
         self.batch.flush();
+        self.batch.record = false;
 
         self.overlays(w, pp, alpha, t);
         // 모아 둔 선(윤곽선·예고 옆선)을 한꺼번에 — 옅은 덩어리보다 먼저(그 뒤의 선이 가려지지 않게).
@@ -465,7 +488,57 @@ impl Renderer {
             });
             draw_haze(iw as f32, ih as f32, haze);
         }
+        self.edge_ready = edges_on && self.normal_pass(&c3, (iw, ih));
+        self.edge_uniform = vec4(
+            t[crate::tuning::P::RenderEdgeDepth],
+            t[crate::tuning::P::RenderEdgeDark],
+            t[crate::tuning::P::RenderEdgeLight],
+            t[crate::tuning::P::RenderEdgeCrease],
+        );
         self.present()
+    }
+
+    /// 법선 패스(0061): 모은 불투명 기하를 같은 카메라로 법선 타깃에 다시 그린다. 재질을 못 만들면 거짓(선 없이).
+    fn normal_pass(&mut self, c3: &Camera3D, size: (u32, u32)) -> bool {
+        if !self.edge_tried {
+            self.edge_tried = true;
+            self.edge = edge_fx(size);
+        }
+        let Some(fx) = &mut self.edge else {
+            self.batch.recorded.clear();
+            return false;
+        };
+        if fx.size != size {
+            fx.rt = edge_rt(size);
+            fx.size = size;
+        }
+        let cam = Camera3D {
+            position: c3.position,
+            target: c3.target,
+            up: c3.up,
+            fovy: c3.fovy,
+            aspect: c3.aspect,
+            projection: c3.projection,
+            render_target: Some(fx.rt.clone()),
+            viewport: None,
+            z_near: c3.z_near,
+            z_far: c3.z_far,
+        };
+        set_camera(&cam);
+        // 빈 곳 = 아주 먼 깊이(ba = 1)·화면을 보는 법선.
+        clear_background(Color::new(0.5, 0.5, 1.0, 1.0));
+        fx.normal_mat
+            .set_uniform("View", Mat4::look_at_rh(c3.position, c3.target, c3.up));
+        gl_use_material(&fx.normal_mat);
+        for (vertices, indices) in self.batch.recorded.drain(..) {
+            draw_mesh(&Mesh {
+                vertices,
+                indices,
+                texture: None,
+            });
+        }
+        gl_use_default_material();
+        true
     }
 
     /// 렌더 타깃을 지금 화면에 맞춘다(0046) — 크기가 바뀐 프레임에만 새로 만든다. 돌려주는 것은 내부 해상도.
@@ -492,6 +565,15 @@ impl Renderer {
         let scale = s as f32 / dpi;
         let (dw, dh) = (iw as f32 * scale, ih as f32 * scale);
         let (ox, oy) = (((sw - dw) * 0.5).floor(), ((sh - dh) * 0.5).floor());
+        // 화면 공간 선 둘(0061): 법선 패스를 그렸으면 선 재질로 올린다.
+        let edge = self.edge.as_ref().filter(|_| self.edge_ready);
+        if let Some(fx) = edge {
+            fx.edge_mat.set_texture("Normals", fx.rt.texture.clone());
+            fx.edge_mat
+                .set_uniform("Texel", vec2(1.0 / iw as f32, 1.0 / ih as f32));
+            fx.edge_mat.set_uniform("Edge", self.edge_uniform);
+            gl_use_material(&fx.edge_mat);
+        }
         draw_texture_ex(
             &self.rt.texture,
             ox,
@@ -503,6 +585,9 @@ impl Renderer {
                 ..Default::default()
             },
         );
+        if edge.is_some() {
+            gl_use_default_material();
+        }
         Frame {
             ox,
             oy,
@@ -1386,6 +1471,9 @@ pub struct Batch {
     pub casters: Vec<Vertex>,
     pub caster_idx: Vec<u16>,
     outline_tried: bool,
+    /// 법선 패스에 다시 그릴 것을 모으나(0061), 모은 덩어리.
+    pub record: bool,
+    pub recorded: Vec<(Vec<Vertex>, Vec<u16>)>,
 }
 
 fn to_u8(x: f32) -> u8 {
@@ -1428,10 +1516,10 @@ impl Batch {
             let bright = e.glow.get(i).copied().unwrap_or(false);
             for k in 0..mesh.pos.len() {
                 let p = mat.transform_point3(mesh.pos[k]);
+                let n = mat.transform_vector3(mesh.nrm[k]).normalize_or_zero();
                 let f = if bright {
                     Vec3::splat(glow)
                 } else {
-                    let n = mat.transform_vector3(mesh.nrm[k]).normalize_or_zero();
                     let r = if actor { rim(p, n, look) } else { Vec3::ZERO };
                     lit(p, n, lights) + r
                 };
@@ -1441,7 +1529,10 @@ impl Batch {
                     to_u8(tint.b * f.z),
                     to_u8(tint.a),
                 );
-                verts.push(Vertex::new(p.x, p.y, p.z, mesh.uv[k].x, mesh.uv[k].y, c));
+                verts.push(crate::scenery::with_normal(
+                    Vertex::new(p.x, p.y, p.z, mesh.uv[k].x, mesh.uv[k].y, c),
+                    n,
+                ));
             }
             idx.extend(mesh.idx.iter().map(|&j| base + j as u16));
         }
@@ -1633,6 +1724,10 @@ impl Batch {
         }
         self.this_frame += self.vertices.len();
         self.sends += 1;
+        if self.record {
+            self.recorded
+                .push((self.vertices.clone(), self.indices.clone()));
+        }
         draw_mesh(&Mesh {
             vertices: std::mem::take(&mut self.vertices),
             indices: std::mem::take(&mut self.indices),
@@ -1715,6 +1810,167 @@ fn outline_material() -> Option<Material> {
         warn!("outline material: {e:?}");
     })
     .ok()
+}
+
+/// 법선 타깃(0061): 내부 해상도 그대로, 자기 깊이(가림)를 붙이고, 가장 가까운 픽셀로 읽는다.
+fn edge_rt((w, h): (u32, u32)) -> RenderTarget {
+    let rt = render_target_ex(
+        w,
+        h,
+        RenderTargetParams {
+            depth: true,
+            ..Default::default()
+        },
+    );
+    rt.texture.set_filter(FilterMode::Nearest);
+    rt
+}
+
+/// 선 패스 둘(0061, GL에서만 — 외곽선 재질과 같은 조건).
+/// 법선 재질: 화면(뷰) 법선 xy와 선형 깊이(0..64m를 두 바이트로 — 약 1mm)를 쓴다.
+/// 선 재질: 이웃 넷(1px)을 본다 — 뒤가 거리의 `Edge.x`배 넘게 멀면 이 픽셀은 앞 물체의 가장자리 → 어둡게(`Edge.y`).
+/// 같은 면 근처에서 이웃 법선과의 차가 `Edge.w`를 넘고 그 차가 이웃 쪽을 향하면(법선이 바깥으로 벌어짐 = 볼록) 가까운 쪽 픽셀만 밝게(`Edge.z`).
+/// 오목 모서리는 긋지 않는다(t3ssel8r의 밝은 선은 볼록에만 — 2차).
+fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
+    let ctx = unsafe { get_internal_gl().quad_context };
+    if ctx.info().backend != miniquad::Backend::OpenGl {
+        return None;
+    }
+    const NORMAL_VS: &str = r#"#version 100
+    attribute vec3 position;
+    attribute vec2 texcoord;
+    attribute vec4 color0;
+    attribute vec4 normal;
+    varying highp vec3 vn;
+    varying highp float vd;
+    uniform mat4 Model;
+    uniform mat4 Projection;
+    uniform mat4 View;
+    void main() {
+        vec4 wp = Model * vec4(position, 1.0);
+        gl_Position = Projection * wp;
+        vd = -(View * wp).z;
+        vn = (View * vec4(normal.xyz, 0.0)).xyz;
+    }"#;
+    const NORMAL_FS: &str = r#"#version 100
+    #ifdef GL_FRAGMENT_PRECISION_HIGH
+    precision highp float;
+    #else
+    precision mediump float;
+    #endif
+    varying highp vec3 vn;
+    varying highp float vd;
+    void main() {
+        vec3 n = length(vn) > 0.0001 ? normalize(vn) : vec3(0.0, 0.0, 1.0);
+        float v = clamp(vd / 64.0, 0.0, 0.99998);
+        float hi = floor(v * 255.0) / 255.0;
+        float lo = fract(v * 255.0);
+        gl_FragColor = vec4(n.xy * 0.5 + 0.5, hi, lo);
+    }"#;
+    const EDGE_VS: &str = r#"#version 100
+    attribute vec3 position;
+    attribute vec2 texcoord;
+    attribute vec4 color0;
+    varying lowp vec4 color;
+    varying highp vec2 uv;
+    uniform mat4 Model;
+    uniform mat4 Projection;
+    void main() {
+        gl_Position = Projection * Model * vec4(position, 1.0);
+        color = color0 / 255.0;
+        uv = texcoord;
+    }"#;
+    const EDGE_FS: &str = r#"#version 100
+    #ifdef GL_FRAGMENT_PRECISION_HIGH
+    precision highp float;
+    #else
+    precision mediump float;
+    #endif
+    varying lowp vec4 color;
+    varying highp vec2 uv;
+    uniform sampler2D Texture;
+    uniform sampler2D Normals;
+    uniform vec2 Texel;
+    uniform vec4 Edge;
+    float dep(vec2 c) {
+        vec4 n = texture2D(Normals, c);
+        return (n.b + n.a / 255.0) * 64.0;
+    }
+    vec2 nrm(vec2 c) {
+        return texture2D(Normals, c).rg * 2.0 - 1.0;
+    }
+    void probe(vec2 dir, float d, vec2 n, inout float dark, inout float light) {
+        vec2 c = uv + dir * Texel;
+        float dn = dep(c);
+        float gap = Edge.x * d;
+        if (dn - d > gap) { dark = 1.0; return; }
+        if (abs(dn - d) > gap) return;
+        vec2 df = nrm(c) - n;
+        if (length(df) > Edge.w && dot(df, dir) > 0.0 && d <= dn) light = 1.0;
+    }
+    void main() {
+        vec4 col = texture2D(Texture, uv) * color;
+        float d = dep(uv);
+        vec2 n = nrm(uv);
+        float dark = 0.0;
+        float light = 0.0;
+        if (d < 63.0) {
+            probe(vec2(1.0, 0.0), d, n, dark, light);
+            probe(vec2(-1.0, 0.0), d, n, dark, light);
+            probe(vec2(0.0, 1.0), d, n, dark, light);
+            probe(vec2(0.0, -1.0), d, n, dark, light);
+        }
+        vec3 rgb = col.rgb;
+        if (dark > 0.5) {
+            rgb = mix(rgb, vec3(0.05, 0.04, 0.08), Edge.y);
+        } else if (light > 0.5) {
+            rgb = mix(rgb, min(rgb * 1.7 + 0.06, vec3(1.0)), Edge.z);
+        }
+        gl_FragColor = vec4(rgb, col.a);
+    }"#;
+    let normal_mat = load_material(
+        ShaderSource::Glsl {
+            vertex: NORMAL_VS,
+            fragment: NORMAL_FS,
+        },
+        MaterialParams {
+            pipeline_params: PipelineParams {
+                depth_write: true,
+                depth_test: Comparison::LessOrEqual,
+                ..Default::default()
+            },
+            uniforms: vec![UniformDesc::new("View", UniformType::Mat4)],
+            ..Default::default()
+        },
+    )
+    .map_err(|e| {
+        warn!("edge normal material: {e:?}");
+    })
+    .ok()?;
+    let edge_mat = load_material(
+        ShaderSource::Glsl {
+            vertex: EDGE_VS,
+            fragment: EDGE_FS,
+        },
+        MaterialParams {
+            uniforms: vec![
+                UniformDesc::new("Texel", UniformType::Float2),
+                UniformDesc::new("Edge", UniformType::Float4),
+            ],
+            textures: vec!["Normals".to_string()],
+            ..Default::default()
+        },
+    )
+    .map_err(|e| {
+        warn!("edge material: {e:?}");
+    })
+    .ok()?;
+    Some(EdgeFx {
+        rt: edge_rt(size),
+        size,
+        normal_mat,
+        edge_mat,
+    })
 }
 
 /// 그림자 가림판(0045): 한 변 칸 수와 덮는 넓이(m). 0.125m 칸 — 바닥 빛 지도(0.25m)보다 촘촘해 캐릭터 실루엣이 읽힌다.

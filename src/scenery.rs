@@ -67,13 +67,16 @@ fn quad(p: &mut Piece, corners: [Vec3; 4], n: Vec3, col: Color, lights: &[Light]
     let base = p.verts.len() as u16;
     for c in corners {
         let l = lit(c, n, lights);
-        p.verts.push(Vertex::new(
-            c.x,
-            c.y,
-            c.z,
-            0.0,
-            0.0,
-            Color::new(col.r * l.x, col.g * l.y, col.b * l.z, col.a),
+        p.verts.push(with_normal(
+            Vertex::new(
+                c.x,
+                c.y,
+                c.z,
+                0.0,
+                0.0,
+                Color::new(col.r * l.x, col.g * l.y, col.b * l.z, col.a),
+            ),
+            n,
         ));
     }
     p.idx
@@ -138,13 +141,16 @@ fn block(p: &mut Piece, min: Vec3, max: Vec3, side: Color, top: Color, lights: &
         let base = p.verts.len() as u16;
         for (i, v) in c.iter().enumerate() {
             let l = lit(*v, n, lights) * if i < 2 { 0.55 } else { 1.0 };
-            p.verts.push(Vertex::new(
-                v.x,
-                v.y,
-                v.z,
-                0.0,
-                0.0,
-                Color::new(side.r * l.x, side.g * l.y, side.b * l.z, 1.0),
+            p.verts.push(with_normal(
+                Vertex::new(
+                    v.x,
+                    v.y,
+                    v.z,
+                    0.0,
+                    0.0,
+                    Color::new(side.r * l.x, side.g * l.y, side.b * l.z, 1.0),
+                ),
+                n,
             ));
         }
         p.idx
@@ -496,13 +502,16 @@ impl Scenery {
                         for (i, v) in corners.iter().enumerate() {
                             let l = lit(*v, -d, &lights) * if i < 2 { 0.3 } else { 1.0 };
                             let col = mul(WALL, 0.9 * k);
-                            p.verts.push(Vertex::new(
-                                v.x,
-                                v.y,
-                                v.z,
-                                0.0,
-                                0.0,
-                                Color::new(col.r * l.x, col.g * l.y, col.b * l.z, 1.0),
+                            p.verts.push(with_normal(
+                                Vertex::new(
+                                    v.x,
+                                    v.y,
+                                    v.z,
+                                    0.0,
+                                    0.0,
+                                    Color::new(col.r * l.x, col.g * l.y, col.b * l.z, 1.0),
+                                ),
+                                -d,
                             ));
                         }
                         p.idx.extend_from_slice(&[
@@ -569,12 +578,26 @@ fn quad_lm(p: &mut Piece, corners: [Vec3; 4], col: Color, uv: &dyn Fn(Vec3) -> V
         (col.b * 2.0).min(1.0),
         col.a,
     );
+    // 법선은 판 모서리에서(경사로는 기운다) — 위를 보게.
+    let mut n = (corners[1] - corners[0])
+        .cross(corners[2] - corners[0])
+        .normalize_or(Vec3::Y);
+    if n.y < 0.0 {
+        n = -n;
+    }
     for c in corners {
         let t = uv(c);
-        p.verts.push(Vertex::new(c.x, c.y, c.z, t.x, t.y, c2));
+        p.verts
+            .push(with_normal(Vertex::new(c.x, c.y, c.z, t.x, t.y, c2), n));
     }
     p.idx
         .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+}
+
+/// 정점에 면 법선을 싣는다(0061 화면 공간 선 — 법선 패스가 읽는다, macroquad 기본 셰이더는 안 읽는 칸).
+pub fn with_normal(mut v: Vertex, n: Vec3) -> Vertex {
+    v.normal = n.normalize_or(Vec3::Y).extend(1.0);
+    v
 }
 
 fn to_u8(x: f32) -> u8 {
@@ -601,13 +624,16 @@ fn wall_face(p: &mut Piece, c: [Vec3; 4], out: Vec3, col: Color, lights: &[Light
     let base = p.verts.len() as u16;
     for (i, v) in c.iter().enumerate() {
         let l = lit(*v, out, lights) * if i < 2 { 0.55 } else { 1.0 };
-        p.verts.push(Vertex::new(
-            v.x,
-            v.y,
-            v.z,
-            0.0,
-            0.0,
-            Color::new(col.r * l.x, col.g * l.y, col.b * l.z, 1.0),
+        p.verts.push(with_normal(
+            Vertex::new(
+                v.x,
+                v.y,
+                v.z,
+                0.0,
+                0.0,
+                Color::new(col.r * l.x, col.g * l.y, col.b * l.z, 1.0),
+            ),
+            out,
         ));
     }
     p.idx.extend_from_slice(&[
