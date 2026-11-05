@@ -13,7 +13,7 @@ nail `docs/release.md`를 줄인 것. 웹(Netlify) + Android APK(0022). PC·iOS�
 | APK(시험용) | `main` push(같은 경로), 또는 Actions → build-android → Run workflow | `build-android.yml` | Actions 아티팩트 `knellroot-apk-<release·dev>-<sha>` |
 
 ## 갈래(0022, nail 0193)
-- `main` = 운영판, 패치만. `release/v0.2` = 개발판이자 작업 갈래(작업은 여기에 커밋·push). 마일스톤을 닫으면 release → main + 버전 올리기, 다음 갈래는 새 main에서.
+- `main` = 운영판, 패치만. `release/v0.3` = 개발판이자 작업 갈래(작업은 여기에 커밋·push, v0.2.0 뒤 새 main에서 만듦). 마일스톤을 닫으면 release → main + 버전 올리기, 다음 갈래는 새 main에서.
 - main에 패치를 넣었으면 release 갈래에도 합친다.
 - **배포(main push·버전 올리기)는 사장이 정한다.** 고친 것을 모아 "이것들을 고쳤는데 v<버전>으로 배포할까요?"
 

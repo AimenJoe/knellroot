@@ -4,11 +4,11 @@
 
 ## 먼저 읽을 것
 1. `docs/concept.md` — 무엇을 만드는가(세계관은 초안, 바뀔 수 있다)
-2. `docs/phase-1-first-stage.md` — 지금 단계(첫 스테이지 "침묵의 성소" 초안, 0019). 끝의 **"구현 상태"와 "사람이 할 일"**이 현재 위치다. PoC(`docs/phase-0-poc.md`)는 닫았다. **기본값은 얼려 있다(0013, `docs/tuning-frozen.txt`) — 판정 없이 바꾸지 않는다**
+2. `docs/phase-1-first-stage.md` — 지금 단계(첫 스테이지 "침묵의 성소" 초안, 0019 — v0.2.0으로 닫음 0060, 다음 마일스톤 v0.3.0 "남는 판" 제안 0064). 끝의 **"구현 상태"와 "사람이 할 일"**이 현재 위치다. PoC(`docs/phase-0-poc.md`)는 닫았다. **기본값은 얼려 있다(0013, `docs/tuning-frozen.txt`) — 판정 없이 바꾸지 않는다**
 3. `docs/lab.md` — 랩이 무엇을 재고 값이 `tuning.rs`로 어떻게 가는가
 4. `docs/decisions/` — 왜 그렇게 정했나. 바꾸려면 새 번호로
 
-세션이 끝나면 "구현 상태"·"사람이 할 일"을 갱신하고 커밋한다. 배포는 `docs/release.md`(웹 = Netlify, Android APK = GitHub Release, main push = 배포, **배포는 사장이 정한다**). **갈래(0022)**: `main` = 운영판(패치만, `--no-default-features`), `release/v0.2` = 개발판이자 작업 갈래(작업은 여기에 커밋·push — 웹 별칭 `dev`, APK 미리 보기 Release `dev`). 릴리스 = `Cargo.toml` 버전·`version_code` + `docs/releases/v<버전>.md`를 main에(`release.yml`이 태그·APK). 기여 규칙은 첫 게임 `CONTRIBUTING.md`를 따른다. 이름·v0.1.0 조건은 `docs/decisions/0005`.
+세션이 끝나면 "구현 상태"·"사람이 할 일"을 갱신하고 커밋한다. 배포는 `docs/release.md`(웹 = Netlify, Android APK = GitHub Release, main push = 배포, **배포는 사장이 정한다**). **갈래(0022)**: `main` = 운영판(패치만, `--no-default-features`), `release/v0.3` = 개발판이자 작업 갈래(v0.2.0 배포 2026-11-05 뒤 — 옛 `release/v0.2`는 그대로 둠)(작업은 여기에 커밋·push — 웹 별칭 `dev`, APK 미리 보기 Release `dev`). 릴리스 = `Cargo.toml` 버전·`version_code` + `docs/releases/v<버전>.md`를 main에(`release.yml`이 태그·APK). 기여 규칙은 첫 게임 `CONTRIBUTING.md`를 따른다. 이름·v0.1.0 조건은 `docs/decisions/0005`.
 
 ## 지식 베이스(KB)
 일반 지식은 **github.com/AimenJoe/KB**. 세션에 KB를 붙이고 `maps/gamedev.md` → 노트를 먼저 읽는다. 이 프로젝트와 바로 닿는 것:
