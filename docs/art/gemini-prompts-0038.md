@@ -167,7 +167,11 @@ between them. A crown of thick angular dark-purple roots grows from its head and
 faceted, clearly readable in silhouette. In the middle of its chest, a LARGE glowing warm amber core set in a
 diamond-shaped socket — the brightest thing on it. Long heavy arms in the A-pose, the right one ending in a big
 blocky stone club with flat faces. Two small amber eye slits. Imposing, ancient and calm, with a sleepy face.
+EXCEPTIONS to the rules above, for this boss only: it is NOT 2 heads tall and does NOT have a big head — a big
+heavy body with a small head; it is about 60 to 150 pixels tall on screen, not 20 to 50; the club is part of its
+right arm (carved from the same stone), not something held, so the hands rule does not apply.
 ```
+- 참조 이미지(권장): `docs/art/previews/gatekeeper.png`(지금 게임 모델) — 색·부위(가슴 핵·뿌리·이끼 낀 어깨)를 맞추는 용. 붙일 때 맨 앞에 "Attached: the current low-poly model of this character in our game. Keep its colors and parts (amber chest core, purple roots, mossy teal shoulder tops), but redesign the shapes as described below." 한 줄.
 - Meshy: 위 "순서" 그대로(Multi-view 정면·옆·뒤, Texture base color, PBR 끔, Triangle 3~5k, Symmetry, A-pose, GLB). **Smooth/부드럽게 다듬는 옵션은 끈다**(면이 뭉개진다).
 - 받은 뒤(Claude): 면 수를 줄이고 **면마다 평평한 법선**, 부위 자르기(몸·머리·팔 둘·곤봉·핵 `glow_core`·뿌리 왕관), 지금 문지기 동작(내려치기·돌진·파동·깨어남)을 옮긴다. 판정은 게임 안 쿼터뷰·락온 스크린숏.
 
