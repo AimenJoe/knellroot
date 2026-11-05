@@ -330,6 +330,11 @@ impl App {
     }
 
     fn tick_scene(&mut self, a: Actions) {
+        // 알림은 어느 장면에서나 줄어든다(가게의 "잔불이 모자란다"가 떠날 때까지 남았다).
+        if let Some((_, t)) = &mut self.toast {
+            *t -= TICK_DT;
+        }
+        self.toast = self.toast.take().filter(|(_, t)| *t > 0.0);
         if a.dev_overlay {
             self.dev_overlay = !self.dev_overlay;
         }

@@ -29,10 +29,6 @@ impl App {
             self.snd(crate::sfx::Id::Wake);
         }
         self.was_waking = waking;
-        if let Some((_, t)) = &mut self.toast {
-            *t -= TICK_DT;
-        }
-        self.toast = self.toast.take().filter(|(_, t)| *t > 0.0);
         if out == crate::stage::StageOut::Respawned {
             // 쉼터에서 다시 일어섰다(0032): 카메라를 그 자리로 바로(멀리서 날아오지 않게).
             self.cam = Camera::new(self.world.player.pos, &self.t);
