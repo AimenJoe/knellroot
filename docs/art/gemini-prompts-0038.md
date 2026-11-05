@@ -147,7 +147,7 @@ along its back — the only sharp shapes, clearly readable in silhouette. One LA
 
 ### 가시짐승 — v2(귀여움 문법, 2026-11-05 — 위 판 대신 이것)
 > 문지기 v2와 같은 틀: 참조 = 방랑자(`docs/art/meshy-0038/wanderer_front.png`), 귀여움 문법 먼저, 뾰족한 것은 뿌리만(0037·0061).
-> 네발짐승이라 A-pose 대신 네 발로 선 자세, **3/4 앞**(정면만이면 몸 길이가 안 보인다 — Meshy가 네발짐승에 어느 각을 잘 받는지는 확인 못 함, 안 되면 옆모습으로 다시).
+> 네발짐승이라 A-pose 대신 네 발로 선 자세, **3/4 앞**(정면만이면 몸 길이가 안 보인다). 2026-11-05: 이 3/4 앞 한 장으로 웹 Meshy 6 Lite가 네 발·갈기·꼬리까지 잘 만들었다(`tools/art/sources/meshy/thorn_v2.glb`).
 > 잔재는 0038 때 받은 `tools/art/sources/ai/knellroot/husk_v1_front.png`이 이미 귀여움 문법에 맞아 그대로 Meshy에 넣는다(새 그림 없음).
 ```
 Attached: our player character, a raccoon cub. Do NOT draw the raccoon. Draw a DIFFERENT character in the same cute

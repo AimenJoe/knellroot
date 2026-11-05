@@ -1,4 +1,8 @@
-"""가시짐승(돌진하는 적, 네 발, 높이 약 1.1m·길이 약 1.6m): 짙은 뿌리 몸에 등을 따라 뼈빛 가시, 호박빛 눈(glow_eyes).
+"""가시짐승(돌진하는 적, 네 발).
+
+지금(0060 W3): Meshy 몸 — 색을 잃은 통통한 아기 멧돼지, 등을 따라 보라 가시 뿌리 갈기, 호박빛 큰 눈 둘(glow_eyes), 옆구리 금.
+키 1.3m(가시 끝까지, 등 ≈ 0.95)·길이 1.45m. 원본 `tools/art/sources/meshy/thorn_v2.glb`(Meshy 6 Lite, CC BY 4.0)
+→ `meshy_convert.py ... 1.3 700 128`. 옛 상자 몸(짙은 뿌리 몸·뼈빛 가시·엄니)은 `make_blocks()`.
 
     blender --background --python tools/art/blender/thorn_beast.py
 """
@@ -11,8 +15,55 @@ import common as C  # noqa: E402
 NAME = "thorn_beast"
 LEGS = (("fl", 0.20, -0.26), ("fr", -0.20, -0.26), ("bl", 0.19, 0.34), ("br", -0.19, 0.34))
 
+MESHY_LOW = os.path.join(C.REPO, "tools", "art", "sources", "meshy", "thorn_v2_low.glb")
+MESHY_PARTS = {"head_geo": "head", "body_geo": "body", "tail_geo": "tail", "glow_eyes": "head",
+               "leg_fl_geo": "leg_fl", "leg_fr_geo": "leg_fr", "leg_bl_geo": "leg_bl", "leg_br_geo": "leg_br"}
+# 치수(앞 = -Y, 캐릭터 왼쪽 = +X) — 정면·옆 직교 렌더에 눈금을 그어 잰 것. 머리와 몸은 한 덩어리라 볼 뒤에서 자른다.
+HEAD_Y = -0.25  # 이보다 앞(-Y)은 머리(맨 앞 가시 포함)
+BELLY_Z = 0.21  # 이보다 아래는 다리
+FRONT_LEGS_Y = 0.20  # 다리 칸: 이보다 앞은 앞다리
+TAIL_Y = 0.62  # 이보다 뒤는 꼬리
+NEW_LEGS = (("fl", 0.15, -0.06), ("fr", -0.15, -0.06), ("bl", 0.15, 0.49), ("br", -0.15, 0.49))
+EYE = (0.21, 0.56)  # 눈 가운데(±x, z)
+EYE_R = (0.11, 0.13)
+GREY_K = 0.6  # 잿빛 몸을 어둡게(잔재와 같은 까닭·같은 값)
+GREY_SAT = 0.18
+
+
+def classify(c):
+    """면 가운데 자리 → 부위."""
+    x, y, z = c.x, c.y, c.z
+    side = "l" if x > 0 else "r"
+    if z < BELLY_Z and y < TAIL_Y:
+        return f"leg_{'f' if y < FRONT_LEGS_Y else 'b'}{side}_geo"
+    if y < HEAD_Y:
+        ex, ez = EYE
+        rx, rz = EYE_R
+        if y < -0.3 and ((abs(x) - ex) / rx) ** 2 + ((z - ez) / rz) ** 2 <= 1.0:
+            return "glow_eyes"
+        return "head_geo"
+    if y > TAIL_Y and z < 0.8:
+        return "tail_geo"
+    return "body_geo"
+
 
 def make():
+    """0060 W3: Meshy 몸, 뼈 이름·동작 표는 옛 가시짐승 그대로 — 뼈 자리만 새 비율에(낮고 둥근 몸·짧은 다리)."""
+    m = C.Model(NAME)
+    m.bone("root", (0, 0, 0))
+    m.bone("body", (0, 0.07, 0.45), "root")
+    m.bone("head", (0, HEAD_Y, 0.50), "body")
+    for n, x, y in NEW_LEGS:
+        m.bone(f"leg_{n}", (x, y, BELLY_Z + 0.04), "root")
+    m.bone("tail", (0, TAIL_Y, 0.58), "body")
+    m.external(MESHY_LOW, classify, MESHY_PARTS)
+    C.darken_grey(m.ext_img, GREY_K, GREY_SAT)
+    m.build()
+    acts(m)
+    return m
+
+
+def make_blocks():
     m = C.Model(NAME)
     m.bone("root", (0, 0, 0))
     m.bone("body", (0, 0.02, 0.72), "root")
@@ -79,36 +130,37 @@ def acts(m):
 
     # run 0.5초 고리: 질주(앞다리 뻗음 ↔ 모음)
     m.action("run", 0.5, [
-        (0.0, k(legs(-42, -32, 38, 30), root={"l": (0, 0, -0.07)}, body={"r": (-6, 0, 0)}, head={"r": (6, 0, 0)}, tail={"r": (-6, 0, 0)})),
-        (0.125, k(legs(0, 6, 0, -6), root={"l": (0, 0, 0.05)}, body={"r": (0, 0, 0)}, head={"r": (2, 0, 0)}, tail={"r": (6, 0, 0)})),
-        (0.25, k(legs(30, 22, -34, -26), root={"l": (0, 0, -0.07)}, body={"r": (7, 0, 0)}, head={"r": (-4, 0, 0)}, tail={"r": (10, 0, 0)})),
+        (0.0, k(legs(-42, -32, 38, 30), root={"l": (0, 0, -0.03)}, body={"r": (-6, 0, 0)}, head={"r": (6, 0, 0)}, tail={"r": (-6, 0, 0)})),
+        (0.125, k(legs(0, 6, 0, -6), root={"l": (0, 0, 0.04)}, body={"r": (0, 0, 0)}, head={"r": (2, 0, 0)}, tail={"r": (6, 0, 0)})),
+        (0.25, k(legs(30, 22, -34, -26), root={"l": (0, 0, -0.03)}, body={"r": (7, 0, 0)}, head={"r": (-4, 0, 0)}, tail={"r": (10, 0, 0)})),
         (0.375, k(legs(-6, 0, 6, 0), root={"l": (0, 0, 0.04)}, body={"r": (0, 0, 0)}, head={"r": (2, 0, 0)}, tail={"r": (0, 0, 0)})),
     ], loop=True)
 
+    # 새 몸(0060 W3)은 배가 땅에서 0.2m라 옛 내려앉기(−17cm)·머리 숙이기(28~32°)면 주둥이·배가 땅에 박혔다 → 반쯤으로.
     # charge_windup 0.6초: 머리를 낮추고 앞발로 땅을 긁는다(두 번)
-    low = dict(root={"l": (0, 0.04, -0.09)}, body={"r": (10, 0, 0)}, head={"r": (28, 0, 0)}, tail={"r": (30, 0, 0)})
+    low = dict(root={"l": (0, 0.04, -0.04)}, body={"r": (8, 0, 0)}, head={"r": (16, 0, 0)}, tail={"r": (30, 0, 0)})
     m.action("charge_windup", 0.6, [
         (0.0, k(legs(0, 0, 0, 0))),
         (0.12, k(legs(-14, -22, -18, -18), **low)),
         (0.24, k(legs(-14, 34, -18, -18), **low)),
         (0.36, k(legs(-14, -16, -18, -18), **low)),
         (0.48, k(legs(-14, 34, -18, -18), **low)),
-        (0.6, k(legs(-16, -10, -20, -20), **dict(low, head={"r": (32, 0, 0)}))),
+        (0.6, k(legs(-16, -10, -20, -20), **dict(low, head={"r": (20, 0, 0)}))),
     ])
 
     # charge 0.4초 고리: 몸을 길게 뻗은 돌진 자세
-    lunge = dict(root={"l": (0, 0, -0.17)}, body={"r": (6, 0, 0)}, head={"r": (20, 0, 0)}, tail={"r": (-4, 0, 0)})
+    lunge = dict(root={"l": (0, 0, -0.06)}, body={"r": (4, 0, 0)}, head={"r": (12, 0, 0)}, tail={"r": (-4, 0, 0)})
     m.action("charge", 0.4, [
         (0.0, k(legs(-58, -44, 56, 42), **lunge)),
-        (0.1, k(legs(-30, -20, 28, 18), **dict(lunge, root={"l": (0, 0, -0.06)}))),
+        (0.1, k(legs(-30, -20, 28, 18), **dict(lunge, root={"l": (0, 0, -0.02)}))),
         (0.2, k(legs(-44, -58, 42, 56), **lunge)),
-        (0.3, k(legs(-20, -30, 18, 28), **dict(lunge, root={"l": (0, 0, -0.06)}))),
+        (0.3, k(legs(-20, -30, 18, 28), **dict(lunge, root={"l": (0, 0, -0.02)}))),
     ], loop=True)
 
     # recover 0.7초: 미끄러져 서고(앞발 버팀) 머리를 털고 쉬는 자세로
     m.action("recover", 0.7, [
-        (0.0, k(legs(-44, -58, 42, 56), root={"l": (0, 0, -0.17)}, body={"r": (6, 0, 0)}, head={"r": (20, 0, 0)})),
-        (0.12, k(legs(-38, -40, -8, -12), root={"l": (0, 0, -0.08)}, body={"r": (-12, 0, 0)}, head={"r": (-14, 0, 0)}, tail={"r": (20, 0, 0)})),
+        (0.0, k(legs(-44, -58, 42, 56), root={"l": (0, 0, -0.06)}, body={"r": (4, 0, 0)}, head={"r": (12, 0, 0)})),
+        (0.12, k(legs(-38, -40, -8, -12), root={"l": (0, 0, -0.03)}, body={"r": (-10, 0, 0)}, head={"r": (-10, 0, 0)}, tail={"r": (20, 0, 0)})),
         (0.3, k(legs(-12, -12, -4, -4), body={"r": (-4, 0, 0)}, head={"r": (4, 0, 18)}, tail={"r": (10, 0, -15)})),
         (0.45, k(legs(-4, -4, 0, 0), body={"r": (-2, 0, 0)}, head={"r": (4, 0, -14)}, tail={"r": (6, 0, 12)})),
         (0.7, k(legs(0, 0, 0, 0), body={"r": (0, 0, 0)}, head={"r": (2, 0, -4)}, tail={"r": (0, 0, 10)})),
@@ -118,7 +170,7 @@ def acts(m):
     m.action("hurt", 0.3, [
         (0.0, k(legs(0, 0, 0, 0), head={"r": (2, 0, -4)}, tail={"r": (0, 0, 10)})),
         (0.05, k(legs(10, 10, -12, -12), root={"l": (0, 0.06, 0.02)}, body={"r": (-10, 8, 0)},
-                 head={"r": (-26, 0, 12)}, tail={"r": (24, 0, 0)})),
+                 head={"r": (-16, 0, 12)}, tail={"r": (24, 0, 0)})),
         (0.3, k(legs(0, 0, 0, 0), head={"r": (2, 0, -4)}, tail={"r": (0, 0, 10)})),
     ])
 
