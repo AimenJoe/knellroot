@@ -154,6 +154,23 @@ warm amber core — the brightest thing on it. Long heavy arms in the A-pose, th
 stone club. Two small amber eye slits. Imposing but with a gentle, sleepy face.
 ```
 
+### 잠들지 않는 문지기 — 0061 판(t3ssel8r 풍, 2026-11-05 — 위 판 대신 이것)
+> 0060 W3 첫 차례. 바뀐 것: 둥근 돌 → **면이 또렷한 각진 돌**(0061 체크리스트 1·3: 툰 띠와 밝은 모서리 선이 면·볼록 모서리에서 나온다, 0037: 뿌리에 먹힌 것은 각졌다).
+> 크기: 방랑자 키의 약 3배 → 쿼터뷰 약 60px·락온 약 150px(방랑자 20·50px 기준). 얼굴은 60px에서 호박색 눈 틈 둘 + 가슴 핵 하나만 남으면 된다.
+> 받은 정면을 `python3 tools/art/tiny_preview.py <그림>`으로 60px에서 보고, 핵·눈·뿌리 왕관이 안 남으면 "make X bigger".
+```
+[CHARACTER] The "sleepless warden": a big heavy guardian about three times the raccoon cub's height, built from a few
+big chunky FACETED stone blocks: large flat planes with crisp straight edges and slightly chamfered corners, like
+low-poly carved stone (soft indigo-grey stone in 2 flat tones, one lighter tone painted along the top edges,
+simple painted seams between blocks, no fine cracks, no noise). Broad blocky shoulders, a small block head sunk
+between them. A crown of thick angular dark-purple roots grows from its head and runs down both shoulders — sharp,
+faceted, clearly readable in silhouette. In the middle of its chest, a LARGE glowing warm amber core set in a
+diamond-shaped socket — the brightest thing on it. Long heavy arms in the A-pose, the right one ending in a big
+blocky stone club with flat faces. Two small amber eye slits. Imposing, ancient and calm, with a sleepy face.
+```
+- Meshy: 위 "순서" 그대로(Multi-view 정면·옆·뒤, Texture base color, PBR 끔, Triangle 3~5k, Symmetry, A-pose, GLB). **Smooth/부드럽게 다듬는 옵션은 끈다**(면이 뭉개진다).
+- 받은 뒤(Claude): 면 수를 줄이고 **면마다 평평한 법선**, 부위 자르기(몸·머리·팔 둘·곤봉·핵 `glow_core`·뿌리 왕관), 지금 문지기 동작(내려치기·돌진·파동·깨어남)을 옮긴다. 판정은 게임 안 쿼터뷰·락온 스크린숏.
+
 ### 뒤·옆 (같은 대화에서 정면을 받은 뒤)
 ```
 Now render exactly the same character as a separate image, same scale, same flat lighting, same white background,

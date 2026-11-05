@@ -2,7 +2,7 @@
 
 - 날짜: 2026-11-05
 - 상태: **상설 규칙**(사장: "늘 모델링 할때는 t3ssel8r 의 스타일을 생각해, 예쁘니까!"). 0037(색 = 생명)·0033(툰·외곽선)과 함께 간다.
-- 근거: KB `concepts/3d-pixel-art-look.md`(이번에 씀). **t3ssel8r 본인의 영상·글은 아직 직접 보지 못했다** — 재구현기(David Holland 글, Otavio Peixoto 글, Godot 포럼)와 논문 한 편의 설명이다.
+- 근거: KB `concepts/3d-pixel-art-look.md`(이번에 씀), 이 레포 `docs/research/2026-11-03-t3ssel8r-style.md`(그때는 "고려 대상"이었다 — 이 결정으로 기준이 됨, 같은 출처·같은 결론: 픽셀 고정은 정사영에서만, 타협은 쿼터뷰 좁은 FOV), Meshy용 그림 프롬프트 `docs/art/gemini-prompts-0038.md`. **t3ssel8r 본인의 영상·글은 아직 직접 보지 못했다** — 재구현기(David Holland 글, Otavio Peixoto 글, Godot 포럼)와 논문 한 편의 설명이다.
 
 ## t3ssel8r 풍이란(2차 출처로 모은 것)
 - 3D를 **낮은 해상도로 그려 정수배로 키운다**(가장 가까운 픽셀).
