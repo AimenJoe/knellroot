@@ -1017,7 +1017,7 @@ pub mod check {
         }
     }
 
-    pub(super) fn cut(t: &str, max_w: f32) {
+    pub fn cut(t: &str, max_w: f32) {
         if on() {
             report(format!("cut ({max_w:.0}px) {t}"));
         }

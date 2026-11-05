@@ -307,15 +307,18 @@ impl App {
         let text_w = lx + lw - text_x;
         let name = self.ui.fit(self.cand_name(focus), text_w, 1.0);
         self.ui.text(&name, text_x, desc_y, 1.0, AMBER);
-        for (k, line) in ui::wrap(&self.ui, self.cand_desc(focus), text_w, 0.9)
-            .iter()
-            .take(3)
-            .enumerate()
-        {
+        // 설명은 칸에 들어가는 줄까지 — 넘치면 F4 넘침 검사에 걸린다(조용히 잘리지 않게).
+        let lines = ui::wrap(&self.ui, self.cand_desc(focus), text_w, 0.9);
+        let fit = ((bottom - desc_y - px * 2.5) / (px * 1.3) + 1.0)
+            .floor()
+            .max(0.0) as usize;
+        #[cfg(feature = "dev")]
+        if lines.len() > fit {
+            crate::ui::check::cut(self.cand_desc(focus), text_w);
+        }
+        for (k, line) in lines.iter().take(fit).enumerate() {
             let y = desc_y + px * 1.5 + px * 1.3 * k as f32;
-            if y + px <= bottom {
-                self.ui.text(line, text_x, y, 0.9, DIM);
-            }
+            self.ui.text(line, text_x, y, 0.9, DIM);
         }
 
         // 오른쪽: 상태(칸 고르기) 또는 후보 목록 + 바뀌는 줄.

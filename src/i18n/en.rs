@@ -55,10 +55,11 @@ pub const EN: Strings = Strings {
     weapon_sword_d:
         "3-hit combo · charged wide slash · magic bolt. The plain blade most pilgrims carry",
     weapon_hammer_d:
-        "Slow, wide 2-hit combo · leaping slam with aftershock · heavy bolt. Breaks posture",
+        "Slow 2 hits · leaping slam · heavy bolt; breaks posture. The sanctuary bell's hammer",
     weapon_staff_d:
-        "Fast 4-hit combo with a beat finisher · bonus for a timed release · piercing bolt",
-    weapon_crossbow_d: "Grenades · aimed shots (4 bolts) · dodging loads a bolt",
+        "Fast 4-hit combo · timed release bonus · piercing bolt. A pilgrim's light staff",
+    weapon_crossbow_d:
+        "Grenades · aimed shots (4 bolts) · dodge to reload. An old hunter's powder crossbow",
     slots_new: "New game",
     slots_load: "Continue",
     slot_name: "Slot {0}",

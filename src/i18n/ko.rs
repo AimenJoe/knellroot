@@ -52,9 +52,11 @@ pub const KO: Strings = Strings {
     stat_kill: "처치 시 기력",
     stat_ember: "잔불",
     weapon_sword_d: "3연타 · 모아 넓게 베기 · 마법탄. 순례자들이 흔히 차고 다니는 평범한 칼",
-    weapon_hammer_d: "느리고 넓은 2연타 · 뛰어 내려찍기(여진) · 무거운 탄. 자세를 크게 깬다",
-    weapon_staff_d: "빠른 4연타(박자 마무리) · 딱 맞춰 떼면 덤 · 꿰뚫는 탄",
-    weapon_crossbow_d: "수류탄 · 조준 사격(탄창 넷) · 회피하면 한 발 장전",
+    weapon_hammer_d:
+        "느린 2연타 · 뛰어 내려찍기 · 무거운 탄, 자세를 크게 깬다. 성소의 종을 치던 망치",
+    weapon_staff_d: "빠른 4연타(박자 마무리) · 딱 맞춰 떼면 덤 · 꿰뚫는 탄. 순례자의 가벼운 지팡이",
+    weapon_crossbow_d:
+        "수류탄 · 조준 사격(탄창 넷) · 회피하면 한 발 장전. 화약 냄새가 밴 낡은 사냥꾼의 쇠뇌",
     slots_new: "새로 시작",
     slots_load: "이어하기",
     slot_name: "슬롯 {0}",
