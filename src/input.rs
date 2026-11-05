@@ -126,6 +126,8 @@ pub struct Actions {
     /// 메뉴 굴리기: 손가락 끌기(논리 px, 위로 끌면 +)·마우스 휠(칸, 아래로 +). 틱마다 소비(`ui::ListView::scroll`).
     pub drag: f32,
     pub wheel: i32,
+    /// 굴리기가 일어난 자리(논리 px): 휠이면 마우스 자리, 끌기면 손가락이 처음 닿은 자리 — 한 화면에 굴릴 것이 둘일 때 가른다(0068).
+    pub point: Option<Vec2>,
     /// 개발: 측정·안내 줄 켜고 끄기(F3).
     pub dev_overlay: bool,
     /// 개발: 글자 넘침 검사 켜고 끄기(F4, `ui::check`).
@@ -985,9 +987,11 @@ impl Input {
             let wy = mouse_wheel().1;
             if wy.abs() > 0.0 {
                 a.wheel = if wy > 0.0 { -1 } else { 1 };
+                a.point = Some(mp);
             }
         }
         a.drag = t.drag;
+        a.point = a.point.or(t.drag_at);
         // 메뉴는 마우스 왼쪽을 뗄 때 탭(터치와 같은 규칙, nail 0199).
         if menu && mouse_real && a.tap.is_none() && is_mouse_button_released(MouseButton::Left) {
             a.tap = Some(mp);
@@ -1048,6 +1052,7 @@ impl Input {
             tap: a.tap.or(self.latch.tap),
             drag: self.latch.drag + a.drag,
             wheel: self.latch.wheel + a.wheel,
+            point: a.point.or(self.latch.point),
             dev_overlay: self.latch.dev_overlay | a.dev_overlay,
             ui_check: self.latch.ui_check | a.ui_check,
             pressed_key: a.pressed_key.or(self.latch.pressed_key),

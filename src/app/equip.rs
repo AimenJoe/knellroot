@@ -109,6 +109,21 @@ fn icon_scale(native: u32, want: f32) -> f32 {
     (want / native as f32).floor().max(1.0)
 }
 
+/// 넘치는 설명 칸 굴리기(0068): 오른쪽 스틱(위 = +, 초당 `PANE_LINES_PER_SEC`줄 × 기울기) · 휠(칸 = 한 줄) · 끌기(줄 수)를
+/// 더해 0..=`max`로. 저절로 흐르지 않는다 — 읽는 속도는 읽는 사람이(WCAG 2.2.2, 사장 2026-11-05 "왜 흘러야해?").
+pub(super) fn pane_step(
+    scroll: f32,
+    stick_y: f32,
+    dt: f32,
+    wheel: i32,
+    drag_lines: f32,
+    max: usize,
+) -> f32 {
+    (scroll - stick_y * PANE_LINES_PER_SEC * dt + wheel as f32 + drag_lines).clamp(0.0, max as f32)
+}
+
+const PANE_LINES_PER_SEC: f32 = 6.0;
+
 /// 나빠지는 값의 색(붉은 계열 — 화살표 ▼와 함께, 색만으로 말하지 않는다).
 const WORSE: Color = Color::new(0.88, 0.42, 0.36, 1.0);
 
@@ -161,13 +176,43 @@ impl App {
     }
 
     /// 장비 창 한 틱: 위아래 = 칸, 좌우 = 바로 돌려 끼우기, 확인·탭 = 후보 목록, 뒤로·✕·창 밖 = 닫기.
+    /// 설명 칸 굴리기 한 틱: 오른쪽 스틱은 늘, 휠·끌기는 `anywhere`이거나 설명 칸 위에서 일어났을 때만(그때는 목록에 넘기지 않는다).
+    fn pane_input(&mut self, a: &mut Actions, anywhere: bool) {
+        let over = anywhere || a.point.and_then(|p| self.hit_at(p)) == Some(Hit::Pane);
+        let (wheel, drag) = if over {
+            let wd = (a.wheel, a.drag);
+            (a.wheel, a.drag) = (0, 0.0);
+            wd
+        } else {
+            (0, 0.0)
+        };
+        let line = self.ui.px(1.0) * 0.9 * 1.3;
+        // 칸에 넘치는 줄 수는 그림이 정한다 — 여기서는 크게 열어 두고 그림이 자른다.
+        self.scroll = pane_step(
+            self.scroll,
+            a.aim.y,
+            TICK_DT,
+            wheel,
+            drag / line.max(1.0),
+            usize::MAX >> 1,
+        );
+    }
+
     pub(super) fn tick_equip(&mut self, a: &Actions) {
+        let mut a = *a;
+        let before = self.cursor;
+        // 칸 고르기에는 굴릴 목록이 없다 — 휠·끌기는 어디서든 설명 칸을.
+        self.pane_input(&mut a, true);
+        let a = &a;
         let tap = a.tap.and_then(|p| self.hit_at(p));
         if a.back || a.pause || tap == Some(Hit::Close) {
             self.go(Go::Back);
             return;
         }
         ui::menu_input(&mut self.cursor, SLOTS, a.menu_up, a.menu_down);
+        if self.cursor != before {
+            self.scroll = 0.0;
+        }
         let step = a.menu_right as i32 - a.menu_left as i32;
         if step != 0 {
             match self.cursor {
@@ -195,13 +240,22 @@ impl App {
 
     /// 후보 목록 한 틱: 위아래·굴리기, 확인·탭 = 끼우고 칸으로(못 얻은 것은 "안 됨"), 뒤로 = 그냥 칸으로.
     pub(super) fn tick_equip_pick(&mut self, a: &Actions, slot: usize) {
+        let mut a = *a;
+        let before = self.cursor;
+        // 휠·끌기가 설명 칸 위면 설명을, 아니면 후보 목록을 굴린다.
+        self.pane_input(&mut a, false);
+        let a = &a;
         let tap = a.tap.and_then(|p| self.hit_at(p));
         if a.back || a.pause || tap == Some(Hit::Close) {
             self.go(Go::Back);
             return;
         }
         let list = candidates(slot, &self.progress.owned);
-        let Some(i) = self.menu_pick(a, list.len()) else {
+        let picked = self.menu_pick(a, list.len());
+        if self.cursor != before {
+            self.scroll = 0.0;
+        }
+        let Some(i) = picked else {
             return;
         };
         match list[i] {
@@ -307,19 +361,37 @@ impl App {
         let text_w = lx + lw - text_x;
         let name = self.ui.fit(self.cand_name(focus), text_w, 1.0);
         self.ui.text(&name, text_x, desc_y, 1.0, AMBER);
-        // 설명은 칸에 들어가는 줄까지 — 넘치면 F4 넘침 검사에 걸린다(조용히 잘리지 않게).
-        let lines = ui::wrap(&self.ui, self.cand_desc(focus), text_w, 0.9);
-        let fit = ((bottom - desc_y - px * 2.5) / (px * 1.3) + 1.0)
-            .floor()
-            .max(0.0) as usize;
-        #[cfg(feature = "dev")]
+        // 설명은 칸에 들어가는 줄만큼 보이고, 넘치면 굴린다(오른쪽 스틱·휠·끌기 — `pane_input`) + ▲▼ 표시.
+        // 먼저 칸 폭 그대로 나누고, 넘칠 때만 오른쪽에 ▲▼ 자리를 비워 다시 나눈다(넘치지 않는 글은 폭을 다 쓴다).
+        let line_h = px * 1.3;
+        let body_y = desc_y + px * 1.5;
+        let fit = ((bottom - body_y - px) / line_h + 1.0).floor().max(1.0) as usize;
+        let mut lines = ui::wrap(&self.ui, self.cand_desc(focus), text_w, 0.9);
         if lines.len() > fit {
-            crate::ui::check::cut(self.cand_desc(focus), text_w);
+            let arrow_w = self.ui.width("▼", 0.8) + u * 3.0;
+            lines = ui::wrap(&self.ui, self.cand_desc(focus), text_w - arrow_w, 0.9);
         }
-        for (k, line) in lines.iter().take(fit).enumerate() {
-            let y = desc_y + px * 1.5 + px * 1.3 * k as f32;
-            self.ui.text(line, text_x, y, 0.9, DIM);
+        let max = lines.len().saturating_sub(fit);
+        self.scroll = self.scroll.clamp(0.0, max as f32);
+        let first = self.scroll.round() as usize;
+        for (k, line) in lines.iter().skip(first).take(fit).enumerate() {
+            self.ui
+                .text(line, text_x, body_y + line_h * k as f32, 0.9, DIM);
         }
+        if max > 0 {
+            let ax = text_x + text_w - self.ui.width("▼", 0.8);
+            if first > 0 {
+                self.ui.text("▲", ax, body_y, 0.8, DIM);
+            }
+            if first < max {
+                self.ui
+                    .text("▼", ax, body_y + line_h * (fit as f32 - 1.0), 0.8, DIM);
+            }
+        }
+        self.hits.push((
+            Rect::new(text_x, desc_y, text_w, bottom - desc_y),
+            Hit::Pane,
+        ));
 
         // 오른쪽: 상태(칸 고르기) 또는 후보 목록 + 바뀌는 줄.
         let now_stats = self.progress.stats();
@@ -480,5 +552,28 @@ mod tests {
             ],
             "table order, owned only"
         );
+    }
+}
+
+#[cfg(test)]
+mod pane_tests {
+    use super::*;
+
+    #[test]
+    fn the_description_pane_scrolls_only_when_asked_and_stays_in_range() {
+        // 손대지 않으면 그대로(저절로 흐르지 않는다).
+        assert_eq!(pane_step(0.0, 0.0, 1.0 / 60.0, 0, 0.0, 3), 0.0);
+        // 스틱 아래(−y) = 아래 줄로, 1초면 여섯 줄 — 그러나 넘친 줄 수까지만.
+        assert_eq!(pane_step(0.0, -1.0, 1.0, 0, 0.0, 3), 3.0);
+        assert_eq!(
+            pane_step(2.0, 1.0, 1.0, 0, 0.0, 3),
+            0.0,
+            "up stops at the top"
+        );
+        // 휠 한 칸 = 한 줄, 끌기는 줄 수.
+        assert_eq!(pane_step(0.0, 0.0, 0.0, 1, 0.0, 3), 1.0);
+        assert_eq!(pane_step(1.0, 0.0, 0.0, 0, 1.5, 3), 2.5);
+        // 넘치지 않으면(0줄) 움직이지 않는다.
+        assert_eq!(pane_step(0.0, -1.0, 1.0, 2, 4.0, 0), 0.0);
     }
 }
