@@ -80,6 +80,8 @@ jobs:
           node tools/test/touch.js $dir shots
           # 로딩 화면·매니페스트·서비스 워커·오프라인 다시 읽기(0062).
           node tools/test/pwa.js $dir shots
+          # 기록: 이어하기·처음부터·새로 하기(0064 M2).
+          node tools/test/save.js $dir shots
       - uses: actions/upload-artifact@v7
         with:
           name: shots

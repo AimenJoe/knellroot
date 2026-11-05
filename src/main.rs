@@ -20,6 +20,7 @@ mod model;
 mod models;
 mod prefs;
 mod render;
+mod save;
 #[cfg(feature = "dev")]
 mod scenario;
 mod scenery;

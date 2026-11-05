@@ -113,6 +113,24 @@
         importObject.env.knell_pref_set = function (i, v) {
           try { window.localStorage.setItem("knell.pref." + i, String(v >>> 0)); } catch (e) {}
         };
+        // 기록(src/save.rs, 0064 M2): localStorage 글 한 칸 "knell.save.0"(키=값 줄, UTF-8). 바이트는 번들의 전역 wasm_memory로 주고받는다.
+        // 막히면(사생활 보호 모드 등) 읽기는 빈 글, 쓰기는 0(실패) — 게임은 한 판만 하는 것처럼 굴러간다.
+        var SAVE_KEY = "knell.save.0";
+        function saveBytes() {
+          try { return new TextEncoder().encode(window.localStorage.getItem(SAVE_KEY) || ""); } catch (e) { return new Uint8Array(0); }
+        }
+        importObject.env.knell_save_len = function () { return saveBytes().length; };
+        importObject.env.knell_save_read = function (ptr, len) {
+          new Uint8Array(wasm_memory.buffer, ptr, len).set(saveBytes().subarray(0, len));
+        };
+        importObject.env.knell_save_write = function (ptr, len) {
+          try {
+            if (len === 0) { window.localStorage.removeItem(SAVE_KEY); return 1; }
+            var text = new TextDecoder().decode(new Uint8Array(wasm_memory.buffer, ptr, len).slice());
+            window.localStorage.setItem(SAVE_KEY, text);
+            return 1;
+          } catch (e) { return 0; }
+        };
         // 전체 화면(src/screen.rs, 0046 — nail 0269와 같은 방식): 문서 전체를 올리고, 들어간 뒤 가로 잠금을 시도(Android Chrome), 안 되면 조용히.
         // 브라우저는 사용자 입력 직후에만 허락한다 — 게임이 메뉴를 고른 그 프레임에 부른다.
         function fsEnabled() { return !!(document.fullscreenEnabled || document.webkitFullscreenEnabled); }

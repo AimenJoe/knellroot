@@ -65,7 +65,10 @@ impl Scene {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TitleItem {
+    /// 시작 — 기록이 있으면 "이어하기"(마지막으로 쉰 쉼터에서, 없으면 입구부터 + 남는 것 그대로, 0064 M2).
     Start,
+    /// 새로 하기(기록이 있을 때만): 한 번 더 눌러야 기록을 지운다.
+    NewGame,
     /// 설정(0052): 언어·전체 화면·흔들림·조작이 여기로 모였다(타이틀에 흩어져 있었다).
     Settings,
     /// 개발 메뉴(0052). 개발판에만.
@@ -73,9 +76,12 @@ pub enum TitleItem {
     Dev,
 }
 
-pub fn title_items() -> Vec<TitleItem> {
-    #[allow(unused_mut)]
+/// 타이틀 줄. 설정은 늘 둘째(`tools/test/shot.js`가 아래로 한 번 간다), 새로 하기는 기록이 있을 때 설정 뒤에.
+pub fn title_items(has_save: bool) -> Vec<TitleItem> {
     let mut v = vec![TitleItem::Start, TitleItem::Settings];
+    if has_save {
+        v.push(TitleItem::NewGame);
+    }
     #[cfg(feature = "dev")]
     v.push(TitleItem::Dev);
     v
@@ -230,7 +236,12 @@ mod tests {
         assert_eq!(choose_pause(PauseItem::Restart), (Scene::Play, true));
         assert_eq!(choose_pause(PauseItem::ToTitle), (Scene::Title, true));
         assert_eq!(choose_result(ResultItem::Retry), (Scene::Play, true));
-        assert_eq!(title_items()[0], TitleItem::Start);
+        assert_eq!(title_items(false)[0], TitleItem::Start);
+        assert_eq!(title_items(false)[1], TitleItem::Settings);
+        assert!(!title_items(false).contains(&TitleItem::NewGame), "nothing to erase");
+        // 기록이 있어도 시작(이어하기)·설정 자리는 그대로, 새로 하기는 그 뒤.
+        assert_eq!(title_items(true)[..2], [TitleItem::Start, TitleItem::Settings]);
+        assert_eq!(title_items(true)[2], TitleItem::NewGame);
         assert_eq!(
             choose_pause(PauseItem::Settings),
             (Scene::Settings { from_pause: true }, false),

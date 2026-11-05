@@ -201,6 +201,12 @@ mod store {
     }
 }
 
+/// 기록 폴더(데스크톱·Android) — 기록(`save.rs`)도 같은 폴더를 쓴다.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn data_dir() -> Option<std::path::PathBuf> {
+    store::data_dir()
+}
+
 pub fn load() -> Option<Prefs> {
     decode(&store::load_all())
 }

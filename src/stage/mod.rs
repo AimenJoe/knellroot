@@ -736,6 +736,31 @@ impl StageRun {
         self.card = Some((|s| s.respawned, CARD_TIME));
     }
 
+    /// 기록할 판 안의 자리(0064 M2): 마지막으로 쉰 쉼터와 되돌아갈 단계. 쉰 적이 없으면 없다(다음은 입구부터).
+    pub fn run_at(&self) -> Option<crate::save::RunAt> {
+        self.rest_at.map(|(i, back)| crate::save::RunAt {
+            rest: i,
+            gate_open: back != Phase::Entrance,
+        })
+    }
+
+    /// 이어하기(0064 M2): 시작 이야기 없이 기록의 쉼터에서 다시 선다 — 쓰러진 뒤 다시 서는 것과 같은 규칙(0032),
+    /// 글만 "쉬었다". 기록의 쉼터 번호가 지도에 없으면(지도가 바뀌었다) 입구부터.
+    pub fn resume(&mut self, w: &mut World, at: crate::save::RunAt) {
+        if at.rest >= self.rests.len() {
+            return;
+        }
+        self.intro = 0.0;
+        self.first_card = true;
+        let back = if at.gate_open {
+            Phase::GateOpen
+        } else {
+            Phase::Entrance
+        };
+        self.respawn(w, at.rest, back);
+        self.card = Some((self.def.zones[self.zone].0, CARD_TIME));
+    }
+
     /// 개발: 물결을 건너뛰고 문 앞으로(문이 열린 채) — 보스만 다시 볼 때.
     #[cfg(feature = "dev")]
     pub fn dev_skip_to_gate(&mut self, w: &mut World) {
@@ -995,6 +1020,31 @@ mod tests {
     }
 
     /// 0032: 성소 지도에 쉼터 둘(입구·문 앞), 곁에서 상호작용 = 체력·등잔 가득 + 다시 일어설 곳.
+    #[test]
+    fn resuming_from_a_record_stands_at_that_rest_site_with_the_same_progress() {
+        // 문 앞 쉼터에서 쉰 기록(문이 열린 뒤) → 새 판에서 이어하기 = 그 쉼터 곁, 문은 열려 있고 물결은 없다.
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        let last = run.rests.len() - 1;
+        run.resume(&mut w, crate::save::RunAt { rest: last, gate_open: true });
+        assert_eq!(run.phase, Phase::GateOpen);
+        assert!(!run.gate_closed);
+        assert_eq!(run.intro, 0.0, "no opening story when continuing");
+        let at = run.rests[last];
+        assert!(vec2(w.player.pos.x - at.x, w.player.pos.z - at.z).length() < 2.0);
+        assert_eq!(run.run_at(), Some(crate::save::RunAt { rest: last, gate_open: true }));
+        assert!(w.enemies.iter().all(|e| e.boss), "only the sleeping gatekeeper");
+        // 입구 쉼터·물결 전 기록이면 입구 단계.
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        run.resume(&mut w, crate::save::RunAt { rest: 0, gate_open: false });
+        assert_eq!(run.phase, Phase::Entrance);
+        assert!(run.gate_closed);
+        // 지도에 없는 쉼터 번호면 아무것도 하지 않는다(처음부터).
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        run.resume(&mut w, crate::save::RunAt { rest: 99, gate_open: true });
+        assert_eq!(run.phase, Phase::Entrance);
+        assert_eq!(run.run_at(), None);
+    }
+
     #[test]
     fn resting_refills_and_marks_the_rest_site() {
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);

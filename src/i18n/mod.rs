@@ -76,6 +76,10 @@ pub struct Strings {
     pub game_title: &'static str,
     pub title_subtitle: &'static str,
     pub menu_start: &'static str,
+    /// 기록이 있을 때의 시작(0064 M2)·새로 하기·그 확인.
+    pub menu_continue: &'static str,
+    pub menu_new_game: &'static str,
+    pub menu_new_confirm: &'static str,
     /// "언어: {0}"
     pub menu_language: &'static str,
     pub menu_resume: &'static str,
@@ -167,6 +171,9 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.game_title,
         s.title_subtitle,
         s.menu_start,
+        s.menu_continue,
+        s.menu_new_game,
+        s.menu_new_confirm,
         s.menu_language,
         s.menu_resume,
         s.menu_restart,

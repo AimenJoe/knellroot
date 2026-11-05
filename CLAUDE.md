@@ -40,6 +40,7 @@
 - **그림 기준은 t3ssel8r 풍 3D 도트(0061, 사장: 늘)**: 모델링할 때마다 0061 체크리스트 — **귀여움 문법이 먼저**(0036: 큰 머리·큰 눈 낮게·입 없음·둥근 실루엣, 보스도), 큰 면 몇 개의 둥근 덩어리(상자 + 면 법선은 마인크래프트 인상), 각진 것은 뿌리만(0037), 실루엣 + 큰 색 덩어리, 밝은 선이 붙을 볼록 모서리는 뿌리·핵·테에, 게임 거리의 px 크기 먼저, 판정은 게임 안 스크린숏.
 - 그림·모델: 손으로 PNG·GLB를 고치지 않는다. 모델 원본은 Blender bpy 스크립트 `tools/art/blender/<이름>.py`(공용 `common.py`: 상자 부위·뼈에 붙인 강체·64×64 아틀라스·동작) → `blender -b -P` → `assets/models/<이름>.glb`(+ 미리보기 `docs/art/previews/`, 검사 `check_glb.py`). GLB는 `build.rs`가 바이너리에 넣고 `models.rs`가 이름으로 찾는다 — 없으면 상자. 부위 이름 `glow_*` = 스스로 빛남. 상태 → 동작 이름은 `render::enemy_anim`·`player`. 지형은 `scenery.rs`가 한 번 굽는다(빛은 정점 색, `render::lit`). 에셋 출처는 `assets/LICENSES.md`. AI를 쓴 곳은 숨기지 않는다.
 - 주위 환경(0063)은 `backdrop.rs`(렌더의 일부)·`flora.rs`(굽는 지형에 얹는 나무·덤불·벽 뿌리 — 잎은 흔든 이십면체, 각진 것은 뿌리만, 걷는 칸에는 두지 않는다): 높이 안개는 걷는 땅 아래에만(`Scenery::walk_min`), 하늘·산등성이·달은 땅보다 먼저·법선 패스 밖, 먼 클립(200m) 안에(시험). 아지랑이는 카메라 숙임으로(`haze_by_pitch`).
+- 기록(0064 M2)은 `save.rs`: 키=값 줄(`save::key` 이름은 바꾸지 않는다, 모르는 키는 지킨다), 웹 localStorage `knell.save.0`·네이티브 `save0.txt`. 앱은 판에서 옮겨(`sync_progress`) 바뀌었을 때만 쓴다(`persist`). 판을 넘어 남는 것을 새로 만들면 `Progress`에 칸 + 키 하나 + 시험. 설정(`prefs`)과 섞지 않는다.
 - 웹 로딩·PWA(0062): 덮개는 `web/index.html`(글 없음, wasm 바이트로 진행, 첫 프레임 뒤 `main.rs` `loaded`), 서비스 워커 `web/sw.js`는 캐시 = 빌드 아이디·`skipWaiting` 없음. `web/`에 파일을 더하면 `sw.js` `PRECACHE`와 `assemble.sh`도, 시험은 `tools/test/pwa.js`. 아이콘은 `tools/icons/make_icons.py`.
 
 ## 하지 않는 것

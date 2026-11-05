@@ -69,6 +69,11 @@ pub struct App {
     mouse_hidden: bool,
     /// 갈 곳이 화면 밖에 있은 초(0060 W1 — 잠깐 뒤에 가장자리 화살).
     goal_off: f32,
+    /// 기록(0064 M2): 지금 것과 마지막으로 쓴 것(바뀌었을 때만 쓴다).
+    progress: crate::save::Progress,
+    saved: crate::save::Progress,
+    /// 타이틀 "새로 하기"를 한 번 눌렀다(한 번 더 = 기록 지우기). 커서가 움직이면 풀린다.
+    new_armed: bool,
 }
 
 impl App {
@@ -89,6 +94,7 @@ impl App {
         let (run, mut world) = StageRun::start(FIRST_STAGE);
         world.set_weapon(weapon);
         let cam = Camera::new(world.player.pos, &t);
+        let progress = crate::save::load();
         App {
             scene: Scene::Title,
             cursor: 0,
@@ -116,6 +122,9 @@ impl App {
             frame: None,
             mouse_hidden: false,
             goal_off: 0.0,
+            progress: progress.clone(),
+            saved: progress,
+            new_armed: false,
         }
     }
 
@@ -125,6 +134,35 @@ impl App {
         self.world = world;
         self.world.set_weapon(self.weapon);
         self.cam = Camera::new(self.world.player.pos, &self.t);
+    }
+
+    /// 이어하기(0064 M2): 새 판을 세우고, 기록에 쉼터가 있으면 거기서.
+    fn continue_run(&mut self) {
+        self.restart();
+        if let Some(at) = self.progress.run {
+            self.run.resume(&mut self.world, at);
+            self.cam = Camera::new(self.world.player.pos, &self.t);
+        }
+    }
+
+    /// 판에서 기록할 것을 옮기고(쉰 쉼터·끝낸 판), 바뀌었으면 쓴다.
+    fn sync_progress(&mut self, out: crate::stage::StageOut) {
+        self.progress.run = self.run.run_at();
+        if out == crate::stage::StageOut::Cleared {
+            self.progress.run = None;
+            self.progress.clears += 1;
+        }
+        self.persist();
+    }
+
+    /// 바뀐 것이 있으면 쓴다. 못 쓰면(사생활 보호 모드 등) 다음에 또 바뀔 때까지 다시 시도하지 않는다.
+    fn persist(&mut self) {
+        if self.progress != self.saved {
+            if !crate::save::save(&self.progress) {
+                warn!("save failed");
+            }
+            self.saved = self.progress.clone();
+        }
     }
 
     /// 무기를 바꾼다(0051, 멈춤 메뉴): 지금 판에 바로, 저장.
@@ -262,10 +300,25 @@ impl App {
         }
         match self.scene {
             Scene::Title => {
-                let items = flow::title_items();
-                if let Some(i) = self.menu_pick(&a, items.len()) {
+                let items = flow::title_items(self.progress.has_any());
+                let was = self.cursor;
+                let pick = self.menu_pick(&a, items.len());
+                if self.cursor != was {
+                    self.new_armed = false;
+                }
+                if let Some(i) = pick {
                     match items[i] {
                         TitleItem::Start => {
+                            crate::screen::touch_enter();
+                            self.continue_run();
+                            self.go(Scene::Play);
+                        }
+                        TitleItem::NewGame if !self.new_armed => self.new_armed = true,
+                        TitleItem::NewGame => {
+                            self.new_armed = false;
+                            crate::save::wipe();
+                            self.progress = crate::save::Progress::default();
+                            self.saved = self.progress.clone();
                             crate::screen::touch_enter();
                             self.restart();
                             self.go(Scene::Play);
@@ -436,6 +489,7 @@ impl App {
                 let a = self.cursor_aim(a);
                 self.step_world(&a);
                 let out = self.run.tick(&mut self.world, TICK_DT);
+                self.sync_progress(out);
                 if out == crate::stage::StageOut::Respawned {
                     // 쉼터에서 다시 일어섰다(0032): 카메라를 그 자리로 바로(멀리서 날아오지 않게).
                     self.cam = Camera::new(self.world.player.pos, &self.t);
@@ -746,10 +800,14 @@ impl App {
         self.ui.text_center(s.game_title, cx, y, 3.0, AMBER);
         self.ui
             .text_center(s.title_subtitle, cx, y + self.ui.px(3.0) * 1.2, 1.0, DIM);
-        let items: Vec<String> = flow::title_items()
+        let has = self.progress.has_any();
+        let items: Vec<String> = flow::title_items(has)
             .iter()
             .map(|i| match i {
+                TitleItem::Start if has => s.menu_continue.to_string(),
                 TitleItem::Start => s.menu_start.to_string(),
+                TitleItem::NewGame if self.new_armed => s.menu_new_confirm.to_string(),
+                TitleItem::NewGame => s.menu_new_game.to_string(),
                 TitleItem::Settings => s.menu_settings.to_string(),
                 // 개발 전용(영어 그대로, 0013).
                 #[cfg(feature = "dev")]
