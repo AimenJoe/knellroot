@@ -90,7 +90,7 @@ ash-grey husk watches. Far below, a bell glows amber. Calm, lonely, tender. Soft
 ### 순서
 1. 새 대화 + 참고 그림 `docs/art/meshy-0038/<이름>_front.png`(색·비율만) + **공통 + 캐릭터** → 정면.
 2. 받은 그림을 `python3 tools/art/tiny_preview.py <그림>`으로 20px·50px에서 본다. 얼굴·특징이 안 남으면 "make X bigger"로 다시.
-3. 같은 대화에서 **뒤·옆** → Meshy Multi-view(정면·옆·뒤). Meshy는 Texture 켬(base color), PBR 맵 끔, Triangle 3~5k, Symmetry 켬, A-pose, GLB.
+3. 같은 대화에서 **뒤·옆** → Meshy Multi-view(정면·옆·뒤) — **유료(Meshy 7.1)만**. 무료면 정면 한 장 + Meshy 6 Lite. Meshy는 Texture 켬(base color), PBR 맵 끔, Triangle 3~5k, Symmetry 켬, A-pose, GLB.
 4. GLB를 Claude에게 → 부위 자르기·줄이기·텍스처 128 → 게임 화면 480×270에서 지금 모델과 나란히.
 
 ### 공통 덩어리(Meshy용, 매번 맨 앞)
@@ -192,7 +192,7 @@ dark-purple roots like little antlers (the only sharp shapes), and one thin root
 a crack. On its round belly, a big glowing warm amber core in a diamond-shaped socket — the brightest thing on it.
 Imposing because of its size and weight, but cute enough that you want to hug it.
 ```
-- **받은 것(2026-11-05, 사장 — 나노바나나, AI 생성)**: `tools/art/sources/ai/knellroot/warden_v2_sheet.png`(정면·뒤·옆 + 뒤·옆 한 번 더). 잘라 낸 것 `warden_v2_front/back/side.png`(1100² 흰 바탕, 높이 80%), 60·150px 미리보기 `warden_v2_front_tiny.png` — 60px에서 눈 둘·이끼 볼·배 핵·뿌리 왕관이 남는다. 뒷모습은 왼팔이 몸에 가려 거의 안 보여 정면·옆과 조금 어긋난다 → Meshy엔 정면 + 옆 먼저.
+- **받은 것(2026-11-05, 사장 — 나노바나나, AI 생성)**: `tools/art/sources/ai/knellroot/warden_v2_sheet.png`(정면·뒤·옆 + 뒤·옆 한 번 더). 잘라 낸 것 `warden_v2_front/back/side.png`(1100² 흰 바탕, 높이 80%), 60·150px 미리보기 `warden_v2_front_tiny.png` — 60px에서 눈 둘·이끼 볼·배 핵·뿌리 왕관이 남는다. 뒷모습은 왼팔이 몸에 가려 거의 안 보여 정면·옆과 조금 어긋난다 → ~~Meshy엔 정면 + 옆 먼저~~ **무료는 정면 한 장 + Meshy 6 Lite만**(Multi-view는 Meshy 7.1 + 유료, 무료는 6 Lite 텍스처 없는 것만 받을 수 있다 — 공식 문서 2026-11-05).
 - 나머지는 v1과 같다: 60px로 줄여 보기 → 뒤·옆 → Meshy(부드럽게 끔 — 다만 이번엔 둥근 조약돌이라 결과가 너무 매끈하면 "faceted"를 더 세게).
 
 ### 뒤·옆 (같은 대화에서 정면을 받은 뒤)
