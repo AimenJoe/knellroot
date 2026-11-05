@@ -73,6 +73,10 @@ async function main() {
     const w = Math.floor(W * dpi / s), rows = Math.min(Math.floor(H * dpi / s), Math.floor(w * 3 / 4));
     const dh = rows * s / dpi, oy = Math.floor((H - dh) / 2), px = 13 * dh / 270;  // ui::GLYPH × Frame::ui
     await tap([W / 2, oy + dh * 0.37 + px * 0.5]);  // app::TITLE_MENU_Y
+    // 시작하기 → 슬롯 창(0066): 첫 줄(슬롯 1, 비어 있음 = 시작)을 탭. 창은 480×270 기준 높이 106 —
+    // 위 6·아래 안내 줄(2.8글) 사이 가운데, 제목 줄 뒤 첫 줄 가운데 ≈ 108/270(`app::menu` `draw_menu`·`ui::list`).
+    await page.waitForTimeout(400);
+    await tap([W / 2, oy + dh * 108 / 270]);
   }
   await page.waitForTimeout(1200);
   await shot('t01-first-screen');

@@ -86,7 +86,7 @@ async function main() {
   };
   await keyboardOnly();
   if (MODE === 'stress') { await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300); await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300); await press('Digit7'); }
-  else { await press('Enter'); }
+  else { await press('Enter'); await page.waitForTimeout(300); await press('Enter'); }  // 시작하기 → 슬롯 창(0066) → 시작
   const t0 = Date.now();
   let next = 0, i = 0;
   const keys = ['KeyW', 'KeyD', 'KeyS', 'KeyA'];

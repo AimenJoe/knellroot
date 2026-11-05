@@ -2,7 +2,8 @@
 //   1) 기록이 없으면 타이틀 = 시작·설정(새로 하기 없음), 2) 기록을 심어 두면 = 이어하기·설정·새로 하기,
 //   3) 이어하기 → 기록의 쉼터(문 앞)에서 선다(스크린숏), 4) 멈춤 → 처음부터 → 기록에서 판 안의 자리가 지워지고 남는 것은 그대로,
 //   3a) 쉼터에서 쉬면 화로 가게 — 잔불로 장신구를 사면 기록에(0064 M4).
-//   5) 새로 하기(타이틀 맨 끝 — 이 시험은 DEV 줄이 있는 개발판)는 묻는 창(커서는 취소, KB)에서 "기록 지우기"를 골라야 지운다. 처음부터·타이틀로·사기도 묻는다. 그 사이 장비 창에서 장신구를 끼면 기록에 남는지(0064 M3).
+//   5) 기록 슬롯(0066): 이어하기·시작하기 → 슬롯 창, 지우기·덮어쓰기는 두 번 눌러야, 다른 슬롯에서 시작해도 슬롯 1은 그대로, 마지막 슬롯 칸.
+//   처음부터·타이틀로·사기는 묻는 창. 그 사이 장비 창에서 장신구를 끼면 기록에 남는지(0064 M3).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/save.js dist shots
 const { chromium } = require('playwright');
 const http = require('http');
@@ -55,7 +56,10 @@ async function main() {
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
   await shot('save-1-title-continue');
 
-  // 3) 이어하기(첫 줄).
+  // 3) 이어하기(첫 줄) → 슬롯 창(이어하기, 0066 — 커서는 마지막 슬롯 = 칸이 없으니 슬롯 1) → 이어하기.
+  await press('Enter');
+  await page.waitForTimeout(300);
+  await shot('save-1a-slots-load');
   await press('Enter');
   await page.waitForTimeout(1500);
   await shot('save-2-continued-at-gate');
@@ -100,30 +104,38 @@ async function main() {
   if (!/embers=5\n/.test(r) || !/clears=1/.test(r)) fail('restart must keep what stays');
   if (!/future\.key=keep/.test(r)) fail('unknown keys must survive a write');
 
-  // 5) 타이틀로 → 새로 하기(셋째 줄) 한 번 = 확인 글만, 두 번 = 지움.
-  await press('Escape');
-  await page.waitForTimeout(200);
-  await press('ArrowDown', 4);
-  await press('Enter');
-  await page.waitForTimeout(300);
-  await press('ArrowUp'); await press('Enter');
-  await page.waitForTimeout(600);
-  // 타이틀: 이어하기·설정·DEV(개발판)·새로 하기(맨 끝).
-  await press('ArrowDown', 3);
-  await press('Enter');
-  await page.waitForTimeout(300);
-  await shot('save-3-new-game-ask');
-  if ((await record()) === null) fail('opening the question must not erase');
-  // 커서는 "취소"에서 — 그대로 확인하면 지우지 않고 타이틀로.
-  await press('Enter'); await page.waitForTimeout(400);
-  if ((await record()) === null) fail('cancel must not erase');
-  // 다시: 취소하면 커서는 연 줄(새로 하기)로 돌아와 있다(0066 장면 스택) → 확인 → 위로 한 번 = "기록 지우기".
+  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 → 다섯째 → 묻는 창 위로 한 번).
+  const slotCell = () => page.evaluate(() => localStorage.getItem('knell.slot'));
+  const toTitle = async () => {
+    await press('Escape'); await page.waitForTimeout(200);
+    await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(300);
+    await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(600);
+  };
+  await toTitle();
+  // 5a) 이어하기 → 지우기(좌우) → 한 번 누르면 "정말 지울까요?"만 — 기록은 그대로. 닫아도 그대로.
   await press('Enter'); await page.waitForTimeout(300);
-  await press('ArrowUp'); await press('Enter');
-  await page.waitForTimeout(800);
+  await press('ArrowRight'); await press('Enter'); await page.waitForTimeout(300);
+  await shot('save-3-erase-armed');
+  if ((await record()) === null) fail('one press must not erase');
+  await press('Escape'); await page.waitForTimeout(300);
+  if ((await record()) === null) fail('closing must not erase');
+  // 5b) 시작하기(둘째 줄 — 닫으면 커서는 이어하기에 돌아와 있다) → 새로 시작 창(커서는 첫 빈 슬롯 = 슬롯 2) → 시작.
+  await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
+  await shot('save-4-slots-new');
+  await press('Enter'); await page.waitForTimeout(800);
+  if ((await slotCell()) !== '1') fail('starting in slot 2 must remember it as the last slot');
+  if ((await record()) === null) fail('starting another slot must keep slot 1');
+  // 5c) 다시 타이틀 → 시작하기 → 슬롯 2는 아직 비었다(쌓인 것이 없다) → 위로 = 슬롯 1 "덮어쓰기"(두 번) → 슬롯 1이 비워진 채 시작.
+  await toTitle();
+  await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
+  await shot('save-5-overwrite-armed');
+  if ((await record()) === null) fail('one press must not overwrite');
+  await press('Enter'); await page.waitForTimeout(800);
   r = await record();
-  console.log('새로 하기 뒤 기록:', JSON.stringify(r));
-  if (r !== null && /embers=5\n/.test(r)) fail('new game must erase the record');
+  console.log('덮어쓰기 뒤 슬롯 1:', JSON.stringify(r));
+  if (r !== null && /embers=5\n/.test(r)) fail('overwrite must clear slot 1');
+  if ((await slotCell()) !== '0') fail('overwriting slot 1 must make it the last slot');
 
   if (errors.length) { console.error('콘솔 에러:\n' + errors.join('\n')); process.exitCode = 1; }
   await browser.close();

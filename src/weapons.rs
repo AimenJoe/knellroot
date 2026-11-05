@@ -122,6 +122,22 @@ pub enum Id {
 
 pub const IDS: [Id; 4] = [Id::Sword, Id::Hammer, Id::Staff, Id::Crossbow];
 
+impl Id {
+    /// 기록 키(0066 — 든 무기는 슬롯 기록에, 키는 바꾸지 않는다).
+    pub fn key(self) -> &'static str {
+        match self {
+            Id::Sword => "sword",
+            Id::Hammer => "hammer",
+            Id::Staff => "staff",
+            Id::Crossbow => "crossbow",
+        }
+    }
+
+    pub fn by_key(k: &str) -> Option<Id> {
+        IDS.into_iter().find(|i| i.key() == k)
+    }
+}
+
 pub struct Weapon {
     pub id: Id,
     /// X 연타(근접 무기). 원거리 무기는 비어 있고 X가 수류탄.

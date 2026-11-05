@@ -27,6 +27,10 @@ pub enum Scene {
     Ask(Ask),
     /// 설정(0052, nail 0269의 틀): 언어·전체 화면·화면 흔들림·조작. 타이틀·멈춤에서 연다 — 닫으면 연 곳(스택, 0066).
     Settings,
+    /// 슬롯 창(0066, KB `roguelite-save-slots-and-continue`): `load`면 이어하기(기록 있는 슬롯만 · 이어하기/지우기), 아니면 새로 시작(빈 슬롯은 시작, 기록 있으면 덮어쓰기). 둘 다 두 번 눌러야 지운다.
+    Slots {
+        load: bool,
+    },
     /// 개발 메뉴(0052, nail `Scene::Dev`): 문 앞에서 시작·PoC 시나리오 목록. 개발판에만.
     #[cfg(feature = "dev")]
     Dev,
@@ -49,6 +53,7 @@ impl Scene {
                 | Scene::Result { .. }
                 | Scene::Controls
                 | Scene::Settings
+                | Scene::Slots { .. }
         ) || self.is_dev()
     }
 
@@ -70,9 +75,11 @@ impl Scene {
             Scene::Sandbox => Layer::Game,
             Scene::Pause | Scene::Equip | Scene::Settings => Layer::Window { hud: true },
             // 가게는 잔불을 제가 보인다(KB hud-readability: 창이 같은 정보면 밑 HUD를 그리지 않는다).
-            Scene::Shop | Scene::Core | Scene::Result { .. } | Scene::Controls => {
-                Layer::Window { hud: false }
-            }
+            Scene::Shop
+            | Scene::Core
+            | Scene::Result { .. }
+            | Scene::Controls
+            | Scene::Slots { .. } => Layer::Window { hud: false },
             #[cfg(feature = "dev")]
             Scene::Dev => Layer::Window { hud: false },
             Scene::Ask(_) => Layer::Modal,
@@ -126,8 +133,6 @@ pub fn focus(scene: Scene) -> usize {
 /// 묻는 일.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Ask {
-    /// 타이틀 "새로 하기": 기록을 지운다.
-    NewGame,
     /// 멈춤 "처음부터": 쉼터 자리를 버린다.
     Restart,
     /// 멈춤 "타이틀로": 마지막 쉼 뒤의 진행을 버린다.
@@ -150,7 +155,6 @@ pub fn answer(k: Ask, yes: bool) -> (Go, bool) {
         return (Go::Back, false);
     }
     match k {
-        Ask::NewGame => (Go::Root(Scene::Play), true),
         Ask::Restart => (Go::Root(Scene::Play), true),
         Ask::ToTitle => (Go::Root(Scene::Title), true),
         Ask::Buy(_) => (Go::Back, false),
@@ -159,10 +163,10 @@ pub fn answer(k: Ask, yes: bool) -> (Go, bool) {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TitleItem {
-    /// 시작 — 기록이 있으면 "이어하기"(마지막으로 쉰 쉼터에서, 없으면 입구부터 + 남는 것 그대로, 0064 M2).
+    /// 이어하기(기록 있는 슬롯이 하나라도 있을 때만, 맨 위) → 슬롯 창(이어하기).
+    Continue,
+    /// 시작하기(늘) → 슬롯 창(새로 시작). KB: 처음 하는 사람은 이어하기가 안 보여 헷갈릴 일이 없다.
     Start,
-    /// 새로 하기(기록이 있을 때만): 한 번 더 눌러야 기록을 지운다.
-    NewGame,
     /// 설정(0052): 언어·전체 화면·흔들림·조작이 여기로 모였다(타이틀에 흩어져 있었다).
     Settings,
     /// 개발 메뉴(0052). 개발판에만.
@@ -170,16 +174,70 @@ pub enum TitleItem {
     Dev,
 }
 
-/// 타이틀 줄. 설정은 늘 둘째·DEV는 셋째(헤드리스 시험의 길), 새로 하기는 기록이 있을 때 맨 끝에.
+/// 타이틀 줄(0066): [이어하기(기록이 있으면)] · 시작하기 · 설정 · DEV. 기록이 없으면 설정은 둘째(헤드리스 시험의 길).
 pub fn title_items(has_save: bool) -> Vec<TitleItem> {
-    #[allow(unused_mut)]
-    let mut v = vec![TitleItem::Start, TitleItem::Settings];
+    let mut v = Vec::new();
+    if has_save {
+        v.push(TitleItem::Continue);
+    }
+    v.extend([TitleItem::Start, TitleItem::Settings]);
     #[cfg(feature = "dev")]
     v.push(TitleItem::Dev);
-    if has_save {
-        v.push(TitleItem::NewGame);
-    }
     v
+}
+
+/// 슬롯 창을 열 때의 포커스(KB): 이어하기는 마지막 슬롯(비었으면 첫 기록), 새로 시작은 첫 빈 슬롯(다 찼으면 첫째).
+pub fn slot_focus(load: bool, filled: &[bool], last: usize) -> usize {
+    if load {
+        if filled.get(last).copied().unwrap_or(false) {
+            last
+        } else {
+            filled.iter().position(|&f| f).unwrap_or(0)
+        }
+    } else {
+        filled.iter().position(|&f| !f).unwrap_or(0)
+    }
+}
+
+/// 이어하기 창에서 위아래: 빈 슬롯은 건너뛴다(고를 수 없는 줄에 서지 않게). 기록이 하나도 없으면 그대로.
+pub fn slot_step(from: usize, dir: i32, filled: &[bool]) -> usize {
+    let n = filled.len() as i32;
+    let mut i = from as i32;
+    for _ in 0..n {
+        i = (i + dir).rem_euclid(n);
+        if filled[i as usize] {
+            return i as usize;
+        }
+    }
+    from
+}
+
+/// 슬롯 줄에서 고르면.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SlotDo {
+    /// 아무것도(이어하기 창의 빈 슬롯).
+    Nothing,
+    /// 한 번 더 눌러야 한다(덮어쓰기·지우기 — 단추 글이 "정말 …?"로 바뀐다).
+    Arm,
+    /// 이 슬롯을 비우고(이미 비었으면 그대로) 새로 시작.
+    Fresh,
+    /// 이 슬롯의 기록으로 이어한다.
+    Load,
+    /// 이 슬롯을 지운다.
+    Erase,
+}
+
+/// 고름 → 할 일(`col`: 이어하기 창의 단추 0 = 이어하기 · 1 = 지우기, `armed`: 이미 한 번 눌렀나).
+pub fn slot_pick(load: bool, filled: bool, col: usize, armed: bool) -> SlotDo {
+    match (load, filled, col, armed) {
+        (true, false, _, _) => SlotDo::Nothing,
+        (true, true, 0, _) => SlotDo::Load,
+        (true, true, _, false) => SlotDo::Arm,
+        (true, true, _, true) => SlotDo::Erase,
+        (false, false, _, _) => SlotDo::Fresh,
+        (false, true, _, false) => SlotDo::Arm,
+        (false, true, _, true) => SlotDo::Fresh,
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -274,7 +332,8 @@ pub fn back(scene: Scene) -> Go {
         | Scene::Shop
         | Scene::Ask(_)
         | Scene::Controls
-        | Scene::Settings => Go::Back,
+        | Scene::Settings
+        | Scene::Slots { .. } => Go::Back,
         #[cfg(feature = "dev")]
         Scene::Dev => Go::Back,
         Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Core | Scene::Result { .. } => {
@@ -357,19 +416,17 @@ mod tests {
         );
         assert_eq!(answer(Ask::Restart, true), (Go::Root(Scene::Play), true));
         assert_eq!(answer(Ask::ToTitle, true), (Go::Root(Scene::Title), true));
-        assert_eq!(answer(Ask::NewGame, true), (Go::Root(Scene::Play), true));
         assert_eq!(
             answer(Ask::Buy(2), true),
             (Go::Back, false),
             "back to the shop"
         );
-        for k in [Ask::Restart, Ask::ToTitle, Ask::NewGame, Ask::Buy(0)] {
+        for k in [Ask::Restart, Ask::ToTitle, Ask::Buy(0)] {
             assert_eq!(answer(k, false), (Go::Back, false), "cancel closes");
             assert_eq!(back(Scene::Ask(k)), Go::Back);
             assert_eq!(Scene::Ask(k).layer(), Layer::Modal);
         }
         // 커서: 버리는 일은 취소에서, 사기는 사기에서 — 여는 순간의 포커스(0066).
-        assert_eq!(focus(Scene::Ask(Ask::NewGame)), 1);
         assert_eq!(focus(Scene::Ask(Ask::Restart)), 1);
         assert_eq!(focus(Scene::Ask(Ask::Buy(0))), 0);
         assert_eq!(focus(Scene::Pause), 0);
@@ -377,18 +434,16 @@ mod tests {
             choose_result(ResultItem::Retry),
             (Go::Root(Scene::Play), true)
         );
-        assert_eq!(title_items(false)[0], TitleItem::Start);
-        assert_eq!(title_items(false)[1], TitleItem::Settings);
-        assert!(
-            !title_items(false).contains(&TitleItem::NewGame),
-            "nothing to erase"
-        );
-        // 기록이 있어도 시작(이어하기)·설정 자리는 그대로, 새로 하기는 그 뒤.
+        // 0066: 기록이 없으면 시작하기·설정(설정은 둘째), 있으면 이어하기가 맨 위에.
         assert_eq!(
-            title_items(true)[..2],
+            title_items(false)[..2],
             [TitleItem::Start, TitleItem::Settings]
         );
-        assert_eq!(title_items(true).last(), Some(&TitleItem::NewGame));
+        assert!(!title_items(false).contains(&TitleItem::Continue));
+        assert_eq!(
+            title_items(true)[..3],
+            [TitleItem::Continue, TitleItem::Start, TitleItem::Settings]
+        );
         assert_eq!(
             choose_pause(PauseItem::Settings),
             (Go::Open(Scene::Settings), false),
@@ -423,5 +478,33 @@ mod tests {
             "shows its own embers"
         );
         assert_eq!(Scene::Core.layer(), Layer::Window { hud: false });
+    }
+
+    #[test]
+    fn slot_windows_focus_skip_and_need_two_presses_to_destroy() {
+        let filled = [true, false, true];
+        // 이어하기: 마지막 슬롯(기록이 있으면), 없으면 첫 기록. 새로 시작: 첫 빈 슬롯.
+        assert_eq!(slot_focus(true, &filled, 2), 2);
+        assert_eq!(slot_focus(true, &filled, 1), 0);
+        assert_eq!(slot_focus(false, &filled, 0), 1);
+        assert_eq!(slot_focus(false, &[true; 3], 2), 0, "all full: first");
+        // 이어하기 창의 위아래는 빈 슬롯을 건너뛴다(끝에서 돈다).
+        assert_eq!(slot_step(0, 1, &filled), 2);
+        assert_eq!(slot_step(2, 1, &filled), 0);
+        assert_eq!(slot_step(0, -1, &filled), 2);
+        assert_eq!(slot_step(1, 1, &[false; 3]), 1, "nothing to stand on");
+        // 덮어쓰기·지우기는 두 번, 이어하기·빈 슬롯 시작은 한 번.
+        assert_eq!(slot_pick(false, false, 0, false), SlotDo::Fresh);
+        assert_eq!(slot_pick(false, true, 0, false), SlotDo::Arm);
+        assert_eq!(slot_pick(false, true, 0, true), SlotDo::Fresh);
+        assert_eq!(slot_pick(true, true, 0, false), SlotDo::Load);
+        assert_eq!(slot_pick(true, true, 1, false), SlotDo::Arm);
+        assert_eq!(slot_pick(true, true, 1, true), SlotDo::Erase);
+        assert_eq!(slot_pick(true, false, 0, true), SlotDo::Nothing);
+        assert_eq!(back(Scene::Slots { load: true }), Go::Back);
+        assert_eq!(
+            Scene::Slots { load: false }.layer(),
+            Layer::Window { hud: false }
+        );
     }
 }

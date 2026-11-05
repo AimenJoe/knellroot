@@ -19,12 +19,6 @@ impl App {
         let (next, rebuild) = flow::answer(k, yes);
         if yes {
             match k {
-                flow::Ask::NewGame => {
-                    crate::save::wipe();
-                    self.progress = crate::save::Progress::default();
-                    self.saved = self.progress.clone();
-                    crate::screen::touch_enter();
-                }
                 flow::Ask::Buy(w) => {
                     let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
                     if let Some(&w) = wares.get(w) {
@@ -55,7 +49,6 @@ impl App {
         crate::ui::check::forget();
         self.ui.dim(0.55);
         let (q, yes) = match k {
-            flow::Ask::NewGame => (s.ask_new_game.to_string(), s.ask_new_game_yes),
             flow::Ask::Restart => (s.ask_restart.to_string(), s.menu_restart),
             flow::Ask::ToTitle => (s.ask_to_title.to_string(), s.menu_to_title),
             flow::Ask::Buy(i) => {

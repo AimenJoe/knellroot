@@ -101,7 +101,7 @@
     // 처음 장치가 터치인지(폰·태블릿): 아무것도 만지기 전 첫 화면부터 터치 버튼을 보이게(src/input.rs initial_device).
     miniquad_add_plugin({
       name: "knell_device",
-      version: 1,
+      version: 2,
       register_plugin: function (importObject) {
         importObject.env.knell_coarse_pointer = function () {
           try { return window.matchMedia("(pointer: coarse)").matches ? 1 : 0; } catch (e) { return 0; }
@@ -113,21 +113,22 @@
         importObject.env.knell_pref_set = function (i, v) {
           try { window.localStorage.setItem("knell.pref." + i, String(v >>> 0)); } catch (e) {}
         };
-        // 기록(src/save.rs, 0064 M2): localStorage 글 한 칸 "knell.save.0"(키=값 줄, UTF-8). 바이트는 번들의 전역 wasm_memory로 주고받는다.
+        // 기록(src/save.rs, 0064 M2 → 슬롯 셋 0066): 칸 0..2 = 슬롯 기록 "knell.save.<칸>"(슬롯 1 = 옛 한 칸 "knell.save.0" 그대로),
+        // 칸 3 = 마지막 슬롯 "knell.slot". 글은 키=값 줄(UTF-8), 바이트는 번들의 전역 wasm_memory로 주고받는다.
         // 막히면(사생활 보호 모드 등) 읽기는 빈 글, 쓰기는 0(실패) — 게임은 한 판만 하는 것처럼 굴러간다.
-        var SAVE_KEY = "knell.save.0";
-        function saveBytes() {
-          try { return new TextEncoder().encode(window.localStorage.getItem(SAVE_KEY) || ""); } catch (e) { return new Uint8Array(0); }
+        function recKey(cell) { return cell === 3 ? "knell.slot" : "knell.save." + cell; }
+        function recBytes(cell) {
+          try { return new TextEncoder().encode(window.localStorage.getItem(recKey(cell)) || ""); } catch (e) { return new Uint8Array(0); }
         }
-        importObject.env.knell_save_len = function () { return saveBytes().length; };
-        importObject.env.knell_save_read = function (ptr, len) {
-          new Uint8Array(wasm_memory.buffer, ptr, len).set(saveBytes().subarray(0, len));
+        importObject.env.knell_rec_len = function (cell) { return recBytes(cell).length; };
+        importObject.env.knell_rec_read = function (cell, ptr, len) {
+          new Uint8Array(wasm_memory.buffer, ptr, len).set(recBytes(cell).subarray(0, len));
         };
-        importObject.env.knell_save_write = function (ptr, len) {
+        importObject.env.knell_rec_write = function (cell, ptr, len) {
           try {
-            if (len === 0) { window.localStorage.removeItem(SAVE_KEY); return 1; }
+            if (len === 0) { window.localStorage.removeItem(recKey(cell)); return 1; }
             var text = new TextDecoder().decode(new Uint8Array(wasm_memory.buffer, ptr, len).slice());
-            window.localStorage.setItem(SAVE_KEY, text);
+            window.localStorage.setItem(recKey(cell), text);
             return 1;
           } catch (e) { return 0; }
         };

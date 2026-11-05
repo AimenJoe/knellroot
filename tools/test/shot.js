@@ -48,6 +48,8 @@ async function main() {
   await keyboardOnly();
   // 0 첫 스테이지(0019): 타이틀 → 시작 이야기 → 입구 → 뜰(첫 물결) → 멈춤 → 타이틀 → 개발: 문 앞 → 깨어남 → 결투(락온) → 멈춤 → 조작 설정.
   await shot('00-title');
+  // 시작하기 → 슬롯 창(0066, 커서는 첫 빈 슬롯) → "시작".
+  await press('Enter'); await page.waitForTimeout(300); await shot('00-slots-new');
   await press('Enter'); await page.waitForTimeout(1500); await shot('00a-intro');
   await page.waitForTimeout(5000); await shot('00b-entrance');
   await page.keyboard.down('KeyW'); await page.waitForTimeout(3500); await page.keyboard.up('KeyW');
@@ -57,9 +59,11 @@ async function main() {
   await press('Escape'); await page.waitForTimeout(300); await shot('00e-pause');
   // 멈춤(0052): 계속·장비·설정·처음부터·타이틀로. 타이틀: 시작·설정·DEV. DEV: 문 앞·무기·PoC 일곱·돌아가기.
   // 타이틀로는 묻는 창(0064 — 커서가 "취소"에서 시작): 위로 한 번 = "타이틀로".
+  // 타이틀의 DEV는 맨 끝 — 기록이 생겨 "이어하기"가 붙어도 위로 한 번(돌아서)이면 DEV(0066).
   await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
-  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
+  await shot('00e2-title-continue');
+  await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await press('Enter'); await page.waitForTimeout(800); await shot('00f-gate');
   await page.keyboard.down('KeyW'); await page.waitForTimeout(2200); await page.keyboard.up('KeyW');
   await page.waitForTimeout(800); await shot('00g-waking');
@@ -74,7 +78,7 @@ async function main() {
   // 닫으면 연 줄로(0066): 조작 → 설정 → 멈춤의 "설정"(셋째)에 커서가 있다 → 아래로 둘 = 타이틀로.
   await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
-  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await shot('00j-dev');
   await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(400);  // DEV: 문 앞·무기·PoC(첫째 = 보스 아레나)·돌아가기
   // 1 보스 아레나: 쿼터뷰 → 앞으로 걷기 → 락온 → 전환 중·전환 뒤 → 공격 → 회피 → 해제.

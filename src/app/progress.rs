@@ -89,7 +89,8 @@ impl App {
     /// 바뀐 것이 있으면 쓴다. 못 쓰면(사생활 보호 모드 등) 다음에 또 바뀔 때까지 다시 시도하지 않는다.
     pub(super) fn persist(&mut self) {
         if self.progress != self.saved {
-            let ok = crate::save::save(&self.progress);
+            let ok = crate::save::save(self.slot, &self.progress);
+            self.slots[self.slot] = self.progress.summary();
             // 실패가 시작될 때 한 번만 알린다(저장할 때마다 알리면 화면을 덮는다).
             if !ok && !self.save_failed {
                 warn!("save failed");

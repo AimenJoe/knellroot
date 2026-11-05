@@ -12,6 +12,7 @@ mod play;
 mod progress;
 mod settings;
 mod shop;
+mod slots;
 mod stack;
 mod title;
 
@@ -90,6 +91,14 @@ pub struct App {
     /// 기록(0064 M2): 지금 것과 마지막으로 쓴 것(바뀌었을 때만 쓴다).
     progress: crate::save::Progress,
     saved: crate::save::Progress,
+    /// 지금 슬롯(0066)과 슬롯 셋의 요약(타이틀 "이어하기"·슬롯 창, 쓸 때마다 고친다).
+    slot: usize,
+    slots: [Option<crate::save::Summary>; crate::save::SLOTS],
+    /// 지금 화면의 둘째 축(슬롯 창의 단추)·두 번째 누름을 기다리나(덮어쓰기·지우기). 장면이 바뀌면 처음으로.
+    col: usize,
+    armed: bool,
+    /// 옛 prefs 칸 21(든 무기) — 읽은 값 그대로 다시 적는다(0066에서 기록으로 옮김).
+    legacy_weapon: u8,
     /// 저장에 실패한 채인가(실패가 시작될 때 한 번만 알린다 — KB `roguelite-save-slots-and-continue`).
     save_failed: bool,
     /// 잠깐 뜨는 알림(0064 M3 — 상자에서 얻은 것 등)과 남은 초.
@@ -103,7 +112,7 @@ impl App {
     pub fn new() -> Self {
         let t = Tuning::default();
         // 저장한 설정(0024·0052·0058): 언어·키 배치·흔들림·무기·마우스 조준.
-        let mut weapon = weapons::Id::Sword;
+        let mut legacy_weapon = 0;
         let mut shake = crate::prefs::SHAKE_DEFAULT;
         let mut volume = crate::prefs::VOLUME_DEFAULT;
         if let Some(p) = crate::prefs::load() {
@@ -114,12 +123,21 @@ impl App {
             input::set_mouse_aim(p.mouse);
             shake = p.shake;
             volume = p.volume;
-            weapon = weapons::IDS[(p.weapon as usize).min(weapons::IDS.len() - 1)];
+            legacy_weapon = p.weapon;
         }
+        // 기록 슬롯(0066): 마지막으로 쓴 슬롯의 기록. 든 무기는 기록에 — 없으면(옛 슬롯 1) 예전 prefs 칸 21의 값.
+        let slot = crate::save::last_slot();
+        let progress = crate::save::load(slot);
+        let weapon = progress.weapon.unwrap_or_else(|| {
+            if slot == 0 {
+                weapons::IDS[(legacy_weapon as usize).min(weapons::IDS.len() - 1)]
+            } else {
+                weapons::Id::Sword
+            }
+        });
         let (run, mut world) = StageRun::start(FIRST_STAGE);
         world.set_weapon(weapon);
         let cam = Camera::new(world.player.pos, &t);
-        let progress = crate::save::load();
         App {
             stack: stack::Stack::new(Scene::Title),
             cursor: 0,
@@ -153,6 +171,11 @@ impl App {
             goal_off: 0.0,
             progress: progress.clone(),
             saved: progress,
+            slot,
+            slots: crate::save::summaries(),
+            col: 0,
+            armed: false,
+            legacy_weapon,
             save_failed: false,
             toast: None,
         }
@@ -201,7 +224,8 @@ impl App {
     fn next_weapon(&mut self, step: i32) {
         self.weapon = self.weapon.next(step);
         self.world.set_weapon(self.weapon);
-        self.save_prefs();
+        self.progress.weapon = Some(self.weapon);
+        self.persist();
     }
 
     /// 설정을 저장한다(언어·키 배치를 바꿀 때마다).
@@ -212,10 +236,8 @@ impl App {
             mouse: input::mouse_aim(),
             shake: self.shake,
             volume: self.volume,
-            weapon: weapons::IDS
-                .iter()
-                .position(|w| *w == self.weapon)
-                .unwrap_or(0) as u8,
+            // 든 무기는 슬롯 기록으로 옮겼다(0066) — 옛 칸은 처음 읽은 값 그대로 둔다(옛 슬롯 1의 기본값).
+            weapon: self.legacy_weapon,
         });
     }
 
@@ -248,6 +270,8 @@ impl App {
         if let Some((cursor, view)) = self.stack.go(go, self.cursor, self.view) {
             self.cursor = cursor;
             self.view = view;
+            self.col = 0;
+            self.armed = false;
             self.hits.clear();
             self.ctl = controls::Controls::default();
         }
@@ -357,6 +381,7 @@ impl App {
             #[cfg(feature = "dev")]
             Scene::Dev => self.tick_menu(&a, Scene::Dev),
             Scene::Controls => self.tick_controls(a),
+            Scene::Slots { load } => self.tick_slots(&a, load),
             Scene::Ending { won } => {
                 self.ending += TICK_DT;
                 self.follow_camera();
@@ -393,6 +418,7 @@ impl App {
             Scene::Shop => Some(self.shop_menu()),
             Scene::Core => Some(self.core_menu()),
             Scene::Result { won } => Some(self.result_menu(won)),
+            Scene::Slots { load } => Some(self.slots_menu(load)),
             #[cfg(feature = "dev")]
             Scene::Dev => Some(self.dev_menu()),
             Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Controls | Scene::Ask(_) => {
@@ -412,6 +438,8 @@ impl App {
             Scene::Shop => self.shop_act(out),
             Scene::Core => self.core_act(out),
             Scene::Result { .. } => self.result_act(out),
+            // 슬롯 창은 제 틱(`tick_slots`)이 고름을 한다(빈 줄 건너뛰기·두 번째 누름).
+            Scene::Slots { .. } => {}
             #[cfg(feature = "dev")]
             Scene::Dev => self.dev_act(out),
             Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Controls | Scene::Ask(_) => {

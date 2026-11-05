@@ -2,8 +2,10 @@
 //!
 //! - 형식: `키=값` 줄(첫 게임 nail `profile.rs` — 키 이름은 바꾸지 않는다, 모르는 키는 지우지 않고 그대로 들고 다닌다,
 //!   깨진 줄은 건너뛴다). 그래서 뒤에 칸을 더해도 옛 기록이 그대로 읽힌다.
-//! - 자리: 웹은 localStorage 글 한 칸 `knell.save.0`(web/index.html `knell_save_*`), 데스크톱·Android는 설정과 같은 폴더의
-//!   `save0.txt`(임시 파일에 쓰고 이름 바꾸기 — 쓰다 꺼져도 옛 기록이 남는다).
+//! - 자리(슬롯 셋, 0066 — KB `roguelite-save-slots-and-continue`): 웹은 localStorage `knell.save.0`·`.1`·`.2` + 마지막 슬롯
+//!   `knell.slot`(web/index.html `knell_rec_*`, 칸 번호 인자), 데스크톱·Android는 설정과 같은 폴더의 `save0.txt`·`save1.txt`·
+//!   `save2.txt`·`slot.txt`(임시 파일에 쓰고 이름 바꾸기 — 쓰다 꺼져도 옛 기록이 남는다). 슬롯 1 = 옛 한 칸 그대로(옮기는 코드 없음).
+//! - 든 무기도 기록에(`weapon`, 0066 — 설정 칸에 두면 슬롯 사이에 샜다).
 //! - 쓰는 때는 앱이 정한다: 바뀐 것이 있을 때만(`Progress` 비교).
 use std::collections::BTreeMap;
 
@@ -29,6 +31,8 @@ pub mod key {
     pub const GROW_FLASK: &str = "grow.flask";
     pub const GROW_HEAL: &str = "grow.heal";
     pub const SHOP_OIL: &str = "shop.oil";
+    /// 든 무기(0066: prefs 칸 21에서 옮김 — 슬롯 사이에 새지 않게).
+    pub const WEAPON: &str = "weapon";
 }
 
 /// 글 기록(키 → 값). 모르는 키도 지키며 들고 다닌다.
@@ -100,6 +104,8 @@ pub struct Progress {
     pub worn: [Option<crate::charms::Id>; crate::charms::SLOTS],
     pub chests: Vec<u32>,
     pub growth: crate::growth::Growth,
+    /// 든 무기(없으면 옛 prefs 칸의 값을 쓴다).
+    pub weapon: Option<crate::weapons::Id>,
     /// 원래 기록(모르는 키를 지키려고 — 쓸 때 이 위에 덮는다).
     base: Record,
 }
@@ -129,6 +135,7 @@ impl Progress {
         };
         Progress {
             growth,
+            weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
             embers: r.num(key::EMBERS).unwrap_or(0),
             clears: r.num(key::CLEARS).unwrap_or(0),
             run,
@@ -152,6 +159,10 @@ impl Progress {
         r.set(key::GROW_FLASK, self.growth.flask);
         r.set(key::GROW_HEAL, self.growth.heal);
         r.set(key::SHOP_OIL, self.growth.oil as u8);
+        match self.weapon {
+            Some(w) => r.set(key::WEAPON, w.key()),
+            None => r.remove(key::WEAPON),
+        }
         match self.run {
             Some(at) => {
                 r.set(key::RUN_REST, at.rest);
@@ -182,27 +193,32 @@ impl Progress {
     }
 }
 
+/// 기록 슬롯 수(0066, KB `roguelite-save-slots-and-continue`, nail 0078).
+pub const SLOTS: usize = 3;
+/// 저장 칸: 0..SLOTS = 슬롯 기록, `LAST` = 마지막으로 쓴 슬롯 번호.
+const LAST: u32 = SLOTS as u32;
+
 #[cfg(target_arch = "wasm32")]
 mod store {
     extern "C" {
-        fn knell_save_len() -> u32;
-        fn knell_save_read(ptr: *mut u8, len: u32);
-        fn knell_save_write(ptr: *const u8, len: u32) -> u32;
+        fn knell_rec_len(cell: u32) -> u32;
+        fn knell_rec_read(cell: u32, ptr: *mut u8, len: u32);
+        fn knell_rec_write(cell: u32, ptr: *const u8, len: u32) -> u32;
     }
 
-    pub fn load() -> String {
-        // SAFETY: 길이를 돌려주는 JS 함수, 그다음 그 길이만큼 이 버퍼에 바이트를 쓰는 JS 함수(web/index.html).
-        let n = unsafe { knell_save_len() } as usize;
+    pub fn load(cell: u32) -> String {
+        // SAFETY: 칸의 길이를 돌려주는 JS 함수, 그다음 그 길이만큼 이 버퍼에 바이트를 쓰는 JS 함수(web/index.html).
+        let n = unsafe { knell_rec_len(cell) } as usize;
         let mut buf = vec![0u8; n];
         if n > 0 {
-            unsafe { knell_save_read(buf.as_mut_ptr(), n as u32) };
+            unsafe { knell_rec_read(cell, buf.as_mut_ptr(), n as u32) };
         }
         String::from_utf8(buf).unwrap_or_default()
     }
 
-    pub fn save(text: &str) -> bool {
+    pub fn save(cell: u32, text: &str) -> bool {
         // SAFETY: 이 바이트를 읽기만 하는 JS 함수(web/index.html). 길이 0이면 지운다.
-        unsafe { knell_save_write(text.as_ptr(), text.len() as u32) == 1 }
+        unsafe { knell_rec_write(cell, text.as_ptr(), text.len() as u32) == 1 }
     }
 }
 
@@ -210,18 +226,24 @@ mod store {
 mod store {
     use std::path::PathBuf;
 
-    fn path() -> Option<PathBuf> {
-        crate::prefs::data_dir().map(|d| d.join("save0.txt"))
+    /// 슬롯 1 = 옛 한 칸 `save0.txt` 그대로(옮기는 코드 없음), 마지막 슬롯 = `slot.txt`.
+    fn path(cell: u32) -> Option<PathBuf> {
+        let name = if cell == super::LAST {
+            "slot.txt".to_string()
+        } else {
+            format!("save{cell}.txt")
+        };
+        crate::prefs::data_dir().map(|d| d.join(name))
     }
 
-    pub fn load() -> String {
-        path()
+    pub fn load(cell: u32) -> String {
+        path(cell)
             .and_then(|p| std::fs::read_to_string(p).ok())
             .unwrap_or_default()
     }
 
-    pub fn save(text: &str) -> bool {
-        let Some(p) = path() else { return false };
+    pub fn save(cell: u32, text: &str) -> bool {
+        let Some(p) = path(cell) else { return false };
         if text.is_empty() {
             return std::fs::remove_file(&p).is_ok() || !p.exists();
         }
@@ -237,18 +259,59 @@ mod store {
     }
 }
 
-pub fn load() -> Progress {
-    Progress::from_record(Record::parse(&store::load()))
+pub fn load(slot: usize) -> Progress {
+    Progress::from_record(Record::parse(&store::load(slot as u32)))
 }
 
 /// 쓴다(실패하면 거짓 — 사생활 보호 모드·디스크 등).
-pub fn save(p: &Progress) -> bool {
-    store::save(&p.to_record().to_text())
+pub fn save(slot: usize, p: &Progress) -> bool {
+    store::save(slot as u32, &p.to_record().to_text())
 }
 
-/// 기록을 지운다(타이틀 "새로 하기").
-pub fn wipe() -> bool {
-    store::save("")
+/// 슬롯의 기록을 지운다(슬롯 창 "지우기"·"덮어쓰기").
+pub fn wipe(slot: usize) -> bool {
+    store::save(slot as u32, "")
+}
+
+/// 마지막으로 쓴 슬롯(없거나 깨졌으면 0 = 슬롯 1 — 옛 한 칸 기록이 있는 곳).
+pub fn last_slot() -> usize {
+    parse_slot(&store::load(LAST))
+}
+
+pub fn set_last_slot(slot: usize) -> bool {
+    store::save(LAST, &slot.to_string())
+}
+
+fn parse_slot(text: &str) -> usize {
+    text.trim()
+        .parse::<usize>()
+        .ok()
+        .filter(|&s| s < SLOTS)
+        .unwrap_or(0)
+}
+
+/// 슬롯 창 한 줄의 요약(기록에서 바로 계산되는 것, KB).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Summary {
+    pub clears: u32,
+    pub embers: u32,
+    pub charms: usize,
+}
+
+impl Progress {
+    /// 기록이 있는 슬롯이면 요약, 비었으면 없음.
+    pub fn summary(&self) -> Option<Summary> {
+        self.has_any().then_some(Summary {
+            clears: self.clears,
+            embers: self.embers,
+            charms: self.owned.len(),
+        })
+    }
+}
+
+/// 슬롯 셋의 요약(타이틀 "이어하기"가 보이나, 슬롯 창의 줄).
+pub fn summaries() -> [Option<Summary>; SLOTS] {
+    std::array::from_fn(|i| load(i).summary())
 }
 
 #[cfg(test)]
@@ -349,11 +412,67 @@ mod tests {
             rest: 0,
             gate_open: false,
         });
-        assert!(save(&p));
-        let got = load();
+        assert!(save(0, &p));
+        let got = load(0);
         assert_eq!((got.embers, got.run), (7, p.run));
-        assert!(wipe());
-        assert!(!load().has_any());
+        // 슬롯 1 = 옛 한 칸 파일 그대로(옮기는 코드 없음, 0066).
+        assert!(dir.join("save0.txt").exists());
+        // 슬롯마다 따로: 슬롯 3에 쓴 것이 슬롯 1·2에 새지 않는다.
+        let other = Progress {
+            clears: 2,
+            ..Progress::default()
+        };
+        assert!(save(2, &other));
+        assert!(dir.join("save2.txt").exists());
+        assert_eq!(load(2).clears, 2);
+        assert_eq!(load(0).clears, 0);
+        assert_eq!(load(1).summary(), None, "untouched slot is empty");
+        let sums = summaries();
+        assert!(sums[0].is_some() && sums[1].is_none() && sums[2].is_some());
+        // 마지막 슬롯 칸.
+        assert_eq!(last_slot(), 0);
+        assert!(set_last_slot(2));
+        assert_eq!(last_slot(), 2);
+        assert!(wipe(0));
+        assert!(!load(0).has_any());
+        assert_eq!(load(2).clears, 2, "wiping one slot keeps the others");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_last_slot_cell_falls_back_to_slot_one_and_weapons_round_trip() {
+        assert_eq!(parse_slot(""), 0, "no cell yet = the old single record");
+        assert_eq!(parse_slot("2"), 2);
+        assert_eq!(parse_slot("7"), 0, "out of range");
+        assert_eq!(parse_slot(" 1\n"), 1);
+        // 가장 큰 값까지 왕복(KB: 범위를 자르는 코드는 새 값에서 조용히 틀린다).
+        for w in crate::weapons::IDS {
+            let p = Progress {
+                weapon: Some(w),
+                ..Progress::default()
+            };
+            let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+            assert_eq!(back.weapon, Some(w));
+        }
+        // 무기만 바꾼 슬롯은 "기록 있음"이 아니다(빈 슬롯 그대로).
+        let only_weapon = Progress {
+            weapon: Some(crate::weapons::Id::Staff),
+            ..Progress::default()
+        };
+        assert_eq!(only_weapon.summary(), None);
+        let some = Progress {
+            clears: 1,
+            embers: 9,
+            owned: vec![crate::charms::Id::Ear],
+            ..Progress::default()
+        };
+        assert_eq!(
+            some.summary(),
+            Some(Summary {
+                clears: 1,
+                embers: 9,
+                charms: 1
+            })
+        );
     }
 }
