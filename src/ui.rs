@@ -50,6 +50,8 @@ pub struct Row {
     pub kind: RowKind,
     /// 지금 고를 수 없음(흐리게 — 가게에서 잔불이 모자란 물건).
     pub dim: bool,
+    /// 이름 앞에 그림 자리를 둔다(`list_icon`이 그 칸, 그림은 부른 쪽이 — 0068 아이템 아이콘).
+    pub icon: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -91,6 +93,9 @@ impl Row {
     }
     pub fn dimmed(self, dim: bool) -> Self {
         Row { dim, ..self }
+    }
+    pub fn with_icon(self, icon: bool) -> Self {
+        Row { icon, ..self }
     }
 }
 
@@ -576,7 +581,7 @@ impl Ui {
             let ink = fade(if sel { INK } else { DIM });
             let mark = fade(if sel { AMBER } else { DIM });
             let right = r.x + r.w - u * 6.0;
-            let label_x = r.x + u * 4.0 + px * 1.1;
+            let label_x = r.x + u * 4.0 + px * 1.1 + if row.icon { px * 1.4 } else { 0.0 };
             // 값 칸의 왼쪽 끝(이름은 그 앞까지 `fit`).
             let value_left = match row.kind {
                 RowKind::Step => {
@@ -628,6 +633,18 @@ impl Ui {
             }
         }
         out
+    }
+
+    /// 목록 줄 `r`(`list`가 돌려준 자리)의 그림 칸 — `Row::icon` 줄의 이름 앞, 정사각 한 글줄 높이.
+    pub fn list_icon(&self, r: Rect) -> Rect {
+        let px = self.px(1.0);
+        let side = px * 1.25;
+        Rect::new(
+            r.x + self.scale * 4.0 + px * 1.1,
+            r.y + (r.h - side) * 0.5,
+            side,
+            side,
+        )
     }
 
     /// 단추 줄(묻는 창, nail `draw_shop_ask`): `labels`를 `area` 가로로 나란히. 누를 자리를 돌려준다.

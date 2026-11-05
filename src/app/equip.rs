@@ -19,13 +19,19 @@ pub(super) enum Cand {
     Charm(Charm),
 }
 
-/// 칸의 후보 목록(표 순서): 무기 칸 = 무기 넷, 장신구 칸 = 빈 칸 + 장신구 여섯(못 얻은 것도 — 잠긴 줄, KB "다 보이는 칸").
-pub(super) fn candidates(slot: usize) -> Vec<Cand> {
+/// 칸의 후보 목록(표 순서): 무기 칸 = 무기 넷, 장신구 칸 = 빈 칸 + **가진** 장신구만.
+/// 못 얻은 것은 장비 창에 보이지 않는다 — 검은 실루엣 같은 "찾을 것" 표시는 도감 몫(사장 2026-11-05, 0068).
+pub(super) fn candidates(slot: usize, owned: &[Charm]) -> Vec<Cand> {
     if slot == 0 {
         weapons::IDS.into_iter().map(Cand::Weapon).collect()
     } else {
         std::iter::once(Cand::Empty)
-            .chain(charms::TABLE.iter().map(|d| Cand::Charm(d.id)))
+            .chain(
+                charms::TABLE
+                    .iter()
+                    .filter(|d| owned.contains(&d.id))
+                    .map(|d| Cand::Charm(d.id)),
+            )
             .collect()
     }
 }
@@ -42,29 +48,6 @@ pub(super) fn wear(
     }
     out[i] = pick;
     out
-}
-
-/// 장신구를 얻는 곳(잠긴 줄의 설명).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum Source {
-    Chest,
-    Boss,
-    Shop,
-}
-
-pub(super) fn source(id: Charm, def: &StageDef) -> Option<Source> {
-    if def.chest_charms.contains(&id) {
-        Some(Source::Chest)
-    } else if def.boss_charm == Some(id) {
-        Some(Source::Boss)
-    } else if crate::growth::SHOP
-        .iter()
-        .any(|(w, _)| *w == crate::growth::Ware::Charm(id))
-    {
-        Some(Source::Shop)
-    } else {
-        None
-    }
 }
 
 /// 상태 줄의 이름과 값 글.
@@ -112,6 +95,20 @@ fn weapon_desc(id: weapons::Id) -> &'static str {
     }
 }
 
+/// 칸 후보 → 그림으로 보일 아이템(빈 칸은 없음).
+fn item_of(c: Cand) -> Option<crate::item_view::Item> {
+    match c {
+        Cand::Weapon(w) => Some(crate::item_view::Item::Weapon(w)),
+        Cand::Charm(id) => Some(crate::item_view::Item::Charm(id)),
+        Cand::Empty => None,
+    }
+}
+
+/// 타깃 한 변 `native` px을 화면 `want` px 안에 넣는 정수 배율(도트가 고르게 — 1 아래면 1).
+fn icon_scale(native: u32, want: f32) -> f32 {
+    (want / native as f32).floor().max(1.0)
+}
+
 /// 나빠지는 값의 색(붉은 계열 — 화살표 ▼와 함께, 색만으로 말하지 않는다).
 const WORSE: Color = Color::new(0.88, 0.42, 0.36, 1.0);
 
@@ -132,20 +129,13 @@ impl App {
         }
     }
 
-    /// 고른 것의 설명(잠긴 장신구는 얻는 곳).
+    /// 고른 것의 설명. 빈 칸은 — 아직 장신구가 하나도 없으면 얻는 곳(옛 장비 창의 안내 그대로).
     fn cand_desc(&self, c: Cand) -> &'static str {
         let s = s();
         match c {
             Cand::Weapon(w) => weapon_desc(w),
+            Cand::Empty if self.progress.owned.is_empty() => s.equip_none_yet,
             Cand::Empty => s.equip_empty_d,
-            Cand::Charm(id) if !self.progress.owned.contains(&id) => {
-                match source(id, self.run.def) {
-                    Some(Source::Chest) => s.charm_from_chest,
-                    Some(Source::Boss) => s.charm_from_boss,
-                    Some(Source::Shop) => s.charm_from_shop,
-                    None => s.charm_locked,
-                }
-            }
             Cand::Charm(id) => tr(charms::def(id).desc),
         }
     }
@@ -196,7 +186,10 @@ impl App {
             let slot = self.cursor;
             let now = self.slot_now(slot);
             self.go(Go::Open(Scene::EquipPick { slot: slot as u8 }));
-            self.cursor = candidates(slot).iter().position(|&c| c == now).unwrap_or(0);
+            self.cursor = candidates(slot, &self.progress.owned)
+                .iter()
+                .position(|&c| c == now)
+                .unwrap_or(0);
         }
     }
 
@@ -207,16 +200,12 @@ impl App {
             self.go(Go::Back);
             return;
         }
-        let list = candidates(slot);
+        let list = candidates(slot, &self.progress.owned);
         let Some(i) = self.menu_pick(a, list.len()) else {
             return;
         };
         match list[i] {
             Cand::Weapon(w) => self.set_weapon(w),
-            Cand::Charm(id) if !self.progress.owned.contains(&id) => {
-                self.snd(crate::sfx::Id::Deny);
-                return;
-            }
             c => {
                 let pick = match c {
                     Cand::Charm(id) => Some(id),
@@ -247,17 +236,22 @@ impl App {
         let (lx, lw) = (panel.x + u * 8.0, split - panel.x - u * 16.0);
         let (rx, rw) = (split + u * 10.0, panel.x + panel.w - split - u * 18.0);
 
-        // 칸 상자: 무기는 인형 왼쪽, 장신구 셋은 오른쪽.
-        // 무기 칸은 이름이 길어(영어 "Pilgrim's Sword") 조금 넓게.
-        let (bw, ww, bh, gap) = (u * 66.0, u * 86.0, u * 30.0, u * 6.0);
-        let boxes_h = bh * 3.0 + gap * 2.0;
+        // 칸 상자(0068 — 디아블로 인형처럼 칸에는 아이템 그림, 이름은 아래 설명의 머리글): 무기는 인형 왼쪽, 장신구 셋은 오른쪽.
+        let (ww, bw, gap) = (u * 40.0, u * 34.0, u * 6.0);
+        let boxes_h = bw * 3.0 + gap * 2.0;
         let mut boxes = [Rect::default(); SLOTS];
-        boxes[0] = Rect::new(lx, top + (boxes_h - bh) * 0.5, ww, bh);
+        boxes[0] = Rect::new(lx + u * 6.0, top + (boxes_h - ww) * 0.5, ww, ww);
         for (i, b) in boxes.iter_mut().enumerate().skip(1) {
-            *b = Rect::new(lx + lw - bw, top + (bh + gap) * (i - 1) as f32, bw, bh);
+            *b = Rect::new(
+                lx + lw - bw - u * 6.0,
+                top + (bw + gap) * (i - 1) as f32,
+                bw,
+                bw,
+            );
         }
         // 인형: 두 칸 사이 가운데, 정수 배율(게임 화면과 같은 도트 굵기).
-        let room_w = lw - bw - ww - u * 8.0;
+        let room_x = boxes[0].x + ww + u * 4.0;
+        let room_w = boxes[1].x - u * 4.0 - room_x;
         let m = ((boxes_h + u * 10.0) / crate::render::DOLL_H as f32)
             .min(room_w / crate::render::DOLL_W as f32)
             .floor()
@@ -266,53 +260,61 @@ impl App {
             crate::render::DOLL_W as f32 * m,
             crate::render::DOLL_H as f32 * m,
         );
-        let doll = Rect::new(
-            lx + ww + u * 4.0 + (room_w - dw) * 0.5,
-            top - u * 4.0,
-            dw,
-            dh,
-        );
+        let doll = Rect::new(room_x + (room_w - dw) * 0.5, top - u * 4.0, dw, dh);
         let t = get_time() as f32;
         self.renderer
             .draw_doll(self.weapon, doll, 0.55 * (t * 0.7).sin(), t);
         for (i, r) in boxes.iter().enumerate() {
             let sel = i == slot_cursor;
             self.ui.button(*r, "", sel);
-            let cap = if i == 0 {
-                s.menu_weapon.to_string()
-            } else {
-                fill(s.menu_charm_slot, &[&i.to_string()])
-            };
-            self.ui.text(&cap, r.x + u * 5.0, r.y + u * 3.0, 0.75, DIM);
-            let now = self.slot_now(i);
-            let name = self.ui.fit(self.cand_name(now), r.w - u * 10.0, 0.8);
-            let col = match (now, sel) {
-                (Cand::Empty, _) => DIM,
-                (_, true) => AMBER,
-                _ => INK,
-            };
-            self.ui
-                .text(&name, r.x + u * 5.0, r.y + u * 3.0 + px * 0.85, 0.8, col);
+            if let Some(item) = item_of(self.slot_now(i)) {
+                let k = icon_scale(crate::render::ICON_PX, r.w - u * 4.0);
+                let side = crate::render::ICON_PX as f32 * k;
+                self.renderer.draw_icon(
+                    item,
+                    Rect::new(
+                        r.x + (r.w - side) * 0.5,
+                        r.y + (r.h - side) * 0.5,
+                        side,
+                        side,
+                    ),
+                );
+            }
             if pick.is_none() {
                 self.hits.push((*r, Hit::Row(i)));
             }
         }
 
-        // 아래 왼쪽: 고른 것의 설명(후보 목록이면 그 후보).
-        let list = pick.map(candidates);
+        // 아래 왼쪽: 고른 것(후보 목록이면 그 후보) — 도는 그림 + 이름(머리글) + 설명.
+        let list = pick.map(|slot| candidates(slot, &self.progress.owned));
         let focus = match (&list, pick) {
             (Some(l), Some(_)) => l.get(self.cursor).copied().unwrap_or(Cand::Empty),
             _ => self.slot_now(slot_cursor),
         };
         let desc_y = (doll.y + doll.h).max(top + boxes_h) + u * 6.0;
-        for (k, line) in ui::wrap(&self.ui, self.cand_desc(focus), lw, 1.0)
+        let room = (bottom - desc_y).max(px);
+        let mut text_x = lx;
+        if let Some(item) = item_of(focus) {
+            let k = icon_scale(crate::render::ITEM_PX, room.min(u * 64.0));
+            let side = crate::render::ITEM_PX as f32 * k;
+            self.renderer.draw_item(
+                item,
+                Rect::new(lx, desc_y, side, side),
+                0.7 * (t * 0.8).sin(),
+            );
+            text_x = lx + side + u * 8.0;
+        }
+        let text_w = lx + lw - text_x;
+        let name = self.ui.fit(self.cand_name(focus), text_w, 1.0);
+        self.ui.text(&name, text_x, desc_y, 1.0, AMBER);
+        for (k, line) in ui::wrap(&self.ui, self.cand_desc(focus), text_w, 0.9)
             .iter()
             .take(3)
             .enumerate()
         {
-            let y = desc_y + px * 1.4 * k as f32;
+            let y = desc_y + px * 1.5 + px * 1.3 * k as f32;
             if y + px <= bottom {
-                self.ui.text(line, lx, y, 1.0, DIM);
+                self.ui.text(line, text_x, y, 0.9, DIM);
             }
         }
 
@@ -350,9 +352,6 @@ impl App {
                     .map(|&c| {
                         let mark = match c {
                             Cand::Weapon(w) if w == self.weapon => s.equip_held.to_string(),
-                            Cand::Charm(id) if !self.progress.owned.contains(&id) => {
-                                s.charm_locked.to_string()
-                            }
                             Cand::Charm(id) => self
                                 .progress
                                 .worn
@@ -362,9 +361,7 @@ impl App {
                                 .unwrap_or_default(),
                             _ => String::new(),
                         };
-                        let locked =
-                            matches!(c, Cand::Charm(id) if !self.progress.owned.contains(&id));
-                        ui::Row::value(self.cand_name(c), mark).dimmed(locked)
+                        ui::Row::value(self.cand_name(c), mark).with_icon(true)
                     })
                     .collect();
                 let list_top = top + px * 1.5;
@@ -376,6 +373,23 @@ impl App {
                     rows.len(),
                     Rect::new(rx, top - u * 6.0, rw + u * 18.0, px),
                 );
+                // 줄마다 아이템 그림(빈 칸은 비워 둔다) — 아이콘은 한 번 찍어 둔 것(0068).
+                for (r, c) in hits.rows.iter().zip(list.iter()) {
+                    if let (true, Some(item)) = (r.w > 0.0, item_of(*c)) {
+                        let slot_r = self.ui.list_icon(*r);
+                        let k = icon_scale(crate::render::ICON_PX, slot_r.w);
+                        let side = crate::render::ICON_PX as f32 * k;
+                        self.renderer.draw_icon(
+                            item,
+                            Rect::new(
+                                slot_r.x + (slot_r.w - side) * 0.5,
+                                slot_r.y + (slot_r.h - side) * 0.5,
+                                side,
+                                side,
+                            ),
+                        );
+                    }
+                }
                 self.push_hits(&hits);
                 // 바뀌는 줄만(무기는 능력치를 바꾸지 않는다 — 설명이 대신).
                 let then =
@@ -447,17 +461,19 @@ mod tests {
     }
 
     #[test]
-    fn every_slot_lists_its_candidates_and_every_charm_has_a_source() {
-        assert_eq!(candidates(0).len(), weapons::IDS.len());
-        assert_eq!(candidates(1)[0], Cand::Empty);
-        assert_eq!(candidates(3).len(), 1 + charms::TABLE.len());
-        // 잠긴 줄의 설명이 비지 않게: 모든 장신구는 얻는 곳이 있다(상자·문지기·화로).
-        for d in charms::TABLE.iter() {
-            assert!(
-                source(d.id, &crate::stage::sanctuary::DEF).is_some(),
-                "{:?} has nowhere to be found",
-                d.id
-            );
-        }
+    fn slots_list_only_what_you_own() {
+        assert_eq!(candidates(0, &[]).len(), weapons::IDS.len());
+        // 장신구가 없으면 빈 칸 하나 — 못 얻은 것은 장비 창에 없다(도감 몫).
+        assert_eq!(candidates(1, &[]), vec![Cand::Empty]);
+        let owned = [Charm::Ear, Charm::Shell];
+        assert_eq!(
+            candidates(3, &owned),
+            vec![
+                Cand::Empty,
+                Cand::Charm(Charm::Shell),
+                Cand::Charm(Charm::Ear)
+            ],
+            "table order, owned only"
+        );
     }
 }

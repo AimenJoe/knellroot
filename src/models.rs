@@ -34,6 +34,12 @@ impl Entry {
     }
 }
 
+/// 모델 파일 바이트(이름 = 파일 이름) — 시험이 부위 이름을 확인할 때.
+#[cfg(test)]
+pub fn bytes(name: &str) -> Option<&'static [u8]> {
+    FILES.iter().find(|(n, _)| *n == name).map(|(_, b)| *b)
+}
+
 #[derive(Default)]
 pub struct Library {
     loaded: HashMap<&'static str, Option<Entry>>,

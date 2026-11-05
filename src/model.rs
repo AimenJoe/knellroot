@@ -267,6 +267,46 @@ impl Model {
         self.nodes.iter().position(|n| n.name == name)
     }
 
+    /// 노드 `n`이 `i` 자신이거나 그 아래인가.
+    pub fn is_under(&self, mut n: usize, i: usize) -> bool {
+        loop {
+            if n == i {
+                return true;
+            }
+            match self.nodes[n].parent {
+                Some(p) => n = p,
+                None => return false,
+            }
+        }
+    }
+
+    /// 쉬는 자세에서 노드 `i` 아래 메시 정점의 경계 상자 가운데와 그 가운데에서 가장 먼 점까지(모델 공간) — 아이템 그림(0068)의 틀 맞추기.
+    pub fn rest_bounds_under(&self, i: usize) -> Option<(Vec3, f32)> {
+        let mut pose = Vec::new();
+        self.pose(None, 0.0, &mut pose);
+        let pts: Vec<Vec3> = self
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(n, node)| node.mesh.is_some() && self.is_under(*n, i))
+            .flat_map(|(n, node)| {
+                let m = pose[n];
+                self.meshes[node.mesh.unwrap()]
+                    .pos
+                    .iter()
+                    .map(move |p| m.transform_point3(*p))
+            })
+            .collect();
+        if pts.is_empty() {
+            return None;
+        }
+        let lo = pts.iter().fold(Vec3::splat(f32::MAX), |a, p| a.min(*p));
+        let hi = pts.iter().fold(Vec3::splat(f32::MIN), |a, p| a.max(*p));
+        let c = (lo + hi) * 0.5;
+        let r = pts.iter().map(|p| p.distance(c)).fold(0.0, f32::max);
+        Some((c, r))
+    }
+
     /// 쉬는 자세에서 노드 `i` 아래 메시 정점의 가운데(모델 공간) — 2차 동작이 "늦게 따라오는 덩어리" 자리로 쓴다.
     pub fn rest_centroid_under(&self, i: usize) -> Option<Vec3> {
         let mut pose = Vec::new();

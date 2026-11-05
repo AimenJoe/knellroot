@@ -9,6 +9,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import charms  # noqa: E402
 import check_glb  # noqa: E402
 import common as C  # noqa: E402
 import gatekeeper  # noqa: E402
@@ -24,6 +25,7 @@ def main():
     for mod in (wanderer, root_husk, thorn_beast, gatekeeper):
         paths.append(mod.build(models, previews))
     paths += props.build(models, previews)
+    paths.append(charms.build(models, previews))
     print("\n[knellroot] check_glb")
     bad = check_glb.main(paths)
     if bad:

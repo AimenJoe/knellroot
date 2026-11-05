@@ -18,6 +18,7 @@ mod growth;
 mod hud;
 mod i18n;
 mod input;
+mod item_view;
 mod lab;
 mod model;
 mod models;

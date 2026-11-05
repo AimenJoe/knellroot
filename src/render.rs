@@ -53,7 +53,14 @@ pub struct Renderer {
     backdrop: crate::backdrop::Backdrop,
     /// 장비 창 인형(0067 D): 방랑자만 그리는 작은 렌더 타깃(처음 쓸 때 만든다).
     doll_rt: Option<RenderTarget>,
+    /// 아이템 그림(0068): 아이콘은 아이템마다 한 번 찍어 둔 타깃, 고른 것 하나는 도는 큰 타깃.
+    icons: std::collections::HashMap<&'static str, RenderTarget>,
+    item_rt: Option<RenderTarget>,
 }
+
+/// 아이템 아이콘·도는 그림의 타깃 크기(내부 px, 정사각).
+pub const ICON_PX: u32 = 32;
+pub const ITEM_PX: u32 = 56;
 
 /// 인형 렌더 타깃 크기(내부 px) — 게임 화면과 같은 도트 굵기로 보이게 작게 굽고 정수배로 늘린다.
 pub const DOLL_W: u32 = 64;
@@ -231,6 +238,21 @@ const FIRE: f32 = 1.5;
 /// 움직이는 모델에 곱하는 밝기(배경과 떼어 읽히게).
 const ACTOR_LIFT: f32 = 1.35;
 
+/// 작은 렌더 타깃을 화면 `dest`에(뒤집어서 — 렌더 타깃은 위아래가 바뀌어 나온다).
+fn blit(rt: &RenderTarget, dest: Rect) {
+    draw_texture_ex(
+        &rt.texture,
+        dest.x,
+        dest.y,
+        WHITE,
+        DrawTextureParams {
+            dest_size: Some(vec2(dest.w, dest.h)),
+            flip_y: true,
+            ..Default::default()
+        },
+    );
+}
+
 /// 깊이 버퍼가 붙은 렌더 타깃(0033).
 fn make_rt(w: u32, h: u32) -> RenderTarget {
     // 깊이 버퍼를 붙인다(0033): `render_target`의 기본값은 깊이 없음이라, `Camera3D`가 깊이 시험을 켜도 붙은 버퍼가 없어
@@ -288,7 +310,104 @@ impl Renderer {
             edge_uniform: Vec4::ZERO,
             backdrop: Default::default(),
             doll_rt: None,
+            icons: Default::default(),
+            item_rt: None,
         }
+    }
+
+    /// 아이템 아이콘(0068): 처음 부를 때 한 번 찍어 두고(정한 각도), 다음부터는 그 그림을 `dest`에 붙인다.
+    /// 모델·부위가 없으면 아무것도 그리지 않는다(칸은 비어 보인다).
+    pub fn draw_icon(&mut self, item: crate::item_view::Item, dest: Rect) {
+        let key = crate::item_view::key(item);
+        let rt = match self.icons.get(key) {
+            Some(rt) => rt.clone(),
+            None => {
+                let rt = make_rt(ICON_PX, ICON_PX);
+                if !self.render_item(item, &rt, ICON_PX, 0.0) {
+                    return;
+                }
+                self.icons.insert(key, rt.clone());
+                rt
+            }
+        };
+        blit(&rt, dest);
+    }
+
+    /// 고른 아이템 하나를 천천히 돌려 크게(0068): 타깃 하나를 매 프레임 다시 그린다(인형과 같은 값싼 패스).
+    pub fn draw_item(&mut self, item: crate::item_view::Item, dest: Rect, spin: f32) {
+        let rt = self
+            .item_rt
+            .get_or_insert_with(|| make_rt(ITEM_PX, ITEM_PX))
+            .clone();
+        if self.render_item(item, &rt, ITEM_PX, spin) {
+            blit(&rt, dest);
+        }
+    }
+
+    /// 아이템 부위 하나만(같은 모델의 다른 부위는 크기 0) 경계 상자 가운데에 놓고 표의 각도 + `spin`으로 돌려, 틀에 꽉 차게 그린다.
+    /// 게임과 같은 툰 빛·외곽선(`Batch::model`). 그렸으면 참. 화면 패스 중에 불러도 기본 카메라로 돌려놓는다.
+    fn render_item(
+        &mut self,
+        item: crate::item_view::Item,
+        rt: &RenderTarget,
+        px: u32,
+        spin: f32,
+    ) -> bool {
+        let v = crate::item_view::view(item);
+        let Some(e) = self.lib.get(v.model) else {
+            return false;
+        };
+        let Some(i) = e.model.node(v.node) else {
+            return false;
+        };
+        let Some((c, rad)) = e.model.rest_bounds_under(i) else {
+            return false;
+        };
+        let hide: Vec<(usize, Quat, Vec3)> = e
+            .model
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(n, node)| node.mesh.is_some() && !e.model.is_under(*n, i))
+            .map(|(n, _)| (n, Quat::IDENTITY, Vec3::ZERO))
+            .collect();
+        e.model.pose_with(None, 0.0, &hide, &mut self.pose);
+        // 표의 각도로 놓은 뒤 화면 세로축으로 `spin`(모델 축으로 돌리면 세운 칼이 바퀴처럼 돈다).
+        let rot = Quat::from_rotation_y(spin)
+            * Quat::from_rotation_z(v.roll.to_radians())
+            * Quat::from_rotation_x(v.pitch.to_radians())
+            * Quat::from_rotation_y(v.yaw.to_radians());
+        let inst = Mat4::from_quat(rot) * Mat4::from_translation(-c);
+        let fovy: f32 = 0.5;
+        let cam = Camera3D {
+            position: vec3(0.0, 0.0, rad.max(0.01) / (fovy * 0.5).sin() * 1.02),
+            target: Vec3::ZERO,
+            up: Vec3::Y,
+            fovy,
+            aspect: Some(1.0),
+            projection: Projection::Perspective,
+            render_target: Some(rt.clone()),
+            ..Default::default()
+        };
+        let saved = look();
+        set_look(Look {
+            eye: cam.position,
+            fovy,
+            rows: px as f32,
+            ..saved
+        });
+        set_camera(&cam);
+        clear_background(Color::new(0.0, 0.0, 0.0, 0.0));
+        let fire = crate::stage::Light {
+            pos: cam.position + vec3(-1.5, 1.5, 0.0) * rad.max(0.1),
+            color: Color::new(1.0, 0.62, 0.25, 1.0),
+            radius: rad * 8.0 + 2.0,
+        };
+        self.batch.model(e, &self.pose, inst, WHITE, &[fire], 1.0);
+        self.batch.flush();
+        set_look(saved);
+        set_default_camera();
+        true
     }
 
     /// 장비 창의 인형(0067 D, 디아블로식): 방랑자만(든 무기만 보이게) 고정 카메라로 작은 타깃에 그리고, 화면 `dest`에 붙인다.
@@ -350,17 +469,7 @@ impl Renderer {
         self.batch.flush();
         set_look(saved);
         set_default_camera();
-        draw_texture_ex(
-            &rt.texture,
-            dest.x,
-            dest.y,
-            WHITE,
-            DrawTextureParams {
-                dest_size: Some(vec2(dest.w, dest.h)),
-                flip_y: true,
-                ..Default::default()
-            },
-        );
+        blit(&rt, dest);
     }
 
     /// 지난 프레임에 보낸 모델 정점 수(개발 줄).

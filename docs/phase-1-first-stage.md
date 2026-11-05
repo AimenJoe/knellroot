@@ -72,6 +72,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 기록(0064 M2 → 슬롯 셋 0066) | `save.rs`, `app/progress.rs` `continue_run`·`sync_progress`·`persist`, `app/slots.rs`, `StageRun::resume`·`run_at`, `web/index.html` `knell_rec_*`, `tools/test/save.js` | 타이틀 [이어하기]·시작하기 → 슬롯 창(슬롯 셋, 요약, 덮어쓰기·지우기 두 번), 쉰 쉼터에서 이어함, 쉬면·판을 끝내면·처음부터 하면 바뀐 것만 씀, 든 무기도 슬롯에 |
 | 잔불(0064 M1) | `ember.rs`, `world.rs` `tick_embers`·`embers`·`drops`, `species.rs` `embers`, `backdrop.rs` `embers`, `hud.rs` | 쓰러지면 튀어나오고 0.35초 뒤 끌려와 주움, 가진 수는 기록에 — 쓰러져도 그대로 |
 | 앱·UI 뼈대(0066) | `app/stack.rs`·`flow.rs` `Go`·`Layer`·`focus`, `app/menu.rs` `Menu`·`Out`·`Hit`, 화면 파일 `pause`·`settings`·`shop`·`ask`·`slots`·`title`·`play`·`progress`·`controls_screen`, `ui.rs` `panel`·`list`·`close`·`buttons`·`title_arrows` | 장면 스택(닫으면 연 줄로), 목록 화면 = 줄 표 하나 + 몰이꾼, nail 창 틀(✕·창 밖 탭·◀ 값 ▶·제목 줄 ▲▼), 묻는 창은 아래 창 위. `tick_scene` 340 → 35줄 |
+| 아이템 그림(0068) | `item_view.rs`, `Renderer::draw_icon`·`draw_item`, `tools/art/blender/charms.py` → `charms.glb` | 칸·후보 줄의 아이콘(한 번 찍어 캐시), 고른 것은 크게 흔들리는 3D, 장신구 모델 여섯(첫 시안) |
 | 장비 창(0067 D) | `app/equip.rs`, `Renderer::draw_doll`, `stats::lines`, `Scene::EquipPick` | 디아블로 콘솔식: 가운데 방랑자 인형(든 무기), 칸 넷 → 후보 목록, 바뀌는 상태 `값 → 값 ▲▼`, 못 얻은 장신구는 잠김 + 얻는 곳 |
 | 장신구(0064 M3) | `stats.rs`·`charms.rs`, `World::stats`·`apply_stats`, `Player::max_hp`·`flask_max`, `StageRun` 상자(`C`)·`take_opened`, `app/pause.rs` 장비 창·`app/progress.rs` `gain_charm`·알림 | 세 칸, 여섯 가운데 상자 둘·문지기 하나에서 얻음, 멈춤 → 장비에서 갈아 끼움, 능력치는 한 곳에서 합침 |
 | 성장(0064 M4) | `growth.rs`, `Scene::Core`·`Scene::Shop`, `StageRun::take_rested`·`shop_ready`, `app/progress.rs` `buy`·`app/shop.rs` `core_menu`·`shop_menu` | 문지기를 이기면 핵 고르기(체력·등잔·회복), 쉬면 화로 가게(장신구 셋·등잔 기름), 살 것이 있으면 쉼터가 빛남 |
@@ -97,6 +98,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 - [ ] **성장(M4)**: 쉼터에서 쉬면 가게가 열리는 게 귀찮지 않은지(쉴 때마다), 값(25·35·45·80)이 한 판에 하나쯤인지, 문지기를 이기고 고르는 핵이 기쁜지.
 - [ ] **장신구(M3)**: 입구 상자(시작 자리 북쪽)·뜰 동쪽 끝 상자를 열어 보기, 멈춤 → 장비에서 갈아 끼우기. 장신구마다 느낌이 달라지는지(특히 가벼운 발·무거운 손의 맞바꿈), 설명 글이 알아듣기 쉬운지.
 - [ ] **기록(M2 + 슬롯 셋 0066)**: 쉼터에서 쉬고 새로고침(웹)·다시 켜기(APK) → 타이틀 "이어하기" → 슬롯 창 → 그 쉼터에서. "시작하기"로 다른 슬롯에서 새로 해도 옛 슬롯이 그대로인지, 지우기·덮어쓰기가 두 번 눌러야 되는지, 무기가 슬롯마다 따로인지.
+- [ ] **아이템 그림(0068)**: 장신구 여섯 모델 시안(`docs/art/previews/charms.png`·장비 창) — 껍질·짚신·종·뿌리 이빨·돌 장갑·주머니가 알아보이는지, 고칠 것. 무기 아이콘 각도.
 - [ ] **장비 창(0067 D)**: 멈춤 → 장비. 인형이 귀엽고 무기가 잘 보이는지, 칸 → 후보 → 끼우기가 번거롭지 않은지(좌우로 바로 돌리기도 됨), 바뀌는 값 미리보기가 읽히는지, 폰 화면에서 글이 작지 않은지.
 - [ ] **창 틀·뼈대(0066)**: 멈춤·장비·설정·가게·핵·결과·DEV가 nail식 창(제목·✕·이름 … 값)으로 — 읽기 쉬운지. 터치로 ✕·창 밖 탭·◀▶ 탭, 설정에서 닫으면 연 줄로 돌아오는지(멈춤 → 설정 → 닫기 = "설정"에 커서), 묻는 창이 아래 창 위에 뜨는지.
 - [ ] **결정 검토 질문 일곱**(2026-11-05 대화): 세계관 D2(0004)·그림 상한(0001)·얼린 값 절차(0013)·P5/S2/S3 판정 시점·상표(0005)·카메라 픽셀 흔들림(0061 ②)·락온 시험 기준(0040).
