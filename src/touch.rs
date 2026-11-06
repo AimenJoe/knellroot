@@ -30,9 +30,6 @@ pub enum Kind {
     TurnRight,
     /// 멈춤(0019): 오른쪽 위.
     Pause,
-    /// 개발판: 랩 창(0070 — 멈춤 메뉴 안의 창, 랩 전용 버튼 줄은 걷었다).
-    Lab,
-    Scenario,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -71,8 +68,6 @@ pub struct Read {
     pub lock: bool,
     pub turn_right: bool,
     pub turn_left: bool,
-    pub lab_toggle: bool,
-    pub scenario_next: bool,
     pub pause: bool,
     /// 메뉴 모드에서 손가락을 거의 움직이지 않고 뗀 자리(논리 px) — 메뉴는 뗄 때 누른다(nail 0199).
     pub tap: Option<Vec2>,
@@ -140,9 +135,8 @@ impl Ctx {
 /// 버튼 배치(0053, `docs/decisions/0053`). `w`·`h`는 논리 px, 기준은 짧은 변 `u`(태블릿에서 너무 커지지 않게 상한).
 /// 오른손 엄지가 쉬는 오른쪽 아래에 공격(지름 ≈ 0.27u), 그 둘레 첫째 호(거리 0.26u)에 자주 쓰는 넷 — 회피·패링·마법·점프 —
 /// 둘째 호(0.44u)에 돌리기 캡슐과 상황 버튼(락온·등잔). 각도는 공격 가운데에서 180° = 왼쪽, 90° = 위.
-pub fn layout(w: f32, h: f32, dev: bool, ctx: Ctx) -> Vec<Button> {
+pub fn layout(w: f32, h: f32, ctx: Ctx) -> Vec<Button> {
     let u = w.min(h).min(TOUCH_U_MAX);
-    let r = u * 0.09;
     let atk = vec2(w - u * 0.238, h - u * 0.21);
     let at = |deg: f32, dist: f32| {
         let a = deg.to_radians();
@@ -202,26 +196,27 @@ pub fn layout(w: f32, h: f32, dev: bool, ctx: Ctx) -> Vec<Button> {
             kind: Kind::Flask,
         });
     }
-    // 멈춤: 오른쪽 위 끝(개발 버튼은 그 왼쪽으로).
-    let s = r * 0.7;
+    // 멈춤: 왼쪽 위 끝(2026-11-06 — 사장, 메뉴 버튼은 왼쪽 위). HUD는 그만큼 오른쪽으로 비킨다(`hud_inset`).
+    // 랩·시나리오 터치 버튼은 걷었다 — 랩은 멈춤 메뉴의 LAB, 시나리오는 DEV 메뉴에서.
+    let (c, s) = pause_spot(w, h);
     b.push(Button {
-        center: vec2(w - s * 1.4, s * 1.4),
+        center: c,
         radius: s,
         kind: Kind::Pause,
     });
-    if dev {
-        b.push(Button {
-            center: vec2(w - s * 4.0, s * 1.4),
-            radius: s,
-            kind: Kind::Lab,
-        });
-        b.push(Button {
-            center: vec2(w - s * 6.6, s * 1.4),
-            radius: s,
-            kind: Kind::Scenario,
-        });
-    }
     b
+}
+
+/// 멈춤 버튼의 가운데와 반지름(논리 px).
+fn pause_spot(w: f32, h: f32) -> (Vec2, f32) {
+    let s = w.min(h).min(TOUCH_U_MAX) * 0.09 * 0.7;
+    (vec2(s * 1.4, s * 1.4), s)
+}
+
+/// 터치일 때 HUD가 왼쪽 위 멈춤 버튼을 비키는 폭(논리 px).
+pub fn hud_inset(w: f32, h: f32) -> f32 {
+    let (c, s) = pause_spot(w, h);
+    c.x + s + 6.0
 }
 
 pub fn stick_radius(w: f32, h: f32) -> f32 {
@@ -230,7 +225,7 @@ pub fn stick_radius(w: f32, h: f32) -> f32 {
 
 impl Touch {
     /// `menu`면 스틱·버튼 없이 탭만(메뉴 화면).
-    pub fn read(&mut self, dev: bool, menu: bool) -> Read {
+    pub fn read(&mut self, menu: bool) -> Read {
         let mut a = Read::default();
         let dpi = screen_dpi_scale().max(0.01);
         let touches: Vec<macroquad::input::Touch> = touches()
@@ -291,7 +286,7 @@ impl Touch {
             return a;
         }
         let (w, h) = (screen_width(), screen_height());
-        let buttons = layout(w, h, dev, self.ctx);
+        let buttons = layout(w, h, self.ctx);
         for t in &touches {
             let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
             if !self.known.contains(&t.id) {
@@ -336,12 +331,12 @@ impl Touch {
         a
     }
 
-    pub fn overlay(&self, dev: bool) -> Overlay {
+    pub fn overlay(&self) -> Overlay {
         let (w, h) = (screen_width(), screen_height());
         Overlay {
             stick: self.stick.map(|s| (s.origin, s.pos)),
             stick_radius: stick_radius(w, h),
-            buttons: layout(w, h, dev, self.ctx),
+            buttons: layout(w, h, self.ctx),
             rest: self.ctx.rest,
         }
     }
@@ -360,8 +355,6 @@ fn press(a: &mut Read, k: Kind) {
         Kind::TurnLeft => a.turn_left = true,
         Kind::TurnRight => a.turn_right = true,
         Kind::Pause => a.pause = true,
-        Kind::Lab => a.lab_toggle = true,
-        Kind::Scenario => a.scenario_next = true,
     }
 }
 
@@ -640,12 +633,6 @@ fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
                 );
             }
         }
-        Kind::Lab | Kind::Scenario => {
-            let text = if k == Kind::Lab { "LAB" } else { "SC" };
-            let size = crate::text::fit((r * 0.7).max(12.0));
-            let m = measure_text(text, None, size as u16, 1.0);
-            draw_text(text, c.x - m.width * 0.5, c.y + m.height * 0.4, size, col);
-        }
     }
 }
 
@@ -664,7 +651,7 @@ mod tests {
             (390.0, 844.0),
         ] {
             {
-                let b = layout(w, h, true, Ctx::ALL);
+                let b = layout(w, h, Ctx::ALL);
                 for x in &b {
                     assert!(
                         x.center.x - x.radius >= 0.0 && x.center.x + x.radius <= w,
@@ -695,7 +682,7 @@ mod tests {
     #[test]
     fn attack_is_the_biggest_button_and_meets_the_minimum_touch_size() {
         // 플랫폼 최소 터치 크기 44pt(지름) — 가장 작은 가로 폰에서도.
-        let b = layout(667.0, 375.0, true, Ctx::ALL);
+        let b = layout(667.0, 375.0, Ctx::ALL);
         let atk = b.iter().find(|x| x.kind == Kind::Attack).unwrap();
         assert!(b.iter().all(|x| x.radius <= atk.radius));
         assert!(
@@ -705,11 +692,22 @@ mod tests {
         );
     }
 
+    /// 2026-11-06: 멈춤은 왼쪽 위(오른쪽 위엔 아무것도 없다), HUD는 그만큼 비킨다.
+    #[test]
+    fn the_pause_button_sits_top_left_and_the_hud_steps_aside() {
+        for (w, h) in [(844.0, 390.0), (1280.0, 720.0)] {
+            let b = layout(w, h, Ctx::ALL);
+            let p = b.iter().find(|x| x.kind == Kind::Pause).unwrap();
+            assert!(p.center.x < w * 0.1 && p.center.y < h * 0.15);
+            assert!(hud_inset(w, h) > p.center.x + p.radius);
+        }
+    }
+
     /// 0053: 상황 버튼이 켜지고 꺼져도 늘 있는 버튼의 자리는 그대로다(엄지가 외운 자리가 밀리지 않게).
     #[test]
     fn contextual_buttons_never_move_the_others() {
-        let all = layout(844.0, 390.0, false, Ctx::ALL);
-        let none = layout(844.0, 390.0, false, Ctx::default());
+        let all = layout(844.0, 390.0, Ctx::ALL);
+        let none = layout(844.0, 390.0, Ctx::default());
         for x in &none {
             let y = all.iter().find(|y| y.kind == x.kind).unwrap();
             assert_eq!(x.center, y.center, "{:?}", x.kind);
@@ -734,7 +732,7 @@ mod tests {
         press(&mut a, Kind::TurnLeft);
         assert!(a.turn_left && !a.turn_right);
         // 오른쪽 버튼이 화면 오른쪽에 있다.
-        let b = layout(844.0, 390.0, false, Ctx::default());
+        let b = layout(844.0, 390.0, Ctx::default());
         let x = |k| b.iter().find(|x| x.kind == k).unwrap().center.x;
         assert!(x(Kind::TurnRight) > x(Kind::TurnLeft));
     }

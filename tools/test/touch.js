@@ -37,9 +37,8 @@ function layout() {
     turn_right: [turn[0] + u * 0.08, turn[1]],
     lock: at(80, 0.44),
     flask: at(150, 0.44),
-    pause: [W - r * 0.7 * 1.4, r * 0.7 * 1.4],
-    lab: [W - r * 0.7 * 4.0, r * 0.7 * 1.4],
-    scenario: [W - r * 0.7 * 6.6, r * 0.7 * 1.4],
+    // 멈춤은 왼쪽 위(2026-11-06), 랩·시나리오 터치 버튼은 없다(랩 = 멈춤 메뉴 LAB).
+    pause: [r * 0.7 * 1.4, r * 0.7 * 1.4],
   };
   return b;
 }
@@ -90,13 +89,6 @@ async function main() {
   await shot('t03-lock-on');
   await tap(b.dodge); await page.waitForTimeout(100);
   await shot('t04-dodge');
-  // 랩(0070): LAB을 누르면 멈춤 메뉴 안의 랩 창(게임은 멈춘다) — 창 밖을 누르면 닫힌다.
-  await tap(b.lab); await page.waitForTimeout(300);
-  await shot('t05-lab');
-  await tap([4, 4]); await page.waitForTimeout(300);
-  await shot('t06-lab-closed');
-  await tap(b.scenario); await page.waitForTimeout(800);
-  await shot('t07-next-scenario');
   // 땅 돌리기 오른쪽 ↷(0012·0017 — 카메라가 오른쪽으로): 도는 중 · 다 돈 뒤(버튼이 대기로 옅어짐).
   await tap(b.turn_right); await page.waitForTimeout(120);
   await shot('t08-turn-cw');
@@ -106,7 +98,7 @@ async function main() {
   await touch('touchStart', [b.pause]); await page.waitForTimeout(300);
   await touch('touchEnd', []); await page.waitForTimeout(400);
   await shot('t10-pause-stays');
-  await tap([4, H - 4]); await page.waitForTimeout(300);
+  await tap([W - 4, H - 4]); await page.waitForTimeout(300);
   await shot('t11-pause-closed');
   await browser.close();
   server.close();

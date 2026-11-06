@@ -68,8 +68,6 @@ fn initial_device() -> Device {
     }
 }
 
-const DEV: bool = cfg!(feature = "dev");
-
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
 pub struct Actions {
     /// 이동. x = 오른쪽, y = 위(앞). 길이 0..=1.
@@ -720,7 +718,7 @@ impl Input {
 
     /// 터치 장치일 때 렌더가 그릴 오버레이.
     pub fn overlay(&self) -> Option<Overlay> {
-        (device() == Device::Touch).then(|| self.touch.overlay(DEV))
+        (device() == Device::Touch).then(|| self.touch.overlay())
     }
 
     /// 프레임마다 한 번. 눌림은 OR로 모으고, 이동(상태)은 마지막 값으로 덮는다. `menu`면 터치는 탭만.
@@ -901,7 +899,7 @@ impl Input {
         }
 
         // 터치: 스틱은 키·패드가 0일 때만, 눌림은 OR.
-        let t = self.touch.read(DEV, menu);
+        let t = self.touch.read(menu);
         a.pause |= t.pause;
         a.tap = t.tap;
         if m == Vec2::ZERO {
@@ -927,10 +925,6 @@ impl Input {
         a.lock |= t.lock;
         a.turn_right |= t.turn_right;
         a.turn_left |= t.turn_left;
-        a.lab_toggle |= t.lab_toggle;
-        if t.scenario_next {
-            a.scenario = Some(0);
-        }
         // 마우스(0058): 움직이거나 누르면 "만졌다". 터치 직후의 마우스 이벤트는 터치가 흉내 낸 것일 수 있어 세지 않는다.
         let fdt = get_frame_time();
         self.since_touch = if t.active {

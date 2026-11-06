@@ -80,7 +80,13 @@ pub fn draw_reticle(f: &Frame, at: Vec2, size: u8) {
 
 pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: bool) {
     let s = u(f);
-    let (x0, y0) = (f.ox + 8.0 * s, f.oy + 8.0 * s);
+    // 터치면 왼쪽 위 멈춤 버튼을 비킨다(2026-11-06).
+    let inset = if crate::input::device() == crate::input::Device::Touch {
+        crate::touch::hud_inset(screen_width(), screen_height())
+    } else {
+        0.0
+    };
+    let (x0, y0) = (f.ox + 8.0 * s + inset, f.oy + 8.0 * s);
     // 체력: 마름모.
     let pl = &w.player;
     let max_hp = pl.max_hp.max(pl.hp);
