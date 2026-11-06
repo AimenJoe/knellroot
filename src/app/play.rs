@@ -8,6 +8,11 @@ impl App {
             self.go(flow::pause(self.scene()));
             return;
         }
+        // Select(Tab) = 장비 창 바로(0070 6 A — 멈춤을 거치지 않는다, 닫으면 싸움으로).
+        if a.equip {
+            self.go(Go::Open(Scene::Equip));
+            return;
+        }
         let a = self.lab_filter(a);
         let a = self.cursor_aim(a);
         self.step_world(&a);

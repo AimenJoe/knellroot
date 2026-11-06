@@ -118,7 +118,6 @@ pub struct Strings {
     /// 장비 창(0067): 상태 머리글, 장비 중인 무기 표시, 바뀌는 것 없음, 빈 칸 설명,
     /// 상태 줄 이름 열과 등잔 횟수 "{0}", 무기 설명 넷.
     pub equip_status: &'static str,
-    pub equip_held: &'static str,
     pub equip_no_change: &'static str,
     pub equip_empty_d: &'static str,
     pub stat_max_hp: &'static str,
@@ -288,7 +287,6 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.chest_verb,
         s.menu_continue,
         s.equip_status,
-        s.equip_held,
         s.equip_no_change,
         s.equip_empty_d,
         s.stat_max_hp,

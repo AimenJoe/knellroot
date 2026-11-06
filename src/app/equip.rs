@@ -37,8 +37,9 @@ pub(super) enum Cand {
 
 /// 칸의 후보 목록(표 순서): 무기 칸 = 무기 넷, 장신구 칸 = 빈 칸 + **가진** 장신구만.
 /// 못 얻은 것은 장비 창에 보이지 않는다 — 검은 실루엣 같은 "찾을 것" 표시는 도감 몫(사장 2026-11-05, 0068).
-pub(super) fn candidates(slot: usize, owned: &[Charm]) -> Vec<Cand> {
-    if slot == 0 {
+/// 그 칸에 **지금 낀 것**(`now`)은 후보에서 뺀다 — 칸 상자와 "지금 → 바뀐" 비교가 이미 보여 준다(0070 8 가, Diablo IV 콘솔 꼴).
+pub(super) fn candidates(slot: usize, owned: &[Charm], now: Cand) -> Vec<Cand> {
+    let all: Vec<Cand> = if slot == 0 {
         weapons::IDS.into_iter().map(Cand::Weapon).collect()
     } else {
         std::iter::once(Cand::Empty)
@@ -49,7 +50,8 @@ pub(super) fn candidates(slot: usize, owned: &[Charm]) -> Vec<Cand> {
                     .map(|d| Cand::Charm(d.id)),
             )
             .collect()
-    }
+    };
+    all.into_iter().filter(|&c| c != now).collect()
 }
 
 /// 장신구 칸 `i`에 `pick`을 끼운 뒤의 세 칸: 다른 칸에 끼어 있던 것이면 그 칸과 맞바꾼다(같은 것 두 칸 금지).
@@ -221,7 +223,7 @@ impl App {
         self.pane_input(&mut a, true);
         let a = &a;
         let tap = a.tap.and_then(|p| self.hit_at(p));
-        if a.back || a.pause || tap == Some(Hit::Close) {
+        if a.back || a.pause || a.equip || tap == Some(Hit::Close) {
             self.go(Go::Back);
             return;
         }
@@ -252,12 +254,13 @@ impl App {
         };
         if pick {
             let slot = self.cursor;
-            let now = self.slot_now(slot);
+            if candidates(slot, &self.progress.owned, self.slot_now(slot)).is_empty() {
+                // 바꿀 것이 없다(설명 칸이 얻는 곳을 말한다).
+                self.snd(crate::sfx::Id::Deny);
+                return;
+            }
             self.go(Go::Open(Scene::EquipPick { slot: slot as u8 }));
-            self.cursor = candidates(slot, &self.progress.owned)
-                .iter()
-                .position(|&c| c == now)
-                .unwrap_or(0);
+            self.cursor = 0;
         }
     }
 
@@ -273,7 +276,11 @@ impl App {
             self.go(Go::Back);
             return;
         }
-        let list = candidates(slot, &self.progress.owned);
+        let list = candidates(slot, &self.progress.owned, self.slot_now(slot));
+        if list.is_empty() {
+            self.go(Go::Back);
+            return;
+        }
         let picked = self.menu_pick(a, list.len());
         if self.cursor != before {
             self.scroll = 0.0;
@@ -363,7 +370,7 @@ impl App {
         }
 
         // 아래 왼쪽: 고른 것(후보 목록이면 그 후보) — 도는 그림 + 이름(머리글) + 설명.
-        let list = pick.map(|slot| candidates(slot, &self.progress.owned));
+        let list = pick.map(|slot| candidates(slot, &self.progress.owned, self.slot_now(slot)));
         let focus = match (&list, pick) {
             (Some(l), Some(_)) => l.get(self.cursor).copied().unwrap_or(Cand::Empty),
             _ => self.slot_now(slot_cursor),
@@ -449,7 +456,6 @@ impl App {
                     .iter()
                     .map(|&c| {
                         let mark = match c {
-                            Cand::Weapon(w) if w == self.weapon => s.equip_held.to_string(),
                             Cand::Charm(id) => self
                                 .progress
                                 .worn
@@ -583,19 +589,26 @@ mod tests {
     }
 
     #[test]
-    fn slots_list_only_what_you_own() {
-        assert_eq!(candidates(0, &[]).len(), weapons::IDS.len());
-        // 장신구가 없으면 빈 칸 하나 — 못 얻은 것은 장비 창에 없다(도감 몫).
-        assert_eq!(candidates(1, &[]), vec![Cand::Empty]);
+    fn slots_list_only_what_you_own_and_not_what_is_already_worn_there() {
+        let held = Cand::Weapon(weapons::IDS[0]);
+        let weapons_left = candidates(0, &[], held);
+        assert_eq!(weapons_left.len(), weapons::IDS.len() - 1);
+        assert!(
+            !weapons_left.contains(&held),
+            "the held weapon is not offered again"
+        );
+        // 장신구가 없고 칸이 비었으면 바꿀 것이 없다 — 못 얻은 것은 장비 창에 없다(도감 몫).
+        assert!(candidates(1, &[], Cand::Empty).is_empty());
         let owned = [Charm::Ear, Charm::Shell];
         assert_eq!(
-            candidates(3, &owned),
-            vec![
-                Cand::Empty,
-                Cand::Charm(Charm::Shell),
-                Cand::Charm(Charm::Ear)
-            ],
-            "table order, owned only"
+            candidates(3, &owned, Cand::Empty),
+            vec![Cand::Charm(Charm::Shell), Cand::Charm(Charm::Ear)],
+            "table order, owned only, no \"empty\" for an empty slot"
+        );
+        assert_eq!(
+            candidates(3, &owned, Cand::Charm(Charm::Ear)),
+            vec![Cand::Empty, Cand::Charm(Charm::Shell)],
+            "the worn one is in the slot box, not the list"
         );
     }
 }

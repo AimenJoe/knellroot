@@ -38,7 +38,6 @@ pub const EN: Strings = Strings {
     chest_verb: "Open",
     menu_continue: "Continue",
     equip_status: "Status",
-    equip_held: "Equipped",
     equip_no_change: "No change",
     equip_empty_d: "Wear nothing here",
     stat_max_hp: "Max HP",

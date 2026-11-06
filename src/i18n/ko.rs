@@ -37,7 +37,6 @@ pub const KO: Strings = Strings {
     chest_verb: "열기",
     menu_continue: "이어하기",
     equip_status: "상태",
-    equip_held: "장비 중",
     equip_no_change: "바뀌는 것 없음",
     equip_empty_d: "아무것도 끼지 않는다",
     stat_max_hp: "최대 체력",

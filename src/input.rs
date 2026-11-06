@@ -6,7 +6,7 @@
 //!   공격 X / 왼쪽 클릭 / J      마법 RB / 오른쪽 클릭 / U      회피 B / Space      패링 LB / L-Shift / K
 //!   락온 R3 / 휠 클릭 / L      땅 돌리기 LT·RT / Q·E      점프·상호작용 A / F      등잔 Y / R
 //!   멈춤 = Start / Esc·P · 메뉴 = 십자·왼쪽 스틱(한 번씩)·A 확인·B 뒤로 / 화살표·WASD·Enter·Esc(0019)
-//!   랩 열기 = Select / F1          랩 안: 십자(↑↓ 고르기, ←→ 바꾸기), LB = 10배(랩이 열려 있으면 왼쪽 돌리기 대신), Y = 초기화, B·X키 = 내보내기,
+//!   장비 창 = Select / Tab(0070) · 랩 열기 = F1(개발판)          랩 안: 십자(↑↓ 고르기, ←→ 바꾸기), LB = 10배(랩이 열려 있으면 왼쪽 돌리기 대신), Y = 초기화, B·X키 = 내보내기,
 //!   LT = 슬롯에 담기, RT = A/B 바꾸기, 1~7 = 시나리오 바꾸기(dev 기능)
 //!   터치(`touch.rs`, 0006) = 왼쪽 반 가상 스틱 + 오른쪽 아래 공격·회피·락온·↶↷, 오른쪽 위 랩·시나리오(dev).
 //!
@@ -101,6 +101,8 @@ pub struct Actions {
     /// (`world::plan_turn`).
     pub turn_right: bool,
     pub turn_left: bool,
+    /// 장비 창 바로 열기(0070 6 A, 2026-11-06): 패드 Select · 키보드 Tab(배치표에 올리지 않았을 때).
+    pub equip: bool,
     pub lab_toggle: bool,
     pub lab_up: bool,
     pub lab_down: bool,
@@ -778,6 +780,8 @@ impl Input {
             })
             .map(|i| i as u8);
         a.lab_toggle = is_key_pressed(KeyCode::F1);
+        // Tab은 배치표에 올릴 수 있는 키라, 게임 동작에 붙이지 않았을 때만 장비 창.
+        a.equip = is_key_pressed(KeyCode::Tab) && !bind.keys.contains(&key_index(KeyCode::Tab));
         a.dev_overlay = is_key_pressed(KeyCode::F3);
         a.ui_check = is_key_pressed(KeyCode::F4);
         a.menu_up = is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W);
@@ -861,7 +865,7 @@ impl Input {
                         .copied()
                         .find(|p| p.bindable() && pad.is_just_pressed(p.button()));
                 }
-                a.lab_toggle |= pad.is_just_pressed(Button::LeftCenterCluster);
+                a.equip |= pad.is_just_pressed(Button::LeftCenterCluster);
                 a.lab_up |= pad.is_just_pressed(Button::DPadUp);
                 a.lab_down |= pad.is_just_pressed(Button::DPadDown);
                 a.lab_left |= pad.is_just_pressed(Button::DPadLeft);
@@ -915,7 +919,7 @@ impl Input {
             if a.pressed_pad.is_none() {
                 a.pressed_pad = PADS.iter().copied().find(|p| p.bindable() && j(*p));
             }
-            a.lab_toggle |= j(Pad::Select);
+            a.equip |= j(Pad::Select);
             a.lab_fast |= is_key_down(Pad::L1.key());
             a.lab_reset |= j(Pad::North);
             a.lab_export |= j(Pad::East);
@@ -1039,6 +1043,7 @@ impl Input {
             lock: self.latch.lock | a.lock,
             turn_right: self.latch.turn_right | a.turn_right,
             turn_left: self.latch.turn_left | a.turn_left,
+            equip: self.latch.equip | a.equip,
             lab_toggle: self.latch.lab_toggle | a.lab_toggle,
             lab_up: self.latch.lab_up | a.lab_up,
             lab_down: self.latch.lab_down | a.lab_down,
