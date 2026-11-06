@@ -106,6 +106,9 @@ pub struct Touch {
     pub ctx: Ctx,
     /// 메뉴 모드: 손가락마다 (id, 처음 자리, 멀리 움직였나 = 끌기, 지난 자리).
     taps: Vec<(u64, Vec2, bool, Vec2)>,
+    /// 싸움 중에 닿아 있던 손가락(멈춤 버튼을 누른 손가락 등) — 메뉴가 열린 뒤 떼도 탭이 아니다(2026-11-06: 멈춤 버튼을 뗀 자리가
+    /// "창 밖 탭"이 되어 멈춤 창이 바로 닫혔다).
+    stale: Vec<u64>,
 }
 
 /// 버튼 크기·거리의 기준(짧은 변)의 상한(논리 px) — 태블릿에서 버튼이 너무 커지지 않게.
@@ -242,9 +245,12 @@ impl Touch {
             self.stick = None;
             self.attack_finger = None;
             self.cast_finger = None;
-            self.known.clear();
+            self.stale.append(&mut self.known);
             for t in &touches {
                 let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
+                if self.stale.contains(&t.id) {
+                    continue;
+                }
                 match self.taps.iter_mut().find(|x| x.0 == t.id) {
                     Some(x) => {
                         let was = x.2;
@@ -269,9 +275,16 @@ impl Touch {
                 }
             }
             self.taps.retain(|x| touches.iter().any(|t| t.id == x.0));
+            // 뗀 손가락은 묵은 목록에서 뺀다(같은 id가 다시 쓰여도 새 탭은 받게).
+            self.stale.retain(|id| {
+                touches.iter().any(|t| {
+                    t.id == *id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
+                })
+            });
             return a;
         }
         self.taps.clear();
+        self.stale.clear();
         if touches.is_empty() && self.stick.is_none() && self.known.is_empty() {
             self.attack_finger = None;
             self.cast_finger = None;

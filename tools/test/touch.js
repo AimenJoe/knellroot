@@ -12,7 +12,8 @@ const OUT = path.resolve(process.argv[3] || 'shots');
 const PORT = 8132;
 const W = 844, H = 390;
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm' };
-const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
+// 둘째: CDP로 오래 누른 touchStart에 Chromium이 다는 개입 경고(우리 코드가 아니라 브라우저의 스크롤 판정, 무해).
+const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/, /Ignored attempt to cancel a touchstart event with cancelable=false/];
 const server = http.createServer((req, res) => {
   const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
   if (!f.startsWith(DIST) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
@@ -101,9 +102,15 @@ async function main() {
   await shot('t08-turn-cw');
   await page.waitForTimeout(600);
   await shot('t09-after-turn');
+  // 멈춤(2026-11-06): 버튼을 누른 채 창이 열리고 나서 떼도 창이 남아야 한다(뗀 자리가 "창 밖 탭"이 되어 닫히던 것).
+  await touch('touchStart', [b.pause]); await page.waitForTimeout(300);
+  await touch('touchEnd', []); await page.waitForTimeout(400);
+  await shot('t10-pause-stays');
+  await tap([4, H - 4]); await page.waitForTimeout(300);
+  await shot('t11-pause-closed');
   await browser.close();
   server.close();
-  for (const n of fs.readdirSync(OUT).filter((n) => n.startsWith('t0'))) console.log(`${n}\t${fs.statSync(path.join(OUT, n)).size} bytes`);
+  for (const n of fs.readdirSync(OUT).filter((n) => /^t\d/.test(n))) console.log(`${n}\t${fs.statSync(path.join(OUT, n)).size} bytes`);
   if (errors.length) { console.error('console errors:\n' + errors.join('\n')); process.exit(1); }
   console.log('ok');
 }
