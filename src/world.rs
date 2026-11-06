@@ -6,8 +6,8 @@ use crate::ground::Ground;
 use crate::input::Actions;
 use crate::tuning::{
     Tuning, BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH,
-    BOMB_SKID, CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES, GROUND_STEP, HIT_DY, LOCK_HANDOFF, P,
-    PLAYER_HP, PLAYER_RADIUS, RIPOSTE_WINDOW, TICK_DT,
+    BOMB_SKID, CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY,
+    HIT_HITSTOP, HIT_SWAY, LOCK_HANDOFF, P, PLAYER_HP, PLAYER_RADIUS, RIPOSTE_WINDOW, TICK_DT,
 };
 use crate::weapons::{self, Rb, Shape};
 
@@ -189,6 +189,44 @@ pub struct Bomb {
     pub poise: f32,
 }
 
+/// 맞힌 자리의 불똥(그림만 — 렌더가 읽는다, 2026-11-06): 맞은 쪽으로 튀어 떨어지며 짧게 산다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Spark {
+    pub pos: Vec3,
+    pub vel: Vec3,
+    pub age: f32,
+    /// 강타·치명타의 큰 불똥.
+    pub big: bool,
+}
+
+/// 불똥이 사는 시간(초).
+pub const SPARK_LIFE: f32 = 0.22;
+
+/// 맞힌 자리 `at`에서 맞은 쪽 `dir`로 퍼지는 불똥(같은 스윙 = 같은 무늬, 난수 없이).
+pub fn sparks_at(at: Vec3, dir: Vec3, swing: u32, big: bool) -> Vec<Spark> {
+    let n = if big { 9 } else { 6 };
+    let side = vec3(-dir.z, 0.0, dir.x);
+    (0..n)
+        .map(|i| {
+            let h = (swing
+                .wrapping_mul(2654435761)
+                .wrapping_add(i as u32 * 40503)
+                >> 8)
+                & 0xffff;
+            let r = h as f32 / 65535.0;
+            let spread = (i as f32 / (n - 1) as f32 - 0.5) * 1.6 + (r - 0.5) * 0.4;
+            let speed = if big { 9.0 } else { 6.5 } * (0.7 + 0.6 * r);
+            let v = (dir + side * spread).normalize_or_zero() * speed + Vec3::Y * (1.5 + 3.0 * r);
+            Spark {
+                pos: at,
+                vel: v,
+                age: 0.0,
+                big,
+            }
+        })
+        .collect()
+}
+
 /// 폭발 고리(그림만 — 렌더가 읽는다).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Blast {
@@ -328,6 +366,8 @@ pub struct Player {
     pub since_spill: f32,
     /// 마지막 패링 성공에서 지난 초(렌더의 번쩍임).
     pub since_parry: f32,
+    /// 마지막으로 무언가를 맞힌 스윙 번호(맞히면 그 스윙의 내딛기를 멈춘다, 2026-11-06).
+    pub connected: u32,
     /// 대시 공격을 받는 남은 시간(회피를 끊었거나 막 끝난 뒤, 2026-11-06).
     pub dash_left: f32,
     /// 공격 버튼을 한 번 누른 뒤 놓지 않고 쥔 시간(초, 0030). 연타 중 휘두르기 도중에 누른 짧은 누름이 모으기로 새지 않게.
@@ -425,6 +465,8 @@ pub struct World {
     pub cracks: Vec<Crack>,
     pub bombs: Vec<Bomb>,
     pub blasts: Vec<Blast>,
+    /// 맞힌 자리의 불똥(2026-11-06).
+    pub sparks: Vec<Spark>,
     /// 이번 틱에 손을 떠난 수류탄(던질 자리).
     throw_to: Option<Vec3>,
     /// 이번 틱에 쏜 쪽과 세기(0 = 보통, 1 = 덜 모음, 2 = 다 모음, 0056) — `tick_bolts`가 탄을 세운다.
@@ -460,6 +502,7 @@ impl World {
                 since_spill: f32::MAX,
                 since_parry: f32::MAX,
                 dash_left: 0.0,
+                connected: 0,
                 attack_hold: 0.0,
                 flask: FLASK_CHARGES,
                 flask_lock: 0.0,
@@ -507,6 +550,7 @@ impl World {
             cracks: Vec::new(),
             bombs: Vec::new(),
             blasts: Vec::new(),
+            sparks: Vec::new(),
             throw_to: None,
             cast_fire: None,
             cast_denied_now: false,
@@ -1630,12 +1674,17 @@ impl World {
             PState::Dodge { dir, .. } => {
                 pl.vel = dir * (t[P::DodgeDist] / t[P::DodgeTime]);
             }
-            PState::Attack { t: e, dir, hit, .. } => {
+            PState::Attack {
+                t: e,
+                dir,
+                hit,
+                swing,
+            } => {
                 // 선딜 + 활성 동안 `attack.lunge m` × 타의 배율만큼 입력한 쪽으로 내딛고, 후딜에는 선다(0018·0051).
                 let (s0, a0, _) = hit_times(t, wpn, hit);
                 let reach = s0 + a0;
                 let lunge = t[P::AttackLunge] * wpn.hit(hit).map_or(1.0, |h| h.lunge);
-                pl.vel = if e < reach {
+                pl.vel = if e < reach && pl.connected != swing {
                     dir * (lunge / reach.max(1e-3))
                 } else {
                     Vec3::ZERO
@@ -1801,6 +1850,13 @@ impl World {
             b.age += dt;
         }
         self.blasts.retain(|b| b.age < BLAST_SHOW);
+        for sp in &mut self.sparks {
+            sp.age += dt;
+            sp.vel.y -= 18.0 * dt;
+            sp.vel *= (1.0 - 6.0 * dt).max(0.0);
+            sp.pos += sp.vel * dt;
+        }
+        self.sparks.retain(|sp| sp.age < SPARK_LIFE);
         if let Some((dir, power)) = self.cast_fire.take() {
             let pl = &self.player;
             let pos = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT) + dir * (PLAYER_RADIUS + 0.2);
@@ -2186,6 +2242,20 @@ impl World {
             }
             en.hurt = 0.15;
             en.knock = dir * t[P::Knockback] * s.knock * if en.boss { 0.25 } else { 1.0 };
+            // 맞은 쪽으로 몸이 젖는다(패링과 같은 `sway`, 2026-11-06 — 흰 번쩍만으로는 "맞았다"가 아니다, KB).
+            en.sway = dir
+                * if s.heavy.is_some() {
+                    HEAVY_SWAY
+                } else {
+                    HIT_SWAY
+                };
+            en.sway_t = 0.0;
+            self.sparks.extend(sparks_at(
+                en.pos + Vec3::Y * en.height * 0.55,
+                dir,
+                swing,
+                s.heavy.is_some() || crit,
+            ));
             add_poise(en, s.poise, primed, t, ev);
             ev.push(Event::Hit {
                 at: en.pos + Vec3::Y * en.height * 0.6,
@@ -2214,7 +2284,14 @@ impl World {
             }
         }
         if stop {
-            self.hitstop = t[P::Hitstop] * if heavy_hit { HEAVY_HITSTOP } else { 1.0 };
+            self.hitstop = t[P::Hitstop]
+                * if heavy_hit {
+                    HEAVY_HITSTOP
+                } else {
+                    HIT_HITSTOP
+                };
+            // 공격자 확인(KB, Hollow Knight 반동): 맞힌 스윙은 남은 내딛기를 멈춘다 — 빗나감과 맞힘이 손에서 다르게.
+            self.player.connected = swing;
         }
     }
 
@@ -4799,6 +4876,42 @@ mod tests {
             ev.extend(w.step(&Actions::default(), &t));
         }
         assert!(ev.contains(&Event::LockOn) && w.lock.is_some());
+    }
+
+    /// 2026-11-06(타격감, KB melee-light…): 평타가 맞으면 6프레임쯤 멈추고(0.06초 × `HIT_HITSTOP`), 맞은 쪽으로 불똥이 튀고
+    /// 몸이 젖고, 공격자는 남은 내딛기를 멈춘다(빗나감과 맞힘이 손에서 다르게).
+    #[test]
+    fn a_landed_light_hit_stops_the_world_sprays_sparks_and_ends_the_lunge() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.spawn_mob(vec3(0.0, 0.0, -1.3));
+        w.player.facing = std::f32::consts::PI;
+        let mut landed = false;
+        for i in 0..20 {
+            let ev = w.step(
+                &Actions {
+                    attack: i == 0,
+                    ..Default::default()
+                },
+                &t,
+            );
+            if ev.iter().any(|e| matches!(e, Event::Hit { .. })) {
+                landed = true;
+                break;
+            }
+        }
+        assert!(landed);
+        assert!((w.hitstop - t[P::Hitstop] * HIT_HITSTOP).abs() < 1e-5);
+        assert!(w.hitstop >= 0.09, "about six frames, not three");
+        assert!(!w.sparks.is_empty(), "sparks fly");
+        let away = w.sparks.iter().map(|s| s.vel.z).sum::<f32>();
+        assert!(away < 0.0, "they fly the way the blow went (-z)");
+        assert!(w.enemies[0].sway.length() > 0.2, "the body gives");
+        while w.hitstop > 0.0 {
+            w.step(&Actions::default(), &t);
+        }
+        w.step(&Actions::default(), &t);
+        assert!(w.player.vel.length() < 1e-4, "the lunge stops on contact");
     }
 
     /// 2026-11-06: 회피를 끊고(또는 막 끝나고) 누른 공격은 무기의 대시 공격 — 멀리 내딛고, 다음 타는 콤보 둘째 타.

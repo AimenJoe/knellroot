@@ -117,8 +117,9 @@ impl App {
         let (cam, t) = (&mut self.cam, &self.t);
         self.world.view_yaw = Some(cam.quarter_yaw_deg(t));
         use crate::tuning::{
-            SHAKE_CHARGED, SHAKE_CRIT, SHAKE_DOWN, SHAKE_HIT, SHAKE_HURT, SHAKE_PARRY,
-            SHAKE_PLUNGE, SHAKE_ROUSE, SHAKE_SLAM, SHAKE_SMASH, SHAKE_TURN,
+            KICK_HIT_DEG, KICK_SMASH_DEG, SHAKE_CHARGED, SHAKE_CRIT, SHAKE_DOWN, SHAKE_HIT,
+            SHAKE_HURT, SHAKE_PARRY, SHAKE_PLUNGE, SHAKE_ROUSE, SHAKE_SLAM, SHAKE_SMASH,
+            SHAKE_TURN,
         };
         let events = self.world.step(a, t);
         for &e in &events {
@@ -147,6 +148,16 @@ impl App {
             };
             // 화면 흔들림 설정(0052): 0..=10 → 0..100%.
             cam.trauma = (cam.trauma + kick * self.shake as f32 / 10.0).min(1.0);
+            // 카메라 킥(2026-11-06, KB melee-light…: 작은 타격은 trauma²에서 0이 된다 — 맞은 쪽으로 2~3px 찼다 돌아온다).
+            let punch = match e {
+                Event::Hit { at } | Event::Crit { at } => Some((at, KICK_HIT_DEG)),
+                Event::Smash { at } | Event::Break { at } => Some((at, KICK_SMASH_DEG)),
+                _ => None,
+            };
+            if let Some((at, deg)) = punch {
+                let d = at - self.world.player.pos;
+                cam.kick(vec3(d.x, 0.0, d.z), deg * self.shake as f32 / 10.0);
+            }
         }
         self.world_sounds(&events);
         self.follow_camera();
@@ -217,6 +228,9 @@ impl App {
                 _ => continue,
             };
             self.snd(id);
+            if id == Id::Hit {
+                self.snd(Id::Thwack);
+            }
         }
         // 회피를 시작한 틱.
         let dodging = matches!(self.world.player.state, crate::world::PState::Dodge { .. });

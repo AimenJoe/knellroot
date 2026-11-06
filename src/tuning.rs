@@ -54,6 +54,16 @@ pub const PLAYER_RADIUS: f32 = 0.35;
 pub const SHAKE_DEG: f32 = 1.6;
 /// 사건마다 더하는 trauma(크기는 제곱으로 쓴다).
 pub const SHAKE_HIT: f32 = 0.25;
+/// 카메라 킥(2026-11-06, KB: 작은 타격은 흔들림 대신 킥 — 2~3px): 평타·치명타, 강타·자세 깨기(도), 돌아오는 빠르기(1/s).
+pub const KICK_HIT_DEG: f32 = 0.3;
+pub const KICK_SMASH_DEG: f32 = 0.55;
+pub const KICK_RETURN: f32 = 22.0;
+/// 평타 히트스톱 배율(`feel.hitstop s` × 이것, 2026-11-06): 0.06초(≈3.6프레임)는 "없는 것과 같다"(KB 사다리 — 가장 약한 타도 6프레임쯤).
+pub const HIT_HITSTOP: f32 = 1.6;
+/// 맞은 쪽: 몸이 맞은 쪽으로 젖는 세기(평타·강타, `Enemy::sway`), 멈춤 동안 떨림(m).
+pub const HIT_SWAY: f32 = 0.35;
+pub const HEAVY_SWAY: f32 = 0.65;
+pub const HIT_TREMBLE: f32 = 0.05;
 pub const SHAKE_HURT: f32 = 0.75;
 pub const SHAKE_DOWN: f32 = 0.15;
 pub const SHAKE_TURN: f32 = 0.2;

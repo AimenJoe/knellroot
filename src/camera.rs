@@ -164,6 +164,9 @@ pub struct Camera {
     look: Option<Vec3>,
     /// 화면 흔들림(trauma 0..1, 제곱으로 쓴다).
     pub trauma: f32,
+    /// 카메라 킥(2026-11-06): 맞은 쪽으로 찼다가 `KICK_RETURN`으로 돌아오는 월드 오프셋(각 → 거리는 `kick`이 잰다).
+    kick: Vec3,
+    kick_deg: Vec3,
     shake: Vec3,
 }
 
@@ -186,6 +189,8 @@ impl Camera {
             vel: Vec3::ZERO,
             look: None,
             trauma: 0.0,
+            kick: Vec3::ZERO,
+            kick_deg: Vec3::ZERO,
             shake: Vec3::ZERO,
         };
         c.rig = c.desired(t, None);
@@ -463,14 +468,23 @@ impl Camera {
         let up = right.cross(fwd / dist);
         let a = self.trauma * self.trauma * dist * crate::tuning::SHAKE_DEG.to_radians().tan();
         self.shake = right * rand::gen_range(-a, a) + up * rand::gen_range(-a, a);
+        // 킥: 각(도 × 방향)을 지금 거리로 — 쿼터뷰·락온 어디서나 화면에서 같은 px쯤. 로직 시계로 줄어 히트스톱 동안 찬 채로 머문다.
+        self.kick_deg *= (-crate::tuning::KICK_RETURN * dt).exp();
+        self.kick = self.kick_deg * dist * 1f32.to_radians().tan();
         self.rig = rig;
+    }
+
+    /// 카메라 킥: 수평 방향 `dir` 쪽으로 `deg`도만큼 찬다(겹치면 더하되 한 번의 두 배까지).
+    pub fn kick(&mut self, dir: Vec3, deg: f32) {
+        let d = dir.normalize_or_zero();
+        self.kick_deg = (self.kick_deg + d * deg).clamp_length_max(deg * 2.0);
     }
 
     /// macroquad 카메라로. 렌더 타깃을 쓰면 `aspect`를 꼭 준다(안 주면 화면 비율로 찌그러진다).
     pub fn to_camera3d(&self, rt: RenderTarget, aspect: f32) -> Camera3D {
         Camera3D {
-            position: self.rig.pos + self.shake,
-            target: self.rig.look + self.shake,
+            position: self.rig.pos + self.shake + self.kick,
+            target: self.rig.look + self.shake + self.kick,
             up: Vec3::Y, // 기본값은 z-up — 매번 적는다.
             fovy: self.rig.fov,
             aspect: Some(aspect),

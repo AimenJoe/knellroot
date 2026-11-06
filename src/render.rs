@@ -971,9 +971,22 @@ impl Renderer {
         lights: &[Light],
         fall: f32,
     ) {
-        let p = en.prev.lerp(en.pos, alpha);
+        let mut p = en.prev.lerp(en.pos, alpha);
         let mut tilt = Quat::IDENTITY;
         let mut squash = 1.0;
+        // 맞은 순간(2026-11-06, KB 사쿠라이): 세상이 멈춘 동안 맞은 축으로 떨고, 몸이 맞은 쪽으로 젖었다 돌아온다.
+        let struck = (en.hurt / 0.15).clamp(0.0, 1.0);
+        if struck > 0.0 && en.sway.length() > 1e-4 {
+            if w.hitstop > 0.0 {
+                let shake = (get_time() as f32 * 90.0).sin() * crate::tuning::HIT_TREMBLE * struck;
+                p += en.sway.normalize() * shake;
+            }
+            if !matches!(en.state, EState::Stagger { .. }) {
+                let v = en.sway * 0.6 * struck;
+                tilt = Quat::from_axis_angle(Vec3::Y.cross(v).normalize(), v.length());
+                squash = 1.0 - 0.12 * struck;
+            }
+        }
         if let EState::Stagger { t: e, dur } = en.state {
             let left = ((dur - e) / 0.25).clamp(0.0, 1.0);
             let v = lean(en.sway, en.sway_t, w.time, left);
@@ -1283,6 +1296,20 @@ impl Renderer {
                 360.0,
                 Color::new(1.0, 0.85, 0.5, 0.35),
             );
+        }
+        // 맞힌 자리의 불똥(2026-11-06): 날아가는 쪽으로 짧은 빛줄, 처음엔 흰빛 → 호박빛으로 식으며 사라진다.
+        for sp in &w.sparks {
+            let k = (sp.age / crate::world::SPARK_LIFE).clamp(0.0, 1.0);
+            let tail = if sp.big { 0.045 } else { 0.03 };
+            let col = Color::new(1.0, 1.0 - 0.35 * k, 0.85 - 0.6 * k, 1.0 - k * k);
+            line(sp.pos, sp.pos - sp.vel * tail, col);
+            if sp.big {
+                line(
+                    sp.pos + Vec3::Y * 0.03,
+                    sp.pos - sp.vel * tail + Vec3::Y * 0.03,
+                    col,
+                );
+            }
         }
         // 폭발 고리: 퍼지며 옅어진다.
         for b in &w.blasts {

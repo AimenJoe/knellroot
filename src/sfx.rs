@@ -40,6 +40,8 @@ pub enum Id {
     Wake,
     Rest,
     Gulp,
+    /// 맞힘의 둘째 층(2026-11-06, KB: 둔한 것 + 짧고 높은 것): 낮은 둥 + 4ms 딱. 파일 맞힘 소리와 함께 낸다.
+    Thwack,
 }
 
 /// 파일 소리 표: (이름, 변형 수, 크기).
@@ -138,11 +140,13 @@ fn synth_gain(id: Id) -> f32 {
         Id::Wake => 0.7,
         Id::Rest => 0.55,
         Id::Gulp => 0.4,
+        Id::Thwack => 0.5,
         _ => 0.5,
     }
 }
 
-const SYNTHS: [Id; 8] = [
+const SYNTHS: [Id; 9] = [
+    Id::Thwack,
     Id::Parry,
     Id::TeleFan,
     Id::TeleLane,
@@ -404,6 +408,23 @@ pub fn synth(id: Id) -> Vec<i16> {
                 g(0.0, 380.0) + g(0.13, 320.0)
             })
             .collect(),
+        // 맞힘 둘째 층: 120 → 70Hz로 떨어지는 둥(80ms) + 처음 4ms 딱(높은 소음).
+        Id::Thwack => {
+            let mut ph = 0.0f32;
+            (0..len(0.12))
+                .map(|i| {
+                    let t = i as f32 / SR as f32;
+                    ph += (120.0 - 400.0 * t).max(70.0) / SR as f32;
+                    let thud = (TAU * ph).sin() * (-t * 30.0).exp();
+                    let click = if t < 0.004 {
+                        rng(&mut seed) * (1.0 - t / 0.004)
+                    } else {
+                        0.0
+                    };
+                    thud * 0.9 + click * 0.8
+                })
+                .collect()
+        }
         _ => vec![0.0; 64],
     };
     // 끝 5ms를 줄인다(딸깍 없이).

@@ -11,6 +11,8 @@ pub use crate::world::KNOCK_DECAY;
 const SLAM_SPEED: f32 = 2.0;
 /// 예고 끝 이만큼(초)은 방향을 고정한다 — 읽은 대로 맞는다.
 const TELE_LOCK: f32 = 0.12;
+/// 돌진이 닿았다고 보는 여유(몸 반지름 + 플레이어 반지름에 더한다).
+const CHARGE_TOUCH: f32 = 0.15;
 /// 체력 반 아래(문지기): 예고·쉬기 배율, 걸음 배율.
 const ROUSED_TELE: f32 = 0.75;
 const ROUSED_RECOVER: f32 = 0.7;
@@ -114,6 +116,9 @@ pub struct Enemy {
     pub poise_frac: f32,
     /// 높낮이(0043): 곧게 못 가면 월드가 주는 다음 칸 가운데(거리 지도) — 그쪽으로 걷고 공격을 고르지 않는다.
     pub way: Option<Vec3>,
+    /// 돌진(2026-11-06): 돌진을 시작한 뒤 몸이 플레이어에 닿기까지의 초(예고를 굳힐 때 잰다, 길 밖이면 돌진 끝까지).
+    /// 띠 예고의 채움이 예고 끝이 아니라 **닿는 순간**에 다 찬다 — 거리마다 박자가 달라 헷갈리지 않게.
+    pub charge_eta: f32,
 }
 
 /// 한 틱의 결과(월드가 피해·이벤트로 바꾼다).
@@ -158,6 +163,7 @@ impl Enemy {
             broken: 0.0,
             poise_frac: 0.0,
             way: None,
+            charge_eta: 0.0,
         }
     }
 
@@ -228,14 +234,38 @@ impl Enemy {
     }
 
     /// 예고 진행 0..1과 모양(없으면 None). 렌더가 바닥 예고를 채운다.
+    /// 돌진은 예고 + 달려오는 동안까지 한 번에 차서 **몸이 닿는 순간** 다 찬다(띠는 남은 길만, 닿으면 사라짐).
     pub fn telegraph(&self) -> Option<(f32, TeleShape)> {
+        let charge = self.atk == Atk::Charge;
+        let whole = self.tele_dur() + if charge { self.charge_eta } else { 0.0 };
+        let k = |e: f32| (e / whole.max(1e-3)).clamp(0.0, 1.0);
         match self.state {
-            EState::Tele { t: e } => Some((
-                (e / self.tele_dur().max(1e-3)).clamp(0.0, 1.0),
-                self.tele_shape(),
-            )),
+            EState::Tele { t: e } => Some((k(e), self.tele_shape())),
+            EState::Charge { t: e, .. } if !self.landed => {
+                let d = self.def();
+                let TeleShape::Lane { len, w } = self.tele_shape() else {
+                    return None;
+                };
+                let left = len - e * d.charge_speed;
+                (left > d.radius)
+                    .then(|| (k(self.tele_dur() + e), TeleShape::Lane { len: left, w }))
+            }
             _ => None,
         }
+    }
+
+    /// 돌진이 지금 방향으로 나가면 몸이 플레이어에 닿기까지의 초(`charge_eta`). 길 밖이면 돌진 끝까지.
+    fn eta_to(&self, player: Vec3) -> f32 {
+        let d = self.def();
+        let f = self.facing_dir();
+        let to = vec3(player.x - self.pos.x, 0.0, player.z - self.pos.z);
+        let along = to.dot(f);
+        let side = (to - f * along).length();
+        let touch = d.radius + PLAYER_RADIUS + CHARGE_TOUCH;
+        if along <= 0.0 || side > touch {
+            return d.charge_time;
+        }
+        ((along - touch).max(0.0) / d.charge_speed).min(d.charge_time)
     }
 
     /// 퍼지는 파동의 지금 반지름(파동 중일 때).
@@ -342,6 +372,10 @@ impl Enemy {
                 if e < dur - TELE_LOCK {
                     let rate = if self.atk == Atk::Charge { 4.0 } else { 2.0 };
                     self.turn_toward(dir, rate, dt);
+                    // 방향이 굳기 전까지는 닿는 때를 다시 잰다(굳은 뒤엔 그대로 — 채움이 일정한 빠르기로).
+                    if self.atk == Atk::Charge {
+                        self.charge_eta = self.eta_to(player);
+                    }
                 }
                 self.state = if e + dt < dur {
                     EState::Tele { t: e + dt }
@@ -375,7 +409,7 @@ impl Enemy {
             }
             EState::Charge { t: e, dir: cdir } => {
                 self.pos += cdir * d.charge_speed * dt;
-                if !self.landed && dist <= d.radius + PLAYER_RADIUS + 0.15 {
+                if !self.landed && dist <= d.radius + PLAYER_RADIUS + CHARGE_TOUCH {
                     self.landed = true;
                     out.hit = true;
                 }
@@ -456,6 +490,33 @@ mod tests {
         assert_eq!(hits, 1, "one hit per charge");
         // 지나쳐 간다(곧게).
         assert!(en.pos.z > -1.0 && en.pos.x.abs() < 0.1, "{:?}", en.pos);
+    }
+
+    /// 2026-11-06: 돌진 띠의 채움은 예고 끝이 아니라 몸이 플레이어에 닿는 틱에 다 찬다 — 거리가 달라도.
+    #[test]
+    fn a_charge_lane_fills_up_exactly_when_the_body_reaches_you() {
+        for far in [3.5_f32, 5.0, 6.5] {
+            let mut en = Enemy::new(Kind::Thorn, vec3(0.0, 0.0, -far));
+            let mut last_k = 0.0;
+            let mut hit_k = None;
+            for _ in 0..240 {
+                let k = en.telegraph().map(|(k, _)| k);
+                if let Some(k) = k {
+                    assert!(
+                        k + 1e-4 >= last_k,
+                        "the fill never goes back: {k} < {last_k}"
+                    );
+                    last_k = k;
+                }
+                if en.tick(Vec3::ZERO, 1.0 / 60.0).hit {
+                    hit_k = Some(last_k);
+                    break;
+                }
+            }
+            let k = hit_k.expect("the charge lands");
+            assert!(k > 0.96, "{far} m: full when it lands, got {k}");
+            assert!(en.telegraph().is_none(), "the lane goes away once it lands");
+        }
     }
 
     #[test]
