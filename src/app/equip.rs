@@ -245,10 +245,16 @@ impl App {
             }
             self.scroll = 0.0;
         }
+        // 터치·마우스(2026-11-06): 다른 칸을 누르면 그 칸을 고르기만 하고(설명·상태가 바뀐다), 고른 칸을 다시 누르면 후보를 연다 —
+        // 패드의 "커서 → 확인"과 같은 두 걸음.
         let pick = match tap {
             Some(Hit::Row(i)) => {
-                self.cursor = i;
-                true
+                let again = self.cursor == i;
+                if !again {
+                    self.cursor = i;
+                    self.scroll = 0.0;
+                }
+                again
             }
             _ => a.confirm,
         };
@@ -276,11 +282,34 @@ impl App {
             self.go(Go::Back);
             return;
         }
+        // 칸 상자를 눌렀다(목록이 열린 채): 같은 칸이면 닫고, 다른 칸이면 그 칸을 고르고 그 칸의 목록을(바꿀 것이 있으면).
+        if let Some(Hit::Cell(0, other)) = tap {
+            self.go(Go::Back);
+            self.cursor = other;
+            self.scroll = 0.0;
+            if other != slot
+                && !candidates(other, &self.progress.owned, self.slot_now(other)).is_empty()
+            {
+                self.go(Go::Open(Scene::EquipPick { slot: other as u8 }));
+                self.cursor = 0;
+            }
+            return;
+        }
         let list = candidates(slot, &self.progress.owned, self.slot_now(slot));
         if list.is_empty() {
             self.go(Go::Back);
             return;
         }
+        // 후보도 두 걸음: 다른 줄을 누르면 고르기만(바뀌는 값 ▲▼를 미리 본다), 고른 줄을 다시 누르면 끼운다.
+        let mut a = *a;
+        if let Some(Hit::Row(i)) = tap {
+            if i != self.cursor && i < list.len() {
+                self.cursor = i;
+                self.scroll = 0.0;
+                a.tap = None;
+            }
+        }
+        let a = &a;
         let picked = self.menu_pick(a, list.len());
         if self.cursor != before {
             self.scroll = 0.0;
@@ -364,9 +393,15 @@ impl App {
                     ),
                 );
             }
-            if pick.is_none() {
-                self.hits.push((*r, Hit::Row(i)));
-            }
+            // 후보 목록이 열려 있어도 칸을 누를 수 있다: 같은 칸 = 목록 닫기, 다른 칸 = 그 칸의 목록으로(`tick_equip_pick`).
+            self.hits.push((
+                *r,
+                if pick.is_none() {
+                    Hit::Row(i)
+                } else {
+                    Hit::Cell(0, i)
+                },
+            ));
         }
 
         // 아래 왼쪽: 고른 것(후보 목록이면 그 후보) — 도는 그림 + 이름(머리글) + 설명.

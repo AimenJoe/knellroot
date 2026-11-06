@@ -98,6 +98,20 @@ async function main() {
   await touch('touchStart', [b.pause]); await page.waitForTimeout(300);
   await touch('touchEnd', []); await page.waitForTimeout(400);
   await shot('t10-pause-stays');
+  // 장비 창 터치(2026-11-06): 멈춤 → 장비 → 칸은 두 걸음(누르면 고르기, 다시 누르면 후보) → 후보도 두 걸음(고르기 = 미리 보기, 다시 = 끼우기).
+  // 자리는 844×390에서 잰 값(`app::equip` 창 440×226 기준 — 창 크기를 바꾸면 함께).
+  const SWORD_BOX = [154, 135], STAFF_ROW = [560, 128], CHARM_BOX = [410, 77];
+  await tap([288, 138]); await page.waitForTimeout(400);   // 멈춤의 둘째 줄 "장비"
+  await tap(CHARM_BOX); await page.waitForTimeout(300);    // 고르기만(설명이 바뀜)
+  await tap(SWORD_BOX); await page.waitForTimeout(300);    // 무기 칸 고르기
+  await tap(SWORD_BOX); await page.waitForTimeout(400);    // 다시 = 후보 목록
+  await tap(STAFF_ROW); await page.waitForTimeout(300);    // 지팡이 고르기(미리 보기)
+  await shot('t12-equip-preview');
+  await tap(STAFF_ROW); await page.waitForTimeout(400);    // 다시 = 끼우기
+  await shot('t13-equip-worn');
+  const rec = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('knell.save')).map((k) => localStorage.getItem(k)).join('\n'));
+  if (!/weapon=staff/i.test(rec)) errors.push('touch equip: two taps on the staff should wear it: ' + JSON.stringify(rec));
+  await tap([W - 4, H - 4]); await page.waitForTimeout(300);
   await tap([W - 4, H - 4]); await page.waitForTimeout(300);
   await shot('t11-pause-closed');
   await browser.close();
