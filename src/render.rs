@@ -1062,7 +1062,7 @@ impl Renderer {
             let speed = (pl.pos - pl.prev).length() / TICK_DT;
             let wpn = pl.weapon.def();
             let hv = wpn.heavy;
-            let combo_anim = |hit: u8| wpn.combo.get(hit as usize).map_or("attack", |h| h.anim);
+            let combo_anim = |hit: u8| wpn.hit(hit).map_or("attack", |h| h.anim);
             let owned: [&str; 3];
             let (names, at): (&[&str], f32) = match pl.state {
                 // 콤보(0051): 무기 표의 타마다 동작(없는 모델이면 평타).
@@ -1298,7 +1298,7 @@ impl Renderer {
         let wpn = w.player.weapon.def();
         if let PState::Attack { t: e, hit, .. } = w.player.state {
             let (s0, a0, _) = crate::world::hit_times(t, wpn, hit);
-            if let Some(h) = wpn.combo.get(hit as usize) {
+            if let Some(h) = wpn.hit(hit) {
                 if e >= s0 && e < s0 + a0 {
                     let arc = if h.shape == crate::weapons::Shape::Circle {
                         360.0

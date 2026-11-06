@@ -121,6 +121,7 @@ pub const KO: Strings = Strings {
     verb_aim: "조준",
     verb_choose: "고르기",
     verb_confirm: "확인",
+    verb_swap: "갈아 끼우기",
     stage1_name: "침묵의 성소",
     zone_entrance: "무너진 입구",
     zone_courtyard: "뿌리의 뜰",

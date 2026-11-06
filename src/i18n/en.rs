@@ -124,6 +124,7 @@ pub const EN: Strings = Strings {
     verb_aim: "Aim",
     verb_choose: "Choose",
     verb_confirm: "Confirm",
+    verb_swap: "Quick swap",
     stage1_name: "The Silent Sanctuary",
     zone_entrance: "The Fallen Entrance",
     zone_courtyard: "The Root Courtyard",

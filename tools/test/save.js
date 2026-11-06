@@ -78,9 +78,10 @@ async function main() {
   await press('Escape'); await page.waitForTimeout(300);
 
   // 3b) 장비(0064 M3): 멈춤 → 둘째 줄(장비) → 장신구 3칸(산 주머니가 2칸에 들어갔다)에 종지기의 귀 → 기록.
+  // 십자는 칸 자리대로 커서만(→ = 무기 옆 가운데 장신구 칸, ↓ = 셋째 칸), 빨리 바꾸기는 땅 돌리기 E(2026-11-06).
   await press('Escape'); await page.waitForTimeout(200);
   await press('ArrowDown', 1); await press('Enter'); await page.waitForTimeout(300);
-  await press('ArrowDown', 3); await press('ArrowRight'); await page.waitForTimeout(300);
+  await press('ArrowRight'); await press('ArrowDown', 1); await press('KeyE'); await page.waitForTimeout(300);
   await shot('save-2b-equip');
   r = await record();
   console.log('장신구를 낀 뒤 기록:', JSON.stringify(r));

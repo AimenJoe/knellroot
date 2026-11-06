@@ -26,6 +26,12 @@ pub const HIT_DY: f32 = 0.75;
 pub const SEC_HEAD_HZ: f32 = 3.5;
 pub const SEC_HEAD_DAMP: f32 = 0.55;
 /// 몸 기울기: 가속하는 쪽으로 — 거의 출렁이지 않게.
+/// 대시 공격(2026-11-06): 회피가 끝난 뒤 이 초 안에 누른 공격도 대시 공격.
+pub const DASH_ATTACK_LATE: f32 = 0.15;
+/// 패링 반격(2026-11-06): 튕긴 뒤 이 초 안에 누른 공격은 다 모은 강타로 바로 나간다.
+pub const RIPOSTE_WINDOW: f32 = 0.6;
+/// 락온 대상이 쓰러지면 그 자리에서 이 반지름 안의 가장 가까운 적으로 넘어간다(없으면 풀림, 2026-11-06).
+pub const LOCK_HANDOFF: f32 = 8.0;
 pub const SEC_LEAN_HZ: f32 = 2.5;
 pub const SEC_LEAN_DAMP: f32 = 0.8;
 /// 늦음(m) → 기울기 변위 배율. 몸은 반대쪽(가속하는 쪽)으로.

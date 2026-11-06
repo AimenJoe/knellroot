@@ -1,5 +1,5 @@
 //! 장비 창(0067 안 D — 디아블로 콘솔식 인형): 가운데 방랑자 인형(든 무기를 든 3D, `Renderer::draw_doll`), 왼쪽 무기 칸,
-//! 오른쪽 장신구 칸 셋. 칸을 먼저 고르고(위아래, 좌우는 바로 돌려 끼우기 — 옛 창 그대로) 확인하면 그 칸의 후보 목록
+//! 오른쪽 장신구 칸 셋. 칸을 먼저 고르고(십자는 칸 자리대로 커서만, 빨리 바꾸기는 땅 돌리기 버튼 — 2026-11-06) 확인하면 그 칸의 후보 목록
 //! (`Scene::EquipPick`, 스택 위 칸 — 닫으면 그 칸으로)에서 고른다. 오른쪽 칸은 상태(`stats::lines`), 후보에 커서가 있으면
 //! 바뀌는 줄만 `값 → 값 ▲▼`(색 + 화살표 + 숫자). 아래 왼쪽은 고른 것의 설명.
 use super::menu::Hit;
@@ -9,6 +9,22 @@ use crate::stats::{Change, Line, Stats};
 
 /// 칸: 0 = 무기, 1..=3 = 장신구 칸.
 pub(super) const SLOTS: usize = 1 + charms::SLOTS;
+
+/// 칸 커서의 공간 이동: `up`(+1 = 위)은 장신구 칸 셋 안에서 돌고(무기 칸에서는 그대로), `right`(+1 = 오른쪽)는
+/// 무기 칸 → 가운데 장신구 칸(무기 상자와 같은 높이), 장신구 칸 → 무기 칸.
+pub(super) fn slot_nav(cur: usize, up: i32, right: i32) -> usize {
+    let mut c = cur;
+    if right > 0 && c == 0 {
+        c = 2;
+    } else if right < 0 && c > 0 {
+        c = 0;
+    }
+    if up != 0 && c > 0 {
+        let n = (SLOTS - 1) as i32;
+        c = 1 + ((c as i32 - 1 - up).rem_euclid(n)) as usize;
+    }
+    c
+}
 
 /// 칸의 후보.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -209,16 +225,23 @@ impl App {
             self.go(Go::Back);
             return;
         }
-        ui::menu_input(&mut self.cursor, SLOTS, a.menu_up, a.menu_down);
+        // 십자·스틱은 커서만 옮긴다 — 위아래는 장신구 칸 셋 안, 좌우는 무기 칸 ↔ 장신구 칸(칸이 놓인 자리대로,
+        // 사장 2026-11-06 "좌우로는 커서가 움직이는게 더 직관적"). 빨리 바꾸기는 땅 돌리기 버튼(LT·RT / Q·E)으로.
+        self.cursor = slot_nav(
+            self.cursor,
+            a.menu_up as i32 - a.menu_down as i32,
+            a.menu_right as i32 - a.menu_left as i32,
+        );
         if self.cursor != before {
             self.scroll = 0.0;
         }
-        let step = a.menu_right as i32 - a.menu_left as i32;
+        let step = a.turn_right as i32 - a.turn_left as i32;
         if step != 0 {
             match self.cursor {
                 0 => self.next_weapon(step),
                 i => self.step_charm(i - 1, step),
             }
+            self.scroll = 0.0;
         }
         let pick = match tap {
             Some(Hit::Row(i)) => {
@@ -500,7 +523,12 @@ impl App {
             }
         }
         self.push_outside(panel);
-        self.menu_hint(
+        let mut acts = vec![(Act::Choose, s.verb_choose), (Act::Confirm, s.verb_confirm)];
+        if pick.is_none() {
+            acts.push((Act::Swap, s.verb_swap));
+        }
+        self.hint_line(
+            &acts,
             f.ox + f.w * 0.5,
             f.oy + f.h - self.ui.px(1.0) * 2.2,
             f.w * 0.94,
@@ -511,6 +539,23 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_slot_cursor_moves_by_where_the_boxes_sit() {
+        // 무기(0)는 왼쪽, 장신구 1..=3은 오른쪽 위에서 아래로.
+        assert_eq!(
+            slot_nav(0, 0, 1),
+            2,
+            "right from the weapon lands level with it"
+        );
+        assert_eq!(slot_nav(3, 0, -1), 0);
+        assert_eq!(slot_nav(1, 0, 1), 1, "nothing further right");
+        assert_eq!(slot_nav(0, 0, -1), 0);
+        assert_eq!(slot_nav(1, -1, 0), 2, "down");
+        assert_eq!(slot_nav(3, -1, 0), 1, "down wraps in the charm column");
+        assert_eq!(slot_nav(1, 1, 0), 3, "up wraps");
+        assert_eq!(slot_nav(0, 1, 0), 0, "the weapon column has one box");
+    }
 
     #[test]
     fn wearing_a_charm_worn_elsewhere_swaps_the_two_slots() {

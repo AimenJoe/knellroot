@@ -143,6 +143,8 @@ pub enum Act {
     Interact,
     Choose,
     Confirm,
+    /// 장비 칸 빨리 바꾸기 = 땅 돌리기 버튼 둘.
+    Swap,
 }
 
 /// 지금 장치의 키 그림(ASCII — 글꼴 상관없이). 터치는 화면 버튼이 곧 안내라 빈 글.
@@ -158,6 +160,12 @@ pub fn prompt(act: Act) -> String {
         (_, Act::Interact) => name(Bind::Jump),
         (Device::Pad, Act::Choose) => "D-PAD".into(),
         (Device::Pad, Act::Confirm) => "A".into(),
+        (Device::Pad, Act::Swap) => format!(
+            "{}/{}",
+            b.pad(Bind::TurnLeft).name(),
+            b.pad(Bind::TurnRight).name()
+        ),
+        (_, Act::Swap) => format!("{}/{}", name(Bind::TurnLeft), name(Bind::TurnRight)),
         (_, Act::Choose) => "W/S".into(),
         (_, Act::Confirm) => "ENTER".into(),
     }

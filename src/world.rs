@@ -6,8 +6,8 @@ use crate::ground::Ground;
 use crate::input::Actions;
 use crate::tuning::{
     Tuning, BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH,
-    BOMB_SKID, CAST_CHARGES, FLASK_CHARGES, GROUND_STEP, HIT_DY, P, PLAYER_HP, PLAYER_RADIUS,
-    TICK_DT,
+    BOMB_SKID, CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES, GROUND_STEP, HIT_DY, LOCK_HANDOFF, P,
+    PLAYER_HP, PLAYER_RADIUS, RIPOSTE_WINDOW, TICK_DT,
 };
 use crate::weapons::{self, Rb, Shape};
 
@@ -328,6 +328,8 @@ pub struct Player {
     pub since_spill: f32,
     /// 마지막 패링 성공에서 지난 초(렌더의 번쩍임).
     pub since_parry: f32,
+    /// 대시 공격을 받는 남은 시간(회피를 끊었거나 막 끝난 뒤, 2026-11-06).
+    pub dash_left: f32,
     /// 공격 버튼을 한 번 누른 뒤 놓지 않고 쥔 시간(초, 0030). 연타 중 휘두르기 도중에 누른 짧은 누름이 모으기로 새지 않게.
     pub attack_hold: f32,
     /// 남은 등잔(0031), 끝난 뒤 누름을 버리는 남은 초, 못 마셔 깜빡이는 남은 초(HUD).
@@ -457,6 +459,7 @@ impl World {
                 stun_chain: 0,
                 since_spill: f32::MAX,
                 since_parry: f32::MAX,
+                dash_left: 0.0,
                 attack_hold: 0.0,
                 flask: FLASK_CHARGES,
                 flask_lock: 0.0,
@@ -609,9 +612,9 @@ impl World {
         let ready = match pl.state {
             PState::Attack { t: e, hit, .. } => {
                 let (s0, a0, r0) = hit_times(t, wpn, hit);
-                let k = wpn.combo.get(hit as usize).map_or(0.0, |h| h.cancel);
+                let k = wpn.hit(hit).map_or(0.0, |h| h.cancel);
                 let base = s0 + a0 + r0 * k;
-                let last = hit as usize + 1 >= wpn.combo.len();
+                let last = wpn.after(hit).is_none();
                 if n == Next::Attack && !last {
                     e >= base.max(s0 + a0 + r0 * t[P::ComboLink])
                 } else {
@@ -632,9 +635,16 @@ impl World {
         if ready && can {
             if let PState::Attack { hit, .. } = pl.state {
                 // 다음 타로 잇는다(마지막 타 뒤면 처음부터).
-                let last = hit as usize + 1 >= wpn.combo.len();
-                pl.combo_next = if last { 0 } else { hit + 1 };
-                pl.combo_left = if last { 0.0 } else { t[P::ComboKeep] };
+                pl.combo_next = wpn.after(hit).unwrap_or(0);
+                pl.combo_left = if wpn.after(hit).is_some() {
+                    t[P::ComboKeep]
+                } else {
+                    0.0
+                };
+            }
+            // 회피를 끊고 나가는 공격 = 대시 공격(2026-11-06).
+            if matches!(pl.state, PState::Dodge { .. }) && n == Next::Attack {
+                pl.dash_left = DASH_ATTACK_LATE;
             }
             if matches!(pl.state, PState::Drink { .. }) {
                 pl.flask_lock = t[P::FlaskLock];
@@ -877,12 +887,18 @@ impl World {
     }
 
     fn tick_lock(&mut self, a: &Actions, ev: &mut Vec<Event>) {
-        // 대상이 죽었거나 너무 멀면 풀린다(버튼 없이).
+        // 대상이 쓰러지면 조준 기준(락온 중에는 그 대상 자리) 가까이의 다음 적으로 넘어간다 — 둘레 `LOCK_HANDOFF` 안에
+        // 아무도 없으면 풀린다(사장 2026-11-06, 소울류의 "다음 적으로 넘기기"). 사라진 대상은 버튼 없이 풀린다.
         if let Some(i) = self.lock {
-            let gone = self.enemies.get(i).is_none_or(|e| !e.alive());
-            if gone {
-                self.lock = None;
-                ev.push(Event::LockOff);
+            match self.enemies.get(i) {
+                Some(e) if e.alive() => {}
+                dead => {
+                    let at = dead.map(|e| e.pos);
+                    self.lock = at.and_then(|at| self.handoff_target(at));
+                    if self.lock.is_none() {
+                        ev.push(Event::LockOff);
+                    }
+                }
             }
         }
         if !a.lock {
@@ -917,6 +933,19 @@ impl World {
             self.lock = Some(i);
             ev.push(Event::LockOn);
         }
+    }
+
+    /// 쓰러진 락온 대상 자리 `at`에서 가장 가까운 깨어 있는 적(둘레 `LOCK_HANDOFF` 안, 플레이어에게서 락온 거리 안).
+    fn handoff_target(&self, at: Vec3) -> Option<usize> {
+        let p = self.player.pos;
+        self.enemies
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.active() && e.pos.distance(p) <= self.range_lock())
+            .map(|(i, e)| (vec3(e.pos.x - at.x, 0.0, e.pos.z - at.z).length(), i))
+            .filter(|(d, _)| *d <= LOCK_HANDOFF)
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, i)| i)
     }
 
     fn range_lock(&self) -> f32 {
@@ -1069,6 +1098,7 @@ impl World {
         pl.cast_denied = (pl.cast_denied - dt).max(0.0);
         pl.dodge_cd = (pl.dodge_cd - dt).max(0.0);
         pl.since_parry = (pl.since_parry + dt).min(f32::MAX);
+        pl.dash_left = (pl.dash_left - dt).max(0.0);
         // 스태미나: 마지막으로 쓴 뒤 `stamina.regen delay s`가 지나야 찬다.
         pl.stamina_denied = (pl.stamina_denied - dt).max(0.0);
         pl.stamina_idle += dt;
@@ -1204,12 +1234,27 @@ impl World {
                         0
                     };
                     pl.combo_left = 0.0;
-                    pl.state = PState::Attack {
-                        t: 0.0,
-                        swing: pl.swings,
-                        dir,
-                        hit,
-                    };
+                    let riposte = pl.since_parry <= RIPOSTE_WINDOW && wpn.heavy.is_some();
+                    let dash = pl.dash_left > 0.0 && wpn.dash.is_some();
+                    pl.dash_left = 0.0;
+                    if riposte {
+                        // 패링 반격(2026-11-06): 튕긴 직후의 공격은 모으기 없이 다 모은 강타 — 드러난 적에게 치명타가 더해진다.
+                        pl.since_parry = f32::MAX;
+                        pl.state = PState::Heavy {
+                            t: 0.0,
+                            swing: pl.swings,
+                            dir: pl.facing_dir(),
+                            full: true,
+                            perfect: false,
+                        };
+                    } else {
+                        pl.state = PState::Attack {
+                            t: 0.0,
+                            swing: pl.swings,
+                            dir,
+                            hit: if dash { weapons::DASH } else { hit },
+                        };
+                    }
                 } else if a.cast && matches!(wpn.rb, Rb::Shot { .. }) {
                     // 원거리 무기의 RB = 사격(0051): 탄창이 비면 장전이 끝날 때까지 못 쏜다.
                     if let Rb::Shot { reload, .. } = wpn.rb {
@@ -1298,7 +1343,7 @@ impl World {
                 let (s0, a0, r0) = hit_times(t, wpn, hit);
                 let total = s0 + a0 + r0;
                 let after = e >= s0 + a0;
-                let last = hit as usize + 1 >= wpn.combo.len();
+                let after_hit = wpn.after(hit);
                 // 회피·패링·점프·마법·다음 타는 캔슬(0057, `cancel_or_buffer`)이 맡는다 — 여기서는 모으기와 끝만.
                 if a.attack_held
                     && pl.attack_hold >= t[P::HeavyHoldStart]
@@ -1311,8 +1356,12 @@ impl World {
                 } else if e + dt >= total {
                     pl.state = PState::Idle;
                     // 마지막 타 뒤에는 처음으로, 아니면 잠깐 다음 타를 기억한다.
-                    pl.combo_next = if last { 0 } else { hit + 1 };
-                    pl.combo_left = if last { 0.0 } else { t[P::ComboKeep] };
+                    pl.combo_next = after_hit.unwrap_or(0);
+                    pl.combo_left = if after_hit.is_some() {
+                        t[P::ComboKeep]
+                    } else {
+                        0.0
+                    };
                 } else {
                     pl.state = PState::Attack {
                         t: e + dt,
@@ -1514,6 +1563,8 @@ impl World {
             PState::Dodge { t: e, dir } => {
                 if e + dt >= t[P::DodgeTime] {
                     pl.state = PState::Idle;
+                    // 회피가 끝난 직후의 공격도 대시 공격(늦게 누른 것도 받아 준다).
+                    pl.dash_left = DASH_ATTACK_LATE;
                 } else {
                     pl.state = PState::Dodge { t: e + dt, dir };
                 }
@@ -1583,8 +1634,7 @@ impl World {
                 // 선딜 + 활성 동안 `attack.lunge m` × 타의 배율만큼 입력한 쪽으로 내딛고, 후딜에는 선다(0018·0051).
                 let (s0, a0, _) = hit_times(t, wpn, hit);
                 let reach = s0 + a0;
-                let lunge =
-                    t[P::AttackLunge] * wpn.combo.get(hit as usize).map_or(1.0, |h| h.lunge);
+                let lunge = t[P::AttackLunge] * wpn.hit(hit).map_or(1.0, |h| h.lunge);
                 pl.vel = if e < reach {
                     dir * (lunge / reach.max(1e-3))
                 } else {
@@ -1594,7 +1644,18 @@ impl World {
             PState::Hurt { .. } => {
                 pl.vel *= (1.0 - KNOCK_DECAY * dt).max(0.0);
             }
-            PState::Turn { .. } | PState::Parry { .. } | PState::Land { .. } => pl.vel = Vec3::ZERO,
+            // 패링은 걸음을 멈출 때와 같은 감속으로 선다 — 그 자리에서 0이면 2차 동작의 몸이 뒤로 출렁여
+            // "뒤로 물러나는" 느낌이 났다(사장 2026-11-06).
+            PState::Parry { .. } => {
+                let v = pl.vel.length();
+                let slow = (v - t[P::MoveAccel] * dt).max(0.0);
+                pl.vel = if v > 1e-4 {
+                    pl.vel * (slow / v)
+                } else {
+                    Vec3::ZERO
+                };
+            }
+            PState::Turn { .. } | PState::Land { .. } => pl.vel = Vec3::ZERO,
             PState::Heavy { t: e, dir, .. } => {
                 let (s0, a0, _) = heavy_times(t, wpn);
                 let reach = s0 + a0;
@@ -2006,7 +2067,7 @@ impl World {
             PState::Attack {
                 t: e, swing, hit, ..
             } => {
-                let Some(h) = wpn.combo.get(hit as usize) else {
+                let Some(h) = wpn.hit(hit) else {
                     return;
                 };
                 let (s0, a0, _) = hit_times(t, wpn, hit);
@@ -2502,7 +2563,7 @@ struct Strike {
 
 /// 콤보 한 타의 선딜·활성·후딜(0051: 랩 평타 × 무기 표의 `time`).
 pub fn hit_times(t: &Tuning, w: &weapons::Weapon, hit: u8) -> (f32, f32, f32) {
-    let k = w.combo.get(hit as usize).map_or(1.0, |h| h.time);
+    let k = w.hit(hit).map_or(1.0, |h| h.time);
     (
         t[P::AttackStartup] * k,
         t[P::AttackActive] * k,
@@ -3044,6 +3105,31 @@ mod tests {
         assert!(matches!(w.enemies[0].state, EState::Stagger { .. }));
         assert!(w.enemies[0].exposed > 0.0);
         assert_eq!(w.player.state, PState::Idle, "free to riposte");
+    }
+
+    /// 2026-11-06: 달리다 패링하면 그 자리에서 0이 아니라 걸음을 멈출 때의 감속으로 선다(뒤로 출렁이지 않게) — 앞으로만 조금 미끄러진다.
+    #[test]
+    fn a_parry_from_a_run_brakes_like_a_stop_not_a_wall() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.player.vel = vec3(0.0, 0.0, -5.0);
+        w.player.state = PState::Parry { t: 0.0 };
+        let z0 = w.player.pos.z;
+        w.step(&Actions::default(), &t);
+        assert!(
+            w.player.vel.z < -1.0,
+            "still moving the first tick: {:?}",
+            w.player.vel
+        );
+        for _ in 0..20 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(
+            w.player.vel.length() < 1e-4,
+            "stopped within a third of a second"
+        );
+        let slid = z0 - w.player.pos.z;
+        assert!(slid > 0.1 && slid < 0.6, "slides forward a little: {slid}");
     }
 
     #[test]
@@ -4713,6 +4799,124 @@ mod tests {
             ev.extend(w.step(&Actions::default(), &t));
         }
         assert!(ev.contains(&Event::LockOn) && w.lock.is_some());
+    }
+
+    /// 2026-11-06: 회피를 끊고(또는 막 끝나고) 누른 공격은 무기의 대시 공격 — 멀리 내딛고, 다음 타는 콤보 둘째 타.
+    #[test]
+    fn attacking_out_of_a_dodge_is_a_dash_attack_that_chains_into_the_second_hit() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.step(
+            &Actions {
+                dodge: true,
+                move_dir: vec2(0.0, 1.0),
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(matches!(w.player.state, PState::Dodge { .. }));
+        let mut dashed = false;
+        for i in 0..40 {
+            let a = Actions {
+                attack: i == 8,
+                ..Default::default()
+            };
+            w.step(&a, &t);
+            if let PState::Attack { hit, .. } = w.player.state {
+                assert_eq!(
+                    hit,
+                    weapons::DASH,
+                    "the attack out of a dodge is the dash attack"
+                );
+                dashed = true;
+                break;
+            }
+        }
+        assert!(dashed);
+        let wpn = w.player.weapon.def();
+        assert_eq!(
+            wpn.after(weapons::DASH),
+            Some(1),
+            "then the combo goes on from its second hit"
+        );
+        // 그냥 선 채로 누른 공격은 첫 타.
+        let mut w = World::new("test", 20.0);
+        w.step(
+            &Actions {
+                attack: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(matches!(w.player.state, PState::Attack { hit: 0, .. }));
+    }
+
+    /// 2026-11-06: 패링으로 튕긴 직후의 공격은 모으기 없이 다 모은 강타(반격). 창이 지나면 평타.
+    #[test]
+    fn attacking_right_after_a_parry_is_a_full_heavy_riposte() {
+        let t = Tuning::default();
+        let mut w = mob_swinging_in_front(&t);
+        w.player.state = PState::Parry { t: 0.0 };
+        let mut parried = false;
+        for _ in 0..60 {
+            parried |= w
+                .step(&Actions::default(), &t)
+                .iter()
+                .any(|e| matches!(e, Event::Parry { .. }));
+            if parried {
+                break;
+            }
+        }
+        assert!(parried);
+        // 세상이 한 박자 멈춘 동안(히트스톱)은 틱이 돌지 않는다 — 풀리고 누른다.
+        while w.hitstop > 0.0 {
+            w.step(&Actions::default(), &t);
+        }
+        w.step(
+            &Actions {
+                attack: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(
+            matches!(w.player.state, PState::Heavy { full: true, .. }),
+            "riposte: {:?}",
+            w.player.state
+        );
+        // 창이 지난 뒤면 평타.
+        let mut w = World::new("test", 20.0);
+        w.player.since_parry = RIPOSTE_WINDOW + 0.1;
+        w.step(
+            &Actions {
+                attack: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(matches!(w.player.state, PState::Attack { .. }));
+    }
+
+    /// 2026-11-06: 락온한 적이 쓰러지면 그 자리에서 가장 가까운 적으로 넘어가고, 둘레에 아무도 없으면 풀린다.
+    #[test]
+    fn a_fallen_lock_target_hands_off_to_the_nearest_enemy_or_lets_go() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.spawn_mob(vec3(0.0, 0.0, -4.0)); // 0: 락온 대상
+        w.spawn_mob(vec3(9.0, 0.0, 0.0)); // 1: 플레이어에게는 가깝지만 대상 자리에서 멀다
+        w.spawn_mob(vec3(2.0, 0.0, -7.0)); // 2: 대상 자리에서 가장 가깝다
+        w.lock = Some(0);
+        w.enemies[0].hp = 0;
+        w.enemies[0].state = EState::Dead;
+        let ev = w.step(&Actions::default(), &t);
+        assert_eq!(w.lock, Some(2), "next to where the target fell");
+        assert!(!ev.contains(&Event::LockOff), "stays in lock-on");
+        // 그 적도 쓰러지고, 남은 적(1)은 둘레 밖 → 풀린다.
+        w.enemies[2].hp = 0;
+        w.enemies[2].state = EState::Dead;
+        let ev = w.step(&Actions::default(), &t);
+        assert_eq!(w.lock, None);
+        assert!(ev.contains(&Event::LockOff));
     }
 
     fn swing_at(w: &mut World, aim: Vec2) {

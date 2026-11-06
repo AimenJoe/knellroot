@@ -142,6 +142,8 @@ pub struct Weapon {
     pub id: Id,
     /// X 연타(근접 무기). 원거리 무기는 비어 있고 X가 수류탄.
     pub combo: &'static [Hit],
+    /// 대시 공격(2026-11-06): 회피 끝무렵·직후에 공격 — 회피의 기세로 멀리 내딛는 한 타. 맞힌 뒤 콤보는 둘째 타부터.
+    pub dash: Option<Hit>,
     pub heavy: Option<Heavy>,
     pub rb: Rb,
     pub grenade: Option<Grenade>,
@@ -171,6 +173,26 @@ const fn hit(
         knock: 1.0,
         anim,
         cancel: 0.0,
+    }
+}
+
+/// 대시 공격의 타 번호(`PState::Attack::hit`) — 콤보 표 밖.
+pub const DASH: u8 = u8::MAX;
+
+impl Weapon {
+    /// 타 번호 → 타(콤보 표 또는 대시 공격).
+    pub fn hit(&self, i: u8) -> Option<&Hit> {
+        if i == DASH {
+            self.dash.as_ref()
+        } else {
+            self.combo.get(i as usize)
+        }
+    }
+
+    /// 이 타 다음에 이을 타(마지막이면 None). 대시 공격은 첫 타 자리라 둘째 타로 잇는다.
+    pub fn after(&self, i: u8) -> Option<u8> {
+        let n = if i == DASH { 1 } else { i as usize + 1 };
+        (n < self.combo.len()).then_some(n as u8)
     }
 }
 
@@ -227,6 +249,12 @@ pub const WEAPONS: [Weapon; 4] = [
     Weapon {
         id: Id::Sword,
         combo: &SWORD_COMBO,
+        // 달려들며 찌르기: 좁고 길게, 회피 거리만큼 더 내딛는다.
+        dash: Some(Hit {
+            knock: 1.4,
+            cancel: 0.2,
+            ..hit(1.0, 1.25, 0.5, 2.4, 2, 2.0, "attack3")
+        }),
         heavy: Some(Heavy {
             time: 1.0,
             charge: 1.0,
@@ -262,6 +290,13 @@ pub const WEAPONS: [Weapon; 4] = [
     Weapon {
         id: Id::Hammer,
         combo: &HAMMER_COMBO,
+        // 달려들며 휘두르기: 한 바퀴 둘레(무거워 늦다).
+        dash: Some(Hit {
+            shape: Shape::Circle,
+            knock: 1.8,
+            cancel: 0.45,
+            ..hit(1.6, 1.0, 1.0, 2.0, 2, 3.0, "hammer2")
+        }),
         heavy: Some(Heavy {
             time: 1.3,
             charge: 1.4,
@@ -305,6 +340,8 @@ pub const WEAPONS: [Weapon; 4] = [
     Weapon {
         id: Id::Staff,
         combo: &STAFF_COMBO,
+        // 달려들며 찌르기: 빠르고 가볍다.
+        dash: Some(hit(0.8, 1.3, 0.6, 2.2, 1, 1.0, "staff3")),
         heavy: Some(Heavy {
             time: 0.9,
             charge: 0.9,
@@ -346,6 +383,7 @@ pub const WEAPONS: [Weapon; 4] = [
     Weapon {
         id: Id::Crossbow,
         combo: &[],
+        dash: None,
         heavy: None,
         rb: Rb::Shot {
             bolt: Bolt {

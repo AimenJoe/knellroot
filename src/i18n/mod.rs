@@ -215,6 +215,7 @@ pub struct Strings {
     pub verb_aim: &'static str,
     pub verb_choose: &'static str,
     pub verb_confirm: &'static str,
+    pub verb_swap: &'static str,
     // 첫 스테이지 "침묵의 성소"(docs/phase-1-first-stage.md).
     pub stage1_name: &'static str,
     pub zone_entrance: &'static str,
@@ -369,6 +370,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.verb_aim,
         s.verb_choose,
         s.verb_confirm,
+        s.verb_swap,
         s.stage1_name,
         s.zone_entrance,
         s.zone_courtyard,
