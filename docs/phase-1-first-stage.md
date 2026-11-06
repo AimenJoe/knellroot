@@ -73,16 +73,16 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 잔불(0064 M1) | `ember.rs`, `world.rs` `tick_embers`·`embers`·`drops`, `species.rs` `embers`, `backdrop.rs` `embers`, `hud.rs` | 쓰러지면 튀어나오고 0.35초 뒤 끌려와 주움, 가진 수는 기록에 — 쓰러져도 그대로 |
 | 앱·UI 뼈대(0066) | `app/stack.rs`·`flow.rs` `Go`·`Layer`·`focus`, `app/menu.rs` `Menu`·`Out`·`Hit`, 화면 파일 `pause`·`settings`·`shop`·`ask`·`slots`·`title`·`play`·`progress`·`controls_screen`, `ui.rs` `panel`·`list`·`close`·`buttons`·`title_arrows` | 장면 스택(닫으면 연 줄로), 목록 화면 = 줄 표 하나 + 몰이꾼, nail 창 틀(✕·창 밖 탭·◀ 값 ▶·제목 줄 ▲▼), 묻는 창은 아래 창 위. `tick_scene` 340 → 35줄 |
 | 아이템 그림(0068) | `item_view.rs`, `Renderer::draw_icon`·`draw_item`, `tools/art/blender/charms.py` → `charms.glb` | 칸·후보 줄의 아이콘(한 번 찍어 캐시), 고른 것은 크게 흔들리는 3D, 장신구 모델 여섯(첫 시안) |
-| v0.3.x 손맛·조작(0070) | `world.rs` 패링 감속·`handoff_target`·대시 공격 `weapons::DASH`·패링 반격, `app/equip.rs` `slot_nav`, `tuning.rs` `LOCK_HANDOFF`·`DASH_ATTACK_LATE`·`RIPOSTE_WINDOW` | 패링은 멈출 때처럼 감속(뒤로 출렁이지 않게)·막기 자세 앞으로, 락온 대상이 쓰러지면 8m 안 다음 적으로(없으면 풀림), 장비 창 십자 = 커서·땅 돌리기 = 갈아 끼우기, 회피 끝·직후 공격 = 무기별 대시 공격(콤보 둘째 타로), 패링 직후 공격 = 다 모은 강타, 평타 타격감 층(히트스톱 ×1.6·카메라 킥·맞은 쪽 젖힘·떨림·불똥·공격자 멈춤·둘째 소리 `Thwack`), 돌진 띠는 몸이 닿는 순간 다 참(`Enemy::charge_eta`). Select(Tab) = 장비 창 바로, 후보에서 그 칸에 낀 것은 뺌(0070 덧붙임). 랩은 멈추지 않는 옆 창으로 옮기는 안(0070 7 고침) |
+| v0.3.x 손맛·조작(0070) | `world.rs` 패링 감속·`handoff_target`·대시 공격 `weapons::DASH`·패링 반격, `app/equip.rs` `slot_nav`, `tuning.rs` `LOCK_HANDOFF`·`DASH_ATTACK_LATE`·`RIPOSTE_WINDOW` | 패링은 멈출 때처럼 감속(뒤로 출렁이지 않게)·막기 자세 앞으로, 락온 대상이 쓰러지면 8m 안 다음 적으로(없으면 풀림), 장비 창 십자 = 커서·땅 돌리기 = 갈아 끼우기, 회피 끝·직후 공격 = 무기별 대시 공격(콤보 둘째 타로), 패링 직후 공격 = 다 모은 강타, 평타 타격감 층(히트스톱 ×1.6·카메라 킥·맞은 쪽 젖힘·떨림·불똥·공격자 멈춤·둘째 소리 `Thwack`), 돌진 띠는 몸이 닿는 순간 다 참(`Enemy::charge_eta`). Select(Tab) = 장비 창 바로, 후보에서 그 칸에 낀 것은 뺌(0070 덧붙임). 랩은 멈춤 메뉴 안의 창(`app/lab_screen.rs`, 묶음 열여섯·A/B·내보내기, 값은 닫아도 계속 — 0070 7 확정) |
 | 장비 창(0067 D) | `app/equip.rs`, `Renderer::draw_doll`, `stats::lines`, `Scene::EquipPick` | 디아블로 콘솔식: 가운데 방랑자 인형(든 무기), 칸 넷 → 후보 목록, 바뀌는 상태 `값 → 값 ▲▼`, 후보는 가진 것만(못 얻은 것은 도감 몫, 0068) |
 | 장신구(0064 M3) | `stats.rs`·`charms.rs`, `World::stats`·`apply_stats`, `Player::max_hp`·`flask_max`, `StageRun` 상자(`C`)·`take_opened`, `app/pause.rs` 장비 창·`app/progress.rs` `gain_charm`·알림 | 세 칸, 여섯 가운데 상자 둘·문지기 하나에서 얻음, 멈춤 → 장비에서 갈아 끼움, 능력치는 한 곳에서 합침 |
 | 성장(0064 M4) | `growth.rs`, `Scene::Core`·`Scene::Shop`, `StageRun::take_rested`·`shop_ready`, `app/progress.rs` `buy`·`app/shop.rs` `core_menu`·`shop_menu` | 문지기를 이기면 핵 고르기(체력·등잔·회복), 쉬면 화로 가게(장신구 셋·등잔 기름), 살 것이 있으면 쉼터가 빛남 |
 | 소리(0064 M5) | `sfx.rs`, `app/play.rs` `world_sounds`·`app/mod.rs` `set_sfx`·메뉴 소리, `prefs.rs` 칸 25, `assets/sfx/` | 효과음 16(CC0)·합성 8(패링·예고 넷·깨어남·쉼터·등잔)·성소 환경음, 설정 소리 크기 |
 | 묻는 창·UI 맞추기(0065) | `Scene::Ask`·`flow::answer`·`ask_default`, `ui.menu_dimmed`, `Sfx::played` | 새로 하기·처음부터·타이틀로·사기는 한 번 묻는다(취소에서), 가게는 못 사는 것 흐리게·HUD 없음, 메뉴 소리 겹치지 않게, 저장 실패 알림 |
-| 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), F1 랩, F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
+| 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), 랩(멈춤 끝 줄 LAB·F1, 0070), F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
-**v0.3.x 패치(0070)**: 1~5·9·10 개발판에 들어감 — 손맛 판정(대시 공격·패링 반격·락온 넘기기·패링 멈춤·장비 창 십자·평타 타격감·돌진 예고가 닿는 때). Select = 장비 창·후보에서 낀 것 빼기는 들어감. 랩은 "게임이 도는 옆 창" 안을 사장 확인 뒤(0070 7 고침).
+**v0.3.x 패치(0070)**: 1~5·9·10 개발판에 들어감 — 손맛 판정(대시 공격·패링 반격·락온 넘기기·패링 멈춤·장비 창 십자·평타 타격감·돌진 예고가 닿는 때). Select = 장비 창·후보에서 낀 것 빼기는 들어감. 랩을 멈춤 메뉴 안의 창으로 옮김(0070 7).
 
 **다음 마일스톤**: v0.4.0 "내려가는 길" 제안 `docs/decisions/0069` — 끝의 "사장이 정할 것" 다섯(보라 뿌리의 뜻·둘째 구역·방랑자와 포포·도감·판정 기준). D2는 (a)로 닫음(0004).
 

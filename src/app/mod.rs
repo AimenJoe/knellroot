@@ -7,6 +7,8 @@ pub mod controls;
 mod controls_screen;
 mod equip;
 pub mod flow;
+#[cfg(feature = "dev")]
+mod lab_screen;
 mod menu;
 mod pause;
 mod play;
@@ -23,6 +25,7 @@ use crate::camera::{Camera, Mode};
 use crate::hud;
 use crate::i18n::{self, fill, s, tr};
 use crate::input::{self, Act, Actions, Input};
+#[cfg(feature = "dev")]
 use crate::lab::Lab;
 use crate::render::{Frame, Perf, Renderer, View};
 #[cfg(feature = "dev")]
@@ -57,6 +60,8 @@ pub struct App {
     view: ui::ListView,
     input: Input,
     t: Tuning,
+    /// 랩(0070, 개발판): 슬롯 B·알림.
+    #[cfg(feature = "dev")]
     lab: Lab,
     renderer: Renderer,
     ui: Ui,
@@ -147,6 +152,7 @@ impl App {
             hits: Vec::new(),
             view: ui::ListView::default(),
             input: Input::new(),
+            #[cfg(feature = "dev")]
             lab: Lab::new(),
             renderer: Renderer::new(),
             ui: Ui::new(),
@@ -293,12 +299,9 @@ impl App {
             lock: play && (self.world.lock.is_some() || self.world.lock_candidate()),
             flask: play && pl.flask > 0 && pl.hp < pl.max_hp,
         });
-        self.input.poll(self.lab.open, self.scene().is_menu());
+        self.input.poll(self.scene().is_menu());
         // 싸움 중 마우스 조준이면 OS 커서 대신 조준 표시(0058). 랩은 마우스를 쓰지 않지만 화살표가 보이게 둔다.
-        let hide = play
-            && !self.lab.open
-            && input::mouse_aim().on
-            && input::device() == input::Device::Keys;
+        let hide = play && input::mouse_aim().on && input::device() == input::Device::Keys;
         if hide != self.mouse_hidden {
             show_mouse(!hide);
             self.mouse_hidden = hide;
@@ -371,8 +374,10 @@ impl App {
         if a.ui_check {
             crate::ui::check::toggle();
         }
+        #[cfg(feature = "dev")]
         if a.lab_toggle {
-            self.lab.open = !self.lab.open;
+            self.toggle_lab();
+            return;
         }
         match self.scene() {
             Scene::Title => self.tick_title(a),
@@ -385,7 +390,9 @@ impl App {
             | Scene::Core
             | Scene::Result { .. }) => self.tick_menu(&a, s),
             #[cfg(feature = "dev")]
-            Scene::Dev => self.tick_menu(&a, Scene::Dev),
+            s @ (Scene::Dev | Scene::Lab) => self.tick_menu(&a, s),
+            #[cfg(feature = "dev")]
+            Scene::LabGroup { g } => self.tick_lab_group(&a, g as usize),
             Scene::Controls => self.tick_controls(a),
             Scene::Slots { load } => self.tick_slots(&a, load),
             Scene::Ending { won } => {
@@ -426,6 +433,10 @@ impl App {
             Scene::Slots { load } => Some(self.slots_menu(load)),
             #[cfg(feature = "dev")]
             Scene::Dev => Some(self.dev_menu()),
+            #[cfg(feature = "dev")]
+            Scene::Lab => Some(self.lab_menu()),
+            #[cfg(feature = "dev")]
+            Scene::LabGroup { g } => Some(self.lab_group_menu(g as usize)),
             Scene::Title
             | Scene::Play
             | Scene::Ending { .. }
@@ -450,6 +461,10 @@ impl App {
             Scene::Slots { .. } => {}
             #[cfg(feature = "dev")]
             Scene::Dev => self.dev_act(out),
+            #[cfg(feature = "dev")]
+            Scene::Lab => self.lab_act(out),
+            #[cfg(feature = "dev")]
+            Scene::LabGroup { g } => self.lab_group_act(g as usize, out),
             Scene::Title
             | Scene::Play
             | Scene::Ending { .. }
@@ -474,7 +489,7 @@ impl App {
         });
         self.frame = Some(f);
         self.ui.begin(f.ui);
-        let overlay = self.input.overlay(self.lab.open);
+        let overlay = self.input.overlay();
         self.hits.clear();
         self.draw_layered(&f, self.scene());
         if matches!(
@@ -492,7 +507,6 @@ impl App {
                     hud::draw_reticle(&f, c, input::mouse_aim().size);
                 }
             }
-            self.lab.draw(&self.t, overlay.is_some());
             if let Some(o) = &overlay {
                 touch::draw(
                     o,

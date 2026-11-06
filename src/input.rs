@@ -104,16 +104,6 @@ pub struct Actions {
     /// 장비 창 바로 열기(0070 6 A, 2026-11-06): 패드 Select · 키보드 Tab(배치표에 올리지 않았을 때).
     pub equip: bool,
     pub lab_toggle: bool,
-    pub lab_up: bool,
-    pub lab_down: bool,
-    pub lab_left: bool,
-    pub lab_right: bool,
-    /// 10배 단계(누르고 있는 동안).
-    pub lab_fast: bool,
-    pub lab_reset: bool,
-    pub lab_export: bool,
-    pub lab_store: bool,
-    pub lab_swap: bool,
     /// 개발 시나리오 번호(1부터). 0 = 다음 시나리오(터치 SC).
     pub scenario: Option<u8>,
     /// 메뉴(0019): 위·아래·왼·오른(눌림, 스틱은 한 번 넘을 때만), 확인·뒤로, 멈춤, 터치 탭 자리.
@@ -729,12 +719,12 @@ impl Input {
     }
 
     /// 터치 장치일 때 렌더가 그릴 오버레이.
-    pub fn overlay(&self, lab_open: bool) -> Option<Overlay> {
-        (device() == Device::Touch).then(|| self.touch.overlay(DEV, lab_open))
+    pub fn overlay(&self) -> Option<Overlay> {
+        (device() == Device::Touch).then(|| self.touch.overlay(DEV))
     }
 
     /// 프레임마다 한 번. 눌림은 OR로 모으고, 이동(상태)은 마지막 값으로 덮는다. `menu`면 터치는 탭만.
-    pub fn poll(&mut self, lab_open: bool, menu: bool) {
+    pub fn poll(&mut self, menu: bool) {
         let mut a = Actions::default();
         // Android에 키보드를 붙이는 일은 드물고, 패드 버튼·D패드도 키로 들어온다 — 키보드로 세지 않는다(안내 글이 키 글자로 바뀌지 않게).
         let used_keys = !cfg!(target_os = "android") && get_last_key_pressed().is_some();
@@ -763,10 +753,9 @@ impl Input {
         a.dodge = kp(Bind::Dodge);
         a.parry = kp(Bind::Parry);
         a.jump = kp(Bind::Jump);
-        // 랩이 열려 있으면 R은 랩 되돌리기다 — 등잔으로 같이 읽지 않는다.
-        a.flask = !lab_open && kp(Bind::Flask);
-        a.cast = !lab_open && kp(Bind::Cast);
-        a.cast_held = !lab_open && bind.key(Bind::Cast).down();
+        a.flask = kp(Bind::Flask);
+        a.cast = kp(Bind::Cast);
+        a.cast_held = bind.key(Bind::Cast).down();
         a.lock = kp(Bind::Lock);
         a.turn_left = kp(Bind::TurnLeft);
         a.turn_right = kp(Bind::TurnRight);
@@ -794,15 +783,6 @@ impl Input {
             || is_key_pressed(KeyCode::J);
         a.back = is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Backspace);
         a.pause = is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::P);
-        a.lab_up = is_key_pressed(KeyCode::Up);
-        a.lab_down = is_key_pressed(KeyCode::Down);
-        a.lab_left = is_key_pressed(KeyCode::Left);
-        a.lab_right = is_key_pressed(KeyCode::Right);
-        a.lab_fast = is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl);
-        a.lab_reset = is_key_pressed(KeyCode::R);
-        a.lab_export = is_key_pressed(KeyCode::X);
-        a.lab_store = is_key_pressed(KeyCode::C);
-        a.lab_swap = is_key_pressed(KeyCode::V);
         for (i, k) in [
             KeyCode::Key1,
             KeyCode::Key2,
@@ -853,12 +833,12 @@ impl Input {
                 a.jump |= pj(Bind::Jump);
                 a.lock |= pj(Bind::Lock);
                 // 랩이 열려 있으면 어깨·트리거는 랩 단계(LB 10배·LT 담기·RT 바꾸기)다 — 패링·돌리기로 같이 읽지 않는다.
-                a.parry |= !lab_open && pj(Bind::Parry);
-                a.flask |= !lab_open && pj(Bind::Flask);
-                a.cast |= !lab_open && pj(Bind::Cast);
-                a.cast_held |= !lab_open && pad.is_currently_pressed(bind.pad(Bind::Cast).button());
-                a.turn_left |= !lab_open && pj(Bind::TurnLeft);
-                a.turn_right |= !lab_open && pj(Bind::TurnRight);
+                a.parry |= pj(Bind::Parry);
+                a.flask |= pj(Bind::Flask);
+                a.cast |= pj(Bind::Cast);
+                a.cast_held |= pad.is_currently_pressed(bind.pad(Bind::Cast).button());
+                a.turn_left |= pj(Bind::TurnLeft);
+                a.turn_right |= pj(Bind::TurnRight);
                 if a.pressed_pad.is_none() {
                     a.pressed_pad = PADS
                         .iter()
@@ -866,15 +846,6 @@ impl Input {
                         .find(|p| p.bindable() && pad.is_just_pressed(p.button()));
                 }
                 a.equip |= pad.is_just_pressed(Button::LeftCenterCluster);
-                a.lab_up |= pad.is_just_pressed(Button::DPadUp);
-                a.lab_down |= pad.is_just_pressed(Button::DPadDown);
-                a.lab_left |= pad.is_just_pressed(Button::DPadLeft);
-                a.lab_right |= pad.is_just_pressed(Button::DPadRight);
-                a.lab_fast |= pad.is_currently_pressed(Button::FrontLeftUpper);
-                a.lab_reset |= pad.is_just_pressed(Button::ActionUp);
-                a.lab_export |= pad.is_just_pressed(Button::ActionRight);
-                a.lab_store |= pad.is_just_pressed(Button::FrontLeftLower);
-                a.lab_swap |= pad.is_just_pressed(Button::FrontRightLower);
                 a.menu_up |= pad.is_just_pressed(Button::DPadUp);
                 a.menu_down |= pad.is_just_pressed(Button::DPadDown);
                 a.menu_left |= pad.is_just_pressed(Button::DPadLeft);
@@ -910,21 +881,16 @@ impl Input {
             a.dodge |= pj(Bind::Dodge);
             a.jump |= pj(Bind::Jump);
             a.lock |= pj(Bind::Lock);
-            a.parry |= !lab_open && pj(Bind::Parry);
-            a.flask |= !lab_open && pj(Bind::Flask);
-            a.cast |= !lab_open && pj(Bind::Cast);
-            a.cast_held |= !lab_open && is_key_down(bind.pad(Bind::Cast).key());
-            a.turn_left |= !lab_open && pj(Bind::TurnLeft);
-            a.turn_right |= !lab_open && pj(Bind::TurnRight);
+            a.parry |= pj(Bind::Parry);
+            a.flask |= pj(Bind::Flask);
+            a.cast |= pj(Bind::Cast);
+            a.cast_held |= is_key_down(bind.pad(Bind::Cast).key());
+            a.turn_left |= pj(Bind::TurnLeft);
+            a.turn_right |= pj(Bind::TurnRight);
             if a.pressed_pad.is_none() {
                 a.pressed_pad = PADS.iter().copied().find(|p| p.bindable() && j(*p));
             }
             a.equip |= j(Pad::Select);
-            a.lab_fast |= is_key_down(Pad::L1.key());
-            a.lab_reset |= j(Pad::North);
-            a.lab_export |= j(Pad::East);
-            a.lab_store |= j(Pad::L2);
-            a.lab_swap |= j(Pad::R2);
             a.confirm |= j(Pad::South);
             a.back |= j(Pad::East) || is_key_pressed(KeyCode::Back);
             a.pause |= j(Pad::Start);
@@ -935,7 +901,7 @@ impl Input {
         }
 
         // 터치: 스틱은 키·패드가 0일 때만, 눌림은 OR.
-        let t = self.touch.read(get_frame_time(), DEV, lab_open, menu);
+        let t = self.touch.read(DEV, menu);
         a.pause |= t.pause;
         a.tap = t.tap;
         if m == Vec2::ZERO {
@@ -962,13 +928,6 @@ impl Input {
         a.turn_right |= t.turn_right;
         a.turn_left |= t.turn_left;
         a.lab_toggle |= t.lab_toggle;
-        a.lab_up |= t.lab_up;
-        a.lab_down |= t.lab_down;
-        a.lab_left |= t.lab_left;
-        a.lab_right |= t.lab_right;
-        a.lab_reset |= t.lab_reset;
-        a.lab_store |= t.lab_store;
-        a.lab_swap |= t.lab_swap;
         if t.scenario_next {
             a.scenario = Some(0);
         }
@@ -1045,15 +1004,6 @@ impl Input {
             turn_left: self.latch.turn_left | a.turn_left,
             equip: self.latch.equip | a.equip,
             lab_toggle: self.latch.lab_toggle | a.lab_toggle,
-            lab_up: self.latch.lab_up | a.lab_up,
-            lab_down: self.latch.lab_down | a.lab_down,
-            lab_left: self.latch.lab_left | a.lab_left,
-            lab_right: self.latch.lab_right | a.lab_right,
-            lab_fast: a.lab_fast,
-            lab_reset: self.latch.lab_reset | a.lab_reset,
-            lab_export: self.latch.lab_export | a.lab_export,
-            lab_store: self.latch.lab_store | a.lab_store,
-            lab_swap: self.latch.lab_swap | a.lab_swap,
             scenario: a.scenario.or(self.latch.scenario),
             menu_up: self.latch.menu_up | a.menu_up,
             menu_down: self.latch.menu_down | a.menu_down,
@@ -1090,7 +1040,6 @@ fn carry(a: &Actions) -> Actions {
         cursor: a.cursor,
         attack_held: a.attack_held,
         cast_held: a.cast_held,
-        lab_fast: a.lab_fast,
         ..Actions::default()
     }
 }

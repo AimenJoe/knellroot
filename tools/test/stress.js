@@ -1,7 +1,7 @@
-// P5·P4 스파이크 측정(0013): 시나리오 6(잡몹 40)·7(80)을 상자/glTF 모델로 띄워 HUD 측정 줄(cpu ms·draws·verts)을 스크린숏으로 남긴다.
+// P5 측정(0013): 시나리오 6(잡몹 40)·7(80)을 띄워 HUD 측정 줄(cpu ms·draws·verts)을 스크린숏으로 남긴다.
 //   node tools/test/stress.js dist shots
 // 헤드리스 Chromium은 소프트웨어 렌더라 fps·frame ms는 판정 근거가 아니다 — cpu ms(우리 코드)와 draws(그리기 호출 수)를 본다.
-// 실기 판정은 사람이 폰·PC 브라우저로(https://knellroot.netlify.app → 6/7, 랩 render.model).
+// 실기 판정은 사람이 폰·PC 브라우저로(개발판 → 6/7, 개발 줄 F3). 상자/glTF 스위치(render.model)는 0070에서 걷었다.
 const { chromium } = require('playwright');
 const http = require('http'), fs = require('fs'), path = require('path');
 const DIST = path.resolve(process.argv[2] || 'dist'); const OUT = path.resolve(process.argv[3] || 'shots');
@@ -21,19 +21,9 @@ const server = http.createServer((req, res) => {
   page.on('pageerror', (e) => { if (!/register_plugin/.test(String(e))) errors.push(String(e)); });
   await page.goto('http://localhost:8151/'); await page.waitForTimeout(2500);
   const key = async (k) => { await page.keyboard.press(k); await page.waitForTimeout(60); };
-  // 랩 커서는 닫아도 남는다 — 처음 한 번만 ↑(맨 끝 값 render.model로 감기), 그 뒤는 ←→만.
-  let atModel = false;
-  const model = async (on) => {
-    await key('F1');
-    if (!atModel) { await key('ArrowUp'); atModel = true; }
-    await key(on ? 'ArrowRight' : 'ArrowLeft'); await key('F1');
-  };
   for (const [digit, name] of [['Digit6', 's40'], ['Digit7', 's80']]) {
-    for (const on of [false, true]) {
-      await key(digit); await model(on); await page.waitForTimeout(2500);
-      await page.screenshot({ path: path.join(OUT, `${name}-${on ? 'gltf' : 'box'}.png`) });
-    }
-    await model(false);
+    await key(digit); await page.waitForTimeout(2500);
+    await page.screenshot({ path: path.join(OUT, `${name}.png`) });
   }
   await browser.close(); server.close();
   for (const n of fs.readdirSync(OUT)) console.log(n);

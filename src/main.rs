@@ -19,6 +19,7 @@ mod hud;
 mod i18n;
 mod input;
 mod item_view;
+#[cfg(feature = "dev")]
 mod lab;
 mod model;
 mod models;

@@ -41,6 +41,14 @@ pub enum Scene {
     /// 개발 시나리오(PoC 아레나). 개발판에만.
     #[cfg(feature = "dev")]
     Sandbox,
+    /// 랩(0070, 개발판): 묶음 목록 + A/B·내보내기. 멈춤 메뉴 끝 줄 "LAB"·F1·터치 LAB에서 연다. 게임은 멈추고 값은 바로 들어간다.
+    #[cfg(feature = "dev")]
+    Lab,
+    /// 랩의 한 묶음(`lab::GROUPS[g]`): 줄 = 이름 ◀ 값 ▶.
+    #[cfg(feature = "dev")]
+    LabGroup {
+        g: u8,
+    },
 }
 
 impl Scene {
@@ -64,7 +72,7 @@ impl Scene {
 
     #[cfg(feature = "dev")]
     fn is_dev(self) -> bool {
-        self == Scene::Dev
+        matches!(self, Scene::Dev | Scene::Lab | Scene::LabGroup { .. })
     }
     #[cfg(not(feature = "dev"))]
     fn is_dev(self) -> bool {
@@ -89,6 +97,8 @@ impl Scene {
             | Scene::Slots { .. } => Layer::Window { hud: false },
             #[cfg(feature = "dev")]
             Scene::Dev => Layer::Window { hud: false },
+            #[cfg(feature = "dev")]
+            Scene::Lab | Scene::LabGroup { .. } => Layer::Window { hud: true },
             Scene::Ask(_) => Layer::Modal,
         }
     }
@@ -255,14 +265,27 @@ pub enum PauseItem {
     Settings,
     Restart,
     ToTitle,
+    /// 개발판: 랩(0070) — 끝 줄이라 앞 줄 자리는 운영판과 같다(헤드리스 길).
+    #[cfg(feature = "dev")]
+    Lab,
 }
 
+#[cfg(not(feature = "dev"))]
 pub const PAUSE_ITEMS: [PauseItem; 5] = [
     PauseItem::Resume,
     PauseItem::Weapon,
     PauseItem::Settings,
     PauseItem::Restart,
     PauseItem::ToTitle,
+];
+#[cfg(feature = "dev")]
+pub const PAUSE_ITEMS: [PauseItem; 6] = [
+    PauseItem::Resume,
+    PauseItem::Weapon,
+    PauseItem::Settings,
+    PauseItem::Restart,
+    PauseItem::ToTitle,
+    PauseItem::Lab,
 ];
 
 /// 설정 줄(0052). 값 줄은 좌우·확인으로 바꾸고, 누르는 줄은 확인으로 들어간다.
@@ -343,7 +366,7 @@ pub fn back(scene: Scene) -> Go {
         | Scene::Settings
         | Scene::Slots { .. } => Go::Back,
         #[cfg(feature = "dev")]
-        Scene::Dev => Go::Back,
+        Scene::Dev | Scene::Lab | Scene::LabGroup { .. } => Go::Back,
         Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Core | Scene::Result { .. } => {
             Go::Stay
         }
@@ -369,6 +392,8 @@ pub fn choose_pause(item: PauseItem) -> (Go, bool) {
         PauseItem::Settings => (Go::Open(Scene::Settings), false),
         PauseItem::Restart => (Go::Open(Scene::Ask(Ask::Restart)), false),
         PauseItem::ToTitle => (Go::Open(Scene::Ask(Ask::ToTitle)), false),
+        #[cfg(feature = "dev")]
+        PauseItem::Lab => (Go::Open(Scene::Lab), false),
     }
 }
 

@@ -50,12 +50,12 @@ pub const LIST: [Entry; 7] = [
     Entry {
         scenario: Scenario::Stress40,
         name: "stress 40",
-        checks: "P5 perf: 40 mobs (lab render.model 1 = gltf), cpu ms / draws",
+        checks: "P5 perf: 40 mobs, cpu ms / draws (F3)",
     },
     Entry {
         scenario: Scenario::Stress80,
         name: "stress 80",
-        checks: "P5 perf: 80 mobs (lab render.model 1 = gltf), cpu ms / draws",
+        checks: "P5 perf: 80 mobs, cpu ms / draws (F3)",
     },
 ];
 

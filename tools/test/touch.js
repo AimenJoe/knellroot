@@ -21,7 +21,7 @@ const server = http.createServer((req, res) => {
 });
 
 // src/touch.rs layout()과 같은 식(논리 px, 0053). 바꾸면 함께. 락온·등잔은 상황 버튼(뜰 때만) — 자리는 늘 같다.
-function layout(lab) {
+function layout() {
   const u = Math.min(W, H, 520), r = u * 0.09;
   const atk = [W - u * 0.238, H - u * 0.21];
   const at = (deg, dist) => { const a = deg * Math.PI / 180; return [atk[0] + Math.cos(a) * u * dist, atk[1] - Math.sin(a) * u * dist]; };
@@ -40,11 +40,6 @@ function layout(lab) {
     lab: [W - r * 0.7 * 4.0, r * 0.7 * 1.4],
     scenario: [W - r * 0.7 * 6.6, r * 0.7 * 1.4],
   };
-  if (lab) {
-    const k = r * 0.62, gap = k * 2.5, names = ['up', 'down', 'minus', 'plus', 'reset', 'store', 'swap'];
-    const x0 = Math.max(W * 0.5 - gap * (names.length - 1) * 0.5, k * 1.3), y = u * 0.21;
-    names.forEach((n, i) => { b['lab_' + n] = [x0 + gap * i, y]; });
-  }
   return b;
 }
 
@@ -64,7 +59,7 @@ async function main() {
 
   await page.goto(`http://localhost:${PORT}/`);
   await page.waitForTimeout(2500);
-  let b = layout(false);
+  let b = layout();
   await shot('t00-title');
   // 타이틀(0019): 첫 줄 "시작"을 탭(뗄 때 누른다). 자리는 `app::draw_title`·`ui::menu`와 같은 셈.
   {
@@ -94,17 +89,11 @@ async function main() {
   await shot('t03-lock-on');
   await tap(b.dodge); await page.waitForTimeout(100);
   await shot('t04-dodge');
-  // 랩: 열기 → ▼ 넷 → + 다섯 → 담기 → − 열 → 바꾸기.
-  await tap(b.lab); await page.waitForTimeout(200);
-  b = layout(true);
-  for (let i = 0; i < 4; i++) await tap(b.lab_down);
-  for (let i = 0; i < 5; i++) await tap(b.lab_plus);
-  await tap(b.lab_store);
-  for (let i = 0; i < 10; i++) await tap(b.lab_minus);
+  // 랩(0070): LAB을 누르면 멈춤 메뉴 안의 랩 창(게임은 멈춘다) — 창 밖을 누르면 닫힌다.
+  await tap(b.lab); await page.waitForTimeout(300);
   await shot('t05-lab');
-  await tap(b.lab_swap); await page.waitForTimeout(200);
-  await shot('t06-lab-swapped');
-  await tap(b.lab); await page.waitForTimeout(100);
+  await tap([4, 4]); await page.waitForTimeout(300);
+  await shot('t06-lab-closed');
   await tap(b.scenario); await page.waitForTimeout(800);
   await shot('t07-next-scenario');
   // 땅 돌리기 오른쪽 ↷(0012·0017 — 카메라가 오른쪽으로): 도는 중 · 다 돈 뒤(버튼이 대기로 옅어짐).

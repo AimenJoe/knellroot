@@ -193,7 +193,6 @@ pub enum P {
     HeavyStartup,
     HeavyActive,
     HeavyRecovery,
-    HeavyDamage,
     HeavyFullBonus,
     HeavyRange,
     HeavyArc,
@@ -220,7 +219,6 @@ pub enum P {
     RenderLockFade,
     RenderActorShadow,
     HeavyChargeWalk,
-    CastDamage,
     CastSpeed,
     CastRange,
     CastPerHit,
@@ -254,9 +252,10 @@ pub enum P {
     RenderMotes,
     RenderSky,
     RenderFlora,
-    RenderModel,
 }
 
+/// 랩이 읽는 칸(이름·걸음·범위·내보내기 이름)은 개발판에만 쓰인다(운영판에는 랩이 없다, 0070).
+#[cfg_attr(not(feature = "dev"), allow(dead_code))]
 pub struct Spec {
     pub p: P,
     /// 랩 화면 이름(개발 전용 화면이라 영어 ASCII — 기본 폰트가 ASCII뿐).
@@ -284,7 +283,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 146] = [
+pub const SPECS: [Spec; 143] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -946,15 +945,6 @@ pub const SPECS: [Spec; 146] = [
     ),
     // 덜 모으고 떼도 이만큼, 다 모으면 + `heavy.full bonus`.
     spec!(
-        HeavyDamage,
-        "heavy.damage",
-        "HEAVY_DAMAGE",
-        2.0,
-        1.0,
-        8.0,
-        1.0
-    ),
-    spec!(
         HeavyFullBonus,
         "heavy.full bonus",
         "HEAVY_FULL_BONUS",
@@ -1154,7 +1144,6 @@ pub const SPECS: [Spec; 146] = [
         0.05
     ),
     // 마법(0048, RB): 피해·탄 빠르기·닿는 거리, 근접 한 대가 채우는 칸, 쏘기까지·끝까지의 시간, 쏘는 동안 걷기 배율.
-    spec!(CastDamage, "cast.damage", "CAST_DAMAGE", 1.0, 1.0, 5.0, 1.0),
     spec!(
         CastSpeed,
         "cast.speed m/s",
@@ -1405,16 +1394,6 @@ pub const SPECS: [Spec; 146] = [
         1.0,
         1.0
     ),
-    // P4·P5 스파이크(0013): 잡몹을 상자 대신 glTF 시험 모델(부위 강체 + 걷기 애니메이션, 한 배치)로 그린다. 측정용 — 0 = 상자.
-    spec!(
-        RenderModel,
-        "render.model 0box 1gltf",
-        "RENDER_MODEL",
-        0.0,
-        0.0,
-        1.0,
-        1.0
-    ),
 ];
 
 /// 땅 돌리기의 두 구간(초): 90°+지나침까지 가는 시간, 90°로 되돌아오는 시간. 카메라(`Camera::turn`)와 월드(쏟는 때)가
@@ -1476,6 +1455,7 @@ impl Index<P> for Tuning {
     }
 }
 
+#[cfg_attr(not(feature = "dev"), allow(dead_code))]
 impl Tuning {
     pub fn get(&self, i: usize) -> f32 {
         self.v[i]
@@ -1559,12 +1539,6 @@ mod tests {
             "기본값이 얼린 값과 다르다 — 판정·결정 기록 없이 바꾸지 않는다(0013):\n{}",
             diff.join("\n")
         );
-    }
-
-    /// 사람에게 "랩을 열고 ↑ 한 번 = `render.model`"로 안내한다(0013) — 새 값은 그 앞에 넣는다.
-    #[test]
-    fn render_model_stays_the_last_lab_entry() {
-        assert_eq!(SPECS.last().unwrap().p, P::RenderModel);
     }
 
     #[test]

@@ -30,15 +30,9 @@ pub enum Kind {
     TurnRight,
     /// 멈춤(0019): 오른쪽 위.
     Pause,
+    /// 개발판: 랩 창(0070 — 멈춤 메뉴 안의 창, 랩 전용 버튼 줄은 걷었다).
     Lab,
     Scenario,
-    LabUp,
-    LabDown,
-    LabMinus,
-    LabPlus,
-    LabReset,
-    LabStore,
-    LabSwap,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -79,13 +73,6 @@ pub struct Read {
     pub turn_left: bool,
     pub lab_toggle: bool,
     pub scenario_next: bool,
-    pub lab_up: bool,
-    pub lab_down: bool,
-    pub lab_left: bool,
-    pub lab_right: bool,
-    pub lab_reset: bool,
-    pub lab_store: bool,
-    pub lab_swap: bool,
     pub pause: bool,
     /// 메뉴 모드에서 손가락을 거의 움직이지 않고 뗀 자리(논리 px) — 메뉴는 뗄 때 누른다(nail 0199).
     pub tap: Option<Vec2>,
@@ -104,16 +91,6 @@ struct Stick {
     pos: Vec2,
 }
 
-/// −/+를 누르고 있으면 반복(처음 0.35초 뒤 0.06초마다).
-#[derive(Clone, Copy)]
-struct Repeat {
-    id: u64,
-    kind: Kind,
-    t: f32,
-}
-
-const REPEAT_DELAY: f32 = 0.35;
-const REPEAT_EVERY: f32 = 0.06;
 /// 스틱 데드존(반지름 대비).
 const DEAD: f32 = 0.15;
 
@@ -121,7 +98,6 @@ const DEAD: f32 = 0.15;
 pub struct Touch {
     stick: Option<Stick>,
     known: Vec<u64>,
-    repeat: Option<Repeat>,
     /// 공격 버튼을 짚은 손가락(강공격 모으기, 0030).
     attack_finger: Option<u64>,
     /// 마법 버튼을 짚은 손가락(0056 — 쥐면 모으기).
@@ -161,7 +137,7 @@ impl Ctx {
 /// 버튼 배치(0053, `docs/decisions/0053`). `w`·`h`는 논리 px, 기준은 짧은 변 `u`(태블릿에서 너무 커지지 않게 상한).
 /// 오른손 엄지가 쉬는 오른쪽 아래에 공격(지름 ≈ 0.27u), 그 둘레 첫째 호(거리 0.26u)에 자주 쓰는 넷 — 회피·패링·마법·점프 —
 /// 둘째 호(0.44u)에 돌리기 캡슐과 상황 버튼(락온·등잔). 각도는 공격 가운데에서 180° = 왼쪽, 90° = 위.
-pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool, ctx: Ctx) -> Vec<Button> {
+pub fn layout(w: f32, h: f32, dev: bool, ctx: Ctx) -> Vec<Button> {
     let u = w.min(h).min(TOUCH_U_MAX);
     let r = u * 0.09;
     let atk = vec2(w - u * 0.238, h - u * 0.21);
@@ -241,47 +217,8 @@ pub fn layout(w: f32, h: f32, dev: bool, lab_open: bool, ctx: Ctx) -> Vec<Button
             radius: s,
             kind: Kind::Scenario,
         });
-        if lab_open {
-            // 위쪽 가운데 줄: ▲ ▼ − + · 초기화 담기 바꾸기. 고른 값의 이름·값은 렌더가 이 줄 위에 쓴다.
-            let k = r * 0.62;
-            let gap = k * 2.5;
-            let kinds = [
-                Kind::LabUp,
-                Kind::LabDown,
-                Kind::LabMinus,
-                Kind::LabPlus,
-                Kind::LabReset,
-                Kind::LabStore,
-                Kind::LabSwap,
-            ];
-            let total = gap * (kinds.len() as f32 - 1.0);
-            let x0 = (w * 0.5 - total * 0.5).max(k * 1.3);
-            let y = lab_row_y(w, h);
-            for (i, kind) in kinds.iter().enumerate() {
-                b.push(Button {
-                    center: vec2(x0 + gap * i as f32, y),
-                    radius: k,
-                    kind: *kind,
-                });
-            }
-        }
     }
     b
-}
-
-/// 랩 터치 줄의 높이(가운데 y)와 버튼 반지름. HUD 두 줄 아래, 랩 글은 이 줄 바로 위(`lab.rs draw_compact`).
-pub fn lab_row_y(w: f32, h: f32) -> f32 {
-    w.min(h).min(TOUCH_U_MAX) * 0.21
-}
-
-pub fn lab_button_radius(w: f32, h: f32) -> f32 {
-    w.min(h).min(TOUCH_U_MAX) * 0.09 * 0.62
-}
-
-/// 오른쪽 위 dev 버튼(시나리오·랩)이 차지하는 폭 — 랩 글이 그 앞에서 멈춘다.
-pub fn dev_buttons_width(w: f32, h: f32) -> f32 {
-    let s = w.min(h) * 0.09 * 0.7;
-    s * 7.6 + 8.0
 }
 
 pub fn stick_radius(w: f32, h: f32) -> f32 {
@@ -290,7 +227,7 @@ pub fn stick_radius(w: f32, h: f32) -> f32 {
 
 impl Touch {
     /// `menu`면 스틱·버튼 없이 탭만(메뉴 화면).
-    pub fn read(&mut self, dt: f32, dev: bool, lab_open: bool, menu: bool) -> Read {
+    pub fn read(&mut self, dev: bool, menu: bool) -> Read {
         let mut a = Read::default();
         let dpi = screen_dpi_scale().max(0.01);
         let touches: Vec<macroquad::input::Touch> = touches()
@@ -303,7 +240,6 @@ impl Touch {
         a.active = !touches.is_empty();
         if menu {
             self.stick = None;
-            self.repeat = None;
             self.attack_finger = None;
             self.cast_finger = None;
             self.known.clear();
@@ -337,13 +273,12 @@ impl Touch {
         }
         self.taps.clear();
         if touches.is_empty() && self.stick.is_none() && self.known.is_empty() {
-            self.repeat = None;
             self.attack_finger = None;
             self.cast_finger = None;
             return a;
         }
         let (w, h) = (screen_width(), screen_height());
-        let buttons = layout(w, h, dev, lab_open, self.ctx);
+        let buttons = layout(w, h, dev, self.ctx);
         for t in &touches {
             let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
             if !self.known.contains(&t.id) {
@@ -361,13 +296,6 @@ impl Touch {
                     }
                     if b.kind == Kind::Cast && !ended {
                         self.cast_finger = Some(t.id);
-                    }
-                    if matches!(b.kind, Kind::LabMinus | Kind::LabPlus) && !ended {
-                        self.repeat = Some(Repeat {
-                            id: t.id,
-                            kind: b.kind,
-                            t: 0.0,
-                        });
                     }
                 } else if t.position.x < w * 0.5 && self.stick.is_none() && !ended {
                     self.stick = Some(Stick {
@@ -387,46 +315,6 @@ impl Touch {
                 if self.stick.map(|s| s.id) == Some(t.id) {
                     self.stick = None;
                 }
-                if self.repeat.map(|r| r.id) == Some(t.id) {
-                    self.repeat = None;
-                }
-            }
-        }
-        // Ended를 못 받고 사라진 손가락(탭 전환 등) 정리.
-        self.known.retain(|id| touches.iter().any(|t| t.id == *id));
-        // 공격 손가락이 아직 화면에 있으면 쥐고 있는 것(버튼 밖으로 미끄러져도 — 떼야 강타가 나간다).
-        self.attack_finger = self.attack_finger.filter(|id| {
-            touches.iter().any(|t| {
-                t.id == *id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
-            })
-        });
-        a.attack_held = self.attack_finger.is_some();
-        self.cast_finger = self.cast_finger.filter(|id| {
-            touches.iter().any(|t| {
-                t.id == *id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
-            })
-        });
-        a.cast_held = self.cast_finger.is_some();
-        if self
-            .stick
-            .is_some_and(|s| !touches.iter().any(|t| t.id == s.id))
-        {
-            self.stick = None;
-        }
-        if let Some(r) = self.repeat.as_mut() {
-            if !touches.iter().any(|t| t.id == r.id) {
-                self.repeat = None;
-            } else {
-                let before = r.t;
-                r.t += dt;
-                if r.t >= REPEAT_DELAY {
-                    let n_before = ((before - REPEAT_DELAY).max(0.0) / REPEAT_EVERY) as i32;
-                    let n_now = ((r.t - REPEAT_DELAY) / REPEAT_EVERY) as i32;
-                    if n_now > n_before || before < REPEAT_DELAY {
-                        let k = r.kind;
-                        press(&mut a, k);
-                    }
-                }
             }
         }
         if let Some(s) = self.stick {
@@ -435,12 +323,12 @@ impl Touch {
         a
     }
 
-    pub fn overlay(&self, dev: bool, lab_open: bool) -> Overlay {
+    pub fn overlay(&self, dev: bool) -> Overlay {
         let (w, h) = (screen_width(), screen_height());
         Overlay {
             stick: self.stick.map(|s| (s.origin, s.pos)),
             stick_radius: stick_radius(w, h),
-            buttons: layout(w, h, dev, lab_open, self.ctx),
+            buttons: layout(w, h, dev, self.ctx),
             rest: self.ctx.rest,
         }
     }
@@ -461,13 +349,6 @@ fn press(a: &mut Read, k: Kind) {
         Kind::Pause => a.pause = true,
         Kind::Lab => a.lab_toggle = true,
         Kind::Scenario => a.scenario_next = true,
-        Kind::LabUp => a.lab_up = true,
-        Kind::LabDown => a.lab_down = true,
-        Kind::LabMinus => a.lab_left = true,
-        Kind::LabPlus => a.lab_right = true,
-        Kind::LabReset => a.lab_reset = true,
-        Kind::LabStore => a.lab_store = true,
-        Kind::LabSwap => a.lab_swap = true,
     }
 }
 
@@ -733,20 +614,6 @@ fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
                 col,
             );
         }
-        Kind::LabUp | Kind::LabDown => {
-            let d = if k == Kind::LabUp { -1.0 } else { 1.0 };
-            draw_triangle(
-                vec2(c.x, c.y + d * s * 0.7),
-                vec2(c.x - s * 0.7, c.y - d * s * 0.5),
-                vec2(c.x + s * 0.7, c.y - d * s * 0.5),
-                col,
-            );
-        }
-        Kind::LabMinus => draw_line(c.x - s * 0.7, c.y, c.x + s * 0.7, c.y, th * 1.4, col),
-        Kind::LabPlus => {
-            draw_line(c.x - s * 0.7, c.y, c.x + s * 0.7, c.y, th * 1.4, col);
-            draw_line(c.x, c.y - s * 0.7, c.x, c.y + s * 0.7, th * 1.4, col);
-        }
         Kind::Pause => {
             // 두 줄(멈춤).
             for dx in [-s * 0.3, s * 0.3] {
@@ -760,14 +627,8 @@ fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
                 );
             }
         }
-        Kind::Lab | Kind::Scenario | Kind::LabReset | Kind::LabStore | Kind::LabSwap => {
-            let text = match k {
-                Kind::Lab => "LAB",
-                Kind::Scenario => "SC",
-                Kind::LabReset => "R",
-                Kind::LabStore => "B",
-                _ => "A/B",
-            };
+        Kind::Lab | Kind::Scenario => {
+            let text = if k == Kind::Lab { "LAB" } else { "SC" };
             let size = crate::text::fit((r * 0.7).max(12.0));
             let m = measure_text(text, None, size as u16, 1.0);
             draw_text(text, c.x - m.width * 0.5, c.y + m.height * 0.4, size, col);
@@ -789,8 +650,8 @@ mod tests {
             (1280.0, 720.0),
             (390.0, 844.0),
         ] {
-            for lab in [false, true] {
-                let b = layout(w, h, true, lab, Ctx::ALL);
+            {
+                let b = layout(w, h, true, Ctx::ALL);
                 for x in &b {
                     assert!(
                         x.center.x - x.radius >= 0.0 && x.center.x + x.radius <= w,
@@ -808,7 +669,7 @@ mod tests {
                         let d = (b[i].center - b[j].center).length();
                         assert!(
                             d > b[i].radius + b[j].radius,
-                            "{w}x{h} lab={lab} {:?} overlaps {:?}",
+                            "{w}x{h} {:?} overlaps {:?}",
                             b[i].kind,
                             b[j].kind
                         );
@@ -821,7 +682,7 @@ mod tests {
     #[test]
     fn attack_is_the_biggest_button_and_meets_the_minimum_touch_size() {
         // 플랫폼 최소 터치 크기 44pt(지름) — 가장 작은 가로 폰에서도.
-        let b = layout(667.0, 375.0, true, true, Ctx::ALL);
+        let b = layout(667.0, 375.0, true, Ctx::ALL);
         let atk = b.iter().find(|x| x.kind == Kind::Attack).unwrap();
         assert!(b.iter().all(|x| x.radius <= atk.radius));
         assert!(
@@ -834,8 +695,8 @@ mod tests {
     /// 0053: 상황 버튼이 켜지고 꺼져도 늘 있는 버튼의 자리는 그대로다(엄지가 외운 자리가 밀리지 않게).
     #[test]
     fn contextual_buttons_never_move_the_others() {
-        let all = layout(844.0, 390.0, false, false, Ctx::ALL);
-        let none = layout(844.0, 390.0, false, false, Ctx::default());
+        let all = layout(844.0, 390.0, false, Ctx::ALL);
+        let none = layout(844.0, 390.0, false, Ctx::default());
         for x in &none {
             let y = all.iter().find(|y| y.kind == x.kind).unwrap();
             assert_eq!(x.center, y.center, "{:?}", x.kind);
@@ -860,7 +721,7 @@ mod tests {
         press(&mut a, Kind::TurnLeft);
         assert!(a.turn_left && !a.turn_right);
         // 오른쪽 버튼이 화면 오른쪽에 있다.
-        let b = layout(844.0, 390.0, false, false, Ctx::default());
+        let b = layout(844.0, 390.0, false, Ctx::default());
         let x = |k| b.iter().find(|x| x.kind == k).unwrap().center.x;
         assert!(x(Kind::TurnRight) > x(Kind::TurnLeft));
     }

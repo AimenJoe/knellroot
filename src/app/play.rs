@@ -13,7 +13,6 @@ impl App {
             self.go(Go::Open(Scene::Equip));
             return;
         }
-        let a = self.lab_filter(a);
         let a = self.cursor_aim(a);
         self.step_world(&a);
         let out = self.run.tick(&mut self.world, TICK_DT);
@@ -62,7 +61,6 @@ impl App {
             self.world.set_weapon(self.weapon);
             self.cam = Camera::new(self.world.player.pos, &self.t);
         }
-        let a = self.lab_filter(a);
         let a = self.cursor_aim(a);
         self.step_world(&a);
     }
@@ -89,33 +87,6 @@ impl App {
         a.aim_at = crate::camera::ground_hit(rig.pos, dir, self.world.player.pos.y)
             .map(|p| vec2(p.x, p.z));
         a
-    }
-
-    /// 랩이 열려 있으면 커서 키는 랩이 먹고, 이동·공격·회피·락온은 그대로 게임으로(바꾸며 바로 느끼기).
-    pub(super) fn lab_filter(&mut self, a: Actions) -> Actions {
-        if !self.lab.open {
-            return a;
-        }
-        if let Some(text) = self.lab.update(&a, &mut self.t) {
-            info!("--- tuning export ---\n{}", text);
-        }
-        Actions {
-            move_dir: a.move_dir,
-            aim: a.aim,
-            cursor: a.cursor,
-            attack: a.attack,
-            attack_held: a.attack_held,
-            cast: a.cast,
-            cast_held: a.cast_held,
-            flask: a.flask,
-            dodge: a.dodge,
-            parry: a.parry,
-            jump: a.jump,
-            lock: a.lock,
-            turn_right: a.turn_right,
-            turn_left: a.turn_left,
-            ..Actions::default()
-        }
     }
 
     pub(super) fn step_world(&mut self, a: &Actions) {

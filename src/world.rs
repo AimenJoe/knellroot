@@ -3815,7 +3815,11 @@ mod tests {
         );
         assert!(ev.iter().any(|e| matches!(e, Event::Cast { .. })));
         assert_eq!(w.player.mana, CAST_CHARGES - 1.0);
-        assert_eq!(w.enemies[0].hp, 9 - t[P::CastDamage].round() as i32);
+        let magic = match w.player.weapon.def().rb {
+            weapons::Rb::Magic(b) => b.damage,
+            weapons::Rb::Shot { bolt, .. } => bolt.damage,
+        };
+        assert_eq!(w.enemies[0].hp, 9 - magic);
         assert!(w.bolts.is_empty());
         assert!(matches!(w.player.state, PState::Idle));
     }
@@ -4609,7 +4613,7 @@ mod tests {
                     ev.iter().any(|e| matches!(e, Event::Smash { .. })),
                     "boss {boss} charged {charged}"
                 );
-                let want = t[P::HeavyDamage] as i32
+                let want = w.player.weapon.def().heavy.unwrap().damage
                     + if charged {
                         t[P::HeavyFullBonus] as i32
                     } else {
@@ -4853,7 +4857,8 @@ mod tests {
             + t[P::HeavyStartup]
             + t[P::HeavyActive]
             + t[P::HeavyRecovery];
-        let heavy_dmg = 1.0 + t[P::HeavyDamage] + t[P::HeavyFullBonus];
+        let heavy_dmg =
+            1.0 + weapons::Id::Sword.def().heavy.unwrap().damage as f32 + t[P::HeavyFullBonus];
         let (h, l) = (heavy_dmg / heavy_time, 1.0 / light);
         assert!(h > l * 1.2, "heavy {h:.2}/s vs light {l:.2}/s");
     }
