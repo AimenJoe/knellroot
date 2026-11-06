@@ -34,8 +34,6 @@ impl App {
                 PauseItem::Settings => ui::Row::go(s.menu_settings),
                 PauseItem::Restart => ui::Row::plain(s.menu_restart),
                 PauseItem::ToTitle => ui::Row::plain(s.menu_to_title),
-                #[cfg(feature = "dev")]
-                PauseItem::Lab => ui::Row::go("LAB"),
             })
             .collect();
         Menu::new(s.pause_title, 260.0, rows)

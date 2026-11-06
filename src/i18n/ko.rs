@@ -90,6 +90,7 @@ pub const KO: Strings = Strings {
     verb_turn_left: "땅 돌리기 왼쪽",
     verb_turn_right: "땅 돌리기 오른쪽",
     menu_controls: "조작 설정",
+    menu_lab: "연구실",
     menu_settings: "설정",
     settings_title: "설정",
     menu_shake: "화면 흔들림",

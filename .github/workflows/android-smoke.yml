@@ -1,0 +1,53 @@
+# Android 에뮬레이터 연기 시험(2026-11-06): 개발판 APK(미리 보기 릴리스 `dev`)를 x86_64 에뮬레이터(ARM 번역)에 깔아
+# 켜고·시작해 보고, 화면 둘·살아 있나·logcat을 아티팩트로 남긴다. 폰에서 켜지지 않을 때 원인(패닉 줄)을 보려고.
+# 이 파일이나 스크립트를 고쳐 release/**에 push하면 돈다(그 push의 개발판 APK가 올라오길 기다린다), 수동 실행도 된다.
+name: android-smoke
+
+on:
+  push:
+    branches: ['release/**']
+    paths:
+      - .github/workflows/android-smoke.yml
+      - tools/test/android-smoke.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Wait for this commit's dev APK (up to 15 min), then download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 30); do
+            tag=$(git ls-remote origin refs/tags/dev | cut -f1)
+            [ "$tag" = "$GITHUB_SHA" ] && { echo "dev APK is this commit"; break; }
+            echo "dev tag at ${tag:0:7}, waiting for ${GITHUB_SHA:0:7}…"; sleep 30
+          done
+          curl -fsSL -o app.apk "https://github.com/${GITHUB_REPOSITORY}/releases/download/dev/knellroot-dev.apk"
+          ls -la app.apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31
+          arch: x86_64
+          target: google_apis
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash tools/test/android-smoke.sh app.apk smoke
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: android-smoke-${{ github.sha }}
+          path: smoke/

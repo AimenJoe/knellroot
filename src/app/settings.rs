@@ -30,6 +30,8 @@ impl App {
                     [s.reticle_small, s.reticle_medium, s.reticle_large]
                         [(mouse.size as usize).min(2)],
                 ),
+                #[cfg(feature = "dev")]
+                SettingsRow::Lab => ui::Row::go(s.menu_lab),
                 SettingsRow::Controls => ui::Row::go(s.menu_controls),
                 SettingsRow::Back => ui::Row::plain(s.controls_back),
             })
@@ -69,6 +71,8 @@ impl App {
                 r @ (SettingsRow::MouseAim | SettingsRow::CursorRest | SettingsRow::Reticle) => {
                     self.step_mouse(r, 1)
                 }
+                #[cfg(feature = "dev")]
+                SettingsRow::Lab => self.go(Go::Open(Scene::Lab)),
                 SettingsRow::Controls => self.go(Go::Open(Scene::Controls)),
                 SettingsRow::Back => self.go(Go::Back),
             },

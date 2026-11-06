@@ -17,7 +17,9 @@ impl App {
                     self.go(Go::Back);
                 }
             }
-            s if s.ticks_world() || s == Scene::Pause => self.go(Go::Open(Scene::Lab)),
+            s if s.ticks_world() || matches!(s, Scene::Pause | Scene::Settings) => {
+                self.go(Go::Open(Scene::Lab))
+            }
             _ => {}
         }
     }
@@ -51,7 +53,7 @@ impl App {
         Menu {
             note_room: true,
             note: (!self.lab.note.is_empty()).then(|| self.lab.note.clone()),
-            ..Menu::new("LAB", 360.0, rows)
+            ..Menu::new(s().menu_lab, 360.0, rows)
         }
     }
 

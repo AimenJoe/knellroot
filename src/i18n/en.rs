@@ -93,6 +93,7 @@ pub const EN: Strings = Strings {
     verb_turn_left: "Turn left",
     verb_turn_right: "Turn right",
     menu_controls: "Controls",
+    menu_lab: "Lab",
     menu_settings: "Settings",
     settings_title: "Settings",
     menu_shake: "Screen shake",

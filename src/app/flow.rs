@@ -265,27 +265,14 @@ pub enum PauseItem {
     Settings,
     Restart,
     ToTitle,
-    /// 개발판: 랩(0070) — 끝 줄이라 앞 줄 자리는 운영판과 같다(헤드리스 길).
-    #[cfg(feature = "dev")]
-    Lab,
 }
 
-#[cfg(not(feature = "dev"))]
 pub const PAUSE_ITEMS: [PauseItem; 5] = [
     PauseItem::Resume,
     PauseItem::Weapon,
     PauseItem::Settings,
     PauseItem::Restart,
     PauseItem::ToTitle,
-];
-#[cfg(feature = "dev")]
-pub const PAUSE_ITEMS: [PauseItem; 6] = [
-    PauseItem::Resume,
-    PauseItem::Weapon,
-    PauseItem::Settings,
-    PauseItem::Restart,
-    PauseItem::ToTitle,
-    PauseItem::Lab,
 ];
 
 /// 설정 줄(0052). 값 줄은 좌우·확인으로 바꾸고, 누르는 줄은 확인으로 들어간다.
@@ -302,6 +289,9 @@ pub enum SettingsRow {
     MouseAim,
     CursorRest,
     Reticle,
+    /// 연구실(랩, 0070) — 개발판에만. 조작 설정 바로 위(조작 설정은 늘 끝에서 둘째).
+    #[cfg(feature = "dev")]
+    Lab,
     Controls,
     Back,
 }
@@ -321,6 +311,8 @@ pub fn settings_rows(fullscreen: bool, mouse: bool) -> Vec<SettingsRow> {
             SettingsRow::Reticle,
         ]);
     }
+    #[cfg(feature = "dev")]
+    v.push(SettingsRow::Lab);
     v.extend([SettingsRow::Controls, SettingsRow::Back]);
     v
 }
@@ -392,8 +384,6 @@ pub fn choose_pause(item: PauseItem) -> (Go, bool) {
         PauseItem::Settings => (Go::Open(Scene::Settings), false),
         PauseItem::Restart => (Go::Open(Scene::Ask(Ask::Restart)), false),
         PauseItem::ToTitle => (Go::Open(Scene::Ask(Ask::ToTitle)), false),
-        #[cfg(feature = "dev")]
-        PauseItem::Lab => (Go::Open(Scene::Lab), false),
     }
 }
 

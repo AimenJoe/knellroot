@@ -176,6 +176,8 @@ pub struct Strings {
     pub verb_turn_left: &'static str,
     pub verb_turn_right: &'static str,
     pub menu_controls: &'static str,
+    /// 연구실(랩, 0070) — 개발판 설정에만.
+    pub menu_lab: &'static str,
     /// 설정(0052): 타이틀·멈춤의 줄, 화면 제목, 화면 흔들림 줄("{0}" = 백분율).
     pub menu_settings: &'static str,
     pub settings_title: &'static str,
@@ -338,6 +340,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.verb_turn_left,
         s.verb_turn_right,
         s.menu_controls,
+        s.menu_lab,
         s.menu_settings,
         s.settings_title,
         s.menu_shake,
