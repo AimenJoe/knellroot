@@ -321,6 +321,7 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("turn.wobble in deg", "땅 돌리기 시작 휘청(도)"),
     ("turn.wobble out deg", "땅 돌리기 끝 휘청(도)"),
     ("turn.start stagger s", "땅 돌리기 시작 적 휘청(초)"),
+    ("parry.stamina gain", "패링 성공 기력 회복"),
 ];
 
 #[cfg(test)]

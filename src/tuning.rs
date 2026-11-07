@@ -33,6 +33,8 @@ pub const BEAT_WINDOW: f32 = 0.15;
 pub const PERFECT_RELEASE: f32 = 0.15;
 /// 박자 창의 가장 좁은 반폭(초, 0077): 쇠뇌 한 발 0.24초 × 15%는 ±36ms라 사람 손으로는 못 맞춘다 — KB 창 범위 ±60~90ms의 아래 끝.
 pub const BEAT_WINDOW_MIN: f32 = 0.06;
+/// 기력이 모자라 막혔을 때 알리는 시간(초, 0088): 막대 깜빡·떨림, 땀방울.
+pub const STAMINA_DENIED_SHOW: f32 = 0.5;
 /// 박자 부채꼴(0087): 박자 순간에 남는 몫(가장 작음 — 0이면 맞출 것이 안 보인다), 사격의 박자 부채꼴 거리(m)·각(도).
 pub const BEAT_CUE_MIN: f32 = 0.12;
 pub const BEAT_CUE_SHOT_REACH: f32 = 2.0;
@@ -279,6 +281,7 @@ pub enum P {
     TurnWobbleIn,
     TurnWobbleOut,
     TurnStartStagger,
+    ParryStaminaGain,
 }
 
 /// 랩이 읽는 칸(이름·걸음·범위·내보내기 이름)은 개발판에만 쓰인다(운영판에는 랩이 없다, 0070).
@@ -310,7 +313,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 146] = [
+pub const SPECS: [Spec; 147] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1451,6 +1454,17 @@ pub const SPECS: [Spec; 146] = [
         0.0,
         1.0,
         0.05
+    ),
+    // 패링 성공의 기력(0088, 사장 2026-11-07 "패링 성공시 어느정도 기력 회복이 되어야 반격 바로 할수 있을듯"): 튕긴 틱마다 이만큼 찬다
+    // (기본 25 = 패링 값 15 + 평타 값 12 남짓 — 0까지 쓰고 튕겨도 반격·회피 하나가 남는다). Wuchang·Lies of P처럼 맞받기가 기력을 돌려준다.
+    spec!(
+        ParryStaminaGain,
+        "parry.stamina gain",
+        "PARRY_STAMINA_GAIN",
+        25.0,
+        0.0,
+        100.0,
+        5.0
     ),
 ];
 

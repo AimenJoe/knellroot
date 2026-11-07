@@ -126,6 +126,7 @@ impl App {
                 Event::Charged => SHAKE_CHARGED,
                 Event::Gulp { .. } | Event::FlaskDenied | Event::Ember { .. } => 0.0,
                 Event::Cast { .. } | Event::CastDenied | Event::Throw => 0.0,
+                Event::StaminaDenied => 0.0,
                 Event::Break { .. } => SHAKE_SMASH,
                 Event::Aftershock { .. } | Event::Boom { .. } => SHAKE_PLUNGE,
                 Event::Perfect { .. } => SHAKE_CHARGED,
@@ -195,22 +196,32 @@ impl App {
         }
     }
 
-    /// 박자 타의 음표(0076): 플레이어 머리 위 화면 자리에서.
-    pub(super) fn draw_beat_note(&mut self, f: &Frame) {
+    /// 플레이어 머리 위의 화면 자리(카메라 뒤면 없음).
+    fn head_on_screen(&self, f: &Frame) -> Option<Vec2> {
         let pl = &self.world.player;
-        if pl.since_beat >= hud::BEAT_NOTE_LIFE {
-            return;
-        }
         let head = pl.pos + Vec3::Y * (pl.air + 1.9);
         let (ndc, front) = crate::camera::world_to_ndc(&self.cam.rig, f.w / f.h.max(1.0), head);
-        if !front {
+        front.then(|| {
+            vec2(
+                f.ox + (ndc.x + 1.0) * 0.5 * f.w,
+                f.oy + (1.0 - ndc.y) * 0.5 * f.h,
+            )
+        })
+    }
+
+    /// 머리 위 표시: 박자 타의 음표(0076), 기력이 모자라 막힌 땀방울(0088).
+    pub(super) fn draw_beat_note(&mut self, f: &Frame) {
+        let Some(p) = self.head_on_screen(f) else {
             return;
+        };
+        let pl = &self.world.player;
+        if pl.since_beat < hud::BEAT_NOTE_LIFE {
+            hud::draw_beat_note(f, p, pl.since_beat / hud::BEAT_NOTE_LIFE, pl.beat_chain);
         }
-        let p = vec2(
-            f.ox + (ndc.x + 1.0) * 0.5 * f.w,
-            f.oy + (1.0 - ndc.y) * 0.5 * f.h,
-        );
-        hud::draw_beat_note(f, p, pl.since_beat / hud::BEAT_NOTE_LIFE, pl.beat_chain);
+        if pl.stamina_denied > 0.0 {
+            let k = 1.0 - pl.stamina_denied / crate::tuning::STAMINA_DENIED_SHOW;
+            hud::draw_sweat(f, p, k.clamp(0.0, 1.0));
+        }
     }
 
     /// 월드 사건·상태 변화 → 소리(0064 M5). 월드는 소리를 모른다 — 여기서만 듣는다.
@@ -230,7 +241,7 @@ impl App {
                 Event::Perfect { .. } => Id::Beat3,
                 Event::Ember { .. } => Id::Ember,
                 Event::Gulp { .. } => Id::Gulp,
-                Event::FlaskDenied | Event::CastDenied => Id::Deny,
+                Event::FlaskDenied | Event::CastDenied | Event::StaminaDenied => Id::Deny,
                 _ => continue,
             };
             self.snd(id);

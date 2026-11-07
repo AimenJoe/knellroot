@@ -108,6 +108,36 @@ pub fn draw_beat_note(f: &Frame, at: Vec2, k: f32, chain: u32) {
     }
 }
 
+/// 기력이 모자라 막혔다(0088): 머리 양옆에서 땀방울 둘이 튀어 오르다 떨어지며 사라진다(귀여운 "헉" — 몸에서 읽히게, KB action-reuse-gating).
+/// `k` 0..1 = 알림 시간의 진행.
+pub fn draw_sweat(f: &Frame, at: Vec2, k: f32) {
+    let s = f.ui;
+    let a = if k < 0.6 { 1.0 } else { (1.0 - k) / 0.4 };
+    let drop = Color::new(0.62, 0.86, 1.0, a);
+    let shade = Color::new(0.05, 0.06, 0.1, 0.8 * a);
+    // 튀어 나가 포물선으로 떨어진다(화면 px, 머리 기준).
+    let fly = |side: f32| {
+        let x = side * (4.0 + 7.0 * k) * s;
+        let y = (-4.0 - 10.0 * k + 14.0 * k * k) * s;
+        at + vec2(x, y)
+    };
+    for side in [-1.0f32, 1.0] {
+        let c = fly(side);
+        for (col, grow) in [(shade, s), (drop, 0.0)] {
+            let r = 1.6 * s + grow;
+            draw_circle(c.x, c.y, r, col);
+            // 물방울 꼭지는 날아가는 반대쪽 위로.
+            let tip = c + vec2(-side * 1.2 * s, -3.6 * s - grow * 1.4);
+            draw_triangle(
+                c + vec2(-r * 0.92, -r * 0.3),
+                c + vec2(r * 0.92, -r * 0.3),
+                tip,
+                col,
+            );
+        }
+    }
+}
+
 /// 커서 조준 표시(0058): 고리 + 가운데 점, 어두운 테두리로 어느 바닥에서도 보이게. 크기 단계 0 작게·1 보통·2 크게.
 /// 붉은색(위험)은 쓰지 않는다 — 적의 예고와 섞이지 않게.
 pub fn draw_reticle(f: &Frame, at: Vec2, size: u8) {
@@ -143,7 +173,22 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
     let smax = SPECS[idx(P::StaminaMax)].def.max(1.0);
     let k = (pl.stamina / smax).clamp(0.0, 1.0);
     let (bx, by, bw, bh) = (x0, y0 + 11.0 * s, 60.0 * s, 2.0 * s);
+    // 막혔을 때(0088): 깜빡임에 더해 막대가 좌우로 떨린다(줄어들며). 다 쓴 동안은 붉은 테가 천천히 숨 쉰다(지금 막히는 상태).
+    let shake = (pl.stamina_denied / crate::tuning::STAMINA_DENIED_SHOW).clamp(0.0, 1.0);
+    let bx = bx + (w.time * 70.0).sin() * 2.0 * s * shake;
     draw_rectangle(bx, by, bw, bh, BAR_BG);
+    if pl.stamina <= 0.0 {
+        let p = 0.5 + 0.5 * (w.time * 5.0).sin();
+        let o = s;
+        draw_rectangle_lines(
+            bx - o,
+            by - o,
+            bw + 2.0 * o,
+            bh + 2.0 * o,
+            s.max(1.0),
+            Color::new(1.0, 0.3, 0.25, 0.35 + 0.45 * p),
+        );
+    }
     let blink = pl.stamina_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
     draw_rectangle(bx, by, bw * k, bh, if blink { DENIED } else { STAMINA });
     // 박자 타(0076): 스태미나를 안 썼다 — 막대가 금빛으로 반짝였다 식는다(막대 위아래로 한 줄씩 넓게).

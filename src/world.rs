@@ -9,7 +9,7 @@ use crate::tuning::{
     BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID,
     CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP,
     HIT_SWAY, LOCK_HANDOFF, P, PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RIPOSTE_WINDOW,
-    RUN_SPEED_X, RUN_STAMINA, TICK_DT,
+    RUN_SPEED_X, RUN_STAMINA, STAMINA_DENIED_SHOW, TICK_DT,
 };
 use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG};
 use crate::weapons::{self, Rb, Shape};
@@ -150,6 +150,8 @@ pub enum Event {
     },
     /// 칸이 모자라 마법을 못 쐈다(0048) — HUD 칸이 깜빡인다.
     CastDenied,
+    /// 기력이 모자라 행동이 막혔다(0088) — 막대가 깜빡이며 떨리고, 머리 위 땀방울, "안 됨" 소리.
+    StaminaDenied,
     /// 적의 자세가 깨졌다(0051) — 휘청 + 드러남.
     Break {
         at: Vec3,
@@ -365,6 +367,8 @@ pub struct Player {
     pub flask_max: i32,
     pub stamina_idle: f32,
     pub stamina_denied: f32,
+    /// 이번 틱에 기력이 모자라 막혔다(0088 — 새로 막힌 때만, 받아 둔 누름이 다시 막혀도 한 번) → `Event::StaminaDenied`.
+    pub denied_new: bool,
     /// 경직 중 또 맞은 횟수(0 = 첫 경직) — 경직 길이가 반씩 준다.
     pub stun_chain: i32,
     /// 마지막 쏟음(땅 돌리기가 멈춘 순간)에서 지난 초 — 렌더의 쟁반 테.
@@ -526,6 +530,7 @@ impl World {
                 flask_max: FLASK_CHARGES,
                 stamina_idle: 0.0,
                 stamina_denied: 0.0,
+                denied_new: false,
                 stun_chain: 0,
                 since_spill: f32::MAX,
                 since_parry: f32::MAX,
@@ -1219,7 +1224,11 @@ impl World {
                 pl.stamina_idle = 0.0;
                 true
             } else {
-                pl.stamina_denied = 0.4;
+                // 막힘 알림(0088): 막대 깜빡·떨림 + 머리 위 땀방울 + "안 됨" 소리. 이미 알리는 중이면(받아 둔 누름이 틱마다 다시 막힘) 새로 시작하지 않는다.
+                if pl.stamina_denied <= 0.0 {
+                    pl.stamina_denied = STAMINA_DENIED_SHOW;
+                    pl.denied_new = true;
+                }
                 false
             }
         };
@@ -1975,6 +1984,9 @@ impl World {
         if std::mem::take(&mut self.cast_denied_now) {
             ev.push(Event::CastDenied);
         }
+        if std::mem::take(&mut self.player.denied_new) {
+            ev.push(Event::StaminaDenied);
+        }
         let wpn = self.player.weapon.def();
         // 자세 막대(0051): 깬 뒤 잠금이 풀리고, 맞지 않은 지 오래면 줄어든다.
         for en in &mut self.enemies {
@@ -2660,6 +2672,8 @@ impl World {
                     parry_chain_add(pl.parry_chain_left, pl.parry_chain_n);
             }
             pl.since_parry = 0.0;
+            // 튕기면 기력이 찬다(0088): 0까지 쓰고 튕겨도 반격을 바로 낼 수 있게. 한 틱에 여럿을 튕겨도 한 번.
+            pl.stamina = (pl.stamina + t[P::ParryStaminaGain]).min(t[P::StaminaMax]);
             self.hitstop = self.hitstop.max(t[P::Hitstop] * PARRY_HITSTOP);
             // 같은 틱이라도 뒤·옆에서 맞은 것·받을 수 없는 파동은 그대로 맞는다(패링은 앞쪽 반원만).
         }
@@ -6339,6 +6353,94 @@ mod tests {
                 assert!(w.player.hp < PLAYER_HP, "the late blow lands");
             }
         }
+    }
+
+    /// 0088(사장 2026-11-07 "패링 성공시 어느정도 기력 회복이 되어야 반격 바로 할수 있을듯"): 기력 마지막 한 줌으로 튕겨도
+    /// 튕긴 순간 `parry.stamina gain`이 차서 반격(다 모은 강타)이 바로 나간다. 0으로 두면 반격이 막힌다.
+    #[test]
+    fn a_parry_on_the_last_breath_still_leaves_stamina_for_the_riposte() {
+        for (gain, riposte) in [(None, true), (Some(0.0), false)] {
+            let mut t = Tuning::default();
+            if let Some(g) = gain {
+                t.bend(P::ParryStaminaGain, g);
+            }
+            let mut w = World::new("test", 20.0);
+            w.player.facing = std::f32::consts::PI;
+            w.spawn_mob(vec3(0.0, 0.0, -1.2));
+            let en = w.enemies.last_mut().unwrap();
+            en.facing = 0.0;
+            en.atk = Atk::Smash;
+            en.state = EState::Tele {
+                t: en.tele_dur() - 4.0 * TICK_DT,
+            };
+            w.player.stamina = 1.0;
+            let mut ev = w.step(
+                &Actions {
+                    parry: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            assert_eq!(w.player.stamina, 0.0, "the parry spent the last of it");
+            let mut parried = false;
+            for _ in 0..30 {
+                if ev.iter().any(|e| matches!(e, Event::Parry { .. })) {
+                    parried = true;
+                    break;
+                }
+                ev = w.step(&Actions::default(), &t);
+            }
+            assert!(parried, "gain {gain:?}");
+            assert!((w.player.stamina - t[P::ParryStaminaGain]).abs() < 1e-3);
+            // 튕긴 멈춤(히트스톱) 동안 누른 것도 받아 둔다 — 몇 틱 안에 반격이 나간다.
+            let mut ev = w.step(
+                &Actions {
+                    attack: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            let mut heavy = false;
+            let mut denied = false;
+            for _ in 0..12 {
+                denied |= ev.contains(&Event::StaminaDenied);
+                heavy |= matches!(w.player.state, PState::Heavy { full: true, .. });
+                ev = w.step(&Actions::default(), &t);
+            }
+            assert_eq!(heavy, riposte, "gain {gain:?}: riposte {heavy}");
+            assert_eq!(denied, !riposte, "a blocked riposte says so");
+        }
+    }
+
+    /// 0088(사장 "기력이 없어 행동하지 못할때의 피드백이 부족함"): 막히면 `Event::StaminaDenied`(소리)·막대 알림이 한 번 —
+    /// 받아 둔 누름이 틱마다 다시 막혀도 다시 알리지 않고, 알림이 끝난 뒤 새로 누르면 다시.
+    #[test]
+    fn running_out_of_stamina_says_so_once_per_press() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.player.stamina = 0.0;
+        w.player.stamina_idle = 0.0;
+        let press = Actions {
+            attack: true,
+            ..Default::default()
+        };
+        let count = |ev: &[Event]| ev.iter().filter(|e| **e == Event::StaminaDenied).count();
+        let mut n = count(&w.step(&press, &t));
+        assert_eq!(n, 1, "the blocked press is announced");
+        assert!(w.player.stamina_denied > 0.0 && matches!(w.player.state, PState::Idle));
+        for _ in 0..((STAMINA_DENIED_SHOW / TICK_DT) as usize - 2) {
+            n += count(&w.step(&Actions::default(), &t));
+        }
+        assert_eq!(n, 1, "the buffered retry stays quiet");
+        for _ in 0..4 {
+            w.step(&Actions::default(), &t);
+        }
+        w.player.stamina = 0.0;
+        assert_eq!(
+            count(&w.step(&press, &t)),
+            1,
+            "a new press later is announced again"
+        );
     }
 
     /// 0085(사장 2026-11-07 "화면돌리기의 휘청은 cc 포함"): 돌기 시작하는 순간 범위 안의 적이 짧게 휘청이고(예고가 끊긴다),
