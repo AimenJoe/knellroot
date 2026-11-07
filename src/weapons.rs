@@ -14,6 +14,43 @@ pub enum Shape {
     Circle,
 }
 
+/// 휘두르는 쪽(0087): 그 동작의 칼이 어느 쪽에서 어느 쪽으로 지나가나 — 박자 부채꼴(`World::beat_cue`)이 칼이 지나간 쪽부터 사라진다.
+/// 오른쪽·왼쪽은 캐릭터 기준(모델 앞 = +Z, 오른쪽 = -X — `tools/art/blender/common.py`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sweep {
+    /// 오른쪽에서 왼쪽으로 가로 베기 — 오른쪽부터 사라진다.
+    RightToLeft,
+    /// 왼쪽에서 오른쪽으로 — 왼쪽부터.
+    LeftToRight,
+    /// 찌르기·내려치기·올려 치기(세로) — 양 가장자리부터, 가운데가 마지막.
+    Center,
+}
+
+/// 동작 이름 → 휘두르는 쪽(`wanderer.py`의 키프레임에서 읽음: 몸·오른팔의 z 회전이 음수 = 오른쪽, 양수 = 왼쪽).
+/// 새 동작을 무기 표에 쓰면 여기에도 한 줄(시험 `every_weapon_motion_has_a_sweep`).
+pub const SWEEPS: [(&str, Sweep); 12] = [
+    ("attack", Sweep::RightToLeft),
+    ("attack2", Sweep::LeftToRight),
+    ("attack3", Sweep::Center),
+    ("heavy", Sweep::RightToLeft),
+    ("hammer1", Sweep::RightToLeft),
+    ("hammer2", Sweep::LeftToRight),
+    ("hammer_slam", Sweep::Center),
+    ("staff1", Sweep::Center),
+    ("staff2", Sweep::RightToLeft),
+    ("staff3", Sweep::Center),
+    ("staff4", Sweep::LeftToRight),
+    ("staff_release", Sweep::LeftToRight),
+];
+
+/// 동작의 휘두르는 쪽(표에 없으면 가운데).
+pub fn sweep_of(anim: &str) -> Sweep {
+    SWEEPS
+        .iter()
+        .find(|(a, _)| *a == anim)
+        .map_or(Sweep::Center, |(_, s)| *s)
+}
+
 /// 콤보 한 타.
 #[derive(Clone, Copy, Debug)]
 pub struct Hit {
@@ -512,5 +549,25 @@ mod tests {
         assert_eq!(Id::Fists.next(1), Id::Sword);
         assert_eq!(Id::Sword.next(-1), Id::Fists);
         assert_eq!(Id::by_key("fists"), Some(Id::Fists));
+    }
+
+    /// 0087: 무기 표의 모든 평타·대시·강타 동작은 휘두르는 쪽 표에 있다(빠지면 박자 부채꼴이 말없이 가운데로 사라진다).
+    #[test]
+    fn every_weapon_motion_has_a_sweep() {
+        for w in WEAPONS.iter() {
+            let anims = w
+                .combo
+                .iter()
+                .chain(w.dash.iter())
+                .map(|h| h.anim)
+                .chain(w.heavy.iter().map(|h| h.anim_heavy));
+            for a in anims {
+                assert!(SWEEPS.iter().any(|(n, _)| *n == a), "{:?}: {a}", w.id);
+            }
+        }
+        // 검 1타는 오른쪽 → 왼쪽, 2타는 되돌려 왼쪽 → 오른쪽, 3타 찌르기는 가운데(wanderer.py 주석).
+        assert_eq!(sweep_of("attack"), Sweep::RightToLeft);
+        assert_eq!(sweep_of("attack2"), Sweep::LeftToRight);
+        assert_eq!(sweep_of("attack3"), Sweep::Center);
     }
 }

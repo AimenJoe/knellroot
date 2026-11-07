@@ -1393,7 +1393,32 @@ impl Renderer {
             );
         }
         let wpn = w.player.weapon.def();
-        if let PState::Attack { t: e, hit, .. } = w.player.state {
+        let swing_col = if w.player.swing_beat {
+            BEAT_GOLD
+        } else {
+            Color::new(1.0, 0.95, 0.7, 0.18)
+        };
+        if let Some(cue) = w.beat_cue(t) {
+            // 박자 부채꼴(0087): 휘두른 부채꼴이 다음 박자까지 줄어든다 — 가장 작을 때가 박자. 칼이 지나간 쪽부터 사라진다
+            // (오른쪽 → 왼쪽 베기는 오른쪽부터, 왼쪽 → 오른쪽은 왼쪽부터, 찌르기·세로는 양 가장자리부터). 창 안이면 금빛 + 테두리.
+            // 캐릭터의 오른쪽 = 바라보는 쪽 − 90°(부채꼴의 작은 각 쪽).
+            let gone = (cue.arc * (1.0 - cue.left) * 0.5).to_radians();
+            let yaw = w.player.facing
+                + match cue.sweep {
+                    crate::weapons::Sweep::RightToLeft => gone,
+                    crate::weapons::Sweep::LeftToRight => -gone,
+                    crate::weapons::Sweep::Center => 0.0,
+                };
+            let arc = cue.arc * cue.left;
+            let c = pp + Vec3::Y * 0.9;
+            if cue.ripe {
+                fl.sector(c, cue.reach, yaw, arc, Color::new(1.0, 0.86, 0.35, 0.45));
+                fl.ring(c, cue.reach, yaw, arc, Color::new(1.0, 0.92, 0.55, 0.85));
+            } else {
+                fl.sector(c, cue.reach, yaw, arc, swing_col);
+            }
+        } else if let PState::Attack { t: e, hit, .. } = w.player.state {
+            // 이을 타가 없는 타(마지막 타)는 박자가 없다 — 활성 동안 판정 부채꼴만.
             let (s0, a0, _) = crate::world::hit_times(t, wpn, hit);
             if let Some(h) = wpn.hit(hit) {
                 if e >= s0 && e < s0 + a0 {
@@ -1402,17 +1427,12 @@ impl Renderer {
                     } else {
                         t[crate::tuning::P::AttackArc] * h.arc
                     };
-                    // 박자 타(0076)는 금빛 — 이 타가 박자에 맞았다는 것이 휘두름 자체에 보인다.
                     fl.sector(
                         pp + Vec3::Y * 0.9,
                         t[crate::tuning::P::AttackRange] * h.reach,
                         w.player.facing,
                         arc,
-                        if w.player.swing_beat {
-                            BEAT_GOLD
-                        } else {
-                            Color::new(1.0, 0.95, 0.7, 0.18)
-                        },
+                        swing_col,
                     );
                 }
             }

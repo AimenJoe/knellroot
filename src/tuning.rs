@@ -33,6 +33,10 @@ pub const BEAT_WINDOW: f32 = 0.15;
 pub const PERFECT_RELEASE: f32 = 0.15;
 /// 박자 창의 가장 좁은 반폭(초, 0077): 쇠뇌 한 발 0.24초 × 15%는 ±36ms라 사람 손으로는 못 맞춘다 — KB 창 범위 ±60~90ms의 아래 끝.
 pub const BEAT_WINDOW_MIN: f32 = 0.06;
+/// 박자 부채꼴(0087): 박자 순간에 남는 몫(가장 작음 — 0이면 맞출 것이 안 보인다), 사격의 박자 부채꼴 거리(m)·각(도).
+pub const BEAT_CUE_MIN: f32 = 0.12;
+pub const BEAT_CUE_SHOT_REACH: f32 = 2.0;
+pub const BEAT_CUE_SHOT_ARC: f32 = 30.0;
 /// 달리기(0076, 사장 2026-11-07 "회피 꾹 눌렀을때 달리는거"): 회피가 끝났을 때 회피 버튼을 아직 쥐고 있으면 달린다 —
 /// 걷기 × 이 배율, 달리는 동안 초당 이만큼 스태미나를 쓰고(차지 않는다) 0이면 걷는다. 소울류 달리기(KB nail 0209 회피 쥐기).
 pub const RUN_SPEED_X: f32 = 1.45;

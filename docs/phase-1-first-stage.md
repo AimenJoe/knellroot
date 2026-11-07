@@ -74,6 +74,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 앱·UI 뼈대(0066) | `app/stack.rs`·`flow.rs` `Go`·`Layer`·`focus`, `app/menu.rs` `Menu`·`Out`·`Hit`, 화면 파일 `pause`·`settings`·`shop`·`ask`·`slots`·`title`·`play`·`progress`·`controls_screen`, `ui.rs` `panel`·`list`·`close`·`buttons`·`title_arrows` | 장면 스택(닫으면 연 줄로), 목록 화면 = 줄 표 하나 + 몰이꾼, nail 창 틀(✕·창 밖 탭·◀ 값 ▶·제목 줄 ▲▼), 묻는 창은 아래 창 위. `tick_scene` 340 → 35줄 |
 | 아이템 그림(0068) | `item_view.rs`, `Renderer::draw_icon`·`draw_item`, `tools/art/blender/charms.py` → `charms.glb` | 칸·후보 줄의 아이콘(한 번 찍어 캐시), 고른 것은 크게 흔들리는 3D, 장신구 모델 여섯(첫 시안) |
 | 이어 패링 쌓기(0086) | `world::parry_chain_add`·`parry_front_cos`, `Player::parry_chain_left/n`, `tuning::PARRY_CHAIN_DECAY`·`PARRY_CHAIN_WIDEN_DEG`, 렌더 이음 반달 | 이음 중에 또 튕기면 남은 창 + 0.2 × 0.5ⁿ, 받는 반원 반각 +45°씩(둘레 전부까지), 열린 동안 넓이만큼 푸른 반달 |
+| 박자 부채꼴(0087) | `world::beat_shrink`·`World::beat_cue`·`BeatCue`, `weapons::Sweep`·`SWEEPS`, `tuning::BEAT_CUE_*`, 렌더 공격 부채꼴 | 휘두른 부채꼴이 다음 박자까지 줄어 박자에 가장 작고(창 안 금빛 + 테두리), 칼이 지나간 쪽부터 사라짐(가로 베기는 시작한 쪽, 찌르기·세로는 양 끝부터), 마지막 타엔 없음, 쇠뇌는 좁은 부채꼴 |
 | 땅 돌리기 시작 CC·착용 중 표시(0085) | `World::apply_turn` 시작 휘청, 랩 `turn.start stagger s`, `equip::wears_something` | 돌기 시작하면 범위 안 적 0.25초 휘청(보스는 무게만큼 짧게, 예고 끊김), "착용 중"은 낀 물건에만(빈 칸·맨손은 커서만) |
 | 바닥 표시 땅 따라·땅 돌리기 휘청(0084) | `render::Drape`(`rise`·`shadow`·`line_up`, 평평한 `ring`·`sector` 없앰), `Level::settle` 문 가운데, `camera` `wobble`·`wobble_at`·`roll`, 랩 `turn.wobble in/out deg` | 그림자·쉼터·상자·갈 곳·플레이어 표시 32곳이 경사로·턱을 따라 접힘(가운데의 땅 위 높이는 지킴), 땅 돌리기 시작엔 도는 쪽·끝엔 반대쪽으로 1.5° 휘청 |
 | 웹 가로 기본(0082) | `web/index.html` `#rotate`·`knell_portrait`, `screen::portrait_blocked`, `tick_play` | 세로로 든 터치 기기엔 회전 안내(싸움은 멈춤), 누르면 Android는 전체 화면 + 가로 잠금(안 먹히면 세로로 계속), iPhone은 세로로 계속 |
@@ -98,6 +99,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 
 ## 사람이 할 일
 **0086**: 이어 패링이 쌓여 둘러싸였을 때 빠져나가는 느낌인지·너무 쉬워지지 않는지.
+**0087**: 줄어드는 부채꼴로 박자를 맞추기 쉬운지, 가장 작은 몫·금빛이 "지금"으로 읽히는지, 동작마다 사라지는 쪽이 칼과 맞는지.
 
 **0085**: 땅 돌리기 시작 휘청 0.25초가 작은지·탈출기로 너무 세지 않은지.
 

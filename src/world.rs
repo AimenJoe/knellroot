@@ -5,10 +5,11 @@ use macroquad::prelude::*;
 use crate::ground::Ground;
 use crate::input::Actions;
 use crate::tuning::{
-    Tuning, BEAT_WINDOW, BEAT_WINDOW_MIN, BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE,
-    BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID, CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES,
-    GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, LOCK_HANDOFF, P, PERFECT_RELEASE,
-    PLAYER_HP, PLAYER_RADIUS, RIPOSTE_WINDOW, RUN_SPEED_X, RUN_STAMINA, TICK_DT,
+    Tuning, BEAT_CUE_MIN, BEAT_CUE_SHOT_ARC, BEAT_CUE_SHOT_REACH, BEAT_WINDOW, BEAT_WINDOW_MIN,
+    BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID,
+    CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP,
+    HIT_SWAY, LOCK_HANDOFF, P, PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RIPOSTE_WINDOW,
+    RUN_SPEED_X, RUN_STAMINA, TICK_DT,
 };
 use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG};
 use crate::weapons::{self, Rb, Shape};
@@ -378,6 +379,8 @@ pub struct Player {
     pub since_swing: f32,
     pub beat: f32,
     pub on_beat: bool,
+    /// 마지막 평타의 타 번호(대시 = `weapons::DASH`) — 박자 부채꼴(0087)이 그 타의 모양·휘두르는 쪽을 끝까지 그린다.
+    pub swing_hit: u8,
     /// 박자 맞춤 피드백(0076): 잇달아 박자에 맞춘 타 수(박자를 놓친 타·새 콤보면 0), 마지막 박자 타에서 지난 초,
     /// 지금 스윙이 박자 타인가(렌더가 금빛 고리·음표·금빛 휘두름, HUD가 스태미나 막대 반짝임, 앱이 오르는 종소리).
     pub beat_chain: u32,
@@ -531,6 +534,7 @@ impl World {
                 dash_left: 0.0,
                 connected: 0,
                 since_swing: f32::MAX,
+                swing_hit: 0,
                 beat: 0.0,
                 on_beat: false,
                 beat_chain: 0,
@@ -753,6 +757,8 @@ impl World {
         pl.weapon = id;
         pl.combo_next = 0;
         pl.combo_left = 0.0;
+        // 박자도 새로(0087 — 앞 무기의 박자 부채꼴이 남지 않게).
+        pl.beat = 0.0;
         pl.reload = 0.0;
         let w = id.def();
         pl.ammo = match w.rb {
@@ -1376,6 +1382,7 @@ impl World {
                         let (s0, a0, r0) = hit_times(t, wpn, hit);
                         pl.since_swing = 0.0;
                         pl.beat = s0 + a0 + r0;
+                        pl.swing_hit = hit;
                         pl.state = PState::Attack {
                             t: 0.0,
                             swing: pl.swings,
@@ -2887,6 +2894,74 @@ pub fn parry_front_cos(chain_open: bool, n: u32) -> f32 {
         -1.01
     } else {
         half.cos()
+    }
+}
+
+/// 박자 부채꼴(0087, 사장 2026-11-07 "공격시 나오는 부채꼴이 타이밍에 맞게 줄어들면, 가장 작아졌을때가 올바른 타이밍"):
+/// 스윙 시작 뒤 `since`초, 부채꼴이 나타난 때 `start`(평타 = 활성 시작, 사격 = 0), 박자 `beat`.
+/// (남은 몫 1 → `BEAT_CUE_MIN`, 박자 창 안인가). 나타나기 전·창이 닫힌 뒤는 없음. 박자 순간에 가장 작고, 창이 닫힐 때까지 그대로.
+pub fn beat_shrink(since: f32, start: f32, beat: f32) -> Option<(f32, bool)> {
+    let close = beat + (beat * BEAT_WINDOW).max(BEAT_WINDOW_MIN);
+    if beat <= 0.0 || since < start || since > close {
+        return None;
+    }
+    let p = ((since - start) / (beat - start).max(1e-3)).clamp(0.0, 1.0);
+    Some((1.0 - p * (1.0 - BEAT_CUE_MIN), on_beat(since, beat)))
+}
+
+/// 박자 부채꼴 한 장(0087): 렌더가 이대로 그린다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BeatCue {
+    /// 거리(m)·각(도, 원 = 360).
+    pub reach: f32,
+    pub arc: f32,
+    /// 칼이 지나간 쪽부터 사라진다.
+    pub sweep: weapons::Sweep,
+    /// 남은 몫(1 → `BEAT_CUE_MIN`).
+    pub left: f32,
+    /// 지금 누르면 박자(창 안).
+    pub ripe: bool,
+}
+
+impl World {
+    /// 지금 그릴 박자 부채꼴(0087): 다음 누름이 박자를 탈 수 있을 때만.
+    /// 평타 — 이을 타가 있는 타의 활성 시작부터(마지막 타·반격·모으기·강타엔 없음, 맞거나 넘어지면 없음),
+    /// 사격 — 쏜 순간부터 앞으로 좁은 부채꼴(가운데로 줄어든다).
+    pub fn beat_cue(&self, t: &Tuning) -> Option<BeatCue> {
+        let pl = &self.player;
+        let wpn = pl.weapon.def();
+        if let Rb::Shot { .. } = wpn.rb {
+            let (left, ripe) = beat_shrink(pl.since_swing, 0.0, pl.beat)?;
+            return Some(BeatCue {
+                reach: BEAT_CUE_SHOT_REACH,
+                arc: BEAT_CUE_SHOT_ARC,
+                sweep: weapons::Sweep::Center,
+                left,
+                ripe,
+            });
+        }
+        let live = match pl.state {
+            PState::Attack { hit, .. } => hit == pl.swing_hit && wpn.after(hit).is_some(),
+            PState::Idle | PState::Dodge { .. } | PState::Parry { .. } => pl.combo_left > 0.0,
+            _ => false,
+        };
+        if !live {
+            return None;
+        }
+        let h = wpn.hit(pl.swing_hit)?;
+        let (s0, _, _) = hit_times(t, wpn, pl.swing_hit);
+        let (left, ripe) = beat_shrink(pl.since_swing, s0, pl.beat)?;
+        Some(BeatCue {
+            reach: t[P::AttackRange] * h.reach,
+            arc: if h.shape == weapons::Shape::Circle {
+                360.0
+            } else {
+                t[P::AttackArc] * h.arc
+            },
+            sweep: weapons::sweep_of(h.anim),
+            left,
+            ripe,
+        })
     }
 }
 
@@ -5262,6 +5337,116 @@ mod tests {
             assert_eq!(beats, 0, "{weapon:?}: mashing never gets the beat for free");
             assert!(!w.player.swing_beat && w.player.beat_chain == 0);
         }
+    }
+
+    /// 0087: 박자 부채꼴은 나타난 뒤 줄기만 하고, 박자 순간에 가장 작으며(그 뒤 창이 닫힐 때까지 그대로), 금빛(ripe) = 박자 창 안.
+    #[test]
+    fn the_beat_fan_shrinks_to_its_smallest_on_the_beat() {
+        let (start, beat) = (0.08, 0.43);
+        assert_eq!(
+            beat_shrink(0.05, start, beat),
+            None,
+            "not before it appears"
+        );
+        assert_eq!(beat_shrink(start, start, beat).map(|c| c.0), Some(1.0));
+        let mut last = 2.0;
+        let mut k = start;
+        while k <= beat {
+            let (left, ripe) = beat_shrink(k, start, beat).unwrap();
+            assert!(left <= last, "only shrinks");
+            assert_eq!(
+                ripe,
+                on_beat(k, beat),
+                "gold exactly inside the window at {k}"
+            );
+            last = left;
+            k += 0.005;
+        }
+        let (min, ripe) = beat_shrink(beat, start, beat).unwrap();
+        assert!((min - BEAT_CUE_MIN).abs() < 1e-5 && ripe);
+        let (held, ripe) = beat_shrink(beat + 0.05, start, beat).unwrap();
+        assert!(
+            (held - BEAT_CUE_MIN).abs() < 1e-5 && ripe,
+            "held smallest until the window closes"
+        );
+        assert_eq!(
+            beat_shrink(beat + 0.1, start, beat),
+            None,
+            "gone once the window closes"
+        );
+        assert_eq!(beat_shrink(0.2, 0.0, 0.0), None, "no beat, no fan");
+    }
+
+    /// 0087: 검 1타(오른쪽 → 왼쪽)는 활성부터 박자 부채꼴, 박자에 금빛으로 가장 작고, 그때 누르면 박자 타.
+    /// 이을 타가 없는 마지막 타엔 없다. 쇠뇌는 쏜 순간부터 좁은 부채꼴이 가운데로 줄어든다.
+    #[test]
+    fn the_beat_fan_follows_the_swing_and_peaks_when_a_press_counts() {
+        let t = Tuning::default();
+        let press = |w: &mut World, attack: bool, cast: bool| {
+            w.step(
+                &Actions {
+                    attack,
+                    cast,
+                    ..Default::default()
+                },
+                &t,
+            )
+        };
+        let mut w = World::new("test", 20.0);
+        w.set_weapon(weapons::Id::Sword);
+        assert_eq!(w.beat_cue(&t), None);
+        press(&mut w, true, false);
+        let (s0, _, _) = hit_times(&t, w.player.weapon.def(), 0);
+        let mut seen = None;
+        let mut beat = false;
+        for _ in 0..90 {
+            let cue = w.beat_cue(&t);
+            if w.player.since_swing < s0 - 1e-4 {
+                assert_eq!(cue, None, "not before the hit is live");
+            }
+            if let Some(c) = cue {
+                assert_eq!(c.sweep, weapons::Sweep::RightToLeft);
+                seen = Some(c);
+                if c.ripe && (w.player.since_swing - w.player.beat).abs() < TICK_DT * 0.6 {
+                    assert!((c.left - BEAT_CUE_MIN).abs() < 0.05, "smallest on the beat");
+                    let ev = press(&mut w, true, false);
+                    assert!(
+                        ev.contains(&Event::Beat),
+                        "a press while it is smallest is on the beat"
+                    );
+                    beat = true;
+                    break;
+                }
+            }
+            press(&mut w, false, false);
+        }
+        assert!(seen.is_some() && beat);
+        // 둘째 타(왼쪽 → 오른쪽)를 박자로 쳤다 — 이제 부채꼴은 그 타의 쪽.
+        for _ in 0..12 {
+            press(&mut w, false, false);
+        }
+        assert_eq!(
+            w.beat_cue(&t).map(|c| c.sweep),
+            Some(weapons::Sweep::LeftToRight)
+        );
+        // 셋째(마지막) 타 찌르기: 이을 타가 없으니 박자도 없다.
+        let mut w = World::new("test", 20.0);
+        w.set_weapon(weapons::Id::Sword);
+        w.player.combo_next = 2;
+        w.player.combo_left = 1.0;
+        press(&mut w, true, false);
+        assert!(matches!(w.player.state, PState::Attack { hit: 2, .. }));
+        for _ in 0..60 {
+            assert_eq!(w.beat_cue(&t), None, "the finisher has no beat");
+            press(&mut w, false, false);
+        }
+        // 쇠뇌: 쏜 순간부터, 가운데로.
+        let mut w = World::new("test", 20.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        press(&mut w, false, true);
+        let c = w.beat_cue(&t).expect("a shot starts its beat fan");
+        assert_eq!(c.sweep, weapons::Sweep::Center);
+        assert!(c.left > 0.9 && !c.ripe);
     }
 
     /// 2026-11-06: 회피를 끊고(또는 막 끝나고) 누른 공격은 무기의 대시 공격 — 멀리 내딛고, 다음 타는 콤보 둘째 타.
