@@ -8,7 +8,7 @@
 3. `docs/lab.md` — 랩이 무엇을 재고 값이 `tuning.rs`로 어떻게 가는가
 4. `docs/decisions/` — 왜 그렇게 정했나. 바꾸려면 새 번호로
 
-세션이 끝나면 "구현 상태"·"사람이 할 일"을 갱신하고 커밋한다. 배포는 `docs/release.md`(웹 = Netlify, Android APK = GitHub Release, main push = 배포, **배포는 사장이 정한다**). **갈래(0022)**: `main` = 운영판(패치만, `--no-default-features`), `release/v0.3` = 개발판이자 작업 갈래(v0.2.0 배포 2026-11-05 뒤 — 옛 `release/v0.2`는 그대로 둠)(작업은 여기에 커밋·push — 웹 별칭 `dev`, APK 미리 보기 Release `dev`). 릴리스 = `Cargo.toml` 버전·`version_code` + `docs/releases/v<버전>.md`를 main에(`release.yml`이 태그·APK) — main 룰셋(0092)이 걸리면 바로 push가 아니라 PR `release/v0.3` → `main`, 사장이 Merge. 기여 규칙은 첫 게임 `CONTRIBUTING.md`를 따른다. 이름·v0.1.0 조건은 `docs/decisions/0005`.
+세션이 끝나면 "구현 상태"·"사람이 할 일"을 갱신하고 커밋한다. 배포는 `docs/release.md`(웹 = Netlify, Android APK = GitHub Release, main push = 배포, **배포는 사장이 정한다**). **갈래(0022)**: `main` = 운영판(패치만, `--no-default-features`), `release/v0.4` = 개발판이자 작업 갈래(v0.3.5 배포 뒤 2026-11-07 새 main에서, 사장 "v0.4 브랜치도 하나 만들자" — 옛 `release/v0.3`·`release/v0.2`는 그대로 둠)(작업은 여기에 커밋·push — 웹 별칭 `dev`, APK 미리 보기 Release `dev`). 릴리스 = `Cargo.toml` 버전·`version_code` + `docs/releases/v<버전>.md`를 main에(`release.yml`이 태그·APK) — main 룰셋(0092)이 걸리면 바로 push가 아니라 PR `release/v0.4` → `main`, 사장이 Merge. 기여 규칙은 첫 게임 `CONTRIBUTING.md`를 따른다. 이름·v0.1.0 조건은 `docs/decisions/0005`.
 
 소개 페이지는 `site/`(0093 — 개발 중이라 한 장만, nail 0069 꼴, `pages.yml`이 main에서 GitHub Pages로, 주소 knellroot.beardworks.io). 페이지 글을 고치면 두 언어를 다 고치고 `tools/site/subset_font.py`로 글꼴을 다시 줄인다.
 
