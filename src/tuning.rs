@@ -825,7 +825,8 @@ pub const SPECS: [Spec; 147] = [
         ParryStamina,
         "parry.stamina cost",
         "PARRY_STAMINA",
-        15.0,
+        // 15 → 5(0097, 사장 2026-11-07 "이미 타이밍 손해 및 뎀지 손해가 있는데 기력까지 소모하는건 너무 가혹해").
+        5.0,
         0.0,
         100.0,
         1.0
