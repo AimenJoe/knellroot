@@ -128,6 +128,15 @@ const BOLT_LOOKS: [(Color, Color); 4] = [
 
 /// 예고 색(붉은 계열 하나 — 붉은색은 위험에만, 그림 팔레트에는 없다).
 const TELE: Color = Color::new(0.85, 0.15, 0.1, 1.0);
+/// 예고 잉크(채움 = 테두리) 투명도. 0.42 채움 + 0.7 테두리(겹쳐 더 진함)에서 내렸다(2026-11-07, 사장 "더 옅게").
+/// 더 내리면 밝은 돌바닥에서 다 찬 순간이 흐려진다 — 그때는 투명도가 아니라 테두리 굵기·잉크 색으로 보강(KB color-vision-check).
+const TELE_A: f32 = 0.3;
+/// 예고 면 전체에 깔린 바탕(어디까지인지만).
+const TELE_BASE_A: f32 = 0.04;
+/// 못 받는 공격의 가운데 X(1px 선이라 면보다 조금 진하게).
+const TELE_MARK_A: f32 = 0.5;
+/// 테두리 띠 폭(m) — `Drape::ring`과 같다. 채움은 이 안쪽까지만.
+const TELE_RING_W: f32 = 0.12;
 
 fn with_a(c: Color, a: f32) -> Color {
     Color::new(c.r, c.g, c.b, a)
@@ -633,8 +642,8 @@ impl Renderer {
                 telegraph(&drape, p, en.facing, k, shape);
             }
             if let Some(front) = en.wave_front() {
-                drape.ring(p, front, 0.0, 360.0, with_a(TELE, 0.75));
-                drape.ring(p, (front - 0.5).max(0.1), 0.0, 360.0, with_a(TELE, 0.3));
+                drape.ring(p, front, 0.0, 360.0, with_a(TELE, 0.45));
+                drape.ring(p, (front - 0.5).max(0.1), 0.0, 360.0, with_a(TELE, 0.18));
             }
         }
         let pp = w.player.prev.lerp(w.player.pos, alpha);
@@ -1340,7 +1349,7 @@ impl Renderer {
                         t[crate::tuning::P::AttackRange] * h.reach,
                         w.player.facing,
                         arc,
-                        Color::new(1.0, 0.95, 0.7, 0.35),
+                        Color::new(1.0, 0.95, 0.7, 0.18),
                     );
                 }
             }
@@ -1382,9 +1391,9 @@ impl Renderer {
                     w.player.facing,
                     arc,
                     if full {
-                        Color::new(1.0, 0.8, 0.4, 0.45)
+                        Color::new(1.0, 0.8, 0.4, 0.25)
                     } else {
-                        Color::new(1.0, 0.9, 0.65, 0.35)
+                        Color::new(1.0, 0.9, 0.65, 0.18)
                     },
                 );
             }
@@ -1410,14 +1419,14 @@ impl Renderer {
                     1.4,
                     w.player.facing,
                     150.0,
-                    Color::new(0.6, 0.85, 1.0, 0.35),
+                    Color::new(0.6, 0.85, 1.0, 0.15),
                 );
                 ring(
                     pp + Vec3::Y * 0.8,
                     1.4,
                     w.player.facing,
                     150.0,
-                    Color::new(0.75, 0.9, 1.0, 0.8),
+                    Color::new(0.75, 0.9, 1.0, 0.4),
                 );
             }
         }
@@ -1442,7 +1451,7 @@ impl Renderer {
                 0.6 + 2.4 * k,
                 0.0,
                 360.0,
-                Color::new(0.85, 0.95, 1.0, 0.9 * (1.0 - k)),
+                Color::new(0.85, 0.95, 1.0, 0.55 * (1.0 - k)),
             );
         }
         // 드러난 적(치명타 기회): 발밑에 금빛 고리가 깜빡인다.
@@ -1674,35 +1683,38 @@ fn enemy_anim(en: &Enemy, e: &Entry, clock: f32, stage: Option<&StageRun>) -> (O
 /// 바닥 예고 하나: 옅은 면 + 테두리, 채움이 자라 테두리에 닿는 순간 공격. 원판·부채꼴·고리는 가운데부터, 띠는 가운데 줄에서 양옆으로.
 /// 2026-11-06: 바닥 높낮이를 따라 접어 그린다(`Drape`) — 낮은 곳의 적이 높은 곳으로 치면 예고가 높은 땅 속에 묻혀 안 보였다.
 fn telegraph(d: &Drape, p: Vec3, facing: f32, k: f32, shape: TeleShape) {
-    let bg = with_a(TELE, 0.16);
-    let fill = with_a(TELE, 0.42);
-    let edge = with_a(TELE, 0.7);
+    // 2026-11-07(사장 "더 옅게, 싸움에 방해되지 않게"): nail 0186·0196 꼴 — 채움과 테두리는 같은 색·같은 투명도(`TELE_A`),
+    // 채움은 테두리 띠 안쪽까지만 자라 겹치지 않는다(겹치면 그 자리만 진해져 "다 찬 순간"이 안 온다), 바탕은 아주 옅게.
+    let bg = with_a(TELE, TELE_BASE_A);
+    let ink = with_a(TELE, TELE_A);
+    let inner = |r: f32| (r - TELE_RING_W).max(0.0);
     match shape {
         TeleShape::Disc { r } => {
-            d.sector(p, r, facing, 360.0, bg);
-            d.sector(p, r * k, facing, 360.0, fill);
-            d.ring(p, r, facing, 360.0, edge);
+            d.sector(p, inner(r), facing, 360.0, bg);
+            d.sector(p, inner(r) * k, facing, 360.0, ink);
+            d.ring(p, r, facing, 360.0, ink);
         }
         TeleShape::Sector { r, arc } => {
-            d.sector(p, r, facing, arc, bg);
-            d.sector(p, r * k, facing, arc, fill);
-            d.ring(p, r, facing, arc, edge);
+            d.sector(p, inner(r), facing, arc, bg);
+            d.sector(p, inner(r) * k, facing, arc, ink);
+            d.ring(p, r, facing, arc, ink);
         }
         TeleShape::Lane { len, w } => {
             let (s, c) = facing.sin_cos();
             let dir = vec3(s, 0.0, c);
             d.lane(p, dir, len, w, bg);
-            d.lane(p, dir, len, w * k, fill);
-            d.lane_edge(p, dir, len, w, edge);
+            d.lane(p, dir, len, w * k, ink);
+            d.lane_edge(p, dir, len, w, ink);
         }
         TeleShape::Ring { r } => {
-            d.sector(p, r, facing, 360.0, with_a(TELE, 0.1));
-            d.ring(p, r * k, facing, 360.0, fill);
-            d.ring(p, r, facing, 360.0, edge);
+            d.sector(p, inner(r), facing, 360.0, bg);
+            d.ring(p, inner(r) * k, facing, 360.0, ink);
+            d.ring(p, r, facing, 360.0, ink);
             // 패링으로 못 받는다 = 가운데 X(색이 아니라 모양으로, nail 0187 · KB timing-parry).
+            let mark = with_a(TELE, TELE_MARK_A);
             let x = r.min(2.0) * 0.45;
-            d.line(p + vec3(-x, 0.0, -x), p + vec3(x, 0.0, x), edge);
-            d.line(p + vec3(-x, 0.0, x), p + vec3(x, 0.0, -x), edge);
+            d.line(p + vec3(-x, 0.0, -x), p + vec3(x, 0.0, x), mark);
+            d.line(p + vec3(-x, 0.0, x), p + vec3(x, 0.0, -x), mark);
         }
     }
 }
@@ -1774,7 +1786,7 @@ impl Drape<'_> {
         if r <= 1e-3 {
             return;
         }
-        let w = 0.12;
+        let w = TELE_RING_W;
         let n = ((arc / 10.0).ceil() as usize)
             .max((arc.to_radians() * r / DRAPE_STEP).ceil() as usize)
             .clamp(3, 96);
