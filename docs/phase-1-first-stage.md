@@ -73,6 +73,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 잔불(0064 M1) | `ember.rs`, `world.rs` `tick_embers`·`embers`·`drops`, `species.rs` `embers`, `backdrop.rs` `embers`, `hud.rs` | 쓰러지면 튀어나오고 0.35초 뒤 끌려와 주움, 가진 수는 기록에 — 쓰러져도 그대로 |
 | 앱·UI 뼈대(0066) | `app/stack.rs`·`flow.rs` `Go`·`Layer`·`focus`, `app/menu.rs` `Menu`·`Out`·`Hit`, 화면 파일 `pause`·`settings`·`shop`·`ask`·`slots`·`title`·`play`·`progress`·`controls_screen`, `ui.rs` `panel`·`list`·`close`·`buttons`·`title_arrows` | 장면 스택(닫으면 연 줄로), 목록 화면 = 줄 표 하나 + 몰이꾼, nail 창 틀(✕·창 밖 탭·◀ 값 ▶·제목 줄 ▲▼), 묻는 창은 아래 창 위. `tick_scene` 340 → 35줄 |
 | 아이템 그림(0068) | `item_view.rs`, `Renderer::draw_icon`·`draw_item`, `tools/art/blender/charms.py` → `charms.glb` | 칸·후보 줄의 아이콘(한 번 찍어 캐시), 고른 것은 크게 흔들리는 3D, 장신구 모델 여섯(첫 시안) |
+| 슬롯 요약·장비 줄·이어 패링(0081) | `save::Summary`(장·`play`)·`play_text`, `app/slots.rs`, `app/pause.rs`, `tuning::PARRY_CHAIN`·`World::parry_open` | 이어하기 줄 = 장 · 지역 · 플레이 시간(새 키 `play`), 멈춤 장비 줄은 들어가는 줄만, 튕긴 뒤 0.2초 동안 앞쪽 공격도 튕김(튕길 때마다 다시) |
 | 개발 화면 한국어(0080) | `i18n/dev.rs`(`Pair`·`t`·`SPEC_KO`·`GROUP_KO`·`SCENARIO_KO`), `app/lab_screen.rs`, `app/settings.rs` 개발 창 | 연구소·DEV 창 글이 설정 언어를 따른다, 연구소 값은 한국어 이름 + 설명 줄에 원래 이름, F3 줄만 영어 |
 | 연구소 줄·개발판 커밋 해시(0079) | `flow::title_items`·`pause_items`(`Lab`), `build.rs` `BUILD_HASH`, `title::version_label` | 연구소(랩)는 타이틀·멈춤 메뉴의 설정 바로 아래 줄(개발판, 설정 창에서는 뺌), 개발판 타이틀 버전 옆에 커밋 앞 7자 |
 | 딱 맞춰 떼기는 모든 무기(0078) | `tuning::PERFECT_RELEASE`, `world` 강타·모은 사격 `perfect`, `Player::since_perfect`, 렌더 금빛 고리, `Event::Perfect` → 종 `Beat3` | 다 모인 뒤 0.15초 안에 떼면 피해 +1·자세 ×1.5(강타는 넉백 ×1.5도) — 근접 강타 전부와 쇠뇌 모은 사격, 무기 표 `perfect` 칸 없앰 |
@@ -92,6 +93,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), 랩(멈춤 끝 줄 LAB·F1, 0070), F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+**0081**: 이어 패링 0.2초가 "비슷한 타이밍"인지·앞쪽만 받는 것이 떼 속에서 억울하지 않은지, 슬롯의 "시간"이 플레이 시간이 맞는지.
+
 **0078**: 딱 맞춰 떼기 0.15초가 무기마다 맞는지·타이밍 규칙 셋(박자·패링·딱 맞춤)이 많지 않은지, 안내 화면은 아직 없음.
 
 **0077**: 쇠뇌 박자 0.24초를 탈 수 있는지·볼트 안 쓰는 덤이 너무 센지.

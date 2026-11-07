@@ -27,14 +27,15 @@ impl App {
             .map(|(i, sum)| {
                 let name = fill(s.slot_name, &[&(i + 1).to_string()]);
                 let label = match sum {
+                    // 장 · 지역(스테이지) · 시간(사장 2026-11-07, 0081 — 완주·잔불·장신구 수는 뺌). 장마다 스테이지는 하나(지금 1장 = 성소).
                     Some(m) => format!(
                         "{name}   {}",
                         fill(
                             s.slot_summary,
                             &[
-                                &m.clears.to_string(),
-                                &m.embers.to_string(),
-                                &m.charms.to_string()
+                                &m.chapter.to_string(),
+                                tr(crate::stage::sanctuary::DEF.name),
+                                &crate::save::play_text(m.play),
                             ]
                         )
                     ),

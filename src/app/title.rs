@@ -38,7 +38,7 @@ impl App {
                 TitleItem::Lab => s.menu_lab.to_string(),
                 // 개발 전용(영어 그대로, 0013).
                 #[cfg(feature = "dev")]
-                TitleItem::Dev => "DEV".to_string(),
+                TitleItem::Dev => crate::i18n::dev::t(crate::i18n::dev::DEV_TITLE).to_string(),
             })
             .collect();
         let bottom = self.menu_bottom(f);

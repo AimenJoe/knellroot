@@ -4,6 +4,7 @@ use macroquad::prelude::*;
 
 use crate::ground::Ground;
 use crate::input::Actions;
+use crate::tuning::PARRY_CHAIN;
 use crate::tuning::{
     Tuning, BEAT_WINDOW, BEAT_WINDOW_MIN, BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE,
     BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID, CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES,
@@ -855,8 +856,10 @@ impl World {
     }
 
     /// 패링 창이 열려 있나(0025).
+    /// 패링 창이 열려 있나: 패링 동작의 창 안이거나, 막 튕긴 뒤 이어 패링 시간 안(0081).
     pub fn parry_open(&self, t: &Tuning) -> bool {
         matches!(self.player.state, PState::Parry { t: e } if e < t[P::ParryWindow])
+            || self.player.since_parry < PARRY_CHAIN
     }
 
     #[cfg(test)]
@@ -2602,10 +2605,14 @@ impl World {
                 });
             }
             // 튕기면 곧바로 움직일 수 있다(반격하라고) — 세상은 한 박자 멈춘다(명중보다 크게, KB).
-            self.player.state = PState::Idle;
+            // 이어 패링(0081)으로 튕겼으면 그 사이 시작한 동작(회피 등)은 그대로 둔다.
+            if matches!(self.player.state, PState::Parry { .. }) {
+                self.player.state = PState::Idle;
+            }
+            // 튕길 때마다 이어 패링 창이 다시 열린다(`PARRY_CHAIN`).
             self.player.since_parry = 0.0;
             self.hitstop = self.hitstop.max(t[P::Hitstop] * PARRY_HITSTOP);
-            // 같은 틱에 다른 적에게 맞은 것은 그대로 맞는다(떼 속 패링은 하나만 막는다).
+            // 같은 틱이라도 뒤·옆에서 맞은 것·받을 수 없는 파동은 그대로 맞는다(패링은 앞쪽 반원만).
         }
         if let (Some(from), false) = (hurt_player, self.player.invulnerable()) {
             let taken = 1 + self.stats.taken;
@@ -6029,5 +6036,53 @@ mod tests {
         assert!(w.player.ammo < full, "mashing spends bolts");
         // 창은 아무리 빨라도 ±60ms 아래로 좁아지지 않는다.
         assert!(on_beat(0.24 + 0.055, 0.24) && !on_beat(0.24 + 0.07, 0.24));
+    }
+
+    /// 0081(사장 2026-11-07): 튕기면 패링 창이 `PARRY_CHAIN`만큼 이어져, 비슷한 때 오는 앞쪽 공격도 같이 튕긴다.
+    /// 패링 동작의 창(0.18초)이 이미 닫힌 뒤에 오는 둘째 공격으로 본다. 이어지는 창보다 늦으면 맞는다.
+    #[test]
+    fn a_parry_extends_its_window_to_deflect_blows_close_behind() {
+        let t = Tuning::default();
+        let first = 9; // 패링을 누르고 9틱(0.15초) 뒤 첫 공격 — 창(0.18초) 끝 무렵
+        for (gap, deflected) in [(9_usize, true), (18, false)] {
+            let mut w = World::new("test", 20.0);
+            w.player.facing = std::f32::consts::PI; // -z = 적 쪽
+            for (x, at) in [(-0.5_f32, first), (0.5, first + gap)] {
+                w.spawn_mob(vec3(x, 0.0, -1.2));
+                let en = w.enemies.last_mut().unwrap();
+                en.facing = 0.0;
+                en.atk = Atk::Smash;
+                // `at`틱 뒤에 내리친다(예고 끝 → 다음 틱 휘두름의 첫 틱에 맞음).
+                en.state = EState::Tele {
+                    t: en.tele_dur() - (at as f32 - 1.0) * TICK_DT,
+                };
+            }
+            let mut parries = 0;
+            let mut ev = w.step(
+                &Actions {
+                    parry: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            for _ in 0..120 {
+                parries += ev
+                    .iter()
+                    .filter(|e| matches!(e, Event::Parry { .. }))
+                    .count();
+                ev = w.step(&Actions::default(), &t);
+            }
+            parries += ev
+                .iter()
+                .filter(|e| matches!(e, Event::Parry { .. }))
+                .count();
+            if deflected {
+                assert_eq!(parries, 2, "gap {gap}: both deflected");
+                assert_eq!(w.player.hp, PLAYER_HP);
+            } else {
+                assert_eq!(parries, 1, "gap {gap}: only the first");
+                assert!(w.player.hp < PLAYER_HP, "the late blow lands");
+            }
+        }
     }
 }

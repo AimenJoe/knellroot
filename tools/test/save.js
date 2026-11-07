@@ -126,10 +126,10 @@ async function main() {
   await press('Enter'); await page.waitForTimeout(800);
   if ((await slotCell()) !== '1') fail('starting in slot 2 must remember it as the last slot');
   if ((await record()) === null) fail('starting another slot must keep slot 1');
-  // 5c) 다시 타이틀 → 시작하기 → 슬롯 2는 아직 비었다(쌓인 것이 없다) → 위로 = 슬롯 1 "덮어쓰기"(두 번) → 슬롯 1이 비워진 채 시작.
+  // 5c) 다시 타이틀 → 시작하기 → 슬롯 2는 잠깐 했어도 플레이 시간이 쌓여 기록 있음(0081) → 커서는 첫 빈 슬롯(3) → 위로 둘 = 슬롯 1 "덮어쓰기"(두 번) → 슬롯 1이 비워진 채 시작.
   await toTitle();
   await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
-  await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(300);
   await shot('save-5-overwrite-armed');
   if ((await record()) === null) fail('one press must not overwrite');
   await press('Enter'); await page.waitForTimeout(800);

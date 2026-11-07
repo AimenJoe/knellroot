@@ -69,7 +69,7 @@ pub const KO: Strings = Strings {
     slots_new: "새로 시작",
     slots_load: "이어하기",
     slot_name: "슬롯 {0}",
-    slot_summary: "완주 {0} · 잔불 {1} · 장신구 {2}",
+    slot_summary: "{0}장 · {1} · {2}",
     slot_empty: "비어 있음",
     slot_start: "시작",
     slot_overwrite: "덮어쓰기",

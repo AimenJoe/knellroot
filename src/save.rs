@@ -33,6 +33,8 @@ pub mod key {
     pub const SHOP_OIL: &str = "shop.oil";
     /// 든 무기(0066: prefs 칸 21에서 옮김 — 슬롯 사이에 새지 않게).
     pub const WEAPON: &str = "weapon";
+    /// 쌓인 플레이 시간(초, 0081 — 이어하기 목록의 "시간"). 개발 판·메뉴·타이틀에 있는 동안은 세지 않는다.
+    pub const PLAY: &str = "play";
 }
 
 /// 글 기록(키 → 값). 모르는 키도 지키며 들고 다닌다.
@@ -106,6 +108,8 @@ pub struct Progress {
     pub growth: crate::growth::Growth,
     /// 든 무기(없으면 옛 prefs 칸의 값을 쓴다).
     pub weapon: Option<crate::weapons::Id>,
+    /// 쌓인 플레이 시간(초, 0081).
+    pub play: u32,
     /// 원래 기록(모르는 키를 지키려고 — 쓸 때 이 위에 덮는다).
     base: Record,
 }
@@ -136,6 +140,7 @@ impl Progress {
         Progress {
             growth,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
+            play: r.num(key::PLAY).unwrap_or(0),
             embers: r.num(key::EMBERS).unwrap_or(0),
             clears: r.num(key::CLEARS).unwrap_or(0),
             run,
@@ -159,6 +164,7 @@ impl Progress {
         r.set(key::GROW_FLASK, self.growth.flask);
         r.set(key::GROW_HEAL, self.growth.heal);
         r.set(key::SHOP_OIL, self.growth.oil as u8);
+        r.set(key::PLAY, self.play);
         match self.weapon {
             Some(w) => r.set(key::WEAPON, w.key()),
             None => r.remove(key::WEAPON),
@@ -179,6 +185,7 @@ impl Progress {
     /// 이어할 것이 있나(타이틀 "이어하기"): 판 밖의 것이 하나라도 쌓였거나 판 안의 자리가 있으면.
     pub fn has_any(&self) -> bool {
         self.run.is_some()
+            || self.play > 0
             || self.embers > 0
             || self.clears > 0
             || !self.owned.is_empty()
@@ -293,20 +300,25 @@ fn parse_slot(text: &str) -> usize {
 /// 슬롯 창 한 줄의 요약(기록에서 바로 계산되는 것, KB).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Summary {
-    pub clears: u32,
-    pub embers: u32,
-    pub charms: usize,
+    /// 장(챕터) 번호, 1부터 — 지금은 스테이지 하나라 늘 1(v0.4.0 구역 잇기 0069 T1에서 `run.stage`로).
+    pub chapter: u32,
+    /// 쌓인 플레이 시간(초).
+    pub play: u32,
 }
 
 impl Progress {
-    /// 기록이 있는 슬롯이면 요약, 비었으면 없음.
+    /// 기록이 있는 슬롯이면 요약(장·지역·시간, 사장 2026-11-07 — 그 밖은 뺌), 비었으면 없음.
     pub fn summary(&self) -> Option<Summary> {
         self.has_any().then_some(Summary {
-            clears: self.clears,
-            embers: self.embers,
-            charms: self.owned.len(),
+            chapter: 1,
+            play: self.play,
         })
     }
+}
+
+/// 플레이 시간 글 "h:mm"(초는 뺀다 — 슬롯 줄은 대강이면 된다).
+pub fn play_text(secs: u32) -> String {
+    format!("{}:{:02}", secs / 3600, secs / 60 % 60)
 }
 
 /// 슬롯 셋의 요약(타이틀 "이어하기"가 보이나, 슬롯 창의 줄).
@@ -466,13 +478,23 @@ mod tests {
             owned: vec![crate::charms::Id::Ear],
             ..Progress::default()
         };
+        // 요약은 장 · 시간만(0081 — 지역은 장에서 정해진다), 완주·잔불·장신구 수는 뺐다.
         assert_eq!(
             some.summary(),
             Some(Summary {
-                clears: 1,
-                embers: 9,
-                charms: 1
+                chapter: 1,
+                play: 0
             })
         );
+        // 플레이 시간은 기록에 남고(키 `play`), 시간만 있어도 "기록 있음"이다.
+        let played = Progress {
+            play: 3725,
+            ..Progress::default()
+        };
+        let back = Progress::from_record(Record::parse(&played.to_record().to_text()));
+        assert_eq!(back.play, 3725);
+        assert_eq!(back.summary().map(|m| m.play), Some(3725));
+        assert_eq!(play_text(3725), "1:02");
+        assert_eq!(play_text(59), "0:00");
     }
 }

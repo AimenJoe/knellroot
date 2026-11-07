@@ -114,6 +114,8 @@ pub struct App {
     legacy_weapon: u8,
     /// 저장에 실패한 채인가(실패가 시작될 때 한 번만 알린다 — KB `roguelite-save-slots-and-continue`).
     save_failed: bool,
+    /// 플레이 시간의 1초 아래 나머지(0081).
+    play_acc: f32,
     /// 잠깐 뜨는 알림(0064 M3 — 상자에서 얻은 것 등)과 남은 초.
     toast: Option<(String, f32)>,
 }
@@ -122,6 +124,14 @@ pub struct App {
 const TOAST_TIME: f32 = 3.5;
 
 impl App {
+    /// 개발 판(DEV에서 시작한 스테이지)인가 — 운영판은 늘 거짓.
+    fn dev_run_now(&self) -> bool {
+        #[cfg(feature = "dev")]
+        return self.dev_run;
+        #[cfg(not(feature = "dev"))]
+        false
+    }
+
     pub fn new() -> Self {
         let t = Tuning::default();
         // 저장한 설정(0024·0052·0058): 언어·키 배치·흔들림·무기·마우스 조준.
@@ -197,6 +207,7 @@ impl App {
             scroll: 0.0,
             legacy_weapon,
             save_failed: false,
+            play_acc: 0.0,
             toast: None,
         }
     }

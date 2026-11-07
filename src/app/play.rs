@@ -15,6 +15,14 @@ impl App {
         }
         let a = self.cursor_aim(a);
         self.step_world(&a);
+        // 플레이 시간(0081): 싸움 화면의 로직 틱만 센다(멈춤·메뉴·타이틀·개발 판은 빼고). 기록에는 다음 저장 때 같이 들어간다.
+        if !self.dev_run_now() {
+            self.play_acc += TICK_DT;
+            if self.play_acc >= 1.0 {
+                self.play_acc -= 1.0;
+                self.progress.play = self.progress.play.saturating_add(1);
+            }
+        }
         let out = self.run.tick(&mut self.world, TICK_DT);
         self.sync_progress(out);
         // 쉼터 화로(0064 M4): 쉬면 가게가 열린다. 살 것이 있으면 쉼터가 빛난다.

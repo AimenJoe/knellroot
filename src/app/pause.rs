@@ -30,15 +30,15 @@ impl App {
             .iter()
             .map(|i| match i {
                 PauseItem::Resume => ui::Row::plain(s.menu_resume),
-                PauseItem::Weapon => ui::Row::step(s.menu_equip, weapon_name(self.weapon)),
+                // 장비 창으로 들어가는 줄 — 든 무기 이름·좌우 바꾸기는 뺐다(사장 2026-11-07, 0081: 장비 창이 보여 준다).
+                PauseItem::Weapon => ui::Row::go(s.menu_equip),
                 PauseItem::Settings => ui::Row::go(s.menu_settings),
                 #[cfg(feature = "dev")]
                 PauseItem::Lab => ui::Row::go(s.menu_lab),
                 PauseItem::Restart => ui::Row::plain(s.menu_restart),
                 PauseItem::ToTitle => ui::Row::plain(s.menu_to_title),
-                // 개발 화면 줄이라 번역하지 않는다(0013).
                 #[cfg(feature = "dev")]
-                PauseItem::Dev => ui::Row::go("DEV"),
+                PauseItem::Dev => ui::Row::go(crate::i18n::dev::t(crate::i18n::dev::DEV_TITLE)),
             })
             .collect();
         Menu::new(s.pause_title, 260.0, rows)
@@ -46,11 +46,7 @@ impl App {
 
     pub(super) fn pause_act(&mut self, out: Out) {
         match out {
-            Out::Step(i, d) => {
-                if flow::pause_items().get(i) == Some(&PauseItem::Weapon) {
-                    self.next_weapon(d);
-                }
-            }
+            Out::Step(..) => {}
             Out::Pick(i) => {
                 let (next, rebuild) = flow::choose_pause(flow::pause_items()[i]);
                 if rebuild {

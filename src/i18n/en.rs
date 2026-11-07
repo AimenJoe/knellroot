@@ -71,7 +71,7 @@ pub const EN: Strings = Strings {
     slots_new: "New game",
     slots_load: "Continue",
     slot_name: "Slot {0}",
-    slot_summary: "Clears {0} · Embers {1} · Charms {2}",
+    slot_summary: "Ch. {0} · {1} · {2}",
     slot_empty: "Empty",
     slot_start: "Start",
     slot_overwrite: "Overwrite",
