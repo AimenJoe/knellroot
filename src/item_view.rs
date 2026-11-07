@@ -29,6 +29,8 @@ pub fn view(item: Item) -> View {
                 Weapon::Sword | Weapon::Staff => (0.0, -80.0, -45.0),
                 Weapon::Hammer => (0.0, -75.0, -40.0),
                 Weapon::Crossbow => (0.0, -70.0, 0.0),
+                // 맨손은 그림이 없다(`has_view` 거짓 — 장비 창이 빈 칸처럼 둔다).
+                Weapon::Fists => (0.0, 0.0, 0.0),
             };
             View {
                 model: "wanderer",
@@ -49,6 +51,11 @@ pub fn view(item: Item) -> View {
     }
 }
 
+/// 그림으로 보일 것이 있나(맨손은 없다).
+pub fn has_view(item: Item) -> bool {
+    !view(item).node.is_empty()
+}
+
 /// 아이콘 캐시 열쇠(부위 이름 — 모델끼리 겹치지 않는다, 시험).
 pub fn key(item: Item) -> &'static str {
     view(item).node
@@ -61,6 +68,7 @@ pub fn all() -> Vec<Item> {
         .into_iter()
         .map(Item::Weapon)
         .chain(crate::charms::TABLE.iter().map(|d| Item::Charm(d.id)))
+        .filter(|&i| has_view(i))
         .collect()
 }
 

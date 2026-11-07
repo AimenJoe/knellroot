@@ -13,6 +13,8 @@ const SLAM_SPEED: f32 = 2.0;
 const TELE_LOCK: f32 = 0.12;
 /// 돌진이 닿았다고 보는 여유(몸 반지름 + 플레이어 반지름에 더한다).
 const CHARGE_TOUCH: f32 = 0.15;
+/// 떼 퍼지기(0076): 옆으로 비키는 세기(가는 쪽 단위 벡터에 더한다).
+const SPREAD_STEER: f32 = 0.8;
 /// 체력 반 아래(문지기): 예고·쉬기 배율, 걸음 배율.
 const ROUSED_TELE: f32 = 0.75;
 const ROUSED_RECOVER: f32 = 0.7;
@@ -119,6 +121,13 @@ pub struct Enemy {
     /// 돌진(2026-11-06): 돌진을 시작한 뒤 몸이 플레이어에 닿기까지의 초(예고를 굳힐 때 잰다, 길 밖이면 돌진 끝까지).
     /// 띠 예고의 채움이 예고 끝이 아니라 **닿는 순간**에 다 찬다 — 거리마다 박자가 달라 헷갈리지 않게.
     pub charge_eta: f32,
+    /// 돌진이 갈 수 있는 길이(m, 0076): 월드가 벽·기둥·턱까지 재어 준다(`nav::charge_room`). 기본은 끝까지(`charge_speed × charge_time`).
+    /// 몸은 여기서 멈추고 예고 띠도 여기까지 — 띠가 벽을 뚫고 그려지는데 몸은 벽에서 멈추던 것.
+    pub charge_len: f32,
+    /// 이번 틱에 돌진 예고가 아직 방향을 겨누고 있었다(월드가 길이·닿는 때를 다시 재라고).
+    pub charge_aim: bool,
+    /// 떼 퍼지기(0076): 곁의 적에게서 비키는 쪽(월드가 매 틱 준다) — 한 줄로 늘어서지 않고 둘러싼다.
+    pub spread: Vec3,
 }
 
 /// 한 틱의 결과(월드가 피해·이벤트로 바꾼다).
@@ -164,6 +173,9 @@ impl Enemy {
             poise_frac: 0.0,
             way: None,
             charge_eta: 0.0,
+            charge_len: d.charge_speed * d.charge_time,
+            charge_aim: false,
+            spread: Vec3::ZERO,
         }
     }
 
@@ -225,9 +237,11 @@ impl Enemy {
                 r: d.reach + PLAYER_RADIUS,
                 arc: d.arc,
             },
+            // 띠 = 플레이어 가운데가 들어가면 맞는 곳(0076): 몸이 지나는 길 + 닿는 거리(몸 + 플레이어 + 여유) — 폭도 끝도.
+            // 예전 띠는 폭이 여유만큼 좁고 끝이 짧아, 띠 밖에 섰는데 맞았다.
             Atk::Charge => TeleShape::Lane {
-                len: d.charge_speed * d.charge_time + d.radius,
-                w: (d.radius + PLAYER_RADIUS) * 2.0,
+                len: self.charge_len + self.touch(),
+                w: self.touch() * 2.0,
             },
             Atk::Wave => TeleShape::Ring { r: d.wave_radius },
         }
@@ -246,12 +260,17 @@ impl Enemy {
                 let TeleShape::Lane { len, w } = self.tele_shape() else {
                     return None;
                 };
-                let left = len - e * d.charge_speed;
-                (left > d.radius)
+                let left = len - (e * d.charge_speed).min(self.charge_len);
+                (left > self.touch() * 0.5)
                     .then(|| (k(self.tele_dur() + e), TeleShape::Lane { len: left, w }))
             }
             _ => None,
         }
+    }
+
+    /// 돌진이 닿는 거리(몸 가운데 ↔ 플레이어 가운데).
+    pub fn touch(&self) -> f32 {
+        self.radius + PLAYER_RADIUS + CHARGE_TOUCH
     }
 
     /// 돌진이 지금 방향으로 나가면 몸이 플레이어에 닿기까지의 초(`charge_eta`). 길 밖이면 돌진 끝까지.
@@ -261,11 +280,22 @@ impl Enemy {
         let to = vec3(player.x - self.pos.x, 0.0, player.z - self.pos.z);
         let along = to.dot(f);
         let side = (to - f * along).length();
-        let touch = d.radius + PLAYER_RADIUS + CHARGE_TOUCH;
+        let touch = self.touch();
+        let end = self.charge_len / d.charge_speed;
         if along <= 0.0 || side > touch {
-            return d.charge_time;
+            return end;
         }
-        ((along - touch).max(0.0) / d.charge_speed).min(d.charge_time)
+        // 옆으로 비켜 서 있으면 몸 가장자리가 닿는 때(가운데 줄 위가 아니면 조금 늦다).
+        let reach = (touch * touch - side * side).max(0.0).sqrt();
+        ((along - reach).max(0.0) / d.charge_speed).min(end)
+    }
+
+    /// 월드가 잰 돌진 길이(`charge_len`)를 넣는다. 아직 겨누는 중(`charge_aim`)이면 닿는 때도 다시 잰다.
+    pub fn set_charge_room(&mut self, room: f32, player: Vec3) {
+        self.charge_len = room;
+        if self.charge_aim {
+            self.charge_eta = self.eta_to(player);
+        }
     }
 
     /// 퍼지는 파동의 지금 반지름(파동 중일 때).
@@ -289,9 +319,11 @@ impl Enemy {
     }
 
     fn start(&mut self, atk: Atk) {
+        let d = self.def();
         self.atk = atk;
         self.atk_count += 1;
         self.landed = false;
+        self.charge_len = d.charge_speed * d.charge_time;
         self.state = EState::Tele { t: 0.0 };
     }
 
@@ -348,6 +380,17 @@ impl Enemy {
         let dist = to.length();
         let dir = if dist > 1e-4 { to / dist } else { Vec3::Z };
         let speed = d.speed * if self.roused { ROUSED_SPEED } else { 1.0 };
+        self.charge_aim = false;
+        // 떼 퍼지기(0076): 가는 쪽의 옆으로만 비킨다(뒤로 물러서지 않는다), 앞이 막혔으면 조금 늦춘다.
+        let steer = |go: Vec3, spread: Vec3| -> (Vec3, f32) {
+            let side = spread - go * spread.dot(go);
+            let slow = if spread.dot(go) < 0.0 {
+                (1.0 + spread.dot(go) * 0.5).max(0.5)
+            } else {
+                1.0
+            };
+            ((go + side * SPREAD_STEER).normalize_or(go), slow)
+        };
         match self.state {
             EState::Dormant | EState::Dead => {}
             EState::Chase => {
@@ -355,15 +398,18 @@ impl Enemy {
                     let to = vec3(w.x - self.pos.x, 0.0, w.z - self.pos.z);
                     let l = to.length();
                     if l > 0.05 {
-                        let d = to / l;
-                        self.turn_toward(d, 6.0, dt);
-                        self.pos += d * (speed * dt).min(l);
+                        let (go, slow) = steer(to / l, self.spread);
+                        self.turn_toward(go, 6.0, dt);
+                        self.pos += go * (speed * slow * dt).min(l);
                     }
                 } else {
                     self.turn_toward(dir, 6.0, dt);
                     match self.choose(dist) {
                         Some(atk) => self.start(atk),
-                        None => self.pos += dir * speed * dt,
+                        None => {
+                            let (go, slow) = steer(dir, self.spread);
+                            self.pos += go * speed * slow * dt;
+                        }
                     }
                 }
             }
@@ -374,6 +420,7 @@ impl Enemy {
                     self.turn_toward(dir, rate, dt);
                     // 방향이 굳기 전까지는 닿는 때를 다시 잰다(굳은 뒤엔 그대로 — 채움이 일정한 빠르기로).
                     if self.atk == Atk::Charge {
+                        self.charge_aim = true;
                         self.charge_eta = self.eta_to(player);
                     }
                 }
@@ -408,12 +455,21 @@ impl Enemy {
                 };
             }
             EState::Charge { t: e, dir: cdir } => {
-                self.pos += cdir * d.charge_speed * dt;
-                if !self.landed && dist <= d.radius + PLAYER_RADIUS + CHARGE_TOUCH {
+                // 벽·기둥·턱 앞(`charge_len`)에서 멈춘다. 닿았나는 움직인 뒤의 몸으로(마지막 자리도 맞는다 — 띠 끝과 같게).
+                let went = (e * d.charge_speed).min(self.charge_len);
+                let step = (d.charge_speed * dt).min(self.charge_len - went).max(0.0);
+                let from = self.pos;
+                self.pos += cdir * step;
+                // 이번 틱에 몸이 쓸고 간 선분과 플레이어 사이 — 틱마다 점으로 재면 띠 가장자리에 빈틈이 생긴다.
+                let to_p = vec3(player.x - from.x, 0.0, player.z - from.z);
+                let k = to_p.dot(cdir).clamp(0.0, step);
+                let near = (to_p - cdir * k).length();
+                if !self.landed && near <= self.touch() {
                     self.landed = true;
                     out.hit = true;
                 }
-                self.state = if e + dt >= d.charge_time {
+                let done = went + step >= self.charge_len - 1e-4;
+                self.state = if e + dt >= d.charge_time || done {
                     EState::Recover { t: 0.0 }
                 } else {
                     EState::Charge {

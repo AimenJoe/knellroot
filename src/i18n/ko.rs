@@ -64,6 +64,8 @@ pub const KO: Strings = Strings {
     weapon_staff_d: "빠른 4연타 · 딱 맞춰 떼면 덤 · 꿰뚫는 탄. 순례자의 가벼운 지팡이",
     weapon_crossbow_d:
         "수류탄 · 조준 사격(탄창 넷) · 회피하면 한 발 장전. 화약 냄새가 밴 낡은 사냥꾼의 쇠뇌",
+    weapon_fists_d:
+        "3연타 · 모아 치기 · 마법탄. 무기 칸을 비우면 맨손으로 싸운다 — 가까이 붙어야 닿고 가볍다",
     slots_new: "새로 시작",
     slots_load: "이어하기",
     slot_name: "슬롯 {0}",
@@ -95,6 +97,7 @@ pub const KO: Strings = Strings {
     rested: "쉬었다 — 체력과 등잔이 찼다",
     respawned: "쉼터에서 다시 일어섰다",
     verb_attack_hint: "공격(꾹: 강공격)",
+    verb_dodge_hint: "회피(꾹: 달리기)",
     verb_turn_left: "땅 돌리기 왼쪽",
     verb_turn_right: "땅 돌리기 오른쪽",
     menu_controls: "조작 설정",
@@ -109,6 +112,8 @@ pub const KO: Strings = Strings {
     weapon_hammer: "종치기 망치",
     weapon_staff: "순례자 지팡이",
     weapon_crossbow: "화약 쇠뇌",
+    weapon_fists: "맨손",
+    equip_worn: "착용 중",
     menu_fullscreen: "전체 화면",
     value_on: "켬",
     value_off: "끔",

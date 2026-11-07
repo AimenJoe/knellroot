@@ -66,7 +66,7 @@ impl App {
                     let name = match bind {
                         // 꾹 눌러 강공격(0030)은 여기서 알린다 — 타이틀의 긴 조작 줄을 걷었다(nail 0153).
                         input::Bind::Attack => s.verb_attack_hint,
-                        input::Bind::Dodge => s.verb_dodge,
+                        input::Bind::Dodge => s.verb_dodge_hint,
                         input::Bind::Parry => s.verb_parry,
                         input::Bind::Lock => s.verb_lock,
                         input::Bind::TurnLeft => s.verb_turn_left,

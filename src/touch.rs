@@ -57,6 +57,8 @@ pub struct Read {
     /// 공격 버튼을 짚고 있나(강공격 모으기, 0030).
     pub attack_held: bool,
     pub dodge: bool,
+    /// 회피 버튼을 쥐고 있나(0076 — 쥐면 회피 뒤 달리기).
+    pub dodge_held: bool,
     pub parry: bool,
     pub jump: bool,
     /// 등잔(0031).
@@ -97,6 +99,8 @@ pub struct Touch {
     attack_finger: Option<u64>,
     /// 마법 버튼을 짚은 손가락(0056 — 쥐면 모으기).
     cast_finger: Option<u64>,
+    /// 회피 버튼을 누른 손가락(0076).
+    dodge_finger: Option<u64>,
     /// 상황 버튼(0053, 앱이 매 프레임 정한다).
     pub ctx: Ctx,
     /// 메뉴 모드: 손가락마다 (id, 처음 자리, 멀리 움직였나 = 끌기, 지난 자리).
@@ -240,6 +244,7 @@ impl Touch {
             self.stick = None;
             self.attack_finger = None;
             self.cast_finger = None;
+            self.dodge_finger = None;
             self.stale.append(&mut self.known);
             for t in &touches {
                 let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
@@ -283,6 +288,7 @@ impl Touch {
         if touches.is_empty() && self.stick.is_none() && self.known.is_empty() {
             self.attack_finger = None;
             self.cast_finger = None;
+            self.dodge_finger = None;
             return a;
         }
         let (w, h) = (screen_width(), screen_height());
@@ -305,6 +311,9 @@ impl Touch {
                     if b.kind == Kind::Cast && !ended {
                         self.cast_finger = Some(t.id);
                     }
+                    if b.kind == Kind::Dodge && !ended {
+                        self.dodge_finger = Some(t.id);
+                    }
                 } else if t.position.x < w * 0.5 && self.stick.is_none() && !ended {
                     self.stick = Some(Stick {
                         id: t.id,
@@ -324,6 +333,29 @@ impl Touch {
                     self.stick = None;
                 }
             }
+        }
+        // Ended를 못 받고 사라진 손가락(탭 전환 등) 정리.
+        self.known.retain(|id| touches.iter().any(|t| t.id == *id));
+        // 버튼을 누른 손가락이 아직 화면에 있으면 쥐고 있는 것(버튼 밖으로 미끄러져도 — 떼야 강타·모은 탄이 나간다).
+        // 0070 7(`995c189`)에서 랩 줄과 함께 지워져 터치로는 강공격·원거리 모으기가 안 됐다(0076에서 되살림).
+        let alive = |f: Option<u64>| {
+            f.filter(|id| {
+                touches.iter().any(|t| {
+                    t.id == *id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
+                })
+            })
+        };
+        self.attack_finger = alive(self.attack_finger);
+        self.cast_finger = alive(self.cast_finger);
+        self.dodge_finger = alive(self.dodge_finger);
+        a.attack_held = self.attack_finger.is_some();
+        a.cast_held = self.cast_finger.is_some();
+        a.dodge_held = self.dodge_finger.is_some();
+        if self
+            .stick
+            .is_some_and(|s| !touches.iter().any(|t| t.id == s.id))
+        {
+            self.stick = None;
         }
         if let Some(s) = self.stick {
             a.move_dir = stick_vector(s.pos - s.origin, stick_radius(w, h));

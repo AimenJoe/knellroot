@@ -514,6 +514,9 @@ impl App {
             self.draw_goal_arrow(&f);
         }
         if self.scene().ticks_world() {
+            self.draw_beat_note(&f);
+        }
+        if self.scene().ticks_world() {
             if self.mouse_hidden && self.world.lock_target().is_none() {
                 if let Some(c) = self.input.cursor() {
                     hud::draw_reticle(&f, c, input::mouse_aim().size);
@@ -619,5 +622,6 @@ fn weapon_name(id: weapons::Id) -> &'static str {
         weapons::Id::Hammer => s.weapon_hammer,
         weapons::Id::Staff => s.weapon_staff,
         weapons::Id::Crossbow => s.weapon_crossbow,
+        weapons::Id::Fists => s.weapon_fists,
     }
 }

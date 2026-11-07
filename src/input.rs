@@ -82,6 +82,8 @@ pub struct Actions {
     /// 공격 버튼을 쥐고 있나(상태, 강공격 모으기 0030). 눌림 `attack`과 달리 틱이 지우지 않는다.
     pub attack_held: bool,
     pub dodge: bool,
+    /// 회피 버튼을 쥐고 있나(상태, 0076): 회피가 끝났을 때 아직 쥐고 있으면 달린다(KB nail 0209).
+    pub dodge_held: bool,
     /// 패링(0025): 누른 뒤 짧은 창 안에 앞쪽에서 오는 근접 공격을 튕긴다.
     pub parry: bool,
     /// 점프(0027). 공중에서 공격 = 내려찍기.
@@ -754,6 +756,7 @@ impl Input {
         a.flask = kp(Bind::Flask);
         a.cast = kp(Bind::Cast);
         a.cast_held = bind.key(Bind::Cast).down();
+        a.dodge_held = bind.key(Bind::Dodge).down();
         a.lock = kp(Bind::Lock);
         a.turn_left = kp(Bind::TurnLeft);
         a.turn_right = kp(Bind::TurnRight);
@@ -829,6 +832,7 @@ impl Input {
                 a.attack |= pj(Bind::Attack);
                 a.attack_held |= pad.is_currently_pressed(bind.pad(Bind::Attack).button());
                 a.dodge |= pj(Bind::Dodge);
+                a.dodge_held |= pad.is_currently_pressed(bind.pad(Bind::Dodge).button());
                 a.jump |= pj(Bind::Jump);
                 a.lock |= pj(Bind::Lock);
                 // 랩이 열려 있으면 어깨·트리거는 랩 단계(LB 10배·LT 담기·RT 바꾸기)다 — 패링·돌리기로 같이 읽지 않는다.
@@ -878,6 +882,7 @@ impl Input {
             a.attack |= pj(Bind::Attack);
             a.attack_held |= is_key_down(bind.pad(Bind::Attack).key());
             a.dodge |= pj(Bind::Dodge);
+            a.dodge_held |= is_key_down(bind.pad(Bind::Dodge).key());
             a.jump |= pj(Bind::Jump);
             a.lock |= pj(Bind::Lock);
             a.parry |= pj(Bind::Parry);
@@ -909,6 +914,7 @@ impl Input {
         a.attack |= t.attack;
         a.attack_held |= t.attack_held;
         a.dodge |= t.dodge;
+        a.dodge_held |= t.dodge_held;
         a.parry |= t.parry;
         a.jump |= t.jump;
         a.flask |= t.flask;
@@ -988,6 +994,7 @@ impl Input {
             attack: self.latch.attack | a.attack,
             attack_held: a.attack_held,
             cast_held: a.cast_held,
+            dodge_held: a.dodge_held,
             dodge: self.latch.dodge | a.dodge,
             parry: self.latch.parry | a.parry,
             jump: self.latch.jump | a.jump,
@@ -1035,6 +1042,7 @@ fn carry(a: &Actions) -> Actions {
         cursor: a.cursor,
         attack_held: a.attack_held,
         cast_held: a.cast_held,
+        dodge_held: a.dodge_held,
         ..Actions::default()
     }
 }
@@ -1049,12 +1057,16 @@ mod tests {
         let first = Actions {
             attack_held: true,
             cast_held: true,
+            dodge_held: true,
             cast: true,
             ..Default::default()
         };
         let second = carry(&first);
         assert!(!second.cast, "a press is taken once");
-        assert!(second.cast_held && second.attack_held, "held stays");
+        assert!(
+            second.cast_held && second.attack_held && second.dodge_held,
+            "held stays"
+        );
     }
 
     /// 0058: 커서는 마우스 조준이 켜져 있고, 장치가 키보드(+마우스)이고, 만진 지 쉼 시간 안일 때만 조준한다.

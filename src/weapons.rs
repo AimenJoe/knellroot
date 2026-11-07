@@ -118,9 +118,12 @@ pub enum Id {
     Hammer,
     Staff,
     Crossbow,
+    /// 맨손(0076, 사장 2026-11-07 "무기 장착하지 않았을 경우에는 맨손 전투") — 무기 칸을 비운 것. 짧고 빠른 주먹 3연타.
+    Fists,
 }
 
-pub const IDS: [Id; 4] = [Id::Sword, Id::Hammer, Id::Staff, Id::Crossbow];
+/// 표 순서. 맨손은 끝에(옛 기록의 무기 번호가 그대로 읽히게 — `app::legacy_weapon`).
+pub const IDS: [Id; 5] = [Id::Sword, Id::Hammer, Id::Staff, Id::Crossbow, Id::Fists];
 
 impl Id {
     /// 기록 키(0066 — 든 무기는 슬롯 기록에, 키는 바꾸지 않는다).
@@ -130,6 +133,7 @@ impl Id {
             Id::Hammer => "hammer",
             Id::Staff => "staff",
             Id::Crossbow => "crossbow",
+            Id::Fists => "fists",
         }
     }
 
@@ -245,7 +249,19 @@ const STAFF_COMBO: [Hit; 4] = [
     },
 ];
 
-pub const WEAPONS: [Weapon; 4] = [
+/// 맨손 — 짧고 빠른 주먹 3연타(가까이 붙어야 닿는다, 피해 1·자세 피해 작음), 셋째는 내디디며 한 방. 동작은 검의 것을 빈손으로
+/// (주먹 동작은 아직 없다).
+const FISTS_COMBO: [Hit; 3] = [
+    hit(0.6, 0.7, 0.8, 0.6, 1, 0.5, "attack"),
+    hit(0.6, 0.7, 0.8, 0.6, 1, 0.5, "attack2"),
+    Hit {
+        knock: 1.3,
+        cancel: 0.1,
+        ..hit(0.8, 0.8, 0.6, 1.2, 1, 1.2, "attack3")
+    },
+];
+
+pub const WEAPONS: [Weapon; 5] = [
     Weapon {
         id: Id::Sword,
         combo: &SWORD_COMBO,
@@ -423,6 +439,45 @@ pub const WEAPONS: [Weapon; 4] = [
         },
         node: "w_crossbow",
     },
+    Weapon {
+        id: Id::Fists,
+        combo: &FISTS_COMBO,
+        // 달려들며 한 방.
+        dash: Some(hit(0.7, 0.8, 0.6, 2.0, 1, 1.0, "attack3")),
+        // 모아 치기: 검보다 짧고 빠르다, 피해 1(다 모으면 + `heavy.full bonus`).
+        heavy: Some(Heavy {
+            time: 0.8,
+            charge: 0.8,
+            reach: 0.7,
+            arc: 0.8,
+            lunge: 1.2,
+            shape: Shape::Arc,
+            damage: 1,
+            poise: 2.0,
+            walk: 1.2,
+            aftershock: None,
+            perfect: None,
+            breaks_primed: None,
+            anim_charge: "charge",
+            anim_heavy: "heavy",
+            cancel: 0.1,
+        }),
+        // 마법은 무기가 아니라 방랑자의 것 — 맨손이어도 쏜다.
+        rb: Rb::Magic(MAGIC),
+        grenade: None,
+        charged: Bolt {
+            speed: 1.2,
+            range: 1.3,
+            damage: 3,
+            poise: 4.0,
+            pierce: true,
+            stagger: 0.6,
+            scale: 1.8,
+            ..MAGIC
+        },
+        // 든 것이 없다(다른 무기 부위는 모두 숨는다).
+        node: "",
+    },
 ];
 
 impl Id {
@@ -460,7 +515,8 @@ mod tests {
                 ),
             }
         }
-        assert_eq!(Id::Crossbow.next(1), Id::Sword);
-        assert_eq!(Id::Sword.next(-1), Id::Crossbow);
+        assert_eq!(Id::Fists.next(1), Id::Sword);
+        assert_eq!(Id::Sword.next(-1), Id::Fists);
+        assert_eq!(Id::by_key("fists"), Some(Id::Fists));
     }
 }

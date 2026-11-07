@@ -979,10 +979,11 @@ mod tests {
                 }
             }
         }
-        // 적 규칙: 거리 지도(`Ground::flow`)로 — 시작 자리와 문 앞(뜰 쪽) 어디서든.
+        // 적 규칙: 길찾기 거리 지도(`Nav::flow`, 소품·상자가 덮은 칸은 막힘 — 0076)로 — 시작 자리와 문 앞(뜰 쪽) 어디서든.
         let gate = lv.gate.unwrap().1 + vec3(0.0, 0.0, CELL * 2.0);
+        let nav = crate::nav::Nav::build(Some(&g), &lv.obstacles(), lv.half_extent());
         for goal in [lv.player_start, gate] {
-            let dist = g.flow(goal);
+            let dist = nav.flow(goal);
             for (c, at) in &lv.marks {
                 if c.is_ascii_lowercase() || c.is_ascii_uppercase() && *c != 'R' {
                     let (x, z) = g.cell_of(*at).unwrap();

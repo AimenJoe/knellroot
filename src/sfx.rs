@@ -42,8 +42,20 @@ pub enum Id {
     Gulp,
     /// 맞힘의 둘째 층(2026-11-06, KB: 둔한 것 + 짧고 높은 것): 낮은 둥 + 4ms 딱. 파일 맞힘 소리와 함께 낸다.
     Thwack,
-    /// 박자에 맞춘 평타(2026-11-07): 맑고 짧은 '팅' — 스태미나를 쓰지 않았다는 신호.
+    /// 박자에 맞춘 평타(2026-11-07): 맑은 종 '팅' — 스태미나를 쓰지 않았다는 신호.
+    /// 잇달아 맞추면 한 음씩 오른다(0076, KB 오르는 종소리 — nail 0180): Beat → Beat2 → Beat3.
     Beat,
+    Beat2,
+    Beat3,
+}
+
+/// 잇단 박자 수(1부터) → 종소리(셋째부터는 가장 높은 것).
+pub fn beat_id(chain: u32) -> Id {
+    match chain {
+        0 | 1 => Id::Beat,
+        2 => Id::Beat2,
+        _ => Id::Beat3,
+    }
 }
 
 /// 파일 소리 표: (이름, 변형 수, 크기).
@@ -143,14 +155,17 @@ fn synth_gain(id: Id) -> f32 {
         Id::Rest => 0.55,
         Id::Gulp => 0.4,
         Id::Thwack => 0.5,
-        Id::Beat => 0.35,
+        // 휘두르는 소리(0.45)와 같은 틱에 나도 묻히지 않게(0076 — 0.35는 안 들렸다).
+        Id::Beat | Id::Beat2 | Id::Beat3 => 0.6,
         _ => 0.5,
     }
 }
 
-const SYNTHS: [Id; 10] = [
+const SYNTHS: [Id; 12] = [
     Id::Thwack,
     Id::Beat,
+    Id::Beat2,
+    Id::Beat3,
     Id::Parry,
     Id::TeleFan,
     Id::TeleLane,
@@ -429,14 +444,22 @@ pub fn synth(id: Id) -> Vec<i16> {
                 })
                 .collect()
         }
-        // 박자: 1568Hz(G6) + 2349Hz 두 배음이 0.18초에 사라지는 맑은 '팅'.
-        Id::Beat => (0..len(0.18))
-            .map(|i| {
-                let t = i as f32 / SR as f32;
-                let e = (-t * 22.0).exp();
-                ((TAU * 1568.0 * t).sin() + 0.45 * (TAU * 2349.0 * t).sin()) * e
-            })
-            .collect(),
+        // 박자: 종처럼 바탕음 + 2.76배 배음(작은 종의 맑은 겹)이 0.32초에 사라지는 '팅'. 잇달으면 G6 → B6 → D7.
+        Id::Beat | Id::Beat2 | Id::Beat3 => {
+            let f0 = match id {
+                Id::Beat => 1568.0,
+                Id::Beat2 => 1976.0,
+                _ => 2349.0,
+            };
+            (0..len(0.32))
+                .map(|i| {
+                    let t = i as f32 / SR as f32;
+                    let e = (-t * 13.0).exp();
+                    let strike = (-t * 60.0).exp();
+                    ((TAU * f0 * t).sin() + 0.35 * (TAU * f0 * 2.76 * t).sin() * strike) * e
+                })
+                .collect()
+        }
         _ => vec![0.0; 64],
     };
     // 끝 5ms를 줄인다(딸깍 없이).
@@ -551,6 +574,17 @@ mod tests {
                 "{id:?} ends quietly"
             );
         }
+    }
+
+    #[test]
+    fn beats_in_a_row_ring_higher() {
+        let pitch = |id| {
+            let s = synth(id);
+            s.windows(2).filter(|w| (w[0] < 0) != (w[1] < 0)).count()
+        };
+        assert_eq!(beat_id(1), Id::Beat);
+        assert_eq!(beat_id(5), Id::Beat3);
+        assert!(pitch(Id::Beat) < pitch(Id::Beat2) && pitch(Id::Beat2) < pitch(Id::Beat3));
     }
 
     #[test]

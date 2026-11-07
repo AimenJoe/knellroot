@@ -8,7 +8,7 @@ use crate::tuning::{
     Tuning, BEAT_WINDOW, BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY,
     BOMB_SHOT_REACH, BOMB_SKID, CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES, GROUND_STEP,
     HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, LOCK_HANDOFF, P, PLAYER_HP, PLAYER_RADIUS,
-    RIPOSTE_WINDOW, TICK_DT,
+    RIPOSTE_WINDOW, RUN_SPEED_X, RUN_STAMINA, TICK_DT,
 };
 use crate::weapons::{self, Rb, Shape};
 
@@ -374,6 +374,13 @@ pub struct Player {
     pub since_swing: f32,
     pub beat: f32,
     pub on_beat: bool,
+    /// 박자 맞춤 피드백(0076): 잇달아 박자에 맞춘 타 수(박자를 놓친 타·새 콤보면 0), 마지막 박자 타에서 지난 초,
+    /// 지금 스윙이 박자 타인가(렌더가 금빛 고리·음표·금빛 휘두름, HUD가 스태미나 막대 반짝임, 앱이 오르는 종소리).
+    pub beat_chain: u32,
+    pub since_beat: f32,
+    pub swing_beat: bool,
+    /// 달리는 중(0076): 회피가 끝날 때 회피 버튼을 쥐고 있었다 — 떼거나 스틱을 놓거나 스태미나가 다하거나 다른 동작을 하면 끝.
+    pub running: bool,
     /// 마지막으로 무언가를 맞힌 스윙 번호(맞히면 그 스윙의 내딛기를 멈춘다, 2026-11-06).
     pub connected: u32,
     /// 대시 공격을 받는 남은 시간(회피를 끊었거나 막 끝난 뒤, 2026-11-06).
@@ -434,6 +441,8 @@ pub struct World {
     /// 걸을 수 있는 높낮이(0043). None = 평평한 땅(y 0). 있으면 배우의 `pos.y` = 발밑 땅 높이(`collide`가 맞춘다),
     /// 플레이어의 몸 높이 = `pos.y + air`.
     pub ground: Option<Ground>,
+    /// 적 길찾기 격자(0076) — 땅 + 상자가 덮은 칸. 상자가 바뀌면(문) 다시 만든다.
+    nav: Option<crate::nav::Nav>,
     /// 아레나 반폭(정사각형, 원점 가운데).
     pub arena: f32,
     pub hitstop: f32,
@@ -516,6 +525,10 @@ impl World {
                 since_swing: f32::MAX,
                 beat: 0.0,
                 on_beat: false,
+                beat_chain: 0,
+                since_beat: f32::MAX,
+                swing_beat: false,
+                running: false,
                 attack_hold: 0.0,
                 flask: FLASK_CHARGES,
                 flask_lock: 0.0,
@@ -539,6 +552,7 @@ impl World {
             lock: None,
             obstacles: Vec::new(),
             ground: None,
+            nav: None,
             arena,
             hitstop: 0.0,
             time: 0.0,
@@ -1163,6 +1177,7 @@ impl World {
         pl.since_parry = (pl.since_parry + dt).min(f32::MAX);
         pl.dash_left = (pl.dash_left - dt).max(0.0);
         pl.since_swing = (pl.since_swing + dt).min(f32::MAX);
+        pl.since_beat = (pl.since_beat + dt).min(f32::MAX);
         // 스태미나: 마지막으로 쓴 뒤 `stamina.regen delay s`가 지나야 찬다.
         pl.stamina_denied = (pl.stamina_denied - dt).max(0.0);
         pl.stamina_idle += dt;
@@ -1281,10 +1296,19 @@ impl World {
                     let dash = pl.dash_left > 0.0 && wpn.dash.is_some();
                     let free = pl.on_beat && pl.combo_left > 0.0 && !riposte && !dash;
                     pl.on_beat = false;
-                    if free {
-                        self.beat_now = true;
+                    let go = free || spend(pl, t[P::StaminaAttack]);
+                    if go {
+                        // 박자를 놓친 타·새 콤보면 잇단 수는 0(놓침은 벌하지 않는다 — 소리 없음, 수만 0, KB).
+                        pl.swing_beat = free;
+                        if free {
+                            self.beat_now = true;
+                            pl.beat_chain += 1;
+                            pl.since_beat = 0.0;
+                        } else {
+                            pl.beat_chain = 0;
+                        }
                     }
-                    free || spend(pl, t[P::StaminaAttack])
+                    go
                 } {
                     pl.swings += 1;
                     // 휘두르는 쪽을 그 자리에서 정한다: 자동 조준 > 조준 스틱 > 지금 바라보는 쪽.
@@ -1644,6 +1668,9 @@ impl World {
                     pl.state = PState::Idle;
                     // 회피가 끝난 직후의 공격도 대시 공격(늦게 누른 것도 받아 준다).
                     pl.dash_left = DASH_ATTACK_LATE;
+                    // 회피는 누르는 순간 그대로, 끝났을 때 아직 쥐고 있으면 달리기(0076, KB nail 0209) — 톡 누름은 회피보다 짧아
+                    // 예전과 같다. 회피의 기세를 그대로 잇는다(속도를 0으로 떨어뜨리지 않는다).
+                    pl.running = a.dodge_held && pl.stamina > 0.0;
                 } else {
                     pl.state = PState::Dodge { t: e + dt, dir };
                 }
@@ -1701,6 +1728,22 @@ impl World {
                 } else {
                     pl.state = PState::Turn { t: e2, from, to };
                 }
+            }
+        }
+
+        // 달리기(0076): 쥔 동안·스틱을 기울인 동안·스태미나가 있는 동안·서 있는(걷는) 동안만. 달리는 동안은 스태미나가 차지 않고
+        // 공격하면 대시 공격(회피에서 나온 것과 같은 한 타 — 소울류 달리며 치기).
+        if pl.running {
+            let keep = pl.state == PState::Idle
+                && a.dodge_held
+                && world_move.length_squared() > 0.04
+                && pl.stamina > 0.0;
+            if keep {
+                pl.stamina = (pl.stamina - RUN_STAMINA * dt).max(0.0);
+                pl.stamina_idle = 0.0;
+                pl.dash_left = pl.dash_left.max(DASH_ATTACK_LATE);
+            } else {
+                pl.running = false;
             }
         }
 
@@ -1779,6 +1822,7 @@ impl World {
                     PState::Cast { .. } | PState::Throw { .. } | PState::CastCharge { .. } => {
                         t[P::CastWalk]
                     }
+                    PState::Idle if pl.running => RUN_SPEED_X,
                     _ => 1.0,
                 };
                 let want = world_move * t[P::MoveSpeed] * slow;
@@ -2391,16 +2435,51 @@ impl World {
         let p = self.player.pos;
         let body = p.y + self.player.air;
         let parrying = self.parry_open(t);
-        // 높낮이(0043): 곧게 못 가거나 높이가 다른 층이면 거리 지도를 따라 돌아간다(못 가면 그 자리에서 기다린다).
-        if let Some(g) = &self.ground {
-            let dist = g.flow(p);
-            for en in &mut self.enemies {
-                en.way = if (body - en.pos.y).abs() <= HIT_DY && g.straight_walkable(en.pos, p) {
+        // 길찾기(0043 → 0076): 몸 폭으로 곧게 못 가거나(벽·기둥·소품·턱) 높이가 다른 층이면 거리 지도를 따라
+        // 앞으로 곧게 갈 수 있는 가장 먼 칸을 겨눈다(못 가면 그 자리에서 기다린다). 쫓는 적만 — 다른 상태는 길을 안 쓴다.
+        if self.nav.as_ref().is_none_or(|n| n.stale(&self.obstacles)) {
+            self.nav = Some(crate::nav::Nav::build(
+                self.ground.as_ref(),
+                &self.obstacles,
+                self.arena,
+            ));
+        }
+        let nav = self.nav.as_ref().expect("built above");
+        let chasing = |en: &Enemy| en.state == EState::Chase;
+        if self.enemies.iter().any(chasing) {
+            let dist = nav.flow(p);
+            for en in self.enemies.iter_mut().filter(|e| chasing(e)) {
+                let same =
+                    nav.g.cell_of(en.pos).is_some() && nav.g.cell_of(en.pos) == nav.g.cell_of(p);
+                en.way = if (body - en.pos.y).abs() <= HIT_DY
+                    && (same || nav.clear(en.pos, p, en.radius))
+                {
                     None
                 } else {
-                    Some(g.next_step(&dist, en.pos).unwrap_or(en.pos))
+                    Some(nav.waypoint(&dist, en.pos, en.radius).unwrap_or(en.pos))
                 };
             }
+        }
+        // 떼 퍼지기(0076): 곁(몸 사이 `SPREAD_GAP` 안)의 적에게서 비키는 쪽 — 가까울수록 세게.
+        let spots: Vec<(Vec3, f32, bool)> = self
+            .enemies
+            .iter()
+            .map(|e| (e.pos, e.radius, e.active()))
+            .collect();
+        for (i, en) in self.enemies.iter_mut().enumerate() {
+            let mut push = Vec3::ZERO;
+            for (j, &(q, r, live)) in spots.iter().enumerate() {
+                if i == j || !live {
+                    continue;
+                }
+                let d = vec3(en.pos.x - q.x, 0.0, en.pos.z - q.z);
+                let range = en.radius + r + SPREAD_GAP;
+                let l = d.length();
+                if l < range && l > 1e-4 {
+                    push += d / l * (1.0 - l / range);
+                }
+            }
+            en.spread = push;
         }
         let facing = self.player.facing_dir();
         // 앞쪽에서 오는가(패링은 바라보는 쪽 반원 안만 — 위치 선정도 기술, KB timing-parry).
@@ -2413,6 +2492,19 @@ impl World {
         let mut parried: Vec<usize> = Vec::new();
         for (i, en) in self.enemies.iter_mut().enumerate() {
             let out = en.tick(p, dt);
+            // 돌진 길이(0076): 벽·기둥·턱·아레나 끝까지 — 예고 띠와 몸이 같은 길이.
+            if en.atk == Atk::Charge && matches!(en.state, EState::Tele { .. }) {
+                let d = en.def();
+                let room = nav.charge_room(
+                    &self.obstacles,
+                    self.arena,
+                    en.pos,
+                    en.facing_dir(),
+                    en.radius,
+                    d.charge_speed * d.charge_time,
+                );
+                en.set_charge_room(room, p);
+            }
             // 바닥을 훑는 파동은 높이 떠 있으면 넘는다(0027) — 높은 단 위도 마찬가지(0043).
             let above = body - en.pos.y;
             let jumped = en.atk == Atk::Wave && above > t[P::JumpClear];
@@ -2754,6 +2846,8 @@ const PLUNGE_FALL: f32 = 2.5;
 
 /// 패링: 바라보는 쪽과 적 쪽의 내적이 이보다 커야 막는다(≈ 앞 156°).
 const PARRY_FRONT: f32 = 0.2;
+/// 떼 퍼지기(0076): 몸 사이가 이만큼(m) 안이면 서로 비킨다.
+const SPREAD_GAP: f32 = 0.9;
 /// 튕긴 적을 미는 거리(m).
 const PARRY_PUSH: f32 = 0.8;
 /// 패링 성공의 히트스톱 = 타격 히트스톱 × 이만큼(명중보다 크게).
@@ -5002,6 +5096,12 @@ mod tests {
                         w.player.stamina >= before,
                         "{weapon:?}: no stamina for the beat swing"
                     );
+                    // 피드백(0076): 이 스윙은 박자 타, 잇단 수 1, 고리·음표 시계가 0부터.
+                    assert!(
+                        w.player.swing_beat && w.player.beat_chain == 1,
+                        "{weapon:?}"
+                    );
+                    assert!(w.player.since_beat < TICK_DT * 2.0);
                     free = true;
                     break;
                 }
@@ -5022,6 +5122,7 @@ mod tests {
                 beats += ev.iter().filter(|e| **e == Event::Beat).count();
             }
             assert_eq!(beats, 0, "{weapon:?}: mashing never gets the beat for free");
+            assert!(!w.player.swing_beat && w.player.beat_chain == 0);
         }
     }
 
@@ -5586,5 +5687,236 @@ mod tests {
         assert!((p.x - 1.3).abs() < 1e-5, "{p:?}");
         assert_eq!(b.ray(vec3(0.0, 1.0, 5.0), vec3(0.0, 0.0, -1.0)), Some(4.0));
         assert_eq!(b.ray(vec3(3.0, 1.0, 5.0), vec3(0.0, 0.0, -1.0)), None);
+    }
+
+    /// 사장 2026-11-07 "적들의 길찾기가 좀 멍청함"(0076): 기둥이 사이에 있으면 박혀 비비지 않고 돌아와 붙는다.
+    #[test]
+    fn an_enemy_walks_around_a_pillar_to_reach_you() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 12.0);
+        w.obstacles.push(Aabb {
+            min: vec3(-1.5, 0.0, -3.0),
+            max: vec3(1.5, 3.0, -1.5),
+        });
+        w.spawn(Kind::Husk, vec3(0.0, 0.0, -6.0));
+        let mut reached = None;
+        for tick in 0..600 {
+            w.step(&Actions::default(), &t);
+            let en = &w.enemies[0];
+            if matches!(en.state, EState::Tele { .. }) {
+                reached = Some(tick);
+                break;
+            }
+        }
+        // 잔재 2.6m/s, 돌아가는 길 ≈ 7m → 3초 남짓.
+        let tick = reached.expect("got to the player and wound up");
+        assert!(tick < 240, "took {tick} ticks");
+    }
+
+    /// 0076: 돌진 예고 띠 = 맞는 곳. 띠 가장자리 바로 안은 맞고 바로 밖은 안 맞는다(폭도 끝도).
+    #[test]
+    fn the_charge_lane_is_exactly_where_the_charge_hits() {
+        let t = Tuning::default();
+        // (옆 가장자리에서 바깥으로 m, 끝에서 앞으로 m — 둘 중 하나만, 둘 다 None이면 띠 가운데).
+        for (side, along, hit) in [
+            (None, None, true),
+            (Some(-0.05), None, true),
+            (Some(0.05), None, false),
+            (None, Some(-0.05), true),
+            (None, Some(0.05), false),
+        ] {
+            let mut w = World::new("test", 20.0);
+            w.player.pos = vec3(0.0, 0.0, 0.0);
+            let i = w.spawn(Kind::Thorn, vec3(0.0, 0.0, -6.5));
+            // 예고가 굳을 때까지 돌리고 띠를 읽는다.
+            let mut lane = None;
+            for _ in 0..60 {
+                w.step(&Actions::default(), &t);
+                if let Some((_, TeleShape::Lane { len, w: lw })) = w.enemies[i].telegraph() {
+                    lane = Some((len, lw));
+                }
+                if matches!(w.enemies[i].state, EState::Charge { .. }) {
+                    break;
+                }
+            }
+            let (len, lw) = lane.expect("a lane");
+            // 플레이어를 띠 가장자리(옆) 또는 끝(앞)으로 옮겨 놓고 돌진을 맞는다.
+            let en = &w.enemies[i];
+            let f = en.facing_dir();
+            let right = vec3(-f.z, 0.0, f.x);
+            let at = match (side, along) {
+                (Some(s), _) => en.pos + f * (len * 0.5) + right * (lw * 0.5 + s),
+                (_, Some(a)) => en.pos + f * (len + a),
+                _ => en.pos + f * (len * 0.5),
+            };
+            w.player.pos = at;
+            w.player.prev = at;
+            let mut got = false;
+            for _ in 0..60 {
+                let before = w.player.hp;
+                w.step(&Actions::default(), &t);
+                got |= w.player.hp < before;
+                w.player.pos = at;
+            }
+            assert_eq!(got, hit, "side {side:?} along {along:?}: lane {len}×{lw}");
+        }
+    }
+
+    /// 0076: 돌진은 기둥 앞에서 멈추고 예고 띠도 거기까지(띠가 기둥을 뚫고 그려지던 것).
+    #[test]
+    fn a_charge_stops_at_a_pillar_and_its_lane_says_so() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        let i = w.spawn(Kind::Thorn, vec3(0.0, 0.0, -6.0));
+        w.step(&Actions::default(), &t);
+        assert!(matches!(w.enemies[i].state, EState::Tele { .. }));
+        // 예고가 시작된 뒤 사이에 기둥이 생겼다(플레이어가 기둥 뒤로 숨은 것과 같다).
+        w.obstacles.push(Aabb {
+            min: vec3(-1.0, 0.0, -3.0),
+            max: vec3(1.0, 3.0, -2.0),
+        });
+        w.step(&Actions::default(), &t);
+        let Some((_, TeleShape::Lane { len, .. })) = w.enemies[i].telegraph() else {
+            panic!("lane")
+        };
+        let room = 6.0 - 3.0 - w.enemies[i].radius;
+        assert!(
+            (len - (room + w.enemies[i].touch())).abs() < 0.1,
+            "lane {len}"
+        );
+        for _ in 0..120 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(
+            w.enemies[i].pos.z < -3.0 + 0.01,
+            "stopped before the pillar: {:?}",
+            w.enemies[i].pos
+        );
+        assert_eq!(w.player.hp, w.player.max_hp, "never reached you");
+    }
+
+    /// 0076(사장 2026-11-07 "회피 꾹 눌렀을때 달리는거"): 톡 누름은 회피만, 회피가 끝날 때까지 쥐고 있으면 달린다 —
+    /// 걷기보다 빠르고 스태미나를 쓰며, 떼면 걷는다. 달리다 치면 대시 공격.
+    #[test]
+    fn holding_dodge_runs_after_the_dodge_and_a_tap_does_not() {
+        let t = Tuning::default();
+        let up = vec2(0.0, 1.0);
+        let run = |held_ticks: usize| -> World {
+            let mut w = World::new("test", 40.0);
+            for i in 0..90 {
+                w.step(
+                    &Actions {
+                        dodge: i == 0,
+                        dodge_held: i < held_ticks,
+                        move_dir: up,
+                        ..Default::default()
+                    },
+                    &t,
+                );
+            }
+            w
+        };
+        // 톡(0.1초): 회피(0.3초 남짓)보다 짧다 — 예전과 같이 걷는다.
+        let tap = run(6);
+        assert!(!tap.player.running);
+        let walk = tap.player.vel.length();
+        assert!((walk - t[P::MoveSpeed]).abs() < 0.3, "walks {walk}");
+        // 쥠: 회피 뒤 달린다.
+        let held = run(90);
+        assert!(held.player.running, "runs while held");
+        let speed = held.player.vel.length();
+        assert!(speed > walk * 1.3, "faster: {speed} vs {walk}");
+        assert!(
+            held.player.stamina < tap.player.stamina,
+            "running costs stamina"
+        );
+        // 떼면 다음 틱에 걷는다.
+        let mut w = held;
+        w.step(
+            &Actions {
+                move_dir: up,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(!w.player.running);
+        // 달리다 치면 대시 공격.
+        let mut w = run(90);
+        w.step(
+            &Actions {
+                attack: true,
+                dodge_held: true,
+                move_dir: up,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(
+            matches!(
+                w.player.state,
+                PState::Attack {
+                    hit: weapons::DASH,
+                    ..
+                }
+            ),
+            "{:?}",
+            w.player.state
+        );
+        assert!(!w.player.running);
+    }
+
+    /// 0076: 스태미나가 다하면 달리기가 끝난다(쥐고 있어도).
+    #[test]
+    fn running_stops_when_stamina_runs_out() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 200.0);
+        let secs = t[P::StaminaMax] / RUN_STAMINA + 1.0;
+        let mut was = false;
+        let mut ended_at = None;
+        for i in 0..((secs / TICK_DT) as usize) {
+            w.step(
+                &Actions {
+                    dodge: i == 0,
+                    dodge_held: true,
+                    move_dir: vec2(0.0, 1.0),
+                    ..Default::default()
+                },
+                &t,
+            );
+            if was && !w.player.running && ended_at.is_none() {
+                ended_at = Some(w.player.stamina);
+            }
+            was = w.player.running;
+        }
+        let left = ended_at.expect("the run ended while still held");
+        assert!(left <= 1e-3, "it ended because stamina ran out: {left}");
+    }
+
+    /// 0076(사장 2026-11-07 "무기 장착하지 않았을 경우에는 맨손 전투"): 맨손도 콤보로 친다 — 가깝고 가볍다.
+    #[test]
+    fn bare_hands_still_fight() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.set_weapon(weapons::Id::Fists);
+        let i = mob_with(&mut w, vec3(0.0, 0.0, 1.0), 10);
+        w.enemies[i].state = EState::Dormant;
+        w.enemies[i].state = EState::Chase;
+        let hp = w.enemies[i].hp;
+        for k in 0..30 {
+            w.step(
+                &Actions {
+                    attack: k == 0,
+                    ..Default::default()
+                },
+                &t,
+            );
+        }
+        assert_eq!(w.enemies[i].hp, hp - 1, "a punch lands for 1");
+        let fists = weapons::Id::Fists.def();
+        let sword = weapons::Id::Sword.def();
+        assert!(
+            fists.combo[0].reach < sword.combo[0].reach
+                && fists.combo[0].time < sword.combo[0].time
+        );
     }
 }

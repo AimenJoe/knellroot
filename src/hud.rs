@@ -66,6 +66,48 @@ pub fn draw_goal_arrow(f: &Frame, at: Vec2, ang: f32, time: f32) {
     draw_poly(c.x, c.y, 4, k, 0.0, AMBER);
 }
 
+/// 박자 타의 스태미나 막대 반짝임(초).
+const BEAT_GLINT: f32 = 0.4;
+/// 박자 타의 음표가 머리 위로 떠오르는 시간(초).
+pub const BEAT_NOTE_LIFE: f32 = 0.55;
+
+/// 박자 타(0076, KB nail 0168 "음표"): 머리 위(`at` 화면 자리)에서 음표가 떠오르며 사라진다. `k` 0..1 진행, `chain` 잇단 수 —
+/// 둘째부터 음표 둘(♫), 셋째부터 크게. 어두운 테두리로 어느 바닥 위에서도.
+pub fn draw_beat_note(f: &Frame, at: Vec2, k: f32, chain: u32) {
+    let s = f.ui * if chain >= 3 { 1.25 } else { 1.0 };
+    let rise = 10.0 * f.ui * (1.0 - (1.0 - k) * (1.0 - k));
+    let a = if k < 0.7 { 1.0 } else { (1.0 - k) / 0.3 };
+    let gold = Color::new(1.0, 0.86, 0.35, a);
+    let shade = Color::new(0.08, 0.05, 0.08, 0.8 * a);
+    let base = at - vec2(0.0, rise);
+    let heads: &[Vec2] = if chain >= 2 {
+        &[vec2(-3.0, 0.0), vec2(3.0, -1.0)]
+    } else {
+        &[vec2(0.0, 0.0)]
+    };
+    for pass in 0..2 {
+        let (col, grow) = if pass == 0 {
+            (shade, f.ui)
+        } else {
+            (gold, 0.0)
+        };
+        let w = 1.0 * s + grow;
+        let mut tops = Vec::new();
+        for h in heads {
+            let c = base + *h * s;
+            draw_ellipse(c.x, c.y, 2.0 * s + grow, 1.5 * s + grow, -20.0, col);
+            let top = c + vec2(1.6 * s, -7.0 * s);
+            draw_line(c.x + 1.6 * s, c.y, top.x, top.y - grow, w, col);
+            tops.push(top);
+        }
+        if let [a0, b0] = tops[..] {
+            draw_line(a0.x, a0.y, b0.x, b0.y, 1.6 * s + grow, col);
+        } else if let [t0] = tops[..] {
+            draw_line(t0.x, t0.y, t0.x + 2.5 * s, t0.y + 3.0 * s, w, col);
+        }
+    }
+}
+
 /// 커서 조준 표시(0058): 고리 + 가운데 점, 어두운 테두리로 어느 바닥에서도 보이게. 크기 단계 0 작게·1 보통·2 크게.
 /// 붉은색(위험)은 쓰지 않는다 — 적의 예고와 섞이지 않게.
 pub fn draw_reticle(f: &Frame, at: Vec2, size: u8) {
@@ -104,6 +146,12 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
     draw_rectangle(bx, by, bw, bh, BAR_BG);
     let blink = pl.stamina_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
     draw_rectangle(bx, by, bw * k, bh, if blink { DENIED } else { STAMINA });
+    // 박자 타(0076): 스태미나를 안 썼다 — 막대가 금빛으로 반짝였다 식는다(막대 위아래로 한 줄씩 넓게).
+    if pl.since_beat < BEAT_GLINT {
+        let g = 1.0 - pl.since_beat / BEAT_GLINT;
+        let col = Color::new(1.0, 0.86, 0.4, 0.9 * g);
+        draw_rectangle(bx, by - s, bw * k, bh + 2.0 * s, col);
+    }
     // 등잔(0031): 남은 것은 불 켠 등잔, 쓴 것은 꺼진 등잔. 못 마시면(가득·0) 잠깐 깜빡인다.
     let fblink = pl.flask_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
     for i in 0..pl.flask_max.max(pl.flask) {

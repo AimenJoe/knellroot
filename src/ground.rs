@@ -159,7 +159,7 @@ impl Ground {
     }
 
     /// 두 칸이 이웃끼리 걸어서(적처럼) 오갈 수 있나: 맞닿은 변 가운데에서 높이 차 ≤ 걸음.
-    fn passable(&self, a: (usize, usize), b: (usize, usize)) -> bool {
+    pub fn passable(&self, a: (usize, usize), b: (usize, usize)) -> bool {
         let ma = self.min_of(a.0, a.1);
         let mb = self.min_of(b.0, b.1);
         let edge = (ma + mb) * 0.5 + Vec2::splat(self.cell * 0.5);
@@ -168,79 +168,6 @@ impl Ground {
             (Some(ha), Some(hb)) => (ha - hb).abs() <= GROUND_STEP,
             _ => false,
         }
-    }
-
-    /// `from`에서 `to`까지 곧게 걸어(적처럼) 갈 수 있나 — 지나는 칸을 이어 가며 이웃끼리 오갈 수 있는지 본다.
-    pub fn straight_walkable(&self, from: Vec3, to: Vec3) -> bool {
-        let (Some(mut c), Some(goal)) = (self.cell_of(from), self.cell_of(to)) else {
-            return false;
-        };
-        let steps = ((to - from).length() / (self.cell * 0.25)).ceil().max(1.0) as usize;
-        for i in 1..=steps {
-            let p = from.lerp(to, i as f32 / steps as f32);
-            let Some(n) = self.cell_of(p) else {
-                return false;
-            };
-            if n != c {
-                // 대각선으로 넘어가면 두 길 가운데 하나라도 이어져야 한다.
-                let ok = if n.0 != c.0 && n.1 != c.1 {
-                    (self.passable(c, (n.0, c.1)) && self.passable((n.0, c.1), n))
-                        || (self.passable(c, (c.0, n.1)) && self.passable((c.0, n.1), n))
-                } else {
-                    self.passable(c, n)
-                };
-                if !ok {
-                    return false;
-                }
-                c = n;
-            }
-        }
-        c == goal
-    }
-
-    /// 너비 우선 거리 지도: 칸마다 `target`까지 걸음 수(못 가면 u16::MAX).
-    pub fn flow(&self, target: Vec3) -> Vec<u16> {
-        let mut dist = vec![u16::MAX; self.w * self.h];
-        let Some(t) = self.cell_of(target) else {
-            return dist;
-        };
-        let mut q = std::collections::VecDeque::new();
-        dist[t.1 * self.w + t.0] = 0;
-        q.push_back(t);
-        while let Some(c) = q.pop_front() {
-            let d = dist[c.1 * self.w + c.0];
-            for (dx, dz) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
-                let (x, z) = (c.0 as i32 + dx, c.1 as i32 + dz);
-                if x < 0 || z < 0 || x as usize >= self.w || z as usize >= self.h {
-                    continue;
-                }
-                let n = (x as usize, z as usize);
-                if dist[n.1 * self.w + n.0] == u16::MAX && self.passable(c, n) {
-                    dist[n.1 * self.w + n.0] = d + 1;
-                    q.push_back(n);
-                }
-            }
-        }
-        dist
-    }
-
-    /// 거리 지도(`flow`)를 따라 `from`에서 한 칸 가까운 이웃의 가운데. 이미 목표 칸이거나 길이 없으면 None.
-    pub fn next_step(&self, dist: &[u16], from: Vec3) -> Option<Vec3> {
-        let c = self.cell_of(from)?;
-        let here = dist[c.1 * self.w + c.0];
-        if here == 0 || here == u16::MAX {
-            return None;
-        }
-        [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)]
-            .iter()
-            .filter_map(|(dx, dz)| {
-                let (x, z) = (c.0 as i32 + dx, c.1 as i32 + dz);
-                (x >= 0 && z >= 0 && (x as usize) < self.w && (z as usize) < self.h)
-                    .then_some((x as usize, z as usize))
-            })
-            .filter(|n| dist[n.1 * self.w + n.0] < here && self.passable(c, *n))
-            .min_by_key(|n| dist[n.1 * self.w + n.0])
-            .map(|n| self.center(n.0, n.1))
     }
 }
 
@@ -318,18 +245,25 @@ mod tests {
         let g = yard();
         let start = g.center(0, 0);
         let goal = g.center(4, 1);
+        let nav0 = crate::nav::Nav::build(Some(&g), &[], 10.0);
         assert!(
-            !g.straight_walkable(g.center(1, 2), goal),
+            !nav0.clear(g.center(1, 2), goal, 0.4),
             "the 0.5 ledge row cannot walk straight onto the 1m platform"
         );
-        let dist = g.flow(goal);
+        let nav = crate::nav::Nav::build(Some(&g), &[], 10.0);
+        let dist = nav.flow(goal);
         let mut p = start;
         let mut seen = vec![];
-        for _ in 0..12 {
-            match g.next_step(&dist, p) {
+        for _ in 0..40 {
+            match nav.waypoint(&dist, p, 0.4) {
                 Some(n) => {
-                    seen.push(g.cell_of(n).unwrap());
-                    p = n;
+                    // 0.5m씩 그쪽으로(적처럼) — 지나는 칸을 적는다.
+                    let d = n - p;
+                    p += d.normalize_or_zero() * d.length().min(0.5);
+                    p.y = g.height(p);
+                    if seen.last() != g.cell_of(p).as_ref() {
+                        seen.push(g.cell_of(p).unwrap());
+                    }
                 }
                 None => break,
             }

@@ -144,6 +144,9 @@ pub struct Strings {
     pub weapon_hammer_d: &'static str,
     pub weapon_staff_d: &'static str,
     pub weapon_crossbow_d: &'static str,
+    pub weapon_fists_d: &'static str,
+    /// 장비 창 무기 후보에서 지금 든 것의 표시(0076).
+    pub equip_worn: &'static str,
     pub slots_new: &'static str,
     pub slots_load: &'static str,
     pub slot_name: &'static str,
@@ -182,6 +185,8 @@ pub struct Strings {
     pub respawned: &'static str,
     /// 싸움 안내 줄의 공격(0030: 꾹 쥐면 강공격).
     pub verb_attack_hint: &'static str,
+    /// 조작 설정의 회피 줄(0076 — 쥐면 달리기).
+    pub verb_dodge_hint: &'static str,
     pub verb_turn_left: &'static str,
     pub verb_turn_right: &'static str,
     pub menu_controls: &'static str,
@@ -200,6 +205,7 @@ pub struct Strings {
     pub weapon_hammer: &'static str,
     pub weapon_staff: &'static str,
     pub weapon_crossbow: &'static str,
+    pub weapon_fists: &'static str,
     /// 타이틀의 전체 화면 줄(0046, 지금 상태를 보인다).
     /// 창 안 줄의 이름(값은 오른쪽 칸 — 0066).
     pub menu_fullscreen: &'static str,
@@ -324,6 +330,8 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.weapon_hammer_d,
         s.weapon_staff_d,
         s.weapon_crossbow_d,
+        s.weapon_fists_d,
+        s.equip_worn,
         s.slots_new,
         s.slots_load,
         s.slot_name,
@@ -355,6 +363,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.rested,
         s.respawned,
         s.verb_attack_hint,
+        s.verb_dodge_hint,
         s.verb_turn_left,
         s.verb_turn_right,
         s.menu_controls,
@@ -369,6 +378,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.weapon_hammer,
         s.weapon_staff,
         s.weapon_crossbow,
+        s.weapon_fists,
         s.menu_fullscreen,
         s.value_on,
         s.value_off,

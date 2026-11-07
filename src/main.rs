@@ -23,6 +23,7 @@ mod item_view;
 mod lab;
 mod model;
 mod models;
+mod nav;
 mod prefs;
 mod render;
 mod save;

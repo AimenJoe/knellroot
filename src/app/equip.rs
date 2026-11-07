@@ -35,13 +35,22 @@ pub(super) enum Cand {
     Charm(Charm),
 }
 
-/// 칸의 후보 목록(표 순서): 무기 칸 = 무기 넷, 장신구 칸 = 빈 칸 + **가진** 장신구만.
+/// 칸의 후보 목록(표 순서): 무기 칸 = 맨손 + 무기 넷, 장신구 칸 = 빈 칸 + **가진** 장신구만.
 /// 못 얻은 것은 장비 창에 보이지 않는다 — 검은 실루엣 같은 "찾을 것" 표시는 도감 몫(사장 2026-11-05, 0068).
-/// 그 칸에 **지금 낀 것**(`now`)은 후보에서 뺀다 — 칸 상자와 "지금 → 바뀐" 비교가 이미 보여 준다(0070 8 가, Diablo IV 콘솔 꼴).
+/// 무기 칸은 **지금 든 것도** 목록에 있다(사장 2026-11-07 — 목록이 무기 전부를 보여야 고르기 쉽다, 줄에 "착용 중", 커서는 거기서
+/// 시작 — `pick_start`). 맨손(무기 칸 비우기)은 장신구 칸의 "빈 칸"처럼 맨 위. 장신구 칸은 그 칸에 낀 것을 뺀다(0070 8 가, Diablo IV 콘솔 꼴).
 pub(super) fn candidates(slot: usize, owned: &[Charm], now: Cand) -> Vec<Cand> {
-    let all: Vec<Cand> = if slot == 0 {
-        weapons::IDS.into_iter().map(Cand::Weapon).collect()
-    } else {
+    if slot == 0 {
+        return std::iter::once(weapons::Id::Fists)
+            .chain(
+                weapons::IDS
+                    .into_iter()
+                    .filter(|&w| w != weapons::Id::Fists),
+            )
+            .map(Cand::Weapon)
+            .collect();
+    }
+    let all: Vec<Cand> = {
         std::iter::once(Cand::Empty)
             .chain(
                 charms::TABLE
@@ -52,6 +61,11 @@ pub(super) fn candidates(slot: usize, owned: &[Charm], now: Cand) -> Vec<Cand> {
             .collect()
     };
     all.into_iter().filter(|&c| c != now).collect()
+}
+
+/// 후보 목록을 열 때 커서 자리: 지금 든 것(목록에 있으면), 아니면 맨 위.
+pub(super) fn pick_start(list: &[Cand], now: Cand) -> usize {
+    list.iter().position(|&c| c == now).unwrap_or(0)
 }
 
 /// 장신구 칸 `i`에 `pick`을 끼운 뒤의 세 칸: 다른 칸에 끼어 있던 것이면 그 칸과 맞바꾼다(같은 것 두 칸 금지).
@@ -240,13 +254,16 @@ fn weapon_desc(id: weapons::Id) -> &'static str {
         weapons::Id::Hammer => s.weapon_hammer_d,
         weapons::Id::Staff => s.weapon_staff_d,
         weapons::Id::Crossbow => s.weapon_crossbow_d,
+        weapons::Id::Fists => s.weapon_fists_d,
     }
 }
 
 /// 칸 후보 → 그림으로 보일 아이템(빈 칸은 없음).
 fn item_of(c: Cand) -> Option<crate::item_view::Item> {
     match c {
-        Cand::Weapon(w) => Some(crate::item_view::Item::Weapon(w)),
+        Cand::Weapon(w) => {
+            Some(crate::item_view::Item::Weapon(w)).filter(|&i| crate::item_view::has_view(i))
+        }
         Cand::Charm(id) => Some(crate::item_view::Item::Charm(id)),
         Cand::Empty => None,
     }
@@ -396,7 +413,10 @@ impl App {
                 return;
             }
             self.go(Go::Open(Scene::EquipPick { slot: slot as u8 }));
-            self.cursor = 0;
+            self.cursor = pick_start(
+                &candidates(slot, &self.progress.owned, self.slot_now(slot)),
+                self.slot_now(slot),
+            );
         }
     }
 
@@ -421,7 +441,10 @@ impl App {
                 && !candidates(other, &self.progress.owned, self.slot_now(other)).is_empty()
             {
                 self.go(Go::Open(Scene::EquipPick { slot: other as u8 }));
-                self.cursor = 0;
+                self.cursor = pick_start(
+                    &candidates(other, &self.progress.owned, self.slot_now(other)),
+                    self.slot_now(other),
+                );
             }
             return;
         }
@@ -435,6 +458,7 @@ impl App {
         if let Some(Hit::Row(i)) = tap {
             if i != self.cursor && i < list.len() {
                 self.cursor = i;
+                self.view.tapped(i);
                 self.scroll = 0.0;
                 a.tap = None;
             }
@@ -448,6 +472,8 @@ impl App {
             return;
         };
         match list[i] {
+            // 지금 든 것을 다시 고르면 그대로 닫는다(기록도 그대로).
+            Cand::Weapon(w) if w == self.weapon => {}
             Cand::Weapon(w) => self.set_weapon(w),
             c => {
                 let pick = match c {
@@ -648,6 +674,7 @@ impl App {
                                 .position(|w| *w == Some(id))
                                 .map(|j| fill(s.menu_charm_slot, &[&(j + 1).to_string()]))
                                 .unwrap_or_default(),
+                            Cand::Weapon(w) if w == self.weapon => s.equip_worn.to_string(),
                             _ => String::new(),
                         };
                         ui::Row::value(self.cand_name(c), mark)
@@ -837,13 +864,21 @@ mod tests {
     }
 
     #[test]
-    fn slots_list_only_what_you_own_and_not_what_is_already_worn_there() {
-        let held = Cand::Weapon(weapons::IDS[0]);
-        let weapons_left = candidates(0, &[], held);
-        assert_eq!(weapons_left.len(), weapons::IDS.len() - 1);
-        assert!(
-            !weapons_left.contains(&held),
-            "the held weapon is not offered again"
+    fn slots_list_what_you_own_weapons_include_the_held_one_charms_do_not() {
+        // 무기 칸(사장 2026-11-07): 든 것도 목록에 있고 커서가 거기서 시작한다, 맨손이 맨 위.
+        let held = Cand::Weapon(weapons::Id::Staff);
+        let weapons = candidates(0, &[], held);
+        assert_eq!(weapons.len(), weapons::IDS.len());
+        assert_eq!(
+            weapons[0],
+            Cand::Weapon(weapons::Id::Fists),
+            "bare hands first"
+        );
+        assert!(weapons.contains(&held), "the held weapon is listed too");
+        assert_eq!(
+            weapons[pick_start(&weapons, held)],
+            held,
+            "the cursor starts on it"
         );
         // 장신구가 없고 칸이 비었으면 바꿀 것이 없다 — 못 얻은 것은 장비 창에 없다(도감 몫).
         assert!(candidates(1, &[], Cand::Empty).is_empty());

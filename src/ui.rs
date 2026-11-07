@@ -715,9 +715,17 @@ pub struct ListView {
     row_h: f32,
     /// 줄 하나가 안 된 끌기 거리(논리 px).
     acc: f32,
+    /// 손가락으로 고른 줄(0076): 이 줄에 커서가 있는 동안은 가장자리 여유로 창을 옮기지 않는다 — 두 걸음 탭(고르기 → 다시 눌러 끼우기)에서
+    /// 첫 탭에 목록이 한 줄 밀려 같은 자리의 둘째 탭이 다른 줄을 누르던 것(장비 창 무기 후보).
+    tapped: Option<usize>,
 }
 
 impl ListView {
+    /// 손가락이 `row`를 골랐다(창은 그대로 — 그 줄은 이미 보인다).
+    pub fn tapped(&mut self, row: usize) {
+        self.tapped = Some(row);
+    }
+
     fn margin(&self) -> usize {
         usize::from(self.fits >= 3)
     }
@@ -726,7 +734,12 @@ impl ListView {
     pub fn window(&mut self, cursor: usize, n: usize, fits: usize, row_h: f32) -> usize {
         self.fits = fits.max(1);
         self.row_h = row_h;
-        let m = self.margin();
+        let m = if self.tapped == Some(cursor) {
+            0
+        } else {
+            self.tapped = None;
+            self.margin()
+        };
         if cursor < self.first + m {
             self.first = cursor.saturating_sub(m);
         }
@@ -840,6 +853,22 @@ mod tests {
         );
         assert_eq!(v.window(0, 10, 4, 12.0), 0);
         assert_eq!(v.window(9, 3, 4, 12.0), 0, "everything fits: 0");
+        // 0076: 손가락으로 가장자리 줄을 고르면 창은 그대로(같은 자리를 다시 누르면 같은 줄), 키로 옮기면 다시 여유를 둔다.
+        let mut v = ListView::default();
+        assert_eq!(v.window(0, 5, 4, 12.0), 0);
+        v.tapped(3);
+        assert_eq!(
+            v.window(3, 5, 4, 12.0),
+            0,
+            "a tapped edge row does not scroll"
+        );
+        assert_eq!(v.window(3, 5, 4, 12.0), 0, "nor on the next frame");
+        assert_eq!(v.window(2, 5, 4, 12.0), 0);
+        assert_eq!(
+            v.window(3, 5, 4, 12.0),
+            1,
+            "a key move keeps the margin again"
+        );
     }
 
     use super::*;

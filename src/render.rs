@@ -109,6 +109,9 @@ pub struct View<'a> {
 }
 
 /// 탄의 색(0048·0051, `weapons::Bolt::look`): 마법 라벤더, 무거운 탄 놋쇠, 꿰뚫는 탄 민트, 쇠뇌 볼트 밝은 나무 — 붉은색(위험)은 쓰지 않는다.
+/// 박자 타의 휘두름 색·발밑 고리가 퍼지는 시간(0076).
+const BEAT_GOLD: Color = Color::new(1.0, 0.82, 0.3, 0.32);
+pub const BEAT_RING_LIFE: f32 = 0.35;
 const BOLT_LOOKS: [(Color, Color); 4] = [
     (
         Color::new(0.92, 0.88, 1.0, 1.0),
@@ -1178,6 +1181,10 @@ impl Renderer {
                     if pl.air < 0.35 { 0.29 } else { 0.12 },
                 ),
                 PState::Land { t: e, .. } => (&["land", "idle"], e),
+                // 달리기(0076): `run` 동작이 없으면 걷기를 빠르게(발 구르기가 속도를 따라간다).
+                PState::Idle if pl.running && speed > 0.5 => {
+                    (&["run", "walk"], w.time * (speed / 4.0).clamp(0.6, 2.2))
+                }
                 PState::Idle if speed > 0.5 => (
                     move_anim(pl.pos - pl.prev, pl.facing_dir(), w.lock.is_some()),
                     w.time * (speed / 4.0).clamp(0.6, 1.6),
@@ -1382,15 +1389,40 @@ impl Renderer {
                     } else {
                         t[crate::tuning::P::AttackArc] * h.arc
                     };
+                    // 박자 타(0076)는 금빛 — 이 타가 박자에 맞았다는 것이 휘두름 자체에 보인다.
                     sector(
                         pp + Vec3::Y * 0.9,
                         t[crate::tuning::P::AttackRange] * h.reach,
                         w.player.facing,
                         arc,
-                        Color::new(1.0, 0.95, 0.7, 0.18),
+                        if w.player.swing_beat {
+                            BEAT_GOLD
+                        } else {
+                            Color::new(1.0, 0.95, 0.7, 0.18)
+                        },
                     );
                 }
             }
+        }
+        // 박자 타(0076, KB nail 0168): 발밑에서 금빛 고리가 퍼진다 — 잇달을수록 크게.
+        if w.player.since_beat < BEAT_RING_LIFE {
+            let k = (w.player.since_beat / BEAT_RING_LIFE).clamp(0.0, 1.0);
+            let big = 1.0 + 0.25 * (w.player.beat_chain.min(3) as f32 - 1.0);
+            let ease = 1.0 - (1.0 - k) * (1.0 - k);
+            ring(
+                pp + Vec3::Y * 0.06,
+                (0.5 + 1.3 * ease) * big,
+                0.0,
+                360.0,
+                Color::new(1.0, 0.86, 0.35, 0.9 * (1.0 - k)),
+            );
+            ring(
+                pp + Vec3::Y * 0.07,
+                (0.35 + 0.9 * ease) * big,
+                0.0,
+                360.0,
+                Color::new(1.0, 0.95, 0.7, 0.6 * (1.0 - k)),
+            );
         }
         // 강공격(0030): 모으는 동안 발밑 고리가 안쪽에서 차오르고, 다 차면 금빛으로 깜빡인다. 강타의 활성 구간엔 넓은 부채꼴.
         if let PState::Charging { t: e } = w.player.state {

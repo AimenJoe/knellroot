@@ -186,6 +186,24 @@ impl App {
         }
     }
 
+    /// 박자 타의 음표(0076): 플레이어 머리 위 화면 자리에서.
+    pub(super) fn draw_beat_note(&mut self, f: &Frame) {
+        let pl = &self.world.player;
+        if pl.since_beat >= hud::BEAT_NOTE_LIFE {
+            return;
+        }
+        let head = pl.pos + Vec3::Y * (pl.air + 1.9);
+        let (ndc, front) = crate::camera::world_to_ndc(&self.cam.rig, f.w / f.h.max(1.0), head);
+        if !front {
+            return;
+        }
+        let p = vec2(
+            f.ox + (ndc.x + 1.0) * 0.5 * f.w,
+            f.oy + (1.0 - ndc.y) * 0.5 * f.h,
+        );
+        hud::draw_beat_note(f, p, pl.since_beat / hud::BEAT_NOTE_LIFE, pl.beat_chain);
+    }
+
     /// 월드 사건·상태 변화 → 소리(0064 M5). 월드는 소리를 모른다 — 여기서만 듣는다.
     pub(super) fn world_sounds(&mut self, events: &[Event]) {
         use crate::sfx::Id;
@@ -198,7 +216,7 @@ impl App {
                 Event::EnemyDown { .. } => Id::Die,
                 Event::PlayerHurt => Id::Hurt,
                 Event::Parry { .. } => Id::Parry,
-                Event::Beat => Id::Beat,
+                Event::Beat => crate::sfx::beat_id(self.world.player.beat_chain),
                 Event::Ember { .. } => Id::Ember,
                 Event::Gulp { .. } => Id::Gulp,
                 Event::FlaskDenied | Event::CastDenied => Id::Deny,
