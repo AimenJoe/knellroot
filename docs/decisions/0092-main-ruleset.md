@@ -1,7 +1,7 @@
 # 0092. main 룰셋 — 운영 갈래는 관리자만 바로, 나머지는 PR
 
 - 날짜: 2026-11-07
-- 상태: **제안 — 사장이 GitHub에서 가져오기(Import)로 건다**(세션은 룰셋을 만들 권한이 없다)
+- 상태: **채택·걸림**(2026-11-07, 사장이 nail 룰셋 둘을 그대로 가져옴 — `main-only` 26757362·`release-branches` 26757372)
 - 사장: "main 룰셋 만들자, 내 레포 보호랄수 있도록."
 
 ## 전
@@ -26,3 +26,9 @@ GitHub → knellroot → Settings → Rules → Rulesets → New ruleset ▾ →
 ## 확인
 - 건 뒤 공개 API `https://api.github.com/repos/AimenJoe/knellroot/rulesets`에 `main-only`가 보이는지.
 - 다음 배포 때 PR에 `build-deploy` 검사가 붙고 통과해야 Merge 단추가 열리는지.
+
+## 건 뒤(2026-11-07)
+- 사장이 처음 제안한 JSON 대신 **nail 것을 그대로** 가져왔다. 공개 API로 읽은 실제 설정을 `.github/rulesets/main.json`·`release.json`에 옮겨 두었다(다음 레포에 그대로 가져오기).
+  - `main-only`: 지우기·강제 push 막기, PR 필수(승인 0, 합치기 셋 다), 필수 검사 **`build`**, 우회 = 레포 관리자.
+  - `release-branches`(`release/**`): 만들기·바꾸기·지우기·강제 push 막기, 우회 = 레포 관리자 + GitHub App 1236702(세션이 push하는 앱).
+- 필수 검사 이름이 nail의 잡 이름 `build`라, knellroot 웹 CI 잡 `build-deploy`를 **`build`로 바꿨다** — 안 그러면 PR이 오지 않는 검사를 기다려 Merge가 막힌다.
