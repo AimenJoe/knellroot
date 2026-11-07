@@ -12,6 +12,8 @@ impl App {
                 TitleItem::Start => self.open_slots(false),
                 TitleItem::Settings => self.go(Go::Open(Scene::Settings)),
                 #[cfg(feature = "dev")]
+                TitleItem::Lab => self.go(Go::Open(Scene::Lab)),
+                #[cfg(feature = "dev")]
                 TitleItem::Dev => self.go(Go::Open(Scene::Dev { tab: 0 })),
             }
         }
@@ -32,6 +34,8 @@ impl App {
                 TitleItem::Continue => s.menu_continue.to_string(),
                 TitleItem::Start => s.menu_start.to_string(),
                 TitleItem::Settings => s.menu_settings.to_string(),
+                #[cfg(feature = "dev")]
+                TitleItem::Lab => s.menu_lab.to_string(),
                 // 개발 전용(영어 그대로, 0013).
                 #[cfg(feature = "dev")]
                 TitleItem::Dev => "DEV".to_string(),
@@ -48,12 +52,10 @@ impl App {
         );
         self.push_hits(&hits);
         self.menu_hint(cx, f.oy + f.h - self.ui.px(1.0) * 2.2, f.w * 0.94);
-        // 버전 글자(오른쪽 위) — 받은 판이 무엇인지 사진 한 장으로 알게. 개발판은 표시를 붙인다.
-        let ver = if cfg!(feature = "dev") {
-            concat!("v", env!("CARGO_PKG_VERSION"), " dev")
-        } else {
-            concat!("v", env!("CARGO_PKG_VERSION"))
-        };
+        // 버전 글자(오른쪽 위) — 받은 판이 무엇인지 사진 한 장으로 알게. 개발판은 표시 + 커밋 해시 앞 7자(0079 — 개발판끼리 가르게,
+        // 개발 웹 `build.txt`와 앞이 같다).
+        let ver = version_label(cfg!(feature = "dev"), env!("BUILD_HASH"));
+        let ver = ver.as_str();
         let w = self.ui.width(ver, 1.0);
         self.ui.text(
             ver,
@@ -61,6 +63,39 @@ impl App {
             f.oy + self.ui.px(0.5),
             1.0,
             DIM,
+        );
+    }
+}
+
+/// 타이틀 오른쪽 위 버전 글자: 운영판 "v0.3.3", 개발판 "v0.3.3 dev 674d4c8"(해시를 모르면 "v0.3.3 dev").
+pub(super) fn version_label(dev: bool, hash: &str) -> String {
+    let v = concat!("v", env!("CARGO_PKG_VERSION"));
+    match (dev, hash.is_empty()) {
+        (false, _) => v.to_string(),
+        (true, true) => format!("{v} dev"),
+        (true, false) => format!("{v} dev {hash}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn dev_builds_show_the_commit_next_to_the_version() {
+        let v = concat!("v", env!("CARGO_PKG_VERSION"));
+        assert_eq!(
+            super::version_label(false, "674d4c8"),
+            v,
+            "production: version only"
+        );
+        assert_eq!(
+            super::version_label(true, "674d4c8"),
+            format!("{v} dev 674d4c8")
+        );
+        assert_eq!(super::version_label(true, ""), format!("{v} dev"));
+        assert_eq!(
+            env!("BUILD_HASH").len(),
+            7,
+            "the build knows its commit here"
         );
     }
 }

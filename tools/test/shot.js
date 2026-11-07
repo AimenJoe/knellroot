@@ -57,11 +57,11 @@ async function main() {
   for (let i = 0; i < 5; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(260); }
   await shot('00d-fight');
   await press('Escape'); await page.waitForTimeout(300); await shot('00e-pause');
-  // 멈춤(0052): 계속·장비·설정·처음부터·타이틀로(·개발판은 끝에 DEV). 타이틀: 시작·설정·DEV.
+  // 멈춤(0052·0079): 계속·장비·설정·연구소·처음부터·타이틀로·DEV(연구소·DEV는 개발판). 타이틀: 시작·설정·연구소·DEV.
   // DEV(0075): 묶음(◀ combat · stage · perf & tools ▶)·무기·그 묶음의 시작할 것·돌아가기 — 첫 묶음 셋째 줄 = 보스 아레나, stage 묶음 넷째 줄 = 문 앞.
   // 타이틀로는 묻는 창(0064 — 커서가 "취소"에서 시작): 위로 한 번 = "타이틀로".
   // 타이틀의 DEV는 맨 끝 — 기록이 생겨 "이어하기"가 붙어도 위로 한 번(돌아서)이면 DEV(0066).
-  await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowDown', 5); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await shot('00e2-title-continue');
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
@@ -76,8 +76,8 @@ async function main() {
   await shot('00i-controls');
   await press('Escape'); await page.waitForTimeout(200); await press('Escape'); await page.waitForTimeout(200);
   // 개발 시나리오로(멈춤 → 타이틀로 → 묻는 창 → DEV → 첫 PoC).
-  // 닫으면 연 줄로(0066): 조작 → 설정 → 멈춤의 "설정"(셋째)에 커서가 있다 → 아래로 둘 = 타이틀로.
-  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
+  // 닫으면 연 줄로(0066): 조작 → 설정 → 멈춤의 "설정"(셋째)에 커서가 있다 → 아래로 셋 = 타이틀로(연구소·처음부터 다음, 0079).
+  await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await shot('00j-dev');

@@ -190,7 +190,7 @@ pub struct Strings {
     pub verb_turn_left: &'static str,
     pub verb_turn_right: &'static str,
     pub menu_controls: &'static str,
-    /// 연구실(랩, 0070) — 개발판 설정에만.
+    /// 연구소(랩, 0070 → 0079) — 개발판 타이틀·멈춤 메뉴의 설정 바로 아래 줄.
     pub menu_lab: &'static str,
     /// 설정(0052): 타이틀·멈춤의 줄, 화면 제목, 화면 흔들림 줄("{0}" = 백분율).
     pub menu_settings: &'static str,

@@ -43,7 +43,7 @@ pub enum Scene {
     /// 개발 시나리오(PoC 아레나). 개발판에만.
     #[cfg(feature = "dev")]
     Sandbox,
-    /// 랩(0070, 개발판): 묶음 목록 + A/B·내보내기. 멈춤 메뉴 끝 줄 "LAB"·F1·터치 LAB에서 연다. 게임은 멈추고 값은 바로 들어간다.
+    /// 연구소(랩, 0070·0079, 개발판): 묶음 목록 + A/B·내보내기. 타이틀·멈춤 메뉴의 설정 바로 아래 줄·F1에서 연다. 게임은 멈추고 값은 바로 들어간다.
     #[cfg(feature = "dev")]
     Lab,
     /// 랩의 한 묶음(`lab::GROUPS[g]`): 줄 = 이름 ◀ 값 ▶.
@@ -191,12 +191,15 @@ pub enum TitleItem {
     Start,
     /// 설정(0052): 언어·전체 화면·흔들림·조작이 여기로 모였다(타이틀에 흩어져 있었다).
     Settings,
+    /// 연구소(랩, 0079 — 개발판에만): 설정 바로 아래 줄.
+    #[cfg(feature = "dev")]
+    Lab,
     /// 개발 메뉴(0052). 개발판에만.
     #[cfg(feature = "dev")]
     Dev,
 }
 
-/// 타이틀 줄(0066): [이어하기(기록이 있으면)] · 시작하기 · 설정 · DEV. 기록이 없으면 설정은 둘째(헤드리스 시험의 길).
+/// 타이틀 줄(0066): [이어하기(기록이 있으면)] · 시작하기 · 설정 · [연구소 · DEV(개발판)]. 기록이 없으면 설정은 둘째(헤드리스 시험의 길).
 pub fn title_items(has_save: bool) -> Vec<TitleItem> {
     let mut v = Vec::new();
     if has_save {
@@ -204,7 +207,7 @@ pub fn title_items(has_save: bool) -> Vec<TitleItem> {
     }
     v.extend([TitleItem::Start, TitleItem::Settings]);
     #[cfg(feature = "dev")]
-    v.push(TitleItem::Dev);
+    v.extend([TitleItem::Lab, TitleItem::Dev]);
     v
 }
 
@@ -268,6 +271,9 @@ pub enum PauseItem {
     /// 장비(0064 M3, 0051의 무기 줄): 좌우 = 다음 무기(전처럼), 확인 = 장비 창(무기 + 장신구 세 칸).
     Weapon,
     Settings,
+    /// 연구소(랩, 0079 — 개발판에만): 설정 바로 아래 줄(사장 2026-11-07).
+    #[cfg(feature = "dev")]
+    Lab,
     Restart,
     ToTitle,
     /// 개발 메뉴(0075) — 개발판에만, 맨 끝(위 다섯 줄 자리는 그대로 — 시험 스크립트가 줄 수로 간다).
@@ -275,16 +281,12 @@ pub enum PauseItem {
     Dev,
 }
 
-/// 멈춤 창의 줄(개발판은 끝에 "개발").
+/// 멈춤 창의 줄: 계속 · 장비 · 설정 · [연구소] · 처음부터 · 타이틀로 · [DEV] — 대괄호는 개발판에만.
 pub fn pause_items() -> Vec<PauseItem> {
-    #[cfg_attr(not(feature = "dev"), allow(unused_mut))]
-    let mut v = vec![
-        PauseItem::Resume,
-        PauseItem::Weapon,
-        PauseItem::Settings,
-        PauseItem::Restart,
-        PauseItem::ToTitle,
-    ];
+    let mut v = vec![PauseItem::Resume, PauseItem::Weapon, PauseItem::Settings];
+    #[cfg(feature = "dev")]
+    v.push(PauseItem::Lab);
+    v.extend([PauseItem::Restart, PauseItem::ToTitle]);
     #[cfg(feature = "dev")]
     v.push(PauseItem::Dev);
     v
@@ -306,9 +308,6 @@ pub enum SettingsRow {
     MouseAim,
     CursorRest,
     Reticle,
-    /// 연구실(랩, 0070) — 개발판에만. 조작 설정 바로 위(조작 설정은 늘 끝에서 둘째).
-    #[cfg(feature = "dev")]
-    Lab,
     Controls,
     Back,
 }
@@ -329,8 +328,6 @@ pub fn settings_rows(fullscreen: bool, mouse: bool) -> Vec<SettingsRow> {
             SettingsRow::Reticle,
         ]);
     }
-    #[cfg(feature = "dev")]
-    v.push(SettingsRow::Lab);
     v.extend([SettingsRow::Controls, SettingsRow::Back]);
     v
 }
@@ -400,6 +397,8 @@ pub fn choose_pause(item: PauseItem) -> (Go, bool) {
         PauseItem::Resume => (Go::Back, false),
         PauseItem::Weapon => (Go::Open(Scene::Equip), false),
         PauseItem::Settings => (Go::Open(Scene::Settings), false),
+        #[cfg(feature = "dev")]
+        PauseItem::Lab => (Go::Open(Scene::Lab), false),
         PauseItem::Restart => (Go::Open(Scene::Ask(Ask::Restart)), false),
         PauseItem::ToTitle => (Go::Open(Scene::Ask(Ask::ToTitle)), false),
         #[cfg(feature = "dev")]
@@ -549,5 +548,25 @@ mod tests {
             Scene::Slots { load: false }.layer(),
             Layer::Window { hud: false }
         );
+    }
+
+    /// 0079(사장 2026-11-07): 연구소는 개발판에서 타이틀·멈춤 메뉴의 설정 바로 아래 줄, 설정 창 안에는 없다.
+    #[cfg(feature = "dev")]
+    #[test]
+    fn the_lab_sits_right_below_settings_in_both_menus() {
+        for has_save in [false, true] {
+            let t = title_items(has_save);
+            let i = t.iter().position(|x| *x == TitleItem::Settings).unwrap();
+            assert_eq!(t.get(i + 1), Some(&TitleItem::Lab));
+        }
+        let p = pause_items();
+        let i = p.iter().position(|x| *x == PauseItem::Settings).unwrap();
+        assert_eq!(p.get(i + 1), Some(&PauseItem::Lab));
+        assert_eq!(choose_pause(PauseItem::Lab), (Go::Open(Scene::Lab), false));
+        for fs in [false, true] {
+            for mouse in [false, true] {
+                assert_eq!(settings_rows(fs, mouse).len() >= 4, true);
+            }
+        }
     }
 }

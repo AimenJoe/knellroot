@@ -34,8 +34,6 @@ impl App {
                     [s.reticle_small, s.reticle_medium, s.reticle_large]
                         [(mouse.size as usize).min(2)],
                 ),
-                #[cfg(feature = "dev")]
-                SettingsRow::Lab => ui::Row::go(s.menu_lab),
                 SettingsRow::Controls => ui::Row::go(s.menu_controls),
                 SettingsRow::Back => ui::Row::plain(s.controls_back),
             })
@@ -83,8 +81,6 @@ impl App {
                 r @ (SettingsRow::MouseAim | SettingsRow::CursorRest | SettingsRow::Reticle) => {
                     self.step_mouse(r, 1)
                 }
-                #[cfg(feature = "dev")]
-                SettingsRow::Lab => self.go(Go::Open(Scene::Lab)),
                 SettingsRow::Controls => self.go(Go::Open(Scene::Controls)),
                 SettingsRow::Back => self.go(Go::Back),
             },
@@ -206,7 +202,7 @@ pub(super) enum DevStart {
     Gate,
     /// PoC·개발 아레나(`scenario::LIST`).
     Scenario(Scenario),
-    /// 연구실(설정 안의 것과 같은 창).
+    /// 연구소(메뉴의 설정 아래 줄과 같은 창, 0079).
     Lab,
 }
 
@@ -234,7 +230,7 @@ impl DevStart {
                     + 1;
                 format!("key {n} in the arena · {}", scenario::entry(sc).checks)
             }
-            DevStart::Lab => "change tuning live; same as settings > lab".to_string(),
+            DevStart::Lab => "change tuning live; same as the lab row under settings".to_string(),
         }
     }
 }

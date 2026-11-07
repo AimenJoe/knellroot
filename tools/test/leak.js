@@ -85,7 +85,8 @@ async function main() {
     await press('ArrowUp'); await page.waitForTimeout(100);
   };
   await keyboardOnly();
-  if (MODE === 'stress') { await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300); await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300); await press('Digit7'); }
+  // 타이틀(개발판): 시작·설정·연구소·DEV(0079) — 시작에서 아래로 셋 = DEV.
+  if (MODE === 'stress') { await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300); await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300); await press('Digit7'); }
   else { await press('Enter'); await page.waitForTimeout(300); await press('Enter'); }  // 시작하기 → 슬롯 창(0066) → 시작
   const t0 = Date.now();
   let next = 0, i = 0;

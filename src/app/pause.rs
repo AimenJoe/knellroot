@@ -32,6 +32,8 @@ impl App {
                 PauseItem::Resume => ui::Row::plain(s.menu_resume),
                 PauseItem::Weapon => ui::Row::step(s.menu_equip, weapon_name(self.weapon)),
                 PauseItem::Settings => ui::Row::go(s.menu_settings),
+                #[cfg(feature = "dev")]
+                PauseItem::Lab => ui::Row::go(s.menu_lab),
                 PauseItem::Restart => ui::Row::plain(s.menu_restart),
                 PauseItem::ToTitle => ui::Row::plain(s.menu_to_title),
                 // 개발 화면 줄이라 번역하지 않는다(0013).

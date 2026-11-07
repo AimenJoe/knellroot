@@ -1,5 +1,5 @@
 //! Lab(KB guides/poc-and-lab-before-content.md, 0070): 실행 중에 `Tuning`을 바꾸고, 슬롯 A/B를 번갈아 느끼고,
-//! `tuning.rs`에 붙여 넣을 줄을 내보낸다. 0066 창 틀 안의 개발 창이다(`app::lab_menu` — 멈춤 메뉴의 "LAB"·F1·터치 LAB).
+//! `tuning.rs`에 붙여 넣을 줄을 내보낸다. 0066 창 틀 안의 개발 창이다(`app::lab_screen` — 타이틀·멈춤 메뉴의 설정 아래 줄 "연구소"·F1).
 //! 창이 열린 동안 게임은 멈추고, 바꾼 값은 바로 `Tuning`에 들어가 창을 닫은 뒤에도 계속 쓰인다(판을 다시 해도 —
 //! 게임을 끄면 사라진다: 진실은 `tuning.rs` 하나, 0013). 개발 전용 화면이라 글은 영어 ASCII.
 use crate::tuning::{Tuning, SPECS};
