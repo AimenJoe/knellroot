@@ -49,8 +49,8 @@ async function main() {
   await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
   await shot('m0-settings');
   await press('Escape'); await page.waitForTimeout(300);
-  // DEV → PoC 첫째(보스 아레나). 타이틀: 시작·설정·연구소·DEV(0079) — 설정을 닫으면 커서는 "설정"에(0066) → 아래로 둘 = DEV.
-  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
+  // DEV → PoC 첫째(보스 아레나). 타이틀: 시작·설정·개발(0094) — 설정을 닫으면 커서는 "설정"에(0066) → 아래로 하나 = 개발.
+  await press('ArrowDown', 1); await press('Enter'); await page.waitForTimeout(300);
   // 개발 창(0083): 묶음 탭에서 오른쪽 둘 = 전투·적, 첫 줄 = 보스 아레나.
   await press('ArrowRight', 2); await press('Enter'); await page.waitForTimeout(1200);
   const cast = async (x, y, name) => {

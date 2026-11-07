@@ -191,15 +191,12 @@ pub enum TitleItem {
     Start,
     /// 설정(0052): 언어·전체 화면·흔들림·조작이 여기로 모였다(타이틀에 흩어져 있었다).
     Settings,
-    /// 연구소(랩, 0079 — 개발판에만): 설정 바로 아래 줄.
-    #[cfg(feature = "dev")]
-    Lab,
-    /// 개발 메뉴(0052). 개발판에만.
+    /// 개발 메뉴(0052). 개발판에만 — 설정 바로 아래(0094: 연구소는 바깥 메뉴에 없고 개발 창의 도구 탭에서만).
     #[cfg(feature = "dev")]
     Dev,
 }
 
-/// 타이틀 줄(0066): [이어하기(기록이 있으면)] · 시작하기 · 설정 · [연구소 · DEV(개발판)]. 기록이 없으면 설정은 둘째(헤드리스 시험의 길).
+/// 타이틀 줄(0066·0094): [이어하기(기록이 있으면)] · 시작하기 · 설정 · [개발(개발판)]. 기록이 없으면 설정은 둘째(헤드리스 시험의 길).
 pub fn title_items(has_save: bool) -> Vec<TitleItem> {
     let mut v = Vec::new();
     if has_save {
@@ -207,7 +204,7 @@ pub fn title_items(has_save: bool) -> Vec<TitleItem> {
     }
     v.extend([TitleItem::Start, TitleItem::Settings]);
     #[cfg(feature = "dev")]
-    v.extend([TitleItem::Lab, TitleItem::Dev]);
+    v.push(TitleItem::Dev);
     v
 }
 
@@ -543,14 +540,16 @@ mod tests {
         );
     }
 
-    /// 0079(사장 2026-11-07): 연구소는 개발판에서 타이틀·멈춤 메뉴의 설정 바로 아래 줄, 설정 창 안에는 없다.
+    /// 0094(사장 2026-11-07 "연구소 메뉴가 바깥(첫 화면 메뉴나 멈춤 화면 메뉴)에서도 표시됨"): 바깥 메뉴엔 연구소가 없고
+    /// 설정 바로 아래가 개발 — 연구소는 개발 창 도구 탭에서만(`app/dev.rs`).
     #[cfg(feature = "dev")]
     #[test]
-    fn the_lab_sits_below_settings_on_the_title_and_dev_below_settings_in_pause() {
+    fn menus_have_dev_below_settings_and_no_lab() {
         for has_save in [false, true] {
             let t = title_items(has_save);
             let i = t.iter().position(|x| *x == TitleItem::Settings).unwrap();
-            assert_eq!(t.get(i + 1), Some(&TitleItem::Lab));
+            assert_eq!(t.get(i + 1), Some(&TitleItem::Dev));
+            assert_eq!(t.len(), 3 + has_save as usize);
         }
         // 멈춤엔 연구소가 없고 그 자리(설정 아래)에 개발 줄(0090) — 연구소는 개발 창의 도구 탭에서.
         let p = pause_items();

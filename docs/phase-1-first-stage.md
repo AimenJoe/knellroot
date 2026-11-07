@@ -80,6 +80,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 모으기 공격의 패링(0089) | `Player::release_guard`·`World::parry_open`, 렌더 패링 반달 | 강타·쇠뇌 모은 사격을 떼는 순간 0.18초 패링 창(앞 반원) — 튕기면 강타는 그대로 나가 드러난 적에게, 반격·근접 무기의 모은 마법엔 없음 |
 | 멈춤 창 개발 줄(0090) | `flow::pause_items` | 개발판 멈춤 창에서 연구소를 빼고 그 자리(설정 아래)에 개발 줄 — 연구소는 타이틀·개발 창 도구 탭 |
 | 문도 시야 가리면 옅게(0091) | `render::gate_box`·`draw_gate`·`Renderer::gate_fade`, `Level::settle`(문 상자도 땅 높이) | 지형 덩어리와 같은 판정·진하기로 문이 옅어짐(쿼터뷰·락온), 문 상자가 땅 높이(+1m)에 맞게 올라감 |
+| 연구소는 개발 창 안에만·소품 가림 상자(0094) | `flow::title_items`, `scenery::vert_bounds` | 타이틀·멈춤에서 연구소 줄을 빼고(개발 창 도구 탭에서만), 소품의 가림 상자를 구운 정점 범위로(회전·큰 모델·돌무더기도) |
 | 땅 돌리기 시작 CC·착용 중 표시(0085) | `World::apply_turn` 시작 휘청, 랩 `turn.start stagger s`, `equip::wears_something` | 돌기 시작하면 범위 안 적 0.25초 휘청(보스는 무게만큼 짧게, 예고 끊김), "착용 중"은 낀 물건에만(빈 칸·맨손은 커서만) |
 | 바닥 표시 땅 따라·땅 돌리기 휘청(0084) | `render::Drape`(`rise`·`shadow`·`line_up`, 평평한 `ring`·`sector` 없앰), `Level::settle` 문 가운데, `camera` `wobble`·`wobble_at`·`roll`, 랩 `turn.wobble in/out deg` | 그림자·쉼터·상자·갈 곳·플레이어 표시 32곳이 경사로·턱을 따라 접힘(가운데의 땅 위 높이는 지킴), 땅 돌리기 시작엔 도는 쪽·끝엔 반대쪽으로 1.5° 휘청 |
 | 웹 가로 기본(0082) | `web/index.html` `#rotate`·`knell_portrait`, `screen::portrait_blocked`, `tick_play` | 세로로 든 터치 기기엔 회전 안내(싸움은 멈춤), 누르면 Android는 전체 화면 + 가로 잠금(안 먹히면 세로로 계속), iPhone은 세로로 계속 |
