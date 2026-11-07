@@ -34,6 +34,8 @@ pub struct Renderer {
     sec_extra: Vec<(usize, Quat, Vec3)>,
     /// 락온 중 과녁을 가릴 때의 진하기(0040, 부드럽게 따라간다).
     lock_fade: f32,
+    /// 스테이지 문의 진하기(0091): 지형 덩어리와 같은 규칙으로 플레이어·락온 대상을 가리면 옅어진다(문은 굽는 지형이 아니라 따로 그린다).
+    gate_fade: f32,
     /// 캐릭터 실시간 그림자(0045): 달 쪽 정사영으로 찍은 가림판(저해상도, 가장 가까운 픽셀) + 그 재질 둘.
     shadow_rt: Option<RenderTarget>,
     mask_mat: Option<Material>,
@@ -316,6 +318,7 @@ impl Renderer {
             sec_rig: None,
             sec_extra: Vec::new(),
             lock_fade: 1.0,
+            gate_fade: 1.0,
             shadow_rt: None,
             mask_mat: None,
             floor_mat: None,
@@ -671,6 +674,12 @@ impl Renderer {
 
         // 스테이지 물건: 문·핵.
         if let Some(run) = v.stage {
+            // 문이 시야를 가리면 옅게(0091, 사장 "문은 투명화되지 않아서 시야를 가림") — 지형 덩어리와 같은 판정점·같은 빠르기.
+            let want = match gate_box(run) {
+                Some(b) if !crate::camera::occluders(&pts, cam.rig.pos, &[b]).is_empty() => FADED,
+                _ => 1.0,
+            };
+            self.gate_fade += (want - self.gate_fade) * k;
             self.stage_props(run, w, &lights);
         }
 
@@ -701,7 +710,11 @@ impl Renderer {
 
         // 옅어진 덩어리는 맨 나중에: 면은 거의 투명하게.
         match v.stage {
-            Some(_) => {
+            Some(run) => {
+                if self.gate_fade < 0.98 {
+                    let a = self.gate_fade;
+                    self.draw_gate(run, &lights, a);
+                }
                 let sc = &self.scenery.as_ref().unwrap().1;
                 for p in sc.pieces.iter().filter(|p| p.fade < 0.98) {
                     self.batch.raw(&p.verts, &p.idx, p.tex.as_ref(), p.fade);
@@ -853,30 +866,41 @@ impl Renderer {
     }
 
     /// 문(열리면 땅으로 가라앉거나 `open` 동작)과 핵(문지기가 남긴 것, 떠서 돈다).
+    /// 스테이지 문(진하기 `a` — 1 = 불투명, 옅으면 외곽선·그림자 실루엣 없이).
+    fn draw_gate(&mut self, run: &StageRun, lights: &[Light], a: f32) {
+        let Some((g, c)) = run.level.gate else {
+            return;
+        };
+        let k = (run.gate_open / GATE_TIME).clamp(0.0, 1.0);
+        if k >= 1.0 {
+            return;
+        }
+        match self.lib.get("gate") {
+            Some(e) => {
+                let open = e.pick(&["open"]);
+                let sink = if open.is_some() { 0.0 } else { k * 4.6 };
+                e.model
+                    .pose(open, k * e.duration(open) * 0.999, &mut self.pose);
+                let inst = Mat4::from_translation(c - Vec3::Y * sink);
+                self.batch
+                    .model(e, &self.pose, inst, with_a(WHITE, a), lights, 1.0);
+            }
+            None => {
+                let mut b = g;
+                b.max.y -= k * 4.5;
+                shaded_box(b.center(), b.size(), Color::new(0.25, 0.2, 0.22, a), 0.6);
+            }
+        }
+    }
+
     fn stage_props(&mut self, run: &StageRun, w: &World, lights: &[Light]) {
         // 바닥 표시는 모두 땅 높낮이를 따라 접는다(0083 — 경사로·턱에서 묻히거나 뜨던 것).
         let fl = Drape {
             ground: w.ground.as_ref(),
         };
-        if let Some((g, c)) = run.level.gate {
-            let k = (run.gate_open / GATE_TIME).clamp(0.0, 1.0);
-            if k < 1.0 {
-                match self.lib.get("gate") {
-                    Some(e) => {
-                        let open = e.pick(&["open"]);
-                        let sink = if open.is_some() { 0.0 } else { k * 4.6 };
-                        e.model
-                            .pose(open, k * e.duration(open) * 0.999, &mut self.pose);
-                        let inst = Mat4::from_translation(c - Vec3::Y * sink);
-                        self.batch.model(e, &self.pose, inst, WHITE, lights, 1.0);
-                    }
-                    None => {
-                        let mut b = g;
-                        b.max.y -= k * 4.5;
-                        shaded_box(b.center(), b.size(), Color::new(0.25, 0.2, 0.22, 1.0), 0.6);
-                    }
-                }
-            }
+        // 문: 가리지 않을 때만 여기서(불투명). 옅어진 문은 옅은 지형과 함께 맨 나중에(`draw_gate`, 0091).
+        if self.gate_fade >= 0.98 {
+            self.draw_gate(run, lights, 1.0);
         }
         // 장신구 상자(0064 M3): 짙은 나무 궤 + 호박빛 자물쇠(닫힌 것만 숨 쉬듯), 열리면 뚜껑이 뒤로 젖혀지고 빛이 꺼진다.
         for (i, c) in run.chests.iter().enumerate() {
@@ -2791,6 +2815,22 @@ const OUTLINE_CULL: miniquad::CullFace = miniquad::CullFace::Front;
 
 /// 가린 기둥의 면 진하기(0 = 안 보임). 윤곽선은 따로 남는다.
 const FADED: f32 = 0.08;
+/// 문 모델의 문틀이 막는 상자보다 앞뒤로 더 나온 만큼(m, `gate.glb` ±0.62 − 상자 ±0.4).
+const GATE_FRAME_EXTRA: f32 = 0.22;
+
+/// 닫힌(또는 열리는 중인) 스테이지 문의 지금 상자 — 다 열렸으면 없음(0091). 열리며 가라앉는 만큼 위가 낮아진다.
+fn gate_box(run: &StageRun) -> Option<Aabb> {
+    let (g, _) = run.level.gate?;
+    let k = (run.gate_open / GATE_TIME).clamp(0.0, 1.0);
+    (k < 1.0).then(|| {
+        let mut b = g;
+        b.max.y -= k * 4.5;
+        // 모델의 문틀은 막는 상자보다 두껍다(±0.62m 대 ±0.4m) — 가림 판정은 보이는 두께로.
+        b.min.z -= GATE_FRAME_EXTRA;
+        b.max.z += GATE_FRAME_EXTRA;
+        b
+    })
+}
 
 /// 휘청 기울기(가장 큰 각, 라디안). 세기 1(가장 멀리 미끄러진 적)이 이만큼 꺾인다.
 const LEAN_MAX: f32 = 0.6;
@@ -2948,6 +2988,27 @@ fn beam(c: Vec3, r: f32, h: f32, col: Color) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0091(사장 "문은 투명화되지 않아서 시야를 가림"): 닫힌 문이 카메라와 플레이어 사이에 있으면 가림으로 잡힌다(지형 덩어리와 같은 판정),
+    /// 문 위쪽(높은 땅 위의 문 꼭대기)을 지나는 시선도. 다 열린 문은 상자가 없다.
+    #[test]
+    fn a_closed_gate_between_camera_and_player_counts_as_an_occluder() {
+        let (mut run, _) = crate::stage::StageRun::start(&crate::stage::sanctuary::DEF);
+        let (g, c) = run.level.gate.unwrap();
+        let b = gate_box(&run).expect("closed at the start");
+        // 문 안쪽 2m에 선 플레이어, 문 바깥 위에서 내려다보는 카메라(락온 숄더뷰가 문을 등지고 물러섰을 때).
+        let player = vec3(c.x, c.y, g.min.z - 2.0);
+        let cam = vec3(c.x, c.y + 5.0, g.max.z + 1.5);
+        let pts =
+            crate::camera::view_points(player, PLAYER_HEIGHT, PLAYER_RADIUS + 0.15, cam, None);
+        assert!(!crate::camera::occluders(&pts, cam, &[b]).is_empty());
+        // 문 꼭대기 바로 아래를 지나는 시선(땅 위 4.3m — 상자를 0에 두면 4.5m에서 끝나 놓쳤다): 상자가 땅에 붙어 있어야 잡힌다.
+        let head = vec3(c.x, c.y + 4.3, g.min.z - 0.1);
+        let low_cam = vec3(c.x, c.y + 4.3, g.max.z + 3.0);
+        assert!(!crate::camera::occluders(&[head], low_cam, &[b]).is_empty());
+        run.gate_open = GATE_TIME;
+        assert!(gate_box(&run).is_none(), "an open gate hides nothing");
+    }
 
     /// 0073: 예고 동안 동작은 정점까지 들어 올리고(`WINDUP_REACH`), 버티다가, 마지막 `WINDUP_SNAP`초에 내리쳐
     /// 예고가 끝나는 틱(= 맞는 틱)에 내리친 자세 — 맞음이 그림보다 먼저 오지 않는다.
