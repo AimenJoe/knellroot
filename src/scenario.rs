@@ -12,6 +12,7 @@ pub enum Scenario {
     Tray,
     Stress40,
     Stress80,
+    Duel,
 }
 
 pub struct Entry {
@@ -21,7 +22,7 @@ pub struct Entry {
     pub checks: &'static str,
 }
 
-pub const LIST: [Entry; 7] = [
+pub const LIST: [Entry; 8] = [
     Entry {
         scenario: Scenario::Boss,
         name: "boss arena",
@@ -56,6 +57,11 @@ pub const LIST: [Entry; 7] = [
         scenario: Scenario::Stress80,
         name: "stress 80",
         checks: "P5 perf: 80 mobs, cpu ms / draws (F3)",
+    },
+    Entry {
+        scenario: Scenario::Duel,
+        name: "husk + thorn",
+        checks: "0073 windup poses one by one (rise, hold, snap; rear-up stomp)",
     },
 ];
 
@@ -119,6 +125,13 @@ pub fn build(s: Scenario) -> World {
         Scenario::Empty => World::new("empty", 16.0),
         Scenario::Stress40 => stress(40),
         Scenario::Stress80 => stress(80),
+        Scenario::Duel => {
+            // 준비 동작 보기(0073): 잡몹 둘을 따로 떨어뜨려 하나씩 — 잔재(앞)·가시짐승(옆, 돌진 거리 밖에서 시작).
+            let mut w = World::new("duel", 12.0);
+            w.spawn(crate::species::Kind::Husk, vec3(0.0, 0.0, -4.0));
+            w.spawn(crate::species::Kind::Thorn, vec3(8.0, 0.0, 2.0));
+            w
+        }
         Scenario::Tray => {
             // 둘러싸인 자리: 안쪽(3m)·가운데(5m)·바깥(7m) 고리 + 바깥 고리 곁 기둥 넷(쏟아진 적이 부딪히게).
             let mut w = World::new("tray", 12.0);

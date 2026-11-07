@@ -257,7 +257,7 @@ impl App {
             let e = scenario::entry(self.sc);
             draw_text(
                 format!(
-                    "{} [{}]  checks: {}  (1-7 scenario, ESC title)",
+                    "{} [{}]  checks: {}  (1-8 scenario, ESC title)",
                     e.name, mode, e.checks
                 ),
                 f.ox + 10.0,
