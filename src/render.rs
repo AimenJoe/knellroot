@@ -104,6 +104,8 @@ pub struct View<'a> {
     pub alpha: f32,
     pub t: &'a Tuning,
     pub stage: Option<&'a StageRun>,
+    /// 바닥 공격 예고 진하기(설정 0..1, 0 = 끔 — 0074).
+    pub tells: f32,
 }
 
 /// 탄의 색(0048·0051, `weapons::Bolt::look`): 마법 라벤더, 무거운 탄 놋쇠, 꿰뚫는 탄 민트, 쇠뇌 볼트 밝은 나무 — 붉은색(위험)은 쓰지 않는다.
@@ -131,6 +133,8 @@ const TELE: Color = Color::new(0.85, 0.15, 0.1, 1.0);
 /// 예고 잉크(채움 = 테두리) 투명도. 0.42 채움 + 0.7 테두리(겹쳐 더 진함)에서 내렸다(2026-11-07, 사장 "더 옅게").
 /// 더 내리면 밝은 돌바닥에서 다 찬 순간이 흐려진다 — 그때는 투명도가 아니라 테두리 굵기·잉크 색으로 보강(KB color-vision-check).
 const TELE_A: f32 = 0.3;
+/// 설정 "공격 예고"(0074)의 이 값에서 위 투명도 그대로(70%). 기본 50%면 0.3 × 5/7 ≈ 0.21.
+const TELLS_BASE: f32 = 0.7;
 /// 예고 면 전체에 깔린 바탕(어디까지인지만).
 const TELE_BASE_A: f32 = 0.04;
 /// 못 받는 공격의 가운데 X(1px 선이라 면보다 조금 진하게).
@@ -639,7 +643,9 @@ impl Renderer {
                 ground: w.ground.as_ref(),
             };
             if let Some((k, shape)) = en.telegraph() {
-                telegraph(&drape, p, en.facing, k, shape);
+                if v.tells > 0.0 {
+                    telegraph(&drape, p, en.facing, k, shape, v.tells / TELLS_BASE);
+                }
             }
             if let Some(front) = en.wave_front() {
                 drape.ring(p, front, 0.0, 360.0, with_a(TELE, 0.45));
@@ -1789,11 +1795,11 @@ fn windup_hold(en: &Enemy) -> Option<f32> {
 
 /// 바닥 예고 하나: 옅은 면 + 테두리, 채움이 자라 테두리에 닿는 순간 공격. 원판·부채꼴·고리는 가운데부터, 띠는 가운데 줄에서 양옆으로.
 /// 2026-11-06: 바닥 높낮이를 따라 접어 그린다(`Drape`) — 낮은 곳의 적이 높은 곳으로 치면 예고가 높은 땅 속에 묻혀 안 보였다.
-fn telegraph(d: &Drape, p: Vec3, facing: f32, k: f32, shape: TeleShape) {
+fn telegraph(d: &Drape, p: Vec3, facing: f32, k: f32, shape: TeleShape, ink_mul: f32) {
     // 2026-11-07(사장 "더 옅게, 싸움에 방해되지 않게"): nail 0186·0196 꼴 — 채움과 테두리는 같은 색·같은 투명도(`TELE_A`),
     // 채움은 테두리 띠 안쪽까지만 자라 겹치지 않는다(겹치면 그 자리만 진해져 "다 찬 순간"이 안 온다), 바탕은 아주 옅게.
-    let bg = with_a(TELE, TELE_BASE_A);
-    let ink = with_a(TELE, TELE_A);
+    let bg = with_a(TELE, TELE_BASE_A * ink_mul);
+    let ink = with_a(TELE, (TELE_A * ink_mul).min(1.0));
     let inner = |r: f32| (r - TELE_RING_W).max(0.0);
     match shape {
         TeleShape::Disc { r } => {
@@ -1818,7 +1824,7 @@ fn telegraph(d: &Drape, p: Vec3, facing: f32, k: f32, shape: TeleShape) {
             d.ring(p, inner(r) * k, facing, 360.0, ink);
             d.ring(p, r, facing, 360.0, ink);
             // 패링으로 못 받는다 = 가운데 X(색이 아니라 모양으로, nail 0187 · KB timing-parry).
-            let mark = with_a(TELE, TELE_MARK_A);
+            let mark = with_a(TELE, (TELE_MARK_A * ink_mul).min(1.0));
             let x = r.min(2.0) * 0.45;
             d.line(p + vec3(-x, 0.0, -x), p + vec3(x, 0.0, x), mark);
             d.line(p + vec3(-x, 0.0, x), p + vec3(x, 0.0, -x), mark);

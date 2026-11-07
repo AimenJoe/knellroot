@@ -20,6 +20,10 @@ impl App {
                 SettingsRow::Volume => {
                     ui::Row::step(s.menu_volume, format!("{}%", self.volume as u32 * 10))
                 }
+                SettingsRow::Tells if self.tells == 0 => ui::Row::step(s.menu_tells, s.value_off),
+                SettingsRow::Tells => {
+                    ui::Row::step(s.menu_tells, format!("{}%", self.tells as u32 * 10))
+                }
                 SettingsRow::MouseAim => ui::Row::step(s.menu_mouse_aim, on_off(mouse.on)),
                 SettingsRow::CursorRest => ui::Row::step(
                     s.menu_cursor_rest,
@@ -48,6 +52,10 @@ impl App {
                     self.shake = (self.shake as i32 + step).clamp(0, 10) as u8;
                     self.save_prefs();
                 }
+                Some(SettingsRow::Tells) => {
+                    self.tells = (self.tells as i32 + step).clamp(0, 10) as u8;
+                    self.save_prefs();
+                }
                 Some(SettingsRow::Volume) => {
                     self.set_volume((self.volume as i32 + step).clamp(0, 10) as u8)
                 }
@@ -61,6 +69,10 @@ impl App {
                 SettingsRow::Fullscreen => crate::screen::toggle(),
                 SettingsRow::Shake => {
                     self.shake = if self.shake >= 10 { 0 } else { self.shake + 1 };
+                    self.save_prefs();
+                }
+                SettingsRow::Tells => {
+                    self.tells = if self.tells >= 10 { 0 } else { self.tells + 1 };
                     self.save_prefs();
                 }
                 SettingsRow::Volume => self.set_volume(if self.volume >= 10 {

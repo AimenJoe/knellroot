@@ -285,6 +285,8 @@ pub enum SettingsRow {
     Shake,
     /// 소리 크기 0..=10(0064 M5).
     Volume,
+    /// 바닥 공격 예고 진하기 0..=10, 0 = 끔(0074, nail 0198 꼴).
+    Tells,
     /// 마우스 조준 켬/끔·커서 쉼 시간·조준 표시 크기(0058) — 마우스가 있을 법한 기기에서만.
     MouseAim,
     CursorRest,
@@ -303,6 +305,7 @@ pub fn settings_rows(fullscreen: bool, mouse: bool) -> Vec<SettingsRow> {
         v.push(SettingsRow::Fullscreen);
     }
     v.push(SettingsRow::Shake);
+    v.push(SettingsRow::Tells);
     v.push(SettingsRow::Volume);
     if mouse {
         v.extend([

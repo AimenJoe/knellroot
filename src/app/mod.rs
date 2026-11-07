@@ -84,6 +84,8 @@ pub struct App {
     shake: u8,
     /// 소리(0064 M5): 크기 0..=10, 소리 묶음(main이 올린 뒤 `set_sfx`), 지난 틱의 회피·적 예고(시작한 순간만 소리).
     volume: u8,
+    /// 바닥 공격 예고 진하기 0..=10(0 = 끔, 0074).
+    tells: u8,
     sfx: Option<crate::sfx::Sfx>,
     was_dodging: bool,
     tele_was: Vec<bool>,
@@ -123,6 +125,7 @@ impl App {
         let mut legacy_weapon = 0;
         let mut shake = crate::prefs::SHAKE_DEFAULT;
         let mut volume = crate::prefs::VOLUME_DEFAULT;
+        let mut tells = crate::prefs::TELLS_DEFAULT;
         if let Some(p) = crate::prefs::load() {
             if let Some(l) = p.lang {
                 i18n::set_lang(l);
@@ -131,6 +134,7 @@ impl App {
             input::set_mouse_aim(p.mouse);
             shake = p.shake;
             volume = p.volume;
+            tells = p.tells;
             legacy_weapon = p.weapon;
         }
         // 기록 슬롯(0066): 마지막으로 쓴 슬롯의 기록. 든 무기는 기록에 — 없으면(옛 슬롯 1) 예전 prefs 칸 21의 값.
@@ -171,6 +175,7 @@ impl App {
             weapon,
             shake,
             volume,
+            tells,
             sfx: None,
             was_dodging: false,
             tele_was: Vec::new(),
@@ -246,6 +251,7 @@ impl App {
             mouse: input::mouse_aim(),
             shake: self.shake,
             volume: self.volume,
+            tells: self.tells,
             // 든 무기는 슬롯 기록으로 옮겼다(0066) — 옛 칸은 처음 읽은 값 그대로 둔다(옛 슬롯 1의 기본값).
             weapon: self.legacy_weapon,
         });
@@ -486,6 +492,7 @@ impl App {
             alpha,
             t: &self.t,
             stage,
+            tells: self.tells as f32 / 10.0,
         });
         self.frame = Some(f);
         self.ui.begin(f.ui);

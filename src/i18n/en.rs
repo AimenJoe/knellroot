@@ -106,6 +106,7 @@ pub const EN: Strings = Strings {
     settings_title: "Settings",
     menu_shake: "Screen shake",
     menu_volume: "Volume",
+    menu_tells: "Attack tells",
     menu_weapon: "Weapon",
     weapon_sword: "Pilgrim's Sword",
     weapon_hammer: "Bell-ringer's Hammer",

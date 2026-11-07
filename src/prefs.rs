@@ -13,9 +13,12 @@ const MAGIC_V1: u32 = 0x4B4E_0001;
 /// 20 화면 흔들림(0..=10, +1로 — 0 = 저장 전 = 10), 21 든 무기(무기 표 자리 +1) — 0052·0051, 뒤에 붙인 칸이라 MAGIC 그대로.
 /// 22 마우스 조준(1 끔·2 켬, 0 = 저장 전 = 켬), 23 커서 쉼(`REST_SECS` 자리 +1), 24 조준 표시 크기(+1) — 0058, 뒤에 붙인 칸이라 MAGIC 그대로.
 /// 25 소리 크기(0..=10, +1로 — 0 = 저장 전 = `VOLUME_DEFAULT`) — 0064 M5, 뒤에 붙인 칸이라 MAGIC 그대로.
-const CELLS: usize = 26;
+/// 26 공격 예고 진하기(0..=10 = 0~100%, +1로 — 0 = 저장 전 = `TELLS_DEFAULT`) — 0074, 뒤에 붙인 칸이라 MAGIC 그대로.
+const CELLS: usize = 27;
 /// 소리 크기 기본값(8 = 80%).
 pub const VOLUME_DEFAULT: u8 = 8;
+/// 공격 예고 진하기 기본(0074, nail 0198 꼴): 10 중 5 = 50%. 70%가 0072의 진하기.
+pub const TELLS_DEFAULT: u8 = 5;
 /// 화면 흔들림 기본값(10 = 100%).
 pub const SHAKE_DEFAULT: u8 = 10;
 
@@ -31,6 +34,8 @@ pub struct Prefs {
     pub mouse: MouseAim,
     /// 소리 크기 0..=10(0064 M5).
     pub volume: u8,
+    /// 바닥 공격 예고 진하기 0..=10(0 = 끔, 0074).
+    pub tells: u8,
 }
 
 fn lang_code(l: Lang) -> u32 {
@@ -59,6 +64,7 @@ fn encode(p: &Prefs) -> [u32; CELLS] {
     v[23] = p.mouse.rest as u32 + 1;
     v[24] = p.mouse.size as u32 + 1;
     v[25] = p.volume.min(10) as u32 + 1;
+    v[26] = p.tells.min(10) as u32 + 1;
     v
 }
 
@@ -97,6 +103,7 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
             weapon: 0,
             mouse: MouseAim::default(),
             volume: VOLUME_DEFAULT,
+            tells: TELLS_DEFAULT,
         });
     }
     if v[0] != MAGIC {
@@ -110,6 +117,10 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
         mouse: mouse_from(v[22], v[23], v[24]),
         volume: match v[25] {
             0 => VOLUME_DEFAULT,
+            c => (c - 1).min(10) as u8,
+        },
+        tells: match v[26] {
+            0 => TELLS_DEFAULT,
             c => (c - 1).min(10) as u8,
         },
     })
@@ -248,9 +259,14 @@ mod tests {
                 size: 0,
             },
             volume: 3,
+            tells: 8,
         };
         assert_eq!(decode(&encode(&p)), Some(p));
         assert_eq!(decode(&[0; CELLS]), None, "nothing saved yet");
+        // 0074 전 저장(예고 칸 0): 기본값.
+        let mut old = encode(&p);
+        old[26] = 0;
+        assert_eq!(decode(&old).unwrap().tells, TELLS_DEFAULT);
         let mut bad = encode(&p);
         bad[2] = 999; // 범위 밖 키 → 배치는 기본값
         assert_eq!(decode(&bad).unwrap().bindings, Bindings::default_layout());
@@ -269,6 +285,7 @@ mod tests {
             weapon: 0,
             mouse: MouseAim::default(),
             volume: VOLUME_DEFAULT,
+            tells: TELLS_DEFAULT,
         };
         let mut old = encode(&plain);
         old[16..].fill(0);
@@ -317,6 +334,7 @@ mod tests {
                 size: 2,
             },
             volume: 0,
+            tells: 0,
         };
         assert_eq!(decode(&encode(&p)), Some(p));
         let mut old = encode(&p);
@@ -348,6 +366,7 @@ mod tests {
             weapon: 1,
             mouse: MouseAim::default(),
             volume: 10,
+            tells: 10,
         };
         assert!(store::write_to(&p, &encode(&prefs)));
         assert_eq!(decode(&store::read_from(&p)), Some(prefs));
