@@ -163,4 +163,5 @@
     - 고침: 개발판 패키지를 `io.github.aimenjoe.dev.knellroot`로 바꿨다(앱 이름 "Knellroot dev"는 그대로).
       - 전에 깐 옛 개발판(`….knellroot.dev`)은 지우고 새로 깔아야 한다. 패키지가 달라 새 앱으로 깔린다.
       - `build-android`의 APK 검사에 "패키지 마지막 조각 = APK 안의 `lib<이름>.so`"를 더해 다시 새지 않게 했다.
+    - 확인: 같은 `android-smoke`에서 새 패키지 APK가 켜지고("after launch: alive"), Enter 둘로 시작한 뒤에도 살아 있다("after start: alive", 2026-11-07 run 42316003392). KB `guides/macroquad-android-apk-github-actions.md` 함정에 적었다.
     - nail도 같은 꼴(`io.github.aimenjoe.nail.dev`)이라 개발판 APK가 같은 이유로 죽을 것이다 — 사장에게 알림.
