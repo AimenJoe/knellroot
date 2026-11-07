@@ -147,7 +147,8 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
     let blink = pl.stamina_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
     draw_rectangle(bx, by, bw * k, bh, if blink { DENIED } else { STAMINA });
     // 박자 타(0076): 스태미나를 안 썼다 — 막대가 금빛으로 반짝였다 식는다(막대 위아래로 한 줄씩 넓게).
-    if pl.since_beat < BEAT_GLINT {
+    let shots = matches!(pl.weapon.def().rb, Rb::Shot { .. });
+    if pl.since_beat < BEAT_GLINT && !shots {
         let g = 1.0 - pl.since_beat / BEAT_GLINT;
         let col = Color::new(1.0, 0.86, 0.4, 0.9 * g);
         draw_rectangle(bx, by - s, bw * k, bh + 2.0 * s, col);
@@ -231,6 +232,17 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
                 };
                 if k > 0.0 {
                     draw_rectangle(bx, by + 7.0 * s * (1.0 - k), 2.5 * s, 7.0 * s * k, AMMO);
+                }
+                // 박자 사격(0077): 볼트를 안 썼다 — 탄창이 금빛으로 반짝였다 식는다.
+                if pl.since_beat < BEAT_GLINT {
+                    let g = 1.0 - pl.since_beat / BEAT_GLINT;
+                    draw_rectangle(
+                        bx - 0.5 * s,
+                        by - 0.5 * s,
+                        3.5 * s,
+                        8.0 * s,
+                        Color::new(1.0, 0.86, 0.4, 0.9 * g),
+                    );
                 }
             }
             if let Some(g) = g {

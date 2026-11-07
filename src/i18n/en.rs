@@ -64,7 +64,7 @@ pub const EN: Strings = Strings {
     weapon_hammer_d:
         "Slow 2 hits · leaping slam · heavy bolt; breaks posture. The sanctuary bell's hammer",
     weapon_staff_d:
-        "Fast 4-hit combo · timed release bonus · piercing bolt. A pilgrim's light staff",
+        "Fast 4-hit combo · charged spin · piercing bolt. A pilgrim's light staff",
     weapon_crossbow_d:
         "Grenades · aimed shots (4 bolts) · dodge to reload. An old hunter's powder crossbow",
     weapon_fists_d: "3-hit combo · charged punch · magic bolt. With the weapon slot empty you fight bare-handed — light, and you must get close",

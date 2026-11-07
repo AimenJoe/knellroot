@@ -73,6 +73,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 잔불(0064 M1) | `ember.rs`, `world.rs` `tick_embers`·`embers`·`drops`, `species.rs` `embers`, `backdrop.rs` `embers`, `hud.rs` | 쓰러지면 튀어나오고 0.35초 뒤 끌려와 주움, 가진 수는 기록에 — 쓰러져도 그대로 |
 | 앱·UI 뼈대(0066) | `app/stack.rs`·`flow.rs` `Go`·`Layer`·`focus`, `app/menu.rs` `Menu`·`Out`·`Hit`, 화면 파일 `pause`·`settings`·`shop`·`ask`·`slots`·`title`·`play`·`progress`·`controls_screen`, `ui.rs` `panel`·`list`·`close`·`buttons`·`title_arrows` | 장면 스택(닫으면 연 줄로), 목록 화면 = 줄 표 하나 + 몰이꾼, nail 창 틀(✕·창 밖 탭·◀ 값 ▶·제목 줄 ▲▼), 묻는 창은 아래 창 위. `tick_scene` 340 → 35줄 |
 | 아이템 그림(0068) | `item_view.rs`, `Renderer::draw_icon`·`draw_item`, `tools/art/blender/charms.py` → `charms.glb` | 칸·후보 줄의 아이콘(한 번 찍어 캐시), 고른 것은 크게 흔들리는 3D, 장신구 모델 여섯(첫 시안) |
+| 박자는 모든 무기·장비 목록 커서(0077) | `equip::candidates`·`has_choice`·`pick_start`, `world` 쇠뇌 사격 박자·`on_beat`·`BEAT_WINDOW_MIN`, `hud` 탄창 반짝임 | 모든 칸 목록에 낀 것(착용 중), 커서는 거기서, 견주는 줄은 가장 긴 것만큼 비움. 쇠뇌는 사격이 박자(한 발 0.24초, 박자 사격 = 볼트 안 씀), 창 바닥 ±60ms, 지팡이 설명에서 박자처럼 읽히던 말 뺌 |
 | 길찾기·돌진 띠·박자 피드백·맨손·달리기(0076) | `nav.rs`(`Nav`·`clear`·`waypoint`·`charge_room`), `Enemy::spread`·`charge_len`·`touch`, `Player::beat_chain`·`since_beat`·`swing_beat`·`running`, `hud::draw_beat_note`, `sfx::beat_id`, `weapons::Id::Fists`, `equip::pick_start`, `ListView::tapped`, `tuning::RUN_*` | 적은 상자(기둥·소품·문)를 아는 격자로 몸 폭 끈 당기기 + 옆으로 퍼지기, 돌진 띠 = 맞는 곳(폭·끝·쓸고 간 선분·벽에서 멈춤), 박자 타 = 금빛 휘두름·발밑 고리·음표·스태미나 막대 반짝임·오르는 종소리, 무기 후보에 든 것(착용 중)·맨손, 회피 꾹 = 달리기(×1.45, 18/s, 달리다 치면 대시 공격), 터치 강공격·모으기 되살림 |
 | 개발 메뉴 개편(0075) | `Scene::Dev { tab }`·`settings::DEV_TABS`·`App::dev_run`·`flow::pause_items` | 묶음(combat·stage·perf & tools) + 설명, 개발 판은 슬롯에 안 씀, 멈춤 끝에 DEV(개발판), 시나리오 8 husk + thorn |
 | 공격 예고 설정(0074) | `SettingsRow::Tells`·prefs 칸 26·`View::tells`·`render::TELLS_BASE` | 설정 → 공격 예고 0~100%(0 = 끔), 기본 50%, 70% = 0072 진하기 |
@@ -88,6 +89,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), 랩(멈춤 끝 줄 LAB·F1, 0070), F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+**0077**: 쇠뇌 박자 0.24초를 탈 수 있는지·볼트 안 쓰는 덤이 너무 센지.
+
 **0076(개발판, 2026-11-07)**: 판정 — 적이 기둥을 돌아오는지·떼가 둘러싸는지, 돌진 띠 끝·옆과 맞는 곳이 같은지(문지기 먼 돌진이 짧게 끝나는 것은 둠 — 늘 닿아야 하면 `charge_range` 8), 박자 고리·음표·종소리로 박자를 타게 되는지(안 되면 메트로놈), 맨손(검 동작 빈손 — 어색하면 주먹 동작), 달리기 ×1.45·18/s. 터치 강공격·원거리 모으기가 0070 7 뒤로 안 됐던 것 고침.
 
 **v0.3.x 패치(0070)**: 1~5·9·10 개발판에 들어감 — 손맛 판정(대시 공격·패링 반격·락온 넘기기·패링 멈춤·장비 창 십자·평타 타격감·돌진 예고가 닿는 때). Select = 장비 창·후보에서 낀 것 빼기는 들어감. 랩을 멈춤 메뉴 안의 창으로 옮김(0070 7).

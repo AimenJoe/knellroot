@@ -5,10 +5,10 @@ use macroquad::prelude::*;
 use crate::ground::Ground;
 use crate::input::Actions;
 use crate::tuning::{
-    Tuning, BEAT_WINDOW, BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY,
-    BOMB_SHOT_REACH, BOMB_SKID, CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES, GROUND_STEP,
-    HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, LOCK_HANDOFF, P, PLAYER_HP, PLAYER_RADIUS,
-    RIPOSTE_WINDOW, RUN_SPEED_X, RUN_STAMINA, TICK_DT,
+    Tuning, BEAT_WINDOW, BEAT_WINDOW_MIN, BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE,
+    BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID, CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES,
+    GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, LOCK_HANDOFF, P, PLAYER_HP,
+    PLAYER_RADIUS, RIPOSTE_WINDOW, RUN_SPEED_X, RUN_STAMINA, TICK_DT,
 };
 use crate::weapons::{self, Rb, Shape};
 
@@ -619,7 +619,13 @@ impl World {
         let pl = &mut self.player;
         // 박자(2026-11-07): 공격을 누른 **그 순간**이 박자 창 안이었나. 받아 뒀다 나중에 나가는 이른 누름은 창 밖으로 친다
         // (연타가 박자를 공짜로 얻지 못하게 — KB melee-light-and-charged-attack-feel "먼저 누른 것이 남아야 창을 긁지 못한다").
-        if a.attack {
+        // 원거리 무기는 사격 버튼(RB)이 같은 박자를 탄다(사장 2026-11-07 "원거리 무기도 박자 있는거야. 근데 버튼이 다를뿐").
+        let beat_press = if matches!(wpn.rb, Rb::Shot { .. }) {
+            a.cast
+        } else {
+            a.attack
+        };
+        if beat_press {
             pl.on_beat = on_beat(pl.since_swing, pl.beat);
         }
         pl.pending_left = (pl.pending_left - dt).max(0.0);
@@ -1360,12 +1366,26 @@ impl World {
                     }
                 } else if a.cast && matches!(wpn.rb, Rb::Shot { .. }) {
                     // 원거리 무기의 RB = 사격(0051): 탄창이 비면 장전이 끝날 때까지 못 쏜다.
-                    if let Rb::Shot { reload, .. } = wpn.rb {
+                    if let Rb::Shot { reload, time, .. } = wpn.rb {
+                        // 박자(0071·0077): 앞 사격이 시작된 뒤 그 한 발의 시간(= 공격 속도) ± 창 안에 누른 사격은 볼트를 쓰지 않는다 —
+                        // 근접의 "박자 평타 = 스태미나 0"과 같은 틀, 쇠뇌의 값은 볼트. 첫 발·받아 둔 이른 누름은 쓴다.
+                        let free = pl.on_beat;
+                        pl.on_beat = false;
                         if pl.ammo > 0 {
-                            pl.ammo -= 1;
-                            if pl.ammo == 0 {
-                                pl.reload = reload;
+                            if free {
+                                self.beat_now = true;
+                                pl.beat_chain += 1;
+                                pl.since_beat = 0.0;
+                            } else {
+                                pl.beat_chain = 0;
+                                pl.ammo -= 1;
+                                if pl.ammo == 0 {
+                                    pl.reload = reload;
+                                }
                             }
+                            pl.swing_beat = free;
+                            pl.since_swing = 0.0;
+                            pl.beat = t[P::CastTime] * time;
                             pl.facing = cast_dir.x.atan2(cast_dir.z);
                             pl.state = PState::Cast {
                                 t: 0.0,
@@ -2771,7 +2791,7 @@ struct Strike {
 /// 콤보 한 타의 선딜·활성·후딜(0051: 랩 평타 × 무기 표의 `time`).
 /// 박자 창 안인가(2026-11-07): 마지막 평타가 시작된 뒤 `since`초, 그 무기의 박자(그 타의 한 스윙 시간) `beat` ± `BEAT_WINDOW` × 박자.
 pub fn on_beat(since: f32, beat: f32) -> bool {
-    beat > 0.0 && (since - beat).abs() <= beat * BEAT_WINDOW
+    beat > 0.0 && (since - beat).abs() <= (beat * BEAT_WINDOW).max(BEAT_WINDOW_MIN)
 }
 
 pub fn hit_times(t: &Tuning, w: &weapons::Weapon, hit: u8) -> (f32, f32, f32) {
@@ -5918,5 +5938,55 @@ mod tests {
             fists.combo[0].reach < sword.combo[0].reach
                 && fists.combo[0].time < sword.combo[0].time
         );
+    }
+
+    /// 0077(사장 2026-11-07 "원거리 무기도 박자 있는거야. 근데 버튼이 다를뿐"): 쇠뇌는 사격(RB)이 박자를 탄다 —
+    /// 앞 사격에서 한 발의 시간(= 공격 속도) ± 창 안에 누른 사격은 볼트를 쓰지 않는다, 연사는 쓴다.
+    #[test]
+    fn a_crossbow_shot_on_the_beat_keeps_its_bolt_and_mashing_spends_them() {
+        let t = Tuning::default();
+        let shoot = |w: &mut World, press: bool| {
+            w.step(
+                &Actions {
+                    cast: press,
+                    ..Default::default()
+                },
+                &t,
+            )
+        };
+        let mut w = World::new("test", 20.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        let full = w.player.ammo;
+        shoot(&mut w, true);
+        assert_eq!(w.player.ammo, full - 1, "the first shot spends a bolt");
+        let beat = w.player.beat;
+        assert!(beat > 0.2, "beat {beat}");
+        let mut got = false;
+        for _ in 0..120 {
+            let press = w.player.since_swing >= beat - TICK_DT * 0.5;
+            let ev = shoot(&mut w, press);
+            if press {
+                assert!(ev.contains(&Event::Beat), "on the beat");
+                assert_eq!(w.player.ammo, full - 1, "no bolt for the beat shot");
+                assert!(w.player.beat_chain == 1 && w.player.since_beat < TICK_DT * 2.0);
+                got = true;
+                break;
+            }
+        }
+        assert!(got);
+        // 연사(매 틱 누름)는 박자를 공짜로 얻지 못한다.
+        let mut w = World::new("test", 20.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        let mut beats = 0;
+        for _ in 0..30 {
+            beats += shoot(&mut w, true)
+                .iter()
+                .filter(|e| **e == Event::Beat)
+                .count();
+        }
+        assert_eq!(beats, 0);
+        assert!(w.player.ammo < full, "mashing spends bolts");
+        // 창은 아무리 빨라도 ±60ms 아래로 좁아지지 않는다.
+        assert!(on_beat(0.24 + 0.055, 0.24) && !on_beat(0.24 + 0.07, 0.24));
     }
 }
