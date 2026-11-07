@@ -101,7 +101,14 @@ async function main() {
   // 장비 창 터치(2026-11-06): 멈춤 → 장비 → 칸은 두 걸음(누르면 고르기, 다시 누르면 후보) → 후보도 두 걸음(고르기 = 미리 보기, 다시 = 끼우기).
   // 자리는 844×390에서 잰 값(`app::equip` 창 440×226 기준 — 창 크기를 바꾸면 함께).
   const SWORD_BOX = [154, 135], STAFF_ROW = [560, 128], CHARM_BOX = [410, 77];
-  await tap([288, 138]); await page.waitForTimeout(400);   // 멈춤의 둘째 줄 "장비"
+  // 멈춤 창 줄 자리는 줄 수로 계산한다(`app::menu` draw_menu·panel_rect — 480×270 기준 단위 u, 제목 30·줄 13×1.75·아래 8,
+  // 창은 위 6u와 아래 안내 줄(2.8글) 사이 가운데). 2026-11-07: 숫자로 박아 둔 자리가 멈춤 줄 수가 바뀌자 다른 줄을 눌렀다.
+  const menuRow = (rows, i) => {
+    const u = H / 270, top = 6 * u, bottom = H - 13 * u * 2.8;
+    const h = (30 + rows * 13 * 1.75 + 8) * u;
+    return [W / 2, top + (bottom - top - h) / 2 + 29 * u + 13 * 1.75 * u * (i + 0.5)];
+  };
+  await tap(menuRow(5, 1)); await page.waitForTimeout(400);   // 멈춤(다섯 줄)의 둘째 줄 "장비"
   await tap(CHARM_BOX); await page.waitForTimeout(300);    // 고르기만(설명이 바뀜)
   await tap(SWORD_BOX); await page.waitForTimeout(300);    // 무기 칸 고르기
   await tap(SWORD_BOX); await page.waitForTimeout(400);    // 다시 = 후보 목록
