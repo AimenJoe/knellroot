@@ -722,6 +722,9 @@ impl Scenery {
                     &lights,
                 );
             }
+            // 가림 상자(0094) = 구운 정점의 실제 범위 — 부딪힘 상자(종류별 반폭)는 회전(yaw)을 모르고 모델보다 좁을 수 있다
+            // (벽 조각 깊이 0.4 대 0.83m, 부러진 기둥 조각 0.6 대 1.07m). 지나가는 소품(돌무더기)도 가리면 옅어진다.
+            p.aabb = vert_bounds(&p.verts).or(p.aabb);
             pieces.push(p);
         }
         crate::render::set_bake_shade(None);
@@ -733,6 +736,18 @@ impl Scenery {
             walk_min: walk_min(&lv.ground()),
         }
     }
+}
+
+/// 정점들을 감싸는 상자(없으면 없음).
+fn vert_bounds(v: &[Vertex]) -> Option<Aabb> {
+    let mut it = v.iter().map(|q| q.position);
+    let first = it.next()?;
+    let (mut lo, mut hi) = (first, first);
+    for q in it {
+        lo = lo.min(q);
+        hi = hi.max(q);
+    }
+    Some(Aabb { min: lo, max: hi })
 }
 
 /// 걸을 수 있는 칸 가운데 가장 낮은 땅(경사로는 낮은 끝). 걸을 칸이 없으면 0.
@@ -904,5 +919,27 @@ fn prop_color(k: PropKind) -> Color {
         PropKind::Root => Color::new(0.30, 0.20, 0.25, 1.0),
         PropKind::Brazier => Color::new(0.9, 0.6, 0.25, 1.0),
         PropKind::Bell => Color::new(0.45, 0.42, 0.30, 1.0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 0094: 소품의 가림 상자는 구운 정점을 다 감싼다(돌린 모델·상자보다 큰 모델도).
+    #[test]
+    fn prop_occlusion_box_wraps_every_baked_vertex() {
+        assert_eq!(vert_bounds(&[]), None);
+        let v: Vec<Vertex> = [
+            vec3(1.0, 0.0, -2.0),
+            vec3(-0.5, 3.0, 0.8),
+            vec3(0.2, 1.0, 0.0),
+        ]
+        .iter()
+        .map(|p| Vertex::new(p.x, p.y, p.z, 0.0, 0.0, WHITE))
+        .collect();
+        let b = vert_bounds(&v).unwrap();
+        assert_eq!(b.min, vec3(-0.5, 0.0, -2.0));
+        assert_eq!(b.max, vec3(1.0, 3.0, 0.8));
     }
 }

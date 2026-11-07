@@ -19,9 +19,10 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | S4 | 분위기 | 어둡고 조용한 성소 + 호박색 불빛. 캐릭터가 바닥에 묻히지 않는다 |
 | P5 | 실기 성능(PoC에서 넘어옴) | 뜰 셋째 물결에서 데스크톱 Chrome 60, Android Chrome 30 이상(개발 줄 F3) |
 
-## 구현 상태(2026-11-07 — 첫 판 2026-11-04, v0.3.0 배포 2026-11-06, v0.3.4 배포 2026-11-07·0090까지)
+## 구현 상태(2026-11-07 — 첫 판 2026-11-04, v0.3.0 배포 2026-11-06, v0.3.4·v0.3.5 배포 2026-11-07·0100까지)
 | 항목 | 위치 | 비고 |
 |---|---|---|
+| 소개 페이지(0093) | `site/`(한국어·`en/`), `.github/workflows/pages.yml`, `tools/site/subset_font.py` | 개발 중이라 한 장만: 첫 화면·두 시점·해 보기·만드는 곳, 스크립트 없음. 주소 knellroot.beardworks.io(도메인·Pages 켜기는 사람이 할 일) |
 | 바닥 다듬기(0060 W2) | `scenery.rs` `MORTAR_Y`·`SLAB_*`·`tuft`·`WALL_AO` | 걷는 면 아래로 판 석판(높이·긴 판·들림·빠짐 + 옆면), 풀 다발, 벽 밑 그늘 |
 | 화면 공간 선(0061) | `render.rs` `EdgeFx`·`normal_pass`·`edge_fx`, `scenery::with_normal`, `Batch::record` | 법선 패스(뷰 법선 + 선형 깊이) → 이웃 넷: 깊이가 끊기는 앞쪽은 어두운 선, 볼록 모서리는 밝은 선. 랩 `render.edge*` 다섯(덧붙임). GL만 |
 | 길 안내(0060 W1) | `stage::StageRun::goal`, `render.rs` `beam`·`GUIDE_*`, `hud::draw_goal_arrow`, `camera::world_to_ndc`·`edge_marker` | 문이 열리면(그리고 핵이 남으면) 그 자리에 호박색 빛기둥 + 빛, 화면 밖 1초면 가장자리 화살, 목표 글 "열린 문으로 성소에 들어가라" |
@@ -78,6 +79,12 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 기력 막힘 알림·패링 기력(0088) | `Event::StaminaDenied`·`Player::denied_new`, `hud::draw_sweat`·막대 떨림·다 쓴 동안 붉은 테, 랩 `parry.stamina gain` | 막히면 "안 됨" 소리 + 막대 깜빡·떨림 + 머리 위 땀방울(누름마다 한 번), 튕기면 기력 +25(마지막 기력으로 튕겨도 반격이 나감) |
 | 모으기 공격의 패링(0089) | `Player::release_guard`·`World::parry_open`, 렌더 패링 반달 | 강타·쇠뇌 모은 사격을 떼는 순간 0.18초 패링 창(앞 반원) — 튕기면 강타는 그대로 나가 드러난 적에게, 반격·근접 무기의 모은 마법엔 없음 |
 | 멈춤 창 개발 줄(0090) | `flow::pause_items` | 개발판 멈춤 창에서 연구소를 빼고 그 자리(설정 아래)에 개발 줄 — 연구소는 타이틀·개발 창 도구 탭 |
+| 문도 시야 가리면 옅게(0091) | `render::gate_box`·`draw_gate`·`Renderer::gate_fade`, `Level::settle`(문 상자도 땅 높이) | 지형 덩어리와 같은 판정·진하기로 문이 옅어짐(쿼터뷰·락온), 문 상자가 땅 높이(+1m)에 맞게 올라감 |
+| 연구소는 개발 창 안에만·소품 가림 상자(0094) | `flow::title_items`, `scenery::vert_bounds` | 타이틀·멈춤에서 연구소 줄을 빼고(개발 창 도구 탭에서만), 소품의 가림 상자를 구운 정점 범위로(회전·큰 모델·돌무더기도) |
+| 패링 기력 15 → 5(0097) | `tuning.rs` `parry.stamina cost`, `docs/tuning-frozen.txt` | 빗나간 패링은 타이밍·피해로 이미 치르니 기력은 연타를 막는 만큼만 — 성공 +20·실패 −5 |
+| 박자 금빛 옅게(0098) | `render.rs` `BEAT_GOLD`·박자 부채꼴·발밑 고리, `hud.rs` 음표·반짝임 | 노랑을 흰빛 쪽으로 + 진하기 30% 안팎 내림(딱 맞춤·락온 표시는 그대로) |
+| 경직 이음 창(0099) | `world::stun_chain_next`, `Player::stun_window`, `tuning::STUN_CHAIN_GRACE` | 경직 + 0.5초 안에 또 맞으면 경직이 그전의 반(맞을 때마다 창 새로) — 몰매 속에서도 맞는 사이 틈이 커진다 |
+| 적의 턱 뛰기(0100) | `nav::Step`·`hop`·다익스트라 `flow`, `enemy::Hop`, `tuning::ENEMY_CLIMB`·`ENEMY_DROP`, 거리 지도 캐시 | 걷기·뛰어오르기(1m)·뛰어내리기(3m)를 길로, 변 앞에서 포물선으로 뛴다(오를 때 0.42초·내릴 때 0.32초), 경사로가 가까우면 경사로, 보스는 걷기만 |
 | 땅 돌리기 시작 CC·착용 중 표시(0085) | `World::apply_turn` 시작 휘청, 랩 `turn.start stagger s`, `equip::wears_something` | 돌기 시작하면 범위 안 적 0.25초 휘청(보스는 무게만큼 짧게, 예고 끊김), "착용 중"은 낀 물건에만(빈 칸·맨손은 커서만) |
 | 바닥 표시 땅 따라·땅 돌리기 휘청(0084) | `render::Drape`(`rise`·`shadow`·`line_up`, 평평한 `ring`·`sector` 없앰), `Level::settle` 문 가운데, `camera` `wobble`·`wobble_at`·`roll`, 랩 `turn.wobble in/out deg` | 그림자·쉼터·상자·갈 곳·플레이어 표시 32곳이 경사로·턱을 따라 접힘(가운데의 땅 위 높이는 지킴), 땅 돌리기 시작엔 도는 쪽·끝엔 반대쪽으로 1.5° 휘청 |
 | 웹 가로 기본(0082) | `web/index.html` `#rotate`·`knell_portrait`, `screen::portrait_blocked`, `tick_play` | 세로로 든 터치 기기엔 회전 안내(싸움은 멈춤), 누르면 Android는 전체 화면 + 가로 잠금(안 먹히면 세로로 계속), iPhone은 세로로 계속 |
@@ -101,6 +108,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), 랩(멈춤 끝 줄 LAB·F1, 0070), F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+**0093 소개 페이지**: `release/v0.3`을 main에 넣은 뒤 ① 레포 Settings → Pages → Source = **GitHub Actions**(켜기 전 첫 실행은 실패, 켠 뒤 Actions의 pages를 다시 실행) ② DNS(Cloudflare)에 `knellroot` CNAME → `aimenjoe.github.io` ③ Settings → Pages → Custom domain = `knellroot.beardworks.io`, Enforce HTTPS. 페이지 글을 고치면 `python3 tools/site/subset_font.py <GowunBatang-Bold.ttf>`.
+
 **0086**: 이어 패링이 쌓여 둘러싸였을 때 빠져나가는 느낌인지·너무 쉬워지지 않는지.
 **0087**: 줄어드는 부채꼴로 박자를 맞추기 쉬운지, 가장 작은 몫·금빛이 "지금"으로 읽히는지, 동작마다 사라지는 쪽이 칼과 맞는지.
 **0088**: 땀방울·막대 떨림·소리가 "기력 없음"으로 읽히는지, 패링 기력 25가 반격엔 넉넉하고 기력 걱정을 없앨 만큼 많지는 않은지.
@@ -120,7 +129,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 
 **v0.3.x 패치(0070)**: 1~5·9·10 개발판에 들어감 — 손맛 판정(대시 공격·패링 반격·락온 넘기기·패링 멈춤·장비 창 십자·평타 타격감·돌진 예고가 닿는 때). Select = 장비 창·후보에서 낀 것 빼기는 들어감. 랩을 멈춤 메뉴 안의 창으로 옮김(0070 7).
 
-**다음 마일스톤**: v0.4.0 "내려가는 길" 제안 `docs/decisions/0069` — 끝의 "사장이 정할 것" 다섯(보라 뿌리의 뜻·둘째 구역·방랑자와 포포·도감·판정 기준). D2는 (a)로 닫음(0004).
+**다음 마일스톤**: v0.4.0 "자라는 방랑자" `docs/decisions/0096`(채택 2026-11-07 — 잔불 레벨 생명·기력·힘, 기술 나무 박자·맞받기·발걸음, 핵 고르기를 나무로, 0095). 순서 T0(`tick_player` 나누기) → G1 레벨 → G3 → G2·G4 나무·화면 → G5 칸 동작. v0.5.0은 "확장" — 다른 지역(둘째 구역 "내려가는 길" 0069, 사장 2026-11-07).
 
 46줄로 쌓였던 것을 플레이 순서로 묶었다(2026-11-05). 줄마다 괄호의 결정 번호에 자세한 것·랩 값이 있다. 이상하면 "어디서·무엇이" 한 줄이면 된다.
 

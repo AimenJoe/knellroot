@@ -265,9 +265,12 @@ impl Level {
         for m in &mut self.marks {
             m.1.y = g.height(m.1);
         }
-        // 문 가운데(갈 곳의 빛기둥·고리 자리, 0083)도 땅 높이에.
-        if let Some((_, c)) = &mut self.gate {
+        // 문 가운데(갈 곳의 빛기둥·고리 자리, 0083)도 땅 높이에. 문 상자도 같이 올린다(0091 — 상자만 0에 남아 있으면 높은 땅의 문은
+        // 위 한 자락이 상자 밖이라 시야 가림 판정이 놓쳤고, 막는 상자도 그만큼 낮았다).
+        if let Some((b, c)) = &mut self.gate {
             c.y = g.height(*c);
+            b.min.y += c.y;
+            b.max.y += c.y;
         }
         self
     }
@@ -875,6 +878,25 @@ mod tests {
     use crate::input::Actions;
     use crate::tuning::Tuning;
     use crate::tuning::{FLASK_CHARGES, PLAYER_HP};
+
+    /// 0091: 높은 땅에 선 문은 상자도 그 땅 위에 — 가운데만 땅에 올리고 상자를 0에 두면 위 한 자락이 시야 가림 판정·막기 밖이었다.
+    #[test]
+    fn the_gate_box_stands_on_the_ground_under_the_gate() {
+        let (run, _) = StageRun::start(&sanctuary::DEF);
+        let (b, c) = run.level.gate.expect("sanctuary has a gate");
+        assert!(
+            c.y > 0.5,
+            "the sanctuary gate stands on raised ground ({})",
+            c.y
+        );
+        assert!(
+            (b.min.y - c.y).abs() < 1e-4,
+            "box floor {} vs ground {}",
+            b.min.y,
+            c.y
+        );
+        assert!((b.max.y - (c.y + 4.5)).abs() < 1e-4);
+    }
 
     #[test]
     fn the_sanctuary_map_parses_into_walls_props_lights_gate_and_marks() {

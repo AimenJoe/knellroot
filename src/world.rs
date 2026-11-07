@@ -9,7 +9,7 @@ use crate::tuning::{
     BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID,
     CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP,
     HIT_SWAY, LOCK_HANDOFF, P, PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RIPOSTE_WINDOW,
-    RUN_SPEED_X, RUN_STAMINA, STAMINA_DENIED_SHOW, TICK_DT,
+    RUN_SPEED_X, RUN_STAMINA, STAMINA_DENIED_SHOW, STUN_CHAIN_GRACE, STUN_CHAIN_MAX, TICK_DT,
 };
 use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG};
 use crate::weapons::{self, Rb, Shape};
@@ -369,8 +369,10 @@ pub struct Player {
     pub stamina_denied: f32,
     /// 이번 틱에 기력이 모자라 막혔다(0088 — 새로 막힌 때만, 받아 둔 누름이 다시 막혀도 한 번) → `Event::StaminaDenied`.
     pub denied_new: bool,
-    /// 경직 중 또 맞은 횟수(0 = 첫 경직) — 경직 길이가 반씩 준다.
+    /// 경직 이음(0018 → 0099): 이음 안에서 또 맞은 횟수(0 = 첫 경직) — 경직 길이가 반씩 준다 — 와 남은 이음 창(초,
+    /// 경직 + `STUN_CHAIN_GRACE`, 맞을 때마다 새로). 창이 닫히면 다음 경직은 다시 처음 길이.
     pub stun_chain: i32,
+    pub stun_window: f32,
     /// 마지막 쏟음(땅 돌리기가 멈춘 순간)에서 지난 초 — 렌더의 쟁반 테.
     pub since_spill: f32,
     /// 마지막 패링 성공에서 지난 초(렌더의 번쩍임).
@@ -459,6 +461,8 @@ pub struct World {
     pub ground: Option<Ground>,
     /// 적 길찾기 격자(0076) — 땅 + 상자가 덮은 칸. 상자가 바뀌면(문) 다시 만든다.
     nav: Option<crate::nav::Nav>,
+    /// 거리 지도 캐시(0100): (플레이어 칸, 지도) — 플레이어가 칸을 옮기거나 길 격자를 다시 만들 때만 새로 잰다(다익스트라는 틱마다 돌리기엔 무겁다).
+    flow: Option<((usize, usize), Vec<u16>)>,
     /// 아레나 반폭(정사각형, 원점 가운데).
     pub arena: f32,
     pub hitstop: f32,
@@ -535,6 +539,7 @@ impl World {
                 stamina_denied: 0.0,
                 denied_new: false,
                 stun_chain: 0,
+                stun_window: 0.0,
                 since_spill: f32::MAX,
                 since_parry: f32::MAX,
                 parry_chain_left: 0.0,
@@ -575,6 +580,7 @@ impl World {
             obstacles: Vec::new(),
             ground: None,
             nav: None,
+            flow: None,
             arena,
             hitstop: 0.0,
             time: 0.0,
@@ -1220,6 +1226,7 @@ impl World {
         pl.since_perfect = (pl.since_perfect + dt).min(f32::MAX);
         // 스태미나: 마지막으로 쓴 뒤 `stamina.regen delay s`가 지나야 찬다.
         pl.stamina_denied = (pl.stamina_denied - dt).max(0.0);
+        pl.stun_window = (pl.stun_window - dt).max(0.0);
         pl.release_guard = (pl.release_guard - dt).max(0.0);
         pl.stamina_idle += dt;
         if pl.stamina_idle >= t[P::StaminaDelay] {
@@ -2558,12 +2565,25 @@ impl World {
                 &self.obstacles,
                 self.arena,
             ));
+            self.flow = None;
         }
         let nav = self.nav.as_ref().expect("built above");
         let chasing = |en: &Enemy| en.state == EState::Chase;
         if self.enemies.iter().any(chasing) {
-            let dist = nav.flow(p);
+            let cell = nav.g.cell_of(p).unwrap_or((usize::MAX, usize::MAX));
+            if self.flow.as_ref().is_none_or(|(c, _)| *c != cell) {
+                self.flow = Some((cell, nav.flow(p)));
+            }
+            let dist = &self.flow.as_ref().expect("filled above").1;
             for en in self.enemies.iter_mut().filter(|e| chasing(e)) {
+                // 턱을 뛰어오르기·뛰어내리기(0100): 길의 다음 칸이 뛰어야 하는 칸이고 변 앞에 왔으면 뛴다. 문지기(보스)는 걷기만.
+                if en.hop.is_none() && !en.boss {
+                    if let Some((land, _)) = nav.hop(dist, en.pos, en.radius) {
+                        en.hop = Some(crate::enemy::Hop::new(en.pos, land));
+                        en.way = None;
+                        continue;
+                    }
+                }
                 let same =
                     nav.g.cell_of(en.pos).is_some() && nav.g.cell_of(en.pos) == nav.g.cell_of(p);
                 en.way = if (body - en.pos.y).abs() <= HIT_DY
@@ -2571,7 +2591,7 @@ impl World {
                 {
                     None
                 } else {
-                    Some(nav.waypoint(&dist, en.pos, en.radius).unwrap_or(en.pos))
+                    Some(nav.waypoint(dist, en.pos, en.radius).unwrap_or(en.pos))
                 };
             }
         }
@@ -2610,6 +2630,25 @@ impl World {
         let mut hurt_player: Option<Vec3> = None;
         let mut parried: Vec<usize> = Vec::new();
         for (i, en) in self.enemies.iter_mut().enumerate() {
+            // 뛰는 중(0100): 몸은 포물선을 따라가고 생각하지도 치지도 않는다. 쓰러지면 그 자리에서 내려앉는다.
+            if en.hop.is_some() && !en.alive() {
+                en.hop = None;
+            }
+            if let Some(mut h) = en.hop {
+                h.t += dt;
+                let d = vec3(h.to.x - h.from.x, 0.0, h.to.z - h.from.z);
+                if d.length_squared() > 1e-6 {
+                    en.facing = d.x.atan2(d.z);
+                }
+                en.pos = h.at(h.t / h.dur);
+                en.hop = if h.t >= h.dur {
+                    en.pos = h.to;
+                    None
+                } else {
+                    Some(h)
+                };
+                continue;
+            }
             let out = en.tick(p, dt);
             // 돌진 길이(0076): 벽·기둥·턱·아레나 끝까지 — 예고 띠와 몸이 같은 길이.
             if en.atk == Atk::Charge && matches!(en.state, EState::Tele { .. }) {
@@ -2697,12 +2736,10 @@ impl World {
             pl.hp -= taken;
             // 맞은 뒤 무적은 짧게(예전 0.6초 — 그 동안 다시 맞을 수 없어 경직 줄이기가 쓸 데가 없었다).
             pl.hurt = t[P::HitIframes];
-            // 경직(0018): 경직 중 또 맞으면 반씩 — 떼에 갇혀 계속 맞아도 손을 놓치지 않게.
-            pl.stun_chain = if matches!(pl.state, PState::Hurt { .. }) {
-                pl.stun_chain + 1
-            } else {
-                0
-            };
+            // 경직 이음(0018 → 0099, 사장 "다구리 맞더라도 틈이 생겨서 도망갈 수 있게" — 이어 패링의 반대): 경직과 그 뒤
+            // `STUN_CHAIN_GRACE` 동안 또 맞으면 경직이 그전의 반 — 맞을수록 짧아져 떼 속에서도 빠져나갈 틈이 생긴다.
+            (pl.stun_chain, pl.stun_window) =
+                stun_chain_next(pl.stun_window, pl.stun_chain, t[P::HitStun]);
             let dur = t[P::HitStun] * 0.5f32.powi(pl.stun_chain);
             if dur > 0.0 {
                 pl.state = PState::Hurt { t: 0.0, dur };
@@ -2785,6 +2822,10 @@ impl World {
             }
         }
         for en in &mut self.enemies {
+            // 뛰는 몸(0100)은 포물선이 자리를 정한다 — 턱·땅에 밀지 않는다.
+            if en.hop.is_some() {
+                continue;
+            }
             let feet = en.pos.y;
             let q = clamp(en.pos, en.radius, feet, GROUND_STEP, false);
             let blocked = vec2(q.x - en.pos.x, q.z - en.pos.z).length() > 1e-3;
@@ -2923,6 +2964,18 @@ pub fn parry_front_cos(chain_open: bool, n: u32) -> f32 {
     } else {
         half.cos()
     }
+}
+
+/// 경직 이음(0099): 남은 이음 창 `window`·지금까지 이은 수 `n`, 첫 경직 `stun` → (새 이은 수, 새 창).
+/// 창이 열려 있으면 하나 더(경직 = 처음 × 0.5ⁿ, n은 `STUN_CHAIN_MAX`까지 — 바닥 = 처음의 1/4), 닫혀 있으면 처음부터.
+/// 창은 이번 경직 + `STUN_CHAIN_GRACE`.
+pub fn stun_chain_next(window: f32, n: i32, stun: f32) -> (i32, f32) {
+    let n = if window > 0.0 {
+        (n + 1).min(STUN_CHAIN_MAX)
+    } else {
+        0
+    };
+    (n, stun * 0.5f32.powi(n) + STUN_CHAIN_GRACE)
 }
 
 /// 박자 부채꼴(0087, 사장 2026-11-07 "공격시 나오는 부채꼴이 타이밍에 맞게 줄어들면, 가장 작아졌을때가 올바른 타이밍"):
@@ -5767,7 +5820,7 @@ mod tests {
         ev
     }
 
-    /// 맞으면 잠깐 경직(못 움직임) — 경직 중 또 맞으면 반씩 짧아지고, 경직이 풀린 뒤 맞으면 다시 처음 길이(0018).
+    /// 맞으면 잠깐 경직(못 움직임) — 경직 중 또 맞으면 반씩 짧아지고, 이음 창(0099)까지 지난 뒤 맞으면 다시 처음 길이(0018).
     #[test]
     fn a_hit_stuns_briefly_and_hits_during_the_stun_halve_it() {
         let t = Tuning::default();
@@ -5810,6 +5863,60 @@ mod tests {
             panic!()
         };
         assert!((d2 - d0).abs() < 1e-4);
+    }
+
+    /// 0099(사장 "다구리 맞더라도 틈이 생겨서 도망갈 수 있게"): 경직이 풀린 뒤에도 `STUN_CHAIN_GRACE` 안에 또 맞으면 경직이 그전의 반,
+    /// 창이 지나면 다시 처음 길이. 일정한 박자로 계속 맞으면 경직이 줄어 맞는 사이사이 움직일 틈이 커진다.
+    #[test]
+    fn hits_soon_after_a_stun_keep_halving_it_so_a_mob_leaves_gaps() {
+        let stun = 0.35;
+        assert_eq!(
+            stun_chain_next(0.0, 3, stun).0,
+            0,
+            "window closed: from the top"
+        );
+        let (n, w) = stun_chain_next(0.1, 0, stun);
+        assert_eq!(n, 1);
+        assert!((w - (stun * 0.5 + STUN_CHAIN_GRACE)).abs() < 1e-5);
+        // 0.4초마다 맞는 몰매: 맞을 때마다 경직이 짧아지고, 맞은 사이에 움직일 수 있는 시간은 늘어난다.
+        let (mut n, mut w) = (0, 0.0);
+        let mut free = Vec::new();
+        for _ in 0..4 {
+            (n, w) = stun_chain_next(w, n, stun);
+            let dur = stun * 0.5f32.powi(n);
+            free.push(0.4 - dur);
+            w -= 0.4;
+        }
+        assert!(free.windows(2).all(|f| f[1] >= f[0]), "{free:?}");
+        assert!(free[0] > 0.0 && free[3] > 0.3);
+        // 바닥(0099 사장 "바닥을 두자"): 두 번 이은 뒤로는 처음의 1/4에서 멈춘다 — 맞은 몸의 반응은 남는다.
+        assert_eq!(n, STUN_CHAIN_MAX);
+        assert!((stun * 0.5f32.powi(n) - stun * 0.25).abs() < 1e-6);
+
+        // 월드에서: 경직이 풀린 뒤(서 있음) 창 안에 맞으면 반, 창이 지나면 처음 길이.
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        hit_by_swing(&mut w, &t);
+        while !matches!(w.player.state, PState::Idle) {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(w.player.stun_window > 0.0, "still inside the grace");
+        hit_by_swing(&mut w, &t);
+        let PState::Hurt { dur, .. } = w.player.state else {
+            panic!("{:?}", w.player.state)
+        };
+        assert!((dur - t[P::HitStun] * 0.5).abs() < 1e-4, "{dur}");
+        for _ in 0..((t[P::HitStun] + STUN_CHAIN_GRACE) / TICK_DT) as usize + 5 {
+            w.step(&Actions::default(), &t);
+        }
+        hit_by_swing(&mut w, &t);
+        let PState::Hurt { dur, .. } = w.player.state else {
+            panic!()
+        };
+        assert!(
+            (dur - t[P::HitStun]).abs() < 1e-4,
+            "fresh after the grace: {dur}"
+        );
     }
 
     /// 회피·공격은 스태미나를 쓰고, 없으면 막히며(막대가 깜빡인다) 마지막 사용 뒤 잠깐 쉬면 다시 찬다(0018).
@@ -5963,13 +6070,67 @@ mod tests {
         assert_eq!((w.player.pos.y, w.player.air), (0.0, 0.0));
     }
 
-    /// 1m 단 위의 플레이어: 아래 잔재의 발톱도, 플레이어의 칼도 닿지 않는다. 경사로가 없으면 적은 아래에서 기다린다.
+    /// 0100(사장 "적들도 높은 곳으로 점프하거나 낮은 곳으로 뛰어내릴 수 있어야"): 경사로 없는 1m 단 위의 플레이어에게 아래 잔재가
+    /// 뛰어올라 와 친다. 단 위의 잔재는 아래 플레이어에게 뛰어내려 온다. 뛰는 동안은 치지 않는다.
+    #[test]
+    fn enemies_hop_up_and_drop_down_ledges_to_reach_you() {
+        let t = Tuning::default();
+        // 뛰어오르기.
+        let mut w = ledge_yard(1.0);
+        w.player.pos = vec3(0.0, 1.0, -5.0);
+        let i = w.spawn(Kind::Husk, vec3(0.0, 0.0, 3.0));
+        let (mut hopped, mut on_top) = (false, false);
+        for _ in 0..900 {
+            w.step(&Actions::default(), &t);
+            if let Some(h) = w.enemies[i].hop {
+                hopped = true;
+                assert!(h.to.y > h.from.y + 0.9, "up the 1m ledge: {h:?}");
+            }
+            on_top |= w.enemies[i].hop.is_none() && (w.enemies[i].pos.y - 1.0).abs() < 1e-3;
+            if w.player.hp < PLAYER_HP {
+                break;
+            }
+        }
+        assert!(hopped && on_top, "hopped up: {:?}", w.enemies[i].pos);
+        assert!(w.player.hp < PLAYER_HP, "and reached the player");
+        // 뛰어내리기.
+        let mut w = ledge_yard(1.0);
+        w.player.pos = vec3(0.0, 0.0, 3.0);
+        let i = w.spawn(Kind::Husk, vec3(0.0, 1.0, -5.0));
+        let mut dropped = false;
+        for _ in 0..900 {
+            w.step(&Actions::default(), &t);
+            if let Some(h) = w.enemies[i].hop {
+                assert!(h.to.y < h.from.y - 0.9, "down: {h:?}");
+                dropped = true;
+            }
+            if w.player.hp < PLAYER_HP {
+                break;
+            }
+        }
+        assert!(dropped, "dropped down: {:?}", w.enemies[i].pos);
+        assert!(w.player.hp < PLAYER_HP, "and reached the player");
+    }
+
+    /// 0100: 뛰는 포물선은 두 끝을 지나고, 오를 때는 턱 위로 넘어간다(가운데 높이가 위 끝보다 높다).
+    #[test]
+    fn a_hop_arcs_over_the_ledge_and_lands_where_it_aimed() {
+        let h = crate::enemy::Hop::new(vec3(0.0, 0.0, 0.0), vec3(0.0, 1.0, -1.2));
+        assert_eq!(h.at(0.0), h.from);
+        assert!((h.at(1.0) - h.to).length() < 1e-5);
+        assert!(h.at(0.5).y > 1.0, "clears the lip: {:?}", h.at(0.5));
+        let d = crate::enemy::Hop::new(vec3(0.0, 2.0, 0.0), vec3(0.0, 0.0, 1.0));
+        assert!(d.dur < h.dur, "dropping is quicker");
+    }
+
+    /// 높이가 다른 단: 아래 잔재의 발톱도, 플레이어의 칼도 닿지 않는다. 뛰어오를 수 없는 높이(1.5m — `ENEMY_CLIMB` 1m 위)면
+    /// 경사로가 없을 때 적은 아래에서 기다린다(0100 전에는 1m 단도 그랬다).
     #[test]
     fn different_levels_do_not_trade_blows() {
         let t = Tuning::default();
-        // 아래 잔재는 1m 단 위에 가만히 선 플레이어를 못 친다.
-        let mut w = ledge_yard(1.0);
-        w.player.pos = vec3(0.0, 1.0, -4.4);
+        // 아래 잔재는 1.5m 단 위에 가만히 선 플레이어를 못 친다.
+        let mut w = ledge_yard(1.5);
+        w.player.pos = vec3(0.0, 1.5, -4.4);
         let i = w.spawn(Kind::Husk, vec3(0.0, 0.0, -3.0));
         for _ in 0..400 {
             w.step(&Actions::default(), &t);

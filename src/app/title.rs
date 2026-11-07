@@ -12,8 +12,6 @@ impl App {
                 TitleItem::Start => self.open_slots(false),
                 TitleItem::Settings => self.go(Go::Open(Scene::Settings)),
                 #[cfg(feature = "dev")]
-                TitleItem::Lab => self.go(Go::Open(Scene::Lab)),
-                #[cfg(feature = "dev")]
                 TitleItem::Dev => self.go(Go::Open(Scene::Dev { tab: 0 })),
             }
         }
@@ -34,9 +32,7 @@ impl App {
                 TitleItem::Continue => s.menu_continue.to_string(),
                 TitleItem::Start => s.menu_start.to_string(),
                 TitleItem::Settings => s.menu_settings.to_string(),
-                #[cfg(feature = "dev")]
-                TitleItem::Lab => s.menu_lab.to_string(),
-                // 개발 전용(영어 그대로, 0013).
+                // 개발 창 이름(언어를 따른다, 0080).
                 #[cfg(feature = "dev")]
                 TitleItem::Dev => crate::i18n::dev::t(crate::i18n::dev::DEV_TITLE).to_string(),
             })
