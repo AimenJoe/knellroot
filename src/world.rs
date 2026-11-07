@@ -9,7 +9,7 @@ use crate::tuning::{
     BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID,
     CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP,
     HIT_SWAY, LOCK_HANDOFF, P, PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RIPOSTE_WINDOW,
-    RUN_SPEED_X, RUN_STAMINA, STAMINA_DENIED_SHOW, STUN_CHAIN_GRACE, TICK_DT,
+    RUN_SPEED_X, RUN_STAMINA, STAMINA_DENIED_SHOW, STUN_CHAIN_GRACE, STUN_CHAIN_MAX, TICK_DT,
 };
 use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG};
 use crate::weapons::{self, Rb, Shape};
@@ -2928,9 +2928,14 @@ pub fn parry_front_cos(chain_open: bool, n: u32) -> f32 {
 }
 
 /// 경직 이음(0099): 남은 이음 창 `window`·지금까지 이은 수 `n`, 첫 경직 `stun` → (새 이은 수, 새 창).
-/// 창이 열려 있으면 하나 더(경직 = 처음 × 0.5ⁿ), 닫혀 있으면 처음부터. 창은 이번 경직 + `STUN_CHAIN_GRACE`.
+/// 창이 열려 있으면 하나 더(경직 = 처음 × 0.5ⁿ, n은 `STUN_CHAIN_MAX`까지 — 바닥 = 처음의 1/4), 닫혀 있으면 처음부터.
+/// 창은 이번 경직 + `STUN_CHAIN_GRACE`.
 pub fn stun_chain_next(window: f32, n: i32, stun: f32) -> (i32, f32) {
-    let n = if window > 0.0 { n + 1 } else { 0 };
+    let n = if window > 0.0 {
+        (n + 1).min(STUN_CHAIN_MAX)
+    } else {
+        0
+    };
     (n, stun * 0.5f32.powi(n) + STUN_CHAIN_GRACE)
 }
 
@@ -5843,8 +5848,11 @@ mod tests {
             free.push(0.4 - dur);
             w -= 0.4;
         }
-        assert!(free.windows(2).all(|f| f[1] > f[0]), "{free:?}");
-        assert!(free[0] > 0.0 && free[3] > 0.35);
+        assert!(free.windows(2).all(|f| f[1] >= f[0]), "{free:?}");
+        assert!(free[0] > 0.0 && free[3] > 0.3);
+        // 바닥(0099 사장 "바닥을 두자"): 두 번 이은 뒤로는 처음의 1/4에서 멈춘다 — 맞은 몸의 반응은 남는다.
+        assert_eq!(n, STUN_CHAIN_MAX);
+        assert!((stun * 0.5f32.powi(n) - stun * 0.25).abs() < 1e-6);
 
         // 월드에서: 경직이 풀린 뒤(서 있음) 창 안에 맞으면 반, 창이 지나면 처음 길이.
         let t = Tuning::default();
