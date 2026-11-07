@@ -28,10 +28,23 @@
     #knell-load.fail img { animation: none; filter: grayscale(1); }
     @keyframes knell-swing { 0%, 100% { transform: rotate(-9deg); } 50% { transform: rotate(9deg); } }
     @media (prefers-reduced-motion: reduce) { #knell-load img { animation: none; } }
+    /* 세로로 든 터치 기기(0082, nail 0269 꼴 · KB pwa-install-fullscreen-orientation): 글 없는 회전 그림 — 폰이 세로에서 가로로 돈다.
+       누르면: 전체 화면을 쓸 수 있으면(Android) 전체 화면 + 가로 잠금, 없으면(iPhone) 이번 창에서는 세로로 계속. */
+    #rotate { position: absolute; inset: 0; z-index: 3; background: rgba(18,18,31,.94); display: none;
+      align-items: center; justify-content: center; cursor: pointer; }
+    #rotate.on { display: flex; }
+    #rotate .phone { width: 44px; height: 76px; border: 4px solid #e6b578; border-radius: 8px; position: relative;
+      animation: knell-turn 2.2s ease-in-out infinite; }
+    #rotate .phone::after { content: ""; position: absolute; left: 50%; bottom: 5px; width: 8px; height: 4px; margin-left: -4px; background: #e6b578; }
+    #rotate .arrow { position: absolute; width: 112px; height: 112px; border: 3px dashed #5c4a6c; border-radius: 50%;
+      border-left-color: transparent; border-bottom-color: transparent; }
+    @keyframes knell-turn { 0%, 25% { transform: rotate(0); } 55%, 100% { transform: rotate(-90deg); } }
+    @media (prefers-reduced-motion: reduce) { #rotate .phone { animation: none; transform: rotate(-90deg); } }
   </style>
 </head>
 <body>
   <canvas id="glcanvas" tabindex="1"></canvas>
+  <div id="rotate" aria-hidden="true"><div class="arrow"></div><div class="phone"></div></div>
   <div id="knell-load" role="progressbar" aria-label="Knellroot" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
     <img src="icons/bell-128.png" alt=""><div class="bar"><i></i></div>
   </div>
@@ -147,6 +160,39 @@
             if (p && p.then) p.then(lockLandscape).catch(function () {}); else lockLandscape();
           } catch (e) {}
         }
+        // 세로 안내(0082): 터치 기기가 세로면 #rotate를 덮고 게임은 멈춤(knell_portrait). 누르면 Android는 전체 화면 + 가로 잠금,
+        // 전체 화면이 없는 iPhone은 이번 창에서 세로로 계속(강제하지 않는다 — 세로에서도 작게 돈다).
+        var rotateOff = false;
+        try { rotateOff = sessionStorage.getItem("knell.rotate.off") === "1"; } catch (e) {}
+        function portraitBlocked() {
+          if (rotateOff) return false;
+          try { return matchMedia("(pointer: coarse)").matches && matchMedia("(orientation: portrait)").matches; } catch (e) { return false; }
+        }
+        function showRotate() {
+          var r = document.getElementById("rotate");
+          if (r) r.classList.toggle("on", portraitBlocked());
+        }
+        window.addEventListener("resize", showRotate);
+        window.addEventListener("orientationchange", showRotate);
+        showRotate();
+        var rot = document.getElementById("rotate");
+        function goUpright() {
+          rotateOff = true;
+          try { sessionStorage.setItem("knell.rotate.off", "1"); } catch (e) {}
+          showRotate();
+        }
+        if (rot) rot.addEventListener("click", function () {
+          if (fsEnabled()) {
+            // 전체 화면 + 가로 잠금을 해 보고, 잠금이 안 먹혀 아직 세로면(일부 브라우저) 세로로 계속 — 안내에 갇히지 않게.
+            enterFs();
+            setTimeout(function () { if (portraitBlocked()) goUpright(); }, 700);
+          } else {
+            goUpright();
+          }
+          showRotate();
+          var c = document.getElementById("glcanvas"); if (c) c.focus();
+        });
+        importObject.env.knell_portrait = function () { return portraitBlocked() ? 1 : 0; };
         importObject.env.knell_fs_enabled = function () { return fsEnabled() ? 1 : 0; };
         importObject.env.knell_fs_active = function () { return fsActive() ? 1 : 0; };
         importObject.env.knell_fs_toggle = function () {

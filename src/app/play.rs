@@ -4,7 +4,8 @@ use super::*;
 impl App {
     /// 싸움 한 틱: 멈춤 → 월드 → 스테이지 → 기록·가게·소리·알림 → 끝났으면 끝 장면.
     pub(super) fn tick_play(&mut self, a: Actions) {
-        if a.pause {
+        // 세로로 든 폰(0082): 회전 안내가 덮인 동안 싸움이 흐르지 않게 멈춤으로(nail 0269 꼴).
+        if a.pause || crate::screen::portrait_blocked() {
             self.go(flow::pause(self.scene()));
             return;
         }

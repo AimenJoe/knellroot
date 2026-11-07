@@ -8,6 +8,7 @@ mod js {
         pub fn knell_fs_active() -> u32;
         pub fn knell_fs_toggle();
         pub fn knell_fs_touch_enter();
+        pub fn knell_portrait() -> u32;
     }
 }
 
@@ -58,4 +59,13 @@ pub fn touch_enter() {
     unsafe {
         js::knell_fs_touch_enter()
     }
+}
+
+/// 세로로 든 터치 기기의 웹인가(0082 — 회전 안내가 덮여 있다, 싸움은 멈춤으로). 웹 밖은 늘 거짓(Android 앱은 가로 고정).
+pub fn portrait_blocked() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    // SAFETY: 위와 같다.
+    return unsafe { js::knell_portrait() } != 0;
+    #[cfg(not(target_arch = "wasm32"))]
+    false
 }

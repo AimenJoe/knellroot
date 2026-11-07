@@ -123,6 +123,20 @@ async function main() {
   await tap([W - 4, H - 4]); await page.waitForTimeout(300);
   await tap([W - 4, H - 4]); await page.waitForTimeout(300);
   await shot('t11-pause-closed');
+  // 세로로 든 폰(0082): 회전 안내(#rotate)가 덮인다. 누르면 전체 화면 + 가로 잠금을 해 보고, 잠금이 안 되면(헤드리스·iPhone) 세로로 계속.
+  {
+    const pctx = await browser.newContext({ viewport: { width: H, height: W }, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
+    const pp = await pctx.newPage();
+    await pp.goto(`http://localhost:${PORT}/`);
+    await pp.waitForTimeout(4000); // 로딩 덮개가 걷힌 뒤
+    const on = () => pp.evaluate(() => document.getElementById('rotate').classList.contains('on'));
+    if (!(await on())) errors.push('portrait: the rotate hint should cover the game');
+    await pp.screenshot({ path: path.join(OUT, 't14-portrait-rotate.png') });
+    await pp.tap('#rotate');
+    await pp.waitForTimeout(1000);
+    if (await on()) errors.push('portrait: tapping the hint should rotate or, if it cannot lock, let it go on upright');
+    await pctx.close();
+  }
   await browser.close();
   server.close();
   for (const n of fs.readdirSync(OUT).filter((n) => /^t\d/.test(n))) console.log(`${n}\t${fs.statSync(path.join(OUT, n)).size} bytes`);
