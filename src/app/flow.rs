@@ -271,24 +271,19 @@ pub enum PauseItem {
     /// 장비(0064 M3, 0051의 무기 줄): 좌우 = 다음 무기(전처럼), 확인 = 장비 창(무기 + 장신구 세 칸).
     Weapon,
     Settings,
-    /// 연구소(랩, 0079 — 개발판에만): 설정 바로 아래 줄(사장 2026-11-07).
-    #[cfg(feature = "dev")]
-    Lab,
-    Restart,
-    ToTitle,
-    /// 개발 메뉴(0075) — 개발판에만, 맨 끝(위 다섯 줄 자리는 그대로 — 시험 스크립트가 줄 수로 간다).
+    /// 개발 메뉴(0075 → 0090) — 개발판에만, 설정 바로 아래 줄(연구소가 있던 자리 — 연구소는 개발 창 도구 탭·타이틀에서, 사장 2026-11-07).
     #[cfg(feature = "dev")]
     Dev,
+    Restart,
+    ToTitle,
 }
 
-/// 멈춤 창의 줄: 계속 · 장비 · 설정 · [연구소] · 처음부터 · 타이틀로 · [DEV] — 대괄호는 개발판에만.
+/// 멈춤 창의 줄: 계속 · 장비 · 설정 · [개발] · 처음부터 · 타이틀로 — 대괄호는 개발판에만(0090).
 pub fn pause_items() -> Vec<PauseItem> {
     let mut v = vec![PauseItem::Resume, PauseItem::Weapon, PauseItem::Settings];
     #[cfg(feature = "dev")]
-    v.push(PauseItem::Lab);
-    v.extend([PauseItem::Restart, PauseItem::ToTitle]);
-    #[cfg(feature = "dev")]
     v.push(PauseItem::Dev);
+    v.extend([PauseItem::Restart, PauseItem::ToTitle]);
     v
 }
 
@@ -397,8 +392,6 @@ pub fn choose_pause(item: PauseItem) -> (Go, bool) {
         PauseItem::Resume => (Go::Back, false),
         PauseItem::Weapon => (Go::Open(Scene::Equip), false),
         PauseItem::Settings => (Go::Open(Scene::Settings), false),
-        #[cfg(feature = "dev")]
-        PauseItem::Lab => (Go::Open(Scene::Lab), false),
         PauseItem::Restart => (Go::Open(Scene::Ask(Ask::Restart)), false),
         PauseItem::ToTitle => (Go::Open(Scene::Ask(Ask::ToTitle)), false),
         #[cfg(feature = "dev")]
@@ -553,16 +546,17 @@ mod tests {
     /// 0079(사장 2026-11-07): 연구소는 개발판에서 타이틀·멈춤 메뉴의 설정 바로 아래 줄, 설정 창 안에는 없다.
     #[cfg(feature = "dev")]
     #[test]
-    fn the_lab_sits_right_below_settings_in_both_menus() {
+    fn the_lab_sits_below_settings_on_the_title_and_dev_below_settings_in_pause() {
         for has_save in [false, true] {
             let t = title_items(has_save);
             let i = t.iter().position(|x| *x == TitleItem::Settings).unwrap();
             assert_eq!(t.get(i + 1), Some(&TitleItem::Lab));
         }
+        // 멈춤엔 연구소가 없고 그 자리(설정 아래)에 개발 줄(0090) — 연구소는 개발 창의 도구 탭에서.
         let p = pause_items();
         let i = p.iter().position(|x| *x == PauseItem::Settings).unwrap();
-        assert_eq!(p.get(i + 1), Some(&PauseItem::Lab));
-        assert_eq!(choose_pause(PauseItem::Lab), (Go::Open(Scene::Lab), false));
+        assert_eq!(p.get(i + 1), Some(&PauseItem::Dev));
+        assert_eq!(p.len(), 6);
         for fs in [false, true] {
             for mouse in [false, true] {
                 assert_eq!(settings_rows(fs, mouse).len() >= 4, true);

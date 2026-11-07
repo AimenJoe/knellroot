@@ -89,7 +89,7 @@ async function main() {
   await press('Escape'); await page.waitForTimeout(200);
   await press('Escape'); await page.waitForTimeout(300);
 
-  // 4) 멈춤 → 처음부터(다섯째 줄: 계속·장비·설정·연구소(개발판, 0079)·처음부터).
+  // 4) 멈춤 → 처음부터(다섯째 줄: 계속·장비·설정·개발(개발판, 0090)·처음부터).
   await press('Escape');
   await page.waitForTimeout(200);
   await press('ArrowDown', 4);
@@ -105,7 +105,7 @@ async function main() {
   if (!/embers=5\n/.test(r) || !/clears=1/.test(r)) fail('restart must keep what stays');
   if (!/future\.key=keep/.test(r)) fail('unknown keys must survive a write');
 
-  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 → 여섯째 — 연구소가 끼어(0079) → 묻는 창 위로 한 번).
+  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 → 여섯째 — 개발 줄이 끼어(0090) → 묻는 창 위로 한 번).
   const slotCell = () => page.evaluate(() => localStorage.getItem('knell.slot'));
   const toTitle = async () => {
     await press('Escape'); await page.waitForTimeout(200);

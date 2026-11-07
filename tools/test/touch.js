@@ -37,7 +37,7 @@ function layout() {
     turn_right: [turn[0] + u * 0.08, turn[1]],
     lock: at(80, 0.44),
     flask: at(150, 0.44),
-    // 멈춤은 왼쪽 위(2026-11-06), 랩·시나리오 터치 버튼은 없다(랩 = 멈춤 메뉴 LAB).
+    // 멈춤은 왼쪽 위(2026-11-06), 랩·시나리오 터치 버튼은 없다(랩 = 타이틀·개발 창 도구 탭).
     pause: [r * 0.7 * 1.4, r * 0.7 * 1.4],
   };
   return b;
@@ -110,7 +110,7 @@ async function main() {
     const h = (30 + rows * 13 * 1.75 + 8) * u;
     return [W / 2, top + (bottom - top - h) / 2 + 29 * u + 13 * 1.75 * u * (i + 0.5)];
   };
-  await tap(menuRow(7, 1)); await page.waitForTimeout(400);   // 멈춤(개발판 일곱 줄 — 설정 아래 연구소 0079·끝에 DEV 0075)의 둘째 줄 "장비"
+  await tap(menuRow(6, 1)); await page.waitForTimeout(400);   // 멈춤(개발판 여섯 줄 — 설정 아래 개발 0090)의 둘째 줄 "장비"
   await tap(CHARM_BOX); await page.waitForTimeout(300);    // 고르기만(설명이 바뀜)
   await tap(SWORD_BOX); await page.waitForTimeout(300);    // 무기 칸 고르기
   await tap(SWORD_BOX); await page.waitForTimeout(400);    // 다시 = 후보 목록
