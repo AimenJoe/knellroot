@@ -112,7 +112,8 @@ pub struct View<'a> {
 
 /// 탄의 색(0048·0051, `weapons::Bolt::look`): 마법 라벤더, 무거운 탄 놋쇠, 꿰뚫는 탄 민트, 쇠뇌 볼트 밝은 나무 — 붉은색(위험)은 쓰지 않는다.
 /// 박자 타의 휘두름 색·발밑 고리가 퍼지는 시간(0076).
-const BEAT_GOLD: Color = Color::new(1.0, 0.82, 0.3, 0.32);
+// 박자 금빛(0076 → 0098 사장 "너무 강한 노란색, 조금만 더 옅게"): 노랑을 흰빛 쪽으로(채도 낮춤) + 진하기 30% 안팎 내림.
+const BEAT_GOLD: Color = Color::new(1.0, 0.9, 0.62, 0.24);
 pub const BEAT_RING_LIFE: f32 = 0.35;
 /// 딱 맞춰 떼기 고리가 퍼지는 시간(0078).
 const PERFECT_RING_LIFE: f32 = 0.45;
@@ -1436,8 +1437,8 @@ impl Renderer {
             let arc = cue.arc * cue.left;
             let c = pp + Vec3::Y * 0.9;
             if cue.ripe {
-                fl.sector(c, cue.reach, yaw, arc, Color::new(1.0, 0.86, 0.35, 0.45));
-                fl.ring(c, cue.reach, yaw, arc, Color::new(1.0, 0.92, 0.55, 0.85));
+                fl.sector(c, cue.reach, yaw, arc, Color::new(1.0, 0.92, 0.64, 0.3));
+                fl.ring(c, cue.reach, yaw, arc, Color::new(1.0, 0.95, 0.76, 0.6));
             } else {
                 fl.sector(c, cue.reach, yaw, arc, swing_col);
             }
@@ -1471,14 +1472,14 @@ impl Renderer {
                 (0.5 + 1.3 * ease) * big,
                 0.0,
                 360.0,
-                Color::new(1.0, 0.86, 0.35, 0.9 * (1.0 - k)),
+                Color::new(1.0, 0.91, 0.62, 0.65 * (1.0 - k)),
             );
             fl.ring(
                 pp + Vec3::Y * 0.07,
                 (0.35 + 0.9 * ease) * big,
                 0.0,
                 360.0,
-                Color::new(1.0, 0.95, 0.7, 0.6 * (1.0 - k)),
+                Color::new(1.0, 0.96, 0.8, 0.45 * (1.0 - k)),
             );
         }
         // 강공격(0030): 모으는 동안 발밑 고리가 안쪽에서 차오르고, 다 차면 금빛으로 깜빡인다. 강타의 활성 구간엔 넓은 부채꼴.

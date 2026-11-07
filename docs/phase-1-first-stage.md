@@ -82,6 +82,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 문도 시야 가리면 옅게(0091) | `render::gate_box`·`draw_gate`·`Renderer::gate_fade`, `Level::settle`(문 상자도 땅 높이) | 지형 덩어리와 같은 판정·진하기로 문이 옅어짐(쿼터뷰·락온), 문 상자가 땅 높이(+1m)에 맞게 올라감 |
 | 연구소는 개발 창 안에만·소품 가림 상자(0094) | `flow::title_items`, `scenery::vert_bounds` | 타이틀·멈춤에서 연구소 줄을 빼고(개발 창 도구 탭에서만), 소품의 가림 상자를 구운 정점 범위로(회전·큰 모델·돌무더기도) |
 | 패링 기력 15 → 5(0097) | `tuning.rs` `parry.stamina cost`, `docs/tuning-frozen.txt` | 빗나간 패링은 타이밍·피해로 이미 치르니 기력은 연타를 막는 만큼만 — 성공 +20·실패 −5 |
+| 박자 금빛 옅게(0098) | `render.rs` `BEAT_GOLD`·박자 부채꼴·발밑 고리, `hud.rs` 음표·반짝임 | 노랑을 흰빛 쪽으로 + 진하기 30% 안팎 내림(딱 맞춤·락온 표시는 그대로) |
 | 땅 돌리기 시작 CC·착용 중 표시(0085) | `World::apply_turn` 시작 휘청, 랩 `turn.start stagger s`, `equip::wears_something` | 돌기 시작하면 범위 안 적 0.25초 휘청(보스는 무게만큼 짧게, 예고 끊김), "착용 중"은 낀 물건에만(빈 칸·맨손은 커서만) |
 | 바닥 표시 땅 따라·땅 돌리기 휘청(0084) | `render::Drape`(`rise`·`shadow`·`line_up`, 평평한 `ring`·`sector` 없앰), `Level::settle` 문 가운데, `camera` `wobble`·`wobble_at`·`roll`, 랩 `turn.wobble in/out deg` | 그림자·쉼터·상자·갈 곳·플레이어 표시 32곳이 경사로·턱을 따라 접힘(가운데의 땅 위 높이는 지킴), 땅 돌리기 시작엔 도는 쪽·끝엔 반대쪽으로 1.5° 휘청 |
 | 웹 가로 기본(0082) | `web/index.html` `#rotate`·`knell_portrait`, `screen::portrait_blocked`, `tick_play` | 세로로 든 터치 기기엔 회전 안내(싸움은 멈춤), 누르면 Android는 전체 화면 + 가로 잠금(안 먹히면 세로로 계속), iPhone은 세로로 계속 |

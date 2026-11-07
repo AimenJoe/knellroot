@@ -77,7 +77,7 @@ pub fn draw_beat_note(f: &Frame, at: Vec2, k: f32, chain: u32) {
     let s = f.ui * if chain >= 3 { 1.25 } else { 1.0 };
     let rise = 10.0 * f.ui * (1.0 - (1.0 - k) * (1.0 - k));
     let a = if k < 0.7 { 1.0 } else { (1.0 - k) / 0.3 };
-    let gold = Color::new(1.0, 0.86, 0.35, a);
+    let gold = Color::new(1.0, 0.91, 0.6, a);
     let shade = Color::new(0.08, 0.05, 0.08, 0.8 * a);
     let base = at - vec2(0.0, rise);
     let heads: &[Vec2] = if chain >= 2 {
@@ -195,7 +195,7 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
     let shots = matches!(pl.weapon.def().rb, Rb::Shot { .. });
     if pl.since_beat < BEAT_GLINT && !shots {
         let g = 1.0 - pl.since_beat / BEAT_GLINT;
-        let col = Color::new(1.0, 0.86, 0.4, 0.9 * g);
+        let col = Color::new(1.0, 0.92, 0.64, 0.7 * g);
         draw_rectangle(bx, by - s, bw * k, bh + 2.0 * s, col);
     }
     // 등잔(0031): 남은 것은 불 켠 등잔, 쓴 것은 꺼진 등잔. 못 마시면(가득·0) 잠깐 깜빡인다.
@@ -286,7 +286,7 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
                         by - 0.5 * s,
                         3.5 * s,
                         8.0 * s,
-                        Color::new(1.0, 0.86, 0.4, 0.9 * g),
+                        Color::new(1.0, 0.92, 0.64, 0.7 * g),
                     );
                 }
             }
