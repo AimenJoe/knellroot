@@ -4,13 +4,13 @@ use macroquad::prelude::*;
 
 use crate::ground::Ground;
 use crate::input::Actions;
-use crate::tuning::PARRY_CHAIN;
 use crate::tuning::{
     Tuning, BEAT_WINDOW, BEAT_WINDOW_MIN, BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE,
     BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID, CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES,
     GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, LOCK_HANDOFF, P, PERFECT_RELEASE,
     PLAYER_HP, PLAYER_RADIUS, RIPOSTE_WINDOW, RUN_SPEED_X, RUN_STAMINA, TICK_DT,
 };
+use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG};
 use crate::weapons::{self, Rb, Shape};
 
 /// 축 정렬 상자(기둥·벽). 충돌·카메라 당기기에 쓴다.
@@ -370,6 +370,9 @@ pub struct Player {
     pub since_spill: f32,
     /// 마지막 패링 성공에서 지난 초(렌더의 번쩍임).
     pub since_parry: f32,
+    /// 이어 패링(0081 → 0086): 남은 창(초)과 이번 이음에서 더 튕긴 수(0 = 첫 튕김만). 창이 닫히면 0으로.
+    pub parry_chain_left: f32,
+    pub parry_chain_n: u32,
     /// 박자(2026-11-07): 마지막 평타가 시작된 뒤 흐른 시간, 그 타의 한 스윙 시간(= 그 무기의 박자, 0 = 없음),
     /// 이번 공격 누름이 박자 창 안이었나(누른 순간에 판정 — 받아 둔 이른 누름은 거짓).
     pub since_swing: f32,
@@ -523,6 +526,8 @@ impl World {
                 stun_chain: 0,
                 since_spill: f32::MAX,
                 since_parry: f32::MAX,
+                parry_chain_left: 0.0,
+                parry_chain_n: 0,
                 dash_left: 0.0,
                 connected: 0,
                 since_swing: f32::MAX,
@@ -859,7 +864,7 @@ impl World {
     /// 패링 창이 열려 있나: 패링 동작의 창 안이거나, 막 튕긴 뒤 이어 패링 시간 안(0081).
     pub fn parry_open(&self, t: &Tuning) -> bool {
         matches!(self.player.state, PState::Parry { t: e } if e < t[P::ParryWindow])
-            || self.player.since_parry < PARRY_CHAIN
+            || self.player.parry_chain_left > 0.0
     }
 
     #[cfg(test)]
@@ -1187,6 +1192,10 @@ impl World {
         pl.cast_denied = (pl.cast_denied - dt).max(0.0);
         pl.dodge_cd = (pl.dodge_cd - dt).max(0.0);
         pl.since_parry = (pl.since_parry + dt).min(f32::MAX);
+        pl.parry_chain_left = (pl.parry_chain_left - dt).max(0.0);
+        if pl.parry_chain_left <= 0.0 {
+            pl.parry_chain_n = 0;
+        }
         pl.dash_left = (pl.dash_left - dt).max(0.0);
         pl.since_swing = (pl.since_swing + dt).min(f32::MAX);
         pl.since_beat = (pl.since_beat + dt).min(f32::MAX);
@@ -1351,7 +1360,10 @@ impl World {
                     if riposte {
                         pl.beat = 0.0;
                         // 패링 반격(2026-11-06): 튕긴 직후의 공격은 모으기 없이 다 모은 강타 — 드러난 적에게 치명타가 더해진다.
+                        // 반격을 고르면 방어를 내려놓는다 — 이어 패링도 닫힌다(0081).
                         pl.since_parry = f32::MAX;
+                        pl.parry_chain_left = 0.0;
+                        pl.parry_chain_n = 0;
                         pl.state = PState::Heavy {
                             t: 0.0,
                             swing: pl.swings,
@@ -2552,10 +2564,14 @@ impl World {
             en.spread = push;
         }
         let facing = self.player.facing_dir();
-        // 앞쪽에서 오는가(패링은 바라보는 쪽 반원 안만 — 위치 선정도 기술, KB timing-parry).
+        // 앞쪽에서 오는가(패링은 바라보는 쪽 반원 안만 — 위치 선정도 기술, KB timing-parry). 이어 패링이 쌓이면 넓어진다(0086).
+        let front_cos = parry_front_cos(
+            self.player.parry_chain_left > 0.0,
+            self.player.parry_chain_n,
+        );
         let in_front = |at: Vec3| {
             let d = vec3(at.x - p.x, 0.0, at.z - p.z).normalize_or_zero();
-            d.dot(facing) > PARRY_FRONT
+            d.dot(facing) > front_cos
         };
         // 플레이어를 친 적의 자리(첫 하나) — 밀려나는 쪽.
         let mut hurt_player: Option<Vec3> = None;
@@ -2629,8 +2645,14 @@ impl World {
             if matches!(self.player.state, PState::Parry { .. }) {
                 self.player.state = PState::Idle;
             }
-            // 튕길 때마다 이어 패링 창이 다시 열린다(`PARRY_CHAIN`).
-            self.player.since_parry = 0.0;
+            // 이어 패링(0081 → 0086): 처음 튕기면 창 `PARRY_CHAIN`, 이어지는 동안 더 튕길 때마다 남은 창에 반씩 줄어드는 몫을 더하고
+            // 받는 반원이 넓어진다. 한 틱에 여럿을 튕기면 하나씩 센다(둘러싸였을 때 가장 빨리 넓어진다).
+            let pl = &mut self.player;
+            for _ in 0..parried.len() {
+                (pl.parry_chain_left, pl.parry_chain_n) =
+                    parry_chain_add(pl.parry_chain_left, pl.parry_chain_n);
+            }
+            pl.since_parry = 0.0;
             self.hitstop = self.hitstop.max(t[P::Hitstop] * PARRY_HITSTOP);
             // 같은 틱이라도 뒤·옆에서 맞은 것·받을 수 없는 파동은 그대로 맞는다(패링은 앞쪽 반원만).
         }
@@ -2843,6 +2865,31 @@ struct Strike {
 }
 
 /// 콤보 한 타의 선딜·활성·후딜(0051: 랩 평타 × 무기 표의 `time`).
+/// 이어 패링 한 번 더(0086): (남은 창, 더 튕긴 수) → 다음. 창이 닫혀 있으면 첫 튕김(창 `PARRY_CHAIN`, 수 0),
+/// 열려 있으면 수 + 1, 남은 창 + `PARRY_CHAIN × PARRY_CHAIN_DECAY^수`.
+pub fn parry_chain_add(left: f32, n: u32) -> (f32, u32) {
+    if left <= 0.0 {
+        (PARRY_CHAIN, 0)
+    } else {
+        let n = n + 1;
+        (left + PARRY_CHAIN * PARRY_CHAIN_DECAY.powi(n as i32), n)
+    }
+}
+
+/// 패링이 받는 반원의 경계(바라보는 쪽과의 내적이 이것보다 커야): 평소 `PARRY_FRONT`, 이어 패링이 열려 있으면 더 튕긴 수만큼
+/// 반각을 넓힌다 — 둘레를 다 덮으면 −1 아래(뒤에서 오는 것도).
+pub fn parry_front_cos(chain_open: bool, n: u32) -> f32 {
+    if !chain_open || n == 0 {
+        return PARRY_FRONT;
+    }
+    let half = PARRY_FRONT.acos() + (PARRY_CHAIN_WIDEN_DEG * n as f32).to_radians();
+    if half >= std::f32::consts::PI {
+        -1.01
+    } else {
+        half.cos()
+    }
+}
+
 /// 박자 창 안인가(2026-11-07): 마지막 평타가 시작된 뒤 `since`초, 그 무기의 박자(그 타의 한 스윙 시간) `beat` ± `BEAT_WINDOW` × 박자.
 pub fn on_beat(since: f32, beat: f32) -> bool {
     beat > 0.0 && (since - beat).abs() <= (beat * BEAT_WINDOW).max(BEAT_WINDOW_MIN)
@@ -6140,5 +6187,83 @@ mod tests {
         }
         assert_eq!(dur(&w.enemies[0]), None);
         assert!(w.spill_at.is_some(), "still turning");
+    }
+
+    /// 0086(사장 2026-11-07): 이어 패링이 쌓이면 남은 창이 반씩 줄어드는 몫만큼 늘고(0.2 → +0.1 → +0.05), 받는 반원은 넓어진다
+    /// (앞 ±78° → ±123° → 둘레 전부).
+    #[test]
+    fn parry_chains_stack_halving_time_and_widen_their_arc() {
+        let (l0, n0) = parry_chain_add(0.0, 0);
+        assert_eq!((l0, n0), (PARRY_CHAIN, 0), "first parry opens the chain");
+        let (l1, n1) = parry_chain_add(0.05, n0);
+        assert!((l1 - (0.05 + PARRY_CHAIN * 0.5)).abs() < 1e-6 && n1 == 1);
+        let (l2, n2) = parry_chain_add(l1, n1);
+        assert!((l2 - (l1 + PARRY_CHAIN * 0.25)).abs() < 1e-6 && n2 == 2);
+        assert_eq!(
+            parry_front_cos(false, 3),
+            PARRY_FRONT,
+            "no chain: the front half"
+        );
+        assert_eq!(parry_front_cos(true, 0), PARRY_FRONT);
+        let side = parry_front_cos(true, 1);
+        assert!(side < 0.0 && side > -0.6, "±123°: the sides too ({side})");
+        assert!(parry_front_cos(true, 3) < -1.0, "all around");
+    }
+
+    /// 0086: 앞에서 둘을 함께 튕기면(이음 +1) 0.1초 뒤 옆(90°)에서 오는 것도 튕긴다 — 하나만 튕겼으면 옆은 맞는다.
+    #[test]
+    fn a_stacked_parry_chain_catches_a_blow_from_the_side() {
+        let t = Tuning::default();
+        for (front_mobs, side_deflected) in [(2usize, true), (1, false)] {
+            let mut w = World::new("test", 20.0);
+            w.player.facing = std::f32::consts::PI; // -z = 앞
+            let mut put = |w: &mut World, at: Vec3, face: f32, ticks: usize| {
+                w.spawn_mob(at);
+                let en = w.enemies.last_mut().unwrap();
+                en.facing = face;
+                en.atk = Atk::Smash;
+                en.state = EState::Tele {
+                    t: en.tele_dur() - (ticks as f32 - 1.0) * TICK_DT,
+                };
+            };
+            // 패링을 누르면 가장 가까운 적 쪽으로 돌아선다 — 앞 오른쪽(0.3, -1.0)이 가장 가깝게.
+            let fronts = [vec3(0.3, 0.0, -1.0), vec3(-0.35, 0.0, -1.05)];
+            for at in fronts.iter().take(front_mobs) {
+                put(&mut w, *at, 0.0, 3);
+            }
+            // 왼쪽 옆(바라보는 쪽에서 ≈ 107° — 평소 반원 ±78° 밖, 한 번 쌓인 ±123° 안)에서 12틱 뒤:
+            // 패링 동작 창(0.18초 = 11틱)이 닫힌 뒤라 이어 패링으로만 받는다.
+            put(
+                &mut w,
+                vec3(-1.2, 0.0, 0.0),
+                std::f32::consts::FRAC_PI_2,
+                3 + 12,
+            );
+            let mut parries = 0;
+            let mut ev = w.step(
+                &Actions {
+                    parry: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            for _ in 0..90 {
+                parries += ev
+                    .iter()
+                    .filter(|e| matches!(e, Event::Parry { .. }))
+                    .count();
+                ev = w.step(&Actions::default(), &t);
+            }
+            parries += ev
+                .iter()
+                .filter(|e| matches!(e, Event::Parry { .. }))
+                .count();
+            let side_hit = w.player.hp < PLAYER_HP;
+            assert_eq!(
+                !side_hit, side_deflected,
+                "{front_mobs} in front: parries {parries}, hp {}",
+                w.player.hp
+            );
+        }
     }
 }

@@ -1513,6 +1513,30 @@ impl Renderer {
                 );
             }
         }
+        // 이어 패링(0081·0086): 열린 동안 같은 푸른 반달을 지금 받는 넓이로 — 쌓일수록 둘레로 벌어진다(둘레 전부면 고리).
+        if w.player.parry_chain_left > 0.0 && !matches!(w.player.state, PState::Parry { .. }) {
+            let c = crate::world::parry_front_cos(true, w.player.parry_chain_n);
+            let arc = if c < -1.0 {
+                360.0
+            } else {
+                (c.acos().to_degrees() * 2.0).min(360.0)
+            };
+            let fade = (w.player.parry_chain_left / crate::tuning::PARRY_CHAIN).min(1.0);
+            fl.sector(
+                pp + Vec3::Y * 0.8,
+                1.4,
+                w.player.facing,
+                arc,
+                Color::new(0.6, 0.85, 1.0, 0.12 * fade),
+            );
+            fl.ring(
+                pp + Vec3::Y * 0.8,
+                1.4,
+                w.player.facing,
+                arc,
+                Color::new(0.75, 0.9, 1.0, 0.35 * fade),
+            );
+        }
         // 내려찍기(0027): 내려앉은 자리에서 범위만큼 퍼지는 고리(`plunge.range m`).
         if let PState::Land { t: e, dur } = w.player.state {
             if (dur - t[crate::tuning::P::PlungeLand]).abs() < 1e-4 && e < 0.25 {
