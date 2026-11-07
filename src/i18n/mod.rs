@@ -8,6 +8,8 @@
 //! - 지금 두 언어(한국어·영어). 구조는 첫 게임처럼 열한 언어까지 그대로 늘어난다(파일 하나 + `Lang` 한 줄).
 use std::sync::atomic::{AtomicU8, Ordering};
 
+#[cfg(feature = "dev")]
+pub mod dev;
 mod en;
 mod ko;
 
@@ -449,7 +451,22 @@ mod tests {
         ] {
             let face = ttf_parser::Face::parse(font, 0).unwrap();
             for l in Lang::ALL {
-                for text in all(l.strings()).into_iter().chain([UI_GLYPHS]) {
+                // 개발 화면 글(0080)도 같은 글꼴로 그린다.
+                #[cfg(feature = "dev")]
+                let dev_texts: Vec<&str> = dev::SPEC_KO
+                    .iter()
+                    .map(|(_, v)| *v)
+                    .chain(dev::GROUP_KO)
+                    .chain(dev::SCENARIO_KO.iter().flat_map(|(_, n, c)| [*n, *c]))
+                    .chain(dev::PAIRS.iter().map(|p| p.0))
+                    .collect();
+                #[cfg(not(feature = "dev"))]
+                let dev_texts: Vec<&str> = Vec::new();
+                for text in all(l.strings())
+                    .into_iter()
+                    .chain([UI_GLYPHS])
+                    .chain(dev_texts)
+                {
                     for c in text.chars() {
                         assert!(
                         c.is_whitespace() || face.glyph_index(c).is_some(),

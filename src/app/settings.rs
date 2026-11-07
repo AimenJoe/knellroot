@@ -1,6 +1,8 @@
 //! 설정·개발 메뉴(0052, nail 설정 창 꼴 0066): 이름 왼쪽 · 값 오른쪽(◀ 값 ▶), 좌우·확인·화살표 탭으로 바꾼다.
 use super::menu::{Menu, Out};
 use super::*;
+#[cfg(feature = "dev")]
+use crate::i18n::dev::{self as dv, scenario_text, t};
 
 impl App {
     pub(super) fn settings_menu(&self) -> Menu {
@@ -88,32 +90,29 @@ impl App {
     }
 
     /// 개발 메뉴(0052 → 0075, nail 0269의 묶음 탭 꼴): 묶음 줄(◀ 묶음 ▶) · 무기 · 그 묶음에서 시작할 것들 · 돌아가기.
-    /// 아래 설명 칸에 고른 줄의 설명. 개발판에만, 영어 그대로(0013).
+    /// 아래 설명 칸에 고른 줄의 설명. 개발판에만, 글은 언어를 따른다(`i18n::dev`, 0080).
     #[cfg(feature = "dev")]
     pub(super) fn dev_menu(&self, tab: usize) -> Menu {
         let tab = tab.min(DEV_TABS.len() - 1);
         let items = dev_items(tab);
         let rows = items
             .iter()
-            .map(|d| match d {
-                DevItem::Tab => ui::Row::step("group", DEV_TABS[tab].0),
-                DevItem::Weapon => ui::Row::step("weapon", format!("{:?}", self.weapon)),
+            .map(|it| match it {
+                DevItem::Tab => ui::Row::step(t(dv::GROUP), tab_name(tab)),
+                DevItem::Weapon => ui::Row::step(t(dv::WEAPON), weapon_name(self.weapon)),
                 DevItem::Start(e) => ui::Row::plain(e.name()),
-                DevItem::Back => ui::Row::plain("back"),
+                DevItem::Back => ui::Row::plain(t(dv::BACK)),
             })
             .collect();
         let note = match items.get(self.cursor) {
             Some(DevItem::Start(e)) => Some(e.note()),
-            Some(DevItem::Tab) => Some(
-                "left/right: group (combat · stage · perf & tools). Dev runs never write the save slot."
-                    .to_string(),
-            ),
+            Some(DevItem::Tab) => Some(t(dv::DEV_TAB_NOTE).to_string()),
             _ => None,
         };
         Menu {
             note_room: true,
             note,
-            ..Menu::new("DEV", 360.0, rows)
+            ..Menu::new(t(dv::DEV_TITLE), 360.0, rows)
         }
     }
 
@@ -167,6 +166,12 @@ impl App {
     }
 }
 
+/// 묶음 이름(한국어면 이 표, 영어면 `DEV_TABS`의 이름).
+#[cfg(feature = "dev")]
+fn tab_name(tab: usize) -> &'static str {
+    t([dv::TAB_COMBAT, dv::TAB_STAGE, dv::TAB_TOOLS][tab.min(2)])
+}
+
 /// 개발 메뉴 묶음(0075, nail 0269 `scenario::Cat`): 이름 · 시작할 것들. 첫 묶음 첫 줄 = 보스 아레나(시험 스크립트가 "아래로 둘 · 확인"으로 간다).
 #[cfg(feature = "dev")]
 pub(super) const DEV_TABS: [(&str, &[DevStart]); 3] = [
@@ -210,27 +215,30 @@ pub(super) enum DevStart {
 impl DevStart {
     fn name(self) -> &'static str {
         match self {
-            DevStart::Entrance => "stage 1 from the entrance",
-            DevStart::Gate => "stage 1 at the sanctum gate (boss)",
-            DevStart::Scenario(sc) => scenario::entry(sc).name,
-            DevStart::Lab => "lab (tuning)",
+            DevStart::Entrance => t(dv::ENTRANCE),
+            DevStart::Gate => t(dv::GATE),
+            DevStart::Scenario(sc) => {
+                let e = scenario::entry(sc);
+                scenario_text(e.name, e.checks).0
+            }
+            DevStart::Lab => t(dv::LAB_START),
         }
     }
 
     fn note(self) -> String {
         match self {
-            DevStart::Entrance | DevStart::Gate => {
-                "the real stage with this slot's charms and embers; nothing is saved".to_string()
-            }
+            DevStart::Entrance | DevStart::Gate => t(dv::STAGE_NOTE).to_string(),
             DevStart::Scenario(sc) => {
                 let n = scenario::LIST
                     .iter()
                     .position(|e| e.scenario == sc)
                     .unwrap_or(0)
                     + 1;
-                format!("key {n} in the arena · {}", scenario::entry(sc).checks)
+                let e = scenario::entry(sc);
+                let checks = scenario_text(e.name, e.checks).1;
+                fill(t(dv::SCENARIO_NOTE), &[&n.to_string(), checks])
             }
-            DevStart::Lab => "change tuning live; same as the lab row under settings".to_string(),
+            DevStart::Lab => t(dv::LAB_NOTE).to_string(),
         }
     }
 }

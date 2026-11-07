@@ -1,9 +1,15 @@
 //! 랩 창(0070, 개발판): 0066 창 틀 안의 목록 둘 — 묶음 목록(+ A/B·내보내기·모두 되돌리기)과 묶음 하나(이름 ◀ 값 ▶).
-//! 창이 열린 동안 게임은 멈추고, 바꾼 값은 바로 `App::t`에 들어가 닫은 뒤에도 계속 쓰인다. 글은 영어(개발 화면, 0013).
+//! 창이 열린 동안 게임은 멈추고, 바꾼 값은 바로 `App::t`에 들어가 닫은 뒤에도 계속 쓰인다. 글은 언어를 따른다(`i18n::dev`, 0080).
 use super::menu::{Menu, Out};
 use super::*;
+use crate::i18n::dev::{self as dv, d, spec_label, t, GROUP_KO};
 use crate::lab::{self, GROUPS};
 use crate::tuning::SPECS;
+
+/// 묶음 이름(한국어면 표, 영어면 `GROUPS`).
+fn group_name(g: usize) -> &'static str {
+    d(GROUP_KO[g], GROUPS[g].0)
+}
 
 /// 묶음 목록 위의 줄 넷.
 const TOP: usize = 4;
@@ -26,19 +32,20 @@ impl App {
 
     pub(super) fn lab_menu(&self) -> Menu {
         let ab = if !self.lab.has_b() {
-            "A (no B)"
+            t(dv::NO_B)
         } else if self.lab.using_b {
             "B"
         } else {
             "A"
         };
         let mut rows = vec![
-            ui::Row::step("using", ab),
-            ui::Row::plain("store current as B"),
-            ui::Row::plain("export to console"),
-            ui::Row::plain("reset all to defaults"),
+            ui::Row::step(t(dv::USING), ab),
+            ui::Row::plain(t(dv::STORE_B)),
+            ui::Row::plain(t(dv::EXPORT)),
+            ui::Row::plain(t(dv::RESET_ALL)),
         ];
-        for (g, (name, _)) in GROUPS.iter().enumerate() {
+        for g in 0..GROUPS.len() {
+            let name = group_name(g);
             let n = lab::members(g)
                 .into_iter()
                 .filter(|&i| lab::changed(&self.t, i))
@@ -70,7 +77,7 @@ impl App {
                 for i in 0..SPECS.len() {
                     self.t.reset(i);
                 }
-                self.lab.note = "all values back to defaults".into();
+                self.lab.note = t(dv::NOTE_RESET).into();
             }
             Out::Pick(i) => self.go(Go::Open(Scene::LabGroup { g: (i - TOP) as u8 })),
         }
@@ -83,23 +90,27 @@ impl App {
                 let s = &SPECS[i];
                 let mark = if lab::changed(&self.t, i) { " *" } else { "" };
                 ui::Row::step(
-                    s.name,
+                    spec_label(s.name),
                     format!("{}{mark}", lab::value_text(self.t.get(i), s.step)),
                 )
             })
             .collect();
         let note = lab::members(g).get(self.cursor).map(|&i| {
             let s = &SPECS[i];
-            format!(
-                "default {} | {} x10 | confirm = default",
-                lab::value_text(s.def, s.step),
-                input::prompt(Act::Swap)
+            // 한국어여도 원래 이름(`tuning.rs`·내보낸 줄의 말)을 함께 — 값을 말로 주고받을 때 같은 이름으로(영어는 줄 이름이 곧 그것).
+            fill(
+                t(dv::LAB_HINT),
+                &[
+                    s.name,
+                    &lab::value_text(s.def, s.step),
+                    &input::prompt(Act::Swap),
+                ],
             )
         });
         Menu {
             note_room: true,
             note,
-            ..Menu::new(GROUPS[g].0, 400.0, rows)
+            ..Menu::new(group_name(g), 400.0, rows)
         }
     }
 

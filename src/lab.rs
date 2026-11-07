@@ -75,7 +75,7 @@ impl Lab {
     pub fn store(&mut self, t: &Tuning) {
         self.slot = Some(t.clone());
         self.using_b = false;
-        self.note = "stored current values as slot B".into();
+        self.note = crate::i18n::dev::t(crate::i18n::dev::NOTE_STORED).into();
     }
 
     /// A ↔ B.
@@ -83,15 +83,16 @@ impl Lab {
         if let Some(b) = self.slot.as_mut() {
             std::mem::swap(t, b);
             self.using_b = !self.using_b;
-            self.note = format!("now using {}", if self.using_b { "B" } else { "A" });
+            let ab = if self.using_b { "B" } else { "A" };
+            self.note = crate::i18n::fill(crate::i18n::dev::t(crate::i18n::dev::NOTE_USING), &[ab]);
         } else {
-            self.note = "no slot B yet (store one first)".into();
+            self.note = crate::i18n::dev::t(crate::i18n::dev::NOTE_NO_B).into();
         }
     }
 
     /// 콘솔에 낼 `tuning.rs` 줄.
     pub fn export(&mut self, t: &Tuning) -> String {
-        self.note = "exported to console (paste into src/tuning.rs)".into();
+        self.note = crate::i18n::dev::t(crate::i18n::dev::NOTE_EXPORTED).into();
         t.export()
     }
 }
