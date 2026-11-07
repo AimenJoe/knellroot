@@ -191,7 +191,8 @@ impl Line {
 
     /// 늘 보이는 줄(나머지는 보정이 있을 때만 — KB: 줄이 늘면 칸이 넘친다).
     pub fn always(self) -> bool {
-        matches!(self, Line::MaxHp | Line::Flask | Line::AtkSpeed)
+        // 공격 속도는 무기 숫자 줄(한 스윙 초 = 박자)이 맡는다 — 여기는 장신구 배율이 있을 때만(2026-11-07).
+        matches!(self, Line::MaxHp | Line::Flask)
     }
 
     /// 작을수록 좋은 줄(받는 피해·회피 기력).
@@ -294,7 +295,8 @@ mod tests {
     fn status_lines_show_the_basics_and_only_lines_that_a_change_touches() {
         let base = Stats::default();
         let shown: Vec<Line> = lines(&base, None).iter().map(|l| l.0).collect();
-        assert_eq!(shown, vec![Line::MaxHp, Line::Flask, Line::AtkSpeed]);
+        // 공격 속도는 무기 숫자 줄(초)이 맡고, 배율은 장신구가 바꿀 때만(2026-11-07).
+        assert_eq!(shown, vec![Line::MaxHp, Line::Flask]);
         // 맞바꿈 장신구(피해 +1 · 공속 −15%): 둘 다 보이고 하나는 좋아짐, 하나는 나빠짐.
         let hand = Stats::compute(&[crate::charms::def(crate::charms::Id::Hand).mods]);
         let preview = lines(&base, Some(&hand));

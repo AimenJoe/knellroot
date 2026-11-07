@@ -5,9 +5,10 @@ use macroquad::prelude::*;
 use crate::ground::Ground;
 use crate::input::Actions;
 use crate::tuning::{
-    Tuning, BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH,
-    BOMB_SKID, CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY,
-    HIT_HITSTOP, HIT_SWAY, LOCK_HANDOFF, P, PLAYER_HP, PLAYER_RADIUS, RIPOSTE_WINDOW, TICK_DT,
+    Tuning, BEAT_WINDOW, BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY,
+    BOMB_SHOT_REACH, BOMB_SKID, CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES, GROUND_STEP,
+    HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, LOCK_HANDOFF, P, PLAYER_HP, PLAYER_RADIUS,
+    RIPOSTE_WINDOW, TICK_DT,
 };
 use crate::weapons::{self, Rb, Shape};
 
@@ -165,6 +166,8 @@ pub enum Event {
     },
     /// 수류탄을 던졌다(0051).
     Throw,
+    /// 박자에 맞춘 평타가 나갔다 — 스태미나를 쓰지 않았다(2026-11-07).
+    Beat,
 }
 
 /// 금 간 땅(0051, 망치 여진): `left`초 뒤 둘레를 친다.
@@ -366,6 +369,11 @@ pub struct Player {
     pub since_spill: f32,
     /// 마지막 패링 성공에서 지난 초(렌더의 번쩍임).
     pub since_parry: f32,
+    /// 박자(2026-11-07): 마지막 평타가 시작된 뒤 흐른 시간, 그 타의 한 스윙 시간(= 그 무기의 박자, 0 = 없음),
+    /// 이번 공격 누름이 박자 창 안이었나(누른 순간에 판정 — 받아 둔 이른 누름은 거짓).
+    pub since_swing: f32,
+    pub beat: f32,
+    pub on_beat: bool,
     /// 마지막으로 무언가를 맞힌 스윙 번호(맞히면 그 스윙의 내딛기를 멈춘다, 2026-11-06).
     pub connected: u32,
     /// 대시 공격을 받는 남은 시간(회피를 끊었거나 막 끝난 뒤, 2026-11-06).
@@ -472,6 +480,8 @@ pub struct World {
     /// 이번 틱에 쏜 쪽과 세기(0 = 보통, 1 = 덜 모음, 2 = 다 모음, 0056) — `tick_bolts`가 탄을 세운다.
     cast_fire: Option<(Vec3, u8)>,
     cast_denied_now: bool,
+    /// 이번 틱에 박자에 맞춘 평타가 나갔다(`Event::Beat`).
+    beat_now: bool,
     /// 이번 틱에 등잔을 삼켰다·못 마셨다(사건은 `apply_strike`가 낸다).
     gulp_now: bool,
     flask_denied_now: bool,
@@ -503,6 +513,9 @@ impl World {
                 since_parry: f32::MAX,
                 dash_left: 0.0,
                 connected: 0,
+                since_swing: f32::MAX,
+                beat: 0.0,
+                on_beat: false,
                 attack_hold: 0.0,
                 flask: FLASK_CHARGES,
                 flask_lock: 0.0,
@@ -554,6 +567,7 @@ impl World {
             throw_to: None,
             cast_fire: None,
             cast_denied_now: false,
+            beat_now: false,
             gulp_now: false,
             flask_denied_now: false,
         }
@@ -589,6 +603,11 @@ impl World {
             None
         };
         let pl = &mut self.player;
+        // 박자(2026-11-07): 공격을 누른 **그 순간**이 박자 창 안이었나. 받아 뒀다 나중에 나가는 이른 누름은 창 밖으로 친다
+        // (연타가 박자를 공짜로 얻지 못하게 — KB melee-light-and-charged-attack-feel "먼저 누른 것이 남아야 창을 긁지 못한다").
+        if a.attack {
+            pl.on_beat = on_beat(pl.since_swing, pl.beat);
+        }
         pl.pending_left = (pl.pending_left - dt).max(0.0);
         if pressed.is_some() {
             pl.pending = pressed;
@@ -1143,6 +1162,7 @@ impl World {
         pl.dodge_cd = (pl.dodge_cd - dt).max(0.0);
         pl.since_parry = (pl.since_parry + dt).min(f32::MAX);
         pl.dash_left = (pl.dash_left - dt).max(0.0);
+        pl.since_swing = (pl.since_swing + dt).min(f32::MAX);
         // 스태미나: 마지막으로 쓴 뒤 `stamina.regen delay s`가 지나야 찬다.
         pl.stamina_denied = (pl.stamina_denied - dt).max(0.0);
         pl.stamina_idle += dt;
@@ -1255,7 +1275,17 @@ impl World {
                         pl.cast_denied = 0.6;
                         self.cast_denied_now = true;
                     }
-                } else if a.attack && !a.dodge && spend(pl, t[P::StaminaAttack]) {
+                } else if a.attack && !a.dodge && {
+                    // 박자에 맞춘 평타 콤보(이어지는 타)는 스태미나를 쓰지 않는다(2026-11-07, 사장). 대시 공격·패링 반격은 늘 쓴다.
+                    let riposte = pl.since_parry <= RIPOSTE_WINDOW && wpn.heavy.is_some();
+                    let dash = pl.dash_left > 0.0 && wpn.dash.is_some();
+                    let free = pl.on_beat && pl.combo_left > 0.0 && !riposte && !dash;
+                    pl.on_beat = false;
+                    if free {
+                        self.beat_now = true;
+                    }
+                    free || spend(pl, t[P::StaminaAttack])
+                } {
                     pl.swings += 1;
                     // 휘두르는 쪽을 그 자리에서 정한다: 자동 조준 > 조준 스틱 > 지금 바라보는 쪽.
                     if let Some(d) = auto_dir.or(aim) {
@@ -1282,6 +1312,7 @@ impl World {
                     let dash = pl.dash_left > 0.0 && wpn.dash.is_some();
                     pl.dash_left = 0.0;
                     if riposte {
+                        pl.beat = 0.0;
                         // 패링 반격(2026-11-06): 튕긴 직후의 공격은 모으기 없이 다 모은 강타 — 드러난 적에게 치명타가 더해진다.
                         pl.since_parry = f32::MAX;
                         pl.state = PState::Heavy {
@@ -1292,11 +1323,15 @@ impl World {
                             perfect: false,
                         };
                     } else {
+                        let hit = if dash { weapons::DASH } else { hit };
+                        let (s0, a0, r0) = hit_times(t, wpn, hit);
+                        pl.since_swing = 0.0;
+                        pl.beat = s0 + a0 + r0;
                         pl.state = PState::Attack {
                             t: 0.0,
                             swing: pl.swings,
                             dir,
-                            hit: if dash { weapons::DASH } else { hit },
+                            hit,
                         };
                     }
                 } else if a.cast && matches!(wpn.rb, Rb::Shot { .. }) {
@@ -1832,6 +1867,9 @@ impl World {
     /// 날아가는 것·늦게 터지는 것(0048·0051): 마법 탄·쇠뇌 볼트, 수류탄, 금 간 땅(망치 여진), 자세 막대가 줄기, 폭발 고리.
     /// 탄은 이번 틱에 쏜 것을 세우고 날려 벽·땅·적에 닿으면 지운다(꿰뚫는 탄은 적을 지나간다). 칸은 채우지 않는다(근접만 채운다).
     fn tick_bolts(&mut self, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
+        if std::mem::take(&mut self.beat_now) {
+            ev.push(Event::Beat);
+        }
         if std::mem::take(&mut self.cast_denied_now) {
             ev.push(Event::CastDenied);
         }
@@ -2639,6 +2677,11 @@ struct Strike {
 }
 
 /// 콤보 한 타의 선딜·활성·후딜(0051: 랩 평타 × 무기 표의 `time`).
+/// 박자 창 안인가(2026-11-07): 마지막 평타가 시작된 뒤 `since`초, 그 무기의 박자(그 타의 한 스윙 시간) `beat` ± `BEAT_WINDOW` × 박자.
+pub fn on_beat(since: f32, beat: f32) -> bool {
+    beat > 0.0 && (since - beat).abs() <= beat * BEAT_WINDOW
+}
+
 pub fn hit_times(t: &Tuning, w: &weapons::Weapon, hit: u8) -> (f32, f32, f32) {
     let k = w.hit(hit).map_or(1.0, |h| h.time);
     (
@@ -4917,6 +4960,69 @@ mod tests {
         }
         w.step(&Actions::default(), &t);
         assert!(w.player.vel.length() < 1e-4, "the lunge stops on contact");
+    }
+
+    /// 2026-11-07: 무기마다 박자 = 그 타의 한 스윙 시간. 박자 창(± `BEAT_WINDOW`) 안에 **누른** 다음 평타는 스태미나를 쓰지 않는다.
+    /// 일찍 눌러 받아 둔 것·연타는 박자에 나가도 쓴다(연타가 공짜가 되지 않게), 첫 타도 쓴다.
+    #[test]
+    fn an_attack_pressed_on_the_weapons_beat_costs_no_stamina_but_mashing_does() {
+        assert!(on_beat(0.43, 0.43) && on_beat(0.43 * 1.14, 0.43) && !on_beat(0.43 * 1.2, 0.43));
+        assert!(!on_beat(0.2, 0.43) && !on_beat(0.43, 0.0));
+        let t = Tuning::default();
+        for weapon in [weapons::Id::Sword, weapons::Id::Staff, weapons::Id::Hammer] {
+            // 박자에 맞춰 누름.
+            let mut w = World::new("test", 20.0);
+            w.set_weapon(weapon);
+            w.step(
+                &Actions {
+                    attack: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            let after_first = w.player.stamina;
+            assert!(after_first < t[P::StaminaMax], "the first swing costs");
+            let beat = w.player.beat;
+            assert!(beat > 0.25, "{weapon:?} beat {beat}");
+            let mut free = false;
+            for _ in 0..120 {
+                let press = w.player.since_swing >= beat - TICK_DT * 0.5
+                    && w.player.since_swing < beat + TICK_DT;
+                let before = w.player.stamina;
+                let ev = w.step(
+                    &Actions {
+                        attack: press,
+                        ..Default::default()
+                    },
+                    &t,
+                );
+                if press {
+                    assert!(ev.contains(&Event::Beat), "{weapon:?}: on the beat");
+                    assert!(
+                        w.player.stamina >= before,
+                        "{weapon:?}: no stamina for the beat swing"
+                    );
+                    free = true;
+                    break;
+                }
+            }
+            assert!(free, "{weapon:?}");
+            // 연타(매 틱 누름): 박자에 나가는 일이 있어도 받아 둔 이른 누름이라 늘 쓴다.
+            let mut w = World::new("test", 20.0);
+            w.set_weapon(weapon);
+            let mut beats = 0;
+            for _ in 0..90 {
+                let ev = w.step(
+                    &Actions {
+                        attack: true,
+                        ..Default::default()
+                    },
+                    &t,
+                );
+                beats += ev.iter().filter(|e| **e == Event::Beat).count();
+            }
+            assert_eq!(beats, 0, "{weapon:?}: mashing never gets the beat for free");
+        }
     }
 
     /// 2026-11-06: 회피를 끊고(또는 막 끝나고) 누른 공격은 무기의 대시 공격 — 멀리 내딛고, 다음 타는 콤보 둘째 타.

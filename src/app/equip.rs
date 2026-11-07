@@ -103,6 +103,136 @@ fn stat_value(l: Line, v: f32) -> String {
     }
 }
 
+/// 무기 숫자 한 줄(2026-11-07): 무기의 "모양"을 숫자로 — 무기 표 + 랩 기준값(장신구 공속까지 휜 사본) + 장신구 피해에서 계산.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum WLine {
+    /// 콤보 타마다 피해 "1·1·2".
+    Damage,
+    /// 첫 타 한 스윙 시간(초) — 곧 그 무기의 박자.
+    Speed,
+    Reach,
+    /// 강타 피해: 덜 모음 / 다 모음.
+    Heavy,
+    Shot,
+    Mag,
+    Reload,
+    Grenade,
+}
+
+impl WLine {
+    fn lower_is_better(self) -> bool {
+        matches!(self, WLine::Speed | WLine::Reload)
+    }
+
+    fn name(self) -> &'static str {
+        let s = s();
+        match self {
+            WLine::Damage => s.wstat_damage,
+            WLine::Speed => s.wstat_speed,
+            WLine::Reach => s.wstat_reach,
+            WLine::Heavy => s.wstat_heavy,
+            WLine::Shot => s.wstat_shot,
+            WLine::Mag => s.wstat_mag,
+            WLine::Reload => s.wstat_reload,
+            WLine::Grenade => s.wstat_grenade,
+        }
+    }
+}
+
+/// 무기 숫자 한 줄의 값: 보이는 글과 견줄 수(클수록 좋다 — 작을수록 좋은 줄은 `WLine`이 뒤집는다).
+#[derive(Clone, PartialEq, Debug)]
+pub(super) struct WVal {
+    pub line: WLine,
+    pub text: String,
+    pub score: f32,
+}
+
+/// 무기의 숫자들. `t` = 장신구까지 휜 랩 값(`Stats::tune`), `dmg` = 장신구·성장의 피해 +.
+pub(super) fn weapon_numbers(w: &weapons::Weapon, t: &Tuning, dmg: i32) -> Vec<WVal> {
+    use crate::tuning::P;
+    let secs = |v: f32| fill(s().value_secs, &[&format!("{v:.2}")]);
+    let mut out = Vec::new();
+    if let Some(h0) = w.combo.first() {
+        let dmgs: Vec<i32> = w.combo.iter().map(|h| h.damage + dmg).collect();
+        out.push(WVal {
+            line: WLine::Damage,
+            text: dmgs
+                .iter()
+                .map(|d| d.to_string())
+                .collect::<Vec<_>>()
+                .join("·"),
+            score: dmgs.iter().sum::<i32>() as f32 / dmgs.len() as f32,
+        });
+        let (s0, a0, r0) = crate::world::hit_times(t, w, 0);
+        out.push(WVal {
+            line: WLine::Speed,
+            text: secs(s0 + a0 + r0),
+            score: s0 + a0 + r0,
+        });
+        let reach = t[P::AttackRange] * h0.reach;
+        out.push(WVal {
+            line: WLine::Reach,
+            text: format!("{reach:.1}m"),
+            score: reach,
+        });
+        if let Some(h) = w.heavy {
+            let (lo, hi) = (h.damage + dmg, h.damage + dmg + t[P::HeavyFullBonus] as i32);
+            out.push(WVal {
+                line: WLine::Heavy,
+                text: format!("{lo} / {hi}"),
+                score: hi as f32,
+            });
+        }
+    }
+    if let weapons::Rb::Shot {
+        bolt, mag, reload, ..
+    } = w.rb
+    {
+        out.push(WVal {
+            line: WLine::Shot,
+            text: (bolt.damage + dmg).to_string(),
+            score: (bolt.damage + dmg) as f32,
+        });
+        out.push(WVal {
+            line: WLine::Mag,
+            text: mag.to_string(),
+            score: mag as f32,
+        });
+        out.push(WVal {
+            line: WLine::Reload,
+            text: secs(reload),
+            score: reload,
+        });
+    }
+    if let Some(g) = w.grenade {
+        out.push(WVal {
+            line: WLine::Grenade,
+            text: g.count.to_string(),
+            score: g.count as f32,
+        });
+    }
+    out
+}
+
+/// 지금 무기 `now`와 후보 `then`의 같은 줄끼리 견줌(줄이 다르면 — 근접 ↔ 쇠뇌 — 견주지 않고 후보만).
+pub(super) fn weapon_compare(now: &[WVal], then: &[WVal]) -> Vec<(WVal, Option<Change>)> {
+    then.iter()
+        .map(|b| {
+            let ch = now.iter().find(|a| a.line == b.line).map(|a| {
+                let d = (b.score - a.score) * if b.line.lower_is_better() { -1.0 } else { 1.0 };
+                if d.abs() < 1e-4 {
+                    Change::Same
+                } else if d > 0.0 {
+                    Change::Better
+                } else {
+                    Change::Worse
+                }
+            });
+            (b.clone(), ch)
+        })
+        .collect()
+}
+
 fn weapon_desc(id: weapons::Id) -> &'static str {
     let s = s();
     match id {
@@ -479,6 +609,26 @@ impl App {
             let name = this.ui.fit(stat_name(l), rw - w - this.ui.u(6.0), 0.9);
             this.ui.text(&name, rx, y, 0.9, DIM);
         };
+        // 무기 숫자 한 줄(2026-11-07): 이름 · 값(견주면 "값 → 값 ▲▼").
+        let tuned = now_stats.tune(&self.t);
+        let num_row = |this: &Self, y: f32, now: Option<&WVal>, v: &WVal, ch: Option<Change>| {
+            let (val, col) = match (now, ch) {
+                (Some(a), Some(c)) if c != Change::Same => {
+                    let (mark, col) = if c == Change::Better {
+                        ("▲", AMBER)
+                    } else {
+                        ("▼", WORSE)
+                    };
+                    (format!("{} → {} {mark}", a.text, v.text), col)
+                }
+                _ => (v.text.clone(), INK),
+            };
+            let w = this.ui.width(&val, 0.9);
+            this.ui.text(&val, rx + rw - w, y, 0.9, col);
+            let name = this.ui.fit(v.line.name(), rw - w - this.ui.u(6.0), 0.9);
+            this.ui.text(&name, rx, y, 0.9, DIM);
+        };
+        let numbers = |id: weapons::Id| weapon_numbers(id.def(), &tuned, now_stats.dmg);
         match (pick, list) {
             (Some(slot), Some(list)) => {
                 let head = if slot == 0 {
@@ -506,7 +656,9 @@ impl App {
                     })
                     .collect();
                 let list_top = top + px * 1.5;
-                let list_h = (px * 1.75 * 5.0).min(bottom - list_top - px * 4.5);
+                // 목록 칸은 후보 수만큼(다섯까지 — 넘치면 굴린다), 남는 자리는 아래 견주는 줄에(2026-11-07: 무기 숫자 넷째 줄이 잘렸다).
+                let list_h =
+                    (px * 1.75 * list.len().clamp(1, 5) as f32).min(bottom - list_top - px * 4.5);
                 let area = Rect::new(rx - u * 4.0, list_top, rw + u * 8.0, list_h);
                 let mut hits = self.ui.list(&rows, self.cursor, &mut self.view, area);
                 hits.arrows = self.ui.title_arrows(
@@ -540,6 +692,18 @@ impl App {
                     .into_iter()
                     .filter(|l| l.2.is_some_and(|(_, c)| c != Change::Same))
                     .collect();
+                // 무기 칸: 고른 후보의 숫자를 지금 무기와 견준다.
+                if let (0, Some(Cand::Weapon(cand))) = (slot, list.get(self.cursor).copied()) {
+                    let now = numbers(self.weapon);
+                    for (v, ch) in weapon_compare(&now, &numbers(cand)) {
+                        if y + px > bottom {
+                            break;
+                        }
+                        let a = now.iter().find(|a| a.line == v.line);
+                        num_row(self, y, a, &v, ch);
+                        y += row_h;
+                    }
+                }
                 if changed.is_empty() && slot > 0 {
                     self.ui.text(s.equip_no_change, rx, y, 0.9, DIM);
                 }
@@ -552,8 +716,19 @@ impl App {
                 }
             }
             _ => {
-                self.ui.text(s.equip_status, rx, top, 1.0, AMBER);
-                let mut y = top + px * 1.6;
+                let mut y = top;
+                // 무기 칸에 커서가 있으면 그 무기의 숫자를 먼저(2026-11-07).
+                if slot_cursor == 0 {
+                    self.ui.text(s.menu_weapon, rx, y, 1.0, AMBER);
+                    y += px * 1.6;
+                    for v in numbers(self.weapon) {
+                        num_row(self, y, None, &v, None);
+                        y += row_h;
+                    }
+                    y += px * 0.5;
+                }
+                self.ui.text(s.equip_status, rx, y, 1.0, AMBER);
+                y += px * 1.6;
                 for (l, v, _) in crate::stats::lines(&now_stats, None) {
                     if y + px > bottom {
                         break;
@@ -580,6 +755,44 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn weapon_numbers_read_the_table_and_compare_the_right_way() {
+        let t = Tuning::default();
+        let sword = weapon_numbers(weapons::Id::Sword.def(), &t, 0);
+        let hammer = weapon_numbers(weapons::Id::Hammer.def(), &t, 0);
+        let line = |v: &[WVal], l: WLine| v.iter().find(|x| x.line == l).unwrap().clone();
+        assert_eq!(line(&sword, WLine::Damage).text, "1·1·2");
+        assert_eq!(line(&hammer, WLine::Damage).text, "2·3");
+        assert!(line(&hammer, WLine::Speed).score > line(&sword, WLine::Speed).score);
+        let cmp = weapon_compare(&sword, &hammer);
+        let ch = |l: WLine| cmp.iter().find(|(v, _)| v.line == l).unwrap().1;
+        assert_eq!(
+            ch(WLine::Damage),
+            Some(Change::Better),
+            "more damage per hit"
+        );
+        assert_eq!(
+            ch(WLine::Speed),
+            Some(Change::Worse),
+            "a slower swing is worse"
+        );
+        // 장신구 피해 +1은 모든 타에.
+        assert_eq!(
+            line(
+                &weapon_numbers(weapons::Id::Sword.def(), &t, 1),
+                WLine::Damage
+            )
+            .text,
+            "2·2·3"
+        );
+        // 쇠뇌는 사격 줄 — 근접 줄과는 견주지 않는다.
+        let xbow = weapon_numbers(weapons::Id::Crossbow.def(), &t, 0);
+        assert!(xbow.iter().all(|v| v.line != WLine::Damage));
+        assert!(weapon_compare(&sword, &xbow)
+            .iter()
+            .all(|(_, c)| c.is_none()));
+    }
 
     #[test]
     fn the_slot_cursor_moves_by_where_the_boxes_sit() {

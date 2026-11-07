@@ -120,7 +120,7 @@ impl App {
                 Event::Break { .. } => SHAKE_SMASH,
                 Event::Aftershock { .. } | Event::Boom { .. } => SHAKE_PLUNGE,
                 Event::Perfect { .. } => SHAKE_CHARGED,
-                Event::Swing | Event::LockOn | Event::LockOff => 0.0,
+                Event::Swing | Event::LockOn | Event::LockOff | Event::Beat => 0.0,
             };
             // 화면 흔들림 설정(0052): 0..=10 → 0..100%.
             cam.trauma = (cam.trauma + kick * self.shake as f32 / 10.0).min(1.0);
@@ -198,6 +198,7 @@ impl App {
                 Event::EnemyDown { .. } => Id::Die,
                 Event::PlayerHurt => Id::Hurt,
                 Event::Parry { .. } => Id::Parry,
+                Event::Beat => Id::Beat,
                 Event::Ember { .. } => Id::Ember,
                 Event::Gulp { .. } => Id::Gulp,
                 Event::FlaskDenied | Event::CastDenied => Id::Deny,

@@ -42,6 +42,8 @@ pub enum Id {
     Gulp,
     /// 맞힘의 둘째 층(2026-11-06, KB: 둔한 것 + 짧고 높은 것): 낮은 둥 + 4ms 딱. 파일 맞힘 소리와 함께 낸다.
     Thwack,
+    /// 박자에 맞춘 평타(2026-11-07): 맑고 짧은 '팅' — 스태미나를 쓰지 않았다는 신호.
+    Beat,
 }
 
 /// 파일 소리 표: (이름, 변형 수, 크기).
@@ -141,12 +143,14 @@ fn synth_gain(id: Id) -> f32 {
         Id::Rest => 0.55,
         Id::Gulp => 0.4,
         Id::Thwack => 0.5,
+        Id::Beat => 0.35,
         _ => 0.5,
     }
 }
 
-const SYNTHS: [Id; 9] = [
+const SYNTHS: [Id; 10] = [
     Id::Thwack,
+    Id::Beat,
     Id::Parry,
     Id::TeleFan,
     Id::TeleLane,
@@ -425,6 +429,14 @@ pub fn synth(id: Id) -> Vec<i16> {
                 })
                 .collect()
         }
+        // 박자: 1568Hz(G6) + 2349Hz 두 배음이 0.18초에 사라지는 맑은 '팅'.
+        Id::Beat => (0..len(0.18))
+            .map(|i| {
+                let t = i as f32 / SR as f32;
+                let e = (-t * 22.0).exp();
+                ((TAU * 1568.0 * t).sin() + 0.45 * (TAU * 2349.0 * t).sin()) * e
+            })
+            .collect(),
         _ => vec![0.0; 64],
     };
     // 끝 5ms를 줄인다(딸깍 없이).
