@@ -643,10 +643,10 @@ impl Renderer {
                 continue;
             }
             let p = en.prev.lerp(en.pos, alpha);
-            shadow(p, en.radius * 1.2);
             let drape = Drape {
                 ground: w.ground.as_ref(),
             };
+            drape.shadow(p, en.radius * 1.2);
             if let Some((k, shape)) = en.telegraph() {
                 if v.tells > 0.0 {
                     telegraph(&drape, p, en.facing, k, shape, v.tells / TELLS_BASE);
@@ -660,7 +660,10 @@ impl Renderer {
         let pp = w.player.prev.lerp(w.player.pos, alpha);
         // 그림자는 땅에, 높이 뜰수록 작고 옅게 — 쿼터뷰에서 높이를 읽는 단서(0027).
         let lift = (w.player.air / JUMP_SHADOW_H).clamp(0.0, 1.0);
-        shadow_k(
+        Drape {
+            ground: w.ground.as_ref(),
+        }
+        .shadow_k(
             pp,
             PLAYER_RADIUS * 1.3 * (1.0 - 0.45 * lift),
             1.0 - 0.5 * lift,
@@ -851,6 +854,10 @@ impl Renderer {
 
     /// 문(열리면 땅으로 가라앉거나 `open` 동작)과 핵(문지기가 남긴 것, 떠서 돈다).
     fn stage_props(&mut self, run: &StageRun, w: &World, lights: &[Light]) {
+        // 바닥 표시는 모두 땅 높낮이를 따라 접는다(0083 — 경사로·턱에서 묻히거나 뜨던 것).
+        let fl = Drape {
+            ground: w.ground.as_ref(),
+        };
         if let Some((g, c)) = run.level.gate {
             let k = (run.gate_open / GATE_TIME).clamp(0.0, 1.0);
             if k < 1.0 {
@@ -874,7 +881,7 @@ impl Renderer {
         // 장신구 상자(0064 M3): 짙은 나무 궤 + 호박빛 자물쇠(닫힌 것만 숨 쉬듯), 열리면 뚜껑이 뒤로 젖혀지고 빛이 꺼진다.
         for (i, c) in run.chests.iter().enumerate() {
             let open = run.chest_open.get(i).copied().unwrap_or(false);
-            shadow(*c, 0.6);
+            fl.shadow(*c, 0.6);
             let body = Color::new(0.36, 0.25, 0.22, 1.0);
             let band = Color::new(0.55, 0.42, 0.3, 1.0);
             shaded_box(*c + Vec3::Y * 0.27, vec3(0.86, 0.54, 0.56), body, 0.85);
@@ -900,7 +907,7 @@ impl Renderer {
                     lock,
                     1.0,
                 );
-                ring(
+                fl.ring(
                     *c,
                     0.9,
                     0.0,
@@ -915,7 +922,7 @@ impl Renderer {
             // 잔불로 살 것이 있으면(0064 M4) 쉼터마다 호박빛 테가 하나 더 숨 쉰다 — 쓸 곳이 보이게.
             if run.shop_ready {
                 let k = 0.5 + 0.5 * (w.time * 3.0 + i as f32).sin();
-                ring(
+                fl.ring(
                     *r,
                     1.5 + 0.3 * k,
                     0.0,
@@ -928,10 +935,10 @@ impl Renderer {
             } else {
                 Color::new(0.9, 0.7, 0.45, 0.25)
             };
-            ring(*r, 1.0, 0.0, 360.0, col);
+            fl.ring(*r, 1.0, 0.0, 360.0, col);
             if home && run.since_rest < 0.8 {
                 let k = run.since_rest / 0.8;
-                ring(
+                fl.ring(
                     *r + Vec3::Y * (0.6 * k),
                     1.0 + 2.5 * k,
                     0.0,
@@ -955,7 +962,7 @@ impl Renderer {
                 GUIDE_BEAM_H * 0.8,
                 with_a(GUIDE_COLOR, 0.3 + 0.15 * pulse),
             );
-            ring(
+            fl.ring(
                 g,
                 GUIDE_BEAM_R + 0.4 + 0.3 * pulse,
                 0.0,
@@ -975,7 +982,7 @@ impl Renderer {
                 }
                 None => shaded_box(p, Vec3::splat(0.45), Color::new(1.0, 0.7, 0.3, 1.0), 0.2),
             }
-            ring(
+            fl.ring(
                 core,
                 1.0 + 0.15 * (w.time * 3.0).sin(),
                 0.0,
@@ -1280,6 +1287,10 @@ impl Renderer {
 
     /// 배우 위에 얹는 것: 스윙 부채꼴·쟁반 테·휘청 별·락온 표시·마법 탄.
     fn overlays(&self, w: &World, pp: Vec3, alpha: f32, t: &Tuning) {
+        // 바닥 표시는 모두 땅 높낮이를 따라 접는다(0083 — 경사로·턱에서 묻히거나 뜨던 것).
+        let fl = Drape {
+            ground: w.ground.as_ref(),
+        };
         // 마법 탄(0048): 라벤더 빛 덩이 + 짧은 꼬리(보간 자리).
         for b in &w.bolts {
             let p = b.prev.lerp(b.pos, alpha);
@@ -1319,8 +1330,8 @@ impl Renderer {
             } else {
                 with_a(glow, 0.3 + 0.5 * k)
             };
-            ring(pp + Vec3::Y * 0.05, 0.9, 0.0, 360.0, with_a(glow, 0.25));
-            ring(pp + Vec3::Y * 0.05, 0.2 + 0.7 * k, 0.0, 360.0, col);
+            fl.ring(pp + Vec3::Y * 0.05, 0.9, 0.0, 360.0, with_a(glow, 0.25));
+            fl.ring(pp + Vec3::Y * 0.05, 0.2 + 0.7 * k, 0.0, 360.0, col);
         }
         // 수류탄 겨누기(0055): 떨굴 자리에 폭발 반지름 고리.
         if let PState::Throw {
@@ -1333,7 +1344,7 @@ impl Renderer {
                 if e >= t[crate::tuning::P::ThrowStartup] * 0.99 {
                     let y = w.ground.as_ref().map_or(0.0, |gr| gr.height(to));
                     let c = vec3(to.x, y + 0.08, to.z);
-                    ring(c, g.radius, 0.0, 360.0, Color::new(1.0, 0.82, 0.45, 0.8));
+                    fl.ring(c, g.radius, 0.0, 360.0, Color::new(1.0, 0.82, 0.45, 0.8));
                     draw_line_3d(pp + Vec3::Y * 1.0, c, Color::new(1.0, 0.82, 0.45, 0.35));
                 }
             }
@@ -1341,14 +1352,14 @@ impl Renderer {
         // 금 간 땅(망치 여진): 터질 때가 가까울수록 진해지는 고리.
         for c in &w.cracks {
             let k = (1.0 - c.left / 1.5).clamp(0.0, 1.0);
-            ring(
+            fl.ring(
                 c.pos + Vec3::Y * 0.06,
                 c.radius,
                 0.0,
                 360.0,
                 Color::new(1.0, 0.75, 0.4, 0.2 + 0.5 * k),
             );
-            ring(
+            fl.ring(
                 c.pos + Vec3::Y * 0.06,
                 c.radius * k,
                 0.0,
@@ -1373,7 +1384,7 @@ impl Renderer {
         // 폭발 고리: 퍼지며 옅어진다.
         for b in &w.blasts {
             let k = (b.age / crate::tuning::BLAST_SHOW).clamp(0.0, 1.0);
-            ring(
+            fl.ring(
                 b.pos + Vec3::Y * 0.1,
                 b.radius * (0.4 + 0.6 * k),
                 0.0,
@@ -1392,7 +1403,7 @@ impl Renderer {
                         t[crate::tuning::P::AttackArc] * h.arc
                     };
                     // 박자 타(0076)는 금빛 — 이 타가 박자에 맞았다는 것이 휘두름 자체에 보인다.
-                    sector(
+                    fl.sector(
                         pp + Vec3::Y * 0.9,
                         t[crate::tuning::P::AttackRange] * h.reach,
                         w.player.facing,
@@ -1411,14 +1422,14 @@ impl Renderer {
             let k = (w.player.since_beat / BEAT_RING_LIFE).clamp(0.0, 1.0);
             let big = 1.0 + 0.25 * (w.player.beat_chain.min(3) as f32 - 1.0);
             let ease = 1.0 - (1.0 - k) * (1.0 - k);
-            ring(
+            fl.ring(
                 pp + Vec3::Y * 0.06,
                 (0.5 + 1.3 * ease) * big,
                 0.0,
                 360.0,
                 Color::new(1.0, 0.86, 0.35, 0.9 * (1.0 - k)),
             );
-            ring(
+            fl.ring(
                 pp + Vec3::Y * 0.07,
                 (0.35 + 0.9 * ease) * big,
                 0.0,
@@ -1437,14 +1448,14 @@ impl Renderer {
             } else {
                 Color::new(1.0, 0.7, 0.4, 0.35 + 0.4 * k)
             };
-            ring(
+            fl.ring(
                 pp + Vec3::Y * 0.05,
                 0.9,
                 0.0,
                 360.0,
                 with_a(col, col.a * 0.5),
             );
-            ring(pp + Vec3::Y * 0.05, 0.2 + 0.7 * k, 0.0, 360.0, col);
+            fl.ring(pp + Vec3::Y * 0.05, 0.2 + 0.7 * k, 0.0, 360.0, col);
         }
         if let (PState::Heavy { t: e, full, .. }, Some(h)) = (w.player.state, wpn.heavy) {
             let (s0, a0, _) = crate::world::heavy_times(t, wpn);
@@ -1457,7 +1468,7 @@ impl Renderer {
                 },
             );
             if e >= s0 && e < s1 {
-                sector(
+                fl.sector(
                     pp + Vec3::Y * 0.9,
                     t[crate::tuning::P::HeavyRange] * h.reach,
                     w.player.facing,
@@ -1474,7 +1485,7 @@ impl Renderer {
         if let PState::Drink { t: e, gulped: true } = w.player.state {
             let k = ((e - t[crate::tuning::P::FlaskRaise]) / 0.35).clamp(0.0, 1.0);
             if k < 1.0 {
-                ring(
+                fl.ring(
                     pp + Vec3::Y * (0.05 + 0.8 * k),
                     0.5 + 0.6 * k,
                     0.0,
@@ -1486,14 +1497,14 @@ impl Renderer {
         // 패링(0025): 창이 열린 동안 앞에 옅은 푸른 반달, 성공하면 둘레로 퍼지는 흰 고리.
         if let PState::Parry { t: e } = w.player.state {
             if e < t[crate::tuning::P::ParryWindow] {
-                sector(
+                fl.sector(
                     pp + Vec3::Y * 0.8,
                     1.4,
                     w.player.facing,
                     150.0,
                     Color::new(0.6, 0.85, 1.0, 0.15),
                 );
-                ring(
+                fl.ring(
                     pp + Vec3::Y * 0.8,
                     1.4,
                     w.player.facing,
@@ -1507,7 +1518,7 @@ impl Renderer {
             if (dur - t[crate::tuning::P::PlungeLand]).abs() < 1e-4 && e < 0.25 {
                 let k = e / 0.25;
                 let r = t[crate::tuning::P::PlungeRange] * (0.4 + 0.6 * k);
-                ring(
+                fl.ring(
                     pp,
                     r,
                     0.0,
@@ -1521,7 +1532,7 @@ impl Renderer {
             let k = (w.player.since_perfect / PERFECT_RING_LIFE).clamp(0.0, 1.0);
             let ease = 1.0 - (1.0 - k) * (1.0 - k);
             for (r0, r1, a) in [(0.6, 3.2, 0.95), (0.4, 2.2, 0.6)] {
-                ring(
+                fl.ring(
                     pp + Vec3::Y * 0.08,
                     r0 + (r1 - r0) * ease,
                     0.0,
@@ -1532,7 +1543,7 @@ impl Renderer {
         }
         if w.player.since_parry < 0.35 {
             let k = (w.player.since_parry / 0.35).clamp(0.0, 1.0);
-            ring(
+            fl.ring(
                 pp + Vec3::Y * 0.05,
                 0.6 + 2.4 * k,
                 0.0,
@@ -1544,7 +1555,7 @@ impl Renderer {
         for en in &w.enemies {
             if en.exposed > 0.0 && en.alive() && (w.time * 10.0) as i32 % 2 == 0 {
                 let p = en.prev.lerp(en.pos, alpha);
-                ring(
+                fl.ring(
                     p,
                     en.radius + 0.45,
                     0.0,
@@ -1558,14 +1569,14 @@ impl Renderer {
         if w.player.since_spill < shown {
             let k = (w.player.since_spill / shown).clamp(0.0, 1.0);
             let range = t[crate::tuning::P::SpillRange];
-            ring(
+            fl.ring(
                 pp,
                 range,
                 0.0,
                 360.0,
                 Color::new(0.7, 0.95, 0.75, 0.8 * (1.0 - k)),
             );
-            ring(
+            fl.ring(
                 pp,
                 range * (0.25 + 0.75 * k),
                 0.0,
@@ -1604,7 +1615,7 @@ impl Renderer {
             ] {
                 line(top + a * s, top + b * s, YELLOW);
             }
-            ring(
+            fl.ring(
                 p,
                 tg.radius + 0.3,
                 0.0,
@@ -1890,14 +1901,31 @@ struct Drape<'a> {
 const DRAPE_STEP: f32 = 0.3;
 
 impl Drape<'_> {
+    /// 점 (x, z)의 땅 높이(벽·격자 밖·땅 없음이면 None).
+    fn ground_at(&self, x: f32, z: f32) -> Option<f32> {
+        let p = vec3(x, 0.0, z);
+        self.ground
+            .and_then(|g| g.cell_of(p).and_then(|(cx, cz)| g.height_in(cx, cz, p)))
+    }
+
+    /// 그림 가운데 `c`가 그 자리 땅보다 얼마나 위인가(0083): 발밑 표시는 0, 가슴 높이 휘두름 부채꼴은 0.9 — 그 높이를 지키며 땅을 따라 접는다.
+    fn rise(&self, c: Vec3) -> f32 {
+        self.ground_at(c.x, c.z).map_or(0.0, |g| c.y - g)
+    }
+
     /// 점 (x, z)의 땅 높이 + `lift`. `base` = 그 그림의 기준(적의 발) — 벽·격자 밖이면 그것.
     fn at(&self, x: f32, z: f32, base: f32, lift: f32) -> Vec3 {
-        let p = vec3(x, base, z);
-        let y = self
-            .ground
-            .and_then(|g| g.cell_of(p).and_then(|(cx, cz)| g.height_in(cx, cz, p)))
-            .unwrap_or(base);
+        let y = self.ground_at(x, z).unwrap_or(base);
         vec3(x, y + lift, z)
+    }
+
+    /// 그림자(땅을 따라, 진하기 `k`배).
+    fn shadow_k(&self, p: Vec3, r: f32, k: f32) {
+        self.sector(p, r, 0.0, 360.0, Color::new(0.0, 0.0, 0.0, 0.35 * k));
+    }
+
+    fn shadow(&self, p: Vec3, r: f32) {
+        self.shadow_k(p, r, 1.0);
     }
 
     fn mesh(vertices: Vec<Vertex>, indices: Vec<u16>) {
@@ -1918,14 +1946,15 @@ impl Drape<'_> {
         let half = arc.to_radians() * 0.5;
         let mut v = Vec::with_capacity((n + 1) * m + 1);
         let mut idx = Vec::with_capacity(n * m * 6);
-        let cv = self.at(c.x, c.z, c.y, 0.02);
+        let up = 0.02 + self.rise(c);
+        let cv = self.at(c.x, c.z, c.y, up);
         v.push(Vertex::new(cv.x, cv.y, cv.z, 0.0, 0.0, col));
         for j in 1..=m {
             let rr = r * j as f32 / m as f32;
             for i in 0..=n {
                 let a = yaw - half + arc.to_radians() * (i as f32 / n as f32);
                 let (s, k) = a.sin_cos();
-                let q = self.at(c.x + s * rr, c.z + k * rr, c.y, 0.02);
+                let q = self.at(c.x + s * rr, c.z + k * rr, c.y, up);
                 v.push(Vertex::new(q.x, q.y, q.z, 0.0, 0.0, col));
             }
         }
@@ -1954,11 +1983,12 @@ impl Drape<'_> {
         let half = arc.to_radians() * 0.5;
         let mut v = Vec::with_capacity((n + 1) * 2);
         let mut idx = Vec::with_capacity(n * 6);
+        let up = 0.03 + self.rise(c);
         for i in 0..=n {
             let a = yaw - half + arc.to_radians() * (i as f32 / n as f32);
             let (s, k) = a.sin_cos();
             for rr in [r - w, r] {
-                let q = self.at(c.x + s * rr, c.z + k * rr, c.y, 0.03);
+                let q = self.at(c.x + s * rr, c.z + k * rr, c.y, up);
                 v.push(Vertex::new(q.x, q.y, q.z, 0.0, 0.0, col));
             }
         }
@@ -1984,10 +2014,11 @@ impl Drape<'_> {
         let n = ((len / DRAPE_STEP).ceil() as usize).clamp(1, 96);
         let mut v = Vec::with_capacity((n + 1) * 2);
         let mut idx = Vec::with_capacity(n * 6);
+        let up = 0.02 + self.rise(p);
         for i in 0..=n {
             let o = p + dir * (len * i as f32 / n as f32);
             for q in [o - side, o + side] {
-                let q = self.at(q.x, q.z, p.y, 0.02);
+                let q = self.at(q.x, q.z, p.y, up);
                 v.push(Vertex::new(q.x, q.y, q.z, 0.0, 0.0, col));
             }
         }
@@ -2002,18 +2033,25 @@ impl Drape<'_> {
         let side = vec3(-dir.z, 0.0, dir.x) * (w * 0.5);
         let (a, b) = (p - side, p + side);
         let (c, d) = (b + dir * len, a + dir * len);
+        // 높이는 띠의 시작 `p`(적의 발)에서 — 모서리가 낮은 단 위에 걸려도 그 자리 땅을 따른다.
+        let up = 0.04 + self.rise(p);
         for (x, z) in [(a, b), (b, c), (c, d), (d, a)] {
-            self.line(x, z, col);
+            self.line_up(x, z, col, up);
         }
     }
 
-    /// 땅에 접힌 선(잘게 나눈 선분들). 높이는 `a`의 y를 기준으로.
+    /// 땅에 접힌 선(잘게 나눈 선분들). 땅 위 높이는 `a`에서 잰다.
     fn line(&self, a: Vec3, b: Vec3, col: Color) {
+        self.line_up(a, b, col, 0.04 + self.rise(a));
+    }
+
+    /// 땅에 접힌 선, 땅 위 `up`만큼.
+    fn line_up(&self, a: Vec3, b: Vec3, col: Color, up: f32) {
         let n = (((b - a).length() / DRAPE_STEP).ceil() as usize).clamp(1, 96);
-        let mut prev = self.at(a.x, a.z, a.y, 0.04);
+        let mut prev = self.at(a.x, a.z, a.y, up);
         for i in 1..=n {
             let q = a.lerp(b, i as f32 / n as f32);
-            let cur = self.at(q.x, q.z, a.y, 0.04);
+            let cur = self.at(q.x, q.z, a.y, up);
             line(prev, cur, col);
             prev = cur;
         }
@@ -2787,11 +2825,6 @@ fn box_wires(center: Vec3, size: Vec3, col: Color, rot: Quat, pivot: Vec3) {
 /// (KB reference/macroquad/3d-rendering.md). shade 0이면 민짜(전처럼), 1이면 그늘진 면이 검정에 가깝다.
 pub const LIGHT_DIR: Vec3 = Vec3::new(-0.55, 0.65, 0.35);
 
-/// 면마다 음영이 다른 상자. 축 정렬. 정점 24개(면마다 넷), 매 프레임 만들어 보낸다(정점은 어차피 매 프레임 올라간다).
-fn shaded_box(center: Vec3, size: Vec3, col: Color, shade: f32) {
-    shaded_box_rot(center, size, col, shade, Quat::IDENTITY, center);
-}
-
 /// `shaded_box`를 `pivot` 둘레로 `rot`만큼 돌린 것. 음영도 돌린 면의 방향으로(빛은 고정).
 fn shaded_box_rot(center: Vec3, size: Vec3, col: Color, shade: f32, rot: Quat, pivot: Vec3) {
     let h = size * 0.5;
@@ -2824,46 +2857,13 @@ fn shaded_box_rot(center: Vec3, size: Vec3, col: Color, shade: f32, rot: Quat, p
     });
 }
 
-fn shadow(p: Vec3, r: f32) {
-    shadow_k(p, r, 1.0);
-}
-
-/// 그림자(진하기 `k`배).
-fn shadow_k(p: Vec3, r: f32, k: f32) {
-    sector(
-        p + Vec3::Y * 0.01,
-        r,
-        0.0,
-        360.0,
-        Color::new(0.0, 0.0, 0.0, 0.35 * k),
-    );
+/// 면마다 음영이 다른 상자. 축 정렬. 정점 24개(면마다 넷), 매 프레임 만들어 보낸다(정점은 어차피 매 프레임 올라간다).
+fn shaded_box(center: Vec3, size: Vec3, col: Color, shade: f32) {
+    shaded_box_rot(center, size, col, shade, Quat::IDENTITY, center);
 }
 
 /// 이 높이(m)에서 그림자가 가장 작다.
 const JUMP_SHADOW_H: f32 = 1.2;
-
-/// 바닥 부채꼴(가운데 `c`, 반지름 `r`, 가운데 각 `yaw`, 벌림 `arc`도). 삼각형 팬 Mesh 하나.
-fn sector(c: Vec3, r: f32, yaw: f32, arc: f32, col: Color) {
-    let n = ((arc / 10.0).ceil() as usize).clamp(3, 48);
-    let half = arc.to_radians() * 0.5;
-    let mut vertices = Vec::with_capacity(n + 2);
-    let mut indices = Vec::with_capacity(n * 3);
-    let y = c.y + 0.02;
-    vertices.push(Vertex::new(c.x, y, c.z, 0.0, 0.0, col));
-    for i in 0..=n {
-        let a = yaw - half + arc.to_radians() * (i as f32 / n as f32);
-        let (s, k) = a.sin_cos();
-        vertices.push(Vertex::new(c.x + s * r, y, c.z + k * r, 0.0, 0.0, col));
-    }
-    for i in 0..n {
-        indices.extend_from_slice(&[0, (i + 1) as u16, (i + 2) as u16]);
-    }
-    draw_mesh(&Mesh {
-        vertices,
-        indices,
-        texture: None,
-    });
-}
 
 /// 세로 빛기둥(0060 W1): 열린 원통, 아래가 `col`의 투명도·위로 갈수록 사라진다. 앞뒤 면이 다 보이게 감김을 둘 다.
 fn beam(c: Vec3, r: f32, h: f32, col: Color) {
@@ -2888,45 +2888,6 @@ fn beam(c: Vec3, r: f32, h: f32, col: Color) {
         let b = (i * 2) as u16;
         indices.extend_from_slice(&[b, b + 1, b + 2, b + 1, b + 3, b + 2]);
         indices.extend_from_slice(&[b, b + 2, b + 1, b + 1, b + 2, b + 3]);
-    }
-    draw_mesh(&Mesh {
-        vertices,
-        indices,
-        texture: None,
-    });
-}
-
-/// 부채꼴 테두리(띠). `arc` 360이면 고리.
-fn ring(c: Vec3, r: f32, yaw: f32, arc: f32, col: Color) {
-    let n = ((arc / 10.0).ceil() as usize).clamp(3, 48);
-    let half = arc.to_radians() * 0.5;
-    let y = c.y + 0.03;
-    let w = 0.12;
-    let mut vertices = Vec::with_capacity((n + 1) * 2);
-    let mut indices = Vec::with_capacity(n * 6);
-    for i in 0..=n {
-        let a = yaw - half + arc.to_radians() * (i as f32 / n as f32);
-        let (s, k) = a.sin_cos();
-        vertices.push(Vertex::new(
-            c.x + s * (r - w),
-            y,
-            c.z + k * (r - w),
-            0.0,
-            0.0,
-            col,
-        ));
-        vertices.push(Vertex::new(c.x + s * r, y, c.z + k * r, 0.0, 0.0, col));
-    }
-    for i in 0..n {
-        let b = (i * 2) as u16;
-        indices.extend_from_slice(&[b, b + 1, b + 2, b + 1, b + 3, b + 2]);
-    }
-    if arc < 360.0 {
-        // 부채꼴이면 양 옆 변도 긋는다.
-        for a in [yaw - half, yaw + half] {
-            let (s, k) = a.sin_cos();
-            line(vec3(c.x, y, c.z), vec3(c.x + s * r, y, c.z + k * r), col);
-        }
     }
     draw_mesh(&Mesh {
         vertices,
@@ -3001,6 +2962,26 @@ mod tests {
         );
         let flat = Drape { ground: None };
         assert!((flat.at(1.0, 0.0, 0.5, 0.02).y - 0.52).abs() < 1e-5);
+        // 0083: 모든 바닥 표시가 이 길로 — 그림 가운데의 땅 위 높이를 지킨다(발밑 고리 0, 가슴 높이 휘두름 0.9).
+        assert!(
+            d.rise(vec3(-1.0, 0.0, 0.0)).abs() < 1e-5,
+            "a mark at the feet"
+        );
+        assert!(
+            (d.rise(vec3(-1.0, 0.9, 0.0)) - 0.9).abs() < 1e-5,
+            "a swing arc at the chest"
+        );
+        assert!(
+            (d.rise(vec3(1.0, 1.05, 0.0)) - 0.05).abs() < 1e-5,
+            "standing on the step"
+        );
+        assert!(
+            flat.rise(vec3(0.0, 0.5, 0.0)).abs() < 1e-5,
+            "no ground: draw at c.y as before"
+        );
+        // 0.05 위 고리의 가운데가 낮은 칸이면, 턱 위로 뻗은 쪽은 턱 높이 + 0.05(예전엔 발 높이에 평평하게 그려 턱 속에 묻혔다).
+        let up = d.rise(vec3(-1.0, 0.05, 0.0));
+        assert!((d.at(1.0, 0.0, 0.05, up).y - 1.05).abs() < 1e-5);
     }
 
     /// 0046: 흔한 화면은 테두리 없이 정수 배율로 꽉 차고, 브라우저 창(주소창만큼 낮은 높이)도 테두리가 배율보다 작다.

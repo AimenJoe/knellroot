@@ -318,6 +318,8 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("render.motes 0off 1on", "떠다니는 입자(0끔 1켬)"),
     ("render.sky 0off 1on", "하늘·원경(0끔 1켬)"),
     ("render.flora 0off 1on", "식생(0끔 1켬)"),
+    ("turn.wobble in deg", "땅 돌리기 시작 휘청(도)"),
+    ("turn.wobble out deg", "땅 돌리기 끝 휘청(도)"),
 ];
 
 #[cfg(test)]

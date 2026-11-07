@@ -167,6 +167,10 @@ pub struct Camera {
     /// 카메라 킥(2026-11-06): 맞은 쪽으로 찼다가 `KICK_RETURN`으로 돌아오는 월드 오프셋(각 → 거리는 `kick`이 잰다).
     kick: Vec3,
     kick_deg: Vec3,
+    /// 땅 돌리기 휘청(0084): (지난 초, 굴림 크기 도 — + = 화면이 시계 방향으로 기욺). 줄어드는 흔들림 몇 개의 합.
+    wobbles: Vec<(f32, f32)>,
+    /// 이번 프레임의 굴림 각(라디안) — `to_camera3d`가 위쪽 벡터를 앞 축 둘레로 돌린다.
+    roll: f32,
     shake: Vec3,
 }
 
@@ -191,6 +195,8 @@ impl Camera {
             trauma: 0.0,
             kick: Vec3::ZERO,
             kick_deg: Vec3::ZERO,
+            wobbles: Vec::new(),
+            roll: 0.0,
             shake: Vec3::ZERO,
         };
         c.rig = c.desired(t, None);
@@ -236,6 +242,8 @@ impl Camera {
         // 지나쳤다 돌아오기(`turn.overshoot deg`): 목표+α까지 같은 빠르기로 가고(그래서 그만큼 길게), `turn.settle s` 동안 목표로 되돌아와 선다.
         let over = t[P::TurnOver].to_radians();
         let (go, settle) = crate::tuning::turn_phases_q(t, quarters);
+        // 시작 휘청(0084): 도는 쪽으로 살짝 기울었다 흔들리며 선다.
+        self.wobble(quarters.signum() as f32 * t[P::TurnWobbleIn]);
         self.blend = Some((
             Orbit::from_rig(&self.rig, self.follow),
             0.0,
@@ -413,10 +421,12 @@ impl Camera {
             if e >= d {
                 self.blend = None;
                 // 땅 돌리기가 90°에 닿는 순간 "탁" — 되돌아오기만으로는 끝이 무르다(사장 "마지막 순간 스냅이 약하다").
-                if let Curve::Over { over, .. } = curve {
+                if let Curve::Over { over, dir, .. } = curve {
                     if over > 0.0 {
                         self.trauma = (self.trauma + t[P::TurnSnap]).min(1.0);
                     }
+                    // 끝 휘청(0084): 멈추는 순간 관성으로 반대쪽으로.
+                    self.wobble(-dir * t[P::TurnWobbleOut]);
                 }
             } else {
                 let x = e / d.max(1e-3);
@@ -471,7 +481,31 @@ impl Camera {
         // 킥: 각(도 × 방향)을 지금 거리로 — 쿼터뷰·락온 어디서나 화면에서 같은 px쯤. 로직 시계로 줄어 히트스톱 동안 찬 채로 머문다.
         self.kick_deg *= (-crate::tuning::KICK_RETURN * dt).exp();
         self.kick = self.kick_deg * dist * 1f32.to_radians().tan();
+        // 휘청(0084): 줄어드는 사인파들의 합 — 로직 시계라 히트스톱 동안 멈춘다.
+        for w in &mut self.wobbles {
+            w.0 += dt;
+        }
+        self.wobbles.retain(|w| w.0 < 1.0);
+        self.roll = self
+            .wobbles
+            .iter()
+            .map(|&(e, a)| wobble_at(e, a))
+            .sum::<f32>()
+            .to_radians();
         self.rig = rig;
+    }
+
+    /// 땅 돌리기 휘청 하나(굴림 `deg`도, + = 화면이 시계 방향으로 기욺).
+    fn wobble(&mut self, deg: f32) {
+        if deg.abs() > 1e-3 {
+            self.wobbles.push((0.0, deg));
+        }
+    }
+
+    /// 지금 굴림 각(도, 시험).
+    #[cfg(test)]
+    pub fn roll_deg(&self) -> f32 {
+        self.roll.to_degrees()
     }
 
     /// 카메라 킥: 수평 방향 `dir` 쪽으로 `deg`도만큼 찬다(겹치면 더하되 한 번의 두 배까지).
@@ -485,7 +519,15 @@ impl Camera {
         Camera3D {
             position: self.rig.pos + self.shake + self.kick,
             target: self.rig.look + self.shake + self.kick,
-            up: Vec3::Y, // 기본값은 z-up — 매번 적는다.
+            // 기본값은 z-up — 매번 적는다. 땅 돌리기 휘청(0084)이면 앞 축 둘레로 살짝 돌린 위.
+            up: if self.roll.abs() > 1e-5 {
+                Quat::from_axis_angle(
+                    (self.rig.look - self.rig.pos).normalize_or(Vec3::NEG_Z),
+                    self.roll,
+                ) * Vec3::Y
+            } else {
+                Vec3::Y
+            },
             fovy: self.rig.fov,
             aspect: Some(aspect),
             projection: Projection::Perspective,
@@ -495,6 +537,16 @@ impl Camera {
             z_far: 200.0,
         }
     }
+}
+
+/// 휘청 하나의 지금 굴림(도): 0에서 시작해 첫 반주기에 `amp` 쪽으로 기울었다(꼭대기 ≈ `amp`) `TURN_WOBBLE_HZ`로 흔들리며
+/// `TURN_WOBBLE_DAMP`로 줄어든다 — 갑자기 기운 채로 시작하지 않게 사인(0에서 출발).
+pub fn wobble_at(elapsed: f32, amp: f32) -> f32 {
+    use crate::tuning::{TURN_WOBBLE_DAMP, TURN_WOBBLE_HZ};
+    // 줄어드는 사인의 첫 꼭대기는 1보다 작다(3.5Hz·7/초에서 ≈ 0.62) — 그만큼 키워 꼭대기가 `amp`가 되게.
+    const PEAK: f32 = 1.6;
+    let x = std::f32::consts::TAU * TURN_WOBBLE_HZ * elapsed;
+    PEAK * amp * (-TURN_WOBBLE_DAMP * elapsed).exp() * x.sin()
 }
 
 /// 화면 점(NDC: x 오른쪽·y 위, -1..1)을 지나는 시선의 방향(0058 커서 조준) — `to_camera3d`와 같은 원근(세로 `fov`, 가로는 `aspect`배).
@@ -1195,6 +1247,51 @@ mod turn_probe {
     use super::*;
     use crate::input::Actions;
     use crate::scenario::{build, Scenario};
+
+    /// 0084(사장 2026-11-07): 땅 돌리기는 시작에 도는 쪽으로, 끝에 반대쪽으로 작게 휘청인다. 휘청 하나는 꼭대기가 설정값,
+    /// 0.5초 안에 거의 사라진다.
+    #[test]
+    fn a_turn_wobbles_into_the_turn_at_the_start_and_back_at_the_end() {
+        let peak = (0..60)
+            .map(|i| wobble_at(i as f32 / 120.0, 1.5))
+            .fold(0.0f32, f32::max);
+        assert!((peak - 1.5).abs() < 0.15, "peak {peak}");
+        assert!(wobble_at(0.0, 1.5).abs() < 1e-6, "starts level");
+        assert!(
+            wobble_at(0.5, 1.5).abs() < 0.1,
+            "almost gone in half a second"
+        );
+        let t = Tuning::default();
+        let mut c = Camera::new(Vec3::ZERO, &t);
+        let step = |c: &mut Camera| c.update(1.0 / 60.0, &t, Vec3::ZERO, None, &[]);
+        for _ in 0..30 {
+            step(&mut c);
+        }
+        c.turn(1, &t);
+        let (go, settle) = crate::tuning::turn_phases_q(&t, 1);
+        let mut early = 0.0f32;
+        let mut late = 0.0f32;
+        let mut e = 0.0;
+        while e < go + settle + 0.5 {
+            step(&mut c);
+            e += 1.0 / 60.0;
+            if e < 0.2 {
+                early = if early.abs() > c.roll_deg().abs() {
+                    early
+                } else {
+                    c.roll_deg()
+                };
+            } else if e > go + settle && e < go + settle + 0.2 {
+                late = if late.abs() > c.roll_deg().abs() {
+                    late
+                } else {
+                    c.roll_deg()
+                };
+            }
+        }
+        assert!(early > 0.5, "leans into the turn first: {early}");
+        assert!(late < -0.5, "and back the other way when it stops: {late}");
+    }
 
     /// 오른쪽 버튼(0017) = `turn(true)`: 카메라가 자기 오른쪽으로 돈다(카메라 자리가 돌기 전 화면 오른쪽 쪽으로 간다).
     /// 180°(0023, 오른쪽을 보고 오른쪽 버튼)는 정한 쪽으로 끝까지 돌고 반대로 튀지 않는다 — "짧은 쪽"이 매 프레임 뒤집힐 수 있다.

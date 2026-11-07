@@ -267,6 +267,8 @@ pub enum P {
     RenderMotes,
     RenderSky,
     RenderFlora,
+    TurnWobbleIn,
+    TurnWobbleOut,
 }
 
 /// 랩이 읽는 칸(이름·걸음·범위·내보내기 이름)은 개발판에만 쓰인다(운영판에는 랩이 없다, 0070).
@@ -298,7 +300,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 143] = [
+pub const SPECS: [Spec; 145] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1409,7 +1411,31 @@ pub const SPECS: [Spec; 143] = [
         1.0,
         1.0
     ),
+    // 땅 돌리기 휘청(0084, 사장 2026-11-07 "회전 시작시에 작은 휘청임, 마지막에 작은 휘청임"): 화면이 돌기 시작할 때 도는 쪽으로,
+    // 멈출 때 반대쪽으로 카메라가 살짝 기울었다 흔들리며 선다(굴림 각, 도). 0 = 없음.
+    spec!(
+        TurnWobbleIn,
+        "turn.wobble in deg",
+        "TURN_WOBBLE_IN",
+        1.5,
+        0.0,
+        6.0,
+        0.25
+    ),
+    spec!(
+        TurnWobbleOut,
+        "turn.wobble out deg",
+        "TURN_WOBBLE_OUT",
+        1.5,
+        0.0,
+        6.0,
+        0.25
+    ),
 ];
+
+/// 땅 돌리기 휘청의 흔들림 빠르기(Hz)·줄어듦(/초) — 0.5초 안에 3% 아래로.
+pub const TURN_WOBBLE_HZ: f32 = 3.5;
+pub const TURN_WOBBLE_DAMP: f32 = 7.0;
 
 /// 땅 돌리기의 두 구간(초): 90°+지나침까지 가는 시간, 90°로 되돌아오는 시간. 카메라(`Camera::turn`)와 월드(쏟는 때)가
 /// 같은 식을 쓴다 — 월드는 카메라를 모르지만 "멈추는 순간"을 같이 알아야 한다(0012).

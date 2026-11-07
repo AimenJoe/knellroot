@@ -265,6 +265,10 @@ impl Level {
         for m in &mut self.marks {
             m.1.y = g.height(m.1);
         }
+        // 문 가운데(갈 곳의 빛기둥·고리 자리, 0083)도 땅 높이에.
+        if let Some((_, c)) = &mut self.gate {
+            c.y = g.height(*c);
+        }
         self
     }
 

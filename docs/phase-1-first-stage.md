@@ -73,6 +73,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 잔불(0064 M1) | `ember.rs`, `world.rs` `tick_embers`·`embers`·`drops`, `species.rs` `embers`, `backdrop.rs` `embers`, `hud.rs` | 쓰러지면 튀어나오고 0.35초 뒤 끌려와 주움, 가진 수는 기록에 — 쓰러져도 그대로 |
 | 앱·UI 뼈대(0066) | `app/stack.rs`·`flow.rs` `Go`·`Layer`·`focus`, `app/menu.rs` `Menu`·`Out`·`Hit`, 화면 파일 `pause`·`settings`·`shop`·`ask`·`slots`·`title`·`play`·`progress`·`controls_screen`, `ui.rs` `panel`·`list`·`close`·`buttons`·`title_arrows` | 장면 스택(닫으면 연 줄로), 목록 화면 = 줄 표 하나 + 몰이꾼, nail 창 틀(✕·창 밖 탭·◀ 값 ▶·제목 줄 ▲▼), 묻는 창은 아래 창 위. `tick_scene` 340 → 35줄 |
 | 아이템 그림(0068) | `item_view.rs`, `Renderer::draw_icon`·`draw_item`, `tools/art/blender/charms.py` → `charms.glb` | 칸·후보 줄의 아이콘(한 번 찍어 캐시), 고른 것은 크게 흔들리는 3D, 장신구 모델 여섯(첫 시안) |
+| 바닥 표시 땅 따라·땅 돌리기 휘청(0084) | `render::Drape`(`rise`·`shadow`·`line_up`, 평평한 `ring`·`sector` 없앰), `Level::settle` 문 가운데, `camera` `wobble`·`wobble_at`·`roll`, 랩 `turn.wobble in/out deg` | 그림자·쉼터·상자·갈 곳·플레이어 표시 32곳이 경사로·턱을 따라 접힘(가운데의 땅 위 높이는 지킴), 땅 돌리기 시작엔 도는 쪽·끝엔 반대쪽으로 1.5° 휘청 |
 | 웹 가로 기본(0082) | `web/index.html` `#rotate`·`knell_portrait`, `screen::portrait_blocked`, `tick_play` | 세로로 든 터치 기기엔 회전 안내(싸움은 멈춤), 누르면 Android는 전체 화면 + 가로 잠금(안 먹히면 세로로 계속), iPhone은 세로로 계속 |
 | 슬롯 요약·장비 줄·이어 패링(0081) | `save::Summary`(장·`play`)·`play_text`, `app/slots.rs`, `app/pause.rs`, `tuning::PARRY_CHAIN`·`World::parry_open` | 이어하기 줄 = 장 · 지역 · 플레이 시간(새 키 `play`), 멈춤 장비 줄은 들어가는 줄만, 튕긴 뒤 0.2초 동안 앞쪽 공격도 튕김(튕길 때마다 다시) |
 | 개발 화면 한국어(0080) | `i18n/dev.rs`(`Pair`·`t`·`SPEC_KO`·`GROUP_KO`·`SCENARIO_KO`), `app/lab_screen.rs`, `app/settings.rs` 개발 창 | 연구소·DEV 창 글이 설정 언어를 따른다, 연구소 값은 한국어 이름 + 설명 줄에 원래 이름, F3 줄만 영어 |
@@ -94,6 +95,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), 랩(멈춤 끝 줄 LAB·F1, 0070), F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+**0084**: 땅 돌리기 휘청 1.5°가 작은지·멀미 없는지(연구소에서 바로), 경사로·턱에서 바닥 표시가 묻히거나 뜨는 곳이 남았는지.
+
 **0081**: 이어 패링 0.2초가 "비슷한 타이밍"인지·앞쪽만 받는 것이 떼 속에서 억울하지 않은지, 슬롯의 "시간"이 플레이 시간이 맞는지.
 
 **0078**: 딱 맞춰 떼기 0.15초가 무기마다 맞는지·타이밍 규칙 셋(박자·패링·딱 맞춤)이 많지 않은지, 안내 화면은 아직 없음.
