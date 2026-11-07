@@ -1031,18 +1031,50 @@ impl Renderer {
         let flash = en.hurt > 0.0;
         let model = en.def().model;
         // 문지기가 깨어나는 동안 눈·핵이 밝아진다.
-        let glow = match (en.state, stage) {
+        let mut glow = match (en.state, stage) {
             (EState::Dormant, Some(run)) => 0.15 + 0.85 * run.wake_progress(),
             _ if en.roused => 1.0,
             _ => 0.85,
         };
+        // 준비 동작(0073): 예고 동안 눈·핵이 차오르고, 정점에서 버티는 동안 힘을 주어 떨고, 닿는 순간 한 번 번쩍인다.
+        if let EState::Tele { t } = en.state {
+            let k = (t / en.tele_dur().max(1e-3)).clamp(0.0, 1.0);
+            glow += WINDUP_GLOW * k;
+        }
+        // 들어 올리는 동안 몸이 늘어나며(부피 그대로 — KB believable-cute-character-motion) 뒤로 젖고, 내리칠 때 바로 돌아온다.
+        let mut stretch = 1.0;
+        if let EState::Tele { t } = en.state {
+            let dur = en.tele_dur().max(1e-3);
+            let snap = WINDUP_SNAP.min(dur * 0.25);
+            let u = if t < dur - snap {
+                let r = (t / (dur * WINDUP_REACH)).min(1.0);
+                1.0 - (1.0 - r) * (1.0 - r)
+            } else {
+                1.0 - (t - (dur - snap)) / snap
+            };
+            stretch = 1.0 + WINDUP_STRETCH * u;
+            if tilt == Quat::IDENTITY {
+                let back = -en.facing_dir();
+                tilt = Quat::from_axis_angle(Vec3::Y.cross(back).normalize(), WINDUP_LEAN * u);
+            }
+        }
+        if let Some(h) = windup_hold(en) {
+            let shake = (get_time() as f32 * 70.0).sin() * WINDUP_TREMBLE;
+            p += vec3(en.facing.cos(), 0.0, -en.facing.sin()) * shake;
+            // 번쩍임은 눈·핵만(몸 전체가 밝아지면 맞았을 때의 흰 번쩍임과 헷갈린다).
+            glow += WINDUP_GLINT_GAIN * (1.0 - h / WINDUP_GLINT).max(0.0);
+        }
         if let Some(e) = self.lib.get(model) {
-            let (anim, at) = enemy_anim(en, e, w.time, stage);
+            let (anim, at) = enemy_anim(en, model, e, w.time, stage);
             e.model.pose(anim, at, &mut self.pose);
             let inst = Mat4::from_translation(p + sink)
                 * Mat4::from_quat(tilt)
                 * Mat4::from_rotation_y(en.facing)
-                * Mat4::from_scale(vec3(1.0, squash, 1.0));
+                * Mat4::from_scale(vec3(
+                    1.0 / stretch.sqrt(),
+                    squash * stretch,
+                    1.0 / stretch.sqrt(),
+                ));
             let tint = if flash {
                 Color::new(1.8, 1.8, 1.8, 1.0)
             } else {
@@ -1611,6 +1643,14 @@ impl Renderer {
     }
 }
 
+/// 준비 동작 단서(0073): 예고 끝까지 눈·핵 빛 +, 버티는 동안 떨림(m, 몸 옆으로), 정점 번쩍임 길이(초)·세기.
+const WINDUP_GLOW: f32 = 0.6;
+/// 들어 올리는 동안 키 늘림(배)·뒤로 젖힘(라디안).
+const WINDUP_STRETCH: f32 = 0.06;
+const WINDUP_LEAN: f32 = 0.1;
+const WINDUP_TREMBLE: f32 = 0.025;
+const WINDUP_GLINT: f32 = 0.1;
+const WINDUP_GLINT_GAIN: f32 = 1.2;
 /// 맞았을 때 몸이 젖혀지는 각(라디안, 경직 처음).
 const RECOIL: f32 = 0.35;
 /// 죽은 적이 넘어져 사라지는 데 걸리는 초.
@@ -1627,7 +1667,13 @@ const GATE_TIME: f32 = 1.5;
 
 /// 적 상태 → (동작, 그 동작의 몇 초). 후보 이름을 차례로 찾고(모델마다 가진 동작이 다르다), 예고 동안은 진행에 맞춰 든다:
 /// `_windup` 동작이면 예고 전체에, 한 동작(`attack`)이면 앞 절반이 예고 · 뒤 절반이 치기.
-fn enemy_anim(en: &Enemy, e: &Entry, clock: f32, stage: Option<&StageRun>) -> (Option<usize>, f32) {
+fn enemy_anim(
+    en: &Enemy,
+    model: &str,
+    e: &Entry,
+    clock: f32,
+    stage: Option<&StageRun>,
+) -> (Option<usize>, f32) {
     let phase = (en.pos.x * 0.37 + en.pos.z * 0.61).rem_euclid(1.0);
     let moving = (en.pos - en.prev).length() > 0.005;
     let windup: &[&str] = match en.atk {
@@ -1653,12 +1699,14 @@ fn enemy_anim(en: &Enemy, e: &Entry, clock: f32, stage: Option<&StageRun>) -> (O
         EState::Chase if moving => (e.pick(&["walk", "run", "idle"]), clock * 1.0 + phase),
         EState::Chase => (e.pick(&["idle", "walk"]), clock + phase),
         EState::Tele { t } => {
-            let k = t / en.tele_dur().max(1e-3);
+            let dur = en.tele_dur().max(1e-3);
             let a = e.pick(windup);
             if is_windup(a) {
-                once(windup, k)
+                once(windup, t / dur)
             } else {
-                once(windup, k * 0.5)
+                // 2026-11-07(0073): 들어 올림 → 정점에서 버팀 → 마지막 순간 내리침. 내리친 자세 = 맞는 틱.
+                let (peak, impact) = strike_keys(model, a, e);
+                (a, windup_clock(t, dur, peak, impact))
             }
         }
         EState::Swing { t } => {
@@ -1666,11 +1714,17 @@ fn enemy_anim(en: &Enemy, e: &Entry, clock: f32, stage: Option<&StageRun>) -> (O
             if is_windup(a) {
                 once(&["attack"], 0.5 + t * 2.0)
             } else {
-                once(windup, 0.5 + t * 2.0)
+                // 맞는 틱부터 제 빠르기로 끝맺음.
+                let (_, impact) = strike_keys(model, a, e);
+                (a, (impact + t).min(e.duration(a) * 0.999))
             }
         }
         EState::Charge { .. } => (e.pick(&["charge", "run", "walk"]), clock * 1.5),
-        EState::Wave { t } => once(&["wave", "slam", "attack"], 0.5 + t),
+        EState::Wave { t } => {
+            let a = e.pick(&["wave", "slam", "attack"]);
+            let (_, impact) = strike_keys(model, a, e);
+            (a, (impact + t).min(e.duration(a) * 0.999))
+        }
         EState::Recover { t } => match e.pick(&["recover"]) {
             Some(a) => (Some(a), t.min(e.duration(Some(a)) * 0.999)),
             None => (e.pick(&["idle"]), clock + phase),
@@ -1678,6 +1732,58 @@ fn enemy_anim(en: &Enemy, e: &Entry, clock: f32, stage: Option<&StageRun>) -> (O
         EState::Stagger { .. } => once(&["hurt", "idle"], 0.3),
         EState::Dead => once(&["hurt", "idle"], 0.999),
     }
+}
+
+/// 한 동작(`attack`·`slam`·`wave`)의 내리치는 열쇠(0073): (정점 = 다 들어 올린 초, 맞음 = 내리친 초).
+/// Blender 스크립트(`tools/art/blender/<모델>.py`)의 키 시각과 같다 — 동작을 고치면 여기도. 표에 없으면 동작의 40%·50%.
+const STRIKE_KEYS: &[(&str, &str, f32, f32)] = &[
+    ("root_husk", "attack", 0.5, 0.62),
+    ("gatekeeper", "slam", 0.9, 1.0),
+    ("gatekeeper", "wave", 1.0, 1.12),
+];
+
+fn strike_keys(model: &str, a: Option<usize>, e: &Entry) -> (f32, f32) {
+    let Some(i) = a else { return (0.0, 0.0) };
+    let name = e.model.anims[i].name.as_str();
+    STRIKE_KEYS
+        .iter()
+        .find(|(m, n, _, _)| *m == model && *n == name)
+        .map(|&(_, _, p, h)| (p, h))
+        .unwrap_or_else(|| {
+            let d = e.duration(a);
+            (d * 0.4, d * 0.5)
+        })
+}
+
+/// 예고가 다 들어 올리는 진행(0073): 예고의 이만큼에서 정점에 닿고, 그 뒤는 버팀.
+pub(crate) const WINDUP_REACH: f32 = 0.6;
+/// 마지막 내리침(초) — 정점 → 맞음. 이 동안은 이미 늦다(KB: 적의 공격 자체는 빠르고 짧게).
+pub(crate) const WINDUP_SNAP: f32 = 0.08;
+
+/// 예고 `t`초(길이 `dur`)의 동작 시각: 들어 올림(천천히 멈추게) → 정점에서 버팀 → 마지막 `WINDUP_SNAP` 동안 내리침.
+fn windup_clock(t: f32, dur: f32, peak: f32, impact: f32) -> f32 {
+    let snap = WINDUP_SNAP.min(dur * 0.25);
+    let reach = (dur * WINDUP_REACH).min(dur - snap);
+    if t < reach {
+        let u = t / reach.max(1e-3);
+        peak * (1.0 - (1.0 - u) * (1.0 - u))
+    } else if t < dur - snap {
+        peak
+    } else {
+        let u = ((t - (dur - snap)) / snap).clamp(0.0, 1.0);
+        peak + (impact - peak) * u
+    }
+}
+
+/// 버팀(0073): 예고에서 정점에 닿은 뒤 흐른 초(아니면 None). 이 동안 몸이 떨리고, 닿는 순간 눈·핵이 한 번 번쩍인다 —
+/// 바닥 예고 그림이 없어도 몸으로 읽히게.
+fn windup_hold(en: &Enemy) -> Option<f32> {
+    let EState::Tele { t } = en.state else {
+        return None;
+    };
+    let dur = en.tele_dur().max(1e-3);
+    let start = dur * WINDUP_REACH;
+    (t >= start).then_some(t - start)
 }
 
 /// 바닥 예고 하나: 옅은 면 + 테두리, 채움이 자라 테두리에 닿는 순간 공격. 원판·부채꼴·고리는 가운데부터, 띠는 가운데 줄에서 양옆으로.
@@ -2777,6 +2883,50 @@ fn ring(c: Vec3, r: f32, yaw: f32, arc: f32, col: Color) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0073: 예고 동안 동작은 정점까지 들어 올리고(`WINDUP_REACH`), 버티다가, 마지막 `WINDUP_SNAP`초에 내리쳐
+    /// 예고가 끝나는 틱(= 맞는 틱)에 내리친 자세 — 맞음이 그림보다 먼저 오지 않는다.
+    #[test]
+    fn a_windup_rises_holds_at_the_peak_then_snaps_down_on_the_hit_tick() {
+        let (dur, peak, impact) = (0.9, 0.9, 1.0);
+        assert_eq!(windup_clock(0.0, dur, peak, impact), 0.0);
+        assert!((windup_clock(dur * WINDUP_REACH, dur, peak, impact) - peak).abs() < 1e-4);
+        let hold = dur - WINDUP_SNAP - 0.01;
+        assert!(
+            (windup_clock(hold, dur, peak, impact) - peak).abs() < 1e-4,
+            "holds"
+        );
+        assert!(
+            (windup_clock(dur, dur, peak, impact) - impact).abs() < 1e-4,
+            "struck on the hit tick"
+        );
+        // 늘 앞으로만(되감기 없음).
+        let mut last = -1.0;
+        for i in 0..=90 {
+            let c = windup_clock(dur * i as f32 / 90.0, dur, peak, impact);
+            assert!(c >= last - 1e-5);
+            last = c;
+        }
+        // 짧은 예고도 내리침 시간이 예고의 1/4을 넘지 않는다.
+        assert!((windup_clock(0.2 - 0.05 - 1e-3, 0.2, peak, impact) - peak).abs() < 0.02);
+    }
+
+    /// 0073: 내리치는 열쇠 표의 동작은 모델에 있고, 정점 < 맞음 < 동작 길이.
+    #[test]
+    fn strike_keys_name_real_clips_in_order() {
+        for &(model, clip, peak, impact) in STRIKE_KEYS {
+            let bytes = crate::models::bytes(model).unwrap_or_else(|| panic!("{model} missing"));
+            let m = crate::model::Model::from_bytes(bytes).unwrap();
+            let a = m
+                .anim(clip)
+                .unwrap_or_else(|| panic!("{model} has no {clip}"));
+            let len = m.anims[a].duration;
+            assert!(
+                0.0 < peak && peak < impact && impact < len,
+                "{model}/{clip}"
+            );
+        }
+    }
 
     /// 2026-11-06: 예고는 땅 높낮이를 따라 그린다 — 높은 칸 위의 점은 그 칸 높이로, 벽·격자 밖은 적의 발 높이로.
     #[test]
