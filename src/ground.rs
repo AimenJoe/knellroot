@@ -160,14 +160,21 @@ impl Ground {
 
     /// 두 칸이 이웃끼리 걸어서(적처럼) 오갈 수 있나: 맞닿은 변 가운데에서 높이 차 ≤ 걸음.
     pub fn passable(&self, a: (usize, usize), b: (usize, usize)) -> bool {
-        let ma = self.min_of(a.0, a.1);
-        let mb = self.min_of(b.0, b.1);
-        let edge = (ma + mb) * 0.5 + Vec2::splat(self.cell * 0.5);
-        let e = vec3(edge.x, 0.0, edge.y);
-        match (self.height_in(a.0, a.1, e), self.height_in(b.0, b.1, e)) {
-            (Some(ha), Some(hb)) => (ha - hb).abs() <= GROUND_STEP,
-            _ => false,
-        }
+        self.edge_heights(a, b)
+            .is_some_and(|(ha, hb)| (ha - hb).abs() <= GROUND_STEP)
+    }
+
+    /// 맞닿은 두 칸의 맞닿은 변 가운데(xz)와 그 자리의 두 칸 높이(벽 칸이면 없음).
+    pub fn edge_heights(&self, a: (usize, usize), b: (usize, usize)) -> Option<(f32, f32)> {
+        let e = self.edge_mid(a, b);
+        Some((self.height_in(a.0, a.1, e)?, self.height_in(b.0, b.1, e)?))
+    }
+
+    /// 맞닿은 두 칸의 맞닿은 변 가운데(y = 0).
+    pub fn edge_mid(&self, a: (usize, usize), b: (usize, usize)) -> Vec3 {
+        let edge =
+            (self.min_of(a.0, a.1) + self.min_of(b.0, b.1)) * 0.5 + Vec2::splat(self.cell * 0.5);
+        vec3(edge.x, 0.0, edge.y)
     }
 }
 
@@ -270,7 +277,7 @@ mod tests {
         }
         assert_eq!(g.cell_of(p), Some((4, 1)), "reached the platform: {seen:?}");
         assert!(seen.contains(&(2, 1)), "via the ramp: {seen:?}");
-        // 0.5m 턱 칸에서는 길이 없다(오르려면 점프 — 적은 못 한다).
-        assert_eq!(dist[2 * 5], u16::MAX);
+        // 0.5m 턱 줄에서도 이제 길이 있다 — 적은 1m까지 뛰어오른다(0100). 경사로 쪽이 가까우면 그리로 돈다(위 시험).
+        assert!(dist[2 * 5] < u16::MAX);
     }
 }

@@ -84,6 +84,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 패링 기력 15 → 5(0097) | `tuning.rs` `parry.stamina cost`, `docs/tuning-frozen.txt` | 빗나간 패링은 타이밍·피해로 이미 치르니 기력은 연타를 막는 만큼만 — 성공 +20·실패 −5 |
 | 박자 금빛 옅게(0098) | `render.rs` `BEAT_GOLD`·박자 부채꼴·발밑 고리, `hud.rs` 음표·반짝임 | 노랑을 흰빛 쪽으로 + 진하기 30% 안팎 내림(딱 맞춤·락온 표시는 그대로) |
 | 경직 이음 창(0099) | `world::stun_chain_next`, `Player::stun_window`, `tuning::STUN_CHAIN_GRACE` | 경직 + 0.5초 안에 또 맞으면 경직이 그전의 반(맞을 때마다 창 새로) — 몰매 속에서도 맞는 사이 틈이 커진다 |
+| 적의 턱 뛰기(0100) | `nav::Step`·`hop`·다익스트라 `flow`, `enemy::Hop`, `tuning::ENEMY_CLIMB`·`ENEMY_DROP`, 거리 지도 캐시 | 걷기·뛰어오르기(1m)·뛰어내리기(3m)를 길로, 변 앞에서 포물선으로 뛴다(오를 때 0.42초·내릴 때 0.32초), 경사로가 가까우면 경사로, 보스는 걷기만 |
 | 땅 돌리기 시작 CC·착용 중 표시(0085) | `World::apply_turn` 시작 휘청, 랩 `turn.start stagger s`, `equip::wears_something` | 돌기 시작하면 범위 안 적 0.25초 휘청(보스는 무게만큼 짧게, 예고 끊김), "착용 중"은 낀 물건에만(빈 칸·맨손은 커서만) |
 | 바닥 표시 땅 따라·땅 돌리기 휘청(0084) | `render::Drape`(`rise`·`shadow`·`line_up`, 평평한 `ring`·`sector` 없앰), `Level::settle` 문 가운데, `camera` `wobble`·`wobble_at`·`roll`, 랩 `turn.wobble in/out deg` | 그림자·쉼터·상자·갈 곳·플레이어 표시 32곳이 경사로·턱을 따라 접힘(가운데의 땅 위 높이는 지킴), 땅 돌리기 시작엔 도는 쪽·끝엔 반대쪽으로 1.5° 휘청 |
 | 웹 가로 기본(0082) | `web/index.html` `#rotate`·`knell_portrait`, `screen::portrait_blocked`, `tick_play` | 세로로 든 터치 기기엔 회전 안내(싸움은 멈춤), 누르면 Android는 전체 화면 + 가로 잠금(안 먹히면 세로로 계속), iPhone은 세로로 계속 |

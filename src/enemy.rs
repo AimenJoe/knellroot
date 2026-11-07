@@ -128,6 +128,47 @@ pub struct Enemy {
     pub charge_aim: bool,
     /// 떼 퍼지기(0076): 곁의 적에게서 비키는 쪽(월드가 매 틱 준다) — 한 줄로 늘어서지 않고 둘러싼다.
     pub spread: Vec3,
+    /// 턱을 뛰어오르거나 뛰어내리는 중(0100) — 그동안 몸은 포물선을 따라가고 생각하지도 치지도 않는다.
+    pub hop: Option<Hop>,
+}
+
+/// 뛰기 한 번(0100): 어디서 어디로, 지난 초·걸리는 초·포물선 높이.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hop {
+    pub from: Vec3,
+    pub to: Vec3,
+    pub t: f32,
+    pub dur: f32,
+    pub arc: f32,
+}
+
+impl Hop {
+    /// 뛰어오르기는 조금 길고 높게(턱 위로 넘어가게), 뛰어내리기는 짧게.
+    pub fn new(from: Vec3, to: Vec3) -> Hop {
+        let up = (to.y - from.y).max(0.0);
+        Hop {
+            from,
+            to,
+            t: 0.0,
+            dur: if up > 0.0 { 0.42 } else { 0.32 },
+            arc: if up > 0.0 { 0.35 + up * 0.25 } else { 0.25 },
+        }
+    }
+
+    /// 진행 `k`(0..1)의 자리: 옆으로는 곧게, 높이는 두 끝을 잇는 줄 + 포물선(가운데에서 `arc`), 오를 때는 일찍 올라선다.
+    pub fn at(&self, k: f32) -> Vec3 {
+        let k = k.clamp(0.0, 1.0);
+        let up = self.to.y > self.from.y;
+        // 오를 때는 높이가 먼저 오른다(턱 모서리에 발이 걸려 보이지 않게).
+        let ky = if up {
+            1.0 - (1.0 - k) * (1.0 - k)
+        } else {
+            k * k
+        };
+        let mut p = self.from.lerp(self.to, k);
+        p.y = self.from.y + (self.to.y - self.from.y) * ky + self.arc * 4.0 * k * (1.0 - k);
+        p
+    }
 }
 
 /// 한 틱의 결과(월드가 피해·이벤트로 바꾼다).
@@ -176,6 +217,7 @@ impl Enemy {
             charge_len: d.charge_speed * d.charge_time,
             charge_aim: false,
             spread: Vec3::ZERO,
+            hop: None,
         }
     }
 

@@ -461,6 +461,8 @@ pub struct World {
     pub ground: Option<Ground>,
     /// 적 길찾기 격자(0076) — 땅 + 상자가 덮은 칸. 상자가 바뀌면(문) 다시 만든다.
     nav: Option<crate::nav::Nav>,
+    /// 거리 지도 캐시(0100): (플레이어 칸, 지도) — 플레이어가 칸을 옮기거나 길 격자를 다시 만들 때만 새로 잰다(다익스트라는 틱마다 돌리기엔 무겁다).
+    flow: Option<((usize, usize), Vec<u16>)>,
     /// 아레나 반폭(정사각형, 원점 가운데).
     pub arena: f32,
     pub hitstop: f32,
@@ -578,6 +580,7 @@ impl World {
             obstacles: Vec::new(),
             ground: None,
             nav: None,
+            flow: None,
             arena,
             hitstop: 0.0,
             time: 0.0,
@@ -2562,12 +2565,25 @@ impl World {
                 &self.obstacles,
                 self.arena,
             ));
+            self.flow = None;
         }
         let nav = self.nav.as_ref().expect("built above");
         let chasing = |en: &Enemy| en.state == EState::Chase;
         if self.enemies.iter().any(chasing) {
-            let dist = nav.flow(p);
+            let cell = nav.g.cell_of(p).unwrap_or((usize::MAX, usize::MAX));
+            if self.flow.as_ref().is_none_or(|(c, _)| *c != cell) {
+                self.flow = Some((cell, nav.flow(p)));
+            }
+            let dist = &self.flow.as_ref().expect("filled above").1;
             for en in self.enemies.iter_mut().filter(|e| chasing(e)) {
+                // 턱을 뛰어오르기·뛰어내리기(0100): 길의 다음 칸이 뛰어야 하는 칸이고 변 앞에 왔으면 뛴다. 문지기(보스)는 걷기만.
+                if en.hop.is_none() && !en.boss {
+                    if let Some((land, _)) = nav.hop(dist, en.pos, en.radius) {
+                        en.hop = Some(crate::enemy::Hop::new(en.pos, land));
+                        en.way = None;
+                        continue;
+                    }
+                }
                 let same =
                     nav.g.cell_of(en.pos).is_some() && nav.g.cell_of(en.pos) == nav.g.cell_of(p);
                 en.way = if (body - en.pos.y).abs() <= HIT_DY
@@ -2575,7 +2591,7 @@ impl World {
                 {
                     None
                 } else {
-                    Some(nav.waypoint(&dist, en.pos, en.radius).unwrap_or(en.pos))
+                    Some(nav.waypoint(dist, en.pos, en.radius).unwrap_or(en.pos))
                 };
             }
         }
@@ -2614,6 +2630,25 @@ impl World {
         let mut hurt_player: Option<Vec3> = None;
         let mut parried: Vec<usize> = Vec::new();
         for (i, en) in self.enemies.iter_mut().enumerate() {
+            // 뛰는 중(0100): 몸은 포물선을 따라가고 생각하지도 치지도 않는다. 쓰러지면 그 자리에서 내려앉는다.
+            if en.hop.is_some() && !en.alive() {
+                en.hop = None;
+            }
+            if let Some(mut h) = en.hop {
+                h.t += dt;
+                let d = vec3(h.to.x - h.from.x, 0.0, h.to.z - h.from.z);
+                if d.length_squared() > 1e-6 {
+                    en.facing = d.x.atan2(d.z);
+                }
+                en.pos = h.at(h.t / h.dur);
+                en.hop = if h.t >= h.dur {
+                    en.pos = h.to;
+                    None
+                } else {
+                    Some(h)
+                };
+                continue;
+            }
             let out = en.tick(p, dt);
             // 돌진 길이(0076): 벽·기둥·턱·아레나 끝까지 — 예고 띠와 몸이 같은 길이.
             if en.atk == Atk::Charge && matches!(en.state, EState::Tele { .. }) {
@@ -2787,6 +2822,10 @@ impl World {
             }
         }
         for en in &mut self.enemies {
+            // 뛰는 몸(0100)은 포물선이 자리를 정한다 — 턱·땅에 밀지 않는다.
+            if en.hop.is_some() {
+                continue;
+            }
             let feet = en.pos.y;
             let q = clamp(en.pos, en.radius, feet, GROUND_STEP, false);
             let blocked = vec2(q.x - en.pos.x, q.z - en.pos.z).length() > 1e-3;
@@ -6031,13 +6070,67 @@ mod tests {
         assert_eq!((w.player.pos.y, w.player.air), (0.0, 0.0));
     }
 
-    /// 1m 단 위의 플레이어: 아래 잔재의 발톱도, 플레이어의 칼도 닿지 않는다. 경사로가 없으면 적은 아래에서 기다린다.
+    /// 0100(사장 "적들도 높은 곳으로 점프하거나 낮은 곳으로 뛰어내릴 수 있어야"): 경사로 없는 1m 단 위의 플레이어에게 아래 잔재가
+    /// 뛰어올라 와 친다. 단 위의 잔재는 아래 플레이어에게 뛰어내려 온다. 뛰는 동안은 치지 않는다.
+    #[test]
+    fn enemies_hop_up_and_drop_down_ledges_to_reach_you() {
+        let t = Tuning::default();
+        // 뛰어오르기.
+        let mut w = ledge_yard(1.0);
+        w.player.pos = vec3(0.0, 1.0, -5.0);
+        let i = w.spawn(Kind::Husk, vec3(0.0, 0.0, 3.0));
+        let (mut hopped, mut on_top) = (false, false);
+        for _ in 0..900 {
+            w.step(&Actions::default(), &t);
+            if let Some(h) = w.enemies[i].hop {
+                hopped = true;
+                assert!(h.to.y > h.from.y + 0.9, "up the 1m ledge: {h:?}");
+            }
+            on_top |= w.enemies[i].hop.is_none() && (w.enemies[i].pos.y - 1.0).abs() < 1e-3;
+            if w.player.hp < PLAYER_HP {
+                break;
+            }
+        }
+        assert!(hopped && on_top, "hopped up: {:?}", w.enemies[i].pos);
+        assert!(w.player.hp < PLAYER_HP, "and reached the player");
+        // 뛰어내리기.
+        let mut w = ledge_yard(1.0);
+        w.player.pos = vec3(0.0, 0.0, 3.0);
+        let i = w.spawn(Kind::Husk, vec3(0.0, 1.0, -5.0));
+        let mut dropped = false;
+        for _ in 0..900 {
+            w.step(&Actions::default(), &t);
+            if let Some(h) = w.enemies[i].hop {
+                assert!(h.to.y < h.from.y - 0.9, "down: {h:?}");
+                dropped = true;
+            }
+            if w.player.hp < PLAYER_HP {
+                break;
+            }
+        }
+        assert!(dropped, "dropped down: {:?}", w.enemies[i].pos);
+        assert!(w.player.hp < PLAYER_HP, "and reached the player");
+    }
+
+    /// 0100: 뛰는 포물선은 두 끝을 지나고, 오를 때는 턱 위로 넘어간다(가운데 높이가 위 끝보다 높다).
+    #[test]
+    fn a_hop_arcs_over_the_ledge_and_lands_where_it_aimed() {
+        let h = crate::enemy::Hop::new(vec3(0.0, 0.0, 0.0), vec3(0.0, 1.0, -1.2));
+        assert_eq!(h.at(0.0), h.from);
+        assert!((h.at(1.0) - h.to).length() < 1e-5);
+        assert!(h.at(0.5).y > 1.0, "clears the lip: {:?}", h.at(0.5));
+        let d = crate::enemy::Hop::new(vec3(0.0, 2.0, 0.0), vec3(0.0, 0.0, 1.0));
+        assert!(d.dur < h.dur, "dropping is quicker");
+    }
+
+    /// 높이가 다른 단: 아래 잔재의 발톱도, 플레이어의 칼도 닿지 않는다. 뛰어오를 수 없는 높이(1.5m — `ENEMY_CLIMB` 1m 위)면
+    /// 경사로가 없을 때 적은 아래에서 기다린다(0100 전에는 1m 단도 그랬다).
     #[test]
     fn different_levels_do_not_trade_blows() {
         let t = Tuning::default();
-        // 아래 잔재는 1m 단 위에 가만히 선 플레이어를 못 친다.
-        let mut w = ledge_yard(1.0);
-        w.player.pos = vec3(0.0, 1.0, -4.4);
+        // 아래 잔재는 1.5m 단 위에 가만히 선 플레이어를 못 친다.
+        let mut w = ledge_yard(1.5);
+        w.player.pos = vec3(0.0, 1.5, -4.4);
         let i = w.spawn(Kind::Husk, vec3(0.0, 0.0, -3.0));
         for _ in 0..400 {
             w.step(&Actions::default(), &t);

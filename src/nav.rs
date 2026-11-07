@@ -6,10 +6,40 @@
 //! - 길을 따라갈 때 칸 가운데를 하나씩 밟아 계단처럼 꺾였다 → 앞으로 이어진 칸 가운데 **곧게 갈 수 있는 가장 먼 칸**을 겨눈다
 //!   (끈 당기기, string pulling). 곧게는 몸 폭(가운데 + 양옆 반지름)으로 본다 — 모서리를 긁지 않게.
 //! - 돌진은 벽·기둥·턱에서 멈춘다(`charge_room`) — 예고 띠도 그 길이만큼.
+//! - 높낮이(0100, 사장 "적들도 높은 곳으로 점프하거나 낮은 곳으로 뛰어내릴 수 있어야"): 이웃 칸으로 가는 법 셋 —
+//!   걷기(높이 차 ≤ 걸음), 뛰어오르기(≤ `ENEMY_CLIMB`), 뛰어내리기(≤ `ENEMY_DROP`). 거리 지도는 값이 다른 다익스트라
+//!   (경사로가 가까우면 걸어서 돈다), 끈 당기기는 걷는 칸까지만, 뛰어야 하는 변 앞에서는 `hop`이 내려앉을 자리를 준다.
 use macroquad::prelude::*;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 
 use crate::ground::{Cell, Ground};
+use crate::tuning::{ENEMY_CLIMB, ENEMY_DROP, GROUND_STEP};
 use crate::world::Aabb;
+
+/// 이웃 칸으로 가는 법(0100).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Step {
+    Walk,
+    Up,
+    Down,
+}
+
+impl Step {
+    /// 거리 지도의 값: 뛰는 것은 걷기 몇 칸만큼 — 경사로가 몇 칸 안이면 그리로 돈다.
+    fn cost(self) -> u16 {
+        match self {
+            Step::Walk => 2,
+            Step::Down => 5,
+            Step::Up => 8,
+        }
+    }
+}
+
+/// 뛰기 전, 몸이 변에서 이만큼(m) 안이면 뛴다.
+const HOP_NEAR: f32 = 0.3;
+/// 내려앉는 자리는 변 너머 몸 반지름 + 이만큼(m).
+const HOP_LAND: f32 = 0.4;
 
 /// 땅이 없는 아레나의 격자 칸(m).
 const ARENA_CELL: f32 = 1.0;
@@ -78,22 +108,47 @@ impl Nav {
         !self.blocked[c.1 * self.g.w + c.0] && !matches!(self.g.at(c.0, c.1), Cell::Solid)
     }
 
-    /// 너비 우선 거리 지도: 칸마다 `target`까지 걸음 수(못 가면 u16::MAX). 목표 칸은 상자가 덮어도 연다(곁에 서 있을 수 있다).
+    /// 칸 `a`에서 이웃 `b`로 적이 가는 법(맞닿은 변의 높이 차로) — 못 가면 없음.
+    pub fn step(&self, a: (usize, usize), b: (usize, usize)) -> Option<Step> {
+        let (ha, hb) = self.g.edge_heights(a, b)?;
+        let dh = hb - ha;
+        if dh.abs() <= GROUND_STEP {
+            Some(Step::Walk)
+        } else if dh > 0.0 && dh <= ENEMY_CLIMB {
+            Some(Step::Up)
+        } else if dh < 0.0 && -dh <= ENEMY_DROP {
+            Some(Step::Down)
+        } else {
+            None
+        }
+    }
+
+    /// 거리 지도(다익스트라): 칸마다 `target`까지의 값(걷기 2·뛰어내리기 5·뛰어오르기 8, 못 가면 u16::MAX).
+    /// 목표 칸은 상자가 덮어도 연다(곁에 서 있을 수 있다). 적은 이웃 `n`에서 `c`로 오므로 `step(n, c)`를 본다.
     pub fn flow(&self, target: Vec3) -> Vec<u16> {
         let g = &self.g;
         let mut dist = vec![u16::MAX; g.w * g.h];
         let Some(t) = g.cell_of(target) else {
             return dist;
         };
-        let mut q = std::collections::VecDeque::new();
+        let mut heap = BinaryHeap::new();
         dist[t.1 * g.w + t.0] = 0;
-        q.push_back(t);
-        while let Some(c) = q.pop_front() {
-            let d = dist[c.1 * g.w + c.0];
+        heap.push(Reverse((0u16, t)));
+        while let Some(Reverse((d, c))) = heap.pop() {
+            if d > dist[c.1 * g.w + c.0] {
+                continue;
+            }
             for n in self.neighbors(c) {
-                if dist[n.1 * g.w + n.0] == u16::MAX && self.open(n) && g.passable(c, n) {
-                    dist[n.1 * g.w + n.0] = d + 1;
-                    q.push_back(n);
+                if !self.open(n) {
+                    continue;
+                }
+                let Some(s) = self.step(n, c) else {
+                    continue;
+                };
+                let nd = d.saturating_add(s.cost());
+                if nd < dist[n.1 * g.w + n.0] {
+                    dist[n.1 * g.w + n.0] = nd;
+                    heap.push(Reverse((nd, n)));
                 }
             }
         }
@@ -110,30 +165,71 @@ impl Nav {
             })
     }
 
-    /// 한 칸 가까운 이웃(거리 지도를 따라).
-    fn next_cell(&self, dist: &[u16], c: (usize, usize)) -> Option<(usize, usize)> {
+    /// 한 칸 가까운 이웃(거리 지도를 따라)과 가는 법 — 이웃의 값 + 가는 값이 가장 작은 쪽.
+    fn next_cell(&self, dist: &[u16], c: (usize, usize)) -> Option<((usize, usize), Step)> {
         let here = dist[c.1 * self.g.w + c.0];
         if here == 0 || here == u16::MAX {
             return None;
         }
         self.neighbors(c)
-            .filter(|n| dist[n.1 * self.g.w + n.0] < here && self.g.passable(c, *n))
-            .min_by_key(|n| dist[n.1 * self.g.w + n.0])
+            .filter(|n| dist[n.1 * self.g.w + n.0] < here)
+            .filter_map(|n| self.step(c, n).map(|s| (n, s)))
+            .min_by_key(|(n, s)| dist[n.1 * self.g.w + n.0].saturating_add(s.cost()))
+    }
+
+    /// 뛰어야 하는 변 앞에 왔나(0100): 다음 칸이 뛰어오르기·뛰어내리기이고 몸이 변에서 `HOP_NEAR` 안이면
+    /// (내려앉을 자리, 가는 법). 내려앉는 자리는 옆으로는 지금 자리 그대로, 변 너머 몸 반지름 + `HOP_LAND`.
+    pub fn hop(&self, dist: &[u16], from: Vec3, r: f32) -> Option<(Vec3, Step)> {
+        let c = self.g.cell_of(from)?;
+        let (n, s) = self.next_cell(dist, c)?;
+        if s == Step::Walk {
+            return None;
+        }
+        let (dir, to_edge) = self.edge_dir(c, n, from);
+        if to_edge > r + HOP_NEAR {
+            return None;
+        }
+        let mut land = from + dir * (to_edge + r + HOP_LAND);
+        land.y = self.g.height(land);
+        Some((land, s))
+    }
+
+    /// 칸 `a` → 이웃 `b` 쪽(xz 단위)과 `from`에서 맞닿은 변까지 그쪽으로 잰 거리.
+    fn edge_dir(&self, a: (usize, usize), b: (usize, usize), from: Vec3) -> (Vec3, f32) {
+        let (ca, cb) = (self.g.center(a.0, a.1), self.g.center(b.0, b.1));
+        let dir = vec3(cb.x - ca.x, 0.0, cb.z - ca.z).normalize_or_zero();
+        let m = self.g.edge_mid(a, b);
+        (dir, vec3(m.x - from.x, 0.0, m.z - from.z).dot(dir))
     }
 
     /// 거리 지도를 따라 겨눌 자리(끈 당기기): 앞으로 `LOOKAHEAD`칸 가운데 몸 폭으로 곧게 갈 수 있는 가장 먼 칸의 가운데.
     /// 없으면(이미 목표 칸·길 없음) None.
     pub fn waypoint(&self, dist: &[u16], from: Vec3, r: f32) -> Option<Vec3> {
-        let mut c = self.g.cell_of(from)?;
+        let start = self.g.cell_of(from)?;
+        let mut c = start;
         let mut chain = Vec::with_capacity(LOOKAHEAD);
+        let mut jump = None;
         while chain.len() < LOOKAHEAD {
             match self.next_cell(dist, c) {
-                Some(n) => {
+                Some((n, Step::Walk)) => {
                     chain.push(n);
                     c = n;
                 }
+                // 뛰어야 하는 변(0100): 걷는 길은 거기까지.
+                Some((n, _)) => {
+                    jump = Some((c, n));
+                    break;
+                }
                 None => break,
             }
+        }
+        // 바로 앞이 뛰어야 하는 변이면 그 변 앞(몸 반지름만큼 안쪽, 옆으로는 지금 자리)으로 — 거기서 `hop`이 뛴다.
+        if chain.is_empty() {
+            let (a, b) = jump?;
+            let (dir, to_edge) = self.edge_dir(a, b, from);
+            let mut at = from + dir * (to_edge - r - 0.05).max(0.0);
+            at.y = self.g.height(at);
+            return Some(at);
         }
         let first = *chain.first()?;
         Some(
