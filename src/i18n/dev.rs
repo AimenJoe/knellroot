@@ -320,6 +320,7 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("render.flora 0off 1on", "식생(0끔 1켬)"),
     ("turn.wobble in deg", "땅 돌리기 시작 휘청(도)"),
     ("turn.wobble out deg", "땅 돌리기 끝 휘청(도)"),
+    ("turn.start stagger s", "땅 돌리기 시작 적 휘청(초)"),
 ];
 
 #[cfg(test)]

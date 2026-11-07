@@ -2436,6 +2436,26 @@ impl World {
             ev.push(Event::Turn { quarters });
             // 도는 동안 적은 그대로 움직인다(0029: 예전엔 범위 안의 적을 실어 붙잡았다 — 1초 가까이 묶는 CC였다).
             self.spill_at = Some((cw, crate::tuning::turn_land_secs_q(t, quarters)));
+            // 시작 휘청(0085): 화면이 돌기 시작하는 순간 범위 안의 적이 짧게 휘청인다(예고가 끊긴다) — 땅이 비틀리는 첫 흔들림.
+            // 몸은 도는 쪽(둘레 방향)으로 젖힌다. 0029처럼 묶어 두지는 않는다(짧은 휘청 하나).
+            let p = self.player.pos;
+            for en in &mut self.enemies {
+                if !en.active() {
+                    continue;
+                }
+                let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+                if d.length() > t[P::SpillRange] {
+                    continue;
+                }
+                let mass = if en.boss { t[P::SpillBossMass] } else { 1.0 };
+                let dur = t[P::TurnStartStagger] / mass.max(1.0);
+                if dur <= 0.0 {
+                    continue;
+                }
+                en.state = EState::Stagger { t: 0.0, dur };
+                en.sway = spill_dir(d, cw, 0.0) * 0.5;
+                en.sway_t = 0.0;
+            }
         }
         let Some((cw, left)) = self.spill_at else {
             return;
@@ -3642,6 +3662,8 @@ mod tests {
     /// 돌리고 멈추는(쏟는) 틱까지.
     fn turn_until_spill(w: &mut World, cw: bool, t: &Tuning) -> Vec<Event> {
         let mut ev = w.step(&turn(cw), t);
+        // 시작 휘청(0085)이 세워 둔 적을 깨우지 않게 — 이 시험들은 멈춘 적으로 쏟기만 본다.
+        idle(w);
         for _ in 0..600 {
             if w.spill_at.is_none() {
                 break;
@@ -3665,7 +3687,8 @@ mod tests {
         idle(&mut w);
         let ev = w.step(&turn(true), &t);
         assert!(ev.contains(&Event::Turn { quarters: 1 }));
-        // 도는 동안(멈추기 전)엔 아무도 밀리지 않는다.
+        idle(&mut w); // 시작 휘청(0085)이 세워 둔 적을 깨우지 않게
+                      // 도는 동안(멈추기 전)엔 아무도 밀리지 않는다.
         let half = (crate::tuning::turn_land_secs_q(&t, 1) * 0.5 / TICK_DT) as usize;
         for _ in 0..half {
             w.step(&Actions::default(), &t);
@@ -6084,5 +6107,38 @@ mod tests {
                 assert!(w.player.hp < PLAYER_HP, "the late blow lands");
             }
         }
+    }
+
+    /// 0085(사장 2026-11-07 "화면돌리기의 휘청은 cc 포함"): 돌기 시작하는 순간 범위 안의 적이 짧게 휘청이고(예고가 끊긴다),
+    /// 범위 밖은 그대로. 보스는 무게만큼 짧게.
+    #[test]
+    fn turning_staggers_enemies_in_range_briefly_when_it_starts() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.spawn_mob(vec3(0.0, 0.0, -2.0));
+        w.spawn_mob(vec3(0.0, 0.0, t[P::SpillRange] + 6.0));
+        w.spawn_boss(vec3(2.5, 0.0, 0.0));
+        for en in &mut w.enemies {
+            en.state = EState::Tele { t: 0.1 };
+        }
+        w.step(&turn(true), &t);
+        let dur = |e: &Enemy| match e.state {
+            EState::Stagger { dur, .. } => Some(dur),
+            _ => None,
+        };
+        assert_eq!(
+            dur(&w.enemies[0]),
+            Some(t[P::TurnStartStagger]),
+            "near: staggered, telegraph cut"
+        );
+        assert_eq!(dur(&w.enemies[1]), None, "out of range: untouched");
+        let boss = dur(&w.enemies[2]).expect("the boss too");
+        assert!(boss < t[P::TurnStartStagger], "but shorter: {boss}");
+        // 짧다 — 땅이 멈추기(쏟기) 전에 풀린다.
+        for _ in 0..((t[P::TurnStartStagger] / TICK_DT) as usize + 2) {
+            w.step(&Actions::default(), &t);
+        }
+        assert_eq!(dur(&w.enemies[0]), None);
+        assert!(w.spill_at.is_some(), "still turning");
     }
 }

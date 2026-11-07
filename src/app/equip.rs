@@ -65,6 +65,11 @@ pub(super) fn has_choice(list: &[Cand], now: Cand) -> bool {
     list.iter().any(|&c| c != now)
 }
 
+/// 무언가를 낀 후보인가(빈 칸·맨손은 아니다 — "착용 중" 표시를 붙이지 않는다).
+pub(super) fn wears_something(c: Cand) -> bool {
+    !matches!(c, Cand::Empty | Cand::Weapon(weapons::Id::Fists))
+}
+
 /// 후보 목록을 열 때 커서 자리: 지금 든 것(목록에 있으면), 아니면 맨 위.
 pub(super) fn pick_start(list: &[Cand], now: Cand) -> usize {
     list.iter().position(|&c| c == now).unwrap_or(0)
@@ -679,8 +684,9 @@ impl App {
                 let rows: Vec<ui::Row> = list
                     .iter()
                     .map(|&c| {
+                        // "착용 중"은 낀 물건에만(사장 2026-11-07, 0085) — 빈 칸·맨손은 "아무것도 안 낌"이라 커서만 거기 둔다.
                         let mark = match c {
-                            _ if c == here => s.equip_worn.to_string(),
+                            _ if c == here && wears_something(c) => s.equip_worn.to_string(),
                             Cand::Charm(id) => self
                                 .progress
                                 .worn
@@ -924,6 +930,11 @@ mod tests {
             Cand::Charm(Charm::Ear)
         );
         assert_eq!(list[pick_start(&list, Cand::Empty)], Cand::Empty);
+        // 빈 칸·맨손은 커서만(0085) — "착용 중"은 낀 물건에만.
+        assert!(
+            !wears_something(Cand::Empty) && !wears_something(Cand::Weapon(weapons::Id::Fists))
+        );
+        assert!(wears_something(Cand::Charm(Charm::Ear)) && wears_something(held));
         // 장신구가 없고 칸이 비었으면 바꿀 것이 없다 — 못 얻은 것은 장비 창에 없다(도감 몫).
         assert!(!has_choice(&candidates(1, &[]), Cand::Empty));
         assert!(has_choice(&list, Cand::Empty));

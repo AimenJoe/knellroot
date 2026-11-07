@@ -269,6 +269,7 @@ pub enum P {
     RenderFlora,
     TurnWobbleIn,
     TurnWobbleOut,
+    TurnStartStagger,
 }
 
 /// 랩이 읽는 칸(이름·걸음·범위·내보내기 이름)은 개발판에만 쓰인다(운영판에는 랩이 없다, 0070).
@@ -300,7 +301,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 145] = [
+pub const SPECS: [Spec; 146] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1430,6 +1431,17 @@ pub const SPECS: [Spec; 145] = [
         0.0,
         6.0,
         0.25
+    ),
+    // 땅 돌리기 시작의 휘청은 CC도(0085, 사장 "화면돌리기의 휘청은 cc 포함"): 돌기 시작하는 순간 `spill.range m` 안의 적이
+    // 이만큼(초) 휘청인다(예고가 끊긴다). 보스는 `spill.boss mass`로 나눈다. 끝의 휘청은 그대로 쏟기(`spill.stagger s`). 0 = 없음.
+    spec!(
+        TurnStartStagger,
+        "turn.start stagger s",
+        "TURN_START_STAGGER",
+        0.25,
+        0.0,
+        1.0,
+        0.05
     ),
 ];
 
