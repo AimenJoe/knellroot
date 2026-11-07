@@ -1,4 +1,4 @@
-"""소개 페이지(site/**/*.html)에 나오는 글자만 남겨 고운바탕 굵게를 woff2로 줄인다(SIL OFL 1.1, 예약 이름 없음, 0092).
+"""소개 페이지(site/**/*.html)에 나오는 글자만 남겨 고운바탕 굵게를 woff2로 줄인다(SIL OFL 1.1, 예약 이름 없음, 0093).
 페이지 글을 고치면 다시 돌린다. 원본은 Google Fonts(github.com/google/fonts ofl/gowunbatang) — 레포에 넣지 않는다.
 
     python3 tools/site/subset_font.py <GowunBatang-Bold.ttf>

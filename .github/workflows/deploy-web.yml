@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 잡 이름 = main 룰셋의 필수 검사 이름(0093 — nail `main-only`를 그대로 가져와 `build`).
+  # 잡 이름 = main 룰셋의 필수 검사 이름(0092 — nail `main-only`를 그대로 가져와 `build`).
   build:
     runs-on: ubuntu-latest
     env:

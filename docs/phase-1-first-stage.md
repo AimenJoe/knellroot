@@ -22,7 +22,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 ## 구현 상태(2026-11-07 — 첫 판 2026-11-04, v0.3.0 배포 2026-11-06, v0.3.4 배포 2026-11-07·0090까지)
 | 항목 | 위치 | 비고 |
 |---|---|---|
-| 소개 페이지(0092) | `site/`(한국어·`en/`), `.github/workflows/pages.yml`, `tools/site/subset_font.py` | 개발 중이라 한 장만: 첫 화면·두 시점·해 보기·만드는 곳, 스크립트 없음. 주소 knellroot.beardworks.io(도메인·Pages 켜기는 사람이 할 일) |
+| 소개 페이지(0093) | `site/`(한국어·`en/`), `.github/workflows/pages.yml`, `tools/site/subset_font.py` | 개발 중이라 한 장만: 첫 화면·두 시점·해 보기·만드는 곳, 스크립트 없음. 주소 knellroot.beardworks.io(도메인·Pages 켜기는 사람이 할 일) |
 | 바닥 다듬기(0060 W2) | `scenery.rs` `MORTAR_Y`·`SLAB_*`·`tuft`·`WALL_AO` | 걷는 면 아래로 판 석판(높이·긴 판·들림·빠짐 + 옆면), 풀 다발, 벽 밑 그늘 |
 | 화면 공간 선(0061) | `render.rs` `EdgeFx`·`normal_pass`·`edge_fx`, `scenery::with_normal`, `Batch::record` | 법선 패스(뷰 법선 + 선형 깊이) → 이웃 넷: 깊이가 끊기는 앞쪽은 어두운 선, 볼록 모서리는 밝은 선. 랩 `render.edge*` 다섯(덧붙임). GL만 |
 | 길 안내(0060 W1) | `stage::StageRun::goal`, `render.rs` `beam`·`GUIDE_*`, `hud::draw_goal_arrow`, `camera::world_to_ndc`·`edge_marker` | 문이 열리면(그리고 핵이 남으면) 그 자리에 호박색 빛기둥 + 빛, 화면 밖 1초면 가장자리 화살, 목표 글 "열린 문으로 성소에 들어가라" |
@@ -104,7 +104,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), 랩(멈춤 끝 줄 LAB·F1, 0070), F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
-**0092 소개 페이지**: `release/v0.3`을 main에 넣은 뒤 ① 레포 Settings → Pages → Source = **GitHub Actions**(켜기 전 첫 실행은 실패, 켠 뒤 Actions의 pages를 다시 실행) ② DNS(Cloudflare)에 `knellroot` CNAME → `aimenjoe.github.io` ③ Settings → Pages → Custom domain = `knellroot.beardworks.io`, Enforce HTTPS. 페이지 글을 고치면 `python3 tools/site/subset_font.py <GowunBatang-Bold.ttf>`.
+**0093 소개 페이지**: `release/v0.3`을 main에 넣은 뒤 ① 레포 Settings → Pages → Source = **GitHub Actions**(켜기 전 첫 실행은 실패, 켠 뒤 Actions의 pages를 다시 실행) ② DNS(Cloudflare)에 `knellroot` CNAME → `aimenjoe.github.io` ③ Settings → Pages → Custom domain = `knellroot.beardworks.io`, Enforce HTTPS. 페이지 글을 고치면 `python3 tools/site/subset_font.py <GowunBatang-Bold.ttf>`.
 
 **0086**: 이어 패링이 쌓여 둘러싸였을 때 빠져나가는 느낌인지·너무 쉬워지지 않는지.
 **0087**: 줄어드는 부채꼴로 박자를 맞추기 쉬운지, 가장 작은 몫·금빛이 "지금"으로 읽히는지, 동작마다 사라지는 쪽이 칼과 맞는지.
@@ -125,7 +125,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 
 **v0.3.x 패치(0070)**: 1~5·9·10 개발판에 들어감 — 손맛 판정(대시 공격·패링 반격·락온 넘기기·패링 멈춤·장비 창 십자·평타 타격감·돌진 예고가 닿는 때). Select = 장비 창·후보에서 낀 것 빼기는 들어감. 랩을 멈춤 메뉴 안의 창으로 옮김(0070 7).
 
-**다음 마일스톤**: v0.4.0 "자라는 방랑자" `docs/decisions/0096`(채택 2026-11-07 — 잔불 레벨 생명·기력·힘, 기술 나무 박자·맞받기·발걸음, 핵 고르기를 나무로, 0095). 순서 T0(`tick_player` 나누기) → G1 레벨 → G3 → G2·G4 나무·화면 → G5 칸 동작. 둘째 구역 "내려가는 길" 0069는 v0.5.0 후보.
+**다음 마일스톤**: v0.4.0 "자라는 방랑자" `docs/decisions/0096`(채택 2026-11-07 — 잔불 레벨 생명·기력·힘, 기술 나무 박자·맞받기·발걸음, 핵 고르기를 나무로, 0095). 순서 T0(`tick_player` 나누기) → G1 레벨 → G3 → G2·G4 나무·화면 → G5 칸 동작. v0.5.0은 "확장" — 다른 지역(둘째 구역 "내려가는 길" 0069, 사장 2026-11-07).
 
 46줄로 쌓였던 것을 플레이 순서로 묶었다(2026-11-05). 줄마다 괄호의 결정 번호에 자세한 것·랩 값이 있다. 이상하면 "어디서·무엇이" 한 줄이면 된다.
 

@@ -1,8 +1,10 @@
-# 0092. 소개 페이지는 GitHub Pages에 작게 — 개발 중이라 한 장만
+# 0093. 소개 페이지는 GitHub Pages에 작게 — 개발 중이라 한 장만
 
 - 날짜: 2026-11-07
 - 상태: **채택·구현**(`site/`, 배포는 사장이 main에 넣은 뒤)
 - 사장: "knellroot도 under the roots처럼 홈페이지 만들어줘, 대신 이 게임은 아직 개발중이니 상세하게 만들지 말고."
+
+- 번호: 처음엔 0091 → 0092로 붙였으나 같은 날 다른 기록(0091 문 가림·0092 main 룰셋)과 겹쳐 0093. 페이지는 게임 코드와 상관없어 `site/`·`pages.yml`만 main에 패치로 먼저 넣는다(`pages.yml`은 main push에서만 돈다).
 
 ## 결정
 1. **꼴은 첫 게임 nail 0069 그대로**: 원본은 이 레포 `site/`(한국어 `index.html`, 영어 `en/`), `pages.yml`이 main의 `site/**`가 바뀔 때 GitHub Pages에 올린다. 게임은 Netlify 그대로.

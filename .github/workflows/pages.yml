@@ -1,5 +1,5 @@
 name: pages
-# 소개 페이지(site/)를 GitHub Pages에 올린다(docs/decisions/0092, 첫 게임 nail 0069와 같은 꼴). 게임 자체는 Netlify(deploy-web.yml).
+# 소개 페이지(site/)를 GitHub Pages에 올린다(docs/decisions/0093, 첫 게임 nail 0069와 같은 꼴). 게임 자체는 Netlify(deploy-web.yml).
 # 처음 한 번 사람이 레포 Settings → Pages → Source를 "GitHub Actions"로 둬야 한다(GITHUB_TOKEN으로는 켤 수 없다).
 on:
   push:
