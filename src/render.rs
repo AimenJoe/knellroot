@@ -1760,13 +1760,14 @@ pub(crate) const WINDUP_REACH: f32 = 0.6;
 /// 마지막 내리침(초) — 정점 → 맞음. 이 동안은 이미 늦다(KB: 적의 공격 자체는 빠르고 짧게).
 pub(crate) const WINDUP_SNAP: f32 = 0.08;
 
-/// 예고 `t`초(길이 `dur`)의 동작 시각: 들어 올림(천천히 멈추게) → 정점에서 버팀 → 마지막 `WINDUP_SNAP` 동안 내리침.
+/// 예고 `t`초(길이 `dur`)의 동작 시각: 들어 올림(천천히 들어가고 멈추게) → 정점에서 버팀 → 마지막 `WINDUP_SNAP` 동안 내리침.
 fn windup_clock(t: f32, dur: f32, peak: f32, impact: f32) -> f32 {
     let snap = WINDUP_SNAP.min(dur * 0.25);
     let reach = (dur * WINDUP_REACH).min(dur - snap);
     if t < reach {
+        // 천천히 들어가고 천천히 멈춘다(smoothstep) — 들기 전 움츠림(동작 앞쪽 키)이 눈에 남게. 처음엔 빠르게 들었더니 움츠림이 3프레임에 지나갔다.
         let u = t / reach.max(1e-3);
-        peak * (1.0 - (1.0 - u) * (1.0 - u))
+        peak * u * u * (3.0 - 2.0 * u)
     } else if t < dur - snap {
         peak
     } else {
