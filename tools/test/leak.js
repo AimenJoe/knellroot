@@ -86,7 +86,8 @@ async function main() {
   };
   await keyboardOnly();
   // 타이틀(개발판): 시작·설정·연구소·DEV(0079) — 시작에서 아래로 셋 = DEV.
-  if (MODE === 'stress') { await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300); await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300); await press('Digit7'); }
+  // 개발 창(0083, nail 구조): 묶음 탭 도구·스테이지·전투·적·성능 — 오른쪽 둘 = 전투·적(첫 줄 보스 아레나), 그다음 숫자 키 7 = 부하 80.
+  if (MODE === 'stress') { await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300); await press('ArrowRight', 2); await press('Enter'); await page.waitForTimeout(300); await press('Digit7'); }
   else { await press('Enter'); await page.waitForTimeout(300); await press('Enter'); }  // 시작하기 → 슬롯 창(0066) → 시작
   const t0 = Date.now();
   let next = 0, i = 0;

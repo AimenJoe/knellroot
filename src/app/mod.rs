@@ -5,6 +5,8 @@
 mod ask;
 pub mod controls;
 mod controls_screen;
+#[cfg(feature = "dev")]
+mod dev;
 mod equip;
 pub mod flow;
 #[cfg(feature = "dev")]
@@ -412,7 +414,9 @@ impl App {
             | Scene::Core
             | Scene::Result { .. }) => self.tick_menu(&a, s),
             #[cfg(feature = "dev")]
-            s @ (Scene::Dev { .. } | Scene::Lab) => self.tick_menu(&a, s),
+            Scene::Dev { tab } => self.tick_dev(&a, tab as usize),
+            #[cfg(feature = "dev")]
+            Scene::Lab => self.tick_menu(&a, Scene::Lab),
             #[cfg(feature = "dev")]
             Scene::LabGroup { g } => self.tick_lab_group(&a, g as usize),
             Scene::Controls => self.tick_controls(a),
@@ -454,8 +458,6 @@ impl App {
             Scene::Result { won } => Some(self.result_menu(won)),
             Scene::Slots { load } => Some(self.slots_menu(load)),
             #[cfg(feature = "dev")]
-            Scene::Dev { tab } => Some(self.dev_menu(tab as usize)),
-            #[cfg(feature = "dev")]
             Scene::Lab => Some(self.lab_menu()),
             #[cfg(feature = "dev")]
             Scene::LabGroup { g } => Some(self.lab_group_menu(g as usize)),
@@ -467,7 +469,7 @@ impl App {
             | Scene::Equip
             | Scene::EquipPick { .. } => None,
             #[cfg(feature = "dev")]
-            Scene::Sandbox => None,
+            Scene::Sandbox | Scene::Dev { .. } => None,
         }
     }
 
@@ -482,8 +484,6 @@ impl App {
             // 슬롯 창은 제 틱(`tick_slots`)이 고름을 한다(빈 줄 건너뛰기·두 번째 누름).
             Scene::Slots { .. } => {}
             #[cfg(feature = "dev")]
-            Scene::Dev { tab } => self.dev_act(tab as usize, out),
-            #[cfg(feature = "dev")]
             Scene::Lab => self.lab_act(out),
             #[cfg(feature = "dev")]
             Scene::LabGroup { g } => self.lab_group_act(g as usize, out),
@@ -495,7 +495,7 @@ impl App {
             | Scene::Equip
             | Scene::EquipPick { .. } => {}
             #[cfg(feature = "dev")]
-            Scene::Sandbox => {}
+            Scene::Sandbox | Scene::Dev { .. } => {}
         }
     }
 
@@ -570,6 +570,8 @@ impl App {
             Scene::Ask(k) => self.draw_ask(f, k),
             Scene::Controls => self.draw_controls(f),
             Scene::Equip => self.draw_equip(f, self.cursor, None),
+            #[cfg(feature = "dev")]
+            Scene::Dev { tab } => self.draw_dev_screen(f, tab as usize),
             Scene::EquipPick { slot } => {
                 // 칸 커서는 아래 칸(장비 창)의 것.
                 let at = self.stack.under().map_or(slot as usize, |e| e.cursor);

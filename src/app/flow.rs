@@ -35,7 +35,7 @@ pub enum Scene {
     Slots {
         load: bool,
     },
-    /// 개발 메뉴(0052 → 0075, nail `Scene::Dev`·0269 묶음 탭): 묶음 `tab`(`DEV_TABS`)의 시작할 것 목록. 개발판에만.
+    /// 개발 창(0052 → 0075 → 0083, nail `Scene::Dev`·0269 구조): 묶음 `tab`(`dev::DEV_CATS`)의 시작할 것 목록. 개발판에만.
     #[cfg(feature = "dev")]
     Dev {
         tab: u8,

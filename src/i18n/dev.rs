@@ -34,17 +34,15 @@ pub const LAB_HINT: Pair = (
     "{0} · 기본 {1} · {2} ×10 · 확인 = 기본값",
     "default {1} | {2} x10 | confirm = default",
 );
-pub const GROUP: Pair = ("묶음", "group");
-pub const WEAPON: Pair = ("무기", "weapon");
-pub const BACK: Pair = ("돌아가기", "back");
 pub const DEV_TITLE: Pair = ("개발", "DEV");
-pub const DEV_TAB_NOTE: Pair = (
-    "좌우: 묶음(싸움 · 스테이지 · 성능·도구). 개발 판은 기록 슬롯에 쓰지 않는다.",
-    "left/right: group (combat · stage · perf & tools). Dev runs never write the save slot.",
-);
-pub const TAB_COMBAT: Pair = ("싸움", "combat");
+pub const TAB_TOOLS: Pair = ("도구", "tools");
 pub const TAB_STAGE: Pair = ("스테이지", "stage");
-pub const TAB_TOOLS: Pair = ("성능·도구", "perf & tools");
+pub const TAB_COMBAT: Pair = ("전투·적", "combat");
+pub const TAB_PERF: Pair = ("성능", "perf");
+pub const DEV_HINT: Pair = (
+    "좌우: 묶음 · 위아래: 고르기 · 확인: 시작 · 뒤로: 나가기",
+    "left/right: group · up/down: pick · confirm: start · back: leave",
+);
 pub const ENTRANCE: Pair = ("첫 스테이지 입구부터", "stage 1 from the entrance");
 pub const GATE: Pair = (
     "첫 스테이지 성소 문 앞(보스)",
@@ -75,14 +73,12 @@ pub const PAIRS: &[Pair] = &[
     NOTE_EXPORTED,
     NOTE_USING,
     LAB_HINT,
-    GROUP,
-    WEAPON,
-    BACK,
     DEV_TITLE,
-    DEV_TAB_NOTE,
-    TAB_COMBAT,
-    TAB_STAGE,
     TAB_TOOLS,
+    TAB_STAGE,
+    TAB_COMBAT,
+    TAB_PERF,
+    DEV_HINT,
     ENTRANCE,
     GATE,
     STAGE_NOTE,

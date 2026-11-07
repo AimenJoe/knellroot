@@ -58,14 +58,14 @@ async function main() {
   await shot('00d-fight');
   await press('Escape'); await page.waitForTimeout(300); await shot('00e-pause');
   // 멈춤(0052·0079): 계속·장비·설정·연구소·처음부터·타이틀로·DEV(연구소·DEV는 개발판). 타이틀: 시작·설정·연구소·DEV.
-  // DEV(0075): 묶음(◀ combat · stage · perf & tools ▶)·무기·그 묶음의 시작할 것·돌아가기 — 첫 묶음 셋째 줄 = 보스 아레나, stage 묶음 넷째 줄 = 문 앞.
+  // 개발 창(0083, nail 구조): 위 묶음 탭(도구 · 스테이지 · 전투·적 · 성능, 좌우로) + 그 묶음의 줄 — 스테이지 둘째 줄 = 문 앞, 전투·적 첫 줄 = 보스 아레나.
   // 타이틀로는 묻는 창(0064 — 커서가 "취소"에서 시작): 위로 한 번 = "타이틀로".
   // 타이틀의 DEV는 맨 끝 — 기록이 생겨 "이어하기"가 붙어도 위로 한 번(돌아서)이면 DEV(0066).
   await press('ArrowDown', 5); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await shot('00e2-title-continue');
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
-  await press('ArrowRight'); await page.waitForTimeout(150); await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(800); await shot('00f-gate');
+  await press('ArrowRight'); await page.waitForTimeout(150); await press('ArrowDown', 1); await press('Enter'); await page.waitForTimeout(800); await shot('00f-gate');
   await page.keyboard.down('KeyW'); await page.waitForTimeout(2200); await page.keyboard.up('KeyW');
   await page.waitForTimeout(800); await shot('00g-waking');
   await page.waitForTimeout(1500); await press('KeyL'); await page.waitForTimeout(900); await shot('00h-boss-lock');
@@ -81,7 +81,7 @@ async function main() {
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await shot('00j-dev');
-  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(400);  // DEV: 묶음·무기·보스 아레나(셋째 줄, 0075)…
+  await press('ArrowRight', 2); await press('Enter'); await page.waitForTimeout(400);  // 개발 창: 전투·적 묶음 첫 줄 = 보스 아레나(0083)
   // 1 보스 아레나: 쿼터뷰 → 앞으로 걷기 → 락온 → 전환 중·전환 뒤 → 공격 → 회피 → 해제.
   await page.keyboard.press('Digit1'); await page.waitForTimeout(400);
   await shot('01-quarter');
