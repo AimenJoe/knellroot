@@ -120,6 +120,10 @@ impl App {
 
     /// 이 슬롯으로 판을 시작한다: 마지막 슬롯 칸을 적고, 기록·무기를 그 슬롯 것으로, 쉼터가 있으면 거기서.
     fn enter_slot(&mut self, i: usize, progress: crate::save::Progress) {
+        #[cfg(feature = "dev")]
+        {
+            self.dev_run = false;
+        }
         self.slot = i;
         crate::save::set_last_slot(i);
         self.weapon = progress.weapon.unwrap_or(weapons::Id::Sword);

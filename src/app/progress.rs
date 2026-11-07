@@ -88,6 +88,11 @@ impl App {
 
     /// 바뀐 것이 있으면 쓴다. 못 쓰면(사생활 보호 모드 등) 다음에 또 바뀔 때까지 다시 시도하지 않는다.
     pub(super) fn persist(&mut self) {
+        // 개발 판(0075, nail 0269 B3의 꼴): 메모리의 기록만 바뀌고 슬롯은 그대로 — 슬롯을 다시 고르면 슬롯 것을 읽는다.
+        #[cfg(feature = "dev")]
+        if self.dev_run {
+            return;
+        }
         if self.progress != self.saved {
             let ok = crate::save::save(self.slot, &self.progress);
             self.slots[self.slot] = self.progress.summary();

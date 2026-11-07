@@ -35,9 +35,11 @@ pub enum Scene {
     Slots {
         load: bool,
     },
-    /// 개발 메뉴(0052, nail `Scene::Dev`): 문 앞에서 시작·PoC 시나리오 목록. 개발판에만.
+    /// 개발 메뉴(0052 → 0075, nail `Scene::Dev`·0269 묶음 탭): 묶음 `tab`(`DEV_TABS`)의 시작할 것 목록. 개발판에만.
     #[cfg(feature = "dev")]
-    Dev,
+    Dev {
+        tab: u8,
+    },
     /// 개발 시나리오(PoC 아레나). 개발판에만.
     #[cfg(feature = "dev")]
     Sandbox,
@@ -72,7 +74,10 @@ impl Scene {
 
     #[cfg(feature = "dev")]
     fn is_dev(self) -> bool {
-        matches!(self, Scene::Dev | Scene::Lab | Scene::LabGroup { .. })
+        matches!(
+            self,
+            Scene::Dev { .. } | Scene::Lab | Scene::LabGroup { .. }
+        )
     }
     #[cfg(not(feature = "dev"))]
     fn is_dev(self) -> bool {
@@ -96,7 +101,7 @@ impl Scene {
             | Scene::Controls
             | Scene::Slots { .. } => Layer::Window { hud: false },
             #[cfg(feature = "dev")]
-            Scene::Dev => Layer::Window { hud: false },
+            Scene::Dev { .. } => Layer::Window { hud: false },
             #[cfg(feature = "dev")]
             Scene::Lab | Scene::LabGroup { .. } => Layer::Window { hud: true },
             Scene::Ask(_) => Layer::Modal,
@@ -265,15 +270,25 @@ pub enum PauseItem {
     Settings,
     Restart,
     ToTitle,
+    /// 개발 메뉴(0075) — 개발판에만, 맨 끝(위 다섯 줄 자리는 그대로 — 시험 스크립트가 줄 수로 간다).
+    #[cfg(feature = "dev")]
+    Dev,
 }
 
-pub const PAUSE_ITEMS: [PauseItem; 5] = [
-    PauseItem::Resume,
-    PauseItem::Weapon,
-    PauseItem::Settings,
-    PauseItem::Restart,
-    PauseItem::ToTitle,
-];
+/// 멈춤 창의 줄(개발판은 끝에 "개발").
+pub fn pause_items() -> Vec<PauseItem> {
+    #[cfg_attr(not(feature = "dev"), allow(unused_mut))]
+    let mut v = vec![
+        PauseItem::Resume,
+        PauseItem::Weapon,
+        PauseItem::Settings,
+        PauseItem::Restart,
+        PauseItem::ToTitle,
+    ];
+    #[cfg(feature = "dev")]
+    v.push(PauseItem::Dev);
+    v
+}
 
 /// 설정 줄(0052). 값 줄은 좌우·확인으로 바꾸고, 누르는 줄은 확인으로 들어간다.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -361,7 +376,7 @@ pub fn back(scene: Scene) -> Go {
         | Scene::Settings
         | Scene::Slots { .. } => Go::Back,
         #[cfg(feature = "dev")]
-        Scene::Dev | Scene::Lab | Scene::LabGroup { .. } => Go::Back,
+        Scene::Dev { .. } | Scene::Lab | Scene::LabGroup { .. } => Go::Back,
         Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Core | Scene::Result { .. } => {
             Go::Stay
         }
@@ -387,6 +402,8 @@ pub fn choose_pause(item: PauseItem) -> (Go, bool) {
         PauseItem::Settings => (Go::Open(Scene::Settings), false),
         PauseItem::Restart => (Go::Open(Scene::Ask(Ask::Restart)), false),
         PauseItem::ToTitle => (Go::Open(Scene::Ask(Ask::ToTitle)), false),
+        #[cfg(feature = "dev")]
+        PauseItem::Dev => (Go::Open(Scene::Dev { tab: 0 }), false),
     }
 }
 

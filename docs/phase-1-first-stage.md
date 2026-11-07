@@ -73,6 +73,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 잔불(0064 M1) | `ember.rs`, `world.rs` `tick_embers`·`embers`·`drops`, `species.rs` `embers`, `backdrop.rs` `embers`, `hud.rs` | 쓰러지면 튀어나오고 0.35초 뒤 끌려와 주움, 가진 수는 기록에 — 쓰러져도 그대로 |
 | 앱·UI 뼈대(0066) | `app/stack.rs`·`flow.rs` `Go`·`Layer`·`focus`, `app/menu.rs` `Menu`·`Out`·`Hit`, 화면 파일 `pause`·`settings`·`shop`·`ask`·`slots`·`title`·`play`·`progress`·`controls_screen`, `ui.rs` `panel`·`list`·`close`·`buttons`·`title_arrows` | 장면 스택(닫으면 연 줄로), 목록 화면 = 줄 표 하나 + 몰이꾼, nail 창 틀(✕·창 밖 탭·◀ 값 ▶·제목 줄 ▲▼), 묻는 창은 아래 창 위. `tick_scene` 340 → 35줄 |
 | 아이템 그림(0068) | `item_view.rs`, `Renderer::draw_icon`·`draw_item`, `tools/art/blender/charms.py` → `charms.glb` | 칸·후보 줄의 아이콘(한 번 찍어 캐시), 고른 것은 크게 흔들리는 3D, 장신구 모델 여섯(첫 시안) |
+| 개발 메뉴 개편(0075) | `Scene::Dev { tab }`·`settings::DEV_TABS`·`App::dev_run`·`flow::pause_items` | 묶음(combat·stage·perf & tools) + 설명, 개발 판은 슬롯에 안 씀, 멈춤 끝에 DEV(개발판), 시나리오 8 husk + thorn |
 | 공격 예고 설정(0074) | `SettingsRow::Tells`·prefs 칸 26·`View::tells`·`render::TELLS_BASE` | 설정 → 공격 예고 0~100%(0 = 끔), 기본 50%, 70% = 0072 진하기 |
 | 적 준비 동작(0073) | `render::STRIKE_KEYS`·`windup_clock`·`windup_hold`·`WINDUP_*` | 들어 올림(예고 60%, smoothstep) → 정점에서 버팀(떨림·눈/핵 번쩍) → 마지막 0.08초에 내리침 = 맞는 틱, 늘어남·뒤로 젖힘, 예고 시간·판정은 그대로. 동작 원본 과장(움츠림 → 까치발 젖힘·늘어남 → 납작): 잔재 attack·가시짐승 charge_windup·문지기 slam·wave·charge_windup |
 | 옅은 예고·표시(0072) | `render::telegraph`·`TELE_A`·`TELE_BASE_A`·`TELE_MARK_A`·`TELE_RING_W` | 적 예고 채움 = 테두리 투명도 0.3(겹치지 않게 — 채움은 테두리 안쪽까지), 파동·평타·강타·패링 반달·패링 성공 고리도 옅게 |

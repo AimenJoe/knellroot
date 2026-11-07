@@ -12,7 +12,7 @@ impl App {
                 TitleItem::Start => self.open_slots(false),
                 TitleItem::Settings => self.go(Go::Open(Scene::Settings)),
                 #[cfg(feature = "dev")]
-                TitleItem::Dev => self.go(Go::Open(Scene::Dev)),
+                TitleItem::Dev => self.go(Go::Open(Scene::Dev { tab: 0 })),
             }
         }
     }

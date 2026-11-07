@@ -26,7 +26,7 @@ pub(super) fn next_charm(
 impl App {
     pub(super) fn pause_menu(&self) -> Menu {
         let s = s();
-        let rows = flow::PAUSE_ITEMS
+        let rows = flow::pause_items()
             .iter()
             .map(|i| match i {
                 PauseItem::Resume => ui::Row::plain(s.menu_resume),
@@ -34,6 +34,9 @@ impl App {
                 PauseItem::Settings => ui::Row::go(s.menu_settings),
                 PauseItem::Restart => ui::Row::plain(s.menu_restart),
                 PauseItem::ToTitle => ui::Row::plain(s.menu_to_title),
+                // 개발 화면 줄이라 번역하지 않는다(0013).
+                #[cfg(feature = "dev")]
+                PauseItem::Dev => ui::Row::go("DEV"),
             })
             .collect();
         Menu::new(s.pause_title, 260.0, rows)
@@ -42,12 +45,12 @@ impl App {
     pub(super) fn pause_act(&mut self, out: Out) {
         match out {
             Out::Step(i, d) => {
-                if flow::PAUSE_ITEMS.get(i) == Some(&PauseItem::Weapon) {
+                if flow::pause_items().get(i) == Some(&PauseItem::Weapon) {
                     self.next_weapon(d);
                 }
             }
             Out::Pick(i) => {
-                let (next, rebuild) = flow::choose_pause(flow::PAUSE_ITEMS[i]);
+                let (next, rebuild) = flow::choose_pause(flow::pause_items()[i]);
                 if rebuild {
                     self.restart();
                 }

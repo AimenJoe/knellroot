@@ -48,7 +48,7 @@ impl App {
     pub(super) fn tick_sandbox(&mut self, a: Actions) {
         if a.pause {
             self.go(Go::Root(Scene::Title));
-            self.go(Go::Open(Scene::Dev));
+            self.go(Go::Open(Scene::Dev { tab: 0 }));
             return;
         }
         if let Some(n) = a.scenario {

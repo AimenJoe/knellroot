@@ -70,6 +70,9 @@ pub struct App {
     run: StageRun,
     #[cfg(feature = "dev")]
     sc: Scenario,
+    /// 개발 메뉴에서 시작한 스테이지 판(0075): 기록 슬롯에 쓰지 않는다. 슬롯을 고르면(`enter_slot`) 풀린다.
+    #[cfg(feature = "dev")]
+    dev_run: bool,
     ending: f32,
     acc: f32,
     /// 개발 줄(F3).
@@ -166,6 +169,8 @@ impl App {
             t,
             #[cfg(feature = "dev")]
             sc: Scenario::Boss,
+            #[cfg(feature = "dev")]
+            dev_run: false,
             ending: 0.0,
             acc: 0.0,
             dev_overlay: false,
@@ -396,7 +401,7 @@ impl App {
             | Scene::Core
             | Scene::Result { .. }) => self.tick_menu(&a, s),
             #[cfg(feature = "dev")]
-            s @ (Scene::Dev | Scene::Lab) => self.tick_menu(&a, s),
+            s @ (Scene::Dev { .. } | Scene::Lab) => self.tick_menu(&a, s),
             #[cfg(feature = "dev")]
             Scene::LabGroup { g } => self.tick_lab_group(&a, g as usize),
             Scene::Controls => self.tick_controls(a),
@@ -438,7 +443,7 @@ impl App {
             Scene::Result { won } => Some(self.result_menu(won)),
             Scene::Slots { load } => Some(self.slots_menu(load)),
             #[cfg(feature = "dev")]
-            Scene::Dev => Some(self.dev_menu()),
+            Scene::Dev { tab } => Some(self.dev_menu(tab as usize)),
             #[cfg(feature = "dev")]
             Scene::Lab => Some(self.lab_menu()),
             #[cfg(feature = "dev")]
@@ -466,7 +471,7 @@ impl App {
             // 슬롯 창은 제 틱(`tick_slots`)이 고름을 한다(빈 줄 건너뛰기·두 번째 누름).
             Scene::Slots { .. } => {}
             #[cfg(feature = "dev")]
-            Scene::Dev => self.dev_act(out),
+            Scene::Dev { tab } => self.dev_act(tab as usize, out),
             #[cfg(feature = "dev")]
             Scene::Lab => self.lab_act(out),
             #[cfg(feature = "dev")]

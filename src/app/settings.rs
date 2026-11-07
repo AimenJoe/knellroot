@@ -91,80 +91,197 @@ impl App {
         }
     }
 
-    /// 개발 메뉴(0052): 개발판에만, 영어 그대로(0013).
+    /// 개발 메뉴(0052 → 0075, nail 0269의 묶음 탭 꼴): 묶음 줄(◀ 묶음 ▶) · 무기 · 그 묶음에서 시작할 것들 · 돌아가기.
+    /// 아래 설명 칸에 고른 줄의 설명. 개발판에만, 영어 그대로(0013).
     #[cfg(feature = "dev")]
-    pub(super) fn dev_menu(&self) -> Menu {
-        let rows = dev_items()
+    pub(super) fn dev_menu(&self, tab: usize) -> Menu {
+        let tab = tab.min(DEV_TABS.len() - 1);
+        let items = dev_items(tab);
+        let rows = items
             .iter()
             .map(|d| match d {
-                DevItem::Gate => ui::Row::plain("start at the sanctum gate (boss)"),
-                DevItem::Scenario => ui::Row::step("PoC", scenario::entry(self.sc).name),
+                DevItem::Tab => ui::Row::step("group", DEV_TABS[tab].0),
                 DevItem::Weapon => ui::Row::step("weapon", format!("{:?}", self.weapon)),
+                DevItem::Start(e) => ui::Row::plain(e.name()),
                 DevItem::Back => ui::Row::plain("back"),
             })
             .collect();
-        let note = (dev_items().get(self.cursor) == Some(&DevItem::Scenario))
-            .then(|| scenario::entry(self.sc).checks.to_string());
+        let note = match items.get(self.cursor) {
+            Some(DevItem::Start(e)) => Some(e.note()),
+            Some(DevItem::Tab) => Some(
+                "left/right: group (combat · stage · perf & tools). Dev runs never write the save slot."
+                    .to_string(),
+            ),
+            _ => None,
+        };
         Menu {
             note_room: true,
             note,
-            ..Menu::new("DEV", 340.0, rows)
+            ..Menu::new("DEV", 360.0, rows)
         }
     }
 
     #[cfg(feature = "dev")]
-    pub(super) fn dev_act(&mut self, out: Out) {
-        let items = dev_items();
+    pub(super) fn dev_act(&mut self, tab: usize, out: Out) {
+        let items = dev_items(tab);
+        let n = DEV_TABS.len();
+        let to_tab = |app: &mut App, step: i32| {
+            let t = (tab as i32 + step).rem_euclid(n as i32) as u8;
+            // 묶음은 장면 칸의 상태(0066): 지금 칸을 새 묶음으로 바꿔 연다(커서는 묶음 줄).
+            app.go(Go::Back);
+            app.go(Go::Open(Scene::Dev { tab: t }));
+        };
         match out {
             Out::Step(i, step) => match items.get(i) {
-                Some(DevItem::Scenario) => {
-                    self.sc = if step > 0 {
-                        scenario::next(self.sc)
-                    } else {
-                        (0..scenario::LIST.len() - 1).fold(self.sc, |s, _| scenario::next(s))
-                    }
-                }
+                Some(DevItem::Tab) => to_tab(self, step),
                 Some(DevItem::Weapon) => self.next_weapon(step),
                 _ => {}
             },
             Out::Pick(i) => match items[i] {
-                DevItem::Gate => {
-                    self.restart();
-                    self.run.dev_skip_to_gate(&mut self.world);
-                    self.cam = Camera::new(self.world.player.pos, &self.t);
-                    self.go(Go::Root(Scene::Play));
-                }
-                DevItem::Scenario => {
-                    let sc = self.sc;
-                    self.world = scenario::build(sc);
-                    self.world.set_weapon(self.weapon);
-                    self.cam = Camera::new(self.world.player.pos, &self.t);
-                    self.go(Go::Root(Scene::Sandbox));
-                }
+                DevItem::Tab => to_tab(self, 1),
                 DevItem::Weapon => self.next_weapon(1),
+                DevItem::Start(e) => self.dev_start(e),
                 DevItem::Back => self.go(Go::Back),
             },
         }
     }
+
+    /// 개발 메뉴에서 시작(0075): 스테이지 판은 기록 슬롯에 쓰지 않는다(`dev_run` — 슬롯을 고르면 풀린다).
+    #[cfg(feature = "dev")]
+    fn dev_start(&mut self, e: DevStart) {
+        match e {
+            DevStart::Entrance | DevStart::Gate => {
+                self.dev_run = true;
+                self.restart();
+                if e == DevStart::Gate {
+                    self.run.dev_skip_to_gate(&mut self.world);
+                }
+                self.cam = Camera::new(self.world.player.pos, &self.t);
+                self.go(Go::Root(Scene::Play));
+            }
+            DevStart::Scenario(sc) => {
+                self.sc = sc;
+                self.world = scenario::build(sc);
+                self.world.set_weapon(self.weapon);
+                self.cam = Camera::new(self.world.player.pos, &self.t);
+                self.go(Go::Root(Scene::Sandbox));
+            }
+            DevStart::Lab => self.go(Go::Open(Scene::Lab)),
+        }
+    }
 }
 
-/// 개발 메뉴 줄(0052).
+/// 개발 메뉴 묶음(0075, nail 0269 `scenario::Cat`): 이름 · 시작할 것들. 첫 묶음 첫 줄 = 보스 아레나(시험 스크립트가 "아래로 둘 · 확인"으로 간다).
+#[cfg(feature = "dev")]
+pub(super) const DEV_TABS: [(&str, &[DevStart]); 3] = [
+    (
+        "combat",
+        &[
+            DevStart::Scenario(Scenario::Boss),
+            DevStart::Scenario(Scenario::Pillars),
+            DevStart::Scenario(Scenario::Duel),
+            DevStart::Scenario(Scenario::Horde),
+            DevStart::Scenario(Scenario::Tray),
+        ],
+    ),
+    ("stage", &[DevStart::Entrance, DevStart::Gate]),
+    (
+        "perf & tools",
+        &[
+            DevStart::Scenario(Scenario::Empty),
+            DevStart::Scenario(Scenario::Stress40),
+            DevStart::Scenario(Scenario::Stress80),
+            DevStart::Lab,
+        ],
+    ),
+];
+
+/// 개발 메뉴에서 시작할 것 하나.
+#[cfg(feature = "dev")]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum DevStart {
+    /// 첫 스테이지 처음부터(입구) — 기록은 쓰지 않는다.
+    Entrance,
+    /// 문 앞(문지기 결투) — 기록은 쓰지 않는다.
+    Gate,
+    /// PoC·개발 아레나(`scenario::LIST`).
+    Scenario(Scenario),
+    /// 연구실(설정 안의 것과 같은 창).
+    Lab,
+}
+
+#[cfg(feature = "dev")]
+impl DevStart {
+    fn name(self) -> &'static str {
+        match self {
+            DevStart::Entrance => "stage 1 from the entrance",
+            DevStart::Gate => "stage 1 at the sanctum gate (boss)",
+            DevStart::Scenario(sc) => scenario::entry(sc).name,
+            DevStart::Lab => "lab (tuning)",
+        }
+    }
+
+    fn note(self) -> String {
+        match self {
+            DevStart::Entrance | DevStart::Gate => {
+                "the real stage with this slot's charms and embers; nothing is saved".to_string()
+            }
+            DevStart::Scenario(sc) => {
+                let n = scenario::LIST
+                    .iter()
+                    .position(|e| e.scenario == sc)
+                    .unwrap_or(0)
+                    + 1;
+                format!("key {n} in the arena · {}", scenario::entry(sc).checks)
+            }
+            DevStart::Lab => "change tuning live; same as settings > lab".to_string(),
+        }
+    }
+}
+
+/// 개발 메뉴 줄(0052 → 0075).
 #[cfg(feature = "dev")]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum DevItem {
-    Gate,
+    /// 묶음(좌우·확인으로 다음 묶음).
+    Tab,
     Weapon,
-    /// PoC 시나리오(좌우로 고르고 확인으로 들어간다).
-    Scenario,
+    Start(DevStart),
     Back,
 }
 
 #[cfg(feature = "dev")]
-pub(super) fn dev_items() -> Vec<DevItem> {
-    vec![
-        DevItem::Gate,
-        DevItem::Weapon,
-        DevItem::Scenario,
-        DevItem::Back,
-    ]
+pub(super) fn dev_items(tab: usize) -> Vec<DevItem> {
+    let mut v = vec![DevItem::Tab, DevItem::Weapon];
+    v.extend(
+        DEV_TABS[tab.min(DEV_TABS.len() - 1)]
+            .1
+            .iter()
+            .map(|&e| DevItem::Start(e)),
+    );
+    v.push(DevItem::Back);
+    v
+}
+
+#[cfg(all(test, feature = "dev"))]
+mod tests {
+    use super::*;
+
+    /// 0075: 시나리오는 모두 한 묶음에 꼭 한 번 — 새 시나리오를 표에 더하고 묶음에 안 넣으면 메뉴에서 못 고른다.
+    #[test]
+    fn every_scenario_sits_in_exactly_one_dev_group() {
+        for e in scenario::LIST.iter() {
+            let n = DEV_TABS
+                .iter()
+                .flat_map(|(_, v)| v.iter())
+                .filter(|&&d| d == DevStart::Scenario(e.scenario))
+                .count();
+            assert_eq!(n, 1, "{}", e.name);
+        }
+        // 시험 스크립트(shot·mouse·leak): 첫 묶음 · 아래로 둘 = 보스 아레나.
+        assert_eq!(
+            dev_items(0)[2],
+            DevItem::Start(DevStart::Scenario(Scenario::Boss))
+        );
+    }
 }
