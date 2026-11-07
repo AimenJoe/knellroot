@@ -19,9 +19,10 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | S4 | 분위기 | 어둡고 조용한 성소 + 호박색 불빛. 캐릭터가 바닥에 묻히지 않는다 |
 | P5 | 실기 성능(PoC에서 넘어옴) | 뜰 셋째 물결에서 데스크톱 Chrome 60, Android Chrome 30 이상(개발 줄 F3) |
 
-## 구현 상태(2026-11-07 — 첫 판 2026-11-04, v0.3.0 배포 2026-11-06, v0.3.4·v0.3.5 배포 2026-11-07·0100까지, v0.4.0 T0 0103·G1 0104)
+## 구현 상태(2026-11-07 — 첫 판 2026-11-04, v0.3.0 배포 2026-11-06, v0.3.4·v0.3.5 배포 2026-11-07·0100까지, v0.4.0 T0 0103·G1 0104·G3 0105)
 | 항목 | 위치 | 비고 |
 |---|---|---|
+| 핵 점수·숨은 물건·옛 기록 옮기기(0105, v0.4.0 G3) | `stage::Find`·`take_picked`·`first_core`, `progression::CORE_CAP`·`find_mods`, `save::migrate_v04`, 기록 `finds`·`core.warden`·`migrated.v04` | 핵 고르기 화면 없음 — 이길 때마다 핵 1점(셋까지, 나무는 G2), 처음 이긴 핵은 스스로 다가옴. 숨은 물건 셋(뜰 동쪽 높은 단 등잔·입구 구석 한 모금·성소 한 모금). 옛 기록은 잃는 것 없이 생명·숨은 물건·핵 점수로 |
 | 잔불 레벨·쉼터 화로(0104, v0.4.0 G1) | `progression.rs`, `stats.rs`(`stamina_max`·`stamina_regen`·`poise`·`heavy_dmg`·`light_dmg`·`lines_from`), `app/hearth.rs`, 기록 `lv.*`, `tools/test/hearth.js` | 생명·기력·힘 각 5단(30·45·65·90·120), 쉬면 화로(레벨·가게·떠나기), 레벨 창 미리보기 `지금 → 다음 ▲`, 올리기는 묻는 창, HUD 기력 막대가 길어짐, 체력 상한 12. 고쳐 쥐는 동작은 아직 |
 | 플레이어 틱 나누기(0103, v0.4.0 T0) | `world/player_tick.rs` `Ctx`·`tick_*`·`try_dodge`·`try_parry` | 925줄 한 함수를 단계·상태마다 메서드로, 동작 그대로(흔적 비교 120/120). 나무 칸은 그 동사의 메서드에 한 줄씩 |
 | 소개 페이지(0093) | `site/`(한국어·`en/`), `.github/workflows/pages.yml`, `tools/site/subset_font.py` | 개발 중이라 한 장만: 첫 화면·두 시점·해 보기·만드는 곳, 스크립트 없음. 주소 knellroot.beardworks.io(도메인·Pages 켜기는 사람이 할 일) |
@@ -111,6 +112,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 
 ## 사람이 할 일
 **0093 소개 페이지**: `release/v0.3`을 main에 넣은 뒤 ① 레포 Settings → Pages → Source = **GitHub Actions**(켜기 전 첫 실행은 실패, 켠 뒤 Actions의 pages를 다시 실행) ② DNS(Cloudflare)에 `knellroot` CNAME → `aimenjoe.github.io` ③ Settings → Pages → Custom domain = `knellroot.beardworks.io`, Enforce HTTPS. 페이지 글을 고치면 `python3 tools/site/subset_font.py <GowunBatang-Bold.ttf>`.
+
+**0105(v0.4.0 G3, 개발판)**: 숨은 물건 셋을 글 안내 없이 찾을 수 있는지(입구 남동 구석·뜰 동쪽 높은 단 무너진 벽 뒤·성소 안 북동) — 너무 숨었으면 테를 밝게. 처음 이길 때 핵이 다가오는 것이 "몸이 반응한다"로 읽히는지, 알림 "핵 +1 — 화로에서 나무를 연다"(나무는 G2에서 — 지금은 쌓이기만). 옛 v0.3 기록으로 이어하면 체력·등잔·한 모금이 그대로인지(L5).
 
 **0104(v0.4.0 G1, 개발판)**: 쉬면 화로 → 레벨. 판정 L1(잔불이 끝까지 쓸 데가 있나 — 줄당 350·셋 1,050이 한 판 70~100에 지루하지 않은지)·L2(한 단이 싸움에서 느껴지나 — 특히 기력: 막대가 길어지고 3·5단에 차는 빠르기). 힘 5단 평타 +1이 너무 세지 않은지(피해 1~3이라 두 배 가까이). 고쳐 쥐는 동작(`regrip`, `tools/art/blender/wanderer.py`)은 아직 — 지금은 소리 + 알림만이라 밋밋하면 말해 달라.
 

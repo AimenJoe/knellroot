@@ -941,6 +941,23 @@ impl Renderer {
                 );
             }
         }
+        // 숨은 물건(0105): 흔적 자리의 작은 빛 — 등잔 +1은 금빛, 한 모금 +1은 민트(0037 생명 색). 살짝 떠서 숨 쉬고 발밑에 옅은 테.
+        // 생김새는 성소의 종과 닮지 않게(lore — 울리는 종은 보이지 않는다): 둥근 덩어리 하나.
+        for (i, (p, kind, _)) in run.finds.iter().enumerate() {
+            if run.found.get(i).copied().unwrap_or(true) {
+                continue;
+            }
+            let col = match kind {
+                crate::stage::Find::Lamp => Color::new(0.95, 0.81, 0.49, 1.0),
+                crate::stage::Find::Sip => Color::new(0.65, 0.86, 0.78, 1.0),
+            };
+            let k = 0.5 + 0.5 * (w.time * 2.2 + i as f32 * 1.7).sin();
+            let c = *p + Vec3::Y * (0.45 + 0.08 * k);
+            fl.shadow(*p, 0.25);
+            shaded_box(c, Vec3::splat(0.22), col, 1.0);
+            shaded_box(c, Vec3::splat(0.34), with_a(col, 0.25 + 0.2 * k), 1.0);
+            fl.ring(*p, 0.6 + 0.15 * k, 0.0, 360.0, with_a(col, 0.25 + 0.25 * k));
+        }
         // 쉼터(0032): 발밑 테 — 아직 안 쉰 곳은 옅게, 다시 일어설 곳은 금빛으로 숨 쉬듯. 쉬는 순간 빛이 퍼진다.
         for (i, r) in run.rests.iter().enumerate() {
             let home = run.rest_at.is_some_and(|(j, _)| j == i);

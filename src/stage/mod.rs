@@ -392,7 +392,43 @@ pub struct StageDef {
     pub chest_charms: &'static [crate::charms::Id],
     /// 문지기를 처음 이겼을 때 주는 장신구.
     pub boss_charm: Option<crate::charms::Id>,
+    /// 숨은 물건 기록 이름의 앞(0105): `<앞>.<종류>.<그 종류의 몇째>` — 스테이지가 늘어도 섞이지 않게.
+    pub find_prefix: &'static str,
 }
+
+/// 숨은 물건(0105, v0.4.0 G3 — 0102 6절): 핵 고르기의 등잔·한 모금이 탐험의 보상으로. 지도 글자 `F` 등잔 +1회 · `H` 한 모금 +1.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Find {
+    Lamp,
+    Sip,
+}
+
+impl Find {
+    pub const ALL: [Find; 2] = [Find::Lamp, Find::Sip];
+
+    pub fn glyph(self) -> char {
+        match self {
+            Find::Lamp => 'F',
+            Find::Sip => 'H',
+        }
+    }
+
+    /// 기록 이름 가운데 칸(바꾸지 않는다).
+    pub fn key(self) -> &'static str {
+        match self {
+            Find::Lamp => "lamp",
+            Find::Sip => "sip",
+        }
+    }
+}
+
+/// 숨은 물건 하나의 기록 이름: `sanctuary.lamp.0`.
+pub fn find_id(prefix: &str, kind: Find, nth: usize) -> String {
+    format!("{prefix}.{}.{nth}", kind.key())
+}
+
+/// 숨은 물건 곁(m) — 상자와 같다.
+pub const FIND_REACH: f32 = 1.8;
 
 /// 상자 곁(m)과, 든 장신구를 이미 가졌을 때 대신 주는 잔불.
 pub const CHEST_REACH: f32 = 1.8;
@@ -438,6 +474,9 @@ pub const WAKE_TIME: f32 = 2.0;
 const WAVE_LEFT: usize = 1;
 /// 핵을 거두는 거리(m).
 const CORE_REACH: f32 = 1.4;
+/// 처음 이긴 문지기의 핵(lore CANON — 0101·0105): 이 안에 들어서면 핵이 스스로 방랑자 쪽으로 다가온다(m, m/s).
+const CORE_DRAW: f32 = 4.0;
+const CORE_DRAW_SPEED: f32 = 2.2;
 /// 이름 카드가 떠 있는 시간(초).
 pub const CARD_TIME: f32 = 3.0;
 
@@ -477,6 +516,13 @@ pub struct StageRun {
     /// 이번 틱에 쉬었다(0064 M4 — 앱이 화로 가게를 연다), 잔불로 살 것이 있다(앱이 정한다 — 쉼터가 빛난다).
     rested: bool,
     pub shop_ready: bool,
+    /// 숨은 물건(0105): 자리·종류·기록 이름, 주웠나(기록에서), 곁의 것, 이번 틱에 주운 것(앱이 가져간다).
+    pub finds: Vec<(Vec3, Find, String)>,
+    pub found: Vec<bool>,
+    pub near_find: Option<usize>,
+    picked: Option<usize>,
+    /// 이 문지기를 처음 이기는 판인가(앱이 기록에서 — 핵이 스스로 다가온다, lore CANON 0101).
+    pub first_core: bool,
 }
 
 /// 시작 이야기 길이(초).
@@ -524,10 +570,22 @@ impl StageRun {
             opened: None,
             rested: false,
             shop_ready: false,
+            finds: Vec::new(),
+            found: Vec::new(),
+            near_find: None,
+            picked: None,
+            first_core: false,
         };
         run.rests = run.level.marks_of('R').collect();
         run.chests = run.level.marks_of('C').collect();
         run.chest_open = vec![false; run.chests.len()];
+        for kind in Find::ALL {
+            let at: Vec<Vec3> = run.level.marks_of(kind.glyph()).collect();
+            for (n, p) in at.into_iter().enumerate() {
+                run.finds.push((p, kind, find_id(def.find_prefix, kind, n)));
+            }
+        }
+        run.found = vec![false; run.finds.len()];
         for c in &run.chests {
             w.obstacles.push(crate::world::Aabb {
                 min: *c - vec3(CHEST_HALF.x, 0.0, CHEST_HALF.z),
@@ -624,9 +682,18 @@ impl StageRun {
         self.near_chest = self.chests.iter().enumerate().position(|(i, c)| {
             !self.chest_open[i] && vec2(c.x - pp.x, c.z - pp.z).length() <= CHEST_REACH
         });
-        // 점프 버튼이 다음 틱부터 쉬기·열기가 되는 자리(0048): 곁이고(쉬기는 안전할 때만) — 아니면 그대로 점프.
-        w.interact_here = (self.near_rest.is_some() && self.rest_safe) || self.near_chest.is_some();
-        if let (Some(i), true) = (self.near_chest, w.interact) {
+        // 숨은 물건(0105): 상자와 같은 꼴 — 곁이면 점프 버튼이 줍기.
+        self.near_find = self.finds.iter().enumerate().position(|(i, (p, _, _))| {
+            !self.found[i] && vec2(p.x - pp.x, p.z - pp.z).length() <= FIND_REACH
+        });
+        // 점프 버튼이 다음 틱부터 쉬기·열기·줍기가 되는 자리(0048): 곁이고(쉬기는 안전할 때만) — 아니면 그대로 점프.
+        w.interact_here = (self.near_rest.is_some() && self.rest_safe)
+            || self.near_chest.is_some()
+            || self.near_find.is_some();
+        if let (Some(i), true) = (self.near_find, w.interact) {
+            self.found[i] = true;
+            self.picked = Some(i);
+        } else if let (Some(i), true) = (self.near_chest, w.interact) {
             self.chest_open[i] = true;
             self.opened = Some(i);
         } else if let (Some(i), true) = (self.near_rest, w.interact) {
@@ -705,6 +772,14 @@ impl StageRun {
                 }
             }
             Phase::Core => {
+                // 처음 이긴 문지기의 핵은 손을 뻗으면 스스로 다가온다(lore CANON, 0101·0105) — 그다음부터는 평소대로 거둔다.
+                if let (Some(c), true) = (self.core.as_mut(), self.first_core) {
+                    let to = vec3(w.player.pos.x - c.x, 0.0, w.player.pos.z - c.z);
+                    let d = to.length();
+                    if d <= CORE_DRAW && d > 1e-3 {
+                        *c += to / d * (CORE_DRAW_SPEED * dt).min(d);
+                    }
+                }
                 if let Some(c) = self.core {
                     let d = vec2(c.x - w.player.pos.x, c.z - w.player.pos.z).length();
                     if d <= CORE_REACH {
@@ -791,6 +866,21 @@ impl StageRun {
     /// 이번 틱에 연 상자(0064 M3) — 앱이 한 번 가져가 장신구·잔불을 준다.
     pub fn take_opened(&mut self) -> Option<usize> {
         self.opened.take()
+    }
+
+    /// 이번 틱에 주운 숨은 물건(0105): (종류, 기록 이름) — 앱이 한 번 가져가 기록·능력치에.
+    pub fn take_picked(&mut self) -> Option<(Find, String)> {
+        let i = self.picked.take()?;
+        self.finds.get(i).map(|(_, k, id)| (*k, id.clone()))
+    }
+
+    /// 기록의 주운 숨은 물건들(판을 넘어 없다).
+    pub fn set_found(&mut self, ids: &[String]) {
+        for (i, (_, _, id)) in self.finds.iter().enumerate() {
+            if ids.contains(id) {
+                self.found[i] = true;
+            }
+        }
     }
 
     /// 기록의 연 상자들(판을 넘어 비어 있다).
@@ -1133,6 +1223,67 @@ mod tests {
         let (mut run, _) = StageRun::start(&sanctuary::DEF);
         run.set_opened(&[0, 9]);
         assert_eq!(run.chest_open, vec![true, false]);
+    }
+
+    /// 0105: 숨은 물건 셋(등잔 하나 · 한 모금 둘)은 걸어서 닿는 바닥에 있고, 점프 버튼으로 한 번 줍고, 기록의 것은 새 판에 없다.
+    #[test]
+    fn hidden_finds_are_reachable_picked_once_and_gone_from_the_record() {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        let kinds: Vec<Find> = run.finds.iter().map(|f| f.1).collect();
+        assert_eq!(kinds, vec![Find::Lamp, Find::Sip, Find::Sip]);
+        let ids: Vec<&str> = run.finds.iter().map(|f| f.2.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["sanctuary.lamp.0", "sanctuary.sip.0", "sanctuary.sip.1"]
+        );
+        for (p, _, id) in &run.finds {
+            // `Level::at`의 거꾸로.
+            let cell = (
+                (p.x / CELL + run.level.w as f32 * 0.5 - 0.5).round() as usize,
+                (p.z / CELL + run.level.h as f32 * 0.5 - 0.5).round() as usize,
+            );
+            assert_eq!(run.level.at(cell.0, cell.1), vec3(p.x, 0.0, p.z));
+            assert!(run.level.walkable(cell.0, cell.1), "{id} on a floor");
+        }
+        run.intro = 0.0;
+        let (p, kind, id) = run.finds[1].clone();
+        w.player.pos = p + vec3(0.0, 0.0, 1.0);
+        w.player.prev = w.player.pos;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.near_find, Some(1));
+        assert!(w.interact_here, "the jump button picks it up");
+        w.interact = true;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.take_picked(), Some((kind, id.clone())));
+        assert_eq!(run.take_picked(), None, "taken once");
+        w.interact = true;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.take_picked(), None, "gone after picking");
+        let (mut run, _) = StageRun::start(&sanctuary::DEF);
+        run.set_found(&[id, "elsewhere.sip.0".to_string()]);
+        assert_eq!(run.found, vec![false, true, false]);
+    }
+
+    /// 0105(lore CANON 0101): 처음 이긴 문지기의 핵은 다가오면 스스로 방랑자 쪽으로 온다. 그다음 판부터는 그 자리에 있다.
+    #[test]
+    fn the_first_core_drifts_to_the_wanderer_later_ones_wait() {
+        for first in [true, false] {
+            let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+            run.intro = 0.0;
+            run.first_core = first;
+            let c0 = w.player.pos + vec3(3.0, 0.0, 0.0);
+            run.core = Some(c0);
+            run.phase = Phase::Core;
+            for _ in 0..30 {
+                run.tick(&mut w, 1.0 / 60.0);
+            }
+            let moved = run.core.map_or(0.0, |c| c.distance(c0));
+            if first {
+                assert!(moved > 0.5, "the first core comes to you ({moved})");
+            } else {
+                assert!(moved < 1e-4, "later cores wait");
+            }
+        }
     }
 
     #[test]

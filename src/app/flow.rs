@@ -22,8 +22,6 @@ pub enum Scene {
     EquipPick {
         slot: u8,
     },
-    /// 핵 고르기(0064 M4): 문지기를 이긴 끝 장면 뒤, 결과 전. 하나를 골라야 넘어간다.
-    Core,
     /// 쉼터 화로(0104, v0.4.0 G1 — 0102 7): 쉬면 열린다. 줄 = 레벨 · 가게 · 떠나기. 뒤로 = 싸움.
     Hearth,
     /// 레벨(0104): 생명·기력·힘을 잔불로 한 단씩. 화로에서 연다 — 닫으면 화로.
@@ -66,7 +64,6 @@ impl Scene {
                 | Scene::Pause
                 | Scene::Equip
                 | Scene::EquipPick { .. }
-                | Scene::Core
                 | Scene::Hearth
                 | Scene::Level
                 | Scene::Shop
@@ -104,7 +101,6 @@ impl Scene {
             Scene::Hearth
             | Scene::Level
             | Scene::Shop
-            | Scene::Core
             | Scene::Result { .. }
             | Scene::Controls
             | Scene::Slots { .. } => Layer::Window { hud: false },
@@ -354,13 +350,9 @@ pub fn after_stage(out: StageOut) -> Option<Scene> {
 /// 끝 장면을 이만큼(초) 보여 준 뒤 결과 창.
 pub const ENDING_TIME: f32 = 1.6;
 
-/// 끝 장면 뒤(0064 M4): 이겼고 고를 성장이 남았으면 핵 고르기, 아니면 결과.
-pub fn after_ending(won: bool, can_grow: bool) -> Scene {
-    if won && can_grow {
-        Scene::Core
-    } else {
-        Scene::Result { won }
-    }
+/// 끝 장면 뒤: 결과(핵 고르기는 0105에서 걷었다 — 핵은 기술 나무 점수, 알림만).
+pub fn after_ending(won: bool) -> Scene {
+    Scene::Result { won }
 }
 
 /// 뒤로(B·Esc): 연 창은 닫는다(스택에서 꺼내 연 곳으로). 골라야 끝나는 창(핵 고르기·결과)·타이틀·싸움은 그대로(0066).
@@ -378,9 +370,7 @@ pub fn back(scene: Scene) -> Go {
         | Scene::Slots { .. } => Go::Back,
         #[cfg(feature = "dev")]
         Scene::Dev { .. } | Scene::Lab | Scene::LabGroup { .. } => Go::Back,
-        Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Core | Scene::Result { .. } => {
-            Go::Stay
-        }
+        Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Result { .. } => Go::Stay,
         #[cfg(feature = "dev")]
         Scene::Sandbox => Go::Stay,
     }
@@ -442,7 +432,6 @@ mod tests {
         assert_eq!(pause(Scene::Title), Go::Stay);
         // 골라야 끝나는 창은 뒤로로 건너뛰지 않는다.
         assert_eq!(back(Scene::Result { won: false }), Go::Stay);
-        assert_eq!(back(Scene::Core), Go::Stay);
         assert_eq!(back(Scene::Title), Go::Stay);
     }
 
@@ -504,10 +493,9 @@ mod tests {
             choose_pause(PauseItem::Weapon),
             (Go::Open(Scene::Equip), false)
         );
-        // 0064 M4: 이기면 핵 고르기(고를 것이 남았을 때만), 지면 결과.
-        assert_eq!(after_ending(true, true), Scene::Core);
-        assert_eq!(after_ending(true, false), Scene::Result { won: true });
-        assert_eq!(after_ending(false, true), Scene::Result { won: false });
+        // 0105: 핵 고르기는 없다 — 이겨도 져도 결과.
+        assert_eq!(after_ending(true), Scene::Result { won: true });
+        assert_eq!(after_ending(false), Scene::Result { won: false });
         assert!(Scene::Controls.is_menu());
         assert!(Scene::Settings.is_menu());
         assert!(!settings_rows(false, true).contains(&SettingsRow::Fullscreen));
@@ -528,7 +516,6 @@ mod tests {
             Layer::Window { hud: false },
             "shows its own embers"
         );
-        assert_eq!(Scene::Core.layer(), Layer::Window { hud: false });
     }
 
     #[test]

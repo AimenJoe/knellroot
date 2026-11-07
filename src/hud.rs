@@ -317,10 +317,14 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
     }
 
     let Some(run) = run else { return };
-    // 상자 곁(0064 M3): "키 열기"(쉼터보다 먼저 — 같은 버튼이 상자를 연다).
-    if run.near_chest.is_some() && !under_menu {
+    // 숨은 물건·상자 곁(0105·0064 M3): "키 줍기"·"키 열기"(쉼터보다 먼저 — 같은 버튼이 줍고 연다, 줍기가 먼저 — 월드와 같은 순서).
+    if (run.near_find.is_some() || run.near_chest.is_some()) && !under_menu {
         let key = crate::input::prompt(crate::input::Act::Interact);
-        let verb = i18n::s().chest_verb;
+        let verb = if run.near_find.is_some() {
+            i18n::s().find_verb
+        } else {
+            i18n::s().chest_verb
+        };
         let text = if key.is_empty() {
             verb.to_string()
         } else {

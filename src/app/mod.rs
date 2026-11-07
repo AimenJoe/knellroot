@@ -224,6 +224,9 @@ impl App {
         self.world.embers = self.progress.embers;
         self.world.apply_stats(self.progress.stats(), true);
         self.run.set_opened(&self.progress.chests);
+        self.run.set_found(&self.progress.finds);
+        // 처음 이기는 판이면 핵이 스스로 다가온다(lore CANON, 0105).
+        self.run.first_core = self.progress.clears == 0;
         self.cam = Camera::new(self.world.player.pos, &self.t);
     }
 
@@ -414,7 +417,6 @@ impl App {
             | Scene::Hearth
             | Scene::Level
             | Scene::Shop
-            | Scene::Core
             | Scene::Result { .. }) => self.tick_menu(&a, s),
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.tick_dev(&a, tab as usize),
@@ -428,8 +430,7 @@ impl App {
                 self.ending += TICK_DT;
                 self.follow_camera();
                 if self.ending >= flow::ENDING_TIME {
-                    let grow = !self.progress.growth.options().is_empty();
-                    self.go(Go::Root(flow::after_ending(won, grow)));
+                    self.go(Go::Root(flow::after_ending(won)));
                 }
             }
             Scene::Play => self.tick_play(a),
@@ -459,7 +460,6 @@ impl App {
             Scene::Hearth => Some(self.hearth_menu()),
             Scene::Level => Some(self.level_menu()),
             Scene::Shop => Some(self.shop_menu()),
-            Scene::Core => Some(self.core_menu()),
             Scene::Result { won } => Some(self.result_menu(won)),
             Scene::Slots { load } => Some(self.slots_menu(load)),
             #[cfg(feature = "dev")]
@@ -486,7 +486,6 @@ impl App {
             Scene::Hearth => self.hearth_act(out),
             Scene::Level => self.level_act(out),
             Scene::Shop => self.shop_act(out),
-            Scene::Core => self.core_act(out),
             Scene::Result { .. } => self.result_act(out),
             // 슬롯 창은 제 틱(`tick_slots`)이 고름을 한다(빈 줄 건너뛰기·두 번째 누름).
             Scene::Slots { .. } => {}

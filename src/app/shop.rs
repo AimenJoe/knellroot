@@ -1,4 +1,4 @@
-//! 쉼터 화로(가게)·핵 고르기·결과(0064 M4, 0060) — 줄 표 + 고름(0066).
+//! 가게·결과(0064 M4, 0060) — 줄 표 + 고름(0066). 핵 고르기는 0105에서 걷었다.
 use super::menu::{Menu, Out};
 use super::*;
 
@@ -46,40 +46,6 @@ impl App {
             Some(_) => self.ask(flow::Ask::Buy(i)),
             None => self.go(Go::Back),
         }
-    }
-
-    /// 핵 고르기(0064 M4): 제목 + 한 줄 + 갈래(지금/상한). 골라야 끝나니 닫을 수 없다.
-    pub(super) fn core_menu(&self) -> Menu {
-        let s = s();
-        let g = self.progress.growth;
-        let rows = g
-            .options()
-            .iter()
-            .map(|&p| {
-                let name = match p {
-                    crate::growth::Pick::Hp => s.grow_hp,
-                    crate::growth::Pick::Flask => s.grow_flask,
-                    crate::growth::Pick::Heal => s.grow_heal,
-                };
-                let n = (g.count(p) + 1).to_string();
-                let m = crate::growth::cap(p).to_string();
-                ui::Row::value(name, fill(s.grow_count, &[&n, &m]))
-            })
-            .collect();
-        Menu {
-            closable: false,
-            sub: Some(s.core_sub.to_string()),
-            ..Menu::new(s.core_title, 300.0, rows)
-        }
-    }
-
-    pub(super) fn core_act(&mut self, out: Out) {
-        let Out::Pick(i) = out else { return };
-        let opts = self.progress.growth.options();
-        self.progress.growth.add(opts[i]);
-        self.world.apply_stats(self.progress.stats(), true);
-        self.persist();
-        self.go(Go::Root(Scene::Result { won: true }));
     }
 
     /// 결과(0060): 제목 + 한 줄(걸린 시간·쓰러뜨린 수 / 쓰러진 까닭) + 다시·타이틀로. 고르는 창이라 닫을 수 없다.

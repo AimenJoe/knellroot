@@ -31,6 +31,23 @@ pub const POISE_PER_RANK: f32 = 0.12;
 pub const HEAVY_RANK: u8 = 3;
 pub const LIGHT_RANK: u8 = 5;
 
+/// 문지기 핵 점수(0102 5절·0105): 이길 때마다 1점, 문지기마다 셋까지 — 기술 나무(G2) 점수의 한 몫(나머지는 종소리 조각).
+pub const CORE_CAP: u32 = 3;
+
+/// 숨은 물건(0105)의 보정: 등잔 +1회 · 한 모금 +1 — 기록 이름(`<스테이지>.<종류>.<n>`)의 가운데 칸으로 센다.
+pub fn find_mods(ids: &[String]) -> Mods {
+    let count = |k: &str| {
+        ids.iter()
+            .filter(|id| id.split('.').nth(1) == Some(k))
+            .count() as i32
+    };
+    Mods {
+        flask: count("lamp"),
+        heal: count("sip"),
+        ..Mods::default()
+    }
+}
+
 /// 올린 단(기록 `lv.*`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Level {
@@ -160,6 +177,19 @@ mod tests {
             assert_eq!(s.parry, 0.0);
             assert_eq!(s.atk_speed, 1.0);
         }
+    }
+
+    #[test]
+    fn finds_count_by_kind_whatever_the_stage() {
+        let ids = vec![
+            "sanctuary.lamp.0".to_string(),
+            "sanctuary.sip.0".to_string(),
+            "hamlet.sip.0".to_string(),
+        ];
+        let s = Stats::compute(&[find_mods(&ids)]);
+        assert_eq!(s.flask, Stats::default().flask + 1);
+        assert_eq!(s.heal, 2);
+        assert_eq!(find_mods(&[]).flask, 0);
     }
 
     #[test]
