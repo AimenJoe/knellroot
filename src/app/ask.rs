@@ -25,6 +25,7 @@ impl App {
                         self.buy(w);
                     }
                 }
+                flow::Ask::Level(l) => self.raise_level(l as usize),
                 flow::Ask::Restart | flow::Ask::ToTitle => {}
             }
         }
@@ -62,6 +63,7 @@ impl App {
                 };
                 (fill(s.ask_buy, &[name, &price.to_string()]), s.ask_buy_yes)
             }
+            flow::Ask::Level(l) => (self.ask_level_text(l as usize), s.ask_level_yes),
         };
         let u = self.ui.u(1.0);
         let w = 280.0;

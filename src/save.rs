@@ -35,6 +35,10 @@ pub mod key {
     pub const WEAPON: &str = "weapon";
     /// 쌓인 플레이 시간(초, 0081 — 이어하기 목록의 "시간"). 개발 판·메뉴·타이틀에 있는 동안은 세지 않는다.
     pub const PLAY: &str = "play";
+    /// 잔불 레벨(0104, v0.4.0 G1): 줄마다 올린 단 0~5.
+    pub const LV_LIFE: &str = "lv.life";
+    pub const LV_STAMINA: &str = "lv.stamina";
+    pub const LV_MIGHT: &str = "lv.might";
 }
 
 /// 글 기록(키 → 값). 모르는 키도 지키며 들고 다닌다.
@@ -106,6 +110,8 @@ pub struct Progress {
     pub worn: [Option<crate::charms::Id>; crate::charms::SLOTS],
     pub chests: Vec<u32>,
     pub growth: crate::growth::Growth,
+    /// 잔불 레벨(0104).
+    pub level: crate::progression::Level,
     /// 든 무기(없으면 옛 prefs 칸의 값을 쓴다).
     pub weapon: Option<crate::weapons::Id>,
     /// 쌓인 플레이 시간(초, 0081).
@@ -137,8 +143,19 @@ impl Progress {
             heal: small(key::GROW_HEAL),
             oil: r.num(key::SHOP_OIL) == Some(1),
         };
+        let rank = |k: &str| {
+            r.num(k)
+                .unwrap_or(0)
+                .min(crate::progression::MAX_RANK as u32) as u8
+        };
+        let level = crate::progression::Level {
+            life: rank(key::LV_LIFE),
+            stamina: rank(key::LV_STAMINA),
+            might: rank(key::LV_MIGHT),
+        };
         Progress {
             growth,
+            level,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
             play: r.num(key::PLAY).unwrap_or(0),
             embers: r.num(key::EMBERS).unwrap_or(0),
@@ -165,6 +182,9 @@ impl Progress {
         r.set(key::GROW_HEAL, self.growth.heal);
         r.set(key::SHOP_OIL, self.growth.oil as u8);
         r.set(key::PLAY, self.play);
+        r.set(key::LV_LIFE, self.level.life);
+        r.set(key::LV_STAMINA, self.level.stamina);
+        r.set(key::LV_MIGHT, self.level.might);
         match self.weapon {
             Some(w) => r.set(key::WEAPON, w.key()),
             None => r.remove(key::WEAPON),
@@ -190,12 +210,19 @@ impl Progress {
             || self.clears > 0
             || !self.owned.is_empty()
             || self.growth != crate::growth::Growth::default()
+            || self.level != crate::progression::Level::default()
     }
 
-    /// 낀 장신구 + 성장으로 합친 능력치.
+    /// 장신구를 뺀 능력치(성장만) — 장비 창이 "장신구가 바꾸는 줄"을 고를 때의 기본값(0104).
+    pub fn stats_without_charms(&self) -> crate::stats::Stats {
+        crate::stats::Stats::compute(&[self.growth.mods(), self.level.mods()])
+    }
+
+    /// 낀 장신구 + 성장(핵 고르기·레벨)으로 합친 능력치.
     pub fn stats(&self) -> crate::stats::Stats {
         let mut mods = crate::charms::mods(&self.worn);
         mods.push(self.growth.mods());
+        mods.push(self.level.mods());
         crate::stats::Stats::compute(&mods)
     }
 }
@@ -370,6 +397,33 @@ mod tests {
         let back = Progress::from_record(r);
         assert_eq!(back.run, None);
         assert!(back.has_any(), "a clear stays");
+    }
+
+    /// 0104: 레벨은 `lv.*` 셋으로 남고, 고친 기록의 큰 수는 5단에서 멈춘다. 레벨만 있어도 기록이 있는 슬롯.
+    #[test]
+    fn levels_survive_the_record_and_clamp_to_five() {
+        let mut p = Progress::default();
+        p.level = crate::progression::Level {
+            life: 2,
+            stamina: 5,
+            might: 1,
+        };
+        assert!(p.has_any());
+        let r = p.to_record();
+        assert_eq!(
+            (
+                r.num(key::LV_LIFE),
+                r.num(key::LV_STAMINA),
+                r.num(key::LV_MIGHT)
+            ),
+            (Some(2), Some(5), Some(1))
+        );
+        let back = Progress::from_record(Record::parse(&r.to_text()));
+        assert_eq!(back.level, p.level);
+        assert_eq!(back.stats(), p.stats());
+        let mut odd = r.clone();
+        odd.set(key::LV_MIGHT, 99);
+        assert_eq!(Progress::from_record(odd).level.might, 5);
     }
 
     #[test]

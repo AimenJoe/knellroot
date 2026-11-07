@@ -9,6 +9,7 @@ mod controls_screen;
 mod dev;
 mod equip;
 pub mod flow;
+mod hearth;
 #[cfg(feature = "dev")]
 mod lab_screen;
 mod menu;
@@ -410,6 +411,8 @@ impl App {
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
             s @ (Scene::Pause
             | Scene::Settings
+            | Scene::Hearth
+            | Scene::Level
             | Scene::Shop
             | Scene::Core
             | Scene::Result { .. }) => self.tick_menu(&a, s),
@@ -453,6 +456,8 @@ impl App {
         match scene {
             Scene::Pause => Some(self.pause_menu()),
             Scene::Settings => Some(self.settings_menu()),
+            Scene::Hearth => Some(self.hearth_menu()),
+            Scene::Level => Some(self.level_menu()),
             Scene::Shop => Some(self.shop_menu()),
             Scene::Core => Some(self.core_menu()),
             Scene::Result { won } => Some(self.result_menu(won)),
@@ -478,6 +483,8 @@ impl App {
         match scene {
             Scene::Pause => self.pause_act(out),
             Scene::Settings => self.settings_act(out),
+            Scene::Hearth => self.hearth_act(out),
+            Scene::Level => self.level_act(out),
             Scene::Shop => self.shop_act(out),
             Scene::Core => self.core_act(out),
             Scene::Result { .. } => self.result_act(out),
@@ -517,7 +524,12 @@ impl App {
         self.draw_layered(&f, self.scene());
         if matches!(
             self.scene(),
-            Scene::Play | Scene::Ending { .. } | Scene::Shop | Scene::Title
+            Scene::Play
+                | Scene::Ending { .. }
+                | Scene::Hearth
+                | Scene::Level
+                | Scene::Shop
+                | Scene::Title
         ) {
             self.draw_toast(&f);
         }
@@ -611,7 +623,7 @@ impl App {
             let a = (t / 0.6).min(1.0);
             let cx = f.ox + f.w * 0.5;
             // 화로 가게에서는 목록을 가리지 않게 맨 위에.
-            let y = if self.scene() == Scene::Shop {
+            let y = if matches!(self.scene(), Scene::Hearth | Scene::Level | Scene::Shop) {
                 0.04
             } else {
                 0.3

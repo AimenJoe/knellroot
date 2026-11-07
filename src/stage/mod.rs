@@ -721,11 +721,12 @@ impl StageRun {
 
     /// 쉬기(0032): 체력·등잔·스태미나 가득, 이 쉼터가 다시 일어설 곳. 되돌아갈 단계 = 지금(물결 중이면 물결 전부터).
     fn rest(&mut self, w: &mut World, i: usize) {
+        let full = w.stats.max_stamina();
         let pl = &mut w.player;
         pl.hp = pl.max_hp;
         pl.flask = pl.flask_max;
         pl.mana = crate::tuning::CAST_CHARGES;
-        pl.stamina = crate::tuning::SPECS[crate::tuning::idx(crate::tuning::P::StaminaMax)].def;
+        pl.stamina = full;
         let back = match self.phase {
             Phase::Entrance | Phase::Waves(_) => Phase::Entrance,
             _ => Phase::GateOpen,

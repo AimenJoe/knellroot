@@ -25,6 +25,7 @@ mod model;
 mod models;
 mod nav;
 mod prefs;
+mod progression;
 mod render;
 mod save;
 #[cfg(feature = "dev")]

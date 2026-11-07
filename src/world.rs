@@ -799,9 +799,11 @@ impl World {
         if refill {
             pl.hp = s.max_hp;
             pl.flask = s.flask;
+            pl.stamina = s.max_stamina();
         } else {
             pl.hp = pl.hp.min(s.max_hp);
             pl.flask = pl.flask.min(s.flask);
+            pl.stamina = pl.stamina.min(s.max_stamina());
         }
     }
 
@@ -862,7 +864,7 @@ impl World {
             en.hit_by = swing;
             // 근접으로 맞히면 마법 칸이 찬다(0048).
             self.player.mana = (self.player.mana + t[P::CastPerHit]).min(CAST_CHARGES);
-            add_poise(en, 2.0, None, t, ev);
+            add_poise(en, 2.0 * self.stats.poise, None, t, ev);
             en.hurt = 0.15;
             en.knock = d.normalize_or_zero() * t[P::Knockback] * if en.boss { 0.25 } else { 1.2 };
             if en.hp <= 0 {
@@ -1234,7 +1236,7 @@ impl World {
                         dur: b.def.stagger,
                     };
                 }
-                add_poise(en, b.def.poise, None, t, ev);
+                add_poise(en, b.def.poise * self.stats.poise, None, t, ev);
                 if en.hp <= 0 {
                     en.state = EState::Dead;
                     self.kills += 1;
@@ -1354,7 +1356,7 @@ impl World {
             } else {
                 Event::Hit { at: hit_at }
             });
-            add_poise(en, poise, None, t, ev);
+            add_poise(en, poise * self.stats.poise, None, t, ev);
             if en.hp <= 0 {
                 en.state = EState::Dead;
                 self.kills += 1;
@@ -1497,7 +1499,13 @@ impl World {
             self.player.mana = (self.player.mana + t[P::CastPerHit]).min(CAST_CHARGES);
             // 패링으로 드러난 적은 한 대가 치명타(0025).
             let crit = en.exposed > 0.0;
-            en.hp -= hurt_by(en, self.stats.dmg + s.damage, crit, t);
+            // 레벨 힘(0104): 강타·패링 반격 +`heavy_dmg`, 콤보·대시 공격 +`light_dmg` — 장신구 `dmg`는 모든 타.
+            let lv = if s.heavy.is_some() {
+                self.stats.heavy_dmg
+            } else {
+                self.stats.light_dmg
+            };
+            en.hp -= hurt_by(en, self.stats.dmg + lv + s.damage, crit, t);
             if crit {
                 en.exposed = 0.0;
                 ev.push(Event::Crit {
@@ -1520,7 +1528,7 @@ impl World {
                 swing,
                 s.heavy.is_some() || crit,
             ));
-            add_poise(en, s.poise, primed, t, ev);
+            add_poise(en, s.poise * self.stats.poise, primed, t, ev);
             ev.push(Event::Hit {
                 at: en.pos + Vec3::Y * en.height * 0.6,
             });
@@ -5892,5 +5900,61 @@ mod tests {
                 w.player.hp
             );
         }
+    }
+
+    /// 0104(레벨 힘): 평타 한 대가 힘 5단이면 피해 +1·자세 피해 ×1.6, 힘 0단은 그대로. 기력은 최대가 늘고 쉬면 가득.
+    #[test]
+    fn might_adds_whole_damage_and_poise_and_stamina_grows_the_bar() {
+        let t = Tuning::default();
+        let swing = |might: u8| {
+            let mut w = World::new("test", 20.0);
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            idle(&mut w);
+            let lv = crate::progression::Level {
+                might,
+                ..Default::default()
+            };
+            let s = crate::stats::Stats::compute(&[lv.mods()]);
+            w.apply_stats(s, true);
+            let tt = w.stats.tune(&t);
+            w.step(
+                &Actions {
+                    attack: true,
+                    ..Default::default()
+                },
+                &tt,
+            );
+            for _ in 0..40 {
+                if w.enemies[i].hp < 99 {
+                    break;
+                }
+                w.step(&Actions::default(), &tt);
+            }
+            (99 - w.enemies[i].hp, w.enemies[i].poise)
+        };
+        let (d0, p0) = swing(0);
+        let (d5, p5) = swing(5);
+        assert!(d0 >= 1, "the first swing lands");
+        assert_eq!(d5, d0 + 1, "might 5: light hits +1");
+        assert!(p0 > 0.0);
+        assert!(
+            (p5 / p0 - 1.6).abs() < 1e-3,
+            "might 5: poise x1.6 ({p0} -> {p5})"
+        );
+
+        let mut w = World::new("test", 20.0);
+        let lv = crate::progression::Level {
+            stamina: 5,
+            ..Default::default()
+        };
+        let s = crate::stats::Stats::compute(&[lv.mods()]);
+        w.apply_stats(s, true);
+        let base = crate::tuning::SPECS[crate::tuning::idx(P::StaminaMax)].def;
+        assert_eq!(w.player.stamina, base + 60.0, "rest fills the longer bar");
+        let tt = w.stats.tune(&t);
+        assert_eq!(tt[P::StaminaMax], t[P::StaminaMax] + 60.0);
+        assert!((tt[P::StaminaRegen] - t[P::StaminaRegen] * 1.2).abs() < 1e-3);
+        // 판정 창은 레벨이 건드리지 않는다(0095 원칙 2).
+        assert_eq!(tt[P::ParryWindow], t[P::ParryWindow]);
     }
 }

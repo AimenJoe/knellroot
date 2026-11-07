@@ -27,6 +27,16 @@ pub struct Mods {
     pub kill_stamina: f32,
     /// 잔불 배.
     pub ember: f32,
+    /// 최대 스태미나 +(레벨 기력, 0102).
+    pub stamina_max: f32,
+    /// 스태미나 차는 빠르기 배(레벨 기력 3·5단).
+    pub stamina_regen: f32,
+    /// 주는 자세 피해 배(레벨 힘).
+    pub poise: f32,
+    /// 강타 피해 +(레벨 힘 3단) — 강타·패링 반격만.
+    pub heavy_dmg: i32,
+    /// 평타 피해 +(레벨 힘 5단) — 콤보·대시 공격만.
+    pub light_dmg: i32,
 }
 
 impl Default for Mods {
@@ -42,6 +52,11 @@ impl Default for Mods {
             parry: 0.0,
             kill_stamina: 0.0,
             ember: 1.0,
+            stamina_max: 0.0,
+            stamina_regen: 1.0,
+            poise: 1.0,
+            heavy_dmg: 0,
+            light_dmg: 0,
         }
     }
 }
@@ -59,10 +74,17 @@ pub struct Stats {
     pub parry: f32,
     pub kill_stamina: f32,
     pub ember: f32,
+    /// 최대 스태미나 +(랩 `stamina.max`에 더한다).
+    pub stamina_max: f32,
+    pub stamina_regen: f32,
+    pub poise: f32,
+    pub heavy_dmg: i32,
+    pub light_dmg: i32,
 }
 
 /// 상한·하한(극단 조합을 막는다 — KB).
-const HP_RANGE: (i32, i32) = (1, 10);
+/// 체력 상한 12(0104): 생명 5단(5 → 10) 위에 장신구 "단단한 껍질"이 여전히 한 칸 — 상한이 10이면 다 올린 뒤 껍질이 아무것도 안 한다.
+const HP_RANGE: (i32, i32) = (1, 12);
 const FLASK_RANGE: (i32, i32) = (0, 8);
 const ATK_SPEED_RANGE: (f32, f32) = (0.6, 1.8);
 const DODGE_COST_RANGE: (f32, f32) = (0.3, 2.0);
@@ -87,6 +109,11 @@ impl Stats {
             parry: 0.0,
             kill_stamina: 0.0,
             ember: 1.0,
+            stamina_max: 0.0,
+            stamina_regen: 1.0,
+            poise: 1.0,
+            heavy_dmg: 0,
+            light_dmg: 0,
         };
         for m in mods {
             s.max_hp += m.hp;
@@ -99,6 +126,11 @@ impl Stats {
             s.parry += m.parry;
             s.kill_stamina += m.kill_stamina;
             s.ember *= m.ember;
+            s.stamina_max += m.stamina_max;
+            s.stamina_regen *= m.stamina_regen;
+            s.poise *= m.poise;
+            s.heavy_dmg += m.heavy_dmg;
+            s.light_dmg += m.light_dmg;
         }
         s.max_hp = s.max_hp.clamp(HP_RANGE.0, HP_RANGE.1);
         s.flask = s.flask.clamp(FLASK_RANGE.0, FLASK_RANGE.1);
@@ -110,7 +142,17 @@ impl Stats {
         s.parry = s.parry.clamp(0.0, PARRY_MAX);
         s.kill_stamina = s.kill_stamina.max(0.0);
         s.ember = s.ember.max(0.0);
+        s.stamina_max = s.stamina_max.max(0.0);
+        s.stamina_regen = s.stamina_regen.max(0.1);
+        s.poise = s.poise.max(0.0);
+        s.heavy_dmg = s.heavy_dmg.max(0);
+        s.light_dmg = s.light_dmg.max(0);
         s
+    }
+
+    /// 최대 스태미나(랩 기본값 + 레벨). HUD 막대·쉬기·다시 서기가 쓴다(로직은 `tune`의 휜 값).
+    pub fn max_stamina(&self) -> f32 {
+        crate::tuning::SPECS[crate::tuning::idx(P::StaminaMax)].def + self.stamina_max
     }
 
     /// 랩 값을 이 능력치로 휜 사본(로직은 이것을 읽는다). 기본 능력치면 그대로.
@@ -122,6 +164,8 @@ impl Stats {
         o.bend(P::StaminaDodge, t[P::StaminaDodge] * self.dodge_cost);
         o.bend(P::ParryWindow, t[P::ParryWindow] + self.parry);
         o.bend(P::FlaskHeal, t[P::FlaskHeal] + self.heal as f32);
+        o.bend(P::StaminaMax, t[P::StaminaMax] + self.stamina_max);
+        o.bend(P::StaminaRegen, t[P::StaminaRegen] * self.stamina_regen);
         for p in [
             P::AttackStartup,
             P::AttackActive,
@@ -150,13 +194,24 @@ pub enum Line {
     Parry,
     KillStamina,
     Ember,
+    /// 레벨(0104): 최대 스태미나 +·차는 빠르기·자세 피해·강타·평타.
+    StaminaMax,
+    StaminaRegen,
+    Poise,
+    HeavyDmg,
+    LightDmg,
 }
 
-pub const LINES: [Line; 10] = [
+pub const LINES: [Line; 15] = [
     Line::MaxHp,
     Line::Flask,
     Line::Heal,
+    Line::StaminaMax,
+    Line::StaminaRegen,
     Line::Dmg,
+    Line::LightDmg,
+    Line::HeavyDmg,
+    Line::Poise,
     Line::Taken,
     Line::AtkSpeed,
     Line::DodgeCost,
@@ -186,6 +241,11 @@ impl Line {
             Line::Parry => s.parry,
             Line::KillStamina => s.kill_stamina,
             Line::Ember => s.ember,
+            Line::StaminaMax => s.stamina_max,
+            Line::StaminaRegen => s.stamina_regen,
+            Line::Poise => s.poise,
+            Line::HeavyDmg => s.heavy_dmg as f32,
+            Line::LightDmg => s.light_dmg as f32,
         }
     }
 
@@ -217,11 +277,15 @@ impl Line {
 pub type Row = (Line, f32, Option<(f32, Change)>);
 
 pub fn lines(now: &Stats, then: Option<&Stats>) -> Vec<Row> {
-    let base = Stats::default();
+    lines_from(&Stats::default(), now, then)
+}
+
+/// `lines`와 같되 "기본값과 다른 줄"의 기본값을 준다 — 장비 창은 장신구를 뺀 능력치를 기본값으로(0104).
+pub fn lines_from(base: &Stats, now: &Stats, then: Option<&Stats>) -> Vec<Row> {
     LINES
         .into_iter()
         .filter(|l| {
-            let differs = |s: &Stats| (l.value(s) - l.value(&base)).abs() > 1e-4;
+            let differs = |s: &Stats| (l.value(s) - l.value(base)).abs() > 1e-4;
             l.always() || differs(now) || then.is_some_and(differs)
         })
         .map(|l| {

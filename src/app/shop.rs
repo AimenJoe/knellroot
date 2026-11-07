@@ -3,7 +3,7 @@ use super::menu::{Menu, Out};
 use super::*;
 
 impl App {
-    /// 쉼터 화로(nail 가게 꼴): 제목 줄 오른쪽에 가진 잔불, 줄 = 이름 … 값(모자라면 흐리게) + 떠나기, 아래에 설명.
+    /// 가게(nail 가게 꼴, 0104부터 화로 아래 창): 제목 줄 오른쪽에 가진 잔불, 줄 = 이름 … 값(모자라면 흐리게) + 떠나기, 아래에 설명.
     pub(super) fn shop_menu(&self) -> Menu {
         let s = s();
         let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
@@ -30,7 +30,7 @@ impl App {
             purse: Some(fill(s.shop_embers, &[&have.to_string()])),
             note_room: true,
             note: note.map(str::to_string),
-            ..Menu::new(s.shop_title, 300.0, rows)
+            ..Menu::new(s.hearth_shop, 300.0, rows)
         }
     }
 

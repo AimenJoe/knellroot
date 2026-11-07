@@ -24,7 +24,11 @@ pub enum Scene {
     },
     /// 핵 고르기(0064 M4): 문지기를 이긴 끝 장면 뒤, 결과 전. 하나를 골라야 넘어간다.
     Core,
-    /// 쉼터 화로(0064 M4): 쉬면 열린다 — 잔불로 장신구·등잔 기름을 산다. 뒤로 = 싸움.
+    /// 쉼터 화로(0104, v0.4.0 G1 — 0102 7): 쉬면 열린다. 줄 = 레벨 · 가게 · 떠나기. 뒤로 = 싸움.
+    Hearth,
+    /// 레벨(0104): 생명·기력·힘을 잔불로 한 단씩. 화로에서 연다 — 닫으면 화로.
+    Level,
+    /// 가게(0064 M4): 잔불로 장신구·등잔 기름을 산다. 화로에서 연다(0104 전엔 쉬면 바로 열렸다) — 닫으면 화로.
     Shop,
     /// 묻는 창(KB `controller-layout-and-remapping` "되돌릴 수 없는 메뉴 항목은 한 번 묻는다", nail 0274·가게 묻는 창):
     /// 줄 둘(하는 일 이름 / 취소) + 무엇을 잃는지 한 줄. 뒤로 = 취소(온 곳).
@@ -63,6 +67,8 @@ impl Scene {
                 | Scene::Equip
                 | Scene::EquipPick { .. }
                 | Scene::Core
+                | Scene::Hearth
+                | Scene::Level
                 | Scene::Shop
                 | Scene::Ask(_)
                 | Scene::Result { .. }
@@ -95,7 +101,9 @@ impl Scene {
                 Layer::Window { hud: true }
             }
             // 가게는 잔불을 제가 보인다(KB hud-readability: 창이 같은 정보면 밑 HUD를 그리지 않는다).
-            Scene::Shop
+            Scene::Hearth
+            | Scene::Level
+            | Scene::Shop
             | Scene::Core
             | Scene::Result { .. }
             | Scene::Controls
@@ -161,12 +169,14 @@ pub enum Ask {
     ToTitle,
     /// 화로 가게: 이 물건(살 수 있는 것 목록의 자리)을 산다.
     Buy(usize),
+    /// 화로 레벨(0104): 이 줄(`progression::LINES`의 자리)을 한 단 올린다.
+    Level(u8),
 }
 
 /// 묻는 창의 커서 처음 자리: 버리는 일은 "취소"(1)에서 — 연타가 실행되지 않게(KB). 사기는 nail 가게처럼 "사기"(0)에서.
 pub fn ask_default(k: Ask) -> usize {
     match k {
-        Ask::Buy(_) => 0,
+        Ask::Buy(_) | Ask::Level(_) => 0,
         _ => 1,
     }
 }
@@ -179,7 +189,7 @@ pub fn answer(k: Ask, yes: bool) -> (Go, bool) {
     match k {
         Ask::Restart => (Go::Root(Scene::Play), true),
         Ask::ToTitle => (Go::Root(Scene::Title), true),
-        Ask::Buy(_) => (Go::Back, false),
+        Ask::Buy(_) | Ask::Level(_) => (Go::Back, false),
     }
 }
 
@@ -359,6 +369,8 @@ pub fn back(scene: Scene) -> Go {
         Scene::Pause
         | Scene::Equip
         | Scene::EquipPick { .. }
+        | Scene::Hearth
+        | Scene::Level
         | Scene::Shop
         | Scene::Ask(_)
         | Scene::Controls
@@ -453,7 +465,14 @@ mod tests {
             (Go::Back, false),
             "back to the shop"
         );
-        for k in [Ask::Restart, Ask::ToTitle, Ask::Buy(0)] {
+        // 0104: 화로 레벨도 가게처럼 "올리기"에서, 답하면 레벨 창으로.
+        assert_eq!(answer(Ask::Level(1), true), (Go::Back, false));
+        assert_eq!(ask_default(Ask::Level(0)), 0);
+        for sc in [Scene::Hearth, Scene::Level, Scene::Shop] {
+            assert_eq!(back(sc), Go::Back, "{sc:?} closes to where it opened");
+            assert!(sc.is_menu());
+        }
+        for k in [Ask::Restart, Ask::ToTitle, Ask::Buy(0), Ask::Level(2)] {
             assert_eq!(answer(k, false), (Go::Back, false), "cancel closes");
             assert_eq!(back(Scene::Ask(k)), Go::Back);
             assert_eq!(Scene::Ask(k).layer(), Layer::Modal);
