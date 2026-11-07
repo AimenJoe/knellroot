@@ -1,0 +1,79 @@
+/* Knellroot 소개 페이지(0092). 색은 게임의 "해 질 녘 남보라 + 따뜻한 등잔빛"(0037). 제목 글꼴은 게임 UI와 같은 고운바탕 굵게. */
+@font-face {
+  font-family: "Gowun Batang";
+  src: url("fonts/gowun-bold-sub.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+:root {
+  --night: #16131f;
+  --dusk: #201b30;
+  --dusk-2: #2d2642;
+  --text: #ece6f2;
+  --muted: #b3a9c4;
+  --lamp: #f0b54d;
+  --root: #a77fd9;
+  --f-title: "Gowun Batang", "Noto Serif KR", "Apple Myungjo", Georgia, serif;
+  --f-body: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { background: #0e0c14; }
+body { margin: 0; background: var(--night); color: var(--text); font-family: var(--f-body); font-size: 17px; line-height: 1.7; overflow-x: hidden; }
+img { max-width: 100%; height: auto; display: block; }
+a { color: var(--lamp); }
+a:focus-visible { outline: 2px solid var(--lamp); outline-offset: 3px; }
+.skip { position: absolute; left: -999px; top: 0; z-index: 50; background: var(--lamp); color: var(--night); padding: .4rem .8rem; }
+.skip:focus { left: 8px; top: 8px; }
+.wrap { max-width: 60rem; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, .brand { font-family: var(--f-title); font-weight: 700; text-wrap: balance; }
+
+.top { position: absolute; inset: 0 0 auto; z-index: 5; }
+.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: .4rem 1rem; padding-block: .7rem; flex-wrap: wrap; }
+.brand { font-size: 1.2rem; color: var(--text); text-decoration: none; display: flex; align-items: center; gap: .45rem; }
+.brand img { width: 28px; height: 28px; border-radius: 6px; }
+.top nav { display: flex; gap: .3rem 1.1rem; flex-wrap: wrap; font-size: .95rem; }
+.top nav a { color: var(--muted); text-decoration: none; }
+.top nav a:hover { color: var(--text); }
+.top nav .lang { color: var(--lamp); }
+
+/* 첫 화면: 게임 장면을 바탕에 깔고 아래쪽을 밤빛으로 덮어 글을 얹는다. 좁으면 그림 아래로 글. */
+.hero { position: relative; display: grid; align-items: end; min-height: min(92vh, 46rem); padding-top: 3.4rem; }
+.hero-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 0% 45%; }
+.hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to right, rgba(22, 19, 31, .8) 0%, rgba(22, 19, 31, .35) 45%, rgba(22, 19, 31, 0) 70%), linear-gradient(to bottom, rgba(22, 19, 31, .6) 0%, rgba(22, 19, 31, 0) 18%, rgba(22, 19, 31, .2) 55%, var(--night) 97%); pointer-events: none; }
+.hero-text { position: relative; z-index: 1; padding-block: 2rem 2.4rem; width: 100%; }
+.hero-text > p { max-width: 34rem; text-shadow: 0 1px 8px rgba(0, 0, 0, .6); }
+@media (max-width: 640px) {
+  .hero { min-height: 0; padding-top: 3.2rem; }
+  .hero-bg { position: static; aspect-ratio: 16 / 9; }
+  .hero::after { background: linear-gradient(to bottom, rgba(22, 19, 31, .6) 0, rgba(22, 19, 31, 0) 4rem); }
+  .hero-text { padding-block: 1.2rem 1.6rem; }
+}
+.eyebrow { margin: 0; color: var(--muted); font-size: .92rem; letter-spacing: .04em; }
+.badge { display: inline-block; font-size: .8rem; padding: .05rem .55rem; margin-right: .35rem; border: 1px solid var(--lamp); color: var(--lamp); border-radius: 999px; letter-spacing: .02em; }
+h1 { font-size: clamp(2.6rem, 8vw, 4.4rem); line-height: 1.1; margin: .3rem 0 .8rem; color: var(--lamp); letter-spacing: .03em; text-shadow: 0 2px 18px rgba(240, 181, 77, .25); }
+h1 small { font-family: var(--f-body); font-weight: 400; font-size: .95rem; color: var(--muted); letter-spacing: .05em; margin-left: .3rem; text-shadow: none; }
+.lede { font-size: 1.15rem; margin: 0 0 .5rem; }
+
+main section { padding-block: 1.4rem; }
+h2 { font-size: 1.6rem; margin: 1.6rem 0 .6rem; }
+h2::before { content: ""; display: inline-block; width: .5rem; height: .5rem; margin-right: .6rem; vertical-align: .2em; background: var(--root); transform: rotate(45deg); }
+main p { max-width: 42rem; }
+
+.views { display: grid; gap: 1rem; margin-top: 1.2rem; }
+@media (min-width: 720px) { .views { grid-template-columns: 1fr 1fr; } }
+.views figure { margin: 0; background: var(--dusk); border: 1px solid var(--dusk-2); border-radius: 6px; overflow: hidden; }
+.views figcaption { padding: .7rem 1rem .9rem; color: var(--muted); font-size: .95rem; }
+.views figcaption b { color: var(--text); margin-right: .4rem; }
+
+.notice { background: var(--dusk); border: 1px solid var(--dusk-2); border-left: 3px solid var(--lamp); border-radius: 6px; padding: .2rem 1rem; margin-bottom: 1rem; max-width: 42rem; }
+.links { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+.links a { display: inline-block; text-decoration: none; padding: .45rem 1rem; border-radius: 4px; border: 1px solid var(--dusk-2); color: var(--text); background: var(--dusk); }
+.links a:hover { border-color: var(--muted); }
+.links a.main { background: var(--lamp); color: var(--night); border-color: var(--lamp); font-weight: 600; }
+.meta { color: var(--muted); font-size: .92rem; }
+.note { color: var(--muted); font-size: .86rem; }
+
+footer { margin-top: 2rem; padding-block: 1.6rem 2.4rem; color: var(--muted); font-size: .84rem; border-top: 1px solid var(--dusk-2); }
+footer a { color: var(--muted); }
+footer p { margin: .4rem 0; max-width: 52rem; }
