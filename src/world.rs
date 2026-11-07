@@ -7,8 +7,8 @@ use crate::input::Actions;
 use crate::tuning::{
     Tuning, BEAT_WINDOW, BEAT_WINDOW_MIN, BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE,
     BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID, CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES,
-    GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, LOCK_HANDOFF, P, PLAYER_HP,
-    PLAYER_RADIUS, RIPOSTE_WINDOW, RUN_SPEED_X, RUN_STAMINA, TICK_DT,
+    GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, LOCK_HANDOFF, P, PERFECT_RELEASE,
+    PLAYER_HP, PLAYER_RADIUS, RIPOSTE_WINDOW, RUN_SPEED_X, RUN_STAMINA, TICK_DT,
 };
 use crate::weapons::{self, Rb, Shape};
 
@@ -160,7 +160,7 @@ pub enum Event {
     Boom {
         at: Vec3,
     },
-    /// 지팡이 강타를 딱 맞춰 뗐다(0051).
+    /// 모으기 공격을 딱 맞춰 뗐다(0051 지팡이 → 0078 모든 무기의 강타·쇠뇌 모은 사격).
     Perfect {
         at: Vec3,
     },
@@ -379,6 +379,8 @@ pub struct Player {
     pub beat_chain: u32,
     pub since_beat: f32,
     pub swing_beat: bool,
+    /// 마지막 딱 맞춰 떼기(0078)에서 지난 초 — 렌더가 발밑에 크게 퍼지는 금빛 고리.
+    pub since_perfect: f32,
     /// 달리는 중(0076): 회피가 끝날 때 회피 버튼을 쥐고 있었다 — 떼거나 스틱을 놓거나 스태미나가 다하거나 다른 동작을 하면 끝.
     pub running: bool,
     /// 마지막으로 무언가를 맞힌 스윙 번호(맞히면 그 스윙의 내딛기를 멈춘다, 2026-11-06).
@@ -528,6 +530,7 @@ impl World {
                 beat_chain: 0,
                 since_beat: f32::MAX,
                 swing_beat: false,
+                since_perfect: f32::MAX,
                 running: false,
                 attack_hold: 0.0,
                 flask: FLASK_CHARGES,
@@ -1184,6 +1187,7 @@ impl World {
         pl.dash_left = (pl.dash_left - dt).max(0.0);
         pl.since_swing = (pl.since_swing + dt).min(f32::MAX);
         pl.since_beat = (pl.since_beat + dt).min(f32::MAX);
+        pl.since_perfect = (pl.since_perfect + dt).min(f32::MAX);
         // 스태미나: 마지막으로 쓴 뒤 `stamina.regen delay s`가 지나야 찬다.
         pl.stamina_denied = (pl.stamina_denied - dt).max(0.0);
         pl.stamina_idle += dt;
@@ -1530,8 +1534,8 @@ impl World {
                         swing: pl.swings,
                         dir,
                         full: e >= full_at,
-                        // 지팡이(0051): 다 모인 뒤 창 안에 떼면 딱 맞춤.
-                        perfect: h.perfect.is_some_and(|w| e >= full_at && e <= full_at + w),
+                        // 딱 맞춰 떼기(0078 — 모든 무기): 다 모인 뒤 창 안에 떼면 덤.
+                        perfect: e >= full_at && e <= full_at + PERFECT_RELEASE,
                     };
                 } else {
                     pl.state = PState::Idle;
@@ -1625,7 +1629,19 @@ impl World {
                         }
                     }
                     pl.facing = cast_dir.x.atan2(cast_dir.z);
-                    fire = Some((cast_dir, if e >= full { 2 } else { 1 }));
+                    // 딱 맞춰 떼기(0078): 원거리 무기의 모으기 공격(사격 꾹)도 다 모인 뒤 창 안에 떼면 덤 — 근접 무기의 RB 마법은 무기의
+                    // 공격이 아니라 빼 둔다(박자와 같은 경계, 0077).
+                    let perfect = matches!(wpn.rb, Rb::Shot { .. })
+                        && e >= full
+                        && e <= full + PERFECT_RELEASE;
+                    fire = Some((
+                        cast_dir,
+                        match (e >= full, perfect) {
+                            (_, true) => 3,
+                            (true, false) => 2,
+                            _ => 1,
+                        },
+                    ));
                     let k = match wpn.rb {
                         Rb::Shot { time, .. } => time,
                         Rb::Magic(_) => 1.0,
@@ -1975,8 +1991,18 @@ impl World {
                     scale: 1.0 + (c.scale - 1.0) * 0.4,
                     ..c
                 },
+                // 딱 맞춰 뗀 모은 탄(0078): 강타의 딱 맞춤과 같은 덤 — 피해 +1·자세 피해 ×1.5.
+                (3, _) => weapons::Bolt {
+                    damage: c.damage + 1,
+                    poise: c.poise * 1.5,
+                    ..c
+                },
                 _ => c,
             };
+            if power == 3 {
+                self.player.since_perfect = 0.0;
+                ev.push(Event::Perfect { at: pos });
+            }
             self.bolts.push(Bolt {
                 pos,
                 prev: pos,
@@ -2296,6 +2322,7 @@ impl World {
                     });
                 }
                 if s.perfect {
+                    self.player.since_perfect = 0.0;
                     ev.push(Event::Perfect {
                         at: self.player.pos + Vec3::Y * 1.0,
                     });
@@ -4213,40 +4240,43 @@ mod tests {
 
     /// 0051: 지팡이는 다 모인 뒤 짧은 창 안에 떼야 "딱 맞춤", 늦게 떼면 보통 강타.
     #[test]
-    fn the_staff_rewards_a_perfectly_timed_release() {
+    fn every_weapon_rewards_a_perfectly_timed_heavy_release() {
+        // 0078(사장 2026-11-07): 딱 맞춰 떼기는 지팡이만이 아니라 강타가 있는 모든 무기의 규칙.
         let t = Tuning::default();
-        let w0 = weapons::Id::Staff.def();
-        let full = t[P::HeavyCharge] * w0.heavy.unwrap().charge;
-        for (extra, want) in [(0.05, true), (0.6, false)] {
-            let mut w = World::new("test", 30.0);
-            w.set_weapon(weapons::Id::Staff);
-            w.step(
-                &Actions {
-                    attack: true,
+        for id in weapons::IDS.into_iter().filter(|i| i.def().heavy.is_some()) {
+            let w0 = id.def();
+            let full = t[P::HeavyCharge] * w0.heavy.unwrap().charge;
+            for (extra, want) in [(0.05, true), (0.6, false)] {
+                let mut w = World::new("test", 30.0);
+                w.set_weapon(id);
+                w.step(
+                    &Actions {
+                        attack: true,
+                        attack_held: true,
+                        ..Default::default()
+                    },
+                    &t,
+                );
+                let hold = Actions {
                     attack_held: true,
                     ..Default::default()
-                },
-                &t,
-            );
-            let hold = Actions {
-                attack_held: true,
-                ..Default::default()
-            };
-            let mut charged_for = 0.0;
-            for _ in 0..400 {
-                w.player.stamina = 100.0;
-                w.step(&hold, &t);
-                if let PState::Charging { t: e } = w.player.state {
-                    charged_for = e;
-                    if e >= full + extra {
-                        break;
+                };
+                let mut charged_for = 0.0;
+                for _ in 0..400 {
+                    w.player.stamina = 100.0;
+                    w.step(&hold, &t);
+                    if let PState::Charging { t: e } = w.player.state {
+                        charged_for = e;
+                        if e >= full + extra {
+                            break;
+                        }
                     }
                 }
+                assert!(charged_for >= full);
+                w.step(&Actions::default(), &t);
+                let got = matches!(w.player.state, PState::Heavy { perfect: true, .. });
+                assert_eq!(got, want, "{id:?}: released {extra}s after full");
             }
-            assert!(charged_for >= full);
-            w.step(&Actions::default(), &t);
-            let got = matches!(w.player.state, PState::Heavy { perfect: true, .. });
-            assert_eq!(got, want, "released {extra}s after full");
         }
     }
 
@@ -4417,15 +4447,24 @@ mod tests {
     #[test]
     fn the_crossbow_charges_a_piercing_shot() {
         let t = Tuning::default();
-        let full = (t[P::CastCharge] / TICK_DT).ceil() as usize + 2;
+        let full = (t[P::CastCharge] / TICK_DT).ceil() as usize;
+        let past_perfect = (PERFECT_RELEASE / TICK_DT).ceil() as usize + 2;
+        let charged = weapons::Id::Crossbow.def().charged;
         let mut w = World::new("test", 40.0);
         w.set_weapon(weapons::Id::Crossbow);
         let mag = w.player.ammo;
-        let got = charge_cast(&mut w, &t, full);
-        assert!(
-            got[0].def.pierce && got[0].def.damage == weapons::Id::Crossbow.def().charged.damage
-        );
+        let got = charge_cast(&mut w, &t, full + past_perfect);
+        assert!(got[0].def.pierce && got[0].def.damage == charged.damage);
         assert_eq!(w.player.ammo, mag - 2);
+        // 딱 맞춰 떼기(0078): 다 모인 바로 뒤에 떼면 피해 +1 — 강타와 같은 규칙.
+        let mut w = World::new("test", 40.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        let got = charge_cast(&mut w, &t, full + 2);
+        assert!(got[0].def.pierce && got[0].def.damage == charged.damage + 1);
+        // 근접 무기의 RB 마법은 무기의 모으기 공격이 아니다 — 딱 맞춤 없음.
+        let mut w = World::new("test", 40.0);
+        let got = charge_cast(&mut w, &t, full + 2);
+        assert_eq!(got[0].def.damage, weapons::Id::Sword.def().charged.damage);
         // 볼트가 다 떨어지면 쥐어도 모으기로 가지 않는다.
         w.player.ammo = 1;
         let held = Actions {
@@ -4751,7 +4790,9 @@ mod tests {
                     }
                     ev.extend(w.step(&hold, &t));
                 }
-                for _ in 0..if charged { full + 2 } else { 3 } {
+                // 다 모은 뒤 딱 맞춤 창(0078)을 지나서 뗀다 — 이 시험은 "다 모음"만 본다(딱 맞춤은 따로).
+                let past_perfect = (PERFECT_RELEASE / TICK_DT).ceil() as usize + 2;
+                for _ in 0..if charged { full + past_perfect } else { 3 } {
                     ev.extend(w.step(&hold, &t));
                 }
                 assert!(matches!(w.player.state, PState::Charging { .. }));

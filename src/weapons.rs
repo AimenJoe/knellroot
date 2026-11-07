@@ -52,8 +52,6 @@ pub struct Heavy {
     pub walk: f32,
     /// 친 자리에 금이 가고 이 초 뒤 둘레를 다시 친다(망치 여진, PoE2 지진 착상): (늦음 s, 반지름 m, 피해, 자세 피해).
     pub aftershock: Option<(f32, f32, i32, f32)>,
-    /// 다 모인 뒤 이 초 안에 떼면 "딱 맞춤" — 피해 +1·자세 피해 ×1.5·둘레 넉백(지팡이, PoE2 착상).
-    pub perfect: Option<f32>,
     /// 자세 막대가 이만큼(0..1) 넘게 찬 적은 바로 깬다(망치 — PoE2의 "깨지기 직전" 적 즉시 깨기).
     pub breaks_primed: Option<f32>,
     pub anim_charge: &'static str,
@@ -282,7 +280,6 @@ pub const WEAPONS: [Weapon; 5] = [
             poise: 3.0,
             walk: 1.0,
             aftershock: None,
-            perfect: None,
             breaks_primed: None,
             anim_charge: "charge",
             anim_heavy: "heavy",
@@ -324,7 +321,6 @@ pub const WEAPONS: [Weapon; 5] = [
             poise: 6.0,
             walk: 0.75,
             aftershock: Some((1.5, 2.6, 2, 3.0)),
-            perfect: None,
             breaks_primed: Some(0.6),
             anim_charge: "hammer_charge",
             anim_heavy: "hammer_slam",
@@ -369,7 +365,6 @@ pub const WEAPONS: [Weapon; 5] = [
             poise: 2.5,
             walk: 1.2,
             aftershock: None,
-            perfect: Some(0.15),
             breaks_primed: None,
             anim_charge: "staff_charge",
             anim_heavy: "staff_release",
@@ -456,7 +451,6 @@ pub const WEAPONS: [Weapon; 5] = [
             poise: 2.0,
             walk: 1.2,
             aftershock: None,
-            perfect: None,
             breaks_primed: None,
             anim_charge: "charge",
             anim_heavy: "heavy",

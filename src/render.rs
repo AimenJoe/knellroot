@@ -112,6 +112,8 @@ pub struct View<'a> {
 /// 박자 타의 휘두름 색·발밑 고리가 퍼지는 시간(0076).
 const BEAT_GOLD: Color = Color::new(1.0, 0.82, 0.3, 0.32);
 pub const BEAT_RING_LIFE: f32 = 0.35;
+/// 딱 맞춰 떼기 고리가 퍼지는 시간(0078).
+const PERFECT_RING_LIFE: f32 = 0.45;
 const BOLT_LOOKS: [(Color, Color); 4] = [
     (
         Color::new(0.92, 0.88, 1.0, 1.0),
@@ -1511,6 +1513,20 @@ impl Renderer {
                     0.0,
                     360.0,
                     Color::new(1.0, 0.85, 0.55, 0.9 * (1.0 - k)),
+                );
+            }
+        }
+        // 딱 맞춰 떼기(0078): 발밑에서 크게 퍼지는 금빛 고리 둘(박자 고리보다 넓고 길게).
+        if w.player.since_perfect < PERFECT_RING_LIFE {
+            let k = (w.player.since_perfect / PERFECT_RING_LIFE).clamp(0.0, 1.0);
+            let ease = 1.0 - (1.0 - k) * (1.0 - k);
+            for (r0, r1, a) in [(0.6, 3.2, 0.95), (0.4, 2.2, 0.6)] {
+                ring(
+                    pp + Vec3::Y * 0.08,
+                    r0 + (r1 - r0) * ease,
+                    0.0,
+                    360.0,
+                    Color::new(1.0, 0.9, 0.5, a * (1.0 - k)),
                 );
             }
         }

@@ -217,6 +217,8 @@ impl App {
                 Event::PlayerHurt => Id::Hurt,
                 Event::Parry { .. } => Id::Parry,
                 Event::Beat => crate::sfx::beat_id(self.world.player.beat_chain),
+                // 딱 맞춰 떼기(0078): 박자와 같은 "맞췄다" 종 — 가장 높은 음.
+                Event::Perfect { .. } => Id::Beat3,
                 Event::Ember { .. } => Id::Ember,
                 Event::Gulp { .. } => Id::Gulp,
                 Event::FlaskDenied | Event::CastDenied => Id::Deny,
