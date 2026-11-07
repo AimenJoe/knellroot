@@ -10,7 +10,7 @@
 ## APK
 - 첫 게임 nail의 `build-android.yml`·`release.yml`을 가져왔다(KB `guides/macroquad-android-apk-github-actions.md`, `reference/github-actions/release-from-version-bump.md`). 뺀 것: 비공개 에셋 레포 단계, 웹 전용 mp3 지우기, PC·iOS 묶음.
 - 액션은 node24 메이저(checkout·upload-artifact v7, cache v6, action-gh-release v3).
-- 패키지 `io.github.aimenjoe.knellroot`(0005에서 잡아 둔 것), 개발판 `….knellroot.dev`("Knellroot dev")는 운영 앱과 나란히. `version_code`는 릴리스마다 1씩(v0.1.0 = 1).
+- 패키지 `io.github.aimenjoe.knellroot`(0005에서 잡아 둔 것), 개발판 `….knellroot.dev`("Knellroot dev")는 운영 앱과 나란히 — **2026-11-07 `io.github.aimenjoe.dev.knellroot`로 바꿈**(마지막 조각이 네이티브 라이브러리 이름이 되어 `libdev.so`를 찾다 켜자마자 죽었다, 0070). `version_code`는 릴리스마다 1씩(v0.1.0 = 1).
 - `android:exported`·앱 아이콘이 없으면 CI가 실패한다(nail 0074·0087에서 배운 것). 아이콘은 `tools/icons/make_icons.py`가 32×32 픽셀 그림(호박색 종 + 뿌리)을 코드로 찍어 만든다.
 - 서명: Secrets `ANDROID_DEBUG_KEYSTORE_B64` → Actions 캐시 → 새로 생성(경고). 키가 바뀌면 덮어 설치가 안 된다 — 시크릿을 넣어 고정한다(docs/release.md).
 - **패드**: Android에서는 `gamepads` 크레이트가 컴파일되지 않아(nail 0005), nail의 패치한 miniquad 0.4.11(`third_party/miniquad`, 버튼 → F13~F24 키, 스틱·HAT → `joystick_axes`, 키 반복 플래그)을 그대로 가져와 `[patch.crates-io]`로 쓴다. `input.rs`의 Android 경로가 데스크톱 패드와 같은 배치로 읽는다(Android 축은 아래가 +y → 뒤집음). 시험: `android_sticks_push_up_for_forward_and_fall_back_to_the_hat`, `android_pad_keys_match_patched_miniquad`, `android_key_repeat_reaches_macroquad`. Android에서는 키 입력을 키보드로 세지 않는다(패드 버튼·D패드도 키로 오므로).

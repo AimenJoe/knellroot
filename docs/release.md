@@ -9,7 +9,8 @@ nail `docs/release.md`를 줄인 것. 웹(Netlify) + Android APK(0022). PC·iOS�
 | 웹(개발판) | `release/**` push | `deploy-web.yml` | 개발 기능 켠 빌드 → 별칭 `dev`(https://dev--knellroot.netlify.app, noindex). 올린 뒤 별칭의 `build.txt`를 확인(아니면 실패) |
 | 웹(PR) | PR | 같은 워크플로 | `pr-<번호>--knellroot.netlify.app` |
 | Release + APK | `main` push에 `Cargo.toml` 버전이 새 값 **그리고** `docs/releases/v<버전>.md`가 있음 | `release.yml` → `build-android.yml` | 태그 `v<버전>`, GitHub Release(본문 = 그 md), `knellroot.apk`(운영판) 첨부 |
-| APK(개발판) | `release/**` push(`src/`·`assets/`·`android/`·`third_party/`·`Cargo.*`) | `build-android.yml` | 패키지 `io.github.aimenjoe.knellroot.dev`("Knellroot dev") → 미리 보기 Release `dev`의 `knellroot-dev.apk`를 갈아 끼움 |
+| APK(개발판) | `release/**` push(`src/`·`assets/`·`android/`·`third_party/`·`Cargo.*`) | `build-android.yml` | 패키지 `io.github.aimenjoe.dev.knellroot`("Knellroot dev" — 마지막 조각은 꼭 `knellroot`: cargo-quad-apk가 라이브러리 이름으로 쓴다, 0070) → 미리 보기 Release `dev`의 `knellroot-dev.apk`를 갈아 끼움 |
+| Android 연기 시험 | `android-smoke.yml`·`tools/test/android-smoke.sh`를 고쳐 `release/**` push, 또는 수동 | `android-smoke.yml` | 그 커밋의 개발판 APK를 x86_64 에뮬레이터(ARM 번역)에 깔아 켜고 Enter 둘(시작) → 살아 있나·화면 둘·logcat을 아티팩트로. 폰에서 안 켜질 때 원인 줄(패닉·`UnsatisfiedLinkError`)을 본다 |
 | APK(시험용) | `main` push(같은 경로), 또는 Actions → build-android → Run workflow | `build-android.yml` | Actions 아티팩트 `knellroot-apk-<release·dev>-<sha>` |
 
 ## 갈래(0022, nail 0193)

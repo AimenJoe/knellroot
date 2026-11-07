@@ -151,3 +151,16 @@
     - 칸·후보 모두 다른 것을 누르면 **고르기만**(설명·미리 보기가 바뀐다), 고른 것을 **다시 누르면** 연다/끼운다. 마우스 클릭도 같다.
     - 목록이 열린 채 칸 상자를 누르면: 같은 칸 = 목록 닫기, 다른 칸 = 그 칸을 고르고 그 칸의 목록으로. 바꿀 것이 없으면 닫고 고르기만 한다(`Hit::Cell(0, 칸)`).
     - 헤드리스 `touch.js`: 멈춤 → 장비 → 장신구 칸 고르기 → 무기 칸 두 번 → 지팡이 두 번 → 기록에 `weapon=staff`.
+
+## 덧붙임(2026-11-07): 연구실은 설정 안으로 · 개발판 Android가 켜지지 않던 것
+사장: "Lab 은 연구실로, 설정 밑에 넣어주고, 개발빌드에서만 나타나야해. 그리고 개발판 안드로이드 빌드 크래쉬 나는데? 시작 할 수 없어."
+15. **연구실**: 이름은 "연구실"(영어 Lab, i18n `menu_lab` — 글꼴 서브셋 다시)이다.
+    - 설정의 조작 설정 바로 위 줄(`SettingsRow::Lab`, 개발판에만)에 둔다. 조작 설정은 늘 끝에서 둘째라 헤드리스 길이 그대로다.
+    - 멈춤 메뉴의 LAB 줄은 지웠다. F1은 그대로(싸움·멈춤·설정에서).
+16. **개발판 Android 크래시**
+    - 증거: 새 CI `android-smoke`(x86_64 에뮬레이터 + ARM 번역에 개발판 APK를 깔아 켬)의 logcat에 `UnsatisfiedLinkError: dlopen failed: library "libdev.so" not found`(MainActivity `System.loadLibrary`)가 있었다.
+    - 원인: cargo-quad-apk는 **패키지 이름의 마지막 조각**을 라이브러리 이름으로 쓴다(`src/ops/build.rs` — `package_name.split(".").last()`, 1차 출처). 개발판 패키지 `io.github.aimenjoe.knellroot.dev` → `libdev.so`를 찾는데 APK에는 `libknellroot.so`뿐이다. 0022부터 개발판 APK는 늘 켜자마자 죽었을 것이다. 운영판(`….knellroot`)은 괜찮다.
+    - 고침: 개발판 패키지를 `io.github.aimenjoe.dev.knellroot`로 바꿨다(앱 이름 "Knellroot dev"는 그대로).
+      - 전에 깐 옛 개발판(`….knellroot.dev`)은 지우고 새로 깔아야 한다. 패키지가 달라 새 앱으로 깔린다.
+      - `build-android`의 APK 검사에 "패키지 마지막 조각 = APK 안의 `lib<이름>.so`"를 더해 다시 새지 않게 했다.
+    - nail도 같은 꼴(`io.github.aimenjoe.nail.dev`)이라 개발판 APK가 같은 이유로 죽을 것이다 — 사장에게 알림.

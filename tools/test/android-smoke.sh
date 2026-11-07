@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Android 에뮬레이터에서 APK를 켜 보고 로그를 남긴다(2026-11-06 — 개발판이 폰에서 켜지지 않아 원인을 보려고).
+# Android 에뮬레이터에서 APK를 켜 보고 로그를 남긴다(2026-11-06 — 개발판이 폰에서 켜지지 않아 원인을 보려고:
+# logcat "libdev.so not found" → 개발판 패키지 이름의 마지막 조각이 라이브러리 이름이 되던 것).
 #   bash tools/test/android-smoke.sh <apk> <나갈 폴더> [패키지]
 # 하는 일: 깔기 → 켜기 → 20초 뒤 화면·살아 있나 → Enter 둘(시작하기 → 빈 슬롯 = 시작) → 15초 뒤 화면·살아 있나 → logcat.
 # Rust 패닉은 logcat의 RustStdoutStderr·"panicked", 네이티브 크래시는 "Fatal signal"·"backtrace"로 남는다.
 set -u
 APK=$1
 OUT=$2
-PKG=${3:-io.github.aimenjoe.knellroot.dev}
+PKG=${3:-io.github.aimenjoe.dev.knellroot}
 mkdir -p "$OUT"
 adb install -r -g "$APK" > "$OUT/install.txt" 2>&1
 cat "$OUT/install.txt"
