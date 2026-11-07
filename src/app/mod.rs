@@ -21,6 +21,7 @@ mod shop;
 mod slots;
 mod stack;
 mod title;
+mod tree;
 
 use macroquad::prelude::*;
 
@@ -411,6 +412,7 @@ impl App {
             Scene::Title => self.tick_title(a),
             Scene::Ask(k) => self.tick_ask(&a, k),
             Scene::Equip => self.tick_equip(&a),
+            Scene::Tree { view } => self.tick_tree(&a, view),
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
             s @ (Scene::Pause
             | Scene::Settings
@@ -472,6 +474,7 @@ impl App {
             | Scene::Controls
             | Scene::Ask(_)
             | Scene::Equip
+            | Scene::Tree { .. }
             | Scene::EquipPick { .. } => None,
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } => None,
@@ -499,6 +502,7 @@ impl App {
             | Scene::Controls
             | Scene::Ask(_)
             | Scene::Equip
+            | Scene::Tree { .. }
             | Scene::EquipPick { .. } => {}
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } => {}
@@ -527,6 +531,7 @@ impl App {
                 | Scene::Ending { .. }
                 | Scene::Hearth
                 | Scene::Level
+                | Scene::Tree { .. }
                 | Scene::Shop
                 | Scene::Title
         ) {
@@ -581,6 +586,7 @@ impl App {
             Scene::Ask(k) => self.draw_ask(f, k),
             Scene::Controls => self.draw_controls(f),
             Scene::Equip => self.draw_equip(f, self.cursor, None),
+            Scene::Tree { view } => self.draw_tree(f, view),
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.draw_dev_screen(f, tab as usize),
             Scene::EquipPick { slot } => {
@@ -622,7 +628,10 @@ impl App {
             let a = (t / 0.6).min(1.0);
             let cx = f.ox + f.w * 0.5;
             // 화로 가게에서는 목록을 가리지 않게 맨 위에.
-            let y = if matches!(self.scene(), Scene::Hearth | Scene::Level | Scene::Shop) {
+            let y = if matches!(
+                self.scene(),
+                Scene::Hearth | Scene::Level | Scene::Tree { .. } | Scene::Shop
+            ) {
                 0.04
             } else {
                 0.3

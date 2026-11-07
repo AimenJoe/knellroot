@@ -59,8 +59,7 @@ pub const LAB_NOTE: Pair = (
 );
 pub const SCENARIO_NOTE: Pair = ("아레나에서 숫자 키 {0} · {1}", "key {0} in the arena · {1}");
 
-/// 위의 쌍 전부(글꼴 시험).
-#[cfg(test)]
+/// 위의 쌍 전부(글꼴 시험·글자 미리 굽기 `i18n::dev_texts`).
 pub const PAIRS: &[Pair] = &[
     NO_B,
     USING,

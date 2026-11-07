@@ -31,7 +31,8 @@ impl App {
             self.world.embers,
             &self.progress.owned,
             &self.progress.growth,
-        ) || self.progress.level.can_raise(self.world.embers);
+        ) || self.progress.level.can_raise(self.world.embers)
+            || self.progress.tree.can_open(self.progress.tree_points());
         if self.run.take_rested() {
             self.snd(crate::sfx::Id::Rest);
             self.go(Go::Open(Scene::Hearth));

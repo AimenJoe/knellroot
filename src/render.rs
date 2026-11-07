@@ -947,11 +947,35 @@ impl Renderer {
             if run.found.get(i).copied().unwrap_or(true) {
                 continue;
             }
+            let k = 0.5 + 0.5 * (w.time * 2.2 + i as f32 * 1.7).sin();
+            // 종소리 조각(0106): 가늘고 긴 크림빛 조각이 천천히 돌며 떤다 — 덩어리(등잔·한 모금)와 모양부터 다르게, 종 꼴은 아니게.
+            if *kind == crate::stage::Find::Shard {
+                let col = Color::new(0.96, 0.92, 0.82, 1.0);
+                let c = *p + Vec3::Y * (0.55 + 0.06 * k);
+                fl.shadow(*p, 0.2);
+                let tremble = (w.time * 23.0 + i as f32).sin() * 0.04;
+                shaded_box_rot(
+                    c,
+                    vec3(0.1, 0.42, 0.05),
+                    col,
+                    1.0,
+                    Quat::from_rotation_y(w.time * 0.9 + i as f32)
+                        * Quat::from_rotation_z(0.35 + tremble),
+                    c,
+                );
+                fl.ring(
+                    *p,
+                    0.5 + 0.12 * k,
+                    0.0,
+                    360.0,
+                    with_a(Color::new(0.95, 0.81, 0.49, 1.0), 0.2 + 0.25 * k),
+                );
+                continue;
+            }
             let col = match kind {
                 crate::stage::Find::Lamp => Color::new(0.95, 0.81, 0.49, 1.0),
-                crate::stage::Find::Sip => Color::new(0.65, 0.86, 0.78, 1.0),
+                _ => Color::new(0.65, 0.86, 0.78, 1.0),
             };
-            let k = 0.5 + 0.5 * (w.time * 2.2 + i as f32 * 1.7).sin();
             let c = *p + Vec3::Y * (0.45 + 0.08 * k);
             fl.shadow(*p, 0.25);
             shaded_box(c, Vec3::splat(0.22), col, 1.0);

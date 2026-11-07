@@ -26,6 +26,10 @@ pub enum Scene {
     Hearth,
     /// 레벨(0104): 생명·기력·힘을 잔불로 한 단씩. 화로에서 연다 — 닫으면 화로.
     Level,
+    /// 기술 나무(0106): 화로에서 열면 칸을 연다(`view = false`), 멈춤에서 열면 읽기·목표 핀만(`view = true`). 닫으면 연 곳.
+    Tree {
+        view: bool,
+    },
     /// 가게(0064 M4): 잔불로 장신구·등잔 기름을 산다. 화로에서 연다(0104 전엔 쉬면 바로 열렸다) — 닫으면 화로.
     Shop,
     /// 묻는 창(KB `controller-layout-and-remapping` "되돌릴 수 없는 메뉴 항목은 한 번 묻는다", nail 0274·가게 묻는 창):
@@ -66,6 +70,7 @@ impl Scene {
                 | Scene::EquipPick { .. }
                 | Scene::Hearth
                 | Scene::Level
+                | Scene::Tree { .. }
                 | Scene::Shop
                 | Scene::Ask(_)
                 | Scene::Result { .. }
@@ -100,6 +105,7 @@ impl Scene {
             // 가게는 잔불을 제가 보인다(KB hud-readability: 창이 같은 정보면 밑 HUD를 그리지 않는다).
             Scene::Hearth
             | Scene::Level
+            | Scene::Tree { .. }
             | Scene::Shop
             | Scene::Result { .. }
             | Scene::Controls
@@ -167,12 +173,14 @@ pub enum Ask {
     Buy(usize),
     /// 화로 레벨(0104): 이 줄(`progression::LINES`의 자리)을 한 단 올린다.
     Level(u8),
+    /// 나무(0106): 이 갈래의 다음 칸을 연다(점수 1).
+    Tree(u8),
 }
 
 /// 묻는 창의 커서 처음 자리: 버리는 일은 "취소"(1)에서 — 연타가 실행되지 않게(KB). 사기는 nail 가게처럼 "사기"(0)에서.
 pub fn ask_default(k: Ask) -> usize {
     match k {
-        Ask::Buy(_) | Ask::Level(_) => 0,
+        Ask::Buy(_) | Ask::Level(_) | Ask::Tree(_) => 0,
         _ => 1,
     }
 }
@@ -185,7 +193,7 @@ pub fn answer(k: Ask, yes: bool) -> (Go, bool) {
     match k {
         Ask::Restart => (Go::Root(Scene::Play), true),
         Ask::ToTitle => (Go::Root(Scene::Title), true),
-        Ask::Buy(_) | Ask::Level(_) => (Go::Back, false),
+        Ask::Buy(_) | Ask::Level(_) | Ask::Tree(_) => (Go::Back, false),
     }
 }
 
@@ -273,6 +281,8 @@ pub enum PauseItem {
     Resume,
     /// 장비(0064 M3, 0051의 무기 줄): 좌우 = 다음 무기(전처럼), 확인 = 장비 창(무기 + 장신구 세 칸).
     Weapon,
+    /// 기술 나무(0106) — 읽기·목표 핀만(칸은 쉼터 화로에서 연다).
+    Tree,
     Settings,
     /// 개발 메뉴(0075 → 0090) — 개발판에만, 설정 바로 아래 줄(연구소가 있던 자리 — 연구소는 개발 창 도구 탭·타이틀에서, 사장 2026-11-07).
     #[cfg(feature = "dev")]
@@ -281,9 +291,14 @@ pub enum PauseItem {
     ToTitle,
 }
 
-/// 멈춤 창의 줄: 계속 · 장비 · 설정 · [개발] · 처음부터 · 타이틀로 — 대괄호는 개발판에만(0090).
+/// 멈춤 창의 줄: 계속 · 장비 · 나무(0106) · 설정 · [개발] · 처음부터 · 타이틀로 — 대괄호는 개발판에만(0090).
 pub fn pause_items() -> Vec<PauseItem> {
-    let mut v = vec![PauseItem::Resume, PauseItem::Weapon, PauseItem::Settings];
+    let mut v = vec![
+        PauseItem::Resume,
+        PauseItem::Weapon,
+        PauseItem::Tree,
+        PauseItem::Settings,
+    ];
     #[cfg(feature = "dev")]
     v.push(PauseItem::Dev);
     v.extend([PauseItem::Restart, PauseItem::ToTitle]);
@@ -363,6 +378,7 @@ pub fn back(scene: Scene) -> Go {
         | Scene::EquipPick { .. }
         | Scene::Hearth
         | Scene::Level
+        | Scene::Tree { .. }
         | Scene::Shop
         | Scene::Ask(_)
         | Scene::Controls
@@ -390,6 +406,7 @@ pub fn choose_pause(item: PauseItem) -> (Go, bool) {
     match item {
         PauseItem::Resume => (Go::Back, false),
         PauseItem::Weapon => (Go::Open(Scene::Equip), false),
+        PauseItem::Tree => (Go::Open(Scene::Tree { view: true }), false),
         PauseItem::Settings => (Go::Open(Scene::Settings), false),
         PauseItem::Restart => (Go::Open(Scene::Ask(Ask::Restart)), false),
         PauseItem::ToTitle => (Go::Open(Scene::Ask(Ask::ToTitle)), false),
@@ -561,7 +578,13 @@ mod tests {
         let p = pause_items();
         let i = p.iter().position(|x| *x == PauseItem::Settings).unwrap();
         assert_eq!(p.get(i + 1), Some(&PauseItem::Dev));
-        assert_eq!(p.len(), 6);
+        // 계속 · 장비 · 나무(0106) · 설정 · 개발 · 처음부터 · 타이틀로.
+        assert_eq!(p.len(), 7);
+        assert_eq!(p[2], PauseItem::Tree);
+        assert_eq!(
+            choose_pause(PauseItem::Tree),
+            (Go::Open(Scene::Tree { view: true }), false)
+        );
         for fs in [false, true] {
             for mouse in [false, true] {
                 assert_eq!(settings_rows(fs, mouse).len() >= 4, true);

@@ -1,8 +1,9 @@
-//! 성장 v0.4.0 "자라는 방랑자"(0095·0096·0102): **잔불 레벨** — 생명·기력·힘 셋, 각 다섯 단(0104 G1).
-//! 기술 나무(G2)는 뒤에 이 파일에 더한다.
+//! 성장 v0.4.0 "자라는 방랑자"(0095·0096·0102): **잔불 레벨** — 생명·기력·힘 셋, 각 다섯 단(0104 G1),
+//! **기술 나무** — 박자·맞받기·발걸음 셋 × 다섯 칸, 점수 = 문지기 핵 + 종소리 조각(0106 G2). 칸의 동작은 G5.
 //!
 //! 뜻(lore CANON, `docs/lore/growth.md`): 힘을 빨아들이는 게 아니라 몸과 싸우는 법을 되찾는 것 — 숫자 성장은 여기,
 //! 동작 성장은 나무. 값·단은 판정(0096 L1·L2)에서 고친다 — 표 한 곳.
+use crate::i18n::Tr;
 use crate::stats::Mods;
 
 /// 레벨 줄.
@@ -109,6 +110,281 @@ impl Level {
     }
 }
 
+/// 나무 갈래(0102 4절 — 싸움을 대하는 태도).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Branch {
+    /// 흐름을 읽는 방랑자 — 평타 콤보·박자·딱 맞춰 떼기.
+    Beat,
+    /// 맞서는 방랑자 — 패링·이어 패링·모으기 패링·반격.
+    Riposte,
+    /// 자리를 찾는 방랑자 — 회피·달리기·땅 돌리기·점프·내려찍기.
+    Footing,
+}
+
+pub const BRANCHES: [Branch; 3] = [Branch::Beat, Branch::Riposte, Branch::Footing];
+/// 갈래마다 칸 수(앞 칸을 열어야 다음 칸, 칸마다 1점).
+pub const DEPTH: u8 = 5;
+
+/// 나무 칸(0102 4절). 기록은 갈래마다 연 칸 수라 칸 이름은 기록에 없다 — 이름·순서를 바꿔도 연 수는 그대로.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Cell {
+    /// 고른 호흡: 딱 맞춰 뗀 강타가 강타 기력을 돌려준다(숫자 칸).
+    EvenBreath,
+    /// 이어지는 박자: 박자 타 셋을 잇달아 맞히면 셋째 타에 작은 충격.
+    FlowingBeat,
+    /// 맺음타: 콤보 마지막 타에도 박자 창, 맞히면 자세 ×1.5.
+    ClosingBlow,
+    /// 빈틈의 박자: 헛친 적의 경직 동안 박자 타 자세 ×2.
+    GapBeat,
+    /// 끝맺음: 박자 다섯 + 마지막 타 박자 → 다음 강타가 다 모인 강타.
+    FinalMeasure,
+    /// 받아내기: 패링이 적 자세에 주는 몫 +50%(숫자 칸).
+    Catch,
+    /// 되돌려 치기: 패링 반격 타가 둘레 2m도 휘청.
+    TurnItBack,
+    /// 모은 맞받기: 모으기 패링 뒤 그 강타가 맞으면 자세가 곧바로 깨짐(문지기는 반).
+    GatheredRiposte,
+    /// 무너진 틈: 깨진 적에게 다 모은 강타 = 깨짐을 처음부터.
+    OpenBreach,
+    /// 맞서는 자: 이어 패링 셋 동안 못 받는 공격도 패링 = 피해 반.
+    OneWhoStands,
+    /// 멈추지 않는 걸음: 달리기 기력 −30%(숫자 칸).
+    UnbrokenStride,
+    /// 비껴서기: 등 뒤에서 끝난 회피 → 대시 공격 자세 ×2.
+    Sidestep,
+    /// 기우는 땅: 땅 돌리기가 멈출 때 휘청인 적이 바깥으로 1m.
+    TiltingGround,
+    /// 착지의 순간: 내려찍기가 0.3초 뒤 바깥 고리 한 번 더.
+    LandingBeat,
+    /// 길을 여는 발: 대시 공격이 맞힌 적을 지나쳐 등 뒤에 선다.
+    PathOpeningStep,
+}
+
+/// 칸 하나의 표 줄: 칸·이름·설명·숫자 칸인가(갈래마다 하나까지 — 0095 원칙, 시험).
+/// `cell`은 칸 동작(G5)이 `Tree::has`로 읽는다 — 그 전까지는 시험만 읽는다.
+#[cfg_attr(not(test), allow(dead_code))]
+pub struct CellDef {
+    pub cell: Cell,
+    pub name: Tr,
+    pub desc: Tr,
+    pub number: bool,
+}
+
+const fn c(cell: Cell, name: Tr, desc: Tr, number: bool) -> CellDef {
+    CellDef {
+        cell,
+        name,
+        desc,
+        number,
+    }
+}
+
+/// 나무(0102 4절 — 이름은 장신구와 겹치지 않는다, 1막이라 종·울림 말 없음, 판정 창을 넓히는 칸 없음).
+pub static TREE: [[CellDef; DEPTH as usize]; 3] = [
+    [
+        c(
+            Cell::EvenBreath,
+            |s| s.cell_even_breath,
+            |s| s.cell_even_breath_d,
+            true,
+        ),
+        c(
+            Cell::FlowingBeat,
+            |s| s.cell_flowing_beat,
+            |s| s.cell_flowing_beat_d,
+            false,
+        ),
+        c(
+            Cell::ClosingBlow,
+            |s| s.cell_closing_blow,
+            |s| s.cell_closing_blow_d,
+            false,
+        ),
+        c(
+            Cell::GapBeat,
+            |s| s.cell_gap_beat,
+            |s| s.cell_gap_beat_d,
+            false,
+        ),
+        c(
+            Cell::FinalMeasure,
+            |s| s.cell_final_measure,
+            |s| s.cell_final_measure_d,
+            false,
+        ),
+    ],
+    [
+        c(Cell::Catch, |s| s.cell_catch, |s| s.cell_catch_d, true),
+        c(
+            Cell::TurnItBack,
+            |s| s.cell_turn_it_back,
+            |s| s.cell_turn_it_back_d,
+            false,
+        ),
+        c(
+            Cell::GatheredRiposte,
+            |s| s.cell_gathered,
+            |s| s.cell_gathered_d,
+            false,
+        ),
+        c(
+            Cell::OpenBreach,
+            |s| s.cell_open_breach,
+            |s| s.cell_open_breach_d,
+            false,
+        ),
+        c(
+            Cell::OneWhoStands,
+            |s| s.cell_one_who_stands,
+            |s| s.cell_one_who_stands_d,
+            false,
+        ),
+    ],
+    [
+        c(
+            Cell::UnbrokenStride,
+            |s| s.cell_stride,
+            |s| s.cell_stride_d,
+            true,
+        ),
+        c(
+            Cell::Sidestep,
+            |s| s.cell_sidestep,
+            |s| s.cell_sidestep_d,
+            false,
+        ),
+        c(
+            Cell::TiltingGround,
+            |s| s.cell_tilting,
+            |s| s.cell_tilting_d,
+            false,
+        ),
+        c(
+            Cell::LandingBeat,
+            |s| s.cell_landing,
+            |s| s.cell_landing_d,
+            false,
+        ),
+        c(
+            Cell::PathOpeningStep,
+            |s| s.cell_path,
+            |s| s.cell_path_d,
+            false,
+        ),
+    ],
+];
+
+impl Branch {
+    /// 갈래 이름과 태도 한 줄(0102 4절, 화면 머리).
+    pub fn name(self) -> Tr {
+        match self {
+            Branch::Beat => |s| s.tree_beat,
+            Branch::Riposte => |s| s.tree_riposte,
+            Branch::Footing => |s| s.tree_footing,
+        }
+    }
+
+    pub fn motto(self) -> Tr {
+        match self {
+            Branch::Beat => |s| s.tree_beat_d,
+            Branch::Riposte => |s| s.tree_riposte_d,
+            Branch::Footing => |s| s.tree_footing_d,
+        }
+    }
+}
+
+/// 나무 점수(0102 5절): 문지기 핵(이길 때마다·셋까지) + 주운 종소리 조각.
+pub fn tree_points(cores: u32, finds: &[String]) -> u32 {
+    cores
+        + finds
+            .iter()
+            .filter(|id| id.split('.').nth(1) == Some("shard"))
+            .count() as u32
+}
+
+/// 연 칸(기록 `tree.beat`·`tree.riposte`·`tree.footing` = 갈래마다 연 수)과 목표 핀(`tree.pin` = "갈래.깊이").
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Tree {
+    pub open: [u8; 3],
+    pub pin: Option<(u8, u8)>,
+}
+
+/// 칸 하나의 지금 모양(화면 밝기 네 단 — KB `meta-progression-unlock-planning`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CellState {
+    Open,
+    /// 다음 칸이고 점수가 있다.
+    Ready,
+    /// 다음 칸인데 점수가 모자란다.
+    Short,
+    /// 앞 칸을 먼저 — 거기까지 n점.
+    Far(u32),
+}
+
+impl Tree {
+    /// 쓴 점수.
+    pub fn spent(&self) -> u32 {
+        self.open.iter().map(|&n| n as u32).sum()
+    }
+
+    /// 남은 점수.
+    pub fn left(&self, points: u32) -> u32 {
+        points.saturating_sub(self.spent())
+    }
+
+    /// 이 칸이 열렸나 — 칸 동작(G5)이 읽는다.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn has(&self, cell: Cell) -> bool {
+        TREE.iter().enumerate().any(|(b, row)| {
+            row.iter()
+                .take(self.open[b] as usize)
+                .any(|d| d.cell == cell)
+        })
+    }
+
+    pub fn state(&self, b: usize, d: usize, points: u32) -> CellState {
+        let open = self.open[b] as usize;
+        if d < open {
+            CellState::Open
+        } else if d == open {
+            if self.left(points) >= 1 {
+                CellState::Ready
+            } else {
+                CellState::Short
+            }
+        } else {
+            CellState::Far((d - open + 1) as u32)
+        }
+    }
+
+    /// 다음 칸을 연다(점수가 있고 갈래가 덜 찼을 때). 그 칸이 목표였으면 핀을 푼다.
+    pub fn open_next(&mut self, b: usize, points: u32) -> bool {
+        if self.open[b] >= DEPTH || self.left(points) == 0 {
+            return false;
+        }
+        self.open[b] += 1;
+        if self
+            .pin
+            .is_some_and(|(pb, pd)| pb as usize == b && pd < self.open[b])
+        {
+            self.pin = None;
+        }
+        true
+    }
+
+    /// 목표까지 남은 칸 수(핀이 있고 아직 안 열렸을 때).
+    pub fn cells_to_pin(&self) -> Option<u32> {
+        let (b, d) = self.pin?;
+        let open = self.open[b as usize];
+        (d >= open).then(|| (d - open + 1) as u32)
+    }
+
+    /// 열 수 있는 칸이 있나(쉼터가 빛난다).
+    pub fn can_open(&self, points: u32) -> bool {
+        self.left(points) >= 1 && self.open.iter().any(|&n| n < DEPTH)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,6 +453,61 @@ mod tests {
             assert_eq!(s.parry, 0.0);
             assert_eq!(s.atk_speed, 1.0);
         }
+    }
+
+    #[test]
+    fn the_tree_has_three_branches_of_five_one_number_cell_each_and_no_charm_names() {
+        let mut seen = Vec::new();
+        for row in &TREE {
+            assert_eq!(
+                row.iter().filter(|d| d.number).count(),
+                1,
+                "one number cell per branch"
+            );
+            for d in row {
+                assert!(!seen.contains(&d.cell), "{:?} twice", d.cell);
+                seen.push(d.cell);
+            }
+        }
+        assert_eq!(seen.len(), 15);
+        // 칸 이름은 장신구 이름과 겹치지 않는다(0102 — "가벼운 발").
+        for lang in crate::i18n::Lang::ALL {
+            let s = lang.strings();
+            let charms: Vec<&str> = crate::charms::TABLE.iter().map(|d| (d.name)(s)).collect();
+            for row in &TREE {
+                for d in row {
+                    assert!(
+                        !charms.contains(&(d.name)(s)),
+                        "{} is a charm name",
+                        (d.name)(s)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cells_open_in_order_one_point_each_and_the_pin_counts_down() {
+        let mut t = Tree::default();
+        assert_eq!(t.state(0, 0, 0), CellState::Short);
+        assert_eq!(t.state(0, 0, 1), CellState::Ready);
+        assert_eq!(t.state(0, 3, 1), CellState::Far(4));
+        t.pin = Some((2, 2));
+        assert_eq!(t.cells_to_pin(), Some(3));
+        assert!(t.open_next(2, 6));
+        assert_eq!(t.cells_to_pin(), Some(2));
+        assert!(t.open_next(2, 6) && t.open_next(2, 6));
+        assert_eq!(t.pin, None, "reaching the goal clears it");
+        assert!(t.has(Cell::TiltingGround));
+        assert!(!t.has(Cell::LandingBeat));
+        assert!(t.open_next(0, 6) && t.open_next(0, 6) && t.open_next(0, 6));
+        assert_eq!(t.left(6), 0);
+        assert!(!t.open_next(1, 6), "no points left");
+        assert!(!t.can_open(6));
+        assert_eq!(
+            tree_points(3, &["sanctuary.shard.0".into(), "sanctuary.lamp.0".into()]),
+            4
+        );
     }
 
     #[test]

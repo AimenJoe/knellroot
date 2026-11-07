@@ -811,6 +811,8 @@ pub fn bake_size(want: f32, dpi: f32) -> (u16, f32) {
 pub fn all_text(s: &Strings) -> String {
     let mut v = i18n::all(s).concat();
     v.push_str(i18n::UI_GLYPHS);
+    // 개발판은 개발 창 글도(0106 — 빠져 있어 개발 창을 여는 프레임에 아틀라스가 커졌다).
+    v.push_str(&i18n::dev_texts().concat());
     v
 }
 

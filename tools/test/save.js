@@ -77,9 +77,9 @@ async function main() {
   r = await record();
   console.log('레벨을 올린 뒤 기록:', JSON.stringify(r));
   if (!/lv\.life=1\n/.test(r) || !/embers=30\n/.test(r)) fail('raising Life must spend 30 embers and keep lv.life=1');
-  // 레벨 창을 닫으면 화로(연 줄) → 둘째 줄 가게 → 첫 줄(잔불 주머니 25) 사기.
+  // 레벨 창을 닫으면 화로(연 줄) → 셋째 줄 가게(레벨·나무·가게, 0106) → 첫 줄(잔불 주머니 25) 사기.
   await press('Escape'); await page.waitForTimeout(300);
-  await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
   await shot('save-2a-shop');
   // 사기 전에 묻는 창(nail 가게 — 커서는 "사기"에서).
   await press('Enter'); await page.waitForTimeout(300);
@@ -105,10 +105,10 @@ async function main() {
   await press('Escape'); await page.waitForTimeout(200);
   await press('Escape'); await page.waitForTimeout(300);
 
-  // 4) 멈춤 → 처음부터(다섯째 줄: 계속·장비·설정·개발(개발판, 0090)·처음부터).
+  // 4) 멈춤 → 처음부터(여섯째 줄: 계속·장비·나무(0106)·설정·개발(개발판, 0090)·처음부터).
   await press('Escape');
   await page.waitForTimeout(200);
-  await press('ArrowDown', 4);
+  await press('ArrowDown', 5);
   await press('Enter');
   await page.waitForTimeout(300);
   // 처음부터는 묻는 창(커서는 "취소" — 그냥 확인하면 아무 일 없다), 위로 한 번 = "처음부터".
@@ -121,11 +121,11 @@ async function main() {
   if (!/embers=5\n/.test(r) || !/clears=1/.test(r)) fail('restart must keep what stays');
   if (!/future\.key=keep/.test(r)) fail('unknown keys must survive a write');
 
-  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 → 여섯째 — 개발 줄이 끼어(0090) → 묻는 창 위로 한 번).
+  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 → 일곱째 — 나무(0106)·개발 줄(0090)이 끼어 → 묻는 창 위로 한 번).
   const slotCell = () => page.evaluate(() => localStorage.getItem('knell.slot'));
   const toTitle = async () => {
     await press('Escape'); await page.waitForTimeout(200);
-    await press('ArrowDown', 5); await press('Enter'); await page.waitForTimeout(300);
+    await press('ArrowDown', 6); await press('Enter'); await page.waitForTimeout(300);
     await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(600);
   };
   await toTitle();

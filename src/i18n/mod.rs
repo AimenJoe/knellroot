@@ -88,6 +88,59 @@ pub struct Strings {
 
     /// 성장(0064 M4): 핵 고르기·쉼터 화로 가게.
     pub core_title: &'static str,
+    pub tree_title: &'static str,
+    pub tree_points: &'static str,
+    pub hearth_tree_d: &'static str,
+    pub hearth_points: &'static str,
+    pub tree_beat: &'static str,
+    pub tree_beat_d: &'static str,
+    pub tree_riposte: &'static str,
+    pub tree_riposte_d: &'static str,
+    pub tree_footing: &'static str,
+    pub tree_footing_d: &'static str,
+    pub tree_open: &'static str,
+    pub tree_ready: &'static str,
+    pub tree_short: &'static str,
+    pub tree_far: &'static str,
+    pub tree_goal: &'static str,
+    pub tree_view_only: &'static str,
+    pub toast_pin: &'static str,
+    pub toast_unpin: &'static str,
+    pub ask_tree: &'static str,
+    pub ask_tree_yes: &'static str,
+    pub toast_tree: &'static str,
+    pub toast_find_shard: &'static str,
+    pub verb_pin: &'static str,
+    pub cell_even_breath: &'static str,
+    pub cell_even_breath_d: &'static str,
+    pub cell_flowing_beat: &'static str,
+    pub cell_flowing_beat_d: &'static str,
+    pub cell_closing_blow: &'static str,
+    pub cell_closing_blow_d: &'static str,
+    pub cell_gap_beat: &'static str,
+    pub cell_gap_beat_d: &'static str,
+    pub cell_final_measure: &'static str,
+    pub cell_final_measure_d: &'static str,
+    pub cell_catch: &'static str,
+    pub cell_catch_d: &'static str,
+    pub cell_turn_it_back: &'static str,
+    pub cell_turn_it_back_d: &'static str,
+    pub cell_gathered: &'static str,
+    pub cell_gathered_d: &'static str,
+    pub cell_open_breach: &'static str,
+    pub cell_open_breach_d: &'static str,
+    pub cell_one_who_stands: &'static str,
+    pub cell_one_who_stands_d: &'static str,
+    pub cell_stride: &'static str,
+    pub cell_stride_d: &'static str,
+    pub cell_sidestep: &'static str,
+    pub cell_sidestep_d: &'static str,
+    pub cell_tilting: &'static str,
+    pub cell_tilting_d: &'static str,
+    pub cell_landing: &'static str,
+    pub cell_landing_d: &'static str,
+    pub cell_path: &'static str,
+    pub cell_path_d: &'static str,
     pub find_verb: &'static str,
     pub toast_find_lamp: &'static str,
     pub toast_find_sip: &'static str,
@@ -288,6 +341,24 @@ pub struct Strings {
     pub defeat_sub: &'static str,
 }
 
+/// 개발 화면 글(0080 — 랩 값 이름·묶음·시나리오·쌍). 글꼴 시험과 글자 미리 굽기(`ui::all_text`)가 같이 쓴다 —
+/// 미리 굽지 않으면 개발 창의 글자가 그 프레임에 아틀라스를 키워 앞서 그린 글이 지운 텍스처를 본다(0106, `text.rs`).
+#[cfg(feature = "dev")]
+pub fn dev_texts() -> Vec<&'static str> {
+    dev::SPEC_KO
+        .iter()
+        .map(|(_, v)| *v)
+        .chain(dev::GROUP_KO)
+        .chain(dev::SCENARIO_KO.iter().flat_map(|(_, n, c)| [*n, *c]))
+        .chain(dev::PAIRS.iter().map(|p| p.0))
+        .collect()
+}
+
+#[cfg(not(feature = "dev"))]
+pub fn dev_texts() -> Vec<&'static str> {
+    Vec::new()
+}
+
 /// 표의 모든 글(글자 굽기·글꼴 시험). 필드를 더하면 여기에도 — 빠뜨리면 그 글자가 안 구워진다.
 pub fn all(s: &Strings) -> Vec<&'static str> {
     vec![
@@ -302,6 +373,59 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.ask_cancel,
         s.save_failed,
         s.core_title,
+        s.tree_title,
+        s.tree_points,
+        s.hearth_tree_d,
+        s.hearth_points,
+        s.tree_beat,
+        s.tree_beat_d,
+        s.tree_riposte,
+        s.tree_riposte_d,
+        s.tree_footing,
+        s.tree_footing_d,
+        s.tree_open,
+        s.tree_ready,
+        s.tree_short,
+        s.tree_far,
+        s.tree_goal,
+        s.tree_view_only,
+        s.toast_pin,
+        s.toast_unpin,
+        s.ask_tree,
+        s.ask_tree_yes,
+        s.toast_tree,
+        s.toast_find_shard,
+        s.verb_pin,
+        s.cell_even_breath,
+        s.cell_even_breath_d,
+        s.cell_flowing_beat,
+        s.cell_flowing_beat_d,
+        s.cell_closing_blow,
+        s.cell_closing_blow_d,
+        s.cell_gap_beat,
+        s.cell_gap_beat_d,
+        s.cell_final_measure,
+        s.cell_final_measure_d,
+        s.cell_catch,
+        s.cell_catch_d,
+        s.cell_turn_it_back,
+        s.cell_turn_it_back_d,
+        s.cell_gathered,
+        s.cell_gathered_d,
+        s.cell_open_breach,
+        s.cell_open_breach_d,
+        s.cell_one_who_stands,
+        s.cell_one_who_stands_d,
+        s.cell_stride,
+        s.cell_stride_d,
+        s.cell_sidestep,
+        s.cell_sidestep_d,
+        s.cell_tilting,
+        s.cell_tilting_d,
+        s.cell_landing,
+        s.cell_landing_d,
+        s.cell_path,
+        s.cell_path_d,
         s.find_verb,
         s.toast_find_lamp,
         s.toast_find_sip,
@@ -490,16 +614,7 @@ mod tests {
             let face = ttf_parser::Face::parse(font, 0).unwrap();
             for l in Lang::ALL {
                 // 개발 화면 글(0080)도 같은 글꼴로 그린다.
-                #[cfg(feature = "dev")]
-                let dev_texts: Vec<&str> = dev::SPEC_KO
-                    .iter()
-                    .map(|(_, v)| *v)
-                    .chain(dev::GROUP_KO)
-                    .chain(dev::SCENARIO_KO.iter().flat_map(|(_, n, c)| [*n, *c]))
-                    .chain(dev::PAIRS.iter().map(|p| p.0))
-                    .collect();
-                #[cfg(not(feature = "dev"))]
-                let dev_texts: Vec<&str> = Vec::new();
+                let dev_texts = dev_texts();
                 for text in all(l.strings())
                     .into_iter()
                     .chain([UI_GLYPHS])

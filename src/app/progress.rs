@@ -43,6 +43,7 @@ impl App {
                     s.toast_find_lamp
                 }
                 crate::stage::Find::Sip => s.toast_find_sip,
+                crate::stage::Find::Shard => s.toast_find_shard,
             };
             self.toast = Some((text.to_string(), TOAST_TIME));
         }

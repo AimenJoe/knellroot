@@ -15,7 +15,7 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
 // 문 앞 쉼터(0)에서 쉰 기록, 잔불은 레벨 몇 단 + 가게를 볼 만큼. 기력·힘은 이미 4단(다음이 마지막 단 — "다 올림" 줄·평타 +1도 본다).
-const SEED = 'v=1\nembers=400\nclears=1\nrun.rest=0\nrun.gate=1\ncharm.owned=shell\ncharm.worn=shell,,\nlv.life=1\nlv.stamina=4\nlv.might=4\n';
+const SEED = 'v=1\nembers=400\nclears=1\nrun.rest=0\nrun.gate=1\ncharm.owned=shell\ncharm.worn=shell,,\nlv.life=1\nlv.stamina=4\nlv.might=4\ncore.warden=1\nfinds=sanctuary.shard.0\nmigrated.v04=1\n';
 
 const server = http.createServer((req, res) => {
   const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
@@ -81,7 +81,18 @@ async function run(browser, lang) {
   // 다 올린 줄을 다시 고르면 알림만(묻는 창 없음).
   await press('Enter'); await page.waitForTimeout(300);
   await shot('7-level-full-toast');
-  // 화로로 → 가게.
+  // 화로로 → 나무(둘째 줄, 0106): 점수(핵 1 + 조각 1)로 박자 첫 칸을 연다, 셋째 갈래 끝 칸에 목표 핀.
+  await press('Escape'); await page.waitForTimeout(300);
+  await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
+  await shot('8a-tree');
+  await press('Enter'); await page.waitForTimeout(300);
+  await shot('8b-tree-ask');
+  await press('Enter'); await page.waitForTimeout(400);
+  await press('ArrowRight', 2); await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(300);
+  await shot('8c-tree-pinned');
+  const t = await record();
+  if (!/tree\.beat=1\n/.test(t) || !/tree\.pin=2\.4\n/.test(t)) errors.push(`tree not saved: ${JSON.stringify(t)}`);
+  // 화로로 → 가게(셋째 줄).
   await press('Escape'); await page.waitForTimeout(300);
   await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
   await shot('8-shop');
@@ -89,9 +100,12 @@ async function run(browser, lang) {
   await press('Escape'); await page.waitForTimeout(300);
   await press('Escape'); await page.waitForTimeout(400);
   await shot('9-play-hud');
-  // 장비 창(멈춤 → 둘째 줄): 레벨 줄(최대 기력·기력 회복·평타·강타·자세)이 상태 줄에 더해져도 창 안에.
+  // 멈춤 → 나무(셋째 줄, 읽기 전용) → 장비(둘째 줄): 레벨 줄(최대 기력·기력 회복·평타·강타·자세)이 상태 줄에 더해져도 창 안에.
   await press('Escape'); await page.waitForTimeout(200);
-  await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(400);
+  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(400);
+  await shot('9b-tree-view');
+  await press('Escape'); await page.waitForTimeout(300);
+  await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(400);
   await shot('10-equip');
   await ctx.close();
   return { errors, checks };

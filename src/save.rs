@@ -45,6 +45,11 @@ pub mod key {
     pub const CORE_WARDEN: &str = "core.warden";
     /// v0.4.0 옮기기를 했다(0105 — 핵 고르기 → 생명·숨은 물건·핵 점수). 한 번만.
     pub const MIGRATED_V04: &str = "migrated.v04";
+    /// 기술 나무(0106): 갈래마다 연 칸 수, 목표 핀 "갈래.깊이"(없으면 키 없음).
+    pub const TREE_BEAT: &str = "tree.beat";
+    pub const TREE_RIPOSTE: &str = "tree.riposte";
+    pub const TREE_FOOTING: &str = "tree.footing";
+    pub const TREE_PIN: &str = "tree.pin";
 }
 
 /// 글 기록(키 → 값). 모르는 키도 지키며 들고 다닌다.
@@ -122,6 +127,8 @@ pub struct Progress {
     pub finds: Vec<String>,
     /// 성소 문지기 핵 점수(0105, `CORE_CAP`까지).
     pub cores: u32,
+    /// 기술 나무(0106).
+    pub tree: crate::progression::Tree,
     /// 든 무기(없으면 옛 prefs 칸의 값을 쓴다).
     pub weapon: Option<crate::weapons::Id>,
     /// 쌓인 플레이 시간(초, 0081).
@@ -178,11 +185,26 @@ impl Progress {
             .unwrap_or(0)
             .min(crate::progression::CORE_CAP);
         let migrated = r.num(key::MIGRATED_V04) == Some(1);
+        let depth = |k: &str| r.num(k).unwrap_or(0).min(crate::progression::DEPTH as u32) as u8;
+        let pin = r.get(key::TREE_PIN).and_then(|v| {
+            let (b, d) = v.split_once('.')?;
+            let (b, d): (u8, u8) = (b.trim().parse().ok()?, d.trim().parse().ok()?);
+            (b < 3 && d < crate::progression::DEPTH).then_some((b, d))
+        });
+        let tree = crate::progression::Tree {
+            open: [
+                depth(key::TREE_BEAT),
+                depth(key::TREE_RIPOSTE),
+                depth(key::TREE_FOOTING),
+            ],
+            pin,
+        };
         let mut p = Progress {
             growth,
             level,
             finds,
             cores,
+            tree,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
             play: r.num(key::PLAY).unwrap_or(0),
             embers: r.num(key::EMBERS).unwrap_or(0),
@@ -219,6 +241,13 @@ impl Progress {
         r.set(key::FINDS, self.finds.join(","));
         r.set(key::CORE_WARDEN, self.cores);
         r.set(key::MIGRATED_V04, 1);
+        r.set(key::TREE_BEAT, self.tree.open[0]);
+        r.set(key::TREE_RIPOSTE, self.tree.open[1]);
+        r.set(key::TREE_FOOTING, self.tree.open[2]);
+        match self.tree.pin {
+            Some((b, d)) => r.set(key::TREE_PIN, format!("{b}.{d}")),
+            None => r.remove(key::TREE_PIN),
+        }
         match self.weapon {
             Some(w) => r.set(key::WEAPON, w.key()),
             None => r.remove(key::WEAPON),
@@ -247,6 +276,12 @@ impl Progress {
             || self.level != crate::progression::Level::default()
             || !self.finds.is_empty()
             || self.cores > 0
+            || self.tree != crate::progression::Tree::default()
+    }
+
+    /// 나무 점수(0106): 핵 + 주운 종소리 조각.
+    pub fn tree_points(&self) -> u32 {
+        crate::progression::tree_points(self.cores, &self.finds)
     }
 
     /// 장신구를 뺀 능력치(성장만) — 장비 창이 "장신구가 바꾸는 줄"을 고를 때의 기본값(0104).
@@ -520,6 +555,25 @@ mod tests {
         // 새 기록은 옮길 것이 없다.
         let p = Progress::from_record(Record::parse(""));
         assert!(p.finds.is_empty() && p.cores == 0 && !p.has_any());
+    }
+
+    /// 0106: 나무는 갈래마다 연 수 + 목표 핀으로 남고, 고친 기록의 큰 수·이상한 핀은 걸러진다.
+    #[test]
+    fn the_tree_survives_the_record() {
+        let mut p = Progress::default();
+        p.tree.open = [2, 0, 5];
+        p.tree.pin = Some((1, 3));
+        let r = p.to_record();
+        assert_eq!(r.get(key::TREE_PIN), Some("1.3"));
+        let back = Progress::from_record(Record::parse(&r.to_text()));
+        assert_eq!(back.tree, p.tree);
+        assert!(back.has_any());
+        let mut odd = r.clone();
+        odd.set(key::TREE_BEAT, 40);
+        odd.set(key::TREE_PIN, "7.9");
+        let back = Progress::from_record(odd);
+        assert_eq!(back.tree.open[0], crate::progression::DEPTH);
+        assert_eq!(back.tree.pin, None);
     }
 
     /// 0104: 레벨은 `lv.*` 셋으로 남고, 고친 기록의 큰 수는 5단에서 멈춘다. 레벨만 있어도 기록이 있는 슬롯.

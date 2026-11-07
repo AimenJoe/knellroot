@@ -5,8 +5,8 @@ use super::menu::{Menu, Out};
 use super::*;
 use crate::progression::{Line as LvLine, LINES as LV_LINES, MAX_RANK};
 
-/// 화로의 줄.
-const HEARTH_ROWS: usize = 3;
+/// 화로의 줄: 레벨 · 나무(0106) · 가게 · 떠나기.
+const HEARTH_ROWS: usize = 4;
 
 /// 레벨 줄 이름.
 fn line_name(l: LvLine) -> &'static str {
@@ -23,20 +23,28 @@ impl App {
     pub(super) fn hearth_menu(&self) -> Menu {
         let s = s();
         let lv = self.progress.level.total().to_string();
+        let points = self.progress.tree_points();
+        let left = self.progress.tree.left(points).to_string();
         let rows = vec![
             ui::Row::value(s.hearth_level, lv),
+            ui::Row::value(s.tree_title, fill(s.hearth_points, &[&left])),
             ui::Row::plain(s.hearth_shop),
             ui::Row::plain(s.shop_leave),
         ];
+        // 나무 줄: 목표 핀이 있으면 "목표까지 n점"(KB — 메뉴에서도 길 표시).
         let note = match self.cursor {
-            0 => Some(s.hearth_level_d),
-            1 => Some(s.hearth_shop_d),
+            0 => Some(s.hearth_level_d.to_string()),
+            1 => Some(match self.progress.tree.cells_to_pin() {
+                Some(n) => fill(s.tree_goal, &[&n.to_string()]),
+                None => s.hearth_tree_d.to_string(),
+            }),
+            2 => Some(s.hearth_shop_d.to_string()),
             _ => None,
         };
         Menu {
             purse: Some(fill(s.shop_embers, &[&self.world.embers.to_string()])),
             note_room: true,
-            note: note.map(str::to_string),
+            note,
             ..Menu::new(s.shop_title, 300.0, rows)
         }
     }
@@ -46,7 +54,8 @@ impl App {
         debug_assert!(i < HEARTH_ROWS);
         match i {
             0 => self.go(Go::Open(Scene::Level)),
-            1 => self.go(Go::Open(Scene::Shop)),
+            1 => self.go(Go::Open(Scene::Tree { view: false })),
+            2 => self.go(Go::Open(Scene::Shop)),
             _ => self.go(Go::Back),
         }
     }
