@@ -1515,23 +1515,28 @@ impl Renderer {
             }
         }
         // 패링(0025): 창이 열린 동안 앞에 옅은 푸른 반달, 성공하면 둘레로 퍼지는 흰 고리.
-        if let PState::Parry { t: e } = w.player.state {
-            if e < t[crate::tuning::P::ParryWindow] {
-                fl.sector(
-                    pp + Vec3::Y * 0.8,
-                    1.4,
-                    w.player.facing,
-                    150.0,
-                    Color::new(0.6, 0.85, 1.0, 0.15),
-                );
-                fl.ring(
-                    pp + Vec3::Y * 0.8,
-                    1.4,
-                    w.player.facing,
-                    150.0,
-                    Color::new(0.75, 0.9, 1.0, 0.4),
-                );
-            }
+        // 모으기 공격을 뗀 직후의 패링 창(0089)도 같은 반달 — 떼는 순간 "막기도 한다"가 보인다.
+        let guard = w.player.release_guard > 0.0
+            && matches!(w.player.state, PState::Heavy { .. } | PState::Cast { .. });
+        let window = match w.player.state {
+            PState::Parry { t: e } => e < t[crate::tuning::P::ParryWindow],
+            _ => guard,
+        };
+        if window {
+            fl.sector(
+                pp + Vec3::Y * 0.8,
+                1.4,
+                w.player.facing,
+                150.0,
+                Color::new(0.6, 0.85, 1.0, 0.15),
+            );
+            fl.ring(
+                pp + Vec3::Y * 0.8,
+                1.4,
+                w.player.facing,
+                150.0,
+                Color::new(0.75, 0.9, 1.0, 0.4),
+            );
         }
         // 이어 패링(0081·0086): 열린 동안 같은 푸른 반달을 지금 받는 넓이로 — 쌓일수록 둘레로 벌어진다(둘레 전부면 고리).
         if w.player.parry_chain_left > 0.0 && !matches!(w.player.state, PState::Parry { .. }) {

@@ -378,6 +378,9 @@ pub struct Player {
     /// 이어 패링(0081 → 0086): 남은 창(초)과 이번 이음에서 더 튕긴 수(0 = 첫 튕김만). 창이 닫히면 0으로.
     pub parry_chain_left: f32,
     pub parry_chain_n: u32,
+    /// 모으기 공격의 패링(0089, 사장 "모으기 공격에는 패링도 달려있어야 함. 리스크가 있는 공격이라 보상"): 모은 공격(강타·모은 사격)을
+    /// 뗀 뒤 남은 패링 창(초, 시작 = `parry.window s`). 그 공격 동작 안에서만 열린다.
+    pub release_guard: f32,
     /// 박자(2026-11-07): 마지막 평타가 시작된 뒤 흐른 시간, 그 타의 한 스윙 시간(= 그 무기의 박자, 0 = 없음),
     /// 이번 공격 누름이 박자 창 안이었나(누른 순간에 판정 — 받아 둔 이른 누름은 거짓).
     pub since_swing: f32,
@@ -536,6 +539,7 @@ impl World {
                 since_parry: f32::MAX,
                 parry_chain_left: 0.0,
                 parry_chain_n: 0,
+                release_guard: 0.0,
                 dash_left: 0.0,
                 connected: 0,
                 since_swing: f32::MAX,
@@ -874,8 +878,11 @@ impl World {
     /// 패링 창이 열려 있나(0025).
     /// 패링 창이 열려 있나: 패링 동작의 창 안이거나, 막 튕긴 뒤 이어 패링 시간 안(0081).
     pub fn parry_open(&self, t: &Tuning) -> bool {
-        matches!(self.player.state, PState::Parry { t: e } if e < t[P::ParryWindow])
-            || self.player.parry_chain_left > 0.0
+        let pl = &self.player;
+        matches!(pl.state, PState::Parry { t: e } if e < t[P::ParryWindow])
+            || pl.parry_chain_left > 0.0
+            || (pl.release_guard > 0.0
+                && matches!(pl.state, PState::Heavy { .. } | PState::Cast { .. }))
     }
 
     #[cfg(test)]
@@ -1213,6 +1220,7 @@ impl World {
         pl.since_perfect = (pl.since_perfect + dt).min(f32::MAX);
         // 스태미나: 마지막으로 쓴 뒤 `stamina.regen delay s`가 지나야 찬다.
         pl.stamina_denied = (pl.stamina_denied - dt).max(0.0);
+        pl.release_guard = (pl.release_guard - dt).max(0.0);
         pl.stamina_idle += dt;
         if pl.stamina_idle >= t[P::StaminaDelay] {
             pl.stamina = (pl.stamina + t[P::StaminaRegen] * dt).min(t[P::StaminaMax]);
@@ -1560,6 +1568,8 @@ impl World {
                         pl.facing_dir()
                     };
                     pl.swings += 1;
+                    // 모으기 공격의 패링(0089): 떼는 순간부터 패링 창 — 모으는 동안 무방비였던 값.
+                    pl.release_guard = t[P::ParryWindow];
                     pl.state = PState::Heavy {
                         t: 0.0,
                         swing: pl.swings,
@@ -1660,6 +1670,10 @@ impl World {
                         }
                     }
                     pl.facing = cast_dir.x.atan2(cast_dir.z);
+                    // 모으기 공격의 패링(0089): 원거리 무기의 모은 사격도 떼는 순간부터 패링 창(근접 무기의 RB 마법은 무기의 공격이 아니라 뺀다, 0077·0078과 같은 경계).
+                    if matches!(wpn.rb, Rb::Shot { .. }) {
+                        pl.release_guard = t[P::ParryWindow];
+                    }
                     // 딱 맞춰 떼기(0078): 원거리 무기의 모으기 공격(사격 꾹)도 다 모인 뒤 창 안에 떼면 덤 — 근접 무기의 RB 마법은 무기의
                     // 공격이 아니라 빼 둔다(박자와 같은 경계, 0077).
                     let perfect = matches!(wpn.rb, Rb::Shot { .. })
@@ -6353,6 +6367,91 @@ mod tests {
                 assert!(w.player.hp < PLAYER_HP, "the late blow lands");
             }
         }
+    }
+
+    /// 0089(사장 "모으기 공격에는 패링도 달려있어야 함. 리스크가 있는 공격이라 보상"): 모은 강타를 떼는 순간 앞에서 오는 공격은 튕기고
+    /// 강타는 끊기지 않는다. 떼지 않고 서 있으면 같은 공격에 맞는다.
+    #[test]
+    fn releasing_a_charged_heavy_deflects_a_blow_from_the_front() {
+        let t = Tuning::default();
+        for release in [true, false] {
+            let mut w = World::new("test", 20.0);
+            w.set_weapon(weapons::Id::Sword);
+            w.player.facing = std::f32::consts::PI;
+            w.spawn_mob(vec3(0.0, 0.0, -1.2));
+            let en = w.enemies.last_mut().unwrap();
+            en.facing = 0.0;
+            en.atk = Atk::Smash;
+            // 두 틱 뒤 내리친다 — 강타의 활성(선딜 0.06초) 전이라 강타가 먼저 끊지 않는다.
+            en.state = EState::Tele {
+                t: en.tele_dur() - TICK_DT,
+            };
+            w.player.state = if release {
+                PState::Charging { t: 2.0 }
+            } else {
+                PState::Idle
+            };
+            let mut parried = false;
+            for _ in 0..12 {
+                let ev = w.step(&Actions::default(), &t);
+                parried |= ev.iter().any(|e| matches!(e, Event::Parry { .. }));
+                if parried {
+                    assert!(
+                        matches!(w.player.state, PState::Heavy { .. }),
+                        "the heavy keeps going"
+                    );
+                }
+            }
+            assert_eq!(parried, release, "release {release}");
+            assert_eq!(w.player.hp == PLAYER_HP, release, "release {release}");
+        }
+    }
+
+    /// 0089: 모으기 공격의 패링 창은 뗀 뒤 `parry.window s` 동안만, 근접 강타·쇠뇌 모은 사격 모두. 반격(모으지 않은 강타)·근접 무기의 모은 마법엔 없다.
+    #[test]
+    fn the_charged_release_guard_lasts_one_parry_window_and_only_for_charged_attacks() {
+        let t = Tuning::default();
+        let open_ticks = |w: &mut World| {
+            let mut n = 0;
+            for _ in 0..40 {
+                w.step(&Actions::default(), &t);
+                n += w.parry_open(&t) as usize;
+            }
+            n
+        };
+        let want = (t[P::ParryWindow] / TICK_DT).round() as usize;
+        let mut w = World::new("test", 20.0);
+        w.set_weapon(weapons::Id::Hammer);
+        w.player.state = PState::Charging { t: 2.0 };
+        let n = open_ticks(&mut w);
+        assert!(
+            n + 1 >= want && n <= want,
+            "heavy guard {n} ticks, want ≈{want}"
+        );
+        // 쇠뇌: 모은 사격을 떼면.
+        let mut w = World::new("test", 20.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        w.player.state = PState::CastCharge { t: 2.0 };
+        let n = open_ticks(&mut w);
+        assert!(n + 1 >= want && n <= want, "shot guard {n}");
+        // 검의 RB 마법을 모아 뗀 것 — 무기의 공격이 아니라 없다.
+        let mut w = World::new("test", 20.0);
+        w.set_weapon(weapons::Id::Sword);
+        w.player.state = PState::CastCharge { t: 2.0 };
+        assert_eq!(open_ticks(&mut w), 0, "charged magic has no guard");
+        // 반격(튕긴 뒤 바로 강타 — 모으지 않았다)도 없다.
+        let mut w = World::new("test", 20.0);
+        w.set_weapon(weapons::Id::Sword);
+        w.player.since_parry = 0.0;
+        w.step(
+            &Actions {
+                attack: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(matches!(w.player.state, PState::Heavy { full: true, .. }));
+        assert_eq!(open_ticks(&mut w), 0, "a riposte is not a charged attack");
     }
 
     /// 0088(사장 2026-11-07 "패링 성공시 어느정도 기력 회복이 되어야 반격 바로 할수 있을듯"): 기력 마지막 한 줌으로 튕겨도
