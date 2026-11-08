@@ -414,6 +414,11 @@ pub struct StageDef {
     pub elites: &'static [(char, Kind, crate::enemy::Affix)],
     /// 처음(문이 닫혀 있을 때)의 목표 글 — 서 있는 적 스테이지는 문을 여는 장치를 찾게.
     pub obj_explore: Tr,
+    /// 문이 지름길인가(0121 — 마을 사다리): 처음부터 문이 열린 단계(문지기·목표는 문과 상관없다), 문은 장치를 당긴(기록) 때만 열린다 —
+    /// 쉬거나 다시 서도, 문지기가 깨어나도 그대로. false면 성소처럼 문이 문지기 방을 막는다.
+    pub gate_shortcut: bool,
+    /// 장치를 당겼을 때의 카드(성소 "어딘가에서 문이 열렸다", 마을 "사다리가 내려왔다").
+    pub card_lever: Tr,
     /// 지하 몇 m(0118, 연출 표 — 지층 단면 전환·카드가 같이 쓴다). 차례대로 깊어진다(시험).
     pub depth_m: u32,
     /// 구역 등급(0112·0116, 1부터): 잡몹의 체력·자세·잔불(등급 3부터 피해 2). 깊을수록 높다(시험).
@@ -701,7 +706,7 @@ impl StageRun {
             run.objective = Some(def.obj_explore);
         }
         // 문 장치도 물결도 없는 지역(0118)은 처음부터 문이 열린 단계.
-        if run.lever.is_none() && def.waves.is_empty() {
+        if (run.lever.is_none() || def.gate_shortcut) && def.waves.is_empty() {
             run.phase = Phase::GateOpen;
             run.set_gate(&mut w, false);
             run.objective = Some(def.obj_gate);
@@ -761,6 +766,12 @@ impl StageRun {
     }
 
     fn set_gate(&mut self, w: &mut World, closed: bool) {
+        // 지름길 문(0121)은 장치를 당겼는지만 따른다.
+        let closed = if self.def.gate_shortcut {
+            !self.gate_opened
+        } else {
+            closed
+        };
         if closed == self.gate_closed {
             return;
         }
@@ -975,7 +986,7 @@ impl StageRun {
                 self.phase = Phase::GateOpen;
                 self.objective = Some(self.def.obj_gate);
             }
-            self.card = Some((|s| s.card_gate_opened, CARD_TIME));
+            self.card = Some((self.def.card_lever, CARD_TIME));
         } else if let (Some(i), true) = (self.near_rest, w.interact) {
             if self.rest_safe {
                 self.rest(w, i);
@@ -1518,6 +1529,66 @@ mod tests {
                 assert_ne!(def.find_prefix, STAGES[i - 1].find_prefix);
             }
         }
+    }
+
+    /// 0121(0115 전투 안전 설계 — "AI보다 레벨 배치로 먼저"): 주민 자리(`1`·`2`·`3`)는 모든 서 있는 적·엘리트·문지기의 제자리에서
+    /// 끈(`LEASH_RANGE`) + 3m 밖 — 쫓아오는 적도 주민 곁까지는 오지 않는다. 화로와도 겹치지 않는다.
+    #[test]
+    fn residents_live_beyond_every_enemy_leash() {
+        use crate::tuning::LEASH_RANGE;
+        for def in STAGES {
+            let (run, _) = StageRun::start(def);
+            let foes: Vec<Vec3> = def
+                .spawns
+                .iter()
+                .map(|s| s.0)
+                .chain(def.elites.iter().map(|e| e.0))
+                .chain(std::iter::once(def.boss.0))
+                .flat_map(|c| run.level.marks_of(c).collect::<Vec<_>>())
+                .collect();
+            for r in ['1', '2', '3'] {
+                for home in run.level.marks_of(r) {
+                    for f in &foes {
+                        let d = vec2(home.x - f.x, home.z - f.z).length();
+                        assert!(
+                            d >= LEASH_RANGE + 3.0,
+                            "{} resident {r} {d:.1} m from a foe",
+                            def.find_prefix
+                        );
+                    }
+                }
+            }
+        }
+        let (run, _) = StageRun::start(STAGES[1]);
+        assert_eq!(
+            ['1', '2', '3']
+                .iter()
+                .filter(|c| run.level.marks_of(**c).next().is_some())
+                .count(),
+            3,
+            "three residents in the village"
+        );
+    }
+
+    /// 0121: 마을 사다리 지름길 — 처음엔 닫혀 있고(목표는 종탑 터), 아래 장치로만 열리며(기록), 쉬어도 열리지 않는다.
+    /// 문과 상관없이 종탑 터에 들어서면 문지기가 깬다.
+    #[test]
+    fn the_village_ladder_opens_only_from_the_lever_below() {
+        let (mut run, mut w) = StageRun::start(STAGES[1]);
+        assert!(STAGES[1].gate_shortcut);
+        assert_eq!(run.phase, Phase::GateOpen);
+        assert!(run.gate_closed, "the ladder is up");
+        rest_now(&mut run, &mut w, 0);
+        assert!(run.gate_closed, "resting does not drop it");
+        pull_lever(&mut run, &mut w);
+        assert!(!run.gate_closed && run.gate_opened && run.take_gate_new());
+        // 다시 닫힌 판에서 문지기에게 곧장.
+        let (mut run, mut w) = StageRun::start(STAGES[1]);
+        w.player.pos = run.level.marks_of('W').next().unwrap() + vec3(0.0, 0.0, 4.0);
+        w.player.prev = w.player.pos;
+        tick(&mut run, &mut w, Actions::default());
+        assert!(matches!(run.phase, Phase::Waking(_)), "{:?}", run.phase);
+        assert!(run.gate_closed, "the boss does not drop the ladder either");
     }
 
     /// 0112·0116 T3: 구역 등급은 깊을수록 높고, 서 있는 적·엘리트가 그 등급으로 선다(보스는 그대로).

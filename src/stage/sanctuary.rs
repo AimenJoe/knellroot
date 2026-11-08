@@ -46,6 +46,8 @@ pub static DEF: StageDef = StageDef {
     ],
     boss_charm: Some(Charm::Hand),
     find_prefix: "sanctuary",
+    gate_shortcut: false,
+    card_lever: |s| s.card_gate_opened,
     depth_m: 0,
     tier: 1,
     env: &crate::backdrop::SURFACE,
