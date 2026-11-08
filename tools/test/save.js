@@ -49,7 +49,7 @@ async function main() {
   if ((await record()) !== null) fail('a fresh browser already has a record');
 
   // 2) 문 앞 쉼터(번호 0 — 지도 위에서부터 첫 R)에서 쉰 기록 + 잔불·끝낸 판 + 나중 칸(모르는 키).
-  await page.evaluate((k) => localStorage.setItem(k, 'v=1\nembers=60\nclears=1\nrun.rest=0\nrun.gate=1\nfuture.key=keep\ncharm.owned=shell,ear\ncharm.worn=shell,,\n'), KEY);
+  await page.evaluate((k) => localStorage.setItem(k, 'v=1\nembers=70\nclears=1\nrun.rest=0\nrun.gate=1\nfuture.key=keep\ncharm.owned=shell,ear\ncharm.worn=shell,,\n'), KEY);
   await page.reload();
   await ready();
   await page.waitForTimeout(600);
@@ -67,7 +67,7 @@ async function main() {
   // 3a) 쉼터 화로(0104): 곁에서 점프 버튼(F) = 쉬기 → 화로(레벨 · 가게 · 떠나기).
   await press('KeyF'); await page.waitForTimeout(600);
   await shot('save-2a-hearth');
-  // 레벨(첫 줄) → 생명(첫 줄, 30) → 묻는 창(커서 "올리기") → 올림. 잔불 60 → 30.
+  // 레벨(첫 줄) → 생명(첫 줄, 레벨 0의 값 40 — 0109) → 묻는 창(커서 "올리기") → 올림. 잔불 70 → 30.
   await press('Enter'); await page.waitForTimeout(300);
   await shot('save-2a-level');
   await press('Enter'); await page.waitForTimeout(300);
@@ -76,7 +76,7 @@ async function main() {
   await shot('save-2a-level-raised');
   r = await record();
   console.log('레벨을 올린 뒤 기록:', JSON.stringify(r));
-  if (!/lv\.life=1\n/.test(r) || !/embers=30\n/.test(r)) fail('raising Life must spend 30 embers and keep lv.life=1');
+  if (!/lv\.life=1\n/.test(r) || !/embers=30\n/.test(r)) fail('raising Life must spend 40 embers and keep lv.life=1');
   // 레벨 창을 닫으면 화로(연 줄) → 셋째 줄 가게(레벨·나무·가게, 0106) → 첫 줄(잔불 주머니 25) 사기.
   await press('Escape'); await page.waitForTimeout(300);
   await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);

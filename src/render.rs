@@ -661,6 +661,45 @@ impl Renderer {
                 drape.ring(p, front, 0.0, 360.0, with_a(TELE, 0.45));
                 drape.ring(p, (front - 0.5).max(0.1), 0.0, 360.0, with_a(TELE, 0.18));
             }
+            // 엘리트(0112): 발밑의 옅은 뼈빛 표지 — 성질마다 모양이 다르다(색으로 세기를 말하지 않는다, lore ecology 2).
+            // 굳은 = 굵은 고리 하나, 되풀이 = 고리 둘, 남는 = 끊어진 고리(쓰러진 뒤 남을 것).
+            if let Some(affix) = en.elite {
+                let r = en.radius + 0.35;
+                match affix {
+                    crate::enemy::Affix::Hardened => {
+                        drape.ring(p, r, 0.0, 360.0, ELITE_MARK);
+                        drape.ring(p, r - TELE_RING_W, 0.0, 360.0, ELITE_MARK);
+                    }
+                    crate::enemy::Affix::Repeating => {
+                        drape.ring(p, r, 0.0, 360.0, ELITE_MARK);
+                        drape.ring(p, r * 0.72, 0.0, 360.0, ELITE_MARK);
+                    }
+                    crate::enemy::Affix::Lingering => {
+                        let spin = w.time * 0.6;
+                        for i in 0..6 {
+                            let yaw = spin + i as f32 * std::f32::consts::TAU / 6.0;
+                            drape.ring(p, r, yaw, 32.0, ELITE_MARK);
+                        }
+                    }
+                }
+            }
+        }
+        // 남는 엘리트의 고리(0112): 뿌리 파동과 같은 "패링 못 함" 고리 예고(가운데 X), 다 차는 순간 터진다.
+        for l in &w.lingers {
+            let drape = Drape {
+                ground: w.ground.as_ref(),
+            };
+            let k = (l.t / crate::tuning::ELITE_LINGER_DELAY).clamp(0.0, 1.0);
+            telegraph(
+                &drape,
+                l.pos,
+                0.0,
+                k,
+                TeleShape::Ring {
+                    r: crate::tuning::ELITE_LINGER_RADIUS,
+                },
+                (v.tells / TELLS_BASE).max(0.6),
+            );
         }
         let pp = w.player.prev.lerp(w.player.pos, alpha);
         // 그림자는 땅에, 높이 뜰수록 작고 옅게 — 쿼터뷰에서 높이를 읽는 단서(0027).
@@ -942,6 +981,31 @@ impl Renderer {
                 );
             }
         }
+        // 문 장치(0113): 돌 기둥 + 쇠 손잡이. 당기기 전엔 손잡이가 위로 서 있고 호박빛이 숨 쉰다(닫힌 상자와 같은 "할 수 있다" 빛),
+        // 당긴 뒤엔 손잡이가 내려가고 빛이 꺼진다.
+        if let Some(l) = run.lever {
+            let stone = Color::new(0.42, 0.4, 0.44, 1.0);
+            let iron = Color::new(0.3, 0.28, 0.27, 1.0);
+            fl.shadow(l, 0.5);
+            shaded_box(l + Vec3::Y * 0.45, vec3(0.5, 0.9, 0.5), stone, 0.85);
+            let hinge = l + vec3(0.0, 0.8, 0.27);
+            let tilt = if run.gate_opened { 1.0 } else { -0.5 };
+            shaded_box_rot(
+                hinge + vec3(0.0, 0.32, 0.0),
+                vec3(0.1, 0.64, 0.1),
+                iron,
+                0.9,
+                Quat::from_rotation_x(tilt),
+                hinge,
+            );
+            if !run.gate_opened {
+                let pulse = 0.75 + 0.25 * (w.time * 2.4).sin();
+                let grip = Color::new(1.0, 0.72 * pulse + 0.1, 0.3, 1.0);
+                let top = hinge + Quat::from_rotation_x(tilt) * vec3(0.0, 0.66, 0.0);
+                shaded_box(top, vec3(0.16, 0.12, 0.16), grip, 1.0);
+                fl.ring(l, 0.9, 0.0, 360.0, Color::new(1.0, 0.75, 0.35, 0.3 * pulse));
+            }
+        }
         // 숨은 물건(0105): 흔적 자리의 작은 빛 — 등잔 +1은 금빛, 한 모금 +1은 민트(0037 생명 색). 살짝 떠서 숨 쉬고 발밑에 옅은 테.
         // 생김새는 성소의 종과 닮지 않게(lore — 울리는 종은 보이지 않는다): 둥근 덩어리 하나.
         for (i, (p, kind, _)) in run.finds.iter().enumerate() {
@@ -1155,11 +1219,14 @@ impl Renderer {
             let inst = Mat4::from_translation(p + sink)
                 * Mat4::from_quat(tilt)
                 * Mat4::from_rotation_y(en.facing)
-                * Mat4::from_scale(vec3(
-                    1.0 / stretch.sqrt(),
-                    squash * stretch,
-                    1.0 / stretch.sqrt(),
-                ));
+                * Mat4::from_scale(
+                    vec3(1.0 / stretch.sqrt(), squash * stretch, 1.0 / stretch.sqrt())
+                        * if en.elite.is_some() {
+                            crate::tuning::ELITE_SCALE
+                        } else {
+                            1.0
+                        },
+                );
             let tint = if flash {
                 Color::new(1.8, 1.8, 1.8, 1.0)
             } else {
@@ -1250,6 +1317,13 @@ impl Renderer {
                 }
                 PState::CastCharge { t: e } => (&["cast_charge", "cast", "parry"], e),
                 // 공중(0027): 방랑자의 jump·plunge·land 동작(없는 모델이면 회피·공격 자세로).
+                // 공중 RB(0111): 떠 있는 동안 쏘는 자세(쇠뇌는 겨누고 쏘기, 마법은 손을 내밂).
+                PState::Jump { plunge: false, .. }
+                    if pl.hover > 0.0 && matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) =>
+                {
+                    (&["xbow_shoot", "cast"], 0.1)
+                }
+                PState::Jump { plunge: false, .. } if pl.hover > 0.0 => (&["cast", "jump"], 0.12),
                 PState::Jump { plunge: false, .. } => (&["jump", "dodge", "idle"], 0.1),
                 // 내려찍기: 떨어지는 동안 칼을 들고 있다가 땅에 가까우면 꽂는 자세로.
                 PState::Jump { plunge: true, .. } => (
@@ -1909,6 +1983,8 @@ fn enemy_anim(
                 None => (e.pick(&["idle"]), 0.0),
             }
         }
+        EState::Idle => (e.pick(&["idle", "walk"]), clock * 0.7 + phase),
+        EState::Return => (e.pick(&["walk", "run", "idle"]), clock + phase),
         EState::Chase if moving => (e.pick(&["walk", "run", "idle"]), clock * 1.0 + phase),
         EState::Chase => (e.pick(&["idle", "walk"]), clock + phase),
         EState::Tele { t } => {
@@ -1999,6 +2075,9 @@ fn windup_hold(en: &Enemy) -> Option<f32> {
     let start = dur * WINDUP_REACH;
     (t >= start).then_some(t - start)
 }
+
+/// 엘리트 발밑 표지(0112): 옅은 뼈빛 — 예고의 붉은빛·플레이어 표지(금·민트·호박)와 겹치지 않는다.
+const ELITE_MARK: Color = Color::new(0.92, 0.88, 0.78, 0.5);
 
 /// 바닥 예고 하나: 옅은 면 + 테두리, 채움이 자라 테두리에 닿는 순간 공격. 원판·부채꼴·고리는 가운데부터, 띠는 가운데 줄에서 양옆으로.
 /// 2026-11-06: 바닥 높낮이를 따라 접어 그린다(`Drape`) — 낮은 곳의 적이 높은 곳으로 치면 예고가 높은 땅 속에 묻혀 안 보였다.

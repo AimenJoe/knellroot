@@ -112,7 +112,7 @@ pub const SHAKE_CHARGED: f32 = 0.12;
 pub const PLAYER_HP: i32 = 5;
 /// 등잔 횟수(0031). 화로에서 다시 찬다 — 화로 전까지는 스테이지를 새로 시작할 때. 성장으로 늘린다(items.md 2).
 pub const FLASK_CHARGES: i32 = 3;
-/// 마법 칸(0048): 근접으로 맞히면 `cast.per hit`씩 차고, 쉼터에서 가득. 한 번 쏘면 한 칸.
+/// 마법 칸(0048 → 0111): 한 칸이 `cast.cooldown s`마다 차고(수류탄과 같은 꼴), 쉼터에서 가득. 한 번 쏘면 한 칸.
 pub const CAST_CHARGES: f32 = 3.0;
 /// 잔불(0064 M1, `ember.rs`): 한 번에 흩는 조각 수 상한, 튀는 빠르기(옆·위 m/s)·중력·튀어 오름 비, 자석이 켜지는 때(초)·
 /// 닿는 거리(m)·끌림 가속(m/s²)·최고 빠르기, 줍는 거리(m). 적마다 떨구는 값은 `species.rs`의 `embers`.
@@ -131,6 +131,32 @@ pub const BOLT_RADIUS: f32 = 0.35;
 pub const BOLT_HEIGHT: f32 = 1.0;
 /// 마법을 쏜 직후 땅 돌리기 누름을 버리는 시간(초) — RB 바로 밑이 RT(돌리기)라 잘못 눌러 세상이 도는 것을 막는다(0048).
 pub const CAST_TURN_GUARD: f32 = 0.25;
+/// 공중 RB(0111): 쏘는 순간 떨어지기를 멈추는 초(체공), 겨눌 적이 없을 때 앞으로 내려 쏘는 거리(m)·가장 가까운 거리(m),
+/// 쇠뇌의 내려 쏘기 볼트 수·부채꼴 반각(도). 한 점프에 한 번.
+pub const AIR_SHOT_HOVER: f32 = 0.2;
+pub const AIR_SHOT_REACH: f32 = 4.0;
+pub const AIR_SHOT_MIN: f32 = 1.5;
+pub const AIR_VOLLEY: usize = 3;
+pub const AIR_VOLLEY_SPREAD_DEG: f32 = 18.0;
+/// 알아차림(0113): 지도에 서 있는 적은 제자리에서 제 일을 하다가 플레이어가 시야(m, 벽·턱 너머는 못 봄) 안에 들거나
+/// 아주 가까이(m, 벽 너머도 — 발소리) 오거나 맞으면 쫓는다. 높이 차가 이보다 크면 못 본다. 깨면 곁(m)의 잠든 동료도 깬다.
+/// 제자리에서 끈(m)보다 멀어지고 플레이어도 그만큼 멀면 제자리로 돌아가 가득 찬다.
+pub const SIGHT_RANGE: f32 = 9.0;
+pub const HEAR_RANGE: f32 = 3.0;
+pub const SIGHT_DY: f32 = 2.5;
+pub const ALERT_RADIUS: f32 = 4.5;
+pub const LEASH_RANGE: f32 = 18.0;
+/// 엘리트(0112): 체력 배율(올림)·몸 크기 배율·떨구는 잔불 배율, 처음 쓰러뜨렸을 때 더 흩는 잔불.
+pub const ELITE_HP: f32 = 2.0;
+pub const ELITE_SCALE: f32 = 1.25;
+pub const ELITE_EMBERS: u32 = 3;
+pub const ELITE_FIRST_EMBERS: u32 = 30;
+/// 굳은(0112): 자세 막대 배율·밀려나는 배율.
+pub const ELITE_HARD_POISE: f32 = 2.5;
+pub const ELITE_HARD_KNOCK: f32 = 0.35;
+/// 남는(0112): 쓰러진 자리에 남는 고리 — 터지기까지의 초(그동안 예고)·반지름(m).
+pub const ELITE_LINGER_DELAY: f32 = 1.0;
+pub const ELITE_LINGER_RADIUS: f32 = 2.6;
 /// 수류탄(0051): 중력(m/s²), 땅에서 튕길 때 남는 위·옆 속도 비, 쇠뇌 볼트가 수류탄을 맞히는 거리(m), 폭발 고리가 보이는 초.
 pub const BOMB_GRAVITY: f32 = 22.0;
 pub const BOMB_BOUNCE: f32 = 0.4;
@@ -254,7 +280,7 @@ pub enum P {
     HeavyChargeWalk,
     CastSpeed,
     CastRange,
-    CastPerHit,
+    CastCooldown,
     CastStartup,
     CastTime,
     CastWalk,
@@ -1200,14 +1226,15 @@ pub const SPECS: [Spec; 147] = [
         30.0,
         0.5
     ),
+    // 마법 한 칸이 다시 차는 초(0111 — 수류탄과 같은 꼴, 사장 2026-11-08. 예전 `cast.per hit` 근접 명중 충전 0048을 갈음).
     spec!(
-        CastPerHit,
-        "cast.per hit",
-        "CAST_PER_HIT",
-        0.25,
-        0.0,
-        1.0,
-        0.05
+        CastCooldown,
+        "cast.cooldown s",
+        "CAST_COOLDOWN",
+        3.0,
+        0.5,
+        10.0,
+        0.25
     ),
     spec!(
         CastStartup,

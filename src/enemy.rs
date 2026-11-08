@@ -20,6 +20,18 @@ const ROUSED_TELE: f32 = 0.75;
 const ROUSED_RECOVER: f32 = 0.7;
 const ROUSED_SPEED: f32 = 1.15;
 
+/// 엘리트의 성질(0112, KB — 디아블로식 "있는 종 + 성질 하나"). 이름은 lore 생태(`docs/lore/ecology.md` 3) 관찰과 맞춘다:
+/// 몸이 바뀐 것(변형) · 같은 동작을 되풀이하는 것(재활동) · 끝난 자리에 무언가 남는 것(잔류). 색으로 세기를 말하지 않는다(ecology 2).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Affix {
+    /// 굳은: 자세 막대 × `ELITE_HARD_POISE`, 밀려나기 × `ELITE_HARD_KNOCK` — 힘 레벨의 자세 피해로 쉽게 깨지지 않는다.
+    Hardened,
+    /// 되풀이: 한 번 친 뒤 쉬지 않고 같은 공격을 한 번 더(예고부터 다시 — 읽을 수 있게).
+    Repeating,
+    /// 남는: 쓰러진 자리에 고리 예고가 남고 `ELITE_LINGER_DELAY` 뒤 터진다(패링 못 함 — 피한다).
+    Lingering,
+}
+
 /// 공격 종류 — 예고 모양과 맞는 방식이 여기서 갈린다.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Atk {
@@ -46,6 +58,10 @@ pub enum TeleShape {
 pub enum EState {
     /// 잠든 문지기(스테이지가 깨운다). 움직이지도 치지도 않는다.
     Dormant,
+    /// 지도에 서 있는 적(0113)이 제자리에서 제 일을 한다 — 맞을 수는 있다(싸움에 낀 것). 월드가 알아차리면 쫓는다.
+    Idle,
+    /// 제자리에서 너무 멀어져 돌아가는 중(0113) — 닿으면 가득 차고 제자리로.
+    Return,
     Chase,
     /// 공격 예고(`Enemy::atk`). 다 차면 친다.
     Tele {
@@ -128,6 +144,12 @@ pub struct Enemy {
     pub charge_aim: bool,
     /// 떼 퍼지기(0076): 곁의 적에게서 비키는 쪽(월드가 매 틱 준다) — 한 줄로 늘어서지 않고 둘러싼다.
     pub spread: Vec3,
+    /// 엘리트(0112): 성질 하나. 없으면 보통 개체.
+    pub elite: Option<Affix>,
+    /// 되풀이(0112): 이번 공격이 되풀이한 둘째 번인가.
+    pub repeated: bool,
+    /// 지도에 서 있는 적의 제자리·바라보는 쪽(0113). 없으면(물결·시나리오) 처음부터 쫓는다.
+    pub home: Option<(Vec3, f32)>,
     /// 턱을 뛰어오르거나 뛰어내리는 중(0100) — 그동안 몸은 포물선을 따라가고 생각하지도 치지도 않는다.
     pub hop: Option<Hop>,
 }
@@ -218,6 +240,52 @@ impl Enemy {
             charge_aim: false,
             spread: Vec3::ZERO,
             hop: None,
+            elite: None,
+            repeated: false,
+            home: None,
+        }
+    }
+
+    /// 지도에 세운다(0113): 이 자리·이 쪽이 제자리, 알아차리기 전엔 제 일(`Idle`).
+    pub fn place(&mut self, facing: f32) {
+        self.home = Some((self.pos, facing));
+        self.facing = facing;
+        self.state = EState::Idle;
+    }
+
+    /// 알아차렸다(0113): 제자리·돌아가는 중이면 쫓기 시작. 이미 싸우는 중이면 그대로.
+    pub fn notice(&mut self) -> bool {
+        if matches!(self.state, EState::Idle | EState::Return) {
+            self.state = EState::Chase;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 엘리트로(0112): 체력 × `ELITE_HP`(올림), 몸 × `ELITE_SCALE`, 성질 하나. 보스는 엘리트가 되지 않는다.
+    pub fn make_elite(&mut self, affix: Affix) {
+        if self.boss {
+            return;
+        }
+        use crate::tuning::{ELITE_HP, ELITE_SCALE};
+        self.elite = Some(affix);
+        self.max_hp = (self.max_hp as f32 * ELITE_HP).ceil() as i32;
+        self.hp = self.max_hp;
+        self.radius *= ELITE_SCALE;
+        self.height *= ELITE_SCALE;
+    }
+
+    /// 공격이 끝난 뒤: 되풀이(0112)면 한 번 더 같은 공격을 예고부터, 아니면 쉰다.
+    fn after_attack(&mut self) -> EState {
+        if self.elite == Some(Affix::Repeating) && !self.repeated {
+            self.repeated = true;
+            let atk = self.atk;
+            self.start(atk);
+            self.state
+        } else {
+            self.repeated = false;
+            EState::Recover { t: 0.0 }
         }
     }
 
@@ -408,8 +476,13 @@ impl Enemy {
         self.hurt = (self.hurt - dt).max(0.0);
         self.exposed = (self.exposed - dt).max(0.0);
         self.sway_t += dt;
-        // 넉백은 빠르게 줄어든다.
-        self.pos += self.knock * dt;
+        // 넉백은 빠르게 줄어든다. 굳은 엘리트(0112)는 덜 밀린다.
+        let budge = if self.elite == Some(Affix::Hardened) {
+            crate::tuning::ELITE_HARD_KNOCK
+        } else {
+            1.0
+        };
+        self.pos += self.knock * budge * dt;
         self.knock *= (1.0 - KNOCK_DECAY * dt).max(0.0);
         if self.knock.length() < SLAM_SPEED {
             self.spilling = false;
@@ -435,6 +508,33 @@ impl Enemy {
         };
         match self.state {
             EState::Dormant | EState::Dead => {}
+            EState::Idle => {
+                if let Some((_, face)) = self.home {
+                    let (s, c) = face.sin_cos();
+                    self.turn_toward(vec3(s, 0.0, c), 2.0, dt);
+                }
+            }
+            EState::Return => {
+                let Some((home, face)) = self.home else {
+                    self.state = EState::Chase;
+                    return out;
+                };
+                let goal = self.way.unwrap_or(home);
+                let to = vec3(goal.x - self.pos.x, 0.0, goal.z - self.pos.z);
+                let l = to.length();
+                if l > 0.05 {
+                    self.turn_toward(to / l, 6.0, dt);
+                    self.pos += to / l * (speed * dt).min(l);
+                }
+                if vec3(home.x - self.pos.x, 0.0, home.z - self.pos.z).length() <= 0.4 {
+                    // 제자리에 닿으면 가득 찬다(끌고 가서 조금씩 깎는 꼼수를 막는다 — 소울의 돌아가는 적).
+                    self.state = EState::Idle;
+                    self.facing = face;
+                    self.hp = self.max_hp;
+                    self.poise = 0.0;
+                    self.repeated = false;
+                }
+            }
             EState::Chase => {
                 if let Some(w) = self.way {
                     let to = vec3(w.x - self.pos.x, 0.0, w.z - self.pos.z);
@@ -491,7 +591,7 @@ impl Enemy {
                     }
                 }
                 self.state = if e + dt >= 0.2 {
-                    EState::Recover { t: 0.0 }
+                    self.after_attack()
                 } else {
                     EState::Swing { t: e + dt }
                 };
@@ -512,7 +612,7 @@ impl Enemy {
                 }
                 let done = went + step >= self.charge_len - 1e-4;
                 self.state = if e + dt >= d.charge_time || done {
-                    EState::Recover { t: 0.0 }
+                    self.after_attack()
                 } else {
                     EState::Charge {
                         t: e + dt,
@@ -559,6 +659,80 @@ mod tests {
         (0..ticks)
             .filter(|_| en.tick(player, 1.0 / 60.0).hit)
             .count()
+    }
+
+    /// 0112: 엘리트 = 체력 × `ELITE_HP`(올림)·몸 × `ELITE_SCALE`·성질 하나. 보스는 엘리트가 되지 않는다.
+    #[test]
+    fn an_elite_has_more_life_a_bigger_body_and_one_affix() {
+        use crate::tuning::{ELITE_HP, ELITE_SCALE};
+        let mut en = Enemy::new(Kind::Husk, Vec3::ZERO);
+        let (hp, r) = (en.max_hp, en.radius);
+        en.make_elite(Affix::Hardened);
+        assert_eq!(en.max_hp, (hp as f32 * ELITE_HP).ceil() as i32);
+        assert_eq!(en.hp, en.max_hp);
+        assert!((en.radius - r * ELITE_SCALE).abs() < 1e-5);
+        assert_eq!(en.elite, Some(Affix::Hardened));
+        let mut boss = Enemy::new(Kind::Warden, Vec3::ZERO);
+        let bhp = boss.max_hp;
+        boss.make_elite(Affix::Repeating);
+        assert_eq!((boss.elite, boss.max_hp), (None, bhp));
+    }
+
+    /// 0112 되풀이: 한 번 친 뒤 쉬지 않고 같은 공격을 예고부터 한 번 더 — 그다음엔 쉰다. 두 번 다 맞힌다.
+    #[test]
+    fn a_repeating_elite_strikes_twice_then_rests() {
+        let mut en = Enemy::new(Kind::Husk, vec3(0.0, 0.0, -1.0));
+        en.make_elite(Affix::Repeating);
+        let player = Vec3::ZERO;
+        let mut teles = 0;
+        let mut hits = 0;
+        let mut was_tele = false;
+        let mut rested = false;
+        for _ in 0..240 {
+            let out = en.tick(player, 1.0 / 60.0);
+            hits += out.hit as usize;
+            let tele = matches!(en.state, EState::Tele { .. });
+            if tele && !was_tele {
+                teles += 1;
+            }
+            was_tele = tele;
+            if matches!(en.state, EState::Recover { .. }) {
+                rested = true;
+                break;
+            }
+        }
+        assert!(rested);
+        assert_eq!(
+            (teles, hits),
+            (2, 2),
+            "two telegraphed blows before resting"
+        );
+        // 보통 개체는 한 번 치고 쉰다.
+        let mut plain = Enemy::new(Kind::Husk, vec3(0.0, 0.0, -1.0));
+        let mut hits = 0;
+        for _ in 0..240 {
+            hits += plain.tick(player, 1.0 / 60.0).hit as usize;
+            if matches!(plain.state, EState::Recover { .. }) {
+                break;
+            }
+        }
+        assert_eq!(hits, 1);
+    }
+
+    /// 0112 굳은: 같은 밀어내기에 덜 밀린다.
+    #[test]
+    fn a_hardened_elite_budges_less() {
+        let mut a = Enemy::new(Kind::Husk, Vec3::ZERO);
+        let mut b = Enemy::new(Kind::Husk, Vec3::ZERO);
+        b.make_elite(Affix::Hardened);
+        for en in [&mut a, &mut b] {
+            en.state = EState::Stagger { t: 0.0, dur: 1.0 };
+            en.knock = vec3(8.0, 0.0, 0.0);
+            for _ in 0..10 {
+                en.tick(vec3(0.0, 0.0, 20.0), 1.0 / 60.0);
+            }
+        }
+        assert!(b.pos.x < a.pos.x * 0.5, "{} vs {}", b.pos.x, a.pos.x);
     }
 
     #[test]
