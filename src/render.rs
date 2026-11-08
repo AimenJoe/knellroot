@@ -981,6 +981,31 @@ impl Renderer {
                 );
             }
         }
+        // 문 장치(0113): 돌 기둥 + 쇠 손잡이. 당기기 전엔 손잡이가 위로 서 있고 호박빛이 숨 쉰다(닫힌 상자와 같은 "할 수 있다" 빛),
+        // 당긴 뒤엔 손잡이가 내려가고 빛이 꺼진다.
+        if let Some(l) = run.lever {
+            let stone = Color::new(0.42, 0.4, 0.44, 1.0);
+            let iron = Color::new(0.3, 0.28, 0.27, 1.0);
+            fl.shadow(l, 0.5);
+            shaded_box(l + Vec3::Y * 0.45, vec3(0.5, 0.9, 0.5), stone, 0.85);
+            let hinge = l + vec3(0.0, 0.8, 0.27);
+            let tilt = if run.gate_opened { 1.0 } else { -0.5 };
+            shaded_box_rot(
+                hinge + vec3(0.0, 0.32, 0.0),
+                vec3(0.1, 0.64, 0.1),
+                iron,
+                0.9,
+                Quat::from_rotation_x(tilt),
+                hinge,
+            );
+            if !run.gate_opened {
+                let pulse = 0.75 + 0.25 * (w.time * 2.4).sin();
+                let grip = Color::new(1.0, 0.72 * pulse + 0.1, 0.3, 1.0);
+                let top = hinge + Quat::from_rotation_x(tilt) * vec3(0.0, 0.66, 0.0);
+                shaded_box(top, vec3(0.16, 0.12, 0.16), grip, 1.0);
+                fl.ring(l, 0.9, 0.0, 360.0, Color::new(1.0, 0.75, 0.35, 0.3 * pulse));
+            }
+        }
         // 숨은 물건(0105): 흔적 자리의 작은 빛 — 등잔 +1은 금빛, 한 모금 +1은 민트(0037 생명 색). 살짝 떠서 숨 쉬고 발밑에 옅은 테.
         // 생김새는 성소의 종과 닮지 않게(lore — 울리는 종은 보이지 않는다): 둥근 덩어리 하나.
         for (i, (p, kind, _)) in run.finds.iter().enumerate() {
@@ -1958,6 +1983,8 @@ fn enemy_anim(
                 None => (e.pick(&["idle"]), 0.0),
             }
         }
+        EState::Idle => (e.pick(&["idle", "walk"]), clock * 0.7 + phase),
+        EState::Return => (e.pick(&["walk", "run", "idle"]), clock + phase),
         EState::Chase if moving => (e.pick(&["walk", "run", "idle"]), clock * 1.0 + phase),
         EState::Chase => (e.pick(&["idle", "walk"]), clock + phase),
         EState::Tele { t } => {

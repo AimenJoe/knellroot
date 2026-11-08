@@ -48,6 +48,15 @@ impl App {
             self.toast = Some((text.to_string(), TOAST_TIME));
         }
         // 엘리트(0112): 처음 쓰러뜨린 것을 기록에(덤 잔불은 스테이지가 이미 흩었다).
+        // 문 장치(0113): 처음 연 문을 기록에(판을 넘어 열려 있다).
+        if self.run.take_gate_new() {
+            let id = self.run.def.find_prefix.to_string();
+            if !self.progress.gates.contains(&id) {
+                self.progress.gates.push(id);
+                self.progress.gates.sort();
+            }
+            self.snd(crate::sfx::Id::Chest);
+        }
         let new = self.run.take_elites_new();
         if !new.is_empty() {
             let n = (crate::tuning::ELITE_FIRST_EMBERS * new.len() as u32).to_string();

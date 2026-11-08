@@ -14,6 +14,7 @@ use crate::tuning::{
     PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RUN_SPEED_X, RUN_STAMINA, STAMINA_DENIED_SHOW,
     STUN_CHAIN_GRACE, STUN_CHAIN_MAX, TICK_DT,
 };
+use crate::tuning::{ALERT_RADIUS, HEAR_RANGE, LEASH_RANGE, SIGHT_DY, SIGHT_RANGE};
 use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG, RIPOSTE_WINDOW};
 use crate::weapons::{self, Rb, Shape};
 
@@ -488,6 +489,8 @@ pub struct World {
     nav: Option<crate::nav::Nav>,
     /// 거리 지도 캐시(0100): (플레이어 칸, 지도) — 플레이어가 칸을 옮기거나 길 격자를 다시 만들 때만 새로 잰다(다익스트라는 틱마다 돌리기엔 무겁다).
     flow: Option<((usize, usize), Vec<u16>)>,
+    /// 제자리로 가는 거리 지도(0113) — 제자리 칸마다 한 번 만들어 둔다(제자리는 움직이지 않는다).
+    home_flows: std::collections::HashMap<(usize, usize), Vec<u16>>,
     /// 아레나 반폭(정사각형, 원점 가운데).
     pub arena: f32,
     pub hitstop: f32,
@@ -625,6 +628,7 @@ impl World {
             ground: None,
             nav: None,
             flow: None,
+            home_flows: std::collections::HashMap::new(),
             arena,
             hitstop: 0.0,
             time: 0.0,
@@ -1893,8 +1897,59 @@ impl World {
                 self.arena,
             ));
             self.flow = None;
+            self.home_flows.clear();
         }
         let nav = self.nav.as_ref().expect("built above");
+        // 알아차림(0113): 제자리의 적은 시야(벽·턱 너머는 못 봄)·발소리·맞음으로 깨어 쫓고, 깨면 곁의 동료도 깬다.
+        // 제자리에서 끈보다 멀어지고 플레이어도 그만큼 멀면 돌아간다. 플레이어가 제자리 끈 밖이면 알아차리지 않는다(되쫓기 왕복 없음).
+        let mut woke: Vec<Vec3> = Vec::new();
+        for en in self.enemies.iter_mut() {
+            let Some((home, _)) = en.home else { continue };
+            let from_home = vec3(p.x - home.x, 0.0, p.z - home.z).length();
+            let d = vec3(p.x - en.pos.x, 0.0, p.z - en.pos.z).length();
+            match en.state {
+                EState::Idle | EState::Return => {
+                    let near = from_home <= LEASH_RANGE && (body - en.pos.y).abs() <= SIGHT_DY;
+                    let sees = near
+                        && (d <= HEAR_RANGE || (d <= SIGHT_RANGE && nav.clear(en.pos, p, 0.1)));
+                    if (sees || en.hurt > 0.0) && en.notice() {
+                        woke.push(en.pos);
+                    }
+                }
+                EState::Chase => {
+                    let gone = vec3(en.pos.x - home.x, 0.0, en.pos.z - home.z).length();
+                    if gone > LEASH_RANGE && from_home > LEASH_RANGE {
+                        en.state = EState::Return;
+                    }
+                }
+                _ => {}
+            }
+        }
+        for at in woke {
+            for en in self.enemies.iter_mut() {
+                if en.state == EState::Idle && en.pos.distance(at) <= ALERT_RADIUS {
+                    en.notice();
+                }
+            }
+        }
+        // 돌아가는 적의 길: 곧게 가면 바로, 아니면 제자리로 가는 거리 지도를 따라.
+        for en in self
+            .enemies
+            .iter_mut()
+            .filter(|e| e.state == EState::Return)
+        {
+            let Some((home, _)) = en.home else { continue };
+            en.way = if nav.clear(en.pos, home, en.radius) {
+                None
+            } else {
+                let cell = nav.g.cell_of(home).unwrap_or((0, 0));
+                let flow = self
+                    .home_flows
+                    .entry(cell)
+                    .or_insert_with(|| nav.flow(home));
+                Some(nav.waypoint(flow, en.pos, en.radius).unwrap_or(home))
+            };
+        }
         let chasing = |en: &Enemy| en.state == EState::Chase;
         if self.enemies.iter().any(chasing) {
             let cell = nav.g.cell_of(p).unwrap_or((usize::MAX, usize::MAX));
@@ -3853,6 +3908,80 @@ mod tests {
             w.step(&Actions::default(), &t);
         }
         assert!(w.enemies[0].hp < hp, "the volley hits the enemy below");
+    }
+
+    /// 0113 알아차림: 제자리의 적은 시야 안(벽 너머 빼고)에 들면 쫓고, 벽 너머라도 아주 가까우면(발소리) 쫓는다.
+    #[test]
+    fn placed_enemies_notice_by_sight_but_not_through_walls_unless_close() {
+        let t = Tuning::default();
+        let notices = |at: Vec3, wall: bool| {
+            let mut w = World::new("test", 30.0);
+            if wall {
+                w.obstacles.push(Aabb {
+                    min: vec3(-3.0, 0.0, -1.2),
+                    max: vec3(3.0, 3.0, -0.8),
+                });
+            }
+            let i = w.spawn(Kind::Husk, at);
+            w.enemies[i].place(0.0);
+            w.step(&Actions::default(), &t);
+            w.enemies[i].state != EState::Idle
+        };
+        assert!(notices(vec3(0.0, 0.0, -7.0), false), "in sight");
+        assert!(!notices(vec3(0.0, 0.0, -7.0), true), "behind a wall");
+        assert!(notices(vec3(0.0, 0.0, -2.5), true), "heard up close");
+        assert!(
+            !notices(vec3(0.0, 0.0, -SIGHT_RANGE - 2.0), false),
+            "too far"
+        );
+    }
+
+    /// 0113: 맞으면 깨고, 깨면 곁(`ALERT_RADIUS`)의 동료도 깬다 — 먼 것은 그대로.
+    #[test]
+    fn a_hit_wakes_the_enemy_and_its_close_friends() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 40.0);
+        let spots = [
+            vec3(0.0, 0.0, -20.0),
+            vec3(2.0, 0.0, -21.0),
+            vec3(0.0, 0.0, -32.0),
+        ];
+        for at in spots {
+            let i = w.spawn(Kind::Husk, at);
+            w.enemies[i].place(0.0);
+        }
+        w.enemies[0].hurt = 0.15;
+        w.step(&Actions::default(), &t);
+        let st: Vec<_> = w.enemies.iter().map(|e| e.state).collect();
+        assert_ne!(st[0], EState::Idle);
+        assert_ne!(st[1], EState::Idle, "the friend next to it");
+        assert_eq!(st[2], EState::Idle, "the far one sleeps on");
+    }
+
+    /// 0113: 제자리에서 끈보다 멀어지고 플레이어도 멀면 돌아가고, 닿으면 가득 찬 채 제 일로.
+    #[test]
+    fn a_leashed_enemy_walks_home_and_heals() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 60.0);
+        let home = vec3(0.0, 0.0, -30.0);
+        let i = w.spawn(Kind::Husk, home);
+        w.enemies[i].place(0.0);
+        w.enemies[i].notice();
+        w.enemies[i].pos = vec3(0.0, 0.0, -30.0 + LEASH_RANGE + 2.0);
+        w.enemies[i].hp = 1;
+        w.player.pos = vec3(0.0, 0.0, 20.0);
+        w.step(&Actions::default(), &t);
+        assert_eq!(w.enemies[i].state, EState::Return);
+        for _ in 0..60 * 15 {
+            w.step(&Actions::default(), &t);
+            if w.enemies[i].state == EState::Idle {
+                break;
+            }
+        }
+        let e = &w.enemies[i];
+        assert_eq!(e.state, EState::Idle);
+        assert!(e.pos.distance(home) < 0.5);
+        assert_eq!(e.hp, e.max_hp, "full again at home");
     }
 
     /// 0112 남는: 쓰러진 자리에 고리가 남고 `ELITE_LINGER_DELAY` 뒤 둘레를 친다 — 안이면 맞고, 밖이면 안 맞는다.

@@ -138,6 +138,14 @@ pub const AIR_SHOT_REACH: f32 = 4.0;
 pub const AIR_SHOT_MIN: f32 = 1.5;
 pub const AIR_VOLLEY: usize = 3;
 pub const AIR_VOLLEY_SPREAD_DEG: f32 = 18.0;
+/// 알아차림(0113): 지도에 서 있는 적은 제자리에서 제 일을 하다가 플레이어가 시야(m, 벽·턱 너머는 못 봄) 안에 들거나
+/// 아주 가까이(m, 벽 너머도 — 발소리) 오거나 맞으면 쫓는다. 높이 차가 이보다 크면 못 본다. 깨면 곁(m)의 잠든 동료도 깬다.
+/// 제자리에서 끈(m)보다 멀어지고 플레이어도 그만큼 멀면 제자리로 돌아가 가득 찬다.
+pub const SIGHT_RANGE: f32 = 9.0;
+pub const HEAR_RANGE: f32 = 3.0;
+pub const SIGHT_DY: f32 = 2.5;
+pub const ALERT_RADIUS: f32 = 4.5;
+pub const LEASH_RANGE: f32 = 18.0;
 /// 엘리트(0112): 체력 배율(올림)·몸 크기 배율·떨구는 잔불 배율, 처음 쓰러뜨렸을 때 더 흩는 잔불.
 pub const ELITE_HP: f32 = 2.0;
 pub const ELITE_SCALE: f32 = 1.25;

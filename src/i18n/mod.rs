@@ -313,6 +313,12 @@ pub struct Strings {
     pub stage1_name: &'static str,
     pub zone_entrance: &'static str,
     pub zone_courtyard: &'static str,
+    /// 0113: 입구와 뜰 사이 무너진 길(뿌리 굴 포함).
+    pub zone_road: &'static str,
+    /// 0113: 문이 닫혀 있을 때의 목표, 문 장치 곁의 동사, 처음 열었을 때의 카드.
+    pub obj_find_gate: &'static str,
+    pub lever_verb: &'static str,
+    pub card_gate_opened: &'static str,
     pub zone_sanctum: &'static str,
     pub intro_1: &'static str,
     pub intro_2: &'static str,
@@ -571,6 +577,10 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.stage1_name,
         s.zone_entrance,
         s.zone_courtyard,
+        s.zone_road,
+        s.obj_find_gate,
+        s.lever_verb,
+        s.card_gate_opened,
         s.zone_sanctum,
         s.intro_1,
         s.intro_2,

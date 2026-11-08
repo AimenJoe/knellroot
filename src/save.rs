@@ -43,6 +43,8 @@ pub mod key {
     pub const FINDS: &str = "finds";
     /// 처음 쓰러뜨린 엘리트(0112): 기록 이름들("sanctuary.elite.0,…") — 처음 덤은 한 번만.
     pub const ELITES: &str = "elites";
+    /// 문 장치로 연 문(0113): 스테이지 이름 앞(`find_prefix`)들 — 한 번 열면 판을 넘어 열려 있다(지름길).
+    pub const GATES: &str = "gates";
     /// 문지기 핵 점수(0105): 이긴 횟수, `progression::CORE_CAP`까지.
     pub const CORE_WARDEN: &str = "core.warden";
     /// v0.4.0 옮기기를 했다(0105 — 핵 고르기 → 생명·숨은 물건·핵 점수). 한 번만.
@@ -129,6 +131,8 @@ pub struct Progress {
     pub finds: Vec<String>,
     /// 처음 쓰러뜨린 엘리트의 기록 이름(0112).
     pub elites: Vec<String>,
+    /// 문 장치로 연 문(0113).
+    pub gates: Vec<String>,
     /// 성소 문지기 핵 점수(0105, `CORE_CAP`까지).
     pub cores: u32,
     /// 기술 나무(0106).
@@ -194,6 +198,16 @@ impl Progress {
             .collect();
         elites.sort();
         elites.dedup();
+        let mut gates: Vec<String> = r
+            .get(key::GATES)
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|f| !f.is_empty())
+            .map(str::to_string)
+            .collect();
+        gates.sort();
+        gates.dedup();
         let cores = r
             .num(key::CORE_WARDEN)
             .unwrap_or(0)
@@ -218,6 +232,7 @@ impl Progress {
             level,
             finds,
             elites,
+            gates,
             cores,
             tree,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
@@ -255,6 +270,7 @@ impl Progress {
         r.set(key::LV_MIGHT, self.level.might);
         r.set(key::FINDS, self.finds.join(","));
         r.set(key::ELITES, self.elites.join(","));
+        r.set(key::GATES, self.gates.join(","));
         r.set(key::CORE_WARDEN, self.cores);
         r.set(key::MIGRATED_V04, 1);
         r.set(key::TREE_BEAT, self.tree.open[0]);
@@ -512,6 +528,11 @@ mod tests {
             &(r.to_text() + "elites=sanctuary.elite.0,sanctuary.elite.1,sanctuary.elite.0\n"),
         ));
         assert_eq!(back.elites, vec!["sanctuary.elite.0", "sanctuary.elite.1"]);
+        // 0113: 문 장치로 연 문도 같은 꼴(키 `gates`).
+        let mut p = Progress::default();
+        p.gates = vec!["sanctuary".into()];
+        let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        assert_eq!(back.gates, vec!["sanctuary"]);
     }
 
     #[test]

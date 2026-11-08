@@ -58,6 +58,10 @@ pub enum TeleShape {
 pub enum EState {
     /// 잠든 문지기(스테이지가 깨운다). 움직이지도 치지도 않는다.
     Dormant,
+    /// 지도에 서 있는 적(0113)이 제자리에서 제 일을 한다 — 맞을 수는 있다(싸움에 낀 것). 월드가 알아차리면 쫓는다.
+    Idle,
+    /// 제자리에서 너무 멀어져 돌아가는 중(0113) — 닿으면 가득 차고 제자리로.
+    Return,
     Chase,
     /// 공격 예고(`Enemy::atk`). 다 차면 친다.
     Tele {
@@ -144,6 +148,8 @@ pub struct Enemy {
     pub elite: Option<Affix>,
     /// 되풀이(0112): 이번 공격이 되풀이한 둘째 번인가.
     pub repeated: bool,
+    /// 지도에 서 있는 적의 제자리·바라보는 쪽(0113). 없으면(물결·시나리오) 처음부터 쫓는다.
+    pub home: Option<(Vec3, f32)>,
     /// 턱을 뛰어오르거나 뛰어내리는 중(0100) — 그동안 몸은 포물선을 따라가고 생각하지도 치지도 않는다.
     pub hop: Option<Hop>,
 }
@@ -236,6 +242,24 @@ impl Enemy {
             hop: None,
             elite: None,
             repeated: false,
+            home: None,
+        }
+    }
+
+    /// 지도에 세운다(0113): 이 자리·이 쪽이 제자리, 알아차리기 전엔 제 일(`Idle`).
+    pub fn place(&mut self, facing: f32) {
+        self.home = Some((self.pos, facing));
+        self.facing = facing;
+        self.state = EState::Idle;
+    }
+
+    /// 알아차렸다(0113): 제자리·돌아가는 중이면 쫓기 시작. 이미 싸우는 중이면 그대로.
+    pub fn notice(&mut self) -> bool {
+        if matches!(self.state, EState::Idle | EState::Return) {
+            self.state = EState::Chase;
+            true
+        } else {
+            false
         }
     }
 
@@ -484,6 +508,33 @@ impl Enemy {
         };
         match self.state {
             EState::Dormant | EState::Dead => {}
+            EState::Idle => {
+                if let Some((_, face)) = self.home {
+                    let (s, c) = face.sin_cos();
+                    self.turn_toward(vec3(s, 0.0, c), 2.0, dt);
+                }
+            }
+            EState::Return => {
+                let Some((home, face)) = self.home else {
+                    self.state = EState::Chase;
+                    return out;
+                };
+                let goal = self.way.unwrap_or(home);
+                let to = vec3(goal.x - self.pos.x, 0.0, goal.z - self.pos.z);
+                let l = to.length();
+                if l > 0.05 {
+                    self.turn_toward(to / l, 6.0, dt);
+                    self.pos += to / l * (speed * dt).min(l);
+                }
+                if vec3(home.x - self.pos.x, 0.0, home.z - self.pos.z).length() <= 0.4 {
+                    // 제자리에 닿으면 가득 찬다(끌고 가서 조금씩 깎는 꼼수를 막는다 — 소울의 돌아가는 적).
+                    self.state = EState::Idle;
+                    self.facing = face;
+                    self.hp = self.max_hp;
+                    self.poise = 0.0;
+                    self.repeated = false;
+                }
+            }
             EState::Chase => {
                 if let Some(w) = self.way {
                     let to = vec3(w.x - self.pos.x, 0.0, w.z - self.pos.z);
