@@ -1645,7 +1645,6 @@ pub fn idx(p: P) -> usize {
 mod tests {
     use super::*;
 
-
     #[test]
     fn region_tier_multipliers_match_the_village_design() {
         let one = tier(1);
