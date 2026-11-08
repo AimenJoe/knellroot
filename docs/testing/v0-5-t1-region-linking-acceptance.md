@@ -31,7 +31,6 @@
 |---|---|---|
 | 지층 전환 | `the_region_swaps_once_under_full_cover_and_depth_moves_one_way` | 전환 중 한 번 교체, 덮인 시점, 깊이 방향을 검증 |
 | 마을 임시 문지기 | `village_guard_remains_a_dormant_sentinel_before_c3` | 종탑 터에 진입해도 C3 전 임시 문지기가 깨어나거나 보스전이 되지 않음을 검증 |
-| 마을 임시 문지기 | `village_guard_remains_a_dormant_sentinel_before_c3` | 종탑 터에 진입해도 C3 전 임시 문지기가 깨어나거나 보스전이 되지 않음을 검증 |
 | 쉼터 저장 | `progress_keeps_the_rest_site_and_drops_it_when_the_run_ends` | `RunAt` 왕복 저장과 판 종료 시 제거를 검증 |
 | 파일 저장 | `the_native_store_writes_reads_and_wipes_the_file` | 네이티브 파일 저장·읽기 기본 동작 검증 |
 | 전체 지역 왕복 | 없음 확인 | 실제 앱 흐름 수동 검증 필요 |
