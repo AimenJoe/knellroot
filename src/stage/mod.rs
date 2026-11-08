@@ -197,6 +197,15 @@ impl Level {
                             radius: 7.0,
                         });
                     }
+                    // 천장 틈 빛줄기(0118 T2, 땅속): 표지 + 옅은 빛(굽는 지형·배우가 받는다). 그림은 렌더가 표지로.
+                    SHAFT_GLYPH => {
+                        lv.marks.push((SHAFT_GLYPH, p));
+                        lv.lights.push(Light {
+                            pos: p + Vec3::Y * 2.5,
+                            color: Color::new(0.62, 0.66, 0.85, 1.0),
+                            radius: 6.0,
+                        });
+                    }
                     other => lv.marks.push((other, p)),
                 }
             }
@@ -405,6 +414,8 @@ pub struct StageDef {
     pub obj_explore: Tr,
     /// 지하 몇 m(0118, 연출 표 — 지층 단면 전환·카드가 같이 쓴다). 차례대로 깊어진다(시험).
     pub depth_m: u32,
+    /// 지역 환경(0118 T2): 원경·달빛·안개·떠다니는 것·식생 — `backdrop::SURFACE`·`UNDERGROUND`.
+    pub env: &'static crate::backdrop::Env,
 }
 
 /// 판의 차례(0118, v0.5.0 T1): 성소 → 떠난 마을. 지도 `D`(내려가는 길, 핵을 거둔 뒤)로 다음, `U`(오르는 길)로 앞.
@@ -413,6 +424,8 @@ pub static STAGES: [&StageDef; 2] = [&sanctuary::DEF, &village::DEF];
 pub const DOWN_GLYPH: char = 'D';
 pub const UP_GLYPH: char = 'U';
 pub const PASSAGE_REACH: f32 = 1.2;
+/// 천장 틈 빛줄기 표지(0118 T2).
+pub const SHAFT_GLYPH: char = 'S';
 /// 상자 기록 번호(0118): 지역마다 `지역 × 이것 + 상자 번호`(성소는 그대로 — 옛 기록이 이어진다).
 pub const CHESTS_PER_STAGE: u32 = 1000;
 const PASSAGE_ARM: f32 = 2.6;
@@ -1494,6 +1507,25 @@ mod tests {
             if i > 0 {
                 assert!(def.depth_m > STAGES[i - 1].depth_m, "stage {i} is deeper");
                 assert_ne!(def.find_prefix, STAGES[i - 1].find_prefix);
+            }
+        }
+    }
+
+    /// 0118 T2: 땅 위 지역만 하늘·달·반딧불·나무, 땅속은 달이 없고 달빛이 약하며 흙이 떨어진다. 땅속엔 천장 틈 빛줄기가 있다.
+    #[test]
+    fn regions_below_ground_have_no_moon_and_light_through_ceiling_cracks() {
+        for def in STAGES {
+            let e = def.env;
+            let below = def.depth_m > 0;
+            assert_eq!(e.moon, !below, "{}", def.find_prefix);
+            assert_eq!(e.fireflies || e.trees, !below);
+            if below {
+                assert!(e.falling && e.moonlight < 1.0);
+                let (run, _) = StageRun::start(def);
+                assert!(
+                    run.level.marks_of(SHAFT_GLYPH).next().is_some(),
+                    "light comes from somewhere"
+                );
             }
         }
     }

@@ -189,6 +189,19 @@ thread_local! {
     static BAKE_SHADE: std::cell::RefCell<Option<crate::shade::Occluders>> = const { std::cell::RefCell::new(None) };
 }
 
+thread_local! {
+    /// 달빛 세기(0118 T2 — 지역 환경 `Env::moonlight`, 땅속은 천장 틈으로 조금). 렌더가 프레임마다 넣는다.
+    static MOONLIGHT: std::cell::Cell<f32> = const { std::cell::Cell::new(1.0) };
+}
+
+pub fn moonlight() -> f32 {
+    MOONLIGHT.with(|m| m.get())
+}
+
+pub fn set_moonlight(k: f32) {
+    MOONLIGHT.with(|m| m.set(k));
+}
+
 /// 굽기 동안 달빛 그림자를 켠다(None = 끔).
 pub fn set_bake_shade(o: Option<crate::shade::Occluders>) {
     BAKE_SHADE.with(|s| *s.borrow_mut() = o);
@@ -220,7 +233,7 @@ pub fn lit(p: Vec3, n: Vec3, lights: &[Light]) -> Vec3 {
     if toon {
         d = band(d, 2.0);
     }
-    let mut c = AMBIENT + MOON * d;
+    let mut c = AMBIENT + MOON * (d * moonlight());
     for li in lights {
         let dv = li.pos - p;
         let dist = dv.length();
@@ -527,7 +540,10 @@ impl Renderer {
             rows: ih as f32,
         });
         set_camera(&c3);
-        clear_background(crate::backdrop::ZENITH);
+        // 지역 환경(0118 T2): 스테이지면 그 지역의 것, 개발 놀이터는 땅 위.
+        self.backdrop.env = v.stage.map_or(&crate::backdrop::SURFACE, |r| r.def.env);
+        set_moonlight(self.backdrop.env.moonlight);
+        clear_background(self.backdrop.env.zenith);
         // 원경(0063 E2): 하늘 띠·달·산등성이 — 스테이지에서만, 땅보다 먼저(법선 패스에는 넣지 않는다).
         let fwd = (c3.target - c3.position).normalize_or_zero();
         let cam_right = fwd.cross(Vec3::Y).normalize_or_zero();
@@ -569,14 +585,16 @@ impl Renderer {
                 let flora = t[crate::tuning::P::RenderFlora] >= 0.5;
                 let key = run.def.map.as_ptr() as usize + look().toon as usize + 2 * flora as usize;
                 if self.scenery.as_ref().is_none_or(|(k, _)| *k != key) {
-                    self.scenery = Some((key, Scenery::bake(&run.level, &mut self.lib, flora)));
+                    let trees = run.def.env.trees;
+                    self.scenery =
+                        Some((key, Scenery::bake(&run.level, &mut self.lib, flora, trees)));
                 }
                 let sc = &mut self.scenery.as_mut().unwrap().1;
                 draw_plane(
                     Vec3::Y * sc.void_y,
                     vec2(sc.extent, sc.extent),
                     None,
-                    crate::backdrop::FOG_DEEP,
+                    self.backdrop.env.fog_deep,
                 );
                 let boxes: Vec<Aabb> = sc.pieces.iter().filter_map(|p| p.aabb).collect();
                 let hidden = crate::camera::occluders(&pts, cam.rig.pos, &boxes);
@@ -1020,6 +1038,34 @@ impl Renderer {
                 0.8,
                 1.6,
                 Color::new(0.55, 0.45, 0.9, 0.08 + 0.06 * pulse),
+            );
+        }
+        // 천장 틈 빛줄기(0118 T2, KB conveying-descent "방 안의 위"): 위는 좁고 아래는 넓은 비스듬한 기둥(위가 밝다) + 바닥 빛 웅덩이.
+        // 기울기는 달빛 쪽 — 땅속의 옅은 달빛과 같은 빛이 틈으로 든다.
+        let lean = vec3(-LIGHT_DIR.x, 0.0, -LIGHT_DIR.z).normalize_or_zero() * 2.2;
+        for s in run.level.marks_of(crate::stage::SHAFT_GLYPH) {
+            let breath = 0.85 + 0.15 * (w.time * 0.7 + s.x * 0.3).sin();
+            fl.sector(
+                s,
+                1.7,
+                0.0,
+                360.0,
+                Color::new(0.75, 0.78, 0.95, 0.14 * breath),
+            );
+            fl.sector(
+                s,
+                1.0,
+                0.0,
+                360.0,
+                Color::new(0.8, 0.82, 1.0, 0.12 * breath),
+            );
+            shaft(
+                s,
+                s + lean + Vec3::Y * 9.0,
+                1.5,
+                0.45,
+                Color::new(0.75, 0.78, 0.95, 0.05 * breath),
+                Color::new(0.8, 0.82, 1.0, 0.2 * breath),
             );
         }
         if let Some(u) = run.up_at {
@@ -3136,6 +3182,29 @@ fn shaded_box(center: Vec3, size: Vec3, col: Color, shade: f32) {
 const JUMP_SHADOW_H: f32 = 1.2;
 
 /// 세로 빛기둥(0060 W1): 열린 원통, 아래가 `col`의 투명도·위로 갈수록 사라진다. 앞뒤 면이 다 보이게 감김을 둘 다.
+/// 빛줄기(0118 T2): 바닥 `a`(반지름 `ra`, 빛 `ca`) → 위 `b`(반지름 `rb`, 빛 `cb`)의 원뿔대 옆면(안팎 둘 다).
+fn shaft(a: Vec3, b: Vec3, ra: f32, rb: f32, ca: Color, cb: Color) {
+    let n = 16;
+    let mut vertices = Vec::with_capacity((n + 1) * 2);
+    let mut indices = Vec::with_capacity(n * 12);
+    for i in 0..=n {
+        let t = std::f32::consts::TAU * i as f32 / n as f32;
+        let (s, k) = t.sin_cos();
+        vertices.push(Vertex::new(a.x + s * ra, a.y, a.z + k * ra, 0.0, 0.0, ca));
+        vertices.push(Vertex::new(b.x + s * rb, b.y, b.z + k * rb, 0.0, 0.0, cb));
+    }
+    for i in 0..n {
+        let q = (i * 2) as u16;
+        indices.extend_from_slice(&[q, q + 1, q + 2, q + 1, q + 3, q + 2]);
+        indices.extend_from_slice(&[q, q + 2, q + 1, q + 1, q + 2, q + 3]);
+    }
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
+}
+
 fn beam(c: Vec3, r: f32, h: f32, col: Color) {
     let n = 16;
     let mut vertices = Vec::with_capacity((n + 1) * 2);

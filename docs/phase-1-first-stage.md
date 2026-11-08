@@ -22,6 +22,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 ## 구현 상태(2026-11-07 — 첫 판 2026-11-04, v0.3.0 배포 2026-11-06, v0.3.4·v0.3.5 배포 2026-11-07·0100까지, v0.4.0 T0 0103·G1 0104·G3 0105·G2·G4 0106·G5 0107·표시 0108 — v0.4.0 배포 2026-11-08(PR #6), 판정 전)
 | 항목 | 위치 | 비고 |
 |---|---|---|
+| 지역 환경(0119, v0.5.0 T2) | `backdrop::Env`(`SURFACE`·`UNDERGROUND`)·`StageDef::env`, `render::set_moonlight`, `Scenery::bake(…, trees)`, 지도 `S`(빛줄기 — `stage::SHAFT_GLYPH`, `render::shaft`) | 땅 위 = 하늘·달·반딧불·나무, 땅속 = 흙빛 동굴 원경·높은 벽·달 없음·달빛 0.4·떨어지는 흙·벽 뿌리만·천장 틈 빛줄기 |
 | 지역 잇기(0118, v0.5.0 T1) | `stage::STAGES`·`StageDef::depth_m`·`Phase::Down`·`StageOut::{CoreTaken,Descend,Ascend}`·`arrive_from_above/below`, `stage/village.rs`(빈 상자 지도), `descent.rs`(지층 단면), `app/progress.rs` `enter_stage`·`cross_to`·`respawn_elsewhere`, 기록 `run.stage`·`run.down` | 판의 차례 = 성소 → 떠난 마을(지하 40m). 성소 핵 → 바닥 길(`D`) → 단면 전환(가운데에서 지역을 바꿈, 굽기가 그 뒤에) → 마을 어귀. 오르는 길(`U`)로 되돌아가면 이긴 문지기는 없고 바닥 길은 열린 채. 다른 지역에서 쉬었으면 거기서 다시 섬. 결과 화면은 마을 끝 문지기(자리만 — 첫 문지기 모델) 뒤. 개발 "둘째 지역(떠난 마을) 어귀부터" |
 | v0.4.2 패치(0117) | `weapons::Weapon::stamina`, `world/player_tick.rs`(평타·강타·쏘기·수류탄·공중 볼트), `tuning.rs` 충전 28/s·0.8초, `save::Progress::weapons`·`owns_weapon`, `app::App::arms`, `stage::Loot`·`chest_loot`, `growth::SHOP`, `tools/maps/sanctuary.py` | 무기별 기력·원거리 기력·느린 충전·무기는 상자에서(옛 기록은 다 가짐)·적 39·입구 강화 덜기·가게 값. `Cargo.toml` 0.4.2·`version_code` 16, `docs/releases/v0.4.2.md` |
 | 나무 칸 표시·v0.4.0(0108) | `render.rs`(끝맺음 금빛 두 겹·비껴서기 민트 고리·맞서는 자 호박 반달), `World::beat_cue`(맺음타 마지막 타 부채꼴), `cancel_or_buffer`(맺음타 캔슬 길), `Cargo.toml` 0.4.0·`version_code` 14, `docs/releases/v0.4.0.md` | 0107에서 맺음타가 캔슬 길로는 안 걸리던 것을 고침. 릴리스 PR `release/v0.4` → `main`(Merge는 사장) |
@@ -123,6 +124,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 **v0.4.0 배포됨(2026-11-08, PR #6 → `9564892`)**: 운영 웹 `build.txt` = 그 커밋, Release `v0.4.0`에 `knellroot.apk`, `deploy-web`·`release`·`build-android` 모두 success. `release/v0.4`는 main까지 앞으로 맞춤. 고칠 것은 v0.4.x.
 
 **v0.5.0 마일스톤 정함(0116, 갈래 `release/v0.5`)**: 인터뷰로 열여섯 물음 — 보라 뿌리 = 주인 없는 실(개발자 답), 떠난 이유는 게임 안 MYSTERY, 주민 = 여러 작은 동물("주민"), 포포 고리 걸어 둠, ECO-05 조건은 열고 행동 규칙만, ECO-10 같은 종이 다른 역할, 잔류형 정본(관찰), 마을 등급 2 = 체력 ×1.5·자세 ×1.3·잔불 ×1.6, 둘째 문지기 거리·공간형, 내려가는 길 + 되돌아가는 길, 도감 넣음, 주민의 불 = 아궁이·재방문 = 다음 판·공격이 지나감·말풍선. 이름: 떠난 마을·등딱지짐승·꼬투리·깨진 종지기. **다음: T1 지역 잇기부터**. 둘째 지역 설계는 0115(`docs/lore/regions/abandoned-village.md`·`docs/design/stages/abandoned-village-residents.md`).
+
+**0119(v0.5.0 T2, 개발판)**: 떠난 마을이 땅속으로 — 하늘·달 대신 흙빛 동굴, 천장 틈 빛줄기 넷, 떨어지는 흙. 판정: 성소 → 마을로 내려왔을 때 "더 깊다"로 읽히나(Z1), 너무 어두워 싸움이 안 보이지 않나(달빛 0.4), 풀 빌보드가 땅속에서 어색하지 않나. 다음은 T3(구역 등급).
 
 **0118(v0.5.0 T1, 개발판)**: 지역 잇기 — 성소 핵을 거두면 판이 끝나지 않고 성소 바닥이 열린다(어두운 구멍, 가까이 가면 빛기둥이 걷힌다) → 밟으면 지층 단면(깊이 0 → 40m) → 떠난 마을(아직 빈 상자 지도) 어귀. 어귀의 빛 웅덩이(오르는 길)로 성소에 되돌아간다. 판정: 단면이 "내려간다"로 읽히나(Z1), 전환 길이 1.6초·올라가기 1.9초, 오르내려도 체력·등잔·잔불이 그대로인가, 마을 화로에서 쉰 뒤 성소에서 쓰러지면 마을에서 서는 게 납득되나(Z5). 다음은 T2(지역 환경).
 

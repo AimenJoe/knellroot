@@ -46,6 +46,7 @@ pub static DEF: StageDef = StageDef {
     boss_charm: Some(Charm::Hand),
     find_prefix: "sanctuary",
     depth_m: 0,
+    env: &crate::backdrop::SURFACE,
     // 엘리트(0112 → 0113): 뜰 가운데 굳은 잔재, 뜰 남동 단 되풀이 가시짐승, 뿌리 굴 남는 잔재(성벽길로 오르는 길목).
     elites: &[
         ('X', Kind::Husk, Affix::Hardened),
