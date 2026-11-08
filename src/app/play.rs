@@ -151,6 +151,7 @@ impl App {
                 Event::Slam { .. } => SHAKE_SLAM,
                 Event::Rouse { .. } => SHAKE_ROUSE,
                 Event::Parry { .. } => SHAKE_PARRY,
+                Event::Deflect { .. } => SHAKE_HIT,
                 Event::Crit { .. } => SHAKE_CRIT,
                 Event::Plunge { .. } => SHAKE_PLUNGE,
                 Event::Smash { .. } => SHAKE_SMASH,
@@ -266,7 +267,8 @@ impl App {
                 Event::Break { .. } | Event::Boom { .. } => Id::Hit,
                 Event::EnemyDown { .. } => Id::Die,
                 Event::PlayerHurt => Id::Hurt,
-                Event::Parry { .. } => Id::Parry,
+                // 등딱지 튕김(0120)은 패링의 거울 — 같은 쇳소리.
+                Event::Parry { .. } | Event::Deflect { .. } => Id::Parry,
                 Event::Beat => crate::sfx::beat_id(self.world.player.beat_chain),
                 // 딱 맞춰 떼기(0078): 박자와 같은 "맞췄다" 종 — 가장 높은 음.
                 Event::Perfect { .. } => Id::Beat3,

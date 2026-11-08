@@ -14,6 +14,8 @@ pub enum Scenario {
     Stress80,
     Duel,
     Elites,
+    /// 떠난 마을의 새 적(0120): 등딱지짐승·꼬투리 둘·청소자.
+    Newcomers,
 }
 
 pub struct Entry {
@@ -23,7 +25,7 @@ pub struct Entry {
     pub checks: &'static str,
 }
 
-pub const LIST: [Entry; 9] = [
+pub const LIST: [Entry; 10] = [
     Entry {
         scenario: Scenario::Boss,
         name: "boss arena",
@@ -68,6 +70,12 @@ pub const LIST: [Entry; 9] = [
         scenario: Scenario::Elites,
         name: "elites",
         checks: "0112 elite affixes: hardened, repeating, lingering",
+    },
+    Entry {
+        scenario: Scenario::Newcomers,
+        name: "shellback + pods + scavenger",
+        checks:
+            "0120 guard (front light hits bounce), planted discs, hop away, scavenger ignores you",
     },
 ];
 
@@ -151,6 +159,19 @@ pub fn build(s: Scenario) -> World {
                 let i = w.spawn(kind, at);
                 w.enemies[i].make_elite(affix);
             }
+            w
+        }
+        Scenario::Newcomers => {
+            // 0120: 앞의 등딱지짐승(이쪽을 본다)·먼 꼬투리 둘·뒤의 청소자(제자리에서 먹는다 — 쳐야 싸운다).
+            use crate::species::Kind;
+            let mut w = World::new("newcomers", 16.0);
+            let s = w.spawn(Kind::Shell, vec3(0.0, 0.0, -5.0));
+            w.enemies[s].facing = 0.0;
+            w.spawn(Kind::Pod, vec3(6.0, 0.0, -9.0));
+            w.spawn(Kind::Pod, vec3(-6.0, 0.0, -9.0));
+            let e = w.spawn(Kind::Husk, vec3(0.0, 0.0, 8.0));
+            w.enemies[e].place(std::f32::consts::PI);
+            w.enemies[e].docile = true;
             w
         }
         Scenario::Tray => {

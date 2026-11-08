@@ -250,6 +250,8 @@ pub const KO: Strings = Strings {
     charm_pouch_d: "잔불 +50%",
     enemy_husk: "뿌리의 잔재",
     enemy_thorn: "가시짐승",
+    enemy_shell: "등딱지짐승",
+    enemy_pod: "꼬투리",
     clear_title: "종소리가 더 깊은 곳에서 울린다",
     clear_sub: "시간 {0} · 쓰러뜨린 것 {1}",
     defeat_title: "쓰러졌다",

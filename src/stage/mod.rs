@@ -407,6 +407,8 @@ pub struct StageDef {
     /// 지도에 서 있는 적(0113): (지도 표지, 종류) — 제자리에서 제 일을 하다 알아차리면 쫓는다. 화로에서 쉬면 다시 선다.
     /// 물결(`waves`)은 시험·PoC·특별한 기믹 스테이지에만 — 보통 스테이지는 넓은 지역 + 밀집도(사장 2026-11-08).
     pub spawns: &'static [(char, Kind)],
+    /// 청소자 자리(0120 — 0116 ECO-10 "같은 종, 다른 역할"): 이 표지에 선 적은 보고도 덤비지 않고 먹는다(맞거나 동료가 깨면 싸운다).
+    pub docile: &'static [char],
     /// 엘리트(0112 → 0113): (지도 표지, 종류, 성질) — 서 있는 적과 같은 꼴, 단 그 판에 한 번 쓰러뜨리면 쉬어도 다시 서지 않는다.
     /// 기록 이름은 `<find_prefix>.elite.<이 표의 몇째>`(처음 쓰러뜨린 것만 덤).
     pub elites: &'static [(char, Kind, crate::enemy::Affix)],
@@ -809,6 +811,7 @@ impl StageRun {
                 let i = w.spawn(kind, p);
                 w.enemies[i].set_tier(self.def.tier);
                 w.enemies[i].place(face(p));
+                w.enemies[i].docile = self.def.docile.contains(&mark);
             }
         }
         for (k, &(mark, kind, affix)) in self.def.elites.iter().enumerate() {

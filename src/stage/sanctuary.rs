@@ -28,6 +28,7 @@ pub static DEF: StageDef = StageDef {
     // 물결은 쓰지 않는다(0113) — 서 있는 적.
     waves: &[],
     spawns: &[('a', Kind::Husk), ('T', Kind::Thorn)],
+    docile: &[],
     obj_explore: |s| s.obj_find_gate,
     boss: ('W', Kind::Warden),
     intro: (|s| s.intro_1, |s| s.intro_2),

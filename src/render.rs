@@ -672,7 +672,9 @@ impl Renderer {
             drape.shadow(p, en.radius * 1.2);
             if let Some((k, shape)) = en.telegraph() {
                 if v.tells > 0.0 {
-                    telegraph(&drape, p, en.facing, k, shape, v.tells / TELLS_BASE);
+                    // 심은 원판(꼬투리, 0120)은 몸이 아니라 심은 자리에.
+                    let at = en.tele_at().unwrap_or(p);
+                    telegraph(&drape, at, en.facing, k, shape, v.tells / TELLS_BASE);
                 }
             }
             if let Some(front) = en.wave_front() {
@@ -1367,6 +1369,7 @@ impl Renderer {
                 PState::Drink { t: e, .. } => (&["drink", "idle"], e),
                 PState::Dodge { t: e, .. } => (&["dodge", "walk"], e),
                 PState::Hurt { t: e, .. } => (&["hurt", "idle"], e),
+                PState::Recoil { t: e } => (&["hurt", "idle"], e),
                 // 0034: 도는 쪽으로 윗몸이 먼저 감긴다(오른쪽 = 요가 준다).
                 PState::Turn { t: e, from, to } => (
                     if crate::world::turn_is_right(from, to) {
@@ -1480,7 +1483,7 @@ impl Renderer {
                 PState::Heavy { .. } => Color::new(1.0, 0.6, 0.3, 1.0),
                 PState::Drink { .. } => Color::new(0.75, 0.9, 0.6, 1.0),
                 PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
-                PState::Parry { .. } => Color::new(0.7, 0.85, 1.0, 1.0),
+                PState::Parry { .. } | PState::Recoil { .. } => Color::new(0.7, 0.85, 1.0, 1.0),
                 PState::Cast { .. } | PState::Throw { .. } | PState::CastCharge { .. } => {
                     Color::new(0.75, 0.7, 1.0, 1.0)
                 }
@@ -2041,6 +2044,7 @@ fn enemy_anim(
         Atk::Slam => &["slam", "attack"],
         Atk::Wave => &["wave", "slam", "attack"],
         Atk::Smash => &["attack"],
+        Atk::Plant => &["plant", "attack"],
     };
     let once = |names: &[&str], k: f32| {
         let a = e.pick(names);

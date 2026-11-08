@@ -101,6 +101,10 @@ pub enum Basis {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Event {
     Swing,
+    /// 등딱지가 평타·탄을 튕겼다(0120).
+    Deflect {
+        at: Vec3,
+    },
     Hit {
         at: Vec3,
     },
@@ -301,6 +305,10 @@ pub enum PState {
     Hurt {
         t: f32,
         dur: f32,
+    },
+    /// 등딱지에 튕겼다(0120): 짧게 뒤로 튀고 콤보가 끊긴다(`RECOIL_TIME` 동안 못 움직이고 못 친다). 패링당한 것보다 짧다.
+    Recoil {
+        t: f32,
     },
     /// 패링(0025): `parry.window s` 동안 앞쪽 근접 공격을 튕긴다. 헛치면 `parry.time s`까지 못 움직인다. 튕기면 바로 풀린다.
     Parry {
@@ -554,6 +562,8 @@ pub struct World {
     flask_denied_now: bool,
     /// 히트스톱 동안 들어온 눌림(공격·회피·락온·돌리기). 멈춤이 풀리는 틱에 낸다 — 버리면 멈춘 순간 누른 버튼이 사라진다.
     held: Actions,
+    /// 이 틱에 공격을 쥐고 있나(0120 — 등딱지 튕김이 모으기를 끊지 않게).
+    attack_down: bool,
 }
 
 impl World {
@@ -641,6 +651,7 @@ impl World {
             turn_now: None,
             spill_at: None,
             held: Actions::default(),
+            attack_down: false,
             plunge_now: false,
             shock_now: false,
             late_ring: None,
@@ -969,6 +980,7 @@ impl World {
         let t = &tuned;
         let mut ev = Vec::new();
         let dt = TICK_DT;
+        self.attack_down = a.attack_held;
         if let Some((_, left)) = &mut self.spill_at {
             *left -= dt;
         }
@@ -1333,6 +1345,13 @@ impl World {
                     b.hits |= 1 << i;
                 }
                 let en = &mut self.enemies[i];
+                // 등딱지(0120): 앞에서 온 탄도 튕긴다(탄은 거기서 멈춘다 — 방랑자는 튀지 않는다).
+                if en.guards(-b.dir) {
+                    ev.push(Event::Deflect {
+                        at: b.pos + b.dir * k,
+                    });
+                    continue;
+                }
                 let crit = en.exposed > 0.0;
                 en.hp -= hurt_by(en, self.stats.dmg + b.def.damage, crit, t);
                 en.exposed = 0.0;
@@ -1622,6 +1641,7 @@ impl World {
         let mut stop = false;
         let mut heavy_hit = false;
         let mut first_hit: Option<(Vec3, f32, Vec3)> = None;
+        let mut deflected: Option<Vec3> = None;
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing {
                 continue;
@@ -1640,6 +1660,11 @@ impl World {
                 continue;
             }
             en.hit_by = swing;
+            // 등딱지(0120): 앞에서 든 평타는 튕긴다 — 피해·자세 없음. 강타·옆/뒤·내려찍기(다른 길)는 들어간다.
+            if s.heavy.is_none() && en.guards(-dir) {
+                deflected.get_or_insert(en.pos + Vec3::Y * en.height * 0.6);
+                continue;
+            }
             // 패링으로 드러난 적은 한 대가 치명타(0025).
             let crit = en.exposed > 0.0;
             // 레벨 힘(0104): 강타·패링 반격 +`heavy_dmg`, 콤보·대시 공격 +`light_dmg` — 장신구 `dmg`는 모든 타.
@@ -1731,6 +1756,10 @@ impl World {
                 ev.push(Event::EnemyDown { at: en.pos });
             }
         }
+        if let (Some(at), false) = (deflected, stop) {
+            self.recoil(at, ev);
+            return;
+        }
         if stop {
             self.hitstop = t[P::Hitstop]
                 * if heavy_hit {
@@ -1742,6 +1771,20 @@ impl World {
             self.player.connected = swing;
             self.strike_cells(t, &s, first_hit, ev);
         }
+    }
+
+    /// 등딱지에 튕겼다(0120): 콤보·받아 둔 누름을 끊고 짧게 뒤로 튄다. 소리·불똥은 앱이 `Event::Deflect`로.
+    /// 공격을 쥐고 있으면(강타를 모으려는 평타) 튀지 않는다 — 강타가 등딱지를 뚫는 길이라 첫 평타의 튕김이 모으기를 끊으면 안 된다.
+    fn recoil(&mut self, at: Vec3, ev: &mut Vec<Event>) {
+        ev.push(Event::Deflect { at });
+        if self.attack_down {
+            return;
+        }
+        let pl = &mut self.player;
+        let back = vec3(pl.pos.x - at.x, 0.0, pl.pos.z - at.z).normalize_or_zero();
+        pl.vel = back * crate::tuning::RECOIL_PUSH;
+        pl.state = PState::Recoil { t: 0.0 };
+        pl.pending = None;
     }
 
     /// 맞힌 스윙 뒤의 나무 칸(0107): 되돌려 치기(반격이 둘레도 휘청) · 길을 여는 발(대시 공격이 맞힌 적을 지나쳐 등 뒤에).
@@ -1911,7 +1954,9 @@ impl World {
             match en.state {
                 EState::Idle | EState::Return => {
                     let near = from_home <= LEASH_RANGE && (body - en.pos.y).abs() <= SIGHT_DY;
-                    let sees = near
+                    // 청소자(0120)는 보고 들어도 먹던 일을 한다 — 맞거나 곁의 동료가 깨면 싸운다.
+                    let sees = !en.docile
+                        && near
                         && (d <= HEAR_RANGE || (d <= SIGHT_RANGE && nav.clear(en.pos, p, 0.1)));
                     if (sees || en.hurt > 0.0) && en.notice() {
                         woke.push(en.pos);
@@ -1998,6 +2043,35 @@ impl World {
                 }
             }
             en.spread = push;
+        }
+        // 꼬투리(0120): 너무 가까이 오면 한 번 깡충 물러난다 — 반대쪽부터 옆으로 조금씩 돌려 보며 곧게 갈 수 있는 바닥으로.
+        for en in self.enemies.iter_mut() {
+            let d = en.def();
+            if d.behavior != crate::species::Behavior::Planter
+                || en.hop.is_some()
+                || en.hop_cd > 0.0
+                || !matches!(en.state, EState::Chase | EState::Recover { .. })
+            {
+                continue;
+            }
+            let to = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+            if to.length() > d.retreat {
+                continue;
+            }
+            let away = to.normalize_or(Vec3::Z);
+            for deg in [0.0f32, 35.0, -35.0, 70.0, -70.0] {
+                let dir = Quat::from_rotation_y(deg.to_radians()) * away;
+                let mut land = en.pos + dir * crate::tuning::POD_HOP;
+                if nav.g.cell_of(land).is_none() || !nav.clear(en.pos, land, en.radius) {
+                    continue;
+                }
+                land.y = nav.g.height(land);
+                en.hop = Some(crate::enemy::Hop::new(en.pos, land));
+                en.hop_cd = crate::tuning::POD_HOP_CD;
+                en.state = EState::Chase;
+                en.plant_at = None;
+                break;
+            }
         }
         let facing = self.player.facing_dir();
         // 앞쪽에서 오는가(패링은 바라보는 쪽 반원 안만 — 위치 선정도 기술, KB timing-parry). 이어 패링이 쌓이면 넓어진다(0086).
@@ -3658,6 +3732,90 @@ mod tests {
             let charged = ev.iter().filter(|e| matches!(e, Event::Charged)).count();
             assert_eq!(charged, want_full as usize);
         }
+    }
+
+    /// 0120: 등딱지짐승 — 앞에서 친 평타는 튕긴다(피해 0, 방랑자는 짧게 튄다), 뒤에서 친 평타·앞에서 친 강타는 들어간다.
+    #[test]
+    fn a_shellback_deflects_light_hits_from_the_front_but_not_heavies_or_from_behind() {
+        let t = Tuning::default();
+        let hit = |facing: f32, heavy: bool| {
+            let mut w = World::new("test", 20.0);
+            w.player.facing = std::f32::consts::PI; // -z = 앞
+            let i = w.spawn(Kind::Shell, vec3(0.0, 0.0, -1.5));
+            w.enemies[i].facing = facing;
+            idle(&mut w);
+            let hp = w.enemies[i].hp;
+            let mut ev = w.step(
+                &Actions {
+                    attack: true,
+                    attack_held: heavy,
+                    ..Default::default()
+                },
+                &t,
+            );
+            let mut recoiled = false;
+            for _ in 0..90 {
+                w.player.stamina = 100.0;
+                let hold = Actions {
+                    attack_held: heavy
+                        && !matches!(w.player.state, PState::Charging { t: e } if e > 0.8),
+                    ..Default::default()
+                };
+                ev.extend(w.step(&hold, &t));
+                w.enemies[i].facing = facing;
+                recoiled |= matches!(w.player.state, PState::Recoil { .. });
+                if w.enemies[i].hp < hp {
+                    break;
+                }
+            }
+            let deflected = ev.iter().any(|e| matches!(e, Event::Deflect { .. }));
+            (w.enemies[i].hp < hp, deflected, recoiled)
+        };
+        assert_eq!(
+            hit(0.0, false),
+            (false, true, true),
+            "front light: deflected, recoil"
+        );
+        assert_eq!(
+            hit(std::f32::consts::PI, false).0,
+            true,
+            "light from behind lands"
+        );
+        assert_eq!(hit(0.0, true).0, true, "a heavy from the front lands");
+    }
+
+    /// 0120: 꼬투리는 가까이 오면 깡충 물러나고(다시 뛰기까지 쉼), 청소자는 보여도 먹기만 하다가(체력이 찬다) 맞으면 싸운다.
+    #[test]
+    fn pods_hop_away_and_scavengers_ignore_you_until_struck() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        let i = w.spawn(Kind::Pod, vec3(0.0, 0.0, -2.0));
+        w.step(&Actions::default(), &t);
+        assert!(w.enemies[i].hop.is_some(), "too close: hop");
+        for _ in 0..40 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(
+            w.enemies[i].pos.z < -4.0,
+            "landed farther: {:?}",
+            w.enemies[i].pos
+        );
+        assert!(w.enemies[i].hop_cd > 0.0);
+
+        let mut w = World::new("test", 30.0);
+        let s = w.spawn(Kind::Husk, vec3(0.0, 0.0, -4.0));
+        w.enemies[s].place(0.0);
+        w.enemies[s].docile = true;
+        w.enemies[s].hp = 1;
+        let steps = (crate::tuning::EAT_TIME * 2.2 / TICK_DT) as usize;
+        for _ in 0..steps {
+            w.step(&Actions::default(), &t);
+        }
+        assert_eq!(w.enemies[s].state, EState::Idle, "seen but not chased");
+        assert_eq!(w.enemies[s].hp, 3, "ate back to full");
+        w.enemies[s].hurt = 0.15;
+        w.step(&Actions::default(), &t);
+        assert_eq!(w.enemies[s].state, EState::Chase, "struck: fights");
     }
 
     fn press(t: &Tuning, w: &mut World, a: Actions, ticks: usize) -> Vec<Event> {

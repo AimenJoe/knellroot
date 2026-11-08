@@ -249,6 +249,8 @@ pub const EN: Strings = Strings {
     charm_pouch_d: "Embers +50%",
     enemy_husk: "Root Husk",
     enemy_thorn: "Thornbeast",
+    enemy_shell: "Shellback",
+    enemy_pod: "Pod",
     clear_title: "The bell now tolls from deeper below",
     clear_sub: "Time {0} · Felled {1}",
     defeat_title: "You have fallen",
