@@ -11,6 +11,7 @@
 //!   하늘 원통은 먼 클립(200m) 안에 들게 높이각 34°까지만, 그 위는 지우는 빛(`ZENITH`)이 이어 준다.
 use macroquad::prelude::*;
 
+use crate::ground::Ground;
 use crate::render::Batch;
 
 /// 안개 빛(해 질 녘 남보라 — 0037 세계 빛, 아지랑이·하늘과 같은 계열).
@@ -316,7 +317,7 @@ fn h01(i: u32, k: u32) -> f32 {
 }
 
 /// 무리의 `i`번째가 시각 `t`에 어디·얼마나 밝은가(0..1). 플레이어 `c`를 가운데 둔 상자에서 감아 돈다.
-fn drift_at(d: &Drift, i: u32, c: Vec3, t: f32) -> (Vec3, f32) {
+fn drift_at(d: &Drift, i: u32, c: Vec3, t: f32, ground: Option<&Ground>) -> (Vec3, f32) {
     let s = d.seed.wrapping_mul(1000) + i;
     let span = d.half * 2.0;
     let base = vec3(h01(s, 1) * span, 0.0, h01(s, 2) * span);
@@ -330,7 +331,26 @@ fn drift_at(d: &Drift, i: u32, c: Vec3, t: f32) -> (Vec3, f32) {
     let z = lo.y + (moved.z - lo.y).rem_euclid(span);
     let hspan = d.y.1 - d.y.0;
     let y0 = h01(s, 5) * hspan + d.flow.y * t + 0.2 * (w * 1.3 + ph).sin();
-    let y = d.y.0 + y0.rem_euclid(hspan);
+    // 떨어지는 흙은 지도 칸의 실제 바닥 높이를 기준으로 천장 6m에서 순환한다.
+    // 벽·허공 위에는 흙을 만들지 않는다. 다른 입자는 기존 월드 높이를 쓴다.
+    let ground_y = if d.seed == FALLING.seed {
+        let p = vec3(x, 0.0, z);
+        ground.and_then(|g| {
+            let (gx, gz) = g.cell_of(p)?;
+            g.height_in(gx, gz, p)
+        })
+    } else {
+        None
+    };
+    if d.seed == FALLING.seed && ground.is_some() && ground_y.is_none() {
+        return (vec3(x, 0.0, z), 0.0);
+    }
+    let floor = ground_y.unwrap_or(0.0);
+    let y = if d.seed == FALLING.seed {
+        floor + d.y.0 + y0.rem_euclid(hspan)
+    } else {
+        d.y.0 + y0.rem_euclid(hspan)
+    };
     // 가장자리는 옅게(감아 돌 때 튀지 않게): 상자 끝 15%·높이 끝에서 0으로.
     let edge =
         |v: f32, a: f32, span: f32| ((v - a).min(a + span - v) / (span * 0.15)).clamp(0.0, 1.0);
@@ -394,7 +414,15 @@ fn halo_pixels(n: u16) -> Vec<u8> {
 
 impl Backdrop {
     /// 떠다니는 것(E4): 반딧불·먼지. `right`·`up`은 카메라 화면의 오른쪽·위(월드).
-    pub fn motes(&mut self, batch: &mut Batch, c: Vec3, right: Vec3, up: Vec3, time: f32) {
+    pub fn motes(
+        &mut self,
+        batch: &mut Batch,
+        c: Vec3,
+        right: Vec3,
+        up: Vec3,
+        time: f32,
+        ground: Option<&Ground>,
+    ) {
         let mut verts = Vec::new();
         let mut idx = Vec::new();
         let mut halos = Vec::new();
@@ -407,7 +435,7 @@ impl Backdrop {
         ];
         for d in kinds.into_iter().flatten() {
             for i in 0..d.count {
-                let (p, k) = drift_at(d, i, c, time);
+                let (p, k) = drift_at(d, i, c, time, ground);
                 if k <= 0.02 {
                     continue;
                 }
@@ -866,7 +894,7 @@ mod tests {
             for c in [Vec3::ZERO, vec3(37.0, 0.0, -12.5)] {
                 for t in [0.0, 13.7, 600.0] {
                     for i in 0..d.count {
-                        let (p, k) = drift_at(d, i, c, t);
+                        let (p, k) = drift_at(d, i, c, t, None);
                         assert!(
                             (p.x - c.x).abs() <= d.half + 1e-3
                                 && (p.z - c.z).abs() <= d.half + 1e-3
@@ -879,18 +907,41 @@ mod tests {
         }
         // 감아 도는 자리(상자 끝)에서는 보이지 않는다 — 튀어 나타나지 않게.
         let edge_k: f32 = (0..2000)
-            .map(|n| drift_at(&MOTES, 3, Vec3::ZERO, n as f32 * 0.37))
+            .map(|n| drift_at(&MOTES, 3, Vec3::ZERO, n as f32 * 0.37, None))
             .filter(|(p, _)| p.x.abs() > MOTES.half * 0.99)
             .map(|(_, k)| k)
             .fold(0.0, f32::max);
         assert!(edge_k < 0.1, "{edge_k}");
     }
 
+
+    #[test]
+    fn falling_dust_tracks_each_walkable_surface_and_stays_below_its_ceiling() {
+        for floor in [-1.0, 0.0, 2.5, 4.0] {
+            let ground = Ground::new(1, 1, 100.0, vec![crate::ground::Cell::Flat(floor)]);
+            for t in [0.0, 13.7, 600.0] {
+                for i in 0..FALLING.count {
+                    let (p, k) = drift_at(&FALLING, i, Vec3::ZERO, t, Some(&ground));
+                    assert!(p.y >= floor + 0.1 - 1e-4, "floor={floor}, y={}", p.y);
+                    assert!(p.y <= floor + 6.0 + 1e-4, "floor={floor}, y={}", p.y);
+                    assert!((0.0..=1.0).contains(&k));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn falling_dust_is_hidden_over_solid_cells() {
+        let ground = Ground::new(1, 1, 100.0, vec![crate::ground::Cell::Solid]);
+        let (_, alpha) = drift_at(&FALLING, 0, Vec3::ZERO, 0.0, Some(&ground));
+        assert_eq!(alpha, 0.0);
+    }
+
     #[test]
     fn fireflies_blink_and_are_not_all_lit_at_once() {
         let lit = |t: f32| {
             (0..FIREFLIES.count)
-                .filter(|&i| drift_at(&FIREFLIES, i, vec3(0.0, 0.0, 0.0), t).1 > 0.5)
+                .filter(|&i| drift_at(&FIREFLIES, i, vec3(0.0, 0.0, 0.0), t, None).1 > 0.5)
                 .count()
         };
         let counts: Vec<usize> = (0..40).map(|n| lit(n as f32 * 0.5)).collect();
