@@ -1309,7 +1309,11 @@ mod tests {
         world.player.pos = guard;
         for _ in 0..(WAKE_TIME * 60.0) as usize {
             let out = run.tick(&mut world, 1.0 / 60.0);
-            assert_ne!(out, StageOut::Cleared, "the sentinel must not clear the stage");
+            assert_ne!(
+                out,
+                StageOut::Cleared,
+                "the sentinel must not clear the stage"
+            );
         }
 
         assert_eq!(run.phase, Phase::GateOpen, "no wake-up or duel phase");
