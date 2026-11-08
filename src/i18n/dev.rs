@@ -48,6 +48,10 @@ pub const GATE: Pair = (
     "첫 스테이지 성소 문 앞(보스)",
     "stage 1 at the sanctum gate (boss)",
 );
+pub const VILLAGE: Pair = (
+    "둘째 지역(떠난 마을) 어귀부터",
+    "region 2 (village) from its edge",
+);
 pub const STAGE_NOTE: Pair = (
     "이 슬롯의 장신구·잔불로 진짜 스테이지를 돈다. 아무것도 저장하지 않는다.",
     "the real stage with this slot's charms and embers; nothing is saved",
@@ -80,6 +84,7 @@ pub const PAIRS: &[Pair] = &[
     DEV_HINT,
     ENTRANCE,
     GATE,
+    VILLAGE,
     STAGE_NOTE,
     LAB_START,
     LAB_NOTE,

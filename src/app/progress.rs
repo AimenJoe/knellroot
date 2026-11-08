@@ -6,19 +6,66 @@ impl App {
     pub(super) fn continue_run(&mut self) {
         self.restart();
         if let Some(at) = self.progress.run {
+            // 지역 잇기(0118): 쉰 곳의 지역에서, 이 판에 이긴 문지기는 그대로.
+            self.down = at.down;
+            self.rest_at = Some(at);
+            if at.stage != self.stage || self.down > self.stage {
+                self.enter_stage(at.stage);
+            }
             self.run.resume(&mut self.world, at);
             self.cam = Camera::new(self.world.player.pos, &self.t);
         }
     }
 
+    /// 쓰러졌는데 이 지역에서 쉰 적이 없다(0118): 이 판에 다른 곳에서 쉬었으면 그 지역·화로에서 다시 선다. 쉰 적이 없으면 거짓(끝).
+    pub(super) fn respawn_elsewhere(&mut self) -> bool {
+        let Some(at) = self.rest_at else {
+            return false;
+        };
+        if at.stage != self.stage {
+            self.enter_stage(at.stage);
+        }
+        self.run.resume(&mut self.world, at);
+        self.run.card = Some((|s| s.respawned, crate::stage::CARD_TIME));
+        self.cam = Camera::new(self.world.player.pos, &self.t);
+        true
+    }
+
+    /// 지역 사이 전환이 지역을 바꿀 때(0118): 다음(내려감)·앞(올라감) 지역을 세우고 바닥 길·오르는 길 곁에 선다.
+    pub(super) fn cross_to(&mut self, to: usize, up: bool) {
+        self.enter_stage(to);
+        if up {
+            self.run.arrive_from_below(&mut self.world);
+        } else {
+            self.run.arrive_from_above(&mut self.world);
+        }
+        self.cam = Camera::new(self.world.player.pos, &self.t);
+    }
+
     /// 판에서 기록할 것을 옮기고(쉰 쉼터·끝낸 판), 바뀌었으면 쓴다.
     pub(super) fn sync_progress(&mut self, out: crate::stage::StageOut) {
-        self.progress.run = self.run.run_at();
+        // 마지막으로 쉰 곳(0118): 이 지역에서 쉬었으면 그곳, 아니면 이 판에 앞서 쉰 곳 그대로(지역을 바꿔도 남는다).
+        if let Some(at) = self.run.run_at() {
+            self.rest_at = Some(crate::save::RunAt {
+                stage: self.stage,
+                down: self.down,
+                ..at
+            });
+        }
+        if out == crate::stage::StageOut::CoreTaken {
+            self.down = self.down.max(self.stage + 1);
+        }
+        if let Some(at) = self.rest_at.as_mut() {
+            at.down = self.down;
+        }
+        self.progress.run = self.rest_at;
         // 상자(0064 M3 → 0117): 든 장신구·무기를 얻는다(이미 가졌으면 잔불).
         if let Some(i) = self.run.take_opened() {
             use crate::stage::Loot;
             self.snd(crate::sfx::Id::Chest);
-            self.progress.chests.push(i as u32);
+            self.progress
+                .chests
+                .push(self.stage as u32 * crate::stage::CHESTS_PER_STAGE + i as u32);
             match self.run.def.chest_loot.get(i).copied() {
                 Some(Loot::Charm(id)) if !self.progress.owned.contains(&id) => self.gain_charm(id),
                 Some(Loot::Weapon(w)) if !self.progress.owns_weapon(w) => self.gain_weapon(w),
@@ -70,8 +117,16 @@ impl App {
             self.progress.elites.sort();
             self.toast = Some((fill(s().toast_elite, &[&n]), TOAST_TIME));
         }
+        let core = matches!(
+            out,
+            crate::stage::StageOut::Cleared | crate::stage::StageOut::CoreTaken
+        );
         if out == crate::stage::StageOut::Cleared {
             self.progress.run = None;
+            self.rest_at = None;
+        }
+        // 핵 보상은 첫 지역 문지기만(둘째 문지기의 몫은 C3).
+        if core && self.stage == 0 {
             // 핵(0105): 이길 때마다 나무 점수 1, 문지기마다 셋까지. 처음 이긴 판은 "핵이 몸에 스민다"(lore CANON — 핵이 다가왔다).
             let s = s();
             if self.progress.cores < crate::progression::CORE_CAP {

@@ -10,6 +10,7 @@ mod app;
 mod backdrop;
 mod camera;
 mod charms;
+mod descent;
 mod ember;
 mod enemy;
 mod flora;

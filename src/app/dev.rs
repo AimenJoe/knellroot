@@ -36,6 +36,8 @@ pub(super) enum DevStart {
     Entrance,
     /// 문 앞(문지기 결투) — 기록은 쓰지 않는다.
     Gate,
+    /// 둘째 지역 어귀(0118 — 이 판에 첫 문지기를 이긴 셈) — 기록은 쓰지 않는다.
+    Village,
     /// PoC·개발 아레나(`scenario::LIST`).
     Scenario(Scenario),
     /// 연구소(메뉴의 설정 아래 줄과 같은 창, 0079).
@@ -43,11 +45,12 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 12] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 13] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Stage, DevStart::Entrance),
     (DevCat::Stage, DevStart::Gate),
+    (DevCat::Stage, DevStart::Village),
     (DevCat::Combat, DevStart::Scenario(Scenario::Boss)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Pillars)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Duel)),
@@ -73,6 +76,7 @@ impl DevStart {
         match self {
             DevStart::Entrance => t(dv::ENTRANCE),
             DevStart::Gate => t(dv::GATE),
+            DevStart::Village => t(dv::VILLAGE),
             DevStart::Scenario(sc) => {
                 let e = scenario::entry(sc);
                 scenario_text(e.name, e.checks).0
@@ -83,7 +87,9 @@ impl DevStart {
 
     fn note(self) -> String {
         match self {
-            DevStart::Entrance | DevStart::Gate => t(dv::STAGE_NOTE).to_string(),
+            DevStart::Entrance | DevStart::Gate | DevStart::Village => {
+                t(dv::STAGE_NOTE).to_string()
+            }
             DevStart::Scenario(sc) => {
                 let n = scenario::LIST
                     .iter()
@@ -139,6 +145,19 @@ impl App {
                     self.run.dev_skip_to_gate(&mut self.world);
                 }
                 self.cam = Camera::new(self.world.player.pos, &self.t);
+                self.go(Go::Root(Scene::Play));
+            }
+            DevStart::Village => {
+                self.dev_run = true;
+                self.restart();
+                // 이 판에 첫 문지기를 이긴 셈 — 내려가는 지층 단면부터 보인다.
+                self.down = 1;
+                self.passage = Some(crate::descent::Passage::new(
+                    1,
+                    false,
+                    self.run.def.depth_m,
+                    crate::stage::STAGES[1].depth_m,
+                ));
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Scenario(sc) => {

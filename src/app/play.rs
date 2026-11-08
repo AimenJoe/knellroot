@@ -4,6 +4,17 @@ use super::*;
 impl App {
     /// 싸움 한 틱: 멈춤 → 월드 → 스테이지 → 기록·가게·소리·알림 → 끝났으면 끝 장면.
     pub(super) fn tick_play(&mut self, a: Actions) {
+        // 지역 사이 지층 단면 전환(0118): 덮인 동안 월드·멈춤·장비 창은 멈추고, 가운데에서 지역을 바꾼다.
+        if let Some(mut p) = self.passage.take() {
+            let (swap, done) = p.step(TICK_DT);
+            if swap {
+                self.cross_to(p.to, p.up);
+            }
+            if !done {
+                self.passage = Some(p);
+            }
+            return;
+        }
         // 세로로 든 폰(0082): 회전 안내가 덮인 동안 싸움이 흐르지 않게 멈춤으로(nail 0269 꼴).
         if a.pause || crate::screen::portrait_blocked() {
             self.go(flow::pause(self.scene()));
@@ -24,8 +35,27 @@ impl App {
                 self.progress.play = self.progress.play.saturating_add(1);
             }
         }
-        let out = self.run.tick(&mut self.world, TICK_DT);
+        let mut out = self.run.tick(&mut self.world, TICK_DT);
+        // 이 지역에서 쉰 적이 없어도 이 판에 다른 지역에서 쉬었으면 거기서 다시 선다(0118).
+        if out == crate::stage::StageOut::Defeated && self.respawn_elsewhere() {
+            out = crate::stage::StageOut::Respawned;
+        }
         self.sync_progress(out);
+        // 내려가는 길·오르는 길(0118): 지층 단면 전환을 연다.
+        let cross = match out {
+            crate::stage::StageOut::Descend => Some((self.stage + 1, false)),
+            crate::stage::StageOut::Ascend => self.stage.checked_sub(1).map(|s| (s, true)),
+            _ => None,
+        };
+        if let Some((to, up)) = cross.filter(|&(to, _)| to < crate::stage::STAGES.len()) {
+            self.snd(crate::sfx::Id::Wake);
+            self.passage = Some(crate::descent::Passage::new(
+                to,
+                up,
+                self.run.def.depth_m,
+                crate::stage::STAGES[to].depth_m,
+            ));
+        }
         // 쉼터 화로(0064 M4 → 0104): 쉬면 화로(레벨·가게)가 열린다. 올릴 단·살 것이 있으면 쉼터가 빛난다.
         self.run.shop_ready = crate::growth::can_buy(
             self.world.embers,

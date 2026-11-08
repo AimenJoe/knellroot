@@ -356,7 +356,12 @@ pub const RESULT_ITEMS: [ResultItem; 2] = [ResultItem::Retry, ResultItem::ToTitl
 /// 스테이지가 이렇게 끝나면 어디로. 이어지는 중이면 그대로.
 pub fn after_stage(out: StageOut) -> Option<Scene> {
     match out {
-        StageOut::Playing | StageOut::Respawned => None,
+        // 지역 잇기(0118)는 앱이 판 안에서 한다 — 장면은 그대로.
+        StageOut::Playing
+        | StageOut::Respawned
+        | StageOut::CoreTaken
+        | StageOut::Descend
+        | StageOut::Ascend => None,
         StageOut::Cleared => Some(Scene::Ending { won: true }),
         StageOut::Defeated => Some(Scene::Ending { won: false }),
     }

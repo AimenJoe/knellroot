@@ -21,6 +21,9 @@ pub mod key {
     pub const RUN_REST: &str = "run.rest";
     /// 그 쉼터에서 다시 서면 문이 열린 뒤부터인가(1) 입구부터인가(0) — 0032의 되돌아갈 단계.
     pub const RUN_GATE: &str = "run.gate";
+    /// 쉰 곳의 지역(0118, `stage::STAGES` 차례)과 이 판에 이긴 문지기 수 — 없으면 0(옛 기록 = 성소).
+    pub const RUN_STAGE: &str = "run.stage";
+    pub const RUN_DOWN: &str = "run.down";
     /// 장신구(M3): 가진 것("shell,ear")·낀 것(세 칸 "shell,,ear") — `charms.rs`의 키.
     pub const CHARMS_OWNED: &str = "charm.owned";
     pub const CHARMS_WORN: &str = "charm.worn";
@@ -110,11 +113,13 @@ impl Record {
     }
 }
 
-/// 판 안의 자리: 쉼터 번호와 문이 열린 뒤인지.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// 판 안의 자리: 쉼터 번호와 문이 열린 뒤인지, 어느 지역(0118)의 쉼터인지, 이 판에 이긴 문지기 수.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RunAt {
     pub rest: usize,
     pub gate_open: bool,
+    pub stage: usize,
+    pub down: usize,
 }
 
 /// 기록에서 게임이 쓰는 것(앱이 들고 있다가 바뀌면 쓴다).
@@ -154,6 +159,8 @@ impl Progress {
         let run = r.num(key::RUN_REST).map(|i| RunAt {
             rest: i as usize,
             gate_open: r.num(key::RUN_GATE) == Some(1),
+            stage: r.num(key::RUN_STAGE).unwrap_or(0) as usize,
+            down: r.num(key::RUN_DOWN).unwrap_or(0) as usize,
         });
         let owned = crate::charms::decode_owned(r.get(key::CHARMS_OWNED).unwrap_or(""));
         let worn = crate::charms::decode_worn(r.get(key::CHARMS_WORN).unwrap_or(""), &owned);
@@ -331,10 +338,14 @@ impl Progress {
             Some(at) => {
                 r.set(key::RUN_REST, at.rest);
                 r.set(key::RUN_GATE, at.gate_open as u8);
+                r.set(key::RUN_STAGE, at.stage);
+                r.set(key::RUN_DOWN, at.down);
             }
             None => {
                 r.remove(key::RUN_REST);
                 r.remove(key::RUN_GATE);
+                r.remove(key::RUN_STAGE);
+                r.remove(key::RUN_DOWN);
             }
         }
         r
@@ -614,6 +625,8 @@ weapon=crossbow
         p.run = Some(RunAt {
             rest: 1,
             gate_open: true,
+            stage: 1,
+            down: 1,
         });
         let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
         assert_eq!(back.run, p.run);
@@ -779,6 +792,7 @@ weapon=crossbow
         p.run = Some(RunAt {
             rest: 0,
             gate_open: false,
+            ..RunAt::default()
         });
         assert!(save(0, &p));
         let got = load(0);

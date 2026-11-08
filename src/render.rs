@@ -1006,6 +1006,28 @@ impl Renderer {
                 fl.ring(l, 0.9, 0.0, 360.0, Color::new(1.0, 0.75, 0.35, 0.3 * pulse));
             }
         }
+        // 지역 잇기(0118): 열린 바닥 길은 아래로 빠지는 어두운 구멍(겹 원판 — 가장자리 흙빛 → 안쪽 검정) + 바닥에서 올라오는 옅은 남보라 빛,
+        // 오르는 길은 마을 어귀 바닥의 빛 웅덩이(위에서 새는 빛 — 갈 곳 빛기둥과 같은 호박색, 낮게).
+        if let (Some(d), Phase::Down) = (run.down_at, run.phase) {
+            // 겹 원판은 바닥보다 조금 띄운다(같은 높이면 석판 면에 묻혔다 — 0118 헤드리스).
+            let d = d + Vec3::Y * 0.05;
+            fl.sector(d, 1.5, 0.0, 360.0, Color::new(0.24, 0.18, 0.16, 0.95));
+            fl.sector(d, 1.15, 0.0, 360.0, Color::new(0.08, 0.06, 0.1, 1.0));
+            fl.sector(d, 0.7, 0.0, 360.0, Color::new(0.02, 0.01, 0.04, 1.0));
+            let pulse = 0.5 + 0.5 * (w.time * 1.6).sin();
+            beam(
+                d,
+                0.8,
+                1.6,
+                Color::new(0.55, 0.45, 0.9, 0.08 + 0.06 * pulse),
+            );
+        }
+        if let Some(u) = run.up_at {
+            let pulse = 0.5 + 0.5 * (w.time * 1.2).sin();
+            fl.sector(u, 1.3, 0.0, 360.0, with_a(GUIDE_COLOR, 0.12 + 0.06 * pulse));
+            beam(u, 0.9, 4.0, with_a(GUIDE_COLOR, 0.06 + 0.04 * pulse));
+            fl.ring(u, 1.3, 0.0, 360.0, with_a(GUIDE_COLOR, 0.45));
+        }
         // 숨은 물건(0105): 흔적 자리의 작은 빛 — 등잔 +1은 금빛, 한 모금 +1은 민트(0037 생명 색). 살짝 떠서 숨 쉬고 발밑에 옅은 테.
         // 생김새는 성소의 종과 닮지 않게(lore — 울리는 종은 보이지 않는다): 둥근 덩어리 하나.
         for (i, (p, kind, _)) in run.finds.iter().enumerate() {
@@ -1079,7 +1101,12 @@ impl Renderer {
             }
         }
         // 갈 곳의 빛기둥(0060 W1): 멀리서도 보이는 세로 기둥 둘(바깥 옅게·안쪽 밝게) + 발밑 고리, 숨 쉬듯.
-        if let Some(g) = run.goal() {
+        // 열린 바닥 길(0118)은 가까이 오면 기둥을 걷는다 — 밝은 기둥 밑동이 어두운 구멍을 덮었다(헤드리스). 멀리서는 그대로 길 안내.
+        let near_hole = run.phase == Phase::Down
+            && run
+                .goal()
+                .is_some_and(|g| vec2(g.x - w.player.pos.x, g.z - w.player.pos.z).length() < 8.0);
+        if let Some(g) = run.goal().filter(|_| !near_hole) {
             let pulse = 0.5 + 0.5 * (w.time * GUIDE_PULSE).sin();
             beam(
                 g,

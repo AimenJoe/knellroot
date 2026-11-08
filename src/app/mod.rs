@@ -51,7 +51,7 @@ const TITLE_MENU_Y: f32 = 0.37;
 const GOAL_ARROW_DELAY: f32 = 1.0;
 const GOAL_ARROW_INSET: f32 = 0.12;
 
-/// 지금 만든 스테이지(나중에 스테이지 고르기가 생기면 여기서 고른다).
+/// 판의 첫 지역(0118 — 차례는 `stage::STAGES`).
 const FIRST_STAGE: &StageDef = &sanctuary::DEF;
 
 pub struct App {
@@ -72,6 +72,14 @@ pub struct App {
     cam: Camera,
     world: World,
     run: StageRun,
+    /// 판의 지역 잇기(0118): 지금 지역(`stage::STAGES` 차례), 이 판에 이긴 문지기 수, 마지막으로 쉰 곳(지역을 바꿔도 남는다),
+    /// 지역 사이 지층 단면 전환.
+    stage: usize,
+    down: usize,
+    rest_at: Option<crate::save::RunAt>,
+    passage: Option<crate::descent::Passage>,
+    /// 실제 시간(전환의 작은 움직임 — 지형을 굽는 동안에도 흐른다).
+    clock: f32,
     #[cfg(feature = "dev")]
     sc: Scenario,
     /// 개발 메뉴에서 시작한 스테이지 판(0075): 기록 슬롯에 쓰지 않는다. 슬롯을 고르면(`enter_slot`) 풀린다.
@@ -195,6 +203,11 @@ impl App {
             cam,
             world,
             run,
+            stage: 0,
+            down: 0,
+            rest_at: None,
+            passage: None,
+            clock: 0.0,
             t,
             #[cfg(feature = "dev")]
             sc: Scenario::Boss,
@@ -235,12 +248,52 @@ impl App {
         let (run, world) = StageRun::start(FIRST_STAGE);
         self.run = run;
         self.world = world;
-        self.world.set_weapon(self.weapon);
+        self.stage = 0;
+        self.down = 0;
+        self.rest_at = None;
+        self.passage = None;
         // 잔불은 판을 넘어 남는다(0064 M1). 장신구·성장은 능력치로, 연 상자는 비어 있다(M3).
         self.world.embers = self.progress.embers;
         self.world.apply_stats(self.progress.stats(), true);
+        self.seed_run();
+        self.cam = Camera::new(self.world.player.pos, &self.t);
+    }
+
+    /// 다른 지역으로(0118): 그 지역을 새로 세우고 방랑자(체력·등잔·기력·탄…)와 잔불은 그대로 옮긴다.
+    fn enter_stage(&mut self, s: usize) {
+        let s = s.min(crate::stage::STAGES.len() - 1);
+        let (run, mut world) = StageRun::start(crate::stage::STAGES[s]);
+        let (start, facing) = (world.player.pos, world.player.facing);
+        std::mem::swap(&mut self.world.player, &mut world.player);
+        let pl = &mut world.player;
+        pl.pos = start;
+        pl.prev = start;
+        pl.facing = facing;
+        pl.vel = Vec3::ZERO;
+        pl.state = crate::world::PState::Idle;
+        pl.air = 0.0;
+        world.embers = self.world.embers;
+        self.run = run;
+        self.world = world;
+        self.stage = s;
+        self.world.apply_stats(self.progress.stats(), false);
+        self.seed_run();
+    }
+
+    /// 지역을 세운 뒤 기록에서 채운다: 무기·나무·연 상자(지역마다 번호 `지역 × 1000 + 번호`, 0118)·주운 것·쓰러뜨린 엘리트·문,
+    /// 이 판에 이 지역 문지기를 이겼으면 바닥 길이 열린 채.
+    fn seed_run(&mut self) {
+        self.world.set_weapon(self.weapon);
         self.world.tree = self.progress.tree;
-        self.run.set_opened(&self.progress.chests);
+        let base = self.stage as u32 * crate::stage::CHESTS_PER_STAGE;
+        let opened: Vec<u32> = self
+            .progress
+            .chests
+            .iter()
+            .filter(|&&c| c / crate::stage::CHESTS_PER_STAGE == self.stage as u32)
+            .map(|c| c - base)
+            .collect();
+        self.run.set_opened(&opened);
         self.run.set_found(&self.progress.finds);
         self.run.set_beaten(&self.progress.elites);
         let open = self
@@ -249,9 +302,12 @@ impl App {
             .iter()
             .any(|g| g == self.run.def.find_prefix);
         self.run.set_gate_opened(&mut self.world, open);
-        // 처음 이기는 판이면 핵이 스스로 다가온다(lore CANON, 0105).
-        self.run.first_core = self.progress.clears == 0;
-        self.cam = Camera::new(self.world.player.pos, &self.t);
+        // 처음 이기는 판이면 핵이 스스로 다가온다(lore CANON, 0105) — 첫 지역 문지기만(둘째 문지기는 C3).
+        self.run.first_core = self.stage == 0 && self.progress.clears == 0;
+        if self.down > self.stage {
+            self.run.down_open = true;
+            self.run.open_down(&mut self.world);
+        }
     }
 
     /// 소리 묶음을 받는다(0064 M5 — main이 올린 뒤). 환경음을 튼다.
@@ -565,6 +621,21 @@ impl App {
         }
         if self.scene() == Scene::Play {
             self.draw_goal_arrow(&f);
+        }
+        // 지역 사이 지층 단면(0118): 싸움 화면 위에(전환 중엔 멈춤·장비 창이 열리지 않는다).
+        self.clock += get_frame_time();
+        if let Some(p) = self
+            .passage
+            .as_ref()
+            .filter(|_| self.scene() == Scene::Play)
+        {
+            let m = p.depth().round() as u32;
+            let label = if m == 0 {
+                s().depth_surface.to_string()
+            } else {
+                fill(s().depth_under, &[&m.to_string()])
+            };
+            crate::descent::draw(p, &self.ui, &f, self.clock, &label);
         }
         if self.scene().ticks_world() {
             self.draw_beat_note(&f);
