@@ -21,8 +21,11 @@ pub const LINES: [Line; 3] = [Line::Life, Line::Stamina, Line::Might];
 
 /// 줄마다 단 수.
 pub const MAX_RANK: u8 = 5;
-/// 다음 단 값(잔불, 줄마다 같은 표 — 0095·0102): 줄당 350, 셋 1,050. 한 판 벌이 ≈ 70~100.
-pub const COSTS: [u32; MAX_RANK as usize] = [30, 45, 65, 90, 120];
+/// 다음 레벨 값(잔불, 0109): 어느 줄이든 **총 레벨**로 — `LEVEL_BASE + LEVEL_STEP × 지금 레벨`(소울 꼴).
+/// 줄마다 따로 매기면 세 줄 1단이 다 싸서 두 판에 레벨 3이 몰렸다(0095·0102의 30→120 표).
+/// 한 판(다 깸) 잔불 80이면 첫 판 1레벨, 넷째 판쯤 4, 열한 판쯤 8 — 이 구역 상한 15까지 2,700(≈ 34판, 둘째 구역에서 채운다).
+pub const LEVEL_BASE: u32 = 40;
+pub const LEVEL_STEP: u32 = 20;
 pub const STAMINA_PER_RANK: f32 = 12.0;
 /// 차는 빠르기가 오르는 단(+10%씩, 곱).
 pub const REGEN_RANKS: [u8; 2] = [3, 5];
@@ -71,9 +74,9 @@ impl Level {
         LINES.iter().map(|&l| self.rank(l) as u32).sum()
     }
 
-    /// 다음 단 값(다 올렸으면 없음).
+    /// 다음 단 값(다 올렸으면 없음) — 줄과 상관없이 총 레벨로 오른다(0109).
     pub fn next_cost(&self, l: Line) -> Option<u32> {
-        COSTS.get(self.rank(l) as usize).copied()
+        (self.rank(l) < MAX_RANK).then(|| LEVEL_BASE + LEVEL_STEP * self.total())
     }
 
     /// 한 단 올린 사본(다 올렸으면 그대로).
@@ -421,23 +424,57 @@ mod tests {
     use crate::stats::Stats;
 
     #[test]
-    fn levels_cost_the_table_stop_at_five_and_sum_to_the_level_number() {
+    fn levels_cost_by_total_level_stop_at_five_and_sum_to_the_level_number() {
         let mut lv = Level::default();
         let mut paid = 0;
         for l in LINES {
             while let Some(c) = lv.next_cost(l) {
+                assert_eq!(c, LEVEL_BASE + LEVEL_STEP * lv.total());
                 paid += c;
                 lv = lv.raised(l);
             }
             assert_eq!(lv.rank(l), MAX_RANK);
             assert_eq!(lv.raised(l), lv, "a full line stays full");
         }
-        assert_eq!(paid, 3 * COSTS.iter().sum::<u32>());
-        assert_eq!(paid, 1_050, "0102: three lines of 30·45·65·90·120");
+        assert_eq!(paid, 2_700, "0109: 40 + 20 × level, levels 0..15");
         assert_eq!(lv.total(), 15);
         assert!(!lv.can_raise(u32::MAX));
-        assert!(Level::default().can_raise(COSTS[0]));
-        assert!(!Level::default().can_raise(COSTS[0] - 1));
+        assert!(Level::default().can_raise(LEVEL_BASE));
+        assert!(!Level::default().can_raise(LEVEL_BASE - 1));
+    }
+
+    /// 0109: 값은 줄이 아니라 총 레벨을 본다 — 다른 줄의 1단도 싸지 않다(세 줄 1단이 몰리던 구멍).
+    #[test]
+    fn a_fresh_line_costs_as_much_as_the_level_says() {
+        let lv = Level {
+            life: 2,
+            ..Level::default()
+        };
+        assert_eq!(lv.next_cost(Line::Might), lv.next_cost(Line::Life));
+        assert_eq!(lv.next_cost(Line::Might), Some(LEVEL_BASE + LEVEL_STEP * 2));
+    }
+
+    /// 0109 빠르기: 한 판(다 깸) 잔불 80 — 첫 판에 레벨 1, 두 판에 2, 넷째 판에 4.
+    #[test]
+    fn a_full_clear_buys_about_one_level_early_on() {
+        let levels_after = |clears: u32| {
+            let (mut lv, mut purse) = (Level::default(), 80 * clears);
+            while let Some(c) = lv.next_cost(Line::Life).or(lv.next_cost(Line::Might)) {
+                if purse < c {
+                    break;
+                }
+                purse -= c;
+                lv = if lv.life < MAX_RANK {
+                    lv.raised(Line::Life)
+                } else {
+                    lv.raised(Line::Might)
+                };
+            }
+            lv.total()
+        };
+        assert_eq!(levels_after(1), 1);
+        assert_eq!(levels_after(2), 2);
+        assert_eq!(levels_after(4), 4);
     }
 
     #[test]
