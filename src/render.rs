@@ -794,7 +794,14 @@ impl Renderer {
                 // 떠다니는 것(0063 E4): 반딧불·달빛 먼지 — 카메라를 보는 작은 판.
                 if t[crate::tuning::P::RenderMotes] >= 0.5 {
                     self.backdrop
-                        .motes(&mut self.batch, w.player.pos, cam_right, cam_up, w.time);
+                        .motes(
+                            &mut self.batch,
+                            w.player.pos,
+                            cam_right,
+                            cam_up,
+                            w.time,
+                            w.ground.as_ref(),
+                        );
                 }
             }
             None => self.sandbox_faded(w, t),
