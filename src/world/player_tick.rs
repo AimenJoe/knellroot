@@ -282,6 +282,10 @@ impl World {
             pl.parry_chain_n = 0;
         }
         pl.dash_left = (pl.dash_left - dt).max(0.0);
+        // 비껴서기(0107·0108): 등 뒤를 잡은 표지는 대시 공격 창이 닫히면 같이 꺼진다.
+        if pl.dash_left <= 0.0 {
+            pl.flank = false;
+        }
         pl.since_swing = (pl.since_swing + dt).min(f32::MAX);
         pl.since_beat = (pl.since_beat + dt).min(f32::MAX);
         pl.since_perfect = (pl.since_perfect + dt).min(f32::MAX);

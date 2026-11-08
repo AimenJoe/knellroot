@@ -774,9 +774,13 @@ impl World {
         };
         if ready && can {
             if let PState::Attack { hit, .. } = pl.state {
-                // 다음 타로 잇는다(마지막 타 뒤면 처음부터).
-                pl.combo_next = wpn.after(hit).unwrap_or(0);
-                pl.combo_left = if wpn.after(hit).is_some() {
+                // 다음 타로 잇는다(마지막 타 뒤면 처음부터). 맺음타(0107·0108)는 마지막 타 뒤에도 콤보를 기억한다 —
+                // 박자에 누른 마지막 타 뒤의 누름은 대개 이 캔슬 길로 나간다(끝까지 기다리지 않는다).
+                let after = wpn.after(hit);
+                let closing = after.is_none() && self.tree.has(Cell::ClosingBlow);
+                pl.combo_next = after.unwrap_or(0);
+                pl.closing_ready = closing;
+                pl.combo_left = if after.is_some() || closing {
                     t[P::ComboKeep]
                 } else {
                     0.0
@@ -2293,7 +2297,10 @@ impl World {
             });
         }
         let live = match pl.state {
-            PState::Attack { hit, .. } => hit == pl.swing_hit && wpn.after(hit).is_some(),
+            PState::Attack { hit, .. } => {
+                hit == pl.swing_hit
+                    && (wpn.after(hit).is_some() || self.tree.has(Cell::ClosingBlow))
+            }
             PState::Idle | PState::Dodge { .. } | PState::Parry { .. } => pl.combo_left > 0.0,
             _ => false,
         };
@@ -6574,5 +6581,70 @@ mod tests {
         };
         assert!(z(false).abs() < 1e-4);
         assert!(z(true) < -1.2 - 0.3, "now behind the foe: {}", z(true));
+    }
+
+    /// 0108: 맺음타는 실제 누름 길로도 걸린다 — 마지막 타 중 박자에 누르면 후딜레이를 끊고(캔슬) 첫 타가 박자 타로, 그 타가 맺음타.
+    /// 박자 부채꼴도 마지막 타에 뜬다(칸이 없으면 뜨지 않는다).
+    #[test]
+    fn closing_blow_works_through_the_cancel_and_shows_the_beat_fan_on_the_last_hit() {
+        let t = Tuning::default();
+        for cell in [false, true] {
+            let mut w = World::new("test", 20.0);
+            if cell {
+                w.tree = tree_with(&[Cell::ClosingBlow]);
+            }
+            let wpn = w.player.weapon.def();
+            let last = (0..8u8).find(|&h| wpn.after(h).is_none()).unwrap();
+            let (s0, a0, r0) = hit_times(&t, wpn, last);
+            let total = s0 + a0 + r0;
+            let pl = &mut w.player;
+            pl.state = PState::Attack {
+                t: total - 0.01,
+                swing: 3,
+                dir: vec3(0.0, 0.0, -1.0),
+                hit: last,
+            };
+            (pl.swings, pl.swing_hit, pl.beat, pl.since_swing) = (3, last, total, total - 0.01);
+            assert_eq!(
+                w.beat_cue(&t).is_some(),
+                cell,
+                "the beat fan on the last hit"
+            );
+            w.step(
+                &Actions {
+                    attack: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            let pl = &w.player;
+            assert!(
+                matches!(pl.state, PState::Attack { hit: 0, .. }),
+                "{:?}",
+                pl.state
+            );
+            assert_eq!(pl.swing_beat, cell, "a beat swing only with the cell");
+            assert_eq!(
+                pl.closing_swing == pl.swings,
+                cell,
+                "and that swing is the closing blow"
+            );
+        }
+    }
+
+    /// 0108: 비껴서기 표지(민트 고리)는 대시 공격 창이 닫히면 꺼진다.
+    #[test]
+    fn the_sidestep_mark_fades_with_the_dash_window() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.tree = tree_with(&[Cell::Sidestep]);
+        w.player.flank = true;
+        w.player.dash_left = DASH_ATTACK_LATE;
+        w.step(&Actions::default(), &t);
+        assert!(w.player.flank, "still open");
+        for _ in 0..20 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(!w.player.flank, "gone with the dash window");
     }
 }

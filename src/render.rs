@@ -3,6 +3,7 @@
 //! 스테이지(0019): 굽힌 지형(`scenery.rs`) + 모델(`models.rs` 목록, 상태 → 동작 이름) + 빛(달빛 + 화로, 정점 색). 모델이 없는 종류는
 //! 상자로. 개발 시나리오(스테이지 없음)는 PoC의 회색 아레나 그대로.
 //! 바닥 예고는 모양마다(원판·부채꼴·띠·고리, `TeleShape`) 옅은 면 + 테두리, 채움이 자라 테두리에 닿는 순간 공격(nail 0186~0188).
+use crate::progression::Cell;
 use macroquad::camera::Camera as _;
 use macroquad::prelude::*;
 use miniquad::{UniformDesc, UniformType};
@@ -1605,7 +1606,15 @@ impl Renderer {
             );
         }
         // 이어 패링(0081·0086): 열린 동안 같은 푸른 반달을 지금 받는 넓이로 — 쌓일수록 둘레로 벌어진다(둘레 전부면 고리).
+        // 맞서는 자(0108): 못 받는 공격까지 막는 동안은 호박색 — 지금 파동도 막는다는 표시.
         if w.player.parry_chain_left > 0.0 && !matches!(w.player.state, PState::Parry { .. }) {
+            let stand = w.tree.has(Cell::OneWhoStands)
+                && w.player.parry_chain_n >= crate::progression::cell::STAND_CHAIN;
+            let (fill_c, edge_c) = if stand {
+                ((1.0, 0.78, 0.4), (1.0, 0.85, 0.5))
+            } else {
+                ((0.6, 0.85, 1.0), (0.75, 0.9, 1.0))
+            };
             let c = crate::world::parry_front_cos(true, w.player.parry_chain_n);
             let arc = if c < -1.0 {
                 360.0
@@ -1618,14 +1627,38 @@ impl Renderer {
                 1.4,
                 w.player.facing,
                 arc,
-                Color::new(0.6, 0.85, 1.0, 0.12 * fade),
+                Color::new(fill_c.0, fill_c.1, fill_c.2, 0.12 * fade),
             );
             fl.ring(
                 pp + Vec3::Y * 0.8,
                 1.4,
                 w.player.facing,
                 arc,
-                Color::new(0.75, 0.9, 1.0, 0.35 * fade),
+                Color::new(edge_c.0, edge_c.1, edge_c.2, 0.35 * fade),
+            );
+        }
+        // 끝맺음(0108): 다음 강타가 다 모여 있는 동안 발밑에 금빛 고리 두 겹이 숨 쉰다(딱 맞춤 고리와 같은 색 — "모였다").
+        if w.player.primed_heavy {
+            let k = 0.5 + 0.5 * (w.time * 4.0).sin();
+            for (r, a) in [(0.75, 0.8), (1.05, 0.45)] {
+                fl.ring(
+                    pp + Vec3::Y * 0.06,
+                    r + 0.08 * k,
+                    0.0,
+                    360.0,
+                    Color::new(1.0, 0.88, 0.45, a * (0.6 + 0.4 * k)),
+                );
+            }
+        }
+        // 비껴서기(0108): 적 등 뒤를 잡은 대시 공격 창 동안 발밑에 민트 고리가 빠르게 뛴다 — 지금 치면 자세 두 배.
+        if w.player.flank {
+            let k = 0.5 + 0.5 * (w.time * 14.0).sin();
+            fl.ring(
+                pp + Vec3::Y * 0.06,
+                0.9,
+                0.0,
+                360.0,
+                Color::new(0.65, 0.95, 0.8, 0.5 + 0.4 * k),
             );
         }
         // 내려찍기(0027): 내려앉은 자리에서 범위만큼 퍼지는 고리(`plunge.range m`).
