@@ -90,7 +90,7 @@ pub(super) fn wear(
 }
 
 /// 상태 줄의 이름과 값 글.
-fn stat_name(l: Line) -> &'static str {
+pub(super) fn stat_name(l: Line) -> &'static str {
     let s = s();
     match l {
         Line::MaxHp => s.stat_max_hp,
@@ -103,18 +103,29 @@ fn stat_name(l: Line) -> &'static str {
         Line::Parry => s.stat_parry,
         Line::KillStamina => s.stat_kill,
         Line::Ember => s.stat_ember,
+        Line::StaminaMax => s.stat_stamina,
+        Line::StaminaRegen => s.stat_regen,
+        Line::Poise => s.stat_poise,
+        Line::HeavyDmg => s.stat_heavy,
+        Line::LightDmg => s.stat_light,
     }
 }
 
-fn stat_value(l: Line, v: f32) -> String {
+pub(super) fn stat_value(l: Line, v: f32) -> String {
     let s = s();
     let int = || (v.round() as i32).to_string();
     let pct = || format!("{}%", (v * 100.0).round() as i32);
     match l {
         Line::MaxHp => int(),
         Line::Flask => fill(s.stat_sips, &[&int()]),
-        Line::Heal | Line::Dmg | Line::Taken | Line::KillStamina => format!("+{}", int()),
-        Line::AtkSpeed | Line::DodgeCost | Line::Ember => pct(),
+        Line::Heal
+        | Line::Dmg
+        | Line::Taken
+        | Line::KillStamina
+        | Line::StaminaMax
+        | Line::HeavyDmg
+        | Line::LightDmg => format!("+{}", int()),
+        Line::AtkSpeed | Line::DodgeCost | Line::Ember | Line::StaminaRegen | Line::Poise => pct(),
         // 0.06 → "0.06초", 0 → "0초"(뒤 0은 뺀다 — 미리보기 줄이 짧게).
         Line::Parry => {
             let n = format!("{v:.2}");
@@ -168,13 +179,19 @@ pub(super) struct WVal {
     pub score: f32,
 }
 
-/// 무기의 숫자들. `t` = 장신구까지 휜 랩 값(`Stats::tune`), `dmg` = 장신구·성장의 피해 +.
-pub(super) fn weapon_numbers(w: &weapons::Weapon, t: &Tuning, dmg: i32) -> Vec<WVal> {
+/// 무기의 숫자들. `t` = 장신구까지 휜 랩 값(`Stats::tune`), `st` = 장신구·성장의 피해 +
+/// (장신구 `dmg`는 모든 타, 레벨 힘은 평타 `light_dmg`·강타 `heavy_dmg`만 — 월드 `apply_strike`와 같다, 0104).
+pub(super) fn weapon_numbers(
+    w: &weapons::Weapon,
+    t: &Tuning,
+    st: &crate::stats::Stats,
+) -> Vec<WVal> {
     use crate::tuning::P;
+    let (dmg, light, heavy) = (st.dmg, st.dmg + st.light_dmg, st.dmg + st.heavy_dmg);
     let secs = |v: f32| fill(s().value_secs, &[&format!("{v:.2}")]);
     let mut out = Vec::new();
     if let Some(h0) = w.combo.first() {
-        let dmgs: Vec<i32> = w.combo.iter().map(|h| h.damage + dmg).collect();
+        let dmgs: Vec<i32> = w.combo.iter().map(|h| h.damage + light).collect();
         out.push(WVal {
             line: WLine::Damage,
             text: dmgs
@@ -197,7 +214,10 @@ pub(super) fn weapon_numbers(w: &weapons::Weapon, t: &Tuning, dmg: i32) -> Vec<W
             score: reach,
         });
         if let Some(h) = w.heavy {
-            let (lo, hi) = (h.damage + dmg, h.damage + dmg + t[P::HeavyFullBonus] as i32);
+            let (lo, hi) = (
+                h.damage + heavy,
+                h.damage + heavy + t[P::HeavyFullBonus] as i32,
+            );
             out.push(WVal {
                 line: WLine::Heavy,
                 text: format!("{lo} / {hi}"),
@@ -671,7 +691,7 @@ impl App {
             let name = this.ui.fit(v.line.name(), rw - w - this.ui.u(6.0), 0.9);
             this.ui.text(&name, rx, y, 0.9, DIM);
         };
-        let numbers = |id: weapons::Id| weapon_numbers(id.def(), &tuned, now_stats.dmg);
+        let numbers = |id: weapons::Id| weapon_numbers(id.def(), &tuned, &now_stats);
         match (pick, list) {
             (Some(slot), Some(list)) => {
                 let head = if slot == 0 {
@@ -790,7 +810,10 @@ impl App {
                 }
                 self.ui.text(s.equip_status, rx, y, 1.0, AMBER);
                 y += px * 1.6;
-                for (l, v, _) in crate::stats::lines(&now_stats, None) {
+                // 장비 창의 상태 = 장신구가 바꾸는 줄(+ 늘 보이는 줄) — 레벨·핵 몫은 값에는 들어가되 줄을 늘리지 않는다
+                // (레벨 화면이 보인다, 0104 — 힘 5단이면 줄이 일곱이라 창 밑에서 잘렸다).
+                let bare = self.progress.stats_without_charms();
+                for (l, v, _) in crate::stats::lines_from(&bare, &now_stats, None) {
                     if y + px > bottom {
                         break;
                     }
@@ -820,8 +843,9 @@ mod tests {
     #[test]
     fn weapon_numbers_read_the_table_and_compare_the_right_way() {
         let t = Tuning::default();
-        let sword = weapon_numbers(weapons::Id::Sword.def(), &t, 0);
-        let hammer = weapon_numbers(weapons::Id::Hammer.def(), &t, 0);
+        let none = crate::stats::Stats::default();
+        let sword = weapon_numbers(weapons::Id::Sword.def(), &t, &none);
+        let hammer = weapon_numbers(weapons::Id::Hammer.def(), &t, &none);
         let line = |v: &[WVal], l: WLine| v.iter().find(|x| x.line == l).unwrap().clone();
         assert_eq!(line(&sword, WLine::Damage).text, "1·1·2");
         assert_eq!(line(&hammer, WLine::Damage).text, "2·3");
@@ -841,14 +865,21 @@ mod tests {
         // 장신구 피해 +1은 모든 타에.
         assert_eq!(
             line(
-                &weapon_numbers(weapons::Id::Sword.def(), &t, 1),
+                &weapon_numbers(
+                    weapons::Id::Sword.def(),
+                    &t,
+                    &crate::stats::Stats::compute(&[crate::stats::Mods {
+                        dmg: 1,
+                        ..Default::default()
+                    }]),
+                ),
                 WLine::Damage
             )
             .text,
             "2·2·3"
         );
         // 쇠뇌는 사격 줄 — 근접 줄과는 견주지 않는다. 공격 속도(= 박자, 0077)만은 둘 다 있어 견준다.
-        let xbow = weapon_numbers(weapons::Id::Crossbow.def(), &t, 0);
+        let xbow = weapon_numbers(weapons::Id::Crossbow.def(), &t, &none);
         assert!(xbow.iter().all(|v| v.line != WLine::Damage));
         assert!(weapon_compare(&sword, &xbow)
             .iter()

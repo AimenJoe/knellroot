@@ -27,8 +27,43 @@ impl App {
                 }
             }
         }
+        // 숨은 물건(0105): 기록에 이름을 넣고 능력치에 — 등잔이면 지금 한 모금도 채운다.
+        if let Some((kind, id)) = self.run.take_picked() {
+            self.snd(crate::sfx::Id::Chest);
+            if !self.progress.finds.contains(&id) {
+                self.progress.finds.push(id);
+                self.progress.finds.sort();
+            }
+            self.world.apply_stats(self.progress.stats(), false);
+            let s = s();
+            let text = match kind {
+                crate::stage::Find::Lamp => {
+                    let pl = &mut self.world.player;
+                    pl.flask = (pl.flask + 1).min(pl.flask_max);
+                    s.toast_find_lamp
+                }
+                crate::stage::Find::Sip => s.toast_find_sip,
+                crate::stage::Find::Shard => s.toast_find_shard,
+            };
+            self.toast = Some((text.to_string(), TOAST_TIME));
+        }
         if out == crate::stage::StageOut::Cleared {
             self.progress.run = None;
+            // 핵(0105): 이길 때마다 나무 점수 1, 문지기마다 셋까지. 처음 이긴 판은 "핵이 몸에 스민다"(lore CANON — 핵이 다가왔다).
+            let s = s();
+            if self.progress.cores < crate::progression::CORE_CAP {
+                self.progress.cores += 1;
+                let (n, m) = (
+                    self.progress.cores.to_string(),
+                    crate::progression::CORE_CAP.to_string(),
+                );
+                self.toast = Some((fill(s.toast_core, &[&n, &m]), TOAST_TIME));
+            } else {
+                self.toast = Some((s.toast_core_full.to_string(), TOAST_TIME));
+            }
+            if self.progress.clears == 0 {
+                self.run.card = Some((|s| s.core_title, crate::stage::CARD_TIME));
+            }
             // 문지기를 처음 이기면 장신구 하나.
             if self.progress.clears == 0 {
                 if let Some(id) = self.run.def.boss_charm {

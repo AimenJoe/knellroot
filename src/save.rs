@@ -35,6 +35,21 @@ pub mod key {
     pub const WEAPON: &str = "weapon";
     /// 쌓인 플레이 시간(초, 0081 — 이어하기 목록의 "시간"). 개발 판·메뉴·타이틀에 있는 동안은 세지 않는다.
     pub const PLAY: &str = "play";
+    /// 잔불 레벨(0104, v0.4.0 G1): 줄마다 올린 단 0~5.
+    pub const LV_LIFE: &str = "lv.life";
+    pub const LV_STAMINA: &str = "lv.stamina";
+    pub const LV_MIGHT: &str = "lv.might";
+    /// 숨은 물건(0105): 주운 것의 기록 이름들("sanctuary.lamp.0,sanctuary.sip.1").
+    pub const FINDS: &str = "finds";
+    /// 문지기 핵 점수(0105): 이긴 횟수, `progression::CORE_CAP`까지.
+    pub const CORE_WARDEN: &str = "core.warden";
+    /// v0.4.0 옮기기를 했다(0105 — 핵 고르기 → 생명·숨은 물건·핵 점수). 한 번만.
+    pub const MIGRATED_V04: &str = "migrated.v04";
+    /// 기술 나무(0106): 갈래마다 연 칸 수, 목표 핀 "갈래.깊이"(없으면 키 없음).
+    pub const TREE_BEAT: &str = "tree.beat";
+    pub const TREE_RIPOSTE: &str = "tree.riposte";
+    pub const TREE_FOOTING: &str = "tree.footing";
+    pub const TREE_PIN: &str = "tree.pin";
 }
 
 /// 글 기록(키 → 값). 모르는 키도 지키며 들고 다닌다.
@@ -106,6 +121,14 @@ pub struct Progress {
     pub worn: [Option<crate::charms::Id>; crate::charms::SLOTS],
     pub chests: Vec<u32>,
     pub growth: crate::growth::Growth,
+    /// 잔불 레벨(0104).
+    pub level: crate::progression::Level,
+    /// 주운 숨은 물건의 기록 이름(0105).
+    pub finds: Vec<String>,
+    /// 성소 문지기 핵 점수(0105, `CORE_CAP`까지).
+    pub cores: u32,
+    /// 기술 나무(0106).
+    pub tree: crate::progression::Tree,
     /// 든 무기(없으면 옛 prefs 칸의 값을 쓴다).
     pub weapon: Option<crate::weapons::Id>,
     /// 쌓인 플레이 시간(초, 0081).
@@ -137,8 +160,51 @@ impl Progress {
             heal: small(key::GROW_HEAL),
             oil: r.num(key::SHOP_OIL) == Some(1),
         };
-        Progress {
+        let rank = |k: &str| {
+            r.num(k)
+                .unwrap_or(0)
+                .min(crate::progression::MAX_RANK as u32) as u8
+        };
+        let level = crate::progression::Level {
+            life: rank(key::LV_LIFE),
+            stamina: rank(key::LV_STAMINA),
+            might: rank(key::LV_MIGHT),
+        };
+        let mut finds: Vec<String> = r
+            .get(key::FINDS)
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|f| !f.is_empty())
+            .map(str::to_string)
+            .collect();
+        finds.sort();
+        finds.dedup();
+        let cores = r
+            .num(key::CORE_WARDEN)
+            .unwrap_or(0)
+            .min(crate::progression::CORE_CAP);
+        let migrated = r.num(key::MIGRATED_V04) == Some(1);
+        let depth = |k: &str| r.num(k).unwrap_or(0).min(crate::progression::DEPTH as u32) as u8;
+        let pin = r.get(key::TREE_PIN).and_then(|v| {
+            let (b, d) = v.split_once('.')?;
+            let (b, d): (u8, u8) = (b.trim().parse().ok()?, d.trim().parse().ok()?);
+            (b < 3 && d < crate::progression::DEPTH).then_some((b, d))
+        });
+        let tree = crate::progression::Tree {
+            open: [
+                depth(key::TREE_BEAT),
+                depth(key::TREE_RIPOSTE),
+                depth(key::TREE_FOOTING),
+            ],
+            pin,
+        };
+        let mut p = Progress {
             growth,
+            level,
+            finds,
+            cores,
+            tree,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
             play: r.num(key::PLAY).unwrap_or(0),
             embers: r.num(key::EMBERS).unwrap_or(0),
@@ -148,7 +214,11 @@ impl Progress {
             worn,
             chests,
             base: r,
+        };
+        if !migrated {
+            migrate_v04(&mut p);
         }
+        p
     }
 
     pub fn to_record(&self) -> Record {
@@ -165,6 +235,19 @@ impl Progress {
         r.set(key::GROW_HEAL, self.growth.heal);
         r.set(key::SHOP_OIL, self.growth.oil as u8);
         r.set(key::PLAY, self.play);
+        r.set(key::LV_LIFE, self.level.life);
+        r.set(key::LV_STAMINA, self.level.stamina);
+        r.set(key::LV_MIGHT, self.level.might);
+        r.set(key::FINDS, self.finds.join(","));
+        r.set(key::CORE_WARDEN, self.cores);
+        r.set(key::MIGRATED_V04, 1);
+        r.set(key::TREE_BEAT, self.tree.open[0]);
+        r.set(key::TREE_RIPOSTE, self.tree.open[1]);
+        r.set(key::TREE_FOOTING, self.tree.open[2]);
+        match self.tree.pin {
+            Some((b, d)) => r.set(key::TREE_PIN, format!("{b}.{d}")),
+            None => r.remove(key::TREE_PIN),
+        }
         match self.weapon {
             Some(w) => r.set(key::WEAPON, w.key()),
             None => r.remove(key::WEAPON),
@@ -190,14 +273,64 @@ impl Progress {
             || self.clears > 0
             || !self.owned.is_empty()
             || self.growth != crate::growth::Growth::default()
+            || self.level != crate::progression::Level::default()
+            || !self.finds.is_empty()
+            || self.cores > 0
+            || self.tree != crate::progression::Tree::default()
     }
 
-    /// 낀 장신구 + 성장으로 합친 능력치.
+    /// 나무 점수(0106): 핵 + 주운 종소리 조각.
+    pub fn tree_points(&self) -> u32 {
+        crate::progression::tree_points(self.cores, &self.finds)
+    }
+
+    /// 장신구를 뺀 능력치(성장만) — 장비 창이 "장신구가 바꾸는 줄"을 고를 때의 기본값(0104).
+    pub fn stats_without_charms(&self) -> crate::stats::Stats {
+        crate::stats::Stats::compute(&[
+            self.growth.mods(),
+            self.level.mods(),
+            crate::progression::find_mods(&self.finds),
+        ])
+    }
+
+    /// 낀 장신구 + 성장(핵 고르기·레벨)으로 합친 능력치.
     pub fn stats(&self) -> crate::stats::Stats {
         let mut mods = crate::charms::mods(&self.worn);
         mods.push(self.growth.mods());
+        mods.push(self.level.mods());
+        mods.push(crate::progression::find_mods(&self.finds));
         crate::stats::Stats::compute(&mods)
     }
+}
+
+/// v0.4.0 옮기기(0105, 0096 L5 "잃은 것 없이"): 핵 고르기로 얻은 것을 새 자리로 — 한 번만(깃발 `migrated.v04`).
+/// - 체력 +n → 생명 n단(5단을 넘는 몫은 `growth.hp`에 남아 그대로 보정).
+/// - 등잔 +n → 성소의 숨은 등잔을 주운 것으로(하나), 남는 몫은 `growth.flask`에.
+/// - 한 모금 +n → 성소의 숨은 한 모금을 주운 것으로(둘까지), 남는 몫은 `growth.heal`에.
+/// - 이긴 횟수 → 문지기 핵 점수(`CORE_CAP`까지).
+pub fn migrate_v04(p: &mut Progress) {
+    use crate::stage::{find_id, Find};
+    let prefix = crate::stage::sanctuary::DEF.find_prefix;
+    let room = crate::progression::MAX_RANK - p.level.life;
+    let moved = p.growth.hp.min(room);
+    p.level.life += moved;
+    p.growth.hp -= moved;
+    let mut take = |kind: Find, have: &mut u8, slots: usize| {
+        for n in 0..slots {
+            let id = find_id(prefix, kind, n);
+            if *have > 0 && !p.finds.contains(&id) {
+                p.finds.push(id);
+                *have -= 1;
+            }
+        }
+    };
+    let (mut flask, mut heal) = (p.growth.flask, p.growth.heal);
+    take(Find::Lamp, &mut flask, 1);
+    take(Find::Sip, &mut heal, 2);
+    p.growth.flask = flask;
+    p.growth.heal = heal;
+    p.finds.sort();
+    p.cores = p.cores.max(p.clears.min(crate::progression::CORE_CAP));
 }
 
 /// 기록 슬롯 수(0066, KB `roguelite-save-slots-and-continue`, nail 0078).
@@ -370,6 +503,104 @@ mod tests {
         let back = Progress::from_record(r);
         assert_eq!(back.run, None);
         assert!(back.has_any(), "a clear stays");
+    }
+
+    /// 0105(0096 L5): 옛 핵 고르기는 잃는 것 없이 옮겨지고, 두 번째 읽기에서는 다시 옮기지 않는다.
+    #[test]
+    fn v03_core_picks_move_to_levels_finds_and_core_points_once() {
+        let old = "v=1\nembers=40\nclears=5\ngrow.hp=3\ngrow.flask=2\ngrow.heal=2\nshop.oil=1\n";
+        let before = {
+            // 옛 셈(핵 고르기 그대로): 체력 +3, 등잔 +2 + 기름, 한 모금 +2.
+            let g = crate::growth::Growth {
+                hp: 3,
+                flask: 2,
+                heal: 2,
+                oil: true,
+            };
+            crate::stats::Stats::compute(&[g.mods()])
+        };
+        let p = Progress::from_record(Record::parse(old));
+        assert_eq!(p.level.life, 3);
+        assert_eq!(p.growth.hp, 0);
+        assert_eq!(
+            p.finds,
+            vec![
+                "sanctuary.lamp.0".to_string(),
+                "sanctuary.sip.0".to_string(),
+                "sanctuary.sip.1".to_string()
+            ]
+        );
+        assert_eq!(
+            (p.growth.flask, p.growth.heal),
+            (1, 0),
+            "the second lamp stays as leftover"
+        );
+        assert_eq!(p.cores, crate::progression::CORE_CAP, "five wins, capped");
+        let after = p.stats();
+        assert_eq!(
+            (after.max_hp, after.flask, after.heal),
+            (before.max_hp, before.flask, before.heal),
+            "nothing lost"
+        );
+        // 다시 읽어도 그대로(깃발).
+        let again = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        assert_eq!(again.level, p.level);
+        assert_eq!(again.finds, p.finds);
+        assert_eq!(again.growth, p.growth);
+        assert_eq!(again.stats(), after);
+
+        // 생명을 이미 올렸으면 5단을 넘는 몫은 남은 보정으로.
+        let p = Progress::from_record(Record::parse("v=1\ngrow.hp=3\nlv.life=4\n"));
+        assert_eq!((p.level.life, p.growth.hp), (5, 2));
+        // 새 기록은 옮길 것이 없다.
+        let p = Progress::from_record(Record::parse(""));
+        assert!(p.finds.is_empty() && p.cores == 0 && !p.has_any());
+    }
+
+    /// 0106: 나무는 갈래마다 연 수 + 목표 핀으로 남고, 고친 기록의 큰 수·이상한 핀은 걸러진다.
+    #[test]
+    fn the_tree_survives_the_record() {
+        let mut p = Progress::default();
+        p.tree.open = [2, 0, 5];
+        p.tree.pin = Some((1, 3));
+        let r = p.to_record();
+        assert_eq!(r.get(key::TREE_PIN), Some("1.3"));
+        let back = Progress::from_record(Record::parse(&r.to_text()));
+        assert_eq!(back.tree, p.tree);
+        assert!(back.has_any());
+        let mut odd = r.clone();
+        odd.set(key::TREE_BEAT, 40);
+        odd.set(key::TREE_PIN, "7.9");
+        let back = Progress::from_record(odd);
+        assert_eq!(back.tree.open[0], crate::progression::DEPTH);
+        assert_eq!(back.tree.pin, None);
+    }
+
+    /// 0104: 레벨은 `lv.*` 셋으로 남고, 고친 기록의 큰 수는 5단에서 멈춘다. 레벨만 있어도 기록이 있는 슬롯.
+    #[test]
+    fn levels_survive_the_record_and_clamp_to_five() {
+        let mut p = Progress::default();
+        p.level = crate::progression::Level {
+            life: 2,
+            stamina: 5,
+            might: 1,
+        };
+        assert!(p.has_any());
+        let r = p.to_record();
+        assert_eq!(
+            (
+                r.num(key::LV_LIFE),
+                r.num(key::LV_STAMINA),
+                r.num(key::LV_MIGHT)
+            ),
+            (Some(2), Some(5), Some(1))
+        );
+        let back = Progress::from_record(Record::parse(&r.to_text()));
+        assert_eq!(back.level, p.level);
+        assert_eq!(back.stats(), p.stats());
+        let mut odd = r.clone();
+        odd.set(key::LV_MIGHT, 99);
+        assert_eq!(Progress::from_record(odd).level.might, 5);
     }
 
     #[test]

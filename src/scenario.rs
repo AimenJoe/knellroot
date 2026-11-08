@@ -198,4 +198,49 @@ mod tests {
             );
         }
     }
+
+    /// 0107: 나무 15칸을 다 연 채로 시나리오마다 무기마다 오래 싸워도 깨지지 않고 아레나 안에 남는다(대시 공격이 적을 지나치는 칸 등).
+    #[test]
+    fn every_scenario_survives_a_full_tree() {
+        let t = Tuning::default();
+        let full = crate::progression::Tree {
+            open: [crate::progression::DEPTH; 3],
+            pin: None,
+        };
+        for e in LIST.iter() {
+            for id in [
+                crate::weapons::Id::Sword,
+                crate::weapons::Id::Hammer,
+                crate::weapons::Id::Fists,
+            ] {
+                let mut w = build(e.scenario);
+                w.set_weapon(id);
+                w.tree = full;
+                for i in 0..900u32 {
+                    let a = Actions {
+                        move_dir: vec2(((i / 40) as f32).sin(), ((i / 40) as f32).cos()),
+                        attack: i % 9 == 0,
+                        attack_held: (i / 60) % 3 == 1,
+                        dodge: i % 70 == 0,
+                        dodge_held: (i / 50) % 4 == 2,
+                        parry: i % 23 == 0,
+                        jump: i % 110 == 5,
+                        lock: i == 30,
+                        turn_right: i % 240 == 10,
+                        ..Default::default()
+                    };
+                    w.step(&a, &t);
+                    assert!(
+                        w.player.pos.x.abs() <= w.arena + 0.5
+                            && w.player.pos.z.abs() <= w.arena + 0.5,
+                        "{} {:?} tick {i}: {:?}",
+                        e.name,
+                        id,
+                        w.player.pos
+                    );
+                    assert!(w.player.pos.is_finite() && w.player.stamina.is_finite());
+                }
+            }
+        }
+    }
 }

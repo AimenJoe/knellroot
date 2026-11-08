@@ -1,7 +1,7 @@
 // 기록 시험(0064 M2): 헤드리스 Chromium으로
 //   1) 기록이 없으면 타이틀 = 시작·설정(새로 하기 없음), 2) 기록을 심어 두면 = 이어하기·설정·새로 하기,
 //   3) 이어하기 → 기록의 쉼터(문 앞)에서 선다(스크린숏), 4) 멈춤 → 처음부터 → 기록에서 판 안의 자리가 지워지고 남는 것은 그대로,
-//   3a) 쉼터에서 쉬면 화로 가게 — 잔불로 장신구를 사면 기록에(0064 M4).
+//   3a) 쉼터에서 쉬면 화로(0104: 레벨 · 가게 · 떠나기) — 생명을 한 단 올리고(lv.life), 가게에서 장신구를 사면 기록에(0064 M4).
 //   5) 기록 슬롯(0066): 이어하기·시작하기 → 슬롯 창, 지우기·덮어쓰기는 두 번 눌러야, 다른 슬롯에서 시작해도 슬롯 1은 그대로, 마지막 슬롯 칸.
 //   처음부터·타이틀로·사기는 묻는 창. 그 사이 장비 창에서 장신구를 끼면 기록에 남는지(0064 M3).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/save.js dist shots
@@ -49,7 +49,7 @@ async function main() {
   if ((await record()) !== null) fail('a fresh browser already has a record');
 
   // 2) 문 앞 쉼터(번호 0 — 지도 위에서부터 첫 R)에서 쉰 기록 + 잔불·끝낸 판 + 나중 칸(모르는 키).
-  await page.evaluate((k) => localStorage.setItem(k, 'v=1\nembers=30\nclears=1\nrun.rest=0\nrun.gate=1\nfuture.key=keep\ncharm.owned=shell,ear\ncharm.worn=shell,,\n'), KEY);
+  await page.evaluate((k) => localStorage.setItem(k, 'v=1\nembers=60\nclears=1\nrun.rest=0\nrun.gate=1\nfuture.key=keep\ncharm.owned=shell,ear\ncharm.worn=shell,,\n'), KEY);
   await page.reload();
   await ready();
   await page.waitForTimeout(600);
@@ -64,8 +64,22 @@ async function main() {
   await page.waitForTimeout(1500);
   await shot('save-2-continued-at-gate');
 
-  // 3a) 쉼터 화로(0064 M4): 곁에서 점프 버튼(F) = 쉬기 → 가게 → 첫 줄(잔불 주머니 25) 사기 → 떠나기.
+  // 3a) 쉼터 화로(0104): 곁에서 점프 버튼(F) = 쉬기 → 화로(레벨 · 가게 · 떠나기).
   await press('KeyF'); await page.waitForTimeout(600);
+  await shot('save-2a-hearth');
+  // 레벨(첫 줄) → 생명(첫 줄, 30) → 묻는 창(커서 "올리기") → 올림. 잔불 60 → 30.
+  await press('Enter'); await page.waitForTimeout(300);
+  await shot('save-2a-level');
+  await press('Enter'); await page.waitForTimeout(300);
+  await shot('save-2a-level-ask');
+  await press('Enter'); await page.waitForTimeout(400);
+  await shot('save-2a-level-raised');
+  r = await record();
+  console.log('레벨을 올린 뒤 기록:', JSON.stringify(r));
+  if (!/lv\.life=1\n/.test(r) || !/embers=30\n/.test(r)) fail('raising Life must spend 30 embers and keep lv.life=1');
+  // 레벨 창을 닫으면 화로(연 줄) → 셋째 줄 가게(레벨·나무·가게, 0106) → 첫 줄(잔불 주머니 25) 사기.
+  await press('Escape'); await page.waitForTimeout(300);
+  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
   await shot('save-2a-shop');
   // 사기 전에 묻는 창(nail 가게 — 커서는 "사기"에서).
   await press('Enter'); await page.waitForTimeout(300);
@@ -75,6 +89,8 @@ async function main() {
   r = await record();
   console.log('가게에서 산 뒤 기록:', JSON.stringify(r));
   if (!/charm\.owned=[^\n]*pouch/.test(r) || !/embers=5\n/.test(r)) fail('buying must spend embers and keep the charm');
+  // 가게 → 화로 → 싸움.
+  await press('Escape'); await page.waitForTimeout(300);
   await press('Escape'); await page.waitForTimeout(300);
 
   // 3b) 장비(0064 M3): 멈춤 → 둘째 줄(장비) → 장신구 3칸(산 주머니가 2칸에 들어갔다)에 종지기의 귀 → 기록.
@@ -89,10 +105,10 @@ async function main() {
   await press('Escape'); await page.waitForTimeout(200);
   await press('Escape'); await page.waitForTimeout(300);
 
-  // 4) 멈춤 → 처음부터(다섯째 줄: 계속·장비·설정·개발(개발판, 0090)·처음부터).
+  // 4) 멈춤 → 처음부터(여섯째 줄: 계속·장비·나무(0106)·설정·개발(개발판, 0090)·처음부터).
   await press('Escape');
   await page.waitForTimeout(200);
-  await press('ArrowDown', 4);
+  await press('ArrowDown', 5);
   await press('Enter');
   await page.waitForTimeout(300);
   // 처음부터는 묻는 창(커서는 "취소" — 그냥 확인하면 아무 일 없다), 위로 한 번 = "처음부터".
@@ -105,11 +121,11 @@ async function main() {
   if (!/embers=5\n/.test(r) || !/clears=1/.test(r)) fail('restart must keep what stays');
   if (!/future\.key=keep/.test(r)) fail('unknown keys must survive a write');
 
-  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 → 여섯째 — 개발 줄이 끼어(0090) → 묻는 창 위로 한 번).
+  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 → 일곱째 — 나무(0106)·개발 줄(0090)이 끼어 → 묻는 창 위로 한 번).
   const slotCell = () => page.evaluate(() => localStorage.getItem('knell.slot'));
   const toTitle = async () => {
     await press('Escape'); await page.waitForTimeout(200);
-    await press('ArrowDown', 5); await press('Enter'); await page.waitForTimeout(300);
+    await press('ArrowDown', 6); await press('Enter'); await page.waitForTimeout(300);
     await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(600);
   };
   await toTitle();

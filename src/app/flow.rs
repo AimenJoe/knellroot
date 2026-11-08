@@ -22,9 +22,15 @@ pub enum Scene {
     EquipPick {
         slot: u8,
     },
-    /// 핵 고르기(0064 M4): 문지기를 이긴 끝 장면 뒤, 결과 전. 하나를 골라야 넘어간다.
-    Core,
-    /// 쉼터 화로(0064 M4): 쉬면 열린다 — 잔불로 장신구·등잔 기름을 산다. 뒤로 = 싸움.
+    /// 쉼터 화로(0104, v0.4.0 G1 — 0102 7): 쉬면 열린다. 줄 = 레벨 · 가게 · 떠나기. 뒤로 = 싸움.
+    Hearth,
+    /// 레벨(0104): 생명·기력·힘을 잔불로 한 단씩. 화로에서 연다 — 닫으면 화로.
+    Level,
+    /// 기술 나무(0106): 화로에서 열면 칸을 연다(`view = false`), 멈춤에서 열면 읽기·목표 핀만(`view = true`). 닫으면 연 곳.
+    Tree {
+        view: bool,
+    },
+    /// 가게(0064 M4): 잔불로 장신구·등잔 기름을 산다. 화로에서 연다(0104 전엔 쉬면 바로 열렸다) — 닫으면 화로.
     Shop,
     /// 묻는 창(KB `controller-layout-and-remapping` "되돌릴 수 없는 메뉴 항목은 한 번 묻는다", nail 0274·가게 묻는 창):
     /// 줄 둘(하는 일 이름 / 취소) + 무엇을 잃는지 한 줄. 뒤로 = 취소(온 곳).
@@ -62,7 +68,9 @@ impl Scene {
                 | Scene::Pause
                 | Scene::Equip
                 | Scene::EquipPick { .. }
-                | Scene::Core
+                | Scene::Hearth
+                | Scene::Level
+                | Scene::Tree { .. }
                 | Scene::Shop
                 | Scene::Ask(_)
                 | Scene::Result { .. }
@@ -95,8 +103,10 @@ impl Scene {
                 Layer::Window { hud: true }
             }
             // 가게는 잔불을 제가 보인다(KB hud-readability: 창이 같은 정보면 밑 HUD를 그리지 않는다).
-            Scene::Shop
-            | Scene::Core
+            Scene::Hearth
+            | Scene::Level
+            | Scene::Tree { .. }
+            | Scene::Shop
             | Scene::Result { .. }
             | Scene::Controls
             | Scene::Slots { .. } => Layer::Window { hud: false },
@@ -161,12 +171,16 @@ pub enum Ask {
     ToTitle,
     /// 화로 가게: 이 물건(살 수 있는 것 목록의 자리)을 산다.
     Buy(usize),
+    /// 화로 레벨(0104): 이 줄(`progression::LINES`의 자리)을 한 단 올린다.
+    Level(u8),
+    /// 나무(0106): 이 갈래의 다음 칸을 연다(점수 1).
+    Tree(u8),
 }
 
 /// 묻는 창의 커서 처음 자리: 버리는 일은 "취소"(1)에서 — 연타가 실행되지 않게(KB). 사기는 nail 가게처럼 "사기"(0)에서.
 pub fn ask_default(k: Ask) -> usize {
     match k {
-        Ask::Buy(_) => 0,
+        Ask::Buy(_) | Ask::Level(_) | Ask::Tree(_) => 0,
         _ => 1,
     }
 }
@@ -179,7 +193,7 @@ pub fn answer(k: Ask, yes: bool) -> (Go, bool) {
     match k {
         Ask::Restart => (Go::Root(Scene::Play), true),
         Ask::ToTitle => (Go::Root(Scene::Title), true),
-        Ask::Buy(_) => (Go::Back, false),
+        Ask::Buy(_) | Ask::Level(_) | Ask::Tree(_) => (Go::Back, false),
     }
 }
 
@@ -267,6 +281,8 @@ pub enum PauseItem {
     Resume,
     /// 장비(0064 M3, 0051의 무기 줄): 좌우 = 다음 무기(전처럼), 확인 = 장비 창(무기 + 장신구 세 칸).
     Weapon,
+    /// 기술 나무(0106) — 읽기·목표 핀만(칸은 쉼터 화로에서 연다).
+    Tree,
     Settings,
     /// 개발 메뉴(0075 → 0090) — 개발판에만, 설정 바로 아래 줄(연구소가 있던 자리 — 연구소는 개발 창 도구 탭·타이틀에서, 사장 2026-11-07).
     #[cfg(feature = "dev")]
@@ -275,9 +291,14 @@ pub enum PauseItem {
     ToTitle,
 }
 
-/// 멈춤 창의 줄: 계속 · 장비 · 설정 · [개발] · 처음부터 · 타이틀로 — 대괄호는 개발판에만(0090).
+/// 멈춤 창의 줄: 계속 · 장비 · 나무(0106) · 설정 · [개발] · 처음부터 · 타이틀로 — 대괄호는 개발판에만(0090).
 pub fn pause_items() -> Vec<PauseItem> {
-    let mut v = vec![PauseItem::Resume, PauseItem::Weapon, PauseItem::Settings];
+    let mut v = vec![
+        PauseItem::Resume,
+        PauseItem::Weapon,
+        PauseItem::Tree,
+        PauseItem::Settings,
+    ];
     #[cfg(feature = "dev")]
     v.push(PauseItem::Dev);
     v.extend([PauseItem::Restart, PauseItem::ToTitle]);
@@ -344,13 +365,9 @@ pub fn after_stage(out: StageOut) -> Option<Scene> {
 /// 끝 장면을 이만큼(초) 보여 준 뒤 결과 창.
 pub const ENDING_TIME: f32 = 1.6;
 
-/// 끝 장면 뒤(0064 M4): 이겼고 고를 성장이 남았으면 핵 고르기, 아니면 결과.
-pub fn after_ending(won: bool, can_grow: bool) -> Scene {
-    if won && can_grow {
-        Scene::Core
-    } else {
-        Scene::Result { won }
-    }
+/// 끝 장면 뒤: 결과(핵 고르기는 0105에서 걷었다 — 핵은 기술 나무 점수, 알림만).
+pub fn after_ending(won: bool) -> Scene {
+    Scene::Result { won }
 }
 
 /// 뒤로(B·Esc): 연 창은 닫는다(스택에서 꺼내 연 곳으로). 골라야 끝나는 창(핵 고르기·결과)·타이틀·싸움은 그대로(0066).
@@ -359,6 +376,9 @@ pub fn back(scene: Scene) -> Go {
         Scene::Pause
         | Scene::Equip
         | Scene::EquipPick { .. }
+        | Scene::Hearth
+        | Scene::Level
+        | Scene::Tree { .. }
         | Scene::Shop
         | Scene::Ask(_)
         | Scene::Controls
@@ -366,9 +386,7 @@ pub fn back(scene: Scene) -> Go {
         | Scene::Slots { .. } => Go::Back,
         #[cfg(feature = "dev")]
         Scene::Dev { .. } | Scene::Lab | Scene::LabGroup { .. } => Go::Back,
-        Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Core | Scene::Result { .. } => {
-            Go::Stay
-        }
+        Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Result { .. } => Go::Stay,
         #[cfg(feature = "dev")]
         Scene::Sandbox => Go::Stay,
     }
@@ -388,6 +406,7 @@ pub fn choose_pause(item: PauseItem) -> (Go, bool) {
     match item {
         PauseItem::Resume => (Go::Back, false),
         PauseItem::Weapon => (Go::Open(Scene::Equip), false),
+        PauseItem::Tree => (Go::Open(Scene::Tree { view: true }), false),
         PauseItem::Settings => (Go::Open(Scene::Settings), false),
         PauseItem::Restart => (Go::Open(Scene::Ask(Ask::Restart)), false),
         PauseItem::ToTitle => (Go::Open(Scene::Ask(Ask::ToTitle)), false),
@@ -430,7 +449,6 @@ mod tests {
         assert_eq!(pause(Scene::Title), Go::Stay);
         // 골라야 끝나는 창은 뒤로로 건너뛰지 않는다.
         assert_eq!(back(Scene::Result { won: false }), Go::Stay);
-        assert_eq!(back(Scene::Core), Go::Stay);
         assert_eq!(back(Scene::Title), Go::Stay);
     }
 
@@ -453,7 +471,14 @@ mod tests {
             (Go::Back, false),
             "back to the shop"
         );
-        for k in [Ask::Restart, Ask::ToTitle, Ask::Buy(0)] {
+        // 0104: 화로 레벨도 가게처럼 "올리기"에서, 답하면 레벨 창으로.
+        assert_eq!(answer(Ask::Level(1), true), (Go::Back, false));
+        assert_eq!(ask_default(Ask::Level(0)), 0);
+        for sc in [Scene::Hearth, Scene::Level, Scene::Shop] {
+            assert_eq!(back(sc), Go::Back, "{sc:?} closes to where it opened");
+            assert!(sc.is_menu());
+        }
+        for k in [Ask::Restart, Ask::ToTitle, Ask::Buy(0), Ask::Level(2)] {
             assert_eq!(answer(k, false), (Go::Back, false), "cancel closes");
             assert_eq!(back(Scene::Ask(k)), Go::Back);
             assert_eq!(Scene::Ask(k).layer(), Layer::Modal);
@@ -485,10 +510,9 @@ mod tests {
             choose_pause(PauseItem::Weapon),
             (Go::Open(Scene::Equip), false)
         );
-        // 0064 M4: 이기면 핵 고르기(고를 것이 남았을 때만), 지면 결과.
-        assert_eq!(after_ending(true, true), Scene::Core);
-        assert_eq!(after_ending(true, false), Scene::Result { won: true });
-        assert_eq!(after_ending(false, true), Scene::Result { won: false });
+        // 0105: 핵 고르기는 없다 — 이겨도 져도 결과.
+        assert_eq!(after_ending(true), Scene::Result { won: true });
+        assert_eq!(after_ending(false), Scene::Result { won: false });
         assert!(Scene::Controls.is_menu());
         assert!(Scene::Settings.is_menu());
         assert!(!settings_rows(false, true).contains(&SettingsRow::Fullscreen));
@@ -509,7 +533,6 @@ mod tests {
             Layer::Window { hud: false },
             "shows its own embers"
         );
-        assert_eq!(Scene::Core.layer(), Layer::Window { hud: false });
     }
 
     #[test]
@@ -555,7 +578,13 @@ mod tests {
         let p = pause_items();
         let i = p.iter().position(|x| *x == PauseItem::Settings).unwrap();
         assert_eq!(p.get(i + 1), Some(&PauseItem::Dev));
-        assert_eq!(p.len(), 6);
+        // 계속 · 장비 · 나무(0106) · 설정 · 개발 · 처음부터 · 타이틀로.
+        assert_eq!(p.len(), 7);
+        assert_eq!(p[2], PauseItem::Tree);
+        assert_eq!(
+            choose_pause(PauseItem::Tree),
+            (Go::Open(Scene::Tree { view: true }), false)
+        );
         for fs in [false, true] {
             for mouse in [false, true] {
                 assert_eq!(settings_rows(fs, mouse).len() >= 4, true);

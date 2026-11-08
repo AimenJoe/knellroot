@@ -26,15 +26,16 @@ impl App {
         }
         let out = self.run.tick(&mut self.world, TICK_DT);
         self.sync_progress(out);
-        // 쉼터 화로(0064 M4): 쉬면 가게가 열린다. 살 것이 있으면 쉼터가 빛난다.
+        // 쉼터 화로(0064 M4 → 0104): 쉬면 화로(레벨·가게)가 열린다. 올릴 단·살 것이 있으면 쉼터가 빛난다.
         self.run.shop_ready = crate::growth::can_buy(
             self.world.embers,
             &self.progress.owned,
             &self.progress.growth,
-        );
+        ) || self.progress.level.can_raise(self.world.embers)
+            || self.progress.tree.can_open(self.progress.tree_points());
         if self.run.take_rested() {
             self.snd(crate::sfx::Id::Rest);
-            self.go(Go::Open(Scene::Shop));
+            self.go(Go::Open(Scene::Hearth));
         }
         // 문지기가 깨어나는 순간(0064 M5): 낮은 땅울림.
         let waking = matches!(self.run.phase, crate::stage::Phase::Waking(_));

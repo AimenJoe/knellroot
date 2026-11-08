@@ -170,9 +170,11 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
         draw_triangle(c + vec2(0.0, -r), c + vec2(-r, 0.0), c + vec2(0.0, r), col);
     }
     // 스태미나(0018): 모자라서 막히면 잠깐 붉게 깜빡인다(막은 이유가 보이게 — KB action-reuse-gating).
-    let smax = SPECS[idx(P::StaminaMax)].def.max(1.0);
+    // 레벨 기력(0104)이 오르면 막대가 길어진다(소울류 — 늘어난 몫이 눈에 보이게, 0096 L2).
+    let base = SPECS[idx(P::StaminaMax)].def.max(1.0);
+    let smax = w.stats.max_stamina().max(1.0);
     let k = (pl.stamina / smax).clamp(0.0, 1.0);
-    let (bx, by, bw, bh) = (x0, y0 + 11.0 * s, 60.0 * s, 2.0 * s);
+    let (bx, by, bw, bh) = (x0, y0 + 11.0 * s, 60.0 * s * smax / base, 2.0 * s);
     // 막혔을 때(0088): 깜빡임에 더해 막대가 좌우로 떨린다(줄어들며). 다 쓴 동안은 붉은 테가 천천히 숨 쉰다(지금 막히는 상태).
     let shake = (pl.stamina_denied / crate::tuning::STAMINA_DENIED_SHOW).clamp(0.0, 1.0);
     let bx = bx + (w.time * 70.0).sin() * 2.0 * s * shake;
@@ -315,10 +317,14 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
     }
 
     let Some(run) = run else { return };
-    // 상자 곁(0064 M3): "키 열기"(쉼터보다 먼저 — 같은 버튼이 상자를 연다).
-    if run.near_chest.is_some() && !under_menu {
+    // 숨은 물건·상자 곁(0105·0064 M3): "키 줍기"·"키 열기"(쉼터보다 먼저 — 같은 버튼이 줍고 연다, 줍기가 먼저 — 월드와 같은 순서).
+    if (run.near_find.is_some() || run.near_chest.is_some()) && !under_menu {
         let key = crate::input::prompt(crate::input::Act::Interact);
-        let verb = i18n::s().chest_verb;
+        let verb = if run.near_find.is_some() {
+            i18n::s().find_verb
+        } else {
+            i18n::s().chest_verb
+        };
         let text = if key.is_empty() {
             verb.to_string()
         } else {
@@ -341,8 +347,8 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
         }
     }
     let cx = f.ox + f.w * 0.5;
-    // 목표(오른쪽 위).
-    if let Some(o) = run.objective {
+    // 목표(오른쪽 위). 창 밑에서는 그리지 않는다 — 구역 카드·시작 이야기와 같다(0066, 장비 창 테두리를 넘었다 0104 F4).
+    if let Some(o) = run.objective.filter(|_| !under_menu) {
         let text = format!("◇ {}", tr(o));
         let tw = ui.width(&text, 1.0);
         ui.text(&text, f.ox + f.w - tw - 8.0 * s, y0, 1.0, INK);
@@ -353,9 +359,11 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
         let y = f.oy + f.h * 0.16;
         let text = tr(name);
         let col = Color::new(INK.r, INK.g, INK.b, a);
-        ui.text_center(text, cx, y, 2.0, col);
-        let tw = ui.width(text, 2.0);
-        let ly = y + ui.px(2.0) * 1.15;
+        // 긴 언어(영어 "Rested — health and flasks restored")는 왼쪽 위 HUD(잔불 수)에 닿았다(0104 F4) — 가운데 62% 안으로 줄인다.
+        let k = (2.0 * f.w * 0.62 / ui.width(text, 2.0).max(1.0)).min(2.0);
+        ui.text_center(text, cx, y, k, col);
+        let tw = ui.width(text, k);
+        let ly = y + ui.px(k) * 1.15;
         draw_rectangle(
             cx - tw * 0.5,
             ly,

@@ -1,6 +1,7 @@
 //! 성장(0064 M4, `docs/design/items.md` 0·F): 판을 넘어 남는 큰 보상.
 //!
-//! - **핵 고르기**: 문지기를 이길 때마다 핵 하나 → 셋 가운데 하나(최대 체력 +1 · 등잔 +1회 · 한 모금 회복 +1), 갈래마다 상한.
+//! - 핵 고르기(문지기를 이길 때마다 체력·등잔·한 모금 중 하나)는 0105에서 걷었다 — 체력은 레벨 생명, 등잔·한 모금은 숨은 물건,
+//!   핵은 기술 나무 점수(`progression.rs`). 옛 기록의 몫은 `save::migrate_v04`가 옮기고 남는 것만 여기.
 //! - **쉼터 화로의 가게**: 잔불로 사는 것 — 상자·문지기에 없는 장신구 셋과 등잔 기름(등잔 +1회, 한 번). 쓸 곳이 생기면
 //!   쉼터가 빛난다(KB `roguelite-healing-and-currency` "쓸 곳이 보여야").
 //!
@@ -8,26 +9,8 @@
 use crate::charms::Id as Charm;
 use crate::stats::Mods;
 
-/// 핵 고르기의 갈래.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Pick {
-    Hp,
-    Flask,
-    Heal,
-}
-
-pub const PICKS: [Pick; 3] = [Pick::Hp, Pick::Flask, Pick::Heal];
-
-/// 갈래마다 고를 수 있는 횟수.
-pub fn cap(p: Pick) -> u8 {
-    match p {
-        Pick::Hp => 3,
-        Pick::Flask => 2,
-        Pick::Heal => 2,
-    }
-}
-
-/// 쌓인 성장.
+/// 쌓인 성장(0064 M4). 핵 고르기는 0105(v0.4.0 G3)에서 걷었다 — `hp`·`flask`·`heal`은 옛 기록을 옮기고 **남은 몫**
+/// (생명 5단을 넘은 체력, 숨은 등잔 하나를 넘은 등잔)만 들고 있다(잃지 않게, `save::migrate_v04`). 새로 늘지 않는다.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Growth {
     pub hp: u8,
@@ -38,31 +21,6 @@ pub struct Growth {
 }
 
 impl Growth {
-    pub fn count(&self, p: Pick) -> u8 {
-        match p {
-            Pick::Hp => self.hp,
-            Pick::Flask => self.flask,
-            Pick::Heal => self.heal,
-        }
-    }
-
-    /// 아직 고를 수 있는 갈래(상한에 닿지 않은 것). 비면 핵 고르기를 건너뛴다.
-    pub fn options(&self) -> Vec<Pick> {
-        PICKS
-            .into_iter()
-            .filter(|&p| self.count(p) < cap(p))
-            .collect()
-    }
-
-    pub fn add(&mut self, p: Pick) {
-        let c = match p {
-            Pick::Hp => &mut self.hp,
-            Pick::Flask => &mut self.flask,
-            Pick::Heal => &mut self.heal,
-        };
-        *c = (*c + 1).min(cap(p));
-    }
-
     pub fn mods(&self) -> Mods {
         Mods {
             hp: self.hp as i32,
@@ -110,28 +68,17 @@ mod tests {
     use crate::stats::Stats;
 
     #[test]
-    fn core_picks_stop_at_their_caps_and_feed_the_stats() {
-        let mut g = Growth::default();
-        assert_eq!(g.options(), PICKS.to_vec());
-        for _ in 0..10 {
-            g.add(Pick::Hp);
-        }
-        assert_eq!(g.hp, cap(Pick::Hp));
-        assert!(!g.options().contains(&Pick::Hp), "capped");
-        g.add(Pick::Heal);
-        g.oil = true;
+    fn leftover_growth_still_feeds_the_stats() {
+        let g = Growth {
+            hp: 1,
+            flask: 1,
+            heal: 0,
+            oil: true,
+        };
         let s = Stats::compute(&[g.mods()]);
         let base = Stats::default();
-        assert_eq!(s.max_hp, base.max_hp + cap(Pick::Hp) as i32);
-        assert_eq!(s.flask, base.flask + 1, "oil adds a sip");
-        assert_eq!(s.heal, 1);
-        // 다 고르면 고를 것이 없다(핵 고르기를 건너뛴다).
-        for p in PICKS {
-            for _ in 0..5 {
-                g.add(p);
-            }
-        }
-        assert!(g.options().is_empty());
+        assert_eq!(s.max_hp, base.max_hp + 1);
+        assert_eq!(s.flask, base.flask + 2, "leftover lamp + oil");
     }
 
     #[test]

@@ -9,6 +9,7 @@ mod controls_screen;
 mod dev;
 mod equip;
 pub mod flow;
+mod hearth;
 #[cfg(feature = "dev")]
 mod lab_screen;
 mod menu;
@@ -20,6 +21,7 @@ mod shop;
 mod slots;
 mod stack;
 mod title;
+mod tree;
 
 use macroquad::prelude::*;
 
@@ -222,7 +224,11 @@ impl App {
         // 잔불은 판을 넘어 남는다(0064 M1). 장신구·성장은 능력치로, 연 상자는 비어 있다(M3).
         self.world.embers = self.progress.embers;
         self.world.apply_stats(self.progress.stats(), true);
+        self.world.tree = self.progress.tree;
         self.run.set_opened(&self.progress.chests);
+        self.run.set_found(&self.progress.finds);
+        // 처음 이기는 판이면 핵이 스스로 다가온다(lore CANON, 0105).
+        self.run.first_core = self.progress.clears == 0;
         self.cam = Camera::new(self.world.player.pos, &self.t);
     }
 
@@ -407,11 +413,13 @@ impl App {
             Scene::Title => self.tick_title(a),
             Scene::Ask(k) => self.tick_ask(&a, k),
             Scene::Equip => self.tick_equip(&a),
+            Scene::Tree { view } => self.tick_tree(&a, view),
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
             s @ (Scene::Pause
             | Scene::Settings
+            | Scene::Hearth
+            | Scene::Level
             | Scene::Shop
-            | Scene::Core
             | Scene::Result { .. }) => self.tick_menu(&a, s),
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.tick_dev(&a, tab as usize),
@@ -425,8 +433,7 @@ impl App {
                 self.ending += TICK_DT;
                 self.follow_camera();
                 if self.ending >= flow::ENDING_TIME {
-                    let grow = !self.progress.growth.options().is_empty();
-                    self.go(Go::Root(flow::after_ending(won, grow)));
+                    self.go(Go::Root(flow::after_ending(won)));
                 }
             }
             Scene::Play => self.tick_play(a),
@@ -453,8 +460,9 @@ impl App {
         match scene {
             Scene::Pause => Some(self.pause_menu()),
             Scene::Settings => Some(self.settings_menu()),
+            Scene::Hearth => Some(self.hearth_menu()),
+            Scene::Level => Some(self.level_menu()),
             Scene::Shop => Some(self.shop_menu()),
-            Scene::Core => Some(self.core_menu()),
             Scene::Result { won } => Some(self.result_menu(won)),
             Scene::Slots { load } => Some(self.slots_menu(load)),
             #[cfg(feature = "dev")]
@@ -467,6 +475,7 @@ impl App {
             | Scene::Controls
             | Scene::Ask(_)
             | Scene::Equip
+            | Scene::Tree { .. }
             | Scene::EquipPick { .. } => None,
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } => None,
@@ -478,8 +487,9 @@ impl App {
         match scene {
             Scene::Pause => self.pause_act(out),
             Scene::Settings => self.settings_act(out),
+            Scene::Hearth => self.hearth_act(out),
+            Scene::Level => self.level_act(out),
             Scene::Shop => self.shop_act(out),
-            Scene::Core => self.core_act(out),
             Scene::Result { .. } => self.result_act(out),
             // 슬롯 창은 제 틱(`tick_slots`)이 고름을 한다(빈 줄 건너뛰기·두 번째 누름).
             Scene::Slots { .. } => {}
@@ -493,6 +503,7 @@ impl App {
             | Scene::Controls
             | Scene::Ask(_)
             | Scene::Equip
+            | Scene::Tree { .. }
             | Scene::EquipPick { .. } => {}
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } => {}
@@ -517,7 +528,13 @@ impl App {
         self.draw_layered(&f, self.scene());
         if matches!(
             self.scene(),
-            Scene::Play | Scene::Ending { .. } | Scene::Shop | Scene::Title
+            Scene::Play
+                | Scene::Ending { .. }
+                | Scene::Hearth
+                | Scene::Level
+                | Scene::Tree { .. }
+                | Scene::Shop
+                | Scene::Title
         ) {
             self.draw_toast(&f);
         }
@@ -570,6 +587,7 @@ impl App {
             Scene::Ask(k) => self.draw_ask(f, k),
             Scene::Controls => self.draw_controls(f),
             Scene::Equip => self.draw_equip(f, self.cursor, None),
+            Scene::Tree { view } => self.draw_tree(f, view),
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.draw_dev_screen(f, tab as usize),
             Scene::EquipPick { slot } => {
@@ -611,7 +629,10 @@ impl App {
             let a = (t / 0.6).min(1.0);
             let cx = f.ox + f.w * 0.5;
             // 화로 가게에서는 목록을 가리지 않게 맨 위에.
-            let y = if self.scene() == Scene::Shop {
+            let y = if matches!(
+                self.scene(),
+                Scene::Hearth | Scene::Level | Scene::Tree { .. } | Scene::Shop
+            ) {
                 0.04
             } else {
                 0.3

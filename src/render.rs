@@ -3,6 +3,7 @@
 //! 스테이지(0019): 굽힌 지형(`scenery.rs`) + 모델(`models.rs` 목록, 상태 → 동작 이름) + 빛(달빛 + 화로, 정점 색). 모델이 없는 종류는
 //! 상자로. 개발 시나리오(스테이지 없음)는 PoC의 회색 아레나 그대로.
 //! 바닥 예고는 모양마다(원판·부채꼴·띠·고리, `TeleShape`) 옅은 면 + 테두리, 채움이 자라 테두리에 닿는 순간 공격(nail 0186~0188).
+use crate::progression::Cell;
 use macroquad::camera::Camera as _;
 use macroquad::prelude::*;
 use miniquad::{UniformDesc, UniformType};
@@ -941,6 +942,47 @@ impl Renderer {
                 );
             }
         }
+        // 숨은 물건(0105): 흔적 자리의 작은 빛 — 등잔 +1은 금빛, 한 모금 +1은 민트(0037 생명 색). 살짝 떠서 숨 쉬고 발밑에 옅은 테.
+        // 생김새는 성소의 종과 닮지 않게(lore — 울리는 종은 보이지 않는다): 둥근 덩어리 하나.
+        for (i, (p, kind, _)) in run.finds.iter().enumerate() {
+            if run.found.get(i).copied().unwrap_or(true) {
+                continue;
+            }
+            let k = 0.5 + 0.5 * (w.time * 2.2 + i as f32 * 1.7).sin();
+            // 종소리 조각(0106): 가늘고 긴 크림빛 조각이 천천히 돌며 떤다 — 덩어리(등잔·한 모금)와 모양부터 다르게, 종 꼴은 아니게.
+            if *kind == crate::stage::Find::Shard {
+                let col = Color::new(0.96, 0.92, 0.82, 1.0);
+                let c = *p + Vec3::Y * (0.55 + 0.06 * k);
+                fl.shadow(*p, 0.2);
+                let tremble = (w.time * 23.0 + i as f32).sin() * 0.04;
+                shaded_box_rot(
+                    c,
+                    vec3(0.1, 0.42, 0.05),
+                    col,
+                    1.0,
+                    Quat::from_rotation_y(w.time * 0.9 + i as f32)
+                        * Quat::from_rotation_z(0.35 + tremble),
+                    c,
+                );
+                fl.ring(
+                    *p,
+                    0.5 + 0.12 * k,
+                    0.0,
+                    360.0,
+                    with_a(Color::new(0.95, 0.81, 0.49, 1.0), 0.2 + 0.25 * k),
+                );
+                continue;
+            }
+            let col = match kind {
+                crate::stage::Find::Lamp => Color::new(0.95, 0.81, 0.49, 1.0),
+                _ => Color::new(0.65, 0.86, 0.78, 1.0),
+            };
+            let c = *p + Vec3::Y * (0.45 + 0.08 * k);
+            fl.shadow(*p, 0.25);
+            shaded_box(c, Vec3::splat(0.22), col, 1.0);
+            shaded_box(c, Vec3::splat(0.34), with_a(col, 0.25 + 0.2 * k), 1.0);
+            fl.ring(*p, 0.6 + 0.15 * k, 0.0, 360.0, with_a(col, 0.25 + 0.25 * k));
+        }
         // 쉼터(0032): 발밑 테 — 아직 안 쉰 곳은 옅게, 다시 일어설 곳은 금빛으로 숨 쉬듯. 쉬는 순간 빛이 퍼진다.
         for (i, r) in run.rests.iter().enumerate() {
             let home = run.rest_at.is_some_and(|(j, _)| j == i);
@@ -1564,7 +1606,15 @@ impl Renderer {
             );
         }
         // 이어 패링(0081·0086): 열린 동안 같은 푸른 반달을 지금 받는 넓이로 — 쌓일수록 둘레로 벌어진다(둘레 전부면 고리).
+        // 맞서는 자(0108): 못 받는 공격까지 막는 동안은 호박색 — 지금 파동도 막는다는 표시.
         if w.player.parry_chain_left > 0.0 && !matches!(w.player.state, PState::Parry { .. }) {
+            let stand = w.tree.has(Cell::OneWhoStands)
+                && w.player.parry_chain_n >= crate::progression::cell::STAND_CHAIN;
+            let (fill_c, edge_c) = if stand {
+                ((1.0, 0.78, 0.4), (1.0, 0.85, 0.5))
+            } else {
+                ((0.6, 0.85, 1.0), (0.75, 0.9, 1.0))
+            };
             let c = crate::world::parry_front_cos(true, w.player.parry_chain_n);
             let arc = if c < -1.0 {
                 360.0
@@ -1577,14 +1627,38 @@ impl Renderer {
                 1.4,
                 w.player.facing,
                 arc,
-                Color::new(0.6, 0.85, 1.0, 0.12 * fade),
+                Color::new(fill_c.0, fill_c.1, fill_c.2, 0.12 * fade),
             );
             fl.ring(
                 pp + Vec3::Y * 0.8,
                 1.4,
                 w.player.facing,
                 arc,
-                Color::new(0.75, 0.9, 1.0, 0.35 * fade),
+                Color::new(edge_c.0, edge_c.1, edge_c.2, 0.35 * fade),
+            );
+        }
+        // 끝맺음(0108): 다음 강타가 다 모여 있는 동안 발밑에 금빛 고리 두 겹이 숨 쉰다(딱 맞춤 고리와 같은 색 — "모였다").
+        if w.player.primed_heavy {
+            let k = 0.5 + 0.5 * (w.time * 4.0).sin();
+            for (r, a) in [(0.75, 0.8), (1.05, 0.45)] {
+                fl.ring(
+                    pp + Vec3::Y * 0.06,
+                    r + 0.08 * k,
+                    0.0,
+                    360.0,
+                    Color::new(1.0, 0.88, 0.45, a * (0.6 + 0.4 * k)),
+                );
+            }
+        }
+        // 비껴서기(0108): 적 등 뒤를 잡은 대시 공격 창 동안 발밑에 민트 고리가 빠르게 뛴다 — 지금 치면 자세 두 배.
+        if w.player.flank {
+            let k = 0.5 + 0.5 * (w.time * 14.0).sin();
+            fl.ring(
+                pp + Vec3::Y * 0.06,
+                0.9,
+                0.0,
+                360.0,
+                Color::new(0.65, 0.95, 0.8, 0.5 + 0.4 * k),
             );
         }
         // 내려찍기(0027): 내려앉은 자리에서 범위만큼 퍼지는 고리(`plunge.range m`).
