@@ -79,6 +79,7 @@ impl App {
             return;
         }
         self.snd(crate::sfx::Id::Buy);
+        self.world.tree = self.progress.tree;
         let name = (TREE[b][d].name)(s());
         self.toast = Some((fill(s().toast_tree, &[name]), TOAST_TIME));
         self.persist();

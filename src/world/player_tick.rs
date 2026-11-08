@@ -4,6 +4,7 @@
 //! → 이동 → 바라보기 → 떨어지기 → 마무리. 새 동작(나무 칸, 0102)은 그 상태의 메서드에 한 줄씩 넣는다.
 //! 상태가 서로 쓰는 시작(회피·패링)은 `try_dodge`·`try_parry` 한 곳.
 use super::*;
+use crate::progression::{cell, Cell};
 
 /// 이번 틱 플레이어 단계가 같이 보는 것 — 입력 기준·조준을 한 번 계산해 상태 메서드들이 나눠 쓴다.
 pub(super) struct Ctx<'a> {
@@ -466,9 +467,31 @@ impl World {
                 self.beat_now = true;
                 pl.beat_chain += 1;
                 pl.since_beat = 0.0;
+                let tree = self.tree;
+                // 맺음타(0107): 마지막 타 뒤 박자로 이은 이 타는 자세 ×1.5(스윙 번호는 `start_swing`이 하나 올린다).
+                if pl.closing_ready {
+                    pl.closing_swing = pl.swings + 1;
+                }
+                // 이어지는 박자(0107): 박자 타 셋마다 둘레 충격.
+                if tree.has(Cell::FlowingBeat) && pl.beat_chain.is_multiple_of(cell::FLOW_EVERY) {
+                    self.shock_now = true;
+                }
+                // 끝맺음(0107): 박자를 다섯 이은 뒤 박자로 낸 마지막 타 → 다음 강타는 다 모여 있다.
+                let hit = if pl.combo_left > 0.0 {
+                    pl.combo_next
+                } else {
+                    0
+                };
+                if tree.has(Cell::FinalMeasure)
+                    && pl.beat_chain >= cell::FINAL_CHAIN
+                    && wpn.after(hit).is_none()
+                {
+                    pl.primed_heavy = true;
+                }
             } else {
                 pl.beat_chain = 0;
             }
+            pl.closing_ready = false;
         }
         go
     }
@@ -509,6 +532,8 @@ impl World {
             pl.since_parry = f32::MAX;
             pl.parry_chain_left = 0.0;
             pl.parry_chain_n = 0;
+            // 되돌려 치기(0107): 이 스윙이 반격.
+            pl.riposte_swing = pl.swings;
             pl.state = PState::Heavy {
                 t: 0.0,
                 swing: pl.swings,
@@ -518,6 +543,11 @@ impl World {
             };
         } else {
             let hit = if dash { weapons::DASH } else { hit };
+            // 비껴서기(0107): 적 등 뒤에서 끝난 회피의 대시 공격.
+            if dash && pl.flank {
+                pl.flank_swing = pl.swings;
+            }
+            pl.flank = false;
             let (s0, a0, r0) = hit_times(t, wpn, hit);
             pl.since_swing = 0.0;
             pl.beat = s0 + a0 + r0;
@@ -602,12 +632,19 @@ impl World {
         if a.attack_held && pl.attack_hold >= t[P::HeavyHoldStart] && after && wpn.heavy.is_some() {
             // 강공격(0030): 평타는 누르는 순간 나갔고, 한 번 누른 채 `heavy.hold start s`를 쥐고 있으면(활성이 끝난 뒤) 모으기로.
             // "그 순간 눌려 있나"만 보면 연타 중 휘두르기 도중의 짧은 누름이 활성 끝에 걸려 모으기로 샜다.
-            pl.state = PState::Charging { t: 0.0 };
+            // 끝맺음(0107): 다 모인 채로 시작한다.
+            let full = t[P::HeavyCharge] * wpn.heavy.map_or(1.0, |h| h.charge);
+            let start = if pl.primed_heavy { full } else { 0.0 };
+            pl.primed_heavy = false;
+            pl.state = PState::Charging { t: start };
         } else if e + cx.dt >= total {
             pl.state = PState::Idle;
             // 마지막 타 뒤에는 처음으로, 아니면 잠깐 다음 타를 기억한다.
             pl.combo_next = after_hit.unwrap_or(0);
-            pl.combo_left = if after_hit.is_some() {
+            // 맺음타(0107): 마지막 타 뒤에도 콤보를 잠깐 기억한다 — 박자에 누르면 첫 타가 박자 타(스태미나 0)로 이어진다.
+            let closing = after_hit.is_none() && self.tree.has(Cell::ClosingBlow);
+            pl.closing_ready = closing;
+            pl.combo_left = if after_hit.is_some() || closing {
                 t[P::ComboKeep]
             } else {
                 0.0
@@ -650,6 +687,11 @@ impl World {
             pl.swings += 1;
             // 모으기 공격의 패링(0089): 떼는 순간부터 패링 창 — 모으는 동안 무방비였던 값.
             pl.release_guard = t[P::ParryWindow];
+            // 고른 호흡(0107): 딱 맞춰 뗀 강타는 강타 기력을 돌려준다.
+            let perfect = e >= full_at && e <= full_at + PERFECT_RELEASE;
+            if perfect && self.tree.has(Cell::EvenBreath) {
+                pl.stamina = (pl.stamina + t[P::HeavyStamina]).min(t[P::StaminaMax]);
+            }
             pl.state = PState::Heavy {
                 t: 0.0,
                 swing: pl.swings,
@@ -815,6 +857,16 @@ impl World {
             // 회피는 누르는 순간 그대로, 끝났을 때 아직 쥐고 있으면 달리기(0076, KB nail 0209) — 톡 누름은 회피보다 짧아
             // 예전과 같다. 회피의 기세를 그대로 잇는다(속도를 0으로 떨어뜨리지 않는다).
             pl.running = cx.a.dodge_held && pl.stamina > 0.0;
+            // 비껴서기(0107): 회피가 가까운 적의 등 뒤(그 적이 바라보는 쪽의 반대 반평면)에서 끝났다.
+            if self.tree.has(Cell::Sidestep) {
+                let p = self.player.pos;
+                self.player.flank = self.enemies.iter().any(|en| {
+                    let d = vec3(p.x - en.pos.x, 0.0, p.z - en.pos.z);
+                    en.active()
+                        && d.length() - en.radius <= cell::SIDESTEP_RANGE
+                        && d.dot(en.facing_dir()) < 0.0
+                });
+            }
         } else {
             pl.state = PState::Dodge { t: e + cx.dt, dir };
         }
@@ -878,7 +930,13 @@ impl World {
             && cx.world_move.length_squared() > 0.04
             && pl.stamina > 0.0;
         if keep {
-            pl.stamina = (pl.stamina - RUN_STAMINA * cx.dt).max(0.0);
+            // 멈추지 않는 걸음(0107): 달리기 기력 ×0.7.
+            let k = if self.tree.has(Cell::UnbrokenStride) {
+                cell::STRIDE_RUN
+            } else {
+                1.0
+            };
+            pl.stamina = (pl.stamina - RUN_STAMINA * k * cx.dt).max(0.0);
             pl.stamina_idle = 0.0;
             pl.dash_left = pl.dash_left.max(DASH_ATTACK_LATE);
         } else {

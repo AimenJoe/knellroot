@@ -224,6 +224,7 @@ impl App {
         // 잔불은 판을 넘어 남는다(0064 M1). 장신구·성장은 능력치로, 연 상자는 비어 있다(M3).
         self.world.embers = self.progress.embers;
         self.world.apply_stats(self.progress.stats(), true);
+        self.world.tree = self.progress.tree;
         self.run.set_opened(&self.progress.chests);
         self.run.set_found(&self.progress.finds);
         // 처음 이기는 판이면 핵이 스스로 다가온다(lore CANON, 0105).

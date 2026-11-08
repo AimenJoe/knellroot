@@ -48,7 +48,7 @@ pub const KO: Strings = Strings {
     cell_final_measure_d:
         "박자 다섯을 잇고 마지막 타를 박자에 맞히면, 다음 강타는 모으지 않아도 다 모인 강타",
     cell_catch: "받아내기",
-    cell_catch_d: "패링이 적의 자세에 주는 몫 +50%",
+    cell_catch_d: "패링이 적의 자세 막대를 25% 채운다(문지기는 반)",
     cell_turn_it_back: "되돌려 치기",
     cell_turn_it_back_d: "패링 반격 타가 둘레 2m의 적도 휘청이게 한다",
     cell_gathered: "모은 맞받기",
@@ -57,7 +57,8 @@ pub const KO: Strings = Strings {
     cell_open_breach: "무너진 틈",
     cell_open_breach_d: "자세가 깨진 적에게 맞힌 다 모은 강타는 깨짐을 처음부터 다시",
     cell_one_who_stands: "맞서는 자",
-    cell_one_who_stands_d: "이어 패링이 셋 쌓인 동안 못 받는 공격도 패링하면 피해 반",
+    cell_one_who_stands_d:
+        "이어 패링이 셋 쌓인 동안 못 받는 공격(뿌리 파동)도 막는다 — 튕기지는 못한다",
     cell_stride: "멈추지 않는 걸음",
     cell_stride_d: "달리기 기력 −30%",
     cell_sidestep: "비껴서기",

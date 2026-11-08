@@ -161,12 +161,12 @@ pub enum Cell {
 }
 
 /// 칸 하나의 표 줄: 칸·이름·설명·숫자 칸인가(갈래마다 하나까지 — 0095 원칙, 시험).
-/// `cell`은 칸 동작(G5)이 `Tree::has`로 읽는다 — 그 전까지는 시험만 읽는다.
-#[cfg_attr(not(test), allow(dead_code))]
+/// `number`는 표 규칙 시험만 읽는다(갈래마다 숫자 칸 하나).
 pub struct CellDef {
     pub cell: Cell,
     pub name: Tr,
     pub desc: Tr,
+    #[cfg_attr(not(test), allow(dead_code))]
     pub number: bool,
 }
 
@@ -293,6 +293,37 @@ impl Branch {
     }
 }
 
+/// 칸 동작의 값(0107 G5 — 0102 4절, 판정에서 고친다).
+pub mod cell {
+    /// 이어지는 박자: 박자 타 셋마다 둘레 반지름(m)·자세 피해.
+    pub const FLOW_EVERY: u32 = 3;
+    pub const FLOW_RADIUS: f32 = 1.5;
+    pub const FLOW_POISE: f32 = 2.0;
+    /// 맺음타: 마지막 타 뒤 박자로 이은 첫 타의 자세 배.
+    pub const CLOSING_POISE: f32 = 1.5;
+    /// 빈틈의 박자: 공격 뒤 굳은(되돌아가는) 적에게 박자 타 자세 배.
+    pub const GAP_POISE: f32 = 2.0;
+    /// 끝맺음: 박자를 이만큼 이은 뒤의 마지막 타.
+    pub const FINAL_CHAIN: u32 = 5;
+    /// 받아내기: 패링이 적 자세 막대를 이만큼 채운다(문지기는 반).
+    pub const CATCH_POISE: f32 = 0.25;
+    /// 되돌려 치기: 반격이 맞으면 둘레(m)의 다른 적도 이만큼(초) 휘청.
+    pub const TURN_BACK_RADIUS: f32 = 2.0;
+    pub const TURN_BACK_STAGGER: f32 = 0.35;
+    /// 맞서는 자: 이어 패링이 이만큼 쌓인 동안(첫 튕김 = 0) 못 받는 공격도 막는다.
+    pub const STAND_CHAIN: u32 = 2;
+    /// 멈추지 않는 걸음: 달리기 기력 배.
+    pub const STRIDE_RUN: f32 = 0.7;
+    /// 비껴서기: 회피가 끝날 때 이 안(m)의 적 등 뒤면, 그 대시 공격 자세 배.
+    pub const SIDESTEP_RANGE: f32 = 3.5;
+    pub const SIDESTEP_POISE: f32 = 2.0;
+    /// 기우는 땅: 땅 돌리기가 멈출 때 바깥으로 더 미는 거리(m).
+    pub const TILT_PUSH: f32 = 1.0;
+    /// 착지의 순간: 내려찍기 뒤 늦은 바깥 고리(초, 반지름 배).
+    pub const LANDING_DELAY: f32 = 0.3;
+    pub const LANDING_RANGE: f32 = 1.8;
+}
+
 /// 나무 점수(0102 5절): 문지기 핵(이길 때마다·셋까지) + 주운 종소리 조각.
 pub fn tree_points(cores: u32, finds: &[String]) -> u32 {
     cores
@@ -332,8 +363,7 @@ impl Tree {
         points.saturating_sub(self.spent())
     }
 
-    /// 이 칸이 열렸나 — 칸 동작(G5)이 읽는다.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// 이 칸이 열렸나 — 칸 동작(0107)이 읽는다.
     pub fn has(&self, cell: Cell) -> bool {
         TREE.iter().enumerate().any(|(b, row)| {
             row.iter()

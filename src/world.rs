@@ -4,6 +4,7 @@ use macroquad::prelude::*;
 
 use crate::ground::Ground;
 use crate::input::Actions;
+use crate::progression::{cell, Cell};
 use crate::tuning::{
     Tuning, BEAT_CUE_MIN, BEAT_CUE_SHOT_ARC, BEAT_CUE_SHOT_REACH, BEAT_WINDOW, BEAT_WINDOW_MIN,
     BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID,
@@ -386,6 +387,15 @@ pub struct Player {
     /// 모으기 공격의 패링(0089, 사장 "모으기 공격에는 패링도 달려있어야 함. 리스크가 있는 공격이라 보상"): 모은 공격(강타·모은 사격)을
     /// 뗀 뒤 남은 패링 창(초, 시작 = `parry.window s`). 그 공격 동작 안에서만 열린다.
     pub release_guard: f32,
+    /// 나무 칸 동작(0107)의 표지: 마지막 타 뒤 박자로 이은 스윙(맺음타), 다음 강타가 다 모여 있다(끝맺음), 반격 스윙(되돌려 치기),
+    /// 모으기 패링으로 튕긴 강타 스윙(모은 맞받기), 회피가 적 등 뒤에서 끝남(비껴서기)·그 대시 공격 스윙.
+    pub closing_swing: u32,
+    pub closing_ready: bool,
+    pub primed_heavy: bool,
+    pub riposte_swing: u32,
+    pub gathered_swing: u32,
+    pub flank: bool,
+    pub flank_swing: u32,
     /// 박자(2026-11-07): 마지막 평타가 시작된 뒤 흐른 시간, 그 타의 한 스윙 시간(= 그 무기의 박자, 0 = 없음),
     /// 이번 공격 누름이 박자 창 안이었나(누른 순간에 판정 — 받아 둔 이른 누름은 거짓).
     pub since_swing: f32,
@@ -486,6 +496,10 @@ pub struct World {
     spill_at: Option<(bool, f32)>,
     /// 이번 틱에 내려찍기가 땅에 닿았다 — `apply_strike`가 친다(0027).
     plunge_now: bool,
+    /// 이어지는 박자(0107): 이번 틱에 박자 셋째 타가 나갔다 — 둘레 충격.
+    shock_now: bool,
+    /// 착지의 순간(0107): 늦은 바깥 고리까지 남은 초.
+    late_ring: Option<f32>,
     /// 이번 틱에 강공격이 다 모였다(`Event::Charged`를 `apply_strike`가 낸다).
     charged_now: bool,
     /// 이번 틱에 상호작용을 눌렀고 손이 비어 있다(0032) — 스테이지가 읽는다(월드는 쉼터를 모른다).
@@ -499,6 +513,8 @@ pub struct World {
     pub drops: Vec<crate::ember::Ember>,
     /// 합친 능력치(0064 M3 — 장신구·성장). 앱이 `apply_stats`로 넣는다.
     pub stats: crate::stats::Stats,
+    /// 연 기술 나무(0106) — 칸 동작은 그 동사 자리에서 `tree.has`(0107). 앱이 기록에서 넣는다.
+    pub tree: crate::progression::Tree,
     /// 마지막으로 잔불을 주운 시각(`time`) — HUD가 수를 잠깐 키운다.
     pub ember_at: f32,
     /// 금 간 땅(망치 여진)·날고 있는 수류탄·폭발 고리(0051).
@@ -548,6 +564,13 @@ impl World {
                 parry_chain_left: 0.0,
                 parry_chain_n: 0,
                 release_guard: 0.0,
+                closing_swing: 0,
+                closing_ready: false,
+                primed_heavy: false,
+                riposte_swing: 0,
+                gathered_swing: 0,
+                flank: false,
+                flank_swing: 0,
                 dash_left: 0.0,
                 connected: 0,
                 since_swing: f32::MAX,
@@ -597,6 +620,8 @@ impl World {
             spill_at: None,
             held: Actions::default(),
             plunge_now: false,
+            shock_now: false,
+            late_ring: None,
             charged_now: false,
             interact: false,
             interact_here: false,
@@ -604,6 +629,7 @@ impl World {
             embers: 0,
             drops: Vec::new(),
             stats: crate::stats::Stats::default(),
+            tree: crate::progression::Tree::default(),
             ember_at: f32::MIN,
             cracks: Vec::new(),
             bombs: Vec::new(),
@@ -1370,6 +1396,29 @@ impl World {
     fn apply_strike(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
         if std::mem::take(&mut self.plunge_now) {
             self.plunge(t, ev);
+            // 착지의 순간(0107): 0.3초 뒤 바깥 고리 한 번 더.
+            if self.tree.has(Cell::LandingBeat) {
+                self.late_ring = Some(cell::LANDING_DELAY);
+            }
+        }
+        if let Some(left) = self.late_ring {
+            if left <= TICK_DT {
+                self.late_ring = None;
+                self.outer_ring(t, ev);
+            } else {
+                self.late_ring = Some(left - TICK_DT);
+            }
+        }
+        // 이어지는 박자(0107): 박자 셋째 타가 나가는 순간 둘레에 작은 충격(자세 피해만).
+        if std::mem::take(&mut self.shock_now) {
+            let p = self.player.pos;
+            for en in &mut self.enemies {
+                let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+                if en.active() && d.length() - en.radius <= cell::FLOW_RADIUS {
+                    add_poise(en, cell::FLOW_POISE * self.stats.poise, None, t, ev);
+                }
+            }
+            ev.push(Event::Plunge { at: p });
         }
         if std::mem::take(&mut self.charged_now) {
             ev.push(Event::Charged);
@@ -1405,6 +1454,8 @@ impl World {
                     knock: h.knock,
                     heavy: None,
                     perfect: false,
+                    beat: self.player.swing_beat,
+                    dash: hit == weapons::DASH,
                 }
             }
             PState::Heavy {
@@ -1437,6 +1488,8 @@ impl World {
                     knock: t[P::HeavyKnock] * if perfect { 1.5 } else { 1.0 },
                     heavy: Some(full),
                     perfect,
+                    beat: false,
+                    dash: false,
                 }
             }
             _ => return,
@@ -1477,6 +1530,7 @@ impl World {
         let half = (s.arc * 0.5).to_radians().cos();
         let mut stop = false;
         let mut heavy_hit = false;
+        let mut first_hit: Option<(Vec3, f32, Vec3)> = None;
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing {
                 continue;
@@ -1528,7 +1582,40 @@ impl World {
                 swing,
                 s.heavy.is_some() || crit,
             ));
-            add_poise(en, s.poise * self.stats.poise, primed, t, ev);
+            // 나무 칸(0107): 맺음타 ×1.5(마지막 타 뒤 박자로 이은 타) · 빈틈의 박자 ×2(굳은 적에게 박자 타) · 비껴서기 ×2(등 뒤 대시 공격).
+            let mut pk = 1.0;
+            if s.heavy.is_none() && s.beat {
+                if swing == self.player.closing_swing && self.tree.has(Cell::ClosingBlow) {
+                    pk *= cell::CLOSING_POISE;
+                }
+                if matches!(en.state, EState::Recover { .. }) && self.tree.has(Cell::GapBeat) {
+                    pk *= cell::GAP_POISE;
+                }
+            }
+            if swing == self.player.flank_swing && self.tree.has(Cell::Sidestep) {
+                pk *= cell::SIDESTEP_POISE;
+            }
+            // 무너진 틈(0107): 깨진 적에게 다 모은 강타 = 깨짐을 처음부터.
+            let was_broken = en.broken > 0.0;
+            add_poise(en, s.poise * self.stats.poise * pk, primed, t, ev);
+            // 모은 맞받기(0107): 모으기 패링으로 튕긴 그 강타가 맞으면 자세가 곧바로 깨진다(문지기는 막대 반).
+            if s.heavy.is_some()
+                && swing == self.player.gathered_swing
+                && self.tree.has(Cell::GatheredRiposte)
+            {
+                let k = if en.boss { 0.5 } else { 1.0 };
+                add_poise(en, poise_max(en, t) * k, None, t, ev);
+            }
+            if s.heavy == Some(true) && was_broken && self.tree.has(Cell::OpenBreach) {
+                let dur = if en.boss {
+                    t[P::PoiseBreakBoss]
+                } else {
+                    t[P::PoiseBreak]
+                };
+                en.broken = dur;
+                en.exposed = en.exposed.max(dur);
+            }
+            first_hit.get_or_insert((en.pos, en.radius, dir));
             ev.push(Event::Hit {
                 at: en.pos + Vec3::Y * en.height * 0.6,
             });
@@ -1564,7 +1651,70 @@ impl World {
                 };
             // 공격자 확인(KB, Hollow Knight 반동): 맞힌 스윙은 남은 내딛기를 멈춘다 — 빗나감과 맞힘이 손에서 다르게.
             self.player.connected = swing;
+            self.strike_cells(t, &s, first_hit, ev);
         }
+    }
+
+    /// 맞힌 스윙 뒤의 나무 칸(0107): 되돌려 치기(반격이 둘레도 휘청) · 길을 여는 발(대시 공격이 맞힌 적을 지나쳐 등 뒤에).
+    fn strike_cells(
+        &mut self,
+        t: &Tuning,
+        s: &Strike,
+        first: Option<(Vec3, f32, Vec3)>,
+        ev: &mut Vec<Event>,
+    ) {
+        let _ = (t, ev);
+        if s.swing == self.player.riposte_swing && self.tree.has(Cell::TurnItBack) {
+            let p = self.player.pos;
+            for en in &mut self.enemies {
+                let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+                if en.active()
+                    && en.hit_by != s.swing
+                    && d.length() - en.radius <= cell::TURN_BACK_RADIUS
+                {
+                    en.state = EState::Stagger {
+                        t: 0.0,
+                        dur: cell::TURN_BACK_STAGGER,
+                    };
+                    en.sway = d.normalize_or_zero() * 0.6;
+                    en.sway_t = 0.0;
+                }
+            }
+        }
+        if s.dash && self.tree.has(Cell::PathOpeningStep) {
+            if let Some((at, r, dir)) = first {
+                let to = at + dir * (r + PLAYER_RADIUS + 0.2);
+                self.player.pos = vec3(to.x, self.player.pos.y, to.z);
+                self.player.vel = Vec3::ZERO;
+            }
+        }
+    }
+
+    /// 착지의 순간(0107): 내려찍기의 늦은 바깥 고리 — 처음 고리 밖, `LANDING_RANGE`배 안의 적만.
+    fn outer_ring(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
+        let p = self.player.pos;
+        let (inner, outer) = (t[P::PlungeRange], t[P::PlungeRange] * cell::LANDING_RANGE);
+        for en in &mut self.enemies {
+            if !en.active() || (en.pos.y - p.y).abs() > HIT_DY {
+                continue;
+            }
+            let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z).length() - en.radius;
+            if d <= inner || d > outer {
+                continue;
+            }
+            en.hp -= hurt_by(en, self.stats.dmg + t[P::PlungeDamage] as i32, false, t);
+            add_poise(en, 2.0 * self.stats.poise, None, t, ev);
+            en.hurt = 0.15;
+            if en.hp <= 0 {
+                en.state = EState::Dead;
+                self.kills += 1;
+                ev.push(Event::EnemyDown { at: en.pos });
+            }
+            ev.push(Event::Hit {
+                at: en.pos + Vec3::Y * en.height * 0.6,
+            });
+        }
+        ev.push(Event::Plunge { at: p });
     }
 
     /// 땅 돌리기(0012). 누른 틱에 `Event::Turn`(카메라가 돈다), 그리고 카메라가 90°에 닿아 **멈추는 순간** 쏟는다:
@@ -1608,6 +1758,7 @@ impl World {
         // 멈추는 순간 세상이 한 박자 멈춘다(카메라의 "탁"과 같은 틱 — KB special-move-impact "시간").
         self.hitstop = self.hitstop.max(t[P::Hitstop]);
         let p = self.player.pos;
+        let tilt = self.tree.has(Cell::TiltingGround);
         for en in &mut self.enemies {
             if !en.active() {
                 continue;
@@ -1622,6 +1773,10 @@ impl World {
             if r > 1e-3 {
                 let dir = spill_dir(d, cw, t[P::SpillOut]);
                 en.knock = dir * slide * KNOCK_DECAY;
+                // 기우는 땅(0107): 바깥으로 1m 더 — 둘러싼 대형이 흩어진다.
+                if tilt {
+                    en.knock += d / r * cell::TILT_PUSH * KNOCK_DECAY;
+                }
                 en.spilling = slide > 0.05;
                 // 몸짓 세기: 많이 미끄러질수록 크게, 가까운 적·보스도 보일 만큼은(0.35).
                 let max = t[P::SpillMax].max(1e-3);
@@ -1717,6 +1872,10 @@ impl World {
         // 플레이어를 친 적의 자리(첫 하나) — 밀려나는 쪽.
         let mut hurt_player: Option<Vec3> = None;
         let mut parried: Vec<usize> = Vec::new();
+        let mut blocked = false;
+        let stand = self.tree.has(Cell::OneWhoStands)
+            && self.player.parry_chain_left > 0.0
+            && self.player.parry_chain_n >= cell::STAND_CHAIN;
         for (i, en) in self.enemies.iter_mut().enumerate() {
             // 뛰는 중(0100): 몸은 포물선을 따라가고 생각하지도 치지도 않는다. 쓰러지면 그 자리에서 내려앉는다.
             if en.hop.is_some() && !en.alive() {
@@ -1758,6 +1917,9 @@ impl World {
             if out.hit && !jumped && reach {
                 if parrying && en.parryable() && in_front(en.pos) {
                     parried.push(i);
+                } else if parrying && !en.parryable() && in_front(en.pos) && stand {
+                    // 맞서는 자(0107): 이어 패링이 쌓인 동안은 못 받는 공격도 막는다(튕기지는 못한다 — 드러남·휘청 없음).
+                    blocked = true;
                 } else {
                     hurt_player.get_or_insert(en.pos);
                 }
@@ -1781,7 +1943,13 @@ impl World {
                 }
             }
         }
+        if blocked {
+            ev.push(Event::Parry {
+                at: p + Vec3::Y * 1.0,
+            });
+        }
         if !parried.is_empty() {
+            let catch = self.tree.has(Cell::Catch);
             for &i in &parried {
                 let en = &mut self.enemies[i];
                 let dur = if en.boss {
@@ -1796,9 +1964,21 @@ impl World {
                 en.knock = away * PARRY_PUSH * KNOCK_DECAY * if en.boss { 0.3 } else { 1.0 };
                 en.sway = away * 0.8;
                 en.sway_t = 0.0;
+                // 받아내기(0107): 패링이 적의 자세 막대를 채운다(문지기는 반).
+                if catch {
+                    let k = if en.boss { 0.5 } else { 1.0 };
+                    let amount = poise_max(en, t) * cell::CATCH_POISE * k;
+                    add_poise(en, amount, None, t, ev);
+                }
                 ev.push(Event::Parry {
                     at: en.pos + Vec3::Y * en.height * 0.6,
                 });
+            }
+            // 모은 맞받기(0107): 모으기 패링(떼는 순간의 창)으로 튕겼으면 그 강타 스윙을 기억한다 — 맞으면 자세가 깨진다.
+            if let (PState::Heavy { swing, .. }, true) =
+                (self.player.state, self.player.release_guard > 0.0)
+            {
+                self.player.gathered_swing = swing;
             }
             // 튕기면 곧바로 움직일 수 있다(반격하라고) — 세상은 한 박자 멈춘다(명중보다 크게, KB).
             // 이어 패링(0081)으로 튕겼으면 그 사이 시작한 동작(회피 등)은 그대로 둔다.
@@ -2026,6 +2206,9 @@ struct Strike {
     /// 강타면 Some(다 모았나).
     heavy: Option<bool>,
     perfect: bool,
+    /// 박자에 맞춘 평타인가·대시 공격인가(나무 칸, 0107).
+    beat: bool,
+    dash: bool,
 }
 
 /// 콤보 한 타의 선딜·활성·후딜(0051: 랩 평타 × 무기 표의 `time`).
@@ -5956,5 +6139,440 @@ mod tests {
         assert!((tt[P::StaminaRegen] - t[P::StaminaRegen] * 1.2).abs() < 1e-3);
         // 판정 창은 레벨이 건드리지 않는다(0095 원칙 2).
         assert_eq!(tt[P::ParryWindow], t[P::ParryWindow]);
+    }
+
+    // ── 나무 칸 동작(0107, v0.4.0 G5) ─────────────────────────────────────────────
+
+    /// 이 칸들(과 그 앞 칸들)을 연 나무.
+    fn tree_with(cells: &[Cell]) -> crate::progression::Tree {
+        let mut tr = crate::progression::Tree::default();
+        for (b, row) in crate::progression::TREE.iter().enumerate() {
+            for (d, def) in row.iter().enumerate() {
+                if cells.contains(&def.cell) {
+                    tr.open[b] = tr.open[b].max(d as u8 + 1);
+                }
+            }
+        }
+        tr
+    }
+
+    /// 앞(-z)의 적을 이 스윙으로 친다 — 활성 첫 틱의 `apply_strike` 한 번.
+    fn strike_once(w: &mut World, t: &Tuning, state: PState) -> Vec<Event> {
+        w.player.facing = std::f32::consts::PI;
+        w.player.state = state;
+        let mut ev = Vec::new();
+        w.apply_strike(t, &mut ev);
+        ev
+    }
+
+    fn light_at_active(t: &Tuning, w: &World, swing: u32, hit: u8) -> PState {
+        let (s0, _, _) = hit_times(t, w.player.weapon.def(), hit);
+        PState::Attack {
+            t: s0 + 1e-4,
+            swing,
+            dir: vec3(0.0, 0.0, -1.0),
+            hit,
+        }
+    }
+
+    fn heavy_at_active(t: &Tuning, w: &World, swing: u32, full: bool) -> PState {
+        let (s0, _, _) = heavy_times(t, w.player.weapon.def());
+        PState::Heavy {
+            t: s0 + 1e-4,
+            swing,
+            dir: vec3(0.0, 0.0, -1.0),
+            full,
+            perfect: false,
+        }
+    }
+
+    #[test]
+    fn even_breath_gives_a_perfect_heavy_its_stamina_back() {
+        let t = Tuning::default();
+        let left = |cells: &[Cell]| {
+            let mut w = World::new("test", 20.0);
+            w.tree = tree_with(cells);
+            let h = w.player.weapon.def().heavy.unwrap();
+            let full = t[P::HeavyCharge] * h.charge;
+            w.player.state = PState::Charging { t: full + 0.05 };
+            w.player.stamina = 50.0;
+            w.step(&Actions::default(), &t);
+            assert!(matches!(
+                w.player.state,
+                PState::Heavy { perfect: true, .. }
+            ));
+            w.player.stamina
+        };
+        assert!((left(&[]) - (50.0 - t[P::HeavyStamina])).abs() < 1e-3);
+        assert!((left(&[Cell::EvenBreath]) - 50.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn flowing_beat_sends_a_shock_on_every_third_beat_hit() {
+        let t = Tuning::default();
+        let poise = |cells: &[Cell]| {
+            let mut w = World::new("test", 20.0);
+            w.tree = tree_with(cells);
+            let i = mob_with(&mut w, vec3(0.0, 0.0, 1.0), 99);
+            idle(&mut w);
+            let pl = &mut w.player;
+            (pl.beat, pl.since_swing) = (0.5, 0.5);
+            (pl.combo_left, pl.combo_next, pl.beat_chain) = (0.3, 1, 2);
+            w.step(
+                &Actions {
+                    attack: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            assert_eq!(w.player.beat_chain, 3, "the third beat in a row");
+            w.enemies[i].poise
+        };
+        assert_eq!(
+            poise(&[]),
+            0.0,
+            "no shock without the cell (the swing has not landed yet)"
+        );
+        assert!(
+            poise(&[Cell::FlowingBeat]) > 0.0,
+            "the shock reaches the foe behind"
+        );
+    }
+
+    #[test]
+    fn closing_blow_keeps_the_combo_after_the_last_hit_and_hits_harder_on_beat() {
+        let t = Tuning::default();
+        for cell in [false, true] {
+            let mut w = World::new("test", 20.0);
+            if cell {
+                w.tree = tree_with(&[Cell::ClosingBlow]);
+            }
+            let wpn = w.player.weapon.def();
+            let last = (0..8u8).find(|&h| wpn.after(h).is_none()).unwrap();
+            let (s0, a0, r0) = hit_times(&t, wpn, last);
+            w.player.state = PState::Attack {
+                t: s0 + a0 + r0 - 1e-3,
+                swing: 1,
+                dir: vec3(0.0, 0.0, -1.0),
+                hit: last,
+            };
+            w.step(&Actions::default(), &t);
+            assert_eq!(w.player.state, PState::Idle);
+            assert_eq!(
+                w.player.combo_left > 0.0,
+                cell,
+                "the beat still counts after the last hit"
+            );
+            assert_eq!(w.player.closing_ready, cell);
+        }
+        // 맺음타로 이은 박자 타는 자세 ×1.5.
+        let poise = |cell: bool| {
+            let mut w = World::new("test", 20.0);
+            if cell {
+                w.tree = tree_with(&[Cell::ClosingBlow]);
+            }
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            idle(&mut w);
+            w.player.swing_beat = true;
+            w.player.closing_swing = 4;
+            let st = light_at_active(&t, &w, 4, 0);
+            strike_once(&mut w, &t, st);
+            w.enemies[i].poise
+        };
+        assert!((poise(true) / poise(false) - cell::CLOSING_POISE).abs() < 1e-3);
+    }
+
+    #[test]
+    fn gap_beat_doubles_poise_on_a_foe_recovering_from_its_swing() {
+        let t = Tuning::default();
+        let poise = |cell: bool, beat: bool| {
+            let mut w = World::new("test", 20.0);
+            if cell {
+                w.tree = tree_with(&[Cell::GapBeat]);
+            }
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            w.enemies[i].state = EState::Recover { t: 0.0 };
+            w.player.swing_beat = beat;
+            let st = light_at_active(&t, &w, 3, 0);
+            strike_once(&mut w, &t, st);
+            w.enemies[i].poise
+        };
+        assert!((poise(true, true) / poise(false, true) - cell::GAP_POISE).abs() < 1e-3);
+        assert!(
+            (poise(true, false) - poise(false, false)).abs() < 1e-4,
+            "only beat hits"
+        );
+    }
+
+    #[test]
+    fn final_measure_primes_the_next_heavy_after_five_beats_and_a_beat_finish() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.tree = tree_with(&[Cell::FinalMeasure]);
+        let wpn = w.player.weapon.def();
+        let last = (0..8u8).find(|&h| wpn.after(h).is_none()).unwrap();
+        let pl = &mut w.player;
+        (pl.beat, pl.since_swing) = (0.5, 0.5);
+        (pl.combo_left, pl.combo_next, pl.beat_chain) = (0.3, last, 4);
+        w.step(
+            &Actions {
+                attack: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.player.primed_heavy, "five beats and the last hit on beat");
+        // 다음 모으기는 다 모인 채로 시작한다.
+        let (s0, a0, _) = hit_times(&t, wpn, 0);
+        w.player.state = PState::Attack {
+            t: s0 + a0 + 0.01,
+            swing: 9,
+            dir: vec3(0.0, 0.0, -1.0),
+            hit: 0,
+        };
+        w.player.attack_hold = t[P::HeavyHoldStart] + 0.1;
+        w.step(
+            &Actions {
+                attack_held: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        let full = t[P::HeavyCharge] * wpn.heavy.unwrap().charge;
+        assert!(
+            matches!(w.player.state, PState::Charging { t: c } if c >= full - 1e-4),
+            "{:?}",
+            w.player.state
+        );
+        assert!(!w.player.primed_heavy, "used once");
+    }
+
+    #[test]
+    fn catch_makes_a_parry_fill_the_poise_bar() {
+        let t = Tuning::default();
+        let after_parry = |cell: bool| {
+            let mut w = mob_swinging_in_front(&t);
+            if cell {
+                w.tree = tree_with(&[Cell::Catch]);
+            }
+            w.player.state = PState::Parry { t: 0.0 };
+            for _ in 0..60 {
+                if w.step(&Actions::default(), &t)
+                    .iter()
+                    .any(|e| matches!(e, Event::Parry { .. }))
+                {
+                    break;
+                }
+            }
+            (w.enemies[0].poise, poise_max(&w.enemies[0], &t))
+        };
+        assert_eq!(after_parry(false).0, 0.0);
+        let (p, max) = after_parry(true);
+        assert!((p - max * cell::CATCH_POISE).abs() < 1e-3, "{p} of {max}");
+    }
+
+    #[test]
+    fn turn_it_back_staggers_foes_around_a_riposte_that_lands() {
+        let t = Tuning::default();
+        let side_staggered = |cell: bool| {
+            let mut w = World::new("test", 20.0);
+            if cell {
+                w.tree = tree_with(&[Cell::TurnItBack]);
+            }
+            mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            let j = mob_with(&mut w, vec3(1.6, 0.0, 0.6), 99);
+            idle(&mut w);
+            w.player.riposte_swing = 5;
+            let st = heavy_at_active(&t, &w, 5, true);
+            strike_once(&mut w, &t, st);
+            matches!(w.enemies[j].state, EState::Stagger { .. })
+        };
+        assert!(!side_staggered(false));
+        assert!(side_staggered(true));
+    }
+
+    #[test]
+    fn gathered_riposte_breaks_poise_when_the_charged_parrys_heavy_lands() {
+        let t = Tuning::default();
+        let broke = |cell: bool| {
+            let mut w = World::new("test", 20.0);
+            if cell {
+                w.tree = tree_with(&[Cell::GatheredRiposte]);
+            }
+            mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            idle(&mut w);
+            w.player.gathered_swing = 7;
+            let st = heavy_at_active(&t, &w, 7, true);
+            strike_once(&mut w, &t, st)
+                .iter()
+                .any(|e| matches!(e, Event::Break { .. }))
+        };
+        assert!(!broke(false), "one heavy does not break a 99-hp foe");
+        assert!(broke(true));
+    }
+
+    #[test]
+    fn open_breach_restarts_the_break_with_a_full_heavy() {
+        let t = Tuning::default();
+        let broken_after = |cell: bool| {
+            let mut w = World::new("test", 20.0);
+            if cell {
+                w.tree = tree_with(&[Cell::OpenBreach]);
+            }
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            w.enemies[i].broken = 0.1;
+            w.enemies[i].poise_lock = 5.0;
+            let st = heavy_at_active(&t, &w, 8, true);
+            strike_once(&mut w, &t, st);
+            w.enemies[i].broken
+        };
+        assert!((broken_after(false) - 0.1).abs() < 1e-4);
+        assert!((broken_after(true) - t[P::PoiseBreak]).abs() < 1e-4);
+    }
+
+    #[test]
+    fn one_who_stands_blocks_a_root_wave_while_three_parries_are_chained() {
+        let t = Tuning::default();
+        let hurt = |cell: bool| {
+            let mut w = world_with_boss();
+            if cell {
+                w.tree = tree_with(&[Cell::OneWhoStands]);
+            }
+            let en = &mut w.enemies[0];
+            en.pos = vec3(0.0, 0.0, -2.0);
+            en.atk = Atk::Wave;
+            en.state = EState::Wave { t: 0.0 };
+            en.landed = false;
+            w.player.facing = std::f32::consts::PI;
+            let mut hurt = false;
+            for _ in 0..60 {
+                w.player.parry_chain_left = 0.5;
+                w.player.parry_chain_n = cell::STAND_CHAIN;
+                hurt |= w.step(&Actions::default(), &t).contains(&Event::PlayerHurt);
+            }
+            hurt
+        };
+        assert!(hurt(false), "the wave still cannot be parried");
+        assert!(!hurt(true), "but a long chain stands against it");
+    }
+
+    #[test]
+    fn unbroken_stride_makes_running_cheaper() {
+        let t = Tuning::default();
+        let spent = |cell: bool| {
+            let mut w = World::new("test", 20.0);
+            if cell {
+                w.tree = tree_with(&[Cell::UnbrokenStride]);
+            }
+            w.player.running = true;
+            w.player.stamina = 100.0;
+            let a = Actions {
+                dodge_held: true,
+                move_dir: vec2(0.0, 1.0),
+                ..Default::default()
+            };
+            for _ in 0..30 {
+                w.step(&a, &t);
+            }
+            100.0 - w.player.stamina
+        };
+        assert!((spent(true) / spent(false) - cell::STRIDE_RUN).abs() < 0.02);
+    }
+
+    #[test]
+    fn sidestep_marks_a_dodge_that_ends_behind_a_foe_and_doubles_that_dash_attacks_poise() {
+        let t = Tuning::default();
+        let flank = |behind: bool| {
+            let mut w = World::new("test", 20.0);
+            w.tree = tree_with(&[Cell::Sidestep]);
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.5), 99);
+            idle(&mut w);
+            // 적이 +z(플레이어 쪽)를 보면 플레이어는 앞, -z를 보면 등 뒤.
+            w.enemies[i].facing = if behind { std::f32::consts::PI } else { 0.0 };
+            w.player.state = PState::Dodge {
+                t: t[P::DodgeTime] - 1e-3,
+                dir: vec3(0.0, 0.0, 1.0),
+            };
+            w.step(&Actions::default(), &t);
+            w.player.flank
+        };
+        assert!(flank(true));
+        assert!(!flank(false));
+        let poise = |cell: bool| {
+            let mut w = World::new("test", 20.0);
+            if cell {
+                w.tree = tree_with(&[Cell::Sidestep]);
+            }
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            idle(&mut w);
+            w.player.flank_swing = 6;
+            let st = light_at_active(&t, &w, 6, weapons::DASH);
+            strike_once(&mut w, &t, st);
+            w.enemies[i].poise
+        };
+        assert!((poise(true) / poise(false) - cell::SIDESTEP_POISE).abs() < 1e-3);
+    }
+
+    #[test]
+    fn tilting_ground_pushes_spilled_foes_farther_out() {
+        let t = Tuning::default();
+        let out = |cell: bool| {
+            let mut w = World::new("test", 20.0);
+            if cell {
+                w.tree = tree_with(&[Cell::TiltingGround]);
+            }
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -3.0), 99);
+            turn_until_spill(&mut w, true, &t);
+            let en = &w.enemies[i];
+            let d = vec3(en.pos.x, 0.0, en.pos.z).normalize_or_zero();
+            en.knock.dot(d)
+        };
+        assert!(
+            // 그 틱의 감속이 조금 먹는다 — 더한 밀림의 절반 넘게 남는다.
+            out(true) - out(false) > cell::TILT_PUSH * KNOCK_DECAY * 0.5,
+            "{} vs {}",
+            out(true),
+            out(false)
+        );
+    }
+
+    #[test]
+    fn landing_beat_rings_again_farther_out_a_moment_after_a_plunge() {
+        let t = Tuning::default();
+        let hp = |cell: bool| {
+            let mut w = World::new("test", 20.0);
+            if cell {
+                w.tree = tree_with(&[Cell::LandingBeat]);
+            }
+            let r = t[P::PlungeRange] * 1.4;
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.0), 99);
+            w.enemies[i].pos.z -= r + w.enemies[i].radius - 1.0;
+            idle(&mut w);
+            w.plunge_now = true;
+            for _ in 0..40 {
+                w.step(&Actions::default(), &t);
+            }
+            w.enemies[i].hp
+        };
+        assert_eq!(hp(false), 99, "outside the first ring");
+        assert!(hp(true) < 99, "the late outer ring reaches it");
+    }
+
+    #[test]
+    fn path_opening_step_carries_a_dash_attack_past_the_foe() {
+        let t = Tuning::default();
+        let z = |cell: bool| {
+            let mut w = World::new("test", 20.0);
+            if cell {
+                w.tree = tree_with(&[Cell::PathOpeningStep]);
+            }
+            mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            idle(&mut w);
+            let st = light_at_active(&t, &w, 2, weapons::DASH);
+            strike_once(&mut w, &t, st);
+            w.player.pos.z
+        };
+        assert!(z(false).abs() < 1e-4);
+        assert!(z(true) < -1.2 - 0.3, "now behind the foe: {}", z(true));
     }
 }
