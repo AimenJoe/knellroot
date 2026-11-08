@@ -170,6 +170,14 @@ pub const TIERS: [Tier; 2] = [
         embers: 1.6,
     },
 ];
+/// 청소자(0120): 싸움이 없을 때 이 초마다 체력 1을 먹는다.
+pub const EAT_TIME: f32 = 2.5;
+/// 등딱지(0120): 앞을 친 평타가 튕기면 방랑자가 튀는 초·뒤로 밀리는 빠르기(m/s). 패링당한 것보다 짧게.
+pub const RECOIL_TIME: f32 = 0.35;
+pub const RECOIL_PUSH: f32 = 3.0;
+/// 꼬투리(0120): 깡충 물러나는 거리(m)·다시 뛰기까지 쉼(초).
+pub const POD_HOP: f32 = 3.2;
+pub const POD_HOP_CD: f32 = 2.6;
 /// 이 등급부터 잡몹 한 대 피해가 2(0112).
 pub const TIER_HEAVY_HITS: u8 = 3;
 

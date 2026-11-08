@@ -111,6 +111,11 @@ pub fn spec_label(name: &'static str) -> &'static str {
 pub const SCENARIO_KO: &[(&str, &str, &str)] = &[
     ("elites", "엘리트", "0112 엘리트 성질: 굳은·되풀이·남는"),
     (
+        "shellback + pods + scavenger",
+        "등딱지짐승 + 꼬투리 + 청소자",
+        "0120 앞 막기(앞 평타는 튕김)·심은 원판·깡충 물러나기·청소자는 덤비지 않음",
+    ),
+    (
         "boss arena",
         "보스 아레나",
         "P2 시점 전환, P3 락온 이동, 보스 예고",

@@ -74,6 +74,13 @@ impl World {
                     PState::Hurt { t: e + dt, dur }
                 };
             }
+            PState::Recoil { t: e } => {
+                self.player.state = if e + dt >= crate::tuning::RECOIL_TIME {
+                    PState::Idle
+                } else {
+                    PState::Recoil { t: e + dt }
+                };
+            }
             PState::Attack {
                 t: e,
                 swing,
@@ -1027,7 +1034,7 @@ impl World {
                     Vec3::ZERO
                 };
             }
-            PState::Hurt { .. } => {
+            PState::Hurt { .. } | PState::Recoil { .. } => {
                 pl.vel *= (1.0 - KNOCK_DECAY * dt).max(0.0);
             }
             // 패링은 걸음을 멈출 때와 같은 감속으로 선다 — 그 자리에서 0이면 2차 동작의 몸이 뒤로 출렁여
@@ -1107,6 +1114,7 @@ impl World {
                 | PState::Heavy { .. }
                 | PState::Turn { .. }
                 | PState::Hurt { .. }
+                | PState::Recoil { .. }
                 | PState::Parry { .. }
                 | PState::Jump { plunge: true, .. }
                 | PState::Cast { .. }

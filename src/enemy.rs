@@ -43,6 +43,8 @@ pub enum Atk {
     Charge,
     /// 퍼지는 뿌리 파동(문지기).
     Wave,
+    /// 바닥에 심기(꼬투리, 0120): 예고를 시작할 때의 플레이어 자리(`plant_at`)에 원판 — 끝 = 판정.
+    Plant,
 }
 
 /// 바닥 예고 모양(렌더가 그린다).
@@ -148,6 +150,12 @@ pub struct Enemy {
     pub elite: Option<Affix>,
     /// 구역 등급(0112, 1부터 — 스테이지가 세울 때 `set_tier`).
     pub tier: u8,
+    /// 심은 자리(꼬투리, 0120)·다시 깡충 물러나기까지 남은 초.
+    pub plant_at: Option<Vec3>,
+    pub hop_cd: f32,
+    /// 청소자(0120 — 마을의 잔재, 0116 ECO-10): 보고도 덤비지 않고 제자리에서 먹는다(먹으면 체력이 찬다). 맞거나 곁의 동료가 싸우면 싸운다.
+    pub docile: bool,
+    pub eat_t: f32,
     /// 되풀이(0112): 이번 공격이 되풀이한 둘째 번인가.
     pub repeated: bool,
     /// 지도에 서 있는 적의 제자리·바라보는 쪽(0113). 없으면(물결·시나리오) 처음부터 쫓는다.
@@ -244,6 +252,10 @@ impl Enemy {
             hop: None,
             elite: None,
             tier: 1,
+            plant_at: None,
+            hop_cd: 0.0,
+            docile: false,
+            eat_t: 0.0,
             repeated: false,
             home: None,
         }
@@ -266,7 +278,6 @@ impl Enemy {
         }
     }
 
-    /// 엘리트로(0112): 체력 × `ELITE_HP`(올림), 몸 × `ELITE_SCALE`, 성질 하나. 보스는 엘리트가 되지 않는다.
     /// 구역 등급(0112): 잡몹만 — 체력을 올림으로 키운다(자세·잔불은 등급을 보고 월드가 곱한다). 보스는 그대로.
     pub fn set_tier(&mut self, n: u8) {
         if self.boss {
@@ -277,6 +288,7 @@ impl Enemy {
         self.hp = self.max_hp;
     }
 
+    /// 엘리트로(0112): 체력 × `ELITE_HP`(올림), 몸 × `ELITE_SCALE`, 성질 하나. 보스는 엘리트가 되지 않는다.
     pub fn make_elite(&mut self, affix: Affix) {
         if self.boss {
             return;
@@ -330,7 +342,23 @@ impl Enemy {
 
     /// 패링으로 튕길 수 있는 공격인가(0025). 퍼지는 뿌리 파동은 못 받는다 — 피해야 한다(예고 고리 가운데 X, nail 0187).
     pub fn parryable(&self) -> bool {
-        self.atk != Atk::Wave
+        !matches!(self.atk, Atk::Wave | Atk::Plant)
+    }
+
+    /// 앞을 막나(등딱지, 0120): `from` = 적에게서 친 쪽으로의 방향. 바라보는 쪽 `guard_arc` 안이고, 휘청·자세가 깨진 동안이 아니면.
+    pub fn guards(&self, from: Vec3) -> bool {
+        let d = self.def();
+        d.guard_arc > 0.0
+            && self.alive()
+            && self.broken <= 0.0
+            && !matches!(self.state, EState::Stagger { .. } | EState::Dormant)
+            && self.facing_dir().dot(from.normalize_or_zero())
+                >= (d.guard_arc * 0.5).to_radians().cos()
+    }
+
+    /// 예고를 그릴 자리: 심은 원판(꼬투리)이면 그 자리, 아니면 몸.
+    pub fn tele_at(&self) -> Option<Vec3> {
+        (self.atk == Atk::Plant).then_some(self.plant_at).flatten()
     }
 
     /// 지금 공격의 예고 길이(초).
@@ -341,6 +369,7 @@ impl Enemy {
                 Atk::Smash | Atk::Slam => d.tele,
                 Atk::Charge => d.charge_tele,
                 Atk::Wave => d.wave_tele,
+                Atk::Plant => d.tele,
             }
     }
 
@@ -367,6 +396,8 @@ impl Enemy {
                 w: self.touch() * 2.0,
             },
             Atk::Wave => TeleShape::Ring { r: d.wave_radius },
+            // 심은 원판 = 플레이어 가운데가 들어가면 맞는 곳.
+            Atk::Plant => TeleShape::Disc { r: d.plant_r },
         }
     }
 
@@ -464,6 +495,8 @@ impl Enemy {
                     None
                 }
             }
+            // 심기(0120): 거리 안이면 심는다(물러나기는 월드가 길을 보고 뛴다 — `hop_cd`).
+            Behavior::Planter => (dist <= d.plant_range).then_some(Atk::Plant),
             Behavior::Warden => {
                 if self.atk_count % 3 == 2 && dist <= d.wave_radius - 1.0 {
                     Some(Atk::Wave)
@@ -487,6 +520,7 @@ impl Enemy {
         }
         let d = self.def();
         self.hurt = (self.hurt - dt).max(0.0);
+        self.hop_cd = (self.hop_cd - dt).max(0.0);
         self.exposed = (self.exposed - dt).max(0.0);
         self.sway_t += dt;
         // 넉백은 빠르게 줄어든다. 굳은 엘리트(0112)는 덜 밀린다.
@@ -526,6 +560,14 @@ impl Enemy {
                     let (s, c) = face.sin_cos();
                     self.turn_toward(vec3(s, 0.0, c), 2.0, dt);
                 }
+                // 청소자(0120): 싸움이 없으면 먹는다 — `EAT_TIME`마다 체력 1(lore ecology 청소자 "잔해를 먹고 회복").
+                if self.docile && self.hp < self.max_hp {
+                    self.eat_t += dt;
+                    if self.eat_t >= crate::tuning::EAT_TIME {
+                        self.eat_t = 0.0;
+                        self.hp += 1;
+                    }
+                }
             }
             EState::Return => {
                 let Some((home, face)) = self.home else {
@@ -560,7 +602,12 @@ impl Enemy {
                 } else {
                     self.turn_toward(dir, 6.0, dt);
                     match self.choose(dist) {
-                        Some(atk) => self.start(atk),
+                        Some(atk) => {
+                            self.start(atk);
+                            if atk == Atk::Plant {
+                                self.plant_at = Some(vec3(player.x, self.pos.y, player.z));
+                            }
+                        }
                         None => {
                             let (go, slow) = steer(dir, self.spread);
                             self.pos += go * speed * slow * dt;
@@ -583,13 +630,29 @@ impl Enemy {
                     EState::Tele { t: e + dt }
                 } else {
                     match self.atk {
-                        Atk::Smash | Atk::Slam => EState::Swing { t: 0.0 },
+                        Atk::Smash | Atk::Slam | Atk::Plant => EState::Swing { t: 0.0 },
                         Atk::Charge => EState::Charge {
                             t: 0.0,
                             dir: self.facing_dir(),
                         },
                         Atk::Wave => EState::Wave { t: 0.0 },
                     }
+                };
+            }
+            EState::Swing { t: e } if self.atk == Atk::Plant => {
+                // 심은 원판이 터진다(0120): 그 순간 플레이어 가운데가 원판 안이면 맞는다.
+                if e == 0.0 {
+                    if let Some(at) = self.plant_at {
+                        if vec2(player.x - at.x, player.z - at.z).length() <= d.plant_r {
+                            out.hit = true;
+                        }
+                    }
+                }
+                self.state = if e + dt >= 0.2 {
+                    self.plant_at = None;
+                    self.after_attack()
+                } else {
+                    EState::Swing { t: e + dt }
                 };
             }
             EState::Swing { t: e } => {
@@ -825,6 +888,53 @@ mod tests {
         assert!(en.tele_dur() < calm || en.atk != Atk::Slam);
         // 다시는 안 깨어난다.
         assert!(!en.tick(Vec3::ZERO, 1.0 / 60.0).roused);
+    }
+
+    #[test]
+    fn a_pod_plants_where_you_stood_and_only_hits_if_you_stay() {
+        // 0120: 심는 순간의 플레이어 자리에 원판 — 끝 = 판정. 비켜 서면 맞지 않는다.
+        for (stay, want) in [(true, 1), (false, 0)] {
+            let mut en = Enemy::new(Kind::Pod, vec3(0.0, 0.0, -7.0));
+            let mut hits = 0;
+            let mut p = Vec3::ZERO;
+            for _ in 0..240 {
+                if en.plant_at.is_some() && !stay {
+                    p = vec3(3.0, 0.0, 0.0);
+                }
+                hits += en.tick(p, 1.0 / 60.0).hit as usize;
+                if en.state == (EState::Recover { t: 0.0 }) {
+                    break;
+                }
+            }
+            assert_eq!(hits, want, "stay {stay}");
+            assert!(
+                !en.parryable() || en.atk != Atk::Plant,
+                "a planted disc is to be avoided, not parried"
+            );
+        }
+        // 멀면 다가오기만 한다.
+        let mut far = Enemy::new(Kind::Pod, vec3(0.0, 0.0, -20.0));
+        assert_eq!(run(&mut far, Vec3::ZERO, 60), 0);
+        assert!(far.plant_at.is_none() && far.pos.z > -20.0);
+    }
+
+    #[test]
+    fn a_shellback_guards_its_front_only_and_not_while_broken() {
+        let mut en = Enemy::new(Kind::Shell, vec3(0.0, 0.0, -1.5));
+        en.facing = 0.0; // +z = 플레이어 쪽
+        assert!(en.guards(vec3(0.0, 0.0, 1.0)), "front");
+        assert!(en.guards(vec3(0.5, 0.0, 1.0)), "inside 120°");
+        assert!(!en.guards(vec3(1.0, 0.0, 0.0)), "side");
+        assert!(!en.guards(vec3(0.0, 0.0, -1.0)), "back");
+        en.broken = 1.0;
+        assert!(
+            !en.guards(vec3(0.0, 0.0, 1.0)),
+            "broken poise drops the guard"
+        );
+        assert!(
+            !Enemy::new(Kind::Husk, Vec3::ZERO).guards(Vec3::Z),
+            "husks never guard"
+        );
     }
 
     #[test]

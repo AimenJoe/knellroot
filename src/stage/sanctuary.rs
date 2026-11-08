@@ -28,6 +28,7 @@ pub static DEF: StageDef = StageDef {
     // 물결은 쓰지 않는다(0113) — 서 있는 적.
     waves: &[],
     spawns: &[('a', Kind::Husk), ('T', Kind::Thorn)],
+    docile: &[],
     obj_explore: |s| s.obj_find_gate,
     boss: ('W', Kind::Warden),
     boss_wakes_on_entry: true,
@@ -46,6 +47,8 @@ pub static DEF: StageDef = StageDef {
     ],
     boss_charm: Some(Charm::Hand),
     find_prefix: "sanctuary",
+    gate_shortcut: false,
+    card_lever: |s| s.card_gate_opened,
     depth_m: 0,
     tier: 1,
     env: &crate::backdrop::SURFACE,
