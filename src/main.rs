@@ -28,6 +28,7 @@ mod nav;
 mod prefs;
 mod progression;
 mod render;
+mod residents;
 mod save;
 #[cfg(feature = "dev")]
 mod scenario;

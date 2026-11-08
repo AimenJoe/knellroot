@@ -52,6 +52,10 @@ pub const VILLAGE: Pair = (
     "둘째 지역(떠난 마을) 어귀부터",
     "region 2 (village) from its edge",
 );
+pub const RESIDENTS: Pair = (
+    "둘째 지역 주민 곁에서(말 걸기)",
+    "region 2 beside a resident (talk)",
+);
 pub const STAGE_NOTE: Pair = (
     "이 슬롯의 장신구·잔불로 진짜 스테이지를 돈다. 아무것도 저장하지 않는다.",
     "the real stage with this slot's charms and embers; nothing is saved",
@@ -85,6 +89,7 @@ pub const PAIRS: &[Pair] = &[
     ENTRANCE,
     GATE,
     VILLAGE,
+    RESIDENTS,
     STAGE_NOTE,
     LAB_START,
     LAB_NOTE,

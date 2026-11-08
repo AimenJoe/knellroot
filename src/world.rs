@@ -536,6 +536,8 @@ pub struct World {
     pub drops: Vec<crate::ember::Ember>,
     /// 남는 엘리트의 고리(0112).
     pub lingers: Vec<Linger>,
+    /// 방랑자만 밀어내는 둥근 몸(0122 — 주민): 적·탄·공격은 지나간다(싸움에 끼지 않는다). (가운데, 반지름).
+    pub bodies: Vec<(Vec3, f32)>,
     /// 합친 능력치(0064 M3 — 장신구·성장). 앱이 `apply_stats`로 넣는다.
     pub stats: crate::stats::Stats,
     /// 연 기술 나무(0106) — 칸 동작은 그 동사 자리에서 `tree.has`(0107). 앱이 기록에서 넣는다.
@@ -662,6 +664,7 @@ impl World {
             embers: 0,
             drops: Vec::new(),
             lingers: Vec::new(),
+            bodies: Vec::new(),
             stats: crate::stats::Stats::default(),
             tree: crate::progression::Tree::default(),
             ember_at: f32::MIN,
@@ -2296,6 +2299,15 @@ impl World {
                 if len < min && len > 1e-4 {
                     self.player.pos += d / len * (min - len);
                 }
+            }
+        }
+        // 주민(0122): 방랑자만 밀어낸다.
+        for &(c, r) in &self.bodies {
+            let d = vec3(self.player.pos.x - c.x, 0.0, self.player.pos.z - c.z);
+            let min = r + PLAYER_RADIUS;
+            let len = d.length();
+            if len < min && len > 1e-4 {
+                self.player.pos += d / len * (min - len);
             }
         }
         let arena = self.arena;

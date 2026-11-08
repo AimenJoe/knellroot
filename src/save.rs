@@ -48,6 +48,11 @@ pub mod key {
     pub const FINDS: &str = "finds";
     /// 처음 쓰러뜨린 엘리트(0112): 기록 이름들("sanctuary.elite.0,…") — 처음 덤은 한 번만.
     pub const ELITES: &str = "elites";
+    /// 시작한 판 수(0122 — 주민 재방문 "처음 본 판이 끝난 뒤의 다른 판").
+    pub const RUNS: &str = "runs";
+    /// 주민을 처음 본 판(`V01:3,…`)·재방문으로 바뀐 주민(`V01,…`, 단방향).
+    pub const RESIDENTS_SEEN: &str = "residents.seen";
+    pub const RESIDENTS_CHANGED: &str = "residents.changed";
     /// 문 장치로 연 문(0113): 스테이지 이름 앞(`find_prefix`)들 — 한 번 열면 판을 넘어 열려 있다(지름길).
     pub const GATES: &str = "gates";
     /// 문지기 핵 점수(0105): 이긴 횟수, `progression::CORE_CAP`까지.
@@ -138,6 +143,10 @@ pub struct Progress {
     pub finds: Vec<String>,
     /// 처음 쓰러뜨린 엘리트의 기록 이름(0112).
     pub elites: Vec<String>,
+    /// 시작한 판 수·주민을 처음 본 판·바뀐 주민(0122).
+    pub runs: u32,
+    pub residents_seen: Vec<(String, u32)>,
+    pub residents_changed: Vec<String>,
     /// 문 장치로 연 문(0113).
     pub gates: Vec<String>,
     /// 성소 문지기 핵 점수(0105, `CORE_CAP`까지).
@@ -238,6 +247,26 @@ impl Progress {
             ],
             pin,
         };
+        let residents_seen: Vec<(String, u32)> = r
+            .get(key::RESIDENTS_SEEN)
+            .unwrap_or("")
+            .split(',')
+            .filter_map(|e| {
+                let (id, n) = e.trim().split_once(':')?;
+                Some((id.to_string(), n.parse().ok()?))
+            })
+            .collect();
+        let mut residents_changed: Vec<String> = r
+            .get(key::RESIDENTS_CHANGED)
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect();
+        residents_changed.sort();
+        residents_changed.dedup();
+        let runs = r.num(key::RUNS).unwrap_or(0);
         let r_has_no_weapons = r.get(key::WEAPONS).is_none();
         let r_weapons = r.get(key::WEAPONS).map(str::to_string);
         let mut p = Progress {
@@ -245,6 +274,9 @@ impl Progress {
             level,
             finds,
             elites,
+            runs,
+            residents_seen,
+            residents_changed,
             gates,
             cores,
             tree,
@@ -312,6 +344,16 @@ impl Progress {
         r.set(key::LV_MIGHT, self.level.might);
         r.set(key::FINDS, self.finds.join(","));
         r.set(key::ELITES, self.elites.join(","));
+        r.set(key::RUNS, self.runs);
+        r.set(
+            key::RESIDENTS_SEEN,
+            self.residents_seen
+                .iter()
+                .map(|(id, n)| format!("{id}:{n}"))
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+        r.set(key::RESIDENTS_CHANGED, self.residents_changed.join(","));
         r.set(key::GATES, self.gates.join(","));
         r.set(key::CORE_WARDEN, self.cores);
         r.set(key::MIGRATED_V04, 1);
@@ -596,6 +638,30 @@ weapon=crossbow
         assert!(crate::weapons::IDS.iter().all(|&w| old.owns_weapon(w)));
         let empty = Progress::from_record(Record::parse(""));
         assert_eq!(empty.owned_weapons(), vec![Id::Sword, Id::Fists]);
+    }
+
+    /// 0122: 판 수·주민을 처음 본 판·바뀐 주민은 기록에 남고, 키가 없는 옛 기록은 0·빈 것(NPC-07).
+    #[test]
+    fn residents_and_runs_round_trip_and_old_records_start_empty() {
+        let mut p = Progress {
+            runs: 4,
+            ..Progress::default()
+        };
+        p.residents_seen = vec![("V01".into(), 2), ("V03".into(), 4)];
+        p.residents_changed = vec!["V01".into()];
+        let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        assert_eq!(back.runs, 4);
+        assert_eq!(back.residents_seen, p.residents_seen);
+        assert_eq!(back.residents_changed, p.residents_changed);
+        let old = Progress::from_record(Record::parse("v=1\nembers=9\n"));
+        assert_eq!(
+            (
+                old.runs,
+                old.residents_seen.len(),
+                old.residents_changed.len()
+            ),
+            (0, 0, 0)
+        );
     }
 
     #[test]
