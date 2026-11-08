@@ -30,6 +30,7 @@ pub static DEF: StageDef = StageDef {
     spawns: &[('a', Kind::Husk), ('T', Kind::Thorn)],
     obj_explore: |s| s.obj_find_gate,
     boss: ('W', Kind::Warden),
+    boss_wakes_on_entry: true,
     intro: (|s| s.intro_1, |s| s.intro_2),
     obj_waves: |s| s.obj_courtyard,
     obj_gate: |s| s.obj_gate_open,

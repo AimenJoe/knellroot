@@ -18,6 +18,7 @@ pub static DEF: StageDef = StageDef {
     // 문 장치가 없어 처음부터 문이 열린 단계(0118) — 목표는 종탑 터.
     obj_explore: |s| s.obj_bell_site,
     boss: ('W', Kind::Warden),
+    boss_wakes_on_entry: false,
     intro: (|s| s.intro_1, |s| s.intro_2),
     obj_waves: |s| s.obj_bell_site,
     obj_gate: |s| s.obj_bell_site,

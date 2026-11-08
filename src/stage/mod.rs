@@ -392,6 +392,8 @@ pub struct StageDef {
     pub waves: &'static [&'static [(char, Kind)]],
     /// 보스 표지.
     pub boss: (char, Kind),
+    /// 마지막 구역에 들어서면 보스전을 시작하나. C3 전 임시 문지기처럼 자리를 지키는 배치는 false.
+    pub boss_wakes_on_entry: bool,
     /// 시작 이야기 두 줄.
     pub intro: (Tr, Tr),
     pub obj_waves: Tr,
@@ -1014,7 +1016,7 @@ impl StageRun {
             }
             Phase::GateOpen => {
                 // 마지막 구역(성소)에 들어서면.
-                if z + 1 >= self.def.zones.len() {
+                if self.def.boss_wakes_on_entry && z + 1 >= self.def.zones.len() {
                     // 문이 닫히고 문지기가 깨어난다(플레이어가 문 안으로 다 들어온 뒤 닫는다).
                     let inside = self
                         .level
@@ -1295,6 +1297,25 @@ mod tests {
     use crate::input::Actions;
     use crate::tuning::Tuning;
     use crate::tuning::{FLASK_CHARGES, PLAYER_HP};
+
+    /// 0118: C3 전까지 마을 끝의 문지기는 자리를 지키기만 한다 — 마지막 구역에 들어가도 깨어나지 않는다.
+    #[test]
+    fn village_guard_remains_a_dormant_sentinel_before_c3() {
+        let (mut run, mut world) = StageRun::start(&village::DEF);
+        let boss = run.boss.expect("the sentinel model is present");
+        let guard = run.level.marks_of('W').next().expect("village guard mark");
+        assert_eq!(world.enemies[boss].state, EState::Dormant);
+
+        world.player.pos = guard;
+        for _ in 0..(WAKE_TIME * 60.0) as usize {
+            let out = run.tick(&mut world, 1.0 / 60.0);
+            assert_ne!(out, StageOut::Cleared, "the sentinel must not clear the stage");
+        }
+
+        assert_eq!(run.phase, Phase::GateOpen, "no wake-up or duel phase");
+        assert_eq!(world.enemies[boss].state, EState::Dormant);
+        assert!(run.boss_bar(&world).is_none(), "no boss health bar");
+    }
 
     /// 0091: 높은 땅에 선 문은 상자도 그 땅 위에 — 가운데만 땅에 올리고 상자를 0에 두면 위 한 자락이 시야 가림 판정·막기 밖이었다.
     #[test]
