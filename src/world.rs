@@ -6,10 +6,11 @@ use crate::ground::Ground;
 use crate::input::Actions;
 use crate::progression::{cell, Cell};
 use crate::tuning::{
-    Tuning, BEAT_CUE_MIN, BEAT_CUE_SHOT_ARC, BEAT_CUE_SHOT_REACH, BEAT_WINDOW, BEAT_WINDOW_MIN,
-    BLAST_SHOW, BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID,
-    CAST_CHARGES, DASH_ATTACK_LATE, FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP,
-    HIT_SWAY, LOCK_HANDOFF, P, PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RUN_SPEED_X, RUN_STAMINA,
+    Tuning, AIR_SHOT_HOVER, AIR_SHOT_MIN, AIR_SHOT_REACH, AIR_VOLLEY, AIR_VOLLEY_SPREAD_DEG,
+    BEAT_CUE_MIN, BEAT_CUE_SHOT_ARC, BEAT_CUE_SHOT_REACH, BEAT_WINDOW, BEAT_WINDOW_MIN, BLAST_SHOW,
+    BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID, CAST_CHARGES,
+    DASH_ATTACK_LATE, FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY,
+    LOCK_HANDOFF, P, PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RUN_SPEED_X, RUN_STAMINA,
     STAMINA_DENIED_SHOW, STUN_CHAIN_GRACE, STUN_CHAIN_MAX, TICK_DT,
 };
 use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG, RIPOSTE_WINDOW};
@@ -426,9 +427,12 @@ pub struct Player {
     pub air: f32,
     pub vy: f32,
     pub swings: u32,
-    /// 마법 칸(0048, 0..=`CAST_CHARGES`): 근접으로 맞히면 차고 쏘면 1 준다. 못 쏴서 깜빡이는 남은 초(HUD).
+    /// 마법 칸(0048 → 0111, 0..=`CAST_CHARGES`): `cast.cooldown s`마다 한 칸 차고 쏘면 1 준다. 못 쏴서 깜빡이는 남은 초(HUD).
     pub mana: f32,
     pub cast_denied: f32,
+    /// 공중 RB(0111): 이번 점프에 이미 쐈나(땅에 서면 지운다), 떨어지기를 멈춘 남은 초(체공).
+    pub air_shot: bool,
+    pub hover: f32,
     /// 든 무기(0051, `weapons.rs` 표).
     pub weapon: weapons::Id,
     /// RB를 한 번 누른 뒤 쥔 시간(0056, `attack_hold`와 같은 셈).
@@ -527,6 +531,8 @@ pub struct World {
     throw_to: Option<Vec3>,
     /// 이번 틱에 쏜 쪽과 세기(0 = 보통, 1 = 덜 모음, 2 = 다 모음, 0056) — `tick_bolts`가 탄을 세운다.
     cast_fire: Option<(Vec3, u8)>,
+    /// 공중 RB(0111): 이번 틱에 공중에서 쏜 쪽(수평) — `tick_bolts`가 내려 쏘는 탄을 만든다.
+    air_fire: Option<Vec3>,
     cast_denied_now: bool,
     /// 이번 틱에 박자에 맞춘 평타가 나갔다(`Event::Beat`).
     beat_now: bool,
@@ -591,6 +597,8 @@ impl World {
                 swings: 0,
                 mana: CAST_CHARGES,
                 cast_denied: 0.0,
+                air_shot: false,
+                hover: 0.0,
                 weapon: weapons::Id::Sword,
                 cast_hold: 0.0,
                 pending: None,
@@ -637,6 +645,7 @@ impl World {
             sparks: Vec::new(),
             throw_to: None,
             cast_fire: None,
+            air_fire: None,
             cast_denied_now: false,
             beat_now: false,
             gulp_now: false,
@@ -728,7 +737,8 @@ impl World {
             PState::Charging { .. } => matches!(n, Next::Dodge | Next::Parry),
             PState::CastCharge { .. } => n == Next::Dodge,
             PState::Drink { gulped: false, .. } => n == Next::Dodge,
-            PState::Jump { plunge: false, .. } => n == Next::Attack,
+            // 공중: 공격 = 내려찍기(0027), RB = 내려 쏘기(0111).
+            PState::Jump { plunge: false, .. } => matches!(n, Next::Attack | Next::Cast),
             _ => false,
         };
         if own {
@@ -897,8 +907,6 @@ impl World {
             en.hp -= hurt_by(en, self.stats.dmg + t[P::PlungeDamage] as i32, crit, t);
             en.exposed = 0.0;
             en.hit_by = swing;
-            // 근접으로 맞히면 마법 칸이 찬다(0048).
-            self.player.mana = (self.player.mana + t[P::CastPerHit]).min(CAST_CHARGES);
             add_poise(en, 2.0 * self.stats.poise, None, t, ev);
             en.hurt = 0.15;
             en.knock = d.normalize_or_zero() * t[P::Knockback] * if en.boss { 0.25 } else { 1.2 };
@@ -1185,6 +1193,52 @@ impl World {
             });
             ev.push(Event::Cast { at: pos });
         }
+        // 공중 RB(0111): 쏜 높이에서 겨눈 적(쏘는 쪽 ±15°·`cast.range m` 안 가장 가까운)의 몸통으로, 없으면 앞
+        // `AIR_SHOT_REACH`m 땅 위 몸통 높이로 비스듬히 내려 쏜다. 쇠뇌는 같은 자리로 볼트 `AIR_VOLLEY`발을 부채꼴로.
+        if let Some(flat) = self.air_fire.take() {
+            let pl = &self.player;
+            let from = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT) + flat * (PLAYER_RADIUS + 0.2);
+            let cone = 15f32.to_radians().cos();
+            let reach = self
+                .enemies
+                .iter()
+                .filter(|en| en.active())
+                .filter_map(|en| {
+                    let d = vec3(en.pos.x - pl.pos.x, 0.0, en.pos.z - pl.pos.z);
+                    let n = d.length();
+                    (n <= t[P::CastRange] && n > 1e-3 && d.dot(flat) / n >= cone).then_some(n)
+                })
+                .min_by(f32::total_cmp)
+                .unwrap_or(AIR_SHOT_REACH)
+                .max(AIR_SHOT_MIN);
+            let (def, count) = match wpn.rb {
+                Rb::Magic(b) => (b, 1),
+                Rb::Shot { bolt, .. } => (bolt, AIR_VOLLEY),
+            };
+            let spread = AIR_VOLLEY_SPREAD_DEG.to_radians();
+            for i in 0..count {
+                let k = if count > 1 {
+                    i as f32 / (count - 1) as f32 * 2.0 - 1.0
+                } else {
+                    0.0
+                };
+                let (sn, cs) = (spread * k).sin_cos();
+                let side = vec3(flat.x * cs + flat.z * sn, 0.0, -flat.x * sn + flat.z * cs);
+                let aim = pl.pos + side * reach;
+                let floor = self.ground.as_ref().map_or(pl.pos.y, |gr| gr.height(aim));
+                let to = vec3(aim.x, floor + BOLT_HEIGHT * 0.6, aim.z);
+                let dir = (to - from).normalize_or(side);
+                self.bolts.push(Bolt {
+                    pos: from,
+                    prev: from,
+                    dir,
+                    left: t[P::CastRange] * def.range,
+                    def,
+                    hits: 0,
+                });
+            }
+            ev.push(Event::Cast { at: from });
+        }
         if let (Some(to), Some(g)) = (self.throw_to.take(), wpn.grenade) {
             // 포물선: 날아가는 시간을 거리로 정하고(가까우면 낮게·빨리) 그 시간에 `to`에 닿는 속도.
             let pl = &self.player;
@@ -1289,6 +1343,9 @@ impl World {
                     g.height_in(x, z, b.pos).is_none_or(|h| h > b.pos.y - 0.1)
                 });
                 gone |= solid;
+            } else {
+                // 평평한 시험 판: 내려 쏜 탄(0111)은 바닥(0)에 닿으면 사라진다.
+                gone |= b.pos.y < 0.1;
             }
             if !gone
                 && b.left > 1e-3
@@ -1558,8 +1615,6 @@ impl World {
                 continue;
             }
             en.hit_by = swing;
-            // 근접으로 맞히면 마법 칸이 찬다(0048, HLD·Death's Door — 원거리만 쏘며 버티지 않게).
-            self.player.mana = (self.player.mana + t[P::CastPerHit]).min(CAST_CHARGES);
             // 패링으로 드러난 적은 한 대가 치명타(0025).
             let crit = en.exposed > 0.0;
             // 레벨 힘(0104): 강타·패링 반격 +`heavy_dmg`, 콤보·대시 공격 +`light_dmg` — 장신구 `dmg`는 모든 타.
@@ -3518,7 +3573,13 @@ mod tests {
             90,
         );
         assert!(ev.iter().any(|e| matches!(e, Event::Cast { .. })));
-        assert_eq!(w.player.mana, CAST_CHARGES - 1.0);
+        // 한 칸을 쓰고, 그 사이(90틱) 시간으로 찬 몫만 더해졌다(0111).
+        let refill = 90.0 * TICK_DT / t[P::CastCooldown];
+        assert!(
+            (w.player.mana - (CAST_CHARGES - 1.0 + refill)).abs() < 0.02,
+            "{}",
+            w.player.mana
+        );
         let magic = match w.player.weapon.def().rb {
             weapons::Rb::Magic(b) => b.damage,
             weapons::Rb::Shot { bolt, .. } => bolt.damage,
@@ -3601,9 +3662,10 @@ mod tests {
         assert!(want.distance(vec2(p0.x, p0.z)) < g.far);
     }
 
-    /// 0048: 칸이 모자라면 쏘지 않고(몸짓 없음) 칸이 깜빡인다. 근접으로 맞히면 `cast.per hit`씩 찬다.
+    /// 0048: 칸이 모자라면 쏘지 않고(몸짓 없음) 칸이 깜빡인다. 0111: 칸은 시간으로만 찬다(`cast.cooldown s`에 한 칸) —
+    /// 근접으로 맞혀도 더 차지 않는다.
     #[test]
-    fn melee_hits_refill_the_magic_and_an_empty_cast_is_denied() {
+    fn magic_refills_with_time_not_hits_and_an_empty_cast_is_denied() {
         let t = Tuning::default();
         let mut w = World::new("test", 30.0);
         w.player.mana = 0.5;
@@ -3623,6 +3685,7 @@ mod tests {
         w.enemies[0].hp = 50;
         w.enemies[0].max_hp = 50;
         idle(&mut w);
+        let m0 = w.player.mana;
         press(
             &t,
             &mut w,
@@ -3633,7 +3696,117 @@ mod tests {
             40,
         );
         assert_eq!(w.enemies[0].hp, 49);
-        assert!((w.player.mana - (0.5 + t[P::CastPerHit])).abs() < 1e-4);
+        let by_time = 41.0 * TICK_DT / t[P::CastCooldown];
+        assert!(
+            w.player.mana - m0 <= by_time + 1e-4,
+            "a hit adds nothing: {} -> {}",
+            m0,
+            w.player.mana
+        );
+        // 한 칸 = `cast.cooldown s`.
+        w.enemies[0].state = EState::Dead;
+        w.player.mana = 0.0;
+        for _ in 0..(t[P::CastCooldown] / TICK_DT).round() as usize {
+            w.step(&Actions::default(), &t);
+        }
+        assert!((w.player.mana - 1.0).abs() < 0.02, "{}", w.player.mana);
+        for _ in 0..600 {
+            w.step(&Actions::default(), &t);
+        }
+        assert_eq!(w.player.mana, CAST_CHARGES, "stops at the cap");
+    }
+
+    /// 0111: 공중 RB(근접 무기) = 마법 한 칸을 비스듬히 내려 쏘고, 잠깐 떠 있다. 한 점프에 한 번.
+    #[test]
+    fn an_air_cast_fires_down_once_per_jump_and_hovers() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.step(
+            &Actions {
+                jump: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        for _ in 0..6 {
+            w.step(&Actions::default(), &t);
+        }
+        let mana = w.player.mana;
+        w.step(
+            &Actions {
+                cast: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert_eq!(w.bolts.len(), 1);
+        assert!(
+            w.bolts[0].dir.y < -0.05,
+            "fired downward: {:?}",
+            w.bolts[0].dir
+        );
+        assert!((w.player.mana - (mana - 1.0)).abs() < 0.01);
+        // 체공: 떨어지지 않는다.
+        let air = w.player.air;
+        assert!(air > 0.2);
+        for _ in 0..((AIR_SHOT_HOVER / TICK_DT) as usize - 2) {
+            w.step(&Actions::default(), &t);
+            assert!((w.player.air - air).abs() < 1e-4, "hovering");
+        }
+        // 같은 점프에 또 누르면 안 나간다.
+        w.step(
+            &Actions {
+                cast: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        let mut n = 0;
+        let mut landed = false;
+        for _ in 0..120 {
+            n = n.max(w.bolts.len());
+            w.step(&Actions::default(), &t);
+            landed |= matches!(w.player.state, PState::Land { .. });
+        }
+        assert!(n <= 1, "once per jump");
+        assert!(landed);
+        assert!(w.bolts.is_empty(), "the bolt sank into the floor");
+    }
+
+    /// 0111: 쇠뇌의 공중 RB = 내려 쏘기 — 볼트 `AIR_VOLLEY`발을 부채꼴로, 탄창은 그대로. 아래의 적을 맞힌다.
+    #[test]
+    fn the_crossbow_shoots_a_downward_volley_from_the_air() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        w.spawn_mob(vec3(0.0, 0.0, -3.0));
+        let hp = w.enemies[0].hp;
+        w.player.facing = std::f32::consts::PI; // -z
+        w.step(
+            &Actions {
+                jump: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        for _ in 0..6 {
+            w.step(&Actions::default(), &t);
+        }
+        let ammo = w.player.ammo;
+        w.step(
+            &Actions {
+                cast: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert_eq!(w.bolts.len(), AIR_VOLLEY);
+        assert!(w.bolts.iter().all(|b| b.dir.y < 0.0));
+        assert_eq!(w.player.ammo, ammo, "no ammo spent");
+        for _ in 0..60 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(w.enemies[0].hp < hp, "the volley hits the enemy below");
     }
 
     /// 0048: 탄은 기둥에 막힌다.
@@ -3950,10 +4123,11 @@ mod tests {
         let got = charge_cast(&mut w, &t, full);
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].def, weapons::Id::Sword.def().charged);
-        assert_eq!(
-            w.player.mana,
-            CAST_CHARGES - 2.0,
-            "one for the tap, one for the charge"
+        // 톡 한 칸 + 모은 탄 한 칸 — 그 사이 시간으로 찬 몫(0111)은 한 칸에 못 미친다.
+        assert!(
+            w.player.mana >= CAST_CHARGES - 2.0 && w.player.mana < CAST_CHARGES - 1.0,
+            "one for the tap, one for the charge: {}",
+            w.player.mana
         );
         // 덜 모으고 떼면 약하게(반 피해, 꿰뚫기 없음).
         let mut w = World::new("test", 40.0);

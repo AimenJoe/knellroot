@@ -273,6 +273,15 @@ impl World {
         if let Some(g) = wpn.grenade {
             pl.grenades = (pl.grenades + dt / g.cooldown.max(0.1)).min(g.count as f32);
         }
+        // 마법 칸(0111): 수류탄처럼 시간으로 찬다 — 한 칸 `cast.cooldown s`.
+        if let Rb::Magic(_) = wpn.rb {
+            pl.mana = (pl.mana + dt / t[P::CastCooldown].max(0.1)).min(CAST_CHARGES);
+        }
+        // 공중 RB(0111): 땅에 서면 다음 점프에 다시 쏠 수 있다.
+        if !matches!(pl.state, PState::Jump { .. }) {
+            pl.air_shot = false;
+            pl.hover = 0.0;
+        }
         pl.hurt = (pl.hurt - dt).max(0.0);
         pl.cast_denied = (pl.cast_denied - dt).max(0.0);
         pl.dodge_cd = (pl.dodge_cd - dt).max(0.0);
@@ -883,14 +892,45 @@ impl World {
         let mut plunge = plunge;
         if cx.a.attack && !plunge && pl.spend(t[P::StaminaAttack]) {
             plunge = true;
+            pl.hover = 0.0;
             if let Some(d) = cx.auto_dir.or(cx.aim) {
                 pl.facing = d.x.atan2(d.z);
             }
+        } else if cx.a.cast && !plunge && !pl.air_shot {
+            // 공중 RB(0111, 사장 2026-11-08): 근접 무기 = 마법 한 칸을 내려 쏘고, 쇠뇌 = 볼트를 부채꼴로 내려 쏜다(탄창은 안 쓴다).
+            // 쏘는 순간 잠깐 떠 있다(체공) — 한 점프에 한 번이라 연타로 떠 있지 못한다.
+            let ok = match cx.wpn.rb {
+                Rb::Magic(_) if pl.mana >= 1.0 => {
+                    pl.mana -= 1.0;
+                    true
+                }
+                Rb::Magic(_) => {
+                    pl.cast_denied = 0.6;
+                    self.cast_denied_now = true;
+                    false
+                }
+                Rb::Shot { .. } => true,
+            };
+            let pl = &mut self.player;
+            if ok {
+                pl.air_shot = true;
+                pl.hover = AIR_SHOT_HOVER;
+                pl.vy = pl.vy.max(0.0);
+                pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+                self.air_fire = Some(cx.cast_dir);
+            }
         }
+        let pl = &mut self.player;
         // 포물선을 그대로(틱마다 위치 = v·dt − g·dt²/2) — 앞 오일러 적분은 높이가 6% 모자랐다.
-        let g = crate::tuning::jump_ballistics(t).1 * if plunge { PLUNGE_FALL } else { 1.0 };
-        pl.air += pl.vy * dt - 0.5 * g * dt * dt;
-        pl.vy -= g * dt;
+        // 체공(0111) 동안은 그 높이에 멈춘다(오르던 속도는 버린다).
+        if pl.hover > 0.0 {
+            pl.hover = (pl.hover - dt).max(0.0);
+            pl.vy = 0.0;
+        } else {
+            let g = crate::tuning::jump_ballistics(t).1 * if plunge { PLUNGE_FALL } else { 1.0 };
+            pl.air += pl.vy * dt - 0.5 * g * dt * dt;
+            pl.vy -= g * dt;
+        }
         if pl.air <= 0.0 && e > 0.0 {
             pl.air = 0.0;
             pl.vy = 0.0;

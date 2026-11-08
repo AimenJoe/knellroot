@@ -1250,6 +1250,13 @@ impl Renderer {
                 }
                 PState::CastCharge { t: e } => (&["cast_charge", "cast", "parry"], e),
                 // 공중(0027): 방랑자의 jump·plunge·land 동작(없는 모델이면 회피·공격 자세로).
+                // 공중 RB(0111): 떠 있는 동안 쏘는 자세(쇠뇌는 겨누고 쏘기, 마법은 손을 내밂).
+                PState::Jump { plunge: false, .. }
+                    if pl.hover > 0.0 && matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) =>
+                {
+                    (&["xbow_shoot", "cast"], 0.1)
+                }
+                PState::Jump { plunge: false, .. } if pl.hover > 0.0 => (&["cast", "jump"], 0.12),
                 PState::Jump { plunge: false, .. } => (&["jump", "dodge", "idle"], 0.1),
                 // 내려찍기: 떨어지는 동안 칼을 들고 있다가 땅에 가까우면 꽂는 자세로.
                 PState::Jump { plunge: true, .. } => (
