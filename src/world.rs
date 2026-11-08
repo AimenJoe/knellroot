@@ -2755,8 +2755,7 @@ mod tests {
         let mut village = Enemy::new(crate::species::Kind::Husk, Vec3::ZERO);
         village.set_tier(2);
 
-        let expected = (t[P::PoiseBase]
-            + village.max_hp as f32 * t[P::PoisePerHp])
+        let expected = (t[P::PoiseBase] + village.max_hp as f32 * t[P::PoisePerHp])
             * crate::tuning::tier(2).poise;
         assert!((poise_max(&village, &t) - expected).abs() < 1e-4);
     }
