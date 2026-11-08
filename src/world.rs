@@ -4167,7 +4167,7 @@ mod tests {
     }
 
     /// 0112 남는: 쓰러진 자리에 고리가 남고 `ELITE_LINGER_DELAY` 뒤 둘레를 친다 — 안이면 맞고, 밖이면 안 맞는다.
-    /// 0112·0116 T3: 등급 2 잡몹은 체력 ×1.5(올림 — 잔재 3 → 5, 가시짐승 2 → 3)·자세 ×1.3(커진 체력 몫에 더해)·잔불 ×1.6(올림),
+    /// 0112·0116 T3: 등급 2 잡몹은 체력 ×1.5(올림 — 잔재 3 → 5, 가시짐승 2 → 3)·자세 ×1.3(커진 체력 몫에 더해)·잔불 ×1.3(올림, 0123),
     /// 한 대는 1 그대로 — 등급 3부터 2. 예고 길이는 같다.
     #[test]
     fn tier_two_mobs_are_sturdier_and_richer_but_hit_and_tell_the_same() {
@@ -4191,8 +4191,9 @@ mod tests {
             w.step(&Actions::default(), &t);
             w.drops.iter().map(|d| d.value).sum::<u32>()
         };
-        assert_eq!(drop(make(Kind::Husk, 2)), 4);
-        assert_eq!(drop(make(Kind::Thorn, 2)), 5);
+        // 0123: 잔재 1·가시짐승 2 × 1.3(올림) = 2·3.
+        assert_eq!(drop(make(Kind::Husk, 2)), 2);
+        assert_eq!(drop(make(Kind::Thorn, 2)), 3);
         // 보스는 등급을 받지 않는다.
         let mut w = World::new("test", 20.0);
         let b = w.spawn(Kind::Warden, vec3(0.0, 0.0, -3.0));
@@ -6913,8 +6914,8 @@ mod tests {
         assert_eq!(d5, d0 + 1, "might 5: light hits +1");
         assert!(p0 > 0.0);
         assert!(
-            (p5 / p0 - 1.6).abs() < 1e-3,
-            "might 5: poise x1.6 ({p0} -> {p5})"
+            (p5 / p0 - 1.4).abs() < 1e-3,
+            "might 5: poise x1.4 ({p0} -> {p5})"
         );
 
         let mut w = World::new("test", 20.0);
@@ -6925,10 +6926,10 @@ mod tests {
         let s = crate::stats::Stats::compute(&[lv.mods()]);
         w.apply_stats(s, true);
         let base = crate::tuning::SPECS[crate::tuning::idx(P::StaminaMax)].def;
-        assert_eq!(w.player.stamina, base + 60.0, "rest fills the longer bar");
+        assert_eq!(w.player.stamina, base + 40.0, "rest fills the longer bar");
         let tt = w.stats.tune(&t);
-        assert_eq!(tt[P::StaminaMax], t[P::StaminaMax] + 60.0);
-        assert!((tt[P::StaminaRegen] - t[P::StaminaRegen] * 1.2).abs() < 1e-3);
+        assert_eq!(tt[P::StaminaMax], t[P::StaminaMax] + 40.0);
+        assert!((tt[P::StaminaRegen] - t[P::StaminaRegen] * 1.12).abs() < 1e-3);
         // 판정 창은 레벨이 건드리지 않는다(0095 원칙 2).
         assert_eq!(tt[P::ParryWindow], t[P::ParryWindow]);
     }

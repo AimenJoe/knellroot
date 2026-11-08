@@ -89,7 +89,7 @@ pub static HUSK: Def = Def {
     retreat: 0.0,
     behavior: Behavior::Melee,
     boss: false,
-    embers: 2,
+    embers: 1,
     model: "root_husk",
 };
 
@@ -117,7 +117,7 @@ pub static THORN: Def = Def {
     retreat: 0.0,
     behavior: Behavior::Charger,
     boss: false,
-    embers: 3,
+    embers: 2,
     model: "thorn_beast",
 };
 
@@ -145,7 +145,7 @@ pub static WARDEN: Def = Def {
     retreat: 0.0,
     behavior: Behavior::Warden,
     boss: true,
-    embers: 40,
+    embers: 30,
     model: "gatekeeper",
 };
 
@@ -175,7 +175,7 @@ pub static SHELL: Def = Def {
     retreat: 0.0,
     behavior: Behavior::Melee,
     boss: false,
-    embers: 4,
+    embers: 3,
     model: "shellback",
 };
 
@@ -205,7 +205,7 @@ pub static POD: Def = Def {
     retreat: 3.5,
     behavior: Behavior::Planter,
     boss: false,
-    embers: 3,
+    embers: 2,
     model: "pod",
 };
 
