@@ -697,6 +697,11 @@ impl World {
         if matches!(pl.state, PState::Drink { .. }) && pl.pending == Some(Next::Flask) {
             pl.pending = None;
         }
+        // 경직 중의 패링 누름은 받아 두지 않는다(0110, 사장 2026-11-08): 풀린 뒤 늦게 나가면 창은 엇나가고
+        // 헛침 굳음(`parry.time s`)만 남는다. 패링은 누른 그 순간의 행동 — 회피 등은 그대로 받아 둔다(경직에서 빠져나가기, 0099).
+        if matches!(pl.state, PState::Hurt { .. }) && pl.pending == Some(Next::Parry) {
+            pl.pending = None;
+        }
         let mut out = Actions {
             attack: false,
             dodge: false,
@@ -2006,6 +2011,10 @@ impl World {
             let taken = 1 + self.stats.taken;
             let pl = &mut self.player;
             pl.hp -= taken;
+            // 나가기 전에 맞았으면 받아 둔 패링은 버린다(0110) — 맞은 뒤 뒤늦게 나가 헛침 굳음이 생기지 않게.
+            if pl.pending == Some(Next::Parry) {
+                pl.pending = None;
+            }
             // 맞은 뒤 무적은 짧게(예전 0.6초 — 그 동안 다시 맞을 수 없어 경직 줄이기가 쓸 데가 없었다).
             pl.hurt = t[P::HitIframes];
             // 경직 이음(0018 → 0099, 사장 "다구리 맞더라도 틈이 생겨서 도망갈 수 있게" — 이어 패링의 반대): 경직과 그 뒤
@@ -5096,6 +5105,87 @@ mod tests {
         let ev = w.step(&Actions::default(), t);
         w.enemies[i].state = EState::Dead;
         ev
+    }
+
+    /// 0110: 공격 후딜레이에 눌러 받아 둔 패링이 나가기 전에 맞으면 버린다 — 경직이 풀린 뒤 뒤늦게 패링(과 헛침 굳음)이 나가지 않는다.
+    #[test]
+    fn a_hit_before_the_parry_comes_out_drops_the_buffered_parry() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        // 평타 하나를 내고 곧바로 패링을 누른다 → 캔슬 시점까지 받아 둔다.
+        w.step(
+            &Actions {
+                attack: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(matches!(w.player.state, PState::Attack { .. }));
+        w.step(
+            &Actions {
+                parry: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert_eq!(
+            w.player.pending,
+            Some(Next::Parry),
+            "buffered behind the swing"
+        );
+        hit_by_swing(&mut w, &t);
+        assert!(matches!(w.player.state, PState::Hurt { .. }));
+        assert_eq!(w.player.pending, None, "the hit drops the parry");
+        for _ in 0..90 {
+            w.step(&Actions::default(), &t);
+            assert!(
+                !matches!(w.player.state, PState::Parry { .. }),
+                "no late parry after the stun"
+            );
+        }
+        assert_eq!(w.player.state, PState::Idle);
+    }
+
+    /// 0110: 경직 중에 누른 패링은 풀린 뒤 나가지 않는다. 회피는 받아 둔다(경직에서 빠져나가기, 0099).
+    #[test]
+    fn a_parry_pressed_during_the_stun_is_not_kept_but_a_dodge_is() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        hit_by_swing(&mut w, &t);
+        w.step(
+            &Actions {
+                parry: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert_eq!(w.player.pending, None);
+        for _ in 0..90 {
+            w.step(&Actions::default(), &t);
+            assert!(!matches!(w.player.state, PState::Parry { .. }));
+        }
+        // 회피: 경직이 짧게 남았을 때 누르면 풀리자마자 나간다.
+        hit_by_swing(&mut w, &t);
+        while let PState::Hurt { t: e, dur } = w.player.state {
+            if dur - e < t[P::AttackBuffer] * 0.5 {
+                break;
+            }
+            w.step(&Actions::default(), &t);
+        }
+        w.step(
+            &Actions {
+                dodge: true,
+                move_dir: vec2(1.0, 0.0),
+                ..Default::default()
+            },
+            &t,
+        );
+        let mut dodged = false;
+        for _ in 0..30 {
+            w.step(&Actions::default(), &t);
+            dodged |= matches!(w.player.state, PState::Dodge { .. });
+        }
+        assert!(dodged, "a dodge pressed late in the stun still comes out");
     }
 
     /// 맞으면 잠깐 경직(못 움직임) — 경직 중 또 맞으면 반씩 짧아지고, 이음 창(0099)까지 지난 뒤 맞으면 다시 처음 길이(0018).
