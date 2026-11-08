@@ -283,8 +283,17 @@ impl Enemy {
         if self.boss {
             return;
         }
-        self.tier = n.max(1);
-        self.max_hp = (self.max_hp as f32 * crate::tuning::tier(self.tier).hp).ceil() as i32;
+        let tier = n.max(1);
+        if self.tier == tier {
+            return;
+        }
+        self.tier = tier;
+        // 늘 종 바탕에서 다시 센다(등급을 바꿔도 배율이 겹치지 않게, 엘리트면 엘리트 배율까지 — 엘리트 뒤에 불러도 같다).
+        let mut hp = (self.def().hp as f32 * crate::tuning::tier(tier).hp).ceil();
+        if self.elite.is_some() {
+            hp = (hp * crate::tuning::ELITE_HP).ceil();
+        }
+        self.max_hp = hp as i32;
         self.hp = self.max_hp;
     }
 
@@ -735,6 +744,34 @@ mod tests {
         (0..ticks)
             .filter(|_| en.tick(player, 1.0 / 60.0).hit)
             .count()
+    }
+
+    /// 0116 T3: 등급 배율은 한 번만 적용한다(재설정 호출로 체력이 누적 증가하지 않게).
+    #[test]
+    fn setting_the_same_region_tier_twice_does_not_stack_health() {
+        let mut en = Enemy::new(Kind::Husk, Vec3::ZERO);
+        let base = en.max_hp;
+        en.set_tier(2);
+        let tier_two = (base as f32 * crate::tuning::tier(2).hp).ceil() as i32;
+        assert_eq!(en.max_hp, tier_two);
+        en.hp -= 1;
+        en.set_tier(2);
+        assert_eq!(en.max_hp, tier_two);
+        assert_eq!(
+            en.hp,
+            tier_two - 1,
+            "reapplying the tier must not refill health"
+        );
+        // 등급을 바꾸면 종 바탕에서 다시 센다(겹치지 않는다), 엘리트 뒤에 불러도 같다.
+        en.set_tier(1);
+        assert_eq!(en.max_hp, base);
+        let mut elite = Enemy::new(Kind::Husk, Vec3::ZERO);
+        elite.set_tier(2);
+        elite.make_elite(Affix::Hardened);
+        let mut late = Enemy::new(Kind::Husk, Vec3::ZERO);
+        late.make_elite(Affix::Hardened);
+        late.set_tier(2);
+        assert_eq!(elite.max_hp, late.max_hp, "order does not matter");
     }
 
     /// 0112: 엘리트 = 체력 × `ELITE_HP`(올림)·몸 × `ELITE_SCALE`·성질 하나. 보스는 엘리트가 되지 않는다.

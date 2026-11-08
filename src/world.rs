@@ -2613,7 +2613,7 @@ pub fn poise_max(en: &Enemy, t: &Tuning) -> f32 {
         } else {
             1.0
         };
-        // 등급(0112): 체력이 커진 몫에 더해 × 등급 자세 배율.
+        // 등급(0112): 체력이 커진 몫에 더해 × 등급 자세 배율(정본의 계산 순서).
         (t[P::PoiseBase] + en.max_hp as f32 * t[P::PoisePerHp])
             * hard
             * crate::tuning::tier(en.tier).poise

@@ -1647,6 +1647,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn region_tier_multipliers_match_the_village_design() {
+        let one = tier(1);
+        assert_eq!((one.hp, one.poise, one.embers), (1.0, 1.0, 1.0));
+        let two = tier(2);
+        assert_eq!(
+            (two.hp, two.poise, two.embers),
+            (1.5, 1.3, 1.3),
+            "0116 → 0123 잔불 1.3"
+        );
+        assert_eq!(tier(0).hp, one.hp, "tier is one-based");
+    }
+
+    #[test]
     fn every_p_has_exactly_one_spec_and_defaults_are_in_range() {
         for s in SPECS.iter() {
             assert!(
