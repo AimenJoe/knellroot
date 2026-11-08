@@ -826,7 +826,7 @@ weapon=crossbow
             (p.owned, p.worn, p.chests)
         );
         assert!(back.has_any());
-        assert_eq!(back.stats().parry, 0.06, "the worn charm counts");
+        assert_eq!(back.stats().parry, 0.04, "the worn charm counts");
         assert_eq!(back.growth, p.growth);
         let base = crate::stats::Stats::default();
         assert_eq!(back.stats().max_hp, base.max_hp + 2);

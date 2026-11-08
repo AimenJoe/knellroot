@@ -76,6 +76,9 @@ pub struct Light {
     pub pos: Vec3,
     pub color: Color,
     pub radius: f32,
+    /// 천장 틈 빛줄기(0119 → 0124): 둥글게 퍼지지 않고 위에서 내리꽂는 기둥 — `radius`는 기둥의 가로 반지름,
+    /// 그 안의 것은 높이와 상관없이 위를 보는 면부터 밝다(서면 몸이 비친다).
+    pub shaft: bool,
 }
 
 /// 지도에서 읽은 레벨(정적인 것).
@@ -195,15 +198,17 @@ impl Level {
                             pos: p + Vec3::Y * 1.2,
                             color: Color::new(1.0, 0.62, 0.25, 1.0),
                             radius: 7.0,
+                            shaft: false,
                         });
                     }
                     // 천장 틈 빛줄기(0118 T2, 땅속): 표지 + 옅은 빛(굽는 지형·배우가 받는다). 그림은 렌더가 표지로.
                     SHAFT_GLYPH => {
                         lv.marks.push((SHAFT_GLYPH, p));
                         lv.lights.push(Light {
-                            pos: p + Vec3::Y * 2.5,
-                            color: Color::new(0.62, 0.66, 0.85, 1.0),
-                            radius: 6.0,
+                            pos: p + Vec3::Y * 1.0,
+                            color: Color::new(0.78, 0.82, 1.0, 1.0),
+                            radius: SHAFT_R,
+                            shaft: true,
                         });
                     }
                     other => lv.marks.push((other, p)),
@@ -414,9 +419,6 @@ pub struct StageDef {
     pub elites: &'static [(char, Kind, crate::enemy::Affix)],
     /// 처음(문이 닫혀 있을 때)의 목표 글 — 서 있는 적 스테이지는 문을 여는 장치를 찾게.
     pub obj_explore: Tr,
-    /// 문이 지름길인가(0121 — 마을 사다리): 처음부터 문이 열린 단계(문지기·목표는 문과 상관없다), 문은 장치를 당긴(기록) 때만 열린다 —
-    /// 쉬거나 다시 서도, 문지기가 깨어나도 그대로. false면 성소처럼 문이 문지기 방을 막는다.
-    pub gate_shortcut: bool,
     /// 장치를 당겼을 때의 카드(성소 "어딘가에서 문이 열렸다", 마을 "사다리가 내려왔다").
     pub card_lever: Tr,
     /// 지하 몇 m(0118, 연출 표 — 지층 단면 전환·카드가 같이 쓴다). 차례대로 깊어진다(시험).
@@ -433,8 +435,9 @@ pub static STAGES: [&StageDef; 2] = [&sanctuary::DEF, &village::DEF];
 pub const DOWN_GLYPH: char = 'D';
 pub const UP_GLYPH: char = 'U';
 pub const PASSAGE_REACH: f32 = 1.2;
-/// 천장 틈 빛줄기 표지(0118 T2).
+/// 천장 틈 빛줄기 표지(0118 T2)와 기둥의 가로 반지름(m — 바닥 웅덩이와 같게).
 pub const SHAFT_GLYPH: char = 'S';
+pub const SHAFT_R: f32 = 1.7;
 /// 상자 기록 번호(0118): 지역마다 `지역 × 이것 + 상자 번호`(성소는 그대로 — 옛 기록이 이어진다).
 pub const CHESTS_PER_STAGE: u32 = 1000;
 const PASSAGE_ARM: f32 = 2.6;
@@ -488,7 +491,7 @@ pub const FIND_REACH: f32 = 1.8;
 
 /// 상자 곁(m)과, 든 장신구를 이미 가졌을 때 대신 주는 잔불.
 pub const CHEST_REACH: f32 = 1.8;
-pub const CHEST_EMBERS: u32 = 15;
+pub const CHEST_EMBERS: u32 = 10;
 
 /// 상자에 든 것(0117): 장신구 또는 무기 — 무기는 얻어서 쓴다(검·맨손만 처음부터).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -733,7 +736,7 @@ impl StageRun {
             run.objective = Some(def.obj_explore);
         }
         // 문 장치도 물결도 없는 지역(0118)은 처음부터 문이 열린 단계.
-        if (run.lever.is_none() || def.gate_shortcut) && def.waves.is_empty() {
+        if run.lever.is_none() && def.waves.is_empty() {
             run.phase = Phase::GateOpen;
             run.set_gate(&mut w, false);
             run.objective = Some(def.obj_gate);
@@ -793,12 +796,6 @@ impl StageRun {
     }
 
     fn set_gate(&mut self, w: &mut World, closed: bool) {
-        // 지름길 문(0121)은 장치를 당겼는지만 따른다.
-        let closed = if self.def.gate_shortcut {
-            !self.gate_opened
-        } else {
-            closed
-        };
         if closed == self.gate_closed {
             return;
         }
@@ -1668,27 +1665,6 @@ mod tests {
         );
     }
 
-    /// 0121: 마을 사다리 지름길 — 처음엔 닫혀 있고(목표는 종탑 터), 아래 장치로만 열리며(기록), 쉬어도 열리지 않는다.
-    /// 문과 상관없이 종탑 터에 들어서면 문지기가 깬다.
-    #[test]
-    fn the_village_ladder_opens_only_from_the_lever_below() {
-        let (mut run, mut w) = StageRun::start(STAGES[1]);
-        assert!(STAGES[1].gate_shortcut);
-        assert_eq!(run.phase, Phase::GateOpen);
-        assert!(run.gate_closed, "the ladder is up");
-        rest_now(&mut run, &mut w, 0);
-        assert!(run.gate_closed, "resting does not drop it");
-        pull_lever(&mut run, &mut w);
-        assert!(!run.gate_closed && run.gate_opened && run.take_gate_new());
-        // 다시 닫힌 판에서 문지기에게 곧장.
-        let (mut run, mut w) = StageRun::start(STAGES[1]);
-        w.player.pos = run.level.marks_of('W').next().unwrap() + vec3(0.0, 0.0, 4.0);
-        w.player.prev = w.player.pos;
-        tick(&mut run, &mut w, Actions::default());
-        assert!(matches!(run.phase, Phase::Waking(_)), "{:?}", run.phase);
-        assert!(run.gate_closed, "the boss does not drop the ladder either");
-    }
-
     /// 0122: 주민은 월드의 적이 아니다(맞지도·락온되지도 않는다 — 공격이 지나간다), 몸은 방랑자만 밀어낸다.
     /// 곁에서 점프 버튼 = 말 걸기(다른 일을 하지 않는다), 가까이 오면 돌아보고, 보면 한 번 기록한다.
     #[test]
@@ -1976,32 +1952,20 @@ mod tests {
         assert_eq!(run.chest_open, vec![true, false, false, false]);
     }
 
-    /// 0105·0106: 숨은 물건 여섯(등잔 하나 · 한 모금 둘 · 종소리 조각 셋)은 걸어서 닿는 바닥에 있고, 점프 버튼으로 한 번 줍고, 기록의 것은 새 판에 없다.
+    /// 0105·0106 → 0123: 숨은 물건 넷(등잔 하나 · 한 모금 하나 · 종소리 조각 둘 — 덜 후하게)은 걸어서 닿는 바닥에 있고, 점프 버튼으로 한 번 줍고, 기록의 것은 새 판에 없다.
     #[test]
     fn hidden_finds_are_reachable_picked_once_and_gone_from_the_record() {
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
         let kinds: Vec<Find> = run.finds.iter().map(|f| f.1).collect();
-        assert_eq!(
-            kinds,
-            vec![
-                Find::Lamp,
-                Find::Sip,
-                Find::Sip,
-                Find::Shard,
-                Find::Shard,
-                Find::Shard
-            ]
-        );
+        assert_eq!(kinds, vec![Find::Lamp, Find::Sip, Find::Shard, Find::Shard]);
         let ids: Vec<&str> = run.finds.iter().map(|f| f.2.as_str()).collect();
         assert_eq!(
             ids,
             vec![
                 "sanctuary.lamp.0",
                 "sanctuary.sip.0",
-                "sanctuary.sip.1",
                 "sanctuary.shard.0",
-                "sanctuary.shard.1",
-                "sanctuary.shard.2"
+                "sanctuary.shard.1"
             ]
         );
         for (p, _, id) in &run.finds {
@@ -2029,7 +1993,7 @@ mod tests {
         assert_eq!(run.take_picked(), None, "gone after picking");
         let (mut run, _) = StageRun::start(&sanctuary::DEF);
         run.set_found(&[id, "elsewhere.sip.0".to_string()]);
-        assert_eq!(run.found, vec![false, true, false, false, false, false]);
+        assert_eq!(run.found, vec![false, true, false, false]);
     }
 
     /// 0105(lore CANON 0101): 처음 이긴 문지기의 핵은 다가오면 스스로 방랑자 쪽으로 온다. 그다음 판부터는 그 자리에 있다.
