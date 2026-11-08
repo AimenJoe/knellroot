@@ -14,12 +14,14 @@ impl App {
     /// 판에서 기록할 것을 옮기고(쉰 쉼터·끝낸 판), 바뀌었으면 쓴다.
     pub(super) fn sync_progress(&mut self, out: crate::stage::StageOut) {
         self.progress.run = self.run.run_at();
-        // 상자(0064 M3): 든 장신구를 얻는다(이미 가졌으면 잔불).
+        // 상자(0064 M3 → 0117): 든 장신구·무기를 얻는다(이미 가졌으면 잔불).
         if let Some(i) = self.run.take_opened() {
+            use crate::stage::Loot;
             self.snd(crate::sfx::Id::Chest);
             self.progress.chests.push(i as u32);
-            match self.run.def.chest_charms.get(i).copied() {
-                Some(id) if !self.progress.owned.contains(&id) => self.gain_charm(id),
+            match self.run.def.chest_loot.get(i).copied() {
+                Some(Loot::Charm(id)) if !self.progress.owned.contains(&id) => self.gain_charm(id),
+                Some(Loot::Weapon(w)) if !self.progress.owns_weapon(w) => self.gain_weapon(w),
                 _ => {
                     self.world.embers += crate::stage::CHEST_EMBERS;
                     let n = crate::stage::CHEST_EMBERS.to_string();
@@ -109,6 +111,14 @@ impl App {
         }
         let name = tr(crate::charms::def(id).name);
         self.toast = Some((fill(s().toast_charm, &[name]), TOAST_TIME));
+    }
+
+    /// 무기를 얻는다(0117): 가진 것에 넣는다 — 드는 것은 장비 창에서(싸우는 손을 마음대로 바꾸지 않는다). 알림.
+    pub(super) fn gain_weapon(&mut self, w: weapons::Id) {
+        if !self.progress.weapons.contains(&w) {
+            self.progress.weapons.push(w);
+        }
+        self.toast = Some((fill(s().toast_weapon, &[weapon_name(w)]), TOAST_TIME));
     }
 
     /// 화로 가게에서 산다(0064 M4): 잔불이 모자라면 알림만.

@@ -388,8 +388,8 @@ pub struct StageDef {
     pub obj_gate: Tr,
     pub obj_core: Tr,
     pub boss_wakes: Tr,
-    /// 상자(지도 `C`, 위에서부터 차례)마다 든 장신구(0064 M3). 이미 가졌으면 잔불 `CHEST_EMBERS`.
-    pub chest_charms: &'static [crate::charms::Id],
+    /// 상자(지도 `C`, 위에서부터 차례)마다 든 것(0064 M3 → 0117: 장신구 또는 무기). 이미 가졌으면 잔불 `CHEST_EMBERS`.
+    pub chest_loot: &'static [Loot],
     /// 문지기를 처음 이겼을 때 주는 장신구.
     pub boss_charm: Option<crate::charms::Id>,
     /// 숨은 물건 기록 이름의 앞(0105): `<앞>.<종류>.<그 종류의 몇째>` — 스테이지가 늘어도 섞이지 않게.
@@ -454,6 +454,13 @@ pub const FIND_REACH: f32 = 1.8;
 /// 상자 곁(m)과, 든 장신구를 이미 가졌을 때 대신 주는 잔불.
 pub const CHEST_REACH: f32 = 1.8;
 pub const CHEST_EMBERS: u32 = 15;
+
+/// 상자에 든 것(0117): 장신구 또는 무기 — 무기는 얻어서 쓴다(검·맨손만 처음부터).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Loot {
+    Charm(crate::charms::Id),
+    Weapon(crate::weapons::Id),
+}
 /// 상자 부딪힘 상자 반폭(가로·세로 m).
 const CHEST_HALF: Vec3 = Vec3::new(0.45, 0.5, 0.3);
 
@@ -1461,8 +1468,8 @@ mod tests {
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
         assert_eq!(
             run.chests.len(),
-            sanctuary::DEF.chest_charms.len(),
-            "a charm per chest"
+            sanctuary::DEF.chest_loot.len(),
+            "loot per chest"
         );
         run.intro = 0.0;
         let c = run.chests[1];
@@ -1482,7 +1489,7 @@ mod tests {
         // 기록에서 연 상자는 새 판에서도 열려 있다.
         let (mut run, _) = StageRun::start(&sanctuary::DEF);
         run.set_opened(&[0, 9]);
-        assert_eq!(run.chest_open, vec![true, false]);
+        assert_eq!(run.chest_open, vec![true, false, false, false]);
     }
 
     /// 0105·0106: 숨은 물건 여섯(등잔 하나 · 한 모금 둘 · 종소리 조각 셋)은 걸어서 닿는 바닥에 있고, 점프 버튼으로 한 번 줍고, 기록의 것은 새 판에 없다.

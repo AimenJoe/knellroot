@@ -446,6 +446,10 @@ impl World {
     /// 원거리 무기의 X = 수류탄(0048·0051): 남아 있으면 던지고, 없으면 칸이 깜빡인다.
     fn throw_grenade(&mut self, cx: &Ctx) {
         let pl = &mut self.player;
+        // 수류탄도 기력을 쓴다(0117) — 평타 한 번 값.
+        if pl.grenades >= 1.0 && !pl.spend(cx.t[P::StaminaAttack]) {
+            return;
+        }
         if pl.grenades >= 1.0 {
             pl.grenades -= 1.0;
             let to = cx.throw_to.unwrap_or(pl.pos);
@@ -473,7 +477,7 @@ impl World {
         let dash = pl.dash_left > 0.0 && wpn.dash.is_some();
         let free = pl.on_beat && pl.combo_left > 0.0 && !riposte && !dash;
         pl.on_beat = false;
-        let go = free || pl.spend(cx.t[P::StaminaAttack]);
+        let go = free || pl.spend(cx.t[P::StaminaAttack] * wpn.stamina);
         if go {
             pl.swing_beat = free;
             if free {
@@ -580,6 +584,12 @@ impl World {
             return;
         };
         let pl = &mut self.player;
+        // 사격도 기력을 쓴다(0117, 사장 "원거리 공격은 탄환도 쓰지만 기력도 — 그렇지 않으면 너무 세다"): 볼트가 있을 때만 치르고,
+        // 기력이 없으면 막힌다(땀방울·막대 떨림). 박자 사격은 볼트만 아낀다.
+        if pl.ammo > 0 && !pl.spend(cx.t[P::StaminaAttack] * cx.wpn.stamina) {
+            pl.on_beat = false;
+            return;
+        }
         // 박자(0071·0077): 앞 사격이 시작된 뒤 그 한 발의 시간(= 공격 속도) ± 창 안에 누른 사격은 볼트를 쓰지 않는다 —
         // 근접의 "박자 평타 = 스태미나 0"과 같은 틀, 쇠뇌의 값은 볼트. 첫 발·받아 둔 이른 누름은 쓴다.
         let free = pl.on_beat;
@@ -685,7 +695,7 @@ impl World {
             return;
         }
         let pl = &mut self.player;
-        if pl.spend(t[P::HeavyStamina]) {
+        if pl.spend(t[P::HeavyStamina] * cx.wpn.stamina) {
             let h = wpn.heavy.expect("charging only with a heavy");
             let full_at = t[P::HeavyCharge] * h.charge;
             // 떼면 강타 — 자동 조준·조준 스틱 쪽으로, 내딛는 쪽은 이동 입력(없으면 바라보는 쪽).
@@ -703,7 +713,8 @@ impl World {
             // 고른 호흡(0107): 딱 맞춰 뗀 강타는 강타 기력을 돌려준다.
             let perfect = e >= full_at && e <= full_at + PERFECT_RELEASE;
             if perfect && self.tree.has(Cell::EvenBreath) {
-                pl.stamina = (pl.stamina + t[P::HeavyStamina]).min(t[P::StaminaMax]);
+                pl.stamina =
+                    (pl.stamina + t[P::HeavyStamina] * cx.wpn.stamina).min(t[P::StaminaMax]);
             }
             pl.state = PState::Heavy {
                 t: 0.0,
@@ -791,6 +802,9 @@ impl World {
                 if pl.ammo == 0 {
                     pl.reload = reload;
                 }
+                // 모은 사격은 강타 값(0117) — 이미 모았으니 막지 않고 0까지 쓴다(소울류).
+                pl.stamina = (pl.stamina - t[P::HeavyStamina] * wpn.stamina).max(0.0);
+                pl.stamina_idle = 0.0;
             }
         }
         pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
@@ -909,7 +923,8 @@ impl World {
                     self.cast_denied_now = true;
                     false
                 }
-                Rb::Shot { .. } => true,
+                // 쇠뇌 내려 쏘기(0111)도 기력(0117) — 볼트는 그대로 안 쓴다.
+                Rb::Shot { .. } => pl.spend(t[P::StaminaAttack] * cx.wpn.stamina),
             };
             let pl = &mut self.player;
             if ok {

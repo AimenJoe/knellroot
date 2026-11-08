@@ -22,6 +22,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 ## 구현 상태(2026-11-07 — 첫 판 2026-11-04, v0.3.0 배포 2026-11-06, v0.3.4·v0.3.5 배포 2026-11-07·0100까지, v0.4.0 T0 0103·G1 0104·G3 0105·G2·G4 0106·G5 0107·표시 0108 — v0.4.0 배포 2026-11-08(PR #6), 판정 전)
 | 항목 | 위치 | 비고 |
 |---|---|---|
+| v0.4.2 패치(0117) | `weapons::Weapon::stamina`, `world/player_tick.rs`(평타·강타·쏘기·수류탄·공중 볼트), `tuning.rs` 충전 28/s·0.8초, `save::Progress::weapons`·`owns_weapon`, `app::App::arms`, `stage::Loot`·`chest_loot`, `growth::SHOP`, `tools/maps/sanctuary.py` | 무기별 기력·원거리 기력·느린 충전·무기는 상자에서(옛 기록은 다 가짐)·적 39·입구 강화 덜기·가게 값. `Cargo.toml` 0.4.2·`version_code` 16, `docs/releases/v0.4.2.md` |
 | 나무 칸 표시·v0.4.0(0108) | `render.rs`(끝맺음 금빛 두 겹·비껴서기 민트 고리·맞서는 자 호박 반달), `World::beat_cue`(맺음타 마지막 타 부채꼴), `cancel_or_buffer`(맺음타 캔슬 길), `Cargo.toml` 0.4.0·`version_code` 14, `docs/releases/v0.4.0.md` | 0107에서 맺음타가 캔슬 길로는 안 걸리던 것을 고침. 릴리스 PR `release/v0.4` → `main`(Merge는 사장) |
 | 나무 칸 동작 15(0107, v0.4.0 G5) | `progression::cell`(값), `world.rs` `strike_cells`·`outer_ring`·패링 튕김, `world/player_tick.rs` `swing_pays`·`tick_attack`·`tick_charging`·`tick_dodge`·`tick_run` | 칸마다 `tree.has` 한 줄 + 시험 하나, 판정 창을 넓히는 칸 없음. 받아내기·맞서는 자는 지금 게임에 맞게 뜻을 고침(0107). 칸을 안 열면 싸움은 T0 전과 같음(흔적 120/120) |
 | 기술 나무·종소리 조각·나무 창(0106, v0.4.0 G2·G4) | `progression::TREE`·`Tree`·`tree_points`, `stage::Find::Shard`(지도 `K`), `app/tree.rs`, 기록 `tree.*`, 멈춤 셋째 줄 "나무" | 갈래 셋 × 다섯 칸, 칸마다 1점(핵 + 조각), 칸 밝기 네 단·거기까지 n점·목표 핀, 화로에서 열기(묻는 창), 멈춤은 읽기 전용. 칸 동작은 G5(아직 — 열어도 싸움은 그대로) |
@@ -117,6 +118,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 **0093 소개 페이지**: `release/v0.3`을 main에 넣은 뒤 ① 레포 Settings → Pages → Source = **GitHub Actions**(켜기 전 첫 실행은 실패, 켠 뒤 Actions의 pages를 다시 실행) ② DNS(Cloudflare)에 `knellroot` CNAME → `aimenjoe.github.io` ③ Settings → Pages → Custom domain = `knellroot.beardworks.io`, Enforce HTTPS. 페이지 글을 고치면 `python3 tools/site/subset_font.py <GowunBatang-Bold.ttf>`.
 
 **v0.4.0 배포됨(2026-11-08, PR #6 → `9564892`)**: 운영 웹 `build.txt` = 그 커밋, Release `v0.4.0`에 `knellroot.apk`, `deploy-web`·`release`·`build-android` 모두 success. `release/v0.4`는 main까지 앞으로 맞춤. 고칠 것은 v0.4.x.
+
+**0117(v0.4.2 패치)**: 무기별 기력 배율(검 1.0·망치 1.7·지팡이 0.75·쇠뇌 0.7·맨손 0.6), 원거리도 기력(쏘기·모은 사격·공중 볼트·수류탄 — 기력이 없으면 안 나감), 기력 충전 45 → 28/s·지연 0.6 → 0.8초(얼린 값, 0117이 판정), 무기는 얻어서(맨손·검만 처음부터 — 쇠뇌 성벽길·지팡이 뜰 남동 단·망치 뿌리 굴 상자, 옛 기록은 다 가진 채로), 서 있는 적 24 → 39, 입구의 상자·조각·한 모금을 깊은 곳으로, 단단한 껍질은 가게로, 가게 값 60·90·110·120·150. 판정: 다시 차는 4.4초가 답답하지 않고 고르게 되는가(답답하면 지연부터 줄인다), 쇠뇌 0.7, 39의 밀도와 걷는 시간, 성벽길·뿌리 굴 중 어디를 먼저 가는가.
 
 **0113(개발판)**: 0번째 지역 — 물결 대신 서 있는 적(보면 깨고·멀어지면 제자리로 가득), 지도 약 3배(입구·다리·무너진 길·뿌리 굴·서쪽 성벽길 고리·동쪽 탑·뜰·성소, 화로 셋, 적 24 + 엘리트 3), 문은 성벽길 끝 장치로(기록에 남는 지름길), 화로에서 쉬면 적이 다시 선다(이 판에 쓰러뜨린 엘리트 빼고). 판정: 넓어졌다·길 찾기·밀도·끈·장치 고리·첫 판 10~15분·Android 30fps.
 

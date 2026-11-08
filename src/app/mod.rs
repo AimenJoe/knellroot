@@ -136,6 +136,15 @@ impl App {
         false
     }
 
+    /// 들 수 있는 무기(0117): 기록에 가진 것 — 개발 판·놀이터(시나리오)는 다(무기를 시험하려고).
+    fn arms(&self) -> Vec<weapons::Id> {
+        #[cfg(feature = "dev")]
+        if self.dev_run || self.stack.base() == Scene::Sandbox {
+            return weapons::IDS.to_vec();
+        }
+        self.progress.owned_weapons()
+    }
+
     pub fn new() -> Self {
         let t = Tuning::default();
         // 저장한 설정(0024·0052·0058): 언어·키 배치·흔들림·무기·마우스 조준.
@@ -164,6 +173,12 @@ impl App {
                 weapons::Id::Sword
             }
         });
+        // 가지지 않은 무기는 들 수 없다(0117).
+        let weapon = if progress.owns_weapon(weapon) {
+            weapon
+        } else {
+            weapons::Id::Sword
+        };
         let (run, mut world) = StageRun::start(FIRST_STAGE);
         world.set_weapon(weapon);
         let cam = Camera::new(world.player.pos, &t);
@@ -268,7 +283,10 @@ impl App {
 
     /// 무기를 바꾼다(0051, 멈춤 메뉴): 지금 판에 바로, 저장.
     fn next_weapon(&mut self, step: i32) {
-        self.weapon = self.weapon.next(step);
+        // 가진 무기 사이에서만(0117).
+        let arms = self.arms();
+        let i = arms.iter().position(|&w| w == self.weapon).unwrap_or(0) as i32;
+        self.weapon = arms[(i + step).rem_euclid(arms.len() as i32) as usize];
         self.world.set_weapon(self.weapon);
         self.progress.weapon = Some(self.weapon);
         self.persist();
