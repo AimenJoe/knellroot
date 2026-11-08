@@ -11,6 +11,7 @@
 //!   하늘 원통은 먼 클립(200m) 안에 들게 높이각 34°까지만, 그 위는 지우는 빛(`ZENITH`)이 이어 준다.
 use macroquad::prelude::*;
 
+use crate::ground::Ground;
 use crate::render::Batch;
 
 /// 안개 빛(해 질 녘 남보라 — 0037 세계 빛, 아지랑이·하늘과 같은 계열).
@@ -261,6 +262,8 @@ struct Drift {
     /// 깜빡임: 0이면 늘 켜짐, 아니면 켜지는 빠르기(Hz).
     blink_hz: f32,
     seed: u32,
+    /// 바닥이 없는 칸(벽·허공) 위에서는 보이지 않는다(떨어지는 흙 — 천장에서 바닥으로 떨어지는 것).
+    hide_off_ground: bool,
 }
 
 /// 반딧불: 풀 높이(0.3~1.8m), 바람 없이 헤매고, 몇 초마다 켜졌다 꺼진다. 빛무리로 둘레를 살짝 밝힌다.
@@ -276,6 +279,7 @@ const FIREFLIES: Drift = Drift {
     color: Color::new(1.0, 0.86, 0.42, 1.0),
     blink_hz: 0.22,
     seed: 11,
+    hide_off_ground: false,
 };
 /// 달빛 먼지: 공중 높이까지(0.2~4m), 옅고 작게, 달 반대쪽으로 천천히 흐르며 가라앉는다.
 const MOTES: Drift = Drift {
@@ -290,6 +294,7 @@ const MOTES: Drift = Drift {
     color: Color::new(0.82, 0.82, 1.0, 0.7),
     blink_hz: 0.0,
     seed: 23,
+    hide_off_ground: false,
 };
 
 /// 떨어지는 흙(땅속, 0118 T2): 천장 높이(6m)에서 곧게 떨어지는 작은 흙빛 점 — 위에 땅이 있다는 신호.
@@ -305,6 +310,7 @@ const FALLING: Drift = Drift {
     color: Color::new(0.62, 0.50, 0.42, 0.85),
     blink_hz: 0.0,
     seed: 31,
+    hide_off_ground: true,
 };
 
 fn h01(i: u32, k: u32) -> f32 {
@@ -316,7 +322,7 @@ fn h01(i: u32, k: u32) -> f32 {
 }
 
 /// 무리의 `i`번째가 시각 `t`에 어디·얼마나 밝은가(0..1). 플레이어 `c`를 가운데 둔 상자에서 감아 돈다.
-fn drift_at(d: &Drift, i: u32, c: Vec3, t: f32) -> (Vec3, f32) {
+fn drift_at(d: &Drift, i: u32, c: Vec3, t: f32, ground: Option<&Ground>) -> (Vec3, f32) {
     let s = d.seed.wrapping_mul(1000) + i;
     let span = d.half * 2.0;
     let base = vec3(h01(s, 1) * span, 0.0, h01(s, 2) * span);
@@ -330,7 +336,17 @@ fn drift_at(d: &Drift, i: u32, c: Vec3, t: f32) -> (Vec3, f32) {
     let z = lo.y + (moved.z - lo.y).rem_euclid(span);
     let hspan = d.y.1 - d.y.0;
     let y0 = h01(s, 5) * hspan + d.flow.y * t + 0.2 * (w * 1.3 + ph).sin();
-    let y = d.y.0 + y0.rem_euclid(hspan);
+    // 높이는 그 자리의 바닥에서 잰다(마을은 구역마다 바닥이 −1 ~ +4m, 성소 성벽길 +3m — 월드 0에서 재면 바닥에 묻혔다).
+    // 바닥이 없는 칸(벽·허공): 떨어지는 흙은 만들지 않고(`hide_off_ground`), 다른 것은 월드 0 기준(허공 위 먼지·반딧불).
+    let floor = ground.and_then(|g| {
+        let p = vec3(x, 0.0, z);
+        let (gx, gz) = g.cell_of(p)?;
+        g.height_in(gx, gz, p)
+    });
+    if d.hide_off_ground && ground.is_some() && floor.is_none() {
+        return (vec3(x, 0.0, z), 0.0);
+    }
+    let y = floor.unwrap_or(0.0) + d.y.0 + y0.rem_euclid(hspan);
     // 가장자리는 옅게(감아 돌 때 튀지 않게): 상자 끝 15%·높이 끝에서 0으로.
     let edge =
         |v: f32, a: f32, span: f32| ((v - a).min(a + span - v) / (span * 0.15)).clamp(0.0, 1.0);
@@ -394,7 +410,15 @@ fn halo_pixels(n: u16) -> Vec<u8> {
 
 impl Backdrop {
     /// 떠다니는 것(E4): 반딧불·먼지. `right`·`up`은 카메라 화면의 오른쪽·위(월드).
-    pub fn motes(&mut self, batch: &mut Batch, c: Vec3, right: Vec3, up: Vec3, time: f32) {
+    pub fn motes(
+        &mut self,
+        batch: &mut Batch,
+        c: Vec3,
+        right: Vec3,
+        up: Vec3,
+        time: f32,
+        ground: Option<&Ground>,
+    ) {
         let mut verts = Vec::new();
         let mut idx = Vec::new();
         let mut halos = Vec::new();
@@ -407,7 +431,7 @@ impl Backdrop {
         ];
         for d in kinds.into_iter().flatten() {
             for i in 0..d.count {
-                let (p, k) = drift_at(d, i, c, time);
+                let (p, k) = drift_at(d, i, c, time, ground);
                 if k <= 0.02 {
                     continue;
                 }
@@ -866,7 +890,7 @@ mod tests {
             for c in [Vec3::ZERO, vec3(37.0, 0.0, -12.5)] {
                 for t in [0.0, 13.7, 600.0] {
                     for i in 0..d.count {
-                        let (p, k) = drift_at(d, i, c, t);
+                        let (p, k) = drift_at(d, i, c, t, None);
                         assert!(
                             (p.x - c.x).abs() <= d.half + 1e-3
                                 && (p.z - c.z).abs() <= d.half + 1e-3
@@ -879,7 +903,7 @@ mod tests {
         }
         // 감아 도는 자리(상자 끝)에서는 보이지 않는다 — 튀어 나타나지 않게.
         let edge_k: f32 = (0..2000)
-            .map(|n| drift_at(&MOTES, 3, Vec3::ZERO, n as f32 * 0.37))
+            .map(|n| drift_at(&MOTES, 3, Vec3::ZERO, n as f32 * 0.37, None))
             .filter(|(p, _)| p.x.abs() > MOTES.half * 0.99)
             .map(|(_, k)| k)
             .fold(0.0, f32::max);
@@ -887,10 +911,47 @@ mod tests {
     }
 
     #[test]
+    fn falling_dust_tracks_each_walkable_surface_and_stays_below_its_ceiling() {
+        for floor in [-1.0, 0.0, 2.5, 4.0] {
+            let ground = Ground::new(1, 1, 100.0, vec![crate::ground::Cell::Flat(floor)]);
+            for t in [0.0, 13.7, 600.0] {
+                for i in 0..FALLING.count {
+                    let (p, k) = drift_at(&FALLING, i, Vec3::ZERO, t, Some(&ground));
+                    assert!(p.y >= floor + 0.1 - 1e-4, "floor={floor}, y={}", p.y);
+                    assert!(p.y <= floor + 6.0 + 1e-4, "floor={floor}, y={}", p.y);
+                    assert!((0.0..=1.0).contains(&k));
+                }
+            }
+        }
+    }
+
+    /// 달빛 먼지·반딧불도 바닥을 따른다(높은 단에서 바닥에 묻히지 않게) — 바닥 없는 칸에서도 보인다(허공 위 먼지).
+    #[test]
+    fn every_drift_rises_from_the_local_floor() {
+        let high = Ground::new(1, 1, 100.0, vec![crate::ground::Cell::Flat(4.0)]);
+        let solid = Ground::new(1, 1, 100.0, vec![crate::ground::Cell::Solid]);
+        for d in [&MOTES, &FIREFLIES] {
+            for i in 0..d.count {
+                let (p, _) = drift_at(d, i, Vec3::ZERO, 7.3, Some(&high));
+                assert!(p.y >= 4.0 + d.y.0 - 1e-4, "seed {}: {}", d.seed, p.y);
+            }
+            let shown = (0..d.count).any(|i| drift_at(d, i, Vec3::ZERO, 7.3, Some(&solid)).1 > 0.0);
+            assert!(shown, "seed {}: not hidden over solid cells", d.seed);
+        }
+    }
+
+    #[test]
+    fn falling_dust_is_hidden_over_solid_cells() {
+        let ground = Ground::new(1, 1, 100.0, vec![crate::ground::Cell::Solid]);
+        let (_, alpha) = drift_at(&FALLING, 0, Vec3::ZERO, 0.0, Some(&ground));
+        assert_eq!(alpha, 0.0);
+    }
+
+    #[test]
     fn fireflies_blink_and_are_not_all_lit_at_once() {
         let lit = |t: f32| {
             (0..FIREFLIES.count)
-                .filter(|&i| drift_at(&FIREFLIES, i, vec3(0.0, 0.0, 0.0), t).1 > 0.5)
+                .filter(|&i| drift_at(&FIREFLIES, i, vec3(0.0, 0.0, 0.0), t, None).1 > 0.5)
                 .count()
         };
         let counts: Vec<usize> = (0..40).map(|n| lit(n as f32 * 0.5)).collect();
