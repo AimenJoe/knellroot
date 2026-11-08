@@ -1310,6 +1310,41 @@ mod tests {
     use crate::tuning::Tuning;
     use crate::tuning::{FLASK_CHARGES, PLAYER_HP};
 
+    /// 0118(PR #10 검토 뒤 분명히): C3 전까지 마을 끝은 **싸우는 임시 문지기**(첫 문지기 모델) — 종탑 터에 들어서면 깨고,
+    /// 이기고 핵을 거두면 마지막 지역이라 판이 끝난다(결과 화면). 바닥 길은 없다.
+    #[test]
+    fn the_village_stand_in_warden_fights_and_its_core_ends_the_run() {
+        let t = Tuning::default();
+        let (mut run, mut w) = StageRun::start(STAGES[STAGES.len() - 1]);
+        assert!(run.down_at.is_none(), "the last region has no way down");
+        let home = run
+            .level
+            .marks_of('W')
+            .next()
+            .expect("stand-in warden mark");
+        w.player.pos = home + vec3(0.0, 0.0, 4.0);
+        w.player.prev = w.player.pos;
+        run.tick(&mut w, 1.0 / 60.0);
+        assert!(matches!(run.phase, Phase::Waking(_)), "{:?}", run.phase);
+        for _ in 0..((WAKE_TIME * 60.0) as usize + 2) {
+            w.player.hp = 5;
+            w.step(&Actions::default(), &t);
+            run.tick(&mut w, 1.0 / 60.0);
+        }
+        assert_eq!(run.phase, Phase::Duel);
+        let b = run.boss.unwrap();
+        w.enemies[b].state = EState::Dead;
+        w.step(&Actions::default(), &t);
+        run.tick(&mut w, 1.0 / 60.0);
+        assert_eq!(run.phase, Phase::Core);
+        w.player.pos = run.core.unwrap();
+        assert_eq!(
+            run.tick(&mut w, 1.0 / 60.0),
+            StageOut::Cleared,
+            "the run ends here"
+        );
+    }
+
     /// 0091: 높은 땅에 선 문은 상자도 그 땅 위에 — 가운데만 땅에 올리고 상자를 0에 두면 위 한 자락이 시야 가림 판정·막기 밖이었다.
     #[test]
     fn the_gate_box_stands_on_the_ground_under_the_gate() {
