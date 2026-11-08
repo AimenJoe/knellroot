@@ -4,9 +4,11 @@
 //! 지도 글자는 `Level::parse` 주석. 스폰 표지: `a` 첫 물결 잔재 · `h` 둘째 물결 잔재 · `T` 둘째 물결 가시짐승 ·
 //! `c` 셋째 물결 잔재 · `U` 셋째 물결 가시짐승 · `W` 문지기 · `R` 쉼터 화로(0032 — 입구 하나, 성소 문 앞 하나) · `C` 장신구 상자(0064 M3 — 뜰 동쪽 끝·입구 방) ·
 //! `F`·`H` 숨은 물건(0105 — 등잔 +1: 뜰 동쪽 높은 단의 무너진 벽 뒤, 한 모금 +1: 입구 방 구석 뿌리 곁·성소 안 뿌리 곁) ·
-//! `K` 종소리 조각(0106 — 입구 방 무너진 벽 조각 뒤, 뜰 서쪽 높은 단 뿌리 뒤, 성소 북쪽 턱 위). 한 칸 = 2m, 위 = 북(-z).
+//! `K` 종소리 조각(0106 — 입구 방 무너진 벽 조각 뒤, 뜰 서쪽 높은 단 뿌리 뒤, 성소 북쪽 턱 위) ·
+//! `X`·`Y`·`Z` 엘리트(0112 — `DEF.elites`). 한 칸 = 2m, 위 = 북(-z).
 use super::StageDef;
 use crate::charms::Id as Charm;
+use crate::enemy::Affix;
 use crate::species::Kind;
 
 pub static DEF: StageDef = StageDef {
@@ -33,6 +35,13 @@ pub static DEF: StageDef = StageDef {
     chest_charms: &[Charm::Ear, Charm::Shell],
     boss_charm: Some(Charm::Hand),
     find_prefix: "sanctuary",
+    // 엘리트(0112): 둘째 물결에 굳은 잔재(뜰 서쪽 가운데), 셋째 물결에 되풀이하는 가시짐승(뜰 한가운데 아래)·남는 잔재(뜰 동쪽).
+    // 보통 개체 하나씩을 갈음한다(물결의 수는 그대로).
+    elites: &[
+        ('X', Kind::Husk, Affix::Hardened, 1),
+        ('Y', Kind::Thorn, Affix::Repeating, 2),
+        ('Z', Kind::Husk, Affix::Lingering, 2),
+    ],
 };
 
 const MAP: &str = "
@@ -51,10 +60,10 @@ const MAP: &str = "
 ##########GGGGG##########
 #r.b......a...a......R.r#
 #....................u..#
-#..a...i.......i...c....#
-#...K..w....h......T....#
+#..a...i.......i...Z....#
+#...K..w....X......T....#
 #.u.r.............r.....#
-#...........U...........#
+#...........Y...........#
 #..h..............h..c..#
 #.......c..T.....a......#
 #..i....r.......r...i...#

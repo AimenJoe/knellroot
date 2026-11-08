@@ -35,6 +35,7 @@ pub const KO: Strings = Strings {
     ask_tree_yes: "열기",
     toast_tree: "{0} 열림",
     toast_find_shard: "종소리 조각 — 마디 +1",
+    toast_elite: "강한 개체를 처음 쓰러뜨렸다 — 잔불 +{0}",
     verb_pin: "목표",
     cell_even_breath: "고른 호흡",
     cell_even_breath_d: "딱 맞춰 뗀 강타가 강타 기력을 돌려준다",

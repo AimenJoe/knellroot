@@ -13,6 +13,7 @@ pub enum Scenario {
     Stress40,
     Stress80,
     Duel,
+    Elites,
 }
 
 pub struct Entry {
@@ -22,7 +23,7 @@ pub struct Entry {
     pub checks: &'static str,
 }
 
-pub const LIST: [Entry; 8] = [
+pub const LIST: [Entry; 9] = [
     Entry {
         scenario: Scenario::Boss,
         name: "boss arena",
@@ -62,6 +63,11 @@ pub const LIST: [Entry; 8] = [
         scenario: Scenario::Duel,
         name: "husk + thorn",
         checks: "0073 windup poses one by one (rise, hold, snap; rear-up stomp)",
+    },
+    Entry {
+        scenario: Scenario::Elites,
+        name: "elites",
+        checks: "0112 elite affixes: hardened, repeating, lingering",
     },
 ];
 
@@ -130,6 +136,21 @@ pub fn build(s: Scenario) -> World {
             let mut w = World::new("duel", 12.0);
             w.spawn(crate::species::Kind::Husk, vec3(0.0, 0.0, -4.0));
             w.spawn(crate::species::Kind::Thorn, vec3(8.0, 0.0, 2.0));
+            w
+        }
+        Scenario::Elites => {
+            // 엘리트 셋(0112)을 따로 떨어뜨려: 굳은 잔재(앞)·되풀이 가시짐승(오른쪽, 돌진 거리 밖)·남는 잔재(왼쪽).
+            use crate::enemy::Affix;
+            use crate::species::Kind;
+            let mut w = World::new("elites", 14.0);
+            for (kind, at, affix) in [
+                (Kind::Husk, vec3(0.0, 0.0, -5.0), Affix::Hardened),
+                (Kind::Thorn, vec3(9.0, 0.0, 2.0), Affix::Repeating),
+                (Kind::Husk, vec3(-7.0, 0.0, 3.0), Affix::Lingering),
+            ] {
+                let i = w.spawn(kind, at);
+                w.enemies[i].make_elite(affix);
+            }
             w
         }
         Scenario::Tray => {

@@ -104,6 +104,7 @@ pub fn spec_label(name: &'static str) -> &'static str {
 
 /// 개발 시나리오(`scenario::LIST`의 영어 이름) → (한국어 이름, 무엇을 보나). F3 아레나 줄은 기본 글꼴이라 영어 그대로.
 pub const SCENARIO_KO: &[(&str, &str, &str)] = &[
+    ("elites", "엘리트", "0112 엘리트 성질: 굳은·되풀이·남는"),
     (
         "boss arena",
         "보스 아레나",

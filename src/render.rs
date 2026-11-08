@@ -661,6 +661,45 @@ impl Renderer {
                 drape.ring(p, front, 0.0, 360.0, with_a(TELE, 0.45));
                 drape.ring(p, (front - 0.5).max(0.1), 0.0, 360.0, with_a(TELE, 0.18));
             }
+            // 엘리트(0112): 발밑의 옅은 뼈빛 표지 — 성질마다 모양이 다르다(색으로 세기를 말하지 않는다, lore ecology 2).
+            // 굳은 = 굵은 고리 하나, 되풀이 = 고리 둘, 남는 = 끊어진 고리(쓰러진 뒤 남을 것).
+            if let Some(affix) = en.elite {
+                let r = en.radius + 0.35;
+                match affix {
+                    crate::enemy::Affix::Hardened => {
+                        drape.ring(p, r, 0.0, 360.0, ELITE_MARK);
+                        drape.ring(p, r - TELE_RING_W, 0.0, 360.0, ELITE_MARK);
+                    }
+                    crate::enemy::Affix::Repeating => {
+                        drape.ring(p, r, 0.0, 360.0, ELITE_MARK);
+                        drape.ring(p, r * 0.72, 0.0, 360.0, ELITE_MARK);
+                    }
+                    crate::enemy::Affix::Lingering => {
+                        let spin = w.time * 0.6;
+                        for i in 0..6 {
+                            let yaw = spin + i as f32 * std::f32::consts::TAU / 6.0;
+                            drape.ring(p, r, yaw, 32.0, ELITE_MARK);
+                        }
+                    }
+                }
+            }
+        }
+        // 남는 엘리트의 고리(0112): 뿌리 파동과 같은 "패링 못 함" 고리 예고(가운데 X), 다 차는 순간 터진다.
+        for l in &w.lingers {
+            let drape = Drape {
+                ground: w.ground.as_ref(),
+            };
+            let k = (l.t / crate::tuning::ELITE_LINGER_DELAY).clamp(0.0, 1.0);
+            telegraph(
+                &drape,
+                l.pos,
+                0.0,
+                k,
+                TeleShape::Ring {
+                    r: crate::tuning::ELITE_LINGER_RADIUS,
+                },
+                (v.tells / TELLS_BASE).max(0.6),
+            );
         }
         let pp = w.player.prev.lerp(w.player.pos, alpha);
         // 그림자는 땅에, 높이 뜰수록 작고 옅게 — 쿼터뷰에서 높이를 읽는 단서(0027).
@@ -1155,11 +1194,14 @@ impl Renderer {
             let inst = Mat4::from_translation(p + sink)
                 * Mat4::from_quat(tilt)
                 * Mat4::from_rotation_y(en.facing)
-                * Mat4::from_scale(vec3(
-                    1.0 / stretch.sqrt(),
-                    squash * stretch,
-                    1.0 / stretch.sqrt(),
-                ));
+                * Mat4::from_scale(
+                    vec3(1.0 / stretch.sqrt(), squash * stretch, 1.0 / stretch.sqrt())
+                        * if en.elite.is_some() {
+                            crate::tuning::ELITE_SCALE
+                        } else {
+                            1.0
+                        },
+                );
             let tint = if flash {
                 Color::new(1.8, 1.8, 1.8, 1.0)
             } else {
@@ -2006,6 +2048,9 @@ fn windup_hold(en: &Enemy) -> Option<f32> {
     let start = dur * WINDUP_REACH;
     (t >= start).then_some(t - start)
 }
+
+/// 엘리트 발밑 표지(0112): 옅은 뼈빛 — 예고의 붉은빛·플레이어 표지(금·민트·호박)와 겹치지 않는다.
+const ELITE_MARK: Color = Color::new(0.92, 0.88, 0.78, 0.5);
 
 /// 바닥 예고 하나: 옅은 면 + 테두리, 채움이 자라 테두리에 닿는 순간 공격. 원판·부채꼴·고리는 가운데부터, 띠는 가운데 줄에서 양옆으로.
 /// 2026-11-06: 바닥 높낮이를 따라 접어 그린다(`Drape`) — 낮은 곳의 적이 높은 곳으로 치면 예고가 높은 땅 속에 묻혀 안 보였다.

@@ -110,6 +110,8 @@ pub struct Strings {
     pub ask_tree_yes: &'static str,
     pub toast_tree: &'static str,
     pub toast_find_shard: &'static str,
+    /// 엘리트를 처음 쓰러뜨렸다(0112): {0} = 더 흩은 잔불.
+    pub toast_elite: &'static str,
     pub verb_pin: &'static str,
     pub cell_even_breath: &'static str,
     pub cell_even_breath_d: &'static str,
@@ -395,6 +397,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.ask_tree_yes,
         s.toast_tree,
         s.toast_find_shard,
+        s.toast_elite,
         s.verb_pin,
         s.cell_even_breath,
         s.cell_even_breath_d,

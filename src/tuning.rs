@@ -138,6 +138,17 @@ pub const AIR_SHOT_REACH: f32 = 4.0;
 pub const AIR_SHOT_MIN: f32 = 1.5;
 pub const AIR_VOLLEY: usize = 3;
 pub const AIR_VOLLEY_SPREAD_DEG: f32 = 18.0;
+/// 엘리트(0112): 체력 배율(올림)·몸 크기 배율·떨구는 잔불 배율, 처음 쓰러뜨렸을 때 더 흩는 잔불.
+pub const ELITE_HP: f32 = 2.0;
+pub const ELITE_SCALE: f32 = 1.25;
+pub const ELITE_EMBERS: u32 = 3;
+pub const ELITE_FIRST_EMBERS: u32 = 30;
+/// 굳은(0112): 자세 막대 배율·밀려나는 배율.
+pub const ELITE_HARD_POISE: f32 = 2.5;
+pub const ELITE_HARD_KNOCK: f32 = 0.35;
+/// 남는(0112): 쓰러진 자리에 남는 고리 — 터지기까지의 초(그동안 예고)·반지름(m).
+pub const ELITE_LINGER_DELAY: f32 = 1.0;
+pub const ELITE_LINGER_RADIUS: f32 = 2.6;
 /// 수류탄(0051): 중력(m/s²), 땅에서 튕길 때 남는 위·옆 속도 비, 쇠뇌 볼트가 수류탄을 맞히는 거리(m), 폭발 고리가 보이는 초.
 pub const BOMB_GRAVITY: f32 = 22.0;
 pub const BOMB_BOUNCE: f32 = 0.4;

@@ -41,6 +41,8 @@ pub mod key {
     pub const LV_MIGHT: &str = "lv.might";
     /// 숨은 물건(0105): 주운 것의 기록 이름들("sanctuary.lamp.0,sanctuary.sip.1").
     pub const FINDS: &str = "finds";
+    /// 처음 쓰러뜨린 엘리트(0112): 기록 이름들("sanctuary.elite.0,…") — 처음 덤은 한 번만.
+    pub const ELITES: &str = "elites";
     /// 문지기 핵 점수(0105): 이긴 횟수, `progression::CORE_CAP`까지.
     pub const CORE_WARDEN: &str = "core.warden";
     /// v0.4.0 옮기기를 했다(0105 — 핵 고르기 → 생명·숨은 물건·핵 점수). 한 번만.
@@ -125,6 +127,8 @@ pub struct Progress {
     pub level: crate::progression::Level,
     /// 주운 숨은 물건의 기록 이름(0105).
     pub finds: Vec<String>,
+    /// 처음 쓰러뜨린 엘리트의 기록 이름(0112).
+    pub elites: Vec<String>,
     /// 성소 문지기 핵 점수(0105, `CORE_CAP`까지).
     pub cores: u32,
     /// 기술 나무(0106).
@@ -180,6 +184,16 @@ impl Progress {
             .collect();
         finds.sort();
         finds.dedup();
+        let mut elites: Vec<String> = r
+            .get(key::ELITES)
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|f| !f.is_empty())
+            .map(str::to_string)
+            .collect();
+        elites.sort();
+        elites.dedup();
         let cores = r
             .num(key::CORE_WARDEN)
             .unwrap_or(0)
@@ -203,6 +217,7 @@ impl Progress {
             growth,
             level,
             finds,
+            elites,
             cores,
             tree,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
@@ -239,6 +254,7 @@ impl Progress {
         r.set(key::LV_STAMINA, self.level.stamina);
         r.set(key::LV_MIGHT, self.level.might);
         r.set(key::FINDS, self.finds.join(","));
+        r.set(key::ELITES, self.elites.join(","));
         r.set(key::CORE_WARDEN, self.cores);
         r.set(key::MIGRATED_V04, 1);
         r.set(key::TREE_BEAT, self.tree.open[0]);
@@ -480,6 +496,22 @@ mod tests {
         assert_eq!(out.get("future.key"), Some("hello = world"));
         assert_eq!(out.num(key::EMBERS), Some(30));
         assert_eq!(out.num(key::VERSION), Some(1));
+    }
+
+    /// 0112: 처음 쓰러뜨린 엘리트는 기록에 남는다(키 `elites`, 겹치지 않게).
+    #[test]
+    fn beaten_elites_round_trip() {
+        let mut p = Progress::default();
+        p.elites = vec!["sanctuary.elite.1".into(), "sanctuary.elite.0".into()];
+        let r = p.to_record();
+        assert_eq!(
+            r.get(key::ELITES),
+            Some("sanctuary.elite.1,sanctuary.elite.0")
+        );
+        let back = Progress::from_record(Record::parse(
+            &(r.to_text() + "elites=sanctuary.elite.0,sanctuary.elite.1,sanctuary.elite.0\n"),
+        ));
+        assert_eq!(back.elites, vec!["sanctuary.elite.0", "sanctuary.elite.1"]);
     }
 
     #[test]

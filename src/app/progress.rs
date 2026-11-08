@@ -47,6 +47,18 @@ impl App {
             };
             self.toast = Some((text.to_string(), TOAST_TIME));
         }
+        // 엘리트(0112): 처음 쓰러뜨린 것을 기록에(덤 잔불은 스테이지가 이미 흩었다).
+        let new = self.run.take_elites_new();
+        if !new.is_empty() {
+            let n = (crate::tuning::ELITE_FIRST_EMBERS * new.len() as u32).to_string();
+            for id in new {
+                if !self.progress.elites.contains(&id) {
+                    self.progress.elites.push(id);
+                }
+            }
+            self.progress.elites.sort();
+            self.toast = Some((fill(s().toast_elite, &[&n]), TOAST_TIME));
+        }
         if out == crate::stage::StageOut::Cleared {
             self.progress.run = None;
             // 핵(0105): 이길 때마다 나무 점수 1, 문지기마다 셋까지. 처음 이긴 판은 "핵이 몸에 스민다"(lore CANON — 핵이 다가왔다).

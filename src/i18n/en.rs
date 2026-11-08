@@ -36,6 +36,7 @@ pub const EN: Strings = Strings {
     ask_tree_yes: "Open",
     toast_tree: "{0} opened",
     toast_find_shard: "Bell shard — notch +1",
+    toast_elite: "A strong one falls for the first time — +{0} embers",
     verb_pin: "Goal",
     cell_even_breath: "Even Breath",
     cell_even_breath_d: "A perfectly released heavy gives its stamina back",

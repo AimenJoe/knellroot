@@ -227,6 +227,7 @@ impl App {
         self.world.tree = self.progress.tree;
         self.run.set_opened(&self.progress.chests);
         self.run.set_found(&self.progress.finds);
+        self.run.set_beaten(&self.progress.elites);
         // 처음 이기는 판이면 핵이 스스로 다가온다(lore CANON, 0105).
         self.run.first_core = self.progress.clears == 0;
         self.cam = Camera::new(self.world.player.pos, &self.t);

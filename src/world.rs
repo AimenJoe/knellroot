@@ -9,9 +9,10 @@ use crate::tuning::{
     Tuning, AIR_SHOT_HOVER, AIR_SHOT_MIN, AIR_SHOT_REACH, AIR_VOLLEY, AIR_VOLLEY_SPREAD_DEG,
     BEAT_CUE_MIN, BEAT_CUE_SHOT_ARC, BEAT_CUE_SHOT_REACH, BEAT_WINDOW, BEAT_WINDOW_MIN, BLAST_SHOW,
     BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID, CAST_CHARGES,
-    DASH_ATTACK_LATE, FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY,
-    LOCK_HANDOFF, P, PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RUN_SPEED_X, RUN_STAMINA,
-    STAMINA_DENIED_SHOW, STUN_CHAIN_GRACE, STUN_CHAIN_MAX, TICK_DT,
+    DASH_ATTACK_LATE, ELITE_EMBERS, ELITE_HARD_POISE, ELITE_LINGER_DELAY, ELITE_LINGER_RADIUS,
+    FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, LOCK_HANDOFF, P,
+    PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RUN_SPEED_X, RUN_STAMINA, STAMINA_DENIED_SHOW,
+    STUN_CHAIN_GRACE, STUN_CHAIN_MAX, TICK_DT,
 };
 use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG, RIPOSTE_WINDOW};
 use crate::weapons::{self, Rb, Shape};
@@ -247,6 +248,13 @@ pub struct Blast {
     pub age: f32,
 }
 
+/// 남는 엘리트(0112)가 쓰러진 자리의 고리 — `ELITE_LINGER_DELAY` 동안 예고, 다 차면 둘레를 친다(패링 못 함).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Linger {
+    pub pos: Vec3,
+    pub t: f32,
+}
+
 /// 미리 받아 두는 다음 행동(0057).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Next {
@@ -464,7 +472,7 @@ impl Player {
     }
 }
 
-pub use crate::enemy::{Atk, EState, Enemy, TeleShape};
+pub use crate::enemy::{Affix, Atk, EState, Enemy, TeleShape};
 use crate::species::Kind;
 
 pub struct World {
@@ -515,6 +523,8 @@ pub struct World {
     /// 잔불(0064 M1): 가진 수(쓰러져도 잃지 않는다 — 앱이 기록에서 넣고 기록으로 옮긴다)와 바닥에 떨어진 조각.
     pub embers: u32,
     pub drops: Vec<crate::ember::Ember>,
+    /// 남는 엘리트의 고리(0112).
+    pub lingers: Vec<Linger>,
     /// 합친 능력치(0064 M3 — 장신구·성장). 앱이 `apply_stats`로 넣는다.
     pub stats: crate::stats::Stats,
     /// 연 기술 나무(0106) — 칸 동작은 그 동사 자리에서 `tree.has`(0107). 앱이 기록에서 넣는다.
@@ -636,6 +646,7 @@ impl World {
             bolts: Vec::new(),
             embers: 0,
             drops: Vec::new(),
+            lingers: Vec::new(),
             stats: crate::stats::Stats::default(),
             tree: crate::progression::Tree::default(),
             ember_at: f32::MIN,
@@ -1022,8 +1033,17 @@ impl World {
             if !en.alive() && !en.dropped {
                 en.dropped = true;
                 let seed = (self.time * 1000.0) as u32 ^ (i as u32).wrapping_mul(2654435761);
-                // 잔불 주머니(0064 M3): 값에 배.
-                let value = (en.def().embers as f32 * self.stats.ember).round() as u32;
+                // 잔불 주머니(0064 M3): 값에 배. 엘리트(0112)는 × `ELITE_EMBERS`.
+                let elite = if en.elite.is_some() { ELITE_EMBERS } else { 1 };
+                let value =
+                    (en.def().embers as f32 * elite as f32 * self.stats.ember).round() as u32;
+                // 남는 엘리트(0112): 쓰러진 자리에 고리가 남는다.
+                if en.elite == Some(Affix::Lingering) {
+                    self.lingers.push(Linger {
+                        pos: en.pos,
+                        t: 0.0,
+                    });
+                }
                 self.drops
                     .extend(crate::ember::scatter(en.pos, value, seed));
                 // 굶주린 뿌리: 쓰러질 때마다 스태미나.
@@ -1994,6 +2014,27 @@ impl World {
                 });
             }
         }
+        // 남는 엘리트의 고리(0112): 다 차면 둘레를 친다 — 바닥을 훑는 것이라 높이 뛰면 넘는다(뿌리 파동과 같다), 패링은 못 한다.
+        for l in &mut self.lingers {
+            l.t += dt;
+            if l.t >= ELITE_LINGER_DELAY {
+                let flat = vec3(p.x - l.pos.x, 0.0, p.z - l.pos.z).length();
+                let above = body - l.pos.y;
+                if flat <= ELITE_LINGER_RADIUS + PLAYER_RADIUS
+                    && above <= t[P::JumpClear]
+                    && above >= -HIT_DY
+                {
+                    hurt_player.get_or_insert(l.pos);
+                }
+                self.blasts.push(Blast {
+                    pos: l.pos,
+                    radius: ELITE_LINGER_RADIUS,
+                    age: 0.0,
+                });
+                ev.push(Event::Boom { at: l.pos });
+            }
+        }
+        self.lingers.retain(|l| l.t < ELITE_LINGER_DELAY);
         // 곧게 오는 돌진은 닿기 조금 앞(`parry.reach m`)에서부터 받는다(nail PARRY_REACH 0258).
         if parrying {
             for (i, en) in self.enemies.iter().enumerate() {
@@ -2417,7 +2458,12 @@ pub fn poise_max(en: &Enemy, t: &Tuning) -> f32 {
     if en.boss {
         t[P::PoiseBoss]
     } else {
-        t[P::PoiseBase] + en.max_hp as f32 * t[P::PoisePerHp]
+        let hard = if en.elite == Some(Affix::Hardened) {
+            ELITE_HARD_POISE
+        } else {
+            1.0
+        };
+        (t[P::PoiseBase] + en.max_hp as f32 * t[P::PoisePerHp]) * hard
     }
 }
 
@@ -3807,6 +3853,52 @@ mod tests {
             w.step(&Actions::default(), &t);
         }
         assert!(w.enemies[0].hp < hp, "the volley hits the enemy below");
+    }
+
+    /// 0112 남는: 쓰러진 자리에 고리가 남고 `ELITE_LINGER_DELAY` 뒤 둘레를 친다 — 안이면 맞고, 밖이면 안 맞는다.
+    /// 엘리트는 잔불을 × `ELITE_EMBERS`, 굳은 엘리트의 자세 막대는 × `ELITE_HARD_POISE`.
+    #[test]
+    fn a_lingering_elite_leaves_a_ring_that_bursts_after_a_beat() {
+        let t = Tuning::default();
+        for (dist, hurt) in [(1.5, true), (ELITE_LINGER_RADIUS + 1.5, false)] {
+            let mut w = World::new("test", 20.0);
+            let i = w.spawn(Kind::Husk, vec3(dist, 0.0, 0.0));
+            w.enemies[i].make_elite(Affix::Lingering);
+            w.enemies[i].state = EState::Dead;
+            w.step(&Actions::default(), &t);
+            assert_eq!(w.lingers.len(), 1);
+            let hp = w.player.hp;
+            let mut burst = false;
+            for _ in 0..((ELITE_LINGER_DELAY / TICK_DT) as usize + 5) {
+                burst |= w
+                    .step(&Actions::default(), &t)
+                    .iter()
+                    .any(|e| matches!(e, Event::Boom { .. }));
+            }
+            assert!(burst && w.lingers.is_empty());
+            assert_eq!(w.player.hp < hp, hurt, "at {dist} m");
+        }
+    }
+
+    #[test]
+    fn elites_drop_more_embers_and_hardened_ones_hold_their_poise() {
+        let t = Tuning::default();
+        let drop = |elite: Option<Affix>| {
+            let mut w = World::new("test", 20.0);
+            let i = w.spawn(Kind::Husk, vec3(6.0, 0.0, 0.0));
+            if let Some(a) = elite {
+                w.enemies[i].make_elite(a);
+            }
+            w.enemies[i].state = EState::Dead;
+            w.step(&Actions::default(), &t);
+            w.drops.iter().map(|d| d.value).sum::<u32>()
+        };
+        assert_eq!(drop(Some(Affix::Repeating)), drop(None) * ELITE_EMBERS);
+        let mut plain = Enemy::new(Kind::Husk, Vec3::ZERO);
+        plain.make_elite(Affix::Repeating);
+        let mut hard = Enemy::new(Kind::Husk, Vec3::ZERO);
+        hard.make_elite(Affix::Hardened);
+        assert!((poise_max(&hard, &t) - poise_max(&plain, &t) * ELITE_HARD_POISE).abs() < 1e-4);
     }
 
     /// 0048: 탄은 기둥에 막힌다.

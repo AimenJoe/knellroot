@@ -394,6 +394,9 @@ pub struct StageDef {
     pub boss_charm: Option<crate::charms::Id>,
     /// 숨은 물건 기록 이름의 앞(0105): `<앞>.<종류>.<그 종류의 몇째>` — 스테이지가 늘어도 섞이지 않게.
     pub find_prefix: &'static str,
+    /// 엘리트(0112): (지도 표지, 종류, 성질, 몇째 물결에 나오나). 정해진 자리 — 소울의 강한 개체처럼.
+    /// 기록 이름은 `<find_prefix>.elite.<이 표의 몇째>`(처음 쓰러뜨린 것만 덤).
+    pub elites: &'static [(char, Kind, crate::enemy::Affix, usize)],
 }
 
 /// 숨은 물건(0105, v0.4.0 G3 — 0102 6절): 핵 고르기의 등잔·한 모금이 탐험의 보상으로. 지도 글자 `F` 등잔 +1회 · `H` 한 모금 +1.
@@ -429,6 +432,11 @@ impl Find {
 /// 숨은 물건 하나의 기록 이름: `sanctuary.lamp.0`.
 pub fn find_id(prefix: &str, kind: Find, nth: usize) -> String {
     format!("{prefix}.{}.{nth}", kind.key())
+}
+
+/// 엘리트 기록 이름(0112): `<앞>.elite.<표의 몇째>`.
+pub fn elite_id(prefix: &str, nth: usize) -> String {
+    format!("{prefix}.elite.{nth}")
 }
 
 /// 숨은 물건 곁(m) — 상자와 같다.
@@ -525,6 +533,10 @@ pub struct StageRun {
     pub found: Vec<bool>,
     pub near_find: Option<usize>,
     picked: Option<usize>,
+    /// 엘리트(0112): 이번 물결의 (적 번호, 기록 이름), 기록에서 이미 쓰러뜨린 것, 이번 틱에 처음 쓰러뜨린 것(앱이 가져간다).
+    elite_ids: Vec<(usize, String)>,
+    beaten: Vec<String>,
+    elite_new: Vec<String>,
     /// 이 문지기를 처음 이기는 판인가(앱이 기록에서 — 핵이 스스로 다가온다, lore CANON 0101).
     pub first_core: bool,
 }
@@ -578,6 +590,9 @@ impl StageRun {
             found: Vec::new(),
             near_find: None,
             picked: None,
+            elite_ids: Vec::new(),
+            beaten: Vec::new(),
+            elite_new: Vec::new(),
             first_core: false,
         };
         run.rests = run.level.marks_of('R').collect();
@@ -632,6 +647,7 @@ impl StageRun {
 
     fn spawn_wave(&mut self, w: &mut World, n: usize) {
         self.wave_ids.clear();
+        self.elite_ids.clear();
         if let Some(list) = self.def.waves.get(n) {
             for (mark, kind) in list.iter() {
                 let spots: Vec<Vec3> = self.level.marks_of(*mark).collect();
@@ -640,6 +656,54 @@ impl StageRun {
                 }
             }
         }
+        // 엘리트(0112): 이 물결의 정해진 자리에.
+        for (k, &(mark, kind, affix, wave)) in self.def.elites.iter().enumerate() {
+            if wave != n {
+                continue;
+            }
+            if let Some(p) = self.level.marks_of(mark).next() {
+                let i = w.spawn(kind, p);
+                w.enemies[i].make_elite(affix);
+                self.wave_ids.push(i);
+                self.elite_ids.push((i, elite_id(self.def.find_prefix, k)));
+            }
+        }
+    }
+
+    /// 쓰러진 엘리트(0112): 처음이면 잔불 `ELITE_FIRST_EMBERS`를 더 흩고 앱에 알린다(기록·알림).
+    fn tick_elites(&mut self, w: &mut World) {
+        let mut down = Vec::new();
+        self.elite_ids.retain(|(i, id)| match w.enemies.get(*i) {
+            Some(e) if e.alive() => true,
+            Some(e) => {
+                down.push((e.pos, id.clone()));
+                false
+            }
+            None => false,
+        });
+        for (pos, id) in down {
+            if self.beaten.contains(&id) {
+                continue;
+            }
+            let seed = (self.time * 1000.0) as u32 ^ 0x5eed_e11e;
+            w.drops.extend(crate::ember::scatter(
+                pos,
+                crate::tuning::ELITE_FIRST_EMBERS,
+                seed,
+            ));
+            self.beaten.push(id.clone());
+            self.elite_new.push(id);
+        }
+    }
+
+    /// 이번 틱에 처음 쓰러뜨린 엘리트들(0112, 한 틱에 여럿 — 수류탄) — 앱이 한 번 가져가 기록·알림에.
+    pub fn take_elites_new(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.elite_new)
+    }
+
+    /// 기록의 쓰러뜨린 엘리트들(처음 덤은 한 번만).
+    pub fn set_beaten(&mut self, ids: &[String]) {
+        self.beaten = ids.to_vec();
     }
 
     fn alive_in_wave(&self, w: &World) -> usize {
@@ -652,6 +716,7 @@ impl StageRun {
     /// 한 틱(월드 틱 뒤). 구역 카드·물결·문·보스·핵을 진행한다.
     pub fn tick(&mut self, w: &mut World, dt: f32) -> StageOut {
         self.time += dt;
+        self.tick_elites(w);
         self.intro = (self.intro - dt).max(0.0);
         if let Some((tr, t)) = self.card {
             self.card = (t > dt).then_some((tr, t - dt));
@@ -833,6 +898,8 @@ impl StageRun {
             e.prev = home;
         }
         self.wave_ids.clear();
+        self.elite_ids.clear();
+        w.lingers.clear();
         w.lock = None;
         w.hitstop = 0.0;
         let pl = &mut w.player;
@@ -1412,6 +1479,48 @@ mod tests {
         w.player.pos = run.level.at(run.level.w / 2, run.def.zones[1].1 - 2);
         tick(&mut run, &mut w, Actions::default());
         assert!(matches!(run.phase, Phase::Waves(0)));
+    }
+
+    /// 0112: 성소의 엘리트 셋은 표의 물결·자리·성질대로 나온다. 처음 쓰러뜨리면 잔불을 더 흩고 앱에 한 번 알린다 —
+    /// 기록에 있으면(다음 판) 덤은 없다.
+    #[test]
+    fn sanctuary_elites_come_with_their_waves_and_pay_extra_the_first_time() {
+        let first_drop = |beaten: &[String]| {
+            let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+            run.set_beaten(beaten);
+            w.player.pos = run.level.at(run.level.w / 2, run.def.zones[1].1 - 2);
+            tick(&mut run, &mut w, Actions::default());
+            let mut seen = Vec::new();
+            let mut news = Vec::new();
+            let mut extra = 0;
+            for _ in 0..run.def.waves.len() + 1 {
+                for e in w.enemies.iter().filter(|e| e.alive() && !e.boss) {
+                    if let Some(a) = e.elite {
+                        seen.push((e.kind, a));
+                    }
+                }
+                for e in w.enemies.iter_mut().filter(|e| !e.boss) {
+                    e.state = EState::Dead;
+                }
+                w.drops.clear();
+                tick(&mut run, &mut w, Actions::default());
+                extra += w.drops.iter().map(|d| d.value).sum::<u32>();
+                news.extend(run.take_elites_new());
+            }
+            (seen, news, extra)
+        };
+        let (seen, news, extra) = first_drop(&[]);
+        let want: Vec<_> = sanctuary::DEF.elites.iter().map(|e| (e.1, e.2)).collect();
+        assert_eq!(seen, want, "each elite in its wave, in table order");
+        assert_eq!(news.len(), sanctuary::DEF.elites.len());
+        assert_eq!(news[0], elite_id("sanctuary", 0));
+        // 쓰러진 적의 제 잔불은 두 판이 같다 — 차이가 처음 덤.
+        let (_, again, plain) = first_drop(&news);
+        assert!(again.is_empty(), "the first-time bonus is once");
+        assert_eq!(
+            extra - plain,
+            crate::tuning::ELITE_FIRST_EMBERS * news.len() as u32
+        );
     }
 
     /// 0032: 물결을 끝내고 문 앞 쉼터에서 쉬었으면 결투에서 쓰러져도 문 앞부터 — 문은 열려 있고, 문지기는 잠든 채 가득.
