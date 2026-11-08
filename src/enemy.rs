@@ -752,7 +752,11 @@ mod tests {
         en.hp -= 1;
         en.set_tier(2);
         assert_eq!(en.max_hp, tier_two);
-        assert_eq!(en.hp, tier_two - 1, "reapplying the tier must not refill health");
+        assert_eq!(
+            en.hp,
+            tier_two - 1,
+            "reapplying the tier must not refill health"
+        );
     }
 
     /// 0112: 엘리트 = 체력 × `ELITE_HP`(올림)·몸 × `ELITE_SCALE`·성질 하나. 보스는 엘리트가 되지 않는다.
