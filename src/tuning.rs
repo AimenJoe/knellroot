@@ -111,7 +111,7 @@ pub const SHAKE_CHARGED: f32 = 0.12;
 
 pub const PLAYER_HP: i32 = 5;
 /// 등잔 횟수(0031). 화로에서 다시 찬다 — 화로 전까지는 스테이지를 새로 시작할 때. 성장으로 늘린다(items.md 2).
-pub const FLASK_CHARGES: i32 = 3;
+pub const FLASK_CHARGES: i32 = 2;
 /// 마법 칸(0048 → 0111): 한 칸이 `cast.cooldown s`마다 차고(수류탄과 같은 꼴), 쉼터에서 가득. 한 번 쏘면 한 칸.
 pub const CAST_CHARGES: f32 = 3.0;
 /// 잔불(0064 M1, `ember.rs`): 한 번에 흩는 조각 수 상한, 튀는 빠르기(옆·위 m/s)·중력·튀어 오름 비, 자석이 켜지는 때(초)·
@@ -149,8 +149,8 @@ pub const LEASH_RANGE: f32 = 18.0;
 /// 엘리트(0112): 체력 배율(올림)·몸 크기 배율·떨구는 잔불 배율, 처음 쓰러뜨렸을 때 더 흩는 잔불.
 pub const ELITE_HP: f32 = 2.0;
 pub const ELITE_SCALE: f32 = 1.25;
-pub const ELITE_EMBERS: u32 = 3;
-pub const ELITE_FIRST_EMBERS: u32 = 30;
+pub const ELITE_EMBERS: u32 = 2;
+pub const ELITE_FIRST_EMBERS: u32 = 15;
 /// 구역 등급(0112 1절 — 잡몹 레벨은 지역마다 고정 등급, 숫자는 화면에 없다): 체력·자세 막대·떨구는 잔불 배율(올림).
 /// 예고 길이·움직임은 바꾸지 않는다(읽히는 싸움 0071·0075). 등급 2 값은 0116 3절. 등급 3 값은 셋째 지역 때 정한다.
 pub struct Tier {
@@ -167,7 +167,8 @@ pub const TIERS: [Tier; 2] = [
     Tier {
         hp: 1.5,
         poise: 1.3,
-        embers: 1.6,
+        // 0123: 1.6 → 1.3(아이템·성장 덜 후하게).
+        embers: 1.3,
     },
 ];
 /// 청소자(0120): 싸움이 없을 때 이 초마다 체력 1을 먹는다.
@@ -1128,12 +1129,12 @@ pub const SPECS: [Spec; 147] = [
         FlaskRaise,
         "flask.raise s",
         "FLASK_RAISE",
-        0.35,
+        0.45,
         0.05,
         1.0,
         0.05
     ),
-    spec!(FlaskTime, "flask.time s", "FLASK_TIME", 0.8, 0.2, 2.0, 0.05),
+    spec!(FlaskTime, "flask.time s", "FLASK_TIME", 1.0, 0.2, 2.0, 0.05),
     spec!(FlaskLock, "flask.lock s", "FLASK_LOCK", 0.3, 0.0, 1.0, 0.05),
     spec!(
         FlaskWalk,

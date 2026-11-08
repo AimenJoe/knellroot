@@ -24,13 +24,13 @@ pub const MAX_RANK: u8 = 5;
 /// 다음 레벨 값(잔불, 0109): 어느 줄이든 **총 레벨**로 — `LEVEL_BASE + LEVEL_STEP × 지금 레벨`(소울 꼴).
 /// 줄마다 따로 매기면 세 줄 1단이 다 싸서 두 판에 레벨 3이 몰렸다(0095·0102의 30→120 표).
 /// 한 판(다 깸) 잔불 80이면 첫 판 1레벨, 넷째 판쯤 4, 열한 판쯤 8 — 이 구역 상한 15까지 2,700(≈ 34판, 둘째 구역에서 채운다).
-pub const LEVEL_BASE: u32 = 40;
-pub const LEVEL_STEP: u32 = 20;
-pub const STAMINA_PER_RANK: f32 = 12.0;
+pub const LEVEL_BASE: u32 = 50;
+pub const LEVEL_STEP: u32 = 25;
+pub const STAMINA_PER_RANK: f32 = 8.0;
 /// 차는 빠르기가 오르는 단(+10%씩, 곱).
 pub const REGEN_RANKS: [u8; 2] = [3, 5];
-pub const REGEN_STEP: f32 = 0.10;
-pub const POISE_PER_RANK: f32 = 0.12;
+pub const REGEN_STEP: f32 = 0.06;
+pub const POISE_PER_RANK: f32 = 0.08;
 /// 강타 +1이 붙는 단·평타 +1이 붙는 단.
 pub const HEAVY_RANK: u8 = 3;
 pub const LIGHT_RANK: u8 = 5;
@@ -301,11 +301,11 @@ pub mod cell {
     /// 이어지는 박자: 박자 타 셋마다 둘레 반지름(m)·자세 피해.
     pub const FLOW_EVERY: u32 = 3;
     pub const FLOW_RADIUS: f32 = 1.5;
-    pub const FLOW_POISE: f32 = 2.0;
+    pub const FLOW_POISE: f32 = 1.5;
     /// 맺음타: 마지막 타 뒤 박자로 이은 첫 타의 자세 배.
-    pub const CLOSING_POISE: f32 = 1.5;
+    pub const CLOSING_POISE: f32 = 1.3;
     /// 빈틈의 박자: 공격 뒤 굳은(되돌아가는) 적에게 박자 타 자세 배.
-    pub const GAP_POISE: f32 = 2.0;
+    pub const GAP_POISE: f32 = 1.5;
     /// 끝맺음: 박자를 이만큼 이은 뒤의 마지막 타.
     pub const FINAL_CHAIN: u32 = 5;
     /// 받아내기: 패링이 적 자세 막대를 이만큼 채운다(문지기는 반).
@@ -319,7 +319,7 @@ pub mod cell {
     pub const STRIDE_RUN: f32 = 0.7;
     /// 비껴서기: 회피가 끝날 때 이 안(m)의 적 등 뒤면, 그 대시 공격 자세 배.
     pub const SIDESTEP_RANGE: f32 = 3.5;
-    pub const SIDESTEP_POISE: f32 = 2.0;
+    pub const SIDESTEP_POISE: f32 = 1.5;
     /// 기우는 땅: 땅 돌리기가 멈출 때 바깥으로 더 미는 거리(m).
     pub const TILT_PUSH: f32 = 1.0;
     /// 착지의 순간: 내려찍기 뒤 늦은 바깥 고리(초, 반지름 배).
@@ -436,7 +436,7 @@ mod tests {
             assert_eq!(lv.rank(l), MAX_RANK);
             assert_eq!(lv.raised(l), lv, "a full line stays full");
         }
-        assert_eq!(paid, 2_700, "0109: 40 + 20 × level, levels 0..15");
+        assert_eq!(paid, 3_375, "0123: 50 + 25 × level, levels 0..15");
         assert_eq!(lv.total(), 15);
         assert!(!lv.can_raise(u32::MAX));
         assert!(Level::default().can_raise(LEVEL_BASE));
@@ -454,11 +454,11 @@ mod tests {
         assert_eq!(lv.next_cost(Line::Might), Some(LEVEL_BASE + LEVEL_STEP * 2));
     }
 
-    /// 0109 빠르기: 한 판(다 깸) 잔불 80 — 첫 판에 레벨 1, 두 판에 2, 넷째 판에 4.
+    /// 0109 → 0123 빠르기: 한 판(다 깸) 잔불 약 60 — 첫 판에 레벨 1, 두 판에도 1, 넷째 판에 3(덜 후하게).
     #[test]
     fn a_full_clear_buys_about_one_level_early_on() {
         let levels_after = |clears: u32| {
-            let (mut lv, mut purse) = (Level::default(), 80 * clears);
+            let (mut lv, mut purse) = (Level::default(), 60 * clears);
             while let Some(c) = lv.next_cost(Line::Life).or(lv.next_cost(Line::Might)) {
                 if purse < c {
                     break;
@@ -473,8 +473,8 @@ mod tests {
             lv.total()
         };
         assert_eq!(levels_after(1), 1);
-        assert_eq!(levels_after(2), 2);
-        assert_eq!(levels_after(4), 4);
+        assert_eq!(levels_after(2), 1);
+        assert_eq!(levels_after(4), 3);
     }
 
     #[test]
@@ -493,11 +493,11 @@ mod tests {
             }
             .mods()])
         };
-        assert_eq!(st(1).stamina_max, 12.0);
+        assert_eq!(st(1).stamina_max, 8.0);
         assert_eq!(st(2).stamina_regen, 1.0, "regen waits for rank 3");
-        assert!((st(3).stamina_regen - 1.1).abs() < 1e-6);
-        assert!((st(5).stamina_regen - 1.2).abs() < 1e-6);
-        assert_eq!(st(5).stamina_max, 60.0);
+        assert!((st(3).stamina_regen - 1.06).abs() < 1e-6);
+        assert!((st(5).stamina_regen - 1.12).abs() < 1e-6);
+        assert_eq!(st(5).stamina_max, 40.0);
         let mt = |r| {
             Stats::compute(&[Level {
                 might: r,
@@ -505,7 +505,7 @@ mod tests {
             }
             .mods()])
         };
-        assert!((mt(1).poise - 1.12).abs() < 1e-6);
+        assert!((mt(1).poise - 1.08).abs() < 1e-6);
         assert_eq!((mt(2).heavy_dmg, mt(2).light_dmg), (0, 0));
         assert_eq!((mt(3).heavy_dmg, mt(3).light_dmg), (1, 0));
         assert_eq!((mt(5).heavy_dmg, mt(5).light_dmg), (1, 1));

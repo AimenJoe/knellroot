@@ -235,6 +235,20 @@ pub fn lit(p: Vec3, n: Vec3, lights: &[Light]) -> Vec3 {
     }
     let mut c = AMBIENT + MOON * (d * moonlight());
     for li in lights {
+        // 빛줄기(0124): 기둥 안이면 위에서 — 가운데일수록·위를 볼수록 밝다(둥근 화로 빛과 달리 높이로 줄지 않는다).
+        if li.shaft {
+            let d = vec2(p.x - li.pos.x, p.z - li.pos.z).length();
+            if d < li.radius {
+                let mut k = 1.0 - d / li.radius;
+                k = k * (2.0 - k);
+                if toon {
+                    k = band(k, 2.0);
+                }
+                let up = 0.35 + 0.65 * n.y.max(0.0);
+                c += vec3(li.color.r, li.color.g, li.color.b) * (SHAFT * k * up);
+            }
+            continue;
+        }
         let dv = li.pos - p;
         let dist = dv.length();
         if dist >= li.radius {
@@ -270,6 +284,8 @@ const OUTLINE_PUSH: f32 = 0.18;
 const AMBIENT: Vec3 = Vec3::new(0.29, 0.28, 0.40);
 const MOON: Vec3 = Vec3::new(0.44, 0.45, 0.62);
 const FIRE: f32 = 1.5;
+/// 빛줄기 세기(0124 — 땅속 달빛 0.4 아래에서 몸이 확 비치게).
+const SHAFT: f32 = 1.1;
 /// 움직이는 모델에 곱하는 밝기(배경과 떼어 읽히게).
 const ACTOR_LIFT: f32 = 1.35;
 
@@ -438,6 +454,7 @@ impl Renderer {
             pos: cam.position + vec3(-1.5, 1.5, 0.0) * rad.max(0.1),
             color: Color::new(1.0, 0.62, 0.25, 1.0),
             radius: rad * 8.0 + 2.0,
+            shaft: false,
         };
         self.batch.model(e, &self.pose, inst, WHITE, &[fire], 1.0);
         self.batch.flush();
@@ -493,6 +510,7 @@ impl Renderer {
             pos: vec3(-1.6, 2.2, 2.4),
             color: Color::new(1.0, 0.62, 0.25, 1.0),
             radius: 6.0,
+            shaft: false,
         };
         self.batch.model(
             e,
@@ -650,6 +668,7 @@ impl Renderer {
                             1.0,
                         ),
                         radius: GUIDE_LIGHT_R,
+                        shaft: false,
                     });
                 }
                 lights
@@ -3360,6 +3379,28 @@ fn beam(c: Vec3, r: f32, h: f32, col: Color) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0124: 빛줄기 기둥 안에 선 몸은 밖보다 뚜렷이 밝고(땅속 달빛 0.4에서도), 위를 보는 면이 더 밝다 — 높이로 줄지 않는다.
+    #[test]
+    fn a_light_shaft_lights_whoever_stands_in_it() {
+        set_moonlight(0.4);
+        let shaft = crate::stage::Light {
+            pos: vec3(0.0, 1.0, 0.0),
+            color: Color::new(0.78, 0.82, 1.0, 1.0),
+            radius: crate::stage::SHAFT_R,
+            shaft: true,
+        };
+        let side = vec3(1.0, 0.0, 0.0);
+        let sum = |v: Vec3| v.x + v.y + v.z;
+        let inside = sum(lit(vec3(0.2, 1.2, 0.0), side, &[shaft]));
+        let outside = sum(lit(vec3(3.0, 1.2, 0.0), side, &[shaft]));
+        assert!(inside > outside * 1.5, "{inside} vs {outside}");
+        let head = sum(lit(vec3(0.2, 1.8, 0.0), Vec3::Y, &[shaft]));
+        assert!(head > inside, "the top catches more");
+        let high = sum(lit(vec3(0.2, 4.0, 0.0), side, &[shaft]));
+        assert!((high - inside).abs() < 1e-4, "a column, not a bulb");
+        set_moonlight(1.0);
+    }
 
     /// 0091(사장 "문은 투명화되지 않아서 시야를 가림"): 닫힌 문이 카메라와 플레이어 사이에 있으면 가림으로 잡힌다(지형 덩어리와 같은 판정),
     /// 문 위쪽(높은 땅 위의 문 꼭대기)을 지나는 시선도. 다 열린 문은 상자가 없다.
