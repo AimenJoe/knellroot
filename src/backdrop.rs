@@ -914,7 +914,6 @@ mod tests {
         assert!(edge_k < 0.1, "{edge_k}");
     }
 
-
     #[test]
     fn falling_dust_tracks_each_walkable_surface_and_stays_below_its_ceiling() {
         for floor in [-1.0, 0.0, 2.5, 4.0] {
