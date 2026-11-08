@@ -288,7 +288,12 @@ impl Enemy {
             return;
         }
         self.tier = tier;
-        self.max_hp = (self.max_hp as f32 * crate::tuning::tier(self.tier).hp).ceil() as i32;
+        // 늘 종 바탕에서 다시 센다(등급을 바꿔도 배율이 겹치지 않게, 엘리트면 엘리트 배율까지 — 엘리트 뒤에 불러도 같다).
+        let mut hp = (self.def().hp as f32 * crate::tuning::tier(tier).hp).ceil();
+        if self.elite.is_some() {
+            hp = (hp * crate::tuning::ELITE_HP).ceil();
+        }
+        self.max_hp = hp as i32;
         self.hp = self.max_hp;
     }
 
@@ -757,6 +762,16 @@ mod tests {
             tier_two - 1,
             "reapplying the tier must not refill health"
         );
+        // 등급을 바꾸면 종 바탕에서 다시 센다(겹치지 않는다), 엘리트 뒤에 불러도 같다.
+        en.set_tier(1);
+        assert_eq!(en.max_hp, base);
+        let mut elite = Enemy::new(Kind::Husk, Vec3::ZERO);
+        elite.set_tier(2);
+        elite.make_elite(Affix::Hardened);
+        let mut late = Enemy::new(Kind::Husk, Vec3::ZERO);
+        late.make_elite(Affix::Hardened);
+        late.set_tier(2);
+        assert_eq!(elite.max_hp, late.max_hp, "order does not matter");
     }
 
     /// 0112: 엘리트 = 체력 × `ELITE_HP`(올림)·몸 × `ELITE_SCALE`·성질 하나. 보스는 엘리트가 되지 않는다.

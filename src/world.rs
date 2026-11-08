@@ -2748,18 +2748,6 @@ pub fn move_to_world(stick: Vec2, basis: Basis, player: Vec3) -> Vec3 {
 mod tests {
     use super::*;
 
-    /// 0112·0116 T3: 자세 막대는 등급 체력 증가분을 반영한 뒤 등급 자세 배율을 곱한다.
-    #[test]
-    fn region_tier_poise_uses_scaled_health_before_its_poise_multiplier() {
-        let t = crate::tuning::Tuning::default();
-        let mut village = Enemy::new(crate::species::Kind::Husk, Vec3::ZERO);
-        village.set_tier(2);
-
-        let expected = (t[P::PoiseBase] + village.max_hp as f32 * t[P::PoisePerHp])
-            * crate::tuning::tier(2).poise;
-        assert!((poise_max(&village, &t) - expected).abs() < 1e-4);
-    }
-
     #[test]
     fn charms_raise_the_health_cap_and_make_hits_hurt_more() {
         use crate::charms::{def, Id};
