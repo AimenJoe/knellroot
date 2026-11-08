@@ -36,6 +36,18 @@ impl App {
             }
         }
         let mut out = self.run.tick(&mut self.world, TICK_DT);
+        // 주민 말풍선(0122): 같은 주민에게 말풍선이 떠 있는 동안 다시 누르면 다음 말, 아니면 처음 말.
+        if let Some(k) = self.run.take_talked() {
+            let n = match self.bubble {
+                Some((b, n, _)) if b == k => n + 1,
+                _ => 0,
+            };
+            self.bubble = Some((k, n, crate::residents::BUBBLE_TIME));
+        }
+        if let Some((_, _, t)) = self.bubble.as_mut() {
+            *t -= TICK_DT;
+        }
+        self.bubble = self.bubble.filter(|b| b.2 > 0.0);
         // 이 지역에서 쉰 적이 없어도 이 판에 다른 지역에서 쉬었으면 거기서 다시 선다(0118).
         if out == crate::stage::StageOut::Defeated && self.respawn_elsewhere() {
             out = crate::stage::StageOut::Respawned;
@@ -226,6 +238,61 @@ impl App {
             );
             hud::draw_goal_arrow(f, p, -ang, self.world.time);
         }
+    }
+
+    /// 주민 말풍선(0122, nail 말 걸기 말풍선 꼴): 그 주민 머리 위, 판 + 테두리 + 짧은 말. 처음·끝에 옅게.
+    pub(super) fn draw_bubble(&mut self, f: &Frame) {
+        let Some((k, n, t)) = self.bubble else { return };
+        let Some(&(i, at)) = self.run.residents.get(k) else {
+            return;
+        };
+        let r = &crate::residents::RESIDENTS[i];
+        let changed = self.run.resident_changed.get(k).copied().unwrap_or(false);
+        let text = tr(crate::residents::line(r, changed, n));
+        let (ndc, front) =
+            crate::camera::world_to_ndc(&self.cam.rig, f.w / f.h.max(1.0), at + Vec3::Y * 1.75);
+        if !front {
+            return;
+        }
+        let a = (t / 0.25)
+            .min((crate::residents::BUBBLE_TIME - t) / 0.15)
+            .clamp(0.0, 1.0);
+        let k = 1.0;
+        let (tw, th) = (self.ui.width(text, k), self.ui.px(k));
+        let pad = 5.0 * f.ui;
+        let cx = (f.ox + (ndc.x + 1.0) * 0.5 * f.w)
+            .clamp(f.ox + tw * 0.5 + pad, f.ox + f.w - tw * 0.5 - pad);
+        let bottom = (f.oy + (1.0 - ndc.y) * 0.5 * f.h).max(f.oy + th + pad * 3.0);
+        let rect = Rect::new(
+            cx - tw * 0.5 - pad,
+            bottom - th - pad * 2.0,
+            tw + pad * 2.0,
+            th + pad * 2.0,
+        );
+        draw_rectangle(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            Color::new(0.08, 0.07, 0.11, 0.86 * a),
+        );
+        draw_rectangle_lines(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            1.5 * f.ui,
+            Color::new(0.85, 0.72, 0.5, 0.9 * a),
+        );
+        // 꼬리(말하는 쪽 아래로).
+        draw_triangle(
+            vec2(cx - 4.0 * f.ui, rect.bottom()),
+            vec2(cx + 4.0 * f.ui, rect.bottom()),
+            vec2(cx, rect.bottom() + 5.0 * f.ui),
+            Color::new(0.85, 0.72, 0.5, 0.9 * a),
+        );
+        self.ui
+            .text_center(text, cx, rect.y + pad, k, Color::new(0.95, 0.92, 0.85, a));
     }
 
     /// 플레이어 머리 위의 화면 자리(카메라 뒤면 없음).

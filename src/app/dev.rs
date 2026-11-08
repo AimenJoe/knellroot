@@ -38,6 +38,8 @@ pub(super) enum DevStart {
     Gate,
     /// 둘째 지역 어귀(0118 — 이 판에 첫 문지기를 이긴 셈) — 기록은 쓰지 않는다.
     Village,
+    /// 둘째 지역의 첫 주민 곁(0122 — 말풍선·돌아봄 판정) — 기록은 쓰지 않는다.
+    Residents,
     /// PoC·개발 아레나(`scenario::LIST`).
     Scenario(Scenario),
     /// 연구소(메뉴의 설정 아래 줄과 같은 창, 0079).
@@ -45,12 +47,13 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 14] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 15] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Stage, DevStart::Entrance),
     (DevCat::Stage, DevStart::Gate),
     (DevCat::Stage, DevStart::Village),
+    (DevCat::Stage, DevStart::Residents),
     (DevCat::Combat, DevStart::Scenario(Scenario::Boss)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Pillars)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Duel)),
@@ -78,6 +81,7 @@ impl DevStart {
             DevStart::Entrance => t(dv::ENTRANCE),
             DevStart::Gate => t(dv::GATE),
             DevStart::Village => t(dv::VILLAGE),
+            DevStart::Residents => t(dv::RESIDENTS),
             DevStart::Scenario(sc) => {
                 let e = scenario::entry(sc);
                 scenario_text(e.name, e.checks).0
@@ -88,7 +92,7 @@ impl DevStart {
 
     fn note(self) -> String {
         match self {
-            DevStart::Entrance | DevStart::Gate | DevStart::Village => {
+            DevStart::Entrance | DevStart::Gate | DevStart::Village | DevStart::Residents => {
                 t(dv::STAGE_NOTE).to_string()
             }
             DevStart::Scenario(sc) => {
@@ -159,6 +163,18 @@ impl App {
                     self.run.def.depth_m,
                     crate::stage::STAGES[1].depth_m,
                 ));
+                self.go(Go::Root(Scene::Play));
+            }
+            DevStart::Residents => {
+                self.dev_run = true;
+                self.restart();
+                self.down = 1;
+                self.cross_to(1, false);
+                if let Some(&(_, at)) = self.run.residents.first() {
+                    self.world.player.pos = at + vec3(0.0, 0.0, 1.6);
+                    self.world.player.prev = self.world.player.pos;
+                    self.cam = Camera::new(self.world.player.pos, &self.t);
+                }
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Scenario(sc) => {

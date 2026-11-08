@@ -22,6 +22,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 ## 구현 상태(2026-11-07 — 첫 판 2026-11-04, v0.3.0 배포 2026-11-06, v0.3.4·v0.3.5 배포 2026-11-07·0100까지, v0.4.0 T0 0103·G1 0104·G3 0105·G2·G4 0106·G5 0107·표시 0108 — v0.4.0 배포 2026-11-08(PR #6), 판정 전)
 | 항목 | 위치 | 비고 |
 |---|---|---|
+| 남은 주민(0122, v0.5.0 C7) | `residents.rs`(표·말·재방문 `settle`), `StageRun::residents`·`near_resident`·`take_talked`·`take_residents_seen`, `World::bodies`, `App::bubble`·`draw_bubble`, 기록 `runs`·`residents.seen`·`residents.changed`, `render.rs` 상자 배우·생활 물건 | 셋(아궁이·물·천), 공격이 지나감, 돌아봄, 말풍선(다시 누르면 다음 말), 처음 본 판 뒤 다른 판에서 한 번 바뀜 |
 | 떠난 마을 지도(0121, v0.5.0 C1) | `tools/maps/village.py` → `stage/village.rs` MAP·HEIGHTS, `StageDef::gate_shortcut`·`card_lever`, 시험 `residents_live_beyond_every_enemy_leash`·`the_village_ladder_opens_only_from_the_lever_below` | 45×60칸, 비탈 아래로(거주지 +4 → 골목 +2.5 → 광장 0 → 종탑 터 −1m), 사다리 지름길, 화로 셋, 적 15 + 엘리트 셋, 주민 자리 셋(끈 밖) |
 | 떠난 마을의 적(0120, v0.5.0 C2) | `species::SHELL`·`POD`(`guard_arc`·`plant_*`·`retreat`·`Behavior::Planter`), `enemy.rs` `Atk::Plant`·`guards`·`tele_at`·`docile`·`eat_t`, `world.rs` 튕김(`Event::Deflect`·`PState::Recoil`)·꼬투리 물러나기·청소자 알아차림, `StageDef::docile`, 시나리오 `Newcomers` | 상자 모델. 등딱지 = 앞 평타·탄 튕김(강타·옆·뒤·내려찍기로 뚫음), 꼬투리 = 심은 원판 + 깡충 물러나기, 청소자 = 맞아야 싸움·먹으면 회복 |
 | 구역 등급(0112·0116, v0.5.0 T3) | `StageDef::tier`, `tuning::TIERS`·`tier`·`TIER_HEAVY_HITS`, `Enemy::set_tier`, `world::poise_max`·잔불 떨굼·한 대 피해 | 성소 1·마을 2(체력 ×1.5·자세 ×1.3·잔불 ×1.6 올림), 등급 3부터 한 대 2, 보스·예고·움직임은 그대로 |
@@ -127,6 +128,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 **v0.4.0 배포됨(2026-11-08, PR #6 → `9564892`)**: 운영 웹 `build.txt` = 그 커밋, Release `v0.4.0`에 `knellroot.apk`, `deploy-web`·`release`·`build-android` 모두 success. `release/v0.4`는 main까지 앞으로 맞춤. 고칠 것은 v0.4.x.
 
 **v0.5.0 마일스톤 정함(0116, 갈래 `release/v0.5`)**: 인터뷰로 열여섯 물음 — 보라 뿌리 = 주인 없는 실(개발자 답), 떠난 이유는 게임 안 MYSTERY, 주민 = 여러 작은 동물("주민"), 포포 고리 걸어 둠, ECO-05 조건은 열고 행동 규칙만, ECO-10 같은 종이 다른 역할, 잔류형 정본(관찰), 마을 등급 2 = 체력 ×1.5·자세 ×1.3·잔불 ×1.6, 둘째 문지기 거리·공간형, 내려가는 길 + 되돌아가는 길, 도감 넣음, 주민의 불 = 아궁이·재방문 = 다음 판·공격이 지나감·말풍선. 이름: 떠난 마을·등딱지짐승·꼬투리·깨진 종지기. **다음: T1 지역 잇기부터**. 둘째 지역 설계는 0115(`docs/lore/regions/abandoned-village.md`·`docs/design/stages/abandoned-village-residents.md`).
+
+**0122(v0.5.0 C7, 개발판)**: 남은 주민 셋(상자 배우) — 개발 "둘째 지역 주민 곁에서(말 걸기)". 판정(Z6): 고요하고 쓸쓸한 누가 사는 곳으로 읽히나, 싸움을 방해하지 않나, 말풍선 3.5초·다시 누르기, 다음 판에 와서 바뀐 것(불빛·항아리·천막)을 알아차리나. **v0.4.2 배포됨(2026-11-08, PR #9 → `b4ddd5a`, Release `v0.4.2` APK)**. 다음은 C3(둘째 문지기 깨진 종지기 — 상자).
 
 **0121(v0.5.0 C1, 개발판)**: 떠난 마을 지도 — 개발 "둘째 지역(떠난 마을) 어귀부터". 판정: 비탈을 내려간다고 읽히나, 길을 잃지 않나, 광장 서쪽 장치로 사다리를 내리면 거주지 화로 → 광장이 짧아지나, 골목의 꼬투리·등딱지짐승 조합. 다음은 C7(주민 셋 — 상자 배우·말풍선·재방문 기록·공격이 지나감). PR #10 검토(2026-11-08, 사장): 마을 끝은 C3 전까지 싸우는 임시 문지기 — 판 전체를 결과 화면까지(0118 문장 분명히). T1 수용 테스트 문서 `docs/testing/v0-5-t1-region-linking-acceptance.md`(수동 항목).
 

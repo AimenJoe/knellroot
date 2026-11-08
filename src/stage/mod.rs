@@ -610,6 +610,15 @@ pub struct StageRun {
     pub up_at: Option<Vec3>,
     pub down_open: bool,
     passage_armed: bool,
+    /// 남은 주민(0122): (표 번호, 자리), 지금 바라보는 쪽(가까이 오면 돌아본다), 재방문으로 바뀌었나(앱이 기록에서),
+    /// 이 판에 봤나(처음 본 틱에 앱이 기록에), 곁의 주민, 이번 틱에 말 건 주민(앱이 가져간다 — 말풍선).
+    pub residents: Vec<(usize, Vec3)>,
+    pub resident_face: Vec<f32>,
+    pub resident_changed: Vec<bool>,
+    resident_seen: Vec<bool>,
+    resident_seen_new: Vec<usize>,
+    pub near_resident: Option<usize>,
+    talked: Option<usize>,
 }
 
 /// 시작 이야기 길이(초).
@@ -674,7 +683,25 @@ impl StageRun {
             up_at: None,
             down_open: false,
             passage_armed: true,
+            residents: Vec::new(),
+            resident_face: Vec::new(),
+            resident_changed: Vec::new(),
+            resident_seen: Vec::new(),
+            resident_seen_new: Vec::new(),
+            near_resident: None,
+            talked: None,
         };
+        // 주민(0122): 표지마다 — 바라보는 쪽은 자리마다 정해진 값, 몸은 방랑자만 밀어낸다.
+        for (c, p) in run.level.marks.clone() {
+            if let Some(i) = crate::residents::by_mark(c) {
+                run.residents.push((i, p));
+                run.resident_face
+                    .push(((p.x * 3.1 + p.z * 1.7).sin() * 2.0).rem_euclid(std::f32::consts::TAU));
+                w.bodies.push((p, crate::residents::BODY_R));
+            }
+        }
+        run.resident_changed = vec![false; run.residents.len()];
+        run.resident_seen = vec![false; run.residents.len()];
         run.down_at = run.level.marks_of(DOWN_GLYPH).next();
         run.up_at = run.level.marks_of(UP_GLYPH).next();
         run.rests = run.level.marks_of('R').collect();
@@ -965,11 +992,34 @@ impl StageRun {
             && self
                 .lever
                 .is_some_and(|l| vec2(l.x - pp.x, l.z - pp.z).length() <= LEVER_REACH);
+        // 주민(0122): 보면 기록, 가까이 오면 돌아보고(무심한 경계 — 천천히), 멀어지면 제 일 쪽으로. 곁이면 말 걸기.
+        self.near_resident = None;
+        for (k, &(_, at)) in self.residents.iter().enumerate() {
+            let d = flat(at);
+            if d <= crate::residents::SEE_RANGE && !self.resident_seen[k] {
+                self.resident_seen[k] = true;
+                self.resident_seen_new.push(k);
+            }
+            let home = ((at.x * 3.1 + at.z * 1.7).sin() * 2.0).rem_euclid(std::f32::consts::TAU);
+            let want = if d <= crate::residents::GLANCE_RANGE {
+                (pp.x - at.x).atan2(pp.z - at.z)
+            } else {
+                home
+            };
+            let f = &mut self.resident_face[k];
+            let diff = (want - *f + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+                - std::f32::consts::PI;
+            *f += diff.clamp(-1.5 * dt, 1.5 * dt);
+            if d <= crate::residents::TALK_RANGE && self.near_resident.is_none() {
+                self.near_resident = Some(k);
+            }
+        }
         // 점프 버튼이 다음 틱부터 쉬기·열기·줍기가 되는 자리(0048): 곁이고(쉬기는 안전할 때만) — 아니면 그대로 점프.
         w.interact_here = (self.near_rest.is_some() && self.rest_safe)
             || self.near_chest.is_some()
             || self.near_find.is_some()
-            || self.near_lever;
+            || self.near_lever
+            || self.near_resident.is_some();
         // 같은 버튼: 줍기 > 열기 > 당기기 > 쉬기(HUD 안내와 같은 차례).
         if let (Some(i), true) = (self.near_find, w.interact) {
             self.found[i] = true;
@@ -987,6 +1037,9 @@ impl StageRun {
                 self.objective = Some(self.def.obj_gate);
             }
             self.card = Some((self.def.card_lever, CARD_TIME));
+        } else if let (Some(k), true) = (self.near_resident, w.interact) {
+            // 말 걸기(0122): 멈추지 않는다 — 앱이 머리 위 말풍선을 띄운다(다시 누르면 다음 줄).
+            self.talked = Some(k);
         } else if let (Some(i), true) = (self.near_rest, w.interact) {
             if self.rest_safe {
                 self.rest(w, i);
@@ -1185,6 +1238,16 @@ impl StageRun {
         }
         self.passage_armed = false;
         self.card = Some((|s| s.respawned, CARD_TIME));
+    }
+
+    /// 이번 틱에 말 건 주민(0122) — 앱이 한 번 가져간다.
+    pub fn take_talked(&mut self) -> Option<usize> {
+        self.talked.take()
+    }
+
+    /// 이 판에 처음 본 주민들(0122) — 앱이 한 번 가져가 기록에.
+    pub fn take_residents_seen(&mut self) -> Vec<usize> {
+        std::mem::take(&mut self.resident_seen_new)
     }
 
     /// 이번 틱에 쉬었나(0064 M4) — 앱이 한 번 가져가 화로 가게를 연다(쓰러진 뒤 다시 서는 것은 아니다).
@@ -1624,6 +1687,63 @@ mod tests {
         tick(&mut run, &mut w, Actions::default());
         assert!(matches!(run.phase, Phase::Waking(_)), "{:?}", run.phase);
         assert!(run.gate_closed, "the boss does not drop the ladder either");
+    }
+
+    /// 0122: 주민은 월드의 적이 아니다(맞지도·락온되지도 않는다 — 공격이 지나간다), 몸은 방랑자만 밀어낸다.
+    /// 곁에서 점프 버튼 = 말 걸기(다른 일을 하지 않는다), 가까이 오면 돌아보고, 보면 한 번 기록한다.
+    #[test]
+    fn residents_talk_glance_and_stay_out_of_the_fight() {
+        let (mut run, mut w) = StageRun::start(STAGES[1]);
+        assert_eq!(run.residents.len(), 3);
+        assert_eq!(w.bodies.len(), 3);
+        for &(_, at) in &run.residents {
+            assert!(
+                w.enemies.iter().all(|e| e.pos.distance(at) > 1.0),
+                "not an enemy"
+            );
+        }
+        let (_, at) = run.residents[0];
+        // 멀리서는 안 보인다 → 다가가면 기록 한 번.
+        w.player.pos = at + vec3(0.0, 0.0, crate::residents::SEE_RANGE + 6.0);
+        tick(&mut run, &mut w, Actions::default());
+        assert!(run.take_residents_seen().is_empty());
+        w.player.pos = at + vec3(0.0, 0.0, 1.6);
+        w.player.prev = w.player.pos;
+        let face0 = run.resident_face[0];
+        for _ in 0..90 {
+            tick(&mut run, &mut w, Actions::default());
+        }
+        assert_eq!(run.take_residents_seen(), vec![0], "seen once");
+        assert!(run.take_residents_seen().is_empty());
+        let want = (w.player.pos.x - at.x).atan2(w.player.pos.z - at.z);
+        let off = |f: f32| {
+            ((want - f + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+                - std::f32::consts::PI)
+                .abs()
+        };
+        assert!(
+            off(run.resident_face[0]) <= off(face0).max(0.05),
+            "turned toward the wanderer"
+        );
+        assert_eq!(run.near_resident, Some(0));
+        assert!(w.interact_here);
+        tick(
+            &mut run,
+            &mut w,
+            Actions {
+                interact: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(run.take_talked(), Some(0));
+        assert!(run.rest_at.is_none(), "talking does nothing else");
+        // 몸이 방랑자를 밀어낸다.
+        w.player.pos = at + vec3(0.05, 0.0, 0.0);
+        tick(&mut run, &mut w, Actions::default());
+        assert!(
+            w.player.pos.distance(at)
+                >= crate::residents::BODY_R + crate::tuning::PLAYER_RADIUS - 0.05
+        );
     }
 
     /// 0112·0116 T3: 구역 등급은 깊을수록 높고, 서 있는 적·엘리트가 그 등급으로 선다(보스는 그대로).

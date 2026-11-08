@@ -4,7 +4,12 @@ use super::*;
 impl App {
     /// 이어하기(0064 M2): 새 판을 세우고, 기록에 쉼터가 있으면 거기서.
     pub(super) fn continue_run(&mut self) {
-        self.restart();
+        // 쉰 곳이 있으면 그 판을 잇는다(판 수 그대로), 없으면 새 판.
+        if self.progress.run.is_some() {
+            self.build_run();
+        } else {
+            self.restart();
+        }
         if let Some(at) = self.progress.run {
             // 지역 잇기(0118): 쉰 곳의 지역에서, 이 판에 이긴 문지기는 그대로.
             self.down = at.down;
@@ -74,6 +79,15 @@ impl App {
                     let n = crate::stage::CHEST_EMBERS.to_string();
                     self.toast = Some((fill(s().toast_embers, &[&n]), TOAST_TIME));
                 }
+            }
+        }
+        // 주민(0122): 이 판에 처음 본 주민은 몇째 판에 봤는지 기록(재방문 규칙).
+        for k in self.run.take_residents_seen() {
+            let id = crate::residents::RESIDENTS[self.run.residents[k].0].id;
+            if !self.progress.residents_seen.iter().any(|(s, _)| s == id) {
+                self.progress
+                    .residents_seen
+                    .push((id.to_string(), self.progress.runs));
             }
         }
         // 숨은 물건(0105): 기록에 이름을 넣고 능력치에 — 등잔이면 지금 한 모금도 채운다.

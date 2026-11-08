@@ -78,6 +78,8 @@ pub struct App {
     down: usize,
     rest_at: Option<crate::save::RunAt>,
     passage: Option<crate::descent::Passage>,
+    /// 주민 말풍선(0122): (주민 — 지금 지역의 번호, 몇째 말, 남은 초). 멈추지 않는다.
+    bubble: Option<(usize, usize, f32)>,
     /// 실제 시간(전환의 작은 움직임 — 지형을 굽는 동안에도 흐른다).
     clock: f32,
     #[cfg(feature = "dev")]
@@ -207,6 +209,7 @@ impl App {
             down: 0,
             rest_at: None,
             passage: None,
+            bubble: None,
             clock: 0.0,
             t,
             #[cfg(feature = "dev")]
@@ -244,7 +247,14 @@ impl App {
         }
     }
 
+    /// 새 판(0122 — 판 수를 센다: 주민 재방문 "처음 본 판이 끝난 뒤의 다른 판"). 이어하기는 `build_run`.
     fn restart(&mut self) {
+        self.progress.runs = self.progress.runs.saturating_add(1);
+        self.build_run();
+    }
+
+    /// 첫 지역을 새로 세운다(판 수는 그대로).
+    fn build_run(&mut self) {
         let (run, world) = StageRun::start(FIRST_STAGE);
         self.run = run;
         self.world = world;
@@ -302,6 +312,17 @@ impl App {
             .iter()
             .any(|g| g == self.run.def.find_prefix);
         self.run.set_gate_opened(&mut self.world, open);
+        // 주민 재방문(0122, 0116): 처음 본 판보다 뒤의 판이면 한 번 바뀐다(단방향, 기록).
+        self.bubble = None;
+        for k in 0..self.run.residents.len() {
+            let id = crate::residents::RESIDENTS[self.run.residents[k].0].id;
+            self.run.resident_changed[k] = crate::residents::settle(
+                id,
+                &self.progress.residents_seen,
+                &mut self.progress.residents_changed,
+                self.progress.runs,
+            );
+        }
         // 처음 이기는 판이면 핵이 스스로 다가온다(lore CANON, 0105) — 첫 지역 문지기만(둘째 문지기는 C3).
         self.run.first_core = self.stage == 0 && self.progress.clears == 0;
         if self.down > self.stage {
@@ -621,6 +642,7 @@ impl App {
         }
         if self.scene() == Scene::Play {
             self.draw_goal_arrow(&f);
+            self.draw_bubble(&f);
         }
         // 지역 사이 지층 단면(0118): 싸움 화면 위에(전환 중엔 멈춤·장비 창이 열리지 않는다).
         self.clock += get_frame_time();
