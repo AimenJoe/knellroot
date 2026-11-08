@@ -19,7 +19,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | S4 | 분위기 | 어둡고 조용한 성소 + 호박색 불빛. 캐릭터가 바닥에 묻히지 않는다 |
 | P5 | 실기 성능(PoC에서 넘어옴) | 뜰 셋째 물결에서 데스크톱 Chrome 60, Android Chrome 30 이상(개발 줄 F3) |
 
-## 구현 상태(2026-11-07 — 첫 판 2026-11-04, v0.3.0 배포 2026-11-06, v0.3.4·v0.3.5 배포 2026-11-07·0100까지, v0.4.0 T0 0103·G1 0104·G3 0105·G2·G4 0106·G5 0107·표시 0108 — v0.4.0 릴리스 PR 2026-11-08, 판정 전)
+## 구현 상태(2026-11-07 — 첫 판 2026-11-04, v0.3.0 배포 2026-11-06, v0.3.4·v0.3.5 배포 2026-11-07·0100까지, v0.4.0 T0 0103·G1 0104·G3 0105·G2·G4 0106·G5 0107·표시 0108 — v0.4.0 배포 2026-11-08(PR #6), 판정 전)
 | 항목 | 위치 | 비고 |
 |---|---|---|
 | 나무 칸 표시·v0.4.0(0108) | `render.rs`(끝맺음 금빛 두 겹·비껴서기 민트 고리·맞서는 자 호박 반달), `World::beat_cue`(맺음타 마지막 타 부채꼴), `cancel_or_buffer`(맺음타 캔슬 길), `Cargo.toml` 0.4.0·`version_code` 14, `docs/releases/v0.4.0.md` | 0107에서 맺음타가 캔슬 길로는 안 걸리던 것을 고침. 릴리스 PR `release/v0.4` → `main`(Merge는 사장) |
@@ -116,7 +116,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 ## 사람이 할 일
 **0093 소개 페이지**: `release/v0.3`을 main에 넣은 뒤 ① 레포 Settings → Pages → Source = **GitHub Actions**(켜기 전 첫 실행은 실패, 켠 뒤 Actions의 pages를 다시 실행) ② DNS(Cloudflare)에 `knellroot` CNAME → `aimenjoe.github.io` ③ Settings → Pages → Custom domain = `knellroot.beardworks.io`, Enforce HTTPS. 페이지 글을 고치면 `python3 tools/site/subset_font.py <GowunBatang-Bold.ttf>`.
 
-**v0.4.0 릴리스(0108)**: PR `release/v0.4` → `main`을 Merge하면 운영 배포·태그·APK(`release.yml`). Merge 뒤 세션이 `release/v0.4`를 main까지 앞으로.
+**v0.4.0 배포됨(2026-11-08, PR #6 → `9564892`)**: 운영 웹 `build.txt` = 그 커밋, Release `v0.4.0`에 `knellroot.apk`, `deploy-web`·`release`·`build-android` 모두 success. `release/v0.4`는 main까지 앞으로 맞춤. 고칠 것은 v0.4.x.
 
 **v0.4.0 "자라는 방랑자" 판정(0096 L1~L5, 개발판 https://dev--knellroot.netlify.app)** — 만들 일(T0·G1~G5)과 칸 표시(0108)가 다 들어갔다(0103~0108):
 - L1 잔불이 끝까지 쓸 데가 있나(레벨 줄당 350·셋 1,050), L2 레벨 한 단이 느껴지나(특히 기력 — 막대가 길어진다), L3 나무로 빌드가 갈리나(핵 셋 + 조각 셋 = 6점 — 두 사람이 다르게 쓰면 싸움 모양이 다른가, 특히 비껴서기·길을 여는 발·모은 맞받기), L4 다 열어도 박자·패링을 못 맞히면 문지기가 어려운가, L5 v0.3 기록으로 이어하면 잃은 것이 없나.
