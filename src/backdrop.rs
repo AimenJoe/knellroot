@@ -262,6 +262,8 @@ struct Drift {
     /// 깜빡임: 0이면 늘 켜짐, 아니면 켜지는 빠르기(Hz).
     blink_hz: f32,
     seed: u32,
+    /// 바닥이 없는 칸(벽·허공) 위에서는 보이지 않는다(떨어지는 흙 — 천장에서 바닥으로 떨어지는 것).
+    hide_off_ground: bool,
 }
 
 /// 반딧불: 풀 높이(0.3~1.8m), 바람 없이 헤매고, 몇 초마다 켜졌다 꺼진다. 빛무리로 둘레를 살짝 밝힌다.
@@ -277,6 +279,7 @@ const FIREFLIES: Drift = Drift {
     color: Color::new(1.0, 0.86, 0.42, 1.0),
     blink_hz: 0.22,
     seed: 11,
+    hide_off_ground: false,
 };
 /// 달빛 먼지: 공중 높이까지(0.2~4m), 옅고 작게, 달 반대쪽으로 천천히 흐르며 가라앉는다.
 const MOTES: Drift = Drift {
@@ -291,6 +294,7 @@ const MOTES: Drift = Drift {
     color: Color::new(0.82, 0.82, 1.0, 0.7),
     blink_hz: 0.0,
     seed: 23,
+    hide_off_ground: false,
 };
 
 /// 떨어지는 흙(땅속, 0118 T2): 천장 높이(6m)에서 곧게 떨어지는 작은 흙빛 점 — 위에 땅이 있다는 신호.
@@ -306,6 +310,7 @@ const FALLING: Drift = Drift {
     color: Color::new(0.62, 0.50, 0.42, 0.85),
     blink_hz: 0.0,
     seed: 31,
+    hide_off_ground: true,
 };
 
 fn h01(i: u32, k: u32) -> f32 {
@@ -331,26 +336,17 @@ fn drift_at(d: &Drift, i: u32, c: Vec3, t: f32, ground: Option<&Ground>) -> (Vec
     let z = lo.y + (moved.z - lo.y).rem_euclid(span);
     let hspan = d.y.1 - d.y.0;
     let y0 = h01(s, 5) * hspan + d.flow.y * t + 0.2 * (w * 1.3 + ph).sin();
-    // 떨어지는 흙은 지도 칸의 실제 바닥 높이를 기준으로 천장 6m에서 순환한다.
-    // 벽·허공 위에는 흙을 만들지 않는다. 다른 입자는 기존 월드 높이를 쓴다.
-    let ground_y = if d.seed == FALLING.seed {
+    // 높이는 그 자리의 바닥에서 잰다(마을은 구역마다 바닥이 −1 ~ +4m, 성소 성벽길 +3m — 월드 0에서 재면 바닥에 묻혔다).
+    // 바닥이 없는 칸(벽·허공): 떨어지는 흙은 만들지 않고(`hide_off_ground`), 다른 것은 월드 0 기준(허공 위 먼지·반딧불).
+    let floor = ground.and_then(|g| {
         let p = vec3(x, 0.0, z);
-        ground.and_then(|g| {
-            let (gx, gz) = g.cell_of(p)?;
-            g.height_in(gx, gz, p)
-        })
-    } else {
-        None
-    };
-    if d.seed == FALLING.seed && ground.is_some() && ground_y.is_none() {
+        let (gx, gz) = g.cell_of(p)?;
+        g.height_in(gx, gz, p)
+    });
+    if d.hide_off_ground && ground.is_some() && floor.is_none() {
         return (vec3(x, 0.0, z), 0.0);
     }
-    let floor = ground_y.unwrap_or(0.0);
-    let y = if d.seed == FALLING.seed {
-        floor + d.y.0 + y0.rem_euclid(hspan)
-    } else {
-        d.y.0 + y0.rem_euclid(hspan)
-    };
+    let y = floor.unwrap_or(0.0) + d.y.0 + y0.rem_euclid(hspan);
     // 가장자리는 옅게(감아 돌 때 튀지 않게): 상자 끝 15%·높이 끝에서 0으로.
     let edge =
         |v: f32, a: f32, span: f32| ((v - a).min(a + span - v) / (span * 0.15)).clamp(0.0, 1.0);
@@ -926,6 +922,21 @@ mod tests {
                     assert!((0.0..=1.0).contains(&k));
                 }
             }
+        }
+    }
+
+    /// 달빛 먼지·반딧불도 바닥을 따른다(높은 단에서 바닥에 묻히지 않게) — 바닥 없는 칸에서도 보인다(허공 위 먼지).
+    #[test]
+    fn every_drift_rises_from_the_local_floor() {
+        let high = Ground::new(1, 1, 100.0, vec![crate::ground::Cell::Flat(4.0)]);
+        let solid = Ground::new(1, 1, 100.0, vec![crate::ground::Cell::Solid]);
+        for d in [&MOTES, &FIREFLIES] {
+            for i in 0..d.count {
+                let (p, _) = drift_at(d, i, Vec3::ZERO, 7.3, Some(&high));
+                assert!(p.y >= 4.0 + d.y.0 - 1e-4, "seed {}: {}", d.seed, p.y);
+            }
+            let shown = (0..d.count).any(|i| drift_at(d, i, Vec3::ZERO, 7.3, Some(&solid)).1 > 0.0);
+            assert!(shown, "seed {}: not hidden over solid cells", d.seed);
         }
     }
 
