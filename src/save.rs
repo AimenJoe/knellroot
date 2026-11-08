@@ -33,6 +33,8 @@ pub mod key {
     pub const SHOP_OIL: &str = "shop.oil";
     /// 든 무기(0066: prefs 칸 21에서 옮김 — 슬롯 사이에 새지 않게).
     pub const WEAPON: &str = "weapon";
+    /// 가진 무기(0117): 무기 기록 키들("sword,hammer") — 맨손은 늘 있다. 키가 없는 옛 기록(판을 한 번이라도 한 것)은 다 가진 것으로.
+    pub const WEAPONS: &str = "weapons";
     /// 쌓인 플레이 시간(초, 0081 — 이어하기 목록의 "시간"). 개발 판·메뉴·타이틀에 있는 동안은 세지 않는다.
     pub const PLAY: &str = "play";
     /// 잔불 레벨(0104, v0.4.0 G1): 줄마다 올린 단 0~5.
@@ -139,6 +141,8 @@ pub struct Progress {
     pub tree: crate::progression::Tree,
     /// 든 무기(없으면 옛 prefs 칸의 값을 쓴다).
     pub weapon: Option<crate::weapons::Id>,
+    /// 가진 무기(0117 — 무기는 얻어서 쓴다). 맨손은 넣지 않는다(늘 있다).
+    pub weapons: Vec<crate::weapons::Id>,
     /// 쌓인 플레이 시간(초, 0081).
     pub play: u32,
     /// 원래 기록(모르는 키를 지키려고 — 쓸 때 이 위에 덮는다).
@@ -227,6 +231,8 @@ impl Progress {
             ],
             pin,
         };
+        let r_has_no_weapons = r.get(key::WEAPONS).is_none();
+        let r_weapons = r.get(key::WEAPONS).map(str::to_string);
         let mut p = Progress {
             growth,
             level,
@@ -236,6 +242,14 @@ impl Progress {
             cores,
             tree,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
+            weapons: r_weapons
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|k| crate::weapons::Id::by_key(k.trim()))
+                        .filter(|&w| w != crate::weapons::Id::Fists)
+                        .collect()
+                })
+                .unwrap_or_default(),
             play: r.num(key::PLAY).unwrap_or(0),
             embers: r.num(key::EMBERS).unwrap_or(0),
             clears: r.num(key::CLEARS).unwrap_or(0),
@@ -248,7 +262,28 @@ impl Progress {
         if !migrated {
             migrate_v04(&mut p);
         }
+        // 0117: 가진 무기 키가 없는 옛 기록은 — 판을 한 번이라도 했으면 무기를 다 가진 채로(잃는 것 없이), 새 기록은 검만.
+        if r_has_no_weapons && p.has_any() {
+            p.weapons = crate::weapons::IDS
+                .into_iter()
+                .filter(|&w| w != crate::weapons::Id::Fists)
+                .collect();
+        }
         p
+    }
+
+    /// 이 무기를 가졌나(0117): 맨손·검은 늘, 그 밖은 얻은 것만.
+    pub fn owns_weapon(&self, w: crate::weapons::Id) -> bool {
+        matches!(w, crate::weapons::Id::Fists | crate::weapons::Id::Sword)
+            || self.weapons.contains(&w)
+    }
+
+    /// 가진 무기(표 순서, 맨손 포함).
+    pub fn owned_weapons(&self) -> Vec<crate::weapons::Id> {
+        crate::weapons::IDS
+            .into_iter()
+            .filter(|&w| self.owns_weapon(w))
+            .collect()
     }
 
     pub fn to_record(&self) -> Record {
@@ -284,6 +319,14 @@ impl Progress {
             Some(w) => r.set(key::WEAPON, w.key()),
             None => r.remove(key::WEAPON),
         }
+        r.set(
+            key::WEAPONS,
+            self.weapons
+                .iter()
+                .map(|w| w.key())
+                .collect::<Vec<_>>()
+                .join(","),
+        );
         match self.run {
             Some(at) => {
                 r.set(key::RUN_REST, at.rest);
@@ -515,6 +558,35 @@ mod tests {
     }
 
     /// 0112: 처음 쓰러뜨린 엘리트는 기록에 남는다(키 `elites`, 겹치지 않게).
+    /// 0117: 무기는 얻어서 쓴다 — 새 기록은 맨손·검만, 얻은 무기는 기록에 남고, 키가 없는 옛 기록(판을 한 번이라도 한)은 다 가진 채로.
+    #[test]
+    fn weapons_are_earned_and_old_records_keep_them_all() {
+        use crate::weapons::Id;
+        let fresh = Progress::default();
+        assert_eq!(fresh.owned_weapons(), vec![Id::Sword, Id::Fists]);
+        // 빈 목록도 키로 남아 다시 읽어도 옮기기가 돌지 않는다.
+        let mut p = Progress {
+            play: 3,
+            ..Progress::default()
+        };
+        let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        assert!(!back.owns_weapon(Id::Hammer), "{:?}", back.weapons);
+        p.weapons.push(Id::Hammer);
+        let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        assert!(back.owns_weapon(Id::Hammer));
+        assert!(!back.owns_weapon(Id::Staff) && !back.owns_weapon(Id::Crossbow));
+        // 옛 기록: 무기 키 없음 + 판을 했다 → 다 가진다. 아무것도 없는 기록은 새 기록과 같다.
+        let old = Progress::from_record(Record::parse(
+            "v=1
+embers=12
+weapon=crossbow
+",
+        ));
+        assert!(crate::weapons::IDS.iter().all(|&w| old.owns_weapon(w)));
+        let empty = Progress::from_record(Record::parse(""));
+        assert_eq!(empty.owned_weapons(), vec![Id::Sword, Id::Fists]);
+    }
+
     #[test]
     fn beaten_elites_round_trip() {
         let mut p = Progress::default();

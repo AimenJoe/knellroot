@@ -806,11 +806,12 @@ pub const SPECS: [Spec; 147] = [
         300.0,
         5.0
     ),
+    // 0117(사장 "기력 충전이 너무 빨라 행동에 제약이 없다"): 45 → 28/s, 차기 시작 0.6 → 0.8초. 빈 막대가 다 차는 데 약 2.8 → 4.4초.
     spec!(
         StaminaRegen,
         "stamina.regen /s",
         "STAMINA_REGEN",
-        45.0,
+        28.0,
         5.0,
         200.0,
         5.0
@@ -819,7 +820,7 @@ pub const SPECS: [Spec; 147] = [
         StaminaDelay,
         "stamina.regen delay s",
         "STAMINA_DELAY",
-        0.6,
+        0.8,
         0.0,
         3.0,
         0.1
