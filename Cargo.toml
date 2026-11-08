@@ -1,6 +1,6 @@
 [package]
 name = "knellroot"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["Beardworks"]
 edition = "2021"
 description = "Knellroot — 레트로 로우폴리 3D ARPG(쿼터뷰 떼싸움 + 락온 보스전)"
@@ -42,7 +42,7 @@ fullscreen = true
 res = "android/res"
 icon = "@mipmap/ic_launcher"
 # 덮어 설치 판정용 정수. 릴리스마다 하나씩 올린다(버전 숫자에서 만들지 않는다 — 작아질 수 있다, nail release.md).
-version_code = 15
+version_code = 16
 
 [package.metadata.android.activity_attributes]
 "android:screenOrientation" = "sensorLandscape"

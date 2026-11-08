@@ -4030,6 +4030,76 @@ mod tests {
         assert!((poise_max(&hard, &t) - poise_max(&plain, &t) * ELITE_HARD_POISE).abs() < 1e-4);
     }
 
+    /// 0117: 평타 기력은 무기 배율만큼 — 망치는 검보다 많이, 맨손은 적게.
+    #[test]
+    fn heavier_weapons_spend_more_stamina_per_swing() {
+        let t = Tuning::default();
+        let spent = |id: weapons::Id| {
+            let mut w = World::new("test", 20.0);
+            w.set_weapon(id);
+            let s0 = w.player.stamina;
+            w.step(
+                &Actions {
+                    attack: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            s0 - w.player.stamina
+        };
+        let sword = spent(weapons::Id::Sword);
+        assert!((sword - t[P::StaminaAttack]).abs() < 0.5, "{sword}");
+        assert!((spent(weapons::Id::Hammer) - sword * 1.7).abs() < 0.5);
+        assert!(spent(weapons::Id::Fists) < sword);
+    }
+
+    /// 0117: 쇠뇌 사격·수류탄도 기력을 쓰고, 기력이 없으면 나가지 않는다(볼트·수류탄도 그대로).
+    #[test]
+    fn shots_and_grenades_cost_stamina_and_stop_when_empty() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 20.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        let (s0, ammo) = (w.player.stamina, w.player.ammo);
+        w.step(
+            &Actions {
+                cast: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.player.stamina < s0, "a shot costs stamina");
+        assert_eq!(w.player.ammo, ammo - 1);
+        // 기력 0: 사격도 수류탄도 막힌다.
+        for _ in 0..60 {
+            w.step(&Actions::default(), &t);
+        }
+        w.player.stamina = 0.0;
+        w.player.stamina_idle = 0.0;
+        let ammo = w.player.ammo;
+        let bombs = w.player.grenades;
+        w.step(
+            &Actions {
+                cast: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert_eq!(w.player.ammo, ammo, "no stamina, no shot");
+        w.player.stamina = 0.0;
+        w.player.stamina_idle = 0.0;
+        w.step(
+            &Actions {
+                attack: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(
+            (w.player.grenades - bombs).abs() < 0.05,
+            "no stamina, no throw"
+        );
+    }
+
     /// 0048: 탄은 기둥에 막힌다.
     #[test]
     fn a_bolt_stops_at_a_pillar() {

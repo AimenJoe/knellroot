@@ -190,6 +190,9 @@ pub struct Weapon {
     pub charged: Bolt,
     /// 방랑자 모델에서 이 무기 부위 이름(다른 무기 부위는 숨긴다).
     pub node: &'static str,
+    /// 공격 기력 배율(0117, 사장 "큰 무기는 더 많은 기력 — 높은 피해의 보정"): 평타·대시 공격 `stamina.attack`, 강타 `heavy.stamina`,
+    /// 원거리 무기는 사격·모은 사격·공중 볼트에 곱한다. 맨손 < 쇠뇌 < 지팡이 < 검 < 망치.
+    pub stamina: f32,
 }
 
 const fn hit(
@@ -336,6 +339,7 @@ pub const WEAPONS: [Weapon; 5] = [
             ..MAGIC
         },
         node: "sword",
+        stamina: 1.0,
     },
     Weapon {
         id: Id::Hammer,
@@ -385,6 +389,7 @@ pub const WEAPONS: [Weapon; 5] = [
             ..MAGIC
         },
         node: "w_hammer",
+        stamina: 1.7,
     },
     Weapon {
         id: Id::Staff,
@@ -427,6 +432,7 @@ pub const WEAPONS: [Weapon; 5] = [
             ..MAGIC
         },
         node: "w_staff",
+        stamina: 0.75,
     },
     Weapon {
         id: Id::Crossbow,
@@ -470,6 +476,7 @@ pub const WEAPONS: [Weapon; 5] = [
             scale: 1.6,
         },
         node: "w_crossbow",
+        stamina: 0.7,
     },
     Weapon {
         id: Id::Fists,
@@ -508,6 +515,7 @@ pub const WEAPONS: [Weapon; 5] = [
         },
         // 든 것이 없다(다른 무기 부위는 모두 숨는다).
         node: "",
+        stamina: 0.6,
     },
 ];
 
@@ -517,12 +525,6 @@ impl Id {
             .iter()
             .find(|w| w.id == self)
             .expect("WEAPONS has every Id")
-    }
-
-    /// 다음 무기(바꾸기 줄).
-    pub fn next(self, step: i32) -> Id {
-        let i = IDS.iter().position(|x| *x == self).unwrap_or(0) as i32;
-        IDS[(i + step).rem_euclid(IDS.len() as i32) as usize]
     }
 }
 
@@ -546,8 +548,6 @@ mod tests {
                 ),
             }
         }
-        assert_eq!(Id::Fists.next(1), Id::Sword);
-        assert_eq!(Id::Sword.next(-1), Id::Fists);
         assert_eq!(Id::by_key("fists"), Some(Id::Fists));
     }
 

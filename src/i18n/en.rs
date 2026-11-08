@@ -88,6 +88,7 @@ pub const EN: Strings = Strings {
     charm_empty: "empty",
     equip_none_yet: "No charms yet — chests and the gatekeeper hold them",
     toast_charm: "Found a charm: {0}",
+    toast_weapon: "Found a weapon: {0} — equip it from Equipment",
     toast_embers: "The chest was empty — embers +{0}",
     chest_verb: "Open",
     menu_continue: "Continue",

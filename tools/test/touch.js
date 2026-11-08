@@ -100,9 +100,9 @@ async function main() {
   await shot('t10-pause-stays');
   // 장비 창 터치(2026-11-06): 멈춤 → 장비 → 칸은 두 걸음(누르면 고르기, 다시 누르면 후보) → 후보도 두 걸음(고르기 = 미리 보기, 다시 = 끼우기).
   // 자리는 844×390에서 잰 값(`app::equip` 창 440×226 기준 — 창 크기를 바꾸면 함께).
-  // 0076·0077: 무기 후보 = 맨손 · 검(착용 중) · 망치 · 지팡이 · 쇠뇌. 아래 견주는 줄 자리를 비워 셋이 보이고(맨손부터) 망치는 셋째 줄 —
-  // 가장자리 줄을 손가락으로 골라도 창이 밀리지 않아 같은 자리의 둘째 탭이 끼운다(한 줄 = 13 × 1.75 u).
-  const SWORD_BOX = [154, 135], PICK_ROW = [560, 128 + 13 * 1.75 * H / 270], CHARM_BOX = [410, 77];
+  // 0076·0077 → 0117: 새 기록의 무기 후보 = 맨손 · 검(착용 중)뿐(무기는 상자에서 얻는다). 맨손은 첫 줄 —
+  // 같은 자리의 둘째 탭이 끼운다(한 줄 = 13 × 1.75 u).
+  const SWORD_BOX = [154, 135], PICK_ROW = [560, 128 - 13 * 1.75 * H / 270], CHARM_BOX = [410, 77];
   // 멈춤 창 줄 자리는 줄 수로 계산한다(`app::menu` draw_menu·panel_rect — 480×270 기준 단위 u, 제목 30·줄 13×1.75·아래 8,
   // 창은 위 6u와 아래 안내 줄(2.8글) 사이 가운데). 2026-11-07: 숫자로 박아 둔 자리가 멈춤 줄 수가 바뀌자 다른 줄을 눌렀다.
   const menuRow = (rows, i) => {
@@ -114,12 +114,12 @@ async function main() {
   await tap(CHARM_BOX); await page.waitForTimeout(300);    // 고르기만(설명이 바뀜)
   await tap(SWORD_BOX); await page.waitForTimeout(300);    // 무기 칸 고르기
   await tap(SWORD_BOX); await page.waitForTimeout(400);    // 다시 = 후보 목록
-  await tap(PICK_ROW); await page.waitForTimeout(300);     // 망치 고르기(미리 보기)
+  await tap(PICK_ROW); await page.waitForTimeout(300);     // 맨손 고르기(미리 보기)
   await shot('t12-equip-preview');
   await tap(PICK_ROW); await page.waitForTimeout(400);     // 다시 = 끼우기
   await shot('t13-equip-worn');
   const rec = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('knell.save')).map((k) => localStorage.getItem(k)).join('\n'));
-  if (!/weapon=hammer/i.test(rec)) errors.push('touch equip: two taps on the hammer should wear it: ' + JSON.stringify(rec));
+  if (!/weapon=fists/i.test(rec)) errors.push('touch equip: two taps on bare hands should wear them: ' + JSON.stringify(rec));
   await tap([W - 4, H - 4]); await page.waitForTimeout(300);
   await tap([W - 4, H - 4]); await page.waitForTimeout(300);
   await shot('t11-pause-closed');

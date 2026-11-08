@@ -127,7 +127,10 @@ impl App {
         }
         self.slot = i;
         crate::save::set_last_slot(i);
-        self.weapon = progress.weapon.unwrap_or(weapons::Id::Sword);
+        self.weapon = progress
+            .weapon
+            .filter(|&w| progress.owns_weapon(w))
+            .unwrap_or(weapons::Id::Sword);
         self.saved = progress.clone();
         self.progress = progress;
         self.slots = crate::save::summaries();

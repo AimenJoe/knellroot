@@ -90,6 +90,7 @@ pub const KO: Strings = Strings {
     charm_empty: "빈 칸",
     equip_none_yet: "아직 장신구가 없다 — 상자와 문지기에게서 얻는다",
     toast_charm: "장신구를 얻었다: {0}",
+    toast_weapon: "무기를 얻었다: {0} — 장비에서 바꿔 든다",
     toast_embers: "상자는 비어 있었다 — 잔불 +{0}",
     chest_verb: "열기",
     menu_continue: "이어하기",

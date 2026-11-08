@@ -39,13 +39,14 @@ pub(super) enum Cand {
 /// 못 얻은 것은 장비 창에 보이지 않는다 — 검은 실루엣 같은 "찾을 것" 표시는 도감 몫(사장 2026-11-05, 0068).
 /// 그 칸에 **지금 낀 것도** 목록에 있고("착용 중") 목록을 열면 커서가 거기서 시작한다(`pick_start`) — 사장 2026-11-07
 /// "오른쪽 목록에서 장착된 장비에 커서가 가 있는 상태여야". 0070 8 가(낀 것 빼기)를 걷음. 비우기(맨손·빈 칸)는 맨 위.
-pub(super) fn candidates(slot: usize, owned: &[Charm]) -> Vec<Cand> {
+pub(super) fn candidates(slot: usize, owned: &[Charm], arms: &[weapons::Id]) -> Vec<Cand> {
     if slot == 0 {
+        // 무기 칸 = 맨손 + **가진** 무기만(0117 — 무기는 얻어서 쓴다).
         return std::iter::once(weapons::Id::Fists)
             .chain(
                 weapons::IDS
                     .into_iter()
-                    .filter(|&w| w != weapons::Id::Fists),
+                    .filter(|&w| w != weapons::Id::Fists && arms.contains(&w)),
             )
             .map(Cand::Weapon)
             .collect();
@@ -444,13 +445,19 @@ impl App {
         };
         if pick {
             let slot = self.cursor;
-            if !has_choice(&candidates(slot, &self.progress.owned), self.slot_now(slot)) {
+            if !has_choice(
+                &candidates(slot, &self.progress.owned, &self.arms()),
+                self.slot_now(slot),
+            ) {
                 // 바꿀 것이 없다(설명 칸이 얻는 곳을 말한다).
                 self.snd(crate::sfx::Id::Deny);
                 return;
             }
             self.go(Go::Open(Scene::EquipPick { slot: slot as u8 }));
-            self.cursor = pick_start(&candidates(slot, &self.progress.owned), self.slot_now(slot));
+            self.cursor = pick_start(
+                &candidates(slot, &self.progress.owned, &self.arms()),
+                self.slot_now(slot),
+            );
         }
     }
 
@@ -473,19 +480,19 @@ impl App {
             self.scroll = 0.0;
             if other != slot
                 && has_choice(
-                    &candidates(other, &self.progress.owned),
+                    &candidates(other, &self.progress.owned, &self.arms()),
                     self.slot_now(other),
                 )
             {
                 self.go(Go::Open(Scene::EquipPick { slot: other as u8 }));
                 self.cursor = pick_start(
-                    &candidates(other, &self.progress.owned),
+                    &candidates(other, &self.progress.owned, &self.arms()),
                     self.slot_now(other),
                 );
             }
             return;
         }
-        let list = candidates(slot, &self.progress.owned);
+        let list = candidates(slot, &self.progress.owned, &self.arms());
         if !has_choice(&list, self.slot_now(slot)) {
             self.go(Go::Back);
             return;
@@ -598,7 +605,7 @@ impl App {
         }
 
         // 아래 왼쪽: 고른 것(후보 목록이면 그 후보) — 도는 그림 + 이름(머리글) + 설명.
-        let list = pick.map(|slot| candidates(slot, &self.progress.owned));
+        let list = pick.map(|slot| candidates(slot, &self.progress.owned, &self.arms()));
         let focus = match (&list, pick) {
             (Some(l), Some(_)) => l.get(self.cursor).copied().unwrap_or(Cand::Empty),
             _ => self.slot_now(slot_cursor),
@@ -932,7 +939,7 @@ mod tests {
     fn slots_list_what_you_own_and_the_cursor_opens_on_what_is_worn() {
         // 무기 칸: 맨손이 맨 위, 든 것도 목록에 있고 커서가 거기서 시작한다.
         let held = Cand::Weapon(weapons::Id::Staff);
-        let weapons = candidates(0, &[]);
+        let weapons = candidates(0, &[], &weapons::IDS);
         assert_eq!(weapons.len(), weapons::IDS.len());
         assert_eq!(
             weapons[0],
@@ -944,9 +951,19 @@ mod tests {
             held,
             "the cursor starts on it"
         );
+        // 0117: 무기 칸은 가진 것만(맨손·검 + 얻은 것).
+        let earned = candidates(0, &[], &[weapons::Id::Sword, weapons::Id::Hammer]);
+        assert_eq!(
+            earned,
+            vec![
+                Cand::Weapon(weapons::Id::Fists),
+                Cand::Weapon(weapons::Id::Sword),
+                Cand::Weapon(weapons::Id::Hammer)
+            ]
+        );
         // 장신구 칸(사장 2026-11-07): 빈 칸 + 가진 것, 낀 것도 목록에 있고 커서가 거기.
         let owned = [Charm::Ear, Charm::Shell];
-        let list = candidates(3, &owned);
+        let list = candidates(3, &owned, &[]);
         assert_eq!(
             list,
             vec![
@@ -967,7 +984,7 @@ mod tests {
         );
         assert!(wears_something(Cand::Charm(Charm::Ear)) && wears_something(held));
         // 장신구가 없고 칸이 비었으면 바꿀 것이 없다 — 못 얻은 것은 장비 창에 없다(도감 몫).
-        assert!(!has_choice(&candidates(1, &[]), Cand::Empty));
+        assert!(!has_choice(&candidates(1, &[], &[]), Cand::Empty));
         assert!(has_choice(&list, Cand::Empty));
     }
 }

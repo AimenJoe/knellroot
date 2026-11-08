@@ -165,6 +165,7 @@ pub struct Strings {
     pub charm_empty: &'static str,
     pub equip_none_yet: &'static str,
     pub toast_charm: &'static str,
+    pub toast_weapon: &'static str,
     pub toast_embers: &'static str,
     pub chest_verb: &'static str,
 
@@ -455,6 +456,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.charm_empty,
         s.equip_none_yet,
         s.toast_charm,
+        s.toast_weapon,
         s.toast_embers,
         s.chest_verb,
         s.menu_continue,
