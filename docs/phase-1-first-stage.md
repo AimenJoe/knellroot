@@ -116,9 +116,11 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 ## 사람이 할 일
 **0093 소개 페이지**: `release/v0.3`을 main에 넣은 뒤 ① 레포 Settings → Pages → Source = **GitHub Actions**(켜기 전 첫 실행은 실패, 켠 뒤 Actions의 pages를 다시 실행) ② DNS(Cloudflare)에 `knellroot` CNAME → `aimenjoe.github.io` ③ Settings → Pages → Custom domain = `knellroot.beardworks.io`, Enforce HTTPS. 페이지 글을 고치면 `python3 tools/site/subset_font.py <GowunBatang-Bold.ttf>`.
 
+**v0.4.1 배포됨(2026-11-08, PR #7 → `a9f2925`)**: 0109~0113(넓어진 0번째 지역·서 있는 적·문 장치·엘리트·마법 쿨타임·공중 RB·레벨 값·마디·늦은 패링 고침). `release/v0.4`는 main까지 앞으로, `release/v0.5`에 main을 합침.
+
 **v0.4.0 배포됨(2026-11-08, PR #6 → `9564892`)**: 운영 웹 `build.txt` = 그 커밋, Release `v0.4.0`에 `knellroot.apk`, `deploy-web`·`release`·`build-android` 모두 success. `release/v0.4`는 main까지 앞으로 맞춤. 고칠 것은 v0.4.x.
 
-**v0.5 준비(0114, 갈래 `release/v0.5`)**: 지역·이야기 확장 전에 정할 것 열(보라 뿌리·둘째 지역·포포 고리·도감·ECO-10·ECO-05·구역 등급 값·잔류형 정본·둘째 문지기·두 지역 잇는 법) — 인터뷰로. 그리고 **0109~0113을 v0.4.1로 낼지**(아직 배포 전).
+**v0.5 준비(0114, 갈래 `release/v0.5`)**: 지역·이야기 확장 전에 정할 것 열(보라 뿌리·둘째 지역·포포 고리·도감·ECO-10·ECO-05·구역 등급 값·잔류형 정본·둘째 문지기·두 지역 잇는 법) — 인터뷰로. 0109~0113은 v0.4.1로 배포함(아래).
 
 **0113(개발판)**: 0번째 지역 — 물결 대신 서 있는 적(보면 깨고·멀어지면 제자리로 가득), 지도 약 3배(입구·다리·무너진 길·뿌리 굴·서쪽 성벽길 고리·동쪽 탑·뜰·성소, 화로 셋, 적 24 + 엘리트 3), 문은 성벽길 끝 장치로(기록에 남는 지름길), 화로에서 쉬면 적이 다시 선다(이 판에 쓰러뜨린 엘리트 빼고). 판정: 넓어졌다·길 찾기·밀도·끈·장치 고리·첫 판 10~15분·Android 30fps.
 
