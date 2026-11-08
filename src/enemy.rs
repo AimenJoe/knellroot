@@ -146,6 +146,8 @@ pub struct Enemy {
     pub spread: Vec3,
     /// 엘리트(0112): 성질 하나. 없으면 보통 개체.
     pub elite: Option<Affix>,
+    /// 구역 등급(0112, 1부터 — 스테이지가 세울 때 `set_tier`).
+    pub tier: u8,
     /// 되풀이(0112): 이번 공격이 되풀이한 둘째 번인가.
     pub repeated: bool,
     /// 지도에 서 있는 적의 제자리·바라보는 쪽(0113). 없으면(물결·시나리오) 처음부터 쫓는다.
@@ -241,6 +243,7 @@ impl Enemy {
             spread: Vec3::ZERO,
             hop: None,
             elite: None,
+            tier: 1,
             repeated: false,
             home: None,
         }
@@ -264,6 +267,16 @@ impl Enemy {
     }
 
     /// 엘리트로(0112): 체력 × `ELITE_HP`(올림), 몸 × `ELITE_SCALE`, 성질 하나. 보스는 엘리트가 되지 않는다.
+    /// 구역 등급(0112): 잡몹만 — 체력을 올림으로 키운다(자세·잔불은 등급을 보고 월드가 곱한다). 보스는 그대로.
+    pub fn set_tier(&mut self, n: u8) {
+        if self.boss {
+            return;
+        }
+        self.tier = n.max(1);
+        self.max_hp = (self.max_hp as f32 * crate::tuning::tier(self.tier).hp).ceil() as i32;
+        self.hp = self.max_hp;
+    }
+
     pub fn make_elite(&mut self, affix: Affix) {
         if self.boss {
             return;

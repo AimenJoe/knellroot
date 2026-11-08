@@ -1039,8 +1039,9 @@ impl World {
                 let seed = (self.time * 1000.0) as u32 ^ (i as u32).wrapping_mul(2654435761);
                 // 잔불 주머니(0064 M3): 값에 배. 엘리트(0112)는 × `ELITE_EMBERS`.
                 let elite = if en.elite.is_some() { ELITE_EMBERS } else { 1 };
-                let value =
-                    (en.def().embers as f32 * elite as f32 * self.stats.ember).round() as u32;
+                // 구역 등급(0112): 종 값 × 등급 배율(올림) — 잔재 2 → 4, 가시짐승 3 → 5(등급 2).
+                let base = (en.def().embers as f32 * crate::tuning::tier(en.tier).embers).ceil();
+                let value = (base * elite as f32 * self.stats.ember).round() as u32;
                 // 남는 엘리트(0112): 쓰러진 자리에 고리가 남는다.
                 if en.elite == Some(Affix::Lingering) {
                     self.lingers.push(Linger {
@@ -2010,6 +2011,8 @@ impl World {
         };
         // 플레이어를 친 적의 자리(첫 하나) — 밀려나는 쪽.
         let mut hurt_player: Option<Vec3> = None;
+        // 맞힌 적 가운데 가장 높은 구역 등급(0112 — 등급 3부터 한 대 2).
+        let mut hurt_tier: u8 = 1;
         let mut parried: Vec<usize> = Vec::new();
         let mut blocked = false;
         let stand = self.tree.has(Cell::OneWhoStands)
@@ -2061,6 +2064,7 @@ impl World {
                     blocked = true;
                 } else {
                     hurt_player.get_or_insert(en.pos);
+                    hurt_tier = hurt_tier.max(en.tier);
                 }
             }
             if out.roused {
@@ -2159,7 +2163,12 @@ impl World {
             // 같은 틱이라도 뒤·옆에서 맞은 것·받을 수 없는 파동은 그대로 맞는다(패링은 앞쪽 반원만).
         }
         if let (Some(from), false) = (hurt_player, self.player.invulnerable()) {
-            let taken = 1 + self.stats.taken;
+            let blow = if hurt_tier >= crate::tuning::TIER_HEAVY_HITS {
+                2
+            } else {
+                1
+            };
+            let taken = blow + self.stats.taken;
             let pl = &mut self.player;
             pl.hp -= taken;
             // 나가기 전에 맞았으면 받아 둔 패링은 버린다(0110) — 맞은 뒤 뒤늦게 나가 헛침 굳음이 생기지 않게.
@@ -2518,7 +2527,10 @@ pub fn poise_max(en: &Enemy, t: &Tuning) -> f32 {
         } else {
             1.0
         };
-        (t[P::PoiseBase] + en.max_hp as f32 * t[P::PoisePerHp]) * hard
+        // 등급(0112): 체력이 커진 몫에 더해 × 등급 자세 배율.
+        (t[P::PoiseBase] + en.max_hp as f32 * t[P::PoisePerHp])
+            * hard
+            * crate::tuning::tier(en.tier).poise
     }
 }
 
@@ -3985,6 +3997,54 @@ mod tests {
     }
 
     /// 0112 남는: 쓰러진 자리에 고리가 남고 `ELITE_LINGER_DELAY` 뒤 둘레를 친다 — 안이면 맞고, 밖이면 안 맞는다.
+    /// 0112·0116 T3: 등급 2 잡몹은 체력 ×1.5(올림 — 잔재 3 → 5, 가시짐승 2 → 3)·자세 ×1.3(커진 체력 몫에 더해)·잔불 ×1.6(올림),
+    /// 한 대는 1 그대로 — 등급 3부터 2. 예고 길이는 같다.
+    #[test]
+    fn tier_two_mobs_are_sturdier_and_richer_but_hit_and_tell_the_same() {
+        use crate::species::Kind;
+        let t = Tuning::default();
+        let make = |kind: Kind, tier: u8| {
+            let mut w = World::new("test", 20.0);
+            let i = w.spawn(kind, vec3(0.0, 0.0, -3.0));
+            w.enemies[i].set_tier(tier);
+            w
+        };
+        let (husk1, husk2) = (make(Kind::Husk, 1), make(Kind::Husk, 2));
+        assert_eq!((husk1.enemies[0].max_hp, husk2.enemies[0].max_hp), (3, 5));
+        assert_eq!(make(Kind::Thorn, 2).enemies[0].max_hp, 3);
+        let base = t[P::PoiseBase] + 5.0 * t[P::PoisePerHp];
+        assert!((poise_max(&husk2.enemies[0], &t) - base * 1.3).abs() < 1e-3);
+        // 잔불: 쓰러뜨려 떨군 값.
+        let drop = |mut w: World| {
+            w.enemies[0].hp = 0;
+            w.enemies[0].state = EState::Dead;
+            w.step(&Actions::default(), &t);
+            w.drops.iter().map(|d| d.value).sum::<u32>()
+        };
+        assert_eq!(drop(make(Kind::Husk, 2)), 4);
+        assert_eq!(drop(make(Kind::Thorn, 2)), 5);
+        // 보스는 등급을 받지 않는다.
+        let mut w = World::new("test", 20.0);
+        let b = w.spawn(Kind::Warden, vec3(0.0, 0.0, -3.0));
+        let hp = w.enemies[b].max_hp;
+        w.enemies[b].set_tier(2);
+        assert_eq!((w.enemies[b].max_hp, w.enemies[b].tier), (hp, 1));
+        // 한 대: 등급 2까지 1, 등급 3부터 2(0112).
+        for (tier, want) in [(2u8, 1), (crate::tuning::TIER_HEAVY_HITS, 2)] {
+            let mut w = World::new("test", 20.0);
+            let i = w.spawn(Kind::Husk, vec3(0.6, 0.0, 0.0));
+            w.enemies[i].set_tier(tier);
+            let before = w.player.hp;
+            for _ in 0..240 {
+                w.step(&Actions::default(), &t);
+                if w.player.hp < before {
+                    break;
+                }
+            }
+            assert_eq!(before - w.player.hp, want, "tier {tier}");
+        }
+    }
+
     /// 엘리트는 잔불을 × `ELITE_EMBERS`, 굳은 엘리트의 자세 막대는 × `ELITE_HARD_POISE`.
     #[test]
     fn a_lingering_elite_leaves_a_ring_that_bursts_after_a_beat() {

@@ -414,6 +414,8 @@ pub struct StageDef {
     pub obj_explore: Tr,
     /// 지하 몇 m(0118, 연출 표 — 지층 단면 전환·카드가 같이 쓴다). 차례대로 깊어진다(시험).
     pub depth_m: u32,
+    /// 구역 등급(0112·0116, 1부터): 잡몹의 체력·자세·잔불(등급 3부터 피해 2). 깊을수록 높다(시험).
+    pub tier: u8,
     /// 지역 환경(0118 T2): 원경·달빛·안개·떠다니는 것·식생 — `backdrop::SURFACE`·`UNDERGROUND`.
     pub env: &'static crate::backdrop::Env,
 }
@@ -777,7 +779,9 @@ impl StageRun {
             for (mark, kind) in list.iter() {
                 let spots: Vec<Vec3> = self.level.marks_of(*mark).collect();
                 for p in spots {
-                    self.wave_ids.push(w.spawn(*kind, p));
+                    let i = w.spawn(*kind, p);
+                    w.enemies[i].set_tier(self.def.tier);
+                    self.wave_ids.push(i);
                 }
             }
         }
@@ -803,6 +807,7 @@ impl StageRun {
             let spots: Vec<Vec3> = self.level.marks_of(mark).collect();
             for p in spots {
                 let i = w.spawn(kind, p);
+                w.enemies[i].set_tier(self.def.tier);
                 w.enemies[i].place(face(p));
             }
         }
@@ -812,6 +817,7 @@ impl StageRun {
             }
             if let Some(p) = self.level.marks_of(mark).next() {
                 let i = w.spawn(kind, p);
+                w.enemies[i].set_tier(self.def.tier);
                 w.enemies[i].make_elite(affix);
                 w.enemies[i].place(face(p));
                 self.elite_ids.push((i, elite_id(self.def.find_prefix, k)));
@@ -1509,6 +1515,26 @@ mod tests {
                 assert_ne!(def.find_prefix, STAGES[i - 1].find_prefix);
             }
         }
+    }
+
+    /// 0112·0116 T3: 구역 등급은 깊을수록 높고, 서 있는 적·엘리트가 그 등급으로 선다(보스는 그대로).
+    #[test]
+    fn deeper_regions_field_higher_tier_mobs() {
+        for (i, def) in STAGES.iter().enumerate() {
+            if i > 0 {
+                assert!(def.tier >= STAGES[i - 1].tier);
+            }
+            let (_, w) = StageRun::start(def);
+            for e in &w.enemies {
+                assert_eq!(
+                    e.tier,
+                    if e.boss { 1 } else { def.tier },
+                    "{}",
+                    def.find_prefix
+                );
+            }
+        }
+        assert_eq!(STAGES[1].tier, 2, "0116: the village is tier 2");
     }
 
     /// 0118 T2: 땅 위 지역만 하늘·달·반딧불·나무, 땅속은 달이 없고 달빛이 약하며 흙이 떨어진다. 땅속엔 천장 틈 빛줄기가 있다.

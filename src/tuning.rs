@@ -151,6 +151,33 @@ pub const ELITE_HP: f32 = 2.0;
 pub const ELITE_SCALE: f32 = 1.25;
 pub const ELITE_EMBERS: u32 = 3;
 pub const ELITE_FIRST_EMBERS: u32 = 30;
+/// 구역 등급(0112 1절 — 잡몹 레벨은 지역마다 고정 등급, 숫자는 화면에 없다): 체력·자세 막대·떨구는 잔불 배율(올림).
+/// 예고 길이·움직임은 바꾸지 않는다(읽히는 싸움 0071·0075). 등급 2 값은 0116 3절. 등급 3 값은 셋째 지역 때 정한다.
+pub struct Tier {
+    pub hp: f32,
+    pub poise: f32,
+    pub embers: f32,
+}
+pub const TIERS: [Tier; 2] = [
+    Tier {
+        hp: 1.0,
+        poise: 1.0,
+        embers: 1.0,
+    },
+    Tier {
+        hp: 1.5,
+        poise: 1.3,
+        embers: 1.6,
+    },
+];
+/// 이 등급부터 잡몹 한 대 피해가 2(0112).
+pub const TIER_HEAVY_HITS: u8 = 3;
+
+/// 등급 `n`(1부터)의 배율 — 표 밖이면 가장 높은 줄.
+pub fn tier(n: u8) -> &'static Tier {
+    &TIERS[(n.max(1) as usize - 1).min(TIERS.len() - 1)]
+}
+
 /// 굳은(0112): 자세 막대 배율·밀려나는 배율.
 pub const ELITE_HARD_POISE: f32 = 2.5;
 pub const ELITE_HARD_KNOCK: f32 = 0.35;

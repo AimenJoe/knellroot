@@ -28,6 +28,7 @@ pub static DEF: StageDef = StageDef {
     find_prefix: "village",
     elites: &[] as &[(char, Kind, Affix)],
     depth_m: 40,
+    tier: 2,
     env: &crate::backdrop::UNDERGROUND,
 };
 
