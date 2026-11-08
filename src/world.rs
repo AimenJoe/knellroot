@@ -2613,8 +2613,15 @@ pub fn poise_max(en: &Enemy, t: &Tuning) -> f32 {
         } else {
             1.0
         };
-        // 등급(0112): 체력이 커진 몫에 더해 × 등급 자세 배율.
-        (t[P::PoiseBase] + en.max_hp as f32 * t[P::PoisePerHp])
+        // 등급(0112·0116): 체력·자세 배율은 각각 독립 적용한다. 등급 체력 배율이
+        // 자세 산식의 HP 항까지 키우면 정본의 자세 ×1.3보다 더 커지므로,
+        // 자세의 HP 항은 종의 기본 HP에 엘리트 체력 배율만 반영한다.
+        let elite_hp = if en.elite.is_some() {
+            crate::tuning::ELITE_HP
+        } else {
+            1.0
+        };
+        (t[P::PoiseBase] + en.def().hp as f32 * elite_hp * t[P::PoisePerHp])
             * hard
             * crate::tuning::tier(en.tier).poise
     }
@@ -2747,6 +2754,20 @@ pub fn move_to_world(stick: Vec2, basis: Basis, player: Vec3) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0116 T3: tier 2의 자세 막대는 tier 1의 정확히 1.3배다.
+    /// 체력 ×1.5가 자세 산식의 HP 항에 중복 반영되면 이 비율을 넘으므로 함께 고정한다.
+    #[test]
+    fn region_tier_poise_multiplier_is_independent_from_health_multiplier() {
+        let t = crate::tuning::Tuning::default();
+        let base = Enemy::new(crate::species::Kind::Husk, Vec3::ZERO);
+        let mut village = Enemy::new(crate::species::Kind::Husk, Vec3::ZERO);
+        village.set_tier(2);
+
+        let base_poise = poise_max(&base, &t);
+        let village_poise = poise_max(&village, &t);
+        assert!((village_poise - base_poise * 1.3).abs() < 1e-4);
+    }
 
     #[test]
     fn charms_raise_the_health_cap_and_make_hits_hurt_more() {
