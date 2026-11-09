@@ -44,6 +44,7 @@ Blender 4.0.2로 확인(glTF 내보내기에 python3-numpy 필요). EGL 경고�
 | `bellkeeper` 깨진 종지기 3.0m | root, body(옷자락 밑동 피벗), head, core(glow_core), arm_l(종을 든 팔, +X), bell, arm_r, leg_l, leg_r | idle 2.0↻, walk 1.4↻, toll 1.6(1.0 머리 위로 들기·1.12 앞 땅 내리침), slam 1.5(0.9 비틀어 뒤로·1.0 앞 가로지름), throw 1.2(0.6 들어 젖힘·0.7 털기), charge_windup 0.8, charge 0.5↻, recover 0.8, hurt 0.4, wake 2.0 | 1608 | glow_eyes, glow_core |
 | `res_hearth` 불 지키는 주민(늙은 오소리) 1.3m | root, body(엉덩이 피벗), head, arm_l, arm_r, leg_l, leg_r — 주민 셋 공용 `resident_parts.py`(자르는 치수 `Cut` + 뼈) | work 3.2↻(숙여 아궁이를 두 번 쑤심 → 허리 폄), look 2.4↻(조금 굽어 돌아봄) | 612 | – |
 | `res_water` 물 모으는 주민(작은 두더지) 1.35m | 같은 꼴(`resident_parts.py`) | work 3.6↻(쪼그려 큰 두 손으로 항아리를 받쳐 들고 올려다봄 → 고쳐 받음 → 들여다봄), look 2.2↻(손을 배 앞에 모음) | 785 | – |
+| `res_cloth` 꿰매는 주민(어린 양) 1.35m | 같은 꼴(`resident_parts.py`) | work 2.8↻(왼손으로 천을 받쳐 들고 오른손으로 바늘을 꽂아 실을 당김 두 번), look 2.6↻(손을 내리고 조용히) | 659 | – |
 | `gatekeeper` 잠들지 않는 문지기 3.2m | root, body, core, head, arm_l, arm_r, club, leg_l, leg_r, shin_l, shin_r | idle 2.0↻, walk 1.4↻, slam 1.5(0–0.9 들기·0.9–1.1 찍기·~1.5), charge_windup 0.8, charge 0.5↻, wave 1.6(0–1.0 들기·1.0–1.2 땅 치기·~1.6), hurt 0.4, wake 2.0(무릎 꿇음 → 섬) | 1200 | glow_core(뼈 `core`, 숨·피격에 크기), glow_eyes |
 | `wall_segment` 벽 2.0×0.8×3.0m | – | – | 352 | – |
 | `pillar_broken` 부서진 기둥 1.2×2.9m | – | – | 288 | – |

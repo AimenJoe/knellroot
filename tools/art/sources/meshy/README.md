@@ -23,6 +23,8 @@
 | `hearth_v1_low.glb`(+ `_tex.png`) | 2026-11-09 | 위를 `meshy_convert.py ... 1.3 700 128`로 줄인 것(정점 612·삼각형 582, 5분) — `res_hearth.py`가 읽는다 |
 | `water_v1.glb` | 2026-11-09 | 물 모으는 주민 v1(Meshy 이름 "Sleepy Blue Mole", 사장이 Image to 3D — 입력 `../ai/knellroot/water_v1_front.png`), 텍스처 셋. 무료 → CC BY 4.0 |
 | `water_v1_low.glb`(+ `_tex.png`) | 2026-11-09 | 위를 `meshy_convert.py ... 1.35 700 128`로 줄인 것(정점 700·삼각형 622, 5분) — `res_water.py`가 읽는다 |
+| `cloth_v1.glb` | 2026-11-09 | 꿰매는 주민 v1(Meshy 이름 "Patchwork Lamb", 사장이 Image to 3D — 입력 `../ai/knellroot/cloth_v2_front.png`), 텍스처 셋. 무료 → CC BY 4.0 |
+| `cloth_v1_low.glb`(+ `_tex.png`) | 2026-11-09 | 위를 `meshy_convert.py ... 1.35 700 128`로 줄인 것(정점 659·삼각형 523, 5분) — `res_cloth.py`가 읽는다 |
 
 게임에 넣을 때: `blender -b -P tools/art/blender/meshy_convert.py -- <원본> <출력> 1.4 2300 256`(줄이기 + 새 UV + 색 굽기).
 배포에 쓰면 `assets/LICENSES.md`에 "Meshy로 만든 모델(AI), CC BY 4.0"을 적는다.
