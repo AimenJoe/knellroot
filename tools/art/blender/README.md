@@ -42,6 +42,7 @@ Blender 4.0.2로 확인(glTF 내보내기에 python3-numpy 필요). EGL 경고�
 | `shellback` 등딱지짐승 1.0×1.25×1.2m | root, body, head, leg_fl, leg_fr, leg_bl, leg_br | idle 1.6↻, walk 1.0↻, attack 1.3(0–0.6 머리 넣고 앞 들기·0.72 쿵·~1.3), hurt 0.3 | 717 | glow_eyes |
 | `pod` 꼬투리 0.6×0.9×0.9m | root, body(피벗 바닥 — 앞발 포함), head, seed(등의 씨앗 꼬투리 + 보라 뿌리), leg_bl, leg_br | idle 1.4↻, walk 0.5↻(작은 깡충), hop 0.4(뛰기 진행으로), plant 1.0(0.18 꼬투리 휙 · 0.45 부풀어 버팀 · 0.6 꽉 오므림), hurt 0.3 | 785 | glow_eyes |
 | `bellkeeper` 깨진 종지기 3.0m | root, body(옷자락 밑동 피벗), head, core(glow_core), arm_l(종을 든 팔, +X), bell, arm_r, leg_l, leg_r | idle 2.0↻, walk 1.4↻, toll 1.6(1.0 머리 위로 들기·1.12 앞 땅 내리침), slam 1.5(0.9 비틀어 뒤로·1.0 앞 가로지름), throw 1.2(0.6 들어 젖힘·0.7 털기), charge_windup 0.8, charge 0.5↻, recover 0.8, hurt 0.4, wake 2.0 | 1608 | glow_eyes, glow_core |
+| `res_hearth` 불 지키는 주민(늙은 오소리) 1.3m | root, body(엉덩이 피벗), head, arm_l, arm_r, leg_l, leg_r | work 3.2↻(숙여 아궁이를 두 번 쑤심 → 허리 폄), look 2.4↻(조금 굽어 돌아봄) | 612 | – |
 | `gatekeeper` 잠들지 않는 문지기 3.2m | root, body, core, head, arm_l, arm_r, club, leg_l, leg_r, shin_l, shin_r | idle 2.0↻, walk 1.4↻, slam 1.5(0–0.9 들기·0.9–1.1 찍기·~1.5), charge_windup 0.8, charge 0.5↻, wave 1.6(0–1.0 들기·1.0–1.2 땅 치기·~1.6), hurt 0.4, wake 2.0(무릎 꿇음 → 섬) | 1200 | glow_core(뼈 `core`, 숨·피격에 크기), glow_eyes |
 | `wall_segment` 벽 2.0×0.8×3.0m | – | – | 352 | – |
 | `pillar_broken` 부서진 기둥 1.2×2.9m | – | – | 288 | – |

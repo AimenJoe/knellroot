@@ -1218,7 +1218,7 @@ impl Renderer {
                 Color::new(0.55, 0.45, 0.9, 0.08 + 0.06 * pulse),
             );
         }
-        // 남은 주민(0122, 상자 배우 — 모델은 0061 체크리스트로 판정 뒤): 둥근 몸 + 큰 머리 + 귀 둘(작은 동물), 바라보는 쪽으로 코.
+        // 남은 주민(0122): 모델(0132, `Resident::model`)이 없으면 상자 배우 — 둥근 몸 + 큰 머리 + 귀 둘(작은 동물), 바라보는 쪽으로 코.
         // 곁의 생활 물건이 재방문 변화를 보인다 — 아궁이 불빛이 살아남 · 항아리가 바로 섬 · 천막이 꿰매짐.
         for (k, &(i, at)) in run.residents.iter().enumerate() {
             let r = &crate::residents::RESIDENTS[i];
@@ -1227,34 +1227,53 @@ impl Renderer {
             let q = Quat::from_rotation_y(face);
             let breath = (w.time * 1.3 + at.x).sin() * 0.02;
             fl.shadow(at, 0.5);
-            shaded_box_rot(
-                at + Vec3::Y * 0.35,
-                vec3(0.6, 0.7 + breath, 0.5),
-                r.body,
-                0.85,
-                q,
-                at,
-            );
-            let head = at + Vec3::Y * (0.95 + breath);
-            shaded_box_rot(head, vec3(0.62, 0.52, 0.56), r.body, 0.9, q, at);
-            for side in [-1.0f32, 1.0] {
+            // 모델(0132)이 있으면: 방랑자가 멀면 제 일(`work`), 돌아볼 거리 안이면 돌아본 자세(`look`). 자리마다 박자를 어긋낸다.
+            if let Some(e) = self.lib.get(r.model) {
+                let near = vec2(w.player.pos.x - at.x, w.player.pos.z - at.z).length()
+                    <= crate::residents::GLANCE_RANGE;
+                let anim = e.pick(if near {
+                    &["look", "idle"]
+                } else {
+                    &["work", "idle"]
+                });
+                let clock = w.time + at.x * 0.37 + at.z * 0.61;
+                e.model.pose(
+                    anim,
+                    clock.rem_euclid(e.duration(anim).max(1e-3)),
+                    &mut self.pose,
+                );
+                let inst = Mat4::from_translation(at) * Mat4::from_rotation_y(face);
+                self.batch.model(e, &self.pose, inst, WHITE, lights, 0.0);
+            } else {
                 shaded_box_rot(
-                    head + vec3(0.2 * side, 0.32, 0.0),
-                    vec3(0.14, 0.2, 0.1),
+                    at + Vec3::Y * 0.35,
+                    vec3(0.6, 0.7 + breath, 0.5),
                     r.body,
-                    0.8,
+                    0.85,
+                    q,
+                    at,
+                );
+                let head = at + Vec3::Y * (0.95 + breath);
+                shaded_box_rot(head, vec3(0.62, 0.52, 0.56), r.body, 0.9, q, at);
+                for side in [-1.0f32, 1.0] {
+                    shaded_box_rot(
+                        head + vec3(0.2 * side, 0.32, 0.0),
+                        vec3(0.14, 0.2, 0.1),
+                        r.body,
+                        0.8,
+                        q,
+                        at,
+                    );
+                }
+                shaded_box_rot(
+                    head + vec3(0.0, -0.05, 0.3),
+                    vec3(0.14, 0.1, 0.08),
+                    Color::new(0.25, 0.2, 0.2, 1.0),
+                    1.0,
                     q,
                     at,
                 );
             }
-            shaded_box_rot(
-                head + vec3(0.0, -0.05, 0.3),
-                vec3(0.14, 0.1, 0.08),
-                Color::new(0.25, 0.2, 0.2, 1.0),
-                1.0,
-                q,
-                at,
-            );
             // 생활 물건은 제 일 쪽(옆)에.
             let spot = at + vec3(0.95, 0.0, 0.0);
             match r.work {

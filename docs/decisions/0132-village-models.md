@@ -10,6 +10,7 @@
 | `shellback` 등딱지짐승 1.0×1.25×1.2m, 정점 717 | `tools/art/sources/meshy/shellback_v1.glb`("Crystalback Turtle", 19.6만 삼각형) → `meshy_convert.py ... 1.2 700 128`(15분) | body(등딱지·배·결정 뿌리 한 덩어리), head(챙 아래 얼굴), glow_eyes, leg_fl·fr·bl·br | idle 1.6↻, walk 1.0↻(대각선 두 발씩), attack 1.3, hurt 0.3 | `render::STRIKE_KEYS` ("shellback", "attack", 0.6, 0.72) |
 | `pod` 꼬투리 0.6×0.9×0.9m, 정점 785 | `tools/art/sources/meshy/pod_v1.glb`("Sproutback Frog", 16.9만 삼각형) → `meshy_convert.py ... 0.9 700 128`(8분) | body(피벗 바닥, 앞발 포함), head, glow_eyes, seed(꼬투리 + 보라 뿌리), leg_bl·br | idle 1.4↻, walk 0.5↻(작은 깡충), hop 0.4, plant 1.0, hurt 0.3 | `STRIKE_KEYS` ("pod", "plant", 0.45, 0.6), 뛰는 동안 `hop`(아래) |
 | `bellkeeper` 깨진 종지기 3.0m, 정점 1,608 | `tools/art/sources/meshy/bellkeeper_v1.glb`("Hollow Lantern Bellringer", 16.5만 삼각형) → `meshy_convert.py ... 3.0 1500 256`(7분) | body, head, glow_eyes, core(glow_core), arm_l + bell(왼손), arm_r, leg_l·r | idle, walk, toll, slam, throw, charge_windup·charge·recover, hurt, wake | `STRIKE_KEYS` toll 1.0·1.12 · slam 0.9·1.0 · throw 0.6·0.7 |
+| `res_hearth` 불 지키는 주민(V01, 늙은 오소리) 1.3m, 정점 612 | `tools/art/sources/meshy/hearth_v1.glb`("Little Apron Bandit") → `meshy_convert.py ... 1.3 700 128`(5분) | body, head(두건), arm_l·r, leg_l·r | work 3.2↻, look 2.4↻ | `Resident::model`, 렌더가 방랑자 거리로 work·look |
 
 ### 등딱지짐승에서 정한 것
 - **가운데 맞추기**: `meshy_convert`는 위 45%의 가운데를 원점에 둔다 — 결정 뿌리가 한쪽(+X)에 솟아 몸이 −X로 0.11m 비껴 왔다. 모델 스크립트가 부위를 +0.11m 옮긴다(`SHIFT_X`, 자르는 치수도 옮긴 자리로). 다시 변환하지 않는다(15분).
@@ -33,11 +34,19 @@
 - **울림 동작이 이어지게(`render::enemy_anim`)**: 울림 고리는 `EState::Wave`를 쓰는데 그 상태는 늘 `wave`·`slam` 순으로 골라 종지기가 내리친 뒤 휘두르기 동작으로 튀었다 → 예고에서 고른 목록(`toll` …)을 이어 쓴다. 문지기의 땅 치기는 목록이 같아 그대로.
 - **자른 뒤 법선 검사(`common.import_split`)**: 자르면 경계의 정점 법선이 다시 계산돼 한 면이 뒤집힌 면으로 걸렸다 → 자른 부위마다 한 번 더 본다. 다른 모델 열다섯은 점 하나까지 그대로(다시 구워 비교).
 
+### 주민에서 정한 것(불 지키는 주민부터)
+- **주민 모델은 표 한 칸**: `residents::Resident::model`(`res_hearth`·`res_water`·`res_cloth`). 모델 파일이 있으면 그것, 없으면 예전 상자 배우(`render::stage_props`) — 셋을 하나씩 바꿀 수 있다.
+- **동작은 둘**: 싸우지 않으니 상태가 없다. 방랑자가 돌아볼 거리(`GLANCE_RANGE` 5m) 밖이면 제 일(`work` 고리), 안이면 돌아본 자세(`look` 고리). 몸을 돌리는 것은 예전대로 스테이지(`resident_face`, 천천히)가 한다. 박자는 자리마다 어긋낸다.
+- **제 일 쪽을 본다**: 예전엔 쉬는 쪽이 자리마다 해시로 정한 아무 쪽이라 상자 배우가 제 물건(옆 +X)을 등지기도 했다 → `residents::WORK_FACE`(+X)를 본다. 그래서 오소리가 아궁이를 들여다본다.
+- **산 것은 어둡게 하지 않는다**: 적(뿌리에 먹힌 것)만 잿빛을 0.6배(`darken_grey`) — 주민은 그림 색 그대로("색은 생명").
+- 늙음은 프롬프트의 "굽은 어깨"가 그림에서 덜 나와 동작으로 보탰다: `look`은 조금 굽은 채(몸 8~10°), `work`는 쑤신 뒤 굽은 허리를 뒤로 편다.
+
 ## 다음
-주민 셋(오소리·두더지·어린 양 — 0132 프롬프트 문서 차례). 받는 대로 이 표에 한 줄씩.
+주민 둘(두더지·어린 양 — 0132 프롬프트 문서 차례). 받는 대로 이 표에 한 줄씩.
 
 ## 판정(사람)
 - 게임 거리에서 등딱지짐승이 무엇인지 읽히나(어둡지 않나), 앞을 드는 예고가 원판보다 먼저 눈에 들어오나.
 - 꼬투리: 부푸는 꼬투리가 원판보다 먼저 "곧 터진다"로 읽히나, 물러나는 깡충이 도망으로 읽히나.
 - 종지기: 울림(종을 머리 위로)·휘두르기(뒤로 비틂)·조각(가슴 앞으로)이 몸만 보고 갈리나, 종이 작아 보이지 않나.
+- 오소리: 멀리서 아궁이를 들여다보는 것이 "제 일"로, 가까이서 돌아보는 것이 무심한 경계로 읽히나.
 - 걷기가 거북이답게 느린가, 맞을 때 머리를 넣는 것이 앞 막기(튕김)와 헷갈리지 않나.

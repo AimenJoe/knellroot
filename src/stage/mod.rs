@@ -723,12 +723,11 @@ impl StageRun {
             near_resident: None,
             talked: None,
         };
-        // 주민(0122): 표지마다 — 바라보는 쪽은 자리마다 정해진 값, 몸은 방랑자만 밀어낸다.
+        // 주민(0122): 표지마다 — 처음엔 제 일 쪽을 본다(0132), 몸은 방랑자만 밀어낸다.
         for (c, p) in run.level.marks.clone() {
             if let Some(i) = crate::residents::by_mark(c) {
                 run.residents.push((i, p));
-                run.resident_face
-                    .push(((p.x * 3.1 + p.z * 1.7).sin() * 2.0).rem_euclid(std::f32::consts::TAU));
+                run.resident_face.push(crate::residents::WORK_FACE);
                 w.bodies.push((p, crate::residents::BODY_R));
             }
         }
@@ -1052,7 +1051,7 @@ impl StageRun {
                 self.resident_seen[k] = true;
                 self.resident_seen_new.push(k);
             }
-            let home = ((at.x * 3.1 + at.z * 1.7).sin() * 2.0).rem_euclid(std::f32::consts::TAU);
+            let home = crate::residents::WORK_FACE;
             let want = if d <= crate::residents::GLANCE_RANGE {
                 (pp.x - at.x).atan2(pp.z - at.z)
             } else {

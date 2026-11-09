@@ -30,6 +30,8 @@ pub struct Resident {
     pub after: Tr,
     /// 상자 배우의 몸빛(작은 동물 — 귀여움 문법 0036은 모델 단계).
     pub body: Color,
+    /// 모델 이름(0132 — `assets/models/<이름>.glb`, 동작 `work`·`look`). 없으면 상자 배우.
+    pub model: &'static str,
 }
 
 pub static RESIDENTS: [Resident; 3] = [
@@ -40,6 +42,7 @@ pub static RESIDENTS: [Resident; 3] = [
         lines: [|s| s.v01_a, |s| s.v01_b, |s| s.v01_c],
         after: |s| s.v01_after,
         body: Color::new(0.78, 0.55, 0.40, 1.0),
+        model: "res_hearth",
     },
     Resident {
         id: "V02",
@@ -48,6 +51,7 @@ pub static RESIDENTS: [Resident; 3] = [
         lines: [|s| s.v02_a, |s| s.v02_b, |s| s.v02_c],
         after: |s| s.v02_after,
         body: Color::new(0.55, 0.66, 0.74, 1.0),
+        model: "res_water",
     },
     Resident {
         id: "V03",
@@ -56,6 +60,7 @@ pub static RESIDENTS: [Resident; 3] = [
         lines: [|s| s.v03_a, |s| s.v03_b, |s| s.v03_c],
         after: |s| s.v03_after,
         body: Color::new(0.74, 0.66, 0.50, 1.0),
+        model: "res_cloth",
     },
 ];
 
@@ -94,6 +99,9 @@ pub fn settle(id: &str, seen: &[(String, u32)], changed: &mut Vec<String>, runs:
     }
     now
 }
+
+/// 제 일을 할 때 바라보는 쪽(0132): 생활 물건은 주민의 +X 옆에 있다(렌더 `stage_props`) — 그쪽을 본다.
+pub const WORK_FACE: f32 = std::f32::consts::FRAC_PI_2;
 
 /// 이 거리(m) 안에 들어오면 "봤다"(기록) — 주민 자리에서 한 눈에 들어오는 만큼.
 pub const SEE_RANGE: f32 = 10.0;
