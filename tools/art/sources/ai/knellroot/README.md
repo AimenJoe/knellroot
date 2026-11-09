@@ -16,3 +16,4 @@ AI로 만든 그림이다(숨기지 않는다). 프롬프트는 `docs/art/gemini
 | `hearth_v1_front.png` | 2026-11-09 | 불 지키는 주민(V01, 늙은 오소리) 정면 A자세(프롬프트 `docs/art/gemini-prompts-0132.md` 4) — 20·40px 확인 `hearth_v1_front_tiny.png` |
 | `water_v1_front.png` | 2026-11-09 | 물 모으는 주민(V02, 작은 두더지) 정면 A자세(프롬프트 `docs/art/gemini-prompts-0132.md` 5) — 20·40px 확인 `water_v1_front_tiny.png` |
 | `cloth_v1_front.png` | 2026-11-09 | 꿰매는 주민(V03, 어린 양) 정면 A자세(프롬프트 `docs/art/gemini-prompts-0132.md` 6) — 다른 그림과 달리 부드러운 그늘(점토 렌더 결)이 들어 있다. 20·40px 확인 `cloth_v1_front_tiny.png` |
+| `cloth_v2_front.png` | 2026-11-09 | 꿰매는 주민 v2 — 평평한 빛으로 다시 받은 것(Meshy에는 이것). 받은 그림은 회색(161) 바탕 + 오른쪽 아래 ✦: 별은 캐릭터와 떨어진 고른 바탕 위라 그 네모만 바탕색으로 메우고, 바탕은 모서리에서 이어진 ±6 안의 점만 흰색으로(바랜 세이지·장미·발굽이 회색과 가까워 바탕 지우기가 헷갈렸다). 20·40px 확인 `cloth_v2_front_tiny.png` |
