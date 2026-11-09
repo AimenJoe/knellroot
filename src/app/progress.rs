@@ -81,6 +81,16 @@ impl App {
                 }
             }
         }
+        // 도감(0130): 처음 본 것을 적는다(기록은 정렬해 둔다 — 같은 기록이면 같은 글).
+        let seen = self.run.take_codex();
+        if !seen.is_empty() {
+            for k in seen {
+                if !self.progress.codex.contains(&k) {
+                    self.progress.codex.push(k);
+                }
+            }
+            self.progress.codex.sort();
+        }
         // 주민(0122): 이 판에 처음 본 주민은 몇째 판에 봤는지 기록(재방문 규칙).
         for k in self.run.take_residents_seen() {
             let id = crate::residents::RESIDENTS[self.run.residents[k].0].id;

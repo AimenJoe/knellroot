@@ -3,6 +3,7 @@
 //!
 //! 루프: 프레임마다 입력 폴링 → 고정 60Hz 틱 N번(장면 → 월드 → 스테이지 → 카메라) → 가변 렌더(보간) → 글·메뉴(화면 패스).
 mod ask;
+mod codex;
 pub mod controls;
 mod controls_screen;
 #[cfg(feature = "dev")]
@@ -530,6 +531,7 @@ impl App {
             Scene::Ask(k) => self.tick_ask(&a, k),
             Scene::Equip => self.tick_equip(&a),
             Scene::Tree { view } => self.tick_tree(&a, view),
+            Scene::Codex { tab } => self.tick_codex(&a, tab as usize),
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
             s @ (Scene::Pause
             | Scene::Settings
@@ -592,6 +594,7 @@ impl App {
             | Scene::Ask(_)
             | Scene::Equip
             | Scene::Tree { .. }
+            | Scene::Codex { .. }
             | Scene::EquipPick { .. } => None,
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } => None,
@@ -620,6 +623,7 @@ impl App {
             | Scene::Ask(_)
             | Scene::Equip
             | Scene::Tree { .. }
+            | Scene::Codex { .. }
             | Scene::EquipPick { .. } => {}
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } => {}
@@ -722,6 +726,7 @@ impl App {
             Scene::Controls => self.draw_controls(f),
             Scene::Equip => self.draw_equip(f, self.cursor, None),
             Scene::Tree { view } => self.draw_tree(f, view),
+            Scene::Codex { tab } => self.draw_codex(f, tab as usize),
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.draw_dev_screen(f, tab as usize),
             Scene::EquipPick { slot } => {

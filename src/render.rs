@@ -56,6 +56,8 @@ pub struct Renderer {
     backdrop: crate::backdrop::Backdrop,
     /// 장비 창 인형(0067 D): 방랑자만 그리는 작은 렌더 타깃(처음 쓸 때 만든다).
     doll_rt: Option<RenderTarget>,
+    /// 도감 생명체(0130).
+    creature_rt: Option<RenderTarget>,
     /// 아이템 그림(0068): 아이콘은 아이템마다 한 번 찍어 둔 타깃, 고른 것 하나는 도는 큰 타깃.
     icons: std::collections::HashMap<&'static str, RenderTarget>,
     item_rt: Option<RenderTarget>,
@@ -364,6 +366,7 @@ impl Renderer {
             edge_uniform: Vec4::ZERO,
             backdrop: Default::default(),
             doll_rt: None,
+            creature_rt: None,
             icons: Default::default(),
             item_rt: None,
         }
@@ -523,6 +526,103 @@ impl Renderer {
             1.0,
         );
         self.batch.flush();
+        set_look(saved);
+        set_default_camera();
+        blit(&rt, dest);
+    }
+
+    /// 도감의 생명체(0130 C5): 종의 모델을 숨쉬기 동작으로 고정 카메라에 — 키에 맞춰 칸에 차게. 모델이 아직 없는 종(상자 단계)은
+    /// 게임과 같은 몸 상자. `dark`면 못 본 것 — 검은 실루엣(빛·색 없이 꼴만).
+    pub fn draw_creature(
+        &mut self,
+        kind: crate::species::Kind,
+        dest: Rect,
+        spin: f32,
+        time: f32,
+        dark: bool,
+    ) {
+        let rt = self
+            .creature_rt
+            .get_or_insert_with(|| make_rt(DOLL_W, DOLL_H))
+            .clone();
+        let d = crate::species::def(kind);
+        let h = d.height.max(0.5);
+        let cam = Camera3D {
+            position: vec3(0.0, h * 0.75, h * 2.3 + d.radius * 2.0 + 1.0),
+            target: vec3(0.0, h * 0.48, 0.0),
+            up: Vec3::Y,
+            fovy: 0.55,
+            aspect: Some(DOLL_W as f32 / DOLL_H as f32),
+            projection: Projection::Perspective,
+            render_target: Some(rt.clone()),
+            ..Default::default()
+        };
+        let saved = look();
+        set_look(Look {
+            eye: cam.position,
+            fovy: cam.fovy,
+            rows: DOLL_H as f32,
+            ..saved
+        });
+        set_camera(&cam);
+        clear_background(Color::new(0.0, 0.0, 0.0, 0.0));
+        let shadow = Color::new(0.04, 0.035, 0.05, 1.0);
+        let fire = crate::stage::Light {
+            pos: vec3(-1.6, h + 1.0, 2.4),
+            color: Color::new(1.0, 0.62, 0.25, 1.0),
+            radius: 6.0 + h * 2.0,
+            shaft: false,
+        };
+        if let Some(e) = self.lib.get(d.model) {
+            e.model
+                .pose_with(e.pick(&["idle"]), time, &[], &mut self.pose);
+            let tint = if dark { shadow } else { WHITE };
+            let lights: &[crate::stage::Light] = if dark {
+                &[]
+            } else {
+                std::slice::from_ref(&fire)
+            };
+            self.batch.model(
+                e,
+                &self.pose,
+                Mat4::from_rotation_y(spin),
+                tint,
+                lights,
+                if dark { 0.0 } else { 1.0 },
+            );
+            self.batch.flush();
+        } else {
+            // 상자 단계(0125 등): 게임의 몸 상자와 같은 꼴 — 몸 + 머리 쪽 작은 상자.
+            let body = if dark {
+                shadow
+            } else if d.boss {
+                Color::new(0.45, 0.2, 0.5, 1.0)
+            } else {
+                Color::new(0.5, 0.35, 0.25, 1.0)
+            };
+            let r = d.radius;
+            let rot = Quat::from_rotation_y(spin);
+            shaded_box_rot(
+                vec3(0.0, h * 0.5, 0.0),
+                vec3(r * 2.0, h, r * 1.6),
+                body,
+                if dark { 1.0 } else { 0.85 },
+                rot,
+                Vec3::ZERO,
+            );
+            shaded_box_rot(
+                vec3(0.0, h * 0.78, r * 0.85),
+                vec3(r * 0.9, h * 0.25, 0.1),
+                if dark {
+                    shadow
+                } else {
+                    Color::new(0.2, 0.15, 0.22, 1.0)
+                },
+                1.0,
+                rot,
+                Vec3::ZERO,
+            );
+        }
         set_look(saved);
         set_default_camera();
         blit(&rt, dest);

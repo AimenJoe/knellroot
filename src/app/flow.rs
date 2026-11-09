@@ -30,6 +30,10 @@ pub enum Scene {
     Tree {
         view: bool,
     },
+    /// 도감(0130 C5): 탭 둘(적 · 장신구), 왼쪽 목록 · 오른쪽 그림과 관찰. 멈춤에서 연다 — 닫으면 멈춤.
+    Codex {
+        tab: u8,
+    },
     /// 가게(0064 M4): 잔불로 장신구·등잔 기름을 산다. 화로에서 연다(0104 전엔 쉬면 바로 열렸다) — 닫으면 화로.
     Shop,
     /// 묻는 창(KB `controller-layout-and-remapping` "되돌릴 수 없는 메뉴 항목은 한 번 묻는다", nail 0274·가게 묻는 창):
@@ -106,6 +110,7 @@ impl Scene {
             Scene::Hearth
             | Scene::Level
             | Scene::Tree { .. }
+            | Scene::Codex { .. }
             | Scene::Shop
             | Scene::Result { .. }
             | Scene::Controls
@@ -283,6 +288,8 @@ pub enum PauseItem {
     Weapon,
     /// 기술 나무(0106) — 읽기·목표 핀만(칸은 쉼터 화로에서 연다).
     Tree,
+    /// 도감(0130) — 나무 다음 줄.
+    Codex,
     Settings,
     /// 개발 메뉴(0075 → 0090) — 개발판에만, 설정 바로 아래 줄(연구소가 있던 자리 — 연구소는 개발 창 도구 탭·타이틀에서, 사장 2026-11-07).
     #[cfg(feature = "dev")]
@@ -291,12 +298,13 @@ pub enum PauseItem {
     ToTitle,
 }
 
-/// 멈춤 창의 줄: 계속 · 장비 · 나무(0106) · 설정 · [개발] · 처음부터 · 타이틀로 — 대괄호는 개발판에만(0090).
+/// 멈춤 창의 줄: 계속 · 장비 · 나무(0106) · 도감(0130) · 설정 · [개발] · 처음부터 · 타이틀로 — 대괄호는 개발판에만(0090).
 pub fn pause_items() -> Vec<PauseItem> {
     let mut v = vec![
         PauseItem::Resume,
         PauseItem::Weapon,
         PauseItem::Tree,
+        PauseItem::Codex,
         PauseItem::Settings,
     ];
     #[cfg(feature = "dev")]
@@ -387,6 +395,7 @@ pub fn back(scene: Scene) -> Go {
         | Scene::Hearth
         | Scene::Level
         | Scene::Tree { .. }
+        | Scene::Codex { .. }
         | Scene::Shop
         | Scene::Ask(_)
         | Scene::Controls
@@ -415,6 +424,7 @@ pub fn choose_pause(item: PauseItem) -> (Go, bool) {
         PauseItem::Resume => (Go::Back, false),
         PauseItem::Weapon => (Go::Open(Scene::Equip), false),
         PauseItem::Tree => (Go::Open(Scene::Tree { view: true }), false),
+        PauseItem::Codex => (Go::Open(Scene::Codex { tab: 0 }), false),
         PauseItem::Settings => (Go::Open(Scene::Settings), false),
         PauseItem::Restart => (Go::Open(Scene::Ask(Ask::Restart)), false),
         PauseItem::ToTitle => (Go::Open(Scene::Ask(Ask::ToTitle)), false),
@@ -586,9 +596,14 @@ mod tests {
         let p = pause_items();
         let i = p.iter().position(|x| *x == PauseItem::Settings).unwrap();
         assert_eq!(p.get(i + 1), Some(&PauseItem::Dev));
-        // 계속 · 장비 · 나무(0106) · 설정 · 개발 · 처음부터 · 타이틀로.
-        assert_eq!(p.len(), 7);
+        // 계속 · 장비 · 나무(0106) · 도감(0130) · 설정 · 개발 · 처음부터 · 타이틀로(헤드리스 스크립트가 이 차례로 간다).
+        assert_eq!(p.len(), 8);
         assert_eq!(p[2], PauseItem::Tree);
+        assert_eq!(p[3], PauseItem::Codex);
+        assert_eq!(
+            choose_pause(PauseItem::Codex),
+            (Go::Open(Scene::Codex { tab: 0 }), false)
+        );
         assert_eq!(
             choose_pause(PauseItem::Tree),
             (Go::Open(Scene::Tree { view: true }), false)

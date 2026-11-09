@@ -11,6 +11,7 @@ mod backdrop;
 mod balance;
 mod camera;
 mod charms;
+mod codex;
 mod descent;
 mod ember;
 mod enemy;

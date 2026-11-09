@@ -105,10 +105,10 @@ async function main() {
   await press('Escape'); await page.waitForTimeout(200);
   await press('Escape'); await page.waitForTimeout(300);
 
-  // 4) 멈춤 → 처음부터(여섯째 줄: 계속·장비·나무(0106)·설정·개발(개발판, 0090)·처음부터).
+  // 4) 멈춤 → 처음부터(일곱째 줄: 계속·장비·나무(0106)·도감(0130)·설정·개발(개발판, 0090)·처음부터).
   await press('Escape');
   await page.waitForTimeout(200);
-  await press('ArrowDown', 5);
+  await press('ArrowDown', 6);
   await press('Enter');
   await page.waitForTimeout(300);
   // 처음부터는 묻는 창(커서는 "취소" — 그냥 확인하면 아무 일 없다), 위로 한 번 = "처음부터".
@@ -121,11 +121,11 @@ async function main() {
   if (!/embers=5\n/.test(r) || !/clears=1/.test(r)) fail('restart must keep what stays');
   if (!/future\.key=keep/.test(r)) fail('unknown keys must survive a write');
 
-  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 → 일곱째 — 나무(0106)·개발 줄(0090)이 끼어 → 묻는 창 위로 한 번).
+  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 → 여덟째 — 나무(0106)·도감(0130)·개발 줄(0090)이 끼어 → 묻는 창 위로 한 번).
   const slotCell = () => page.evaluate(() => localStorage.getItem('knell.slot'));
   const toTitle = async () => {
     await press('Escape'); await page.waitForTimeout(200);
-    await press('ArrowDown', 6); await press('Enter'); await page.waitForTimeout(300);
+    await press('ArrowDown', 7); await press('Enter'); await page.waitForTimeout(300);
     await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(600);
   };
   await toTitle();

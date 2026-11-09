@@ -53,6 +53,8 @@ pub mod key {
     /// 주민을 처음 본 판(`V01:3,…`)·재방문으로 바뀐 주민(`V01,…`, 단방향).
     pub const RESIDENTS_SEEN: &str = "residents.seen";
     pub const RESIDENTS_CHANGED: &str = "residents.changed";
+    /// 도감(0130): 본 것의 이름(`codex::obs_key`, 쉼표).
+    pub const CODEX: &str = "codex";
     /// 문 장치로 연 문(0113): 스테이지 이름 앞(`find_prefix`)들 — 한 번 열면 판을 넘어 열려 있다(지름길).
     pub const GATES: &str = "gates";
     /// 문지기 핵 점수(0105): 이긴 횟수, `progression::CORE_CAP`까지.
@@ -149,6 +151,8 @@ pub struct Progress {
     pub runs: u32,
     pub residents_seen: Vec<(String, u32)>,
     pub residents_changed: Vec<String>,
+    /// 도감에 적힌 것(0130).
+    pub codex: Vec<String>,
     /// 문 장치로 연 문(0113).
     pub gates: Vec<String>,
     /// 성소 문지기 핵 점수(0105, `CORE_CAP`까지).
@@ -274,6 +278,16 @@ impl Progress {
             .collect();
         residents_changed.sort();
         residents_changed.dedup();
+        let mut codex: Vec<String> = r
+            .get(key::CODEX)
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect();
+        codex.sort();
+        codex.dedup();
         let runs = r.num(key::RUNS).unwrap_or(0);
         let r_has_no_weapons = r.get(key::WEAPONS).is_none();
         let r_weapons = r.get(key::WEAPONS).map(str::to_string);
@@ -285,6 +299,7 @@ impl Progress {
             runs,
             residents_seen,
             residents_changed,
+            codex,
             gates,
             cores,
             bell_cores,
@@ -363,6 +378,7 @@ impl Progress {
                 .join(","),
         );
         r.set(key::RESIDENTS_CHANGED, self.residents_changed.join(","));
+        r.set(key::CODEX, self.codex.join(","));
         r.set(key::GATES, self.gates.join(","));
         r.set(key::CORE_WARDEN, self.cores);
         r.set(key::CORE_BELL, self.bell_cores);
@@ -622,6 +638,20 @@ mod tests {
     }
 
     /// 0112: 처음 쓰러뜨린 엘리트는 기록에 남는다(키 `elites`, 겹치지 않게).
+    /// 0130: 도감 기록은 정렬된 이름 목록으로 돌아온다(빈 기록 = 없음).
+    #[test]
+    fn the_codex_round_trips() {
+        let p = Progress {
+            codex: vec!["husk".into(), "husk.docile".into(), "warden.roused".into()],
+            ..Progress::default()
+        };
+        let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        assert_eq!(back.codex, p.codex);
+        assert!(Progress::from_record(Record::parse("v=1\n"))
+            .codex
+            .is_empty());
+    }
+
     /// 0125: 깨진 종지기 핵은 따로 센다(셋까지) — 나무 마디는 두 문지기 핵을 더한다. 키가 없는 옛 기록은 0.
     #[test]
     fn bellkeeper_cores_are_kept_apart_and_add_to_tree_points() {

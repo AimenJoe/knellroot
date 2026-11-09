@@ -110,7 +110,7 @@ async function main() {
     const h = (30 + rows * 13 * 1.75 + 8) * u;
     return [W / 2, top + (bottom - top - h) / 2 + 29 * u + 13 * 1.75 * u * (i + 0.5)];
   };
-  await tap(menuRow(6, 1)); await page.waitForTimeout(400);   // 멈춤(개발판 여섯 줄 — 설정 아래 개발 0090)의 둘째 줄 "장비"
+  await tap(menuRow(8, 1)); await page.waitForTimeout(400);   // 멈춤(개발판 여덟 줄 — 나무·도감 0130·설정·개발 0090)의 둘째 줄 "장비"
   await tap(CHARM_BOX); await page.waitForTimeout(300);    // 고르기만(설명이 바뀜)
   await tap(SWORD_BOX); await page.waitForTimeout(300);    // 무기 칸 고르기
   await tap(SWORD_BOX); await page.waitForTimeout(400);    // 다시 = 후보 목록

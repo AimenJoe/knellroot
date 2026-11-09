@@ -594,6 +594,9 @@ pub struct StageRun {
     pub stones: Vec<Vec3>,
     pub near_stone: Option<usize>,
     read: Option<usize>,
+    /// 도감(0130): 이 판에 이미 알린 이름, 이번 틱까지 새로 본 이름(앱이 가져간다).
+    codex_told: Vec<String>,
+    codex_new: Vec<String>,
     /// 이번 틱에 쉬었다(0064 M4 — 앱이 화로 가게를 연다), 잔불로 살 것이 있다(앱이 정한다 — 쉼터가 빛난다).
     rested: bool,
     pub shop_ready: bool,
@@ -677,6 +680,8 @@ impl StageRun {
             stones: Vec::new(),
             near_stone: None,
             read: None,
+            codex_told: Vec::new(),
+            codex_new: Vec::new(),
             opened: None,
             rested: false,
             shop_ready: false,
@@ -993,6 +998,18 @@ impl StageRun {
         self.near_chest = self.chests.iter().enumerate().position(|(i, c)| {
             !self.chest_open[i] && vec2(c.x - pp.x, c.z - pp.z).length() <= CHEST_REACH
         });
+        // 도감(0130): 깨어난 적을 가까이(적 시야만큼) 보면 그 종·역할·성질·깨어남을 한 번씩 알린다.
+        for e in w.enemies.iter().filter(|e| e.active() && e.alive()) {
+            if vec2(e.pos.x - pp.x, e.pos.z - pp.z).length() > crate::codex::SEE {
+                continue;
+            }
+            for k in crate::codex::seen_keys(e) {
+                if !self.codex_told.contains(&k) {
+                    self.codex_told.push(k.clone());
+                    self.codex_new.push(k);
+                }
+            }
+        }
         // 새긴 돌(0129): 곁이면 읽기(싸움 중에도 — 글 판은 멈추지 않는다).
         self.near_stone = self
             .stones
@@ -1260,6 +1277,11 @@ impl StageRun {
     }
 
     /// 이번 틱에 말 건 주민(0122) — 앱이 한 번 가져간다.
+    /// 이번 틱까지 도감에 새로 본 이름(0130).
+    pub fn take_codex(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.codex_new)
+    }
+
     /// 이번 틱에 읽은 새긴 돌(0129 — 앱이 글 판을 띄운다).
     pub fn take_read(&mut self) -> Option<usize> {
         self.read.take()
@@ -1690,6 +1712,39 @@ mod tests {
                 .count(),
             3,
             "three residents in the village"
+        );
+    }
+
+    /// 0130 C5: 깨어난 적을 가까이(9m) 보면 도감에 한 번 — 멀면 없고, 같은 판에 다시 알리지 않는다. 청소자는 역할도.
+    #[test]
+    fn seeing_an_awake_foe_up_close_writes_the_codex_once() {
+        let (mut run, mut w) = StageRun::start(STAGES[1]);
+        let i = w
+            .enemies
+            .iter()
+            .position(|e| e.docile)
+            .expect("a scavenger in the village");
+        let at = w.enemies[i].pos;
+        w.player.pos = at + vec3(0.0, 0.0, crate::codex::SEE + 8.0);
+        w.player.prev = w.player.pos;
+        tick(&mut run, &mut w, Actions::default());
+        let far = run.take_codex();
+        assert!(
+            !far.contains(&"husk.docile".to_string()),
+            "too far: {far:?}"
+        );
+        w.player.pos = at + vec3(0.0, 0.0, 3.0);
+        w.player.prev = w.player.pos;
+        tick(&mut run, &mut w, Actions::default());
+        let near = run.take_codex();
+        assert!(near.contains(&"husk.docile".to_string()), "{near:?}");
+        // 종 이름은 먼 데서 다른 잔재를 봤으면 그때 이미 — 합쳐서 한 번.
+        let husk = far.iter().chain(&near).filter(|k| *k == "husk").count();
+        assert_eq!(husk, 1, "the kind is told once: {far:?} {near:?}");
+        tick(&mut run, &mut w, Actions::default());
+        assert!(
+            run.take_codex().iter().all(|k| k != "husk"),
+            "told once per run"
         );
     }
 
