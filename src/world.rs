@@ -124,6 +124,10 @@ pub enum Event {
     Slam {
         at: Vec3,
     },
+    /// 지연 공격이 곧 풀린다(0128 — 정점에서 버티던 적이 내리치기 직전, 앱이 소리를 낸다).
+    Release {
+        at: Vec3,
+    },
     /// 보스가 체력 반 아래로 깨어났다(핵이 밝아지고 빨라진다).
     Rouse {
         at: Vec3,
@@ -2206,6 +2210,11 @@ impl World {
                     hurt_player.get_or_insert(en.pos);
                     hurt_tier = hurt_tier.max(en.tier);
                 }
+            }
+            if out.release {
+                ev.push(Event::Release {
+                    at: en.pos + Vec3::Y * en.height * 0.8,
+                });
             }
             if out.roused {
                 ev.push(Event::Rouse {

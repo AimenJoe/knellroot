@@ -176,6 +176,18 @@ pub const TIERS: [Tier; 2] = [
 /// 고리 사이는 시간으로 맞춘다(0126 모의): 점프는 누른 뒤 약 0.06~0.49초 동안 넘고 착지까지 0.65초 — 2.6m(0.37초)면
 /// 첫 고리를 넘은 몸이 둘째 고리에 꼭 맞았다. 6m ÷ 7m/s ≈ 0.86초 = 착지 뒤 다시 뛸 창 약 0.24초.
 pub const TOLL_GAP: f32 = 6.0;
+
+/// 적 공격 박자 변주(0128): 지연 공격이 정점에서 더 버티는 초(둘 — 외울 수 있게 몇 가지로만), 빠른 변형의 예고 배율과
+/// 바닥(신호 + 공격 ≥ 340ms — DS3 공격 해부, 0073), 지연이 풀리기 전 소리를 내는 때(맞기 몇 초 전), 페인트가 끊는 때
+/// (들어 올림의 몫), 엘리트가 더 받는 지연 확률·연속 공격(확률·간격).
+pub const DELAY_HOLDS: [f32; 2] = [0.35, 0.6];
+pub const FAST_TELE: f32 = 0.6;
+pub const TELE_FLOOR: f32 = 0.38;
+pub const RELEASE_LEAD: f32 = 0.22;
+pub const FEINT_AT: f32 = 0.75;
+pub const ELITE_DELAY_BONUS: f32 = 0.2;
+pub const ELITE_CHAIN: f32 = 0.3;
+pub const ELITE_GAPS: &[f32] = &[0.5];
 pub const SHARD_SPEED: f32 = 9.0;
 pub const SHARD_RANGE: f32 = 14.0;
 pub const SHARD_R: f32 = 0.35;

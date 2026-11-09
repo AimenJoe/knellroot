@@ -170,7 +170,7 @@ impl App {
                 Event::Charged => SHAKE_CHARGED,
                 Event::Gulp { .. } | Event::FlaskDenied | Event::Ember { .. } => 0.0,
                 Event::Cast { .. } | Event::CastDenied | Event::Throw => 0.0,
-                Event::StaminaDenied => 0.0,
+                Event::StaminaDenied | Event::Release { .. } => 0.0,
                 Event::Break { .. } => SHAKE_SMASH,
                 Event::Aftershock { .. } | Event::Boom { .. } => SHAKE_PLUNGE,
                 Event::Perfect { .. } => SHAKE_CHARGED,
@@ -341,6 +341,8 @@ impl App {
                 Event::Perfect { .. } => Id::Beat3,
                 Event::Ember { .. } => Id::Ember,
                 Event::Gulp { .. } => Id::Gulp,
+                // 지연 공격이 풀린다(0128): 짧게 들이쉬는 소리 — 이 뒤 `RELEASE_LEAD`초에 맞는다.
+                Event::Release { .. } => Id::TeleRelease,
                 Event::FlaskDenied | Event::CastDenied | Event::StaminaDenied => Id::Deny,
                 _ => continue,
             };
@@ -357,11 +359,13 @@ impl App {
         self.was_dodging = dodging;
         // 적의 예고가 시작한 틱: 모양마다 다른 소리(소리만 듣고도 가르게, 0064 R4).
         let n = self.world.enemies.len();
-        self.tele_was.resize(n, false);
+        self.tele_was.resize(n, u32::MAX);
         let mut cues = Vec::new();
         for (i, en) in self.world.enemies.iter().enumerate() {
             let tele = en.telegraph();
-            if let (Some((_, shape)), false) = (tele, self.tele_was[i]) {
+            // 공격 번호로 센다(0128): 연속 공격의 다음 타·페인트로 바뀐 공격도 제 소리를 낸다.
+            let fresh = tele.is_some() && self.tele_was[i] != en.atk_count;
+            if let (Some((_, shape)), true) = (tele, fresh) {
                 cues.push(match shape {
                     crate::enemy::TeleShape::Disc { .. } => Id::TeleDisk,
                     crate::enemy::TeleShape::Sector { .. } => Id::TeleFan,
@@ -369,7 +373,9 @@ impl App {
                     crate::enemy::TeleShape::Ring { .. } => Id::TeleRing,
                 });
             }
-            self.tele_was[i] = tele.is_some();
+            if tele.is_some() {
+                self.tele_was[i] = en.atk_count;
+            }
         }
         for id in cues {
             self.snd(id);

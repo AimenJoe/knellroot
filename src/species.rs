@@ -31,7 +31,31 @@ pub enum Behavior {
     Bellkeeper,
 }
 
+/// 공격 박자 변주(0128, 사장 "정박에만 때리면 난이도가 확 내려간다"): 같은 공격을 다른 박자로.
+/// 지연 = 들어 올림은 같고 정점에서 더 버틴다(몸이 더 젖히고 떨림 + 내리치기 직전 소리), 빠름 = 예고가 짧다,
+/// 연속 = 첫 타 뒤 같은 공격이 고르지 않은 간격(`gaps` = 예고 배율)으로 더, 페인트 = 체력 반 아래 보스가 들다가 다른 공격으로.
+/// 외울 수 있게 길이는 몇 가지로만(`tuning::DELAY_HOLDS`). 확률은 공격을 시작할 때 한 번 굴린다.
+#[derive(Clone, Copy, Debug)]
+pub struct Rhythm {
+    pub delay: f32,
+    pub fast: f32,
+    pub chain: f32,
+    pub gaps: &'static [f32],
+    pub feint: f32,
+}
+
+/// 변주 없음(꼬투리 — 심는 것이 이미 늦게 터진다).
+pub const STEADY: Rhythm = Rhythm {
+    delay: 0.0,
+    fast: 0.0,
+    chain: 0.0,
+    gaps: &[],
+    feint: 0.0,
+};
+
 pub struct Def {
+    /// 공격 박자 변주(0128).
+    pub rhythm: Rhythm,
     pub kind: Kind,
     pub name: Tr,
     pub hp: i32,
@@ -97,6 +121,13 @@ pub static HUSK: Def = Def {
     retreat: 0.0,
     rings: 0,
     shards: 0,
+    rhythm: Rhythm {
+        delay: 0.25,
+        fast: 0.0,
+        chain: 0.0,
+        gaps: &[],
+        feint: 0.0,
+    },
     behavior: Behavior::Melee,
     boss: false,
     embers: 1,
@@ -127,6 +158,13 @@ pub static THORN: Def = Def {
     retreat: 0.0,
     rings: 0,
     shards: 0,
+    rhythm: Rhythm {
+        delay: 0.15,
+        fast: 0.15,
+        chain: 0.0,
+        gaps: &[],
+        feint: 0.0,
+    },
     behavior: Behavior::Charger,
     boss: false,
     embers: 2,
@@ -157,6 +195,13 @@ pub static WARDEN: Def = Def {
     retreat: 0.0,
     rings: 0,
     shards: 0,
+    rhythm: Rhythm {
+        delay: 0.3,
+        fast: 0.15,
+        chain: 0.35,
+        gaps: &[0.45, 1.25],
+        feint: 0.3,
+    },
     behavior: Behavior::Warden,
     boss: true,
     embers: 30,
@@ -189,6 +234,13 @@ pub static SHELL: Def = Def {
     retreat: 0.0,
     rings: 0,
     shards: 0,
+    rhythm: Rhythm {
+        delay: 0.25,
+        fast: 0.0,
+        chain: 0.0,
+        gaps: &[],
+        feint: 0.0,
+    },
     behavior: Behavior::Melee,
     boss: false,
     embers: 3,
@@ -221,6 +273,7 @@ pub static POD: Def = Def {
     retreat: 3.5,
     rings: 0,
     shards: 0,
+    rhythm: STEADY,
     behavior: Behavior::Planter,
     boss: false,
     embers: 2,
@@ -253,6 +306,13 @@ pub static BELLKEEPER: Def = Def {
     retreat: 0.0,
     rings: 2,
     shards: 3,
+    rhythm: Rhythm {
+        delay: 0.35,
+        fast: 0.2,
+        chain: 0.4,
+        gaps: &[0.4, 1.3],
+        feint: 0.35,
+    },
     behavior: Behavior::Bellkeeper,
     boss: true,
     embers: 30,

@@ -184,6 +184,7 @@ pub const EN: Strings = Strings {
     menu_shake: "Screen shake",
     menu_volume: "Volume",
     menu_tells: "Attack tells",
+    menu_tell_timing: "Tell timing",
     menu_weapon: "Weapon",
     weapon_sword: "Pilgrim's Sword",
     weapon_hammer: "Bell-ringer's Hammer",

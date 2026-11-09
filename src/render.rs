@@ -109,6 +109,8 @@ pub struct View<'a> {
     pub stage: Option<&'a StageRun>,
     /// 바닥 공격 예고 진하기(설정 0..1, 0 = 끔 — 0074).
     pub tells: f32,
+    /// 바닥 예고의 "언제"(0128): 켬 = 채움이 테두리에 닿는 순간(0186 꼴), 끔(기본) = 자리가 점점 짙어지다 정해진 농도에서 맞는다.
+    pub tell_timing: bool,
 }
 
 /// 탄의 색(0048·0051, `weapons::Bolt::look`): 마법 라벤더, 무거운 탄 놋쇠, 꿰뚫는 탄 민트, 쇠뇌 볼트 밝은 나무 — 붉은색(위험)은 쓰지 않는다.
@@ -693,7 +695,15 @@ impl Renderer {
                 if v.tells > 0.0 {
                     // 심은 원판(꼬투리, 0120)은 몸이 아니라 심은 자리에.
                     let at = en.tele_at().unwrap_or(p);
-                    telegraph(&drape, at, en.facing, k, shape, v.tells / TELLS_BASE);
+                    telegraph(
+                        &drape,
+                        at,
+                        en.facing,
+                        k,
+                        shape,
+                        v.tells / TELLS_BASE,
+                        v.tell_timing,
+                    );
                 }
             }
             // 퍼지는 고리(뿌리 파동 하나·울림 고리 여럿, 0125) — 고리 사이가 설 자리로 읽히게 하나하나 따로.
@@ -739,6 +749,7 @@ impl Renderer {
                     r: crate::tuning::ELITE_LINGER_RADIUS,
                 },
                 (v.tells / TELLS_BASE).max(0.6),
+                v.tell_timing,
             );
         }
         let pp = w.player.prev.lerp(w.player.pos, alpha);
@@ -1405,12 +1416,20 @@ impl Renderer {
         }
         // 들어 올리는 동안 몸이 늘어나며(부피 그대로 — KB believable-cute-character-motion) 뒤로 젖고, 내리칠 때 바로 돌아온다.
         let mut stretch = 1.0;
+        // 지연 공격(0128): 들어 올림은 같은 빠르기(`lift_dur`), 정점에서 더 젖히고 더 떨며 버틴다 — 늦게 친다는 것이 몸에 보이게.
+        let delayed = matches!(en.tempo, crate::enemy::Tempo::Delayed(_));
         if let EState::Tele { t } = en.state {
             let dur = en.tele_dur().max(1e-3);
+            let lift = en.lift_dur().max(1e-3);
             let snap = WINDUP_SNAP.min(dur * 0.25);
             let u = if t < dur - snap {
-                let r = (t / (dur * WINDUP_REACH)).min(1.0);
-                1.0 - (1.0 - r) * (1.0 - r)
+                let r = (t / (lift * WINDUP_REACH)).min(1.0);
+                let held = if delayed {
+                    1.0 + (DELAY_LEAN - 1.0) * ((t - lift * WINDUP_REACH) / 0.2).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                (1.0 - (1.0 - r) * (1.0 - r)) * held
             } else {
                 1.0 - (t - (dur - snap)) / snap
             };
@@ -1421,7 +1440,8 @@ impl Renderer {
             }
         }
         if let Some(h) = windup_hold(en) {
-            let shake = (get_time() as f32 * 70.0).sin() * WINDUP_TREMBLE;
+            let tremble = WINDUP_TREMBLE * if delayed { DELAY_TREMBLE } else { 1.0 };
+            let shake = (get_time() as f32 * 70.0).sin() * tremble;
             p += vec3(en.facing.cos(), 0.0, -en.facing.sin()) * shake;
             // 번쩍임은 눈·핵만(몸 전체가 밝아지면 맞았을 때의 흰 번쩍임과 헷갈린다).
             glow += WINDUP_GLINT_GAIN * (1.0 - h / WINDUP_GLINT).max(0.0);
@@ -2192,6 +2212,9 @@ const WINDUP_GLOW: f32 = 0.6;
 const WINDUP_STRETCH: f32 = 0.06;
 const WINDUP_LEAN: f32 = 0.1;
 const WINDUP_TREMBLE: f32 = 0.025;
+/// 지연 공격(0128)의 몸 신호: 더 젖힘(배)·더 떨림(배).
+const DELAY_LEAN: f32 = 1.8;
+const DELAY_TREMBLE: f32 = 2.0;
 const WINDUP_GLINT: f32 = 0.1;
 const WINDUP_GLINT_GAIN: f32 = 1.2;
 /// 맞았을 때 몸이 젖혀지는 각(라디안, 경직 처음).
@@ -2248,13 +2271,21 @@ fn enemy_anim(
         EState::Chase => (e.pick(&["idle", "walk"]), clock + phase),
         EState::Tele { t } => {
             let dur = en.tele_dur().max(1e-3);
+            let lift = en.lift_dur().max(1e-3);
             let a = e.pick(windup);
             if is_windup(a) {
-                once(windup, t / dur)
+                // 지연(0128): 들어 올림까지는 같은 빠르기로 85%, 버팀, 마지막 순간 끝까지.
+                let snap = WINDUP_SNAP.min(dur * 0.25);
+                let k = if t < dur - snap {
+                    (t / (lift - snap).max(1e-3)).min(1.0) * 0.85
+                } else {
+                    0.85 + 0.15 * ((t - (dur - snap)) / snap).clamp(0.0, 1.0)
+                };
+                once(windup, k)
             } else {
                 // 2026-11-07(0073): 들어 올림 → 정점에서 버팀 → 마지막 순간 내리침. 내리친 자세 = 맞는 틱.
                 let (peak, impact) = strike_keys(model, a, e);
-                (a, windup_clock(t, dur, peak, impact))
+                (a, windup_clock(t, dur, lift, peak, impact))
             }
         }
         EState::Swing { t } => {
@@ -2309,9 +2340,9 @@ pub(crate) const WINDUP_REACH: f32 = 0.6;
 pub(crate) const WINDUP_SNAP: f32 = 0.08;
 
 /// 예고 `t`초(길이 `dur`)의 동작 시각: 들어 올림(천천히 들어가고 멈추게) → 정점에서 버팀 → 마지막 `WINDUP_SNAP` 동안 내리침.
-fn windup_clock(t: f32, dur: f32, peak: f32, impact: f32) -> f32 {
+fn windup_clock(t: f32, dur: f32, lift: f32, peak: f32, impact: f32) -> f32 {
     let snap = WINDUP_SNAP.min(dur * 0.25);
-    let reach = (dur * WINDUP_REACH).min(dur - snap);
+    let reach = (lift * WINDUP_REACH).min(dur - snap);
     if t < reach {
         // 천천히 들어가고 천천히 멈춘다(smoothstep) — 들기 전 움츠림(동작 앞쪽 키)이 눈에 남게. 처음엔 빠르게 들었더니 움츠림이 3프레임에 지나갔다.
         let u = t / reach.max(1e-3);
@@ -2330,8 +2361,7 @@ fn windup_hold(en: &Enemy) -> Option<f32> {
     let EState::Tele { t } = en.state else {
         return None;
     };
-    let dur = en.tele_dur().max(1e-3);
-    let start = dur * WINDUP_REACH;
+    let start = en.lift_dur().max(1e-3) * WINDUP_REACH;
     (t >= start).then_some(t - start)
 }
 
@@ -2340,7 +2370,18 @@ const ELITE_MARK: Color = Color::new(0.92, 0.88, 0.78, 0.5);
 
 /// 바닥 예고 하나: 옅은 면 + 테두리, 채움이 자라 테두리에 닿는 순간 공격. 원판·부채꼴·고리는 가운데부터, 띠는 가운데 줄에서 양옆으로.
 /// 2026-11-06: 바닥 높낮이를 따라 접어 그린다(`Drape`) — 낮은 곳의 적이 높은 곳으로 치면 예고가 높은 땅 속에 묻혀 안 보였다.
-fn telegraph(d: &Drape, p: Vec3, facing: f32, k: f32, shape: TeleShape, ink_mul: f32) {
+fn telegraph(
+    d: &Drape,
+    p: Vec3,
+    facing: f32,
+    k: f32,
+    shape: TeleShape,
+    ink_mul: f32,
+    timing: bool,
+) {
+    if !timing {
+        return telegraph_density(d, p, facing, k, shape, ink_mul);
+    }
     // 2026-11-07(사장 "더 옅게, 싸움에 방해되지 않게"): nail 0186·0196 꼴 — 채움과 테두리는 같은 색·같은 투명도(`TELE_A`),
     // 채움은 테두리 띠 안쪽까지만 자라 겹치지 않는다(겹치면 그 자리만 진해져 "다 찬 순간"이 안 온다), 바탕은 아주 옅게.
     let bg = with_a(TELE, TELE_BASE_A * ink_mul);
@@ -2376,6 +2417,44 @@ fn telegraph(d: &Drape, p: Vec3, facing: f32, k: f32, shape: TeleShape, ink_mul:
         }
     }
 }
+
+/// 타이밍을 끈 바닥 예고(0128, 사장 "공격 지점에 색의 농도가 짙어지는 식, 정해진 농도가 되었을 때 히트"): 자라는 앞이 없다 —
+/// 자리 전체가 옅게(`TELE_DENSITY_START`)에서 테두리와 같은 농도로 짙어지고, 그 농도에 닿는 틱에 맞는다. 밝기 차이는 비율로만 보여
+/// 닿는 순간을 정확히 잴 수 없다(KB melee-light… "진하기만 오르는 채움은 끝 느낌이 없다") — 그래서 "언제"는 몸이 맡는다.
+fn telegraph_density(d: &Drape, p: Vec3, facing: f32, k: f32, shape: TeleShape, ink_mul: f32) {
+    let a = TELE_A * ink_mul * (TELE_DENSITY_START + (1.0 - TELE_DENSITY_START) * k);
+    let ink = with_a(TELE, a.min(1.0));
+    let edge = with_a(TELE, (TELE_A * ink_mul).min(1.0));
+    let inner = |r: f32| (r - TELE_RING_W).max(0.0);
+    match shape {
+        TeleShape::Disc { r } => {
+            d.sector(p, inner(r), facing, 360.0, ink);
+            d.ring(p, r, facing, 360.0, edge);
+        }
+        TeleShape::Sector { r, arc } => {
+            d.sector(p, inner(r), facing, arc, ink);
+            d.ring(p, r, facing, arc, edge);
+        }
+        TeleShape::Lane { len, w } => {
+            let (s, c) = facing.sin_cos();
+            let dir = vec3(s, 0.0, c);
+            d.lane(p, dir, len, w, ink);
+            d.lane_edge(p, dir, len, w, edge);
+        }
+        TeleShape::Ring { r } => {
+            // 둘레 고리(울림·뿌리 파동)는 반지름 9m라 다 짙어지면 화면을 덮는다 — 채움은 반만 짙게, 테두리는 그대로.
+            d.sector(p, inner(r), facing, 360.0, with_a(TELE, ink.a * 0.5));
+            d.ring(p, r, facing, 360.0, edge);
+            let mark = with_a(TELE, (TELE_MARK_A * ink_mul).min(1.0));
+            let x = r.min(2.0) * 0.45;
+            d.line(p + vec3(-x, 0.0, -x), p + vec3(x, 0.0, x), mark);
+            d.line(p + vec3(-x, 0.0, x), p + vec3(x, 0.0, -x), mark);
+        }
+    }
+}
+
+/// 타이밍을 끈 예고가 처음 보이는 농도(다 찬 농도의 몫).
+const TELE_DENSITY_START: f32 = 0.15;
 
 /// 바닥 그림을 땅 높낮이에 접는 것(2026-11-06): 점마다 그 자리의 땅 높이(경사로·턱 — `Ground::height_in`, 벽·격자 밖이면 적의 발 높이)
 /// 위로 들어 올리고, 면은 `DRAPE_STEP`마다 잘게 나눠 턱에서 꺾이게 한다. 땅이 없으면(아레나) 발 높이 평면 그대로.
@@ -3473,26 +3552,26 @@ mod tests {
     #[test]
     fn a_windup_rises_holds_at_the_peak_then_snaps_down_on_the_hit_tick() {
         let (dur, peak, impact) = (0.9, 0.9, 1.0);
-        assert_eq!(windup_clock(0.0, dur, peak, impact), 0.0);
-        assert!((windup_clock(dur * WINDUP_REACH, dur, peak, impact) - peak).abs() < 1e-4);
+        assert_eq!(windup_clock(0.0, dur, dur, peak, impact), 0.0);
+        assert!((windup_clock(dur * WINDUP_REACH, dur, dur, peak, impact) - peak).abs() < 1e-4);
         let hold = dur - WINDUP_SNAP - 0.01;
         assert!(
-            (windup_clock(hold, dur, peak, impact) - peak).abs() < 1e-4,
+            (windup_clock(hold, dur, dur, peak, impact) - peak).abs() < 1e-4,
             "holds"
         );
         assert!(
-            (windup_clock(dur, dur, peak, impact) - impact).abs() < 1e-4,
+            (windup_clock(dur, dur, dur, peak, impact) - impact).abs() < 1e-4,
             "struck on the hit tick"
         );
         // 늘 앞으로만(되감기 없음).
         let mut last = -1.0;
         for i in 0..=90 {
-            let c = windup_clock(dur * i as f32 / 90.0, dur, peak, impact);
+            let c = windup_clock(dur * i as f32 / 90.0, dur, dur, peak, impact);
             assert!(c >= last - 1e-5);
             last = c;
         }
         // 짧은 예고도 내리침 시간이 예고의 1/4을 넘지 않는다.
-        assert!((windup_clock(0.2 - 0.05 - 1e-3, 0.2, peak, impact) - peak).abs() < 0.02);
+        assert!((windup_clock(0.2 - 0.05 - 1e-3, 0.2, 0.2, peak, impact) - peak).abs() < 0.02);
     }
 
     /// 0073: 내리치는 열쇠 표의 동작은 모델에 있고, 정점 < 맞음 < 동작 길이.

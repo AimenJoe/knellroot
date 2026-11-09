@@ -47,6 +47,8 @@ pub enum Id {
     Beat,
     Beat2,
     Beat3,
+    /// 지연 공격이 풀린다(0128): 짧게 들이쉬는 바람 + 낮은 딸깍 — 이 뒤 0.22초에 맞는다.
+    TeleRelease,
 }
 
 /// 잇단 박자 수(1부터) → 종소리(셋째부터는 가장 높은 것).
@@ -151,6 +153,7 @@ fn synth_gain(id: Id) -> f32 {
         Id::TeleFan | Id::TeleRing => 0.5,
         Id::TeleLane => 0.4,
         Id::TeleDisk => 0.3,
+        Id::TeleRelease => 0.5,
         Id::Wake => 0.7,
         Id::Rest => 0.55,
         Id::Gulp => 0.4,
@@ -161,7 +164,8 @@ fn synth_gain(id: Id) -> f32 {
     }
 }
 
-const SYNTHS: [Id; 12] = [
+const SYNTHS: [Id; 13] = [
+    Id::TeleRelease,
     Id::Thwack,
     Id::Beat,
     Id::Beat2,
@@ -367,6 +371,23 @@ pub fn synth(id: Id) -> Vec<i16> {
                 let am = 0.6 + 0.4 * (TAU * 7.0 * t).sin();
                 let body = (TAU * 55.0 * t).sin() + 0.5 * (TAU * 110.0 * t).sin();
                 body * am * (t / 0.15).min(1.0) * (1.0 - t / 0.9)
+            })
+            .collect(),
+        // 지연이 풀린다(0128): 0.12초 들이쉬는 바람(오르는 잡음) + 끝에 낮은 딸깍 — 예고 소리들과 다른 결(숨 → 친다).
+        Id::TeleRelease => (0..len(0.18))
+            .map(|i| {
+                let t = i as f32 / SR as f32;
+                let breath = rng(&mut seed)
+                    * (t / 0.12).min(1.0).powf(2.0)
+                    * (1.0 - ((t - 0.12) / 0.06).max(0.0))
+                    * 0.7;
+                let d = t - 0.12;
+                let click = if d < 0.0 {
+                    0.0
+                } else {
+                    (TAU * 180.0 * d).sin() * (-d * 70.0).exp()
+                };
+                breath + click
             })
             .collect(),
         // 둘레 원판(잔재): 짧은 나무 딱 두 번.

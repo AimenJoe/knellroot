@@ -96,6 +96,18 @@ pub enum EState {
     Dead,
 }
 
+/// 이번 공격의 박자(0128).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Tempo {
+    Normal,
+    /// 예고가 짧다(`FAST_TELE`, 바닥 `TELE_FLOOR`).
+    Fast,
+    /// 정점에서 이만큼(초) 더 버틴다 — 들어 올림은 같다.
+    Delayed(f32),
+    /// 연속 공격의 이어지는 타: 예고 배율.
+    Chain(f32),
+}
+
 pub struct Enemy {
     pub kind: Kind,
     pub pos: Vec3,
@@ -164,6 +176,14 @@ pub struct Enemy {
     pub eat_t: f32,
     /// 되풀이(0112): 이번 공격이 되풀이한 둘째 번인가.
     pub repeated: bool,
+    /// 박자 변주(0128): 이번 공격의 박자, 연속 공격(켜졌나·다음 간격 차례), 페인트(바꿀 공격), 지연 소리를 냈나, 결정적 굴림, 변주 끔(시험).
+    pub tempo: Tempo,
+    pub chain_on: bool,
+    pub chain_i: u8,
+    pub feint: Option<Atk>,
+    pub cued: bool,
+    pub dice: u32,
+    pub steady: bool,
     /// 지도에 서 있는 적의 제자리·바라보는 쪽(0113). 없으면(물결·시나리오) 처음부터 쫓는다.
     pub home: Option<(Vec3, f32)>,
     /// 턱을 뛰어오르거나 뛰어내리는 중(0100) — 그동안 몸은 포물선을 따라가고 생각하지도 치지도 않는다.
@@ -212,6 +232,8 @@ impl Hop {
 /// 한 틱의 결과(월드가 피해·이벤트로 바꾼다).
 #[derive(Default, Debug, PartialEq)]
 pub struct Out {
+    /// 지연 공격이 곧 풀린다(0128 — 앱이 소리를 낸다).
+    pub release: bool,
     /// 플레이어를 쳤다.
     pub hit: bool,
     /// 이번 틱에 체력 반 아래로 깨어났다.
@@ -266,6 +288,16 @@ impl Enemy {
             docile: false,
             eat_t: 0.0,
             repeated: false,
+            tempo: Tempo::Normal,
+            chain_on: false,
+            chain_i: 0,
+            feint: None,
+            cued: false,
+            dice: (pos.x.to_bits()
+                ^ pos.z.to_bits().rotate_left(13)
+                ^ (kind as u32).wrapping_mul(0x9E37_79B9))
+                | 1,
+            steady: false,
             home: None,
         }
     }
@@ -321,6 +353,17 @@ impl Enemy {
 
     /// 공격이 끝난 뒤: 되풀이(0112)면 한 번 더 같은 공격을 예고부터, 아니면 쉰다.
     fn after_attack(&mut self) -> EState {
+        // 연속 공격(0128): 같은 공격이 고르지 않은 간격으로 더(굴림 없이 — 묶음 안에서는 간격이 박자다).
+        let gaps = self.rhythm().gaps;
+        if self.chain_on && (self.chain_i as usize) < gaps.len() {
+            let m = gaps[self.chain_i as usize];
+            self.chain_i += 1;
+            let atk = self.atk;
+            self.begin(atk);
+            self.tempo = Tempo::Chain(m);
+            return self.state;
+        }
+        self.chain_on = false;
         if self.elite == Some(Affix::Repeating) && !self.repeated {
             self.repeated = true;
             let atk = self.atk;
@@ -392,8 +435,29 @@ impl Enemy {
         (self.atk == Atk::Plant).then_some(self.plant_at).flatten()
     }
 
-    /// 지금 공격의 예고 길이(초).
+    /// 지금 공격의 예고 길이(초) = 들어 올림 + 지연 버팀(0128).
     pub fn tele_dur(&self) -> f32 {
+        self.lift_dur()
+            + match self.tempo {
+                Tempo::Delayed(h) => h,
+                _ => 0.0,
+            }
+    }
+
+    /// 들어 올려 정점에 닿기까지의 예고(지연 버팀 빼고) — 렌더가 준비 동작을 이 길이로 든다.
+    pub fn lift_dur(&self) -> f32 {
+        let base = self.base_tele();
+        match self.tempo {
+            Tempo::Fast => (base * crate::tuning::FAST_TELE)
+                .max(crate::tuning::TELE_FLOOR)
+                .min(base),
+            Tempo::Chain(m) => (base * m).max(crate::tuning::TELE_FLOOR),
+            _ => base,
+        }
+    }
+
+    /// 종의 예고 길이(공격마다, 반 아래면 짧게).
+    fn base_tele(&self) -> f32 {
         let d = self.def();
         self.tele_mul()
             * match self.atk {
@@ -514,6 +578,16 @@ impl Enemy {
     }
 
     fn start(&mut self, atk: Atk) {
+        self.begin(atk);
+        self.chain_on = false;
+        self.chain_i = 0;
+        if !self.steady {
+            self.roll_tempo();
+        }
+    }
+
+    /// 공격 하나를 연다(박자는 보통 — 굴림은 `start`가).
+    fn begin(&mut self, atk: Atk) {
         let d = self.def();
         self.atk = atk;
         self.atk_count += 1;
@@ -521,6 +595,61 @@ impl Enemy {
         self.rings_hit = 0;
         self.charge_len = d.charge_speed * d.charge_time;
         self.state = EState::Tele { t: 0.0 };
+        self.tempo = Tempo::Normal;
+        self.feint = None;
+        self.cued = false;
+    }
+
+    /// 결정적 굴림 0..1(xorshift — 같은 자리·같은 순서면 같은 박자, 시험이 잰다).
+    fn roll(&mut self) -> f32 {
+        let mut x = self.dice;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self.dice = x;
+        (x >> 8) as f32 / (1u32 << 24) as f32
+    }
+
+    /// 이 적의 박자 변주(엘리트는 지연이 잦고 연속 공격을 한다, 0128 "보스·엘리트 많이, 잡몹 조금").
+    pub fn rhythm(&self) -> species::Rhythm {
+        let mut r = self.def().rhythm;
+        if self.elite.is_some() {
+            r.delay += crate::tuning::ELITE_DELAY_BONUS;
+            if r.chain < crate::tuning::ELITE_CHAIN {
+                r.chain = crate::tuning::ELITE_CHAIN;
+                r.gaps = crate::tuning::ELITE_GAPS;
+            }
+        }
+        r
+    }
+
+    /// 공격을 시작할 때 박자를 굴린다(0128): 페인트(반 아래 보스) → 지연·빠름 → 연속.
+    fn roll_tempo(&mut self) {
+        let r = self.rhythm();
+        let swing = matches!(self.atk, Atk::Smash | Atk::Slam);
+        if !(swing || self.atk == Atk::Shards) {
+            return;
+        }
+        if swing && self.boss && self.roused && self.roll() < r.feint {
+            self.feint = match self.def().behavior {
+                Behavior::Warden => Some(Atk::Wave),
+                Behavior::Bellkeeper => Some(Atk::Toll),
+                _ => None,
+            };
+            if self.feint.is_some() {
+                return;
+            }
+        }
+        let x = self.roll();
+        if x < r.delay {
+            let long = self.roll() < 0.5;
+            self.tempo = Tempo::Delayed(crate::tuning::DELAY_HOLDS[long as usize]);
+        } else if x < r.delay + r.fast {
+            self.tempo = Tempo::Fast;
+        }
+        if swing && !r.gaps.is_empty() && self.roll() < r.chain {
+            self.chain_on = true;
+        }
     }
 
     /// 쫓다가 어떤 공격을 고를까(행동 방식마다).
@@ -677,7 +806,22 @@ impl Enemy {
                 }
             }
             EState::Tele { t: e } => {
+                // 페인트(0128): 들어 올림의 `FEINT_AT`에서 끊고 다른 공격의 예고로(그 예고는 그 공격의 모양·소리).
+                if let Some(next) = self.feint {
+                    if e >= self.lift_dur() * crate::tuning::FEINT_AT {
+                        self.begin(next);
+                        return out;
+                    }
+                }
                 let dur = self.tele_dur();
+                // 지연이 풀리기 직전 소리(0128 "몸 + 소리") — 맞기 `RELEASE_LEAD`초 전, 한 번.
+                if matches!(self.tempo, Tempo::Delayed(_))
+                    && !self.cued
+                    && dur - (e + dt) <= crate::tuning::RELEASE_LEAD
+                {
+                    self.cued = true;
+                    out.release = true;
+                }
                 if e < dur - TELE_LOCK {
                     let rate = if self.atk == Atk::Charge { 4.0 } else { 2.0 };
                     self.turn_toward(dir, rate, dt);
@@ -848,6 +992,127 @@ mod tests {
             "{a:?} {b:?}"
         );
         assert_eq!(en.choose(en.def().charge_range + 1.0), None);
+    }
+
+    /// 0128: 지연 = 들어 올림은 같고 버팀만 길다, 풀리기 `RELEASE_LEAD`초 전에 소리 한 번. 빠름 = 짧되 바닥 위.
+    #[test]
+    fn delayed_swings_hold_longer_and_cue_before_the_hit_and_fast_ones_keep_a_floor() {
+        use crate::tuning::{DELAY_HOLDS, RELEASE_LEAD, TELE_FLOOR};
+        let mut en = Enemy::new(Kind::Bellkeeper, Vec3::ZERO);
+        en.steady = true;
+        en.start(Atk::Slam);
+        let normal = en.tele_dur();
+        en.tempo = Tempo::Delayed(DELAY_HOLDS[1]);
+        assert_eq!(en.lift_dur(), normal, "the lift is the same");
+        assert!((en.tele_dur() - normal - DELAY_HOLDS[1]).abs() < 1e-5);
+        let p = vec3(0.0, 0.0, -3.0);
+        let (mut cue_at, mut hit_at, mut t) = (None, None, 0.0);
+        for _ in 0..200 {
+            let out = en.tick(p, 1.0 / 60.0);
+            t += 1.0 / 60.0;
+            if out.release {
+                assert!(cue_at.is_none(), "one cue");
+                cue_at = Some(t);
+            }
+            if matches!(en.state, EState::Swing { .. }) && hit_at.is_none() {
+                hit_at = Some(t);
+            }
+        }
+        let lead = hit_at.unwrap() - cue_at.unwrap();
+        assert!(
+            (lead - RELEASE_LEAD).abs() < 0.04,
+            "cue {lead:.3}s before the hit"
+        );
+        en.tempo = Tempo::Fast;
+        assert!(en.tele_dur() < normal && en.tele_dur() >= TELE_FLOOR - 1e-5);
+    }
+
+    /// 0128: 연속 공격 = 같은 공격이 표의 간격(예고 배율) 차례로 더, 다 치면 쉰다. 페인트 = 반 아래 보스가 들다가 다른 공격으로.
+    #[test]
+    fn chains_follow_the_gap_table_and_feints_switch_the_attack_mid_lift() {
+        let mut en = Enemy::new(Kind::Warden, Vec3::ZERO);
+        en.steady = true;
+        en.start(Atk::Slam);
+        en.chain_on = true;
+        let p = vec3(0.0, 0.0, -2.0);
+        let mut tempos = Vec::new();
+        for _ in 0..600 {
+            let was = en.atk_count;
+            en.tick(p, 1.0 / 60.0);
+            if en.atk_count != was {
+                tempos.push(en.tempo);
+            }
+            if matches!(en.state, EState::Recover { .. }) {
+                break;
+            }
+        }
+        let gaps = en.def().rhythm.gaps;
+        let want: Vec<Tempo> = gaps.iter().map(|&m| Tempo::Chain(m)).collect();
+        assert_eq!(tempos, want, "hits after the first follow the uneven gaps");
+        assert!(matches!(en.state, EState::Recover { .. }), "then rests");
+
+        let mut b = Enemy::new(Kind::Bellkeeper, Vec3::ZERO);
+        b.steady = true;
+        b.roused = true;
+        b.start(Atk::Slam);
+        b.feint = Some(Atk::Toll);
+        let lift = b.lift_dur();
+        let mut switched_at = None;
+        for i in 0..120 {
+            b.tick(p, 1.0 / 60.0);
+            if b.atk == Atk::Toll && switched_at.is_none() {
+                switched_at = Some(i as f32 / 60.0);
+            }
+        }
+        let at = switched_at.expect("feinted into the toll");
+        assert!(
+            (at - lift * crate::tuning::FEINT_AT).abs() < 0.05,
+            "{at} vs {lift}"
+        );
+    }
+
+    /// 0128 "보스·엘리트 많이, 잡몹 조금": 굴림의 몫이 표대로 — 잡몹은 지연만 가끔, 엘리트는 연속 공격도, 보스는 넷 다(페인트는 반 아래만).
+    #[test]
+    fn rhythm_odds_follow_the_table_mobs_little_bosses_much() {
+        let sample = |kind: Kind, elite: bool, roused: bool| {
+            let mut en = Enemy::new(kind, vec3(1.3, 0.0, 2.7));
+            if elite {
+                en.make_elite(Affix::Hardened);
+            }
+            en.roused = roused;
+            let n = 2000;
+            let (mut delay, mut fast, mut chain, mut feint) = (0, 0, 0, 0);
+            for _ in 0..n {
+                en.start(Atk::Slam);
+                delay += matches!(en.tempo, Tempo::Delayed(_)) as i32;
+                fast += (en.tempo == Tempo::Fast) as i32;
+                chain += en.chain_on as i32;
+                feint += en.feint.is_some() as i32;
+            }
+            let f = |c: i32| c as f32 / n as f32;
+            (f(delay), f(fast), f(chain), f(feint))
+        };
+        let (d, f, c, x) = sample(Kind::Husk, false, false);
+        assert!(
+            (d - 0.25).abs() < 0.04 && f == 0.0 && c == 0.0 && x == 0.0,
+            "husk {d} {f} {c} {x}"
+        );
+        let (d, _, c, _) = sample(Kind::Husk, true, false);
+        assert!(
+            d > 0.38 && c > 0.2,
+            "elite husk delays more and chains: {d} {c}"
+        );
+        let (_, _, _, x) = sample(Kind::Bellkeeper, false, false);
+        assert_eq!(x, 0.0, "no feints before half health");
+        let (d, f, c, x) = sample(Kind::Bellkeeper, false, true);
+        assert!(
+            d > 0.1 && f > 0.05 && c > 0.2 && x > 0.25,
+            "bellkeeper roused {d} {f} {c} {x}"
+        );
+        let mut steady = Enemy::new(Kind::Bellkeeper, Vec3::ZERO);
+        steady.steady = true;
+        steady.start(Atk::Slam);
+        assert_eq!(steady.tempo, Tempo::Normal);
     }
 
     /// 0116 T3: 등급 배율은 한 번만 적용한다(재설정 호출로 체력이 누적 증가하지 않게).

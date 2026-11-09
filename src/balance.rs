@@ -89,6 +89,10 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     let mut ok = false;
     let mut ring_ok = [false; 4];
     let mut parries = 0u32;
+    let offbeat: f32 = std::env::var("SIM_OFFBEAT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1.0);
     let (mut dmg_plain, mut dmg_opened, mut dmg_reflect, mut interrupted) = (0, 0, 0, 0u32);
     // 기력 남김: 실제 싸움은 점프 두 번 몫, 허수아비는 한 번 칠 몫만.
     let reserve = if dummy { 12.0 } else { 36.0 };
@@ -120,7 +124,11 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
         // 새 공격: 굴린다.
         if matches!(e.state, EState::Tele { .. }) && e.atk_count != roll_for {
             roll_for = e.atk_count;
-            ok = rng.f() < p;
+            // 엇박(0128): 지연·빠름·연속의 이어지는 타·페인트 뒤의 공격은 사람이 덜 받아낸다고 볼 때 — `SIM_OFFBEAT=0.75`면 p × 0.75.
+            // 몇 배인지는 확인하지 못했다(가정 — 판정에서 잴 것). 봇 자체는 상태를 읽으니 속지 않는다.
+            let off = !matches!(e.tempo, crate::enemy::Tempo::Normal);
+            let pen = if off { offbeat } else { 1.0 };
+            ok = rng.f() < p * pen;
             for r in &mut ring_ok {
                 *r = rng.f() < p;
             }

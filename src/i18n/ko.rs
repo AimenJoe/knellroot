@@ -185,6 +185,7 @@ pub const KO: Strings = Strings {
     menu_shake: "화면 흔들림",
     menu_volume: "소리 크기",
     menu_tells: "공격 예고",
+    menu_tell_timing: "예고 타이밍",
     menu_weapon: "무기",
     weapon_sword: "순례자의 검",
     weapon_hammer: "종치기 망치",
