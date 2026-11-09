@@ -6,13 +6,8 @@ Meshy 몸 — 잿빛 동그란 날쥐·개구리 몸에 큰 머리, 늘어진 �
 
     blender --background --python tools/art/blender/pod.py
 """
-import colorsys
-import json
 import os
-import struct
 import sys
-
-import bpy
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
@@ -20,7 +15,6 @@ import common as C  # noqa: E402
 NAME = "pod"
 
 MESHY_LOW = os.path.join(C.REPO, "tools", "art", "sources", "meshy", "pod_v1_low.glb")
-MESHY_TEX = MESHY_LOW.replace(".glb", "_tex.png")
 MESHY_PARTS = {"body_geo": "body", "head_geo": "head", "glow_eyes": "head", "seed_geo": "seed",
                "leg_bl_geo": "leg_bl", "leg_br_geo": "leg_br"}
 # 치수(앞 = -Y, 캐릭터 왼쪽 = +X) — 정면·옆·위 직교 렌더(텍스처째)에 눈금을 그어 잰 것.
@@ -39,63 +33,17 @@ GREY_SAT = 0.18
 
 
 def _seed_faces():
-    """꼬투리(올리브)·뿌리(보라) 색 면의 가운데 자리 — 몸과 맞닿은 경계가 비스듬해 자리로는 못 가른다(0132).
-    줄인 GLB의 삼각형마다 세 꼭짓점 + 가운데 UV의 텍스처 색을 평균해 고른다. 돌려주는 것 = 가운데 자리(블렌더 축) 목록."""
-    data = open(MESHY_LOW, "rb").read()
-    off, js, bn = 12, None, b""
-    while off < len(data):
-        n, kind = struct.unpack_from("<II", data, off)
-        chunk = data[off + 8:off + 8 + n]
-        if kind == 0x4E4F534A:
-            js = json.loads(chunk)
-        else:
-            bn = chunk
-        off += 8 + n
-
-    def acc(i, fmt, k):
-        a = js["accessors"][i]
-        bv = js["bufferViews"][a["bufferView"]]
-        base = bv.get("byteOffset", 0) + a.get("byteOffset", 0)
-        size = struct.calcsize("<" + fmt)
-        return [struct.unpack_from("<" + fmt * k, bn, base + j * size * k) for j in range(a["count"])]
-
-    prim = js["meshes"][0]["primitives"][0]
-    pos = acc(prim["attributes"]["POSITION"], "f", 3)
-    uv = acc(prim["attributes"]["TEXCOORD_0"], "f", 2)
-    ifmt = {5123: "H", 5125: "I"}[js["accessors"][prim["indices"]]["componentType"]]
-    idx = [i[0] for i in acc(prim["indices"], ifmt, 1)]
-    img = bpy.data.images.load(MESHY_TEX, check_existing=True)
-    W, H = img.size
-    px = img.pixels[:]
-
-    def texel(u, v):
-        x = int(u * W) % W
-        y = H - 1 - int(v * H) % H  # glTF v는 위에서, 블렌더 화소 줄은 아래에서
-        k = (y * W + x) * 4
-        return px[k:k + 3]
-
-    out = []
-    for t in range(0, len(idx), 3):
-        tri = idx[t:t + 3]
-        uvs = [uv[i] for i in tri]
-        uvs.append(tuple(sum(c) / 3 for c in zip(*uvs)))
-        r, g, b = (sum(c) / 4 for c in zip(*[texel(*q) for q in uvs]))
-        h, s, v = colorsys.rgb_to_hsv(r, g, b)
-        olive = 0.09 < h < 0.22 and s > 0.25 and v > 0.15
-        purple = 0.62 < h < 0.9 and s > 0.2
-        if olive or purple:
-            c = [sum(pos[i][a] for i in tri) / 3 for a in range(3)]
-            out.append((c[0], -c[2], c[1]))  # glTF(Y 위) → 블렌더(Z 위)
-    bpy.data.images.remove(img)
-    return out
+    """꼬투리(올리브)·뿌리(보라) 색 면의 가운데 자리 — 몸과 맞닿은 경계가 비스듬해 자리로는 못 가른다(0132)."""
+    def pick(h, s, v):
+        return (0.09 < h < 0.22 and s > 0.25 and v > 0.15) or (0.62 < h < 0.9 and s > 0.2)
+    return [c for c, hsv in C.face_colors(MESHY_LOW) if pick(*hsv)]
 
 
 SEED = []
 
 
 def _is_seed(x, y, z):
-    """가져온 면 가운데가 꼬투리 색 면 가운데와 같은 자리인가(가져오며 생기는 부동소수 차이만 봐준다)."""
-    return any(abs(x - a) < 2e-3 and abs(y - b) < 2e-3 and abs(z - c) < 2e-3 for a, b, c in SEED)
+    return C.near_any(SEED, (x, y, z))
 
 
 def classify(c):

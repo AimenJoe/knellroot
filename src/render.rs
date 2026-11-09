@@ -1658,7 +1658,7 @@ impl Renderer {
             let crouch = matches!(en.state, EState::Tele { .. });
             let h = en.height * if crouch { 0.85 } else { 1.0 } * squash;
             actor(p + sink, en.facing_dir(), en.radius, h, col, 0.6, tilt);
-            // 깨진 종지기(0125, 상자 단계): 등 뒤에 끄는 깨진 종 — 울리기 예고 동안 들어 올린다. 모델은 다음 단계.
+            // 깨진 종지기(0125, 상자 단계): 등 뒤에 끄는 깨진 종 — 울리기 예고 동안 들어 올린다. 모델(0132 `bellkeeper.glb`)이 있으면 쓰지 않는다.
             if en.kind == crate::species::Kind::Bellkeeper {
                 let lift = match (en.state, en.atk) {
                     (EState::Tele { t }, crate::enemy::Atk::Toll) => {
@@ -2487,8 +2487,9 @@ fn enemy_anim(
             }
         }
         EState::Charge { .. } => (e.pick(&["charge", "run", "walk"]), clock * 1.5),
+        // 울림 고리(0125 `Atk::Toll`)도 이 상태 — 예고에서 고른 동작(`toll` …)을 이어 튼다(0132).
         EState::Wave { t } => {
-            let a = e.pick(&["wave", "slam", "attack"]);
+            let a = e.pick(windup);
             let (_, impact) = strike_keys(model, a, e);
             (a, (impact + t).min(e.duration(a) * 0.999))
         }
@@ -2509,6 +2510,9 @@ const STRIKE_KEYS: &[(&str, &str, f32, f32)] = &[
     ("gatekeeper", "wave", 1.0, 1.12),
     ("shellback", "attack", 0.6, 0.72),
     ("pod", "plant", 0.45, 0.6),
+    ("bellkeeper", "toll", 1.0, 1.12),
+    ("bellkeeper", "slam", 0.9, 1.0),
+    ("bellkeeper", "throw", 0.6, 0.7),
 ];
 
 fn strike_keys(model: &str, a: Option<usize>, e: &Entry) -> (f32, f32) {
