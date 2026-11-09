@@ -9,3 +9,4 @@ AI로 만든 그림이다(숨기지 않는다). 프롬프트는 `docs/art/gemini
 | `wanderer_v1_back_side.png` | 2026-11-04 | 방랑자 뒤 | 옆(왼쪽을 봄) |
 | `husk_v1_front.png` | 2026-11-04 | 잔재 정면 |
 | `husk_v1_back_side.png` | 2026-11-04 | 잔재 뒤 | 옆 — 정면과 안 맞음(아래 `gemini/README.md`) |
+| `shellback_v1_front.png` | 2026-11-09 | 등딱지짐승 3/4 앞(프롬프트 `docs/art/gemini-prompts-0132.md` 1) — 20·50px 확인 `shellback_v1_front_tiny.png` |
