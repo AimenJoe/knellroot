@@ -407,6 +407,8 @@ pub struct StageDef {
     pub chest_loot: &'static [Loot],
     /// 문지기를 처음 이겼을 때 주는 장신구.
     pub boss_charm: Option<crate::charms::Id>,
+    /// 새긴 돌(0129 C4, 지도 `N`, 위에서부터 차례)마다 새긴 글 — 곁에서 상호작용하면 화면 아래 글 판(평범한 삶의 흔적, lore 0116).
+    pub stones: &'static [Tr],
     /// 숨은 물건 기록 이름의 앞(0105): `<앞>.<종류>.<그 종류의 몇째>` — 스테이지가 늘어도 섞이지 않게.
     pub find_prefix: &'static str,
     /// 지도에 서 있는 적(0113): (지도 표지, 종류) — 제자리에서 제 일을 하다 알아차리면 쫓는다. 화로에서 쉬면 다시 선다.
@@ -491,6 +493,8 @@ pub const FIND_REACH: f32 = 1.8;
 
 /// 상자 곁(m)과, 든 장신구를 이미 가졌을 때 대신 주는 잔불.
 pub const CHEST_REACH: f32 = 1.8;
+/// 새긴 돌을 읽는 거리(m, 0129).
+const STONE_REACH: f32 = 2.2;
 pub const CHEST_EMBERS: u32 = 10;
 
 /// 상자에 든 것(0117): 장신구 또는 무기 — 무기는 얻어서 쓴다(검·맨손만 처음부터).
@@ -586,6 +590,10 @@ pub struct StageRun {
     pub chest_open: Vec<bool>,
     pub near_chest: Option<usize>,
     opened: Option<usize>,
+    /// 새긴 돌(0129): 자리, 곁의 돌, 이번 틱에 읽은 돌(앱이 가져간다).
+    pub stones: Vec<Vec3>,
+    pub near_stone: Option<usize>,
+    read: Option<usize>,
     /// 이번 틱에 쉬었다(0064 M4 — 앱이 화로 가게를 연다), 잔불로 살 것이 있다(앱이 정한다 — 쉼터가 빛난다).
     rested: bool,
     pub shop_ready: bool,
@@ -666,6 +674,9 @@ impl StageRun {
             chests: Vec::new(),
             chest_open: Vec::new(),
             near_chest: None,
+            stones: Vec::new(),
+            near_stone: None,
+            read: None,
             opened: None,
             rested: false,
             shop_ready: false,
@@ -709,6 +720,7 @@ impl StageRun {
         run.up_at = run.level.marks_of(UP_GLYPH).next();
         run.rests = run.level.marks_of('R').collect();
         run.chests = run.level.marks_of('C').collect();
+        run.stones = run.level.marks_of('N').collect();
         run.chest_open = vec![false; run.chests.len()];
         for kind in Find::ALL {
             let at: Vec<Vec3> = run.level.marks_of(kind.glyph()).collect();
@@ -981,6 +993,11 @@ impl StageRun {
         self.near_chest = self.chests.iter().enumerate().position(|(i, c)| {
             !self.chest_open[i] && vec2(c.x - pp.x, c.z - pp.z).length() <= CHEST_REACH
         });
+        // 새긴 돌(0129): 곁이면 읽기(싸움 중에도 — 글 판은 멈추지 않는다).
+        self.near_stone = self
+            .stones
+            .iter()
+            .position(|s| vec2(s.x - pp.x, s.z - pp.z).length() <= STONE_REACH);
         // 숨은 물건(0105): 상자와 같은 꼴 — 곁이면 점프 버튼이 줍기.
         self.near_find = self.finds.iter().enumerate().position(|(i, (p, _, _))| {
             !self.found[i] && vec2(p.x - pp.x, p.z - pp.z).length() <= FIND_REACH
@@ -1017,7 +1034,8 @@ impl StageRun {
             || self.near_chest.is_some()
             || self.near_find.is_some()
             || self.near_lever
-            || self.near_resident.is_some();
+            || self.near_resident.is_some()
+            || self.near_stone.is_some();
         // 같은 버튼: 줍기 > 열기 > 당기기 > 쉬기(HUD 안내와 같은 차례).
         if let (Some(i), true) = (self.near_find, w.interact) {
             self.found[i] = true;
@@ -1038,6 +1056,8 @@ impl StageRun {
         } else if let (Some(k), true) = (self.near_resident, w.interact) {
             // 말 걸기(0122): 멈추지 않는다 — 앱이 머리 위 말풍선을 띄운다(다시 누르면 다음 줄).
             self.talked = Some(k);
+        } else if let (Some(k), true) = (self.near_stone, w.interact) {
+            self.read = Some(k);
         } else if let (Some(i), true) = (self.near_rest, w.interact) {
             if self.rest_safe {
                 self.rest(w, i);
@@ -1240,6 +1260,11 @@ impl StageRun {
     }
 
     /// 이번 틱에 말 건 주민(0122) — 앱이 한 번 가져간다.
+    /// 이번 틱에 읽은 새긴 돌(0129 — 앱이 글 판을 띄운다).
+    pub fn take_read(&mut self) -> Option<usize> {
+        self.read.take()
+    }
+
     pub fn take_talked(&mut self) -> Option<usize> {
         self.talked.take()
     }
@@ -1666,6 +1691,37 @@ mod tests {
             3,
             "three residents in the village"
         );
+    }
+
+    /// 0129 C4: 새긴 돌은 지도 표지 수 = 글 수, 곁에서 상호작용 = 읽기(다른 일을 하지 않는다), 멀면 아무것도 없다.
+    #[test]
+    fn carved_stones_have_one_text_each_and_read_with_the_interact_button() {
+        for def in STAGES {
+            let (run, _) = StageRun::start(def);
+            assert_eq!(run.stones.len(), def.stones.len(), "marks = texts");
+        }
+        let (mut run, mut w) = StageRun::start(STAGES[1]);
+        assert_eq!(run.stones.len(), 3);
+        let at = run.stones[2];
+        w.player.pos = at + vec3(0.0, 0.0, 6.0);
+        w.player.prev = w.player.pos;
+        tick(&mut run, &mut w, Actions::default());
+        assert_eq!(run.near_stone, None);
+        w.player.pos = at + vec3(0.0, 0.0, 1.2);
+        w.player.prev = w.player.pos;
+        tick(&mut run, &mut w, Actions::default());
+        assert_eq!(run.near_stone, Some(2));
+        assert!(w.interact_here, "the jump button reads it");
+        tick(
+            &mut run,
+            &mut w,
+            Actions {
+                interact: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(run.take_read(), Some(2));
+        assert_eq!(run.take_read(), None, "once per press");
     }
 
     /// 0122: 주민은 월드의 적이 아니다(맞지도·락온되지도 않는다 — 공격이 지나간다), 몸은 방랑자만 밀어낸다.

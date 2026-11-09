@@ -321,7 +321,8 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
     if (run.near_find.is_some()
         || run.near_chest.is_some()
         || run.near_lever
-        || run.near_resident.is_some())
+        || run.near_resident.is_some()
+        || run.near_stone.is_some())
         && !under_menu
     {
         let key = crate::input::prompt(crate::input::Act::Interact);
@@ -331,8 +332,10 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
             i18n::s().chest_verb
         } else if run.near_lever {
             i18n::s().lever_verb
-        } else {
+        } else if run.near_resident.is_some() {
             i18n::s().talk_verb
+        } else {
+            i18n::s().read_verb
         };
         let text = if key.is_empty() {
             verb.to_string()

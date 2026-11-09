@@ -80,6 +80,8 @@ pub struct App {
     passage: Option<crate::descent::Passage>,
     /// 주민 말풍선(0122): (주민 — 지금 지역의 번호, 몇째 말, 남은 초). 멈추지 않는다.
     bubble: Option<(usize, usize, f32)>,
+    /// 새긴 돌 글 판(0129): (지금 지역의 돌 번호, 남은 초).
+    stone_card: Option<(usize, f32)>,
     /// 실제 시간(전환의 작은 움직임 — 지형을 굽는 동안에도 흐른다).
     clock: f32,
     #[cfg(feature = "dev")]
@@ -213,6 +215,7 @@ impl App {
             rest_at: None,
             passage: None,
             bubble: None,
+            stone_card: None,
             clock: 0.0,
             t,
             #[cfg(feature = "dev")]
@@ -276,6 +279,9 @@ impl App {
     /// 다른 지역으로(0118): 그 지역을 새로 세우고 방랑자(체력·등잔·기력·탄…)와 잔불은 그대로 옮긴다.
     fn enter_stage(&mut self, s: usize) {
         let s = s.min(crate::stage::STAGES.len() - 1);
+        // 말풍선·새긴 돌 글 판은 지역 안의 번호라 지역을 바꾸면 닫는다(0129).
+        self.bubble = None;
+        self.stone_card = None;
         let (run, mut world) = StageRun::start(crate::stage::STAGES[s]);
         let (start, facing) = (world.player.pos, world.player.facing);
         std::mem::swap(&mut self.world.player, &mut world.player);
@@ -652,6 +658,7 @@ impl App {
         if self.scene() == Scene::Play {
             self.draw_goal_arrow(&f);
             self.draw_bubble(&f);
+            self.draw_stone_card(&f);
         }
         // 지역 사이 지층 단면(0118): 싸움 화면 위에(전환 중엔 멈춤·장비 창이 열리지 않는다).
         self.clock += get_frame_time();

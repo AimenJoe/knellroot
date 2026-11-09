@@ -1000,6 +1000,45 @@ impl Renderer {
         if self.gate_fade >= 0.98 {
             self.draw_gate(run, lights, 1.0);
         }
+        // 새긴 돌(0129 C4): 조금 기운 선돌 + 새긴 줄 셋 + 밑동 이끼 — 곁에 서면 줄이 옅게 밝아진다(읽을 수 있다는 표시, 호박빛은 쓰지 않는다).
+        for (i, st) in run.stones.iter().enumerate() {
+            fl.shadow(*st, 0.45);
+            let near = run.near_stone == Some(i);
+            let yaw = (st.x * 1.7 + st.z * 0.9).sin() * 0.6;
+            let lean = Quat::from_rotation_y(yaw) * Quat::from_rotation_x(0.08);
+            let stone = Color::new(0.47, 0.48, 0.46, 1.0);
+            let base = *st;
+            shaded_box_rot(
+                base + Vec3::Y * 0.55,
+                vec3(0.62, 1.1, 0.2),
+                stone,
+                0.85,
+                lean,
+                base,
+            );
+            let carve = if near {
+                Color::new(0.86, 0.84, 0.78, 1.0)
+            } else {
+                Color::new(0.3, 0.3, 0.3, 1.0)
+            };
+            for k in 0..3 {
+                let y = 0.78 - k as f32 * 0.2;
+                shaded_box_rot(
+                    base + vec3(0.0, y, 0.105),
+                    vec3(0.42 - k as f32 * 0.08, 0.04, 0.02),
+                    carve,
+                    1.0,
+                    lean,
+                    base,
+                );
+            }
+            shaded_box(
+                base + Vec3::Y * 0.05,
+                vec3(0.75, 0.1, 0.32),
+                Color::new(0.33, 0.42, 0.3, 1.0),
+                0.85,
+            );
+        }
         // 장신구 상자(0064 M3): 짙은 나무 궤 + 호박빛 자물쇠(닫힌 것만 숨 쉬듯), 열리면 뚜껑이 뒤로 젖혀지고 빛이 꺼진다.
         for (i, c) in run.chests.iter().enumerate() {
             let open = run.chest_open.get(i).copied().unwrap_or(false);

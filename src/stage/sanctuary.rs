@@ -45,6 +45,7 @@ pub static DEF: StageDef = StageDef {
         Loot::Weapon(weapons::Id::Hammer),
     ],
     boss_charm: Some(Charm::Hand),
+    stones: &[],
     find_prefix: "sanctuary",
     card_lever: |s| s.card_gate_opened,
     depth_m: 0,

@@ -1,6 +1,9 @@
 //! 싸움 한 틱과 그 둘레(0019): 월드·스테이지·카메라·조준·랩, 길 안내 화살, 개발 줄, 월드 소리(0066 R3에서 옮김).
 use super::*;
 
+/// 새긴 돌 글 판이 떠 있는 초(0129).
+const STONE_TIME: f32 = 6.0;
+
 impl App {
     /// 싸움 한 틱: 멈춤 → 월드 → 스테이지 → 기록·가게·소리·알림 → 끝났으면 끝 장면.
     pub(super) fn tick_play(&mut self, a: Actions) {
@@ -44,6 +47,17 @@ impl App {
             };
             self.bubble = Some((k, n, crate::residents::BUBBLE_TIME));
         }
+        // 새긴 돌(0129): 읽으면 글 판, 떠 있는 동안 같은 돌을 다시 누르면 닫힌다.
+        if let Some(k) = self.run.take_read() {
+            self.stone_card = match self.stone_card {
+                Some((b, _)) if b == k => None,
+                _ => Some((k, STONE_TIME)),
+            };
+        }
+        if let Some((_, t)) = self.stone_card.as_mut() {
+            *t -= TICK_DT;
+        }
+        self.stone_card = self.stone_card.filter(|c| c.1 > 0.0);
         if let Some((_, _, t)) = self.bubble.as_mut() {
             *t -= TICK_DT;
         }
@@ -293,6 +307,64 @@ impl App {
         );
         self.ui
             .text_center(text, cx, rect.y + pad, k, Color::new(0.95, 0.92, 0.85, a));
+    }
+
+    /// 새긴 돌 글 판(0129 C4): 화면 위쪽 가운데, 돌빛 판 + 글(줄 바꿈), 들어오고 나갈 때 옅게. 멈추지 않는다.
+    pub(super) fn draw_stone_card(&mut self, f: &Frame) {
+        let Some((k, t)) = self.stone_card else {
+            return;
+        };
+        let Some(&text) = self.run.def.stones.get(k) else {
+            return;
+        };
+        let text = tr(text);
+        let a = (t / 0.3).min((STONE_TIME - t) / 0.2).clamp(0.0, 1.0);
+        let kk = 1.0;
+        let max_w = (f.w * 0.6).min(f.ui * 320.0);
+        // 새긴 줄(`\n`)마다 끊고, 그 안에서만 폭에 맞춰 나눈다 — 문장이 어색하게 갈리지 않게.
+        let lines: Vec<String> = text
+            .split('\n')
+            .flat_map(|part| ui::wrap(&self.ui, part, max_w, kk))
+            .collect();
+        let gap = self.ui.px(kk) * 1.45;
+        let w = lines
+            .iter()
+            .map(|l| self.ui.width(l, kk))
+            .fold(0.0, f32::max);
+        let pad = 8.0 * f.ui;
+        let h = gap * lines.len() as f32;
+        let cx = f.ox + f.w * 0.5;
+        let rect = Rect::new(
+            cx - w * 0.5 - pad,
+            // 화면 위쪽(목표 글 아래) — 가운데의 방랑자 몸을 가리지 않게.
+            f.oy + f.h * 0.14,
+            w + pad * 2.0,
+            h + pad * 1.6,
+        );
+        draw_rectangle(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            Color::new(0.16, 0.15, 0.17, 0.88 * a),
+        );
+        draw_rectangle_lines(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            1.5 * f.ui,
+            Color::new(0.62, 0.6, 0.58, 0.9 * a),
+        );
+        for (i, line) in lines.iter().enumerate() {
+            self.ui.text_center(
+                line,
+                cx,
+                rect.y + pad + gap * i as f32,
+                kk,
+                Color::new(0.88, 0.86, 0.82, a),
+            );
+        }
     }
 
     /// 플레이어 머리 위의 화면 자리(카메라 뒤면 없음).

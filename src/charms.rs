@@ -26,6 +26,8 @@ pub struct Def {
     pub key: &'static str,
     pub name: Tr,
     pub desc: Tr,
+    /// 세계 안의 말 한 줄(0129 C4 — 출처와 기능을 잇는다, lore ecology "장신구 = 옛 흔적"). 장비 창 설명 아래 옅게.
+    pub flavor: Tr,
     pub mods: Mods,
 }
 
@@ -36,6 +38,7 @@ pub static TABLE: [Def; 9] = [
         key: "shell",
         name: |s: &Strings| s.charm_shell,
         desc: |s: &Strings| s.charm_shell_d,
+        flavor: |s: &Strings| s.charm_shell_f,
         mods: Mods {
             hp: 1,
             flask: 0,
@@ -60,6 +63,7 @@ pub static TABLE: [Def; 9] = [
         key: "feet",
         name: |s: &Strings| s.charm_feet,
         desc: |s: &Strings| s.charm_feet_d,
+        flavor: |s: &Strings| s.charm_feet_f,
         mods: Mods {
             hp: 0,
             flask: 0,
@@ -84,6 +88,7 @@ pub static TABLE: [Def; 9] = [
         key: "ear",
         name: |s: &Strings| s.charm_ear,
         desc: |s: &Strings| s.charm_ear_d,
+        flavor: |s: &Strings| s.charm_ear_f,
         mods: Mods {
             hp: 0,
             flask: 0,
@@ -108,6 +113,7 @@ pub static TABLE: [Def; 9] = [
         key: "hunger",
         name: |s: &Strings| s.charm_hunger,
         desc: |s: &Strings| s.charm_hunger_d,
+        flavor: |s: &Strings| s.charm_hunger_f,
         mods: Mods {
             hp: 0,
             flask: -1,
@@ -132,6 +138,7 @@ pub static TABLE: [Def; 9] = [
         key: "hand",
         name: |s: &Strings| s.charm_hand,
         desc: |s: &Strings| s.charm_hand_d,
+        flavor: |s: &Strings| s.charm_hand_f,
         mods: Mods {
             hp: 0,
             flask: 0,
@@ -156,6 +163,7 @@ pub static TABLE: [Def; 9] = [
         key: "pouch",
         name: |s: &Strings| s.charm_pouch,
         desc: |s: &Strings| s.charm_pouch_d,
+        flavor: |s: &Strings| s.charm_pouch_f,
         mods: Mods {
             hp: 0,
             flask: 0,
@@ -180,6 +188,7 @@ pub static TABLE: [Def; 9] = [
         key: "cloth",
         name: |s: &Strings| s.charm_cloth,
         desc: |s: &Strings| s.charm_cloth_d,
+        flavor: |s: &Strings| s.charm_cloth_f,
         mods: Mods {
             hp: 1,
             flask: 0,
@@ -204,6 +213,7 @@ pub static TABLE: [Def; 9] = [
         key: "jar",
         name: |s: &Strings| s.charm_jar,
         desc: |s: &Strings| s.charm_jar_d,
+        flavor: |s: &Strings| s.charm_jar_f,
         mods: Mods {
             hp: 0,
             flask: -1,
@@ -228,6 +238,7 @@ pub static TABLE: [Def; 9] = [
         key: "bellshard",
         name: |s: &Strings| s.charm_bellshard,
         desc: |s: &Strings| s.charm_bellshard_d,
+        flavor: |s: &Strings| s.charm_bellshard_f,
         mods: Mods {
             hp: 0,
             flask: 0,
@@ -354,5 +365,14 @@ mod tests {
         let jar = Stats::compute(&[def(Id::Jar).mods]);
         assert!(jar.heal == 1 && jar.flask == base.flask - 1);
         assert_eq!(Stats::compute(&[def(Id::BellShard).mods]).opened_dmg, 1);
+        // 0129 C4: 모든 장신구에 세계 안의 말 한 줄 — 수치 글과 다르다.
+        for d in &TABLE {
+            let s = crate::i18n::s();
+            assert!(
+                !(d.flavor)(s).is_empty() && (d.flavor)(s) != (d.desc)(s),
+                "{:?}",
+                d.id
+            );
+        }
     }
 }
