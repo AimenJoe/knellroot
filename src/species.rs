@@ -232,7 +232,7 @@ pub static POD: Def = Def {
 pub static BELLKEEPER: Def = Def {
     kind: Kind::Bellkeeper,
     name: |s: &Strings| s.boss_bellkeeper,
-    hp: 46,
+    hp: 58,
     radius: 1.0,
     height: 3.0,
     speed: 2.2,

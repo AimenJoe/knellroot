@@ -948,7 +948,13 @@ impl World {
                 continue;
             }
             let crit = en.exposed > 0.0;
-            en.hp -= hurt_by(en, self.stats.dmg + t[P::PlungeDamage] as i32, crit, t);
+            en.hp -= hurt_by(
+                en,
+                self.stats.dmg + t[P::PlungeDamage] as i32,
+                crit,
+                self.stats.opened_dmg,
+                t,
+            );
             en.exposed = 0.0;
             en.hit_by = swing;
             add_poise(en, 2.0 * self.stats.poise, None, t, ev);
@@ -1371,7 +1377,13 @@ impl World {
                     continue;
                 }
                 let crit = en.exposed > 0.0;
-                en.hp -= hurt_by(en, self.stats.dmg + b.def.damage, crit, t);
+                en.hp -= hurt_by(
+                    en,
+                    self.stats.dmg + b.def.damage,
+                    crit,
+                    self.stats.opened_dmg,
+                    t,
+                );
                 en.exposed = 0.0;
                 en.hurt = 0.15;
                 en.knock = b.dir * t[P::Knockback] * if en.boss { 0.1 } else { 0.5 };
@@ -1500,7 +1512,7 @@ impl World {
                 continue;
             }
             let crit = en.exposed > 0.0;
-            en.hp -= hurt_by(en, self.stats.dmg + damage, crit, t);
+            en.hp -= hurt_by(en, self.stats.dmg + damage, crit, self.stats.opened_dmg, t);
             en.exposed = 0.0;
             en.hurt = 0.15;
             en.knock = d.normalize_or_zero() * t[P::Knockback] * if en.boss { 0.2 } else { 1.4 };
@@ -1691,7 +1703,13 @@ impl World {
             } else {
                 self.stats.light_dmg
             };
-            en.hp -= hurt_by(en, self.stats.dmg + lv + s.damage, crit, t);
+            en.hp -= hurt_by(
+                en,
+                self.stats.dmg + lv + s.damage,
+                crit,
+                self.stats.opened_dmg,
+                t,
+            );
             if crit {
                 en.exposed = 0.0;
                 ev.push(Event::Crit {
@@ -1852,7 +1870,13 @@ impl World {
             if d <= inner || d > outer {
                 continue;
             }
-            en.hp -= hurt_by(en, self.stats.dmg + t[P::PlungeDamage] as i32, false, t);
+            en.hp -= hurt_by(
+                en,
+                self.stats.dmg + t[P::PlungeDamage] as i32,
+                false,
+                self.stats.opened_dmg,
+                t,
+            );
             add_poise(en, 2.0 * self.stats.poise, None, t, ev);
             en.hurt = 0.15;
             if en.hp <= 0 {
@@ -2715,8 +2739,10 @@ pub fn poise_max(en: &Enemy, t: &Tuning) -> f32 {
 }
 
 /// 플레이어가 주는 피해(0055): 드러난 적은 치명타 덤, 자세가 깨진 동안은 × `poise.break damage x`(올림) — 폭딜 창.
-fn hurt_by(en: &Enemy, base: i32, crit: bool, t: &Tuning) -> i32 {
-    let d = base + if crit { t[P::ParryCrit] as i32 } else { 0 };
+/// `opened` = 열린 틈의 타 덤(장신구 "깨진 종 조각", 0127) — 드러났거나(치명타) 자세가 깨진 적에게만.
+fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, t: &Tuning) -> i32 {
+    let open = crit || en.broken > 0.0;
+    let d = base + if crit { t[P::ParryCrit] as i32 } else { 0 } + if open { opened } else { 0 };
     if en.broken > 0.0 {
         (d as f32 * t[P::PoiseBreakDamage]).ceil() as i32
     } else {
@@ -5095,10 +5121,24 @@ mod tests {
         assert!(w.enemies[i].broken > 0.0);
         let base = 2;
         let want = (base as f32 * t[P::PoiseBreakDamage]).ceil() as i32;
-        assert_eq!(hurt_by(&w.enemies[i], base, false, &t), want);
-        assert!(hurt_by(&w.enemies[i], base, true, &t) > want);
+        assert_eq!(hurt_by(&w.enemies[i], base, false, 0, &t), want);
+        assert!(hurt_by(&w.enemies[i], base, true, 0, &t) > want);
+        // 0127 깨진 종 조각: 열린 틈(깨짐·드러남)에만 +1 — 깨진 동안은 배율 앞에서 더한다.
+        let open = ((base + 1) as f32 * t[P::PoiseBreakDamage]).ceil() as i32;
+        assert_eq!(hurt_by(&w.enemies[i], base, false, 1, &t), open);
         w.enemies[i].broken = 0.0;
-        assert_eq!(hurt_by(&w.enemies[i], base, false, &t), base);
+        assert_eq!(hurt_by(&w.enemies[i], base, false, 0, &t), base);
+        assert_eq!(
+            hurt_by(&w.enemies[i], base, false, 1, &t),
+            base,
+            "closed: no bonus"
+        );
+        let crit = base + t[P::ParryCrit] as i32;
+        assert_eq!(
+            hurt_by(&w.enemies[i], base, true, 1, &t),
+            crit + 1,
+            "exposed: bonus"
+        );
         let before = w.enemies[i].poise;
         add_poise(&mut w.enemies[i], max, None, &t, &mut ev);
         assert_eq!(w.enemies[i].poise, before, "locked after a break");

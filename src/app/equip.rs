@@ -109,6 +109,7 @@ pub(super) fn stat_name(l: Line) -> &'static str {
         Line::Poise => s.stat_poise,
         Line::HeavyDmg => s.stat_heavy,
         Line::LightDmg => s.stat_light,
+        Line::OpenedDmg => s.stat_opened,
     }
 }
 
@@ -125,7 +126,8 @@ pub(super) fn stat_value(l: Line, v: f32) -> String {
         | Line::KillStamina
         | Line::StaminaMax
         | Line::HeavyDmg
-        | Line::LightDmg => format!("+{}", int()),
+        | Line::LightDmg
+        | Line::OpenedDmg => format!("+{}", int()),
         Line::AtkSpeed | Line::DodgeCost | Line::Ember | Line::StaminaRegen | Line::Poise => pct(),
         // 0.06 → "0.06초", 0 → "0초"(뒤 0은 뺀다 — 미리보기 줄이 짧게).
         Line::Parry => {

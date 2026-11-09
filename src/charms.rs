@@ -11,6 +11,10 @@ pub enum Id {
     Hunger,
     Hand,
     Pouch,
+    /// 떠난 마을(0127 C6): 꿰맨 천 · 물 받는 항아리(상자) · 깨진 종 조각(종지기 첫 승리).
+    Cloth,
+    Jar,
+    BellShard,
 }
 
 /// 낄 수 있는 칸 수.
@@ -26,7 +30,7 @@ pub struct Def {
 }
 
 /// 표 순서 = 보여 주는 순서.
-pub static TABLE: [Def; 6] = [
+pub static TABLE: [Def; 9] = [
     Def {
         id: Id::Shell,
         key: "shell",
@@ -48,6 +52,7 @@ pub static TABLE: [Def; 6] = [
             poise: 1.0,
             heavy_dmg: 0,
             light_dmg: 0,
+            opened_dmg: 0,
         },
     },
     Def {
@@ -71,6 +76,7 @@ pub static TABLE: [Def; 6] = [
             poise: 1.0,
             heavy_dmg: 0,
             light_dmg: 0,
+            opened_dmg: 0,
         },
     },
     Def {
@@ -94,6 +100,7 @@ pub static TABLE: [Def; 6] = [
             poise: 1.0,
             heavy_dmg: 0,
             light_dmg: 0,
+            opened_dmg: 0,
         },
     },
     Def {
@@ -117,6 +124,7 @@ pub static TABLE: [Def; 6] = [
             poise: 1.0,
             heavy_dmg: 0,
             light_dmg: 0,
+            opened_dmg: 0,
         },
     },
     Def {
@@ -128,9 +136,9 @@ pub static TABLE: [Def; 6] = [
             hp: 0,
             flask: 0,
             heal: 0,
-            dmg: 1,
+            dmg: 0,
             taken: 0,
-            atk_speed: 0.85,
+            atk_speed: 1.0,
             dodge_cost: 1.0,
             parry: 0.0,
             kill_stamina: 0.0,
@@ -138,8 +146,9 @@ pub static TABLE: [Def; 6] = [
             stamina_max: 0.0,
             stamina_regen: 1.0,
             poise: 1.0,
-            heavy_dmg: 0,
+            heavy_dmg: 1,
             light_dmg: 0,
+            opened_dmg: 0,
         },
     },
     Def {
@@ -163,6 +172,79 @@ pub static TABLE: [Def; 6] = [
             poise: 1.0,
             heavy_dmg: 0,
             light_dmg: 0,
+            opened_dmg: 0,
+        },
+    },
+    Def {
+        id: Id::Cloth,
+        key: "cloth",
+        name: |s: &Strings| s.charm_cloth,
+        desc: |s: &Strings| s.charm_cloth_d,
+        mods: Mods {
+            hp: 1,
+            flask: 0,
+            heal: 0,
+            dmg: 0,
+            taken: 0,
+            atk_speed: 1.0,
+            dodge_cost: 1.0,
+            parry: 0.0,
+            kill_stamina: 0.0,
+            ember: 1.0,
+            stamina_max: 0.0,
+            stamina_regen: 0.9,
+            poise: 1.0,
+            heavy_dmg: 0,
+            light_dmg: 0,
+            opened_dmg: 0,
+        },
+    },
+    Def {
+        id: Id::Jar,
+        key: "jar",
+        name: |s: &Strings| s.charm_jar,
+        desc: |s: &Strings| s.charm_jar_d,
+        mods: Mods {
+            hp: 0,
+            flask: -1,
+            heal: 1,
+            dmg: 0,
+            taken: 0,
+            atk_speed: 1.0,
+            dodge_cost: 1.0,
+            parry: 0.0,
+            kill_stamina: 0.0,
+            ember: 1.0,
+            stamina_max: 0.0,
+            stamina_regen: 1.0,
+            poise: 1.0,
+            heavy_dmg: 0,
+            light_dmg: 0,
+            opened_dmg: 0,
+        },
+    },
+    Def {
+        id: Id::BellShard,
+        key: "bellshard",
+        name: |s: &Strings| s.charm_bellshard,
+        desc: |s: &Strings| s.charm_bellshard_d,
+        mods: Mods {
+            hp: 0,
+            flask: 0,
+            heal: 0,
+            dmg: 0,
+            taken: 0,
+            atk_speed: 1.0,
+            dodge_cost: 1.0,
+            parry: 0.0,
+            kill_stamina: 0.0,
+            ember: 1.0,
+            stamina_max: 0.0,
+            stamina_regen: 1.0,
+            poise: 1.0,
+            heavy_dmg: 0,
+            light_dmg: 0,
+            opened_dmg: 1,
         },
     },
 ];
@@ -263,7 +345,14 @@ mod tests {
         assert!(feet.dodge_cost < 1.0 && feet.taken == 1);
         let hunger = Stats::compute(&[def(Id::Hunger).mods]);
         assert!(hunger.kill_stamina > 0.0 && hunger.flask == base.flask - 1);
+        // 무거운 손(0127, 0126 모의 — 평타 +1이 싸움 시간을 반으로 줄였다): 강타(패링 반격 포함)에만.
         let hand = Stats::compute(&[def(Id::Hand).mods]);
-        assert!(hand.dmg == 1 && hand.atk_speed < 1.0);
+        assert!(hand.heavy_dmg == 1 && hand.dmg == 0 && hand.atk_speed == 1.0);
+        // 떠난 마을(0127): 맞바꿈 둘 + 열린 틈.
+        let cloth = Stats::compute(&[def(Id::Cloth).mods]);
+        assert!(cloth.max_hp == base.max_hp + 1 && cloth.stamina_regen < 1.0);
+        let jar = Stats::compute(&[def(Id::Jar).mods]);
+        assert!(jar.heal == 1 && jar.flask == base.flask - 1);
+        assert_eq!(Stats::compute(&[def(Id::BellShard).mods]).opened_dmg, 1);
     }
 }

@@ -37,6 +37,8 @@ pub struct Mods {
     pub heavy_dmg: i32,
     /// 평타 피해 +(레벨 힘 5단) — 콤보·대시 공격만.
     pub light_dmg: i32,
+    /// 열린 틈의 타 피해 +(0127 "깨진 종 조각") — 패링으로 드러났거나 자세가 깨진 적을 칠 때만.
+    pub opened_dmg: i32,
 }
 
 impl Default for Mods {
@@ -57,6 +59,7 @@ impl Default for Mods {
             poise: 1.0,
             heavy_dmg: 0,
             light_dmg: 0,
+            opened_dmg: 0,
         }
     }
 }
@@ -80,6 +83,7 @@ pub struct Stats {
     pub poise: f32,
     pub heavy_dmg: i32,
     pub light_dmg: i32,
+    pub opened_dmg: i32,
 }
 
 /// 상한·하한(극단 조합을 막는다 — KB).
@@ -114,6 +118,7 @@ impl Stats {
             poise: 1.0,
             heavy_dmg: 0,
             light_dmg: 0,
+            opened_dmg: 0,
         };
         for m in mods {
             s.max_hp += m.hp;
@@ -131,6 +136,7 @@ impl Stats {
             s.poise *= m.poise;
             s.heavy_dmg += m.heavy_dmg;
             s.light_dmg += m.light_dmg;
+            s.opened_dmg += m.opened_dmg;
         }
         s.max_hp = s.max_hp.clamp(HP_RANGE.0, HP_RANGE.1);
         s.flask = s.flask.clamp(FLASK_RANGE.0, FLASK_RANGE.1);
@@ -147,6 +153,7 @@ impl Stats {
         s.poise = s.poise.max(0.0);
         s.heavy_dmg = s.heavy_dmg.max(0);
         s.light_dmg = s.light_dmg.max(0);
+        s.opened_dmg = s.opened_dmg.max(0);
         s
     }
 
@@ -200,9 +207,11 @@ pub enum Line {
     Poise,
     HeavyDmg,
     LightDmg,
+    /// 열린 틈의 타 피해(0127).
+    OpenedDmg,
 }
 
-pub const LINES: [Line; 15] = [
+pub const LINES: [Line; 16] = [
     Line::MaxHp,
     Line::Flask,
     Line::Heal,
@@ -211,6 +220,7 @@ pub const LINES: [Line; 15] = [
     Line::Dmg,
     Line::LightDmg,
     Line::HeavyDmg,
+    Line::OpenedDmg,
     Line::Poise,
     Line::Taken,
     Line::AtkSpeed,
@@ -246,6 +256,7 @@ impl Line {
             Line::Poise => s.poise,
             Line::HeavyDmg => s.heavy_dmg as f32,
             Line::LightDmg => s.light_dmg as f32,
+            Line::OpenedDmg => s.opened_dmg as f32,
         }
     }
 
@@ -361,13 +372,18 @@ mod tests {
         let shown: Vec<Line> = lines(&base, None).iter().map(|l| l.0).collect();
         // 공격 속도는 무기 숫자 줄(초)이 맡고, 배율은 장신구가 바꿀 때만(2026-11-07).
         assert_eq!(shown, vec![Line::MaxHp, Line::Flask]);
-        // 맞바꿈 장신구(피해 +1 · 공속 −15%): 둘 다 보이고 하나는 좋아짐, 하나는 나빠짐.
+        // 맞바꿈 장신구(꿰맨 천: 체력 +1 · 기력 회복 −10%, 0127): 둘 다 보이고 하나는 좋아짐, 하나는 나빠짐.
+        let cloth = Stats::compute(&[crate::charms::def(crate::charms::Id::Cloth).mods]);
+        let preview = lines(&base, Some(&cloth));
+        let hp = preview.iter().find(|l| l.0 == Line::MaxHp).unwrap();
+        assert_eq!(hp.2.unwrap().1, Change::Better);
+        let regen = preview.iter().find(|l| l.0 == Line::StaminaRegen).unwrap();
+        assert_eq!(regen.2.unwrap().1, Change::Worse);
+        // 무거운 손(0127): 강타 피해만 — 평타·공격 속도 줄은 보이지 않는다.
         let hand = Stats::compute(&[crate::charms::def(crate::charms::Id::Hand).mods]);
-        let preview = lines(&base, Some(&hand));
-        let dmg = preview.iter().find(|l| l.0 == Line::Dmg).unwrap();
-        assert_eq!(dmg.2.unwrap().1, Change::Better);
-        let spd = preview.iter().find(|l| l.0 == Line::AtkSpeed).unwrap();
-        assert_eq!(spd.2.unwrap().1, Change::Worse);
+        let shown: Vec<Line> = lines(&base, Some(&hand)).iter().map(|l| l.0).collect();
+        assert!(shown.contains(&Line::HeavyDmg));
+        assert!(!shown.contains(&Line::Dmg) && !shown.contains(&Line::AtkSpeed));
         // 작을수록 좋은 줄: 받는 피해가 늘면 나빠짐, 회피 기력이 줄면 좋아짐.
         let feet = Stats::compute(&[crate::charms::def(crate::charms::Id::Feet).mods]);
         assert_eq!(Line::Taken.change(&base, &feet), Change::Worse);

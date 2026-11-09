@@ -99,7 +99,13 @@ mod tests {
         assert!(!can_buy(cheapest - 1, &[], &g));
         assert!(can_buy(cheapest, &[], &g));
         // 상자·문지기에서 얻는 장신구는 팔지 않는다(얻는 곳이 겹치지 않게). 등껍질은 0117에서 가게로 옮겼다.
-        for id in [Charm::Ear, Charm::Hand] {
+        for id in [
+            Charm::Ear,
+            Charm::Hand,
+            Charm::Cloth,
+            Charm::Jar,
+            Charm::BellShard,
+        ] {
             assert!(SHOP.iter().all(|(w, _)| *w != Ware::Charm(id)));
         }
     }

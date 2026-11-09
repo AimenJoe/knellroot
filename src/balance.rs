@@ -74,6 +74,14 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     w.apply_stats(prog.stats(), true);
     w.tree = b.tree;
     let boss = w.spawn(kind, vec3(0.0, 0.0, -7.0));
+    // 체력 훑기(0127): `SIM_BOSS_HP=60`이면 보스 체력을 바꿔 잰다(자세 막대는 보스 고정값이라 그대로).
+    if let Some(hp) = std::env::var("SIM_BOSS_HP")
+        .ok()
+        .and_then(|v| v.parse().ok())
+    {
+        w.enemies[boss].max_hp = hp;
+        w.enemies[boss].hp = hp;
+    }
     let flask0 = w.player.flask;
     let (mut hp_seen, mut taken) = (w.player.hp, 0);
     // 이번 공격의 굴림(공격 번호 → 성공), 울림 고리는 고리마다.
@@ -293,6 +301,12 @@ pub fn builds() -> Vec<Build> {
         open: [0, r, 0],
         pin: None,
     };
+    let finds = || {
+        vec![
+            "sanctuary.lamp.1".to_string(),
+            "sanctuary.sip.1".to_string(),
+        ]
+    };
     vec![
         Build {
             name: "A bare (Lv0, no charm, sword)",
@@ -302,39 +316,29 @@ pub fn builds() -> Vec<Build> {
             tree: tree(0),
             weapon: W::Sword,
         },
+        // 첫 도착(0127): 잔불 ≈ 280 = 레벨 셋, 성소 탑의 귀 + 문지기의 손 + 마을 상자의 꿰맨 천, 등잔·한 모금, 마디 셋.
         Build {
-            name: "B first arrival (Lv3 life1/might2, Ear+Hand, lamp+sip, Riposte2)",
+            name: "B first arrival (Lv3 life1/might2, Ear+Hand+Cloth, lamp+sip, Riposte2)",
             level: Level {
                 life: 1,
                 stamina: 0,
                 might: 2,
             },
-            worn: vec![Charm::Ear, Charm::Hand],
-            finds: vec!["sanctuary.lamp.1".into(), "sanctuary.sip.1".into()],
+            worn: vec![Charm::Ear, Charm::Hand, Charm::Cloth],
+            finds: finds(),
             tree: tree(2),
             weapon: W::Sword,
         },
+        // 둘째 판 이후(문지기 핵 둘·마디 넷): 힘 3단(강타 +1).
         Build {
-            name: "B' first arrival without Hand (Lv3, Ear+Shell, lamp+sip, Riposte2)",
-            level: Level {
-                life: 1,
-                stamina: 0,
-                might: 2,
-            },
-            worn: vec![Charm::Ear, Charm::Shell],
-            finds: vec!["sanctuary.lamp.1".into(), "sanctuary.sip.1".into()],
-            tree: tree(2),
-            weapon: W::Sword,
-        },
-        Build {
-            name: "C thorough (Lv4 life2/might2, Ear+Hand+Shell, lamp+sip, Riposte4)",
+            name: "C later run (Lv5 life2/might3, Ear+Hand+Cloth, lamp+sip, Riposte4)",
             level: Level {
                 life: 2,
                 stamina: 0,
-                might: 2,
+                might: 3,
             },
-            worn: vec![Charm::Ear, Charm::Hand, Charm::Shell],
-            finds: vec!["sanctuary.lamp.1".into(), "sanctuary.sip.1".into()],
+            worn: vec![Charm::Ear, Charm::Hand, Charm::Cloth],
+            finds: finds(),
             tree: tree(4),
             weapon: W::Sword,
         },
