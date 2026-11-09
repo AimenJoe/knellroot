@@ -60,6 +60,10 @@ pub const STONES: Pair = (
     "둘째 지역 새긴 돌 곁에서(읽기)",
     "region 2 beside a carved stone (read)",
 );
+pub const CHEST: Pair = (
+    "둘째 지역 상자 곁에서(떨어진 아이템)",
+    "region 2 beside a chest (dropped loot)",
+);
 pub const STAGE_NOTE: Pair = (
     "이 슬롯의 장신구·잔불로 진짜 스테이지를 돈다. 아무것도 저장하지 않는다.",
     "the real stage with this slot's charms and embers; nothing is saved",
@@ -95,6 +99,7 @@ pub const PAIRS: &[Pair] = &[
     VILLAGE,
     RESIDENTS,
     STONES,
+    CHEST,
     STAGE_NOTE,
     LAB_START,
     LAB_NOTE,

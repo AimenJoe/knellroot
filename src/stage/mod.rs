@@ -490,6 +490,11 @@ pub fn elite_id(prefix: &str, nth: usize) -> String {
 
 /// 숨은 물건 곁(m) — 상자와 같다.
 pub const FIND_REACH: f32 = 1.8;
+/// 떨어진 아이템(0131): 상자에서 튀어나오는 거리(m), 튀어나와 내려앉는 초(그동안 줍지 못한다 — 렌더의 포물선과 같은 길이).
+pub const DROP_OUT: f32 = 1.3;
+pub const DROP_SETTLE: f32 = 0.45;
+/// 떨어지는 쪽: 방랑자 쪽에서 이만큼(도) 비껴.
+const DROP_SIDE: f32 = 65.0;
 
 /// 상자 곁(m)과, 든 장신구를 이미 가졌을 때 대신 주는 잔불.
 pub const CHEST_REACH: f32 = 1.8;
@@ -590,6 +595,11 @@ pub struct StageRun {
     pub chest_open: Vec<bool>,
     pub near_chest: Option<usize>,
     opened: Option<usize>,
+    /// 떨어진 아이템(0131, 사장 "디아블로식 — 상자를 열면 아이템이 떨어짐, 바로 습득되는 것이 아니라"): 연 상자 앞 바닥에 놓이고
+    /// 주워야 얻는다. (자리, 어느 상자, 떨어진 뒤 초). 곁의 것, 이번 틱에 주운 상자 번호(앱이 가져가 그 상자의 것을 준다·기록한다).
+    pub drops: Vec<(Vec3, usize, f32)>,
+    pub near_drop: Option<usize>,
+    looted: Option<usize>,
     /// 새긴 돌(0129): 자리, 곁의 돌, 이번 틱에 읽은 돌(앱이 가져간다).
     pub stones: Vec<Vec3>,
     pub near_stone: Option<usize>,
@@ -677,6 +687,9 @@ impl StageRun {
             chests: Vec::new(),
             chest_open: Vec::new(),
             near_chest: None,
+            drops: Vec::new(),
+            near_drop: None,
+            looted: None,
             stones: Vec::new(),
             near_stone: None,
             read: None,
@@ -1015,6 +1028,13 @@ impl StageRun {
             .stones
             .iter()
             .position(|s| vec2(s.x - pp.x, s.z - pp.z).length() <= STONE_REACH);
+        // 떨어진 아이템(0131): 튀어나온 뒤 잠깐(`DROP_SETTLE`)은 줍지 못한다 — 여는 누름이 곧바로 줍지 않게.
+        for d in &mut self.drops {
+            d.2 += dt;
+        }
+        self.near_drop = self.drops.iter().position(|(p, _, age)| {
+            *age >= DROP_SETTLE && vec2(p.x - pp.x, p.z - pp.z).length() <= FIND_REACH
+        });
         // 숨은 물건(0105): 상자와 같은 꼴 — 곁이면 점프 버튼이 줍기.
         self.near_find = self.finds.iter().enumerate().position(|(i, (p, _, _))| {
             !self.found[i] && vec2(p.x - pp.x, p.z - pp.z).length() <= FIND_REACH
@@ -1048,18 +1068,29 @@ impl StageRun {
         }
         // 점프 버튼이 다음 틱부터 쉬기·열기·줍기가 되는 자리(0048): 곁이고(쉬기는 안전할 때만) — 아니면 그대로 점프.
         w.interact_here = (self.near_rest.is_some() && self.rest_safe)
+            || self.near_drop.is_some()
             || self.near_chest.is_some()
             || self.near_find.is_some()
             || self.near_lever
             || self.near_resident.is_some()
             || self.near_stone.is_some();
-        // 같은 버튼: 줍기 > 열기 > 당기기 > 쉬기(HUD 안내와 같은 차례).
-        if let (Some(i), true) = (self.near_find, w.interact) {
+        // 같은 버튼: 줍기(떨어진 것 · 숨은 물건) > 열기 > 당기기 > 쉬기(HUD 안내와 같은 차례).
+        if let (Some(k), true) = (self.near_drop, w.interact) {
+            let (_, chest, _) = self.drops.remove(k);
+            self.looted = Some(chest);
+            self.near_drop = None;
+        } else if let (Some(i), true) = (self.near_find, w.interact) {
             self.found[i] = true;
             self.picked = Some(i);
         } else if let (Some(i), true) = (self.near_chest, w.interact) {
             self.chest_open[i] = true;
             self.opened = Some(i);
+            // 상자 앞(방랑자 쪽)으로 튀어나와 떨어진다(0131) — 기록은 주울 때.
+            let c = self.chests[i];
+            // 방랑자 쪽에서 옆으로 비껴(발밑에 떨어지면 몸에 가려 빛기둥이 안 보였다, 헤드리스).
+            let to = vec3(pp.x - c.x, 0.0, pp.z - c.z).normalize_or(Vec3::Z);
+            let side = Quat::from_rotation_y(DROP_SIDE.to_radians()) * to;
+            self.drops.push((c + side * DROP_OUT, i, 0.0));
         } else if let (true, true) = (self.near_lever, w.interact) {
             self.gate_opened = true;
             self.gate_new = true;
@@ -1301,9 +1332,14 @@ impl StageRun {
         std::mem::take(&mut self.rested)
     }
 
-    /// 이번 틱에 연 상자(0064 M3) — 앱이 한 번 가져가 장신구·잔불을 준다.
+    /// 이번 틱에 연 상자(0064 M3) — 앱이 한 번 가져가 여는 소리를 낸다(0131부터 얻는 것은 주울 때 — `take_looted`).
     pub fn take_opened(&mut self) -> Option<usize> {
         self.opened.take()
+    }
+
+    /// 이번 틱에 주운 떨어진 아이템의 상자 번호(0131) — 앱이 그 상자의 것을 주고 기록한다.
+    pub fn take_looted(&mut self) -> Option<usize> {
+        self.looted.take()
     }
 
     /// 이번 틱에 주운 숨은 물건(0105): (종류, 기록 이름) — 앱이 한 번 가져가 기록·능력치에.
@@ -2060,6 +2096,29 @@ mod tests {
         run.tick(&mut w, 0.016);
         assert_eq!(run.take_opened(), None, "an open chest stays open");
         assert_eq!(run.near_chest, None);
+        // 0131: 열면 얻는 것이 아니라 상자 앞 바닥에 떨어진다 — 내려앉기 전엔 못 줍고, 주우면 그 상자의 것.
+        assert_eq!(run.drops.len(), 1);
+        assert!(
+            run.drops[0].0.distance(c) > 1.0,
+            "out in front of the chest"
+        );
+        assert_eq!(run.take_looted(), None, "not taken by opening");
+        assert!(
+            run.drops[0].0.distance(w.player.pos) > 0.6,
+            "not under the wanderer's feet"
+        );
+        w.player.pos = run.drops[0].0;
+        w.interact = false;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.near_drop, None, "still flying");
+        for _ in 0..40 {
+            run.tick(&mut w, 0.016);
+        }
+        assert_eq!(run.near_drop, Some(0));
+        w.interact = true;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.take_looted(), Some(1));
+        assert!(run.drops.is_empty());
         // 기록에서 연 상자는 새 판에서도 열려 있다.
         let (mut run, _) = StageRun::start(&sanctuary::DEF);
         run.set_opened(&[0, 9]);

@@ -1364,12 +1364,55 @@ impl Renderer {
             beam(u, 0.9, 4.0, with_a(GUIDE_COLOR, 0.06 + 0.04 * pulse));
             fl.ring(u, 1.3, 0.0, 360.0, with_a(GUIDE_COLOR, 0.45));
         }
+        // 떨어진 아이템(0131): 상자에서 포물선으로 튀어나와 내려앉고, 내려앉은 뒤 천천히 돌며 떠 있는 흰 마름모 + 흰 빛기둥.
+        for (j, (p, chest, age)) in run.drops.iter().enumerate() {
+            let k = (age / crate::stage::DROP_SETTLE).clamp(0.0, 1.0);
+            let from = run.chests.get(*chest).copied().unwrap_or(*p) + Vec3::Y * 0.7;
+            let to = *p + Vec3::Y * 0.45;
+            let arc = from.lerp(to, k) + Vec3::Y * (4.0 * k * (1.0 - k)) * 1.0;
+            let bob = if k >= 1.0 {
+                0.06 * (w.time * 2.4 + j as f32).sin()
+            } else {
+                0.0
+            };
+            let c = arc + Vec3::Y * bob;
+            fl.shadow(*p, 0.22);
+            let rot = Quat::from_rotation_y(w.time * 1.4 + j as f32)
+                * Quat::from_rotation_z(std::f32::consts::FRAC_PI_4)
+                * Quat::from_rotation_x(std::f32::consts::FRAC_PI_4);
+            shaded_box_rot(c, Vec3::splat(0.2), LOOT_CHEST, 1.0, rot, c);
+            shaded_box_rot(c, Vec3::splat(0.32), with_a(LOOT_CHEST, 0.25), 1.0, rot, c);
+            if k >= 1.0 {
+                loot_beam(
+                    &fl,
+                    *p,
+                    LOOT_CHEST,
+                    loot_fade(*p, w.player.pos),
+                    w.time,
+                    7.0 + j as f32,
+                );
+            }
+        }
         // 숨은 물건(0105): 흔적 자리의 작은 빛 — 등잔 +1은 금빛, 한 모금 +1은 민트(0037 생명 색). 살짝 떠서 숨 쉬고 발밑에 옅은 테.
         // 생김새는 성소의 종과 닮지 않게(lore — 울리는 종은 보이지 않는다): 둥근 덩어리 하나.
         for (i, (p, kind, _)) in run.finds.iter().enumerate() {
             if run.found.get(i).copied().unwrap_or(true) {
                 continue;
             }
+            // 떨어진 아이템의 빛기둥(0131): 종류 색, 가까이 와야 서서히 — 뒤지는 맛은 남긴다.
+            let beam_col = match kind {
+                crate::stage::Find::Lamp => LOOT_LAMP,
+                crate::stage::Find::Sip => LOOT_SIP,
+                crate::stage::Find::Shard => LOOT_SHARD,
+            };
+            loot_beam(
+                &fl,
+                *p,
+                beam_col,
+                loot_fade(*p, w.player.pos),
+                w.time,
+                i as f32,
+            );
             let k = 0.5 + 0.5 * (w.time * 2.2 + i as f32 * 1.7).sin();
             // 종소리 조각(0106): 가늘고 긴 크림빛 조각이 천천히 돌며 떤다 — 덩어리(등잔·한 모금)와 모양부터 다르게, 종 꼴은 아니게.
             if *kind == crate::stage::Find::Shard {
@@ -3607,6 +3650,43 @@ fn shaft(a: Vec3, b: Vec3, ra: f32, rb: f32, ca: Color, cb: Color) {
         indices,
         texture: None,
     });
+}
+
+/// 떨어진 아이템의 빛기둥 색(0131 — 종류마다, 갈 곳의 호박빛 `GUIDE_COLOR`는 쓰지 않는다: KB wayfinding "그 색 = 갈 길").
+const LOOT_LAMP: Color = Color::new(0.98, 0.9, 0.62, 1.0);
+const LOOT_SIP: Color = Color::new(0.62, 0.92, 0.8, 1.0);
+const LOOT_SHARD: Color = Color::new(0.96, 0.94, 0.86, 1.0);
+const LOOT_CHEST: Color = Color::new(0.9, 0.93, 1.0, 1.0);
+/// 빛기둥이 다 보이는 거리·사라지는 거리(m) — 가까이 와야 서서히(사장 2026-11-09 "가까이서만 서서히").
+const LOOT_NEAR: f32 = 10.0;
+const LOOT_FAR: f32 = 14.0;
+
+/// 방랑자와의 거리로 빛기둥의 세기 0..1.
+fn loot_fade(at: Vec3, player: Vec3) -> f32 {
+    let d = vec2(at.x - player.x, at.z - player.z).length();
+    ((LOOT_FAR - d) / (LOOT_FAR - LOOT_NEAR)).clamp(0.0, 1.0)
+}
+
+/// 떨어진 아이템의 빛기둥(0131, 디아블로식 — 갈 곳 기둥보다 훨씬 가늘고 낮게): 안쪽 밝은 심 + 바깥 옅은 껍질 + 위로 오르는 반짝임 셋 + 발밑 테.
+fn loot_beam(fl: &Drape, p: Vec3, col: Color, fade: f32, time: f32, seed: f32) {
+    if fade <= 0.01 {
+        return;
+    }
+    let pulse = 0.85 + 0.15 * (time * 2.0 + seed).sin();
+    beam(p, 0.1, 2.6, with_a(col, 0.55 * fade * pulse));
+    beam(p, 0.26, 2.0, with_a(col, 0.16 * fade));
+    fl.ring(p, 0.42, 0.0, 360.0, with_a(col, 0.45 * fade));
+    for k in 0..3 {
+        let u = (time * 0.55 + k as f32 / 3.0 + seed * 0.37).fract();
+        let a = (1.0 - u) * fade;
+        let x = (seed * 1.3 + k as f32 * 2.1 + time).sin() * 0.08;
+        draw_cube(
+            p + vec3(x, 0.2 + u * 2.3, -x),
+            Vec3::splat(0.05),
+            None,
+            with_a(col, a),
+        );
+    }
 }
 
 fn beam(c: Vec3, r: f32, h: f32, col: Color) {
