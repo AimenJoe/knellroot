@@ -13,3 +13,4 @@ AI로 만든 그림이다(숨기지 않는다). 프롬프트는 `docs/art/gemini
 | `shellback_v2_sheet.png` | 2026-11-09 | 등딱지짐승 v2 셋(왼쪽 = v1 꼴, 가운데·오른쪽 = 뿌리가 솟은 판) — 1024×342 묶음이라 Meshy에는 고른 한 장의 원본 크기를 쓴다. 가운데 20·50px 확인 `shellback_v2_mid_tiny.png` |
 | `pod_v1_front.png` | 2026-11-09 | 꼬투리 3/4 앞, 웅크려 뛸 채비(프롬프트 `docs/art/gemini-prompts-0132.md` 2) — 키 0.9m라 14·36px 확인 `pod_v1_front_tiny.png` |
 | `bellkeeper_v1_front.png` | 2026-11-09 | 깨진 종지기 정면(프롬프트 `docs/art/gemini-prompts-0132.md` 3) — 종은 캐릭터의 **왼손**(그림의 오른쪽)에 들렸다(프롬프트는 오른손). 60·150px 확인 `bellkeeper_v1_front_tiny.png` |
+| `hearth_v1_front.png` | 2026-11-09 | 불 지키는 주민(V01, 늙은 오소리) 정면 A자세(프롬프트 `docs/art/gemini-prompts-0132.md` 4) — 20·40px 확인 `hearth_v1_front_tiny.png` |
