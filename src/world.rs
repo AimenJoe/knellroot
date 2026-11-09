@@ -11,8 +11,9 @@ use crate::tuning::{
     BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID, CAST_CHARGES,
     DASH_ATTACK_LATE, ELITE_EMBERS, ELITE_HARD_POISE, ELITE_LINGER_DELAY, ELITE_LINGER_RADIUS,
     FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, LOCK_HANDOFF, P,
-    PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RUN_SPEED_X, RUN_STAMINA, STAMINA_DENIED_SHOW,
-    STUN_CHAIN_GRACE, STUN_CHAIN_MAX, TICK_DT,
+    PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RUN_SPEED_X, RUN_STAMINA, SHARD_R, SHARD_RANGE,
+    SHARD_REFLECT_DAMAGE, SHARD_REFLECT_SPEED, SHARD_SPEED, STAMINA_DENIED_SHOW, STUN_CHAIN_GRACE,
+    STUN_CHAIN_MAX, TICK_DT,
 };
 use crate::tuning::{ALERT_RADIUS, HEAR_RANGE, LEASH_RANGE, SIGHT_DY, SIGHT_RANGE};
 use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG, RIPOSTE_WINDOW};
@@ -258,6 +259,17 @@ pub struct Blast {
 pub struct Linger {
     pub pos: Vec3,
     pub t: f32,
+}
+
+/// 깨진 종지기의 종 조각(0125): 곧게 날아간다 — 앞에서 패링하면 종지기 쪽으로 되돌아가(`reflected`) 종지기를 깎는다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shard {
+    pub pos: Vec3,
+    pub dir: Vec3,
+    pub went: f32,
+    pub reflected: bool,
+    /// 던진 종지기(적 번호).
+    pub from: usize,
 }
 
 /// 미리 받아 두는 다음 행동(0057).
@@ -536,6 +548,8 @@ pub struct World {
     pub drops: Vec<crate::ember::Ember>,
     /// 남는 엘리트의 고리(0112).
     pub lingers: Vec<Linger>,
+    /// 날아가는 종 조각(0125).
+    pub shards: Vec<Shard>,
     /// 방랑자만 밀어내는 둥근 몸(0122 — 주민): 적·탄·공격은 지나간다(싸움에 끼지 않는다). (가운데, 반지름).
     pub bodies: Vec<(Vec3, f32)>,
     /// 합친 능력치(0064 M3 — 장신구·성장). 앱이 `apply_stats`로 넣는다.
@@ -664,6 +678,7 @@ impl World {
             embers: 0,
             drops: Vec::new(),
             lingers: Vec::new(),
+            shards: Vec::new(),
             bodies: Vec::new(),
             stats: crate::stats::Stats::default(),
             tree: crate::progression::Tree::default(),
@@ -2091,6 +2106,8 @@ impl World {
         // 맞힌 적 가운데 가장 높은 구역 등급(0112 — 등급 3부터 한 대 2).
         let mut hurt_tier: u8 = 1;
         let mut parried: Vec<usize> = Vec::new();
+        // 이번 틱에 던진 종 조각(0125 — 적을 도는 동안은 목록을 빌릴 수 없어 모았다가 넣는다).
+        let mut thrown: Vec<Shard> = Vec::new();
         let mut blocked = false;
         let stand = self.tree.has(Cell::OneWhoStands)
             && self.player.parry_chain_left > 0.0
@@ -2131,7 +2148,29 @@ impl World {
             }
             // 바닥을 훑는 파동은 높이 떠 있으면 넘는다(0027) — 높은 단 위도 마찬가지(0043).
             let above = body - en.pos.y;
-            let jumped = en.atk == Atk::Wave && above > t[P::JumpClear];
+            // 울림 고리(0125)도 바닥을 훑는다 — 뛰면 넘는다.
+            let jumped = matches!(en.atk, Atk::Wave | Atk::Toll) && above > t[P::JumpClear];
+            // 종 조각(0125): 플레이어 쪽 가운데로 부채꼴(가슴 높이).
+            if out.shards > 0 {
+                let aim = vec3(p.x - en.pos.x, 0.0, p.z - en.pos.z).normalize_or(en.facing_dir());
+                let n = out.shards as usize;
+                let spread = en.def().arc.to_radians();
+                for k in 0..n {
+                    let f = if n == 1 {
+                        0.0
+                    } else {
+                        k as f32 / (n - 1) as f32 - 0.5
+                    };
+                    let dir = Quat::from_rotation_y(f * spread) * aim;
+                    thrown.push(Shard {
+                        pos: en.pos + dir * (en.radius + 0.2) + Vec3::Y * 1.1,
+                        dir,
+                        went: 0.0,
+                        reflected: false,
+                        from: i,
+                    });
+                }
+            }
             let reach = above.abs() <= HIT_DY;
             if out.hit && !jumped && reach {
                 if parrying && en.parryable() && in_front(en.pos) {
@@ -2148,6 +2187,61 @@ impl World {
                 ev.push(Event::Rouse {
                     at: en.pos + Vec3::Y * en.height * 0.6,
                 });
+            }
+        }
+        // 종 조각(0125): 날아가 플레이어에 닿으면 — 앞에서 패링 중이면 되돌아가고, 아니면 맞는다. 되돌아간 조각은 종지기를 깎는다.
+        // 던진 종지기가 쓰러지면 날던 조각은 사라진다(KB ranged-boss — 쓰러진 뒤에 맞지 않게).
+        self.shards.append(&mut thrown);
+        let mut shard_hits: Vec<(usize, Vec3)> = Vec::new();
+        self.shards.retain_mut(|s| {
+            let alive = self.enemies.get(s.from).is_some_and(|e| e.alive());
+            if !alive {
+                return false;
+            }
+            let speed = SHARD_SPEED
+                * if s.reflected {
+                    SHARD_REFLECT_SPEED
+                } else {
+                    1.0
+                };
+            s.pos += s.dir * speed * dt;
+            s.went += speed * dt;
+            if s.went > SHARD_RANGE {
+                return false;
+            }
+            if s.reflected {
+                let b = &self.enemies[s.from];
+                let d = vec2(b.pos.x - s.pos.x, b.pos.z - s.pos.z).length();
+                if d <= b.radius + SHARD_R {
+                    shard_hits.push((s.from, s.pos));
+                    return false;
+                }
+                return true;
+            }
+            let d = vec2(p.x - s.pos.x, p.z - s.pos.z).length();
+            if d <= SHARD_R + PLAYER_RADIUS && (s.pos.y - body - 1.0).abs() <= HIT_DY + 0.6 {
+                if parrying && in_front(s.pos - s.dir) {
+                    let b = self.enemies[s.from].pos;
+                    s.dir = vec3(b.x - s.pos.x, 0.0, b.z - s.pos.z).normalize_or(-s.dir);
+                    s.reflected = true;
+                    s.went = 0.0;
+                    ev.push(Event::Parry { at: s.pos });
+                    return true;
+                }
+                hurt_player.get_or_insert(s.pos);
+                return false;
+            }
+            true
+        });
+        for (i, at) in shard_hits {
+            let en = &mut self.enemies[i];
+            en.hp -= SHARD_REFLECT_DAMAGE;
+            en.hurt = 0.15;
+            ev.push(Event::Hit { at });
+            if en.hp <= 0 {
+                en.state = EState::Dead;
+                self.kills += 1;
+                ev.push(Event::EnemyDown { at: en.pos });
             }
         }
         // 남는 엘리트의 고리(0112): 다 차면 둘레를 친다 — 바닥을 훑는 것이라 높이 뛰면 넘는다(뿌리 파동과 같다), 패링은 못 한다.
@@ -3828,6 +3922,116 @@ mod tests {
         w.enemies[s].hurt = 0.15;
         w.step(&Actions::default(), &t);
         assert_eq!(w.enemies[s].state, EState::Chase, "struck: fights");
+    }
+
+    /// 0125: 울림 고리는 고리마다 한 번씩 친다(반 아래면 하나 더) — 뛰면 넘고, 고리가 닿지 않는 멀리에서는 맞지 않는다.
+    #[test]
+    fn toll_rings_hit_once_each_and_a_jump_clears_them() {
+        let t = Tuning::default();
+        let run = |dist: f32, jump: bool, roused: bool| -> i32 {
+            let mut w = World::new("test", 40.0);
+            let b = w.spawn(Kind::Bellkeeper, vec3(0.0, 0.0, -dist));
+            w.enemies[b].roused = roused;
+            w.enemies[b].atk = Atk::Toll;
+            w.enemies[b].state = EState::Wave { t: 0.0 };
+            w.player.hp = 99;
+            let hp = w.player.hp;
+            for _ in 0..240 {
+                w.player.hurt = 0.0;
+                w.player.state = PState::Idle;
+                if jump {
+                    w.player.air = 2.0;
+                }
+                w.step(&Actions::default(), &t);
+                if !matches!(w.enemies[b].state, EState::Wave { .. }) {
+                    w.enemies[b].state = EState::Recover { t: -1000.0 };
+                }
+            }
+            hp - w.player.hp
+        };
+        assert_eq!(run(3.0, false, false), 2, "two rings, one hit each");
+        assert_eq!(run(3.0, false, true), 3, "roused: a third ring");
+        assert_eq!(run(3.0, true, false), 0, "jumping clears every ring");
+        assert_eq!(run(12.0, false, false), 0, "beyond the rings' reach");
+    }
+
+    /// 0125: 종 조각은 부채꼴(셋, 반 아래 다섯) — 앞에서 패링하면 종지기에게 되돌아가 깎고, 그냥 맞으면 아프다.
+    #[test]
+    fn a_parried_shard_flies_back_and_cuts_the_bellkeeper() {
+        let t = Tuning::default();
+        let shot = |w: &mut World, b: usize| {
+            w.shards.push(Shard {
+                pos: vec3(0.0, 1.1, -1.6),
+                dir: vec3(0.0, 0.0, 1.0),
+                went: 0.0,
+                reflected: false,
+                from: b,
+            });
+        };
+        // 부채꼴: 휘두르는 첫 틱에 조각 수만큼.
+        let mut w = World::new("test", 40.0);
+        let b = w.spawn(Kind::Bellkeeper, vec3(0.0, 0.0, -8.0));
+        w.enemies[b].atk = Atk::Shards;
+        w.enemies[b].state = EState::Swing { t: 0.0 };
+        w.step(&Actions::default(), &t);
+        assert_eq!(w.shards.len(), 3);
+        let mut w = World::new("test", 40.0);
+        let b = w.spawn(Kind::Bellkeeper, vec3(0.0, 0.0, -8.0));
+        w.enemies[b].roused = true;
+        w.enemies[b].atk = Atk::Shards;
+        w.enemies[b].state = EState::Swing { t: 0.0 };
+        w.step(&Actions::default(), &t);
+        assert_eq!(w.shards.len(), 5, "roused: two more");
+
+        // 패링 → 되받아치기.
+        let mut w = World::new("test", 40.0);
+        let b = w.spawn(Kind::Bellkeeper, vec3(0.0, 0.0, -8.0));
+        idle(&mut w);
+        let hp = w.enemies[b].hp;
+        shot(&mut w, b);
+        w.player.state = PState::Parry { t: 0.0 };
+        let mut parried = false;
+        for _ in 0..90 {
+            let ev = w.step(&Actions::default(), &t);
+            parried |= ev.iter().any(|e| matches!(e, Event::Parry { .. }));
+            idle(&mut w);
+        }
+        assert!(parried, "the parry turned it");
+        assert_eq!(w.player.hp, w.player.max_hp, "unhurt");
+        assert_eq!(w.enemies[b].hp, hp - crate::tuning::SHARD_REFLECT_DAMAGE);
+        assert!(w.shards.is_empty());
+
+        // 패링 없이: 맞는다.
+        let mut w = World::new("test", 40.0);
+        let b = w.spawn(Kind::Bellkeeper, vec3(0.0, 0.0, -8.0));
+        idle(&mut w);
+        let hp = w.player.hp;
+        shot(&mut w, b);
+        for _ in 0..30 {
+            w.step(&Actions::default(), &t);
+            idle(&mut w);
+        }
+        assert_eq!(w.player.hp, hp - 1);
+        assert!(w.shards.is_empty());
+    }
+
+    /// 0125(KB ranged-boss-for-melee-player): 종지기가 쓰러지면 날던 조각도 사라진다 — 이긴 뒤에 맞지 않게.
+    #[test]
+    fn shards_vanish_when_the_bellkeeper_falls() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 40.0);
+        let b = w.spawn(Kind::Bellkeeper, vec3(0.0, 0.0, -8.0));
+        w.enemies[b].atk = Atk::Shards;
+        w.enemies[b].state = EState::Swing { t: 0.0 };
+        w.step(&Actions::default(), &t);
+        assert!(!w.shards.is_empty());
+        w.enemies[b].state = EState::Dead;
+        let hp = w.player.hp;
+        for _ in 0..60 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(w.shards.is_empty());
+        assert_eq!(w.player.hp, hp);
     }
 
     fn press(t: &Tuning, w: &mut World, a: Actions, ticks: usize) -> Vec<Event> {

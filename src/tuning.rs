@@ -171,6 +171,15 @@ pub const TIERS: [Tier; 2] = [
         embers: 1.3,
     },
 ];
+/// 깨진 종지기(0125): 울림 고리 사이(m), 종 조각 빠르기(m/s)·날아가는 거리(m)·맞는 반지름(m)·되돌아가 종지기를 깎는 피해·
+/// 되받아칠 때 빨라지는 배, 조각 부채꼴 예고의 길이(m).
+pub const TOLL_GAP: f32 = 2.6;
+pub const SHARD_SPEED: f32 = 9.0;
+pub const SHARD_RANGE: f32 = 14.0;
+pub const SHARD_R: f32 = 0.35;
+pub const SHARD_REFLECT_DAMAGE: i32 = 3;
+pub const SHARD_REFLECT_SPEED: f32 = 1.4;
+pub const SHARD_SHOW: f32 = 7.0;
 /// 청소자(0120): 싸움이 없을 때 이 초마다 체력 1을 먹는다.
 pub const EAT_TIME: f32 = 2.5;
 /// 등딱지(0120): 앞을 친 평타가 튕기면 방랑자가 튀는 초·뒤로 밀리는 빠르기(m/s). 패링당한 것보다 짧게.

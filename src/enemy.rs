@@ -45,6 +45,10 @@ pub enum Atk {
     Wave,
     /// 바닥에 심기(꼬투리, 0120): 예고를 시작할 때의 플레이어 자리(`plant_at`)에 원판 — 끝 = 판정.
     Plant,
+    /// 울림 고리(깨진 종지기, 0125): 땅을 쳐 고리가 여러 겹 퍼진다(사이 `TOLL_GAP`) — 사이에 서거나 뛰어넘는다, 받지 못한다.
+    Toll,
+    /// 종 조각 부채꼴(깨진 종지기, 0125): 예고 끝에 조각을 던진다(월드의 탄) — 패링하면 되돌아간다.
+    Shards,
 }
 
 /// 바닥 예고 모양(렌더가 그린다).
@@ -109,6 +113,8 @@ pub struct Enemy {
     pub atk_count: u32,
     /// 체력 반 아래로 깨어났다(문지기 — 핵이 밝아지고 빨라진다).
     pub roused: bool,
+    /// 이번 고리들 가운데 이미 맞힌 것(울림 고리 0125 — 고리마다 한 번).
+    pub rings_hit: u8,
     /// 이번 돌진·파동이 이미 맞혔다(한 번만).
     pub landed: bool,
     pub hurt: f32,
@@ -210,6 +216,8 @@ pub struct Out {
     pub hit: bool,
     /// 이번 틱에 체력 반 아래로 깨어났다.
     pub roused: bool,
+    /// 이번 틱에 던진 종 조각 수(0125 — 월드가 부채꼴로 날린다).
+    pub shards: u8,
 }
 
 impl Enemy {
@@ -230,6 +238,7 @@ impl Enemy {
             atk_count: 0,
             roused: false,
             landed: false,
+            rings_hit: 0,
             hurt: 0.0,
             knock: Vec3::ZERO,
             hit_by: 0,
@@ -351,7 +360,20 @@ impl Enemy {
 
     /// 패링으로 튕길 수 있는 공격인가(0025). 퍼지는 뿌리 파동은 못 받는다 — 피해야 한다(예고 고리 가운데 X, nail 0187).
     pub fn parryable(&self) -> bool {
-        !matches!(self.atk, Atk::Wave | Atk::Plant)
+        !matches!(self.atk, Atk::Wave | Atk::Plant | Atk::Toll)
+    }
+
+    /// 이번 공격의 고리 겹 수(뿌리 파동 1, 울림 고리 `rings` — 체력 반 아래 +1).
+    pub fn ring_count(&self) -> u8 {
+        match self.atk {
+            Atk::Toll => self.def().rings + self.roused as u8,
+            _ => 1,
+        }
+    }
+
+    /// 이번에 던질 종 조각 수(체력 반 아래 +2).
+    pub fn shard_count(&self) -> u8 {
+        self.def().shards + 2 * self.roused as u8
     }
 
     /// 앞을 막나(등딱지, 0120): `from` = 적에게서 친 쪽으로의 방향. 바라보는 쪽 `guard_arc` 안이고, 휘청·자세가 깨진 동안이 아니면.
@@ -378,7 +400,8 @@ impl Enemy {
                 Atk::Smash | Atk::Slam => d.tele,
                 Atk::Charge => d.charge_tele,
                 Atk::Wave => d.wave_tele,
-                Atk::Plant => d.tele,
+                Atk::Plant | Atk::Shards => d.tele,
+                Atk::Toll => d.wave_tele,
             }
     }
 
@@ -407,6 +430,12 @@ impl Enemy {
             Atk::Wave => TeleShape::Ring { r: d.wave_radius },
             // 심은 원판 = 플레이어 가운데가 들어가면 맞는 곳.
             Atk::Plant => TeleShape::Disc { r: d.plant_r },
+            Atk::Toll => TeleShape::Ring { r: d.wave_radius },
+            // 조각이 나가는 부채꼴(되받아칠 수 있는 것 = 띠·부채꼴 모양, 0187 — 피할 것은 고리).
+            Atk::Shards => TeleShape::Sector {
+                r: crate::tuning::SHARD_SHOW,
+                arc: d.arc,
+            },
         }
     }
 
@@ -461,11 +490,14 @@ impl Enemy {
         }
     }
 
-    /// 퍼지는 파동의 지금 반지름(파동 중일 때).
-    pub fn wave_front(&self) -> Option<f32> {
+    /// 퍼지는 고리들의 지금 반지름(뿌리 파동 하나, 울림 고리 여럿 — 뒤 고리는 `TOLL_GAP`만큼 늦다). 아직 안 나온 고리는 없다.
+    pub fn wave_fronts(&self) -> Vec<f32> {
         match self.state {
-            EState::Wave { t } => Some(t * self.def().wave_speed),
-            _ => None,
+            EState::Wave { t } => (0..self.ring_count())
+                .map(|k| t * self.def().wave_speed - k as f32 * crate::tuning::TOLL_GAP)
+                .filter(|&r| r > 0.0 && r <= self.def().wave_radius)
+                .collect(),
+            _ => Vec::new(),
         }
     }
 
@@ -486,6 +518,7 @@ impl Enemy {
         self.atk = atk;
         self.atk_count += 1;
         self.landed = false;
+        self.rings_hit = 0;
         self.charge_len = d.charge_speed * d.charge_time;
         self.state = EState::Tele { t: 0.0 };
     }
@@ -500,6 +533,25 @@ impl Enemy {
                     Some(Atk::Smash)
                 } else if dist <= d.charge_range && dist > 2.5 {
                     Some(Atk::Charge)
+                } else {
+                    None
+                }
+            }
+            // 깨진 종지기(0125): 가까우면 울림 고리, 멀면 조각과 돌진을 번갈아.
+            Behavior::Bellkeeper => {
+                // 붙어 있으면 울림 고리와 종 휘두르기(앞 부채꼴 — 옆으로 비키면 빈다)를 번갈아: 고리만 이어지면 뛰기만 하게 된다(0125 헤드리스).
+                if dist <= d.reach {
+                    Some(if self.atk == Atk::Toll {
+                        Atk::Smash
+                    } else {
+                        Atk::Toll
+                    })
+                } else if dist <= d.charge_range {
+                    Some(if self.atk_count.is_multiple_of(2) {
+                        Atk::Shards
+                    } else {
+                        Atk::Charge
+                    })
                 } else {
                     None
                 }
@@ -639,13 +691,27 @@ impl Enemy {
                     EState::Tele { t: e + dt }
                 } else {
                     match self.atk {
-                        Atk::Smash | Atk::Slam | Atk::Plant => EState::Swing { t: 0.0 },
+                        Atk::Smash | Atk::Slam | Atk::Plant | Atk::Shards => {
+                            EState::Swing { t: 0.0 }
+                        }
+                        Atk::Toll => EState::Wave { t: 0.0 },
                         Atk::Charge => EState::Charge {
                             t: 0.0,
                             dir: self.facing_dir(),
                         },
                         Atk::Wave => EState::Wave { t: 0.0 },
                     }
+                };
+            }
+            EState::Swing { t: e } if self.atk == Atk::Shards => {
+                // 종 조각(0125): 휘두르는 첫 틱에 던진다(탄은 월드가 날린다).
+                if e == 0.0 {
+                    out.shards = self.shard_count();
+                }
+                self.state = if e + dt >= 0.25 {
+                    self.after_attack()
+                } else {
+                    EState::Swing { t: e + dt }
                 };
             }
             EState::Swing { t: e } if self.atk == Atk::Plant => {
@@ -706,12 +772,22 @@ impl Enemy {
                 };
             }
             EState::Wave { t: e } => {
-                let front = (e + dt) * d.wave_speed;
-                if !self.landed && (dist - front).abs() <= 0.7 {
-                    self.landed = true;
-                    out.hit = true;
+                // 고리마다 한 번(울림 고리는 여럿 — 뒤 고리는 `TOLL_GAP`만큼 늦다, 0125). 마지막 고리가 끝까지 가면 쉰다.
+                let n = self.ring_count();
+                let lead = (e + dt) * d.wave_speed;
+                for k in 0..n {
+                    let front = lead - k as f32 * crate::tuning::TOLL_GAP;
+                    if front > 0.0
+                        && front <= d.wave_radius
+                        && self.rings_hit & (1 << k) == 0
+                        && (dist - front).abs() <= 0.7
+                    {
+                        self.rings_hit |= 1 << k;
+                        out.hit = true;
+                    }
                 }
-                self.state = if front >= d.wave_radius {
+                let last = lead - (n.max(1) - 1) as f32 * crate::tuning::TOLL_GAP;
+                self.state = if last >= d.wave_radius {
                     EState::Recover { t: 0.0 }
                 } else {
                     EState::Wave { t: e + dt }
@@ -744,6 +820,32 @@ mod tests {
         (0..ticks)
             .filter(|_| en.tick(player, 1.0 / 60.0).hit)
             .count()
+    }
+
+    /// 0125: 깨진 종지기 — 가까우면 울림 고리와 종 휘두르기를 번갈아, 멀면 조각과 돌진을 번갈아, 아주 멀면 쫓기만.
+    #[test]
+    fn the_bellkeeper_alternates_toll_and_swing_up_close_and_shards_and_charge_afar() {
+        let mut en = Enemy::new(Kind::Bellkeeper, Vec3::ZERO);
+        let near = en.def().reach - 0.5;
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            let a = en.choose(near).unwrap();
+            seen.push(a);
+            en.start(a);
+        }
+        assert_eq!(seen, vec![Atk::Toll, Atk::Smash, Atk::Toll, Atk::Smash]);
+        let far = en.def().charge_range - 1.0;
+        let a = en.choose(far).unwrap();
+        en.start(a);
+        let b = en.choose(far).unwrap();
+        assert!(
+            matches!(
+                (a, b),
+                (Atk::Shards, Atk::Charge) | (Atk::Charge, Atk::Shards)
+            ),
+            "{a:?} {b:?}"
+        );
+        assert_eq!(en.choose(en.def().charge_range + 1.0), None);
     }
 
     /// 0116 T3: 등급 배율은 한 번만 적용한다(재설정 호출로 체력이 누적 증가하지 않게).

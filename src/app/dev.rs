@@ -47,7 +47,7 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 15] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 16] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Stage, DevStart::Entrance),
@@ -59,6 +59,7 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 15] = [
     (DevCat::Combat, DevStart::Scenario(Scenario::Duel)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Elites)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Newcomers)),
+    (DevCat::Combat, DevStart::Scenario(Scenario::Bellkeeper)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Horde)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Tray)),
     (DevCat::Perf, DevStart::Scenario(Scenario::Stress40)),

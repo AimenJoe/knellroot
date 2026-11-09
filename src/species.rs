@@ -12,6 +12,8 @@ pub enum Kind {
     Shell,
     /// 꼬투리(0116 이름, 0120): 멀리서 바닥에 예고를 심는다.
     Pod,
+    /// 깨진 종지기(0116 이름, 0125 — 둘째 문지기): 울림 고리·종 조각·종 끌기 돌진.
+    Bellkeeper,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -24,6 +26,9 @@ pub enum Behavior {
     Warden,
     /// 심기(꼬투리, 0120): `plant_range` 안이면 플레이어 자리에 원판 예고를 심고(끝 = 판정), 너무 가까우면(`retreat`) 깡충 물러난다.
     Planter,
+    /// 깨진 종지기(0125): 가까우면 땅을 쳐 울림 고리(`rings`겹 — 사이에 서거나 뛰어넘는다), 멀면 종 조각 부채꼴(`shards`개 —
+    /// 패링하면 되돌아가 종지기를 깎는다)과 종 끌기 돌진을 번갈아. 체력 반 아래 고리·조각이 하나·둘 는다.
+    Bellkeeper,
 }
 
 pub struct Def {
@@ -57,6 +62,9 @@ pub struct Def {
     pub plant_range: f32,
     pub plant_r: f32,
     pub retreat: f32,
+    /// 깨진 종지기(0125): 울림 고리 겹 수·종 조각 수(체력 반 아래 +1·+2).
+    pub rings: u8,
+    pub shards: u8,
     pub behavior: Behavior,
     pub boss: bool,
     /// 쓰러지면 떨구는 잔불(0064 M1).
@@ -87,6 +95,8 @@ pub static HUSK: Def = Def {
     plant_range: 0.0,
     plant_r: 0.0,
     retreat: 0.0,
+    rings: 0,
+    shards: 0,
     behavior: Behavior::Melee,
     boss: false,
     embers: 1,
@@ -115,6 +125,8 @@ pub static THORN: Def = Def {
     plant_range: 0.0,
     plant_r: 0.0,
     retreat: 0.0,
+    rings: 0,
+    shards: 0,
     behavior: Behavior::Charger,
     boss: false,
     embers: 2,
@@ -143,6 +155,8 @@ pub static WARDEN: Def = Def {
     plant_range: 0.0,
     plant_r: 0.0,
     retreat: 0.0,
+    rings: 0,
+    shards: 0,
     behavior: Behavior::Warden,
     boss: true,
     embers: 30,
@@ -173,6 +187,8 @@ pub static SHELL: Def = Def {
     plant_range: 0.0,
     plant_r: 0.0,
     retreat: 0.0,
+    rings: 0,
+    shards: 0,
     behavior: Behavior::Melee,
     boss: false,
     embers: 3,
@@ -203,13 +219,47 @@ pub static POD: Def = Def {
     plant_range: 9.0,
     plant_r: 1.4,
     retreat: 3.5,
+    rings: 0,
+    shards: 0,
     behavior: Behavior::Planter,
     boss: false,
     embers: 2,
     model: "pod",
 };
 
-pub static ALL: [&Def; 5] = [&HUSK, &THORN, &WARDEN, &SHELL, &POD];
+/// 깨진 종지기(0116 이름·3절 싸움 꼴, 0125): 둘째 문지기 — 거리·공간형. 마을의 깨진 종을 끌고 다닌다(종이 왜 깨졌는지는 말하지 않는다).
+/// 가까우면(5m 안) 울림 고리 두 겹(7m/s, 9m까지 — 사이 2.6m에 서거나 뛰어넘기), 멀면 종 조각 부채꼴 셋(50°, 되받아치기)과 종 끌기 돌진(띠)을 번갈아.
+pub static BELLKEEPER: Def = Def {
+    kind: Kind::Bellkeeper,
+    name: |s: &Strings| s.boss_bellkeeper,
+    hp: 46,
+    radius: 1.0,
+    height: 3.0,
+    speed: 2.2,
+    reach: 5.0,
+    tele: 0.9,
+    recover: 1.1,
+    arc: 50.0,
+    charge_range: 13.0,
+    charge_tele: 0.85,
+    charge_speed: 10.0,
+    charge_time: 0.75,
+    wave_tele: 1.0,
+    wave_radius: 9.0,
+    wave_speed: 7.0,
+    guard_arc: 0.0,
+    plant_range: 0.0,
+    plant_r: 0.0,
+    retreat: 0.0,
+    rings: 2,
+    shards: 3,
+    behavior: Behavior::Bellkeeper,
+    boss: true,
+    embers: 30,
+    model: "bellkeeper",
+};
+
+pub static ALL: [&Def; 6] = [&HUSK, &THORN, &WARDEN, &SHELL, &POD, &BELLKEEPER];
 
 /// 종류의 줄(표 `ALL`에서 찾는다 — 새 종류 = `Kind` 한 줄 + 표 한 줄, 빠뜨리면 시험이 잡는다).
 pub fn def(kind: Kind) -> &'static Def {
@@ -230,7 +280,7 @@ mod tests {
             assert!(d.hp > 0 && d.radius > 0.0 && d.height > 0.0 && d.speed > 0.0);
             match d.behavior {
                 Behavior::Melee => assert!(d.reach > d.radius, "{:?}", d.kind),
-                Behavior::Charger | Behavior::Warden => {
+                Behavior::Charger | Behavior::Warden | Behavior::Bellkeeper => {
                     assert!(d.reach > d.radius, "{:?}", d.kind);
                     assert!(d.charge_speed > 0.0 && d.charge_time > 0.0 && d.charge_tele > 0.0);
                 }
@@ -241,6 +291,7 @@ mod tests {
             }
             assert!((0.0..=180.0).contains(&d.guard_arc), "{:?}", d.kind);
         }
-        assert!(ALL.iter().filter(|d| d.boss).count() == 1);
+        // 문지기는 지역마다 하나(성소 문지기·깨진 종지기).
+        assert!(ALL.iter().filter(|d| d.boss).count() == 2);
     }
 }

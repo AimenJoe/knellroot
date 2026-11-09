@@ -266,6 +266,8 @@ pub const EN: Strings = Strings {
     enemy_thorn: "Thornbeast",
     enemy_shell: "Shellback",
     enemy_pod: "Pod",
+    boss_bellkeeper: "The Broken Bellkeeper",
+    bellkeeper_wakes: "The broken bell drags",
     clear_title: "The bell now tolls from deeper below",
     clear_sub: "Time {0} · Felled {1}",
     defeat_title: "You have fallen",

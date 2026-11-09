@@ -324,7 +324,10 @@ impl App {
             );
         }
         // 처음 이기는 판이면 핵이 스스로 다가온다(lore CANON, 0105) — 첫 지역 문지기만(둘째 문지기는 C3).
-        self.run.first_core = self.stage == 0 && self.progress.clears == 0;
+        self.run.first_core = match self.stage {
+            0 => self.progress.clears == 0,
+            _ => self.progress.bell_cores == 0,
+        };
         if self.down > self.stage {
             self.run.down_open = true;
             self.run.open_down(&mut self.world);

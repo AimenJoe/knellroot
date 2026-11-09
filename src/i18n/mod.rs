@@ -368,6 +368,8 @@ pub struct Strings {
     pub enemy_thorn: &'static str,
     pub enemy_shell: &'static str,
     pub enemy_pod: &'static str,
+    pub boss_bellkeeper: &'static str,
+    pub bellkeeper_wakes: &'static str,
     pub clear_title: &'static str,
     /// "{0} · {1}" — 스테이지 이름, 걸린 시간.
     pub clear_sub: &'static str,
@@ -655,6 +657,8 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.enemy_thorn,
         s.enemy_shell,
         s.enemy_pod,
+        s.boss_bellkeeper,
+        s.bellkeeper_wakes,
         s.clear_title,
         s.clear_sub,
         s.defeat_title,

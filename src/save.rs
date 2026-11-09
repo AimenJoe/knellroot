@@ -57,6 +57,8 @@ pub mod key {
     pub const GATES: &str = "gates";
     /// 문지기 핵 점수(0105): 이긴 횟수, `progression::CORE_CAP`까지.
     pub const CORE_WARDEN: &str = "core.warden";
+    /// 깨진 종지기 핵 점수(0125, v0.5.0 C3): 둘째 지역 문지기를 이긴 횟수, `CORE_CAP`까지.
+    pub const CORE_BELL: &str = "core.bellkeeper";
     /// v0.4.0 옮기기를 했다(0105 — 핵 고르기 → 생명·숨은 물건·핵 점수). 한 번만.
     pub const MIGRATED_V04: &str = "migrated.v04";
     /// 기술 나무(0106): 갈래마다 연 칸 수, 목표 핀 "갈래.깊이"(없으면 키 없음).
@@ -151,6 +153,8 @@ pub struct Progress {
     pub gates: Vec<String>,
     /// 성소 문지기 핵 점수(0105, `CORE_CAP`까지).
     pub cores: u32,
+    /// 깨진 종지기 핵 점수(0125, `CORE_CAP`까지).
+    pub bell_cores: u32,
     /// 기술 나무(0106).
     pub tree: crate::progression::Tree,
     /// 든 무기(없으면 옛 prefs 칸의 값을 쓴다).
@@ -232,6 +236,10 @@ impl Progress {
             .num(key::CORE_WARDEN)
             .unwrap_or(0)
             .min(crate::progression::CORE_CAP);
+        let bell_cores = r
+            .num(key::CORE_BELL)
+            .unwrap_or(0)
+            .min(crate::progression::CORE_CAP);
         let migrated = r.num(key::MIGRATED_V04) == Some(1);
         let depth = |k: &str| r.num(k).unwrap_or(0).min(crate::progression::DEPTH as u32) as u8;
         let pin = r.get(key::TREE_PIN).and_then(|v| {
@@ -279,6 +287,7 @@ impl Progress {
             residents_changed,
             gates,
             cores,
+            bell_cores,
             tree,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
             weapons: r_weapons
@@ -356,6 +365,7 @@ impl Progress {
         r.set(key::RESIDENTS_CHANGED, self.residents_changed.join(","));
         r.set(key::GATES, self.gates.join(","));
         r.set(key::CORE_WARDEN, self.cores);
+        r.set(key::CORE_BELL, self.bell_cores);
         r.set(key::MIGRATED_V04, 1);
         r.set(key::TREE_BEAT, self.tree.open[0]);
         r.set(key::TREE_RIPOSTE, self.tree.open[1]);
@@ -404,12 +414,13 @@ impl Progress {
             || self.level != crate::progression::Level::default()
             || !self.finds.is_empty()
             || self.cores > 0
+            || self.bell_cores > 0
             || self.tree != crate::progression::Tree::default()
     }
 
-    /// 나무 점수(0106): 핵 + 주운 종소리 조각.
+    /// 나무 점수(0106): 핵(문지기마다) + 주운 종소리 조각.
     pub fn tree_points(&self) -> u32 {
-        crate::progression::tree_points(self.cores, &self.finds)
+        crate::progression::tree_points(self.cores + self.bell_cores, &self.finds)
     }
 
     /// 장신구를 뺀 능력치(성장만) — 장비 창이 "장신구가 바꾸는 줄"을 고를 때의 기본값(0104).
@@ -611,6 +622,23 @@ mod tests {
     }
 
     /// 0112: 처음 쓰러뜨린 엘리트는 기록에 남는다(키 `elites`, 겹치지 않게).
+    /// 0125: 깨진 종지기 핵은 따로 센다(셋까지) — 나무 마디는 두 문지기 핵을 더한다. 키가 없는 옛 기록은 0.
+    #[test]
+    fn bellkeeper_cores_are_kept_apart_and_add_to_tree_points() {
+        let p = Progress {
+            cores: 2,
+            bell_cores: 9,
+            ..Progress::default()
+        };
+        let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        assert_eq!(back.cores, 2);
+        assert_eq!(back.bell_cores, crate::progression::CORE_CAP, "capped");
+        assert_eq!(back.tree_points(), 2 + crate::progression::CORE_CAP);
+        assert!(back.has_any());
+        let old = Progress::from_record(Record::parse("v=1\ncore.warden=1\n"));
+        assert_eq!((old.cores, old.bell_cores), (1, 0));
+    }
+
     /// 0117: 무기는 얻어서 쓴다 — 새 기록은 맨손·검만, 얻은 무기는 기록에 남고, 키가 없는 옛 기록(판을 한 번이라도 한)은 다 가진 채로.
     #[test]
     fn weapons_are_earned_and_old_records_keep_them_all() {

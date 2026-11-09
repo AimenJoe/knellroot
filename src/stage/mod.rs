@@ -834,6 +834,7 @@ impl StageRun {
         self.boss = (!w.enemies.is_empty()).then_some(0);
         w.lock = None;
         w.lingers.clear();
+        w.shards.clear();
         self.elite_ids.clear();
         // 바라보는 쪽은 자리마다 정해진 값(자리로 섞는다) — 늘어선 적이 한 쪽만 보지 않게.
         let face = |p: Vec3| {
@@ -1204,6 +1205,7 @@ impl StageRun {
         self.wave_ids.clear();
         self.elite_ids.clear();
         w.lingers.clear();
+        w.shards.clear();
         w.lock = None;
         w.hitstop = 0.0;
         let pl = &mut w.player;
@@ -1373,15 +1375,11 @@ mod tests {
     /// 0118(PR #10 검토 뒤 분명히): C3 전까지 마을 끝은 **싸우는 임시 문지기**(첫 문지기 모델) — 종탑 터에 들어서면 깨고,
     /// 이기고 핵을 거두면 마지막 지역이라 판이 끝난다(결과 화면). 바닥 길은 없다.
     #[test]
-    fn the_village_stand_in_warden_fights_and_its_core_ends_the_run() {
+    fn the_village_bellkeeper_fights_and_its_core_ends_the_run() {
         let t = Tuning::default();
         let (mut run, mut w) = StageRun::start(STAGES[STAGES.len() - 1]);
         assert!(run.down_at.is_none(), "the last region has no way down");
-        let home = run
-            .level
-            .marks_of('W')
-            .next()
-            .expect("stand-in warden mark");
+        let home = run.level.marks_of('W').next().expect("bellkeeper mark");
         w.player.pos = home + vec3(0.0, 0.0, 4.0);
         w.player.prev = w.player.pos;
         run.tick(&mut w, 1.0 / 60.0);
@@ -1393,6 +1391,11 @@ mod tests {
         }
         assert_eq!(run.phase, Phase::Duel);
         let b = run.boss.unwrap();
+        assert_eq!(
+            w.enemies[b].kind,
+            Kind::Bellkeeper,
+            "the second warden (0125)"
+        );
         w.enemies[b].state = EState::Dead;
         w.step(&Actions::default(), &t);
         run.tick(&mut w, 1.0 / 60.0);

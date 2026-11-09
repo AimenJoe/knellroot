@@ -267,6 +267,8 @@ pub const KO: Strings = Strings {
     enemy_thorn: "가시짐승",
     enemy_shell: "등딱지짐승",
     enemy_pod: "꼬투리",
+    boss_bellkeeper: "깨진 종지기",
+    bellkeeper_wakes: "깨진 종이 끌린다",
     clear_title: "종소리가 더 깊은 곳에서 울린다",
     clear_sub: "시간 {0} · 쓰러뜨린 것 {1}",
     defeat_title: "쓰러졌다",

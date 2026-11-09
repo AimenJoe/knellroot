@@ -139,7 +139,30 @@ impl App {
             self.progress.run = None;
             self.rest_at = None;
         }
-        // 핵 보상은 첫 지역 문지기만(둘째 문지기의 몫은 C3).
+        // 둘째 지역 문지기(깨진 종지기, 0125): 핵 점수는 따로 셋까지 — 나무 마디는 같이 센다.
+        if core && self.stage == 1 {
+            let s = s();
+            let first = self.progress.bell_cores == 0;
+            if self.progress.bell_cores < crate::progression::CORE_CAP {
+                self.progress.bell_cores += 1;
+                let (n, m) = (
+                    self.progress.bell_cores.to_string(),
+                    crate::progression::CORE_CAP.to_string(),
+                );
+                self.toast = Some((fill(s.toast_core, &[&n, &m]), TOAST_TIME));
+            } else {
+                self.toast = Some((s.toast_core_full.to_string(), TOAST_TIME));
+            }
+            if first {
+                self.run.card = Some((|s| s.core_title, crate::stage::CARD_TIME));
+                if let Some(id) = self.run.def.boss_charm {
+                    if !self.progress.owned.contains(&id) {
+                        self.gain_charm(id);
+                    }
+                }
+            }
+        }
+        // 첫 지역 문지기의 핵(0105).
         if core && self.stage == 0 {
             // 핵(0105): 이길 때마다 나무 점수 1, 문지기마다 셋까지. 처음 이긴 판은 "핵이 몸에 스민다"(lore CANON — 핵이 다가왔다).
             let s = s();

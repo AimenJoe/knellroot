@@ -696,7 +696,8 @@ impl Renderer {
                     telegraph(&drape, at, en.facing, k, shape, v.tells / TELLS_BASE);
                 }
             }
-            if let Some(front) = en.wave_front() {
+            // 퍼지는 고리(뿌리 파동 하나·울림 고리 여럿, 0125) — 고리 사이가 설 자리로 읽히게 하나하나 따로.
+            for front in en.wave_fronts() {
                 drape.ring(p, front, 0.0, 360.0, with_a(TELE, 0.45));
                 drape.ring(p, (front - 0.5).max(0.1), 0.0, 360.0, with_a(TELE, 0.18));
             }
@@ -1455,6 +1456,24 @@ impl Renderer {
             let crouch = matches!(en.state, EState::Tele { .. });
             let h = en.height * if crouch { 0.85 } else { 1.0 } * squash;
             actor(p + sink, en.facing_dir(), en.radius, h, col, 0.6, tilt);
+            // 깨진 종지기(0125, 상자 단계): 등 뒤에 끄는 깨진 종 — 울리기 예고 동안 들어 올린다. 모델은 다음 단계.
+            if en.kind == crate::species::Kind::Bellkeeper {
+                let lift = match (en.state, en.atk) {
+                    (EState::Tele { t }, crate::enemy::Atk::Toll) => {
+                        (t / en.tele_dur().max(1e-3)).clamp(0.0, 1.0) * 1.2
+                    }
+                    _ => 0.0,
+                };
+                let at = p + sink - en.facing_dir() * (en.radius + 0.7) + Vec3::Y * (0.6 + lift);
+                let bronze = if flash {
+                    WHITE
+                } else {
+                    Color::new(0.55, 0.42, 0.26, 1.0)
+                };
+                draw_cube(at, vec3(1.2, 1.2, 1.2), None, bronze);
+                draw_cube(at + Vec3::Y * 0.75, vec3(0.7, 0.3, 0.7), None, bronze);
+                draw_cube_wires(at, vec3(1.22, 1.22, 1.22), Color::new(0.2, 0.14, 0.1, 1.0));
+            }
         }
     }
 
@@ -1653,6 +1672,30 @@ impl Renderer {
             draw_cube(p, Vec3::splat(0.32 * k), None, core);
             draw_cube(p, Vec3::splat(0.5 * k), None, glow);
             draw_line_3d(p - b.dir * 0.9, p, glow);
+        }
+        // 종 조각(0125): 돌며 나는 청동 조각 — 되받아친 것은 호박빛(패링이 "돌려보냈다"로 읽히게).
+        for sh in &w.shards {
+            let spin = w.time * 14.0 + sh.went;
+            let rot = Quat::from_rotation_y(spin) * Quat::from_rotation_x(spin * 0.7);
+            let (core, glow) = if sh.reflected {
+                (
+                    Color::new(1.0, 0.78, 0.38, 1.0),
+                    Color::new(1.0, 0.7, 0.3, 0.35),
+                )
+            } else {
+                (
+                    Color::new(0.62, 0.48, 0.30, 1.0),
+                    Color::new(0.85, 0.55, 0.35, 0.22),
+                )
+            };
+            let a = rot * vec3(0.22, 0.0, 0.0);
+            let b = rot * vec3(0.0, 0.0, 0.16);
+            draw_line_3d(sh.pos - a, sh.pos + a, core);
+            draw_line_3d(sh.pos - b, sh.pos + b, core);
+            draw_cube(sh.pos, Vec3::splat(0.2), None, core);
+            draw_cube(sh.pos, Vec3::splat(0.38), None, glow);
+            draw_line_3d(sh.pos - sh.dir * 0.8, sh.pos, glow);
+            fl.shadow(sh.pos, 0.18);
         }
         // 수류탄(0051): 어두운 덩이 + 도화선이 짧아질수록 빨리 깜빡이는 불.
         for bm in &w.bombs {
@@ -2182,6 +2225,8 @@ fn enemy_anim(
         Atk::Wave => &["wave", "slam", "attack"],
         Atk::Smash => &["attack"],
         Atk::Plant => &["plant", "attack"],
+        Atk::Toll => &["toll", "wave", "slam", "attack"],
+        Atk::Shards => &["throw", "attack"],
     };
     let once = |names: &[&str], k: f32| {
         let a = e.pick(names);
