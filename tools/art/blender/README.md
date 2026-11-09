@@ -39,6 +39,7 @@ Blender 4.0.2로 확인(glTF 내보내기에 python3-numpy 필요). EGL 경고�
 | `wanderer` 방랑자 1.8m | root, body, head, arm_l, arm_r, hand_r(검 `sword`), leg_l, leg_r, cloak | idle 1.2↻, walk 0.8↻, attack 0.43(0–0.08 당김·0.08–0.18 베기·~0.43 회복), dodge 0.25, hurt 0.35, turn 0.25 | 636 | glow_eyes |
 | `root_husk` 뿌리의 잔재 1.5m | root, body, head, arm_l, arm_r, leg_l, leg_r | idle 1.6↻, walk 1.0↻, attack 1.3(0–0.5 들기·0.5–0.7 내려찍기·~1.3 회복), hurt 0.3 | 580 | glow_core |
 | `thorn_beast` 가시짐승 1.1×1.7m | root, body, head, leg_fl, leg_fr, leg_bl, leg_br, tail | idle 1.4↻, run 0.5↻, charge_windup 0.6, charge 0.4↻, recover 0.7, hurt 0.3 | 648 | glow_eyes |
+| `shellback` 등딱지짐승 1.0×1.25×1.2m | root, body, head, leg_fl, leg_fr, leg_bl, leg_br | idle 1.6↻, walk 1.0↻, attack 1.3(0–0.6 머리 넣고 앞 들기·0.72 쿵·~1.3), hurt 0.3 | 717 | glow_eyes |
 | `gatekeeper` 잠들지 않는 문지기 3.2m | root, body, core, head, arm_l, arm_r, club, leg_l, leg_r, shin_l, shin_r | idle 2.0↻, walk 1.4↻, slam 1.5(0–0.9 들기·0.9–1.1 찍기·~1.5), charge_windup 0.8, charge 0.5↻, wave 1.6(0–1.0 들기·1.0–1.2 땅 치기·~1.6), hurt 0.4, wake 2.0(무릎 꿇음 → 섬) | 1200 | glow_core(뼈 `core`, 숨·피격에 크기), glow_eyes |
 | `wall_segment` 벽 2.0×0.8×3.0m | – | – | 352 | – |
 | `pillar_broken` 부서진 기둥 1.2×2.9m | – | – | 288 | – |

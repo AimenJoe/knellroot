@@ -2501,6 +2501,7 @@ const STRIKE_KEYS: &[(&str, &str, f32, f32)] = &[
     ("root_husk", "attack", 0.5, 0.62),
     ("gatekeeper", "slam", 0.9, 1.0),
     ("gatekeeper", "wave", 1.0, 1.12),
+    ("shellback", "attack", 0.6, 0.72),
 ];
 
 fn strike_keys(model: &str, a: Option<usize>, e: &Entry) -> (f32, f32) {

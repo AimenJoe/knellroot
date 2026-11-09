@@ -13,6 +13,8 @@
 | `husk_v2_low.glb`(+ `_tex.png`) | 2026-11-05 | 위를 `meshy_convert.py ... 1.5 700 128`로 줄인 것(정점 656·삼각형 554, 3분) — `root_husk.py`가 읽는다 |
 | `thorn_v2.glb` | 2026-11-05 | 가시짐승 v2(Meshy 이름 "Crystalback Piglet", 사장이 웹 Meshy 6 Lite — 입력 Gemini v2 그림), 삼각형 98,462 · 텍스처 셋. 무료 → CC BY 4.0 |
 | `thorn_v2_low.glb`(+ `_tex.png`) | 2026-11-05 | 위를 `meshy_convert.py ... 1.3 700 128`로 줄인 것(정점 682·삼각형 614) — `thorn_beast.py`가 읽는다 |
+| `shellback_v1.glb` | 2026-11-09 | 등딱지짐승 v1(Meshy 이름 "Crystalback Turtle", 사장이 Image to 3D — 입력 Gemini 그림 `../ai/knellroot/shellback_v2_*.png`, 프롬프트 `docs/art/gemini-prompts-0132.md`), 삼각형 196,104 · 텍스처 셋. 무료 → CC BY 4.0 |
+| `shellback_v1_low.glb`(+ `_tex.png`) | 2026-11-09 | 위를 `meshy_convert.py ... 1.2 700 128`로 줄인 것(정점 642·삼각형 614, 15분) — `shellback.py`가 읽는다 |
 
 게임에 넣을 때: `blender -b -P tools/art/blender/meshy_convert.py -- <원본> <출력> 1.4 2300 256`(줄이기 + 새 UV + 색 굽기).
 배포에 쓰면 `assets/LICENSES.md`에 "Meshy로 만든 모델(AI), CC BY 4.0"을 적는다.
