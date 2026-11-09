@@ -19,7 +19,7 @@ REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 
 # 정점 예산(캐릭터 700, 보스 1600, 소품 400)
 # wanderer: 0051 무기 넷(검·망치·지팡이·쇠뇌)이 한 모델에 있고 게임은 든 것만 보인다(나머지 크기 0) — 보이는 정점은 약 2,300.
-BUDGET = {"wanderer": 2600, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780,
+BUDGET = {"wanderer": 2600, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800,
           # 0068 장신구 여섯이 한 파일(게임은 하나씩만 그린다) — 하나 280 안팎.
           "charms": 1800}
 PROP_BUDGET = 400
@@ -36,13 +36,14 @@ EXPECT = {
     "bellkeeper": {"idle": 2.0, "walk": 1.4, "toll": 1.6, "slam": 1.5, "throw": 1.2, "charge_windup": 0.8,
                    "charge": 0.5, "recover": 0.8, "hurt": 0.4, "wake": 2.0},
     "res_hearth": {"work": 3.2, "look": 2.4},
+    "res_water": {"work": 3.6, "look": 2.2},
     "gate": {"open": 1.5},
     "core_crystal": {"pulse": 1.0},
     "bell": {"toll": 2.0},
 }
 MUST_NODES = {"gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["head_geo", "sword", "glow_lamp"],
               "root_husk": ["glow_eye"], "thorn_beast": ["glow_eyes"], "shellback": ["glow_eyes", "head_geo"], "pod": ["glow_eyes", "head_geo", "seed_geo"],
-              "bellkeeper": ["glow_eyes", "glow_core", "bell_geo", "head_geo"], "res_hearth": ["head_geo"], "brazier": ["glow_flame"],
+              "bellkeeper": ["glow_eyes", "glow_core", "bell_geo", "head_geo"], "res_hearth": ["head_geo"], "res_water": ["head_geo"], "brazier": ["glow_flame"],
               "core_crystal": ["glow_core"],
               "charms": ["shell", "feet", "ear", "hunger", "hand", "pouch"]}
 

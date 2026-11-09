@@ -10,53 +10,19 @@ CC BY 4.0) → `meshy_convert.py ... 1.3 700 128`. 주민은 싸우지 않는다
 import os
 import sys
 
-from mathutils import Matrix
-
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
+import resident_parts as R  # noqa: E402
 
 NAME = "res_hearth"
-
-MESHY_LOW = os.path.join(C.REPO, "tools", "art", "sources", "meshy", "hearth_v1_low.glb")
-MESHY_PARTS = {"body_geo": "body", "head_geo": "head", "arm_l_geo": "arm_l", "arm_r_geo": "arm_r",
-               "leg_l_geo": "leg_l", "leg_r_geo": "leg_r"}
-# meshy_convert는 위 45%(머리)의 가운데를 원점에 둔다 — 두건 매듭이 +X로 뻗어 몸이 −X로 조금 비껴 왔다(다리 사이 틈 기준 0.07).
-SHIFT_X = 0.07
-# 치수(옮긴 자리, 앞 = -Y, 캐릭터 왼쪽 = +X) — 정면·옆·위 직교 렌더(텍스처째)로 잰 것.
-HEAD_Z = 0.78  # 이보다 위는 머리(두건·귀)
-ARM_X = 0.24  # 몸보다 밖이면 팔(어깨 아래 ~ 손)
-ARM_Z = (0.28, 0.72)
-LEG_Z = 0.17
-LEG_SPLIT = 0.03  # 두 발 사이 틈
-
-
-def classify(c):
-    """면 가운데 자리(가져온 그대로) → 부위."""
-    x, z = c.x + SHIFT_X, c.z
-    if z > HEAD_Z:
-        return "head_geo"
-    if ARM_Z[0] < z < ARM_Z[1] and abs(x) > ARM_X:
-        return "arm_l_geo" if x > 0 else "arm_r_geo"
-    if z < LEG_Z:
-        return "leg_l_geo" if x > LEG_SPLIT else "leg_r_geo"
-    return "body_geo"
+# 두건 매듭이 +X로 뻗어 meshy_convert(머리 가운데를 원점으로)가 몸을 −X로 0.07 비껴 두었다(다리 사이 틈 기준).
+CUT = R.Cut(head_z=0.78, arm_x=0.24, arm_z=(0.28, 0.72), leg_z=0.17, leg_split=0.03, shift_x=0.07)
+BONES = {"body": (0, 0, 0.18), "head": (0, -0.02, 0.78), "arm_l": (0.22, 0, 0.66), "arm_r": (-0.22, 0, 0.66),
+         "leg_l": (0.12, 0, 0.18), "leg_r": (-0.10, 0, 0.18)}
 
 
 def make():
-    m = C.Model(NAME)
-    m.bone("root", (0, 0, 0))
-    m.bone("body", (0, 0, 0.18), "root")  # 엉덩이 — 숙이면 위가 앞으로
-    m.bone("head", (0, -0.02, 0.78), "body")
-    m.bone("arm_l", (0.22, 0, 0.66), "body")
-    m.bone("arm_r", (-0.22, 0, 0.66), "body")
-    m.bone("leg_l", (0.12, 0, 0.18), "root")
-    m.bone("leg_r", (-0.10, 0, 0.18), "root")
-    objs = m.external(MESHY_LOW, classify, MESHY_PARTS)
-    for o in objs.values():
-        o.data.transform(Matrix.Translation((SHIFT_X, 0.0, 0.0)))
-    m.build()
-    acts(m)
-    return m
+    return R.make(NAME, "hearth_v1_low.glb", CUT, BONES, acts)
 
 
 def k(**bones):
@@ -94,14 +60,7 @@ CHECK = [("work", 0.0), ("work", 1.5), ("work", 2.4), ("look", 1.2)]
 
 
 def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, check_dir=None):
-    m = make()
-    path = m.export(models_dir)
-    for act, t, suffix in PREVIEWS:
-        m.preview(os.path.join(preview_dir, f"{NAME}{suffix}.png"), act, t, yaw=-35)
-    if check_dir:
-        for act, t in CHECK:
-            m.preview(os.path.join(check_dir, f"{NAME}_{act}_{int(t * 100):03d}.png"), act, t, yaw=-70)
-    return path
+    return R.build(make, NAME, PREVIEWS, CHECK, models_dir, preview_dir, check_dir)
 
 
 if __name__ == "__main__":
