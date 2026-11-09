@@ -2439,6 +2439,12 @@ fn enemy_anim(
     };
     let is_windup =
         |a: Option<usize>| a.is_some_and(|i| e.model.anims[i].name.ends_with("_windup"));
+    // 뛰기(턱 오르내림 0100 · 꼬투리 물러나기 0120): 모델에 `hop`이 있으면 뛰기 진행대로 한 번(0132), 없으면 상태대로.
+    if let Some(h) = en.hop {
+        if e.pick(&["hop"]).is_some() {
+            return once(&["hop"], h.t / h.dur.max(1e-3));
+        }
+    }
     match en.state {
         EState::Dormant => {
             let w = stage.map(|s| s.wake_progress()).unwrap_or(0.0);
@@ -2502,6 +2508,7 @@ const STRIKE_KEYS: &[(&str, &str, f32, f32)] = &[
     ("gatekeeper", "slam", 0.9, 1.0),
     ("gatekeeper", "wave", 1.0, 1.12),
     ("shellback", "attack", 0.6, 0.72),
+    ("pod", "plant", 0.45, 0.6),
 ];
 
 fn strike_keys(model: &str, a: Option<usize>, e: &Entry) -> (f32, f32) {
