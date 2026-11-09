@@ -542,7 +542,7 @@ impl Enemy {
                 // 붙어 있으면 울림 고리와 종 휘두르기(앞 부채꼴 — 옆으로 비키면 빈다)를 번갈아: 고리만 이어지면 뛰기만 하게 된다(0125 헤드리스).
                 if dist <= d.reach {
                     Some(if self.atk == Atk::Toll {
-                        Atk::Smash
+                        Atk::Slam
                     } else {
                         Atk::Toll
                     })
@@ -833,7 +833,9 @@ mod tests {
             seen.push(a);
             en.start(a);
         }
-        assert_eq!(seen, vec![Atk::Toll, Atk::Smash, Atk::Toll, Atk::Smash]);
+        assert_eq!(seen, vec![Atk::Toll, Atk::Slam, Atk::Toll, Atk::Slam]);
+        // 휘두르기는 앞 부채꼴(둘레 원판이 아니다) — 옆으로 비키면 빈다.
+        assert!(matches!(en.tele_shape(), TeleShape::Sector { .. }) || en.atk != Atk::Slam);
         let far = en.def().charge_range - 1.0;
         let a = en.choose(far).unwrap();
         en.start(a);

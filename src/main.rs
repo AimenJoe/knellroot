@@ -8,6 +8,7 @@
 
 mod app;
 mod backdrop;
+mod balance;
 mod camera;
 mod charms;
 mod descent;
