@@ -150,8 +150,60 @@ pub fn draw_reticle(f: &Frame, at: Vec2, size: u8) {
     draw_circle(at.x, at.y, w * 0.6, INK);
 }
 
-pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: bool) {
+/// 맞음 테의 세기(0..1): 맞은 순간부터 `HURT_EDGE_HOLD` 동안 가득, 그 뒤 `HURT_EDGE_FADE`에 걸쳐 제곱으로 사라진다.
+/// 센 타격(잃은 체력 2 이상)은 `HURT_HEAVY`배(1 안). 로직 시계라 히트스톱 동안은 가득한 채 멈춰 있다.
+pub fn hurt_edge_k(since: f32, blow: i32) -> f32 {
+    use crate::tuning::{HURT_EDGE_FADE, HURT_EDGE_HOLD, HURT_HEAVY};
+    if !(0.0..HURT_EDGE_HOLD + HURT_EDGE_FADE).contains(&since) {
+        return 0.0;
+    }
+    let k = 1.0 - ((since - HURT_EDGE_HOLD) / HURT_EDGE_FADE).clamp(0.0, 1.0);
+    let heavy = if blow >= 2 { HURT_HEAVY } else { 1.0 };
+    (k * k * heavy / HURT_HEAVY).min(1.0)
+}
+
+/// 체력이 위험한가(0143): `LOW_HP` 칸 이하로 살아 있고, 최대가 그보다 많을 때만(처음부터 한 칸인 판에서 늘 울리지 않게).
+pub fn low_hp(hp: i32, max_hp: i32) -> bool {
+    hp > 0 && hp <= crate::tuning::LOW_HP && max_hp > crate::tuning::LOW_HP
+}
+
+/// 화면 가장자리의 붉은 테(0143): 가장자리에서 안으로 계단지게 옅어지는 띠 일곱 겹(도트 화면이라 매끈한 그러데이션 대신 계단).
+/// `a` = 가장 바깥 띠의 불투명도. 붉은색은 바닥의 위험 예고와 같은 뜻("위험") — 예고는 바닥에, 이것은 화면 테두리에만.
+fn draw_edge(s: f32, a: f32) {
+    if a <= 0.004 {
+        return;
+    }
+    const BANDS: usize = 7;
+    let (sw, sh) = (screen_width(), screen_height());
+    let step = (3.0 * s).max(2.0);
+    for i in 0..BANDS {
+        let k = 1.0 - i as f32 / BANDS as f32;
+        let col = Color::new(0.86, 0.1, 0.16, a * k * k);
+        let o = i as f32 * step;
+        // 위·아래(가로 전체), 왼쪽·오른쪽(그 사이) — 겹치지 않게.
+        draw_rectangle(o, o, sw - 2.0 * o, step, col);
+        draw_rectangle(o, sh - o - step, sw - 2.0 * o, step, col);
+        draw_rectangle(o, o + step, step, sh - 2.0 * (o + step), col);
+        draw_rectangle(sw - o - step, o + step, step, sh - 2.0 * (o + step), col);
+    }
+}
+
+/// `edge`: 맞음 테의 세기 배율(랩 `hurt.edge`, 0 = 끔 — 창이 위에 뜬 동안은 0).
+pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: bool, edge: f32) {
     let s = u(f);
+    // 맞음 테(0143 — "맞았는지 잘 모르겠음"): 맞은 순간 화면 가장자리가 붉게 번쩍였다 사라지고, 체력이 한 칸이면 옅게 숨 쉰다.
+    // HUD 글·막대보다 먼저 그려 그 아래에 깔린다.
+    {
+        use crate::tuning::HURT_EDGE_ALPHA;
+        let pl = &w.player;
+        let hit = hurt_edge_k(pl.since_hurt, pl.hurt_blow) * HURT_EDGE_ALPHA;
+        let low = if low_hp(pl.hp, pl.max_hp) {
+            0.1 + 0.08 * (0.5 + 0.5 * (w.time * 4.2).sin())
+        } else {
+            0.0
+        };
+        draw_edge(s, hit.max(low) * edge.clamp(0.0, 2.0));
+    }
     // 터치면 왼쪽 위 멈춤 버튼을 비킨다(2026-11-06).
     let inset = if crate::input::device() == crate::input::Device::Touch {
         crate::touch::hud_inset(screen_width(), screen_height())
@@ -162,12 +214,43 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
     // 체력: 마름모.
     let pl = &w.player;
     let max_hp = pl.max_hp.max(pl.hp);
-    for i in 0..max_hp {
-        let c = vec2(x0 + 4.0 * s + i as f32 * 10.0 * s, y0 + 4.0 * s);
-        let col = if i < pl.hp { HP_ON } else { HP_OFF };
-        let r = 3.5 * s;
+    // 맞으면(0143) 체력 줄이 잠깐 떨리고, 잃은 칸은 희게 번쩍이며 커졌다 사라진다. 한 칸 남으면 그 칸이 붉게 뛴다.
+    use crate::tuning::{HURT_HP_SHAKE, HURT_PIP};
+    let jolt = (1.0 - pl.since_hurt / HURT_HP_SHAKE).clamp(0.0, 1.0);
+    let hx = x0 + (w.time * 80.0).sin() * 2.5 * s * jolt;
+    let lost = pl.hp.max(0)..(pl.hp.max(0) + pl.hurt_blow.max(0));
+    let low = low_hp(pl.hp, pl.max_hp);
+    let diamond = |c: Vec2, r: f32, col: Color| {
         draw_triangle(c + vec2(0.0, -r), c + vec2(r, 0.0), c + vec2(0.0, r), col);
         draw_triangle(c + vec2(0.0, -r), c + vec2(-r, 0.0), c + vec2(0.0, r), col);
+    };
+    for i in 0..max_hp {
+        let c = vec2(hx + 4.0 * s + i as f32 * 10.0 * s, y0 + 4.0 * s);
+        let on = i < pl.hp;
+        let beat = if low && on {
+            0.5 + 0.5 * (w.time * 4.2).sin()
+        } else {
+            0.0
+        };
+        let col = if on {
+            Color::new(
+                HP_ON.r + (1.0 - HP_ON.r) * beat,
+                HP_ON.g * (1.0 - 0.55 * beat),
+                HP_ON.b * (1.0 - 0.3 * beat),
+                1.0,
+            )
+        } else {
+            HP_OFF
+        };
+        diamond(c, (3.5 + 0.8 * beat) * s, col);
+        if lost.contains(&i) && pl.since_hurt < HURT_PIP {
+            let k = pl.since_hurt / HURT_PIP;
+            diamond(
+                c,
+                (3.5 + 5.0 * k.sqrt()) * s,
+                Color::new(1.0, 0.96, 0.9, (1.0 - k) * (1.0 - k)),
+            );
+        }
     }
     // 스태미나(0018): 모자라서 막히면 잠깐 붉게 깜빡인다(막은 이유가 보이게 — KB action-reuse-gating).
     // 레벨 기력(0104)이 오르면 막대가 길어진다(소울류 — 늘어난 몫이 눈에 보이게, 0096 L2).
@@ -458,6 +541,29 @@ fn s_rest() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0143 맞음 테: 맞은 순간 가득(센 타격) — 보통 타격은 그보다 옅게 — 잠깐 머문 뒤 사라지고, 맞은 적이 없으면(무한대) 없다.
+    #[test]
+    fn the_hurt_edge_peaks_at_the_blow_holds_briefly_and_fades_out() {
+        use crate::tuning::{HURT_EDGE_FADE, HURT_EDGE_HOLD};
+        assert_eq!(hurt_edge_k(f32::MAX, 1), 0.0);
+        let (light, heavy) = (hurt_edge_k(0.0, 1), hurt_edge_k(0.0, 2));
+        assert!(light > 0.5 && (heavy - 1.0).abs() < 1e-6 && heavy > light);
+        assert_eq!(
+            hurt_edge_k(HURT_EDGE_HOLD * 0.9, 2),
+            heavy,
+            "held at full first"
+        );
+        let mid = hurt_edge_k(HURT_EDGE_HOLD + HURT_EDGE_FADE * 0.5, 2);
+        assert!(mid > 0.0 && mid < 0.5, "{mid}");
+        assert_eq!(hurt_edge_k(HURT_EDGE_HOLD + HURT_EDGE_FADE + 0.01, 2), 0.0);
+    }
+
+    /// 0143 위험한 체력: 마지막 한 칸일 때만 — 쓰러진 뒤(0)나 처음부터 한 칸인 판에서는 울리지 않는다.
+    #[test]
+    fn low_health_is_the_last_pip_of_a_longer_bar() {
+        assert!(low_hp(1, 5) && !low_hp(2, 5) && !low_hp(0, 5) && !low_hp(1, 1));
+    }
 
     #[test]
     fn cards_fade_in_and_out() {

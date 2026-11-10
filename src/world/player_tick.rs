@@ -293,6 +293,7 @@ impl World {
         pl.cast_denied = (pl.cast_denied - dt).max(0.0);
         pl.dodge_cd = (pl.dodge_cd - dt).max(0.0);
         pl.since_parry = (pl.since_parry + dt).min(f32::MAX);
+        pl.since_hurt = (pl.since_hurt + dt).min(f32::MAX);
         pl.parry_chain_left = (pl.parry_chain_left - dt).max(0.0);
         if pl.parry_chain_left <= 0.0 {
             pl.parry_chain_n = 0;

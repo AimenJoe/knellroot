@@ -98,6 +98,21 @@ pub const HIT_SWAY: f32 = 0.35;
 pub const HEAVY_SWAY: f32 = 0.65;
 pub const HIT_TREMBLE: f32 = 0.05;
 pub const SHAKE_HURT: f32 = 0.75;
+/// 맞은 쪽(방랑자)의 손맛(0143 — 사장 "맞았는지 잘 모르겠음", nail 0269 `HurtFeel` 꼴): 히트스톱 배율(`feel.hitstop s` × 이것 —
+/// 때릴 때 1.6보다 길게: 0.06 × 2.2 ≈ 8프레임)·센 타격(피해 2 이상)이면 더 곱하는 배율. 떼 속에서는 경직 이음(0099)처럼 맞을수록 반.
+pub const HURT_HITSTOP: f32 = 2.2;
+pub const HURT_HEAVY: f32 = 1.4;
+/// 맞으면 카메라가 밀려난 쪽으로 차였다 돌아온다(도) — 흔들림 설정을 따른다.
+pub const KICK_HURT_DEG: f32 = 0.8;
+/// 맞음 테(화면 가장자리의 붉은 번쩍임, HUD): 가장 진한 채 머무는 시간·그 뒤 사라지는 시간(초)·가장 진한 불투명도(센 타격은 `HURT_HEAVY`배, 1 안).
+pub const HURT_EDGE_HOLD: f32 = 0.06;
+pub const HURT_EDGE_FADE: f32 = 0.42;
+pub const HURT_EDGE_ALPHA: f32 = 0.55;
+/// 잃은 체력 칸이 희게 번쩍이며 부서지는 시간(초)·체력 줄이 떨리는 시간(초).
+pub const HURT_PIP: f32 = 0.45;
+pub const HURT_HP_SHAKE: f32 = 0.3;
+/// 체력이 이 칸 이하면(최대가 이보다 많을 때만) 가장자리가 붉게 숨 쉰다 — 지금 위험하다는 이어지는 신호.
+pub const LOW_HP: i32 = 1;
 pub const SHAKE_DOWN: f32 = 0.15;
 pub const SHAKE_TURN: f32 = 0.2;
 pub const SHAKE_SLAM: f32 = 0.35;
@@ -399,6 +414,7 @@ pub enum P {
     RenderVignette,
     RenderFx,
     RenderWind,
+    HudHurtEdge,
 }
 
 /// 랩이 읽는 칸(이름·걸음·범위·내보내기 이름)은 개발판에만 쓰인다(운영판에는 랩이 없다, 0070).
@@ -430,7 +446,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 154] = [
+pub const SPECS: [Spec; 155] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1649,6 +1665,7 @@ pub const SPECS: [Spec; 154] = [
     ),
     // 살아 있는 환경(0142, 사장 2026-11-10 "Environment도 생동감 있게"): 풀 끝·잎 무더기가 바람에 흔들리는 세기(0 = 멈춤). 땅속은 이 값의 0.4배.
     spec!(RenderWind, "render.wind", "RENDER_WIND", 1.0, 0.0, 2.5, 0.1),
+    spec!(HudHurtEdge, "hurt.edge", "HURT_EDGE", 1.0, 0.0, 2.0, 0.1),
 ];
 
 /// 땅 돌리기 휘청의 흔들림 빠르기(Hz)·줄어듦(/초) — 0.5초 안에 3% 아래로.

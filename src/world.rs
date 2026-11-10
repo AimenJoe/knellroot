@@ -395,6 +395,9 @@ pub struct Player {
     pub state: PState,
     pub hp: i32,
     pub hurt: f32,
+    /// 마지막으로 맞은 뒤 지난 초·그때 잃은 체력(0143) — HUD가 맞음 테·부서지는 체력 칸을 그린다(로직 시계: 히트스톱 동안 멈춰 있다).
+    pub since_hurt: f32,
+    pub hurt_blow: i32,
     pub dodge_cd: f32,
     /// 땅 돌리기 대기(초).
     pub turn_cd: f32,
@@ -608,6 +611,8 @@ impl World {
                 denied_new: false,
                 stun_chain: 0,
                 stun_window: 0.0,
+                since_hurt: f32::MAX,
+                hurt_blow: 0,
                 since_spill: f32::MAX,
                 since_parry: f32::MAX,
                 parry_chain_left: 0.0,
@@ -2415,6 +2420,8 @@ impl World {
             }
             // 맞은 뒤 무적은 짧게(예전 0.6초 — 그 동안 다시 맞을 수 없어 경직 줄이기가 쓸 데가 없었다).
             pl.hurt = t[P::HitIframes];
+            pl.since_hurt = 0.0;
+            pl.hurt_blow = taken;
             // 경직 이음(0018 → 0099, 사장 "다구리 맞더라도 틈이 생겨서 도망갈 수 있게" — 이어 패링의 반대): 경직과 그 뒤
             // `STUN_CHAIN_GRACE` 동안 또 맞으면 경직이 그전의 반 — 맞을수록 짧아져 떼 속에서도 빠져나갈 틈이 생긴다.
             (pl.stun_chain, pl.stun_window) =
@@ -2428,6 +2435,15 @@ impl World {
             }
             let away = vec3(pl.pos.x - from.x, 0.0, pl.pos.z - from.z).normalize_or_zero();
             pl.vel = away * t[P::HitKnock] * KNOCK_DECAY;
+            // 맞은 순간 세계가 멈춘다(0143): 때릴 때보다 길게, 센 타격은 더 길게. 이어 맞으면 경직처럼 반씩(떼 속에서 화면이 얼어붙지 않게).
+            let heavy = if taken >= 2 {
+                crate::tuning::HURT_HEAVY
+            } else {
+                1.0
+            };
+            let stop =
+                t[P::Hitstop] * crate::tuning::HURT_HITSTOP * heavy * 0.5f32.powi(pl.stun_chain);
+            self.hitstop = self.hitstop.max(stop);
             ev.push(Event::PlayerHurt);
         }
     }
@@ -6243,6 +6259,49 @@ mod tests {
             dodged |= matches!(w.player.state, PState::Dodge { .. });
         }
         assert!(dodged, "a dodge pressed late in the stun still comes out");
+    }
+
+    /// 0143 "맞았는지 잘 모르겠음": 맞은 틱에 세계가 멈춘다 — 때릴 때(`HIT_HITSTOP`)보다 길게, HUD가 읽는 "맞은 뒤 지난 시간"은
+    /// 멈춘 동안 0에 머문다(붉은 테·흰 몸이 멈춘 화면과 함께 남는다). 경직 중 또 맞으면 멈춤도 반(떼 속에서 화면이 얼어붙지 않게).
+    #[test]
+    fn being_hit_freezes_the_world_longer_than_landing_a_hit_and_less_when_chained() {
+        let t = Tuning::default();
+        let mut w = World::new("test", 30.0);
+        let hp = w.player.hp;
+        hit_by_swing(&mut w, &t);
+        let first = w.hitstop;
+        assert!(first > t[P::Hitstop] * HIT_HITSTOP, "{first}");
+        assert!(
+            (0.1..=0.2).contains(&first),
+            "six to twelve frames: {first}"
+        );
+        assert_eq!(
+            (w.player.since_hurt, w.player.hurt_blow),
+            (0.0, hp - w.player.hp)
+        );
+        // 멈춘 동안: 시계가 가지 않는다 — 맞은 뒤 지난 시간도 0.
+        w.step(&Actions::default(), &t);
+        assert!(w.hitstop > 0.0 && w.player.since_hurt == 0.0);
+        while w.hitstop > 0.0 {
+            w.step(&Actions::default(), &t);
+        }
+        // 풀리면 흐른다.
+        for _ in 0..3 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(w.player.since_hurt > 0.0);
+        // 무적이 끝나고 아직 경직 중일 때 또 맞는다 → 멈춤도 반.
+        while w.player.hurt > 0.0 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(matches!(w.player.state, PState::Hurt { .. }));
+        hit_by_swing(&mut w, &t);
+        assert!(
+            (w.hitstop - first * 0.5).abs() < 1e-4,
+            "{} vs {first}",
+            w.hitstop
+        );
+        assert_eq!(w.player.since_hurt, 0.0);
     }
 
     /// 맞으면 잠깐 경직(못 움직임) — 경직 중 또 맞으면 반씩 짧아지고, 이음 창(0099)까지 지난 뒤 맞으면 다시 처음 길이(0018).

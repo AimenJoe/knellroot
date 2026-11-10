@@ -746,10 +746,11 @@ impl App {
         match scene.layer() {
             Layer::Game => {
                 let run = matches!(scene, Scene::Play | Scene::Ending { .. }).then_some(&self.run);
-                hud::draw(&self.ui, f, &self.world, run, false);
+                let edge = self.t[crate::tuning::P::HudHurtEdge];
+                hud::draw(&self.ui, f, &self.world, run, false, edge);
             }
             Layer::Window { hud: true } if self.stack.base() == Scene::Play => {
-                hud::draw(&self.ui, f, &self.world, Some(&self.run), true);
+                hud::draw(&self.ui, f, &self.world, Some(&self.run), true, 0.0);
             }
             Layer::Screen | Layer::Window { .. } | Layer::Modal => {}
         }

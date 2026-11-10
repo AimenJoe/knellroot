@@ -369,6 +369,7 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("render.vignette", "가장자리 그늘 세기"),
     ("render.fx 0off 1on", "타격·먼지 입자(0끔 1켬)"),
     ("render.wind", "풀·나무·불 흔들림(세기)"),
+    ("hurt.edge", "맞을 때 가장자리 빛(0끔)"),
 ];
 
 #[cfg(test)]

@@ -2250,7 +2250,10 @@ impl Renderer {
             let inst = Mat4::from_translation(pp + Vec3::Y * pl.air + tremble)
                 * Mat4::from_quat(recoil)
                 * Mat4::from_rotation_y(pl.facing);
-            let tint = if blink {
+            // 맞은 순간(0143): 몸 전체가 희게 — 히트스톱 동안 그대로 멈춰 있다(KB: 흰 실루엣 → 맞은 자세). 그 뒤는 무적 깜빡임.
+            let tint = if pl.since_hurt < HURT_WHITE {
+                Color::new(3.0, 3.0, 3.0, a)
+            } else if blink {
                 Color::new(1.8, 1.8, 1.8, a)
             } else {
                 Color::new(1.0, 1.0, 1.0, a)
@@ -4209,6 +4212,9 @@ thread_local! {
     /// (정점 10,000개분 ≈ 400KB)를 잡고 줄이지 않아, 오래 두면 핸드헬드가 죽었다(사장 2026-11-03, 0016). 선을 모아 한 번에 그린다.
     static LINES: std::cell::RefCell<Vec<(Vec3, Vec3, Color)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
+
+/// 맞은 순간 방랑자의 몸이 희게 뜨는 시간(초, 로직 시계 — 히트스톱 동안은 멈춰 있어 실제로는 그만큼 더 길다).
+const HURT_WHITE: f32 = 0.05;
 
 /// 휘두름의 초승달이 활성 구간 뒤에 옅어지는 시간(초).
 const SLASH_FADE: f32 = 0.12;

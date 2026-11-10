@@ -197,6 +197,11 @@ impl App {
             let punch = match e {
                 Event::Hit { at } | Event::Crit { at } => Some((at, KICK_HIT_DEG)),
                 Event::Smash { at } | Event::Break { at } => Some((at, KICK_SMASH_DEG)),
+                // 맞음(0143): 밀려난 쪽으로 — 흔들림만으로는 어디서 맞았는지가 없다.
+                Event::PlayerHurt => Some((
+                    self.world.player.pos + self.world.player.vel,
+                    crate::tuning::KICK_HURT_DEG,
+                )),
                 _ => None,
             };
             if let Some((at, deg)) = punch {

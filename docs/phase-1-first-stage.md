@@ -48,6 +48,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 모델 | `assets/models/*.glb`, `build.rs`, `models.rs`, `tools/art/blender/` | Blender 4.0 bpy 스크립트가 원본(상자·둥근 덩어리·깎은 돌·돌린 꼴·꺾인 관 + 뼈에 붙인 강체 + 128×128 아틀라스, 캐릭터 몸은 Meshy 메시). 미리보기 `docs/art/previews/`, 검사 `check_glb.py`, 리뷰 표 `review_glb.py`. 없으면 상자 |
 | 이펙트(0141) | `fx.rs`(`Fx::on_events`·`watch`·`tick`, `brazier_ember`), `backdrop.rs` `Backdrop::fx`, `render.rs` `gem`·`spark4`·`crescent`·`slash_arcs`, `app/play.rs` `step_world`, 랩 `render.fx`, `tools/test/fx.js` + 개발 키 F6 | 사건·상태 변화 → 입자(별·빛줄·먼지·네모 화소), 휘두름의 초승달, 화로 불티. 꾸밈만 상한, 빨강 없음, 히트스톱 동안 1/4 빠르기 |
 | 남은 상자 걷기·바람(0142) | `tools/art/blender/props.py` `work_fire`·`work_jar`·`work_tent`, `render.rs` `stage_props`(생활 물건·줍는 것)·`loot_body`·`loot_front`·`shaded_tris`·`octa_faces`·`ball_faces`·`spike_faces`·`glow_disc`·`wind_material`·GLSL `sway`·`flame_sway`, `scenery::sway`(법선 칸 w = 바람 몫), `flora.rs` `LEAF_SWAY`, `backdrop.rs` `LEAVES`, 랩 `render.wind` | 0142 |
+| 맞음 피드백(0143) | `world.rs` 맞은 틱의 히트스톱(`HURT_HITSTOP`·`HURT_HEAVY`)·`Player::since_hurt`·`hurt_blow`, `hud.rs` `hurt_edge_k`·`low_hp`·`draw_edge`·체력 칸, `render.rs` `HURT_WHITE`, `app/play.rs` 맞음 킥(`KICK_HURT_DEG`), 랩 `hurt.edge` | 0143 |
 | 화면 다듬기(0140) | `scenery.rs` `MORTAR_CALM`·`patch`·`SHADE_RES`·`PROP_AO`, `render.rs` `AMBIENT_KEY`·`MOON_KEY`·`actor_moon`·`floor_shade`·`post`·`Grade`, 랩 `render.floor calm`·`key light`·`grade`·`bloom`·`vignette` | 조용한 바닥, 빛 : 그늘 2.5배·그림자 칸 0.125m·소품 밑 그늘·그늘에 선 배우, 톤 곡선·빛 번짐·가장자리 그늘(선 둘과 함께 내부 해상도에서 한 번) |
 | 모델 리뷰·소품 v2(0139) | `tools/art/blender/common.py` `Geo.stone`·`lathe`·`limb`·`k_*` 칸, `props.py`, `review_glb.py`, `render.rs` `stage_props` | 소품 여덟(벽 조각·기둥·뿌리·화로·문·핵·종·돌무더기)을 0061 기준으로 다시 빚음 — 돌 쌓기 무늬 상자 대신 큰 덩어리 기하 + 단색, 둥근 것은 매끈하게·뿌리와 테만 각지게. 상자로 그리던 장신구 상자·새긴 돌·문 장치를 모델로(`chest`·`stone_tablet`·`lever`, 없으면 예전 상자) |
 | 지형·빛 | `scenery.rs`, `render.rs` `lit` | 한 번 굽기. 바탕 + 달빛 + 화로(7m, 거리 제곱). 배우는 1.35배 밝게. 가리는 벽 칸·소품은 옅게 |
@@ -125,6 +126,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), 랩(멈춤 끝 줄 LAB·F1, 0070), F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+**0143 정할 것(사장)**: 쿼터뷰 카메라 거리 — 20(지금, 0012) · 17 · 14 가운데(`docs/art/hurt-0143/camera-distance.png`, 랩 `cam.quarter.dist`). 가까이 가면 캐릭터는 커지지만 보이는 땅이 줄고 땅 돌리기의 어지러움이 돌아올 수 있다. 정해지면 얼린 값을 바꾼다. 그리고 맞음 피드백 판정(13-1~13-4): 멈춤 길이·붉은 테 진하기.
+
 **0142 판정(개발판)**: 체크리스트 12번 묶음 — 특히 ① 문지기 2단계의 뿌리 가시(싸움 안에서는 못 찍었다) ② 바람이 폰·핸드헬드에서 과하지 않은지·프레임 ③ 락온에서 보스 둘이 거칠어 보이는지(보이면 텍스처 1024×512).
 
 **0138(방향만, 2026-11-10)**: 웹 호스팅은 나중에 Netlify → Cloudflare(Workers 정적 파일)로. Netlify 요금제는 **Legacy**(월 100 GB, 사장 2026-11-10 확인) — 급하지 않다. 사람이 할 일: 때때로 Netlify 대시보드의 이번 달 대역폭(nail과 같은 팀이라 합산) — 100 GB에 가까워지면 옮길 시점.
@@ -138,6 +141,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 **v0.5.0 마일스톤 정함(0116, 갈래 `release/v0.5`)**: 인터뷰로 열여섯 물음 — 보라 뿌리 = 주인 없는 실(개발자 답), 떠난 이유는 게임 안 MYSTERY, 주민 = 여러 작은 동물("주민"), 포포 고리 걸어 둠, ECO-05 조건은 열고 행동 규칙만, ECO-10 같은 종이 다른 역할, 잔류형 정본(관찰), 마을 등급 2 = 체력 ×1.5·자세 ×1.3·잔불 ×1.6, 둘째 문지기 거리·공간형, 내려가는 길 + 되돌아가는 길, 도감 넣음, 주민의 불 = 아궁이·재방문 = 다음 판·공격이 지나감·말풍선. 이름: 떠난 마을·등딱지짐승·꼬투리·깨진 종지기. **다음: T1 지역 잇기부터**. 둘째 지역 설계는 0115(`docs/lore/regions/abandoned-village.md`·`docs/design/stages/abandoned-village-residents.md`).
 
 **v0.5.0 배포(2026-11-10, PR #15 `release/v0.5` → `main`, 사장 Merge — Squash `082a781`)**: `Cargo.toml` 0.5.0·`version_code` 17·`docs/releases/v0.5.0.md`. Actions `release`·`build-android` success, Release `v0.5.0`에 `knellroot.apk`. Squash라 빨리 감기가 안 돼 `release/v0.5`에는 main을 합치고(트리 같음), `release/v0.6`에는 `-s ours`로 합침(내용은 이미 있음). 고칠 것은 v0.5.x(`release/v0.5`) 또는 v0.6에서.
+
+**0143(개발판, 사장 "맞았는지 잘 모르겠음 … 캐릭터가 너무 작아서")**: 맞은 틱에 다섯 겹 — 세계 멈춤(0.13초, 센 타격 0.18초, 이어 맞으면 반씩)·화면 가장자리 붉은 테(겹 띠, 랩 `hurt.edge`)·잃은 체력 칸이 희게 부서짐 + 줄 떨림·몸 전체 흰 번쩍임·밀려난 쪽 카메라 킥. 한 칸 남으면 가장자리가 숨 쉰다. 캐릭터 크기는 카메라 거리(0012에서 사장이 14 → 20)라 바꾸지 않고 20·17·14 비교 그림만 — 판정 13-1~13-6.
 
 **0142(개발판, 사장 "그 외에 개발버전 수준인것들 찾아줘 … Environment 도 생동감 있게")**: 상자로 그리던 것 걷기 — 주민의 생활 물건 셋을 모델로(아궁이·항아리·천막, 다시 찾은 뒤의 변화는 뼈로), 줍는 것은 정육면체 대신 결정·둥근 덩이 + 빛무리(빛기둥 앞으로 당기고 어두운 테), 문지기 2단계의 뿌리 기둥은 가늘어지는 가시. 환경: 바람(풀 끝·잎·구운 화로 불꽃이 흔들리고 밟으면 풀이 눕는다 — 정점의 법선 칸 w에 몫, 색·법선 패스가 같은 식, 랩 `render.wind`) + 흩날리는 잎. Meshy 모델은 화면 크기로 재서 지금은 다시 변환하지 않음(락온의 보스 둘만 텍셀 0.64~0.70/화소 — 조건부). 판정 12-1~12-7.
 
