@@ -5,7 +5,7 @@
 - 근거(KB): `reference/netlify/free-plan-limits.md`·`reference/cloudflare/static-site-extras.md`, 결정 0001 덧붙임(2026-11-10, 공식 문서 라이브 대조).
 
 ## 왜
-- Netlify 무료판은 2025-09-04부터 크레딧제다. 크레딧제 무료판은 대역폭 ≈ 15 GB(1 GB = 20크레딧)·운영 배포 1회 15크레딧이고, 다 쓰면 **팀의 모든 사이트가 멈춘다**("Site not available"). 우리 팀(2023년 생성)은 바꾸지 않았다면 Legacy(월 100 GB, 넘으면 멈춤)지만, 어느 쪽이든 **넘으면 멈춘다** — 출시·홍보로 트래픽이 갑자기 오를 때 게임 둘(nail·knellroot)이 같은 팀이라 함께 내려간다.
+- Netlify 무료판은 2025-09-04부터 크레딧제다. 크레딧제 무료판은 대역폭 ≈ 15 GB(1 GB = 20크레딧)·운영 배포 1회 15크레딧이고, 다 쓰면 **팀의 모든 사이트가 멈춘다**("Site not available"). 우리 팀(2023년 생성)은 **Legacy**(사장 확인 2026-11-10 — 월 100 GB, 넘으면 멈춤, 크레딧제로 바꾸지 않는다: 바꾸면 되돌릴 수 없고 정적 사이트에 불리하다)다. 그래도 **넘으면 멈춘다** — 출시·홍보로 트래픽이 갑자기 오를 때 게임 둘(nail·knellroot)이 같은 팀이라 함께 내려간다.
 - Cloudflare는 정적 파일 요청이 무료·무제한이다. 도메인·DNS·메일이 이미 Cloudflare에 있다(beardworks.io).
 
 ## 어디로
@@ -19,5 +19,6 @@
 - 주소: 게임 주소를 `*.netlify.app`에서 우리 하위 도메인으로 옮기면 PWA·웹 기록(localStorage)은 출처가 바뀌어 끊긴다(KB `reference/web/pwa-install-fullscreen-orientation.md`) — 옮기는 결정에서 옛 주소를 어떻게 둘지 함께 정한다.
 
 ## 사람이 할 일
-- [ ] Netlify 대시보드 → Team → **Billing**에서 Legacy인지 크레딧제인지, 이번 달 사용량(팀 API로는 둘 다 "Free"로만 보인다).
+- [x] Netlify 요금제: **Legacy**(사장 2026-11-10). 지금 규모에선 급하지 않다 — 옮길 때는 트래픽이 크게 오를 일(상점 출시·홍보) 전에.
+- [ ] (때때로) Netlify 대시보드의 이번 달 대역폭 — 100 GB에 가까워지면 옮길 시점.
 - [ ] 옮길 시점을 정하면 새 결정 번호로.
