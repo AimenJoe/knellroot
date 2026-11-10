@@ -65,9 +65,13 @@ impl App {
         }
         self.progress.run = self.rest_at;
         // 상자(0064 M3 → 0117): 든 장신구·무기를 얻는다(이미 가졌으면 잔불).
-        if let Some(i) = self.run.take_opened() {
-            use crate::stage::Loot;
+        // 상자(0064 M3 → 0131): 열면 소리만 — 얻는 것은 바닥에 떨어진 것을 주울 때. 기록도 그때(줍지 않고 떠나면 다음에 다시 닫혀 있다).
+        if self.run.take_opened().is_some() {
             self.snd(crate::sfx::Id::Chest);
+        }
+        if let Some(i) = self.run.take_looted() {
+            use crate::stage::Loot;
+            self.snd(crate::sfx::Id::Ember);
             self.progress
                 .chests
                 .push(self.stage as u32 * crate::stage::CHESTS_PER_STAGE + i as u32);

@@ -440,12 +440,75 @@ def import_split(path, classify, names):
         bm.free()
         if not pm.polygons:
             continue
+        # 자르면 경계의 정점 법선이 다시 계산된다 — 그때 어긋난 면도 각지게(종지기 0132: 자른 뒤 1면).
+        pm.update()
+        for poly in pm.polygons:
+            if poly.use_smooth and any(poly.normal.dot(pm.vertices[i].normal) < 0.0 for i in poly.vertices):
+                poly.use_smooth = False
         o = bpy.data.objects.new(name, pm)
         bpy.context.scene.collection.objects.link(o)
         parts[name] = o
     for o in new:
         bpy.data.objects.remove(o)
     return parts, img
+
+
+def face_colors(path):
+    """줄인 Meshy GLB(`meshy_convert.py` 결과, 텍스처는 옆의 `<이름>_tex.png`)의 삼각형마다 (가운데 자리(블렌더 축), (h, s, v)).
+    색 = 세 꼭짓점 + 가운데 UV의 텍스처 색 평균. 자리로는 못 가르는 부위(꼬투리·종·핵 — 0132)를 색으로 고를 때:
+    `[c for c, hsv in face_colors(p) if 조건(*hsv)]` → `classify`에서 `near_any(그 목록, 면 가운데)`."""
+    import colorsys
+    import json
+    import struct
+    data = open(path, "rb").read()
+    off, js, bn = 12, None, b""
+    while off < len(data):
+        n, kind = struct.unpack_from("<II", data, off)
+        chunk = data[off + 8:off + 8 + n]
+        if kind == 0x4E4F534A:
+            js = json.loads(chunk)
+        else:
+            bn = chunk
+        off += 8 + n
+
+    def acc(i, fmt, k):
+        a = js["accessors"][i]
+        bv = js["bufferViews"][a["bufferView"]]
+        base = bv.get("byteOffset", 0) + a.get("byteOffset", 0)
+        size = struct.calcsize("<" + fmt)
+        return [struct.unpack_from("<" + fmt * k, bn, base + j * size * k) for j in range(a["count"])]
+
+    prim = js["meshes"][0]["primitives"][0]
+    pos = acc(prim["attributes"]["POSITION"], "f", 3)
+    uv = acc(prim["attributes"]["TEXCOORD_0"], "f", 2)
+    ifmt = {5123: "H", 5125: "I"}[js["accessors"][prim["indices"]]["componentType"]]
+    idx = [i[0] for i in acc(prim["indices"], ifmt, 1)]
+    img = bpy.data.images.load(path.replace(".glb", "_tex.png"), check_existing=True)
+    W, H = img.size
+    px = img.pixels[:]
+
+    def texel(u, v):
+        x = int(u * W) % W
+        y = H - 1 - int(v * H) % H  # glTF v는 위에서, 블렌더 화소 줄은 아래에서
+        k = (y * W + x) * 4
+        return px[k:k + 3]
+
+    out = []
+    for t in range(0, len(idx), 3):
+        tri = idx[t:t + 3]
+        uvs = [uv[i] for i in tri]
+        uvs.append(tuple(sum(c) / 3 for c in zip(*uvs)))
+        rgb = [sum(c) / 4 for c in zip(*[texel(*q) for q in uvs])]
+        c = [sum(pos[i][a] for i in tri) / 3 for a in range(3)]
+        out.append(((c[0], -c[2], c[1]), colorsys.rgb_to_hsv(*rgb)))  # glTF(Y 위) → 블렌더(Z 위)
+    bpy.data.images.remove(img)
+    return out
+
+
+def near_any(points, c, tol=2e-3):
+    """가져온 면 가운데 `c`가 목록의 한 자리와 같은가(가져오며 생기는 부동소수 차이만 봐준다)."""
+    x, y, z = c
+    return any(abs(x - a) < tol and abs(y - b) < tol and abs(z - d) < tol for a, b, d in points)
 
 
 def darken_grey(img, k, sat_max):

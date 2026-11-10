@@ -194,6 +194,24 @@ pub const SHARD_R: f32 = 0.35;
 pub const SHARD_REFLECT_DAMAGE: i32 = 3;
 pub const SHARD_REFLECT_SPEED: f32 = 1.4;
 pub const SHARD_SHOW: f32 = 7.0;
+
+// 보스 2단계(0133 — 사장 2026-11-09 인터뷰: 두 보스, 짧은 전환, 새 수 하나 + 잇기, 막대 표시 없음).
+/// 체력 반에서 하던 공격을 멈추고 맞지 않는 전환(초): 무릎 꿇음 → `RISE_BURST`에 터짐(밀쳐냄, 피해 없음) → 일어섬.
+pub const RISE_TIME: f32 = 2.0;
+pub const RISE_BURST: f32 = 1.2;
+/// 터질 때 이 거리(m, 몸 가장자리부터) 안의 방랑자를 이 빠르기로 밀어낸다(튕김 `RECOIL_PUSH`의 셋 배 남짓).
+pub const RISE_PUSH_R: f32 = 4.5;
+pub const RISE_PUSH: f32 = 9.0;
+/// 문지기 2단계 — 뿌리 기둥 줄(`Atk::Roots`): 땅을 짚으면 바라보는 쪽으로 기둥이 줄지어 솟는다. 원(피함)이 줄지어 예고되고,
+/// 앞머리가 이 빠르기로 나아가며 지나는 자리를 친다(뛰어도 맞는다 — 위로 솟으니). 옆으로 비킨다.
+pub const ROOTS_LEN: f32 = 11.0;
+pub const ROOTS_R: f32 = 0.9;
+pub const ROOTS_SPEED: f32 = 10.0;
+/// 종지기 2단계 — 종 내던지기(`Atk::Hurl`): 예고 첫 틱의 방랑자 자리에 종을 높이 던져 떨어뜨린다(원판 = 맞는 곳) →
+/// 떨어진 자리에서 고리 한 겹이 퍼진다(뛰어 넘는다). 예고의 이만큼이 지나면 종이 손을 떠난다(렌더).
+pub const HURL_R: f32 = 2.2;
+pub const HURL_RING: f32 = 7.0;
+pub const HURL_THROW: f32 = 0.55;
 /// 청소자(0120): 싸움이 없을 때 이 초마다 체력 1을 먹는다.
 pub const EAT_TIME: f32 = 2.5;
 /// 등딱지(0120): 앞을 친 평타가 튕기면 방랑자가 튀는 초·뒤로 밀리는 빠르기(m/s). 패링당한 것보다 짧게.

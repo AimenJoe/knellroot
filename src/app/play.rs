@@ -442,7 +442,10 @@ impl App {
                     crate::enemy::TeleShape::Disc { .. } => Id::TeleDisk,
                     crate::enemy::TeleShape::Sector { .. } => Id::TeleFan,
                     crate::enemy::TeleShape::Lane { .. } => Id::TeleLane,
-                    crate::enemy::TeleShape::Ring { .. } => Id::TeleRing,
+                    // 줄지은 원(0133 뿌리 기둥)도 피할 것 — 고리와 같은 소리.
+                    crate::enemy::TeleShape::Ring { .. } | crate::enemy::TeleShape::Row { .. } => {
+                        Id::TeleRing
+                    }
                 });
             }
             if tele.is_some() {

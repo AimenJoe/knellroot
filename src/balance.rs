@@ -180,6 +180,43 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
                 }
             }
             (EState::Tele { .. }, Atk::Shards) => defending = tele_left < 0.5,
+            // 2단계(0133) 전환: 튕기니 치지 않는다.
+            (EState::Rise { .. }, _) => defending = true,
+            // 뿌리 기둥 줄: 줄 위면 옆으로 비킨다(성공이면).
+            (EState::Tele { .. } | EState::Wave { .. }, Atk::Roots) => {
+                let f = e.facing_dir();
+                let rel = -to;
+                let along = rel.dot(f);
+                let side = (rel - f * along).length();
+                let on_line = along > 0.0 && side <= crate::tuning::ROOTS_R + PLAYER_RADIUS + 0.4;
+                defending = true;
+                if ok && on_line {
+                    a.move_dir = vec2(1.0, 0.0);
+                }
+            }
+            // 종 내던지기: 떨어질 원판 안이면 빠져나오고(성공이면), 떨어진 자리의 고리는 울림처럼 뛴다.
+            (EState::Tele { .. } | EState::Swing { .. }, Atk::Hurl) => {
+                defending = true;
+                if let Some(at) = e.plant_at {
+                    let inside = vec2(pp.x - at.x, pp.z - at.z).length()
+                        <= crate::tuning::HURL_R + PLAYER_RADIUS + 0.3;
+                    if ok && inside {
+                        a.move_dir = vec2(1.0, 0.0);
+                    }
+                }
+            }
+            (EState::Wave { t: wt }, Atk::Hurl) => {
+                defending = true;
+                let c = e.wave_center();
+                let from_c = vec2(pp.x - c.x, pp.z - c.z).length();
+                let v = e.def().wave_speed;
+                let arrive = (from_c - 0.7 - wt * v) / v;
+                let grounded = w.player.air <= 0.0
+                    && matches!(w.player.state, PState::Idle | PState::Attack { .. });
+                if ring_ok[0] && e.rings_hit == 0 && grounded && (0.07..0.13).contains(&arrive) {
+                    a.jump = true;
+                }
+            }
             _ => {}
         }
         // 날아오는 조각: 가장 가까운 것이 닿기 직전에 패링.

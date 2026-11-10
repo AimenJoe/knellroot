@@ -807,9 +807,55 @@ impl Renderer {
                 }
             }
             // 퍼지는 고리(뿌리 파동 하나·울림 고리 여럿, 0125) — 고리 사이가 설 자리로 읽히게 하나하나 따로.
+            // 종 내던지기(0133)의 고리는 종이 떨어진 자리가 가운데.
+            let wc = if en.atk == crate::enemy::Atk::Hurl {
+                en.wave_center()
+            } else {
+                p
+            };
             for front in en.wave_fronts() {
-                drape.ring(p, front, 0.0, 360.0, with_a(TELE, 0.45));
-                drape.ring(p, (front - 0.5).max(0.1), 0.0, 360.0, with_a(TELE, 0.18));
+                drape.ring(wc, front, 0.0, 360.0, with_a(TELE, 0.45));
+                drape.ring(wc, (front - 0.5).max(0.1), 0.0, 360.0, with_a(TELE, 0.18));
+            }
+            // 뿌리 기둥 줄(0133): 앞머리까지 기둥이 솟고(지나간 자리일수록 다 솟음), 쉬는 동안 가라앉는다.
+            let sink_k = match (en.state, en.atk) {
+                (EState::Recover { t }, crate::enemy::Atk::Roots) => Some(1.0 - t / ROOTS_SINK),
+                _ => None,
+            };
+            if let Some(front) = en
+                .roots_front()
+                .or(sink_k.filter(|k| *k > 0.0).map(|_| en.charge_len))
+            {
+                let f = en.facing_dir();
+                let mut s = en.radius + 0.5;
+                let mut i = 0;
+                while s <= front {
+                    let rise = ((front - s) / 1.6).clamp(0.0, 1.0) * sink_k.unwrap_or(1.0).max(0.0);
+                    let h = ROOT_PILLAR_H * rise * if i % 2 == 0 { 1.0 } else { 0.75 };
+                    if h > 0.02 {
+                        let side = if i % 2 == 0 { 0.25 } else { -0.25 };
+                        let at = drape.at(
+                            p.x + f.x * s + f.z * side,
+                            p.z + f.z * s - f.x * side,
+                            p.y,
+                            0.0,
+                        );
+                        shaded_box(
+                            at + Vec3::Y * h * 0.5,
+                            vec3(0.32, h, 0.32),
+                            ROOT_PILLAR,
+                            0.8,
+                        );
+                        shaded_box(
+                            at + Vec3::Y * (h + 0.12),
+                            vec3(0.16, 0.24, 0.16),
+                            ROOT_PILLAR_TIP,
+                            0.9,
+                        );
+                    }
+                    s += 0.8;
+                    i += 1;
+                }
             }
             // 엘리트(0112): 발밑의 옅은 뼈빛 표지 — 성질마다 모양이 다르다(색으로 세기를 말하지 않는다, lore ecology 2).
             // 굳은 = 굵은 고리 하나, 되풀이 = 고리 둘, 남는 = 끊어진 고리(쓰러진 뒤 남을 것).
@@ -1218,7 +1264,7 @@ impl Renderer {
                 Color::new(0.55, 0.45, 0.9, 0.08 + 0.06 * pulse),
             );
         }
-        // 남은 주민(0122, 상자 배우 — 모델은 0061 체크리스트로 판정 뒤): 둥근 몸 + 큰 머리 + 귀 둘(작은 동물), 바라보는 쪽으로 코.
+        // 남은 주민(0122): 모델(0132, `Resident::model`)이 없으면 상자 배우 — 둥근 몸 + 큰 머리 + 귀 둘(작은 동물), 바라보는 쪽으로 코.
         // 곁의 생활 물건이 재방문 변화를 보인다 — 아궁이 불빛이 살아남 · 항아리가 바로 섬 · 천막이 꿰매짐.
         for (k, &(i, at)) in run.residents.iter().enumerate() {
             let r = &crate::residents::RESIDENTS[i];
@@ -1227,34 +1273,53 @@ impl Renderer {
             let q = Quat::from_rotation_y(face);
             let breath = (w.time * 1.3 + at.x).sin() * 0.02;
             fl.shadow(at, 0.5);
-            shaded_box_rot(
-                at + Vec3::Y * 0.35,
-                vec3(0.6, 0.7 + breath, 0.5),
-                r.body,
-                0.85,
-                q,
-                at,
-            );
-            let head = at + Vec3::Y * (0.95 + breath);
-            shaded_box_rot(head, vec3(0.62, 0.52, 0.56), r.body, 0.9, q, at);
-            for side in [-1.0f32, 1.0] {
+            // 모델(0132)이 있으면: 방랑자가 멀면 제 일(`work`), 돌아볼 거리 안이면 돌아본 자세(`look`). 자리마다 박자를 어긋낸다.
+            if let Some(e) = self.lib.get(r.model) {
+                let near = vec2(w.player.pos.x - at.x, w.player.pos.z - at.z).length()
+                    <= crate::residents::GLANCE_RANGE;
+                let anim = e.pick(if near {
+                    &["look", "idle"]
+                } else {
+                    &["work", "idle"]
+                });
+                let clock = w.time + at.x * 0.37 + at.z * 0.61;
+                e.model.pose(
+                    anim,
+                    clock.rem_euclid(e.duration(anim).max(1e-3)),
+                    &mut self.pose,
+                );
+                let inst = Mat4::from_translation(at) * Mat4::from_rotation_y(face);
+                self.batch.model(e, &self.pose, inst, WHITE, lights, 0.0);
+            } else {
                 shaded_box_rot(
-                    head + vec3(0.2 * side, 0.32, 0.0),
-                    vec3(0.14, 0.2, 0.1),
+                    at + Vec3::Y * 0.35,
+                    vec3(0.6, 0.7 + breath, 0.5),
                     r.body,
-                    0.8,
+                    0.85,
+                    q,
+                    at,
+                );
+                let head = at + Vec3::Y * (0.95 + breath);
+                shaded_box_rot(head, vec3(0.62, 0.52, 0.56), r.body, 0.9, q, at);
+                for side in [-1.0f32, 1.0] {
+                    shaded_box_rot(
+                        head + vec3(0.2 * side, 0.32, 0.0),
+                        vec3(0.14, 0.2, 0.1),
+                        r.body,
+                        0.8,
+                        q,
+                        at,
+                    );
+                }
+                shaded_box_rot(
+                    head + vec3(0.0, -0.05, 0.3),
+                    vec3(0.14, 0.1, 0.08),
+                    Color::new(0.25, 0.2, 0.2, 1.0),
+                    1.0,
                     q,
                     at,
                 );
             }
-            shaded_box_rot(
-                head + vec3(0.0, -0.05, 0.3),
-                vec3(0.14, 0.1, 0.08),
-                Color::new(0.25, 0.2, 0.2, 1.0),
-                1.0,
-                q,
-                at,
-            );
             // 생활 물건은 제 일 쪽(옆)에.
             let spot = at + vec3(0.95, 0.0, 0.0);
             match r.work {
@@ -1364,12 +1429,55 @@ impl Renderer {
             beam(u, 0.9, 4.0, with_a(GUIDE_COLOR, 0.06 + 0.04 * pulse));
             fl.ring(u, 1.3, 0.0, 360.0, with_a(GUIDE_COLOR, 0.45));
         }
+        // 떨어진 아이템(0131): 상자에서 포물선으로 튀어나와 내려앉고, 내려앉은 뒤 천천히 돌며 떠 있는 흰 마름모 + 흰 빛기둥.
+        for (j, (p, chest, age)) in run.drops.iter().enumerate() {
+            let k = (age / crate::stage::DROP_SETTLE).clamp(0.0, 1.0);
+            let from = run.chests.get(*chest).copied().unwrap_or(*p) + Vec3::Y * 0.7;
+            let to = *p + Vec3::Y * 0.45;
+            let arc = from.lerp(to, k) + Vec3::Y * (4.0 * k * (1.0 - k)) * 1.0;
+            let bob = if k >= 1.0 {
+                0.06 * (w.time * 2.4 + j as f32).sin()
+            } else {
+                0.0
+            };
+            let c = arc + Vec3::Y * bob;
+            fl.shadow(*p, 0.22);
+            let rot = Quat::from_rotation_y(w.time * 1.4 + j as f32)
+                * Quat::from_rotation_z(std::f32::consts::FRAC_PI_4)
+                * Quat::from_rotation_x(std::f32::consts::FRAC_PI_4);
+            shaded_box_rot(c, Vec3::splat(0.2), LOOT_CHEST, 1.0, rot, c);
+            shaded_box_rot(c, Vec3::splat(0.32), with_a(LOOT_CHEST, 0.25), 1.0, rot, c);
+            if k >= 1.0 {
+                loot_beam(
+                    &fl,
+                    *p,
+                    LOOT_CHEST,
+                    loot_fade(*p, w.player.pos),
+                    w.time,
+                    7.0 + j as f32,
+                );
+            }
+        }
         // 숨은 물건(0105): 흔적 자리의 작은 빛 — 등잔 +1은 금빛, 한 모금 +1은 민트(0037 생명 색). 살짝 떠서 숨 쉬고 발밑에 옅은 테.
         // 생김새는 성소의 종과 닮지 않게(lore — 울리는 종은 보이지 않는다): 둥근 덩어리 하나.
         for (i, (p, kind, _)) in run.finds.iter().enumerate() {
             if run.found.get(i).copied().unwrap_or(true) {
                 continue;
             }
+            // 떨어진 아이템의 빛기둥(0131): 종류 색, 가까이 와야 서서히 — 뒤지는 맛은 남긴다.
+            let beam_col = match kind {
+                crate::stage::Find::Lamp => LOOT_LAMP,
+                crate::stage::Find::Sip => LOOT_SIP,
+                crate::stage::Find::Shard => LOOT_SHARD,
+            };
+            loot_beam(
+                &fl,
+                *p,
+                beam_col,
+                loot_fade(*p, w.player.pos),
+                w.time,
+                i as f32,
+            );
             let k = 0.5 + 0.5 * (w.time * 2.2 + i as f32 * 1.7).sin();
             // 종소리 조각(0106): 가늘고 긴 크림빛 조각이 천천히 돌며 떤다 — 덩어리(등잔·한 모금)와 모양부터 다르게, 종 꼴은 아니게.
             if *kind == crate::stage::Find::Shard {
@@ -1585,9 +1693,22 @@ impl Renderer {
             // 번쩍임은 눈·핵만(몸 전체가 밝아지면 맞았을 때의 흰 번쩍임과 헷갈린다).
             glow += WINDUP_GLINT_GAIN * (1.0 - h / WINDUP_GLINT).max(0.0);
         }
+        // 2단계 전환(0133): 무릎 꿇은 동안 핵·눈이 차오르다 터지는 틱에 가장 밝고, 일어서며 2단계 밝기로.
+        if let EState::Rise { t } = en.state {
+            use crate::tuning::{RISE_BURST, RISE_TIME};
+            glow += if t < RISE_BURST {
+                RISE_GLOW * (t / RISE_BURST)
+            } else {
+                RISE_GLOW * (1.0 - (t - RISE_BURST) / (RISE_TIME - RISE_BURST))
+            };
+        }
         if let Some(e) = self.lib.get(model) {
             let (anim, at) = enemy_anim(en, model, e, w.time, stage);
-            e.model.pose(anim, at, &mut self.pose);
+            // 종 내던지기(0133): 종이 손을 떠난 뒤엔 손의 종을 감춘다(날아가는·떨어진 종은 따로 그린다).
+            let hide = hurl_bell(en)
+                .and(e.model.node("bell"))
+                .map(|n| (n, Quat::IDENTITY, Vec3::ZERO));
+            e.model.pose_with(anim, at, hide.as_slice(), &mut self.pose);
             let inst = Mat4::from_translation(p + sink)
                 * Mat4::from_quat(tilt)
                 * Mat4::from_rotation_y(en.facing)
@@ -1605,6 +1726,24 @@ impl Renderer {
                 WHITE
             };
             self.batch.model(e, &self.pose, inst, tint, lights, glow);
+            // 손을 떠난 종(0133): 성소 종 소품의 종 몸만(나무 틀은 감춘다), 날아가는 동안 돈다.
+            if let (Some(q), Some(b)) = (hurl_bell(en), self.lib.get("bell")) {
+                let frame = b
+                    .model
+                    .node("bell_frame")
+                    .map(|n| (n, Quat::IDENTITY, Vec3::ZERO));
+                b.model
+                    .pose_with(None, 0.0, frame.as_slice(), &mut self.pose);
+                let spin = if matches!(en.state, EState::Tele { .. }) {
+                    w.time * 9.0
+                } else {
+                    0.0
+                };
+                let inst = Mat4::from_translation(q - Vec3::Y * (1.05 * HURL_BELL_SCALE))
+                    * Mat4::from_rotation_y(spin)
+                    * Mat4::from_scale(Vec3::splat(HURL_BELL_SCALE));
+                self.batch.model(b, &self.pose, inst, WHITE, lights, 0.0);
+            }
         } else {
             let base = if en.boss {
                 Color::new(0.45, 0.2, 0.5, 1.0)
@@ -1615,7 +1754,7 @@ impl Renderer {
             let crouch = matches!(en.state, EState::Tele { .. });
             let h = en.height * if crouch { 0.85 } else { 1.0 } * squash;
             actor(p + sink, en.facing_dir(), en.radius, h, col, 0.6, tilt);
-            // 깨진 종지기(0125, 상자 단계): 등 뒤에 끄는 깨진 종 — 울리기 예고 동안 들어 올린다. 모델은 다음 단계.
+            // 깨진 종지기(0125, 상자 단계): 등 뒤에 끄는 깨진 종 — 울리기 예고 동안 들어 올린다. 모델(0132 `bellkeeper.glb`)이 있으면 쓰지 않는다.
             if en.kind == crate::species::Kind::Bellkeeper {
                 let lift = match (en.state, en.atk) {
                     (EState::Tele { t }, crate::enemy::Atk::Toll) => {
@@ -2347,6 +2486,40 @@ impl Renderer {
 
 /// 준비 동작 단서(0073): 예고 끝까지 눈·핵 빛 +, 버티는 동안 떨림(m, 몸 옆으로), 정점 번쩍임 길이(초)·세기.
 const WINDUP_GLOW: f32 = 0.6;
+/// 2단계 전환(0133)이 터지는 틱의 눈·핵 밝기 더함.
+const RISE_GLOW: f32 = 2.2;
+/// 뿌리 기둥(0133): 높이(m)·가라앉는 초·빛깔(보라 뿌리 — 몸빛이 아니라 뿌리라 각지게, 0037).
+const ROOT_PILLAR_H: f32 = 1.5;
+const ROOTS_SINK: f32 = 0.6;
+const ROOT_PILLAR: Color = Color::new(0.24, 0.16, 0.30, 1.0);
+const ROOT_PILLAR_TIP: Color = Color::new(0.42, 0.30, 0.52, 1.0);
+/// 종 내던지기(0133): 날아가는 종이 그리는 포물선 높이(m)·크기(성소 종 소품의 종 몸을 키워 쓴다).
+const HURL_ARC: f32 = 4.5;
+const HURL_BELL_SCALE: f32 = 1.2;
+
+/// 종 내던지기(0133)에서 종이 손을 떠났다면 그 종의 자리(날아가는 중 = 포물선, 떨어진 뒤 = 떨어진 자리). 아니면 None.
+fn hurl_bell(en: &Enemy) -> Option<Vec3> {
+    if en.atk != crate::enemy::Atk::Hurl {
+        return None;
+    }
+    let target = en.plant_at?;
+    let hand = en.pos + en.facing_dir() * 0.9 + Vec3::Y * 2.6;
+    match en.state {
+        EState::Tele { t } => {
+            let k = t / en.tele_dur().max(1e-3);
+            let throw = crate::tuning::HURL_THROW;
+            if k < throw {
+                return None;
+            }
+            let u = ((k - throw) / (1.0 - throw)).clamp(0.0, 1.0);
+            let mut q = hand.lerp(target, u);
+            q.y += HURL_ARC * 4.0 * u * (1.0 - u);
+            Some(q)
+        }
+        EState::Swing { .. } | EState::Wave { .. } => Some(target),
+        _ => None,
+    }
+}
 /// 들어 올리는 동안 키 늘림(배)·뒤로 젖힘(라디안).
 const WINDUP_STRETCH: f32 = 0.06;
 const WINDUP_LEAN: f32 = 0.1;
@@ -2389,6 +2562,8 @@ fn enemy_anim(
         Atk::Plant => &["plant", "attack"],
         Atk::Toll => &["toll", "wave", "slam", "attack"],
         Atk::Shards => &["throw", "attack"],
+        Atk::Roots => &["roots", "slam", "attack"],
+        Atk::Hurl => &["hurl", "toll", "throw", "attack"],
     };
     let once = |names: &[&str], k: f32| {
         let a = e.pick(names);
@@ -2396,6 +2571,12 @@ fn enemy_anim(
     };
     let is_windup =
         |a: Option<usize>| a.is_some_and(|i| e.model.anims[i].name.ends_with("_windup"));
+    // 뛰기(턱 오르내림 0100 · 꼬투리 물러나기 0120): 모델에 `hop`이 있으면 뛰기 진행대로 한 번(0132), 없으면 상태대로.
+    if let Some(h) = en.hop {
+        if e.pick(&["hop"]).is_some() {
+            return once(&["hop"], h.t / h.dur.max(1e-3));
+        }
+    }
     match en.state {
         EState::Dormant => {
             let w = stage.map(|s| s.wake_progress()).unwrap_or(0.0);
@@ -2438,8 +2619,9 @@ fn enemy_anim(
             }
         }
         EState::Charge { .. } => (e.pick(&["charge", "run", "walk"]), clock * 1.5),
+        // 울림 고리(0125 `Atk::Toll`)도 이 상태 — 예고에서 고른 동작(`toll` …)을 이어 튼다(0132).
         EState::Wave { t } => {
-            let a = e.pick(&["wave", "slam", "attack"]);
+            let a = e.pick(windup);
             let (_, impact) = strike_keys(model, a, e);
             (a, (impact + t).min(e.duration(a) * 0.999))
         }
@@ -2447,6 +2629,18 @@ fn enemy_anim(
             Some(a) => (Some(a), t.min(e.duration(Some(a)) * 0.999)),
             None => (e.pick(&["idle"]), clock + phase),
         },
+        // 2단계 전환(0133): 깨어남 동작을 거꾸로 무릎 꿇고(0.5초) 버티다가, 터지는 틱부터 일어선다.
+        EState::Rise { t } => {
+            use crate::tuning::{RISE_BURST, RISE_TIME};
+            let k = if t < 0.5 {
+                1.0 - t / 0.5
+            } else if t < RISE_BURST {
+                0.0
+            } else {
+                (t - RISE_BURST) / (RISE_TIME - RISE_BURST)
+            };
+            once(&["rise", "wake", "hurt"], k)
+        }
         EState::Stagger { .. } => once(&["hurt", "idle"], 0.3),
         EState::Dead => once(&["hurt", "idle"], 0.999),
     }
@@ -2458,6 +2652,11 @@ const STRIKE_KEYS: &[(&str, &str, f32, f32)] = &[
     ("root_husk", "attack", 0.5, 0.62),
     ("gatekeeper", "slam", 0.9, 1.0),
     ("gatekeeper", "wave", 1.0, 1.12),
+    ("shellback", "attack", 0.6, 0.72),
+    ("pod", "plant", 0.45, 0.6),
+    ("bellkeeper", "toll", 1.0, 1.12),
+    ("bellkeeper", "slam", 0.9, 1.0),
+    ("bellkeeper", "throw", 0.6, 0.7),
 ];
 
 fn strike_keys(model: &str, a: Option<usize>, e: &Entry) -> (f32, f32) {
@@ -2518,6 +2717,16 @@ fn telegraph(
     ink_mul: f32,
     timing: bool,
 ) {
+    // 줄지은 원(0133 뿌리 기둥): 원 하나하나를 같은 규칙으로(원 = 피할 것).
+    if let TeleShape::Row { n, r, step, start } = shape {
+        let (sn, cs) = facing.sin_cos();
+        let dir = vec3(sn, 0.0, cs);
+        for i in 0..n {
+            let c = p + dir * (start + i as f32 * step);
+            telegraph(d, c, facing, k, TeleShape::Disc { r }, ink_mul, timing);
+        }
+        return;
+    }
     if !timing {
         return telegraph_density(d, p, facing, k, shape, ink_mul);
     }
@@ -2554,6 +2763,7 @@ fn telegraph(
             d.line(p + vec3(-x, 0.0, -x), p + vec3(x, 0.0, x), mark);
             d.line(p + vec3(-x, 0.0, x), p + vec3(x, 0.0, -x), mark);
         }
+        TeleShape::Row { .. } => {}
     }
 }
 
@@ -2589,6 +2799,7 @@ fn telegraph_density(d: &Drape, p: Vec3, facing: f32, k: f32, shape: TeleShape, 
             d.line(p + vec3(-x, 0.0, -x), p + vec3(x, 0.0, x), mark);
             d.line(p + vec3(-x, 0.0, x), p + vec3(x, 0.0, -x), mark);
         }
+        TeleShape::Row { .. } => {}
     }
 }
 
@@ -3607,6 +3818,43 @@ fn shaft(a: Vec3, b: Vec3, ra: f32, rb: f32, ca: Color, cb: Color) {
         indices,
         texture: None,
     });
+}
+
+/// 떨어진 아이템의 빛기둥 색(0131 — 종류마다, 갈 곳의 호박빛 `GUIDE_COLOR`는 쓰지 않는다: KB wayfinding "그 색 = 갈 길").
+const LOOT_LAMP: Color = Color::new(0.98, 0.9, 0.62, 1.0);
+const LOOT_SIP: Color = Color::new(0.62, 0.92, 0.8, 1.0);
+const LOOT_SHARD: Color = Color::new(0.96, 0.94, 0.86, 1.0);
+const LOOT_CHEST: Color = Color::new(0.9, 0.93, 1.0, 1.0);
+/// 빛기둥이 다 보이는 거리·사라지는 거리(m) — 가까이 와야 서서히(사장 2026-11-09 "가까이서만 서서히").
+const LOOT_NEAR: f32 = 10.0;
+const LOOT_FAR: f32 = 14.0;
+
+/// 방랑자와의 거리로 빛기둥의 세기 0..1.
+fn loot_fade(at: Vec3, player: Vec3) -> f32 {
+    let d = vec2(at.x - player.x, at.z - player.z).length();
+    ((LOOT_FAR - d) / (LOOT_FAR - LOOT_NEAR)).clamp(0.0, 1.0)
+}
+
+/// 떨어진 아이템의 빛기둥(0131, 디아블로식 — 갈 곳 기둥보다 훨씬 가늘고 낮게): 안쪽 밝은 심 + 바깥 옅은 껍질 + 위로 오르는 반짝임 셋 + 발밑 테.
+fn loot_beam(fl: &Drape, p: Vec3, col: Color, fade: f32, time: f32, seed: f32) {
+    if fade <= 0.01 {
+        return;
+    }
+    let pulse = 0.85 + 0.15 * (time * 2.0 + seed).sin();
+    beam(p, 0.1, 2.6, with_a(col, 0.55 * fade * pulse));
+    beam(p, 0.26, 2.0, with_a(col, 0.16 * fade));
+    fl.ring(p, 0.42, 0.0, 360.0, with_a(col, 0.45 * fade));
+    for k in 0..3 {
+        let u = (time * 0.55 + k as f32 / 3.0 + seed * 0.37).fract();
+        let a = (1.0 - u) * fade;
+        let x = (seed * 1.3 + k as f32 * 2.1 + time).sin() * 0.08;
+        draw_cube(
+            p + vec3(x, 0.2 + u * 2.3, -x),
+            Vec3::splat(0.05),
+            None,
+            with_a(col, a),
+        );
+    }
 }
 
 fn beam(c: Vec3, r: f32, h: f32, col: Color) {

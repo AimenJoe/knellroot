@@ -60,6 +60,10 @@ pub const STONES: Pair = (
     "둘째 지역 새긴 돌 곁에서(읽기)",
     "region 2 beside a carved stone (read)",
 );
+pub const CHEST: Pair = (
+    "둘째 지역 상자 곁에서(떨어진 아이템)",
+    "region 2 beside a chest (dropped loot)",
+);
 pub const STAGE_NOTE: Pair = (
     "이 슬롯의 장신구·잔불로 진짜 스테이지를 돈다. 아무것도 저장하지 않는다.",
     "the real stage with this slot's charms and embers; nothing is saved",
@@ -95,6 +99,7 @@ pub const PAIRS: &[Pair] = &[
     VILLAGE,
     RESIDENTS,
     STONES,
+    CHEST,
     STAGE_NOTE,
     LAB_START,
     LAB_NOTE,
@@ -119,6 +124,16 @@ pub fn spec_label(name: &'static str) -> &'static str {
 
 /// 개발 시나리오(`scenario::LIST`의 영어 이름) → (한국어 이름, 무엇을 보나). F3 아레나 줄은 기본 글꼴이라 영어 그대로.
 pub const SCENARIO_KO: &[(&str, &str, &str)] = &[
+    (
+        "warden phase two",
+        "문지기 2단계",
+        "0133 시작하자마자 전환(맞지 않음·밀쳐냄)·뿌리 기둥 줄·돌진 뒤 내려치기",
+    ),
+    (
+        "bellkeeper phase two",
+        "종지기 2단계",
+        "0133 시작하자마자 전환(맞지 않음·밀쳐냄)·선 자리에 종 내던지기 + 고리·돌진 뒤 울림",
+    ),
     (
         "broken bellkeeper",
         "깨진 종지기",
