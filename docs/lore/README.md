@@ -8,6 +8,7 @@
 |---|---|
 | 이 파일 | 방향 셋·상태 넷·지키는 것·세계 법칙 A~E·미스터리 넷·다섯 막·엔딩의 울타리·단서 규칙 |
 | [`regions/abandoned-village.md`](regions/abandoned-village.md) | v0.5.0 둘째 지역 — 실제 지도·주민의 일상·새긴 돌·적 생태·깨진 종지기·장신구·도감(0115~0130 교차 검증) |
+| [`regions/shrine-village-connection.md`](regions/shrine-village-connection.md) | 침묵의 성소 ↔ 떠난 마을 — 두 지역의 역사적 연결 가설(PROPOSED)·환경 단서 A~D·공개 순서·지킬 미스터리 |
 | [`ecology.md`](ecology.md) | 뿌리와 침식의 생태계 — 뿌리의 작용·형태, 침식 유형, 생명체 분류, 침묵의 성소·떠난 마을의 관찰, 적·보스·도감 규칙, 불변 규칙, 열린 질문 ECO-01~10 |
 | [`growth.md`](growth.md) | v0.4.0 "자라는 방랑자"(0096)를 세계관에 놓는 법 — 레벨·나무·핵·종소리 조각·화로의 뜻과 연출 규칙, 나무 칸 이름 후보 |
 
