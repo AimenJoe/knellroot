@@ -26,3 +26,9 @@
 
 ## 다시 볼 조건
 v0.4.0 "내려가는 길"(0069)처럼 구역이 늘거나 판매 준비(첫 게임 0232)에 들어가면 nail 페이지처럼 넓힌다(조작·적·소식).
+
+## 덧붙임(2026-11-10) — SEO
+사장 "넬루트도 SEO 최적화"(회사 페이지·nail 0290과 같은 꼴, 기준은 Google 검색 센터 문서):
+- 머리말(한·영): 자기 주소 `canonical`, ko·en 짝에 `x-default`(한국어판), `og:url`·`og:site_name`·`og:locale`, 하는 일이 드러나는 제목·설명("개발 중"은 그대로).
+- JSON-LD `VideoGame`(이름·넬루트·장르·플랫폼 웹·Android·언어·무료 `Offer`·만든 곳 = beardworks.io Organization `@id`) + `WebSite`. 평점·리뷰가 없어 리치 결과용 `SoftwareApplication`은 넣지 않는다(필수 칸을 지어내지 않는다). 출시일은 없다(개발 중).
+- `site/sitemap.xml`·`site/robots.txt`(`Sitemap:` 줄). 글꼴 서브셋 다시.
