@@ -68,6 +68,8 @@ jobs:
           ls -la knellroot-ios-unsigned.ipa
           du -sh "$app"
           file "$app/knellroot"
+          # 패드(0137): GameController 프레임워크가 링크됐나 — 없으면 첫 그리기에서 패드 클래스를 못 찾는다(nail 0288과 같은 확인).
+          otool -L "$app/knellroot" | grep GameController.framework
 
       - uses: actions/upload-artifact@v7
         with:

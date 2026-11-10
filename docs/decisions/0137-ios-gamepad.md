@@ -21,3 +21,11 @@
 - 확인: 리눅스에서 `cargo clippy --release --target aarch64-apple-ios`(운영판·개발판) 경고 없음, 다른 타깃·`cargo test`(355) 그대로. CI `build-ios`가 GameController 프레임워크를 링크해 `.ipa`를 만드는지(아래 커밋의 실행).
 - 못 함: 실기(사장) — 패드 연결·버튼 열둘·스틱 세기·D패드 메뉴·패드를 뗐다 붙이기. Menu 버튼을 시스템이 가로채는지(iOS가 홈 버튼은 가로챈다 — 우리는 Home을 읽지 않는다).
 - 알려진 것: 그리기 사이(1/60초 안)에 눌렀다 뗀 아주 짧은 누름은 놓칠 수 있다(폴링의 한계 — Apple 문서도 같은 말). 문제가 되면 `valueChangedHandler`(콜백)로 바꾼다.
+
+## 손질 — 첫 게임 nail 0288과 견주어(2026-11-10, 사장 "서로 비교해볼래?" → "다섯 다")
+nail은 같은 날 같은 요청을 **게임 쪽 모듈**(`src/input/ios_pad.rs` + 순수 `PadFrame` → `pad_frame_actions`, miniquad는 그대로)로 풀었다. 구조는 각자 맞는 쪽으로 둔다 — knellroot는 Android와 한 길(키·축), nail은 플랫폼마다 `Actions`를 돌려주는 입력 구조. 대신 nail에서 다섯을 가져왔다.
+1. **링크 보장**: 알림 이름 상수(`GCControllerDidConnectNotification`·`DidDisconnect…`)를 실제로 참조한다. 전엔 빈 `#[link]` 블록만 있어, 링커가 프레임워크를 빼면 `class!(GCController)`가 첫 그리기에서 panic할 수 있었다(objc-rs `class!`는 못 찾으면 panic — 소스로 확인). `build-ios.yml`이 `otool -L`로 GameController.framework를 본다.
+2. **`Class::get`**: 못 찾으면 panic 대신 "패드 없음".
+3. **연결·끊김 알림 구독**(빈 처리기, 한 번) — Apple 권장, iOS 15부터 프레임워크가 이때 패드를 찾기 시작한다는 포럼 답(2차).
+4. **`autoreleasepool`**로 읽기를 감싼다.
+5. **패드 여럿 합치기**: 버튼은 어느 쪽이든, 스틱·D패드는 더 기운 쪽(데스크톱 `gamepads` 길과 같다).

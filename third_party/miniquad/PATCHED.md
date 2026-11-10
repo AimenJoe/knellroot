@@ -23,4 +23,5 @@ miniquad를 올릴 때는 새 원본을 받아 같은 패치를 다시 넣는다
   Apple GameController(`GCController.controllers` → 첫 `extendedGamepad`)를 그리기마다 읽어 버튼 열둘을 Android 패치와 같은
   `KeyCode::F13`~`F24` 눌림·뗌 이벤트로, 스틱·D패드를 `joystick_axes()`(Android와 같은 배열·같은 부호, 아래가 +y)로 넘긴다.
   `src/native/ios.rs` `draw_in_rect`가 `update()` 직전에 `ios_pad::poll`을 부르고, `src/native.rs`가 iOS에서 `joystick_axes`를 내보낸다.
-  GameController 프레임워크는 `ios_pad.rs`의 `#[link]`로 잇는다.
+  GameController 프레임워크는 `ios_pad.rs`의 `#[link]` + 알림 상수 참조로 잇는다(링크가 빠지면 panic하지 않고 "패드 없음" — `Class::get`).
+  연결·끊김 알림 구독·`autoreleasepool`·패드 여럿 합치기는 nail 0288과 견주어 더했다(0137 손질).
