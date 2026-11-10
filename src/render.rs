@@ -20,6 +20,8 @@ use crate::world::{Aabb, Atk, EState, Enemy, PState, TeleShape, World};
 
 pub struct Renderer {
     rt: RenderTarget,
+    /// 선·번짐·톤을 내부 해상도에서 한 번 셈해 담는 타깃(0140) — 화면에는 이것을 가장 가까운 픽셀로 키운다.
+    post: RenderTarget,
     /// 렌더 타깃 크기와 정수 배율(물리 px) — 화면에 맞춰 바뀐다(0046).
     rt_size: (u32, u32, u32),
     /// 시나리오 상자마다 지금 진하기(1 = 불투명). 가리면 부드럽게 옅어지고 풀리면 돌아온다(0008).
@@ -52,6 +54,7 @@ pub struct Renderer {
     /// 이번 프레임에 법선 패스를 그렸나(선 재질을 쓸까).
     edge_ready: bool,
     edge_uniform: Vec4,
+    grade_uniform: Vec4,
     /// 주위 환경(0063): 높이 안개 등.
     backdrop: crate::backdrop::Backdrop,
     /// 장비 창 인형(0067 D): 방랑자만 그리는 작은 렌더 타깃(처음 쓸 때 만든다).
@@ -173,6 +176,10 @@ pub struct Look {
     pub fovy: f32,
     /// 렌더 타깃의 줄 수(0046 — 화면에 따라 바뀐다, 외곽선 두께를 내부 px로 셀 때).
     pub rows: f32,
+    /// 조용한 바닥(0140): 줄눈·석판마다의 밝기 차를 줄인다(지형 굽기가 본다).
+    pub calm: bool,
+    /// 빛 대비(0140): 센 달빛 + 낮고 차가운 바탕빛 — 그림자가 또렷하다(`lit`·지형 굽기가 본다).
+    pub key: bool,
 }
 
 thread_local! {
@@ -184,9 +191,41 @@ thread_local! {
             eye: Vec3::ZERO,
             fovy: 1.0,
             rows: INTERNAL_H as f32,
+            calm: false,
+            key: false,
         })
     };
 }
+
+thread_local! {
+    /// 그늘에 선 배우(0140): 구운 지형의 가림 높이 지도(스테이지를 그리는 동안만) — 배우마다 광선 몇 개로 달빛 몫을 정한다.
+    static ACTOR_SHADE: std::cell::RefCell<Option<std::rc::Rc<crate::shade::Occluders>>> = const { std::cell::RefCell::new(None) };
+    /// 지금 그리는 배우가 받는 달빛 몫(0..1). 지형 굽기·배우 밖에서는 1.
+    static MOON_GATE: std::cell::Cell<f32> = const { std::cell::Cell::new(1.0) };
+}
+
+/// 그늘에 선 배우의 달빛 가림을 켠다(None = 끔 — 개발 아레나·인형·아이콘).
+pub fn set_actor_shade(o: Option<std::rc::Rc<crate::shade::Occluders>>) {
+    ACTOR_SHADE.with(|s| *s.borrow_mut() = o);
+}
+
+/// 발 자리 `at`에 선 배우가 받는 달빛 몫: 몸 높이 셋에서 달 쪽으로 쏜 광선 가운데 안 막힌 몫.
+/// 다 막혀도 `ACTOR_SHADE_MIN`은 남긴다 — 그늘 속 적도 읽혀야 한다(외곽선·가장자리 빛은 그대로).
+pub fn actor_moon(at: Vec3) -> f32 {
+    ACTOR_SHADE.with(|s| match s.borrow().as_ref() {
+        Some(o) => {
+            let l = LIGHT_DIR.normalize();
+            let open: f32 = [0.3, 0.9, 1.5]
+                .iter()
+                .map(|h| o.vis(at + Vec3::Y * *h, l))
+                .sum::<f32>()
+                / 3.0;
+            ACTOR_SHADE_MIN + (1.0 - ACTOR_SHADE_MIN) * open
+        }
+        None => 1.0,
+    })
+}
+const ACTOR_SHADE_MIN: f32 = 0.35;
 
 thread_local! {
     /// 지형 굽기 동안만 있는 달빛 가림 높이 지도(0044, `Scenery::bake`가 넣고 뺀다).
@@ -237,7 +276,13 @@ pub fn lit(p: Vec3, n: Vec3, lights: &[Light]) -> Vec3 {
     if toon {
         d = band(d, 2.0);
     }
-    let mut c = AMBIENT + MOON * (d * moonlight());
+    d *= MOON_GATE.with(|g| g.get());
+    let (ambient, moon) = if look().key {
+        (AMBIENT_KEY, MOON_KEY)
+    } else {
+        (AMBIENT, MOON)
+    };
+    let mut c = ambient + moon * (d * moonlight());
     for li in lights {
         // 빛줄기(0124): 기둥 안이면 위에서 — 가운데일수록·위를 볼수록 밝다(둥근 화로 빛과 달리 높이로 줄지 않는다).
         if li.shaft {
@@ -287,6 +332,20 @@ const OUTLINE_PUSH: f32 = 0.18;
 // 0037: 해 질 녘 — 바탕빛은 보랏빛을 조금, 달빛은 차갑게(파스텔 주인공이 그 위에서 선다).
 const AMBIENT: Vec3 = Vec3::new(0.29, 0.28, 0.40);
 const MOON: Vec3 = Vec3::new(0.44, 0.45, 0.62);
+/// 빛 대비(0140): 달빛을 주광으로 세게, 바탕빛은 낮고 차갑게 — 달빛 받는 바닥의 밝기는 그대로(0.51 → 0.52) 두고 그림자만 어둡게(0.29 → 0.21),
+/// 빛 : 그늘 = 1.8 : 1 → 2.5 : 1. 달을 바로 보는 면은 0.73 → 0.83(더 올리면 배우처럼 그리는 돌 문이 하얗게 뜬다). 그늘의 색은 검정이 아니라 남보라(0037).
+const AMBIENT_KEY: Vec3 = Vec3::new(0.21, 0.21, 0.36);
+const MOON_KEY: Vec3 = Vec3::new(0.62, 0.64, 0.86);
+/// 달빛 받는 바닥에 견준 그늘의 밝기(붉은 칸 기준 — 툰이면 바닥의 달빛 몫은 반 단): 캐릭터 그림자(가림판)를 구운 그림자와 같은 진하기로.
+pub fn floor_shade() -> f32 {
+    let (a, m) = if look().key {
+        (AMBIENT_KEY, MOON_KEY)
+    } else {
+        (AMBIENT, MOON)
+    };
+    let k = 0.5 * moonlight();
+    1.0 - a.y / (a.y + m.y * k)
+}
 const FIRE: f32 = 1.5;
 /// 빛줄기 세기(0124 — 땅속 달빛 0.4 아래에서 몸이 확 비치게).
 const SHAFT: f32 = 1.1;
@@ -324,6 +383,12 @@ fn make_rt(w: u32, h: u32) -> RenderTarget {
     rt
 }
 
+fn make_post(w: u32, h: u32) -> RenderTarget {
+    let rt = render_target(w, h);
+    rt.texture.set_filter(FilterMode::Nearest);
+    rt
+}
+
 /// 화면(물리 px)에 맞춘 내부 해상도와 정수 배율(0046): 배율은 높이가 `INTERNAL_H`에 가장 가깝게(반올림) 고르고,
 /// 내부 해상도는 그 배율로 화면을 채우는 크기 — 픽셀은 늘 정수배로 고르고 검은 테두리는 배율보다 작다.
 /// 폭은 높이의 4:3~21:9 사이로 묶는다(세로 폰·아주 넓은 창은 나머지가 테두리). 세로 시야각은 그대로라 넓은 화면은 옆을 더 본다.
@@ -343,6 +408,7 @@ impl Renderer {
         let rt = make_rt(INTERNAL_W, INTERNAL_H);
         Renderer {
             rt,
+            post: make_post(INTERNAL_W, INTERNAL_H),
             rt_size: (INTERNAL_W, INTERNAL_H, 1),
             fade: Vec::new(),
             lib: Library::default(),
@@ -364,6 +430,7 @@ impl Renderer {
             edge_tried: false,
             edge_ready: false,
             edge_uniform: Vec4::ZERO,
+            grade_uniform: Vec4::ZERO,
             backdrop: Default::default(),
             doll_rt: None,
             creature_rt: None,
@@ -658,6 +725,8 @@ impl Renderer {
             eye: c3.position,
             fovy: c3.fovy,
             rows: ih as f32,
+            calm: t[crate::tuning::P::RenderFloorCalm] >= 0.5,
+            key: t[crate::tuning::P::RenderKeyLight] >= 0.5,
         });
         set_camera(&c3);
         // 지역 환경(0118 T2): 스테이지면 그 지역의 것, 개발 놀이터는 땅 위.
@@ -703,13 +772,20 @@ impl Renderer {
                 // 툰을 켜고 끄면 지형을 다시 굽는다(빛이 정점에 구워져 있다, 0033).
                 // 식생(0063)을 끄고 켜도 다시 굽는다.
                 let flora = t[crate::tuning::P::RenderFlora] >= 0.5;
-                let key = run.def.map.as_ptr() as usize + look().toon as usize + 2 * flora as usize;
+                // 조용한 바닥·빛 대비(0140)도 굽는 것이라 바꾸면 다시 굽는다.
+                let key = run.def.map.as_ptr() as usize
+                    + look().toon as usize
+                    + 2 * flora as usize
+                    + 4 * look().calm as usize
+                    + 8 * look().key as usize;
                 if self.scenery.as_ref().is_none_or(|(k, _)| *k != key) {
                     let trees = run.def.env.trees;
                     self.scenery =
                         Some((key, Scenery::bake(&run.level, &mut self.lib, flora, trees)));
                 }
                 let sc = &mut self.scenery.as_mut().unwrap().1;
+                // 그늘에 선 배우는 달빛을 덜 받는다(0140) — 구운 그림자와 같은 가림 지도.
+                set_actor_shade(look().key.then(|| sc.occ.clone()));
                 draw_plane(
                     Vec3::Y * sc.void_y,
                     vec2(sc.extent, sc.extent),
@@ -722,6 +798,7 @@ impl Renderer {
                 let floor = match (&self.floor_mat, &self.shadow_rt, self.light_vp) {
                     (Some(m), Some(rt), Some(vp)) => {
                         m.set_uniform("LightVP", vp);
+                        m.set_uniform("Shade", floor_shade());
                         m.set_texture("ShadowMask", rt.texture.clone());
                         Some(m)
                     }
@@ -999,12 +1076,20 @@ impl Renderer {
             });
             draw_haze(iw as f32, ih as f32, haze);
         }
+        set_actor_shade(None);
         self.edge_ready = edges_on && self.normal_pass(&c3, (iw, ih));
         self.edge_uniform = vec4(
             t[crate::tuning::P::RenderEdgeDepth],
             t[crate::tuning::P::RenderEdgeDark],
             t[crate::tuning::P::RenderEdgeLight],
             t[crate::tuning::P::RenderEdgeCrease],
+        );
+        // 마무리 패스(0140): 톤 곡선·빛 번짐·가장자리 어둡게 — 끝 칸은 "선을 긋나"(법선 패스를 그린 프레임만).
+        self.grade_uniform = vec4(
+            t[crate::tuning::P::RenderGrade],
+            t[crate::tuning::P::RenderBloom],
+            t[crate::tuning::P::RenderVignette],
+            if self.edge_ready { 1.0 } else { 0.0 },
         );
         self.present()
     }
@@ -1060,6 +1145,7 @@ impl Renderer {
         if fit != self.rt_size {
             if (fit.0, fit.1) != (self.rt_size.0, self.rt_size.1) {
                 self.rt = make_rt(fit.0, fit.1);
+                self.post = make_post(fit.0, fit.1);
             }
             self.rt_size = fit;
         }
@@ -1077,28 +1163,56 @@ impl Renderer {
         let (dw, dh) = (iw as f32 * scale, ih as f32 * scale);
         let (ox, oy) = (((sw - dw) * 0.5).floor(), ((sh - dh) * 0.5).floor());
         // 화면 공간 선 둘(0061): 법선 패스를 그렸으면 선 재질로 올린다.
-        let edge = self.edge.as_ref().filter(|_| self.edge_ready);
-        if let Some(fx) = edge {
-            fx.edge_mat.set_texture("Normals", fx.rt.texture.clone());
-            fx.edge_mat
-                .set_uniform("Texel", vec2(1.0 / iw as f32, 1.0 / ih as f32));
-            fx.edge_mat.set_uniform("Edge", self.edge_uniform);
-            gl_use_material(&fx.edge_mat);
-        }
+        // 화면 공간 선 둘(0061) + 마무리 패스(0140): 내부 해상도에서 한 번만 셈해 `post`에 담고, 화면에는 그것을 가장 가까운 픽셀로 키운다
+        // (화면 해상도로 셈하면 배율² 배 — 2배 화면에서 화소마다 텍스처를 서른 번 가까이 읽었다). 선을 긋지 않아도 마무리 패스가
+        // 켜져 있으면 같은 재질로(선은 `Grade.w`로 끈다).
+        let g = self.grade_uniform;
+        let edge = self
+            .edge
+            .as_ref()
+            .filter(|_| self.edge_ready || g.x > 0.0 || g.y > 0.0 || g.z > 0.0);
+        let src = match edge {
+            Some(fx) => {
+                set_camera(&Camera2D {
+                    zoom: vec2(2.0 / iw as f32, 2.0 / ih as f32),
+                    target: vec2(iw as f32 * 0.5, ih as f32 * 0.5),
+                    render_target: Some(self.post.clone()),
+                    ..Default::default()
+                });
+                fx.edge_mat.set_texture("Normals", fx.rt.texture.clone());
+                fx.edge_mat
+                    .set_uniform("Texel", vec2(1.0 / iw as f32, 1.0 / ih as f32));
+                fx.edge_mat.set_uniform("Edge", self.edge_uniform);
+                fx.edge_mat.set_uniform("Grade", g);
+                gl_use_material(&fx.edge_mat);
+                draw_texture_ex(
+                    &self.rt.texture,
+                    0.0,
+                    0.0,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(vec2(iw as f32, ih as f32)),
+                        ..Default::default()
+                    },
+                );
+                gl_use_default_material();
+                set_default_camera();
+                &self.post.texture
+            }
+            None => &self.rt.texture,
+        };
         draw_texture_ex(
-            &self.rt.texture,
+            src,
             ox,
             oy,
             WHITE,
             DrawTextureParams {
                 dest_size: Some(vec2(dw, dh)),
+                // 렌더 타깃은 위아래가 바뀌어 나온다 — `post`에 옮길 때는 그대로 두고(법선 타깃과 같은 방향으로 읽는다) 화면에서 한 번만 뒤집는다.
                 flip_y: true,
                 ..Default::default()
             },
         );
-        if edge.is_some() {
-            gl_use_default_material();
-        }
         Frame {
             ox,
             oy,
@@ -1126,8 +1240,10 @@ impl Renderer {
                 e.model
                     .pose(open, k * e.duration(open) * 0.999, &mut self.pose);
                 let inst = Mat4::from_translation(c - Vec3::Y * sink);
+                // 문은 건물이다(0140): 배우의 밝기 올림(`ACTOR_LIFT`)을 되돌려 벽·기둥과 같은 밝기로 — 센 달빛에서 돌 문이 방랑자보다 밝게 떴다.
+                let k = 1.0 / ACTOR_LIFT;
                 self.batch
-                    .model(e, &self.pose, inst, with_a(WHITE, a), lights, 1.0);
+                    .model(e, &self.pose, inst, Color::new(k, k, k, a), lights, 1.0);
             }
             None => {
                 let mut b = g;
@@ -3202,6 +3318,7 @@ impl Batch {
             tint.b * ACTOR_LIFT,
             tint.a,
         );
+        MOON_GATE.with(|g| g.set(actor_moon(at)));
         Self::bake_glow(
             &mut self.vertices,
             &mut self.indices,
@@ -3213,6 +3330,7 @@ impl Batch {
             glow,
             true,
         );
+        MOON_GATE.with(|g| g.set(1.0));
         // 그림자 지도는 한 번에 그린다 — 다 차면 그 뒤 배우는 그림자 없이(반쯤 잘린 그림자보다 낫다).
         if self.casting && tint.a > 0.5 && fits(self.casters.len(), self.caster_idx.len(), nv, ni) {
             let m = &e.model;
@@ -3517,6 +3635,13 @@ fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
     uniform sampler2D Normals;
     uniform vec2 Texel;
     uniform vec4 Edge;
+    uniform vec4 Grade;
+    // 번질 빛(0140): 밝고 따뜻한 화소만(불꽃·핵·눈·자물쇠) — 파스텔 옷·달빛 웅덩이는 번지지 않는다.
+    vec3 hot(vec2 o) {
+        vec3 s = texture2D(Texture, uv + o * Texel).rgb;
+        float l = dot(s, vec3(0.3, 0.6, 0.1));
+        return s * clamp((s.r - s.b) * 4.0, 0.0, 1.0) * clamp((l - 0.42) * 4.0, 0.0, 1.0);
+    }
     float dep(vec2 c) {
         vec4 n = texture2D(Normals, c);
         return (n.b + n.a / 255.0) * 64.0;
@@ -3539,7 +3664,7 @@ fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
         vec2 n = nrm(uv);
         float dark = 0.0;
         float light = 0.0;
-        if (d < 63.0) {
+        if (d < 63.0 && Grade.w > 0.5) {
             probe(vec2(1.0, 0.0), d, n, dark, light);
             probe(vec2(-1.0, 0.0), d, n, dark, light);
             probe(vec2(0.0, 1.0), d, n, dark, light);
@@ -3551,7 +3676,21 @@ fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
         } else if (light > 0.5) {
             rgb = mix(rgb, min(rgb * 1.7 + 0.06, vec3(1.0)), Edge.z);
         }
-        gl_FragColor = vec4(rgb, col.a);
+        // 마무리 패스(0140). 번짐: 이웃 열여섯 칸(내부 px 단위 — 도트가 뭉개지지 않는다)의 밝고 따뜻한 빛을 더한다.
+        if (Grade.y > 0.0) {
+            vec3 g = hot(vec2(1.0, 0.0)) + hot(vec2(-1.0, 0.0)) + hot(vec2(0.0, 1.0)) + hot(vec2(0.0, -1.0));
+            g += 0.7 * (hot(vec2(2.0, 1.0)) + hot(vec2(-2.0, -1.0)) + hot(vec2(-1.0, 2.0)) + hot(vec2(1.0, -2.0)));
+            g += 0.4 * (hot(vec2(3.0, -2.0)) + hot(vec2(-3.0, 2.0)) + hot(vec2(2.0, 3.0)) + hot(vec2(-2.0, -3.0)));
+            g += 0.22 * (hot(vec2(5.0, 1.0)) + hot(vec2(-5.0, -1.0)) + hot(vec2(-1.0, 5.0)) + hot(vec2(1.0, -5.0)));
+            rgb += g * (0.085 * Grade.y);
+        }
+        // 톤 곡선: 어두운 중간을 올리고 밝은 끝은 그대로(x(1+a)/(1+ax) — 0과 1은 제자리).
+        float a = 0.5 * Grade.x;
+        rgb = rgb * (1.0 + a) / (1.0 + a * rgb);
+        // 가장자리 어둡게: 가운데(주인공)로 눈이 모이게.
+        vec2 q = (uv - 0.5) * vec2(1.0, 0.85);
+        rgb *= 1.0 - Grade.z * smoothstep(0.28, 0.72, length(q));
+        gl_FragColor = vec4(min(rgb, vec3(1.0)), col.a);
     }"#;
     let normal_mat = load_material(
         ShaderSource::Glsl {
@@ -3581,6 +3720,7 @@ fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
             uniforms: vec![
                 UniformDesc::new("Texel", UniformType::Float2),
                 UniformDesc::new("Edge", UniformType::Float4),
+                UniformDesc::new("Grade", UniformType::Float4),
             ],
             textures: vec!["Normals".to_string()],
             ..Default::default()
@@ -3610,7 +3750,10 @@ impl Renderer {
             self.mask_mat = flat_material(MASK_FRAGMENT, &[], &[]);
             self.floor_mat = flat_material(
                 FLOOR_FRAGMENT,
-                &[UniformDesc::new("LightVP", UniformType::Mat4)],
+                &[
+                    UniformDesc::new("LightVP", UniformType::Mat4),
+                    UniformDesc::new("Shade", UniformType::Float1),
+                ],
                 &["ShadowMask"],
             );
             if self.mask_mat.is_some() && self.floor_mat.is_some() {
@@ -3666,13 +3809,14 @@ varying lowp vec2 uv;
 varying mediump vec3 sp;
 uniform sampler2D Texture;
 uniform sampler2D ShadowMask;
+uniform float Shade;
 void main() {
     vec4 c = color * texture2D(Texture, uv);
     float s = 0.0;
     if (sp.x > 0.0 && sp.x < 1.0 && sp.y > 0.0 && sp.y < 1.0) {
         s = texture2D(ShadowMask, sp.xy).r;
     }
-    gl_FragColor = vec4(c.rgb * (1.0 - 0.5 * s), c.a);
+    gl_FragColor = vec4(c.rgb * (1.0 - Shade * s), c.a);
 }"#;
 
 /// 두 재질이 같이 쓰는 꼭짓점 셰이더: 월드 자리를 빛 공간(`LightVP`, 없으면 단위)으로도 넘긴다.
@@ -3968,6 +4112,84 @@ mod tests {
         assert!(!fits(6000, 14_000, 3000, 7000));
         assert!(!fits(9000, 0, 1000, 10), "vertices alone still count");
         // 모델 하나는 늘 빈 배치에 들어간다 — models.rs `every_bundled_model_fits_one_draw_call`.
+    }
+
+    fn with_key<T>(key: bool, f: impl FnOnce() -> T) -> T {
+        let saved = look();
+        set_look(Look {
+            toon: true,
+            key,
+            ..saved
+        });
+        let out = f();
+        set_look(saved);
+        out
+    }
+
+    /// 0140 빛 대비: 달빛 받는 바닥의 밝기는 그대로 두고 그늘만 어둡게 — 빛 : 그늘이 2.2배를 넘는다(예전 1.8배).
+    /// 그늘은 검정이 아니라 남보라(파랑이 가장 크다, 0037).
+    #[test]
+    fn key_light_darkens_the_shade_not_the_lit_floor() {
+        let floor = |key: bool, gate: f32| {
+            with_key(key, || {
+                MOON_GATE.with(|g| g.set(gate));
+                let c = lit(Vec3::ZERO, Vec3::Y, &[]);
+                MOON_GATE.with(|g| g.set(1.0));
+                c
+            })
+        };
+        let (old_lit, new_lit) = (floor(false, 1.0), floor(true, 1.0));
+        let (old_shade, new_shade) = (floor(false, 0.0), floor(true, 0.0));
+        assert!(
+            (new_lit.y / old_lit.y - 1.0).abs() < 0.06,
+            "{new_lit} vs {old_lit}"
+        );
+        assert!(old_lit.y / old_shade.y < 2.0);
+        assert!(new_lit.y / new_shade.y > 2.2, "{new_lit} / {new_shade}");
+        assert!(new_shade.z > new_shade.x && new_shade.z > new_shade.y);
+    }
+
+    /// 0140: 캐릭터 그림자(가림판)의 진하기 = 구운 그림자의 진하기 — 둘이 다르면 그림자가 두 가지로 보인다.
+    #[test]
+    fn the_actor_shadow_is_as_dark_as_the_baked_shadow() {
+        for key in [false, true] {
+            with_key(key, || {
+                let open = lit(Vec3::ZERO, Vec3::Y, &[]);
+                MOON_GATE.with(|g| g.set(0.0));
+                let shade = lit(Vec3::ZERO, Vec3::Y, &[]);
+                MOON_GATE.with(|g| g.set(1.0));
+                let want = 1.0 - shade.y / open.y;
+                assert!(
+                    (floor_shade() - want).abs() < 0.01,
+                    "key {key}: {}",
+                    floor_shade()
+                );
+            });
+        }
+    }
+
+    /// 0140: 그늘에 선 배우는 달빛을 덜 받지만 다 잃지는 않는다(그늘 속 적도 읽혀야 한다), 가림 지도가 없으면(개발 아레나·인형) 그대로.
+    #[test]
+    fn an_actor_in_a_baked_shadow_gets_less_moon_but_never_none() {
+        assert_eq!(actor_moon(Vec3::ZERO), 1.0);
+        // 20m 마당, 달 쪽(-x, +z 앞)으로 높이 6m 벽 — 그 뒤(달 반대쪽)는 그늘.
+        let mut o = crate::shade::Occluders::new(vec2(-10.0, -10.0), 0.25, 80, 80);
+        for j in 0..80 {
+            for i in 0..80 {
+                o.raise(i, j, 0.0);
+            }
+        }
+        let l = LIGHT_DIR.normalize();
+        let wall = vec2(l.x, l.z).normalize() * 2.0;
+        o.raise_box(wall - vec2(1.5, 1.5), wall + vec2(1.5, 1.5), 6.0);
+        set_actor_shade(Some(std::rc::Rc::new(o)));
+        let shaded = actor_moon(Vec3::ZERO);
+        let open =
+            actor_moon(vec3(-wall.x * 4.0, 0.0, -wall.y * 4.0) + vec3(wall.y, 0.0, -wall.x) * 3.0);
+        set_actor_shade(None);
+        assert_eq!(shaded, ACTOR_SHADE_MIN);
+        assert_eq!(open, 1.0);
+        assert!(ACTOR_SHADE_MIN >= 0.3);
     }
 
     /// 0124: 빛줄기 기둥 안에 선 몸은 밖보다 뚜렷이 밝고(땅속 달빛 0.4에서도), 위를 보는 면이 더 밝다 — 높이로 줄지 않는다.

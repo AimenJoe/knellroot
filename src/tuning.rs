@@ -392,6 +392,11 @@ pub enum P {
     TurnWobbleOut,
     TurnStartStagger,
     ParryStaminaGain,
+    RenderFloorCalm,
+    RenderKeyLight,
+    RenderGrade,
+    RenderBloom,
+    RenderVignette,
 }
 
 /// 랩이 읽는 칸(이름·걸음·범위·내보내기 이름)은 개발판에만 쓰인다(운영판에는 랩이 없다, 0070).
@@ -423,7 +428,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 147] = [
+pub const SPECS: [Spec; 152] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1578,6 +1583,56 @@ pub const SPECS: [Spec; 147] = [
         0.0,
         100.0,
         5.0
+    ),
+    // 화면 다듬기(0140, 사장 2026-11-10 "제안 순서대로 해줘 … 그림자가 명확해야"): 켬 = 새 그림, 끔 = 예전 그림(나란히 견주려고 남긴다).
+    // 조용한 바닥: 줄눈·석판마다의 밝기 차를 줄이고 큰 얼룩으로 — 화면의 대비가 바닥 격자가 아니라 배우와 빛에 가게(다시 굽는다).
+    spec!(
+        RenderFloorCalm,
+        "render.floor calm 0off 1on",
+        "RENDER_FLOOR_CALM",
+        1.0,
+        0.0,
+        1.0,
+        1.0
+    ),
+    // 빛 대비: 달빛(주광)을 세게·바탕빛을 낮고 차갑게 → 그림자가 또렷, 그림자 칸은 반으로 촘촘히, 소품 밑 그늘,
+    // 화로 빛 웅덩이를 넓게, 그늘에 선 배우는 달빛을 덜 받는다(다시 굽는다).
+    spec!(
+        RenderKeyLight,
+        "render.key light 0old 1new",
+        "RENDER_KEY_LIGHT",
+        1.0,
+        0.0,
+        1.0,
+        1.0
+    ),
+    // 마무리 패스(화면에 올릴 때): 톤 곡선(어두운 중간을 올림)·빛나는 따뜻한 화소의 번짐·가장자리 어둡게. 0 = 없음.
+    spec!(
+        RenderGrade,
+        "render.grade",
+        "RENDER_GRADE",
+        1.0,
+        0.0,
+        1.5,
+        0.1
+    ),
+    spec!(
+        RenderBloom,
+        "render.bloom",
+        "RENDER_BLOOM",
+        1.0,
+        0.0,
+        2.0,
+        0.1
+    ),
+    spec!(
+        RenderVignette,
+        "render.vignette",
+        "RENDER_VIGNETTE",
+        0.3,
+        0.0,
+        0.8,
+        0.05
     ),
 ];
 

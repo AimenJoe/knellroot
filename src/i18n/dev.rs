@@ -362,6 +362,11 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("turn.wobble out deg", "땅 돌리기 끝 휘청(도)"),
     ("turn.start stagger s", "땅 돌리기 시작 적 휘청(초)"),
     ("parry.stamina gain", "패링 성공 기력 회복"),
+    ("render.floor calm 0off 1on", "조용한 바닥(0끔 1켬)"),
+    ("render.key light 0old 1new", "빛 대비·진한 그림자(0끔 1켬)"),
+    ("render.grade", "어두운 중간 밝게(세기)"),
+    ("render.bloom", "빛 번짐 세기"),
+    ("render.vignette", "가장자리 그늘 세기"),
 ];
 
 #[cfg(test)]
