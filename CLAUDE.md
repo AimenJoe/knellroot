@@ -1,6 +1,6 @@
 # CLAUDE.md — Knellroot
 
-레트로 로우폴리 3D ARPG. 쿼터뷰 떼싸움 + 락온 숄더뷰 보스전. Rust + macroquad. 웹 먼저, Android 핸드헬드(컨트롤러, v0.1.0부터 APK — 0022), PC(Windows·macOS·Linux 묶음, 0135).
+레트로 로우폴리 3D ARPG. 쿼터뷰 떼싸움 + 락온 숄더뷰 보스전. Rust + macroquad. 웹 먼저, Android 핸드헬드(컨트롤러, v0.1.0부터 APK — 0022), PC(Windows·macOS·Linux 묶음, 0135), iOS는 서명 안 한 .ipa만(0136).
 
 ## 먼저 읽을 것
 1. `docs/concept.md` — 무엇을 만드는가(세계관은 nail의 먼 뒷이야기 — 세부는 초안)
@@ -48,6 +48,7 @@
 - 성장(0064 M4)은 `growth.rs`(화로 가게 `SHOP` 표 + 옛 핵 고르기의 남은 몫 — 핵 고르기는 0105에서 걷었다, 옛 기록은 `save::migrate_v04`가 한 번 옮긴다). 핵은 나무 마디(이길 때마다·셋까지 `core.warden`), 등잔·한 모금은 숨은 물건(`stage::Find`, 지도 `F`·`H`, 기록 `finds` = 이름 `<스테이지>.<종류>.<n>`, 상자와 같은 꼴로 줍기). v0.4.0 성장(0102)은 `progression.rs` 표 한 곳 — 잔불 레벨 생명·기력·힘(0104, 기록 `lv.*` — 값은 총 레벨로 `LEVEL_BASE + LEVEL_STEP × 레벨`, 0109)·기술 나무 `TREE`(갈래 셋 × 다섯, 마디(화면 글 — 예전 "점수", 0109) = 핵 + 종소리 조각 `Find::Shard`, 기록 `tree.*`, 0106 — 칸 동작은 `Tree::has`로 그 동사의 메서드에 한 줄씩). 쉬면 `Scene::Hearth`(화로: 레벨 `Scene::Level` · 나무 `Scene::Tree` · 가게 `Scene::Shop`, `app/hearth.rs`·`app/tree.rs`), 멈춤 "나무"는 읽기·핀 전용. 능력치는 장신구와 같은 `Stats::compute`로 — 판정 창을 넓히는 성장은 없다(0095 원칙 2, 시험). 장비 창의 상태 칸은 장신구가 바꾸는 줄만(`stats::lines_from`), 레벨 몫은 레벨 창. 화로·레벨·나무 화면을 고치면 `tools/test/hearth.js`(한국어·영어 + F4). 개발 창 글은 `i18n::dev_texts`에 — 글자 미리 굽기가 같이 쓴다(빠지면 아틀라스가 그 프레임에 커져 지운 텍스처 오류, 0106).
 - 소리(0064 M5)는 `sfx.rs`(앱만 안다): 파일 표 `FILES`(`assets/sfx`, CC0 — 출처는 LICENSES) + 합성(`synth`·`ambience`, 순수 함수라 시험). 앱 `world_sounds`가 `Event`·상태 변화(회피 시작·예고 시작·깨어남)를 듣고 낸다 — 월드에 소리를 넣지 않는다. 예고 소리는 모양마다 달라야 한다(시험).
 - PC(0135, nail 0240 꼴): PC 전용은 `crate::DESKTOP`으로 가른다(타이틀 끝내기 `TitleItem::Quit`, F11 `input::fullscreen_pressed` — 키 배치 밖, 전체 화면 기억 prefs 칸 28, Windows 콘솔 창 없음, 창 아이콘 `pc/window-*.png`). 에셋은 늘 바이너리 안에 넣는다(디스크에서 읽지 않는다 — 바로가기·Finder로 켜도 된다). 묶음은 `build-desktop.yml`(release/** push·손으로·릴리스 때), 아이콘은 `tools/icons/make_icons.py`(`pc/knellroot.ico`·`.icns`). 커밋 전에 `cargo clippy --release --target x86_64-pc-windows-msvc --no-default-features -- -D warnings`(macOS는 `aarch64-apple-darwin`, 둘 다 리눅스에서 링크 없이). 의존성·에셋 출처를 바꾸면 `python3 tools/licenses.py`(→ `assets/THIRD_PARTY_LICENSES.txt`, PC 묶음에 실린다).
+- iOS(0136, nail 0086 꼴): `build-ios.yml`(main = 운영판, release/** = 개발판 `.dev`) → 서명 안 한 `.ipa` 아티팩트, `ios/Info.plist`(`__VERSION__`·`__BUILD__`는 CI가 채움)·아이콘 `ios/icons/`(`make_icons.py`). iOS는 `DESKTOP`이 아니고 Android처럼 터치로 시작·전체 화면 줄 없음(`input::initial_device`·`screen`). 패드는 iOS에서 안 된다(다리는 다음 단계). 커밋 전에 `cargo clippy --release --target aarch64-apple-ios --no-default-features -- -D warnings`(리눅스에서 됨).
 - 그리기 배치(0135): 한 그리기 호출은 정점 10,000·색인 15,000 미만 — 모을 때는 `render::fits`(둘 다 센다, Meshy 모델은 색인 ≈ 정점 × 2.4). 새 배치를 만들면 이것으로 끊는다.
 - 웹 로딩·PWA(0062): 덮개는 `web/index.html`(글 없음, wasm 바이트로 진행, 첫 프레임 뒤 `main.rs` `loaded`), 서비스 워커 `web/sw.js`는 캐시 = 빌드 아이디·`skipWaiting` 없음. `web/`에 파일을 더하면 `sw.js` `PRECACHE`와 `assemble.sh`도, 시험은 `tools/test/pwa.js`. 아이콘은 `tools/icons/make_icons.py`.
 

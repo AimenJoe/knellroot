@@ -1,4 +1,4 @@
-"""앱 아이콘(0022, PC 0135). 산출물(android/res/mipmap-*)을 커밋하고, 이 파일이 원본이다 — PNG를 손으로 고치지 않는다.
+"""앱 아이콘(0022, PC 0135, iOS 0136). 산출물(android/res/mipmap-*)을 커밋하고, 이 파일이 원본이다 — PNG를 손으로 고치지 않는다.
     python3 tools/icons/make_icons.py
 그림: 어둠 속 호박색 종(knell) 아래로 뿌리(root)가 내려간다. 32×32 픽셀 격자에 코드로 찍고 크기마다 가장 가까운 픽셀로 키운다
 (게임의 레트로 픽셀 느낌). 첫 게임 nail tools/icons/make_icons.py의 틀(밀도 표·적응형 XML)을 따랐다.
@@ -6,7 +6,8 @@
 - 적응형(Android 8+): mipmap-anydpi-v26/ic_launcher.xml = 배경(바탕색 한 장) + 앞 그림(108dp 칸의 가운데 66dp 안 — 원으로 깎여도 다 보이게).
 Cargo.toml [package.metadata.android]의 res = "android/res", icon = "@mipmap/ic_launcher".
 - PC(0135, nail 0240 꼴): `pc/knellroot.ico`(Windows 실행 파일, 16~256 — build-desktop.yml이 rcedit로 넣는다),
-  `pc/knellroot.icns`(macOS .app, 16~1024), `pc/window-16·32·64.png`(창·작업 표시줄 아이콘 — main.rs `window_icon`이 바이너리에 넣는다)."""
+  `pc/knellroot.icns`(macOS .app, 16~1024), `pc/window-16·32·64.png`(창·작업 표시줄 아이콘 — main.rs `window_icon`이 바이너리에 넣는다).
+- iOS(0136, nail 0086 꼴): `ios/icons/AppIcon*.png`(투명 없이 바탕 꽉 — iOS가 둥글게 깎는다, ios/Info.plist `CFBundleIconFiles`)."""
 import math
 import os
 import random
@@ -273,6 +274,27 @@ def pc_icons(src):
         small(src, n).save(os.path.join(d, f'window-{n}.png'))
 
 
+# iOS 아이콘 이름 → 크기(px). 에셋 카탈로그 없이 Info.plist `CFBundleIconFiles`(AppIcon60x60·76x76·83.5x83.5)가 찾는 이름.
+IOS = {
+    'AppIcon60x60@2x.png': 120,
+    'AppIcon60x60@3x.png': 180,
+    'AppIcon76x76@2x~ipad.png': 152,
+    'AppIcon83.5x83.5@2x~ipad.png': 167,
+    'AppIcon1024.png': 1024,
+}
+
+
+def ios_icons(src):
+    """iOS(0136): 바탕 꽉 + 그림 가운데 80%(apple-touch-icon과 같은 꼴), 투명 없음(RGB)."""
+    d = os.path.join(ROOT, 'ios', 'icons')
+    os.makedirs(d, exist_ok=True)
+    for name, size in IOS.items():
+        full = background(size)
+        n = int(size * 0.80) // 32 * 32 or int(size * 0.80)
+        full.alpha_composite(src.resize((n, n), Image.NEAREST), ((size - n) // 2, (size - n) // 2))
+        full.convert('RGB').save(os.path.join(d, name))
+
+
 def main():
     src = art()
     res = os.path.join(ROOT, 'android', 'res')
@@ -304,6 +326,7 @@ def main():
     prev.save(os.path.join(ROOT, 'docs', 'art', 'app-icon.png'))
     web_icons(src)
     pc_icons(src)
+    ios_icons(src)
     print('icons written')
 
 

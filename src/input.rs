@@ -64,11 +64,12 @@ fn initial_device() -> Device {
         }
         Device::Keys
     }
-    #[cfg(target_os = "android")]
+    // iOS 앱(0136)도 손가락이 주 포인터 — 첫 화면부터 터치 버튼이 보이게(패드는 iOS에서 아직 안 된다).
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         Device::Touch
     }
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
     {
         Device::Keys
     }

@@ -1,6 +1,6 @@
 # 배포와 릴리스(Knellroot)
 
-nail `docs/release.md`를 줄인 것. 웹(Netlify) + Android APK(0022) + PC 묶음 셋(0135). iOS는 nail의 워크플로를 가져올 때 이 표에 줄을 더한다.
+nail `docs/release.md`를 줄인 것. 웹(Netlify) + Android APK(0022) + PC 묶음 셋(0135) + iOS 서명 안 한 .ipa(0136, 아티팩트만).
 
 ## 무엇이 어디로 나가나
 | 대상 | 트리거 | 워크플로 | 결과 |
@@ -13,6 +13,7 @@ nail `docs/release.md`를 줄인 것. 웹(Netlify) + Android APK(0022) + PC 묶�
 | Android 연기 시험 | `android-smoke.yml`·`tools/test/android-smoke.sh`를 고쳐 `release/**` push, 또는 수동 | `android-smoke.yml` | 그 커밋의 개발판 APK를 x86_64 에뮬레이터(ARM 번역)에 깔아 켜고 Enter 둘(시작) → 살아 있나·화면 둘·logcat을 아티팩트로. 폰에서 안 켜질 때 원인 줄(패닉·`UnsatisfiedLinkError`)을 본다 |
 | PC 묶음(운영판) | Release와 같음(APK 잡 뒤) | `release.yml` → `build-desktop.yml` | 같은 Release에 `knellroot-windows-release.zip`·`knellroot-macos-release.zip`(겸용 `.app`, 임시 서명)·`knellroot-linux-release.tar.gz` |
 | PC 묶음(개발판) | `release/**` push(`src/`·`assets/`·`pc/`·`third_party/`·`build.rs`·`Cargo.*`), 또는 Actions → build-desktop → Run workflow | `build-desktop.yml` | Actions 아티팩트 `knellroot-<windows·macos·linux>-dev-<sha>`(7일). macOS 러너가 비싸 main push마다는 돌리지 않는다 |
+| iOS .ipa(서명 안 함) | `main`·`release/**` push(`src/`·`assets/`·`ios/`·`third_party/`·`build.rs`·`Cargo.*`), 또는 Actions → build-ios → Run workflow | `build-ios.yml` | Actions 아티팩트 `knellroot-ios-unsigned-<release·dev>-<sha>`(7일). Release에는 붙이지 않는다 — Sideloadly 등으로 내 Apple ID 서명 뒤 설치(0136) |
 | APK(시험용) | `main` push(같은 경로), 또는 Actions → build-android → Run workflow | `build-android.yml` | Actions 아티팩트 `knellroot-apk-<release·dev>-<sha>` |
 
 ## 갈래(0022, nail 0193)
