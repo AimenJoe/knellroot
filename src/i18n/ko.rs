@@ -181,6 +181,7 @@ pub const KO: Strings = Strings {
     menu_controls: "조작 설정",
     menu_lab: "연구소",
     menu_settings: "설정",
+    menu_quit: "끝내기",
     settings_title: "설정",
     menu_shake: "화면 흔들림",
     menu_volume: "소리 크기",

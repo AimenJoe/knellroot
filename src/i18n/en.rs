@@ -180,6 +180,7 @@ pub const EN: Strings = Strings {
     menu_controls: "Controls",
     menu_lab: "Lab",
     menu_settings: "Settings",
+    menu_quit: "Quit",
     settings_title: "Settings",
     menu_shake: "Screen shake",
     menu_volume: "Volume",

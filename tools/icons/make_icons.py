@@ -1,10 +1,12 @@
-"""앱 아이콘(0022). 산출물(android/res/mipmap-*)을 커밋하고, 이 파일이 원본이다 — PNG를 손으로 고치지 않는다.
+"""앱 아이콘(0022, PC 0135). 산출물(android/res/mipmap-*)을 커밋하고, 이 파일이 원본이다 — PNG를 손으로 고치지 않는다.
     python3 tools/icons/make_icons.py
 그림: 어둠 속 호박색 종(knell) 아래로 뿌리(root)가 내려간다. 32×32 픽셀 격자에 코드로 찍고 크기마다 가장 가까운 픽셀로 키운다
 (게임의 레트로 픽셀 느낌). 첫 게임 nail tools/icons/make_icons.py의 틀(밀도 표·적응형 XML)을 따랐다.
 - 옛 아이콘: mipmap-<밀도>/ic_launcher.png(48~192px, 둥근 네모 바탕 + 그림).
 - 적응형(Android 8+): mipmap-anydpi-v26/ic_launcher.xml = 배경(바탕색 한 장) + 앞 그림(108dp 칸의 가운데 66dp 안 — 원으로 깎여도 다 보이게).
-Cargo.toml [package.metadata.android]의 res = "android/res", icon = "@mipmap/ic_launcher"."""
+Cargo.toml [package.metadata.android]의 res = "android/res", icon = "@mipmap/ic_launcher".
+- PC(0135, nail 0240 꼴): `pc/knellroot.ico`(Windows 실행 파일, 16~256 — build-desktop.yml이 rcedit로 넣는다),
+  `pc/knellroot.icns`(macOS .app, 16~1024), `pc/window-16·32·64.png`(창·작업 표시줄 아이콘 — main.rs `window_icon`이 바이너리에 넣는다)."""
 import math
 import os
 import random
@@ -248,6 +250,29 @@ def legacy(src, size):
     return out
 
 
+def small(src, size):
+    """작은 아이콘(16·32·64): 둥근 네모 바탕 + 그림을 꽉(32칸 그림이라 32·64는 점 그대로, 16은 두 칸씩 평균)."""
+    out = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    mask = Image.new('L', (size, size), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, size - 1, size - 1], radius=max(2, size // 6), fill=255)
+    out.paste(background(size), (0, 0), mask)
+    a = src.resize((size, size), Image.NEAREST if size % 32 == 0 else Image.BOX)
+    out.alpha_composite(a)
+    return out
+
+
+def pc_icons(src):
+    """PC(0135): .ico(크기마다 따로 그린 것을 넣는다 — 큰 것 하나를 줄이면 16·32가 뭉갠다), .icns, 창 아이콘 PNG 셋."""
+    d = os.path.join(ROOT, 'pc')
+    os.makedirs(d, exist_ok=True)
+    sizes = [16, 24, 32, 48, 64, 128, 256]
+    imgs = [small(src, n) if n <= 64 else legacy(src, n) for n in sizes]
+    imgs[-1].save(os.path.join(d, 'knellroot.ico'), sizes=[(n, n) for n in sizes], append_images=imgs[:-1])
+    legacy(src, 1024).save(os.path.join(d, 'knellroot.icns'))
+    for n in (16, 32, 64):
+        small(src, n).save(os.path.join(d, f'window-{n}.png'))
+
+
 def main():
     src = art()
     res = os.path.join(ROOT, 'android', 'res')
@@ -278,6 +303,7 @@ def main():
     os.makedirs(os.path.join(ROOT, 'docs', 'art'), exist_ok=True)
     prev.save(os.path.join(ROOT, 'docs', 'art', 'app-icon.png'))
     web_icons(src)
+    pc_icons(src)
     print('icons written')
 
 

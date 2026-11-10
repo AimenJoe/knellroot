@@ -71,7 +71,7 @@ impl App {
             },
             Out::Pick(i) => match rows[i] {
                 SettingsRow::Language => self.next_lang(),
-                SettingsRow::Fullscreen => crate::screen::toggle(),
+                SettingsRow::Fullscreen => self.toggle_fullscreen(),
                 SettingsRow::Shake => {
                     self.shake = if self.shake >= 10 { 0 } else { self.shake + 1 };
                     self.save_prefs();

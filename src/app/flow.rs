@@ -213,9 +213,11 @@ pub enum TitleItem {
     /// 개발 메뉴(0052). 개발판에만 — 설정 바로 아래(0094: 연구소는 바깥 메뉴에 없고 개발 창의 도구 탭에서만).
     #[cfg(feature = "dev")]
     Dev,
+    /// 끝내기(PC만, 0135 — nail 0240): 맨 끝. 전체 화면·패드로 하면 창 ✕가 없다. 기록은 바뀔 때마다 이미 썼다(`persist`).
+    Quit,
 }
 
-/// 타이틀 줄(0066·0094): [이어하기(기록이 있으면)] · 시작하기 · 설정 · [개발(개발판)]. 기록이 없으면 설정은 둘째(헤드리스 시험의 길).
+/// 타이틀 줄(0066·0094): [이어하기(기록이 있으면)] · 시작하기 · 설정 · [개발(개발판)] · [끝내기(PC)]. 기록이 없으면 설정은 둘째(헤드리스 시험의 길).
 pub fn title_items(has_save: bool) -> Vec<TitleItem> {
     let mut v = Vec::new();
     if has_save {
@@ -224,6 +226,9 @@ pub fn title_items(has_save: bool) -> Vec<TitleItem> {
     v.extend([TitleItem::Start, TitleItem::Settings]);
     #[cfg(feature = "dev")]
     v.push(TitleItem::Dev);
+    if crate::DESKTOP {
+        v.push(TitleItem::Quit);
+    }
     v
 }
 
@@ -519,6 +524,15 @@ mod tests {
             title_items(true)[..3],
             [TitleItem::Continue, TitleItem::Start, TitleItem::Settings]
         );
+        // 0135: 끝내기는 PC에만, 늘 맨 끝(시험은 PC에서 돈다). 웹·Android 줄은 그대로라 헤드리스 시험의 길이 같다.
+        for has in [false, true] {
+            let v = title_items(has);
+            assert_eq!(v.last() == Some(&TitleItem::Quit), crate::DESKTOP);
+            assert_eq!(
+                v.iter().filter(|&&i| i == TitleItem::Quit).count(),
+                crate::DESKTOP as usize
+            );
+        }
         assert_eq!(
             choose_pause(PauseItem::Settings),
             (Go::Open(Scene::Settings), false),
@@ -590,7 +604,8 @@ mod tests {
             let t = title_items(has_save);
             let i = t.iter().position(|x| *x == TitleItem::Settings).unwrap();
             assert_eq!(t.get(i + 1), Some(&TitleItem::Dev));
-            assert_eq!(t.len(), 3 + has_save as usize);
+            // + 끝내기(PC, 0135 — 맨 끝).
+            assert_eq!(t.len(), 3 + has_save as usize + crate::DESKTOP as usize);
         }
         // 멈춤엔 연구소가 없고 그 자리(설정 아래)에 개발 줄(0090) — 연구소는 개발 창의 도구 탭에서.
         let p = pause_items();

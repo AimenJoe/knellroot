@@ -383,6 +383,14 @@ impl App {
         self.persist();
     }
 
+    /// 전체 화면을 켜고 끈다(설정 줄·F11) — PC는 다음에 켤 때도 그대로(0135).
+    pub(super) fn toggle_fullscreen(&mut self) {
+        crate::screen::toggle();
+        if crate::DESKTOP {
+            self.save_prefs();
+        }
+    }
+
     /// 설정을 저장한다(언어·키 배치를 바꿀 때마다).
     fn save_prefs(&self) {
         crate::prefs::save(&crate::prefs::Prefs {
@@ -393,6 +401,8 @@ impl App {
             volume: self.volume,
             tells: self.tells,
             tell_timing: self.tell_timing,
+            // PC만 기억한다(0135) — 웹은 브라우저가 Esc로 끌 수 있고 다음에 켤 때 사용자 입력 없이 못 연다.
+            fullscreen: crate::DESKTOP && crate::screen::active(),
             // 든 무기는 슬롯 기록으로 옮겼다(0066) — 옛 칸은 처음 읽은 값 그대로 둔다(옛 슬롯 1의 기본값).
             weapon: self.legacy_weapon,
         });
@@ -447,6 +457,10 @@ impl App {
             flask: play && pl.flask > 0 && pl.hp < pl.max_hp,
         });
         self.input.poll(self.scene().is_menu());
+        // F11(PC, 0135): 어느 장면에서나 창 ↔ 전체 화면. 창 일이라 `Actions`(게임 동작)에 넣지 않는다.
+        if input::fullscreen_pressed() {
+            self.toggle_fullscreen();
+        }
         // 싸움 중 마우스 조준이면 OS 커서 대신 조준 표시(0058). 랩은 마우스를 쓰지 않지만 화살표가 보이게 둔다.
         let hide = play && input::mouse_aim().on && input::device() == input::Device::Keys;
         if hide != self.mouse_hidden {

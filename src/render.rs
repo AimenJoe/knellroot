@@ -3008,6 +3008,13 @@ pub const MAX_DRAW_VERTICES: usize = 10_000;
 pub const DRAW_CALL_INDICES: usize = 15_000;
 pub const MAX_DRAW_INDICES: usize = DRAW_CALL_INDICES;
 
+/// 지금 모은 것(`v`·`i`)에 `nv`·`ni`를 더해도 한 그리기 호출에 들어가나 — 정점과 **색인 둘 다**(0135).
+/// Meshy 모델은 정점을 나눠 써서 정점 하나에 색인이 2.4개쯤이라, 정점만 세면 색인이 15,000을 넘어 macroquad가 잘랐다
+/// (외곽선·그림자 배치가 매 프레임 1만 개 가까이 잘림 — PC 빌드의 `geometry() exceeded` 경고로 찾음).
+fn fits(v: usize, i: usize, nv: usize, ni: usize) -> bool {
+    v + nv < MAX_DRAW_VERTICES && i + ni < MAX_DRAW_INDICES
+}
+
 #[derive(Default)]
 pub struct Batch {
     tex: Option<Texture2D>,
@@ -3099,9 +3106,7 @@ impl Batch {
             self.send();
             self.tex = tex.cloned();
         }
-        if self.vertices.len() + nv >= MAX_DRAW_VERTICES
-            || self.indices.len() + ni >= MAX_DRAW_INDICES
-        {
+        if !fits(self.vertices.len(), self.indices.len(), nv, ni) {
             self.send();
         }
     }
@@ -3146,7 +3151,8 @@ impl Batch {
             glow,
             true,
         );
-        if self.casting && tint.a > 0.5 && self.casters.len() + nv < MAX_DRAW_VERTICES {
+        // 그림자 지도는 한 번에 그린다 — 다 차면 그 뒤 배우는 그림자 없이(반쯤 잘린 그림자보다 낫다).
+        if self.casting && tint.a > 0.5 && fits(self.casters.len(), self.caster_idx.len(), nv, ni) {
             let m = &e.model;
             for (i, node) in m.nodes.iter().enumerate() {
                 let Some(mi) = node.mesh else { continue };
@@ -3166,6 +3172,10 @@ impl Batch {
             // 화면 1px = 그 거리에서 이만큼(m): 2·거리·tan(시야/2) / 내부 세로.
             let dist = k.eye.distance(at).max(0.5);
             let w = k.outline_px * 2.0 * dist * (k.fovy * 0.5).tan() / k.rows;
+            // 껍데기는 모델과 정점·색인 수가 같다 — 넣기 전에 넘칠지 보고 먼저 보낸다.
+            if !fits(self.outline.len(), self.outline_idx.len(), nv, ni) {
+                self.send_outline();
+            }
             Self::hull(
                 &mut self.outline,
                 &mut self.outline_idx,
@@ -3175,9 +3185,6 @@ impl Batch {
                 w,
                 k.eye,
             );
-            if self.outline.len() >= MAX_DRAW_VERTICES - 2000 {
-                self.send_outline();
-            }
         }
     }
 
@@ -3890,6 +3897,16 @@ fn beam(c: Vec3, r: f32, h: f32, col: Color) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0135: 한 그리기 호출은 정점과 색인 둘 다 한도 아래 — Meshy 모델(색인 ≈ 정점 × 2.4)을 정점만 보고 모으면 색인이 넘쳐 잘렸다.
+    #[test]
+    fn a_batch_counts_indices_too() {
+        assert!(fits(0, 0, 3000, 7000));
+        // 정점은 넉넉해도(6,000 + 3,000 < 10,000) 색인이 넘치면(14,000 + 7,000) 먼저 보낸다.
+        assert!(!fits(6000, 14_000, 3000, 7000));
+        assert!(!fits(9000, 0, 1000, 10), "vertices alone still count");
+        // 모델 하나는 늘 빈 배치에 들어간다 — models.rs `every_bundled_model_fits_one_draw_call`.
+    }
 
     /// 0124: 빛줄기 기둥 안에 선 몸은 밖보다 뚜렷이 밝고(땅속 달빛 0.4에서도), 위를 보는 면이 더 밝다 — 높이로 줄지 않는다.
     #[test]

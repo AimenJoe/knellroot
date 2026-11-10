@@ -272,6 +272,8 @@ pub struct Strings {
     pub menu_lab: &'static str,
     /// 설정(0052): 타이틀·멈춤의 줄, 화면 제목, 화면 흔들림 줄("{0}" = 백분율).
     pub menu_settings: &'static str,
+    /// 끝내기(PC 타이틀 끝 줄, 0135).
+    pub menu_quit: &'static str,
     pub settings_title: &'static str,
     pub menu_shake: &'static str,
     /// 소리 크기(0064 M5).
@@ -635,6 +637,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.menu_controls,
         s.menu_lab,
         s.menu_settings,
+        s.menu_quit,
         s.settings_title,
         s.menu_shake,
         s.menu_volume,
