@@ -121,6 +121,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), 랩(멈춤 끝 줄 LAB·F1, 0070), F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+**0138(방향만, 2026-11-10)**: 웹 호스팅은 나중에 Netlify → Cloudflare(Workers 정적 파일)로. 사람이 할 일: Netlify 대시보드 → Team → Billing에서 Legacy(월 100 GB)인지 크레딧제(≈ 15 GB, 다 쓰면 nail·knellroot 사이트가 함께 멈춤)인지와 이번 달 사용량.
+
 **0093 소개 페이지**: `release/v0.3`을 main에 넣은 뒤 ① 레포 Settings → Pages → Source = **GitHub Actions**(켜기 전 첫 실행은 실패, 켠 뒤 Actions의 pages를 다시 실행) ② DNS(Cloudflare)에 `knellroot` CNAME → `aimenjoe.github.io` ③ Settings → Pages → Custom domain = `knellroot.beardworks.io`, Enforce HTTPS. 페이지 글을 고치면 `python3 tools/site/subset_font.py <GowunBatang-Bold.ttf>`.
 
 **v0.4.1 배포됨(2026-11-08, PR #7 → `a9f2925`)**: 0109~0113(넓어진 0번째 지역·서 있는 적·문 장치·엘리트·마법 쿨타임·공중 RB·레벨 값·마디·늦은 패링 고침). `release/v0.4`는 main까지 앞으로, `release/v0.5`에 main을 합침.
