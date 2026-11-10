@@ -27,7 +27,7 @@ nail `docs/release.md`를 줄인 것. 웹(Netlify) + Android APK(0022). PC·iOS�
 1. 작업이 release 갈래에 다 올라가 있고 사장이 "v<버전>으로 배포"를 말했다. `git fetch origin main && git merge-base --is-ancestor origin/main HEAD`.
 2. 올린다: `Cargo.toml` `version`·`[package.metadata.android] version_code`, `docs/releases/v<버전>.md`(들어 있는 것/바뀐 것·해 보기·알려진 것·출처·English short), `Cargo.lock`.
 3. 전체 검사(CLAUDE.md "커밋 전" + `cargo clippy --target aarch64-linux-android -- -D warnings`).
-4. 커밋 메시지 `v<버전>: <한 줄>`, release 갈래에 push → **PR `release/v0.x` → `main`을 연다**(main 룰셋 0092: PR 필수 + `build` 검사, 바로 push는 관리자만). 사장이 검사 통과를 보고 Merge(합치기 = merge). Merge 뒤 `git fetch origin main && git merge --ff-only origin/main && git push origin release/v0.x`(release를 main의 Merge 커밋까지 앞으로).
+4. 커밋 메시지 `v<버전>: <한 줄>`, release 갈래에 push → **PR `release/v0.x` → `main`을 연다**(main 룰셋 0092: PR 필수 + `build` 검사, 바로 push는 관리자만). 사장이 검사 통과를 보고 Merge(합치기 = merge). Merge 뒤 `git fetch origin main && git merge --ff-only origin/main && git push origin release/v0.x`(release를 main의 Merge 커밋까지 앞으로). **Squash로 합쳐졌으면**(main 커밋의 부모가 하나 — v0.5.0 #15) 빨리 감기가 안 된다: `git diff release/v0.x origin/main`이 비었는지 보고 `git merge origin/main`(트리 같음), 다음 갈래(`release/v0.(x+1)`)에는 `git merge -s ours origin/main`(내용은 이미 있고 기록만 잇는다 — 안 하면 다음 릴리스 PR에서 같은 줄이 충돌한다).
    - 룰셋을 걸기 전(0092 이전)에는 같은 커밋을 `git push origin HEAD:main`으로 바로 넣었다.
 5. 확인(5~10분 뒤): Actions의 `deploy-web`·`release`(→ `build-android`) success, Release `v<버전>`에 `knellroot.apk`, 운영 주소 `build.txt`, 타이틀 오른쪽 위 버전 글자.
 6. 사장에게 보고.

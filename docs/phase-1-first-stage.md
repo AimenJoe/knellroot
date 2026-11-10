@@ -129,7 +129,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 
 **v0.5.0 마일스톤 정함(0116, 갈래 `release/v0.5`)**: 인터뷰로 열여섯 물음 — 보라 뿌리 = 주인 없는 실(개발자 답), 떠난 이유는 게임 안 MYSTERY, 주민 = 여러 작은 동물("주민"), 포포 고리 걸어 둠, ECO-05 조건은 열고 행동 규칙만, ECO-10 같은 종이 다른 역할, 잔류형 정본(관찰), 마을 등급 2 = 체력 ×1.5·자세 ×1.3·잔불 ×1.6, 둘째 문지기 거리·공간형, 내려가는 길 + 되돌아가는 길, 도감 넣음, 주민의 불 = 아궁이·재방문 = 다음 판·공격이 지나감·말풍선. 이름: 떠난 마을·등딱지짐승·꼬투리·깨진 종지기. **다음: T1 지역 잇기부터**. 둘째 지역 설계는 0115(`docs/lore/regions/abandoned-village.md`·`docs/design/stages/abandoned-village-residents.md`).
 
-**v0.5.0 릴리스 PR #15(2026-11-10, `release/v0.5` → `main`, 사장 Merge 대기)**: `Cargo.toml` 0.5.0·`version_code` 17·`docs/releases/v0.5.0.md`. Merge 뒤: Actions `deploy-web`·`release`(→ `build-android`) success, Release `v0.5.0`에 `knellroot.apk`, 운영 `build.txt`, 그다음 `release/v0.5`를 main까지 앞으로 + `release/v0.6`에 main 합침.
+**v0.5.0 배포(2026-11-10, PR #15 `release/v0.5` → `main`, 사장 Merge — Squash `082a781`)**: `Cargo.toml` 0.5.0·`version_code` 17·`docs/releases/v0.5.0.md`. Actions `release`·`build-android` success, Release `v0.5.0`에 `knellroot.apk`. Squash라 빨리 감기가 안 돼 `release/v0.5`에는 main을 합치고(트리 같음), `release/v0.6`에는 `-s ours`로 합침(내용은 이미 있음). 고칠 것은 v0.5.x(`release/v0.5`) 또는 v0.6에서.
 
 **v0.6.0 "다듬기" 마일스톤 정함(0134, 갈래 `release/v0.6`)**: 인터뷰 — 중심 = 다듬기(판정 반영), 함께 = 판정 줄 반영·무기 강화·PC 빌드 먼저, 셋째 지역은 나중에 lore에 맞게, 크기 = v0.5만큼. **사람이 할 일: 판정 체크리스트 `docs/testing/v0-6-judgment-checklist.md`(8묶음 45칸)를 해 보고 칸마다 "좋음 / 고침"**. 차례: J0(체크리스트) → P1 PC 빌드(판정을 기다리는 동안) → J1 판정 반영 → W1 무기 강화(시작할 때 짧은 인터뷰).
 
