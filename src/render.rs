@@ -807,9 +807,55 @@ impl Renderer {
                 }
             }
             // 퍼지는 고리(뿌리 파동 하나·울림 고리 여럿, 0125) — 고리 사이가 설 자리로 읽히게 하나하나 따로.
+            // 종 내던지기(0133)의 고리는 종이 떨어진 자리가 가운데.
+            let wc = if en.atk == crate::enemy::Atk::Hurl {
+                en.wave_center()
+            } else {
+                p
+            };
             for front in en.wave_fronts() {
-                drape.ring(p, front, 0.0, 360.0, with_a(TELE, 0.45));
-                drape.ring(p, (front - 0.5).max(0.1), 0.0, 360.0, with_a(TELE, 0.18));
+                drape.ring(wc, front, 0.0, 360.0, with_a(TELE, 0.45));
+                drape.ring(wc, (front - 0.5).max(0.1), 0.0, 360.0, with_a(TELE, 0.18));
+            }
+            // 뿌리 기둥 줄(0133): 앞머리까지 기둥이 솟고(지나간 자리일수록 다 솟음), 쉬는 동안 가라앉는다.
+            let sink_k = match (en.state, en.atk) {
+                (EState::Recover { t }, crate::enemy::Atk::Roots) => Some(1.0 - t / ROOTS_SINK),
+                _ => None,
+            };
+            if let Some(front) = en
+                .roots_front()
+                .or(sink_k.filter(|k| *k > 0.0).map(|_| en.charge_len))
+            {
+                let f = en.facing_dir();
+                let mut s = en.radius + 0.5;
+                let mut i = 0;
+                while s <= front {
+                    let rise = ((front - s) / 1.6).clamp(0.0, 1.0) * sink_k.unwrap_or(1.0).max(0.0);
+                    let h = ROOT_PILLAR_H * rise * if i % 2 == 0 { 1.0 } else { 0.75 };
+                    if h > 0.02 {
+                        let side = if i % 2 == 0 { 0.25 } else { -0.25 };
+                        let at = drape.at(
+                            p.x + f.x * s + f.z * side,
+                            p.z + f.z * s - f.x * side,
+                            p.y,
+                            0.0,
+                        );
+                        shaded_box(
+                            at + Vec3::Y * h * 0.5,
+                            vec3(0.32, h, 0.32),
+                            ROOT_PILLAR,
+                            0.8,
+                        );
+                        shaded_box(
+                            at + Vec3::Y * (h + 0.12),
+                            vec3(0.16, 0.24, 0.16),
+                            ROOT_PILLAR_TIP,
+                            0.9,
+                        );
+                    }
+                    s += 0.8;
+                    i += 1;
+                }
             }
             // 엘리트(0112): 발밑의 옅은 뼈빛 표지 — 성질마다 모양이 다르다(색으로 세기를 말하지 않는다, lore ecology 2).
             // 굳은 = 굵은 고리 하나, 되풀이 = 고리 둘, 남는 = 끊어진 고리(쓰러진 뒤 남을 것).
@@ -1647,9 +1693,22 @@ impl Renderer {
             // 번쩍임은 눈·핵만(몸 전체가 밝아지면 맞았을 때의 흰 번쩍임과 헷갈린다).
             glow += WINDUP_GLINT_GAIN * (1.0 - h / WINDUP_GLINT).max(0.0);
         }
+        // 2단계 전환(0133): 무릎 꿇은 동안 핵·눈이 차오르다 터지는 틱에 가장 밝고, 일어서며 2단계 밝기로.
+        if let EState::Rise { t } = en.state {
+            use crate::tuning::{RISE_BURST, RISE_TIME};
+            glow += if t < RISE_BURST {
+                RISE_GLOW * (t / RISE_BURST)
+            } else {
+                RISE_GLOW * (1.0 - (t - RISE_BURST) / (RISE_TIME - RISE_BURST))
+            };
+        }
         if let Some(e) = self.lib.get(model) {
             let (anim, at) = enemy_anim(en, model, e, w.time, stage);
-            e.model.pose(anim, at, &mut self.pose);
+            // 종 내던지기(0133): 종이 손을 떠난 뒤엔 손의 종을 감춘다(날아가는·떨어진 종은 따로 그린다).
+            let hide = hurl_bell(en)
+                .and(e.model.node("bell"))
+                .map(|n| (n, Quat::IDENTITY, Vec3::ZERO));
+            e.model.pose_with(anim, at, hide.as_slice(), &mut self.pose);
             let inst = Mat4::from_translation(p + sink)
                 * Mat4::from_quat(tilt)
                 * Mat4::from_rotation_y(en.facing)
@@ -1667,6 +1726,24 @@ impl Renderer {
                 WHITE
             };
             self.batch.model(e, &self.pose, inst, tint, lights, glow);
+            // 손을 떠난 종(0133): 성소 종 소품의 종 몸만(나무 틀은 감춘다), 날아가는 동안 돈다.
+            if let (Some(q), Some(b)) = (hurl_bell(en), self.lib.get("bell")) {
+                let frame = b
+                    .model
+                    .node("bell_frame")
+                    .map(|n| (n, Quat::IDENTITY, Vec3::ZERO));
+                b.model
+                    .pose_with(None, 0.0, frame.as_slice(), &mut self.pose);
+                let spin = if matches!(en.state, EState::Tele { .. }) {
+                    w.time * 9.0
+                } else {
+                    0.0
+                };
+                let inst = Mat4::from_translation(q - Vec3::Y * (1.05 * HURL_BELL_SCALE))
+                    * Mat4::from_rotation_y(spin)
+                    * Mat4::from_scale(Vec3::splat(HURL_BELL_SCALE));
+                self.batch.model(b, &self.pose, inst, WHITE, lights, 0.0);
+            }
         } else {
             let base = if en.boss {
                 Color::new(0.45, 0.2, 0.5, 1.0)
@@ -2409,6 +2486,40 @@ impl Renderer {
 
 /// 준비 동작 단서(0073): 예고 끝까지 눈·핵 빛 +, 버티는 동안 떨림(m, 몸 옆으로), 정점 번쩍임 길이(초)·세기.
 const WINDUP_GLOW: f32 = 0.6;
+/// 2단계 전환(0133)이 터지는 틱의 눈·핵 밝기 더함.
+const RISE_GLOW: f32 = 2.2;
+/// 뿌리 기둥(0133): 높이(m)·가라앉는 초·빛깔(보라 뿌리 — 몸빛이 아니라 뿌리라 각지게, 0037).
+const ROOT_PILLAR_H: f32 = 1.5;
+const ROOTS_SINK: f32 = 0.6;
+const ROOT_PILLAR: Color = Color::new(0.24, 0.16, 0.30, 1.0);
+const ROOT_PILLAR_TIP: Color = Color::new(0.42, 0.30, 0.52, 1.0);
+/// 종 내던지기(0133): 날아가는 종이 그리는 포물선 높이(m)·크기(성소 종 소품의 종 몸을 키워 쓴다).
+const HURL_ARC: f32 = 4.5;
+const HURL_BELL_SCALE: f32 = 1.2;
+
+/// 종 내던지기(0133)에서 종이 손을 떠났다면 그 종의 자리(날아가는 중 = 포물선, 떨어진 뒤 = 떨어진 자리). 아니면 None.
+fn hurl_bell(en: &Enemy) -> Option<Vec3> {
+    if en.atk != crate::enemy::Atk::Hurl {
+        return None;
+    }
+    let target = en.plant_at?;
+    let hand = en.pos + en.facing_dir() * 0.9 + Vec3::Y * 2.6;
+    match en.state {
+        EState::Tele { t } => {
+            let k = t / en.tele_dur().max(1e-3);
+            let throw = crate::tuning::HURL_THROW;
+            if k < throw {
+                return None;
+            }
+            let u = ((k - throw) / (1.0 - throw)).clamp(0.0, 1.0);
+            let mut q = hand.lerp(target, u);
+            q.y += HURL_ARC * 4.0 * u * (1.0 - u);
+            Some(q)
+        }
+        EState::Swing { .. } | EState::Wave { .. } => Some(target),
+        _ => None,
+    }
+}
 /// 들어 올리는 동안 키 늘림(배)·뒤로 젖힘(라디안).
 const WINDUP_STRETCH: f32 = 0.06;
 const WINDUP_LEAN: f32 = 0.1;
@@ -2451,6 +2562,8 @@ fn enemy_anim(
         Atk::Plant => &["plant", "attack"],
         Atk::Toll => &["toll", "wave", "slam", "attack"],
         Atk::Shards => &["throw", "attack"],
+        Atk::Roots => &["roots", "slam", "attack"],
+        Atk::Hurl => &["hurl", "toll", "throw", "attack"],
     };
     let once = |names: &[&str], k: f32| {
         let a = e.pick(names);
@@ -2516,6 +2629,18 @@ fn enemy_anim(
             Some(a) => (Some(a), t.min(e.duration(Some(a)) * 0.999)),
             None => (e.pick(&["idle"]), clock + phase),
         },
+        // 2단계 전환(0133): 깨어남 동작을 거꾸로 무릎 꿇고(0.5초) 버티다가, 터지는 틱부터 일어선다.
+        EState::Rise { t } => {
+            use crate::tuning::{RISE_BURST, RISE_TIME};
+            let k = if t < 0.5 {
+                1.0 - t / 0.5
+            } else if t < RISE_BURST {
+                0.0
+            } else {
+                (t - RISE_BURST) / (RISE_TIME - RISE_BURST)
+            };
+            once(&["rise", "wake", "hurt"], k)
+        }
         EState::Stagger { .. } => once(&["hurt", "idle"], 0.3),
         EState::Dead => once(&["hurt", "idle"], 0.999),
     }
@@ -2592,6 +2717,16 @@ fn telegraph(
     ink_mul: f32,
     timing: bool,
 ) {
+    // 줄지은 원(0133 뿌리 기둥): 원 하나하나를 같은 규칙으로(원 = 피할 것).
+    if let TeleShape::Row { n, r, step, start } = shape {
+        let (sn, cs) = facing.sin_cos();
+        let dir = vec3(sn, 0.0, cs);
+        for i in 0..n {
+            let c = p + dir * (start + i as f32 * step);
+            telegraph(d, c, facing, k, TeleShape::Disc { r }, ink_mul, timing);
+        }
+        return;
+    }
     if !timing {
         return telegraph_density(d, p, facing, k, shape, ink_mul);
     }
@@ -2628,6 +2763,7 @@ fn telegraph(
             d.line(p + vec3(-x, 0.0, -x), p + vec3(x, 0.0, x), mark);
             d.line(p + vec3(-x, 0.0, x), p + vec3(x, 0.0, -x), mark);
         }
+        TeleShape::Row { .. } => {}
     }
 }
 
@@ -2663,6 +2799,7 @@ fn telegraph_density(d: &Drape, p: Vec3, facing: f32, k: f32, shape: TeleShape, 
             d.line(p + vec3(-x, 0.0, -x), p + vec3(x, 0.0, x), mark);
             d.line(p + vec3(-x, 0.0, x), p + vec3(x, 0.0, -x), mark);
         }
+        TeleShape::Row { .. } => {}
     }
 }
 

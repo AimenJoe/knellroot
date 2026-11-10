@@ -125,6 +125,16 @@ pub fn spec_label(name: &'static str) -> &'static str {
 /// 개발 시나리오(`scenario::LIST`의 영어 이름) → (한국어 이름, 무엇을 보나). F3 아레나 줄은 기본 글꼴이라 영어 그대로.
 pub const SCENARIO_KO: &[(&str, &str, &str)] = &[
     (
+        "warden phase two",
+        "문지기 2단계",
+        "0133 시작하자마자 전환(맞지 않음·밀쳐냄)·뿌리 기둥 줄·돌진 뒤 내려치기",
+    ),
+    (
+        "bellkeeper phase two",
+        "종지기 2단계",
+        "0133 시작하자마자 전환(맞지 않음·밀쳐냄)·선 자리에 종 내던지기 + 고리·돌진 뒤 울림",
+    ),
+    (
         "broken bellkeeper",
         "깨진 종지기",
         "0125 울림 고리(뛰거나 구르며 지나기)·종 조각 부채꼴(패링하면 되돌아감)·종 끌기 돌진",

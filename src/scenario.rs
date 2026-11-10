@@ -18,6 +18,10 @@ pub enum Scenario {
     Newcomers,
     /// 깨진 종지기(0125): 울림 고리·종 조각·돌진.
     Bellkeeper,
+    /// 보스 2단계(0133): 문지기 체력 반 — 시작하자마자 전환, 이어 뿌리 기둥 줄·돌진 뒤 내려치기.
+    WardenTwo,
+    /// 보스 2단계(0133): 종지기 체력 반 — 시작하자마자 전환, 이어 종 내던지기·돌진 뒤 울림.
+    BellkeeperTwo,
 }
 
 pub struct Entry {
@@ -27,7 +31,7 @@ pub struct Entry {
     pub checks: &'static str,
 }
 
-pub const LIST: [Entry; 11] = [
+pub const LIST: [Entry; 13] = [
     Entry {
         scenario: Scenario::Boss,
         name: "boss arena",
@@ -84,6 +88,16 @@ pub const LIST: [Entry; 11] = [
         name: "broken bellkeeper",
         checks:
             "0125 toll rings (jump or dodge through), shard fan (parry sends it back), bell charge",
+    },
+    Entry {
+        scenario: Scenario::WardenTwo,
+        name: "warden phase two",
+        checks: "0133 rise at once (untouchable, burst push), root pillar row, charge then slam",
+    },
+    Entry {
+        scenario: Scenario::BellkeeperTwo,
+        name: "bellkeeper phase two",
+        checks: "0133 rise at once (untouchable, burst push), bell hurled to your spot + ring, charge then toll",
     },
 ];
 
@@ -174,6 +188,20 @@ pub fn build(s: Scenario) -> World {
             w.spawn(crate::species::Kind::Bellkeeper, vec3(0.0, 0.0, -9.0));
             w.obstacles.push(pillar(-10.0, -10.0, 1.6, 4.0));
             w.obstacles.push(pillar(10.0, -10.0, 1.6, 4.0));
+            w
+        }
+        // 2단계(0133): 같은 아레나, 체력만 반 — 시작하자마자 전환(잠든 문지기는 깨어난 뒤).
+        Scenario::WardenTwo | Scenario::BellkeeperTwo => {
+            let mut w = build(if s == Scenario::WardenTwo {
+                Scenario::Boss
+            } else {
+                Scenario::Bellkeeper
+            });
+            for en in &mut w.enemies {
+                if en.boss {
+                    en.hp = en.max_hp / 2;
+                }
+            }
             w
         }
         Scenario::Newcomers => {
