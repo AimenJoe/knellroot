@@ -189,7 +189,8 @@ fn empty(aabb: Option<Aabb>) -> Piece {
 }
 
 impl Scenery {
-    pub fn bake(lv: &Level, lib: &mut Library, flora: bool) -> Scenery {
+    /// `trees` = 이 지역에 나무·덤불이 자라나(0118 T2 — 땅속은 벽 뿌리만).
+    pub fn bake(lv: &Level, lib: &mut Library, flora: bool, trees: bool) -> Scenery {
         let lights = lv.lights.clone();
         let mut pieces = Vec::new();
         let gnd = lv.ground();
@@ -596,7 +597,7 @@ impl Scenery {
                         c.z + (hash(x, z, 33) - 0.5) * CELL * 0.5,
                     );
                     let seed = (x * 977 + z * 131) as u32;
-                    if !flora {
+                    if !flora || !trees {
                     } else if hash(x, z, 30) < TREE_SHARE {
                         let b = crate::flora::tree(&mut p, on, seed, &lights);
                         if let Some(a) = p.aabb.as_mut() {

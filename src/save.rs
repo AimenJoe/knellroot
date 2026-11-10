@@ -21,6 +21,9 @@ pub mod key {
     pub const RUN_REST: &str = "run.rest";
     /// 그 쉼터에서 다시 서면 문이 열린 뒤부터인가(1) 입구부터인가(0) — 0032의 되돌아갈 단계.
     pub const RUN_GATE: &str = "run.gate";
+    /// 쉰 곳의 지역(0118, `stage::STAGES` 차례)과 이 판에 이긴 문지기 수 — 없으면 0(옛 기록 = 성소).
+    pub const RUN_STAGE: &str = "run.stage";
+    pub const RUN_DOWN: &str = "run.down";
     /// 장신구(M3): 가진 것("shell,ear")·낀 것(세 칸 "shell,,ear") — `charms.rs`의 키.
     pub const CHARMS_OWNED: &str = "charm.owned";
     pub const CHARMS_WORN: &str = "charm.worn";
@@ -45,10 +48,19 @@ pub mod key {
     pub const FINDS: &str = "finds";
     /// 처음 쓰러뜨린 엘리트(0112): 기록 이름들("sanctuary.elite.0,…") — 처음 덤은 한 번만.
     pub const ELITES: &str = "elites";
+    /// 시작한 판 수(0122 — 주민 재방문 "처음 본 판이 끝난 뒤의 다른 판").
+    pub const RUNS: &str = "runs";
+    /// 주민을 처음 본 판(`V01:3,…`)·재방문으로 바뀐 주민(`V01,…`, 단방향).
+    pub const RESIDENTS_SEEN: &str = "residents.seen";
+    pub const RESIDENTS_CHANGED: &str = "residents.changed";
+    /// 도감(0130): 본 것의 이름(`codex::obs_key`, 쉼표).
+    pub const CODEX: &str = "codex";
     /// 문 장치로 연 문(0113): 스테이지 이름 앞(`find_prefix`)들 — 한 번 열면 판을 넘어 열려 있다(지름길).
     pub const GATES: &str = "gates";
     /// 문지기 핵 점수(0105): 이긴 횟수, `progression::CORE_CAP`까지.
     pub const CORE_WARDEN: &str = "core.warden";
+    /// 깨진 종지기 핵 점수(0125, v0.5.0 C3): 둘째 지역 문지기를 이긴 횟수, `CORE_CAP`까지.
+    pub const CORE_BELL: &str = "core.bellkeeper";
     /// v0.4.0 옮기기를 했다(0105 — 핵 고르기 → 생명·숨은 물건·핵 점수). 한 번만.
     pub const MIGRATED_V04: &str = "migrated.v04";
     /// 기술 나무(0106): 갈래마다 연 칸 수, 목표 핀 "갈래.깊이"(없으면 키 없음).
@@ -110,11 +122,13 @@ impl Record {
     }
 }
 
-/// 판 안의 자리: 쉼터 번호와 문이 열린 뒤인지.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// 판 안의 자리: 쉼터 번호와 문이 열린 뒤인지, 어느 지역(0118)의 쉼터인지, 이 판에 이긴 문지기 수.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RunAt {
     pub rest: usize,
     pub gate_open: bool,
+    pub stage: usize,
+    pub down: usize,
 }
 
 /// 기록에서 게임이 쓰는 것(앱이 들고 있다가 바뀌면 쓴다).
@@ -133,10 +147,18 @@ pub struct Progress {
     pub finds: Vec<String>,
     /// 처음 쓰러뜨린 엘리트의 기록 이름(0112).
     pub elites: Vec<String>,
+    /// 시작한 판 수·주민을 처음 본 판·바뀐 주민(0122).
+    pub runs: u32,
+    pub residents_seen: Vec<(String, u32)>,
+    pub residents_changed: Vec<String>,
+    /// 도감에 적힌 것(0130).
+    pub codex: Vec<String>,
     /// 문 장치로 연 문(0113).
     pub gates: Vec<String>,
     /// 성소 문지기 핵 점수(0105, `CORE_CAP`까지).
     pub cores: u32,
+    /// 깨진 종지기 핵 점수(0125, `CORE_CAP`까지).
+    pub bell_cores: u32,
     /// 기술 나무(0106).
     pub tree: crate::progression::Tree,
     /// 든 무기(없으면 옛 prefs 칸의 값을 쓴다).
@@ -154,6 +176,8 @@ impl Progress {
         let run = r.num(key::RUN_REST).map(|i| RunAt {
             rest: i as usize,
             gate_open: r.num(key::RUN_GATE) == Some(1),
+            stage: r.num(key::RUN_STAGE).unwrap_or(0) as usize,
+            down: r.num(key::RUN_DOWN).unwrap_or(0) as usize,
         });
         let owned = crate::charms::decode_owned(r.get(key::CHARMS_OWNED).unwrap_or(""));
         let worn = crate::charms::decode_worn(r.get(key::CHARMS_WORN).unwrap_or(""), &owned);
@@ -216,6 +240,10 @@ impl Progress {
             .num(key::CORE_WARDEN)
             .unwrap_or(0)
             .min(crate::progression::CORE_CAP);
+        let bell_cores = r
+            .num(key::CORE_BELL)
+            .unwrap_or(0)
+            .min(crate::progression::CORE_CAP);
         let migrated = r.num(key::MIGRATED_V04) == Some(1);
         let depth = |k: &str| r.num(k).unwrap_or(0).min(crate::progression::DEPTH as u32) as u8;
         let pin = r.get(key::TREE_PIN).and_then(|v| {
@@ -231,6 +259,36 @@ impl Progress {
             ],
             pin,
         };
+        let residents_seen: Vec<(String, u32)> = r
+            .get(key::RESIDENTS_SEEN)
+            .unwrap_or("")
+            .split(',')
+            .filter_map(|e| {
+                let (id, n) = e.trim().split_once(':')?;
+                Some((id.to_string(), n.parse().ok()?))
+            })
+            .collect();
+        let mut residents_changed: Vec<String> = r
+            .get(key::RESIDENTS_CHANGED)
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect();
+        residents_changed.sort();
+        residents_changed.dedup();
+        let mut codex: Vec<String> = r
+            .get(key::CODEX)
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect();
+        codex.sort();
+        codex.dedup();
+        let runs = r.num(key::RUNS).unwrap_or(0);
         let r_has_no_weapons = r.get(key::WEAPONS).is_none();
         let r_weapons = r.get(key::WEAPONS).map(str::to_string);
         let mut p = Progress {
@@ -238,8 +296,13 @@ impl Progress {
             level,
             finds,
             elites,
+            runs,
+            residents_seen,
+            residents_changed,
+            codex,
             gates,
             cores,
+            bell_cores,
             tree,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
             weapons: r_weapons
@@ -305,8 +368,20 @@ impl Progress {
         r.set(key::LV_MIGHT, self.level.might);
         r.set(key::FINDS, self.finds.join(","));
         r.set(key::ELITES, self.elites.join(","));
+        r.set(key::RUNS, self.runs);
+        r.set(
+            key::RESIDENTS_SEEN,
+            self.residents_seen
+                .iter()
+                .map(|(id, n)| format!("{id}:{n}"))
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+        r.set(key::RESIDENTS_CHANGED, self.residents_changed.join(","));
+        r.set(key::CODEX, self.codex.join(","));
         r.set(key::GATES, self.gates.join(","));
         r.set(key::CORE_WARDEN, self.cores);
+        r.set(key::CORE_BELL, self.bell_cores);
         r.set(key::MIGRATED_V04, 1);
         r.set(key::TREE_BEAT, self.tree.open[0]);
         r.set(key::TREE_RIPOSTE, self.tree.open[1]);
@@ -331,10 +406,14 @@ impl Progress {
             Some(at) => {
                 r.set(key::RUN_REST, at.rest);
                 r.set(key::RUN_GATE, at.gate_open as u8);
+                r.set(key::RUN_STAGE, at.stage);
+                r.set(key::RUN_DOWN, at.down);
             }
             None => {
                 r.remove(key::RUN_REST);
                 r.remove(key::RUN_GATE);
+                r.remove(key::RUN_STAGE);
+                r.remove(key::RUN_DOWN);
             }
         }
         r
@@ -351,12 +430,13 @@ impl Progress {
             || self.level != crate::progression::Level::default()
             || !self.finds.is_empty()
             || self.cores > 0
+            || self.bell_cores > 0
             || self.tree != crate::progression::Tree::default()
     }
 
-    /// 나무 점수(0106): 핵 + 주운 종소리 조각.
+    /// 나무 점수(0106): 핵(문지기마다) + 주운 종소리 조각.
     pub fn tree_points(&self) -> u32 {
-        crate::progression::tree_points(self.cores, &self.finds)
+        crate::progression::tree_points(self.cores + self.bell_cores, &self.finds)
     }
 
     /// 장신구를 뺀 능력치(성장만) — 장비 창이 "장신구가 바꾸는 줄"을 고를 때의 기본값(0104).
@@ -558,6 +638,37 @@ mod tests {
     }
 
     /// 0112: 처음 쓰러뜨린 엘리트는 기록에 남는다(키 `elites`, 겹치지 않게).
+    /// 0130: 도감 기록은 정렬된 이름 목록으로 돌아온다(빈 기록 = 없음).
+    #[test]
+    fn the_codex_round_trips() {
+        let p = Progress {
+            codex: vec!["husk".into(), "husk.docile".into(), "warden.roused".into()],
+            ..Progress::default()
+        };
+        let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        assert_eq!(back.codex, p.codex);
+        assert!(Progress::from_record(Record::parse("v=1\n"))
+            .codex
+            .is_empty());
+    }
+
+    /// 0125: 깨진 종지기 핵은 따로 센다(셋까지) — 나무 마디는 두 문지기 핵을 더한다. 키가 없는 옛 기록은 0.
+    #[test]
+    fn bellkeeper_cores_are_kept_apart_and_add_to_tree_points() {
+        let p = Progress {
+            cores: 2,
+            bell_cores: 9,
+            ..Progress::default()
+        };
+        let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        assert_eq!(back.cores, 2);
+        assert_eq!(back.bell_cores, crate::progression::CORE_CAP, "capped");
+        assert_eq!(back.tree_points(), 2 + crate::progression::CORE_CAP);
+        assert!(back.has_any());
+        let old = Progress::from_record(Record::parse("v=1\ncore.warden=1\n"));
+        assert_eq!((old.cores, old.bell_cores), (1, 0));
+    }
+
     /// 0117: 무기는 얻어서 쓴다 — 새 기록은 맨손·검만, 얻은 무기는 기록에 남고, 키가 없는 옛 기록(판을 한 번이라도 한)은 다 가진 채로.
     #[test]
     fn weapons_are_earned_and_old_records_keep_them_all() {
@@ -587,6 +698,30 @@ weapon=crossbow
         assert_eq!(empty.owned_weapons(), vec![Id::Sword, Id::Fists]);
     }
 
+    /// 0122: 판 수·주민을 처음 본 판·바뀐 주민은 기록에 남고, 키가 없는 옛 기록은 0·빈 것(NPC-07).
+    #[test]
+    fn residents_and_runs_round_trip_and_old_records_start_empty() {
+        let mut p = Progress {
+            runs: 4,
+            ..Progress::default()
+        };
+        p.residents_seen = vec![("V01".into(), 2), ("V03".into(), 4)];
+        p.residents_changed = vec!["V01".into()];
+        let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        assert_eq!(back.runs, 4);
+        assert_eq!(back.residents_seen, p.residents_seen);
+        assert_eq!(back.residents_changed, p.residents_changed);
+        let old = Progress::from_record(Record::parse("v=1\nembers=9\n"));
+        assert_eq!(
+            (
+                old.runs,
+                old.residents_seen.len(),
+                old.residents_changed.len()
+            ),
+            (0, 0, 0)
+        );
+    }
+
     #[test]
     fn beaten_elites_round_trip() {
         let mut p = Progress::default();
@@ -614,6 +749,8 @@ weapon=crossbow
         p.run = Some(RunAt {
             rest: 1,
             gate_open: true,
+            stage: 1,
+            down: 1,
         });
         let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
         assert_eq!(back.run, p.run);
@@ -747,7 +884,7 @@ weapon=crossbow
             (p.owned, p.worn, p.chests)
         );
         assert!(back.has_any());
-        assert_eq!(back.stats().parry, 0.06, "the worn charm counts");
+        assert_eq!(back.stats().parry, 0.04, "the worn charm counts");
         assert_eq!(back.growth, p.growth);
         let base = crate::stats::Stats::default();
         assert_eq!(back.stats().max_hp, base.max_hp + 2);
@@ -779,6 +916,7 @@ weapon=crossbow
         p.run = Some(RunAt {
             rest: 0,
             gate_open: false,
+            ..RunAt::default()
         });
         assert!(save(0, &p));
         let got = load(0);

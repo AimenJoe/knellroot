@@ -1,9 +1,23 @@
 //! 싸움 한 틱과 그 둘레(0019): 월드·스테이지·카메라·조준·랩, 길 안내 화살, 개발 줄, 월드 소리(0066 R3에서 옮김).
 use super::*;
 
+/// 새긴 돌 글 판이 떠 있는 초(0129).
+const STONE_TIME: f32 = 6.0;
+
 impl App {
     /// 싸움 한 틱: 멈춤 → 월드 → 스테이지 → 기록·가게·소리·알림 → 끝났으면 끝 장면.
     pub(super) fn tick_play(&mut self, a: Actions) {
+        // 지역 사이 지층 단면 전환(0118): 덮인 동안 월드·멈춤·장비 창은 멈추고, 가운데에서 지역을 바꾼다.
+        if let Some(mut p) = self.passage.take() {
+            let (swap, done) = p.step(TICK_DT);
+            if swap {
+                self.cross_to(p.to, p.up);
+            }
+            if !done {
+                self.passage = Some(p);
+            }
+            return;
+        }
         // 세로로 든 폰(0082): 회전 안내가 덮인 동안 싸움이 흐르지 않게 멈춤으로(nail 0269 꼴).
         if a.pause || crate::screen::portrait_blocked() {
             self.go(flow::pause(self.scene()));
@@ -24,8 +38,50 @@ impl App {
                 self.progress.play = self.progress.play.saturating_add(1);
             }
         }
-        let out = self.run.tick(&mut self.world, TICK_DT);
+        let mut out = self.run.tick(&mut self.world, TICK_DT);
+        // 주민 말풍선(0122): 같은 주민에게 말풍선이 떠 있는 동안 다시 누르면 다음 말, 아니면 처음 말.
+        if let Some(k) = self.run.take_talked() {
+            let n = match self.bubble {
+                Some((b, n, _)) if b == k => n + 1,
+                _ => 0,
+            };
+            self.bubble = Some((k, n, crate::residents::BUBBLE_TIME));
+        }
+        // 새긴 돌(0129): 읽으면 글 판, 떠 있는 동안 같은 돌을 다시 누르면 닫힌다.
+        if let Some(k) = self.run.take_read() {
+            self.stone_card = match self.stone_card {
+                Some((b, _)) if b == k => None,
+                _ => Some((k, STONE_TIME)),
+            };
+        }
+        if let Some((_, t)) = self.stone_card.as_mut() {
+            *t -= TICK_DT;
+        }
+        self.stone_card = self.stone_card.filter(|c| c.1 > 0.0);
+        if let Some((_, _, t)) = self.bubble.as_mut() {
+            *t -= TICK_DT;
+        }
+        self.bubble = self.bubble.filter(|b| b.2 > 0.0);
+        // 이 지역에서 쉰 적이 없어도 이 판에 다른 지역에서 쉬었으면 거기서 다시 선다(0118).
+        if out == crate::stage::StageOut::Defeated && self.respawn_elsewhere() {
+            out = crate::stage::StageOut::Respawned;
+        }
         self.sync_progress(out);
+        // 내려가는 길·오르는 길(0118): 지층 단면 전환을 연다.
+        let cross = match out {
+            crate::stage::StageOut::Descend => Some((self.stage + 1, false)),
+            crate::stage::StageOut::Ascend => self.stage.checked_sub(1).map(|s| (s, true)),
+            _ => None,
+        };
+        if let Some((to, up)) = cross.filter(|&(to, _)| to < crate::stage::STAGES.len()) {
+            self.snd(crate::sfx::Id::Wake);
+            self.passage = Some(crate::descent::Passage::new(
+                to,
+                up,
+                self.run.def.depth_m,
+                crate::stage::STAGES[to].depth_m,
+            ));
+        }
         // 쉼터 화로(0064 M4 → 0104): 쉬면 화로(레벨·가게)가 열린다. 올릴 단·살 것이 있으면 쉼터가 빛난다.
         self.run.shop_ready = crate::growth::can_buy(
             self.world.embers,
@@ -121,13 +177,14 @@ impl App {
                 Event::Slam { .. } => SHAKE_SLAM,
                 Event::Rouse { .. } => SHAKE_ROUSE,
                 Event::Parry { .. } => SHAKE_PARRY,
+                Event::Deflect { .. } => SHAKE_HIT,
                 Event::Crit { .. } => SHAKE_CRIT,
                 Event::Plunge { .. } => SHAKE_PLUNGE,
                 Event::Smash { .. } => SHAKE_SMASH,
                 Event::Charged => SHAKE_CHARGED,
                 Event::Gulp { .. } | Event::FlaskDenied | Event::Ember { .. } => 0.0,
                 Event::Cast { .. } | Event::CastDenied | Event::Throw => 0.0,
-                Event::StaminaDenied => 0.0,
+                Event::StaminaDenied | Event::Release { .. } => 0.0,
                 Event::Break { .. } => SHAKE_SMASH,
                 Event::Aftershock { .. } | Event::Boom { .. } => SHAKE_PLUNGE,
                 Event::Perfect { .. } => SHAKE_CHARGED,
@@ -197,6 +254,119 @@ impl App {
         }
     }
 
+    /// 주민 말풍선(0122, nail 말 걸기 말풍선 꼴): 그 주민 머리 위, 판 + 테두리 + 짧은 말. 처음·끝에 옅게.
+    pub(super) fn draw_bubble(&mut self, f: &Frame) {
+        let Some((k, n, t)) = self.bubble else { return };
+        let Some(&(i, at)) = self.run.residents.get(k) else {
+            return;
+        };
+        let r = &crate::residents::RESIDENTS[i];
+        let changed = self.run.resident_changed.get(k).copied().unwrap_or(false);
+        let text = tr(crate::residents::line(r, changed, n));
+        let (ndc, front) =
+            crate::camera::world_to_ndc(&self.cam.rig, f.w / f.h.max(1.0), at + Vec3::Y * 1.75);
+        if !front {
+            return;
+        }
+        let a = (t / 0.25)
+            .min((crate::residents::BUBBLE_TIME - t) / 0.15)
+            .clamp(0.0, 1.0);
+        let k = 1.0;
+        let (tw, th) = (self.ui.width(text, k), self.ui.px(k));
+        let pad = 5.0 * f.ui;
+        let cx = (f.ox + (ndc.x + 1.0) * 0.5 * f.w)
+            .clamp(f.ox + tw * 0.5 + pad, f.ox + f.w - tw * 0.5 - pad);
+        let bottom = (f.oy + (1.0 - ndc.y) * 0.5 * f.h).max(f.oy + th + pad * 3.0);
+        let rect = Rect::new(
+            cx - tw * 0.5 - pad,
+            bottom - th - pad * 2.0,
+            tw + pad * 2.0,
+            th + pad * 2.0,
+        );
+        draw_rectangle(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            Color::new(0.08, 0.07, 0.11, 0.86 * a),
+        );
+        draw_rectangle_lines(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            1.5 * f.ui,
+            Color::new(0.85, 0.72, 0.5, 0.9 * a),
+        );
+        // 꼬리(말하는 쪽 아래로).
+        draw_triangle(
+            vec2(cx - 4.0 * f.ui, rect.bottom()),
+            vec2(cx + 4.0 * f.ui, rect.bottom()),
+            vec2(cx, rect.bottom() + 5.0 * f.ui),
+            Color::new(0.85, 0.72, 0.5, 0.9 * a),
+        );
+        self.ui
+            .text_center(text, cx, rect.y + pad, k, Color::new(0.95, 0.92, 0.85, a));
+    }
+
+    /// 새긴 돌 글 판(0129 C4): 화면 위쪽 가운데, 돌빛 판 + 글(줄 바꿈), 들어오고 나갈 때 옅게. 멈추지 않는다.
+    pub(super) fn draw_stone_card(&mut self, f: &Frame) {
+        let Some((k, t)) = self.stone_card else {
+            return;
+        };
+        let Some(&text) = self.run.def.stones.get(k) else {
+            return;
+        };
+        let text = tr(text);
+        let a = (t / 0.3).min((STONE_TIME - t) / 0.2).clamp(0.0, 1.0);
+        let kk = 1.0;
+        let max_w = (f.w * 0.6).min(f.ui * 320.0);
+        // 새긴 줄(`\n`)마다 끊고, 그 안에서만 폭에 맞춰 나눈다 — 문장이 어색하게 갈리지 않게.
+        let lines: Vec<String> = text
+            .split('\n')
+            .flat_map(|part| ui::wrap(&self.ui, part, max_w, kk))
+            .collect();
+        let gap = self.ui.px(kk) * 1.45;
+        let w = lines
+            .iter()
+            .map(|l| self.ui.width(l, kk))
+            .fold(0.0, f32::max);
+        let pad = 8.0 * f.ui;
+        let h = gap * lines.len() as f32;
+        let cx = f.ox + f.w * 0.5;
+        let rect = Rect::new(
+            cx - w * 0.5 - pad,
+            // 화면 위쪽(목표 글 아래) — 가운데의 방랑자 몸을 가리지 않게.
+            f.oy + f.h * 0.14,
+            w + pad * 2.0,
+            h + pad * 1.6,
+        );
+        draw_rectangle(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            Color::new(0.16, 0.15, 0.17, 0.88 * a),
+        );
+        draw_rectangle_lines(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            1.5 * f.ui,
+            Color::new(0.62, 0.6, 0.58, 0.9 * a),
+        );
+        for (i, line) in lines.iter().enumerate() {
+            self.ui.text_center(
+                line,
+                cx,
+                rect.y + pad + gap * i as f32,
+                kk,
+                Color::new(0.88, 0.86, 0.82, a),
+            );
+        }
+    }
+
     /// 플레이어 머리 위의 화면 자리(카메라 뒤면 없음).
     fn head_on_screen(&self, f: &Frame) -> Option<Vec2> {
         let pl = &self.world.player;
@@ -236,12 +406,15 @@ impl App {
                 Event::Break { .. } | Event::Boom { .. } => Id::Hit,
                 Event::EnemyDown { .. } => Id::Die,
                 Event::PlayerHurt => Id::Hurt,
-                Event::Parry { .. } => Id::Parry,
+                // 등딱지 튕김(0120)은 패링의 거울 — 같은 쇳소리.
+                Event::Parry { .. } | Event::Deflect { .. } => Id::Parry,
                 Event::Beat => crate::sfx::beat_id(self.world.player.beat_chain),
                 // 딱 맞춰 떼기(0078): 박자와 같은 "맞췄다" 종 — 가장 높은 음.
                 Event::Perfect { .. } => Id::Beat3,
                 Event::Ember { .. } => Id::Ember,
                 Event::Gulp { .. } => Id::Gulp,
+                // 지연 공격이 풀린다(0128): 짧게 들이쉬는 소리 — 이 뒤 `RELEASE_LEAD`초에 맞는다.
+                Event::Release { .. } => Id::TeleRelease,
                 Event::FlaskDenied | Event::CastDenied | Event::StaminaDenied => Id::Deny,
                 _ => continue,
             };
@@ -258,19 +431,26 @@ impl App {
         self.was_dodging = dodging;
         // 적의 예고가 시작한 틱: 모양마다 다른 소리(소리만 듣고도 가르게, 0064 R4).
         let n = self.world.enemies.len();
-        self.tele_was.resize(n, false);
+        self.tele_was.resize(n, u32::MAX);
         let mut cues = Vec::new();
         for (i, en) in self.world.enemies.iter().enumerate() {
             let tele = en.telegraph();
-            if let (Some((_, shape)), false) = (tele, self.tele_was[i]) {
+            // 공격 번호로 센다(0128): 연속 공격의 다음 타·페인트로 바뀐 공격도 제 소리를 낸다.
+            let fresh = tele.is_some() && self.tele_was[i] != en.atk_count;
+            if let (Some((_, shape)), true) = (tele, fresh) {
                 cues.push(match shape {
                     crate::enemy::TeleShape::Disc { .. } => Id::TeleDisk,
                     crate::enemy::TeleShape::Sector { .. } => Id::TeleFan,
                     crate::enemy::TeleShape::Lane { .. } => Id::TeleLane,
-                    crate::enemy::TeleShape::Ring { .. } => Id::TeleRing,
+                    // 줄지은 원(0133 뿌리 기둥)도 피할 것 — 고리와 같은 소리.
+                    crate::enemy::TeleShape::Ring { .. } | crate::enemy::TeleShape::Row { .. } => {
+                        Id::TeleRing
+                    }
                 });
             }
-            self.tele_was[i] = tele.is_some();
+            if tele.is_some() {
+                self.tele_was[i] = en.atk_count;
+            }
         }
         for id in cues {
             self.snd(id);

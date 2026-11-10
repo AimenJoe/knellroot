@@ -3,6 +3,7 @@
 //!
 //! 루프: 프레임마다 입력 폴링 → 고정 60Hz 틱 N번(장면 → 월드 → 스테이지 → 카메라) → 가변 렌더(보간) → 글·메뉴(화면 패스).
 mod ask;
+mod codex;
 pub mod controls;
 mod controls_screen;
 #[cfg(feature = "dev")]
@@ -51,7 +52,7 @@ const TITLE_MENU_Y: f32 = 0.37;
 const GOAL_ARROW_DELAY: f32 = 1.0;
 const GOAL_ARROW_INSET: f32 = 0.12;
 
-/// 지금 만든 스테이지(나중에 스테이지 고르기가 생기면 여기서 고른다).
+/// 판의 첫 지역(0118 — 차례는 `stage::STAGES`).
 const FIRST_STAGE: &StageDef = &sanctuary::DEF;
 
 pub struct App {
@@ -72,6 +73,18 @@ pub struct App {
     cam: Camera,
     world: World,
     run: StageRun,
+    /// 판의 지역 잇기(0118): 지금 지역(`stage::STAGES` 차례), 이 판에 이긴 문지기 수, 마지막으로 쉰 곳(지역을 바꿔도 남는다),
+    /// 지역 사이 지층 단면 전환.
+    stage: usize,
+    down: usize,
+    rest_at: Option<crate::save::RunAt>,
+    passage: Option<crate::descent::Passage>,
+    /// 주민 말풍선(0122): (주민 — 지금 지역의 번호, 몇째 말, 남은 초). 멈추지 않는다.
+    bubble: Option<(usize, usize, f32)>,
+    /// 새긴 돌 글 판(0129): (지금 지역의 돌 번호, 남은 초).
+    stone_card: Option<(usize, f32)>,
+    /// 실제 시간(전환의 작은 움직임 — 지형을 굽는 동안에도 흐른다).
+    clock: f32,
     #[cfg(feature = "dev")]
     sc: Scenario,
     /// 개발 메뉴에서 시작한 스테이지 판(0075): 기록 슬롯에 쓰지 않는다. 슬롯을 고르면(`enter_slot`) 풀린다.
@@ -93,9 +106,10 @@ pub struct App {
     volume: u8,
     /// 바닥 공격 예고 진하기 0..=10(0 = 끔, 0074).
     tells: u8,
+    tell_timing: bool,
     sfx: Option<crate::sfx::Sfx>,
     was_dodging: bool,
-    tele_was: Vec<bool>,
+    tele_was: Vec<u32>,
     was_waking: bool,
     /// 지난 프레임에 그린 화면 자리(커서 → 땅, 0058).
     frame: Option<Frame>,
@@ -152,6 +166,7 @@ impl App {
         let mut shake = crate::prefs::SHAKE_DEFAULT;
         let mut volume = crate::prefs::VOLUME_DEFAULT;
         let mut tells = crate::prefs::TELLS_DEFAULT;
+        let mut tell_timing = false;
         if let Some(p) = crate::prefs::load() {
             if let Some(l) = p.lang {
                 i18n::set_lang(l);
@@ -161,6 +176,7 @@ impl App {
             shake = p.shake;
             volume = p.volume;
             tells = p.tells;
+            tell_timing = p.tell_timing;
             legacy_weapon = p.weapon;
         }
         // 기록 슬롯(0066): 마지막으로 쓴 슬롯의 기록. 든 무기는 기록에 — 없으면(옛 슬롯 1) 예전 prefs 칸 21의 값.
@@ -195,6 +211,13 @@ impl App {
             cam,
             world,
             run,
+            stage: 0,
+            down: 0,
+            rest_at: None,
+            passage: None,
+            bubble: None,
+            stone_card: None,
+            clock: 0.0,
             t,
             #[cfg(feature = "dev")]
             sc: Scenario::Boss,
@@ -210,6 +233,7 @@ impl App {
             shake,
             volume,
             tells,
+            tell_timing,
             sfx: None,
             was_dodging: false,
             tele_was: Vec::new(),
@@ -231,16 +255,66 @@ impl App {
         }
     }
 
+    /// 새 판(0122 — 판 수를 센다: 주민 재방문 "처음 본 판이 끝난 뒤의 다른 판"). 이어하기는 `build_run`.
     fn restart(&mut self) {
+        self.progress.runs = self.progress.runs.saturating_add(1);
+        self.build_run();
+    }
+
+    /// 첫 지역을 새로 세운다(판 수는 그대로).
+    fn build_run(&mut self) {
         let (run, world) = StageRun::start(FIRST_STAGE);
         self.run = run;
         self.world = world;
-        self.world.set_weapon(self.weapon);
+        self.stage = 0;
+        self.down = 0;
+        self.rest_at = None;
+        self.passage = None;
         // 잔불은 판을 넘어 남는다(0064 M1). 장신구·성장은 능력치로, 연 상자는 비어 있다(M3).
         self.world.embers = self.progress.embers;
         self.world.apply_stats(self.progress.stats(), true);
+        self.seed_run();
+        self.cam = Camera::new(self.world.player.pos, &self.t);
+    }
+
+    /// 다른 지역으로(0118): 그 지역을 새로 세우고 방랑자(체력·등잔·기력·탄…)와 잔불은 그대로 옮긴다.
+    fn enter_stage(&mut self, s: usize) {
+        let s = s.min(crate::stage::STAGES.len() - 1);
+        // 말풍선·새긴 돌 글 판은 지역 안의 번호라 지역을 바꾸면 닫는다(0129).
+        self.bubble = None;
+        self.stone_card = None;
+        let (run, mut world) = StageRun::start(crate::stage::STAGES[s]);
+        let (start, facing) = (world.player.pos, world.player.facing);
+        std::mem::swap(&mut self.world.player, &mut world.player);
+        let pl = &mut world.player;
+        pl.pos = start;
+        pl.prev = start;
+        pl.facing = facing;
+        pl.vel = Vec3::ZERO;
+        pl.state = crate::world::PState::Idle;
+        pl.air = 0.0;
+        world.embers = self.world.embers;
+        self.run = run;
+        self.world = world;
+        self.stage = s;
+        self.world.apply_stats(self.progress.stats(), false);
+        self.seed_run();
+    }
+
+    /// 지역을 세운 뒤 기록에서 채운다: 무기·나무·연 상자(지역마다 번호 `지역 × 1000 + 번호`, 0118)·주운 것·쓰러뜨린 엘리트·문,
+    /// 이 판에 이 지역 문지기를 이겼으면 바닥 길이 열린 채.
+    fn seed_run(&mut self) {
+        self.world.set_weapon(self.weapon);
         self.world.tree = self.progress.tree;
-        self.run.set_opened(&self.progress.chests);
+        let base = self.stage as u32 * crate::stage::CHESTS_PER_STAGE;
+        let opened: Vec<u32> = self
+            .progress
+            .chests
+            .iter()
+            .filter(|&&c| c / crate::stage::CHESTS_PER_STAGE == self.stage as u32)
+            .map(|c| c - base)
+            .collect();
+        self.run.set_opened(&opened);
         self.run.set_found(&self.progress.finds);
         self.run.set_beaten(&self.progress.elites);
         let open = self
@@ -249,9 +323,26 @@ impl App {
             .iter()
             .any(|g| g == self.run.def.find_prefix);
         self.run.set_gate_opened(&mut self.world, open);
-        // 처음 이기는 판이면 핵이 스스로 다가온다(lore CANON, 0105).
-        self.run.first_core = self.progress.clears == 0;
-        self.cam = Camera::new(self.world.player.pos, &self.t);
+        // 주민 재방문(0122, 0116): 처음 본 판보다 뒤의 판이면 한 번 바뀐다(단방향, 기록).
+        self.bubble = None;
+        for k in 0..self.run.residents.len() {
+            let id = crate::residents::RESIDENTS[self.run.residents[k].0].id;
+            self.run.resident_changed[k] = crate::residents::settle(
+                id,
+                &self.progress.residents_seen,
+                &mut self.progress.residents_changed,
+                self.progress.runs,
+            );
+        }
+        // 처음 이기는 판이면 핵이 스스로 다가온다(lore CANON, 0105) — 첫 지역 문지기만(둘째 문지기는 C3).
+        self.run.first_core = match self.stage {
+            0 => self.progress.clears == 0,
+            _ => self.progress.bell_cores == 0,
+        };
+        if self.down > self.stage {
+            self.run.down_open = true;
+            self.run.open_down(&mut self.world);
+        }
     }
 
     /// 소리 묶음을 받는다(0064 M5 — main이 올린 뒤). 환경음을 튼다.
@@ -301,6 +392,7 @@ impl App {
             shake: self.shake,
             volume: self.volume,
             tells: self.tells,
+            tell_timing: self.tell_timing,
             // 든 무기는 슬롯 기록으로 옮겼다(0066) — 옛 칸은 처음 읽은 값 그대로 둔다(옛 슬롯 1의 기본값).
             weapon: self.legacy_weapon,
         });
@@ -439,6 +531,7 @@ impl App {
             Scene::Ask(k) => self.tick_ask(&a, k),
             Scene::Equip => self.tick_equip(&a),
             Scene::Tree { view } => self.tick_tree(&a, view),
+            Scene::Codex { tab } => self.tick_codex(&a, tab as usize),
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
             s @ (Scene::Pause
             | Scene::Settings
@@ -501,6 +594,7 @@ impl App {
             | Scene::Ask(_)
             | Scene::Equip
             | Scene::Tree { .. }
+            | Scene::Codex { .. }
             | Scene::EquipPick { .. } => None,
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } => None,
@@ -529,6 +623,7 @@ impl App {
             | Scene::Ask(_)
             | Scene::Equip
             | Scene::Tree { .. }
+            | Scene::Codex { .. }
             | Scene::EquipPick { .. } => {}
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } => {}
@@ -545,6 +640,7 @@ impl App {
             t: &self.t,
             stage,
             tells: self.tells as f32 / 10.0,
+            tell_timing: self.tell_timing,
         });
         self.frame = Some(f);
         self.ui.begin(f.ui);
@@ -565,6 +661,23 @@ impl App {
         }
         if self.scene() == Scene::Play {
             self.draw_goal_arrow(&f);
+            self.draw_bubble(&f);
+            self.draw_stone_card(&f);
+        }
+        // 지역 사이 지층 단면(0118): 싸움 화면 위에(전환 중엔 멈춤·장비 창이 열리지 않는다).
+        self.clock += get_frame_time();
+        if let Some(p) = self
+            .passage
+            .as_ref()
+            .filter(|_| self.scene() == Scene::Play)
+        {
+            let m = p.depth().round() as u32;
+            let label = if m == 0 {
+                s().depth_surface.to_string()
+            } else {
+                fill(s().depth_under, &[&m.to_string()])
+            };
+            crate::descent::draw(p, &self.ui, &f, self.clock, &label);
         }
         if self.scene().ticks_world() {
             self.draw_beat_note(&f);
@@ -613,6 +726,7 @@ impl App {
             Scene::Controls => self.draw_controls(f),
             Scene::Equip => self.draw_equip(f, self.cursor, None),
             Scene::Tree { view } => self.draw_tree(f, view),
+            Scene::Codex { tab } => self.draw_codex(f, tab as usize),
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.draw_dev_screen(f, tab as usize),
             Scene::EquipPick { slot } => {

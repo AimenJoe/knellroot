@@ -109,6 +109,7 @@ pub(super) fn stat_name(l: Line) -> &'static str {
         Line::Poise => s.stat_poise,
         Line::HeavyDmg => s.stat_heavy,
         Line::LightDmg => s.stat_light,
+        Line::OpenedDmg => s.stat_opened,
     }
 }
 
@@ -125,7 +126,8 @@ pub(super) fn stat_value(l: Line, v: f32) -> String {
         | Line::KillStamina
         | Line::StaminaMax
         | Line::HeavyDmg
-        | Line::LightDmg => format!("+{}", int()),
+        | Line::LightDmg
+        | Line::OpenedDmg => format!("+{}", int()),
         Line::AtkSpeed | Line::DodgeCost | Line::Ember | Line::StaminaRegen | Line::Poise => pct(),
         // 0.06 → "0.06초", 0 → "0초"(뒤 0은 뺀다 — 미리보기 줄이 짧게).
         Line::Parry => {
@@ -284,6 +286,9 @@ pub(super) fn weapon_compare(now: &[WVal], then: &[WVal]) -> Vec<(WVal, Option<C
         })
         .collect()
 }
+
+/// 장신구의 세계 안의 말(0129): 설명보다 옅고 조금 푸르스름하게 — 수치와 섞여 읽히지 않게.
+const FLAVOR: Color = Color::new(0.55, 0.56, 0.62, 1.0);
 
 fn weapon_desc(id: weapons::Id) -> &'static str {
     let s = s();
@@ -631,17 +636,38 @@ impl App {
         let line_h = px * 1.3;
         let body_y = desc_y + px * 1.5;
         let fit = ((bottom - body_y - px) / line_h + 1.0).floor().max(1.0) as usize;
-        let mut lines = ui::wrap(&self.ui, self.cand_desc(focus), text_w, 0.9);
+        // 장신구는 수치 아래 한 줄 띄고 세계 안의 말 한 줄(0129 C4) — 옅게(`FLAVOR`).
+        let flavor = match focus {
+            Cand::Charm(id) => Some(tr(charms::def(id).flavor)),
+            _ => None,
+        };
+        let build = |w: f32| -> Vec<(String, bool)> {
+            let mut v: Vec<(String, bool)> = ui::wrap(&self.ui, self.cand_desc(focus), w, 0.9)
+                .into_iter()
+                .map(|l| (l, false))
+                .collect();
+            if let Some(fl) = flavor {
+                v.push((String::new(), false));
+                v.extend(
+                    ui::wrap(&self.ui, fl, w, 0.9)
+                        .into_iter()
+                        .map(|l| (l, true)),
+                );
+            }
+            v
+        };
+        let mut lines = build(text_w);
         if lines.len() > fit {
             let arrow_w = self.ui.width("▼", 0.8) + u * 3.0;
-            lines = ui::wrap(&self.ui, self.cand_desc(focus), text_w - arrow_w, 0.9);
+            lines = build(text_w - arrow_w);
         }
         let max = lines.len().saturating_sub(fit);
         self.scroll = self.scroll.clamp(0.0, max as f32);
         let first = self.scroll.round() as usize;
-        for (k, line) in lines.iter().skip(first).take(fit).enumerate() {
+        for (k, (line, faint)) in lines.iter().skip(first).take(fit).enumerate() {
+            let col = if *faint { FLAVOR } else { DIM };
             self.ui
-                .text(line, text_x, body_y + line_h * k as f32, 0.9, DIM);
+                .text(line, text_x, body_y + line_h * k as f32, 0.9, col);
         }
         if max > 0 {
             let ax = text_x + text_w - self.ui.width("▼", 0.8);

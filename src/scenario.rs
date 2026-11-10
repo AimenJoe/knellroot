@@ -14,6 +14,14 @@ pub enum Scenario {
     Stress80,
     Duel,
     Elites,
+    /// 떠난 마을의 새 적(0120): 등딱지짐승·꼬투리 둘·청소자.
+    Newcomers,
+    /// 깨진 종지기(0125): 울림 고리·종 조각·돌진.
+    Bellkeeper,
+    /// 보스 2단계(0133): 문지기 체력 반 — 시작하자마자 전환, 이어 뿌리 기둥 줄·돌진 뒤 내려치기.
+    WardenTwo,
+    /// 보스 2단계(0133): 종지기 체력 반 — 시작하자마자 전환, 이어 종 내던지기·돌진 뒤 울림.
+    BellkeeperTwo,
 }
 
 pub struct Entry {
@@ -23,7 +31,7 @@ pub struct Entry {
     pub checks: &'static str,
 }
 
-pub const LIST: [Entry; 9] = [
+pub const LIST: [Entry; 13] = [
     Entry {
         scenario: Scenario::Boss,
         name: "boss arena",
@@ -68,6 +76,28 @@ pub const LIST: [Entry; 9] = [
         scenario: Scenario::Elites,
         name: "elites",
         checks: "0112 elite affixes: hardened, repeating, lingering",
+    },
+    Entry {
+        scenario: Scenario::Newcomers,
+        name: "shellback + pods + scavenger",
+        checks:
+            "0120 guard (front light hits bounce), planted discs, hop away, scavenger ignores you",
+    },
+    Entry {
+        scenario: Scenario::Bellkeeper,
+        name: "broken bellkeeper",
+        checks:
+            "0125 toll rings (jump or dodge through), shard fan (parry sends it back), bell charge",
+    },
+    Entry {
+        scenario: Scenario::WardenTwo,
+        name: "warden phase two",
+        checks: "0133 rise at once (untouchable, burst push), root pillar row, charge then slam",
+    },
+    Entry {
+        scenario: Scenario::BellkeeperTwo,
+        name: "bellkeeper phase two",
+        checks: "0133 rise at once (untouchable, burst push), bell hurled to your spot + ring, charge then toll",
     },
 ];
 
@@ -151,6 +181,40 @@ pub fn build(s: Scenario) -> World {
                 let i = w.spawn(kind, at);
                 w.enemies[i].make_elite(affix);
             }
+            w
+        }
+        Scenario::Bellkeeper => {
+            let mut w = World::new("bellkeeper arena", 16.0);
+            w.spawn(crate::species::Kind::Bellkeeper, vec3(0.0, 0.0, -9.0));
+            w.obstacles.push(pillar(-10.0, -10.0, 1.6, 4.0));
+            w.obstacles.push(pillar(10.0, -10.0, 1.6, 4.0));
+            w
+        }
+        // 2단계(0133): 같은 아레나, 체력만 반 — 시작하자마자 전환(잠든 문지기는 깨어난 뒤).
+        Scenario::WardenTwo | Scenario::BellkeeperTwo => {
+            let mut w = build(if s == Scenario::WardenTwo {
+                Scenario::Boss
+            } else {
+                Scenario::Bellkeeper
+            });
+            for en in &mut w.enemies {
+                if en.boss {
+                    en.hp = en.max_hp / 2;
+                }
+            }
+            w
+        }
+        Scenario::Newcomers => {
+            // 0120: 앞의 등딱지짐승(이쪽을 본다)·먼 꼬투리 둘·뒤의 청소자(제자리에서 먹는다 — 쳐야 싸운다).
+            use crate::species::Kind;
+            let mut w = World::new("newcomers", 16.0);
+            let s = w.spawn(Kind::Shell, vec3(0.0, 0.0, -5.0));
+            w.enemies[s].facing = 0.0;
+            w.spawn(Kind::Pod, vec3(6.0, 0.0, -9.0));
+            w.spawn(Kind::Pod, vec3(-6.0, 0.0, -9.0));
+            let e = w.spawn(Kind::Husk, vec3(0.0, 0.0, 8.0));
+            w.enemies[e].place(std::f32::consts::PI);
+            w.enemies[e].docile = true;
             w
         }
         Scenario::Tray => {

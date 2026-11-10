@@ -8,8 +8,11 @@
 
 mod app;
 mod backdrop;
+mod balance;
 mod camera;
 mod charms;
+mod codex;
+mod descent;
 mod ember;
 mod enemy;
 mod flora;
@@ -27,6 +30,7 @@ mod nav;
 mod prefs;
 mod progression;
 mod render;
+mod residents;
 mod save;
 #[cfg(feature = "dev")]
 mod scenario;

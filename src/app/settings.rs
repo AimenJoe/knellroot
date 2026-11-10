@@ -24,6 +24,9 @@ impl App {
                 SettingsRow::Tells => {
                     ui::Row::step(s.menu_tells, format!("{}%", self.tells as u32 * 10))
                 }
+                SettingsRow::TellTiming => {
+                    ui::Row::step(s.menu_tell_timing, on_off(self.tell_timing))
+                }
                 SettingsRow::MouseAim => ui::Row::step(s.menu_mouse_aim, on_off(mouse.on)),
                 SettingsRow::CursorRest => ui::Row::step(
                     s.menu_cursor_rest,
@@ -54,6 +57,10 @@ impl App {
                     self.tells = (self.tells as i32 + step).clamp(0, 10) as u8;
                     self.save_prefs();
                 }
+                Some(SettingsRow::TellTiming) => {
+                    self.tell_timing = !self.tell_timing;
+                    self.save_prefs();
+                }
                 Some(SettingsRow::Volume) => {
                     self.set_volume((self.volume as i32 + step).clamp(0, 10) as u8)
                 }
@@ -71,6 +78,10 @@ impl App {
                 }
                 SettingsRow::Tells => {
                     self.tells = if self.tells >= 10 { 0 } else { self.tells + 1 };
+                    self.save_prefs();
+                }
+                SettingsRow::TellTiming => {
+                    self.tell_timing = !self.tell_timing;
                     self.save_prefs();
                 }
                 SettingsRow::Volume => self.set_volume(if self.volume >= 10 {

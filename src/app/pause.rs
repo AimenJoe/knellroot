@@ -33,6 +33,7 @@ impl App {
                 // 장비 창으로 들어가는 줄 — 든 무기 이름·좌우 바꾸기는 뺐다(사장 2026-11-07, 0081: 장비 창이 보여 준다).
                 PauseItem::Weapon => ui::Row::go(s.menu_equip),
                 PauseItem::Tree => ui::Row::go(s.tree_title),
+                PauseItem::Codex => ui::Row::go(s.menu_codex),
                 PauseItem::Settings => ui::Row::go(s.menu_settings),
                 PauseItem::Restart => ui::Row::plain(s.menu_restart),
                 PauseItem::ToTitle => ui::Row::plain(s.menu_to_title),

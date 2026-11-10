@@ -14,7 +14,7 @@ const MAGIC_V1: u32 = 0x4B4E_0001;
 /// 22 마우스 조준(1 끔·2 켬, 0 = 저장 전 = 켬), 23 커서 쉼(`REST_SECS` 자리 +1), 24 조준 표시 크기(+1) — 0058, 뒤에 붙인 칸이라 MAGIC 그대로.
 /// 25 소리 크기(0..=10, +1로 — 0 = 저장 전 = `VOLUME_DEFAULT`) — 0064 M5, 뒤에 붙인 칸이라 MAGIC 그대로.
 /// 26 공격 예고 진하기(0..=10 = 0~100%, +1로 — 0 = 저장 전 = `TELLS_DEFAULT`) — 0074, 뒤에 붙인 칸이라 MAGIC 그대로.
-const CELLS: usize = 27;
+const CELLS: usize = 28;
 /// 소리 크기 기본값(8 = 80%).
 pub const VOLUME_DEFAULT: u8 = 8;
 /// 공격 예고 진하기 기본(0074, nail 0198 꼴): 10 중 5 = 50%. 70%가 0072의 진하기.
@@ -36,6 +36,8 @@ pub struct Prefs {
     pub volume: u8,
     /// 바닥 공격 예고 진하기 0..=10(0 = 끔, 0074).
     pub tells: u8,
+    /// 바닥 예고의 "언제"를 채움으로 보이기(0128, 기본 끔 — 끄면 농도가 짙어지는 꼴).
+    pub tell_timing: bool,
 }
 
 fn lang_code(l: Lang) -> u32 {
@@ -65,6 +67,7 @@ fn encode(p: &Prefs) -> [u32; CELLS] {
     v[24] = p.mouse.size as u32 + 1;
     v[25] = p.volume.min(10) as u32 + 1;
     v[26] = p.tells.min(10) as u32 + 1;
+    v[27] = p.tell_timing as u32 + 1;
     v
 }
 
@@ -104,6 +107,7 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
             mouse: MouseAim::default(),
             volume: VOLUME_DEFAULT,
             tells: TELLS_DEFAULT,
+            tell_timing: false,
         });
     }
     if v[0] != MAGIC {
@@ -123,6 +127,7 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
             0 => TELLS_DEFAULT,
             c => (c - 1).min(10) as u8,
         },
+        tell_timing: v[27] == 2,
     })
 }
 
@@ -260,6 +265,7 @@ mod tests {
             },
             volume: 3,
             tells: 8,
+            tell_timing: false,
         };
         assert_eq!(decode(&encode(&p)), Some(p));
         assert_eq!(decode(&[0; CELLS]), None, "nothing saved yet");
@@ -267,6 +273,15 @@ mod tests {
         let mut old = encode(&p);
         old[26] = 0;
         assert_eq!(decode(&old).unwrap().tells, TELLS_DEFAULT);
+        // 0128 전 저장(타이밍 칸 0): 끔. 켠 것은 그대로 돌아온다.
+        let mut old = encode(&p);
+        old[27] = 0;
+        assert!(!decode(&old).unwrap().tell_timing);
+        let on = Prefs {
+            tell_timing: true,
+            ..p
+        };
+        assert!(decode(&encode(&on)).unwrap().tell_timing);
         let mut bad = encode(&p);
         bad[2] = 999; // 범위 밖 키 → 배치는 기본값
         assert_eq!(decode(&bad).unwrap().bindings, Bindings::default_layout());
@@ -286,6 +301,7 @@ mod tests {
             mouse: MouseAim::default(),
             volume: VOLUME_DEFAULT,
             tells: TELLS_DEFAULT,
+            tell_timing: false,
         };
         let mut old = encode(&plain);
         old[16..].fill(0);
@@ -335,6 +351,7 @@ mod tests {
             },
             volume: 0,
             tells: 0,
+            tell_timing: false,
         };
         assert_eq!(decode(&encode(&p)), Some(p));
         let mut old = encode(&p);
@@ -367,6 +384,7 @@ mod tests {
             mouse: MouseAim::default(),
             volume: 10,
             tells: 10,
+            tell_timing: false,
         };
         assert!(store::write_to(&p, &encode(&prefs)));
         assert_eq!(decode(&store::read_from(&p)), Some(prefs));
