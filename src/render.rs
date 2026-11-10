@@ -1152,8 +1152,16 @@ impl Renderer {
             let near = run.near_stone == Some(i);
             let yaw = (st.x * 1.7 + st.z * 0.9).sin() * 0.6;
             let lean = Quat::from_rotation_y(yaw) * Quat::from_rotation_x(0.08);
-            let stone = Color::new(0.47, 0.48, 0.46, 1.0);
             let base = *st;
+            // 모델(0139): 새긴 줄(`glow_carve`)은 스스로 빛나는 부위 — 곁에 서면 밝게, 아니면 돌보다 조금 어둡게.
+            if let Some(e) = self.lib.get("stone_tablet") {
+                e.model.pose(None, 0.0, &mut self.pose);
+                let inst = Mat4::from_translation(base) * Mat4::from_quat(lean);
+                let carve = if near { 1.15 } else { 0.42 };
+                self.batch.model(e, &self.pose, inst, WHITE, lights, carve);
+                continue;
+            }
+            let stone = Color::new(0.47, 0.48, 0.46, 1.0);
             shaded_box_rot(
                 base + Vec3::Y * 0.55,
                 vec3(0.62, 1.1, 0.2),
@@ -1189,6 +1197,35 @@ impl Renderer {
         for (i, c) in run.chests.iter().enumerate() {
             let open = run.chest_open.get(i).copied().unwrap_or(false);
             fl.shadow(*c, 0.6);
+            let pulse = 0.75 + 0.25 * (w.time * 2.4 + i as f32).sin();
+            // 모델(0139): 열린 상자 = `open` 동작의 끝 자세 + 자물쇠 감춤, 닫힌 상자는 자물쇠(`glow_lock`)가 숨 쉰다.
+            if let Some(e) = self.lib.get("chest") {
+                let anim = e.pick(&["open"]);
+                let at = if open { e.duration(anim) * 0.999 } else { 0.0 };
+                let hide = open
+                    .then(|| e.model.node("glow_lock"))
+                    .flatten()
+                    .map(|n| (n, Quat::IDENTITY, Vec3::ZERO));
+                e.model.pose_with(anim, at, hide.as_slice(), &mut self.pose);
+                self.batch.model(
+                    e,
+                    &self.pose,
+                    Mat4::from_translation(*c),
+                    WHITE,
+                    lights,
+                    0.55 + 0.6 * pulse,
+                );
+                if !open {
+                    fl.ring(
+                        *c,
+                        0.9,
+                        0.0,
+                        360.0,
+                        Color::new(1.0, 0.75, 0.35, 0.3 * pulse),
+                    );
+                }
+                continue;
+            }
             let body = Color::new(0.36, 0.25, 0.22, 1.0);
             let band = Color::new(0.55, 0.42, 0.3, 1.0);
             shaded_box(*c + Vec3::Y * 0.27, vec3(0.86, 0.54, 0.56), body, 0.85);
@@ -1206,7 +1243,6 @@ impl Renderer {
                 );
             } else {
                 shaded_box(lid_c, vec3(0.88, 0.14, 0.58), body, 0.85);
-                let pulse = 0.75 + 0.25 * (w.time * 2.4 + i as f32).sin();
                 let lock = Color::new(1.0, 0.72 * pulse + 0.1, 0.3, 1.0);
                 shaded_box(
                     *c + vec3(0.0, 0.46, 0.29),
@@ -1226,25 +1262,51 @@ impl Renderer {
         // 문 장치(0113): 돌 기둥 + 쇠 손잡이. 당기기 전엔 손잡이가 위로 서 있고 호박빛이 숨 쉰다(닫힌 상자와 같은 "할 수 있다" 빛),
         // 당긴 뒤엔 손잡이가 내려가고 빛이 꺼진다.
         if let Some(l) = run.lever {
-            let stone = Color::new(0.42, 0.4, 0.44, 1.0);
-            let iron = Color::new(0.3, 0.28, 0.27, 1.0);
             fl.shadow(l, 0.5);
-            shaded_box(l + Vec3::Y * 0.45, vec3(0.5, 0.9, 0.5), stone, 0.85);
-            let hinge = l + vec3(0.0, 0.8, 0.27);
-            let tilt = if run.gate_opened { 1.0 } else { -0.5 };
-            shaded_box_rot(
-                hinge + vec3(0.0, 0.32, 0.0),
-                vec3(0.1, 0.64, 0.1),
-                iron,
-                0.9,
-                Quat::from_rotation_x(tilt),
-                hinge,
-            );
+            let pulse = 0.75 + 0.25 * (w.time * 2.4).sin();
+            // 모델(0139): 당긴 뒤 = `pull` 동작의 끝 자세 + 쥘 곳(`glow_grip`) 감춤.
+            if let Some(e) = self.lib.get("lever") {
+                let anim = e.pick(&["pull"]);
+                let at = if run.gate_opened {
+                    e.duration(anim) * 0.999
+                } else {
+                    0.0
+                };
+                let hide = run
+                    .gate_opened
+                    .then(|| e.model.node("glow_grip"))
+                    .flatten()
+                    .map(|n| (n, Quat::IDENTITY, Vec3::ZERO));
+                e.model.pose_with(anim, at, hide.as_slice(), &mut self.pose);
+                self.batch.model(
+                    e,
+                    &self.pose,
+                    Mat4::from_translation(l),
+                    WHITE,
+                    lights,
+                    0.55 + 0.6 * pulse,
+                );
+            } else {
+                let stone = Color::new(0.42, 0.4, 0.44, 1.0);
+                let iron = Color::new(0.3, 0.28, 0.27, 1.0);
+                shaded_box(l + Vec3::Y * 0.45, vec3(0.5, 0.9, 0.5), stone, 0.85);
+                let hinge = l + vec3(0.0, 0.8, 0.27);
+                let tilt = if run.gate_opened { 1.0 } else { -0.5 };
+                shaded_box_rot(
+                    hinge + vec3(0.0, 0.32, 0.0),
+                    vec3(0.1, 0.64, 0.1),
+                    iron,
+                    0.9,
+                    Quat::from_rotation_x(tilt),
+                    hinge,
+                );
+                if !run.gate_opened {
+                    let grip = Color::new(1.0, 0.72 * pulse + 0.1, 0.3, 1.0);
+                    let top = hinge + Quat::from_rotation_x(tilt) * vec3(0.0, 0.66, 0.0);
+                    shaded_box(top, vec3(0.16, 0.12, 0.16), grip, 1.0);
+                }
+            }
             if !run.gate_opened {
-                let pulse = 0.75 + 0.25 * (w.time * 2.4).sin();
-                let grip = Color::new(1.0, 0.72 * pulse + 0.1, 0.3, 1.0);
-                let top = hinge + Quat::from_rotation_x(tilt) * vec3(0.0, 0.66, 0.0);
-                shaded_box(top, vec3(0.16, 0.12, 0.16), grip, 1.0);
                 fl.ring(l, 0.9, 0.0, 360.0, Color::new(1.0, 0.75, 0.35, 0.3 * pulse));
             }
         }

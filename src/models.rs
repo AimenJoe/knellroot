@@ -94,6 +94,30 @@ mod tests {
         }
     }
 
+    /// 0139: 렌더가 이름으로 찾는 부위·동작이 모델에 있다 — 없으면 상자가 안 열리거나(동작), 자물쇠·쥘 곳·종 틀을
+    /// 못 감춰(부위) 조용히 틀린 그림이 된다.
+    #[test]
+    fn stage_object_models_have_the_parts_the_renderer_asks_for() {
+        for (name, parts, anims) in [
+            ("chest", &["lid", "glow_lock"][..], &["open"][..]),
+            ("stone_tablet", &["glow_carve"][..], &[][..]),
+            ("lever", &["handle", "glow_grip"][..], &["pull"][..]),
+            ("bell", &["bell", "bell_frame"][..], &["toll"][..]),
+            ("gate", &["door_l", "door_r"][..], &["open"][..]),
+            ("core_crystal", &["glow_core"][..], &["pulse"][..]),
+            ("brazier", &["glow_flame"][..], &[][..]),
+        ] {
+            let m = Model::from_bytes(bytes(name).unwrap_or_else(|| panic!("{name} missing")))
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            for p in parts {
+                assert!(m.node(p).is_some(), "{name}: no part {p}");
+            }
+            for a in anims {
+                assert!(m.anim(a).is_some(), "{name}: no action {a}");
+            }
+        }
+    }
+
     /// 들어 있는 모든 모델이 읽히고, 동작 길이가 0보다 크다(Blender에서 내보낸 꼴이 로더와 맞는지).
     #[test]
     fn every_bundled_model_parses() {

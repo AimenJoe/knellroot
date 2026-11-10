@@ -1,9 +1,10 @@
 """Knellroot 초안 3D 모델 공용 도구(bpy). 모델 스크립트(wanderer.py 등)가 이것만 불러 쓴다.
 
 꼴(게임 로더 `src/model.rs`가 읽는 것에 맞춤):
-- 상자(직육면체·위가 좁은 상자·기운 상자)만으로 부위를 만든다. 부위 = 메시 오브젝트 하나 = glTF 노드 하나.
+- 상자(직육면체·위가 좁은 상자·기운 상자)와 둥근 덩어리(`blob`, 0036), 다듬은 꼴(`stone`·`lathe`·`limb`, 0139)로 부위를 만든다.
+  부위 = 메시 오브젝트 하나 = glTF 노드 하나.
 - 뼈(아마추어)에 부위를 parent_type='BONE'으로 붙인다 — 강체. 정점 가중치·스키닝 없음.
-- 텍스처는 파일마다 하나: 64×64 아틀라스(코드로 찍음, 가장 가까운 픽셀). 모든 부위가 재질 하나를 같이 쓴다.
+- 텍스처는 파일마다 하나: 128×128 아틀라스(코드로 찍음, 가장 가까운 픽셀). 모든 부위가 재질 하나를 같이 쓴다.
 - 예외(0038): 바깥 메시(Meshy로 만든 몸)를 `Model.external`로 부위마다 잘라 같은 식으로 뼈에 붙이고,
   그 텍스처와 아틀라스를 `merge_textures`가 한 장으로 합친다(로더는 이미지 하나만 읽는다).
 - 동작(Action)마다 glTF 애니메이션 하나(이름 그대로). 100fps로 찍어 0.43초 같은 길이가 정확히 프레임에 맞는다.
@@ -66,7 +67,7 @@ def mix(a, b, t):
 
 # ---------------------------------------------------------------- 아틀라스
 # 128×128(0036에서 64 → 128). 위(y 0..31, 위에서부터) = 8px 칸 16×4 — 재질마다 옆면 칸 + 윗면 칸(조금 밝게), 한 줄에 열여섯.
-# 그 아래(y 32..63) = 16px 큰 칸 4×2 — 넓은 면(벽·문)용 재질 넷, 옆면 + 윗면. 나머지는 빈 칸.
+# 그 아래(y 32..63) = 16px 큰 칸 4×2 — 넓은 면(벽·문)용 재질 넷, 옆면 + 윗면. 그 오른쪽과 아래 절반(y 64..)은 8px 칸이 이어진다(0139 `k_*`).
 ATLAS = 128
 # (이름, 색, 무늬). 무늬: noise·cloth·leather·speck·streak·glow·metal·flat·grain
 SMALL = [
@@ -110,6 +111,30 @@ SMALL = [
     ("f_ash", "#a29eb0", "soft"),
     ("f_ash_d", "#6f6a80", "soft"),
     ("p_mask", "#86675c", "soft"),
+    # 0139 다듬은 소품: 무늬·칸 테두리 없는 단색 칸(`soft`) — 돌 사이 금·모서리 선은 기하와 렌더(0061 선 둘)가 긋는다.
+    # 세계 팔레트(direction.md 해 질 녘 #2c2e47 · #454463 · #5f5c7a)와 구운 지형(`scenery.rs` WALL·WALL_TOP)에 맞춘다.
+    ("k_deep", "#2c2e47", "soft"),
+    ("k_dark", "#454463", "soft"),
+    ("k_stone", "#5f5c7a", "soft"),
+    ("k_light", "#7d7997", "soft"),
+    ("k_moss", "#3f6d6a", "soft"),
+    ("k_root", "#6b4a7e", "soft"),
+    ("k_rootl", "#8a66a3", "soft"),
+    ("k_droot", "#4a3340", "soft"),
+    ("k_wood", "#5a4650", "soft"),
+    ("k_woodl", "#76606a", "soft"),
+    ("k_bronze", "#7c6658", "soft"),
+    ("k_bronzel", "#a38a6c", "soft"),
+    ("k_amber", "#e09a3a", "soft"),
+    ("k_ember", "#f2c46d", "soft"),
+    ("k_core", "#ffe9b4", "soft"),
+    ("k_bone", "#b9b3c4", "soft"),
+    # 불꽃 끝(짙은 호박빛 — 빨강은 위험 예고 전용이라 쓰지 않는다).
+    ("k_flame", "#cf7a2c", "soft"),
+    # 상자의 나무(따뜻한 갈색 — 손댈 수 있는 물건은 푸른 달빛 아래에서도 돌과 갈려야 한다)·놋쇠 띠.
+    ("k_chest", "#7c5340", "soft"),
+    ("k_chestl", "#96694c", "soft"),
+    ("k_brass", "#c09a5c", "soft"),
 ]
 # 큰 칸: blocks(돌 쌓기)·bark(뿌리 결)·door(널빤지 + 청동 띠)
 BIG = [
@@ -126,10 +151,14 @@ def _cell_rects():
     for i, (name, _, _) in enumerate(SMALL):
         if i < 32:
             cx, row = i % 16, (i // 16) * 2
-        else:
+        elif i < 48:
             # 서른셋째부터는 큰 칸 오른쪽 빈 자리(x 64.., y 32..)에 여덟씩.
             j = i - 32
             cx, row = 8 + j % 8, 4 + (j // 8) * 2
+        else:
+            # 마흔아홉째부터는 아래 절반(y 64..)에 한 줄 열여섯씩(0139).
+            j = i - 48
+            cx, row = j % 16, 8 + (j // 16) * 2
         rects[name] = {"side": (cx * 8, row * 8, 8), "top": (cx * 8, (row + 1) * 8, 8)}
     for i, (name, _, _) in enumerate(BIG):
         cx, row = i % 2, i // 2
@@ -223,7 +252,7 @@ def _paint_cell(px, x0, y0, size, base, pattern, rng, top):
 
 
 def atlas_pixels():
-    """64×64 RGBA 행렬(위에서부터). 같은 입력이면 늘 같은 그림."""
+    """128×128 RGB 행렬(위에서부터). 같은 입력이면 늘 같은 그림."""
     px = [[(0.5, 0.5, 0.5)] * ATLAS for _ in range(ATLAS)]
     for name, col, pat in SMALL + BIG:
         rng = random.Random(sum(map(ord, name)) * 7919)
@@ -265,6 +294,12 @@ def cell_uv(mat_name, face):
     u0, u1 = (x0 + e) / ATLAS, (x0 + s - e) / ATLAS
     v1, v0 = 1.0 - (y0 + e) / ATLAS, 1.0 - (y0 + s - e) / ATLAS
     return u0, v0, u1, v1
+
+
+def cell_mid(mat_name, face="side"):
+    """칸 가운데 한 점의 UV — 면 전체를 한 색으로(무늬·칸 테두리를 안 쓴다, 0139)."""
+    x0, y0, s = RECTS[mat_name][face]
+    return ((x0 + s / 2) / ATLAS, 1.0 - (y0 + s / 2) / ATLAS)
 
 
 # ---------------------------------------------------------------- 상자
@@ -364,6 +399,144 @@ class Geo:
                         self.quads.append((quad, [uv] * 4, True))
         return self
 
+    # --- 다듬은 꼴(0139): 깎은 돌·돌린 꼴·꺾인 관. 면은 칸 가운데 한 색(`cell_mid`), 다각형 그대로(`quads`에 3각·n각도 들어간다).
+    def _group(self):
+        """매끈한 면 묶음 번호(같은 묶음 + 같은 자리 = 같은 정점). True(blob)와 겹치지 않게 2부터."""
+        self._grp = getattr(self, "_grp", 1) + 1
+        return self._grp
+
+    def stone(self, c, s, mat, bevel=0.06, rot=(0, 0, 0), taper=(1, 1), shift=(0, 0), drop=(), pivot=None,
+              edges="tv", top_mat=None, bevel_mat=None):
+        """모서리를 깎은 돌(`box`와 같은 치수·기울임). 건물 모서리는 둥글게(direction.md 기둥 2) — 깎인 면이 제 빛 단을 받아
+        모서리가 한 칸 밝거나 어둡게 읽힌다. edges: 't' 윗면 둘레 · 'v' 세로 모서리 · 'b' 아랫면 둘레(바닥에 닿으면 뺀다).
+        top_mat = 윗면 칸(기본 mat의 밝은 칸), bevel_mat = 깎인 면 칸(기본 mat). drop = 뺄 본디 면('-z' 등)."""
+        sx, sy, sz = s
+        tx, ty = taper
+        R = Euler([math.radians(a) for a in rot], "XYZ").to_matrix()
+        cv = Vector(c)
+        pv = Vector(pivot) if pivot is not None else cv
+        bm = bmesh.new()
+        cs, iz_of = {}, {}
+        for ix in (0, 1):
+            for iy in (0, 1):
+                for iz in (0, 1):
+                    x, y, z = (ix - 0.5) * sx, (iy - 0.5) * sy, (iz - 0.5) * sz
+                    if iz:
+                        x, y = x * tx + shift[0], y * ty + shift[1]
+                    v = bm.verts.new((x, y, z))
+                    cs[(ix, iy, iz)] = v
+                    iz_of[v] = iz
+        planes = {}
+        for key, corners in _FACES.items():
+            f = bm.faces.new([cs[k] for k in corners])
+            f.normal_update()
+            planes[key] = (f.normal.copy(), f.normal.dot(f.verts[0].co))
+        pick = []
+        for e in bm.edges:
+            k = iz_of[e.verts[0]] + iz_of[e.verts[1]]
+            if {2: "t", 1: "v", 0: "b"}[k] in edges:
+                pick.append(e)
+        if bevel > 0 and pick:
+            bmesh.ops.bevel(bm, geom=pick, offset=bevel, offset_type="OFFSET", segments=1, profile=0.5,
+                            affect="EDGES", clamp_overlap=True)
+        bm.normal_update()
+        for f in bm.faces:
+            n = f.normal
+            orig = next((k for k, (pn, pd) in planes.items()
+                         if n.dot(pn) > 0.9999 and abs(pn.dot(f.verts[0].co) - pd) < 1e-5), None)
+            if orig in drop:
+                continue
+            if orig == "+z":
+                uv = cell_mid(top_mat or mat, "side" if top_mat else "top")
+            elif orig is not None:
+                uv = cell_mid(mat, "side")
+            else:
+                uv = cell_mid(bevel_mat or mat, "top" if n.z > 0.25 else "side")
+            pts = [pv + R @ (cv + v.co - pv) for v in f.verts]
+            self.quads.append((pts, [uv] * len(pts), False))
+        bm.free()
+        return self
+
+    def _sweep(self, rings, mats, smooth=False, hard=(), cap0=None, cap1=None):
+        """고리(점 목록 — 점 하나면 뾰족한 끝)를 차례로 이은 띠. 고리는 진행 쪽에서 마주 보아 반시계.
+        mats = 띠마다 (칸 이름, 'side'|'top'). smooth면 띠끼리 정점을 같이 쓴다 — hard에 적은 고리에서는 끊는다(또렷한 테).
+        cap0·cap1 = 처음·끝 고리를 막는 면의 (칸, 면)."""
+        grp = self._group() if smooth else False
+        for i in range(len(rings) - 1):
+            a, b = rings[i], rings[i + 1]
+            uv = cell_mid(*mats[i])
+            if smooth and i in hard:
+                grp = self._group()
+            n = max(len(a), len(b))
+            for k in range(n):
+                if len(a) == 1:
+                    pts = [a[0], b[(k + 1) % n], b[k]]
+                elif len(b) == 1:
+                    pts = [a[k], a[(k + 1) % n], b[0]]
+                else:
+                    pts = [a[k], a[(k + 1) % n], b[(k + 1) % n], b[k]]
+                self.quads.append((pts, [uv] * len(pts), grp))
+        if cap0 and len(rings[0]) > 2:
+            self.quads.append((list(reversed(rings[0])), [cell_mid(*cap0)] * len(rings[0]), False))
+        if cap1 and len(rings[-1]) > 2:
+            self.quads.append((list(rings[-1]), [cell_mid(*cap1)] * len(rings[-1]), False))
+        return self
+
+    def lathe(self, c, profile, mat, sides=8, rot=(0, 0, 0), pivot=None, smooth=False, hard=(), phase=0.5,
+              squash=(1, 1), caps=(False, True), cap_mat=None):
+        """돌려 만든 꼴(기둥 북·그릇·종·결정·불꽃). profile = [(반지름, 높이)…] 아래에서 위로, c 기준. 반지름 0 = 뾰족한 끝.
+        mat = 칸 이름 하나 또는 띠마다 하나(len(profile) − 1개). 위를 보는 띠는 밝은 칸.
+        smooth = 둥글게(정점 공유, 툰 띠가 감긴다 — 산 것·둥근 건물), 아니면 면마다 각지게(뿌리·결정·테 — 밝은 선이 붙는다).
+        phase = 첫 모서리 각(1 = 한 변만큼), squash = x·y 배율(타원), caps = (아래, 위) 막기."""
+        R = Euler([math.radians(a) for a in rot], "XYZ").to_matrix()
+        cv = Vector(c)
+        pv = Vector(pivot) if pivot is not None else cv
+        mats = [mat] * (len(profile) - 1) if isinstance(mat, str) else list(mat)
+        rings = []
+        for r, z in profile:
+            if r <= 1e-6:
+                rings.append([pv + R @ (cv + Vector((0, 0, z)) - pv)])
+                continue
+            ring = []
+            for k in range(sides):
+                a = 2 * math.pi * (k + phase) / sides
+                ring.append(pv + R @ (cv + Vector((r * math.cos(a) * squash[0], r * math.sin(a) * squash[1], z)) - pv))
+            rings.append(ring)
+        cells = []
+        for i in range(len(profile) - 1):
+            (r0, z0), (r1, z1) = profile[i], profile[i + 1]
+            up = (r0 - r1) / max(1e-6, math.hypot(r0 - r1, z1 - z0))
+            cells.append((mats[i], "top" if up > 0.5 else "side"))
+        cm = cap_mat or mats[-1]
+        return self._sweep(rings, cells, smooth, hard,
+                           (cap_mat or mats[0], "side") if caps[0] else None, (cm, "top") if caps[1] else None)
+
+    def limb(self, pts, radii, mat, sides=4, roll=0.0, flat=1.0, smooth=False, caps=(False, False)):
+        """꺾인 관(뿌리·가지·들보): 점들을 따라 n각 단면, 점마다 반지름(0 = 뾰족한 끝). 기본은 각진 면 — 뿌리는 각지게(0037),
+        네모 단면(roll 0)은 한 모서리가 위를 봐서 등줄기에 밝은 선이 붙는다. flat = 단면의 위아래 배율(납작한 뿌리)."""
+        P = [Vector(p) for p in pts]
+        mats = [mat] * (len(P) - 1) if isinstance(mat, str) else list(mat)
+        rings, u = [], None
+        for i, p in enumerate(P):
+            t = (P[min(i + 1, len(P) - 1)] - P[max(i - 1, 0)]).normalized()
+            if u is None:
+                u = t.cross(Vector((0, 0, 1)))
+                if u.length < 1e-4:
+                    u = Vector((1, 0, 0))
+            else:
+                u = u - t * u.dot(t)
+            u.normalize()
+            v = t.cross(u)
+            r = radii[i]
+            if r <= 1e-6:
+                rings.append([p])
+                continue
+            rings.append([p + (u * math.cos(a) + v * (math.sin(a) * flat)) * r
+                          for a in (2 * math.pi * k / sides + math.radians(roll) for k in range(sides))])
+        cells = [(m, "side") for m in mats]
+        return self._sweep(rings, cells, smooth, (),
+                           (mats[0], "side") if caps[0] else None, (mats[-1], "side") if caps[1] else None)
+
     def verts(self):
         return len(self.quads) * 4
 
@@ -375,14 +548,14 @@ def geo_object(geo, mat):
     shared = {}
     for pts, uvs, smooth in geo.quads:
         if smooth:
-            # 둥근 덩어리는 정점을 같이 쓴다(매끈한 법선). 같은 자리 = 같은 정점.
+            # 둥근 덩어리는 정점을 같이 쓴다(매끈한 법선). 같은 묶음(`smooth` 값) + 같은 자리 = 같은 정점.
             vs = []
             for p in pts:
-                key = (round(p[0], 5), round(p[1], 5), round(p[2], 5))
+                key = (smooth, round(p[0], 5), round(p[1], 5), round(p[2], 5))
                 if key not in shared:
                     shared[key] = bm.verts.new(p)
                 vs.append(shared[key])
-            if len(set(vs)) < 4:
+            if len(set(vs)) < len(vs):
                 continue
         else:
             vs = [bm.verts.new(p) for p in pts]
@@ -390,7 +563,7 @@ def geo_object(geo, mat):
             f = bm.faces.new(vs)
         except ValueError:
             continue
-        f.smooth = smooth
+        f.smooth = bool(smooth)
         for loop, uv in zip(f.loops, uvs):
             loop[uvl].uv = uv
     bm.to_mesh(me)

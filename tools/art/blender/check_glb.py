@@ -21,7 +21,11 @@ REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 # wanderer: 0051 무기 넷(검·망치·지팡이·쇠뇌)이 한 모델에 있고 게임은 든 것만 보인다(나머지 크기 0) — 보이는 정점은 약 2,300.
 BUDGET = {"wanderer": 2600, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
           # 0068 장신구 여섯이 한 파일(게임은 하나씩만 그린다) — 하나 280 안팎.
-          "charms": 1800}
+          "charms": 1800,
+          # 0139 다듬은 소품: 깎은 돌 하나가 정점 64(면마다 따로 — 각진 음영), 스테이지에 60개 안쪽이라 넉넉히.
+          # 문은 하나뿐이고 널 여덟 + 띠 + 설주 돌이라 크다.
+          "wall_segment": 960, "pillar_broken": 560, "root_clump": 480, "brazier": 440, "gate": 1900, "core_crystal": 400,
+          "bell": 800, "rubble": 480, "chest": 560}
 PROP_BUDGET = 400
 # 동작 이름과 길이(초) — 명세 그대로인지 본다.
 EXPECT = {
@@ -41,11 +45,14 @@ EXPECT = {
     "gate": {"open": 1.5},
     "core_crystal": {"pulse": 1.0},
     "bell": {"toll": 2.0},
+    "chest": {"open": 0.4},
+    "lever": {"pull": 0.4},
 }
 MUST_NODES = {"gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["head_geo", "sword", "glow_lamp"],
               "root_husk": ["glow_eye"], "thorn_beast": ["glow_eyes"], "shellback": ["glow_eyes", "head_geo"], "pod": ["glow_eyes", "head_geo", "seed_geo"],
               "bellkeeper": ["glow_eyes", "glow_core", "bell_geo", "head_geo"], "res_hearth": ["head_geo"], "res_water": ["head_geo"], "res_cloth": ["head_geo"], "brazier": ["glow_flame"],
-              "core_crystal": ["glow_core"],
+              "core_crystal": ["glow_core"], "bell": ["bell", "bell_frame"],
+              "chest": ["lid", "glow_lock"], "stone_tablet": ["glow_carve"], "lever": ["handle", "glow_grip"],
               "charms": ["shell", "feet", "ear", "hunger", "hand", "pouch"]}
 
 CT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2), 5123: ("H", 2), 5125: ("I", 4), 5126: ("f", 4)}
