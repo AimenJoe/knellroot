@@ -18,7 +18,8 @@ gltf = { version = "1.4.1", default-features = false, features = ["utils", "name
 base64 = "0.22"
 
 # nail과 같은 까닭: gamepads 0.1.7은 Android에서 컴파일되지 않는다(패드는 miniquad 패치가 키로 넘긴다).
-[target.'cfg(not(target_os = "android"))'.dependencies]
+# iOS도 뺀다(0137): gilrs에 iOS 백엔드가 없어 빈 패드였다 — 패치한 miniquad가 GameController를 읽어 Android와 같은 키로 넘긴다.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 gamepads = { version = "0.1.7", default-features = false }
 
 [dev-dependencies]

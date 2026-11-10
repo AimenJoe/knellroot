@@ -360,6 +360,8 @@ pub fn define_glk_or_mtk_view_dlg(superclass: &Class) -> *const Class {
         }
 
         if let Some(ref mut event_handler) = payload.event_handler {
+            // Knellroot 패치(0137): 게임 컨트롤러를 update 직전에 한 번 읽는다(ios_pad.rs).
+            crate::native::ios_pad::poll(event_handler.as_mut());
             event_handler.update();
             event_handler.draw();
             let mut s = payload.state.lock().unwrap();

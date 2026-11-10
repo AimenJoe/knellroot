@@ -4,6 +4,7 @@ use std::{env, fs, path::Path};
 
 fn main() {
     build_hash();
+    pad_keys_cfg();
     let dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("assets/models");
     println!("cargo:rerun-if-changed={}", dir.display());
     let mut names: Vec<(String, String)> = fs::read_dir(&dir)
@@ -55,4 +56,14 @@ fn build_hash() {
         });
     let short: String = full.unwrap_or_default().chars().take(7).collect();
     println!("cargo:rustc-env=BUILD_HASH={short}");
+}
+
+/// `cfg(pad_keys)`(0137): 패드를 `gamepads` 크레이트가 아니라 패치한 miniquad가 키(F13~F24)·`joystick_axes`로 넘기는 플랫폼 —
+/// Android(0022, KEYCODE_BUTTON_*)와 iOS(0137, GameController 폴링). `input.rs`가 이 이름 하나로 두 길을 가른다.
+fn pad_keys_cfg() {
+    println!("cargo::rustc-check-cfg=cfg(pad_keys)");
+    let os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if os == "android" || os == "ios" {
+        println!("cargo:rustc-cfg=pad_keys");
+    }
 }

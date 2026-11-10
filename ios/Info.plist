@@ -81,6 +81,17 @@
 			<string>AppIcon</string>
 		</dict>
 	</dict>
+	<!-- 게임 컨트롤러(0137): Xcode "Game Controllers" 능력이 넣는 두 키를 손으로 — 시스템에 패드 지원을 알리고(GCSupportsControllerUserInteraction),
+	     쓰는 프로필을 적는다(확장 게임패드 하나 — 패치한 miniquad ios_pad.rs가 extendedGamepad만 읽는다). -->
+	<key>GCSupportsControllerUserInteraction</key>
+	<true/>
+	<key>GCSupportedGameControllers</key>
+	<array>
+		<dict>
+			<key>ProfileName</key>
+			<string>ExtendedGamepad</string>
+		</dict>
+	</array>
 	<!-- 저장은 앱 안(Library/Application Support)에만 한다. 파일 앱에 보이지 않게. -->
 	<key>UIFileSharingEnabled</key>
 	<false/>

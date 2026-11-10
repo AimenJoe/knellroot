@@ -114,6 +114,12 @@ pub mod macos;
 #[cfg(target_os = "ios")]
 pub mod ios;
 
+// Knellroot 패치(0137): iOS 게임 컨트롤러 — Android 패치처럼 F13~F24 키 + `joystick_axes()`.
+#[cfg(target_os = "ios")]
+pub mod ios_pad;
+#[cfg(target_os = "ios")]
+pub use ios_pad::joystick_axes;
+
 #[cfg(any(target_os = "android", target_os = "linux"))]
 pub mod egl;
 

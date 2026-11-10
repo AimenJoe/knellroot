@@ -23,5 +23,5 @@
 4. 볼 것: 가로로 켜지나, 터치 버튼(첫 화면부터), 화면 배율·노치 둘레, 소리, 저장(끄고 다시 켜서 이어하기), 글꼴.
 
 ## 하지 않은 것(다음 단계)
-- 게임패드 다리(Apple `GameController` → 키 코드, Android 패치 0022 꼴) — 핸드헬드·컨트롤러가 목표라 iOS 배포 전에 필요.
+- ~~게임패드 다리~~ → 0137에서 넣음(Apple `GameController` → 키 코드, Android 패치 0022 꼴).
 - 정식 서명·TestFlight(Apple Developer Program $99/년 — nail과 같은 계정을 쓸 수 있다, 인증서·프로필·App Store Connect API 키를 Secrets로) — 판매 준비 마일스톤.
