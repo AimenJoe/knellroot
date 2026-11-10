@@ -106,6 +106,9 @@ mod tests {
             ("gate", &["door_l", "door_r"][..], &["open"][..]),
             ("core_crystal", &["glow_core"][..], &["pulse"][..]),
             ("brazier", &["glow_flame"][..], &[][..]),
+            ("work_fire", &["fire", "glow_fire"][..], &[][..]),
+            ("work_jar", &["jar"][..], &[][..]),
+            ("work_tent", &["torn", "whole"][..], &[][..]),
         ] {
             let m = Model::from_bytes(bytes(name).unwrap_or_else(|| panic!("{name} missing")))
                 .unwrap_or_else(|e| panic!("{name}: {e}"));

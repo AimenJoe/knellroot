@@ -865,7 +865,9 @@ fn tuft(p: &mut Piece, at: Vec3, sx: usize, sz: usize, lights: &[Light]) {
             (tip, GRASS_TIP),
         ] {
             let l = lit(q, Vec3::Y, lights);
-            p.verts.push(with_normal(
+            // 풀 끝만 바람에 흔들린다(밑동은 땅에 박혀 있다, 0142).
+            let tip_sway = if col == GRASS_TIP { 1.0 } else { 0.0 };
+            let mut v = with_normal(
                 Vertex::new(
                     q.x,
                     q.y,
@@ -875,7 +877,9 @@ fn tuft(p: &mut Piece, at: Vec3, sx: usize, sz: usize, lights: &[Light]) {
                     Color::new(col.r * l.x, col.g * l.y, col.b * l.z, 1.0),
                 ),
                 Vec3::Y,
-            ));
+            );
+            sway(&mut v, tip_sway);
+            p.verts.push(v);
         }
         p.idx.extend_from_slice(&[base, base + 1, base + 2]);
     }
@@ -910,6 +914,12 @@ fn quad_lm(p: &mut Piece, corners: [Vec3; 4], col: Color, uv: &dyn Fn(Vec3) -> V
 pub fn with_normal(mut v: Vertex, n: Vec3) -> Vertex {
     v.normal = n.normalize_or(Vec3::Y).extend(1.0);
     v
+}
+
+/// 바람에 흔들리는 몫(0142)을 정점에 싣는다 — 법선 칸의 넷째 값: 1 = 가만히, 1 + `s` = 바람에 `s`만큼(풀 끝 1·잎 무더기 0.3),
+/// 1 − `f` = 불꽃처럼 빠르게 일렁임(`f` 0..0.9). 지형 재질(`render` 바람 셰이더)과 법선 패스가 같은 식으로 읽는다.
+pub fn sway(v: &mut Vertex, s: f32) {
+    v.normal.w = 1.0 + s;
 }
 
 fn to_u8(x: f32) -> u8 {
@@ -1004,6 +1014,40 @@ mod tests {
         }
         assert!(spread > 0.3, "얼룩이 거의 없다: {spread}");
         assert!(MORTAR_CALM.g / SLAB.g > 0.5 && MORTAR.g / SLAB.g < 0.35);
+    }
+
+    /// 0142 바람: 풀 다발은 끝만 흔들린다(밑동은 땅에 박혀 있다) — 바람 몫은 법선 칸의 넷째 값, 1 = 가만히.
+    #[test]
+    fn grass_sways_at_the_tip_and_stays_rooted_at_the_foot() {
+        let mut p = Piece {
+            verts: Vec::new(),
+            idx: Vec::new(),
+            tex: None,
+            aabb: None,
+            fade: 1.0,
+            lightmap: false,
+        };
+        let at = vec3(4.0, 1.0, -3.0);
+        tuft(&mut p, at, 4, 3, &[]);
+        let (mut tips, mut feet) = (0, 0);
+        for v in &p.verts {
+            if v.normal.w > 1.5 {
+                tips += 1;
+                assert!(
+                    v.position.y > at.y + 0.25,
+                    "a swaying vertex near the ground"
+                );
+            } else {
+                feet += 1;
+                assert_eq!(v.normal.w, 1.0);
+                assert!(v.position.y < at.y + 0.01, "a still vertex up in the air");
+            }
+        }
+        assert!(tips >= 7 && feet >= 14, "{tips} tips, {feet} feet");
+        // 도우미: 몫은 1에 더한다(음수 = 불꽃의 일렁임).
+        let mut v = Vertex::new(0.0, 0.0, 0.0, 0.0, 0.0, WHITE);
+        sway(&mut v, -0.5);
+        assert_eq!(v.normal.w, 0.5);
     }
 
     /// 0094: 소품의 가림 상자는 구운 정점을 다 감싼다(돌린 모델·상자보다 큰 모델도).

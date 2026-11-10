@@ -25,7 +25,9 @@ BUDGET = {"wanderer": 2600, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 
           # 0139 다듬은 소품: 깎은 돌 하나가 정점 64(면마다 따로 — 각진 음영), 스테이지에 60개 안쪽이라 넉넉히.
           # 문은 하나뿐이고 널 여덟 + 띠 + 설주 돌이라 크다.
           "wall_segment": 960, "pillar_broken": 560, "root_clump": 480, "brazier": 440, "gate": 1900, "core_crystal": 400,
-          "bell": 800, "rubble": 480, "chest": 560}
+          "bell": 800, "rubble": 480, "chest": 560,
+          # 0142 주민의 생활 물건: 주민 하나에 하나(마을에 셋) — 돌 다섯 + 장작 + 불꽃, 장대 둘 + 천 두 벌.
+          "work_fire": 520, "work_tent": 480}
 PROP_BUDGET = 400
 # 동작 이름과 길이(초) — 명세 그대로인지 본다.
 EXPECT = {
@@ -53,6 +55,7 @@ MUST_NODES = {"gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_ey
               "bellkeeper": ["glow_eyes", "glow_core", "bell_geo", "head_geo"], "res_hearth": ["head_geo"], "res_water": ["head_geo"], "res_cloth": ["head_geo"], "brazier": ["glow_flame"],
               "core_crystal": ["glow_core"], "bell": ["bell", "bell_frame"],
               "chest": ["lid", "glow_lock"], "stone_tablet": ["glow_carve"], "lever": ["handle", "glow_grip"],
+              "work_fire": ["fire", "glow_fire"], "work_jar": ["jar"], "work_tent": ["torn", "whole"],
               "charms": ["shell", "feet", "ear", "hunger", "hand", "pouch"]}
 
 CT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2), 5123: ("H", 2), 5125: ("I", 4), 5126: ("f", 4)}

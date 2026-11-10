@@ -310,6 +310,65 @@ def lever():
     return m, [("pull", 0.4, "_pull")]
 
 
+def work_fire():
+    """불 지키는 주민의 아궁이(0122·0142): 돌 다섯을 반원으로 두른 낮은 화덕(앞 = -Y가 트임) + 재 + 장작 둘 + 불꽃(glow_fire, 뼈 fire —
+    밑동 피벗. 게임이 크기를 준다: 꺼져 가는 불은 낮게, 다시 찾으면 살아난 불)."""
+    import math
+    m = C.Model("work_fire")
+    m.bone("fire", (0, 0, 0.16))
+    g = m.geo("fire_pit")
+    g.lathe((0, 0, 0), [(0.30, 0.0), (0.27, 0.05)], "k_deep", sides=8, caps=(False, True))  # 재
+    for i, a in enumerate((-120, -60, 0, 60, 120)):
+        r = math.radians(a)
+        h = 0.20 + 0.05 * (i % 2)
+        g.stone((math.sin(r) * 0.33, math.cos(r) * 0.30, h / 2), (0.26, 0.19, h), "k_stone" if i % 2 else "k_dark", bevel=0.05,
+                rot=(0, 0, -a), taper=(0.85, 0.85), drop=GROUND)
+    g.limb([(-0.20, -0.06, 0.07), (0.16, 0.08, 0.13)], [0.05, 0.045], "k_wood", sides=5, caps=(True, True))  # 장작
+    g.limb([(0.18, -0.10, 0.07), (-0.12, 0.10, 0.15)], [0.045, 0.04], "k_woodl", sides=5, caps=(True, True))
+    g = m.geo("glow_fire", "fire")
+    g.limb([(0.0, 0.0, 0.14), (0.0, 0.0, 0.22), (0.02, -0.01, 0.34), (0.0, 0.01, 0.46), (-0.02, 0.0, 0.56)],
+           [0.11, 0.14, 0.10, 0.05, 0.0], ["k_ember", "k_amber", "k_amber", "k_flame"], sides=6, smooth=True)
+    g.limb([(0.10, 0.04, 0.14), (0.12, 0.05, 0.22), (0.11, 0.04, 0.32)], [0.06, 0.06, 0.0], ["k_ember", "k_flame"], sides=5, smooth=True)
+    m.build()
+    return m, []
+
+
+def work_jar():
+    """물 모으는 주민의 항아리(0122·0142): 배가 부른 질항아리 0.44×0.56m(뼈 jar — 밑동 피벗. 게임이 기울인다: 엎어진 채 / 바로 세움)."""
+    m = C.Model("work_jar")
+    m.bone("jar", (0, 0, 0))
+    g = m.geo("jar_geo", "jar")
+    g.lathe((0, 0, 0), [(0.12, 0.0), (0.20, 0.10), (0.22, 0.28), (0.16, 0.44), (0.12, 0.50)], ["k_chest", "k_chest", "k_chestl", "k_chestl"],
+            sides=8, smooth=True, caps=(True, False))
+    g.lathe((0, 0, 0.50), [(0.12, 0.0), (0.155, 0.03), (0.155, 0.06), (0.11, 0.06)], "k_brass", sides=8, caps=(False, False))  # 아가리 테
+    g.lathe((0, 0, 0.53), [(0.11, 0.0), (0.11, 0.01)], "k_deep", sides=8, caps=(False, True), cap_mat="k_deep")  # 속
+    m.build()
+    return m, []
+
+
+def work_tent():
+    """꿰매는 주민의 천막 틀(0122·0142): 장대 둘 + 줄 + 천. 천은 두 벌 — 찢어져 늘어진 두 조각(뼈 torn)과 꿰맨 한 장(뼈 whole, 가운데 꿰맨 자국).
+    게임이 하나만 보인다(다시 찾으면 꿰매져 있다). 앞 = -Y."""
+    m = C.Model("work_tent")
+    m.bone("torn", (0, 0, 1.15))
+    m.bone("whole", (0, 0, 1.15))
+    g = m.geo("tent_poles")
+    for sx in (1, -1):
+        g.limb([(0.57 * sx, 0, 0.0), (0.55 * sx, 0, 0.62), (0.56 * sx, 0, 1.24)], [0.05, 0.045, 0.04], "k_wood", sides=5, caps=(False, True))
+        g.stone((0.57 * sx, 0, 0.05), (0.22, 0.20, 0.10), "k_dark", bevel=0.03, drop=GROUND)  # 장대를 누른 돌
+    g.limb([(-0.56, 0, 1.18), (0.0, 0, 1.13), (0.56, 0, 1.18)], [0.018, 0.018, 0.018], "k_deep", sides=3)  # 줄
+    g = m.geo("cloth_torn", "torn")
+    g.stone((-0.30, 0, 0.98), (0.50, 0.035, 0.34), "k_cloth", bevel=0.0, rot=(0, 5, 0), taper=(1.0, 1.0))
+    g.stone((0.33, 0, 0.84), (0.42, 0.035, 0.26), "k_clothd", bevel=0.0, rot=(0, -14, 0), pivot=(0.54, 0, 1.15))
+    g = m.geo("cloth_whole", "whole")
+    g.stone((0, 0, 0.90), (1.08, 0.035, 0.50), "k_cloth", bevel=0.0)
+    g.stone((0.04, -0.022, 0.90), (0.03, 0.01, 0.46), "k_clothd", bevel=0.0, rot=(0, 9, 0))  # 꿰맨 자국
+    for z in (0.74, 0.86, 0.98, 1.08):
+        g.stone((0.04 + (z - 0.90) * 0.16, -0.026, z), (0.10, 0.01, 0.018), "k_wood", bevel=0.0)  # 땀
+    m.build()
+    return m, []
+
+
 PROPS = {
     "wall_segment": wall_segment,
     "pillar_broken": pillar_broken,
@@ -322,6 +381,9 @@ PROPS = {
     "chest": chest,
     "stone_tablet": stone_tablet,
     "lever": lever,
+    "work_fire": work_fire,
+    "work_jar": work_jar,
+    "work_tent": work_tent,
 }
 
 

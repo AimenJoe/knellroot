@@ -269,6 +269,22 @@ struct Drift {
     hide_off_ground: bool,
 }
 
+/// 흩날리는 잎(0142 — 나무가 있는 지역): 바람 쪽으로 비스듬히 흘러 내려오며 크게 흔들린다. 드물게(스물넷) — 바람이 "보이게"만.
+const LEAVES: Drift = Drift {
+    count: 24,
+    half: 13.0,
+    y: (0.2, 5.0),
+    flow: Vec3::new(0.55, -0.45, 0.3),
+    wobble: 0.5,
+    wobble_hz: 0.33,
+    size: 0.1,
+    halo: 0.0,
+    color: Color::new(0.50, 0.70, 0.60, 0.9),
+    blink_hz: 0.0,
+    seed: 47,
+    hide_off_ground: false,
+};
+
 /// 반딧불: 풀 높이(0.3~1.8m), 바람 없이 헤매고, 몇 초마다 켜졌다 꺼진다. 빛무리로 둘레를 살짝 밝힌다.
 const FIREFLIES: Drift = Drift {
     count: 40,
@@ -501,6 +517,7 @@ impl Backdrop {
             Some(&MOTES),
             env.fireflies.then_some(&FIREFLIES),
             env.falling.then_some(&FALLING),
+            env.trees.then_some(&LEAVES),
         ];
         for d in kinds.into_iter().flatten() {
             for i in 0..d.count {

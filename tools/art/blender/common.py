@@ -135,6 +135,9 @@ SMALL = [
     ("k_chest", "#7c5340", "soft"),
     ("k_chestl", "#96694c", "soft"),
     ("k_brass", "#c09a5c", "soft"),
+    # 주민의 생활 물건(0142): 천막 천(따뜻한 베이지 — 산 것 곁의 물건)·그 그늘.
+    ("k_cloth", "#b89478", "soft"),
+    ("k_clothd", "#8f6f5c", "soft"),
 ]
 # 큰 칸: blocks(돌 쌓기)·bark(뿌리 결)·door(널빤지 + 청동 띠)
 BIG = [

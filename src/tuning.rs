@@ -398,6 +398,7 @@ pub enum P {
     RenderBloom,
     RenderVignette,
     RenderFx,
+    RenderWind,
 }
 
 /// 랩이 읽는 칸(이름·걸음·범위·내보내기 이름)은 개발판에만 쓰인다(운영판에는 랩이 없다, 0070).
@@ -429,7 +430,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 153] = [
+pub const SPECS: [Spec; 154] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1646,6 +1647,8 @@ pub const SPECS: [Spec; 153] = [
         1.0,
         1.0
     ),
+    // 살아 있는 환경(0142, 사장 2026-11-10 "Environment도 생동감 있게"): 풀 끝·잎 무더기가 바람에 흔들리는 세기(0 = 멈춤). 땅속은 이 값의 0.4배.
+    spec!(RenderWind, "render.wind", "RENDER_WIND", 1.0, 0.0, 2.5, 0.1),
 ];
 
 /// 땅 돌리기 휘청의 흔들림 빠르기(Hz)·줄어듦(/초) — 0.5초 안에 3% 아래로.

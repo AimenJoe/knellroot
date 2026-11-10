@@ -106,12 +106,19 @@ pub fn blob(p: &mut Piece, c: Vec3, r: Vec3, seed: u32, col: Color, lights: &[Li
         .enumerate()
         .map(|(i, q)| c + *q * r * (0.85 + 0.3 * h(seed, i as u32)))
         .collect();
+    let start = p.verts.len();
     for (k, [a, b, d]) in f.iter().enumerate() {
         // 면마다 빛을 조금씩(같은 띠 안에서도 잎 무더기가 얼룩지게).
         let shade = 0.9 + 0.2 * h(seed, 40 + k as u32);
         tri(p, pts[*a], pts[*b], pts[*d], mul(col, shade), lights);
     }
+    // 잎 무더기는 바람에 조금 흔들린다(0142 — 줄기·뿌리는 그대로).
+    for v in &mut p.verts[start..] {
+        crate::scenery::sway(v, LEAF_SWAY);
+    }
 }
+/// 잎 무더기가 바람을 받는 몫(풀 끝 = 1).
+const LEAF_SWAY: f32 = 0.3;
 
 /// 네모 단면 줄기(뿌리·가지): 점을 따라 굵기 `r0` → `r1`. 각진 것은 뿌리만(0037).
 fn strand(p: &mut Piece, pts: &[Vec3], r0: f32, r1: f32, col: Color, lights: &[Light]) {
@@ -267,6 +274,23 @@ mod tests {
             aabb: None,
             fade: 1.0,
             lightmap: false,
+        }
+    }
+
+    /// 0142 바람: 나무는 잎 무더기만 살랑이고 줄기는 가만히 선다(줄기가 흔들리면 뿌리째 미끄러져 보인다).
+    #[test]
+    fn only_the_leaves_of_a_tree_sway() {
+        let mut p = piece();
+        let base = vec3(0.0, 0.0, 0.0);
+        tree(&mut p, base, 3, &[]);
+        let swaying: Vec<&Vertex> = p.verts.iter().filter(|v| v.normal.w != 1.0).collect();
+        assert!(!swaying.is_empty() && swaying.len() < p.verts.len());
+        for v in swaying {
+            assert_eq!(v.normal.w, 1.0 + LEAF_SWAY);
+            assert!(
+                v.position.y > base.y + 1.0,
+                "a leaf at the foot of the trunk"
+            );
         }
     }
 

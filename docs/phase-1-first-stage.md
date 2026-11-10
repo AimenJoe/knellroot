@@ -47,6 +47,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 글 | `i18n/`, `ui.rs`, `hud.rs` | 한국어·영어. HUD: 체력 마름모·스태미나·목표·구역 카드·시작 이야기·보스 띠 |
 | 모델 | `assets/models/*.glb`, `build.rs`, `models.rs`, `tools/art/blender/` | Blender 4.0 bpy 스크립트가 원본(상자·둥근 덩어리·깎은 돌·돌린 꼴·꺾인 관 + 뼈에 붙인 강체 + 128×128 아틀라스, 캐릭터 몸은 Meshy 메시). 미리보기 `docs/art/previews/`, 검사 `check_glb.py`, 리뷰 표 `review_glb.py`. 없으면 상자 |
 | 이펙트(0141) | `fx.rs`(`Fx::on_events`·`watch`·`tick`, `brazier_ember`), `backdrop.rs` `Backdrop::fx`, `render.rs` `gem`·`spark4`·`crescent`·`slash_arcs`, `app/play.rs` `step_world`, 랩 `render.fx`, `tools/test/fx.js` + 개발 키 F6 | 사건·상태 변화 → 입자(별·빛줄·먼지·네모 화소), 휘두름의 초승달, 화로 불티. 꾸밈만 상한, 빨강 없음, 히트스톱 동안 1/4 빠르기 |
+| 남은 상자 걷기·바람(0142) | `tools/art/blender/props.py` `work_fire`·`work_jar`·`work_tent`, `render.rs` `stage_props`(생활 물건·줍는 것)·`loot_body`·`loot_front`·`shaded_tris`·`octa_faces`·`ball_faces`·`spike_faces`·`glow_disc`·`wind_material`·GLSL `sway`·`flame_sway`, `scenery::sway`(법선 칸 w = 바람 몫), `flora.rs` `LEAF_SWAY`, `backdrop.rs` `LEAVES`, 랩 `render.wind` | 0142 |
 | 화면 다듬기(0140) | `scenery.rs` `MORTAR_CALM`·`patch`·`SHADE_RES`·`PROP_AO`, `render.rs` `AMBIENT_KEY`·`MOON_KEY`·`actor_moon`·`floor_shade`·`post`·`Grade`, 랩 `render.floor calm`·`key light`·`grade`·`bloom`·`vignette` | 조용한 바닥, 빛 : 그늘 2.5배·그림자 칸 0.125m·소품 밑 그늘·그늘에 선 배우, 톤 곡선·빛 번짐·가장자리 그늘(선 둘과 함께 내부 해상도에서 한 번) |
 | 모델 리뷰·소품 v2(0139) | `tools/art/blender/common.py` `Geo.stone`·`lathe`·`limb`·`k_*` 칸, `props.py`, `review_glb.py`, `render.rs` `stage_props` | 소품 여덟(벽 조각·기둥·뿌리·화로·문·핵·종·돌무더기)을 0061 기준으로 다시 빚음 — 돌 쌓기 무늬 상자 대신 큰 덩어리 기하 + 단색, 둥근 것은 매끈하게·뿌리와 테만 각지게. 상자로 그리던 장신구 상자·새긴 돌·문 장치를 모델로(`chest`·`stone_tablet`·`lever`, 없으면 예전 상자) |
 | 지형·빛 | `scenery.rs`, `render.rs` `lit` | 한 번 굽기. 바탕 + 달빛 + 화로(7m, 거리 제곱). 배우는 1.35배 밝게. 가리는 벽 칸·소품은 옅게 |
@@ -124,6 +125,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), 랩(멈춤 끝 줄 LAB·F1, 0070), F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
+**0142 판정(개발판)**: 체크리스트 12번 묶음 — 특히 ① 문지기 2단계의 뿌리 가시(싸움 안에서는 못 찍었다) ② 바람이 폰·핸드헬드에서 과하지 않은지·프레임 ③ 락온에서 보스 둘이 거칠어 보이는지(보이면 텍스처 1024×512).
+
 **0138(방향만, 2026-11-10)**: 웹 호스팅은 나중에 Netlify → Cloudflare(Workers 정적 파일)로. Netlify 요금제는 **Legacy**(월 100 GB, 사장 2026-11-10 확인) — 급하지 않다. 사람이 할 일: 때때로 Netlify 대시보드의 이번 달 대역폭(nail과 같은 팀이라 합산) — 100 GB에 가까워지면 옮길 시점.
 
 **0093 소개 페이지**: `release/v0.3`을 main에 넣은 뒤 ① 레포 Settings → Pages → Source = **GitHub Actions**(켜기 전 첫 실행은 실패, 켠 뒤 Actions의 pages를 다시 실행) ② DNS(Cloudflare)에 `knellroot` CNAME → `aimenjoe.github.io` ③ Settings → Pages → Custom domain = `knellroot.beardworks.io`, Enforce HTTPS. 페이지 글을 고치면 `python3 tools/site/subset_font.py <GowunBatang-Bold.ttf>`.
@@ -135,6 +138,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 **v0.5.0 마일스톤 정함(0116, 갈래 `release/v0.5`)**: 인터뷰로 열여섯 물음 — 보라 뿌리 = 주인 없는 실(개발자 답), 떠난 이유는 게임 안 MYSTERY, 주민 = 여러 작은 동물("주민"), 포포 고리 걸어 둠, ECO-05 조건은 열고 행동 규칙만, ECO-10 같은 종이 다른 역할, 잔류형 정본(관찰), 마을 등급 2 = 체력 ×1.5·자세 ×1.3·잔불 ×1.6, 둘째 문지기 거리·공간형, 내려가는 길 + 되돌아가는 길, 도감 넣음, 주민의 불 = 아궁이·재방문 = 다음 판·공격이 지나감·말풍선. 이름: 떠난 마을·등딱지짐승·꼬투리·깨진 종지기. **다음: T1 지역 잇기부터**. 둘째 지역 설계는 0115(`docs/lore/regions/abandoned-village.md`·`docs/design/stages/abandoned-village-residents.md`).
 
 **v0.5.0 배포(2026-11-10, PR #15 `release/v0.5` → `main`, 사장 Merge — Squash `082a781`)**: `Cargo.toml` 0.5.0·`version_code` 17·`docs/releases/v0.5.0.md`. Actions `release`·`build-android` success, Release `v0.5.0`에 `knellroot.apk`. Squash라 빨리 감기가 안 돼 `release/v0.5`에는 main을 합치고(트리 같음), `release/v0.6`에는 `-s ours`로 합침(내용은 이미 있음). 고칠 것은 v0.5.x(`release/v0.5`) 또는 v0.6에서.
+
+**0142(개발판, 사장 "그 외에 개발버전 수준인것들 찾아줘 … Environment 도 생동감 있게")**: 상자로 그리던 것 걷기 — 주민의 생활 물건 셋을 모델로(아궁이·항아리·천막, 다시 찾은 뒤의 변화는 뼈로), 줍는 것은 정육면체 대신 결정·둥근 덩이 + 빛무리(빛기둥 앞으로 당기고 어두운 테), 문지기 2단계의 뿌리 기둥은 가늘어지는 가시. 환경: 바람(풀 끝·잎·구운 화로 불꽃이 흔들리고 밟으면 풀이 눕는다 — 정점의 법선 칸 w에 몫, 색·법선 패스가 같은 식, 랩 `render.wind`) + 흩날리는 잎. Meshy 모델은 화면 크기로 재서 지금은 다시 변환하지 않음(락온의 보스 둘만 텍셀 0.64~0.70/화소 — 조건부). 판정 12-1~12-7.
 
 **0141(개발판, 사장 "각종 이펙트들도 다듬어줘")**: 이펙트 다듬기 — 타격의 겹(맞힌 자리의 별 + 두 화소 굵기 불똥 + 먼지, 치명타·강타·패링·튕김·쓰러짐·폭발마다 다른 그림), 휘두름의 초승달, 뛰기·착지·회피·달리기·적 돌진과 내리침의 먼지, 정육면체이던 탄·조각·별을 마름모·별로, 화로 불티. 월드는 이펙트를 모른다(`fx.rs`가 사건을 듣는다). **사람이 할 일: 체크리스트 11 — 개발판에서 F6(한 프레임 = 한 틱)으로 느리게 보거나 그냥 싸워 보고, 과한지·모자란지. 패링 성공·치명타·폭발은 장면으로 확인하지 못했다(시험으로만).**
 

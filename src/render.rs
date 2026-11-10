@@ -44,6 +44,10 @@ pub struct Renderer {
     mask_mat: Option<Material>,
     floor_mat: Option<Material>,
     shadow_tried: bool,
+    /// 바람 재질(0142)과 이번 프레임의 바람 값 — 지형 덩어리와 법선 패스가 같이 읽는다.
+    wind_mat: Option<Material>,
+    wind_tried: bool,
+    wind_uniform: Vec4,
     /// 이번 프레임 가림판의 빛 공간 행렬(없으면 바닥은 그림자 없이).
     light_vp: Option<Mat4>,
     /// 가림판 가운데(지난 프레임의 플레이어 자리).
@@ -349,6 +353,14 @@ pub fn floor_shade() -> f32 {
     1.0 - a.y / (a.y + m.y * k)
 }
 const FIRE: f32 = 1.5;
+/// 구운 불꽃의 끝이 일렁이는 몫(0142, 밑동 0 → 끝 이만큼).
+const FLAME_SWAY: f32 = 0.9;
+
+/// 구운 불꽃의 바람 몫(음수 = 빠른 일렁임): 부위의 밑동(`y0`)은 0 — 그릇에 붙어 있다 — 끝(`y1`)으로 갈수록 제곱으로 커진다.
+pub fn flame_sway(y: f32, y0: f32, y1: f32) -> f32 {
+    let up = ((y - y0) / (y1 - y0).max(1e-3)).clamp(0.0, 1.0);
+    -FLAME_SWAY * up * up
+}
 /// 화로의 빛은 바닥 1.2m 위(`stage` 지도 읽기), 그릇 테는 0.86m(`props.py`) — 불티가 그릇에서 오르게.
 const BRAZIER_LIGHT_ABOVE_BOWL: f32 = 1.2 - 0.86;
 /// 빛줄기 세기(0124 — 땅속 달빛 0.4 아래에서 몸이 확 비치게).
@@ -428,6 +440,9 @@ impl Renderer {
             mask_mat: None,
             floor_mat: None,
             shadow_tried: false,
+            wind_mat: None,
+            wind_tried: false,
+            wind_uniform: Vec4::ZERO,
             light_vp: None,
             shadow_center: Vec3::ZERO,
             edge: None,
@@ -733,6 +748,20 @@ impl Renderer {
             key: t[crate::tuning::P::RenderKeyLight] >= 0.5,
         });
         set_camera(&c3);
+        // 바람(0142): 시각은 초당 열두 번으로 끊는다(낮은 해상도에서 풀이 기어가지 않고 "도트 움직임"으로), 땅속은 약하게.
+        if !self.wind_tried {
+            self.wind_tried = true;
+            self.wind_mat = wind_material();
+        }
+        let breeze = t[crate::tuning::P::RenderWind]
+            * v.stage
+                .map_or(1.0, |r| if r.def.env.moon { 1.0 } else { 0.4 });
+        self.wind_uniform = vec4(
+            (w.time * 12.0).floor() / 12.0,
+            breeze,
+            w.player.pos.x,
+            w.player.pos.z,
+        );
         // 지역 환경(0118 T2): 스테이지면 그 지역의 것, 개발 놀이터는 땅 위.
         self.backdrop.env = v.stage.map_or(&crate::backdrop::SURFACE, |r| r.def.env);
         set_moonlight(self.backdrop.env.moonlight);
@@ -818,6 +847,11 @@ impl Renderer {
                 if floor.is_some() {
                     gl_use_default_material();
                 }
+                // 바람(0142): 풀 끝·잎·불꽃이 흔들린다 — 그 몫이 실린 정점만 움직이고 나머지 지형은 그대로.
+                if let Some(m) = &self.wind_mat {
+                    m.set_uniform("Wind", self.wind_uniform);
+                    gl_use_material(m);
+                }
                 let mut bi = 0;
                 for p in sc.pieces.iter_mut().filter(|p| !p.lightmap) {
                     let want = match p.aabb {
@@ -838,6 +872,9 @@ impl Renderer {
                     }
                 }
                 self.batch.send();
+                if self.wind_mat.is_some() {
+                    gl_use_default_material();
+                }
                 let mut lights = sc.lights.clone();
                 // 갈 곳(0060 W1)에 호박색 빛 — 곁의 모델이 같이 물든다("호박색 불빛 = 갈 길").
                 if let Some(g) = run.goal() {
@@ -921,18 +958,13 @@ impl Renderer {
                             p.y,
                             0.0,
                         );
-                        shaded_box(
-                            at + Vec3::Y * h * 0.5,
-                            vec3(0.32, h, 0.32),
-                            ROOT_PILLAR,
-                            0.8,
-                        );
-                        shaded_box(
-                            at + Vec3::Y * (h + 0.12),
-                            vec3(0.16, 0.24, 0.16),
-                            ROOT_PILLAR_TIP,
-                            0.9,
-                        );
+                        // 뿌리 가시(0142 — 네모 기둥 대신): 굵은 밑동에서 가늘어지다 뾰족한 끝, 하나씩 엇갈려 기운다.
+                        // 각진 것은 뿌리(0037)라 면은 각진 채로. 판정(띠)은 그대로다 — 그림만.
+                        let lean = vec3(f.z, 0.0, -f.x) * (side * 0.5) + f * 0.08;
+                        let (body, tip) = spike_faces(0.21, 0.09, h, 0.42 * rise, lean);
+                        let turn = Quat::from_rotation_y(i as f32 * 0.9);
+                        shaded_tris(at, &body, ROOT_PILLAR, 0.8, turn);
+                        shaded_tris(at, &tip, ROOT_PILLAR_TIP, 0.9, turn);
                     }
                     s += 0.8;
                     i += 1;
@@ -1035,10 +1067,16 @@ impl Renderer {
                     self.draw_gate(run, &lights, a);
                 }
                 let sc = &self.scenery.as_ref().unwrap().1;
+                if let Some(m) = &self.wind_mat {
+                    gl_use_material(m);
+                }
                 for p in sc.pieces.iter().filter(|p| p.fade < 0.98) {
                     self.batch.raw(&p.verts, &p.idx, p.tex.as_ref(), p.fade);
                 }
                 self.batch.send();
+                if self.wind_mat.is_some() {
+                    gl_use_default_material();
+                }
                 // 높이 안개(0063 E1): 걷는 땅 아래만 — 카메라가 보는 곳(플레이어) 둘레.
                 if t[crate::tuning::P::RenderFog] >= 0.5 {
                     self.backdrop.fog(
@@ -1145,6 +1183,7 @@ impl Renderer {
         clear_background(Color::new(0.5, 0.5, 1.0, 1.0));
         fx.normal_mat
             .set_uniform("View", Mat4::look_at_rh(c3.position, c3.target, c3.up));
+        fx.normal_mat.set_uniform("Wind", self.wind_uniform);
         gl_use_material(&fx.normal_mat);
         for (vertices, indices) in self.batch.recorded.drain(..) {
             draw_mesh(&Mesh {
@@ -1531,6 +1570,34 @@ impl Renderer {
                         360.0,
                         Color::new(1.0, 0.6, 0.25, 0.22 * flick),
                     );
+                    // 모델(0142): 돌을 두른 화덕 + 불꽃(뼈 `fire`, 밑동 피벗) — 꺼져 가는 불은 낮고 가늘게, 다시 찾으면 살아난 불.
+                    if let Some(e) = self.lib.get("work_fire") {
+                        let size = if changed { 1.0 } else { 0.5 };
+                        let lick = (w.time * 11.0 + at.x).sin() * 0.06;
+                        let grow = e.model.node("fire").map(|n| {
+                            (
+                                n,
+                                Quat::from_rotation_y(w.time * 0.6),
+                                vec3(
+                                    size * (1.0 - lick),
+                                    size * (flick + lick) * 1.05,
+                                    size * (1.0 - lick),
+                                ),
+                            )
+                        });
+                        e.model
+                            .pose_with(None, 0.0, grow.as_slice(), &mut self.pose);
+                        fl.shadow(spot, 0.5);
+                        self.batch.model(
+                            e,
+                            &self.pose,
+                            Mat4::from_translation(spot),
+                            WHITE,
+                            lights,
+                            if changed { 1.0 } else { 0.75 } * flick,
+                        );
+                        continue;
+                    }
                     shaded_box(
                         spot + Vec3::Y * 0.15,
                         vec3(0.7, 0.3, 0.6),
@@ -1546,6 +1613,34 @@ impl Renderer {
                     );
                 }
                 crate::residents::Work::Water => {
+                    // 모델(0142): 질항아리 — 엎어진 채 누워 물이 샌 자리 / 다시 찾으면 바로 서고 아가리에 물빛.
+                    if let Some(e) = self.lib.get("work_jar") {
+                        e.model.pose(None, 0.0, &mut self.pose);
+                        let inst = if changed {
+                            fl.sector(
+                                spot + Vec3::Y * 0.56,
+                                0.1,
+                                0.0,
+                                360.0,
+                                Color::new(0.5, 0.7, 0.9, 0.5),
+                            );
+                            Mat4::from_translation(spot)
+                        } else {
+                            fl.sector(
+                                spot + vec3(-0.62, 0.0, 0.05),
+                                0.42,
+                                0.0,
+                                360.0,
+                                Color::new(0.4, 0.55, 0.75, 0.25),
+                            );
+                            Mat4::from_translation(spot + Vec3::Y * JAR_LIE_LIFT)
+                                * Mat4::from_rotation_y(0.3)
+                                * Mat4::from_rotation_z(JAR_LIE)
+                        };
+                        fl.shadow(spot, 0.34);
+                        self.batch.model(e, &self.pose, inst, WHITE, lights, 0.0);
+                        continue;
+                    }
                     let tilt = if changed { 0.0 } else { 0.55 };
                     let jar = Color::new(0.55, 0.4, 0.32, 1.0);
                     shaded_box_rot(
@@ -1569,6 +1664,24 @@ impl Renderer {
                     }
                 }
                 crate::residents::Work::Cloth => {
+                    // 모델(0142): 장대 둘 + 줄 + 천 두 벌 — 찢어져 늘어진 두 조각(`torn`) / 다시 찾으면 꿰맨 한 장(`whole`). 하나만 보인다.
+                    if let Some(e) = self.lib.get("work_tent") {
+                        let hide = e
+                            .model
+                            .node(if changed { "torn" } else { "whole" })
+                            .map(|n| (n, Quat::IDENTITY, Vec3::ZERO));
+                        e.model
+                            .pose_with(None, 0.0, hide.as_slice(), &mut self.pose);
+                        self.batch.model(
+                            e,
+                            &self.pose,
+                            Mat4::from_translation(spot),
+                            WHITE,
+                            lights,
+                            0.0,
+                        );
+                        continue;
+                    }
                     let cloth = Color::new(0.7, 0.55, 0.45, 1.0);
                     let pole = Color::new(0.35, 0.28, 0.22, 1.0);
                     for dx in [-0.55f32, 0.55] {
@@ -1643,8 +1756,16 @@ impl Renderer {
             let rot = Quat::from_rotation_y(w.time * 1.4 + j as f32)
                 * Quat::from_rotation_z(std::f32::consts::FRAC_PI_4)
                 * Quat::from_rotation_x(std::f32::consts::FRAC_PI_4);
-            shaded_box_rot(c, Vec3::splat(0.2), LOOT_CHEST, 1.0, rot, c);
-            shaded_box_rot(c, Vec3::splat(0.32), with_a(LOOT_CHEST, 0.25), 1.0, rot, c);
+            // 몸은 결정(팔면체 — 0142: 정육면체는 디버그 상자로 읽혔다) + 카메라를 보는 둥근 빛무리.
+            // 빛기둥 앞에 둔다(`loot_front`) — 기둥 속에 두면 흰 기둥에 흰 몸이 묻혔다.
+            let c = loot_front(c);
+            loot_body(
+                c,
+                &octa_faces(vec2(0.15, 0.15), 0.23, 0.23),
+                LOOT_CHEST,
+                rot,
+            );
+            glow_disc(c, 0.3, with_a(LOOT_CHEST, 0.3));
             if k >= 1.0 {
                 loot_beam(
                     &fl,
@@ -1683,15 +1804,18 @@ impl Renderer {
                 let c = *p + Vec3::Y * (0.55 + 0.06 * k);
                 fl.shadow(*p, 0.2);
                 let tremble = (w.time * 23.0 + i as f32).sin() * 0.04;
-                shaded_box_rot(
+                // 깨진 조각(0142): 한쪽이 길고 납작한 결정 — 위가 길고 아래가 짧아 종 꼴도 상자도 아니다.
+                let c = loot_front(c);
+                // 가는 꼴이라 테는 배율이 아니라 두께로(같은 배율이면 1px도 안 됐다).
+                loot_rimmed(
                     c,
-                    vec3(0.1, 0.42, 0.05),
+                    &octa_faces(vec2(0.13, 0.085), 0.34, 0.16),
+                    &octa_faces(vec2(0.18, 0.135), 0.4, 0.22),
                     col,
-                    1.0,
                     Quat::from_rotation_y(w.time * 0.9 + i as f32)
                         * Quat::from_rotation_z(0.35 + tremble),
-                    c,
                 );
+                glow_disc(c, 0.26, with_a(col, 0.14 + 0.1 * k));
                 fl.ring(
                     *p,
                     0.5 + 0.12 * k,
@@ -1707,8 +1831,15 @@ impl Renderer {
             };
             let c = *p + Vec3::Y * (0.45 + 0.08 * k);
             fl.shadow(*p, 0.25);
-            shaded_box(c, Vec3::splat(0.22), col, 1.0);
-            shaded_box(c, Vec3::splat(0.34), with_a(col, 0.25 + 0.2 * k), 1.0);
+            // 둥근 덩이(0142, 0037 둥근 것 = 산 것) + 숨 쉬는 빛무리.
+            let c = loot_front(c);
+            loot_body(
+                c,
+                &ball_faces(0.17),
+                col,
+                Quat::from_rotation_y(w.time * 0.8 + i as f32),
+            );
+            glow_disc(c, 0.3 + 0.04 * k, with_a(col, 0.25 + 0.2 * k));
             fl.ring(*p, 0.6 + 0.15 * k, 0.0, 360.0, with_a(col, 0.25 + 0.25 * k));
         }
         // 쉼터(0032): 발밑 테 — 아직 안 쉰 곳은 옅게, 다시 일어설 곳은 금빛으로 숨 쉬듯. 쉬는 순간 빛이 퍼진다.
@@ -3294,6 +3425,12 @@ impl Batch {
             let mat = inst * pose[i];
             let base = verts.len() as u16;
             let bright = e.glow.get(i).copied().unwrap_or(false);
+            // 구운 불꽃(0142): 지형에 굽는 스스로 빛나는 부위(화로 불꽃)는 밑동은 그대로, 끝으로 갈수록 일렁인다(바람 셰이더).
+            let (y0, y1) = mesh
+                .pos
+                .iter()
+                .map(|q| mat.transform_point3(*q).y)
+                .fold((f32::MAX, f32::MIN), |(a, b), y| (a.min(y), b.max(y)));
             for k in 0..mesh.pos.len() {
                 let p = mat.transform_point3(mesh.pos[k]);
                 let n = mat.transform_vector3(mesh.nrm[k]).normalize_or_zero();
@@ -3309,10 +3446,14 @@ impl Batch {
                     to_u8(tint.b * f.z),
                     to_u8(tint.a),
                 );
-                verts.push(crate::scenery::with_normal(
+                let mut v = crate::scenery::with_normal(
                     Vertex::new(p.x, p.y, p.z, mesh.uv[k].x, mesh.uv[k].y, c),
                     n,
-                ));
+                );
+                if bright && !actor {
+                    crate::scenery::sway(&mut v, flame_sway(p.y, y0, y1));
+                }
+                verts.push(v);
             }
             idx.extend(mesh.idx.iter().map(|&j| base + j as u16));
         }
@@ -3628,8 +3769,31 @@ fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
     uniform mat4 Model;
     uniform mat4 Projection;
     uniform mat4 View;
+    // 바람(0142): 법선 칸 넷째 값 − 1 = 흔들리는 몫. 양수 = 풀·잎(느린 돌풍 + 플레이어가 밟으면 눕는다), 음수 = 불꽃(빠른 일렁임).
+    // Wind = (끊은 시각, 세기, 플레이어 x, 플레이어 z).
+    uniform vec4 Wind;
+    vec3 sway(vec3 w, float s) {
+        float ph = w.x * 0.9 + w.z * 0.7;
+        if (s > 0.0) {
+            float g = sin(Wind.x * 1.7 + ph) * 0.6 + sin(Wind.x * 3.3 + ph * 1.9) * 0.4;
+            w.x += g * 0.075 * s * Wind.y;
+            w.z += g * 0.045 * s * Wind.y;
+            vec2 d = w.xz - Wind.zw;
+            float push = clamp(1.0 - length(d) / 0.9, 0.0, 1.0) * min(s, 1.0);
+            w.xz += normalize(d + vec2(0.0001, 0.0)) * push * 0.28;
+            w.y -= push * 0.14;
+        } else if (s < 0.0) {
+            float f = -s;
+            float g = sin(Wind.x * 9.0 + ph * 5.0) * 0.6 + sin(Wind.x * 14.3 + ph * 3.0) * 0.4;
+            w.x += g * 0.07 * f;
+            w.z += g * 0.05 * f;
+            w.y += (sin(Wind.x * 11.0 + ph) * 0.5 + 0.5) * 0.12 * f;
+        }
+        return w;
+    }
     void main() {
         vec4 wp = Model * vec4(position, 1.0);
+        wp.xyz = sway(wp.xyz, normal.w - 1.0);
         gl_Position = Projection * wp;
         vd = -(View * wp).z;
         vn = (View * vec4(normal.xyz, 0.0)).xyz;
@@ -3742,7 +3906,10 @@ fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
                 depth_test: Comparison::LessOrEqual,
                 ..Default::default()
             },
-            uniforms: vec![UniformDesc::new("View", UniformType::Mat4)],
+            uniforms: vec![
+                UniformDesc::new("View", UniformType::Mat4),
+                UniformDesc::new("Wind", UniformType::Float4),
+            ],
             ..Default::default()
         },
     )
@@ -3775,6 +3942,80 @@ fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
         normal_mat,
         edge_mat,
     })
+}
+
+/// 지형 재질(0142): 기본 재질과 같되 꼭짓점을 바람으로 민다(풀 끝·잎 무더기·불꽃 — `scenery::sway`가 실은 몫). 못 만들면 없음(바람 없이).
+fn wind_material() -> Option<Material> {
+    const VS: &str = r#"#version 100
+    attribute vec3 position;
+    attribute vec2 texcoord;
+    attribute vec4 color0;
+    attribute vec4 normal;
+    varying lowp vec4 color;
+    varying lowp vec2 uv;
+    uniform mat4 Model;
+    uniform mat4 Projection;
+    // 바람(0142): 법선 칸 넷째 값 − 1 = 흔들리는 몫. 양수 = 풀·잎(느린 돌풍 + 플레이어가 밟으면 눕는다), 음수 = 불꽃(빠른 일렁임).
+    // Wind = (끊은 시각, 세기, 플레이어 x, 플레이어 z).
+    uniform vec4 Wind;
+    vec3 sway(vec3 w, float s) {
+        float ph = w.x * 0.9 + w.z * 0.7;
+        if (s > 0.0) {
+            float g = sin(Wind.x * 1.7 + ph) * 0.6 + sin(Wind.x * 3.3 + ph * 1.9) * 0.4;
+            w.x += g * 0.075 * s * Wind.y;
+            w.z += g * 0.045 * s * Wind.y;
+            vec2 d = w.xz - Wind.zw;
+            float push = clamp(1.0 - length(d) / 0.9, 0.0, 1.0) * min(s, 1.0);
+            w.xz += normalize(d + vec2(0.0001, 0.0)) * push * 0.28;
+            w.y -= push * 0.14;
+        } else if (s < 0.0) {
+            float f = -s;
+            float g = sin(Wind.x * 9.0 + ph * 5.0) * 0.6 + sin(Wind.x * 14.3 + ph * 3.0) * 0.4;
+            w.x += g * 0.07 * f;
+            w.z += g * 0.05 * f;
+            w.y += (sin(Wind.x * 11.0 + ph) * 0.5 + 0.5) * 0.12 * f;
+        }
+        return w;
+    }
+    void main() {
+        vec4 w = Model * vec4(position, 1.0);
+        w.xyz = sway(w.xyz, normal.w - 1.0);
+        gl_Position = Projection * w;
+        color = color0 / 255.0;
+        uv = texcoord;
+    }"#;
+    const FS: &str = r#"#version 100
+    precision mediump float;
+    varying lowp vec4 color;
+    varying lowp vec2 uv;
+    uniform sampler2D Texture;
+    void main() {
+        gl_FragColor = color * texture2D(Texture, uv);
+    }"#;
+    load_material(
+        ShaderSource::Glsl {
+            vertex: VS,
+            fragment: FS,
+        },
+        MaterialParams {
+            pipeline_params: PipelineParams {
+                depth_write: true,
+                depth_test: Comparison::LessOrEqual,
+                color_blend: Some(miniquad::BlendState::new(
+                    miniquad::Equation::Add,
+                    miniquad::BlendFactor::Value(miniquad::BlendValue::SourceAlpha),
+                    miniquad::BlendFactor::OneMinusValue(miniquad::BlendValue::SourceAlpha),
+                )),
+                ..Default::default()
+            },
+            uniforms: vec![UniformDesc::new("Wind", UniformType::Float4)],
+            ..Default::default()
+        },
+    )
+    .map_err(|e| {
+        warn!("wind material: {e:?}");
+    })
+    .ok()
 }
 
 /// 그림자 가림판(0045): 한 변 칸 수와 덮는 넓이(m). 0.125m 칸 — 바닥 빛 지도(0.25m)보다 촘촘해 캐릭터 실루엣이 읽힌다.
@@ -4208,13 +4449,138 @@ fn loot_beam(fl: &Drape, p: Vec3, col: Color, fade: f32, time: f32, seed: f32) {
         let u = (time * 0.55 + k as f32 / 3.0 + seed * 0.37).fract();
         let a = (1.0 - u) * fade;
         let x = (seed * 1.3 + k as f32 * 2.1 + time).sin() * 0.08;
-        draw_cube(
-            p + vec3(x, 0.2 + u * 2.3, -x),
-            Vec3::splat(0.05),
-            None,
-            with_a(col, a),
-        );
+        gem(p + vec3(x, 0.2 + u * 2.3, -x), 0.09, with_a(col, a));
     }
+}
+
+/// 줍는 것의 몸 음영(0142): 스스로 빛나는 것이라 그늘진 면도 조금은 남긴다(면이 읽힐 만큼은 진하게).
+const LOOT_SHADE: f32 = 0.5;
+/// 줍는 것의 몸을 빛기둥 앞으로 당기는 거리(m — 기둥 바깥 반지름보다 조금 더)·어두운 테의 두께(몸의 배율)·테를 뒤로 미는 거리.
+const LOOT_FRONT: f32 = 0.3;
+const LOOT_RIM: f32 = 1.35;
+const LOOT_RIM_BACK: f32 = 0.06;
+
+/// 빛기둥 앞(카메라 쪽)의 자리 — 줍는 것의 몸이 기둥의 빛에 묻히지 않게.
+fn loot_front(p: Vec3) -> Vec3 {
+    p + (look().eye - p).normalize_or_zero() * LOOT_FRONT
+}
+
+/// 줍는 것의 몸(0142): 면마다 음영 + 뒤에 깔린 어두운 같은 꼴(조금 크게 — 밝은 빛기둥·바닥 위에서 테가 된다).
+fn loot_body(c: Vec3, faces: &[[Vec3; 3]], col: Color, rot: Quat) {
+    let grown: Vec<[Vec3; 3]> = faces.iter().map(|t| t.map(|p| p * LOOT_RIM)).collect();
+    loot_rimmed(c, faces, &grown, col, rot);
+}
+
+/// `loot_body`의 속: 테의 꼴(`rim`)을 따로 받는다.
+fn loot_rimmed(c: Vec3, faces: &[[Vec3; 3]], rim: &[[Vec3; 3]], col: Color, rot: Quat) {
+    let back = c - (look().eye - c).normalize_or_zero() * LOOT_RIM_BACK;
+    let dark = Color::new(col.r * 0.2, col.g * 0.17, col.b * 0.28, 1.0);
+    shaded_tris(back, rim, dark, 0.0, rot);
+    shaded_tris(c, faces, col, LOOT_SHADE, rot);
+}
+/// 엎어진 항아리(0142): 눕힌 각(라디안)·배가 땅에 닿게 올리는 높이(m).
+const JAR_LIE: f32 = 1.38;
+const JAR_LIE_LIFT: f32 = 0.2;
+
+/// 면마다 음영이 다른 삼각형 묶음 — `tris`는 가운데 `c` 기준 꼭짓점 셋씩, 법선은 바깥(가운데에서 먼 쪽)으로.
+fn shaded_tris(c: Vec3, tris: &[[Vec3; 3]], col: Color, shade: f32, rot: Quat) {
+    let l = LIGHT_DIR.normalize();
+    let mut vertices = Vec::with_capacity(tris.len() * 3);
+    let mut indices = Vec::with_capacity(tris.len() * 3);
+    // 바깥 = 꼴의 가운데(꼭짓점 평균)에서 먼 쪽 — 원점에서 재면 길쭉하게 솟은 꼴(뿌리 가시)의 옆면이 뒤집힌다.
+    let n_pts = (tris.len() * 3).max(1) as f32;
+    let mid = rot * (tris.iter().flatten().copied().sum::<Vec3>() / n_pts);
+    for t in tris {
+        let [a, b, d] = t.map(|p| rot * p);
+        let mut n = (b - a).cross(d - a).normalize_or_zero();
+        if n.dot((a + b + d) / 3.0 - mid) < 0.0 {
+            n = -n;
+        }
+        let k = 1.0 - shade + shade * n.dot(l).max(0.0);
+        let k = Color::new(col.r * k, col.g * k, col.b * k, col.a);
+        let base = vertices.len() as u16;
+        for p in [a, b, d] {
+            let p = c + p;
+            vertices.push(Vertex::new(p.x, p.y, p.z, 0.0, 0.0, k));
+        }
+        indices.extend_from_slice(&[base, base + 1, base + 2]);
+    }
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
+}
+
+/// 솟는 뿌리 가시의 면(밑동 가운데 기준) — `(몸 여덟, 끝 넷)`: 반폭 `base`의 네모 밑동에서 높이 `h`의 목(반폭 `neck`)까지 가늘어지고
+/// 그 위로 `tip`만큼 뾰족하다. `lean` = 높이 1마다 옆으로 기우는 양.
+pub fn spike_faces(
+    base: f32,
+    neck: f32,
+    h: f32,
+    tip: f32,
+    lean: Vec3,
+) -> (Vec<[Vec3; 3]>, Vec<[Vec3; 3]>) {
+    let corner = |k: usize, r: f32, y: f32| {
+        let (sx, sz) = [(1.0, 1.0), (-1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)][k % 4];
+        vec3(sx * r, y, sz * r) + lean * y
+    };
+    let top = Vec3::Y * (h + tip) + lean * (h + tip) * 1.4;
+    let (mut body, mut point) = (Vec::with_capacity(8), Vec::with_capacity(4));
+    for k in 0..4 {
+        let (a, b) = (corner(k, base, 0.0), corner(k + 1, base, 0.0));
+        let (c, d) = (corner(k, neck, h), corner(k + 1, neck, h));
+        body.push([a, b, d]);
+        body.push([a, d, c]);
+        point.push([c, d, top]);
+    }
+    (body, point)
+}
+
+/// 팔면체의 면 여덟(가운데 기준): 가로 반지름 `r`(x·z), 위·아래 꼭짓점까지 `up`·`down`.
+pub fn octa_faces(r: Vec2, up: f32, down: f32) -> Vec<[Vec3; 3]> {
+    let ring = [
+        vec3(r.x, 0.0, 0.0),
+        vec3(0.0, 0.0, r.y),
+        vec3(-r.x, 0.0, 0.0),
+        vec3(0.0, 0.0, -r.y),
+    ];
+    let (top, bottom) = (Vec3::Y * up, Vec3::NEG_Y * down);
+    let mut out = Vec::with_capacity(8);
+    for i in 0..4 {
+        let (a, b) = (ring[i], ring[(i + 1) % 4]);
+        out.push([top, a, b]);
+        out.push([bottom, b, a]);
+    }
+    out
+}
+
+/// 둥근 덩이의 면 서른둘(가운데 기준): 팔면체의 면을 넷으로 쪼개 반지름 `r`의 공에 붙인다.
+pub fn ball_faces(r: f32) -> Vec<[Vec3; 3]> {
+    let on = |p: Vec3| p.normalize() * r;
+    let mut out = Vec::with_capacity(32);
+    for [a, b, d] in octa_faces(Vec2::ONE, 1.0, 1.0) {
+        let (ab, bd, da) = (on(a + b), on(b + d), on(d + a));
+        let (a, b, d) = (on(a), on(b), on(d));
+        out.extend_from_slice(&[[a, ab, da], [ab, b, bd], [da, bd, d], [ab, bd, da]]);
+    }
+    out
+}
+
+/// 카메라를 보는 둥근 빛무리: 가운데 `col` → 가장자리 투명(0142 — 겹 정육면체의 반투명 겉 대신).
+fn glow_disc(p: Vec3, r: f32, col: Color) {
+    const N: usize = 10;
+    let (right, up) = facing_axes(p);
+    let rim = with_a(col, 0.0);
+    let mut pts = Vec::with_capacity(N + 1);
+    let mut idx = Vec::with_capacity(N * 3);
+    pts.push((p, col));
+    for i in 0..N {
+        let (s, k) = (std::f32::consts::TAU * i as f32 / N as f32).sin_cos();
+        pts.push((p + (right * k + up * s) * r, rim));
+        idx.extend_from_slice(&[0, 1 + i as u16, 1 + ((i + 1) % N) as u16]);
+    }
+    flat_mesh(&pts, &idx);
 }
 
 fn beam(c: Vec3, r: f32, h: f32, col: Color) {
@@ -4259,6 +4625,71 @@ mod tests {
         assert!(!fits(6000, 14_000, 3000, 7000));
         assert!(!fits(9000, 0, 1000, 10), "vertices alone still count");
         // 모델 하나는 늘 빈 배치에 들어간다 — models.rs `every_bundled_model_fits_one_draw_call`.
+    }
+
+    /// 0142 구운 불꽃: 밑동은 그릇에 붙어 가만히, 끝으로 갈수록 크게 일렁인다 — 몫은 늘 음수 쪽(풀의 느린 바람과 다른 박자)이고
+    /// 법선 칸에 실으면 0보다 크다(0은 "법선 없음"으로 읽힐 수 있다).
+    #[test]
+    fn a_baked_flame_flickers_at_the_tip_and_holds_at_the_bowl() {
+        assert_eq!(flame_sway(1.0, 1.0, 1.6), 0.0);
+        let (mid, tip) = (flame_sway(1.3, 1.0, 1.6), flame_sway(1.6, 1.0, 1.6));
+        assert!(tip < mid && mid < 0.0, "{mid} {tip}");
+        assert!(1.0 + tip > 0.0 && 1.0 + flame_sway(9.0, 1.0, 1.6) > 0.0);
+        // 높이가 없는 부위(납작한 빛)도 나눗셈에서 터지지 않는다.
+        assert!(flame_sway(1.0, 1.0, 1.0).is_finite());
+    }
+
+    /// 0142 뿌리 가시: 밑동은 땅(y = 0)에 붙고 위로 갈수록 가늘어지며 끝이 가장 높다 — 솟는 동안(높이 0에 가까워도) 면이 뒤집히지 않는다.
+    #[test]
+    fn a_root_spike_tapers_from_a_wide_foot_to_a_point() {
+        let (body, tip) = spike_faces(0.2, 0.09, 1.0, 0.4, vec3(0.1, 0.0, 0.0));
+        assert_eq!((body.len(), tip.len()), (8, 4));
+        let foot: Vec<Vec3> = body
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|p| p.y == 0.0)
+            .collect();
+        assert!(!foot.is_empty());
+        for p in &foot {
+            assert!((p.x.abs() - 0.2).abs() < 1e-6 && (p.z.abs() - 0.2).abs() < 1e-6);
+        }
+        let top = tip.iter().flatten().map(|p| p.y).fold(f32::MIN, f32::max);
+        assert!((top - 1.4).abs() < 1e-6, "{top}");
+        // 목은 밑동보다 가늘다(기운 만큼 옆으로 밀린 것은 빼고 잰다).
+        for p in body.iter().flatten().filter(|p| p.y == 1.0) {
+            assert!((p.x - 0.1).abs() <= 0.09 + 1e-6 && p.z.abs() <= 0.09 + 1e-6);
+        }
+        let (low, _) = spike_faces(0.2, 0.09, 0.02, 0.0, Vec3::ZERO);
+        assert!(low.iter().flatten().all(|p| p.is_finite()));
+    }
+
+    /// 0142 줍는 것의 몸: 결정은 면 여덟·둥근 덩이는 면 서른둘, 꼭짓점은 준 치수 안에 있고(둥근 덩이는 모두 반지름 위)
+    /// 면이 찌그러지지 않았다 — 정육면체 대신 쓰는 꼴이라 크기가 어긋나면 빛기둥·발밑 고리와 안 맞는다.
+    #[test]
+    fn loot_bodies_are_a_crystal_and_a_round_bead_of_the_asked_size() {
+        let octa = octa_faces(vec2(0.15, 0.1), 0.3, 0.2);
+        assert_eq!(octa.len(), 8);
+        for t in &octa {
+            let area = (t[1] - t[0]).cross(t[2] - t[0]).length();
+            assert!(area > 1e-4, "a collapsed face");
+            for p in t {
+                assert!(p.x.abs() <= 0.15 + 1e-6 && p.z.abs() <= 0.1 + 1e-6);
+                assert!(p.y <= 0.3 + 1e-6 && p.y >= -0.2 - 1e-6);
+            }
+        }
+        // 위·아래 길이가 다르면 위쪽이 더 길다(조각 — 종 꼴도 상자도 아니게).
+        let top = octa.iter().flatten().map(|p| p.y).fold(f32::MIN, f32::max);
+        let low = octa.iter().flatten().map(|p| p.y).fold(f32::MAX, f32::min);
+        assert!((top - 0.3).abs() < 1e-6 && (low + 0.2).abs() < 1e-6);
+        let ball = ball_faces(0.17);
+        assert_eq!(ball.len(), 32);
+        for t in &ball {
+            assert!((t[1] - t[0]).cross(t[2] - t[0]).length() > 1e-4);
+            for p in t {
+                assert!((p.length() - 0.17).abs() < 1e-5, "off the sphere: {p}");
+            }
+        }
     }
 
     /// 0141 휘두름의 초승달: 가로 베기는 칼이 지나간 쪽에서 시작해 머리가 반대쪽 끝에 닿고(오른쪽 → 왼쪽 = 작은 각에서 큰 각으로),
