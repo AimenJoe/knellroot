@@ -69,14 +69,14 @@ async function main() {
   await page.keyboard.down('KeyW'); await page.waitForTimeout(2200); await page.keyboard.up('KeyW');
   await page.waitForTimeout(800); await shot('00g-waking');
   await page.waitForTimeout(1500); await press('KeyL'); await page.waitForTimeout(900); await shot('00h-boss-lock');
-  // 설정(0052): 멈춤 → 넷째 줄(나무 다음, 0106) → 조작은 끝에서 둘째(위로 두 번 — 전체 화면 줄이 있든 없든).
-  await press('Escape'); await page.waitForTimeout(200); await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300);
+  // 설정(0052): 멈춤 → 다섯째 줄(나무·도감 다음, 0106·0130) → 조작은 끝에서 둘째(위로 두 번 — 전체 화면 줄이 있든 없든).
+  await press('Escape'); await page.waitForTimeout(200); await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(300);
   await shot('00h2-settings');
   await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(300);
   await shot('00i-controls');
   await press('Escape'); await page.waitForTimeout(200); await press('Escape'); await page.waitForTimeout(200);
   // 개발 시나리오로(멈춤 → 타이틀로 → 묻는 창 → DEV → 첫 PoC).
-  // 닫으면 연 줄로(0066): 조작 → 설정 → 멈춤의 "설정"(넷째)에 커서가 있다 → 아래로 셋 = 타이틀로(개발·처음부터 다음, 0090).
+  // 닫으면 연 줄로(0066): 조작 → 설정 → 멈춤의 "설정"(다섯째)에 커서가 있다 → 아래로 셋 = 타이틀로(개발·처음부터 다음, 0090).
   await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);

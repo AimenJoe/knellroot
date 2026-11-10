@@ -13,6 +13,18 @@
 | `husk_v2_low.glb`(+ `_tex.png`) | 2026-11-05 | 위를 `meshy_convert.py ... 1.5 700 128`로 줄인 것(정점 656·삼각형 554, 3분) — `root_husk.py`가 읽는다 |
 | `thorn_v2.glb` | 2026-11-05 | 가시짐승 v2(Meshy 이름 "Crystalback Piglet", 사장이 웹 Meshy 6 Lite — 입력 Gemini v2 그림), 삼각형 98,462 · 텍스처 셋. 무료 → CC BY 4.0 |
 | `thorn_v2_low.glb`(+ `_tex.png`) | 2026-11-05 | 위를 `meshy_convert.py ... 1.3 700 128`로 줄인 것(정점 682·삼각형 614) — `thorn_beast.py`가 읽는다 |
+| `shellback_v1.glb` | 2026-11-09 | 등딱지짐승 v1(Meshy 이름 "Crystalback Turtle", 사장이 Image to 3D — 입력 Gemini 그림 `../ai/knellroot/shellback_v2_*.png`, 프롬프트 `docs/art/gemini-prompts-0132.md`), 삼각형 196,104 · 텍스처 셋. 무료 → CC BY 4.0 |
+| `shellback_v1_low.glb`(+ `_tex.png`) | 2026-11-09 | 위를 `meshy_convert.py ... 1.2 700 128`로 줄인 것(정점 642·삼각형 614, 15분) — `shellback.py`가 읽는다 |
+| `pod_v1.glb` | 2026-11-09 | 꼬투리 v1(Meshy 이름 "Sproutback Frog", 사장이 Image to 3D — 입력 `../ai/knellroot/pod_v1_front.png`), 삼각형 169,354 · 텍스처 셋. 무료 → CC BY 4.0 |
+| `pod_v1_low.glb`(+ `_tex.png`) | 2026-11-09 | 위를 `meshy_convert.py ... 0.9 700 128`로 줄인 것(정점 655·삼각형 564, 8분) — `pod.py`가 읽는다(꼬투리 부위는 텍스처 색으로 가른다) |
+| `bellkeeper_v1.glb` | 2026-11-09 | 깨진 종지기 v1(Meshy 이름 "Hollow Lantern Bellringer", 사장이 Image to 3D — 입력 `../ai/knellroot/bellkeeper_v1_front.png`), 삼각형 164,932 · 텍스처 셋. 무료 → CC BY 4.0. 종은 왼손 앞에 놓였다 |
+| `bellkeeper_v1_low.glb`(+ `_tex.png`) | 2026-11-09 | 위를 `meshy_convert.py ... 3.0 1500 256`으로 줄인 것(정점 1,498·삼각형 1,318, 7분) — `bellkeeper.py`가 읽는다(종·핵·눈은 텍스처 색으로 가른다) |
+| `hearth_v1.glb` | 2026-11-09 | 불 지키는 주민 v1(Meshy 이름 "Little Apron Bandit", 사장이 Image to 3D — 입력 `../ai/knellroot/hearth_v1_front.png`), 텍스처 셋. 무료 → CC BY 4.0. Meshy가 짧은 꼬리를 더했다 |
+| `hearth_v1_low.glb`(+ `_tex.png`) | 2026-11-09 | 위를 `meshy_convert.py ... 1.3 700 128`로 줄인 것(정점 612·삼각형 582, 5분) — `res_hearth.py`가 읽는다 |
+| `water_v1.glb` | 2026-11-09 | 물 모으는 주민 v1(Meshy 이름 "Sleepy Blue Mole", 사장이 Image to 3D — 입력 `../ai/knellroot/water_v1_front.png`), 텍스처 셋. 무료 → CC BY 4.0 |
+| `water_v1_low.glb`(+ `_tex.png`) | 2026-11-09 | 위를 `meshy_convert.py ... 1.35 700 128`로 줄인 것(정점 700·삼각형 622, 5분) — `res_water.py`가 읽는다 |
+| `cloth_v1.glb` | 2026-11-09 | 꿰매는 주민 v1(Meshy 이름 "Patchwork Lamb", 사장이 Image to 3D — 입력 `../ai/knellroot/cloth_v2_front.png`), 텍스처 셋. 무료 → CC BY 4.0 |
+| `cloth_v1_low.glb`(+ `_tex.png`) | 2026-11-09 | 위를 `meshy_convert.py ... 1.35 700 128`로 줄인 것(정점 659·삼각형 523, 5분) — `res_cloth.py`가 읽는다 |
 
 게임에 넣을 때: `blender -b -P tools/art/blender/meshy_convert.py -- <원본> <출력> 1.4 2300 256`(줄이기 + 새 UV + 색 굽기).
 배포에 쓰면 `assets/LICENSES.md`에 "Meshy로 만든 모델(AI), CC BY 4.0"을 적는다.

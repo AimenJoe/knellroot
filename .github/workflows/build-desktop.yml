@@ -1,0 +1,177 @@
+name: build-desktop
+# PC 빌드(0135, nail 0240에서 가져옴): Windows(x64 zip) · macOS(인텔+애플 실리콘 겸용 .app zip) · Linux(x64 tar.gz).
+# - release/** push: 개발판(기본 기능 = 개발 메뉴)을 Actions 아티팩트로.
+# - release.yml이 부를 때(release_tag): 운영판(--no-default-features)을 만들어 그 태그의 GitHub Release에 붙인다.
+# - 손으로: Actions → build-desktop → Run workflow(브랜치 고르기).
+# main push마다는 돌리지 않는다: macOS 러너는 분당 비용이 리눅스의 약 10배라(레포를 비공개로 바꾸면 유료) 릴리스·개발판에서만.
+# 묶음 안: 실행 파일 하나 + 라이선스 셋. 모델·소리·글꼴은 모두 바이너리 안(build.rs·include_bytes!)이라 assets 폴더가 없다 —
+# nail이 겪은 "바로가기·Finder로 켜면 에셋을 못 찾음"(지금 폴더 기준 읽기)이 여기엔 없다.
+# 서명: macOS는 임시(ad-hoc) 서명만, Windows는 서명 없음 — docs/decisions/0135.
+# 액션 판: node24 메이저(build-android.yml과 같은 판).
+on:
+  push:
+    branches: ['release/**']
+    paths:
+      - 'src/**'
+      - 'assets/**'
+      - 'third_party/**'
+      - 'pc/**'
+      - 'build.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/build-desktop.yml'
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_tag:
+        type: string
+        required: true
+
+concurrency:
+  group: desktop-${{ inputs.release_tag || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+          - os: macos-latest
+            name: macos
+          # glibc를 낮게: 오래된 배포판·Steam Deck(SteamOS)에서도 뜨게 22.04에서 빌드한다.
+          - os: ubuntu-22.04
+            name: linux
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write   # release_tag일 때 Release에 붙이기
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.name == 'macos' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
+
+      - name: Linux build deps
+        if: matrix.name == 'linux'
+        # libudev: 패드(gamepads → gilrs)가 리눅스에서 장치를 찾을 때 쓴다.
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev libudev-dev
+
+      - name: Flavor
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [ -n "$RELEASE_TAG" ]; then
+            echo "FEATURES=--no-default-features" >> "$GITHUB_ENV"; echo "FLAVOR=release" >> "$GITHUB_ENV"
+          else
+            echo "FEATURES=" >> "$GITHUB_ENV"; echo "FLAVOR=dev" >> "$GITHUB_ENV"
+          fi
+          echo "VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)" >> "$GITHUB_ENV"
+
+      # 묶음에 같이 넣는 고지: 제3자 라이선스(tools/licenses.py가 만든 것 — Meshy 모델 CC BY 4.0 표기 포함), 에셋 출처, 글꼴 OFL 원문.
+      - name: Stage notices
+        run: |
+          mkdir -p stage
+          cp assets/THIRD_PARTY_LICENSES.txt assets/LICENSES.md assets/fonts/GowunBatang-OFL.txt stage/
+
+      - name: Build (Windows)
+        if: matrix.name == 'windows'
+        run: cargo build --release $FEATURES
+      - name: Build (Linux)
+        if: matrix.name == 'linux'
+        run: cargo build --release $FEATURES
+      - name: Build (macOS, universal)
+        if: matrix.name == 'macos'
+        run: |
+          cargo build --release $FEATURES --target aarch64-apple-darwin
+          cargo build --release $FEATURES --target x86_64-apple-darwin
+          lipo -create -output target/release-knellroot-universal \
+            target/aarch64-apple-darwin/release/knellroot target/x86_64-apple-darwin/release/knellroot
+          lipo -info target/release-knellroot-universal
+
+      - name: Package (Windows)
+        if: matrix.name == 'windows'
+        run: |
+          # 실행 파일 아이콘(pc/knellroot.ico, tools/icons/make_icons.py)을 rcedit로 넣는다(빌드 의존성 없이).
+          curl -sSL -o rcedit.exe https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe
+          ./rcedit.exe target/release/knellroot.exe --set-icon pc/knellroot.ico \
+            --set-version-string ProductName "Knellroot" \
+            --set-version-string FileDescription "Knellroot" \
+            --set-file-version "$VERSION" --set-product-version "$VERSION"
+          D="Knellroot"
+          mkdir -p "$D"
+          cp target/release/knellroot.exe "$D/Knellroot.exe"
+          cp stage/* "$D/"
+          7z a -tzip "knellroot-windows-$FLAVOR.zip" "$D" > /dev/null
+          ls -la "knellroot-windows-$FLAVOR.zip"
+          echo "PKG=knellroot-windows-$FLAVOR.zip" >> "$GITHUB_ENV"
+
+      - name: Package (macOS)
+        if: matrix.name == 'macos'
+        run: |
+          APP="Knellroot.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/release-knellroot-universal "$APP/Contents/MacOS/knellroot"
+          cp stage/* "$APP/Contents/Resources/"
+          cp pc/knellroot.icns "$APP/Contents/Resources/knellroot.icns"
+          cat > "$APP/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>Knellroot</string>
+            <key>CFBundleDisplayName</key><string>Knellroot</string>
+            <key>CFBundleIdentifier</key><string>io.github.aimenjoe.knellroot</string>
+            <key>CFBundleExecutable</key><string>knellroot</string>
+            <key>CFBundleIconFile</key><string>knellroot.icns</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+            <key>CFBundleVersion</key><string>${VERSION}</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>LSApplicationCategoryType</key><string>public.app-category.action-games</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          EOF
+          plutil -lint "$APP/Contents/Info.plist"
+          # 임시(ad-hoc) 서명: lipo로 합치면 arm64의 링커 서명이 깨져 애플 실리콘에서 켜지지 않는다.
+          # 개발자 ID 서명·공증은 Apple Developer 가입 뒤(0135). 그 전에는 처음 열 때 "개인정보 보호 및 보안 → 그래도 열기".
+          codesign --force --deep -s - "$APP"
+          codesign --verify --verbose "$APP"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "knellroot-macos-$FLAVOR.zip"
+          ls -la "knellroot-macos-$FLAVOR.zip"
+          echo "PKG=knellroot-macos-$FLAVOR.zip" >> "$GITHUB_ENV"
+
+      - name: Package (Linux)
+        if: matrix.name == 'linux'
+        run: |
+          D="Knellroot"
+          mkdir -p "$D"
+          cp target/release/knellroot "$D/knellroot"
+          cp stage/* "$D/"
+          tar czf "knellroot-linux-$FLAVOR.tar.gz" "$D"
+          ls -la "knellroot-linux-$FLAVOR.tar.gz"
+          ldd "$D/knellroot" | head -20
+          objdump -T "$D/knellroot" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+          echo "PKG=knellroot-linux-$FLAVOR.tar.gz" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: knellroot-${{ matrix.name }}-${{ env.FLAVOR }}-${{ github.sha }}
+          path: ${{ env.PKG }}
+          retention-days: 7
+
+      - name: Attach to Release
+        if: inputs.release_tag != ''
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: ${{ env.PKG }}

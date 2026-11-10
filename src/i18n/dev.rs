@@ -48,6 +48,22 @@ pub const GATE: Pair = (
     "첫 스테이지 성소 문 앞(보스)",
     "stage 1 at the sanctum gate (boss)",
 );
+pub const VILLAGE: Pair = (
+    "둘째 지역(떠난 마을) 어귀부터",
+    "region 2 (village) from its edge",
+);
+pub const RESIDENTS: Pair = (
+    "둘째 지역 주민 곁에서(말 걸기)",
+    "region 2 beside a resident (talk)",
+);
+pub const STONES: Pair = (
+    "둘째 지역 새긴 돌 곁에서(읽기)",
+    "region 2 beside a carved stone (read)",
+);
+pub const CHEST: Pair = (
+    "둘째 지역 상자 곁에서(떨어진 아이템)",
+    "region 2 beside a chest (dropped loot)",
+);
 pub const STAGE_NOTE: Pair = (
     "이 슬롯의 장신구·잔불로 진짜 스테이지를 돈다. 아무것도 저장하지 않는다.",
     "the real stage with this slot's charms and embers; nothing is saved",
@@ -80,6 +96,10 @@ pub const PAIRS: &[Pair] = &[
     DEV_HINT,
     ENTRANCE,
     GATE,
+    VILLAGE,
+    RESIDENTS,
+    STONES,
+    CHEST,
     STAGE_NOTE,
     LAB_START,
     LAB_NOTE,
@@ -104,7 +124,27 @@ pub fn spec_label(name: &'static str) -> &'static str {
 
 /// 개발 시나리오(`scenario::LIST`의 영어 이름) → (한국어 이름, 무엇을 보나). F3 아레나 줄은 기본 글꼴이라 영어 그대로.
 pub const SCENARIO_KO: &[(&str, &str, &str)] = &[
+    (
+        "warden phase two",
+        "문지기 2단계",
+        "0133 시작하자마자 전환(맞지 않음·밀쳐냄)·뿌리 기둥 줄·돌진 뒤 내려치기",
+    ),
+    (
+        "bellkeeper phase two",
+        "종지기 2단계",
+        "0133 시작하자마자 전환(맞지 않음·밀쳐냄)·선 자리에 종 내던지기 + 고리·돌진 뒤 울림",
+    ),
+    (
+        "broken bellkeeper",
+        "깨진 종지기",
+        "0125 울림 고리(뛰거나 구르며 지나기)·종 조각 부채꼴(패링하면 되돌아감)·종 끌기 돌진",
+    ),
     ("elites", "엘리트", "0112 엘리트 성질: 굳은·되풀이·남는"),
+    (
+        "shellback + pods + scavenger",
+        "등딱지짐승 + 꼬투리 + 청소자",
+        "0120 앞 막기(앞 평타는 튕김)·심은 원판·깡충 물러나기·청소자는 덤비지 않음",
+    ),
     (
         "boss arena",
         "보스 아레나",

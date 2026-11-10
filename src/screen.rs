@@ -37,6 +37,14 @@ pub fn active() -> bool {
     DESKTOP_FS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// PC(0135): 창을 전체 화면으로 열었으면 그 상태를 적어 둔다(main.rs `window_conf`가 prefs에서 읽어 연다).
+pub fn start_desktop(on: bool) {
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    DESKTOP_FS.store(on, std::sync::atomic::Ordering::Relaxed);
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
+    let _ = on;
+}
+
 /// 켜거나 끈다 — 메뉴에서 고른 프레임에 부른다.
 pub fn toggle() {
     #[cfg(target_arch = "wasm32")]

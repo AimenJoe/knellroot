@@ -2,6 +2,7 @@
 //! (`StageDef` 한 개). 진행은 월드 밖에서 월드를 지켜보며 적을 세우고 문을 여닫는다 — 월드는 스테이지를 모른다(경계 그대로).
 //! 앱은 `StageRun::tick`의 결과(`StageOut`)로 장면만 바꾼다(흐름은 `app::flow`의 순수 함수).
 pub mod sanctuary;
+pub mod village;
 
 use macroquad::prelude::*;
 
@@ -75,6 +76,9 @@ pub struct Light {
     pub pos: Vec3,
     pub color: Color,
     pub radius: f32,
+    /// 천장 틈 빛줄기(0119 → 0124): 둥글게 퍼지지 않고 위에서 내리꽂는 기둥 — `radius`는 기둥의 가로 반지름,
+    /// 그 안의 것은 높이와 상관없이 위를 보는 면부터 밝다(서면 몸이 비친다).
+    pub shaft: bool,
 }
 
 /// 지도에서 읽은 레벨(정적인 것).
@@ -194,6 +198,17 @@ impl Level {
                             pos: p + Vec3::Y * 1.2,
                             color: Color::new(1.0, 0.62, 0.25, 1.0),
                             radius: 7.0,
+                            shaft: false,
+                        });
+                    }
+                    // 천장 틈 빛줄기(0118 T2, 땅속): 표지 + 옅은 빛(굽는 지형·배우가 받는다). 그림은 렌더가 표지로.
+                    SHAFT_GLYPH => {
+                        lv.marks.push((SHAFT_GLYPH, p));
+                        lv.lights.push(Light {
+                            pos: p + Vec3::Y * 1.0,
+                            color: Color::new(0.78, 0.82, 1.0, 1.0),
+                            radius: SHAFT_R,
+                            shaft: true,
                         });
                     }
                     other => lv.marks.push((other, p)),
@@ -388,21 +403,46 @@ pub struct StageDef {
     pub obj_gate: Tr,
     pub obj_core: Tr,
     pub boss_wakes: Tr,
-    /// 상자(지도 `C`, 위에서부터 차례)마다 든 장신구(0064 M3). 이미 가졌으면 잔불 `CHEST_EMBERS`.
-    pub chest_charms: &'static [crate::charms::Id],
+    /// 상자(지도 `C`, 위에서부터 차례)마다 든 것(0064 M3 → 0117: 장신구 또는 무기). 이미 가졌으면 잔불 `CHEST_EMBERS`.
+    pub chest_loot: &'static [Loot],
     /// 문지기를 처음 이겼을 때 주는 장신구.
     pub boss_charm: Option<crate::charms::Id>,
+    /// 새긴 돌(0129 C4, 지도 `N`, 위에서부터 차례)마다 새긴 글 — 곁에서 상호작용하면 화면 아래 글 판(평범한 삶의 흔적, lore 0116).
+    pub stones: &'static [Tr],
     /// 숨은 물건 기록 이름의 앞(0105): `<앞>.<종류>.<그 종류의 몇째>` — 스테이지가 늘어도 섞이지 않게.
     pub find_prefix: &'static str,
     /// 지도에 서 있는 적(0113): (지도 표지, 종류) — 제자리에서 제 일을 하다 알아차리면 쫓는다. 화로에서 쉬면 다시 선다.
     /// 물결(`waves`)은 시험·PoC·특별한 기믹 스테이지에만 — 보통 스테이지는 넓은 지역 + 밀집도(사장 2026-11-08).
     pub spawns: &'static [(char, Kind)],
+    /// 청소자 자리(0120 — 0116 ECO-10 "같은 종, 다른 역할"): 이 표지에 선 적은 보고도 덤비지 않고 먹는다(맞거나 동료가 깨면 싸운다).
+    pub docile: &'static [char],
     /// 엘리트(0112 → 0113): (지도 표지, 종류, 성질) — 서 있는 적과 같은 꼴, 단 그 판에 한 번 쓰러뜨리면 쉬어도 다시 서지 않는다.
     /// 기록 이름은 `<find_prefix>.elite.<이 표의 몇째>`(처음 쓰러뜨린 것만 덤).
     pub elites: &'static [(char, Kind, crate::enemy::Affix)],
     /// 처음(문이 닫혀 있을 때)의 목표 글 — 서 있는 적 스테이지는 문을 여는 장치를 찾게.
     pub obj_explore: Tr,
+    /// 장치를 당겼을 때의 카드(성소 "어딘가에서 문이 열렸다", 마을 "사다리가 내려왔다").
+    pub card_lever: Tr,
+    /// 지하 몇 m(0118, 연출 표 — 지층 단면 전환·카드가 같이 쓴다). 차례대로 깊어진다(시험).
+    pub depth_m: u32,
+    /// 구역 등급(0112·0116, 1부터): 잡몹의 체력·자세·잔불(등급 3부터 피해 2). 깊을수록 높다(시험).
+    pub tier: u8,
+    /// 지역 환경(0118 T2): 원경·달빛·안개·떠다니는 것·식생 — `backdrop::SURFACE`·`UNDERGROUND`.
+    pub env: &'static crate::backdrop::Env,
 }
+
+/// 판의 차례(0118, v0.5.0 T1): 성소 → 떠난 마을. 지도 `D`(내려가는 길, 핵을 거둔 뒤)로 다음, `U`(오르는 길)로 앞.
+pub static STAGES: [&StageDef; 2] = [&sanctuary::DEF, &village::DEF];
+/// 내려가는 길·오르는 길 표지(0118)와 밟는 거리(m). 표지에서 이만큼 벗어난 뒤에야 다시 밟을 수 있다.
+pub const DOWN_GLYPH: char = 'D';
+pub const UP_GLYPH: char = 'U';
+pub const PASSAGE_REACH: f32 = 1.2;
+/// 천장 틈 빛줄기 표지(0118 T2)와 기둥의 가로 반지름(m — 바닥 웅덩이와 같게).
+pub const SHAFT_GLYPH: char = 'S';
+pub const SHAFT_R: f32 = 1.7;
+/// 상자 기록 번호(0118): 지역마다 `지역 × 이것 + 상자 번호`(성소는 그대로 — 옛 기록이 이어진다).
+pub const CHESTS_PER_STAGE: u32 = 1000;
+const PASSAGE_ARM: f32 = 2.6;
 
 /// 문을 여는 장치(0113): 지도 `V`. 곁에서 상호작용 = 당기기 — 문이 열리고 기록에 남는다(지름길, 소울 고리).
 pub const LEVER_GLYPH: char = 'V';
@@ -450,10 +490,24 @@ pub fn elite_id(prefix: &str, nth: usize) -> String {
 
 /// 숨은 물건 곁(m) — 상자와 같다.
 pub const FIND_REACH: f32 = 1.8;
+/// 떨어진 아이템(0131): 상자에서 튀어나오는 거리(m), 튀어나와 내려앉는 초(그동안 줍지 못한다 — 렌더의 포물선과 같은 길이).
+pub const DROP_OUT: f32 = 1.3;
+pub const DROP_SETTLE: f32 = 0.45;
+/// 떨어지는 쪽: 방랑자 쪽에서 이만큼(도) 비껴.
+const DROP_SIDE: f32 = 65.0;
 
 /// 상자 곁(m)과, 든 장신구를 이미 가졌을 때 대신 주는 잔불.
 pub const CHEST_REACH: f32 = 1.8;
-pub const CHEST_EMBERS: u32 = 15;
+/// 새긴 돌을 읽는 거리(m, 0129).
+const STONE_REACH: f32 = 2.2;
+pub const CHEST_EMBERS: u32 = 10;
+
+/// 상자에 든 것(0117): 장신구 또는 무기 — 무기는 얻어서 쓴다(검·맨손만 처음부터).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Loot {
+    Charm(crate::charms::Id),
+    Weapon(crate::weapons::Id),
+}
 /// 상자 부딪힘 상자 반폭(가로·세로 m).
 const CHEST_HALF: Vec3 = Vec3::new(0.45, 0.5, 0.3);
 
@@ -471,6 +525,8 @@ pub enum Phase {
     Duel,
     /// 문지기가 쓰러지고 핵이 남았다.
     Core,
+    /// 핵을 거뒀고 아래 지역이 있다(0118): 바닥 길(`D`)이 열려 있다 — 이 판에서는 문지기가 다시 서지 않는다.
+    Down,
     Cleared,
 }
 
@@ -478,6 +534,11 @@ pub enum Phase {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum StageOut {
     Playing,
+    /// 마지막이 아닌 지역의 핵을 거뒀다(0118) — 앱은 핵 보상만, 판은 이어진다(바닥 길이 열린다).
+    CoreTaken,
+    /// 열린 바닥 길·오르는 길을 밟았다(0118) — 앱이 지층 단면 전환을 열고 지역을 바꾼다.
+    Descend,
+    Ascend,
     Cleared,
     Defeated,
     /// 쓰러졌지만 마지막으로 쉰 쉼터에서 다시 일어섰다(0032) — 앱은 카메라만 그 자리로.
@@ -534,6 +595,18 @@ pub struct StageRun {
     pub chest_open: Vec<bool>,
     pub near_chest: Option<usize>,
     opened: Option<usize>,
+    /// 떨어진 아이템(0131, 사장 "디아블로식 — 상자를 열면 아이템이 떨어짐, 바로 습득되는 것이 아니라"): 연 상자 앞 바닥에 놓이고
+    /// 주워야 얻는다. (자리, 어느 상자, 떨어진 뒤 초). 곁의 것, 이번 틱에 주운 상자 번호(앱이 가져가 그 상자의 것을 준다·기록한다).
+    pub drops: Vec<(Vec3, usize, f32)>,
+    pub near_drop: Option<usize>,
+    looted: Option<usize>,
+    /// 새긴 돌(0129): 자리, 곁의 돌, 이번 틱에 읽은 돌(앱이 가져간다).
+    pub stones: Vec<Vec3>,
+    pub near_stone: Option<usize>,
+    read: Option<usize>,
+    /// 도감(0130): 이 판에 이미 알린 이름, 이번 틱까지 새로 본 이름(앱이 가져간다).
+    codex_told: Vec<String>,
+    codex_new: Vec<String>,
     /// 이번 틱에 쉬었다(0064 M4 — 앱이 화로 가게를 연다), 잔불로 살 것이 있다(앱이 정한다 — 쉼터가 빛난다).
     rested: bool,
     pub shop_ready: bool,
@@ -555,6 +628,21 @@ pub struct StageRun {
     elite_new: Vec<String>,
     /// 이 문지기를 처음 이기는 판인가(앱이 기록에서 — 핵이 스스로 다가온다, lore CANON 0101).
     pub first_core: bool,
+    /// 내려가는 길·오르는 길 자리(0118, 지도 `D`·`U`), 이 판에 이 지역 문지기를 이겼나(바닥 길이 열린 채, 문지기 없음),
+    /// 표지에서 한 번 벗어났나(도착하자마자 되돌아가지 않게).
+    pub down_at: Option<Vec3>,
+    pub up_at: Option<Vec3>,
+    pub down_open: bool,
+    passage_armed: bool,
+    /// 남은 주민(0122): (표 번호, 자리), 지금 바라보는 쪽(가까이 오면 돌아본다), 재방문으로 바뀌었나(앱이 기록에서),
+    /// 이 판에 봤나(처음 본 틱에 앱이 기록에), 곁의 주민, 이번 틱에 말 건 주민(앱이 가져간다 — 말풍선).
+    pub residents: Vec<(usize, Vec3)>,
+    pub resident_face: Vec<f32>,
+    pub resident_changed: Vec<bool>,
+    resident_seen: Vec<bool>,
+    resident_seen_new: Vec<usize>,
+    pub near_resident: Option<usize>,
+    talked: Option<usize>,
 }
 
 /// 시작 이야기 길이(초).
@@ -599,6 +687,14 @@ impl StageRun {
             chests: Vec::new(),
             chest_open: Vec::new(),
             near_chest: None,
+            drops: Vec::new(),
+            near_drop: None,
+            looted: None,
+            stones: Vec::new(),
+            near_stone: None,
+            read: None,
+            codex_told: Vec::new(),
+            codex_new: Vec::new(),
             opened: None,
             rested: false,
             shop_ready: false,
@@ -615,9 +711,33 @@ impl StageRun {
             beaten: Vec::new(),
             elite_new: Vec::new(),
             first_core: false,
+            down_at: None,
+            up_at: None,
+            down_open: false,
+            passage_armed: true,
+            residents: Vec::new(),
+            resident_face: Vec::new(),
+            resident_changed: Vec::new(),
+            resident_seen: Vec::new(),
+            resident_seen_new: Vec::new(),
+            near_resident: None,
+            talked: None,
         };
+        // 주민(0122): 표지마다 — 처음엔 제 일 쪽을 본다(0132), 몸은 방랑자만 밀어낸다.
+        for (c, p) in run.level.marks.clone() {
+            if let Some(i) = crate::residents::by_mark(c) {
+                run.residents.push((i, p));
+                run.resident_face.push(crate::residents::WORK_FACE);
+                w.bodies.push((p, crate::residents::BODY_R));
+            }
+        }
+        run.resident_changed = vec![false; run.residents.len()];
+        run.resident_seen = vec![false; run.residents.len()];
+        run.down_at = run.level.marks_of(DOWN_GLYPH).next();
+        run.up_at = run.level.marks_of(UP_GLYPH).next();
         run.rests = run.level.marks_of('R').collect();
         run.chests = run.level.marks_of('C').collect();
+        run.stones = run.level.marks_of('N').collect();
         run.chest_open = vec![false; run.chests.len()];
         for kind in Find::ALL {
             let at: Vec<Vec3> = run.level.marks_of(kind.glyph()).collect();
@@ -644,7 +764,53 @@ impl StageRun {
             run.populate(&mut w);
             run.objective = Some(def.obj_explore);
         }
+        // 문 장치도 물결도 없는 지역(0118)은 처음부터 문이 열린 단계.
+        if run.lever.is_none() && def.waves.is_empty() {
+            run.phase = Phase::GateOpen;
+            run.set_gate(&mut w, false);
+            run.objective = Some(def.obj_gate);
+        }
         (run, w)
+    }
+
+    /// 위 지역에서 내려와 닿았다(0118): 시작 이야기 없이 시작 자리(`P`)에, 이름 카드.
+    pub fn arrive_from_above(&mut self, w: &mut World) {
+        self.intro = 0.0;
+        self.first_card = true;
+        self.passage_armed = false;
+        let p = self.level.player_start;
+        w.player.pos = p;
+        w.player.prev = p;
+        w.player.facing = std::f32::consts::PI;
+        self.zone = self.zone_at(p);
+        self.card = Some((self.def.name, CARD_TIME));
+    }
+
+    /// 아래 지역에서 올라왔다(0118): 이 판에 이긴 문지기는 없고 바닥 길은 열린 채, 바닥 길 곁(남쪽)에 선다.
+    pub fn arrive_from_below(&mut self, w: &mut World) {
+        self.intro = 0.0;
+        self.first_card = true;
+        self.open_down(w);
+        self.passage_armed = false;
+        if let Some(d) = self.down_at {
+            let p = d + vec3(0.0, 0.0, PASSAGE_ARM - 0.4);
+            w.player.pos = p;
+            w.player.prev = p;
+            w.player.facing = 0.0;
+        }
+        self.zone = self.zone_at(w.player.pos);
+        self.card = Some((self.def.zones[self.zone].0, CARD_TIME));
+    }
+
+    /// 이 판에 이 지역 문지기를 이겼다(0118): 문지기를 지우고 문을 열고 바닥 길 단계로.
+    pub fn open_down(&mut self, w: &mut World) {
+        self.down_open = true;
+        w.enemies.retain(|e| !e.boss);
+        self.boss = None;
+        self.core = None;
+        self.phase = Phase::Down;
+        self.objective = Some(|s| s.obj_descend);
+        self.set_gate(w, false);
     }
 
     fn zone_at(&self, p: Vec3) -> usize {
@@ -679,7 +845,9 @@ impl StageRun {
             for (mark, kind) in list.iter() {
                 let spots: Vec<Vec3> = self.level.marks_of(*mark).collect();
                 for p in spots {
-                    self.wave_ids.push(w.spawn(*kind, p));
+                    let i = w.spawn(*kind, p);
+                    w.enemies[i].set_tier(self.def.tier);
+                    self.wave_ids.push(i);
                 }
             }
         }
@@ -695,6 +863,7 @@ impl StageRun {
         self.boss = (!w.enemies.is_empty()).then_some(0);
         w.lock = None;
         w.lingers.clear();
+        w.shards.clear();
         self.elite_ids.clear();
         // 바라보는 쪽은 자리마다 정해진 값(자리로 섞는다) — 늘어선 적이 한 쪽만 보지 않게.
         let face = |p: Vec3| {
@@ -705,7 +874,9 @@ impl StageRun {
             let spots: Vec<Vec3> = self.level.marks_of(mark).collect();
             for p in spots {
                 let i = w.spawn(kind, p);
+                w.enemies[i].set_tier(self.def.tier);
                 w.enemies[i].place(face(p));
+                w.enemies[i].docile = self.def.docile.contains(&mark);
             }
         }
         for (k, &(mark, kind, affix)) in self.def.elites.iter().enumerate() {
@@ -714,6 +885,7 @@ impl StageRun {
             }
             if let Some(p) = self.level.marks_of(mark).next() {
                 let i = w.spawn(kind, p);
+                w.enemies[i].set_tier(self.def.tier);
                 w.enemies[i].make_elite(affix);
                 w.enemies[i].place(face(p));
                 self.elite_ids.push((i, elite_id(self.def.find_prefix, k)));
@@ -813,6 +985,17 @@ impl StageRun {
         }
         // 쉼터(0032): 곁이면 "쉬기", 깨어 있는 적이 가까우면 막는다.
         let pp = w.player.pos;
+        // 내려가는 길·오르는 길(0118): 표지에서 한 번 벗어나야 다시 밟힌다.
+        let flat = |a: Vec3| vec2(a.x - pp.x, a.z - pp.z).length();
+        let near = |at: Option<Vec3>| at.is_some_and(|a| flat(a) <= PASSAGE_REACH);
+        if !self.passage_armed
+            && [self.down_at, self.up_at]
+                .iter()
+                .flatten()
+                .all(|&a| flat(a) >= PASSAGE_ARM)
+        {
+            self.passage_armed = true;
+        }
         self.near_rest = self
             .rests
             .iter()
@@ -827,6 +1010,30 @@ impl StageRun {
         self.near_chest = self.chests.iter().enumerate().position(|(i, c)| {
             !self.chest_open[i] && vec2(c.x - pp.x, c.z - pp.z).length() <= CHEST_REACH
         });
+        // 도감(0130): 깨어난 적을 가까이(적 시야만큼) 보면 그 종·역할·성질·깨어남을 한 번씩 알린다.
+        for e in w.enemies.iter().filter(|e| e.active() && e.alive()) {
+            if vec2(e.pos.x - pp.x, e.pos.z - pp.z).length() > crate::codex::SEE {
+                continue;
+            }
+            for k in crate::codex::seen_keys(e) {
+                if !self.codex_told.contains(&k) {
+                    self.codex_told.push(k.clone());
+                    self.codex_new.push(k);
+                }
+            }
+        }
+        // 새긴 돌(0129): 곁이면 읽기(싸움 중에도 — 글 판은 멈추지 않는다).
+        self.near_stone = self
+            .stones
+            .iter()
+            .position(|s| vec2(s.x - pp.x, s.z - pp.z).length() <= STONE_REACH);
+        // 떨어진 아이템(0131): 튀어나온 뒤 잠깐(`DROP_SETTLE`)은 줍지 못한다 — 여는 누름이 곧바로 줍지 않게.
+        for d in &mut self.drops {
+            d.2 += dt;
+        }
+        self.near_drop = self.drops.iter().position(|(p, _, age)| {
+            *age >= DROP_SETTLE && vec2(p.x - pp.x, p.z - pp.z).length() <= FIND_REACH
+        });
         // 숨은 물건(0105): 상자와 같은 꼴 — 곁이면 점프 버튼이 줍기.
         self.near_find = self.finds.iter().enumerate().position(|(i, (p, _, _))| {
             !self.found[i] && vec2(p.x - pp.x, p.z - pp.z).length() <= FIND_REACH
@@ -836,18 +1043,53 @@ impl StageRun {
             && self
                 .lever
                 .is_some_and(|l| vec2(l.x - pp.x, l.z - pp.z).length() <= LEVER_REACH);
+        // 주민(0122): 보면 기록, 가까이 오면 돌아보고(무심한 경계 — 천천히), 멀어지면 제 일 쪽으로. 곁이면 말 걸기.
+        self.near_resident = None;
+        for (k, &(_, at)) in self.residents.iter().enumerate() {
+            let d = flat(at);
+            if d <= crate::residents::SEE_RANGE && !self.resident_seen[k] {
+                self.resident_seen[k] = true;
+                self.resident_seen_new.push(k);
+            }
+            let home = crate::residents::WORK_FACE;
+            let want = if d <= crate::residents::GLANCE_RANGE {
+                (pp.x - at.x).atan2(pp.z - at.z)
+            } else {
+                home
+            };
+            let f = &mut self.resident_face[k];
+            let diff = (want - *f + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+                - std::f32::consts::PI;
+            *f += diff.clamp(-1.5 * dt, 1.5 * dt);
+            if d <= crate::residents::TALK_RANGE && self.near_resident.is_none() {
+                self.near_resident = Some(k);
+            }
+        }
         // 점프 버튼이 다음 틱부터 쉬기·열기·줍기가 되는 자리(0048): 곁이고(쉬기는 안전할 때만) — 아니면 그대로 점프.
         w.interact_here = (self.near_rest.is_some() && self.rest_safe)
+            || self.near_drop.is_some()
             || self.near_chest.is_some()
             || self.near_find.is_some()
-            || self.near_lever;
-        // 같은 버튼: 줍기 > 열기 > 당기기 > 쉬기(HUD 안내와 같은 차례).
-        if let (Some(i), true) = (self.near_find, w.interact) {
+            || self.near_lever
+            || self.near_resident.is_some()
+            || self.near_stone.is_some();
+        // 같은 버튼: 줍기(떨어진 것 · 숨은 물건) > 열기 > 당기기 > 쉬기(HUD 안내와 같은 차례).
+        if let (Some(k), true) = (self.near_drop, w.interact) {
+            let (_, chest, _) = self.drops.remove(k);
+            self.looted = Some(chest);
+            self.near_drop = None;
+        } else if let (Some(i), true) = (self.near_find, w.interact) {
             self.found[i] = true;
             self.picked = Some(i);
         } else if let (Some(i), true) = (self.near_chest, w.interact) {
             self.chest_open[i] = true;
             self.opened = Some(i);
+            // 상자 앞(방랑자 쪽)으로 튀어나와 떨어진다(0131) — 기록은 주울 때.
+            let c = self.chests[i];
+            // 방랑자 쪽에서 옆으로 비껴(발밑에 떨어지면 몸에 가려 빛기둥이 안 보였다, 헤드리스).
+            let to = vec3(pp.x - c.x, 0.0, pp.z - c.z).normalize_or(Vec3::Z);
+            let side = Quat::from_rotation_y(DROP_SIDE.to_radians()) * to;
+            self.drops.push((c + side * DROP_OUT, i, 0.0));
         } else if let (true, true) = (self.near_lever, w.interact) {
             self.gate_opened = true;
             self.gate_new = true;
@@ -857,7 +1099,12 @@ impl StageRun {
                 self.phase = Phase::GateOpen;
                 self.objective = Some(self.def.obj_gate);
             }
-            self.card = Some((|s| s.card_gate_opened, CARD_TIME));
+            self.card = Some((self.def.card_lever, CARD_TIME));
+        } else if let (Some(k), true) = (self.near_resident, w.interact) {
+            // 말 걸기(0122): 멈추지 않는다 — 앱이 머리 위 말풍선을 띄운다(다시 누르면 다음 줄).
+            self.talked = Some(k);
+        } else if let (Some(k), true) = (self.near_stone, w.interact) {
+            self.read = Some(k);
         } else if let (Some(i), true) = (self.near_rest, w.interact) {
             if self.rest_safe {
                 self.rest(w, i);
@@ -947,13 +1194,31 @@ impl StageRun {
                 if let Some(c) = self.core {
                     let d = vec2(c.x - w.player.pos.x, c.z - w.player.pos.z).length();
                     if d <= CORE_REACH {
+                        // 아래 지역이 있으면 바닥 길이 열린다(0118) — 판은 이어진다.
+                        if self.down_at.is_some() {
+                            self.open_down(w);
+                            self.card = Some((|s| s.card_way_down, CARD_TIME));
+                            return StageOut::CoreTaken;
+                        }
                         self.phase = Phase::Cleared;
                         self.objective = None;
                         return StageOut::Cleared;
                     }
                 }
             }
+            Phase::Down => {
+                if self.passage_armed && near(self.down_at) {
+                    return StageOut::Descend;
+                }
+            }
             Phase::Cleared => return StageOut::Cleared,
+        }
+        // 오르는 길(0118): 문지기와 싸우는 동안 말고는 언제나.
+        if self.passage_armed
+            && near(self.up_at)
+            && !matches!(self.phase, Phase::Waking(_) | Phase::Duel)
+        {
+            return StageOut::Ascend;
         }
         StageOut::Playing
     }
@@ -981,6 +1246,10 @@ impl StageRun {
     /// 다시 온다), 문지기는 잠든 채 가득. 문지기만 남기고 다른 적은 지운다(문지기는 시작할 때 처음 세워 번호 0).
     fn respawn(&mut self, w: &mut World, i: usize, back: Phase) {
         let at = self.rests[i];
+        // 이 판에 이긴 문지기는 다시 서지 않는다(0118).
+        if self.down_open {
+            w.enemies.retain(|e| !e.boss);
+        }
         // 기록의 문(0113)이 열려 있으면 문 앞 단계로.
         let back = if self.gate_opened {
             Phase::GateOpen
@@ -1003,6 +1272,7 @@ impl StageRun {
         self.wave_ids.clear();
         self.elite_ids.clear();
         w.lingers.clear();
+        w.shards.clear();
         w.lock = None;
         w.hitstop = 0.0;
         let pl = &mut w.player;
@@ -1029,7 +1299,31 @@ impl StageRun {
         self.rest_at = Some((i, back));
         self.zone = self.zone_at(w.player.pos);
         self.core = None;
+        if self.down_open {
+            self.open_down(w);
+        }
+        self.passage_armed = false;
         self.card = Some((|s| s.respawned, CARD_TIME));
+    }
+
+    /// 이번 틱에 말 건 주민(0122) — 앱이 한 번 가져간다.
+    /// 이번 틱까지 도감에 새로 본 이름(0130).
+    pub fn take_codex(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.codex_new)
+    }
+
+    /// 이번 틱에 읽은 새긴 돌(0129 — 앱이 글 판을 띄운다).
+    pub fn take_read(&mut self) -> Option<usize> {
+        self.read.take()
+    }
+
+    pub fn take_talked(&mut self) -> Option<usize> {
+        self.talked.take()
+    }
+
+    /// 이 판에 처음 본 주민들(0122) — 앱이 한 번 가져가 기록에.
+    pub fn take_residents_seen(&mut self) -> Vec<usize> {
+        std::mem::take(&mut self.resident_seen_new)
     }
 
     /// 이번 틱에 쉬었나(0064 M4) — 앱이 한 번 가져가 화로 가게를 연다(쓰러진 뒤 다시 서는 것은 아니다).
@@ -1037,9 +1331,14 @@ impl StageRun {
         std::mem::take(&mut self.rested)
     }
 
-    /// 이번 틱에 연 상자(0064 M3) — 앱이 한 번 가져가 장신구·잔불을 준다.
+    /// 이번 틱에 연 상자(0064 M3) — 앱이 한 번 가져가 여는 소리를 낸다(0131부터 얻는 것은 주울 때 — `take_looted`).
     pub fn take_opened(&mut self) -> Option<usize> {
         self.opened.take()
+    }
+
+    /// 이번 틱에 주운 떨어진 아이템의 상자 번호(0131) — 앱이 그 상자의 것을 주고 기록한다.
+    pub fn take_looted(&mut self) -> Option<usize> {
+        self.looted.take()
     }
 
     /// 이번 틱에 주운 숨은 물건(0105): (종류, 기록 이름) — 앱이 한 번 가져가 기록·능력치에.
@@ -1071,6 +1370,7 @@ impl StageRun {
         self.rest_at.map(|(i, back)| crate::save::RunAt {
             rest: i,
             gate_open: back != Phase::Entrance || self.gate_opened,
+            ..Default::default()
         })
     }
 
@@ -1132,6 +1432,7 @@ impl StageRun {
         match self.phase {
             Phase::GateOpen => self.level.gate.map(|(_, c)| c),
             Phase::Core => self.core,
+            Phase::Down => self.down_at,
             _ => None,
         }
     }
@@ -1152,6 +1453,42 @@ mod tests {
     use crate::input::Actions;
     use crate::tuning::Tuning;
     use crate::tuning::{FLASK_CHARGES, PLAYER_HP};
+
+    /// 0118(PR #10 검토 뒤 분명히): C3 전까지 마을 끝은 **싸우는 임시 문지기**(첫 문지기 모델) — 종탑 터에 들어서면 깨고,
+    /// 이기고 핵을 거두면 마지막 지역이라 판이 끝난다(결과 화면). 바닥 길은 없다.
+    #[test]
+    fn the_village_bellkeeper_fights_and_its_core_ends_the_run() {
+        let t = Tuning::default();
+        let (mut run, mut w) = StageRun::start(STAGES[STAGES.len() - 1]);
+        assert!(run.down_at.is_none(), "the last region has no way down");
+        let home = run.level.marks_of('W').next().expect("bellkeeper mark");
+        w.player.pos = home + vec3(0.0, 0.0, 4.0);
+        w.player.prev = w.player.pos;
+        run.tick(&mut w, 1.0 / 60.0);
+        assert!(matches!(run.phase, Phase::Waking(_)), "{:?}", run.phase);
+        for _ in 0..((WAKE_TIME * 60.0) as usize + 2) {
+            w.player.hp = 5;
+            w.step(&Actions::default(), &t);
+            run.tick(&mut w, 1.0 / 60.0);
+        }
+        assert_eq!(run.phase, Phase::Duel);
+        let b = run.boss.unwrap();
+        assert_eq!(
+            w.enemies[b].kind,
+            Kind::Bellkeeper,
+            "the second warden (0125)"
+        );
+        w.enemies[b].state = EState::Dead;
+        w.step(&Actions::default(), &t);
+        run.tick(&mut w, 1.0 / 60.0);
+        assert_eq!(run.phase, Phase::Core);
+        w.player.pos = run.core.unwrap();
+        assert_eq!(
+            run.tick(&mut w, 1.0 / 60.0),
+            StageOut::Cleared,
+            "the run ends here"
+        );
+    }
 
     /// 0091: 높은 땅에 선 문은 상자도 그 땅 위에 — 가운데만 땅에 올리고 상자를 0에 두면 위 한 자락이 시야 가림 판정·막기 밖이었다.
     #[test]
@@ -1247,50 +1584,54 @@ mod tests {
     /// 적이 걸어서(경사로로만) 플레이어 시작 자리·문 앞까지 온다 — 높낮이가 길을 끊지 않았나.
     #[test]
     fn every_floor_is_reachable_and_every_spawn_can_walk_to_the_fight() {
-        let (run, _) = StageRun::start(&sanctuary::DEF);
-        let lv = &run.level;
-        let g = lv.ground();
-        // 플레이어 규칙: 이웃 칸 가운데 높이로 — 오르기는 점프 높이(0.9m) 안의 0.5m까지, 내리기는 아무리 깊어도.
-        let start = g.cell_of(lv.player_start).unwrap();
-        let mut seen = vec![false; lv.w * lv.h];
-        let mut q = vec![start];
-        seen[start.1 * lv.w + start.0] = true;
-        while let Some((x, z)) = q.pop() {
-            let here = g.center(x, z).y;
-            for (dx, dz) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
-                let (nx, nz) = (x as i32 + dx, z as i32 + dz);
-                if nx < 0 || nz < 0 || nx as usize >= lv.w || nz as usize >= lv.h {
-                    continue;
-                }
-                let (nx, nz) = (nx as usize, nz as usize);
-                if seen[nz * lv.w + nx] || matches!(g.at(nx, nz), Cell::Solid) {
-                    continue;
-                }
-                if g.center(nx, nz).y - here <= 0.5 + 1e-3 {
-                    seen[nz * lv.w + nx] = true;
-                    q.push((nx, nz));
-                }
-            }
-        }
-        for z in 0..lv.h {
-            for x in 0..lv.w {
-                if lv.walkable(x, z) {
-                    assert!(seen[z * lv.w + x], "player cannot reach row {z} col {x}");
+        // 0118: 모든 지역.
+        for def in STAGES {
+            let (run, _) = StageRun::start(def);
+            let lv = &run.level;
+            let g = lv.ground();
+            // 플레이어 규칙: 이웃 칸 가운데 높이로 — 오르기는 점프 높이(0.9m) 안의 0.5m까지, 내리기는 아무리 깊어도.
+            let start = g.cell_of(lv.player_start).unwrap();
+            let mut seen = vec![false; lv.w * lv.h];
+            let mut q = vec![start];
+            seen[start.1 * lv.w + start.0] = true;
+            while let Some((x, z)) = q.pop() {
+                let here = g.center(x, z).y;
+                for (dx, dz) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
+                    let (nx, nz) = (x as i32 + dx, z as i32 + dz);
+                    if nx < 0 || nz < 0 || nx as usize >= lv.w || nz as usize >= lv.h {
+                        continue;
+                    }
+                    let (nx, nz) = (nx as usize, nz as usize);
+                    if seen[nz * lv.w + nx] || matches!(g.at(nx, nz), Cell::Solid) {
+                        continue;
+                    }
+                    if g.center(nx, nz).y - here <= 0.5 + 1e-3 {
+                        seen[nz * lv.w + nx] = true;
+                        q.push((nx, nz));
+                    }
                 }
             }
-        }
-        // 적 규칙: 길찾기 거리 지도(`Nav::flow`, 소품·상자가 덮은 칸은 막힘 — 0076)로 — 시작 자리와 문 앞(뜰 쪽) 어디서든.
-        let gate = lv.gate.unwrap().1 + vec3(0.0, 0.0, CELL * 2.0);
-        let nav = crate::nav::Nav::build(Some(&g), &lv.obstacles(), lv.half_extent());
-        for goal in [lv.player_start, gate] {
-            let dist = nav.flow(goal);
-            for (c, at) in &lv.marks {
-                if c.is_ascii_lowercase() || c.is_ascii_uppercase() && *c != 'R' {
-                    let (x, z) = g.cell_of(*at).unwrap();
-                    assert!(
-                        dist[z * lv.w + x] != u16::MAX,
-                        "spawn {c} at row {z} col {x} cannot walk to {goal:?}"
-                    );
+            for z in 0..lv.h {
+                for x in 0..lv.w {
+                    if lv.walkable(x, z) {
+                        assert!(seen[z * lv.w + x], "player cannot reach row {z} col {x}");
+                    }
+                }
+            }
+            // 적 규칙: 길찾기 거리 지도(`Nav::flow`, 소품·상자가 덮은 칸은 막힘 — 0076)로 — 시작 자리와 문 앞(뜰 쪽) 어디서든.
+            // 문이 없는 지역(0118 마을)은 시작 자리만.
+            let gate = lv.gate.map(|g| g.1 + vec3(0.0, 0.0, CELL * 2.0));
+            let nav = crate::nav::Nav::build(Some(&g), &lv.obstacles(), lv.half_extent());
+            for goal in std::iter::once(lv.player_start).chain(gate) {
+                let dist = nav.flow(goal);
+                for (c, at) in &lv.marks {
+                    if c.is_ascii_lowercase() || c.is_ascii_uppercase() && *c != 'R' {
+                        let (x, z) = g.cell_of(*at).unwrap();
+                        assert!(
+                            dist[z * lv.w + x] != u16::MAX,
+                            "spawn {c} at row {z} col {x} cannot walk to {goal:?}"
+                        );
+                    }
                 }
             }
         }
@@ -1337,7 +1678,279 @@ mod tests {
         assert_eq!(run.phase, Phase::Core);
         assert_eq!(run.goal(), run.core, "then the core");
         w.player.pos = run.core.unwrap();
-        assert_eq!(step(&mut run, &mut w), StageOut::Cleared);
+        // 0118: 아래 지역이 있으면 핵은 판을 끝내지 않고 바닥 길을 연다 — 길이 갈 곳, 밟으면 내려간다.
+        assert_eq!(step(&mut run, &mut w), StageOut::CoreTaken);
+        assert_eq!(run.phase, Phase::Down);
+        assert!(!run.gate_closed, "the way back out is open");
+        assert_eq!(run.goal(), run.down_at);
+        assert!(w.enemies.iter().all(|e| !e.boss), "the warden is gone");
+        w.player.pos = run.down_at.unwrap();
+        assert_eq!(step(&mut run, &mut w), StageOut::Descend);
+    }
+
+    /// 0118: 판의 차례 — 지역은 깊어지고, 마지막 지역만 바닥 길이 없다(핵 = 판의 끝). 첫 지역 말고는 오르는 길이 있다.
+    #[test]
+    fn stages_go_deeper_and_link_down_and_up() {
+        for (i, def) in STAGES.iter().enumerate() {
+            let (run, _) = StageRun::start(def);
+            let last = i + 1 == STAGES.len();
+            assert_eq!(
+                run.down_at.is_none(),
+                last,
+                "stage {i}: a way down unless last"
+            );
+            assert_eq!(
+                run.up_at.is_some(),
+                i > 0,
+                "stage {i}: a way up unless first"
+            );
+            if i > 0 {
+                assert!(def.depth_m > STAGES[i - 1].depth_m, "stage {i} is deeper");
+                assert_ne!(def.find_prefix, STAGES[i - 1].find_prefix);
+            }
+        }
+    }
+
+    /// 0121(0115 전투 안전 설계 — "AI보다 레벨 배치로 먼저"): 주민 자리(`1`·`2`·`3`)는 모든 서 있는 적·엘리트·문지기의 제자리에서
+    /// 끈(`LEASH_RANGE`) + 3m 밖 — 쫓아오는 적도 주민 곁까지는 오지 않는다. 화로와도 겹치지 않는다.
+    #[test]
+    fn residents_live_beyond_every_enemy_leash() {
+        use crate::tuning::LEASH_RANGE;
+        for def in STAGES {
+            let (run, _) = StageRun::start(def);
+            let foes: Vec<Vec3> = def
+                .spawns
+                .iter()
+                .map(|s| s.0)
+                .chain(def.elites.iter().map(|e| e.0))
+                .chain(std::iter::once(def.boss.0))
+                .flat_map(|c| run.level.marks_of(c).collect::<Vec<_>>())
+                .collect();
+            for r in ['1', '2', '3'] {
+                for home in run.level.marks_of(r) {
+                    for f in &foes {
+                        let d = vec2(home.x - f.x, home.z - f.z).length();
+                        assert!(
+                            d >= LEASH_RANGE + 3.0,
+                            "{} resident {r} {d:.1} m from a foe",
+                            def.find_prefix
+                        );
+                    }
+                }
+            }
+        }
+        let (run, _) = StageRun::start(STAGES[1]);
+        assert_eq!(
+            ['1', '2', '3']
+                .iter()
+                .filter(|c| run.level.marks_of(**c).next().is_some())
+                .count(),
+            3,
+            "three residents in the village"
+        );
+    }
+
+    /// 0130 C5: 깨어난 적을 가까이(9m) 보면 도감에 한 번 — 멀면 없고, 같은 판에 다시 알리지 않는다. 청소자는 역할도.
+    #[test]
+    fn seeing_an_awake_foe_up_close_writes_the_codex_once() {
+        let (mut run, mut w) = StageRun::start(STAGES[1]);
+        let i = w
+            .enemies
+            .iter()
+            .position(|e| e.docile)
+            .expect("a scavenger in the village");
+        let at = w.enemies[i].pos;
+        w.player.pos = at + vec3(0.0, 0.0, crate::codex::SEE + 8.0);
+        w.player.prev = w.player.pos;
+        tick(&mut run, &mut w, Actions::default());
+        let far = run.take_codex();
+        assert!(
+            !far.contains(&"husk.docile".to_string()),
+            "too far: {far:?}"
+        );
+        w.player.pos = at + vec3(0.0, 0.0, 3.0);
+        w.player.prev = w.player.pos;
+        tick(&mut run, &mut w, Actions::default());
+        let near = run.take_codex();
+        assert!(near.contains(&"husk.docile".to_string()), "{near:?}");
+        // 종 이름은 먼 데서 다른 잔재를 봤으면 그때 이미 — 합쳐서 한 번.
+        let husk = far.iter().chain(&near).filter(|k| *k == "husk").count();
+        assert_eq!(husk, 1, "the kind is told once: {far:?} {near:?}");
+        tick(&mut run, &mut w, Actions::default());
+        assert!(
+            run.take_codex().iter().all(|k| k != "husk"),
+            "told once per run"
+        );
+    }
+
+    /// 0129 C4: 새긴 돌은 지도 표지 수 = 글 수, 곁에서 상호작용 = 읽기(다른 일을 하지 않는다), 멀면 아무것도 없다.
+    #[test]
+    fn carved_stones_have_one_text_each_and_read_with_the_interact_button() {
+        for def in STAGES {
+            let (run, _) = StageRun::start(def);
+            assert_eq!(run.stones.len(), def.stones.len(), "marks = texts");
+        }
+        let (mut run, mut w) = StageRun::start(STAGES[1]);
+        assert_eq!(run.stones.len(), 3);
+        let at = run.stones[2];
+        w.player.pos = at + vec3(0.0, 0.0, 6.0);
+        w.player.prev = w.player.pos;
+        tick(&mut run, &mut w, Actions::default());
+        assert_eq!(run.near_stone, None);
+        w.player.pos = at + vec3(0.0, 0.0, 1.2);
+        w.player.prev = w.player.pos;
+        tick(&mut run, &mut w, Actions::default());
+        assert_eq!(run.near_stone, Some(2));
+        assert!(w.interact_here, "the jump button reads it");
+        tick(
+            &mut run,
+            &mut w,
+            Actions {
+                interact: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(run.take_read(), Some(2));
+        assert_eq!(run.take_read(), None, "once per press");
+    }
+
+    /// 0122: 주민은 월드의 적이 아니다(맞지도·락온되지도 않는다 — 공격이 지나간다), 몸은 방랑자만 밀어낸다.
+    /// 곁에서 점프 버튼 = 말 걸기(다른 일을 하지 않는다), 가까이 오면 돌아보고, 보면 한 번 기록한다.
+    #[test]
+    fn residents_talk_glance_and_stay_out_of_the_fight() {
+        let (mut run, mut w) = StageRun::start(STAGES[1]);
+        assert_eq!(run.residents.len(), 3);
+        assert_eq!(w.bodies.len(), 3);
+        for &(_, at) in &run.residents {
+            assert!(
+                w.enemies.iter().all(|e| e.pos.distance(at) > 1.0),
+                "not an enemy"
+            );
+        }
+        let (_, at) = run.residents[0];
+        // 멀리서는 안 보인다 → 다가가면 기록 한 번.
+        w.player.pos = at + vec3(0.0, 0.0, crate::residents::SEE_RANGE + 6.0);
+        tick(&mut run, &mut w, Actions::default());
+        assert!(run.take_residents_seen().is_empty());
+        w.player.pos = at + vec3(0.0, 0.0, 1.6);
+        w.player.prev = w.player.pos;
+        let face0 = run.resident_face[0];
+        for _ in 0..90 {
+            tick(&mut run, &mut w, Actions::default());
+        }
+        assert_eq!(run.take_residents_seen(), vec![0], "seen once");
+        assert!(run.take_residents_seen().is_empty());
+        let want = (w.player.pos.x - at.x).atan2(w.player.pos.z - at.z);
+        let off = |f: f32| {
+            ((want - f + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+                - std::f32::consts::PI)
+                .abs()
+        };
+        assert!(
+            off(run.resident_face[0]) <= off(face0).max(0.05),
+            "turned toward the wanderer"
+        );
+        assert_eq!(run.near_resident, Some(0));
+        assert!(w.interact_here);
+        tick(
+            &mut run,
+            &mut w,
+            Actions {
+                interact: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(run.take_talked(), Some(0));
+        assert!(run.rest_at.is_none(), "talking does nothing else");
+        // 몸이 방랑자를 밀어낸다.
+        w.player.pos = at + vec3(0.05, 0.0, 0.0);
+        tick(&mut run, &mut w, Actions::default());
+        assert!(
+            w.player.pos.distance(at)
+                >= crate::residents::BODY_R + crate::tuning::PLAYER_RADIUS - 0.05
+        );
+    }
+
+    /// 0112·0116 T3: 구역 등급은 깊을수록 높고, 서 있는 적·엘리트가 그 등급으로 선다(보스는 그대로).
+    #[test]
+    fn deeper_regions_field_higher_tier_mobs() {
+        for (i, def) in STAGES.iter().enumerate() {
+            if i > 0 {
+                assert!(def.tier >= STAGES[i - 1].tier);
+            }
+            let (_, w) = StageRun::start(def);
+            for e in &w.enemies {
+                assert_eq!(
+                    e.tier,
+                    if e.boss { 1 } else { def.tier },
+                    "{}",
+                    def.find_prefix
+                );
+            }
+        }
+        assert_eq!(STAGES[1].tier, 2, "0116: the village is tier 2");
+    }
+
+    /// 0118 T2: 땅 위 지역만 하늘·달·반딧불·나무, 땅속은 달이 없고 달빛이 약하며 흙이 떨어진다. 땅속엔 천장 틈 빛줄기가 있다.
+    #[test]
+    fn regions_below_ground_have_no_moon_and_light_through_ceiling_cracks() {
+        for def in STAGES {
+            let e = def.env;
+            let below = def.depth_m > 0;
+            assert_eq!(e.moon, !below, "{}", def.find_prefix);
+            assert_eq!(e.fireflies || e.trees, !below);
+            if below {
+                assert!(e.falling && e.moonlight < 1.0);
+                let (run, _) = StageRun::start(def);
+                assert!(
+                    run.level.marks_of(SHAFT_GLYPH).next().is_some(),
+                    "light comes from somewhere"
+                );
+            }
+        }
+    }
+
+    /// 0118: 내려와 닿으면 오르는 길 곁이지만 바로 올라가지 않는다 — 한 번 벗어났다 다시 밟아야. 장치 없는 지역은 문이 열린 단계.
+    #[test]
+    fn arriving_does_not_bounce_back_and_the_way_up_works_after_leaving_it() {
+        let t = Tuning::default();
+        let (mut run, mut w) = StageRun::start(STAGES[1]);
+        assert_eq!(run.phase, Phase::GateOpen, "no lever, no waves: open");
+        run.arrive_from_above(&mut w);
+        let up = run.up_at.unwrap();
+        w.player.pos = up;
+        w.step(&Actions::default(), &t);
+        assert_eq!(
+            run.tick(&mut w, 1.0 / 60.0),
+            StageOut::Playing,
+            "not right away"
+        );
+        w.player.pos = up + vec3(0.0, 0.0, -PASSAGE_ARM - 0.5);
+        w.step(&Actions::default(), &t);
+        run.tick(&mut w, 1.0 / 60.0);
+        w.player.pos = up;
+        w.step(&Actions::default(), &t);
+        assert_eq!(run.tick(&mut w, 1.0 / 60.0), StageOut::Ascend);
+    }
+
+    /// 0118: 아래에서 올라오면 이 판에 이긴 문지기는 없고 바닥 길이 열린 채 — 쉬었다 쓰러져도 그대로.
+    #[test]
+    fn coming_back_up_finds_the_warden_gone_and_the_floor_open_even_after_a_fall() {
+        let (mut run, mut w) = StageRun::start(STAGES[0]);
+        run.arrive_from_below(&mut w);
+        assert_eq!(run.phase, Phase::Down);
+        assert!(run.boss.is_none() && w.enemies.iter().all(|e| !e.boss));
+        assert!(!run.gate_closed);
+        let d = run.down_at.unwrap();
+        assert!(
+            w.player.pos.distance(d) > PASSAGE_REACH,
+            "beside the hole, not in it"
+        );
+        rest_now(&mut run, &mut w, 0);
+        w.player.hp = 0;
+        assert_eq!(run.tick(&mut w, 1.0 / 60.0), StageOut::Respawned);
+        assert_eq!(run.phase, Phase::Down);
+        assert!(w.enemies.iter().all(|e| !e.boss), "still gone");
     }
 
     /// 문 장치 곁에서 상호작용(0113).
@@ -1392,24 +2005,27 @@ mod tests {
     /// 0113: 화로 곁은 처음부터 안전하다 — 서 있는 적이 화로 곁의 플레이어를 알아차리지 않는다(쉴 수 있다).
     #[test]
     fn every_hearth_starts_safe_from_the_placed_enemies() {
-        for i in 0..StageRun::start(&sanctuary::DEF).0.rests.len() {
-            let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
-            // 쉬기 전에 곁에 잠깐 서 있는다(쉬면 적이 제자리로 돌아가 알아차림이 지워진다).
-            w.player.pos = run.rests[i] + vec3(0.0, 0.0, 1.0);
-            w.player.prev = w.player.pos;
-            for _ in 0..10 {
-                tick(&mut run, &mut w, Actions::default());
+        // 0118: 모든 지역.
+        for def in STAGES {
+            for i in 0..StageRun::start(def).0.rests.len() {
+                let (mut run, mut w) = StageRun::start(def);
+                // 쉬기 전에 곁에 잠깐 서 있는다(쉬면 적이 제자리로 돌아가 알아차림이 지워진다).
+                w.player.pos = run.rests[i] + vec3(0.0, 0.0, 1.0);
+                w.player.prev = w.player.pos;
+                for _ in 0..10 {
+                    tick(&mut run, &mut w, Actions::default());
+                }
+                let woke: Vec<_> = w
+                    .enemies
+                    .iter()
+                    .filter(|e| !e.boss && e.state != EState::Idle)
+                    .map(|e| e.pos)
+                    .collect();
+                assert!(woke.is_empty(), "hearth {i}: {woke:?} noticed");
+                rest_now(&mut run, &mut w, i);
+                assert!(run.rest_safe, "hearth {i} at {:?}", run.rests[i]);
+                assert_eq!(run.rest_at.map(|r| r.0), Some(i));
             }
-            let woke: Vec<_> = w
-                .enemies
-                .iter()
-                .filter(|e| !e.boss && e.state != EState::Idle)
-                .map(|e| e.pos)
-                .collect();
-            assert!(woke.is_empty(), "hearth {i}: {woke:?} noticed");
-            rest_now(&mut run, &mut w, i);
-            assert!(run.rest_safe, "hearth {i} at {:?}", run.rests[i]);
-            assert_eq!(run.rest_at.map(|r| r.0), Some(i));
         }
     }
 
@@ -1461,8 +2077,8 @@ mod tests {
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
         assert_eq!(
             run.chests.len(),
-            sanctuary::DEF.chest_charms.len(),
-            "a charm per chest"
+            sanctuary::DEF.chest_loot.len(),
+            "loot per chest"
         );
         run.intro = 0.0;
         let c = run.chests[1];
@@ -1479,38 +2095,49 @@ mod tests {
         run.tick(&mut w, 0.016);
         assert_eq!(run.take_opened(), None, "an open chest stays open");
         assert_eq!(run.near_chest, None);
+        // 0131: 열면 얻는 것이 아니라 상자 앞 바닥에 떨어진다 — 내려앉기 전엔 못 줍고, 주우면 그 상자의 것.
+        assert_eq!(run.drops.len(), 1);
+        assert!(
+            run.drops[0].0.distance(c) > 1.0,
+            "out in front of the chest"
+        );
+        assert_eq!(run.take_looted(), None, "not taken by opening");
+        assert!(
+            run.drops[0].0.distance(w.player.pos) > 0.6,
+            "not under the wanderer's feet"
+        );
+        w.player.pos = run.drops[0].0;
+        w.interact = false;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.near_drop, None, "still flying");
+        for _ in 0..40 {
+            run.tick(&mut w, 0.016);
+        }
+        assert_eq!(run.near_drop, Some(0));
+        w.interact = true;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.take_looted(), Some(1));
+        assert!(run.drops.is_empty());
         // 기록에서 연 상자는 새 판에서도 열려 있다.
         let (mut run, _) = StageRun::start(&sanctuary::DEF);
         run.set_opened(&[0, 9]);
-        assert_eq!(run.chest_open, vec![true, false]);
+        assert_eq!(run.chest_open, vec![true, false, false, false]);
     }
 
-    /// 0105·0106: 숨은 물건 여섯(등잔 하나 · 한 모금 둘 · 종소리 조각 셋)은 걸어서 닿는 바닥에 있고, 점프 버튼으로 한 번 줍고, 기록의 것은 새 판에 없다.
+    /// 0105·0106 → 0123: 숨은 물건 넷(등잔 하나 · 한 모금 하나 · 종소리 조각 둘 — 덜 후하게)은 걸어서 닿는 바닥에 있고, 점프 버튼으로 한 번 줍고, 기록의 것은 새 판에 없다.
     #[test]
     fn hidden_finds_are_reachable_picked_once_and_gone_from_the_record() {
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
         let kinds: Vec<Find> = run.finds.iter().map(|f| f.1).collect();
-        assert_eq!(
-            kinds,
-            vec![
-                Find::Lamp,
-                Find::Sip,
-                Find::Sip,
-                Find::Shard,
-                Find::Shard,
-                Find::Shard
-            ]
-        );
+        assert_eq!(kinds, vec![Find::Lamp, Find::Sip, Find::Shard, Find::Shard]);
         let ids: Vec<&str> = run.finds.iter().map(|f| f.2.as_str()).collect();
         assert_eq!(
             ids,
             vec![
                 "sanctuary.lamp.0",
                 "sanctuary.sip.0",
-                "sanctuary.sip.1",
                 "sanctuary.shard.0",
-                "sanctuary.shard.1",
-                "sanctuary.shard.2"
+                "sanctuary.shard.1"
             ]
         );
         for (p, _, id) in &run.finds {
@@ -1538,7 +2165,7 @@ mod tests {
         assert_eq!(run.take_picked(), None, "gone after picking");
         let (mut run, _) = StageRun::start(&sanctuary::DEF);
         run.set_found(&[id, "elsewhere.sip.0".to_string()]);
-        assert_eq!(run.found, vec![false, true, false, false, false, false]);
+        assert_eq!(run.found, vec![false, true, false, false]);
     }
 
     /// 0105(lore CANON 0101): 처음 이긴 문지기의 핵은 다가오면 스스로 방랑자 쪽으로 온다. 그다음 판부터는 그 자리에 있다.
@@ -1573,6 +2200,7 @@ mod tests {
             crate::save::RunAt {
                 rest: last,
                 gate_open: true,
+                ..Default::default()
             },
         );
         assert_eq!(run.phase, Phase::GateOpen);
@@ -1584,7 +2212,8 @@ mod tests {
             run.run_at(),
             Some(crate::save::RunAt {
                 rest: last,
-                gate_open: true
+                gate_open: true,
+                ..Default::default()
             })
         );
         // 서 있는 적은 쉼터에서 다시 섰다(0113).
@@ -1607,6 +2236,7 @@ mod tests {
             crate::save::RunAt {
                 rest: 0,
                 gate_open: false,
+                ..Default::default()
             },
         );
         assert_eq!(run.phase, Phase::Entrance);
@@ -1618,6 +2248,7 @@ mod tests {
             crate::save::RunAt {
                 rest: 99,
                 gate_open: true,
+                ..Default::default()
             },
         );
         assert_eq!(run.phase, Phase::Entrance);

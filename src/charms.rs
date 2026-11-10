@@ -11,6 +11,10 @@ pub enum Id {
     Hunger,
     Hand,
     Pouch,
+    /// 떠난 마을(0127 C6): 꿰맨 천 · 물 받는 항아리(상자) · 깨진 종 조각(종지기 첫 승리).
+    Cloth,
+    Jar,
+    BellShard,
 }
 
 /// 낄 수 있는 칸 수.
@@ -22,16 +26,19 @@ pub struct Def {
     pub key: &'static str,
     pub name: Tr,
     pub desc: Tr,
+    /// 세계 안의 말 한 줄(0129 C4 — 출처와 기능을 잇는다, lore ecology "장신구 = 옛 흔적"). 장비 창 설명 아래 옅게.
+    pub flavor: Tr,
     pub mods: Mods,
 }
 
 /// 표 순서 = 보여 주는 순서.
-pub static TABLE: [Def; 6] = [
+pub static TABLE: [Def; 9] = [
     Def {
         id: Id::Shell,
         key: "shell",
         name: |s: &Strings| s.charm_shell,
         desc: |s: &Strings| s.charm_shell_d,
+        flavor: |s: &Strings| s.charm_shell_f,
         mods: Mods {
             hp: 1,
             flask: 0,
@@ -48,6 +55,7 @@ pub static TABLE: [Def; 6] = [
             poise: 1.0,
             heavy_dmg: 0,
             light_dmg: 0,
+            opened_dmg: 0,
         },
     },
     Def {
@@ -55,6 +63,7 @@ pub static TABLE: [Def; 6] = [
         key: "feet",
         name: |s: &Strings| s.charm_feet,
         desc: |s: &Strings| s.charm_feet_d,
+        flavor: |s: &Strings| s.charm_feet_f,
         mods: Mods {
             hp: 0,
             flask: 0,
@@ -62,7 +71,7 @@ pub static TABLE: [Def; 6] = [
             dmg: 0,
             taken: 1,
             atk_speed: 1.0,
-            dodge_cost: 0.7,
+            dodge_cost: 0.8,
             parry: 0.0,
             kill_stamina: 0.0,
             ember: 1.0,
@@ -71,6 +80,7 @@ pub static TABLE: [Def; 6] = [
             poise: 1.0,
             heavy_dmg: 0,
             light_dmg: 0,
+            opened_dmg: 0,
         },
     },
     Def {
@@ -78,6 +88,7 @@ pub static TABLE: [Def; 6] = [
         key: "ear",
         name: |s: &Strings| s.charm_ear,
         desc: |s: &Strings| s.charm_ear_d,
+        flavor: |s: &Strings| s.charm_ear_f,
         mods: Mods {
             hp: 0,
             flask: 0,
@@ -86,7 +97,7 @@ pub static TABLE: [Def; 6] = [
             taken: 0,
             atk_speed: 1.0,
             dodge_cost: 1.0,
-            parry: 0.06,
+            parry: 0.04,
             kill_stamina: 0.0,
             ember: 1.0,
             stamina_max: 0.0,
@@ -94,6 +105,7 @@ pub static TABLE: [Def; 6] = [
             poise: 1.0,
             heavy_dmg: 0,
             light_dmg: 0,
+            opened_dmg: 0,
         },
     },
     Def {
@@ -101,6 +113,7 @@ pub static TABLE: [Def; 6] = [
         key: "hunger",
         name: |s: &Strings| s.charm_hunger,
         desc: |s: &Strings| s.charm_hunger_d,
+        flavor: |s: &Strings| s.charm_hunger_f,
         mods: Mods {
             hp: 0,
             flask: -1,
@@ -117,6 +130,7 @@ pub static TABLE: [Def; 6] = [
             poise: 1.0,
             heavy_dmg: 0,
             light_dmg: 0,
+            opened_dmg: 0,
         },
     },
     Def {
@@ -124,29 +138,7 @@ pub static TABLE: [Def; 6] = [
         key: "hand",
         name: |s: &Strings| s.charm_hand,
         desc: |s: &Strings| s.charm_hand_d,
-        mods: Mods {
-            hp: 0,
-            flask: 0,
-            heal: 0,
-            dmg: 1,
-            taken: 0,
-            atk_speed: 0.85,
-            dodge_cost: 1.0,
-            parry: 0.0,
-            kill_stamina: 0.0,
-            ember: 1.0,
-            stamina_max: 0.0,
-            stamina_regen: 1.0,
-            poise: 1.0,
-            heavy_dmg: 0,
-            light_dmg: 0,
-        },
-    },
-    Def {
-        id: Id::Pouch,
-        key: "pouch",
-        name: |s: &Strings| s.charm_pouch,
-        desc: |s: &Strings| s.charm_pouch_d,
+        flavor: |s: &Strings| s.charm_hand_f,
         mods: Mods {
             hp: 0,
             flask: 0,
@@ -157,12 +149,113 @@ pub static TABLE: [Def; 6] = [
             dodge_cost: 1.0,
             parry: 0.0,
             kill_stamina: 0.0,
-            ember: 1.5,
+            ember: 1.0,
+            stamina_max: 0.0,
+            stamina_regen: 1.0,
+            poise: 1.0,
+            heavy_dmg: 1,
+            light_dmg: 0,
+            opened_dmg: 0,
+        },
+    },
+    Def {
+        id: Id::Pouch,
+        key: "pouch",
+        name: |s: &Strings| s.charm_pouch,
+        desc: |s: &Strings| s.charm_pouch_d,
+        flavor: |s: &Strings| s.charm_pouch_f,
+        mods: Mods {
+            hp: 0,
+            flask: 0,
+            heal: 0,
+            dmg: 0,
+            taken: 0,
+            atk_speed: 1.0,
+            dodge_cost: 1.0,
+            parry: 0.0,
+            kill_stamina: 0.0,
+            ember: 1.25,
             stamina_max: 0.0,
             stamina_regen: 1.0,
             poise: 1.0,
             heavy_dmg: 0,
             light_dmg: 0,
+            opened_dmg: 0,
+        },
+    },
+    Def {
+        id: Id::Cloth,
+        key: "cloth",
+        name: |s: &Strings| s.charm_cloth,
+        desc: |s: &Strings| s.charm_cloth_d,
+        flavor: |s: &Strings| s.charm_cloth_f,
+        mods: Mods {
+            hp: 1,
+            flask: 0,
+            heal: 0,
+            dmg: 0,
+            taken: 0,
+            atk_speed: 1.0,
+            dodge_cost: 1.0,
+            parry: 0.0,
+            kill_stamina: 0.0,
+            ember: 1.0,
+            stamina_max: 0.0,
+            stamina_regen: 0.9,
+            poise: 1.0,
+            heavy_dmg: 0,
+            light_dmg: 0,
+            opened_dmg: 0,
+        },
+    },
+    Def {
+        id: Id::Jar,
+        key: "jar",
+        name: |s: &Strings| s.charm_jar,
+        desc: |s: &Strings| s.charm_jar_d,
+        flavor: |s: &Strings| s.charm_jar_f,
+        mods: Mods {
+            hp: 0,
+            flask: -1,
+            heal: 1,
+            dmg: 0,
+            taken: 0,
+            atk_speed: 1.0,
+            dodge_cost: 1.0,
+            parry: 0.0,
+            kill_stamina: 0.0,
+            ember: 1.0,
+            stamina_max: 0.0,
+            stamina_regen: 1.0,
+            poise: 1.0,
+            heavy_dmg: 0,
+            light_dmg: 0,
+            opened_dmg: 0,
+        },
+    },
+    Def {
+        id: Id::BellShard,
+        key: "bellshard",
+        name: |s: &Strings| s.charm_bellshard,
+        desc: |s: &Strings| s.charm_bellshard_d,
+        flavor: |s: &Strings| s.charm_bellshard_f,
+        mods: Mods {
+            hp: 0,
+            flask: 0,
+            heal: 0,
+            dmg: 0,
+            taken: 0,
+            atk_speed: 1.0,
+            dodge_cost: 1.0,
+            parry: 0.0,
+            kill_stamina: 0.0,
+            ember: 1.0,
+            stamina_max: 0.0,
+            stamina_regen: 1.0,
+            poise: 1.0,
+            heavy_dmg: 0,
+            light_dmg: 0,
+            opened_dmg: 1,
         },
     },
 ];
@@ -263,7 +356,23 @@ mod tests {
         assert!(feet.dodge_cost < 1.0 && feet.taken == 1);
         let hunger = Stats::compute(&[def(Id::Hunger).mods]);
         assert!(hunger.kill_stamina > 0.0 && hunger.flask == base.flask - 1);
+        // 무거운 손(0127, 0126 모의 — 평타 +1이 싸움 시간을 반으로 줄였다): 강타(패링 반격 포함)에만.
         let hand = Stats::compute(&[def(Id::Hand).mods]);
-        assert!(hand.dmg == 1 && hand.atk_speed < 1.0);
+        assert!(hand.heavy_dmg == 1 && hand.dmg == 0 && hand.atk_speed == 1.0);
+        // 떠난 마을(0127): 맞바꿈 둘 + 열린 틈.
+        let cloth = Stats::compute(&[def(Id::Cloth).mods]);
+        assert!(cloth.max_hp == base.max_hp + 1 && cloth.stamina_regen < 1.0);
+        let jar = Stats::compute(&[def(Id::Jar).mods]);
+        assert!(jar.heal == 1 && jar.flask == base.flask - 1);
+        assert_eq!(Stats::compute(&[def(Id::BellShard).mods]).opened_dmg, 1);
+        // 0129 C4: 모든 장신구에 세계 안의 말 한 줄 — 수치 글과 다르다.
+        for d in &TABLE {
+            let s = crate::i18n::s();
+            assert!(
+                !(d.flavor)(s).is_empty() && (d.flavor)(s) != (d.desc)(s),
+                "{:?}",
+                d.id
+            );
+        }
     }
 }

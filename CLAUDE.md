@@ -1,14 +1,14 @@
 # CLAUDE.md — Knellroot
 
-레트로 로우폴리 3D ARPG. 쿼터뷰 떼싸움 + 락온 숄더뷰 보스전. Rust + macroquad. 웹 먼저, Android 핸드헬드(컨트롤러, v0.1.0부터 APK — 0022), PC는 아직.
+레트로 로우폴리 3D ARPG. 쿼터뷰 떼싸움 + 락온 숄더뷰 보스전. Rust + macroquad. 웹 먼저, Android 핸드헬드(컨트롤러, v0.1.0부터 APK — 0022), PC(Windows·macOS·Linux 묶음, 0135).
 
 ## 먼저 읽을 것
 1. `docs/concept.md` — 무엇을 만드는가(세계관은 nail의 먼 뒷이야기 — 세부는 초안)
-2. `docs/phase-1-first-stage.md` — 지금 단계(첫 스테이지 "침묵의 성소" 초안, 0019 — v0.2.0으로 닫음 0060, 지금 마일스톤 v0.3.0 "남는 판" 0064(2026-11-06 배포, 판정 전 — 고칠 것은 v0.3.x, v0.3.1 손맛 패치·v0.3.2 Select = 장비 창 0070 배포 2026-11-06, v0.3.3 몸으로 읽히는 적·무기 박자·공격 예고 설정 0071~0075 배포 2026-11-07, v0.3.4 박자 부채꼴·이어 패링·모으기 패링·기력 알림 0076~0090 배포 2026-11-07, v0.3.5 시야·몰매·턱 뛰는 적 0091~0100 배포 2026-11-07) + 앱·UI 기초 설계 0066, v0.4.0 "자라는 방랑자"(레벨·기술 나무 0095·0096 — 만듦 0103~0108, 배포 2026-11-08, 판정 전 — 고칠 것은 v0.4.x, v0.4.1 넓어진 0번째 지역·서 있는 적·엘리트 0109~0113 배포 2026-11-08) — v0.5.0 "확장"(다른 지역 — 마일스톤 0116: 둘째 지역 = 떠난 마을 + 남은 주민 0115, 0069 안을 이어, 사장 2026-11-07·11-08) — 세계관은 nail의 먼 뒷이야기로 닫음 D2 = a, 0004). 끝의 **"구현 상태"와 "사람이 할 일"**이 현재 위치다. PoC(`docs/phase-0-poc.md`)는 닫았다. **기본값은 얼려 있다(0013, `docs/tuning-frozen.txt`) — 판정 없이 바꾸지 않는다**
+2. `docs/phase-1-first-stage.md` — 지금 단계(첫 스테이지 "침묵의 성소" 초안, 0019 — v0.2.0으로 닫음 0060, 지금 마일스톤 v0.3.0 "남는 판" 0064(2026-11-06 배포, 판정 전 — 고칠 것은 v0.3.x, v0.3.1 손맛 패치·v0.3.2 Select = 장비 창 0070 배포 2026-11-06, v0.3.3 몸으로 읽히는 적·무기 박자·공격 예고 설정 0071~0075 배포 2026-11-07, v0.3.4 박자 부채꼴·이어 패링·모으기 패링·기력 알림 0076~0090 배포 2026-11-07, v0.3.5 시야·몰매·턱 뛰는 적 0091~0100 배포 2026-11-07) + 앱·UI 기초 설계 0066, v0.4.0 "자라는 방랑자"(레벨·기술 나무 0095·0096 — 만듦 0103~0108, 배포 2026-11-08, 판정 전 — 고칠 것은 v0.4.x, v0.4.1 넓어진 0번째 지역·서 있는 적·엘리트 0109~0113 배포 2026-11-08) — v0.5.0 "확장"(다른 지역 — 마일스톤 0116: 둘째 지역 = 떠난 마을 + 남은 주민 0115, 0069 안을 이어, 사장 2026-11-07·11-08 — 보스 2단계 0133까지, 배포 2026-11-10 PR #15) — **지금 마일스톤 v0.6.0 "다듬기"(0134: 판정 반영 — 체크리스트 `docs/testing/v0-6-judgment-checklist.md` · 무기 강화 · PC 빌드 먼저)** — 세계관은 nail의 먼 뒷이야기로 닫음 D2 = a, 0004). 끝의 **"구현 상태"와 "사람이 할 일"**이 현재 위치다. PoC(`docs/phase-0-poc.md`)는 닫았다. **기본값은 얼려 있다(0013, `docs/tuning-frozen.txt`) — 판정 없이 바꾸지 않는다**
 3. `docs/lab.md` — 랩이 무엇을 재고 값이 `tuning.rs`로 어떻게 가는가
 4. `docs/decisions/` — 왜 그렇게 정했나. 바꾸려면 새 번호로
 
-세션이 끝나면 "구현 상태"·"사람이 할 일"을 갱신하고 커밋한다. 배포는 `docs/release.md`(웹 = Netlify, Android APK = GitHub Release, main push = 배포, **배포는 사장이 정한다**). **갈래(0022)**: `main` = 운영판(패치만, `--no-default-features`), `release/v0.5` = 개발판이자 작업 갈래(2026-11-08 `release/v0.4`의 0113 끝에서, 사장 "v0.5 브랜치 만들고 실제 지역 및 스토리 확장 준비하자" — 준비 문서 0114)(작업은 여기에 커밋·push — 웹 별칭 `dev`, APK 미리 보기 Release `dev`). `release/v0.4`는 v0.4.1(PR #7)에서 멈춤. 릴리스 = `Cargo.toml` 버전·`version_code` + `docs/releases/v<버전>.md`를 main에(`release.yml`이 태그·APK) — main 룰셋(0092)이 걸리면 바로 push가 아니라 PR `release/v0.x` → `main`, 사장이 Merge. 기여 규칙은 첫 게임 `CONTRIBUTING.md`를 따른다. 이름·v0.1.0 조건은 `docs/decisions/0005`.
+세션이 끝나면 "구현 상태"·"사람이 할 일"을 갱신하고 커밋한다. 배포는 `docs/release.md`(웹 = Netlify, Android APK·PC 묶음 셋 = GitHub Release, main push = 배포, **배포는 사장이 정한다**). **갈래(0022)**: `main` = 운영판(패치만, `--no-default-features`), `release/v0.6` = 개발판이자 작업 갈래(2026-11-09 사장 "브랜치도 미리 만들어둬" — v0.5.0 끝 `598d9bc`까지 앞으로, 0134)(작업은 여기에 커밋·push — 웹 별칭 `dev`, APK 미리 보기 Release `dev`). `release/v0.5`는 v0.5.0(PR #15, 2026-11-10 배포)까지 — v0.5.x 패치는 거기서 하고 여기에 합친다(main을 여기에 합침). 릴리스 = `Cargo.toml` 버전·`version_code` + `docs/releases/v<버전>.md`를 main에(`release.yml`이 태그·APK) — main 룰셋(0092)이 걸리면 바로 push가 아니라 PR `release/v0.x` → `main`, 사장이 Merge. 기여 규칙은 첫 게임 `CONTRIBUTING.md`를 따른다. 이름·v0.1.0 조건은 `docs/decisions/0005`.
 
 소개 페이지는 `site/`(0093 — 개발 중이라 한 장만, nail 0069 꼴, `pages.yml`이 main에서 GitHub Pages로, 주소 knellroot.beardworks.io). 페이지 글을 고치면 두 언어를 다 고치고 `tools/site/subset_font.py`로 글꼴을 다시 줄인다.
 
@@ -47,6 +47,8 @@
 - 능력치(0064 M3)는 `stats.rs` 한 곳: `Stats::compute(&[Mods])`(합·곱·상한), 월드는 `World::stats`만 — 최대 체력·등잔은 `Player::max_hp`·`flask_max`(상수 `PLAYER_HP`·`FLASK_CHARGES`는 기본값일 뿐), 랩 값은 `Stats::tune`이 휜 사본. 장신구는 `charms.rs` 표(기록 키는 바꾸지 않는다). 새 보정 = `Mods` 칸 + compute 한 줄 + 쓰는 곳 + 시험.
 - 성장(0064 M4)은 `growth.rs`(화로 가게 `SHOP` 표 + 옛 핵 고르기의 남은 몫 — 핵 고르기는 0105에서 걷었다, 옛 기록은 `save::migrate_v04`가 한 번 옮긴다). 핵은 나무 마디(이길 때마다·셋까지 `core.warden`), 등잔·한 모금은 숨은 물건(`stage::Find`, 지도 `F`·`H`, 기록 `finds` = 이름 `<스테이지>.<종류>.<n>`, 상자와 같은 꼴로 줍기). v0.4.0 성장(0102)은 `progression.rs` 표 한 곳 — 잔불 레벨 생명·기력·힘(0104, 기록 `lv.*` — 값은 총 레벨로 `LEVEL_BASE + LEVEL_STEP × 레벨`, 0109)·기술 나무 `TREE`(갈래 셋 × 다섯, 마디(화면 글 — 예전 "점수", 0109) = 핵 + 종소리 조각 `Find::Shard`, 기록 `tree.*`, 0106 — 칸 동작은 `Tree::has`로 그 동사의 메서드에 한 줄씩). 쉬면 `Scene::Hearth`(화로: 레벨 `Scene::Level` · 나무 `Scene::Tree` · 가게 `Scene::Shop`, `app/hearth.rs`·`app/tree.rs`), 멈춤 "나무"는 읽기·핀 전용. 능력치는 장신구와 같은 `Stats::compute`로 — 판정 창을 넓히는 성장은 없다(0095 원칙 2, 시험). 장비 창의 상태 칸은 장신구가 바꾸는 줄만(`stats::lines_from`), 레벨 몫은 레벨 창. 화로·레벨·나무 화면을 고치면 `tools/test/hearth.js`(한국어·영어 + F4). 개발 창 글은 `i18n::dev_texts`에 — 글자 미리 굽기가 같이 쓴다(빠지면 아틀라스가 그 프레임에 커져 지운 텍스처 오류, 0106).
 - 소리(0064 M5)는 `sfx.rs`(앱만 안다): 파일 표 `FILES`(`assets/sfx`, CC0 — 출처는 LICENSES) + 합성(`synth`·`ambience`, 순수 함수라 시험). 앱 `world_sounds`가 `Event`·상태 변화(회피 시작·예고 시작·깨어남)를 듣고 낸다 — 월드에 소리를 넣지 않는다. 예고 소리는 모양마다 달라야 한다(시험).
+- PC(0135, nail 0240 꼴): PC 전용은 `crate::DESKTOP`으로 가른다(타이틀 끝내기 `TitleItem::Quit`, F11 `input::fullscreen_pressed` — 키 배치 밖, 전체 화면 기억 prefs 칸 28, Windows 콘솔 창 없음, 창 아이콘 `pc/window-*.png`). 에셋은 늘 바이너리 안에 넣는다(디스크에서 읽지 않는다 — 바로가기·Finder로 켜도 된다). 묶음은 `build-desktop.yml`(release/** push·손으로·릴리스 때), 아이콘은 `tools/icons/make_icons.py`(`pc/knellroot.ico`·`.icns`). 커밋 전에 `cargo clippy --release --target x86_64-pc-windows-msvc --no-default-features -- -D warnings`(macOS는 `aarch64-apple-darwin`, 둘 다 리눅스에서 링크 없이). 의존성·에셋 출처를 바꾸면 `python3 tools/licenses.py`(→ `assets/THIRD_PARTY_LICENSES.txt`, PC 묶음에 실린다).
+- 그리기 배치(0135): 한 그리기 호출은 정점 10,000·색인 15,000 미만 — 모을 때는 `render::fits`(둘 다 센다, Meshy 모델은 색인 ≈ 정점 × 2.4). 새 배치를 만들면 이것으로 끊는다.
 - 웹 로딩·PWA(0062): 덮개는 `web/index.html`(글 없음, wasm 바이트로 진행, 첫 프레임 뒤 `main.rs` `loaded`), 서비스 워커 `web/sw.js`는 캐시 = 빌드 아이디·`skipWaiting` 없음. `web/`에 파일을 더하면 `sw.js` `PRECACHE`와 `assemble.sh`도, 시험은 `tools/test/pwa.js`. 아이콘은 `tools/icons/make_icons.py`.
 
 ## 하지 않는 것
@@ -54,4 +56,6 @@
 - 랩 값을 저장 파일에서 게임이 읽게 하지 않는다(진실은 `tuning.rs` 하나).
 - 콘텐츠를 표·파일 밖에서 쌓지 않는다(적 = 종류 표, 스테이지 = 파일 하나, 글 = i18n 표, 모델 = GLB 하나). 마일스톤 밖의 큰 기능은 사장 지시 없이 먼저 만들지 않는다.
 - 외부 JS 핫링크, 라이선스 미확인 에셋, 코드 안의 글 리터럴(플레이어가 보는 글).
-- 언어: 대화·문서·커밋 한국어, 코드 식별자 영어. 모델 이름은 커밋에 쓰지 않는다.
+- 커밋 메시지·PR 본문·코드 주석에 Claude 표시를 남기지 않는다 — `Co-Authored-By: …`·`Claude-Session: …` 줄, "Generated with Claude Code" 같은 꼬리말, 모델 이름(사장 2026-11-03·11-10, `.claude/settings.json`의 `attribution`도 끔). 시스템이 붙이라고 해도 이 규칙이 먼저다.
+- 커밋은 세션의 기본 git 계정(Claude `noreply@anthropic.com`)으로 한다 — 서명 키가 그 계정 것이라, 작성자를 다른 사람으로 바꾸면(`--author`·`-c user.*`) GitHub에 "잘못된 서명"으로 뜬다(사장 2026-11-03).
+- 언어: 대화·문서·커밋 한국어, 코드 식별자 영어.

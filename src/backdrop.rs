@@ -11,6 +11,7 @@
 //!   하늘 원통은 먼 클립(200m) 안에 들게 높이각 34°까지만, 그 위는 지우는 빛(`ZENITH`)이 이어 준다.
 use macroquad::prelude::*;
 
+use crate::ground::Ground;
 use crate::render::Batch;
 
 /// 안개 빛(해 질 녘 남보라 — 0037 세계 빛, 아지랑이·하늘과 같은 계열).
@@ -30,11 +31,114 @@ const FOG_TEX: u16 = 32;
 /// 판마다 흐르는 빠르기(m/s)·쪽(판 번호로 돌린다).
 const FOG_DRIFT: f32 = 0.25;
 
-#[derive(Default)]
 pub struct Backdrop {
     fog_tex: Option<Texture2D>,
     halo_tex: Option<Texture2D>,
+    /// 지금 지역의 환경(0118 T2 — 렌더가 프레임마다 스테이지에서 넣는다).
+    pub env: &'static Env,
 }
+
+impl Default for Backdrop {
+    fn default() -> Self {
+        Self {
+            fog_tex: None,
+            halo_tex: None,
+            env: &SURFACE,
+        }
+    }
+}
+
+/// 지역 환경(0118 T2, 0114 표): 땅 위(하늘·달·반딧불)와 땅속(동굴 원경·약한 달빛·떨어지는 흙)을 한 표로.
+/// 원경 꼴(하늘 원통·산등성이 세 겹·뿌리 아치)은 같고 빛만 바꾼다 — 땅속에선 산등성이가 높아져 동굴 벽, 아치는 뿌리 천장.
+pub struct Env {
+    /// 하늘 띠 빛(`SKY_BANDS` 높이각 차례)·원통 위를 지우는 빛.
+    pub sky: [Color; 6],
+    pub zenith: Color,
+    /// 산등성이 세 겹의 (몸빛, 꼭대기 테)와 높이 배율(땅속 = 동굴 벽).
+    pub ridges: [(Color, Color); 3],
+    pub ridge_h: f32,
+    /// 달을 그리나, 달빛 세기(굽는 지형·배우의 `lit` 달빛 몫에 곱한다).
+    pub moon: bool,
+    pub moonlight: f32,
+    /// 안개 빛·허공 판 빛.
+    pub fog: Color,
+    pub fog_deep: Color,
+    /// 반딧불, 떨어지는 흙(천장에서), 나무·덤불(벽 뿌리는 둘 다).
+    pub fireflies: bool,
+    pub falling: bool,
+    pub trees: bool,
+}
+
+/// 땅 위(성소): 해 질 녘 남보라 하늘·달(0063 그대로).
+pub static SURFACE: Env = Env {
+    sky: [
+        Color::new(0.22, 0.20, 0.34, 1.0),
+        Color::new(0.40, 0.30, 0.44, 1.0),
+        Color::new(0.33, 0.26, 0.43, 1.0),
+        Color::new(0.25, 0.21, 0.39, 1.0),
+        Color::new(0.18, 0.16, 0.33, 1.0),
+        Color::new(0.12, 0.11, 0.25, 1.0),
+    ],
+    zenith: ZENITH,
+    ridges: [
+        (
+            Color::new(0.27, 0.22, 0.38, 1.0),
+            Color::new(0.36, 0.30, 0.48, 1.0),
+        ),
+        (
+            Color::new(0.19, 0.16, 0.30, 1.0),
+            Color::new(0.28, 0.24, 0.40, 1.0),
+        ),
+        (
+            Color::new(0.12, 0.11, 0.21, 1.0),
+            Color::new(0.20, 0.18, 0.32, 1.0),
+        ),
+    ],
+    ridge_h: 1.0,
+    moon: true,
+    moonlight: 1.0,
+    fog: FOG,
+    fog_deep: FOG_DEEP,
+    fireflies: true,
+    falling: false,
+    trees: true,
+};
+
+/// 땅속(떠난 마을, 지하 40m): 하늘 대신 흙빛이 아래로 짙어지는 동굴, 높은 동굴 벽, 뿌리 천장(아치), 달 없음·달빛은 천장 틈으로 조금,
+/// 흙이 떨어진다(KB conveying-descent "방 안의 위"). 색은 같은 남보라 계열을 흙빛 쪽으로 낮춘다(0037 — 세계의 빛은 이어진다).
+pub static UNDERGROUND: Env = Env {
+    sky: [
+        Color::new(0.10, 0.08, 0.12, 1.0),
+        Color::new(0.17, 0.13, 0.17, 1.0),
+        Color::new(0.13, 0.10, 0.15, 1.0),
+        Color::new(0.10, 0.08, 0.12, 1.0),
+        Color::new(0.07, 0.06, 0.10, 1.0),
+        Color::new(0.05, 0.045, 0.08, 1.0),
+    ],
+    zenith: Color::new(0.04, 0.035, 0.06, 1.0),
+    ridges: [
+        (
+            Color::new(0.16, 0.12, 0.15, 1.0),
+            Color::new(0.24, 0.18, 0.21, 1.0),
+        ),
+        (
+            Color::new(0.11, 0.09, 0.12, 1.0),
+            Color::new(0.18, 0.14, 0.17, 1.0),
+        ),
+        (
+            Color::new(0.07, 0.06, 0.09, 1.0),
+            Color::new(0.13, 0.10, 0.13, 1.0),
+        ),
+    ],
+    ridge_h: 2.2,
+    moon: false,
+    moonlight: 0.4,
+    fog: Color::new(0.16, 0.13, 0.20, 1.0),
+    fog_deep: Color::new(0.09, 0.075, 0.12, 1.0),
+    fireflies: false,
+    falling: true,
+    trees: false,
+};
 
 /// 이어 붙여도 이음매가 없는 점 무늬(정수 주파수 사인 합) → 세 단 알파(픽셀 그림처럼 계단).
 fn fog_pixels(n: u16) -> Vec<u8> {
@@ -120,7 +224,8 @@ impl Backdrop {
                 t
             })
             .clone();
-        let col = Color::new(FOG.r, FOG.g, FOG.b, FOG_ALPHA);
+        let f = self.env.fog;
+        let col = Color::new(f.r, f.g, f.b, FOG_ALPHA);
         for (k, &y) in heights.iter().enumerate().rev() {
             let a = k as f32 * 2.4 + 0.7;
             let shift = vec2(a.cos(), a.sin()) * FOG_DRIFT * time;
@@ -157,6 +262,8 @@ struct Drift {
     /// 깜빡임: 0이면 늘 켜짐, 아니면 켜지는 빠르기(Hz).
     blink_hz: f32,
     seed: u32,
+    /// 바닥이 없는 칸(벽·허공) 위에서는 보이지 않는다(떨어지는 흙 — 천장에서 바닥으로 떨어지는 것).
+    hide_off_ground: bool,
 }
 
 /// 반딧불: 풀 높이(0.3~1.8m), 바람 없이 헤매고, 몇 초마다 켜졌다 꺼진다. 빛무리로 둘레를 살짝 밝힌다.
@@ -172,6 +279,7 @@ const FIREFLIES: Drift = Drift {
     color: Color::new(1.0, 0.86, 0.42, 1.0),
     blink_hz: 0.22,
     seed: 11,
+    hide_off_ground: false,
 };
 /// 달빛 먼지: 공중 높이까지(0.2~4m), 옅고 작게, 달 반대쪽으로 천천히 흐르며 가라앉는다.
 const MOTES: Drift = Drift {
@@ -186,6 +294,23 @@ const MOTES: Drift = Drift {
     color: Color::new(0.82, 0.82, 1.0, 0.7),
     blink_hz: 0.0,
     seed: 23,
+    hide_off_ground: false,
+};
+
+/// 떨어지는 흙(땅속, 0118 T2): 천장 높이(6m)에서 곧게 떨어지는 작은 흙빛 점 — 위에 땅이 있다는 신호.
+const FALLING: Drift = Drift {
+    count: 36,
+    half: 13.0,
+    y: (0.1, 6.0),
+    flow: Vec3::new(0.0, -0.9, 0.0),
+    wobble: 0.05,
+    wobble_hz: 0.3,
+    size: 0.06,
+    halo: 0.0,
+    color: Color::new(0.62, 0.50, 0.42, 0.85),
+    blink_hz: 0.0,
+    seed: 31,
+    hide_off_ground: true,
 };
 
 fn h01(i: u32, k: u32) -> f32 {
@@ -197,7 +322,7 @@ fn h01(i: u32, k: u32) -> f32 {
 }
 
 /// 무리의 `i`번째가 시각 `t`에 어디·얼마나 밝은가(0..1). 플레이어 `c`를 가운데 둔 상자에서 감아 돈다.
-fn drift_at(d: &Drift, i: u32, c: Vec3, t: f32) -> (Vec3, f32) {
+fn drift_at(d: &Drift, i: u32, c: Vec3, t: f32, ground: Option<&Ground>) -> (Vec3, f32) {
     let s = d.seed.wrapping_mul(1000) + i;
     let span = d.half * 2.0;
     let base = vec3(h01(s, 1) * span, 0.0, h01(s, 2) * span);
@@ -211,7 +336,17 @@ fn drift_at(d: &Drift, i: u32, c: Vec3, t: f32) -> (Vec3, f32) {
     let z = lo.y + (moved.z - lo.y).rem_euclid(span);
     let hspan = d.y.1 - d.y.0;
     let y0 = h01(s, 5) * hspan + d.flow.y * t + 0.2 * (w * 1.3 + ph).sin();
-    let y = d.y.0 + y0.rem_euclid(hspan);
+    // 높이는 그 자리의 바닥에서 잰다(마을은 구역마다 바닥이 −1 ~ +4m, 성소 성벽길 +3m — 월드 0에서 재면 바닥에 묻혔다).
+    // 바닥이 없는 칸(벽·허공): 떨어지는 흙은 만들지 않고(`hide_off_ground`), 다른 것은 월드 0 기준(허공 위 먼지·반딧불).
+    let floor = ground.and_then(|g| {
+        let p = vec3(x, 0.0, z);
+        let (gx, gz) = g.cell_of(p)?;
+        g.height_in(gx, gz, p)
+    });
+    if d.hide_off_ground && ground.is_some() && floor.is_none() {
+        return (vec3(x, 0.0, z), 0.0);
+    }
+    let y = floor.unwrap_or(0.0) + d.y.0 + y0.rem_euclid(hspan);
     // 가장자리는 옅게(감아 돌 때 튀지 않게): 상자 끝 15%·높이 끝에서 0으로.
     let edge =
         |v: f32, a: f32, span: f32| ((v - a).min(a + span - v) / (span * 0.15)).clamp(0.0, 1.0);
@@ -275,14 +410,28 @@ fn halo_pixels(n: u16) -> Vec<u8> {
 
 impl Backdrop {
     /// 떠다니는 것(E4): 반딧불·먼지. `right`·`up`은 카메라 화면의 오른쪽·위(월드).
-    pub fn motes(&mut self, batch: &mut Batch, c: Vec3, right: Vec3, up: Vec3, time: f32) {
+    pub fn motes(
+        &mut self,
+        batch: &mut Batch,
+        c: Vec3,
+        right: Vec3,
+        up: Vec3,
+        time: f32,
+        ground: Option<&Ground>,
+    ) {
         let mut verts = Vec::new();
         let mut idx = Vec::new();
         let mut halos = Vec::new();
         let mut halo_idx = Vec::new();
-        for d in [&MOTES, &FIREFLIES] {
+        let env = self.env;
+        let kinds = [
+            Some(&MOTES),
+            env.fireflies.then_some(&FIREFLIES),
+            env.falling.then_some(&FALLING),
+        ];
+        for d in kinds.into_iter().flatten() {
             for i in 0..d.count {
-                let (p, k) = drift_at(d, i, c, time);
+                let (p, k) = drift_at(d, i, c, time, ground);
                 if k <= 0.02 {
                     continue;
                 }
@@ -312,14 +461,14 @@ impl Backdrop {
 
 /// 하늘 꼭대기 = 렌더 타깃을 지우는 빛(원통 위는 이것).
 pub const ZENITH: Color = Color::new(0.08, 0.08, 0.18, 1.0);
-/// 하늘 띠: (아래 높이각°, 위 높이각°, 빛). 지평선 바로 위가 가장 밝은 해 질 녘 띠.
-const SKY_BANDS: [(f32, f32, Color); 6] = [
-    (-25.0, -3.0, Color::new(0.22, 0.20, 0.34, 1.0)),
-    (-3.0, 2.0, Color::new(0.40, 0.30, 0.44, 1.0)),
-    (2.0, 6.0, Color::new(0.33, 0.26, 0.43, 1.0)),
-    (6.0, 12.0, Color::new(0.25, 0.21, 0.39, 1.0)),
-    (12.0, 20.0, Color::new(0.18, 0.16, 0.33, 1.0)),
-    (20.0, 34.0, Color::new(0.12, 0.11, 0.25, 1.0)),
+/// 하늘 띠: (아래 높이각°, 위 높이각°) — 빛은 지역 환경(`Env::sky`). 땅 위는 지평선 바로 위가 가장 밝은 해 질 녘 띠.
+const SKY_BANDS: [(f32, f32); 6] = [
+    (-25.0, -3.0),
+    (-3.0, 2.0),
+    (2.0, 6.0),
+    (6.0, 12.0),
+    (12.0, 20.0),
+    (20.0, 34.0),
 ];
 const SKY_R: f32 = 160.0;
 const SKY_SEGS: usize = 32;
@@ -337,13 +486,11 @@ fn moon_azimuth() -> f32 {
     let l = crate::render::LIGHT_DIR;
     l.z.atan2(l.x)
 }
-/// 산등성이 세 겹(스테이지 가운데 둘레): 반지름 = 스테이지 반폭 × 배, 땅 위 높이 범위(m), 몸빛·꼭대기 테 빛.
+/// 산등성이 세 겹(스테이지 가운데 둘레): 반지름 = 스테이지 반폭 × 배, 땅 위 높이 범위(m). 빛은 `Env::ridges`.
 struct Ridge {
     radius_k: f32,
     low: f32,
     high: f32,
-    body: Color,
-    rim: Color,
     seed: u32,
 }
 const RIDGES: [Ridge; 3] = [
@@ -351,24 +498,18 @@ const RIDGES: [Ridge; 3] = [
         radius_k: 2.7,
         low: 11.0,
         high: 24.0,
-        body: Color::new(0.27, 0.22, 0.38, 1.0),
-        rim: Color::new(0.36, 0.30, 0.48, 1.0),
         seed: 3,
     },
     Ridge {
         radius_k: 1.95,
         low: 7.0,
         high: 17.0,
-        body: Color::new(0.19, 0.16, 0.30, 1.0),
-        rim: Color::new(0.28, 0.24, 0.40, 1.0),
         seed: 5,
     },
     Ridge {
         radius_k: 1.38,
         low: 3.0,
         high: 9.0,
-        body: Color::new(0.12, 0.11, 0.21, 1.0),
-        rim: Color::new(0.20, 0.18, 0.32, 1.0),
         seed: 7,
     },
 ];
@@ -522,7 +663,9 @@ impl Backdrop {
         // 하늘 띠.
         let mut verts = Vec::new();
         let mut idx = Vec::new();
-        for (e0, e1, col) in SKY_BANDS {
+        let env = self.env;
+        for (b, &(e0, e1)) in SKY_BANDS.iter().enumerate() {
+            let col = env.sky[b];
             let (y0, y1) = (SKY_R * e0.to_radians().tan(), SKY_R * e1.to_radians().tan());
             for i in 0..SKY_SEGS {
                 let (a0, a1) = (
@@ -540,7 +683,11 @@ impl Backdrop {
         }
         batch.raw(&verts, &idx, None, 1.0);
         batch.send();
-        // 달(달빛이 오는 쪽).
+        // 달(달빛이 오는 쪽) — 땅속엔 없다.
+        if !env.moon {
+            self.ridges(batch, half, base_y);
+            return;
+        }
         let az = moon_azimuth();
         let flat = vec2(az.cos(), az.sin());
         let e = MOON_ELEV.to_radians();
@@ -557,7 +704,13 @@ impl Backdrop {
         );
         batch.raw(&mv, &mi, None, 1.0);
         batch.send();
-        // 산등성이 세 겹(먼 것부터) + 뿌리 아치(가운데 겹 앞).
+        self.ridges(batch, half, base_y);
+    }
+
+    /// 산등성이 세 겹(먼 것부터) + 뿌리 아치(가운데 겹 앞). 빛·높이는 지역 환경에서.
+    fn ridges(&mut self, batch: &mut Batch, half: f32, base_y: f32) {
+        let tau = std::f32::consts::TAU;
+        let env = self.env;
         let bottom = base_y - 6.0;
         for (k, r) in RIDGES.iter().enumerate() {
             let mut verts = Vec::new();
@@ -569,7 +722,10 @@ impl Backdrop {
                     (i + 1) as f32 / RIDGE_SEGS as f32 * tau,
                 );
                 let at = |a: f32, y: f32| vec3(a.cos() * rad, y, a.sin() * rad);
-                let (t0, t1) = (ridge_top(r, a0), ridge_top(r, a1));
+                let (t0, t1) = (
+                    ridge_top(r, a0) * env.ridge_h,
+                    ridge_top(r, a1) * env.ridge_h,
+                );
                 quad(
                     &mut verts,
                     &mut idx,
@@ -579,7 +735,7 @@ impl Backdrop {
                         at(a1, t1 - RIDGE_RIM),
                         at(a0, t0 - RIDGE_RIM),
                     ],
-                    r.body,
+                    env.ridges[k].0,
                 );
                 quad(
                     &mut verts,
@@ -590,7 +746,7 @@ impl Backdrop {
                         at(a1, t1),
                         at(a0, t0),
                     ],
-                    r.rim,
+                    env.ridges[k].1,
                 );
             }
             if k == 1 {
@@ -601,8 +757,8 @@ impl Backdrop {
                         arch,
                         rad * 0.97,
                         bottom,
-                        r.body,
-                        r.rim,
+                        env.ridges[k].0,
+                        env.ridges[k].1,
                     );
                 }
             }
@@ -730,11 +886,11 @@ mod tests {
 
     #[test]
     fn drifting_specks_stay_in_a_box_around_the_player_and_fade_at_its_edges() {
-        for d in [&MOTES, &FIREFLIES] {
+        for d in [&MOTES, &FIREFLIES, &FALLING] {
             for c in [Vec3::ZERO, vec3(37.0, 0.0, -12.5)] {
                 for t in [0.0, 13.7, 600.0] {
                     for i in 0..d.count {
-                        let (p, k) = drift_at(d, i, c, t);
+                        let (p, k) = drift_at(d, i, c, t, None);
                         assert!(
                             (p.x - c.x).abs() <= d.half + 1e-3
                                 && (p.z - c.z).abs() <= d.half + 1e-3
@@ -747,7 +903,7 @@ mod tests {
         }
         // 감아 도는 자리(상자 끝)에서는 보이지 않는다 — 튀어 나타나지 않게.
         let edge_k: f32 = (0..2000)
-            .map(|n| drift_at(&MOTES, 3, Vec3::ZERO, n as f32 * 0.37))
+            .map(|n| drift_at(&MOTES, 3, Vec3::ZERO, n as f32 * 0.37, None))
             .filter(|(p, _)| p.x.abs() > MOTES.half * 0.99)
             .map(|(_, k)| k)
             .fold(0.0, f32::max);
@@ -755,10 +911,47 @@ mod tests {
     }
 
     #[test]
+    fn falling_dust_tracks_each_walkable_surface_and_stays_below_its_ceiling() {
+        for floor in [-1.0, 0.0, 2.5, 4.0] {
+            let ground = Ground::new(1, 1, 100.0, vec![crate::ground::Cell::Flat(floor)]);
+            for t in [0.0, 13.7, 600.0] {
+                for i in 0..FALLING.count {
+                    let (p, k) = drift_at(&FALLING, i, Vec3::ZERO, t, Some(&ground));
+                    assert!(p.y >= floor + 0.1 - 1e-4, "floor={floor}, y={}", p.y);
+                    assert!(p.y <= floor + 6.0 + 1e-4, "floor={floor}, y={}", p.y);
+                    assert!((0.0..=1.0).contains(&k));
+                }
+            }
+        }
+    }
+
+    /// 달빛 먼지·반딧불도 바닥을 따른다(높은 단에서 바닥에 묻히지 않게) — 바닥 없는 칸에서도 보인다(허공 위 먼지).
+    #[test]
+    fn every_drift_rises_from_the_local_floor() {
+        let high = Ground::new(1, 1, 100.0, vec![crate::ground::Cell::Flat(4.0)]);
+        let solid = Ground::new(1, 1, 100.0, vec![crate::ground::Cell::Solid]);
+        for d in [&MOTES, &FIREFLIES] {
+            for i in 0..d.count {
+                let (p, _) = drift_at(d, i, Vec3::ZERO, 7.3, Some(&high));
+                assert!(p.y >= 4.0 + d.y.0 - 1e-4, "seed {}: {}", d.seed, p.y);
+            }
+            let shown = (0..d.count).any(|i| drift_at(d, i, Vec3::ZERO, 7.3, Some(&solid)).1 > 0.0);
+            assert!(shown, "seed {}: not hidden over solid cells", d.seed);
+        }
+    }
+
+    #[test]
+    fn falling_dust_is_hidden_over_solid_cells() {
+        let ground = Ground::new(1, 1, 100.0, vec![crate::ground::Cell::Solid]);
+        let (_, alpha) = drift_at(&FALLING, 0, Vec3::ZERO, 0.0, Some(&ground));
+        assert_eq!(alpha, 0.0);
+    }
+
+    #[test]
     fn fireflies_blink_and_are_not_all_lit_at_once() {
         let lit = |t: f32| {
             (0..FIREFLIES.count)
-                .filter(|&i| drift_at(&FIREFLIES, i, vec3(0.0, 0.0, 0.0), t).1 > 0.5)
+                .filter(|&i| drift_at(&FIREFLIES, i, vec3(0.0, 0.0, 0.0), t, None).1 > 0.5)
                 .count()
         };
         let counts: Vec<usize> = (0..40).map(|n| lit(n as f32 * 0.5)).collect();

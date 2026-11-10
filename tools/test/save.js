@@ -49,7 +49,7 @@ async function main() {
   if ((await record()) !== null) fail('a fresh browser already has a record');
 
   // 2) 문 앞 쉼터(번호 0 — 지도 위에서부터 첫 R)에서 쉰 기록 + 잔불·끝낸 판 + 나중 칸(모르는 키).
-  await page.evaluate((k) => localStorage.setItem(k, 'v=1\nembers=70\nclears=1\nrun.rest=0\nrun.gate=1\nfuture.key=keep\ncharm.owned=shell,ear\ncharm.worn=shell,,\n'), KEY);
+  await page.evaluate((k) => localStorage.setItem(k, 'v=1\nembers=115\nclears=1\nrun.rest=0\nrun.gate=1\nfuture.key=keep\ncharm.owned=shell,ear\ncharm.worn=shell,,\n'), KEY);
   await page.reload();
   await ready();
   await page.waitForTimeout(600);
@@ -67,7 +67,7 @@ async function main() {
   // 3a) 쉼터 화로(0104): 곁에서 점프 버튼(F) = 쉬기 → 화로(레벨 · 가게 · 떠나기).
   await press('KeyF'); await page.waitForTimeout(600);
   await shot('save-2a-hearth');
-  // 레벨(첫 줄) → 생명(첫 줄, 레벨 0의 값 40 — 0109) → 묻는 창(커서 "올리기") → 올림. 잔불 70 → 30.
+  // 레벨(첫 줄) → 생명(첫 줄, 레벨 0의 값 50 — 0123) → 묻는 창(커서 "올리기") → 올림. 잔불 115 → 65.
   await press('Enter'); await page.waitForTimeout(300);
   await shot('save-2a-level');
   await press('Enter'); await page.waitForTimeout(300);
@@ -76,8 +76,8 @@ async function main() {
   await shot('save-2a-level-raised');
   r = await record();
   console.log('레벨을 올린 뒤 기록:', JSON.stringify(r));
-  if (!/lv\.life=1\n/.test(r) || !/embers=30\n/.test(r)) fail('raising Life must spend 40 embers and keep lv.life=1');
-  // 레벨 창을 닫으면 화로(연 줄) → 셋째 줄 가게(레벨·나무·가게, 0106) → 첫 줄(잔불 주머니 25) 사기.
+  if (!/lv\.life=1\n/.test(r) || !/embers=65\n/.test(r)) fail('raising Life must spend 50 embers and keep lv.life=1');
+  // 레벨 창을 닫으면 화로(연 줄) → 셋째 줄 가게(레벨·나무·가게, 0106) → 첫 줄(잔불 주머니 60, 0117) 사기.
   await press('Escape'); await page.waitForTimeout(300);
   await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
   await shot('save-2a-shop');
@@ -105,10 +105,10 @@ async function main() {
   await press('Escape'); await page.waitForTimeout(200);
   await press('Escape'); await page.waitForTimeout(300);
 
-  // 4) 멈춤 → 처음부터(여섯째 줄: 계속·장비·나무(0106)·설정·개발(개발판, 0090)·처음부터).
+  // 4) 멈춤 → 처음부터(일곱째 줄: 계속·장비·나무(0106)·도감(0130)·설정·개발(개발판, 0090)·처음부터).
   await press('Escape');
   await page.waitForTimeout(200);
-  await press('ArrowDown', 5);
+  await press('ArrowDown', 6);
   await press('Enter');
   await page.waitForTimeout(300);
   // 처음부터는 묻는 창(커서는 "취소" — 그냥 확인하면 아무 일 없다), 위로 한 번 = "처음부터".
@@ -121,11 +121,11 @@ async function main() {
   if (!/embers=5\n/.test(r) || !/clears=1/.test(r)) fail('restart must keep what stays');
   if (!/future\.key=keep/.test(r)) fail('unknown keys must survive a write');
 
-  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 → 일곱째 — 나무(0106)·개발 줄(0090)이 끼어 → 묻는 창 위로 한 번).
+  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 → 여덟째 — 나무(0106)·도감(0130)·개발 줄(0090)이 끼어 → 묻는 창 위로 한 번).
   const slotCell = () => page.evaluate(() => localStorage.getItem('knell.slot'));
   const toTitle = async () => {
     await press('Escape'); await page.waitForTimeout(200);
-    await press('ArrowDown', 6); await press('Enter'); await page.waitForTimeout(300);
+    await press('ArrowDown', 7); await press('Enter'); await page.waitForTimeout(300);
     await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(600);
   };
   await toTitle();

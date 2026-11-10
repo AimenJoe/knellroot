@@ -111,7 +111,7 @@ pub const SHAKE_CHARGED: f32 = 0.12;
 
 pub const PLAYER_HP: i32 = 5;
 /// 등잔 횟수(0031). 화로에서 다시 찬다 — 화로 전까지는 스테이지를 새로 시작할 때. 성장으로 늘린다(items.md 2).
-pub const FLASK_CHARGES: i32 = 3;
+pub const FLASK_CHARGES: i32 = 2;
 /// 마법 칸(0048 → 0111): 한 칸이 `cast.cooldown s`마다 차고(수류탄과 같은 꼴), 쉼터에서 가득. 한 번 쏘면 한 칸.
 pub const CAST_CHARGES: f32 = 3.0;
 /// 잔불(0064 M1, `ember.rs`): 한 번에 흩는 조각 수 상한, 튀는 빠르기(옆·위 m/s)·중력·튀어 오름 비, 자석이 켜지는 때(초)·
@@ -149,8 +149,85 @@ pub const LEASH_RANGE: f32 = 18.0;
 /// 엘리트(0112): 체력 배율(올림)·몸 크기 배율·떨구는 잔불 배율, 처음 쓰러뜨렸을 때 더 흩는 잔불.
 pub const ELITE_HP: f32 = 2.0;
 pub const ELITE_SCALE: f32 = 1.25;
-pub const ELITE_EMBERS: u32 = 3;
-pub const ELITE_FIRST_EMBERS: u32 = 30;
+pub const ELITE_EMBERS: u32 = 2;
+pub const ELITE_FIRST_EMBERS: u32 = 15;
+/// 구역 등급(0112 1절 — 잡몹 레벨은 지역마다 고정 등급, 숫자는 화면에 없다): 체력·자세 막대·떨구는 잔불 배율(올림).
+/// 예고 길이·움직임은 바꾸지 않는다(읽히는 싸움 0071·0075). 등급 2 값은 0116 3절. 등급 3 값은 셋째 지역 때 정한다.
+pub struct Tier {
+    pub hp: f32,
+    pub poise: f32,
+    pub embers: f32,
+}
+pub const TIERS: [Tier; 2] = [
+    Tier {
+        hp: 1.0,
+        poise: 1.0,
+        embers: 1.0,
+    },
+    Tier {
+        hp: 1.5,
+        poise: 1.3,
+        // 0123: 1.6 → 1.3(아이템·성장 덜 후하게).
+        embers: 1.3,
+    },
+];
+/// 깨진 종지기(0125): 울림 고리 사이(m), 종 조각 빠르기(m/s)·날아가는 거리(m)·맞는 반지름(m)·되돌아가 종지기를 깎는 피해·
+/// 되받아칠 때 빨라지는 배, 조각 부채꼴 예고의 길이(m).
+/// 고리 사이는 시간으로 맞춘다(0126 모의): 점프는 누른 뒤 약 0.06~0.49초 동안 넘고 착지까지 0.65초 — 2.6m(0.37초)면
+/// 첫 고리를 넘은 몸이 둘째 고리에 꼭 맞았다. 6m ÷ 7m/s ≈ 0.86초 = 착지 뒤 다시 뛸 창 약 0.24초.
+pub const TOLL_GAP: f32 = 6.0;
+
+/// 적 공격 박자 변주(0128): 지연 공격이 정점에서 더 버티는 초(둘 — 외울 수 있게 몇 가지로만), 빠른 변형의 예고 배율과
+/// 바닥(신호 + 공격 ≥ 340ms — DS3 공격 해부, 0073), 지연이 풀리기 전 소리를 내는 때(맞기 몇 초 전), 페인트가 끊는 때
+/// (들어 올림의 몫), 엘리트가 더 받는 지연 확률·연속 공격(확률·간격).
+pub const DELAY_HOLDS: [f32; 2] = [0.35, 0.6];
+pub const FAST_TELE: f32 = 0.6;
+pub const TELE_FLOOR: f32 = 0.38;
+pub const RELEASE_LEAD: f32 = 0.22;
+pub const FEINT_AT: f32 = 0.75;
+pub const ELITE_DELAY_BONUS: f32 = 0.2;
+pub const ELITE_CHAIN: f32 = 0.3;
+pub const ELITE_GAPS: &[f32] = &[0.5];
+pub const SHARD_SPEED: f32 = 9.0;
+pub const SHARD_RANGE: f32 = 14.0;
+pub const SHARD_R: f32 = 0.35;
+pub const SHARD_REFLECT_DAMAGE: i32 = 3;
+pub const SHARD_REFLECT_SPEED: f32 = 1.4;
+pub const SHARD_SHOW: f32 = 7.0;
+
+// 보스 2단계(0133 — 사장 2026-11-09 인터뷰: 두 보스, 짧은 전환, 새 수 하나 + 잇기, 막대 표시 없음).
+/// 체력 반에서 하던 공격을 멈추고 맞지 않는 전환(초): 무릎 꿇음 → `RISE_BURST`에 터짐(밀쳐냄, 피해 없음) → 일어섬.
+pub const RISE_TIME: f32 = 2.0;
+pub const RISE_BURST: f32 = 1.2;
+/// 터질 때 이 거리(m, 몸 가장자리부터) 안의 방랑자를 이 빠르기로 밀어낸다(튕김 `RECOIL_PUSH`의 셋 배 남짓).
+pub const RISE_PUSH_R: f32 = 4.5;
+pub const RISE_PUSH: f32 = 9.0;
+/// 문지기 2단계 — 뿌리 기둥 줄(`Atk::Roots`): 땅을 짚으면 바라보는 쪽으로 기둥이 줄지어 솟는다. 원(피함)이 줄지어 예고되고,
+/// 앞머리가 이 빠르기로 나아가며 지나는 자리를 친다(뛰어도 맞는다 — 위로 솟으니). 옆으로 비킨다.
+pub const ROOTS_LEN: f32 = 11.0;
+pub const ROOTS_R: f32 = 0.9;
+pub const ROOTS_SPEED: f32 = 10.0;
+/// 종지기 2단계 — 종 내던지기(`Atk::Hurl`): 예고 첫 틱의 방랑자 자리에 종을 높이 던져 떨어뜨린다(원판 = 맞는 곳) →
+/// 떨어진 자리에서 고리 한 겹이 퍼진다(뛰어 넘는다). 예고의 이만큼이 지나면 종이 손을 떠난다(렌더).
+pub const HURL_R: f32 = 2.2;
+pub const HURL_RING: f32 = 7.0;
+pub const HURL_THROW: f32 = 0.55;
+/// 청소자(0120): 싸움이 없을 때 이 초마다 체력 1을 먹는다.
+pub const EAT_TIME: f32 = 2.5;
+/// 등딱지(0120): 앞을 친 평타가 튕기면 방랑자가 튀는 초·뒤로 밀리는 빠르기(m/s). 패링당한 것보다 짧게.
+pub const RECOIL_TIME: f32 = 0.35;
+pub const RECOIL_PUSH: f32 = 3.0;
+/// 꼬투리(0120): 깡충 물러나는 거리(m)·다시 뛰기까지 쉼(초).
+pub const POD_HOP: f32 = 3.2;
+pub const POD_HOP_CD: f32 = 2.6;
+/// 이 등급부터 잡몹 한 대 피해가 2(0112).
+pub const TIER_HEAVY_HITS: u8 = 3;
+
+/// 등급 `n`(1부터)의 배율 — 표 밖이면 가장 높은 줄.
+pub fn tier(n: u8) -> &'static Tier {
+    &TIERS[(n.max(1) as usize - 1).min(TIERS.len() - 1)]
+}
+
 /// 굳은(0112): 자세 막대 배율·밀려나는 배율.
 pub const ELITE_HARD_POISE: f32 = 2.5;
 pub const ELITE_HARD_KNOCK: f32 = 0.35;
@@ -806,11 +883,12 @@ pub const SPECS: [Spec; 147] = [
         300.0,
         5.0
     ),
+    // 0117(사장 "기력 충전이 너무 빨라 행동에 제약이 없다"): 45 → 28/s, 차기 시작 0.6 → 0.8초. 빈 막대가 다 차는 데 약 2.8 → 4.4초.
     spec!(
         StaminaRegen,
         "stamina.regen /s",
         "STAMINA_REGEN",
-        45.0,
+        28.0,
         5.0,
         200.0,
         5.0
@@ -819,7 +897,7 @@ pub const SPECS: [Spec; 147] = [
         StaminaDelay,
         "stamina.regen delay s",
         "STAMINA_DELAY",
-        0.6,
+        0.8,
         0.0,
         3.0,
         0.1
@@ -1092,12 +1170,12 @@ pub const SPECS: [Spec; 147] = [
         FlaskRaise,
         "flask.raise s",
         "FLASK_RAISE",
-        0.35,
+        0.45,
         0.05,
         1.0,
         0.05
     ),
-    spec!(FlaskTime, "flask.time s", "FLASK_TIME", 0.8, 0.2, 2.0, 0.05),
+    spec!(FlaskTime, "flask.time s", "FLASK_TIME", 1.0, 0.2, 2.0, 0.05),
     spec!(FlaskLock, "flask.lock s", "FLASK_LOCK", 0.3, 0.0, 1.0, 0.05),
     spec!(
         FlaskWalk,
@@ -1608,6 +1686,19 @@ pub fn idx(p: P) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn region_tier_multipliers_match_the_village_design() {
+        let one = tier(1);
+        assert_eq!((one.hp, one.poise, one.embers), (1.0, 1.0, 1.0));
+        let two = tier(2);
+        assert_eq!(
+            (two.hp, two.poise, two.embers),
+            (1.5, 1.3, 1.3),
+            "0116 → 0123 잔불 1.3"
+        );
+        assert_eq!(tier(0).hp, one.hp, "tier is one-based");
+    }
 
     #[test]
     fn every_p_has_exactly_one_spec_and_defaults_are_in_range() {

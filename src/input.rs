@@ -32,6 +32,12 @@ pub enum Device {
 
 static DEVICE: AtomicU8 = AtomicU8::new(u8::MAX);
 
+/// 이번 프레임에 전체 화면 키(F11, PC만 — 0135, nail 0240)를 눌렀나. 창 일이라 `Actions`(게임 동작)에 넣지 않고,
+/// 키 배치(`KEYS`)에도 없다(어떤 배치에서도 같은 키).
+pub fn fullscreen_pressed() -> bool {
+    crate::DESKTOP && is_key_pressed(KeyCode::F11)
+}
+
 pub fn device() -> Device {
     match DEVICE.load(Ordering::Relaxed) {
         u8::MAX => initial_device(),

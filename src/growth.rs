@@ -39,12 +39,14 @@ pub enum Ware {
     Oil,
 }
 
-/// 쉼터 화로의 가게(값은 잔불). 잔재 2·가시짐승 3·문지기 40이라 한 판(≈ 70)에 하나쯤.
-pub const SHOP: [(Ware, u32); 4] = [
-    (Ware::Charm(Charm::Pouch), 25),
-    (Ware::Charm(Charm::Feet), 35),
-    (Ware::Charm(Charm::Hunger), 45),
-    (Ware::Oil, 80),
+/// 쉼터 화로의 가게(값은 잔불). 0117: 서 있는 적 39(잔재 2·가시짐승 3)·엘리트·문지기 40으로 한 판 ≈ 150 —
+/// 레벨(40 + 20×L)과 나눠 쓰니 한 판에 하나쯤 되게 값을 올렸다(초반에 강해지는 것이 몰리지 않게). 단단한 껍질은 입구 상자에서 옮겨 왔다.
+pub const SHOP: [(Ware, u32); 5] = [
+    (Ware::Charm(Charm::Pouch), 60),
+    (Ware::Charm(Charm::Feet), 90),
+    (Ware::Charm(Charm::Shell), 110),
+    (Ware::Charm(Charm::Hunger), 120),
+    (Ware::Oil, 150),
 ];
 
 /// 아직 살 수 있는 것(가진 장신구·산 기름은 빠진다).
@@ -96,8 +98,14 @@ mod tests {
         let cheapest = SHOP.iter().map(|s| s.1).min().unwrap();
         assert!(!can_buy(cheapest - 1, &[], &g));
         assert!(can_buy(cheapest, &[], &g));
-        // 상자·문지기에서 얻는 장신구는 팔지 않는다(얻는 곳이 겹치지 않게).
-        for id in [Charm::Shell, Charm::Ear, Charm::Hand] {
+        // 상자·문지기에서 얻는 장신구는 팔지 않는다(얻는 곳이 겹치지 않게). 등껍질은 0117에서 가게로 옮겼다.
+        for id in [
+            Charm::Ear,
+            Charm::Hand,
+            Charm::Cloth,
+            Charm::Jar,
+            Charm::BellShard,
+        ] {
             assert!(SHOP.iter().all(|(w, _)| *w != Ware::Charm(id)));
         }
     }

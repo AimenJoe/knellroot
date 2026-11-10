@@ -9,12 +9,18 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bellkeeper  # noqa: E402
 import charms  # noqa: E402
 import check_glb  # noqa: E402
 import common as C  # noqa: E402
 import gatekeeper  # noqa: E402
+import pod  # noqa: E402
 import props  # noqa: E402
+import res_cloth  # noqa: E402
+import res_hearth  # noqa: E402
+import res_water  # noqa: E402
 import root_husk  # noqa: E402
+import shellback  # noqa: E402
 import thorn_beast  # noqa: E402
 import wanderer  # noqa: E402
 
@@ -22,7 +28,7 @@ import wanderer  # noqa: E402
 def main():
     models, previews = C.out_dirs()
     paths = []
-    for mod in (wanderer, root_husk, thorn_beast, gatekeeper):
+    for mod in (wanderer, root_husk, thorn_beast, gatekeeper, shellback, pod, bellkeeper, res_hearth, res_water, res_cloth):
         paths.append(mod.build(models, previews))
     paths += props.build(models, previews)
     paths.append(charms.build(models, previews))
