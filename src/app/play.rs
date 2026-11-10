@@ -124,6 +124,7 @@ impl App {
                 scenario::by_number(n).unwrap_or(self.sc)
             };
             self.world = scenario::build(self.sc);
+            self.fx.clear();
             self.world.set_weapon(self.weapon);
             self.cam = Camera::new(self.world.player.pos, &self.t);
         }
@@ -204,6 +205,11 @@ impl App {
             }
         }
         self.world_sounds(&events);
+        // 그림 이펙트(0141): 사건·상태 변화 → 입자. 히트스톱 동안은 입자도 느리게(맞힌 순간의 번쩍임·불티가 멈춘 몸과 함께 남는다).
+        self.fx.on_events(&events, &self.world);
+        self.fx.watch(&self.world, TICK_DT);
+        let slow = if self.world.hitstop > 0.0 { 0.25 } else { 1.0 };
+        self.fx.tick(TICK_DT * slow);
         self.follow_camera();
     }
 

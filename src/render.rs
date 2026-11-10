@@ -116,6 +116,8 @@ pub struct View<'a> {
     pub tells: f32,
     /// 바닥 예고의 "언제"(0128): 켬 = 채움이 테두리에 닿는 순간(0186 꼴), 끔(기본) = 자리가 점점 짙어지다 정해진 농도에서 맞는다.
     pub tell_timing: bool,
+    /// 그림 이펙트(0141 — 앱이 사건을 듣고 채운다).
+    pub fx: &'a crate::fx::Fx,
 }
 
 /// 탄의 색(0048·0051, `weapons::Bolt::look`): 마법 라벤더, 무거운 탄 놋쇠, 꿰뚫는 탄 민트, 쇠뇌 볼트 밝은 나무 — 붉은색(위험)은 쓰지 않는다.
@@ -347,6 +349,8 @@ pub fn floor_shade() -> f32 {
     1.0 - a.y / (a.y + m.y * k)
 }
 const FIRE: f32 = 1.5;
+/// 화로의 빛은 바닥 1.2m 위(`stage` 지도 읽기), 그릇 테는 0.86m(`props.py`) — 불티가 그릇에서 오르게.
+const BRAZIER_LIGHT_ABOVE_BOWL: f32 = 1.2 - 0.86;
 /// 빛줄기 세기(0124 — 땅속 달빛 0.4 아래에서 몸이 확 비치게).
 const SHAFT: f32 = 1.1;
 /// 움직이는 모델에 곱하는 밝기(배경과 떼어 읽히게).
@@ -1062,6 +1066,22 @@ impl Renderer {
         // 잔불 조각(0064 M1) — 스테이지·개발 시나리오 둘 다.
         self.backdrop
             .embers(&mut self.batch, &w.drops, cam_right, cam_up, w.time);
+        // 이펙트 입자(0141): 사건의 입자·화로 불티는 랩 `render.fx`로 끄고 켠다, 맞힌 자리의 불똥은 늘.
+        let fx_on = t[crate::tuning::P::RenderFx] >= 0.5;
+        let braziers: Vec<Vec3> = lights
+            .iter()
+            .filter(|l| fx_on && !l.shaft && l.pos.distance(w.player.pos) < 26.0)
+            .map(|l| l.pos - Vec3::Y * BRAZIER_LIGHT_ABOVE_BOWL)
+            .collect();
+        self.backdrop.fx(
+            &mut self.batch,
+            if fx_on { &v.fx.parts } else { &[] },
+            &w.sparks,
+            &braziers,
+            cam_right,
+            cam_up,
+            w.time,
+        );
 
         // 지평선 아지랑이(0012): 렌더 타깃 위쪽을 하늘빛으로 옅게 — 화면에 고정된 수평 띠라 땅 돌리기 중에도 기울지 않는다.
         // 하늘이 보이는 숄더뷰에서는 아지랑이를 걷는다(0063 E2): 화면 위 = 하늘이라 띠가 달·산등성이를 지운다.
@@ -2145,9 +2165,17 @@ impl Renderer {
             let p = b.prev.lerp(b.pos, alpha);
             let (core, glow) = BOLT_LOOKS[(b.def.look as usize).min(BOLT_LOOKS.len() - 1)];
             let k = if b.def.look == 3 { 0.6 } else { 1.0 } * b.def.scale;
-            draw_cube(p, Vec3::splat(0.32 * k), None, core);
-            draw_cube(p, Vec3::splat(0.5 * k), None, glow);
-            draw_line_3d(p - b.dir * 0.9, p, glow);
+            // 0141: 정육면체 대신 카메라를 보는 마름모 — 빛무리 + 알맹이 + 뒤로 작아지는 꼬리 셋.
+            for i in 1..=3 {
+                let f = i as f32;
+                gem(
+                    p - b.dir * (0.3 * f * k),
+                    (0.42 - 0.09 * f) * k,
+                    with_a(glow, glow.a * (1.0 - 0.28 * f)),
+                );
+            }
+            gem(p, 0.78 * k, glow);
+            gem(p, 0.42 * k, core);
         }
         // 종 조각(0125): 돌며 나는 청동 조각 — 되받아친 것은 호박빛(패링이 "돌려보냈다"로 읽히게).
         for sh in &w.shards {
@@ -2168,23 +2196,18 @@ impl Renderer {
             let b = rot * vec3(0.0, 0.0, 0.16);
             draw_line_3d(sh.pos - a, sh.pos + a, core);
             draw_line_3d(sh.pos - b, sh.pos + b, core);
-            draw_cube(sh.pos, Vec3::splat(0.2), None, core);
-            draw_cube(sh.pos, Vec3::splat(0.38), None, glow);
-            draw_line_3d(sh.pos - sh.dir * 0.8, sh.pos, glow);
+            gem(sh.pos - sh.dir * 0.3, 0.3, with_a(glow, glow.a * 0.7));
+            gem(sh.pos, 0.56, glow);
+            gem(sh.pos, 0.3, core);
             fl.shadow(sh.pos, 0.18);
         }
         // 수류탄(0051): 어두운 덩이 + 도화선이 짧아질수록 빨리 깜빡이는 불.
         for bm in &w.bombs {
             let p = bm.prev.lerp(bm.pos, alpha);
-            draw_cube(p, Vec3::splat(0.3), None, Color::new(0.25, 0.2, 0.18, 1.0));
+            gem(p, 0.4, Color::new(0.22, 0.19, 0.24, 1.0));
             let hz = 4.0 + 10.0 * (1.0 - (bm.fuse / 1.5).clamp(0.0, 1.0));
             if (w.time * hz) as i32 % 2 == 0 {
-                draw_cube(
-                    p + Vec3::Y * 0.2,
-                    Vec3::splat(0.14),
-                    None,
-                    Color::new(1.0, 0.75, 0.3, 1.0),
-                );
+                spark4(p + Vec3::Y * 0.22, 0.36, Color::new(1.0, 0.8, 0.4, 1.0));
             }
         }
         // 원거리 강공격 모으기(0056): 손에 빛이 자라고 발밑 고리가 차오른다(근접 강공격과 같은 문법), 다 모이면 깜빡인다.
@@ -2196,8 +2219,8 @@ impl Renderer {
                 + Vec3::Y * (w.player.air + crate::tuning::BOLT_HEIGHT)
                 + w.player.facing_dir() * 0.45;
             let size = 0.15 + 0.35 * k;
-            draw_cube(hand, Vec3::splat(size), None, core);
-            draw_cube(hand, Vec3::splat(size * 1.6), None, glow);
+            gem(hand, size * 2.1, glow);
+            gem(hand, size * 1.25, core);
             let col = if k >= 1.0 && (w.time * 12.0) as i32 % 2 == 0 {
                 with_a(core, 0.95)
             } else {
@@ -2240,20 +2263,7 @@ impl Renderer {
                 Color::new(1.0, 0.85, 0.5, 0.35),
             );
         }
-        // 맞힌 자리의 불똥(2026-11-06): 날아가는 쪽으로 짧은 빛줄, 처음엔 흰빛 → 호박빛으로 식으며 사라진다.
-        for sp in &w.sparks {
-            let k = (sp.age / crate::world::SPARK_LIFE).clamp(0.0, 1.0);
-            let tail = if sp.big { 0.045 } else { 0.03 };
-            let col = Color::new(1.0, 1.0 - 0.35 * k, 0.85 - 0.6 * k, 1.0 - k * k);
-            line(sp.pos, sp.pos - sp.vel * tail, col);
-            if sp.big {
-                line(
-                    sp.pos + Vec3::Y * 0.03,
-                    sp.pos - sp.vel * tail + Vec3::Y * 0.03,
-                    col,
-                );
-            }
-        }
+        // 맞힌 자리의 불똥(2026-11-06)은 입자와 함께 그린다(`Backdrop::fx`, 0141 — 두 화소 굵기의 빛줄).
         // 폭발 고리: 퍼지며 옅어진다.
         for b in &w.blasts {
             let k = (b.age / crate::tuning::BLAST_SHOW).clamp(0.0, 1.0);
@@ -2266,6 +2276,36 @@ impl Renderer {
             );
         }
         let wpn = w.player.weapon.def();
+        // 휘두름의 초승달(0141): 활성 구간 동안 칼끝이 지난 자리에 밝은 초승달이 따라가고 0.12초에 걸쳐 옅어진다 — 무기가 지나간 호
+        // (판정 부채꼴은 아래 박자 부채꼴이 그대로 맡는다). 박자 타면 금빛.
+        if t[crate::tuning::P::RenderFx] >= 0.5 {
+            if let PState::Attack { t: e, hit, .. } = w.player.state {
+                let (s0, a0, _) = crate::world::hit_times(t, wpn, hit);
+                if let Some(h) = wpn.hit(hit).filter(|_| e >= s0 && e < s0 + a0 + SLASH_FADE) {
+                    let q = ((e - s0) / a0.max(1e-3)).clamp(0.0, 1.0);
+                    let fade = 1.0 - ((e - s0 - a0) / SLASH_FADE).clamp(0.0, 1.0);
+                    let arc = if h.shape == crate::weapons::Shape::Circle {
+                        360.0
+                    } else {
+                        t[crate::tuning::P::AttackArc] * h.arc
+                    };
+                    let col = if w.player.swing_beat {
+                        Color::new(1.0, 0.9, 0.6, 0.8)
+                    } else {
+                        Color::new(1.0, 0.97, 0.88, 0.7)
+                    };
+                    crescent(
+                        pp + Vec3::Y * 0.95,
+                        t[crate::tuning::P::AttackRange] * h.reach,
+                        w.player.facing,
+                        arc.to_radians(),
+                        crate::weapons::sweep_of(h.anim),
+                        q,
+                        with_a(col, col.a * fade),
+                    );
+                }
+            }
+        }
         let swing_col = if w.player.swing_beat {
             BEAT_GOLD
         } else {
@@ -2546,11 +2586,10 @@ impl Renderer {
                 for i in 0..3 {
                     let a = w.time * 6.0 + i as f32 * std::f32::consts::TAU / 3.0;
                     let r = en.radius + 0.15;
-                    draw_cube(
+                    spark4(
                         p + vec3(a.cos() * r, en.height + 0.3, a.sin() * r),
-                        Vec3::splat(0.16),
-                        None,
-                        Color::new(1.0, 0.92, 0.35, fade),
+                        0.34,
+                        Color::new(1.0, 0.92, 0.45, fade),
                     );
                 }
             }
@@ -3930,6 +3969,114 @@ thread_local! {
     static LINES: std::cell::RefCell<Vec<(Vec3, Vec3, Color)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
+/// 휘두름의 초승달이 활성 구간 뒤에 옅어지는 시간(초).
+const SLASH_FADE: f32 = 0.12;
+
+/// 카메라를 보는 판의 오른쪽·위(길이 1) — 그 자리에서 눈을 보게.
+fn facing_axes(p: Vec3) -> (Vec3, Vec3) {
+    let f = (p - look().eye).normalize_or(Vec3::NEG_Z);
+    let r = f.cross(Vec3::Y).normalize_or(Vec3::X);
+    (r, r.cross(f).normalize_or(Vec3::Y))
+}
+
+fn flat_mesh(pts: &[(Vec3, Color)], indices: &[u16]) {
+    draw_mesh(&Mesh {
+        vertices: pts
+            .iter()
+            .map(|(p, c)| Vertex::new(p.x, p.y, p.z, 0.0, 0.0, *c))
+            .collect(),
+        indices: indices.to_vec(),
+        texture: None,
+    });
+}
+
+/// 카메라를 보는 마름모(0141 — 정육면체 대신: 탄·조각·모으는 빛의 덩이). `size` = 꼭짓점에서 꼭짓점.
+fn gem(p: Vec3, size: f32, col: Color) {
+    let (r, u) = facing_axes(p);
+    let h = size * 0.5;
+    flat_mesh(
+        &[
+            (p + u * h, col),
+            (p + r * h, col),
+            (p - u * h, col),
+            (p - r * h, col),
+        ],
+        &[0, 1, 2, 0, 2, 3],
+    );
+}
+
+/// 카메라를 보는 네 갈래 별(0141 — 휘청의 별·도화선 불꽃): 끝이 뾰족한 마름모 둘. `size` = 끝에서 끝.
+fn spark4(p: Vec3, size: f32, col: Color) {
+    let (r, u) = facing_axes(p);
+    let (h, t) = (size * 0.5, size * 0.15);
+    flat_mesh(
+        &[
+            (p - r * h, col),
+            (p - u * t, col),
+            (p + r * h, col),
+            (p + u * t, col),
+            (p - u * h, col),
+            (p - r * t, col),
+            (p + u * h, col),
+            (p + r * t, col),
+        ],
+        &[0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7],
+    );
+}
+
+/// 초승달이 덮는 각(라디안): `(꼬리, 머리)` 쌍들. 머리 = 칼끝이 지금 있는 각, 꼬리 = 지나온 쪽(길어야 `SLASH_TAIL`).
+/// 가로 베기는 한쪽 끝에서 반대쪽으로(캐릭터의 오른쪽 = 바라보는 쪽 − 반각), 찌르기·세로는 가운데에서 양쪽으로.
+pub fn slash_arcs(yaw: f32, arc: f32, sweep: crate::weapons::Sweep, q: f32) -> Vec<(f32, f32)> {
+    use crate::weapons::Sweep;
+    let half = arc * 0.5;
+    let q = q.clamp(0.0, 1.0);
+    match sweep {
+        Sweep::RightToLeft => {
+            let head = yaw - half + arc * q;
+            vec![((head - SLASH_TAIL).max(yaw - half), head)]
+        }
+        Sweep::LeftToRight => {
+            let head = yaw + half - arc * q;
+            vec![((head + SLASH_TAIL).min(yaw + half), head)]
+        }
+        Sweep::Center => vec![(yaw, yaw + half * q), (yaw, yaw - half * q)],
+    }
+}
+const SLASH_TAIL: f32 = 1.5;
+
+/// 초승달 한 장: 머리 쪽이 두껍고 밝고, 꼬리로 갈수록 가늘어지며 사라진다(바깥 변 = 닿는 거리).
+fn crescent(
+    c: Vec3,
+    reach: f32,
+    yaw: f32,
+    arc: f32,
+    sweep: crate::weapons::Sweep,
+    q: f32,
+    col: Color,
+) {
+    const N: usize = 10;
+    for (tail, head) in slash_arcs(yaw, arc, sweep, q) {
+        if (head - tail).abs() < 0.02 {
+            continue;
+        }
+        let mut pts = Vec::with_capacity((N + 1) * 2);
+        let mut idx = Vec::with_capacity(N * 6);
+        for i in 0..=N {
+            let s = i as f32 / N as f32;
+            let a = tail + (head - tail) * s;
+            let dir = vec3(a.sin(), 0.0, a.cos());
+            let k = with_a(col, col.a * s * s.sqrt());
+            pts.push((c + dir * reach, k));
+            pts.push((c + dir * reach * (1.0 - 0.36 * s), k));
+        }
+        for i in 0..N as u16 {
+            let b = i * 2;
+            idx.extend_from_slice(&[b, b + 1, b + 2, b + 1, b + 3, b + 2]);
+        }
+        flat_mesh(&pts, &idx);
+    }
+}
+
 fn line(a: Vec3, b: Vec3, col: Color) {
     LINES.with(|l| l.borrow_mut().push((a, b, col)));
 }
@@ -4112,6 +4259,30 @@ mod tests {
         assert!(!fits(6000, 14_000, 3000, 7000));
         assert!(!fits(9000, 0, 1000, 10), "vertices alone still count");
         // 모델 하나는 늘 빈 배치에 들어간다 — models.rs `every_bundled_model_fits_one_draw_call`.
+    }
+
+    /// 0141 휘두름의 초승달: 가로 베기는 칼이 지나간 쪽에서 시작해 머리가 반대쪽 끝에 닿고(오른쪽 → 왼쪽 = 작은 각에서 큰 각으로),
+    /// 꼬리는 부채꼴 밖으로 나가지 않는다. 찌르기·세로는 가운데에서 양쪽으로 벌어진다.
+    #[test]
+    fn the_slash_crescent_follows_the_blade_and_stays_inside_the_arc() {
+        use crate::weapons::Sweep;
+        let (yaw, arc) = (0.3f32, 2.0f32);
+        for q in [0.0, 0.3, 0.7, 1.0] {
+            for sw in [Sweep::RightToLeft, Sweep::LeftToRight, Sweep::Center] {
+                for (tail, head) in slash_arcs(yaw, arc, sw, q) {
+                    for a in [tail, head] {
+                        assert!((a - yaw).abs() <= arc * 0.5 + 1e-4, "{sw:?} {q}: {a}");
+                    }
+                }
+            }
+        }
+        let r2l = |q| slash_arcs(yaw, arc, Sweep::RightToLeft, q)[0].1;
+        assert!((r2l(0.0) - (yaw - 1.0)).abs() < 1e-5 && (r2l(1.0) - (yaw + 1.0)).abs() < 1e-5);
+        let l2r = |q| slash_arcs(yaw, arc, Sweep::LeftToRight, q)[0].1;
+        assert!(l2r(1.0) < l2r(0.0));
+        let mid = slash_arcs(yaw, arc, Sweep::Center, 1.0);
+        assert_eq!(mid.len(), 2);
+        assert!(mid[0].0 == yaw && mid[1].0 == yaw && mid[0].1 > yaw && mid[1].1 < yaw);
     }
 
     fn with_key<T>(key: bool, f: impl FnOnce() -> T) -> T {

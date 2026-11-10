@@ -94,6 +94,8 @@ pub struct App {
     acc: f32,
     /// 개발 줄(F3).
     dev_overlay: bool,
+    /// 개발(F6, 0141): 한 프레임에 꼭 한 틱 — 0.1초짜리 이펙트를 틱마다 찍어 보려고(`tools/test/fx.js`). 운영판에는 없다.
+    step_clock: bool,
     /// 조작 설정 화면(0024).
     ctl: controls::Controls,
     perf: Perf,
@@ -109,6 +111,8 @@ pub struct App {
     tell_timing: bool,
     sfx: Option<crate::sfx::Sfx>,
     was_dodging: bool,
+    /// 그림 이펙트(0141): 월드 사건·상태 변화를 듣고 입자를 낸다 — 월드는 모른다(소리와 같은 길).
+    fx: crate::fx::Fx,
     tele_was: Vec<u32>,
     was_waking: bool,
     /// 지난 프레임에 그린 화면 자리(커서 → 땅, 0058).
@@ -226,6 +230,7 @@ impl App {
             ending: 0.0,
             acc: 0.0,
             dev_overlay: false,
+            step_clock: false,
             ctl: controls::Controls::default(),
             perf: Perf::default(),
             sums: (0.0, 0.0, 0.0, 0),
@@ -236,6 +241,7 @@ impl App {
             tell_timing,
             sfx: None,
             was_dodging: false,
+            fx: crate::fx::Fx::default(),
             tele_was: Vec::new(),
             was_waking: false,
             frame: None,
@@ -266,6 +272,7 @@ impl App {
         let (run, world) = StageRun::start(FIRST_STAGE);
         self.run = run;
         self.world = world;
+        self.fx.clear();
         self.stage = 0;
         self.down = 0;
         self.rest_at = None;
@@ -296,6 +303,7 @@ impl App {
         world.embers = self.world.embers;
         self.run = run;
         self.world = world;
+        self.fx.clear();
         self.stage = s;
         self.world.apply_stats(self.progress.stats(), false);
         self.seed_run();
@@ -469,6 +477,12 @@ impl App {
         }
         let dt = get_frame_time().min(MAX_FRAME_DT);
         self.acc += dt;
+        if self.step_clock {
+            // 개발(F6): 실제 시간과 상관없이 프레임마다 한 틱.
+            self.acc = 0.0;
+            let a = self.input.take();
+            self.tick(a);
+        }
         while self.acc >= TICK_DT {
             let a = self.input.take();
             self.tick(a);
@@ -534,6 +548,10 @@ impl App {
         #[cfg(feature = "dev")]
         if a.ui_check {
             crate::ui::check::toggle();
+        }
+        #[cfg(feature = "dev")]
+        if a.step_clock {
+            self.step_clock = !self.step_clock;
         }
         #[cfg(feature = "dev")]
         if a.lab_toggle {
@@ -655,6 +673,7 @@ impl App {
             stage,
             tells: self.tells as f32 / 10.0,
             tell_timing: self.tell_timing,
+            fx: &self.fx,
         });
         self.frame = Some(f);
         self.ui.begin(f.ui);

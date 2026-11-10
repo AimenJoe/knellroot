@@ -21,6 +21,7 @@ mod descent;
 mod ember;
 mod enemy;
 mod flora;
+mod fx;
 mod ground;
 mod growth;
 mod hud;

@@ -34,6 +34,8 @@ const FOG_DRIFT: f32 = 0.25;
 pub struct Backdrop {
     fog_tex: Option<Texture2D>,
     halo_tex: Option<Texture2D>,
+    /// 먼지·재 덩이 한 장(0141 — 빛무리보다 진한 계단진 원판).
+    puff_tex: Option<Texture2D>,
     /// 지금 지역의 환경(0118 T2 — 렌더가 프레임마다 스테이지에서 넣는다).
     pub env: &'static Env,
 }
@@ -43,6 +45,7 @@ impl Default for Backdrop {
         Self {
             fog_tex: None,
             halo_tex: None,
+            puff_tex: None,
             env: &SURFACE,
         }
     }
@@ -381,6 +384,76 @@ fn billboard(
     idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
+/// 날아가는 쪽으로 늘어난 빛줄 하나(0141): `a`(머리, 빛 `ca`)에서 `b`(꼬리, `cb`)까지, 폭 `w` — 카메라를 본다(`view` = 화면 안쪽).
+#[allow(clippy::too_many_arguments)]
+fn streak(
+    verts: &mut Vec<Vertex>,
+    idx: &mut Vec<u16>,
+    a: Vec3,
+    b: Vec3,
+    w: f32,
+    view: Vec3,
+    ca: Color,
+    cb: Color,
+) {
+    let side = (a - b).cross(view).normalize_or(Vec3::Y) * (w * 0.5);
+    let base = verts.len() as u16;
+    for (q, c) in [
+        (a - side, ca),
+        (a + side, ca),
+        (b + side, cb),
+        (b - side, cb),
+    ] {
+        verts.push(Vertex::new(q.x, q.y, q.z, 0.0, 0.0, c));
+    }
+    idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+}
+
+/// 네 갈래 번쩍임(0141): 끝이 뾰족한 가로·세로 마름모 둘(가운데가 두껍다 — 네모 팔보다 "반짝"으로 읽힌다). `size` = 끝에서 끝.
+fn star(
+    verts: &mut Vec<Vertex>,
+    idx: &mut Vec<u16>,
+    p: Vec3,
+    r: Vec3,
+    u: Vec3,
+    size: f32,
+    col: Color,
+) {
+    let (h, t) = (size * 0.5, size * 0.13);
+    for (long, thin) in [(r, u), (u, r)] {
+        let base = verts.len() as u16;
+        for q in [p - long * h, p - thin * t, p + long * h, p + thin * t] {
+            verts.push(Vertex::new(q.x, q.y, q.z, 0.0, 0.0, col));
+        }
+        idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+}
+
+/// 먼지·재 덩이 한 장(0141): 속이 찬 원판 + 한 단 옅은 테 — 빛무리(가운데도 0.7)로 그리면 어두운 바닥에서 안 보였다.
+fn puff_pixels(n: u16) -> Vec<u8> {
+    let n = n as usize;
+    let mut px = vec![255u8; n * n * 4];
+    for y in 0..n {
+        for x in 0..n {
+            let d = vec2(
+                x as f32 + 0.5 - n as f32 * 0.5,
+                y as f32 + 0.5 - n as f32 * 0.5,
+            )
+            .length()
+                / (n as f32 * 0.5);
+            let a = if d < 0.62 {
+                1.0
+            } else if d < 0.95 {
+                0.55
+            } else {
+                0.0
+            };
+            px[(y * n + x) * 4 + 3] = (a * 255.0) as u8;
+        }
+    }
+    px
+}
+
 /// 빛무리 한 장(가운데 진하고 가장자리 0, 세 단 계단 — 픽셀 그림처럼).
 fn halo_pixels(n: u16) -> Vec<u8> {
     let n = n as usize;
@@ -456,6 +529,97 @@ impl Backdrop {
         }
         batch.raw(&verts, &idx, None, 1.0);
         batch.send();
+    }
+}
+
+/// 화로 불티의 빛(밝게 떠올라 호박빛으로 식는다).
+const SPARK_HOT: Color = Color::new(1.0, 0.92, 0.62, 1.0);
+const SPARK_COOL: Color = Color::new(1.0, 0.55, 0.2, 1.0);
+
+impl Backdrop {
+    /// 이펙트 입자(0141): 사건의 입자(`parts` — 번쩍임·불티·먼지·재), 맞힌 자리의 불똥(월드 `sparks`), 화로에서 오르는 불티
+    /// (`braziers` = 그릇 꼭대기 자리, 상태 없음). 모두 카메라를 보는 판 — 먼지·재만 계단진 원판 텍스처, 나머지는 네모 화소.
+    /// 법선 패스 밖(선이 붙지 않는다). 따뜻하고 밝은 것은 마무리 패스(0140)가 번지게 한다.
+    #[allow(clippy::too_many_arguments)]
+    pub fn fx(
+        &mut self,
+        batch: &mut Batch,
+        parts: &[crate::fx::Part],
+        sparks: &[crate::world::Spark],
+        braziers: &[Vec3],
+        right: Vec3,
+        up: Vec3,
+        time: f32,
+    ) {
+        use crate::fx::Shape;
+        let view = right.cross(up);
+        let (mut verts, mut idx) = (Vec::new(), Vec::new());
+        let (mut puffs, mut puff_idx) = (Vec::new(), Vec::new());
+        for p in parts {
+            let (size, col) = (p.size_now(), p.color_now());
+            match p.shape {
+                Shape::Dot => billboard(&mut verts, &mut idx, p.pos, right, up, size, col),
+                Shape::Puff => billboard(&mut puffs, &mut puff_idx, p.pos, right, up, size, col),
+                Shape::Star => star(&mut verts, &mut idx, p.pos, right, up, size, col),
+                Shape::Streak => {
+                    let tail = p.pos - p.vel * 0.045;
+                    let end = Color::new(col.r, col.g, col.b, 0.0);
+                    streak(&mut verts, &mut idx, p.pos, tail, size, view, col, end);
+                }
+            }
+        }
+        // 불똥(2026-11-06 → 0141): 1px 선이던 것을 두 화소 굵기의 빛줄로 — 흰빛에서 호박빛으로 식으며 꼬리가 옅어진다.
+        for sp in sparks {
+            let k = (sp.age / crate::world::SPARK_LIFE).clamp(0.0, 1.0);
+            let col = Color::new(1.0, 1.0 - 0.35 * k, 0.85 - 0.6 * k, 1.0 - k * k);
+            let (w, tail) = if sp.big { (0.11, 0.055) } else { (0.08, 0.04) };
+            let end = Color::new(col.r, col.g * 0.8, col.b * 0.6, 0.0);
+            streak(
+                &mut verts,
+                &mut idx,
+                sp.pos,
+                sp.pos - sp.vel * tail,
+                w,
+                view,
+                col,
+                end,
+            );
+        }
+        for (k, b) in braziers.iter().enumerate() {
+            for i in 0..crate::fx::BRAZIER_EMBERS {
+                let (off, a) = crate::fx::brazier_ember(k, i, time);
+                if a <= 0.02 {
+                    continue;
+                }
+                // 위로 갈수록(주기의 뒤쪽) 식는다.
+                let cool = (off.y / 1.6).clamp(0.0, 1.0);
+                let col = Color::new(
+                    SPARK_HOT.r + (SPARK_COOL.r - SPARK_HOT.r) * cool,
+                    SPARK_HOT.g + (SPARK_COOL.g - SPARK_HOT.g) * cool,
+                    SPARK_HOT.b + (SPARK_COOL.b - SPARK_HOT.b) * cool,
+                    a,
+                );
+                billboard(&mut verts, &mut idx, *b + off, right, up, 0.07, col);
+            }
+        }
+        if !puffs.is_empty() {
+            let tex = self
+                .puff_tex
+                .get_or_insert_with(|| {
+                    // 16칸: 락온 거리(1m ≈ 46px)에서 0.7m 덩이의 텍셀이 2px — 8칸이면 네모 벽돌처럼 보였다.
+                    let t = Texture2D::from_rgba8(16, 16, &puff_pixels(16));
+                    t.set_filter(FilterMode::Nearest);
+                    t
+                })
+                .clone();
+            // 입자 수 상한(`fx::HARD_CAP`)이라 한 번의 그리기 용량 안이다.
+            batch.raw(&puffs, &puff_idx, Some(&tex), 1.0);
+            batch.send();
+        }
+        if !verts.is_empty() {
+            batch.raw(&verts, &idx, None, 1.0);
+            batch.send();
+        }
     }
 }
 

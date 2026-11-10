@@ -917,6 +917,11 @@ impl World {
         self.spawn(Kind::Warden, pos);
     }
 
+    /// 점 `p` 자리의 땅 높이(땅이 없는 개발 아레나는 0) — 그림 쪽(이펙트·바닥 표시)이 묻는다.
+    pub fn ground_y(&self, p: Vec3) -> f32 {
+        self.ground.as_ref().map_or(0.0, |g| g.height(p))
+    }
+
     pub fn lock_target(&self) -> Option<Vec3> {
         self.lock
             .and_then(|i| self.enemies.get(i))

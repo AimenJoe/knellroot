@@ -397,6 +397,7 @@ pub enum P {
     RenderGrade,
     RenderBloom,
     RenderVignette,
+    RenderFx,
 }
 
 /// 랩이 읽는 칸(이름·걸음·범위·내보내기 이름)은 개발판에만 쓰인다(운영판에는 랩이 없다, 0070).
@@ -428,7 +429,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 152] = [
+pub const SPECS: [Spec; 153] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1633,6 +1634,17 @@ pub const SPECS: [Spec; 152] = [
         0.0,
         0.8,
         0.05
+    ),
+    // 이펙트 다듬기(0141, 사장 2026-11-10 "각종 이펙트들도 다듬어줘"): 타격의 번쩍임·불티·먼지·재, 휘두름의 초승달, 화로 불티.
+    // 0 = 그 층을 그리지 않는다(예전과 견주거나 핸드헬드에서 무거우면). 탄·불똥·별의 새 꼴은 늘 쓴다.
+    spec!(
+        RenderFx,
+        "render.fx 0off 1on",
+        "RENDER_FX",
+        1.0,
+        0.0,
+        1.0,
+        1.0
     ),
 ];
 

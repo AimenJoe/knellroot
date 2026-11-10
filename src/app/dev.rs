@@ -218,6 +218,7 @@ impl App {
             DevStart::Scenario(sc) => {
                 self.sc = sc;
                 self.world = scenario::build(sc);
+                self.fx.clear();
                 self.world.set_weapon(self.weapon);
                 self.cam = Camera::new(self.world.player.pos, &self.t);
                 self.go(Go::Root(Scene::Sandbox));

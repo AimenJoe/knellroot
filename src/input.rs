@@ -131,6 +131,8 @@ pub struct Actions {
     pub dev_overlay: bool,
     /// 개발: 글자 넘침 검사 켜고 끄기(F4, `ui::check`).
     pub ui_check: bool,
+    /// 개발: 한 프레임 = 한 틱 시계 켜고 끄기(F6, 0141) — 짧은 이펙트·동작을 틱마다 본다(느린 기기·헤드리스에서는 느린 화면이 된다).
+    pub step_clock: bool,
     /// 키 다시 붙이기(0024): 이번에 처음 눌린, 배치표에 올릴 수 있는 키(`KEYS`의 자리)·패드 버튼(Start·Select 빼고).
     pub pressed_key: Option<u8>,
     pub pressed_pad: Option<Pad>,
@@ -781,6 +783,7 @@ impl Input {
         a.equip = is_key_pressed(KeyCode::Tab) && !bind.keys.contains(&key_index(KeyCode::Tab));
         a.dev_overlay = is_key_pressed(KeyCode::F3);
         a.ui_check = is_key_pressed(KeyCode::F4);
+        a.step_clock = is_key_pressed(KeyCode::F6);
         a.menu_up = is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W);
         a.menu_down = is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S);
         a.menu_left = is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A);
@@ -1029,6 +1032,7 @@ impl Input {
             point: a.point.or(self.latch.point),
             dev_overlay: self.latch.dev_overlay | a.dev_overlay,
             ui_check: self.latch.ui_check | a.ui_check,
+            step_clock: self.latch.step_clock | a.step_clock,
             pressed_key: a.pressed_key.or(self.latch.pressed_key),
             pressed_pad: a.pressed_pad.or(self.latch.pressed_pad),
         };

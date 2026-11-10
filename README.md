@@ -62,6 +62,7 @@ node tools/test/hearth.js dist shots    # 화로·레벨·나무 화면(한국�
 node tools/test/save.js dist shots      # 저장 슬롯
 node tools/test/pwa.js dist shots       # 로딩 덮개·서비스 워커
 node tools/test/stress.js dist shots    # 잡몹 많이
+node tools/test/fx.js dist shots-fx     # 이펙트를 틱마다(개발 키 F6 = 한 프레임에 한 틱)
 node tools/test/leak.js dist 120 stage  # 오래 켜기: GL 텍스처·버퍼·wasm 메모리(stress = 잡몹 80)
 sh tools/test/android-smoke.sh <apk> <폴더> [패키지]   # 에뮬레이터에서 APK가 켜지나(CI android-smoke.yml)
 ```

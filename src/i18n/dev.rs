@@ -367,6 +367,7 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("render.grade", "어두운 중간 밝게(세기)"),
     ("render.bloom", "빛 번짐 세기"),
     ("render.vignette", "가장자리 그늘 세기"),
+    ("render.fx 0off 1on", "타격·먼지 입자(0끔 1켬)"),
 ];
 
 #[cfg(test)]
