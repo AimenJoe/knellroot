@@ -726,6 +726,7 @@ impl App {
                     o,
                     self.world.lock_target().is_some(),
                     self.world.turn_ready(&self.t),
+                    touch::attack_icon(self.world.player.weapon),
                 );
             }
         }

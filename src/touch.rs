@@ -24,6 +24,11 @@ pub enum Kind {
     Cast,
     /// 그림만(0053): 쉼터 곁의 점프 버튼에 그리는 모닥불.
     Rest,
+    /// 그림만(0147): 공격 버튼에 그리는 든 무기 — 검은 `Attack`의 칼 그림 그대로(`attack_icon`).
+    Hammer,
+    Staff,
+    Crossbow,
+    Fist,
     Lock,
     /// 땅 돌리기(0023): 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면.
     TurnLeft,
@@ -376,7 +381,7 @@ impl Touch {
 
 fn press(a: &mut Read, k: Kind) {
     match k {
-        Kind::Attack => a.attack = true,
+        Kind::Attack | Kind::Hammer | Kind::Staff | Kind::Crossbow | Kind::Fist => a.attack = true,
         Kind::Dodge => a.dodge = true,
         Kind::Parry => a.parry = true,
         Kind::Jump => a.jump = true,
@@ -404,10 +409,22 @@ pub fn stick_vector(d: Vec2, radius: f32) -> Vec2 {
 const INK: Color = Color::new(0.07, 0.05, 0.1, 1.0);
 const WARM: Color = Color::new(1.0, 0.8, 0.42, 1.0);
 
-/// 터치 오버레이 그리기(화면 패스). `locked`면 락온 버튼을 채운다. `turn` = 땅 돌리기 준비 0..1 — 차오르는 동안 옅고, 다 차면 밝다.
+/// 공격 버튼에 그릴 그림(0147 — 사장 "어차피 종류는 정해졌으니까"): 든 무기마다 하나. `_` 없는 match라 새 무기는 여기서 그림을 고르게 된다.
+pub fn attack_icon(w: crate::weapons::Id) -> Kind {
+    use crate::weapons::Id;
+    match w {
+        Id::Sword => Kind::Attack,
+        Id::Hammer => Kind::Hammer,
+        Id::Staff => Kind::Staff,
+        Id::Crossbow => Kind::Crossbow,
+        Id::Fists => Kind::Fist,
+    }
+}
+
+/// 터치 오버레이 그리기(화면 패스). `attack` = 공격 버튼의 그림(`attack_icon`). `locked`면 락온 버튼을 채운다. `turn` = 땅 돌리기 준비 0..1 — 차오르는 동안 옅고, 다 차면 밝다.
 /// 버튼의 몸(0146): 어두운 반투명 바탕 + 밝은 테 — 흰 반투명만으로는 밝은 바닥·불빛 위에서 그림이 묻혔다. 공격만 굵은 호박빛 테
 /// (가장 큰 버튼이 가장 먼저 읽히게), 나머지는 흰 테.
-pub fn draw(o: &Overlay, locked: bool, turn: f32) {
+pub fn draw(o: &Overlay, locked: bool, turn: f32, attack: Kind) {
     let line = Color::new(1.0, 1.0, 1.0, 0.5);
     let back = Color::new(INK.r, INK.g, INK.b, 0.42);
     if let Some((origin, pos)) = o.stick {
@@ -489,10 +506,10 @@ pub fn draw(o: &Overlay, locked: bool, turn: f32) {
         };
         draw_circle_lines(b.center.x, b.center.y, b.radius, thick, ring);
         let dim = if is_turn && turn < 1.0 { 0.4 } else { 1.0 };
-        let kind = if b.kind == Kind::Jump && o.rest {
-            Kind::Rest
-        } else {
-            b.kind
+        let kind = match b.kind {
+            Kind::Jump if o.rest => Kind::Rest,
+            Kind::Attack => attack,
+            k => k,
         };
         let tint = if on || kind == Kind::Rest {
             Color::new(1.0, 0.9, 0.66, 1.0)
@@ -525,11 +542,71 @@ fn draw_arc_left_right(l: Vec2, r: Vec2, rr: f32, col: Color) {
 /// 픽토그램의 한 변(칸).
 pub const ICON_N: usize = 13;
 
-/// 터치 픽토그램(0146 — 사장 "터치스크린의 아이콘도 좀 거시기 하네"): 13×13 도트 그림(`#` = 칠한 칸). 가는 선 그림은 도트 화면 위에서
+/// 터치 픽토그램(0146·0147 — 사장 "터치스크린의 아이콘도 좀 거시기 하네"): 13×13 도트 그림(`#` = 칠한 칸). 가는 선 그림은 도트 화면 위에서
 /// 다른 게임의 UI처럼 떠 보였다 — 첫 게임도 같은 판정을 도트 그림으로 풀었다(nail 0172 판정 11). 돌리기 둘은 한 그림을 좌우로 뒤집는다
 /// (`icon_cell`). 고치면 시험 `touch_icons_are_13_by_13_and_tell_each_other_apart`.
 pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
     match k {
+        Kind::Hammer => [
+            "......##.....",
+            ".....####....",
+            "....######...",
+            "...########..",
+            "....########.",
+            ".....########",
+            "....#.######.",
+            "...###.####..",
+            "..###...##...",
+            ".###.........",
+            "###..........",
+            "##...........",
+            ".............",
+        ],
+        Kind::Staff => [
+            ".........###.",
+            "........#####",
+            "........#####",
+            "........#####",
+            ".......#.###.",
+            "......###....",
+            ".....###.....",
+            "....###......",
+            "...###.......",
+            "..###........",
+            ".###.........",
+            "###..........",
+            "##...........",
+        ],
+        Kind::Crossbow => [
+            "......#......",
+            "..#########..",
+            ".###..#..###.",
+            "##....#....##",
+            "#.#...#...#.#",
+            "...#..#..#...",
+            "....#.#.#....",
+            ".....###.....",
+            "......#......",
+            ".....###.....",
+            ".....###.....",
+            ".....###.....",
+            ".............",
+        ],
+        Kind::Fist => [
+            ".............",
+            "...##.##.##..",
+            "..###.##.###.",
+            "..##########.",
+            ".###########.",
+            "############.",
+            "####.......#.",
+            "####.#######.",
+            ".###########.",
+            ".###########.",
+            "..#########..",
+            "...#######...",
+            ".............",
+        ],
         Kind::Attack => [
             "..........###",
             ".........####",
@@ -754,7 +831,20 @@ mod tests {
             Kind::TurnLeft,
             Kind::TurnRight,
             Kind::Pause,
+            Kind::Hammer,
+            Kind::Staff,
+            Kind::Crossbow,
+            Kind::Fist,
         ];
+        // 0147: 무기마다 공격 그림이 다르다(같으면 무엇을 들었는지 버튼이 말하지 못한다).
+        let icons: Vec<Kind> = crate::weapons::IDS
+            .iter()
+            .map(|w| attack_icon(*w))
+            .collect();
+        for (i, a) in icons.iter().enumerate() {
+            assert!(!icons[i + 1..].contains(a), "{a:?} twice");
+        }
+        assert_eq!(attack_icon(crate::weapons::Id::Sword), Kind::Attack);
         let grid = |k: Kind| -> Vec<bool> {
             (0..ICON_N * ICON_N)
                 .map(|i| icon_cell(k, i % ICON_N, i / ICON_N))
