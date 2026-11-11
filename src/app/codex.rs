@@ -1,5 +1,5 @@
 //! 도감 창(0130 C5 — 사장 2026-11-09 인터뷰: 멈춤 메뉴 줄, 깨어난 것을 가까이 본 때 적힘, 본 만큼 관찰 줄이 열림, 모델 + 실루엣).
-//! 꼴은 개발 창(0083, nail 0269): 위 탭 줄(적 · 장신구 — 좌우·땅 돌리기·탭) · 왼쪽 목록(위아래·굴리기) · 오른쪽 그림과 글 · 아래 안내.
+//! 꼴은 개발 창(0083, nail 0269): 위 탭 줄(적 · 장신구 — 좌우·스킬 버튼(0151)·탭) · 왼쪽 목록(위아래·굴리기) · 오른쪽 그림과 글 · 아래 안내.
 //! 적: 본 것 = 돌아가는 모델 + 이름 + 관찰(`·`)·추측(`?`) 줄, 못 본 것 = 검은 실루엣 + "???" + 나오는 곳.
 //! 장신구: 가진 것 = 돌아가는 그림 + 이름 + 수치 + 세계 안의 말(0129), 못 가진 것 = "???" + 나오는 곳.
 use super::menu::Hit;
@@ -9,14 +9,14 @@ use crate::codex::{self, ENTRIES};
 const TABS: usize = 2;
 
 impl App {
-    /// 도감 한 틱: 뒤로·✕·창 밖 = 닫기, 좌우·땅 돌리기·탭 = 탭, 위아래·굴리기·줄 누르기 = 고르기(고름은 보기만 — 할 일 없음).
+    /// 도감 한 틱: 뒤로·✕·창 밖 = 닫기, 좌우·스킬 버튼(0151)·탭 = 탭, 위아래·굴리기·줄 누르기 = 고르기(고름은 보기만 — 할 일 없음).
     pub(super) fn tick_codex(&mut self, a: &Actions, tab: usize) {
         let tap = a.tap.and_then(|p| self.hit_at(p));
         if a.back || a.pause || tap == Some(Hit::Close) {
             self.go(Go::Back);
             return;
         }
-        let step = (a.menu_right || a.turn_right) as i32 - (a.menu_left || a.turn_left) as i32;
+        let step = (a.menu_right || a.skill2) as i32 - (a.menu_left || a.skill1) as i32;
         let to = match tap {
             Some(Hit::Cell(1, i)) => Some(i),
             _ if step != 0 => Some((tab as i32 + step).rem_euclid(TABS as i32) as usize),

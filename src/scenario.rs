@@ -22,6 +22,8 @@ pub enum Scenario {
     WardenTwo,
     /// 보스 2단계(0133): 종지기 체력 반 — 시작하자마자 전환, 이어 종 내던지기·돌진 뒤 울림.
     BellkeeperTwo,
+    /// 스킬 연습(0151 S0 판정): 두 겹으로 둘러싼 떼 + 큰 기술 게이지 가득 — "모으고 → 쓸고"와 쟁반 뒤집기를 바로.
+    Skills,
 }
 
 pub struct Entry {
@@ -31,7 +33,7 @@ pub struct Entry {
     pub checks: &'static str,
 }
 
-pub const LIST: [Entry; 13] = [
+pub const LIST: [Entry; 14] = [
     Entry {
         scenario: Scenario::Boss,
         name: "boss arena",
@@ -98,6 +100,11 @@ pub const LIST: [Entry; 13] = [
         scenario: Scenario::BellkeeperTwo,
         name: "bellkeeper phase two",
         checks: "0133 rise at once (untouchable, burst push), bell hurled to your spot + ring, charge then toll",
+    },
+    Entry {
+        scenario: Scenario::Skills,
+        name: "skills: horde 24 + full gauge",
+        checks: "0151 gather then sweep, momentum (kills bring skills back), both buttons = great skill",
     },
 ];
 
@@ -215,6 +222,18 @@ pub fn build(s: Scenario) -> World {
             let e = w.spawn(Kind::Husk, vec3(0.0, 0.0, 8.0));
             w.enemies[e].place(std::f32::consts::PI);
             w.enemies[e].docile = true;
+            w
+        }
+        Scenario::Skills => {
+            // 두 겹의 떼(8m·11m — 다가오기까지 숨 돌릴 틈) — 벽이 가까워(14m) 큰 기술로 쏟긴 적이 박힌다. 게이지는 가득.
+            let mut w = World::new("skills", 14.0);
+            for (n, r) in [(10, 8.0), (14, 11.0)] {
+                for i in 0..n {
+                    let a = (i as f32 + 0.5) / n as f32 * std::f32::consts::TAU;
+                    w.spawn_mob(vec3(a.cos() * r, 0.0, a.sin() * r));
+                }
+            }
+            w.player.gauge = 1.0;
             w
         }
         Scenario::Tray => {

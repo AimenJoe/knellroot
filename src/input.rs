@@ -2,9 +2,9 @@
 //! 프레임마다 `poll()`로 읽고 눌림(edge)은 래치에 모아 두며, 로직 틱의 `take()`가 소비한다.
 //!
 //! 기본 배치(패드 W3C 표준 자리 / 키보드+마우스 0058 / 키보드만 0024·0048) — 표는 `Bindings::default_layout`·`keyboard_only`:
-//!   이동 = 왼쪽 스틱·십자 / WASD(·화살표)      조준 = 오른쪽 스틱 / 커서(최근 만진 것만, 0058) — 안 쓰면 자동 조준(0014)
+//!   이동 = 왼쪽 스틱(십자 키는 싸움에서 걷지 않는다, 0151) / WASD(·화살표)      조준 = 오른쪽 스틱 / 커서(최근 만진 것만, 0058) — 안 쓰면 자동 조준(0014)
 //!   공격 X / 왼쪽 클릭 / J      마법 RB / 오른쪽 클릭 / U      회피 B / Space      패링 LB / L-Shift / K
-//!   락온 R3 / 휠 클릭 / L      땅 돌리기 LT·RT / Q·E      점프·상호작용 A / F      등잔 Y / R
+//!   락온 R3 / 휠 클릭 / L      땅 돌리기 십자 ←·→ / Z·C(0151)      스킬 LT·RT / Q·E(함께 = 큰 기술)      점프·상호작용 A / F      등잔 Y / R
 //!   멈춤 = Start / Esc·P · 메뉴 = 십자·왼쪽 스틱(한 번씩)·A 확인·B 뒤로 / 화살표·WASD·Enter·Esc(0019)
 //!   장비 창 = Select / Tab(0070) · 랩 열기 = F1(개발판)          랩 안: 십자(↑↓ 고르기, ←→ 바꾸기), LB = 10배(랩이 열려 있으면 왼쪽 돌리기 대신), Y = 초기화, B·X키 = 내보내기,
 //!   LT = 슬롯에 담기, RT = A/B 바꾸기, 1~7 = 시나리오 바꾸기(dev 기능)
@@ -108,6 +108,12 @@ pub struct Actions {
     /// (`world::plan_turn`).
     pub turn_right: bool,
     pub turn_left: bool,
+    /// 스킬 버튼 둘(0151): LT·RT / Q·E. 싸움에서는 끼운 스킬, 메뉴에서는 빠른 바꾸기(1 = 왼쪽, 2 = 오른쪽 — 예전 돌리기 버튼의 몫).
+    /// 둘을 함께 누르면 큰 기술 — 월드가 가른다(시동 안의 바꿔치기).
+    pub skill1: bool,
+    pub skill2: bool,
+    /// 큰 기술 버튼(터치만 — 게이지가 차면 뜬다). 패드·키보드는 스킬 둘을 함께.
+    pub ult: bool,
     /// 장비 창 바로 열기(0070 6 A, 2026-11-06): 패드 Select · 키보드 Tab(배치표에 올리지 않았을 때).
     pub equip: bool,
     pub lab_toggle: bool,
@@ -144,7 +150,7 @@ pub enum Act {
     Interact,
     Choose,
     Confirm,
-    /// 장비 칸 빨리 바꾸기 = 땅 돌리기 버튼 둘.
+    /// 장비 칸 빨리 바꾸기 = 스킬 버튼 둘(0151 — 예전에는 땅 돌리기 버튼 둘).
     Swap,
 }
 
@@ -163,10 +169,10 @@ pub fn prompt(act: Act) -> String {
         (Device::Pad, Act::Confirm) => "A".into(),
         (Device::Pad, Act::Swap) => format!(
             "{}/{}",
-            b.pad(Bind::TurnLeft).name(),
-            b.pad(Bind::TurnRight).name()
+            b.pad(Bind::Skill1).name(),
+            b.pad(Bind::Skill2).name()
         ),
-        (_, Act::Swap) => format!("{}/{}", name(Bind::TurnLeft), name(Bind::TurnRight)),
+        (_, Act::Swap) => format!("{}/{}", name(Bind::Skill1), name(Bind::Skill2)),
         (_, Act::Choose) => "W/S".into(),
         (_, Act::Confirm) => "ENTER".into(),
     }
@@ -188,10 +194,13 @@ pub enum Bind {
     Flask = 7,
     /// 마법(0048, RB·U) — 0032의 상호작용 칸을 물려받았다(상호작용은 점프 버튼이 같이 한다). 저장 칸 뜻이 바뀌어 prefs MAGIC을 올렸다.
     Cast = 8,
+    /// 스킬 둘(0151, LT·RT / Q·E) — 예전 땅 돌리기의 자리. 돌리기는 십자 ←·→ / Z·C로 갔다. 칸 뜻이 바뀌어 prefs MAGIC을 올렸다.
+    Skill1 = 9,
+    Skill2 = 10,
 }
 
 /// 다시 붙일 수 있는 동작 수.
-pub const NB: usize = 9;
+pub const NB: usize = 11;
 
 pub const BINDS: [Bind; NB] = [
     Bind::Attack,
@@ -203,6 +212,8 @@ pub const BINDS: [Bind; NB] = [
     Bind::Jump,
     Bind::Flask,
     Bind::Cast,
+    Bind::Skill1,
+    Bind::Skill2,
 ];
 
 /// 배치표에 올릴 수 있는 키(저장 번호 = 이 표의 자리 — 뒤에만 붙인다). 이동(WASD·화살표)·Enter·Esc·Backspace·P(멈춤)·
@@ -307,7 +318,7 @@ pub struct Bindings {
 
 impl Bindings {
     /// 기본 = 키보드+마우스(0058, 새로 설치한 판): 왼쪽 클릭 공격·오른쪽 클릭 마법(커서 쪽)·휠 클릭 락온·L-Shift 패링,
-    /// 왼손은 그대로(Space 회피·F 점프·R 등잔·Q/E 땅 돌리기 — 마우스가 오른손을 가져가도 땅 돌리기는 남는다). 패드 칸은 `keyboard_only`와 같다.
+    /// 왼손은 그대로(Space 회피·F 점프·R 등잔·Q/E 스킬·Z/C 땅 돌리기 — 0151). 패드 칸은 `keyboard_only`와 같다.
     pub fn default_layout() -> Bindings {
         Bindings {
             keys: [
@@ -315,17 +326,19 @@ impl Bindings {
                 key_index(KeyCode::Space),
                 key_index(KeyCode::LeftShift),
                 mouse_index(MouseButton::Middle),
-                key_index(KeyCode::Q),
-                key_index(KeyCode::E),
+                key_index(KeyCode::Z),
+                key_index(KeyCode::C),
                 key_index(KeyCode::F),
                 key_index(KeyCode::R),
                 mouse_index(MouseButton::Right),
+                key_index(KeyCode::Q),
+                key_index(KeyCode::E),
             ],
             ..Bindings::keyboard_only()
         }
     }
 
-    /// 키보드만(0024): 소울라이크식 — 회피 B·Space, 패링 LB, 땅 돌리기 LT·RT, 락온 R3, 점프 A·F(0027, 엘든 링). 공격만 X·J(사장: "공격만 우리식").
+    /// 키보드만(0024): 소울라이크식 — 회피 B·Space, 패링 LB, 스킬 LT·RT(0151 — 땅 돌리기는 십자 ←·→), 락온 R3, 점프 A·F(0027, 엘든 링). 공격만 X·J(사장: "공격만 우리식").
     /// 오른손은 J·K·L·U(패드의 오른쪽 넷처럼). 조작 설정의 "키보드만 배치로".
     pub fn keyboard_only() -> Bindings {
         Bindings {
@@ -334,22 +347,26 @@ impl Bindings {
                 key_index(KeyCode::Space),
                 key_index(KeyCode::K),
                 key_index(KeyCode::L),
-                key_index(KeyCode::Q),
-                key_index(KeyCode::E),
+                key_index(KeyCode::Z),
+                key_index(KeyCode::C),
                 key_index(KeyCode::F),
                 key_index(KeyCode::R),
                 key_index(KeyCode::U),
+                key_index(KeyCode::Q),
+                key_index(KeyCode::E),
             ],
             pads: [
                 Pad::West,
                 Pad::East,
                 Pad::L1,
                 Pad::R3,
-                Pad::L2,
-                Pad::R2,
+                Pad::DLeft,
+                Pad::DRight,
                 Pad::South,
                 Pad::North,
                 Pad::R1,
+                Pad::L2,
+                Pad::R2,
             ],
         }
     }
@@ -560,9 +577,12 @@ pub enum Pad {
     R3,
     Start,
     Select,
+    /// 십자 키 왼쪽·오른쪽(0151 — 땅 돌리기의 기본 자리). 표 끝에 붙였다(저장 번호 = `PADS`의 자리).
+    DLeft,
+    DRight,
 }
 
-pub const PADS: [Pad; 12] = [
+pub const PADS: [Pad; 14] = [
     Pad::South,
     Pad::East,
     Pad::West,
@@ -575,6 +595,8 @@ pub const PADS: [Pad; 12] = [
     Pad::R3,
     Pad::Start,
     Pad::Select,
+    Pad::DLeft,
+    Pad::DRight,
 ];
 
 impl Pad {
@@ -593,6 +615,9 @@ impl Pad {
             Pad::R3 => "RS",
             Pad::Start => "START",
             Pad::Select => "SELECT",
+            // 십자 키는 글자 대신 세모(`i18n::UI_GLYPHS`에 있다).
+            Pad::DLeft => "◀",
+            Pad::DRight => "▶",
         }
     }
 
@@ -616,6 +641,8 @@ impl Pad {
             Pad::R3 => Button::RightStick,
             Pad::Start => Button::RightCenterCluster,
             Pad::Select => Button::LeftCenterCluster,
+            Pad::DLeft => Button::DPadLeft,
+            Pad::DRight => Button::DPadRight,
         }
     }
 }
@@ -638,14 +665,17 @@ impl Pad {
             Pad::R3 => KeyCode::F22,
             Pad::Start => KeyCode::F23,
             Pad::Select => KeyCode::F24,
+            // 십자 키는 Android에서 화살표 키코드(또는 HAT 축 — `Input::hat`)로 온다.
+            Pad::DLeft => KeyCode::Left,
+            Pad::DRight => KeyCode::Right,
         }
     }
 }
 
 /// Android·iOS 패드 축(패치한 miniquad의 `joystick_axes`: [왼쪽 X, 왼쪽 Y, 오른쪽 X(Z), 오른쪽 Y(RZ), HAT X, HAT Y], **아래가 +y**)
-/// → (이동, 조준), 우리 축(위가 +y). 왼쪽 스틱이 서 있으면 HAT(D패드)을 이동으로.
+/// → (이동, 조준, 십자 키), 우리 축(위가 +y). 십자 키(HAT)는 걷지 않는다(0151) — 메뉴 고르기와 땅 돌리기(좌·우)만.
 #[cfg_attr(not(any(pad_keys, test)), allow(dead_code))]
-fn android_axes(ax: [f32; 6]) -> (Vec2, Vec2) {
+fn android_axes(ax: [f32; 6]) -> (Vec2, Vec2, Vec2) {
     let dead = |v: Vec2| {
         if v.length() > tuning::STICK_DEADZONE {
             v
@@ -653,11 +683,11 @@ fn android_axes(ax: [f32; 6]) -> (Vec2, Vec2) {
             Vec2::ZERO
         }
     };
-    let mut mv = dead(vec2(ax[0], -ax[1]));
-    if mv == Vec2::ZERO {
-        mv = vec2(ax[4].round(), -ax[5].round()).normalize_or_zero();
-    }
-    (mv, dead(vec2(ax[2], -ax[3])))
+    (
+        dead(vec2(ax[0], -ax[1])),
+        dead(vec2(ax[2], -ax[3])),
+        vec2(ax[4].round(), -ax[5].round()),
+    )
 }
 
 /// 메뉴 스틱: 한 번 넘을 때만 눌림(히스테리시스 — 쥐고 있으면 반복하지 않는다). `held`는 지금 기울어 있는 쪽.
@@ -682,8 +712,9 @@ pub struct Input {
     latch: Actions,
     /// 메뉴 스틱이 기울어 있는 쪽(히스테리시스).
     menu_stick: Vec2,
-    /// 마법을 누른 뒤 땅 돌리기 누름을 버리는 남은 초(0048).
-    cast_guard: f32,
+    /// 십자 키(HAT 축)가 지난 프레임에 기울어 있던 쪽(Android·iOS — 좌·우의 눌림을 가장자리로 읽는다, 0151).
+    #[cfg_attr(not(pad_keys), allow(dead_code))]
+    hat: Vec2,
     /// 마우스(0058): 지금 자리, 마지막으로 "만졌다"고 센 자리(천천히 끌어도 쌓여서 넘게), 만진 뒤 지난 초, 마지막 터치 뒤 지난 초.
     mouse_pos: Vec2,
     mouse_anchor: Option<Vec2>,
@@ -703,7 +734,7 @@ impl Input {
         Input {
             latch: Actions::default(),
             menu_stick: Vec2::ZERO,
-            cast_guard: 0.0,
+            hat: Vec2::ZERO,
             mouse_pos: Vec2::ZERO,
             mouse_anchor: None,
             since_mouse: f32::MAX,
@@ -742,16 +773,18 @@ impl Input {
         let mut m = Vec2::ZERO;
         #[allow(unused_mut)]
         let mut aim = Vec2::ZERO;
-        if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) {
+        // 화살표로 걷는 것은 키보드뿐: Android·iOS에서는 화살표 키코드가 패드의 십자 키다 — 십자 키는 걷지 않는다(0151).
+        let arrow = |k: KeyCode| !cfg!(pad_keys) && is_key_down(k);
+        if is_key_down(KeyCode::A) || arrow(KeyCode::Left) {
             m.x -= 1.0;
         }
-        if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) {
+        if is_key_down(KeyCode::D) || arrow(KeyCode::Right) {
             m.x += 1.0;
         }
-        if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) {
+        if is_key_down(KeyCode::W) || arrow(KeyCode::Up) {
             m.y += 1.0;
         }
-        if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
+        if is_key_down(KeyCode::S) || arrow(KeyCode::Down) {
             m.y -= 1.0;
         }
         // 게임 동작은 배치표에서(0024).
@@ -769,6 +802,8 @@ impl Input {
         a.lock = kp(Bind::Lock);
         a.turn_left = kp(Bind::TurnLeft);
         a.turn_right = kp(Bind::TurnRight);
+        a.skill1 = kp(Bind::Skill1);
+        a.skill2 = kp(Bind::Skill2);
         a.pressed_key = KEYS
             .iter()
             .position(|(k, _)| is_key_pressed(*k))
@@ -827,18 +862,6 @@ impl Input {
                     aim = r;
                     used_pad = true;
                 }
-                if pad.is_currently_pressed(Button::DPadLeft) {
-                    m.x -= 1.0;
-                }
-                if pad.is_currently_pressed(Button::DPadRight) {
-                    m.x += 1.0;
-                }
-                if pad.is_currently_pressed(Button::DPadUp) {
-                    m.y += 1.0;
-                }
-                if pad.is_currently_pressed(Button::DPadDown) {
-                    m.y -= 1.0;
-                }
                 let pj = |x: Bind| pad.is_just_pressed(bind.pad(x).button());
                 a.attack |= pj(Bind::Attack);
                 a.attack_held |= pad.is_currently_pressed(bind.pad(Bind::Attack).button());
@@ -853,6 +876,8 @@ impl Input {
                 a.cast_held |= pad.is_currently_pressed(bind.pad(Bind::Cast).button());
                 a.turn_left |= pj(Bind::TurnLeft);
                 a.turn_right |= pj(Bind::TurnRight);
+                a.skill1 |= pj(Bind::Skill1);
+                a.skill2 |= pj(Bind::Skill2);
                 if a.pressed_pad.is_none() {
                     a.pressed_pad = PADS
                         .iter()
@@ -880,7 +905,7 @@ impl Input {
         // 버튼 배치는 데스크톱 패드와 같다.
         #[cfg(pad_keys)]
         {
-            let (mv, r) = android_axes(macroquad::miniquad::native::joystick_axes());
+            let (mv, r, hat) = android_axes(macroquad::miniquad::native::joystick_axes());
             if mv != Vec2::ZERO {
                 m = mv;
                 used_pad = true;
@@ -889,7 +914,14 @@ impl Input {
                 aim = r;
                 used_pad = true;
             }
-            let j = |p: Pad| is_key_pressed(p.key());
+            // 십자 키 좌·우: 키코드(Android) 또는 HAT 축이 새로 기운 프레임(iOS·일부 Android).
+            let was = std::mem::replace(&mut self.hat, hat);
+            used_pad |= hat != Vec2::ZERO;
+            let j = |p: Pad| {
+                is_key_pressed(p.key())
+                    || (p == Pad::DLeft && hat.x < 0.0 && was.x >= 0.0)
+                    || (p == Pad::DRight && hat.x > 0.0 && was.x <= 0.0)
+            };
             let pj = |x: Bind| j(bind.pad(x));
             a.attack |= pj(Bind::Attack);
             a.attack_held |= is_key_down(bind.pad(Bind::Attack).key());
@@ -903,6 +935,8 @@ impl Input {
             a.cast_held |= is_key_down(bind.pad(Bind::Cast).key());
             a.turn_left |= pj(Bind::TurnLeft);
             a.turn_right |= pj(Bind::TurnRight);
+            a.skill1 |= pj(Bind::Skill1);
+            a.skill2 |= pj(Bind::Skill2);
             if a.pressed_pad.is_none() {
                 a.pressed_pad = PADS.iter().copied().find(|p| p.bindable() && j(*p));
             }
@@ -910,7 +944,11 @@ impl Input {
             a.confirm |= j(Pad::South);
             a.back |= j(Pad::East) || is_key_pressed(KeyCode::Back);
             a.pause |= j(Pad::Start);
-            menu_from_stick(&mut self.menu_stick, mv, &mut a);
+            menu_from_stick(
+                &mut self.menu_stick,
+                if hat != Vec2::ZERO { hat } else { mv },
+                &mut a,
+            );
             let arrows = [KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right];
             used_pad |=
                 PADS.iter().any(|p| is_key_down(p.key())) || arrows.iter().any(|k| is_key_down(*k));
@@ -933,17 +971,13 @@ impl Input {
         a.interact |= t.interact;
         a.cast |= t.cast;
         a.cast_held |= t.cast_held;
-        // 마법 직후의 돌리기 누름은 버린다(0048: RB 바로 밑이 RT).
-        self.cast_guard = (self.cast_guard - get_frame_time()).max(0.0);
-        if a.cast {
-            self.cast_guard = tuning::CAST_TURN_GUARD;
-        } else if self.cast_guard > 0.0 {
-            a.turn_left = false;
-            a.turn_right = false;
-        }
+        // 0048의 "마법 직후 돌리기 누름 버리기"(RB 바로 밑이 RT)는 걷었다(0151): RT는 이제 스킬이고 RB → RT로 잇는 것이 바라는 쓰임이다.
         a.lock |= t.lock;
         a.turn_right |= t.turn_right;
         a.turn_left |= t.turn_left;
+        a.skill1 |= t.skill1;
+        a.skill2 |= t.skill2;
+        a.ult |= t.ult;
         // 마우스(0058): 움직이거나 누르면 "만졌다". 터치 직후의 마우스 이벤트는 터치가 흉내 낸 것일 수 있어 세지 않는다.
         let fdt = get_frame_time();
         self.since_touch = if t.active {
@@ -1016,6 +1050,9 @@ impl Input {
             lock: self.latch.lock | a.lock,
             turn_right: self.latch.turn_right | a.turn_right,
             turn_left: self.latch.turn_left | a.turn_left,
+            skill1: self.latch.skill1 | a.skill1,
+            skill2: self.latch.skill2 | a.skill2,
+            ult: self.latch.ult | a.ult,
             equip: self.latch.equip | a.equip,
             lab_toggle: self.latch.lab_toggle | a.lab_toggle,
             scenario: a.scenario.or(self.latch.scenario),
@@ -1127,21 +1164,20 @@ mod tests {
     /// Android 스틱(0022): 패치한 miniquad는 아래가 +y — 위로 밀면 앞(+y)으로. 데드존 안 떨림은 0, 스틱이 서 있으면 HAT.
     #[test]
     fn android_sticks_push_up_for_forward_and_fall_back_to_the_hat() {
-        assert_eq!(android_axes([0.0; 6]), (Vec2::ZERO, Vec2::ZERO));
+        assert_eq!(android_axes([0.0; 6]), (Vec2::ZERO, Vec2::ZERO, Vec2::ZERO));
         assert_eq!(
             android_axes([0.1, -0.1, 0.15, 0.0, 0.0, 0.0]),
-            (Vec2::ZERO, Vec2::ZERO)
+            (Vec2::ZERO, Vec2::ZERO, Vec2::ZERO)
         );
-        let (mv, aim) = android_axes([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]);
+        let (mv, aim, _) = android_axes([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]);
         assert_eq!(mv, vec2(0.0, 1.0), "left stick up = forward");
         assert_eq!(aim, vec2(1.0, 0.0), "right stick right = aim right");
-        let (mv, _) = android_axes([0.0, 0.0, 0.0, 0.0, -1.0, 1.0]);
-        assert!(
-            (mv - vec2(-1.0, -1.0).normalize()).length() < 1e-5,
-            "hat down-left"
-        );
-        let (mv, _) = android_axes([0.5, 0.0, 0.0, 0.0, 0.0, -1.0]);
-        assert_eq!(mv, vec2(0.5, 0.0), "the stick wins over the hat");
+        // 0151: 십자 키(HAT)는 걷지 않는다 — 따로 나온다(메뉴·땅 돌리기), 위가 +y.
+        let (mv, _, hat) = android_axes([0.0, 0.0, 0.0, 0.0, -1.0, 1.0]);
+        assert_eq!(mv, Vec2::ZERO, "the hat does not walk");
+        assert_eq!(hat, vec2(-1.0, -1.0), "hat down-left");
+        let (mv, _, hat) = android_axes([0.5, 0.0, 0.0, 0.0, 0.0, -1.0]);
+        assert_eq!((mv, hat), (vec2(0.5, 0.0), vec2(0.0, 1.0)));
     }
 
     /// Android 패드 버튼: 패치한 miniquad 표(KEYCODE_BUTTON_* → F13~F24)와 `Pad::key`가 같은 짝이고 겹치지 않는다(nail 0075).
@@ -1161,6 +1197,8 @@ mod tests {
             Pad::R3 => "BUTTON_THUMBR",
             Pad::Start => "BUTTON_START",
             Pad::Select => "BUTTON_SELECT",
+            Pad::DLeft => "DPAD_LEFT",
+            Pad::DRight => "DPAD_RIGHT",
         };
         let mut seen = Vec::new();
         for p in PADS {
@@ -1193,6 +1231,8 @@ mod tests {
             Pad::R3 => "rightThumbstickButton",
             Pad::Start => "buttonMenu",
             Pad::Select => "buttonOptions",
+            // 십자 키는 버튼이 아니라 HAT 축(dx·dy)으로 넘어온다.
+            Pad::DLeft | Pad::DRight => "",
         };
         // 버튼 읽는 차례(msg_send![g, <이름>])와 KEYS 표의 차례가 같은 자리끼리 짝이다.
         let buttons: Vec<&str> = src
@@ -1207,17 +1247,17 @@ mod tests {
             .collect();
         assert_eq!(buttons.len(), 12, "{buttons:?}");
         assert_eq!(keys.len(), 12, "{keys:?}");
-        for p in PADS {
+        for p in PADS.into_iter().filter(|p| !name(*p).is_empty()) {
             let i = buttons.iter().position(|b| *b == name(p)).unwrap();
             assert_eq!(keys[i], format!("{:?}", p.key()), "{p:?}");
         }
         // 축: GameController는 위가 +라 뒤집어 Android와 같은 뜻으로 넘긴다.
         assert!(src.contains("[lx, -ly, rx, -ry, dx, -dy]"));
-        let (mv, _) = android_axes([0.0, -1.0, 0.0, 0.0, 0.0, 0.0]);
+        let (mv, _, _) = android_axes([0.0, -1.0, 0.0, 0.0, 0.0, 0.0]);
         assert!(mv.y > 0.9, "stick pushed up walks forward");
-        // D패드만(스틱 가운데): HAT 칸이 이동이 된다.
-        let (mv, _) = android_axes([0.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
-        assert_eq!(mv, vec2(1.0, 0.0));
+        // D패드(스틱 가운데): HAT 칸은 걷지 않고 십자 키로 나온다(0151 — 오른쪽 = 땅 돌리기 오른쪽).
+        let (mv, _, hat) = android_axes([0.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+        assert_eq!((mv, hat), (Vec2::ZERO, vec2(1.0, 0.0)));
     }
 
     /// Android 키 반복: 패치한 miniquad가 반복 이벤트의 repeat 플래그를 넘긴다(안 그러면 누르고 있는 동안 계속 새 누름, nail 0171).

@@ -19,6 +19,7 @@ mod play;
 mod progress;
 mod settings;
 mod shop;
+mod skills;
 mod slots;
 mod stack;
 mod title;
@@ -201,6 +202,7 @@ impl App {
         };
         let (run, mut world) = StageRun::start(FIRST_STAGE);
         world.set_weapon(weapon);
+        world.set_skills(progress.skills.0);
         let cam = Camera::new(world.player.pos, &t);
         App {
             stack: stack::Stack::new(Scene::Title),
@@ -313,6 +315,7 @@ impl App {
     /// 이 판에 이 지역 문지기를 이겼으면 바닥 길이 열린 채.
     fn seed_run(&mut self) {
         self.world.set_weapon(self.weapon);
+        self.world.set_skills(self.progress.skills.0);
         self.world.tree = self.progress.tree;
         let base = self.stage as u32 * crate::stage::CHESTS_PER_STAGE;
         let opened: Vec<u32> = self
@@ -463,6 +466,7 @@ impl App {
             rest: play && self.world.interact_here,
             lock: play && (self.world.lock.is_some() || self.world.lock_candidate()),
             flask: play && pl.flask > 0 && pl.hp < pl.max_hp,
+            ult: play && pl.gauge >= 1.0,
         });
         self.input.poll(self.scene().is_menu());
         // F11(PC, 0135): 어느 장면에서나 창 ↔ 전체 화면. 창 일이라 `Actions`(게임 동작)에 넣지 않는다.
@@ -567,6 +571,7 @@ impl App {
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
             s @ (Scene::Pause
             | Scene::Settings
+            | Scene::Skills
             | Scene::Hearth
             | Scene::Level
             | Scene::Shop
@@ -610,6 +615,7 @@ impl App {
         match scene {
             Scene::Pause => Some(self.pause_menu()),
             Scene::Settings => Some(self.settings_menu()),
+            Scene::Skills => Some(self.skills_menu()),
             Scene::Hearth => Some(self.hearth_menu()),
             Scene::Level => Some(self.level_menu()),
             Scene::Shop => Some(self.shop_menu()),
@@ -638,6 +644,7 @@ impl App {
         match scene {
             Scene::Pause => self.pause_act(out),
             Scene::Settings => self.settings_act(out),
+            Scene::Skills => self.skills_act(out),
             Scene::Hearth => self.hearth_act(out),
             Scene::Level => self.level_act(out),
             Scene::Shop => self.shop_act(out),
@@ -722,11 +729,22 @@ impl App {
                 }
             }
             if let Some(o) = &overlay {
+                let pl = &self.world.player;
+                let skill = |slot: usize| {
+                    (
+                        touch::skill_icon(pl.skills[slot]),
+                        self.world.skill_ready(slot, &self.t),
+                    )
+                };
                 touch::draw(
                     o,
-                    self.world.lock_target().is_some(),
-                    self.world.turn_ready(&self.t),
-                    touch::attack_icon(self.world.player.weapon),
+                    &touch::View {
+                        locked: self.world.lock_target().is_some(),
+                        turn: self.world.turn_ready(&self.t),
+                        attack: touch::attack_icon(pl.weapon),
+                        cast: touch::cast_icon(pl.weapon),
+                        skills: [skill(0), skill(1)],
+                    },
                 );
             }
         }
@@ -748,10 +766,12 @@ impl App {
             Layer::Game => {
                 let run = matches!(scene, Scene::Play | Scene::Ending { .. }).then_some(&self.run);
                 let edge = self.t[crate::tuning::P::HudHurtEdge];
-                hud::draw(&self.ui, f, &self.world, run, false, edge);
+                let skills = [0, 1].map(|i| self.world.skill_ready(i, &self.t));
+                hud::draw(&self.ui, f, &self.world, run, false, edge, skills);
             }
             Layer::Window { hud: true } if self.stack.base() == Scene::Play => {
-                hud::draw(&self.ui, f, &self.world, Some(&self.run), true, 0.0);
+                let skills = [0, 1].map(|i| self.world.skill_ready(i, &self.t));
+                hud::draw(&self.ui, f, &self.world, Some(&self.run), true, 0.0, skills);
             }
             Layer::Screen | Layer::Window { .. } | Layer::Modal => {}
         }

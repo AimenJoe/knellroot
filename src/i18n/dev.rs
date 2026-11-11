@@ -73,6 +73,11 @@ pub const LAB_NOTE: Pair = (
     "값을 바로 바꿔 본다. 메뉴의 설정 아래 연구소와 같은 창.",
     "change tuning live; same as the lab row under settings",
 );
+pub const SKILLS_START: Pair = ("기술 끼우기", "skill slots");
+pub const SKILLS_NOTE: Pair = (
+    "아레나에서 쓸 기술 둘을 고른다. 멈춤의 기술 창과 같다.",
+    "pick the two skills for the arenas; same window as the pause menu's",
+);
 pub const SCENARIO_NOTE: Pair = ("아레나에서 숫자 키 {0} · {1}", "key {0} in the arena · {1}");
 
 /// 위의 쌍 전부(글꼴 시험·글자 미리 굽기 `i18n::dev_texts`).
@@ -103,6 +108,8 @@ pub const PAIRS: &[Pair] = &[
     STAGE_NOTE,
     LAB_START,
     LAB_NOTE,
+    SKILLS_START,
+    SKILLS_NOTE,
     SCENARIO_NOTE,
 ];
 
@@ -155,6 +162,11 @@ pub const SCENARIO_KO: &[(&str, &str, &str)] = &[
         "무리 20",
         "P1 쿼터뷰 읽힘, 그리기 비용, 떼싸움 느낌",
     ),
+    (
+        "skills: horde 24 + full gauge",
+        "기술 연습(무리 24)",
+        "0151 큰 기술 가득 — 모으고 쓸기, 기세(쓰러뜨리면 기술이 빨리 돌아옴), 두 버튼 함께 = 큰 기술",
+    ),
     ("pillars + boss", "기둥 + 보스", "P2 카메라 벽 당기기, 가림"),
     ("empty", "빈 아레나", "이동 실험(빠르기·가속·돌기·회피)"),
     (
@@ -191,7 +203,7 @@ pub fn scenario_text(name: &'static str, checks: &'static str) -> (&'static str,
 }
 
 /// 랩 묶음 이름(`lab::GROUPS` 순서와 같다 — 시험).
-pub const GROUP_KO: [&str; 16] = [
+pub const GROUP_KO: [&str; 17] = [
     "카메라: 쿼터뷰",
     "카메라: 락온",
     "카메라: 전환·벽",
@@ -205,6 +217,7 @@ pub const GROUP_KO: [&str; 16] = [
     "피격·스태미나",
     "등잔",
     "마법·던지기",
+    "기술",
     "자세",
     "동작",
     "그림(P5 스위치)",
@@ -239,6 +252,12 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("feel.hitstop s", "히트스톱(초)"),
     ("feel.knockback", "넉백"),
     ("feel.zoom", "강타·패링 때 카메라 당김(0끔)"),
+    ("skill.cooldown x", "기술 대기 배율"),
+    ("skill.momentum s", "쓰러뜨리면 기술 대기 당김(초)"),
+    ("skill.momentum by skill s", "기술로 쓰러뜨리면 당김(초)"),
+    ("skill.chord s", "두 버튼 함께 누름 창(초)"),
+    ("skill.gauge per hit", "큰 기술: 맞힐 때 차는 몫"),
+    ("skill.gauge per parry", "큰 기술: 패링 때 차는 몫"),
     ("lock.range", "락온 거리 한도"),
     ("lock.lose dist", "락온 풀리는 거리"),
     ("render.face shade", "면 음영"),

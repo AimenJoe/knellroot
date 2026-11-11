@@ -20,6 +20,8 @@ const FLASK_ON: Color = Color::new(0.62, 0.5, 0.32, 1.0);
 const FLASK_FLAME: Color = Color::new(1.0, 0.8, 0.35, 1.0);
 /// 마법 칸(0048): 라벤더(탄과 같은 색). 쇠뇌 탄창·수류탄(0051): 밝은 나무.
 const MANA: Color = Color::new(0.75, 0.66, 1.0, 1.0);
+/// 큰 기술 게이지(0151): 차는 동안은 가라앉은 금빛, 가득 차면 밝게 숨 쉰다.
+const GAUGE: Color = Color::new(0.78, 0.62, 0.3, 1.0);
 const AMMO: Color = Color::new(0.95, 0.82, 0.55, 1.0);
 const BOSS: Color = Color::new(0.72, 0.62, 0.42, 1.0);
 const BOSS_ROUSED: Color = Color::new(0.95, 0.55, 0.2, 1.0);
@@ -189,7 +191,68 @@ fn draw_edge(s: f32, a: f32) {
 }
 
 /// `edge`: 맞음 테의 세기 배율(랩 `hurt.edge`, 0 = 끔 — 창이 위에 뜬 동안은 0).
-pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: bool, edge: f32) {
+/// 스킬 칸(0151): 오른쪽 아래 — 끼운 둘의 그림(터치 버튼과 같은 픽토그램) + 대기(위에서 덮였다 걷힌다) + 버튼 이름,
+/// 그 위에 큰 기술 게이지(가득 차면 금빛으로 숨 쉰다). 터치는 화면 버튼이 같은 것을 보여 주므로 그리지 않는다.
+/// `ready` = 칸마다 준비 0..1(`World::skill_ready`).
+fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
+    use crate::input::{self, Bind, Device};
+    if input::device() == Device::Touch {
+        return;
+    }
+    let s = u(f);
+    let pl = &w.player;
+    let (side, gap) = (15.0 * s, 4.0 * s);
+    let label = 0.7;
+    let x1 = f.ox + f.w - 8.0 * s - side;
+    let x0 = x1 - gap - side;
+    let y = f.oy + f.h - 6.0 * s - ui.px(label) - side;
+    let blink = pl.skill_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
+    let b = input::bindings();
+    for (i, (x, bind)) in [(x0, Bind::Skill1), (x1, Bind::Skill2)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = ready[i].clamp(0.0, 1.0);
+        draw_rectangle(x - s, y - s, side + 2.0 * s, side + 2.0 * s, BAR_BG);
+        let back = if blink && k < 1.0 { DENIED } else { HP_OFF };
+        draw_rectangle(x, y, side, side, back);
+        // 픽토그램 한 칸 = UI 한 px(13칸 = 13 px).
+        let c = vec2(x + side * 0.5, y + side * 0.5);
+        let dim = if k < 1.0 { 0.45 } else { 1.0 };
+        let tint = Color::new(1.0, 0.99, 0.95, 1.0);
+        let r = crate::touch::ICON_N as f32 * s / 1.25 + 0.01;
+        crate::touch::icon(crate::touch::skill_icon(pl.skills[i]), c, r, dim, tint);
+        if k < 1.0 {
+            draw_rectangle(x, y, side, side * (1.0 - k), Color::new(0.0, 0.0, 0.0, 0.5));
+        }
+        let name = match input::device() {
+            Device::Pad => b.pad(bind).name(),
+            _ => input::key_name(b.keys[bind as usize]),
+        };
+        ui.text_center(name, x + side * 0.5, y + side + 2.0 * s, label, INK);
+    }
+    // 큰 기술 게이지: 칸 둘의 폭.
+    let (gx, gw, gh) = (x0, x1 + side - x0, 2.5 * s);
+    let gy = y - 3.0 * s - gh;
+    draw_rectangle(gx - s, gy - s, gw + 2.0 * s, gh + 2.0 * s, BAR_BG);
+    let col = if pl.gauge >= 1.0 {
+        let p = 0.75 + 0.25 * (w.time * 5.0).sin();
+        Color::new(1.0, 0.86 * p + 0.1, 0.45 * p, 1.0)
+    } else {
+        GAUGE
+    };
+    draw_rectangle(gx, gy, gw * pl.gauge.clamp(0.0, 1.0), gh, col);
+}
+
+pub fn draw(
+    ui: &Ui,
+    f: &Frame,
+    w: &World,
+    run: Option<&StageRun>,
+    under_menu: bool,
+    edge: f32,
+    skills: [f32; 2],
+) {
     let s = u(f);
     // 맞음 테(0143 — "맞았는지 잘 모르겠음"): 맞은 순간 화면 가장자리가 붉게 번쩍였다 사라지고, 체력이 한 칸이면 옅게 숨 쉰다.
     // HUD 글·막대보다 먼저 그려 그 아래에 깔린다.
@@ -398,6 +461,8 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, under_menu: b
             }
         }
     }
+
+    draw_skills(ui, f, w, skills);
 
     let Some(run) = run else { return };
     // 숨은 물건·상자 곁(0105·0064 M3): "키 줍기"·"키 열기"(쉼터보다 먼저 — 같은 버튼이 줍고 연다, 줍기가 먼저 — 월드와 같은 순서).

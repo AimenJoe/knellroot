@@ -5,6 +5,7 @@ use macroquad::prelude::*;
 use crate::ground::Ground;
 use crate::input::Actions;
 use crate::progression::{cell, Cell};
+use crate::skills;
 use crate::tuning::{
     Tuning, AIR_SHOT_HOVER, AIR_SHOT_MIN, AIR_SHOT_REACH, AIR_VOLLEY, AIR_VOLLEY_SPREAD_DEG,
     BEAT_CUE_MIN, BEAT_CUE_SHOT_ARC, BEAT_CUE_SHOT_REACH, BEAT_WINDOW, BEAT_WINDOW_MIN, BLAST_SHOW,
@@ -21,6 +22,7 @@ use crate::weapons::{self, Rb, Shape};
 
 /// 플레이어 틱 — 단계·상태마다 메서드(0103).
 mod player_tick;
+mod skill_tick;
 
 /// 축 정렬 상자(기둥·벽). 충돌·카메라 당기기에 쓴다.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -188,6 +190,42 @@ pub enum Event {
     Throw,
     /// 박자에 맞춘 평타가 나갔다 — 스태미나를 쓰지 않았다(2026-11-07).
     Beat,
+    /// 스킬(0151)을 눌러 시동이 걸렸다 — 앱이 휘두르는 소리를 낸다.
+    SkillStart {
+        id: skills::Id,
+    },
+    /// 스킬의 판정이 나간 순간(휘돌이는 바퀴마다, 가로지르기는 내딛는 순간) — 이펙트의 자리와 쪽.
+    Skill {
+        id: skills::Id,
+        at: Vec3,
+        dir: Vec3,
+    },
+    /// 스킬을 눌렀지만 아직 대기 중 — HUD 칸이 깜빡인다.
+    SkillDenied,
+    /// 큰 기술(0151)의 시동(세계가 멈춘다)과 땅이 뒤집힌 순간.
+    UltStart,
+    Ult {
+        at: Vec3,
+    },
+    /// 큰 기술 게이지가 가득 찼다.
+    UltReady,
+}
+
+/// 무기의 버튼 길(0151, 사장 "원거리는 공격 버튼이 전부 평타인 거고 RB는 스페셜"): 어느 무기든 X = 평타, RB = 스페셜.
+/// 근접 무기는 그대로다(X 콤보 · RB 마법 탄). 원거리 무기는 평타가 사격이고 스페셜이 수류탄이라, 월드 안쪽의 이름
+/// (`attack` = 수류탄 던지기, `cast` = 사격 — 0048·0051의 자리)과 맞바꾼다. 쥐고 있음도 같이(X 꾹 = 모은 사격, RB 꾹 = 멀리 던지기).
+pub fn weapon_buttons(a: Actions, w: &weapons::Weapon) -> Actions {
+    if matches!(w.rb, Rb::Shot { .. }) {
+        Actions {
+            attack: a.cast,
+            attack_held: a.cast_held,
+            cast: a.attack,
+            cast_held: a.attack_held,
+            ..a
+        }
+    } else {
+        a
+    }
 }
 
 /// 금 간 땅(0051, 망치 여진): `left`초 뒤 둘레를 친다.
@@ -285,6 +323,9 @@ pub enum Next {
     Jump,
     Cast,
     Flask,
+    /// 스킬 칸(0 = 스킬 1, 1 = 스킬 2)과 큰 기술(0151).
+    Skill(u8),
+    Ult,
 }
 
 /// 마법 탄(0048): 곧게 날아 처음 닿는 깨어 있는 적 하나를 치고 사라진다. 벽·기둥·높은 땅에 닿아도 사라진다.
@@ -378,6 +419,19 @@ pub enum PState {
         dir: Vec3,
         fired: bool,
     },
+    /// 스킬(0151, `skills.rs`): 시동 → 판정(모양마다) → 후딜. `dir` = 누른 순간에 정한 쪽, `swing` = 이 스킬의 타 번호
+    /// (한 번 맞은 적을 다시 치지 않는다 — 휘돌이는 바퀴마다 새 번호).
+    Skill {
+        id: skills::Id,
+        t: f32,
+        dir: Vec3,
+        swing: u32,
+    },
+    /// 큰 기술 쟁반 뒤집기(0151): 시동 뒤 땅이 뒤집히고(`done`) 후딜.
+    Ult {
+        t: f32,
+        done: bool,
+    },
     /// 땅 돌리기: 발을 딛고 비튼다(`turn.plant s` 동안 못 움직인다 — 공짜가 아니다). 그동안 몸이 `from` → `to`(요)로 돈다(0023).
     Turn {
         t: f32,
@@ -416,6 +470,13 @@ pub struct Player {
     pub stun_window: f32,
     /// 마지막 쏟음(땅 돌리기가 멈춘 순간)에서 지난 초 — 렌더의 쟁반 테.
     pub since_spill: f32,
+    /// 스킬(0151): 끼운 둘, 스킬마다 남은 대기(초, `skills::IDS`의 자리), 큰 기술 게이지(0..1), 게이지를 채운 마지막 휘두르기
+    /// (한 번 휘두르기에 한 번만), 대기 중에 눌러 칸이 깜빡이는 남은 초.
+    pub skills: [skills::Id; 2],
+    pub skill_cd: [f32; skills::N],
+    pub gauge: f32,
+    pub gauge_swing: u32,
+    pub skill_denied: f32,
     /// 마지막 패링 성공에서 지난 초(렌더의 번쩍임).
     pub since_parry: f32,
     /// 이어 패링(0081 → 0086): 남은 창(초)과 이번 이음에서 더 튕긴 수(0 = 첫 튕김만). 창이 닫히면 0으로.
@@ -496,7 +557,11 @@ impl Player {
         matches!(self.state, PState::Jump { .. })
     }
     pub fn invulnerable(&self) -> bool {
-        matches!(self.state, PState::Dodge { .. }) || self.hurt > 0.0
+        // 큰 기술(0151)은 땅이 뒤집히기까지 끊기지 않는다 — 가득 모은 게이지가 한 대에 날아가지 않게.
+        matches!(
+            self.state,
+            PState::Dodge { .. } | PState::Ult { done: false, .. }
+        ) || self.hurt > 0.0
     }
 }
 
@@ -578,6 +643,13 @@ pub struct World {
     /// 공중 RB(0111): 이번 틱에 공중에서 쏜 쪽(수평) — `tick_bolts`가 내려 쏘는 탄을 만든다.
     air_fire: Option<Vec3>,
     cast_denied_now: bool,
+    /// 스킬(0151): 플레이어 틱이 낸 사건(틱 끝에 내보낸다), 이번 틱에 스킬의 타가 맞았나·스킬이 남긴 처치로 치는 남은 초
+    /// (기세의 몫을 가른다 — 스킬로 쓰러뜨리면 덜 당겨진다).
+    skill_ev: Vec<Event>,
+    skill_hit_tick: bool,
+    skill_kill_left: f32,
+    /// 이번 틱에 방랑자의 탄이 적을 맞혔다(게이지 — `skill_books`).
+    bolt_hit_tick: bool,
     /// 이번 틱에 박자에 맞춘 평타가 나갔다(`Event::Beat`).
     beat_now: bool,
     /// 이번 틱에 등잔을 삼켰다·못 마셨다(사건은 `apply_strike`가 낸다).
@@ -614,6 +686,11 @@ impl World {
                 since_hurt: f32::MAX,
                 hurt_blow: 0,
                 since_spill: f32::MAX,
+                skills: skills::START,
+                skill_cd: [0.0; skills::N],
+                gauge: 0.0,
+                gauge_swing: 0,
+                skill_denied: 0.0,
                 since_parry: f32::MAX,
                 parry_chain_left: 0.0,
                 parry_chain_n: 0,
@@ -666,6 +743,10 @@ impl World {
             home_flows: std::collections::HashMap::new(),
             arena,
             hitstop: 0.0,
+            skill_ev: Vec::new(),
+            skill_hit_tick: false,
+            skill_kill_left: 0.0,
+            bolt_hit_tick: false,
             time: 0.0,
             kills: 0,
             lock_range: 18.0,
@@ -722,6 +803,8 @@ impl World {
         let wpn = self.player.weapon.def();
         let pressed = if a.dodge {
             Some(Next::Dodge)
+        } else if let Some(n) = self.skill_press(a, t) {
+            Some(n)
         } else if a.parry {
             Some(Next::Parry)
         } else if a.jump {
@@ -771,6 +854,9 @@ impl World {
             jump: false,
             cast: false,
             flask: false,
+            skill1: false,
+            skill2: false,
+            ult: false,
             ..*a
         };
         let Some(n) = pl.pending else {
@@ -783,6 +869,9 @@ impl World {
             Next::Jump => out.jump = true,
             Next::Cast => out.cast = true,
             Next::Flask => out.flask = true,
+            Next::Skill(0) => out.skill1 = true,
+            Next::Skill(_) => out.skill2 = true,
+            Next::Ult => out.ult = true,
         };
         // 지금 동작이 직접 받는 누름.
         let own = match pl.state {
@@ -792,6 +881,8 @@ impl World {
             PState::Drink { gulped: false, .. } => n == Next::Dodge,
             // 공중: 공격 = 내려찍기(0027), RB = 내려 쏘기(0111).
             PState::Jump { plunge: false, .. } => matches!(n, Next::Attack | Next::Cast),
+            // 스킬의 시동 안에 들어온 큰 기술(두 버튼 함께, 0151) — 스킬 틱이 바꿔친다.
+            PState::Skill { t: e, .. } => n == Next::Ult && e < t[P::SkillChord],
             _ => false,
         };
         if own {
@@ -816,6 +907,8 @@ impl World {
                 Rb::Shot { .. } => pl.ammo >= 1,
             },
             Next::Flask => pl.flask > 0 && pl.hp < pl.max_hp && pl.flask_lock <= 0.0,
+            Next::Skill(slot) => pl.skill_cd[pl.skills[slot as usize % 2].index()] <= 0.0,
+            Next::Ult => pl.gauge >= 1.0,
         };
         let ready = match pl.state {
             PState::Attack { t: e, hit, .. } => {
@@ -838,6 +931,12 @@ impl World {
             PState::Throw { thrown, .. } => thrown,
             PState::Land { t: e, dur } => e >= dur * t[P::LandCancel],
             PState::Drink { gulped, .. } => gulped,
+            // 스킬·큰 기술의 후딜(0151): 판정이 끝나면 회피·다른 스킬·평타로 끊는다.
+            PState::Skill { id, t: e, .. } => {
+                let d = id.def();
+                e >= d.startup + d.active()
+            }
+            PState::Ult { done, .. } => done,
             _ => false,
         };
         if ready && can {
@@ -989,6 +1088,8 @@ impl World {
         }
         ev.push(Event::Plunge { at: p });
         if hit {
+            // 맞힌 내려찍기도 휘두르기 한 번(게이지 — `skill_books`).
+            self.player.connected = swing;
             self.hitstop = self.hitstop.max(t[P::Hitstop] * 1.5);
         }
     }
@@ -1034,6 +1135,9 @@ impl World {
                 lock: self.held.lock | a.lock,
                 turn_right: self.held.turn_right | a.turn_right,
                 turn_left: self.held.turn_left | a.turn_left,
+                skill1: self.held.skill1 | a.skill1,
+                skill2: self.held.skill2 | a.skill2,
+                ult: self.held.ult | a.ult,
                 ..Actions::default()
             };
             // 보간이 미끄러지지 않게 prev를 지금으로.
@@ -1053,6 +1157,9 @@ impl World {
             lock: a.lock | held.lock,
             turn_right: a.turn_right | held.turn_right,
             turn_left: a.turn_left | held.turn_left,
+            skill1: a.skill1 | held.skill1,
+            skill2: a.skill2 | held.skill2,
+            ult: a.ult | held.ult,
             ..*a
         };
         let idle = matches!(self.player.state, PState::Idle);
@@ -1063,14 +1170,19 @@ impl World {
             jump: merged.jump && !via_jump,
             ..merged
         };
+        // 무기의 버튼 길(0151): X = 그 무기의 평타, RB = 그 무기의 스페셜.
+        let merged = weapon_buttons(merged, self.player.weapon.def());
         let a = &merged;
         self.time += dt;
         self.player.prev = self.player.pos;
         for e in &mut self.enemies {
             e.prev = e.pos;
         }
+        self.skill_hit_tick = false;
+        self.skill_kill_left = (self.skill_kill_left - dt).max(0.0);
         self.tick_lock(a, &mut ev);
         self.tick_player(a, t, dt);
+        ev.append(&mut self.skill_ev);
         self.apply_strike(t, &mut ev);
         self.tick_bolts(t, dt, &mut ev);
         self.apply_turn(t, &mut ev);
@@ -1078,6 +1190,7 @@ impl World {
         self.collide(t, &mut ev);
         self.cleanup(&mut ev);
         self.tick_embers(t, dt, &mut ev);
+        self.skill_books(t, &mut ev);
         ev
     }
 
@@ -1402,6 +1515,7 @@ impl World {
                 en.exposed = 0.0;
                 en.hurt = 0.15;
                 en.knock = b.dir * t[P::Knockback] * if en.boss { 0.1 } else { 0.5 };
+                self.bolt_hit_tick = true;
                 let at = b.pos + b.dir * k;
                 ev.push(if crit {
                     Event::Crit { at }
@@ -2468,7 +2582,15 @@ impl World {
                 }
             }
             // 회피 중에는 적을 뚫고 지나간다(0020: 떼 사이에 끼어 죽지 않게). 끝났을 때 겹쳐 있으면 다음 틱에 밀려 나온다.
-            let passing = matches!(self.player.state, PState::Dodge { .. });
+            // 가로지르기(0151)도 길 위의 적을 뚫고 간다.
+            let passing = matches!(
+                self.player.state,
+                PState::Dodge { .. }
+                    | PState::Skill {
+                        id: skills::Id::Cut,
+                        ..
+                    }
+            );
             if self.enemies[i].alive() && !passing {
                 let d = self.player.pos - self.enemies[i].pos;
                 let d = vec3(d.x, 0.0, d.z);
@@ -2546,7 +2668,7 @@ impl World {
             // 몸은 부딪힌 쪽에서 되튄다.
             en.sway = -en.sway.normalize_or_zero();
             en.sway_t = 0.0;
-            en.hp -= t[P::SlamDamage].round() as i32;
+            en.hp -= t[P::SlamDamage].round() as i32 + std::mem::take(&mut en.slam_bonus);
             en.hurt = 0.15;
             if let EState::Stagger { t: e, dur } = en.state {
                 en.state = EState::Stagger {
@@ -4295,7 +4417,7 @@ mod tests {
         let want = vec2(p0.x + 4.0, p0.z + 3.0);
         w.step(
             &Actions {
-                attack: true,
+                cast: true,
                 aim_at: Some(want),
                 ..Default::default()
             },
@@ -4442,7 +4564,7 @@ mod tests {
         let ammo = w.player.ammo;
         w.step(
             &Actions {
-                cast: true,
+                attack: true,
                 ..Default::default()
             },
             &t,
@@ -4657,7 +4779,7 @@ mod tests {
         let (s0, ammo) = (w.player.stamina, w.player.ammo);
         w.step(
             &Actions {
-                cast: true,
+                attack: true,
                 ..Default::default()
             },
             &t,
@@ -4674,7 +4796,7 @@ mod tests {
         let bombs = w.player.grenades;
         w.step(
             &Actions {
-                cast: true,
+                attack: true,
                 ..Default::default()
             },
             &t,
@@ -4684,7 +4806,7 @@ mod tests {
         w.player.stamina_idle = 0.0;
         w.step(
             &Actions {
-                attack: true,
+                cast: true,
                 ..Default::default()
             },
             &t,
@@ -4872,7 +4994,7 @@ mod tests {
         assert_eq!(w.player.ammo, mag);
         let mana = w.player.mana;
         let cast = Actions {
-            cast: true,
+            attack: true,
             ..Default::default()
         };
         for _ in 0..mag {
@@ -4914,7 +5036,7 @@ mod tests {
         idle(&mut w);
         let mut ev = w.step(
             &Actions {
-                attack: true,
+                cast: true,
                 ..Default::default()
             },
             &t,
@@ -4943,18 +5065,12 @@ mod tests {
         let mut w = World::new("test", 40.0);
         w.set_weapon(weapons::Id::Crossbow);
         let hold = Actions {
-            attack_held: true,
+            cast_held: true,
             move_dir: vec2(1.0, 0.0),
             ..Default::default()
         };
         w.view_yaw = Some(0.0);
-        w.step(
-            &Actions {
-                attack: true,
-                ..hold
-            },
-            &t,
-        );
+        w.step(&Actions { cast: true, ..hold }, &t);
         for _ in 0..40 {
             w.step(&hold, &t);
         }
@@ -4974,13 +5090,23 @@ mod tests {
         assert_eq!(w.bombs.len(), 1);
     }
 
-    /// RB를 누른 채 쥔다: 한 발 쏘고 모으기로 들어가 `ticks`틱 쥔 뒤 뗀다 — 뗀 직후의 탄들.
+    /// 쏘는 버튼을 누른 채 쥔다(0151: 근접 무기 = RB 마법, 원거리 무기 = X 사격): 한 발 쏘고 모으기로 들어가 `ticks`틱 쥔 뒤 뗀다 —
+    /// 뗀 직후의 탄들.
     fn charge_cast(w: &mut World, t: &Tuning, ticks: usize) -> Vec<Bolt> {
+        let ranged = w.player.weapon.def().grenade.is_some();
         let held = Actions {
-            cast_held: true,
+            attack_held: ranged,
+            cast_held: !ranged,
             ..Default::default()
         };
-        w.step(&Actions { cast: true, ..held }, t);
+        w.step(
+            &Actions {
+                attack: ranged,
+                cast: !ranged,
+                ..held
+            },
+            t,
+        );
         for _ in 0..200 {
             if matches!(w.player.state, PState::CastCharge { .. }) {
                 break;
@@ -5048,10 +5174,16 @@ mod tests {
         // 볼트가 다 떨어지면 쥐어도 모으기로 가지 않는다.
         w.player.ammo = 1;
         let held = Actions {
-            cast_held: true,
+            attack_held: true,
             ..Default::default()
         };
-        w.step(&Actions { cast: true, ..held }, &t);
+        w.step(
+            &Actions {
+                attack: true,
+                ..held
+            },
+            &t,
+        );
         for _ in 0..80 {
             w.step(&held, &t);
             assert!(!matches!(w.player.state, PState::CastCharge { .. }));
@@ -5885,7 +6017,7 @@ mod tests {
         // 쇠뇌: 쏜 순간부터, 가운데로.
         let mut w = World::new("test", 20.0);
         w.set_weapon(weapons::Id::Crossbow);
-        press(&mut w, false, true);
+        press(&mut w, true, false);
         let c = w.beat_cue(&t).expect("a shot starts its beat fan");
         assert_eq!(c.sweep, weapons::Sweep::Center);
         assert!(c.left > 0.9 && !c.ripe);
@@ -6917,15 +7049,15 @@ mod tests {
         );
     }
 
-    /// 0077(사장 2026-11-07 "원거리 무기도 박자 있는거야. 근데 버튼이 다를뿐"): 쇠뇌는 사격(RB)이 박자를 탄다 —
-    /// 앞 사격에서 한 발의 시간(= 공격 속도) ± 창 안에 누른 사격은 볼트를 쓰지 않는다, 연사는 쓴다.
+    /// 0077(사장 2026-11-07 "원거리 무기도 박자 있는거야. 근데 버튼이 다를뿐") → 0151(이제 버튼도 같다 — 사격이 X): 쇠뇌는 사격이
+    /// 박자를 탄다 — 앞 사격에서 한 발의 시간(= 공격 속도) ± 창 안에 누른 사격은 볼트를 쓰지 않는다, 연사는 쓴다.
     #[test]
     fn a_crossbow_shot_on_the_beat_keeps_its_bolt_and_mashing_spends_them() {
         let t = Tuning::default();
         let shoot = |w: &mut World, press: bool| {
             w.step(
                 &Actions {
-                    cast: press,
+                    attack: press,
                     ..Default::default()
                 },
                 &t,

@@ -125,10 +125,11 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 성장(0064 M4) | `growth.rs`, `Scene::Core`·`Scene::Shop`, `StageRun::take_rested`·`shop_ready`, `app/progress.rs` `buy`·`app/shop.rs` `core_menu`·`shop_menu` | 문지기를 이기면 핵 고르기(체력·등잔·회복), 쉬면 화로 가게(장신구 셋·등잔 기름), 살 것이 있으면 쉼터가 빛남 |
 | 소리(0064 M5) | `sfx.rs`, `app/play.rs` `world_sounds`·`app/mod.rs` `set_sfx`·메뉴 소리, `prefs.rs` 칸 25, `assets/sfx/` | 효과음 16(CC0)·합성 8(패링·예고 넷·깨어남·쉼터·등잔)·성소 환경음, 설정 소리 크기 |
 | 묻는 창·UI 맞추기(0065) | `Scene::Ask`·`flow::answer`·`ask_default`, `ui.menu_dimmed`, `Sfx::played` | 새로 하기·처음부터·타이틀로·사기는 한 번 묻는다(취소에서), 가게는 못 사는 것 흐리게·HUD 없음, 메뉴 소리 겹치지 않게, 저장 실패 알림 |
+| 전투 스킬 S0(0151) | `skills.rs` 표, `world/skill_tick.rs`, `PState::Skill`·`Ult`, `world::weapon_buttons`, `input.rs`(`Bind::Skill1`·`Skill2`, `Pad::DLeft`·`DRight`), `hud.rs` `draw_skills`, `touch.rs`(스킬 버튼·그림 여섯), `app/skills.rs`(`Scene::Skills`), 기록 `skill.1`·`skill.2`, 랩 `skill.*`, 시나리오 "기술 연습" | 스킬 넷(휘돌이·가로지르기·끌어모으기·땅울림) + 큰 기술 쟁반 뒤집기(게이지 — 평타·패링으로만 찬다, 두 버튼 함께 = 시동 안의 바꿔치기), 기세(쓰러뜨리면 대기가 당겨진다), 땅 돌리기는 십자 ←·→ / Z·C로(뜻 그대로), 쇠뇌는 X 사격·RB 수류탄. 판정 전(개발판) |
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), 랩(멈춤 끝 줄 LAB·F1, 0070), F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
-**0150 정할 것(사장 — 전투 스킬 제안)**: `docs/decisions/0150-combat-skills-active-and-passive-proposal.md` 10절의 일곱 물음(땅 돌리기의 쏟기를 스킬로 올릴지·패드 조합·칸 수·다시 쓰기까지·패시브의 자리·얻는 법·어느 마일스톤). 닫히면 S0(조작 옮기기 + 스킬 넷)부터 만든다. 아직 만든 것은 없다.
+**0151 판정(개발판 — 전투 스킬 S0, 체크리스트 16번)**: 개발 창 → 전투·적 → "기술 연습(무리 24)"에서 ① "모으고 → 쓸고"가 되는지(16-1) ② 조작 옮기기(땅 돌리기 = 십자 ←·→ / Z·C, 스킬 = LT·RT / Q·E, 쇠뇌 X 사격·RB 수류탄 — 16-5·16-6) ③ 큰 기술(두 버튼 함께, 16-4) ④ 이대로 v0.7.0으로 묶을지 접을지(16-9). **패드·터치·실기기에서는 아직 눌러 보지 못했다**(헤드리스는 키보드뿐). 조작이 바뀐 일이라 v0.6.0을 main에 내기 전에 이 판정을 닫는다 — 접으면 S0 커밋 묶음을 되돌린다. 일곱 물음의 답과 만든 것은 `docs/decisions/0151-combat-skills-interview-and-s0-scope.md`.
 
 **0148 판정(개발판)**: 락온 카메라의 새 값(15-1~15-3) — 다가선 느낌·거리 재기·돌 때의 어지러움. 랩에서 그전 값과 견준다.
 

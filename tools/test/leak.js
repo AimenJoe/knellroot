@@ -94,11 +94,12 @@ async function main() {
   const keys = ['KeyW', 'KeyD', 'KeyS', 'KeyA'];
   console.log('sec\twasmMB\tbuffers\tbufMB\ttextures\ttexMB\tdraws\tpeak\tjsMB');
   while ((Date.now() - t0) / 1000 < SECS) {
-    // 걷고 치고 돌리기(땅 돌리기는 대기가 있어 가끔).
+    // 걷고 치고 돌리기(땅 돌리기는 대기가 있어 가끔 — 0151: 돌리기 = C, Q·E는 스킬).
     const k = keys[i++ % 4];
     await page.keyboard.down(k); await page.waitForTimeout(700); await page.keyboard.up(k);
     await press('KeyJ', 3);
-    if (i % 5 === 0) await press('KeyE');
+    if (i % 5 === 0) await press('KeyC');
+    if (i % 3 === 0) await press(i % 2 ? 'KeyQ' : 'KeyE');
     if (i % 7 === 0) await press('KeyL');
     const sec = (Date.now() - t0) / 1000;
     if (sec >= next) {

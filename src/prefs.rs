@@ -8,14 +8,17 @@ use crate::i18n::Lang;
 use crate::input::{Bindings, MouseAim, REST_SECS, RETICLE_SIZES};
 
 /// 0x…0002(0048): 18..20 칸이 상호작용 → 마법으로 바뀌고 등잔·마법의 기본 버튼이 바뀌었다. 옛 표식(0x…0001)은 언어만 살리고 배치는 기본값.
-const MAGIC: u32 = 0x4B4E_0002;
+const MAGIC: u32 = 0x4B4E_0003;
 const MAGIC_V1: u32 = 0x4B4E_0001;
+/// 0151 전 표식: 배치 칸 4·5가 Q·E / LT·RT = 땅 돌리기였다(지금은 스킬) — 배치만 기본으로 되돌리고 다른 설정은 그대로 읽는다.
+const MAGIC_V2: u32 = 0x4B4E_0002;
 /// 20 화면 흔들림(0..=10, +1로 — 0 = 저장 전 = 10), 21 든 무기(무기 표 자리 +1) — 0052·0051, 뒤에 붙인 칸이라 MAGIC 그대로.
 /// 22 마우스 조준(1 끔·2 켬, 0 = 저장 전 = 켬), 23 커서 쉼(`REST_SECS` 자리 +1), 24 조준 표시 크기(+1) — 0058, 뒤에 붙인 칸이라 MAGIC 그대로.
 /// 25 소리 크기(0..=10, +1로 — 0 = 저장 전 = `VOLUME_DEFAULT`) — 0064 M5, 뒤에 붙인 칸이라 MAGIC 그대로.
 /// 26 공격 예고 진하기(0..=10 = 0~100%, +1로 — 0 = 저장 전 = `TELLS_DEFAULT`) — 0074, 뒤에 붙인 칸이라 MAGIC 그대로.
 /// 27 예고 타이밍(1 끔·2 켬, 0128), 28 PC 전체 화면(1 창·2 전체, 0 = 저장 전 = 창 — 0135, 데스크톱만 읽는다), 뒤에 붙인 칸이라 MAGIC 그대로.
-const CELLS: usize = 29;
+/// 29..33 스킬 둘의 (키, 패드)(0151 — 배치 칸은 2..20이 꽉 차 뒤에 잇는다, `Bindings::encode`의 18.. 몫).
+const CELLS: usize = 33;
 /// 소리 크기 기본값(8 = 80%).
 pub const VOLUME_DEFAULT: u8 = 8;
 /// 공격 예고 진하기 기본(0074, nail 0198 꼴): 10 중 5 = 50%. 70%가 0072의 진하기.
@@ -62,7 +65,9 @@ fn encode(p: &Prefs) -> [u32; CELLS] {
     let mut v = [0u32; CELLS];
     v[0] = MAGIC;
     v[1] = p.lang.map_or(0, lang_code);
-    v[2..20].copy_from_slice(&p.bindings.encode());
+    let keys = p.bindings.encode();
+    v[2..20].copy_from_slice(&keys[..18]);
+    v[29..33].copy_from_slice(&keys[18..]);
     v[20] = p.shake.min(10) as u32 + 1;
     v[21] = p.weapon as u32 + 1;
     v[22] = p.mouse.on as u32 + 1;
@@ -115,12 +120,17 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
             fullscreen: false,
         });
     }
-    if v[0] != MAGIC {
+    if v[0] != MAGIC && v[0] != MAGIC_V2 {
         return None;
     }
+    let keys: Vec<u32> = v[2..20].iter().chain(&v[29..33]).copied().collect();
     Some(Prefs {
         lang: lang_from(v[1]),
-        bindings: Bindings::decode(&v[2..20]),
+        bindings: if v[0] == MAGIC_V2 {
+            Bindings::default_layout()
+        } else {
+            Bindings::decode(&keys)
+        },
         shake: shake_from(v[20]),
         weapon: v[21].saturating_sub(1).min(255) as u8,
         mouse: mouse_from(v[22], v[23], v[24]),
@@ -253,6 +263,64 @@ mod tests {
     use super::*;
     use crate::input::{Bind, Pad};
     use macroquad::prelude::MouseButton;
+
+    /// 0151: 표식이 0x…0002인 저장(배치 칸 4·5 = Q·E / LT·RT가 땅 돌리기였다)은 **배치만** 기본으로 되돌린다 — 다른 설정은 그대로.
+    /// 새 기본: 스킬 = Q·E / LT·RT, 땅 돌리기 = Z·C / 십자 ←·→. 스킬 칸(29..33)까지 왕복한다.
+    #[test]
+    fn a_pre_skill_layout_resets_the_bindings_only_and_the_new_cells_round_trip() {
+        use crate::input::Slot;
+        use macroquad::prelude::KeyCode;
+        let mut b = Bindings::default_layout();
+        b.set_key(Bind::Attack, 5);
+        let p = Prefs {
+            lang: Some(Lang::En),
+            bindings: b,
+            shake: 4,
+            weapon: 2,
+            mouse: MouseAim::default(),
+            volume: 3,
+            tells: 8,
+            tell_timing: true,
+            fullscreen: true,
+        };
+        let mut old = encode(&p);
+        old[0] = MAGIC_V2;
+        old[29..33].fill(0);
+        let want = Prefs {
+            bindings: Bindings::default_layout(),
+            ..p
+        };
+        assert_eq!(decode(&old), Some(want));
+        let d = Bindings::default_layout();
+        assert_eq!(
+            (d.pad(Bind::Skill1), d.pad(Bind::Skill2)),
+            (Pad::L2, Pad::R2)
+        );
+        assert_eq!(
+            (d.pad(Bind::TurnLeft), d.pad(Bind::TurnRight)),
+            (Pad::DLeft, Pad::DRight)
+        );
+        assert_eq!(d.key(Bind::Skill1), Slot::Key(KeyCode::Q));
+        assert_eq!(d.key(Bind::Skill2), Slot::Key(KeyCode::E));
+        assert_eq!(d.key(Bind::TurnLeft), Slot::Key(KeyCode::Z));
+        assert_eq!(d.key(Bind::TurnRight), Slot::Key(KeyCode::C));
+        // 스킬을 다른 버튼으로 옮긴 배치도 그대로 돌아온다(맞바꾸기 — 십자 ← ↔ LT).
+        let mut moved = d;
+        moved.set_pad(Bind::Skill1, Pad::DLeft);
+        moved.set_key(Bind::Skill2, 19);
+        assert_eq!(moved.pad(Bind::TurnLeft), Pad::L2, "swapped");
+        let back = decode(&encode(&Prefs {
+            bindings: moved,
+            ..p
+        }));
+        assert_eq!(back.unwrap().bindings, moved);
+        // 스킬 칸만 빈 저장(있을 수 없지만): 그 칸만 기본값.
+        let mut holes = encode(&p);
+        holes[29..33].fill(0);
+        let got = decode(&holes).unwrap().bindings;
+        assert_eq!(got.keys[..9], b.keys[..9]);
+        assert_eq!(got.pad(Bind::Skill1), Pad::L2);
+    }
 
     #[test]
     fn prefs_round_trip_and_unknown_storage_reads_as_defaults() {

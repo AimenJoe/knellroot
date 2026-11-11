@@ -2190,6 +2190,15 @@ impl Renderer {
                     if pl.air < 0.35 { 0.29 } else { 0.12 },
                 ),
                 PState::Land { t: e, .. } => (&["land", "idle"], e),
+                // 스킬·큰 기술(0151): S0는 무기 동작을 빌린다(표의 `anim`) — 전용 동작은 S1.
+                PState::Skill { id, t: e, .. } => {
+                    owned = [id.def().anim, "heavy", "attack"];
+                    (&owned, e)
+                }
+                PState::Ult { t: e, .. } => {
+                    owned = [crate::skills::UPEND.anim, "heavy", "attack"];
+                    (&owned, e)
+                }
                 // 달리기(0076): `run` 동작이 없으면 걷기를 빠르게(발 구르기가 속도를 따라간다).
                 PState::Idle if pl.running && speed > 0.5 => {
                     (&["run", "walk"], w.time * (speed / 4.0).clamp(0.6, 2.2))
@@ -2274,6 +2283,7 @@ impl Renderer {
                     Color::new(0.75, 0.7, 1.0, 1.0)
                 }
                 PState::Jump { .. } | PState::Land { .. } => Color::new(0.9, 0.8, 0.6, 1.0),
+                PState::Skill { .. } | PState::Ult { .. } => Color::new(0.6, 1.0, 0.85, 1.0),
                 PState::Idle => Color::new(0.85, 0.75, 0.55, 1.0),
             };
             actor(
@@ -2566,6 +2576,145 @@ impl Renderer {
                     q,
                     with_a(col, col.a * fade * fade),
                     if full { 1.5 } else { 1.25 },
+                );
+            }
+        }
+        // 스킬(0151): 판정의 모양을 그대로 빛으로 — 바깥 변 = 닿는 거리(판정보다 크게 그리지 않는다, 0145). 금·민트·흰빛.
+        if let PState::Skill { id, t: e, dir, .. } = w.player.state {
+            use crate::skills::Form;
+            let d = id.def();
+            let e0 = e - d.startup;
+            let yaw = dir.x.atan2(dir.z);
+            let gold = Color::new(1.0, 0.86, 0.5, 1.0);
+            let mint = Color::new(0.66, 1.0, 0.86, 1.0);
+            let fx = t[crate::tuning::P::RenderFx] >= 0.5;
+            if e0 >= 0.0 {
+                match d.form {
+                    // 휘돌이: 몸과 함께 도는 긴 초승달(머리 = 지금 보는 쪽) + 둘레 원판.
+                    Form::Ring {
+                        radius, hits, gap, ..
+                    } => {
+                        let span = gap * hits as f32;
+                        let fade = 1.0 - ((e0 - span) / SKILL_GLOW_FADE).clamp(0.0, 1.0);
+                        fl.sector(
+                            pp + Vec3::Y * 0.06,
+                            radius,
+                            0.0,
+                            360.0,
+                            with_a(gold, 0.16 * fade),
+                        );
+                        if fx {
+                            crescent(
+                                pp + Vec3::Y * 0.95,
+                                radius,
+                                w.player.facing + std::f32::consts::PI * 0.75,
+                                std::f32::consts::PI * 1.5,
+                                crate::weapons::Sweep::LeftToRight,
+                                1.0,
+                                with_a(gold, fade * fade),
+                                1.4,
+                            );
+                        }
+                    }
+                    // 가로지르기: 지나온 길의 빛 띠(머리 = 몸, 꼬리로 사라진다).
+                    Form::Lane { dist, half, time } => {
+                        let gone = (e0 / time.max(1e-3)).clamp(0.0, 1.0) * dist;
+                        let fade = 1.0 - ((e0 - time) / SKILL_GLOW_FADE).clamp(0.0, 1.0);
+                        if fx && gone > 0.05 {
+                            let side = vec3(dir.z, 0.0, -dir.x);
+                            let head = pp + Vec3::Y * 0.9;
+                            let tail = head - dir * gone;
+                            for (w2, ink, a) in [(half, mint, 0.5), (half * 0.28, WHITE, 0.9)] {
+                                let on = with_a(ink, a * fade * fade);
+                                let off = with_a(ink, 0.0);
+                                flat_mesh(
+                                    &[
+                                        (tail - side * w2 * 0.4, off),
+                                        (tail + side * w2 * 0.4, off),
+                                        (head - side * w2, on),
+                                        (head + side * w2, on),
+                                    ],
+                                    &[0, 1, 2, 1, 3, 2],
+                                );
+                            }
+                        }
+                    }
+                    // 끌어모으기: 모이는 점으로 좁아지는 민트 고리 둘.
+                    Form::Pull { range, to, .. } => {
+                        let k = (e0 / 0.3).clamp(0.0, 1.0);
+                        if k < 1.0 {
+                            let spot = pp + dir * to;
+                            for lag in [0.0, 0.35] {
+                                let r = range * 0.7 * (1.0 - (k - lag).clamp(0.0, 1.0)) + 0.4;
+                                fl.ring(
+                                    spot + Vec3::Y * 0.06,
+                                    r,
+                                    0.0,
+                                    360.0,
+                                    with_a(mint, 0.85 * (1.0 - k)),
+                                );
+                            }
+                        }
+                    }
+                    // 땅울림: 내리찍은 부채꼴 — 바닥의 빛 + 앞으로 터지는 굵은 초승달.
+                    Form::Cone { range, arc_deg, .. } => {
+                        let k = (e0 / 0.3).clamp(0.0, 1.0);
+                        if k < 1.0 {
+                            fl.sector(
+                                pp + Vec3::Y * 0.06,
+                                range,
+                                yaw,
+                                arc_deg,
+                                with_a(gold, 0.3 * (1.0 - k)),
+                            );
+                            if fx {
+                                crescent(
+                                    pp + Vec3::Y * 0.5,
+                                    range * (0.5 + 0.5 * k),
+                                    yaw,
+                                    arc_deg.to_radians(),
+                                    crate::weapons::Sweep::Center,
+                                    1.0,
+                                    with_a(gold, (1.0 - k) * (1.0 - k)),
+                                    1.5,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // 큰 기술(0151): 시동은 발밑으로 모이는 금빛 고리, 뒤집히는 순간부터 둘레 끝까지 퍼지는 고리 둘.
+        if let PState::Ult { t: e, done } = w.player.state {
+            let u = &crate::skills::UPEND;
+            let gold = Color::new(1.0, 0.86, 0.5, 1.0);
+            if !done {
+                let k = (e / u.startup.max(1e-3)).clamp(0.0, 1.0);
+                fl.ring(
+                    pp + Vec3::Y * 0.06,
+                    2.5 * (1.0 - k) + 0.3,
+                    0.0,
+                    360.0,
+                    with_a(gold, 0.9),
+                );
+            } else {
+                let k = ((e - u.startup) / u.recover.max(1e-3)).clamp(0.0, 1.0);
+                for lag in [0.0, 0.25] {
+                    let q = (k * 1.6 - lag).clamp(0.0, 1.0);
+                    fl.ring(
+                        pp + Vec3::Y * 0.06,
+                        u.radius * q,
+                        0.0,
+                        360.0,
+                        with_a(gold, 0.9 * (1.0 - k)),
+                    );
+                }
+                fl.sector(
+                    pp + Vec3::Y * 0.05,
+                    u.radius,
+                    0.0,
+                    360.0,
+                    with_a(gold, 0.12 * (1.0 - k)),
                 );
             }
         }
@@ -4313,6 +4462,8 @@ pub fn slash_arcs(yaw: f32, arc: f32, sweep: crate::weapons::Sweep, q: f32) -> V
     }
 }
 const SLASH_TAIL: f32 = 2.2;
+/// 스킬의 빛(0151)이 판정 뒤에 남는 초.
+const SKILL_GLOW_FADE: f32 = 0.25;
 /// 초승달의 두께(머리에서, 닿는 거리의 몫): 빛 띠·그 안의 밝은 날 — `weight`를 곱한다(강타는 더 두껍게, 0145).
 const SLASH_GLOW: f32 = 0.6;
 const SLASH_EDGE: f32 = 0.16;

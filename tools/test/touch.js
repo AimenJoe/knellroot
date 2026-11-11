@@ -26,15 +26,19 @@ function layout() {
   const u = Math.min(W, H, 520), r = u * 0.09;
   const atk = [W - u * 0.238, H - u * 0.21];
   const at = (deg, dist) => { const a = deg * Math.PI / 180; return [atk[0] + Math.cos(a) * u * dist, atk[1] - Math.sin(a) * u * dist]; };
-  const turn = at(118, 0.44);
+  // 0151: 예전 돌리기 캡슐 자리 = 스킬 둘, 돌리기는 오른쪽 위(멈춤과 마주 본다 — `touch::layout`).
+  const skill = at(118, 0.44);
+  const ps = r * 0.7, pc = ps * 1.4;
   const b = {
     attack: atk,
     dodge: at(188, 0.26),
     parry: at(146, 0.26),
     cast: at(104, 0.26),
     jump: at(62, 0.26),
-    turn_left: [turn[0] - u * 0.08, turn[1]],
-    turn_right: [turn[0] + u * 0.08, turn[1]],
+    skill1: [skill[0] - u * 0.08, skill[1]],
+    skill2: [skill[0] + u * 0.08, skill[1]],
+    turn_left: [W - pc - ps * 2.5, pc],
+    turn_right: [W - pc, pc],
     lock: at(80, 0.44),
     flask: at(150, 0.44),
     // 멈춤은 왼쪽 위(2026-11-06), 랩·시나리오 터치 버튼은 없다(랩 = 타이틀·개발 창 도구 탭).

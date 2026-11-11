@@ -126,6 +126,7 @@ impl App {
             self.world = scenario::build(self.sc);
             self.fx.clear();
             self.world.set_weapon(self.weapon);
+            self.world.set_skills(self.progress.skills.0);
             self.cam = Camera::new(self.world.player.pos, &self.t);
         }
         let a = self.cursor_aim(a);
@@ -190,6 +191,13 @@ impl App {
                 Event::Aftershock { .. } | Event::Boom { .. } => SHAKE_PLUNGE,
                 Event::Perfect { .. } => SHAKE_CHARGED,
                 Event::Swing | Event::LockOn | Event::LockOff | Event::Beat => 0.0,
+                // 스킬(0151): 판정이 나간 순간에 한 번, 큰 기술은 깨어나는 보스만큼.
+                Event::Skill { .. } => SHAKE_PLUNGE,
+                Event::Ult { .. } => SHAKE_ROUSE,
+                Event::SkillStart { .. }
+                | Event::SkillDenied
+                | Event::UltStart
+                | Event::UltReady => 0.0,
             };
             // 화면 흔들림 설정(0052): 0..=10 → 0..100%.
             cam.trauma = (cam.trauma + kick * self.shake as f32 / 10.0).min(1.0);
@@ -215,6 +223,8 @@ impl App {
                 Event::Crit { .. } => ZOOM_CRIT,
                 Event::Parry { .. } => ZOOM_PARRY,
                 Event::Perfect { .. } => ZOOM_PERFECT,
+                // 큰 기술(0151): 시동의 세계 멈춤 동안 당겨 두고(멈춤 동안 머문다), 뒤집히는 순간 한 번 더.
+                Event::UltStart | Event::Ult { .. } => ZOOM_SMASH,
                 _ => 0.0,
             };
             if zoom > 0.0 {
@@ -440,6 +450,13 @@ impl App {
                 // 지연 공격이 풀린다(0128): 짧게 들이쉬는 소리 — 이 뒤 `RELEASE_LEAD`초에 맞는다.
                 Event::Release { .. } => Id::TeleRelease,
                 Event::FlaskDenied | Event::CastDenied | Event::StaminaDenied => Id::Deny,
+                // 스킬(0151 — S0는 있는 소리를 겹쳐 쓴다, 전용 소리는 S1): 시동 = 휘두름, 큰 기술 시동 = 깊은 울림, 터짐 = 타격,
+                // 게이지 가득 = 가장 높은 종.
+                Event::SkillStart { .. } => Id::Swing,
+                Event::SkillDenied => Id::Deny,
+                Event::UltStart => Id::Wake,
+                Event::Ult { .. } => Id::Hit,
+                Event::UltReady => Id::Beat3,
                 _ => continue,
             };
             self.snd(id);

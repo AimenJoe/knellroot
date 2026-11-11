@@ -71,6 +71,8 @@ const GOLD: Color = Color::new(1.0, 0.86, 0.45, 1.0);
 const COOL: Color = Color::new(0.80, 0.92, 1.0, 1.0);
 const STEEL: Color = Color::new(0.74, 0.78, 0.88, 1.0);
 const LAVENDER: Color = Color::new(0.82, 0.74, 1.0, 1.0);
+/// 스킬의 민트(0151 — 땅을 다루는 기술의 빛).
+const MINT: Color = Color::new(0.66, 1.0, 0.86, 1.0);
 const HEAL: Color = Color::new(1.0, 0.86, 0.56, 1.0);
 /// 먼지 = 바닥 석판보다 한 단 밝은 남보라 — 바닥과 같은 빛이면(처음 0.50·0.48·0.62) 깔리는 게 아니라 안 보였다.
 const DUST: Color = Color::new(0.63, 0.61, 0.74, 0.72);
@@ -464,6 +466,85 @@ impl Fx {
                         GOLD,
                     );
                 }
+                // 스킬(0151 — 금·민트·흰빛, 빨강 없음). 판정이 나간 자리의 번쩍임 + 땅의 먼지 고리, 모양마다 한 겹씩 다르다.
+                Event::Skill { id, at, dir } => {
+                    use crate::skills::Id as Sk;
+                    let g = vec3(at.x, w.ground_y(at), at.z);
+                    match id {
+                        // 휘돌이: 둘레로 퍼지는 먼지 고리와 허리 높이의 빛줄.
+                        Sk::Whirl => {
+                            self.dust_ring(g, 1.6, 12, 5.0, 0.55, DUST);
+                            self.spray(
+                                g + Vec3::Y * 0.9,
+                                Vec3::Y,
+                                1.0,
+                                10,
+                                8.0,
+                                Shape::Streak,
+                                0.07,
+                                0.2,
+                                2.0,
+                                WHITE_HOT,
+                                GOLD,
+                            );
+                        }
+                        // 가로지르기: 떠난 자리의 별과 뒤로 차이는 먼지.
+                        Sk::Cut => {
+                            self.star(g + Vec3::Y * 0.9, 1.2, 0.09, WHITE_HOT);
+                            self.dust_kick(g, -dir, 4, 0.5);
+                        }
+                        // 끌어모으기: 모이는 점의 민트빛 별과 안쪽으로 감기는 먼지.
+                        Sk::Gather => {
+                            self.star(g + Vec3::Y * 0.6, 1.5, 0.14, MINT);
+                            self.dust_ring(g, 2.4, 10, -3.2, 0.5, DUST);
+                        }
+                        // 땅울림: 찍은 자리의 별 + 앞으로 터지는 돌 부스러기 + 넓은 먼지 고리.
+                        Sk::Quake => {
+                            let c = g + dir * 1.6;
+                            self.star(c + Vec3::Y * 0.3, 1.8, 0.12, WHITE_HOT);
+                            self.dust_ring(c, 0.8, 12, 4.4, 0.7, DUST);
+                            self.spray(
+                                c + Vec3::Y * 0.1,
+                                dir + Vec3::Y * 0.8,
+                                0.6,
+                                9,
+                                6.0,
+                                Shape::Dot,
+                                0.12,
+                                0.5,
+                                14.0,
+                                STONE,
+                                STONE,
+                            );
+                        }
+                    }
+                }
+                // 큰 기술: 시동은 발밑에 모이는 금빛, 뒤집히는 순간은 가장 큰 별 + 두 겹 먼지 고리 + 사방의 금빛 줄.
+                Event::UltStart => {
+                    self.star(pp + Vec3::Y * 0.4, 1.4, 0.3, GOLD);
+                    self.dust_ring(vec3(pp.x, w.ground_y(pp), pp.z), 2.6, 12, -2.6, 0.45, DUST);
+                }
+                Event::Ult { at } => {
+                    let g = vec3(at.x, w.ground_y(at), at.z);
+                    self.star(g + Vec3::Y * 0.8, 3.2, 0.15, GOLD);
+                    self.dust_ring(g, 1.0, 14, 7.5, 0.9, DUST);
+                    self.dust_ring(g, 2.5, 14, 5.0, 0.7, DUST);
+                    self.spray(
+                        g + Vec3::Y * 0.5,
+                        Vec3::Y,
+                        1.0,
+                        18,
+                        11.0,
+                        Shape::Streak,
+                        0.09,
+                        0.4,
+                        5.0,
+                        WHITE_HOT,
+                        GOLD,
+                    );
+                }
+                // 게이지가 가득: 가슴 높이의 금빛 번쩍임.
+                Event::UltReady => self.star(pp + Vec3::Y * 1.2, 1.2, 0.12, GOLD),
                 // 다 모였다: 손 높이의 작은 금빛 번쩍임.
                 Event::Charged => self.star(pp + Vec3::Y * 1.0, 0.9, 0.09, GOLD),
                 // 보스가 깨어남(2단계): 호박빛 불티가 사방으로 + 넓은 먼지 고리.

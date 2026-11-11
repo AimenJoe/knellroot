@@ -36,6 +36,9 @@ pub mod key {
     pub const SHOP_OIL: &str = "shop.oil";
     /// 든 무기(0066: prefs 칸 21에서 옮김 — 슬롯 사이에 새지 않게).
     pub const WEAPON: &str = "weapon";
+    /// 끼운 스킬 둘(0151 — 값은 `skills::Id::key`).
+    pub const SKILL1: &str = "skill.1";
+    pub const SKILL2: &str = "skill.2";
     /// 가진 무기(0117): 무기 기록 키들("sword,hammer") — 맨손은 늘 있다. 키가 없는 옛 기록(판을 한 번이라도 한 것)은 다 가진 것으로.
     pub const WEAPONS: &str = "weapons";
     /// 쌓인 플레이 시간(초, 0081 — 이어하기 목록의 "시간"). 개발 판·메뉴·타이틀에 있는 동안은 세지 않는다.
@@ -165,6 +168,8 @@ pub struct Progress {
     pub weapon: Option<crate::weapons::Id>,
     /// 가진 무기(0117 — 무기는 얻어서 쓴다). 맨손은 넣지 않는다(늘 있다).
     pub weapons: Vec<crate::weapons::Id>,
+    /// 끼운 스킬 둘(0151). 기록에 없으면 처음의 둘(`skills::START`).
+    pub skills: crate::skills::Worn,
     /// 쌓인 플레이 시간(초, 0081).
     pub play: u32,
     /// 원래 기록(모르는 키를 지키려고 — 쓸 때 이 위에 덮는다).
@@ -305,6 +310,15 @@ impl Progress {
             bell_cores,
             tree,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
+            skills: {
+                let at = |k: &str, d: crate::skills::Id| {
+                    r.get(k).and_then(crate::skills::Id::by_key).unwrap_or(d)
+                };
+                crate::skills::Worn(crate::skills::sane([
+                    at(key::SKILL1, crate::skills::START[0]),
+                    at(key::SKILL2, crate::skills::START[1]),
+                ]))
+            },
             weapons: r_weapons
                 .map(|v| {
                     v.split(',')
@@ -393,6 +407,14 @@ impl Progress {
         match self.weapon {
             Some(w) => r.set(key::WEAPON, w.key()),
             None => r.remove(key::WEAPON),
+        }
+        // 처음의 둘이면 쓰지 않는다(기록이 없는 슬롯이 "기록 있음"이 되지 않게).
+        if self.skills.0 == crate::skills::START {
+            r.remove(key::SKILL1);
+            r.remove(key::SKILL2);
+        } else {
+            r.set(key::SKILL1, self.skills.0[0].key());
+            r.set(key::SKILL2, self.skills.0[1].key());
         }
         r.set(
             key::WEAPONS,
@@ -943,6 +965,29 @@ weapon=crossbow
         assert!(!load(0).has_any());
         assert_eq!(load(2).clears, 2, "wiping one slot keeps the others");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 0151: 끼운 스킬 둘은 기록에 남는다 — 가장 뒤의 스킬까지 왕복하고, 기록에 없으면(옛 기록) 처음의 둘, 같은 스킬 둘이면 바로잡는다.
+    /// 처음의 둘 그대로면 키를 쓰지 않는다(빈 슬롯이 "기록 있음"이 되지 않게).
+    #[test]
+    fn worn_skills_round_trip_and_old_records_get_the_first_two() {
+        use crate::skills::{Id, Worn, IDS, START};
+        assert_eq!(Progress::default().skills.0, START);
+        let last = *IDS.last().unwrap();
+        for worn in [[last, Id::Gather], [Id::Cut, Id::Whirl]] {
+            let p = Progress {
+                skills: Worn(worn),
+                ..Progress::default()
+            };
+            let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+            assert_eq!(back.skills.0, worn);
+        }
+        let old = Progress::from_record(Record::parse("clears=1\n"));
+        assert_eq!(old.skills.0, START);
+        let twice = Progress::from_record(Record::parse("skill.1=quake\nskill.2=quake\n"));
+        assert_eq!(twice.skills.0, [Id::Quake, Id::Whirl]);
+        assert!(!Progress::default().to_record().to_text().contains("skill."));
+        assert_eq!(Progress::default().summary(), None);
     }
 
     #[test]

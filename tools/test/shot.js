@@ -57,11 +57,11 @@ async function main() {
   for (let i = 0; i < 5; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(260); }
   await shot('00d-fight');
   await press('Escape'); await page.waitForTimeout(300); await shot('00e-pause');
-  // 멈춤(0052·0090·0106): 계속·장비·나무·설정·개발·처음부터·타이틀로(개발은 개발판). 타이틀: 시작·설정·개발(0094).
+  // 멈춤(0052·0090·0106·0130·0151): 계속·장비·나무·도감·기술·설정·개발·처음부터·타이틀로(개발은 개발판). 타이틀: 시작·설정·개발(0094).
   // 개발 창(0083, nail 구조): 위 묶음 탭(도구 · 스테이지 · 전투·적 · 성능, 좌우로) + 그 묶음의 줄 — 스테이지 둘째 줄 = 문 앞, 전투·적 첫 줄 = 보스 아레나.
   // 타이틀로는 묻는 창(0064 — 커서가 "취소"에서 시작): 위로 한 번 = "타이틀로".
   // 타이틀의 DEV는 맨 끝 — 기록이 생겨 "이어하기"가 붙어도 위로 한 번(돌아서)이면 DEV(0066).
-  await press('ArrowDown', 6); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowDown', 7); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await shot('00e2-title-continue');
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
@@ -69,14 +69,18 @@ async function main() {
   await page.keyboard.down('KeyW'); await page.waitForTimeout(2200); await page.keyboard.up('KeyW');
   await page.waitForTimeout(800); await shot('00g-waking');
   await page.waitForTimeout(1500); await press('KeyL'); await page.waitForTimeout(900); await shot('00h-boss-lock');
-  // 설정(0052): 멈춤 → 다섯째 줄(나무·도감 다음, 0106·0130) → 조작은 끝에서 둘째(위로 두 번 — 전체 화면 줄이 있든 없든).
+  // 기술(0151): 멈춤 → 다섯째 줄 — 칸 1을 오른쪽으로 한 번 돌려 본 뒤 되돌리고 닫는다.
   await press('Escape'); await page.waitForTimeout(200); await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowRight'); await page.waitForTimeout(200); await shot('00h1-skills');
+  await press('ArrowLeft'); await page.waitForTimeout(150); await press('Escape'); await page.waitForTimeout(300);
+  // 설정(0052): 멈춤 → 여섯째 줄(나무·도감·기술 다음, 0106·0130·0151 — 닫으면 연 줄 "기술"에 커서가 있다: 아래로 하나) → 조작은 끝에서 둘째(위로 두 번 — 전체 화면 줄이 있든 없든).
+  await press('ArrowDown', 1); await press('Enter'); await page.waitForTimeout(300);
   await shot('00h2-settings');
   await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(300);
   await shot('00i-controls');
   await press('Escape'); await page.waitForTimeout(200); await press('Escape'); await page.waitForTimeout(200);
   // 개발 시나리오로(멈춤 → 타이틀로 → 묻는 창 → DEV → 첫 PoC).
-  // 닫으면 연 줄로(0066): 조작 → 설정 → 멈춤의 "설정"(다섯째)에 커서가 있다 → 아래로 셋 = 타이틀로(개발·처음부터 다음, 0090).
+  // 닫으면 연 줄로(0066): 조작 → 설정 → 멈춤의 "설정"(여섯째)에 커서가 있다 → 아래로 셋 = 타이틀로(개발·처음부터 다음, 0090).
   await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
@@ -128,12 +132,12 @@ async function main() {
   await press('Escape'); await page.waitForTimeout(200);
   await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(200);
   await page.keyboard.press('F1'); await page.waitForTimeout(200);
-  // 쟁반 돌리기(0012): 시나리오 5에서 E(↻) — 도는 중(적은 그대로) · 멈춘 순간 쏟아짐·휘청 · 대기 중 Q(↺)는 안 먹는다.
+  // 쟁반 돌리기(0012): 시나리오 5에서 C(↻, 0151 — 예전 E) — 도는 중(적은 그대로) · 멈춘 순간 쏟아짐·휘청 · 대기 중 Z(↺)는 안 먹는다.
   await page.keyboard.press('Digit5'); await page.waitForTimeout(500); await shot('12-tray');
-  await page.keyboard.press('KeyE'); await page.waitForTimeout(100); await shot('13-turn-mid');
+  await page.keyboard.press('KeyC'); await page.waitForTimeout(100); await shot('13-turn-mid');
   await page.waitForTimeout(400); await shot('14-turn-turning');
   await page.waitForTimeout(700); await shot('15-turn-landed-spill');
-  await page.keyboard.press('KeyQ'); await page.waitForTimeout(300); await shot('16-turn-cooldown');
+  await page.keyboard.press('KeyZ'); await page.waitForTimeout(300); await shot('16-turn-cooldown');
   await browser.close();
   server.close();
   for (const n of fs.readdirSync(OUT)) {

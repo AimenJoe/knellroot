@@ -1,5 +1,5 @@
 //! 장비 창(0067 안 D — 디아블로 콘솔식 인형): 가운데 방랑자 인형(든 무기를 든 3D, `Renderer::draw_doll`), 왼쪽 무기 칸,
-//! 오른쪽 장신구 칸 셋. 칸을 먼저 고르고(십자는 칸 자리대로 커서만, 빨리 바꾸기는 땅 돌리기 버튼 — 2026-11-06) 확인하면 그 칸의 후보 목록
+//! 오른쪽 장신구 칸 셋. 칸을 먼저 고르고(십자는 칸 자리대로 커서만, 빨리 바꾸기는 스킬 버튼 둘 — 예전 땅 돌리기 버튼, 0151) 확인하면 그 칸의 후보 목록
 //! (`Scene::EquipPick`, 스택 위 칸 — 닫으면 그 칸으로)에서 고른다. 오른쪽 칸은 상태(`stats::lines`), 후보에 커서가 있으면
 //! 바뀌는 줄만 `값 → 값 ▲▼`(색 + 화살표 + 숫자). 아래 왼쪽은 고른 것의 설명.
 use super::menu::Hit;
@@ -418,7 +418,7 @@ impl App {
             return;
         }
         // 십자·스틱은 커서만 옮긴다 — 위아래는 장신구 칸 셋 안, 좌우는 무기 칸 ↔ 장신구 칸(칸이 놓인 자리대로,
-        // 사장 2026-11-06 "좌우로는 커서가 움직이는게 더 직관적"). 빨리 바꾸기는 땅 돌리기 버튼(LT·RT / Q·E)으로.
+        // 사장 2026-11-06 "좌우로는 커서가 움직이는게 더 직관적"). 빨리 바꾸기는 스킬 버튼 둘(LT·RT / Q·E — 예전 땅 돌리기 버튼, 0151)으로.
         self.cursor = slot_nav(
             self.cursor,
             a.menu_up as i32 - a.menu_down as i32,
@@ -427,7 +427,7 @@ impl App {
         if self.cursor != before {
             self.scroll = 0.0;
         }
-        let step = a.turn_right as i32 - a.turn_left as i32;
+        let step = a.skill2 as i32 - a.skill1 as i32;
         if step != 0 {
             match self.cursor {
                 0 => self.next_weapon(step),

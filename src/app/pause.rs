@@ -34,6 +34,7 @@ impl App {
                 PauseItem::Weapon => ui::Row::go(s.menu_equip),
                 PauseItem::Tree => ui::Row::go(s.tree_title),
                 PauseItem::Codex => ui::Row::go(s.menu_codex),
+                PauseItem::Skills => ui::Row::go(s.menu_skills),
                 PauseItem::Settings => ui::Row::go(s.menu_settings),
                 PauseItem::Restart => ui::Row::plain(s.menu_restart),
                 PauseItem::ToTitle => ui::Row::plain(s.menu_to_title),

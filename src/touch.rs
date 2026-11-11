@@ -33,8 +33,33 @@ pub enum Kind {
     /// 땅 돌리기(0023): 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면.
     TurnLeft,
     TurnRight,
-    /// 멈춤(0019): 오른쪽 위.
+    /// 스킬 버튼 둘(0151): 예전 돌리기 캡슐 자리. 그림은 끼운 스킬의 것(`View::skills`).
+    Skill1,
+    Skill2,
+    /// 큰 기술(0151): 게이지가 차면 스킬 둘 위에 뜬다(상황 버튼).
+    Ult,
+    /// 그림만(0151): 스킬·큰 기술의 픽토그램, 원거리 무기의 RB(수류탄).
+    Whirl,
+    Cut,
+    Gather,
+    Quake,
+    Upend,
+    Bomb,
+    /// 멈춤(0019): 왼쪽 위.
     Pause,
+}
+
+/// 그릴 때 앱이 넘기는 것(0151): 상태에 따라 바뀌는 그림·차오름.
+#[derive(Clone, Copy, Debug)]
+pub struct View {
+    pub locked: bool,
+    /// 땅 돌리기 대기(0..1, 1 = 준비).
+    pub turn: f32,
+    /// 공격 버튼의 그림(든 무기, 0147)과 RB 버튼의 그림(근접 = 별, 원거리 = 수류탄).
+    pub attack: Kind,
+    pub cast: Kind,
+    /// 스킬 둘: (그림, 대기 0..1 — 1 = 준비).
+    pub skills: [(Kind, f32); 2],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -75,6 +100,9 @@ pub struct Read {
     pub lock: bool,
     pub turn_right: bool,
     pub turn_left: bool,
+    pub skill1: bool,
+    pub skill2: bool,
+    pub ult: bool,
     pub pause: bool,
     /// 메뉴 모드에서 손가락을 거의 움직이지 않고 뗀 자리(논리 px) — 메뉴는 뗄 때 누른다(nail 0199).
     pub tap: Option<Vec2>,
@@ -130,6 +158,8 @@ pub struct Ctx {
     pub lock: bool,
     /// 마실 수 있다(체력이 가득이 아니고 등잔이 남았다).
     pub flask: bool,
+    /// 큰 기술 게이지가 가득 찼다(0151).
+    pub ult: bool,
 }
 
 impl Ctx {
@@ -138,6 +168,7 @@ impl Ctx {
         rest: true,
         lock: true,
         flask: true,
+        ult: true,
     };
 }
 
@@ -179,18 +210,38 @@ pub fn layout(w: f32, h: f32, ctx: Ctx) -> Vec<Button> {
         },
     ];
     // 땅 돌리기: 둘을 한 캡슐로(왼쪽 반 = 왼쪽으로, 오른쪽 반 = 오른쪽으로) — 그림이 캡슐 테두리로 묶는다.
-    let turn = at(118.0, 0.44);
-    let tr = u * 0.065;
+    // 스킬 둘(0151): 예전 돌리기 캡슐 자리(공격 위 바깥 호) — 엄지가 외운 자리를 스킬이 물려받는다.
+    let skill = at(118.0, 0.44);
+    let sr = u * 0.065;
     b.push(Button {
-        center: turn - vec2(u * 0.08, 0.0),
-        radius: tr,
+        center: skill - vec2(u * 0.08, 0.0),
+        radius: sr,
+        kind: Kind::Skill1,
+    });
+    b.push(Button {
+        center: skill + vec2(u * 0.08, 0.0),
+        radius: sr,
+        kind: Kind::Skill2,
+    });
+    // 땅 돌리기(0151): 자주 누르지 않으니 엄지 호 밖, 오른쪽 위에 작게(왼쪽 위의 멈춤과 마주 본다).
+    let (pc, ps) = pause_spot(w, h);
+    b.push(Button {
+        center: vec2(w - pc.x - ps * 2.5, pc.y),
+        radius: ps,
         kind: Kind::TurnLeft,
     });
     b.push(Button {
-        center: turn + vec2(u * 0.08, 0.0),
-        radius: tr,
+        center: vec2(w - pc.x, pc.y),
+        radius: ps,
         kind: Kind::TurnRight,
     });
+    if ctx.ult {
+        b.push(Button {
+            center: at(118.0, 0.6),
+            radius: u * 0.06,
+            kind: Kind::Ult,
+        });
+    }
     if ctx.lock {
         b.push(Button {
             center: at(80.0, 0.44),
@@ -391,6 +442,11 @@ fn press(a: &mut Read, k: Kind) {
         Kind::Lock => a.lock = true,
         Kind::TurnLeft => a.turn_left = true,
         Kind::TurnRight => a.turn_right = true,
+        Kind::Skill1 => a.skill1 = true,
+        Kind::Skill2 => a.skill2 = true,
+        Kind::Ult | Kind::Upend => a.ult = true,
+        // 그림만인 것은 버튼이 되지 않는다.
+        Kind::Whirl | Kind::Cut | Kind::Gather | Kind::Quake | Kind::Bomb => {}
         Kind::Pause => a.pause = true,
     }
 }
@@ -424,7 +480,28 @@ pub fn attack_icon(w: crate::weapons::Id) -> Kind {
 /// 터치 오버레이 그리기(화면 패스). `attack` = 공격 버튼의 그림(`attack_icon`). `locked`면 락온 버튼을 채운다. `turn` = 땅 돌리기 준비 0..1 — 차오르는 동안 옅고, 다 차면 밝다.
 /// 버튼의 몸(0146): 어두운 반투명 바탕 + 밝은 테 — 흰 반투명만으로는 밝은 바닥·불빛 위에서 그림이 묻혔다. 공격만 굵은 호박빛 테
 /// (가장 큰 버튼이 가장 먼저 읽히게), 나머지는 흰 테.
-pub fn draw(o: &Overlay, locked: bool, turn: f32, attack: Kind) {
+/// 스킬 버튼의 그림(0151) — 새 스킬 = 그림 하나(`_` 없는 match).
+pub fn skill_icon(id: crate::skills::Id) -> Kind {
+    use crate::skills::Id;
+    match id {
+        Id::Whirl => Kind::Whirl,
+        Id::Cut => Kind::Cut,
+        Id::Gather => Kind::Gather,
+        Id::Quake => Kind::Quake,
+    }
+}
+
+/// RB 버튼의 그림(0151): 근접 무기 = 마법 탄의 별, 원거리 무기 = 수류탄.
+pub fn cast_icon(w: crate::weapons::Id) -> Kind {
+    if w.def().grenade.is_some() {
+        Kind::Bomb
+    } else {
+        Kind::Cast
+    }
+}
+
+pub fn draw(o: &Overlay, v: &View) {
+    let (locked, turn, attack) = (v.locked, v.turn, v.attack);
     let line = Color::new(1.0, 1.0, 1.0, 0.5);
     let back = Color::new(INK.r, INK.g, INK.b, 0.42);
     if let Some((origin, pos)) = o.stick {
@@ -499,19 +576,47 @@ pub fn draw(o: &Overlay, locked: bool, turn: f32, attack: Kind) {
                 Color::new(1.0, 1.0, 1.0, 0.1),
             );
         }
+        // 스킬(0151): 대기는 돌리기와 같은 꼴 — 가운데부터 차오르고 그림은 옅게.
+        let skill = match b.kind {
+            Kind::Skill1 => Some(v.skills[0]),
+            Kind::Skill2 => Some(v.skills[1]),
+            _ => None,
+        };
+        if let Some((_, ready)) = skill.filter(|(_, r)| *r < 1.0) {
+            draw_circle(
+                b.center.x,
+                b.center.y,
+                b.radius * ready.clamp(0.0, 1.0),
+                Color::new(1.0, 1.0, 1.0, 0.1),
+            );
+        }
+        let ult = b.kind == Kind::Ult;
+        if ult {
+            draw_circle(
+                b.center.x,
+                b.center.y,
+                b.radius,
+                Color::new(WARM.r, WARM.g, WARM.b, 0.3),
+            );
+        }
         let (ring, thick) = match b.kind {
             Kind::Attack => (Color::new(WARM.r, WARM.g, WARM.b, 0.8), 3.0),
-            _ if on => (Color::new(WARM.r, WARM.g, WARM.b, 0.9), 2.0),
+            _ if on || ult => (Color::new(WARM.r, WARM.g, WARM.b, 0.9), 2.0),
             _ => (line, 2.0),
         };
         draw_circle_lines(b.center.x, b.center.y, b.radius, thick, ring);
-        let dim = if is_turn && turn < 1.0 { 0.4 } else { 1.0 };
+        let cooling = (is_turn && turn < 1.0) || skill.is_some_and(|(_, r)| r < 1.0);
+        let dim = if cooling { 0.4 } else { 1.0 };
         let kind = match b.kind {
             Kind::Jump if o.rest => Kind::Rest,
             Kind::Attack => attack,
+            Kind::Cast => v.cast,
+            Kind::Skill1 => v.skills[0].0,
+            Kind::Skill2 => v.skills[1].0,
+            Kind::Ult => Kind::Upend,
             k => k,
         };
-        let tint = if on || kind == Kind::Rest {
+        let tint = if on || ult || kind == Kind::Rest {
             Color::new(1.0, 0.9, 0.66, 1.0)
         } else {
             Color::new(1.0, 0.99, 0.95, 1.0)
@@ -742,6 +847,102 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             ".............",
             ".............",
         ],
+        // 스킬(0151). 휘돌이: 바람개비 날 넷.
+        Kind::Skill1 | Kind::Whirl => [
+            "......#......",
+            ".....##......",
+            "....###......",
+            "....###...#..",
+            ".....##.###..",
+            "..#..######..",
+            ".###########.",
+            "..######..#..",
+            "..###.##.....",
+            "..#...###....",
+            "......###....",
+            "......##.....",
+            "......#......",
+        ],
+        // 가로지르기: 선 하나를 꿰뚫고 지나가는 화살.
+        Kind::Skill2 | Kind::Cut => [
+            "...##........",
+            "...##........",
+            "...##....#...",
+            "...##....##..",
+            "...##....###.",
+            "############.",
+            "#############",
+            "############.",
+            "...##....###.",
+            "...##....##..",
+            "...##....#...",
+            "...##........",
+            "...##........",
+        ],
+        // 끌어모으기: 한 점으로 모이는 화살 넷.
+        Kind::Gather => [
+            "......#......",
+            "....#####....",
+            ".....###.....",
+            "......#......",
+            ".#.........#.",
+            ".##..###..##.",
+            "####.###.####",
+            ".##..###..##.",
+            ".#.........#.",
+            "......#......",
+            ".....###.....",
+            "....#####....",
+            "......#......",
+        ],
+        // 땅울림: 내리찍는 화살과 갈라지는 땅.
+        Kind::Quake => [
+            ".....###.....",
+            ".....###.....",
+            ".....###.....",
+            "..#########..",
+            "...#######...",
+            "....#####....",
+            ".....###.....",
+            "......#......",
+            "#############",
+            "#############",
+            "..#...#...#..",
+            ".#....#....#.",
+            "#.....#.....#",
+        ],
+        // 큰 기술 쟁반 뒤집기: 바깥으로 터지는 살과 가운데 판.
+        Kind::Ult | Kind::Upend => [
+            "#.....#.....#",
+            ".#....#....#.",
+            "..#...#...#..",
+            ".............",
+            "....#####....",
+            "....#####....",
+            "###.#####.###",
+            "....#####....",
+            "....#####....",
+            ".............",
+            "..#...#...#..",
+            ".#....#....#.",
+            "#.....#.....#",
+        ],
+        // 수류탄(원거리 무기의 RB): 둥근 몸과 도화선.
+        Kind::Bomb => [
+            ".........##..",
+            "........#..#.",
+            ".......#.....",
+            "....#####....",
+            "...#######...",
+            "..####..###..",
+            "..###...###..",
+            "..#########..",
+            "..#########..",
+            "..#########..",
+            "...#######...",
+            "....#####....",
+            ".............",
+        ],
         Kind::TurnLeft | Kind::TurnRight => [
             ".............",
             ".............",
@@ -779,7 +980,7 @@ pub fn icon_px(r: f32) -> f32 {
 }
 
 /// 픽토그램 그리기: 어두운 한 칸 테(밝은 바닥·불빛 위에서도 읽히게, KB hud-readability) 위에 밝은 몸. `tint` = 몸의 빛깔.
-fn icon(k: Kind, c: Vec2, r: f32, dim: f32, tint: Color) {
+pub fn icon(k: Kind, c: Vec2, r: f32, dim: f32, tint: Color) {
     let px = icon_px(r);
     let size = ICON_N as f32 * px;
     let (x0, y0) = ((c.x - size / 2.0).round(), (c.y - size / 2.0).round());
@@ -835,6 +1036,12 @@ mod tests {
             Kind::Staff,
             Kind::Crossbow,
             Kind::Fist,
+            Kind::Whirl,
+            Kind::Cut,
+            Kind::Gather,
+            Kind::Quake,
+            Kind::Upend,
+            Kind::Bomb,
         ];
         // 0147: 무기마다 공격 그림이 다르다(같으면 무엇을 들었는지 버튼이 말하지 못한다).
         let icons: Vec<Kind> = crate::weapons::IDS
@@ -969,9 +1176,10 @@ mod tests {
             .any(|x| matches!(x.kind, Kind::Lock | Kind::Flask)));
         assert_eq!(
             none.iter().filter(|x| x.kind != Kind::Pause).count(),
-            7,
-            "attack + 4 + turn pair"
+            9,
+            "attack + 4 + skill pair + turn pair"
         );
+        assert!(!none.iter().any(|x| x.kind == Kind::Ult));
     }
 
     /// 오른쪽 버튼 = 카메라가 오른쪽으로 = 땅이 화면에서 시계 방향(0017) — 카메라 쪽 뜻은 camera 시험이 본다.
@@ -987,6 +1195,37 @@ mod tests {
         let b = layout(844.0, 390.0, Ctx::default());
         let x = |k| b.iter().find(|x| x.kind == k).unwrap().center.x;
         assert!(x(Kind::TurnRight) > x(Kind::TurnLeft));
+    }
+
+    /// 0151: 스킬 둘이 예전 돌리기 자리(엄지 호)를 물려받고, 돌리기는 오른쪽 위로 갔다. 큰 기술은 게이지가 찼을 때만 스킬 둘 위에 뜬다.
+    #[test]
+    fn skills_take_the_thumb_arc_and_turning_moves_to_the_top_right() {
+        for (w, h) in [(844.0, 390.0), (667.0, 375.0), (1180.0, 820.0)] {
+            let b = layout(w, h, Ctx::ALL);
+            let at = |k| b.iter().find(|x| x.kind == k).unwrap();
+            let (s1, s2, atk) = (at(Kind::Skill1), at(Kind::Skill2), at(Kind::Attack));
+            assert!(s1.center.x < s2.center.x && s1.center.y == s2.center.y);
+            assert!(s1.center.y < atk.center.y, "above the attack button");
+            assert!(
+                (s1.center - atk.center).length() < w.min(h) * 0.6,
+                "in reach"
+            );
+            let (tl, tr) = (at(Kind::TurnLeft), at(Kind::TurnRight));
+            assert!(tl.center.x > w * 0.7 && tr.center.y < h * 0.2, "top right");
+            assert!(tl.radius < s1.radius, "turning is the smaller pair now");
+            let u = at(Kind::Ult);
+            assert!(u.center.y < s1.center.y && u.center.x > s1.center.x - 1.0);
+            assert!(u.center.x < s2.center.x + 1.0, "between and above the two");
+        }
+        let mut a = Read::default();
+        press(&mut a, Kind::Skill1);
+        assert!(a.skill1 && !a.skill2 && !a.ult);
+        let mut a = Read::default();
+        press(&mut a, Kind::Ult);
+        assert!(a.ult && !a.skill1);
+        use crate::weapons::Id;
+        assert_eq!(cast_icon(Id::Crossbow), Kind::Bomb);
+        assert_eq!(cast_icon(Id::Sword), Kind::Cast);
     }
 
     #[test]

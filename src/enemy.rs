@@ -165,6 +165,8 @@ pub struct Enemy {
     pub hit_by: u32,
     /// 땅 돌리기로 쏟아지는 중 — 이때 벽에 부딪히면 벽 쿵(한 번).
     pub spilling: bool,
+    /// 큰 기술(0151)로 쏟긴 동안: 벽·기둥에 박히면 `spill.slam dmg`에 더해지는 피해. 쏟김이 끝나면 0.
+    pub slam_bonus: i32,
     /// 휘청 몸짓(렌더가 기울인다).
     pub sway: Vec3,
     pub sway_t: f32,
@@ -302,6 +304,7 @@ impl Enemy {
             knock: Vec3::ZERO,
             hit_by: 0,
             spilling: false,
+            slam_bonus: 0,
             sway: Vec3::ZERO,
             sway_t: 0.0,
             dead_t: 0.0,
@@ -856,6 +859,7 @@ impl Enemy {
         self.knock *= (1.0 - KNOCK_DECAY * dt).max(0.0);
         if self.knock.length() < SLAM_SPEED {
             self.spilling = false;
+            self.slam_bonus = 0;
         }
         // 2단계 전환(0133): 체력 반에서 한 번 — 하던 공격을 버리고 `RISE_TIME` 동안 무릎 꿇었다 터지며 일어선다.
         if d.boss && !self.roused && self.hp * 2 <= self.max_hp && self.state != EState::Dormant {

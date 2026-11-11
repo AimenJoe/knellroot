@@ -45,6 +45,7 @@ mod screen;
 mod secondary;
 mod sfx;
 mod shade;
+mod skills;
 mod species;
 mod stage;
 mod stats;

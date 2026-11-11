@@ -48,12 +48,15 @@ pub(super) enum DevStart {
     Scenario(Scenario),
     /// 연구소(메뉴의 설정 아래 줄과 같은 창, 0079).
     Lab,
+    /// 기술 창(0151 — 멈춤의 기술 줄과 같은 창): 아레나에는 멈춤이 없어 여기서 끼운다.
+    Skills,
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 20] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 22] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
+    (DevCat::Tools, DevStart::Skills),
     (DevCat::Stage, DevStart::Entrance),
     (DevCat::Stage, DevStart::Gate),
     (DevCat::Stage, DevStart::Village),
@@ -69,6 +72,7 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 20] = [
     (DevCat::Combat, DevStart::Scenario(Scenario::WardenTwo)),
     (DevCat::Combat, DevStart::Scenario(Scenario::BellkeeperTwo)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Horde)),
+    (DevCat::Combat, DevStart::Scenario(Scenario::Skills)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Tray)),
     (DevCat::Perf, DevStart::Scenario(Scenario::Stress40)),
     (DevCat::Perf, DevStart::Scenario(Scenario::Stress80)),
@@ -98,6 +102,7 @@ impl DevStart {
                 scenario_text(e.name, e.checks).0
             }
             DevStart::Lab => t(dv::LAB_START),
+            DevStart::Skills => t(dv::SKILLS_START),
         }
     }
 
@@ -120,12 +125,13 @@ impl DevStart {
                 fill(t(dv::SCENARIO_NOTE), &[&n.to_string(), checks])
             }
             DevStart::Lab => t(dv::LAB_NOTE).to_string(),
+            DevStart::Skills => t(dv::SKILLS_NOTE).to_string(),
         }
     }
 }
 
 impl App {
-    /// 개발 창 한 틱: 뒤로·✕·창 밖 = 나가기, 좌우·땅 돌리기(Q/E)·탭 누르기 = 묶음, 위아래·굴리기 = 줄, 확인·줄 누르기 = 시작.
+    /// 개발 창 한 틱: 뒤로·✕·창 밖 = 나가기, 좌우·스킬 버튼(Q/E, 0151)·탭 누르기 = 묶음, 위아래·굴리기 = 줄, 확인·줄 누르기 = 시작.
     pub(super) fn tick_dev(&mut self, a: &Actions, tab: usize) {
         let tap = a.tap.and_then(|p| self.hit_at(p));
         if a.back || a.pause || tap == Some(Hit::Close) {
@@ -133,7 +139,7 @@ impl App {
             return;
         }
         let n = DEV_CATS.len();
-        let step = (a.menu_right || a.turn_right) as i32 - (a.menu_left || a.turn_left) as i32;
+        let step = (a.menu_right || a.skill2) as i32 - (a.menu_left || a.skill1) as i32;
         let to = match tap {
             Some(Hit::Cell(1, i)) => Some(i),
             _ if step != 0 => Some((tab as i32 + step).rem_euclid(n as i32) as usize),
@@ -220,10 +226,12 @@ impl App {
                 self.world = scenario::build(sc);
                 self.fx.clear();
                 self.world.set_weapon(self.weapon);
+                self.world.set_skills(self.progress.skills.0);
                 self.cam = Camera::new(self.world.player.pos, &self.t);
                 self.go(Go::Root(Scene::Sandbox));
             }
             DevStart::Lab => self.go(Go::Open(Scene::Lab)),
+            DevStart::Skills => self.go(Go::Open(Scene::Skills)),
         }
     }
 

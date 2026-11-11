@@ -100,6 +100,13 @@ pub const ZOOM_PERFECT: f32 = 0.035;
 /// 겹쳐도 이 몫까지·돌아오는 빠르기(1/s — 0.25초쯤에 거의 다).
 pub const ZOOM_MAX: f32 = 0.14;
 pub const ZOOM_RETURN: f32 = 11.0;
+/// 스킬(0151): 스킬의 타·큰 기술이 터진 순간의 히트스톱 배율(`feel.hitstop s` × 이것), 대기 중에 눌렀을 때 칸이 깜빡이는 초,
+/// 큰 기술이 쏟은 뒤 벽에 박혀 쓰러진 적을 "스킬로 쓰러뜨린 것"으로 치는 초, 큰 기술로 쏟긴 적이 벽에 박힐 때의 덤 피해.
+pub const SKILL_HITSTOP: f32 = 1.8;
+pub const ULT_HITSTOP: f32 = 3.0;
+pub const SKILL_DENIED_SHOW: f32 = 0.5;
+pub const ULT_KILL_WINDOW: f32 = 1.5;
+pub const ULT_SLAM_DAMAGE: i32 = 2;
 /// 평타 히트스톱 배율(`feel.hitstop s` × 이것, 2026-11-06): 0.06초(≈3.6프레임)는 "없는 것과 같다"(KB 사다리 — 가장 약한 타도 6프레임쯤).
 pub const HIT_HITSTOP: f32 = 1.6;
 /// 맞은 쪽: 몸이 맞은 쪽으로 젖는 세기(평타·강타, `Enemy::sway`), 멈춤 동안 떨림(m).
@@ -153,8 +160,6 @@ pub const EMBER_PICK_R: f32 = 0.7;
 /// 마법 탄 반지름(m)과 쏘는 높이(몸 위 m).
 pub const BOLT_RADIUS: f32 = 0.35;
 pub const BOLT_HEIGHT: f32 = 1.0;
-/// 마법을 쏜 직후 땅 돌리기 누름을 버리는 시간(초) — RB 바로 밑이 RT(돌리기)라 잘못 눌러 세상이 도는 것을 막는다(0048).
-pub const CAST_TURN_GUARD: f32 = 0.25;
 /// 공중 RB(0111): 쏘는 순간 떨어지기를 멈추는 초(체공), 겨눌 적이 없을 때 앞으로 내려 쏘는 거리(m)·가장 가까운 거리(m),
 /// 쇠뇌의 내려 쏘기 볼트 수·부채꼴 반각(도). 한 점프에 한 번.
 pub const AIR_SHOT_HOVER: f32 = 0.2;
@@ -425,6 +430,14 @@ pub enum P {
     RenderWind,
     HudHurtEdge,
     FeelZoom,
+    /// 스킬(0151): 모든 대기에 곱하는 배율, 스킬이 아닌 것으로(스킬로) 쓰러뜨렸을 때 대기가 당겨지는 초("기세"),
+    /// 두 버튼을 함께 누른 것으로 치는 시동 안의 창(초), 게이지가 차는 몫(맞힌 휘두르기 한 번·패링 한 번, 1 = 가득).
+    SkillCooldownX,
+    SkillMomentum,
+    SkillMomentumOwn,
+    SkillChord,
+    SkillGaugeHit,
+    SkillGaugeParry,
 }
 
 /// 랩이 읽는 칸(이름·걸음·범위·내보내기 이름)은 개발판에만 쓰인다(운영판에는 랩이 없다, 0070).
@@ -456,7 +469,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 156] = [
+pub const SPECS: [Spec; 162] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1677,6 +1690,60 @@ pub const SPECS: [Spec; 156] = [
     spec!(RenderWind, "render.wind", "RENDER_WIND", 1.0, 0.0, 2.5, 0.1),
     spec!(HudHurtEdge, "hurt.edge", "HURT_EDGE", 1.0, 0.0, 2.0, 0.1),
     spec!(FeelZoom, "feel.zoom", "FEEL_ZOOM", 1.0, 0.0, 2.5, 0.1),
+    spec!(
+        SkillCooldownX,
+        "skill.cooldown x",
+        "SKILL_COOLDOWN_X",
+        1.0,
+        0.2,
+        2.0,
+        0.1
+    ),
+    spec!(
+        SkillMomentum,
+        "skill.momentum s",
+        "SKILL_MOMENTUM_S",
+        0.6,
+        0.0,
+        2.0,
+        0.1
+    ),
+    spec!(
+        SkillMomentumOwn,
+        "skill.momentum by skill s",
+        "SKILL_MOMENTUM_BY_SKILL_S",
+        0.3,
+        0.0,
+        2.0,
+        0.1
+    ),
+    spec!(
+        SkillChord,
+        "skill.chord s",
+        "SKILL_CHORD_S",
+        0.12,
+        0.0,
+        0.3,
+        0.01
+    ),
+    spec!(
+        SkillGaugeHit,
+        "skill.gauge per hit",
+        "SKILL_GAUGE_PER_HIT",
+        0.025,
+        0.0,
+        0.2,
+        0.005
+    ),
+    spec!(
+        SkillGaugeParry,
+        "skill.gauge per parry",
+        "SKILL_GAUGE_PER_PARRY",
+        0.1,
+        0.0,
+        0.5,
+        0.01
+    ),
 ];
 
 /// 땅 돌리기 휘청의 흔들림 빠르기(Hz)·줄어듦(/초) — 0.5초 안에 3% 아래로.

@@ -115,6 +115,13 @@ impl World {
                 };
             }
             PState::Turn { t: e, from, to } => self.tick_turning(&cx, e, from, to),
+            PState::Skill {
+                id,
+                t: e,
+                dir,
+                swing,
+            } => self.tick_skill(&cx, id, e, dir, swing),
+            PState::Ult { t: e, done } => self.tick_ult(&cx, e, done),
         }
 
         self.tick_run(&cx);
@@ -315,6 +322,11 @@ impl World {
             pl.stamina = (pl.stamina + t[P::StaminaRegen] * dt).min(t[P::StaminaMax]);
         }
         pl.turn_cd = (pl.turn_cd - dt).max(0.0);
+        // 스킬의 대기(0151)는 저마다 돈다.
+        for cd in &mut pl.skill_cd {
+            *cd = (*cd - dt).max(0.0);
+        }
+        pl.skill_denied = (pl.skill_denied - dt).max(0.0);
         pl.flask_lock = (pl.flask_lock - dt).max(0.0);
         pl.flask_denied = (pl.flask_denied - dt).max(0.0);
         // 새 누름이면 0부터, 쥐고 있으면 늘고, 놓으면 0.
@@ -415,7 +427,7 @@ impl World {
             };
             pl.vy = crate::tuning::jump_ballistics(t).0;
             pl.air = 0.0;
-        } else if self.try_parry(cx) {
+        } else if self.try_parry(cx) || self.try_skill(cx) {
         } else if a.attack && !a.dodge && wpn.grenade.is_some() {
             self.throw_grenade(cx);
         } else if a.attack && !a.dodge && self.swing_pays(cx) {
@@ -1049,7 +1061,19 @@ impl World {
                     Vec3::ZERO
                 };
             }
-            PState::Turn { .. } | PState::Land { .. } => pl.vel = Vec3::ZERO,
+            PState::Turn { .. } | PState::Land { .. } | PState::Ult { .. } => pl.vel = Vec3::ZERO,
+            // 스킬(0151): 가로지르기만 움직인다 — 판정 구간 동안 `dist` m를 곧게.
+            PState::Skill { id, t: e, dir, .. } => {
+                let d = id.def();
+                pl.vel = match d.form {
+                    crate::skills::Form::Lane { dist, time, .. }
+                        if e >= d.startup && e < d.startup + time =>
+                    {
+                        dir * (dist / time.max(1e-3))
+                    }
+                    _ => Vec3::ZERO,
+                };
+            }
             PState::Heavy { t: e, dir, .. } => {
                 let (s0, a0, _) = heavy_times(t, wpn);
                 let reach = s0 + a0;
@@ -1120,7 +1144,9 @@ impl World {
                 | PState::Jump { plunge: true, .. }
                 | PState::Cast { .. }
                 | PState::Throw { .. }
-                | PState::Land { .. },
+                | PState::Land { .. }
+                | PState::Skill { .. }
+                | PState::Ult { .. },
             ) => None,
             (Basis::Lock(tg), _) => {
                 let d = tg - pl.pos;
