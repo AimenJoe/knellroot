@@ -1414,6 +1414,8 @@ mod turn_probe {
         /// 가장 빠른 롤(화면이 제자리에서 도는 것, °/s)과 팬(옆으로 훑기, °/s).
         roll: f32,
         pan: f32,
+        /// 돌기 전 시선이 실제로 숙인 각(라디안) — 카메라는 발이 아니라 몸통을 봐서 랩의 지상각보다 조금 얕고, 가까울수록 더 얕다.
+        dip: f32,
         /// 되돌아올 때 반대 방향으로 가장 빠른 방위 회전(°/s).
         back: f32,
         /// 가장 멀리 간 방위(°, 90이면 지나침 없음).
@@ -1451,6 +1453,7 @@ mod turn_probe {
             peak: 0.0,
             roll: 0.0,
             pan: 0.0,
+            dip: (-(c.rig.look - c.rig.pos).normalize().y).asin(),
             back: 0.0,
             reach: 0.0,
             secs: 0.0,
@@ -1545,12 +1548,14 @@ mod turn_probe {
             );
             assert!(p.roll < last_roll, "roll shrinks as the pitch drops");
             last_roll = p.roll;
-            let r = f32::to_radians(pitch);
+            // 견주는 각은 랩의 지상각이 아니라 시선이 실제로 숙인 각(0144: 거리를 20 → 17로 줄이자 둘의 차가 커져
+            // 지상각 70°에서 허용 폭을 넘었다 — 식이 틀린 것이 아니라 견준 각이 달랐다).
+            assert!(p.dip <= f32::to_radians(pitch) + 1e-3 && p.dip > f32::to_radians(pitch - 4.0));
             assert!(
-                (p.roll / p.pan - r.tan()).abs() < 0.08,
-                "roll/pan = tan(pitch): {} vs {}",
+                (p.roll / p.pan - p.dip.tan()).abs() < 0.08,
+                "roll/pan = tan(dip): {} vs {}",
                 p.roll / p.pan,
-                r.tan()
+                p.dip.tan()
             );
         }
         // 기본 지상각(44°)에서는 롤이 팬보다 작다.

@@ -82,7 +82,7 @@ pub const SEC_STRETCH_PER_SPEED: f32 = 0.018;
 pub const SEC_SQUASH_MAX: f32 = 0.3;
 
 pub const PLAYER_RADIUS: f32 = 0.35;
-/// 화면 흔들림(0020): trauma 1이면 카메라가 이 각(도)만큼 흔들린다 — 거리에 곱해 쿼터뷰(20m)·락온(7m)에서 화면 크기가 같다.
+/// 화면 흔들림(0020): trauma 1이면 카메라가 이 각(도)만큼 흔들린다 — 거리에 곱해 쿼터뷰(17m, 0144 — 그전 20m)·락온(7m)에서 화면 크기가 같다.
 /// 예전엔 월드 ±0.25m 고정이라 20m 쿼터뷰에서 1px 남짓(사장: "피격 시에도 흔들림 있어야지").
 pub const SHAKE_DEG: f32 = 1.6;
 /// 사건마다 더하는 trauma(크기는 제곱으로 쓴다).
@@ -460,7 +460,7 @@ pub const SPECS: [Spec; 155] = [
         CamQDist,
         "cam.quarter.dist",
         "CAM_Q_DIST",
-        20.0,
+        17.0,
         4.0,
         30.0,
         0.5

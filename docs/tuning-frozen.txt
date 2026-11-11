@@ -1,5 +1,5 @@
 pub const CAM_Q_PITCH_DEG: f32 = 40.000;  // (default)
-pub const CAM_Q_DIST: f32 = 20.000;  // (default)
+pub const CAM_Q_DIST: f32 = 17.000;  // (default)
 pub const CAM_Q_FOV_DEG: f32 = 42.000;  // (default)
 pub const CAM_Q_LAG: f32 = 8.000;  // (default)
 pub const CAM_Q_YAW_DEG: f32 = 35.000;  // (default)
