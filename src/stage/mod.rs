@@ -1154,6 +1154,10 @@ impl StageRun {
                         .is_none_or(|(g, _)| w.player.pos.z < g.min.z - 0.8);
                     if inside {
                         self.set_gate(w, true);
+                        // 깨어나는 동안에도 락온에는 잡힌다(0149).
+                        if let Some(b) = self.boss.and_then(|i| w.enemies.get_mut(i)) {
+                            b.waking = true;
+                        }
                         self.phase = Phase::Waking(0.0);
                         self.objective = None;
                         self.card = Some((self.def.boss_wakes, WAKE_TIME + 1.0));
@@ -1164,6 +1168,7 @@ impl StageRun {
                 if t + dt >= WAKE_TIME {
                     if let Some(b) = self.boss.and_then(|i| w.enemies.get_mut(i)) {
                         b.state = EState::Chase;
+                        b.waking = false;
                     }
                     self.phase = Phase::Duel;
                 } else {
@@ -1263,6 +1268,7 @@ impl StageRun {
             let e = &mut w.enemies[b];
             e.hp = max;
             e.state = EState::Dormant;
+            e.waking = false;
             e.roused = false;
             e.exposed = 0.0;
             e.knock = Vec3::ZERO;
@@ -1453,6 +1459,47 @@ mod tests {
     use crate::input::Actions;
     use crate::tuning::Tuning;
     use crate::tuning::{FLASK_CHARGES, PLAYER_HP};
+
+    /// 0149(사장 "보스가 깨어나기 전에 타겟팅이 안 돼서 엉뚱한 적에게 락온"): 깨어나는 2초 동안에도 락온은 보스를 잡는다 —
+    /// 더 가까이 깬 잡몹이 있어도. 아직 깨어나기 시작하지 않은 잠든 보스는 잡히지 않고(싸울 것이 아니다), 다 깨면 깃발은 내려간다.
+    #[test]
+    fn lock_on_takes_the_boss_while_it_is_still_waking() {
+        let t = Tuning::default();
+        let (mut run, mut w) = StageRun::start(STAGES[STAGES.len() - 1]);
+        let b = run.boss.unwrap();
+        let home = run.level.marks_of('W').next().expect("boss mark");
+        let lock = Actions {
+            lock: true,
+            ..Default::default()
+        };
+        // 깨어나기 전: 곁에 서도 잠든 보스는 락온 후보가 아니다.
+        assert!(!w.enemies[b].lockable());
+        // 성소에 들어선다 → 깨어나기 시작.
+        w.player.pos = home + vec3(0.0, 0.0, 4.0);
+        w.player.prev = w.player.pos;
+        run.tick(&mut w, 1.0 / 60.0);
+        assert!(matches!(run.phase, Phase::Waking(_)), "{:?}", run.phase);
+        assert!(w.enemies[b].waking && w.enemies[b].lockable() && !w.enemies[b].active());
+        assert!(w.lock_candidate(), "the touch lock button shows too");
+        // 더 가까운 깬 잡몹 하나(방랑자 옆 2m) — 그래도 보스가 잡힌다.
+        let mob = w.spawn(
+            crate::species::Kind::Husk,
+            w.player.pos + vec3(2.0, 0.0, 0.0),
+        );
+        w.enemies[mob].state = EState::Chase;
+        w.player.facing = (home - w.player.pos).x.atan2((home - w.player.pos).z);
+        w.step(&lock, &t);
+        assert_eq!(w.lock, Some(b), "locked {:?}, boss is {b}", w.lock);
+        // 다 깨면 깃발이 내려가고 락온은 그대로다.
+        for _ in 0..((WAKE_TIME * 60.0) as usize + 2) {
+            w.player.hp = 5;
+            w.step(&Actions::default(), &t);
+            run.tick(&mut w, 1.0 / 60.0);
+        }
+        assert_eq!(run.phase, Phase::Duel);
+        assert!(!w.enemies[b].waking && w.enemies[b].active());
+        assert_eq!(w.lock, Some(b));
+    }
 
     /// 0118(PR #10 검토 뒤 분명히): C3 전까지 마을 끝은 **싸우는 임시 문지기**(첫 문지기 모델) — 종탑 터에 들어서면 깨고,
     /// 이기고 핵을 거두면 마지막 지역이라 판이 끝난다(결과 화면). 바닥 길은 없다.

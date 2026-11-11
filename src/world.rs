@@ -710,7 +710,7 @@ impl World {
     pub fn lock_candidate(&self) -> bool {
         self.enemies
             .iter()
-            .any(|e| e.active() && e.pos.distance(self.player.pos) <= self.lock_range)
+            .any(|e| e.lockable() && e.pos.distance(self.player.pos) <= self.lock_range)
     }
 
     /// 캔슬(0057, KB `action-roguelite-for-solo-dev` "캔슬 창이 곧 무기 성격"): 새 누름(회피 > 패링 > 점프 > 공격 > 마법 > 등잔)을
@@ -1155,7 +1155,8 @@ impl World {
         let f = self.player.facing_dir();
         let mut best: Option<(f32, usize)> = None;
         for (i, e) in self.enemies.iter().enumerate() {
-            if !e.active() {
+            // 깨어나는 중인 보스도 잡힌다(0149) — 아니면 그 2초 동안 락온이 범위 안의 다른 적으로 간다.
+            if !e.lockable() {
                 continue;
             }
             let d = e.pos - p;
@@ -1182,7 +1183,7 @@ impl World {
         self.enemies
             .iter()
             .enumerate()
-            .filter(|(_, e)| e.active() && e.pos.distance(p) <= self.range_lock())
+            .filter(|(_, e)| e.lockable() && e.pos.distance(p) <= self.range_lock())
             .map(|(i, e)| (vec3(e.pos.x - at.x, 0.0, e.pos.z - at.z).length(), i))
             .filter(|(d, _)| *d <= LOCK_HANDOFF)
             .min_by(|a, b| a.0.total_cmp(&b.0))

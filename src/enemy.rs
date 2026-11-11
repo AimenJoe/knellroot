@@ -152,6 +152,9 @@ pub struct Enemy {
     pub atk_count: u32,
     /// 체력 반 아래로 깨어났다(문지기 — 핵이 밝아지고 빨라진다).
     pub roused: bool,
+    /// 잠에서 깨어나는 중(0149 — 스테이지가 켠다): 아직 맞지도 움직이지도 않지만 **락온에는 잡힌다**. 깨어나는 2초 동안
+    /// 보스가 락온 후보에서 빠져, 락온을 누르면 범위 안의 엉뚱한 적이 잡혔다(사장 2026-11-11).
+    pub waking: bool,
     /// 이번 고리들 가운데 이미 맞힌 것(울림 고리 0125 — 고리마다 한 번).
     pub rings_hit: u8,
     /// 이번 돌진·파동이 이미 맞혔다(한 번만).
@@ -292,6 +295,7 @@ impl Enemy {
             atk: Atk::Smash,
             atk_count: 0,
             roused: false,
+            waking: false,
             landed: false,
             rings_hit: 0,
             hurt: 0.0,
@@ -444,6 +448,11 @@ impl Enemy {
     /// 싸움에 끼어 있나 — 잠든 적(`Dormant`)은 몸은 있어도(부딪힘) 맞지도, 락온·조준·땅 돌리기에 잡히지도 않는다.
     pub fn active(&self) -> bool {
         !matches!(self.state, EState::Dead | EState::Dormant)
+    }
+
+    /// 락온에 잡히나(0149): 싸움에 낀 적 + 깨어나는 중인 잠든 적. 그냥 잠든 적은 아니다(싸울 것이 아직 아니다).
+    pub fn lockable(&self) -> bool {
+        self.active() || (self.waking && self.state == EState::Dormant)
     }
 
     pub fn facing_dir(&self) -> Vec3 {
