@@ -2424,9 +2424,9 @@ impl Renderer {
                         t[crate::tuning::P::AttackArc] * h.arc
                     };
                     let col = if w.player.swing_beat {
-                        Color::new(1.0, 0.9, 0.6, 0.8)
+                        Color::new(1.0, 0.88, 0.55, 0.95)
                     } else {
-                        Color::new(1.0, 0.97, 0.88, 0.7)
+                        Color::new(0.92, 0.95, 1.0, 0.9)
                     };
                     crescent(
                         pp + Vec3::Y * 0.95,
@@ -2436,6 +2436,7 @@ impl Renderer {
                         crate::weapons::sweep_of(h.anim),
                         q,
                         with_a(col, col.a * fade),
+                        1.0,
                     );
                 }
             }
@@ -2545,6 +2546,26 @@ impl Renderer {
                     } else {
                         Color::new(1.0, 0.9, 0.65, 0.18)
                     },
+                );
+            }
+            // 강타의 초승달(0145): 평타보다 두껍고 오래 남는다 — 다 모았으면 호박빛. 강타는 가운데에서 양쪽으로 벌어진다.
+            if t[crate::tuning::P::RenderFx] >= 0.5 && e >= s0 && e < s1 + HEAVY_SLASH_FADE {
+                let q = ((e - s0) / a0.max(1e-3)).clamp(0.0, 1.0);
+                let fade = 1.0 - ((e - s1) / HEAVY_SLASH_FADE).clamp(0.0, 1.0);
+                let col = if full {
+                    Color::new(1.0, 0.78, 0.4, 1.0)
+                } else {
+                    Color::new(1.0, 0.93, 0.75, 0.9)
+                };
+                crescent(
+                    pp + Vec3::Y * 0.95,
+                    t[crate::tuning::P::HeavyRange] * h.reach,
+                    w.player.facing,
+                    arc.to_radians(),
+                    crate::weapons::Sweep::Center,
+                    q,
+                    with_a(col, col.a * fade * fade),
+                    if full { 1.5 } else { 1.25 },
                 );
             }
         }
@@ -4217,7 +4238,9 @@ thread_local! {
 const HURT_WHITE: f32 = 0.05;
 
 /// 휘두름의 초승달이 활성 구간 뒤에 옅어지는 시간(초).
-const SLASH_FADE: f32 = 0.12;
+const SLASH_FADE: f32 = 0.2;
+/// 강타의 초승달이 남는 시간(초).
+const HEAVY_SLASH_FADE: f32 = 0.3;
 
 /// 카메라를 보는 판의 오른쪽·위(길이 1) — 그 자리에서 눈을 보게.
 fn facing_axes(p: Vec3) -> (Vec3, Vec3) {
@@ -4289,9 +4312,21 @@ pub fn slash_arcs(yaw: f32, arc: f32, sweep: crate::weapons::Sweep, q: f32) -> V
         Sweep::Center => vec![(yaw, yaw + half * q), (yaw, yaw - half * q)],
     }
 }
-const SLASH_TAIL: f32 = 1.5;
+const SLASH_TAIL: f32 = 2.2;
+/// 초승달의 두께(머리에서, 닿는 거리의 몫): 빛 띠·그 안의 밝은 날 — `weight`를 곱한다(강타는 더 두껍게, 0145).
+const SLASH_GLOW: f32 = 0.6;
+const SLASH_EDGE: f32 = 0.16;
 
-/// 초승달 한 장: 머리 쪽이 두껍고 밝고, 꼬리로 갈수록 가늘어지며 사라진다(바깥 변 = 닿는 거리).
+/// 초승달의 안쪽 반지름 몫(0..1): 머리(`s` = 1)에서 `thick × weight`만큼 두껍고 꼬리(`s` = 0)에서 0 — 반지름의 0.15보다 안으로는
+/// 들어가지 않는다(가운데가 메워지면 초승달이 아니라 원판이다).
+pub fn slash_inner(s: f32, thick: f32, weight: f32) -> f32 {
+    (1.0 - thick * weight * s.clamp(0.0, 1.0)).max(0.15)
+}
+
+/// 초승달: 머리 쪽이 두껍고 밝고, 꼬리로 갈수록 가늘어지며 사라진다(바깥 변 = 닿는 거리 — 판정보다 크게 그리지 않는다).
+/// 두 겹(0145 — 사장 "더 큰 휘두름"): 넓은 빛 띠(무기 빛깔, 안쪽으로 옅어진다) + 바깥 변을 따라가는 밝은 날(흰빛).
+/// `weight` = 두께 배율(평타 1, 강타 1.25~1.5).
+#[allow(clippy::too_many_arguments)]
 fn crescent(
     c: Vec3,
     reach: f32,
@@ -4300,27 +4335,36 @@ fn crescent(
     sweep: crate::weapons::Sweep,
     q: f32,
     col: Color,
+    weight: f32,
 ) {
-    const N: usize = 10;
+    const N: usize = 14;
+    let hot = Color::new(1.0, 1.0, 0.96, col.a);
     for (tail, head) in slash_arcs(yaw, arc, sweep, q) {
         if (head - tail).abs() < 0.02 {
             continue;
         }
-        let mut pts = Vec::with_capacity((N + 1) * 2);
-        let mut idx = Vec::with_capacity(N * 6);
-        for i in 0..=N {
-            let s = i as f32 / N as f32;
-            let a = tail + (head - tail) * s;
-            let dir = vec3(a.sin(), 0.0, a.cos());
-            let k = with_a(col, col.a * s * s.sqrt());
-            pts.push((c + dir * reach, k));
-            pts.push((c + dir * reach * (1.0 - 0.36 * s), k));
+        // (두께, 바깥 빛, 안쪽 빛의 투명도 몫): 빛 띠는 안으로 사라지고, 날은 고르게 밝다.
+        for (thick, ink, inner_a) in [(SLASH_GLOW, col, 0.12), (SLASH_EDGE, hot, 0.85)] {
+            let mut pts = Vec::with_capacity((N + 1) * 2);
+            let mut idx = Vec::with_capacity(N * 6);
+            for i in 0..=N {
+                let s = i as f32 / N as f32;
+                let a = tail + (head - tail) * s;
+                let dir = vec3(a.sin(), 0.0, a.cos());
+                // 꼬리 쪽도 한동안 보이게(예전 s^1.5는 머리 근처만 남았다).
+                let k = ink.a * s;
+                pts.push((c + dir * reach, with_a(ink, k)));
+                pts.push((
+                    c + dir * reach * slash_inner(s, thick, weight),
+                    with_a(ink, k * inner_a),
+                ));
+            }
+            for i in 0..N as u16 {
+                let b = i * 2;
+                idx.extend_from_slice(&[b, b + 1, b + 2, b + 1, b + 3, b + 2]);
+            }
+            flat_mesh(&pts, &idx);
         }
-        for i in 0..N as u16 {
-            let b = i * 2;
-            idx.extend_from_slice(&[b, b + 1, b + 2, b + 1, b + 3, b + 2]);
-        }
-        flat_mesh(&pts, &idx);
     }
 }
 
@@ -4631,6 +4675,20 @@ mod tests {
         assert!(!fits(6000, 14_000, 3000, 7000));
         assert!(!fits(9000, 0, 1000, 10), "vertices alone still count");
         // 모델 하나는 늘 빈 배치에 들어간다 — models.rs `every_bundled_model_fits_one_draw_call`.
+    }
+
+    /// 0145 더 큰 휘두름: 초승달은 머리에서 가장 두껍고 꼬리에서 0, 강타(`weight` > 1)가 더 두껍다 — 그래도 가운데는 비어 있다.
+    #[test]
+    fn the_slash_crescent_is_thickest_at_the_blade_and_never_fills_the_middle() {
+        assert_eq!(slash_inner(0.0, SLASH_GLOW, 1.0), 1.0);
+        let (light, heavy) = (
+            slash_inner(1.0, SLASH_GLOW, 1.0),
+            slash_inner(1.0, SLASH_GLOW, 1.5),
+        );
+        assert!(light < 0.5 && heavy < light, "{light} {heavy}");
+        assert!(heavy >= 0.15 && slash_inner(1.0, SLASH_GLOW, 9.0) >= 0.15);
+        // 밝은 날은 빛 띠보다 훨씬 가늘다(바깥 변을 따라가는 선).
+        assert!(1.0 - slash_inner(1.0, SLASH_EDGE, 1.0) < (1.0 - light) * 0.4);
     }
 
     /// 0142 구운 불꽃: 밑동은 그릇에 붙어 가만히, 끝으로 갈수록 크게 일렁인다 — 몫은 늘 음수 쪽(풀의 느린 바람과 다른 박자)이고

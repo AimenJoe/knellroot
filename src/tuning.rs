@@ -82,7 +82,7 @@ pub const SEC_STRETCH_PER_SPEED: f32 = 0.018;
 pub const SEC_SQUASH_MAX: f32 = 0.3;
 
 pub const PLAYER_RADIUS: f32 = 0.35;
-/// 화면 흔들림(0020): trauma 1이면 카메라가 이 각(도)만큼 흔들린다 — 거리에 곱해 쿼터뷰(17m, 0144 — 그전 20m)·락온(7m)에서 화면 크기가 같다.
+/// 화면 흔들림(0020): trauma 1이면 카메라가 이 각(도)만큼 흔들린다 — 거리에 곱해 쿼터뷰(15m, 0145 — 그전 20 → 17)·락온(7m)에서 화면 크기가 같다.
 /// 예전엔 월드 ±0.25m 고정이라 20m 쿼터뷰에서 1px 남짓(사장: "피격 시에도 흔들림 있어야지").
 pub const SHAKE_DEG: f32 = 1.6;
 /// 사건마다 더하는 trauma(크기는 제곱으로 쓴다).
@@ -91,6 +91,15 @@ pub const SHAKE_HIT: f32 = 0.25;
 pub const KICK_HIT_DEG: f32 = 0.3;
 pub const KICK_SMASH_DEG: f32 = 0.55;
 pub const KICK_RETURN: f32 = 22.0;
+/// 타격 줌(0145 — 사장 "센 타격 줌"): 센 타격의 순간 카메라가 주시점 쪽으로 거리의 이 몫만큼 다가갔다 돌아온다 — 강타·자세 깨기,
+/// 치명타, 패링, 딱 맞춘 떼기. 평타에는 없다(늘 당기면 신호가 아니라 멀미다). 히트스톱 동안은 다가간 채 머문다.
+pub const ZOOM_SMASH: f32 = 0.085;
+pub const ZOOM_CRIT: f32 = 0.06;
+pub const ZOOM_PARRY: f32 = 0.06;
+pub const ZOOM_PERFECT: f32 = 0.035;
+/// 겹쳐도 이 몫까지·돌아오는 빠르기(1/s — 0.25초쯤에 거의 다).
+pub const ZOOM_MAX: f32 = 0.14;
+pub const ZOOM_RETURN: f32 = 11.0;
 /// 평타 히트스톱 배율(`feel.hitstop s` × 이것, 2026-11-06): 0.06초(≈3.6프레임)는 "없는 것과 같다"(KB 사다리 — 가장 약한 타도 6프레임쯤).
 pub const HIT_HITSTOP: f32 = 1.6;
 /// 맞은 쪽: 몸이 맞은 쪽으로 젖는 세기(평타·강타, `Enemy::sway`), 멈춤 동안 떨림(m).
@@ -415,6 +424,7 @@ pub enum P {
     RenderFx,
     RenderWind,
     HudHurtEdge,
+    FeelZoom,
 }
 
 /// 랩이 읽는 칸(이름·걸음·범위·내보내기 이름)은 개발판에만 쓰인다(운영판에는 랩이 없다, 0070).
@@ -446,7 +456,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 155] = [
+pub const SPECS: [Spec; 156] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -460,7 +470,7 @@ pub const SPECS: [Spec; 155] = [
         CamQDist,
         "cam.quarter.dist",
         "CAM_Q_DIST",
-        17.0,
+        15.0,
         4.0,
         30.0,
         0.5
@@ -1666,6 +1676,7 @@ pub const SPECS: [Spec; 155] = [
     // 살아 있는 환경(0142, 사장 2026-11-10 "Environment도 생동감 있게"): 풀 끝·잎 무더기가 바람에 흔들리는 세기(0 = 멈춤). 땅속은 이 값의 0.4배.
     spec!(RenderWind, "render.wind", "RENDER_WIND", 1.0, 0.0, 2.5, 0.1),
     spec!(HudHurtEdge, "hurt.edge", "HURT_EDGE", 1.0, 0.0, 2.0, 0.1),
+    spec!(FeelZoom, "feel.zoom", "FEEL_ZOOM", 1.0, 0.0, 2.5, 0.1),
 ];
 
 /// 땅 돌리기 휘청의 흔들림 빠르기(Hz)·줄어듦(/초) — 0.5초 안에 3% 아래로.

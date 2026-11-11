@@ -208,6 +208,18 @@ impl App {
                 let d = at - self.world.player.pos;
                 cam.kick(vec3(d.x, 0.0, d.z), deg * self.shake as f32 / 10.0);
             }
+            // 타격 줌(0145): 센 타격의 순간에만 — 흔들림 설정과 랩 `feel.zoom`을 따른다.
+            use crate::tuning::{ZOOM_CRIT, ZOOM_PARRY, ZOOM_PERFECT, ZOOM_SMASH};
+            let zoom = match e {
+                Event::Smash { .. } | Event::Break { .. } => ZOOM_SMASH,
+                Event::Crit { .. } => ZOOM_CRIT,
+                Event::Parry { .. } => ZOOM_PARRY,
+                Event::Perfect { .. } => ZOOM_PERFECT,
+                _ => 0.0,
+            };
+            if zoom > 0.0 {
+                cam.punch_in(zoom * t[crate::tuning::P::FeelZoom] * self.shake as f32 / 10.0);
+            }
         }
         self.world_sounds(&events);
         // 그림 이펙트(0141): 사건·상태 변화 → 입자. 히트스톱 동안은 입자도 느리게(맞힌 순간의 번쩍임·불티가 멈춘 몸과 함께 남는다).
@@ -220,6 +232,7 @@ impl App {
 
     pub(super) fn follow_camera(&mut self) {
         let target = self.world.lock_target();
+        self.cam.freeze = self.world.hitstop > 0.0;
         self.cam.set_mode(
             if target.is_some() {
                 Mode::Lock

@@ -238,6 +238,7 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("attack.arc deg", "평타 각(도)"),
     ("feel.hitstop s", "히트스톱(초)"),
     ("feel.knockback", "넉백"),
+    ("feel.zoom", "강타·패링 때 카메라 당김(0끔)"),
     ("lock.range", "락온 거리 한도"),
     ("lock.lose dist", "락온 풀리는 거리"),
     ("render.face shade", "면 음영"),

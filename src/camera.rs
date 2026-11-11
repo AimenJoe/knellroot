@@ -167,6 +167,9 @@ pub struct Camera {
     /// 카메라 킥(2026-11-06): 맞은 쪽으로 찼다가 `KICK_RETURN`으로 돌아오는 월드 오프셋(각 → 거리는 `kick`이 잰다).
     kick: Vec3,
     kick_deg: Vec3,
+    /// 타격 줌(0145): 주시점 쪽으로 다가가 있는 몫(거리의 0..`ZOOM_MAX`). `freeze`(히트스톱)인 동안은 줄지 않는다.
+    zoom: f32,
+    pub freeze: bool,
     /// 땅 돌리기 휘청(0084): (지난 초, 굴림 크기 도 — + = 화면이 시계 방향으로 기욺). 줄어드는 흔들림 몇 개의 합.
     wobbles: Vec<(f32, f32)>,
     /// 이번 프레임의 굴림 각(라디안) — `to_camera3d`가 위쪽 벡터를 앞 축 둘레로 돌린다.
@@ -195,6 +198,8 @@ impl Camera {
             trauma: 0.0,
             kick: Vec3::ZERO,
             kick_deg: Vec3::ZERO,
+            zoom: 0.0,
+            freeze: false,
             wobbles: Vec::new(),
             roll: 0.0,
             shake: Vec3::ZERO,
@@ -469,6 +474,15 @@ impl Camera {
             self.push += (want_push - self.push) * (1.0 - (-t[P::CamPullOut] * dt).exp());
         }
         rig.pos += self.push;
+        // 타격 줌(0145): 주시점 쪽으로 거리의 몫만큼 — 리그 자체를 옮겨 그림·커서 조준·가림이 같은 눈을 쓴다.
+        // 세계가 멈춘 동안(히트스톱)은 다가간 채 머물고, 풀리면 돌아온다.
+        if !self.freeze {
+            self.zoom *= (-crate::tuning::ZOOM_RETURN * dt).exp();
+            if self.zoom < 1e-4 {
+                self.zoom = 0.0;
+            }
+        }
+        rig.pos = rig.look + (rig.pos - rig.look) * (1.0 - self.zoom);
         // 흔들림: trauma² 크기의 무작위 오프셋(로직 시계를 쓰므로 히트스톱 중엔 멈춘다).
         self.trauma = (self.trauma - dt * 2.5).max(0.0);
         // 크기는 각으로(0020): 카메라 거리 × tan(각) — 먼 쿼터뷰에서도 화면에서 보이게. 카메라의 오른쪽·위로 민다(위치·주시점 같이 = 화면 평행 이동).
@@ -506,6 +520,11 @@ impl Camera {
     #[cfg(test)]
     pub fn roll_deg(&self) -> f32 {
         self.roll.to_degrees()
+    }
+
+    /// 타격 줌(0145): 주시점 쪽으로 거리의 `k` 몫만큼 다가간다 — 겹치면 더 큰 쪽(더하지 않는다), `ZOOM_MAX`까지.
+    pub fn punch_in(&mut self, k: f32) {
+        self.zoom = self.zoom.max(k).clamp(0.0, crate::tuning::ZOOM_MAX);
     }
 
     /// 카메라 킥: 수평 방향 `dir` 쪽으로 `deg`도만큼 찬다(겹치면 더하되 한 번의 두 배까지).
@@ -1533,6 +1552,48 @@ mod turn_probe {
             "reaches {}",
             p.reach
         );
+    }
+
+    /// 0145 타격 줌: 센 타격의 순간 카메라가 주시점 쪽으로 거리의 몫만큼 다가가고, 세계가 멈춘 동안(히트스톱)은 그대로 머물다
+    /// 풀리면 0.5초 안에 제자리로 돌아온다. 겹치면 더 큰 쪽 — 한도(`ZOOM_MAX`)를 넘지 않는다.
+    #[test]
+    fn a_heavy_blow_pulls_the_camera_in_holds_through_hitstop_and_lets_go() {
+        use crate::tuning::{ZOOM_MAX, ZOOM_SMASH};
+        let t = Tuning::default();
+        let w = build(Scenario::Tray);
+        let mut c = Camera::new(w.player.pos, &t);
+        let step = |c: &mut Camera| c.update(1.0 / 60.0, &t, w.player.pos, None, &w.obstacles);
+        for _ in 0..30 {
+            step(&mut c);
+        }
+        let far = c.rig.pos.distance(c.rig.look);
+        c.punch_in(ZOOM_SMASH);
+        c.freeze = true;
+        for _ in 0..8 {
+            step(&mut c);
+        }
+        let near = c.rig.pos.distance(c.rig.look);
+        assert!(
+            (near / far - (1.0 - ZOOM_SMASH)).abs() < 1e-3,
+            "{near} of {far}"
+        );
+        c.freeze = false;
+        step(&mut c);
+        assert!(
+            c.rig.pos.distance(c.rig.look) > near,
+            "eases out once the world moves"
+        );
+        for _ in 0..30 {
+            step(&mut c);
+        }
+        assert!((c.rig.pos.distance(c.rig.look) - far).abs() < 0.02);
+        // 겹쳐도 한도까지.
+        for _ in 0..5 {
+            c.punch_in(ZOOM_MAX);
+        }
+        c.freeze = true;
+        step(&mut c);
+        assert!((c.rig.pos.distance(c.rig.look) / far - (1.0 - ZOOM_MAX)).abs() < 1e-3);
     }
 
     /// 지상각을 낮추면 롤(화면이 제자리에서 도는 것)이 줄고 팬이 는다 — 45°에서 같아진다(롤 = 방위 회전 × sin 지상각).

@@ -49,6 +49,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 이펙트(0141) | `fx.rs`(`Fx::on_events`·`watch`·`tick`, `brazier_ember`), `backdrop.rs` `Backdrop::fx`, `render.rs` `gem`·`spark4`·`crescent`·`slash_arcs`, `app/play.rs` `step_world`, 랩 `render.fx`, `tools/test/fx.js` + 개발 키 F6 | 사건·상태 변화 → 입자(별·빛줄·먼지·네모 화소), 휘두름의 초승달, 화로 불티. 꾸밈만 상한, 빨강 없음, 히트스톱 동안 1/4 빠르기 |
 | 남은 상자 걷기·바람(0142) | `tools/art/blender/props.py` `work_fire`·`work_jar`·`work_tent`, `render.rs` `stage_props`(생활 물건·줍는 것)·`loot_body`·`loot_front`·`shaded_tris`·`octa_faces`·`ball_faces`·`spike_faces`·`glow_disc`·`wind_material`·GLSL `sway`·`flame_sway`, `scenery::sway`(법선 칸 w = 바람 몫), `flora.rs` `LEAF_SWAY`, `backdrop.rs` `LEAVES`, 랩 `render.wind` | 0142 |
 | 맞음 피드백(0143) | `world.rs` 맞은 틱의 히트스톱(`HURT_HITSTOP`·`HURT_HEAVY`)·`Player::since_hurt`·`hurt_blow`, `hud.rs` `hurt_edge_k`·`low_hp`·`draw_edge`·체력 칸, `render.rs` `HURT_WHITE`, `app/play.rs` 맞음 킥(`KICK_HURT_DEG`), 랩 `hurt.edge` | 0143 |
+| 타격 줌·큰 휘두름(0145) | `camera.rs` `punch_in`·`zoom`·`freeze`, `app/play.rs`(사건 → 줌, `ZOOM_*`), `render.rs` `crescent`(두 겹)·`slash_inner`·`SLASH_GLOW`·`SLASH_EDGE`·`HEAVY_SLASH_FADE`, 랩 `feel.zoom`·`cam.quarter.dist` 15 | 0145 |
 | 화면 다듬기(0140) | `scenery.rs` `MORTAR_CALM`·`patch`·`SHADE_RES`·`PROP_AO`, `render.rs` `AMBIENT_KEY`·`MOON_KEY`·`actor_moon`·`floor_shade`·`post`·`Grade`, 랩 `render.floor calm`·`key light`·`grade`·`bloom`·`vignette` | 조용한 바닥, 빛 : 그늘 2.5배·그림자 칸 0.125m·소품 밑 그늘·그늘에 선 배우, 톤 곡선·빛 번짐·가장자리 그늘(선 둘과 함께 내부 해상도에서 한 번) |
 | 모델 리뷰·소품 v2(0139) | `tools/art/blender/common.py` `Geo.stone`·`lathe`·`limb`·`k_*` 칸, `props.py`, `review_glb.py`, `render.rs` `stage_props` | 소품 여덟(벽 조각·기둥·뿌리·화로·문·핵·종·돌무더기)을 0061 기준으로 다시 빚음 — 돌 쌓기 무늬 상자 대신 큰 덩어리 기하 + 단색, 둥근 것은 매끈하게·뿌리와 테만 각지게. 상자로 그리던 장신구 상자·새긴 돌·문 장치를 모델로(`chest`·`stone_tablet`·`lever`, 없으면 예전 상자) |
 | 지형·빛 | `scenery.rs`, `render.rs` `lit` | 한 번 굽기. 바탕 + 달빛 + 화로(7m, 거리 제곱). 배우는 1.35배 밝게. 가리는 벽 칸·소품은 옅게 |
@@ -126,7 +127,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 개발 | 타이틀 "DEV: skip to the sanctum gate"·"DEV: PoC scenarios"(1~7, Esc = 타이틀), 랩(멈춤 끝 줄 LAB·F1, 0070), F3 개발 줄, F4 글자 넘침 검사 | 운영판(`--no-default-features`)에는 없다(F3 줄은 있음) |
 
 ## 사람이 할 일
-**0144 판정(개발판)**: 쿼터뷰 거리 17이 맞는지(13-5 — 캐릭터 크기·땅 돌리기 어지러움·폰 화면), 모자라면 13-6. 그리고 0143 맞음 피드백(13-1~13-4): 멈춤 길이·붉은 테 진하기.
+**0145 판정(개발판)**: 쿼터뷰 거리 15가 맞는지(13-5 — 캐릭터 크기·땅 돌리기 어지러움·폰 화면), 타격 줌의 세기(13-7), 큰 초승달(13-8·13-9). 그리고 0143 맞음 피드백(13-1~13-4): 멈춤 길이·붉은 테 진하기.
 
 **0142 판정(개발판)**: 체크리스트 12번 묶음 — 특히 ① 문지기 2단계의 뿌리 가시(싸움 안에서는 못 찍었다) ② 바람이 폰·핸드헬드에서 과하지 않은지·프레임 ③ 락온에서 보스 둘이 거칠어 보이는지(보이면 텍스처 1024×512).
 
@@ -141,6 +142,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 **v0.5.0 마일스톤 정함(0116, 갈래 `release/v0.5`)**: 인터뷰로 열여섯 물음 — 보라 뿌리 = 주인 없는 실(개발자 답), 떠난 이유는 게임 안 MYSTERY, 주민 = 여러 작은 동물("주민"), 포포 고리 걸어 둠, ECO-05 조건은 열고 행동 규칙만, ECO-10 같은 종이 다른 역할, 잔류형 정본(관찰), 마을 등급 2 = 체력 ×1.5·자세 ×1.3·잔불 ×1.6, 둘째 문지기 거리·공간형, 내려가는 길 + 되돌아가는 길, 도감 넣음, 주민의 불 = 아궁이·재방문 = 다음 판·공격이 지나감·말풍선. 이름: 떠난 마을·등딱지짐승·꼬투리·깨진 종지기. **다음: T1 지역 잇기부터**. 둘째 지역 설계는 0115(`docs/lore/regions/abandoned-village.md`·`docs/design/stages/abandoned-village-residents.md`).
 
 **v0.5.0 배포(2026-11-10, PR #15 `release/v0.5` → `main`, 사장 Merge — Squash `082a781`)**: `Cargo.toml` 0.5.0·`version_code` 17·`docs/releases/v0.5.0.md`. Actions `release`·`build-android` success, Release `v0.5.0`에 `knellroot.apk`. Squash라 빨리 감기가 안 돼 `release/v0.5`에는 main을 합치고(트리 같음), `release/v0.6`에는 `-s ours`로 합침(내용은 이미 있음). 고칠 것은 v0.5.x(`release/v0.5`) 또는 v0.6에서.
+
+**0145(개발판, 사장 "센 타격 줌이랑 더 큰 휘두름 … 거리 15")**: ① 쿼터뷰 거리 17 → 15(방랑자 몸 56px = 화면 높이 15.6%, 보이는 땅은 20 대비 −25%) ② 타격 줌 — 강타·자세 깨기 8.5%, 치명타·패링 6%, 딱 맞춘 떼기 3.5%만큼 카메라가 다가갔다 돌아온다(평타에는 없음, 히트스톱 동안 머묾, 랩 `feel.zoom`) ③ 휘두름의 초승달을 두 겹(넓은 빛 띠 + 밝은 날)으로 키우고 강타에도 — 바깥 변은 여전히 닿는 거리. 판정 13-5·13-7~13-9.
 
 **0144(개발판, 사장 "응 제안대로 할께")**: 쿼터뷰 카메라 거리 20 → 17(얼린 값 `CAM_Q_DIST`) — 방랑자 몸 42 → 50px(화면 높이 11.7 → 13.8%), 보이는 땅 15% 줄어듦. 땅 돌리기의 회전 빠르기는 같고(각도의 일) 화면 위 흐름만 18% 빠르다 — 어지러움은 판정 13-5. 시험 `a_lower_pitch_turns_roll_into_pan`은 시선이 실제로 숙인 각으로 견주게 고침.
 
