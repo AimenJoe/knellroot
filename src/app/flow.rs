@@ -66,37 +66,11 @@ pub enum Scene {
 }
 
 impl Scene {
-    /// 메뉴 입력을 받는 장면(터치는 탭만, 패드 십자키는 커서).
+    /// 메뉴 입력을 받는 장면(터치는 탭만, 패드 십자키는 커서, 메뉴 소리) = **싸움 화면이 아닌 모든 장면**.
+    /// 예전에는 장면을 하나씩 적은 목록이었고 도감(0130)이 빠져 있었다 — 도감에 들어가면 터치가 싸움 조작(스틱·버튼)으로 읽혀
+    /// 탭이 안 먹었다(사장 2026-11-11). `layer()`는 `_` 없는 match라 새 장면을 빠뜨릴 수 없다 — 거기서 끌어온다.
     pub fn is_menu(self) -> bool {
-        matches!(
-            self,
-            Scene::Title
-                | Scene::Pause
-                | Scene::Equip
-                | Scene::EquipPick { .. }
-                | Scene::Hearth
-                | Scene::Level
-                | Scene::Tree { .. }
-                | Scene::Shop
-                | Scene::Ask(_)
-                | Scene::Result { .. }
-                | Scene::Controls
-                | Scene::Settings
-                | Scene::Skills
-                | Scene::Slots { .. }
-        ) || self.is_dev()
-    }
-
-    #[cfg(feature = "dev")]
-    fn is_dev(self) -> bool {
-        matches!(
-            self,
-            Scene::Dev { .. } | Scene::Lab | Scene::LabGroup { .. }
-        )
-    }
-    #[cfg(not(feature = "dev"))]
-    fn is_dev(self) -> bool {
-        false
+        self.layer() != Layer::Game
     }
 
     /// 무엇 위에 그리나(0066, nail 0235 R21 — `_` 없는 match: 새 장면이면 컴파일러가 묻는다).
@@ -507,6 +481,17 @@ mod tests {
         // 0104: 화로 레벨도 가게처럼 "올리기"에서, 답하면 레벨 창으로.
         assert_eq!(answer(Ask::Level(1), true), (Go::Back, false));
         assert_eq!(ask_default(Ask::Level(0)), 0);
+        // 도감(0130)·기술(0151)도 메뉴다 — 터치가 탭으로 읽힌다(도감이 목록에서 빠져 터치가 안 먹던 것).
+        for sc in [
+            Scene::Codex { tab: 0 },
+            Scene::Codex { tab: 1 },
+            Scene::Skills,
+        ] {
+            assert!(sc.is_menu(), "{sc:?} takes taps");
+            assert_eq!(back(sc), Go::Back);
+        }
+        // 싸움 화면만 메뉴가 아니다.
+        assert!(!Scene::Play.is_menu());
         for sc in [Scene::Hearth, Scene::Level, Scene::Shop] {
             assert_eq!(back(sc), Go::Back, "{sc:?} closes to where it opened");
             assert!(sc.is_menu());
