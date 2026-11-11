@@ -400,14 +400,32 @@ pub fn stick_vector(d: Vec2, radius: f32) -> Vec2 {
     v / len * ((len - DEAD) / (1.0 - DEAD)).min(1.0)
 }
 
+/// 터치 UI의 잉크(어두운 바탕·테)·따뜻한 강조(공격 테·락온) — HUD의 호박빛과 같은 줄기.
+const INK: Color = Color::new(0.07, 0.05, 0.1, 1.0);
+const WARM: Color = Color::new(1.0, 0.8, 0.42, 1.0);
+
 /// 터치 오버레이 그리기(화면 패스). `locked`면 락온 버튼을 채운다. `turn` = 땅 돌리기 준비 0..1 — 차오르는 동안 옅고, 다 차면 밝다.
+/// 버튼의 몸(0146): 어두운 반투명 바탕 + 밝은 테 — 흰 반투명만으로는 밝은 바닥·불빛 위에서 그림이 묻혔다. 공격만 굵은 호박빛 테
+/// (가장 큰 버튼이 가장 먼저 읽히게), 나머지는 흰 테.
 pub fn draw(o: &Overlay, locked: bool, turn: f32) {
-    let line = Color::new(1.0, 1.0, 1.0, 0.4);
-    let fill = Color::new(1.0, 1.0, 1.0, 0.12);
+    let line = Color::new(1.0, 1.0, 1.0, 0.5);
+    let back = Color::new(INK.r, INK.g, INK.b, 0.42);
     if let Some((origin, pos)) = o.stick {
+        draw_circle(
+            origin.x,
+            origin.y,
+            o.stick_radius,
+            Color::new(INK.r, INK.g, INK.b, 0.22),
+        );
         draw_circle_lines(origin.x, origin.y, o.stick_radius, 2.0, line);
         let knob = origin + (pos - origin).clamp_length_max(o.stick_radius);
-        draw_circle(knob.x, knob.y, o.stick_radius * 0.4, fill);
+        draw_circle(knob.x, knob.y, o.stick_radius * 0.4, back);
+        draw_circle(
+            knob.x,
+            knob.y,
+            o.stick_radius * 0.4,
+            Color::new(1.0, 1.0, 1.0, 0.18),
+        );
         draw_circle_lines(knob.x, knob.y, o.stick_radius * 0.4, 2.0, line);
     }
     // 돌리기 둘을 한 캡슐로 묶는 테(0053).
@@ -416,20 +434,22 @@ pub fn draw(o: &Overlay, locked: bool, turn: f32) {
     if let (Some(l), Some(r)) = (tl, trn) {
         let pad = l.radius * 0.25;
         let rr = l.radius + pad;
+        let faint = Color::new(INK.r, INK.g, INK.b, 0.2);
         draw_rectangle(
             l.center.x,
             l.center.y - rr,
             r.center.x - l.center.x,
             rr * 2.0,
-            Color::new(1.0, 1.0, 1.0, 0.06),
+            faint,
         );
+        let soft = Color::new(1.0, 1.0, 1.0, 0.3);
         draw_line(
             l.center.x,
             l.center.y - rr,
             r.center.x,
             r.center.y - rr,
             2.0,
-            line,
+            soft,
         );
         draw_line(
             l.center.x,
@@ -437,36 +457,49 @@ pub fn draw(o: &Overlay, locked: bool, turn: f32) {
             r.center.x,
             r.center.y + rr,
             2.0,
-            line,
+            soft,
         );
-        draw_arc_left_right(l.center, r.center, rr, line);
+        draw_arc_left_right(l.center, r.center, rr, soft);
     }
     for b in &o.buttons {
         let on = b.kind == Kind::Lock && locked;
-        let f = if on {
-            Color::new(1.0, 0.85, 0.3, 0.35)
-        } else {
-            fill
-        };
         let is_turn = matches!(b.kind, Kind::TurnLeft | Kind::TurnRight);
-        draw_circle(b.center.x, b.center.y, b.radius, f);
+        draw_circle(b.center.x, b.center.y, b.radius, back);
+        if on {
+            draw_circle(
+                b.center.x,
+                b.center.y,
+                b.radius,
+                Color::new(WARM.r, WARM.g, WARM.b, 0.3),
+            );
+        }
         if is_turn && turn < 1.0 {
-            // 대기: 차오르는 몫만큼 아래부터 채운다(그림은 옅게).
+            // 대기: 차오르는 몫만큼 가운데부터 채운다(그림은 옅게).
             draw_circle(
                 b.center.x,
                 b.center.y,
                 b.radius * turn.clamp(0.0, 1.0),
-                Color::new(1.0, 1.0, 1.0, 0.08),
+                Color::new(1.0, 1.0, 1.0, 0.1),
             );
         }
-        draw_circle_lines(b.center.x, b.center.y, b.radius, 2.0, line);
-        let dim = if is_turn && turn < 1.0 { 0.35 } else { 1.0 };
+        let (ring, thick) = match b.kind {
+            Kind::Attack => (Color::new(WARM.r, WARM.g, WARM.b, 0.8), 3.0),
+            _ if on => (Color::new(WARM.r, WARM.g, WARM.b, 0.9), 2.0),
+            _ => (line, 2.0),
+        };
+        draw_circle_lines(b.center.x, b.center.y, b.radius, thick, ring);
+        let dim = if is_turn && turn < 1.0 { 0.4 } else { 1.0 };
         let kind = if b.kind == Kind::Jump && o.rest {
             Kind::Rest
         } else {
             b.kind
         };
-        icon(kind, b.center, b.radius, dim);
+        let tint = if on || kind == Kind::Rest {
+            Color::new(1.0, 0.9, 0.66, 1.0)
+        } else {
+            Color::new(1.0, 0.99, 0.95, 1.0)
+        };
+        icon(kind, b.center, b.radius, dim, tint);
     }
 }
 
@@ -489,180 +522,213 @@ fn draw_arc_left_right(l: Vec2, r: Vec2, rr: f32, col: Color) {
     }
 }
 
-/// 픽토그램(선 그림). 플레이어용 셋은 글자 없이, dev 버튼만 짧은 ASCII.
-fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
-    let col = Color::new(1.0, 1.0, 1.0, 0.85 * dim);
-    let s = r * 0.5;
-    let th = (r * 0.09).max(2.0);
+/// 픽토그램의 한 변(칸).
+pub const ICON_N: usize = 13;
+
+/// 터치 픽토그램(0146 — 사장 "터치스크린의 아이콘도 좀 거시기 하네"): 13×13 도트 그림(`#` = 칠한 칸). 가는 선 그림은 도트 화면 위에서
+/// 다른 게임의 UI처럼 떠 보였다 — 첫 게임도 같은 판정을 도트 그림으로 풀었다(nail 0172 판정 11). 돌리기 둘은 한 그림을 좌우로 뒤집는다
+/// (`icon_cell`). 고치면 시험 `touch_icons_are_13_by_13_and_tell_each_other_apart`.
+pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
     match k {
-        Kind::Attack => {
-            // 칼: 대각 날 + 가드.
-            draw_line(c.x - s, c.y + s, c.x + s, c.y - s, th * 1.4, col);
-            draw_line(
-                c.x - s * 0.75,
-                c.y + s * 0.05,
-                c.x - s * 0.05,
-                c.y + s * 0.75,
-                th,
-                col,
-            );
-        }
-        Kind::Dodge => {
-            // 겹 화살촉(옆으로 굴러 빠지기).
-            for dx in [-s * 0.45, s * 0.25] {
-                draw_line(c.x + dx, c.y - s * 0.6, c.x + dx + s * 0.6, c.y, th, col);
-                draw_line(c.x + dx + s * 0.6, c.y, c.x + dx, c.y + s * 0.6, th, col);
+        Kind::Attack => [
+            "..........###",
+            ".........####",
+            "........####.",
+            ".......####..",
+            "......####...",
+            ".##..####....",
+            ".###.###.....",
+            "..#####......",
+            "...####......",
+            "..######.....",
+            ".###..###....",
+            "###....##....",
+            "##...........",
+        ],
+        Kind::Dodge => [
+            ".............",
+            ".............",
+            "###...###....",
+            ".###...###...",
+            "..###...###..",
+            "...###...###.",
+            "....###...###",
+            "...###...###.",
+            "..###...###..",
+            ".###...###...",
+            "###...###....",
+            ".............",
+            ".............",
+        ],
+        Kind::Parry => [
+            ".............",
+            ".###########.",
+            ".###########.",
+            ".##.......##.",
+            ".##...#...##.",
+            ".##..###..##.",
+            ".##...#...##.",
+            ".##.......##.",
+            "..##.....##..",
+            "...##...##...",
+            "....##.##....",
+            ".....###.....",
+            "......#......",
+        ],
+        Kind::Cast => [
+            "......#......",
+            "......#......",
+            ".....###.....",
+            ".....###.....",
+            "....#####....",
+            "..#########..",
+            "#############",
+            "..#########..",
+            "....#####....",
+            ".....###.....",
+            ".....###.....",
+            "......#......",
+            "......#......",
+        ],
+        Kind::Jump => [
+            "......#......",
+            ".....###.....",
+            "....#####....",
+            "...#######...",
+            "..#########..",
+            ".....###.....",
+            ".....###.....",
+            ".....###.....",
+            ".....###.....",
+            ".............",
+            "..#########..",
+            "..#########..",
+            ".............",
+        ],
+        Kind::Rest => [
+            "......#......",
+            ".....##......",
+            ".....###.....",
+            "....####.#...",
+            "...#####.##..",
+            "...########..",
+            "..#########..",
+            "..####.####..",
+            "...###.###...",
+            "....#####....",
+            "##.........##",
+            ".###########.",
+            "##.........##",
+        ],
+        Kind::Lock => [
+            "......#......",
+            "......#......",
+            "...#######...",
+            "..#########..",
+            "..##.....##..",
+            "..##.....##..",
+            "####..#..####",
+            "..##.....##..",
+            "..##.....##..",
+            "..#########..",
+            "...#######...",
+            "......#......",
+            "......#......",
+        ],
+        Kind::Flask => [
+            "......#......",
+            ".....##......",
+            ".....###.....",
+            "....#####....",
+            "....#####....",
+            ".....###.....",
+            ".............",
+            ".###########.",
+            "..#########..",
+            "...#######...",
+            "....#####....",
+            "...#######...",
+            "..#########..",
+        ],
+        Kind::Pause => [
+            ".............",
+            ".............",
+            "...###.###...",
+            "...###.###...",
+            "...###.###...",
+            "...###.###...",
+            "...###.###...",
+            "...###.###...",
+            "...###.###...",
+            "...###.###...",
+            "...###.###...",
+            ".............",
+            ".............",
+        ],
+        Kind::TurnLeft | Kind::TurnRight => [
+            ".............",
+            ".............",
+            "...######....",
+            "..########...",
+            ".###....###..",
+            ".##......##..",
+            "##.......##..",
+            "##....#######",
+            "##.....#####.",
+            "........###..",
+            ".........#...",
+            ".............",
+            ".............",
+        ],
+    }
+}
+
+/// 픽토그램의 칸 `(x, y)`가 칠해졌나 — 왼쪽 돌리기는 오른쪽 돌리기의 거울상.
+pub fn icon_cell(k: Kind, x: usize, y: usize) -> bool {
+    if x >= ICON_N || y >= ICON_N {
+        return false;
+    }
+    let x = if k == Kind::TurnLeft {
+        ICON_N - 1 - x
+    } else {
+        x
+    };
+    icon_mask(k)[y].as_bytes()[x] == b'#'
+}
+
+/// 버튼 반지름 `r`에 맞춘 픽토그램 한 칸의 크기(논리 px, 정수 — 칸이 고르게 떨어지게).
+pub fn icon_px(r: f32) -> f32 {
+    (r * 1.25 / ICON_N as f32).floor().max(1.0)
+}
+
+/// 픽토그램 그리기: 어두운 한 칸 테(밝은 바닥·불빛 위에서도 읽히게, KB hud-readability) 위에 밝은 몸. `tint` = 몸의 빛깔.
+fn icon(k: Kind, c: Vec2, r: f32, dim: f32, tint: Color) {
+    let px = icon_px(r);
+    let size = ICON_N as f32 * px;
+    let (x0, y0) = ((c.x - size / 2.0).round(), (c.y - size / 2.0).round());
+    let body = Color::new(tint.r, tint.g, tint.b, 0.95 * dim);
+    let edge = Color::new(INK.r, INK.g, INK.b, 0.7 * dim);
+    let n = ICON_N as i32;
+    // 테: 칠한 칸의 이웃 여덟 칸 가운데 비어 있는 칸을 한 번씩만(겹쳐 그리면 반투명이 얼룩진다).
+    for y in -1..=n {
+        for x in -1..=n {
+            let at = |dx: i32, dy: i32| {
+                let (u, v) = (x + dx, y + dy);
+                u >= 0 && v >= 0 && icon_cell(k, u as usize, v as usize)
+            };
+            if at(0, 0) {
+                continue;
+            }
+            let near = (-1..=1).any(|dy| (-1..=1).any(|dx| at(dx, dy)));
+            if near {
+                draw_rectangle(x0 + x as f32 * px, y0 + y as f32 * px, px, px, edge);
             }
         }
-        Kind::Jump => {
-            // 위 화살표 + 바닥 줄(뛰어오르기).
-            draw_line(c.x, c.y + s * 0.5, c.x, c.y - s * 0.7, th, col);
-            draw_line(c.x - s * 0.5, c.y - s * 0.2, c.x, c.y - s * 0.7, th, col);
-            draw_line(c.x + s * 0.5, c.y - s * 0.2, c.x, c.y - s * 0.7, th, col);
-            draw_line(
-                c.x - s * 0.7,
-                c.y + s * 0.8,
-                c.x + s * 0.7,
-                c.y + s * 0.8,
-                th,
-                col,
-            );
-        }
-        Kind::Flask => {
-            // 등잔: 둥근 몸 + 목 + 불꽃.
-            let body = [
-                vec2(-0.6, 0.15),
-                vec2(0.6, 0.15),
-                vec2(0.45, 0.8),
-                vec2(-0.45, 0.8),
-            ];
-            for i in 0..body.len() {
-                let (p, q) = (c + body[i] * s, c + body[(i + 1) % body.len()] * s);
-                draw_line(p.x, p.y, q.x, q.y, th, col);
-            }
-            draw_line(
-                c.x - s * 0.2,
-                c.y + s * 0.15,
-                c.x - s * 0.2,
-                c.y - s * 0.1,
-                th,
-                col,
-            );
-            draw_line(
-                c.x + s * 0.2,
-                c.y + s * 0.15,
-                c.x + s * 0.2,
-                c.y - s * 0.1,
-                th,
-                col,
-            );
-            draw_line(c.x, c.y - s * 0.3, c.x - s * 0.22, c.y - s * 0.55, th, col);
-            draw_line(c.x - s * 0.22, c.y - s * 0.55, c.x, c.y - s * 0.85, th, col);
-            draw_line(c.x, c.y - s * 0.85, c.x + s * 0.22, c.y - s * 0.55, th, col);
-            draw_line(c.x + s * 0.22, c.y - s * 0.55, c.x, c.y - s * 0.3, th, col);
-        }
-        Kind::Cast => {
-            // 마법: 네 갈래 별(가는 마름모 둘).
-            let pts = [
-                vec2(0.0, -0.9),
-                vec2(0.22, -0.22),
-                vec2(0.9, 0.0),
-                vec2(0.22, 0.22),
-                vec2(0.0, 0.9),
-                vec2(-0.22, 0.22),
-                vec2(-0.9, 0.0),
-                vec2(-0.22, -0.22),
-            ];
-            for i in 0..pts.len() {
-                let (p, q) = (c + pts[i] * s, c + pts[(i + 1) % pts.len()] * s);
-                draw_line(p.x, p.y, q.x, q.y, th, col);
-            }
-        }
-        Kind::Parry => {
-            // 방패: 위가 넓고 아래가 뾰족한 오각형 윤곽.
-            let pts = [
-                vec2(-0.7, -0.75),
-                vec2(0.7, -0.75),
-                vec2(0.7, 0.05),
-                vec2(0.0, 0.85),
-                vec2(-0.7, 0.05),
-            ];
-            for i in 0..pts.len() {
-                let (p, q) = (c + pts[i] * s, c + pts[(i + 1) % pts.len()] * s);
-                draw_line(p.x, p.y, q.x, q.y, th, col);
-            }
-        }
-        Kind::Rest => {
-            // 모닥불: 엇갈린 장작 둘 + 불꽃.
-            draw_line(
-                c.x - s * 0.7,
-                c.y + s * 0.75,
-                c.x + s * 0.7,
-                c.y + s * 0.35,
-                th,
-                col,
-            );
-            draw_line(
-                c.x + s * 0.7,
-                c.y + s * 0.75,
-                c.x - s * 0.7,
-                c.y + s * 0.35,
-                th,
-                col,
-            );
-            draw_line(c.x, c.y + s * 0.25, c.x - s * 0.4, c.y - s * 0.2, th, col);
-            draw_line(c.x - s * 0.4, c.y - s * 0.2, c.x, c.y - s * 0.85, th, col);
-            draw_line(c.x, c.y - s * 0.85, c.x + s * 0.4, c.y - s * 0.2, th, col);
-            draw_line(c.x + s * 0.4, c.y - s * 0.2, c.x, c.y + s * 0.25, th, col);
-        }
-        Kind::Lock => {
-            // 조준 고리 + 십자.
-            draw_circle_lines(c.x, c.y, s * 0.7, th, col);
-            for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
-                draw_line(
-                    c.x + dx * s * 0.45,
-                    c.y + dy * s * 0.45,
-                    c.x + dx * s * 1.1,
-                    c.y + dy * s * 1.1,
-                    th,
-                    col,
-                );
-            }
-        }
-        Kind::TurnLeft | Kind::TurnRight => {
-            // 위쪽 반원 화살표(↶ ↷): 반대쪽 끝에서 위를 지나 누르는 쪽 끝으로, 화살촉은 아래로 — 먼 쪽이 그쪽으로 = 카메라가 그쪽으로 돈다(0017).
-            let side = if k == Kind::TurnRight { 1.0 } else { -1.0 };
-            let rad = s * 0.75;
-            let n = 14;
-            let at = |a: f32| c + vec2(a.cos() * side, -a.sin()) * rad + vec2(0.0, rad * 0.35);
-            for i in 0..n {
-                let (u, v) = (
-                    std::f32::consts::PI * (1.0 - i as f32 / n as f32),
-                    std::f32::consts::PI * (1.0 - (i + 1) as f32 / n as f32),
-                );
-                let (p, q) = (at(u), at(v));
-                draw_line(p.x, p.y, q.x, q.y, th, col);
-            }
-            let tip = at(0.0) + vec2(0.0, s * 0.15);
-            let h = s * 0.45;
-            draw_triangle(
-                tip + vec2(0.0, h * 0.6),
-                tip + vec2(-h * 0.55, -h * 0.4),
-                tip + vec2(h * 0.55, -h * 0.4),
-                col,
-            );
-        }
-        Kind::Pause => {
-            // 두 줄(멈춤).
-            for dx in [-s * 0.3, s * 0.3] {
-                draw_line(
-                    c.x + dx,
-                    c.y - s * 0.55,
-                    c.x + dx,
-                    c.y + s * 0.55,
-                    th * 1.6,
-                    col,
-                );
+    }
+    for y in 0..ICON_N {
+        for x in 0..ICON_N {
+            if icon_cell(k, x, y) {
+                draw_rectangle(x0 + x as f32 * px, y0 + y as f32 * px, px, px, body);
             }
         }
     }
@@ -671,6 +737,70 @@ fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0146 도트 픽토그램: 그림마다 13×13, `#`·`.`만, 서로 다르고(같은 그림 둘이면 버튼을 못 가른다), 칸이 너무 적지도(안 보임)
+    /// 너무 꽉 차지도(덩어리) 않다. 왼쪽 돌리기는 오른쪽 돌리기의 거울상. 칸 크기는 정수 px이고 그림이 버튼 안에 든다.
+    #[test]
+    fn touch_icons_are_13_by_13_and_tell_each_other_apart() {
+        let kinds = [
+            Kind::Attack,
+            Kind::Dodge,
+            Kind::Parry,
+            Kind::Jump,
+            Kind::Flask,
+            Kind::Cast,
+            Kind::Rest,
+            Kind::Lock,
+            Kind::TurnLeft,
+            Kind::TurnRight,
+            Kind::Pause,
+        ];
+        let grid = |k: Kind| -> Vec<bool> {
+            (0..ICON_N * ICON_N)
+                .map(|i| icon_cell(k, i % ICON_N, i / ICON_N))
+                .collect()
+        };
+        for k in kinds {
+            let m = icon_mask(k);
+            for row in m {
+                assert_eq!(row.len(), ICON_N, "{k:?}: {row}");
+                assert!(row.bytes().all(|b| b == b'#' || b == b'.'), "{k:?}");
+            }
+            let on = grid(k).iter().filter(|c| **c).count();
+            assert!((30..=110).contains(&on), "{k:?}: {on} cells");
+        }
+        for (i, a) in kinds.iter().enumerate() {
+            for b in &kinds[i + 1..] {
+                let differ = grid(*a)
+                    .iter()
+                    .zip(grid(*b))
+                    .filter(|(x, y)| **x != *y)
+                    .count();
+                assert!(
+                    differ >= 12,
+                    "{a:?} and {b:?} look alike ({differ} cells apart)"
+                );
+            }
+        }
+        for y in 0..ICON_N {
+            for x in 0..ICON_N {
+                assert_eq!(
+                    icon_cell(Kind::TurnLeft, x, y),
+                    icon_cell(Kind::TurnRight, ICON_N - 1 - x, y)
+                );
+            }
+        }
+        assert!(!icon_cell(Kind::Attack, ICON_N, 0) && !icon_cell(Kind::Attack, 0, ICON_N));
+        for (w, h) in [(844.0, 390.0), (667.0, 375.0), (1180.0, 820.0)] {
+            for b in layout(w, h, Ctx::ALL) {
+                let px = icon_px(b.radius);
+                assert!(px >= 2.0 && px.fract() == 0.0, "{w}x{h} {:?}: {px}", b.kind);
+                // 그림의 대각 반(테 한 칸 포함)이 버튼 안에.
+                let half = (ICON_N as f32 / 2.0 + 1.0) * px;
+                assert!(half * 1.3 <= b.radius * 1.25, "{w}x{h} {:?}", b.kind);
+            }
+        }
+    }
 
     #[test]
     fn buttons_stay_on_screen_and_do_not_overlap_on_phone_tablet_and_desktop() {
