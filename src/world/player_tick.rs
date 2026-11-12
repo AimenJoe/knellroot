@@ -1026,6 +1026,11 @@ impl World {
     /// 이동: 상태마다 속도를 정하고 한 번 옮긴다.
     fn move_player(&mut self, cx: &Ctx) {
         let (t, dt, wpn, world_move) = (cx.t, cx.dt, cx.wpn, cx.world_move);
+        // 스킬 중이면 그 단의 실제 값(0158).
+        let d_skill = match self.player.state {
+            PState::Skill { id, .. } => Some(self.skill_eff(id)),
+            _ => None,
+        };
         let pl = &mut self.player;
         match pl.state {
             PState::Dodge { dir, .. } => {
@@ -1062,14 +1067,36 @@ impl World {
                 };
             }
             PState::Turn { .. } | PState::Land { .. } | PState::Ult { .. } => pl.vel = Vec3::ZERO,
-            // 스킬(0151): 가로지르기만 움직인다 — 판정 구간 동안 `dist` m를 곧게.
+            // 스킬(0151): 가로지르기는 판정 구간 동안 `dist` m를 곧게 — 되돌아 베기(0158 ㄱ)면 같은 길을 되돌아온다.
+            // 휘돌이의 도는 걸음(ㄱ)은 돌면서 느리게 걷고, 땅울림의 멀리 뛰기(ㄱ)는 시동 동안 정해 둔 거리를 뛰어든다.
             PState::Skill { id, t: e, dir, .. } => {
-                let d = id.def();
-                pl.vel = match d.form {
-                    crate::skills::Form::Lane { dist, time, .. }
-                        if e >= d.startup && e < d.startup + time =>
-                    {
-                        dir * (dist / time.max(1e-3))
+                use crate::skills::{Form, Twist};
+                let d = d_skill.unwrap_or_else(|| id.def().at(1, crate::skills::Pick::A));
+                let s = d.skill;
+                pl.vel = match (s.form, d.twist) {
+                    (Form::Lane { dist, time, .. }, twist) if e >= s.startup => {
+                        let v = dist / time.max(1e-3);
+                        if e < s.startup + time {
+                            dir * v
+                        } else if twist == Some(Twist::Return) && e < s.startup + time * 2.0 {
+                            -dir * v
+                        } else {
+                            Vec3::ZERO
+                        }
+                    }
+                    (Form::Ring { .. }, Some(Twist::Walk { speed })) => {
+                        let want = world_move * t[P::MoveSpeed] * speed;
+                        let diff = want - pl.vel;
+                        let max = t[P::MoveAccel] * dt;
+                        pl.vel
+                            + if diff.length() > max {
+                                diff.normalize() * max
+                            } else {
+                                diff
+                            }
+                    }
+                    (Form::Cone { .. }, Some(Twist::Leap { .. })) if e < s.startup => {
+                        dir * (pl.skill_leap / s.startup.max(1e-3))
                     }
                     _ => Vec3::ZERO,
                 };

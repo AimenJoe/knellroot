@@ -39,6 +39,12 @@ pub mod key {
     /// 끼운 스킬 둘(0151 — 값은 `skills::Id::key`).
     pub const SKILL1: &str = "skill.1";
     pub const SKILL2: &str = "skill.2";
+    /// 기술 판(0158): 스킬마다의 단 `skill.rank.<스킬 키>`(0~5)·3단의 고르기 `skill.pick.<스킬 키>`("a"·"b"),
+    /// 큰 기술의 단 `ult.rank.<큰 기술 키>`(1~3). 뒤에 스킬 키(`skills::Id::key`·`skills::UPEND_KEY`)를 붙인다.
+    /// 처음 그대로인 칸은 쓰지 않는다 — 키가 없는 옛 기록은 처음의 둘 1단·큰 기술 1단.
+    pub const SKILL_RANK: &str = "skill.rank.";
+    pub const SKILL_PICK: &str = "skill.pick.";
+    pub const ULT_RANK: &str = "ult.rank.";
     /// 가진 무기(0117): 무기 기록 키들("sword,hammer") — 맨손은 늘 있다. 키가 없는 옛 기록(판을 한 번이라도 한 것)은 다 가진 것으로.
     pub const WEAPONS: &str = "weapons";
     /// 쌓인 플레이 시간(초, 0081 — 이어하기 목록의 "시간"). 개발 판·메뉴·타이틀에 있는 동안은 세지 않는다.
@@ -168,8 +174,10 @@ pub struct Progress {
     pub weapon: Option<crate::weapons::Id>,
     /// 가진 무기(0117 — 무기는 얻어서 쓴다). 맨손은 넣지 않는다(늘 있다).
     pub weapons: Vec<crate::weapons::Id>,
-    /// 끼운 스킬 둘(0151). 기록에 없으면 처음의 둘(`skills::START`).
+    /// 끼운 스킬 둘(0151). 기록에 없으면 처음의 둘(`skills::START`). 배운 스킬만 끼운다(0158).
     pub skills: crate::skills::Worn,
+    /// 기술 판(0158): 스킬마다의 단·고르기, 큰 기술의 단.
+    pub board: crate::skills::Board,
     /// 쌓인 플레이 시간(초, 0081).
     pub play: u32,
     /// 원래 기록(모르는 키를 지키려고 — 쓸 때 이 위에 덮는다).
@@ -294,6 +302,23 @@ impl Progress {
         codex.sort();
         codex.dedup();
         let runs = r.num(key::RUNS).unwrap_or(0);
+        // 기술 판(0158): 키가 없으면 처음 그대로. 범위·점수는 아래에서 바로잡는다(`Board::sane`).
+        let board = {
+            use crate::skills::{Board, Entry, Pick, IDS, UPEND_KEY};
+            let mut b = Board::default();
+            let small = |k: String| r.num(&k).map(|n| n.min(u8::MAX as u32) as u8);
+            for (i, id) in IDS.into_iter().enumerate() {
+                if let Some(n) = small(format!("{}{}", key::SKILL_RANK, id.key())) {
+                    b.rank[i] = n;
+                }
+                b.pick[i] = r
+                    .get(&format!("{}{}", key::SKILL_PICK, id.key()))
+                    .and_then(Pick::by_key)
+                    .unwrap_or_default();
+            }
+            b.ult = small(format!("{}{UPEND_KEY}", key::ULT_RANK)).unwrap_or(Entry::Ult.free());
+            b
+        };
         let r_has_no_weapons = r.get(key::WEAPONS).is_none();
         let r_weapons = r.get(key::WEAPONS).map(str::to_string);
         let mut p = Progress {
@@ -319,6 +344,7 @@ impl Progress {
                     at(key::SKILL2, crate::skills::START[1]),
                 ]))
             },
+            board,
             weapons: r_weapons
                 .map(|v| {
                     v.split(',')
@@ -346,7 +372,19 @@ impl Progress {
                 .filter(|&w| w != crate::weapons::Id::Fists)
                 .collect();
         }
+        // 기술 판(0158): 가진 점수 안으로 바로잡고, 안 배운 스킬이 끼워져 있으면 처음의 둘로.
+        p.board = p.board.sane(p.skill_points());
+        p.skills = crate::skills::Worn(p.board.wearable(p.skills.0));
         p
+    }
+
+    /// 기술 점수(0158 나)의 합: 총 레벨 + 처음 쓰러뜨린 엘리트 수 + 처음 이긴 보스 수(핵 기록이 있는 문지기) — 셈이라 옛 기록도 가진다.
+    pub fn skill_points(&self) -> u32 {
+        crate::skills::points(
+            self.level.total(),
+            self.elites.len() as u32,
+            (self.cores > 0) as u32 + (self.bell_cores > 0) as u32,
+        )
     }
 
     /// 이 무기를 가졌나(0117): 맨손·검은 늘, 그 밖은 얻은 것만.
@@ -415,6 +453,32 @@ impl Progress {
         } else {
             r.set(key::SKILL1, self.skills.0[0].key());
             r.set(key::SKILL2, self.skills.0[1].key());
+        }
+        // 기술 판(0158): 처음 그대로인 칸은 쓰지 않는다(빈 슬롯이 "기록 있음"이 되지 않게, 옛 판으로 읽어도 그대로).
+        {
+            use crate::skills::{Entry, IDS, PICK_RANK, UPEND_KEY};
+            for (i, id) in IDS.into_iter().enumerate() {
+                let (rk, pk) = (
+                    format!("{}{}", key::SKILL_RANK, id.key()),
+                    format!("{}{}", key::SKILL_PICK, id.key()),
+                );
+                if self.board.rank[i] == Entry::Skill(id).free() {
+                    r.remove(&rk);
+                } else {
+                    r.set(&rk, self.board.rank[i]);
+                }
+                if self.board.rank[i] >= PICK_RANK {
+                    r.set(&pk, self.board.pick[i].key());
+                } else {
+                    r.remove(&pk);
+                }
+            }
+            let uk = format!("{}{UPEND_KEY}", key::ULT_RANK);
+            if self.board.ult == Entry::Ult.free() {
+                r.remove(&uk);
+            } else {
+                r.set(&uk, self.board.ult);
+            }
         }
         r.set(
             key::WEAPONS,
@@ -977,26 +1041,156 @@ weapon=crossbow
     }
 
     /// 0151: 끼운 스킬 둘은 기록에 남는다 — 가장 뒤의 스킬까지 왕복하고, 기록에 없으면(옛 기록) 처음의 둘, 같은 스킬 둘이면 바로잡는다.
-    /// 처음의 둘 그대로면 키를 쓰지 않는다(빈 슬롯이 "기록 있음"이 되지 않게).
+    /// 처음의 둘 그대로면 키를 쓰지 않는다(빈 슬롯이 "기록 있음"이 되지 않게). 0158: 끼운 것은 배운 스킬이어야 한다.
     #[test]
     fn worn_skills_round_trip_and_old_records_get_the_first_two() {
-        use crate::skills::{Id, Worn, IDS, START};
+        use crate::skills::{Board, Id, Pick, Worn, IDS, START};
         assert_eq!(Progress::default().skills.0, START);
         let last = *IDS.last().unwrap();
+        // 넷을 다 배운 판(쓴 점수 2 — 레벨이 그만큼 있다).
+        let learned = Progress {
+            level: crate::progression::Level {
+                life: 2,
+                ..Default::default()
+            },
+            board: Board {
+                rank: [1; crate::skills::N],
+                pick: [Pick::A; crate::skills::N],
+                ult: 1,
+            },
+            ..Progress::default()
+        };
         for worn in [[last, Id::Gather], [Id::Cut, Id::Whirl]] {
             let p = Progress {
                 skills: Worn(worn),
-                ..Progress::default()
+                ..learned.clone()
             };
             let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
             assert_eq!(back.skills.0, worn);
         }
         let old = Progress::from_record(Record::parse("clears=1\n"));
         assert_eq!(old.skills.0, START);
-        let twice = Progress::from_record(Record::parse("skill.1=quake\nskill.2=quake\n"));
-        assert_eq!(twice.skills.0, [Id::Quake, Id::Whirl]);
-        assert!(!Progress::default().to_record().to_text().contains("skill."));
+        let mut twice = learned.to_record();
+        twice.set(key::SKILL1, "quake");
+        twice.set(key::SKILL2, "quake");
+        assert_eq!(
+            Progress::from_record(twice).skills.0,
+            [Id::Quake, Id::Whirl]
+        );
+        let text = Progress::default().to_record().to_text();
+        assert!(!text.contains("skill.") && !text.contains("ult."), "{text}");
         assert_eq!(Progress::default().summary(), None);
+    }
+
+    /// 0158: 기술 판은 스킬마다의 단(`skill.rank.<키>`)·3단의 고르기(`skill.pick.<키>`)·큰 기술의 단(`ult.rank.upend`)으로 남는다.
+    /// 처음 그대로인 칸은 쓰지 않고, 모르는 스킬의 키(다음 판의 것)는 그대로 지닌다.
+    #[test]
+    fn the_skill_board_round_trips_ranks_picks_and_the_ult_rank() {
+        use crate::skills::{Board, Id, Pick, Worn};
+        let p = Progress {
+            level: crate::progression::Level {
+                life: 5,
+                stamina: 5,
+                might: 5,
+            },
+            // 휘돌이 5·ㄴ, 가로지르기 3·ㄱ, 끌어모으기 2, 땅울림 1, 큰 기술 3 — 쓴 점수 4 + 2 + 2 + 1 + 2 = 11.
+            board: Board {
+                rank: [5, 3, 2, 1],
+                pick: [Pick::B, Pick::A, Pick::A, Pick::A],
+                ult: 3,
+            },
+            skills: Worn([Id::Quake, Id::Gather]),
+            ..Progress::default()
+        };
+        assert_eq!((p.board.spent(), p.skill_points()), (11, 15));
+        let mut r = p.to_record();
+        let text = r.to_text();
+        for line in [
+            "skill.rank.whirl=5\n",
+            "skill.pick.whirl=b\n",
+            "skill.rank.cut=3\n",
+            "skill.pick.cut=a\n",
+            "skill.rank.gather=2\n",
+            "skill.rank.quake=1\n",
+            "ult.rank.upend=3\n",
+        ] {
+            assert!(text.contains(line), "{line:?} in {text}");
+        }
+        assert!(!text.contains("skill.pick.gather"), "no pick below rank 3");
+        r.set("skill.rank.echo", 2);
+        r.set("ult.rank.onrush", 2);
+        let back = Progress::from_record(Record::parse(&r.to_text()));
+        assert_eq!(back.board, p.board);
+        assert_eq!(back.skills, p.skills);
+        let again = back.to_record();
+        assert_eq!(again.num("skill.rank.echo"), Some(2), "unknown keys stay");
+        assert_eq!(again.num("ult.rank.onrush"), Some(2));
+        // 처음 판으로 돌아가면 키가 지워진다(옛 판으로 읽어도 처음 그대로).
+        let mut reset = back.clone();
+        reset.board = Board::default();
+        let text = reset.to_record().to_text();
+        assert!(!text.contains("skill.rank.whirl") && !text.contains("ult.rank.upend"));
+    }
+
+    /// 0158: 판의 키가 없는 기록(지금까지의 모든 기록)은 처음의 둘 1단·나머지 0단·큰 기술 1단으로 읽히고, 점수는 셈이라 저절로 있다
+    /// (총 레벨 + 처음 쓰러뜨린 엘리트 + 이긴 적 있는 문지기). 안 배운 스킬이 끼워져 있으면 처음의 둘로.
+    #[test]
+    fn a_record_without_board_keys_reads_as_the_starters_and_already_has_points() {
+        use crate::skills::{Board, Id, START};
+        let old = Progress::from_record(Record::parse(
+            "v=1\nmigrated.v04=1\nlv.life=2\nlv.might=1\nelites=sanctuary.elite.0,hamlet.elite.1\n\
+             core.warden=3\ncore.bellkeeper=1\nskill.1=gather\nskill.2=quake\n",
+        ));
+        assert_eq!(old.board, Board::default());
+        assert_eq!(old.board.rank, [1, 1, 0, 0]);
+        assert_eq!(old.board.ult, 1);
+        assert_eq!(
+            old.skills.0, START,
+            "S0 let anything be worn — not learned now"
+        );
+        // 레벨 3 + 엘리트 2 + 문지기 둘(핵을 세 번 얻어도 한 번) = 7, 쓴 것 없음.
+        assert_eq!(old.skill_points(), 7);
+        assert_eq!(old.board.left(old.skill_points()), 7);
+        // 배운 스킬 하나 + 안 배운 스킬 하나여도 처음의 둘로.
+        let half = Progress::from_record(Record::parse("skill.1=whirl\nskill.2=gather\n"));
+        assert_eq!(half.skills.0, START);
+        assert!(!half.board.learned(Id::Gather));
+    }
+
+    /// 0158: 손댄 기록 — 범위 밖의 단은 범위 안으로(처음의 둘·큰 기술은 1단 아래로 안 내려간다), 이상한 고르기는 ㄱ,
+    /// 가진 점수보다 많이 쓴 판은 통째로 처음으로(터지지 않는다 — 점수는 남아 있다).
+    #[test]
+    fn a_hand_edited_board_is_clamped_or_ignored() {
+        use crate::skills::{Board, Pick, MAX_RANK, START};
+        let rich = "lv.life=5\nlv.stamina=5\nlv.might=5\n";
+        let odd = Progress::from_record(Record::parse(&format!(
+            "{rich}skill.rank.quake=99\nskill.rank.whirl=0\nskill.rank.gather=x\nult.rank.upend=0\n\
+             skill.pick.quake=zzz\nskill.pick.cut=b\nskill.1=quake\nskill.2=cut\n"
+        )));
+        assert_eq!(odd.board.rank, [1, 1, 0, MAX_RANK]);
+        assert_eq!(odd.board.ult, 1);
+        assert_eq!(
+            odd.board.pick,
+            [Pick::A; crate::skills::N],
+            "{:?}",
+            odd.board
+        );
+        assert_eq!(
+            odd.skills.0[0],
+            crate::skills::Id::Quake,
+            "learned: stays worn"
+        );
+        // 큰 기술의 큰 수도 세 단에서 멈춘다.
+        let ult = Progress::from_record(Record::parse(&format!("{rich}ult.rank.upend=250\n")));
+        assert_eq!(ult.board.ult, crate::skills::ULT_MAX_RANK);
+        // 점수 0인 기록에 끝 단들 → 처음 판, 끼운 것도 처음의 둘.
+        let broke = Progress::from_record(Record::parse(
+            "skill.rank.whirl=5\nskill.rank.cut=5\nskill.rank.gather=5\nskill.rank.quake=5\n\
+             ult.rank.upend=3\nskill.pick.whirl=b\nskill.1=quake\nskill.2=gather\n",
+        ));
+        assert_eq!(broke.board, Board::default());
+        assert_eq!(broke.skills.0, START);
+        assert_eq!(broke.skill_points(), 0);
     }
 
     #[test]

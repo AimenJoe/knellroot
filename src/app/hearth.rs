@@ -1,12 +1,12 @@
-//! 쉼터 화로와 레벨(0104, v0.4.0 G1 — 0102 3·7절): 쉬면 화로가 열리고(레벨 · 가게 · 떠나기), 레벨은 생명·기력·힘을
-//! 잔불로 한 단씩 올린다. 줄 표(0066) — 값은 `progression.rs`, 미리보기는 장비 창과 같은 상태 줄(`stats::lines`, 0067 D).
+//! 쉼터 화로와 레벨(0104, v0.4.0 G1 — 0102 3·7절): 쉬면 화로가 열리고(레벨 · 나무 · 가게 · 기술 · 떠나기), 레벨은 생명·기력·힘을
+//! 잔불로 한 단씩 올린다. 기술 줄(0158 G0)은 기술 판 `board.rs`로 — 가게 다음 줄이라 앞 줄들의 자리는 그대로다. 줄 표(0066) — 값은 `progression.rs`, 미리보기는 장비 창과 같은 상태 줄(`stats::lines`, 0067 D).
 use super::equip::{stat_name, stat_value};
 use super::menu::{Menu, Out};
 use super::*;
 use crate::progression::{Line as LvLine, LINES as LV_LINES, MAX_RANK};
 
-/// 화로의 줄: 레벨 · 나무(0106) · 가게 · 떠나기.
-const HEARTH_ROWS: usize = 4;
+/// 화로의 줄: 레벨 · 나무(0106) · 가게 · 기술(0158) · 떠나기.
+const HEARTH_ROWS: usize = 5;
 
 /// 레벨 줄 이름.
 fn line_name(l: LvLine) -> &'static str {
@@ -25,10 +25,16 @@ impl App {
         let lv = self.progress.level.total().to_string();
         let points = self.progress.tree_points();
         let left = self.progress.tree.left(points).to_string();
+        let skill_left = self
+            .progress
+            .board
+            .left(self.progress.skill_points())
+            .to_string();
         let rows = vec![
             ui::Row::value(s.hearth_level, lv),
             ui::Row::value(s.tree_title, fill(s.hearth_points, &[&left])),
             ui::Row::plain(s.hearth_shop),
+            ui::Row::value(s.menu_skills, fill(s.hearth_skill_points, &[&skill_left])),
             ui::Row::plain(s.shop_leave),
         ];
         // 나무 줄: 목표 핀이 있으면 "목표까지 n점"(KB — 메뉴에서도 길 표시).
@@ -39,6 +45,7 @@ impl App {
                 None => s.hearth_tree_d.to_string(),
             }),
             2 => Some(s.hearth_shop_d.to_string()),
+            3 => Some(s.hearth_skills_d.to_string()),
             _ => None,
         };
         Menu {
@@ -56,6 +63,7 @@ impl App {
             0 => self.go(Go::Open(Scene::Level)),
             1 => self.go(Go::Open(Scene::Tree { view: false })),
             2 => self.go(Go::Open(Scene::Shop)),
+            3 => self.go(Go::Open(Scene::SkillBoard)),
             _ => self.go(Go::Back),
         }
     }

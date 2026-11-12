@@ -36,6 +36,8 @@ pub enum Scene {
     },
     /// 기술(0151 S0): 스킬 칸 둘에 가진 스킬을 끼운다. 멈춤에서 연다 — 닫으면 멈춤.
     Skills,
+    /// 기술 판(0158 G0): 기술 점수로 스킬을 배우고 단을 올린다 · 3단 고르기 바꾸기 · 되돌리기. 화로에서 연다 — 닫으면 화로.
+    SkillBoard,
     /// 가게(0064 M4): 잔불로 장신구·등잔 기름을 산다. 화로에서 연다(0104 전엔 쉬면 바로 열렸다) — 닫으면 화로.
     Shop,
     /// 묻는 창(KB `controller-layout-and-remapping` "되돌릴 수 없는 메뉴 항목은 한 번 묻는다", nail 0274·가게 묻는 창):
@@ -88,6 +90,7 @@ impl Scene {
             // 가게는 잔불을 제가 보인다(KB hud-readability: 창이 같은 정보면 밑 HUD를 그리지 않는다).
             Scene::Hearth
             | Scene::Level
+            | Scene::SkillBoard
             | Scene::Tree { .. }
             | Scene::Codex { .. }
             | Scene::Shop
@@ -159,13 +162,18 @@ pub enum Ask {
     Level(u8),
     /// 나무(0106): 이 갈래의 다음 칸을 연다(점수 1).
     Tree(u8),
+    /// 기술 판(0158): 이 칸(`skills::ENTRIES`의 자리)의 다음 단을 산다(기술 점수 1).
+    Skill(u8),
+    /// 기술 판: 잔불을 내고 쓴 점수를 모두 돌려받는다.
+    Respec,
 }
 
 /// 묻는 창의 커서 처음 자리: 버리는 일은 "취소"(1)에서 — 연타가 실행되지 않게(KB). 사기는 nail 가게처럼 "사기"(0)에서.
+/// 되돌리기(0158)는 찍은 것을 버리는 일이라 취소에서.
 pub fn ask_default(k: Ask) -> usize {
     match k {
-        Ask::Buy(_) | Ask::Level(_) | Ask::Tree(_) => 0,
-        _ => 1,
+        Ask::Buy(_) | Ask::Level(_) | Ask::Tree(_) | Ask::Skill(_) => 0,
+        Ask::Restart | Ask::ToTitle | Ask::Respec => 1,
     }
 }
 
@@ -177,7 +185,9 @@ pub fn answer(k: Ask, yes: bool) -> (Go, bool) {
     match k {
         Ask::Restart => (Go::Root(Scene::Play), true),
         Ask::ToTitle => (Go::Root(Scene::Title), true),
-        Ask::Buy(_) | Ask::Level(_) | Ask::Tree(_) => (Go::Back, false),
+        Ask::Buy(_) | Ask::Level(_) | Ask::Tree(_) | Ask::Skill(_) | Ask::Respec => {
+            (Go::Back, false)
+        }
     }
 }
 
@@ -381,6 +391,7 @@ pub fn back(scene: Scene) -> Go {
         | Scene::EquipPick { .. }
         | Scene::Hearth
         | Scene::Level
+        | Scene::SkillBoard
         | Scene::Tree { .. }
         | Scene::Codex { .. }
         | Scene::Skills
@@ -492,11 +503,28 @@ mod tests {
         }
         // 싸움 화면만 메뉴가 아니다.
         assert!(!Scene::Play.is_menu());
-        for sc in [Scene::Hearth, Scene::Level, Scene::Shop] {
+        for sc in [Scene::Hearth, Scene::Level, Scene::SkillBoard, Scene::Shop] {
             assert_eq!(back(sc), Go::Back, "{sc:?} closes to where it opened");
             assert!(sc.is_menu());
         }
-        for k in [Ask::Restart, Ask::ToTitle, Ask::Buy(0), Ask::Level(2)] {
+        // 0158: 기술 판 — 단을 사는 것은 "올리기"에서, 되돌리기는 "취소"에서. 답하면 판으로 돌아온다.
+        assert_eq!(ask_default(Ask::Skill(0)), 0);
+        assert_eq!(ask_default(Ask::Respec), 1);
+        assert_eq!(answer(Ask::Skill(3), true), (Go::Back, false));
+        assert_eq!(answer(Ask::Respec, true), (Go::Back, false));
+        assert_eq!(
+            Scene::SkillBoard.layer(),
+            Layer::Window { hud: false },
+            "shows its own points and embers"
+        );
+        for k in [
+            Ask::Restart,
+            Ask::ToTitle,
+            Ask::Buy(0),
+            Ask::Level(2),
+            Ask::Skill(1),
+            Ask::Respec,
+        ] {
             assert_eq!(answer(k, false), (Go::Back, false), "cancel closes");
             assert_eq!(back(Scene::Ask(k)), Go::Back);
             assert_eq!(Scene::Ask(k).layer(), Layer::Modal);

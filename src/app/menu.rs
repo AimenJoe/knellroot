@@ -6,7 +6,9 @@ use super::*;
 /// 창 틀(0066, 480×270 기준 px): 제목 줄 높이, 아래 여백, 아래 설명 두 줄 자리, 제목 아래 한 줄.
 pub(super) const PANEL_HEAD: f32 = 30.0;
 pub(super) const PANEL_FOOT: f32 = 8.0;
-pub(super) const PANEL_NOTE: f32 = ui::GLYPH * 1.45 * 2.0 + 6.0;
+/// 아래 설명 한 줄의 높이·설명 칸 위 틈. 줄 수는 화면이 정한다(`Menu::note_lines` — 보통 둘, 기술 판은 셋).
+pub(super) const NOTE_LINE: f32 = ui::GLYPH * 1.45;
+pub(super) const NOTE_GAP: f32 = 6.0;
 pub(super) const PANEL_SUB: f32 = ui::GLYPH * 1.6;
 
 /// 목록 화면 하나(그림과 입력이 같이 쓴다).
@@ -21,9 +23,12 @@ pub(super) struct Menu {
     pub purse: Option<String>,
     /// 제목 아래 한 줄.
     pub sub: Option<String>,
-    /// 아래 설명 자리를 두나 · 지금 고른 줄의 설명.
+    /// 아래 설명 자리를 두나 · 지금 고른 줄의 설명 · 그 줄 수(넘치는 글은 잘린다 — 개발판 F4가 알린다).
     pub note_room: bool,
     pub note: Option<String>,
+    pub note_lines: usize,
+    /// 설명 자리에 잠깐 대신 뜨는 알림(밝게) — 창이 화면을 다 써서 위쪽 알림 자리가 없는 화면(기술 판)이 쓴다.
+    pub alert: Option<String>,
 }
 
 impl Menu {
@@ -37,6 +42,8 @@ impl Menu {
             sub: None,
             note_room: false,
             note: None,
+            note_lines: 2,
+            alert: None,
         }
     }
 }
@@ -165,18 +172,19 @@ impl App {
         Rect::new(f.ox + (f.w - w) * 0.5, top + (bottom - top - h) * 0.5, w, h)
     }
 
-    /// 창 안 아래쪽 설명(두 줄까지, nail 가게의 설명 줄).
-    pub(super) fn panel_note(&self, panel: Rect, text: &str) {
+    /// 창 안 아래쪽 설명(`lines`줄까지, nail 가게의 설명 줄). 넘쳐 잘린 글은 개발판 넘침 검사(F4)가 알린다.
+    pub(super) fn panel_note(&self, panel: Rect, text: &str, lines: usize, ink: Color) {
         let u = self.ui.u(1.0);
         let px = self.ui.px(1.0);
-        let y = panel.y + panel.h - u * PANEL_FOOT - px * 1.45 * 2.0;
-        for (i, line) in ui::wrap(&self.ui, text, panel.w - u * 24.0, 1.0)
-            .iter()
-            .take(2)
-            .enumerate()
-        {
+        let y = panel.y + panel.h - u * PANEL_FOOT - px * 1.45 * lines as f32;
+        let wrapped = ui::wrap(&self.ui, text, panel.w - u * 24.0, 1.0);
+        #[cfg(feature = "dev")]
+        if wrapped.len() > lines {
+            ui::check::cut(text, panel.w - u * 24.0);
+        }
+        for (i, line) in wrapped.iter().take(lines).enumerate() {
             self.ui
-                .text(line, panel.x + u * 12.0, y + px * 1.45 * i as f32, 1.0, DIM);
+                .text(line, panel.x + u * 12.0, y + px * 1.45 * i as f32, 1.0, ink);
         }
     }
 
@@ -185,21 +193,15 @@ impl App {
         self.ui.dim(0.45);
         let u = self.ui.u(1.0);
         let sub = if m.sub.is_some() { PANEL_SUB } else { 0.0 };
-        let note = if m.note_room { PANEL_NOTE } else { 0.0 };
+        let note = if m.note_room {
+            NOTE_LINE * m.note_lines as f32 + NOTE_GAP
+        } else {
+            0.0
+        };
         let h = PANEL_HEAD + m.rows.len() as f32 * ui::GLYPH * 1.75 + sub + note + PANEL_FOOT;
         let panel = self.panel_rect(f, m.width, h);
         let top = self.ui.panel(panel, Some(&m.title));
         let close = m.closable.then(|| self.ui.close(panel));
-        if let Some(p) = &m.purse {
-            let pw = self.ui.width(p, 1.0);
-            self.ui.text(
-                p,
-                panel.x + panel.w - u * 30.0 - pw,
-                panel.y + u * 6.0,
-                1.0,
-                INK,
-            );
-        }
         if let Some(t) = &m.sub {
             let t = self.ui.fit(t, panel.w - u * 24.0, 1.0);
             self.ui.text(&t, panel.x + u * 12.0, top, 1.0, DIM);
@@ -214,6 +216,19 @@ impl App {
         );
         let mut hits = self.ui.list(&m.rows, self.cursor, &mut self.view, area);
         hits.arrows = self.ui.title_arrows(&self.view, m.rows.len(), panel);
+        // 지갑은 제목 줄 오른쪽 — 목록이 넘쳐 ▲▼가 뜨면 그 왼쪽으로 비킨다(겹치지 않게).
+        if let Some(p) = &m.purse {
+            let (up, down) = self.view.more(m.rows.len());
+            let arrows = if up || down { 30.0 } else { 0.0 };
+            let pw = self.ui.width(p, 1.0);
+            self.ui.text(
+                p,
+                panel.x + panel.w - u * (30.0 + arrows) - pw,
+                panel.y + u * 6.0,
+                1.0,
+                INK,
+            );
+        }
         if let Some(x) = close {
             self.hits.push((x, Hit::Close));
         }
@@ -221,8 +236,10 @@ impl App {
         if m.closable {
             self.push_outside(panel);
         }
-        if let Some(t) = &m.note {
-            self.panel_note(panel, t);
+        match (&m.alert, &m.note) {
+            (Some(t), _) => self.panel_note(panel, t, m.note_lines, AMBER),
+            (None, Some(t)) => self.panel_note(panel, t, m.note_lines, DIM),
+            (None, None) => {}
         }
         self.menu_hint(
             f.ox + f.w * 0.5,

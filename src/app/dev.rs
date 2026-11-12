@@ -50,13 +50,19 @@ pub(super) enum DevStart {
     Lab,
     /// 기술 창(0151 — 멈춤의 기술 줄과 같은 창): 아레나에는 멈춤이 없어 여기서 끼운다.
     Skills,
+    /// 기술 판을 모두 끝 단으로(0158 — 켬/끔): 개발 판·아레나에서 단과 고르기를 시험한다. 기록에 쓰지 않는다.
+    SkillsMax,
+    /// 끝 단으로 올린 판의 3단 고르기를 모두 뒤집는다(ㄱ ↔ ㄴ). 기록에 쓰지 않는다.
+    SkillsFlip,
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 22] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 24] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Tools, DevStart::Skills),
+    (DevCat::Tools, DevStart::SkillsMax),
+    (DevCat::Tools, DevStart::SkillsFlip),
     (DevCat::Stage, DevStart::Entrance),
     (DevCat::Stage, DevStart::Gate),
     (DevCat::Stage, DevStart::Village),
@@ -103,6 +109,8 @@ impl DevStart {
             }
             DevStart::Lab => t(dv::LAB_START),
             DevStart::Skills => t(dv::SKILLS_START),
+            DevStart::SkillsMax => t(dv::SKILLS_MAX),
+            DevStart::SkillsFlip => t(dv::SKILLS_FLIP),
         }
     }
 
@@ -126,7 +134,26 @@ impl DevStart {
             }
             DevStart::Lab => t(dv::LAB_NOTE).to_string(),
             DevStart::Skills => t(dv::SKILLS_NOTE).to_string(),
+            // 지금 상태({0})는 앱이 채운다(`App::dev_note`).
+            DevStart::SkillsMax => t(dv::SKILLS_MAX_NOTE).to_string(),
+            DevStart::SkillsFlip => t(dv::SKILLS_FLIP_NOTE).to_string(),
         }
+    }
+}
+
+/// 개발 창의 기술 판 줄을 고르면(0158): "다 올리기"는 켬/끔(켜면 끝 단 · 고르기 ㄱ), "고르기 바꾸기"는 끝 단 판의 고르기를
+/// 모두 뒤집는다(꺼져 있으면 ㄴ으로 켠다). 순수 — 시험.
+pub(super) fn dev_board_step(
+    now: Option<crate::skills::Board>,
+    e: DevStart,
+) -> Option<crate::skills::Board> {
+    use crate::skills::{Board, Pick};
+    match (e, now) {
+        (DevStart::SkillsMax, None) => Some(Board::maxed(Pick::A)),
+        (DevStart::SkillsMax, Some(_)) => None,
+        (DevStart::SkillsFlip, None) => Some(Board::maxed(Pick::B)),
+        (DevStart::SkillsFlip, Some(b)) => Some(Board::maxed(b.pick[0].other())),
+        (_, now) => now,
     }
 }
 
@@ -226,12 +253,33 @@ impl App {
                 self.world = scenario::build(sc);
                 self.fx.clear();
                 self.world.set_weapon(self.weapon);
-                self.world.set_skills(self.progress.skills.0);
+                self.world.set_skills(self.loadout());
                 self.cam = Camera::new(self.world.player.pos, &self.t);
                 self.go(Go::Root(Scene::Sandbox));
             }
             DevStart::Lab => self.go(Go::Open(Scene::Lab)),
             DevStart::Skills => self.go(Go::Open(Scene::Skills)),
+            // 기술 판(0158): 메모리의 덮어쓰기만 바꾼다 — 기록(`progress`)과 슬롯은 건드리지 않는다. 창은 그대로(설명 줄이 상태를 보인다).
+            DevStart::SkillsMax | DevStart::SkillsFlip => {
+                self.dev_board = dev_board_step(self.dev_board, e);
+                self.world.set_skills(self.loadout());
+                self.snd(crate::sfx::Id::Buy);
+            }
+        }
+    }
+
+    /// 고른 줄의 설명 — 기술 판 줄은 지금 상태를 채운다.
+    fn dev_note(&self, e: DevStart) -> String {
+        match e {
+            DevStart::SkillsMax | DevStart::SkillsFlip => {
+                let state = match self.dev_board {
+                    None => dv::BOARD_SLOT,
+                    Some(b) if b.pick[0] == crate::skills::Pick::A => dv::BOARD_MAX_A,
+                    Some(_) => dv::BOARD_MAX_B,
+                };
+                fill(&e.note(), &[t(state)])
+            }
+            _ => e.note(),
         }
     }
 
@@ -287,7 +335,7 @@ impl App {
             let fit = ((hint_y - u * 6.0 - body - px * 1.6) / line_h)
                 .floor()
                 .max(1.0) as usize;
-            for (k, l) in ui::wrap(&self.ui, &e.note(), w, 0.9)
+            for (k, l) in ui::wrap(&self.ui, &self.dev_note(*e), w, 0.9)
                 .iter()
                 .take(fit)
                 .enumerate()
@@ -322,5 +370,29 @@ mod tests {
         // 시험 스크립트(shot·mouse·leak): 전투·적(셋째 묶음) 첫 줄 = 보스 아레나, 성능(넷째) 첫 줄 = 부하 40.
         assert_eq!(dev_items(2)[0], DevStart::Scenario(Scenario::Boss));
         assert_eq!(dev_items(3)[0], DevStart::Scenario(Scenario::Stress40));
+        // 도구 묶음: 기술 판 줄 둘은 끝에(앞 줄들의 자리는 그대로 — 헤드리스 길).
+        assert_eq!(
+            dev_items(0)[2..],
+            [DevStart::Skills, DevStart::SkillsMax, DevStart::SkillsFlip]
+        );
+    }
+
+    /// 0158: 개발 창의 "다 올리기"는 켬/끔, "고르기 바꾸기"는 끝 단 판의 고르기를 모두 뒤집는다(꺼져 있으면 ㄴ으로 켠다).
+    /// 다른 줄은 판을 건드리지 않는다.
+    #[test]
+    fn the_dev_board_rows_toggle_max_ranks_and_flip_every_pick() {
+        use crate::skills::{Board, Pick, MAX_RANK, ULT_MAX_RANK};
+        let on = dev_board_step(None, DevStart::SkillsMax).expect("on");
+        assert!(on.rank.iter().all(|&r| r == MAX_RANK) && on.ult == ULT_MAX_RANK);
+        assert!(on.pick.iter().all(|&p| p == Pick::A));
+        assert_eq!(dev_board_step(Some(on), DevStart::SkillsMax), None, "off");
+        let b = dev_board_step(Some(on), DevStart::SkillsFlip).expect("stays on");
+        assert!(b.pick.iter().all(|&p| p == Pick::B));
+        assert_eq!(dev_board_step(Some(b), DevStart::SkillsFlip), Some(on));
+        assert_eq!(
+            dev_board_step(None, DevStart::SkillsFlip),
+            Some(Board::maxed(Pick::B))
+        );
+        assert_eq!(dev_board_step(Some(on), DevStart::Lab), Some(on));
     }
 }

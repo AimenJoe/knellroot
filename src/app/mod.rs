@@ -3,6 +3,7 @@
 //!
 //! 루프: 프레임마다 입력 폴링 → 고정 60Hz 틱 N번(장면 → 월드 → 스테이지 → 카메라) → 가변 렌더(보간) → 글·메뉴(화면 패스).
 mod ask;
+mod board;
 mod codex;
 pub mod controls;
 mod controls_screen;
@@ -91,6 +92,9 @@ pub struct App {
     /// 개발 메뉴에서 시작한 스테이지 판(0075): 기록 슬롯에 쓰지 않는다. 슬롯을 고르면(`enter_slot`) 풀린다.
     #[cfg(feature = "dev")]
     dev_run: bool,
+    /// 개발 창에서 올린 기술 판(0158 — 모두 끝 단): 있으면 기록의 판 대신 이것을 쓴다. 기록에 쓰지 않고, 슬롯을 고르면 풀린다.
+    #[cfg(feature = "dev")]
+    dev_board: Option<crate::skills::Board>,
     ending: f32,
     acc: f32,
     /// 개발 줄(F3).
@@ -202,7 +206,7 @@ impl App {
         };
         let (run, mut world) = StageRun::start(FIRST_STAGE);
         world.set_weapon(weapon);
-        world.set_skills(progress.skills.0);
+        world.set_skills(progress.board.loadout(progress.skills.0));
         let cam = Camera::new(world.player.pos, &t);
         App {
             stack: stack::Stack::new(Scene::Title),
@@ -229,6 +233,8 @@ impl App {
             sc: Scenario::Boss,
             #[cfg(feature = "dev")]
             dev_run: false,
+            #[cfg(feature = "dev")]
+            dev_board: None,
             ending: 0.0,
             acc: 0.0,
             dev_overlay: false,
@@ -315,7 +321,7 @@ impl App {
     /// 이 판에 이 지역 문지기를 이겼으면 바닥 길이 열린 채.
     fn seed_run(&mut self) {
         self.world.set_weapon(self.weapon);
-        self.world.set_skills(self.progress.skills.0);
+        self.world.set_skills(self.loadout());
         self.world.tree = self.progress.tree;
         let base = self.stage as u32 * crate::stage::CHESTS_PER_STAGE;
         let opened: Vec<u32> = self
@@ -574,6 +580,7 @@ impl App {
             | Scene::Skills
             | Scene::Hearth
             | Scene::Level
+            | Scene::SkillBoard
             | Scene::Shop
             | Scene::Result { .. }) => self.tick_menu(&a, s),
             #[cfg(feature = "dev")]
@@ -618,6 +625,7 @@ impl App {
             Scene::Skills => Some(self.skills_menu()),
             Scene::Hearth => Some(self.hearth_menu()),
             Scene::Level => Some(self.level_menu()),
+            Scene::SkillBoard => Some(self.board_menu()),
             Scene::Shop => Some(self.shop_menu()),
             Scene::Result { won } => Some(self.result_menu(won)),
             Scene::Slots { load } => Some(self.slots_menu(load)),
@@ -647,6 +655,7 @@ impl App {
             Scene::Skills => self.skills_act(out),
             Scene::Hearth => self.hearth_act(out),
             Scene::Level => self.level_act(out),
+            Scene::SkillBoard => self.board_act(out),
             Scene::Shop => self.shop_act(out),
             Scene::Result { .. } => self.result_act(out),
             // 슬롯 창은 제 틱(`tick_slots`)이 고름을 한다(빈 줄 건너뛰기·두 번째 누름).

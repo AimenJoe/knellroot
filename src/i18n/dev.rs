@@ -78,6 +78,19 @@ pub const SKILLS_NOTE: Pair = (
     "아레나에서 쓸 기술 둘을 고른다. 멈춤의 기술 창과 같다.",
     "pick the two skills for the arenas; same window as the pause menu's",
 );
+pub const SKILLS_MAX: Pair = ("기술 다 올리기(켬/끔)", "max skills (on/off)");
+pub const SKILLS_MAX_NOTE: Pair = (
+    "모든 기술과 큰 기술을 끝 단으로. 다시 고르면 이 슬롯의 판으로 돌아간다. 저장하지 않는다. 지금: {0}",
+    "every skill and the great skill at max rank; pick again for this slot's board. nothing is saved. now: {0}",
+);
+pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
+pub const SKILLS_FLIP_NOTE: Pair = (
+    "끝 단으로 올린 판의 고르기를 모두 ㄱ·ㄴ으로 뒤집는다(꺼져 있으면 켠다). 저장하지 않는다. 지금: {0}",
+    "flips every pick on the maxed board (turns it on if off). nothing is saved. now: {0}",
+);
+pub const BOARD_SLOT: Pair = ("슬롯의 판", "the slot's board");
+pub const BOARD_MAX_A: Pair = ("끝 단 · 고르기 ㄱ", "max rank · pick A");
+pub const BOARD_MAX_B: Pair = ("끝 단 · 고르기 ㄴ", "max rank · pick B");
 pub const SCENARIO_NOTE: Pair = ("아레나에서 숫자 키 {0} · {1}", "key {0} in the arena · {1}");
 
 /// 위의 쌍 전부(글꼴 시험·글자 미리 굽기 `i18n::dev_texts`).
@@ -110,6 +123,13 @@ pub const PAIRS: &[Pair] = &[
     LAB_NOTE,
     SKILLS_START,
     SKILLS_NOTE,
+    SKILLS_MAX,
+    SKILLS_MAX_NOTE,
+    SKILLS_FLIP,
+    SKILLS_FLIP_NOTE,
+    BOARD_SLOT,
+    BOARD_MAX_A,
+    BOARD_MAX_B,
     SCENARIO_NOTE,
 ];
 

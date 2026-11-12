@@ -22,7 +22,7 @@ use crate::weapons::{self, Rb, Shape};
 
 /// 플레이어 틱 — 단계·상태마다 메서드(0103).
 mod player_tick;
-mod skill_tick;
+pub mod skill_tick;
 
 /// 축 정렬 상자(기둥·벽). 충돌·카메라 당기기에 쓴다.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -209,6 +209,10 @@ pub enum Event {
     },
     /// 큰 기술 게이지가 가득 찼다.
     UltReady,
+    /// 끌어모으기의 "모인 자리"(0158 G1)가 터졌다.
+    SkillBurst {
+        at: Vec3,
+    },
 }
 
 /// 무기의 버튼 길(0151, 사장 "원거리는 공격 버튼이 전부 평타인 거고 RB는 스페셜"): 어느 무기든 X = 평타, RB = 스페셜.
@@ -477,6 +481,15 @@ pub struct Player {
     pub gauge: f32,
     pub gauge_swing: u32,
     pub skill_denied: f32,
+    /// 기술 판(0158): 끼운 칸의 단·고르기, 큰 기술의 단 — 앱이 `set_skills`로 넣는다(월드는 기록을 모른다).
+    pub skill_rank: [u8; 2],
+    pub skill_pick: [skills::Pick; 2],
+    pub ult_rank: u8,
+    /// 지금 스킬의 덤 상태(0158 G1): 뛰어드는 거리(땅울림 ㄱ — 누른 순간에 정한다), 대기를 이미 돌려받았나(가로지르기 맺음),
+    /// 지나는 동안 맞지 않는 중인가(가로지르기 ㄴ — 스킬 틱이 틱마다 적는다).
+    pub skill_leap: f32,
+    pub skill_refunded: bool,
+    pub skill_ghost: bool,
     /// 마지막 패링 성공에서 지난 초(렌더의 번쩍임).
     pub since_parry: f32,
     /// 이어 패링(0081 → 0086): 남은 창(초)과 이번 이음에서 더 튕긴 수(0 = 첫 튕김만). 창이 닫히면 0으로.
@@ -558,10 +571,12 @@ impl Player {
     }
     pub fn invulnerable(&self) -> bool {
         // 큰 기술(0151)은 땅이 뒤집히기까지 끊기지 않는다 — 가득 모은 게이지가 한 대에 날아가지 않게.
+        // 가로지르기 ㄴ(0158): 지나는 동안.
         matches!(
             self.state,
             PState::Dodge { .. } | PState::Ult { done: false, .. }
-        ) || self.hurt > 0.0
+        ) || (self.skill_ghost && matches!(self.state, PState::Skill { .. }))
+            || self.hurt > 0.0
     }
 }
 
@@ -648,6 +663,9 @@ pub struct World {
     skill_ev: Vec<Event>,
     skill_hit_tick: bool,
     skill_kill_left: f32,
+    /// 스킬이 남긴 것(0158 G1): 곧 터질 "모인 자리"(끌어모으기 ㄱ), 남은 갈라진 땅(땅울림 ㄴ — 렌더가 읽는다).
+    skill_bursts: Vec<skill_tick::Burst>,
+    pub skill_zones: Vec<skill_tick::Zone>,
     /// 이번 틱에 방랑자의 탄이 적을 맞혔다(게이지 — `skill_books`).
     bolt_hit_tick: bool,
     /// 이번 틱에 박자에 맞춘 평타가 나갔다(`Event::Beat`).
@@ -691,6 +709,12 @@ impl World {
                 gauge: 0.0,
                 gauge_swing: 0,
                 skill_denied: 0.0,
+                skill_rank: [1; 2],
+                skill_pick: [skills::Pick::A; 2],
+                ult_rank: 1,
+                skill_leap: 0.0,
+                skill_refunded: false,
+                skill_ghost: false,
                 since_parry: f32::MAX,
                 parry_chain_left: 0.0,
                 parry_chain_n: 0,
@@ -746,6 +770,8 @@ impl World {
             skill_ev: Vec::new(),
             skill_hit_tick: false,
             skill_kill_left: 0.0,
+            skill_bursts: Vec::new(),
+            skill_zones: Vec::new(),
             bolt_hit_tick: false,
             time: 0.0,
             kills: 0,
@@ -817,6 +843,14 @@ impl World {
             Some(Next::Flask)
         } else {
             None
+        };
+        // 스킬의 판정이 끝났나(그 단의 실제 길이로 — 바퀴가 늘거나 길을 되돌아가면 길어진다, 0158).
+        let skill_done = match self.player.state {
+            PState::Skill { id, t: e, .. } => {
+                let d = self.skill_eff(id);
+                e >= d.skill.startup + d.active()
+            }
+            _ => false,
         };
         let pl = &mut self.player;
         // 박자(2026-11-07): 공격을 누른 **그 순간**이 박자 창 안이었나. 받아 뒀다 나중에 나가는 이른 누름은 창 밖으로 친다
@@ -932,10 +966,7 @@ impl World {
             PState::Land { t: e, dur } => e >= dur * t[P::LandCancel],
             PState::Drink { gulped, .. } => gulped,
             // 스킬·큰 기술의 후딜(0151): 판정이 끝나면 회피·다른 스킬·평타로 끊는다.
-            PState::Skill { id, t: e, .. } => {
-                let d = id.def();
-                e >= d.startup + d.active()
-            }
+            PState::Skill { .. } => skill_done,
             PState::Ult { done, .. } => done,
             _ => false,
         };
@@ -1182,6 +1213,7 @@ impl World {
         self.skill_kill_left = (self.skill_kill_left - dt).max(0.0);
         self.tick_lock(a, &mut ev);
         self.tick_player(a, t, dt);
+        self.tick_skill_fields(t, dt);
         ev.append(&mut self.skill_ev);
         self.apply_strike(t, &mut ev);
         self.tick_bolts(t, dt, &mut ev);
@@ -2935,8 +2967,14 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, t: &Tuning) -> i32 {
     }
     let open = crit || en.broken > 0.0;
     let d = base + if crit { t[P::ParryCrit] as i32 } else { 0 } + if open { opened } else { 0 };
-    if en.broken > 0.0 {
+    let d = if en.broken > 0.0 {
         crate::tuning::scale_up(d, t[P::PoiseBreakDamage])
+    } else {
+        d
+    };
+    // 끌어모으기 맺음(0158 G1): 모인 적은 잠깐 더 다친다.
+    if en.frail > 0.0 {
+        skills::scaled(d, en.frail_mult)
     } else {
         d
     }

@@ -2606,8 +2606,10 @@ impl Renderer {
         }
         // 스킬(0151): 판정의 모양을 그대로 빛으로 — 바깥 변 = 닿는 거리(판정보다 크게 그리지 않는다, 0145). 금·민트·흰빛.
         if let PState::Skill { id, t: e, dir, .. } = w.player.state {
-            use crate::skills::Form;
-            let d = id.def();
+            use crate::skills::{Form, Twist};
+            // 그 단의 실제 값(0158) — 넓어진 반지름·늘어난 바퀴·되돌아가는 길을 그대로 그린다.
+            let eff = w.skill_eff(id);
+            let d = eff.skill;
             let e0 = e - d.startup;
             let yaw = dir.x.atan2(dir.z);
             let gold = Color::new(1.0, 0.86, 0.5, 1.0);
@@ -2643,6 +2645,9 @@ impl Renderer {
                     }
                     // 가로지르기: 지나온 길의 빛 띠(머리 = 몸, 꼬리로 사라진다).
                     Form::Lane { dist, half, time } => {
+                        // 되돌아 베기(0158 ㄱ): 둘째 구간은 온 길을 거꾸로 — 띠도 거꾸로 선다.
+                        let back = eff.twist == Some(Twist::Return) && e0 >= time;
+                        let (e0, dir) = if back { (e0 - time, -dir) } else { (e0, dir) };
                         let gone = (e0 / time.max(1e-3)).clamp(0.0, 1.0) * dist;
                         let fade = 1.0 - ((e0 - time) / SKILL_GLOW_FADE).clamp(0.0, 1.0);
                         if fx && gone > 0.05 {
@@ -2742,6 +2747,28 @@ impl Renderer {
                     with_a(gold, 0.12 * (1.0 - k)),
                 );
             }
+        }
+        // 갈라진 땅(0158 G1, 땅울림 ㄴ): 남아 있는 동안 바닥의 부채꼴(면은 옅게·테는 또렷하게 — 판정 그대로), 끝에서 사라진다.
+        for z in &w.skill_zones {
+            let k = (z.left / z.total.max(1e-3)).clamp(0.0, 1.0);
+            let a = (k / 0.3).min(1.0);
+            let yaw = z.dir.x.atan2(z.dir.z);
+            let dust = Color::new(0.86, 0.78, 0.62, 1.0);
+            let at = vec3(z.pos.x, w.ground_y(z.pos), z.pos.z);
+            fl.sector(
+                at + Vec3::Y * 0.05,
+                z.range,
+                yaw,
+                z.arc_deg,
+                with_a(dust, 0.22 * a),
+            );
+            fl.ring(
+                at + Vec3::Y * 0.06,
+                z.range,
+                yaw,
+                z.arc_deg,
+                with_a(dust, 0.7 * a),
+            );
         }
         // 등잔(0031): 삼키는 순간 따뜻한 빛이 발밑에서 퍼진다.
         if let PState::Drink { t: e, gulped: true } = w.player.state {
@@ -2884,6 +2911,19 @@ impl Renderer {
                     0.0,
                     360.0,
                     Color::new(1.0, 0.82, 0.35, 0.85),
+                );
+            }
+        }
+        // 더 다치는 적(0158 G1, 끌어모으기 맺음): 발밑에 민트빛 고리 — 남은 시간만큼 옅어진다(드러난 적의 금빛 고리보다 좁게).
+        for en in &w.enemies {
+            if en.frail > 0.0 && en.alive() {
+                let p = en.prev.lerp(en.pos, alpha);
+                fl.ring(
+                    p + Vec3::Y * 0.04,
+                    en.radius + 0.25,
+                    0.0,
+                    360.0,
+                    Color::new(0.66, 1.0, 0.86, 0.3 + 0.5 * en.frail.min(1.0)),
                 );
             }
         }

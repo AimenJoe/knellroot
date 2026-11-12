@@ -224,6 +224,10 @@ pub struct Enemy {
     pub home: Option<(Vec3, f32)>,
     /// 턱을 뛰어오르거나 뛰어내리는 중(0100) — 그동안 몸은 포물선을 따라가고 생각하지도 치지도 않는다.
     pub hop: Option<Hop>,
+    /// 스킬이 남긴 것(0158 G1): 더 다치는 남은 초와 그 배(끌어모으기 맺음), 걷는 빠르기의 배(갈라진 땅 — 월드가 틱마다 적는다, 1 = 그대로).
+    pub frail: f32,
+    pub frail_mult: f32,
+    pub slow: f32,
 }
 
 /// 뛰기 한 번(0100): 어디서 어디로, 지난 초·걸리는 초·포물선 높이.
@@ -341,6 +345,9 @@ impl Enemy {
                 | 1,
             steady: false,
             home: None,
+            frail: 0.0,
+            frail_mult: 1.0,
+            slow: 1.0,
         }
     }
 
@@ -849,6 +856,7 @@ impl Enemy {
         self.hurt = (self.hurt - dt).max(0.0);
         self.hop_cd = (self.hop_cd - dt).max(0.0);
         self.exposed = (self.exposed - dt).max(0.0);
+        self.frail = (self.frail - dt).max(0.0);
         self.sway_t += dt;
         // 넉백은 빠르게 줄어든다. 굳은 엘리트(0112)는 덜 밀린다.
         let budge = if self.elite == Some(Affix::Hardened) {
@@ -876,7 +884,7 @@ impl Enemy {
         let to = vec3(player.x - self.pos.x, 0.0, player.z - self.pos.z);
         let dist = to.length();
         let dir = if dist > 1e-4 { to / dist } else { Vec3::Z };
-        let speed = d.speed * if self.roused { ROUSED_SPEED } else { 1.0 };
+        let speed = d.speed * if self.roused { ROUSED_SPEED } else { 1.0 } * self.slow;
         self.charge_aim = false;
         // 떼 퍼지기(0076): 가는 쪽의 옆으로만 비킨다(뒤로 물러서지 않는다), 앞이 막혔으면 조금 늦춘다.
         let steer = |go: Vec3, spread: Vec3| -> (Vec3, f32) {

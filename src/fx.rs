@@ -519,6 +519,25 @@ impl Fx {
                         }
                     }
                 }
+                // 모인 자리(0158 G1, 끌어모으기 ㄱ): 모인 점에서 터지는 민트빛 별 + 바깥으로 퍼지는 먼지 고리 + 위로 튀는 빛줄.
+                Event::SkillBurst { at } => {
+                    let g = vec3(at.x, w.ground_y(at), at.z);
+                    self.star(g + Vec3::Y * 0.7, 2.0, 0.12, MINT);
+                    self.dust_ring(g, 0.5, 10, 4.2, 0.55, DUST);
+                    self.spray(
+                        g + Vec3::Y * 0.5,
+                        Vec3::Y,
+                        1.0,
+                        8,
+                        6.0,
+                        Shape::Streak,
+                        0.07,
+                        0.25,
+                        4.0,
+                        WHITE_HOT,
+                        MINT,
+                    );
+                }
                 // 큰 기술: 시동은 발밑에 모이는 금빛, 뒤집히는 순간은 가장 큰 별 + 두 겹 먼지 고리 + 사방의 금빛 줄.
                 Event::UltStart => {
                     self.star(pp + Vec3::Y * 0.4, 1.4, 0.3, GOLD);

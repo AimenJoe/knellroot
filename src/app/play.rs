@@ -88,7 +88,8 @@ impl App {
             &self.progress.owned,
             &self.progress.growth,
         ) || self.progress.level.can_raise(self.world.embers)
-            || self.progress.tree.can_open(self.progress.tree_points());
+            || self.progress.tree.can_open(self.progress.tree_points())
+            || self.progress.board.can_buy(self.progress.skill_points());
         if self.run.take_rested() {
             self.snd(crate::sfx::Id::Rest);
             self.go(Go::Open(Scene::Hearth));
@@ -126,7 +127,7 @@ impl App {
             self.world = scenario::build(self.sc);
             self.fx.clear();
             self.world.set_weapon(self.weapon);
-            self.world.set_skills(self.progress.skills.0);
+            self.world.set_skills(self.loadout());
             self.cam = Camera::new(self.world.player.pos, &self.t);
         }
         let a = self.cursor_aim(a);
@@ -192,7 +193,7 @@ impl App {
                 Event::Perfect { .. } => SHAKE_CHARGED,
                 Event::Swing | Event::LockOn | Event::LockOff | Event::Beat => 0.0,
                 // 스킬(0151): 판정이 나간 순간에 한 번, 큰 기술은 깨어나는 보스만큼.
-                Event::Skill { .. } => SHAKE_PLUNGE,
+                Event::Skill { .. } | Event::SkillBurst { .. } => SHAKE_PLUNGE,
                 Event::Ult { .. } => SHAKE_ROUSE,
                 Event::SkillStart { .. }
                 | Event::SkillDenied
@@ -455,7 +456,7 @@ impl App {
                 Event::SkillStart { .. } => Id::Swing,
                 Event::SkillDenied => Id::Deny,
                 Event::UltStart => Id::Wake,
-                Event::Ult { .. } => Id::Hit,
+                Event::Ult { .. } | Event::SkillBurst { .. } => Id::Hit,
                 Event::UltReady => Id::Beat3,
                 _ => continue,
             };

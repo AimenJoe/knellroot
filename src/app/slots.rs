@@ -124,6 +124,7 @@ impl App {
         #[cfg(feature = "dev")]
         {
             self.dev_run = false;
+            self.dev_board = None;
         }
         self.slot = i;
         crate::save::set_last_slot(i);
