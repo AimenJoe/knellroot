@@ -60,7 +60,7 @@ def classify(c):
 # 0153 꼬리: Meshy 원본의 꼬리는 왼쪽 엉덩이에서 옆으로 뻗는다(위에서 보면 몸 밖 왼쪽으로 0.3m — 사장 "너무 한쪽으로 치우쳐져").
 # 부위로 자른 뒤 꼬리만 등 가운데로 돌려 붙이고 조금 세운다 — 뒤에서(락온·쿼터뷰) 줄무늬가 길게 보인다.
 TAIL_AT = (0.0, 0.085, 0.235)  # 새 뿌리: 등 가운데, 옷자락 안으로 조금 묻는다
-TAIL_LIFT = 50.0  # 도: 뿌리에서 끝을 위로 세우는 각(원본의 들림에 더한다)
+TAIL_LIFT = 40.0  # 도: 뿌리에서 끝을 위로 세우는 각(원본의 들림에 더한다) — 0156: 50 → 40, 두건 자락 밑으로 나오게
 TAIL_SIZE = 1.0
 
 
@@ -147,17 +147,15 @@ def recenter_tail(tail, body):
           f"→ {TAIL_AT}, closed body {n_body} tail {n_tail}")
 
 
-# 0155 두건: 뒤에서 보면 무늬 없는 보라색 공 + 뿔 같은 귀였다(사장 "두건 좀 이상하지 않니?"), 0153에서 붙인 두건 꼬리는 뒤통수에 붙은 띠로 읽혔다.
-# 두건을 두건으로 읽히게 하는 것 셋: 뒤로 넘어가는 꼭지(실루엣) · 뒤통수의 솔기(천을 이은 자리) · 고른 면(천).
-HOOD_TIP_AT = (0.0, 0.17, 1.30)  # 꼭지 뼈(밑동)
+# 0155·0156 두건: 뒤에서 보면 무늬 없는 보라색 공 + 뿔 같은 귀였다(사장 "두건 좀 이상하지 않니?"). 0153의 두건 꼬리는 뒤통수에 붙은 띠로,
+# 0155의 꼭지는 "요정 모자"로 읽혔다(사장) — 위로 솟은 끝은 모자의 것이다. 두건을 두건으로 만드는 것은 **천이 머리에서 어깨로 흘러내리는 것**:
+# 공은 목에서 쏙 들어가고(머리 + 목), 두건은 가장 넓은 둘레에서 그대로 늘어져 어깨에 얹힌다. 그리고 얼굴을 두른 말린 테.
+HOOD_TIP_AT = (0.0, 0.30, 0.80)  # 뼈만 남긴다(동작 표가 부른다) — 0156부터 붙은 부위 없음
 
 
-def soften_hood(head, img):
-    """두건 면만 고르게(줄이며 생긴 울퉁불퉁 — 툰 음영이 얼룩으로 감겼다). 두건 = 텍스처가 라벤더인 면, 그 면에만 닿은 정점을 이웃 평균으로.
-    얼굴·귀·잘린 목 가장자리는 건드리지 않는다. UV는 그대로라 색은 안 바뀐다."""
+def _lavender_of(img):
+    """텍스처 UV → 두건 천인가(밝은 라벤더). 눈가의 짙은 보라는 밝기로 거른다."""
     import colorsys
-
-    import bmesh
     wd, hd = img.size
     px = img.pixels[:]
 
@@ -165,14 +163,26 @@ def soften_hood(head, img):
         x = min(wd - 1, max(0, int(uv[0] * wd)))
         y = min(hd - 1, max(0, int(uv[1] * hd)))
         i = (y * wd + x) * 4
-        h, sat, _ = colorsys.rgb_to_hsv(px[i], px[i + 1], px[i + 2])
-        return 0.62 < h < 0.82 and sat > 0.12
+        h, sat, val = colorsys.rgb_to_hsv(px[i], px[i + 1], px[i + 2])
+        return 0.62 < h < 0.82 and sat > 0.12 and val > 0.5
 
+    return lavender
+
+
+def _hood_faces(bm, img):
+    lavender = _lavender_of(img)
+    uvl = bm.loops.layers.uv.active
+    return {f for f in bm.faces if sum(lavender(lp[uvl].uv) for lp in f.loops) * 2 > len(f.loops)}
+
+
+def soften_hood(head, img):
+    """두건 면만 고르게(줄이며 생긴 울퉁불퉁 — 툰 음영이 얼룩으로 감겼다). 두건 = 텍스처가 라벤더인 면, 그 면에만 닿은 정점을 이웃 평균으로.
+    얼굴·귀·잘린 목 가장자리는 건드리지 않는다. UV는 그대로라 색은 안 바뀐다."""
+    import bmesh
     bm = bmesh.new()
     bm.from_mesh(head.data)
-    uvl = bm.loops.layers.uv.active
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
-    hood = {f for f in bm.faces if sum(lavender(lp[uvl].uv) for lp in f.loops) * 2 > len(f.loops)}
+    hood = _hood_faces(bm, img)
     verts = [x for x in bm.verts if x.co.z > 0.74 and not x.is_boundary and all(f in hood for f in x.link_faces)]
     for _ in range(6):
         bmesh.ops.smooth_vert(bm, verts=verts, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
@@ -180,6 +190,26 @@ def soften_hood(head, img):
     bm.free()
     _flat_where_folded(head.data)
     print(f"[wanderer] hood: smoothed {len(verts)} verts of {len(hood)} hood faces")
+
+
+def _cloth(g, rings, mat, inner, axis_y=0.02, thick=0.012, inner_from=0):
+    """열린 천(고리마다 같은 수의 점을 이은 띠 면): 바깥 면(mat) + 조금 안쪽의 안감 면(inner) — 한 겹 면은 안에서 보면 사라진다.
+    inner_from = 안감을 붙이기 시작하는 띠(위쪽 띠는 머리에 가려 안이 안 보인다 — 정점을 아낀다)."""
+    from mathutils import Vector
+    uo, ui = C.cell_mid(mat, "side"), C.cell_mid(inner, "side")
+    go, gi = g._group(), g._group()
+    for i in range(len(rings) - 1):
+        a, b = rings[i], rings[i + 1]
+        for k in range(len(a) - 1):
+            quad = [a[k], a[k + 1], b[k + 1], b[k]]
+            c = sum(quad, Vector()) / 4
+            out = Vector((c.x, c.y - axis_y, 0.0)).normalized()
+            n = (quad[1] - quad[0]).cross(quad[3] - quad[0])
+            if n.dot(out) < 0:
+                quad.reverse()
+            g.quads.append((quad, [uo] * 4, go))
+            if i >= inner_from:
+                g.quads.append(([q - out * thick for q in reversed(quad)], [ui] * 4, gi))
 
 
 def dress_hood(m, head):
@@ -191,6 +221,8 @@ def dress_hood(m, head):
     soften_hood(head, m.ext_img)
     bm = bmesh.new()
     bm.from_mesh(head.data)
+    bm.faces.ensure_lookup_table()
+    hood = {f.index for f in _hood_faces(bm, m.ext_img)}
     tree = BVHTree.FromBMesh(bm)
 
     def hit(origin, direction, fallback):
@@ -198,23 +230,62 @@ def dress_hood(m, head):
         loc = tree.ray_cast(Vector(origin), Vector(direction).normalized())[0]
         return loc if loc is not None else Vector(fallback)
 
-    # 꼭지: 정수리 뒤에서 솟아 뒤로 넘어가 늘어진다 — 뒤·옆 실루엣이 "공"에서 "두건"이 된다. 제 뼈라 걸을 때·몸짓 때 따로 흔들린다.
-    g = m.geo("hood_tip_geo", "hood_tip")
-    g.limb([(0, 0.10, 1.22), (0, 0.215, 1.365), (0, 0.335, 1.425), (0, 0.440, 1.395), (0, 0.510, 1.315)],
-           [0.190, 0.150, 0.108, 0.074, 0.050], "p_hood", sides=10, smooth=True, caps=(False, True))
-    g.limb([(0, 0.512, 1.318), (0, 0.524, 1.290)], [0.056, 0.056], "p_cream", sides=8, smooth=True, caps=(True, True))  # 끝단
-    g.lathe((0, 0.527, 1.228), [(0.058, -0.052), (0.060, -0.030), (0.046, 0.022), (0.020, 0.052), (0.0, 0.060)], "p_gold",
-            sides=8, smooth=True, caps=(True, False))  # 작은 종(가슴의 종과 짝)
-    g.blob((0, 0.527, 1.166), (0.034, 0.034, 0.034), "p_boot", r=1.0, n=1)  # 추
-    # 뒤통수의 솔기: 꼭지 밑에서 아랫단까지 내려오는 가는 줄(짙은 안감 색) — 뒤에서 본 민짜 면에 "천을 이은 자리"가 생긴다.
-    # (아랫단 말림·귀 구멍 테도 해 봤다: 아랫단은 돔의 처마 밑이라 게임 눈(뒤 위)에서 안 보이고, 귀 테는 귀 옆면을 타고 흘러 지저분했다.)
     g = m.geo("hood_trim_geo", "head")
-    pts = []
-    for k in range(9):
-        z = 1.16 - (1.16 - 0.73) * k / 8
+    # ① 늘어진 자락: 두건의 가장 넓은 둘레에서 어깨까지 내려오는 천(옆·뒤 — 앞은 얼굴과 목도리라 연다). 아래로 갈수록 주름이 잡히고
+    #    끝단이 물결친다. 이것이 "머리 + 목"의 공을 "어깨에 얹힌 두건"으로 바꾼다.
+    n, cy = 22, 0.02
+    axis = Vector((0.0, cy, 0.0))
+    rings = [[], [], [], []]
+    for k in range(n + 1):
+        t = math.radians(-34 + 248 * k / n)
+        d = Vector((math.cos(t), math.sin(t), 0.0))
+        fold = math.cos(7 * (t - math.pi / 2))
+        end = max(0.0, 1.0 - min(k, n - k) / 4.0) ** 2  # 앞 끝: 두건 옆면 속으로 파고들어 자른 가장자리가 안 보이게
+
+        def dome(z):
+            """그 높이에서 돔 겉면까지의 거리(축에서) — 실제 면을 따라야 자락이 턱 없이 나온다(타원 어림은 띠를 두른 것처럼 보였다)."""
+            at = hit(axis + d * 1.5 + Vector((0, 0, z)), -d, axis + d * 0.40 + Vector((0, 0, z)))
+            return (Vector((at.x, at.y, 0.0)) - axis).length
+
+        r_top, r_out = dome(0.935), dome(0.835)
+        hem = 0.580 - 0.035 * max(0.0, math.sin(t)) ** 2 - 0.014 * fold + 0.070 * end
+        for j, (z, r) in enumerate(((0.935, r_top - 0.014), (0.835, r_out + 0.003), (0.705, r_out * (0.985 + 0.012 * fold)),
+                                    (hem, r_out * (0.885 + 0.028 * fold)))):
+            r *= 1.0 - (0.05, 0.07, 0.16, 0.20)[j] * end
+            rings[j].append(axis + d * r + Vector((0, 0, z)))
+    _cloth(g, rings, "p_hood", "p_hood_in", axis_y=cy, inner_from=2)
+    # ② 얼굴을 두른 말린 테: 앞에서 얼굴 가운데로부터 바깥으로 훑어 처음 두건 천을 만나는 자리(텍스처 색) — 거기에 도톰한 줄을 앉힌다.
+    cz, pts = 0.90, []
+    for k in range(21):
+        t = math.radians(-42 + 264 * k / 20)
+        found, streak = None, 0
+        for j in range(60):
+            r = 0.14 + 0.007 * j
+            loc, _, idx, _ = tree.ray_cast(Vector((r * math.cos(t), -1.5, cz + r * math.sin(t))), Vector((0, 1, 0)))
+            if loc is None:
+                break
+            streak = streak + 1 if idx in hood else 0
+            if streak == 1:
+                found = loc
+            if streak >= 2:
+                break
+            if streak == 0:
+                found = None
+        if found is not None and streak >= 2:
+            pts.append(found)
+    for _ in range(2):  # 들쭉날쭉한 경계를 한 번 고른다
+        pts = [pts[0]] + [(pts[i - 1] + pts[i] * 2 + pts[i + 1]) / 4 for i in range(1, len(pts) - 1)] + [pts[-1]]
+    rim = [tuple(q + Vector((0, -0.010, 0))) for q in pts]
+    g.limb(rim, [0.020] + [0.032] * (len(rim) - 2) + [0.020], "p_hood_in", sides=5, smooth=True, caps=(True, True))
+    # ③ 뒤통수의 솔기: 정수리 뒤에서 자락 끝까지 내려오는 가는 줄(짙은 안감 색) — 뒤에서 본 민짜 면에 "천을 이은 자리"가 생긴다.
+    seam = []
+    for k in range(7):
+        z = 1.20 - (1.20 - 0.84) * k / 6
         at = hit((0.0, 1.5, z), (0, -1, 0), (0.0, 0.36, z))
-        pts.append((0.0, at.y - 0.004, z))
-    g.limb(pts, [0.016] * 8 + [0.010], "p_hood_in", sides=5, smooth=True, caps=(False, True))
+        seam.append((0.0, at.y - 0.004, z))
+    seam += [(0.0, q.y + 0.004, q.z) for q in (ring[n // 2] for ring in rings[1:])]
+    g.limb(seam, [0.012] * (len(seam) - 1) + [0.008], "p_hood_in", sides=5, smooth=True, caps=(False, True))
+    print(f"[wanderer] hood: rim {len(rim)} pts")
     bm.free()
 
 
