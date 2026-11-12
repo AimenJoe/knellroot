@@ -26,6 +26,7 @@ mod ground;
 mod growth;
 mod hud;
 mod i18n;
+mod idle;
 mod input;
 mod item_view;
 #[cfg(feature = "dev")]

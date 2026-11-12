@@ -33,6 +33,9 @@ pub struct Renderer {
     batch: Batch,
     /// 방랑자의 2차 동작 층(0039): 상태·부위(처음 그릴 때 모델에서 찾음)·이번 프레임 덧붙이기.
     sec: Secondary,
+    /// 서 있는 동안의 몸짓(0153)과 그 시계의 기준(월드 시간 — 멈춤 창 아래에서는 같이 선다).
+    idle: crate::idle::Idle,
+    idle_at: f32,
     sec_rig: Option<Rig>,
     sec_extra: Vec<(usize, Quat, Vec3)>,
     /// 락온 중 과녁을 가릴 때의 진하기(0040, 부드럽게 따라간다).
@@ -432,6 +435,8 @@ impl Renderer {
             pose: Vec::new(),
             batch: Batch::default(),
             sec: Secondary::default(),
+            idle: crate::idle::Idle::default(),
+            idle_at: 0.0,
             sec_rig: None,
             sec_extra: Vec::new(),
             lock_fade: 1.0,
@@ -2131,6 +2136,20 @@ impl Renderer {
             let hv = wpn.heavy;
             let combo_anim = |hit: u8| wpn.hit(hit).map_or("attack", |h| h.anim);
             let owned: [&str; 3];
+            // 서 있는 동안(0153): 숨 고리 + 조용할 때 가끔 몸짓. 조용함 = 락온이 아니고 가까이 깨어 있는 적이 없다.
+            let idle_pose = {
+                use crate::idle::FIDGETS;
+                let dt = (w.time - self.idle_at).clamp(0.0, 0.1);
+                self.idle_at = w.time;
+                let standing = matches!(pl.state, PState::Idle) && speed <= 0.5;
+                let calm = w.lock.is_none()
+                    && !w.enemies.iter().any(|en| {
+                        en.active() && en.pos.distance(pl.pos) < crate::tuning::IDLE_CALM_RADIUS
+                    });
+                let dur_of = |n: &str| e.model.anim(n).map_or(0.0, |i| e.duration(Some(i)));
+                self.idle
+                    .step(dt, standing, calm, dur_of("idle"), FIDGETS.map(dur_of))
+            };
             let (names, at): (&[&str], f32) = match pl.state {
                 // 콤보(0051): 무기 표의 타마다 동작(없는 모델이면 평타).
                 PState::Attack { t: e, hit, .. } => {
@@ -2207,7 +2226,13 @@ impl Renderer {
                     move_anim(pl.pos - pl.prev, pl.facing_dir(), w.lock.is_some()),
                     w.time * (speed / 4.0).clamp(0.6, 1.6),
                 ),
-                PState::Idle => (&["idle"], w.time),
+                PState::Idle => match idle_pose {
+                    crate::idle::Pose::Loop(t) => (&["idle"], t),
+                    crate::idle::Pose::Fidget(i, t) => {
+                        owned = [crate::idle::FIDGETS[i], "idle", "idle"];
+                        (&owned, t)
+                    }
+                },
             };
             let anim = e.pick(names);
             let looped = matches!(pl.state, PState::Idle);

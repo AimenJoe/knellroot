@@ -18,8 +18,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 
 # 정점 예산(캐릭터 700, 보스 1600, 소품 400)
-# wanderer: 0051 무기 넷(검·망치·지팡이·쇠뇌)이 한 모델에 있고 게임은 든 것만 보인다(나머지 크기 0) — 보이는 정점은 약 2,300.
-BUDGET = {"wanderer": 2600, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
+# wanderer: 0051 무기 넷(검·망치·지팡이·쇠뇌)이 한 모델에 있고 게임은 든 것만 보인다(나머지 크기 0). 0153: 몸을 정점 2,800·텍스처 512로 다시
+# 줄이고 두건 꼬리·주머니를 더했다 — 보이는 정점은 약 3,200(한 그리기 호출 10,000 미만, 0135).
+BUDGET = {"wanderer": 3800, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
           # 0068 장신구 여섯이 한 파일(게임은 하나씩만 그린다) — 하나 280 안팎.
           "charms": 1800,
           # 0139 다듬은 소품: 깎은 돌 하나가 정점 64(면마다 따로 — 각진 음영), 스테이지에 60개 안쪽이라 넉넉히.
@@ -31,7 +32,7 @@ BUDGET = {"wanderer": 2600, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 
 PROP_BUDGET = 400
 # 동작 이름과 길이(초) — 명세 그대로인지 본다.
 EXPECT = {
-    "wanderer": {"idle": 1.2, "walk": 0.8, "attack": 0.43, "dodge": 0.25, "hurt": 0.35, "turn_r": 0.25, "turn_l": 0.25,
+    "wanderer": {"idle": 2.4, "idle_look": 2.6, "idle_shake": 1.3, "idle_bell": 2.2, "walk": 0.8, "attack": 0.43, "dodge": 0.25, "hurt": 0.35, "turn_r": 0.25, "turn_l": 0.25,
                  "strafe_l": 0.6, "strafe_r": 0.6, "walk_back": 0.7, "charge": 0.3, "heavy": 0.58, "drink": 0.8},
     "root_husk": {"idle": 1.6, "walk": 1.0, "attack": 1.3, "hurt": 0.3},
     "thorn_beast": {"idle": 1.4, "run": 0.5, "charge_windup": 0.6, "charge": 0.4, "recover": 0.7, "hurt": 0.3},

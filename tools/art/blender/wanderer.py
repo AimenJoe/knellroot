@@ -57,6 +57,96 @@ def classify(c):
     return "body_geo"
 
 
+# 0153 꼬리: Meshy 원본의 꼬리는 왼쪽 엉덩이에서 옆으로 뻗는다(위에서 보면 몸 밖 왼쪽으로 0.3m — 사장 "너무 한쪽으로 치우쳐져").
+# 부위로 자른 뒤 꼬리만 등 가운데로 돌려 붙이고 조금 세운다 — 뒤에서(락온·쿼터뷰) 줄무늬가 길게 보인다.
+TAIL_AT = (0.0, 0.085, 0.235)  # 새 뿌리: 등 가운데, 옷자락 안으로 조금 묻는다
+TAIL_LIFT = 50.0  # 도: 뿌리에서 끝을 위로 세우는 각(원본의 들림에 더한다)
+TAIL_SIZE = 1.0
+
+
+def _boundary_loops(bm):
+    """열린 가장자리(면 하나에만 붙은 모서리)를 이어진 덩이마다: [(모서리들, 정점들)]."""
+    seen, out = set(), []
+    for e in bm.edges:
+        if not e.is_boundary or e in seen:
+            continue
+        comp, stack = [], [e]
+        while stack:
+            x = stack.pop()
+            if x in seen:
+                continue
+            seen.add(x)
+            comp.append(x)
+            for vert in x.verts:
+                stack.extend(y for y in vert.link_edges if y.is_boundary and y not in seen)
+        out.append((comp, {vert for x in comp for vert in x.verts}))
+    return out
+
+
+def _pinch(bm, verts):
+    """열린 가장자리 하나를 한 점(가장자리의 가운데)으로 오므려 닫는다. 새 면을 만들지 않는다 — 들쭉날쭉한 가장자리를 면으로 메우면
+    접힌 조각이 생겨 법선이 어긋났다(0153: `check_glb` 뒤집힌 면). 둘레의 면이 그 점으로 모이고 색(UV)은 그대로다."""
+    import bmesh
+    from mathutils import Vector
+    verts = list(verts)
+    c = sum((x.co for x in verts), Vector()) / len(verts)
+    bmesh.ops.pointmerge(bm, verts=verts, merge_co=c)
+
+
+def _flat_where_folded(me):
+    """정점을 합치고 면을 메운 뒤: 면 법선과 매끈한 정점 법선이 반대인 면은 각지게(`common.import_split`과 같은 규칙 —
+    안 그러면 내보낸 법선이 감김과 어긋나 외곽선 컬링·`check_glb`의 뒤집힌 면에 걸린다)."""
+    me.update()
+    for poly in me.polygons:
+        if poly.use_smooth and any(poly.normal.dot(me.vertices[i].normal) < 0.0 for i in poly.vertices):
+            poly.use_smooth = False
+
+
+def recenter_tail(tail, body):
+    """꼬리 부위를 등 가운데로(뿌리 = `TAIL_AT`, 곧게 뒤로 + `TAIL_LIFT`만큼 세움), 잘린 자리(몸의 구멍·꼬리 밑동)는 오므려 닫는다."""
+    import math
+
+    import bmesh
+    from mathutils import Matrix, Vector
+
+    # 몸: 꼬리를 떼어 낸 구멍(왼쪽 엉덩이 뒤)만 메운다 — 목·팔·다리의 잘린 자리는 그 부위가 가린다.
+    bm = bmesh.new()
+    bm.from_mesh(body.data)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    n_body = 0
+    for _, verts in _boundary_loops(bm):
+        c = sum((x.co for x in verts), Vector()) / len(verts)
+        if c.x > 0.03 and c.y > 0.0 and 0.13 < c.z < 0.5:
+            _pinch(bm, verts)
+            n_body += 1
+    bm.to_mesh(body.data)
+    bm.free()
+    _flat_where_folded(body.data)
+
+    bm = bmesh.new()
+    bm.from_mesh(tail.data)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    loops = _boundary_loops(bm)
+    rim = {x for _, verts in loops for x in verts}
+    pivot = sum((x.co for x in rim), Vector()) / len(rim)
+    mid = sum((x.co for x in bm.verts), Vector()) / len(bm.verts)
+    d = mid - pivot
+    yaw = math.atan2(d.x, d.y)  # 뒤(+Y)에서 왼쪽(+X)으로 벗어난 각
+    n_tail = len(loops)
+    # 곧게 뒤로 돌리고(Z), 끝을 세우고(X — +Y를 +Z 쪽으로), 뿌리를 등 가운데로.
+    turn = Matrix.Rotation(math.radians(TAIL_LIFT), 4, "X") @ Matrix.Rotation(yaw, 4, "Z")
+    to = Vector(TAIL_AT)
+    for x in bm.verts:
+        x.co = turn @ ((x.co - pivot) * TAIL_SIZE) + to
+    for _, verts in _boundary_loops(bm):
+        _pinch(bm, verts)
+    bm.to_mesh(tail.data)
+    bm.free()
+    _flat_where_folded(tail.data)
+    print(f"[wanderer] tail: pivot {tuple(round(c, 3) for c in pivot)} yaw {math.degrees(yaw):.1f}° "
+          f"→ {TAIL_AT}, closed body {n_body} tail {n_tail}")
+
+
 # 뼈 자리(새 몸, 키 1.4m). 손은 장갑 가운데, 어깨는 소매 위.
 HAND = (0.29, -0.085, 0.31)
 SHOULDER = (0.185, -0.05, 0.52)
@@ -78,11 +168,27 @@ def make():
     m.bone("leg_l", (0.08, -0.07, 0.125), "root")
     m.bone("leg_r", (-0.08, -0.07, 0.125), "root")
     m.bone("cloak", (0, 0.15, 0.50), "body")  # 0037 동작 표가 부르는 뼈 — 새 몸에는 따로 흔들 망토가 없다
-    m.bone("tail", (0.10, 0.16, 0.24), "body")
+    m.bone("tail", TAIL_AT, "body")
     m.bone("lamp", (hx, hy - 0.05, hz - 0.04), "hand_l")
     m.hide("lamp")
+    # 0153 뒷모습의 디테일(게임에서 가장 오래 보는 쪽 — 밋밋한 두건 뒤통수와 옷 등판뿐이었다).
+    m.bone("hood_tip", (0.0, 0.30, 1.20), "head")
 
-    m.external(MESHY_LOW, classify, MESHY_PARTS)
+    objs = m.external(MESHY_LOW, classify, MESHY_PARTS)
+    recenter_tail(objs["tail_geo"], objs["body_geo"])
+
+    # 두건 꼬리(뒤통수에서 늘어진 끝) + 끝의 작은 금빛 종 — 가슴의 종과 짝, 걸을 때·숨 쉴 때 따로 흔들린다(`hood_tip` 뼈).
+    g = m.geo("hood_tip_geo", "hood_tip")
+    # 끝마디는 크림 띠, 종은 크게 — 게임 거리(쿼터뷰 56px·락온 89px)에서 두건과 같은 색이면 안 읽힌다(헤드리스로 봄).
+    g.limb([(0, 0.20, 1.22), (0, 0.345, 1.15), (0, 0.425, 1.04), (0, 0.44, 0.955), (0, 0.44, 0.915)],
+           [0.16, 0.125, 0.09, 0.066, 0.05], ["p_hood", "p_hood", "p_hood", "p_cream"], sides=8, smooth=True, caps=(False, True))
+    g.blob((0, 0.44, 0.852), (0.115, 0.115, 0.115), "p_gold", r=0.95, n=2)
+    g.blob((0, 0.44, 0.785), (0.04, 0.04, 0.04), "p_boot", r=0.9, n=1)  # 종의 추
+    # 허리 주머니(왼쪽 엉덩이 뒤 — 꼬리를 옮기며 메운 자리를 덮는다): 갈색 몸 + 크림 덮개 + 금빛 단추.
+    g = m.geo("pouch_geo", "body")
+    g.blob((0.225, 0.075, 0.265), (0.11, 0.14, 0.125), "p_boot", r=0.6, n=2)
+    g.blob((0.232, 0.075, 0.315), (0.115, 0.15, 0.055), "p_cream", r=0.7, n=2)
+    g.blob((0.288, 0.075, 0.285), (0.022, 0.04, 0.04), "p_gold", r=0.9, n=1)
 
     # 칼(오른손) — 0037과 같은 꼴, 손 자리만 새 몸에 맞춤.
     g = m.geo("sword", "hand_r")
@@ -217,16 +323,57 @@ def acts(m):
     # 0039 원칙(KB concepts/believable-cute-character-motion.md): 게임 판정 시각(선딜·활성)은 그대로 두고,
     # 실감은 끝맺음·찌그러짐(부피 그대로)·겹치기로 더한다. 꼬리·머리의 늦음·착지 찌그러짐은 게임의 2차 동작 층(`secondary.rs`)이 얹는다.
 
-    # idle 1.2초 고리: 숨 쉬기(몸이 조금 오르내리고 망토가 따라 흔들림)
-    m.action("idle", 1.2, [
-        (0.0, {"root": {"l": (0, 0, 0)}, "body": {"r": (3, 0, 0)}, "head": {"r": (-2, 0, 0)},
-               "arm_l": {"r": (-4, -4, 0)}, "arm_r": {"r": (-12, 6, 0)}, "hand_r": rest_hand,
-               "cloak": {"r": (6, 0, 0)}, "tail": {"r": (0, 0, -14)}}),
-        (0.6, {"tail": {"r": (0, 0, 14)}, "root": {"l": (0, 0, -0.018), "s": sq(1.03)}, "body": {"r": (5, 0, 0)},
-               "head": {"r": (0, 4, 0)},
-               "arm_l": {"r": (-2, -6, 0)}, "arm_r": {"r": (-10, 8, 0)}, "hand_r": {"r": (54, 0, 0)},
-               "cloak": {"r": (9, 0, 0)}}),
+    # idle 2.4초 고리(0153 — 예전 1.2초: 숨 한 번에 꼬리 한 번이라 기계처럼 보였다): 숨 두 번, 그 사이 고개가 한쪽씩 갸웃하고
+    # 꼬리는 숨보다 느리게 한 번 오간다(박자가 어긋나야 살아 보인다 — KB believable-cute-character-motion "2차 동작").
+    idle0 = {"root": {"l": (0, 0, 0), "s": sq(1.0)}, "body": {"r": (3, 0, 0)}, "head": {"r": (-2, 0, 0)},
+             "arm_l": {"r": (-4, -4, 0)}, "arm_r": {"r": (-12, 6, 0)}, "hand_r": rest_hand,
+             "leg_l": {"r": (0, 0, 0)}, "leg_r": {"r": (0, 0, 0)},
+             "cloak": {"r": (6, 0, 0)}, "tail": {"r": (0, 0, -13)}, "hood_tip": {"r": (0, 0, 0)}}
+    breath = {"root": {"l": (0, 0, -0.018), "s": sq(1.03)}, "body": {"r": (5, 0, 0)},
+              "arm_l": {"r": (-2, -6, 0)}, "arm_r": {"r": (-10, 8, 0)}, "hand_r": {"r": (54, 0, 0)}, "cloak": {"r": (9, 0, 0)}}
+    m.action("idle", 2.4, [
+        (0.0, idle0),
+        (0.6, dict(breath, head={"r": (0, 4, 0)}, tail={"r": (3, 0, 2)}, hood_tip={"r": (5, 0, 3)})),
+        (1.2, dict(idle0, head={"r": (-2, 0, 3)}, tail={"r": (0, 0, 14)}, hood_tip={"r": (0, 0, 0)})),
+        (1.8, dict(breath, head={"r": (1, -4, 0)}, tail={"r": (-3, 0, 1)}, hood_tip={"r": (5, 0, -3)})),
     ], loop=True)
+
+    # 가만히 서 있으면 가끔 나오는 몸짓 셋(0153 — 게임이 `idle`의 고리 끝에서 하나씩 돌려 가며 튼다, `src/idle.rs`).
+    # 셋 다 `idle`의 0초 자세에서 시작해 거기로 돌아온다(이음매 없이). 작은 화면이라 크게(고개 30°·꼬리 30°).
+    # ① 둘러보기 2.6초: 왼쪽을 보고 멈췄다 오른쪽 — 몸이 따라 돌고 꼬리·두건 꼬리는 늦게 반대로.
+    m.action("idle_look", 2.6, [
+        (0.0, idle0),
+        (0.38, dict(idle0, head={"r": (-3, 2, 32)}, body={"r": (3, 0, 9)}, tail={"r": (0, 0, -22)}, hood_tip={"r": (0, 0, -14)})),
+        (1.0, dict(idle0, head={"r": (-4, 3, 34)}, body={"r": (4, 0, 10)}, tail={"r": (2, 0, -10)}, hood_tip={"r": (2, 0, -3)},
+                   root={"l": (0, 0, -0.012), "s": sq(1.02)})),
+        (1.4, dict(idle0, head={"r": (-3, -2, -30)}, body={"r": (3, 0, -9)}, tail={"r": (0, 0, 22)}, hood_tip={"r": (0, 0, 14)})),
+        (2.05, dict(idle0, head={"r": (-4, -3, -33)}, body={"r": (4, 0, -10)}, tail={"r": (2, 0, 10)}, hood_tip={"r": (2, 0, 3)},
+                    root={"l": (0, 0, -0.012), "s": sq(1.02)})),
+        (2.45, idle0),
+    ])
+    # ② 털기 1.3초: 움츠렸다(예비) 젖은 짐승처럼 몸을 좌우로 빠르게 털고 쭉 펴며 끝난다 — 머리는 몸과 반대로, 꼬리가 가장 크게.
+    def shake(k):
+        return dict(idle0, body={"r": (4, 0, 16 * k)}, head={"r": (0, 0, -14 * k)}, tail={"r": (0, 0, 32 * k)},
+                    hood_tip={"r": (0, 0, -26 * k)}, arm_l={"r": (-4, -4 - 10 * abs(k), 0)}, arm_r={"r": (-12, 6 + 10 * abs(k), 0)})
+    m.action("idle_shake", 1.3, [
+        (0.0, idle0),
+        (0.16, dict(idle0, root={"l": (0, 0, -0.03), "s": sq(0.93)}, body={"r": (9, 0, 0)}, head={"r": (7, 0, 0)})),
+        (0.30, shake(1.0)), (0.41, shake(-1.0)), (0.52, shake(0.85)), (0.63, shake(-0.7)), (0.74, shake(0.45)),
+        (0.92, dict(idle0, root={"l": (0, 0, 0.02), "s": sq(1.06)}, body={"r": (1, 0, 0)}, head={"r": (-8, 0, 0)},
+                    tail={"r": (-8, 0, 0)}, hood_tip={"r": (8, 0, 0)})),
+        (1.18, idle0),
+    ])
+    # ③ 종 만지기 2.2초: 왼손으로 가슴의 종을 건드려 보고 고개를 숙여 들여다본다 — 꼬리 끝이 한 번 까딱.
+    touch = dict(idle0, arm_l={"r": (-58, -6, -46)}, head={"r": (13, 4, -9)}, body={"r": (6, 0, -4)},
+                 tail={"r": (4, 0, 6)}, hood_tip={"r": (9, 0, 2)})
+    m.action("idle_bell", 2.2, [
+        (0.0, idle0),
+        (0.4, touch),
+        (0.7, dict(touch, arm_l={"r": (-50, -6, -40)}, head={"r": (15, 5, -10)})),
+        (0.95, dict(touch, arm_l={"r": (-62, -6, -48)}, tail={"r": (-6, 0, 16)})),
+        (1.45, dict(touch, head={"r": (10, -3, -4)}, tail={"r": (4, 0, 4)})),
+        (2.0, idle0),
+    ])
 
     # walk 0.8초 고리: 다리 ±28°, 팔은 반대로, 지날 때 몸이 오른다
     st = 28
@@ -235,10 +382,11 @@ def acts(m):
         return {"root": {"l": (0, 0, 0), "s": sq(0.95)}, "body": {"r": (6, -7 * s, 4 * s)},
                 "leg_l": {"r": (-st * s, 0, 0)}, "leg_r": {"r": (st * s, 0, 0)},
                 "arm_l": {"r": (18 * s, -4, 0)}, "arm_r": {"r": (-16 - 12 * s, 6, 0)}, "hand_r": rest_hand,
-                "head": {"r": (-3, 4 * s, -3 * s)}, "cloak": {"r": (14, 0, -3 * s)}, "tail": {"r": (-8, 6 * s, 24 * s)}}
+                "head": {"r": (-3, 4 * s, -3 * s)}, "cloak": {"r": (14, 0, -3 * s)}, "tail": {"r": (-8, 6 * s, 24 * s)},
+                "hood_tip": {"r": (8, 0, -12 * s)}}
     def pass_key():
         return {"root": {"l": (0, 0, 0.05), "s": sq(1.04)}, "body": {"r": (6, 0, 0)}, "leg_l": {"r": (0, 0, 0)},
-                "leg_r": {"r": (0, 0, 0)}, "cloak": {"r": (20, 0, 0)}, "head": {"r": (-6, 0, 0)}}
+                "leg_r": {"r": (0, 0, 0)}, "cloak": {"r": (20, 0, 0)}, "head": {"r": (-6, 0, 0)}, "hood_tip": {"r": (-5, 0, 0)}}
     m.action("walk", 0.8, [(0.0, walk_key(1)), (0.2, pass_key()), (0.4, walk_key(-1)), (0.6, pass_key())], loop=True)
 
     # attack 0.43초: 0~0.08 칼을 오른쪽 뒤로 당김, 0.08~0.18 앞을 가로질러 베기(오른쪽 → 왼쪽, 조금 위에서 아래로), 0.18~0.43 돌아옴
