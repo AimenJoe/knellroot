@@ -38,7 +38,7 @@ Blender 4.0.2로 확인(glTF 내보내기에 python3-numpy 필요). EGL 경고�
 
 | 모델 | 뼈 | 동작(초, ↻ = 고리) | 정점 | glow_ |
 |---|---|---|---|---|
-| `wanderer` 방랑자 1.8m | root, body, head, arm_l, arm_r, hand_r(검 `sword`), leg_l, leg_r, cloak | idle 2.4↻(+ 몸짓 idle_look 2.6·idle_shake 1.3·idle_bell 2.2, 0153 — 뼈 `hood_tip`·`tail`. 무기 넷·등잔은 0155 `weapons`, 두건의 자락·얼굴 테·솔기는 0156 `dress_hood` — `hood_tip` 뼈는 붙은 부위 없이 남는다), walk 0.8↻, attack 0.43(0–0.08 당김·0.08–0.18 베기·~0.43 회복), dodge 0.25, hurt 0.35, turn 0.25 | 636 | glow_eyes |
+| `wanderer` 방랑자 1.8m | root, body, head, arm_l, arm_r, hand_r(검 `sword`), leg_l, leg_r, cloak | idle 2.4↻(+ 몸짓 idle_look 2.6·idle_shake 1.3·idle_bell 2.2, 0153 — 뼈 `hood_tip`·`tail`. 무기 넷·등잔은 0155 `weapons`. 두건은 원본 + 면 고르기뿐(0157 — 덧붙인 꼴은 걷었다), `hood_tip` 뼈는 붙은 부위 없이 남는다), walk 0.8↻, attack 0.43(0–0.08 당김·0.08–0.18 베기·~0.43 회복), dodge 0.25, hurt 0.35, turn 0.25 | 636 | glow_eyes |
 | `root_husk` 뿌리의 잔재 1.5m | root, body, head, arm_l, arm_r, leg_l, leg_r | idle 1.6↻, walk 1.0↻, attack 1.3(0–0.5 들기·0.5–0.7 내려찍기·~1.3 회복), hurt 0.3 | 580 | glow_core |
 | `thorn_beast` 가시짐승 1.1×1.7m | root, body, head, leg_fl, leg_fr, leg_bl, leg_br, tail | idle 1.4↻, run 0.5↻, charge_windup 0.6, charge 0.4↻, recover 0.7, hurt 0.3 | 648 | glow_eyes |
 | `shellback` 등딱지짐승 1.0×1.25×1.2m | root, body, head, leg_fl, leg_fr, leg_bl, leg_br | idle 1.6↻, walk 1.0↻, attack 1.3(0–0.6 머리 넣고 앞 들기·0.72 쿵·~1.3), hurt 0.3 | 717 | glow_eyes |
