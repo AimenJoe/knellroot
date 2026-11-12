@@ -272,15 +272,16 @@ impl Progress {
         let cells = {
             use crate::progression::{Tree, DEPTH};
             let mut t = Tree::default();
-            for b in 0..3 {
-                t.cells[b] = match r.get(key::TREE_CELLS[b]) {
+            let keys = key::TREE_CELLS.iter().zip(key::TREE_COUNTS);
+            for (cell, (cells_key, count_key)) in t.cells.iter_mut().zip(keys) {
+                *cell = match r.get(cells_key) {
                     Some(list) => list
                         .split(',')
                         .filter_map(|c| c.trim().parse::<u8>().ok())
                         .filter(|d| (1..=DEPTH).contains(d))
                         .fold(0, |m, d| m | 1 << (d - 1)),
                     None => {
-                        let n = r.num(key::TREE_COUNTS[b]).unwrap_or(0).min(DEPTH as u32) as u8;
+                        let n = r.num(count_key).unwrap_or(0).min(DEPTH as u32) as u8;
                         Tree::from_counts([n, 0, 0]).cells[0]
                     }
                 };

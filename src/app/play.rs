@@ -556,10 +556,13 @@ impl App {
 
     pub(super) fn dev_sandbox(&self) -> bool {
         #[cfg(feature = "dev")]
-        if self.scene() == Scene::Sandbox {
-            return true;
+        {
+            self.scene() == Scene::Sandbox
         }
-        false
+        #[cfg(not(feature = "dev"))]
+        {
+            false
+        }
     }
 
     /// 개발 줄(기본 글꼴, 영어 — 개발 전용 화면은 예외, 첫 게임 0013): 측정·시나리오.
