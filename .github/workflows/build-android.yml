@@ -43,7 +43,7 @@ jobs:
       contents: write   # Release 만들기·dev 미리 보기 갈아 끼우기
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust
         with:
           targets: aarch64-linux-android
       - uses: Swatinem/rust-cache@v2
