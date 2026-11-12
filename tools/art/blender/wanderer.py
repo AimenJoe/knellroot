@@ -147,9 +147,150 @@ def recenter_tail(tail, body):
           f"→ {TAIL_AT}, closed body {n_body} tail {n_tail}")
 
 
+# 0155 두건: 뒤에서 보면 무늬 없는 보라색 공 + 뿔 같은 귀였다(사장 "두건 좀 이상하지 않니?"), 0153에서 붙인 두건 꼬리는 뒤통수에 붙은 띠로 읽혔다.
+# 두건을 두건으로 읽히게 하는 것 셋: 뒤로 넘어가는 꼭지(실루엣) · 뒤통수의 솔기(천을 이은 자리) · 고른 면(천).
+HOOD_TIP_AT = (0.0, 0.17, 1.30)  # 꼭지 뼈(밑동)
+
+
+def soften_hood(head, img):
+    """두건 면만 고르게(줄이며 생긴 울퉁불퉁 — 툰 음영이 얼룩으로 감겼다). 두건 = 텍스처가 라벤더인 면, 그 면에만 닿은 정점을 이웃 평균으로.
+    얼굴·귀·잘린 목 가장자리는 건드리지 않는다. UV는 그대로라 색은 안 바뀐다."""
+    import colorsys
+
+    import bmesh
+    wd, hd = img.size
+    px = img.pixels[:]
+
+    def lavender(uv):
+        x = min(wd - 1, max(0, int(uv[0] * wd)))
+        y = min(hd - 1, max(0, int(uv[1] * hd)))
+        i = (y * wd + x) * 4
+        h, sat, _ = colorsys.rgb_to_hsv(px[i], px[i + 1], px[i + 2])
+        return 0.62 < h < 0.82 and sat > 0.12
+
+    bm = bmesh.new()
+    bm.from_mesh(head.data)
+    uvl = bm.loops.layers.uv.active
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    hood = {f for f in bm.faces if sum(lavender(lp[uvl].uv) for lp in f.loops) * 2 > len(f.loops)}
+    verts = [x for x in bm.verts if x.co.z > 0.74 and not x.is_boundary and all(f in hood for f in x.link_faces)]
+    for _ in range(6):
+        bmesh.ops.smooth_vert(bm, verts=verts, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+    bm.to_mesh(head.data)
+    bm.free()
+    _flat_where_folded(head.data)
+    print(f"[wanderer] hood: smoothed {len(verts)} verts of {len(hood)} hood faces")
+
+
+def dress_hood(m, head):
+    import math
+
+    import bmesh
+    from mathutils import Vector
+    from mathutils.bvhtree import BVHTree
+    soften_hood(head, m.ext_img)
+    bm = bmesh.new()
+    bm.from_mesh(head.data)
+    tree = BVHTree.FromBMesh(bm)
+
+    def hit(origin, direction, fallback):
+        """머리 메시에 쏜 광선이 닿는 자리(덧붙인 테가 실제 두건 면에 앉게 — 타원체 어림으로 두면 떠서 고리처럼 보였다)."""
+        loc = tree.ray_cast(Vector(origin), Vector(direction).normalized())[0]
+        return loc if loc is not None else Vector(fallback)
+
+    # 꼭지: 정수리 뒤에서 솟아 뒤로 넘어가 늘어진다 — 뒤·옆 실루엣이 "공"에서 "두건"이 된다. 제 뼈라 걸을 때·몸짓 때 따로 흔들린다.
+    g = m.geo("hood_tip_geo", "hood_tip")
+    g.limb([(0, 0.10, 1.22), (0, 0.215, 1.365), (0, 0.335, 1.425), (0, 0.440, 1.395), (0, 0.510, 1.315)],
+           [0.190, 0.150, 0.108, 0.074, 0.050], "p_hood", sides=10, smooth=True, caps=(False, True))
+    g.limb([(0, 0.512, 1.318), (0, 0.524, 1.290)], [0.056, 0.056], "p_cream", sides=8, smooth=True, caps=(True, True))  # 끝단
+    g.lathe((0, 0.527, 1.228), [(0.058, -0.052), (0.060, -0.030), (0.046, 0.022), (0.020, 0.052), (0.0, 0.060)], "p_gold",
+            sides=8, smooth=True, caps=(True, False))  # 작은 종(가슴의 종과 짝)
+    g.blob((0, 0.527, 1.166), (0.034, 0.034, 0.034), "p_boot", r=1.0, n=1)  # 추
+    # 뒤통수의 솔기: 꼭지 밑에서 아랫단까지 내려오는 가는 줄(짙은 안감 색) — 뒤에서 본 민짜 면에 "천을 이은 자리"가 생긴다.
+    # (아랫단 말림·귀 구멍 테도 해 봤다: 아랫단은 돔의 처마 밑이라 게임 눈(뒤 위)에서 안 보이고, 귀 테는 귀 옆면을 타고 흘러 지저분했다.)
+    g = m.geo("hood_trim_geo", "head")
+    pts = []
+    for k in range(9):
+        z = 1.16 - (1.16 - 0.73) * k / 8
+        at = hit((0.0, 1.5, z), (0, -1, 0), (0.0, 0.36, z))
+        pts.append((0.0, at.y - 0.004, z))
+    g.limb(pts, [0.016] * 8 + [0.010], "p_hood_in", sides=5, smooth=True, caps=(False, True))
+    bm.free()
+
+
 # 뼈 자리(새 몸, 키 1.4m). 손은 장갑 가운데, 어깨는 소매 위.
 HAND = (0.29, -0.085, 0.31)
 SHOULDER = (0.185, -0.05, 0.52)
+
+
+def weapons(m, hand):
+    """무기 넷(오른손 — 게임이 든 것만 보인다, 다른 부위는 크기 0). 0155: 상자 조합이던 것을 **무기의 꼴**로.
+    약속(게임 쪽이 기댄다): 손 = `hand`, 길이는 블렌더 −y(앞)로, 넓은 면이 +z를 본다(`item_view.rs`의 각도), 길이·머리 크기는 0051과 같은 남짓.
+    실루엣으로 갈린다: 검 = 잎 꼴 날 + 굽은 코등이, 망치 = 가로 통 머리, 지팡이 = 긴 대 + 결정을 품은 갈래, 쇠뇌 = 굽은 활의 T."""
+    x0, y0, z0 = hand
+
+    def at(dx, dy, dz=0.0):
+        return (x0 + dx, y0 + dy, z0 + dz)
+
+    # --- 검: 마름모 단면의 잎 꼴 날(등줄기에 밝은 선이 붙는다) · 날 쪽으로 굽은 코등이 · 감은 손잡이 · 자루 끝 구슬.
+    g = m.geo("sword", "hand_r")
+    g.limb([at(0, -0.066), at(0, -0.15), at(0, -0.40), at(0, -0.53), at(0, -0.605)], [0.050, 0.060, 0.048, 0.034, 0.0],
+           "p_steel", sides=4, flat=0.30, caps=(True, False))
+    g.limb([at(0, -0.075), at(0, -0.38), at(0, -0.51)], [0.020, 0.017, 0.0], "p_white", sides=4, flat=1.2)  # 등줄기
+    g.limb([at(-0.125, -0.098), at(-0.078, -0.070), at(0, -0.058), at(0.078, -0.070), at(0.125, -0.098)],
+           [0.017, 0.024, 0.031, 0.024, 0.017], "p_gold", sides=6, smooth=True, caps=(True, True))  # 코등이
+    for sx in (-1, 1):
+        g.blob(at(sx * 0.130, -0.102), (0.044, 0.044, 0.044), "p_gold", r=1.0, n=2)
+    g.limb([at(0, -0.050), at(0, -0.022), at(0, 0.006), at(0, 0.034), at(0, 0.060)], [0.021, 0.024, 0.024, 0.023, 0.020],
+           ["brown", "p_boot", "brown", "p_boot"], sides=6, smooth=True)  # 감은 손잡이
+    g.blob(at(0, 0.078), (0.062, 0.050, 0.062), "p_gold", r=1.0, n=2)  # 자루 끝
+
+    # --- 망치(종치기): 가로로 누운 통 머리(양 끝 금빛 테 · 가운데 띠) + 감은 자루. 머리가 실루엣의 전부다.
+    g = m.geo("w_hammer", "hand_r")
+    g.limb([at(0, 0.075), at(0, 0.040), at(0, -0.050), at(0, -0.085), at(0, -0.37)], [0.022, 0.025, 0.025, 0.021, 0.024],
+           ["brown", "brown", "p_boot", "p_boot"], sides=6, smooth=True)
+    g.blob(at(0, 0.090), (0.066, 0.050, 0.066), "p_gold", r=1.0, n=2)  # 자루 끝
+    head = at(0, -0.475)
+    g.lathe(head, [(0.082, -0.200), (0.112, -0.182), (0.112, -0.128), (0.096, -0.118), (0.096, -0.034), (0.108, -0.026),
+                   (0.108, 0.026), (0.096, 0.034), (0.096, 0.118), (0.112, 0.128), (0.112, 0.182), (0.082, 0.200)],
+            ["p_gold", "p_gold", "p_steel", "p_steel", "p_gold", "p_gold", "p_gold", "p_steel", "p_steel", "p_gold", "p_gold"],
+            sides=10, rot=(0, 90, 0), smooth=True, hard=(2, 4, 7, 9), caps=(True, True), cap_mat="p_steel")
+    g.lathe(at(0, -0.37), [(0.034, 0.0), (0.040, 0.012), (0.034, 0.030)], "p_gold", sides=8, rot=(90, 0, 0), smooth=True)  # 목 테
+    g.blob(at(0, -0.598), (0.060, 0.044, 0.060), "p_gold", r=1.0, n=2)  # 머리 위 마개
+
+    # --- 지팡이: 긴 대 · 앞 끝은 두 갈래가 하늘빛 결정을 품는다(결정만 각지게) · 감은 천과 늘어진 끝 · 뒤 끝 물미.
+    g = m.geo("w_staff", "hand_r")
+    g.limb([at(0, 0.34), at(0, 0.06), at(0, -0.06), at(0, -0.60)], [0.019, 0.022, 0.022, 0.024], ["p_boot", "brown", "p_boot"],
+           sides=6, smooth=True)
+    g.lathe(at(0, 0.34), [(0.026, 0.0), (0.030, -0.030), (0.0, -0.085)], "p_gold", sides=6, rot=(-90, 0, 0), smooth=True)  # 물미
+    g.lathe(at(0, -0.585), [(0.030, 0.0), (0.040, 0.014), (0.030, 0.034)], "p_gold", sides=8, rot=(90, 0, 0), smooth=True)
+    for sx in (-1, 1):
+        g.limb([at(0, -0.61), at(sx * 0.078, -0.655), at(sx * 0.118, -0.745), at(sx * 0.098, -0.835), at(sx * 0.048, -0.880)],
+               [0.024, 0.025, 0.022, 0.017, 0.0], "p_gold", sides=6, smooth=True)
+    g.lathe(at(0, -0.752), [(0.0, -0.085), (0.056, 0.0), (0.0, 0.085)], "p_sky", sides=4, rot=(90, 0, 0), caps=(False, False))
+    g.lathe(at(0, -0.752), [(0.0, -0.040), (0.026, 0.0), (0.0, 0.040)], "p_white", sides=4, rot=(90, 0, 45),
+            squash=(1.0, 2.3), caps=(False, False))  # 결정 속의 밝은 심(위에서 보인다)
+    g.limb([at(0, -0.500), at(0, -0.545)], [0.031, 0.031], "p_cloak", sides=6, smooth=True)  # 감은 천
+    g.limb([at(0.026, -0.52, -0.01), at(0.050, -0.50, -0.07), at(0.042, -0.47, -0.14)], [0.016, 0.014, 0.0], "p_cloak", sides=4,
+           flat=0.4)
+
+    # --- 쇠뇌: 굽은 활(끝이 쏘는 이 쪽으로 휜다) · 걸린 시위(V) · 촉과 깃이 달린 볼트 · 개머리가 굵은 몸 · 앞의 발걸이.
+    g = m.geo("w_crossbow", "hand_r")
+    g.limb([at(0, 0.085), at(0, 0.030), at(0, -0.10), at(0, -0.30), at(0, -0.385)], [0.058, 0.046, 0.040, 0.036, 0.030], "p_boot",
+           sides=4, roll=45, flat=0.85, caps=(True, True))  # 몸
+    g.box(at(0, 0.092), (0.086, 0.020, 0.074), "brown")  # 개머리 판
+    bow = [(-0.315, -0.235), (-0.245, -0.292), (-0.125, -0.338), (0.0, -0.352), (0.125, -0.338), (0.245, -0.292), (0.315, -0.235)]
+    g.limb([at(x, y, 0.026) for x, y in bow], [0.013, 0.020, 0.026, 0.030, 0.026, 0.020, 0.013], "p_steel", sides=4, flat=0.6,
+           caps=(True, True))
+    g.limb([at(-0.312, -0.238, 0.030), at(0, -0.115, 0.046), at(0.312, -0.238, 0.030)], [0.007, 0.007, 0.007], "p_white", sides=4)
+    g.box(at(0, -0.115, 0.040), (0.050, 0.044, 0.034), "p_gold")  # 걸쇠
+    g.limb([at(0, -0.125, 0.064), at(0, -0.405, 0.064)], [0.011, 0.011], "p_gold", sides=4, roll=45)  # 볼트 대
+    g.lathe(at(0, -0.405, 0.064), [(0.026, 0.0), (0.0, 0.085)], "p_steel", sides=4, rot=(90, 0, 0), caps=(True, False))  # 촉
+    for sx in (-1, 1):
+        g.box(at(sx * 0.018, -0.165, 0.066), (0.030, 0.060, 0.008), "p_cream", rot=(0, sx * 35, 0))  # 깃
+    g.limb([at(-0.040, -0.378, 0.02), at(-0.046, -0.430, 0.02), at(0, -0.458, 0.02), at(0.046, -0.430, 0.02), at(0.040, -0.378, 0.02)],
+           [0.010, 0.011, 0.011, 0.011, 0.010], "p_steel", sides=4)  # 발걸이
+    g.box(at(0, -0.045, -0.050), (0.016, 0.040, 0.050), "p_steel", rot=(25, 0, 0))  # 방아쇠
 
 
 def make():
@@ -172,57 +313,32 @@ def make():
     m.bone("lamp", (hx, hy - 0.05, hz - 0.04), "hand_l")
     m.hide("lamp")
     # 0153 뒷모습의 디테일(게임에서 가장 오래 보는 쪽 — 밋밋한 두건 뒤통수와 옷 등판뿐이었다).
-    m.bone("hood_tip", (0.0, 0.30, 1.20), "head")
+    m.bone("hood_tip", HOOD_TIP_AT, "head")
 
     objs = m.external(MESHY_LOW, classify, MESHY_PARTS)
     recenter_tail(objs["tail_geo"], objs["body_geo"])
 
-    # 두건 꼬리(뒤통수에서 늘어진 끝) + 끝의 작은 금빛 종 — 가슴의 종과 짝, 걸을 때·숨 쉴 때 따로 흔들린다(`hood_tip` 뼈).
-    g = m.geo("hood_tip_geo", "hood_tip")
-    # 끝마디는 크림 띠, 종은 크게 — 게임 거리(쿼터뷰 56px·락온 89px)에서 두건과 같은 색이면 안 읽힌다(헤드리스로 봄).
-    g.limb([(0, 0.20, 1.22), (0, 0.345, 1.15), (0, 0.425, 1.04), (0, 0.44, 0.955), (0, 0.44, 0.915)],
-           [0.16, 0.125, 0.09, 0.066, 0.05], ["p_hood", "p_hood", "p_hood", "p_cream"], sides=8, smooth=True, caps=(False, True))
-    g.blob((0, 0.44, 0.852), (0.115, 0.115, 0.115), "p_gold", r=0.95, n=2)
-    g.blob((0, 0.44, 0.785), (0.04, 0.04, 0.04), "p_boot", r=0.9, n=1)  # 종의 추
+    dress_hood(m, objs["head_geo"])
+
     # 허리 주머니(왼쪽 엉덩이 뒤 — 꼬리를 옮기며 메운 자리를 덮는다): 갈색 몸 + 크림 덮개 + 금빛 단추.
     g = m.geo("pouch_geo", "body")
     g.blob((0.225, 0.075, 0.265), (0.11, 0.14, 0.125), "p_boot", r=0.6, n=2)
     g.blob((0.232, 0.075, 0.315), (0.115, 0.15, 0.055), "p_cream", r=0.7, n=2)
     g.blob((0.288, 0.075, 0.285), (0.022, 0.04, 0.04), "p_gold", r=0.9, n=1)
 
-    # 칼(오른손) — 0037과 같은 꼴, 손 자리만 새 몸에 맞춤.
-    g = m.geo("sword", "hand_r")
-    x0, y0, z0 = -hx, hy, hz
-    g.blob((x0, y0 + 0.06, z0), (0.05, 0.04, 0.05), "p_gold", r=0.9, n=2)  # 칼자루 끝 구슬
-    g.box((x0, y0, z0), (0.035, 0.09, 0.035), "p_boot")  # 손잡이
-    g.blob((x0, y0 - 0.06, z0), (0.15, 0.035, 0.05), "p_gold", r=0.8, n=2)  # 코등이
-    g.box((x0, y0 - 0.31, z0), (0.06, 0.46, 0.022), "p_steel")  # 칼날
-    g.box((x0, y0 - 0.29, z0), (0.016, 0.38, 0.026), "p_white")  # 날 가운데 밝은 줄
-    g.box((x0, y0 - 0.575, z0), (0.06, 0.022, 0.08), "p_steel", rot=(90, 0, 0), taper=(0.15, 1))  # 칼끝
+    weapons(m, (-hx, hy, hz))
 
-    # 0051 무기 셋(오른손, 게임이 든 것만 보인다 — 다른 부위는 크기 0). 무기 머리는 1.3~1.5배로 키워 위에서 읽히게(KB readable-low-poly),
-    # 실루엣으로 갈린다: 망치 = 큰 네모 머리, 지팡이 = 긴 대 + 양끝 덧대기, 쇠뇌 = 가로로 넓은 T.
-    g = m.geo("w_hammer", "hand_r")
-    g.box((x0, y0 - 0.20, z0), (0.05, 0.44, 0.05), "p_boot")  # 자루
-    g.blob((x0, y0 + 0.05, z0), (0.07, 0.05, 0.07), "p_gold", r=0.9, n=2)  # 자루 끝
-    g.box((x0, y0 - 0.48, z0), (0.30, 0.20, 0.22), "p_steel")  # 머리(종치기 — 둥근 모서리 대신 테)
-    g.box((x0, y0 - 0.48, z0), (0.32, 0.06, 0.24), "p_gold")  # 머리 가운데 띠
-    g = m.geo("w_staff", "hand_r")
-    g.box((x0, y0 - 0.22, z0), (0.04, 1.10, 0.04), "p_boot")  # 대(손 앞뒤로 길게)
-    g.blob((x0, y0 - 0.80, z0), (0.11, 0.11, 0.11), "p_gold", r=0.8, n=2)  # 앞 끝 덧대기
-    g.blob((x0, y0 + 0.34, z0), (0.08, 0.08, 0.08), "p_gold", r=0.8, n=2)  # 뒤 끝
-    g.box((x0, y0 - 0.70, z0), (0.07, 0.05, 0.07), "p_cloak")  # 감은 천
-    g = m.geo("w_crossbow", "hand_r")
-    g.box((x0, y0 - 0.14, z0), (0.07, 0.40, 0.07), "p_boot")  # 개머리
-    g.box((x0, y0 - 0.34, z0 + 0.02), (0.58, 0.05, 0.05), "p_steel")  # 활(가로로 넓게)
-    g.box((x0, y0 - 0.30, z0 + 0.02), (0.56, 0.012, 0.012), "p_white")  # 시위
-    g.box((x0, y0 - 0.30, z0 + 0.06), (0.02, 0.30, 0.02), "p_gold")  # 걸린 볼트
-
-    # 등잔(왼손, 마실 때만 — 0031).
+    # 등잔(왼손, 마실 때만 — 0031). 0155: 덩어리 하나 → 배 부른 병 + 금빛 테 + 손잡이 고리, 불꽃은 물방울 꼴.
+    lx, ly, lz = hx, hy - 0.06, hz - 0.10
     g = m.geo("lamp_geo", "lamp")
-    g.blob((hx, hy - 0.06, hz - 0.10), (0.115, 0.115, 0.115), "p_lamp", r=0.7, n=3, taper=(0.75, 0.75))
+    g.lathe((lx, ly, lz), [(0.036, -0.062), (0.066, -0.048), (0.078, -0.012), (0.062, 0.024), (0.036, 0.040)], "p_lamp",
+            sides=8, smooth=True, caps=(True, False))
+    g.lathe((lx, ly, lz), [(0.036, 0.040), (0.046, 0.048), (0.046, 0.060), (0.030, 0.064)], "p_gold", sides=8, smooth=True)
+    g.limb([(lx + 0.060, ly, lz + 0.018), (lx + 0.105, ly, lz + 0.012), (lx + 0.112, ly, lz - 0.022), (lx + 0.070, ly, lz - 0.034)],
+           [0.011, 0.012, 0.012, 0.010], "p_gold", sides=5, smooth=True)
     g = m.geo("glow_lamp", "lamp")
-    g.box((hx, hy - 0.06, hz - 0.02), (0.045, 0.045, 0.07), "ember", taper=(0.4, 0.4))
+    g.lathe((lx, ly, lz + 0.064), [(0.0, 0.0), (0.026, 0.018), (0.020, 0.044), (0.0, 0.082)], "ember", sides=6, smooth=True,
+            caps=(False, False))
 
     m.build()
     acts(m)
