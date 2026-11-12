@@ -153,7 +153,7 @@ impl App {
             self.progress.run = None;
             self.rest_at = None;
         }
-        // 둘째 지역 문지기(깨진 종지기, 0125): 핵 점수는 따로 셋까지 — 나무 마디는 같이 센다.
+        // 둘째 지역 문지기(깨진 종지기, 0125): 핵은 따로 셋까지 — 기술 점수는 같이 센다(0161).
         if core && self.stage == 1 {
             let s = s();
             let first = self.progress.bell_cores == 0;
@@ -178,7 +178,7 @@ impl App {
         }
         // 첫 지역 문지기의 핵(0105).
         if core && self.stage == 0 {
-            // 핵(0105): 이길 때마다 나무 점수 1, 문지기마다 셋까지. 처음 이긴 판은 "핵이 몸에 스민다"(lore CANON — 핵이 다가왔다).
+            // 핵(0105 → 0161): 이길 때마다 기술 점수 1, 문지기마다 셋까지. 처음 이긴 판은 "핵이 몸에 스민다"(lore CANON — 핵이 다가왔다).
             let s = s();
             if self.progress.cores < crate::progression::CORE_CAP {
                 self.progress.cores += 1;

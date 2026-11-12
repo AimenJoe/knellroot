@@ -26,7 +26,6 @@ impl App {
                     }
                 }
                 flow::Ask::Level(l) => self.raise_level(l as usize),
-                flow::Ask::Tree(b) => self.open_tree_cell(b as usize),
                 flow::Ask::Skill(i) => self.buy_skill(i as usize),
                 flow::Ask::Respec => self.respec_skills(),
                 flow::Ask::Restart | flow::Ask::ToTitle => {}
@@ -67,8 +66,7 @@ impl App {
                 (fill(s.ask_buy, &[name, &price.to_string()]), s.ask_buy_yes)
             }
             flow::Ask::Level(l) => (self.ask_level_text(l as usize), s.ask_level_yes),
-            flow::Ask::Tree(b) => (self.ask_tree_text(b as usize), s.ask_tree_yes),
-            flow::Ask::Skill(i) => (self.ask_skill_text(i as usize), s.ask_level_yes),
+            flow::Ask::Skill(i) => self.ask_skill_text(i as usize),
             flow::Ask::Respec => (self.ask_respec_text(), s.board_respec),
         };
         let u = self.ui.u(1.0);

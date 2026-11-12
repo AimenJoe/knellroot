@@ -88,7 +88,6 @@ impl App {
             &self.progress.owned,
             &self.progress.growth,
         ) || self.progress.level.can_raise(self.world.embers)
-            || self.progress.tree.can_open(self.progress.tree_points())
             || self.progress.board.can_buy(self.progress.skill_points());
         if self.run.take_rested() {
             self.snd(crate::sfx::Id::Rest);
@@ -127,7 +126,7 @@ impl App {
             self.world = scenario::build(self.sc);
             self.fx.clear();
             self.world.set_weapon(self.weapon);
-            self.world.set_skills(self.loadout());
+            self.apply_board();
             self.cam = Camera::new(self.world.player.pos, &self.t);
         }
         let a = self.cursor_aim(a);

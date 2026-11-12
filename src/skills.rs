@@ -13,7 +13,12 @@
 //! **G2(0158)**: 스킬 여덟(버팀 `Brace` · 되울림 `Echo` · 던지기 `Throw` · 잔불 흩기 `Field`의 네 모양이 더해졌다), 큰 기술 셋
 //! (`Ult` — 쟁반 뒤집기는 처음부터, 몰아치기·한 줄기는 판에서 2점으로 배운다. **끼우는 큰 기술은 하나**). 전용 동작은 `Clip`
 //! (이름 + 시동·이어짐·후딜 구간의 길이 — 구간의 경계가 판정의 순간이라 `Clip::at`이 단·고르기가 바꾼 길이를 구간에 맞춘다).
+//!
+//! **나무 하나(0161)**: 패시브 15칸(`progression::Cell`)도 이 판의 칸이다(`Entry::Cell` — 칸마다 1점, 잠금은 줄뿐). 스킬·큰 기술은
+//! 갈래 셋(흐름·맞받기·자리 — `Skill::branch`·`Ult::branch`)에 서고, 판의 칸 순서 `ENTRIES`가 곧 화면의 차례다. 기술 점수의 샘은
+//! 총 레벨 + 처음 쓰러뜨린 엘리트 + 핵 + 종소리 조각(`points`) — 화폐 "마디"는 없다.
 
+use crate::progression::{Branch, Cell, Tree, DEPTH};
 use crate::tuning::{HP_UNIT, ULT_SLAM_DAMAGE};
 
 /// 스킬의 모양(판정과 움직임).
@@ -164,6 +169,8 @@ pub struct Skill {
     pub clip: Clip,
     /// 판의 줄(0158 라): 쓴 점수 합이 `ROW_NEEDS[row]`에 닿아야 살 수 있다.
     pub row: u8,
+    /// 판의 갈래(0161 "갈래와 줄").
+    pub branch: Branch,
     /// 3단의 둘 가운데 하나(ㄱ·ㄴ)와 5단의 맺음(0158 마).
     pub picks: [Twist; 2],
     pub cap: Cap,
@@ -475,6 +482,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.15, 0.22, 0.30],
         },
         row: 0,
+        branch: Branch::Beat,
         picks: [Twist::Walk { speed: 0.6 }, Twist::Spins { more: 1 }],
         cap: Cap::Lift { stagger: 0.4 },
     },
@@ -496,6 +504,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.12, 0.20, 0.25],
         },
         row: 0,
+        branch: Branch::Beat,
         picks: [Twist::Return, Twist::Ghost],
         cap: Cap::Refund { part: 0.5 },
     },
@@ -518,6 +527,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.20, 0.0, 0.30],
         },
         row: 0,
+        branch: Branch::Footing,
         picks: [
             Twist::Burst {
                 delay: 0.5,
@@ -549,6 +559,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.30, 0.0, 0.40],
         },
         row: 1,
+        branch: Branch::Beat,
         picks: [
             Twist::Leap {
                 dist: 6.0,
@@ -584,6 +595,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.10, 1.20, 0.35],
         },
         row: 0,
+        branch: Branch::Riposte,
         picks: [Twist::Walk { speed: 0.45 }, Twist::Reflect],
         cap: Cap::Stun { stagger: 1.0 },
     },
@@ -605,6 +617,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.0, 0.20],
         },
         row: 1,
+        branch: Branch::Riposte,
         picks: [Twist::Rattle { poise: 2.5 }, Twist::Tempo { secs: 0.6 }],
         cap: Cap::Toll { damage: HP_UNIT },
     },
@@ -627,6 +640,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.18, 0.10, 0.25],
         },
         row: 1,
+        branch: Branch::Footing,
         picks: [
             Twist::Stick {
                 radius: 2.5,
@@ -657,6 +671,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.0, 0.30],
         },
         row: 1,
+        branch: Branch::Footing,
         picks: [Twist::Follow, Twist::Kindle { embers: 1 }],
         cap: Cap::Smolder {
             secs: 1.0,
@@ -736,6 +751,15 @@ impl Ult {
 
     pub fn by_key(k: &str) -> Option<Ult> {
         ULTS.into_iter().find(|u| u.key() == k)
+    }
+
+    /// 판의 갈래(0161 "갈래와 줄"): 몰아치기 = 흐름, 한 줄기 = 맞받기, 쟁반 뒤집기 = 자리.
+    pub fn branch(self) -> Branch {
+        match self {
+            Ult::Upend => Branch::Footing,
+            Ult::Flurry => Branch::Beat,
+            Ult::Line => Branch::Riposte,
+        }
     }
 
     /// 빌려 쓰는 동작과 전용 동작(스킬의 `anim`·`clip`과 같은 뜻).
@@ -989,9 +1013,11 @@ impl From<[Id; 2]> for Loadout {
     }
 }
 
-/// 기술 점수(0158 나): 줍는 물건이 아니라 셈 — 총 레벨 + 처음 쓰러뜨린 엘리트 수 + 처음 이긴 보스 수.
-pub fn points(level: u32, elites: u32, bosses: u32) -> u32 {
-    level + elites + bosses
+/// 기술 점수(0158 나 → 0161): 줍는 화폐가 아니라 셈 — 총 레벨 + 처음 쓰러뜨린 엘리트 수 + **핵**(보스를 이길 때마다, 보스마다
+/// `progression::CORE_CAP`까지 — 부르는 쪽이 자른 수) + 주운 **종소리 조각**. 핵·조각은 옛 나무 화폐 "마디"였다 — 이제 점수의 샘이다.
+/// 0158의 "보스 첫 쓰러뜨림 +1"은 핵의 수로 바뀌었다. 지금 내용으로 15 + 6 + 6 + 3 = 30.
+pub fn points(level: u32, elites: u32, cores: u32, shards: u32) -> u32 {
+    level + elites + cores + shards
 }
 
 /// 줄이 열리는 때(쓴 점수 합): 첫 줄 · 둘째 줄 · 큰 기술 줄(0158 라).
@@ -1000,33 +1026,58 @@ pub const ROW_NEEDS: [u32; 3] = [0, 4, 8];
 pub const RESPEC_BASE: u32 = 30;
 pub const RESPEC_PER: u32 = 5;
 
-/// 판의 칸: 스킬 하나 또는 큰 기술 하나.
+/// 판의 칸: 스킬 하나 · 큰 기술 하나 · 패시브 칸 하나(0161).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Entry {
     Skill(Id),
     Ult(Ult),
+    Cell(Cell),
 }
 
-/// 판의 줄 순서(화면도 이 순서 — 0158 라: 첫 줄 넷 · 둘째 줄 넷 · 큰 기술 셋). 대기 칸의 자리(`IDS`)와는 따로다.
-pub const ENTRIES: [Entry; N + NU] = [
+/// 판의 칸 수: 스킬 여덟 + 큰 기술 셋 + 패시브 열다섯.
+pub const NE: usize = N + NU + 3 * DEPTH as usize;
+
+/// 판의 칸 순서(0161 "갈래와 줄" — 화면의 차례이기도 하다): 줄(처음부터 · 쓴 점수 4 · 쓴 점수 8)마다 갈래(흐름 · 맞받기 · 자리)
+/// 순으로, 갈래 안에서는 스킬(큰 기술) 먼저·패시브 다음. 대기 칸의 자리(`IDS`)와는 따로다. 묻는 창 `Ask::Skill`이 이 자리를 든다.
+pub const ENTRIES: [Entry; NE] = [
+    // 1 — 처음부터
     Entry::Skill(Id::Whirl),
     Entry::Skill(Id::Cut),
-    Entry::Skill(Id::Gather),
+    Entry::Cell(Cell::EvenBreath),
+    Entry::Cell(Cell::FlowingBeat),
     Entry::Skill(Id::Brace),
+    Entry::Cell(Cell::Catch),
+    Entry::Cell(Cell::TurnItBack),
+    Entry::Skill(Id::Gather),
+    Entry::Cell(Cell::UnbrokenStride),
+    Entry::Cell(Cell::Sidestep),
+    // 2 — 쓴 점수 4
     Entry::Skill(Id::Quake),
+    Entry::Cell(Cell::ClosingBlow),
+    Entry::Cell(Cell::GapBeat),
     Entry::Skill(Id::Echo),
+    Entry::Cell(Cell::GatheredRiposte),
+    Entry::Cell(Cell::OpenBreach),
     Entry::Skill(Id::Throw),
     Entry::Skill(Id::Embers),
-    Entry::Ult(Ult::Upend),
+    Entry::Cell(Cell::TiltingGround),
+    Entry::Cell(Cell::LandingBeat),
+    // 3 — 쓴 점수 8
     Entry::Ult(Ult::Flurry),
+    Entry::Cell(Cell::FinalMeasure),
     Entry::Ult(Ult::Line),
+    Entry::Cell(Cell::OneWhoStands),
+    Entry::Ult(Ult::Upend),
+    Entry::Cell(Cell::PathOpeningStep),
 ];
 
 impl Entry {
+    /// 끝 단(패시브 칸은 열림 = 1).
     pub fn max(self) -> u8 {
         match self {
             Entry::Skill(_) => MAX_RANK,
             Entry::Ult(_) => ULT_MAX_RANK,
+            Entry::Cell(_) => 1,
         }
     }
 
@@ -1034,6 +1085,15 @@ impl Entry {
         match self {
             Entry::Skill(id) => id.def().row as usize,
             Entry::Ult(_) => ULT_ROW as usize,
+            Entry::Cell(c) => c.row(),
+        }
+    }
+
+    pub fn branch(self) -> Branch {
+        match self {
+            Entry::Skill(id) => id.def().branch,
+            Entry::Ult(u) => u.branch(),
+            Entry::Cell(c) => c.branch(),
         }
     }
 
@@ -1042,10 +1102,11 @@ impl Entry {
         match self {
             Entry::Skill(id) => START.contains(&id) as u8,
             Entry::Ult(u) => (u == Ult::Upend) as u8,
+            Entry::Cell(_) => 0,
         }
     }
 
-    /// `rank`단에서 다음 단으로 올리는 값(기술 점수): 단마다 1 — 큰 기술을 배우는 첫 단만 `ULT_LEARN`.
+    /// `rank`단에서 다음 단으로 올리는 값(기술 점수): 단마다 1 — 큰 기술을 배우는 첫 단만 `ULT_LEARN`. 패시브 칸은 1.
     pub fn price(self, rank: u8) -> u32 {
         match self {
             Entry::Ult(_) if rank == 0 => ULT_LEARN,
@@ -1072,12 +1133,14 @@ pub enum Offer {
     Full,
 }
 
-/// 기술 판(기록 `skill.rank.*`·`skill.pick.*`·`ult.rank.*`): 스킬마다의 단과 고르기, 큰 기술마다의 단(`ULTS`의 자리).
+/// 기술 판(기록 `skill.rank.*`·`skill.pick.*`·`ult.rank.*`·`tree.cells.*`): 스킬마다의 단과 고르기, 큰 기술마다의 단
+/// (`ULTS`의 자리), 연 패시브 칸(0161 — 같은 점수로 산다).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Board {
     pub rank: [u8; N],
     pub pick: [Pick; N],
     pub ult: [u8; NU],
+    pub cells: Tree,
 }
 
 impl Default for Board {
@@ -1086,15 +1149,18 @@ impl Default for Board {
             rank: IDS.map(|id| Entry::Skill(id).free()),
             pick: [Pick::A; N],
             ult: ULTS.map(|u| Entry::Ult(u).free()),
+            cells: Tree::default(),
         }
     }
 }
 
 impl Board {
+    /// 칸의 단(패시브 칸은 열렸으면 1).
     pub fn rank(&self, e: Entry) -> u8 {
         match e {
             Entry::Skill(id) => self.rank[id.index()],
             Entry::Ult(u) => self.ult[u.index()],
+            Entry::Cell(c) => self.cells.has(c) as u8,
         }
     }
 
@@ -1106,7 +1172,7 @@ impl Board {
         self.ult[u.index()] >= 1
     }
 
-    /// 쓴 점수: 산 단만 센다(처음부터 가진 단은 값이 없다, 큰 기술을 배운 첫 단은 2점).
+    /// 쓴 점수: 산 단만 센다(처음부터 가진 단은 값이 없다, 큰 기술을 배운 첫 단은 2점) + 연 패시브 칸마다 1.
     pub fn spent(&self) -> u32 {
         ENTRIES.iter().map(|&e| e.paid(self.rank(e))).sum()
     }
@@ -1143,6 +1209,7 @@ impl Board {
                 }
             }
             Entry::Ult(u) => self.ult[u.index()] += 1,
+            Entry::Cell(c) => self.cells.open_cell(c),
         }
         true
     }
@@ -1169,8 +1236,8 @@ impl Board {
         RESPEC_BASE + RESPEC_PER * self.spent()
     }
 
-    /// 전부 되돌린다: 처음의 둘만 1단·쟁반 뒤집기 1단, 고르기는 지운다. 끼운 칸에 안 배운 스킬이 남으면 처음의 둘로,
-    /// 끼운 큰 기술은 쟁반 뒤집기로.
+    /// 전부 되돌린다: 처음의 둘만 1단·쟁반 뒤집기 1단, 고르기는 지우고 패시브 칸도 모두 닫는다(0161). 끼운 칸에 안 배운 스킬이
+    /// 남으면 처음의 둘로, 끼운 큰 기술은 쟁반 뒤집기로.
     pub fn respec(&mut self, worn: &mut [Id; 2], great: &mut Ult) {
         *self = Board::default();
         *worn = self.wearable(*worn);
@@ -1207,8 +1274,11 @@ impl Board {
     }
 
     /// 기록에서 읽은 판을 바로잡는다: 단은 범위 안으로(처음의 둘·쟁반 뒤집기는 1단 아래로 내려가지 않는다), 3단이 안 된 고르기는
-    /// 지우고, 가진 점수보다 많이 썼으면(손댄 기록) 판 전체를 처음으로 — 점수는 그대로 남으니 다시 찍으면 된다.
+    /// 지우고, 가진 점수보다 많이 썼으면 처음으로 — 점수는 그대로 남으니 다시 찍으면 된다. 처음으로 돌리는 차례(0161): 먼저 스킬·
+    /// 큰 기술만(연 패시브 칸은 남긴다 — 옛 기록의 칸은 핵·조각으로 열었고 그 둘은 지금도 점수라 칸만으로는 넘지 않는다. 0158의
+    /// "보스 첫 쓰러뜨림 +1"이 핵의 수로 바뀌어 개발판 기록이 한두 점 넘칠 수 있다), 그래도 넘으면(손댄 기록) 칸까지.
     pub fn sane(mut self, total: u32) -> Board {
+        self.cells = self.cells.sane();
         for (i, id) in IDS.into_iter().enumerate() {
             let e = Entry::Skill(id);
             self.rank[i] = self.rank[i].clamp(e.free(), e.max());
@@ -1219,21 +1289,41 @@ impl Board {
         for (i, u) in ULTS.into_iter().enumerate() {
             self.ult[i] = self.ult[i].clamp(Entry::Ult(u).free(), ULT_MAX_RANK);
         }
-        if self.spent() > total {
-            Board::default()
+        if self.spent() <= total {
+            return self;
+        }
+        let cells = Board {
+            cells: self.cells,
+            ..Board::default()
+        };
+        if cells.spent() <= total {
+            cells
         } else {
-            self
+            Board::default()
         }
     }
 
-    /// 모두 끝 단(개발 창 — 기록에 쓰지 않는다).
+    /// 모두 끝 단·패시브 칸 모두 열림(개발 창 — 기록에 쓰지 않는다).
     #[cfg(any(test, feature = "dev"))]
     pub fn maxed(pick: Pick) -> Board {
         Board {
             rank: [MAX_RANK; N],
             pick: [pick; N],
             ult: [ULT_MAX_RANK; NU],
+            cells: Tree::full(),
         }
+    }
+
+    /// 화면을 열 때 설 칸(0161, `ENTRIES`의 자리): 올릴 수 있는 화면(`edit`)이면 지금 살 수 있는 첫 칸, 없으면(또는 읽기 전용이면)
+    /// 배운 첫 스킬 — 처음의 둘이 늘 있다.
+    pub fn first_focus(&self, total: u32, edit: bool) -> usize {
+        let ready = ENTRIES
+            .iter()
+            .position(|&e| edit && self.offer(e, total) == Offer::Ready);
+        let learned = ENTRIES
+            .iter()
+            .position(|&e| matches!(e, Entry::Skill(id) if self.learned(id)));
+        ready.or(learned).unwrap_or(0)
     }
 
     /// 끼운 둘과 끼운 큰 기술을 월드에 넘길 꼴로.
@@ -1297,12 +1387,24 @@ mod tests {
         assert!(matches!(g.form, Form::Pull { stagger, .. } if stagger > 0.0));
     }
 
-    /// 0158 나: 기술 점수는 셈 — 총 레벨 + 처음 쓰러뜨린 엘리트 + 처음 이긴 보스, 남은 점수 = 그것 − 쓴 점수.
-    /// 처음부터 가진 단(처음의 둘·큰 기술 1단)은 쓴 점수가 아니다.
+    /// 0161: 기술 점수는 셈 — 총 레벨 + 처음 쓰러뜨린 엘리트 + 핵(보스마다 셋까지) + 종소리 조각, 남은 점수 = 그것 − 쓴 점수.
+    /// 화폐 "마디"(핵 + 조각)와 0158의 "보스 첫 쓰러뜨림 +1"을 이 하나가 대신한다. 처음부터 가진 단(처음의 둘·큰 기술 1단)은 쓴 점수가 아니다.
     #[test]
-    fn points_are_levels_plus_first_elites_plus_first_bosses_minus_spent() {
-        assert_eq!(points(0, 0, 0), 0);
-        assert_eq!(points(15, 6, 2), 23, "0158: everything in the game today");
+    fn points_are_levels_plus_first_elites_plus_cores_plus_shards_minus_spent() {
+        assert_eq!(points(0, 0, 0, 0), 0);
+        assert_eq!(points(15, 0, 0, 0), 15);
+        assert_eq!(points(0, 6, 0, 0), 6);
+        assert_eq!(
+            points(0, 0, 6, 0),
+            6,
+            "every core counts, not just the first"
+        );
+        assert_eq!(points(0, 0, 0, 3), 3);
+        assert_eq!(
+            points(15, 6, 6, 3),
+            30,
+            "0161: everything in the game today"
+        );
         let mut b = Board::default();
         assert_eq!(b.rank, [1, 1, 0, 0, 0, 0, 0, 0]);
         assert_eq!(
@@ -1310,13 +1412,191 @@ mod tests {
             ([1, 0, 0], 0),
             "the free ranks cost nothing"
         );
-        let total = points(3, 1, 1);
+        let total = points(3, 1, 1, 0);
         assert_eq!(b.left(total), 5);
         assert!(b.buy(Entry::Skill(Id::Gather), total));
         assert!(b.buy(Entry::Skill(Id::Whirl), total));
-        assert_eq!((b.spent(), b.left(total)), (2, 3));
+        assert!(b.buy(Entry::Cell(Cell::Catch), total));
+        assert_eq!((b.spent(), b.left(total)), (3, 2));
         // 가진 것보다 많이 쓴 판(손댄 기록)의 남은 점수는 0에서 멈춘다.
         assert_eq!(Board::maxed(Pick::A).left(3), 0);
+    }
+
+    /// 0161 "지금 내용으로 15 + 6 + 6 + 3 = 30": 레벨 셋 × 다섯 단, 스테이지 표의 엘리트 자리, 문지기 둘 × 핵 셋, 지도에 놓인 종소리 조각.
+    #[test]
+    fn todays_content_gives_thirty_points() {
+        use crate::progression::{CORE_CAP, LINES, MAX_RANK as LEVEL_RANKS};
+        let levels = LINES.len() as u32 * LEVEL_RANKS as u32;
+        let stages = crate::stage::STAGES;
+        let elites: u32 = stages.iter().map(|d| d.elites.len() as u32).sum();
+        let cores = stages.len() as u32 * CORE_CAP;
+        let shards: u32 = stages
+            .iter()
+            .map(|d| {
+                let (run, _) = crate::stage::StageRun::start(d);
+                run.finds
+                    .iter()
+                    .filter(|f| f.1 == crate::stage::Find::Shard)
+                    .count() as u32
+            })
+            .sum();
+        assert_eq!((levels, elites, cores, shards), (15, 6, 6, 3));
+        assert_eq!(points(levels, elites, cores, shards), 30);
+        // 다 익히는 값 63의 반이 조금 안 된다(0160 2절).
+        assert!(2 * 30 < Board::maxed(Pick::A).spent());
+    }
+
+    /// 0161: 패시브 칸은 판의 칸이다 — 칸마다 1점, 잠금은 줄(쓴 점수 합)뿐. 갈래의 앞 칸을 열지 않아도 같은 줄의 뒤 칸이 열리고,
+    /// 둘째 줄 칸은 쓴 점수 4, 셋째 줄 칸은 8부터 — 어디에 썼든 상관없다. 연 칸은 다시 못 산다.
+    #[test]
+    fn passive_cells_cost_one_point_and_are_gated_by_rows_not_by_order() {
+        let total = 30;
+        let mut b = Board::default();
+        let (second, third, fifth) = (
+            Entry::Cell(Cell::FlowingBeat),
+            Entry::Cell(Cell::ClosingBlow),
+            Entry::Cell(Cell::FinalMeasure),
+        );
+        assert_eq!((second.price(0), second.max(), second.free()), (1, 1, 0));
+        assert_eq!(b.offer(second, 0), Offer::Short);
+        // 갈래의 첫 칸(고른 호흡)을 열지 않고 둘째 칸부터.
+        assert_eq!(b.offer(second, total), Offer::Ready);
+        assert!(b.buy(second, total));
+        assert!(b.cells.has(Cell::FlowingBeat) && !b.cells.has(Cell::EvenBreath));
+        assert_eq!((b.spent(), b.rank(second)), (1, 1));
+        assert_eq!(b.offer(second, total), Offer::Full);
+        assert!(!b.buy(second, total), "an open cell is not bought twice");
+        // 둘째 줄: 쓴 점수 4부터(지금 1) — 스킬에 셋을 더 쓰면 열린다.
+        assert_eq!(b.offer(third, total), Offer::Locked(3));
+        assert_eq!(b.offer(fifth, total), Offer::Locked(7));
+        for _ in 0..3 {
+            assert!(b.buy(Entry::Skill(Id::Whirl), total));
+        }
+        assert_eq!(b.offer(third, total), Offer::Ready);
+        // 넷째 칸을 셋째 칸보다 먼저.
+        assert!(b.buy(Entry::Cell(Cell::GapBeat), total));
+        assert!(!b.cells.has(Cell::ClosingBlow));
+        // 패시브에 쓴 점수도 줄을 연다: 칸 셋을 더 열면 쓴 점수 8 — 셋째 줄.
+        for c in [Cell::Catch, Cell::TurnItBack, Cell::Sidestep] {
+            assert_eq!(b.offer(fifth, total), Offer::Locked(8 - b.spent()));
+            assert!(b.buy(Entry::Cell(c), total));
+        }
+        assert_eq!(b.spent(), 8);
+        assert!(b.buy(fifth, total));
+        assert!(b.cells.has(Cell::FinalMeasure));
+        // 점수가 떨어지면 열린 줄의 칸도 못 연다.
+        assert_eq!(
+            b.offer(Entry::Cell(Cell::EvenBreath), b.spent()),
+            Offer::Short
+        );
+        assert!(b.can_buy(total) && !b.can_buy(b.spent()));
+    }
+
+    /// 0161 "갈래와 줄"의 표 그대로: 줄마다 갈래마다 선 칸(스킬·큰 기술·패시브). 판의 칸 순서는 줄 → 갈래 → 스킬 먼저.
+    #[test]
+    fn the_board_stands_as_the_0161_table_says() {
+        use Branch::{Beat, Footing, Riposte};
+        use Entry::{Cell as C, Skill as S, Ult as U};
+        let table: [(usize, Branch, &[Entry]); 9] = [
+            (
+                0,
+                Beat,
+                &[
+                    S(Id::Whirl),
+                    S(Id::Cut),
+                    C(Cell::EvenBreath),
+                    C(Cell::FlowingBeat),
+                ],
+            ),
+            (
+                0,
+                Riposte,
+                &[S(Id::Brace), C(Cell::Catch), C(Cell::TurnItBack)],
+            ),
+            (
+                0,
+                Footing,
+                &[S(Id::Gather), C(Cell::UnbrokenStride), C(Cell::Sidestep)],
+            ),
+            (
+                1,
+                Beat,
+                &[S(Id::Quake), C(Cell::ClosingBlow), C(Cell::GapBeat)],
+            ),
+            (
+                1,
+                Riposte,
+                &[S(Id::Echo), C(Cell::GatheredRiposte), C(Cell::OpenBreach)],
+            ),
+            (
+                1,
+                Footing,
+                &[
+                    S(Id::Throw),
+                    S(Id::Embers),
+                    C(Cell::TiltingGround),
+                    C(Cell::LandingBeat),
+                ],
+            ),
+            (2, Beat, &[U(Ult::Flurry), C(Cell::FinalMeasure)]),
+            (2, Riposte, &[U(Ult::Line), C(Cell::OneWhoStands)]),
+            (2, Footing, &[U(Ult::Upend), C(Cell::PathOpeningStep)]),
+        ];
+        let flat: Vec<Entry> = table
+            .iter()
+            .flat_map(|(_, _, es)| es.iter().copied())
+            .collect();
+        assert_eq!(flat, ENTRIES, "ENTRIES is the table read row by row");
+        for (row, branch, es) in table {
+            for &e in es {
+                assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
+            }
+        }
+        assert_eq!(NE, 26);
+        for (i, e) in ENTRIES.iter().enumerate() {
+            assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
+        }
+        // 모든 스킬·큰 기술·패시브 칸이 판에 있다.
+        for id in IDS {
+            assert!(ENTRIES.contains(&S(id)), "{id:?}");
+        }
+        for u in ULTS {
+            assert!(ENTRIES.contains(&U(u)), "{u:?}");
+        }
+        for row in &crate::progression::TREE {
+            for d in row {
+                assert!(ENTRIES.contains(&C(d.cell)), "{:?}", d.cell);
+            }
+        }
+    }
+
+    /// 화면을 열 때 설 칸(0161): 화로에서는 지금 살 수 있는 첫 칸, 살 것이 없거나 읽기 전용(멈춤)이면 배운 첫 스킬.
+    #[test]
+    fn the_screen_opens_on_the_first_buyable_cell_or_the_first_learned_skill() {
+        let b = Board::default();
+        let at = |e: Entry| ENTRIES.iter().position(|x| *x == e).unwrap();
+        assert_eq!(b.first_focus(5, true), at(Entry::Skill(Id::Whirl)));
+        assert_eq!(
+            b.first_focus(0, true),
+            at(Entry::Skill(Id::Whirl)),
+            "nothing to buy"
+        );
+        assert_eq!(
+            b.first_focus(5, false),
+            at(Entry::Skill(Id::Whirl)),
+            "view only"
+        );
+        // 첫 칸(휘돌이)을 다 올렸으면 그다음 살 수 있는 칸.
+        let mut full = Board::default();
+        full.rank[Id::Whirl.index()] = MAX_RANK;
+        assert_eq!(full.first_focus(9, true), at(Entry::Skill(Id::Cut)));
+        assert_eq!(
+            full.first_focus(4, true),
+            at(Entry::Skill(Id::Whirl)),
+            "all spent"
+        );
+        // 다 익힌 판: 살 것이 없다 — 배운 첫 스킬.
+        assert_eq!(Board::maxed(Pick::A).first_focus(99, true), 0);
     }
 
     /// 0158 다: 단은 차례로 하나씩·단마다 1점, 다섯에서 멈춘다. 점수가 떨어지면 못 산다. 3단을 사면 고르기는 ㄱ.
@@ -1389,17 +1669,23 @@ mod tests {
         assert_eq!(b.offer(ult, total), Offer::Ready);
         assert!(b.buy(ult, total) && b.buy(ult, total));
         assert_eq!((b.ult[0], b.offer(ult, total)), (ULT_MAX_RANK, Offer::Full));
-        // 다 익히는 데 드는 점수(0158 라): 스킬 여덟 × 5 − 처음 둘 = 38, 큰 기술 셋 × 4 − 쟁반 뒤집기의 배움 2 = 10 — 48.
-        assert_eq!(Board::maxed(Pick::A).spent(), 48);
-        // 판의 줄 순서: 첫 줄 넷 · 둘째 줄 넷 · 큰 기술 셋 — 줄 번호가 내려가지 않는다, 모든 칸이 한 번씩.
+        // 다 익히는 데 드는 점수(0158 라 → 0161): 스킬 여덟 × 5 − 처음 둘 = 38, 큰 기술 셋 × 4 − 쟁반 뒤집기의 배움 2 = 10,
+        // 패시브 열다섯 × 1 = 15 — 63.
+        let all = Board::maxed(Pick::A);
+        let paid = |pred: fn(&Entry) -> bool| -> u32 {
+            ENTRIES
+                .iter()
+                .filter(|e| pred(e))
+                .map(|&e| e.paid(all.rank(e)))
+                .sum()
+        };
+        assert_eq!(paid(|e| matches!(e, Entry::Skill(_))), 38);
+        assert_eq!(paid(|e| matches!(e, Entry::Ult(_))), 10);
+        assert_eq!(paid(|e| matches!(e, Entry::Cell(_))), 15);
+        assert_eq!(all.spent(), 63);
+        // 판의 칸 순서: 줄 번호가 내려가지 않는다.
         let rows: Vec<usize> = ENTRIES.iter().map(|e| e.row()).collect();
-        assert_eq!(rows, [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2]);
-        for id in IDS {
-            assert!(ENTRIES.contains(&Entry::Skill(id)), "{id:?}");
-        }
-        for u in ULTS {
-            assert!(ENTRIES.contains(&Entry::Ult(u)), "{u:?}");
-        }
+        assert!(rows.windows(2).all(|w| w[0] <= w[1]), "{rows:?}");
     }
 
     /// 0158 나: 되돌리기는 쓴 점수를 모두 돌려준다 — 처음의 둘만 1단·큰 기술 1단, 고르기는 지워진다. 값은 `30 + 5 × 쓴 점수`.
@@ -1416,10 +1702,15 @@ mod tests {
         assert!(b.buy(Entry::Skill(Id::Quake), total) && b.buy(Entry::Skill(Id::Gather), total));
         assert_eq!(b.spent(), 6);
         assert_eq!(b.respec_cost(), 30 + 5 * 6);
+        // 0161: 패시브 칸도 쓴 점수다 — 값에 들어가고, 되돌리면 같이 닫힌다.
+        assert!(b.buy(Entry::Cell(Cell::Catch), total) && b.buy(Entry::Cell(Cell::GapBeat), total));
+        assert_eq!((b.spent(), b.respec_cost()), (8, 30 + 5 * 8));
         let mut worn = [Id::Quake, Id::Whirl];
         let mut great = Ult::Upend;
         b.respec(&mut worn, &mut great);
         assert_eq!(b, Board::default());
+        assert_eq!(b.cells.count(), 0, "a respec closes every passive cell");
+        assert!(!b.cells.has(Cell::Catch) && !b.cells.has(Cell::GapBeat));
         assert_eq!((b.spent(), b.left(total)), (0, total));
         assert_eq!(b.pick, [Pick::A; N]);
         assert_eq!(worn, START, "Quake is no longer learned");
@@ -1742,6 +2033,7 @@ mod tests {
             rank: [0, 9, 2, 3, 0, 0, 7, 0],
             pick: [Pick::B; N],
             ult: [0, 9, 0],
+            cells: Tree::default(),
         };
         let b = odd.sane(40);
         assert_eq!(b.rank, [1, MAX_RANK, 2, 3, 0, 0, MAX_RANK, 0]);
@@ -1762,6 +2054,30 @@ mod tests {
         assert_eq!(odd.sane(b.spent()), b, "exactly enough points");
         assert_eq!(odd.sane(b.spent() - 1), Board::default(), "one short");
         assert_eq!(Board::default().sane(0), Board::default());
+        // 0161: 넘치면 먼저 스킬·큰 기술만 처음으로 — 연 패시브 칸은 남는다(칸만으로 점수 안이면). 칸만으로도 넘으면 칸까지.
+        let cells = Tree::with(&[Cell::EvenBreath, Cell::Catch, Cell::LandingBeat]);
+        let over = Board { cells, ..odd };
+        assert_eq!(over.sane(b.spent() + 3).cells, cells, "enough for all");
+        let kept = over.sane(b.spent() + 2);
+        assert_eq!(
+            kept,
+            Board {
+                cells,
+                ..Board::default()
+            },
+            "two short: the skills reset, the cells stay"
+        );
+        assert_eq!(kept.spent(), 3);
+        assert_eq!(over.sane(2), Board::default(), "not even the cells fit");
+        // 옛 꼴로 적힌 칸·범위 밖 비트는 한 꼴로 바로잡힌다.
+        let legacy = Board {
+            cells: Tree {
+                open: [2, 0, 0],
+                cells: [0x80, 0, 0],
+            },
+            ..Board::default()
+        };
+        assert_eq!(legacy.sane(9).cells, Tree::from_counts([2, 0, 0]));
     }
 
     /// 월드에 넘기는 끼운 둘: 그 스킬의 단·고르기 + 큰 기술의 단. 끼울 수 있는 것은 배운 스킬뿐.

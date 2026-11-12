@@ -1126,35 +1126,14 @@ pub fn icon_px(r: f32) -> f32 {
 
 /// 픽토그램 그리기: 어두운 한 칸 테(밝은 바닥·불빛 위에서도 읽히게, KB hud-readability) 위에 밝은 몸. `tint` = 몸의 빛깔.
 pub fn icon(k: Kind, c: Vec2, r: f32, dim: f32, tint: Color) {
-    let px = icon_px(r);
-    let size = ICON_N as f32 * px;
-    let (x0, y0) = ((c.x - size / 2.0).round(), (c.y - size / 2.0).round());
+    icon_at(k, c, icon_px(r), dim, tint);
+}
+
+/// 한 칸의 크기 `px`(화면 px, 정수)를 직접 주는 픽토그램 — 메뉴의 칸 그림(기술 화면, 0161)이 제 칸에 맞춰 쓴다.
+pub fn icon_at(k: Kind, c: Vec2, px: f32, dim: f32, tint: Color) {
     let body = Color::new(tint.r, tint.g, tint.b, 0.95 * dim);
     let edge = Color::new(INK.r, INK.g, INK.b, 0.7 * dim);
-    let n = ICON_N as i32;
-    // 테: 칠한 칸의 이웃 여덟 칸 가운데 비어 있는 칸을 한 번씩만(겹쳐 그리면 반투명이 얼룩진다).
-    for y in -1..=n {
-        for x in -1..=n {
-            let at = |dx: i32, dy: i32| {
-                let (u, v) = (x + dx, y + dy);
-                u >= 0 && v >= 0 && icon_cell(k, u as usize, v as usize)
-            };
-            if at(0, 0) {
-                continue;
-            }
-            let near = (-1..=1).any(|dy| (-1..=1).any(|dx| at(dx, dy)));
-            if near {
-                draw_rectangle(x0 + x as f32 * px, y0 + y as f32 * px, px, px, edge);
-            }
-        }
-    }
-    for y in 0..ICON_N {
-        for x in 0..ICON_N {
-            if icon_cell(k, x, y) {
-                draw_rectangle(x0 + x as f32 * px, y0 + y as f32 * px, px, px, body);
-            }
-        }
-    }
+    crate::icons::draw(|x, y| icon_cell(k, x, y), c, px, body, edge);
 }
 
 #[cfg(test)]

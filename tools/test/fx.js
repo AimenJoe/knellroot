@@ -55,17 +55,25 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     await p.close();
   }
   if (want('skills')) {
-    // 판마다 새 페이지(떼가 몸을 덮기 전에 낸다): [이름, 칸 1까지 오른쪽, 큰 기술까지 오른쪽, 기다림 ms, 누름, 찍을 수].
-    // 칸 1의 차례는 `skills::IDS`(칸 2의 가로지르기는 건너뛴다) — 가로지르기는 칸 2(E)로. 큰 기술은 Q+E.
-    const RUNS = [['whirl', 0, 0, 1500, 'Q', 22], ['cut', 0, 0, 1100, 'E', 26], ['gather', 1, 0, 900, 'Q', 26],
-      ['quake', 2, 0, 1000, 'Q', 26], ['brace', 3, 0, 1300, 'Q', 40], ['echo', 4, 0, 1300, 'Q', 16],
-      ['throw', 5, 0, 900, 'Q', 30], ['embers', 6, 0, 1300, 'Q', 50],
-      ['upend', 0, 0, 1500, 'ult', 30], ['flurry', 0, 1, 1300, 'ult', 14], ['line', 0, 2, 900, 'ult', 30]];
-    const pick = async (p, n) => { for (let i = 0; i < n; i++) { await p.keyboard.press('ArrowRight'); await p.waitForTimeout(90); } };
+    // 판마다 새 페이지(떼가 몸을 덮기 전에 낸다): [이름, 끼울 스킬의 자리(줄, 칸) — 없으면 그대로, 끼울 큰 기술의 칸 — 없으면 그대로, 기다림 ms, 누름, 찍을 수].
+    // 기술 화면(0161)의 자리: 스킬은 보이는 줄 0(휘돌이·가로지르기·버팀·끌어모으기)·줄 2(땅울림·되울림·던지기·잔불 흩기), 큰 기술은 줄 4의
+    // 칸 0·2·4(몰아치기·한 줄기·쟁반 뒤집기). 칸에서 확인 = 목록의 첫 줄 "칸 1에 끼우기"(큰 기술은 "끼우기"). 처음 끼워진 것은 휘돌이(Q)·
+    // 가로지르기(E)·쟁반 뒤집기라 그 셋은 건드리지 않는다. 큰 기술은 Q+E.
+    const RUNS = [['whirl', null, null, 1500, 'Q', 22], ['cut', null, null, 1100, 'E', 26], ['gather', [0, 3], null, 900, 'Q', 26],
+      ['quake', [2, 0], null, 1000, 'Q', 26], ['brace', [0, 2], null, 1300, 'Q', 40], ['echo', [2, 1], null, 1300, 'Q', 16],
+      ['throw', [2, 2], null, 900, 'Q', 30], ['embers', [2, 3], null, 1300, 'Q', 50],
+      ['upend', null, null, 1500, 'ult', 30], ['flurry', null, 0, 1300, 'ult', 14], ['line', null, 2, 900, 'ult', 30]];
+    const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.waitForTimeout(90); } };
+    // 왼쪽 위(가장자리에서 돌지 않는다) → 줄 → 그 줄의 왼쪽 끝 → 칸 → 확인(목록) → 확인(첫 줄).
+    const wear = async (p, row, col) => {
+      await pick(p, 6, 'ArrowLeft'); await pick(p, 6, 'ArrowUp'); await pick(p, row, 'ArrowDown'); await pick(p, 6, 'ArrowLeft'); await pick(p, col);
+      await p.keyboard.press('Enter'); await p.waitForTimeout(250); await p.keyboard.press('Enter'); await p.waitForTimeout(250);
+    };
     for (const [name, slot, ult, wait, key, n] of RUNS) {
       p = await open(0, 3); await p.waitForTimeout(300); // 도구 탭 넷째 줄 = 기술 다 올리기(켬)
       await p.keyboard.press('ArrowUp'); await p.waitForTimeout(90); await p.keyboard.press('Enter'); await p.waitForTimeout(300); // 기술 끼우기
-      await pick(p, slot); await p.keyboard.press('ArrowDown'); await p.keyboard.press('ArrowDown'); await pick(p, ult);
+      if (slot) await wear(p, slot[0], slot[1]);
+      if (ult !== null) await wear(p, 4, ult);
       if (name === 'whirl' || name === 'line') await p.screenshot({ path: path.join(OUT, `sk-window-${name}.png`) });
       await p.keyboard.press('Escape'); await p.waitForTimeout(300);
       await pick(p, 2); await p.waitForTimeout(200); for (let i = 0; i < 9; i++) await p.keyboard.press('ArrowDown');

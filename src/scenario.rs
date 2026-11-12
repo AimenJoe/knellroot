@@ -307,10 +307,7 @@ mod tests {
     #[test]
     fn every_scenario_survives_a_full_tree() {
         let t = Tuning::default();
-        let full = crate::progression::Tree {
-            open: [crate::progression::DEPTH; 3],
-            pin: None,
-        };
+        let full = crate::progression::Tree::full();
         for e in LIST.iter() {
             for id in [
                 crate::weapons::Id::Sword,

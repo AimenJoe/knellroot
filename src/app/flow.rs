@@ -26,18 +26,18 @@ pub enum Scene {
     Hearth,
     /// 레벨(0104): 생명·기력·힘을 잔불로 한 단씩. 화로에서 연다 — 닫으면 화로.
     Level,
-    /// 기술 나무(0106): 화로에서 열면 칸을 연다(`view = false`), 멈춤에서 열면 읽기·목표 핀만(`view = true`). 닫으면 연 곳.
-    Tree {
-        view: bool,
-    },
     /// 도감(0130 C5): 탭 둘(적 · 장신구), 왼쪽 목록 · 오른쪽 그림과 관찰. 멈춤에서 연다 — 닫으면 멈춤.
     Codex {
         tab: u8,
     },
-    /// 기술(0151 S0): 스킬 칸 둘에 가진 스킬을 끼운다. 멈춤에서 연다 — 닫으면 멈춤.
-    Skills,
-    /// 기술 판(0158 G0): 기술 점수로 스킬을 배우고 단을 올린다 · 3단 고르기 바꾸기 · 되돌리기. 화로에서 연다 — 닫으면 화로.
-    SkillBoard,
+    /// 기술(0161 — 옛 나무 창·기술 판·멈춤의 기술 창을 하나로): 갈래 셋 × 줄 셋의 칸 그림 + 고른 칸의 상세. 화로에서 열면
+    /// 올리기·고르기 바꾸기·되돌리기까지(`edit`), 멈춤에서 열면 읽기와 끼우기만. 닫으면 연 곳.
+    Skills {
+        edit: bool,
+    },
+    /// 기술 화면에서 고른 칸에 할 수 있는 일의 작은 목록(0161): 올리기·열기 / 칸에 끼우기 / 고르기 바꾸기 — 되는 줄만.
+    /// 기술 화면 위에 얹는다(칸은 아래 칸의 커서) — 닫으면 그 칸으로.
+    SkillAct,
     /// 가게(0064 M4): 잔불로 장신구·등잔 기름을 산다. 화로에서 연다(0104 전엔 쉬면 바로 열렸다) — 닫으면 화로.
     Shop,
     /// 묻는 창(KB `controller-layout-and-remapping` "되돌릴 수 없는 메뉴 항목은 한 번 묻는다", nail 0274·가게 묻는 창):
@@ -82,16 +82,13 @@ impl Scene {
             Scene::Play | Scene::Ending { .. } => Layer::Game,
             #[cfg(feature = "dev")]
             Scene::Sandbox => Layer::Game,
-            Scene::Pause
-            | Scene::Equip
-            | Scene::EquipPick { .. }
-            | Scene::Settings
-            | Scene::Skills => Layer::Window { hud: true },
+            Scene::Pause | Scene::Equip | Scene::EquipPick { .. } | Scene::Settings => {
+                Layer::Window { hud: true }
+            }
             // 가게는 잔불을 제가 보인다(KB hud-readability: 창이 같은 정보면 밑 HUD를 그리지 않는다).
             Scene::Hearth
             | Scene::Level
-            | Scene::SkillBoard
-            | Scene::Tree { .. }
+            | Scene::Skills { .. }
             | Scene::Codex { .. }
             | Scene::Shop
             | Scene::Result { .. }
@@ -101,7 +98,7 @@ impl Scene {
             Scene::Dev { .. } => Layer::Window { hud: false },
             #[cfg(feature = "dev")]
             Scene::Lab | Scene::LabGroup { .. } => Layer::Window { hud: true },
-            Scene::Ask(_) => Layer::Modal,
+            Scene::Ask(_) | Scene::SkillAct => Layer::Modal,
         }
     }
 
@@ -160,11 +157,9 @@ pub enum Ask {
     Buy(usize),
     /// 화로 레벨(0104): 이 줄(`progression::LINES`의 자리)을 한 단 올린다.
     Level(u8),
-    /// 나무(0106): 이 갈래의 다음 칸을 연다(점수 1).
-    Tree(u8),
-    /// 기술 판(0158): 이 칸(`skills::ENTRIES`의 자리)의 다음 단을 산다(기술 점수 1).
+    /// 기술(0158 → 0161): 이 칸(`skills::ENTRIES`의 자리 — 스킬·큰 기술·패시브)의 다음 단을 산다·칸을 연다(기술 점수).
     Skill(u8),
-    /// 기술 판: 잔불을 내고 쓴 점수를 모두 돌려받는다.
+    /// 기술: 잔불을 내고 쓴 점수를 모두 돌려받는다(패시브 칸까지).
     Respec,
 }
 
@@ -172,7 +167,7 @@ pub enum Ask {
 /// 되돌리기(0158)는 찍은 것을 버리는 일이라 취소에서.
 pub fn ask_default(k: Ask) -> usize {
     match k {
-        Ask::Buy(_) | Ask::Level(_) | Ask::Tree(_) | Ask::Skill(_) => 0,
+        Ask::Buy(_) | Ask::Level(_) | Ask::Skill(_) => 0,
         Ask::Restart | Ask::ToTitle | Ask::Respec => 1,
     }
 }
@@ -185,9 +180,7 @@ pub fn answer(k: Ask, yes: bool) -> (Go, bool) {
     match k {
         Ask::Restart => (Go::Root(Scene::Play), true),
         Ask::ToTitle => (Go::Root(Scene::Title), true),
-        Ask::Buy(_) | Ask::Level(_) | Ask::Tree(_) | Ask::Skill(_) | Ask::Respec => {
-            (Go::Back, false)
-        }
+        Ask::Buy(_) | Ask::Level(_) | Ask::Skill(_) | Ask::Respec => (Go::Back, false),
     }
 }
 
@@ -280,11 +273,9 @@ pub enum PauseItem {
     Resume,
     /// 장비(0064 M3, 0051의 무기 줄): 좌우 = 다음 무기(전처럼), 확인 = 장비 창(무기 + 장신구 세 칸).
     Weapon,
-    /// 기술 나무(0106) — 읽기·목표 핀만(칸은 쉼터 화로에서 연다).
-    Tree,
-    /// 도감(0130) — 나무 다음 줄.
+    /// 도감(0130) — 장비 다음 줄.
     Codex,
-    /// 기술(0151) — 도감 다음 줄.
+    /// 기술(0151 → 0161: 나무와 하나) — 도감 다음 줄. 읽기와 끼우기만(올리는 것은 쉼터 화로에서).
     Skills,
     Settings,
     /// 개발 메뉴(0075 → 0090) — 개발판에만, 설정 바로 아래 줄(연구소가 있던 자리 — 연구소는 개발 창 도구 탭·타이틀에서, 사장 2026-11-07).
@@ -294,12 +285,12 @@ pub enum PauseItem {
     ToTitle,
 }
 
-/// 멈춤 창의 줄: 계속 · 장비 · 나무(0106) · 도감(0130) · 설정 · [개발] · 처음부터 · 타이틀로 — 대괄호는 개발판에만(0090).
+/// 멈춤 창의 줄: 계속 · 장비 · 도감(0130) · 기술(0161 — "나무" 줄은 여기로 들어갔다) · 설정 · [개발] · 처음부터 · 타이틀로 —
+/// 대괄호는 개발판에만(0090).
 pub fn pause_items() -> Vec<PauseItem> {
     let mut v = vec![
         PauseItem::Resume,
         PauseItem::Weapon,
-        PauseItem::Tree,
         PauseItem::Codex,
         PauseItem::Skills,
         PauseItem::Settings,
@@ -391,10 +382,9 @@ pub fn back(scene: Scene) -> Go {
         | Scene::EquipPick { .. }
         | Scene::Hearth
         | Scene::Level
-        | Scene::SkillBoard
-        | Scene::Tree { .. }
+        | Scene::Skills { .. }
+        | Scene::SkillAct
         | Scene::Codex { .. }
-        | Scene::Skills
         | Scene::Shop
         | Scene::Ask(_)
         | Scene::Controls
@@ -422,9 +412,8 @@ pub fn choose_pause(item: PauseItem) -> (Go, bool) {
     match item {
         PauseItem::Resume => (Go::Back, false),
         PauseItem::Weapon => (Go::Open(Scene::Equip), false),
-        PauseItem::Tree => (Go::Open(Scene::Tree { view: true }), false),
         PauseItem::Codex => (Go::Open(Scene::Codex { tab: 0 }), false),
-        PauseItem::Skills => (Go::Open(Scene::Skills), false),
+        PauseItem::Skills => (Go::Open(Scene::Skills { edit: false }), false),
         PauseItem::Settings => (Go::Open(Scene::Settings), false),
         PauseItem::Restart => (Go::Open(Scene::Ask(Ask::Restart)), false),
         PauseItem::ToTitle => (Go::Open(Scene::Ask(Ask::ToTitle)), false),
@@ -496,27 +485,39 @@ mod tests {
         for sc in [
             Scene::Codex { tab: 0 },
             Scene::Codex { tab: 1 },
-            Scene::Skills,
+            Scene::Skills { edit: false },
+            Scene::Skills { edit: true },
+            Scene::SkillAct,
         ] {
             assert!(sc.is_menu(), "{sc:?} takes taps");
             assert_eq!(back(sc), Go::Back);
         }
         // 싸움 화면만 메뉴가 아니다.
         assert!(!Scene::Play.is_menu());
-        for sc in [Scene::Hearth, Scene::Level, Scene::SkillBoard, Scene::Shop] {
+        for sc in [
+            Scene::Hearth,
+            Scene::Level,
+            Scene::Skills { edit: true },
+            Scene::Shop,
+        ] {
             assert_eq!(back(sc), Go::Back, "{sc:?} closes to where it opened");
             assert!(sc.is_menu());
         }
-        // 0158: 기술 판 — 단을 사는 것은 "올리기"에서, 되돌리기는 "취소"에서. 답하면 판으로 돌아온다.
+        // 0158 → 0161: 기술 화면 — 단을 사는 것·칸을 여는 것은 "올리기"에서, 되돌리기는 "취소"에서. 답하면 화면으로 돌아온다.
         assert_eq!(ask_default(Ask::Skill(0)), 0);
         assert_eq!(ask_default(Ask::Respec), 1);
         assert_eq!(answer(Ask::Skill(3), true), (Go::Back, false));
         assert_eq!(answer(Ask::Respec, true), (Go::Back, false));
-        assert_eq!(
-            Scene::SkillBoard.layer(),
-            Layer::Window { hud: false },
-            "shows its own points and embers"
-        );
+        for edit in [false, true] {
+            assert_eq!(
+                Scene::Skills { edit }.layer(),
+                Layer::Window { hud: false },
+                "shows its own points and embers"
+            );
+        }
+        // 칸의 동작 목록은 기술 화면 위에 얹는 작은 창(아래 칸을 그대로 깐다).
+        assert_eq!(Scene::SkillAct.layer(), Layer::Modal);
+        assert_eq!(focus(Scene::SkillAct), 0, "the primary row");
         for k in [
             Ask::Restart,
             Ask::ToTitle,
@@ -634,22 +635,18 @@ mod tests {
         let p = pause_items();
         let i = p.iter().position(|x| *x == PauseItem::Settings).unwrap();
         assert_eq!(p.get(i + 1), Some(&PauseItem::Dev));
-        // 계속 · 장비 · 나무(0106) · 도감(0130) · 기술(0151) · 설정 · 개발 · 처음부터 · 타이틀로(헤드리스 스크립트가 이 차례로 간다).
-        assert_eq!(p.len(), 9);
-        assert_eq!(p[4], PauseItem::Skills);
+        // 계속 · 장비 · 도감(0130) · 기술(0161 — 나무 줄이 들어갔다) · 설정 · 개발 · 처음부터 · 타이틀로(헤드리스 스크립트가 이 차례로 간다).
+        assert_eq!(p.len(), 8);
+        assert_eq!(p[3], PauseItem::Skills);
+        // 멈춤에서 여는 기술 화면은 읽기·끼우기만(올리는 것은 쉼터 화로).
         assert_eq!(
             choose_pause(PauseItem::Skills),
-            (Go::Open(Scene::Skills), false)
+            (Go::Open(Scene::Skills { edit: false }), false)
         );
-        assert_eq!(p[2], PauseItem::Tree);
-        assert_eq!(p[3], PauseItem::Codex);
+        assert_eq!(p[2], PauseItem::Codex);
         assert_eq!(
             choose_pause(PauseItem::Codex),
             (Go::Open(Scene::Codex { tab: 0 }), false)
-        );
-        assert_eq!(
-            choose_pause(PauseItem::Tree),
-            (Go::Open(Scene::Tree { view: true }), false)
         );
         for fs in [false, true] {
             for mouse in [false, true] {

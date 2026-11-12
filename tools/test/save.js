@@ -77,7 +77,7 @@ async function main() {
   r = await record();
   console.log('레벨을 올린 뒤 기록:', JSON.stringify(r));
   if (!/lv\.life=1\n/.test(r) || !/embers=65\n/.test(r)) fail('raising Life must spend 50 embers and keep lv.life=1');
-  // 레벨 창을 닫으면 화로(연 줄) → 셋째 줄 가게(레벨·나무·가게, 0106) → 첫 줄(잔불 주머니 60, 0117) 사기.
+  // 레벨 창을 닫으면 화로(연 줄) → 셋째 줄 가게(레벨·기술·가게, 0161) → 첫 줄(잔불 주머니 60, 0117) 사기.
   await press('Escape'); await page.waitForTimeout(300);
   await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
   await shot('save-2a-shop');
@@ -105,10 +105,10 @@ async function main() {
   await press('Escape'); await page.waitForTimeout(200);
   await press('Escape'); await page.waitForTimeout(300);
 
-  // 4) 멈춤 → 처음부터(여덟째 줄: 계속·장비·나무(0106)·도감(0130)·기술(0151)·설정·개발(개발판, 0090)·처음부터).
+  // 4) 멈춤 → 처음부터(일곱째 줄: 계속·장비·도감(0130)·기술(0151·0161)·설정·개발(개발판, 0090)·처음부터).
   await press('Escape');
   await page.waitForTimeout(200);
-  await press('ArrowDown', 7);
+  await press('ArrowDown', 6);
   await press('Enter');
   await page.waitForTimeout(300);
   // 처음부터는 묻는 창(커서는 "취소" — 그냥 확인하면 아무 일 없다), 위로 한 번 = "처음부터".
@@ -121,11 +121,11 @@ async function main() {
   if (!/embers=5\n/.test(r) || !/clears=1/.test(r)) fail('restart must keep what stays');
   if (!/future\.key=keep/.test(r)) fail('unknown keys must survive a write');
 
-  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 → 아홉째 — 나무(0106)·도감(0130)·기술(0151)·개발 줄(0090)이 끼어 → 묻는 창 위로 한 번).
+  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 → 여덟째 — 도감(0130)·기술(0151)·개발 줄(0090)이 끼어 → 묻는 창 위로 한 번).
   const slotCell = () => page.evaluate(() => localStorage.getItem('knell.slot'));
   const toTitle = async () => {
     await press('Escape'); await page.waitForTimeout(200);
-    await press('ArrowDown', 8); await press('Enter'); await page.waitForTimeout(300);
+    await press('ArrowDown', 7); await press('Enter'); await page.waitForTimeout(300);
     await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(600);
   };
   await toTitle();

@@ -70,7 +70,7 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     }
     prog.owned = b.worn.clone();
     prog.finds = b.finds.clone();
-    prog.tree = b.tree;
+    prog.board.cells = b.tree;
     w.apply_stats(prog.stats(), true);
     w.tree = b.tree;
     let boss = w.spawn(kind, vec3(0.0, 0.0, -7.0));
@@ -342,10 +342,7 @@ pub fn summary(kind: Kind, b: &Build, p: f32, runs: u64, t: &Tuning) -> Sum {
 
 pub fn builds() -> Vec<Build> {
     use crate::weapons::Id as W;
-    let tree = |r: u8| Tree {
-        open: [0, r, 0],
-        pin: None,
-    };
+    let tree = |r: u8| Tree::from_counts([0, r, 0]);
     let finds = || {
         vec![
             "sanctuary.lamp.1".to_string(),
@@ -361,7 +358,7 @@ pub fn builds() -> Vec<Build> {
             tree: tree(0),
             weapon: W::Sword,
         },
-        // 첫 도착(0127): 잔불 ≈ 280 = 레벨 셋, 성소 탑의 귀 + 문지기의 손 + 마을 상자의 꿰맨 천, 등잔·한 모금, 마디 셋.
+        // 첫 도착(0127): 잔불 ≈ 280 = 레벨 셋, 성소 탑의 귀 + 문지기의 손 + 마을 상자의 꿰맨 천, 등잔·한 모금, 패시브 칸 둘.
         Build {
             name: "B first arrival (Lv3 life1/might2, Ear+Hand+Cloth, lamp+sip, Riposte2)",
             level: Level {
@@ -374,7 +371,7 @@ pub fn builds() -> Vec<Build> {
             tree: tree(2),
             weapon: W::Sword,
         },
-        // 둘째 판 이후(문지기 핵 둘·마디 넷): 힘 3단(강타 +1).
+        // 둘째 판 이후(문지기 핵 둘·패시브 칸 넷): 힘 3단(강타 +1).
         Build {
             name: "C later run (Lv5 life2/might3, Ear+Hand+Cloth, lamp+sip, Riposte4)",
             level: Level {

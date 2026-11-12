@@ -48,9 +48,9 @@ pub(super) enum DevStart {
     Scenario(Scenario),
     /// 연구소(메뉴의 설정 아래 줄과 같은 창, 0079).
     Lab,
-    /// 기술 창(0151 — 멈춤의 기술 줄과 같은 창): 아레나에는 멈춤이 없어 여기서 끼운다.
+    /// 기술 화면(0151 → 0161 — 멈춤의 기술 줄과 같은 화면, 읽기·끼우기): 아레나에는 멈춤이 없어 여기서 끼운다.
     Skills,
-    /// 기술 판을 모두 끝 단으로(0158 — 켬/끔): 개발 판·아레나에서 단과 고르기를 시험한다. 기록에 쓰지 않는다.
+    /// 기술 판을 모두 끝 단으로·패시브 칸을 모두 열림으로(0158·0161 — 켬/끔): 개발 판·아레나에서 단과 고르기를 시험한다. 기록에 쓰지 않는다.
     SkillsMax,
     /// 끝 단으로 올린 판의 3단 고르기를 모두 뒤집는다(ㄱ ↔ ㄴ). 기록에 쓰지 않는다.
     SkillsFlip,
@@ -253,16 +253,16 @@ impl App {
                 self.world = scenario::build(sc);
                 self.fx.clear();
                 self.world.set_weapon(self.weapon);
-                self.world.set_skills(self.loadout());
+                self.apply_board();
                 self.cam = Camera::new(self.world.player.pos, &self.t);
                 self.go(Go::Root(Scene::Sandbox));
             }
             DevStart::Lab => self.go(Go::Open(Scene::Lab)),
-            DevStart::Skills => self.go(Go::Open(Scene::Skills)),
+            DevStart::Skills => self.open_skills(false),
             // 기술 판(0158): 메모리의 덮어쓰기만 바꾼다 — 기록(`progress`)과 슬롯은 건드리지 않는다. 창은 그대로(설명 줄이 상태를 보인다).
             DevStart::SkillsMax | DevStart::SkillsFlip => {
                 self.dev_board = dev_board_step(self.dev_board, e);
-                self.world.set_skills(self.loadout());
+                self.apply_board();
                 self.snd(crate::sfx::Id::Buy);
             }
         }

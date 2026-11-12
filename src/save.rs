@@ -74,11 +74,19 @@ pub mod key {
     pub const CORE_BELL: &str = "core.bellkeeper";
     /// v0.4.0 옮기기를 했다(0105 — 핵 고르기 → 생명·숨은 물건·핵 점수). 한 번만.
     pub const MIGRATED_V04: &str = "migrated.v04";
-    /// 기술 나무(0106): 갈래마다 연 칸 수, 목표 핀 "갈래.깊이"(없으면 키 없음).
+    /// 기술 나무(0106)의 옛 꼴: 갈래마다 **앞에서부터** 연 칸 수. 0161부터는 `tree.cells.*`가 없을 때만 읽는다("앞에서부터 N칸").
+    /// 쓸 때는 앞에서부터 이어 연 수를 적는다(옛 판이 읽어도 가진 것보다 많이 열리지 않는다). 목표 핀 `tree.pin`은 0161에서 걷었다 —
+    /// 읽지도 쓰지도 않는다(옛 기록의 줄은 모르는 키처럼 그대로 지닌다).
     pub const TREE_BEAT: &str = "tree.beat";
     pub const TREE_RIPOSTE: &str = "tree.riposte";
     pub const TREE_FOOTING: &str = "tree.footing";
-    pub const TREE_PIN: &str = "tree.pin";
+    /// 연 패시브 칸(0161 — 칸마다 따로): `tree.cells.<갈래>` = 연 자리들("1,2,4" — 1이 첫 칸). 연 칸이 없는 갈래는 쓰지 않는다.
+    pub const TREE_CELLS: [&str; 3] = [
+        "tree.cells.beat",
+        "tree.cells.riposte",
+        "tree.cells.footing",
+    ];
+    pub const TREE_COUNTS: [&str; 3] = [TREE_BEAT, TREE_RIPOSTE, TREE_FOOTING];
 }
 
 /// 글 기록(키 → 값). 모르는 키도 지키며 들고 다닌다.
@@ -170,8 +178,6 @@ pub struct Progress {
     pub cores: u32,
     /// 깨진 종지기 핵 점수(0125, `CORE_CAP`까지).
     pub bell_cores: u32,
-    /// 기술 나무(0106).
-    pub tree: crate::progression::Tree,
     /// 든 무기(없으면 옛 prefs 칸의 값을 쓴다).
     pub weapon: Option<crate::weapons::Id>,
     /// 가진 무기(0117 — 무기는 얻어서 쓴다). 맨손은 넣지 않는다(늘 있다).
@@ -180,7 +186,7 @@ pub struct Progress {
     pub skills: crate::skills::Worn,
     /// 끼운 큰 기술(0158 G2 — 하나). 기록에 없으면 쟁반 뒤집기. 배운 것만 끼운다.
     pub ult: crate::skills::Ult,
-    /// 기술 판(0158): 스킬마다의 단·고르기, 큰 기술의 단.
+    /// 기술 판(0158 → 0161): 스킬마다의 단·고르기, 큰 기술의 단, 연 패시브 칸(`board.cells` — 옛 `tree`).
     pub board: crate::skills::Board,
     /// 쌓인 플레이 시간(초, 0081).
     pub play: u32,
@@ -262,19 +268,24 @@ impl Progress {
             .unwrap_or(0)
             .min(crate::progression::CORE_CAP);
         let migrated = r.num(key::MIGRATED_V04) == Some(1);
-        let depth = |k: &str| r.num(k).unwrap_or(0).min(crate::progression::DEPTH as u32) as u8;
-        let pin = r.get(key::TREE_PIN).and_then(|v| {
-            let (b, d) = v.split_once('.')?;
-            let (b, d): (u8, u8) = (b.trim().parse().ok()?, d.trim().parse().ok()?);
-            (b < 3 && d < crate::progression::DEPTH).then_some((b, d))
-        });
-        let tree = crate::progression::Tree {
-            open: [
-                depth(key::TREE_BEAT),
-                depth(key::TREE_RIPOSTE),
-                depth(key::TREE_FOOTING),
-            ],
-            pin,
+        // 패시브 칸(0161): 갈래마다 `tree.cells.*`(연 자리들)가 있으면 그것, 없으면 옛 꼴(연 수 N = 앞에서부터 N칸).
+        let cells = {
+            use crate::progression::{Tree, DEPTH};
+            let mut t = Tree::default();
+            for b in 0..3 {
+                t.cells[b] = match r.get(key::TREE_CELLS[b]) {
+                    Some(list) => list
+                        .split(',')
+                        .filter_map(|c| c.trim().parse::<u8>().ok())
+                        .filter(|d| (1..=DEPTH).contains(d))
+                        .fold(0, |m, d| m | 1 << (d - 1)),
+                    None => {
+                        let n = r.num(key::TREE_COUNTS[b]).unwrap_or(0).min(DEPTH as u32) as u8;
+                        Tree::from_counts([n, 0, 0]).cells[0]
+                    }
+                };
+            }
+            t
         };
         let residents_seen: Vec<(String, u32)> = r
             .get(key::RESIDENTS_SEEN)
@@ -325,6 +336,7 @@ impl Progress {
                     b.ult[i] = n;
                 }
             }
+            b.cells = cells;
             b
         };
         let r_has_no_weapons = r.get(key::WEAPONS).is_none();
@@ -341,7 +353,6 @@ impl Progress {
             gates,
             cores,
             bell_cores,
-            tree,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
             skills: {
                 let at = |k: &str, d: crate::skills::Id| {
@@ -391,12 +402,15 @@ impl Progress {
         p
     }
 
-    /// 기술 점수(0158 나)의 합: 총 레벨 + 처음 쓰러뜨린 엘리트 수 + 처음 이긴 보스 수(핵 기록이 있는 문지기) — 셈이라 옛 기록도 가진다.
+    /// 기술 점수(0158 나 → 0161)의 합: 총 레벨 + 처음 쓰러뜨린 엘리트 수 + 핵(문지기마다 `CORE_CAP`까지) + 주운 종소리 조각 —
+    /// 셈이라 옛 기록도 가진다(옛 나무 화폐 "마디" = 핵 + 조각이 그대로 점수가 된다).
     pub fn skill_points(&self) -> u32 {
+        use crate::progression::{shards, CORE_CAP};
         crate::skills::points(
             self.level.total(),
             self.elites.len() as u32,
-            (self.cores > 0) as u32 + (self.bell_cores > 0) as u32,
+            self.cores.min(CORE_CAP) + self.bell_cores.min(CORE_CAP),
+            shards(&self.finds),
         )
     }
 
@@ -448,12 +462,19 @@ impl Progress {
         r.set(key::CORE_WARDEN, self.cores);
         r.set(key::CORE_BELL, self.bell_cores);
         r.set(key::MIGRATED_V04, 1);
-        r.set(key::TREE_BEAT, self.tree.open[0]);
-        r.set(key::TREE_RIPOSTE, self.tree.open[1]);
-        r.set(key::TREE_FOOTING, self.tree.open[2]);
-        match self.tree.pin {
-            Some((b, d)) => r.set(key::TREE_PIN, format!("{b}.{d}")),
-            None => r.remove(key::TREE_PIN),
+        // 패시브 칸(0161): 새 키는 연 자리들, 옛 키는 앞에서부터 이어 연 수(키 이름은 그대로 — 옛 판이 읽어도 터지지 않는다).
+        for b in 0..3 {
+            let cells = self.board.cells;
+            r.set(key::TREE_COUNTS[b], cells.prefix(b));
+            let open: Vec<String> = (0..crate::progression::DEPTH)
+                .filter(|d| cells.mask(b) & (1 << d) != 0)
+                .map(|d| (d + 1).to_string())
+                .collect();
+            if open.is_empty() {
+                r.remove(key::TREE_CELLS[b]);
+            } else {
+                r.set(key::TREE_CELLS[b], open.join(","));
+            }
         }
         match self.weapon {
             Some(w) => r.set(key::WEAPON, w.key()),
@@ -537,12 +558,7 @@ impl Progress {
             || !self.finds.is_empty()
             || self.cores > 0
             || self.bell_cores > 0
-            || self.tree != crate::progression::Tree::default()
-    }
-
-    /// 나무 점수(0106): 핵(문지기마다) + 주운 종소리 조각.
-    pub fn tree_points(&self) -> u32 {
-        crate::progression::tree_points(self.cores + self.bell_cores, &self.finds)
+            || self.board.cells.count() > 0
     }
 
     /// 장신구를 뺀 능력치(성장만) — 장비 창이 "장신구가 바꾸는 줄"을 고를 때의 기본값(0104).
@@ -758,9 +774,9 @@ mod tests {
             .is_empty());
     }
 
-    /// 0125: 깨진 종지기 핵은 따로 센다(셋까지) — 나무 마디는 두 문지기 핵을 더한다. 키가 없는 옛 기록은 0.
+    /// 0125: 깨진 종지기 핵은 따로 센다(셋까지) — 기술 점수는 두 문지기 핵을 더한다(0161). 키가 없는 옛 기록은 0.
     #[test]
-    fn bellkeeper_cores_are_kept_apart_and_add_to_tree_points() {
+    fn bellkeeper_cores_are_kept_apart_and_add_to_skill_points() {
         let p = Progress {
             cores: 2,
             bell_cores: 9,
@@ -769,7 +785,7 @@ mod tests {
         let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
         assert_eq!(back.cores, 2);
         assert_eq!(back.bell_cores, crate::progression::CORE_CAP, "capped");
-        assert_eq!(back.tree_points(), 2 + crate::progression::CORE_CAP);
+        assert_eq!(back.skill_points(), 2 + crate::progression::CORE_CAP);
         assert!(back.has_any());
         let old = Progress::from_record(Record::parse("v=1\ncore.warden=1\n"));
         assert_eq!((old.cores, old.bell_cores), (1, 0));
@@ -930,23 +946,125 @@ weapon=crossbow
         assert!(p.finds.is_empty() && p.cores == 0 && !p.has_any());
     }
 
-    /// 0106: 나무는 갈래마다 연 수 + 목표 핀으로 남고, 고친 기록의 큰 수·이상한 핀은 걸러진다.
+    /// 0161: 패시브 칸은 칸마다 따로 남는다(`tree.cells.<갈래>` = 연 자리들) — 사이가 빈 나무도 그대로 왕복하고, 옛 키에는
+    /// 앞에서부터 이어 연 수가 적힌다. 연 칸이 없는 갈래는 새 키를 쓰지 않는다. 고친 기록의 이상한 자리는 걸러진다.
     #[test]
-    fn the_tree_survives_the_record() {
-        let mut p = Progress::default();
-        p.tree.open = [2, 0, 5];
-        p.tree.pin = Some((1, 3));
+    fn open_cells_round_trip_one_by_one() {
+        use crate::progression::{Cell, Tree};
+        // 칸 넷(쓴 점수 4)을 가질 만큼의 점수: 핵 셋 + 조각 하나.
+        let rich = Progress {
+            cores: 3,
+            finds: vec!["sanctuary.shard.0".into()],
+            ..Progress::default()
+        };
+        let mut p = rich.clone();
+        p.board.cells = Tree::with(&[
+            Cell::EvenBreath,
+            Cell::FlowingBeat,
+            Cell::Sidestep,
+            Cell::FinalMeasure,
+        ]);
+        assert_eq!((p.board.spent(), p.skill_points()), (4, 4));
         let r = p.to_record();
-        assert_eq!(r.get(key::TREE_PIN), Some("1.3"));
+        assert_eq!(r.get("tree.cells.beat"), Some("1,2,5"));
+        assert_eq!(r.get("tree.cells.riposte"), None, "nothing open there");
+        assert_eq!(r.get("tree.cells.footing"), Some("2"));
+        assert_eq!(
+            (
+                r.num(key::TREE_BEAT),
+                r.num(key::TREE_RIPOSTE),
+                r.num(key::TREE_FOOTING)
+            ),
+            (Some(2), Some(0), Some(0)),
+            "the old keys keep the leading run"
+        );
         let back = Progress::from_record(Record::parse(&r.to_text()));
-        assert_eq!(back.tree, p.tree);
+        assert_eq!(back.board, p.board);
         assert!(back.has_any());
-        let mut odd = r.clone();
-        odd.set(key::TREE_BEAT, 40);
-        odd.set(key::TREE_PIN, "7.9");
-        let back = Progress::from_record(odd);
-        assert_eq!(back.tree.open[0], crate::progression::DEPTH);
-        assert_eq!(back.tree.pin, None);
+        // 칸을 다 닫으면(되돌리기) 새 키가 지워지고 옛 키는 0 — 다시 읽어도 닫힌 채.
+        let mut shut = back.clone();
+        shut.board.cells = Tree::default();
+        let r = shut.to_record();
+        assert_eq!(r.get("tree.cells.beat"), None);
+        assert_eq!(r.num(key::TREE_BEAT), Some(0));
+        assert_eq!(
+            Progress::from_record(Record::parse(&r.to_text()))
+                .board
+                .cells,
+            Tree::default()
+        );
+        // 손댄 기록: 범위 밖 자리·글자는 버리고 아는 자리만.
+        let mut odd = rich.to_record();
+        odd.set("tree.cells.beat", "0,3,9,x,3");
+        assert_eq!(
+            Progress::from_record(odd).board.cells,
+            Tree::with(&[Cell::ClosingBlow])
+        );
+    }
+
+    /// 0161: 옛 기록(`tree.beat = N` — 갈래마다 연 수)은 앞에서부터 N칸을 연 것으로 읽히고, 그 칸들은 쓴 점수다 — 핵·조각이
+    /// 이제 기술 점수라 잃는 것이 없다. 옛 목표 핀(`tree.pin`)은 읽지 않고 줄만 그대로 지닌다. 큰 수는 다섯에서 멈춘다.
+    #[test]
+    fn old_tree_counts_read_as_the_first_cells_and_count_as_spent_points() {
+        use crate::progression::{Cell, Tree};
+        // v0.5 기록: 핵 셋 + 둘째 문지기 핵 하나 + 조각 둘 = 마디 6, 박자 2칸·발걸음 3칸을 열었다(쓴 마디 5). 레벨 4.
+        let old = Progress::from_record(Record::parse(
+            "v=1\nmigrated.v04=1\nlv.life=2\nlv.might=2\ncore.warden=3\ncore.bellkeeper=1\n\
+             finds=sanctuary.shard.0,sanctuary.shard.1,sanctuary.lamp.0\ntree.beat=2\ntree.footing=3\ntree.pin=1.3\n",
+        ));
+        assert_eq!(old.board.cells, Tree::from_counts([2, 0, 3]));
+        for c in [
+            Cell::EvenBreath,
+            Cell::FlowingBeat,
+            Cell::UnbrokenStride,
+            Cell::Sidestep,
+            Cell::TiltingGround,
+        ] {
+            assert!(old.board.cells.has(c), "{c:?}");
+        }
+        assert!(!old.board.cells.has(Cell::ClosingBlow) && !old.board.cells.has(Cell::Catch));
+        // 점수: 레벨 4 + 핵 4 + 조각 2 = 10, 쓴 점수 5(연 칸) — 남은 5.
+        assert_eq!(old.skill_points(), 10);
+        assert_eq!(
+            (old.board.spent(), old.board.left(old.skill_points())),
+            (5, 5)
+        );
+        // 다시 쓰면 새 키가 생기고 옛 키·옛 핀 줄은 남는다.
+        let r = old.to_record();
+        assert_eq!(r.get("tree.cells.beat"), Some("1,2"));
+        assert_eq!(r.get("tree.cells.footing"), Some("1,2,3"));
+        assert_eq!(r.num(key::TREE_FOOTING), Some(3));
+        assert_eq!(r.get("tree.pin"), Some("1.3"), "kept like any unknown key");
+        assert_eq!(Progress::from_record(r).board.cells, old.board.cells);
+        // 새 키가 있으면 옛 키보다 먼저다(새 판이 칸을 닫은 뒤의 기록).
+        let both = Progress::from_record(Record::parse(
+            "core.warden=3\ntree.beat=3\ntree.cells.beat=4\n",
+        ));
+        assert_eq!(both.board.cells, Tree::with(&[Cell::GapBeat]));
+        // 고친 기록의 큰 수는 다섯 칸.
+        let big = Progress::from_record(Record::parse(
+            "core.warden=3\ncore.bellkeeper=3\ntree.riposte=40\n",
+        ));
+        assert_eq!(big.board.cells, Tree::from_counts([0, 5, 0]));
+        // 가진 점수보다 많이 연 기록(손댄 것)은 터지지 않고 닫힌 채로 읽힌다.
+        let broke = Progress::from_record(Record::parse("tree.beat=5\ntree.footing=5\n"));
+        assert_eq!(broke.board, crate::skills::Board::default());
+        assert_eq!(broke.skill_points(), 0);
+    }
+
+    /// 0161: 개발판 기록(0158 G0·G2 — 마디로 연 칸 + 기술 점수로 올린 단)이 새 셈에서 한두 점 넘치면(옛 "보스 첫 쓰러뜨림 +1"이
+    /// 핵의 수로 바뀌어서) 스킬·큰 기술만 처음으로 돌아가고 연 패시브 칸은 남는다 — 점수는 남아 있어 다시 찍으면 된다.
+    #[test]
+    fn a_dev_record_one_point_over_keeps_its_cells_and_resets_the_skills() {
+        use crate::progression::Tree;
+        // 핵 1 + 핵 1(= 옛 마디 2 → 칸 둘) · 레벨 2 + 옛 보스 둘 +2 = 옛 점수 4를 스킬에 다 썼다. 새 점수는 레벨 2 + 핵 2 = 4, 쓴 것 6.
+        let p = Progress::from_record(Record::parse(
+            "lv.life=2\ncore.warden=1\ncore.bellkeeper=1\ntree.beat=2\nskill.rank.whirl=3\nskill.rank.cut=3\n",
+        ));
+        assert_eq!(p.skill_points(), 4);
+        assert_eq!(p.board.cells, Tree::from_counts([2, 0, 0]));
+        assert_eq!(p.board.rank[..2], [1, 1], "back to the starters");
+        assert_eq!((p.board.spent(), p.board.left(4)), (2, 2));
     }
 
     /// 0104: 레벨은 `lv.*` 셋으로 남고, 고친 기록의 큰 수는 5단에서 멈춘다. 레벨만 있어도 기록이 있는 슬롯.
@@ -1078,6 +1196,7 @@ weapon=crossbow
                 rank: [1; crate::skills::N],
                 pick: [Pick::A; crate::skills::N],
                 ult: [1, 0, 0],
+                ..Board::default()
             },
             ..Progress::default()
         };
@@ -1128,6 +1247,7 @@ weapon=crossbow
                     Pick::A,
                 ],
                 ult: [3, 0, 0],
+                ..Board::default()
             },
             skills: Worn([Id::Quake, Id::Gather]),
             ..Progress::default()
@@ -1179,9 +1299,9 @@ weapon=crossbow
             old.skills.0, START,
             "S0 let anything be worn — not learned now"
         );
-        // 레벨 3 + 엘리트 2 + 문지기 둘(핵을 세 번 얻어도 한 번) = 7, 쓴 것 없음.
-        assert_eq!(old.skill_points(), 7);
-        assert_eq!(old.board.left(old.skill_points()), 7);
+        // 레벨 3 + 엘리트 2 + 핵 넷(문지기 셋 + 종지기 하나 — 0161: 핵마다 1) = 9, 쓴 것 없음.
+        assert_eq!(old.skill_points(), 9);
+        assert_eq!(old.board.left(old.skill_points()), 9);
         // 배운 스킬 하나 + 안 배운 스킬 하나여도 처음의 둘로.
         let half = Progress::from_record(Record::parse("skill.1=whirl\nskill.2=gather\n"));
         assert_eq!(half.skills.0, START);

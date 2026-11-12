@@ -32,7 +32,6 @@ impl App {
                 PauseItem::Resume => ui::Row::plain(s.menu_resume),
                 // 장비 창으로 들어가는 줄 — 든 무기 이름·좌우 바꾸기는 뺐다(사장 2026-11-07, 0081: 장비 창이 보여 준다).
                 PauseItem::Weapon => ui::Row::go(s.menu_equip),
-                PauseItem::Tree => ui::Row::go(s.tree_title),
                 PauseItem::Codex => ui::Row::go(s.menu_codex),
                 PauseItem::Skills => ui::Row::go(s.menu_skills),
                 PauseItem::Settings => ui::Row::go(s.menu_settings),
@@ -53,7 +52,11 @@ impl App {
                 if rebuild {
                     self.restart();
                 }
-                self.go(next);
+                // 기술 화면은 처음 설 칸을 판에서 정한다(배운 첫 스킬 — `open_skills`).
+                match next {
+                    Go::Open(Scene::Skills { edit }) => self.open_skills(edit),
+                    _ => self.go(next),
+                }
             }
         }
     }

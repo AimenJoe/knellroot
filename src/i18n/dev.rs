@@ -75,13 +75,13 @@ pub const LAB_NOTE: Pair = (
 );
 pub const SKILLS_START: Pair = ("기술 끼우기", "skill slots");
 pub const SKILLS_NOTE: Pair = (
-    "아레나에서 쓸 기술 둘을 고른다. 멈춤의 기술 창과 같다.",
-    "pick the two skills for the arenas; same window as the pause menu's",
+    "아레나에서 쓸 기술 둘과 큰 기술을 끼운다. 멈춤의 기술 화면과 같다(칸 → 확인 → 끼우기).",
+    "wear the two skills and the great skill for the arenas; the pause menu's skills screen (cell, confirm, wear)",
 );
 pub const SKILLS_MAX: Pair = ("기술 다 올리기(켬/끔)", "max skills (on/off)");
 pub const SKILLS_MAX_NOTE: Pair = (
-    "모든 기술과 큰 기술을 끝 단으로. 다시 고르면 이 슬롯의 판으로 돌아간다. 저장하지 않는다. 지금: {0}",
-    "every skill and the great skill at max rank; pick again for this slot's board. nothing is saved. now: {0}",
+    "모든 기술과 큰 기술을 끝 단으로, 패시브 칸을 모두 열림으로. 다시 고르면 이 슬롯의 판으로 돌아간다. 저장하지 않는다. 지금: {0}",
+    "every skill and great skill at max rank, every passive open; pick again for this slot's board. nothing is saved. now: {0}",
 );
 pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
 pub const SKILLS_FLIP_NOTE: Pair = (

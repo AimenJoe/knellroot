@@ -3,7 +3,6 @@
 //!
 //! 루프: 프레임마다 입력 폴링 → 고정 60Hz 틱 N번(장면 → 월드 → 스테이지 → 카메라) → 가변 렌더(보간) → 글·메뉴(화면 패스).
 mod ask;
-mod board;
 mod codex;
 pub mod controls;
 mod controls_screen;
@@ -11,6 +10,7 @@ mod controls_screen;
 mod dev;
 mod equip;
 pub mod flow;
+mod frame;
 mod hearth;
 #[cfg(feature = "dev")]
 mod lab_screen;
@@ -24,7 +24,6 @@ mod skills;
 mod slots;
 mod stack;
 mod title;
-mod tree;
 
 use macroquad::prelude::*;
 
@@ -207,6 +206,7 @@ impl App {
         let (run, mut world) = StageRun::start(FIRST_STAGE);
         world.set_weapon(weapon);
         world.set_skills(progress.board.loadout(progress.skills.0, progress.ult));
+        world.tree = progress.board.cells;
         let cam = Camera::new(world.player.pos, &t);
         App {
             stack: stack::Stack::new(Scene::Title),
@@ -317,12 +317,11 @@ impl App {
         self.seed_run();
     }
 
-    /// 지역을 세운 뒤 기록에서 채운다: 무기·나무·연 상자(지역마다 번호 `지역 × 1000 + 번호`, 0118)·주운 것·쓰러뜨린 엘리트·문,
+    /// 지역을 세운 뒤 기록에서 채운다: 무기·기술(끼운 스킬과 연 패시브 칸)·연 상자(지역마다 번호 `지역 × 1000 + 번호`, 0118)·주운 것·쓰러뜨린 엘리트·문,
     /// 이 판에 이 지역 문지기를 이겼으면 바닥 길이 열린 채.
     fn seed_run(&mut self) {
         self.world.set_weapon(self.weapon);
-        self.world.set_skills(self.loadout());
-        self.world.tree = self.progress.tree;
+        self.apply_board();
         let base = self.stage as u32 * crate::stage::CHESTS_PER_STAGE;
         let opened: Vec<u32> = self
             .progress
@@ -572,15 +571,14 @@ impl App {
             Scene::Title => self.tick_title(a),
             Scene::Ask(k) => self.tick_ask(&a, k),
             Scene::Equip => self.tick_equip(&a),
-            Scene::Tree { view } => self.tick_tree(&a, view),
+            Scene::Skills { edit } => self.tick_skills(&a, edit),
+            Scene::SkillAct => self.tick_skill_act(&a),
             Scene::Codex { tab } => self.tick_codex(&a, tab as usize),
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
             s @ (Scene::Pause
             | Scene::Settings
-            | Scene::Skills
             | Scene::Hearth
             | Scene::Level
-            | Scene::SkillBoard
             | Scene::Shop
             | Scene::Result { .. }) => self.tick_menu(&a, s),
             #[cfg(feature = "dev")]
@@ -622,10 +620,8 @@ impl App {
         match scene {
             Scene::Pause => Some(self.pause_menu()),
             Scene::Settings => Some(self.settings_menu()),
-            Scene::Skills => Some(self.skills_menu()),
             Scene::Hearth => Some(self.hearth_menu()),
             Scene::Level => Some(self.level_menu()),
-            Scene::SkillBoard => Some(self.board_menu()),
             Scene::Shop => Some(self.shop_menu()),
             Scene::Result { won } => Some(self.result_menu(won)),
             Scene::Slots { load } => Some(self.slots_menu(load)),
@@ -639,7 +635,8 @@ impl App {
             | Scene::Controls
             | Scene::Ask(_)
             | Scene::Equip
-            | Scene::Tree { .. }
+            | Scene::Skills { .. }
+            | Scene::SkillAct
             | Scene::Codex { .. }
             | Scene::EquipPick { .. } => None,
             #[cfg(feature = "dev")]
@@ -652,10 +649,8 @@ impl App {
         match scene {
             Scene::Pause => self.pause_act(out),
             Scene::Settings => self.settings_act(out),
-            Scene::Skills => self.skills_act(out),
             Scene::Hearth => self.hearth_act(out),
             Scene::Level => self.level_act(out),
-            Scene::SkillBoard => self.board_act(out),
             Scene::Shop => self.shop_act(out),
             Scene::Result { .. } => self.result_act(out),
             // 슬롯 창은 제 틱(`tick_slots`)이 고름을 한다(빈 줄 건너뛰기·두 번째 누름).
@@ -670,7 +665,8 @@ impl App {
             | Scene::Controls
             | Scene::Ask(_)
             | Scene::Equip
-            | Scene::Tree { .. }
+            | Scene::Skills { .. }
+            | Scene::SkillAct
             | Scene::Codex { .. }
             | Scene::EquipPick { .. } => {}
             #[cfg(feature = "dev")]
@@ -702,7 +698,6 @@ impl App {
                 | Scene::Ending { .. }
                 | Scene::Hearth
                 | Scene::Level
-                | Scene::Tree { .. }
                 | Scene::Shop
                 | Scene::Title
         ) {
@@ -791,7 +786,8 @@ impl App {
             Scene::Ask(k) => self.draw_ask(f, k),
             Scene::Controls => self.draw_controls(f),
             Scene::Equip => self.draw_equip(f, self.cursor, None),
-            Scene::Tree { view } => self.draw_tree(f, view),
+            Scene::Skills { edit } => self.draw_skills(f, self.cursor, edit),
+            Scene::SkillAct => self.draw_skill_act(f),
             Scene::Codex { tab } => self.draw_codex(f, tab as usize),
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.draw_dev_screen(f, tab as usize),
@@ -834,10 +830,7 @@ impl App {
             let a = (t / 0.6).min(1.0);
             let cx = f.ox + f.w * 0.5;
             // 화로 가게에서는 목록을 가리지 않게 맨 위에.
-            let y = if matches!(
-                self.scene(),
-                Scene::Hearth | Scene::Level | Scene::Tree { .. } | Scene::Shop
-            ) {
+            let y = if matches!(self.scene(), Scene::Hearth | Scene::Level | Scene::Shop) {
                 0.04
             } else {
                 0.3

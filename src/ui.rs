@@ -41,6 +41,11 @@ pub const PANEL: Color = Color::new(0.07, 0.05, 0.09, 0.94);
 pub const PANEL_LIGHT: Color = Color::new(0.16, 0.11, 0.14, 1.0);
 pub const BORDER: Color = Color::new(0.55, 0.40, 0.28, 1.0);
 
+/// "지금 할 수 있는 것"의 빛(0160 꾸밈의 규칙: 금빛 = 내 것·고른 것 / 민트 = 지금 할 수 있는 것 / 흐림 = 잠김. 빨강은 위험 전용).
+pub const MINT: Color = Color::new(0.50, 0.90, 0.74, 1.0);
+/// 큰 창(0161)의 머리 줄 높이(480×270 기준 px).
+pub const WINDOW_HEAD: f32 = 22.0;
+
 /// 창 안 목록의 한 줄(0066, nail `menu_list`·`setting_row`): 이름은 왼쪽, 값은 오른쪽.
 #[derive(Debug, Clone, Default)]
 pub struct Row {
@@ -482,6 +487,23 @@ impl Ui {
         self.text_center(&line, cx, y, 1.0, DIM);
     }
 
+    /// `hints`와 같은 줄을 왼쪽 맞춤으로(큰 창 아래 — 오른쪽은 화면의 단추가 쓴다, 0161).
+    pub fn hints_left(&self, pairs: &[(&str, &str)], x: f32, y: f32, max_w: f32) {
+        let line = pairs
+            .iter()
+            .filter(|(k, _)| !k.is_empty())
+            .map(|(k, v)| format!("{} {v}", key(k)))
+            .collect::<Vec<_>>()
+            .join("   ");
+        if line.is_empty() {
+            return;
+        }
+        // 좁은 화면(4:3)에서는 글을 자르기 전에 먼저 줄인다 — 안내의 끝이 "…"이면 닫는 법을 못 읽는다.
+        let k = (max_w / self.width(&line, 1.0).max(1.0)).clamp(0.72, 1.0);
+        let line = self.fit(&line, max_w, k);
+        self.text(&line, x, y + (self.px(1.0) - self.px(k)) * 0.5, k, DIM);
+    }
+
     /// 480×270 기준 px `n`의 화면 px(창 틀·여백).
     pub fn u(&self, n: f32) -> f32 {
         n * self.scale
@@ -512,6 +534,89 @@ impl Ui {
                 ly + u * 6.0
             }
             None => r.y + u * 8.0,
+        }
+    }
+
+    /// 테 한 겹(굵기 `t` 화면 px — `draw_rectangle_lines`는 준 굵기의 반만 안쪽에 긋는다).
+    pub fn edge(&self, r: Rect, t: f32, c: Color) {
+        let t = t.max(1.0).round();
+        draw_rectangle(r.x, r.y, r.w, t, c);
+        draw_rectangle(r.x, r.y + r.h - t, r.w, t, c);
+        draw_rectangle(r.x, r.y + t, t, r.h - t * 2.0, c);
+        draw_rectangle(r.x + r.w - t, r.y + t, t, r.h - t * 2.0, c);
+    }
+
+    /// 큰 창의 틀(0161 — 0160 "창 하나, 늘 같은 자리·같은 크기": 기술 화면부터, 뒤에 다른 탭이 같은 틀에 선다).
+    /// 두 겹 테 + 머리 줄(탭들 — 고른 탭은 금빛 테의 칸 · 오른쪽에 지갑 `(이름, 값)`들) + 머리 아래 선. `k` = 좁은 화면에서 줄인 배
+    /// (자리·글이 함께 준다). 몸의 자리는 부른 쪽이 `WINDOW_HEAD`로 센다. 닫기 단추는 `close`가 같은 자리에 그린다.
+    pub fn window(&self, r: Rect, k: f32, tabs: &[&str], active: usize, purse: &[(&str, String)]) {
+        let u = self.scale * k;
+        let line = self.scale.max(1.0).round();
+        draw_rectangle(r.x, r.y, r.w, r.h, PANEL);
+        #[cfg(feature = "dev")]
+        check::frame(r);
+        let head = (u * WINDOW_HEAD).round();
+        // 머리 줄은 몸보다 한 톤 어둡게(탭이 몸에서 솟아 보이게).
+        draw_rectangle(r.x, r.y, r.w, head, Color::new(0.0, 0.0, 0.01, 0.38));
+        self.edge(r, line, BORDER);
+        let inset = (u * 2.5).round();
+        self.edge(
+            Rect::new(
+                r.x + inset,
+                r.y + inset,
+                r.w - inset * 2.0,
+                r.h - inset * 2.0,
+            ),
+            1.0,
+            Color { a: 0.4, ..BORDER },
+        );
+        // 탭: 고른 탭은 몸과 같은 면 + 금빛 테(위·양옆), 머리 아래 선은 그 밑에서 끊긴다.
+        let px = self.px(k);
+        let ty = r.y + (head - px) * 0.5 + u;
+        let mut x = r.x + u * 10.0;
+        let mut gap = (x, x);
+        for (i, t) in tabs.iter().enumerate() {
+            let w = (self.width(t, k) + u * 18.0).round();
+            if i == active {
+                let top = r.y + u * 4.0;
+                draw_rectangle(x, top, w, head - u * 4.0, PANEL);
+                draw_rectangle(
+                    x,
+                    top,
+                    w,
+                    head - u * 4.0,
+                    Color {
+                        a: 0.5,
+                        ..PANEL_LIGHT
+                    },
+                );
+                draw_rectangle(x, top, w, line, AMBER);
+                draw_rectangle(x, top, line, head - u * 4.0, AMBER);
+                draw_rectangle(x + w - line, top, line, head - u * 4.0, AMBER);
+                gap = (x + line, x + w - line);
+            }
+            let ink = if i == active { AMBER } else { DIM };
+            self.text_center(t, x + w * 0.5, ty, k, ink);
+            x += w + u * 2.0;
+        }
+        let (l, rr, y) = (r.x + inset, r.x + r.w - inset, r.y + head);
+        draw_rectangle(l, y, gap.0 - l, line, BORDER);
+        draw_rectangle(gap.1, y, rr - gap.1, line, BORDER);
+        // 지갑: 닫기 단추 왼쪽에 오른쪽 맞춤 — 이름은 본문 색, 값은 금빛.
+        let mut right = r.x + r.w - self.scale * 28.0;
+        for (n, (name, value)) in purse.iter().enumerate().rev() {
+            let vw = self.width(value, k);
+            self.text(value, right - vw, ty, k, AMBER);
+            let lead = format!("{name} ");
+            let lw = self.width(&lead, k);
+            self.text(&lead, right - vw - lw, ty, k, INK);
+            right -= vw + lw;
+            if n > 0 {
+                let dot = "  ·  ";
+                let dw = self.width(dot, k);
+                self.text(dot, right - dw, ty, k, DIM);
+                right -= dw;
+            }
         }
     }
 

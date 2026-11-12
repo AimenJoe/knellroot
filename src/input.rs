@@ -152,6 +152,10 @@ pub enum Act {
     Confirm,
     /// 장비 칸 빨리 바꾸기 = 스킬 버튼 둘(0151 — 예전에는 땅 돌리기 버튼 둘).
     Swap,
+    /// 격자 화면(기술, 0161)의 네 쪽 걷기 — 메뉴의 위·아래·왼·오른.
+    Walk,
+    /// 뒤로·닫기(고정 — 배치표에 없다).
+    Back,
 }
 
 /// 지금 장치의 키 그림(ASCII — 글꼴 상관없이). 터치는 화면 버튼이 곧 안내라 빈 글.
@@ -173,8 +177,12 @@ pub fn prompt(act: Act) -> String {
             b.pad(Bind::Skill2).name()
         ),
         (_, Act::Swap) => format!("{}/{}", name(Bind::Skill1), name(Bind::Skill2)),
+        (Device::Pad, Act::Walk) => "D-PAD".into(),
+        (Device::Pad, Act::Back) => "B".into(),
         (_, Act::Choose) => "W/S".into(),
         (_, Act::Confirm) => "ENTER".into(),
+        (_, Act::Walk) => "WASD".into(),
+        (_, Act::Back) => "ESC".into(),
     }
 }
 
