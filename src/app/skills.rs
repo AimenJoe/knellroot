@@ -309,14 +309,18 @@ pub(super) mod geo {
     pub const COL_W: f32 = 90.0;
     /// 갈래 머리(이름 + 한 줄).
     pub const HEAD_H: f32 = 27.0;
-    /// 줄 띠의 높이(첫 줄·둘째 줄 = 스킬 줄 + 패시브 줄, 셋째 줄 = 큰 기술과 패시브가 한 줄).
-    pub const BAND_H: [f32; 3] = [62.0, 62.0, 43.0];
+    /// 줄 띠의 높이(첫 줄·둘째 줄 = 스킬 줄 + 패시브 줄, 셋째 줄 = 큰 기술과 패시브가 한 줄). 띠 셋의 합이 보이는 높이를 넘는다 —
+    /// 격자는 위아래로 굴린다(0163: 이름표와 칸 사이를 띄우고, 줄이 늘어도 같은 꼴).
+    pub const BAND_H: [f32; 3] = [72.0, 72.0, 56.0];
     /// 띠 안: 스킬 칸의 위·한 변, 단의 점, 패시브 칸의 위·지름.
-    pub const CELL_TOP: f32 = 11.0;
+    pub const CELL_TOP: f32 = 17.0;
     pub const SKILL: f32 = 24.0;
-    pub const PIPS_TOP: f32 = 36.5;
-    pub const PASSIVE_TOP: f32 = 43.0;
+    pub const PIPS_TOP: f32 = 42.5;
+    pub const PASSIVE_TOP: f32 = 49.0;
     pub const PASSIVE: f32 = 18.0;
+    /// 굴리기: 휠·▲▼ 한 칸(기준 px), 커서가 창을 끌 때 칸 둘레에 남기는 여유(위: 이름표, 아래: 단의 점).
+    pub const WHEEL: f32 = 24.0;
+    pub const REVEAL_PAD: f32 = 4.0;
     /// 칸 둘이 서는 자리(갈래 폭 안의 가운데 x), 하나면 가운데.
     pub const SLOT_2: [f32; 2] = [23.0, 67.0];
     pub const SLOT_1: f32 = 45.0;
@@ -334,6 +338,11 @@ pub(super) mod geo {
 
     pub fn band_top(row: usize) -> f32 {
         HEAD_H + BAND_H[..row].iter().sum::<f32>()
+    }
+
+    /// 굴리는 내용의 높이(띠 셋).
+    pub fn content_h() -> f32 {
+        BAND_H.iter().sum()
     }
 }
 
@@ -400,6 +409,21 @@ pub(super) fn spots() -> [Spot; NE] {
         }
     }
     out
+}
+
+/// 칸 `i`가 "보인다"고 할 구간(내용의 y — 띠 셋의 처음이 0): 커서가 그 칸에 서면 격자 창이 이 구간이 보이게 가장 적게 움직인다(0163).
+/// 줄의 윗칸(스킬·큰 기술)은 띠의 머리(이름표)부터 단의 점까지, 아랫칸(패시브)은 칸부터 띠의 끝까지 — 셋째 줄은 띠 하나가 통째로.
+pub(super) fn reveal_span(i: usize) -> (f32, f32) {
+    use geo::*;
+    let (e, sp) = (ENTRIES[i], spots()[i]);
+    let row = e.row();
+    let (top, bottom) = (band_top(row) - HEAD_H, band_top(row) + BAND_H[row] - HEAD_H);
+    let (y, h) = (sp.c.y - HEAD_H, sp.half);
+    match e {
+        Entry::Cell(_) if row < 2 => (y - h - REVEAL_PAD, bottom),
+        _ if row == 2 => (top, bottom),
+        _ => (top, y + h + 6.0 + REVEAL_PAD),
+    }
 }
 
 /// 십자 한 걸음(0161 — KB `game-menu-scene-stack-and-focus`: 격자는 돌지 않는다): 누른 쪽에 있는 칸 가운데 가장 가깝고 곧은 것으로.
@@ -750,10 +774,15 @@ impl App {
     pub(super) fn tick_skills(&mut self, a: &Actions, edit: bool) {
         let mut a = *a;
         let before = self.cursor;
-        // 굴릴 목록이 없는 화면 — 휠·끌기는 상세 칸 위에서만 그 칸을 굴린다(오른쪽 스틱은 늘).
+        // 휠·끌기: 격자 위에서는 격자 창을(0163), 상세 칸 위에서는 그 칸을 굴린다(오른쪽 스틱은 늘 상세 칸).
+        self.grid_scroll(&mut a);
         self.pane_scroll(&mut a);
         let a = &a;
         let tap = a.tap.and_then(|p| self.hit_at(p));
+        if let Some(Hit::Scroll(d)) = tap {
+            self.view.nudge(0.0, d, geo::WHEEL * 2.0);
+            return;
+        }
         if a.back || a.pause || tap == Some(Hit::Close) {
             self.go(Go::Back);
             return;
@@ -764,6 +793,11 @@ impl App {
             a.menu_down as i32 - a.menu_up as i32,
             edit,
         );
+        // 십자로 옮긴 커서는 창을 끈다 — 손가락으로 고른 칸은 이미 보이니 창을 옮기지 않는다(둘째 탭이 같은 자리에 닿게, 0076).
+        if self.cursor != before && self.cursor < NE {
+            let (y0, y1) = reveal_span(self.cursor);
+            self.view.reveal(y0, y1);
+        }
         // 터치·마우스: 다른 칸은 고르기만, 고른 칸을 다시 누르면 확인(장비 창과 같은 두 걸음). 단추는 한 번에.
         let confirm = match tap {
             Some(Hit::Cell(0, i)) => {
@@ -789,6 +823,19 @@ impl App {
             return;
         }
         self.go(Go::Open(Scene::SkillAct));
+    }
+
+    /// 격자 굴리기(0163): 휠·끌기가 격자의 보이는 자리(`Hit::Field` — 칸 위도 그 안이다)에서 일어났으면 격자 창을 옮긴다.
+    fn grid_scroll(&mut self, a: &mut Actions) {
+        let over = a.point.is_some_and(|p| {
+            self.hits
+                .iter()
+                .any(|(r, h)| *h == Hit::Field && r.contains(p))
+        });
+        if over && (a.wheel != 0 || a.drag != 0.0) {
+            self.view.nudge(a.drag, a.wheel, geo::WHEEL);
+            (a.wheel, a.drag) = (0, 0.0);
+        }
     }
 
     /// 상세 칸 굴리기: 오른쪽 스틱은 늘, 휠·끌기는 그 칸 위에서 일어났을 때만(0068) — 값은 덩이 수, 그림이 끝을 자른다.
@@ -1033,7 +1080,17 @@ impl App {
             self.ui
                 .text_center(&motto, cx, w.at(0.0, 14.5).y, 0.62 * k, DIM);
         }
-        // 줄 띠: 가는 선 + 오른쪽 끝의 이름("처음부터" / "쓴 점수 4부터" — 잠겼으면 몇 점 더).
+        // 굴리는 자리(0163): 갈래 머리 아래 ~ 몸의 끝. 내용(띠 셋)이 넘치면 창을 옮겨 본다 — 처음 그릴 때는 커서 칸이 보이게.
+        let room = w.body_h - geo::HEAD_H;
+        let (mut off, fresh) = self.view.span(room, geo::content_h(), u);
+        if fresh && at < NE {
+            let (y0, y1) = reveal_span(at);
+            off = self.view.reveal(y0, y1);
+        }
+        let port = w.rect(0.0, geo::HEAD_H, geo::GRID_W, room);
+        let (port_top, port_bottom) = (port.y, port.y + port.h);
+        ui::clip(Some(port));
+        // 줄 띠: 가는 선 + 오른쪽 끝의 이름("처음부터" / "쓴 점수 4부터" — 잠겼으면 몇 점 더). 글은 다 보일 때만(잘린 글은 그리지 않는다).
         let spent = board.spent();
         for row in 0..3 {
             let need = sk::ROW_NEEDS[row];
@@ -1047,7 +1104,7 @@ impl App {
             } else {
                 fill(s.sk_row_from, &[&need.to_string()])
             };
-            let top = geo::band_top(row);
+            let top = geo::band_top(row) - off;
             let lk = 0.6 * k;
             let lw = self.ui.width(&label, lk);
             let right = w.at(geo::GRID_W, 0.0).x;
@@ -1057,12 +1114,16 @@ impl App {
             } else {
                 DIM
             };
-            self.ui.text(&label, right - lw, y, lk, ink);
+            let shown = y >= port_top - 0.5 && y + self.ui.px(lk) <= port_bottom + 0.5;
+            if shown {
+                self.ui.text(&label, right - lw, y, lk, ink);
+            }
             let ly = (y + self.ui.px(lk) * 0.55).round();
+            let line_end = if shown { right - lw - u * 5.0 } else { right };
             draw_rectangle(
                 w.origin.x,
                 ly,
-                right - lw - u * 5.0 - w.origin.x,
+                line_end - w.origin.x,
                 1.0,
                 Color {
                     a: 0.55,
@@ -1074,22 +1135,30 @@ impl App {
         let worn = self.progress.skills.0;
         let great = board.wearable_ult(self.progress.ult);
         let spots = spots();
+        let mut cells = Vec::new();
         for (i, &e) in ENTRIES.iter().enumerate() {
             let sp = spots[i];
-            let (c, half) = (w.at(sp.c.x, sp.c.y), sp.half * u);
+            let (c, half) = (w.at(sp.c.x, sp.c.y - off), sp.half * u);
+            // 보이는 자리 밖의 칸은 건너뛴다(걸친 칸은 가위가 자른다).
+            let reach = half + u * 8.0;
+            if c.y + reach < port_top || c.y - reach > port_bottom {
+                continue;
+            }
             let (lk, ready) = look(board, total, e);
             let fade = if lk == Look::Locked { 0.5 } else { 1.0 };
-            let top = geo::band_top(e.row());
+            let top = geo::band_top(e.row()) - off;
             let pips_end = w.at(0.0, top + geo::PIPS_TOP + 3.0).y;
             draw_node(e, c, half, u, lk, (i == at).then_some(pips_end));
+            // 귀퉁이 표지(글)는 칸이 다 보일 때만.
+            let whole = c.y - half - u * 3.0 >= port_top && c.y + half <= port_bottom;
             match e {
                 Entry::Skill(id) => {
                     let py = w.at(0.0, top + geo::PIPS_TOP).y.round();
                     draw_pips(c.x, py, e.max(), board.rank(e), ready, false, u * 3.0, fade);
-                    if let Some(slot) = worn.iter().position(|x| *x == id) {
+                    if let (Some(slot), true) = (worn.iter().position(|x| *x == id), whole) {
                         self.node_badge(c, half, u, k, &(slot + 1).to_string(), true);
                     }
-                    if board.rank(e) >= PICK_RANK {
+                    if board.rank(e) >= PICK_RANK && whole {
                         let mark = pick_text(id, board.pick[id.index()]).0;
                         self.node_badge(c, half, u, k, mark, false);
                     }
@@ -1097,19 +1166,39 @@ impl App {
                 Entry::Ult(ult) => {
                     let py = w.at(0.0, top + geo::PIPS_TOP).y.round();
                     draw_pips(c.x, py, e.max(), board.rank(e), ready, true, u * 3.0, fade);
-                    if ult == great {
+                    if ult == great && whole {
                         self.node_badge(c, half, u, k, s.sk_badge_ult, true);
                     }
                 }
                 Entry::Cell(_) => {}
             }
-            // 누를 자리는 그림보다 넉넉히(터치).
+            // 누를 자리는 그림보다 넉넉히(터치) — 보이는 자리 안으로만.
             let r = half + u * 3.0;
-            self.hits.push((
-                Rect::new(c.x - r, c.y - r, r * 2.0, r * 2.0),
-                Hit::Cell(0, i),
-            ));
+            if let Some(hit) = Rect::new(c.x - r, c.y - r, r * 2.0, r * 2.0).intersect(port) {
+                cells.push((hit, Hit::Cell(0, i)));
+            }
         }
+        ui::clip(None);
+        // 더 있다는 표시(▲▼ — 누르면 한 걸음): 격자의 오른쪽 끝, 위·아래. 누를 자리는 칸보다 먼저.
+        let (above, below) = self.view.span_more();
+        let mk = 0.6 * k;
+        let (mw, mh) = (self.ui.width("▲", mk), self.ui.px(mk));
+        let mx = w.at(geo::GRID_W, 0.0).x - mw;
+        for (on, glyph, y, d) in [
+            (above, "▲", port_top + u * 9.0, -1),
+            (below, "▼", port_bottom - mh - u, 1),
+        ] {
+            if on {
+                self.ui.text(glyph, mx, y, mk, AMBER);
+                let pad = u * 5.0;
+                self.hits.push((
+                    Rect::new(mx - pad, y - pad, mw + pad * 2.0, mh + pad * 2.0),
+                    Hit::Scroll(d),
+                ));
+            }
+        }
+        self.hits.extend(cells);
+        self.hits.push((port, Hit::Field));
     }
 
     /// 칸 귀퉁이의 작은 표지: 끼운 칸 번호(오른쪽 위, 금빛 면) · 고르기(왼쪽 위, 어두운 면).
@@ -1503,7 +1592,7 @@ impl App {
         // 고른 칸의 오른쪽에(안 들어가면 왼쪽에), 화면 안으로.
         let w = self.window_geo(f);
         let sp = spots()[under.cursor];
-        let (c, half) = (w.at(sp.c.x, sp.c.y), sp.half * w.s);
+        let (c, half) = (w.at(sp.c.x, sp.c.y - under.view.offset()), sp.half * w.s);
         let gap = u * 7.0;
         let mut x = c.x + half + gap;
         if x + pw > f.ox + f.w - u * 6.0 {
@@ -1586,13 +1675,82 @@ mod tests {
         );
         assert!(whirl.c.y < breath.c.y);
         assert!(whirl.half > breath.half, "skills are the bigger cells");
-        // 띠 셋의 끝이 창의 몸 높이(기준 195) 안.
-        assert!(geo::band_top(2) + geo::BAND_H[2] <= 195.0);
         assert!(geo::DETAIL_X + geo::DETAIL_W <= super::super::frame::WINDOW_W - 16.0);
     }
 
     /// 걷기(KB: 격자는 돌지 않는다): 가장자리에서 바깥쪽을 눌러도 그대로, 어느 칸에서 떠나도 모든 칸에 닿는다.
     /// 옆 걸음은 같은 높이의 이웃으로, 아래 걸음은 같은 갈래의 아래 칸으로.
+    /// 0163: 격자는 위아래로 굴린다 — 칸마다 "보인다"고 할 구간이 내용 안에 있고 보이는 높이(몸 195 − 머리)에 들어가며,
+    /// 십자로 맨 위에서 맨 아래까지 내려갔다 올라오면 창이 그 칸들을 따라간다(가장 적게).
+    #[test]
+    fn the_grid_scrolls_to_keep_the_cursor_cell_in_view() {
+        let room = 195.0 - geo::HEAD_H;
+        assert!(
+            geo::content_h() > room,
+            "the bands no longer fit — that is why it scrolls"
+        );
+        for i in 0..NE {
+            let (y0, y1) = reveal_span(i);
+            assert!(
+                y0 >= -0.01 && y1 <= geo::content_h() + 0.01,
+                "{:?}",
+                ENTRIES[i]
+            );
+            assert!(y1 - y0 <= room, "{:?} fits the view", ENTRIES[i]);
+            // 칸 자체가 그 구간 안에 있다.
+            let sp = spots()[i];
+            let (top, bottom) = (
+                sp.c.y - sp.half - geo::HEAD_H,
+                sp.c.y + sp.half - geo::HEAD_H,
+            );
+            assert!(top >= y0 && bottom <= y1, "{:?}", ENTRIES[i]);
+        }
+        let mut view = ui::ListView::default();
+        let visible = |view: &ui::ListView, i: usize| {
+            let (y0, y1) = reveal_span(i);
+            y0 >= view.offset() - 0.01 && y1 <= view.offset() + room + 0.01
+        };
+        view.span(room, geo::content_h(), 2.0);
+        let mut at_ = at(Entry::Skill(Id::Whirl));
+        assert_eq!(view.offset(), 0.0);
+        // 아래로 끝까지: 걸음마다 그 칸이 보인다. 첫 두 줄은 창이 움직이지 않고(이미 보인다) 셋째 줄에서 내려간다.
+        let mut moved_at = None;
+        for step in 0..8 {
+            let next = walk(at_, 0, 1, false);
+            if next == at_ {
+                break;
+            }
+            at_ = next;
+            let before = view.offset();
+            let (y0, y1) = reveal_span(at_);
+            view.reveal(y0, y1);
+            assert!(visible(&view, at_), "{:?}", ENTRIES[at_]);
+            if view.offset() != before && moved_at.is_none() {
+                moved_at = Some((step, ENTRIES[at_].row()));
+            }
+        }
+        assert_eq!(ENTRIES[at_].row(), 2);
+        assert_eq!(
+            moved_at.map(|m| m.1),
+            Some(2),
+            "only the last band needs a scroll"
+        );
+        assert_eq!(
+            view.offset(),
+            geo::content_h() - room,
+            "the bottom of the board"
+        );
+        // 다시 위로: 맨 위 칸에 서면 창도 맨 위(갈래 머리 아래 첫 이름표가 보인다).
+        for _ in 0..8 {
+            at_ = walk(at_, 0, -1, false);
+            let (y0, y1) = reveal_span(at_);
+            view.reveal(y0, y1);
+            assert!(visible(&view, at_));
+        }
+        assert_eq!(ENTRIES[at_].row(), 0);
+        assert_eq!(view.offset(), 0.0);
+    }
+
     #[test]
     fn walking_follows_the_layout_never_wraps_and_reaches_every_cell() {
         let whirl = at(Entry::Skill(Id::Whirl));

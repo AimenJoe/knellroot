@@ -823,9 +823,70 @@ pub struct ListView {
     /// 손가락으로 고른 줄(0076): 이 줄에 커서가 있는 동안은 가장자리 여유로 창을 옮기지 않는다 — 두 걸음 탭(고르기 → 다시 눌러 끼우기)에서
     /// 첫 탭에 목록이 한 줄 밀려 같은 자리의 둘째 탭이 다른 줄을 누르던 것(장비 창 무기 후보).
     tapped: Option<usize>,
+    /// 줄 표가 아닌 판(기술 화면의 칸 격자, 0163)의 창: 보이는 첫 자리 `off`, 지난번 그릴 때의 보이는 높이·내용 높이(판의 기준 px)와
+    /// 기준 px 하나의 화면 px. 한 화면은 줄 창(`first`)과 판 창 가운데 하나만 쓴다.
+    off: f32,
+    room: f32,
+    content: f32,
+    unit: f32,
+}
+
+/// 화면 패스의 그림을 `r`(논리 px) 안으로 자른다 — `None`이면 푼다. 굴리는 판의 위·아래 끝에 걸친 칸을 자를 때(0163).
+/// 풀기를 잊으면 그 뒤의 모든 그림이 잘린다: 자른 함수 안에서 푼다.
+pub fn clip(r: Option<Rect>) {
+    let dpi = screen_dpi_scale();
+    let px = r.map(|r| {
+        (
+            (r.x * dpi).round() as i32,
+            (r.y * dpi).round() as i32,
+            (r.w * dpi).round() as i32,
+            (r.h * dpi).round() as i32,
+        )
+    });
+    unsafe { get_internal_gl() }.quad_gl.scissor(px);
 }
 
 impl ListView {
+    /// 판 창(0163): 그릴 때 보이는 높이 `room`·내용 높이 `content`(기준 px)·기준 px의 화면 크기 `unit`을 적고, 보이는 첫 자리를
+    /// 돌려준다(내용이 다 들어가면 0). 처음 그리는 창이면 참도 함께 — 부르는 쪽이 커서 자리를 `reveal`로 보이게 한다.
+    pub fn span(&mut self, room: f32, content: f32, unit: f32) -> (f32, bool) {
+        let fresh = self.room <= 0.0;
+        (self.room, self.content, self.unit) = (room, content, unit);
+        self.off = self.off.clamp(0.0, self.span_max());
+        (self.off, fresh)
+    }
+
+    fn span_max(&self) -> f32 {
+        (self.content - self.room).max(0.0)
+    }
+
+    /// 지금 보이는 첫 자리(기준 px).
+    pub fn offset(&self) -> f32 {
+        self.off
+    }
+
+    /// 내용의 `y0..y1`이 보이게 창을 가장 적게 옮긴다(커서가 창을 끈다). 창보다 큰 구간이면 위쪽을 보인다. 움직인 뒤의 자리.
+    pub fn reveal(&mut self, y0: f32, y1: f32) -> f32 {
+        if self.room > 0.0 {
+            let low = (y1 - self.room).min(y0);
+            self.off = self.off.clamp(low, y0.max(low)).clamp(0.0, self.span_max());
+        }
+        self.off
+    }
+
+    /// 끌기(화면 px, 위로 끌면 +)와 칸(휠·▲▼, 아래로 + — 한 칸 = `step` 기준 px)만큼 판 창을 옮긴다. 움직였으면 참.
+    pub fn nudge(&mut self, drag: f32, steps: i32, step: f32) -> bool {
+        let before = self.off;
+        let d = drag / self.unit.max(0.01) + steps as f32 * step;
+        self.off = (self.off + d).clamp(0.0, self.span_max());
+        self.off != before
+    }
+
+    /// 판 창의 위·아래에 가려진 것이 있나(▲▼).
+    pub fn span_more(&self) -> (bool, bool) {
+        (self.off > 0.5, self.off < self.span_max() - 0.5)
+    }
+
     /// 손가락이 `row`를 골랐다(창은 그대로 — 그 줄은 이미 보인다).
     pub fn tapped(&mut self, row: usize) {
         self.tapped = Some(row);
@@ -925,6 +986,40 @@ pub fn all_text(s: &Strings) -> String {
 mod tests {
     /// 굴리는 목록(nail 0199 + 가장자리 한 줄 여유): 줄 높이만큼 끌면 한 줄, 끝에서 멈추고, 커서는 창 안(가장자리에서 한 줄 띄워)으로.
     /// 키 커서는 창이 따라가되 다음 줄이 보이게 한 줄 앞서 굴린다.
+    /// 0163: 판 창(줄 표가 아닌 격자) — 내용이 다 들어가면 움직이지 않고, 넘치면 끌기(화면 px)·칸(휠·▲▼)으로 0..=넘친 만큼,
+    /// `reveal`은 구간이 보이게 가장 적게 옮긴다. 그리기 전(보이는 높이를 모를 때)에는 움직이지 않는다.
+    #[test]
+    fn a_span_view_scrolls_only_what_overflows_and_reveals_with_the_least_move() {
+        let mut v = ListView::default();
+        assert_eq!(v.reveal(150.0, 190.0), 0.0, "not drawn yet");
+        let (off, fresh) = v.span(100.0, 80.0, 2.0);
+        assert!(fresh && off == 0.0);
+        assert!(!v.nudge(40.0, 1, 24.0), "everything fits");
+        assert_eq!(v.span_more(), (false, false));
+        let (_, fresh) = v.span(100.0, 160.0, 2.0);
+        assert!(!fresh);
+        assert_eq!(v.span_more(), (false, true));
+        // 끌기 40 화면 px = 20 기준 px, 휠 한 칸 = 24.
+        assert!(v.nudge(40.0, 0, 24.0));
+        assert_eq!(v.offset(), 20.0);
+        assert!(v.nudge(0.0, 1, 24.0));
+        assert_eq!(v.offset(), 44.0);
+        assert_eq!(v.span_more(), (true, true));
+        v.nudge(0.0, 5, 24.0);
+        assert_eq!(v.offset(), 60.0, "stops at the end");
+        assert_eq!(v.span_more(), (true, false));
+        // 보이는 구간(60..160) 안이면 그대로, 위로 벗어나면 그 위가 창의 위 끝, 아래로 벗어나면 그 아래가 창의 아래 끝.
+        assert_eq!(v.reveal(70.0, 120.0), 60.0);
+        assert_eq!(v.reveal(30.0, 80.0), 30.0);
+        assert_eq!(v.reveal(100.0, 150.0), 50.0);
+        // 창보다 큰 구간은 위쪽을 보인다.
+        assert_eq!(v.reveal(10.0, 150.0), 10.0);
+        // 내용이 줄면(창이 커지면) 자리도 따라 줄어든다.
+        assert_eq!(v.span(100.0, 120.0, 2.0).0, 10.0);
+        v.nudge(0.0, 3, 24.0);
+        assert_eq!(v.span(130.0, 120.0, 2.0).0, 0.0);
+    }
+
     #[test]
     fn list_view_scrolls_by_drag_and_keeps_a_row_of_margin() {
         let mut v = ListView::default();
