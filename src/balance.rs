@@ -1,7 +1,7 @@
 //! 보스 싸움 길이 모의(0126): 실제 `World`로 종지기와 싸우는 봇을 돌려 성공률별 싸움 시간·받은 피해를 잰다.
 //! 봇은 보스 상태를 읽는다(사람이 예고를 읽는 것의 대역). 공격마다 한 번 굴려 `p`면 맞는 순간에 패링(되받을 수 있는 것)·
 //! 점프(울림 고리 — 고리마다 굴림)를 정확히 하고, 아니면 아무것도 안 해 맞는다(늦거나 이른 패링 = 맞음과 같게 본다).
-//! 틈(보스가 예고 중이 아니거나 예고가 많이 남았을 때)에는 붙어서 평타 콤보를 넣는다. 체력 2 이하면 틈에 등잔을 마신다.
+//! 틈(보스가 예고 중이 아니거나 예고가 많이 남았을 때)에는 붙어서 평타 콤보를 넣는다. 체력 20(두 대 몫) 이하면 틈에 등잔을 마신다.
 //! 돌리기: `cargo test bellkeeper_fight_length -- --ignored --nocapture`
 #![cfg(test)]
 
@@ -74,7 +74,7 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     w.apply_stats(prog.stats(), true);
     w.tree = b.tree;
     let boss = w.spawn(kind, vec3(0.0, 0.0, -7.0));
-    // 체력 훑기(0127): `SIM_BOSS_HP=60`이면 보스 체력을 바꿔 잰다(자세 막대는 보스 고정값이라 그대로).
+    // 체력 훑기(0127): `SIM_BOSS_HP=600`이면 보스 체력을 바꿔 잰다(자세 막대는 보스 고정값이라 그대로).
     if let Some(hp) = std::env::var("SIM_BOSS_HP")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -240,8 +240,8 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
         if opening && gap <= 1.6 && w.player.stamina >= reserve && !busy {
             a.attack = true;
         }
-        // 등잔: 체력 2 이하·틈·조금 떨어져 있으면.
-        if w.player.hp <= 2 && w.player.flask > 0 && opening && !busy {
+        // 등잔: 체력 두 눈금(20) 이하·틈·조금 떨어져 있으면.
+        if w.player.hp <= 2 * crate::tuning::HP_UNIT && w.player.flask > 0 && opening && !busy {
             a.flask = true;
             a.attack = false;
             a.move_dir = Vec2::ZERO;

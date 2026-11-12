@@ -11,8 +11,8 @@ use crate::tuning::{
     BEAT_CUE_MIN, BEAT_CUE_SHOT_ARC, BEAT_CUE_SHOT_REACH, BEAT_WINDOW, BEAT_WINDOW_MIN, BLAST_SHOW,
     BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID, CAST_CHARGES,
     DASH_ATTACK_LATE, ELITE_EMBERS, ELITE_HARD_POISE, ELITE_LINGER_DELAY, ELITE_LINGER_RADIUS,
-    FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, LOCK_HANDOFF, P,
-    PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RUN_SPEED_X, RUN_STAMINA, SHARD_R, SHARD_RANGE,
+    FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, HP_UNIT, LOCK_HANDOFF,
+    P, PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RUN_SPEED_X, RUN_STAMINA, SHARD_R, SHARD_RANGE,
     SHARD_REFLECT_DAMAGE, SHARD_REFLECT_SPEED, SHARD_SPEED, STAMINA_DENIED_SHOW, STUN_CHAIN_GRACE,
     STUN_CHAIN_MAX, TICK_DT,
 };
@@ -1351,18 +1351,18 @@ impl World {
             let def = match (power, wpn.rb) {
                 (0, Rb::Magic(b)) => b,
                 (0, Rb::Shot { bolt, .. }) => bolt,
-                // 덜 모은 탄(0056): 모은 탄의 반 — 꿰뚫기·휘청 없음.
+                // 덜 모은 탄(0056): 모은 탄의 반(옛 눈금으로 올림, 0158 N0) — 꿰뚫기·휘청 없음.
                 (1, _) => weapons::Bolt {
-                    damage: (c.damage + 1) / 2,
+                    damage: crate::tuning::half_up(c.damage),
                     poise: c.poise * 0.5,
                     pierce: false,
                     stagger: 0.0,
                     scale: 1.0 + (c.scale - 1.0) * 0.4,
                     ..c
                 },
-                // 딱 맞춰 뗀 모은 탄(0078): 강타의 딱 맞춤과 같은 덤 — 피해 +1·자세 피해 ×1.5.
+                // 딱 맞춰 뗀 모은 탄(0078): 강타의 딱 맞춤과 같은 덤 — 피해 +한 눈금(`HP_UNIT`)·자세 피해 ×1.5.
                 (3, _) => weapons::Bolt {
-                    damage: c.damage + 1,
+                    damage: c.damage + HP_UNIT,
                     poise: c.poise * 1.5,
                     ..c
                 },
@@ -1752,7 +1752,7 @@ impl World {
                         } else {
                             0
                         }
-                        + perfect as i32,
+                        + perfect as i32 * HP_UNIT,
                     poise: h.poise * if perfect { 1.5 } else { 1.0 },
                     knock: t[P::HeavyKnock] * if perfect { 1.5 } else { 1.0 },
                     heavy: Some(full),
@@ -2521,10 +2521,11 @@ impl World {
             // 같은 틱이라도 뒤·옆에서 맞은 것·받을 수 없는 파동은 그대로 맞는다(패링은 앞쪽 반원만).
         }
         if let (Some(from), false) = (hurt_player, self.player.invulnerable()) {
+            // 한 대 = 한 눈금(`HP_UNIT`, 0158 N0), 높은 등급의 적은 두 눈금.
             let blow = if hurt_tier >= crate::tuning::TIER_HEAVY_HITS {
-                2
+                2 * HP_UNIT
             } else {
-                1
+                HP_UNIT
             };
             let taken = blow + self.stats.taken;
             let pl = &mut self.player;
@@ -2551,7 +2552,7 @@ impl World {
             let away = vec3(pl.pos.x - from.x, 0.0, pl.pos.z - from.z).normalize_or_zero();
             pl.vel = away * t[P::HitKnock] * KNOCK_DECAY;
             // 맞은 순간 세계가 멈춘다(0143): 때릴 때보다 길게, 센 타격은 더 길게. 이어 맞으면 경직처럼 반씩(떼 속에서 화면이 얼어붙지 않게).
-            let heavy = if taken >= 2 {
+            let heavy = if taken >= crate::tuning::HURT_HEAVY_BLOW {
                 crate::tuning::HURT_HEAVY
             } else {
                 1.0
@@ -2906,7 +2907,8 @@ pub fn heavy_times(t: &Tuning, w: &weapons::Weapon) -> (f32, f32, f32) {
     )
 }
 
-/// 자세 막대의 크기(0051): 잡몹 = 바탕 + 체력 × 배, 보스는 따로.
+/// 자세 막대의 크기(0051): 잡몹 = 바탕 + 체력(옛 눈금 — `HP_UNIT`으로 나눈 칸 수) × 배, 보스는 따로.
+/// 자세는 눈금을 옮기지 않았다(0158 N0) — 체력이 ×10이 되어도 막대는 그대로.
 pub fn poise_max(en: &Enemy, t: &Tuning) -> f32 {
     if en.boss {
         t[P::PoiseBoss]
@@ -2917,13 +2919,14 @@ pub fn poise_max(en: &Enemy, t: &Tuning) -> f32 {
             1.0
         };
         // 등급(0112): 체력이 커진 몫에 더해 × 등급 자세 배율(정본의 계산 순서).
-        (t[P::PoiseBase] + en.max_hp as f32 * t[P::PoisePerHp])
+        (t[P::PoiseBase] + en.max_hp as f32 / HP_UNIT as f32 * t[P::PoisePerHp])
             * hard
             * crate::tuning::tier(en.tier).poise
     }
 }
 
-/// 플레이어가 주는 피해(0055): 드러난 적은 치명타 덤, 자세가 깨진 동안은 × `poise.break damage x`(올림) — 폭딜 창.
+/// 플레이어가 주는 피해(0055): 드러난 적은 치명타 덤, 자세가 깨진 동안은 × `poise.break damage x`(옛 눈금으로 올림 —
+/// `tuning::scale_up`, 0158 N0: 옛 3 × 1.5 → 5가 30 × 1.5 → 50) — 폭딜 창.
 /// `opened` = 열린 틈의 타 덤(장신구 "깨진 종 조각", 0127) — 드러났거나(치명타) 자세가 깨진 적에게만.
 fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, t: &Tuning) -> i32 {
     // 보스 2단계 전환(0133) 동안은 들어가지 않는다(근접·탄은 `guards`가 튕긴다 — 나머지 넓은 타도 0).
@@ -2933,7 +2936,7 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, t: &Tuning) -> i32 {
     let open = crit || en.broken > 0.0;
     let d = base + if crit { t[P::ParryCrit] as i32 } else { 0 } + if open { opened } else { 0 };
     if en.broken > 0.0 {
-        (d as f32 * t[P::PoiseBreakDamage]).ceil() as i32
+        crate::tuning::scale_up(d, t[P::PoiseBreakDamage])
     } else {
         d
     }
@@ -3062,17 +3065,17 @@ mod tests {
         use crate::charms::{def, Id};
         use crate::stats::Stats;
         let mut w = World::new("t", 20.0);
-        // 단단한 껍질 + 가벼운 발: 최대 체력 +1, 받는 피해 +1.
+        // 단단한 껍질 + 가벼운 발: 최대 체력 +10, 받는 피해 +10.
         w.apply_stats(
             Stats::compute(&[def(Id::Shell).mods, def(Id::Feet).mods]),
             true,
         );
-        assert_eq!(w.player.max_hp, crate::tuning::PLAYER_HP + 1);
+        assert_eq!(w.player.max_hp, crate::tuning::PLAYER_HP + 10);
         assert_eq!(w.player.hp, w.player.max_hp, "refilled");
         // 장신구를 빼면 체력은 새 최대를 넘지 않는다.
         w.apply_stats(Stats::default(), false);
         assert_eq!(w.player.hp, crate::tuning::PLAYER_HP);
-        // 받는 피해: 같은 한 대가 1 대신 2.
+        // 받는 피해: 같은 한 대가 10 대신 20.
         w.apply_stats(Stats::compute(&[def(Id::Feet).mods]), true);
         let before = w.player.hp;
         w.spawn(crate::species::Kind::Husk, vec3(0.6, 0.0, 0.0));
@@ -3083,7 +3086,7 @@ mod tests {
                 break;
             }
         }
-        assert_eq!(before - w.player.hp, 2);
+        assert_eq!(before - w.player.hp, 20);
     }
 
     #[test]
@@ -3252,7 +3255,7 @@ mod tests {
             hits += ev.iter().filter(|e| matches!(e, Event::Hit { .. })).count();
         }
         assert_eq!(hits, 1);
-        assert_eq!(w.enemies[0].hp, w.enemies[0].max_hp - 1);
+        assert_eq!(w.enemies[0].hp, w.enemies[0].max_hp - 10);
     }
 
     #[test]
@@ -3588,7 +3591,12 @@ mod tests {
             ev.extend(w.step(&Actions::default(), &t));
         }
         assert!(ev.iter().any(|e| matches!(e, Event::Crit { .. })));
-        assert_eq!(w.enemies[0].hp, hp - 1 - t[P::ParryCrit] as i32);
+        assert_eq!(w.enemies[0].hp, hp - 10 - t[P::ParryCrit] as i32);
+        assert_eq!(
+            t[P::ParryCrit] as i32,
+            20,
+            "the crit bonus is two old points"
+        );
         assert_eq!(w.enemies[0].exposed, 0.0);
     }
 
@@ -3906,7 +3914,7 @@ mod tests {
         for (p, v) in [
             (P::SpillPerM, 0.35),
             (P::SpillMax, 3.0),
-            (P::SlamDamage, 1.0),
+            (P::SlamDamage, 10.0),
         ] {
             let i = crate::tuning::SPECS.iter().position(|s| s.p == p).unwrap();
             t.set(i, v);
@@ -4127,13 +4135,16 @@ mod tests {
         let s = w.spawn(Kind::Husk, vec3(0.0, 0.0, -4.0));
         w.enemies[s].place(0.0);
         w.enemies[s].docile = true;
-        w.enemies[s].hp = 1;
+        w.enemies[s].hp = 10;
         let steps = (crate::tuning::EAT_TIME * 2.2 / TICK_DT) as usize;
         for _ in 0..steps {
             w.step(&Actions::default(), &t);
         }
         assert_eq!(w.enemies[s].state, EState::Idle, "seen but not chased");
-        assert_eq!(w.enemies[s].hp, 3, "ate back to full");
+        assert_eq!(
+            w.enemies[s].hp, 30,
+            "ate back to full, one old point a bite"
+        );
         w.enemies[s].hurt = 0.15;
         w.step(&Actions::default(), &t);
         assert_eq!(w.enemies[s].state, EState::Chase, "struck: fights");
@@ -4146,7 +4157,7 @@ mod tests {
         let mut w = World::new("test", 40.0);
         let b = w.spawn(Kind::Warden, vec3(0.0, 0.0, -2.6));
         w.enemies[b].hp = w.enemies[b].max_hp / 2;
-        w.player.hp = 9;
+        w.player.hp = 90;
         w.step(&Actions::default(), &t);
         assert!(w.enemies[b].rising());
         let hp = w.enemies[b].hp;
@@ -4168,7 +4179,7 @@ mod tests {
                 && w.player.pos.distance(start) > 0.05;
         }
         assert!(pushed, "the burst pushes the wanderer");
-        assert_eq!(w.player.hp, 9, "the burst does not hurt");
+        assert_eq!(w.player.hp, 90, "the burst does not hurt");
         // 튕길 때마다의 히트스톱만큼 늦게 끝난다.
         for _ in 0..90 {
             w.step(&Actions::default(), &t);
@@ -4187,7 +4198,7 @@ mod tests {
             w.enemies[b].atk = Atk::Hurl;
             w.enemies[b].plant_at = Some(vec3(0.0, 0.0, -4.0));
             w.enemies[b].state = EState::Wave { t: 0.0 };
-            w.player.hp = 99;
+            w.player.hp = 990;
             let hp = w.player.hp;
             for _ in 0..200 {
                 w.player.hurt = 0.0;
@@ -4202,7 +4213,7 @@ mod tests {
             }
             hp - w.player.hp
         };
-        assert_eq!(run(false), 1, "the ring from the landing hits once");
+        assert_eq!(run(false), 10, "the ring from the landing hits once");
         assert_eq!(run(true), 0, "jumped over");
     }
 
@@ -4216,7 +4227,7 @@ mod tests {
             w.enemies[b].roused = roused;
             w.enemies[b].atk = Atk::Toll;
             w.enemies[b].state = EState::Wave { t: 0.0 };
-            w.player.hp = 99;
+            w.player.hp = 990;
             let hp = w.player.hp;
             for _ in 0..240 {
                 w.player.hurt = 0.0;
@@ -4231,8 +4242,8 @@ mod tests {
             }
             hp - w.player.hp
         };
-        assert_eq!(run(3.0, false, false), 2, "two rings, one hit each");
-        assert_eq!(run(3.0, false, true), 3, "roused: a third ring");
+        assert_eq!(run(3.0, false, false), 20, "two rings, one hit each");
+        assert_eq!(run(3.0, false, true), 30, "roused: a third ring");
         assert_eq!(run(3.0, true, false), 0, "jumping clears every ring");
         assert_eq!(run(12.0, false, false), 0, "beyond the rings' reach");
     }
@@ -4293,7 +4304,7 @@ mod tests {
             w.step(&Actions::default(), &t);
             idle(&mut w);
         }
-        assert_eq!(w.player.hp, hp - 1);
+        assert_eq!(w.player.hp, hp - 10);
         assert!(w.shards.is_empty());
     }
 
@@ -4330,7 +4341,7 @@ mod tests {
         let t = Tuning::default();
         let mut w = World::new("test", 30.0);
         w.spawn_mob(vec3(1.0, 0.0, -6.0));
-        w.enemies[0].hp = 9;
+        w.enemies[0].hp = 90;
         idle(&mut w);
         let ev = press(
             &t,
@@ -4353,7 +4364,7 @@ mod tests {
             weapons::Rb::Magic(b) => b.damage,
             weapons::Rb::Shot { bolt, .. } => bolt.damage,
         };
-        assert_eq!(w.enemies[0].hp, 9 - magic);
+        assert_eq!(w.enemies[0].hp, 90 - magic);
         assert!(w.bolts.is_empty());
         assert!(matches!(w.player.state, PState::Idle));
     }
@@ -4368,7 +4379,7 @@ mod tests {
             w.spawn_mob(vec3(0.0, 0.0, -4.0)); // 가까운 앞쪽(자동 조준·락온이 고를 적)
             w.spawn_mob(vec3(7.0, 0.0, 0.0)); // 커서 쪽
             for e in &mut w.enemies {
-                e.hp = 9;
+                e.hp = 90;
             }
             idle(&mut w);
             if lock {
@@ -4396,11 +4407,11 @@ mod tests {
             (w.enemies[0].hp, w.enemies[1].hp)
         };
         let (near, cursor) = cast_at(false);
-        assert_eq!(near, 9, "the near enemy is left alone");
-        assert!(cursor < 9, "the bolt went the cursor's way");
+        assert_eq!(near, 90, "the near enemy is left alone");
+        assert!(cursor < 90, "the bolt went the cursor's way");
         let (near, cursor) = cast_at(true);
         assert!(
-            near < 9 && cursor == 9,
+            near < 90 && cursor == 90,
             "locked: the target, not the cursor"
         );
     }
@@ -4451,8 +4462,8 @@ mod tests {
         assert!(matches!(w.player.state, PState::Idle));
         assert!(w.player.cast_denied > 0.0);
         w.spawn_mob(vec3(0.0, 0.0, -1.2));
-        w.enemies[0].hp = 50;
-        w.enemies[0].max_hp = 50;
+        w.enemies[0].hp = 500;
+        w.enemies[0].max_hp = 500;
         idle(&mut w);
         let m0 = w.player.mana;
         press(
@@ -4464,7 +4475,7 @@ mod tests {
             },
             40,
         );
-        assert_eq!(w.enemies[0].hp, 49);
+        assert_eq!(w.enemies[0].hp, 490);
         let by_time = 41.0 * TICK_DT / t[P::CastCooldown];
         assert!(
             w.player.mana - m0 <= by_time + 1e-4,
@@ -4636,7 +4647,7 @@ mod tests {
         w.enemies[i].place(0.0);
         w.enemies[i].notice();
         w.enemies[i].pos = vec3(0.0, 0.0, -30.0 + LEASH_RANGE + 2.0);
-        w.enemies[i].hp = 1;
+        w.enemies[i].hp = 10;
         w.player.pos = vec3(0.0, 0.0, 20.0);
         w.step(&Actions::default(), &t);
         assert_eq!(w.enemies[i].state, EState::Return);
@@ -4653,8 +4664,8 @@ mod tests {
     }
 
     /// 0112 남는: 쓰러진 자리에 고리가 남고 `ELITE_LINGER_DELAY` 뒤 둘레를 친다 — 안이면 맞고, 밖이면 안 맞는다.
-    /// 0112·0116 T3: 등급 2 잡몹은 체력 ×1.5(올림 — 잔재 3 → 5, 가시짐승 2 → 3)·자세 ×1.3(커진 체력 몫에 더해)·잔불 ×1.3(올림, 0123),
-    /// 한 대는 1 그대로 — 등급 3부터 2. 예고 길이는 같다.
+    /// 0112·0116 T3: 등급 2 잡몹은 체력 ×1.5(옛 눈금으로 올림 — 잔재 30 → 50, 가시짐승 20 → 30, 0158 N0)·자세 ×1.3(커진 체력 몫에 더해)·
+    /// 잔불 ×1.3(올림, 0123), 한 대는 10 그대로 — 등급 3부터 20. 예고 길이는 같다.
     #[test]
     fn tier_two_mobs_are_sturdier_and_richer_but_hit_and_tell_the_same() {
         use crate::species::Kind;
@@ -4666,8 +4677,9 @@ mod tests {
             w
         };
         let (husk1, husk2) = (make(Kind::Husk, 1), make(Kind::Husk, 2));
-        assert_eq!((husk1.enemies[0].max_hp, husk2.enemies[0].max_hp), (3, 5));
-        assert_eq!(make(Kind::Thorn, 2).enemies[0].max_hp, 3);
+        assert_eq!((husk1.enemies[0].max_hp, husk2.enemies[0].max_hp), (30, 50));
+        assert_eq!(make(Kind::Thorn, 2).enemies[0].max_hp, 30);
+        // 자세는 눈금을 옮기지 않았다: 체력 50 = 옛 다섯 칸 몫.
         let base = t[P::PoiseBase] + 5.0 * t[P::PoisePerHp];
         assert!((poise_max(&husk2.enemies[0], &t) - base * 1.3).abs() < 1e-3);
         // 잔불: 쓰러뜨려 떨군 값.
@@ -4686,8 +4698,8 @@ mod tests {
         let hp = w.enemies[b].max_hp;
         w.enemies[b].set_tier(2);
         assert_eq!((w.enemies[b].max_hp, w.enemies[b].tier), (hp, 1));
-        // 한 대: 등급 2까지 1, 등급 3부터 2(0112).
-        for (tier, want) in [(2u8, 1), (crate::tuning::TIER_HEAVY_HITS, 2)] {
+        // 한 대: 등급 2까지 10, 등급 3부터 20(0112).
+        for (tier, want) in [(2u8, 10), (crate::tuning::TIER_HEAVY_HITS, 20)] {
             let mut w = World::new("test", 20.0);
             let i = w.spawn(Kind::Husk, vec3(0.6, 0.0, 0.0));
             w.enemies[i].set_tier(tier);
@@ -4827,7 +4839,7 @@ mod tests {
             max: vec3(1.0, 3.0, -2.5),
         });
         w.spawn_mob(vec3(0.0, 0.0, -6.0));
-        w.enemies[0].hp = 9;
+        w.enemies[0].hp = 90;
         idle(&mut w);
         press(
             &t,
@@ -4838,7 +4850,7 @@ mod tests {
             },
             90,
         );
-        assert_eq!(w.enemies[0].hp, 9);
+        assert_eq!(w.enemies[0].hp, 90);
         assert!(w.bolts.is_empty());
     }
 
@@ -4874,7 +4886,7 @@ mod tests {
     fn mashing_the_sword_runs_its_three_hit_combo() {
         let t = Tuning::default();
         let mut w = World::new("test", 30.0);
-        mob_with(&mut w, vec3(0.0, 0.0, -1.3), 99);
+        mob_with(&mut w, vec3(0.0, 0.0, -1.3), 990);
         idle(&mut w);
         let mut seen = Vec::new();
         for i in 0..240 {
@@ -4901,7 +4913,7 @@ mod tests {
         let t = Tuning::default();
         let mut w = World::new("test", 30.0);
         w.set_weapon(weapons::Id::Hammer);
-        let far = mob_with(&mut w, vec3(0.0, 0.0, 8.0), 50);
+        let far = mob_with(&mut w, vec3(0.0, 0.0, 8.0), 500);
         idle(&mut w);
         w.step(
             &Actions {
@@ -4935,7 +4947,7 @@ mod tests {
             idle(&mut w);
         }
         assert!(ev.iter().any(|e| matches!(e, Event::Aftershock { .. })));
-        assert!(w.enemies[far].hp < 50, "aftershock hits");
+        assert!(w.enemies[far].hp < 500, "aftershock hits");
         assert!(w.cracks.is_empty());
     }
 
@@ -5032,7 +5044,7 @@ mod tests {
         let mut w = World::new("test", 40.0);
         w.set_weapon(weapons::Id::Crossbow);
         let g = weapons::Id::Crossbow.def().grenade.unwrap();
-        let m = mob_with(&mut w, vec3(0.0, 0.0, -5.0), 20);
+        let m = mob_with(&mut w, vec3(0.0, 0.0, -5.0), 200);
         idle(&mut w);
         let mut ev = w.step(
             &Actions {
@@ -5050,7 +5062,7 @@ mod tests {
         assert!(ev.iter().any(|e| matches!(e, Event::Throw)));
         assert!(ev.iter().any(|e| matches!(e, Event::Boom { .. })));
         assert!(
-            w.enemies[m].hp <= 20 - g.damage,
+            w.enemies[m].hp <= 200 - g.damage,
             "blast hits: {}",
             w.enemies[m].hp
         );
@@ -5145,7 +5157,8 @@ mod tests {
         let mut w = World::new("test", 40.0);
         let got = charge_cast(&mut w, &t, 3);
         let c = weapons::Id::Sword.def().charged;
-        assert_eq!(got[0].def.damage, (c.damage + 1) / 2);
+        // 반은 옛 눈금으로 올림(0158 N0): 30 → 옛 (3 + 1) / 2 = 2의 열 배.
+        assert_eq!((c.damage, got[0].def.damage), (30, 20));
         assert!(!got[0].def.pierce);
     }
 
@@ -5162,11 +5175,11 @@ mod tests {
         let got = charge_cast(&mut w, &t, full + past_perfect);
         assert!(got[0].def.pierce && got[0].def.damage == charged.damage);
         assert_eq!(w.player.ammo, mag - 2);
-        // 딱 맞춰 떼기(0078): 다 모인 바로 뒤에 떼면 피해 +1 — 강타와 같은 규칙.
+        // 딱 맞춰 떼기(0078): 다 모인 바로 뒤에 떼면 피해 +10(옛 +1) — 강타와 같은 규칙.
         let mut w = World::new("test", 40.0);
         w.set_weapon(weapons::Id::Crossbow);
         let got = charge_cast(&mut w, &t, full + 2);
-        assert!(got[0].def.pierce && got[0].def.damage == charged.damage + 1);
+        assert!(got[0].def.pierce && got[0].def.damage == charged.damage + 10);
         // 근접 무기의 RB 마법은 무기의 모으기 공격이 아니다 — 딱 맞춤 없음.
         let mut w = World::new("test", 40.0);
         let got = charge_cast(&mut w, &t, full + 2);
@@ -5374,7 +5387,7 @@ mod tests {
     fn filling_the_poise_bar_breaks_the_enemy() {
         let t = Tuning::default();
         let mut w = World::new("test", 30.0);
-        let i = mob_with(&mut w, vec3(0.0, 0.0, -3.0), 99);
+        let i = mob_with(&mut w, vec3(0.0, 0.0, -3.0), 990);
         let max = poise_max(&w.enemies[i], &t);
         let mut ev = Vec::new();
         add_poise(&mut w.enemies[i], max * 0.5, None, &t, &mut ev);
@@ -5385,31 +5398,37 @@ mod tests {
         assert!(w.enemies[i].exposed > 0.0);
         // 0055: 깨진 동안은 모든 타격이 × `poise.break damage x`(폭딜 창) — 첫 대는 치명타 덤까지.
         assert!(w.enemies[i].broken > 0.0);
-        let base = 2;
-        let want = (base as f32 * t[P::PoiseBreakDamage]).ceil() as i32;
+        let base = 20;
+        let want = crate::tuning::scale_up(base, t[P::PoiseBreakDamage]);
         assert_eq!(hurt_by(&w.enemies[i], base, false, 0, &t), want);
         assert!(hurt_by(&w.enemies[i], base, true, 0, &t) > want);
-        // 0127 깨진 종 조각: 열린 틈(깨짐·드러남)에만 +1 — 깨진 동안은 배율 앞에서 더한다.
-        let open = ((base + 1) as f32 * t[P::PoiseBreakDamage]).ceil() as i32;
-        assert_eq!(hurt_by(&w.enemies[i], base, false, 1, &t), open);
+        // 올림은 옛 눈금으로(0158 N0): 옛 1 → 2·2 → 3·3 → 5(4.5 올림)가 열 배 그대로 — 15·45가 아니다.
+        assert_eq!(t[P::PoiseBreakDamage], 1.5);
+        for (d, hurt) in [(10, 20), (20, 30), (30, 50), (40, 60), (50, 80)] {
+            assert_eq!(hurt_by(&w.enemies[i], d, false, 0, &t), hurt, "{d}");
+        }
+        // 0127 깨진 종 조각: 열린 틈(깨짐·드러남)에만 +10 — 깨진 동안은 배율 앞에서 더한다.
+        let open = crate::tuning::scale_up(base + 10, t[P::PoiseBreakDamage]);
+        assert_eq!((want, open), (30, 50));
+        assert_eq!(hurt_by(&w.enemies[i], base, false, 10, &t), open);
         w.enemies[i].broken = 0.0;
         assert_eq!(hurt_by(&w.enemies[i], base, false, 0, &t), base);
         assert_eq!(
-            hurt_by(&w.enemies[i], base, false, 1, &t),
+            hurt_by(&w.enemies[i], base, false, 10, &t),
             base,
             "closed: no bonus"
         );
         let crit = base + t[P::ParryCrit] as i32;
         assert_eq!(
-            hurt_by(&w.enemies[i], base, true, 1, &t),
-            crit + 1,
+            hurt_by(&w.enemies[i], base, true, 10, &t),
+            crit + 10,
             "exposed: bonus"
         );
         let before = w.enemies[i].poise;
         add_poise(&mut w.enemies[i], max, None, &t, &mut ev);
         assert_eq!(w.enemies[i].poise, before, "locked after a break");
         // 망치처럼 "깨지기 직전"을 깨는 타는 반만 차 있어도 깬다.
-        let j = mob_with(&mut w, vec3(2.0, 0.0, -3.0), 99);
+        let j = mob_with(&mut w, vec3(2.0, 0.0, -3.0), 990);
         let mut ev = Vec::new();
         add_poise(&mut w.enemies[j], max * 0.7, None, &t, &mut ev);
         add_poise(&mut w.enemies[j], 0.1, Some(0.6), &t, &mut ev);
@@ -5492,8 +5511,8 @@ mod tests {
                     w.spawn_boss(vec3(0.0, 0.0, -1.5));
                 } else {
                     w.spawn_mob(vec3(0.0, 0.0, -1.2));
-                    w.enemies[0].hp = 50;
-                    w.enemies[0].max_hp = 50;
+                    w.enemies[0].hp = 500;
+                    w.enemies[0].max_hp = 500;
                 }
                 idle(&mut w);
                 let hp0 = w.enemies[0].hp;
@@ -5524,7 +5543,7 @@ mod tests {
                 assert!(matches!(w.player.state, PState::Charging { .. }));
                 // 평타 한 대는 이미 맞았다. 이제 놓는다.
                 let hp1 = w.enemies[0].hp;
-                assert_eq!(hp0 - hp1, 1, "the light hit first");
+                assert_eq!(hp0 - hp1, 10, "the light hit first");
                 assert!(!ev.iter().any(|e| matches!(e, Event::Smash { .. })));
                 let mut ev = Vec::new();
                 let mut staggered = false;
@@ -5578,9 +5597,10 @@ mod tests {
     fn a_sip_heals_and_spends_one_charge() {
         let t = Tuning::default();
         let mut w = World::new("test", 20.0);
-        w.player.hp = 1;
+        w.player.hp = 10;
         let ev = drink(&mut w, &t, 80); // 마시기 0.8초 + 누름 버리기 0.3초를 넘게
-        assert_eq!(w.player.hp, 1 + t[P::FlaskHeal] as i32);
+        assert_eq!(w.player.hp, 10 + t[P::FlaskHeal] as i32);
+        assert_eq!(w.player.hp, 30, "a sip is two old points");
         assert_eq!(w.player.flask, FLASK_CHARGES - 1);
         assert_eq!(
             ev.iter()
@@ -5588,7 +5608,7 @@ mod tests {
                 .count(),
             1
         );
-        w.player.hp = PLAYER_HP - 1;
+        w.player.hp = PLAYER_HP - 10;
         drink(&mut w, &t, 80);
         assert_eq!(w.player.hp, PLAYER_HP, "never above full");
     }
@@ -5597,7 +5617,7 @@ mod tests {
     #[test]
     fn a_full_or_empty_flask_press_does_nothing_but_flash() {
         let t = Tuning::default();
-        for (hp, charges) in [(PLAYER_HP, FLASK_CHARGES), (1, 0)] {
+        for (hp, charges) in [(PLAYER_HP, FLASK_CHARGES), (10, 0)] {
             let mut w = World::new("test", 20.0);
             w.player.hp = hp;
             w.player.flask = charges;
@@ -5624,7 +5644,7 @@ mod tests {
                     let (mut starts, mut gulps, mut was) = (0, 0, false);
                     for i in 0..ticks {
                         if !full {
-                            w.player.hp = 1; // 늘 다쳐 있다(급한 상황)
+                            w.player.hp = 10; // 늘 다쳐 있다(급한 상황)
                         }
                         let k = i % (press + gap);
                         let ev = w.step(
@@ -5663,7 +5683,7 @@ mod tests {
     fn a_dodge_before_the_gulp_takes_the_flask_back() {
         let t = Tuning::default();
         let mut w = World::new("test", 20.0);
-        w.player.hp = 1;
+        w.player.hp = 10;
         drink(&mut w, &t, 5);
         w.player.dodge_cd = 0.0;
         w.step(
@@ -5674,10 +5694,10 @@ mod tests {
             &t,
         );
         assert!(matches!(w.player.state, PState::Dodge { .. }));
-        assert_eq!((w.player.flask, w.player.hp), (FLASK_CHARGES, 1));
+        assert_eq!((w.player.flask, w.player.hp), (FLASK_CHARGES, 10));
         // 0057: 삼킨 뒤에는 내리는 동작(후딜레이)을 회피로 끊는다 — 등잔·체력은 이미 바뀌었다(0031의 "삼킨 뒤 회피는 안 먹는다"를 바꿈).
         let mut w = World::new("test", 20.0);
-        w.player.hp = 1;
+        w.player.hp = 10;
         drink(&mut w, &t, (t[P::FlaskRaise] / TICK_DT) as usize + 3);
         w.player.dodge_cd = 0.0;
         w.step(
@@ -5690,7 +5710,7 @@ mod tests {
         assert!(matches!(w.player.state, PState::Dodge { .. }));
         assert_eq!(
             (w.player.flask, w.player.hp),
-            (FLASK_CHARGES - 1, 1 + t[P::FlaskHeal].round() as i32)
+            (FLASK_CHARGES - 1, 10 + t[P::FlaskHeal].round() as i32)
         );
     }
 
@@ -5699,7 +5719,7 @@ mod tests {
     fn a_hit_before_the_gulp_keeps_the_flask() {
         let t = Tuning::default();
         let mut w = mob_swinging_in_front(&t);
-        w.player.hp = 3;
+        w.player.hp = 30;
         let mut hurt = drink(&mut w, &t, 0).contains(&Event::PlayerHurt);
         for _ in 0..((t[P::FlaskRaise] / TICK_DT) as usize - 2) {
             if hurt {
@@ -5709,7 +5729,7 @@ mod tests {
         }
         assert!(hurt, "the blow landed before the gulp");
         assert!(!matches!(w.player.state, PState::Drink { .. }));
-        assert_eq!((w.player.flask, w.player.hp), (FLASK_CHARGES, 2));
+        assert_eq!((w.player.flask, w.player.hp), (FLASK_CHARGES, 20));
     }
 
     /// 0030(사장 "급하면 막 연타할텐데"): 연타는 모으기로 새지 않는다 — 누름 길이 1~9틱(≤0.15초) × 사이 2~14틱,
@@ -5781,9 +5801,11 @@ mod tests {
             + t[P::HeavyStartup]
             + t[P::HeavyActive]
             + t[P::HeavyRecovery];
+        // 평타 한 대(쥐기 전에 나간 것) + 다 모은 강타 대 평타만(둘 다 피해/초).
+        let jab = weapons::Id::Sword.def().combo[0].damage as f32;
         let heavy_dmg =
-            1.0 + weapons::Id::Sword.def().heavy.unwrap().damage as f32 + t[P::HeavyFullBonus];
-        let (h, l) = (heavy_dmg / heavy_time, 1.0 / light);
+            jab + weapons::Id::Sword.def().heavy.unwrap().damage as f32 + t[P::HeavyFullBonus];
+        let (h, l) = (heavy_dmg / heavy_time, jab / light);
         assert!(h > l * 1.2, "heavy {h:.2}/s vs light {l:.2}/s");
     }
 
@@ -6311,6 +6333,120 @@ mod tests {
         let ev = w.step(&Actions::default(), t);
         w.enemies[i].state = EState::Dead;
         ev
+    }
+
+    // ── 눈금 옮기기(0158 N0) ─────────────────────────────────────────────────────────────────────────────
+
+    /// 옮기기 전의 수(작은 정수 — 고치지 않는다): 방랑자 체력, 한 대(등급 3부터 둘), 치명타 덤, 깨진 동안의 배율.
+    const OLD_PLAYER_HP: i32 = 5;
+    const OLD_BLOW: i32 = 1;
+    const OLD_BLOW_HEAVY_TIER: i32 = 2;
+    const OLD_CRIT: i32 = 2;
+    const OLD_BREAK_X: f32 = 1.5;
+
+    /// 0158 N0 판정 기준: 어느 종에게 맞아도(등급 1~3, 받는 피해 + 장신구까지) 몇 대에 쓰러지는가가 옮기기 전과 같다.
+    /// 종마다 실제로 한 대 맞아 잃은 체력을 재고, 옛 수(체력 5 · 한 대 1 · 등급 3부터 2 · 가벼운 발 +1)와 대 수를 견준다.
+    #[test]
+    fn hits_to_die_to_every_species_are_what_they_were_before_the_scale_move() {
+        use crate::charms::{def, Id};
+        use crate::stats::Stats;
+        let t = Tuning::default();
+        let mut cases = 0;
+        for d in crate::species::ALL {
+            for tier in [1u8, 2, crate::tuning::TIER_HEAVY_HITS] {
+                for feet in [false, true] {
+                    let mut w = World::new("test", 30.0);
+                    if feet {
+                        w.apply_stats(Stats::compute(&[def(Id::Feet).mods]), true);
+                    }
+                    let full = w.player.hp;
+                    assert_eq!(full, OLD_PLAYER_HP * HP_UNIT);
+                    let i = w.spawn(d.kind, w.player.pos + vec3(0.0, 0.0, -1.0));
+                    w.enemies[i].set_tier(tier);
+                    w.enemies[i].facing = 0.0; // +z = 플레이어 쪽
+                                               // 꼬투리는 휘두르지 않고 심는다 — 심어 둔 원판이 발밑에서 터지는 틱.
+                    if d.behavior == crate::species::Behavior::Planter {
+                        w.enemies[i].atk = Atk::Plant;
+                        w.enemies[i].plant_at = Some(w.player.pos);
+                    }
+                    w.enemies[i].state = EState::Swing { t: 0.0 };
+                    let ev = w.step(&Actions::default(), &t);
+                    let tag = format!("{:?} tier {tier} feet {feet}", d.kind);
+                    assert!(ev.contains(&Event::PlayerHurt), "{tag}: the blow lands");
+                    let lost = full - w.player.hp;
+                    // 보스는 등급을 받지 않는다(늘 한 대 = 한 칸).
+                    let old = if !d.boss && tier >= crate::tuning::TIER_HEAVY_HITS {
+                        OLD_BLOW_HEAVY_TIER
+                    } else {
+                        OLD_BLOW
+                    } + feet as i32;
+                    assert_eq!(lost, old * HP_UNIT, "{tag}");
+                    assert_eq!(
+                        w.player.hurt_blow, lost,
+                        "{tag}: the HUD reads the same loss"
+                    );
+                    assert_eq!(
+                        (full + lost - 1) / lost,
+                        (OLD_PLAYER_HP + old - 1) / old,
+                        "{tag}: hits to die"
+                    );
+                    cases += 1;
+                }
+            }
+        }
+        assert_eq!(cases, crate::species::ALL.len() * 6);
+        // 등잔 한 모금·생명 한 단도 옛 칸 수 그대로: 한 모금 = 두 대 몫, 생명 한 단 = 한 대 몫.
+        assert_eq!(t[P::FlaskHeal] as i32, 2 * OLD_BLOW * HP_UNIT);
+        let life = crate::progression::Level {
+            life: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            Stats::compute(&[life.mods()]).max_hp,
+            (OLD_PLAYER_HP + 1) * HP_UNIT
+        );
+    }
+
+    /// 0158 N0: 방랑자가 주는 피해의 셈(`hurt_by` — 치명타 덤 · 열린 틈 덤 · 깨진 동안 ×1.5 올림)은 옛 작은 정수로 센 결과의
+    /// 꼭 열 배다. 옛 피해 1~9 × 치명타 × 깨짐 × 열린 틈 덤 0·1을 다 돈다(올림이 걸리는 홀수도).
+    #[test]
+    fn every_damage_formula_gives_ten_times_what_the_old_small_numbers_gave() {
+        let t = Tuning::default();
+        assert_eq!(t[P::ParryCrit] as i32, OLD_CRIT * HP_UNIT);
+        assert_eq!(t[P::PoiseBreakDamage], OLD_BREAK_X);
+        let mut w = World::new("test", 30.0);
+        let i = mob_with(&mut w, vec3(0.0, 0.0, -3.0), 990);
+        for base in 1..=9 {
+            for crit in [false, true] {
+                for broken in [false, true] {
+                    for opened in [0, 1] {
+                        let open = crit || broken;
+                        let d =
+                            base + if crit { OLD_CRIT } else { 0 } + if open { opened } else { 0 };
+                        let old = if broken {
+                            (d as f32 * OLD_BREAK_X).ceil() as i32
+                        } else {
+                            d
+                        };
+                        w.enemies[i].broken = if broken { 1.0 } else { 0.0 };
+                        let new =
+                            hurt_by(&w.enemies[i], base * HP_UNIT, crit, opened * HP_UNIT, &t);
+                        assert_eq!(
+                            new,
+                            old * HP_UNIT,
+                            "base {base} crit {crit} broken {broken} opened {opened}"
+                        );
+                    }
+                }
+            }
+        }
+        // 자세 막대는 옮기지 않았다: 체력 ×10이어도 옛 칸 수로 센다(잔재 = 옛 세 칸).
+        let mut w = World::new("test", 30.0);
+        let h = w.spawn(Kind::Husk, vec3(0.0, 0.0, -3.0));
+        assert_eq!(
+            poise_max(&w.enemies[h], &t),
+            t[P::PoiseBase] + 3.0 * t[P::PoisePerHp]
+        );
     }
 
     /// 0110: 공격 후딜레이에 눌러 받아 둔 패링이 나가기 전에 맞으면 버린다 — 경직이 풀린 뒤 뒤늦게 패링(과 헛침 굳음)이 나가지 않는다.
@@ -7027,7 +7163,7 @@ mod tests {
         let t = Tuning::default();
         let mut w = World::new("test", 20.0);
         w.set_weapon(weapons::Id::Fists);
-        let i = mob_with(&mut w, vec3(0.0, 0.0, 1.0), 10);
+        let i = mob_with(&mut w, vec3(0.0, 0.0, 1.0), 100);
         w.enemies[i].state = EState::Dormant;
         w.enemies[i].state = EState::Chase;
         let hp = w.enemies[i].hp;
@@ -7040,7 +7176,7 @@ mod tests {
                 &t,
             );
         }
-        assert_eq!(w.enemies[i].hp, hp - 1, "a punch lands for 1");
+        assert_eq!(w.enemies[i].hp, hp - 10, "a punch lands for 10");
         let fists = weapons::Id::Fists.def();
         let sword = weapons::Id::Sword.def();
         assert!(
@@ -7431,13 +7567,13 @@ mod tests {
         }
     }
 
-    /// 0104(레벨 힘): 평타 한 대가 힘 5단이면 피해 +1·자세 피해 ×1.6, 힘 0단은 그대로. 기력은 최대가 늘고 쉬면 가득.
+    /// 0104(레벨 힘): 평타 한 대가 힘 5단이면 피해 +10(옛 +1)·자세 피해 ×1.6, 힘 0단은 그대로. 기력은 최대가 늘고 쉬면 가득.
     #[test]
     fn might_adds_whole_damage_and_poise_and_stamina_grows_the_bar() {
         let t = Tuning::default();
         let swing = |might: u8| {
             let mut w = World::new("test", 20.0);
-            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 990);
             idle(&mut w);
             let lv = crate::progression::Level {
                 might,
@@ -7454,17 +7590,17 @@ mod tests {
                 &tt,
             );
             for _ in 0..40 {
-                if w.enemies[i].hp < 99 {
+                if w.enemies[i].hp < 990 {
                     break;
                 }
                 w.step(&Actions::default(), &tt);
             }
-            (99 - w.enemies[i].hp, w.enemies[i].poise)
+            (990 - w.enemies[i].hp, w.enemies[i].poise)
         };
         let (d0, p0) = swing(0);
         let (d5, p5) = swing(5);
-        assert!(d0 >= 1, "the first swing lands");
-        assert_eq!(d5, d0 + 1, "might 5: light hits +1");
+        assert_eq!(d0, 10, "the first swing lands");
+        assert_eq!(d5, d0 + 10, "might 5: light hits +10");
         assert!(p0 > 0.0);
         assert!(
             (p5 / p0 - 1.4).abs() < 1e-3,
@@ -7559,7 +7695,7 @@ mod tests {
         let poise = |cells: &[Cell]| {
             let mut w = World::new("test", 20.0);
             w.tree = tree_with(cells);
-            let i = mob_with(&mut w, vec3(0.0, 0.0, 1.0), 99);
+            let i = mob_with(&mut w, vec3(0.0, 0.0, 1.0), 990);
             idle(&mut w);
             let pl = &mut w.player;
             (pl.beat, pl.since_swing) = (0.5, 0.5);
@@ -7617,7 +7753,7 @@ mod tests {
             if cell {
                 w.tree = tree_with(&[Cell::ClosingBlow]);
             }
-            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 990);
             idle(&mut w);
             w.player.swing_beat = true;
             w.player.closing_swing = 4;
@@ -7636,7 +7772,7 @@ mod tests {
             if cell {
                 w.tree = tree_with(&[Cell::GapBeat]);
             }
-            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 990);
             w.enemies[i].state = EState::Recover { t: 0.0 };
             w.player.swing_beat = beat;
             let st = light_at_active(&t, &w, 3, 0);
@@ -7725,8 +7861,8 @@ mod tests {
             if cell {
                 w.tree = tree_with(&[Cell::TurnItBack]);
             }
-            mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
-            let j = mob_with(&mut w, vec3(1.6, 0.0, 0.6), 99);
+            mob_with(&mut w, vec3(0.0, 0.0, -1.2), 990);
+            let j = mob_with(&mut w, vec3(1.6, 0.0, 0.6), 990);
             idle(&mut w);
             w.player.riposte_swing = 5;
             let st = heavy_at_active(&t, &w, 5, true);
@@ -7745,7 +7881,7 @@ mod tests {
             if cell {
                 w.tree = tree_with(&[Cell::GatheredRiposte]);
             }
-            mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            mob_with(&mut w, vec3(0.0, 0.0, -1.2), 990);
             idle(&mut w);
             w.player.gathered_swing = 7;
             let st = heavy_at_active(&t, &w, 7, true);
@@ -7765,7 +7901,7 @@ mod tests {
             if cell {
                 w.tree = tree_with(&[Cell::OpenBreach]);
             }
-            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 990);
             w.enemies[i].broken = 0.1;
             w.enemies[i].poise_lock = 5.0;
             let st = heavy_at_active(&t, &w, 8, true);
@@ -7831,7 +7967,7 @@ mod tests {
         let flank = |behind: bool| {
             let mut w = World::new("test", 20.0);
             w.tree = tree_with(&[Cell::Sidestep]);
-            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.5), 99);
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.5), 990);
             idle(&mut w);
             // 적이 +z(플레이어 쪽)를 보면 플레이어는 앞, -z를 보면 등 뒤.
             w.enemies[i].facing = if behind { std::f32::consts::PI } else { 0.0 };
@@ -7849,7 +7985,7 @@ mod tests {
             if cell {
                 w.tree = tree_with(&[Cell::Sidestep]);
             }
-            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 990);
             idle(&mut w);
             w.player.flank_swing = 6;
             let st = light_at_active(&t, &w, 6, weapons::DASH);
@@ -7867,7 +8003,7 @@ mod tests {
             if cell {
                 w.tree = tree_with(&[Cell::TiltingGround]);
             }
-            let i = mob_with(&mut w, vec3(0.0, 0.0, -3.0), 99);
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -3.0), 990);
             turn_until_spill(&mut w, true, &t);
             let en = &w.enemies[i];
             let d = vec3(en.pos.x, 0.0, en.pos.z).normalize_or_zero();
@@ -7891,7 +8027,7 @@ mod tests {
                 w.tree = tree_with(&[Cell::LandingBeat]);
             }
             let r = t[P::PlungeRange] * 1.4;
-            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.0), 99);
+            let i = mob_with(&mut w, vec3(0.0, 0.0, -1.0), 990);
             w.enemies[i].pos.z -= r + w.enemies[i].radius - 1.0;
             idle(&mut w);
             w.plunge_now = true;
@@ -7900,8 +8036,12 @@ mod tests {
             }
             w.enemies[i].hp
         };
-        assert_eq!(hp(false), 99, "outside the first ring");
-        assert!(hp(true) < 99, "the late outer ring reaches it");
+        assert_eq!(hp(false), 990, "outside the first ring");
+        assert_eq!(
+            hp(true),
+            990 - t[P::PlungeDamage] as i32,
+            "the late outer ring reaches it"
+        );
     }
 
     #[test]
@@ -7912,7 +8052,7 @@ mod tests {
             if cell {
                 w.tree = tree_with(&[Cell::PathOpeningStep]);
             }
-            mob_with(&mut w, vec3(0.0, 0.0, -1.2), 99);
+            mob_with(&mut w, vec3(0.0, 0.0, -1.2), 990);
             idle(&mut w);
             let st = light_at_active(&t, &w, 2, weapons::DASH);
             strike_once(&mut w, &t, st);

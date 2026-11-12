@@ -794,7 +794,7 @@ weapon=crossbow
     fn v03_core_picks_move_to_levels_finds_and_core_points_once() {
         let old = "v=1\nembers=40\nclears=5\ngrow.hp=3\ngrow.flask=2\ngrow.heal=2\nshop.oil=1\n";
         let before = {
-            // 옛 셈(핵 고르기 그대로): 체력 +3, 등잔 +2 + 기름, 한 모금 +2.
+            // 옛 셈(핵 고르기 그대로): 체력 +3, 등잔 +2 + 기름, 한 모금 +2 — 기록의 수는 몫의 수 그대로, 한 몫 = 10(0158 N0).
             let g = crate::growth::Growth {
                 hp: 3,
                 flask: 2,
@@ -825,6 +825,11 @@ weapon=crossbow
             (after.max_hp, after.flask, after.heal),
             (before.max_hp, before.flask, before.heal),
             "nothing lost"
+        );
+        assert_eq!(
+            (after.max_hp, after.heal),
+            (80, 20),
+            "old 5 + 3 hearts and +2 sip, times ten"
         );
         // 다시 읽어도 그대로(깃발).
         let again = Progress::from_record(Record::parse(&p.to_record().to_text()));
@@ -909,7 +914,11 @@ weapon=crossbow
         assert_eq!(back.stats().parry, 0.04, "the worn charm counts");
         assert_eq!(back.growth, p.growth);
         let base = crate::stats::Stats::default();
-        assert_eq!(back.stats().max_hp, base.max_hp + 2);
+        assert_eq!(
+            back.stats().max_hp,
+            base.max_hp + 20,
+            "a saved count of two is still two old points (0158 N0)"
+        );
         assert_eq!(
             back.stats().flask,
             base.flask + 2,

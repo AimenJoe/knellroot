@@ -90,7 +90,7 @@ pub const SKILLS: [Skill; N] = [
         cooldown: 7.0,
         startup: 0.15,
         recover: 0.3,
-        damage: 1,
+        damage: 10,
         poise: 1.5,
         form: Form::Ring {
             radius: 3.0,
@@ -105,7 +105,7 @@ pub const SKILLS: [Skill; N] = [
         cooldown: 8.0,
         startup: 0.12,
         recover: 0.25,
-        damage: 2,
+        damage: 20,
         poise: 2.0,
         form: Form::Lane {
             dist: 6.0,
@@ -134,7 +134,7 @@ pub const SKILLS: [Skill; N] = [
         cooldown: 10.0,
         startup: 0.3,
         recover: 0.4,
-        damage: 2,
+        damage: 20,
         poise: 4.0,
         form: Form::Cone {
             range: 5.0,
@@ -240,7 +240,7 @@ mod tests {
             // 시동은 짧다(0150 3절: 0.15~0.3초) — 누른 것이 바로 나가야 "빵빵"이다.
             assert!((0.1..=0.3).contains(&s.startup), "{id:?} startup");
             assert!(s.total() < 1.0, "{id:?} is over within a second");
-            assert!(s.damage >= 0 && s.damage <= 2, "{id:?}: wide, not strong");
+            assert!(s.damage >= 0 && s.damage <= 20, "{id:?}: wide, not strong");
         }
         let keys: Vec<_> = IDS.iter().map(|i| i.key()).collect();
         for (i, k) in keys.iter().enumerate() {

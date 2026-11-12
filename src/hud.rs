@@ -1,6 +1,6 @@
 //! 싸움 화면의 글·막대(0019). 그린 화면(`render::Frame`) 안에 같은 정수 배율로 붙인다. 월드·스테이지를 읽기만 한다.
 //!
-//! 자리: 왼쪽 위 체력(마름모)·스태미나 · 오른쪽 위 목표 · 가운데 위 구역 카드 · 아래 가운데 보스 띠 · 가운데 시작 이야기.
+//! 자리: 왼쪽 위 체력(막대, 0158 N0)·스태미나 · 오른쪽 위 목표 · 가운데 위 구역 카드 · 아래 가운데 보스 띠 · 가운데 시작 이야기.
 use macroquad::prelude::*;
 
 use crate::i18n::{self, tr};
@@ -153,20 +153,46 @@ pub fn draw_reticle(f: &Frame, at: Vec2, size: u8) {
 }
 
 /// 맞음 테의 세기(0..1): 맞은 순간부터 `HURT_EDGE_HOLD` 동안 가득, 그 뒤 `HURT_EDGE_FADE`에 걸쳐 제곱으로 사라진다.
-/// 센 타격(잃은 체력 2 이상)은 `HURT_HEAVY`배(1 안). 로직 시계라 히트스톱 동안은 가득한 채 멈춰 있다.
+/// 센 타격(잃은 체력 `HURT_HEAVY_BLOW` 이상)은 `HURT_HEAVY`배(1 안). 로직 시계라 히트스톱 동안은 가득한 채 멈춰 있다.
 pub fn hurt_edge_k(since: f32, blow: i32) -> f32 {
-    use crate::tuning::{HURT_EDGE_FADE, HURT_EDGE_HOLD, HURT_HEAVY};
+    use crate::tuning::{HURT_EDGE_FADE, HURT_EDGE_HOLD, HURT_HEAVY, HURT_HEAVY_BLOW};
     if !(0.0..HURT_EDGE_HOLD + HURT_EDGE_FADE).contains(&since) {
         return 0.0;
     }
     let k = 1.0 - ((since - HURT_EDGE_HOLD) / HURT_EDGE_FADE).clamp(0.0, 1.0);
-    let heavy = if blow >= 2 { HURT_HEAVY } else { 1.0 };
+    let heavy = if blow >= HURT_HEAVY_BLOW {
+        HURT_HEAVY
+    } else {
+        1.0
+    };
     (k * k * heavy / HURT_HEAVY).min(1.0)
 }
 
-/// 체력이 위험한가(0143): `LOW_HP` 칸 이하로 살아 있고, 최대가 그보다 많을 때만(처음부터 한 칸인 판에서 늘 울리지 않게).
+/// 체력이 위험한가(0143): `LOW_HP`(한 대 몫) 이하로 살아 있고, 최대가 그보다 많을 때만(처음부터 그만큼인 판에서 늘 울리지 않게).
 pub fn low_hp(hp: i32, max_hp: i32) -> bool {
     hp > 0 && hp <= crate::tuning::LOW_HP && max_hp > crate::tuning::LOW_HP
+}
+
+/// 체력 막대(0158 N0)의 높이·체력 1의 길이·길이 상한(UI px). 기본 체력(50)이 기본 스태미나 막대와 같은 60px이고,
+/// 최대 체력 +10마다 12px 길어진다(늘어난 몫이 눈에 보이게 — 스태미나 막대와 같은 꼴, 0104). 상한을 넘으면 더 길어지지 않는다.
+const HP_BAR_H: f32 = 5.0;
+const HP_BAR_PER_HP: f32 = 1.2;
+const HP_BAR_MAX_W: f32 = 160.0;
+
+/// 체력 막대의 길이(UI px): 최대 체력에 비례, `HP_BAR_MAX_W`까지.
+pub fn hp_bar_w(max_hp: i32) -> f32 {
+    (max_hp.max(0) as f32 * HP_BAR_PER_HP).min(HP_BAR_MAX_W)
+}
+
+/// 방금 잃은 몫(0143 "부서지는 체력 칸"의 막대 꼴, 0158 N0): 맞은 뒤 `HURT_PIP` 동안 채움 끝에 밝게 남는 체력 —
+/// 처음 `HURT_PIP_HOLD`의 몫은 잃은 만큼 그대로 머물고, 그 뒤 끝까지 0으로 줄어든다. 로직 시계라 히트스톱 동안은 멈춰 있다.
+pub fn hp_chip(since: f32, blow: i32) -> f32 {
+    use crate::tuning::{HURT_PIP, HURT_PIP_HOLD};
+    if !(0.0..HURT_PIP).contains(&since) || blow <= 0 {
+        return 0.0;
+    }
+    let k = ((since / HURT_PIP - HURT_PIP_HOLD) / (1.0 - HURT_PIP_HOLD)).clamp(0.0, 1.0);
+    blow as f32 * (1.0 - k)
 }
 
 /// 화면 가장자리의 붉은 테(0143): 가장자리에서 안으로 계단지게 옅어지는 띠 일곱 겹(도트 화면이라 매끈한 그러데이션 대신 계단).
@@ -254,7 +280,7 @@ pub fn draw(
     skills: [f32; 2],
 ) {
     let s = u(f);
-    // 맞음 테(0143 — "맞았는지 잘 모르겠음"): 맞은 순간 화면 가장자리가 붉게 번쩍였다 사라지고, 체력이 한 칸이면 옅게 숨 쉰다.
+    // 맞음 테(0143 — "맞았는지 잘 모르겠음"): 맞은 순간 화면 가장자리가 붉게 번쩍였다 사라지고, 체력이 한 대 몫만 남으면 옅게 숨 쉰다.
     // HUD 글·막대보다 먼저 그려 그 아래에 깔린다.
     {
         use crate::tuning::HURT_EDGE_ALPHA;
@@ -274,46 +300,39 @@ pub fn draw(
         0.0
     };
     let (x0, y0) = (f.ox + 8.0 * s + inset, f.oy + 8.0 * s);
-    // 체력: 마름모.
+    // 체력: 막대(0158 N0 — 하트 칸에서). 길이 = 최대 체력, 어두운 바탕 위에 남은 몫.
     let pl = &w.player;
-    let max_hp = pl.max_hp.max(pl.hp);
-    // 맞으면(0143) 체력 줄이 잠깐 떨리고, 잃은 칸은 희게 번쩍이며 커졌다 사라진다. 한 칸 남으면 그 칸이 붉게 뛴다.
-    use crate::tuning::{HURT_HP_SHAKE, HURT_PIP};
+    let max_hp = pl.max_hp.max(pl.hp).max(1);
+    // 맞으면(0143) 체력 막대가 잠깐 떨리고, 잃은 몫은 채움 끝에 밝게 남았다 줄어든다. 한 대 남으면 채움이 붉게 뛴다.
+    use crate::tuning::HURT_HP_SHAKE;
     let jolt = (1.0 - pl.since_hurt / HURT_HP_SHAKE).clamp(0.0, 1.0);
     let hx = x0 + (w.time * 80.0).sin() * 2.5 * s * jolt;
-    let lost = pl.hp.max(0)..(pl.hp.max(0) + pl.hurt_blow.max(0));
-    let low = low_hp(pl.hp, pl.max_hp);
-    let diamond = |c: Vec2, r: f32, col: Color| {
-        draw_triangle(c + vec2(0.0, -r), c + vec2(r, 0.0), c + vec2(0.0, r), col);
-        draw_triangle(c + vec2(0.0, -r), c + vec2(-r, 0.0), c + vec2(0.0, r), col);
+    let (hy, hw, hh) = (y0 + 1.5 * s, hp_bar_w(max_hp) * s, HP_BAR_H * s);
+    let per = hw / max_hp as f32;
+    let beat = if low_hp(pl.hp, pl.max_hp) {
+        0.5 + 0.5 * (w.time * 4.2).sin()
+    } else {
+        0.0
     };
-    for i in 0..max_hp {
-        let c = vec2(hx + 4.0 * s + i as f32 * 10.0 * s, y0 + 4.0 * s);
-        let on = i < pl.hp;
-        let beat = if low && on {
-            0.5 + 0.5 * (w.time * 4.2).sin()
-        } else {
-            0.0
-        };
-        let col = if on {
-            Color::new(
-                HP_ON.r + (1.0 - HP_ON.r) * beat,
-                HP_ON.g * (1.0 - 0.55 * beat),
-                HP_ON.b * (1.0 - 0.3 * beat),
-                1.0,
-            )
-        } else {
-            HP_OFF
-        };
-        diamond(c, (3.5 + 0.8 * beat) * s, col);
-        if lost.contains(&i) && pl.since_hurt < HURT_PIP {
-            let k = pl.since_hurt / HURT_PIP;
-            diamond(
-                c,
-                (3.5 + 5.0 * k.sqrt()) * s,
-                Color::new(1.0, 0.96, 0.9, (1.0 - k) * (1.0 - k)),
-            );
-        }
+    draw_rectangle(hx - s, hy - s, hw + 2.0 * s, hh + 2.0 * s, BAR_BG);
+    draw_rectangle(hx, hy, hw, hh, HP_OFF);
+    let fill = pl.hp.clamp(0, max_hp) as f32 * per;
+    draw_rectangle(
+        hx,
+        hy,
+        fill,
+        hh,
+        Color::new(
+            HP_ON.r + (1.0 - HP_ON.r) * beat,
+            HP_ON.g * (1.0 - 0.55 * beat),
+            HP_ON.b * (1.0 - 0.3 * beat),
+            1.0,
+        ),
+    );
+    // 방금 잃은 몫: 채움 끝에서 최대까지만(그 사이 회복했으면 남은 자리만큼).
+    let chip = (hp_chip(pl.since_hurt, pl.hurt_blow) * per).min(hw - fill);
+    if chip > 0.0 {
+        draw_rectangle(hx + fill, hy, chip, hh, Color::new(1.0, 0.96, 0.9, 1.0));
     }
     // 스태미나(0018): 모자라서 막히면 잠깐 붉게 깜빡인다(막은 이유가 보이게 — KB action-reuse-gating).
     // 레벨 기력(0104)이 오르면 막대가 길어진다(소울류 — 늘어난 몫이 눈에 보이게, 0096 L2).
@@ -611,23 +630,55 @@ mod tests {
     #[test]
     fn the_hurt_edge_peaks_at_the_blow_holds_briefly_and_fades_out() {
         use crate::tuning::{HURT_EDGE_FADE, HURT_EDGE_HOLD};
-        assert_eq!(hurt_edge_k(f32::MAX, 1), 0.0);
-        let (light, heavy) = (hurt_edge_k(0.0, 1), hurt_edge_k(0.0, 2));
+        assert_eq!(hurt_edge_k(f32::MAX, 10), 0.0);
+        let (light, heavy) = (hurt_edge_k(0.0, 10), hurt_edge_k(0.0, 20));
         assert!(light > 0.5 && (heavy - 1.0).abs() < 1e-6 && heavy > light);
         assert_eq!(
-            hurt_edge_k(HURT_EDGE_HOLD * 0.9, 2),
+            hurt_edge_k(HURT_EDGE_HOLD * 0.9, 20),
             heavy,
             "held at full first"
         );
-        let mid = hurt_edge_k(HURT_EDGE_HOLD + HURT_EDGE_FADE * 0.5, 2);
+        let mid = hurt_edge_k(HURT_EDGE_HOLD + HURT_EDGE_FADE * 0.5, 20);
         assert!(mid > 0.0 && mid < 0.5, "{mid}");
-        assert_eq!(hurt_edge_k(HURT_EDGE_HOLD + HURT_EDGE_FADE + 0.01, 2), 0.0);
+        assert_eq!(hurt_edge_k(HURT_EDGE_HOLD + HURT_EDGE_FADE + 0.01, 20), 0.0);
     }
 
-    /// 0143 위험한 체력: 마지막 한 칸일 때만 — 쓰러진 뒤(0)나 처음부터 한 칸인 판에서는 울리지 않는다.
+    /// 0143 위험한 체력: 마지막 한 대 몫일 때만 — 쓰러진 뒤(0)나 처음부터 그만큼인 판에서는 울리지 않는다.
     #[test]
-    fn low_health_is_the_last_pip_of_a_longer_bar() {
-        assert!(low_hp(1, 5) && !low_hp(2, 5) && !low_hp(0, 5) && !low_hp(1, 1));
+    fn low_health_is_the_last_blow_of_a_longer_bar() {
+        assert!(low_hp(10, 50) && !low_hp(20, 50) && !low_hp(0, 50) && !low_hp(10, 10));
+        // 눈금 사이의 값(나중의 % 피해)도 한 대 몫 안이면 위험하다.
+        assert!(low_hp(5, 50) && !low_hp(11, 50));
+    }
+
+    /// 0158 N0 체력 막대: 길이는 최대 체력에 비례해 늘고(+10이 눈에 보인다) 상한에서 멈춘다 — 기본 체력은 기본 스태미나 막대와 같은 길이.
+    #[test]
+    fn the_health_bar_grows_with_max_health_up_to_a_cap() {
+        use crate::tuning::{HP_UNIT, PLAYER_HP};
+        let base = hp_bar_w(PLAYER_HP);
+        assert!((base - 60.0).abs() < 1e-4, "{base}");
+        let more = hp_bar_w(PLAYER_HP + HP_UNIT);
+        assert!(more - base >= 8.0, "+10 max health is plainly longer");
+        // 능력치 상한(120)의 막대는 상한 안이고, 그 위로는 더 길어지지 않는다.
+        assert!(hp_bar_w(120) > more && hp_bar_w(120) <= HP_BAR_MAX_W);
+        assert_eq!(hp_bar_w(100_000), HP_BAR_MAX_W);
+        assert_eq!(hp_bar_w(-5), 0.0);
+    }
+
+    /// 0158 N0(0143의 부서지는 칸을 막대로): 잃은 몫은 맞은 순간 그대로 남아 잠깐 머문 뒤 줄어들어 `HURT_PIP`에 없어진다.
+    #[test]
+    fn the_lost_health_stays_bright_briefly_then_drains() {
+        use crate::tuning::{HURT_PIP, HURT_PIP_HOLD};
+        assert_eq!(hp_chip(0.0, 20), 20.0);
+        assert_eq!(hp_chip(HURT_PIP * HURT_PIP_HOLD * 0.9, 20), 20.0, "held");
+        let mid = hp_chip(HURT_PIP * (HURT_PIP_HOLD + 1.0) * 0.5, 20);
+        assert!(mid > 5.0 && mid < 15.0, "{mid}");
+        let late = hp_chip(HURT_PIP * 0.95, 20);
+        assert!(late > 0.0 && late < mid, "drains, never grows back");
+        assert_eq!(hp_chip(HURT_PIP, 20), 0.0);
+        // 맞은 적이 없으면(무한대)·잃은 것이 없으면 없다.
+        assert_eq!(hp_chip(f32::MAX, 20), 0.0);
+        assert_eq!(hp_chip(0.1, 0), 0.0);
     }
 
     #[test]

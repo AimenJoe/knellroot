@@ -2,7 +2,7 @@
 //! 강타, RB(근접 무기 = 마법 탄, 원거리 무기 = 사격), 원거리 무기의 X(수류탄). 0048: 무기 한 줄 = (X, RB) 짝.
 //!
 //! 시간·거리·각·내딛기는 랩의 기준값(`attack.*`·`heavy.*`, `tuning.rs`)에 곱하는 **배율** — 손맛의 바탕은 랩 한 곳에서 맞추고,
-//! 무기는 그 위의 모양만 갖는다(코드에 타별 숫자를 박지 않는다). 피해·자세 피해는 정수·점수 그대로.
+//! 무기는 그 위의 모양만 갖는다(코드에 타별 숫자를 박지 않는다). 피해·자세 피해는 정수·점수 그대로(피해의 눈금은 `tuning::HP_UNIT` — 옛 1 = 10, 0158 N0).
 //! 새 무기 = `Id` 한 줄 + `WEAPONS` 한 줄 + 동작(`tools/art/blender/wanderer.py`) + 모델 부위(같은 파일, 오른손 뼈) + 글(i18n).
 
 /// 판정 모양.
@@ -241,7 +241,7 @@ impl Weapon {
 const MAGIC: Bolt = Bolt {
     speed: 1.0,
     range: 1.0,
-    damage: 1,
+    damage: 10,
     poise: 1.0,
     pierce: false,
     stagger: 0.0,
@@ -251,12 +251,12 @@ const MAGIC: Bolt = Bolt {
 
 /// 순례자의 검 — 기준. 3연타: 가로 → 되돌려 가로 → 내디디며 찌르기(좁고 길게, 자세 피해 큼).
 const SWORD_COMBO: [Hit; 3] = [
-    hit(1.0, 1.0, 1.0, 1.0, 1, 1.0, "attack"),
-    hit(1.0, 1.0, 1.0, 1.0, 1, 1.0, "attack2"),
+    hit(1.0, 1.0, 1.0, 1.0, 10, 1.0, "attack"),
+    hit(1.0, 1.0, 1.0, 1.0, 10, 1.0, "attack2"),
     Hit {
         knock: 1.6,
         cancel: 0.15,
-        ..hit(1.2, 1.25, 0.45, 1.6, 2, 2.0, "attack3")
+        ..hit(1.2, 1.25, 0.45, 1.6, 20, 2.0, "attack3")
     },
 ];
 
@@ -265,37 +265,37 @@ const HAMMER_COMBO: [Hit; 2] = [
     Hit {
         knock: 1.5,
         cancel: 0.4,
-        ..hit(1.7, 1.15, 1.25, 1.4, 2, 3.0, "hammer1")
+        ..hit(1.7, 1.15, 1.25, 1.4, 20, 3.0, "hammer1")
     },
     Hit {
         shape: Shape::Circle,
         knock: 2.0,
         cancel: 0.5,
-        ..hit(2.0, 1.1, 1.0, 1.2, 3, 4.0, "hammer2")
+        ..hit(2.0, 1.1, 1.0, 1.2, 30, 4.0, "hammer2")
     },
 ];
 
 /// 순례자 지팡이 — 빠른 4연타, 넷째는 둘레 회전 마무리(느림).
 const STAFF_COMBO: [Hit; 4] = [
-    hit(0.7, 1.15, 0.8, 0.7, 1, 0.6, "staff1"),
-    hit(0.7, 1.15, 0.8, 0.7, 1, 0.6, "staff2"),
-    hit(0.75, 1.2, 0.9, 0.8, 1, 0.8, "staff3"),
+    hit(0.7, 1.15, 0.8, 0.7, 10, 0.6, "staff1"),
+    hit(0.7, 1.15, 0.8, 0.7, 10, 0.6, "staff2"),
+    hit(0.75, 1.2, 0.9, 0.8, 10, 0.8, "staff3"),
     Hit {
         shape: Shape::Circle,
         knock: 1.8,
-        ..hit(1.3, 1.25, 1.0, 0.4, 2, 2.0, "staff4")
+        ..hit(1.3, 1.25, 1.0, 0.4, 20, 2.0, "staff4")
     },
 ];
 
-/// 맨손 — 짧고 빠른 주먹 3연타(가까이 붙어야 닿는다, 피해 1·자세 피해 작음), 셋째는 내디디며 한 방. 동작은 검의 것을 빈손으로
+/// 맨손 — 짧고 빠른 주먹 3연타(가까이 붙어야 닿는다, 피해 10·자세 피해 작음), 셋째는 내디디며 한 방. 동작은 검의 것을 빈손으로
 /// (주먹 동작은 아직 없다).
 const FISTS_COMBO: [Hit; 3] = [
-    hit(0.6, 0.7, 0.8, 0.6, 1, 0.5, "attack"),
-    hit(0.6, 0.7, 0.8, 0.6, 1, 0.5, "attack2"),
+    hit(0.6, 0.7, 0.8, 0.6, 10, 0.5, "attack"),
+    hit(0.6, 0.7, 0.8, 0.6, 10, 0.5, "attack2"),
     Hit {
         knock: 1.3,
         cancel: 0.1,
-        ..hit(0.8, 0.8, 0.6, 1.2, 1, 1.2, "attack3")
+        ..hit(0.8, 0.8, 0.6, 1.2, 10, 1.2, "attack3")
     },
 ];
 
@@ -307,7 +307,7 @@ pub const WEAPONS: [Weapon; 5] = [
         dash: Some(Hit {
             knock: 1.4,
             cancel: 0.2,
-            ..hit(1.0, 1.25, 0.5, 2.4, 2, 2.0, "attack3")
+            ..hit(1.0, 1.25, 0.5, 2.4, 20, 2.0, "attack3")
         }),
         heavy: Some(Heavy {
             time: 1.0,
@@ -316,7 +316,7 @@ pub const WEAPONS: [Weapon; 5] = [
             arc: 1.0,
             lunge: 1.0,
             shape: Shape::Arc,
-            damage: 2,
+            damage: 20,
             poise: 3.0,
             walk: 1.0,
             aftershock: None,
@@ -331,7 +331,7 @@ pub const WEAPONS: [Weapon; 5] = [
         charged: Bolt {
             speed: 1.2,
             range: 1.3,
-            damage: 3,
+            damage: 30,
             poise: 4.0,
             pierce: true,
             stagger: 0.6,
@@ -349,7 +349,7 @@ pub const WEAPONS: [Weapon; 5] = [
             shape: Shape::Circle,
             knock: 1.8,
             cancel: 0.45,
-            ..hit(1.6, 1.0, 1.0, 2.0, 2, 3.0, "hammer2")
+            ..hit(1.6, 1.0, 1.0, 2.0, 20, 3.0, "hammer2")
         }),
         heavy: Some(Heavy {
             time: 1.3,
@@ -358,10 +358,10 @@ pub const WEAPONS: [Weapon; 5] = [
             arc: 1.0,
             lunge: 2.2,
             shape: Shape::Circle,
-            damage: 3,
+            damage: 30,
             poise: 6.0,
             walk: 0.75,
-            aftershock: Some((1.5, 2.6, 2, 3.0)),
+            aftershock: Some((1.5, 2.6, 20, 3.0)),
             breaks_primed: Some(0.6),
             anim_charge: "hammer_charge",
             anim_heavy: "hammer_slam",
@@ -370,7 +370,7 @@ pub const WEAPONS: [Weapon; 5] = [
         rb: Rb::Magic(Bolt {
             speed: 0.65,
             range: 0.6,
-            damage: 2,
+            damage: 20,
             poise: 3.0,
             stagger: 0.5,
             look: 1,
@@ -381,7 +381,7 @@ pub const WEAPONS: [Weapon; 5] = [
         charged: Bolt {
             speed: 0.6,
             range: 0.8,
-            damage: 4,
+            damage: 40,
             poise: 8.0,
             stagger: 1.0,
             look: 1,
@@ -395,7 +395,7 @@ pub const WEAPONS: [Weapon; 5] = [
         id: Id::Staff,
         combo: &STAFF_COMBO,
         // 달려들며 찌르기: 빠르고 가볍다.
-        dash: Some(hit(0.8, 1.3, 0.6, 2.2, 1, 1.0, "staff3")),
+        dash: Some(hit(0.8, 1.3, 0.6, 2.2, 10, 1.0, "staff3")),
         heavy: Some(Heavy {
             time: 0.9,
             charge: 0.9,
@@ -403,7 +403,7 @@ pub const WEAPONS: [Weapon; 5] = [
             arc: 1.0,
             lunge: 0.5,
             shape: Shape::Circle,
-            damage: 2,
+            damage: 20,
             poise: 2.5,
             walk: 1.2,
             aftershock: None,
@@ -424,7 +424,7 @@ pub const WEAPONS: [Weapon; 5] = [
         charged: Bolt {
             speed: 1.6,
             range: 1.7,
-            damage: 3,
+            damage: 30,
             poise: 3.0,
             pierce: true,
             look: 2,
@@ -443,7 +443,7 @@ pub const WEAPONS: [Weapon; 5] = [
             bolt: Bolt {
                 speed: 1.7,
                 range: 1.4,
-                damage: 2,
+                damage: 20,
                 poise: 1.5,
                 pierce: false,
                 stagger: 0.0,
@@ -459,7 +459,7 @@ pub const WEAPONS: [Weapon; 5] = [
             count: 2,
             cooldown: 4.0,
             radius: 2.2,
-            damage: 3,
+            damage: 30,
             poise: 5.0,
             near: 7.0,
             far: 11.0,
@@ -468,7 +468,7 @@ pub const WEAPONS: [Weapon; 5] = [
         charged: Bolt {
             speed: 2.2,
             range: 1.8,
-            damage: 5,
+            damage: 50,
             poise: 6.0,
             pierce: true,
             stagger: 0.4,
@@ -482,8 +482,8 @@ pub const WEAPONS: [Weapon; 5] = [
         id: Id::Fists,
         combo: &FISTS_COMBO,
         // 달려들며 한 방.
-        dash: Some(hit(0.7, 0.8, 0.6, 2.0, 1, 1.0, "attack3")),
-        // 모아 치기: 검보다 짧고 빠르다, 피해 1(다 모으면 + `heavy.full bonus`).
+        dash: Some(hit(0.7, 0.8, 0.6, 2.0, 10, 1.0, "attack3")),
+        // 모아 치기: 검보다 짧고 빠르다, 피해 10(다 모으면 + `heavy.full bonus`).
         heavy: Some(Heavy {
             time: 0.8,
             charge: 0.8,
@@ -491,7 +491,7 @@ pub const WEAPONS: [Weapon; 5] = [
             arc: 0.8,
             lunge: 1.2,
             shape: Shape::Arc,
-            damage: 1,
+            damage: 10,
             poise: 2.0,
             walk: 1.2,
             aftershock: None,
@@ -506,7 +506,7 @@ pub const WEAPONS: [Weapon; 5] = [
         charged: Bolt {
             speed: 1.2,
             range: 1.3,
-            damage: 3,
+            damage: 30,
             poise: 4.0,
             pierce: true,
             stagger: 0.6,
@@ -569,5 +569,291 @@ mod tests {
         assert_eq!(sweep_of("attack"), Sweep::RightToLeft);
         assert_eq!(sweep_of("attack2"), Sweep::LeftToRight);
         assert_eq!(sweep_of("attack3"), Sweep::Center);
+    }
+
+    // ── 눈금 옮기기(0158 N0): 체력·피해가 ×10이 되어도 몇 대에 쓰러지는가는 그대로 ──────────────────────────────
+
+    /// 옮기기 전의 수(작은 정수 — 0158 N0 직전의 표를 그대로 적어 둔다, 고치지 않는다).
+    /// 무기마다: 콤보 타들 · 대시 공격 · 강타(덜 모음) · 여진 · RB(마법/사격) · 모은 탄 · 수류탄. 없는 것은 0.
+    struct Old {
+        id: Id,
+        combo: &'static [i32],
+        dash: i32,
+        heavy: i32,
+        aftershock: i32,
+        rb: i32,
+        charged: i32,
+        grenade: i32,
+    }
+    const OLD_WEAPONS: [Old; 5] = [
+        Old {
+            id: Id::Sword,
+            combo: &[1, 1, 2],
+            dash: 2,
+            heavy: 2,
+            aftershock: 0,
+            rb: 1,
+            charged: 3,
+            grenade: 0,
+        },
+        Old {
+            id: Id::Hammer,
+            combo: &[2, 3],
+            dash: 2,
+            heavy: 3,
+            aftershock: 2,
+            rb: 2,
+            charged: 4,
+            grenade: 0,
+        },
+        Old {
+            id: Id::Staff,
+            combo: &[1, 1, 1, 2],
+            dash: 1,
+            heavy: 2,
+            aftershock: 0,
+            rb: 1,
+            charged: 3,
+            grenade: 0,
+        },
+        Old {
+            id: Id::Crossbow,
+            combo: &[],
+            dash: 0,
+            heavy: 0,
+            aftershock: 0,
+            rb: 2,
+            charged: 5,
+            grenade: 3,
+        },
+        Old {
+            id: Id::Fists,
+            combo: &[1, 1, 1],
+            dash: 1,
+            heavy: 1,
+            aftershock: 0,
+            rb: 1,
+            charged: 3,
+            grenade: 0,
+        },
+    ];
+    /// 옛 랩 값·상수: 다 모은 강타 덤 · 딱 맞춘 떼기 덤 · 내려찍기 · 치명타 덤 · 되받은 종 조각 · 큰 기술의 벽 쿵.
+    const OLD_FULL_BONUS: i32 = 1;
+    const OLD_PERFECT: i32 = 1;
+    const OLD_PLUNGE: i32 = 2;
+    const OLD_CRIT: i32 = 2;
+    const OLD_SHARD_REFLECT: i32 = 3;
+    const OLD_ULT_SLAM: i32 = 2;
+    /// 옛 스킬 피해(표 순서: 휘돌이 · 가로지르기 · 끌어모으기 · 땅울림).
+    const OLD_SKILLS: [i32; 4] = [1, 2, 0, 2];
+    /// 옛 종 체력(표 `species::ALL` 순서: 잔재 · 가시짐승 · 문지기 · 등딱지짐승 · 꼬투리 · 종지기).
+    const OLD_SPECIES_HP: [i32; 6] = [3, 2, 40, 5, 2, 58];
+    /// 옛 등급 2·엘리트 배율(올림) — `tuning::TIERS[1].hp`·`ELITE_HP`.
+    const OLD_TIER2: f32 = 1.5;
+    const OLD_ELITE: f32 = 2.0;
+
+    /// 한 무기의 모든 타(이름, 옛 피해, 새 피해) — 강타는 덜 모음·다 모음·딱 맞춤, 모은 탄은 덜 모음·다 모음·딱 맞춤(원거리만).
+    fn attacks(o: &Old) -> Vec<(String, i32, i32)> {
+        use crate::tuning::{half_up, idx, HP_UNIT, P, SPECS};
+        let w = o.id.def();
+        let full = SPECS[idx(P::HeavyFullBonus)].def as i32;
+        let mut v = Vec::new();
+        assert_eq!(w.combo.len(), o.combo.len(), "{:?} combo", o.id);
+        for (i, (h, &old)) in w.combo.iter().zip(o.combo).enumerate() {
+            v.push((format!("combo {i}"), old, h.damage));
+        }
+        v.push(("dash".into(), o.dash, w.dash.map_or(0, |h| h.damage)));
+        let heavy = w.heavy.map_or(0, |h| h.damage);
+        v.push(("heavy".into(), o.heavy, heavy));
+        if w.heavy.is_some() {
+            v.push(("heavy full".into(), o.heavy + OLD_FULL_BONUS, heavy + full));
+            v.push((
+                "heavy perfect".into(),
+                o.heavy + OLD_FULL_BONUS + OLD_PERFECT,
+                heavy + full + HP_UNIT,
+            ));
+        }
+        let shock = w.heavy.and_then(|h| h.aftershock).map_or(0, |a| a.2);
+        v.push(("aftershock".into(), o.aftershock, shock));
+        let (rb, ranged) = match w.rb {
+            Rb::Magic(b) => (b.damage, false),
+            Rb::Shot { bolt, .. } => (bolt.damage, true),
+        };
+        v.push(("rb".into(), o.rb, rb));
+        let c = w.charged.damage;
+        v.push(("charged".into(), o.charged, c));
+        v.push(("half charged".into(), (o.charged + 1) / 2, half_up(c)));
+        if ranged {
+            v.push(("perfect shot".into(), o.charged + OLD_PERFECT, c + HP_UNIT));
+        }
+        v.push((
+            "grenade".into(),
+            o.grenade,
+            w.grenade.map_or(0, |g| g.damage),
+        ));
+        v
+    }
+
+    /// 무기와 상관없는 타(이름, 옛, 새): 내려찍기 · 스킬 넷 · 되받은 종 조각 · 큰 기술의 벽 쿵.
+    fn other_attacks() -> Vec<(String, i32, i32)> {
+        use crate::tuning::{idx, P, SHARD_REFLECT_DAMAGE, SPECS, ULT_SLAM_DAMAGE};
+        let mut v = vec![(
+            "plunge".to_string(),
+            OLD_PLUNGE,
+            SPECS[idx(P::PlungeDamage)].def as i32,
+        )];
+        for (sk, old) in crate::skills::SKILLS.iter().zip(OLD_SKILLS) {
+            v.push((format!("skill {:?}", sk.id), old, sk.damage));
+        }
+        v.push(("shard".into(), OLD_SHARD_REFLECT, SHARD_REFLECT_DAMAGE));
+        v.push(("ult slam".into(), OLD_ULT_SLAM, ULT_SLAM_DAMAGE));
+        v
+    }
+
+    /// 적의 체력들(이름, 옛, 새): 종마다 등급 1, 잡몹은 등급 2·엘리트·등급 2 엘리트까지(옛 셈 = 작은 정수에 올림).
+    fn healths() -> Vec<(String, i32, i32)> {
+        use crate::enemy::{Affix, Enemy};
+        use macroquad::prelude::Vec3;
+        let up = |v: i32, k: f32| (v as f32 * k).ceil() as i32;
+        let mut v = Vec::new();
+        assert_eq!(crate::species::ALL.len(), OLD_SPECIES_HP.len());
+        for (d, old) in crate::species::ALL.iter().zip(OLD_SPECIES_HP) {
+            v.push((format!("{:?}", d.kind), old, d.hp));
+            if d.boss {
+                continue;
+            }
+            let make = |tier: u8, elite: bool| {
+                let mut e = Enemy::new(d.kind, Vec3::ZERO);
+                e.set_tier(tier);
+                if elite {
+                    e.make_elite(Affix::Hardened);
+                }
+                assert_eq!(e.hp, e.max_hp);
+                e.max_hp
+            };
+            v.push((
+                format!("{:?} tier 2", d.kind),
+                up(old, OLD_TIER2),
+                make(2, false),
+            ));
+            v.push((
+                format!("{:?} elite", d.kind),
+                up(old, OLD_ELITE),
+                make(1, true),
+            ));
+            v.push((
+                format!("{:?} tier 2 elite", d.kind),
+                up(up(old, OLD_TIER2), OLD_ELITE),
+                make(2, true),
+            ));
+        }
+        v
+    }
+
+    /// 0158 N0 판정 기준: 모든 무기의 모든 타 × 모든 적(등급·엘리트 포함)에서 쓰러뜨리는 데 드는 대 수가 옮기기 전과 같다.
+    /// 옛 수는 위의 표(작은 정수)에서, 새 수는 지금 표에서 — `ceil(새 체력 / 새 피해) == ceil(옛 체력 / 옛 피해)`.
+    #[test]
+    fn hits_to_kill_every_enemy_with_every_attack_are_what_they_were_before_the_scale_move() {
+        let mut all = other_attacks();
+        for o in &OLD_WEAPONS {
+            for (name, old, new) in attacks(o) {
+                all.push((format!("{:?} {name}", o.id), old, new));
+            }
+        }
+        assert_eq!(
+            OLD_WEAPONS.len(),
+            WEAPONS.len(),
+            "every weapon is in the old table"
+        );
+        let mut pairs = 0;
+        for (foe, old_hp, new_hp) in healths() {
+            for (atk, old_dmg, new_dmg) in &all {
+                assert_eq!(
+                    *old_dmg == 0,
+                    *new_dmg == 0,
+                    "{atk}: harmless stays harmless"
+                );
+                if *old_dmg == 0 {
+                    continue;
+                }
+                let (old, new) = (
+                    (old_hp + old_dmg - 1) / old_dmg,
+                    (new_hp + new_dmg - 1) / new_dmg,
+                );
+                assert_eq!(new, old, "{atk} on {foe}: {new_dmg} into {new_hp}");
+                pairs += 1;
+            }
+        }
+        assert!(pairs > 500, "{pairs}");
+    }
+
+    /// 0158 N0: 옮기기만 했다 — 모든 체력·피해는 옛 수의 꼭 열 배다(대 수가 같은 것보다 센 조건: 덤·배율이 섞여도 그대로).
+    #[test]
+    fn every_health_and_damage_number_is_exactly_ten_times_the_old_one() {
+        use crate::tuning::{idx, HP_UNIT, P, SPECS};
+        assert_eq!(HP_UNIT, 10);
+        for (foe, old, new) in healths() {
+            assert_eq!(new, old * HP_UNIT, "{foe}");
+        }
+        for o in &OLD_WEAPONS {
+            for (name, old, new) in attacks(o) {
+                assert_eq!(new, old * HP_UNIT, "{:?} {name}", o.id);
+            }
+        }
+        for (name, old, new) in other_attacks() {
+            assert_eq!(new, old * HP_UNIT, "{name}");
+        }
+        assert_eq!(SPECS[idx(P::ParryCrit)].def as i32, OLD_CRIT * HP_UNIT);
+    }
+
+    /// 0158 N0: 종 체력·무기 피해·스킬 피해·장신구 보정은 모두 눈금(`HP_UNIT`)의 배수다 — 옛 한 칸보다 잔 수는 아직 없다
+    /// (올림 규칙 `scale_up`·`half_up`이 옛 결과를 지키는 바탕. %를 쓰는 성장(G0)이 이 시험을 고친다).
+    #[test]
+    fn species_health_and_weapon_skill_and_charm_numbers_are_multiples_of_the_hp_unit() {
+        use crate::tuning::HP_UNIT;
+        let whole = |v: i32, what: &str| assert_eq!(v % HP_UNIT, 0, "{what}: {v}");
+        for d in crate::species::ALL {
+            whole(d.hp, &format!("{:?} hp", d.kind));
+        }
+        for w in WEAPONS.iter() {
+            for h in w.combo.iter().chain(w.dash.iter()) {
+                whole(h.damage, &format!("{:?} {}", w.id, h.anim));
+            }
+            if let Some(h) = w.heavy {
+                whole(h.damage, &format!("{:?} heavy", w.id));
+                if let Some((_, _, d, _)) = h.aftershock {
+                    whole(d, &format!("{:?} aftershock", w.id));
+                }
+            }
+            let rb = match w.rb {
+                Rb::Magic(b) => b.damage,
+                Rb::Shot { bolt, .. } => bolt.damage,
+            };
+            whole(rb, &format!("{:?} rb", w.id));
+            whole(w.charged.damage, &format!("{:?} charged", w.id));
+            if let Some(g) = w.grenade {
+                whole(g.damage, &format!("{:?} grenade", w.id));
+            }
+        }
+        for s in crate::skills::SKILLS.iter() {
+            whole(s.damage, &format!("{:?}", s.id));
+        }
+        for c in crate::charms::TABLE.iter() {
+            let m = c.mods;
+            for v in [
+                m.hp,
+                m.heal,
+                m.dmg,
+                m.taken,
+                m.heavy_dmg,
+                m.light_dmg,
+                m.opened_dmg,
+            ] {
+                whole(v, &format!("{:?}", c.id));
+            }
+        }
+        whole(crate::tuning::PLAYER_HP, "player hp");
+        whole(crate::tuning::ULT_SLAM_DAMAGE, "ult slam");
+        whole(crate::tuning::SHARD_REFLECT_DAMAGE, "shard");
     }
 }

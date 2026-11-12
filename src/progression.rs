@@ -9,11 +9,11 @@ use crate::stats::Mods;
 /// 레벨 줄.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Line {
-    /// 버티는 힘 — 최대 체력 +1/단.
+    /// 버티는 힘 — 최대 체력 +10/단(`LIFE_PER_RANK`).
     Life,
     /// 움직이는 힘 — 최대 스태미나 +12/단, 3·5단에 차는 빠르기 +10%.
     Stamina,
-    /// 맞서는 힘 — 자세 피해 +12%/단, 3단 강타 +1, 5단 평타 +1(정수 피해를 지킨다, 0095 원칙 3).
+    /// 맞서는 힘 — 자세 피해 +12%/단, 3단 강타 +10, 5단 평타 +10(`MIGHT_DMG` — 옛 +1, 0095 원칙 3 → 눈금 0158 N0).
     Might,
 }
 
@@ -31,14 +31,18 @@ pub const STAMINA_PER_RANK: f32 = 8.0;
 pub const REGEN_RANKS: [u8; 2] = [3, 5];
 pub const REGEN_STEP: f32 = 0.06;
 pub const POISE_PER_RANK: f32 = 0.08;
-/// 강타 +1이 붙는 단·평타 +1이 붙는 단.
+/// 강타 덤이 붙는 단·평타 덤이 붙는 단, 그 덤(피해).
 pub const HEAVY_RANK: u8 = 3;
 pub const LIGHT_RANK: u8 = 5;
+pub const MIGHT_DMG: i32 = 10;
+/// 생명 한 단의 최대 체력·숨은 한 모금 하나의 회복(0105) — 눈금 0158 N0(옛 +1).
+pub const LIFE_PER_RANK: i32 = 10;
+pub const SIP_HEAL: i32 = 10;
 
 /// 문지기 핵 점수(0102 5절·0105): 이길 때마다 1점, 문지기마다 셋까지 — 기술 나무(G2) 점수의 한 몫(나머지는 종소리 조각).
 pub const CORE_CAP: u32 = 3;
 
-/// 숨은 물건(0105)의 보정: 등잔 +1회 · 한 모금 +1 — 기록 이름(`<스테이지>.<종류>.<n>`)의 가운데 칸으로 센다.
+/// 숨은 물건(0105)의 보정: 등잔 +1회 · 한 모금 +`SIP_HEAL` — 기록 이름(`<스테이지>.<종류>.<n>`)의 가운데 칸으로 센다.
 pub fn find_mods(ids: &[String]) -> Mods {
     let count = |k: &str| {
         ids.iter()
@@ -47,7 +51,7 @@ pub fn find_mods(ids: &[String]) -> Mods {
     };
     Mods {
         flask: count("lamp"),
-        heal: count("sip"),
+        heal: count("sip") * SIP_HEAL,
         ..Mods::default()
     }
 }
@@ -102,12 +106,12 @@ impl Level {
     pub fn mods(&self) -> Mods {
         let regen = REGEN_RANKS.iter().filter(|&&r| self.stamina >= r).count() as f32;
         Mods {
-            hp: self.life as i32,
+            hp: self.life as i32 * LIFE_PER_RANK,
             stamina_max: STAMINA_PER_RANK * self.stamina as f32,
             stamina_regen: 1.0 + REGEN_STEP * regen,
             poise: 1.0 + POISE_PER_RANK * self.might as f32,
-            heavy_dmg: (self.might >= HEAVY_RANK) as i32,
-            light_dmg: (self.might >= LIGHT_RANK) as i32,
+            heavy_dmg: (self.might >= HEAVY_RANK) as i32 * MIGHT_DMG,
+            light_dmg: (self.might >= LIGHT_RANK) as i32 * MIGHT_DMG,
             ..Mods::default()
         }
     }
@@ -485,7 +489,7 @@ mod tests {
             ..Level::default()
         }
         .mods()]);
-        assert_eq!(life.max_hp, base.max_hp + 5);
+        assert_eq!(life.max_hp, base.max_hp + 50);
         let st = |r| {
             Stats::compute(&[Level {
                 stamina: r,
@@ -507,8 +511,8 @@ mod tests {
         };
         assert!((mt(1).poise - 1.08).abs() < 1e-6);
         assert_eq!((mt(2).heavy_dmg, mt(2).light_dmg), (0, 0));
-        assert_eq!((mt(3).heavy_dmg, mt(3).light_dmg), (1, 0));
-        assert_eq!((mt(5).heavy_dmg, mt(5).light_dmg), (1, 1));
+        assert_eq!((mt(3).heavy_dmg, mt(3).light_dmg), (10, 0));
+        assert_eq!((mt(5).heavy_dmg, mt(5).light_dmg), (10, 10));
         // 레벨은 판정 창을 건드리지 않는다(0095 원칙 2, 0102).
         for r in 0..=MAX_RANK {
             let lv = Level {
@@ -586,7 +590,7 @@ mod tests {
         ];
         let s = Stats::compute(&[find_mods(&ids)]);
         assert_eq!(s.flask, Stats::default().flask + 1);
-        assert_eq!(s.heal, 2);
+        assert_eq!(s.heal, 20);
         assert_eq!(find_mods(&[]).flask, 0);
     }
 
@@ -597,12 +601,9 @@ mod tests {
             life: MAX_RANK,
             ..Level::default()
         };
-        let shell = crate::stats::Mods {
-            hp: 1,
-            ..Mods::default()
-        };
+        let shell = crate::charms::def(crate::charms::Id::Shell).mods;
         let a = Stats::compute(&[full.mods()]);
         let b = Stats::compute(&[full.mods(), shell]);
-        assert_eq!(b.max_hp, a.max_hp + 1);
+        assert_eq!((a.max_hp, b.max_hp), (100, 110));
     }
 }

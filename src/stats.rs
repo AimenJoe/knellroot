@@ -87,8 +87,8 @@ pub struct Stats {
 }
 
 /// 상한·하한(극단 조합을 막는다 — KB).
-/// 체력 상한 12(0104): 생명 5단(5 → 10) 위에 장신구 "단단한 껍질"이 여전히 한 칸 — 상한이 10이면 다 올린 뒤 껍질이 아무것도 안 한다.
-const HP_RANGE: (i32, i32) = (1, 12);
+/// 체력 상한 120(0104, 눈금 0158 N0): 생명 5단(50 → 100) 위에 장신구 "단단한 껍질"이 여전히 한 몫(+10) — 상한이 100이면 다 올린 뒤 껍질이 아무것도 안 한다.
+const HP_RANGE: (i32, i32) = (10, 120);
 const FLASK_RANGE: (i32, i32) = (0, 8);
 const ATK_SPEED_RANGE: (f32, f32) = (0.6, 1.8);
 const DODGE_COST_RANGE: (f32, f32) = (0.3, 2.0);
@@ -318,23 +318,23 @@ mod tests {
         let base = Stats::default();
         assert_eq!((base.max_hp, base.flask), (PLAYER_HP, FLASK_CHARGES));
         let a = Mods {
-            hp: 1,
+            hp: 10,
             atk_speed: 0.85,
             ..Mods::default()
         };
         let b = Mods {
-            hp: 2,
-            dmg: 1,
+            hp: 20,
+            dmg: 10,
             atk_speed: 0.85,
             ..Mods::default()
         };
         let s = Stats::compute(&[a, b]);
-        assert_eq!(s.max_hp, PLAYER_HP + 3);
-        assert_eq!(s.dmg, 1);
+        assert_eq!(s.max_hp, PLAYER_HP + 30);
+        assert_eq!(s.dmg, 10);
         assert!((s.atk_speed - 0.85 * 0.85).abs() < 1e-6, "rates multiply");
         // 극단은 묶인다.
         let silly = Mods {
-            hp: 50,
+            hp: 500,
             flask: -9,
             atk_speed: 0.1,
             parry: 1.0,
@@ -372,7 +372,7 @@ mod tests {
         let shown: Vec<Line> = lines(&base, None).iter().map(|l| l.0).collect();
         // 공격 속도는 무기 숫자 줄(초)이 맡고, 배율은 장신구가 바꿀 때만(2026-11-07).
         assert_eq!(shown, vec![Line::MaxHp, Line::Flask]);
-        // 맞바꿈 장신구(꿰맨 천: 체력 +1 · 기력 회복 −10%, 0127): 둘 다 보이고 하나는 좋아짐, 하나는 나빠짐.
+        // 맞바꿈 장신구(꿰맨 천: 체력 +10 · 기력 회복 −10%, 0127): 둘 다 보이고 하나는 좋아짐, 하나는 나빠짐.
         let cloth = Stats::compute(&[crate::charms::def(crate::charms::Id::Cloth).mods]);
         let preview = lines(&base, Some(&cloth));
         let hp = preview.iter().find(|l| l.0 == Line::MaxHp).unwrap();

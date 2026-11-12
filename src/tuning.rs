@@ -32,7 +32,7 @@ pub const SEC_HEAD_DAMP: f32 = 0.55;
 /// 박자 창(2026-11-07): 그 무기의 한 스윙 시간 ± 이 비율 안에 누른 평타 콤보는 스태미나를 쓰지 않는다(KB: 창은 박자에 비례, ±60~90ms).
 pub const BEAT_WINDOW: f32 = 0.15;
 /// 딱 맞춰 떼기(0078 — 0051에선 지팡이만, 사장 2026-11-07 "2"로 모든 무기의 규칙): 강타가 다 모인 뒤 이 초 안에 떼면
-/// 피해 +1·자세 피해 ×1.5·넉백 ×1.5. 다 모은 뒤 더 쥐고 있어도 손해는 없다(덤만 없다).
+/// 피해 +한 눈금(`HP_UNIT` = 10)·자세 피해 ×1.5·넉백 ×1.5. 다 모은 뒤 더 쥐고 있어도 손해는 없다(덤만 없다).
 pub const PERFECT_RELEASE: f32 = 0.15;
 /// 박자 창의 가장 좁은 반폭(초, 0077): 쇠뇌 한 발 0.24초 × 15%는 ±36ms라 사람 손으로는 못 맞춘다 — KB 창 범위 ±60~90ms의 아래 끝.
 pub const BEAT_WINDOW_MIN: f32 = 0.06;
@@ -108,7 +108,7 @@ pub const SKILL_HITSTOP: f32 = 1.8;
 pub const ULT_HITSTOP: f32 = 3.0;
 pub const SKILL_DENIED_SHOW: f32 = 0.5;
 pub const ULT_KILL_WINDOW: f32 = 1.5;
-pub const ULT_SLAM_DAMAGE: i32 = 2;
+pub const ULT_SLAM_DAMAGE: i32 = 20;
 /// 평타 히트스톱 배율(`feel.hitstop s` × 이것, 2026-11-06): 0.06초(≈3.6프레임)는 "없는 것과 같다"(KB 사다리 — 가장 약한 타도 6프레임쯤).
 pub const HIT_HITSTOP: f32 = 1.6;
 /// 맞은 쪽: 몸이 맞은 쪽으로 젖는 세기(평타·강타, `Enemy::sway`), 멈춤 동안 떨림(m).
@@ -117,20 +117,23 @@ pub const HEAVY_SWAY: f32 = 0.65;
 pub const HIT_TREMBLE: f32 = 0.05;
 pub const SHAKE_HURT: f32 = 0.75;
 /// 맞은 쪽(방랑자)의 손맛(0143 — 사장 "맞았는지 잘 모르겠음", nail 0269 `HurtFeel` 꼴): 히트스톱 배율(`feel.hitstop s` × 이것 —
-/// 때릴 때 1.6보다 길게: 0.06 × 2.2 ≈ 8프레임)·센 타격(피해 2 이상)이면 더 곱하는 배율. 떼 속에서는 경직 이음(0099)처럼 맞을수록 반.
+/// 때릴 때 1.6보다 길게: 0.06 × 2.2 ≈ 8프레임)·센 타격(피해 `HURT_HEAVY_BLOW` 이상)이면 더 곱하는 배율. 떼 속에서는 경직 이음(0099)처럼 맞을수록 반.
 pub const HURT_HITSTOP: f32 = 2.2;
 pub const HURT_HEAVY: f32 = 1.4;
+/// 센 타격으로 치는 잃은 체력(0143 — 옛 눈금의 두 칸).
+pub const HURT_HEAVY_BLOW: i32 = 2 * HP_UNIT;
 /// 맞으면 카메라가 밀려난 쪽으로 차였다 돌아온다(도) — 흔들림 설정을 따른다.
 pub const KICK_HURT_DEG: f32 = 0.8;
 /// 맞음 테(화면 가장자리의 붉은 번쩍임, HUD): 가장 진한 채 머무는 시간·그 뒤 사라지는 시간(초)·가장 진한 불투명도(센 타격은 `HURT_HEAVY`배, 1 안).
 pub const HURT_EDGE_HOLD: f32 = 0.06;
 pub const HURT_EDGE_FADE: f32 = 0.42;
 pub const HURT_EDGE_ALPHA: f32 = 0.55;
-/// 잃은 체력 칸이 희게 번쩍이며 부서지는 시간(초)·체력 줄이 떨리는 시간(초).
+/// 체력 막대(0158 N0)에서 잃은 몫이 밝게 남았다 줄어드는 시간(초 — 처음 `HURT_PIP_HOLD`의 몫은 그대로 머문다)·체력 막대가 떨리는 시간(초).
 pub const HURT_PIP: f32 = 0.45;
+pub const HURT_PIP_HOLD: f32 = 0.35;
 pub const HURT_HP_SHAKE: f32 = 0.3;
-/// 체력이 이 칸 이하면(최대가 이보다 많을 때만) 가장자리가 붉게 숨 쉰다 — 지금 위험하다는 이어지는 신호.
-pub const LOW_HP: i32 = 1;
+/// 체력이 이 값 이하면(최대가 이보다 많을 때만) 가장자리가 붉게 숨 쉰다 — 지금 위험하다는 이어지는 신호(한 대 남음).
+pub const LOW_HP: i32 = 10;
 pub const SHAKE_DOWN: f32 = 0.15;
 pub const SHAKE_TURN: f32 = 0.2;
 pub const SHAKE_SLAM: f32 = 0.35;
@@ -142,7 +145,24 @@ pub const SHAKE_PLUNGE: f32 = 0.4;
 pub const SHAKE_SMASH: f32 = 0.5;
 pub const SHAKE_CHARGED: f32 = 0.12;
 
-pub const PLAYER_HP: i32 = 5;
+/// 체력·피해의 눈금(0158 N0): 옛 "1"(체력 한 칸·피해 1)이 이만큼이다 — 모든 체력·피해·회복 수가 ×10으로 옮겨 왔다.
+/// 표의 수(종 체력·무기 피해·장신구 보정)는 새 수를 그대로 적고, 코드가 "옛 한 칸"을 뜻할 때(가장 작은 피해·코드로 더하는 덤·
+/// 옛 눈금의 올림)만 이 이름을 쓴다. 옮기기만 했다: 몇 대에 쓰러지는가는 그대로(시험 `hits_to_kill_*`).
+pub const HP_UNIT: i32 = 10;
+
+/// 옛 눈금으로 곱해 올린다(0158 N0): `v`(새 눈금) × `k`를 옛 한 칸 단위로 올림 — 등급·엘리트 체력, 자세가 깨진 동안의 피해처럼
+/// 작은 정수에 `ceil`을 쓰던 셈이 눈금이 잘아졌다고 달라지지 않게(옛 3 × 1.5 = 4.5 → 5, 새 30 × 1.5 → 50). `v`가 `HP_UNIT`의
+/// 배수면 옛 셈과 비트까지 같다.
+pub fn scale_up(v: i32, k: f32) -> i32 {
+    (v as f32 / HP_UNIT as f32 * k).ceil() as i32 * HP_UNIT
+}
+
+/// 옛 눈금의 반(올림): 옛 `(d + 1) / 2`의 열 배(30 → 20, 40 → 20, 50 → 30).
+pub fn half_up(v: i32) -> i32 {
+    (v + HP_UNIT) / (2 * HP_UNIT) * HP_UNIT
+}
+
+pub const PLAYER_HP: i32 = 50;
 /// 등잔 횟수(0031). 화로에서 다시 찬다 — 화로 전까지는 스테이지를 새로 시작할 때. 성장으로 늘린다(items.md 2).
 pub const FLASK_CHARGES: i32 = 2;
 /// 마법 칸(0048 → 0111): 한 칸이 `cast.cooldown s`마다 차고(수류탄과 같은 꼴), 쉼터에서 가득. 한 번 쏘면 한 칸.
@@ -222,7 +242,7 @@ pub const ELITE_GAPS: &[f32] = &[0.5];
 pub const SHARD_SPEED: f32 = 9.0;
 pub const SHARD_RANGE: f32 = 14.0;
 pub const SHARD_R: f32 = 0.35;
-pub const SHARD_REFLECT_DAMAGE: i32 = 3;
+pub const SHARD_REFLECT_DAMAGE: i32 = 30;
 pub const SHARD_REFLECT_SPEED: f32 = 1.4;
 pub const SHARD_SHOW: f32 = 7.0;
 
@@ -243,7 +263,7 @@ pub const ROOTS_SPEED: f32 = 10.0;
 pub const HURL_R: f32 = 2.2;
 pub const HURL_RING: f32 = 7.0;
 pub const HURL_THROW: f32 = 0.55;
-/// 청소자(0120): 싸움이 없을 때 이 초마다 체력 1을 먹는다.
+/// 청소자(0120): 싸움이 없을 때 이 초마다 체력 한 눈금(`HP_UNIT`)을 먹는다.
 pub const EAT_TIME: f32 = 2.5;
 /// 등딱지(0120): 앞을 친 평타가 튕기면 방랑자가 튀는 초·뒤로 밀리는 빠르기(m/s). 패링당한 것보다 짧게.
 pub const RECOIL_TIME: f32 = 0.35;
@@ -251,7 +271,7 @@ pub const RECOIL_PUSH: f32 = 3.0;
 /// 꼬투리(0120): 깡충 물러나는 거리(m)·다시 뛰기까지 쉼(초).
 pub const POD_HOP: f32 = 3.2;
 pub const POD_HOP_CD: f32 = 2.6;
-/// 이 등급부터 잡몹 한 대 피해가 2(0112).
+/// 이 등급부터 잡몹 한 대 피해가 두 눈금(20, 0112).
 pub const TIER_HEAVY_HITS: u8 = 3;
 
 /// 등급 `n`(1부터)의 배율 — 표 밖이면 가장 높은 줄.
@@ -866,8 +886,8 @@ pub const SPECS: [Spec; 162] = [
         "SLAM_DAMAGE",
         0.0,
         0.0,
-        5.0,
-        1.0
+        50.0,
+        10.0
     ),
     spec!(
         SlamStagger,
@@ -1023,10 +1043,10 @@ pub const SPECS: [Spec; 162] = [
         ParryCrit,
         "parry.crit bonus",
         "PARRY_CRIT",
-        2.0,
+        20.0,
         0.0,
-        10.0,
-        1.0
+        100.0,
+        10.0
     ),
     // 점프(0027): 높이·체공 시간에서 처음 속도·중력을 만든다(포물선). 뛰기 전 속도를 잇고 공중에선 조금만 조종.
     // `jump.clear m`보다 높이 떠 있으면 바닥을 훑는 뿌리 파동을 넘는다(엘든 링: 점프로 낮은 공격 피하기).
@@ -1068,15 +1088,15 @@ pub const SPECS: [Spec; 162] = [
         0.05
     ),
     spec!(JumpLand, "jump.land s", "JUMP_LAND", 0.1, 0.0, 1.0, 0.02),
-    // 내려찍기: 공중에서 공격 → 내려앉는 순간 둘레를 친다(묵직하게 — 피해 2, 넉백, 히트스톱).
+    // 내려찍기: 공중에서 공격 → 내려앉는 순간 둘레를 친다(묵직하게 — 피해 20, 넉백, 히트스톱).
     spec!(
         PlungeDamage,
         "plunge.damage",
         "PLUNGE_DAMAGE",
-        2.0,
-        1.0,
+        20.0,
         10.0,
-        1.0
+        100.0,
+        10.0
     ),
     spec!(
         PlungeRange,
@@ -1138,10 +1158,10 @@ pub const SPECS: [Spec; 162] = [
         HeavyFullBonus,
         "heavy.full bonus",
         "HEAVY_FULL_BONUS",
-        1.0,
+        10.0,
         0.0,
-        5.0,
-        1.0
+        50.0,
+        10.0
     ),
     spec!(HeavyRange, "heavy.range", "HEAVY_RANGE", 2.2, 0.5, 5.0, 0.1),
     spec!(
@@ -1213,7 +1233,15 @@ pub const SPECS: [Spec; 162] = [
         0.01
     ),
     // 등잔(0031): 한 모금에 체력, 들기(이 전에 회피·피격이면 끊기고 등잔 그대로), 전체 길이, 끝난 뒤 누름을 버리는 시간, 마시며 걷는 빠르기 배율.
-    spec!(FlaskHeal, "flask.heal", "FLASK_HEAL", 2.0, 1.0, 5.0, 1.0),
+    spec!(
+        FlaskHeal,
+        "flask.heal",
+        "FLASK_HEAL",
+        20.0,
+        10.0,
+        50.0,
+        10.0
+    ),
     spec!(
         FlaskRaise,
         "flask.raise s",
@@ -1393,11 +1421,11 @@ pub const SPECS: [Spec; 162] = [
         1.0,
         0.05
     ),
-    // 자세 막대(0051): 잡몹 크기 = 바탕 + 체력 × 배, 보스는 따로. 깨지면 휘청(잡몹·보스), 깬 뒤 안 차는 초, 줄기 시작까지·줄어드는 빠르기.
+    // 자세 막대(0051): 잡몹 크기 = 바탕 + 체력(옛 눈금 — `HP_UNIT`으로 나눈 칸 수, 0158 N0: 자세는 눈금을 옮기지 않았다) × 배, 보스는 따로. 깨지면 휘청(잡몹·보스), 깬 뒤 안 차는 초, 줄기 시작까지·줄어드는 빠르기.
     spec!(PoiseBase, "poise.base", "POISE_BASE", 3.0, 0.5, 20.0, 0.5),
     spec!(
         PoisePerHp,
-        "poise.per hp",
+        "poise.per 10hp",
         "POISE_PER_HP",
         0.6,
         0.0,
@@ -1908,6 +1936,50 @@ mod tests {
             "기본값이 얼린 값과 다르다 — 판정·결정 기록 없이 바꾸지 않는다(0013):\n{}",
             diff.join("\n")
         );
+    }
+
+    /// 0158 N0: 옛 눈금의 올림 — 작은 정수에 쓰던 `ceil(d × k)`·`(d + 1) / 2`의 꼭 열 배를 낸다(눈금이 잘아졌다고 45·15가 되지 않는다).
+    #[test]
+    fn old_unit_rounding_gives_ten_times_the_old_small_integer_result() {
+        for d in 0..=60 {
+            assert_eq!(half_up(d * HP_UNIT), (d + 1) / 2 * HP_UNIT, "half of {d}");
+            for k in [1.0, 1.3, 1.5, 2.0, 2.5] {
+                let old = (d as f32 * k).ceil() as i32;
+                assert_eq!(scale_up(d * HP_UNIT, k), old * HP_UNIT, "{d} x {k}");
+            }
+        }
+        // 눈금 사이의 값(나중의 % 피해)도 위로 올린다 — 내려가지 않는다.
+        assert_eq!(scale_up(25, 1.0), 30);
+        assert_eq!(half_up(25), 10);
+    }
+
+    /// 0158 N0: 체력·피해 단위의 랩 값은 기본값·범위·걸음이 모두 눈금의 배수(옛 한 칸씩 움직인다), 나머지 값은 손대지 않았다.
+    #[test]
+    fn lab_values_in_health_units_step_by_the_hp_unit() {
+        let hp_unit_specs = [
+            P::SlamDamage,
+            P::ParryCrit,
+            P::PlungeDamage,
+            P::HeavyFullBonus,
+            P::FlaskHeal,
+        ];
+        for p in hp_unit_specs {
+            let s = &SPECS[idx(p)];
+            for v in [s.def, s.min, s.max, s.step] {
+                assert_eq!(v % HP_UNIT as f32, 0.0, "{}: {v}", s.name);
+            }
+            assert_eq!(s.step, HP_UNIT as f32, "{}", s.name);
+        }
+        // 옛 기본값의 열 배(벽 쿵 0 · 치명타 덤 2 · 내려찍기 2 · 다 모은 덤 1 · 한 모금 2).
+        let defs: Vec<f32> = hp_unit_specs.iter().map(|&p| SPECS[idx(p)].def).collect();
+        assert_eq!(defs, vec![0.0, 20.0, 20.0, 10.0, 20.0]);
+        assert_eq!((PLAYER_HP, LOW_HP, HURT_HEAVY_BLOW), (50, 10, 20));
+        assert_eq!((ULT_SLAM_DAMAGE, SHARD_REFLECT_DAMAGE), (20, 30));
+        // 자세·기력은 옮기지 않았다.
+        assert_eq!(SPECS[idx(P::PoiseBase)].def, 3.0);
+        assert_eq!(SPECS[idx(P::PoisePerHp)].def, 0.6);
+        assert_eq!(SPECS[idx(P::PoiseBoss)].def, 20.0);
+        assert_eq!(SPECS[idx(P::StaminaMax)].def, 100.0);
     }
 
     #[test]

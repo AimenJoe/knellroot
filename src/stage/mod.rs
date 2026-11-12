@@ -425,7 +425,7 @@ pub struct StageDef {
     pub card_lever: Tr,
     /// 지하 몇 m(0118, 연출 표 — 지층 단면 전환·카드가 같이 쓴다). 차례대로 깊어진다(시험).
     pub depth_m: u32,
-    /// 구역 등급(0112·0116, 1부터): 잡몹의 체력·자세·잔불(등급 3부터 피해 2). 깊을수록 높다(시험).
+    /// 구역 등급(0112·0116, 1부터): 잡몹의 체력·자세·잔불(등급 3부터 피해 20 — 두 눈금). 깊을수록 높다(시험).
     pub tier: u8,
     /// 지역 환경(0118 T2): 원경·달빛·안개·떠다니는 것·식생 — `backdrop::SURFACE`·`UNDERGROUND`.
     pub env: &'static crate::backdrop::Env,
@@ -1492,7 +1492,7 @@ mod tests {
         assert_eq!(w.lock, Some(b), "locked {:?}, boss is {b}", w.lock);
         // 다 깨면 깃발이 내려가고 락온은 그대로다.
         for _ in 0..((WAKE_TIME * 60.0) as usize + 2) {
-            w.player.hp = 5;
+            w.player.hp = PLAYER_HP;
             w.step(&Actions::default(), &t);
             run.tick(&mut w, 1.0 / 60.0);
         }
@@ -1514,7 +1514,7 @@ mod tests {
         run.tick(&mut w, 1.0 / 60.0);
         assert!(matches!(run.phase, Phase::Waking(_)), "{:?}", run.phase);
         for _ in 0..((WAKE_TIME * 60.0) as usize + 2) {
-            w.player.hp = 5;
+            w.player.hp = PLAYER_HP;
             w.step(&Actions::default(), &t);
             run.tick(&mut w, 1.0 / 60.0);
         }
@@ -1713,7 +1713,7 @@ mod tests {
         assert!(run.gate_closed);
         assert_eq!(run.goal(), None, "no guide while the fight is on");
         for _ in 0..((WAKE_TIME * 60.0) as usize + 2) {
-            w.player.hp = 5;
+            w.player.hp = PLAYER_HP;
             step(&mut run, &mut w);
         }
         assert_eq!(run.phase, Phase::Duel);
@@ -2307,7 +2307,7 @@ mod tests {
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
         assert_eq!(run.rests.len(), 3, "gate, root hollow, entrance");
         let i = entrance_rest(&run);
-        w.player.hp = 1;
+        w.player.hp = 10;
         w.player.flask = 0;
         rest_now(&mut run, &mut w, i);
         assert_eq!(run.near_rest, Some(i));
@@ -2321,11 +2321,11 @@ mod tests {
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
         let i = entrance_rest(&run);
         w.spawn(Kind::Husk, run.rests[i] + vec3(3.0, 0.0, 0.0));
-        w.player.hp = 1;
+        w.player.hp = 10;
         rest_now(&mut run, &mut w, i);
         assert!(!run.rest_safe);
         assert_eq!(run.rest_at, None);
-        assert_eq!(w.player.hp, 1);
+        assert_eq!(w.player.hp, 10);
     }
 
     /// 0032 → 0113: 쉰 뒤 쓰러지면 그 쉼터에서 — 가득 찬 채, 서 있는 적은 다시 서고(소울 화톳불), 이 판에 쓰러뜨린 엘리트는
@@ -2428,7 +2428,7 @@ mod tests {
         }
         assert_eq!(run.phase, Phase::Duel);
         let b = run.boss.unwrap();
-        w.enemies[b].hp = 3;
+        w.enemies[b].hp = 30;
         w.player.hp = 0;
         assert_eq!(
             tick(&mut run, &mut w, Actions::default()),

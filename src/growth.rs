@@ -11,6 +11,7 @@ use crate::stats::Mods;
 
 /// 쌓인 성장(0064 M4). 핵 고르기는 0105(v0.4.0 G3)에서 걷었다 — `hp`·`flask`·`heal`은 옛 기록을 옮기고 **남은 몫**
 /// (생명 5단을 넘은 체력, 숨은 등잔 하나를 넘은 등잔)만 들고 있다(잃지 않게, `save::migrate_v04`). 새로 늘지 않는다.
+/// `hp`·`heal`은 **몫의 수**(기록 `grow.hp`·`grow.heal` 그대로) — 한 몫이 체력·회복 한 눈금(`HP_UNIT` = 10, 0158 N0).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Growth {
     pub hp: u8,
@@ -23,9 +24,9 @@ pub struct Growth {
 impl Growth {
     pub fn mods(&self) -> Mods {
         Mods {
-            hp: self.hp as i32,
+            hp: self.hp as i32 * crate::tuning::HP_UNIT,
             flask: self.flask as i32 + self.oil as i32,
-            heal: self.heal as i32,
+            heal: self.heal as i32 * crate::tuning::HP_UNIT,
             ..Mods::default()
         }
     }
@@ -79,7 +80,11 @@ mod tests {
         };
         let s = Stats::compute(&[g.mods()]);
         let base = Stats::default();
-        assert_eq!(s.max_hp, base.max_hp + 1);
+        assert_eq!(
+            s.max_hp,
+            base.max_hp + 10,
+            "one leftover share = one old point"
+        );
         assert_eq!(s.flask, base.flask + 2, "leftover lamp + oil");
     }
 

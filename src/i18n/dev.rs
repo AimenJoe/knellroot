@@ -355,7 +355,7 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("combo.link x", "콤보 끊기 시점 배율"),
     ("attack.buffer s", "누름 받아 두기(초)"),
     ("poise.base", "자세 기본"),
-    ("poise.per hp", "체력당 자세"),
+    ("poise.per 10hp", "체력 10당 자세"),
     ("poise.boss", "보스 자세"),
     ("poise.break s", "자세 깨짐(초)"),
     ("poise.break boss s", "보스 자세 깨짐(초)"),

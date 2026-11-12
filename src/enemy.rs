@@ -362,6 +362,7 @@ impl Enemy {
     }
 
     /// 구역 등급(0112): 잡몹만 — 체력을 올림으로 키운다(자세·잔불은 등급을 보고 월드가 곱한다). 보스는 그대로.
+    /// 올림은 옛 눈금으로(`tuning::scale_up`, 0158 N0 — 옛 3 × 1.5 → 5가 30 → 50, 눈금이 잘아져도 결과는 열 배 그대로).
     pub fn set_tier(&mut self, n: u8) {
         if self.boss {
             return;
@@ -372,11 +373,11 @@ impl Enemy {
         }
         self.tier = tier;
         // 늘 종 바탕에서 다시 센다(등급을 바꿔도 배율이 겹치지 않게, 엘리트면 엘리트 배율까지 — 엘리트 뒤에 불러도 같다).
-        let mut hp = (self.def().hp as f32 * crate::tuning::tier(tier).hp).ceil();
+        let mut hp = crate::tuning::scale_up(self.def().hp, crate::tuning::tier(tier).hp);
         if self.elite.is_some() {
-            hp = (hp * crate::tuning::ELITE_HP).ceil();
+            hp = crate::tuning::scale_up(hp, crate::tuning::ELITE_HP);
         }
-        self.max_hp = hp as i32;
+        self.max_hp = hp;
         self.hp = self.max_hp;
     }
 
@@ -387,7 +388,7 @@ impl Enemy {
         }
         use crate::tuning::{ELITE_HP, ELITE_SCALE};
         self.elite = Some(affix);
-        self.max_hp = (self.max_hp as f32 * ELITE_HP).ceil() as i32;
+        self.max_hp = crate::tuning::scale_up(self.max_hp, ELITE_HP);
         self.hp = self.max_hp;
         self.radius *= ELITE_SCALE;
         self.height *= ELITE_SCALE;
@@ -864,7 +865,8 @@ impl Enemy {
         // 2단계 전환(0133): 체력 반에서 한 번 — 하던 공격을 버리고 `RISE_TIME` 동안 무릎 꿇었다 터지며 일어선다.
         if d.boss && !self.roused && self.hp * 2 <= self.max_hp && self.state != EState::Dormant {
             self.roused = true;
-            self.rise_hp = self.hp.max(1);
+            // 전환은 살아서 맞는다 — 적어도 옛 한 칸(`HP_UNIT`).
+            self.rise_hp = self.hp.max(crate::tuning::HP_UNIT);
             self.state = EState::Rise { t: 0.0 };
             self.plant_at = None;
             self.feint = None;
@@ -893,12 +895,12 @@ impl Enemy {
                     let (s, c) = face.sin_cos();
                     self.turn_toward(vec3(s, 0.0, c), 2.0, dt);
                 }
-                // 청소자(0120): 싸움이 없으면 먹는다 — `EAT_TIME`마다 체력 1(lore ecology 청소자 "잔해를 먹고 회복").
+                // 청소자(0120): 싸움이 없으면 먹는다 — `EAT_TIME`마다 체력 한 눈금(`HP_UNIT`, lore ecology 청소자 "잔해를 먹고 회복").
                 if self.docile && self.hp < self.max_hp {
                     self.eat_t += dt;
                     if self.eat_t >= crate::tuning::EAT_TIME {
                         self.eat_t = 0.0;
-                        self.hp += 1;
+                        self.hp = (self.hp + crate::tuning::HP_UNIT).min(self.max_hp);
                     }
                 }
             }
@@ -1324,14 +1326,16 @@ mod tests {
         let mut en = Enemy::new(Kind::Husk, Vec3::ZERO);
         let base = en.max_hp;
         en.set_tier(2);
-        let tier_two = (base as f32 * crate::tuning::tier(2).hp).ceil() as i32;
+        // 올림은 옛 눈금으로(0158 N0): 잔재 30 × 1.5 = 옛 3 × 1.5 → 5의 열 배 = 50(45가 아니다).
+        let tier_two = crate::tuning::scale_up(base, crate::tuning::tier(2).hp);
+        assert_eq!((base, tier_two), (30, 50));
         assert_eq!(en.max_hp, tier_two);
-        en.hp -= 1;
+        en.hp -= 10;
         en.set_tier(2);
         assert_eq!(en.max_hp, tier_two);
         assert_eq!(
             en.hp,
-            tier_two - 1,
+            tier_two - 10,
             "reapplying the tier must not refill health"
         );
         // 등급을 바꾸면 종 바탕에서 다시 센다(겹치지 않는다), 엘리트 뒤에 불러도 같다.
@@ -1344,6 +1348,7 @@ mod tests {
         late.make_elite(Affix::Hardened);
         late.set_tier(2);
         assert_eq!(elite.max_hp, late.max_hp, "order does not matter");
+        assert_eq!(elite.max_hp, 100, "old 3 → 5 → 10, times ten");
     }
 
     /// 0112: 엘리트 = 체력 × `ELITE_HP`(올림)·몸 × `ELITE_SCALE`·성질 하나. 보스는 엘리트가 되지 않는다.
@@ -1353,7 +1358,8 @@ mod tests {
         let mut en = Enemy::new(Kind::Husk, Vec3::ZERO);
         let (hp, r) = (en.max_hp, en.radius);
         en.make_elite(Affix::Hardened);
-        assert_eq!(en.max_hp, (hp as f32 * ELITE_HP).ceil() as i32);
+        assert_eq!(en.max_hp, crate::tuning::scale_up(hp, ELITE_HP));
+        assert_eq!((hp, en.max_hp), (30, 60));
         assert_eq!(en.hp, en.max_hp);
         assert!((en.radius - r * ELITE_SCALE).abs() < 1e-5);
         assert_eq!(en.elite, Some(Affix::Hardened));
@@ -1520,7 +1526,7 @@ mod tests {
             let start = en.hp;
             let mut bursts = Vec::new();
             for i in 0..200 {
-                en.hp -= 1; // 어디서 깎여도(넓은 타·되받아친 조각) 전환 동안은 되돌아온다
+                en.hp -= 10; // 어디서 깎여도(넓은 타·되받아친 조각) 전환 동안은 되돌아온다
                 let out = en.tick(Vec3::ZERO, 1.0 / 60.0);
                 if out.burst {
                     bursts.push(i);
@@ -1538,7 +1544,7 @@ mod tests {
             assert!(!en.rising() && en.roused, "{kind:?}: phase two");
             // 잡몹은 전환하지 않는다.
             let mut mob = Enemy::new(Kind::Husk, Vec3::ZERO);
-            mob.hp = 1;
+            mob.hp = 10;
             mob.tick(vec3(0.0, 0.0, 5.0), 1.0 / 60.0);
             assert!(!mob.rising());
         }

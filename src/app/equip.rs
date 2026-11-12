@@ -880,8 +880,8 @@ mod tests {
         let sword = weapon_numbers(weapons::Id::Sword.def(), &t, &none);
         let hammer = weapon_numbers(weapons::Id::Hammer.def(), &t, &none);
         let line = |v: &[WVal], l: WLine| v.iter().find(|x| x.line == l).unwrap().clone();
-        assert_eq!(line(&sword, WLine::Damage).text, "1·1·2");
-        assert_eq!(line(&hammer, WLine::Damage).text, "2·3");
+        assert_eq!(line(&sword, WLine::Damage).text, "10·10·20");
+        assert_eq!(line(&hammer, WLine::Damage).text, "20·30");
         assert!(line(&hammer, WLine::Speed).score > line(&sword, WLine::Speed).score);
         let cmp = weapon_compare(&sword, &hammer);
         let ch = |l: WLine| cmp.iter().find(|(v, _)| v.line == l).unwrap().1;
@@ -895,21 +895,21 @@ mod tests {
             Some(Change::Worse),
             "a slower swing is worse"
         );
-        // 장신구 피해 +1은 모든 타에.
+        // 장신구 피해 +10은 모든 타에.
         assert_eq!(
             line(
                 &weapon_numbers(
                     weapons::Id::Sword.def(),
                     &t,
                     &crate::stats::Stats::compute(&[crate::stats::Mods {
-                        dmg: 1,
+                        dmg: 10,
                         ..Default::default()
                     }]),
                 ),
                 WLine::Damage
             )
             .text,
-            "2·2·3"
+            "20·20·30"
         );
         // 쇠뇌는 사격 줄 — 근접 줄과는 견주지 않는다. 공격 속도(= 박자, 0077)만은 둘 다 있어 견준다.
         let xbow = weapon_numbers(weapons::Id::Crossbow.def(), &t, &none);

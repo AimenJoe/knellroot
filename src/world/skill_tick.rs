@@ -438,8 +438,8 @@ mod tests {
 
     fn still(w: &mut World) {
         for e in &mut w.enemies {
-            e.hp = 9;
-            e.max_hp = 9;
+            e.hp = 90;
+            e.max_hp = 90;
             e.state = EState::Recover { t: -1000.0 };
         }
     }
@@ -486,10 +486,10 @@ mod tests {
         assert_eq!(rounds, 2, "one flash per turn");
         let dmg = Sk::Whirl.def().damage + w.stats.dmg;
         for e in &w.enemies[..6] {
-            assert_eq!(e.hp, 9 - 2 * dmg, "hit once per turn");
+            assert_eq!(e.hp, 90 - 2 * dmg, "hit once per turn");
             assert!(flat(e.pos, w.player.pos) > 2.8, "pushed out: {:?}", e.pos);
         }
-        assert_eq!(w.enemies[6].hp, 9, "out of reach");
+        assert_eq!(w.enemies[6].hp, 90, "out of reach");
         assert_eq!(w.player.stamina, stamina, "skills cost no stamina");
         assert!(w.player.skill_cd[Sk::Whirl.index()] > 4.0, "cooling down");
         assert!(matches!(w.player.state, PState::Idle));
@@ -517,10 +517,10 @@ mod tests {
             w.player.pos
         );
         for e in &w.enemies[..3] {
-            assert_eq!(e.hp, 9 - d.damage - w.stats.dmg);
+            assert_eq!(e.hp, 90 - d.damage - w.stats.dmg);
             assert!(e.pos.z > w.player.pos.z, "left behind");
         }
-        assert_eq!(w.enemies[3].hp, 9, "off the lane");
+        assert_eq!(w.enemies[3].hp, 90, "off the lane");
     }
 
     /// 끌어모으기: 앞 부채꼴의 잡몹이 방랑자 앞 한 점으로 모이고 휘청인다 — 다치지는 않는다. 뒤의 적·보스·엘리트는 그대로.
@@ -552,7 +552,7 @@ mod tests {
         let spot = vec3(0.0, 0.0, -1.8);
         for e in &w.enemies[..3] {
             assert!(flat(e.pos, spot) < 1.7, "gathered: {:?}", e.pos);
-            assert_eq!(e.hp, 9, "gather does no harm");
+            assert_eq!(e.hp, 90, "gather does no harm");
         }
         for i in [3, 4, elite] {
             assert!(flat(w.enemies[i].pos, was[i]) < 0.05, "{i} stays");
@@ -574,10 +574,10 @@ mod tests {
         let boss_hp = w.enemies[3].hp;
         let ev = run(&mut w, &t, skill(0), 22);
         let d = Sk::Quake.def();
-        assert_eq!(w.enemies[0].hp, 9 - d.damage - w.stats.dmg);
+        assert_eq!(w.enemies[0].hp, 90 - d.damage - w.stats.dmg);
         assert!(matches!(w.enemies[0].state, EState::Stagger { .. }));
-        assert_eq!(w.enemies[1].hp, 9, "behind");
-        assert_eq!(w.enemies[2].hp, 9, "to the side");
+        assert_eq!(w.enemies[1].hp, 90, "behind");
+        assert_eq!(w.enemies[2].hp, 90, "to the side");
         assert!(w.enemies[3].hp < boss_hp, "the boss is hurt");
         assert!(!matches!(w.enemies[3].state, EState::Stagger { .. }));
         assert_eq!(
@@ -602,13 +602,13 @@ mod tests {
         let want = 5.0 - t[P::SkillMomentumOwn];
         assert!(w.player.skill_cd.iter().all(|c| (c - want).abs() < 1e-5));
         assert!(t[P::SkillMomentumOwn] < t[P::SkillMomentum]);
-        // 실제 판: 휘돌이가 체력 1짜리 둘을 쓰러뜨리면 다른 스킬의 대기가 "스킬 몫"만큼 당겨진다.
+        // 실제 판: 휘돌이가 한 대 몫(체력 10)짜리 둘을 쓰러뜨리면 다른 스킬의 대기가 "스킬 몫"만큼 당겨진다.
         let (mut w, t) = world();
         w.spawn_mob(vec3(1.5, 0.0, 0.0));
         w.spawn_mob(vec3(-1.5, 0.0, 0.0));
         still(&mut w);
         for e in &mut w.enemies {
-            e.hp = 1;
+            e.hp = 10;
         }
         w.player.skill_cd[Sk::Cut.index()] = 5.0;
         let ticks = 12;
@@ -763,12 +763,12 @@ mod tests {
             now[0] - was[0]
         );
         assert!(now[1] - was[1] > 1.0 && now[1] - was[1] < now[0] - was[0]);
-        assert_eq!(w.enemies[0].hp, 9, "no direct damage");
-        assert_eq!(w.enemies[1].hp, 9);
+        assert_eq!(w.enemies[0].hp, 90, "no direct damage");
+        assert_eq!(w.enemies[1].hp, 90);
         assert!(ev.iter().any(|e| matches!(e, Event::Slam { .. })));
         assert_eq!(
             w.enemies[2].hp,
-            9 - crate::tuning::ULT_SLAM_DAMAGE,
+            90 - crate::tuning::ULT_SLAM_DAMAGE,
             "thrown into the wall"
         );
         assert_eq!(w.enemies[3].hp, boss_hp);
