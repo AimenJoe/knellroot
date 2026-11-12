@@ -44,6 +44,13 @@ pub enum Kind {
     Gather,
     Quake,
     Upend,
+    /// 그림만(0158 G2): 스킬 넷·큰 기술 둘.
+    Brace,
+    Echo,
+    Throw,
+    Embers,
+    Flurry,
+    Line,
     Bomb,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
@@ -60,6 +67,10 @@ pub struct View {
     pub cast: Kind,
     /// 스킬 둘: (그림, 대기 0..1 — 1 = 준비).
     pub skills: [(Kind, f32); 2],
+    /// 스킬이 남긴 것이 이어지는 몫 0..1(0158 G2 — 되울림·잔불 흩기: 버튼 둘레의 줄어드는 테).
+    pub active: [f32; 2],
+    /// 큰 기술 버튼의 그림(끼운 하나, 0158 G2).
+    pub ult: Kind,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -447,6 +458,7 @@ fn press(a: &mut Read, k: Kind) {
         Kind::Ult | Kind::Upend => a.ult = true,
         // 그림만인 것은 버튼이 되지 않는다.
         Kind::Whirl | Kind::Cut | Kind::Gather | Kind::Quake | Kind::Bomb => {}
+        Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
 }
@@ -488,6 +500,20 @@ pub fn skill_icon(id: crate::skills::Id) -> Kind {
         Id::Cut => Kind::Cut,
         Id::Gather => Kind::Gather,
         Id::Quake => Kind::Quake,
+        Id::Brace => Kind::Brace,
+        Id::Echo => Kind::Echo,
+        Id::Throw => Kind::Throw,
+        Id::Embers => Kind::Embers,
+    }
+}
+
+/// 큰 기술 버튼의 그림(0158 G2) — 새 큰 기술 = 그림 하나(`_` 없는 match).
+pub fn ult_icon(u: crate::skills::Ult) -> Kind {
+    use crate::skills::Ult;
+    match u {
+        Ult::Upend => Kind::Upend,
+        Ult::Flurry => Kind::Flurry,
+        Ult::Line => Kind::Line,
     }
 }
 
@@ -590,6 +616,29 @@ pub fn draw(o: &Overlay, v: &View) {
                 Color::new(1.0, 1.0, 1.0, 0.1),
             );
         }
+        // 스킬이 남긴 것이 이어지는 동안(0158 G2): 버튼 둘레에 줄어드는 밝은 호.
+        let active = match b.kind {
+            Kind::Skill1 => v.active[0],
+            Kind::Skill2 => v.active[1],
+            _ => 0.0,
+        };
+        if active > 0.0 {
+            let n = 24;
+            let lit = (active.clamp(0.0, 1.0) * n as f32).ceil() as usize;
+            let rr = b.radius + 3.0;
+            for i in 0..lit {
+                let a0 = (-90.0 + 360.0 * i as f32 / n as f32).to_radians();
+                let a1 = (-90.0 + 360.0 * (i + 1) as f32 / n as f32).to_radians();
+                draw_line(
+                    b.center.x + rr * a0.cos(),
+                    b.center.y + rr * a0.sin(),
+                    b.center.x + rr * a1.cos(),
+                    b.center.y + rr * a1.sin(),
+                    3.0,
+                    Color::new(WARM.r, WARM.g, WARM.b, 0.9),
+                );
+            }
+        }
         let ult = b.kind == Kind::Ult;
         if ult {
             draw_circle(
@@ -613,7 +662,7 @@ pub fn draw(o: &Overlay, v: &View) {
             Kind::Cast => v.cast,
             Kind::Skill1 => v.skills[0].0,
             Kind::Skill2 => v.skills[1].0,
-            Kind::Ult => Kind::Upend,
+            Kind::Ult => v.ult,
             k => k,
         };
         let tint = if on || ult || kind == Kind::Rest {
@@ -927,6 +976,102 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             ".#....#....#.",
             "#.....#.....#",
         ],
+        // 0158 G2. 버팀: 땅에 박은 기둥과 양옆에서 튕겨 나가는 타.
+        Kind::Brace => [
+            ".............",
+            "#....###....#",
+            ".#..#####..#.",
+            "....#####....",
+            "....#####....",
+            "##..#####..##",
+            "....#####....",
+            "....#####....",
+            ".#..#####..#.",
+            "#...#####...#",
+            "....#####....",
+            ".###########.",
+            ".###########.",
+        ],
+        // 되울림: 한 점에서 퍼지는 울림 두 겹.
+        Kind::Echo => [
+            "....#####....",
+            "..##.....##..",
+            ".#.........#.",
+            ".#...###...#.",
+            "#...#...#...#",
+            "#..#.....#..#",
+            "#..#..#..#..#",
+            "#..#.....#..#",
+            "#...#...#...#",
+            ".#...###...#.",
+            ".#.........#.",
+            "..##.....##..",
+            "....#####....",
+        ],
+        // 던지기: 도는 날과 되돌아오는 화살.
+        Kind::Throw => [
+            ".............",
+            "..####.......",
+            ".######......",
+            ".###.###.....",
+            ".###..###....",
+            "..##...###...",
+            "........###..",
+            ".....#...###.",
+            "....##...###.",
+            "...#########.",
+            "....#######..",
+            ".....#.......",
+            ".............",
+        ],
+        // 잔불 흩기: 바닥의 불과 흩어져 오르는 불티.
+        Kind::Embers => [
+            "..#.....#....",
+            ".....#.....#.",
+            ".#.......#...",
+            "....#.#......",
+            "..#..###..#..",
+            "....#####....",
+            ".#..#####..#.",
+            "...#######...",
+            "...###.###...",
+            "...##...##...",
+            "....#####....",
+            ".............",
+            "#############",
+        ],
+        // 큰 기술 몰아치기: 잇달아 긋는 빗금 셋.
+        Kind::Flurry => [
+            ".........###.",
+            ".......####..",
+            ".....####....",
+            "...####......",
+            ".###.....###.",
+            ".......####..",
+            ".....####....",
+            "...####......",
+            ".###.....###.",
+            ".......####..",
+            ".....####....",
+            "...####......",
+            ".###.........",
+        ],
+        // 큰 기술 한 줄기: 화면을 가르는 긴 한 줄과 번쩍임 둘.
+        Kind::Line => [
+            "##...........",
+            "###..........",
+            ".###.........",
+            "..###....#...",
+            "...###...#...",
+            "....###.###..",
+            ".....###.#...",
+            "......###....",
+            "..#....###...",
+            ".###....###..",
+            "..#......###.",
+            "..........###",
+            "...........##",
+        ],
         // 수류탄(원거리 무기의 RB): 둥근 몸과 도화선.
         Kind::Bomb => [
             ".........##..",
@@ -1041,8 +1186,24 @@ mod tests {
             Kind::Gather,
             Kind::Quake,
             Kind::Upend,
+            Kind::Brace,
+            Kind::Echo,
+            Kind::Throw,
+            Kind::Embers,
+            Kind::Flurry,
+            Kind::Line,
             Kind::Bomb,
         ];
+        // 0158 G2: 스킬·큰 기술마다 그림이 다르다(같으면 무엇을 끼웠는지 버튼이 말하지 못한다) — 모두 위 목록에 있다.
+        let skill_icons: Vec<Kind> = crate::skills::IDS
+            .iter()
+            .map(|id| skill_icon(*id))
+            .chain(crate::skills::ULTS.iter().map(|u| ult_icon(*u)))
+            .collect();
+        for (i, a) in skill_icons.iter().enumerate() {
+            assert!(!skill_icons[i + 1..].contains(a), "{a:?} twice");
+            assert!(kinds.contains(a), "{a:?} is not in the checked list");
+        }
         // 0147: 무기마다 공격 그림이 다르다(같으면 무엇을 들었는지 버튼이 말하지 못한다).
         let icons: Vec<Kind> = crate::weapons::IDS
             .iter()

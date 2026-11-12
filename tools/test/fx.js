@@ -1,6 +1,8 @@
 // 이펙트를 틱마다 찍는다(0141): 헤드리스 Chromium으로 개발 시나리오를 띄우고, 개발 키 F6(한 프레임 = 한 틱)을 켠 뒤
 // 동작마다 연달아 스크린숏 — 0.1초짜리 번쩍임·먼지를 실제 시간으로는 못 잡는다(헤드리스는 초당 8프레임 남짓).
-//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage]
+//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills]
+// skills(0158 G2): 개발 창 도구 탭 "기술 다 올리기"(끝 단 · 고르기 ㄱ, 기록에 안 쓴다) → "기술 끼우기"에서 칸·큰 기술을 고르고 →
+//   전투 탭 "skills" 판에서 Q(칸 1)·E(칸 2)·Q+E(큰 기술)를 틱마다 찍는다 — 스킬·큰 기술마다 새 판(sk-<이름>-<n>.png).
 // 눈으로 볼 것: 맞힌 자리의 별·불똥, 휘두름의 초승달, 쓰러진 적의 재, 뛰기·회피·적 내리침의 먼지, 마법 탄의 마름모, 화로 불티.
 // 메뉴 길은 shot.js와 같다(처음에 "키보드만 배치로" — J 공격·K 패링·L 락온·Space 회피·F 점프·U 마법). 콘솔 에러가 있으면 종료 코드 1.
 const { chromium } = require('playwright'); const http = require('http'); const fs = require('fs'); const path = require('path');
@@ -51,6 +53,36 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     await p.keyboard.press('F6'); await p.waitForTimeout(300);
     for (let k = 0; k < 10; k++) { await p.keyboard.press('KeyK'); await burst(p, `parry${k}`, 6); }
     await p.close();
+  }
+  if (want('skills')) {
+    // 판마다 새 페이지(떼가 몸을 덮기 전에 낸다): [이름, 칸 1까지 오른쪽, 큰 기술까지 오른쪽, 기다림 ms, 누름, 찍을 수].
+    // 칸 1의 차례는 `skills::IDS`(칸 2의 가로지르기는 건너뛴다) — 가로지르기는 칸 2(E)로. 큰 기술은 Q+E.
+    const RUNS = [['whirl', 0, 0, 1500, 'Q', 22], ['cut', 0, 0, 1100, 'E', 26], ['gather', 1, 0, 900, 'Q', 26],
+      ['quake', 2, 0, 1000, 'Q', 26], ['brace', 3, 0, 1300, 'Q', 40], ['echo', 4, 0, 1300, 'Q', 16],
+      ['throw', 5, 0, 900, 'Q', 30], ['embers', 6, 0, 1300, 'Q', 50],
+      ['upend', 0, 0, 1500, 'ult', 30], ['flurry', 0, 1, 1300, 'ult', 14], ['line', 0, 2, 900, 'ult', 30]];
+    const pick = async (p, n) => { for (let i = 0; i < n; i++) { await p.keyboard.press('ArrowRight'); await p.waitForTimeout(90); } };
+    for (const [name, slot, ult, wait, key, n] of RUNS) {
+      p = await open(0, 3); await p.waitForTimeout(300); // 도구 탭 넷째 줄 = 기술 다 올리기(켬)
+      await p.keyboard.press('ArrowUp'); await p.waitForTimeout(90); await p.keyboard.press('Enter'); await p.waitForTimeout(300); // 기술 끼우기
+      await pick(p, slot); await p.keyboard.press('ArrowDown'); await p.keyboard.press('ArrowDown'); await pick(p, ult);
+      if (name === 'whirl' || name === 'line') await p.screenshot({ path: path.join(OUT, `sk-window-${name}.png`) });
+      await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+      await pick(p, 2); await p.waitForTimeout(200); for (let i = 0; i < 9; i++) await p.keyboard.press('ArrowDown');
+      await p.keyboard.press('Enter'); await p.waitForTimeout(wait); // 떼가 다가오게
+      await p.keyboard.press('F6'); await p.waitForTimeout(300);
+      if (key === 'ult') {
+        await p.keyboard.down('KeyQ'); await p.keyboard.down('KeyE'); await p.waitForTimeout(40);
+        await p.keyboard.up('KeyQ'); await p.keyboard.up('KeyE');
+      } else {
+        await p.keyboard.press(`Key${key}`);
+      }
+      await burst(p, `sk-${name}`, n);
+      // 되울림은 받아쳐야 울린다(맞는 틱은 운 — 몇 번), 몰아치기는 평타를 이어 본다.
+      if (name === 'echo') for (let k = 0; k < 8; k++) { await p.keyboard.press('KeyK'); await burst(p, `sk-echo-parry${k}`, 5); }
+      if (name === 'flurry') for (let k = 0; k < 5; k++) { await p.keyboard.press('KeyJ'); await burst(p, `sk-flurry-hit${k}`, 5); }
+      await p.close();
+    }
   }
   if (want('stage')) {
     // 입구: 화로 불티 + 회피·달리기 먼지(진짜 바닥)

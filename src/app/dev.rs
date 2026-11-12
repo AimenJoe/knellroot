@@ -383,7 +383,7 @@ mod tests {
     fn the_dev_board_rows_toggle_max_ranks_and_flip_every_pick() {
         use crate::skills::{Board, Pick, MAX_RANK, ULT_MAX_RANK};
         let on = dev_board_step(None, DevStart::SkillsMax).expect("on");
-        assert!(on.rank.iter().all(|&r| r == MAX_RANK) && on.ult == ULT_MAX_RANK);
+        assert!(on.rank.iter().all(|&r| r == MAX_RANK) && on.ult == [ULT_MAX_RANK; 3]);
         assert!(on.pick.iter().all(|&p| p == Pick::A));
         assert_eq!(dev_board_step(Some(on), DevStart::SkillsMax), None, "off");
         let b = dev_board_step(Some(on), DevStart::SkillsFlip).expect("stays on");

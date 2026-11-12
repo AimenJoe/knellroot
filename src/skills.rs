@@ -9,6 +9,10 @@
 //! 5단 맺음 `Cap`), 큰 기술은 세 단. 단의 숫자는 아래 `RANK_*`, 스킬마다의 고르기·맺음은 표의 `picks`·`cap`, 줄은 `row`
 //! (쓴 점수 합 `ROW_NEEDS`로 열린다). 판의 셈(`Board` — 점수·사기·되돌리기)은 순수하고, 월드는 끼운 둘의 `Loadout`만 받는다
 //! (`Skill::at(단, 고르기)` = 그 단의 실제 값 `Eff`). 새 단 효과 = `Twist`/`Cap` 한 갈래 + 표의 값 + `skill_tick.rs`의 한 줄 + 글 + 시험.
+//!
+//! **G2(0158)**: 스킬 여덟(버팀 `Brace` · 되울림 `Echo` · 던지기 `Throw` · 잔불 흩기 `Field`의 네 모양이 더해졌다), 큰 기술 셋
+//! (`Ult` — 쟁반 뒤집기는 처음부터, 몰아치기·한 줄기는 판에서 2점으로 배운다. **끼우는 큰 기술은 하나**). 전용 동작은 `Clip`
+//! (이름 + 시동·이어짐·후딜 구간의 길이 — 구간의 경계가 판정의 순간이라 `Clip::at`이 단·고르기가 바꾼 길이를 구간에 맞춘다).
 
 use crate::tuning::{HP_UNIT, ULT_SLAM_DAMAGE};
 
@@ -38,6 +42,71 @@ pub enum Form {
         arc_deg: f32,
         stagger: f32,
     },
+    /// 버팀(0158 G2): `hold`초 동안 버틴다 — 밀리지도 끊기지도 않고 받는 타마다 피해 −`soak`(0 아래로는 안 내려간다), 받아낸 타를
+    /// `most`번까지 센다. 끝에 둘레 `radius` m를 터뜨린다: 표의 피해 + 받아낸 타마다 `more`, 맞은 적은 바깥으로 `push` m.
+    /// 회피는 버팀을 터뜨림 없이 끊는다(대기는 쓴 채).
+    Brace {
+        hold: f32,
+        radius: f32,
+        soak: i32,
+        most: u8,
+        more: i32,
+        push: f32,
+    },
+    /// 되울림(0158 G2): `secs`초 동안 성공한 패링마다 둘레 `radius` m의 적이 `stagger`초 휘청인다(보스는 휘청이지 않는다).
+    /// 패링 창은 그대로다(0095 원칙 2).
+    Echo {
+        secs: f32,
+        radius: f32,
+        stagger: f32,
+    },
+    /// 던지기(0158 G2): 든 것이 `dist` m를 곧게 날아가(초속 `speed` m, 길의 반 폭 `half` m — 뚫는다) 방랑자에게 되돌아온다.
+    /// 가는 길·오는 길에 적마다 한 번씩 표의 피해. `hand` = 던진 뒤 팔이 따라가는 초(몸의 "이어짐" — 그 뒤는 후딜).
+    Throw {
+        dist: f32,
+        half: f32,
+        speed: f32,
+        hand: f32,
+    },
+    /// 잔불 흩기(0158 G2): 선 자리 둘레 `radius` m에 `secs`초 남는 불티 — 그 안의 적이 `every`초마다 표의 피해(첫 타는 `every`초 뒤).
+    /// 잔불(재화)은 쓰지 않는다.
+    Field { radius: f32, secs: f32, every: f32 },
+}
+
+/// 스킬 전용 동작(0158 G2, `wanderer.glb`의 `sk_*`·`ult_*`): 이름과 구간 셋(시동 · 이어짐 · 후딜)의 길이(초 — 바탕값으로 만든 것).
+/// 구간의 경계가 판정의 순간이다. 모델에 아직 없으면 렌더가 표의 `anim`(빌려 쓰던 동작)으로 넘어간다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Clip {
+    pub name: &'static str,
+    pub seg: [f32; 3],
+}
+
+impl Clip {
+    /// 상태의 시각 `e`(초) → 동작의 시각. `startup`·`active`·`recover` = 지금 단·고르기의 실제 길이.
+    /// 시동은 시동 구간에 맞춰 늘이고(경계 = 판정의 순간이 어긋나지 않게), 이어짐은 `period`가 있으면 그 주기로 구간을 되풀이
+    /// (휘돌이의 바퀴·되돌아 베기의 둘째 길), 없으면 구간 전체에 늘인다. 후딜은 제 빠르기로 — 길면 끝 자세에 머문다.
+    pub fn at(&self, e: f32, startup: f32, active: f32, period: Option<f32>) -> f32 {
+        let [s, a, r] = self.seg;
+        let e = e.max(0.0);
+        if e < startup {
+            return s * (e / startup.max(1e-4));
+        }
+        let q = e - startup;
+        if q < active {
+            let k = match period {
+                Some(p) if p > 1e-4 => (q / p).fract(),
+                _ => q / active.max(1e-4),
+            };
+            return s + a * k;
+        }
+        s + a + (q - active).min(r)
+    }
+
+    /// 동작 전체의 길이(초) — 시험이 읽는다.
+    #[cfg(test)]
+    pub fn total(&self) -> f32 {
+        self.seg.iter().sum()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -50,10 +119,27 @@ pub enum Id {
     Gather,
     /// 땅울림: 몰린 쪽을 한 번에.
     Quake,
+    /// 버팀(G2): 떼 한가운데서 맞으며 버티다 터뜨린다.
+    Brace,
+    /// 되울림(G2): 패링이 둘레를 울린다.
+    Echo,
+    /// 던지기(G2): 든 것을 던져 길을 가르고 되받는다.
+    Throw,
+    /// 잔불 흩기(G2): 둘레에 남는 불티.
+    Embers,
 }
 
 /// 표 순서(대기 칸 `Player::skill_cd`의 자리 — 뒤에만 붙인다).
-pub const IDS: [Id; 4] = [Id::Whirl, Id::Cut, Id::Gather, Id::Quake];
+pub const IDS: [Id; 8] = [
+    Id::Whirl,
+    Id::Cut,
+    Id::Gather,
+    Id::Quake,
+    Id::Brace,
+    Id::Echo,
+    Id::Throw,
+    Id::Embers,
+];
 pub const N: usize = IDS.len();
 
 /// 처음 끼워져 있는 둘(0151 6번 — 첫 판부터 스킬 버튼이 비지 않게).
@@ -72,8 +158,10 @@ pub struct Skill {
     pub damage: i32,
     pub poise: f32,
     pub form: Form,
-    /// 빌려 쓰는 동작 이름(`wanderer.glb` — 스킬 전용 동작은 S1).
+    /// 빌려 쓰는 동작 이름(`wanderer.glb`) — 전용 동작 `clip`이 모델에 없을 때 쓴다.
     pub anim: &'static str,
+    /// 전용 동작(0158 G2)과 그 구간의 길이.
+    pub clip: Clip,
     /// 판의 줄(0158 라): 쓴 점수 합이 `ROW_NEEDS[row]`에 닿아야 살 수 있다.
     pub row: u8,
     /// 3단의 둘 가운데 하나(ㄱ·ㄴ)와 5단의 맺음(0158 마).
@@ -87,9 +175,11 @@ pub const MAX_RANK: u8 = 5;
 pub const PICK_RANK: u8 = 3;
 pub const SIZE_RANK: u8 = 4;
 pub const CAP_RANK: u8 = 5;
-/// 단의 숫자: 2단부터 피해 ×1.15(피해 없는 스킬은 휘청 +0.3초), 4단 제 치수 ×1.2, 5단 피해 ×1.3(합)·대기 ×0.9.
+/// 단의 숫자: 2단부터 피해 ×1.15(피해 없는 스킬은 휘청 +0.3초 — 되울림은 이어지는 시간 +1초), 4단 제 치수 ×1.2,
+/// 5단 피해 ×1.3(합)·대기 ×0.9.
 pub const RANK2_DAMAGE: f32 = 1.15;
 pub const RANK2_STAGGER: f32 = 0.3;
+pub const RANK2_SECS: f32 = 1.0;
 pub const RANK4_SIZE: f32 = 1.2;
 pub const RANK5_DAMAGE: f32 = 1.3;
 pub const RANK5_COOLDOWN: f32 = 0.9;
@@ -135,7 +225,7 @@ impl Pick {
 /// 3단 고르기가 바꾸는 쓰임(0158 마). 숫자는 표에 — 틱은 갈래만 본다.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Twist {
-    /// 휘돌이 ㄱ: 도는 동안 걷는다(걷는 빠르기 × `speed`).
+    /// 휘돌이 ㄱ·버팀 ㄱ: 도는(버티는) 동안 걷는다(걷는 빠르기 × `speed`).
     Walk { speed: f32 },
     /// 휘돌이 ㄴ: 바퀴를 `more`번 더.
     Spins { more: u8 },
@@ -155,6 +245,20 @@ pub enum Twist {
     Leap { dist: f32, short: f32, half: f32 },
     /// 땅울림 ㄴ: 찍은 부채꼴이 `secs`초 남는다 — 그 안의 적은 `slow`배로 걷는다(보스는 아니다).
     Crack { secs: f32, slow: f32 },
+    /// 버팀 ㄴ "되쏘기": 버티는 동안 받아낸 탄·조각을 터뜨릴 때 쏜 쪽으로 되쏜다.
+    Reflect,
+    /// 되울림 ㄱ "울리는 틈": 울림이 닿은 적에게 자세 피해 `poise`.
+    Rattle { poise: f32 },
+    /// 되울림 ㄴ "당기는 박자": 울린 패링마다 모든 스킬의 대기 −`secs`초.
+    Tempo { secs: f32 },
+    /// 던지기 ㄱ "박힌 자리": 돌아오지 않고 끝에서 터진다(둘레 `radius` m · 피해 `damage`).
+    Stick { radius: f32, damage: i32 },
+    /// 던지기 ㄴ "끌고 오기": 돌아오는 길에 맞은 적을 방랑자 쪽으로 `dist` m 끈다(보스는 아니다).
+    Drag { dist: f32 },
+    /// 잔불 흩기 ㄱ "따르는 불티": 불티가 방랑자를 따라온다.
+    Follow,
+    /// 잔불 흩기 ㄴ "남는 불씨": 불티 속에서 쓰러진 적이 잔불(재화)을 `embers`개 더 남긴다.
+    Kindle { embers: u32 },
 }
 
 /// 5단 맺음(0158 마).
@@ -168,6 +272,14 @@ pub enum Cap {
     Frail { secs: f32, mult: f32 },
     /// 땅울림: 자세가 깨져 있는 적에게 피해 × `mult`.
     Shatter { mult: f32 },
+    /// 버팀: 터뜨림에 맞은 적이 `stagger`초 휘청인다(보스는 아니다).
+    Stun { stagger: f32 },
+    /// 되울림: 울림이 닿은 적에게 피해 `damage`(보스도 다치되 휘청이지 않는다).
+    Toll { damage: i32 },
+    /// 던지기: 돌아오는 길의 피해 × `damage`·자세 피해 × `poise`.
+    Homing { damage: f32, poise: f32 },
+    /// 잔불 흩기: 이어지는 시간 +`secs`초, 불티의 타마다 자세 피해 `poise`.
+    Smolder { secs: f32, poise: f32 },
 }
 
 /// 그 단·그 고르기의 실제 값(월드가 쓴다): 표의 줄에 단의 숫자를 입힌 것 + 열린 고르기·맺음.
@@ -208,7 +320,7 @@ impl Skill {
             1.0
         };
         let size = if rank >= SIZE_RANK { RANK4_SIZE } else { 1.0 };
-        // 피해 없는 스킬의 2단은 휘청 시간.
+        // 피해 없는 스킬(끌어모으기)의 2단은 휘청 시간.
         let hold = if rank >= 2 && self.damage == 0 {
             RANK2_STAGGER
         } else {
@@ -255,6 +367,56 @@ impl Skill {
                 arc_deg: arc_deg * size,
                 stagger,
             },
+            // 버팀: 받아낸 타의 덤도 피해의 배를 같이 받는다(10 → 12 → 13).
+            Form::Brace {
+                hold,
+                radius,
+                soak,
+                most,
+                more,
+                push,
+            } => Form::Brace {
+                hold,
+                radius: radius * size,
+                soak,
+                most,
+                more: scaled(more, dmg),
+                push,
+            },
+            // 되울림의 2단은 이어지는 시간(피해도 휘청도 아니다).
+            Form::Echo {
+                secs,
+                radius,
+                stagger,
+            } => Form::Echo {
+                secs: secs + if rank >= 2 { RANK2_SECS } else { 0.0 },
+                radius: radius * size,
+                stagger,
+            },
+            Form::Throw {
+                dist,
+                half,
+                speed,
+                hand,
+            } => Form::Throw {
+                dist: dist * size,
+                half,
+                speed,
+                hand,
+            },
+            Form::Field {
+                radius,
+                secs,
+                every,
+            } => Form::Field {
+                radius: radius * size,
+                secs: secs
+                    + match cap {
+                        Some(Cap::Smolder { secs, .. }) => secs,
+                        _ => 0.0,
+                    },
+                every,
+            },
         };
         Eff {
             skill: Skill {
@@ -280,7 +442,9 @@ impl Skill {
         match self.form {
             Form::Ring { hits, gap, .. } => gap * hits.saturating_sub(1) as f32,
             Form::Lane { time, .. } => time,
-            Form::Pull { .. } | Form::Cone { .. } => 0.0,
+            Form::Brace { hold, .. } => hold,
+            Form::Throw { hand, .. } => hand,
+            Form::Pull { .. } | Form::Cone { .. } | Form::Echo { .. } | Form::Field { .. } => 0.0,
         }
     }
 
@@ -306,6 +470,10 @@ pub const SKILLS: [Skill; N] = [
             push: 1.5,
         },
         anim: "staff4",
+        clip: Clip {
+            name: "sk_whirl",
+            seg: [0.15, 0.22, 0.30],
+        },
         row: 0,
         picks: [Twist::Walk { speed: 0.6 }, Twist::Spins { more: 1 }],
         cap: Cap::Lift { stagger: 0.4 },
@@ -323,6 +491,10 @@ pub const SKILLS: [Skill; N] = [
             time: 0.2,
         },
         anim: "attack3",
+        clip: Clip {
+            name: "sk_cut",
+            seg: [0.12, 0.20, 0.25],
+        },
         row: 0,
         picks: [Twist::Return, Twist::Ghost],
         cap: Cap::Refund { part: 0.5 },
@@ -341,6 +513,10 @@ pub const SKILLS: [Skill; N] = [
             stagger: 0.6,
         },
         anim: "charge",
+        clip: Clip {
+            name: "sk_gather",
+            seg: [0.20, 0.0, 0.30],
+        },
         row: 0,
         picks: [
             Twist::Burst {
@@ -368,6 +544,10 @@ pub const SKILLS: [Skill; N] = [
             stagger: 0.8,
         },
         anim: "hammer_slam",
+        clip: Clip {
+            name: "sk_quake",
+            seg: [0.30, 0.0, 0.40],
+        },
         row: 1,
         picks: [
             Twist::Leap {
@@ -381,6 +561,107 @@ pub const SKILLS: [Skill; N] = [
             },
         ],
         cap: Cap::Shatter { mult: 2.0 },
+    },
+    // ---- G2(0158): 나머지 넷 ----
+    Skill {
+        id: Id::Brace,
+        cooldown: 12.0,
+        startup: 0.10,
+        recover: 0.35,
+        damage: HP_UNIT,
+        poise: 2.0,
+        form: Form::Brace {
+            hold: 1.2,
+            radius: 3.0,
+            soak: HP_UNIT,
+            most: 3,
+            more: HP_UNIT,
+            push: 1.0,
+        },
+        anim: "parry",
+        clip: Clip {
+            name: "sk_brace",
+            seg: [0.10, 1.20, 0.35],
+        },
+        row: 0,
+        picks: [Twist::Walk { speed: 0.45 }, Twist::Reflect],
+        cap: Cap::Stun { stagger: 1.0 },
+    },
+    Skill {
+        id: Id::Echo,
+        cooldown: 12.0,
+        startup: 0.25,
+        recover: 0.20,
+        damage: 0,
+        poise: 0.0,
+        form: Form::Echo {
+            secs: 4.0,
+            radius: 4.0,
+            stagger: 0.8,
+        },
+        anim: "cast_charge",
+        clip: Clip {
+            name: "sk_echo",
+            seg: [0.25, 0.0, 0.20],
+        },
+        row: 1,
+        picks: [Twist::Rattle { poise: 2.5 }, Twist::Tempo { secs: 0.6 }],
+        cap: Cap::Toll { damage: HP_UNIT },
+    },
+    Skill {
+        id: Id::Throw,
+        cooldown: 8.0,
+        startup: 0.18,
+        recover: 0.25,
+        damage: HP_UNIT,
+        poise: 1.5,
+        form: Form::Throw {
+            dist: 8.0,
+            half: 0.9,
+            speed: 22.0,
+            hand: 0.10,
+        },
+        anim: "throw",
+        clip: Clip {
+            name: "sk_throw",
+            seg: [0.18, 0.10, 0.25],
+        },
+        row: 1,
+        picks: [
+            Twist::Stick {
+                radius: 2.5,
+                damage: 2 * HP_UNIT,
+            },
+            Twist::Drag { dist: 2.0 },
+        ],
+        cap: Cap::Homing {
+            damage: 1.5,
+            poise: 2.0,
+        },
+    },
+    Skill {
+        id: Id::Embers,
+        cooldown: 10.0,
+        startup: 0.25,
+        recover: 0.30,
+        damage: HP_UNIT,
+        poise: 0.0,
+        form: Form::Field {
+            radius: 4.0,
+            secs: 3.0,
+            every: 1.0,
+        },
+        anim: "cast",
+        clip: Clip {
+            name: "sk_embers",
+            seg: [0.25, 0.0, 0.30],
+        },
+        row: 1,
+        picks: [Twist::Follow, Twist::Kindle { embers: 1 }],
+        cap: Cap::Smolder {
+            secs: 1.0,
+            poise: 1.0,
+        },
     },
 ];
 
@@ -399,6 +680,10 @@ impl Id {
             Id::Cut => "cut",
             Id::Gather => "gather",
             Id::Quake => "quake",
+            Id::Brace => "brace",
+            Id::Echo => "echo",
+            Id::Throw => "throw",
+            Id::Embers => "embers",
         }
     }
 
@@ -411,6 +696,86 @@ impl Id {
             .iter()
             .find(|s| s.id == self)
             .expect("SKILLS has every Id")
+    }
+}
+
+/// 큰 기술(0151 → 0158 G2: 셋 — **끼우는 것은 하나**). 게이지를 통째로 쓴다.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Ult {
+    /// 쟁반 뒤집기: 둘레의 적을 바깥으로 쏟는다(처음부터 1단).
+    #[default]
+    Upend,
+    /// 몰아치기: 잠깐 동안 평타가 기력 없이·빠르게·모두 박자 타로.
+    Flurry,
+    /// 한 줄기: 세계를 멈추고 앞의 긴 한 줄을 가른다(보스전의 큰 기술).
+    Line,
+}
+
+/// 큰 기술의 표 순서(판의 단 `Board::ult`의 자리 — 뒤에만 붙인다).
+pub const ULTS: [Ult; 3] = [Ult::Upend, Ult::Flurry, Ult::Line];
+pub const NU: usize = ULTS.len();
+
+/// 큰 기술을 판에서 배우는 값(기술 점수 — 그 뒤 단마다 1).
+pub const ULT_LEARN: u32 = 2;
+
+impl Ult {
+    pub fn index(self) -> usize {
+        ULTS.iter()
+            .position(|u| *u == self)
+            .expect("ULTS has every Ult")
+    }
+
+    /// 기록 키(`ult.rank.<키>`·`ult.worn`의 값 — 바꾸지 않는다).
+    pub fn key(self) -> &'static str {
+        match self {
+            Ult::Upend => UPEND_KEY,
+            Ult::Flurry => "flurry",
+            Ult::Line => "line",
+        }
+    }
+
+    pub fn by_key(k: &str) -> Option<Ult> {
+        ULTS.into_iter().find(|u| u.key() == k)
+    }
+
+    /// 빌려 쓰는 동작과 전용 동작(스킬의 `anim`·`clip`과 같은 뜻).
+    pub fn anim(self) -> &'static str {
+        match self {
+            Ult::Upend => UPEND.anim,
+            Ult::Flurry => FLURRY.anim,
+            Ult::Line => LINE.anim,
+        }
+    }
+
+    pub fn clip(self) -> Clip {
+        match self {
+            Ult::Upend => UPEND.clip,
+            Ult::Flurry => FLURRY.clip,
+            Ult::Line => LINE.clip,
+        }
+    }
+
+    /// (누른 순간 세계가 멈추는 초, 그 뒤 터지기까지의 시동, 후딜) — 상태 틱과 동작 맞추기가 같이 읽는다.
+    pub fn times(self) -> (f32, f32, f32) {
+        match self {
+            Ult::Upend => (UPEND.freeze, UPEND.startup, UPEND.recover),
+            Ult::Flurry => (0.0, FLURRY.startup, FLURRY.recover),
+            Ult::Line => (LINE.freeze, LINE.startup, LINE.recover),
+        }
+    }
+
+    /// 큰 기술 동작의 시각: 세계 멈춤(`frozen` = 멈춤이 지난 몫 0..1, 상태 시계는 0에 머문다)은 시동 구간에, 그 뒤 터지기까지의
+    /// 시동은 이어짐 구간에 늘여 맞춘다 — 이어짐 구간의 끝이 터지는 순간. 멈춤이 없는 큰 기술(몰아치기)은 시동이 곧 시동 구간.
+    pub fn clip_at(self, e: f32, frozen: f32) -> f32 {
+        let (freeze, startup, _) = self.times();
+        let c = self.clip();
+        if freeze <= 0.0 {
+            return c.at(e, startup, 0.0, None);
+        }
+        if e <= 0.0 {
+            return c.seg[0] * frozen.clamp(0.0, 1.0);
+        }
+        c.at(e, 0.0, startup, None)
     }
 }
 
@@ -429,6 +794,7 @@ pub struct Upend {
     pub stagger: f32,
     pub boss_stagger: f32,
     pub anim: &'static str,
+    pub clip: Clip,
 }
 
 pub const UPEND: Upend = Upend {
@@ -441,9 +807,113 @@ pub const UPEND: Upend = Upend {
     stagger: 2.0,
     boss_stagger: 0.6,
     anim: "hammer_slam",
+    clip: Clip {
+        name: "ult_upend",
+        seg: [0.30, 0.20, 0.50],
+    },
 };
 
-/// 큰 기술의 단(0158 다): 처음부터 1단, 큰 기술 줄이 열리면 2단(휘청 +0.6초 — 보스의 짧은 휘청은 그대로)·3단(벽에 박힌 피해 ×1.5).
+/// 큰 기술 "몰아치기"(0158 G2): 시동 뒤 `secs`초 동안 평타가 기력을 쓰지 않고 `speed`배 빠르며 모든 타가 박자 타로 친다.
+/// 2단 = `secs2`초, 3단 = 그동안 쓰러뜨릴 때마다 +`kill_more`초(더해지는 몫은 `kill_cap`초까지).
+pub struct Flurry {
+    pub startup: f32,
+    pub recover: f32,
+    pub secs: f32,
+    pub secs2: f32,
+    pub speed: f32,
+    pub kill_more: f32,
+    pub kill_cap: f32,
+    pub anim: &'static str,
+    pub clip: Clip,
+}
+
+pub const FLURRY: Flurry = Flurry {
+    startup: 0.3,
+    recover: 0.2,
+    secs: 5.0,
+    secs2: 6.5,
+    speed: 1.4,
+    kill_more: 0.5,
+    kill_cap: 3.0,
+    anim: "staff_charge",
+    clip: Clip {
+        name: "ult_flurry",
+        seg: [0.30, 0.0, 0.20],
+    },
+};
+
+impl Flurry {
+    /// `rank`단의 이어지는 시간(초)과 쓰러뜨릴 때마다 더해지는 초(3단부터).
+    pub fn secs_at(&self, rank: u8) -> f32 {
+        if rank >= 2 {
+            self.secs2
+        } else {
+            self.secs
+        }
+    }
+
+    pub fn kill_more_at(&self, rank: u8) -> f32 {
+        if rank >= ULT_MAX_RANK {
+            self.kill_more
+        } else {
+            0.0
+        }
+    }
+}
+
+/// 큰 기술 "한 줄기"(0158 G2): 시동의 세계 멈춤 뒤 앞 `len` m 한 줄(반 폭 `half` m)을 가른다 — 피해 `damage`·자세 피해 `poise`.
+/// 보스도 다치고 자세가 깎인다(자세가 깨져서 생기는 휘청 말고는 휘청이지 않는다). 2단 = 길이 `len2`, 3단 = 피해 `damage3`.
+pub struct Line {
+    pub freeze: f32,
+    pub startup: f32,
+    pub recover: f32,
+    pub len: f32,
+    pub len2: f32,
+    pub half: f32,
+    pub damage: i32,
+    pub damage3: i32,
+    pub poise: f32,
+    pub anim: &'static str,
+    pub clip: Clip,
+}
+
+pub const LINE: Line = Line {
+    freeze: 0.3,
+    startup: 0.15,
+    recover: 0.45,
+    len: 12.0,
+    len2: 15.0,
+    half: 1.2,
+    damage: 4 * HP_UNIT,
+    damage3: 6 * HP_UNIT,
+    poise: 12.0,
+    anim: "heavy",
+    clip: Clip {
+        name: "ult_line",
+        seg: [0.30, 0.15, 0.45],
+    },
+};
+
+impl Line {
+    pub fn len_at(&self, rank: u8) -> f32 {
+        if rank >= 2 {
+            self.len2
+        } else {
+            self.len
+        }
+    }
+
+    pub fn damage_at(&self, rank: u8) -> i32 {
+        if rank >= ULT_MAX_RANK {
+            self.damage3
+        } else {
+            self.damage
+        }
+    }
+}
+
+/// 큰 기술의 단(0158 다): 쟁반 뒤집기는 처음부터 1단, 큰 기술 줄이 열리면 2단(휘청 +0.6초 — 보스의 짧은 휘청은 그대로)·
+/// 3단(벽에 박힌 피해 ×1.5). 몰아치기·한 줄기는 줄이 열리면 2점으로 배우고(1단) 2·3단은 1점씩.
 pub const ULT_MAX_RANK: u8 = 3;
 pub const ULT_RANK2_STAGGER: f32 = 0.6;
 pub const ULT_RANK3_SLAM: f32 = 1.5;
@@ -496,14 +966,15 @@ pub struct Slot {
     pub pick: Pick,
 }
 
-/// 끼운 둘 + 큰 기술의 단.
+/// 끼운 둘 + 끼운 큰 기술(`great`)과 그 단(`ult`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Loadout {
     pub slots: [Slot; 2],
     pub ult: u8,
+    pub great: Ult,
 }
 
-/// 스킬만 주면 1단(시험·옛 부름).
+/// 스킬만 주면 1단·쟁반 뒤집기(시험·옛 부름).
 impl From<[Id; 2]> for Loadout {
     fn from(ids: [Id; 2]) -> Self {
         Loadout {
@@ -513,6 +984,7 @@ impl From<[Id; 2]> for Loadout {
                 pick: Pick::A,
             }),
             ult: 1,
+            great: Ult::Upend,
         }
     }
 }
@@ -528,52 +1000,71 @@ pub const ROW_NEEDS: [u32; 3] = [0, 4, 8];
 pub const RESPEC_BASE: u32 = 30;
 pub const RESPEC_PER: u32 = 5;
 
-/// 판의 칸: 스킬 하나 또는 큰 기술.
+/// 판의 칸: 스킬 하나 또는 큰 기술 하나.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Entry {
     Skill(Id),
-    Ult,
+    Ult(Ult),
 }
 
-/// 판의 줄 순서(화면도 이 순서).
-pub const ENTRIES: [Entry; N + 1] = [
+/// 판의 줄 순서(화면도 이 순서 — 0158 라: 첫 줄 넷 · 둘째 줄 넷 · 큰 기술 셋). 대기 칸의 자리(`IDS`)와는 따로다.
+pub const ENTRIES: [Entry; N + NU] = [
     Entry::Skill(Id::Whirl),
     Entry::Skill(Id::Cut),
     Entry::Skill(Id::Gather),
+    Entry::Skill(Id::Brace),
     Entry::Skill(Id::Quake),
-    Entry::Ult,
+    Entry::Skill(Id::Echo),
+    Entry::Skill(Id::Throw),
+    Entry::Skill(Id::Embers),
+    Entry::Ult(Ult::Upend),
+    Entry::Ult(Ult::Flurry),
+    Entry::Ult(Ult::Line),
 ];
 
 impl Entry {
     pub fn max(self) -> u8 {
         match self {
             Entry::Skill(_) => MAX_RANK,
-            Entry::Ult => ULT_MAX_RANK,
+            Entry::Ult(_) => ULT_MAX_RANK,
         }
     }
 
     pub fn row(self) -> usize {
         match self {
             Entry::Skill(id) => id.def().row as usize,
-            Entry::Ult => ULT_ROW as usize,
+            Entry::Ult(_) => ULT_ROW as usize,
         }
     }
 
-    /// 값 없이 가진 단(처음의 둘과 큰 기술은 1단).
+    /// 값 없이 가진 단(처음의 둘과 쟁반 뒤집기는 1단).
     pub fn free(self) -> u8 {
         match self {
             Entry::Skill(id) => START.contains(&id) as u8,
-            Entry::Ult => 1,
+            Entry::Ult(u) => (u == Ult::Upend) as u8,
         }
+    }
+
+    /// `rank`단에서 다음 단으로 올리는 값(기술 점수): 단마다 1 — 큰 기술을 배우는 첫 단만 `ULT_LEARN`.
+    pub fn price(self, rank: u8) -> u32 {
+        match self {
+            Entry::Ult(_) if rank == 0 => ULT_LEARN,
+            _ => 1,
+        }
+    }
+
+    /// `rank`단까지 쓴 점수(값 없이 가진 단은 빼고).
+    pub fn paid(self, rank: u8) -> u32 {
+        (self.free()..rank).map(|r| self.price(r)).sum()
     }
 }
 
 /// 칸 하나의 다음 단을 지금 살 수 있나.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Offer {
-    /// 살 수 있다(점수 1).
+    /// 살 수 있다(점수 `Entry::price`).
     Ready,
-    /// 점수가 없다.
+    /// 점수가 모자란다.
     Short,
     /// 줄이 아직 안 열렸다 — 점수를 이만큼 더 써야 열린다.
     Locked(u32),
@@ -581,12 +1072,12 @@ pub enum Offer {
     Full,
 }
 
-/// 기술 판(기록 `skill.rank.*`·`skill.pick.*`·`ult.rank.*`): 스킬마다의 단과 고르기, 큰 기술의 단.
+/// 기술 판(기록 `skill.rank.*`·`skill.pick.*`·`ult.rank.*`): 스킬마다의 단과 고르기, 큰 기술마다의 단(`ULTS`의 자리).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Board {
     pub rank: [u8; N],
     pub pick: [Pick; N],
-    pub ult: u8,
+    pub ult: [u8; NU],
 }
 
 impl Default for Board {
@@ -594,7 +1085,7 @@ impl Default for Board {
         Board {
             rank: IDS.map(|id| Entry::Skill(id).free()),
             pick: [Pick::A; N],
-            ult: Entry::Ult.free(),
+            ult: ULTS.map(|u| Entry::Ult(u).free()),
         }
     }
 }
@@ -603,7 +1094,7 @@ impl Board {
     pub fn rank(&self, e: Entry) -> u8 {
         match e {
             Entry::Skill(id) => self.rank[id.index()],
-            Entry::Ult => self.ult,
+            Entry::Ult(u) => self.ult[u.index()],
         }
     }
 
@@ -611,12 +1102,13 @@ impl Board {
         self.rank[id.index()] >= 1
     }
 
-    /// 쓴 점수: 산 단만 센다(처음부터 가진 단은 값이 없다).
+    pub fn has_ult(&self, u: Ult) -> bool {
+        self.ult[u.index()] >= 1
+    }
+
+    /// 쓴 점수: 산 단만 센다(처음부터 가진 단은 값이 없다, 큰 기술을 배운 첫 단은 2점).
     pub fn spent(&self) -> u32 {
-        ENTRIES
-            .iter()
-            .map(|&e| self.rank(e).saturating_sub(e.free()) as u32)
-            .sum()
+        ENTRIES.iter().map(|&e| e.paid(self.rank(e))).sum()
     }
 
     /// 남은 점수.
@@ -630,14 +1122,14 @@ impl Board {
             Offer::Full
         } else if self.spent() < need {
             Offer::Locked(need - self.spent())
-        } else if self.left(total) == 0 {
+        } else if self.left(total) < e.price(self.rank(e)) {
             Offer::Short
         } else {
             Offer::Ready
         }
     }
 
-    /// 다음 단을 산다(점수 1). 3단에 닿으면 고르기는 ㄱ.
+    /// 다음 단을 산다(점수 `Entry::price`). 3단에 닿으면 고르기는 ㄱ.
     pub fn buy(&mut self, e: Entry, total: u32) -> bool {
         if self.offer(e, total) != Offer::Ready {
             return false;
@@ -650,7 +1142,7 @@ impl Board {
                     self.pick[i] = Pick::A;
                 }
             }
-            Entry::Ult => self.ult += 1,
+            Entry::Ult(u) => self.ult[u.index()] += 1,
         }
         true
     }
@@ -677,20 +1169,22 @@ impl Board {
         RESPEC_BASE + RESPEC_PER * self.spent()
     }
 
-    /// 전부 되돌린다: 처음의 둘만 1단·큰 기술 1단, 고르기는 지운다. 끼운 칸에 안 배운 스킬이 남으면 처음의 둘로.
-    pub fn respec(&mut self, worn: &mut [Id; 2]) {
+    /// 전부 되돌린다: 처음의 둘만 1단·쟁반 뒤집기 1단, 고르기는 지운다. 끼운 칸에 안 배운 스킬이 남으면 처음의 둘로,
+    /// 끼운 큰 기술은 쟁반 뒤집기로.
+    pub fn respec(&mut self, worn: &mut [Id; 2], great: &mut Ult) {
         *self = Board::default();
         *worn = self.wearable(*worn);
+        *great = self.wearable_ult(*great);
     }
 
     /// 잔불을 내고 되돌린다(화로): 쓴 점수가 없거나 잔불이 모자라면 아무 일도 없다(거짓).
-    pub fn respec_paid(&mut self, embers: &mut u32, worn: &mut [Id; 2]) -> bool {
+    pub fn respec_paid(&mut self, embers: &mut u32, worn: &mut [Id; 2], great: &mut Ult) -> bool {
         let cost = self.respec_cost();
         if self.spent() == 0 || *embers < cost {
             return false;
         }
         *embers -= cost;
-        self.respec(worn);
+        self.respec(worn, great);
         true
     }
 
@@ -703,8 +1197,17 @@ impl Board {
         }
     }
 
-    /// 기록에서 읽은 판을 바로잡는다: 단은 범위 안으로(처음의 둘·큰 기술은 1단 아래로 내려가지 않는다), 3단이 안 된 고르기는 지우고,
-    /// 가진 점수보다 많이 썼으면(손댄 기록) 판 전체를 처음으로 — 점수는 그대로 남으니 다시 찍으면 된다.
+    /// 끼울 수 있는 큰 기술: 배운 것이면 그대로, 아니면 쟁반 뒤집기(늘 가진 것).
+    pub fn wearable_ult(&self, great: Ult) -> Ult {
+        if self.has_ult(great) {
+            great
+        } else {
+            Ult::Upend
+        }
+    }
+
+    /// 기록에서 읽은 판을 바로잡는다: 단은 범위 안으로(처음의 둘·쟁반 뒤집기는 1단 아래로 내려가지 않는다), 3단이 안 된 고르기는
+    /// 지우고, 가진 점수보다 많이 썼으면(손댄 기록) 판 전체를 처음으로 — 점수는 그대로 남으니 다시 찍으면 된다.
     pub fn sane(mut self, total: u32) -> Board {
         for (i, id) in IDS.into_iter().enumerate() {
             let e = Entry::Skill(id);
@@ -713,7 +1216,9 @@ impl Board {
                 self.pick[i] = Pick::A;
             }
         }
-        self.ult = self.ult.clamp(Entry::Ult.free(), ULT_MAX_RANK);
+        for (i, u) in ULTS.into_iter().enumerate() {
+            self.ult[i] = self.ult[i].clamp(Entry::Ult(u).free(), ULT_MAX_RANK);
+        }
         if self.spent() > total {
             Board::default()
         } else {
@@ -727,19 +1232,21 @@ impl Board {
         Board {
             rank: [MAX_RANK; N],
             pick: [pick; N],
-            ult: ULT_MAX_RANK,
+            ult: [ULT_MAX_RANK; NU],
         }
     }
 
-    /// 끼운 둘을 월드에 넘길 꼴로.
-    pub fn loadout(&self, worn: [Id; 2]) -> Loadout {
+    /// 끼운 둘과 끼운 큰 기술을 월드에 넘길 꼴로.
+    pub fn loadout(&self, worn: [Id; 2], great: Ult) -> Loadout {
+        let great = self.wearable_ult(great);
         Loadout {
             slots: worn.map(|id| Slot {
                 id,
                 rank: self.rank[id.index()],
                 pick: self.pick[id.index()],
             }),
-            ult: self.ult,
+            ult: self.ult[great.index()],
+            great,
         }
     }
 }
@@ -757,8 +1264,22 @@ mod tests {
             assert!((5.0..=14.0).contains(&s.cooldown), "{id:?} cooldown");
             // 시동은 짧다(0150 3절: 0.15~0.3초) — 누른 것이 바로 나가야 "빵빵"이다.
             assert!((0.1..=0.3).contains(&s.startup), "{id:?} startup");
-            assert!(s.total() < 1.0, "{id:?} is over within a second");
+            // 버팀만 길다(버티는 것이 그 스킬이다) — 나머지는 1초 안에 끝난다.
+            if matches!(s.form, Form::Brace { .. }) {
+                assert!(s.total() < 2.0, "{id:?}: a hold, but a short one");
+            } else {
+                assert!(s.total() < 1.0, "{id:?} is over within a second");
+            }
             assert!(s.damage >= 0 && s.damage <= 20, "{id:?}: wide, not strong");
+            // 전용 동작(G2): 구간의 길이 = 표의 바탕값(경계가 판정의 순간).
+            assert!(s.clip.name.starts_with("sk_"), "{id:?}");
+            assert!((s.clip.seg[0] - s.startup).abs() < 1e-6, "{id:?} startup");
+            assert!((s.clip.seg[1] - s.active()).abs() < 1e-6, "{id:?} active");
+            assert!((s.clip.seg[2] - s.recover).abs() < 1e-6, "{id:?} recover");
+        }
+        let clips: Vec<_> = IDS.iter().map(|i| i.def().clip.name).collect();
+        for (i, c) in clips.iter().enumerate() {
+            assert!(!clips[i + 1..].contains(c), "{c} twice");
         }
         let keys: Vec<_> = IDS.iter().map(|i| i.key()).collect();
         for (i, k) in keys.iter().enumerate() {
@@ -783,8 +1304,12 @@ mod tests {
         assert_eq!(points(0, 0, 0), 0);
         assert_eq!(points(15, 6, 2), 23, "0158: everything in the game today");
         let mut b = Board::default();
-        assert_eq!(b.rank, [1, 1, 0, 0]);
-        assert_eq!((b.ult, b.spent()), (1, 0), "the free ranks cost nothing");
+        assert_eq!(b.rank, [1, 1, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(
+            (b.ult, b.spent()),
+            ([1, 0, 0], 0),
+            "the free ranks cost nothing"
+        );
         let total = points(3, 1, 1);
         assert_eq!(b.left(total), 5);
         assert!(b.buy(Entry::Skill(Id::Gather), total));
@@ -830,12 +1355,16 @@ mod tests {
     #[test]
     fn rows_open_by_points_spent_wherever_they_went() {
         assert_eq!(ROW_NEEDS, [0, 4, 8]);
-        for id in [Id::Whirl, Id::Cut, Id::Gather] {
+        for id in [Id::Whirl, Id::Cut, Id::Gather, Id::Brace] {
             assert_eq!(Entry::Skill(id).row(), 0, "{id:?}");
         }
-        assert_eq!(Entry::Skill(Id::Quake).row(), 1);
-        assert_eq!(Entry::Ult.row(), ULT_ROW as usize);
-        let (quake, ult) = (Entry::Skill(Id::Quake), Entry::Ult);
+        for id in [Id::Quake, Id::Echo, Id::Throw, Id::Embers] {
+            assert_eq!(Entry::Skill(id).row(), 1, "{id:?}");
+        }
+        for u in ULTS {
+            assert_eq!(Entry::Ult(u).row(), ULT_ROW as usize);
+        }
+        let (quake, ult) = (Entry::Skill(Id::Quake), Entry::Ult(Ult::Upend));
         let total = 23;
         let mut b = Board::default();
         assert_eq!(b.offer(quake, total), Offer::Locked(4));
@@ -859,9 +1388,18 @@ mod tests {
         assert_eq!(b.spent(), 8);
         assert_eq!(b.offer(ult, total), Offer::Ready);
         assert!(b.buy(ult, total) && b.buy(ult, total));
-        assert_eq!((b.ult, b.offer(ult, total)), (ULT_MAX_RANK, Offer::Full));
-        // 다 익히는 데 드는 점수: 스킬 넷 × 5 − 처음 둘 + 큰 기술 둘 = 20.
-        assert_eq!(Board::maxed(Pick::A).spent(), 20);
+        assert_eq!((b.ult[0], b.offer(ult, total)), (ULT_MAX_RANK, Offer::Full));
+        // 다 익히는 데 드는 점수(0158 라): 스킬 여덟 × 5 − 처음 둘 = 38, 큰 기술 셋 × 4 − 쟁반 뒤집기의 배움 2 = 10 — 48.
+        assert_eq!(Board::maxed(Pick::A).spent(), 48);
+        // 판의 줄 순서: 첫 줄 넷 · 둘째 줄 넷 · 큰 기술 셋 — 줄 번호가 내려가지 않는다, 모든 칸이 한 번씩.
+        let rows: Vec<usize> = ENTRIES.iter().map(|e| e.row()).collect();
+        assert_eq!(rows, [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2]);
+        for id in IDS {
+            assert!(ENTRIES.contains(&Entry::Skill(id)), "{id:?}");
+        }
+        for u in ULTS {
+            assert!(ENTRIES.contains(&Entry::Ult(u)), "{u:?}");
+        }
     }
 
     /// 0158 나: 되돌리기는 쓴 점수를 모두 돌려준다 — 처음의 둘만 1단·큰 기술 1단, 고르기는 지워진다. 값은 `30 + 5 × 쓴 점수`.
@@ -879,14 +1417,16 @@ mod tests {
         assert_eq!(b.spent(), 6);
         assert_eq!(b.respec_cost(), 30 + 5 * 6);
         let mut worn = [Id::Quake, Id::Whirl];
-        b.respec(&mut worn);
+        let mut great = Ult::Upend;
+        b.respec(&mut worn, &mut great);
         assert_eq!(b, Board::default());
         assert_eq!((b.spent(), b.left(total)), (0, total));
         assert_eq!(b.pick, [Pick::A; N]);
         assert_eq!(worn, START, "Quake is no longer learned");
         let mut worn = [Id::Cut, Id::Whirl];
-        b.respec(&mut worn);
+        b.respec(&mut worn, &mut great);
         assert_eq!(worn, [Id::Cut, Id::Whirl], "both starters: kept as worn");
+        assert_eq!(great, Ult::Upend);
     }
 
     /// 되돌리기는 잔불을 낸다 — 모자라면 아무 일도 없고(판·잔불·끼운 것 그대로), 쓴 점수가 없으면 낼 것도 없다.
@@ -896,7 +1436,11 @@ mod tests {
         let mut b = Board::default();
         let mut worn = [Id::Gather, Id::Cut];
         let mut embers = 500;
-        assert!(!b.respec_paid(&mut embers, &mut worn), "nothing spent");
+        let mut great = Ult::Upend;
+        assert!(
+            !b.respec_paid(&mut embers, &mut worn, &mut great),
+            "nothing spent"
+        );
         assert_eq!(embers, 500);
         assert!(b.buy(Entry::Skill(Id::Gather), total));
         assert!(b.buy(Entry::Skill(Id::Gather), total));
@@ -904,9 +1448,12 @@ mod tests {
         let (cost, before) = (b.respec_cost(), b);
         assert_eq!(cost, 30 + 5 * 3);
         let mut poor = cost - 1;
-        assert!(!b.respec_paid(&mut poor, &mut worn), "one ember short");
+        assert!(
+            !b.respec_paid(&mut poor, &mut worn, &mut great),
+            "one ember short"
+        );
         assert_eq!((b, poor, worn), (before, cost - 1, [Id::Gather, Id::Cut]));
-        assert!(b.respec_paid(&mut embers, &mut worn));
+        assert!(b.respec_paid(&mut embers, &mut worn, &mut great));
         assert_eq!(embers, 500 - cost);
         assert_eq!((b, b.left(total)), (Board::default(), total));
         assert_eq!(worn, START, "Gather went back to unlearned");
@@ -947,6 +1494,11 @@ mod tests {
         assert_eq!(dmg(Id::Cut), [20, 23, 23, 23, 26]);
         assert_eq!(dmg(Id::Quake), [20, 23, 23, 23, 26]);
         assert_eq!(dmg(Id::Gather), [0; 5], "gather never hurts by itself");
+        // G2: 버팀·던지기·잔불 흩기는 한 눈금에서, 되울림은 피해가 없다(맺음의 피해는 따로).
+        for id in [Id::Brace, Id::Throw, Id::Embers] {
+            assert_eq!(dmg(id), [10, 12, 12, 12, 13], "{id:?}");
+        }
+        assert_eq!(dmg(Id::Echo), [0; 5]);
         for id in IDS {
             let d = id.def();
             assert_eq!(
@@ -992,6 +1544,43 @@ mod tests {
         assert!(
             matches!(form(Id::Quake, 4), Form::Cone { range, arc_deg, .. } if range == 5.0 && (arc_deg - 120.0).abs() < 1e-4)
         );
+        // G2의 4단: 버팀·되울림·잔불 흩기는 반지름, 던지기는 거리.
+        assert!(
+            matches!(form(Id::Brace, 4), Form::Brace { radius, hold, .. } if (radius - 3.6).abs() < 1e-5 && hold == 1.2)
+        );
+        assert!(
+            matches!(form(Id::Echo, 4), Form::Echo { radius, .. } if (radius - 4.8).abs() < 1e-5)
+        );
+        assert!(
+            matches!(form(Id::Throw, 4), Form::Throw { dist, half, .. } if (dist - 9.6).abs() < 1e-5 && half == 0.9)
+        );
+        assert!(
+            matches!(form(Id::Embers, 4), Form::Field { radius, secs, .. } if (radius - 4.8).abs() < 1e-5 && secs == 3.0)
+        );
+        // 되울림의 2단은 이어지는 시간 +1초(휘청은 그대로), 잔불 흩기의 맺음은 +1초, 버팀의 받아낸 타 덤은 피해와 같이 오른다.
+        let echo = |r| match form(Id::Echo, r) {
+            Form::Echo { secs, stagger, .. } => (secs, stagger),
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            (echo(1), echo(2), echo(5)),
+            ((4.0, 0.8), (5.0, 0.8), (5.0, 0.8))
+        );
+        let field = |r| match form(Id::Embers, r) {
+            Form::Field { secs, every, .. } => (secs, every),
+            _ => unreachable!(),
+        };
+        assert_eq!((field(4), field(5)), ((3.0, 1.0), (4.0, 1.0)));
+        let more = |r| match form(Id::Brace, r) {
+            Form::Brace {
+                more, soak, most, ..
+            } => (more, soak, most),
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            (more(1), more(2), more(5)),
+            ((10, 10, 3), (12, 10, 3), (13, 10, 3))
+        );
     }
 
     /// 0158 마: 고르기와 맺음의 표 — 스킬마다 둘(서로 다르다)과 하나, 값은 결정문의 것. 길이가 달라지는 고르기를 골라도 1초 안에 끝난다.
@@ -1002,10 +1591,101 @@ mod tests {
             assert_ne!(d.picks[0], d.picks[1], "{id:?}");
             for p in [Pick::A, Pick::B] {
                 let e = d.at(MAX_RANK, p);
-                assert!(e.total() < 1.0, "{id:?} {p:?}: {}", e.total());
+                let long = if id == Id::Brace { 2.0 } else { 1.0 };
+                assert!(e.total() < long, "{id:?} {p:?}: {}", e.total());
                 assert!(e.active() >= d.active());
             }
         }
+        // G2의 고르기와 맺음(0158 "G2" 표의 값).
+        assert_eq!(
+            Id::Brace.def().picks,
+            [Twist::Walk { speed: 0.45 }, Twist::Reflect]
+        );
+        assert_eq!(
+            Id::Echo.def().picks,
+            [Twist::Rattle { poise: 2.5 }, Twist::Tempo { secs: 0.6 }]
+        );
+        assert_eq!(
+            Id::Throw.def().picks,
+            [
+                Twist::Stick {
+                    radius: 2.5,
+                    damage: 20
+                },
+                Twist::Drag { dist: 2.0 }
+            ]
+        );
+        assert_eq!(
+            Id::Embers.def().picks,
+            [Twist::Follow, Twist::Kindle { embers: 1 }]
+        );
+        assert_eq!(Id::Brace.def().cap, Cap::Stun { stagger: 1.0 });
+        assert_eq!(Id::Echo.def().cap, Cap::Toll { damage: 10 });
+        assert_eq!(
+            Id::Throw.def().cap,
+            Cap::Homing {
+                damage: 1.5,
+                poise: 2.0
+            }
+        );
+        assert_eq!(
+            Id::Embers.def().cap,
+            Cap::Smolder {
+                secs: 1.0,
+                poise: 1.0
+            }
+        );
+        // 표의 바탕값(0158 G2): 대기·시동·후딜과 모양의 수.
+        let row = |id: Id| {
+            let d = id.def();
+            (d.cooldown, d.startup, d.recover, d.form)
+        };
+        assert_eq!(
+            row(Id::Brace),
+            (
+                12.0,
+                0.10,
+                0.35,
+                Form::Brace {
+                    hold: 1.2,
+                    radius: 3.0,
+                    soak: 10,
+                    most: 3,
+                    more: 10,
+                    push: 1.0
+                }
+            )
+        );
+        assert_eq!(
+            row(Id::Echo),
+            (
+                12.0,
+                0.25,
+                0.20,
+                Form::Echo {
+                    secs: 4.0,
+                    radius: 4.0,
+                    stagger: 0.8
+                }
+            )
+        );
+        assert!(matches!(
+            row(Id::Throw),
+            (cd, st, rc, Form::Throw { dist, .. }) if cd == 8.0 && st == 0.18 && rc == 0.25 && dist == 8.0
+        ));
+        assert_eq!(
+            row(Id::Embers),
+            (
+                10.0,
+                0.25,
+                0.30,
+                Form::Field {
+                    radius: 4.0,
+                    secs: 3.0,
+                    every: 1.0
+                }
+            )
+        );
         assert_eq!(
             Id::Whirl.def().picks,
             [Twist::Walk { speed: 0.6 }, Twist::Spins { more: 1 }]
@@ -1043,7 +1723,8 @@ mod tests {
     /// 0158 다: 큰 기술은 세 단 — 2단 휘청 +0.6초, 3단 벽에 박힌 피해 ×1.5(20 → 30). 처음부터 1단.
     #[test]
     fn the_great_skill_has_three_ranks() {
-        assert_eq!((Entry::Ult.free(), Entry::Ult.max()), (1, 3));
+        let upend = Entry::Ult(Ult::Upend);
+        assert_eq!((upend.free(), upend.max()), (1, 3));
         assert_eq!(UPEND.stagger_at(1), UPEND.stagger);
         assert!((UPEND.stagger_at(2) - UPEND.stagger - 0.6).abs() < 1e-6);
         assert_eq!(UPEND.stagger_at(3), UPEND.stagger_at(2));
@@ -1058,14 +1739,26 @@ mod tests {
     #[test]
     fn a_board_from_a_record_is_made_sane_against_the_points_it_has() {
         let odd = Board {
-            rank: [0, 9, 2, 3],
+            rank: [0, 9, 2, 3, 0, 0, 7, 0],
             pick: [Pick::B; N],
-            ult: 0,
+            ult: [0, 9, 0],
         };
-        let b = odd.sane(23);
-        assert_eq!(b.rank, [1, MAX_RANK, 2, 3]);
-        assert_eq!(b.pick, [Pick::A, Pick::B, Pick::A, Pick::B]);
-        assert_eq!(b.ult, 1);
+        let b = odd.sane(40);
+        assert_eq!(b.rank, [1, MAX_RANK, 2, 3, 0, 0, MAX_RANK, 0]);
+        assert_eq!(
+            b.pick,
+            [
+                Pick::A,
+                Pick::B,
+                Pick::A,
+                Pick::B,
+                Pick::A,
+                Pick::A,
+                Pick::B,
+                Pick::A
+            ]
+        );
+        assert_eq!(b.ult, [1, ULT_MAX_RANK, 0]);
         assert_eq!(odd.sane(b.spent()), b, "exactly enough points");
         assert_eq!(odd.sane(b.spent() - 1), Board::default(), "one short");
         assert_eq!(Board::default().sane(0), Board::default());
@@ -1075,10 +1768,10 @@ mod tests {
     #[test]
     fn the_loadout_carries_the_worn_ranks_and_only_learned_skills_are_wearable() {
         let mut b = Board::default();
-        b.rank = [3, 1, 0, 5];
+        b.rank[..4].copy_from_slice(&[3, 1, 0, 5]);
         b.pick[Id::Whirl.index()] = Pick::B;
-        b.ult = 2;
-        let l = b.loadout([Id::Quake, Id::Whirl]);
+        b.ult[0] = 2;
+        let l = b.loadout([Id::Quake, Id::Whirl], Ult::Upend);
         assert_eq!(
             l.slots,
             [
@@ -1094,7 +1787,12 @@ mod tests {
                 }
             ]
         );
-        assert_eq!(l.ult, 2);
+        assert_eq!((l.ult, l.great), (2, Ult::Upend));
+        // 끼운 큰 기술이 안 배운 것이면 쟁반 뒤집기로, 배웠으면 그것과 그 단.
+        assert_eq!(b.loadout(START, Ult::Line).great, Ult::Upend);
+        b.ult[Ult::Line.index()] = 3;
+        let l = b.loadout(START, Ult::Line);
+        assert_eq!((l.great, l.ult), (Ult::Line, 3));
         assert_eq!(b.wearable([Id::Quake, Id::Whirl]), [Id::Quake, Id::Whirl]);
         assert_eq!(b.wearable([Id::Gather, Id::Whirl]), START);
         let plain: Loadout = [Id::Cut, Id::Gather].into();
@@ -1106,5 +1804,135 @@ mod tests {
         assert_eq!(sane([Id::Cut, Id::Quake]), [Id::Cut, Id::Quake]);
         assert_eq!(sane([Id::Cut, Id::Cut]), [Id::Cut, Id::Whirl]);
         assert_eq!(sane([Id::Whirl, Id::Whirl]), [Id::Whirl, Id::Cut]);
+    }
+
+    /// 0158 G2: 큰 기술은 셋 — 쟁반 뒤집기는 처음부터 1단, 몰아치기·한 줄기는 큰 기술 줄(쓴 점수 8)이 열리면 **2점**으로 배우고
+    /// 2·3단은 1점씩. 점수가 1뿐이면 배우지 못한다.
+    #[test]
+    fn the_other_great_skills_are_learned_for_two_points_once_eight_are_spent() {
+        assert_eq!(ULTS, [Ult::Upend, Ult::Flurry, Ult::Line]);
+        for u in ULTS {
+            assert_eq!(Ult::by_key(u.key()), Some(u));
+            assert!(u.clip().name.starts_with("ult_"));
+        }
+        assert_eq!(Ult::Upend.key(), "upend", "the G0 record key");
+        let (flurry, line) = (Entry::Ult(Ult::Flurry), Entry::Ult(Ult::Line));
+        assert_eq!((flurry.free(), line.free()), (0, 0));
+        assert_eq!(
+            (flurry.price(0), flurry.price(1), flurry.price(2)),
+            (2, 1, 1)
+        );
+        assert_eq!(Entry::Ult(Ult::Upend).price(1), 1);
+        assert_eq!((flurry.paid(1), flurry.paid(3)), (2, 4));
+        assert_eq!(Entry::Ult(Ult::Upend).paid(3), 2);
+        let mut b = Board::default();
+        assert_eq!(b.offer(flurry, 23), Offer::Locked(8));
+        for _ in 0..4 {
+            assert!(b.buy(Entry::Skill(Id::Whirl), 23) && b.buy(Entry::Skill(Id::Cut), 23));
+        }
+        assert_eq!(b.spent(), 8);
+        assert!(!b.has_ult(Ult::Flurry));
+        assert_eq!(b.offer(flurry, 9), Offer::Short, "one point is not enough");
+        assert!(!b.buy(flurry, 9));
+        assert_eq!(b.offer(flurry, 10), Offer::Ready);
+        assert!(b.buy(flurry, 10));
+        assert!(b.has_ult(Ult::Flurry));
+        assert_eq!((b.spent(), b.left(10)), (10, 0));
+        assert!(b.buy(flurry, 12) && b.buy(flurry, 12));
+        assert_eq!(b.offer(flurry, 99), Offer::Full);
+        assert_eq!(b.spent(), 12);
+        assert!(b.buy(line, 14));
+        assert_eq!(b.ult, [1, 3, 1]);
+        // 되돌리면 배운 큰 기술도 돌아가고, 끼운 큰 기술은 쟁반 뒤집기로.
+        let (mut worn, mut great) = (START, Ult::Line);
+        b.respec(&mut worn, &mut great);
+        assert_eq!((b.ult, great), ([1, 0, 0], Ult::Upend));
+        assert_eq!(b.wearable_ult(Ult::Flurry), Ult::Upend);
+    }
+
+    /// 0158 G2: 몰아치기는 5초(2단 6.5초, 3단은 쓰러뜨릴 때마다 +0.5초 — 3초까지)·1.4배, 한 줄기는 12m(2단 15m)·피해 40(3단 60).
+    #[test]
+    fn flurry_and_line_rank_numbers() {
+        assert_eq!((FLURRY.startup, FLURRY.speed), (0.3, 1.4));
+        assert_eq!([1, 2, 3].map(|r| FLURRY.secs_at(r)), [5.0, 6.5, 6.5]);
+        assert_eq!([1, 2, 3].map(|r| FLURRY.kill_more_at(r)), [0.0, 0.0, 0.5]);
+        assert_eq!(FLURRY.kill_cap, 3.0);
+        assert_eq!((LINE.freeze, LINE.half), (0.3, 1.2));
+        assert_eq!([1, 2, 3].map(|r| LINE.len_at(r)), [12.0, 15.0, 15.0]);
+        assert_eq!([1, 2, 3].map(|r| LINE.damage_at(r)), [40, 40, 60]);
+        assert!(LINE.poise >= 10.0, "very large poise damage");
+    }
+
+    /// 0158 G2 동작: 상태의 시각 → 동작의 시각은 구간으로 맞춘다 — 시동의 끝은 늘 시동 구간의 끝(판정의 순간), 이어짐이
+    /// 길어지면(셋째 바퀴·되돌아 베기) 이어짐 구간을 되풀이하고, 후딜은 후딜 구간에서 시작해 동작의 끝을 넘지 않는다.
+    #[test]
+    fn a_clip_maps_each_phase_onto_its_own_segment_whatever_the_rank() {
+        let near = |a: f32, b: f32| (a - b).abs() < 1e-4;
+        for id in IDS {
+            for (rank, pick) in [(1, Pick::A), (MAX_RANK, Pick::A), (MAX_RANK, Pick::B)] {
+                let e = id.def().at(rank, pick);
+                let (c, s) = (e.skill.clip, e.skill);
+                let period = match s.form {
+                    Form::Ring { gap, .. } => Some(gap),
+                    Form::Lane { time, .. } => Some(time),
+                    _ => None,
+                };
+                let at = |t: f32| c.at(t, s.startup, e.active(), period);
+                let tag = format!("{id:?} {rank} {pick:?}");
+                assert!(near(at(0.0), 0.0), "{tag}: starts at 0");
+                // 시동의 끝 = 시동 구간의 끝.
+                assert!(
+                    near(at(s.startup - 1e-5), c.seg[0]),
+                    "{tag}: {}",
+                    at(s.startup - 1e-5)
+                );
+                // 이어짐 안은 이어짐 구간 안.
+                if e.active() > 0.0 {
+                    for k in [0.1, 0.5, 0.9] {
+                        let t = at(s.startup + e.active() * k);
+                        assert!(
+                            t >= c.seg[0] - 1e-4 && t <= c.seg[0] + c.seg[1] + 1e-4,
+                            "{tag}: active at {t}"
+                        );
+                    }
+                }
+                // 후딜의 시작 = 후딜 구간의 시작, 끝은 동작의 끝을 넘지 않는다.
+                let rec = s.startup + e.active();
+                assert!(near(at(rec), c.seg[0] + c.seg[1]), "{tag}: {}", at(rec));
+                assert!(near(at(rec + 0.1), c.seg[0] + c.seg[1] + 0.1), "{tag}");
+                assert!(near(at(rec + 9.0), c.total()), "{tag}: holds the last pose");
+                // 뒤로 가지 않는다(되풀이하는 이어짐 안에서만 감긴다).
+                assert!(at(rec + 0.05) > at(rec));
+            }
+        }
+        // 휘돌이의 셋째 바퀴: 이어짐 구간(한 바퀴)을 바퀴마다 한 번씩 — 둘째 바퀴의 가운데 = 구간의 가운데.
+        let w = Id::Whirl.def().at(3, Pick::B);
+        let (c, s) = (w.skill.clip, w.skill);
+        assert!(near(w.active(), 0.44));
+        let mid = c.at(s.startup + 0.22 + 0.11, s.startup, w.active(), Some(0.22));
+        assert!(near(mid, c.seg[0] + c.seg[1] * 0.5), "{mid}");
+        // 큰 기술: 세계 멈춤은 시동 구간에, 그 뒤 터지기까지는 이어짐 구간에 — 터지는 순간 = 이어짐 구간의 끝.
+        for u in [Ult::Upend, Ult::Line] {
+            let (c, (_, startup, _)) = (u.clip(), u.times());
+            assert!(near(u.clip_at(0.0, 0.0), 0.0), "{u:?}");
+            assert!(near(u.clip_at(0.0, 0.5), c.seg[0] * 0.5));
+            assert!(near(u.clip_at(0.0, 1.0), c.seg[0]));
+            assert!(
+                near(u.clip_at(startup - 1e-5, 1.0), c.seg[0] + c.seg[1]),
+                "{u:?}"
+            );
+            assert!(near(
+                u.clip_at(startup + 0.1, 1.0),
+                c.seg[0] + c.seg[1] + 0.1
+            ));
+            assert!(near(u.clip_at(99.0, 1.0), c.total()));
+        }
+        // 몰아치기는 멈춤이 없다: 시동이 곧 시동 구간.
+        let c = FLURRY.clip;
+        assert!(near(
+            Ult::Flurry.clip_at(FLURRY.startup * 0.5, 0.0),
+            c.seg[0] * 0.5
+        ));
+        assert!(near(Ult::Flurry.clip_at(FLURRY.startup, 0.0), c.seg[0]));
     }
 }

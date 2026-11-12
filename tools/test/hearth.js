@@ -1,7 +1,8 @@
 // 화로·레벨 화면 시험(0104, v0.4.0 G1): 헤드리스 Chromium으로 한국어·영어 두 판 —
 //   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 화로 → 레벨(줄 셋을 차례로 올려 보고 묻는 창) → 가게, 화면마다 스크린숏.
 //   기술 판(0158 G0·G1): 화로 넷째 줄 "기술" → 한 단 사기(묻는 창) → 3단 고르기 뒤집기 → 줄마다 설명 → 되돌리기(묻는 창).
-//   그다음 단을 미리 찍은 기록 일곱(2단 · 3·4·5단 × ㄱ/ㄴ)으로 판의 모든 줄과 멈춤의 기술 창을 돌며 설명 칸의 넘침을 본다.
+//   그다음 단을 미리 찍은 기록 열(0158 G2: 스킬 여덟이라 점수 23으로는 한 기록에 다 못 올린다 — 첫 넷·새 넷을 다른 단으로 짝지어
+//   2단 · 3·4·5단 × ㄱ/ㄴ을 모두, 큰 기술 셋의 단도)으로 판의 열세 줄과 멈춤의 기술 창(칸 1 · 큰 기술 줄)을 돌며 설명 칸의 넘침을 본다.
 //   개발판의 F4 넘침 검사(`ui::check`)를 켜 두고 콘솔의 `[ui-check]` 줄(켬/끔 말고)이 있으면 실패(CLAUDE.md "새 화면은 F4").
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/hearth.js dist shots
 const { chromium } = require('playwright');
@@ -18,14 +19,23 @@ const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
 // 문 앞 쉼터(0)에서 쉰 기록, 잔불은 레벨 몇 단 + 가게 + 기술 되돌리기(40)를 볼 만큼. 기력·힘은 이미 4단(다음이 마지막 단 — "다 올림" 줄·평타 +1도 본다).
 const SEED = 'v=1\nembers=700\nclears=1\nrun.rest=0\nrun.gate=1\ncharm.owned=shell\ncharm.worn=shell,,\nlv.life=1\nlv.stamina=4\nlv.might=4\ncore.warden=1\nfinds=sanctuary.shard.0\nmigrated.v04=1\n';
-// 기술 판의 단을 미리 찍은 기록(0158): 점수 23(레벨 15 + 엘리트 6 + 문지기 둘)으로 스킬 넷을 같은 단·같은 고르기에.
-// 설명 칸은 "지금 고르기 + 다음 단"이라 단마다 글이 다르다 — 넘침 검사(F4)가 모든 조합을 보게.
+// 기술 판의 단을 미리 찍은 기록(0158): 점수 23(레벨 15 + 엘리트 6 + 문지기 둘). 첫 넷(휘돌이·가로지르기·끌어모으기·땅울림)과
+// 새 넷(버팀·되울림·던지기·잔불 흩기, G2)을 따로 같은 단·같은 고르기에, 큰 기술은 (뒤집기, 몰아치기, 한 줄기)의 단.
+// 설명 칸은 "지금 고르기 + 다음 단"이라 단마다 글이 다르다 — 넘침 검사(F4)가 모든 조합을 보게. 쓴 점수는 기록마다 23 안.
 const RICH = 'v=1\nembers=600\nclears=1\nrun.rest=0\nrun.gate=1\nlv.life=5\nlv.stamina=5\nlv.might=5\ncore.warden=1\ncore.bellkeeper=1\n'
   + 'elites=t.elite.0,t.elite.1,t.elite.2,t.elite.3,t.elite.4,t.elite.5\nmigrated.v04=1\n';
-const board = (rank, pick, ult) => RICH + ['whirl', 'cut', 'gather', 'quake'].map((k) =>
-  `skill.rank.${k}=${rank}\n` + (rank >= 3 ? `skill.pick.${k}=${pick}\n` : '')).join('') + `ult.rank.upend=${ult}\n`;
-const BOARDS = [['r2', board(2, 'a', 1)], ['r3a', board(3, 'a', 2)], ['r3b', board(3, 'b', 2)], ['r4a', board(4, 'a', 3)],
-  ['r4b', board(4, 'b', 3)], ['r5a', board(5, 'a', 3)], ['r5b', board(5, 'b', 3)]];
+const set = (keys, rank, pick) => keys.map((k) =>
+  (rank > 0 ? `skill.rank.${k}=${rank}\n` : '') + (rank >= 3 ? `skill.pick.${k}=${pick}\n` : '')).join('');
+const OLD = ['whirl', 'cut', 'gather', 'quake'];
+const NEW = ['brace', 'echo', 'throw', 'embers'];
+const board = ([ro, po], [rn, pn], [upend, flurry, line]) => RICH + set(OLD, ro, po) + set(NEW, rn, pn)
+  + `ult.rank.upend=${upend}\n` + (flurry ? `ult.rank.flurry=${flurry}\n` : '') + (line ? `ult.rank.line=${line}\n` : '');
+const BOARDS = [
+  ['o3a-n3b', board([3, 'a'], [3, 'b'], [1, 0, 0])], ['o3b-n3a', board([3, 'b'], [3, 'a'], [1, 0, 0])],
+  ['o4a-n2', board([4, 'a'], [2, 'a'], [1, 0, 0])], ['o2-n4b', board([2, 'a'], [4, 'b'], [1, 0, 0])],
+  ['o4b-n1-u', board([4, 'b'], [1, 'a'], [1, 1, 1])], ['n4a-u', board([1, 'a'], [4, 'a'], [3, 2, 0])],
+  ['o5a-n1', board([5, 'a'], [1, 'a'], [1, 0, 0])], ['o5b-n1', board([5, 'b'], [1, 'a'], [1, 0, 0])],
+  ['n5a-l1', board([1, 'a'], [5, 'a'], [1, 0, 1])], ['n5b-f1', board([1, 'a'], [5, 'b'], [1, 1, 0])]];
 
 const server = http.createServer((req, res) => {
   const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
@@ -127,17 +137,18 @@ async function run(browser, lang) {
   await shot('12d-board-flipped');
   let b = await record();
   if (!/skill\.rank\.whirl=3\n/.test(b) || !/skill\.pick\.whirl=b\n/.test(b)) errors.push(`board not saved: ${JSON.stringify(b)}`);
-  // 줄마다 설명(가로지르기 · 끌어모으기(안 배움) · 땅울림(잠김) · 큰 기술(잠김) · 되돌리기 · 돌아가기).
-  for (const name of ['cut', 'gather', 'quake-locked', 'ult-locked', 'respec', 'back']) {
+  // 줄마다 설명(0158 G2 — 첫 줄 넷 · 둘째 줄 넷(잠김) · 큰 기술 셋(잠김) · 되돌리기 · 돌아가기).
+  for (const name of ['cut', 'gather', 'brace', 'quake-locked', 'echo-locked', 'throw-locked', 'embers-locked',
+    'upend-locked', 'flurry-locked', 'line-locked', 'respec', 'back']) {
     await press('ArrowDown'); await page.waitForTimeout(200);
     await shot(`12e-board-${name}`);
   }
-  // 잠긴 줄을 고르면 알림만(묻는 창 없음).
-  await press('ArrowUp', 3); await press('Enter'); await page.waitForTimeout(300);
+  // 잠긴 줄(땅울림)을 고르면 알림만(묻는 창 없음).
+  await press('ArrowUp', 8); await press('Enter'); await page.waitForTimeout(300);
   await shot('12f-board-locked-toast');
   // 되돌리기: 묻는 창(커서 "취소") → 왼쪽 = "되돌리기" → 쓴 점수 2를 돌려받고 잔불 40(30 + 5 × 2).
   const embers = Number(/embers=(\d+)\n/.exec(b)[1]);
-  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowDown', 7); await press('Enter'); await page.waitForTimeout(300);
   await shot('12g-respec-ask');
   await press('ArrowLeft'); await press('Enter'); await page.waitForTimeout(400);
   await shot('12h-respec-done');
@@ -157,7 +168,8 @@ async function run(browser, lang) {
   await press('Escape'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(400);
   await shot('10-equip');
-  // 기술 판의 모든 단(0158): 단을 미리 찍은 기록마다 — 판의 줄 일곱을 다 지나고, 멈춤의 기술 창에서 칸 1을 스킬 넷으로 돌린다.
+  // 기술 판의 모든 단(0158): 단을 미리 찍은 기록마다 — 판의 줄 열셋을 다 지나고, 멈춤의 기술 창에서 칸 1을 배운 스킬로 돌리고
+  // 큰 기술 줄을 배운 큰 기술로 돌린다(G2 — 끼우는 큰 기술은 하나).
   for (const [name, text] of BOARDS) {
     await page.evaluate(([k, v]) => localStorage.setItem(k, v), [KEY, text]);
     await page.reload();
@@ -170,9 +182,9 @@ async function run(browser, lang) {
     await press('KeyF'); await page.waitForTimeout(600);
     await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300);
     await shot(`20-${name}-board`);
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 12; i++) {
       await press('ArrowDown'); await page.waitForTimeout(150);
-      if (i === 2 || i === 3) await shot(`20-${name}-board-row${i + 1}`);
+      if (i === 3 || i === 5 || i === 9) await shot(`20-${name}-board-row${i + 1}`);
     }
     await press('Escape'); await page.waitForTimeout(300);
     await press('Escape'); await page.waitForTimeout(400);
@@ -180,9 +192,12 @@ async function run(browser, lang) {
     await press('Escape'); await page.waitForTimeout(200);
     await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(300);
     await shot(`21-${name}-pause-skills`);
-    for (let i = 0; i < 3; i++) { await press('ArrowRight'); await page.waitForTimeout(150); }
+    for (let i = 0; i < 7; i++) { await press('ArrowRight'); await page.waitForTimeout(150); }
     await shot(`21-${name}-pause-skills-turned`);
-    await press('ArrowDown', 3); await page.waitForTimeout(150);
+    await press('ArrowDown', 2);
+    for (let i = 0; i < 2; i++) { await press('ArrowRight'); await page.waitForTimeout(150); }
+    await shot(`21-${name}-pause-ult`);
+    await press('ArrowDown'); await page.waitForTimeout(150);
   }
   await ctx.close();
   return { errors, checks };

@@ -109,6 +109,9 @@ pub const ULT_HITSTOP: f32 = 3.0;
 pub const SKILL_DENIED_SHOW: f32 = 0.5;
 pub const ULT_KILL_WINDOW: f32 = 1.5;
 pub const ULT_SLAM_DAMAGE: i32 = 20;
+/// 던지기(0158 G2): 던진 것이 나는 높이(m — 가슴), 돌아와 손에 잡히는 거리(m).
+pub const BLADE_HEIGHT: f32 = 1.0;
+pub const BLADE_CATCH: f32 = 0.5;
 /// 평타 히트스톱 배율(`feel.hitstop s` × 이것, 2026-11-06): 0.06초(≈3.6프레임)는 "없는 것과 같다"(KB 사다리 — 가장 약한 타도 6프레임쯤).
 pub const HIT_HITSTOP: f32 = 1.6;
 /// 맞은 쪽: 몸이 맞은 쪽으로 젖는 세기(평타·강타, `Enemy::sway`), 멈춤 동안 떨림(m).

@@ -2,11 +2,17 @@
 //! 판정(`skill_area`·`skill_pull`·`upend`), 스킬이 남긴 것(`tick_skill_fields` — 곧 터질 자리·갈라진 땅, 0158 G1),
 //! 틱 끝의 셈(`skill_books` — 기세·게이지). `tick_player`의 한 갈래다.
 //!
+//! G2(0158): 버팀(버티는 동안의 표지는 여기서 적고 맞음 길 `tick_enemies`가 읽는다 · 끝의 터뜨림), 되울림(패링 길이 `echo_ring`을
+//! 부른다), 던지기(`Blade` — `tick_skill_fields`가 날린다), 잔불 흩기(`Field`), 큰 기술 셋(`start_ult`·`tick_ult` — 쟁반 뒤집기 `upend`
+//! · 몰아치기 · 한 줄기 `line_cut`). 새 스킬들의 타는 `skill_touch` 한 곳을 탄다.
+//!
 //! 단과 고르기(0158): 숫자는 `World::skill_eff`(= `Skill::at(단, 고르기)`)가 준 값만 쓴다 — 여기는 `Twist`·`Cap`의 갈래만 본다.
 use super::player_tick::Ctx;
 use super::*;
-use crate::skills::{Cap, Eff, Form, Twist, UPEND};
-use crate::tuning::{SKILL_DENIED_SHOW, SKILL_HITSTOP, ULT_HITSTOP, ULT_KILL_WINDOW};
+use crate::skills::{Cap, Eff, Form, Twist, FLURRY, LINE, UPEND};
+use crate::tuning::{
+    BLADE_CATCH, BLADE_HEIGHT, SKILL_DENIED_SHOW, SKILL_HITSTOP, ULT_HITSTOP, ULT_KILL_WINDOW,
+};
 
 /// 곧 터질 "모인 자리"(끌어모으기 ㄱ): `left`초 뒤 `at` 둘레 `radius` m에 `damage`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -38,6 +44,72 @@ impl Zone {
             && r - radius <= self.range
             && (r < 1e-3 || (dv / r).dot(self.dir) >= (self.arc_deg * 0.5).to_radians().cos())
     }
+}
+
+/// 던진 무기(0158 G2, 던지기): 곧게 `dist` m를 날아가(가는 길) 방랑자에게 되돌아온다(오는 길) — 길의 반 폭 `half` m 안의 적을
+/// 길마다 한 번씩 친다. `stick` = 돌아오지 않고 끝에서 터진다(둘레·피해), `drag` = 오는 길에 맞은 적을 끄는 거리. 렌더가 그 자리에 무기를 그린다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Blade {
+    pub pos: Vec3,
+    pub prev: Vec3,
+    pub dir: Vec3,
+    pub went: f32,
+    pub dist: f32,
+    pub half: f32,
+    pub speed: f32,
+    /// 가는 길인가(거짓 = 돌아오는 길).
+    pub out: bool,
+    /// 이 길에서 이미 맞은 적(번호 비트 — 길이 바뀌면 비운다).
+    pub hits: u64,
+    pub damage: i32,
+    pub poise: f32,
+    /// 오는 길의 피해·자세 피해(맺음이면 더 세다).
+    pub back_damage: i32,
+    pub back_poise: f32,
+    pub drag: f32,
+    pub stick: Option<(f32, i32)>,
+    /// 날아온 초(렌더의 회전).
+    pub age: f32,
+}
+
+/// 남은 불티(0158 G2, 잔불 흩기): `pos` 둘레 `radius` m에 `secs`초 — `every`초마다 그 안의 적을 태운다(`pulses` = 지금까지 태운 수).
+/// `follow` = 방랑자를 따라온다, `kindle` = 그 안에서 쓰러진 적이 더 남기는 잔불 수. 렌더가 바닥에 그린다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Field {
+    pub pos: Vec3,
+    pub radius: f32,
+    pub age: f32,
+    pub secs: f32,
+    pub every: f32,
+    pub pulses: u32,
+    pub damage: i32,
+    pub poise: f32,
+    pub follow: bool,
+    pub kindle: u32,
+}
+
+impl Field {
+    /// 이 자리(몸 반지름 `radius`)가 불티 안인가.
+    pub fn holds(&self, at: Vec3, radius: f32) -> bool {
+        (at.y - self.pos.y).abs() <= HIT_DY
+            && vec3(at.x - self.pos.x, 0.0, at.z - self.pos.z).length() - radius <= self.radius
+    }
+
+    /// 남은 몫 0..1(HUD 칸·렌더의 옅어짐).
+    pub fn left(&self) -> f32 {
+        (1.0 - self.age / self.secs.max(1e-3)).clamp(0.0, 1.0)
+    }
+}
+
+/// 새 스킬들의 타 하나(`skill_touch`): 피해(0 = 없음)·자세 피해·휘청(보스는 휘청이지 않는다)·밀려나는 속도·치명타를 쓰나
+/// (남는 피해 — 불티·울림 — 는 드러난 틈을 쓰지 않는다: 반격의 치명타를 먹어 치우지 않게).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Touch {
+    damage: i32,
+    poise: f32,
+    stagger: f32,
+    knock: Vec3,
+    crit: bool,
 }
 
 /// 스킬의 넓은 타 한 번(`skill_area`): 닿는 거리·부채꼴(쪽, cos 반각)·밀기·휘청·타 번호·피해·자세 피해·깨진 적에게의 배.
@@ -105,7 +177,7 @@ impl World {
             if self.player.gauge < 1.0 {
                 return false;
             }
-            self.start_ult();
+            self.start_ult(cx);
             return true;
         }
         let slot = if a.skill1 {
@@ -131,6 +203,12 @@ impl World {
         pl.skill_leap = leap;
         pl.skill_refunded = false;
         pl.skill_ghost = false;
+        pl.skill_brace = 0;
+        if matches!(d.skill.form, Form::Brace { .. }) {
+            pl.brace_soaked = 0;
+            self.brace_caught.clear();
+        }
+        let pl = &mut self.player;
         pl.swings += 1;
         pl.facing = dir.x.atan2(dir.z);
         pl.state = PState::Skill {
@@ -153,7 +231,15 @@ impl World {
             .map(|tg| vec3(tg.x - pl.pos.x, 0.0, tg.z - pl.pos.z).normalize_or_zero())
             .filter(|v| v.length_squared() > 0.5);
         match d.skill.form {
-            Form::Ring { .. } => facing,
+            Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. } => {
+                facing
+            }
+            // 던지기: 조준 > 락온 > 닿는 거리의 가장 가까운 적 > 바라보는 쪽.
+            Form::Throw { dist, .. } => cx
+                .aim
+                .or(lock)
+                .or_else(|| nearest_in_reach(&self.enemies, pl.pos, dist, None))
+                .unwrap_or(facing),
             Form::Lane { .. } => {
                 if cx.world_move.length_squared() > 1e-4 {
                     cx.world_move.normalize()
@@ -204,7 +290,8 @@ impl World {
         if cx.a.ult && e < t[P::SkillChord] && self.player.gauge >= 1.0 {
             self.player.skill_cd[id.index()] = 0.0;
             self.player.skill_ghost = false;
-            self.start_ult();
+            self.player.skill_brace = 0;
+            self.start_ult(cx);
             return;
         }
         let e1 = e + dt;
@@ -212,6 +299,7 @@ impl World {
         let at = self.player.pos;
         let mut swing = swing;
         self.player.skill_ghost = false;
+        self.player.skill_brace = 0;
         match s.form {
             Form::Ring {
                 radius,
@@ -362,9 +450,145 @@ impl World {
                     }
                 }
             }
+            // 버팀(G2): 버티는 동안은 표지만 적는다(덜 다치고·밀리지 않고·끊기지 않는 것은 맞음 길이 한다) — 회피는 터뜨림 없이 끊는다.
+            // 끝에 둘레를 터뜨린다: 표의 피해 + 받아낸 타마다 덤.
+            Form::Brace {
+                hold,
+                radius,
+                soak,
+                most,
+                more,
+                push,
+            } => {
+                let end = s.startup + hold;
+                if e1 >= s.startup && e1 < end {
+                    if cx.a.dodge && self.try_dodge(cx) {
+                        return;
+                    }
+                    let pl = &mut self.player;
+                    pl.skill_brace = soak;
+                    pl.brace_most = most;
+                    pl.skill_reflect = matches!(d.twist, Some(Twist::Reflect));
+                }
+                if crossed(end) {
+                    self.player.swings += 1;
+                    swing = self.player.swings;
+                    let n = self.player.brace_soaked as i32;
+                    self.skill_ev.push(Event::Skill { id, at, dir });
+                    let stun = match d.cap {
+                        Some(Cap::Stun { stagger }) => stagger,
+                        _ => 0.0,
+                    };
+                    self.skill_area(
+                        t,
+                        &Sweep {
+                            reach: radius,
+                            cone: None,
+                            push,
+                            stagger: stun,
+                            swing,
+                            damage: s.damage + more * n,
+                            poise: s.poise,
+                            shatter: 1.0,
+                        },
+                    );
+                    // 되쏘기(ㄴ): 받아 둔 조각을 던진 쪽으로 — 패링으로 되돌린 조각과 같은 길(`reflected`).
+                    for from in std::mem::take(&mut self.brace_caught) {
+                        let Some(en) = self.enemies.get(from).filter(|en| en.alive()) else {
+                            continue;
+                        };
+                        let pos = at + Vec3::Y * 1.1;
+                        let to = vec3(en.pos.x - pos.x, 0.0, en.pos.z - pos.z);
+                        self.shards.push(Shard {
+                            pos,
+                            dir: to.normalize_or(dir),
+                            went: 0.0,
+                            reflected: true,
+                            from,
+                        });
+                    }
+                }
+            }
+            // 되울림(G2): 시동 뒤 몸에 울림을 두른다 — 그동안의 패링은 `echo_ring`이 둘레로 퍼뜨린다.
+            Form::Echo { secs, .. } => {
+                if crossed(s.startup) {
+                    let pl = &mut self.player;
+                    pl.echo_left = secs;
+                    pl.echo_total = secs;
+                    self.skill_ev.push(Event::Skill { id, at, dir });
+                }
+            }
+            // 던지기(G2): 시동 끝에 손을 떠난다 — 그 뒤는 `tick_skill_fields`가 날린다(몸은 후딜 뒤 자유).
+            Form::Throw {
+                dist, half, speed, ..
+            } => {
+                if crossed(s.startup) {
+                    let (back_damage, back_poise) = match d.cap {
+                        Some(Cap::Homing { damage, poise }) => {
+                            (skills::scaled(s.damage, damage), s.poise * poise)
+                        }
+                        _ => (s.damage, s.poise),
+                    };
+                    let pos = at + Vec3::Y * (self.player.air + BLADE_HEIGHT) + dir * 0.5;
+                    self.skill_blades.push(Blade {
+                        pos,
+                        prev: pos,
+                        dir,
+                        went: 0.0,
+                        dist,
+                        half,
+                        speed,
+                        out: true,
+                        hits: 0,
+                        damage: s.damage,
+                        poise: s.poise,
+                        back_damage,
+                        back_poise,
+                        drag: match d.twist {
+                            Some(Twist::Drag { dist }) => dist,
+                            _ => 0.0,
+                        },
+                        stick: match d.twist {
+                            Some(Twist::Stick { radius, damage }) => Some((radius, damage)),
+                            _ => None,
+                        },
+                        age: 0.0,
+                    });
+                    self.skill_ev.push(Event::Skill { id, at, dir });
+                }
+            }
+            // 잔불 흩기(G2): 선 자리에 불티가 남는다 — 태우는 것은 `tick_skill_fields`.
+            Form::Field {
+                radius,
+                secs,
+                every,
+            } => {
+                if crossed(s.startup) {
+                    self.skill_fields.push(Field {
+                        pos: at,
+                        radius,
+                        age: 0.0,
+                        secs,
+                        every,
+                        pulses: 0,
+                        damage: s.damage,
+                        poise: match d.cap {
+                            Some(Cap::Smolder { poise, .. }) => poise,
+                            _ => 0.0,
+                        },
+                        follow: matches!(d.twist, Some(Twist::Follow)),
+                        kindle: match d.twist {
+                            Some(Twist::Kindle { embers }) => embers,
+                            _ => 0,
+                        },
+                    });
+                    self.skill_ev.push(Event::Skill { id, at, dir });
+                }
+            }
         }
         self.player.state = if e1 >= d.total() {
             self.player.skill_ghost = false;
+            self.player.skill_brace = 0;
             PState::Idle
         } else {
             PState::Skill {
@@ -532,6 +756,311 @@ impl World {
                 }
             }
         }
+        self.tick_blades(t, dt);
+        self.tick_fields(t, dt);
+    }
+
+    /// 던진 무기(G2)를 날린다: 가는 길은 곧게 `dist` m(벽·기둥·아레나 끝에 닿으면 거기서) — 끝에서 되돌거나(오는 길은 지금의
+    /// 방랑자에게, 벽을 가리지 않는다 — 든 것을 잃지 않게) 터진다(박힌 자리). 길 위의 적은 길마다 한 번씩 맞는다.
+    fn tick_blades(&mut self, t: &Tuning, dt: f32) {
+        if self.skill_blades.is_empty() {
+            return;
+        }
+        let mut ev = std::mem::take(&mut self.skill_ev);
+        let home = self.player.pos + Vec3::Y * (self.player.air + BLADE_HEIGHT);
+        let mut keep = Vec::with_capacity(self.skill_blades.len());
+        for mut b in std::mem::take(&mut self.skill_blades) {
+            b.prev = b.pos;
+            b.age += dt;
+            let step = b.speed * dt;
+            let (len, done) = if b.out {
+                let mut len = step.min(b.dist - b.went);
+                let mut stop = false;
+                for o in &self.obstacles {
+                    if let Some(d) = o.ray(b.pos, b.dir) {
+                        if d <= len {
+                            len = d;
+                            stop = true;
+                        }
+                    }
+                }
+                let next = b.pos + b.dir * len;
+                if next.x.abs() > self.arena || next.z.abs() > self.arena {
+                    stop = true;
+                }
+                (len, stop || b.went + len >= b.dist - 1e-3)
+            } else {
+                let to = vec3(home.x - b.pos.x, 0.0, home.z - b.pos.z);
+                let l = to.length();
+                b.dir = to.normalize_or(-b.dir);
+                (step.min(l), l <= step + BLADE_CATCH)
+            };
+            // 이 걸음의 선분에서 반 폭 안에 든 깨어 있는 적.
+            let feet = b.pos.y - BLADE_HEIGHT;
+            let struck: Vec<usize> = self
+                .enemies
+                .iter()
+                .enumerate()
+                .filter(|(i, en)| {
+                    if !en.active()
+                        || (*i < 64 && b.hits & (1 << i) != 0)
+                        || (en.pos.y - feet).abs() > HIT_DY
+                    {
+                        return false;
+                    }
+                    let c = vec3(en.pos.x - b.pos.x, 0.0, en.pos.z - b.pos.z);
+                    let k = c.dot(b.dir).clamp(0.0, len);
+                    (c - b.dir * k).length() <= b.half + en.radius
+                })
+                .map(|(i, _)| i)
+                .collect();
+            for i in struck {
+                if i < 64 {
+                    b.hits |= 1 << i;
+                }
+                let en = &self.enemies[i];
+                // 끌고 오기(ㄴ): 오는 길에 맞은 적은 방랑자 쪽으로 미끄러진다 — 보스는 끌리지 않는다(무겁다).
+                let knock = if b.out {
+                    b.dir * t[P::Knockback] * if en.boss { 0.1 } else { 0.5 }
+                } else if b.drag > 0.0 && !en.boss && !en.rising() {
+                    let to = vec3(home.x - en.pos.x, 0.0, home.z - en.pos.z);
+                    let room = (to.length() - en.radius - PLAYER_RADIUS).max(0.0);
+                    to.normalize_or_zero() * b.drag.min(room) * KNOCK_DECAY
+                } else {
+                    Vec3::ZERO
+                };
+                let (damage, poise) = if b.out {
+                    (b.damage, b.poise)
+                } else {
+                    (b.back_damage, b.back_poise)
+                };
+                self.skill_touch(
+                    t,
+                    &mut ev,
+                    i,
+                    &Touch {
+                        damage,
+                        poise,
+                        stagger: 0.0,
+                        knock,
+                        crit: true,
+                    },
+                );
+                if !b.out && b.drag > 0.0 {
+                    self.enemies[i].spilling = false;
+                }
+            }
+            b.pos += b.dir * len;
+            b.went += len;
+            match (b.out, done, b.stick) {
+                // 박힌 자리(ㄱ): 돌아오지 않고 끝에서 터진다.
+                (true, true, Some((radius, damage))) => {
+                    let at = vec3(b.pos.x, feet, b.pos.z);
+                    self.skill_blast(t, &mut ev, at, radius, damage);
+                    ev.push(Event::ThrowBoom { at, radius });
+                }
+                (true, true, None) => {
+                    b.out = false;
+                    b.hits = 0;
+                    ev.push(Event::ThrowTurn { at: b.pos });
+                    keep.push(b);
+                }
+                (false, true, _) => ev.push(Event::ThrowBack { at: home }),
+                _ => keep.push(b),
+            }
+        }
+        self.skill_blades = keep;
+        self.skill_ev = ev;
+    }
+
+    /// 남은 불티(G2): `every`초마다 그 안의 적을 태운다(첫 타는 `every`초 뒤 — 끝나는 순간의 타까지 치고 사라진다). 따르는 불티는
+    /// 방랑자를 따라온다. 남는 불씨는 그 안에 선 적에게 표지를 적어 둔다(쓰러질 때 `tick_embers`가 읽는다).
+    fn tick_fields(&mut self, t: &Tuning, dt: f32) {
+        let pp = self.player.pos;
+        let mut due: Vec<Field> = Vec::new();
+        for f in &mut self.skill_fields {
+            f.age += dt;
+            if f.follow {
+                f.pos = pp;
+            }
+            let next = f.every * (f.pulses + 1) as f32;
+            if f.age + 1e-4 >= next && next <= f.secs + 1e-4 {
+                f.pulses += 1;
+                due.push(*f);
+            }
+        }
+        for en in &mut self.enemies {
+            en.kindled = self
+                .skill_fields
+                .iter()
+                .filter(|f| f.holds(en.pos, en.radius))
+                .map(|f| f.kindle)
+                .max()
+                .unwrap_or(0);
+        }
+        if !due.is_empty() {
+            let mut ev = std::mem::take(&mut self.skill_ev);
+            for f in due {
+                for i in 0..self.enemies.len() {
+                    let en = &self.enemies[i];
+                    if !en.active() || !f.holds(en.pos, en.radius) {
+                        continue;
+                    }
+                    self.skill_touch(
+                        t,
+                        &mut ev,
+                        i,
+                        &Touch {
+                            damage: f.damage,
+                            poise: f.poise,
+                            stagger: 0.0,
+                            knock: Vec3::ZERO,
+                            crit: false,
+                        },
+                    );
+                }
+                ev.push(Event::FieldPulse {
+                    at: f.pos,
+                    radius: f.radius,
+                });
+            }
+            self.skill_ev = ev;
+        }
+        self.skill_fields.retain(|f| f.age + 1e-4 < f.secs);
+    }
+
+    /// 새 스킬들의 타 하나(G2 — 던진 무기·불티·울림·한 줄기): 피해는 여느 타와 같은 길(`hurt_by` — 장신구의 덤·깨진 동안의 배·
+    /// 더 다치는 표지), 자세 피해, 쓰러짐, 휘청(보스·전환 중인 보스는 휘청이지 않는다 — 이미 더 길게 휘청이는 적은 그대로).
+    /// 스킬의 타라 큰 기술 게이지를 채우지 않고(`connected`를 건드리지 않는다), 쓰러뜨리면 스킬 몫의 기세. 쓰러뜨렸으면 참.
+    fn skill_touch(&mut self, t: &Tuning, ev: &mut Vec<Event>, i: usize, c: &Touch) -> bool {
+        let en = &mut self.enemies[i];
+        let at = en.pos + Vec3::Y * en.height * 0.6;
+        if c.damage > 0 {
+            let crit = c.crit && en.exposed > 0.0;
+            en.hp -= hurt_by(
+                en,
+                self.stats.dmg + c.damage,
+                crit,
+                self.stats.opened_dmg,
+                t,
+            );
+            if crit {
+                en.exposed = 0.0;
+                ev.push(Event::Crit { at });
+            }
+            en.hurt = 0.15;
+            ev.push(Event::Hit { at });
+            self.skill_hit_tick = true;
+        }
+        if c.knock != Vec3::ZERO {
+            en.knock = c.knock;
+            en.sway = c.knock.normalize_or_zero() * HIT_SWAY;
+            en.sway_t = 0.0;
+        }
+        add_poise(en, c.poise * self.stats.poise, None, t, ev);
+        if en.hp <= 0 {
+            en.state = EState::Dead;
+            self.kills += 1;
+            ev.push(Event::EnemyDown { at: en.pos });
+            return true;
+        }
+        if c.stagger > 0.0 && !en.boss && !en.rising() {
+            let longer = matches!(en.state, EState::Stagger { t: e, dur } if dur - e >= c.stagger);
+            if !longer {
+                en.state = EState::Stagger {
+                    t: 0.0,
+                    dur: c.stagger,
+                };
+            }
+        }
+        false
+    }
+
+    /// 둘레 터짐(G2 — 던지기의 박힌 자리): `at` 둘레 `radius` m의 깨어 있는 적에게 피해, 바깥으로 민다(보스는 조금).
+    fn skill_blast(&mut self, t: &Tuning, ev: &mut Vec<Event>, at: Vec3, radius: f32, damage: i32) {
+        let mut n = 0;
+        for i in 0..self.enemies.len() {
+            let en = &self.enemies[i];
+            if !en.active() || (en.pos.y - at.y).abs() > HIT_DY {
+                continue;
+            }
+            let dv = vec3(en.pos.x - at.x, 0.0, en.pos.z - at.z);
+            if dv.length() - en.radius > radius {
+                continue;
+            }
+            let knock = dv.normalize_or_zero() * t[P::Knockback] * if en.boss { 0.2 } else { 1.2 };
+            self.skill_touch(
+                t,
+                ev,
+                i,
+                &Touch {
+                    damage,
+                    poise: 0.0,
+                    stagger: 0.0,
+                    knock,
+                    crit: true,
+                },
+            );
+            n += 1;
+        }
+        if n > 0 {
+            self.hitstop = self.hitstop.max(t[P::Hitstop] * SKILL_HITSTOP);
+        }
+    }
+
+    /// 되울림(G2): 울림이 남아 있는 동안 성공한 패링 `parries`번마다 둘레의 적이 휘청인다(보스는 아니다). 패링 창·받는 반원은
+    /// 건드리지 않는다(0095 원칙 2) — 이미 성공한 패링에 얹힐 뿐. 고르기: 자세 피해(ㄱ)·모든 대기 당기기(ㄴ), 맺음: 피해.
+    pub(super) fn echo_ring(&mut self, t: &Tuning, parries: usize, ev: &mut Vec<Event>) {
+        if parries == 0 || self.player.echo_left <= 0.0 {
+            return;
+        }
+        let d = self.skill_eff(skills::Id::Echo);
+        let Form::Echo {
+            radius, stagger, ..
+        } = d.skill.form
+        else {
+            return;
+        };
+        let poise = match d.twist {
+            Some(Twist::Rattle { poise }) => poise,
+            _ => 0.0,
+        };
+        let damage = match d.cap {
+            Some(Cap::Toll { damage }) => damage,
+            _ => 0,
+        };
+        let p = self.player.pos;
+        let body = p.y + self.player.air;
+        for _ in 0..parries {
+            for i in 0..self.enemies.len() {
+                let en = &self.enemies[i];
+                if !en.active() || (en.pos.y - body).abs() > HIT_DY {
+                    continue;
+                }
+                let dv = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+                if dv.length() - en.radius > radius {
+                    continue;
+                }
+                self.skill_touch(
+                    t,
+                    ev,
+                    i,
+                    &Touch {
+                        damage,
+                        poise,
+                        stagger,
+                        knock: Vec3::ZERO,
+                        crit: false,
+                    },
+                );
+            }
+            if let Some(Twist::Tempo { secs }) = d.twist {
+                for cd in &mut self.player.skill_cd {
+                    *cd = (*cd - secs).max(0.0);
+                }
+            }
+        }
+        ev.push(Event::EchoRing { at: p, radius });
     }
 
     /// 모인 자리가 터진다: 둘레의 깨어 있는 적에게 피해(밀지 않는다 — 모아 둔 것을 흩지 않게, 휘청도 없다).
@@ -577,30 +1106,117 @@ impl World {
         self.skill_ev = ev;
     }
 
-    /// 큰 기술 시작: 게이지를 통째로 쓰고 세계가 한 번 멈춘다(시동 정지 — "시간").
-    fn start_ult(&mut self) {
+    /// 큰 기술 시작(끼운 하나): 게이지를 통째로 쓴다. 쟁반 뒤집기·한 줄기는 세계가 한 번 멈춘다(시동 정지 — "시간"),
+    /// 한 줄기는 가를 쪽을 이 순간에 정한다(조준 > 락온 > 닿는 거리의 가장 가까운 적 > 바라보는 쪽).
+    fn start_ult(&mut self, cx: &Ctx) {
+        let kind = self.player.ult;
+        if kind == skills::Ult::Line {
+            let pl = &self.player;
+            let lock = cx
+                .target
+                .map(|tg| vec3(tg.x - pl.pos.x, 0.0, tg.z - pl.pos.z).normalize_or_zero())
+                .filter(|v| v.length_squared() > 0.5);
+            let reach = LINE.len_at(pl.ult_rank);
+            let dir = cx
+                .aim
+                .or(lock)
+                .or_else(|| nearest_in_reach(&self.enemies, pl.pos, reach, None));
+            if let Some(d) = dir {
+                self.player.facing = d.x.atan2(d.z);
+            }
+        }
         let pl = &mut self.player;
         pl.gauge = 0.0;
         pl.state = PState::Ult {
+            kind,
             t: 0.0,
             done: false,
         };
-        self.hitstop = self.hitstop.max(UPEND.freeze);
+        let (freeze, ..) = kind.times();
+        self.hitstop = self.hitstop.max(freeze);
         self.skill_ev.push(Event::UltStart);
     }
 
-    pub(super) fn tick_ult(&mut self, cx: &Ctx, e: f32, done: bool) {
+    pub(super) fn tick_ult(&mut self, cx: &Ctx, kind: skills::Ult, e: f32, done: bool) {
         let e1 = e + cx.dt;
         let mut done = done;
-        if !done && e1 >= UPEND.startup {
+        let (_, startup, recover) = kind.times();
+        if !done && e1 >= startup {
             done = true;
-            self.upend(cx.t);
+            match kind {
+                skills::Ult::Upend => self.upend(cx.t),
+                skills::Ult::Flurry => {
+                    let pl = &mut self.player;
+                    pl.flurry_left = FLURRY.secs_at(pl.ult_rank);
+                    pl.flurry_total = pl.flurry_left;
+                    pl.flurry_added = 0.0;
+                    self.skill_ev.push(Event::Flurry { at: pl.pos });
+                }
+                skills::Ult::Line => self.line_cut(cx.t),
+            }
         }
-        self.player.state = if e1 >= UPEND.startup + UPEND.recover {
+        self.player.state = if e1 >= startup + recover {
             PState::Idle
         } else {
-            PState::Ult { t: e1, done }
+            PState::Ult { kind, t: e1, done }
         };
+    }
+
+    /// 한 줄기(G2): 바라보는 쪽 한 줄(반 폭 `LINE.half` m)을 가른다 — 벽·기둥 앞에서 끊긴다. 줄 위의 깨어 있는 적이 모두 다치고
+    /// 자세가 크게 깎인다. 보스도 같다(보스전의 큰 기술) — 휘청은 자세가 깨져서 생기는 것뿐이다.
+    fn line_cut(&mut self, t: &Tuning) {
+        let mut ev = std::mem::take(&mut self.skill_ev);
+        let p = self.player.pos;
+        let body = p.y + self.player.air;
+        let dir = self.player.facing_dir();
+        let rank = self.player.ult_rank;
+        let mut len = LINE.len_at(rank);
+        let eye = p + Vec3::Y * (self.player.air + BLADE_HEIGHT);
+        for o in &self.obstacles {
+            if let Some(d) = o.ray(eye, dir) {
+                len = len.min(d);
+            }
+        }
+        let damage = LINE.damage_at(rank);
+        for i in 0..self.enemies.len() {
+            let en = &self.enemies[i];
+            if !en.active() || (en.pos.y - body).abs() > HIT_DY {
+                continue;
+            }
+            let dv = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+            let along = dv.dot(dir);
+            let off = (dv - dir * along).length();
+            if along < -en.radius || along - en.radius > len || off > LINE.half + en.radius {
+                continue;
+            }
+            let knock = dir * t[P::Knockback] * if en.boss { 0.25 } else { 1.0 };
+            self.sparks.extend(sparks_at(
+                en.pos + Vec3::Y * en.height * 0.55,
+                dir,
+                self.player.swings,
+                true,
+            ));
+            self.skill_touch(
+                t,
+                &mut ev,
+                i,
+                &Touch {
+                    damage,
+                    poise: LINE.poise,
+                    stagger: 0.0,
+                    knock,
+                    crit: true,
+                },
+            );
+        }
+        self.hitstop = self.hitstop.max(t[P::Hitstop] * ULT_HITSTOP);
+        ev.push(Event::LineCut {
+            at: p,
+            dir,
+            len,
+            half: LINE.half,
+        });
+        self.skill_ev = ev;
     }
 
     /// 쟁반 뒤집기: 둘레의 모든 적이 바깥으로 쏟아진다 — 가까운 적일수록 멀리. 쏟기와 같은 길(`spilling`)이라 벽·기둥·턱에
@@ -659,6 +1275,15 @@ impl World {
                 *cd = (*cd - per * downs).max(0.0);
             }
         }
+        // 몰아치기 3단(G2): 그동안 쓰러뜨릴 때마다 조금 더 이어진다 — 더해지는 몫은 `kill_cap`초까지.
+        if downs > 0.0 && pl.flurry_left > 0.0 {
+            let more = (FLURRY.kill_more_at(pl.ult_rank) * downs)
+                .min(FLURRY.kill_cap - pl.flurry_added)
+                .max(0.0);
+            pl.flurry_left += more;
+            pl.flurry_total += more;
+            pl.flurry_added += more;
+        }
         let was_full = pl.gauge >= 1.0;
         let hit = t[P::SkillGaugeHit];
         let mut gain = parries * t[P::SkillGaugeParry] + perfects * hit * 2.0;
@@ -686,6 +1311,37 @@ impl World {
         }
     }
 
+    /// 스킬 칸 `slot`의 스킬이 남긴 것이 이어지는 몫 0..1(0 = 없음) — 되울림의 울림·잔불 흩기의 불티(HUD·터치 칸).
+    pub fn skill_active(&self, slot: usize) -> f32 {
+        let pl = &self.player;
+        match pl.skills[slot % 2] {
+            skills::Id::Echo if pl.echo_left > 0.0 => {
+                (pl.echo_left / pl.echo_total.max(1e-3)).clamp(0.0, 1.0)
+            }
+            skills::Id::Embers => self
+                .skill_fields
+                .iter()
+                .map(|f| f.left())
+                .fold(0.0, f32::max),
+            _ => 0.0,
+        }
+    }
+
+    /// 몰아치기가 이어지는 몫 0..1(0 = 아니다) — HUD가 큰 기술 게이지를 줄어드는 막대로 그린다.
+    pub fn ult_active(&self) -> f32 {
+        let pl = &self.player;
+        if pl.flurry_left > 0.0 {
+            (pl.flurry_left / pl.flurry_total.max(1e-3)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// 든 것이 손을 떠나 있나(던지기, G2) — 렌더가 손의 무기를 감추고 날아가는 자리에 그린다.
+    pub fn weapon_away(&self) -> bool {
+        !self.skill_blades.is_empty()
+    }
+
     /// 스킬 둘을 끼운다(같은 것 둘은 바로잡는다) — 그 단·고르기와 큰 기술의 단까지(0158). 스킬 이름만 주면 모두 1단.
     /// 대기는 스킬마다라 그대로 남는다.
     pub fn set_skills(&mut self, l: impl Into<skills::Loadout>) {
@@ -704,6 +1360,7 @@ impl World {
             };
         }
         pl.ult_rank = l.ult.max(1);
+        pl.ult = l.great;
     }
 }
 
@@ -1140,6 +1797,7 @@ mod tests {
                 },
             ],
             ult: 1,
+            great: skills::Ult::Upend,
         });
     }
 
@@ -1161,6 +1819,7 @@ mod tests {
                 },
             ],
             ult: 3,
+            great: skills::Ult::Upend,
         });
         assert_eq!(w.player.skills, [Sk::Quake, Sk::Whirl]);
         assert_eq!(w.player.skill_rank, [5, 1]);
@@ -1658,6 +2317,7 @@ mod tests {
                 },
             ],
             ult: 1,
+            great: skills::Ult::Upend,
         });
         // 앞의 적이 더 가깝다(겨누는 쪽) — 뒤의 적은 부채꼴 밖.
         w.spawn_mob(vec3(0.0, 0.0, -2.2));
@@ -1786,8 +2446,23 @@ mod tests {
                 let stamina = w.player.stamina;
                 let tag = format!("{id:?} {pick:?}");
                 let mut ev = w.step(&skill(0), &t);
-                for _ in 0..150 {
-                    ev.extend(w.step(&Actions::default(), &t));
+                for k in 0..150 {
+                    // 되울림(G2)은 패링이 있어야 울린다: 울림을 두른 뒤 잡몹이 앞에서 내려치게 하고 받아친다(보스는 둘레 안).
+                    let a = if id == Sk::Echo && k == 30 {
+                        let en = &mut w.enemies[1];
+                        en.pos = vec3(0.0, 0.0, -1.2);
+                        en.facing = 0.0;
+                        en.atk = Atk::Smash;
+                        en.state = EState::Tele { t: en.tele_dur() };
+                        w.player.facing = PI;
+                        Actions {
+                            parry: true,
+                            ..Default::default()
+                        }
+                    } else {
+                        Actions::default()
+                    };
+                    ev.extend(w.step(&a, &t));
                     let b = &w.enemies[0];
                     assert!(
                         !matches!(b.state, EState::Stagger { .. }),
@@ -1811,9 +2486,781 @@ mod tests {
                 } else if !(id == Sk::Quake && pick == Pick::A) {
                     assert!(now > was - 0.6, "{tag}: drawn in ({was} -> {now})");
                 }
-                assert_eq!(w.player.gauge, 0.0, "{tag}: skill hits fill no gauge");
+                // 패링 한 번은 패링의 몫만 채운다(울림의 타는 채우지 않는다).
+                let parries = ev
+                    .iter()
+                    .filter(|e| matches!(e, Event::Parry { .. }))
+                    .count();
+                if id == Sk::Echo {
+                    assert_eq!(parries, 1, "{tag}: the echo test parries once");
+                    assert!(
+                        ev.iter().any(|e| matches!(e, Event::EchoRing { .. })),
+                        "{tag}"
+                    );
+                }
+                let want = parries as f32 * t[P::SkillGaugeParry];
+                assert!(
+                    (w.player.gauge - want).abs() < 1e-5,
+                    "{tag}: skill hits fill no gauge ({})",
+                    w.player.gauge
+                );
                 assert_eq!(w.player.stamina, stamina, "{tag}: no stamina");
                 assert!(w.player.skill_cd[id.index()] > 1.0, "{tag}: cooling down");
+            }
+        }
+    }
+
+    // ---- G2(0158): 나머지 스킬 넷 · 큰 기술 둘 ----
+
+    use crate::skills::Ult;
+
+    /// 칸 0에 `id`를 끼우고 큰 기술 `great`를 `ult`단으로.
+    fn wear_ult(w: &mut World, great: Ult, ult: u8) {
+        w.set_skills(Loadout {
+            slots: [
+                Slot {
+                    id: Sk::Whirl,
+                    rank: 1,
+                    pick: Pick::A,
+                },
+                Slot {
+                    id: Sk::Cut,
+                    rank: 1,
+                    pick: Pick::A,
+                },
+            ],
+            ult,
+            great,
+        });
+    }
+
+    /// 앞 1.2m에서 이 틱에 내려치는 잔재(맞으면 한 눈금).
+    fn swing_at_player(w: &mut World, i: usize) {
+        let p = w.player.pos;
+        let en = &mut w.enemies[i];
+        en.pos = p + vec3(0.0, 0.0, -1.2);
+        en.prev = en.pos;
+        en.facing = 0.0;
+        en.atk = Atk::Smash;
+        en.state = EState::Swing { t: 0.0 };
+    }
+
+    fn ticks(secs: f32) -> usize {
+        (secs / TICK_DT).ceil() as usize
+    }
+
+    /// 버팀: 버티는 동안 맞아도 밀리지도 끊기지도 않고 한 대 몫(10)을 덜어 다치지 않는다 — 받아낸 타는 셋까지 센다.
+    /// 끝의 터뜨림은 둘레 3m에 10 + 받아낸 타마다 10(셋이면 40). 아무것도 안 받아냈으면 10.
+    #[test]
+    fn brace_soaks_blows_without_being_moved_and_bursts_harder_for_each() {
+        let burst = |blows: usize| {
+            let (mut w, t) = world();
+            wear(&mut w, Sk::Brace, 1, Pick::A);
+            let hitter = w.spawn(Kind::Husk, vec3(0.0, 0.0, -1.2));
+            let side = w.spawn(Kind::Husk, vec3(2.0, 0.0, 1.0));
+            w.spawn_mob(vec3(0.0, 0.0, 6.0));
+            still(&mut w);
+            let (hp, at) = (w.player.hp, w.player.pos);
+            let mut ev = run(&mut w, &t, skill(0), ticks(0.12));
+            for _ in 0..blows {
+                swing_at_player(&mut w, hitter);
+                ev.extend(run(&mut w, &t, Actions::default(), 2));
+                assert!(
+                    matches!(w.player.state, PState::Skill { id: Sk::Brace, .. }),
+                    "not interrupted: {:?}",
+                    w.player.state
+                );
+                w.enemies[hitter].state = EState::Recover { t: -1000.0 };
+                ev.extend(run(&mut w, &t, Actions::default(), ticks(0.2)));
+            }
+            ev.extend(run(&mut w, &t, Actions::default(), 120));
+            let soaks = ev
+                .iter()
+                .filter(|e| matches!(e, Event::Soak { .. }))
+                .count();
+            assert_eq!(soaks, blows, "every blow is soaked");
+            assert_eq!(w.player.hp, hp, "a blow of 10 minus 10");
+            assert!(flat(w.player.pos, at) < 0.05, "not pushed");
+            assert!(!ev.contains(&Event::PlayerHurt), "no hurt feedback");
+            (
+                90 - w.enemies[side].hp,
+                w.enemies[2].hp,
+                w.player.brace_soaked,
+            )
+        };
+        assert_eq!(burst(0), (10, 90, 0), "the far one is out of reach");
+        assert_eq!(burst(1), (20, 90, 1));
+        assert_eq!(burst(3), (40, 90, 3));
+        assert_eq!(burst(4), (40, 90, 3), "three at most");
+        // 버티지 않으면 같은 타가 맞히고 경직시킨다.
+        let (mut w, t) = world();
+        w.spawn_mob(vec3(0.0, 0.0, -1.2));
+        still(&mut w);
+        swing_at_player(&mut w, 0);
+        let ev = run(&mut w, &t, Actions::default(), 2);
+        assert!(ev.contains(&Event::PlayerHurt) && w.player.hp < PLAYER_HP);
+    }
+
+    /// 버팀: 버티는 동안 회피는 터뜨림 없이 버팀을 끊는다 — 대기는 쓴 채. 시동 동안·후딜의 회피 받기는 다른 스킬과 같다.
+    #[test]
+    fn a_dodge_breaks_the_brace_without_a_burst_and_the_cooldown_stays_spent() {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Brace, 1, Pick::A);
+        w.spawn_mob(vec3(1.5, 0.0, 0.0));
+        still(&mut w);
+        let mut ev = run(&mut w, &t, skill(0), ticks(0.4));
+        assert!(matches!(w.player.state, PState::Skill { .. }));
+        ev.extend(w.step(
+            &Actions {
+                dodge: true,
+                ..Default::default()
+            },
+            &t,
+        ));
+        assert!(
+            matches!(w.player.state, PState::Dodge { .. }),
+            "{:?}",
+            w.player.state
+        );
+        ev.extend(run(&mut w, &t, Actions::default(), 120));
+        assert!(!ev
+            .iter()
+            .any(|e| matches!(e, Event::Skill { id: Sk::Brace, .. })));
+        assert_eq!(w.enemies[0].hp, 90, "no burst");
+        assert!(w.player.skill_cd[Sk::Brace.index()] > 5.0, "spent");
+    }
+
+    /// 버팀 3단 ㄱ "버티는 걸음": 버티는 동안 스틱 쪽으로 느리게 걷는다 — 고르기가 없거나 ㄴ이면 제자리.
+    #[test]
+    fn brace_pick_a_walks_while_bracing() {
+        let moved = |rank: u8, pick: Pick| {
+            let (mut w, t) = world();
+            wear(&mut w, Sk::Brace, rank, pick);
+            let go = Actions {
+                move_dir: vec2(0.0, 1.0),
+                ..Default::default()
+            };
+            w.step(&Actions { skill1: true, ..go }, &t);
+            let mut n = 1;
+            while matches!(w.player.state, PState::Skill { .. }) {
+                w.step(&go, &t);
+                n += 1;
+            }
+            (flat(w.player.pos, Vec3::ZERO), n as f32 * TICK_DT, t)
+        };
+        let (d, secs, t) = moved(3, Pick::A);
+        assert!(d > 1.0, "walked: {d}");
+        assert!(d < t[P::MoveSpeed] * secs * 0.5, "slowly: {d}");
+        for (rank, pick) in [(2, Pick::A), (3, Pick::B)] {
+            let (d, ..) = moved(rank, pick);
+            assert!(d < 0.05, "{rank} {pick:?}: {d}");
+        }
+    }
+
+    /// 버팀 3단 ㄴ "되쏘기": 버티는 동안 받아낸 종 조각을 터뜨릴 때 던진 종지기 쪽으로 되쏜다 — 되돌린 조각이 종지기를 깎는다.
+    /// ㄱ이면 받아낼 뿐(종지기는 그대로).
+    #[test]
+    fn brace_pick_b_sends_soaked_shards_back_at_their_thrower() {
+        let hurt_keeper = |pick: Pick| {
+            let (mut w, t) = world();
+            wear(&mut w, Sk::Brace, 3, pick);
+            let b = w.spawn(Kind::Bellkeeper, vec3(0.0, 0.0, -8.0));
+            still(&mut w);
+            let hp = w.enemies[b].hp;
+            run(&mut w, &t, skill(0), ticks(0.15));
+            w.shards.push(Shard {
+                pos: vec3(0.0, 1.1, -1.6),
+                dir: vec3(0.0, 0.0, 1.0),
+                went: 0.0,
+                reflected: false,
+                from: b,
+            });
+            let mut soaked = false;
+            for _ in 0..200 {
+                soaked |= w
+                    .step(&Actions::default(), &t)
+                    .iter()
+                    .any(|e| matches!(e, Event::Soak { .. }));
+                w.enemies[b].state = EState::Recover { t: -1000.0 };
+            }
+            assert!(soaked, "{pick:?}: the shard was soaked");
+            hp - w.enemies[b].hp
+        };
+        assert_eq!(hurt_keeper(Pick::B), crate::tuning::SHARD_REFLECT_DAMAGE);
+        assert_eq!(hurt_keeper(Pick::A), 0);
+    }
+
+    /// 버팀 5단 맺음: 터뜨림에 맞은 적이 1초 휘청인다 — 보스는 휘청이지 않는다. 4단에는 없다.
+    #[test]
+    fn brace_capstone_staggers_the_burst_but_not_a_boss() {
+        let staggers = |rank: u8| {
+            let (mut w, t) = world();
+            wear(&mut w, Sk::Brace, rank, Pick::A);
+            w.spawn_mob(vec3(2.0, 0.0, 0.0));
+            w.spawn_boss(vec3(-2.2, 0.0, 0.0));
+            still(&mut w);
+            let mut most = [0.0f32; 2];
+            w.step(&skill(0), &t);
+            for _ in 0..150 {
+                w.step(&Actions::default(), &t);
+                for (i, e) in w.enemies.iter().enumerate() {
+                    if let EState::Stagger { dur, .. } = e.state {
+                        most[i] = most[i].max(dur);
+                    }
+                }
+            }
+            most
+        };
+        let five = staggers(MAX_RANK);
+        assert!((five[0] - 1.0).abs() < 1e-5, "{five:?}");
+        assert_eq!(five[1], 0.0, "a boss does not stagger");
+        assert_eq!(staggers(4)[0], 0.0);
+    }
+
+    /// 앞에서 이 틱에 내려치는 잔재(쪽 −z)와 둘레의 적들 — 되울림의 판.
+    fn echo_world(rank: u8, pick: Pick) -> (World, Tuning) {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Echo, rank, pick);
+        w.spawn_mob(vec3(0.0, 0.0, -1.2)); // 0: 내려친다(패링당한다)
+        w.spawn_mob(vec3(3.0, 0.0, 0.5)); // 1: 둘레 4m 안
+        w.spawn_mob(vec3(0.0, 0.0, 7.0)); // 2: 밖
+        w.spawn_boss(vec3(-2.6, 0.0, 1.0)); // 3: 안의 보스
+        still(&mut w);
+        (w, t)
+    }
+
+    /// 앞의 잔재가 내려치게 하고 패링한다 — 이 판의 사건과 패링 창이 열려 있던 틱 수.
+    fn parry_the_front(w: &mut World, t: &Tuning) -> (Vec<Event>, usize) {
+        let en = &mut w.enemies[0];
+        en.facing = 0.0;
+        en.atk = Atk::Smash;
+        en.state = EState::Tele { t: en.tele_dur() };
+        w.player.facing = PI;
+        let mut ev = w.step(
+            &Actions {
+                parry: true,
+                ..Default::default()
+            },
+            t,
+        );
+        let mut open = w.parry_open(t) as usize;
+        for _ in 0..40 {
+            ev.extend(w.step(&Actions::default(), t));
+            open += w.parry_open(t) as usize;
+        }
+        (ev, open)
+    }
+
+    /// 되울림: 4초 동안 성공한 패링마다 둘레 4m의 모든 적이 0.8초 휘청인다 — 밖의 적·보스는 아니다, 피해는 없다.
+    /// **패링 창은 그대로**(0095 원칙 2): 울림이 있어도 없어도 창이 열린 틱 수가 같다. 울림이 없으면 둘레는 그대로.
+    #[test]
+    fn echo_makes_each_parry_stagger_everyone_around_and_leaves_the_window_alone() {
+        let (mut w, t) = echo_world(1, Pick::A);
+        run(&mut w, &t, skill(0), ticks(0.3));
+        assert!(
+            (w.player.echo_left - 4.0).abs() < 0.1,
+            "{}",
+            w.player.echo_left
+        );
+        still(&mut w);
+        let (ev, open_echo) = parry_the_front(&mut w, &t);
+        assert!(ev.iter().any(|e| matches!(e, Event::Parry { .. })));
+        assert!(ev.iter().any(|e| matches!(e, Event::EchoRing { .. })));
+        assert!(
+            matches!(w.enemies[1].state, EState::Stagger { dur, .. } if (dur - 0.8).abs() < 1e-5),
+            "{:?}",
+            w.enemies[1].state
+        );
+        assert!(
+            !matches!(w.enemies[2].state, EState::Stagger { .. }),
+            "outside"
+        );
+        assert!(
+            !matches!(w.enemies[3].state, EState::Stagger { .. }),
+            "a boss"
+        );
+        assert!(
+            w.enemies.iter().skip(1).all(|e| e.hp == e.max_hp),
+            "no damage"
+        );
+        // 울림 없이 같은 패링.
+        let (mut w, t) = echo_world(1, Pick::A);
+        let (ev, open_plain) = parry_the_front(&mut w, &t);
+        assert!(ev.iter().any(|e| matches!(e, Event::Parry { .. })));
+        assert!(!ev.iter().any(|e| matches!(e, Event::EchoRing { .. })));
+        assert!(!matches!(w.enemies[1].state, EState::Stagger { .. }));
+        assert_eq!(open_echo, open_plain, "the parry window is untouched");
+        // 2단: 5초. 4초가 지나면 끝(1단).
+        let (mut w, t) = echo_world(2, Pick::A);
+        run(&mut w, &t, skill(0), ticks(0.3));
+        assert!((w.player.echo_total - 5.0).abs() < 1e-5);
+        let (mut w, t) = echo_world(1, Pick::A);
+        run(&mut w, &t, skill(0), ticks(0.3) + ticks(4.1));
+        assert_eq!(w.player.echo_left, 0.0);
+        still(&mut w);
+        let (ev, _) = parry_the_front(&mut w, &t);
+        assert!(
+            !ev.iter().any(|e| matches!(e, Event::EchoRing { .. })),
+            "over"
+        );
+    }
+
+    /// 되울림 3단 ㄱ "울리는 틈": 울림이 닿은 적의 자세가 깎인다 · ㄴ "당기는 박자": 울린 패링마다 모든 스킬의 대기 −0.6초.
+    #[test]
+    fn echo_picks_add_poise_damage_or_pull_cooldowns() {
+        let echo = |pick: Pick| {
+            let (mut w, t) = echo_world(3, pick);
+            run(&mut w, &t, skill(0), ticks(0.3));
+            w.player.skill_cd[Sk::Whirl.index()] = 5.0;
+            still(&mut w);
+            let cd0 = w.player.skill_cd[Sk::Whirl.index()];
+            let (_, _) = parry_the_front(&mut w, &t);
+            let spent = cd0 - w.player.skill_cd[Sk::Whirl.index()];
+            (w.enemies[1].poise, w.enemies[3].poise, spent)
+        };
+        let (poise_a, boss_a, spent_a) = echo(Pick::A);
+        let (poise_b, _, spent_b) = echo(Pick::B);
+        assert!(poise_a > 0.0 && boss_a > 0.0, "{poise_a} {boss_a}");
+        assert_eq!(poise_b, 0.0);
+        assert!(
+            (spent_b - spent_a - 0.6).abs() < 0.02,
+            "{spent_a} vs {spent_b}"
+        );
+    }
+
+    /// 되울림 5단 맺음: 울림이 닿은 적에게 피해 10 — 보스도 다치되 휘청이지 않는다. 4단에는 없다.
+    #[test]
+    fn echo_capstone_hurts_everyone_echoed_but_staggers_no_boss() {
+        let hurt = |rank: u8| {
+            let (mut w, t) = echo_world(rank, Pick::B);
+            run(&mut w, &t, skill(0), ticks(0.3));
+            still(&mut w);
+            let boss = w.enemies[3].hp;
+            parry_the_front(&mut w, &t);
+            assert!(!matches!(w.enemies[3].state, EState::Stagger { .. }));
+            (90 - w.enemies[1].hp, boss - w.enemies[3].hp)
+        };
+        assert_eq!(hurt(MAX_RANK), (10, 10));
+        assert_eq!(hurt(4), (0, 0));
+    }
+
+    /// 던지고 다 돌아올 때까지(또는 `n`틱).
+    fn throw_all(w: &mut World, t: &Tuning, a: Actions) -> Vec<Event> {
+        let mut ev = w.step(&a, t);
+        for _ in 0..400 {
+            ev.extend(w.step(&Actions::default(), t));
+            if matches!(w.player.state, PState::Idle) && w.skill_blades.is_empty() {
+                break;
+            }
+        }
+        ev
+    }
+
+    /// 던지기: 든 것이 8m를 곧게 날아가 뚫고 돌아온다 — 길 위의 적은 가는 길·오는 길에 10씩, 길 밖은 그대로. 후딜 뒤에는 무기가
+    /// 날고 있어도 움직이고 평타를 낼 수 있다(무기는 손에 없는 것으로 그린다). 돌아오면 손에.
+    #[test]
+    fn throw_flies_out_through_the_lane_and_back_cutting_both_ways() {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Throw, 1, Pick::A);
+        for z in [-3.0, -6.5] {
+            w.spawn_mob(vec3(0.0, 0.0, z));
+        }
+        w.spawn_mob(vec3(3.0, 0.0, -4.0));
+        w.spawn_mob(vec3(0.0, 0.0, -10.5));
+        still(&mut w);
+        let d = Sk::Throw.def();
+        let mut ev = run(&mut w, &t, skill(0), ticks(d.startup + 0.4 + 0.05));
+        assert!(
+            matches!(w.player.state, PState::Idle),
+            "free after the recover"
+        );
+        assert!(w.weapon_away(), "still flying");
+        // 무기가 없는 동안에도 평타.
+        ev.extend(w.step(
+            &Actions {
+                attack: true,
+                ..Default::default()
+            },
+            &t,
+        ));
+        assert!(matches!(w.player.state, PState::Attack { .. }));
+        ev.extend(throw_all(&mut w, &t, Actions::default()));
+        assert!(!w.weapon_away(), "back in hand");
+        assert!(ev.iter().any(|e| matches!(e, Event::ThrowTurn { .. })));
+        assert!(ev.iter().any(|e| matches!(e, Event::ThrowBack { .. })));
+        assert_eq!(w.enemies[0].hp, 90 - 20, "out and back");
+        assert_eq!(w.enemies[1].hp, 90 - 20);
+        assert_eq!(w.enemies[2].hp, 90, "off the lane");
+        assert_eq!(w.enemies[3].hp, 90, "beyond 8 m");
+        assert_eq!(w.player.gauge, 0.0, "a skill hit: no gauge");
+    }
+
+    /// 던지기 3단 ㄱ "박힌 자리": 돌아오지 않고 끝에서 터진다(둘레 2.5m · 피해 20) — 길 위의 적은 한 번만.
+    #[test]
+    fn throw_pick_a_sticks_at_the_far_end_and_bursts() {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Throw, 3, Pick::A);
+        w.spawn_mob(vec3(0.0, 0.0, -3.0));
+        w.spawn_mob(vec3(1.8, 0.0, -8.0)); // 끝 곁
+        still(&mut w);
+        let ev = throw_all(&mut w, &t, skill(0));
+        assert!(ev.iter().any(|e| matches!(e, Event::ThrowBoom { .. })));
+        assert!(!ev.iter().any(|e| matches!(e, Event::ThrowBack { .. })));
+        assert_eq!(w.enemies[0].hp, 90 - 12, "once on the way out (rank 3)");
+        assert_eq!(w.enemies[1].hp, 90 - 20, "the burst");
+        assert!(!w.weapon_away());
+    }
+
+    /// 던지기 3단 ㄴ "끌고 오기": 돌아오는 길에 맞은 적이 방랑자 쪽으로 2m 끌려온다 — 보스는 아니다. 2단(고르기 없음)이면 그대로.
+    #[test]
+    fn throw_pick_b_drags_the_hit_back_two_metres_but_never_a_boss() {
+        let pulled = |rank: u8, pick: Pick| {
+            let (mut w, t) = world();
+            wear(&mut w, Sk::Throw, rank, pick);
+            // 보스는 끌려오는 잡몹의 길 밖·던진 길 위(뒤쪽)에.
+            w.spawn_mob(vec3(0.0, 0.0, -4.5));
+            w.spawn_boss(vec3(0.0, 0.0, -7.6));
+            still(&mut w);
+            let was: Vec<Vec3> = w.enemies.iter().map(|e| e.pos).collect();
+            throw_all(&mut w, &t, skill(0));
+            run(&mut w, &t, Actions::default(), 40);
+            (
+                flat(was[0], Vec3::ZERO) - flat(w.enemies[0].pos, Vec3::ZERO),
+                flat(was[1], Vec3::ZERO) - flat(w.enemies[1].pos, Vec3::ZERO),
+            )
+        };
+        let (mob, boss) = pulled(3, Pick::B);
+        assert!((mob - 2.0).abs() < 0.5, "dragged ~2 m: {mob}");
+        assert!(boss < 0.2, "a boss is not dragged: {boss}");
+        let (mob, _) = pulled(2, Pick::A);
+        assert!(mob < 0.5, "no pick: {mob}");
+    }
+
+    /// 던지기 5단 맺음: 돌아오는 길의 피해 ×1.5(13 → 20)·자세 피해 두 배. 4단은 오는 길도 같은 피해.
+    #[test]
+    fn throw_capstone_makes_the_way_back_hit_harder() {
+        let legs = |rank: u8| {
+            let (mut w, t) = world();
+            wear(&mut w, Sk::Throw, rank, Pick::B);
+            w.spawn_mob(vec3(0.0, 0.0, -4.0));
+            still(&mut w);
+            for e in &mut w.enemies {
+                e.hp = 500;
+                e.max_hp = 500;
+            }
+            let mut hits = Vec::new();
+            let mut poise = Vec::new();
+            let mut hp = 500;
+            let mut last_poise = 0.0;
+            let mut ev = w.step(&skill(0), &t);
+            for _ in 0..300 {
+                ev.extend(w.step(&Actions::default(), &t));
+                let e = &w.enemies[0];
+                if e.hp != hp {
+                    hits.push(hp - e.hp);
+                    poise.push(e.poise - last_poise);
+                    hp = e.hp;
+                }
+                last_poise = e.poise;
+            }
+            (hits, poise)
+        };
+        let (hits, poise) = legs(MAX_RANK);
+        assert_eq!(hits, [13, 20]);
+        assert!((poise[1] - 2.0 * poise[0]).abs() < 1e-3, "{poise:?}");
+        assert_eq!(legs(4).0, [12, 12]);
+    }
+
+    /// 잔불 흩기: 선 자리 둘레 4m에 3초 — 그 안의 적이 1초마다 10(첫 타는 1초 뒤), 밖의 적은 그대로. 잔불(재화)은 쓰지 않는다.
+    /// 방랑자가 떠나도 불티는 그 자리에 남는다.
+    #[test]
+    fn embers_burn_everyone_inside_every_second_for_three_seconds_for_free() {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Embers, 1, Pick::A);
+        w.spawn_mob(vec3(2.5, 0.0, 0.0));
+        w.spawn_mob(vec3(0.0, 0.0, 6.5));
+        still(&mut w);
+        w.embers = 50;
+        let d = Sk::Embers.def();
+        run(&mut w, &t, skill(0), ticks(d.startup + 0.9));
+        assert_eq!(w.enemies[0].hp, 90, "not yet");
+        assert_eq!(w.skill_active(0) > 0.0, true, "the HUD cell shows it");
+        // 떠난다.
+        let away = Actions {
+            move_dir: vec2(1.0, 0.0),
+            ..Default::default()
+        };
+        let mut pulses = 0;
+        for _ in 0..ticks(3.0) {
+            pulses += w
+                .step(&away, &t)
+                .iter()
+                .filter(|e| matches!(e, Event::FieldPulse { .. }))
+                .count();
+        }
+        assert_eq!(pulses, 3);
+        assert_eq!(w.enemies[0].hp, 90 - 30);
+        assert_eq!(w.enemies[1].hp, 90, "outside");
+        assert!(w.skill_fields.is_empty() && w.skill_active(0) == 0.0);
+        assert_eq!(w.embers, 50, "costs no embers");
+        assert_eq!(w.player.gauge, 0.0);
+    }
+
+    /// 잔불 흩기 3단 ㄱ "따르는 불티": 불티가 방랑자를 따라와 옮겨 간 자리의 적을 태운다 — ㄴ이면 처음 자리에 남는다.
+    #[test]
+    fn embers_pick_a_follows_the_wanderer() {
+        let burnt = |pick: Pick| {
+            let (mut w, t) = world();
+            wear(&mut w, Sk::Embers, 3, pick);
+            w.spawn_mob(vec3(0.0, 0.0, -9.0));
+            still(&mut w);
+            let d = Sk::Embers.def();
+            run(&mut w, &t, skill(0), ticks(d.startup + d.recover + 0.05));
+            assert_eq!(w.skill_fields.len(), 1);
+            // 방랑자가 적 곁으로 옮겨 간다(걸음과 상관없이 — 따라오는지만 본다).
+            w.player.pos = vec3(0.0, 0.0, -7.0);
+            for _ in 0..ticks(3.0) {
+                w.step(&Actions::default(), &t);
+                w.enemies[0].state = EState::Recover { t: -1000.0 };
+            }
+            90 - w.enemies[0].hp
+        };
+        assert_eq!(burnt(Pick::A), 36, "three pulses of 12");
+        assert_eq!(burnt(Pick::B), 0);
+    }
+
+    /// 잔불 흩기 3단 ㄴ "남는 불씨": 불티 속에서 쓰러진 적이 잔불을 하나 더 남긴다 — ㄱ이면 여느 때와 같다.
+    #[test]
+    fn embers_pick_b_makes_the_fallen_drop_one_more_ember() {
+        let dropped = |pick: Pick| {
+            let (mut w, t) = world();
+            wear(&mut w, Sk::Embers, 3, pick);
+            w.spawn_mob(vec3(2.0, 0.0, 0.0));
+            still(&mut w);
+            w.enemies[0].hp = 5;
+            for _ in 0..ticks(1.5) {
+                w.step(&skill(0), &t);
+                if !w.drops.is_empty() {
+                    break;
+                }
+            }
+            assert!(!w.enemies[0].alive());
+            w.drops.iter().map(|d| d.value).sum::<u32>()
+        };
+        assert_eq!(dropped(Pick::B), dropped(Pick::A) + 1);
+    }
+
+    /// 잔불 흩기 5단 맺음: 1초 더(넷째 타) + 불티가 자세도 깎는다. 4단은 세 타·자세 그대로.
+    #[test]
+    fn embers_capstone_lasts_a_second_longer_and_wears_down_poise() {
+        let burn = |rank: u8| {
+            let (mut w, t) = world();
+            wear(&mut w, Sk::Embers, rank, Pick::B);
+            w.spawn_mob(vec3(2.0, 0.0, 0.0));
+            still(&mut w);
+            w.enemies[0].hp = 500;
+            let ev = run(&mut w, &t, skill(0), ticks(5.5));
+            let pulses = ev
+                .iter()
+                .filter(|e| matches!(e, Event::FieldPulse { .. }))
+                .count();
+            (
+                pulses,
+                w.enemies[0].poise > 0.0 || w.enemies[0].broken > 0.0,
+            )
+        };
+        assert_eq!(burn(MAX_RANK), (4, true));
+        assert_eq!(burn(4), (3, false));
+    }
+
+    /// 기세(0151)는 새 스킬들의 쓰러뜨림에도: 던진 무기·불티로 쓰러뜨리면 다른 스킬의 대기가 "스킬 몫"만큼 당겨진다.
+    #[test]
+    fn kills_by_the_new_skills_pull_cooldowns_as_skill_kills() {
+        for id in [Sk::Throw, Sk::Embers] {
+            let (mut w, t) = world();
+            wear(&mut w, id, 1, Pick::A);
+            w.spawn_mob(vec3(0.0, 0.0, -2.5));
+            still(&mut w);
+            w.enemies[0].hp = 5;
+            w.player.skill_cd[Sk::Quake.index()] = 5.0;
+            let mut ev = Vec::new();
+            let mut n = 0;
+            ev.extend(w.step(&skill(0), &t));
+            while !ev.iter().any(|e| matches!(e, Event::EnemyDown { .. })) && n < 200 {
+                ev.extend(w.step(&Actions::default(), &t));
+                n += 1;
+            }
+            let cd = w.player.skill_cd[Sk::Quake.index()];
+            let want = 5.0 - (n + 1) as f32 * TICK_DT - t[P::SkillMomentumOwn];
+            assert!((cd - want).abs() < 0.02, "{id:?}: {cd} vs {want}");
+        }
+    }
+
+    /// 큰 기술 몰아치기: 시동 0.3초 뒤 5초 동안 평타가 기력을 쓰지 않고 1.4배 빠르며 모든 타가 박자 타(`Event::Beat`)다.
+    /// 끝나면 여느 평타(기력을 쓴다). 끼운 큰 기술이 나간다(쟁반 뒤집기가 아니다).
+    #[test]
+    fn flurry_makes_basic_attacks_free_fast_and_on_the_beat_for_five_seconds() {
+        let swing_ticks = |w: &mut World, t: &Tuning| {
+            w.step(
+                &Actions {
+                    attack: true,
+                    ..Default::default()
+                },
+                t,
+            );
+            let mut n = 1;
+            while matches!(w.player.state, PState::Attack { .. }) {
+                w.step(&Actions::default(), t);
+                n += 1;
+            }
+            n
+        };
+        let (mut w, t) = world();
+        let plain = swing_ticks(&mut w, &t);
+        let (mut w, t) = world();
+        wear_ult(&mut w, Ult::Flurry, 1);
+        w.player.gauge = 1.0;
+        let ev = run(
+            &mut w,
+            &t,
+            Actions {
+                ult: true,
+                ..Default::default()
+            },
+            ticks(0.35),
+        );
+        assert!(ev.iter().any(|e| matches!(e, Event::Flurry { .. })));
+        assert!(
+            !ev.iter().any(|e| matches!(e, Event::Ult { .. })),
+            "not Upend"
+        );
+        assert!((w.player.flurry_left - 5.0).abs() < 0.1);
+        assert_eq!(w.player.gauge, 0.0);
+        let stamina = w.player.stamina;
+        let mut beats = 0;
+        let fast = swing_ticks(&mut w, &t);
+        for _ in 0..3 {
+            let ev = w.step(
+                &Actions {
+                    attack: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            beats += ev.contains(&Event::Beat) as usize;
+            run(&mut w, &t, Actions::default(), 30);
+        }
+        assert_eq!(beats, 3, "every swing is a beat hit");
+        assert_eq!(w.player.stamina, stamina, "no stamina");
+        let k = plain as f32 / fast as f32;
+        assert!((k - 1.4).abs() < 0.15, "1.4x faster: {plain} vs {fast}");
+        assert!(w.ult_active() > 0.0);
+        // 끝나면 여느 평타.
+        run(&mut w, &t, Actions::default(), ticks(5.0));
+        assert_eq!((w.player.flurry_left, w.ult_active()), (0.0, 0.0));
+        let s0 = w.player.stamina;
+        swing_ticks(&mut w, &t);
+        assert!(w.player.stamina < s0);
+    }
+
+    /// 몰아치기의 단: 2단 6.5초, 3단은 그동안 쓰러뜨릴 때마다 +0.5초 — 더해지는 몫은 3초까지.
+    #[test]
+    fn flurry_ranks_lengthen_it_and_rank_three_feeds_on_kills_up_to_three_seconds() {
+        let (mut w, t) = world();
+        wear_ult(&mut w, Ult::Flurry, 2);
+        w.player.gauge = 1.0;
+        let ult = Actions {
+            ult: true,
+            ..Default::default()
+        };
+        run(&mut w, &t, ult, ticks(0.32));
+        assert!((w.player.flurry_total - 6.5).abs() < 1e-4);
+        let down = Event::EnemyDown { at: Vec3::ZERO };
+        let left = w.player.flurry_left;
+        w.skill_books(&t, &mut vec![down]);
+        assert_eq!(w.player.flurry_left, left, "rank 2 does not feed");
+        let (mut w, t) = world();
+        wear_ult(&mut w, Ult::Flurry, 3);
+        w.player.gauge = 1.0;
+        run(&mut w, &t, ult, ticks(0.32));
+        let left = w.player.flurry_left;
+        w.skill_books(&t, &mut vec![down, down]);
+        assert!((w.player.flurry_left - left - 1.0).abs() < 1e-4);
+        for _ in 0..10 {
+            w.skill_books(&t, &mut vec![down]);
+        }
+        assert!((w.player.flurry_left - left - 3.0).abs() < 1e-4, "capped");
+        assert!((w.player.flurry_added - 3.0).abs() < 1e-4);
+    }
+
+    /// 큰 기술 한 줄기: 시동에 세계가 멈추고(0.3초) 앞 12m 한 줄(반 폭 1.2m)을 가른다 — 줄 위의 적은 40·자세 크게, 보스도 다치고
+    /// 자세가 깎이되 휘청이지 않는다(막대가 안 깨지면). 줄 밖·12m 너머는 그대로. 2단 15m, 3단 60.
+    #[test]
+    fn line_cuts_one_long_lane_ahead_hurting_bosses_too() {
+        let cut = |rank: u8| {
+            let mut w = World::new("test", 30.0);
+            let t = Tuning::default();
+            w.player.facing = PI;
+            wear_ult(&mut w, Ult::Line, rank);
+            for z in [-3.0, -10.5, -13.5] {
+                w.spawn_mob(vec3(0.0, 0.0, z));
+            }
+            w.spawn_mob(vec3(3.0, 0.0, -5.0));
+            w.spawn_boss(vec3(0.5, 0.0, -6.5));
+            still(&mut w);
+            let boss = w.enemies[4].hp;
+            w.player.gauge = 1.0;
+            w.step(
+                &Actions {
+                    ult: true,
+                    ..Default::default()
+                },
+                &t,
+            );
+            assert!(w.hitstop >= LINE.freeze - 1e-4, "the world stops");
+            let mut ev = Vec::new();
+            let mut staggered = false;
+            for _ in 0..120 {
+                ev.extend(w.step(&Actions::default(), &t));
+                staggered |= matches!(w.enemies[4].state, EState::Stagger { .. });
+            }
+            assert!(ev.iter().any(|e| matches!(e, Event::LineCut { .. })));
+            assert!(!staggered, "a boss is not staggered");
+            assert!(w.enemies[4].poise > 0.0, "but its poise is worn");
+            assert_eq!(w.player.gauge, 0.0);
+            let lost: Vec<i32> = w.enemies[..4].iter().map(|e| 90 - e.hp).collect();
+            (lost, boss - w.enemies[4].hp)
+        };
+        assert_eq!(cut(1), (vec![40, 40, 0, 0], 40));
+        assert_eq!(cut(2), (vec![40, 40, 40, 0], 40), "15 m");
+        assert_eq!(cut(3), (vec![60, 60, 60, 0], 60));
+    }
+
+    /// 끼우는 큰 기술은 하나: 게이지가 차면 끼운 것이 나간다 — 쟁반 뒤집기를 끼웠으면 몰아치기·한 줄기는 나가지 않는다.
+    #[test]
+    fn only_the_worn_great_skill_goes_off() {
+        for (great, want) in [(Ult::Upend, 0), (Ult::Flurry, 1), (Ult::Line, 2)] {
+            let (mut w, t) = world();
+            wear_ult(&mut w, great, 1);
+            w.spawn_mob(vec3(0.0, 0.0, -3.0));
+            still(&mut w);
+            w.player.gauge = 1.0;
+            let ev = run(
+                &mut w,
+                &t,
+                Actions {
+                    ult: true,
+                    ..Default::default()
+                },
+                90,
+            );
+            let got = [
+                ev.iter().any(|e| matches!(e, Event::Ult { .. })),
+                ev.iter().any(|e| matches!(e, Event::Flurry { .. })),
+                ev.iter().any(|e| matches!(e, Event::LineCut { .. })),
+            ];
+            for (i, g) in got.into_iter().enumerate() {
+                assert_eq!(g, i == want, "{great:?}");
             }
         }
     }

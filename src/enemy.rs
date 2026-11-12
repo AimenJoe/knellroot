@@ -228,6 +228,8 @@ pub struct Enemy {
     pub frail: f32,
     pub frail_mult: f32,
     pub slow: f32,
+    /// 남는 불씨(0158 G2, 잔불 흩기 ㄴ): 지금 선 자리의 불티가 쓰러질 때 더 남기는 잔불 수(월드가 틱마다 적는다, 0 = 없음).
+    pub kindled: u32,
 }
 
 /// 뛰기 한 번(0100): 어디서 어디로, 지난 초·걸리는 초·포물선 높이.
@@ -348,6 +350,7 @@ impl Enemy {
             frail: 0.0,
             frail_mult: 1.0,
             slow: 1.0,
+            kindled: 0,
         }
     }
 

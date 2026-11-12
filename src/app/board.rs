@@ -3,7 +3,7 @@
 //! 확인 = 다음 단을 묻고 산다(점수 1). 잠긴 줄(쓴 점수가 모자람)도 이름·하는 일·고르기 둘이 다 보인다 — 살 수만 없다.
 //! 셈은 `skills::Board`(순수), 줄과 설명 글은 여기의 순수 함수(`board_rows`·`board_note` — 시험).
 use super::menu::{Menu, Out};
-use super::skills::skill_text;
+use super::skills::{skill_text, ult_text};
 use super::*;
 use crate::skills::{self as sk, Board, Entry, Form, Offer, Pick, ENTRIES, PICK_RANK, SIZE_RANK};
 
@@ -18,7 +18,7 @@ const BACK_ROW: usize = ENTRIES.len() + 1;
 pub(super) fn entry_name(e: Entry) -> &'static str {
     match e {
         Entry::Skill(id) => skill_text(id).0,
-        Entry::Ult => s().ult_upend,
+        Entry::Ult(u) => ult_text(u).0,
     }
 }
 
@@ -38,6 +38,14 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Gather, Pick::B) => (s.pick_gather_b, s.pick_gather_b_d),
         (sk::Id::Quake, Pick::A) => (s.pick_quake_a, s.pick_quake_a_d),
         (sk::Id::Quake, Pick::B) => (s.pick_quake_b, s.pick_quake_b_d),
+        (sk::Id::Brace, Pick::A) => (s.pick_brace_a, s.pick_brace_a_d),
+        (sk::Id::Brace, Pick::B) => (s.pick_brace_b, s.pick_brace_b_d),
+        (sk::Id::Echo, Pick::A) => (s.pick_echo_a, s.pick_echo_a_d),
+        (sk::Id::Echo, Pick::B) => (s.pick_echo_b, s.pick_echo_b_d),
+        (sk::Id::Throw, Pick::A) => (s.pick_throw_a, s.pick_throw_a_d),
+        (sk::Id::Throw, Pick::B) => (s.pick_throw_b, s.pick_throw_b_d),
+        (sk::Id::Embers, Pick::A) => (s.pick_embers_a, s.pick_embers_a_d),
+        (sk::Id::Embers, Pick::B) => (s.pick_embers_b, s.pick_embers_b_d),
     };
     (mark, name, desc)
 }
@@ -50,6 +58,10 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Cut => s.cap_cut,
         sk::Id::Gather => s.cap_gather,
         sk::Id::Quake => s.cap_quake,
+        sk::Id::Brace => s.cap_brace,
+        sk::Id::Echo => s.cap_echo,
+        sk::Id::Throw => s.cap_throw,
+        sk::Id::Embers => s.cap_embers,
     }
 }
 
@@ -65,6 +77,10 @@ fn rank_gives(id: sk::Id, rank: u8) -> String {
     let harmless = d.damage == 0;
     match rank {
         0 | 1 => skill_text(id).1.to_string(),
+        // 되울림의 2단은 이어지는 시간(0158 G2).
+        2 if matches!(d.form, Form::Echo { .. }) => {
+            fill(s.rk_secs, &[&format!("{:.0}", sk::RANK2_SECS)])
+        }
         2 if harmless => fill(s.rk_stagger, &[&format!("{:.1}", sk::RANK2_STAGGER)]),
         2 => fill(s.rk_damage, &[&pct(sk::RANK2_DAMAGE)]),
         r if r == PICK_RANK => {
@@ -73,9 +89,11 @@ fn rank_gives(id: sk::Id, rank: u8) -> String {
         }
         r if r == SIZE_RANK => {
             let t = match d.form {
-                Form::Ring { .. } => s.rk_radius,
+                Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. } => {
+                    s.rk_radius
+                }
                 Form::Lane { .. } => s.rk_length,
-                Form::Pull { .. } => s.rk_range,
+                Form::Pull { .. } | Form::Throw { .. } => s.rk_range,
                 Form::Cone { .. } => s.rk_arc,
             };
             fill(t, &[&pct(sk::RANK4_SIZE)])
@@ -95,13 +113,28 @@ fn rank_gives(id: sk::Id, rank: u8) -> String {
     }
 }
 
-/// 큰 기술의 `rank`단이 주는 것.
-fn ult_gives(rank: u8) -> String {
+/// 큰 기술 `u`의 `rank`단이 주는 것(표의 수에서).
+fn ult_gives(u: sk::Ult, rank: u8) -> String {
     let s = s();
-    match rank {
-        0 | 1 => s.ult_upend_d.to_string(),
-        2 => fill(s.rk_stagger, &[&format!("{:.1}", sk::ULT_RANK2_STAGGER)]),
-        _ => fill(s.rk_slam, &[&pct(sk::ULT_RANK3_SLAM)]),
+    // 6.5 같은 반 초는 한 자리, 나머지는 정수로.
+    let num = |v: f32| {
+        if (v - v.round()).abs() < 1e-3 {
+            format!("{v:.0}")
+        } else {
+            format!("{v:.1}")
+        }
+    };
+    match (u, rank) {
+        (_, 0 | 1) => ult_text(u).1.to_string(),
+        (sk::Ult::Upend, 2) => fill(s.rk_stagger, &[&format!("{:.1}", sk::ULT_RANK2_STAGGER)]),
+        (sk::Ult::Upend, _) => fill(s.rk_slam, &[&pct(sk::ULT_RANK3_SLAM)]),
+        (sk::Ult::Flurry, 2) => fill(s.rk_flurry_secs, &[&num(sk::FLURRY.secs2)]),
+        (sk::Ult::Flurry, _) => fill(
+            s.rk_flurry_kill,
+            &[&num(sk::FLURRY.kill_more), &num(sk::FLURRY.kill_cap)],
+        ),
+        (sk::Ult::Line, 2) => fill(s.rk_line_len, &[&num(sk::LINE.len2)]),
+        (sk::Ult::Line, _) => fill(s.rk_line_dmg, &[&sk::LINE.damage3.to_string()]),
     }
 }
 
@@ -112,8 +145,8 @@ pub(super) fn board_note(board: &Board, e: Entry) -> String {
     let next = rank + 1;
     let step = |text: String| fill(s.board_next, &[&next.to_string(), &text]);
     match e {
-        Entry::Ult if rank >= e.max() => s.board_full.to_string(),
-        Entry::Ult => step(ult_gives(next)),
+        Entry::Ult(_) if rank >= e.max() => s.board_full.to_string(),
+        Entry::Ult(u) => step(ult_gives(u, next)),
         Entry::Skill(id) => {
             let now = (rank >= PICK_RANK).then(|| {
                 let (mark, name, desc) = pick_text(id, board.pick[id.index()]);
@@ -185,7 +218,8 @@ impl App {
 
     /// 월드에 넘길 끼운 둘(그 단·고르기) + 큰 기술의 단.
     pub(super) fn loadout(&self) -> sk::Loadout {
-        self.board().loadout(self.progress.skills.0)
+        self.board()
+            .loadout(self.progress.skills.0, self.progress.ult)
     }
 
     pub(super) fn board_menu(&self) -> Menu {
@@ -274,29 +308,35 @@ impl App {
     /// 묻는 창에서 "되돌리기": 잔불을 내고 쓴 점수를 모두 돌려받는다 — 끼운 칸에 안 배운 스킬이 남으면 처음의 둘로.
     pub(super) fn respec_skills(&mut self) {
         let mut worn = self.progress.skills.0;
+        let mut great = self.progress.ult;
         if !self
             .progress
             .board
-            .respec_paid(&mut self.world.embers, &mut worn)
+            .respec_paid(&mut self.world.embers, &mut worn, &mut great)
         {
             self.snd(crate::sfx::Id::Deny);
             return;
         }
         self.progress.embers = self.world.embers;
         self.progress.skills = sk::Worn(worn);
+        self.progress.ult = great;
         self.snd(crate::sfx::Id::Buy);
         self.toast = Some((s().toast_respec.to_string(), BOARD_ALERT));
         self.world.set_skills(self.loadout());
         self.persist();
     }
 
-    /// 묻는 창의 글: "땅울림 1단 — 기술 점수 1. 올릴까요?".
+    /// 묻는 창의 글: "땅울림 1단 — 기술 점수 1. 올릴까요?"(큰 기술을 배우는 첫 단은 2).
     pub(super) fn ask_skill_text(&self, i: usize) -> String {
         let Some(&e) = ENTRIES.get(i) else {
             return String::new();
         };
-        let next = (self.progress.board.rank(e) + 1).min(e.max()).to_string();
-        fill(s().ask_skill, &[entry_name(e), &next])
+        let rank = self.progress.board.rank(e);
+        let next = (rank + 1).min(e.max()).to_string();
+        fill(
+            s().ask_skill,
+            &[entry_name(e), &next, &e.price(rank).to_string()],
+        )
     }
 
     /// "쓴 점수 6을 모두 돌려받는다 — 잔불 60. 되돌릴까요?".
@@ -318,7 +358,7 @@ mod tests {
     #[test]
     fn locked_rows_show_but_are_dim_and_open_rows_dim_only_without_points() {
         let b = Board::default();
-        // 점수 3: 첫 줄 셋은 살 수 있고(밝다), 땅울림·큰 기술은 잠겨 흐리다.
+        // 점수 3: 첫 줄 넷은 살 수 있고(밝다), 둘째 줄·큰 기술은 잠겨 흐리다.
         let rows = board_rows(&b, 3, 0);
         assert_eq!(rows.len(), ENTRIES.len() + 2, "+ respec + back");
         for (i, e) in ENTRIES.iter().enumerate() {
@@ -330,8 +370,24 @@ mod tests {
         }
         assert_eq!(rows[0].value, fill(s().board_rank, &["1", "5"]));
         assert_eq!(rows[2].value, fill(s().board_rank, &["0", "5"]));
-        assert_eq!(rows[3].value, fill(s().board_locked, &["4"]));
-        assert_eq!(rows[4].value, fill(s().board_locked, &["8"]));
+        assert_eq!(rows[3].value, fill(s().board_rank, &["0", "5"]), "Brace");
+        for i in 4..8 {
+            assert_eq!(rows[i].value, fill(s().board_locked, &["4"]), "row {i}");
+        }
+        for i in 8..11 {
+            assert_eq!(rows[i].value, fill(s().board_locked, &["8"]), "row {i}");
+        }
+        // 0158 G2: 스킬 여덟 + 큰 기술 셋 — 이름이 모두 다르다.
+        assert_eq!(ENTRIES.len(), 11);
+        for (i, r) in rows.iter().enumerate().take(ENTRIES.len()) {
+            assert!(
+                rows[i + 1..ENTRIES.len()]
+                    .iter()
+                    .all(|o| o.label != r.label),
+                "{} twice",
+                r.label
+            );
+        }
         // 점수가 없으면 열린 줄도 흐리다.
         assert!(board_rows(&b, 0, 0)
             .iter()
@@ -419,10 +475,69 @@ mod tests {
         ] {
             assert!(rank_gives(id, 4).contains(&fill(t, &["20"])), "{id:?}");
         }
-        assert!(board_note(&b, Entry::Ult).contains(&fill(s.rk_stagger, &["0.6"])));
-        b.ult = 2;
-        assert!(board_note(&b, Entry::Ult).contains(&fill(s.rk_slam, &["50"])));
-        b.ult = 3;
-        assert_eq!(board_note(&b, Entry::Ult), s.board_full);
+        let upend = Entry::Ult(sk::Ult::Upend);
+        assert!(board_note(&b, upend).contains(&fill(s.rk_stagger, &["0.6"])));
+        b.ult[0] = 2;
+        assert!(board_note(&b, upend).contains(&fill(s.rk_slam, &["50"])));
+        b.ult[0] = 3;
+        assert_eq!(board_note(&b, upend), s.board_full);
+    }
+
+    /// 0158 G2: 새 스킬 넷의 설명 — 2단(되울림은 이어지는 시간 +1초, 나머지는 피해), 4단의 치수 이름(던지기는 거리, 나머지는
+    /// 반지름), 5단의 맺음. 큰 기술 둘은 안 배웠으면 하는 일, 그 뒤는 단의 수(6.5초 · +0.5초(3초까지) · 15m · 피해 60).
+    #[test]
+    fn the_note_covers_the_g2_skills_and_the_two_new_great_skills() {
+        let s = s();
+        let mut b = Board::default();
+        for (id, d) in [
+            (Id::Brace, s.skill_brace_d),
+            (Id::Echo, s.skill_echo_d),
+            (Id::Throw, s.skill_throw_d),
+            (Id::Embers, s.skill_embers_d),
+        ] {
+            let n = board_note(&b, Entry::Skill(id));
+            assert!(n.contains(d), "{id:?}: {n}");
+            let (a, bb) = (pick_text(id, Pick::A), pick_text(id, Pick::B));
+            assert!(
+                n.contains(a.1) && n.contains(bb.1),
+                "{id:?}: both picks named"
+            );
+            assert_ne!(a.1, bb.1);
+            assert!(rank_gives(id, 3).contains(a.2) && rank_gives(id, 3).contains(bb.2));
+            assert!(rank_gives(id, 5).contains(cap_text(id)), "{id:?}");
+        }
+        assert_eq!(rank_gives(Id::Echo, 2), fill(s.rk_secs, &["1"]));
+        for id in [Id::Brace, Id::Throw, Id::Embers] {
+            assert_eq!(rank_gives(id, 2), fill(s.rk_damage, &["15"]), "{id:?}");
+        }
+        assert!(!rank_gives(Id::Echo, 5).contains(&fill(s.rk_damage_more, &["15"])));
+        for (id, t) in [
+            (Id::Brace, s.rk_radius),
+            (Id::Echo, s.rk_radius),
+            (Id::Embers, s.rk_radius),
+            (Id::Throw, s.rk_range),
+        ] {
+            assert_eq!(rank_gives(id, 4), fill(t, &["20"]), "{id:?}");
+        }
+        let (flurry, line) = (Entry::Ult(sk::Ult::Flurry), Entry::Ult(sk::Ult::Line));
+        assert!(board_note(&b, flurry).contains(s.ult_flurry_d));
+        assert!(board_note(&b, line).contains(s.ult_line_d));
+        b.ult = [1, 1, 1];
+        assert!(board_note(&b, flurry).contains(&fill(s.rk_flurry_secs, &["6.5"])));
+        assert!(board_note(&b, line).contains(&fill(s.rk_line_len, &["15"])));
+        b.ult = [1, 2, 2];
+        assert!(board_note(&b, flurry).contains(&fill(s.rk_flurry_kill, &["0.5", "3"])));
+        assert!(board_note(&b, line).contains(&fill(s.rk_line_dmg, &["60"])));
+        b.ult = [1, 3, 3];
+        assert_eq!(board_note(&b, flurry), s.board_full);
+        // 줄의 값: 안 배운 큰 기술은 0/3, 줄이 열려도 점수가 1뿐이면 흐리다(배움은 2점).
+        let mut open = Board::default();
+        open.rank[Id::Whirl.index()] = 5;
+        open.rank[Id::Cut.index()] = 5;
+        let at = ENTRIES.iter().position(|e| *e == flurry).unwrap();
+        let rows = board_rows(&open, open.spent() + 1, 0);
+        assert_eq!(rows[at].value, fill(s.board_rank, &["0", "3"]));
+        assert!(rows[at].dim, "one point cannot learn a great skill");
+        assert!(!board_rows(&open, open.spent() + 2, 0)[at].dim);
     }
 }

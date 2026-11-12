@@ -193,8 +193,20 @@ impl App {
                 Event::Perfect { .. } => SHAKE_CHARGED,
                 Event::Swing | Event::LockOn | Event::LockOff | Event::Beat => 0.0,
                 // 스킬(0151): 판정이 나간 순간에 한 번, 큰 기술은 깨어나는 보스만큼.
+                // 되울림·잔불 흩기의 시동(몸에 두르는 것·흩는 것)은 흔들지 않는다 — 울림·불티의 타가 제 몫을 낸다.
+                Event::Skill {
+                    id: crate::skills::Id::Echo | crate::skills::Id::Embers,
+                    ..
+                } => 0.0,
                 Event::Skill { .. } | Event::SkillBurst { .. } => SHAKE_PLUNGE,
-                Event::Ult { .. } => SHAKE_ROUSE,
+                Event::Ult { .. } | Event::LineCut { .. } => SHAKE_ROUSE,
+                // 0158 G2: 터지는 것은 내려찍기만큼, 받아냄·울림·되돎은 가볍게, 불티의 타·손에 돌아옴·몰아치기의 시작은 조용히.
+                Event::ThrowBoom { .. } => SHAKE_PLUNGE,
+                Event::Soak { .. } | Event::EchoRing { .. } => SHAKE_HIT,
+                Event::ThrowTurn { .. }
+                | Event::ThrowBack { .. }
+                | Event::FieldPulse { .. }
+                | Event::Flurry { .. } => 0.0,
                 Event::SkillStart { .. }
                 | Event::SkillDenied
                 | Event::UltStart
@@ -225,7 +237,20 @@ impl App {
                 Event::Parry { .. } => ZOOM_PARRY,
                 Event::Perfect { .. } => ZOOM_PERFECT,
                 // 큰 기술(0151): 시동의 세계 멈춤 동안 당겨 두고(멈춤 동안 머문다), 뒤집히는 순간 한 번 더.
-                Event::UltStart | Event::Ult { .. } => ZOOM_SMASH,
+                Event::UltStart | Event::Ult { .. } | Event::LineCut { .. } => ZOOM_SMASH,
+                // 0158 G2의 큰 순간: 땅울림이 찍는 순간, 셋을 다 받아낸 버팀의 터뜨림(받아낸 수는 다음 버팀까지 남는다).
+                Event::Skill {
+                    id: crate::skills::Id::Quake,
+                    ..
+                } => ZOOM_CRIT,
+                Event::Skill {
+                    id: crate::skills::Id::Brace,
+                    ..
+                } if self.world.player.brace_soaked >= self.world.player.brace_most
+                    && self.world.player.brace_most > 0 =>
+                {
+                    ZOOM_SMASH
+                }
                 _ => 0.0,
             };
             if zoom > 0.0 {
@@ -453,11 +478,42 @@ impl App {
                 Event::FlaskDenied | Event::CastDenied | Event::StaminaDenied => Id::Deny,
                 // 스킬(0151 — S0는 있는 소리를 겹쳐 쓴다, 전용 소리는 S1): 시동 = 휘두름, 큰 기술 시동 = 깊은 울림, 터짐 = 타격,
                 // 게이지 가득 = 가장 높은 종.
-                Event::SkillStart { .. } => Id::Swing,
+                // 0158 G2: 스킬마다 다른 짝(있는 소리를 겹친다). 시동 — 버팀은 발을 딛는 둔한 소리, 되울림은 낮은 종,
+                // 잔불 흩기는 잔불 소리, 나머지는 휘두름. 판정 — 휘돌이 = 휘두름(바퀴마다), 가로지르기·던지기 = 스치는 바람,
+                // 끌어모으기·버팀의 터뜨림 = 둔한 소리, 땅울림 = 낮은 울림, 되울림 = 가운데 종, 잔불 흩기 = 잔불 소리.
+                Event::SkillStart { id } => {
+                    use crate::skills::Id as Sk;
+                    match id {
+                        Sk::Brace => Id::Thwack,
+                        Sk::Echo => Id::Beat,
+                        Sk::Embers => Id::Ember,
+                        Sk::Whirl | Sk::Cut | Sk::Gather | Sk::Quake | Sk::Throw => Id::Swing,
+                    }
+                }
+                Event::Skill { id, .. } => {
+                    use crate::skills::Id as Sk;
+                    match id {
+                        Sk::Whirl => Id::Swing,
+                        Sk::Cut | Sk::Throw => Id::Dodge,
+                        Sk::Gather | Sk::Brace => Id::Thwack,
+                        Sk::Quake => Id::Wake,
+                        Sk::Echo => Id::Beat2,
+                        Sk::Embers => Id::Ember,
+                    }
+                }
                 Event::SkillDenied => Id::Deny,
                 Event::UltStart => Id::Wake,
                 Event::Ult { .. } | Event::SkillBurst { .. } => Id::Hit,
                 Event::UltReady => Id::Beat3,
+                // 0158 G2(새 소리 파일 없이 있는 것을 겹친다 — 스킬마다 다른 짝): 받아냄 = 쇳소리, 울림 = 가운데 종,
+                // 되돎 = 휘두름, 터짐·한 줄기 = 타격, 손에 돌아옴 = 낮은 종, 불티의 타 = 잔불 소리, 몰아치기 = 가장 높은 종.
+                Event::Soak { .. } => Id::Parry,
+                Event::EchoRing { .. } => Id::Beat2,
+                Event::ThrowTurn { .. } => Id::Swing,
+                Event::ThrowBoom { .. } | Event::LineCut { .. } => Id::Hit,
+                Event::ThrowBack { .. } => Id::Beat,
+                Event::FieldPulse { .. } => Id::Ember,
+                Event::Flurry { .. } => Id::Beat3,
                 _ => continue,
             };
             self.snd(id);

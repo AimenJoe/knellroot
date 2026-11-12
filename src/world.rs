@@ -213,6 +213,43 @@ pub enum Event {
     SkillBurst {
         at: Vec3,
     },
+    /// 버팀(0158 G2)이 한 대를 받아냈다 — 받아낸 수(`n`번째).
+    Soak {
+        at: Vec3,
+        n: u8,
+    },
+    /// 되울림(0158 G2): 패링이 둘레 `radius` m를 울렸다.
+    EchoRing {
+        at: Vec3,
+        radius: f32,
+    },
+    /// 던지기(0158 G2): 든 것이 끝에서 되돌았다 / 끝에서 터졌다(박힌 자리) / 손으로 돌아왔다.
+    ThrowTurn {
+        at: Vec3,
+    },
+    ThrowBoom {
+        at: Vec3,
+        radius: f32,
+    },
+    ThrowBack {
+        at: Vec3,
+    },
+    /// 잔불 흩기(0158 G2): 불티가 그 안의 적을 한 번 태웠다(`every`초마다).
+    FieldPulse {
+        at: Vec3,
+        radius: f32,
+    },
+    /// 큰 기술 몰아치기(0158 G2)가 시작됐다(시동이 끝난 순간).
+    Flurry {
+        at: Vec3,
+    },
+    /// 큰 기술 한 줄기(0158 G2)가 앞 `len` m(반 폭 `half` m)를 갈랐다.
+    LineCut {
+        at: Vec3,
+        dir: Vec3,
+        len: f32,
+        half: f32,
+    },
 }
 
 /// 무기의 버튼 길(0151, 사장 "원거리는 공격 버튼이 전부 평타인 거고 RB는 스페셜"): 어느 무기든 X = 평타, RB = 스페셜.
@@ -431,8 +468,9 @@ pub enum PState {
         dir: Vec3,
         swing: u32,
     },
-    /// 큰 기술 쟁반 뒤집기(0151): 시동 뒤 땅이 뒤집히고(`done`) 후딜.
+    /// 큰 기술(0151 → 0158 G2: 끼운 하나 `kind`): 시동 뒤 터지고(`done` — 땅이 뒤집힌다·몰아치기가 시작된다·한 줄을 가른다) 후딜.
     Ult {
+        kind: skills::Ult,
         t: f32,
         done: bool,
     },
@@ -485,6 +523,21 @@ pub struct Player {
     pub skill_rank: [u8; 2],
     pub skill_pick: [skills::Pick; 2],
     pub ult_rank: u8,
+    /// 끼운 큰 기술(0158 G2 — 하나).
+    pub ult: skills::Ult,
+    /// 버팀(0158 G2): 이번 틱에 버티는 중이면 타마다 덜어내는 피해(0 = 버티지 않는다 — 스킬 틱이 틱마다 적는다), 받아낸 조각을
+    /// 되쏘나(ㄴ), 이번 버팀에서 받아낸 타 수와 그 상한(터뜨림의 덤 — 다음 버팀까지 남아 앱이 읽는다).
+    pub skill_brace: i32,
+    pub skill_reflect: bool,
+    pub brace_soaked: u8,
+    pub brace_most: u8,
+    /// 되울림(0158 G2): 남은 초와 처음 길이(HUD 칸).
+    pub echo_left: f32,
+    pub echo_total: f32,
+    /// 몰아치기(0158 G2): 남은 초·처음 길이(+ 더해진 몫 — HUD가 줄어드는 게이지로 그린다)·쓰러뜨려 더한 초(상한까지).
+    pub flurry_left: f32,
+    pub flurry_total: f32,
+    pub flurry_added: f32,
     /// 지금 스킬의 덤 상태(0158 G1): 뛰어드는 거리(땅울림 ㄱ — 누른 순간에 정한다), 대기를 이미 돌려받았나(가로지르기 맺음),
     /// 지나는 동안 맞지 않는 중인가(가로지르기 ㄴ — 스킬 틱이 틱마다 적는다).
     pub skill_leap: f32,
@@ -666,6 +719,10 @@ pub struct World {
     /// 스킬이 남긴 것(0158 G1): 곧 터질 "모인 자리"(끌어모으기 ㄱ), 남은 갈라진 땅(땅울림 ㄴ — 렌더가 읽는다).
     skill_bursts: Vec<skill_tick::Burst>,
     pub skill_zones: Vec<skill_tick::Zone>,
+    /// 0158 G2: 던진 무기(던지기 — 렌더가 그 자리에 무기를 그린다), 남은 불티(잔불 흩기), 버티는 동안 받아낸 조각을 던진 적(버팀 ㄴ).
+    pub skill_blades: Vec<skill_tick::Blade>,
+    pub skill_fields: Vec<skill_tick::Field>,
+    brace_caught: Vec<usize>,
     /// 이번 틱에 방랑자의 탄이 적을 맞혔다(게이지 — `skill_books`).
     bolt_hit_tick: bool,
     /// 이번 틱에 박자에 맞춘 평타가 나갔다(`Event::Beat`).
@@ -712,6 +769,16 @@ impl World {
                 skill_rank: [1; 2],
                 skill_pick: [skills::Pick::A; 2],
                 ult_rank: 1,
+                ult: skills::Ult::Upend,
+                skill_brace: 0,
+                skill_reflect: false,
+                brace_soaked: 0,
+                brace_most: 0,
+                echo_left: 0.0,
+                echo_total: 0.0,
+                flurry_left: 0.0,
+                flurry_total: 0.0,
+                flurry_added: 0.0,
                 skill_leap: 0.0,
                 skill_refunded: false,
                 skill_ghost: false,
@@ -772,6 +839,9 @@ impl World {
             skill_kill_left: 0.0,
             skill_bursts: Vec::new(),
             skill_zones: Vec::new(),
+            skill_blades: Vec::new(),
+            skill_fields: Vec::new(),
+            brace_caught: Vec::new(),
             bolt_hit_tick: false,
             time: 0.0,
             kills: 0,
@@ -845,12 +915,15 @@ impl World {
             None
         };
         // 스킬의 판정이 끝났나(그 단의 실제 길이로 — 바퀴가 늘거나 길을 되돌아가면 길어진다, 0158).
-        let skill_done = match self.player.state {
+        // 버팀(0158 G2)은 버티는 동안 회피를 직접 받는다(터뜨림 없이 끊는다).
+        let (skill_done, brace_hold) = match self.player.state {
             PState::Skill { id, t: e, .. } => {
                 let d = self.skill_eff(id);
-                e >= d.skill.startup + d.active()
+                let end = d.skill.startup + d.active();
+                let hold = matches!(d.skill.form, skills::Form::Brace { .. });
+                (e >= end, hold && e >= d.skill.startup && e < end)
             }
-            _ => false,
+            _ => (false, false),
         };
         let pl = &mut self.player;
         // 박자(2026-11-07): 공격을 누른 **그 순간**이 박자 창 안이었나. 받아 뒀다 나중에 나가는 이른 누름은 창 밖으로 친다
@@ -916,7 +989,9 @@ impl World {
             // 공중: 공격 = 내려찍기(0027), RB = 내려 쏘기(0111).
             PState::Jump { plunge: false, .. } => matches!(n, Next::Attack | Next::Cast),
             // 스킬의 시동 안에 들어온 큰 기술(두 버튼 함께, 0151) — 스킬 틱이 바꿔친다.
-            PState::Skill { t: e, .. } => n == Next::Ult && e < t[P::SkillChord],
+            PState::Skill { t: e, .. } => {
+                (n == Next::Ult && e < t[P::SkillChord]) || (n == Next::Dodge && brace_hold)
+            }
             _ => false,
         };
         if own {
@@ -1143,10 +1218,32 @@ impl World {
         }
     }
 
+    /// 이 틱의 랩 값: 장신구·성장이 휜 것(`Stats::tune`) + 몰아치기(0158 G2) 동안의 평타 빠르기(공격 속도 장신구와 같은 길 —
+    /// 평타의 선딜·활성·후딜을 `FLURRY.speed`로 나눈다).
+    pub fn tuned(&self, t: &Tuning) -> Tuning {
+        let mut o = self.stats.tune(t);
+        let rate = self.flurry_rate();
+        if rate != 1.0 {
+            for p in [P::AttackStartup, P::AttackActive, P::AttackRecovery] {
+                o.bend(p, o[p] / rate);
+            }
+        }
+        o
+    }
+
+    /// 몰아치기 동안의 평타 빠르기 배(아니면 1) — 렌더가 평타 동작을 같은 배로 돌린다.
+    pub fn flurry_rate(&self) -> f32 {
+        if self.player.flurry_left > 0.0 {
+            skills::FLURRY.speed
+        } else {
+            1.0
+        }
+    }
+
     /// 한 틱. 히트스톱 중엔 로직 시계만 멈춘다.
     pub fn step(&mut self, a: &Actions, t: &Tuning) -> Vec<Event> {
         // 장신구·성장이 휜 랩 값(0064 M3) — 이 틱의 로직은 이것만 읽는다.
-        let tuned = self.stats.tune(t);
+        let tuned = self.tuned(t);
         let t = &tuned;
         let mut ev = Vec::new();
         let dt = TICK_DT;
@@ -1236,7 +1333,8 @@ impl World {
                 let elite = if en.elite.is_some() { ELITE_EMBERS } else { 1 };
                 // 구역 등급(0112): 종 값 × 등급 배율(올림) — 잔재 2 → 4, 가시짐승 3 → 5(등급 2).
                 let base = (en.def().embers as f32 * crate::tuning::tier(en.tier).embers).ceil();
-                let value = (base * elite as f32 * self.stats.ember).round() as u32;
+                // 남는 불씨(0158 G2, 잔불 흩기 ㄴ): 불티 속에서 쓰러졌으면 잔불을 더 남긴다.
+                let value = (base * elite as f32 * self.stats.ember).round() as u32 + en.kindled;
                 // 남는 엘리트(0112): 쓰러진 자리에 고리가 남는다.
                 if en.elite == Some(Affix::Lingering) {
                     self.lingers.push(Linger {
@@ -2401,13 +2499,22 @@ impl World {
         // 종 조각(0125): 날아가 플레이어에 닿으면 — 앞에서 패링 중이면 되돌아가고, 아니면 맞는다. 되돌아간 조각은 종지기를 깎는다.
         // 던진 종지기가 쓰러지면 날던 조각은 사라진다(KB ranged-boss — 쓰러진 뒤에 맞지 않게).
         self.shards.append(&mut thrown);
-        if let Some(away) = burst_push {
+        // 버티는 동안(0158 G2 버팀)은 2단계 전환의 밀어냄에도 밀리지 않는다.
+        if let (Some(away), false) = (burst_push, self.bracing()) {
             let pl = &mut self.player;
             pl.vel = away * crate::tuning::RISE_PUSH;
             pl.state = PState::Recoil { t: 0.0 };
             pl.pending = None;
         }
         let mut shard_hits: Vec<(usize, Vec3)> = Vec::new();
+        // 되쏘기(0158 G2, 버팀 ㄴ): 버티는 동안 몸에 닿은 조각은 받아 두었다가 터뜨릴 때 던진 쪽으로 되쏜다.
+        let catching = self.bracing() && self.player.skill_reflect && !self.player.invulnerable();
+        let mut caught: Vec<usize> = Vec::new();
+        // 이번 틱의 패링 수(0158 G2 되울림) — 이 단계가 낸 `Event::Parry`를 센다.
+        let parries_before = ev
+            .iter()
+            .filter(|e| matches!(e, Event::Parry { .. }))
+            .count();
         self.shards.retain_mut(|s| {
             let alive = self.enemies.get(s.from).is_some_and(|e| e.alive());
             if !alive {
@@ -2443,11 +2550,15 @@ impl World {
                     ev.push(Event::Parry { at: s.pos });
                     return true;
                 }
+                if catching {
+                    caught.push(s.from);
+                }
                 hurt_player.get_or_insert(s.pos);
                 return false;
             }
             true
         });
+        self.brace_caught.append(&mut caught);
         for (i, at) in shard_hits {
             let en = &mut self.enemies[i];
             if en.rising() {
@@ -2552,6 +2663,13 @@ impl World {
             self.hitstop = self.hitstop.max(t[P::Hitstop] * PARRY_HITSTOP);
             // 같은 틱이라도 뒤·옆에서 맞은 것·받을 수 없는 파동은 그대로 맞는다(패링은 앞쪽 반원만).
         }
+        // 되울림(0158 G2): 이번 틱에 성공한 패링마다 둘레가 울린다(패링 창은 건드리지 않는다 — 0095 원칙 2).
+        let parries = ev
+            .iter()
+            .filter(|e| matches!(e, Event::Parry { .. }))
+            .count()
+            - parries_before;
+        self.echo_ring(t, parries, ev);
         if let (Some(from), false) = (hurt_player, self.player.invulnerable()) {
             // 한 대 = 한 눈금(`HP_UNIT`, 0158 N0), 높은 등급의 적은 두 눈금.
             let blow = if hurt_tier >= crate::tuning::TIER_HEAVY_HITS {
@@ -2559,7 +2677,13 @@ impl World {
             } else {
                 HP_UNIT
             };
-            let taken = blow + self.stats.taken;
+            // 버팀(0158 G2): 버티는 동안은 타마다 덜 다치고(0 아래로는 안 내려간다) 밀리지도 끊기지도 않는다 — 받아낸 타를 센다.
+            let braced = self.bracing();
+            let taken = if braced {
+                (blow + self.stats.taken - self.player.skill_brace).max(0)
+            } else {
+                blow + self.stats.taken
+            };
             let pl = &mut self.player;
             pl.hp -= taken;
             // 나가기 전에 맞았으면 받아 둔 패링은 버린다(0110) — 맞은 뒤 뒤늦게 나가 헛침 굳음이 생기지 않게.
@@ -2568,32 +2692,54 @@ impl World {
             }
             // 맞은 뒤 무적은 짧게(예전 0.6초 — 그 동안 다시 맞을 수 없어 경직 줄이기가 쓸 데가 없었다).
             pl.hurt = t[P::HitIframes];
-            pl.since_hurt = 0.0;
-            pl.hurt_blow = taken;
-            // 경직 이음(0018 → 0099, 사장 "다구리 맞더라도 틈이 생겨서 도망갈 수 있게" — 이어 패링의 반대): 경직과 그 뒤
-            // `STUN_CHAIN_GRACE` 동안 또 맞으면 경직이 그전의 반 — 맞을수록 짧아져 떼 속에서도 빠져나갈 틈이 생긴다.
-            (pl.stun_chain, pl.stun_window) =
-                stun_chain_next(pl.stun_window, pl.stun_chain, t[P::HitStun]);
-            let dur = t[P::HitStun] * 0.5f32.powi(pl.stun_chain);
-            if dur > 0.0 {
-                pl.state = PState::Hurt { t: 0.0, dur };
-            } else if matches!(pl.state, PState::Drink { .. }) {
-                // 맞으면 마시기는 끊긴다(삼키기 전이면 등잔 그대로, 0031).
-                pl.state = PState::Idle;
+            if braced {
+                pl.brace_soaked = (pl.brace_soaked + 1).min(pl.brace_most);
+                ev.push(Event::Soak {
+                    at: pl.pos + Vec3::Y * (pl.air + 1.0),
+                    n: pl.brace_soaked,
+                });
             }
-            let away = vec3(pl.pos.x - from.x, 0.0, pl.pos.z - from.z).normalize_or_zero();
-            pl.vel = away * t[P::HitKnock] * KNOCK_DECAY;
-            // 맞은 순간 세계가 멈춘다(0143): 때릴 때보다 길게, 센 타격은 더 길게. 이어 맞으면 경직처럼 반씩(떼 속에서 화면이 얼어붙지 않게).
-            let heavy = if taken >= crate::tuning::HURT_HEAVY_BLOW {
-                crate::tuning::HURT_HEAVY
-            } else {
-                1.0
-            };
-            let stop =
-                t[P::Hitstop] * crate::tuning::HURT_HITSTOP * heavy * 0.5f32.powi(pl.stun_chain);
-            self.hitstop = self.hitstop.max(stop);
-            ev.push(Event::PlayerHurt);
+            // 다 받아낸 타(피해 0)는 맞음 피드백(붉은 테·흰 몸·멈춤)을 내지 않는다 — 받아냈다는 불똥만.
+            let felt = taken > 0 || !braced;
+            if felt {
+                pl.since_hurt = 0.0;
+                pl.hurt_blow = taken;
+            }
+            if !braced {
+                // 경직 이음(0018 → 0099, 사장 "다구리 맞더라도 틈이 생겨서 도망갈 수 있게" — 이어 패링의 반대): 경직과 그 뒤
+                // `STUN_CHAIN_GRACE` 동안 또 맞으면 경직이 그전의 반 — 맞을수록 짧아져 떼 속에서도 빠져나갈 틈이 생긴다.
+                (pl.stun_chain, pl.stun_window) =
+                    stun_chain_next(pl.stun_window, pl.stun_chain, t[P::HitStun]);
+                let dur = t[P::HitStun] * 0.5f32.powi(pl.stun_chain);
+                if dur > 0.0 {
+                    pl.state = PState::Hurt { t: 0.0, dur };
+                } else if matches!(pl.state, PState::Drink { .. }) {
+                    // 맞으면 마시기는 끊긴다(삼키기 전이면 등잔 그대로, 0031).
+                    pl.state = PState::Idle;
+                }
+                let away = vec3(pl.pos.x - from.x, 0.0, pl.pos.z - from.z).normalize_or_zero();
+                pl.vel = away * t[P::HitKnock] * KNOCK_DECAY;
+            }
+            if felt {
+                // 맞은 순간 세계가 멈춘다(0143): 때릴 때보다 길게, 센 타격은 더 길게. 이어 맞으면 경직처럼 반씩(떼 속에서 화면이 얼어붙지 않게).
+                let heavy = if taken >= crate::tuning::HURT_HEAVY_BLOW {
+                    crate::tuning::HURT_HEAVY
+                } else {
+                    1.0
+                };
+                let stop = t[P::Hitstop]
+                    * crate::tuning::HURT_HITSTOP
+                    * heavy
+                    * 0.5f32.powi(pl.stun_chain);
+                self.hitstop = self.hitstop.max(stop);
+                ev.push(Event::PlayerHurt);
+            }
         }
+    }
+
+    /// 버팀(0158 G2)으로 버티는 중인가 — 스킬 틱이 이번 틱에 적어 둔 것(상태가 스킬일 때만).
+    pub fn bracing(&self) -> bool {
+        self.player.skill_brace > 0 && matches!(self.player.state, PState::Skill { .. })
     }
 
     /// 겹침 풀기(적끼리·플레이어와), 기둥·아레나 경계. 쏟아지던 적이 벽에 막히면 벽 쿵(피해 + 휘청 연장, 0012).

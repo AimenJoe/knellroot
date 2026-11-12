@@ -22,6 +22,8 @@ const FLASK_FLAME: Color = Color::new(1.0, 0.8, 0.35, 1.0);
 const MANA: Color = Color::new(0.75, 0.66, 1.0, 1.0);
 /// 큰 기술 게이지(0151): 차는 동안은 가라앉은 금빛, 가득 차면 밝게 숨 쉰다.
 const GAUGE: Color = Color::new(0.78, 0.62, 0.3, 1.0);
+/// 이어지는 것의 남은 시간(0158 G2 — 몰아치기의 줄어드는 막대, 스킬 칸 아래의 띠): 게이지보다 밝은 금빛.
+const GAUGE_FULL: Color = Color::new(1.0, 0.9, 0.55, 1.0);
 const AMMO: Color = Color::new(0.95, 0.82, 0.55, 1.0);
 const BOSS: Color = Color::new(0.72, 0.62, 0.42, 1.0);
 const BOSS_ROUSED: Color = Color::new(0.95, 0.55, 0.2, 1.0);
@@ -251,6 +253,11 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
         if k < 1.0 {
             draw_rectangle(x, y, side, side * (1.0 - k), Color::new(0.0, 0.0, 0.0, 0.5));
         }
+        // 스킬이 남긴 것이 이어지는 동안(0158 G2 — 되울림의 울림·잔불 흩기의 불티): 칸 아래에 줄어드는 밝은 띠.
+        let live = w.skill_active(i);
+        if live > 0.0 {
+            draw_rectangle(x, y + side - 2.0 * s, side * live, 2.0 * s, GAUGE_FULL);
+        }
         let name = match input::device() {
             Device::Pad => b.pad(bind).name(),
             _ => input::key_name(b.keys[bind as usize]),
@@ -261,13 +268,21 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
     let (gx, gw, gh) = (x0, x1 + side - x0, 2.5 * s);
     let gy = y - 3.0 * s - gh;
     draw_rectangle(gx - s, gy - s, gw + 2.0 * s, gh + 2.0 * s, BAR_BG);
-    let col = if pl.gauge >= 1.0 {
-        let p = 0.75 + 0.25 * (w.time * 5.0).sin();
-        Color::new(1.0, 0.86 * p + 0.1, 0.45 * p, 1.0)
+    // 몰아치기(0158 G2)가 이어지는 동안은 같은 막대가 남은 시간으로 줄어든다(밝은 금빛 — 그동안 차오르는 게이지는 끝난 뒤에 보인다).
+    let (fill, col) = gauge_bar(pl.gauge, w.ult_active(), w.time);
+    draw_rectangle(gx, gy, gw * fill, gh, col);
+}
+
+/// 큰 기술 막대의 (채움 0..1, 빛깔): 몰아치기가 이어지는 동안(`active` > 0)은 남은 몫, 아니면 게이지 — 가득이면 금빛으로 숨 쉰다.
+pub fn gauge_bar(gauge: f32, active: f32, time: f32) -> (f32, Color) {
+    if active > 0.0 {
+        (active.clamp(0.0, 1.0), GAUGE_FULL)
+    } else if gauge >= 1.0 {
+        let p = 0.75 + 0.25 * (time * 5.0).sin();
+        (1.0, Color::new(1.0, 0.86 * p + 0.1, 0.45 * p, 1.0))
     } else {
-        GAUGE
-    };
-    draw_rectangle(gx, gy, gw * pl.gauge.clamp(0.0, 1.0), gh, col);
+        (gauge.clamp(0.0, 1.0), GAUGE)
+    }
 }
 
 pub fn draw(

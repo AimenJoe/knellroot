@@ -121,7 +121,7 @@ impl World {
                 dir,
                 swing,
             } => self.tick_skill(&cx, id, e, dir, swing),
-            PState::Ult { t: e, done } => self.tick_ult(&cx, e, done),
+            PState::Ult { kind, t: e, done } => self.tick_ult(&cx, kind, e, done),
         }
 
         self.tick_run(&cx);
@@ -327,6 +327,9 @@ impl World {
             *cd = (*cd - dt).max(0.0);
         }
         pl.skill_denied = (pl.skill_denied - dt).max(0.0);
+        // 되울림·몰아치기(0158 G2)의 남은 시간 — 로직 시계라 히트스톱 동안은 줄지 않는다.
+        pl.echo_left = (pl.echo_left - dt).max(0.0);
+        pl.flurry_left = (pl.flurry_left - dt).max(0.0);
         pl.flask_lock = (pl.flask_lock - dt).max(0.0);
         pl.flask_denied = (pl.flask_denied - dt).max(0.0);
         // 새 누름이면 0부터, 쥐고 있으면 늘고, 놓으면 0.
@@ -384,7 +387,7 @@ impl World {
 
     /// 회피 시작(0029): 눌렀고·대기가 끝났고·스태미나를 쓸 수 있으면. 쪽은 이동 입력, 없으면 뒤로.
     /// 상태마다 다른 조건(삼키기 전·쏜 뒤·후딜레이 …)은 부르는 쪽이 `&&`로 앞에 둔다.
-    fn try_dodge(&mut self, cx: &Ctx) -> bool {
+    pub(super) fn try_dodge(&mut self, cx: &Ctx) -> bool {
         let pl = &mut self.player;
         if !(cx.a.dodge && pl.dodge_cd <= 0.0 && pl.spend(cx.t[P::StaminaDodge])) {
             return false;
@@ -495,7 +498,9 @@ impl World {
         let pl = &mut self.player;
         let riposte = pl.since_parry <= RIPOSTE_WINDOW && wpn.heavy.is_some();
         let dash = pl.dash_left > 0.0 && wpn.dash.is_some();
-        let free = pl.on_beat && pl.combo_left > 0.0 && !riposte && !dash;
+        // 몰아치기(0158 G2): 그동안의 평타는 모두 기력 없이 나가는 박자 타.
+        let flurry = pl.flurry_left > 0.0;
+        let free = flurry || (pl.on_beat && pl.combo_left > 0.0 && !riposte && !dash);
         pl.on_beat = false;
         let go = free || pl.spend(cx.t[P::StaminaAttack] * wpn.stamina);
         if go {
@@ -1084,7 +1089,12 @@ impl World {
                             Vec3::ZERO
                         }
                     }
-                    (Form::Ring { .. }, Some(Twist::Walk { speed })) => {
+                    // 버팀의 버티는 걸음(0158 G2 ㄱ)도 같은 걸음 — 버티는 동안만.
+                    (Form::Ring { .. }, Some(Twist::Walk { speed }))
+                    | (Form::Brace { .. }, Some(Twist::Walk { speed }))
+                        if !matches!(s.form, Form::Brace { .. })
+                            || (e >= s.startup && e < s.startup + d.active()) =>
+                    {
                         let want = world_move * t[P::MoveSpeed] * speed;
                         let diff = want - pl.vel;
                         let max = t[P::MoveAccel] * dt;

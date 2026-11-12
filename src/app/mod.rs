@@ -206,7 +206,7 @@ impl App {
         };
         let (run, mut world) = StageRun::start(FIRST_STAGE);
         world.set_weapon(weapon);
-        world.set_skills(progress.board.loadout(progress.skills.0));
+        world.set_skills(progress.board.loadout(progress.skills.0, progress.ult));
         let cam = Camera::new(world.player.pos, &t);
         App {
             stack: stack::Stack::new(Scene::Title),
@@ -753,6 +753,8 @@ impl App {
                         attack: touch::attack_icon(pl.weapon),
                         cast: touch::cast_icon(pl.weapon),
                         skills: [skill(0), skill(1)],
+                        active: [0, 1].map(|i| self.world.skill_active(i)),
+                        ult: touch::ult_icon(pl.ult),
                     },
                 );
             }
