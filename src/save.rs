@@ -77,7 +77,8 @@ pub mod key {
     /// 0166: 처음의 둘(휘돌이·가로지르기)도 기술 점수로 배운다. 이 깃발이 없는 기록(그 전의 판)은 둘을 이미 가졌던 것이다 —
     /// 1단으로 읽고 그 값을 점수로 지닌다(`SKILL_GIFT` — 남은 점수는 그대로).
     pub const MIGRATED_V06: &str = "migrated.v06";
-    /// 옛 기록의 몫(0167): 처음의 둘을 값 없이 받았던 기록이 지니는 기술 점수(`skills::GIFT_POINTS`까지). 새 판에는 없다.
+    /// 기록의 몫(0167 → 0169): 셈 밖에서 받은 기술 점수 — 처음의 둘을 값 없이 받았던 옛 기록은 둘(`skills::GIFT_POINTS`),
+    /// 새 판은 튜토리얼의 몸 걸음 넷을 마친 상 하나(`tutorial::REWARD_POINTS`). 그 전에는 없다.
     pub const SKILL_GIFT: &str = "skill.gift";
     /// 튜토리얼(0167): 지난 걸음 수(`tutorial::DONE`이면 다 지났다). 이 키가 없는 옛 기록은 `tutorial::start_for_old`.
     pub const TUTORIAL: &str = "tut.step";
@@ -195,7 +196,7 @@ pub struct Progress {
     pub ult: crate::skills::Ult,
     /// 기술 판(0158 → 0161): 스킬마다의 단·고르기, 큰 기술의 단, 연 패시브 칸(`board.cells` — 옛 `tree`).
     pub board: crate::skills::Board,
-    /// 옛 기록의 몫(0167): 처음의 둘을 값 없이 받았던 기록이 지니는 기술 점수. 새 판은 0.
+    /// 기록의 몫(0167 → 0169): 셈 밖에서 받은 기술 점수 — 옛 기록의 처음 둘(2) 또는 튜토리얼의 상(1). 새 판은 0에서 선다.
     pub gift: u32,
     /// 튜토리얼에서 지난 걸음 수(0167). 새 판은 0.
     pub tutorial: u8,

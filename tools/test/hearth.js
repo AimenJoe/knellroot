@@ -7,7 +7,7 @@
 //   패시브 칸 열기 · 모든 칸의 상세 · 잠긴 칸 · 되돌리기(묻는 창)를 지나고, 멈춤의 기술 화면(끼우기만)도 본다.
 //   그다음 단을 미리 찍은 기록 열(스킬 여덟이라 점수 23으로는 한 기록에 다 못 올린다 — 첫 넷·새 넷을 다른 단으로 짝지어
 //   2단 · 3·4·5단 × ㄱ/ㄴ을 모두, 큰 기술 셋의 단도)으로 화로·멈춤의 모든 칸을 돌며 상세 칸의 넘침을 본다.
-//   끝으로 새 판의 기록(0166·0167 — 아는 스킬도 점수도 없음): 빈 스킬 칸 → 쉬기 = 상태 탭 → 첫 레벨 = 첫 점수 → 기술 탭에서 배움 = 빈 칸에 끼워짐.
+//   끝으로 새 판의 기록(0166·0167·0169 — 아는 스킬 없음, 튜토리얼의 상 한 점): 빈 스킬 칸 → 쉬기 = 기술 탭 → 배움 = 빈 칸에 끼워짐 → 첫 레벨 = 둘째 점수.
 //   개발판의 F4 넘침 검사(`ui::check`)를 켜 두고 콘솔의 `[ui-check]` 줄(켬/끔 말고)이 있으면 실패(CLAUDE.md "새 화면은 F4").
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/hearth.js dist shots
 const { chromium } = require('playwright');
@@ -30,8 +30,9 @@ const SEED = 'v=1\nembers=700\nclears=1\nrun.rest=0\nrun.gate=1\ncharm.owned=she
 // 갈리는 넷이면 된다: 3단(고르기 ㄱ/ㄴ) · 4단 + 큰 기술 셋 · 5단(다 올림) · 새 넷의 5단 + 몰아치기.
 const RICH = 'v=1\nembers=600\nclears=1\nrun.rest=0\nrun.gate=1\nlv.life=5\nlv.stamina=5\nlv.might=5\ncore.warden=1\ncore.bellkeeper=1\n'
   + 'elites=t.elite.0,t.elite.1,t.elite.2,t.elite.3,t.elite.4,t.elite.5\nmigrated.v04=1\n';
-// 새 판의 기록(0166·0167 — `migrated.v06`이 있다: 처음의 둘도 기술 점수도 받지 않는다). 문 앞 쉼터에 서 있고 잔불만 두 단 값만큼.
-const FRESH = 'v=1\nembers=130\nrun.rest=0\nrun.gate=0\nplay=1\nweapons=\nmigrated.v04=1\nmigrated.v06=1\n';
+// 새 판의 기록(0166·0167·0169 — `migrated.v06`이 있다: 처음의 둘을 받지 않는다). 튜토리얼의 몸 걸음 넷을 마쳐 상(기술 점수 1)을
+// 받은 참이다. 문 앞 쉼터에 서 있고 잔불은 첫 레벨 값보다 넉넉히.
+const FRESH = 'v=1\nembers=130\nrun.rest=0\nrun.gate=0\nplay=1\nweapons=\nmigrated.v04=1\nmigrated.v06=1\ntut.step=4\nskill.gift=1\n';
 const set = (keys, rank, pick) => keys.map((k) =>
   (rank > 0 ? `skill.rank.${k}=${rank}\n` : '') + (rank >= 3 ? `skill.pick.${k}=${pick}\n` : '')).join('');
 const OLD = ['whirl', 'cut', 'gather', 'quake'];
@@ -267,8 +268,9 @@ async function run(browser, lang) {
     await shot(`21-${name}-pause-ult`);
     await press('Escape'); await page.waitForTimeout(300);
   }
-  // 새 판(0166 → 0167): 아는 스킬도 기술 점수도 없다 — 스킬 칸 둘이 비어 있다. 첫 점수는 첫 레벨에서: 쉬기 → 상태 탭(점수가
-  // 없으니 기술 탭이 아니다) → 생명 한 단(잔불 50) → 기술 점수 1 → 기술 탭에서 배움 → 빈 칸에 저절로 끼워진다.
+  // 새 판(0166 → 0167 → 0169): 스킬 칸 둘이 비어 있다. 튜토리얼의 몸 걸음 넷을 마친 상으로 기술 점수 하나를 들고 있다
+  // (기록의 몫 `skill.gift=1`) — 쉬면 기술 탭에서 열리고(아는 스킬이 없고 배울 점수가 있는 동안만), 배우면 빈 칸에 저절로
+  // 끼워진다. 둘째 점수는 첫 레벨에서(잔불 50).
   const boot = async (text) => {
     // 게임이 도는 쪽에서 심으면 다시 띄우기 전에 게임이 제 기록을 덮어쓸 수 있다 — 같은 출처의 빈 쪽으로 나가서 심는다.
     await page.goto(`http://localhost:${PORT}/manifest.webmanifest`);
@@ -287,26 +289,23 @@ async function run(browser, lang) {
   await press('KeyQ'); await page.waitForTimeout(300);
   await shot('30a-fresh-press-empty');
   await press('KeyF'); await page.waitForTimeout(600);
-  await shot('31-fresh-rest-status');
-  // 생명 한 단: 묻는 창 → 올림 → 기술 점수 1(지갑·기술 탭 머리의 민트 점).
-  await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(500);
-  await shot('31a-fresh-level-one');
-  b = await record();
-  if (!/lv\.life=1\n/.test(b) || !/embers=80\n/.test(b)) errors.push(`fresh: the first level costs 50: ${JSON.stringify(b)}`);
-  // 기술 탭(E 둘): 처음 서는 칸 = 살 수 있는 첫 칸(휘돌이) → 목록(배우기뿐) → 묻는 창 → 배움.
-  await press('KeyE', 2); await page.waitForTimeout(300);
-  await shot('31b-fresh-skills');
+  await shot('31-fresh-rest-skills');
+  // 처음 서는 칸 = 살 수 있는 첫 칸(휘돌이): 목록(배우기뿐) → 묻는 창 → 배움.
   await press('Enter'); await page.waitForTimeout(300);
-  await shot('31c-fresh-acts');
-  await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(400);
-  await shot('31d-fresh-learned');
+  await shot('31a-fresh-acts');
+  await press('Enter'); await page.waitForTimeout(300);
+  await shot('31b-fresh-ask');
+  await press('Enter'); await page.waitForTimeout(400);
+  await shot('31c-fresh-learned');
   b = await record();
-  if (!/skill\.rank\.whirl=1\n/.test(b) || !/migrated\.v06=1\n/.test(b)) errors.push(`fresh: whirl not learned: ${JSON.stringify(b)}`);
-  if (/skill\.gift/.test(b)) errors.push(`fresh: a new run has no gift points: ${JSON.stringify(b)}`);
+  if (!/skill\.rank\.whirl=1\n/.test(b) || !/skill\.gift=1\n/.test(b)) errors.push(`fresh: whirl not learned: ${JSON.stringify(b)}`);
   await page.waitForTimeout(1800);
-  // 한 단 더(Q 둘 = 상태 탭, 잔불 75) → 기술 탭에서 오른쪽으로 둘째 칸(맞받기 갈래의 버팀) → 남은 빈 칸(칸 2)에 끼워진다.
+  // 한 단 올린다(Q 둘 = 상태 탭, 잔불 50 → 기술 점수 +1) → 기술 탭에서 오른쪽으로 둘째 칸(맞받기 갈래의 버팀) → 남은 빈 칸(칸 2)에.
   await press('KeyQ', 2); await page.waitForTimeout(300);
   await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(500);
+  await shot('31d-fresh-level-one');
+  b = await record();
+  if (!/lv\.life=1\n/.test(b) || !/embers=80\n/.test(b)) errors.push(`fresh: the first level costs 50: ${JSON.stringify(b)}`);
   await press('KeyE', 2); await page.waitForTimeout(300);
   await home(); await press('ArrowRight', 2); await page.waitForTimeout(200);
   await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(300);
@@ -317,10 +316,9 @@ async function run(browser, lang) {
   if (/skill\.rank\.cut=/.test(b)) errors.push(`fresh: cut was never learned: ${JSON.stringify(b)}`);
   await press('Escape'); await page.waitForTimeout(400);
   await shot('32-fresh-hud-two');
-  // 점수는 있는데 아는 스킬이 없는 기록(레벨만 올리고 떠났다): 쉬면 기술 탭에서 열린다(0166 — 그동안만).
-  await boot(FRESH + 'lv.life=1\n');
+  // 다시 쉬면 상태 탭(아는 스킬이 있다).
   await press('KeyF'); await page.waitForTimeout(600);
-  await shot('33-point-no-skill-rest-skills');
+  await shot('33-fresh-rest-status');
   await press('Escape'); await page.waitForTimeout(300);
   await ctx.close();
   return { errors, checks };

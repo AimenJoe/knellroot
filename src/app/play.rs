@@ -307,6 +307,8 @@ impl App {
             level: level.total(),
             spent: board.spent() > 0,
             knows_skill: board.knows_a_skill(),
+            can_learn: board.can_buy(self.progress.skill_points()),
+            gift: self.progress.gift,
         }
     }
 
@@ -342,6 +344,14 @@ impl App {
         let facts = self.tutor_facts();
         if self.tutor.tick(&facts, fight, TICK_DT) {
             self.progress.tutorial = self.tutor.at;
+            self.persist();
+        }
+        // 상(0169): 몸의 걸음 넷을 마쳤다 — 기술 점수 하나. 기록의 몫에 적어 한 번만(이어한 판도 지금의 상태로 본다).
+        // 잔불·레벨은 건드리지 않는다(0109·0123의 "한 판 ≈ 한 레벨"은 그대로 — 첫 스킬만 그 뒤로 밀리지 않게).
+        if self.tutor.owes_reward(&facts) {
+            self.progress.gift = crate::tutorial::REWARD_POINTS;
+            self.toast = Some((crate::i18n::s().tut_reward.to_string(), TOAST_TIME));
+            self.snd(crate::sfx::Id::Buy);
             self.persist();
         }
     }

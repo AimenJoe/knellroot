@@ -152,7 +152,8 @@ pub const N: usize = IDS.len();
 /// 아무 일 없다, 그림은 빈 테).
 pub const START: [Id; 2] = [Id::Whirl, Id::Cut];
 /// 옛 기록의 몫(0166 → 0167): 처음의 둘을 값 없이 받았던 기록은 그 둘의 값을 점수로 지닌다(`Progress::gift` — 남은 점수가
-/// 줄지 않게, 되돌리면 그 둘도 다른 데 쓸 수 있다). 새 판에는 없다.
+/// 줄지 않게, 되돌리면 그 둘도 다른 데 쓸 수 있다). 새 판은 튜토리얼의 상 하나를 같은 칸에 받는다(`tutorial::REWARD_POINTS`,
+/// 0169) — 이 수는 그 칸의 상한이기도 하다.
 pub const GIFT_POINTS: u32 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq)]

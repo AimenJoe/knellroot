@@ -1,8 +1,8 @@
 // 튜토리얼 시험(0167): 헤드리스 Chromium으로 한국어·영어 두 판 —
-//   걸음 여덟의 힌트 줄을 하나씩 띄워 본다(걸음을 미리 적은 기록 `tut.step=N`으로 이어하기) — 큰 화면(1280×720)과 가로 폰(844×390).
+//   걸음 일곱의 힌트 줄을 하나씩 띄워 본다(걸음을 미리 적은 기록 `tut.step=N`으로 이어하기) — 큰 화면(1280×720)과 가로 폰(844×390).
 //   개발판의 F4 넘침 검사(`ui::check`)를 켜 두고 콘솔의 `[ui-check]` 줄(켬/끔 말고)이 있으면 실패.
-//   그리고 새 판에서 실제로 걸어 첫 걸음이 넘어가는지(힌트 [1/8] → [2/8], 기록 `tut.step`), 곁에 온 첫 적을 세 번 베고 한 번
-//   굴러 공격·회피 걸음이 넘어가는지를 본다(월드 사건이 튜토리얼의 셈까지 이어져 있나).
+//   그리고 새 판에서 실제로 걸어 첫 걸음이 넘어가는지(힌트 [1/7] → [2/7], 기록 `tut.step`), 곁에 온 첫 적을 세 번 베고 한 번
+//   굴러 걸음 셋이 넘어가는지(월드 사건이 튜토리얼의 셈까지 이어져 있나), 몸의 걸음을 지난 판에 상(기술 점수 1)이 오는지를 본다.
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/tutorial.js dist shots
 const { chromium } = require('playwright');
 const http = require('http');
@@ -18,10 +18,13 @@ const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
 // 문 앞 쉼터에 선 새 판의 기록(처음의 둘도 기술 점수도 없다) + 걸음마다의 사실.
 const BASE = 'v=1\nrun.rest=0\nrun.gate=0\nplay=1\nweapons=\nmigrated.v04=1\nmigrated.v06=1\n';
+// 0169: 몸의 걸음 넷 뒤에 상(기술 점수 1 — `skill.gift=1`) → 쉬고 배우기 → 쓰기 → 잔불이 첫 레벨 값만큼 모였을 때에야 뜨는
+// "한 단 올리기"(모자라면 힌트가 없다 — `7q`).
 const STEPS = [
   ['1-move', 'tut.step=0\n'], ['2-attack', 'tut.step=1\n'], ['3-dodge', 'tut.step=2\n'], ['4-parry', 'tut.step=3\n'],
-  ['5-gather', 'tut.step=4\nembers=20\n'], ['6-level', 'tut.step=5\nembers=60\n'],
-  ['7-learn', 'tut.step=6\nlv.life=1\n'], ['8-skill', 'tut.step=7\nlv.life=1\nskill.rank.whirl=1\n'],
+  ['5-learn', 'tut.step=4\nskill.gift=1\n'], ['6-skill', 'tut.step=5\nskill.gift=1\nskill.rank.whirl=1\n'],
+  ['7-level', 'tut.step=6\nskill.gift=1\nskill.rank.whirl=1\nembers=60\n'],
+  ['7q-level-quiet', 'tut.step=6\nskill.gift=1\nskill.rank.whirl=1\nembers=20\n'],
 ];
 
 const server = http.createServer((req, res) => {
@@ -82,7 +85,7 @@ async function run(browser, lang, size) {
     await page.waitForTimeout(2500);
     await shot(name);
   }
-  // 새 판에서 실제로 걷는다: [1/8] → 넉 미터 걸으면 [2/8], 기록에 지난 걸음 수가 남는다.
+  // 새 판에서 실제로 걷는다: [1/7] → 넉 미터 걸으면 [2/7], 기록에 지난 걸음 수가 남는다.
   await boot(BASE + STEPS[0][1]);
   await page.keyboard.down('KeyS'); await page.waitForTimeout(1600); await page.keyboard.up('KeyS');
   await page.waitForTimeout(300);
@@ -102,6 +105,13 @@ async function run(browser, lang, size) {
     await shot('9c-dodged');
     if ((await step()) < 3) errors.push(`a dodge must pass the dodge step: ${JSON.stringify(await record())}`);
   }
+  // 상(0169): 몸의 걸음 넷을 지난 판(패링은 헤드리스로 받아치기 어렵다 — 걸음이 넘어가는 것은 단위 시험이 본다)을 이어하면
+  // 첫 틱에 기술 점수 하나가 온다 — 기록의 몫 `skill.gift=1`, 화면 위 알림, 힌트는 "쉬고 배운다"로.
+  await boot(BASE + 'tut.step=4\n');
+  await page.waitForTimeout(600);
+  await shot('9d-reward');
+  b = await record();
+  if (!/skill\.gift=1\n/.test(b)) errors.push(`the body steps must pay one skill point: ${JSON.stringify(b)}`);
   // 멈춤 창 밑에는 힌트를 그리지 않는다.
   await press('Escape'); await page.waitForTimeout(400);
   await shot('9a-paused');
