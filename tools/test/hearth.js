@@ -240,8 +240,10 @@ async function run(browser, lang) {
   // 모든 단(0158): 단을 미리 찍은 기록마다 — 화로의 기술 화면에서 모든 칸의 상세를 지나고, 멈춤의 기술 화면에서도 한 번 더
   // (멈춤은 상태 줄·목록이 다르다 — 끼우기만).
   for (const [name, text] of BOARDS) {
+    // 게임이 도는 쪽에서 심으면 다시 띄우기 전에 게임이 제 기록을 덮어쓸 수 있다 — 같은 출처의 빈 쪽으로 나가서 심는다.
+    await page.goto(`http://localhost:${PORT}/manifest.webmanifest`);
     await page.evaluate(([k, v]) => localStorage.setItem(k, v), [KEY, text]);
-    await page.reload();
+    await page.goto(`http://localhost:${PORT}/`);
     await ready();
     await page.waitForTimeout(600);
     await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
@@ -268,8 +270,10 @@ async function run(browser, lang) {
   // 새 판(0166 → 0167): 아는 스킬도 기술 점수도 없다 — 스킬 칸 둘이 비어 있다. 첫 점수는 첫 레벨에서: 쉬기 → 상태 탭(점수가
   // 없으니 기술 탭이 아니다) → 생명 한 단(잔불 50) → 기술 점수 1 → 기술 탭에서 배움 → 빈 칸에 저절로 끼워진다.
   const boot = async (text) => {
+    // 게임이 도는 쪽에서 심으면 다시 띄우기 전에 게임이 제 기록을 덮어쓸 수 있다 — 같은 출처의 빈 쪽으로 나가서 심는다.
+    await page.goto(`http://localhost:${PORT}/manifest.webmanifest`);
     await page.evaluate(([k, v]) => localStorage.setItem(k, v), [KEY, text]);
-    await page.reload();
+    await page.goto(`http://localhost:${PORT}/`);
     await ready();
     await page.waitForTimeout(600);
     await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });

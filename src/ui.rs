@@ -115,7 +115,10 @@ pub const KEY_OPEN: char = '\u{E000}';
 pub const KEY_CLOSE: char = '\u{E001}';
 pub const KEY_TEXT: Color = Color::new(1.0, 0.93, 0.78, 1.0);
 const KEY_FILL: Color = Color::new(0.08, 0.06, 0.10, 0.85);
-const KEY_EDGE: Color = Color::new(0.62, 0.50, 0.38, 1.0);
+/// 테는 밝게, 아랫변은 두껍게(0168 — 사장 "키·버튼 표시는 더 눈에 띄게, 버튼처럼": 눌리는 키의 턱).
+const KEY_EDGE: Color = Color::new(0.86, 0.70, 0.46, 1.0);
+/// 아랫변 턱의 두께(테 두께의 배).
+const KEY_LIP: f32 = 2.0;
 /// 키캡 안쪽 여백·칸 사이 틈(글 크기에 대한 비).
 const KEY_PAD: f32 = 0.28;
 const KEY_GAP: f32 = 0.12;
@@ -287,17 +290,15 @@ impl Ui {
                         ..KEY_FILL
                     },
                 );
-                draw_rectangle_lines(
-                    cx,
-                    ry,
-                    w,
-                    rh,
-                    self.scale.max(1.0),
-                    Color {
-                        a: color.a,
-                        ..KEY_EDGE
-                    },
-                );
+                let line = self.scale.max(1.0);
+                let edge = Color {
+                    a: color.a,
+                    ..KEY_EDGE
+                };
+                draw_rectangle_lines(cx, ry, w, rh, line, edge);
+                // 아랫변의 턱(칸 안쪽으로 — 칸의 크기는 그대로다).
+                let lip = line * KEY_LIP;
+                draw_rectangle(cx, ry + rh - lip, w, lip, edge);
                 self.plain_text(
                     &seg,
                     cx + KEY_PAD * px,

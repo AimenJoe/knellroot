@@ -183,7 +183,8 @@ impl Tutor {
         self.at != was
     }
 
-    /// 힌트: 머리 줄 "[n/N] 키  할 일"(버튼 이름이 없는 걸음·장치는 글만) + 작은 풀이 줄. 다 지났으면 없음.
+    /// 힌트: 머리 줄 "[n/N] 키 할 일"(버튼 이름이 없는 걸음·장치는 글만) + 작은 풀이 줄. 다 지났으면 없음.
+    /// `key`가 버튼의 표시를 만든다 — 앱은 키캡(`ui::key`)으로 감싸 넘긴다(글 속에서 버튼처럼 보이게).
     pub fn hint(
         &self,
         st: &Strings,
@@ -198,7 +199,7 @@ impl Tutor {
         let head = if k.is_empty() {
             format!("[{n}/{DONE}] {text}")
         } else {
-            format!("[{n}/{DONE}] {k}  {text}")
+            format!("[{n}/{DONE}] {k} {text}")
         };
         Some((head, more))
     }
@@ -369,7 +370,7 @@ mod tests {
             t.seen.hits = 9;
             let (h, more) = t.hint(st, &f, 0, key).unwrap();
             assert!(
-                h.starts_with(&format!("[2/8] <{}>  ", Bind::Attack as usize)),
+                h.starts_with(&format!("[2/8] <{}> ", Bind::Attack as usize)),
                 "{h}"
             );
             assert!(h.contains("3/3") && !h.contains('{'), "{h}");

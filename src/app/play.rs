@@ -359,12 +359,17 @@ impl App {
             .iter()
             .position(|&id| board.learned(id))
             .unwrap_or(0);
-        self.tutor.hint(
-            crate::i18n::s(),
-            &self.tutor_facts(),
-            slot,
-            crate::input::bind_prompt,
-        )
+        // 버튼 이름은 키캡으로(사장 2026-11-13 "버튼처럼") — 터치는 이름이 없다(화면 버튼이 곧 안내).
+        let cap = |b| {
+            let name = crate::input::bind_prompt(b);
+            if name.is_empty() {
+                name
+            } else {
+                crate::ui::key(&name)
+            }
+        };
+        self.tutor
+            .hint(crate::i18n::s(), &self.tutor_facts(), slot, cap)
     }
 
     pub(super) fn in_stage(&self) -> bool {

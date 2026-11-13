@@ -50,8 +50,10 @@ async function run(browser, lang, size) {
   const record = () => page.evaluate((k) => localStorage.getItem(k), KEY);
   // 기록을 심고 다시 띄워 이어하기(타이틀 → 슬롯 창 → 이어하기).
   const boot = async (text) => {
+    // 게임이 도는 쪽에서 심으면 다시 띄우기 전에 게임이 제 기록을 덮어쓸 수 있다 — 같은 출처의 빈 쪽으로 나가서 심는다.
+    await page.goto(`http://localhost:${PORT}/manifest.webmanifest`);
     await page.evaluate(([k, v]) => localStorage.setItem(k, v), [KEY, text]);
-    await page.reload();
+    await page.goto(`http://localhost:${PORT}/`);
     await ready();
     await page.waitForTimeout(600);
     await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });

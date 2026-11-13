@@ -266,7 +266,9 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
             Device::Pad => b.pad(bind).name(),
             _ => input::key_name(b.keys[bind as usize]),
         };
-        ui.text_center(name, x + side * 0.5, y + side + 2.0 * s, label, INK);
+        // 칸의 버튼 이름도 키캡으로(0168 — 힌트·곁의 할 일과 같은 꼴).
+        let cap = crate::ui::key(name);
+        ui.text_center(&cap, x + side * 0.5, y + side + 2.5 * s, label, INK);
     }
     // 큰 기술 게이지: 칸 둘의 폭.
     let (gx, gw, gh) = (x0, x1 + side - x0, 2.5 * s);
@@ -307,6 +309,21 @@ pub fn draw_hint(ui: &Ui, f: &Frame, head: &str, more: &str, fresh: f32) {
         let soft = Color::new(INK.r, INK.g, INK.b, 0.78);
         ui.text_center_wrapped(more, cx, y, HINT_MORE_SCALE, soft, f.w * HINT_W);
     }
+}
+
+/// 버튼 + 할 일 한 줄을 가운데에: 버튼 이름은 키캡(`ui::key` — 어두운 칸 + 테 + 밝은 글, 버튼처럼 보인다), 할 일은
+/// 제 빛으로. 이름이 없는 장치(터치)는 글만.
+fn key_line(ui: &Ui, key: &str, text: &str, cx: f32, y: f32, k: f32, color: Color) {
+    if key.is_empty() {
+        ui.text_center(text, cx, y, k, color);
+        return;
+    }
+    let cap = crate::ui::key(key);
+    let gap = ui.px(k) * 0.35;
+    let (kw, tw) = (ui.width(&cap, k), ui.width(text, k));
+    let x = cx - (kw + gap + tw) * 0.5;
+    ui.text(&cap, x, y, k, color);
+    ui.text(text, x + kw + gap, y, k, color);
 }
 
 /// 힌트의 자리(화면 높이의 몫)·폭(화면 폭의 몫)·글 크기(머리 줄 · 풀이 줄).
@@ -546,12 +563,7 @@ pub fn draw(
         match verb {
             Some(verb) => {
                 let key = crate::input::prompt(crate::input::Act::Interact);
-                let text = if key.is_empty() {
-                    verb.to_string()
-                } else {
-                    format!("{key}  {verb}")
-                };
-                ui.text_center(&text, cx, y, 1.0, AMBER);
+                key_line(ui, &key, verb, cx, y, 1.0, AMBER);
             }
             None => ui.text_center(i18n::s().rest_blocked, cx, y, 1.0, DIM),
         }
