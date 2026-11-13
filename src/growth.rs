@@ -60,6 +60,19 @@ pub fn wares(owned: &[Charm], g: &Growth) -> Vec<(Ware, u32)> {
         .collect()
 }
 
+/// 가게의 진열(0164 다듬기): 살 수 있는 것이 앞(차례는 `wares` 그대로 — 사는 자리 번호가 같다), 이미 산 것이 그 뒤에 흐리게.
+/// 셋째 값이 "샀다". 가게가 한 줄만 남아도 무엇을 팔았는지 보인다.
+pub fn shelf(owned: &[Charm], g: &Growth) -> Vec<(Ware, u32, bool)> {
+    let open = wares(owned, g);
+    let sold = SHOP
+        .into_iter()
+        .filter(|(w, _)| !open.iter().any(|(o, _)| o == w));
+    open.iter()
+        .map(|&(w, p)| (w, p, false))
+        .chain(sold.map(|(w, p)| (w, p, true)))
+        .collect()
+}
+
 /// 잔불로 살 수 있는 것이 있나(쉼터가 빛난다).
 pub fn can_buy(embers: u32, owned: &[Charm], g: &Growth) -> bool {
     wares(owned, g).iter().any(|&(_, price)| embers >= price)
@@ -69,6 +82,29 @@ pub fn can_buy(embers: u32, owned: &[Charm], g: &Growth) -> bool {
 mod tests {
     use super::*;
     use crate::stats::Stats;
+
+    /// 진열은 살 것이 앞·산 것이 뒤 — 살 것의 자리 번호는 `wares`와 같고(묻는 창이 그 번호로 산다), 합치면 표의 다섯이 다 있다.
+    #[test]
+    fn the_shelf_lists_what_is_left_first_and_what_was_bought_after() {
+        let none = Growth::default();
+        let all = shelf(&[], &none);
+        assert_eq!(all.len(), SHOP.len());
+        assert!(all.iter().all(|&(_, _, sold)| !sold));
+        let g = Growth {
+            oil: true,
+            ..Growth::default()
+        };
+        let owned = [Charm::Feet];
+        let some = shelf(&owned, &g);
+        let open = wares(&owned, &g);
+        assert_eq!(some.len(), SHOP.len());
+        for (i, &(w, p)) in open.iter().enumerate() {
+            assert_eq!(some[i], (w, p, false));
+        }
+        let sold: Vec<Ware> = some[open.len()..].iter().map(|x| x.0).collect();
+        assert_eq!(sold, [Ware::Charm(Charm::Feet), Ware::Oil]);
+        assert!(some[open.len()..].iter().all(|x| x.2));
+    }
 
     #[test]
     fn leftover_growth_still_feeds_the_stats() {

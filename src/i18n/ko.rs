@@ -64,7 +64,7 @@ pub const KO: Strings = Strings {
     shop_oil: "등잔 기름",
     shop_oil_d: "등잔 +1회(한 번만)",
     shop_poor: "잔불이 모자란다",
-    shop_empty: "더 살 것이 없다",
+    shop_sold: "샀다",
     toast_bought: "샀다: {0}",
     menu_equip: "장비",
     menu_charm_slot: "장신구 {0}",

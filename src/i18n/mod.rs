@@ -137,7 +137,7 @@ pub struct Strings {
     pub shop_oil: &'static str,
     pub shop_oil_d: &'static str,
     pub shop_poor: &'static str,
-    pub shop_empty: &'static str,
+    pub shop_sold: &'static str,
     pub toast_bought: &'static str,
 
     /// 장비(0064 M3): 멈춤 줄·창 제목·칸 줄·빈 칸·없을 때 안내·얻었을 때 알림·빈 상자·상자 곁 동사.
@@ -641,7 +641,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.shop_oil,
         s.shop_oil_d,
         s.shop_poor,
-        s.shop_empty,
+        s.shop_sold,
         s.toast_bought,
         s.menu_equip,
         s.menu_charm_slot,

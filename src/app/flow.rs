@@ -83,6 +83,9 @@ pub enum Host {
     Pause,
     /// 쉼터 화로(쉬면 열린다): 올리기·사기·되돌리기가 켜지고 가게 탭이 선다.
     Hearth,
+    /// 개발 창의 "기술 끼우기"(타이틀 위에서도 열린다): 기술 탭 하나 — 다른 탭으로 넘어가 판의 줄(처음부터·타이틀로)에 닿지 않게.
+    #[cfg(feature = "dev")]
+    Dev,
 }
 
 impl Host {
@@ -107,6 +110,8 @@ pub enum Tab {
 pub fn tabs(host: Host) -> &'static [Tab] {
     match host {
         Host::Title => &[Tab::Settings],
+        #[cfg(feature = "dev")]
+        Host::Dev => &[Tab::Skills],
         Host::Pause => &[
             Tab::Status,
             Tab::Equip,
@@ -714,6 +719,13 @@ mod tests {
         assert!(Host::Hearth.edits());
         assert!(!Host::Pause.edits());
         assert!(!Host::Title.edits());
+        // 개발 창의 "기술 끼우기"(0164 다듬기): 기술 탭 하나 — 넘길 탭이 없고, 올리기·사기는 꺼져 있고, 멈춤이 열 탭을 바꾸지 않는다.
+        #[cfg(feature = "dev")]
+        {
+            assert_eq!(tabs(Host::Dev), [Tab::Skills]);
+            assert!(!Host::Dev.edits());
+            assert_eq!(remembered(Scene::Skills { host: Host::Dev }), None);
+        }
         for (f, m) in [(false, false), (true, true), (true, false)] {
             let pause = settings_rows(f, m, Host::Pause);
             assert_eq!(
