@@ -20,6 +20,7 @@ use crate::world::{Aabb, Atk, EState, Enemy, PState, TeleShape, World};
 
 mod actors;
 mod batch;
+mod descent;
 mod drape;
 mod items;
 mod light;
@@ -100,6 +101,8 @@ pub struct Renderer {
     /// 아이템 그림(0068): 아이콘은 아이템마다 한 번 찍어 둔 타깃, 고른 것 하나는 도는 큰 타깃.
     icons: std::collections::HashMap<&'static str, RenderTarget>,
     item_rt: Option<RenderTarget>,
+    /// 지역 사이 전환의 굴(0174) — 전환마다 한 번 짓는다.
+    shaft: Option<descent::ShaftMesh>,
 }
 
 /// 아이템 아이콘·도는 그림의 타깃 크기(내부 px, 정사각).
@@ -191,6 +194,7 @@ impl Renderer {
             creature_rt: None,
             icons: Default::default(),
             item_rt: None,
+            shaft: None,
         }
     }
 

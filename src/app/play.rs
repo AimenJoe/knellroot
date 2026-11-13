@@ -9,13 +9,20 @@ const KINDLE_TIME: f32 = 1.5;
 impl App {
     /// 싸움 한 틱: 멈춤 → 월드 → 스테이지 → 기록·가게·소리·알림 → 끝났으면 끝 장면.
     pub(super) fn tick_play(&mut self, a: Actions) {
-        // 지역 사이 지층 단면 전환(0118): 덮인 동안 월드·멈춤·장비 창은 멈추고, 가운데에서 지역을 바꾼다.
+        // 지역 사이 전환(0118 → 0174 뿌리 굴): 그동안 월드·멈춤·장비 창은 멈추고, 떠나는 곳이 다 어두워진 순간에 지역을 바꾼다.
+        // 굴을 지나는 동안의 아무 버튼 = 건너뛰기(굴이 어둠으로 들어가는 데로 — 자주 오가는 길에서 지치지 않게).
         if let Some(mut p) = self.passage.take() {
-            let (swap, done) = p.step(TICK_DT);
-            if swap {
+            if a.attack || a.jump || a.dodge || a.confirm || a.pause {
+                p.skip();
+            }
+            let tick = p.step(TICK_DT);
+            if tick.swap {
                 self.cross_to(p.to, p.up);
             }
-            if !done {
+            if tick.bell {
+                self.snd(crate::sfx::Id::Knell);
+            }
+            if !tick.done {
                 self.passage = Some(p);
             }
             return;
@@ -102,7 +109,7 @@ impl App {
             out = crate::stage::StageOut::Respawned;
         }
         self.sync_progress(out);
-        // 내려가는 길·오르는 길(0118): 지층 단면 전환을 연다.
+        // 내려가는 길·오르는 길(0118 → 0174): 뿌리 굴 전환을 연다.
         let cross = match out {
             crate::stage::StageOut::Descend => Some((self.stage + 1, false)),
             crate::stage::StageOut::Ascend => self.stage.checked_sub(1).map(|s| (s, true)),

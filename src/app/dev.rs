@@ -202,7 +202,7 @@ impl App {
             DevStart::Village => {
                 self.dev_run = true;
                 self.restart();
-                // 이 판에 첫 문지기를 이긴 셈 — 내려가는 지층 단면부터 보인다.
+                // 이 판에 첫 문지기를 이긴 셈 — 내려가는 뿌리 굴(0174)부터 보인다.
                 self.down = 1;
                 self.passage = Some(crate::descent::Passage::new(
                     1,

@@ -75,7 +75,7 @@ pub struct App {
     world: World,
     run: StageRun,
     /// 판의 지역 잇기(0118): 지금 지역(`stage::STAGES` 차례), 이 판에 이긴 문지기 수, 마지막으로 쉰 곳(지역을 바꿔도 남는다),
-    /// 지역 사이 지층 단면 전환.
+    /// 지역 사이 전환(0118 → 0174 뿌리 굴).
     stage: usize,
     down: usize,
     rest_at: Option<crate::save::RunAt>,
@@ -757,22 +757,47 @@ impl App {
         };
         self.cam.present(alpha);
         let stage = self.in_stage().then_some(&self.run);
-        let f = self.renderer.draw(&View {
-            world: &self.world,
-            cam: &self.cam,
-            alpha,
-            t: &self.t,
-            stage,
-            tells: self.tells as f32 / 10.0,
-            tell_timing: self.tell_timing,
-            fx: &self.fx,
-            wake: self.wake.filter(|_| stage.is_some()).map(|w| w.pose()),
-        });
+        // 지역 사이 전환의 굴 장면(0174): 월드 대신 굴을 그린다 — 지역은 이미 닿을 곳으로 바뀌어 있고, 그 월드는 닿는 쪽의
+        // 어둠 뒤에서 처음 그려진다(지형 굽기가 거기 숨는다). HUD·화살·터치 버튼도 그동안은 걷는다.
+        let in_shaft = self
+            .passage
+            .filter(|p| self.scene() == Scene::Play && p.phase() == crate::descent::Phase::Shaft);
+        self.clock += get_frame_time();
+        let f = match in_shaft {
+            Some(p) => {
+                // 굴의 위·아래 지역(얕은 쪽·깊은 쪽)의 환경: 달이 있나 · 닿을 곳의 안개 빛.
+                let (a, b) = if p.up {
+                    (p.to, p.to + 1)
+                } else {
+                    (p.to.saturating_sub(1), p.to)
+                };
+                let env = |i: usize| {
+                    crate::stage::STAGES
+                        .get(i)
+                        .map_or(&crate::backdrop::SURFACE, |d| d.env)
+                };
+                self.renderer
+                    .draw_shaft(&p, self.weapon, &self.t, self.clock, (env(a), env(b)))
+            }
+            None => self.renderer.draw(&View {
+                world: &self.world,
+                cam: &self.cam,
+                alpha,
+                t: &self.t,
+                stage,
+                tells: self.tells as f32 / 10.0,
+                tell_timing: self.tell_timing,
+                fx: &self.fx,
+                wake: self.wake.filter(|_| stage.is_some()).map(|w| w.pose()),
+            }),
+        };
         self.frame = Some(f);
         self.ui.begin(f.ui);
-        let overlay = self.input.overlay();
+        let overlay = self.input.overlay().filter(|_| in_shaft.is_none());
         self.hits.clear();
-        self.draw_layered(&f, self.scene());
+        if in_shaft.is_none() {
+            self.draw_layered(&f, self.scene());
+        }
         // 큰 창은 화면을 다 써서 알림을 제 오른쪽 칸의 상태 줄에 보인다(`draw_pane_head`) — 여기서는 싸움·타이틀만.
         if matches!(
             self.scene(),
@@ -782,31 +807,32 @@ impl App {
         }
         // 깨어나는 첫 장면(0171) 동안은 싸움 화면의 덧그림(화살·조준점·터치 버튼)을 걷는다 — 덮개만.
         let waking = self.waking().is_some();
-        if self.scene() == Scene::Play && !waking {
+        if self.scene() == Scene::Play && !waking && in_shaft.is_none() {
             self.draw_goal_arrow(&f);
             self.draw_knell(&f);
             self.draw_bubble(&f);
             self.draw_stone_card(&f);
         }
-        // 지역 사이 지층 단면(0118): 싸움 화면 위에(전환 중엔 멈춤·장비 창이 열리지 않는다).
-        self.clock += get_frame_time();
-        if let Some(p) = self
-            .passage
-            .as_ref()
-            .filter(|_| self.scene() == Scene::Play)
-        {
-            let m = p.depth().round() as u32;
-            let label = if m == 0 {
-                s().depth_surface.to_string()
-            } else {
-                fill(s().depth_under, &[&m.to_string()])
-            };
-            crate::descent::draw(p, &self.ui, &f, self.clock, &label);
+        // 지역 사이 전환(0174)의 화면 패스: 덮는 어둠(떠남·굴의 두 끝·닿음) + 굴을 지나는 동안의 깊이 글.
+        if let Some(p) = self.passage.filter(|_| self.scene() == Scene::Play) {
+            let dark = p.dark();
+            if dark > 0.0 {
+                draw_rectangle(f.ox, f.oy, f.w, f.h, Color::new(0.02, 0.015, 0.035, dark));
+            }
+            if in_shaft.is_some() {
+                let m = p.depth().round() as u32;
+                let label = if m == 0 {
+                    s().depth_surface.to_string()
+                } else {
+                    fill(s().depth_under, &[&m.to_string()])
+                };
+                hud::draw_depth(&self.ui, &f, &label, 1.0 - dark);
+            }
         }
-        if self.scene().ticks_world() {
+        if self.scene().ticks_world() && in_shaft.is_none() {
             self.draw_beat_note(&f);
         }
-        if self.scene().ticks_world() && !waking {
+        if self.scene().ticks_world() && !waking && in_shaft.is_none() {
             if self.mouse_hidden && self.world.lock_target().is_none() {
                 if let Some(c) = self.input.cursor() {
                     hud::draw_reticle(&f, c, input::mouse_aim().size);

@@ -930,6 +930,27 @@ fn s_rest() -> &'static str {
     i18n::s().rest_verb
 }
 
+/// 지역 사이 전환의 깊이 글(0118 → 0174): 굴을 지나는 동안 화면 아래 가운데, 둥근 그늘 위에 — `a` = 진하기(굴이 어둠에서
+/// 나오고 들어갈 때 같이 옅어진다).
+pub fn draw_depth(u: &Ui, f: &Frame, label: &str, a: f32) {
+    if a <= 0.0 {
+        return;
+    }
+    let k = 1.2;
+    let (tw, th) = (u.width(label, k), u.px(k));
+    let cx = f.ox + f.w * 0.5;
+    let ty = f.oy + f.h * 0.8;
+    let pad = 7.0 * f.ui;
+    draw_rectangle(
+        cx - tw * 0.5 - pad * 1.4,
+        ty - pad * 0.6,
+        tw + pad * 2.8,
+        th + pad * 1.2,
+        Color::new(0.04, 0.03, 0.07, 0.55 * a),
+    );
+    u.text_center(label, cx, ty, k, Color::new(1.0, 0.86, 0.6, a));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
