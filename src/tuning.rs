@@ -185,6 +185,11 @@ pub const EMBER_PICK_R: f32 = 0.7;
 /// 마법 탄 반지름(m)과 쏘는 높이(몸 위 m).
 pub const BOLT_RADIUS: f32 = 0.35;
 pub const BOLT_HEIGHT: f32 = 1.0;
+/// 수평으로 쏜 탄이 땅을 따라 오르내리는 빠르기(나아간 거리당 높이 — 2 = 1m 가는 동안 2m까지), 넘는 턱의 높이(그보다 높은
+/// 벼랑·벽에서는 사라진다 — 방랑자가 뛰어 오르는 턱 1m보다 조금 넉넉히), 몸 높이 판정의 위아래 여유.
+pub const BOLT_FOLLOW: f32 = 2.0;
+pub const BOLT_STEP: f32 = 1.3;
+pub const BOLT_BODY_SLACK: f32 = 0.6;
 /// 공중 RB(0111): 쏘는 순간 떨어지기를 멈추는 초(체공), 겨눌 적이 없을 때 앞으로 내려 쏘는 거리(m)·가장 가까운 거리(m),
 /// 쇠뇌의 내려 쏘기 볼트 수·부채꼴 반각(도). 한 점프에 한 번.
 pub const AIR_SHOT_HOVER: f32 = 0.2;
@@ -330,6 +335,8 @@ pub enum P {
     Shade,
     CamLYawMax,
     CamLNear,
+    CamLCatch,
+    CamLCatchAt,
     CamPullOut,
     CamQLead,
     CamBlendTurn,
@@ -498,7 +505,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 164] = [
+pub const SPECS: [Spec; 166] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -721,6 +728,24 @@ pub const SPECS: [Spec; 164] = [
         0.0,
         8.0,
         0.25
+    ),
+    spec!(
+        CamLCatch,
+        "cam.lock.catch deg/s",
+        "CAM_L_CATCH_DEG",
+        200.0,
+        0.0,
+        360.0,
+        10.0
+    ),
+    spec!(
+        CamLCatchAt,
+        "cam.lock.catch at deg",
+        "CAM_L_CATCH_AT_DEG",
+        45.0,
+        10.0,
+        120.0,
+        5.0
     ),
     spec!(
         CamPullOut,

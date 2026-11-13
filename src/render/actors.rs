@@ -200,7 +200,7 @@ impl Renderer {
         // 락온 중 몸이 과녁을 가리면 옅게(0040): 카메라를 어깨 너머로 비켜 둬도 가까운 큰 대상은 다 비켜나지 못한다.
         let hide = match w.lock.and_then(|i| w.enemies.get(i)).filter(|e| e.alive()) {
             Some(e) if cam.mode == Mode::Lock => occlusion(
-                cam.rig.pos,
+                cam.view.pos,
                 pp + Vec3::Y * (pl.air + PLAYER_HEIGHT * 0.45),
                 PLAYER_RADIUS * 1.2,
                 e.pos + Vec3::Y * (e.height * 0.5),

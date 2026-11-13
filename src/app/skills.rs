@@ -230,7 +230,7 @@ pub(super) fn state_line(board: &Board, total: u32, e: Entry, edit: bool) -> (St
         Offer::Locked(n) => (fill(s.sk_st_locked, &[&n.to_string()]), DIM),
         Offer::Short => (fill(s.sk_st_short, &[&price]), DIM),
         // 멈춤에서는 올릴 수 없다 — 어디서 하는지를 말한다.
-        Offer::Ready if !edit => (s.sk_st_view.to_string(), DIM),
+        Offer::Ready if !edit => (s.sk_st_view.to_string(), INK),
         Offer::Ready if matches!(e, Entry::Cell(_)) => (fill(s.sk_st_open, &[&price]), ui::MINT),
         Offer::Ready => (fill(s.sk_st_raise, &[&price]), ui::MINT),
     }
@@ -247,10 +247,12 @@ pub(super) enum Do {
     WearUlt,
     /// 3단의 고르기를 뒤집는다(화로에서만, 값 없이).
     Flip,
+    /// 올릴·열 수 있는데 여기서는 못 한다(멈춤 — 쉼터 화로에서만, 0173). 목록의 흐린 줄: 고르면 까닭을 말한다.
+    Away,
 }
 
 /// 칸 `e`에 지금 할 수 있는 일만, 가장 앞이 으뜸(커서가 거기서 시작한다): 올리기·열기 → 끼우기 → 고르기 바꾸기.
-/// 멈춤(`edit` 아님)에서는 끼우기만. 비면 확인은 "안 됨" 소리만 낸다.
+/// 멈춤(`edit` 아님)에서는 끼우기만 — 올릴 수 있는 칸이면 끝에 "쉼터 화로에서" 줄(`Do::Away`). 비면 확인은 까닭을 알린다.
 pub(super) fn node_acts(
     board: &Board,
     total: u32,
@@ -272,6 +274,10 @@ pub(super) fn node_acts(
         }
         Entry::Ult(u) if board.has_ult(u) && board.wearable_ult(great) != u => v.push(Do::WearUlt),
         _ => {}
+    }
+    // 멈춤(0173): 점수가 있어 올릴 수 있는 칸인데 올리는 줄이 없으면 왜인지 알 수 없었다 — 끝에 흐린 줄로 남긴다.
+    if !edit && board.offer(e, total) == Offer::Ready {
+        v.push(Do::Away);
     }
     v
 }
@@ -299,6 +305,7 @@ fn act_label(board: &Board, e: Entry, d: Do) -> String {
             fill(s.act_flip, &[mark, name])
         }
         (Do::Flip, _) => String::new(),
+        (Do::Away, _) => s.act_away.to_string(),
     }
 }
 
@@ -561,7 +568,7 @@ fn stroke(points: &[Vec2], thick: f32, col: Color) {
 
 /// 칸 하나(그림까지): `half` = 화면 px의 반 변, `s` = 기준 px 하나의 화면 크기. `focus` = 고른 칸(밝은 바깥 테 — 스킬·큰 기술은
 /// 아래의 단의 점까지 두른다, `Some(점 줄의 아래 끝 y)`).
-fn draw_node(e: Entry, c: Vec2, half: f32, s: f32, look: Look, focus: Option<f32>) {
+pub(super) fn draw_node(e: Entry, c: Vec2, half: f32, s: f32, look: Look, focus: Option<f32>) {
     let shape = shape_of(e);
     let c = c.round();
     let pts = outline(shape, c, half);
@@ -815,8 +822,18 @@ impl App {
             return self.pick_respec(edit);
         }
         let acts = self.acts_at(self.cursor, edit);
-        if acts.is_empty() {
-            // 할 수 있는 일이 없다 — 까닭은 상세 칸의 상태 줄이 말하고 있다.
+        if acts.iter().all(|d| *d == Do::Away) {
+            // 할 수 있는 일이 없다 — 까닭을 상태 줄 자리에 한 번 밝게(0173: 소리만으로는 왜 안 되는지 몰랐다).
+            let why = match (acts.is_empty(), ENTRIES.get(self.cursor)) {
+                (false, _) => s().toast_away.to_string(),
+                (true, Some(&e)) => {
+                    state_line(&self.board(), self.progress.skill_points(), e, edit).0
+                }
+                (true, None) => String::new(),
+            };
+            if !why.is_empty() {
+                self.toast = Some((why, ALERT));
+            }
             self.snd(crate::sfx::Id::Deny);
             return;
         }
@@ -935,6 +952,10 @@ impl App {
                 }
                 self.after_wear();
             }
+            (Do::Away, _) => {
+                self.toast = Some((s().toast_away.to_string(), ALERT));
+                self.snd(crate::sfx::Id::Deny);
+            }
             _ => {}
         }
     }
@@ -1044,6 +1065,8 @@ impl App {
         let asking = matches!(self.scene(), Scene::Ask(_));
         let right = if edit && !asking {
             self.draw_respec(f, &w, at).x - w.s * 8.0
+        } else if !asking {
+            self.draw_view_note(f, &w)
         } else {
             w.panel.x + w.panel.w
         };
@@ -1567,7 +1590,10 @@ impl App {
         let rows: Vec<ui::Row> = self
             .acts_at(under.cursor, edit)
             .into_iter()
-            .map(|d| ui::Row::plain(act_label(&board, e, d)))
+            .map(|d| ui::Row {
+                dim: d == Do::Away,
+                ..ui::Row::plain(act_label(&board, e, d))
+            })
             .collect();
         if rows.is_empty() {
             return;
@@ -1816,33 +1842,40 @@ mod tests {
     }
 
     /// 확인의 목록에는 되는 일만: 화로에서 살 수 있으면 올리기·열기가 맨 앞(으뜸), 배운 스킬은 끼우지 않은 칸에 끼우기,
-    /// 3단부터 고르기 바꾸기(화로에서만). 멈춤에서는 끼우기만 — 잠긴 칸·안 배운 칸·패시브는 빈 목록(확인 = "안 됨" 소리).
+    /// 3단부터 고르기 바꾸기(화로에서만). 멈춤에서는 끼우기만 — 점수가 있어 올릴 수 있는 칸이면 끝에 "쉼터 화로에서" 줄(0173),
+    /// 잠긴 칸·점수가 모자란 칸은 빈 목록(확인 = 까닭 알림).
     #[test]
     fn the_action_list_holds_only_what_applies_with_the_primary_row_first() {
         let worn = sk::START;
         let b = started();
         let acts = |b: &Board, total, e, edit| node_acts(b, total, worn, Ult::Upend, e, edit);
-        // 0166: 새 판에서는 끼워 둔 자리의 스킬도 안 배운 것 — 화로에서 배우기만, 멈춤에서는 아무것도.
+        // 0166: 새 판에서는 끼워 둔 자리의 스킬도 안 배운 것 — 화로에서 배우기만, 멈춤에서는 "쉼터 화로에서"만(0173).
         let fresh = Board::default();
         assert_eq!(acts(&fresh, 2, Entry::Skill(Id::Whirl), true), [Do::Buy]);
-        assert!(acts(&fresh, 2, Entry::Skill(Id::Whirl), false).is_empty());
+        assert_eq!(acts(&fresh, 2, Entry::Skill(Id::Whirl), false), [Do::Away]);
+        // 점수가 없으면 멈춤에서도 화로에서도 아무것도(까닭은 "점수가 모자란다").
+        assert!(acts(&fresh, 0, Entry::Skill(Id::Whirl), false).is_empty());
         // 휘돌이(칸 1에 끼움, 1단): 화로에서 점수가 있으면 올리기 + 칸 2에 끼우기.
         assert_eq!(
             acts(&b, 3, Entry::Skill(Id::Whirl), true),
             [Do::Buy, Do::Wear(1)]
         );
         assert_eq!(acts(&b, 0, Entry::Skill(Id::Whirl), true), [Do::Wear(1)]);
-        assert_eq!(acts(&b, 3, Entry::Skill(Id::Whirl), false), [Do::Wear(1)]);
-        // 안 배운 스킬: 화로에서는 올리기(배움)만, 멈춤에서는 아무것도.
+        assert_eq!(
+            acts(&b, 3, Entry::Skill(Id::Whirl), false),
+            [Do::Wear(1), Do::Away]
+        );
+        assert_eq!(acts(&b, 0, Entry::Skill(Id::Whirl), false), [Do::Wear(1)]);
+        // 안 배운 스킬: 화로에서는 올리기(배움)만, 멈춤에서는 "쉼터 화로에서"만.
         assert_eq!(acts(&b, 3, Entry::Skill(Id::Gather), true), [Do::Buy]);
-        assert!(acts(&b, 3, Entry::Skill(Id::Gather), false).is_empty());
+        assert_eq!(acts(&b, 3, Entry::Skill(Id::Gather), false), [Do::Away]);
         // 잠긴 줄: 아무것도.
         assert!(acts(&b, 30, Entry::Skill(Id::Quake), true).is_empty());
         assert!(acts(&b, 30, Entry::Ult(Ult::Flurry), true).is_empty());
-        // 패시브: 화로에서 열기만 — 연 뒤에는(그리고 멈춤에서는) 아무것도.
+        // 패시브: 화로에서 열기만(멈춤에서는 "쉼터 화로에서") — 연 뒤에는 아무것도.
         let catch = Entry::Cell(Cell::Catch);
         assert_eq!(acts(&b, 3, catch, true), [Do::Buy]);
-        assert!(acts(&b, 3, catch, false).is_empty());
+        assert_eq!(acts(&b, 3, catch, false), [Do::Away]);
         let mut open = b;
         assert!(open.buy(catch, 3));
         assert!(acts(&open, 3, catch, true).is_empty());
@@ -1855,7 +1888,7 @@ mod tests {
         );
         assert_eq!(
             acts(&m, 9, Entry::Skill(Id::Gather), false),
-            [Do::Wear(0), Do::Wear(1)]
+            [Do::Wear(0), Do::Wear(1), Do::Away]
         );
         // 다 익힌 스킬: 올리기는 없다.
         m.rank[Id::Gather.index()] = 5;

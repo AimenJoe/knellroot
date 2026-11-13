@@ -2,6 +2,7 @@
 //!
 //! 순서: 틱이 남긴 알림 → 자세 막대 → 폭발 고리·불똥의 나이 → 쏜 탄·공중 RB·던진 수류탄을 세움 → 탄이 난다 → 수류탄 → 금 간 땅.
 use super::*;
+use crate::tuning::{BOLT_BODY_SLACK, BOLT_FOLLOW, BOLT_STEP};
 
 impl World {
     /// 날아가는 것·늦게 터지는 것(0048·0051): 마법 탄·쇠뇌 볼트, 수류탄, 금 간 땅(망치 여진), 자세 막대가 줄기, 폭발 고리.
@@ -200,10 +201,11 @@ impl World {
             // 적: 걸음 선분에서 맞는 깨어 있는 적(높이가 몸 안). 꿰뚫는 탄은 모두, 아니면 가장 가까운 하나.
             let mut struck: Vec<(usize, f32)> = Vec::new();
             for (i, en) in self.enemies.iter().enumerate() {
+                // 높이: 탄이 몸의 높이 안(위아래 `BOLT_BODY_SLACK` 여유 — 땅을 따라 흐르는 탄이 턱·경사로를 넘는 사이에도 맞게).
                 if !en.active()
                     || (i < 64 && b.hits & (1 << i) != 0)
-                    || b.pos.y < en.pos.y - 0.2
-                    || b.pos.y > en.pos.y + en.height + 0.2
+                    || b.pos.y < en.pos.y - BOLT_BODY_SLACK
+                    || b.pos.y > en.pos.y + en.height + BOLT_BODY_SLACK
                 {
                     continue;
                 }
@@ -265,12 +267,29 @@ impl World {
             }
             b.pos += b.dir * len;
             b.left -= len;
-            // 땅: 탄보다 높은 땅(턱·벽 칸)에 들어가면 사라진다.
+            // 땅: 수평으로 쏜 탄은 **땅을 따라 흐른다**(사장 2026-11-13 "고도 차이가 있을 때 원거리 공격이 안 맞는다" — 조준은 평면인데
+            // 탄은 쏜 높이로 곧게 날아, 낮은 곳의 적 머리 위로 지나가고 턱 위의 적 앞에서 턱에 박혔다). 땅 위 `BOLT_HEIGHT`를 향해
+            // 걸음마다 `BOLT_FOLLOW`(거리당 높이)만큼 오르내린다 — 턱(`BOLT_STEP`까지)은 넘고, 그보다 높은 벼랑·벽 칸에서는 사라진다.
+            // 내려 쏜 탄(0111 — 방향에 높이가 있다)은 곧게 가다 땅에 닿으면 사라진다.
             if let Some(g) = &self.ground {
-                let solid = g.cell_of(b.pos).is_none_or(|(x, z)| {
-                    g.height_in(x, z, b.pos).is_none_or(|h| h > b.pos.y - 0.1)
-                });
-                gone |= solid;
+                let floor = g.cell_of(b.pos).and_then(|(x, z)| g.height_in(x, z, b.pos));
+                let level = b.dir.y.abs() < 1e-4;
+                gone |= match floor {
+                    None => true,
+                    Some(h) if level => {
+                        let want = h + BOLT_HEIGHT;
+                        if want - b.pos.y > BOLT_STEP {
+                            true
+                        } else {
+                            let reach = (len * BOLT_FOLLOW).max(0.02);
+                            b.pos.y += (want - b.pos.y).clamp(-reach, reach);
+                            // 막 넘은 턱의 모서리에 묻히지 않게.
+                            b.pos.y = b.pos.y.max(h + 0.15);
+                            false
+                        }
+                    }
+                    Some(h) => h > b.pos.y - 0.1,
+                };
             } else {
                 // 평평한 시험 판: 내려 쏜 탄(0111)은 바닥(0)에 닿으면 사라진다.
                 gone |= b.pos.y < 0.1;

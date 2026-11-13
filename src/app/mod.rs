@@ -584,6 +584,8 @@ impl App {
     }
 
     fn tick(&mut self, a: Actions) {
+        // 카메라의 지난 틱 = 지금(0173): 이 틱에 카메라가 안 움직이면(멈춤 창 아래) 그림이 틱 사이를 오가지 않는다.
+        self.cam.settle();
         let (scene0, cursor0, back0) = (self.scene(), self.cursor, a.back || a.pause);
         let played0 = self.sfx.as_ref().map_or(0, |s| s.played());
         self.tick_scene(a);
@@ -747,7 +749,13 @@ impl App {
     }
 
     fn draw(&mut self) {
-        let alpha = (self.acc / TICK_DT).clamp(0.0, 1.0);
+        // 멈춤 창 아래의 세계는 틱이 없다 — 틱 사이를 오가지 않게 끝에 세운다(0173).
+        let alpha = if self.paused() {
+            1.0
+        } else {
+            (self.acc / TICK_DT).clamp(0.0, 1.0)
+        };
+        self.cam.present(alpha);
         let stage = self.in_stage().then_some(&self.run);
         let f = self.renderer.draw(&View {
             world: &self.world,

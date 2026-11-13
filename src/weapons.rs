@@ -191,7 +191,7 @@ pub struct Weapon {
     /// 방랑자 모델에서 이 무기 부위 이름(다른 무기 부위는 숨긴다).
     pub node: &'static str,
     /// 공격 기력 배율(0117, 사장 "큰 무기는 더 많은 기력 — 높은 피해의 보정"): 평타·대시 공격 `stamina.attack`, 강타 `heavy.stamina`,
-    /// 원거리 무기는 사격·모은 사격·공중 볼트에 곱한다. 맨손 < 쇠뇌 < 지팡이 < 검 < 망치.
+    /// 원거리 무기는 사격·모은 사격·공중 볼트에 곱한다. 맨손 < 지팡이 < 쇠뇌(0173: 0.7 → 0.9) < 검 < 망치.
     pub stamina: f32,
 }
 
@@ -439,20 +439,23 @@ pub const WEAPONS: [Weapon; 5] = [
         combo: &[],
         dash: None,
         heavy: None,
+        // 0173(사장 "쇠뇌는 전투도 편한데 데미지도 강해서 오버파워"): 잰 값 — 8m 밖에서 처음 4초 60~65/초(근접 무기 30~37/초의 두 배),
+        // 오래 쏴도 35/초(검 25). 안전한 거리의 값은 피해로 치른다: 볼트 20 → 10(마법 탄과 같다), 한 발 0.24 → 0.36초,
+        // 장전 1.2 → 1.5초, 기력 0.7 → 0.9. 고친 뒤 처음 4초 약 23/초 · 오래 15/초(근접의 여섯~일곱 할).
         rb: Rb::Shot {
             bolt: Bolt {
                 speed: 1.7,
                 range: 1.4,
-                damage: 20,
-                poise: 1.5,
+                damage: 10,
+                poise: 1.0,
                 pierce: false,
                 stagger: 0.0,
                 look: 3,
                 scale: 1.0,
             },
             mag: 4,
-            reload: 1.2,
-            time: 0.6,
+            reload: 1.5,
+            time: 0.9,
         },
         grenade: Some(Grenade {
             fuse: 1.5,
@@ -468,7 +471,7 @@ pub const WEAPONS: [Weapon; 5] = [
         charged: Bolt {
             speed: 2.2,
             range: 1.8,
-            damage: 50,
+            damage: 40,
             poise: 6.0,
             pierce: true,
             stagger: 0.4,
@@ -476,7 +479,7 @@ pub const WEAPONS: [Weapon; 5] = [
             scale: 1.6,
         },
         node: "w_crossbow",
-        stamina: 0.7,
+        stamina: 0.9,
     },
     Weapon {
         id: Id::Fists,
@@ -622,8 +625,9 @@ mod tests {
             dash: 0,
             heavy: 0,
             aftershock: 0,
-            rb: 2,
-            charged: 5,
+            // 0173: 쇠뇌를 낮췄다(사격 2 → 1, 모은 사격 5 → 4) — 눈금을 옮긴 것이 아니라 값을 바꾼 것이라 이 표의 줄도 같이 고친다.
+            rb: 1,
+            charged: 4,
             grenade: 3,
         },
         Old {

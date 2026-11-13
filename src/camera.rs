@@ -144,7 +144,15 @@ fn smoothstep(x: f32) -> f32 {
 
 pub struct Camera {
     pub mode: Mode,
+    /// 이번 틱의 리그(로직 — 조준 광선·시험이 읽는다). 그림은 `view`를 쓴다.
     pub rig: Rig,
+    /// 그릴 때의 리그(0173): 지난 틱과 이번 틱 사이(`present`). 방랑자는 틱 사이를 보간해 그리는데 카메라만 틱에서 뚝뚝 옮기면,
+    /// 화면 주사율이 60Hz가 아니거나 프레임 간격이 흔들릴 때 방랑자가 화면에서 한 틱어치씩 앞뒤로 떨린다.
+    pub view: Rig,
+    /// 지난 틱의 (리그, 흔들림 + 킥, 굴림) · 그릴 때의 흔들림 + 킥, 굴림.
+    prev: (Rig, Vec3, f32),
+    view_off: Vec3,
+    view_roll: f32,
     /// 전환 중이면 (출발 궤도, 경과 시간, 이번 전환 길이 — 없으면 첫 갱신에 돌 각도로 정한다, 방위 늦춤 몫).
     blend: Option<(Orbit, f32, Option<f32>, Curve)>,
     /// 쿼터뷰 추적점(플레이어를 지연 추적).
@@ -181,13 +189,18 @@ pub struct Camera {
 
 impl Camera {
     pub fn new(player: Vec3, t: &Tuning) -> Self {
+        let zero = Rig {
+            pos: Vec3::ZERO,
+            look: Vec3::ZERO,
+            fov: 1.0,
+        };
         let mut c = Camera {
             mode: Mode::Quarter,
-            rig: Rig {
-                pos: Vec3::ZERO,
-                look: Vec3::ZERO,
-                fov: 1.0,
-            },
+            rig: zero,
+            view: zero,
+            prev: (zero, Vec3::ZERO, 0.0),
+            view_off: Vec3::ZERO,
+            view_roll: 0.0,
             blend: None,
             follow: player,
             yaw: 0.0,
@@ -208,7 +221,27 @@ impl Camera {
             shake: Vec3::ZERO,
         };
         c.rig = c.desired(t, None);
+        c.settle();
+        c.present(1.0);
         c
+    }
+
+    /// 틱 들머리에: 지난 틱의 리그 = 지금 리그. 이 틱에 `update`가 안 불리면(멈춤 창 아래) 그림이 틱 사이를 오가지 않는다.
+    pub fn settle(&mut self) {
+        self.prev = (self.rig, self.shake + self.kick, self.roll);
+    }
+
+    /// 그리기 전에: 지난 틱과 이번 틱 사이 `alpha`의 리그를 `view`에(0173). 방랑자의 보간과 같은 `alpha`를 준다.
+    pub fn present(&mut self, alpha: f32) {
+        let a = alpha.clamp(0.0, 1.0);
+        let (p, off, roll) = self.prev;
+        self.view = Rig {
+            pos: p.pos.lerp(self.rig.pos, a),
+            look: p.look.lerp(self.rig.look, a),
+            fov: p.fov + (self.rig.fov - p.fov) * a,
+        };
+        self.view_off = off.lerp(self.shake + self.kick, a);
+        self.view_roll = roll + (self.roll - roll) * a;
     }
 
     /// 모드 전환. 같은 모드면 아무것도 안 한다. 출발점은 지금 카메라(고정 자리에서 시작하면 달리는 중 튄다).
@@ -336,6 +369,7 @@ impl Camera {
         target: Option<Vec3>,
         obstacles: &[Aabb],
     ) {
+        self.settle();
         // 락온을 풀면 쿼터뷰 방위를 방식에 따라 정한다(0011): 고정 = 랩 값, 따라감 = 락온하던 방향 그대로(돌아가며 돌지 않는다),
         // 90° 단위 = 랩 값 + 90°×k 중 락온 방향에 가장 가까운 것(최대 45°만 돈다, 지도 방향은 넷뿐).
         if let Some(a) = self.unlock_azimuth.take() {
@@ -386,10 +420,17 @@ impl Camera {
                 } else {
                     1.0
                 };
-                let ky = 1.0 - (-t[P::CamLYawLag] * slow * dt).exp();
+                // 따라잡기(0173): 대상 방향과의 차가 크면 — 방랑자가 대상 뒤로 돌아가 대상이 카메라와 방랑자 사이에 섰다 — 가까움의
+                // 늦춤을 걷고 상한을 올린다. 입력 기준은 그 틱에 대상 쪽으로 바뀌었는데 카메라만 반대편을 보고 있으면 스틱이 화면과
+                // 거꾸로다(예전: 2m에서 뒤로 돌면 초당 36° — 다시 보기까지 4초). 차가 작을 때(곁에서 옆걸음)는 예전 그대로 조용하다.
+                let at = t[P::CamLCatchAt].to_radians().max(1e-3);
+                let far = smoothstep((diff.abs() - at) / at);
+                let slow_k = slow + (1.0 - slow) * far;
+                let ky = 1.0 - (-t[P::CamLYawLag] * slow_k * dt).exp();
                 // 상한도 가까울수록 낮춘다(바짝 붙어 원을 그리면 대상 방향이 초당 200° 넘게 바뀐다 — 다 따라가면 멀미).
                 // 바닥 0.4: 대상이 화면 밖으로 영영 빠지지는 않게.
-                let max = t[P::CamLYawMax].to_radians() * slow.max(0.4) * dt;
+                let calm = t[P::CamLYawMax] * slow.max(0.4);
+                let max = (calm + (t[P::CamLCatch] - calm).max(0.0) * far).to_radians() * dt;
                 self.yaw += (diff * ky).clamp(-max, max);
             }
         }
@@ -540,18 +581,18 @@ impl Camera {
     /// macroquad 카메라로. 렌더 타깃을 쓰면 `aspect`를 꼭 준다(안 주면 화면 비율로 찌그러진다).
     pub fn to_camera3d(&self, rt: RenderTarget, aspect: f32) -> Camera3D {
         Camera3D {
-            position: self.rig.pos + self.shake + self.kick,
-            target: self.rig.look + self.shake + self.kick,
+            position: self.view.pos + self.view_off,
+            target: self.view.look + self.view_off,
             // 기본값은 z-up — 매번 적는다. 땅 돌리기 휘청(0084)이면 앞 축 둘레로 살짝 돌린 위.
-            up: if self.roll.abs() > 1e-5 {
+            up: if self.view_roll.abs() > 1e-5 {
                 Quat::from_axis_angle(
-                    (self.rig.look - self.rig.pos).normalize_or(Vec3::NEG_Z),
-                    self.roll,
+                    (self.view.look - self.view.pos).normalize_or(Vec3::NEG_Z),
+                    self.view_roll,
                 ) * Vec3::Y
             } else {
                 Vec3::Y
             },
-            fovy: self.rig.fov,
+            fovy: self.view.fov,
             aspect: Some(aspect),
             projection: Projection::Perspective,
             render_target: Some(rt),
@@ -864,6 +905,151 @@ mod tests {
 mod framing_tests {
     use super::*;
 
+    /// 재는 도구(0173): 대상 `r`m 앞에 서 있다가 한 틱에 뒤(반대편 `r`m)로 넘어갔을 때, 락온 카메라가 대상 쪽을 다시 볼 때까지의
+    /// 초와 그동안의 가장 빠른 회전(°/s). `cargo test behind_probe -- --nocapture --ignored`
+    fn behind(t: &Tuning, r: f32) -> (f32, f32) {
+        let tg = Vec3::ZERO;
+        let mut c = Camera::new(vec3(0.0, 0.0, r), t);
+        c.set_mode(Mode::Lock, Some(tg), vec3(0.0, 0.0, r));
+        for _ in 0..240 {
+            c.update(1.0 / 60.0, t, vec3(0.0, 0.0, r), Some(tg), &[]);
+        }
+        let p = vec3(0.0, 0.0, -r);
+        let (mut secs, mut peak) = (f32::MAX, 0f32);
+        for i in 0..900 {
+            let y0 = c.yaw;
+            c.update(1.0 / 60.0, t, p, Some(tg), &[]);
+            peak = peak.max(wrap(c.yaw - y0).abs().to_degrees() * 60.0);
+            let want = (tg.x - p.x).atan2(tg.z - p.z);
+            if wrap(want - c.yaw).abs().to_degrees() < 20.0 {
+                secs = (i + 1) as f32 / 60.0;
+                break;
+            }
+        }
+        (secs, peak)
+    }
+
+    /// 대상 둘레 `r`m를 `v` m/s로 3초 돈 뒤의 (카메라 회전 °/s, 대상 방향과의 차 °).
+    fn circle(t: &Tuning, r: f32, v: f32) -> (f32, f32) {
+        let tg = Vec3::ZERO;
+        let at = |a: f32| vec3(a.sin() * r, 0.0, a.cos() * r);
+        let mut c = Camera::new(at(0.0), t);
+        c.set_mode(Mode::Lock, Some(tg), at(0.0));
+        for _ in 0..240 {
+            c.update(1.0 / 60.0, t, at(0.0), Some(tg), &[]);
+        }
+        let (mut a, mut rate, mut err) = (0.0f32, 0.0, 0.0);
+        for _ in 0..180 {
+            a += v / r / 60.0;
+            let y0 = c.yaw;
+            c.update(1.0 / 60.0, t, at(a), Some(tg), &[]);
+            rate = wrap(c.yaw - y0).abs().to_degrees() * 60.0;
+            let p = at(a);
+            err = wrap((tg.x - p.x).atan2(tg.z - p.z) - c.yaw)
+                .abs()
+                .to_degrees();
+        }
+        (rate, err)
+    }
+
+    /// 0173: 방랑자가 대상 뒤로 돌아가면(대상이 카메라와 방랑자 사이) 카메라가 곧 따라 돈다 — 예전엔 2m에서 4초였다.
+    /// 곁에서 옆걸음하는 동안(차가 작다)은 예전의 조용한 상한 그대로.
+    #[test]
+    fn the_lock_camera_catches_up_when_the_wanderer_gets_behind_the_target() {
+        let t = Tuning::default();
+        for r in [1.2, 2.0, 3.0, 5.0] {
+            let (secs, peak) = behind(&t, r);
+            assert!(secs < 2.0, "{r}m: {secs}s");
+            assert!(peak <= t[P::CamLCatch] + 1.0, "{r}m: {peak}°/s");
+        }
+        // 따라잡기를 끄면(0) 예전 그대로 느리다 — 이 시험이 재는 것이 그 값이라는 확인.
+        let mut off = Tuning::default();
+        off.bend(P::CamLCatch, 0.0);
+        assert!(behind(&off, 2.0).0 > 3.0);
+        // 멀찍이서 도는 동안은 차가 따라잡기 각에 못 미친다 — 상한은 조용한 쪽.
+        let (rate, err) = circle(&t, 4.0, 4.0);
+        assert!(
+            err < t[P::CamLCatchAt] && rate <= t[P::CamLYawMax],
+            "{rate} {err}"
+        );
+    }
+
+    #[test]
+    #[ignore]
+    fn behind_probe() {
+        let t = Tuning::default();
+        for r in [1.2, 2.0, 3.0, 5.0] {
+            let (s, p) = behind(&t, r);
+            println!("behind r={r}: {s:.2}s peak {p:.0} deg/s");
+        }
+        for (r, v) in [(1.6, 4.0), (2.5, 4.0), (4.0, 4.0), (6.0, 4.0)] {
+            let (rate, err) = circle(&t, r, v);
+            println!(
+                "circle r={r} v={v}: target {:.0} deg/s, cam {rate:.0} deg/s, err {err:.0}",
+                (v / r).to_degrees()
+            );
+        }
+    }
+
+    /// 0173: 방랑자는 틱 사이를 보간해 그린다 — 카메라도 같은 `alpha`로 보간해야 걷는 동안 방랑자가 화면에서 떨리지 않는다.
+    /// 120Hz 화면(틱 60Hz)을 흉내 낸다: 프레임이 틱의 한가운데와 끝에 번갈아 온다.
+    #[test]
+    fn a_walking_wanderer_does_not_judder_on_screen_between_ticks() {
+        let t = Tuning::default();
+        let dt = 1.0 / 60.0;
+        let v = vec3(5.0, 0.0, 0.0);
+        let mut c = Camera::new(Vec3::ZERO, &t);
+        let mut pos = Vec3::ZERO;
+        // 따라가기가 자리 잡을 때까지.
+        for _ in 0..240 {
+            pos += v * dt;
+            c.update(dt, &t, pos, None, &[]);
+        }
+        let (mut shown, mut stepped) = (Vec::new(), Vec::new());
+        for _ in 0..30 {
+            let prev = pos;
+            pos += v * dt;
+            c.update(dt, &t, pos, None, &[]);
+            for alpha in [0.5, 1.0] {
+                c.present(alpha);
+                let p = prev.lerp(pos, alpha);
+                shown.push(ndc_x(&c.view, p));
+                // 예전: 카메라는 이번 틱의 리그 그대로.
+                stepped.push(ndc_x(&c.rig, p));
+            }
+        }
+        let spread = |xs: &[f32]| {
+            let (lo, hi) = xs
+                .iter()
+                .fold((f32::MAX, f32::MIN), |(l, h), &x| (l.min(x), h.max(x)));
+            hi - lo
+        };
+        // 화면 폭 2(NDC) 가운데 — 보간하면 방랑자는 화면의 한 자리에 선다.
+        assert!(spread(&shown) < 1e-3, "보간한 카메라: {}", spread(&shown));
+        // 보간하지 않으면 반 틱어치(약 4cm)씩 앞뒤로 흔들린다 — 이 시험이 그 떨림을 본다.
+        assert!(
+            spread(&stepped) > 3.0 * spread(&shown).max(1e-4),
+            "{}",
+            spread(&stepped)
+        );
+    }
+
+    /// 0173: 카메라가 안 움직인 틱(멈춤 창 아래)에는 그림이 지난 틱과 이번 틱 사이를 오가지 않는다.
+    #[test]
+    fn a_camera_that_did_not_move_this_tick_stands_still_whatever_the_alpha() {
+        let t = Tuning::default();
+        let mut c = Camera::new(Vec3::ZERO, &t);
+        for i in 0..30 {
+            c.update(1.0 / 60.0, &t, vec3(i as f32 * 0.1, 0.0, 0.0), None, &[]);
+        }
+        c.settle();
+        c.present(0.2);
+        let a = c.view;
+        c.present(0.9);
+        assert_eq!(a, c.view);
+        assert_eq!(a, c.rig);
+    }
+
     fn ndc_x(rig: &Rig, p: Vec3) -> f32 {
         let m = Mat4::perspective_rh_gl(rig.fov, 16.0 / 9.0, 0.1, 200.0)
             * Mat4::look_at_rh(rig.pos, rig.look, Vec3::Y);
@@ -972,9 +1158,10 @@ mod motion_probe {
                     prev = c.rig;
                 }
                 if strict {
-                    // 쿼터뷰는 플레이어 속도(6)를 크게 넘지 않고 거의 돌지 않는다. 락온은 상한(90°/s) 근처까지만.
+                    // 쿼터뷰는 플레이어 속도(6)를 크게 넘지 않고 거의 돌지 않는다. 락온은 따라잡기 상한(0173 — 대상 곁을 돌아
+                    // 뒤로 가면 `cam.lock.catch deg/s`까지 따라 돈다. 예전 상한은 90°/s × 1.4, 카메라 25 m/s)까지만.
                     let (vlim, wlim) = if lock {
-                        (25.0, t[P::CamLYawMax] * 1.4)
+                        (30.0, (t[P::CamLYawMax] * 1.4).max(t[P::CamLCatch] * 1.05))
                     } else {
                         (15.0, 30.0)
                     };

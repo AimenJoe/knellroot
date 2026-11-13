@@ -188,6 +188,18 @@ impl App {
         self.window_hints(f, w, right, &all);
     }
 
+    /// 멈춤의 큰 창(0173): 올리는 일이 있는 탭(상태·기술)의 아래 줄 오른쪽 끝에 "보기만 — 올리기는 쉼터 화로에서".
+    /// 화로에서 되돌리기 단추가 서는 자리다. 안내 줄이 쓸 수 있는 오른쪽 끝을 돌려준다.
+    pub(super) fn draw_view_note(&mut self, f: &Frame, w: &Window) -> f32 {
+        let k = K_KIND * w.k;
+        let room = w.panel.w * 0.5;
+        let text = self.ui.fit(s().view_note, room, k);
+        let x = (w.panel.x + w.panel.w - self.ui.width(&text, k) - w.s * 2.0).round();
+        let y = f.oy + f.h - self.ui.px(1.0) * 2.2 + (self.ui.px(1.0) - self.ui.px(k)) * 0.5;
+        self.ui.text(&text, x, y, k, AMBER);
+        x - w.s * 8.0
+    }
+
     /// 왼쪽 칸의 줄 목록(줄 표 그대로 — 창의 배로): `top`(기준 px)부터 몸의 끝까지. 넘치면 굴리고 ▲▼는 줄 끝과 세로 선 사이에.
     /// 누를 자리를 채운다.
     pub(super) fn draw_left_list(&mut self, w: &Window, rows: &[ui::Row], top: f32) {

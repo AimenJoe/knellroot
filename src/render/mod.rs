@@ -234,7 +234,7 @@ impl Renderer {
             w.player.pos,
             PLAYER_HEIGHT,
             PLAYER_RADIUS + 0.15,
-            cam.rig.pos,
+            cam.view.pos,
             tg,
         );
         let k = 1.0 - (-10.0 * get_frame_time()).exp();
@@ -245,7 +245,7 @@ impl Renderer {
         let lights: Vec<Light> = match v.stage {
             Some(run) => self.terrain(run, w, cam, &pts, k, t),
             None => {
-                self.sandbox_floor(w, &pts, cam.rig.pos, k, t);
+                self.sandbox_floor(w, &pts, cam.view.pos, k, t);
                 Vec::new()
             }
         };
@@ -268,7 +268,7 @@ impl Renderer {
         if let Some(run) = v.stage {
             // 문이 시야를 가리면 옅게(0091, 사장 "문은 투명화되지 않아서 시야를 가림") — 지형 덩어리와 같은 판정점·같은 빠르기.
             let want = match gate_box(run) {
-                Some(b) if !crate::camera::occluders(&pts, cam.rig.pos, &[b]).is_empty() => FADED,
+                Some(b) if !crate::camera::occluders(&pts, cam.view.pos, &[b]).is_empty() => FADED,
                 _ => 1.0,
             };
             self.gate_fade += (want - self.gate_fade) * k;

@@ -1,6 +1,6 @@
 // 큰 창(화로·멈춤) 시험(0104 → 0164 "창 하나 + 탭"): 헤드리스 Chromium으로 한국어·영어 두 판 —
-//   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 창(상태 탭 — 레벨 줄 셋을 차례로 올려 보고 묻는 창, 장신구 칸에서 확인 = 장비 탭의
-//   그 칸) → 탭마다(E·Q로 넘긴다):
+//   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 창(상태 탭 — 레벨 줄 셋을 차례로 올려 보고 묻는 창, 기술 줄에서 확인 = 기술 탭의
+//   그 칸, 0173) → 탭마다(E·Q로 넘긴다):
 //   장비(칸·후보의 작은 목록) · 도감(묶음 둘의 모든 줄) · 가게 · 설정(모든 줄) · 기술, 그리고 멈춤의 같은 창(탭 다섯), 화면마다 스크린숏.
 //   기술 탭(0161 — 옛 "나무" 줄과 기술 판이 하나가 되었다): 칸 그림 격자(갈래 셋 × 줄 셋) + 오른쪽 상세.
 //   확인 = 그 칸에 할 수 있는 일의 작은 목록(올리기·열기 / 끼우기 / 고르기 바꾸기) → 사는 일은 묻는 창. 한 단 사기 · 3단 고르기 뒤집기 ·
@@ -125,15 +125,20 @@ async function run(browser, lang) {
   await press('Enter'); await page.waitForTimeout(300);
   await shot('7-level-full');
   await page.waitForTimeout(1800);
-  // 상태 탭의 장신구 칸 셋(레벨 줄 아래): 낀 칸 · 빈 칸의 상세 → 빈 칸(장신구 2)에서 확인 = 장비 탭의 그 칸으로(탭 사이의 이음).
+  // 상태 탭의 기술 줄 넷(레벨 줄 아래, 0173 — 그전에는 장신구 세 칸): 스킬 두 칸 · 큰 기술 · 패시브의 상세 → 패시브 줄에서 확인 =
+  // 기술 탭의 그 칸으로(탭 사이의 이음). 거기서 Q = 장비 탭(무기 칸).
   await press('ArrowDown', 2); await page.waitForTimeout(150);
-  await shot('7a-status-charm-worn');
+  await shot('7a-status-skill-1');
   await press('ArrowDown'); await page.waitForTimeout(150);
-  await shot('7b-status-charm-empty');
+  await shot('7b-status-skill-2');
   await press('ArrowDown'); await page.waitForTimeout(150);
-  await shot('7c-status-charm-3');
-  await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
-  // 탭마다 한 바퀴(0164): 장비(장신구 2 칸에 서 있다) — 칸을 걷고 후보의 작은 목록(장신구 칸·무기 칸)을 열어 본다.
+  await shot('7c-status-great');
+  await press('ArrowDown'); await page.waitForTimeout(150);
+  await shot('7d-status-passives');
+  await press('Enter'); await page.waitForTimeout(300);
+  await shot('7e-status-to-skills');
+  await press('KeyQ'); await page.waitForTimeout(300);
+  // 탭마다 한 바퀴(0164): 장비(무기 칸에 서 있다 — → 가운데 장신구 칸, ↑ 첫 칸) — 칸을 걷고 후보의 작은 목록(장신구 칸·무기 칸)을 열어 본다.
   await shot('8a-equip');
   await press('ArrowRight'); await page.waitForTimeout(150); await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8b-equip-charm');
@@ -227,9 +232,11 @@ async function run(browser, lang) {
   // 기술: 같은 화면, 끼우기만(되돌리기 단추 없음).
   await press('KeyE'); await page.waitForTimeout(400);
   await shot('16-pause-skills');
+  // 되돌린 뒤라 아는 스킬이 없다(점수는 있다): 안 배운 칸에서 확인 — 목록이 없고 상태 줄 자리에 "올리기는 쉼터 화로에서만" 알림(0173).
+  // 여기서 Escape를 누르면 목록이 아니라 창이 닫힌다(예전 길이 그래서 뒤의 도감·설정을 싸움 화면에서 찍고 있었다) — 누르지 않는다.
   await home(); await press('ArrowRight'); await press('Enter'); await page.waitForTimeout(300);
-  await shot('16a-pause-skills-acts');
-  await press('Escape'); await page.waitForTimeout(300);
+  await shot('16a-pause-skills-away');
+  await page.waitForTimeout(1600);
   // 도감 → 설정(멈춤에서는 끝에 개발 · 처음부터 · 타이틀로): 줄마다, 끝 줄에서 묻는 창을 열어 보고 취소.
   await press('KeyE'); await page.waitForTimeout(300);
   await shot('17-pause-codex');
@@ -262,6 +269,10 @@ async function run(browser, lang) {
     await press('Escape'); await page.waitForTimeout(300);
     await press('KeyE', 2); await page.waitForTimeout(300);
     await shot(`21-${name}-pause-skills`);
+    // 배운 스킬(휘돌이 — 칸 1에 끼움)에서 확인: "칸 2에 끼우기" + 올릴 수 있으면 끝에 흐린 "올리기 — 쉼터 화로에서"(0173) → 닫기.
+    await home(); await press('Enter'); await page.waitForTimeout(300);
+    await shot(`21-${name}-pause-acts`);
+    await press('Escape'); await page.waitForTimeout(300);
     // 멈춤의 상세는 상태 줄만 다르다("쉼터 화로에서 올린다") — 모든 칸은 첫 기록에서 한 번만 돈다.
     if (name === BOARDS[0][0]) await sweep(`21-${name}-pause`, []); else await press('ArrowDown', 4);
     // 큰 기술 칸에서 확인(배웠고 끼우지 않았으면 "끼우기" 목록, 아니면 아무 일 없음) → 닫기.

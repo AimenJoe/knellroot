@@ -290,6 +290,8 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("render.face shade", "면 음영"),
     ("cam.lock.yaw max deg/s", "락온 돌기 상한(도/초)"),
     ("cam.lock.near slow m", "가까우면 천천히 돌기(m)"),
+    ("cam.lock.catch deg/s", "뒤로 돌면 따라잡기(도/초)"),
+    ("cam.lock.catch at deg", "따라잡기 시작 각(도)"),
     ("cam.pull out 1/s", "벽 당긴 뒤 풀기(/초)"),
     ("cam.quarter.lead s", "쿼터뷰 앞서 보기(초)"),
     ("cam.blend turn x", "전환 돌기 배율"),

@@ -594,3 +594,132 @@ fn a_crossbow_shot_on_the_beat_keeps_its_bolt_and_mashing_spends_them() {
     // 창은 아무리 빨라도 ±60ms 아래로 좁아지지 않는다.
     assert!(on_beat(0.24 + 0.055, 0.24) && !on_beat(0.24 + 0.07, 0.24));
 }
+
+/// 원거리 시험 마당: 5×8칸(2m), z가 음수인 위쪽 네 줄의 높이가 `far`, 아래 네 줄은 0. 방랑자는 아래쪽(z = +4)에서 위(-z)를 본다.
+fn split_yard(far: f32) -> World {
+    use crate::ground::{Cell::Flat, Ground};
+    let mut cells = vec![Flat(0.0); 5 * 8];
+    for c in cells.iter_mut().take(5 * 4) {
+        *c = Flat(far);
+    }
+    let mut w = World::new("test", 30.0);
+    w.ground = Some(Ground::new(5, 8, 2.0, cells));
+    w.view_yaw = Some(0.0);
+    w.player.pos = vec3(0.0, 0.0, 4.0);
+    w.player.prev = w.player.pos;
+    w.player.facing = std::f32::consts::PI;
+    w
+}
+
+/// 사장 2026-11-13 "고도 차이가 있을 때 원거리 공격이 안 맞는다": 수평으로 쏜 탄은 땅을 따라 흐른다 — 낮은 곳에 선 적의 머리
+/// 위로 지나가지 않고(전에는 쏜 높이로 곧게 날았다), 턱 위에 선 적 앞에서 턱에 박히지도 않는다. 벼랑처럼 높은 단에서는 사라진다.
+#[test]
+fn a_level_shot_follows_the_ground_to_foes_above_and_below() {
+    let t = Tuning::default();
+    let shoot = |w: &mut World| {
+        w.enemies[0].hp = 900;
+        idle(w);
+        press(
+            &t,
+            w,
+            Actions {
+                cast: true,
+                ..Default::default()
+            },
+            90,
+        )
+    };
+    let hit = |ev: &[Event]| ev.iter().any(|e| matches!(e, Event::Hit { .. }));
+    for (far, mine, tag) in [
+        (-1.0, 0.0, "a foe one metre below"),
+        (-2.5, 0.0, "a foe down a tall drop"),
+        (1.0, 0.0, "a foe up a one-metre ledge"),
+        (0.0, 0.0, "flat ground still hits"),
+    ] {
+        let mut w = split_yard(far);
+        w.player.pos.y = mine;
+        w.spawn_mob(vec3(0.0, far, -4.0));
+        let ev = shoot(&mut w);
+        assert!(hit(&ev), "{tag}");
+        assert!(w.enemies[0].hp < 900, "{tag}");
+    }
+    // 방랑자가 위에 서서 아래로: 같은 일(땅 높이는 음수만이 아니다).
+    let mut w = split_yard(0.0);
+    {
+        use crate::ground::{Cell::Flat, Ground};
+        let mut cells = vec![Flat(0.0); 5 * 8];
+        for c in cells.iter_mut().skip(5 * 4) {
+            *c = Flat(1.5);
+        }
+        w.ground = Some(Ground::new(5, 8, 2.0, cells));
+    }
+    w.player.pos.y = 1.5;
+    w.player.prev = w.player.pos;
+    w.spawn_mob(vec3(0.0, 0.0, -4.0));
+    assert!(hit(&shoot(&mut w)), "shooting down off a terrace");
+    // 벼랑(넘는 턱보다 높은 단) 위의 적에게는 닿지 않는다 — 탄은 벼랑 면에서 사라진다.
+    let mut w = split_yard(3.0);
+    w.spawn_mob(vec3(0.0, 3.0, -4.0));
+    assert!(!hit(&shoot(&mut w)), "a cliff face stops the bolt");
+    assert!(w.bolts.is_empty());
+}
+
+/// 재는 도구(0173): 무기마다 서 있는 적에게 `secs`초 동안 준 피해(초당) — 평타를 박자에 맞춰/마구 눌러.
+/// `cargo test weapon_dps_probe -- --ignored --nocapture`
+fn dps(id: weapons::Id, secs: f32, on_beat: bool, dist: f32) -> (f32, f32) {
+    let t = Tuning::default();
+    let mut w = World::new("test", 40.0);
+    w.set_weapon(id);
+    let hp0 = 1_000_000;
+    let i = mob_with(&mut w, vec3(0.0, 0.0, -dist), hp0);
+    let n = (secs / TICK_DT) as usize;
+    let mut starved = 0;
+    for k in 0..n {
+        idle(&mut w);
+        w.enemies[i].pos = vec3(0.0, 0.0, -dist);
+        w.enemies[i].poise = 0.0;
+        w.player.pos = Vec3::ZERO;
+        let press = if on_beat {
+            let beat = w.player.beat.period;
+            beat <= 0.0 || w.player.beat.since_swing >= beat - TICK_DT * 0.5
+        } else {
+            k % 2 == 0
+        };
+        if w.player.stamina < 1.0 {
+            starved += 1;
+        }
+        w.step(
+            &Actions {
+                attack: press,
+                ..Default::default()
+            },
+            &t,
+        );
+    }
+    (
+        (hp0 - w.enemies[i].hp) as f32 / secs,
+        starved as f32 / n as f32,
+    )
+}
+
+#[test]
+#[ignore]
+fn weapon_dps_probe() {
+    for id in weapons::IDS {
+        let d = if id == weapons::Id::Crossbow {
+            8.0
+        } else {
+            1.2
+        };
+        for secs in [4.0, 20.0] {
+            let (mash, s1) = dps(id, secs, false, d);
+            let (beat, s2) = dps(id, secs, true, d);
+            println!(
+                "{:?} {secs}s: mash {mash:.1}/s (기력 바닥 {:.0}%) · beat {beat:.1}/s (기력 바닥 {:.0}%)",
+                id,
+                s1 * 100.0,
+                s2 * 100.0
+            );
+        }
+    }
+}

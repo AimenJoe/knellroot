@@ -205,7 +205,7 @@ impl Renderer {
             self.backdrop.env.fog_deep,
         );
         let boxes: Vec<Aabb> = sc.pieces.iter().filter_map(|p| p.aabb).collect();
-        let hidden = crate::camera::occluders(pts, cam.rig.pos, &boxes);
+        let hidden = crate::camera::occluders(pts, cam.view.pos, &boxes);
         // 빛 지도 바닥(0044)은 캐릭터 그림자 가림판을 읽는 재질로(0045). 가림판이 없으면 기본 재질 그대로.
         let floor = match (&self.floor_mat, &self.shadow_rt, self.light_vp) {
             (Some(m), Some(rt), Some(vp)) => {

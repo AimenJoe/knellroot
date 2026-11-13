@@ -494,7 +494,7 @@ impl App {
         };
         let mark = target.and_then(|g| {
             let (ndc, front) =
-                crate::camera::world_to_ndc(&self.cam.rig, f.w / f.h.max(1.0), g + Vec3::Y);
+                crate::camera::world_to_ndc(&self.cam.view, f.w / f.h.max(1.0), g + Vec3::Y);
             crate::camera::edge_marker(ndc, front, GOAL_ARROW_INSET)
         });
         self.goal_off = match mark {
@@ -550,7 +550,7 @@ impl App {
             return;
         };
         let (ndc, front) =
-            crate::camera::world_to_ndc(&self.cam.rig, f.w / f.h.max(1.0), from + Vec3::Y);
+            crate::camera::world_to_ndc(&self.cam.view, f.w / f.h.max(1.0), from + Vec3::Y);
         let px = |n: Vec2| {
             vec2(
                 f.ox + (n.x + 1.0) * 0.5 * f.w,
@@ -573,7 +573,7 @@ impl App {
         let changed = self.run.resident_changed.get(k).copied().unwrap_or(false);
         let text = tr(crate::residents::line(r, changed, n));
         let (ndc, front) =
-            crate::camera::world_to_ndc(&self.cam.rig, f.w / f.h.max(1.0), at + Vec3::Y * 1.75);
+            crate::camera::world_to_ndc(&self.cam.view, f.w / f.h.max(1.0), at + Vec3::Y * 1.75);
         if !front {
             return;
         }
@@ -680,7 +680,7 @@ impl App {
     fn head_on_screen(&self, f: &Frame) -> Option<Vec2> {
         let pl = &self.world.player;
         let head = pl.pos + Vec3::Y * (pl.air + 1.9);
-        let (ndc, front) = crate::camera::world_to_ndc(&self.cam.rig, f.w / f.h.max(1.0), head);
+        let (ndc, front) = crate::camera::world_to_ndc(&self.cam.view, f.w / f.h.max(1.0), head);
         front.then(|| {
             vec2(
                 f.ox + (ndc.x + 1.0) * 0.5 * f.w,
