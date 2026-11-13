@@ -1,5 +1,6 @@
 // 큰 창(화로·멈춤) 시험(0104 → 0164 "창 하나 + 탭"): 헤드리스 Chromium으로 한국어·영어 두 판 —
-//   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 창(상태 탭 — 레벨 줄 셋을 차례로 올려 보고 묻는 창) → 탭마다(E·Q로 넘긴다):
+//   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 창(상태 탭 — 레벨 줄 셋을 차례로 올려 보고 묻는 창, 장신구 칸에서 확인 = 장비 탭의
+//   그 칸) → 탭마다(E·Q로 넘긴다):
 //   장비(칸·후보의 작은 목록) · 도감(묶음 둘의 모든 줄) · 가게 · 설정(모든 줄) · 기술, 그리고 멈춤의 같은 창(탭 다섯), 화면마다 스크린숏.
 //   기술 탭(0161 — 옛 "나무" 줄과 기술 판이 하나가 되었다): 칸 그림 격자(갈래 셋 × 줄 셋) + 오른쪽 상세.
 //   확인 = 그 칸에 할 수 있는 일의 작은 목록(올리기·열기 / 끼우기 / 고르기 바꾸기) → 사는 일은 묻는 창. 한 단 사기 · 3단 고르기 뒤집기 ·
@@ -116,12 +117,19 @@ async function run(browser, lang) {
   await shot('6-level-after');
   const r = await record();
   if (!/lv\.might=5\n/.test(r) || !/lv\.stamina=5\n/.test(r)) errors.push(`levels not saved: ${JSON.stringify(r)}`);
-  // 다 올린 줄을 다시 고르면 알림만(묻는 창 없음).
+  // 다 올린 줄을 다시 고르면 안 됨 소리만(묻는 창 없음 — 까닭은 오른쪽 칸의 상태 줄 "다 올렸다").
   await press('Enter'); await page.waitForTimeout(300);
-  await shot('7-level-full-toast');
+  await shot('7-level-full');
   await page.waitForTimeout(1800);
-  // 탭마다 한 바퀴(0164): 장비 — 칸 넷을 걷고 후보의 작은 목록(장신구 칸·무기 칸)을 열어 본다.
-  await press('KeyE'); await page.waitForTimeout(300);
+  // 상태 탭의 장신구 칸 셋(레벨 줄 아래): 낀 칸 · 빈 칸의 상세 → 빈 칸(장신구 2)에서 확인 = 장비 탭의 그 칸으로(탭 사이의 이음).
+  await press('ArrowDown', 2); await page.waitForTimeout(150);
+  await shot('7a-status-charm-worn');
+  await press('ArrowDown'); await page.waitForTimeout(150);
+  await shot('7b-status-charm-empty');
+  await press('ArrowDown'); await page.waitForTimeout(150);
+  await shot('7c-status-charm-3');
+  await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
+  // 탭마다 한 바퀴(0164): 장비(장신구 2 칸에 서 있다) — 칸을 걷고 후보의 작은 목록(장신구 칸·무기 칸)을 열어 본다.
   await shot('8a-equip');
   await press('ArrowRight'); await page.waitForTimeout(150); await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8b-equip-charm');

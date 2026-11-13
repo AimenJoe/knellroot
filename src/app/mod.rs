@@ -593,15 +593,15 @@ impl App {
         match self.scene() {
             Scene::Title => self.tick_title(a),
             Scene::Ask(k) => self.tick_ask(&a, k),
+            Scene::Status { host } => self.tick_status(&a, host),
             Scene::Equip { .. } => self.tick_equip(&a),
             Scene::Skills { host } => self.tick_skills(&a, host.edits()),
             Scene::SkillAct => self.tick_skill_act(&a),
             Scene::Codex { host, tab } => self.tick_codex(&a, host, tab as usize),
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
-            s @ (Scene::Status { .. }
-            | Scene::Settings { .. }
-            | Scene::Shop
-            | Scene::Result { .. }) => self.tick_menu(&a, s),
+            s @ (Scene::Settings { .. } | Scene::Shop | Scene::Result { .. }) => {
+                self.tick_menu(&a, s)
+            }
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.tick_dev(&a, tab as usize),
             #[cfg(feature = "dev")]
@@ -636,7 +636,6 @@ impl App {
     fn menu_of(&self, scene: Scene) -> Option<menu::Menu> {
         match scene {
             Scene::Settings { host } => Some(self.settings_menu(host)),
-            Scene::Status { .. } => Some(self.level_menu()),
             Scene::Shop => Some(self.shop_menu()),
             Scene::Result { won } => Some(self.result_menu(won)),
             Scene::Slots { load } => Some(self.slots_menu(load)),
@@ -649,6 +648,7 @@ impl App {
             | Scene::Ending { .. }
             | Scene::Controls
             | Scene::Ask(_)
+            | Scene::Status { .. }
             | Scene::Equip { .. }
             | Scene::Skills { .. }
             | Scene::SkillAct
@@ -663,7 +663,6 @@ impl App {
     fn act(&mut self, scene: Scene, out: menu::Out) {
         match scene {
             Scene::Settings { host } => self.settings_act(host, out),
-            Scene::Status { host } => self.level_act(host, out),
             Scene::Shop => self.shop_act(out),
             Scene::Result { .. } => self.result_act(out),
             // 슬롯 창은 제 틱(`tick_slots`)이 고름을 한다(빈 줄 건너뛰기·두 번째 누름).
@@ -677,6 +676,7 @@ impl App {
             | Scene::Ending { .. }
             | Scene::Controls
             | Scene::Ask(_)
+            | Scene::Status { .. }
             | Scene::Equip { .. }
             | Scene::Skills { .. }
             | Scene::SkillAct
