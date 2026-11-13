@@ -191,6 +191,16 @@ pub fn prompt(act: Act) -> String {
     }
 }
 
+/// 싸움의 동작 하나의 지금 버튼 이름(튜토리얼의 힌트, 0167 — 지금 장치·지금 배치). 터치는 화면 버튼이 곧 안내라 빈 글.
+pub fn bind_prompt(x: Bind) -> String {
+    let b = bindings();
+    match device() {
+        Device::Touch => String::new(),
+        Device::Pad => b.pad(x).name().to_string(),
+        _ => key_name(b.keys[x as usize]).to_string(),
+    }
+}
+
 /// 장비 칸 빨리 바꾸기(공격 버튼, 0164)를 지금 장치에서 쓸 수 있나: 공격 버튼이 메뉴에서 이미 다른 일을 하면 못 쓴다 —
 /// 키보드의 J·Space는 확인이고(키보드만 배치의 공격 = J), 마우스 버튼은 누르기(기본 배치의 공격 = 왼쪽 클릭)다. 그때는 확인 →
 /// 후보 목록으로 바꾼다(안내 줄에도 뜨지 않는다). 패드는 기본 배치(공격 = X)에서 된다. 터치는 메뉴에 공격 버튼이 없다.

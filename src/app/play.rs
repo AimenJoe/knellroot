@@ -261,6 +261,7 @@ impl App {
             }
         }
         self.world_sounds(&events);
+        self.tutor_watch(&events);
         // 그림 이펙트(0141): 사건·상태 변화 → 입자. 히트스톱 동안은 입자도 느리게(맞힌 순간의 번쩍임·불티가 멈춘 몸과 함께 남는다).
         self.fx.on_events(&events, &self.world);
         self.fx.watch(&self.world, TICK_DT);
@@ -288,6 +289,82 @@ impl App {
             target,
             &self.world.obstacles,
         );
+    }
+
+    /// 튜토리얼(0167)이 이 판에서 도나: 슬롯의 판이고(개발 창의 판·놀이터가 아니다) 걸음이 남았다.
+    fn tutor_on(&self) -> bool {
+        !self.dev_run_now() && self.stack.base() == Scene::Play && self.tutor.step().is_some()
+    }
+
+    /// 튜토리얼이 읽는 지금의 사실 — 잔불·다음 레벨 값·총 레벨·기술 판.
+    fn tutor_facts(&self) -> crate::tutorial::Facts {
+        let (level, board) = (self.progress.level, self.progress.board);
+        crate::tutorial::Facts {
+            embers: self.world.embers,
+            cost: crate::progression::LINES
+                .iter()
+                .find_map(|&l| level.next_cost(l)),
+            level: level.total(),
+            spent: board.spent() > 0,
+            knows_skill: board.knows_a_skill(),
+        }
+    }
+
+    /// 한 틱의 월드를 튜토리얼이 본다(0167): 걸은 거리·맞힌 타·회피·패링·쓴 스킬을 쌓고 끝난 걸음을 넘긴다. 걸음이
+    /// 바뀌면 기록에 적는다(이어하면 그 걸음부터). 월드는 튜토리얼을 모른다 — 소리·이펙트와 같은 길.
+    fn tutor_watch(&mut self, events: &[Event]) {
+        if !self.tutor_on() {
+            return;
+        }
+        let pl = &self.world.player;
+        let step = pl.pos - pl.prev;
+        let dodging = matches!(pl.state, crate::world::PState::Dodge { .. });
+        // 패링 걸음의 시계는 깨어 있는 적이 곁에 있을 때만 간다(적이 없는데 "못 했다"고 넘기지 않는다).
+        let fight = self
+            .world
+            .enemies
+            .iter()
+            .any(|e| e.active() && (e.pos - pl.pos).length() < crate::tutorial::FIGHT_RANGE);
+        let seen = &mut self.tutor.seen;
+        seen.moved += vec2(step.x, step.z).length();
+        if dodging && !self.tutor.dodging {
+            seen.dodges += 1;
+        }
+        for e in events {
+            match e {
+                Event::Hit { .. } | Event::Crit { .. } => seen.hits += 1,
+                Event::Parry { .. } => seen.parries += 1,
+                Event::SkillStart { .. } => seen.skills += 1,
+                _ => {}
+            }
+        }
+        self.tutor.dodging = dodging;
+        let facts = self.tutor_facts();
+        if self.tutor.tick(&facts, fight, TICK_DT) {
+            self.progress.tutorial = self.tutor.at;
+            self.persist();
+        }
+    }
+
+    /// 지금 보일 튜토리얼의 힌트 줄(없으면 그리지 않는다). 스킬 걸음의 버튼은 배운 스킬이 놓인 칸의 것.
+    pub(super) fn tutor_hint(&self) -> Option<(String, &'static str)> {
+        if !self.tutor_on() {
+            return None;
+        }
+        let board = self.progress.board;
+        let slot = self
+            .progress
+            .skills
+            .0
+            .iter()
+            .position(|&id| board.learned(id))
+            .unwrap_or(0);
+        self.tutor.hint(
+            crate::i18n::s(),
+            &self.tutor_facts(),
+            slot,
+            crate::input::bind_prompt,
+        )
     }
 
     pub(super) fn in_stage(&self) -> bool {

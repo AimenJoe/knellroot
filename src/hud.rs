@@ -289,6 +289,32 @@ pub fn gauge_bar(gauge: f32, active: f32, time: f32) -> (f32, Color) {
     }
 }
 
+/// 튜토리얼의 힌트(0167 — nail 0023의 "[n/N] 버튼 …" 꼴): 화면 아래 가운데, 곁의 할 일 글 밑에 머리 줄 + 작은 풀이 줄.
+/// 걸음이 막 바뀐 동안(`fresh` 초)은 머리 줄이 민트로 밝았다가 여느 글 빛으로 가라앉는다. 터치의 엄지 자리(왼쪽 스틱·
+/// 오른쪽 버튼 호)를 피해 가운데 폭 안에서(넘치면 줄을 바꾼다).
+pub fn draw_hint(ui: &Ui, f: &Frame, head: &str, more: &str, fresh: f32) {
+    let k = (fresh / crate::tutorial::FRESH_TIME).clamp(0.0, 1.0);
+    let mix = |a: f32, b: f32| a + (b - a) * k;
+    let ink = Color::new(
+        mix(INK.r, crate::ui::MINT.r),
+        mix(INK.g, crate::ui::MINT.g),
+        mix(INK.b, crate::ui::MINT.b),
+        1.0,
+    );
+    let (cx, y) = (f.ox + f.w * 0.5, f.oy + f.h * HINT_Y);
+    let y = ui.text_center_wrapped(head, cx, y, HINT_SCALE, ink, f.w * HINT_W);
+    if !more.is_empty() {
+        let soft = Color::new(INK.r, INK.g, INK.b, 0.78);
+        ui.text_center_wrapped(more, cx, y, HINT_MORE_SCALE, soft, f.w * HINT_W);
+    }
+}
+
+/// 힌트의 자리(화면 높이의 몫)·폭(화면 폭의 몫)·글 크기(머리 줄 · 풀이 줄).
+const HINT_Y: f32 = 0.85;
+const HINT_W: f32 = 0.5;
+const HINT_SCALE: f32 = 0.95;
+const HINT_MORE_SCALE: f32 = 0.8;
+
 pub fn draw(
     ui: &Ui,
     f: &Frame,

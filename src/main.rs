@@ -54,6 +54,7 @@ mod stats;
 mod text;
 mod touch;
 mod tuning;
+mod tutorial;
 mod ui;
 mod weapons;
 mod world;

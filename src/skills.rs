@@ -147,11 +147,13 @@ pub const IDS: [Id; 8] = [
 ];
 pub const N: usize = IDS.len();
 
-/// 스킬 칸 둘의 처음 자리(0151 6번). 0166부터 이 둘도 값 없이 주지 않는다 — 기술 점수로 배운다(시작 점수 `START_POINTS`로
-/// 살 수 있다). 안 배운 스킬이 놓인 칸은 **빈 칸**이다(단 0 — 눌러도 아무 일 없다, 그림은 빈 테).
+/// 스킬 칸 둘의 처음 자리(0151 6번). 0166부터 이 둘도 값 없이 주지 않는다 — 기술 점수로 배운다. 새 판은 점수 없이
+/// 선다(0167 — 첫 점수는 첫 레벨에서, 튜토리얼이 그 길을 알린다). 안 배운 스킬이 놓인 칸은 **빈 칸**이다(단 0 — 눌러도
+/// 아무 일 없다, 그림은 빈 테).
 pub const START: [Id; 2] = [Id::Whirl, Id::Cut];
-/// 처음부터 가진 기술 점수(0166): 예전에 값 없이 주던 처음의 둘 몫 — 무엇을 먼저 배울지는 방랑자가 고른다.
-pub const START_POINTS: u32 = 2;
+/// 옛 기록의 몫(0166 → 0167): 처음의 둘을 값 없이 받았던 기록은 그 둘의 값을 점수로 지닌다(`Progress::gift` — 남은 점수가
+/// 줄지 않게, 되돌리면 그 둘도 다른 데 쓸 수 있다). 새 판에는 없다.
+pub const GIFT_POINTS: u32 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Skill {
@@ -1019,9 +1021,9 @@ impl From<[Id; 2]> for Loadout {
 /// 기술 점수(0158 나 → 0161): 줍는 화폐가 아니라 셈 — 총 레벨 + 처음 쓰러뜨린 엘리트 수 + **핵**(보스를 이길 때마다, 보스마다
 /// `progression::CORE_CAP`까지 — 부르는 쪽이 자른 수) + 주운 **종소리 조각**. 핵·조각은 옛 나무 화폐 "마디"였다 — 이제 점수의 샘이다.
 /// 0158의 "보스 첫 쓰러뜨림 +1"은 핵의 수로 바뀌었다. 지금 내용으로 15 + 6 + 6 + 3 = 30.
-/// 0166: 거기에 처음부터 가진 `START_POINTS`(예전에 값 없이 주던 처음의 둘 몫).
+/// 처음부터 가진 점수는 없다(0167) — 옛 기록의 몫 `GIFT_POINTS`는 기록이 따로 더한다(`Progress::skill_points`).
 pub fn points(level: u32, elites: u32, cores: u32, shards: u32) -> u32 {
-    START_POINTS + level + elites + cores + shards
+    level + elites + cores + shards
 }
 
 /// 줄이 열리는 때(쓴 점수 합): 첫 줄 · 둘째 줄 · 큰 기술 줄(0158 라).
@@ -1413,22 +1415,21 @@ mod tests {
 
     /// 0161: 기술 점수는 셈 — 총 레벨 + 처음 쓰러뜨린 엘리트 + 핵(보스마다 셋까지) + 종소리 조각, 남은 점수 = 그것 − 쓴 점수.
     /// 화폐 "마디"(핵 + 조각)와 0158의 "보스 첫 쓰러뜨림 +1"을 이 하나가 대신한다. 처음부터 가진 단(큰 기술 1단)은 쓴 점수가 아니다.
-    /// 0166: 새 판은 `START_POINTS` 둘을 들고 선다 — 예전에 그냥 주던 스킬 둘의 몫, 무엇을 먼저 배울지는 방랑자가 고른다.
+    /// 0166 → 0167: 스킬은 값 없이 주지 않고, 새 판은 점수도 없이 선다 — 첫 점수는 첫 레벨에서.
     #[test]
     fn points_are_levels_plus_first_elites_plus_cores_plus_shards_minus_spent() {
-        assert_eq!(START_POINTS, 2);
-        assert_eq!(points(0, 0, 0, 0), START_POINTS);
-        assert_eq!(points(15, 0, 0, 0), START_POINTS + 15);
-        assert_eq!(points(0, 6, 0, 0), START_POINTS + 6);
+        assert_eq!(points(0, 0, 0, 0), 0, "0167: a new run starts with none");
+        assert_eq!(points(15, 0, 0, 0), 15);
+        assert_eq!(points(0, 6, 0, 0), 6);
         assert_eq!(
             points(0, 0, 6, 0),
-            START_POINTS + 6,
+            6,
             "every core counts, not just the first"
         );
-        assert_eq!(points(0, 0, 0, 3), START_POINTS + 3);
+        assert_eq!(points(0, 0, 0, 3), 3);
         assert_eq!(
             points(15, 6, 6, 3),
-            START_POINTS + 30,
+            30,
             "0161: everything in the game today"
         );
         let mut b = Board::default();
@@ -1439,11 +1440,11 @@ mod tests {
             "the free rank costs nothing"
         );
         let total = points(3, 1, 1, 0);
-        assert_eq!(b.left(total), 7);
+        assert_eq!(b.left(total), 5);
         assert!(b.buy(Entry::Skill(Id::Gather), total));
         assert!(b.buy(Entry::Skill(Id::Whirl), total));
         assert!(b.buy(Entry::Cell(Cell::Catch), total));
-        assert_eq!((b.spent(), b.left(total)), (3, 4));
+        assert_eq!((b.spent(), b.left(total)), (3, 2));
         // 가진 것보다 많이 쓴 판(손댄 기록)의 남은 점수는 0에서 멈춘다.
         assert_eq!(Board::maxed(Pick::A).left(3), 0);
     }
@@ -1467,9 +1468,9 @@ mod tests {
             })
             .sum();
         assert_eq!((levels, elites, cores, shards), (15, 6, 6, 3));
-        assert_eq!(points(levels, elites, cores, shards), START_POINTS + 30);
-        // 다 익히는 값 65의 반이 조금 안 된다(0160 2절 — 0166: 처음의 둘도 값이 있고, 그 몫을 들고 선다).
-        assert!(2 * (START_POINTS + 30) < Board::maxed(Pick::A).spent());
+        assert_eq!(points(levels, elites, cores, shards), 30);
+        // 다 익히는 값 65의 반이 조금 안 된다(0160 2절 — 0166: 처음의 둘도 값이 있다).
+        assert!(2 * 30 < Board::maxed(Pick::A).spent());
     }
 
     /// 0161: 패시브 칸은 판의 칸이다 — 칸마다 1점, 잠금은 줄(쓴 점수 합)뿐. 갈래의 앞 칸을 열지 않아도 같은 줄의 뒤 칸이 열리고,
@@ -1769,29 +1770,30 @@ mod tests {
         assert_eq!(b.respec_cost(), RESPEC_BASE);
     }
 
-    /// 0166: 처음의 둘(휘돌이·가로지르기)도 값 없이 주지 않는다 — 새 판은 스킬을 하나도 모르고 시작 점수 둘을 가졌다. 무엇을
-    /// 먼저 배울지는 방랑자가 고른다(첫 줄의 스킬 넷·패시브 여섯 가운데). 쟁반 뒤집기만 처음부터 1단이다.
+    /// 0166 → 0167: 처음의 둘(휘돌이·가로지르기)도 값 없이 주지 않는다 — 새 판은 스킬을 하나도 모르고 점수도 없다. 첫 레벨이
+    /// 첫 점수이고, 무엇을 먼저 배울지는 방랑자가 고른다(첫 줄의 스킬 넷·패시브 여섯 가운데). 쟁반 뒤집기만 처음부터 1단이다.
     #[test]
-    fn a_fresh_board_knows_no_skill_and_starts_with_two_points() {
+    fn a_fresh_board_knows_no_skill_and_has_no_points() {
         let b = Board::default();
-        assert!(IDS.iter().all(|&id| !b.learned(id)));
+        assert!(IDS.iter().all(|&id| !b.learned(id)) && !b.knows_a_skill());
         assert!(b.has_ult(Ult::Upend) && !b.has_ult(Ult::Flurry) && !b.has_ult(Ult::Line));
-        assert_eq!(points(0, 0, 0, 0), START_POINTS);
-        assert_eq!((START_POINTS, b.spent()), (2, 0));
-        // 시작 점수로 처음의 둘을 배울 수도, 다른 둘(끌어모으기 + 패시브 한 칸)을 고를 수도 있다.
-        let mut usual = b;
-        for id in START {
-            assert_eq!(usual.offer(Entry::Skill(id), START_POINTS), Offer::Ready);
-            assert!(usual.buy(Entry::Skill(id), START_POINTS));
+        assert_eq!((points(0, 0, 0, 0), b.spent()), (0, 0));
+        assert!(!b.can_buy(0), "nothing to learn before the first level");
+        // 첫 레벨의 한 점: 첫 줄의 어느 스킬이든·패시브 한 칸이든 — 하나만.
+        let one = points(1, 0, 0, 0);
+        for e in [
+            Entry::Skill(Id::Whirl),
+            Entry::Skill(Id::Gather),
+            Entry::Cell(Cell::Catch),
+        ] {
+            let mut pick = b;
+            assert_eq!(pick.offer(e, one), Offer::Ready, "{e:?}");
+            assert!(pick.buy(e, one));
+            assert_eq!(pick.left(one), 0);
+            assert_eq!(pick.offer(Entry::Skill(Id::Cut), one), Offer::Short);
         }
-        assert_eq!(usual.left(START_POINTS), 0);
-        let mut other = b;
-        assert!(other.buy(Entry::Skill(Id::Gather), START_POINTS));
-        assert!(other.buy(Entry::Cell(Cell::Catch), START_POINTS));
-        assert_eq!(
-            other.offer(Entry::Skill(Id::Whirl), START_POINTS),
-            Offer::Short
-        );
+        // 옛 기록의 몫은 처음의 둘의 값과 같다.
+        assert_eq!(Board::default().with_starters().spent(), GIFT_POINTS);
     }
 
     /// 0166: 막 배운 스킬은 빈 칸(안 배운 스킬이 놓인 자리)에 저절로 끼워진다 — 칸 1부터. 빈 칸이 없으면 그대로(끼우는 것은

@@ -75,8 +75,12 @@ pub mod key {
     /// v0.4.0 옮기기를 했다(0105 — 핵 고르기 → 생명·숨은 물건·핵 점수). 한 번만.
     pub const MIGRATED_V04: &str = "migrated.v04";
     /// 0166: 처음의 둘(휘돌이·가로지르기)도 기술 점수로 배운다. 이 깃발이 없는 기록(그 전의 판)은 둘을 이미 가졌던 것이다 —
-    /// 1단으로 읽는다(그 몫의 점수 `skills::START_POINTS`가 새로 생겨 남은 점수는 그대로).
+    /// 1단으로 읽고 그 값을 점수로 지닌다(`SKILL_GIFT` — 남은 점수는 그대로).
     pub const MIGRATED_V06: &str = "migrated.v06";
+    /// 옛 기록의 몫(0167): 처음의 둘을 값 없이 받았던 기록이 지니는 기술 점수(`skills::GIFT_POINTS`까지). 새 판에는 없다.
+    pub const SKILL_GIFT: &str = "skill.gift";
+    /// 튜토리얼(0167): 지난 걸음 수(`tutorial::DONE`이면 다 지났다). 이 키가 없는 옛 기록은 `tutorial::start_for_old`.
+    pub const TUTORIAL: &str = "tut.step";
     /// 기술 나무(0106)의 옛 꼴: 갈래마다 **앞에서부터** 연 칸 수. 0161부터는 `tree.cells.*`가 없을 때만 읽는다("앞에서부터 N칸").
     /// 쓸 때는 앞에서부터 이어 연 수를 적는다(옛 판이 읽어도 가진 것보다 많이 열리지 않는다). 목표 핀 `tree.pin`은 0161에서 걷었다 —
     /// 읽지도 쓰지도 않는다(옛 기록의 줄은 모르는 키처럼 그대로 지닌다).
@@ -191,6 +195,10 @@ pub struct Progress {
     pub ult: crate::skills::Ult,
     /// 기술 판(0158 → 0161): 스킬마다의 단·고르기, 큰 기술의 단, 연 패시브 칸(`board.cells` — 옛 `tree`).
     pub board: crate::skills::Board,
+    /// 옛 기록의 몫(0167): 처음의 둘을 값 없이 받았던 기록이 지니는 기술 점수. 새 판은 0.
+    pub gift: u32,
+    /// 튜토리얼에서 지난 걸음 수(0167). 새 판은 0.
+    pub tutorial: u8,
     /// 쌓인 플레이 시간(초, 0081).
     pub play: u32,
     /// 원래 기록(모르는 키를 지키려고 — 쓸 때 이 위에 덮는다).
@@ -321,8 +329,8 @@ impl Progress {
         codex.sort();
         codex.dedup();
         let runs = r.num(key::RUNS).unwrap_or(0);
-        // 0166 전의 기록: 처음의 둘은 값 없이 가졌다 — 잃지 않게 1단으로(이미 올렸으면 그대로). 시작 점수 둘이 그 값이라
-        // 남은 점수는 그대로다. 한 번도 쓴 적 없는 기록(빈 슬롯·깨진 글)은 옛 기록이 아니다 — 새 판으로 읽는다.
+        // 0166 전의 기록: 처음의 둘은 값 없이 가졌다 — 잃지 않게 1단으로(이미 올렸으면 그대로), 그 값은 기록의 몫
+        // (`gift` 둘)으로 얹어 남은 점수는 그대로다. 한 번도 쓴 적 없는 기록(빈 슬롯·깨진 글)은 옛 기록이 아니다 — 새 판으로 읽는다.
         let before_v06 = r.num(key::VERSION).is_some() && r.num(key::MIGRATED_V06) != Some(1);
         // 기술 판(0158): 키가 없으면 처음 그대로. 범위·점수는 아래에서 바로잡는다(`Board::sane`).
         let board = {
@@ -378,6 +386,21 @@ impl Progress {
                 .and_then(crate::skills::Ult::by_key)
                 .unwrap_or_default(),
             board,
+            tutorial: match r.num(key::TUTORIAL) {
+                Some(n) => n.min(crate::tutorial::DONE as u32) as u8,
+                // 이 게임이 쓴 적 있는 기록(옛 판): 아는 만큼 건너뛴다. 빈 슬롯은 처음부터.
+                None if r.num(key::VERSION).is_some() => {
+                    crate::tutorial::start_for_old(level.total())
+                }
+                None => 0,
+            },
+            gift: if before_v06 {
+                crate::skills::GIFT_POINTS
+            } else {
+                r.num(key::SKILL_GIFT)
+                    .unwrap_or(0)
+                    .min(crate::skills::GIFT_POINTS)
+            },
             weapons: r_weapons
                 .map(|v| {
                     v.split(',')
@@ -408,7 +431,7 @@ impl Progress {
         // 기술 판(0158): 가진 점수 안으로 바로잡는다. 안 배운 스킬이 놓인 칸은 빈 칸으로 둔다(0166).
         let total = p.skill_points();
         p.board = p.board.sane(total);
-        // 넘쳐서 처음으로 돌아간 옛 기록도 처음의 둘은 지닌다(그 값이 시작 점수다).
+        // 넘쳐서 처음으로 돌아간 옛 기록도 처음의 둘은 지닌다(그 값이 기록의 몫이다).
         if before_v06 {
             let kept = p.board.with_starters();
             if kept.spent() <= total {
@@ -432,7 +455,7 @@ impl Progress {
             self.elites.len() as u32,
             self.cores.min(CORE_CAP) + self.bell_cores.min(CORE_CAP),
             shards(&self.finds),
-        )
+        ) + self.gift
     }
 
     /// 이 무기를 가졌나(0117): 맨손·검은 늘, 그 밖은 얻은 것만.
@@ -484,6 +507,12 @@ impl Progress {
         r.set(key::CORE_BELL, self.bell_cores);
         r.set(key::MIGRATED_V04, 1);
         r.set(key::MIGRATED_V06, 1);
+        r.set(key::TUTORIAL, self.tutorial);
+        if self.gift > 0 {
+            r.set(key::SKILL_GIFT, self.gift);
+        } else {
+            r.remove(key::SKILL_GIFT);
+        }
         // 패시브 칸(0161): 새 키는 연 자리들, 옛 키는 앞에서부터 이어 연 수(키 이름은 그대로 — 옛 판이 읽어도 터지지 않는다).
         for b in 0..3 {
             let cells = self.board.cells;
@@ -807,10 +836,7 @@ mod tests {
         let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
         assert_eq!(back.cores, 2);
         assert_eq!(back.bell_cores, crate::progression::CORE_CAP, "capped");
-        assert_eq!(
-            back.skill_points(),
-            crate::skills::START_POINTS + 2 + crate::progression::CORE_CAP
-        );
+        assert_eq!(back.skill_points(), 2 + crate::progression::CORE_CAP);
         assert!(back.has_any());
         let old = Progress::from_record(Record::parse("v=1\ncore.warden=1\n"));
         assert_eq!((old.cores, old.bell_cores), (1, 0));
@@ -976,7 +1002,7 @@ weapon=crossbow
     #[test]
     fn open_cells_round_trip_one_by_one() {
         use crate::progression::{Cell, Tree};
-        // 칸 넷(쓴 점수 4)을 가질 만큼의 점수: 핵 셋 + 조각 하나(+ 시작 점수 둘, 0166).
+        // 칸 넷(쓴 점수 4)을 가질 만큼의 점수: 핵 셋 + 조각 하나.
         let rich = Progress {
             cores: 3,
             finds: vec!["sanctuary.shard.0".into()],
@@ -989,7 +1015,7 @@ weapon=crossbow
             Cell::Sidestep,
             Cell::FinalMeasure,
         ]);
-        assert_eq!((p.board.spent(), p.skill_points()), (4, 6));
+        assert_eq!((p.board.spent(), p.skill_points()), (4, 4));
         let r = p.to_record();
         assert_eq!(r.get("tree.cells.beat"), Some("1,2,5"));
         assert_eq!(r.get("tree.cells.riposte"), None, "nothing open there");
@@ -1048,7 +1074,7 @@ weapon=crossbow
             assert!(old.board.cells.has(c), "{c:?}");
         }
         assert!(!old.board.cells.has(Cell::ClosingBlow) && !old.board.cells.has(Cell::Catch));
-        // 점수: 레벨 4 + 핵 4 + 조각 2 = 10(+ 시작 점수 둘), 쓴 점수 5(연 칸) + 처음의 둘 2 — 남은 5는 그대로(0166).
+        // 점수: 레벨 4 + 핵 4 + 조각 2 = 10(+ 옛 기록의 몫 둘), 쓴 점수 5(연 칸) + 처음의 둘 2 — 남은 5는 그대로(0166·0167).
         assert_eq!(old.skill_points(), 12);
         assert_eq!(old.board.rank[..2], [1, 1], "an old record keeps its two");
         assert_eq!(
@@ -1075,7 +1101,7 @@ weapon=crossbow
         // 가진 점수보다 많이 연 기록(손댄 것)은 터지지 않고 닫힌 채로 읽힌다.
         let broke = Progress::from_record(Record::parse("tree.beat=5\ntree.footing=5\n"));
         assert_eq!(broke.board, crate::skills::Board::default());
-        assert_eq!(broke.skill_points(), crate::skills::START_POINTS);
+        assert_eq!(broke.skill_points(), 0);
     }
 
     /// 0161: 개발판 기록(0158 G0·G2 — 마디로 연 칸 + 기술 점수로 올린 단)이 새 셈에서 한두 점 넘치면(옛 "보스 첫 쓰러뜨림 +1"이
@@ -1084,7 +1110,7 @@ weapon=crossbow
     fn a_dev_record_one_point_over_keeps_its_cells_and_resets_the_skills() {
         use crate::progression::Tree;
         // 핵 1 + 핵 1(= 옛 마디 2 → 칸 둘) · 레벨 2 + 옛 보스 둘 +2 = 옛 점수 4를 스킬에 다 썼다. 새 점수는 레벨 2 + 핵 2 = 4
-        // (+ 시작 점수 둘 = 6), 쓴 것 6(+ 처음의 둘 2 = 8).
+        // (+ 옛 기록의 몫 둘 = 6), 쓴 것 6(+ 처음의 둘 2 = 8).
         let p = Progress::from_record(Record::parse(
             "v=1\nlv.life=2\ncore.warden=1\ncore.bellkeeper=1\ntree.beat=2\nskill.rank.whirl=3\nskill.rank.cut=3\n",
         ));
@@ -1260,7 +1286,7 @@ weapon=crossbow
                 stamina: 5,
                 might: 5,
             },
-            // 휘돌이 5·ㄴ, 가로지르기 3·ㄱ, 끌어모으기 2, 땅울림 1, 큰 기술 3 — 쓴 점수 5 + 3 + 2 + 1 + 2 = 13.
+            // 휘돌이 5·ㄴ, 가로지르기 3·ㄱ, 끌어모으기 2, 땅울림 1, 큰 기술 3 — 쓴 점수 5 + 3 + 2 + 1 + 2 = 13(레벨 15 안).
             board: Board {
                 rank: [5, 3, 2, 1, 0, 0, 0, 0],
                 pick: [
@@ -1279,7 +1305,7 @@ weapon=crossbow
             skills: Worn([Id::Quake, Id::Gather]),
             ..Progress::default()
         };
-        assert_eq!((p.board.spent(), p.skill_points()), (13, 17));
+        assert_eq!((p.board.spent(), p.skill_points()), (13, 15));
         let mut r = p.to_record();
         let text = r.to_text();
         for line in [
@@ -1328,29 +1354,60 @@ weapon=crossbow
             "S0 let anything be worn — not learned now"
         );
         // 레벨 3 + 엘리트 2 + 핵 넷(문지기 셋 + 종지기 하나 — 0161: 핵마다 1) = 9, 쓴 것 없음.
-        // 0166: 시작 점수 둘이 더해지고 처음의 둘이 그 둘을 쓴 것으로 — 남은 점수는 그대로 9.
-        assert_eq!(old.skill_points(), 11);
+        // 0166·0167: 옛 기록의 몫 둘이 더해지고 처음의 둘이 그 둘을 쓴 것으로 — 남은 점수는 그대로 9.
+        assert_eq!((old.gift, old.skill_points()), (2, 11));
         assert_eq!(old.board.left(old.skill_points()), 9);
         // 배운 스킬 하나 + 안 배운 스킬 하나여도 처음의 둘로.
         let half = Progress::from_record(Record::parse("v=1\nskill.1=whirl\nskill.2=gather\n"));
         assert_eq!(half.skills.0, START);
         assert!(!half.board.learned(Id::Gather));
-        // 다시 쓰면 깃발이 서고 처음의 둘의 단이 적힌다 — 다시 읽어도 그대로.
+        // 다시 쓰면 깃발이 서고 처음의 둘의 단과 몫이 적힌다 — 다시 읽어도 그대로.
         let text = old.to_record().to_text();
         assert!(text.contains("migrated.v06=1\n") && text.contains("skill.rank.whirl=1\n"));
-        assert_eq!(Progress::from_record(Record::parse(&text)).board, old.board);
-        // 새 기록(깃발이 있다): 아무것도 모른다 — 끼운 자리는 그대로 두되 빈 칸이다. 시작 점수 둘이 남아 있다.
+        assert!(text.contains("skill.gift=2\n"), "{text}");
+        let again = Progress::from_record(Record::parse(&text));
+        assert_eq!((again.board, again.gift), (old.board, 2));
+        assert_eq!(again.skill_points(), old.skill_points());
+        // 새 기록(깃발이 있다): 아무것도 모르고 점수도 없다(0167) — 끼운 자리는 그대로 두되 빈 칸이다. 몫의 키도 쓰지 않는다.
         let new = Progress::from_record(Record::parse(
             "v=1\nmigrated.v06=1\nskill.1=gather\nskill.2=quake\n",
         ));
         assert_eq!(new.board, Board::default());
         assert_eq!(new.skills.0, [Id::Gather, Id::Quake]);
-        assert_eq!(new.board.left(new.skill_points()), 2);
+        assert_eq!((new.gift, new.skill_points()), (0, 0));
+        assert!(!new.to_record().to_text().contains("skill.gift"));
+        // 손댄 기록의 큰 몫은 둘에서 멈춘다.
+        let big = Progress::from_record(Record::parse("v=1\nmigrated.v06=1\nskill.gift=99\n"));
+        assert_eq!(big.skill_points(), 2);
         // 한 번도 쓴 적 없는 슬롯도 새 판이다.
         assert_eq!(
             Progress::from_record(Record::parse("")).board,
             Board::default()
         );
+    }
+
+    /// 0167: 튜토리얼에서 지난 걸음 수(`tut.step`)가 기록에 남는다. 빈 슬롯은 처음부터, 이 키가 없는 옛 기록은 아는 만큼
+    /// 건너뛴다(레벨을 올려 봤으면 다 지난 것, 아니면 잔불 → 레벨부터). 손댄 큰 수는 "다 지났다"에서 멈춘다.
+    #[test]
+    fn the_tutorial_step_round_trips_and_old_records_skip_what_they_know() {
+        use crate::tutorial::{AFTER_BASICS, DONE};
+        assert_eq!(Progress::default().tutorial, 0);
+        assert_eq!(Progress::from_record(Record::parse("")).tutorial, 0);
+        let p = Progress {
+            tutorial: 5,
+            ..Progress::default()
+        };
+        let text = p.to_record().to_text();
+        assert!(text.contains("tut.step=5\n"), "{text}");
+        assert_eq!(Progress::from_record(Record::parse(&text)).tutorial, 5);
+        // 새 판도 0을 적는다 — 다음에 읽을 때 "옛 기록"으로 보이지 않게.
+        let fresh = Progress::default().to_record().to_text();
+        assert!(fresh.contains("tut.step=0\n"));
+        assert_eq!(Progress::from_record(Record::parse(&fresh)).tutorial, 0);
+        let old = |text: &str| Progress::from_record(Record::parse(text)).tutorial;
+        assert_eq!(old("v=1\nlv.life=2\n"), DONE);
+        assert_eq!(old("v=1\nembers=30\n"), AFTER_BASICS);
+        assert_eq!(old("v=1\ntut.step=250\n"), DONE);
     }
 
     /// 0158: 손댄 기록 — 범위 밖의 단은 범위 안으로(큰 기술은 1단 아래로 안 내려간다), 이상한 고르기는 ㄱ,
@@ -1388,7 +1445,7 @@ weapon=crossbow
         assert!(broke.skills.0.iter().all(|&id| !broke.board.learned(id)));
         let l = broke.board.loadout(broke.skills.0, broke.ult);
         assert_eq!(l.slots.map(|s| s.rank), [0, 0], "empty slots");
-        assert_eq!(broke.skill_points(), crate::skills::START_POINTS);
+        assert_eq!(broke.skill_points(), 0);
     }
 
     /// 0158 G2: 새 스킬 넷의 단·고르기(`skill.rank.brace` …)와 큰 기술 둘의 단(`ult.rank.flurry`·`ult.rank.line`), 끼운 큰 기술
@@ -1420,7 +1477,7 @@ weapon=crossbow
             ult: Ult::Flurry,
             ..Progress::default()
         };
-        assert_eq!((p.board.spent(), p.skill_points()), (16, 18));
+        assert_eq!((p.board.spent(), p.skill_points()), (16, 16));
         let text = p.to_record().to_text();
         for line in [
             "skill.rank.brace=3\n",

@@ -82,6 +82,8 @@ pub struct App {
     passage: Option<crate::descent::Passage>,
     /// 이 판에서 멈춤 창이 마지막에 보던 탭(0164) — 다음에 멈추면 거기서 열린다(`flow::pause`). 판에 붙은 한 칸: 새 판이면 상태로.
     pause_tab: flow::Tab,
+    /// 튜토리얼(0167): 지난 걸음 수(기록 `Progress::tutorial`과 같은 값) + 이 판에서 본 것. 판에 붙는다.
+    tutor: crate::tutorial::Tutor,
     /// 주민 말풍선(0122): (주민 — 지금 지역의 번호, 몇째 말, 남은 초). 멈추지 않는다.
     bubble: Option<(usize, usize, f32)>,
     /// 새긴 돌 글 판(0129): (지금 지역의 돌 번호, 남은 초).
@@ -228,6 +230,7 @@ impl App {
             rest_at: None,
             passage: None,
             pause_tab: flow::Tab::Status,
+            tutor: crate::tutorial::Tutor::new(progress.tutorial),
             bubble: None,
             stone_card: None,
             clock: 0.0,
@@ -289,6 +292,7 @@ impl App {
         self.rest_at = None;
         self.passage = None;
         self.pause_tab = flow::Tab::Status;
+        self.tutor = crate::tutorial::Tutor::new(self.progress.tutorial);
         // 잔불은 판을 넘어 남는다(0064 M1). 장신구·성장은 능력치로, 연 상자는 비어 있다(M3).
         self.world.embers = self.progress.embers;
         self.world.apply_stats(self.progress.stats(), true);
@@ -792,6 +796,10 @@ impl App {
                 let edge = self.t[crate::tuning::P::HudHurtEdge];
                 let skills = [0, 1].map(|i| self.world.skill_ready(i, &self.t));
                 hud::draw(&self.ui, f, &self.world, run, false, edge, skills);
+                // 튜토리얼의 힌트 한 줄(0167) — 싸움 화면에서만, 창 밑에서는 그리지 않는다.
+                if let Some((head, more)) = self.tutor_hint().filter(|_| scene == Scene::Play) {
+                    hud::draw_hint(&self.ui, f, &head, more, self.tutor.fresh);
+                }
             }
             Layer::Window { hud: true } if self.stack.base() == Scene::Play => {
                 let skills = [0, 1].map(|i| self.world.skill_ready(i, &self.t));
