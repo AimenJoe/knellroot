@@ -34,8 +34,8 @@ impl World {
         let facing = self.player.facing_dir();
         // 앞쪽에서 오는가(패링은 바라보는 쪽 반원 안만 — 위치 선정도 기술, KB timing-parry). 이어 패링이 쌓이면 넓어진다(0086).
         let front_cos = parry_front_cos(
-            self.player.parry_chain_left > 0.0,
-            self.player.parry_chain_n,
+            self.player.parry.chain_left > 0.0,
+            self.player.parry.chain_n,
         );
         let in_front = |at: Vec3| {
             let d = vec3(at.x - p.x, 0.0, at.z - p.z).normalize_or_zero();
@@ -255,8 +255,8 @@ impl World {
         let mut burst_push: Option<Vec3> = None;
         let mut blocked = false;
         let stand = self.tree.has(Cell::OneWhoStands)
-            && self.player.parry_chain_left > 0.0
-            && self.player.parry_chain_n >= cell::STAND_CHAIN;
+            && self.player.parry.chain_left > 0.0
+            && self.player.parry.chain_n >= cell::STAND_CHAIN;
         for (i, en) in self.enemies.iter_mut().enumerate() {
             // 뛰는 중(0100): 몸은 포물선을 따라가고 생각하지도 치지도 않는다. 쓰러지면 그 자리에서 내려앉는다.
             if en.hop.is_some() && !en.alive() {
@@ -390,7 +390,7 @@ impl World {
     ) -> usize {
         let mut shard_hits: Vec<(usize, Vec3)> = Vec::new();
         // 되쏘기(0158 G2, 버팀 ㄴ): 버티는 동안 몸에 닿은 조각은 받아 두었다가 터뜨릴 때 던진 쪽으로 되쏜다.
-        let catching = self.bracing() && self.player.skill_reflect && !self.player.invulnerable();
+        let catching = self.bracing() && self.player.skill.reflect && !self.player.invulnerable();
         let mut caught: Vec<usize> = Vec::new();
         // 이번 틱의 패링 수(0158 G2 되울림) — 이 단계가 낸 `Event::Parry`를 센다.
         let parries_before = ev
@@ -544,9 +544,9 @@ impl World {
             }
             // 모은 맞받기(0107): 모으기 패링(떼는 순간의 창)으로 튕겼으면 그 강타 스윙을 기억한다 — 맞으면 자세가 깨진다.
             if let (PState::Heavy { swing, .. }, true) =
-                (self.player.state, self.player.release_guard > 0.0)
+                (self.player.state, self.player.parry.release_guard > 0.0)
             {
-                self.player.gathered_swing = swing;
+                self.player.parry.gathered_swing = swing;
             }
             // 튕기면 곧바로 움직일 수 있다(반격하라고) — 세상은 한 박자 멈춘다(명중보다 크게, KB).
             // 이어 패링(0081)으로 튕겼으면 그 사이 시작한 동작(회피 등)은 그대로 둔다.
@@ -557,10 +557,10 @@ impl World {
             // 받는 반원이 넓어진다. 한 틱에 여럿을 튕기면 하나씩 센다(둘러싸였을 때 가장 빨리 넓어진다).
             let pl = &mut self.player;
             for _ in 0..parried.len() {
-                (pl.parry_chain_left, pl.parry_chain_n) =
-                    parry_chain_add(pl.parry_chain_left, pl.parry_chain_n);
+                (pl.parry.chain_left, pl.parry.chain_n) =
+                    parry_chain_add(pl.parry.chain_left, pl.parry.chain_n);
             }
-            pl.since_parry = 0.0;
+            pl.parry.since = 0.0;
             // 튕기면 기력이 찬다(0088): 0까지 쓰고 튕겨도 반격을 바로 낼 수 있게. 한 틱에 여럿을 튕겨도 한 번.
             pl.stamina = (pl.stamina + t[P::ParryStaminaGain]).min(t[P::StaminaMax]);
             self.hitstop = self.hitstop.max(t[P::Hitstop] * PARRY_HITSTOP);
@@ -586,7 +586,7 @@ impl World {
             // 버팀(0158 G2): 버티는 동안은 타마다 덜 다치고(0 아래로는 안 내려간다) 밀리지도 끊기지도 않는다 — 받아낸 타를 센다.
             let braced = self.bracing();
             let taken = if braced {
-                (blow + self.stats.taken - self.player.skill_brace).max(0)
+                (blow + self.stats.taken - self.player.skill.brace).max(0)
             } else {
                 blow + self.stats.taken
             };
@@ -597,26 +597,26 @@ impl World {
                 pl.pending = None;
             }
             // 맞은 뒤 무적은 짧게(예전 0.6초 — 그 동안 다시 맞을 수 없어 경직 줄이기가 쓸 데가 없었다).
-            pl.hurt = t[P::HitIframes];
+            pl.hurt.left = t[P::HitIframes];
             if braced {
-                pl.brace_soaked = (pl.brace_soaked + 1).min(pl.brace_most);
+                pl.skill.brace_soaked = (pl.skill.brace_soaked + 1).min(pl.skill.brace_most);
                 ev.push(Event::Soak {
                     at: pl.pos + Vec3::Y * (pl.air + 1.0),
-                    n: pl.brace_soaked,
+                    n: pl.skill.brace_soaked,
                 });
             }
             // 다 받아낸 타(피해 0)는 맞음 피드백(붉은 테·흰 몸·멈춤)을 내지 않는다 — 받아냈다는 불똥만.
             let felt = taken > 0 || !braced;
             if felt {
-                pl.since_hurt = 0.0;
-                pl.hurt_blow = taken;
+                pl.hurt.since = 0.0;
+                pl.hurt.blow = taken;
             }
             if !braced {
                 // 경직 이음(0018 → 0099, 사장 "다구리 맞더라도 틈이 생겨서 도망갈 수 있게" — 이어 패링의 반대): 경직과 그 뒤
                 // `STUN_CHAIN_GRACE` 동안 또 맞으면 경직이 그전의 반 — 맞을수록 짧아져 떼 속에서도 빠져나갈 틈이 생긴다.
-                (pl.stun_chain, pl.stun_window) =
-                    stun_chain_next(pl.stun_window, pl.stun_chain, t[P::HitStun]);
-                let dur = t[P::HitStun] * 0.5f32.powi(pl.stun_chain);
+                (pl.hurt.stun_chain, pl.hurt.stun_window) =
+                    stun_chain_next(pl.hurt.stun_window, pl.hurt.stun_chain, t[P::HitStun]);
+                let dur = t[P::HitStun] * 0.5f32.powi(pl.hurt.stun_chain);
                 if dur > 0.0 {
                     pl.state = PState::Hurt { t: 0.0, dur };
                 } else if matches!(pl.state, PState::Drink { .. }) {
@@ -636,7 +636,7 @@ impl World {
                 let stop = t[P::Hitstop]
                     * crate::tuning::HURT_HITSTOP
                     * heavy
-                    * 0.5f32.powi(pl.stun_chain);
+                    * 0.5f32.powi(pl.hurt.stun_chain);
                 self.hitstop = self.hitstop.max(stop);
                 ev.push(Event::PlayerHurt);
             }

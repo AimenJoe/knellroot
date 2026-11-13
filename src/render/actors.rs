@@ -193,7 +193,7 @@ impl Renderer {
     ) {
         let pl = &w.player;
         // 무적 깜빡임: 짝수 프레임은 밝게.
-        let blink = pl.hurt > 0.0 && (w.time * 20.0) as i32 % 2 == 0;
+        let blink = pl.hurt.left > 0.0 && (w.time * 20.0) as i32 % 2 == 0;
         // 카메라가 몸에 닿을 만큼 가까우면 옅게(가림 당기기의 마지막 수단).
         let close = (cam.closeness(pp) - CAM_MIN_DIST).clamp(0.0, 1.0);
         // 락온 중 몸이 과녁을 가리면 옅게(0040): 카메라를 어깨 너머로 비켜 둬도 가까운 큰 대상은 다 비켜나지 못한다.
@@ -279,11 +279,14 @@ impl Renderer {
                 // 공중(0027): 방랑자의 jump·plunge·land 동작(없는 모델이면 회피·공격 자세로).
                 // 공중 RB(0111): 떠 있는 동안 쏘는 자세(쇠뇌는 겨누고 쏘기, 마법은 손을 내밂).
                 PState::Jump { plunge: false, .. }
-                    if pl.hover > 0.0 && matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) =>
+                    if pl.ranged.hover > 0.0
+                        && matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) =>
                 {
                     (&["xbow_shoot", "cast"], 0.1)
                 }
-                PState::Jump { plunge: false, .. } if pl.hover > 0.0 => (&["cast", "jump"], 0.12),
+                PState::Jump { plunge: false, .. } if pl.ranged.hover > 0.0 => {
+                    (&["cast", "jump"], 0.12)
+                }
                 PState::Jump { plunge: false, .. } => (&["jump", "dodge", "idle"], 0.1),
                 // 내려찍기: 떨어지는 동안 칼을 들고 있다가 땅에 가까우면 꽂는 자세로.
                 PState::Jump { plunge: true, .. } => (
@@ -403,7 +406,7 @@ impl Renderer {
                 * Mat4::from_quat(recoil)
                 * Mat4::from_rotation_y(yaw);
             // 맞은 순간(0143): 몸 전체가 희게 — 히트스톱 동안 그대로 멈춰 있다(KB: 흰 실루엣 → 맞은 자세). 그 뒤는 무적 깜빡임.
-            let tint = if pl.since_hurt < HURT_WHITE {
+            let tint = if pl.hurt.since < HURT_WHITE {
                 Color::new(3.0, 3.0, 3.0, a)
             } else if blink {
                 Color::new(1.8, 1.8, 1.8, a)

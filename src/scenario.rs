@@ -233,7 +233,7 @@ pub fn build(s: Scenario) -> World {
                     w.spawn_mob(vec3(a.cos() * r, 0.0, a.sin() * r));
                 }
             }
-            w.player.gauge = 1.0;
+            w.player.skill.gauge = 1.0;
             w
         }
         Scenario::Tray => {

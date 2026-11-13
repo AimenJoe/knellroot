@@ -829,7 +829,7 @@ impl Fx {
                     );
                 }
                 // 몰아치기 동안의 평타: 휘두를 때마다 바라보는 쪽으로 금빛 줄이 흩어진다.
-                Event::Swing if w.player.flurry_left > 0.0 => {
+                Event::Swing if w.player.skill.flurry_left > 0.0 => {
                     let f = w.player.facing_dir();
                     self.spray(
                         pp + Vec3::Y * 1.0 + f * 0.8,
@@ -878,7 +878,7 @@ impl Fx {
                 // 큰 기술의 시동(끼운 것마다): 쟁반 뒤집기는 발밑으로 모이는 금빛, 몰아치기는 솟는 금빛, 한 줄기는 흰 별.
                 Event::UltStart => {
                     let g = vec3(pp.x, w.ground_y(pp), pp.z);
-                    match w.player.ult {
+                    match w.player.skill.ult {
                         crate::skills::Ult::Upend => {
                             self.star(pp + Vec3::Y * 0.4, 1.4, 0.3, GOLD);
                             self.dust_ring(g, 2.6, 12, -2.6, 0.45, DUST);
@@ -1151,7 +1151,7 @@ impl Fx {
             }
             // 버팀의 터뜨림: 흰 큰 별 + 닿는 거리까지 터지는 고리 둘 + 받아낸 만큼 많아지는 금빛 줄 + 먼지.
             (Sk::Brace, Form::Brace { radius, .. }) => {
-                let n = w.player.brace_soaked as usize;
+                let n = w.player.skill.brace_soaked as usize;
                 self.star(g + Vec3::Y * 0.8, 2.0 + 0.4 * n as f32, 0.13, WHITE_HOT);
                 self.mark(
                     g,
@@ -1321,7 +1321,7 @@ impl Fx {
             self.push(part);
         }
         // 몰아치기의 기운: 이어지는 동안 몸 둘레에서 금빛 알갱이가 솟는다(0.05초마다 하나 — 적게, 오래).
-        if pl.flurry_left > 0.0 {
+        if pl.skill.flurry_left > 0.0 {
             self.aura_t += dt;
             if self.aura_t >= 0.05 {
                 self.aura_t = 0.0;

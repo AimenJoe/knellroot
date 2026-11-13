@@ -48,7 +48,7 @@ fn hits_to_die_to_every_species_are_what_they_were_before_the_scale_move() {
                 } + feet as i32;
                 assert_eq!(lost, old * HP_UNIT, "{tag}");
                 assert_eq!(
-                    w.player.hurt_blow, lost,
+                    w.player.hurt.blow, lost,
                     "{tag}: the HUD reads the same loss"
                 );
                 assert_eq!(
@@ -128,12 +128,12 @@ fn being_hit_freezes_the_world_longer_than_landing_a_hit_and_less_when_chained()
         "six to twelve frames: {first}"
     );
     assert_eq!(
-        (w.player.since_hurt, w.player.hurt_blow),
+        (w.player.hurt.since, w.player.hurt.blow),
         (0.0, hp - w.player.hp)
     );
     // 멈춘 동안: 시계가 가지 않는다 — 맞은 뒤 지난 시간도 0.
     w.step(&Actions::default(), &t);
-    assert!(w.hitstop > 0.0 && w.player.since_hurt == 0.0);
+    assert!(w.hitstop > 0.0 && w.player.hurt.since == 0.0);
     while w.hitstop > 0.0 {
         w.step(&Actions::default(), &t);
     }
@@ -141,9 +141,9 @@ fn being_hit_freezes_the_world_longer_than_landing_a_hit_and_less_when_chained()
     for _ in 0..3 {
         w.step(&Actions::default(), &t);
     }
-    assert!(w.player.since_hurt > 0.0);
+    assert!(w.player.hurt.since > 0.0);
     // 무적이 끝나고 아직 경직 중일 때 또 맞는다 → 멈춤도 반.
-    while w.player.hurt > 0.0 {
+    while w.player.hurt.left > 0.0 {
         w.step(&Actions::default(), &t);
     }
     assert!(matches!(w.player.state, PState::Hurt { .. }));
@@ -153,7 +153,7 @@ fn being_hit_freezes_the_world_longer_than_landing_a_hit_and_less_when_chained()
         "{} vs {first}",
         w.hitstop
     );
-    assert_eq!(w.player.since_hurt, 0.0);
+    assert_eq!(w.player.hurt.since, 0.0);
 }
 
 /// 맞으면 잠깐 경직(못 움직임) — 경직 중 또 맞으면 반씩 짧아지고, 이음 창(0099)까지 지난 뒤 맞으면 다시 처음 길이(0018).
@@ -180,7 +180,7 @@ fn a_hit_stuns_briefly_and_hits_during_the_stun_halve_it() {
     }
     assert!((w.player.pos.x - before.x).abs() < 1e-3);
     // 무적이 끝나고 아직 경직 중일 때 또 맞는다 → 반.
-    while w.player.hurt > 0.0 {
+    while w.player.hurt.left > 0.0 {
         w.step(&Actions::default(), &t);
     }
     assert!(matches!(w.player.state, PState::Hurt { .. }));
@@ -236,7 +236,7 @@ fn hits_soon_after_a_stun_keep_halving_it_so_a_mob_leaves_gaps() {
     while !matches!(w.player.state, PState::Idle) {
         w.step(&Actions::default(), &t);
     }
-    assert!(w.player.stun_window > 0.0, "still inside the grace");
+    assert!(w.player.hurt.stun_window > 0.0, "still inside the grace");
     hit_by_swing(&mut w, &t);
     let PState::Hurt { dur, .. } = w.player.state else {
         panic!("{:?}", w.player.state)

@@ -496,10 +496,8 @@ pub struct Player {
     pub vel: Vec3,
     pub state: PState,
     pub hp: i32,
-    pub hurt: f32,
-    /// 마지막으로 맞은 뒤 지난 초·그때 잃은 체력(0143) — HUD가 맞음 테·부서지는 체력 칸을 그린다(로직 시계: 히트스톱 동안 멈춰 있다).
-    pub since_hurt: f32,
-    pub hurt_blow: i32,
+    /// 맞은 뒤(0143): 무적 시간, 맞은 뒤 흐른 시간과 그 타의 세기(그림이 읽는다), 이어 맞음.
+    pub hurt: HurtState,
     pub dodge_cd: f32,
     /// 땅 돌리기 대기(초).
     pub turn_cd: f32,
@@ -512,74 +510,17 @@ pub struct Player {
     pub stamina_denied: f32,
     /// 이번 틱에 기력이 모자라 막혔다(0088 — 새로 막힌 때만, 받아 둔 누름이 다시 막혀도 한 번) → `Event::StaminaDenied`.
     pub denied_new: bool,
-    /// 경직 이음(0018 → 0099): 이음 안에서 또 맞은 횟수(0 = 첫 경직) — 경직 길이가 반씩 준다 — 와 남은 이음 창(초,
-    /// 경직 + `STUN_CHAIN_GRACE`, 맞을 때마다 새로). 창이 닫히면 다음 경직은 다시 처음 길이.
-    pub stun_chain: i32,
-    pub stun_window: f32,
     /// 마지막 쏟음(땅 돌리기가 멈춘 순간)에서 지난 초 — 렌더의 쟁반 테.
     pub since_spill: f32,
-    /// 스킬(0151): 끼운 둘, 스킬마다 남은 대기(초, `skills::IDS`의 자리), 큰 기술 게이지(0..1), 게이지를 채운 마지막 휘두르기
-    /// (한 번 휘두르기에 한 번만), 대기 중에 눌러 칸이 깜빡이는 남은 초.
-    pub skills: [skills::Id; 2],
-    pub skill_cd: [f32; skills::N],
-    pub gauge: f32,
-    pub gauge_swing: u32,
-    pub skill_denied: f32,
-    /// 기술 판(0158): 끼운 칸의 단·고르기, 큰 기술의 단 — 앱이 `set_skills`로 넣는다(월드는 기록을 모른다).
-    pub skill_rank: [u8; 2],
-    pub skill_pick: [skills::Pick; 2],
-    pub ult_rank: u8,
-    /// 끼운 큰 기술(0158 G2 — 하나).
-    pub ult: skills::Ult,
-    /// 버팀(0158 G2): 이번 틱에 버티는 중이면 타마다 덜어내는 피해(0 = 버티지 않는다 — 스킬 틱이 틱마다 적는다), 받아낸 조각을
-    /// 되쏘나(ㄴ), 이번 버팀에서 받아낸 타 수와 그 상한(터뜨림의 덤 — 다음 버팀까지 남아 앱이 읽는다).
-    pub skill_brace: i32,
-    pub skill_reflect: bool,
-    pub brace_soaked: u8,
-    pub brace_most: u8,
-    /// 되울림(0158 G2): 남은 초와 처음 길이(HUD 칸).
-    pub echo_left: f32,
-    pub echo_total: f32,
-    /// 몰아치기(0158 G2): 남은 초·처음 길이(+ 더해진 몫 — HUD가 줄어드는 게이지로 그린다)·쓰러뜨려 더한 초(상한까지).
-    pub flurry_left: f32,
-    pub flurry_total: f32,
-    pub flurry_added: f32,
-    /// 지금 스킬의 덤 상태(0158 G1): 뛰어드는 거리(땅울림 ㄱ — 누른 순간에 정한다), 대기를 이미 돌려받았나(가로지르기 맺음),
-    /// 지나는 동안 맞지 않는 중인가(가로지르기 ㄴ — 스킬 틱이 틱마다 적는다).
-    pub skill_leap: f32,
-    pub skill_refunded: bool,
-    pub skill_ghost: bool,
-    /// 마지막 패링 성공에서 지난 초(렌더의 번쩍임).
-    pub since_parry: f32,
-    /// 이어 패링(0081 → 0086): 남은 창(초)과 이번 이음에서 더 튕긴 수(0 = 첫 튕김만). 창이 닫히면 0으로.
-    pub parry_chain_left: f32,
-    pub parry_chain_n: u32,
-    /// 모으기 공격의 패링(0089, 사장 "모으기 공격에는 패링도 달려있어야 함. 리스크가 있는 공격이라 보상"): 모은 공격(강타·모은 사격)을
-    /// 뗀 뒤 남은 패링 창(초, 시작 = `parry.window s`). 그 공격 동작 안에서만 열린다.
-    pub release_guard: f32,
-    /// 나무 칸 동작(0107)의 표지: 마지막 타 뒤 박자로 이은 스윙(맺음타), 다음 강타가 다 모여 있다(끝맺음), 반격 스윙(되돌려 치기),
-    /// 모으기 패링으로 튕긴 강타 스윙(모은 맞받기), 회피가 적 등 뒤에서 끝남(비껴서기)·그 대시 공격 스윙.
-    pub closing_swing: u32,
-    pub closing_ready: bool,
-    pub primed_heavy: bool,
-    pub riposte_swing: u32,
-    pub gathered_swing: u32,
+    /// 끼운 스킬·큰 기술의 상태(0151·0158): 끼운 것과 단, 대기, 게이지, 스킬마다의 진행(버팀·되울림·몰아치기 …).
+    pub skill: SkillState,
+    /// 패링과 그 뒤(0076~0090·0107): 마지막 패링 뒤의 시간, 이어 패링, 떼기 지킴, 패링이 연 다음 타(강공격·반격·맞받기·맺음타).
+    pub parry: ParryState,
+    /// 회피가 적 등 뒤에서 끝났나(비껴서기, 0107)와 그 대시 공격의 스윙 번호.
     pub flank: bool,
     pub flank_swing: u32,
-    /// 박자(2026-11-07): 마지막 평타가 시작된 뒤 흐른 시간, 그 타의 한 스윙 시간(= 그 무기의 박자, 0 = 없음),
-    /// 이번 공격 누름이 박자 창 안이었나(누른 순간에 판정 — 받아 둔 이른 누름은 거짓).
-    pub since_swing: f32,
-    pub beat: f32,
-    pub on_beat: bool,
-    /// 마지막 평타의 타 번호(대시 = `weapons::DASH`) — 박자 부채꼴(0087)이 그 타의 모양·휘두르는 쪽을 끝까지 그린다.
-    pub swing_hit: u8,
-    /// 박자 맞춤 피드백(0076): 잇달아 박자에 맞춘 타 수(박자를 놓친 타·새 콤보면 0), 마지막 박자 타에서 지난 초,
-    /// 지금 스윙이 박자 타인가(렌더가 금빛 고리·음표·금빛 휘두름, HUD가 스태미나 막대 반짝임, 앱이 오르는 종소리).
-    pub beat_chain: u32,
-    pub since_beat: f32,
-    pub swing_beat: bool,
-    /// 마지막 딱 맞춰 떼기(0078)에서 지난 초 — 렌더가 발밑에 크게 퍼지는 금빛 고리.
-    pub since_perfect: f32,
+    /// 무기 박자(0071·0076): 마지막 평타 뒤의 시간과 그 타의 박자, 박자에 맞았나, 이어 맞춘 수.
+    pub beat: BeatState,
     /// 달리는 중(0076): 회피가 끝날 때 회피 버튼을 쥐고 있었다 — 떼거나 스틱을 놓거나 스태미나가 다하거나 다른 동작을 하면 끝.
     pub running: bool,
     /// 마지막으로 무언가를 맞힌 스윙 번호(맞히면 그 스윙의 내딛기를 멈춘다, 2026-11-06).
@@ -596,26 +537,116 @@ pub struct Player {
     pub air: f32,
     pub vy: f32,
     pub swings: u32,
-    /// 마법 칸(0048 → 0111, 0..=`CAST_CHARGES`): `cast.cooldown s`마다 한 칸 차고 쏘면 1 준다. 못 쏴서 깜빡이는 남은 초(HUD).
-    pub mana: f32,
-    pub cast_denied: f32,
-    /// 공중 RB(0111): 이번 점프에 이미 쐈나(땅에 서면 지운다), 떨어지기를 멈춘 남은 초(체공).
-    pub air_shot: bool,
-    pub hover: f32,
+    /// 마법·사격·수류탄(0048·0051·0111): 마법 칸, 공중 사격과 체공, 쇠뇌의 탄과 재장전, 수류탄.
+    pub ranged: RangedState,
     /// 든 무기(0051, `weapons.rs` 표).
     pub weapon: weapons::Id,
-    /// RB를 한 번 누른 뒤 쥔 시간(0056, `attack_hold`와 같은 셈).
-    pub cast_hold: f32,
     /// 미리 받아 둔 다음 행동과 남은 초(0057 — 후딜레이를 끊는 캔슬 시점에 나간다).
     pub pending: Option<Next>,
     pub pending_left: f32,
     /// 콤보: 다음 타 번호와 그 타를 이어 갈 남은 초.
     pub combo_next: u8,
     pub combo_left: f32,
+}
+
+/// 끼운 스킬·큰 기술의 상태(0151·0158): 끼운 것과 단, 대기, 게이지, 스킬마다의 진행(버팀·되울림·몰아치기 …). `Player::skill`.
+pub struct SkillState {
+    /// 스킬(0151): 끼운 둘, 스킬마다 남은 대기(초, `skills::IDS`의 자리), 큰 기술 게이지(0..1), 게이지를 채운 마지막 휘두르기
+    /// (한 번 휘두르기에 한 번만), 대기 중에 눌러 칸이 깜빡이는 남은 초.
+    pub worn: [skills::Id; 2],
+    pub cd: [f32; skills::N],
+    pub gauge: f32,
+    pub gauge_swing: u32,
+    pub denied: f32,
+    /// 기술 판(0158): 끼운 칸의 단·고르기, 큰 기술의 단 — 앱이 `set_skills`로 넣는다(월드는 기록을 모른다).
+    pub rank: [u8; 2],
+    pub pick: [skills::Pick; 2],
+    pub ult_rank: u8,
+    /// 끼운 큰 기술(0158 G2 — 하나).
+    pub ult: skills::Ult,
+    /// 버팀(0158 G2): 이번 틱에 버티는 중이면 타마다 덜어내는 피해(0 = 버티지 않는다 — 스킬 틱이 틱마다 적는다), 받아낸 조각을
+    /// 되쏘나(ㄴ), 이번 버팀에서 받아낸 타 수와 그 상한(터뜨림의 덤 — 다음 버팀까지 남아 앱이 읽는다).
+    pub brace: i32,
+    pub reflect: bool,
+    pub brace_soaked: u8,
+    pub brace_most: u8,
+    /// 되울림(0158 G2): 남은 초와 처음 길이(HUD 칸).
+    pub echo_left: f32,
+    pub echo_total: f32,
+    /// 몰아치기(0158 G2): 남은 초·처음 길이(+ 더해진 몫 — HUD가 줄어드는 게이지로 그린다)·쓰러뜨려 더한 초(상한까지).
+    pub flurry_left: f32,
+    pub flurry_total: f32,
+    pub flurry_added: f32,
+    /// 지금 스킬의 덤 상태(0158 G1): 뛰어드는 거리(땅울림 ㄱ — 누른 순간에 정한다), 대기를 이미 돌려받았나(가로지르기 맺음),
+    /// 지나는 동안 맞지 않는 중인가(가로지르기 ㄴ — 스킬 틱이 틱마다 적는다).
+    pub leap: f32,
+    pub refunded: bool,
+    pub ghost: bool,
+}
+
+/// 패링과 그 뒤(0076~0090·0107): 마지막 패링 뒤의 시간, 이어 패링, 떼기 지킴, 패링이 연 다음 타(강공격·반격·맞받기·맺음타). `Player::parry`.
+pub struct ParryState {
+    /// 마지막 패링 성공에서 지난 초(렌더의 번쩍임).
+    pub since: f32,
+    /// 이어 패링(0081 → 0086): 남은 창(초)과 이번 이음에서 더 튕긴 수(0 = 첫 튕김만). 창이 닫히면 0으로.
+    pub chain_left: f32,
+    pub chain_n: u32,
+    /// 모으기 공격의 패링(0089, 사장 "모으기 공격에는 패링도 달려있어야 함. 리스크가 있는 공격이라 보상"): 모은 공격(강타·모은 사격)을
+    /// 뗀 뒤 남은 패링 창(초, 시작 = `parry.window s`). 그 공격 동작 안에서만 열린다.
+    pub release_guard: f32,
+    /// 나무 칸 동작(0107)의 표지: 마지막 타 뒤 박자로 이은 스윙(맺음타), 다음 강타가 다 모여 있다(끝맺음), 반격 스윙(되돌려 치기),
+    /// 모으기 패링으로 튕긴 강타 스윙(모은 맞받기).
+    pub closing_swing: u32,
+    pub closing_ready: bool,
+    pub primed_heavy: bool,
+    pub riposte_swing: u32,
+    pub gathered_swing: u32,
+}
+
+/// 무기 박자(0071·0076): 마지막 평타 뒤의 시간과 그 타의 박자, 박자에 맞았나, 이어 맞춘 수. `Player::beat`.
+pub struct BeatState {
+    /// 박자(2026-11-07): 마지막 평타가 시작된 뒤 흐른 시간, 그 타의 한 스윙 시간(= 그 무기의 박자, 0 = 없음),
+    /// 이번 공격 누름이 박자 창 안이었나(누른 순간에 판정 — 받아 둔 이른 누름은 거짓).
+    pub since_swing: f32,
+    pub period: f32,
+    pub on: bool,
+    /// 마지막 평타의 타 번호(대시 = `weapons::DASH`) — 박자 부채꼴(0087)이 그 타의 모양·휘두르는 쪽을 끝까지 그린다.
+    pub swing_hit: u8,
+    /// 박자 맞춤 피드백(0076): 잇달아 박자에 맞춘 타 수(박자를 놓친 타·새 콤보면 0), 마지막 박자 타에서 지난 초,
+    /// 지금 스윙이 박자 타인가(렌더가 금빛 고리·음표·금빛 휘두름, HUD가 스태미나 막대 반짝임, 앱이 오르는 종소리).
+    pub chain: u32,
+    pub since: f32,
+    pub swing_beat: bool,
+    /// 마지막 딱 맞춰 떼기(0078)에서 지난 초 — 렌더가 발밑에 크게 퍼지는 금빛 고리.
+    pub since_perfect: f32,
+}
+
+/// 마법·사격·수류탄(0048·0051·0111): 마법 칸, 공중 사격과 체공, 쇠뇌의 탄과 재장전, 수류탄. `Player::ranged`.
+pub struct RangedState {
+    /// 마법 칸(0048 → 0111, 0..=`CAST_CHARGES`): `cast.cooldown s`마다 한 칸 차고 쏘면 1 준다. 못 쏴서 깜빡이는 남은 초(HUD).
+    pub mana: f32,
+    pub cast_denied: f32,
+    /// 공중 RB(0111): 이번 점프에 이미 쐈나(땅에 서면 지운다), 떨어지기를 멈춘 남은 초(체공).
+    pub air_shot: bool,
+    pub hover: f32,
+    /// RB를 한 번 누른 뒤 쥔 시간(0056, `attack_hold`와 같은 셈).
+    pub cast_hold: f32,
     /// 원거리 무기: 탄창의 볼트, 장전 남은 초(0 = 장전 중 아님), 수류탄(소수 = 다시 차는 중).
     pub ammo: u8,
     pub reload: f32,
     pub grenades: f32,
+}
+
+/// 맞은 뒤(0143): 무적 시간, 맞은 뒤 흐른 시간과 그 타의 세기(그림이 읽는다), 이어 맞음. `Player::hurt`.
+pub struct HurtState {
+    pub left: f32,
+    /// 마지막으로 맞은 뒤 지난 초·그때 잃은 체력(0143) — HUD가 맞음 테·부서지는 체력 칸을 그린다(로직 시계: 히트스톱 동안 멈춰 있다).
+    pub since: f32,
+    pub blow: i32,
+    /// 경직 이음(0018 → 0099): 이음 안에서 또 맞은 횟수(0 = 첫 경직) — 경직 길이가 반씩 준다 — 와 남은 이음 창(초,
+    /// 경직 + `STUN_CHAIN_GRACE`, 맞을 때마다 새로). 창이 닫히면 다음 경직은 다시 처음 길이.
+    pub stun_chain: i32,
+    pub stun_window: f32,
 }
 
 impl Player {
@@ -634,8 +665,8 @@ impl Player {
         matches!(
             self.state,
             PState::Dodge { .. } | PState::Ult { done: false, .. }
-        ) || (self.skill_ghost && matches!(self.state, PState::Skill { .. }))
-            || self.hurt > 0.0
+        ) || (self.skill.ghost && matches!(self.state, PState::Skill { .. }))
+            || self.hurt.left > 0.0
     }
 }
 
@@ -753,7 +784,13 @@ impl World {
                 vel: Vec3::ZERO,
                 state: PState::Idle,
                 hp: PLAYER_HP,
-                hurt: 0.0,
+                hurt: HurtState {
+                    left: 0.0,
+                    stun_chain: 0,
+                    stun_window: 0.0,
+                    since: f32::MAX,
+                    blow: 0,
+                },
                 dodge_cd: 0.0,
                 turn_cd: 0.0,
                 stamina: crate::tuning::SPECS[crate::tuning::idx(P::StaminaMax)].def,
@@ -762,53 +799,55 @@ impl World {
                 stamina_idle: 0.0,
                 stamina_denied: 0.0,
                 denied_new: false,
-                stun_chain: 0,
-                stun_window: 0.0,
-                since_hurt: f32::MAX,
-                hurt_blow: 0,
                 since_spill: f32::MAX,
-                skills: skills::START,
-                skill_cd: [0.0; skills::N],
-                gauge: 0.0,
-                gauge_swing: 0,
-                skill_denied: 0.0,
-                skill_rank: [1; 2],
-                skill_pick: [skills::Pick::A; 2],
-                ult_rank: 1,
-                ult: skills::Ult::Upend,
-                skill_brace: 0,
-                skill_reflect: false,
-                brace_soaked: 0,
-                brace_most: 0,
-                echo_left: 0.0,
-                echo_total: 0.0,
-                flurry_left: 0.0,
-                flurry_total: 0.0,
-                flurry_added: 0.0,
-                skill_leap: 0.0,
-                skill_refunded: false,
-                skill_ghost: false,
-                since_parry: f32::MAX,
-                parry_chain_left: 0.0,
-                parry_chain_n: 0,
-                release_guard: 0.0,
-                closing_swing: 0,
-                closing_ready: false,
-                primed_heavy: false,
-                riposte_swing: 0,
-                gathered_swing: 0,
+                skill: SkillState {
+                    worn: skills::START,
+                    cd: [0.0; skills::N],
+                    gauge: 0.0,
+                    gauge_swing: 0,
+                    denied: 0.0,
+                    rank: [1; 2],
+                    pick: [skills::Pick::A; 2],
+                    ult_rank: 1,
+                    ult: skills::Ult::Upend,
+                    brace: 0,
+                    reflect: false,
+                    brace_soaked: 0,
+                    brace_most: 0,
+                    echo_left: 0.0,
+                    echo_total: 0.0,
+                    flurry_left: 0.0,
+                    flurry_total: 0.0,
+                    flurry_added: 0.0,
+                    leap: 0.0,
+                    refunded: false,
+                    ghost: false,
+                },
+                parry: ParryState {
+                    since: f32::MAX,
+                    chain_left: 0.0,
+                    chain_n: 0,
+                    release_guard: 0.0,
+                    closing_swing: 0,
+                    closing_ready: false,
+                    primed_heavy: false,
+                    riposte_swing: 0,
+                    gathered_swing: 0,
+                },
                 flank: false,
                 flank_swing: 0,
                 dash_left: 0.0,
                 connected: 0,
-                since_swing: f32::MAX,
-                swing_hit: 0,
-                beat: 0.0,
-                on_beat: false,
-                beat_chain: 0,
-                since_beat: f32::MAX,
-                swing_beat: false,
-                since_perfect: f32::MAX,
+                beat: BeatState {
+                    since_swing: f32::MAX,
+                    swing_hit: 0,
+                    period: 0.0,
+                    on: false,
+                    chain: 0,
+                    since: f32::MAX,
+                    swing_beat: false,
+                    since_perfect: f32::MAX,
+                },
                 running: false,
                 attack_hold: 0.0,
                 flask: FLASK_CHARGES,
@@ -817,19 +856,21 @@ impl World {
                 air: 0.0,
                 vy: 0.0,
                 swings: 0,
-                mana: CAST_CHARGES,
-                cast_denied: 0.0,
-                air_shot: false,
-                hover: 0.0,
+                ranged: RangedState {
+                    mana: CAST_CHARGES,
+                    cast_denied: 0.0,
+                    air_shot: false,
+                    hover: 0.0,
+                    cast_hold: 0.0,
+                    ammo: 0,
+                    reload: 0.0,
+                    grenades: 0.0,
+                },
                 weapon: weapons::Id::Sword,
-                cast_hold: 0.0,
                 pending: None,
                 pending_left: 0.0,
                 combo_next: 0,
                 combo_left: 0.0,
-                ammo: 0,
-                reload: 0.0,
-                grenades: 0.0,
             },
             enemies: Vec::new(),
             lock: None,
@@ -941,7 +982,7 @@ impl World {
             a.attack
         };
         if beat_press {
-            pl.on_beat = on_beat(pl.since_swing, pl.beat);
+            pl.beat.on = on_beat(pl.beat.since_swing, pl.beat.period);
         }
         pl.pending_left = (pl.pending_left - dt).max(0.0);
         if pressed.is_some() {
@@ -1012,18 +1053,18 @@ impl World {
             Next::Parry | Next::Jump => pl.stamina > 0.0,
             Next::Attack => {
                 if wpn.grenade.is_some() {
-                    pl.grenades >= 1.0
+                    pl.ranged.grenades >= 1.0
                 } else {
                     pl.stamina > 0.0
                 }
             }
             Next::Cast => match wpn.rb {
-                Rb::Magic(_) => pl.mana >= 1.0,
-                Rb::Shot { .. } => pl.ammo >= 1,
+                Rb::Magic(_) => pl.ranged.mana >= 1.0,
+                Rb::Shot { .. } => pl.ranged.ammo >= 1,
             },
             Next::Flask => pl.flask > 0 && pl.hp < pl.max_hp && pl.flask_lock <= 0.0,
-            Next::Skill(slot) => pl.skill_cd[pl.skills[slot as usize % 2].index()] <= 0.0,
-            Next::Ult => pl.gauge >= 1.0,
+            Next::Skill(slot) => pl.skill.cd[pl.skill.worn[slot as usize % 2].index()] <= 0.0,
+            Next::Ult => pl.skill.gauge >= 1.0,
         };
         let ready = match pl.state {
             PState::Attack { t: e, hit, .. } => {
@@ -1058,7 +1099,7 @@ impl World {
                 let after = wpn.after(hit);
                 let closing = after.is_none() && self.tree.has(Cell::ClosingBlow);
                 pl.combo_next = after.unwrap_or(0);
-                pl.closing_ready = closing;
+                pl.parry.closing_ready = closing;
                 pl.combo_left = if after.is_some() || closing {
                     t[P::ComboKeep]
                 } else {
@@ -1085,14 +1126,14 @@ impl World {
         pl.combo_next = 0;
         pl.combo_left = 0.0;
         // 박자도 새로(0087 — 앞 무기의 박자 부채꼴이 남지 않게).
-        pl.beat = 0.0;
-        pl.reload = 0.0;
+        pl.beat.period = 0.0;
+        pl.ranged.reload = 0.0;
         let w = id.def();
-        pl.ammo = match w.rb {
+        pl.ranged.ammo = match w.rb {
             Rb::Shot { mag, .. } => mag,
             Rb::Magic(_) => 0,
         };
-        pl.grenades = w.grenade.map_or(0.0, |g| g.count as f32);
+        pl.ranged.grenades = w.grenade.map_or(0.0, |g| g.count as f32);
         if !matches!(pl.state, PState::Hurt { .. } | PState::Jump { .. }) {
             pl.state = PState::Idle;
         }
@@ -1211,8 +1252,8 @@ impl World {
     pub fn parry_open(&self, t: &Tuning) -> bool {
         let pl = &self.player;
         matches!(pl.state, PState::Parry { t: e } if e < t[P::ParryWindow])
-            || pl.parry_chain_left > 0.0
-            || (pl.release_guard > 0.0
+            || pl.parry.chain_left > 0.0
+            || (pl.parry.release_guard > 0.0
                 && matches!(pl.state, PState::Heavy { .. } | PState::Cast { .. }))
     }
 
@@ -1239,7 +1280,7 @@ impl World {
 
     /// 몰아치기 동안의 평타 빠르기 배(아니면 1) — 렌더가 평타 동작을 같은 배로 돌린다.
     pub fn flurry_rate(&self) -> f32 {
-        if self.player.flurry_left > 0.0 {
+        if self.player.skill.flurry_left > 0.0 {
             skills::FLURRY.speed
         } else {
             1.0
@@ -1508,7 +1549,7 @@ impl World {
         ev: &mut Vec<Event>,
     ) {
         let _ = (t, ev);
-        if s.swing == self.player.riposte_swing && self.tree.has(Cell::TurnItBack) {
+        if s.swing == self.player.parry.riposte_swing && self.tree.has(Cell::TurnItBack) {
             let p = self.player.pos;
             for en in &mut self.enemies {
                 let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
@@ -1648,7 +1689,7 @@ impl World {
 
     /// 버팀(0158 G2)으로 버티는 중인가 — 스킬 틱이 이번 틱에 적어 둔 것(상태가 스킬일 때만).
     pub fn bracing(&self) -> bool {
-        self.player.skill_brace > 0 && matches!(self.player.state, PState::Skill { .. })
+        self.player.skill.brace > 0 && matches!(self.player.state, PState::Skill { .. })
     }
 
     /// 겹침 풀기(적끼리·플레이어와), 기둥·아레나 경계. 쏟아지던 적이 벽에 막히면 벽 쿵(피해 + 휘청 연장, 0012).
@@ -1933,7 +1974,7 @@ impl World {
         let pl = &self.player;
         let wpn = pl.weapon.def();
         if let Rb::Shot { .. } = wpn.rb {
-            let (left, ripe) = beat_shrink(pl.since_swing, 0.0, pl.beat)?;
+            let (left, ripe) = beat_shrink(pl.beat.since_swing, 0.0, pl.beat.period)?;
             return Some(BeatCue {
                 reach: BEAT_CUE_SHOT_REACH,
                 arc: BEAT_CUE_SHOT_ARC,
@@ -1944,7 +1985,7 @@ impl World {
         }
         let live = match pl.state {
             PState::Attack { hit, .. } => {
-                hit == pl.swing_hit
+                hit == pl.beat.swing_hit
                     && (wpn.after(hit).is_some() || self.tree.has(Cell::ClosingBlow))
             }
             PState::Idle | PState::Dodge { .. } | PState::Parry { .. } => pl.combo_left > 0.0,
@@ -1953,9 +1994,9 @@ impl World {
         if !live {
             return None;
         }
-        let h = wpn.hit(pl.swing_hit)?;
-        let (s0, _, _) = hit_times(t, wpn, pl.swing_hit);
-        let (left, ripe) = beat_shrink(pl.since_swing, s0, pl.beat)?;
+        let h = wpn.hit(pl.beat.swing_hit)?;
+        let (s0, _, _) = hit_times(t, wpn, pl.beat.swing_hit);
+        let (left, ripe) = beat_shrink(pl.beat.since_swing, s0, pl.beat.period)?;
         Some(BeatCue {
             reach: t[P::AttackRange] * h.reach,
             arc: if h.shape == weapons::Shape::Circle {

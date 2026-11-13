@@ -234,7 +234,7 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
     let x1 = f.ox + f.w - 8.0 * s - side;
     let x0 = x1 - gap - side;
     let y = f.oy + f.h - 6.0 * s - ui.px(label) - side;
-    let blink = pl.skill_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
+    let blink = pl.skill.denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
     let b = input::bindings();
     for (i, (x, bind)) in [(x0, Bind::Skill1), (x1, Bind::Skill2)]
         .into_iter()
@@ -249,7 +249,7 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
         let dim = if k < 1.0 { 0.45 } else { 1.0 };
         let tint = Color::new(1.0, 0.99, 0.95, 1.0);
         let r = crate::touch::ICON_N as f32 * s / 1.25 + 0.01;
-        crate::touch::icon(crate::touch::skill_icon(pl.skills[i]), c, r, dim, tint);
+        crate::touch::icon(crate::touch::skill_icon(pl.skill.worn[i]), c, r, dim, tint);
         if k < 1.0 {
             draw_rectangle(x, y, side, side * (1.0 - k), Color::new(0.0, 0.0, 0.0, 0.5));
         }
@@ -269,7 +269,7 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
     let gy = y - 3.0 * s - gh;
     draw_rectangle(gx - s, gy - s, gw + 2.0 * s, gh + 2.0 * s, BAR_BG);
     // 몰아치기(0158 G2)가 이어지는 동안은 같은 막대가 남은 시간으로 줄어든다(밝은 금빛 — 그동안 차오르는 게이지는 끝난 뒤에 보인다).
-    let (fill, col) = gauge_bar(pl.gauge, w.ult_active(), w.time);
+    let (fill, col) = gauge_bar(pl.skill.gauge, w.ult_active(), w.time);
     draw_rectangle(gx, gy, gw * fill, gh, col);
 }
 
@@ -300,7 +300,7 @@ pub fn draw(
     {
         use crate::tuning::HURT_EDGE_ALPHA;
         let pl = &w.player;
-        let hit = hurt_edge_k(pl.since_hurt, pl.hurt_blow) * HURT_EDGE_ALPHA;
+        let hit = hurt_edge_k(pl.hurt.since, pl.hurt.blow) * HURT_EDGE_ALPHA;
         let low = if low_hp(pl.hp, pl.max_hp) {
             0.1 + 0.08 * (0.5 + 0.5 * (w.time * 4.2).sin())
         } else {
@@ -320,7 +320,7 @@ pub fn draw(
     let max_hp = pl.max_hp.max(pl.hp).max(1);
     // 맞으면(0143) 체력 막대가 잠깐 떨리고, 잃은 몫은 채움 끝에 밝게 남았다 줄어든다. 한 대 남으면 채움이 붉게 뛴다.
     use crate::tuning::HURT_HP_SHAKE;
-    let jolt = (1.0 - pl.since_hurt / HURT_HP_SHAKE).clamp(0.0, 1.0);
+    let jolt = (1.0 - pl.hurt.since / HURT_HP_SHAKE).clamp(0.0, 1.0);
     let hx = x0 + (w.time * 80.0).sin() * 2.5 * s * jolt;
     let (hy, hw, hh) = (y0 + 1.5 * s, hp_bar_w(max_hp) * s, HP_BAR_H * s);
     let per = hw / max_hp as f32;
@@ -345,7 +345,7 @@ pub fn draw(
         ),
     );
     // 방금 잃은 몫: 채움 끝에서 최대까지만(그 사이 회복했으면 남은 자리만큼).
-    let chip = (hp_chip(pl.since_hurt, pl.hurt_blow) * per).min(hw - fill);
+    let chip = (hp_chip(pl.hurt.since, pl.hurt.blow) * per).min(hw - fill);
     if chip > 0.0 {
         draw_rectangle(hx + fill, hy, chip, hh, Color::new(1.0, 0.96, 0.9, 1.0));
     }
@@ -375,8 +375,8 @@ pub fn draw(
     draw_rectangle(bx, by, bw * k, bh, if blink { DENIED } else { STAMINA });
     // 박자 타(0076): 스태미나를 안 썼다 — 막대가 금빛으로 반짝였다 식는다(막대 위아래로 한 줄씩 넓게).
     let shots = matches!(pl.weapon.def().rb, Rb::Shot { .. });
-    if pl.since_beat < BEAT_GLINT && !shots {
-        let g = 1.0 - pl.since_beat / BEAT_GLINT;
+    if pl.beat.since < BEAT_GLINT && !shots {
+        let g = 1.0 - pl.beat.since / BEAT_GLINT;
         let col = Color::new(1.0, 0.92, 0.64, 0.7 * g);
         draw_rectangle(bx, by - s, bw * k, bh + 2.0 * s, col);
     }
@@ -430,7 +430,7 @@ pub fn draw(
     }
     // 마법 칸(0048): 등잔 오른쪽에 둥근 칸 셋 — 찬 만큼 채워지고, 못 쏘면 깜빡인다. 근접으로 맞히면 찬다.
     // 원거리 무기(0051)는 그 자리에 탄창(세운 막대 — 장전 중이면 아래에서 차오른다) + 수류탄(둥근 칸).
-    let mblink = pl.cast_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
+    let mblink = pl.ranged.cast_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
     let mx0 = x0 + pl.flask_max.max(pl.flask) as f32 * 9.0 * s + 6.0 * s;
     let wpn = pl.weapon.def();
     let pip = |i: i32, fill: f32, col: Color| {
@@ -450,10 +450,10 @@ pub fn draw(
             for i in 0..mag as i32 {
                 let (bx, by) = (mx0 + i as f32 * 4.0 * s, y0 + 17.0 * s);
                 draw_rectangle(bx, by, 2.5 * s, 7.0 * s, HP_OFF);
-                let k = if (i as u8) < pl.ammo {
+                let k = if (i as u8) < pl.ranged.ammo {
                     1.0
-                } else if pl.reload > 0.0 {
-                    1.0 - (pl.reload / reload.max(0.01)).clamp(0.0, 1.0)
+                } else if pl.ranged.reload > 0.0 {
+                    1.0 - (pl.ranged.reload / reload.max(0.01)).clamp(0.0, 1.0)
                 } else {
                     0.0
                 };
@@ -461,8 +461,8 @@ pub fn draw(
                     draw_rectangle(bx, by + 7.0 * s * (1.0 - k), 2.5 * s, 7.0 * s * k, AMMO);
                 }
                 // 박자 사격(0077): 볼트를 안 썼다 — 탄창이 금빛으로 반짝였다 식는다.
-                if pl.since_beat < BEAT_GLINT {
-                    let g = 1.0 - pl.since_beat / BEAT_GLINT;
+                if pl.beat.since < BEAT_GLINT {
+                    let g = 1.0 - pl.beat.since / BEAT_GLINT;
                     draw_rectangle(
                         bx - 0.5 * s,
                         by - 0.5 * s,
@@ -477,7 +477,7 @@ pub fn draw(
                 for i in 0..g.count as i32 {
                     let c = vec2(mx0 + gx + 3.0 * s + i as f32 * 8.0 * s, y0 + 20.5 * s);
                     draw_circle(c.x, c.y, 3.0 * s, if mblink { DENIED } else { HP_OFF });
-                    let fill = (pl.grenades - i as f32).clamp(0.0, 1.0);
+                    let fill = (pl.ranged.grenades - i as f32).clamp(0.0, 1.0);
                     if fill > 0.0 && !mblink {
                         let col = if fill >= 1.0 {
                             AMMO
@@ -491,7 +491,7 @@ pub fn draw(
         }
         (Rb::Magic(_), _) => {
             for i in 0..CAST_CHARGES as i32 {
-                pip(i, (pl.mana - i as f32).clamp(0.0, 1.0), MANA);
+                pip(i, (pl.ranged.mana - i as f32).clamp(0.0, 1.0), MANA);
             }
         }
     }

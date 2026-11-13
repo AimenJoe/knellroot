@@ -311,12 +311,12 @@ fn an_attack_pressed_on_the_weapons_beat_costs_no_stamina_but_mashing_does() {
         );
         let after_first = w.player.stamina;
         assert!(after_first < t[P::StaminaMax], "the first swing costs");
-        let beat = w.player.beat;
+        let beat = w.player.beat.period;
         assert!(beat > 0.25, "{weapon:?} beat {beat}");
         let mut free = false;
         for _ in 0..120 {
-            let press = w.player.since_swing >= beat - TICK_DT * 0.5
-                && w.player.since_swing < beat + TICK_DT;
+            let press = w.player.beat.since_swing >= beat - TICK_DT * 0.5
+                && w.player.beat.since_swing < beat + TICK_DT;
             let before = w.player.stamina;
             let ev = w.step(
                 &Actions {
@@ -333,10 +333,10 @@ fn an_attack_pressed_on_the_weapons_beat_costs_no_stamina_but_mashing_does() {
                 );
                 // 피드백(0076): 이 스윙은 박자 타, 잇단 수 1, 고리·음표 시계가 0부터.
                 assert!(
-                    w.player.swing_beat && w.player.beat_chain == 1,
+                    w.player.beat.swing_beat && w.player.beat.chain == 1,
                     "{weapon:?}"
                 );
-                assert!(w.player.since_beat < TICK_DT * 2.0);
+                assert!(w.player.beat.since < TICK_DT * 2.0);
                 free = true;
                 break;
             }
@@ -357,7 +357,7 @@ fn an_attack_pressed_on_the_weapons_beat_costs_no_stamina_but_mashing_does() {
             beats += ev.iter().filter(|e| **e == Event::Beat).count();
         }
         assert_eq!(beats, 0, "{weapon:?}: mashing never gets the beat for free");
-        assert!(!w.player.swing_beat && w.player.beat_chain == 0);
+        assert!(!w.player.beat.swing_beat && w.player.beat.chain == 0);
     }
 }
 
@@ -423,13 +423,13 @@ fn the_beat_fan_follows_the_swing_and_peaks_when_a_press_counts() {
     let mut beat = false;
     for _ in 0..90 {
         let cue = w.beat_cue(&t);
-        if w.player.since_swing < s0 - 1e-4 {
+        if w.player.beat.since_swing < s0 - 1e-4 {
             assert_eq!(cue, None, "not before the hit is live");
         }
         if let Some(c) = cue {
             assert_eq!(c.sweep, weapons::Sweep::RightToLeft);
             seen = Some(c);
-            if c.ripe && (w.player.since_swing - w.player.beat).abs() < TICK_DT * 0.6 {
+            if c.ripe && (w.player.beat.since_swing - w.player.beat.period).abs() < TICK_DT * 0.6 {
                 assert!((c.left - BEAT_CUE_MIN).abs() < 0.05, "smallest on the beat");
                 let ev = press(&mut w, true, false);
                 assert!(

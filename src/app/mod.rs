@@ -475,7 +475,7 @@ impl App {
             rest: play && self.world.interact_here,
             lock: play && (self.world.lock.is_some() || self.world.lock_candidate()),
             flask: play && pl.flask > 0 && pl.hp < pl.max_hp,
-            ult: play && pl.gauge >= 1.0,
+            ult: play && pl.skill.gauge >= 1.0,
         });
         self.input.poll(self.scene().is_menu());
         // F11(PC, 0135): 어느 장면에서나 창 ↔ 전체 화면. 창 일이라 `Actions`(게임 동작)에 넣지 않는다.
@@ -745,7 +745,7 @@ impl App {
                 let pl = &self.world.player;
                 let skill = |slot: usize| {
                     (
-                        touch::skill_icon(pl.skills[slot]),
+                        touch::skill_icon(pl.skill.worn[slot]),
                         self.world.skill_ready(slot, &self.t),
                     )
                 };
@@ -758,7 +758,7 @@ impl App {
                         cast: touch::cast_icon(pl.weapon),
                         skills: [skill(0), skill(1)],
                         active: [0, 1].map(|i| self.world.skill_active(i)),
-                        ult: touch::ult_icon(pl.ult),
+                        ult: touch::ult_icon(pl.skill.ult),
                     },
                 );
             }

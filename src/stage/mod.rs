@@ -1234,7 +1234,7 @@ impl StageRun {
         let pl = &mut w.player;
         pl.hp = pl.max_hp;
         pl.flask = pl.flask_max;
-        pl.mana = crate::tuning::CAST_CHARGES;
+        pl.ranged.mana = crate::tuning::CAST_CHARGES;
         pl.stamina = full;
         let back = match self.phase {
             Phase::Entrance | Phase::Waves(_) => Phase::Entrance,
@@ -1287,7 +1287,7 @@ impl StageRun {
         pl.vel = Vec3::ZERO;
         pl.state = PState::Idle;
         pl.air = 0.0;
-        pl.hurt = 1.0;
+        pl.hurt.left = 1.0;
         self.rest(w, i);
         self.since_rest = f32::MAX;
         match back {

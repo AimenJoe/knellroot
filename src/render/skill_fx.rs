@@ -227,8 +227,8 @@ impl Renderer {
         let hot = Color::new(1.0, 0.97, 0.86, 1.0);
         let fx = t[crate::tuning::P::RenderFx] >= 0.5;
         let feet = vec3(pp.x, w.ground_y(pp), pp.z);
-        if pl.echo_left > 0.0 {
-            let fade = (pl.echo_left / 0.4).min(1.0);
+        if pl.skill.echo_left > 0.0 {
+            let fade = (pl.skill.echo_left / 0.4).min(1.0);
             let breathe = 0.5 + 0.5 * (w.time * 6.0).sin();
             if let crate::skills::Form::Echo { radius, .. } =
                 w.skill_eff(crate::skills::Id::Echo).skill.form
@@ -299,8 +299,8 @@ impl Renderer {
                 }
             }
         }
-        if pl.flurry_left > 0.0 {
-            let fade = (pl.flurry_left / 0.5).min(1.0);
+        if pl.skill.flurry_left > 0.0 {
+            let fade = (pl.skill.flurry_left / 0.5).min(1.0);
             let breathe = 0.5 + 0.5 * (w.time * 9.0).sin();
             for (r, a) in [(0.7, 0.8), (0.95, 0.4)] {
                 fl.ring(

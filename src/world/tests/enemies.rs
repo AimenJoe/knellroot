@@ -163,7 +163,7 @@ fn the_hurled_bells_ring_is_cleared_by_a_jump() {
         w.player.hp = 990;
         let hp = w.player.hp;
         for _ in 0..200 {
-            w.player.hurt = 0.0;
+            w.player.hurt.left = 0.0;
             w.player.state = PState::Idle;
             if jump {
                 w.player.air = 2.0;
@@ -192,7 +192,7 @@ fn toll_rings_hit_once_each_and_a_jump_clears_them() {
         w.player.hp = 990;
         let hp = w.player.hp;
         for _ in 0..240 {
-            w.player.hurt = 0.0;
+            w.player.hurt.left = 0.0;
             w.player.state = PState::Idle;
             if jump {
                 w.player.air = 2.0;

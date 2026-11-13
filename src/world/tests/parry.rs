@@ -213,7 +213,7 @@ fn attacking_right_after_a_parry_is_a_full_heavy_riposte() {
     );
     // 창이 지난 뒤면 평타.
     let mut w = World::new("test", 20.0);
-    w.player.since_parry = RIPOSTE_WINDOW + 0.1;
+    w.player.parry.since = RIPOSTE_WINDOW + 0.1;
     w.step(
         &Actions {
             attack: true,
@@ -426,7 +426,7 @@ fn the_charged_release_guard_lasts_one_parry_window_and_only_for_charged_attacks
     // 반격(튕긴 뒤 바로 강타 — 모으지 않았다)도 없다.
     let mut w = World::new("test", 20.0);
     w.set_weapon(weapons::Id::Sword);
-    w.player.since_parry = 0.0;
+    w.player.parry.since = 0.0;
     w.step(
         &Actions {
             attack: true,

@@ -128,8 +128,8 @@ impl World {
     /// 스킬 `id`의 지금 값: 끼운 칸의 단·고르기를 입힌 것(끼우지 않은 스킬은 1단 — 시험·바꿔 끼운 직후).
     pub fn skill_eff(&self, id: skills::Id) -> Eff {
         let pl = &self.player;
-        match pl.skills.iter().position(|s| *s == id) {
-            Some(i) => id.def().at(pl.skill_rank[i], pl.skill_pick[i]),
+        match pl.skill.worn.iter().position(|s| *s == id) {
+            Some(i) => id.def().at(pl.skill.rank[i], pl.skill.pick[i]),
             None => id.def().at(1, skills::Pick::A),
         }
     }
@@ -139,7 +139,7 @@ impl World {
     /// 대기가 한참 남은 스킬은 받아 두지 않고 칸만 깜빡인다(몇 초 뒤에 저절로 나가면 안 된다).
     pub(super) fn skill_press(&mut self, a: &Actions, t: &Tuning) -> Option<Next> {
         let pl = &mut self.player;
-        let full = pl.gauge >= 1.0;
+        let full = pl.skill.gauge >= 1.0;
         if a.ult || (a.skill1 && a.skill2) {
             if full {
                 return Some(Next::Ult);
@@ -156,15 +156,15 @@ impl World {
             return None;
         };
         if let PState::Skill { id, t: e, .. } = pl.state {
-            if full && e < t[P::SkillChord] && pl.skills[slot] != id {
+            if full && e < t[P::SkillChord] && pl.skill.worn[slot] != id {
                 return Some(Next::Ult);
             }
         }
-        if pl.skill_cd[pl.skills[slot].index()] > t[P::AttackBuffer] {
-            if pl.skill_denied <= 0.0 {
+        if pl.skill.cd[pl.skill.worn[slot].index()] > t[P::AttackBuffer] {
+            if pl.skill.denied <= 0.0 {
                 self.skill_ev.push(Event::SkillDenied);
             }
-            pl.skill_denied = SKILL_DENIED_SHOW;
+            pl.skill.denied = SKILL_DENIED_SHOW;
             return None;
         }
         Some(Next::Skill(slot as u8))
@@ -174,7 +174,7 @@ impl World {
     pub(super) fn try_skill(&mut self, cx: &Ctx) -> bool {
         let a = &cx.a;
         if a.ult {
-            if self.player.gauge < 1.0 {
+            if self.player.skill.gauge < 1.0 {
                 return false;
             }
             self.start_ult(cx);
@@ -187,8 +187,8 @@ impl World {
         } else {
             return false;
         };
-        let id = self.player.skills[slot];
-        if self.player.skill_cd[id.index()] > 0.0 {
+        let id = self.player.skill.worn[slot];
+        if self.player.skill.cd[id.index()] > 0.0 {
             return false;
         }
         let d = self.skill_eff(id);
@@ -199,13 +199,13 @@ impl World {
             _ => 0.0,
         };
         let pl = &mut self.player;
-        pl.skill_cd[id.index()] = d.skill.cooldown * cx.t[P::SkillCooldownX];
-        pl.skill_leap = leap;
-        pl.skill_refunded = false;
-        pl.skill_ghost = false;
-        pl.skill_brace = 0;
+        pl.skill.cd[id.index()] = d.skill.cooldown * cx.t[P::SkillCooldownX];
+        pl.skill.leap = leap;
+        pl.skill.refunded = false;
+        pl.skill.ghost = false;
+        pl.skill.brace = 0;
         if matches!(d.skill.form, Form::Brace { .. }) {
-            pl.brace_soaked = 0;
+            pl.skill.brace_soaked = 0;
             self.brace_caught.clear();
         }
         let pl = &mut self.player;
@@ -287,10 +287,10 @@ impl World {
         let d = self.skill_eff(id);
         let s = d.skill;
         // 두 버튼 함께(0151): 시동 안에 들어온 큰 기술 누름이 이 스킬을 바꿔친다 — 쓴 대기는 돌려준다.
-        if cx.a.ult && e < t[P::SkillChord] && self.player.gauge >= 1.0 {
-            self.player.skill_cd[id.index()] = 0.0;
-            self.player.skill_ghost = false;
-            self.player.skill_brace = 0;
+        if cx.a.ult && e < t[P::SkillChord] && self.player.skill.gauge >= 1.0 {
+            self.player.skill.cd[id.index()] = 0.0;
+            self.player.skill.ghost = false;
+            self.player.skill.brace = 0;
             self.start_ult(cx);
             return;
         }
@@ -298,8 +298,8 @@ impl World {
         let crossed = |at: f32| e < at && e1 >= at;
         let at = self.player.pos;
         let mut swing = swing;
-        self.player.skill_ghost = false;
-        self.player.skill_brace = 0;
+        self.player.skill.ghost = false;
+        self.player.skill.brace = 0;
         match s.form {
             Form::Ring {
                 radius,
@@ -355,7 +355,7 @@ impl World {
                 // 지나가는 동안 틱마다 몸 둘레를 친다(한 번 맞은 적은 다시 안 맞는다).
                 if e1 >= s.startup && e < s.startup + d.active() {
                     // 스치는 몸(ㄴ): 지나는 동안 맞지 않는다.
-                    self.player.skill_ghost = matches!(d.twist, Some(Twist::Ghost));
+                    self.player.skill.ghost = matches!(d.twist, Some(Twist::Ghost));
                     let kills = self.kills;
                     self.skill_area(
                         t,
@@ -373,10 +373,10 @@ impl World {
                     // 맺음: 이 스킬로 쓰러뜨리면 대기의 몫을 돌려받는다(한 번 쓸 때 한 번).
                     if let Some(Cap::Refund { part }) = d.cap {
                         let pl = &mut self.player;
-                        if self.kills > kills && !pl.skill_refunded {
-                            pl.skill_refunded = true;
+                        if self.kills > kills && !pl.skill.refunded {
+                            pl.skill.refunded = true;
                             let back = s.cooldown * t[P::SkillCooldownX] * part;
-                            let cd = &mut pl.skill_cd[id.index()];
+                            let cd = &mut pl.skill.cd[id.index()];
                             *cd = (*cd - back).max(0.0);
                         }
                     }
@@ -466,14 +466,14 @@ impl World {
                         return;
                     }
                     let pl = &mut self.player;
-                    pl.skill_brace = soak;
-                    pl.brace_most = most;
-                    pl.skill_reflect = matches!(d.twist, Some(Twist::Reflect));
+                    pl.skill.brace = soak;
+                    pl.skill.brace_most = most;
+                    pl.skill.reflect = matches!(d.twist, Some(Twist::Reflect));
                 }
                 if crossed(end) {
                     self.player.swings += 1;
                     swing = self.player.swings;
-                    let n = self.player.brace_soaked as i32;
+                    let n = self.player.skill.brace_soaked as i32;
                     self.skill_ev.push(Event::Skill { id, at, dir });
                     let stun = match d.cap {
                         Some(Cap::Stun { stagger }) => stagger,
@@ -513,8 +513,8 @@ impl World {
             Form::Echo { secs, .. } => {
                 if crossed(s.startup) {
                     let pl = &mut self.player;
-                    pl.echo_left = secs;
-                    pl.echo_total = secs;
+                    pl.skill.echo_left = secs;
+                    pl.skill.echo_total = secs;
                     self.skill_ev.push(Event::Skill { id, at, dir });
                 }
             }
@@ -587,8 +587,8 @@ impl World {
             }
         }
         self.player.state = if e1 >= d.total() {
-            self.player.skill_ghost = false;
-            self.player.skill_brace = 0;
+            self.player.skill.ghost = false;
+            self.player.skill.brace = 0;
             PState::Idle
         } else {
             PState::Skill {
@@ -1011,7 +1011,7 @@ impl World {
     /// 되울림(G2): 울림이 남아 있는 동안 성공한 패링 `parries`번마다 둘레의 적이 휘청인다(보스는 아니다). 패링 창·받는 반원은
     /// 건드리지 않는다(0095 원칙 2) — 이미 성공한 패링에 얹힐 뿐. 고르기: 자세 피해(ㄱ)·모든 대기 당기기(ㄴ), 맺음: 피해.
     pub(super) fn echo_ring(&mut self, t: &Tuning, parries: usize, ev: &mut Vec<Event>) {
-        if parries == 0 || self.player.echo_left <= 0.0 {
+        if parries == 0 || self.player.skill.echo_left <= 0.0 {
             return;
         }
         let d = self.skill_eff(skills::Id::Echo);
@@ -1055,7 +1055,7 @@ impl World {
                 );
             }
             if let Some(Twist::Tempo { secs }) = d.twist {
-                for cd in &mut self.player.skill_cd {
+                for cd in &mut self.player.skill.cd {
                     *cd = (*cd - secs).max(0.0);
                 }
             }
@@ -1109,14 +1109,14 @@ impl World {
     /// 큰 기술 시작(끼운 하나): 게이지를 통째로 쓴다. 쟁반 뒤집기·한 줄기는 세계가 한 번 멈춘다(시동 정지 — "시간"),
     /// 한 줄기는 가를 쪽을 이 순간에 정한다(조준 > 락온 > 닿는 거리의 가장 가까운 적 > 바라보는 쪽).
     fn start_ult(&mut self, cx: &Ctx) {
-        let kind = self.player.ult;
+        let kind = self.player.skill.ult;
         if kind == skills::Ult::Line {
             let pl = &self.player;
             let lock = cx
                 .target
                 .map(|tg| vec3(tg.x - pl.pos.x, 0.0, tg.z - pl.pos.z).normalize_or_zero())
                 .filter(|v| v.length_squared() > 0.5);
-            let reach = LINE.len_at(pl.ult_rank);
+            let reach = LINE.len_at(pl.skill.ult_rank);
             let dir = cx
                 .aim
                 .or(lock)
@@ -1126,7 +1126,7 @@ impl World {
             }
         }
         let pl = &mut self.player;
-        pl.gauge = 0.0;
+        pl.skill.gauge = 0.0;
         pl.state = PState::Ult {
             kind,
             t: 0.0,
@@ -1147,9 +1147,9 @@ impl World {
                 skills::Ult::Upend => self.upend(cx.t),
                 skills::Ult::Flurry => {
                     let pl = &mut self.player;
-                    pl.flurry_left = FLURRY.secs_at(pl.ult_rank);
-                    pl.flurry_total = pl.flurry_left;
-                    pl.flurry_added = 0.0;
+                    pl.skill.flurry_left = FLURRY.secs_at(pl.skill.ult_rank);
+                    pl.skill.flurry_total = pl.skill.flurry_left;
+                    pl.skill.flurry_added = 0.0;
                     self.skill_ev.push(Event::Flurry { at: pl.pos });
                 }
                 skills::Ult::Line => self.line_cut(cx.t),
@@ -1169,7 +1169,7 @@ impl World {
         let p = self.player.pos;
         let body = p.y + self.player.air;
         let dir = self.player.facing_dir();
-        let rank = self.player.ult_rank;
+        let rank = self.player.skill.ult_rank;
         let mut len = LINE.len_at(rank);
         let eye = p + Vec3::Y * (self.player.air + BLADE_HEIGHT);
         for o in &self.obstacles {
@@ -1224,7 +1224,7 @@ impl World {
     /// 단(0158): 2단 = 휘청이 길어진다(보스의 짧은 휘청은 그대로), 3단 = 벽에 박힌 피해가 는다.
     fn upend(&mut self, t: &Tuning) {
         let p = self.player.pos;
-        let rank = self.player.ult_rank;
+        let rank = self.player.skill.ult_rank;
         let (stagger, slam) = (UPEND.stagger_at(rank), UPEND.slam_at(rank));
         for en in &mut self.enemies {
             if !en.active() || en.rising() {
@@ -1271,52 +1271,52 @@ impl World {
             } else {
                 t[P::SkillMomentum]
             };
-            for cd in &mut pl.skill_cd {
+            for cd in &mut pl.skill.cd {
                 *cd = (*cd - per * downs).max(0.0);
             }
         }
         // 몰아치기 3단(G2): 그동안 쓰러뜨릴 때마다 조금 더 이어진다 — 더해지는 몫은 `kill_cap`초까지.
-        if downs > 0.0 && pl.flurry_left > 0.0 {
-            let more = (FLURRY.kill_more_at(pl.ult_rank) * downs)
-                .min(FLURRY.kill_cap - pl.flurry_added)
+        if downs > 0.0 && pl.skill.flurry_left > 0.0 {
+            let more = (FLURRY.kill_more_at(pl.skill.ult_rank) * downs)
+                .min(FLURRY.kill_cap - pl.skill.flurry_added)
                 .max(0.0);
-            pl.flurry_left += more;
-            pl.flurry_total += more;
-            pl.flurry_added += more;
+            pl.skill.flurry_left += more;
+            pl.skill.flurry_total += more;
+            pl.skill.flurry_added += more;
         }
-        let was_full = pl.gauge >= 1.0;
+        let was_full = pl.skill.gauge >= 1.0;
         let hit = t[P::SkillGaugeHit];
         let mut gain = parries * t[P::SkillGaugeParry] + perfects * hit * 2.0;
-        if pl.connected != 0 && pl.connected != pl.gauge_swing {
-            pl.gauge_swing = pl.connected;
+        if pl.connected != 0 && pl.connected != pl.skill.gauge_swing {
+            pl.skill.gauge_swing = pl.connected;
             gain += hit;
         }
         if std::mem::take(&mut self.bolt_hit_tick) {
             gain += hit;
         }
-        pl.gauge = (pl.gauge + gain).min(1.0);
-        if !was_full && pl.gauge >= 1.0 {
+        pl.skill.gauge = (pl.skill.gauge + gain).min(1.0);
+        if !was_full && pl.skill.gauge >= 1.0 {
             ev.push(Event::UltReady);
         }
     }
 
     /// 스킬 칸 `slot`(0·1)의 준비 0..1(1 = 쓸 수 있다) — HUD·터치.
     pub fn skill_ready(&self, slot: usize, t: &Tuning) -> f32 {
-        let id = self.player.skills[slot % 2];
+        let id = self.player.skill.worn[slot % 2];
         let full = self.skill_eff(id).skill.cooldown * t[P::SkillCooldownX];
         if full <= 0.0 {
             1.0
         } else {
-            1.0 - (self.player.skill_cd[id.index()] / full).clamp(0.0, 1.0)
+            1.0 - (self.player.skill.cd[id.index()] / full).clamp(0.0, 1.0)
         }
     }
 
     /// 스킬 칸 `slot`의 스킬이 남긴 것이 이어지는 몫 0..1(0 = 없음) — 되울림의 울림·잔불 흩기의 불티(HUD·터치 칸).
     pub fn skill_active(&self, slot: usize) -> f32 {
         let pl = &self.player;
-        match pl.skills[slot % 2] {
-            skills::Id::Echo if pl.echo_left > 0.0 => {
-                (pl.echo_left / pl.echo_total.max(1e-3)).clamp(0.0, 1.0)
+        match pl.skill.worn[slot % 2] {
+            skills::Id::Echo if pl.skill.echo_left > 0.0 => {
+                (pl.skill.echo_left / pl.skill.echo_total.max(1e-3)).clamp(0.0, 1.0)
             }
             skills::Id::Embers => self
                 .skill_fields
@@ -1330,8 +1330,8 @@ impl World {
     /// 몰아치기가 이어지는 몫 0..1(0 = 아니다) — HUD가 큰 기술 게이지를 줄어드는 막대로 그린다.
     pub fn ult_active(&self) -> f32 {
         let pl = &self.player;
-        if pl.flurry_left > 0.0 {
-            (pl.flurry_left / pl.flurry_total.max(1e-3)).clamp(0.0, 1.0)
+        if pl.skill.flurry_left > 0.0 {
+            (pl.skill.flurry_left / pl.skill.flurry_total.max(1e-3)).clamp(0.0, 1.0)
         } else {
             0.0
         }
@@ -1348,19 +1348,19 @@ impl World {
         let l = l.into();
         let ids = skills::sane([l.slots[0].id, l.slots[1].id]);
         let pl = &mut self.player;
-        pl.skills = ids;
+        pl.skill.worn = ids;
         for (i, id) in ids.into_iter().enumerate() {
             // 같은 스킬 둘이라 바꿔 끼운 칸은 1단.
             let same = l.slots[i].id == id;
-            pl.skill_rank[i] = if same { l.slots[i].rank.max(1) } else { 1 };
-            pl.skill_pick[i] = if same {
+            pl.skill.rank[i] = if same { l.slots[i].rank.max(1) } else { 1 };
+            pl.skill.pick[i] = if same {
                 l.slots[i].pick
             } else {
                 skills::Pick::A
             };
         }
-        pl.ult_rank = l.ult.max(1);
-        pl.ult = l.great;
+        pl.skill.ult_rank = l.ult.max(1);
+        pl.skill.ult = l.great;
     }
 }
 
@@ -1432,7 +1432,7 @@ mod tests {
         }
         assert_eq!(w.enemies[6].hp, 90, "out of reach");
         assert_eq!(w.player.stamina, stamina, "skills cost no stamina");
-        assert!(w.player.skill_cd[Sk::Whirl.index()] > 4.0, "cooling down");
+        assert!(w.player.skill.cd[Sk::Whirl.index()] > 4.0, "cooling down");
         assert!(matches!(w.player.state, PState::Idle));
         // 두 바퀴를 돌고 처음 보던 쪽으로 돌아온다.
         assert!(w.player.facing_dir().dot(vec3(0.0, 0.0, -1.0)) > 0.99);
@@ -1532,16 +1532,16 @@ mod tests {
     fn felling_enemies_brings_skills_back_sooner_and_skill_kills_count_half() {
         let (mut w, t) = world();
         let down = Event::EnemyDown { at: Vec3::ZERO };
-        w.player.skill_cd = [5.0; skills::N];
+        w.player.skill.cd = [5.0; skills::N];
         let mut ev = vec![down, down];
         w.skill_books(&t, &mut ev);
         let want = 5.0 - 2.0 * t[P::SkillMomentum];
-        assert!(w.player.skill_cd.iter().all(|c| (c - want).abs() < 1e-5));
-        w.player.skill_cd = [5.0; skills::N];
+        assert!(w.player.skill.cd.iter().all(|c| (c - want).abs() < 1e-5));
+        w.player.skill.cd = [5.0; skills::N];
         w.skill_hit_tick = true;
         w.skill_books(&t, &mut vec![down]);
         let want = 5.0 - t[P::SkillMomentumOwn];
-        assert!(w.player.skill_cd.iter().all(|c| (c - want).abs() < 1e-5));
+        assert!(w.player.skill.cd.iter().all(|c| (c - want).abs() < 1e-5));
         assert!(t[P::SkillMomentumOwn] < t[P::SkillMomentum]);
         // 실제 판: 휘돌이가 한 대 몫(체력 10)짜리 둘을 쓰러뜨리면 다른 스킬의 대기가 "스킬 몫"만큼 당겨진다.
         let (mut w, t) = world();
@@ -1551,7 +1551,7 @@ mod tests {
         for e in &mut w.enemies {
             e.hp = 10;
         }
-        w.player.skill_cd[Sk::Cut.index()] = 5.0;
+        w.player.skill.cd[Sk::Cut.index()] = 5.0;
         let ticks = 12;
         let ev = run(&mut w, &t, skill(0), ticks);
         let downs = ev
@@ -1559,7 +1559,7 @@ mod tests {
             .filter(|e| matches!(e, Event::EnemyDown { .. }))
             .count();
         assert_eq!(downs, 2);
-        let cd = w.player.skill_cd[Sk::Cut.index()];
+        let cd = w.player.skill.cd[Sk::Cut.index()];
         assert!(cd < 5.0 - 2.0 * t[P::SkillMomentumOwn] + 1e-3, "{cd}");
         assert!(
             cd > 5.0 - 2.0 * t[P::SkillMomentum],
@@ -1587,22 +1587,22 @@ mod tests {
         );
         let hits = ev.iter().filter(|e| matches!(e, Event::Hit { .. })).count();
         assert!(hits >= 2, "a wide swing: {hits}");
-        assert!((w.player.gauge - t[P::SkillGaugeHit]).abs() < 1e-5);
+        assert!((w.player.skill.gauge - t[P::SkillGaugeHit]).abs() < 1e-5);
         // 스킬의 타는 채우지 않는다.
-        let g = w.player.gauge;
+        let g = w.player.skill.gauge;
         let ev = run(&mut w, &t, skill(0), 60);
         assert!(ev.iter().any(|e| matches!(e, Event::Hit { .. })));
-        assert_eq!(w.player.gauge, g);
+        assert_eq!(w.player.skill.gauge, g);
         // 패링 한 번 = 맞힘 여러 번.
         let parry = Event::Parry { at: Vec3::ZERO };
         w.skill_books(&t, &mut vec![parry]);
-        assert!((w.player.gauge - g - t[P::SkillGaugeParry]).abs() < 1e-5);
+        assert!((w.player.skill.gauge - g - t[P::SkillGaugeParry]).abs() < 1e-5);
         assert!(t[P::SkillGaugeParry] >= 3.0 * t[P::SkillGaugeHit]);
         // 가득: 한 번만 알린다.
-        w.player.gauge = 1.0 - t[P::SkillGaugeParry] * 0.5;
+        w.player.skill.gauge = 1.0 - t[P::SkillGaugeParry] * 0.5;
         let mut ev = vec![parry];
         w.skill_books(&t, &mut ev);
-        assert_eq!(w.player.gauge, 1.0);
+        assert_eq!(w.player.skill.gauge, 1.0);
         assert!(ev.contains(&Event::UltReady));
         let mut ev = vec![parry];
         w.skill_books(&t, &mut ev);
@@ -1619,15 +1619,15 @@ mod tests {
             ..Default::default()
         };
         let (mut w, t) = world();
-        w.player.gauge = 1.0;
+        w.player.skill.gauge = 1.0;
         let ev = w.step(&both, &t);
         assert!(matches!(w.player.state, PState::Ult { .. }));
         assert!(ev.contains(&Event::UltStart));
-        assert_eq!(w.player.gauge, 0.0);
-        assert!(w.player.skill_cd.iter().all(|c| *c == 0.0));
+        assert_eq!(w.player.skill.gauge, 0.0);
+        assert!(w.player.skill.cd.iter().all(|c| *c == 0.0));
         // 두 틱 어긋나게.
         let (mut w, t) = world();
-        w.player.gauge = 1.0;
+        w.player.skill.gauge = 1.0;
         w.step(&skill(0), &t);
         assert!(
             matches!(w.player.state, PState::Skill { id: Sk::Whirl, .. }),
@@ -1636,10 +1636,10 @@ mod tests {
         w.step(&Actions::default(), &t);
         w.step(&skill(1), &t);
         assert!(matches!(w.player.state, PState::Ult { .. }));
-        assert_eq!(w.player.skill_cd[Sk::Whirl.index()], 0.0, "refunded");
+        assert_eq!(w.player.skill.cd[Sk::Whirl.index()], 0.0, "refunded");
         // 시동 창이 지난 뒤의 둘째 누름은 큰 기술이 아니다 — 다음 스킬로 받아 둔다.
         let (mut w, t) = world();
-        w.player.gauge = 1.0;
+        w.player.skill.gauge = 1.0;
         w.step(&skill(0), &t);
         let late = (t[P::SkillChord] / TICK_DT).ceil() as usize + 1;
         for _ in 0..late {
@@ -1650,7 +1650,7 @@ mod tests {
             w.player.state,
             PState::Skill { id: Sk::Whirl, .. }
         ));
-        assert_eq!(w.player.gauge, 1.0);
+        assert_eq!(w.player.skill.gauge, 1.0);
         // 게이지가 안 찼으면 함께 눌러도 스킬 하나.
         let (mut w, t) = world();
         w.step(&both, &t);
@@ -1675,7 +1675,7 @@ mod tests {
         still(&mut w);
         let boss_hp = w.enemies[3].hp;
         let was: Vec<f32> = w.enemies.iter().map(|e| flat(e.pos, Vec3::ZERO)).collect();
-        w.player.gauge = 1.0;
+        w.player.skill.gauge = 1.0;
         w.step(
             &Actions {
                 ult: true,
@@ -1723,7 +1723,7 @@ mod tests {
         let mut w = World::new("test", 30.0);
         w.spawn_mob(vec3(0.0, 0.0, -(UPEND.radius + 1.5)));
         still(&mut w);
-        w.player.gauge = 1.0;
+        w.player.skill.gauge = 1.0;
         run(
             &mut w,
             &t,
@@ -1742,7 +1742,7 @@ mod tests {
     fn a_cooling_skill_blinks_and_is_not_buffered() {
         let (mut w, t) = world();
         run(&mut w, &t, skill(0), 60);
-        let cd = w.player.skill_cd[Sk::Whirl.index()];
+        let cd = w.player.skill.cd[Sk::Whirl.index()];
         assert!(cd > 1.0);
         let ev = w.step(&skill(0), &t);
         assert!(ev.contains(&Event::SkillDenied));
@@ -1821,16 +1821,16 @@ mod tests {
             ult: 3,
             great: skills::Ult::Upend,
         });
-        assert_eq!(w.player.skills, [Sk::Quake, Sk::Whirl]);
-        assert_eq!(w.player.skill_rank, [5, 1]);
-        assert_eq!(w.player.skill_pick, [Pick::B, Pick::A]);
-        assert_eq!(w.player.ult_rank, 3);
+        assert_eq!(w.player.skill.worn, [Sk::Quake, Sk::Whirl]);
+        assert_eq!(w.player.skill.rank, [5, 1]);
+        assert_eq!(w.player.skill.pick, [Pick::B, Pick::A]);
+        assert_eq!(w.player.skill.ult_rank, 3);
         assert_eq!(w.skill_eff(Sk::Quake).skill.damage, 26);
         assert_eq!(w.skill_eff(Sk::Whirl).skill.damage, 10);
         assert_eq!(w.skill_eff(Sk::Gather).twist, None, "not worn: rank 1");
         // 5단의 대기는 ×0.9 — 쓴 직후 남은 대기가 그만큼.
         w.step(&skill(0), &t);
-        let cd = w.player.skill_cd[Sk::Quake.index()];
+        let cd = w.player.skill.cd[Sk::Quake.index()];
         assert!((cd - Sk::Quake.def().cooldown * 0.9).abs() < 0.05, "{cd}");
         assert!(w.skill_ready(0, &t) < 0.02);
     }
@@ -2061,7 +2061,7 @@ mod tests {
             assert_eq!(e.hp, 90 - crate::tuning::HP_UNIT);
         }
         assert_eq!(w.enemies[3].hp, 90, "far behind");
-        assert_eq!(w.player.gauge, 0.0, "a skill hit: no gauge");
+        assert_eq!(w.player.skill.gauge, 0.0, "a skill hit: no gauge");
         let ev = run(&mut w, &t, Actions::default(), 120);
         assert!(
             !ev.iter().any(|e| matches!(e, Event::SkillBurst { .. })),
@@ -2277,7 +2277,7 @@ mod tests {
                 .filter(|e| matches!(e, Event::EnemyDown { .. }))
                 .count();
             assert_eq!(downs, kills);
-            (w.player.skill_cd[Sk::Cut.index()], w, t)
+            (w.player.skill.cd[Sk::Cut.index()], w, t)
         };
         let (none, w, t) = cd_after(0, MAX_RANK);
         let full = w.skill_eff(Sk::Cut).skill.cooldown * t[P::SkillCooldownX];
@@ -2388,7 +2388,7 @@ mod tests {
             w.spawn_boss(vec3(0.0, 0.0, 4.0));
             still(&mut w);
             let boss_hp = w.enemies[2].hp;
-            w.player.gauge = 1.0;
+            w.player.skill.gauge = 1.0;
             w.step(
                 &Actions {
                     ult: true,
@@ -2500,12 +2500,12 @@ mod tests {
                 }
                 let want = parries as f32 * t[P::SkillGaugeParry];
                 assert!(
-                    (w.player.gauge - want).abs() < 1e-5,
+                    (w.player.skill.gauge - want).abs() < 1e-5,
                     "{tag}: skill hits fill no gauge ({})",
-                    w.player.gauge
+                    w.player.skill.gauge
                 );
                 assert_eq!(w.player.stamina, stamina, "{tag}: no stamina");
-                assert!(w.player.skill_cd[id.index()] > 1.0, "{tag}: cooling down");
+                assert!(w.player.skill.cd[id.index()] > 1.0, "{tag}: cooling down");
             }
         }
     }
@@ -2585,7 +2585,7 @@ mod tests {
             (
                 90 - w.enemies[side].hp,
                 w.enemies[2].hp,
-                w.player.brace_soaked,
+                w.player.skill.brace_soaked,
             )
         };
         assert_eq!(burst(0), (10, 90, 0), "the far one is out of reach");
@@ -2627,7 +2627,7 @@ mod tests {
             .iter()
             .any(|e| matches!(e, Event::Skill { id: Sk::Brace, .. })));
         assert_eq!(w.enemies[0].hp, 90, "no burst");
-        assert!(w.player.skill_cd[Sk::Brace.index()] > 5.0, "spent");
+        assert!(w.player.skill.cd[Sk::Brace.index()] > 5.0, "spent");
     }
 
     /// 버팀 3단 ㄱ "버티는 걸음": 버티는 동안 스틱 쪽으로 느리게 걷는다 — 고르기가 없거나 ㄴ이면 제자리.
@@ -2758,9 +2758,9 @@ mod tests {
         let (mut w, t) = echo_world(1, Pick::A);
         run(&mut w, &t, skill(0), ticks(0.3));
         assert!(
-            (w.player.echo_left - 4.0).abs() < 0.1,
+            (w.player.skill.echo_left - 4.0).abs() < 0.1,
             "{}",
-            w.player.echo_left
+            w.player.skill.echo_left
         );
         still(&mut w);
         let (ev, open_echo) = parry_the_front(&mut w, &t);
@@ -2793,10 +2793,10 @@ mod tests {
         // 2단: 5초. 4초가 지나면 끝(1단).
         let (mut w, t) = echo_world(2, Pick::A);
         run(&mut w, &t, skill(0), ticks(0.3));
-        assert!((w.player.echo_total - 5.0).abs() < 1e-5);
+        assert!((w.player.skill.echo_total - 5.0).abs() < 1e-5);
         let (mut w, t) = echo_world(1, Pick::A);
         run(&mut w, &t, skill(0), ticks(0.3) + ticks(4.1));
-        assert_eq!(w.player.echo_left, 0.0);
+        assert_eq!(w.player.skill.echo_left, 0.0);
         still(&mut w);
         let (ev, _) = parry_the_front(&mut w, &t);
         assert!(
@@ -2811,11 +2811,11 @@ mod tests {
         let echo = |pick: Pick| {
             let (mut w, t) = echo_world(3, pick);
             run(&mut w, &t, skill(0), ticks(0.3));
-            w.player.skill_cd[Sk::Whirl.index()] = 5.0;
+            w.player.skill.cd[Sk::Whirl.index()] = 5.0;
             still(&mut w);
-            let cd0 = w.player.skill_cd[Sk::Whirl.index()];
+            let cd0 = w.player.skill.cd[Sk::Whirl.index()];
             let (_, _) = parry_the_front(&mut w, &t);
-            let spent = cd0 - w.player.skill_cd[Sk::Whirl.index()];
+            let spent = cd0 - w.player.skill.cd[Sk::Whirl.index()];
             (w.enemies[1].poise, w.enemies[3].poise, spent)
         };
         let (poise_a, boss_a, spent_a) = echo(Pick::A);
@@ -2892,7 +2892,7 @@ mod tests {
         assert_eq!(w.enemies[1].hp, 90 - 20);
         assert_eq!(w.enemies[2].hp, 90, "off the lane");
         assert_eq!(w.enemies[3].hp, 90, "beyond 8 m");
-        assert_eq!(w.player.gauge, 0.0, "a skill hit: no gauge");
+        assert_eq!(w.player.skill.gauge, 0.0, "a skill hit: no gauge");
     }
 
     /// 던지기 3단 ㄱ "박힌 자리": 돌아오지 않고 끝에서 터진다(둘레 2.5m · 피해 20) — 길 위의 적은 한 번만.
@@ -3003,7 +3003,7 @@ mod tests {
         assert_eq!(w.enemies[1].hp, 90, "outside");
         assert!(w.skill_fields.is_empty() && w.skill_active(0) == 0.0);
         assert_eq!(w.embers, 50, "costs no embers");
-        assert_eq!(w.player.gauge, 0.0);
+        assert_eq!(w.player.skill.gauge, 0.0);
     }
 
     /// 잔불 흩기 3단 ㄱ "따르는 불티": 불티가 방랑자를 따라와 옮겨 간 자리의 적을 태운다 — ㄴ이면 처음 자리에 남는다.
@@ -3082,7 +3082,7 @@ mod tests {
             w.spawn_mob(vec3(0.0, 0.0, -2.5));
             still(&mut w);
             w.enemies[0].hp = 5;
-            w.player.skill_cd[Sk::Quake.index()] = 5.0;
+            w.player.skill.cd[Sk::Quake.index()] = 5.0;
             let mut ev = Vec::new();
             let mut n = 0;
             ev.extend(w.step(&skill(0), &t));
@@ -3090,7 +3090,7 @@ mod tests {
                 ev.extend(w.step(&Actions::default(), &t));
                 n += 1;
             }
-            let cd = w.player.skill_cd[Sk::Quake.index()];
+            let cd = w.player.skill.cd[Sk::Quake.index()];
             let want = 5.0 - (n + 1) as f32 * TICK_DT - t[P::SkillMomentumOwn];
             assert!((cd - want).abs() < 0.02, "{id:?}: {cd} vs {want}");
         }
@@ -3119,7 +3119,7 @@ mod tests {
         let plain = swing_ticks(&mut w, &t);
         let (mut w, t) = world();
         wear_ult(&mut w, Ult::Flurry, 1);
-        w.player.gauge = 1.0;
+        w.player.skill.gauge = 1.0;
         let ev = run(
             &mut w,
             &t,
@@ -3134,8 +3134,8 @@ mod tests {
             !ev.iter().any(|e| matches!(e, Event::Ult { .. })),
             "not Upend"
         );
-        assert!((w.player.flurry_left - 5.0).abs() < 0.1);
-        assert_eq!(w.player.gauge, 0.0);
+        assert!((w.player.skill.flurry_left - 5.0).abs() < 0.1);
+        assert_eq!(w.player.skill.gauge, 0.0);
         let stamina = w.player.stamina;
         let mut beats = 0;
         let fast = swing_ticks(&mut w, &t);
@@ -3157,7 +3157,7 @@ mod tests {
         assert!(w.ult_active() > 0.0);
         // 끝나면 여느 평타.
         run(&mut w, &t, Actions::default(), ticks(5.0));
-        assert_eq!((w.player.flurry_left, w.ult_active()), (0.0, 0.0));
+        assert_eq!((w.player.skill.flurry_left, w.ult_active()), (0.0, 0.0));
         let s0 = w.player.stamina;
         swing_ticks(&mut w, &t);
         assert!(w.player.stamina < s0);
@@ -3168,29 +3168,32 @@ mod tests {
     fn flurry_ranks_lengthen_it_and_rank_three_feeds_on_kills_up_to_three_seconds() {
         let (mut w, t) = world();
         wear_ult(&mut w, Ult::Flurry, 2);
-        w.player.gauge = 1.0;
+        w.player.skill.gauge = 1.0;
         let ult = Actions {
             ult: true,
             ..Default::default()
         };
         run(&mut w, &t, ult, ticks(0.32));
-        assert!((w.player.flurry_total - 6.5).abs() < 1e-4);
+        assert!((w.player.skill.flurry_total - 6.5).abs() < 1e-4);
         let down = Event::EnemyDown { at: Vec3::ZERO };
-        let left = w.player.flurry_left;
+        let left = w.player.skill.flurry_left;
         w.skill_books(&t, &mut vec![down]);
-        assert_eq!(w.player.flurry_left, left, "rank 2 does not feed");
+        assert_eq!(w.player.skill.flurry_left, left, "rank 2 does not feed");
         let (mut w, t) = world();
         wear_ult(&mut w, Ult::Flurry, 3);
-        w.player.gauge = 1.0;
+        w.player.skill.gauge = 1.0;
         run(&mut w, &t, ult, ticks(0.32));
-        let left = w.player.flurry_left;
+        let left = w.player.skill.flurry_left;
         w.skill_books(&t, &mut vec![down, down]);
-        assert!((w.player.flurry_left - left - 1.0).abs() < 1e-4);
+        assert!((w.player.skill.flurry_left - left - 1.0).abs() < 1e-4);
         for _ in 0..10 {
             w.skill_books(&t, &mut vec![down]);
         }
-        assert!((w.player.flurry_left - left - 3.0).abs() < 1e-4, "capped");
-        assert!((w.player.flurry_added - 3.0).abs() < 1e-4);
+        assert!(
+            (w.player.skill.flurry_left - left - 3.0).abs() < 1e-4,
+            "capped"
+        );
+        assert!((w.player.skill.flurry_added - 3.0).abs() < 1e-4);
     }
 
     /// 큰 기술 한 줄기: 시동에 세계가 멈추고(0.3초) 앞 12m 한 줄(반 폭 1.2m)을 가른다 — 줄 위의 적은 40·자세 크게, 보스도 다치고
@@ -3209,7 +3212,7 @@ mod tests {
             w.spawn_boss(vec3(0.5, 0.0, -6.5));
             still(&mut w);
             let boss = w.enemies[4].hp;
-            w.player.gauge = 1.0;
+            w.player.skill.gauge = 1.0;
             w.step(
                 &Actions {
                     ult: true,
@@ -3227,7 +3230,7 @@ mod tests {
             assert!(ev.iter().any(|e| matches!(e, Event::LineCut { .. })));
             assert!(!staggered, "a boss is not staggered");
             assert!(w.enemies[4].poise > 0.0, "but its poise is worn");
-            assert_eq!(w.player.gauge, 0.0);
+            assert_eq!(w.player.skill.gauge, 0.0);
             let lost: Vec<i32> = w.enemies[..4].iter().map(|e| 90 - e.hp).collect();
             (lost, boss - w.enemies[4].hp)
         };
@@ -3244,7 +3247,7 @@ mod tests {
             wear_ult(&mut w, great, 1);
             w.spawn_mob(vec3(0.0, 0.0, -3.0));
             still(&mut w);
-            w.player.gauge = 1.0;
+            w.player.skill.gauge = 1.0;
             let ev = run(
                 &mut w,
                 &t,

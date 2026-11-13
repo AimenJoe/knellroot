@@ -245,8 +245,8 @@ impl App {
                 Event::Skill {
                     id: crate::skills::Id::Brace,
                     ..
-                } if self.world.player.brace_soaked >= self.world.player.brace_most
-                    && self.world.player.brace_most > 0 =>
+                } if self.world.player.skill.brace_soaked >= self.world.player.skill.brace_most
+                    && self.world.player.skill.brace_most > 0 =>
                 {
                     ZOOM_SMASH
                 }
@@ -445,8 +445,8 @@ impl App {
             return;
         };
         let pl = &self.world.player;
-        if pl.since_beat < hud::BEAT_NOTE_LIFE {
-            hud::draw_beat_note(f, p, pl.since_beat / hud::BEAT_NOTE_LIFE, pl.beat_chain);
+        if pl.beat.since < hud::BEAT_NOTE_LIFE {
+            hud::draw_beat_note(f, p, pl.beat.since / hud::BEAT_NOTE_LIFE, pl.beat.chain);
         }
         if pl.stamina_denied > 0.0 {
             let k = 1.0 - pl.stamina_denied / crate::tuning::STAMINA_DENIED_SHOW;
@@ -467,7 +467,7 @@ impl App {
                 Event::PlayerHurt => Id::Hurt,
                 // 등딱지 튕김(0120)은 패링의 거울 — 같은 쇳소리.
                 Event::Parry { .. } | Event::Deflect { .. } => Id::Parry,
-                Event::Beat => crate::sfx::beat_id(self.world.player.beat_chain),
+                Event::Beat => crate::sfx::beat_id(self.world.player.beat.chain),
                 // 딱 맞춰 떼기(0078): 박자와 같은 "맞췄다" 종 — 가장 높은 음.
                 Event::Perfect { .. } => Id::Beat3,
                 Event::Ember { .. } => Id::Ember,

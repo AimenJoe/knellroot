@@ -161,8 +161,8 @@ fn flowing_beat_sends_a_shock_on_every_third_beat_hit() {
         let i = mob_with(&mut w, vec3(0.0, 0.0, 1.0), 990);
         idle(&mut w);
         let pl = &mut w.player;
-        (pl.beat, pl.since_swing) = (0.5, 0.5);
-        (pl.combo_left, pl.combo_next, pl.beat_chain) = (0.3, 1, 2);
+        (pl.beat.period, pl.beat.since_swing) = (0.5, 0.5);
+        (pl.combo_left, pl.combo_next, pl.beat.chain) = (0.3, 1, 2);
         w.step(
             &Actions {
                 attack: true,
@@ -170,7 +170,7 @@ fn flowing_beat_sends_a_shock_on_every_third_beat_hit() {
             },
             &t,
         );
-        assert_eq!(w.player.beat_chain, 3, "the third beat in a row");
+        assert_eq!(w.player.beat.chain, 3, "the third beat in a row");
         w.enemies[i].poise
     };
     assert_eq!(
@@ -208,7 +208,7 @@ fn closing_blow_keeps_the_combo_after_the_last_hit_and_hits_harder_on_beat() {
             cell,
             "the beat still counts after the last hit"
         );
-        assert_eq!(w.player.closing_ready, cell);
+        assert_eq!(w.player.parry.closing_ready, cell);
     }
     // 맺음타로 이은 박자 타는 자세 ×1.5.
     let poise = |cell: bool| {
@@ -218,8 +218,8 @@ fn closing_blow_keeps_the_combo_after_the_last_hit_and_hits_harder_on_beat() {
         }
         let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 990);
         idle(&mut w);
-        w.player.swing_beat = true;
-        w.player.closing_swing = 4;
+        w.player.beat.swing_beat = true;
+        w.player.parry.closing_swing = 4;
         let st = light_at_active(&t, &w, 4, 0);
         strike_once(&mut w, &t, st);
         w.enemies[i].poise
@@ -237,7 +237,7 @@ fn gap_beat_doubles_poise_on_a_foe_recovering_from_its_swing() {
         }
         let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 990);
         w.enemies[i].state = EState::Recover { t: 0.0 };
-        w.player.swing_beat = beat;
+        w.player.beat.swing_beat = beat;
         let st = light_at_active(&t, &w, 3, 0);
         strike_once(&mut w, &t, st);
         w.enemies[i].poise
@@ -257,8 +257,8 @@ fn final_measure_primes_the_next_heavy_after_five_beats_and_a_beat_finish() {
     let wpn = w.player.weapon.def();
     let last = (0..8u8).find(|&h| wpn.after(h).is_none()).unwrap();
     let pl = &mut w.player;
-    (pl.beat, pl.since_swing) = (0.5, 0.5);
-    (pl.combo_left, pl.combo_next, pl.beat_chain) = (0.3, last, 4);
+    (pl.beat.period, pl.beat.since_swing) = (0.5, 0.5);
+    (pl.combo_left, pl.combo_next, pl.beat.chain) = (0.3, last, 4);
     w.step(
         &Actions {
             attack: true,
@@ -266,7 +266,10 @@ fn final_measure_primes_the_next_heavy_after_five_beats_and_a_beat_finish() {
         },
         &t,
     );
-    assert!(w.player.primed_heavy, "five beats and the last hit on beat");
+    assert!(
+        w.player.parry.primed_heavy,
+        "five beats and the last hit on beat"
+    );
     // 다음 모으기는 다 모인 채로 시작한다.
     let (s0, a0, _) = hit_times(&t, wpn, 0);
     w.player.state = PState::Attack {
@@ -289,7 +292,7 @@ fn final_measure_primes_the_next_heavy_after_five_beats_and_a_beat_finish() {
         "{:?}",
         w.player.state
     );
-    assert!(!w.player.primed_heavy, "used once");
+    assert!(!w.player.parry.primed_heavy, "used once");
 }
 
 #[test]
@@ -327,7 +330,7 @@ fn turn_it_back_staggers_foes_around_a_riposte_that_lands() {
         mob_with(&mut w, vec3(0.0, 0.0, -1.2), 990);
         let j = mob_with(&mut w, vec3(1.6, 0.0, 0.6), 990);
         idle(&mut w);
-        w.player.riposte_swing = 5;
+        w.player.parry.riposte_swing = 5;
         let st = heavy_at_active(&t, &w, 5, true);
         strike_once(&mut w, &t, st);
         matches!(w.enemies[j].state, EState::Stagger { .. })
@@ -346,7 +349,7 @@ fn gathered_riposte_breaks_poise_when_the_charged_parrys_heavy_lands() {
         }
         mob_with(&mut w, vec3(0.0, 0.0, -1.2), 990);
         idle(&mut w);
-        w.player.gathered_swing = 7;
+        w.player.parry.gathered_swing = 7;
         let st = heavy_at_active(&t, &w, 7, true);
         strike_once(&mut w, &t, st)
             .iter()
@@ -391,8 +394,8 @@ fn one_who_stands_blocks_a_root_wave_while_three_parries_are_chained() {
         w.player.facing = std::f32::consts::PI;
         let mut hurt = false;
         for _ in 0..60 {
-            w.player.parry_chain_left = 0.5;
-            w.player.parry_chain_n = cell::STAND_CHAIN;
+            w.player.parry.chain_left = 0.5;
+            w.player.parry.chain_n = cell::STAND_CHAIN;
             hurt |= w.step(&Actions::default(), &t).contains(&Event::PlayerHurt);
         }
         hurt
@@ -546,7 +549,12 @@ fn closing_blow_works_through_the_cancel_and_shows_the_beat_fan_on_the_last_hit(
             dir: vec3(0.0, 0.0, -1.0),
             hit: last,
         };
-        (pl.swings, pl.swing_hit, pl.beat, pl.since_swing) = (3, last, total, total - 0.01);
+        (
+            pl.swings,
+            pl.beat.swing_hit,
+            pl.beat.period,
+            pl.beat.since_swing,
+        ) = (3, last, total, total - 0.01);
         assert_eq!(
             w.beat_cue(&t).is_some(),
             cell,
@@ -565,9 +573,9 @@ fn closing_blow_works_through_the_cancel_and_shows_the_beat_fan_on_the_last_hit(
             "{:?}",
             pl.state
         );
-        assert_eq!(pl.swing_beat, cell, "a beat swing only with the cell");
+        assert_eq!(pl.beat.swing_beat, cell, "a beat swing only with the cell");
         assert_eq!(
-            pl.closing_swing == pl.swings,
+            pl.parry.closing_swing == pl.swings,
             cell,
             "and that swing is the closing blow"
         );

@@ -83,7 +83,7 @@ impl World {
                 _ => c,
             };
             if power == 3 {
-                self.player.since_perfect = 0.0;
+                self.player.beat.since_perfect = 0.0;
                 ev.push(Event::Perfect { at: pos });
             }
             self.bolts.push(Bolt {

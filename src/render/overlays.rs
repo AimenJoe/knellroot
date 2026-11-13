@@ -222,7 +222,7 @@ impl Renderer {
                                     Color::new(1.0, 0.97, 0.86, 0.55),
                                 );
                             }
-                            let n = w.player.brace_soaked.min(most);
+                            let n = w.player.skill.brace_soaked.min(most);
                             for i in 0..n {
                                 let a =
                                     -w.time * 5.0 + i as f32 * std::f32::consts::TAU / most as f32;
@@ -392,7 +392,7 @@ fn swing_crescent(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon)
                 } else {
                     t[crate::tuning::P::AttackArc] * h.arc
                 };
-                let col = if w.player.swing_beat {
+                let col = if w.player.beat.swing_beat {
                     Color::new(1.0, 0.88, 0.55, 0.95)
                 } else {
                     Color::new(0.92, 0.95, 1.0, 0.9)
@@ -414,7 +414,7 @@ fn swing_crescent(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon)
 
 /// 박자 부채꼴(0087) — 이을 타가 없는 타는 활성 동안 판정 부채꼴만.
 fn beat_fan(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon, fl: &Drape) {
-    let swing_col = if w.player.swing_beat {
+    let swing_col = if w.player.beat.swing_beat {
         BEAT_GOLD
     } else {
         Color::new(1.0, 0.95, 0.7, 0.18)
@@ -462,9 +462,9 @@ fn beat_fan(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon, fl: &
 
 fn beat_ring(w: &World, pp: Vec3, fl: &Drape) {
     // 박자 타(0076, KB nail 0168): 발밑에서 금빛 고리가 퍼진다 — 잇달을수록 크게.
-    if w.player.since_beat < BEAT_RING_LIFE {
-        let k = (w.player.since_beat / BEAT_RING_LIFE).clamp(0.0, 1.0);
-        let big = 1.0 + 0.25 * (w.player.beat_chain.min(3) as f32 - 1.0);
+    if w.player.beat.since < BEAT_RING_LIFE {
+        let k = (w.player.beat.since / BEAT_RING_LIFE).clamp(0.0, 1.0);
+        let big = 1.0 + 0.25 * (w.player.beat.chain.min(3) as f32 - 1.0);
         let ease = 1.0 - (1.0 - k) * (1.0 - k);
         fl.ring(
             pp + Vec3::Y * 0.06,
@@ -612,7 +612,7 @@ fn ult_shape(w: &World, pp: Vec3, fl: &Drape) {
                 let u = &crate::skills::LINE;
                 if !done {
                     let dir = w.player.facing_dir();
-                    let len = u.len_at(w.player.ult_rank);
+                    let len = u.len_at(w.player.skill.ult_rank);
                     let frozen = 1.0 - (w.hitstop / u.freeze.max(1e-3)).clamp(0.0, 1.0);
                     let k = if e > 0.0 { 1.0 } else { frozen };
                     let at = pp + Vec3::Y * 0.06;
@@ -672,7 +672,7 @@ fn flask_glow(w: &World, pp: Vec3, t: &Tuning, fl: &Drape) {
 fn parry_window(w: &World, pp: Vec3, t: &Tuning, fl: &Drape) {
     // 패링(0025): 창이 열린 동안 앞에 옅은 푸른 반달, 성공하면 둘레로 퍼지는 흰 고리.
     // 모으기 공격을 뗀 직후의 패링 창(0089)도 같은 반달 — 떼는 순간 "막기도 한다"가 보인다.
-    let guard = w.player.release_guard > 0.0
+    let guard = w.player.parry.release_guard > 0.0
         && matches!(w.player.state, PState::Heavy { .. } | PState::Cast { .. });
     let window = match w.player.state {
         PState::Parry { t: e } => e < t[crate::tuning::P::ParryWindow],
@@ -699,21 +699,21 @@ fn parry_window(w: &World, pp: Vec3, t: &Tuning, fl: &Drape) {
 fn parry_chain(w: &World, pp: Vec3, fl: &Drape) {
     // 이어 패링(0081·0086): 열린 동안 같은 푸른 반달을 지금 받는 넓이로 — 쌓일수록 둘레로 벌어진다(둘레 전부면 고리).
     // 맞서는 자(0108): 못 받는 공격까지 막는 동안은 호박색 — 지금 파동도 막는다는 표시.
-    if w.player.parry_chain_left > 0.0 && !matches!(w.player.state, PState::Parry { .. }) {
+    if w.player.parry.chain_left > 0.0 && !matches!(w.player.state, PState::Parry { .. }) {
         let stand = w.tree.has(Cell::OneWhoStands)
-            && w.player.parry_chain_n >= crate::progression::cell::STAND_CHAIN;
+            && w.player.parry.chain_n >= crate::progression::cell::STAND_CHAIN;
         let (fill_c, edge_c) = if stand {
             ((1.0, 0.78, 0.4), (1.0, 0.85, 0.5))
         } else {
             ((0.6, 0.85, 1.0), (0.75, 0.9, 1.0))
         };
-        let c = crate::world::parry_front_cos(true, w.player.parry_chain_n);
+        let c = crate::world::parry_front_cos(true, w.player.parry.chain_n);
         let arc = if c < -1.0 {
             360.0
         } else {
             (c.acos().to_degrees() * 2.0).min(360.0)
         };
-        let fade = (w.player.parry_chain_left / crate::tuning::PARRY_CHAIN).min(1.0);
+        let fade = (w.player.parry.chain_left / crate::tuning::PARRY_CHAIN).min(1.0);
         fl.sector(
             pp + Vec3::Y * 0.8,
             1.4,
@@ -733,7 +733,7 @@ fn parry_chain(w: &World, pp: Vec3, fl: &Drape) {
 
 fn primed_heavy_rings(w: &World, pp: Vec3, fl: &Drape) {
     // 끝맺음(0108): 다음 강타가 다 모여 있는 동안 발밑에 금빛 고리 두 겹이 숨 쉰다(딱 맞춤 고리와 같은 색 — "모였다").
-    if w.player.primed_heavy {
+    if w.player.parry.primed_heavy {
         let k = 0.5 + 0.5 * (w.time * 4.0).sin();
         for (r, a) in [(0.75, 0.8), (1.05, 0.45)] {
             fl.ring(
@@ -780,8 +780,8 @@ fn plunge_ring(w: &World, pp: Vec3, t: &Tuning, fl: &Drape) {
 
 fn perfect_rings(w: &World, pp: Vec3, fl: &Drape) {
     // 딱 맞춰 떼기(0078): 발밑에서 크게 퍼지는 금빛 고리 둘(박자 고리보다 넓고 길게).
-    if w.player.since_perfect < PERFECT_RING_LIFE {
-        let k = (w.player.since_perfect / PERFECT_RING_LIFE).clamp(0.0, 1.0);
+    if w.player.beat.since_perfect < PERFECT_RING_LIFE {
+        let k = (w.player.beat.since_perfect / PERFECT_RING_LIFE).clamp(0.0, 1.0);
         let ease = 1.0 - (1.0 - k) * (1.0 - k);
         for (r0, r1, a) in [(0.6, 3.2, 0.95), (0.4, 2.2, 0.6)] {
             fl.ring(
@@ -797,8 +797,8 @@ fn perfect_rings(w: &World, pp: Vec3, fl: &Drape) {
 
 /// 패링 성공: 둘레로 퍼지는 흰 고리.
 fn parry_ring(w: &World, pp: Vec3, fl: &Drape) {
-    if w.player.since_parry < 0.35 {
-        let k = (w.player.since_parry / 0.35).clamp(0.0, 1.0);
+    if w.player.parry.since < 0.35 {
+        let k = (w.player.parry.since / 0.35).clamp(0.0, 1.0);
         fl.ring(
             pp + Vec3::Y * 0.05,
             0.6 + 2.4 * k,

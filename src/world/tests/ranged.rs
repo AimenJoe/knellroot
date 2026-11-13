@@ -22,9 +22,9 @@ fn a_cast_spends_a_charge_and_the_bolt_hits() {
     // 한 칸을 쓰고, 그 사이(90틱) 시간으로 찬 몫만 더해졌다(0111).
     let refill = 90.0 * TICK_DT / t[P::CastCooldown];
     assert!(
-        (w.player.mana - (CAST_CHARGES - 1.0 + refill)).abs() < 0.02,
+        (w.player.ranged.mana - (CAST_CHARGES - 1.0 + refill)).abs() < 0.02,
         "{}",
-        w.player.mana
+        w.player.ranged.mana
     );
     let magic = match w.player.weapon.def().rb {
         weapons::Rb::Magic(b) => b.damage,
@@ -114,7 +114,7 @@ fn a_tossed_grenade_lands_at_the_cursor() {
 fn magic_refills_with_time_not_hits_and_an_empty_cast_is_denied() {
     let t = Tuning::default();
     let mut w = World::new("test", 30.0);
-    w.player.mana = 0.5;
+    w.player.ranged.mana = 0.5;
     let ev = press(
         &t,
         &mut w,
@@ -126,12 +126,12 @@ fn magic_refills_with_time_not_hits_and_an_empty_cast_is_denied() {
     );
     assert!(ev.iter().any(|e| matches!(e, Event::CastDenied)));
     assert!(matches!(w.player.state, PState::Idle));
-    assert!(w.player.cast_denied > 0.0);
+    assert!(w.player.ranged.cast_denied > 0.0);
     w.spawn_mob(vec3(0.0, 0.0, -1.2));
     w.enemies[0].hp = 500;
     w.enemies[0].max_hp = 500;
     idle(&mut w);
-    let m0 = w.player.mana;
+    let m0 = w.player.ranged.mana;
     press(
         &t,
         &mut w,
@@ -144,22 +144,26 @@ fn magic_refills_with_time_not_hits_and_an_empty_cast_is_denied() {
     assert_eq!(w.enemies[0].hp, 490);
     let by_time = 41.0 * TICK_DT / t[P::CastCooldown];
     assert!(
-        w.player.mana - m0 <= by_time + 1e-4,
+        w.player.ranged.mana - m0 <= by_time + 1e-4,
         "a hit adds nothing: {} -> {}",
         m0,
-        w.player.mana
+        w.player.ranged.mana
     );
     // 한 칸 = `cast.cooldown s`.
     w.enemies[0].state = EState::Dead;
-    w.player.mana = 0.0;
+    w.player.ranged.mana = 0.0;
     for _ in 0..(t[P::CastCooldown] / TICK_DT).round() as usize {
         w.step(&Actions::default(), &t);
     }
-    assert!((w.player.mana - 1.0).abs() < 0.02, "{}", w.player.mana);
+    assert!(
+        (w.player.ranged.mana - 1.0).abs() < 0.02,
+        "{}",
+        w.player.ranged.mana
+    );
     for _ in 0..600 {
         w.step(&Actions::default(), &t);
     }
-    assert_eq!(w.player.mana, CAST_CHARGES, "stops at the cap");
+    assert_eq!(w.player.ranged.mana, CAST_CHARGES, "stops at the cap");
 }
 
 /// 0111: 공중 RB(근접 무기) = 마법 한 칸을 비스듬히 내려 쏘고, 잠깐 떠 있다. 한 점프에 한 번.
@@ -177,7 +181,7 @@ fn an_air_cast_fires_down_once_per_jump_and_hovers() {
     for _ in 0..6 {
         w.step(&Actions::default(), &t);
     }
-    let mana = w.player.mana;
+    let mana = w.player.ranged.mana;
     w.step(
         &Actions {
             cast: true,
@@ -191,7 +195,7 @@ fn an_air_cast_fires_down_once_per_jump_and_hovers() {
         "fired downward: {:?}",
         w.bolts[0].dir
     );
-    assert!((w.player.mana - (mana - 1.0)).abs() < 0.01);
+    assert!((w.player.ranged.mana - (mana - 1.0)).abs() < 0.01);
     // 체공: 떨어지지 않는다.
     let air = w.player.air;
     assert!(air > 0.2);
@@ -238,7 +242,7 @@ fn the_crossbow_shoots_a_downward_volley_from_the_air() {
     for _ in 0..6 {
         w.step(&Actions::default(), &t);
     }
-    let ammo = w.player.ammo;
+    let ammo = w.player.ranged.ammo;
     w.step(
         &Actions {
             attack: true,
@@ -248,7 +252,7 @@ fn the_crossbow_shoots_a_downward_volley_from_the_air() {
     );
     assert_eq!(w.bolts.len(), AIR_VOLLEY);
     assert!(w.bolts.iter().all(|b| b.dir.y < 0.0));
-    assert_eq!(w.player.ammo, ammo, "no ammo spent");
+    assert_eq!(w.player.ranged.ammo, ammo, "no ammo spent");
     for _ in 0..60 {
         w.step(&Actions::default(), &t);
     }
@@ -261,7 +265,7 @@ fn shots_and_grenades_cost_stamina_and_stop_when_empty() {
     let t = Tuning::default();
     let mut w = World::new("test", 20.0);
     w.set_weapon(weapons::Id::Crossbow);
-    let (s0, ammo) = (w.player.stamina, w.player.ammo);
+    let (s0, ammo) = (w.player.stamina, w.player.ranged.ammo);
     w.step(
         &Actions {
             attack: true,
@@ -270,15 +274,15 @@ fn shots_and_grenades_cost_stamina_and_stop_when_empty() {
         &t,
     );
     assert!(w.player.stamina < s0, "a shot costs stamina");
-    assert_eq!(w.player.ammo, ammo - 1);
+    assert_eq!(w.player.ranged.ammo, ammo - 1);
     // 기력 0: 사격도 수류탄도 막힌다.
     for _ in 0..60 {
         w.step(&Actions::default(), &t);
     }
     w.player.stamina = 0.0;
     w.player.stamina_idle = 0.0;
-    let ammo = w.player.ammo;
-    let bombs = w.player.grenades;
+    let ammo = w.player.ranged.ammo;
+    let bombs = w.player.ranged.grenades;
     w.step(
         &Actions {
             attack: true,
@@ -286,7 +290,7 @@ fn shots_and_grenades_cost_stamina_and_stop_when_empty() {
         },
         &t,
     );
-    assert_eq!(w.player.ammo, ammo, "no stamina, no shot");
+    assert_eq!(w.player.ranged.ammo, ammo, "no stamina, no shot");
     w.player.stamina = 0.0;
     w.player.stamina_idle = 0.0;
     w.step(
@@ -297,7 +301,7 @@ fn shots_and_grenades_cost_stamina_and_stop_when_empty() {
         &t,
     );
     assert!(
-        (w.player.grenades - bombs).abs() < 0.05,
+        (w.player.ranged.grenades - bombs).abs() < 0.05,
         "no stamina, no throw"
     );
 }
@@ -337,8 +341,8 @@ fn the_crossbow_shoots_from_a_magazine_and_reloads() {
         Rb::Shot { mag, reload, .. } => (mag, reload),
         _ => unreachable!(),
     };
-    assert_eq!(w.player.ammo, mag);
-    let mana = w.player.mana;
+    assert_eq!(w.player.ranged.ammo, mag);
+    let mana = w.player.ranged.mana;
     let cast = Actions {
         attack: true,
         ..Default::default()
@@ -346,8 +350,8 @@ fn the_crossbow_shoots_from_a_magazine_and_reloads() {
     for _ in 0..mag {
         press(&t, &mut w, cast, 40);
     }
-    assert_eq!(w.player.ammo, 0);
-    assert_eq!(w.player.mana, mana, "no magic spent");
+    assert_eq!(w.player.ranged.ammo, 0);
+    assert_eq!(w.player.ranged.mana, mana, "no magic spent");
     let ev = press(&t, &mut w, cast, 2);
     assert!(ev.iter().any(|e| matches!(e, Event::CastDenied)), "empty");
     // 회피 한 번 = 한 발.
@@ -360,7 +364,7 @@ fn the_crossbow_shoots_from_a_magazine_and_reloads() {
         },
         2,
     );
-    assert_eq!(w.player.ammo, 1);
+    assert_eq!(w.player.ranged.ammo, 1);
     // 장전이 끝나면 가득.
     press(
         &t,
@@ -368,7 +372,7 @@ fn the_crossbow_shoots_from_a_magazine_and_reloads() {
         Actions::default(),
         (reload / TICK_DT) as usize + 10,
     );
-    assert_eq!(w.player.ammo, mag);
+    assert_eq!(w.player.ranged.ammo, mag);
 }
 
 /// 0051: 쇠뇌의 X = 수류탄 — 날아가 도화선이 다하면 둘레를 친다(셀 수 있고 다시 찬다).
@@ -387,7 +391,7 @@ fn a_grenade_flies_bounces_and_blows_up() {
         },
         &t,
     );
-    assert!((w.player.grenades - (g.count as f32 - 1.0)).abs() < 0.05);
+    assert!((w.player.ranged.grenades - (g.count as f32 - 1.0)).abs() < 0.05);
     for _ in 0..((g.fuse + 0.6) / TICK_DT) as usize {
         ev.extend(w.step(&Actions::default(), &t));
         idle(&mut w);
@@ -483,9 +487,9 @@ fn holding_rb_charges_a_stronger_magic_bolt() {
     assert_eq!(got[0].def, weapons::Id::Sword.def().charged);
     // 톡 한 칸 + 모은 탄 한 칸 — 그 사이 시간으로 찬 몫(0111)은 한 칸에 못 미친다.
     assert!(
-        w.player.mana >= CAST_CHARGES - 2.0 && w.player.mana < CAST_CHARGES - 1.0,
+        w.player.ranged.mana >= CAST_CHARGES - 2.0 && w.player.ranged.mana < CAST_CHARGES - 1.0,
         "one for the tap, one for the charge: {}",
-        w.player.mana
+        w.player.ranged.mana
     );
     // 덜 모으고 떼면 약하게(반 피해, 꿰뚫기 없음).
     let mut w = World::new("test", 40.0);
@@ -505,10 +509,10 @@ fn the_crossbow_charges_a_piercing_shot() {
     let charged = weapons::Id::Crossbow.def().charged;
     let mut w = World::new("test", 40.0);
     w.set_weapon(weapons::Id::Crossbow);
-    let mag = w.player.ammo;
+    let mag = w.player.ranged.ammo;
     let got = charge_cast(&mut w, &t, full + past_perfect);
     assert!(got[0].def.pierce && got[0].def.damage == charged.damage);
-    assert_eq!(w.player.ammo, mag - 2);
+    assert_eq!(w.player.ranged.ammo, mag - 2);
     // 딱 맞춰 떼기(0078): 다 모인 바로 뒤에 떼면 피해 +10(옛 +1) — 강타와 같은 규칙.
     let mut w = World::new("test", 40.0);
     w.set_weapon(weapons::Id::Crossbow);
@@ -519,7 +523,7 @@ fn the_crossbow_charges_a_piercing_shot() {
     let got = charge_cast(&mut w, &t, full + 2);
     assert_eq!(got[0].def.damage, weapons::Id::Sword.def().charged.damage);
     // 볼트가 다 떨어지면 쥐어도 모으기로 가지 않는다.
-    w.player.ammo = 1;
+    w.player.ranged.ammo = 1;
     let held = Actions {
         attack_held: true,
         ..Default::default()
@@ -553,19 +557,23 @@ fn a_crossbow_shot_on_the_beat_keeps_its_bolt_and_mashing_spends_them() {
     };
     let mut w = World::new("test", 20.0);
     w.set_weapon(weapons::Id::Crossbow);
-    let full = w.player.ammo;
+    let full = w.player.ranged.ammo;
     shoot(&mut w, true);
-    assert_eq!(w.player.ammo, full - 1, "the first shot spends a bolt");
-    let beat = w.player.beat;
+    assert_eq!(
+        w.player.ranged.ammo,
+        full - 1,
+        "the first shot spends a bolt"
+    );
+    let beat = w.player.beat.period;
     assert!(beat > 0.2, "beat {beat}");
     let mut got = false;
     for _ in 0..120 {
-        let press = w.player.since_swing >= beat - TICK_DT * 0.5;
+        let press = w.player.beat.since_swing >= beat - TICK_DT * 0.5;
         let ev = shoot(&mut w, press);
         if press {
             assert!(ev.contains(&Event::Beat), "on the beat");
-            assert_eq!(w.player.ammo, full - 1, "no bolt for the beat shot");
-            assert!(w.player.beat_chain == 1 && w.player.since_beat < TICK_DT * 2.0);
+            assert_eq!(w.player.ranged.ammo, full - 1, "no bolt for the beat shot");
+            assert!(w.player.beat.chain == 1 && w.player.beat.since < TICK_DT * 2.0);
             got = true;
             break;
         }
@@ -582,7 +590,7 @@ fn a_crossbow_shot_on_the_beat_keeps_its_bolt_and_mashing_spends_them() {
             .count();
     }
     assert_eq!(beats, 0);
-    assert!(w.player.ammo < full, "mashing spends bolts");
+    assert!(w.player.ranged.ammo < full, "mashing spends bolts");
     // 창은 아무리 빨라도 ±60ms 아래로 좁아지지 않는다.
     assert!(on_beat(0.24 + 0.055, 0.24) && !on_beat(0.24 + 0.07, 0.24));
 }

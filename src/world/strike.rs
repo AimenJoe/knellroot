@@ -53,7 +53,7 @@ impl World {
                     knock: h.knock,
                     heavy: None,
                     perfect: false,
-                    beat: self.player.swing_beat,
+                    beat: self.player.beat.swing_beat,
                     dash: hit == weapons::DASH,
                 }
             }
@@ -170,7 +170,7 @@ impl World {
                     });
                 }
                 if s.perfect {
-                    self.player.since_perfect = 0.0;
+                    self.player.beat.since_perfect = 0.0;
                     ev.push(Event::Perfect {
                         at: self.player.pos + Vec3::Y * 1.0,
                     });
@@ -264,7 +264,7 @@ impl World {
             // 나무 칸(0107): 맺음타 ×1.5(마지막 타 뒤 박자로 이은 타) · 빈틈의 박자 ×2(굳은 적에게 박자 타) · 비껴서기 ×2(등 뒤 대시 공격).
             let mut pk = 1.0;
             if s.heavy.is_none() && s.beat {
-                if swing == self.player.closing_swing && self.tree.has(Cell::ClosingBlow) {
+                if swing == self.player.parry.closing_swing && self.tree.has(Cell::ClosingBlow) {
                     pk *= cell::CLOSING_POISE;
                 }
                 if matches!(en.state, EState::Recover { .. }) && self.tree.has(Cell::GapBeat) {
@@ -279,7 +279,7 @@ impl World {
             add_poise(en, s.poise * self.stats.poise * pk, primed, t, ev);
             // 모은 맞받기(0107): 모으기 패링으로 튕긴 그 강타가 맞으면 자세가 곧바로 깨진다(문지기는 막대 반).
             if s.heavy.is_some()
-                && swing == self.player.gathered_swing
+                && swing == self.player.parry.gathered_swing
                 && self.tree.has(Cell::GatheredRiposte)
             {
                 let k = if en.boss { 0.5 } else { 1.0 };
