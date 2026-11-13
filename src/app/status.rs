@@ -1,13 +1,11 @@
-//! 쉼터 화로와 레벨(0104, v0.4.0 G1 — 0102 3·7절): 쉬면 화로가 열리고(레벨 · 기술 · 가게 · 떠나기), 레벨은 생명·기력·힘을
-//! 잔불로 한 단씩 올린다. 기술 줄은 기술 화면 `skills.rs`로(0161 — 옛 "나무" 줄과 기술 판이 하나가 되었다: 가게는 셋째 줄 그대로).
-//! 줄 표(0066) — 값은 `progression.rs`, 미리보기는 장비 창과 같은 상태 줄(`stats::lines`, 0067 D).
+//! 큰 창의 상태 탭(0164 — 옛 화로 목록과 레벨 창 0104가 여기로): 레벨은 생명·기력·힘을 잔불로 한 단씩. 화로에서는 확인 = 올리기
+//! (묻는 창), 멈춤에서는 읽기만. 값은 `progression.rs`, 미리보기는 장비 탭과 같은 상태 줄(`stats::lines`, 0067 D).
 use super::equip::{stat_name, stat_value};
 use super::menu::{Menu, Out};
+use super::tabs::{Ln, PaneHead, HEAD_H};
 use super::*;
 use crate::progression::{Line as LvLine, LINES as LV_LINES, MAX_RANK};
-
-/// 화로의 줄: 레벨 · 기술(0161) · 가게 · 떠나기.
-const HEARTH_ROWS: usize = 4;
+use flow::Host;
 
 /// 레벨 줄 이름.
 fn line_name(l: LvLine) -> &'static str {
@@ -20,48 +18,7 @@ fn line_name(l: LvLine) -> &'static str {
 }
 
 impl App {
-    /// 화로: 제목 줄 오른쪽에 잔불, 줄 = 레벨(지금 레벨) · 기술(남은 기술 점수) · 가게 · 떠나기, 아래에 고른 줄의 설명.
-    pub(super) fn hearth_menu(&self) -> Menu {
-        let s = s();
-        let lv = self.progress.level.total().to_string();
-        let skill_left = self
-            .progress
-            .board
-            .left(self.progress.skill_points())
-            .to_string();
-        let rows = vec![
-            ui::Row::value(s.hearth_level, lv),
-            ui::Row::value(s.menu_skills, fill(s.hearth_skill_points, &[&skill_left])),
-            ui::Row::plain(s.hearth_shop),
-            ui::Row::plain(s.shop_leave),
-        ];
-        let note = match self.cursor {
-            0 => Some(s.hearth_level_d.to_string()),
-            1 => Some(s.hearth_skills_d.to_string()),
-            2 => Some(s.hearth_shop_d.to_string()),
-            _ => None,
-        };
-        Menu {
-            purse: Some(fill(s.shop_embers, &[&self.world.embers.to_string()])),
-            note_room: true,
-            note,
-            ..Menu::new(s.shop_title, 300.0, rows)
-        }
-    }
-
-    pub(super) fn hearth_act(&mut self, out: Out) {
-        let Out::Pick(i) = out else { return };
-        debug_assert!(i < HEARTH_ROWS);
-        match i {
-            0 => self.go(Go::Open(Scene::Level)),
-            1 => self.open_skills(true),
-            2 => self.go(Go::Open(Scene::Shop)),
-            _ => self.go(Go::Back),
-        }
-    }
-
-    /// 레벨: 제목 "레벨 n", 줄 = 생명·기력·힘 … "단/5 · 잔불 값"(모자라면·다 올렸으면 흐리게),
-    /// 아래에 고른 줄을 올리면 바뀌는 상태 줄 "지금 → 다음 ▲"(장비 창과 같은 줄·같은 값 글).
+    /// 레벨 줄: 생명·기력·힘 … "단/5 · 잔불 값"(모자라면·다 올렸으면 흐리게).
     pub(super) fn level_menu(&self) -> Menu {
         let s = s();
         let lv = self.progress.level;
@@ -83,17 +40,43 @@ impl App {
                 }
             })
             .collect();
-        let note = LV_LINES.get(self.cursor).map(|&l| self.level_preview(l));
-        Menu {
-            purse: Some(fill(s.shop_embers, &[&have.to_string()])),
-            note_room: true,
-            note,
-            ..Menu::new(
-                &fill(s.level_title, &[&lv.total().to_string()]),
-                300.0,
-                rows,
-            )
+        Menu::new(s.equip_status, tabs::LEFT_W, rows)
+    }
+
+    /// 상태 탭 그림: 왼쪽 레벨 줄, 오른쪽에 고른 줄을 올리면 바뀌는 것.
+    pub(super) fn draw_status(&mut self, f: &Frame, host: Host) {
+        let s = s();
+        let scene = Scene::Status { host };
+        let m = self.level_menu();
+        let w = self.draw_tab_window(f, scene);
+        self.draw_left_list(&w, &m.rows, 0.0);
+        let lv = self.progress.level;
+        if let Some(&l) = LV_LINES.get(self.cursor) {
+            let state = match lv.next_cost(l) {
+                None => (s.lv_full_d.to_string(), DIM),
+                Some(_) if !host.edits() => (s.lv_rest_only.to_string(), DIM),
+                Some(c) if self.world.embers < c => (s.shop_poor.to_string(), DIM),
+                Some(c) => (fill(s.shop_embers, &[&c.to_string()]), ui::MINT),
+            };
+            self.draw_pane_head(
+                &w,
+                &PaneHead {
+                    name: line_name(l),
+                    gold: true,
+                    kind: fill(s.level_title, &[&lv.total().to_string()]),
+                    state,
+                    icon: false,
+                },
+            );
+            let lines: Vec<Ln> = self.pane_wrap(&w, &self.level_preview(l), DIM);
+            self.draw_pane(&w, HEAD_H, &lines);
         }
+        let right = w.panel.x + w.panel.w;
+        let mut acts = vec![(Act::Choose, s.verb_choose)];
+        if host.edits() {
+            acts.push((Act::Confirm, s.ask_level_yes));
+        }
+        self.tab_foot(f, &w, scene, right, &acts);
     }
 
     /// 이 줄을 한 단 올리면 바뀌는 상태 줄 — "최대 기력 +12 → +24 ▲ · …". 다 올렸으면 그렇다고.
@@ -125,10 +108,12 @@ impl App {
             .join(" · ")
     }
 
-    pub(super) fn level_act(&mut self, out: Out) {
+    pub(super) fn level_act(&mut self, host: Host, out: Out) {
         let Out::Pick(i) = out else { return };
         let Some(&l) = LV_LINES.get(i) else { return };
         match self.progress.level.next_cost(l) {
+            // 올리는 것은 쉬는 동안에만(멈춤에서는 읽기) — 까닭은 오른쪽 칸의 상태 줄이 말하고 있다.
+            Some(_) if !host.edits() => self.snd(crate::sfx::Id::Deny),
             None => {
                 self.toast = Some((s().lv_full_d.to_string(), 1.6));
                 self.snd(crate::sfx::Id::Deny);

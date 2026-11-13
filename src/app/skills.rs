@@ -305,7 +305,7 @@ fn act_label(board: &Board, e: Entry, d: Do) -> String {
 /// 화면의 자리(480×270 기준 px, 창의 몸 왼쪽 위가 원점). 칸의 자리·걷기·그림이 같은 수를 쓴다.
 pub(super) mod geo {
     /// 왼쪽 칸 격자: 갈래 셋.
-    pub const GRID_W: f32 = 270.0;
+    pub const GRID_W: f32 = super::super::tabs::LEFT_W;
     pub const COL_W: f32 = 90.0;
     /// 갈래 머리(이름 + 한 줄).
     pub const HEAD_H: f32 = 27.0;
@@ -327,11 +327,11 @@ pub(super) mod geo {
     /// 셋째 줄: 큰 기술 · 패시브.
     pub const SLOT_ULT: [f32; 2] = [30.0, 66.0];
     /// 오른쪽 상세 칸.
-    pub const DETAIL_X: f32 = 282.0;
-    pub const DETAIL_W: f32 = 166.0;
+    pub const DETAIL_X: f32 = super::super::tabs::RIGHT_X;
+    pub const DETAIL_W: f32 = super::super::tabs::RIGHT_W;
     /// 상세의 머리(그림 + 이름·갈래·상태)와 큰 그림의 한 변.
-    pub const DETAIL_HEAD: f32 = 37.0;
-    pub const DETAIL_ICON: f32 = 30.0;
+    pub const DETAIL_HEAD: f32 = super::super::tabs::HEAD_H;
+    pub const DETAIL_ICON: f32 = super::super::tabs::HEAD_ICON;
     /// 되돌리기 단추(창 아래 안내 줄의 오른쪽 끝)의 폭·높이.
     pub const RESPEC_W: f32 = 150.0;
     pub const RESPEC_H: f32 = 16.0;
@@ -700,12 +700,12 @@ enum Block {
 }
 
 /// 상세 칸의 글 크기(본문 1 = 13px 기준)와 줄 높이(기준 px).
-const K_NAME: f32 = 1.0;
-const K_KIND: f32 = 0.66;
-const K_BODY: f32 = 0.72;
+const K_NAME: f32 = super::tabs::K_NAME;
+const K_KIND: f32 = super::tabs::K_KIND;
+const K_BODY: f32 = super::tabs::K_BODY;
 const K_RANK: f32 = 0.68;
 const K_PICK: f32 = 0.62;
-const LH_BODY: f32 = 10.4;
+const LH_BODY: f32 = super::tabs::LH_BODY;
 const LH_RANK: f32 = 9.8;
 const LH_PICK: f32 = 8.8;
 /// 단 줄의 번호 칸 폭.
@@ -737,7 +737,7 @@ impl App {
     }
 
     /// 개발 창에서 올린 판을 쓰는 중인가(그동안 끼운 것·뒤집은 것은 슬롯에 쓰지 않는다).
-    fn dev_board_on(&self) -> bool {
+    pub(super) fn dev_board_on(&self) -> bool {
         #[cfg(feature = "dev")]
         return self.dev_board.is_some();
         #[cfg(not(feature = "dev"))]
@@ -754,14 +754,6 @@ impl App {
     pub(super) fn apply_board(&mut self) {
         self.world.set_skills(self.loadout());
         self.world.tree = self.board().cells;
-    }
-
-    /// 기술 화면을 연다(0161): 화로면 지금 살 수 있는 첫 칸, 아니면 배운 첫 스킬에 선다.
-    pub(super) fn open_skills(&mut self, edit: bool) {
-        self.go(Go::Open(Scene::Skills { edit }));
-        self.cursor = self
-            .board()
-            .first_focus(self.progress.skill_points(), edit && !self.dev_board_on());
     }
 
     /// 되돌리기 단추를 누를 수 있나: 쓴 점수가 있고 잔불이 값만큼 있다(개발 창의 판은 되돌리지 않는다).
@@ -900,7 +892,7 @@ impl App {
         let tap = a.tap.and_then(|p| self.hit_at(p));
         let under = self.stack.under().copied();
         let Some((at, edit)) = under.and_then(|e| match e.scene {
-            Scene::Skills { edit } => Some((e.cursor, edit)),
+            Scene::Skills { host } => Some((e.cursor, host.edits())),
             _ => None,
         }) else {
             return self.go(Go::Back);
@@ -1019,29 +1011,15 @@ impl App {
         )
     }
 
-    /// 기술 화면 그림. `at` = 고른 칸(되돌리기 단추면 `RESPEC`).
-    pub(super) fn draw_skills(&mut self, f: &Frame, at: usize, edit: bool) {
+    /// 기술 탭 그림. `at` = 고른 칸(되돌리기 단추면 `RESPEC`).
+    pub(super) fn draw_skills(&mut self, f: &Frame, at: usize, host: flow::Host) {
         let s = s();
+        let edit = host.edits();
+        let scene = Scene::Skills { host };
         let board = self.board();
         let total = self.progress.skill_points();
-        let purse = [
-            (s.sk_purse_points, board.left(total).to_string()),
-            (s.sk_purse_embers, self.world.embers.to_string()),
-        ];
-        let w = self.draw_window(f, &[s.skills_title], 0, &purse);
+        let w = self.draw_tab_window(f, scene);
         self.draw_skill_grid(&w, &board, total, at);
-        // 격자와 상세 사이 세로 선.
-        let x = w.at(geo::GRID_W + 6.0, 0.0).x.round();
-        draw_rectangle(
-            x,
-            w.origin.y,
-            1.0,
-            w.body_h * w.s,
-            Color {
-                a: 0.6,
-                ..ui::BORDER
-            },
-        );
         self.draw_skill_detail(&w, &board, total, at, edit);
         // 창 아래 줄: 왼쪽에 버튼 안내, 오른쪽 끝에 되돌리기 단추(화로). 단추는 창 밖이라 닫기 자리보다 먼저 넣는다.
         // 묻는 창이 위에 있으면 단추를 그리지 않는다 — 그 창의 안내 줄(가운데)이 같은 자리를 쓴다.
@@ -1051,20 +1029,13 @@ impl App {
         } else {
             w.panel.x + w.panel.w
         };
-        self.push_outside(w.panel);
-        // 묻는 창이 위에 있으면 그 창이 제 안내를 그린다.
-        if !asking {
-            self.window_hints(
-                f,
-                &w,
-                right,
-                &[
-                    (Act::Walk, s.verb_choose),
-                    (Act::Confirm, s.verb_confirm),
-                    (Act::Back, s.verb_close),
-                ],
-            );
-        }
+        self.tab_foot(
+            f,
+            &w,
+            scene,
+            right,
+            &[(Act::Walk, s.verb_choose), (Act::Confirm, s.verb_confirm)],
+        );
     }
 
     /// 왼쪽: 갈래 머리 · 줄 띠 · 칸들. 누를 자리(칸)를 채운다.
@@ -1555,9 +1526,10 @@ impl App {
         let Some(under) = self.stack.under().copied() else {
             return;
         };
-        let Scene::Skills { edit } = under.scene else {
+        let Scene::Skills { host } = under.scene else {
             return;
         };
+        let edit = host.edits();
         let (cursor, view) = (self.cursor, self.view);
         (self.cursor, self.view) = (under.cursor, under.view);
         self.draw_layered(f, under.scene);

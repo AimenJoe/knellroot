@@ -499,7 +499,7 @@ impl Ui {
             return;
         }
         // 좁은 화면(4:3)에서는 글을 자르기 전에 먼저 줄인다 — 안내의 끝이 "…"이면 닫는 법을 못 읽는다.
-        let k = (max_w / self.width(&line, 1.0).max(1.0)).clamp(0.72, 1.0);
+        let k = (max_w / self.width(&line, 1.0).max(1.0)).clamp(0.6, 1.0);
         let line = self.fit(&line, max_w, k);
         self.text(&line, x, y + (self.px(1.0) - self.px(k)) * 0.5, k, DIM);
     }
@@ -546,10 +546,20 @@ impl Ui {
         draw_rectangle(r.x + r.w - t, r.y + t, t, r.h - t * 2.0, c);
     }
 
-    /// 큰 창의 틀(0161 — 0160 "창 하나, 늘 같은 자리·같은 크기": 기술 화면부터, 뒤에 다른 탭이 같은 틀에 선다).
+    /// 큰 창의 틀(0161 — 0160 "창 하나, 늘 같은 자리·같은 크기": 기술 화면부터, 0164에 모든 탭이 같은 틀에 선다).
     /// 두 겹 테 + 머리 줄(탭들 — 고른 탭은 금빛 테의 칸 · 오른쪽에 지갑 `(이름, 값)`들) + 머리 아래 선. `k` = 좁은 화면에서 줄인 배
     /// (자리·글이 함께 준다). 몸의 자리는 부른 쪽이 `WINDOW_HEAD`로 센다. 닫기 단추는 `close`가 같은 자리에 그린다.
-    pub fn window(&self, r: Rect, k: f32, tabs: &[&str], active: usize, purse: &[(&str, String)]) {
+    /// 탭 머리의 자리(누를 자리)를 돌려준다. 탭이 지갑까지 닿으면 탭의 옆 여백부터 줄이고, 그래도 넘치면 탭 글을 줄인다
+    /// (`window_tabs` — 지갑의 폭이 같으면 탭 자리도 같다: 탭을 넘겨도 머리 줄이 움직이지 않게 부른 쪽이 같은 지갑을 준다).
+    /// 탭 = (이름, 표시) — 표시가 참이면 이름 오른쪽 위에 민트 점("지금 할 수 있는 것이 있다").
+    pub fn window(
+        &self,
+        r: Rect,
+        k: f32,
+        tabs: &[(&str, bool)],
+        active: usize,
+        purse: &[(&str, String)],
+    ) -> Vec<Rect> {
         let u = self.scale * k;
         let line = self.scale.max(1.0).round();
         draw_rectangle(r.x, r.y, r.w, r.h, PANEL);
@@ -570,15 +580,37 @@ impl Ui {
             1.0,
             Color { a: 0.4, ..BORDER },
         );
-        // 탭: 고른 탭은 몸과 같은 면 + 금빛 테(위·양옆), 머리 아래 선은 그 밑에서 끊긴다.
+        // 지갑: 닫기 단추 왼쪽에 오른쪽 맞춤 — 이름은 본문 색, 값은 금빛.
         let px = self.px(k);
         let ty = r.y + (head - px) * 0.5 + u;
-        let mut x = r.x + u * 10.0;
+        let mut right = r.x + r.w - self.scale * 28.0;
+        for (n, (name, value)) in purse.iter().enumerate().rev() {
+            let vw = self.width(value, k);
+            self.text(value, right - vw, ty, k, AMBER);
+            let lead = format!("{name} ");
+            let lw = self.width(&lead, k);
+            self.text(&lead, right - vw - lw, ty, k, INK);
+            right -= vw + lw;
+            if n > 0 {
+                let dot = "  ·  ";
+                let dw = self.width(dot, k);
+                self.text(dot, right - dw, ty, k, DIM);
+                right -= dw;
+            }
+        }
+        // 탭: 고른 탭은 몸과 같은 면 + 금빛 테(위·양옆), 머리 아래 선은 그 밑에서 끊긴다.
+        let x0 = r.x + u * 10.0;
+        let widths: Vec<f32> = tabs.iter().map(|t| self.width(t.0, 1.0)).collect();
+        let (pad, tk) = window_tabs(&widths, right - u * 8.0 - x0, u, k);
+        let tpx = self.px(tk);
+        let tab_y = r.y + (head - tpx) * 0.5 + u;
+        let mut x = x0;
         let mut gap = (x, x);
-        for (i, t) in tabs.iter().enumerate() {
-            let w = (self.width(t, k) + u * 18.0).round();
+        let mut rects = Vec::with_capacity(tabs.len());
+        for (i, (t, mark)) in tabs.iter().enumerate() {
+            let w = (widths[i] * tk + pad).round();
+            let top = r.y + u * 4.0;
             if i == active {
-                let top = r.y + u * 4.0;
                 draw_rectangle(x, top, w, head - u * 4.0, PANEL);
                 draw_rectangle(
                     x,
@@ -596,28 +628,22 @@ impl Ui {
                 gap = (x + line, x + w - line);
             }
             let ink = if i == active { AMBER } else { DIM };
-            self.text_center(t, x + w * 0.5, ty, k, ink);
+            self.text_center(t, x + w * 0.5, tab_y, tk, ink);
+            if *mark {
+                // 민트 점: 글의 오른쪽 위 구석(여백 안), 어두운 한 칸 테로 어느 바탕에서도 보이게.
+                let d = (u * 3.0).round().max(2.0);
+                let dx = (x + w * 0.5 + widths[i] * tk * 0.5 + u).min(x + w - d - line);
+                let dy = tab_y - u;
+                draw_rectangle(dx - line, dy - line, d + line * 2.0, d + line * 2.0, PANEL);
+                draw_rectangle(dx, dy, d, d, MINT);
+            }
+            rects.push(Rect::new(x, r.y, w, head));
             x += w + u * 2.0;
         }
         let (l, rr, y) = (r.x + inset, r.x + r.w - inset, r.y + head);
         draw_rectangle(l, y, gap.0 - l, line, BORDER);
         draw_rectangle(gap.1, y, rr - gap.1, line, BORDER);
-        // 지갑: 닫기 단추 왼쪽에 오른쪽 맞춤 — 이름은 본문 색, 값은 금빛.
-        let mut right = r.x + r.w - self.scale * 28.0;
-        for (n, (name, value)) in purse.iter().enumerate().rev() {
-            let vw = self.width(value, k);
-            self.text(value, right - vw, ty, k, AMBER);
-            let lead = format!("{name} ");
-            let lw = self.width(&lead, k);
-            self.text(&lead, right - vw - lw, ty, k, INK);
-            right -= vw + lw;
-            if n > 0 {
-                let dot = "  ·  ";
-                let dw = self.width(dot, k);
-                self.text(dot, right - dw, ty, k, DIM);
-                right -= dw;
-            }
-        }
+        rects
     }
 
     /// 닫기 단추(nail `close_button`, 0198): 창 오른쪽 위 작은 칸에 ✕(선 둘). 누를 자리(그림보다 넉넉히)를 돌려준다 —
@@ -665,8 +691,20 @@ impl Ui {
     /// 창 안 목록(0066, nail `menu_list`·`setting_row`): `area` 안에 줄을 왼쪽 맞춤으로, 고른 줄은 밝은 면 + ▶.
     /// 값은 오른쪽(`Step`이면 ◀ 값 ▶, `Go`면 →). 넘치면 `menu`처럼 굴린다(▲▼, 창은 `view`).
     pub fn list(&self, rows: &[Row], cursor: usize, view: &mut ListView, area: Rect) -> MenuHits {
-        let px = self.px(1.0);
-        let u = self.scale;
+        self.list_k(rows, cursor, view, area, 1.0)
+    }
+
+    /// `list`를 `k`배로(큰 창의 몸 — 좁은 화면에서 창이 줄면 줄·글도 같은 배로 준다, 0164).
+    pub fn list_k(
+        &self,
+        rows: &[Row],
+        cursor: usize,
+        view: &mut ListView,
+        area: Rect,
+        k: f32,
+    ) -> MenuHits {
+        let px = self.px(k);
+        let u = self.scale * k;
         let n = rows.len();
         let row_h = px * 1.75;
         // 넘치면 들어가는 만큼만 — ▲▼는 목록이 아니라 창 제목 줄에(`title_arrows`, nail 0239: 줄 자리를 먹지 않게).
@@ -685,7 +723,7 @@ impl Ui {
             let ty = r.y + (row_h - px) * 0.5;
             if sel {
                 draw_rectangle(r.x, r.y, r.w, r.h, PANEL_LIGHT);
-                self.text("▶", r.x + u * 4.0, ty, 1.0, AMBER);
+                self.text("▶", r.x + u * 4.0, ty, k, AMBER);
             }
             let fade = |c: Color| if row.dim { Color { a: 0.4, ..c } } else { c };
             let ink = fade(if sel { INK } else { DIM });
@@ -695,38 +733,38 @@ impl Ui {
             // 값 칸의 왼쪽 끝(이름은 그 앞까지 `fit`).
             let value_left = match row.kind {
                 RowKind::Step => {
-                    let arrow = self.width("▶", 1.0) + u * 6.0;
-                    let vw = self.width(&row.value, 1.0).max(px * 3.0) + u * 6.0;
+                    let arrow = self.width("▶", k) + u * 6.0;
+                    let vw = self.width(&row.value, k).max(px * 3.0) + u * 6.0;
                     let ra = Rect::new(right - arrow, r.y, arrow, row_h);
                     let la = Rect::new(ra.x - vw - arrow, r.y, arrow, row_h);
-                    self.text("◀", la.x + u * 3.0, ty, 1.0, mark);
-                    self.text_center(&row.value, la.x + arrow + vw * 0.5, ty, 1.0, ink);
-                    self.text("▶", ra.x + u * 3.0, ty, 1.0, mark);
+                    self.text("◀", la.x + u * 3.0, ty, k, mark);
+                    self.text_center(&row.value, la.x + arrow + vw * 0.5, ty, k, ink);
+                    self.text("▶", ra.x + u * 3.0, ty, k, mark);
                     hits.steps[i] = Some([la, ra]);
                     la.x
                 }
                 RowKind::Go => {
-                    let w = self.width("→", 1.0);
-                    self.text("→", right - w, ty, 1.0, mark);
+                    let w = self.width("→", k);
+                    self.text("→", right - w, ty, k, mark);
                     right - w
                 }
                 RowKind::Plain if row.value.is_empty() => right,
                 RowKind::Plain => {
-                    let k = if row.tag { 0.8 } else { 1.0 };
-                    let w = self.width(&row.value, k);
-                    let y = ty + (px - self.px(k)) * 0.5;
+                    let vk = if row.tag { 0.8 * k } else { k };
+                    let w = self.width(&row.value, vk);
+                    let y = ty + (px - self.px(vk)) * 0.5;
                     self.text(
                         &row.value,
                         right - w,
                         y,
-                        k,
+                        vk,
                         if row.tag { mark } else { ink },
                     );
                     right - w
                 }
             };
-            let label = self.fit(&row.label, value_left - label_x - u * 6.0, 1.0);
-            self.text(&label, label_x, ty, 1.0, ink);
+            let label = self.fit(&row.label, value_left - label_x - u * 6.0, k);
+            self.text(&label, label_x, ty, k, ink);
             hits.rows[i] = r;
         }
         hits
@@ -753,12 +791,12 @@ impl Ui {
         out
     }
 
-    /// 목록 줄 `r`(`list`가 돌려준 자리)의 그림 칸 — `Row::icon` 줄의 이름 앞, 정사각 한 글줄 높이.
-    pub fn list_icon(&self, r: Rect) -> Rect {
-        let px = self.px(1.0);
+    /// 목록 줄 `r`(`list_k`가 돌려준 자리)의 그림 칸 — `Row::icon` 줄의 이름 앞, 정사각 한 글줄 높이. `k` = 목록의 배.
+    pub fn list_icon(&self, r: Rect, k: f32) -> Rect {
+        let px = self.px(k);
         let side = px * 1.25;
         Rect::new(
-            r.x + self.scale * 4.0 + px * 1.1,
+            r.x + self.scale * k * 4.0 + px * 1.1,
             r.y + (r.h - side) * 0.5,
             side,
             side,
@@ -955,6 +993,21 @@ impl ListView {
     }
 }
 
+/// 큰 창의 탭 줄 맞추기(0164): 글 폭들(`widths` — 배율 1의 화면 px)을 `room`(화면 px) 안에. 돌려주는 것 = (탭 하나의 옆 여백 합, 글 배율).
+/// 넉넉하면 여백 18·글은 창의 배 `k` 그대로. 모자라면 여백을 6까지 줄이고, 그래도 넘치면 글을 줄인다(0.7배까지 — 그 아래는
+/// 읽히지 않으니 넘치게 두고 개발판 넘침 검사가 알린다). `u` = 기준 px 하나의 화면 크기(탭 사이 틈 2).
+pub fn window_tabs(widths: &[f32], room: f32, u: f32, k: f32) -> (f32, f32) {
+    let n = widths.len().max(1) as f32;
+    let text: f32 = widths.iter().sum::<f32>() * k;
+    let gaps = (n - 1.0) * u * 2.0;
+    let pad = ((room - text - gaps) / n).clamp(u * 6.0, u * 18.0);
+    let over = text + gaps + pad * n - room;
+    if over <= 0.0 || text <= 0.0 {
+        return (pad, k);
+    }
+    (pad, (k * (text - over) / text).max(k * 0.7))
+}
+
 pub fn menu_input(cursor: &mut usize, n: usize, up: bool, down: bool) {
     if n == 0 {
         return;
@@ -984,6 +1037,29 @@ pub fn all_text(s: &Strings) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// 0164: 큰 창의 탭 줄 — 넉넉하면 여백 18·글 그대로, 모자라면 여백부터(6까지), 그래도 넘치면 글을 줄여 꼭 맞춘다.
+    #[test]
+    fn window_tabs_give_up_padding_before_text_size() {
+        use super::window_tabs;
+        let w = [26.0; 6];
+        // 넉넉: 6 × (26 + 18) + 5 × 2 = 274.
+        assert_eq!(window_tabs(&w, 400.0, 1.0, 1.0), (18.0, 1.0));
+        // 조금 모자람: 글은 그대로, 여백만 준다 — 합이 꼭 방에 든다.
+        let (pad, k) = window_tabs(&w, 250.0, 1.0, 1.0);
+        assert_eq!(k, 1.0);
+        assert!((6.0..18.0).contains(&pad));
+        assert!((156.0 + 10.0 + pad * 6.0 - 250.0).abs() < 0.01);
+        // 많이 모자람: 여백은 바닥(6), 글이 준다 — 그래도 꼭 맞는다.
+        let (pad, k) = window_tabs(&w, 190.0, 1.0, 1.0);
+        assert_eq!(pad, 6.0);
+        assert!(k < 1.0 && k > 0.7);
+        assert!((156.0 * k + 10.0 + 36.0 - 190.0).abs() < 0.01);
+        // 글은 0.7배 아래로 줄지 않는다.
+        assert_eq!(window_tabs(&w, 50.0, 1.0, 1.0), (6.0, 0.7));
+        // 화면 배율·좁은 창의 배가 같이 곱해진다.
+        assert_eq!(window_tabs(&w, 2000.0, 3.0, 0.8), (54.0, 0.8));
+    }
+
     /// 굴리는 목록(nail 0199 + 가장자리 한 줄 여유): 줄 높이만큼 끌면 한 줄, 끝에서 멈추고, 커서는 창 안(가장자리에서 한 줄 띄워)으로.
     /// 키 커서는 창이 따라가되 다음 줄이 보이게 한 줄 앞서 굴린다.
     /// 0163: 판 창(줄 표가 아닌 격자) — 내용이 다 들어가면 움직이지 않고, 넘치면 끌기(화면 px)·칸(휠·▲▼)으로 0..=넘친 만큼,

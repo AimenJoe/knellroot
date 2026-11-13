@@ -75,10 +75,10 @@ async function main() {
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
   const press = async (k, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(k); await page.waitForTimeout(60); } };
   // 키보드만 배치로(0058 — 이 스크립트는 J·K·L로 싸운다. 새로 설치한 판의 기본은 키보드+마우스):
-  // 타이틀 → 설정(둘째) → 조작(끝에서 둘째, 위로 두 번) → "키보드만 배치로"(끝에서 둘째) → 돌아가기 둘.
+  // 타이틀 → 설정(둘째) → 조작(타이틀의 설정에서는 맨 끝 줄 — 위로 한 번, 0164) → "키보드만 배치로"(끝에서 둘째) → 돌아가기 둘.
   const keyboardOnly = async () => {
     await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
-    await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(300);
+    await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
     await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(200);
     await press('Escape'); await page.waitForTimeout(200); await press('Escape'); await page.waitForTimeout(300);
     // 닫으면 연 줄로 돌아온다(0066 장면 스택): 타이틀 커서는 "설정"에 있다 → 위로 한 번 = 시작.

@@ -1,5 +1,6 @@
-//! 큰 창의 틀(0161 — 0160 3절 "창은 하나, 늘 같은 자리·같은 크기"): 기술 화면이 처음 쓰고, 뒤에 다른 탭(상태·장비·도감·가게·설정)이
-//! 같은 틀에 선다. 틀 = 두 겹 테 + 머리 줄(탭 · 지갑 · ✕) + 창 아래 버튼 안내 한 줄. 그림은 `ui::Ui::window`, 여기는 자리와 누를 자리.
+//! 큰 창의 틀(0161 — 0160 3절 "창은 하나, 늘 같은 자리·같은 크기"): 기술 화면이 처음 썼고, 0164부터 모든 탭(상태·장비·기술·도감·
+//! 가게·설정)이 같은 틀에 선다. 틀 = 두 겹 테 + 머리 줄(탭 · 지갑 · ✕) + 창 아래 버튼 안내 한 줄. 그림은 `ui::Ui::window`,
+//! 여기는 자리와 누를 자리. 탭 줄·넘기기는 `tabs.rs`.
 use super::menu::Hit;
 use super::*;
 
@@ -49,19 +50,23 @@ impl App {
         }
     }
 
-    /// 창을 그린다: 어둡게 → 틀·탭·지갑 → ✕·창 밖(닫기 자리). `tabs`의 `active`가 지금 화면.
+    /// 창을 그린다: 어둡게 → 틀·탭·지갑 → ✕(닫기 자리) · 탭 머리(누르면 그 탭 — 탭이 둘 이상일 때). `tabs`의 `active`가 지금 화면.
     pub(super) fn draw_window(
         &mut self,
         f: &Frame,
-        tabs: &[&str],
+        tabs: &[(&str, bool)],
         active: usize,
         purse: &[(&str, String)],
     ) -> Window {
         self.ui.dim(0.45);
         let w = self.window_geo(f);
-        self.ui.window(w.panel, w.k, tabs, active, purse);
+        let heads = self.ui.window(w.panel, w.k, tabs, active, purse);
         let x = self.ui.close(w.panel);
         self.hits.push((x, Hit::Close));
+        if heads.len() > 1 {
+            self.hits
+                .extend(heads.into_iter().enumerate().map(|(i, r)| (r, Hit::Tab(i))));
+        }
         w
     }
 

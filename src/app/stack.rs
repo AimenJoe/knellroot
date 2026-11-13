@@ -49,9 +49,9 @@ impl Stack {
         self.v.len().checked_sub(2).map(|i| &self.v[i])
     }
 
-    /// 스택에 이 장면이 있나.
-    pub fn holds(&self, scene: Scene) -> bool {
-        self.v.iter().any(|e| e.scene == scene)
+    /// 스택에 이런 장면이 있나(멈춤에서 연 창 아래인가 등 — 장면이 값을 들고 다녀 조건으로 묻는다).
+    pub fn any(&self, f: impl Fn(Scene) -> bool) -> bool {
+        self.v.iter().any(|e| f(e.scene))
     }
 
     /// 바꾼다. 지금 칸의 커서·창(`cursor`·`view`)을 받아 맡겨 두고, 바뀌었으면 새 맨 위의 커서·창을 돌려준다.
@@ -62,6 +62,8 @@ impl Stack {
         match go {
             Go::Stay => return None,
             Go::Open(s) => self.v.push(Entry::new(s)),
+            // 탭 넘기기(0164): 맨 위 칸만 새 장면으로 — 아래 칸(연 자리)은 그대로라 닫으면 한 번에 거기로 간다.
+            Go::Swap(s) => *self.v.last_mut().expect("never empty") = Entry::new(s),
             Go::Back if self.v.len() > 1 => {
                 self.v.pop();
             }
@@ -76,50 +78,84 @@ impl Stack {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flow::Ask;
+    use flow::{Ask, Host};
+
+    const PAUSE_SETTINGS: Scene = Scene::Settings { host: Host::Pause };
+
+    fn paused(s: &Stack) -> bool {
+        s.any(|sc| matches!(flow::tab_of(sc), Some((Host::Pause, _))))
+    }
 
     #[test]
     fn closing_a_window_returns_to_the_row_that_opened_it() {
-        let mut s = Stack::new(Scene::Play);
-        // 멈춤(커서 0) → 설정 줄(2)에서 설정을 연다 → 조작.
+        let mut s = Stack::new(Scene::Title);
+        // 타이틀(설정 줄 1) → 설정(조작 줄 5) → 조작.
         assert_eq!(
-            s.go(Go::Open(Scene::Pause), 0, ListView::default())
-                .map(|c| c.0),
+            s.go(
+                Go::Open(Scene::Settings { host: Host::Title }),
+                1,
+                ListView::default()
+            )
+            .map(|c| c.0),
             Some(0)
         );
-        s.go(Go::Open(Scene::Settings), 2, ListView::default());
         s.go(Go::Open(Scene::Controls), 5, ListView::default());
         assert_eq!(s.top(), Scene::Controls);
-        assert_eq!(s.base(), Scene::Play);
-        // 닫으면 연 줄로: 조작 → 설정(5) → 멈춤(2) → 싸움.
+        assert_eq!(s.base(), Scene::Title);
+        // 닫으면 연 줄로: 조작 → 설정(5) → 타이틀(1).
         assert_eq!(s.go(Go::Back, 0, ListView::default()).map(|c| c.0), Some(5));
-        assert_eq!(s.top(), Scene::Settings);
-        assert_eq!(s.go(Go::Back, 5, ListView::default()).map(|c| c.0), Some(2));
-        assert_eq!(s.top(), Scene::Pause);
-        s.go(Go::Back, 2, ListView::default());
-        assert_eq!(s.top(), Scene::Play);
+        assert_eq!(s.top(), Scene::Settings { host: Host::Title });
+        assert_eq!(s.go(Go::Back, 5, ListView::default()).map(|c| c.0), Some(1));
+        assert_eq!(s.top(), Scene::Title);
         // 맨 아래에서 뒤로는 그대로.
         assert!(s.go(Go::Back, 0, ListView::default()).is_none());
+        assert_eq!(s.top(), Scene::Title);
+    }
+
+    /// 0164: 탭 넘기기는 맨 위 칸을 바꾼다 — 몇 번을 넘겨도 스택은 자라지 않고, 뒤로 한 번에 싸움으로 돌아간다.
+    #[test]
+    fn swapping_tabs_never_grows_the_stack_and_one_back_closes_the_window() {
+        let mut s = Stack::new(Scene::Play);
+        s.go(
+            Go::Open(flow::pause_opens(flow::Tab::Status)),
+            0,
+            ListView::default(),
+        );
+        let mut seen = vec![s.top()];
+        for _ in 0..12 {
+            let go = flow::tab_step(s.top(), 1);
+            // 새 탭은 처음 자리에서(지난 탭의 커서 3은 버린다).
+            assert_eq!(s.go(go, 3, ListView::default()).map(|c| c.0), Some(0));
+            seen.push(s.top());
+            assert_eq!(s.under().map(|e| e.scene), Some(Scene::Play));
+            assert!(paused(&s));
+        }
+        // 다섯 탭을 다 지났다.
+        for &t in flow::tabs(Host::Pause) {
+            assert!(seen.contains(&flow::tab_scene(Host::Pause, t)), "{t:?}");
+        }
+        s.go(Go::Back, 0, ListView::default());
         assert_eq!(s.top(), Scene::Play);
+        assert!(!paused(&s));
     }
 
     #[test]
     fn asks_open_on_their_focus_and_lie_over_the_window_below() {
         let mut s = Stack::new(Scene::Play);
-        s.go(Go::Open(Scene::Pause), 0, ListView::default());
-        let got = s.go(Go::Open(Scene::Ask(Ask::ToTitle)), 4, ListView::default());
+        s.go(Go::Open(PAUSE_SETTINGS), 0, ListView::default());
+        let got = s.go(Go::Open(Scene::Ask(Ask::ToTitle)), 9, ListView::default());
         assert_eq!(
             got.map(|c| c.0),
             Some(1),
             "destructive asks start on cancel"
         );
-        let under = s.under().expect("pause is below");
-        assert_eq!((under.scene, under.cursor), (Scene::Pause, 4));
-        assert!(s.holds(Scene::Pause));
-        // 예 → 처음부터: 스택이 비고 타이틀 하나.
+        let under = s.under().expect("settings is below");
+        assert_eq!((under.scene, under.cursor), (PAUSE_SETTINGS, 9));
+        assert!(paused(&s), "still under the pause window");
+        // 예 → 타이틀로: 스택이 비고 타이틀 하나.
         s.go(Go::Root(Scene::Title), 0, ListView::default());
         assert_eq!(s.top(), Scene::Title);
         assert!(s.under().is_none());
-        assert!(!s.holds(Scene::Pause));
+        assert!(!paused(&s));
     }
 }

@@ -1,6 +1,7 @@
-// 화로·레벨 화면 시험(0104, v0.4.0 G1): 헤드리스 Chromium으로 한국어·영어 두 판 —
-//   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 화로 → 레벨(줄 셋을 차례로 올려 보고 묻는 창) → 가게, 화면마다 스크린숏.
-//   기술 화면(0161 — 옛 "나무" 줄과 기술 판이 하나가 되었다): 화로 둘째 줄 "기술" → 칸 그림 격자(갈래 셋 × 줄 셋) + 오른쪽 상세.
+// 큰 창(화로·멈춤) 시험(0104 → 0164 "창 하나 + 탭"): 헤드리스 Chromium으로 한국어·영어 두 판 —
+//   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 창(상태 탭 — 레벨 줄 셋을 차례로 올려 보고 묻는 창) → 탭마다(E·Q로 넘긴다):
+//   장비(칸·후보의 작은 목록) · 도감(묶음 둘의 모든 줄) · 가게 · 설정(모든 줄) · 기술, 그리고 멈춤의 같은 창(탭 다섯), 화면마다 스크린숏.
+//   기술 탭(0161 — 옛 "나무" 줄과 기술 판이 하나가 되었다): 칸 그림 격자(갈래 셋 × 줄 셋) + 오른쪽 상세.
 //   확인 = 그 칸에 할 수 있는 일의 작은 목록(올리기·열기 / 끼우기 / 고르기 바꾸기) → 사는 일은 묻는 창. 한 단 사기 · 3단 고르기 뒤집기 ·
 //   패시브 칸 열기 · 모든 칸의 상세 · 잠긴 칸 · 되돌리기(묻는 창)를 지나고, 멈춤의 기술 화면(끼우기만)도 본다.
 //   그다음 단을 미리 찍은 기록 열(스킬 여덟이라 점수 23으로는 한 기록에 다 못 올린다 — 첫 넷·새 넷을 다른 단으로 짝지어
@@ -89,17 +90,17 @@ async function run(browser, lang) {
   if (lang === 'en') {
     await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
     await press('ArrowRight'); await page.waitForTimeout(200);
+    await shot('0-title-settings');
     await press('Escape'); await page.waitForTimeout(300);
     await press('ArrowUp', 2);
   }
   // 이어하기 → 슬롯 창 → 이어하기 → 문 앞 쉼터.
   await press('Enter'); await page.waitForTimeout(300);
   await press('Enter'); await page.waitForTimeout(1500);
-  // 쉬기 → 화로.
+  // 쉬기 → 큰 창(0164)이 상태 탭에서 열린다. 탭은 E(오른쪽)·Q(왼쪽)로 넘긴다 — 상태 · 장비 · 기술 · 도감 · 가게 · 설정.
   await press('KeyF'); await page.waitForTimeout(600);
   await shot('1-hearth');
-  // 레벨 창: 줄마다 커서를 옮겨 미리보기 글을 본다(생명 1단 · 기력 4단(다음이 끝) · 힘 4단(다음 단에 평타 +1)).
-  await press('Enter'); await page.waitForTimeout(300);
+  // 상태 탭의 레벨 줄: 줄마다 커서를 옮겨 미리보기 글을 본다(생명 1단 · 기력 4단(다음이 끝) · 힘 4단(다음 단에 평타 +1)).
   await shot('2-level-life');
   await press('ArrowDown'); await page.waitForTimeout(150);
   await shot('3-level-stamina');
@@ -118,15 +119,37 @@ async function run(browser, lang) {
   // 다 올린 줄을 다시 고르면 알림만(묻는 창 없음).
   await press('Enter'); await page.waitForTimeout(300);
   await shot('7-level-full-toast');
-  // 화로로 → 가게(셋째 줄 — 레벨·기술·가게, 0161).
-  await press('Escape'); await page.waitForTimeout(300);
-  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
-  await shot('8-shop');
-  // 가게 → 화로 → 기술(둘째 줄, 0161): 줄 값 = 남은 기술 점수(레벨 11 + 핵 1 + 조각 1 = 13).
-  await press('Escape'); await page.waitForTimeout(300);
-  await press('ArrowUp'); await page.waitForTimeout(150);
-  await shot('11-hearth-skills');
+  await page.waitForTimeout(1800);
+  // 탭마다 한 바퀴(0164): 장비 — 칸 넷을 걷고 후보의 작은 목록(장신구 칸·무기 칸)을 열어 본다.
+  await press('KeyE'); await page.waitForTimeout(300);
+  await shot('8a-equip');
+  await press('ArrowRight'); await page.waitForTimeout(150); await press('ArrowUp'); await page.waitForTimeout(150);
+  await shot('8b-equip-charm');
   await press('Enter'); await page.waitForTimeout(300);
+  await shot('8c-equip-charm-pick');
+  await press('ArrowUp'); await page.waitForTimeout(150);
+  await shot('8d-equip-charm-pick-empty');
+  await press('Escape'); await page.waitForTimeout(300);
+  await press('ArrowDown'); await page.waitForTimeout(150);
+  await shot('8e-equip-empty-slot');
+  await press('ArrowLeft'); await page.waitForTimeout(150); await press('Enter'); await page.waitForTimeout(300);
+  await shot('8f-equip-weapon-pick');
+  await press('ArrowUp'); await page.waitForTimeout(150);
+  await shot('8g-equip-weapon-pick-fists');
+  await press('Escape'); await page.waitForTimeout(300);
+  // 도감(장비에서 E 둘 — 기술을 지나): 묶음 둘(좌우)의 모든 줄.
+  await press('KeyE', 2); await page.waitForTimeout(300);
+  for (let i = 0; i < 6; i++) { await shot(`8h-codex-foe-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  await press('ArrowRight'); await page.waitForTimeout(300);
+  for (let i = 0; i < 9; i++) { await shot(`8i-codex-charm-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  // 가게: 살 것의 줄마다(끝에서 돈다).
+  await press('KeyE'); await page.waitForTimeout(300);
+  for (let i = 0; i < 9; i++) { await shot(`8-shop-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  // 설정: 줄마다(화로에서는 처음부터·타이틀로가 없다).
+  await press('KeyE'); await page.waitForTimeout(300);
+  for (let i = 0; i < 11; i++) { await shot(`8j-settings-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  // 기술 탭(설정에서 Q 셋 — 가게 · 도감을 지나): 탭 머리의 민트 점 = 남은 기술 점수로 올릴 것이 있다.
+  await press('KeyQ', 3); await page.waitForTimeout(300);
   // 기술 화면: 처음 서는 칸 = 올릴 수 있는 첫 칸(휘돌이). 왼쪽 위로 가도 같은 칸 — 가장자리에서 돌지 않는다.
   await shot('12-skills');
   await home();
@@ -177,20 +200,31 @@ async function run(browser, lang) {
   b = await record();
   if (/skill\.rank\./.test(b) || /skill\.pick\./.test(b) || /tree\.cells\./.test(b)) errors.push(`respec must clear the board: ${JSON.stringify(b)}`);
   if (!new RegExp(`embers=${embers - 45}\\n`).test(b)) errors.push(`respec must cost 45 embers: ${JSON.stringify(b)}`);
-  // 기술 화면 → 화로 → 싸움(HUD 기력 막대가 길어졌는지).
-  await press('Escape'); await page.waitForTimeout(300);
+  // 창을 닫으면 떠난다(한 번에) → 싸움(HUD 기력 막대가 길어졌는지).
   await press('Escape'); await page.waitForTimeout(400);
   await shot('9-play-hud');
-  // 멈춤 → 장비(둘째 줄): 레벨 줄(최대 기력·기력 회복·평타·강타·자세)이 상태 줄에 더해져도 창 안에.
-  await press('Escape'); await page.waitForTimeout(200);
-  await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(400);
-  await shot('10-equip');
-  // 장비를 닫으면 멈춤의 "장비" 줄 → 아래로 둘 = 기술(계속·장비·도감·기술): 같은 화면, 끼우기만(되돌리기 단추 없음).
+  // 멈춤 = 같은 창(탭 다섯 — 가게가 없다), 상태 탭에서 열린다: 읽기만(확인해도 묻는 창이 없다).
   await press('Escape'); await page.waitForTimeout(300);
-  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(400);
+  await shot('10a-pause-status');
+  await press('Enter'); await page.waitForTimeout(300);
+  await shot('10b-pause-status-deny');
+  // 장비: 레벨 줄(최대 기력·기력 회복·평타·강타·자세)이 상태 줄에 더해져도 칸 안에(넘치면 굴린다).
+  await press('KeyE'); await page.waitForTimeout(400);
+  await shot('10-equip');
+  // 기술: 같은 화면, 끼우기만(되돌리기 단추 없음).
+  await press('KeyE'); await page.waitForTimeout(400);
   await shot('16-pause-skills');
   await home(); await press('ArrowRight'); await press('Enter'); await page.waitForTimeout(300);
   await shot('16a-pause-skills-acts');
+  await press('Escape'); await page.waitForTimeout(300);
+  // 도감 → 설정(멈춤에서는 끝에 개발 · 처음부터 · 타이틀로): 줄마다, 끝 줄에서 묻는 창을 열어 보고 취소.
+  await press('KeyE'); await page.waitForTimeout(300);
+  await shot('17-pause-codex');
+  await press('KeyE'); await page.waitForTimeout(300);
+  for (let i = 0; i < 13; i++) { await shot(`18-pause-settings-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
+  await shot('18a-pause-to-title-ask');
+  await press('Escape'); await page.waitForTimeout(300);
   await press('Escape'); await page.waitForTimeout(300);
   // 모든 단(0158): 단을 미리 찍은 기록마다 — 화로의 기술 화면에서 모든 칸의 상세를 지나고, 멈춤의 기술 화면에서도 한 번 더
   // (멈춤은 상태 줄·목록이 다르다 — 끼우기만).
@@ -204,14 +238,14 @@ async function run(browser, lang) {
     await press('Enter'); await page.waitForTimeout(300);
     await press('Enter'); await page.waitForTimeout(1500);
     await press('KeyF'); await page.waitForTimeout(600);
-    await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
+    await shot(`20-${name}-status`);
+    await press('KeyE', 2); await page.waitForTimeout(300);
     await shot(`20-${name}-skills`);
     await sweep(`20-${name}`, [0, 4]);
-    await press('Escape'); await page.waitForTimeout(300);
     await press('Escape'); await page.waitForTimeout(400);
-    // 멈춤 → 기술(넷째 줄).
-    await press('Escape'); await page.waitForTimeout(200);
-    await press('ArrowDown', 3); await press('Enter'); await page.waitForTimeout(300);
+    // 멈춤(다시 띄운 판이라 상태 탭) → E 둘 = 기술.
+    await press('Escape'); await page.waitForTimeout(300);
+    await press('KeyE', 2); await page.waitForTimeout(300);
     await shot(`21-${name}-pause-skills`);
     // 멈춤의 상세는 상태 줄만 다르다("쉼터 화로에서 올린다") — 모든 칸은 첫 기록에서 한 번만 돈다.
     if (name === BOARDS[0][0]) await sweep(`21-${name}-pause`, []); else await press('ArrowDown', 4);

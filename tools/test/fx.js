@@ -22,7 +22,7 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     await p.goto(`http://localhost:${PORT}/`); await p.waitForTimeout(2500); await p.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
     const press = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(k); await p.waitForTimeout(70); } };
     if (first) { first = false;
-      await press('ArrowDown'); await press('Enter'); await p.waitForTimeout(300); await press('ArrowUp', 2); await press('Enter'); await p.waitForTimeout(300);
+      await press('ArrowDown'); await press('Enter'); await p.waitForTimeout(300); await press('ArrowUp'); await press('Enter'); await p.waitForTimeout(300); // 타이틀의 설정: 조작 설정은 맨 끝 줄(0164)
       await press('ArrowUp', 2); await press('Enter'); await p.waitForTimeout(200); await press('Escape'); await p.waitForTimeout(200); await press('Escape'); await p.waitForTimeout(300); await press('ArrowUp'); }
     await press('ArrowUp'); await press('Enter'); await p.waitForTimeout(300); await press('ArrowRight', tab); await p.waitForTimeout(150); await press('ArrowDown', row); await press('Enter');
     return p;

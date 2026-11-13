@@ -10,7 +10,9 @@ impl App {
                 // 둘 다 슬롯 창으로(0066, KB): 고른 슬롯에서 판이 시작된다.
                 TitleItem::Continue => self.open_slots(true),
                 TitleItem::Start => self.open_slots(false),
-                TitleItem::Settings => self.go(Go::Open(Scene::Settings)),
+                TitleItem::Settings => self.go(Go::Open(Scene::Settings {
+                    host: flow::Host::Title,
+                })),
                 #[cfg(feature = "dev")]
                 TitleItem::Dev => self.go(Go::Open(Scene::Dev { tab: 0 })),
                 TitleItem::Quit => macroquad::miniquad::window::order_quit(),

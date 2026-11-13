@@ -6,7 +6,6 @@ use crate::stage::StageOut;
 pub enum Scene {
     Title,
     Play,
-    Pause,
     /// 스테이지가 끝나고 장면이 멈춰 보이는 동안(쓰러짐·종소리) — 이어서 `Result`.
     Ending {
         won: bool,
@@ -16,35 +15,42 @@ pub enum Scene {
     },
     /// 조작 설정(0024). 설정에서 연다(0052).
     Controls,
-    /// 장비(0064 M3 → 0067 D 인형): 무기 + 장신구 세 칸. 멈춤 "장비"에서, 뒤로 = 멈춤.
-    Equip,
-    /// 장비 칸의 후보 목록(0067): 장비 창 위에 얹는다 — 닫으면 그 칸으로.
+    /// 큰 창의 상태 탭(0164 — 옛 레벨 창 0104가 여기로): 인형·막대, 레벨 셋(생명·기력·힘), 지금의 수치와 끼운 장신구.
+    /// 화로에서는 확인 = 올리기(묻는 창), 멈춤에서는 읽기만. 멈춤과 화로가 이 탭에서 열린다.
+    Status {
+        host: Host,
+    },
+    /// 큰 창의 장비 탭(0064 M3 → 0067 D 인형 → 0164): 무기 + 장신구 세 칸. Select는 싸움에서 이 탭을 바로 연다(0070).
+    Equip {
+        host: Host,
+    },
+    /// 장비 칸의 후보 목록(0067): 장비 탭 위에 얹는다 — 닫으면 그 칸으로.
     EquipPick {
         slot: u8,
     },
-    /// 쉼터 화로(0104, v0.4.0 G1 — 0102 7): 쉬면 열린다. 줄 = 레벨 · 가게 · 떠나기. 뒤로 = 싸움.
-    Hearth,
-    /// 레벨(0104): 생명·기력·힘을 잔불로 한 단씩. 화로에서 연다 — 닫으면 화로.
-    Level,
-    /// 도감(0130 C5): 탭 둘(적 · 장신구), 왼쪽 목록 · 오른쪽 그림과 관찰. 멈춤에서 연다 — 닫으면 멈춤.
+    /// 큰 창의 도감 탭(0130 C5 → 0164): 몸 안의 묶음 둘(`tab`: 적 · 장신구), 왼쪽 목록 · 오른쪽 그림과 관찰.
     Codex {
+        host: Host,
         tab: u8,
     },
-    /// 기술(0161 — 옛 나무 창·기술 판·멈춤의 기술 창을 하나로): 갈래 셋 × 줄 셋의 칸 그림 + 고른 칸의 상세. 화로에서 열면
-    /// 올리기·고르기 바꾸기·되돌리기까지(`edit`), 멈춤에서 열면 읽기와 끼우기만. 닫으면 연 곳.
+    /// 큰 창의 기술 탭(0161 → 0164): 갈래 셋 × 줄 셋의 칸 그림 + 고른 칸의 상세. 화로에서는 올리기·고르기 바꾸기·되돌리기까지
+    /// (`Host::edits`), 멈춤에서는 읽기와 끼우기만.
     Skills {
-        edit: bool,
+        host: Host,
     },
     /// 기술 화면에서 고른 칸에 할 수 있는 일의 작은 목록(0161): 올리기·열기 / 칸에 끼우기 / 고르기 바꾸기 — 되는 줄만.
     /// 기술 화면 위에 얹는다(칸은 아래 칸의 커서) — 닫으면 그 칸으로.
     SkillAct,
-    /// 가게(0064 M4): 잔불로 장신구·등잔 기름을 산다. 화로에서 연다(0104 전엔 쉬면 바로 열렸다) — 닫으면 화로.
+    /// 큰 창의 가게 탭(0064 M4 → 0164): 잔불로 장신구·등잔 기름을 산다. 화로에만 있다.
     Shop,
     /// 묻는 창(KB `controller-layout-and-remapping` "되돌릴 수 없는 메뉴 항목은 한 번 묻는다", nail 0274·가게 묻는 창):
     /// 줄 둘(하는 일 이름 / 취소) + 무엇을 잃는지 한 줄. 뒤로 = 취소(온 곳).
     Ask(Ask),
-    /// 설정(0052, nail 0269의 틀): 언어·전체 화면·화면 흔들림·조작. 타이틀·멈춤에서 연다 — 닫으면 연 곳(스택, 0066).
-    Settings,
+    /// 큰 창의 설정 탭(0052 → 0164): 언어·전체 화면·화면 흔들림·조작. 멈춤에서는 끝에 [개발] · 처음부터 · 타이틀로.
+    /// 타이틀에서 열면 탭이 이것 하나.
+    Settings {
+        host: Host,
+    },
     /// 슬롯 창(0066, KB `roguelite-save-slots-and-continue`): `load`면 이어하기(기록 있는 슬롯만 · 이어하기/지우기), 아니면 새로 시작(빈 슬롯은 시작, 기록 있으면 덮어쓰기). 둘 다 두 번 눌러야 지운다.
     Slots {
         load: bool,
@@ -57,7 +63,7 @@ pub enum Scene {
     /// 개발 시나리오(PoC 아레나). 개발판에만.
     #[cfg(feature = "dev")]
     Sandbox,
-    /// 연구소(랩, 0070·0079, 개발판): 묶음 목록 + A/B·내보내기. 타이틀·멈춤 메뉴의 설정 바로 아래 줄·F1에서 연다. 게임은 멈추고 값은 바로 들어간다.
+    /// 연구소(랩, 0070·0079, 개발판): 묶음 목록 + A/B·내보내기. 개발 창의 도구 탭·F1에서 연다. 게임은 멈추고 값은 바로 들어간다.
     #[cfg(feature = "dev")]
     Lab,
     /// 랩의 한 묶음(`lab::GROUPS[g]`): 줄 = 이름 ◀ 값 ▶.
@@ -65,6 +71,143 @@ pub enum Scene {
     LabGroup {
         g: u8,
     },
+}
+
+/// 큰 창을 연 곳(0164 — 0160 3절 "멈춤과 화로가 같은 창을 연다"): 탭 목록과 켜지는 일이 여기서 갈린다. 장면 칸이 들고 다닌다 —
+/// 탭을 넘기면 맨 위 칸을 바꾸므로(쌓지 않는다) 연 곳은 칸의 값이어야 남는다.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Host {
+    /// 타이틀의 설정: 탭 하나.
+    Title,
+    /// 싸움 중 멈춤(Esc·Start): 읽기와 끼우기만. 처음부터·타이틀로는 여기 설정 탭의 끝 줄.
+    Pause,
+    /// 쉼터 화로(쉬면 열린다): 올리기·사기·되돌리기가 켜지고 가게 탭이 선다.
+    Hearth,
+}
+
+impl Host {
+    /// 올리기·사기·되돌리기가 켜지나(쉬는 동안에만 — 0104·0161의 규칙 그대로).
+    pub fn edits(self) -> bool {
+        self == Host::Hearth
+    }
+}
+
+/// 큰 창의 탭(0164). 차례는 `tabs`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Tab {
+    Status,
+    Equip,
+    Skills,
+    Codex,
+    Shop,
+    Settings,
+}
+
+/// 연 곳마다의 탭 줄: 멈춤 = 상태 · 장비 · 기술 · 도감 · 설정, 화로 = 거기에 가게(설정 앞), 타이틀 = 설정 하나.
+pub fn tabs(host: Host) -> &'static [Tab] {
+    match host {
+        Host::Title => &[Tab::Settings],
+        Host::Pause => &[
+            Tab::Status,
+            Tab::Equip,
+            Tab::Skills,
+            Tab::Codex,
+            Tab::Settings,
+        ],
+        Host::Hearth => &[
+            Tab::Status,
+            Tab::Equip,
+            Tab::Skills,
+            Tab::Codex,
+            Tab::Shop,
+            Tab::Settings,
+        ],
+    }
+}
+
+/// 탭의 장면(가게는 화로에만 있어 연 곳을 들지 않는다).
+pub fn tab_scene(host: Host, tab: Tab) -> Scene {
+    match tab {
+        Tab::Status => Scene::Status { host },
+        Tab::Equip => Scene::Equip { host },
+        Tab::Skills => Scene::Skills { host },
+        Tab::Codex => Scene::Codex { host, tab: 0 },
+        Tab::Shop => Scene::Shop,
+        Tab::Settings => Scene::Settings { host },
+    }
+}
+
+/// 이 장면이 큰 창의 탭이면 (연 곳, 탭). `_` 없는 match — 새 장면이면 컴파일러가 묻는다.
+pub fn tab_of(scene: Scene) -> Option<(Host, Tab)> {
+    match scene {
+        Scene::Status { host } => Some((host, Tab::Status)),
+        Scene::Equip { host } => Some((host, Tab::Equip)),
+        Scene::Skills { host } => Some((host, Tab::Skills)),
+        Scene::Codex { host, .. } => Some((host, Tab::Codex)),
+        Scene::Shop => Some((Host::Hearth, Tab::Shop)),
+        Scene::Settings { host } => Some((host, Tab::Settings)),
+        Scene::Title
+        | Scene::Play
+        | Scene::Ending { .. }
+        | Scene::Result { .. }
+        | Scene::Controls
+        | Scene::EquipPick { .. }
+        | Scene::SkillAct
+        | Scene::Ask(_)
+        | Scene::Slots { .. } => None,
+        #[cfg(feature = "dev")]
+        Scene::Dev { .. } | Scene::Sandbox | Scene::Lab | Scene::LabGroup { .. } => None,
+    }
+}
+
+/// 탭 줄에서의 자리(그림의 "지금 탭").
+pub fn tab_index(scene: Scene) -> Option<usize> {
+    let (host, tab) = tab_of(scene)?;
+    tabs(host).iter().position(|&t| t == tab)
+}
+
+/// 탭 넘기기(스킬 버튼 둘 — `dir` ±1): 맨 위 칸을 옆 탭의 장면으로 **바꾼다**(쌓지 않는다 — 뒤로 한 번에 닫힌다).
+/// 한 줄 목록이라 끝에서 돈다(KB: Xbox 112). 탭이 하나면(타이틀의 설정) 그대로.
+pub fn tab_step(scene: Scene, dir: i32) -> Go {
+    let Some((host, _)) = tab_of(scene) else {
+        return Go::Stay;
+    };
+    let (list, at) = (tabs(host), tab_index(scene).unwrap_or(0));
+    let to = (at as i32 + dir).rem_euclid(list.len() as i32) as usize;
+    tab_pick(scene, to)
+}
+
+/// 탭 머리를 눌렀다(터치·마우스): 그 탭으로 바꾼다. 지금 탭이면 그대로.
+pub fn tab_pick(scene: Scene, i: usize) -> Go {
+    let Some((host, now)) = tab_of(scene) else {
+        return Go::Stay;
+    };
+    match tabs(host).get(i) {
+        Some(&t) if t != now => Go::Swap(tab_scene(host, t)),
+        _ => Go::Stay,
+    }
+}
+
+/// 화로가 여는 탭(상태 — 화로의 첫 일은 레벨 올리기) · Select가 여는 탭(장비, 0070).
+pub const HEARTH_OPENS: Scene = Scene::Status { host: Host::Hearth };
+pub const SELECT_OPENS: Scene = Scene::Equip { host: Host::Pause };
+
+/// 멈춤이 여는 탭: 이 판에서 멈춤 창이 마지막에 보던 탭(`last` — 판에 붙은 한 칸, 새 판이면 상태). 멈춤에 없는 탭이면 상태.
+pub fn pause_opens(last: Tab) -> Scene {
+    let tab = if tabs(Host::Pause).contains(&last) {
+        last
+    } else {
+        Tab::Status
+    };
+    tab_scene(Host::Pause, tab)
+}
+
+/// 이 장면을 보았으면 적어 둘 탭: 멈춤에서 연 창의 탭만(화로·타이틀의 창은 멈춤이 열 곳을 바꾸지 않는다).
+pub fn remembered(scene: Scene) -> Option<Tab> {
+    match tab_of(scene) {
+        Some((Host::Pause, tab)) => Some(tab),
+        _ => None,
+    }
 }
 
 impl Scene {
@@ -82,15 +225,14 @@ impl Scene {
             Scene::Play | Scene::Ending { .. } => Layer::Game,
             #[cfg(feature = "dev")]
             Scene::Sandbox => Layer::Game,
-            Scene::Pause | Scene::Equip | Scene::EquipPick { .. } | Scene::Settings => {
-                Layer::Window { hud: true }
-            }
-            // 가게는 잔불을 제가 보인다(KB hud-readability: 창이 같은 정보면 밑 HUD를 그리지 않는다).
-            Scene::Hearth
-            | Scene::Level
+            // 큰 창(0164)은 화면을 거의 다 쓰고 잔불·기술 점수를 제가 보인다(KB hud-readability: 창이 같은 정보면 밑 HUD를 그리지 않는다).
+            Scene::Status { .. }
+            | Scene::Equip { .. }
+            | Scene::EquipPick { .. }
             | Scene::Skills { .. }
             | Scene::Codex { .. }
             | Scene::Shop
+            | Scene::Settings { .. }
             | Scene::Result { .. }
             | Scene::Controls
             | Scene::Slots { .. } => Layer::Window { hud: false },
@@ -132,6 +274,8 @@ pub enum Go {
     Stay,
     /// 지금 장면 위에 연다(닫으면 지금 장면 · 지금 커서로 돌아온다).
     Open(Scene),
+    /// 맨 위 칸을 이 장면으로 바꾼다(0164 — 큰 창의 탭 넘기기: 쌓지 않으니 뒤로 한 번에 닫힌다). 커서는 처음 자리에서.
+    Swap(Scene),
     /// 위 칸을 닫는다. 맨 아래 칸이면 그대로.
     Back,
     /// 스택을 비우고 이 장면부터.
@@ -149,13 +293,13 @@ pub fn focus(scene: Scene) -> usize {
 /// 묻는 일.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Ask {
-    /// 멈춤 "처음부터": 쉼터 자리를 버린다.
+    /// 멈춤의 설정 탭 "처음부터": 쉼터 자리를 버린다.
     Restart,
-    /// 멈춤 "타이틀로": 마지막 쉼 뒤의 진행을 버린다.
+    /// 멈춤의 설정 탭 "타이틀로": 마지막 쉼 뒤의 진행을 버린다.
     ToTitle,
     /// 화로 가게: 이 물건(살 수 있는 것 목록의 자리)을 산다.
     Buy(usize),
-    /// 화로 레벨(0104): 이 줄(`progression::LINES`의 자리)을 한 단 올린다.
+    /// 화로의 상태 탭(0104 → 0164): 이 줄(`progression::LINES`의 자리)을 한 단 올린다.
     Level(u8),
     /// 기술(0158 → 0161): 이 칸(`skills::ENTRIES`의 자리 — 스킬·큰 기술·패시브)의 다음 단을 산다·칸을 연다(기술 점수).
     Skill(u8),
@@ -268,39 +412,6 @@ pub fn slot_pick(load: bool, filled: bool, col: usize, armed: bool) -> SlotDo {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum PauseItem {
-    Resume,
-    /// 장비(0064 M3, 0051의 무기 줄): 좌우 = 다음 무기(전처럼), 확인 = 장비 창(무기 + 장신구 세 칸).
-    Weapon,
-    /// 도감(0130) — 장비 다음 줄.
-    Codex,
-    /// 기술(0151 → 0161: 나무와 하나) — 도감 다음 줄. 읽기와 끼우기만(올리는 것은 쉼터 화로에서).
-    Skills,
-    Settings,
-    /// 개발 메뉴(0075 → 0090) — 개발판에만, 설정 바로 아래 줄(연구소가 있던 자리 — 연구소는 개발 창 도구 탭·타이틀에서, 사장 2026-11-07).
-    #[cfg(feature = "dev")]
-    Dev,
-    Restart,
-    ToTitle,
-}
-
-/// 멈춤 창의 줄: 계속 · 장비 · 도감(0130) · 기술(0161 — "나무" 줄은 여기로 들어갔다) · 설정 · [개발] · 처음부터 · 타이틀로 —
-/// 대괄호는 개발판에만(0090).
-pub fn pause_items() -> Vec<PauseItem> {
-    let mut v = vec![
-        PauseItem::Resume,
-        PauseItem::Weapon,
-        PauseItem::Codex,
-        PauseItem::Skills,
-        PauseItem::Settings,
-    ];
-    #[cfg(feature = "dev")]
-    v.push(PauseItem::Dev);
-    v.extend([PauseItem::Restart, PauseItem::ToTitle]);
-    v
-}
-
 /// 설정 줄(0052). 값 줄은 좌우·확인으로 바꾸고, 누르는 줄은 확인으로 들어간다.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SettingsRow {
@@ -320,11 +431,17 @@ pub enum SettingsRow {
     CursorRest,
     Reticle,
     Controls,
-    Back,
+    /// 개발 메뉴(0075 → 0090 → 0164) — 개발판의 멈춤에서만, 조작 설정 바로 아래.
+    #[cfg(feature = "dev")]
+    Dev,
+    /// 처음부터 · 타이틀로(0164 — 옛 멈춤 목록의 끝 두 줄): 멈춤에서만, 맨 끝. 둘 다 묻는 창을 거친다.
+    Restart,
+    ToTitle,
 }
 
-/// 조작 설정은 늘 끝에서 둘째(`tools/test/shot.js`가 위로 두 번 간다).
-pub fn settings_rows(fullscreen: bool, mouse: bool) -> Vec<SettingsRow> {
+/// 설정 탭의 줄: 값 줄들 · 조작 설정, 멈춤에서 열었으면 끝에 [개발(개발판)] · 처음부터 · 타이틀로(0164 — 화로·타이틀에는 없다).
+/// "돌아가기" 줄은 없다 — 창의 ✕·뒤로·창 밖이 닫는다. 조작 설정은 값 줄들 바로 다음(타이틀·화로에서는 맨 끝 = 위로 한 번).
+pub fn settings_rows(fullscreen: bool, mouse: bool, host: Host) -> Vec<SettingsRow> {
     let mut v = vec![SettingsRow::Language];
     if fullscreen {
         v.push(SettingsRow::Fullscreen);
@@ -340,8 +457,33 @@ pub fn settings_rows(fullscreen: bool, mouse: bool) -> Vec<SettingsRow> {
             SettingsRow::Reticle,
         ]);
     }
-    v.extend([SettingsRow::Controls, SettingsRow::Back]);
+    v.push(SettingsRow::Controls);
+    if host == Host::Pause {
+        #[cfg(feature = "dev")]
+        v.push(SettingsRow::Dev);
+        v.extend([SettingsRow::Restart, SettingsRow::ToTitle]);
+    }
     v
+}
+
+/// 설정 탭에서 다른 창을 여는 줄 → 어디로(값 줄은 `None` — 화면이 값을 바꾼다). 버리는 일은 묻는 창을 거친다(KB).
+pub fn choose_settings(row: SettingsRow) -> Option<Go> {
+    match row {
+        SettingsRow::Controls => Some(Go::Open(Scene::Controls)),
+        #[cfg(feature = "dev")]
+        SettingsRow::Dev => Some(Go::Open(Scene::Dev { tab: 0 })),
+        SettingsRow::Restart => Some(Go::Open(Scene::Ask(Ask::Restart))),
+        SettingsRow::ToTitle => Some(Go::Open(Scene::Ask(Ask::ToTitle))),
+        SettingsRow::Language
+        | SettingsRow::Fullscreen
+        | SettingsRow::Shake
+        | SettingsRow::Volume
+        | SettingsRow::Tells
+        | SettingsRow::TellTiming
+        | SettingsRow::MouseAim
+        | SettingsRow::CursorRest
+        | SettingsRow::Reticle => None,
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -374,21 +516,20 @@ pub fn after_ending(won: bool) -> Scene {
     Scene::Result { won }
 }
 
-/// 뒤로(B·Esc): 연 창은 닫는다(스택에서 꺼내 연 곳으로). 골라야 끝나는 창(핵 고르기·결과)·타이틀·싸움은 그대로(0066).
+/// 뒤로(B·Esc): 연 창은 닫는다(스택에서 꺼내 연 곳으로 — 큰 창의 탭은 어느 탭에서든 한 번에 닫힌다, 0164).
+/// 골라야 끝나는 창(결과)·타이틀·싸움은 그대로(0066).
 pub fn back(scene: Scene) -> Go {
     match scene {
-        Scene::Pause
-        | Scene::Equip
+        Scene::Status { .. }
+        | Scene::Equip { .. }
         | Scene::EquipPick { .. }
-        | Scene::Hearth
-        | Scene::Level
         | Scene::Skills { .. }
         | Scene::SkillAct
         | Scene::Codex { .. }
         | Scene::Shop
         | Scene::Ask(_)
         | Scene::Controls
-        | Scene::Settings
+        | Scene::Settings { .. }
         | Scene::Slots { .. } => Go::Back,
         #[cfg(feature = "dev")]
         Scene::Dev { .. } | Scene::Lab | Scene::LabGroup { .. } => Go::Back,
@@ -398,27 +539,13 @@ pub fn back(scene: Scene) -> Go {
     }
 }
 
-/// 멈춤 버튼: 싸움 중이면 멈춤을 열고, 멈춤이면 닫는다.
-pub fn pause(scene: Scene) -> Go {
-    match scene {
-        Scene::Play => Go::Open(Scene::Pause),
-        Scene::Pause => Go::Back,
+/// 멈춤 버튼: 싸움 중이면 큰 창을 바로 열고(목록을 거치지 않는다 — 마지막에 보던 탭 `last`), 멈춤에서 연 창이면 닫는다
+/// ("계속" = 닫기, 0164).
+pub fn pause(scene: Scene, last: Tab) -> Go {
+    match (scene, tab_of(scene)) {
+        (Scene::Play, _) => Go::Open(pause_opens(last)),
+        (_, Some((Host::Pause, _))) => Go::Back,
         _ => Go::Stay,
-    }
-}
-
-/// 이 장면에서 고르면: (어디로, 스테이지를 새로 세우나).
-pub fn choose_pause(item: PauseItem) -> (Go, bool) {
-    match item {
-        PauseItem::Resume => (Go::Back, false),
-        PauseItem::Weapon => (Go::Open(Scene::Equip), false),
-        PauseItem::Codex => (Go::Open(Scene::Codex { tab: 0 }), false),
-        PauseItem::Skills => (Go::Open(Scene::Skills { edit: false }), false),
-        PauseItem::Settings => (Go::Open(Scene::Settings), false),
-        PauseItem::Restart => (Go::Open(Scene::Ask(Ask::Restart)), false),
-        PauseItem::ToTitle => (Go::Open(Scene::Ask(Ask::ToTitle)), false),
-        #[cfg(feature = "dev")]
-        PauseItem::Dev => (Go::Open(Scene::Dev { tab: 0 }), false),
     }
 }
 
@@ -449,28 +576,181 @@ mod tests {
     }
 
     #[test]
-    fn pause_opens_and_back_closes() {
-        assert_eq!(pause(Scene::Play), Go::Open(Scene::Pause));
-        assert_eq!(pause(Scene::Pause), Go::Back);
-        assert_eq!(back(Scene::Pause), Go::Back);
-        assert_eq!(pause(Scene::Title), Go::Stay);
+    fn pause_opens_the_window_and_back_closes_it_from_any_tab() {
+        // 멈춤 = 큰 창을 바로(0164 — 목록이 없다). 어느 탭에서든 뒤로·멈춤 버튼 한 번에 닫힌다("계속" 줄이 없다).
+        assert_eq!(
+            pause(Scene::Play, Tab::Status),
+            Go::Open(Scene::Status { host: Host::Pause })
+        );
+        for &t in tabs(Host::Pause) {
+            let sc = tab_scene(Host::Pause, t);
+            assert_eq!(pause(sc, Tab::Status), Go::Back, "{sc:?}");
+            assert_eq!(back(sc), Go::Back, "{sc:?}");
+        }
+        // 화로·타이틀에서 연 창은 멈춤 버튼으로 닫는 것이 아니다(뒤로가 닫는다 — 몰이꾼은 둘 다 닫기로 읽는다).
+        assert_eq!(pause(HEARTH_OPENS, Tab::Status), Go::Stay);
+        assert_eq!(back(HEARTH_OPENS), Go::Back);
+        assert_eq!(pause(Scene::Title, Tab::Status), Go::Stay);
         // 골라야 끝나는 창은 뒤로로 건너뛰지 않는다.
         assert_eq!(back(Scene::Result { won: false }), Go::Stay);
         assert_eq!(back(Scene::Title), Go::Stay);
+        // Select는 장비 탭을 바로(0070).
+        assert_eq!(SELECT_OPENS, Scene::Equip { host: Host::Pause });
+    }
+
+    /// 0164: 멈춤은 이 판에서 마지막에 보던 탭에서 다시 열린다 — 적어 두는 것은 멈춤의 탭뿐(화로에서 가게를 보았다고
+    /// 멈춤이 가게에서 열리지는 않는다 — 멈춤에는 가게가 없다).
+    #[test]
+    fn pause_reopens_on_the_tab_last_seen_while_paused() {
+        for &t in tabs(Host::Pause) {
+            assert_eq!(pause_opens(t), tab_scene(Host::Pause, t));
+            assert_eq!(remembered(tab_scene(Host::Pause, t)), Some(t));
+            assert_eq!(pause(Scene::Play, t), Go::Open(tab_scene(Host::Pause, t)));
+        }
+        assert_eq!(pause_opens(Tab::Shop), Scene::Status { host: Host::Pause });
+        for &t in tabs(Host::Hearth) {
+            assert_eq!(remembered(tab_scene(Host::Hearth, t)), None, "{t:?}");
+        }
+        assert_eq!(remembered(Scene::Settings { host: Host::Title }), None);
+        assert_eq!(remembered(Scene::Play), None);
+        // 도감은 안의 묶음이 어디든 도감으로 적힌다.
+        let codex = Scene::Codex {
+            host: Host::Pause,
+            tab: 1,
+        };
+        assert_eq!(remembered(codex), Some(Tab::Codex));
+        // Select로 연 장비 탭도 멈춤의 탭이다.
+        assert_eq!(remembered(SELECT_OPENS), Some(Tab::Equip));
+    }
+
+    /// 0164: 탭 줄 — 멈춤 다섯, 화로는 거기에 가게, 타이틀은 설정 하나. 탭마다 장면이 하나고 장면에서 탭이 되읽힌다.
+    #[test]
+    fn each_host_has_its_tab_row_and_every_tab_maps_to_one_scene() {
+        use Tab::*;
+        assert_eq!(tabs(Host::Pause), [Status, Equip, Skills, Codex, Settings]);
+        assert_eq!(
+            tabs(Host::Hearth),
+            [Status, Equip, Skills, Codex, Shop, Settings]
+        );
+        assert_eq!(tabs(Host::Title), [Settings]);
+        for host in [Host::Title, Host::Pause, Host::Hearth] {
+            for (i, &t) in tabs(host).iter().enumerate() {
+                let sc = tab_scene(host, t);
+                assert_eq!(tab_of(sc), Some((host, t)), "{sc:?}");
+                assert_eq!(tab_index(sc), Some(i));
+                assert!(sc.is_menu(), "{sc:?} takes taps");
+                assert_eq!(
+                    sc.layer(),
+                    Layer::Window { hud: false },
+                    "{sc:?}: one window, always the same"
+                );
+                assert_eq!(focus(sc), 0);
+            }
+        }
+        // 가게는 화로에만 선다.
+        assert_eq!(tab_of(Scene::Shop), Some((Host::Hearth, Shop)));
+        assert!(!tabs(Host::Pause).contains(&Shop));
+        // 탭 위에 얹는 작은 창·싸움 화면은 탭이 아니다(넘기는 버튼을 먹지 않는다).
+        for sc in [
+            Scene::Play,
+            Scene::Title,
+            Scene::SkillAct,
+            Scene::EquipPick { slot: 1 },
+            Scene::Ask(Ask::Respec),
+            Scene::Controls,
+        ] {
+            assert_eq!(tab_of(sc), None, "{sc:?}");
+            assert_eq!(tab_step(sc, 1), Go::Stay);
+            assert_eq!(tab_pick(sc, 0), Go::Stay);
+        }
+    }
+
+    /// 0164: 넘기면 맨 위 칸을 바꾼다(쌓지 않는다) — 끝에서 돌고, 연 곳은 그대로 따라가고, 탭이 하나면 그대로.
+    #[test]
+    fn stepping_tabs_swaps_the_top_scene_wraps_and_keeps_the_host() {
+        for host in [Host::Pause, Host::Hearth] {
+            let list = tabs(host);
+            let n = list.len();
+            for (i, &t) in list.iter().enumerate() {
+                let sc = tab_scene(host, t);
+                let next = tab_scene(host, list[(i + 1) % n]);
+                let prev = tab_scene(host, list[(i + n - 1) % n]);
+                assert_eq!(tab_step(sc, 1), Go::Swap(next));
+                assert_eq!(tab_step(sc, -1), Go::Swap(prev));
+                // 탭 머리 누르기: 다른 탭이면 그 탭으로, 지금 탭·없는 자리면 그대로.
+                assert_eq!(tab_pick(sc, i), Go::Stay);
+                assert_eq!(tab_pick(sc, n), Go::Stay);
+                assert_eq!(tab_pick(sc, (i + 1) % n), Go::Swap(next));
+            }
+        }
+        // 도감은 안의 묶음(적·장신구)이 어디에 있든 같은 탭이다 — 넘기면 옆 탭으로.
+        let codex = Scene::Codex {
+            host: Host::Pause,
+            tab: 1,
+        };
+        assert_eq!(tab_of(codex), Some((Host::Pause, Tab::Codex)));
+        assert_eq!(
+            tab_step(codex, 1),
+            Go::Swap(Scene::Settings { host: Host::Pause })
+        );
+        assert_eq!(
+            tab_step(codex, -1),
+            Go::Swap(Scene::Skills { host: Host::Pause })
+        );
+        // 멈춤의 끝(설정)에서 오른쪽 = 처음(상태).
+        assert_eq!(
+            tab_step(Scene::Settings { host: Host::Pause }, 1),
+            Go::Swap(Scene::Status { host: Host::Pause })
+        );
+        // 타이틀의 설정은 탭이 하나 — 넘길 곳이 없다.
+        let only = Scene::Settings { host: Host::Title };
+        assert_eq!(tab_step(only, 1), Go::Stay);
+        assert_eq!(tab_step(only, -1), Go::Stay);
+    }
+
+    /// 0164: 올리기·사기·되돌리기는 화로에서만 켜진다(멈춤은 읽기·끼우기). 처음부터·타이틀로·개발은 멈춤의 설정 탭 끝에만.
+    #[test]
+    fn only_the_hearth_edits_and_only_pause_settings_end_the_run() {
+        assert!(Host::Hearth.edits());
+        assert!(!Host::Pause.edits());
+        assert!(!Host::Title.edits());
+        for (f, m) in [(false, false), (true, true), (true, false)] {
+            let pause = settings_rows(f, m, Host::Pause);
+            assert_eq!(
+                pause[pause.len() - 2..],
+                [SettingsRow::Restart, SettingsRow::ToTitle]
+            );
+            for host in [Host::Title, Host::Hearth] {
+                let r = settings_rows(f, m, host);
+                assert_eq!(r.last(), Some(&SettingsRow::Controls), "{host:?}");
+                assert!(!r.contains(&SettingsRow::Restart));
+                assert!(!r.contains(&SettingsRow::ToTitle));
+                // 멈춤의 줄 = 다른 곳의 줄 + 끝 줄들(값 줄의 차례는 어디서 열어도 같다).
+                assert_eq!(pause[..r.len()], r[..]);
+            }
+        }
+        assert!(!settings_rows(false, true, Host::Title).contains(&SettingsRow::Fullscreen));
+        assert!(!settings_rows(true, false, Host::Title).contains(&SettingsRow::MouseAim));
+        // 버리는 일은 한 번 묻는다(KB): 처음부터·타이틀로 → 묻는 창, 답해야 판을 다시 세운다. 값 줄은 어디로도 가지 않는다.
+        assert_eq!(
+            choose_settings(SettingsRow::Restart),
+            Some(Go::Open(Scene::Ask(Ask::Restart)))
+        );
+        assert_eq!(
+            choose_settings(SettingsRow::ToTitle),
+            Some(Go::Open(Scene::Ask(Ask::ToTitle)))
+        );
+        assert_eq!(
+            choose_settings(SettingsRow::Controls),
+            Some(Go::Open(Scene::Controls)),
+            "the run is kept"
+        );
+        assert_eq!(choose_settings(SettingsRow::Volume), None);
+        assert_eq!(choose_settings(SettingsRow::Language), None);
     }
 
     #[test]
-    fn menus_rebuild_the_stage_except_resume() {
-        assert_eq!(choose_pause(PauseItem::Resume), (Go::Back, false));
-        // 버리는 일은 한 번 묻는다(KB): 처음부터·타이틀로 → 묻는 창, 답해야 판을 다시 세운다.
-        assert_eq!(
-            choose_pause(PauseItem::Restart),
-            (Go::Open(Scene::Ask(Ask::Restart)), false)
-        );
-        assert_eq!(
-            choose_pause(PauseItem::ToTitle),
-            (Go::Open(Scene::Ask(Ask::ToTitle)), false)
-        );
+    fn asks_answer_and_results_rebuild_the_stage() {
         assert_eq!(answer(Ask::Restart, true), (Go::Root(Scene::Play), true));
         assert_eq!(answer(Ask::ToTitle, true), (Go::Root(Scene::Title), true));
         assert_eq!(
@@ -478,46 +758,22 @@ mod tests {
             (Go::Back, false),
             "back to the shop"
         );
-        // 0104: 화로 레벨도 가게처럼 "올리기"에서, 답하면 레벨 창으로.
+        // 0104: 레벨도 가게처럼 "올리기"에서, 답하면 상태 탭으로.
         assert_eq!(answer(Ask::Level(1), true), (Go::Back, false));
         assert_eq!(ask_default(Ask::Level(0)), 0);
-        // 도감(0130)·기술(0151)도 메뉴다 — 터치가 탭으로 읽힌다(도감이 목록에서 빠져 터치가 안 먹던 것).
-        for sc in [
-            Scene::Codex { tab: 0 },
-            Scene::Codex { tab: 1 },
-            Scene::Skills { edit: false },
-            Scene::Skills { edit: true },
-            Scene::SkillAct,
-        ] {
-            assert!(sc.is_menu(), "{sc:?} takes taps");
-            assert_eq!(back(sc), Go::Back);
-        }
         // 싸움 화면만 메뉴가 아니다.
         assert!(!Scene::Play.is_menu());
-        for sc in [
-            Scene::Hearth,
-            Scene::Level,
-            Scene::Skills { edit: true },
-            Scene::Shop,
-        ] {
-            assert_eq!(back(sc), Go::Back, "{sc:?} closes to where it opened");
-            assert!(sc.is_menu());
-        }
         // 0158 → 0161: 기술 화면 — 단을 사는 것·칸을 여는 것은 "올리기"에서, 되돌리기는 "취소"에서. 답하면 화면으로 돌아온다.
         assert_eq!(ask_default(Ask::Skill(0)), 0);
         assert_eq!(ask_default(Ask::Respec), 1);
         assert_eq!(answer(Ask::Skill(3), true), (Go::Back, false));
         assert_eq!(answer(Ask::Respec, true), (Go::Back, false));
-        for edit in [false, true] {
-            assert_eq!(
-                Scene::Skills { edit }.layer(),
-                Layer::Window { hud: false },
-                "shows its own points and embers"
-            );
-        }
-        // 칸의 동작 목록은 기술 화면 위에 얹는 작은 창(아래 칸을 그대로 깐다).
+        // 칸의 동작 목록·후보 목록은 탭 위에 얹는 창(닫으면 그 칸으로).
         assert_eq!(Scene::SkillAct.layer(), Layer::Modal);
         assert_eq!(focus(Scene::SkillAct), 0, "the primary row");
+        assert!(Scene::SkillAct.is_menu());
+        assert_eq!(back(Scene::SkillAct), Go::Back);
+        assert_eq!(back(Scene::EquipPick { slot: 0 }), Go::Back);
         for k in [
             Ask::Restart,
             Ask::ToTitle,
@@ -533,7 +789,6 @@ mod tests {
         // 커서: 버리는 일은 취소에서, 사기는 사기에서 — 여는 순간의 포커스(0066).
         assert_eq!(focus(Scene::Ask(Ask::Restart)), 1);
         assert_eq!(focus(Scene::Ask(Ask::Buy(0))), 0);
-        assert_eq!(focus(Scene::Pause), 0);
         assert_eq!(
             choose_result(ResultItem::Retry),
             (Go::Root(Scene::Play), true)
@@ -557,38 +812,23 @@ mod tests {
                 crate::DESKTOP as usize
             );
         }
-        assert_eq!(
-            choose_pause(PauseItem::Settings),
-            (Go::Open(Scene::Settings), false),
-            "the run is kept"
-        );
-        assert_eq!(
-            choose_pause(PauseItem::Weapon),
-            (Go::Open(Scene::Equip), false)
-        );
         // 0105: 핵 고르기는 없다 — 이겨도 져도 결과.
         assert_eq!(after_ending(true), Scene::Result { won: true });
         assert_eq!(after_ending(false), Scene::Result { won: false });
         assert!(Scene::Controls.is_menu());
-        assert!(Scene::Settings.is_menu());
-        assert!(!settings_rows(false, true).contains(&SettingsRow::Fullscreen));
-        assert!(!settings_rows(true, false).contains(&SettingsRow::MouseAim));
-        for (f, m) in [(false, false), (true, true), (true, false)] {
-            let r = settings_rows(f, m);
-            assert_eq!(r[r.len() - 2..], [SettingsRow::Controls, SettingsRow::Back]);
-        }
     }
 
     #[test]
     fn layers_put_the_hud_only_under_windows_that_lack_it() {
         assert_eq!(Scene::Title.layer(), Layer::Screen);
         assert_eq!(Scene::Play.layer(), Layer::Game);
-        assert_eq!(Scene::Pause.layer(), Layer::Window { hud: true });
         assert_eq!(
             Scene::Shop.layer(),
             Layer::Window { hud: false },
             "shows its own embers"
         );
+        #[cfg(feature = "dev")]
+        assert_eq!(Scene::Lab.layer(), Layer::Window { hud: true });
     }
 
     #[test]
@@ -620,7 +860,7 @@ mod tests {
     }
 
     /// 0094(사장 2026-11-07 "연구소 메뉴가 바깥(첫 화면 메뉴나 멈춤 화면 메뉴)에서도 표시됨"): 바깥 메뉴엔 연구소가 없고
-    /// 설정 바로 아래가 개발 — 연구소는 개발 창 도구 탭에서만(`app/dev.rs`).
+    /// 타이틀은 설정 바로 아래가 개발 — 연구소는 개발 창 도구 탭에서만(`app/dev.rs`). 멈춤의 개발 줄은 설정 탭의 끝 묶음(0164).
     #[cfg(feature = "dev")]
     #[test]
     fn menus_have_dev_below_settings_and_no_lab() {
@@ -631,27 +871,24 @@ mod tests {
             // + 끝내기(PC, 0135 — 맨 끝).
             assert_eq!(t.len(), 3 + has_save as usize + crate::DESKTOP as usize);
         }
-        // 멈춤엔 연구소가 없고 그 자리(설정 아래)에 개발 줄(0090) — 연구소는 개발 창의 도구 탭에서.
-        let p = pause_items();
-        let i = p.iter().position(|x| *x == PauseItem::Settings).unwrap();
-        assert_eq!(p.get(i + 1), Some(&PauseItem::Dev));
-        // 계속 · 장비 · 도감(0130) · 기술(0161 — 나무 줄이 들어갔다) · 설정 · 개발 · 처음부터 · 타이틀로(헤드리스 스크립트가 이 차례로 간다).
-        assert_eq!(p.len(), 8);
-        assert_eq!(p[3], PauseItem::Skills);
-        // 멈춤에서 여는 기술 화면은 읽기·끼우기만(올리는 것은 쉼터 화로).
+        // 멈춤의 설정 탭: … 조작 설정 · 개발 · 처음부터 · 타이틀로(헤드리스 스크립트가 끝에서 위로 센다).
+        let p = settings_rows(true, true, Host::Pause);
         assert_eq!(
-            choose_pause(PauseItem::Skills),
-            (Go::Open(Scene::Skills { edit: false }), false)
+            p[p.len() - 4..],
+            [
+                SettingsRow::Controls,
+                SettingsRow::Dev,
+                SettingsRow::Restart,
+                SettingsRow::ToTitle
+            ]
         );
-        assert_eq!(p[2], PauseItem::Codex);
         assert_eq!(
-            choose_pause(PauseItem::Codex),
-            (Go::Open(Scene::Codex { tab: 0 }), false)
+            choose_settings(SettingsRow::Dev),
+            Some(Go::Open(Scene::Dev { tab: 0 }))
         );
-        for fs in [false, true] {
-            for mouse in [false, true] {
-                assert_eq!(settings_rows(fs, mouse).len() >= 4, true);
-            }
+        // 화로·타이틀의 설정에는 개발 줄이 없다(타이틀은 제 줄이 있다).
+        for host in [Host::Title, Host::Hearth] {
+            assert!(!settings_rows(true, true, host).contains(&SettingsRow::Dev));
         }
     }
 }

@@ -35,6 +35,10 @@ pub const LAB_HINT: Pair = (
     "default {1} | {2} x10 | confirm = default",
 );
 pub const DEV_TITLE: Pair = ("개발", "DEV");
+pub const DEV_ROW_D: Pair = (
+    "개발 창을 연다 — 스테이지·시나리오·도구를 고른다.",
+    "open the dev window: stages, scenarios, tools",
+);
 pub const TAB_TOOLS: Pair = ("도구", "tools");
 pub const TAB_STAGE: Pair = ("스테이지", "stage");
 pub const TAB_COMBAT: Pair = ("전투·적", "combat");
@@ -107,6 +111,7 @@ pub const PAIRS: &[Pair] = &[
     NOTE_USING,
     LAB_HINT,
     DEV_TITLE,
+    DEV_ROW_D,
     TAB_TOOLS,
     TAB_STAGE,
     TAB_COMBAT,

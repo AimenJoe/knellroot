@@ -23,9 +23,7 @@ impl App {
                     self.go(Go::Back);
                 }
             }
-            s if s.ticks_world() || matches!(s, Scene::Pause | Scene::Settings) => {
-                self.go(Go::Open(Scene::Lab))
-            }
+            s if s.ticks_world() || flow::tab_of(s).is_some() => self.go(Go::Open(Scene::Lab)),
             _ => {}
         }
     }

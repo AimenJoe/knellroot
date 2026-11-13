@@ -258,7 +258,9 @@ impl App {
                 self.go(Go::Root(Scene::Sandbox));
             }
             DevStart::Lab => self.go(Go::Open(Scene::Lab)),
-            DevStart::Skills => self.open_skills(false),
+            DevStart::Skills => self.show(Go::Open(Scene::Skills {
+                host: flow::Host::Pause,
+            })),
             // 기술 판(0158): 메모리의 덮어쓰기만 바꾼다 — 기록(`progress`)과 슬롯은 건드리지 않는다. 창은 그대로(설명 줄이 상태를 보인다).
             DevStart::SkillsMax | DevStart::SkillsFlip => {
                 self.dev_board = dev_board_step(self.dev_board, e);

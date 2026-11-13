@@ -102,19 +102,30 @@ async function main() {
   await touch('touchStart', [b.pause]); await page.waitForTimeout(300);
   await touch('touchEnd', []); await page.waitForTimeout(400);
   await shot('t10-pause-stays');
-  // 장비 창 터치(2026-11-06): 멈춤 → 장비 → 칸은 두 걸음(누르면 고르기, 다시 누르면 후보) → 후보도 두 걸음(고르기 = 미리 보기, 다시 = 끼우기).
-  // 자리는 844×390에서 잰 값(`app::equip` 창 440×226 기준 — 창 크기를 바꾸면 함께).
-  // 0076·0077 → 0117: 새 기록의 무기 후보 = 맨손 · 검(착용 중)뿐(무기는 상자에서 얻는다). 맨손은 첫 줄 —
-  // 같은 자리의 둘째 탭이 끼운다(한 줄 = 13 × 1.75 u).
-  const SWORD_BOX = [154, 135], PICK_ROW = [560, 128 - 13 * 1.75 * H / 270], CHARM_BOX = [410, 77];
-  // 멈춤 창 줄 자리는 줄 수로 계산한다(`app::menu` draw_menu·panel_rect — 480×270 기준 단위 u, 제목 30·줄 13×1.75·아래 8,
-  // 창은 위 6u와 아래 안내 줄(2.8글) 사이 가운데). 2026-11-07: 숫자로 박아 둔 자리가 멈춤 줄 수가 바뀌자 다른 줄을 눌렀다.
-  const menuRow = (rows, i) => {
-    const u = H / 270, top = 6 * u, bottom = H - 13 * u * 2.8;
-    const h = (30 + rows * 13 * 1.75 + 8) * u;
-    return [W / 2, top + (bottom - top - h) / 2 + 29 * u + 13 * 1.75 * u * (i + 0.5)];
-  };
-  await tap(menuRow(8, 1)); await page.waitForTimeout(400);   // 멈춤(개발판 여덟 줄 — 나무·도감 0130·설정·개발 0090)의 둘째 줄 "장비"
+  // 장비 탭 터치(2026-11-06 → 0164): 멈춤 = 큰 창(상태 탭에서 열린다) → 탭 머리 "장비"를 누른다 → 칸은 두 걸음(누르면 고르기,
+  // 다시 누르면 그 칸 곁에 후보의 작은 목록) → 후보도 두 걸음(고르기 = 미리 보기, 다시 = 끼우기).
+  // 0076·0077 → 0117: 새 기록의 무기 후보 = 맨손 · 검(착용 중)뿐(무기는 상자에서 얻는다). 맨손은 첫 줄 — 같은 자리의 둘째 탭이 끼운다.
+  // 자리는 코드와 같은 셈(480×270 기준 단위 u): 창 464×228(`app::frame` — 위 6u와 아래 안내 줄(2.8글) 사이 가운데), 머리 줄 22,
+  // 몸의 원점 = 창 + (8, 27). 탭 머리는 왼쪽 10부터 폭 44씩(두 글자 26 + 여백 18, 틈 2 — `ui::window`).
+  // 장비 탭의 칸(`app::equip`): 무기 상자 40(왼쪽 8, 세로 가운데), 장신구 상자 34 × 3(오른쪽 끝에서 8 들여, 사이 6),
+  // 후보 목록은 무기 상자 오른쪽 5에 폭 170 — 줄 높이 13 × 1.75, 위 여백 4.
+  const u = H / 270;
+  const win = (() => {
+    const top = 6 * u, bottom = H - 13 * u * 2.8;
+    const x = (W - 464 * u) / 2, y = top + (bottom - top - 228 * u) / 2;
+    const body = (bx, by) => [x + (8 + bx) * u, y + (27 + by) * u];
+    const boxesTop = (196 - (34 * 3 + 6 * 2)) / 2;
+    return {
+      tab: (i) => [x + (10 + 44 * i + 22) * u, y + 12 * u],
+      weapon: body(8 + 20, 196 / 2),
+      charm: (i) => body(270 - 8 - 17, boxesTop + (34 + 6) * i + 17),
+      pick: (row) => body(8 + 40 + 5 + 85, 196 / 2 - 20 + 4 + 13 * 1.75 * (row + 0.5)),
+    };
+  })();
+  const SWORD_BOX = win.weapon, PICK_ROW = win.pick(0), CHARM_BOX = win.charm(0);
+  await shot('t10a-pause-status');
+  await tap(win.tab(1)); await page.waitForTimeout(400);   // 탭 머리 "장비"(상태 · 장비 · 기술 · 도감 · 설정의 둘째)
+  await shot('t10b-equip-tab');
   await tap(CHARM_BOX); await page.waitForTimeout(300);    // 고르기만(설명이 바뀜)
   await tap(SWORD_BOX); await page.waitForTimeout(300);    // 무기 칸 고르기
   await tap(SWORD_BOX); await page.waitForTimeout(400);    // 다시 = 후보 목록
@@ -124,7 +135,7 @@ async function main() {
   await shot('t13-equip-worn');
   const rec = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('knell.save')).map((k) => localStorage.getItem(k)).join('\n'));
   if (!/weapon=fists/i.test(rec)) errors.push('touch equip: two taps on bare hands should wear them: ' + JSON.stringify(rec));
-  await tap([W - 4, H - 4]); await page.waitForTimeout(300);
+  // 창 밖을 누르면 창이 닫힌다(어느 탭에서든 한 번에 — 0164).
   await tap([W - 4, H - 4]); await page.waitForTimeout(300);
   await shot('t11-pause-closed');
   // 세로로 든 폰(0082): 회전 안내(#rotate)가 덮인다. 누르면 전체 화면 + 가로 잠금을 해 보고, 잠금이 안 되면(헤드리스·iPhone) 세로로 계속.

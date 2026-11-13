@@ -1,4 +1,4 @@
-//! 앱(0019): 장면(타이틀 → 싸움 → 멈춤 → 끝 → 결과)과 프레임 루프. 흐름은 `flow.rs`의 순수 함수가 정하고 여기서는 그대로 한다.
+//! 앱(0019): 장면(타이틀 → 싸움 → 큰 창(멈춤·화로, 0164) → 끝 → 결과)과 프레임 루프. 흐름은 `flow.rs`의 순수 함수가 정하고 여기서는 그대로 한다.
 //! 월드는 메뉴를 모르고, 스테이지(`stage`)는 월드를 지켜보며 진행만 하고, 앱이 둘을 묶어 카메라·그림·글로 보낸다.
 //!
 //! 루프: 프레임마다 입력 폴링 → 고정 60Hz 틱 N번(장면 → 월드 → 스테이지 → 카메라) → 가변 렌더(보간) → 글·메뉴(화면 패스).
@@ -11,11 +11,9 @@ mod dev;
 mod equip;
 pub mod flow;
 mod frame;
-mod hearth;
 #[cfg(feature = "dev")]
 mod lab_screen;
 mod menu;
-mod pause;
 mod play;
 mod progress;
 mod settings;
@@ -23,6 +21,8 @@ mod shop;
 mod skills;
 mod slots;
 mod stack;
+mod status;
+mod tabs;
 mod title;
 
 use macroquad::prelude::*;
@@ -42,9 +42,9 @@ use crate::tuning::{Tuning, MAX_FRAME_DT, TICK_DT};
 use crate::ui::{self, Ui, AMBER, DIM, INK};
 use crate::weapons;
 use crate::world::{Event, World};
-use flow::{Go, Layer, PauseItem, ResultItem, Scene, SettingsRow, TitleItem};
+use equip::next_charm;
+use flow::{Go, Layer, ResultItem, Scene, SettingsRow, TitleItem};
 use menu::Hit;
-use pause::next_charm;
 
 /// 타이틀 메뉴 첫 줄의 자리(화면 높이 비율) — `tools/test/touch.js`가 같은 값으로 탭한다.
 const TITLE_MENU_Y: f32 = 0.37;
@@ -80,6 +80,8 @@ pub struct App {
     down: usize,
     rest_at: Option<crate::save::RunAt>,
     passage: Option<crate::descent::Passage>,
+    /// 이 판에서 멈춤 창이 마지막에 보던 탭(0164) — 다음에 멈추면 거기서 열린다(`flow::pause`). 판에 붙은 한 칸: 새 판이면 상태로.
+    pause_tab: flow::Tab,
     /// 주민 말풍선(0122): (주민 — 지금 지역의 번호, 몇째 말, 남은 초). 멈추지 않는다.
     bubble: Option<(usize, usize, f32)>,
     /// 새긴 돌 글 판(0129): (지금 지역의 돌 번호, 남은 초).
@@ -225,6 +227,7 @@ impl App {
             down: 0,
             rest_at: None,
             passage: None,
+            pause_tab: flow::Tab::Status,
             bubble: None,
             stone_card: None,
             clock: 0.0,
@@ -285,6 +288,7 @@ impl App {
         self.down = 0;
         self.rest_at = None;
         self.passage = None;
+        self.pause_tab = flow::Tab::Status;
         // 잔불은 판을 넘어 남는다(0064 M1). 장신구·성장은 능력치로, 연 상자는 비어 있다(M3).
         self.world.embers = self.progress.embers;
         self.world.apply_stats(self.progress.stats(), true);
@@ -388,7 +392,7 @@ impl App {
         self.go(Go::Open(Scene::Ask(k)));
     }
 
-    /// 무기를 바꾼다(0051, 멈춤 메뉴): 지금 판에 바로, 저장.
+    /// 무기를 바꾼다(0051, 장비 탭의 빨리 바꾸기): 지금 판에 바로, 저장.
     fn next_weapon(&mut self, step: i32) {
         // 가진 무기 사이에서만(0117).
         let arms = self.arms();
@@ -567,18 +571,35 @@ impl App {
             self.toggle_lab();
             return;
         }
+        // 큰 창의 탭(0164): 탭 넘기기(스킬 버튼 둘·탭 머리)가 먼저 — 넘겼으면 그 틱은 끝.
+        let swapped = flow::tab_of(self.scene()).is_some() && self.tab_input(&a);
+        if !swapped {
+            self.tick_top(a);
+        }
+        // 창이 열린 동안 카메라는 계속 따라간다(타이틀 바탕·화로) — 판 위의 멈춤 아래에서는 그대로 선다.
+        if self.scene().is_menu() && !self.paused() {
+            self.follow_camera();
+        }
+    }
+
+    /// 멈춤에서 연 창(과 그 위의 작은 창들)이 떠 있나.
+    fn paused(&self) -> bool {
+        self.stack
+            .any(|sc| matches!(flow::tab_of(sc), Some((flow::Host::Pause, _))))
+    }
+
+    /// 맨 위 장면의 한 틱.
+    fn tick_top(&mut self, a: Actions) {
         match self.scene() {
             Scene::Title => self.tick_title(a),
             Scene::Ask(k) => self.tick_ask(&a, k),
-            Scene::Equip => self.tick_equip(&a),
-            Scene::Skills { edit } => self.tick_skills(&a, edit),
+            Scene::Equip { .. } => self.tick_equip(&a),
+            Scene::Skills { host } => self.tick_skills(&a, host.edits()),
             Scene::SkillAct => self.tick_skill_act(&a),
-            Scene::Codex { tab } => self.tick_codex(&a, tab as usize),
+            Scene::Codex { host, tab } => self.tick_codex(&a, host, tab as usize),
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
-            s @ (Scene::Pause
-            | Scene::Settings
-            | Scene::Hearth
-            | Scene::Level
+            s @ (Scene::Status { .. }
+            | Scene::Settings { .. }
             | Scene::Shop
             | Scene::Result { .. }) => self.tick_menu(&a, s),
             #[cfg(feature = "dev")]
@@ -600,10 +621,6 @@ impl App {
             #[cfg(feature = "dev")]
             Scene::Sandbox => self.tick_sandbox(a),
         }
-        // 창이 열린 동안 카메라는 계속 따라간다(타이틀 바탕·가게·핵 고르기) — 판 위의 멈춤 아래에서는 그대로 선다.
-        if self.scene().is_menu() && !self.stack.holds(Scene::Pause) {
-            self.follow_camera();
-        }
     }
 
     /// 목록 화면 한 틱(0066): 줄 표 → 입력 → 화면의 고름.
@@ -618,10 +635,8 @@ impl App {
     /// 장면의 줄 표(목록 화면만 — 제 그림을 갖는 화면은 `None`). `_` 없는 match: 새 장면이면 컴파일러가 묻는다.
     fn menu_of(&self, scene: Scene) -> Option<menu::Menu> {
         match scene {
-            Scene::Pause => Some(self.pause_menu()),
-            Scene::Settings => Some(self.settings_menu()),
-            Scene::Hearth => Some(self.hearth_menu()),
-            Scene::Level => Some(self.level_menu()),
+            Scene::Settings { host } => Some(self.settings_menu(host)),
+            Scene::Status { .. } => Some(self.level_menu()),
             Scene::Shop => Some(self.shop_menu()),
             Scene::Result { won } => Some(self.result_menu(won)),
             Scene::Slots { load } => Some(self.slots_menu(load)),
@@ -634,7 +649,7 @@ impl App {
             | Scene::Ending { .. }
             | Scene::Controls
             | Scene::Ask(_)
-            | Scene::Equip
+            | Scene::Equip { .. }
             | Scene::Skills { .. }
             | Scene::SkillAct
             | Scene::Codex { .. }
@@ -647,10 +662,8 @@ impl App {
     /// 목록 화면의 고름을 그 화면에(뒤로는 몰이꾼이 한다).
     fn act(&mut self, scene: Scene, out: menu::Out) {
         match scene {
-            Scene::Pause => self.pause_act(out),
-            Scene::Settings => self.settings_act(out),
-            Scene::Hearth => self.hearth_act(out),
-            Scene::Level => self.level_act(out),
+            Scene::Settings { host } => self.settings_act(host, out),
+            Scene::Status { host } => self.level_act(host, out),
             Scene::Shop => self.shop_act(out),
             Scene::Result { .. } => self.result_act(out),
             // 슬롯 창은 제 틱(`tick_slots`)이 고름을 한다(빈 줄 건너뛰기·두 번째 누름).
@@ -664,7 +677,7 @@ impl App {
             | Scene::Ending { .. }
             | Scene::Controls
             | Scene::Ask(_)
-            | Scene::Equip
+            | Scene::Equip { .. }
             | Scene::Skills { .. }
             | Scene::SkillAct
             | Scene::Codex { .. }
@@ -692,14 +705,10 @@ impl App {
         let overlay = self.input.overlay();
         self.hits.clear();
         self.draw_layered(&f, self.scene());
+        // 큰 창은 화면을 다 써서 알림을 제 오른쪽 칸의 상태 줄에 보인다(`draw_pane_head`) — 여기서는 싸움·타이틀만.
         if matches!(
             self.scene(),
-            Scene::Play
-                | Scene::Ending { .. }
-                | Scene::Hearth
-                | Scene::Level
-                | Scene::Shop
-                | Scene::Title
+            Scene::Play | Scene::Ending { .. } | Scene::Title
         ) {
             self.draw_toast(&f);
         }
@@ -785,16 +794,24 @@ impl App {
             Scene::Title => self.draw_title(f),
             Scene::Ask(k) => self.draw_ask(f, k),
             Scene::Controls => self.draw_controls(f),
-            Scene::Equip => self.draw_equip(f, self.cursor, None),
-            Scene::Skills { edit } => self.draw_skills(f, self.cursor, edit),
+            Scene::Status { host } => self.draw_status(f, host),
+            Scene::Equip { host } => self.draw_equip(f, host, self.cursor, None),
+            Scene::Skills { host } => self.draw_skills(f, self.cursor, host),
             Scene::SkillAct => self.draw_skill_act(f),
-            Scene::Codex { tab } => self.draw_codex(f, tab as usize),
+            Scene::Codex { host, tab } => self.draw_codex(f, host, tab as usize),
+            Scene::Shop => self.draw_shop(f),
+            Scene::Settings { host } => self.draw_settings(f, host),
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.draw_dev_screen(f, tab as usize),
             Scene::EquipPick { slot } => {
-                // 칸 커서는 아래 칸(장비 창)의 것.
-                let at = self.stack.under().map_or(slot as usize, |e| e.cursor);
-                self.draw_equip(f, at, Some(slot as usize));
+                // 칸 커서·연 곳은 아래 칸(장비 탭)의 것.
+                let under = self.stack.under().copied();
+                let at = under.map_or(slot as usize, |e| e.cursor);
+                let host = match under.map(|e| e.scene) {
+                    Some(Scene::Equip { host }) => host,
+                    _ => flow::Host::Pause,
+                };
+                self.draw_equip(f, host, at, Some(slot as usize));
             }
             s => {
                 if let Some(m) = self.menu_of(s) {
@@ -829,16 +846,10 @@ impl App {
         if let Some((text, t)) = &self.toast {
             let a = (t / 0.6).min(1.0);
             let cx = f.ox + f.w * 0.5;
-            // 화로 가게에서는 목록을 가리지 않게 맨 위에.
-            let y = if matches!(self.scene(), Scene::Hearth | Scene::Level | Scene::Shop) {
-                0.04
-            } else {
-                0.3
-            };
             self.ui.text_center(
                 text,
                 cx,
-                f.oy + f.h * y,
+                f.oy + f.h * 0.3,
                 1.2,
                 Color::new(AMBER.r, AMBER.g, AMBER.b, a),
             );

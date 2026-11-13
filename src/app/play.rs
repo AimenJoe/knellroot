@@ -20,12 +20,12 @@ impl App {
         }
         // 세로로 든 폰(0082): 회전 안내가 덮인 동안 싸움이 흐르지 않게 멈춤으로(nail 0269 꼴).
         if a.pause || crate::screen::portrait_blocked() {
-            self.go(flow::pause(self.scene()));
+            self.show(flow::pause(self.scene(), self.pause_tab));
             return;
         }
-        // Select(Tab) = 장비 창 바로(0070 6 A — 멈춤을 거치지 않는다, 닫으면 싸움으로).
+        // Select(Tab) = 큰 창의 장비 탭 바로(0070 6 A → 0164, 닫으면 싸움으로).
         if a.equip {
-            self.go(Go::Open(Scene::Equip));
+            self.show(Go::Open(flow::SELECT_OPENS));
             return;
         }
         let a = self.cursor_aim(a);
@@ -91,7 +91,7 @@ impl App {
             || self.progress.board.can_buy(self.progress.skill_points());
         if self.run.take_rested() {
             self.snd(crate::sfx::Id::Rest);
-            self.go(Go::Open(Scene::Hearth));
+            self.show(Go::Open(flow::HEARTH_OPENS));
         }
         // 문지기가 깨어나는 순간(0064 M5): 낮은 땅울림.
         let waking = matches!(self.run.phase, crate::stage::Phase::Waking(_));
