@@ -49,8 +49,10 @@ fn u(f: &Frame) -> f32 {
 
 /// `under_menu`: 메뉴(멈춤)가 위에 뜬다 — 아래 가운데 보스 띠는 메뉴 안내와 겹쳐 그리지 않는다(KB hud-readability: 창이 덮는 HUD는 뺀다).
 /// 갈 곳이 화면 밖일 때 가장자리 화살(0060 W1, nail 0159 출구 표시와 같은 장치): `at` 화면 자리, `ang` 화면 방향(라디안, y 아래),
-/// 호박색 삼각형이 바깥을 가리키고 안쪽에 작은 마름모(갈 곳), 어두운 테두리로 어느 바닥 위에서도, 맥박. 색만이 아니라 모양으로 읽힌다.
-pub fn draw_goal_arrow(f: &Frame, at: Vec2, ang: f32, time: f32) {
+/// 삼각형이 바깥을 가리키고 안쪽에 작은 마름모(갈 곳), 어두운 테두리로 어느 바닥 위에서도, 맥박. 색만이 아니라 모양으로 읽힌다.
+/// 빛을 받는다: 호박색 = 갈 곳(0060 — 그 뜻은 이 색 하나가 끝까지 지닌다), 잿빛 `FOE_INK` = "저쪽에 적이 있다"(0170 — 튜토리얼이
+/// 벨 상대를 가리킬 때. 갈 길의 색을 쓰지 않는다).
+pub fn draw_edge_arrow(f: &Frame, at: Vec2, ang: f32, time: f32, ink: Color) {
     let s = f.ui * (7.0 + 1.0 * (time * 4.0).sin());
     let d = vec2(ang.cos(), ang.sin());
     let n = vec2(-d.y, d.x);
@@ -63,12 +65,15 @@ pub fn draw_goal_arrow(f: &Frame, at: Vec2, ang: f32, time: f32) {
     let shade = Color::new(0.05, 0.04, 0.06, 0.8);
     let grow = |p: Vec2| at + (p - at) * 1.35;
     draw_triangle(grow(tip), grow(l), grow(r), shade);
-    draw_triangle(tip, l, r, AMBER);
+    draw_triangle(tip, l, r, ink);
     let c = at - d * s * 1.9;
     let k = s * 0.45;
     draw_poly(c.x, c.y, 4, k + f.ui * 1.2, 0.0, shade);
-    draw_poly(c.x, c.y, 4, k, 0.0, AMBER);
+    draw_poly(c.x, c.y, 4, k, 0.0, ink);
 }
+
+/// 적 쪽 화살의 빛(0170): 적의 잿빛(`light::enemy_tint`이 만드는 몸빛)과 같은 줄기 — 색 없는 밝은 회색.
+pub const FOE_INK: Color = Color::new(0.82, 0.80, 0.78, 1.0);
 
 /// 박자 타의 스태미나 막대 반짝임(초).
 const BEAT_GLINT: f32 = 0.4;

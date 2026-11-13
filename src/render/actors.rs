@@ -131,7 +131,7 @@ impl Renderer {
             let tint = if flash {
                 Color::new(1.8, 1.8, 1.8, 1.0)
             } else {
-                WHITE
+                super::light::enemy_tint()
             };
             self.batch.model(e, &self.pose, inst, tint, lights, glow);
             // 손을 떠난 종(0133): 성소 종 소품의 종 몸만(나무 틀은 감춘다), 날아가는 동안 돈다.

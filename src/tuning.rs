@@ -463,6 +463,10 @@ pub enum P {
     SkillChord,
     SkillGaugeHit,
     SkillGaugeParry,
+    /// 적이 바닥에서 떠 보이게(0170 — 사장 "적들도 배경색이랑 비슷해서 눈에 잘 안 띔"): 적 모델에만 곱하는 밝기와,
+    /// 달빛에 물든 색을 잿빛으로 되돌리는 몫(0 = 그대로 · 1 = 다).
+    RenderEnemyLift,
+    RenderEnemyAsh,
 }
 
 /// 랩이 읽는 칸(이름·걸음·범위·내보내기 이름)은 개발판에만 쓰인다(운영판에는 랩이 없다, 0070).
@@ -494,7 +498,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 162] = [
+pub const SPECS: [Spec; 164] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1776,6 +1780,26 @@ pub const SPECS: [Spec; 162] = [
         0.0,
         0.5,
         0.01
+    ),
+    // 적의 가독성(0170): 잰 수로 적은 바닥과 밝기·색이 같았다(잔재 49 : 바닥 50, 색상 243° : 241°) — "색을 잃은 잿빛"(0037)이
+    // 남보라 달빛을 받아 바닥색이 됐다. 적에게만 밝기를 더 곱하고(1 = 예전), 달빛의 물을 빼 잿빛으로 되돌린다(0 = 예전).
+    spec!(
+        RenderEnemyLift,
+        "render.enemy lift",
+        "RENDER_ENEMY_LIFT",
+        1.45,
+        1.0,
+        2.5,
+        0.05
+    ),
+    spec!(
+        RenderEnemyAsh,
+        "render.enemy ash",
+        "RENDER_ENEMY_ASH",
+        0.8,
+        0.0,
+        1.0,
+        0.05
     ),
 ];
 

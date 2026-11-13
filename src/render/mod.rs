@@ -360,6 +360,8 @@ impl Renderer {
             rows: ih as f32,
             calm: t[crate::tuning::P::RenderFloorCalm] >= 0.5,
             key: t[crate::tuning::P::RenderKeyLight] >= 0.5,
+            enemy_lift: t[crate::tuning::P::RenderEnemyLift],
+            enemy_ash: t[crate::tuning::P::RenderEnemyAsh],
         });
         set_camera(&c3);
         // 바람(0142): 시각은 초당 열두 번으로 끊는다(낮은 해상도에서 풀이 기어가지 않고 "도트 움직임"으로), 땅속은 약하게.

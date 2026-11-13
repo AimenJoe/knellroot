@@ -583,6 +583,9 @@ pub struct StageRun {
     first_card: bool,
     /// 쉼터 화로들(지도 `R`).
     pub rests: Vec<Vec3>,
+    /// 바깥에서 얹는 갈 곳(0170 — 튜토리얼이 "쉼터로"를 가리킬 때의 그 쉼터): 진행의 갈 곳(`goal`의 문·핵)이 없을 때만 쓰인다.
+    /// 앱이 틱마다 다시 정한다(없으면 `None`).
+    pub guide: Option<Vec3>,
     /// 마지막으로 쉰 쉼터와, 쓰러지면 되돌아갈 진행 단계(쉰 때의 단계 — 물결 전이면 입구, 물결을 끝냈으면 문 앞).
     pub rest_at: Option<(usize, Phase)>,
     /// 곁에 있는 쉼터(HUD·터치 버튼), 지금 쉴 수 있나(가까운 깨어 있는 적이 없다).
@@ -705,6 +708,7 @@ impl StageRun {
             zone: 0,
             card: None,
             objective: None,
+            guide: None,
             intro: INTRO_TIME,
             wave_ids: Vec::new(),
             boss: None,
@@ -1466,7 +1470,8 @@ impl StageRun {
         }
     }
 
-    /// 지금 가야 할 곳(0060 W1 길 안내): 문이 열렸으면 문, 핵이 남았으면 핵. 싸우는 동안·입구 길은 없음.
+    /// 지금 가야 할 곳(0060 W1 길 안내): 문이 열렸으면 문, 핵이 남았으면 핵. 싸우는 동안·입구 길은 없음 — 그때는 바깥에서
+    /// 얹은 갈 곳(`guide`, 0170 — 튜토리얼의 쉼터)이 있으면 그것.
     /// 렌더는 여기에 호박색 빛기둥을, HUD는 화면 밖이면 가장자리 화살을 그린다.
     pub fn goal(&self) -> Option<Vec3> {
         match self.phase {
@@ -1475,6 +1480,7 @@ impl StageRun {
             Phase::Down => self.down_at,
             _ => None,
         }
+        .or(self.guide)
     }
 
     /// 문지기가 깨어나는 진행(0..1, 렌더의 `wake` 동작). 깨어나기 전 0, 다 깨면 1.
@@ -1730,6 +1736,11 @@ mod tests {
         assert_eq!(run.phase, Phase::Entrance);
         assert!(run.gate_closed);
         assert_eq!(run.goal(), None, "the way to the gate is to be found");
+        // 0170: 바깥에서 얹은 갈 곳(튜토리얼의 쉼터)은 진행의 갈 곳이 없을 때만 — 문이 열리면 문이 먼저다.
+        let hearth = run.rests[0];
+        run.guide = Some(hearth);
+        assert_eq!(run.goal(), Some(hearth));
+        run.guide = None;
         assert!(run.objective.is_some());
         // 문 장치를 당긴다.
         pull_lever(&mut run, &mut w);
@@ -1737,6 +1748,13 @@ mod tests {
         assert!(!run.gate_closed && run.gate_opened);
         assert!(run.take_gate_new(), "the app records it");
         assert!(!run.take_gate_new(), "once");
+        run.guide = Some(hearth);
+        assert_eq!(
+            run.goal(),
+            run.level.gate.map(|(_, c)| c),
+            "the open gate comes first"
+        );
+        run.guide = None;
         // 0060 W1: 문이 열리면 갈 곳 = 문. 싸우는 동안은 없다.
         assert_eq!(run.goal(), run.level.gate.map(|(_, c)| c));
         // 성소 안으로.

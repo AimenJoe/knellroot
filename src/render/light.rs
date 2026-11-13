@@ -19,6 +19,20 @@ pub struct Look {
     pub calm: bool,
     /// 빛 대비(0140): 센 달빛 + 낮고 차가운 바탕빛 — 그림자가 또렷하다(`lit`·지형 굽기가 본다).
     pub key: bool,
+    /// 적의 가독성(0170): 적 모델에만 곱하는 밝기(1 = 없음)와 달빛의 물을 빼는 몫(0 = 없음) — `enemy_tint`.
+    pub enemy_lift: f32,
+    pub enemy_ash: f32,
+}
+
+/// 달빛에 물든 색을 되돌리는 곱(0170): 남보라 빛을 받은 잿빛에 이것을 곱하면 붉은 쪽이 살고 푸른 쪽이 눌려 중성 잿빛이 된다.
+const ASH: Color = Color::new(1.0, 0.93, 0.70, 1.0);
+
+/// 적 모델의 색조(0170): 바닥과 같은 밝기·같은 색으로 묻히지 않게 — 더 밝게, 달빛의 물을 뺀 잿빛으로. "침식 = 색을 잃은 것"
+/// (0037)이 남보라 세계에서 **색이 없어서** 눈에 띄게 한다(위험의 빨강·산 것의 파스텔은 건드리지 않는다).
+pub fn enemy_tint() -> Color {
+    let k = look();
+    let mix = |c: f32| (1.0 + (c - 1.0) * k.enemy_ash) * k.enemy_lift;
+    Color::new(mix(ASH.r), mix(ASH.g), mix(ASH.b), 1.0)
 }
 
 thread_local! {
@@ -32,6 +46,8 @@ thread_local! {
             rows: INTERNAL_H as f32,
             calm: false,
             key: false,
+            enemy_lift: 1.0,
+            enemy_ash: 0.0,
         })
     };
 }

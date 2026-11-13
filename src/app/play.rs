@@ -315,6 +315,8 @@ impl App {
     /// 한 틱의 월드를 튜토리얼이 본다(0167): 걸은 거리·맞힌 타·회피·패링·쓴 스킬을 쌓고 끝난 걸음을 넘긴다. 걸음이
     /// 바뀌면 기록에 적는다(이어하면 그 걸음부터). 월드는 튜토리얼을 모른다 — 소리·이펙트와 같은 길.
     fn tutor_watch(&mut self, events: &[Event]) {
+        // 길 안내(0170)는 틱마다 다시 정한다 — 튜토리얼이 꺼졌으면 걷는다.
+        self.run.guide = None;
         if !self.tutor_on() {
             return;
         }
@@ -345,6 +347,21 @@ impl App {
         if self.tutor.tick(&facts, fight, TICK_DT) {
             self.progress.tutorial = self.tutor.at;
             self.persist();
+        }
+        // 길 안내(0170 — KB wayfinding: 갈 곳이 화면에 말한다): 걸음이 쉼터에서 할 일이면 가장 가까운 쉼터에 갈 곳의
+        // 빛기둥·화살을 얹는다. 싸우는 동안은 비운다(화살이 싸움을 가리지 않게).
+        let to_hearth = matches!(
+            self.tutor.step(),
+            Some(crate::tutorial::Step::Learn | crate::tutorial::Step::Level)
+        ) && self.tutor.step().is_some_and(|s| s.shown(&facts));
+        if to_hearth && !fight {
+            let at = self.world.player.pos;
+            self.run.guide = self
+                .run
+                .rests
+                .iter()
+                .copied()
+                .min_by(|a, b| a.distance(at).total_cmp(&b.distance(at)));
         }
         // 상(0169): 몸의 걸음 넷을 마쳤다 — 기술 점수 하나. 기록의 몫에 적어 한 번만(이어한 판도 지금의 상태로 본다).
         // 잔불·레벨은 건드리지 않는다(0109·0123의 "한 판 ≈ 한 레벨"은 그대로 — 첫 스킬만 그 뒤로 밀리지 않게).
@@ -390,8 +407,33 @@ impl App {
         }
     }
 
+    /// 튜토리얼이 벨 상대를 찾게 하는 걸음(공격·패링)에서 가장 가까운 적의 자리(0170) — 곁에 깨어 있는 적이 없을 때만
+    /// (싸우는 동안은 화살이 필요 없다). 갈 곳(`StageRun::goal`)이 따로 있으면 그것이 먼저다.
+    fn tutor_foe(&self) -> Option<Vec3> {
+        use crate::tutorial::{Step, FIGHT_RANGE};
+        if !self.tutor_on() || !matches!(self.tutor.step(), Some(Step::Attack | Step::Parry)) {
+            return None;
+        }
+        let at = self.world.player.pos;
+        let near = |e: &&crate::enemy::Enemy| e.pos.distance(at) < FIGHT_RANGE;
+        if self.world.enemies.iter().filter(near).any(|e| e.active()) {
+            return None;
+        }
+        self.world
+            .enemies
+            .iter()
+            .filter(|e| e.alive())
+            .map(|e| e.pos)
+            .min_by(|a, b| a.distance(at).total_cmp(&b.distance(at)))
+    }
+
     pub(super) fn draw_goal_arrow(&mut self, f: &Frame) {
-        let mark = self.run.goal().and_then(|g| {
+        // 갈 곳(호박색)이 먼저, 없으면 튜토리얼의 벨 상대(잿빛 — 갈 길의 색을 쓰지 않는다).
+        let (target, ink) = match (self.run.goal(), self.tutor_foe()) {
+            (Some(g), _) => (Some(g), AMBER),
+            (None, foe) => (foe, hud::FOE_INK),
+        };
+        let mark = target.and_then(|g| {
             let (ndc, front) =
                 crate::camera::world_to_ndc(&self.cam.rig, f.w / f.h.max(1.0), g + Vec3::Y);
             crate::camera::edge_marker(ndc, front, GOAL_ARROW_INSET)
@@ -405,7 +447,7 @@ impl App {
                 f.ox + (at.x + 1.0) * 0.5 * f.w,
                 f.oy + (1.0 - at.y) * 0.5 * f.h,
             );
-            hud::draw_goal_arrow(f, p, -ang, self.world.time);
+            hud::draw_edge_arrow(f, p, -ang, self.world.time, ink);
         }
     }
 

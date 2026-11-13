@@ -283,6 +283,8 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("skill.chord s", "두 버튼 함께 누름 창(초)"),
     ("skill.gauge per hit", "큰 기술: 맞힐 때 차는 몫"),
     ("skill.gauge per parry", "큰 기술: 패링 때 차는 몫"),
+    ("render.enemy lift", "적 밝기(1 = 예전)"),
+    ("render.enemy ash", "적 잿빛(0 = 예전)"),
     ("lock.range", "락온 거리 한도"),
     ("lock.lose dist", "락온 풀리는 거리"),
     ("render.face shade", "면 음영"),
