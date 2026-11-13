@@ -733,6 +733,12 @@ impl App {
         if let Some(b) = self.dev_board {
             return b;
         }
+        // 개발 창에서 시작한 판·놀이터(시나리오 — 기록에 안 쓴다): 처음의 둘은 배운 것으로 — 스킬 버튼이 비지 않게
+        // (0166, 무기를 다 드는 `App::arms`와 같은 갈림).
+        #[cfg(feature = "dev")]
+        if self.dev_run || self.stack.base() == Scene::Sandbox {
+            return self.progress.board.with_starters();
+        }
         self.progress.board
     }
 
@@ -951,6 +957,13 @@ impl App {
             return;
         }
         self.snd(crate::sfx::Id::Buy);
+        // 막 배운 스킬은 빈 칸에 저절로(0166 — 처음 배운 스킬이 버튼에 바로 있다).
+        if let Entry::Skill(id) = e {
+            if self.progress.board.rank(e) == 1 {
+                let worn = self.progress.skills.0;
+                self.progress.skills = sk::Worn(self.progress.board.wear_on_learn(worn, id));
+            }
+        }
         let name = entry_text(e).0;
         let text = match e {
             Entry::Cell(_) => fill(s().toast_cell, &[name]),
@@ -964,20 +977,18 @@ impl App {
         self.persist();
     }
 
-    /// 묻는 창에서 "되돌리기": 잔불을 내고 쓴 점수를 모두 돌려받는다(패시브 칸까지) — 끼운 칸에 안 배운 스킬이 남으면 처음의 둘로.
+    /// 묻는 창에서 "되돌리기": 잔불을 내고 쓴 점수를 모두 돌려받는다(패시브 칸까지) — 스킬 칸은 빈 칸이 된다(0166 — 다시 배우면 그 자리에).
     pub(super) fn respec_skills(&mut self) {
-        let mut worn = self.progress.skills.0;
         let mut great = self.progress.ult;
         if !self
             .progress
             .board
-            .respec_paid(&mut self.world.embers, &mut worn, &mut great)
+            .respec_paid(&mut self.world.embers, &mut great)
         {
             self.snd(crate::sfx::Id::Deny);
             return;
         }
         self.progress.embers = self.world.embers;
-        self.progress.skills = sk::Worn(worn);
         self.progress.ult = great;
         self.snd(crate::sfx::Id::Buy);
         self.toast = Some((s().toast_respec.to_string(), ALERT));
@@ -1126,7 +1137,9 @@ impl App {
                 Entry::Skill(id) => {
                     let py = w.at(0.0, top + geo::PIPS_TOP).y.round();
                     draw_pips(c.x, py, e.max(), board.rank(e), ready, false, u * 3.0, fade);
-                    if let (Some(slot), true) = (worn.iter().position(|x| *x == id), whole) {
+                    // 끼운 칸 번호는 배운 스킬에만(안 배운 스킬이 놓인 칸은 빈 칸이다, 0166).
+                    let slot = worn.iter().position(|x| *x == id);
+                    if let (Some(slot), true) = (slot.filter(|_| board.learned(id)), whole) {
                         self.node_badge(c, half, u, k, &(slot + 1).to_string(), true);
                     }
                     if board.rank(e) >= PICK_RANK && whole {
@@ -1613,6 +1626,11 @@ mod tests {
         ENTRIES.iter().position(|x| *x == e).unwrap()
     }
 
+    /// 처음의 둘을 배운 판(0166: 새 판은 아무것도 모른다 — "배운 스킬"의 규칙은 이 판으로 본다).
+    fn started() -> Board {
+        Board::default().with_starters()
+    }
+
     /// 칸의 자리: 모든 칸이 격자 안에 있고 서로 겹치지 않는다. 갈래는 왼쪽부터 흐름·맞받기·자리, 줄은 위부터 — 스킬은 그 줄의
     /// 패시브보다 위에(셋째 줄만 나란히).
     #[test]
@@ -1793,8 +1811,12 @@ mod tests {
     #[test]
     fn the_action_list_holds_only_what_applies_with_the_primary_row_first() {
         let worn = sk::START;
-        let b = Board::default();
+        let b = started();
         let acts = |b: &Board, total, e, edit| node_acts(b, total, worn, Ult::Upend, e, edit);
+        // 0166: 새 판에서는 끼워 둔 자리의 스킬도 안 배운 것 — 화로에서 배우기만, 멈춤에서는 아무것도.
+        let fresh = Board::default();
+        assert_eq!(acts(&fresh, 2, Entry::Skill(Id::Whirl), true), [Do::Buy]);
+        assert!(acts(&fresh, 2, Entry::Skill(Id::Whirl), false).is_empty());
         // 휘돌이(칸 1에 끼움, 1단): 화로에서 점수가 있으면 올리기 + 칸 2에 끼우기.
         assert_eq!(
             acts(&b, 3, Entry::Skill(Id::Whirl), true),
@@ -1816,7 +1838,7 @@ mod tests {
         assert!(open.buy(catch, 3));
         assert!(acts(&open, 3, catch, true).is_empty());
         // 끼우지 않은 배운 스킬: 두 칸 다. 3단부터 고르기 바꾸기(화로에서만).
-        let mut m = Board::default();
+        let mut m = started();
         m.rank[Id::Gather.index()] = 3;
         assert_eq!(
             acts(&m, 9, Entry::Skill(Id::Gather), true),
@@ -1853,7 +1875,17 @@ mod tests {
     /// 밝기 넷: 익힌 칸은 점수가 없어도 익힌 빛(더 올릴 수 있으면 다음 점이 민트), 안 익힌 칸은 살 수 있음 / 점수 모자람 / 줄 잠김.
     #[test]
     fn a_cell_looks_owned_ready_short_or_locked() {
-        let b = Board::default();
+        // 0166: 새 판의 휘돌이는 살 수 있는 칸일 뿐이다.
+        let fresh = Board::default();
+        assert_eq!(
+            look(&fresh, 2, Entry::Skill(Id::Whirl)),
+            (Look::Ready, true)
+        );
+        assert_eq!(
+            look(&fresh, 0, Entry::Skill(Id::Whirl)),
+            (Look::Short, false)
+        );
+        let b = started();
         assert_eq!(look(&b, 5, Entry::Skill(Id::Whirl)), (Look::Owned, true));
         assert_eq!(look(&b, 0, Entry::Skill(Id::Whirl)), (Look::Owned, false));
         assert_eq!(look(&b, 5, Entry::Skill(Id::Gather)), (Look::Ready, true));
@@ -1877,7 +1909,7 @@ mod tests {
     #[test]
     fn the_state_line_says_what_can_be_done_or_why_not() {
         let s = s();
-        let b = Board::default();
+        let b = started();
         let whirl = Entry::Skill(Id::Whirl);
         assert_eq!(
             state_line(&b, 5, whirl, true).0,
@@ -1890,7 +1922,8 @@ mod tests {
         );
         assert_eq!(
             state_line(&b, 5, Entry::Skill(Id::Quake), true).0,
-            fill(s.sk_st_locked, &["4"])
+            fill(s.sk_st_locked, &["2"]),
+            "two of the four are already spent"
         );
         let catch = Entry::Cell(Cell::Catch);
         assert_eq!(state_line(&b, 5, catch, true).0, fill(s.sk_st_open, &["1"]));
@@ -1902,11 +1935,11 @@ mod tests {
         open.rank[Id::Whirl.index()] = 5;
         open.rank[Id::Cut.index()] = 5;
         assert_eq!(
-            state_line(&open, 10, Entry::Ult(Ult::Line), true).0,
+            state_line(&open, 12, Entry::Ult(Ult::Line), true).0,
             fill(s.sk_st_raise, &["2"])
         );
         assert_eq!(
-            state_line(&open, 9, Entry::Ult(Ult::Line), true).0,
+            state_line(&open, 11, Entry::Ult(Ult::Line), true).0,
             fill(s.sk_st_short, &["2"])
         );
     }

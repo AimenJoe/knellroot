@@ -91,7 +91,11 @@ impl App {
             || self.progress.board.can_buy(self.progress.skill_points());
         if self.run.take_rested() {
             self.snd(crate::sfx::Id::Rest);
-            self.show(Go::Open(flow::HEARTH_OPENS));
+            let (board, total) = (self.board(), self.progress.skill_points());
+            self.show(Go::Open(flow::hearth_opens(
+                board.knows_a_skill(),
+                board.can_buy(total),
+            )));
         }
         // 문지기가 깨어나는 순간(0064 M5): 낮은 땅울림.
         let waking = matches!(self.run.phase, crate::stage::Phase::Waking(_));

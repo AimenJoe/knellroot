@@ -253,9 +253,10 @@ impl App {
                 self.world = scenario::build(sc);
                 self.fx.clear();
                 self.world.set_weapon(self.weapon);
-                self.apply_board();
                 self.cam = Camera::new(self.world.player.pos, &self.t);
                 self.go(Go::Root(Scene::Sandbox));
+                // 놀이터가 선 뒤에: 판(`App::board`)이 놀이터인지를 보고 처음의 둘을 배운 것으로 친다(0166).
+                self.apply_board();
             }
             DevStart::Lab => self.go(Go::Open(Scene::Lab)),
             DevStart::Skills => self.show(Go::Open(Scene::Skills {

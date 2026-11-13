@@ -648,7 +648,41 @@ pub struct StageRun {
 /// 시작 이야기 길이(초).
 pub const INTRO_TIME: f32 = 6.0;
 
+/// 점프(상호작용) 버튼이 지금 하는 일(0166): HUD의 동사와 터치 버튼의 그림이 같은 답을 쓴다. 차례는 월드가 처리하는 차례와 같다 —
+/// 줍기(떨어진 것 · 숨은 물건) > 열기 > 당기기 > 말 걸기 > 읽기 > 쉬기.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Near {
+    Pick,
+    Open,
+    Pull,
+    Talk,
+    Read,
+    /// 쉼터 곁. `safe`가 아니면(적이 가까이) 쉴 수 없다 — 버튼은 그대로 점프다.
+    Rest {
+        safe: bool,
+    },
+}
+
 impl StageRun {
+    /// 곁에 있는 할 일(없으면 `None`).
+    pub fn near(&self) -> Option<Near> {
+        if self.near_find.is_some() || self.near_drop.is_some() {
+            Some(Near::Pick)
+        } else if self.near_chest.is_some() {
+            Some(Near::Open)
+        } else if self.near_lever {
+            Some(Near::Pull)
+        } else if self.near_resident.is_some() {
+            Some(Near::Talk)
+        } else if self.near_stone.is_some() {
+            Some(Near::Read)
+        } else {
+            self.near_rest.map(|_| Near::Rest {
+                safe: self.rest_safe,
+            })
+        }
+    }
+
     /// 레벨을 세우고 월드를 만든다.
     pub fn start(def: &'static StageDef) -> (StageRun, World) {
         let mut level = Level::parse(def.map);

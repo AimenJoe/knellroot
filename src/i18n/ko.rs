@@ -200,7 +200,7 @@ pub const KO: Strings = Strings {
     board_full: "다 익혔다",
     board_respec: "되돌리기",
     board_respec_d:
-        "쓴 점수를 모두 돌려받는다. 처음의 둘만 1단으로 남고, 고르기는 지워지고 패시브 칸은 닫힌다.",
+        "쓴 점수를 모두 돌려받는다. 배운 스킬은 모두 잊고, 고르기는 지워지고 패시브 칸은 닫힌다.",
     board_respec_none: "되돌릴 점수가 없다",
     ask_skill: "{0} {1}단 — 기술 점수 {2}. 올릴까요?",
     ask_respec: "쓴 점수 {0}점을 모두 돌려받는다 — 잔불 {1}. 되돌릴까요?",

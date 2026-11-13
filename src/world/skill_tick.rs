@@ -160,6 +160,10 @@ impl World {
                 return Some(Next::Ult);
             }
         }
+        // 빈 칸(0166 — 안 배운 스킬이 놓인 자리, 단 0): 눌러도 아무 일 없다(받아 두지도, 깜빡이지도 않는다).
+        if pl.skill.rank[slot] == 0 {
+            return None;
+        }
         if pl.skill.cd[pl.skill.worn[slot].index()] > t[P::AttackBuffer] {
             if pl.skill.denied <= 0.0 {
                 self.skill_ev.push(Event::SkillDenied);
@@ -188,7 +192,7 @@ impl World {
             return false;
         };
         let id = self.player.skill.worn[slot];
-        if self.player.skill.cd[id.index()] > 0.0 {
+        if self.player.skill.rank[slot] == 0 || self.player.skill.cd[id.index()] > 0.0 {
             return false;
         }
         let d = self.skill_eff(id);
@@ -1350,9 +1354,9 @@ impl World {
         let pl = &mut self.player;
         pl.skill.worn = ids;
         for (i, id) in ids.into_iter().enumerate() {
-            // 같은 스킬 둘이라 바꿔 끼운 칸은 1단.
+            // 같은 스킬 둘이라 바꿔 끼운 칸은 1단. 단 0 = 빈 칸(0166 — 안 배운 스킬이 놓인 자리: 눌러도 아무 일 없다).
             let same = l.slots[i].id == id;
-            pl.skill.rank[i] = if same { l.slots[i].rank.max(1) } else { 1 };
+            pl.skill.rank[i] = if same { l.slots[i].rank } else { 1 };
             pl.skill.pick[i] = if same {
                 l.slots[i].pick
             } else {
@@ -1403,6 +1407,62 @@ mod tests {
 
     fn flat(a: Vec3, b: Vec3) -> f32 {
         vec3(a.x - b.x, 0.0, a.z - b.z).length()
+    }
+
+    /// 0166: 안 배운 스킬이 놓인 칸은 빈 칸(단 0)이다 — 눌러도 시작하지 않고, 받아 두지도 "안 됨"을 알리지도 않는다.
+    /// 다른 칸의 배운 스킬은 그대로 나가고, 두 버튼 "함께"의 큰 기술도 그대로다(큰 기술은 처음부터 가진다).
+    #[test]
+    fn an_empty_slot_does_nothing_when_pressed() {
+        use crate::skills::{Loadout, Pick, Slot, Ult};
+        let (mut w, t) = world();
+        w.spawn_mob(vec3(0.0, 0.0, -2.0));
+        still(&mut w);
+        let slot = |id, rank| Slot {
+            id,
+            rank,
+            pick: Pick::A,
+        };
+        w.set_skills(Loadout {
+            slots: [slot(Sk::Whirl, 0), slot(Sk::Cut, 1)],
+            ult: 1,
+            great: Ult::Upend,
+        });
+        assert_eq!(w.player.skill.rank, [0, 1]);
+        let ev = run(&mut w, &t, skill(0), 30);
+        assert!(
+            !ev.iter().any(|e| matches!(
+                e,
+                Event::SkillStart { .. } | Event::Skill { .. } | Event::SkillDenied
+            )),
+            "{ev:?}"
+        );
+        assert!(matches!(w.player.state, PState::Idle));
+        assert_eq!(w.player.skill.cd[Sk::Whirl.index()], 0.0, "no cooldown");
+        assert_eq!(w.enemies[0].hp, 90);
+        // 배운 칸은 그대로.
+        let ev = run(&mut w, &t, skill(1), 5);
+        assert!(ev
+            .iter()
+            .any(|e| matches!(e, Event::SkillStart { id: Sk::Cut })));
+        // 둘 다 빈 칸이어도 게이지가 차면 "함께" = 큰 기술.
+        let (mut w, t) = world();
+        w.set_skills(Loadout {
+            slots: [slot(Sk::Whirl, 0), slot(Sk::Cut, 0)],
+            ult: 1,
+            great: Ult::Upend,
+        });
+        w.player.skill.gauge = 1.0;
+        let both = Actions {
+            skill1: true,
+            skill2: true,
+            ..Default::default()
+        };
+        run(&mut w, &t, both, 3);
+        assert!(
+            matches!(w.player.state, PState::Ult { .. }),
+            "{:?}",
+            w.player.state
+        );
     }
 
     /// 휘돌이: 둘레의 적을 **모두** 두 번 치고(바퀴마다 한 번) 바깥으로 민다. 기력은 쓰지 않고 대기가 돈다.

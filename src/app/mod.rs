@@ -473,6 +473,14 @@ impl App {
         let pl = &self.world.player;
         self.input.set_touch_ctx(crate::touch::Ctx {
             rest: play && self.world.interact_here,
+            near: match self.run.near() {
+                Some(crate::stage::Near::Pick) => crate::touch::Near::Pick,
+                Some(crate::stage::Near::Open) => crate::touch::Near::Open,
+                Some(crate::stage::Near::Pull) => crate::touch::Near::Pull,
+                Some(crate::stage::Near::Talk) => crate::touch::Near::Talk,
+                Some(crate::stage::Near::Read) => crate::touch::Near::Read,
+                Some(crate::stage::Near::Rest { .. }) | None => crate::touch::Near::Rest,
+            },
             lock: play && (self.world.lock.is_some() || self.world.lock_candidate()),
             flask: play && pl.flask > 0 && pl.hp < pl.max_hp,
             ult: play && pl.skill.gauge >= 1.0,
@@ -757,6 +765,7 @@ impl App {
                         attack: touch::attack_icon(pl.weapon),
                         cast: touch::cast_icon(pl.weapon),
                         skills: [skill(0), skill(1)],
+                        vacant: [0, 1].map(|i| pl.skill.rank[i] == 0),
                         active: [0, 1].map(|i| self.world.skill_active(i)),
                         ult: touch::ult_icon(pl.skill.ult),
                     },

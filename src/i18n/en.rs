@@ -197,7 +197,7 @@ pub const EN: Strings = Strings {
     ult_upend_d: "Wrench the ground and spill every enemy around you outward. Those thrown into walls are hurt.",
     board_full: "Fully learned",
     board_respec: "Take back",
-    board_respec_d: "Get every spent point back. Only the first two skills stay at rank 1; picks are cleared and passives close.",
+    board_respec_d: "Get every spent point back. Every skill is unlearned, picks are cleared and passives close.",
     board_respec_none: "Nothing to take back",
     ask_skill: "{0} rank {1} — skill points: {2}. Raise it?",
     ask_respec: "Take back all {0} spent points for {1} embers?",

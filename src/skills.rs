@@ -147,8 +147,11 @@ pub const IDS: [Id; 8] = [
 ];
 pub const N: usize = IDS.len();
 
-/// 처음 끼워져 있는 둘(0151 6번 — 첫 판부터 스킬 버튼이 비지 않게).
+/// 스킬 칸 둘의 처음 자리(0151 6번). 0166부터 이 둘도 값 없이 주지 않는다 — 기술 점수로 배운다(시작 점수 `START_POINTS`로
+/// 살 수 있다). 안 배운 스킬이 놓인 칸은 **빈 칸**이다(단 0 — 눌러도 아무 일 없다, 그림은 빈 테).
 pub const START: [Id; 2] = [Id::Whirl, Id::Cut];
+/// 처음부터 가진 기술 점수(0166): 예전에 값 없이 주던 처음의 둘 몫 — 무엇을 먼저 배울지는 방랑자가 고른다.
+pub const START_POINTS: u32 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Skill {
@@ -1016,8 +1019,9 @@ impl From<[Id; 2]> for Loadout {
 /// 기술 점수(0158 나 → 0161): 줍는 화폐가 아니라 셈 — 총 레벨 + 처음 쓰러뜨린 엘리트 수 + **핵**(보스를 이길 때마다, 보스마다
 /// `progression::CORE_CAP`까지 — 부르는 쪽이 자른 수) + 주운 **종소리 조각**. 핵·조각은 옛 나무 화폐 "마디"였다 — 이제 점수의 샘이다.
 /// 0158의 "보스 첫 쓰러뜨림 +1"은 핵의 수로 바뀌었다. 지금 내용으로 15 + 6 + 6 + 3 = 30.
+/// 0166: 거기에 처음부터 가진 `START_POINTS`(예전에 값 없이 주던 처음의 둘 몫).
 pub fn points(level: u32, elites: u32, cores: u32, shards: u32) -> u32 {
-    level + elites + cores + shards
+    START_POINTS + level + elites + cores + shards
 }
 
 /// 줄이 열리는 때(쓴 점수 합): 첫 줄 · 둘째 줄 · 큰 기술 줄(0158 라).
@@ -1097,10 +1101,10 @@ impl Entry {
         }
     }
 
-    /// 값 없이 가진 단(처음의 둘과 쟁반 뒤집기는 1단).
+    /// 값 없이 가진 단: 쟁반 뒤집기 1단뿐(큰 기술은 처음부터, 0151). 스킬은 처음의 둘도 점수로 배운다(0166).
     pub fn free(self) -> u8 {
         match self {
-            Entry::Skill(id) => START.contains(&id) as u8,
+            Entry::Skill(_) => 0,
             Entry::Ult(u) => (u == Ult::Upend) as u8,
             Entry::Cell(_) => 0,
         }
@@ -1236,31 +1240,37 @@ impl Board {
         RESPEC_BASE + RESPEC_PER * self.spent()
     }
 
-    /// 전부 되돌린다: 처음의 둘만 1단·쟁반 뒤집기 1단, 고르기는 지우고 패시브 칸도 모두 닫는다(0161). 끼운 칸에 안 배운 스킬이
-    /// 남으면 처음의 둘로, 끼운 큰 기술은 쟁반 뒤집기로.
-    pub fn respec(&mut self, worn: &mut [Id; 2], great: &mut Ult) {
+    /// 전부 되돌린다: 스킬은 모두 안 배운 것으로(0166 — 처음의 둘도)·쟁반 뒤집기만 1단, 고르기는 지우고 패시브 칸도 모두 닫는다(0161).
+    /// 끼운 자리는 그대로 둔다(빈 칸이 된다 — 다시 배우면 그 자리에 있다), 끼운 큰 기술은 쟁반 뒤집기로.
+    pub fn respec(&mut self, great: &mut Ult) {
         *self = Board::default();
-        *worn = self.wearable(*worn);
         *great = self.wearable_ult(*great);
     }
 
     /// 잔불을 내고 되돌린다(화로): 쓴 점수가 없거나 잔불이 모자라면 아무 일도 없다(거짓).
-    pub fn respec_paid(&mut self, embers: &mut u32, worn: &mut [Id; 2], great: &mut Ult) -> bool {
+    pub fn respec_paid(&mut self, embers: &mut u32, great: &mut Ult) -> bool {
         let cost = self.respec_cost();
         if self.spent() == 0 || *embers < cost {
             return false;
         }
         *embers -= cost;
-        self.respec(worn, great);
+        self.respec(great);
         true
     }
 
-    /// 끼울 수 있는 둘: 둘 다 배운 스킬이면 그대로, 아니면 처음의 둘.
-    pub fn wearable(&self, worn: [Id; 2]) -> [Id; 2] {
-        if worn.iter().all(|&id| self.learned(id)) {
-            worn
-        } else {
-            START
+    /// 막 배운 스킬 `id`를 빈 칸에(0166): 칸 1부터 보아 안 배운 스킬이 놓인 칸이 있으면 거기에 끼운다 — 처음 배운 스킬이
+    /// 기술 화면에서 한 번 더 끼우지 않아도 버튼에 있다. 빈 칸이 없거나 이미 끼워져 있으면 그대로.
+    pub fn wear_on_learn(&self, worn: [Id; 2], id: Id) -> [Id; 2] {
+        if worn.contains(&id) {
+            return worn;
+        }
+        match worn.iter().position(|&w| !self.learned(w)) {
+            Some(slot) => {
+                let mut out = worn;
+                out[slot] = id;
+                out
+            }
+            None => worn,
         }
     }
 
@@ -1303,6 +1313,20 @@ impl Board {
         }
     }
 
+    /// 배운 스킬이 하나라도 있나(0166 — 없으면 스킬 칸 둘이 다 비어 있다).
+    pub fn knows_a_skill(&self) -> bool {
+        IDS.into_iter().any(|id| self.learned(id))
+    }
+
+    /// 처음의 둘(`START`)을 배운 판 — 0166 전에는 새 판이 이 꼴이었다. 옛 기록을 읽을 때·개발 시나리오 판·시험이 쓴다
+    /// (이미 올린 단은 그대로).
+    pub fn with_starters(mut self) -> Board {
+        for id in START {
+            self.rank[id.index()] = self.rank[id.index()].max(1);
+        }
+        self
+    }
+
     /// 모두 끝 단·패시브 칸 모두 열림(개발 창 — 기록에 쓰지 않는다).
     #[cfg(any(test, feature = "dev"))]
     pub fn maxed(pick: Pick) -> Board {
@@ -1315,7 +1339,7 @@ impl Board {
     }
 
     /// 화면을 열 때 설 칸(0161, `ENTRIES`의 자리): 올릴 수 있는 화면(`edit`)이면 지금 살 수 있는 첫 칸, 없으면(또는 읽기 전용이면)
-    /// 배운 첫 스킬 — 처음의 둘이 늘 있다.
+    /// 배운 첫 스킬 — 아무것도 안 배웠으면 맨 앞 칸.
     pub fn first_focus(&self, total: u32, edit: bool) -> usize {
         let ready = ENTRIES
             .iter()
@@ -1388,36 +1412,38 @@ mod tests {
     }
 
     /// 0161: 기술 점수는 셈 — 총 레벨 + 처음 쓰러뜨린 엘리트 + 핵(보스마다 셋까지) + 종소리 조각, 남은 점수 = 그것 − 쓴 점수.
-    /// 화폐 "마디"(핵 + 조각)와 0158의 "보스 첫 쓰러뜨림 +1"을 이 하나가 대신한다. 처음부터 가진 단(처음의 둘·큰 기술 1단)은 쓴 점수가 아니다.
+    /// 화폐 "마디"(핵 + 조각)와 0158의 "보스 첫 쓰러뜨림 +1"을 이 하나가 대신한다. 처음부터 가진 단(큰 기술 1단)은 쓴 점수가 아니다.
+    /// 0166: 새 판은 `START_POINTS` 둘을 들고 선다 — 예전에 그냥 주던 스킬 둘의 몫, 무엇을 먼저 배울지는 방랑자가 고른다.
     #[test]
     fn points_are_levels_plus_first_elites_plus_cores_plus_shards_minus_spent() {
-        assert_eq!(points(0, 0, 0, 0), 0);
-        assert_eq!(points(15, 0, 0, 0), 15);
-        assert_eq!(points(0, 6, 0, 0), 6);
+        assert_eq!(START_POINTS, 2);
+        assert_eq!(points(0, 0, 0, 0), START_POINTS);
+        assert_eq!(points(15, 0, 0, 0), START_POINTS + 15);
+        assert_eq!(points(0, 6, 0, 0), START_POINTS + 6);
         assert_eq!(
             points(0, 0, 6, 0),
-            6,
+            START_POINTS + 6,
             "every core counts, not just the first"
         );
-        assert_eq!(points(0, 0, 0, 3), 3);
+        assert_eq!(points(0, 0, 0, 3), START_POINTS + 3);
         assert_eq!(
             points(15, 6, 6, 3),
-            30,
+            START_POINTS + 30,
             "0161: everything in the game today"
         );
         let mut b = Board::default();
-        assert_eq!(b.rank, [1, 1, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(b.rank, [0; N], "0166: no skill is given");
         assert_eq!(
             (b.ult, b.spent()),
             ([1, 0, 0], 0),
-            "the free ranks cost nothing"
+            "the free rank costs nothing"
         );
         let total = points(3, 1, 1, 0);
-        assert_eq!(b.left(total), 5);
+        assert_eq!(b.left(total), 7);
         assert!(b.buy(Entry::Skill(Id::Gather), total));
         assert!(b.buy(Entry::Skill(Id::Whirl), total));
         assert!(b.buy(Entry::Cell(Cell::Catch), total));
-        assert_eq!((b.spent(), b.left(total)), (3, 2));
+        assert_eq!((b.spent(), b.left(total)), (3, 4));
         // 가진 것보다 많이 쓴 판(손댄 기록)의 남은 점수는 0에서 멈춘다.
         assert_eq!(Board::maxed(Pick::A).left(3), 0);
     }
@@ -1441,9 +1467,9 @@ mod tests {
             })
             .sum();
         assert_eq!((levels, elites, cores, shards), (15, 6, 6, 3));
-        assert_eq!(points(levels, elites, cores, shards), 30);
-        // 다 익히는 값 63의 반이 조금 안 된다(0160 2절).
-        assert!(2 * 30 < Board::maxed(Pick::A).spent());
+        assert_eq!(points(levels, elites, cores, shards), START_POINTS + 30);
+        // 다 익히는 값 65의 반이 조금 안 된다(0160 2절 — 0166: 처음의 둘도 값이 있고, 그 몫을 들고 선다).
+        assert!(2 * (START_POINTS + 30) < Board::maxed(Pick::A).spent());
     }
 
     /// 0161: 패시브 칸은 판의 칸이다 — 칸마다 1점, 잠금은 줄(쓴 점수 합)뿐. 갈래의 앞 칸을 열지 않아도 같은 줄의 뒤 칸이 열리고,
@@ -1606,10 +1632,10 @@ mod tests {
         let whirl = Entry::Skill(Id::Whirl);
         assert_eq!(b.offer(whirl, 0), Offer::Short);
         assert!(!b.buy(whirl, 0));
-        for want in 2..=MAX_RANK {
+        for want in 1..=MAX_RANK {
             let spent = b.spent();
-            assert_eq!(b.offer(whirl, 4), Offer::Ready);
-            assert!(b.buy(whirl, 4));
+            assert_eq!(b.offer(whirl, 5), Offer::Ready);
+            assert!(b.buy(whirl, 5));
             assert_eq!(b.rank(whirl), want);
             assert_eq!(b.spent(), spent + 1, "one point per rank");
         }
@@ -1620,9 +1646,9 @@ mod tests {
         );
         assert_eq!(b.offer(whirl, 99), Offer::Full);
         assert!(!b.buy(whirl, 99));
-        assert_eq!(b.left(4), 0);
-        assert_eq!(b.offer(Entry::Skill(Id::Cut), 4), Offer::Short);
-        assert!(!b.can_buy(4) && b.can_buy(5));
+        assert_eq!(b.left(5), 0);
+        assert_eq!(b.offer(Entry::Skill(Id::Cut), 5), Offer::Short);
+        assert!(!b.can_buy(5) && b.can_buy(6));
         // 안 배운 스킬의 첫 점 = 배움(1단).
         let mut b = Board::default();
         assert!(!b.learned(Id::Gather));
@@ -1669,8 +1695,8 @@ mod tests {
         assert_eq!(b.offer(ult, total), Offer::Ready);
         assert!(b.buy(ult, total) && b.buy(ult, total));
         assert_eq!((b.ult[0], b.offer(ult, total)), (ULT_MAX_RANK, Offer::Full));
-        // 다 익히는 데 드는 점수(0158 라 → 0161): 스킬 여덟 × 5 − 처음 둘 = 38, 큰 기술 셋 × 4 − 쟁반 뒤집기의 배움 2 = 10,
-        // 패시브 열다섯 × 1 = 15 — 63.
+        // 다 익히는 데 드는 점수(0158 라 → 0161 → 0166): 스킬 여덟 × 5 = 40(처음의 둘도 값이 있다), 큰 기술 셋 × 4 − 쟁반 뒤집기의 배움 2 = 10,
+        // 패시브 열다섯 × 1 = 15 — 65.
         let all = Board::maxed(Pick::A);
         let paid = |pred: fn(&Entry) -> bool| -> u32 {
             ENTRIES
@@ -1679,59 +1705,54 @@ mod tests {
                 .map(|&e| e.paid(all.rank(e)))
                 .sum()
         };
-        assert_eq!(paid(|e| matches!(e, Entry::Skill(_))), 38);
+        assert_eq!(paid(|e| matches!(e, Entry::Skill(_))), 40);
         assert_eq!(paid(|e| matches!(e, Entry::Ult(_))), 10);
         assert_eq!(paid(|e| matches!(e, Entry::Cell(_))), 15);
-        assert_eq!(all.spent(), 63);
+        assert_eq!(all.spent(), 65);
         // 판의 칸 순서: 줄 번호가 내려가지 않는다.
         let rows: Vec<usize> = ENTRIES.iter().map(|e| e.row()).collect();
         assert!(rows.windows(2).all(|w| w[0] <= w[1]), "{rows:?}");
     }
 
-    /// 0158 나: 되돌리기는 쓴 점수를 모두 돌려준다 — 처음의 둘만 1단·큰 기술 1단, 고르기는 지워진다. 값은 `30 + 5 × 쓴 점수`.
-    /// 끼운 칸에 안 배운 스킬이 남으면 처음의 둘로, 배운 것만 끼워져 있었으면 그대로.
+    /// 0158 나: 되돌리기는 쓴 점수를 모두 돌려준다 — 스킬은 모두 안 배운 것으로(0166: 처음의 둘도)·큰 기술 1단, 고르기는 지워진다.
+    /// 값은 `30 + 5 × 쓴 점수`. 끼운 큰 기술은 쟁반 뒤집기로.
     #[test]
-    fn a_respec_returns_every_point_clears_picks_and_fixes_the_worn_slots() {
+    fn a_respec_returns_every_point_and_clears_picks() {
         assert_eq!(Board::default().respec_cost(), RESPEC_BASE);
         let total = 12;
         let mut b = Board::default();
-        for e in [Entry::Skill(Id::Whirl); 4] {
+        for e in [Entry::Skill(Id::Whirl); 5] {
             assert!(b.buy(e, total));
         }
         assert!(b.flip(Id::Whirl));
         assert!(b.buy(Entry::Skill(Id::Quake), total) && b.buy(Entry::Skill(Id::Gather), total));
-        assert_eq!(b.spent(), 6);
-        assert_eq!(b.respec_cost(), 30 + 5 * 6);
+        assert_eq!(b.spent(), 7);
+        assert_eq!(b.respec_cost(), 30 + 5 * 7);
         // 0161: 패시브 칸도 쓴 점수다 — 값에 들어가고, 되돌리면 같이 닫힌다.
         assert!(b.buy(Entry::Cell(Cell::Catch), total) && b.buy(Entry::Cell(Cell::GapBeat), total));
-        assert_eq!((b.spent(), b.respec_cost()), (8, 30 + 5 * 8));
-        let mut worn = [Id::Quake, Id::Whirl];
+        assert_eq!((b.spent(), b.respec_cost()), (9, 30 + 5 * 9));
         let mut great = Ult::Upend;
-        b.respec(&mut worn, &mut great);
+        b.respec(&mut great);
         assert_eq!(b, Board::default());
         assert_eq!(b.cells.count(), 0, "a respec closes every passive cell");
         assert!(!b.cells.has(Cell::Catch) && !b.cells.has(Cell::GapBeat));
         assert_eq!((b.spent(), b.left(total)), (0, total));
         assert_eq!(b.pick, [Pick::A; N]);
-        assert_eq!(worn, START, "Quake is no longer learned");
-        let mut worn = [Id::Cut, Id::Whirl];
-        b.respec(&mut worn, &mut great);
-        assert_eq!(worn, [Id::Cut, Id::Whirl], "both starters: kept as worn");
+        assert!(
+            IDS.iter().all(|&id| !b.learned(id)),
+            "no skill stays learned — not even the first two"
+        );
         assert_eq!(great, Ult::Upend);
     }
 
-    /// 되돌리기는 잔불을 낸다 — 모자라면 아무 일도 없고(판·잔불·끼운 것 그대로), 쓴 점수가 없으면 낼 것도 없다.
+    /// 되돌리기는 잔불을 낸다 — 모자라면 아무 일도 없고(판·잔불 그대로), 쓴 점수가 없으면 낼 것도 없다.
     #[test]
     fn a_respec_charges_embers_and_does_nothing_when_short_or_unspent() {
         let total = 10;
         let mut b = Board::default();
-        let mut worn = [Id::Gather, Id::Cut];
         let mut embers = 500;
         let mut great = Ult::Upend;
-        assert!(
-            !b.respec_paid(&mut embers, &mut worn, &mut great),
-            "nothing spent"
-        );
+        assert!(!b.respec_paid(&mut embers, &mut great), "nothing spent");
         assert_eq!(embers, 500);
         assert!(b.buy(Entry::Skill(Id::Gather), total));
         assert!(b.buy(Entry::Skill(Id::Gather), total));
@@ -1739,17 +1760,66 @@ mod tests {
         let (cost, before) = (b.respec_cost(), b);
         assert_eq!(cost, 30 + 5 * 3);
         let mut poor = cost - 1;
-        assert!(
-            !b.respec_paid(&mut poor, &mut worn, &mut great),
-            "one ember short"
-        );
-        assert_eq!((b, poor, worn), (before, cost - 1, [Id::Gather, Id::Cut]));
-        assert!(b.respec_paid(&mut embers, &mut worn, &mut great));
+        assert!(!b.respec_paid(&mut poor, &mut great), "one ember short");
+        assert_eq!((b, poor), (before, cost - 1));
+        assert!(b.respec_paid(&mut embers, &mut great));
         assert_eq!(embers, 500 - cost);
         assert_eq!((b, b.left(total)), (Board::default(), total));
-        assert_eq!(worn, START, "Gather went back to unlearned");
         // 다시 찍으면 값은 처음 값부터.
         assert_eq!(b.respec_cost(), RESPEC_BASE);
+    }
+
+    /// 0166: 처음의 둘(휘돌이·가로지르기)도 값 없이 주지 않는다 — 새 판은 스킬을 하나도 모르고 시작 점수 둘을 가졌다. 무엇을
+    /// 먼저 배울지는 방랑자가 고른다(첫 줄의 스킬 넷·패시브 여섯 가운데). 쟁반 뒤집기만 처음부터 1단이다.
+    #[test]
+    fn a_fresh_board_knows_no_skill_and_starts_with_two_points() {
+        let b = Board::default();
+        assert!(IDS.iter().all(|&id| !b.learned(id)));
+        assert!(b.has_ult(Ult::Upend) && !b.has_ult(Ult::Flurry) && !b.has_ult(Ult::Line));
+        assert_eq!(points(0, 0, 0, 0), START_POINTS);
+        assert_eq!((START_POINTS, b.spent()), (2, 0));
+        // 시작 점수로 처음의 둘을 배울 수도, 다른 둘(끌어모으기 + 패시브 한 칸)을 고를 수도 있다.
+        let mut usual = b;
+        for id in START {
+            assert_eq!(usual.offer(Entry::Skill(id), START_POINTS), Offer::Ready);
+            assert!(usual.buy(Entry::Skill(id), START_POINTS));
+        }
+        assert_eq!(usual.left(START_POINTS), 0);
+        let mut other = b;
+        assert!(other.buy(Entry::Skill(Id::Gather), START_POINTS));
+        assert!(other.buy(Entry::Cell(Cell::Catch), START_POINTS));
+        assert_eq!(
+            other.offer(Entry::Skill(Id::Whirl), START_POINTS),
+            Offer::Short
+        );
+    }
+
+    /// 0166: 막 배운 스킬은 빈 칸(안 배운 스킬이 놓인 자리)에 저절로 끼워진다 — 칸 1부터. 빈 칸이 없으면 그대로(끼우는 것은
+    /// 기술 화면에서), 이미 끼워져 있으면 그대로. 끼운 둘의 단은 판에서 — 안 배운 스킬이 놓인 칸은 단 0(빈 칸)이다.
+    #[test]
+    fn a_newly_learned_skill_fills_the_first_empty_slot() {
+        let mut b = Board::default();
+        let l = b.loadout(START, Ult::Upend);
+        assert_eq!(
+            (l.slots[0].rank, l.slots[1].rank),
+            (0, 0),
+            "both slots start empty"
+        );
+        assert!(b.buy(Entry::Skill(Id::Gather), 4));
+        let worn = b.wear_on_learn(START, Id::Gather);
+        assert_eq!(worn, [Id::Gather, Id::Cut], "into slot 1");
+        let l = b.loadout(worn, Ult::Upend);
+        assert_eq!((l.slots[0].rank, l.slots[1].rank), (1, 0));
+        assert!(b.buy(Entry::Skill(Id::Whirl), 4));
+        let worn = b.wear_on_learn(worn, Id::Whirl);
+        assert_eq!(worn, [Id::Gather, Id::Whirl], "the second one into slot 2");
+        assert!(b.buy(Entry::Skill(Id::Brace), 4));
+        assert_eq!(
+            b.wear_on_learn(worn, Id::Brace),
+            worn,
+            "no empty slot: left as worn"
+        );
+        assert_eq!(b.wear_on_learn(worn, Id::Whirl), worn, "already worn");
     }
 
     /// 3단의 고르기는 값 없이 뒤집는다(쓴 점수 그대로) — 3단이 안 된 스킬은 뒤집히지 않는다.
@@ -2036,7 +2106,7 @@ mod tests {
             cells: Tree::default(),
         };
         let b = odd.sane(40);
-        assert_eq!(b.rank, [1, MAX_RANK, 2, 3, 0, 0, MAX_RANK, 0]);
+        assert_eq!(b.rank, [0, MAX_RANK, 2, 3, 0, 0, MAX_RANK, 0]);
         assert_eq!(
             b.pick,
             [
@@ -2080,9 +2150,9 @@ mod tests {
         assert_eq!(legacy.sane(9).cells, Tree::from_counts([2, 0, 0]));
     }
 
-    /// 월드에 넘기는 끼운 둘: 그 스킬의 단·고르기 + 큰 기술의 단. 끼울 수 있는 것은 배운 스킬뿐.
+    /// 월드에 넘기는 끼운 둘: 그 스킬의 단·고르기 + 큰 기술의 단. 안 배운 스킬이 놓인 칸은 단 0 — 빈 칸이다(0166).
     #[test]
-    fn the_loadout_carries_the_worn_ranks_and_only_learned_skills_are_wearable() {
+    fn the_loadout_carries_the_worn_ranks_and_an_unlearned_slot_is_empty() {
         let mut b = Board::default();
         b.rank[..4].copy_from_slice(&[3, 1, 0, 5]);
         b.pick[Id::Whirl.index()] = Pick::B;
@@ -2109,8 +2179,13 @@ mod tests {
         b.ult[Ult::Line.index()] = 3;
         let l = b.loadout(START, Ult::Line);
         assert_eq!((l.great, l.ult), (Ult::Line, 3));
-        assert_eq!(b.wearable([Id::Quake, Id::Whirl]), [Id::Quake, Id::Whirl]);
-        assert_eq!(b.wearable([Id::Gather, Id::Whirl]), START);
+        let l = b.loadout([Id::Gather, Id::Whirl], Ult::Upend);
+        assert_eq!(
+            (l.slots[0].id, l.slots[0].rank),
+            (Id::Gather, 0),
+            "unlearned: an empty slot"
+        );
+        assert_eq!(l.slots[1].rank, 3);
         let plain: Loadout = [Id::Cut, Id::Gather].into();
         assert!(plain.slots.iter().all(|s| s.rank == 1) && plain.ult == 1);
     }
@@ -2160,8 +2235,8 @@ mod tests {
         assert!(b.buy(line, 14));
         assert_eq!(b.ult, [1, 3, 1]);
         // 되돌리면 배운 큰 기술도 돌아가고, 끼운 큰 기술은 쟁반 뒤집기로.
-        let (mut worn, mut great) = (START, Ult::Line);
-        b.respec(&mut worn, &mut great);
+        let mut great = Ult::Line;
+        b.respec(&mut great);
         assert_eq!((b.ult, great), ([1, 0, 0], Ult::Upend));
         assert_eq!(b.wearable_ult(Ult::Flurry), Ult::Upend);
     }

@@ -195,6 +195,16 @@ pub fn tab_pick(scene: Scene, i: usize) -> Go {
 
 /// 화로가 여는 탭(상태 — 화로의 첫 일은 레벨 올리기) · Select가 여는 탭(장비, 0070).
 pub const HEARTH_OPENS: Scene = Scene::Status { host: Host::Hearth };
+
+/// 쉬었을 때 화로가 여는 탭(0166): 아는 스킬이 하나도 없고 배울 점수가 있으면 기술 탭 — 새 판의 첫 쉼에서 빈 스킬 칸을
+/// 채우는 길을 놓치지 않게. 그 밖에는 늘 상태(`HEARTH_OPENS`).
+pub fn hearth_opens(knows_a_skill: bool, can_learn: bool) -> Scene {
+    if !knows_a_skill && can_learn {
+        Scene::Skills { host: Host::Hearth }
+    } else {
+        HEARTH_OPENS
+    }
+}
 pub const SELECT_OPENS: Scene = Scene::Equip { host: Host::Pause };
 
 /// 멈춤이 여는 탭: 이 판에서 멈춤 창이 마지막에 보던 탭(`last` — 판에 붙은 한 칸, 새 판이면 상태). 멈춤에 없는 탭이면 상태.
@@ -595,6 +605,12 @@ mod tests {
         // 화로·타이틀에서 연 창은 멈춤 버튼으로 닫는 것이 아니다(뒤로가 닫는다 — 몰이꾼은 둘 다 닫기로 읽는다).
         assert_eq!(pause(HEARTH_OPENS, Tab::Status), Go::Stay);
         assert_eq!(back(HEARTH_OPENS), Go::Back);
+        // 0166: 아는 스킬이 없고 배울 점수가 있을 때만 화로가 기술 탭에서 열린다 — 하나라도 배웠거나 점수가 없으면 상태.
+        let skills = Scene::Skills { host: Host::Hearth };
+        assert_eq!(hearth_opens(false, true), skills);
+        assert_eq!(hearth_opens(true, true), HEARTH_OPENS);
+        assert_eq!(hearth_opens(false, false), HEARTH_OPENS);
+        assert_eq!(hearth_opens(true, false), HEARTH_OPENS);
         assert_eq!(pause(Scene::Title, Tab::Status), Go::Stay);
         // 골라야 끝나는 창은 뒤로로 건너뛰지 않는다.
         assert_eq!(back(Scene::Result { won: false }), Go::Stay);

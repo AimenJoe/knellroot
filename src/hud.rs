@@ -249,8 +249,12 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
         let dim = if k < 1.0 { 0.45 } else { 1.0 };
         let tint = Color::new(1.0, 0.99, 0.95, 1.0);
         let r = crate::touch::ICON_N as f32 * s / 1.25 + 0.01;
-        crate::touch::icon(crate::touch::skill_icon(pl.skill.worn[i]), c, r, dim, tint);
-        if k < 1.0 {
+        // 빈 칸(0166 — 아직 배운 스킬이 없다): 그림 없이 어두운 칸과 키 이름만(자리는 지킨다 — KB "빈 칸도 자리를 지킨다").
+        let vacant = pl.skill.rank[i] == 0;
+        if !vacant {
+            crate::touch::icon(crate::touch::skill_icon(pl.skill.worn[i]), c, r, dim, tint);
+        }
+        if k < 1.0 && !vacant {
             draw_rectangle(x, y, side, side * (1.0 - k), Color::new(0.0, 0.0, 0.0, 0.5));
         }
         // 스킬이 남긴 것이 이어지는 동안(0158 G2 — 되울림의 울림·잔불 흩기의 불티): 칸 아래에 줄어드는 밝은 띠.
@@ -499,46 +503,31 @@ pub fn draw(
     draw_skills(ui, f, w, skills);
 
     let Some(run) = run else { return };
-    // 숨은 물건·상자 곁(0105·0064 M3): "키 줍기"·"키 열기"(쉼터보다 먼저 — 같은 버튼이 줍고 연다, 줍기가 먼저 — 월드와 같은 순서).
-    if (run.near_find.is_some()
-        || run.near_drop.is_some()
-        || run.near_chest.is_some()
-        || run.near_lever
-        || run.near_resident.is_some()
-        || run.near_stone.is_some())
-        && !under_menu
-    {
-        let key = crate::input::prompt(crate::input::Act::Interact);
-        let verb = if run.near_find.is_some() || run.near_drop.is_some() {
-            i18n::s().find_verb
-        } else if run.near_chest.is_some() {
-            i18n::s().chest_verb
-        } else if run.near_lever {
-            i18n::s().lever_verb
-        } else if run.near_resident.is_some() {
-            i18n::s().talk_verb
-        } else {
-            i18n::s().read_verb
+    // 곁의 할 일(0105·0064 M3 → 0166 `StageRun::near` — 터치 버튼의 그림과 같은 답): "키 줍기"·"키 열기"·… ·"키 쉬기".
+    // 쉼터 곁인데 적이 가까우면 쉴 수 없다는 한 줄.
+    if let (Some(near), false) = (run.near(), under_menu) {
+        use crate::stage::Near;
+        let (y, cx) = (f.oy + f.h * 0.78, f.ox + f.w * 0.5);
+        let verb = match near {
+            Near::Pick => Some(i18n::s().find_verb),
+            Near::Open => Some(i18n::s().chest_verb),
+            Near::Pull => Some(i18n::s().lever_verb),
+            Near::Talk => Some(i18n::s().talk_verb),
+            Near::Read => Some(i18n::s().read_verb),
+            Near::Rest { safe: true } => Some(s_rest()),
+            Near::Rest { safe: false } => None,
         };
-        let text = if key.is_empty() {
-            verb.to_string()
-        } else {
-            format!("{key}  {verb}")
-        };
-        ui.text_center(&text, f.ox + f.w * 0.5, f.oy + f.h * 0.78, 1.0, AMBER);
-    } else if run.near_rest.is_some() && !under_menu {
-        let y = f.oy + f.h * 0.78;
-        let cx = f.ox + f.w * 0.5;
-        if run.rest_safe {
-            let key = crate::input::prompt(crate::input::Act::Interact);
-            let text = if key.is_empty() {
-                s_rest().to_string()
-            } else {
-                format!("{key}  {}", s_rest())
-            };
-            ui.text_center(&text, cx, y, 1.0, AMBER);
-        } else {
-            ui.text_center(i18n::s().rest_blocked, cx, y, 1.0, DIM);
+        match verb {
+            Some(verb) => {
+                let key = crate::input::prompt(crate::input::Act::Interact);
+                let text = if key.is_empty() {
+                    verb.to_string()
+                } else {
+                    format!("{key}  {verb}")
+                };
+                ui.text_center(&text, cx, y, 1.0, AMBER);
+            }
+            None => ui.text_center(i18n::s().rest_blocked, cx, y, 1.0, DIM),
         }
     }
     let cx = f.ox + f.w * 0.5;

@@ -523,7 +523,7 @@ fn a_stacked_parry_chain_catches_a_blow_from_the_side() {
     for (front_mobs, side_deflected) in [(2usize, true), (1, false)] {
         let mut w = World::new("test", 20.0);
         w.player.facing = std::f32::consts::PI; // -z = 앞
-        let mut put = |w: &mut World, at: Vec3, face: f32, ticks: usize| {
+        let put = |w: &mut World, at: Vec3, face: f32, ticks: usize| {
             w.spawn_mob(at);
             let en = w.enemies.last_mut().unwrap();
             en.facing = face;

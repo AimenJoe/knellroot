@@ -24,6 +24,13 @@ pub enum Kind {
     Cast,
     /// 그림만(0053): 쉼터 곁의 점프 버튼에 그리는 모닥불.
     Rest,
+    /// 그림만(0166): 점프 버튼이 그 자리의 일을 할 때의 그림 — 줍기·열기(상자)·당기기(장치)·말 걸기·읽기(새긴 돌).
+    /// 예전에는 모두 모닥불이었다(사장 2026-11-13 "인터랙션 버튼이 다 화톳불처럼 보이네").
+    Pick,
+    Open,
+    Pull,
+    Talk,
+    Read,
     /// 그림만(0147): 공격 버튼에 그리는 든 무기 — 검은 `Attack`의 칼 그림 그대로(`attack_icon`).
     Hammer,
     Staff,
@@ -67,6 +74,8 @@ pub struct View {
     pub cast: Kind,
     /// 스킬 둘: (그림, 대기 0..1 — 1 = 준비).
     pub skills: [(Kind, f32); 2],
+    /// 빈 스킬 칸(0166 — 아직 배운 스킬이 없다): 그림 없이 흐린 테만.
+    pub vacant: [bool; 2],
     /// 스킬이 남긴 것이 이어지는 몫 0..1(0158 G2 — 되울림·잔불 흩기: 버튼 둘레의 줄어드는 테).
     pub active: [f32; 2],
     /// 큰 기술 버튼의 그림(끼운 하나, 0158 G2).
@@ -86,8 +95,9 @@ pub struct Overlay {
     pub stick: Option<(Vec2, Vec2)>,
     pub stick_radius: f32,
     pub buttons: Vec<Button>,
-    /// 쉼터 곁(0053): 점프 버튼에 모닥불을 그린다.
+    /// 곁에 할 일이 있다(0053): 점프 버튼에 그 일의 그림(`near` — 쉬기는 모닥불, 0166).
     pub rest: bool,
+    pub near: Near,
 }
 
 /// 터치가 이번 프레임에 만든 입력.
@@ -160,11 +170,37 @@ const TOUCH_U_MAX: f32 = 520.0;
 /// 이보다 덜 움직이고 떼면 탭(논리 px).
 const TAP_SLOP: f32 = 24.0;
 
+/// 점프 버튼이 지금 하는 일(0166 — 스테이지가 안다, 앱이 옮겨 준다): 버튼의 그림을 고른다.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Near {
+    #[default]
+    Rest,
+    Pick,
+    Open,
+    Pull,
+    Talk,
+    Read,
+}
+
+/// 그 일의 그림(`_` 없는 match — 새 일 = 그림 하나).
+pub fn near_icon(n: Near) -> Kind {
+    match n {
+        Near::Rest => Kind::Rest,
+        Near::Pick => Kind::Pick,
+        Near::Open => Kind::Open,
+        Near::Pull => Kind::Pull,
+        Near::Talk => Kind::Talk,
+        Near::Read => Kind::Read,
+    }
+}
+
 /// 상황 버튼(0053): 쓸 수 있을 때만 정해 둔 자리에 뜬다 — 다른 버튼을 밀지 않는다(Apple HIG Game controls: 쓸 수 없으면 숨겨 어수선함을 줄인다).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Ctx {
-    /// 쉼터 곁이고 안전하다 — 점프 버튼이 모닥불 그림이 되고 쉬기를 한다(0048: 점프 = 상호작용).
+    /// 곁에 할 일이 있다(쉼터는 안전할 때만) — 점프 버튼이 그 일의 그림이 되고 그 일을 한다(0048: 점프 = 상호작용).
     pub rest: bool,
+    /// 그 일이 무엇인가(0166 — `rest`일 때만 뜻이 있다).
+    pub near: Near,
     /// 락온할 적이 가까이 있거나 이미 락온 중.
     pub lock: bool,
     /// 마실 수 있다(체력이 가득이 아니고 등잔이 남았다).
@@ -177,6 +213,7 @@ impl Ctx {
     #[cfg(test)]
     pub const ALL: Ctx = Ctx {
         rest: true,
+        near: Near::Rest,
         lock: true,
         flask: true,
         ult: true,
@@ -437,6 +474,7 @@ impl Touch {
             stick_radius: stick_radius(w, h),
             buttons: layout(w, h, self.ctx),
             rest: self.ctx.rest,
+            near: self.ctx.near,
         }
     }
 }
@@ -449,7 +487,9 @@ fn press(a: &mut Read, k: Kind) {
         Kind::Jump => a.jump = true,
         Kind::Flask => a.flask = true,
         Kind::Cast => a.cast = true,
-        Kind::Rest => a.jump = true,
+        Kind::Rest | Kind::Pick | Kind::Open | Kind::Pull | Kind::Talk | Kind::Read => {
+            a.jump = true
+        }
         Kind::Lock => a.lock = true,
         Kind::TurnLeft => a.turn_left = true,
         Kind::TurnRight => a.turn_right = true,
@@ -657,7 +697,7 @@ pub fn draw(o: &Overlay, v: &View) {
         let cooling = (is_turn && turn < 1.0) || skill.is_some_and(|(_, r)| r < 1.0);
         let dim = if cooling { 0.4 } else { 1.0 };
         let kind = match b.kind {
-            Kind::Jump if o.rest => Kind::Rest,
+            Kind::Jump if o.rest => near_icon(o.near),
             Kind::Attack => attack,
             Kind::Cast => v.cast,
             Kind::Skill1 => v.skills[0].0,
@@ -665,12 +705,19 @@ pub fn draw(o: &Overlay, v: &View) {
             Kind::Ult => v.ult,
             k => k,
         };
-        let tint = if on || ult || kind == Kind::Rest {
+        let tint = if on || ult || (o.rest && b.kind == Kind::Jump) {
             Color::new(1.0, 0.9, 0.66, 1.0)
         } else {
             Color::new(1.0, 0.99, 0.95, 1.0)
         };
-        icon(kind, b.center, b.radius, dim, tint);
+        let vacant = match b.kind {
+            Kind::Skill1 => v.vacant[0],
+            Kind::Skill2 => v.vacant[1],
+            _ => false,
+        };
+        if !vacant {
+            icon(kind, b.center, b.radius, dim, tint);
+        }
     }
 }
 
@@ -834,6 +881,81 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             ".............",
             "..#########..",
             "..#########..",
+            ".............",
+        ],
+        Kind::Pick => [
+            "......#......",
+            "......#......",
+            "......#......",
+            "...#..#..#...",
+            "....#.#.#....",
+            ".....###.....",
+            "......#......",
+            ".............",
+            ".#.........#.",
+            ".#.........#.",
+            ".#.........#.",
+            ".###########.",
+            ".............",
+        ],
+        Kind::Open => [
+            ".............",
+            "..#########..",
+            ".###########.",
+            ".###########.",
+            ".###########.",
+            ".............",
+            ".####...####.",
+            ".####...####.",
+            ".###########.",
+            ".###########.",
+            ".###########.",
+            ".###########.",
+            ".............",
+        ],
+        Kind::Pull => [
+            ".........##..",
+            "........####.",
+            "........####.",
+            ".......###...",
+            "......##.....",
+            ".....##......",
+            "....##.......",
+            "...##........",
+            "...##........",
+            ".#########...",
+            ".#########...",
+            "###########..",
+            ".............",
+        ],
+        Kind::Talk => [
+            ".............",
+            "..#########..",
+            ".###########.",
+            ".###########.",
+            ".##.##.##.##.",
+            ".###########.",
+            ".###########.",
+            "..#########..",
+            "....###......",
+            "...##........",
+            "..##.........",
+            ".............",
+            ".............",
+        ],
+        Kind::Read => [
+            "...#######...",
+            "..#########..",
+            "..##.....##..",
+            "..#.#####.#..",
+            "..##.....##..",
+            "..#.####..#..",
+            "..##.....##..",
+            "..#.#####.#..",
+            "..##.....##..",
+            "..#########..",
+            ".###########.",
+            ".###########.",
             ".............",
         ],
         Kind::Rest => [
@@ -1172,7 +1294,26 @@ mod tests {
             Kind::Flurry,
             Kind::Line,
             Kind::Bomb,
+            Kind::Pick,
+            Kind::Open,
+            Kind::Pull,
+            Kind::Talk,
+            Kind::Read,
         ];
+        // 0166: 점프 버튼이 하는 일마다 그림이 다르다(모두 모닥불이면 무엇을 하는지 버튼이 말하지 못한다) — 모두 위 목록에 있다.
+        let nears = [
+            Near::Rest,
+            Near::Pick,
+            Near::Open,
+            Near::Pull,
+            Near::Talk,
+            Near::Read,
+        ]
+        .map(near_icon);
+        for (i, a) in nears.iter().enumerate() {
+            assert!(!nears[i + 1..].contains(a), "{a:?} twice");
+            assert!(kinds.contains(a), "{a:?} is not in the checked list");
+        }
         // 0158 G2: 스킬·큰 기술마다 그림이 다르다(같으면 무엇을 끼웠는지 버튼이 말하지 못한다) — 모두 위 목록에 있다.
         let skill_icons: Vec<Kind> = crate::skills::IDS
             .iter()
