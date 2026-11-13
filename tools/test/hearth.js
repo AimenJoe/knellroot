@@ -32,7 +32,7 @@ const RICH = 'v=1\nembers=600\nclears=1\nrun.rest=0\nrun.gate=1\nlv.life=5\nlv.s
   + 'elites=t.elite.0,t.elite.1,t.elite.2,t.elite.3,t.elite.4,t.elite.5\nmigrated.v04=1\n';
 // 새 판의 기록(0166·0167·0169 — `migrated.v06`이 있다: 처음의 둘을 받지 않는다). 튜토리얼의 몸 걸음 넷을 마쳐 상(기술 점수 1)을
 // 받은 참이다. 문 앞 쉼터에 서 있고 잔불은 첫 레벨 값보다 넉넉히.
-const FRESH = 'v=1\nembers=130\nrun.rest=0\nrun.gate=0\nplay=1\nweapons=\nmigrated.v04=1\nmigrated.v06=1\ntut.step=4\nskill.gift=1\n';
+const FRESH = 'v=1\nembers=130\nrun.rest=0\nrun.gate=0\nplay=1\nweapons=\nmigrated.v04=1\nmigrated.v06=1\nmigrated.ult=1\ntut.step=4\nskill.gift=1\n';
 const set = (keys, rank, pick) => keys.map((k) =>
   (rank > 0 ? `skill.rank.${k}=${rank}\n` : '') + (rank >= 3 ? `skill.pick.${k}=${pick}\n` : '')).join('');
 const OLD = ['whirl', 'cut', 'gather', 'quake'];
@@ -199,7 +199,7 @@ async function run(browser, lang) {
   // 잠긴 줄(셋째 — 쓴 점수 8부터)의 칸은 확인해도 목록이 없다(안 됨 소리만).
   await press('Enter'); await page.waitForTimeout(300);
   await shot('14-skills-locked');
-  // 되돌리기 단추(창 아래 오른쪽 — 맨 아래 줄에서 아래): 묻는 창(커서 "취소") → 왼쪽 = "되돌리기" → 쓴 점수 5(산 것 셋 + 옛 기록이 지닌 처음의 둘, 0166)를 돌려받고 잔불 55(30 + 5 × 5).
+  // 되돌리기 단추(창 아래 오른쪽 — 맨 아래 줄에서 아래): 묻는 창(커서 "취소") → 왼쪽 = "되돌리기" → 쓴 점수 7(산 것 셋 + 옛 기록이 지닌 처음의 둘 0166 + 쟁반 뒤집기의 배움 2 0172)을 돌려받고 잔불 65(30 + 5 × 7).
   const embers = Number(/embers=(\d+)\n/.exec(b)[1]);
   await press('ArrowDown'); await page.waitForTimeout(200);
   await shot('15-respec-focus');
@@ -211,7 +211,8 @@ async function run(browser, lang) {
   await shot('15c-skills-after-respec');
   b = await record();
   if (/skill\.rank\./.test(b) || /skill\.pick\./.test(b) || /tree\.cells\./.test(b)) errors.push(`respec must clear the board: ${JSON.stringify(b)}`);
-  if (!new RegExp(`embers=${embers - 55}\\n`).test(b)) errors.push(`respec must cost 55 embers: ${JSON.stringify(b)}`);
+  if (!new RegExp(`embers=${embers - 65}\\n`).test(b)) errors.push(`respec must cost 65 embers: ${JSON.stringify(b)}`);
+  if (/ult\.rank\./.test(b)) errors.push(`respec must forget the great skill too (0172): ${JSON.stringify(b)}`);
   // 창을 닫으면 떠난다(한 번에) → 싸움(HUD 기력 막대가 길어졌는지).
   await press('Escape'); await page.waitForTimeout(400);
   await shot('9-play-hud');

@@ -1288,6 +1288,11 @@ impl World {
             pl.skill.flurry_total += more;
             pl.skill.flurry_added += more;
         }
+        // 큰 기술을 안 배웠으면(0172 — 단 0) 게이지는 없다: 차지 않으니 가득도·발동도 없다.
+        if pl.skill.ult_rank == 0 {
+            pl.skill.gauge = 0.0;
+            return;
+        }
         let was_full = pl.skill.gauge >= 1.0;
         let hit = t[P::SkillGaugeHit];
         let mut gain = parries * t[P::SkillGaugeParry] + perfects * hit * 2.0;
@@ -1363,7 +1368,8 @@ impl World {
                 skills::Pick::A
             };
         }
-        pl.skill.ult_rank = l.ult.max(1);
+        // 단 0 = 큰 기술을 아직 안 배웠다(0172): 게이지가 차지 않는다 — 두 버튼 함께도 아무 일 없다.
+        pl.skill.ult_rank = l.ult;
         pl.skill.ult = l.great;
     }
 }
@@ -2592,6 +2598,45 @@ mod tests {
             ult,
             great,
         });
+    }
+
+    /// 0172: 큰 기술을 아직 안 배웠으면(단 0 — 새 판) 게이지가 없다 — 패링을 해도 차지 않고 "가득"도 알리지 않으며, 두 스킬
+    /// 버튼을 함께 눌러도·터치의 큰 기술 버튼을 눌러도 큰 기술은 나가지 않는다(끼운 스킬이 나간다). 배우면(단 1) 그때부터 찬다.
+    #[test]
+    fn without_a_great_skill_there_is_no_gauge_and_the_chord_does_nothing() {
+        let (mut w, t) = world();
+        wear_ult(&mut w, Ult::Upend, 0);
+        assert_eq!(w.player.skill.ult_rank, 0);
+        let parry = Event::Parry { at: Vec3::ZERO };
+        for _ in 0..40 {
+            let mut ev = vec![parry];
+            w.skill_books(&t, &mut ev);
+            assert!(!ev.contains(&Event::UltReady));
+        }
+        assert_eq!(w.player.skill.gauge, 0.0, "nothing to fill");
+        // 함께 누름: 큰 기술이 아니라 칸의 스킬.
+        still(&mut w);
+        let both = Actions {
+            skill1: true,
+            skill2: true,
+            ..Default::default()
+        };
+        let ev = run(&mut w, &t, both, 30);
+        assert!(!ev.iter().any(|e| matches!(e, Event::UltStart)));
+        assert!(ev.iter().any(|e| matches!(e, Event::SkillStart { .. })));
+        let touch = Actions {
+            ult: true,
+            ..Default::default()
+        };
+        let mut w2 = world().0;
+        wear_ult(&mut w2, Ult::Upend, 0);
+        still(&mut w2);
+        let ev = run(&mut w2, &t, touch, 30);
+        assert!(!ev.iter().any(|e| matches!(e, Event::UltStart)));
+        // 배우면 찬다.
+        wear_ult(&mut w, Ult::Upend, 1);
+        w.skill_books(&t, &mut vec![parry]);
+        assert!(w.player.skill.gauge > 0.0);
     }
 
     /// 앞 1.2m에서 이 틱에 내려치는 잔재(맞으면 한 눈금).

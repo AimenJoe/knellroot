@@ -394,7 +394,10 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
         let cap = crate::ui::key(name);
         ui.text_center(&cap, x + side * 0.5, y + side + 2.5 * s, label, INK);
     }
-    // 큰 기술 게이지: 칸 둘의 폭.
+    // 큰 기술 게이지: 칸 둘의 폭. 큰 기술을 아직 안 배웠으면(0172 — 단 0) 그리지 않는다.
+    if pl.skill.ult_rank == 0 {
+        return;
+    }
     let (gx, gw, gh) = (x0, x1 + side - x0, 2.5 * s);
     let gy = y - 3.0 * s - gh;
     draw_rectangle(gx - s, gy - s, gw + 2.0 * s, gh + 2.0 * s, BAR_BG);

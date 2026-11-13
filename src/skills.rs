@@ -1104,13 +1104,10 @@ impl Entry {
         }
     }
 
-    /// 값 없이 가진 단: 쟁반 뒤집기 1단뿐(큰 기술은 처음부터, 0151). 스킬은 처음의 둘도 점수로 배운다(0166).
+    /// 값 없이 가진 단: 없다(0172 — 쟁반 뒤집기도 점수로 배운다. 0166의 "처음부터 주는 것은 없다"를 큰 기술까지). 옛 기록이
+    /// 값 없이 받았던 것은 기록의 몫으로 지닌다(`Board::with_upend` + `Progress::ult_gift`).
     pub fn free(self) -> u8 {
-        match self {
-            Entry::Skill(_) => 0,
-            Entry::Ult(u) => (u == Ult::Upend) as u8,
-            Entry::Cell(_) => 0,
-        }
+        0
     }
 
     /// `rank`단에서 다음 단으로 올리는 값(기술 점수): 단마다 1 — 큰 기술을 배우는 첫 단만 `ULT_LEARN`. 패시브 칸은 1.
@@ -1243,8 +1240,8 @@ impl Board {
         RESPEC_BASE + RESPEC_PER * self.spent()
     }
 
-    /// 전부 되돌린다: 스킬은 모두 안 배운 것으로(0166 — 처음의 둘도)·쟁반 뒤집기만 1단, 고르기는 지우고 패시브 칸도 모두 닫는다(0161).
-    /// 끼운 자리는 그대로 둔다(빈 칸이 된다 — 다시 배우면 그 자리에 있다), 끼운 큰 기술은 쟁반 뒤집기로.
+    /// 전부 되돌린다: 스킬·큰 기술은 모두 안 배운 것으로(0166 — 처음의 둘도, 0172 — 쟁반 뒤집기도), 고르기는 지우고 패시브 칸도
+    /// 모두 닫는다(0161). 끼운 자리는 그대로 둔다(빈 칸이 된다 — 다시 배우면 그 자리에 있다. 큰 기술도).
     pub fn respec(&mut self, great: &mut Ult) {
         *self = Board::default();
         *great = self.wearable_ult(*great);
@@ -1277,13 +1274,27 @@ impl Board {
         }
     }
 
-    /// 끼울 수 있는 큰 기술: 배운 것이면 그대로, 아니면 쟁반 뒤집기(늘 가진 것).
+    /// 끼울 수 있는 큰 기술: 배운 것이면 그대로, 아니면 배운 것 가운데 첫째(표 순서). 하나도 안 배웠으면(0172 — 새 판) 그대로
+    /// 돌려준다 — 그 단은 0이라 월드에서는 큰 기술이 없다(`Loadout::ult` 0: 게이지가 차지 않는다).
     pub fn wearable_ult(&self, great: Ult) -> Ult {
         if self.has_ult(great) {
             great
         } else {
-            Ult::Upend
+            ULTS.into_iter().find(|&u| self.has_ult(u)).unwrap_or(great)
         }
+    }
+
+    /// 배운 큰 기술의 수(0172 — 둘 이상일 때만 기술 탭이 끼운 것을 표시한다).
+    pub fn ults_known(&self) -> usize {
+        ULTS.into_iter().filter(|&u| self.has_ult(u)).count()
+    }
+
+    /// 쟁반 뒤집기를 배운 판 — 0172 전에는 새 판이 이 꼴이었다(큰 기술 하나는 처음부터). 옛 기록을 읽을 때·개발 시나리오 판이
+    /// 쓴다(이미 올린 단은 그대로).
+    pub fn with_upend(mut self) -> Board {
+        let i = Ult::Upend.index();
+        self.ult[i] = self.ult[i].max(1);
+        self
     }
 
     /// 기록에서 읽은 판을 바로잡는다: 단은 범위 안으로(처음의 둘·쟁반 뒤집기는 1단 아래로 내려가지 않는다), 3단이 안 된 고르기는
@@ -1437,8 +1448,8 @@ mod tests {
         assert_eq!(b.rank, [0; N], "0166: no skill is given");
         assert_eq!(
             (b.ult, b.spent()),
-            ([1, 0, 0], 0),
-            "the free rank costs nothing"
+            ([0, 0, 0], 0),
+            "0172: no great skill is given either"
         );
         let total = points(3, 1, 1, 0);
         assert_eq!(b.left(total), 5);
@@ -1695,10 +1706,12 @@ mod tests {
         assert!(b.buy(Entry::Skill(Id::Gather), total) && b.buy(Entry::Skill(Id::Whirl), total));
         assert_eq!(b.spent(), 8);
         assert_eq!(b.offer(ult, total), Offer::Ready);
-        assert!(b.buy(ult, total) && b.buy(ult, total));
+        // 쟁반 뒤집기도 배운다(0172): 첫 단 2점, 그 뒤 1점씩 — 넷.
+        assert!(b.buy(ult, total) && b.buy(ult, total) && b.buy(ult, total));
+        assert_eq!(b.spent(), 12);
         assert_eq!((b.ult[0], b.offer(ult, total)), (ULT_MAX_RANK, Offer::Full));
-        // 다 익히는 데 드는 점수(0158 라 → 0161 → 0166): 스킬 여덟 × 5 = 40(처음의 둘도 값이 있다), 큰 기술 셋 × 4 − 쟁반 뒤집기의 배움 2 = 10,
-        // 패시브 열다섯 × 1 = 15 — 65.
+        // 다 익히는 데 드는 점수(0158 라 → 0161 → 0166 → 0172): 스킬 여덟 × 5 = 40(처음의 둘도 값이 있다), 큰 기술 셋 × 4 = 12
+        // (쟁반 뒤집기도 배운다), 패시브 열다섯 × 1 = 15 — 67.
         let all = Board::maxed(Pick::A);
         let paid = |pred: fn(&Entry) -> bool| -> u32 {
             ENTRIES
@@ -1708,9 +1721,9 @@ mod tests {
                 .sum()
         };
         assert_eq!(paid(|e| matches!(e, Entry::Skill(_))), 40);
-        assert_eq!(paid(|e| matches!(e, Entry::Ult(_))), 10);
+        assert_eq!(paid(|e| matches!(e, Entry::Ult(_))), 12);
         assert_eq!(paid(|e| matches!(e, Entry::Cell(_))), 15);
-        assert_eq!(all.spent(), 65);
+        assert_eq!(all.spent(), 67);
         // 판의 칸 순서: 줄 번호가 내려가지 않는다.
         let rows: Vec<usize> = ENTRIES.iter().map(|e| e.row()).collect();
         assert!(rows.windows(2).all(|w| w[0] <= w[1]), "{rows:?}");
@@ -1772,12 +1785,14 @@ mod tests {
     }
 
     /// 0166 → 0167: 처음의 둘(휘돌이·가로지르기)도 값 없이 주지 않는다 — 새 판은 스킬을 하나도 모르고 점수도 없다. 첫 레벨이
-    /// 첫 점수이고, 무엇을 먼저 배울지는 방랑자가 고른다(첫 줄의 스킬 넷·패시브 여섯 가운데). 쟁반 뒤집기만 처음부터 1단이다.
+    /// 첫 점수이고, 무엇을 먼저 배울지는 방랑자가 고른다(첫 줄의 스킬 넷·패시브 여섯 가운데). 큰 기술도 하나도 없다(0172 — 쟁반
+    /// 뒤집기도 배운다): 끼울 것이 없으니 월드에 넘기는 큰 기술의 단은 0이다.
     #[test]
     fn a_fresh_board_knows_no_skill_and_has_no_points() {
         let b = Board::default();
         assert!(IDS.iter().all(|&id| !b.learned(id)) && !b.knows_a_skill());
-        assert!(b.has_ult(Ult::Upend) && !b.has_ult(Ult::Flurry) && !b.has_ult(Ult::Line));
+        assert!(ULTS.iter().all(|&u| !b.has_ult(u)) && b.ults_known() == 0);
+        assert_eq!(b.loadout(START, Ult::Upend).ult, 0, "no great skill yet");
         assert_eq!((points(0, 0, 0, 0), b.spent()), (0, 0));
         assert!(!b.can_buy(0), "nothing to learn before the first level");
         // 첫 레벨의 한 점: 첫 줄의 어느 스킬이든·패시브 한 칸이든 — 하나만.
@@ -2084,11 +2099,11 @@ mod tests {
         assert_eq!(cut.at(3, Pick::B).active(), cut.active());
     }
 
-    /// 0158 다: 큰 기술은 세 단 — 2단 휘청 +0.6초, 3단 벽에 박힌 피해 ×1.5(20 → 30). 처음부터 1단.
+    /// 0158 다: 큰 기술은 세 단 — 2단 휘청 +0.6초, 3단 벽에 박힌 피해 ×1.5(20 → 30). 0172: 처음부터 주지 않는다(배운다).
     #[test]
     fn the_great_skill_has_three_ranks() {
         let upend = Entry::Ult(Ult::Upend);
-        assert_eq!((upend.free(), upend.max()), (1, 3));
+        assert_eq!((upend.free(), upend.max()), (0, 3));
         assert_eq!(UPEND.stagger_at(1), UPEND.stagger);
         assert!((UPEND.stagger_at(2) - UPEND.stagger - 0.6).abs() < 1e-6);
         assert_eq!(UPEND.stagger_at(3), UPEND.stagger_at(2));
@@ -2123,7 +2138,7 @@ mod tests {
                 Pick::A
             ]
         );
-        assert_eq!(b.ult, [1, ULT_MAX_RANK, 0]);
+        assert_eq!(b.ult, [0, ULT_MAX_RANK, 0]);
         assert_eq!(odd.sane(b.spent()), b, "exactly enough points");
         assert_eq!(odd.sane(b.spent() - 1), Board::default(), "one short");
         assert_eq!(Board::default().sane(0), Board::default());
@@ -2200,10 +2215,10 @@ mod tests {
         assert_eq!(sane([Id::Whirl, Id::Whirl]), [Id::Whirl, Id::Cut]);
     }
 
-    /// 0158 G2: 큰 기술은 셋 — 쟁반 뒤집기는 처음부터 1단, 몰아치기·한 줄기는 큰 기술 줄(쓴 점수 8)이 열리면 **2점**으로 배우고
-    /// 2·3단은 1점씩. 점수가 1뿐이면 배우지 못한다.
+    /// 0158 G2 → 0172: 큰 기술은 셋 — 셋 다 큰 기술 줄(쓴 점수 8)이 열리면 **2점**으로 배우고 2·3단은 1점씩(쟁반 뒤집기도 —
+    /// 처음부터 주는 것은 없다). 점수가 1뿐이면 배우지 못한다. 처음 배운 것이 끼울 것이고, 되돌리면 하나도 없다.
     #[test]
-    fn the_other_great_skills_are_learned_for_two_points_once_eight_are_spent() {
+    fn the_great_skills_are_learned_for_two_points_once_eight_are_spent() {
         assert_eq!(ULTS, [Ult::Upend, Ult::Flurry, Ult::Line]);
         for u in ULTS {
             assert_eq!(Ult::by_key(u.key()), Some(u));
@@ -2216,9 +2231,10 @@ mod tests {
             (flurry.price(0), flurry.price(1), flurry.price(2)),
             (2, 1, 1)
         );
-        assert_eq!(Entry::Ult(Ult::Upend).price(1), 1);
+        let upend = Entry::Ult(Ult::Upend);
+        assert_eq!((upend.free(), upend.price(0), upend.price(1)), (0, 2, 1));
         assert_eq!((flurry.paid(1), flurry.paid(3)), (2, 4));
-        assert_eq!(Entry::Ult(Ult::Upend).paid(3), 2);
+        assert_eq!(upend.paid(3), 4, "0172: the same as the others");
         let mut b = Board::default();
         assert_eq!(b.offer(flurry, 23), Offer::Locked(8));
         for _ in 0..4 {
@@ -2226,22 +2242,33 @@ mod tests {
         }
         assert_eq!(b.spent(), 8);
         assert!(!b.has_ult(Ult::Flurry));
+        // 아직 하나도 안 배웠다: 끼울 것이 없다(끼운 자리의 이름은 그대로 — 그 단이 0이다).
+        assert_eq!((b.ults_known(), b.wearable_ult(Ult::Line)), (0, Ult::Line));
+        assert_eq!(b.loadout(START, Ult::Line).ult, 0);
         assert_eq!(b.offer(flurry, 9), Offer::Short, "one point is not enough");
         assert!(!b.buy(flurry, 9));
         assert_eq!(b.offer(flurry, 10), Offer::Ready);
         assert!(b.buy(flurry, 10));
         assert!(b.has_ult(Ult::Flurry));
+        // 배운 것이 하나면 그것이 끼울 것이다 — 끼운 자리가 무엇을 가리키든.
+        assert_eq!(b.wearable_ult(Ult::Upend), Ult::Flurry);
+        assert_eq!(b.loadout(START, Ult::Upend).great, Ult::Flurry);
         assert_eq!((b.spent(), b.left(10)), (10, 0));
         assert!(b.buy(flurry, 12) && b.buy(flurry, 12));
         assert_eq!(b.offer(flurry, 99), Offer::Full);
         assert_eq!(b.spent(), 12);
         assert!(b.buy(line, 14));
-        assert_eq!(b.ult, [1, 3, 1]);
-        // 되돌리면 배운 큰 기술도 돌아가고, 끼운 큰 기술은 쟁반 뒤집기로.
+        assert_eq!((b.ult, b.ults_known()), ([0, 3, 1], 2));
+        assert!(b.buy(upend, 16));
+        assert_eq!((b.ult, b.spent()), ([1, 3, 1], 16));
+        // 옛 기록의 꼴: 쟁반 뒤집기를 지닌 판(이미 올린 단은 그대로).
+        assert_eq!(Board::default().with_upend().ult, [1, 0, 0]);
+        assert_eq!(b.with_upend(), b);
+        // 되돌리면 배운 큰 기술이 모두 돌아간다 — 끼울 것이 없다(자리의 이름은 그대로).
         let mut great = Ult::Line;
         b.respec(&mut great);
-        assert_eq!((b.ult, great), ([1, 0, 0], Ult::Upend));
-        assert_eq!(b.wearable_ult(Ult::Flurry), Ult::Upend);
+        assert_eq!((b.ult, great), ([0, 0, 0], Ult::Line));
+        assert_eq!(b.loadout(START, great).ult, 0);
     }
 
     /// 0158 G2: 몰아치기는 5초(2단 6.5초, 3단은 쓰러뜨릴 때마다 +0.5초 — 3초까지)·1.4배, 한 줄기는 12m(2단 15m)·피해 40(3단 60).

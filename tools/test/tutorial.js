@@ -17,7 +17,7 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
 // 문 앞 쉼터에 선 새 판의 기록(처음의 둘도 기술 점수도 없다) + 걸음마다의 사실.
-const BASE = 'v=1\nrun.rest=0\nrun.gate=0\nplay=1\nweapons=\nmigrated.v04=1\nmigrated.v06=1\n';
+const BASE = 'v=1\nrun.rest=0\nrun.gate=0\nplay=1\nweapons=\nmigrated.v04=1\nmigrated.v06=1\nmigrated.ult=1\n';
 // 0169: 몸의 걸음 넷 뒤에 상(기술 점수 1 — `skill.gift=1`) → 쉬고 배우기 → 쓰기 → 잔불이 첫 레벨 값만큼 모였을 때에야 뜨는
 // "한 단 올리기"(모자라면 힌트가 없다 — `7q`).
 const STEPS = [

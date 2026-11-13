@@ -737,7 +737,7 @@ impl App {
         // (0166, 무기를 다 드는 `App::arms`와 같은 갈림).
         #[cfg(feature = "dev")]
         if self.dev_run || self.stack.base() == Scene::Sandbox {
-            return self.progress.board.with_starters();
+            return self.progress.board.with_starters().with_upend();
         }
         self.progress.board
     }
@@ -964,12 +964,19 @@ impl App {
                 self.progress.skills = sk::Worn(self.progress.board.wear_on_learn(worn, id));
             }
         }
+        // 처음 배운 큰 기술도 저절로 끼워진다(0172 — 끼운 것이 아직 안 배운 것이면).
+        if let Entry::Ult(u) = e {
+            if !self.progress.board.has_ult(self.progress.ult) {
+                self.progress.ult = u;
+            }
+        }
         let name = entry_text(e).0;
         let text = match e {
             Entry::Cell(_) => fill(s().toast_cell, &[name]),
             _ => {
+                // 기술을 올린 알림은 단만 말한다 — 레벨의 "기술 점수 +1"(0167)을 같이 쓰면 점수를 **쓴** 자리에서 얻었다고 읽힌다.
                 let rank = self.progress.board.rank(e).to_string();
-                fill(s().toast_level, &[name, &rank])
+                fill(s().toast_rank, &[name, &rank])
             }
         };
         self.toast = Some((text, ALERT));
@@ -1150,8 +1157,10 @@ impl App {
                 Entry::Ult(ult) => {
                     let py = w.at(0.0, top + geo::PIPS_TOP).y.round();
                     draw_pips(c.x, py, e.max(), board.rank(e), ready, true, u * 3.0, fade);
-                    if ult == great && whole {
-                        self.node_badge(c, half, u, k, s.sk_badge_ult, true);
+                    // 끼운 큰 기술의 표시(0172 — "큰" 글은 걷었다): 고를 것이 있을 때만(둘 이상 배웠다) 금빛 마름모.
+                    // 하나만 배웠으면 그것이 끼운 것이다 — 표시가 없다.
+                    if ult == great && board.ults_known() > 1 && whole {
+                        self.node_badge(c, half, u, k, "◆", true);
                     }
                 }
                 Entry::Cell(_) => {}
