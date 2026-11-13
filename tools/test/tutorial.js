@@ -115,6 +115,29 @@ async function run(browser, lang, size) {
   // 멈춤 창 밑에는 힌트를 그리지 않는다.
   await press('Escape'); await page.waitForTimeout(400);
   await shot('9a-paused');
+  // 깨어나는 첫 장면(0171): 빈 기록으로 시작하면 타이틀 바탕부터 방랑자가 꺼진 화로 곁에 엎드려 있고, 판은 그 장면으로 열린다 —
+  // 서술 두 줄이 넘치지 않고(F4), 멈춤 버튼으로 건너뛰면 기록에 남고(`woke=1`) 튜토리얼의 첫 걸음이 뜬다. 화로는 아직 꺼져 있다.
+  await page.goto(`http://localhost:${PORT}/manifest.webmanifest`);
+  await page.evaluate((k) => localStorage.removeItem(k), KEY);
+  await page.goto(`http://localhost:${PORT}/`);
+  await ready();
+  await page.waitForTimeout(600);
+  await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
+  await press('F4');
+  await shot('w0-title-asleep');
+  await press('Enter'); await page.waitForTimeout(300);
+  await press('Enter');
+  await page.waitForTimeout(4600);
+  await shot('w1-eyes-open');
+  await page.waitForTimeout(5200);
+  await shot('w2-rising');
+  b = await record();
+  if (/woke=1\n/.test(b || '')) errors.push(`the waking scene must still be running: ${JSON.stringify(b)}`);
+  await press('Escape'); await page.waitForTimeout(1500);
+  await shot('w3-awake');
+  b = await record();
+  if (!/woke=1\n/.test(b || '')) errors.push(`skipping the waking scene must be recorded: ${JSON.stringify(b)}`);
+  if (!/hearth\.lit=0\n/.test(b || '')) errors.push(`the first hearth must still be cold: ${JSON.stringify(b)}`);
   await ctx.close();
   return { tag, errors, checks };
 }

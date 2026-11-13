@@ -146,6 +146,8 @@ pub struct View<'a> {
     pub tell_timing: bool,
     /// 그림 이펙트(0141 — 앱이 사건을 듣고 채운다).
     pub fx: &'a crate::fx::Fx,
+    /// 깨어나는 첫 장면(0171)이 흐르는 동안의 `wake` 동작 시각 — 방랑자는 상태와 상관없이 그 자세로 그린다(월드는 모른다).
+    pub wake: Option<f32>,
 }
 /// 화로의 빛은 바닥 1.2m 위(`stage` 지도 읽기), 그릇 테는 0.86m(`props.py`) — 불티가 그릇에서 오르게.
 const BRAZIER_LIGHT_ABOVE_BOWL: f32 = 1.2 - 0.86;
@@ -289,7 +291,7 @@ impl Renderer {
             self.enemy(en, w, alpha, v.stage, &lights, fall);
         }
         // 플레이어.
-        self.player(w, cam, pp, t, &lights);
+        self.player(w, cam, pp, t, &lights, v.wake);
         // 던진 무기(0158 G2): 날아가는 자리에 돌며.
         self.blades(w, alpha, &lights);
         self.batch.casting = false;

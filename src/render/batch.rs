@@ -46,6 +46,9 @@ pub struct Batch {
     pub recorded: Vec<(Vec<Vertex>, Vec<u16>)>,
 }
 
+/// `bake_glow`의 빛남 값: 이 값이면 스스로 빛나는 부위를 아예 굽지 않는다(꺼진 것).
+const GLOW_OFF: f32 = -1.0;
+
 fn to_u8(x: f32) -> u8 {
     (x.clamp(0.0, 1.0) * 255.0) as u8
 }
@@ -62,6 +65,19 @@ impl Batch {
         lights: &[Light],
     ) {
         Self::bake_glow(verts, idx, e, pose, inst, tint, lights, 1.0, false);
+    }
+
+    /// 스스로 빛나는 부위(`glow_`)를 빼고 굽는다 — 꺼진 화로(0171: 불꽃 없는 그릇).
+    pub fn bake_model_dark(
+        verts: &mut Vec<Vertex>,
+        idx: &mut Vec<u16>,
+        e: &Entry,
+        pose: &[Mat4],
+        inst: Mat4,
+        tint: Color,
+        lights: &[Light],
+    ) {
+        Self::bake_glow(verts, idx, e, pose, inst, tint, lights, GLOW_OFF, false);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -84,6 +100,9 @@ impl Batch {
             let mat = inst * pose[i];
             let base = verts.len() as u16;
             let bright = e.glow.get(i).copied().unwrap_or(false);
+            if bright && glow == GLOW_OFF {
+                continue;
+            }
             // 구운 불꽃(0142): 지형에 굽는 스스로 빛나는 부위(화로 불꽃)는 밑동은 그대로, 끝으로 갈수록 일렁인다(바람 셰이더).
             let (y0, y1) = mesh
                 .pos

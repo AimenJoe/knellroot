@@ -82,6 +82,10 @@ pub mod key {
     pub const SKILL_GIFT: &str = "skill.gift";
     /// 튜토리얼(0167): 지난 걸음 수(`tutorial::DONE`이면 다 지났다). 이 키가 없는 옛 기록은 `tutorial::start_for_old`.
     pub const TUTORIAL: &str = "tut.step";
+    /// 깨어나는 첫 장면(0171)을 보았다(1) / 아직(0). 이 키가 없는 옛 기록은 본 것으로 친다(이미 걷던 방랑자다).
+    pub const WOKE: &str = "woke";
+    /// 깨어난 자리의 화로에 불을 붙였다(0171 — 처음 거기서 쉴 때). 이 키가 없는 옛 기록은 붙인 것으로.
+    pub const HEARTH_LIT: &str = "hearth.lit";
     /// 기술 나무(0106)의 옛 꼴: 갈래마다 **앞에서부터** 연 칸 수. 0161부터는 `tree.cells.*`가 없을 때만 읽는다("앞에서부터 N칸").
     /// 쓸 때는 앞에서부터 이어 연 수를 적는다(옛 판이 읽어도 가진 것보다 많이 열리지 않는다). 목표 핀 `tree.pin`은 0161에서 걷었다 —
     /// 읽지도 쓰지도 않는다(옛 기록의 줄은 모르는 키처럼 그대로 지닌다).
@@ -200,6 +204,10 @@ pub struct Progress {
     pub gift: u32,
     /// 튜토리얼에서 지난 걸음 수(0167). 새 판은 0.
     pub tutorial: u8,
+    /// 깨어나는 첫 장면을 보았다(0171). 새 기록은 거짓 — 첫 판이 그 장면으로 열린다.
+    pub woke: bool,
+    /// 깨어난 자리의 화로에 불이 붙었다(0171). 새 기록은 거짓 — 그 화로가 꺼진 채 서 있다.
+    pub lit: bool,
     /// 쌓인 플레이 시간(초, 0081).
     pub play: u32,
     /// 원래 기록(모르는 키를 지키려고 — 쓸 때 이 위에 덮는다).
@@ -395,6 +403,13 @@ impl Progress {
                 }
                 None => 0,
             },
+            // 0171: 이 게임이 쓴 적 있는 기록인데 키가 없으면 옛 판 — 이미 깨어나 걷던 방랑자다.
+            woke: r
+                .num(key::WOKE)
+                .map_or(r.num(key::VERSION).is_some(), |n| n > 0),
+            lit: r
+                .num(key::HEARTH_LIT)
+                .map_or(r.num(key::VERSION).is_some(), |n| n > 0),
             gift: if before_v06 {
                 crate::skills::GIFT_POINTS
             } else {
@@ -509,6 +524,8 @@ impl Progress {
         r.set(key::MIGRATED_V04, 1);
         r.set(key::MIGRATED_V06, 1);
         r.set(key::TUTORIAL, self.tutorial);
+        r.set(key::WOKE, self.woke as u32);
+        r.set(key::HEARTH_LIT, self.lit as u32);
         if self.gift > 0 {
             r.set(key::SKILL_GIFT, self.gift);
         } else {
@@ -1409,6 +1426,31 @@ weapon=crossbow
         assert_eq!(old("v=1\nlv.life=2\n"), DONE);
         assert_eq!(old("v=1\nembers=30\n"), AFTER_BASICS);
         assert_eq!(old("v=1\ntut.step=250\n"), DONE);
+    }
+
+    /// 0171: 깨어나는 첫 장면과 꺼진 화로는 새 기록의 것 — 새 판은 "아직"을 적어 두고(다음에 읽을 때 옛 기록으로 보이지 않게),
+    /// 이 키가 없는 옛 기록(이미 걷던 방랑자)은 본 것·붙인 것으로 읽는다. 한 번 적히면 그대로 오간다.
+    #[test]
+    fn waking_and_the_cold_hearth_belong_to_new_records() {
+        let fresh = Progress::default();
+        assert!(!fresh.woke && !fresh.lit);
+        let text = fresh.to_record().to_text();
+        assert!(
+            text.contains("woke=0\n") && text.contains("hearth.lit=0\n"),
+            "{text}"
+        );
+        let back = Progress::from_record(Record::parse(&text));
+        assert!(!back.woke && !back.lit, "still a new record after a save");
+        let old = Progress::from_record(Record::parse("v=1\nembers=30\n"));
+        assert!(old.woke && old.lit, "an old record already walked");
+        let empty = Progress::from_record(Record::parse(""));
+        assert!(!empty.woke && !empty.lit, "an empty slot is new");
+        let seen = Progress {
+            woke: true,
+            ..Progress::default()
+        };
+        let back = Progress::from_record(Record::parse(&seen.to_record().to_text()));
+        assert!(back.woke && !back.lit, "woke up, the hearth still cold");
     }
 
     /// 0158: 손댄 기록 — 범위 밖의 단은 범위 안으로(큰 기술은 1단 아래로 안 내려간다), 이상한 고르기는 ㄱ,

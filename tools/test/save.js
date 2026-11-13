@@ -143,6 +143,14 @@ async function main() {
   await press('Enter'); await page.waitForTimeout(800);
   if ((await slotCell()) !== '1') fail('starting in slot 2 must remember it as the last slot');
   if ((await record()) === null) fail('starting another slot must keep slot 1');
+  // 빈 슬롯의 첫 판은 깨어나는 장면(0171)으로 열린다 — 그동안 멈춤 키는 건너뛰기다. 한 번 건너뛰고 나서야 멈춤이 열린다.
+  {
+    const slot2 = () => page.evaluate(() => localStorage.getItem('knell.save.1'));
+    if (/woke=1\n/.test((await slot2()) || '')) fail('a new slot must open with the waking scene still ahead: ' + JSON.stringify(await slot2()));
+    // 건너뛴 뒤 조금 걷는다(플레이 시간은 장면 동안 쌓이지 않는다 — 5c는 슬롯 2에 시간이 쌓여 "기록 있음"인 것에 기댄다).
+    await press('Escape'); await page.waitForTimeout(3400);
+    if (!/woke=1\n/.test((await slot2()) || '')) fail('skipping the waking scene must be recorded in slot 2: ' + JSON.stringify(await slot2()));
+  }
   // 5c) 다시 타이틀 → 시작하기 → 슬롯 2는 잠깐 했어도 플레이 시간이 쌓여 기록 있음(0081) → 커서는 첫 빈 슬롯(3) → 위로 둘 = 슬롯 1 "덮어쓰기"(두 번) → 슬롯 1이 비워진 채 시작.
   await toTitle();
   await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
@@ -153,6 +161,7 @@ async function main() {
   r = await record();
   console.log('덮어쓰기 뒤 슬롯 1:', JSON.stringify(r));
   if (r !== null && /embers=5\n/.test(r)) fail('overwrite must clear slot 1');
+  if (r !== null && !/woke=0\n/.test(r)) fail('an overwritten slot is a new record — the waking scene is ahead again');
   if ((await slotCell()) !== '0') fail('overwriting slot 1 must make it the last slot');
 
   if (errors.length) { console.error('콘솔 에러:\n' + errors.join('\n')); process.exitCode = 1; }

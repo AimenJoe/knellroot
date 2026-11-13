@@ -218,9 +218,15 @@ impl Scenery {
     pub fn bake(lv: &Level, lib: &mut Library, flora: bool, trees: bool) -> Scenery {
         let look = crate::render::look();
         // 빛 대비(0140): 화로 빛 웅덩이를 넓게(빛줄기는 그대로) — 따뜻한 자리가 화면에서 더 큰 덩어리가 되게.
+        // 꺼진 화로(0171): 그 자리의 빛은 굽지 않는다(불꽃 부위도 — 아래 소품).
+        let cold = |p: Vec3| {
+            lv.cold
+                .is_some_and(|c| vec2(c.x - p.x, c.z - p.z).length() < 0.1)
+        };
         let lights: Vec<Light> = lv
             .lights
             .iter()
+            .filter(|l| !cold(l.pos))
             .map(|l| Light {
                 radius: if look.key && !l.shaft {
                     l.radius * FIRE_REACH
@@ -767,7 +773,19 @@ impl Scenery {
             if let Some(e) = lib.get(pr.kind.model()) {
                 e.model.pose(e.pick(&["idle"]), 0.0, &mut pose);
                 let inst = Mat4::from_translation(pr.pos) * Mat4::from_rotation_y(pr.yaw);
-                Batch::bake_model(&mut p.verts, &mut p.idx, e, &pose, inst, WHITE, &lights);
+                if pr.kind == PropKind::Brazier && cold(pr.pos) {
+                    Batch::bake_model_dark(
+                        &mut p.verts,
+                        &mut p.idx,
+                        e,
+                        &pose,
+                        inst,
+                        WHITE,
+                        &lights,
+                    );
+                } else {
+                    Batch::bake_model(&mut p.verts, &mut p.idx, e, &pose, inst, WHITE, &lights);
+                }
                 p.tex = Some(e.tex.clone());
             } else {
                 let s = if half == Vec2::ZERO {

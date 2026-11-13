@@ -355,6 +355,27 @@ impl Fx {
         }
     }
 
+    /// 꺼진 화로에 불이 붙는다(0171 — 사건이 아니라 앱이 부른다: 월드는 화로를 모른다): 그릇 위의 번쩍임 + 솟는 불티 +
+    /// 둘레로 튀는 금빛 줄. `at` = 화로의 발밑.
+    pub fn kindle(&mut self, at: Vec3) {
+        let bowl = at + Vec3::Y * 0.9;
+        self.star(bowl + Vec3::Y * 0.15, 1.5, 0.16, WHITE_HOT);
+        self.spray(
+            bowl,
+            Vec3::Y,
+            0.45,
+            26,
+            3.4,
+            Shape::Dot,
+            0.09,
+            1.1,
+            1.2,
+            WHITE_HOT,
+            AMBER,
+        );
+        self.ring_sparks(bowl, 0.3, 12, 2.6, 0.5, GOLD, AMBER);
+    }
+
     /// 바닥에서 둘레로 퍼지는 먼지 `n`덩이(반지름 `r`의 고리에서 바깥으로 `speed`).
     fn dust_ring(&mut self, at: Vec3, r: f32, n: usize, speed: f32, size: f32, col: Color) {
         let turn = self.r() * std::f32::consts::TAU;

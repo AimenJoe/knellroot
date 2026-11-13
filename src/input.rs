@@ -159,6 +159,8 @@ pub enum Act {
     Walk,
     /// 뒤로·닫기(고정 — 배치표에 없다).
     Back,
+    /// 멈춤(고정 — Esc · Start). 깨어나는 첫 장면(0171)에서는 건너뛰기.
+    Pause,
 }
 
 /// 지금 장치의 키 그림(ASCII — 글꼴 상관없이). 터치는 화면 버튼이 곧 안내라 빈 글.
@@ -184,10 +186,11 @@ pub fn prompt(act: Act) -> String {
         (_, Act::Tabs) => format!("{}/{}", name(Bind::Skill1), name(Bind::Skill2)),
         (Device::Pad, Act::Walk) => "D-PAD".into(),
         (Device::Pad, Act::Back) => "B".into(),
+        (Device::Pad, Act::Pause) => "START".into(),
         (_, Act::Choose) => "W/S".into(),
         (_, Act::Confirm) => "ENTER".into(),
         (_, Act::Walk) => "WASD".into(),
-        (_, Act::Back) => "ESC".into(),
+        (_, Act::Back) | (_, Act::Pause) => "ESC".into(),
     }
 }
 

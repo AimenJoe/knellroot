@@ -84,6 +84,12 @@ pub struct App {
     pause_tab: flow::Tab,
     /// 튜토리얼(0167): 지난 걸음 수(기록 `Progress::tutorial`과 같은 값) + 이 판에서 본 것. 판에 붙는다.
     tutor: crate::tutorial::Tutor,
+    /// 종소리의 길 안내(0171): 문을 찾는 동안 가끔 우는 종의 시계 + 물결. 판에 붙는다(기록에 남지 않는다).
+    knell: crate::knell::Knell,
+    /// 깨어나는 첫 장면(0171)이 흐르는 중 — 새 기록의 첫 판에서 한 번(타이틀 바탕에서는 0초에 멈춰 있다: 엎드린 방랑자).
+    wake: Option<crate::wake::Wake>,
+    /// 꺼진 화로에 불이 붙는 순간을 보는 남은 시간(0171) — 이 동안은 조작이 멎고, 끝나면 화로의 창이 열린다.
+    kindle: f32,
     /// 주민 말풍선(0122): (주민 — 지금 지역의 번호, 몇째 말, 남은 초). 멈추지 않는다.
     bubble: Option<(usize, usize, f32)>,
     /// 새긴 돌 글 판(0129): (지금 지역의 돌 번호, 남은 초).
@@ -153,6 +159,20 @@ pub struct App {
 /// 알림이 떠 있는 시간(초).
 const TOAST_TIME: f32 = 3.5;
 
+/// 깨어나는 첫 장면(0171)의 누운 자리: 몸이 화면에 옆으로 놓이게(뒤통수만 보이면 일어나는 몸짓이 두건에 가린다) — 머리는
+/// 꺼진 화로 쪽 옆으로. 화면 위 = 월드 -z라서 화로까지의 앞뒤 몫을 줄여 거의 옆을 보게 한다.
+fn lay_by_hearth(run: &StageRun, world: &mut World) {
+    let at = world.player.pos;
+    let hearth = run
+        .rests
+        .iter()
+        .copied()
+        .min_by(|a, b| a.distance(at).total_cmp(&b.distance(at)));
+    if let Some(h) = hearth {
+        world.player.facing = (h.x - at.x).atan2((h.z - at.z) * 0.3);
+    }
+}
+
 impl App {
     /// 개발 판(DEV에서 시작한 스테이지)인가 — 운영판은 늘 거짓.
     fn dev_run_now(&self) -> bool {
@@ -207,7 +227,14 @@ impl App {
         } else {
             weapons::Id::Sword
         };
-        let (run, mut world) = StageRun::start(FIRST_STAGE);
+        let (mut run, mut world) = StageRun::start(FIRST_STAGE);
+        // 새 기록(0171): 깨어난 자리의 화로는 꺼져 있다 — 타이틀 바탕부터.
+        if !progress.lit {
+            run.chill_hearth();
+        }
+        if !progress.woke {
+            lay_by_hearth(&run, &mut world);
+        }
         world.set_weapon(weapon);
         world.set_skills(progress.board.loadout(progress.skills.0, progress.ult));
         world.tree = progress.board.cells;
@@ -231,6 +258,9 @@ impl App {
             passage: None,
             pause_tab: flow::Tab::Status,
             tutor: crate::tutorial::Tutor::new(progress.tutorial),
+            knell: crate::knell::Knell::default(),
+            wake: (!progress.woke).then(crate::wake::Wake::default),
+            kindle: 0.0,
             bubble: None,
             stone_card: None,
             clock: 0.0,
@@ -293,6 +323,14 @@ impl App {
         self.passage = None;
         self.pause_tab = flow::Tab::Status;
         self.tutor = crate::tutorial::Tutor::new(self.progress.tutorial);
+        self.knell = crate::knell::Knell::default();
+        // 깨어나는 첫 장면(0171): 아직 본 적 없는 기록의 판은 그 장면으로 열린다(개발 창의 판은 아니다).
+        self.wake = (!self.progress.woke && !self.dev_run_now()).then(crate::wake::Wake::default);
+        if self.wake.is_some() {
+            lay_by_hearth(&self.run, &mut self.world);
+        }
+        self.kindle = 0.0;
+        self.cam.close = 0.0;
         // 잔불은 판을 넘어 남는다(0064 M1). 장신구·성장은 능력치로, 연 상자는 비어 있다(M3).
         self.world.embers = self.progress.embers;
         self.world.apply_stats(self.progress.stats(), true);
@@ -329,6 +367,10 @@ impl App {
     /// 이 판에 이 지역 문지기를 이겼으면 바닥 길이 열린 채.
     fn seed_run(&mut self) {
         self.world.set_weapon(self.weapon);
+        // 깨어난 자리의 화로(0171): 불을 붙인 적 없는 기록이면 첫 지역의 그 화로가 꺼져 있다.
+        if self.stage == 0 && !self.progress.lit && !self.dev_run_now() {
+            self.run.chill_hearth();
+        }
         self.apply_board();
         let base = self.stage as u32 * crate::stage::CHESTS_PER_STAGE;
         let opened: Vec<u32> = self
@@ -594,6 +636,11 @@ impl App {
         }
     }
 
+    /// 깨어나는 첫 장면(0171)이 지금 화면에 흐르나 — 싸움 화면이 맨 위일 때만(타이틀 바탕·멈춤 밑에서는 아니다).
+    fn waking(&self) -> Option<crate::wake::Wake> {
+        self.wake.filter(|_| self.scene() == Scene::Play)
+    }
+
     /// 멈춤에서 연 창(과 그 위의 작은 창들)이 떠 있나.
     fn paused(&self) -> bool {
         self.stack
@@ -711,6 +758,7 @@ impl App {
             tells: self.tells as f32 / 10.0,
             tell_timing: self.tell_timing,
             fx: &self.fx,
+            wake: self.wake.filter(|_| stage.is_some()).map(|w| w.pose()),
         });
         self.frame = Some(f);
         self.ui.begin(f.ui);
@@ -724,8 +772,11 @@ impl App {
         ) {
             self.draw_toast(&f);
         }
-        if self.scene() == Scene::Play {
+        // 깨어나는 첫 장면(0171) 동안은 싸움 화면의 덧그림(화살·조준점·터치 버튼)을 걷는다 — 덮개만.
+        let waking = self.waking().is_some();
+        if self.scene() == Scene::Play && !waking {
             self.draw_goal_arrow(&f);
+            self.draw_knell(&f);
             self.draw_bubble(&f);
             self.draw_stone_card(&f);
         }
@@ -747,7 +798,7 @@ impl App {
         if self.scene().ticks_world() {
             self.draw_beat_note(&f);
         }
-        if self.scene().ticks_world() {
+        if self.scene().ticks_world() && !waking {
             if self.mouse_hidden && self.world.lock_target().is_none() {
                 if let Some(c) = self.input.cursor() {
                     hud::draw_reticle(&f, c, input::mouse_aim().size);
@@ -795,15 +846,39 @@ impl App {
                 let run = matches!(scene, Scene::Play | Scene::Ending { .. }).then_some(&self.run);
                 let edge = self.t[crate::tuning::P::HudHurtEdge];
                 let skills = [0, 1].map(|i| self.world.skill_ready(i, &self.t));
-                hud::draw(&self.ui, f, &self.world, run, false, edge, skills);
-                // 튜토리얼의 힌트 한 줄(0167) — 싸움 화면에서만, 창 밑에서는 그리지 않는다.
-                if let Some((head, more)) = self.tutor_hint().filter(|_| scene == Scene::Play) {
-                    hud::draw_hint(&self.ui, f, &head, more, self.tutor.fresh);
+                // 깨어나는 첫 장면(0171): HUD 대신 눈꺼풀·띠·서술 글. 싸움 화면에서만(타이틀 바탕은 그냥 엎드린 방랑자).
+                if let Some(wk) = self.waking() {
+                    let st = crate::i18n::s();
+                    let skip = input::prompt(input::Act::Pause);
+                    hud::draw_wake(
+                        &self.ui,
+                        f,
+                        &wk,
+                        [st.wake_1, st.wake_2],
+                        (&skip, st.wake_skip),
+                    );
+                } else {
+                    // 튜토리얼의 힌트 판(0167·0171) — 싸움 화면에서만, 창 밑에서는 그리지 않는다.
+                    let hint = self.tutor_hint().filter(|_| scene == Scene::Play);
+                    let hint = hint.as_ref().map(|h| (h, self.tutor.fresh));
+                    let o = hud::Opts {
+                        under_menu: false,
+                        edge,
+                        skills,
+                        hint,
+                    };
+                    hud::draw(&self.ui, f, &self.world, run, &o);
                 }
             }
             Layer::Window { hud: true } if self.stack.base() == Scene::Play => {
                 let skills = [0, 1].map(|i| self.world.skill_ready(i, &self.t));
-                hud::draw(&self.ui, f, &self.world, Some(&self.run), true, 0.0, skills);
+                let o = hud::Opts {
+                    under_menu: true,
+                    edge: 0.0,
+                    skills,
+                    hint: None,
+                };
+                hud::draw(&self.ui, f, &self.world, Some(&self.run), &o);
             }
             Layer::Screen | Layer::Window { .. } | Layer::Modal => {}
         }

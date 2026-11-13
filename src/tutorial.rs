@@ -11,7 +11,7 @@
 //!
 //! 지난 걸음 수는 기록에 남는다(`save::key::TUTORIAL`) — 이어하면 그 걸음부터. 개발 창에서 시작한 판·놀이터에서는 돌지 않는다.
 
-use crate::i18n::{fill, Strings};
+use crate::i18n::Strings;
 use crate::input::Bind;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -127,25 +127,39 @@ impl Step {
         }
     }
 
-    /// 힌트의 글 둘(버튼 이름 없이 — 동작의 이름으로): 할 일 한마디 + 작은 풀이(없으면 빈 글). 세는 걸음은 "지금/목표"를 채운다.
-    pub fn text(self, st: &Strings, s: &Seen) -> (String, &'static str) {
+    /// 힌트의 글 둘(버튼 이름 없이 — 동작의 이름으로): 할 일 한마디 + 작은 풀이. 풀이는 기능의 설명이 아니라 **몸의
+    /// 기억**으로 말한다(0171 — 과거를 잃은 방랑자: 잊었지만 몸은 안다).
+    pub fn text(self, st: &Strings) -> (&'static str, &'static str) {
         match self {
-            Step::Move => (st.tut_move.to_string(), st.tut_move_d),
-            Step::Attack => (
-                fill(
-                    st.tut_attack,
-                    &[&s.hits.min(HITS).to_string(), &HITS.to_string()],
-                ),
-                st.tut_attack_d,
-            ),
-            Step::Dodge => (st.tut_dodge.to_string(), st.tut_dodge_d),
-            Step::Parry => (st.tut_parry.to_string(), st.tut_parry_d),
+            Step::Move => (st.tut_move, st.tut_move_d),
+            Step::Attack => (st.tut_attack, st.tut_attack_d),
+            Step::Dodge => (st.tut_dodge, st.tut_dodge_d),
+            Step::Parry => (st.tut_parry, st.tut_parry_d),
             // 쉬는 것까지는 같은 말, 화로에서 할 일이 다르다.
-            Step::Learn => (st.tut_rest.to_string(), st.tut_learn_d),
-            Step::Skill => (st.tut_skill.to_string(), st.tut_skill_d),
-            Step::Level => (st.tut_rest.to_string(), st.tut_level_d),
+            Step::Learn => (st.tut_rest, st.tut_learn_d),
+            Step::Skill => (st.tut_skill, st.tut_skill_d),
+            Step::Level => (st.tut_rest, st.tut_level_d),
         }
     }
+
+    /// 세는 걸음의 (지금, 목표) — 머리 줄 곁에 따로 그린다(0171: 글 속의 "(0/3)"이 아니라 제 빛의 수).
+    pub fn count(self, s: &Seen) -> Option<(u32, u32)> {
+        match self {
+            Step::Attack => Some((s.hits.min(HITS), HITS)),
+            _ => None,
+        }
+    }
+}
+
+/// 힌트 한 장(0171 — 판 위에): 걸음 점의 자리, 버튼의 표시(없으면 빈 글), 할 일, 세는 수, 풀이.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Hint {
+    /// 지금 걸음의 자리(0부터) — 그 앞은 지난 점, 뒤는 남은 점. 모두 `DONE`개.
+    pub at: u8,
+    pub key: String,
+    pub text: &'static str,
+    pub count: Option<(u32, u32)>,
+    pub more: &'static str,
 }
 
 /// 판에 붙은 튜토리얼의 상태: 지난 걸음 수(기록과 같은 값) + 본 것.
@@ -195,25 +209,24 @@ impl Tutor {
         self.at >= AFTER_BASICS && self.step().is_some() && f.gift == 0
     }
 
-    /// 힌트: 머리 줄 "[n/N] 키 할 일"(버튼 이름이 없는 걸음·장치는 글만) + 작은 풀이 줄. 다 지났거나 지금은 보일 것이
-    /// 없으면(`Step::shown`) 없음. `key`가 버튼의 표시를 만든다 — 앱은 키캡(`ui::key`)으로 감싸 넘긴다.
+    /// 힌트(0171 — 걸음 점 + 키캡 + 할 일 + 세는 수 + 풀이): 다 지났거나 지금은 보일 것이 없으면(`Step::shown`) 없음.
+    /// `key`가 버튼의 표시를 만든다 — 앱은 키캡(`ui::key`)으로 감싸 넘긴다(이름이 없는 걸음·장치는 빈 글).
     pub fn hint(
         &self,
         st: &Strings,
         f: &Facts,
         slot: usize,
         key: impl Fn(Bind) -> String,
-    ) -> Option<(String, &'static str)> {
+    ) -> Option<Hint> {
         let step = self.step().filter(|s| s.shown(f))?;
-        let (text, more) = step.text(st, &self.seen);
-        let k = step.bind(slot).map(key).unwrap_or_default();
-        let n = self.at + 1;
-        let head = if k.is_empty() {
-            format!("[{n}/{DONE}] {text}")
-        } else {
-            format!("[{n}/{DONE}] {k} {text}")
-        };
-        Some((head, more))
+        let (text, more) = step.text(st);
+        Some(Hint {
+            at: self.at,
+            key: step.bind(slot).map(key).unwrap_or_default(),
+            text,
+            count: step.count(&self.seen),
+            more,
+        })
     }
 }
 
@@ -427,11 +440,10 @@ mod tests {
         assert_eq!(at(&t), Some(Step::Skill));
     }
 
-    /// 힌트: 머리 줄 "[n/N] 키 할 일" + 작은 풀이. 버튼이 없는 걸음·이름이 없는 장치(터치)는 글만, 세는 걸음은 "지금/목표"
-    /// (목표를 넘지 않는다), 스킬 걸음의 버튼은 배운 스킬이 놓인 칸. 두 언어 모두 걸음마다 글이 있고, 쉬는 두 걸음은 머리 줄이
-    /// 같고 풀이가 다르다.
+    /// 힌트 한 장(0171): 걸음 점의 자리 · 버튼(키캡) · 할 일 · 세는 수는 글 밖에 따로 · 풀이. 글에 "{0}"·"[n/N]"이 남지
+    /// 않는다 — 걸음은 점이, 세는 수는 제 칸이 말한다.
     #[test]
-    fn the_hint_shows_the_count_the_button_and_the_deed() {
+    fn the_hint_carries_the_step_the_button_the_deed_and_the_count() {
         let key = |b: Bind| format!("<{}>", b as usize);
         // 어느 걸음이든 보이게: 배울 점수도, 올릴 잔불도 있다.
         let f = Facts {
@@ -441,36 +453,35 @@ mod tests {
         };
         for st in [&crate::i18n::KO, &crate::i18n::EN] {
             let mut t = Tutor::new(0);
-            let (h, _) = t.hint(st, &f, 0, key).unwrap();
-            assert!(h.starts_with("[1/7] ") && !h.contains('<'), "{h}");
+            let h = t.hint(st, &f, 0, key).unwrap();
+            assert!((h.at, h.key.as_str(), h.count) == (0, "", None), "{h:?}");
             t.at = 1;
             t.seen.hits = 9;
-            let (h, more) = t.hint(st, &f, 0, key).unwrap();
-            assert!(
-                h.starts_with(&format!("[2/7] <{}> ", Bind::Attack as usize)),
-                "{h}"
-            );
-            assert!(h.contains("3/3") && !h.contains('{'), "{h}");
-            assert!(!more.is_empty());
+            let h = t.hint(st, &f, 0, key).unwrap();
+            assert_eq!(h.key, format!("<{}>", Bind::Attack as usize));
+            assert_eq!((h.at, h.count), (1, Some((HITS, HITS))), "capped");
+            assert!(!h.more.is_empty());
             // 터치: 버튼 이름이 비면 글만.
-            let (bare, _) = t.hint(st, &f, 0, |_| String::new()).unwrap();
-            assert!(bare.starts_with("[2/7] ") && !bare.contains("  "), "{bare}");
+            let bare = t.hint(st, &f, 0, |_| String::new()).unwrap();
+            assert!(bare.key.is_empty() && bare.text == h.text);
             t.at = 4;
             let learn = t.hint(st, &f, 0, key).unwrap();
             t.at = 6;
             let level = t.hint(st, &f, 0, key).unwrap();
-            assert_eq!(level.0[5..], learn.0[5..], "both say: rest at a hearth");
-            assert_ne!(level.1, learn.1);
+            assert_eq!(level.text, learn.text, "both say: rest at a hearth");
+            assert_ne!(level.more, learn.more);
             t.at = 5;
             for (slot, b) in [(0, Bind::Skill1), (1, Bind::Skill2)] {
-                let (h, _) = t.hint(st, &f, slot, key).unwrap();
-                assert!(h.contains(&format!("<{}>", b as usize)), "{h}");
+                let h = t.hint(st, &f, slot, key).unwrap();
+                assert_eq!(h.key, format!("<{}>", b as usize));
             }
             for i in 0..DONE {
                 t.at = i;
-                let (h, more) = t.hint(st, &f, 0, key).unwrap();
-                assert!(!h.contains('{') && h.chars().count() > 8, "{h}");
-                assert!(!more.contains('{'), "{more}");
+                let h = t.hint(st, &f, 0, key).unwrap();
+                let clean = |s: &str| !s.contains('{') && !s.contains('[') && !s.contains('(');
+                assert!(clean(h.text) && h.text.chars().count() >= 2, "{h:?}");
+                assert!(clean(h.more) && !h.more.is_empty(), "{h:?}");
+                assert_eq!(h.count.is_some(), STEPS[i as usize] == Step::Attack);
             }
             t.at = DONE;
             assert_eq!(t.hint(st, &f, 0, key), None);

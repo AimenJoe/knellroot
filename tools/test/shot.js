@@ -50,8 +50,13 @@ async function main() {
   await shot('00-title');
   // 시작하기 → 슬롯 창(0066, 커서는 첫 빈 슬롯) → "시작".
   await press('Enter'); await page.waitForTimeout(300); await shot('00-slots-new');
-  await press('Enter'); await page.waitForTimeout(1500); await shot('00a-intro');
+  // 빈 기록의 첫 판은 깨어나는 장면(0171)으로 열린다: 어둠 → 눈이 열린다 → 멈춤 키로 건너뛴다 → 그제야 시작 이야기.
+  await press('Enter'); await page.waitForTimeout(1500); await shot('00a0-wake-dark');
+  await page.waitForTimeout(3200); await shot('00a1-wake-eyes');
+  await press('Escape'); await page.waitForTimeout(1500); await shot('00a-intro');
   await page.waitForTimeout(5000); await shot('00b-entrance');
+  // 시작 자리는 꺼진 화로 곁(0171) — 뜰로 가는 길목은 왼쪽 위다: 왼쪽으로 세 칸, 그리고 위로.
+  await page.keyboard.down('KeyA'); await page.waitForTimeout(1400); await page.keyboard.up('KeyA');
   await page.keyboard.down('KeyW'); await page.waitForTimeout(3500); await page.keyboard.up('KeyW');
   await page.waitForTimeout(900); await shot('00c-courtyard');
   for (let i = 0; i < 5; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(260); }

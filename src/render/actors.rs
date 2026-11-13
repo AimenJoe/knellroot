@@ -190,6 +190,7 @@ impl Renderer {
         pp: Vec3,
         t: &Tuning,
         lights: &[Light],
+        wake: Option<f32>,
     ) {
         let pl = &w.player;
         // 무적 깜빡임: 짝수 프레임은 밝게.
@@ -339,8 +340,13 @@ impl Renderer {
                     }
                 },
             };
+            // 깨어나는 첫 장면(0171): 장면의 시계가 `wake` 동작을 튼다(0초 = 엎드린 채). 그 동작이 없는 모델이면 그냥 선다.
+            let (names, at): (&[&str], f32) = match wake {
+                Some(at) if e.model.anim("wake").is_some() => (&["wake"], at),
+                _ => (names, at),
+            };
             let anim = e.pick(names);
-            let looped = matches!(pl.state, PState::Idle);
+            let looped = matches!(pl.state, PState::Idle) && wake.is_none();
             let dur = e.duration(anim);
             let at = if looped { at } else { at.min(dur * 0.999) };
             // 키프레임 동작 위에 2차 동작(0039): 꼬리·머리가 늦게 따라오고 몸은 가속하는 쪽으로, 점프·착지에 늘어나고 찌그러진다.

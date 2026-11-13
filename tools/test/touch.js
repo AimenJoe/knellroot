@@ -77,7 +77,15 @@ async function main() {
     await page.waitForTimeout(400);
     await tap([W / 2, oy + dh * 108 / 270]);
   }
-  await page.waitForTimeout(1200);
+  // 빈 기록의 첫 판은 깨어나는 장면(0171): 화면 버튼은 걷혀 있고(덮개만), 싸움 버튼 자리를 누르면 건너뛴다 — 안내 글이 선
+  // 오른쪽 아래가 공격 버튼 자리다. 건너뛴 뒤에야 버튼들이 선다.
+  await page.waitForTimeout(4200);
+  await shot('t01a-wake');
+  await tap(b.attack); await page.waitForTimeout(1500);
+  {
+    const rec = await page.evaluate(() => localStorage.getItem('knell.save.0'));
+    if (!/woke=1\n/.test(rec || '')) errors.push(`a touch on the attack spot must skip the waking scene: ${JSON.stringify(rec)}`);
+  }
   await shot('t01-first-screen');
   // 스틱: 왼쪽 아래에 대고 위로 끌어 0.8초 걷기.
   const s0 = [W * 0.2, H * 0.7];

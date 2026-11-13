@@ -7,6 +7,7 @@ use crate::i18n::{self, tr};
 use crate::render::Frame;
 use crate::stage::{StageRun, CARD_TIME, INTRO_TIME};
 use crate::tuning::{idx, CAST_CHARGES, P, SPECS};
+use crate::tutorial::Hint;
 use crate::ui::{Ui, AMBER, DIM, INK};
 use crate::weapons::Rb;
 use crate::world::World;
@@ -71,6 +72,124 @@ pub fn draw_edge_arrow(f: &Frame, at: Vec2, ang: f32, time: f32, ink: Color) {
     draw_poly(c.x, c.y, 4, k + f.ui * 1.2, 0.0, shade);
     draw_poly(c.x, c.y, 4, k, 0.0, ink);
 }
+
+/// 깨어나는 첫 장면의 덮개(0171 — HUD 대신): 눈꺼풀(위아래에서 닫힌 어둠 — 가장자리는 부드럽게) + 덜 뜬 눈의 흐린 어둠 +
+/// 장면 동안 남는 위아래 띠 + 아래쪽 서술 두 줄(방랑자의 몸을 가리지 않게 가운데가 아니라 아래 3분의 1) + 구석의 건너뛰기 안내.
+/// 시간표는 `wake::Wake`가 낸다. `skip` = (버튼 이름 — 터치는 빈 글, 글).
+pub fn draw_wake(ui: &Ui, f: &Frame, w: &crate::wake::Wake, lines: [&str; 2], skip: (&str, &str)) {
+    let s = u(f);
+    let (open, bars) = (w.lids(), w.bars() * crate::wake::BARS);
+    // 덜 뜬 눈은 어둡다 — 열릴수록 걷힌다.
+    let veil = (1.0 - open).powi(2) * 0.85;
+    if veil > 0.003 {
+        draw_rectangle(f.ox, f.oy, f.w, f.h, Color::new(0.0, 0.0, 0.0, veil));
+    }
+    // 눈꺼풀: 다 뜬 뒤에도 띠만큼은 남는다(장면의 표지). 가장자리 `soft`는 여러 겹으로 옅어진다.
+    let lid = ((1.0 - open) * 0.5).max(bars) * f.h;
+    let soft = if open < 1.0 { 14.0 * s } else { 0.0 };
+    for (y, dir) in [(f.oy, 1.0), (f.oy + f.h, -1.0)] {
+        let (top, h) = if dir > 0.0 { (y, lid) } else { (y - lid, lid) };
+        draw_rectangle(f.ox, top, f.w, h, BLACK);
+        const STEPS: usize = 7;
+        for i in 0..STEPS {
+            let k = 1.0 - (i as f32 + 0.5) / STEPS as f32;
+            let band = soft / STEPS as f32;
+            let y0 = y + dir * (lid + band * i as f32);
+            let top = if dir > 0.0 { y0 } else { y0 - band };
+            draw_rectangle(f.ox, top, f.w, band, Color::new(0.0, 0.0, 0.0, k * k * 0.9));
+        }
+    }
+    // 서술 두 줄(시작 글과 같은 빛: 첫 줄 본문 · 둘째 줄 흐리게).
+    let cx = f.ox + f.w * 0.5;
+    let mut y = f.oy + f.h * WAKE_TEXT_Y;
+    for (i, (line, ink)) in lines.into_iter().zip([INK, DIM]).enumerate() {
+        let a = w.line(i);
+        let col = Color::new(ink.r, ink.g, ink.b, a);
+        let y2 = if a > 0.004 {
+            ui.text_center_wrapped(line, cx, y, WAKE_TEXT_K, col, f.w * 0.84)
+        } else {
+            y + ui.px(WAKE_TEXT_K)
+        };
+        y = y2 + ui.px(WAKE_TEXT_K) * 0.35;
+    }
+    // 건너뛰기: 눈이 뜨인 뒤 오른쪽 아래 띠 안에 작게(터치는 왼쪽 위 멈춤 버튼이 같은 일을 한다 — 글만).
+    let a = (open * w.bars()).min(1.0) * 0.75;
+    if a > 0.05 && !skip.1.is_empty() {
+        let k = 0.75;
+        let text = if skip.0.is_empty() {
+            skip.1.to_string()
+        } else {
+            format!("{} {}", crate::ui::key(skip.0), skip.1)
+        };
+        let tw = ui.width(&text, k);
+        let y = f.oy + f.h - (bars * f.h + ui.px(k)) * 0.5 - s;
+        ui.text(
+            &text,
+            f.ox + f.w - tw - 8.0 * s,
+            y.min(f.oy + f.h - ui.px(k) - 3.0 * s),
+            k,
+            Color::new(DIM.r, DIM.g, DIM.b, a),
+        );
+    }
+}
+
+/// 깨어나는 장면의 서술 글: 자리(화면 높이의 몫)·크기.
+const WAKE_TEXT_Y: f32 = 0.68;
+const WAKE_TEXT_K: f32 = 1.1;
+
+/// 종소리의 물결(0171): 종이 운 뒤 `k` 0..1 동안. 소리가 화면 밖에서 오면(`out` = 바깥을 향한 화면 방향, 라디안·y 아래)
+/// 가장자리 `at`에서 화면 안쪽으로 번져 오는 호 셋, 화면 안이면 그 자리에서 퍼지는 고리 둘. 화살이 아니다 — 가리키지 않고
+/// 번진다. 빛은 종의 쇠(창백한 푸른 흰빛): 갈 곳의 호박색·적 쪽의 잿빛과 갈린다. 어두운 밑줄로 어느 바닥 위에서도.
+pub fn draw_knell(f: &Frame, at: Vec2, out: Option<f32>, k: f32) {
+    let s = f.ui;
+    let shade = |a: f32| Color::new(0.04, 0.04, 0.07, 0.55 * a);
+    let ink = |a: f32| Color::new(KNELL_INK.r, KNELL_INK.g, KNELL_INK.b, a);
+    // 호 하나: 가운데 `c`·반지름 `r`·가운데 방향 `mid`에서 양쪽으로 `half` 라디안.
+    let arc = |c: Vec2, r: f32, mid: f32, half: f32, a: f32| {
+        const SEGS: usize = 24;
+        let pt = |i: usize| {
+            let t = mid - half + 2.0 * half * i as f32 / SEGS as f32;
+            c + vec2(t.cos(), t.sin()) * r
+        };
+        for (w, col) in [(3.6 * s, shade(a)), (1.8 * s, ink(a))] {
+            for i in 0..SEGS {
+                let (p, q) = (pt(i), pt(i + 1));
+                draw_line(p.x, p.y, q.x, q.y, w, col);
+            }
+        }
+    };
+    for i in 0..3 {
+        // 물결마다 조금씩 늦게 떠나 차례로 번진다.
+        let t = (k * 1.5 - i as f32 * 0.18).clamp(0.0, 1.0);
+        if t <= 0.0 || t >= 1.0 {
+            continue;
+        }
+        let a = (t / 0.15).min((1.0 - t) / 0.5).clamp(0.0, 1.0) * 0.85;
+        match out {
+            Some(ang) => {
+                // 소리의 샘은 화면 밖 — 가장자리 너머의 점에서 원이 자라 화면 안으로 들어온다.
+                let d = vec2(ang.cos(), ang.sin());
+                let c = at + d * KNELL_BACK * s;
+                let r = (KNELL_BACK + 4.0 + t * KNELL_REACH) * s;
+                arc(c, r, ang + std::f32::consts::PI, KNELL_HALF, a);
+            }
+            None if i < 2 => arc(
+                at,
+                (5.0 + t * KNELL_REACH * 0.6) * s,
+                0.0,
+                std::f32::consts::PI,
+                a,
+            ),
+            None => {}
+        }
+    }
+}
+
+/// 종소리 물결의 빛·크기(480×270 기준 px): 샘이 가장자리 너머로 물러난 거리 · 번지는 거리 · 호의 반각(라디안).
+pub const KNELL_INK: Color = Color::new(0.80, 0.88, 1.0, 1.0);
+const KNELL_BACK: f32 = 64.0;
+const KNELL_REACH: f32 = 46.0;
+const KNELL_HALF: f32 = 0.5;
 
 /// 적 쪽 화살의 빛(0170): 적의 잿빛(`light::enemy_tint`이 만드는 몸빛)과 같은 줄기 — 색 없는 밝은 회색.
 pub const FOE_INK: Color = Color::new(0.82, 0.80, 0.78, 1.0);
@@ -296,10 +415,40 @@ pub fn gauge_bar(gauge: f32, active: f32, time: f32) -> (f32, Color) {
     }
 }
 
-/// 튜토리얼의 힌트(0167 — nail 0023의 "[n/N] 버튼 …" 꼴): 화면 아래 가운데, 곁의 할 일 글 밑에 머리 줄 + 작은 풀이 줄.
-/// 걸음이 막 바뀐 동안(`fresh` 초)은 머리 줄이 민트로 밝았다가 여느 글 빛으로 가라앉는다. 터치의 엄지 자리(왼쪽 스틱·
-/// 오른쪽 버튼 호)를 피해 가운데 폭 안에서(넘치면 줄을 바꾼다).
-pub fn draw_hint(ui: &Ui, f: &Frame, head: &str, more: &str, fresh: f32) {
+/// 튜토리얼의 힌트 판(0167 → 0171 "잘 눈에 안 띈다"): 화면 아래 가운데의 어두운 판 + 위쪽 호박색 줄. 안에 걸음 점
+/// (지난 것 민트 · 지금 호박 · 남은 것 빈 고리 — "[2/7]"을 대신한다), 큰 머리 줄(키캡 + 할 일 + 세는 수는 호박색으로
+/// 따로), 작은 풀이 줄. 걸음이 막 바뀐 동안(`fresh` 초)은 머리 줄이 민트로 밝았다가 가라앉는다. 터치의 엄지 자리
+/// (왼쪽 스틱·오른쪽 버튼 호)를 피해 가운데 폭 안에서 — 넘치는 풀이는 줄을 바꾸고 판이 위로 자란다.
+/// 판의 자리는 `hint_box`가 정한다(곁의 할 일 글이 그 위로 비킨다).
+fn draw_hint(ui: &Ui, f: &Frame, h: &Hint, fresh: f32) {
+    let s = u(f);
+    let lay = hint_box(ui, f, h);
+    let r = lay.rect;
+    draw_rectangle(r.x, r.y, r.w, r.h, HINT_PANEL);
+    draw_rectangle(r.x, r.y, r.w, (1.5 * s).round().max(1.0), AMBER);
+    #[cfg(feature = "dev")]
+    crate::ui::check::frame(r);
+    let cx = r.x + r.w * 0.5;
+    // 걸음 점.
+    let n = crate::tutorial::DONE as usize;
+    let pitch = HINT_DOT_PITCH * s;
+    let mut y = r.y + HINT_PAD_TOP * s;
+    let dy = y + HINT_DOT * s;
+    for i in 0..n {
+        let dx = cx + (i as f32 - (n as f32 - 1.0) * 0.5) * pitch;
+        match i.cmp(&(h.at as usize)) {
+            std::cmp::Ordering::Less => draw_circle(dx, dy, HINT_DOT * s * 0.8, crate::ui::MINT),
+            std::cmp::Ordering::Equal => {
+                draw_circle(dx, dy, HINT_DOT * s * 1.25, crate::ui::SHADOW);
+                draw_circle(dx, dy, HINT_DOT * s, AMBER);
+            }
+            std::cmp::Ordering::Greater => {
+                draw_circle_lines(dx, dy, HINT_DOT * s * 0.8, s.max(1.0), DIM)
+            }
+        }
+    }
+    y += (HINT_DOT * 2.0 + HINT_GAP) * s;
+    // 머리 줄: 키캡 + 할 일 + 세는 수.
     let k = (fresh / crate::tutorial::FRESH_TIME).clamp(0.0, 1.0);
     let mix = |a: f32, b: f32| a + (b - a) * k;
     let ink = Color::new(
@@ -308,11 +457,93 @@ pub fn draw_hint(ui: &Ui, f: &Frame, head: &str, more: &str, fresh: f32) {
         mix(INK.b, crate::ui::MINT.b),
         1.0,
     );
-    let (cx, y) = (f.ox + f.w * 0.5, f.oy + f.h * HINT_Y);
-    let y = ui.text_center_wrapped(head, cx, y, HINT_SCALE, ink, f.w * HINT_W);
-    if !more.is_empty() {
-        let soft = Color::new(INK.r, INK.g, INK.b, 0.78);
-        ui.text_center_wrapped(more, cx, y, HINT_MORE_SCALE, soft, f.w * HINT_W);
+    let hk = lay.head_k;
+    let mut x = cx - lay.head_w * 0.5;
+    if !h.key.is_empty() {
+        ui.text(&h.key, x, y, hk, ink);
+        x += ui.width(&h.key, hk) + lay.gap;
+    }
+    ui.text(h.text, x, y, hk, ink);
+    x += ui.width(h.text, hk);
+    if let Some(c) = &lay.count {
+        let ck = hk * HINT_COUNT_K;
+        // 작은 글을 큰 글의 밑줄 가까이에 앉힌다.
+        let cy = y + (ui.px(hk) - ui.px(ck)) * 0.7;
+        ui.text(c, x + lay.gap * 1.6, cy, ck, AMBER);
+    }
+    y += ui.px(hk) + HINT_GAP * 0.5 * s;
+    let soft = Color::new(INK.r, INK.g, INK.b, 0.8);
+    for line in &lay.more {
+        ui.text_center(line, cx, y, HINT_MORE_SCALE, soft);
+        y += ui.px(HINT_MORE_SCALE) * HINT_LINE;
+    }
+}
+
+/// 힌트 판이 차지하는 자리 — 가장자리 화살·종소리 물결이 그 위로 비킨다(판에 겹치면 글도 화살도 안 읽힌다).
+pub fn hint_rect(ui: &Ui, f: &Frame, h: &Hint) -> Rect {
+    hint_box(ui, f, h).rect
+}
+
+/// 힌트 판의 자리와 그 안의 글 배치(그리기와 곁의 할 일 글이 같이 읽는다).
+struct HintBox {
+    rect: Rect,
+    head_k: f32,
+    head_w: f32,
+    gap: f32,
+    count: Option<String>,
+    more: Vec<String>,
+}
+
+fn hint_box(ui: &Ui, f: &Frame, h: &Hint) -> HintBox {
+    let s = u(f);
+    let pad = HINT_PAD_X * s;
+    let room = f.w * HINT_W - pad * 2.0;
+    let count = h.count.map(|(a, b)| format!("{a} / {b}"));
+    let head = |k: f32| {
+        let gap = ui.px(k) * 0.35;
+        let kw = if h.key.is_empty() {
+            0.0
+        } else {
+            ui.width(&h.key, k) + gap
+        };
+        let cw = count
+            .as_ref()
+            .map_or(0.0, |c| gap * 1.6 + ui.width(c, k * HINT_COUNT_K));
+        (kw + ui.width(h.text, k) + cw, gap)
+    };
+    // 머리 줄이 폭을 넘으면 글을 줄인다(줄을 바꾸지 않는다 — 키캡과 할 일이 갈라지면 안 읽힌다).
+    let (w1, _) = head(HINT_SCALE);
+    let head_k = HINT_SCALE * (room / w1.max(1.0)).min(1.0);
+    let (head_w, gap) = head(head_k);
+    let more = if h.more.is_empty() {
+        Vec::new()
+    } else {
+        crate::ui::wrap(ui, h.more, room, HINT_MORE_SCALE)
+    };
+    let more_w = more
+        .iter()
+        .map(|l| ui.width(l, HINT_MORE_SCALE))
+        .fold(0.0, f32::max);
+    let dots_w = HINT_DOT_PITCH * s * crate::tutorial::DONE as f32;
+    let w = (head_w.max(more_w).max(dots_w) + pad * 2.0)
+        .max(HINT_MIN_W * s)
+        .min(f.w * HINT_W);
+    let hh = (HINT_PAD_TOP + HINT_DOT * 2.0 + HINT_GAP + HINT_GAP * 0.5 + HINT_PAD_BOTTOM) * s
+        + ui.px(head_k)
+        + ui.px(HINT_MORE_SCALE) * HINT_LINE * more.len() as f32;
+    let (cx, bottom) = (f.ox + f.w * 0.5, f.oy + f.h - HINT_FLOOR * s);
+    HintBox {
+        rect: Rect::new(
+            (cx - w * 0.5).round(),
+            (bottom - hh).round(),
+            w.round(),
+            hh.round(),
+        ),
+        head_k,
+        head_w,
+        gap,
+        count,
+        more,
     }
 }
 
@@ -331,21 +562,40 @@ fn key_line(ui: &Ui, key: &str, text: &str, cx: f32, y: f32, k: f32, color: Colo
     ui.text(text, x + kw + gap, y, k, color);
 }
 
-/// 힌트의 자리(화면 높이의 몫)·폭(화면 폭의 몫)·글 크기(머리 줄 · 풀이 줄).
-const HINT_Y: f32 = 0.85;
+/// 힌트 판(0171): 폭의 상한(화면 폭의 몫 — 터치의 엄지 자리 사이)·가장 좁은 폭·글 크기(머리 줄 · 세는 수는 그 몫 ·
+/// 풀이 줄)·줄 높이. 나머지는 480×270 기준 px: 옆·위·아래 여백, 걸음 점의 반지름·간격, 줄 사이, 화면 바닥에서 뜬 높이.
 const HINT_W: f32 = 0.5;
-const HINT_SCALE: f32 = 0.95;
+const HINT_MIN_W: f32 = 132.0;
+const HINT_SCALE: f32 = 1.2;
+const HINT_COUNT_K: f32 = 0.85;
 const HINT_MORE_SCALE: f32 = 0.8;
+const HINT_LINE: f32 = 1.12;
+const HINT_PAD_X: f32 = 9.0;
+const HINT_PAD_TOP: f32 = 4.5;
+const HINT_PAD_BOTTOM: f32 = 3.5;
+const HINT_DOT: f32 = 1.7;
+const HINT_DOT_PITCH: f32 = 7.0;
+const HINT_GAP: f32 = 3.0;
+const HINT_FLOOR: f32 = 3.0;
+/// 힌트 판의 면(큰 창의 `ui::PANEL`보다 조금 비친다 — 싸움 화면 위라 바닥이 아주 가리지는 않게).
+const HINT_PANEL: Color = Color::new(0.07, 0.05, 0.09, 0.86);
 
-pub fn draw(
-    ui: &Ui,
-    f: &Frame,
-    w: &World,
-    run: Option<&StageRun>,
-    under_menu: bool,
-    edge: f32,
-    skills: [f32; 2],
-) {
+/// HUD가 판 밖에서 받는 것(앱이 정한다): 창이 위에 떴나 · 맞음 테의 세기(설정) · 스킬 칸 둘의 준비 몫 · 튜토리얼의 힌트와 그
+/// 밝은 시간(0171 — 곁의 할 일 글이 힌트 판 위로 비키게 HUD가 같이 놓는다).
+pub struct Opts<'a> {
+    pub under_menu: bool,
+    pub edge: f32,
+    pub skills: [f32; 2],
+    pub hint: Option<(&'a Hint, f32)>,
+}
+
+pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
+    let Opts {
+        under_menu,
+        edge,
+        skills,
+        hint,
+    } = *o;
     let s = u(f);
     // 맞음 테(0143 — "맞았는지 잘 모르겠음"): 맞은 순간 화면 가장자리가 붉게 번쩍였다 사라지고, 체력이 한 대 몫만 남으면 옅게 숨 쉰다.
     // HUD 글·막대보다 먼저 그려 그 아래에 깔린다.
@@ -553,9 +803,14 @@ pub fn draw(
     let Some(run) = run else { return };
     // 곁의 할 일(0105·0064 M3 → 0166 `StageRun::near` — 터치 버튼의 그림과 같은 답): "키 줍기"·"키 열기"·… ·"키 쉬기".
     // 쉼터 곁인데 적이 가까우면 쉴 수 없다는 한 줄.
+    // 튜토리얼의 힌트 판(0171)이 떠 있으면 그 위로 비킨다. 보스 띠가 같은 자리를 쓰는 동안은 힌트를 그리지 않는다.
+    let hint = hint.filter(|_| !under_menu && run.boss_bar(w).is_none());
+    let hint_top = hint.map(|(h, _)| hint_box(ui, f, h).rect.y);
     if let (Some(near), false) = (run.near(), under_menu) {
         use crate::stage::Near;
-        let (y, cx) = (f.oy + f.h * 0.78, f.ox + f.w * 0.5);
+        let y = f.oy + f.h * 0.78;
+        let y = hint_top.map_or(y, |top| y.min(top - ui.px(1.0) - 3.0 * s));
+        let cx = f.ox + f.w * 0.5;
         let verb = match near {
             Near::Pick => Some(i18n::s().find_verb),
             Near::Open => Some(i18n::s().chest_verb),
@@ -572,6 +827,9 @@ pub fn draw(
             }
             None => ui.text_center(i18n::s().rest_blocked, cx, y, 1.0, DIM),
         }
+    }
+    if let Some((h, fresh)) = hint {
+        draw_hint(ui, f, h, fresh);
     }
     let cx = f.ox + f.w * 0.5;
     // 목표(오른쪽 위). 창 밑에서는 그리지 않는다 — 구역 카드·시작 이야기와 같다(0066, 장비 창 테두리를 넘었다 0104 F4).

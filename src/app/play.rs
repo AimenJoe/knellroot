@@ -3,6 +3,8 @@ use super::*;
 
 /// 새긴 돌 글 판이 떠 있는 초(0129).
 const STONE_TIME: f32 = 6.0;
+/// 꺼진 화로에 불이 붙는 것을 보는 초(0171) — 그 뒤에 화로의 창이 열린다.
+const KINDLE_TIME: f32 = 1.5;
 
 impl App {
     /// 싸움 한 틱: 멈춤 → 월드 → 스테이지 → 기록·가게·소리·알림 → 끝났으면 끝 장면.
@@ -15,6 +17,39 @@ impl App {
             }
             if !done {
                 self.passage = Some(p);
+            }
+            return;
+        }
+        // 깨어나는 첫 장면(0171): 조작 없이 흐른다 — 월드는 빈 입력으로 그냥 간다(방랑자는 서 있고, 그림만 `wake` 동작을
+        // 튼다). 멈춤 버튼 = 건너뛰기. 끝나면 기록에 적고 시작 글이 그제야 흐른다.
+        if let (Some(mut wk), false) = (self.wake, crate::screen::portrait_blocked()) {
+            // 터치는 화면 버튼을 걷어 두었으니(덮개만) 싸움 버튼 자리 어디든 — 안내 글이 선 오른쪽 아래가 공격 버튼 자리다.
+            let touch = crate::input::device() == crate::input::Device::Touch;
+            if a.pause || (touch && (a.attack || a.jump || a.dodge)) {
+                wk.skip();
+            }
+            let cue = wk.tick(TICK_DT);
+            if cue == crate::wake::Cue::Bell {
+                self.snd(crate::sfx::Id::Knell);
+            }
+            self.cam.close = wk.close();
+            self.run.intro = crate::stage::INTRO_TIME;
+            self.wake = Some(wk).filter(|w| !w.done());
+            self.step_world(&Actions::default());
+            if cue == crate::wake::Cue::Done {
+                self.cam.close = 0.0;
+                self.progress.woke = true;
+                self.persist();
+            }
+            return;
+        }
+        // 꺼진 화로에 불이 붙는 순간(0171): 잠깐 보고 나서 화로의 창이 열린다(창이 화면을 다 덮는다 — 바로 열면 못 본다).
+        if self.kindle > 0.0 {
+            self.kindle -= TICK_DT;
+            self.step_world(&Actions::default());
+            let _ = self.run.tick(&mut self.world, TICK_DT);
+            if self.kindle <= 0.0 {
+                self.open_hearth();
             }
             return;
         }
@@ -91,11 +126,17 @@ impl App {
             || self.progress.board.can_buy(self.progress.skill_points());
         if self.run.take_rested() {
             self.snd(crate::sfx::Id::Rest);
-            let (board, total) = (self.board(), self.progress.skill_points());
-            self.show(Go::Open(flow::hearth_opens(
-                board.knows_a_skill(),
-                board.can_buy(total),
-            )));
+            if self.run.take_kindled() {
+                // 꺼진 화로에서 처음 쉰다(0171): 불이 붙는다 — 기록에 적고, 그 순간을 본 뒤에 창을 연다.
+                self.progress.lit = true;
+                self.persist();
+                if let Some((i, _)) = self.run.rest_at {
+                    self.fx.kindle(self.run.rests[i]);
+                }
+                self.kindle = KINDLE_TIME;
+            } else {
+                self.open_hearth();
+            }
         }
         // 문지기가 깨어나는 순간(0064 M5): 낮은 땅울림.
         let waking = matches!(self.run.phase, crate::stage::Phase::Waking(_));
@@ -111,6 +152,15 @@ impl App {
             self.ending = 0.0;
             self.go(Go::Root(next));
         }
+    }
+
+    /// 쉬었다: 큰 창이 화로로 열린다(0164 — 아는 스킬이 없고 배울 점수가 있으면 기술 탭에서, 0166).
+    fn open_hearth(&mut self) {
+        let (board, total) = (self.board(), self.progress.skill_points());
+        self.show(Go::Open(flow::hearth_opens(
+            board.knows_a_skill(),
+            board.can_buy(total),
+        )));
     }
 
     /// 개발 아레나(PoC) 한 틱: 숫자 키로 시나리오, 멈춤 = 개발 메뉴로.
@@ -262,6 +312,7 @@ impl App {
         }
         self.world_sounds(&events);
         self.tutor_watch(&events);
+        self.knell_watch();
         // 그림 이펙트(0141): 사건·상태 변화 → 입자. 히트스톱 동안은 입자도 느리게(맞힌 순간의 번쩍임·불티가 멈춘 몸과 함께 남는다).
         self.fx.on_events(&events, &self.world);
         self.fx.watch(&self.world, TICK_DT);
@@ -293,7 +344,11 @@ impl App {
 
     /// 튜토리얼(0167)이 이 판에서 도나: 슬롯의 판이고(개발 창의 판·놀이터가 아니다) 걸음이 남았다.
     fn tutor_on(&self) -> bool {
-        !self.dev_run_now() && self.stack.base() == Scene::Play && self.tutor.step().is_some()
+        !self.dev_run_now()
+            && self.stack.base() == Scene::Play
+            && self.tutor.step().is_some()
+            // 깨어나는 첫 장면(0171) 동안은 아직 아무것도 시키지 않는다.
+            && self.wake.is_none()
     }
 
     /// 튜토리얼이 읽는 지금의 사실 — 잔불·다음 레벨 값·총 레벨·기술 판.
@@ -347,6 +402,10 @@ impl App {
         if self.tutor.tick(&facts, fight, TICK_DT) {
             self.progress.tutorial = self.tutor.at;
             self.persist();
+            // 걸음이 넘어갔다(0171) — 빛만 바뀌던 것에 소리 하나. 상이 오는 틱은 상의 소리가 대신한다.
+            if !self.tutor.owes_reward(&facts) {
+                self.snd(crate::sfx::Id::Recall);
+            }
         }
         // 길 안내(0170 — KB wayfinding: 갈 곳이 화면에 말한다): 걸음이 쉼터에서 할 일이면 가장 가까운 쉼터에 갈 곳의
         // 빛기둥·화살을 얹는다. 싸우는 동안은 비운다(화살이 싸움을 가리지 않게).
@@ -374,7 +433,7 @@ impl App {
     }
 
     /// 지금 보일 튜토리얼의 힌트 줄(없으면 그리지 않는다). 스킬 걸음의 버튼은 배운 스킬이 놓인 칸의 것.
-    pub(super) fn tutor_hint(&self) -> Option<(String, &'static str)> {
+    pub(super) fn tutor_hint(&self) -> Option<crate::tutorial::Hint> {
         if !self.tutor_on() {
             return None;
         }
@@ -447,7 +506,60 @@ impl App {
                 f.ox + (at.x + 1.0) * 0.5 * f.w,
                 f.oy + (1.0 - at.y) * 0.5 * f.h,
             );
-            hud::draw_edge_arrow(f, p, -ang, self.world.time, ink);
+            hud::draw_edge_arrow(f, self.above_hint(f, p), -ang, self.world.time, ink);
+        }
+    }
+
+    /// 화면 가장자리의 표지(화살·물결)가 튜토리얼의 힌트 판에 걸리면 판 바로 위로 올린다(0171 — 판과 화살이 서로를 가렸다).
+    fn above_hint(&self, f: &Frame, p: Vec2) -> Vec2 {
+        let Some(h) = self.tutor_hint() else { return p };
+        let r = hud::hint_rect(&self.ui, f, &h);
+        let m = 10.0 * f.ui;
+        if p.x > r.x - m && p.x < r.x + r.w + m && p.y > r.y - m {
+            vec2(p.x, r.y - m)
+        } else {
+            p
+        }
+    }
+
+    /// 종소리의 길 안내(0171): 닫힌 문의 장치를 찾는 동안 — 다른 길 안내(갈 곳의 빛기둥·튜토리얼의 쉼터)가 없고 장치가
+    /// 멀 때만 — 가끔 종이 운다. 싸우는 동안은 울리지 않는다(`knell::Knell`). 월드는 모른다(소리·이펙트와 같은 길).
+    fn knell_watch(&mut self) {
+        let at = self.world.player.pos;
+        let lost = self.stack.base() == Scene::Play
+            && self.wake.is_none()
+            && self.run.goal().is_none()
+            && self
+                .run
+                .bell_from()
+                .is_some_and(|b| b.distance(at) > crate::knell::NEAR);
+        let fight = self
+            .world
+            .enemies
+            .iter()
+            .any(|e| e.active() && e.pos.distance(at) < crate::tutorial::FIGHT_RANGE);
+        if self.knell.tick(TICK_DT, lost, fight) {
+            self.snd(crate::sfx::Id::Knell);
+        }
+    }
+
+    /// 종이 운 뒤 잠깐, 소리가 온 쪽의 화면 가장자리에 물결(화면 안이면 그 자리에 고리). 소리는 좌우로 나뉘지 않으니
+    /// (모노) 방향은 그림이 말한다.
+    pub(super) fn draw_knell(&self, f: &Frame) {
+        let (Some(k), Some(from)) = (self.knell.wave(), self.run.bell_from()) else {
+            return;
+        };
+        let (ndc, front) =
+            crate::camera::world_to_ndc(&self.cam.rig, f.w / f.h.max(1.0), from + Vec3::Y);
+        let px = |n: Vec2| {
+            vec2(
+                f.ox + (n.x + 1.0) * 0.5 * f.w,
+                f.oy + (1.0 - n.y) * 0.5 * f.h,
+            )
+        };
+        match crate::camera::edge_marker(ndc, front, 0.0) {
+            Some((at, ang)) => hud::draw_knell(f, self.above_hint(f, px(at)), Some(-ang), k),
+            None => hud::draw_knell(f, px(ndc), None, k),
         }
     }
 

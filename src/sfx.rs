@@ -49,6 +49,10 @@ pub enum Id {
     Beat3,
     /// 지연 공격이 풀린다(0128): 짧게 들이쉬는 바람 + 낮은 딸깍 — 이 뒤 0.22초에 맞는다.
     TeleRelease,
+    /// 튜토리얼의 걸음이 넘어간다(0171): 낮고 부드러운 두 음 — 박자의 '팅'(높다)·사는 소리와 다르게, 무언가 떠오르듯.
+    Recall,
+    /// 종소리의 길 안내(0171): 땅 밑의 큰 종 한 번 — 환경음의 먼 종보다 가깝고 낮다. 문을 찾는 동안 가끔.
+    Knell,
 }
 
 /// 잇단 박자 수(1부터) → 종소리(셋째부터는 가장 높은 것).
@@ -160,11 +164,15 @@ fn synth_gain(id: Id) -> f32 {
         Id::Thwack => 0.5,
         // 휘두르는 소리(0.45)와 같은 틱에 나도 묻히지 않게(0076 — 0.35는 안 들렸다).
         Id::Beat | Id::Beat2 | Id::Beat3 => 0.6,
+        Id::Recall => 0.4,
+        Id::Knell => 0.65,
         _ => 0.5,
     }
 }
 
-const SYNTHS: [Id; 13] = [
+const SYNTHS: [Id; 15] = [
+    Id::Recall,
+    Id::Knell,
     Id::TeleRelease,
     Id::Thwack,
     Id::Beat,
@@ -478,6 +486,46 @@ pub fn synth(id: Id) -> Vec<i16> {
                     let e = (-t * 13.0).exp();
                     let strike = (-t * 60.0).exp();
                     ((TAU * f0 * t).sin() + 0.35 * (TAU * f0 * 2.76 * t).sin() * strike) * e
+                })
+                .collect()
+        }
+        // 떠오름: E5 → A5 두 음이 0.09초 사이로 겹친다(부드러운 시작 — 딱 소리 없이, 0.5초에 사라진다).
+        Id::Recall => (0..len(0.55))
+            .map(|i| {
+                let t = i as f32 / SR as f32;
+                let note = |t0: f32, f: f32| {
+                    let d = t - t0;
+                    if d < 0.0 {
+                        0.0
+                    } else {
+                        ((TAU * f * d).sin() + 0.25 * (TAU * f * 2.0 * d).sin())
+                            * (d / 0.012).min(1.0)
+                            * (-d * 7.0).exp()
+                    }
+                };
+                note(0.0, 659.3) + 0.9 * note(0.09, 880.0)
+            })
+            .collect(),
+        // 큰 종: 종의 겹(울림 0.5 · 으뜸 1 · 단3도 1.2 · 5도 1.5 · 옥타브 2 — 높은 겹일수록 빨리 사라진다) + 치는 순간의
+        // 짧은 쇳소리. 으뜸 D3, 3.6초.
+        Id::Knell => {
+            const F0: f32 = 146.8;
+            const PARTS: [(f32, f32, f32); 5] = [
+                (0.5, 0.45, 0.7),
+                (1.0, 1.0, 1.0),
+                (1.2, 0.55, 1.5),
+                (1.5, 0.35, 2.2),
+                (2.0, 0.5, 2.8),
+            ];
+            (0..len(3.6))
+                .map(|i| {
+                    let t = i as f32 / SR as f32;
+                    let ring: f32 = PARTS
+                        .iter()
+                        .map(|&(k, a, d)| a * (TAU * F0 * k * t).sin() * (-t * d).exp())
+                        .sum();
+                    let strike = (TAU * F0 * 5.4 * t).sin() * (-t * 28.0).exp() * 0.5;
+                    (ring + strike) * (t / 0.004).min(1.0)
                 })
                 .collect()
         }

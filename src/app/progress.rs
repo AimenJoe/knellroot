@@ -19,6 +19,8 @@ impl App {
             }
             self.run.resume(&mut self.world, at);
             self.cam = Camera::new(self.world.player.pos, &self.t);
+            // 쉼터에서 잇는 판은 깨어나는 장면이 아니다(0171 — 그 장면은 시작 자리의 것).
+            self.wake = None;
         }
     }
 

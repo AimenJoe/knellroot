@@ -1319,7 +1319,7 @@ pub mod check {
         });
     }
 
-    pub(super) fn frame(r: Rect) {
+    pub fn frame(r: Rect) {
         if on() {
             S.with(|s| s.borrow_mut().frames.push(r));
         }

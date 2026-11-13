@@ -93,6 +93,8 @@ pub struct Level {
     /// 표지 글자 → 그 칸들의 가운데.
     pub marks: Vec<(char, Vec3)>,
     pub player_start: Vec3,
+    /// 꺼진 화로(0171 — 깨어난 자리의 것): 그 자리의 화로는 불꽃도 빛도 없이 굽는다. 거기서 처음 쉬면 불이 붙는다.
+    pub cold: Option<Vec3>,
     /// 문(닫히면 막는 상자)과 그 가운데.
     pub gate: Option<(Aabb, Vec3)>,
     /// 높낮이(0035 그림 → 0043 걸을 수 있게): 칸마다 높이(m). 바닥 칸은 땅 높이, 바깥 칸은 바위 단(+)·꺼진 땅(-),
@@ -149,6 +151,7 @@ impl Level {
             lights: Vec::new(),
             marks: Vec::new(),
             player_start: Vec3::ZERO,
+            cold: None,
             gate: None,
             heights: vec![None; w * h],
             ramps: vec![false; w * h],
@@ -612,6 +615,8 @@ pub struct StageRun {
     codex_new: Vec<String>,
     /// 이번 틱에 쉬었다(0064 M4 — 앱이 화로 가게를 연다), 잔불로 살 것이 있다(앱이 정한다 — 쉼터가 빛난다).
     rested: bool,
+    /// 이번 틱에 꺼진 화로에 불이 붙었다(0171 — 앱이 가져가 기록에 적고 그 순간을 보여 준다).
+    kindled: bool,
     pub shop_ready: bool,
     /// 숨은 물건(0105): 자리·종류·기록 이름, 주웠나(기록에서), 곁의 것, 이번 틱에 주운 것(앱이 가져간다).
     pub finds: Vec<(Vec3, Find, String)>,
@@ -735,6 +740,7 @@ impl StageRun {
             codex_new: Vec::new(),
             opened: None,
             rested: false,
+            kindled: false,
             shop_ready: false,
             finds: Vec::new(),
             found: Vec::new(),
@@ -1145,6 +1151,15 @@ impl StageRun {
             self.read = Some(k);
         } else if let (Some(i), true) = (self.near_rest, w.interact) {
             if self.rest_safe {
+                // 꺼진 화로(0171)에서 처음 쉰다: 불이 붙는다 — 지형이 다시 구워진다(빛·불꽃).
+                if self
+                    .level
+                    .cold
+                    .is_some_and(|c| c.distance(self.rests[i]) < 0.1)
+                {
+                    self.level.cold = None;
+                    self.kindled = true;
+                }
                 self.rest(w, i);
                 self.rested = true;
             } else {
@@ -1370,6 +1385,21 @@ impl StageRun {
         std::mem::take(&mut self.resident_seen_new)
     }
 
+    /// 깨어난 자리의 화로를 끈다(0171 — 아직 불을 붙인 적 없는 기록의 첫 지역): 시작 자리에서 가장 가까운 쉼터.
+    pub fn chill_hearth(&mut self) {
+        let from = self.level.player_start;
+        self.level.cold = self
+            .rests
+            .iter()
+            .copied()
+            .min_by(|a, b| a.distance(from).total_cmp(&b.distance(from)));
+    }
+
+    /// 이번 틱에 꺼진 화로에 불이 붙었나(0171) — 앱이 한 번 가져간다.
+    pub fn take_kindled(&mut self) -> bool {
+        std::mem::take(&mut self.kindled)
+    }
+
     /// 이번 틱에 쉬었나(0064 M4) — 앱이 한 번 가져가 화로 가게를 연다(쓰러진 뒤 다시 서는 것은 아니다).
     pub fn take_rested(&mut self) -> bool {
         std::mem::take(&mut self.rested)
@@ -1481,6 +1511,13 @@ impl StageRun {
             _ => None,
         }
         .or(self.guide)
+    }
+
+    /// 종소리가 들려오는 곳(0171 — 세계 법칙 D): 닫힌 문의 장치를 찾는 동안은 그 장치. 문이 열리면 갈 곳(`goal`)이 맡는다.
+    pub fn bell_from(&self) -> Option<Vec3> {
+        (self.phase == Phase::Entrance && !self.gate_opened)
+            .then_some(self.lever)
+            .flatten()
     }
 
     /// 문지기가 깨어나는 진행(0..1, 렌더의 `wake` 동작). 깨어나기 전 0, 다 깨면 1.
@@ -2365,6 +2402,70 @@ mod tests {
         assert_eq!(run.near_rest, Some(i));
         assert_eq!((w.player.hp, w.player.flask), (PLAYER_HP, FLASK_CHARGES));
         assert_eq!(run.rest_at, Some((i, Phase::Entrance)));
+    }
+
+    /// 0171: 방랑자는 화로 곁에서 깨어난다 — 시작 자리는 가장 가까운 쉼터의 곁(몇 걸음)이되 쉬는 거리 바로 밖이고
+    /// (일어나자마자 "쉬기"가 뜨지 않게), 깨어 있을 적이 볼 수 없는 자리다.
+    #[test]
+    fn the_wanderer_wakes_beside_a_hearth() {
+        let (run, w) = StageRun::start(&sanctuary::DEF);
+        let at = w.player.pos;
+        let near = run
+            .rests
+            .iter()
+            .map(|r| r.distance(at))
+            .fold(f32::MAX, f32::min);
+        assert!(near > REST_REACH && near < 4.0, "{near}");
+        assert_eq!(run.near(), None, "nothing to press on waking");
+        let foe = w
+            .enemies
+            .iter()
+            .map(|e| e.pos.distance(at))
+            .fold(f32::MAX, f32::min);
+        assert!(foe > REST_SAFE, "no one stands over the sleeper: {foe}");
+    }
+
+    /// 0171: 꺼진 화로 — 시작 자리에서 가장 가까운 쉼터가 꺼져 있다가, **거기서** 처음 쉴 때 불이 붙는다(한 번).
+    /// 다른 화로에서 쉬어도 그 화로는 꺼진 채다. 끄지 않은 판(옛 기록)에는 아무 일도 없다.
+    #[test]
+    fn the_cold_hearth_lights_when_first_rested_at() {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        let home = entrance_rest(&run);
+        // 끄지 않았으면 쉬어도 불 붙는 일은 없다.
+        rest_now(&mut run, &mut w, home);
+        assert!(run.level.cold.is_none() && !run.take_kindled());
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        run.chill_hearth();
+        assert_eq!(
+            run.level.cold,
+            Some(run.rests[home]),
+            "the one by the start"
+        );
+        // 다른 화로에서 쉰다: 그대로 꺼져 있다.
+        let other = (0..run.rests.len()).find(|&i| i != home).unwrap();
+        for e in &mut w.enemies {
+            e.state = EState::Dead;
+        }
+        rest_now(&mut run, &mut w, other);
+        assert!(run.take_rested() && !run.take_kindled());
+        assert!(run.level.cold.is_some());
+        // 그 화로에서 쉰다: 불이 붙는다 — 한 번만 알린다.
+        rest_now(&mut run, &mut w, home);
+        assert!(run.take_rested() && run.take_kindled());
+        assert_eq!(run.level.cold, None);
+        rest_now(&mut run, &mut w, home);
+        assert!(!run.take_kindled(), "lit stays lit");
+    }
+
+    /// 0171 종소리의 길 안내: 닫힌 문의 장치를 찾는 동안에만 종소리가 온 곳이 있다 — 장치를 당기면(문이 열리면) 갈 곳이 맡는다.
+    #[test]
+    fn the_bell_calls_from_the_lever_until_the_gate_opens() {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        assert_eq!(run.bell_from(), run.lever);
+        assert!(run.bell_from().is_some() && run.goal().is_none());
+        pull_lever(&mut run, &mut w);
+        assert_eq!(run.bell_from(), None);
+        assert!(run.goal().is_some());
     }
 
     /// 0032: 깨어 있는 적이 `REST_SAFE` 안이면 쉴 수 없다(잠든 문지기는 괜찮다).

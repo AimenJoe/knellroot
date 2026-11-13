@@ -169,6 +169,8 @@ pub struct Camera {
     kick_deg: Vec3,
     /// 타격 줌(0145): 주시점 쪽으로 다가가 있는 몫(거리의 0..`ZOOM_MAX`). `freeze`(히트스톱)인 동안은 줄지 않는다.
     zoom: f32,
+    /// 장면이 당겨 둔 몫(0171 — 깨어나는 첫 장면): 주시점 쪽으로 거리의 0..1. 앱이 틱마다 적는다(0 = 제 거리). 타격 줌과 곱해진다.
+    pub close: f32,
     pub freeze: bool,
     /// 땅 돌리기 휘청(0084): (지난 초, 굴림 크기 도 — + = 화면이 시계 방향으로 기욺). 줄어드는 흔들림 몇 개의 합.
     wobbles: Vec<(f32, f32)>,
@@ -199,6 +201,7 @@ impl Camera {
             kick: Vec3::ZERO,
             kick_deg: Vec3::ZERO,
             zoom: 0.0,
+            close: 0.0,
             freeze: false,
             wobbles: Vec::new(),
             roll: 0.0,
@@ -482,7 +485,8 @@ impl Camera {
                 self.zoom = 0.0;
             }
         }
-        rig.pos = rig.look + (rig.pos - rig.look) * (1.0 - self.zoom);
+        rig.pos = rig.look
+            + (rig.pos - rig.look) * (1.0 - self.zoom) * (1.0 - self.close.clamp(0.0, 0.9));
         // 흔들림: trauma² 크기의 무작위 오프셋(로직 시계를 쓰므로 히트스톱 중엔 멈춘다).
         self.trauma = (self.trauma - dt * 2.5).max(0.0);
         // 크기는 각으로(0020): 카메라 거리 × tan(각) — 먼 쿼터뷰에서도 화면에서 보이게. 카메라의 오른쪽·위로 민다(위치·주시점 같이 = 화면 평행 이동).

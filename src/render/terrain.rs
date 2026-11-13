@@ -188,7 +188,9 @@ impl Renderer {
             + look().toon as usize
             + 2 * flora as usize
             + 4 * look().calm as usize
-            + 8 * look().key as usize;
+            + 8 * look().key as usize
+            // 꺼진 화로(0171)에 불이 붙으면 다시 굽는다(빛·불꽃이 정점에 구워져 있다).
+            + 16 * run.level.cold.is_some() as usize;
         if self.scenery.as_ref().is_none_or(|(k, _)| *k != key) {
             let trees = run.def.env.trees;
             self.scenery = Some((key, Scenery::bake(&run.level, &mut self.lib, flora, trees)));

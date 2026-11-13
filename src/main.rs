@@ -30,6 +30,7 @@ mod icons;
 mod idle;
 mod input;
 mod item_view;
+mod knell;
 #[cfg(feature = "dev")]
 mod lab;
 mod model;
@@ -56,6 +57,7 @@ mod touch;
 mod tuning;
 mod tutorial;
 mod ui;
+mod wake;
 mod weapons;
 mod world;
 
