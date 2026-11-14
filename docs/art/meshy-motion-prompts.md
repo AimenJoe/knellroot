@@ -35,10 +35,13 @@ Text to Motion으로 붙인다. 이름 = `tools/art/blender/wanderer.py`의 동�
 ## 빠진 것(첫 묶음 13개 뒤, 2026-11-14) — 이어 붙인 한 클립에서 자른다
 첫 묶음이 채우는 것: `idle`(Combat_Stance)·`walk`(walking_2_inplace)·달리기(Running)·`attack`·`attack2`(Weapon_Combo_2)·`attack3`(Thrust_Slash 찌르기)·`heavy`(Attack)·`hammer1`(Heavy_Hammer_Swing)·`jump`·`land`(Basic_Jump·Jump_Run). 나머지 39개 이름을 아래 열셋 클립 + 콤보 셋(지팡이·망치 위) + 기술·큰 기술 열하나(2·3순위)로 채운다.
 
+(2026-11-14 사장 "Parry dodge 이상하게 나왔어": 성질이 다른 둘을 한 클립에 이으면 뒤섞인다 — 패링·회피는 따로. 패링은 "칼을 가로로 들어 내려치는 것을 막는다"처럼 꼴이 분명하게, 회피는 Text to Motion이 잘 아는 앞구르기로. 라이브러리(Fighting)에 Block·Roll·Dodge가 있으면 그쪽이 먼저.)
+
 | 클립 → 자를 이름 | 길이 | 프롬프트 |
 |---|---|---|
 | react → `hurt`·`fall`·`wake` | 5초 | A sword fighter in a combat-ready stance is hit hard in the chest, staggers back two steps, then is hit again and collapses forward face down onto the ground, lies still for a moment, then slowly pushes up with the hands, gets to the knees and stands back up into a combat-ready stance. |
-| defense → `parry`·`dodge` | 3초 | A sword fighter holding a one-handed sword in the right hand first snaps the sword up diagonally to parry a blow with a short recoil, returns to stance, pauses, then does a very quick low evasive dash forward with the head and shoulders ducked, and pops back up into a combat-ready stance. |
+| `parry`(따로) | 2초 | A sword fighter holding a one-handed sword in the right hand stands in a guard stance, then quickly raises the sword horizontally in front of the face with the left hand bracing the blade to block a heavy overhead strike, the knees bend from the impact, then pushes the blade away and returns to the guard stance. Only one block. |
+| `dodge`(따로) | 2초 | A sword fighter holding a one-handed sword in the right hand does one quick forward dive roll: crouches, rolls forward over one shoulder along the ground, and comes back up onto the feet into a crouched guard stance. Only one roll, then holds still. |
 | charge_heavy → `charge`·`heavy` | 4초 | A sword fighter crouches low and draws a one-handed sword far back behind the right hip, holds the coiled tense pose for two seconds while trembling with gathered power, then releases a wide explosive sweeping slash across the front at waist height and rises into a combat-ready stance. |
 | `walk_back` | 2초 | A sword fighter holding a one-handed sword in the right hand walks slowly backwards while still facing forward, guard raised, small careful steps, keeping the eyes on an enemy in front. In place, looping. |
 | turn → `turn_l`·`turn_r` | 3초 | A fighter stomps the right foot down and twists the whole body sharply to the left as if turning the ground underfoot, pauses, then stomps again and twists sharply to the right, and returns to a combat-ready stance. |
