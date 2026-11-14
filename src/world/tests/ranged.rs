@@ -672,8 +672,16 @@ fn a_level_shot_follows_the_ground_to_foes_above_and_below() {
 /// 재는 도구(0173): 무기마다 서 있는 적에게 `secs`초 동안 준 피해(초당) — 평타를 박자에 맞춰/마구 눌러.
 /// `cargo test weapon_dps_probe -- --ignored --nocapture`
 fn dps(id: weapons::Id, secs: f32, on_beat: bool, dist: f32) -> (f32, f32) {
+    dps_at(id, 0, secs, on_beat, dist)
+}
+
+/// `dps` + 벼린 단(0180).
+fn dps_at(id: weapons::Id, rank: u8, secs: f32, on_beat: bool, dist: f32) -> (f32, f32) {
     let t = Tuning::default();
     let mut w = World::new("test", 40.0);
+    let mut f = crate::forge::Forged::default();
+    f.set(id, rank);
+    w.apply_stats(crate::stats::Stats::compute(&[f.mods(id)]), true);
     w.set_weapon(id);
     let hp0 = 1_000_000;
     let i = mob_with(&mut w, vec3(0.0, 0.0, -dist), hp0);
@@ -726,5 +734,67 @@ fn weapon_dps_probe() {
                 s2 * 100.0
             );
         }
+    }
+}
+
+#[test]
+#[ignore]
+fn forged_dps_probe() {
+    for id in [
+        weapons::Id::Sword,
+        weapons::Id::Hammer,
+        weapons::Id::Staff,
+        weapons::Id::Crossbow,
+    ] {
+        let d = if id == weapons::Id::Crossbow {
+            8.0
+        } else {
+            1.2
+        };
+        for rank in 0..=crate::forge::RANKS {
+            let (beat, _) = dps_at(id, rank, 20.0, true, d);
+            let (mash, _) = dps_at(id, rank, 20.0, false, d);
+            println!("{id:?} +{rank}: beat {beat:.1}/s · mash {mash:.1}/s");
+        }
+    }
+}
+
+/// 0180: 벼린 쇠뇌는 탄창이 늘고(가득 채워 시작·장전도 새 탄창까지) 볼트 피해가 오른다 — 탄창은 HUD와 같은 `mag_of` 한 곳.
+#[test]
+fn a_forged_crossbow_holds_more_bolts_and_hits_harder() {
+    let mut w = World::new("test", 40.0);
+    let base = w.mag_of(weapons::Id::Crossbow);
+    let mut f = crate::forge::Forged::default();
+    f.set(weapons::Id::Crossbow, 3);
+    w.apply_stats(
+        crate::stats::Stats::compute(&[f.mods(weapons::Id::Crossbow)]),
+        true,
+    );
+    w.set_weapon(weapons::Id::Crossbow);
+    assert_eq!(w.mag_of(weapons::Id::Crossbow), base + 2);
+    assert_eq!(w.player.ranged.ammo, base + 2, "starts full");
+    // 능력치를 되돌리면(거두기) 탄창 안으로.
+    w.apply_stats(crate::stats::Stats::default(), false);
+    assert_eq!(w.player.ranged.ammo, base);
+    // 볼트 한 발의 피해: 0단 대 3단.
+    let hit = |rank: u8| {
+        let (d, _) = dps_at(weapons::Id::Crossbow, rank, 2.0, true, 8.0);
+        d
+    };
+    assert!(hit(3) > hit(0) * 1.5, "rank 3 bolts hit clearly harder");
+}
+
+/// 0180(0173을 지킨다): 어느 단에서나 같은 단의 쇠뇌는 검의 일곱 할 밑 — 벼려도 원거리가 근접을 앞지르지 않는다.
+#[test]
+fn a_forged_crossbow_stays_under_seven_tenths_of_the_sword_at_every_rank() {
+    for rank in 0..=crate::forge::RANKS {
+        // 20초(탐침 `weapon_dps_probe`와 같은 창 — 짧으면 처음 가득한 탄창의 몫이 비율을 부풀린다).
+        let (bow, _) = dps_at(weapons::Id::Crossbow, rank, 20.0, true, 8.0);
+        let (sword, _) = dps_at(weapons::Id::Sword, rank, 20.0, true, 1.2);
+        assert!(
+            bow < sword * 0.7,
+            "+{rank}: crossbow {bow:.1}/s vs sword {sword:.1}/s"
+        );
+        assert!(sword > 0.0 && bow > 0.0);
     }
 }

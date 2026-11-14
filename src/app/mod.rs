@@ -994,6 +994,21 @@ impl App {
     }
 }
 
+impl App {
+    /// 벼린 단이 붙은 무기 이름(0180 — "검 +2", 0단이면 이름만).
+    pub(super) fn forged_name(&self, w: weapons::Id) -> String {
+        forged_label(w, self.progress.forged.rank(w))
+    }
+}
+
+/// 무기 이름 + 단(0180).
+fn forged_label(w: weapons::Id, rank: u8) -> String {
+    match rank {
+        0 => weapon_name(w).to_string(),
+        r => fill(s().forge_named, &[weapon_name(w), &r.to_string()]),
+    }
+}
+
 /// 무기 이름(0051, i18n 표).
 fn weapon_name(id: weapons::Id) -> &'static str {
     let s = s();

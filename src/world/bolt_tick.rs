@@ -164,7 +164,7 @@ impl World {
                 vel: flat / tf + Vec3::Y * vy,
                 fuse: g.fuse,
                 radius: g.radius,
-                damage: g.damage,
+                damage: g.damage + self.stats.shot_dmg,
                 poise: g.poise,
             });
             ev.push(Event::Throw);
@@ -234,7 +234,13 @@ impl World {
                 let crit = en.exposed > 0.0;
                 en.hp -= hurt_by(
                     en,
-                    self.stats.dmg + b.def.damage,
+                    self.stats.dmg
+                        + b.def.damage
+                        + if b.def.is_shot() {
+                            self.stats.shot_dmg
+                        } else {
+                            0
+                        },
                     crit,
                     self.stats.opened_dmg,
                     t,

@@ -28,6 +28,8 @@ impl App {
                 flow::Ask::Level(l) => self.raise_level(l as usize),
                 flow::Ask::Skill(i) => self.buy_skill(i as usize),
                 flow::Ask::Respec => self.respec_skills(),
+                flow::Ask::Forge(i) => self.forge_weapon(crate::weapons::IDS[i as usize]),
+                flow::Ask::Recall(i) => self.recall_weapon(crate::weapons::IDS[i as usize]),
                 flow::Ask::Restart | flow::Ask::ToTitle => {}
             }
         }
@@ -68,6 +70,30 @@ impl App {
             flow::Ask::Level(l) => (self.ask_level_text(l as usize), s.ask_level_yes),
             flow::Ask::Skill(i) => self.ask_skill_text(i as usize),
             flow::Ask::Respec => (self.ask_respec_text(), s.board_respec),
+            flow::Ask::Forge(i) => {
+                let w = crate::weapons::IDS[i as usize];
+                let (st, em) = crate::forge::next_cost(&self.progress.forged, w).unwrap_or((0, 0));
+                let to = self.progress.forged.rank(w) + 1;
+                (
+                    fill(
+                        s.ask_forge,
+                        &[&forged_label(w, to), &st.to_string(), &em.to_string()],
+                    ),
+                    s.forge_do,
+                )
+            }
+            flow::Ask::Recall(i) => {
+                let w = crate::weapons::IDS[i as usize];
+                let r = self.progress.forged.rank(w);
+                let (st, em) = crate::forge::cost_to(r);
+                (
+                    fill(
+                        s.ask_recall,
+                        &[&forged_label(w, r), &st.to_string(), &em.to_string()],
+                    ),
+                    s.forge_recall,
+                )
+            }
         };
         let u = self.ui.u(1.0);
         let w = 280.0;

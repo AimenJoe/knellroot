@@ -320,14 +320,19 @@ pub enum Ask {
     Skill(u8),
     /// 기술: 잔불을 내고 쓴 점수를 모두 돌려받는다(패시브 칸까지).
     Respec,
+    /// 화로 가게의 벼리기(0180): 이 무기(`weapons::IDS`의 자리)를 한 단 벼린다(숫돌 + 잔불).
+    Forge(u8),
+    /// 화로 가게의 거두기(0180): 이 무기의 단을 모두 거둔다 — 숫돌은 돌아오고 잔불은 안 돌아온다.
+    Recall(u8),
 }
 
 /// 묻는 창의 커서 처음 자리: 버리는 일은 "취소"(1)에서 — 연타가 실행되지 않게(KB). 사기는 nail 가게처럼 "사기"(0)에서.
 /// 되돌리기(0158)는 찍은 것을 버리는 일이라 취소에서.
 pub fn ask_default(k: Ask) -> usize {
     match k {
-        Ask::Buy(_) | Ask::Level(_) | Ask::Skill(_) => 0,
-        Ask::Restart | Ask::ToTitle | Ask::Respec => 1,
+        Ask::Buy(_) | Ask::Level(_) | Ask::Skill(_) | Ask::Forge(_) => 0,
+        // 거두기는 쓴 잔불을 버린다 — 취소에서.
+        Ask::Restart | Ask::ToTitle | Ask::Respec | Ask::Recall(_) => 1,
     }
 }
 
@@ -339,7 +344,12 @@ pub fn answer(k: Ask, yes: bool) -> (Go, bool) {
     match k {
         Ask::Restart => (Go::Root(Scene::Play), true),
         Ask::ToTitle => (Go::Root(Scene::Title), true),
-        Ask::Buy(_) | Ask::Level(_) | Ask::Skill(_) | Ask::Respec => (Go::Back, false),
+        Ask::Buy(_)
+        | Ask::Level(_)
+        | Ask::Skill(_)
+        | Ask::Respec
+        | Ask::Forge(_)
+        | Ask::Recall(_) => (Go::Back, false),
     }
 }
 

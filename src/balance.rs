@@ -71,6 +71,11 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     prog.owned = b.worn.clone();
     prog.finds = b.finds.clone();
     prog.board.cells = b.tree;
+    // 벼린 단 훑기(0180): `SIM_FORGE=2`면 든 무기를 그 단까지 벼린 것으로 잰다.
+    prog.weapon = Some(b.weapon);
+    if let Some(r) = std::env::var("SIM_FORGE").ok().and_then(|v| v.parse().ok()) {
+        prog.forged.set(b.weapon, r);
+    }
     w.apply_stats(prog.stats(), true);
     w.tree = b.tree;
     let boss = w.spawn(kind, vec3(0.0, 0.0, -7.0));

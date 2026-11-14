@@ -193,6 +193,47 @@ pub struct Weapon {
     /// 공격 기력 배율(0117, 사장 "큰 무기는 더 많은 기력 — 높은 피해의 보정"): 평타·대시 공격 `stamina.attack`, 강타 `heavy.stamina`,
     /// 원거리 무기는 사격·모은 사격·공중 볼트에 곱한다. 맨손 < 지팡이 < 쇠뇌(0173: 0.7 → 0.9) < 검 < 망치.
     pub stamina: f32,
+    /// 벼린 단(0180 — 1·2·3단에 쌓인 몫, `forge.rs`). 근접 = 타마다 피해(평타·대시·강타), 쇠뇌 = 탄창 먼저·볼트 피해는 뒤에
+    /// (볼트는 10이라 +10이면 곱절 — 원거리는 근접의 여섯~일곱 할 밑을 지킨다, 0173). 맨손은 벼리지 않는다(`None`).
+    pub forge: Option<[Forge; 3]>,
+}
+
+/// 벼린 한 단의 몫(그 단까지 쌓인 값).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Forge {
+    /// 근접 타마다 피해 +.
+    pub hit: i32,
+    /// 볼트·모은 사격·수류탄 피해 +.
+    pub shot: i32,
+    /// 탄창 +.
+    pub mag: i32,
+}
+
+/// 근접 무기의 벼린 단: 단마다 타의 피해 +5(반 눈금 — 0180: +10은 한 단에 문지기 싸움이 43초 → 18초(허수아비)라 반으로.
+/// +5도 잔재(30)를 쓰러뜨리는 검의 대 수가 셋 → 둘로 준다, KB `weapon-upgrade-design`).
+const MELEE_FORGE: [Forge; 3] = [
+    Forge {
+        hit: 5,
+        shot: 0,
+        mag: 0,
+    },
+    Forge {
+        hit: 10,
+        shot: 0,
+        mag: 0,
+    },
+    Forge {
+        hit: 15,
+        shot: 0,
+        mag: 0,
+    },
+];
+
+impl Bolt {
+    /// 쇠뇌의 볼트인가(0180 — 벼린 쇠뇌의 피해 몫을 받는다. 근접 무기의 마법 탄은 아니다).
+    pub fn is_shot(&self) -> bool {
+        self.look == 3
+    }
 }
 
 const fn hit(
@@ -340,6 +381,7 @@ pub const WEAPONS: [Weapon; 5] = [
         },
         node: "sword",
         stamina: 1.0,
+        forge: Some(MELEE_FORGE),
     },
     Weapon {
         id: Id::Hammer,
@@ -390,6 +432,7 @@ pub const WEAPONS: [Weapon; 5] = [
         },
         node: "w_hammer",
         stamina: 1.7,
+        forge: Some(MELEE_FORGE),
     },
     Weapon {
         id: Id::Staff,
@@ -433,6 +476,7 @@ pub const WEAPONS: [Weapon; 5] = [
         },
         node: "w_staff",
         stamina: 0.75,
+        forge: Some(MELEE_FORGE),
     },
     Weapon {
         id: Id::Crossbow,
@@ -479,6 +523,23 @@ pub const WEAPONS: [Weapon; 5] = [
         },
         node: "w_crossbow",
         stamina: 0.9,
+        forge: Some([
+            Forge {
+                hit: 0,
+                shot: 0,
+                mag: 1,
+            },
+            Forge {
+                hit: 0,
+                shot: 5,
+                mag: 1,
+            },
+            Forge {
+                hit: 0,
+                shot: 10,
+                mag: 2,
+            },
+        ]),
     },
     Weapon {
         id: Id::Fists,
@@ -518,6 +579,7 @@ pub const WEAPONS: [Weapon; 5] = [
         // 든 것이 없다(다른 무기 부위는 모두 숨는다).
         node: "",
         stamina: 0.6,
+        forge: None,
     },
 ];
 

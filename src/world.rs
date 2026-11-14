@@ -1129,21 +1129,36 @@ impl World {
         pl.beat.period = 0.0;
         pl.ranged.reload = 0.0;
         let w = id.def();
-        pl.ranged.ammo = match w.rb {
-            Rb::Shot { mag, .. } => mag,
-            Rb::Magic(_) => 0,
-        };
+        let mag = self.mag_of(id);
+        let pl = &mut self.player;
+        pl.ranged.ammo = mag;
         pl.ranged.grenades = w.grenade.map_or(0.0, |g| g.count as f32);
         if !matches!(pl.state, PState::Hurt { .. } | PState::Jump { .. }) {
             pl.state = PState::Idle;
         }
     }
 
+    /// 그 무기의 탄창(0180 — 표의 탄창 + 벼린 단의 몫 `Stats::mag`, 사격 무기가 아니면 0).
+    pub fn mag_of(&self, id: weapons::Id) -> u8 {
+        match id.def().rb {
+            Rb::Shot { mag, .. } => (mag as i32 + self.stats.mag).clamp(1, u8::MAX as i32) as u8,
+            Rb::Magic(_) => 0,
+        }
+    }
+
     /// 종류 표(`species.rs`)의 적 하나를 세운다.
     /// 능력치를 바꾼다(0064 M3 — 장신구를 갈아 끼우거나 성장했을 때). 체력·등잔은 새 최대를 넘지 않게, `refill`이면 가득.
     pub fn apply_stats(&mut self, s: crate::stats::Stats, refill: bool) {
+        // 탄창(0180): 가득이었거나 `refill`이면 새 탄창으로 가득, 아니면 새 탄창 안으로.
+        let was_full = self.player.ranged.ammo >= self.mag_of(self.player.weapon);
         self.stats = s;
+        let mag = self.mag_of(self.player.weapon);
         let pl = &mut self.player;
+        pl.ranged.ammo = if refill || was_full {
+            mag
+        } else {
+            pl.ranged.ammo.min(mag)
+        };
         pl.max_hp = s.max_hp;
         pl.flask_max = s.flask;
         if refill {

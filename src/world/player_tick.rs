@@ -248,10 +248,11 @@ impl World {
     /// 시계·스태미나 차기·누르고 있는 시간. 끝에서 `world_move`·`can_charge_cast`를 채운다(장전이 끝난 뒤의 탄으로).
     fn tick_player_clocks(&mut self, cx: &mut Ctx) {
         let (a, t, dt, wpn) = (&cx.a, cx.t, cx.dt, cx.wpn);
+        let mag = self.mag_of(self.player.weapon);
         let pl = &mut self.player;
         // 콤보·원거리 무기 시계(0051).
         pl.combo_left = (pl.combo_left - dt).max(0.0);
-        if let Rb::Shot { mag, .. } = wpn.rb {
+        if let Rb::Shot { .. } = wpn.rb {
             if pl.ranged.reload > 0.0 {
                 pl.ranged.reload -= dt;
                 if pl.ranged.reload <= 0.0 {
@@ -1210,7 +1211,8 @@ impl World {
         }
         // 원거리 무기는 회피하면 한 발 장전(0051, PoE2 착상) — 회피를 공격 리듬에 넣는다.
         if !was_dodging && matches!(self.player.state, PState::Dodge { .. }) {
-            if let Rb::Shot { mag, .. } = cx.wpn.rb {
+            if let Rb::Shot { .. } = cx.wpn.rb {
+                let mag = self.mag_of(self.player.weapon);
                 let pl = &mut self.player;
                 if pl.ranged.ammo < mag {
                     pl.ranged.ammo += 1;

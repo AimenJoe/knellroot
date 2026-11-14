@@ -172,7 +172,8 @@ impl App {
             &self.progress.owned,
             &self.progress.growth,
         ) || self.progress.level.can_raise(self.world.embers)
-            || self.progress.board.can_buy(self.progress.skill_points());
+            || self.progress.board.can_buy(self.progress.skill_points())
+            || self.can_forge();
         if self.run.take_rested() {
             self.snd(crate::sfx::Id::Rest);
             if self.run.take_kindled() {

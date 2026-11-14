@@ -304,10 +304,11 @@ pub(super) fn weapon_numbers(
         time,
     } = w.rb
     {
+        let shot_dmg = bolt.damage + dmg + st.shot_dmg;
         out.push(WVal {
             line: WLine::Shot,
-            text: (bolt.damage + dmg).to_string(),
-            score: (bolt.damage + dmg) as f32,
+            text: shot_dmg.to_string(),
+            score: shot_dmg as f32,
         });
         // 공격 속도 = 한 발의 시간 = 박자(0077 — 근접과 같은 줄).
         let shot = t[P::CastTime] * time;
@@ -316,6 +317,8 @@ pub(super) fn weapon_numbers(
             text: secs(shot),
             score: shot,
         });
+        // 벼린 단의 탄창(0180).
+        let mag = (mag as i32 + st.mag).max(1);
         out.push(WVal {
             line: WLine::Mag,
             text: mag.to_string(),
@@ -423,6 +426,14 @@ impl App {
     /// 칸의 후보(가진 것에서).
     fn cands(&self, slot: usize) -> Vec<Cand> {
         candidates(slot, &self.progress.owned, &self.arms(), &self.garbs())
+    }
+
+    /// 줄·머리에 쓰는 이름: 무기는 벼린 단이 붙는다(0180 "검 +2").
+    fn cand_label(&self, c: Cand) -> String {
+        match c {
+            Cand::Weapon(w) => self.forged_name(w),
+            _ => self.cand_name(c).to_string(),
+        }
     }
 
     fn cand_name(&self, c: Cand) -> &'static str {
@@ -731,7 +742,14 @@ impl App {
             &PaneHead {
                 name: self.cand_name(focus),
                 gold: wears_something(focus),
-                kind: slot_name(slot),
+                // 벼린 단(0180)은 갈래 줄에 — 머리의 이름 칸은 긴 무기 이름으로 이미 찬다.
+                kind: match focus {
+                    Cand::Weapon(w) if self.progress.forged.rank(w) > 0 => fill(
+                        s.forge_named,
+                        &[&slot_name(slot), &self.progress.forged.rank(w).to_string()],
+                    ),
+                    _ => slot_name(slot),
+                },
                 state,
                 icon: item.is_some(),
             },
@@ -767,7 +785,7 @@ impl App {
                             .unwrap_or_default(),
                         _ => String::new(),
                     };
-                    ui::Row::value(self.cand_name(c), mark)
+                    ui::Row::value(self.cand_label(c), mark)
                         .with_icon(true)
                         .tagged()
                 })
@@ -873,8 +891,13 @@ impl App {
     fn equip_lines(&self, w: &Window, slot: usize, focus: Cand, picking: bool) -> Vec<Ln> {
         let s = s();
         let now_stats = self.progress.stats();
-        let tuned = now_stats.tune(&self.t);
-        let numbers = |id: weapons::Id| weapon_numbers(id.def(), &tuned, &now_stats);
+        // 벼린 단(0180)은 그 무기를 들었을 때만 — 후보마다 그 무기를 든 능력치로 센다.
+        let numbers = |id: weapons::Id| {
+            let mut p = self.progress.clone();
+            p.weapon = Some(id);
+            let st = p.stats();
+            weapon_numbers(id.def(), &st.tune(&self.t), &st)
+        };
         let arrow = |ch: Change| match ch {
             Change::Better => ("▲", AMBER),
             Change::Worse => ("▼", WORSE),

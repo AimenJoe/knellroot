@@ -130,6 +130,7 @@ impl App {
                 }
                 crate::stage::Find::Sip => s.toast_find_sip,
                 crate::stage::Find::Shard => s.toast_find_shard,
+                crate::stage::Find::Stone => s.toast_find_stone,
                 crate::stage::Find::Garb => {
                     let name = garb.map_or("", |g| tr(crate::garb::def(g).name));
                     let line = if put_on {
