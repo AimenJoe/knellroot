@@ -54,6 +54,13 @@ Text to Motion으로 붙인다. 이름 = `tools/art/blender/wanderer.py`의 동�
 
 아직 없는 것: `wake`(엎드리거나 누운 데서 일어나기), `walk_back`, `turn_l`·`turn_r`, 몸짓 둘, `drink`, `cast`·`cast_charge`, `throw`, 지팡이 여섯, 쇠뇌 둘, `hammer2`·`hammer_charge`, 기술 다섯(`sk_gather`·`sk_brace`·`sk_echo`·`sk_throw`·`sk_embers`), `ult_upend`.
 
+### 둘째 묶음 뒤에 만들 것(2026-11-14)
+| 이름 | 길이 | 프롬프트 |
+|---|---|---|
+| `wake`(등으로 누운 데서 — Dead에 이어진다) | 4초 | A small hooded fighter lies flat on the back on the ground, unconscious, then stirs, slowly sits up, rolls onto the hands and knees, pushes up to stand, shakes the head once, and settles into a combat-ready stance. |
+| `hammer_charge` | 2초 | A fighter holding a heavy two-handed war hammer cocks it back over the right shoulder and crouches, gathering strength, body tense and trembling slightly, holding the pose. Looping hold, no release. |
+나머지(뒷걸음·땅 돌리기·몸짓·마시기·마법·던지기·지팡이·쇠뇌·망치 2연타·기술 다섯·쟁반 뒤집기)는 위 표들의 프롬프트 그대로.
+
 ## 빠진 것(첫 묶음 13개 뒤, 2026-11-14) — 이어 붙인 한 클립에서 자른다
 첫 묶음이 채우는 것: `idle`(Combat_Stance)·`walk`(walking_2_inplace)·달리기(Running)·`attack`·`attack2`(Weapon_Combo_2)·`attack3`(Thrust_Slash 찌르기)·`heavy`(Attack)·`hammer1`(Heavy_Hammer_Swing)·`jump`·`land`(Basic_Jump·Jump_Run). 나머지 39개 이름을 아래 열셋 클립 + 콤보 셋(지팡이·망치 위) + 기술·큰 기술 열하나(2·3순위)로 채운다.
 
