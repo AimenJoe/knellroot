@@ -15,6 +15,23 @@ Text to Motion으로 붙인다. 이름 = `tools/art/blender/wanderer.py`의 동�
 - 3타는 게임에서 **내디디며 찌르기**(`weapons.rs` `SWORD_COMBO` — 좁고 길게)다. 처음 적은 내려치기 프롬프트는 틀렸다.
 - 끝 자세는 늘 "칼을 든 준비 자세"로 — 다음 타·서기와 이어 붙이기 쉽다.
 
+## 연속 동작으로 만들고 자르기(사장 2026-11-14 — "프롬프트로는 두 번째 동작을 잘 만들 수 없었어. 연속 동작을 만들고 자르는 식이 더 좋을 듯")
+콤보는 한 클립에 이어서 만들고, 들일 때 **오른손 속도의 봉우리**로 타를 나눈다(봉우리 앞의 느린 구간 = 시동, 봉우리 = 판정, 뒤 = 후딜).
+타 사이에 "짧고 또렷한 멈춤"을 넣으면 자르는 자리가 분명해진다. 길이 4초(지팡이 4.5초).
+
+| 이름(자를 것) | 프롬프트 |
+|---|---|
+| `sword_combo` → `attack`·`attack2`·`attack3` | A sword fighter holding a one-handed sword in the right hand performs a three-hit combo with a short clear pause between hits: first a horizontal slash right to left at chest height, then a backhand slash left to right at waist height with a half step forward, then a deep lunging thrust straight ahead. Ends holding a combat-ready stance. |
+| `staff_combo` → `staff1`~`staff4` | A fighter holding a light wooden staff with both hands performs a fast four-hit combo with a brief pause between hits: a straight thrust, a horizontal swing left to right, a rising strike with the lower end, then one full spin finishing with a strong downward strike. Ends in a ready stance. |
+| `hammer_combo` → `hammer1`·`hammer2` | A fighter holding a heavy two-handed war hammer performs a slow two-hit combo with a clear pause between hits: first a wide horizontal swing from the right with the weight pulling the body around, then a step forward and an overhead slam onto the ground. Ends lifting the hammer back to a ready stance. |
+
+### 받은 첫 묶음(2026-11-14, `Meshy_AI_Hooded_Raccoon_Rogue_…_animated_mixamo_All_animation.glb`)
+- 몸: 정점 96,786 · 뼈 58(Mixamo 이름 + 꼬리 `Bone_014~017`·망토 `Bone_028~035`·귀 `Bone_044~047`·`headfront`) · 30fps · 손에 칼 없음(칼은 게임의 부위를 `RightHand`에 붙인다).
+- 동작 13: Walking(1.03s)·walking_2_inplace·Running(0.63s)·Combat_Stance·Attack·Weapon_Combo_2·Thrust_Slash·Sword_Judgment·Heavy_Hammer_Swing·Archery_Shot·Basic_Jump·Back_Jump·Jump_Run.
+- 오른손 속도 봉우리(프레임, m/s): Weapon_Combo_2 = 26(4.1)·48(6.9)·72(5.6) — 세 타가 또렷하다(자를 자리 ≈ 12–36 · 36–58 · 58–84). Attack = 26(11.3, 크게 한 번 — 강타 후보).
+  Thrust_Slash = 18(5.8, 찌르기)·33(4.0). Sword_Judgment = 24(10.0)·80(3.4). Heavy_Hammer_Swing = 37(4.4).
+- 앞으로 가는 이동: Weapon_Combo_2·Sword_Judgment·Basic_Jump·Back_Jump는 엉덩이가 0.5~1.1m 움직인다 — 들일 때 수평 이동을 뺀다.
+
 ## 1순위 — 검(기본 무기)
 | 이름 | 프롬프트 |
 |---|---|
