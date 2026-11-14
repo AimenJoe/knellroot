@@ -2,8 +2,8 @@
 
 쿼터뷰로 떼를 상대하다가, 락온을 누르면 숄더뷰로 내려가 보스와 1:1. Rust + macroquad(첫 게임 [nail-under-the-roots](https://github.com/AimenJoe/nail-under-the-roots)와 같은 스택). 세계관은 nail의 먼 뒷이야기(0004).
 
-- **운영판 v0.5.0 "확장 — 떠난 마을"**(2026-11-10): 웹 https://knellroot.netlify.app · Android APK는 GitHub Releases · 소개 페이지 https://knellroot.beardworks.io
-- **개발판**(`release/v0.6`, 지금 마일스톤 **v0.6.0 "다듬기"** — 판정 반영·무기 강화·PC 빌드 먼저, 0134): https://dev--knellroot.netlify.app · 개발판 APK는 미리 보기 Release `dev` · PC 묶음(Windows·macOS·Linux)은 Actions 아티팩트, v0.6.0부터 Release에(0135)
+- **운영판 v0.6.0 "다듬기"**(2026-11-14 — 전투 스킬·기술 판·창 하나 + 탭·첫 장면과 튜토리얼·덧옷·뿌리 굴·PC 빌드): 웹 https://knellroot.netlify.app · Android APK·PC 묶음(Windows·macOS·Linux)은 GitHub Releases · 소개 페이지 https://knellroot.beardworks.io
+- **개발판**(`release/v0.6`, 다음 v0.6.1 = 무기 강화, 0179): https://dev--knellroot.netlify.app · 개발판 APK는 미리 보기 Release `dev` · PC 묶음은 Actions 아티팩트
 - iOS는 서명하지 않은 .ipa를 Actions 아티팩트로만(0136)
 
 ## 지금 있는 것
