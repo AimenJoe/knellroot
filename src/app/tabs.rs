@@ -314,12 +314,8 @@ impl App {
         self.scroll = self.scroll.clamp(0.0, max_first as f32);
         let first = self.scroll.round() as usize;
         let (x0, x1) = (w.at(RIGHT_X, 0.0).x, w.at(RIGHT_X + RIGHT_W, 0.0).x);
-        // 넘칠 때만 오른쪽 끝에 ▲▼ 자리를 비운다.
-        let arrow_w = if max_first > 0 {
-            self.ui.width("▼", 0.7 * k) + u * 2.0
-        } else {
-            0.0
-        };
+        // 넘칠 때만 오른쪽 끝에 굴림 막대 자리를 비운다(0191 — 전에는 ▲▼ 글자였는데 값 바로 옆이라 "올라감 ▲"으로 읽혔다).
+        let arrow_w = if max_first > 0 { u * 6.0 } else { 0.0 };
         let mut y = top;
         let mut shown = first;
         for l in lines.iter().skip(first) {
@@ -348,14 +344,16 @@ impl App {
             shown += 1;
         }
         if max_first > 0 {
-            let ax = x1 - self.ui.width("▼", 0.7 * k);
-            if first > 0 {
-                self.ui.text("▲", ax, w.at(0.0, top).y, 0.7 * k, DIM);
-            }
-            if shown < lines.len() {
-                let ay = w.at(0.0, w.body_h).y - self.ui.px(0.7 * k);
-                self.ui.text("▼", ax, ay, 0.7 * k, DIM);
-            }
+            // 굴림 막대: 칸 오른쪽 끝의 가는 홈 + 보이는 몫만큼의 손잡이(위치 = 첫 줄 / 내려갈 수 있는 끝).
+            let (y0, y1) = (w.at(0.0, top).y, w.at(0.0, w.body_h).y);
+            let bw = (u * 1.5).max(1.0).round();
+            let bx = (x1 - bw).round();
+            let total: f32 = heights.iter().sum();
+            let seen: f32 = heights[first..shown].iter().sum();
+            let len = ((y1 - y0) * (seen / total.max(0.01))).clamp(u * 6.0, y1 - y0);
+            let at = y0 + (y1 - y0 - len) * (first as f32 / max_first as f32);
+            draw_rectangle(bx, y0, bw, y1 - y0, Color { a: 0.18, ..DIM });
+            draw_rectangle(bx, at.round(), bw, len.round(), Color { a: 0.85, ..DIM });
         }
         self.hits
             .push((w.rect(RIGHT_X, top, RIGHT_W, room), Hit::Pane));

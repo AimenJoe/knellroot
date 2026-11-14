@@ -1670,7 +1670,7 @@ pub const SPECS: [Spec; 168] = [
         RenderRows,
         "render.rows",
         "RENDER_ROWS",
-        360.0,
+        540.0,
         270.0,
         720.0,
         90.0
@@ -1679,7 +1679,7 @@ pub const SPECS: [Spec; 168] = [
         RenderSsaa,
         "render.ssaa 0off 1on",
         "RENDER_SSAA",
-        0.0,
+        1.0,
         0.0,
         1.0,
         1.0

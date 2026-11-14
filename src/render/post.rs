@@ -129,6 +129,8 @@ impl Renderer {
             self.rows_target,
         );
         // 2배로 그려 줄이기(0190): 그리는 타깃은 두 배, 화면에 올리기 전에 한 번 반으로 줄인다(2×2 평균) — 도트 크기는 그대로, 경계만 부드럽게.
+        // 배율 1(화면 = 내부 해상도 — 720줄 화면에 540줄을 고르면 720줄 그대로)이면 키운 계단이 없다: 네 배로 그리지 않는다(0191).
+        self.ssaa &= s >= 2;
         let k = if self.ssaa { 2 } else { 1 };
         let fit = (w * k, h * k, s);
         if fit != self.rt_size || self.ssaa != self.half.is_some() {

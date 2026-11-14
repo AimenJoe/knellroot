@@ -15,6 +15,8 @@ fn row_desc(r: SettingsRow) -> &'static str {
         SettingsRow::Volume => s.set_volume_d,
         SettingsRow::Tells => s.set_tells_d,
         SettingsRow::TellTiming => s.set_tell_timing_d,
+        SettingsRow::LookYaw => s.set_look_yaw_d,
+        SettingsRow::LookPitch => s.set_look_pitch_d,
         SettingsRow::MouseAim => s.set_mouse_aim_d,
         SettingsRow::CursorRest => s.set_cursor_rest_d,
         SettingsRow::Reticle => s.set_reticle_d,
@@ -55,6 +57,14 @@ impl App {
                 SettingsRow::TellTiming => {
                     ui::Row::step(s.menu_tell_timing, on_off(self.tell_timing))
                 }
+                SettingsRow::LookYaw => ui::Row::step(
+                    s.menu_look_yaw,
+                    format!("{}%", crate::prefs::LOOK_SENS[self.look_sens.0 as usize]),
+                ),
+                SettingsRow::LookPitch => ui::Row::step(
+                    s.menu_look_pitch,
+                    format!("{}%", crate::prefs::LOOK_SENS[self.look_sens.1 as usize]),
+                ),
                 SettingsRow::MouseAim => ui::Row::step(s.menu_mouse_aim, on_off(mouse.on)),
                 SettingsRow::CursorRest => ui::Row::step(
                     s.menu_cursor_rest,
@@ -108,6 +118,22 @@ impl App {
         );
     }
 
+    /// 자유 시점 민감도 한 걸음(0191): 좌우는 끝에서 멈추고, 확인은 끝에서 첫 단계로 돈다(다른 값 줄과 같은 꼴).
+    fn step_look(&mut self, r: SettingsRow, step: i32, wrap: bool) {
+        let n = crate::prefs::LOOK_SENS.len() as i32;
+        let v = match r {
+            SettingsRow::LookYaw => &mut self.look_sens.0,
+            _ => &mut self.look_sens.1,
+        };
+        let to = *v as i32 + step;
+        *v = if wrap {
+            to.rem_euclid(n)
+        } else {
+            to.clamp(0, n - 1)
+        } as u8;
+        self.save_prefs();
+    }
+
     pub(super) fn settings_act(&mut self, host: Host, out: Out) {
         let rows = Self::settings_rows(host);
         match out {
@@ -127,6 +153,9 @@ impl App {
                 }
                 Some(SettingsRow::Volume) => {
                     self.set_volume((self.volume as i32 + step).clamp(0, 10) as u8)
+                }
+                Some(&r @ (SettingsRow::LookYaw | SettingsRow::LookPitch)) => {
+                    self.step_look(r, step, false)
                 }
                 Some(
                     &r @ (SettingsRow::MouseAim | SettingsRow::CursorRest | SettingsRow::Reticle),
@@ -156,6 +185,7 @@ impl App {
                 r @ (SettingsRow::MouseAim | SettingsRow::CursorRest | SettingsRow::Reticle) => {
                     self.step_mouse(r, 1)
                 }
+                r @ (SettingsRow::LookYaw | SettingsRow::LookPitch) => self.step_look(r, 1, true),
                 r => {
                     if let Some(go) = flow::choose_settings(r) {
                         self.go(go);

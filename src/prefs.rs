@@ -18,7 +18,12 @@ const MAGIC_V2: u32 = 0x4B4E_0002;
 /// 26 공격 예고 진하기(0..=10 = 0~100%, +1로 — 0 = 저장 전 = `TELLS_DEFAULT`) — 0074, 뒤에 붙인 칸이라 MAGIC 그대로.
 /// 27 예고 타이밍(1 끔·2 켬, 0128), 28 PC 전체 화면(1 창·2 전체, 0 = 저장 전 = 창 — 0135, 데스크톱만 읽는다), 뒤에 붙인 칸이라 MAGIC 그대로.
 /// 29..33 스킬 둘의 (키, 패드)(0151 — 배치 칸은 2..20이 꽉 차 뒤에 잇는다, `Bindings::encode`의 18.. 몫).
-const CELLS: usize = 33;
+/// 33·34 자유 시점 돌리기 민감도 가로·세로(`LOOK_SENS`의 자리 +1, 0 = 저장 전 = 100%) — 0191, 뒤에 붙인 칸이라 MAGIC 그대로.
+const CELLS: usize = 35;
+/// 자유 시점 민감도 단계(%) — 0191, 사장 "화면 수직 수평 방향 회전(자유 시점)에 대한 민감도 옵션".
+pub const LOOK_SENS: [u32; 9] = [25, 50, 75, 100, 125, 150, 200, 250, 300];
+/// 기본 자리(100%).
+pub const LOOK_DEFAULT: u8 = 3;
 /// 소리 크기 기본값(8 = 80%).
 pub const VOLUME_DEFAULT: u8 = 8;
 /// 공격 예고 진하기 기본(0074, nail 0198 꼴): 10 중 5 = 50%. 70%가 0072의 진하기.
@@ -44,6 +49,16 @@ pub struct Prefs {
     pub tell_timing: bool,
     /// PC(0135): 전체 화면으로 시작(마지막에 고른 대로). 웹·Android는 쓰지 않는다.
     pub fullscreen: bool,
+    /// 자유 시점 돌리기 민감도(가로, 세로) — `LOOK_SENS`의 자리(0191).
+    pub look: (u8, u8),
+}
+
+/// 민감도 칸 → 자리(0 = 저장 전 = 기본).
+fn look_from(c: u32) -> u8 {
+    match c {
+        0 => LOOK_DEFAULT,
+        c => (c - 1).min(LOOK_SENS.len() as u32 - 1) as u8,
+    }
 }
 
 fn lang_code(l: Lang) -> u32 {
@@ -77,6 +92,8 @@ fn encode(p: &Prefs) -> [u32; CELLS] {
     v[26] = p.tells.min(10) as u32 + 1;
     v[27] = p.tell_timing as u32 + 1;
     v[28] = p.fullscreen as u32 + 1;
+    v[33] = p.look.0 as u32 + 1;
+    v[34] = p.look.1 as u32 + 1;
     v
 }
 
@@ -118,6 +135,7 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
             tells: TELLS_DEFAULT,
             tell_timing: false,
             fullscreen: false,
+            look: (LOOK_DEFAULT, LOOK_DEFAULT),
         });
     }
     if v[0] != MAGIC && v[0] != MAGIC_V2 {
@@ -144,6 +162,7 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
         },
         tell_timing: v[27] == 2,
         fullscreen: v[28] == 2,
+        look: (look_from(v[33]), look_from(v[34])),
     })
 }
 
@@ -282,6 +301,7 @@ mod tests {
             tells: 8,
             tell_timing: true,
             fullscreen: true,
+            look: (5, 1),
         };
         let mut old = encode(&p);
         old[0] = MAGIC_V2;
@@ -341,8 +361,15 @@ mod tests {
             tells: 8,
             tell_timing: false,
             fullscreen: false,
+            look: (0, 8),
         };
         assert_eq!(decode(&encode(&p)), Some(p));
+        // 0191 전 저장(민감도 칸 0): 100%.
+        let mut old = encode(&p);
+        old[33] = 0;
+        old[34] = 0;
+        assert_eq!(decode(&old).unwrap().look, (LOOK_DEFAULT, LOOK_DEFAULT));
+        assert_eq!(LOOK_SENS[LOOK_DEFAULT as usize], 100);
         assert_eq!(decode(&[0; CELLS]), None, "nothing saved yet");
         // 0074 전 저장(예고 칸 0): 기본값.
         let mut old = encode(&p);
@@ -387,6 +414,7 @@ mod tests {
             tells: TELLS_DEFAULT,
             tell_timing: false,
             fullscreen: false,
+            look: (LOOK_DEFAULT, LOOK_DEFAULT),
         };
         let mut old = encode(&plain);
         old[16..].fill(0);
@@ -438,6 +466,7 @@ mod tests {
             tells: 0,
             tell_timing: false,
             fullscreen: false,
+            look: (LOOK_DEFAULT, LOOK_DEFAULT),
         };
         assert_eq!(decode(&encode(&p)), Some(p));
         let mut old = encode(&p);
@@ -472,6 +501,7 @@ mod tests {
             tells: 10,
             tell_timing: false,
             fullscreen: false,
+            look: (2, 6),
         };
         assert!(store::write_to(&p, &encode(&prefs)));
         assert_eq!(decode(&store::read_from(&p)), Some(prefs));

@@ -162,7 +162,7 @@ async function run(browser, lang) {
   await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8g-equip-weapon-pick-fists');
   await press('Escape'); await page.waitForTimeout(300);
-  // 도감(장비에서 E 둘 — 기술을 지나): 묶음 셋(좌우)의 모든 줄.
+  // 도감(장비에서 E 둘 — 기술을 지나): 묶음 넷(좌우)의 모든 줄.
   await press('KeyE', 2); await page.waitForTimeout(300);
   for (let i = 0; i < 6; i++) { await shot(`8h-codex-foe-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   await press('ArrowRight'); await page.waitForTimeout(300);
@@ -170,6 +170,9 @@ async function run(browser, lang) {
   // 셋째 묶음 덧옷(0176).
   await press('ArrowRight'); await page.waitForTimeout(300);
   for (let i = 0; i < 3; i++) { await shot(`8k-codex-garb-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  // 넷째 묶음 무기(0191).
+  await press('ArrowRight'); await page.waitForTimeout(300);
+  for (let i = 0; i < 5; i++) { await shot(`8l-codex-weapon-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   // 여정(0183 — 도감 다음 탭): 줄마다. 심은 기록은 성소의 문지기를 넘었다(core.warden=1) — 둘째 줄 "성소의 문지기를 넘어라"를
   // 받으면(확인) 기록에 journey=s.warden, 잔불 +60. 마을의 목표도 보인다.
   await press('KeyE'); await page.waitForTimeout(300);

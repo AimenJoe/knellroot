@@ -284,8 +284,12 @@ impl App {
                 FREE_MOUSE_DEG_PER_PX
             }
             .to_radians();
-            let dyaw = a.aim.x * FREE_STICK_YAW_DEG.to_radians() * TICK_DT + a.look.x * px;
-            let dpitch = -a.aim.y * FREE_STICK_PITCH_DEG.to_radians() * TICK_DT + a.look.y * px;
+            // 설정의 민감도(0191 — 스틱·마우스·끌기 모두에 같은 배율).
+            let sens = |i: u8| crate::prefs::LOOK_SENS[i as usize] as f32 / 100.0;
+            let (ky, kp) = (sens(self.look_sens.0), sens(self.look_sens.1));
+            let dyaw = (a.aim.x * FREE_STICK_YAW_DEG.to_radians() * TICK_DT + a.look.x * px) * ky;
+            let dpitch =
+                (-a.aim.y * FREE_STICK_PITCH_DEG.to_radians() * TICK_DT + a.look.y * px) * kp;
             self.cam.look(dyaw, dpitch);
             a.aim = Vec2::ZERO;
             a.cursor = None;

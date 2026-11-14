@@ -461,6 +461,9 @@ pub enum SettingsRow {
     Tells,
     /// 바닥 예고의 "언제"(채움) 켬/끔(0128).
     TellTiming,
+    /// 자유 시점 돌리기 민감도 가로·세로(0191 — 오른쪽 스틱·마우스·화면 끌기, `prefs::LOOK_SENS`).
+    LookYaw,
+    LookPitch,
     /// 마우스 조준 켬/끔·커서 쉼 시간·조준 표시 크기(0058) — 마우스가 있을 법한 기기에서만.
     MouseAim,
     CursorRest,
@@ -485,6 +488,7 @@ pub fn settings_rows(fullscreen: bool, mouse: bool, host: Host) -> Vec<SettingsR
     v.push(SettingsRow::Tells);
     v.push(SettingsRow::TellTiming);
     v.push(SettingsRow::Volume);
+    v.extend([SettingsRow::LookYaw, SettingsRow::LookPitch]);
     if mouse {
         v.extend([
             SettingsRow::MouseAim,
@@ -515,6 +519,8 @@ pub fn choose_settings(row: SettingsRow) -> Option<Go> {
         | SettingsRow::Volume
         | SettingsRow::Tells
         | SettingsRow::TellTiming
+        | SettingsRow::LookYaw
+        | SettingsRow::LookPitch
         | SettingsRow::MouseAim
         | SettingsRow::CursorRest
         | SettingsRow::Reticle => None,
