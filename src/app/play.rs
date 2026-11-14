@@ -274,6 +274,9 @@ impl App {
         for _ in 0..a.zoom.unsigned_abs().min(3) {
             self.cam.step_zoom(a.zoom.signum(), player);
         }
+        if a.view {
+            self.cam.toggle_view(player);
+        }
         if self.cam.mode == Mode::Free {
             let px = if crate::input::device() == crate::input::Device::Touch {
                 FREE_TOUCH_DEG_PER_PX
@@ -290,6 +293,7 @@ impl App {
         crate::input::set_free_look(self.cam.mode == Mode::Free);
         a.zoom = 0;
         a.look = Vec2::ZERO;
+        a.view = false;
         a
     }
 

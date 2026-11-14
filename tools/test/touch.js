@@ -39,6 +39,8 @@ function layout() {
     skill2: [skill[0] + u * 0.08, skill[1]],
     turn_left: [W - pc - ps * 2.5, pc],
     turn_right: [W - pc, pc],
+    // 시점(0184): 돌리기 왼쪽, 한 칸 띄워 — 쿼터뷰 ↔ 자유 숄더뷰.
+    view: [W - pc - ps * 5.4, pc],
     lock: at(80, 0.44),
     flask: at(150, 0.44),
     // 멈춤은 왼쪽 위(2026-11-06), 랩·시나리오 터치 버튼은 없다(랩 = 타이틀·개발 창 도구 탭).
@@ -87,6 +89,18 @@ async function main() {
     if (!/woke=1\n/.test(rec || '')) errors.push(`a touch on the attack spot must skip the waking scene: ${JSON.stringify(rec)}`);
   }
   await shot('t01-first-screen');
+  // 시점 버튼(0184 — 적이 아직 먼 첫 화면에서): 눈 버튼 = 자유 숄더뷰 → 오른쪽 반을 끌면 시점이 돈다 → 다시 눈 버튼 = 쿼터뷰.
+  await tap(b.view); await page.waitForTimeout(800);
+  await shot('t01b-shoulder');
+  {
+    const y = H * 0.4, x0 = W * 0.62;
+    await touch('touchStart', [[x0, y]]); await page.waitForTimeout(40);
+    for (let i = 1; i <= 8; i++) { await touch('touchMove', [[x0 + i * 20, y]]); await page.waitForTimeout(30); }
+    await touch('touchEnd', []); await page.waitForTimeout(300);
+  }
+  await shot('t01c-shoulder-dragged');
+  await tap(b.view); await page.waitForTimeout(800);
+  await shot('t01d-back-to-quarter');
   // 스틱: 왼쪽 아래에 대고 위로 끌어 0.8초 걷기.
   const s0 = [W * 0.2, H * 0.7];
   await touch('touchStart', [s0]);

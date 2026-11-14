@@ -719,10 +719,20 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
         draw_edge(s, hit.max(low) * edge.clamp(0.0, 2.0));
     }
     // 터치면 왼쪽 위 멈춤 버튼을 비킨다(2026-11-06).
-    let inset = if crate::input::device() == crate::input::Device::Touch {
+    let touch = crate::input::device() == crate::input::Device::Touch;
+    let inset = if touch {
         crate::touch::hud_inset(screen_width(), screen_height())
     } else {
         0.0
+    };
+    // 오른쪽 위의 목표 줄은 터치의 버튼 줄(시점·땅 돌리기, 0184) 밑으로.
+    let top_right = if touch {
+        (f.oy + 8.0 * s).max(crate::touch::top_right_drop(
+            screen_width(),
+            screen_height(),
+        ))
+    } else {
+        f.oy + 8.0 * s
     };
     let (x0, y0) = (f.ox + 8.0 * s + inset, f.oy + 8.0 * s);
     // 체력: 막대(0158 N0 — 하트 칸에서). 길이 = 최대 체력, 어두운 바탕 위에 남은 몫.
@@ -946,7 +956,7 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
     if let Some(o) = run.objective.filter(|_| !under_menu) {
         let text = format!("◇ {}", tr(o));
         let tw = ui.width(&text, 1.0);
-        ui.text(&text, f.ox + f.w - tw - 8.0 * s, y0, 1.0, INK);
+        ui.text(&text, f.ox + f.w - tw - 8.0 * s, top_right, 1.0, INK);
     }
     // 구역 카드(가운데 위): 이름 + 가는 줄.
     if let Some((name, left)) = run.card.filter(|_| !under_menu) {

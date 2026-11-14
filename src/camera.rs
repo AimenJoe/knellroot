@@ -378,6 +378,17 @@ impl Camera {
         }
     }
 
+    /// 시점 바꾸기(0184 — 터치의 시점 버튼): 쿼터뷰 ↔ 자유 숄더뷰. 거리 단계는 그대로 두어 돌아오면 같은 거리다.
+    /// 락온 중에는 아무것도 하지 않는다(카메라는 대상이 정한다). 바뀌었으면 참.
+    pub fn toggle_view(&mut self, player: Vec3) -> bool {
+        match self.mode {
+            Mode::Quarter => self.set_mode(Mode::Free, None, player),
+            Mode::Free => self.set_mode(Mode::Quarter, None, player),
+            Mode::Lock => return false,
+        }
+        true
+    }
+
     /// 자유 숄더뷰의 시점 돌리기(0181): 방위 `dyaw`(라디안, + = 오른쪽을 본다)·높이 `dpitch`(+ = 내려다본다). 다른 모드에서는 없다.
     pub fn look(&mut self, dyaw: f32, dpitch: f32) {
         if self.mode != Mode::Free {
@@ -1016,6 +1027,24 @@ mod tests {
         c.turn(1, &t);
         let d = (c.basis_yaw_deg(&t) - a).rem_euclid(360.0);
         assert!((d - 90.0).abs() < 0.01, "{d}");
+    }
+
+    /// 0184: 시점 버튼은 쿼터뷰 ↔ 자유 숄더뷰를 오가고 거리 단계를 기억한다(먼 쿼터뷰에서 숄더뷰로 갔다 오면 다시 먼 쿼터뷰).
+    /// 락온 중에는 아무 일도 없다.
+    #[test]
+    fn the_view_button_flips_between_quarter_and_shoulder_and_keeps_the_distance() {
+        let t = Tuning::default();
+        let p = Vec3::ZERO;
+        let mut c = Camera::new(p, &t);
+        c.step_zoom(-1, p);
+        let far = c.zoom_step;
+        assert!(c.toggle_view(p));
+        assert_eq!(c.mode, Mode::Free);
+        assert!(c.toggle_view(p));
+        assert_eq!((c.mode, c.zoom_step), (Mode::Quarter, far));
+        c.set_mode(Mode::Lock, Some(vec3(0.0, 0.0, -5.0)), p);
+        assert!(!c.toggle_view(p));
+        assert_eq!(c.mode, Mode::Lock);
     }
 
     /// 0181: 락온을 버튼으로 풀면 락온한 곳으로(쿼터뷰 → 쿼터뷰, 자유 → 자유), 대상을 잃으면 숄더뷰에 머문다.
