@@ -88,6 +88,8 @@ pub struct App {
     knell: crate::knell::Knell,
     /// 깨어나는 첫 장면(0171)이 흐르는 중 — 새 기록의 첫 판에서 한 번(타이틀 바탕에서는 0초에 멈춰 있다: 엎드린 방랑자).
     wake: Option<crate::wake::Wake>,
+    /// 쓰러짐(0175): 무너짐 → 어둠 → 쉼터 곁에서 일어남. 그동안 조작이 없다.
+    fall: Option<crate::fall::Fall>,
     /// 꺼진 화로에 불이 붙는 순간을 보는 남은 시간(0171) — 이 동안은 조작이 멎고, 끝나면 화로의 창이 열린다.
     kindle: f32,
     /// 주민 말풍선(0122): (주민 — 지금 지역의 번호, 몇째 말, 남은 초). 멈추지 않는다.
@@ -260,6 +262,7 @@ impl App {
             tutor: crate::tutorial::Tutor::new(progress.tutorial),
             knell: crate::knell::Knell::default(),
             wake: (!progress.woke).then(crate::wake::Wake::default),
+            fall: None,
             kindle: 0.0,
             bubble: None,
             stone_card: None,
@@ -321,6 +324,7 @@ impl App {
         self.down = 0;
         self.rest_at = None;
         self.passage = None;
+        self.fall = None;
         self.pause_tab = flow::Tab::Status;
         self.tutor = crate::tutorial::Tutor::new(self.progress.tutorial);
         self.knell = crate::knell::Knell::default();
@@ -788,7 +792,11 @@ impl App {
                 tells: self.tells as f32 / 10.0,
                 tell_timing: self.tell_timing,
                 fx: &self.fx,
-                wake: self.wake.filter(|_| stage.is_some()).map(|w| w.pose()),
+                pose: match (self.fall, self.wake) {
+                    (Some(f), _) if self.scene() == Scene::Play => Some(f.pose()),
+                    (_, Some(w)) if stage.is_some() => Some(("wake", w.pose())),
+                    _ => None,
+                },
             }),
         };
         self.frame = Some(f);
@@ -806,7 +814,8 @@ impl App {
             self.draw_toast(&f);
         }
         // 깨어나는 첫 장면(0171) 동안은 싸움 화면의 덧그림(화살·조준점·터치 버튼)을 걷는다 — 덮개만.
-        let waking = self.waking().is_some();
+        let waking =
+            self.waking().is_some() || (self.fall.is_some() && self.scene() == Scene::Play);
         if self.scene() == Scene::Play && !waking && in_shaft.is_none() {
             self.draw_goal_arrow(&f);
             self.draw_knell(&f);
@@ -881,7 +890,9 @@ impl App {
                 let edge = self.t[crate::tuning::P::HudHurtEdge];
                 let skills = [0, 1].map(|i| self.world.skill_ready(i, &self.t));
                 // 깨어나는 첫 장면(0171): HUD 대신 눈꺼풀·띠·서술 글. 싸움 화면에서만(타이틀 바탕은 그냥 엎드린 방랑자).
-                if let Some(wk) = self.waking() {
+                if let Some(fl) = self.fall.filter(|_| scene == Scene::Play) {
+                    hud::draw_fall(&self.ui, f, &fl, crate::i18n::s().defeat_sub);
+                } else if let Some(wk) = self.waking() {
                     let st = crate::i18n::s();
                     let skip = input::prompt(input::Act::Pause);
                     hud::draw_wake(

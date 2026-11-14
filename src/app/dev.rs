@@ -166,7 +166,7 @@ impl App {
             return;
         }
         let n = DEV_CATS.len();
-        let step = (a.menu_right || a.skill2) as i32 - (a.menu_left || a.skill1) as i32;
+        let step = (a.menu_right || a.tab_next) as i32 - (a.menu_left || a.tab_prev) as i32;
         let to = match tap {
             Some(Hit::Cell(1, i)) => Some(i),
             _ if step != 0 => Some((tab as i32 + step).rem_euclid(n as i32) as usize),

@@ -112,6 +112,10 @@ pub struct Actions {
     /// 둘을 함께 누르면 큰 기술 — 월드가 가른다(시동 안의 바꿔치기).
     pub skill1: bool,
     pub skill2: bool,
+    /// 큰 창의 탭 넘기기(0164 → 0175): 패드 = 어깨 LB·RB(고정 — 메뉴의 십자·A·B처럼, KB 조작 노트 "어깨 = 탭 넘기기"),
+    /// 키보드 = 스킬 버튼 둘(배치 — Q·E). 0164는 패드도 스킬 버튼(LT·RT)이었다 — 사장 "LB, RB가 맞아"(2026-11-14).
+    pub tab_prev: bool,
+    pub tab_next: bool,
     /// 큰 기술 버튼(터치만 — 게이지가 차면 뜬다). 패드·키보드는 스킬 둘을 함께.
     pub ult: bool,
     /// 장비 창 바로 열기(0070 6 A, 2026-11-06): 패드 Select · 키보드 Tab(배치표에 올리지 않았을 때).
@@ -153,7 +157,7 @@ pub enum Act {
     /// 장비 칸 빨리 바꾸기 = 공격 버튼 하나(0164 — 다음 후보로 돈다. 스킬 버튼 둘은 큰 창의 탭을 넘긴다).
     /// 그 버튼이 메뉴에서 이미 다른 일을 하면 빈 글(`swap_free`).
     Swap,
-    /// 큰 창의 탭 넘기기 = 스킬 버튼 둘(0164 — 0160 3절, LT·RT / Q·E).
+    /// 큰 창의 탭 넘기기(0164 → 0175): 패드 LB·RB, 키보드 스킬 버튼 둘(Q·E).
     Tabs,
     /// 격자 화면(기술, 0161)의 네 쪽 걷기 — 메뉴의 위·아래·왼·오른.
     Walk,
@@ -178,11 +182,7 @@ pub fn prompt(act: Act) -> String {
         (Device::Pad, Act::Confirm) => "A".into(),
         (_, Act::Swap) if !swap_free() => String::new(),
         (_, Act::Swap) => name(Bind::Attack),
-        (Device::Pad, Act::Tabs) => format!(
-            "{}/{}",
-            b.pad(Bind::Skill1).name(),
-            b.pad(Bind::Skill2).name()
-        ),
+        (Device::Pad, Act::Tabs) => format!("{}/{}", Pad::L1.name(), Pad::R1.name()),
         (_, Act::Tabs) => format!("{}/{}", name(Bind::Skill1), name(Bind::Skill2)),
         (Device::Pad, Act::Walk) => "D-PAD".into(),
         (Device::Pad, Act::Back) => "B".into(),
@@ -850,6 +850,8 @@ impl Input {
         a.turn_right = kp(Bind::TurnRight);
         a.skill1 = kp(Bind::Skill1);
         a.skill2 = kp(Bind::Skill2);
+        a.tab_prev = a.skill1;
+        a.tab_next = a.skill2;
         a.pressed_key = KEYS
             .iter()
             .position(|(k, _)| is_key_pressed(*k))
@@ -924,6 +926,8 @@ impl Input {
                 a.turn_right |= pj(Bind::TurnRight);
                 a.skill1 |= pj(Bind::Skill1);
                 a.skill2 |= pj(Bind::Skill2);
+                a.tab_prev |= pad.is_just_pressed(Pad::L1.button());
+                a.tab_next |= pad.is_just_pressed(Pad::R1.button());
                 if a.pressed_pad.is_none() {
                     a.pressed_pad = PADS
                         .iter()
@@ -983,6 +987,8 @@ impl Input {
             a.turn_right |= pj(Bind::TurnRight);
             a.skill1 |= pj(Bind::Skill1);
             a.skill2 |= pj(Bind::Skill2);
+            a.tab_prev |= j(Pad::L1);
+            a.tab_next |= j(Pad::R1);
             if a.pressed_pad.is_none() {
                 a.pressed_pad = PADS.iter().copied().find(|p| p.bindable() && j(*p));
             }
@@ -1098,6 +1104,8 @@ impl Input {
             turn_left: self.latch.turn_left | a.turn_left,
             skill1: self.latch.skill1 | a.skill1,
             skill2: self.latch.skill2 | a.skill2,
+            tab_prev: self.latch.tab_prev | a.tab_prev,
+            tab_next: self.latch.tab_next | a.tab_next,
             ult: self.latch.ult | a.ult,
             equip: self.latch.equip | a.equip,
             lab_toggle: self.latch.lab_toggle | a.lab_toggle,

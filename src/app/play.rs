@@ -27,6 +27,43 @@ impl App {
             }
             return;
         }
+        // 쓰러짐(0175): 체력이 다하면 세계가 멈추고 방랑자만 무너진다 → 뿌리가 감겨 들며 어두워진다 → 다 어두울 때 쉼터 곁으로
+        // (그전에는 쓰러진 그 틱에 쉼터 곁에 서 있었다) → 화로 곁에서 일어난다. 조작은 없고, 일어나는 동안만 건너뛸 수 있다.
+        if let Some(mut fl) = self.fall.take() {
+            if a.attack || a.jump || a.dodge || a.confirm || a.pause {
+                fl.skip();
+            }
+            let cue = fl.tick(TICK_DT);
+            if cue.rumble {
+                self.snd(crate::sfx::Id::Wake);
+            }
+            self.cam.close = fl.close();
+            if !fl.moved() {
+                // 세계가 멈춘 동안: 보간이 지난 틱과 이번 틱 사이를 오가지 않게 서 있는 자리로(KB 고정 타임스텝 — 히트스톱과 같다).
+                self.world.player.prev = self.world.player.pos;
+                for e in &mut self.world.enemies {
+                    e.prev = e.pos;
+                }
+                self.follow_camera();
+            } else {
+                self.step_world(&Actions::default());
+            }
+            if cue.moved {
+                self.fall = Some(fl);
+                self.rise_after_fall();
+                if self.scene() != Scene::Play {
+                    // 쉰 적이 없다 — 끝 장면으로 갔다(장면은 거기서 끝).
+                    self.fall = None;
+                }
+                return;
+            }
+            if cue.done || fl.done() {
+                self.cam.close = 0.0;
+            } else {
+                self.fall = Some(fl);
+            }
+            return;
+        }
         // 깨어나는 첫 장면(0171): 조작 없이 흐른다 — 월드는 빈 입력으로 그냥 간다(방랑자는 서 있고, 그림만 `wake` 동작을
         // 튼다). 멈춤 버튼 = 건너뛰기. 끝나면 기록에 적고 시작 글이 그제야 흐른다.
         if let (Some(mut wk), false) = (self.wake, crate::screen::portrait_blocked()) {
@@ -79,6 +116,11 @@ impl App {
                 self.play_acc -= 1.0;
                 self.progress.play = self.progress.play.saturating_add(1);
             }
+        }
+        // 체력이 다했다(0175): 쓰러짐을 연다 — 쉼터로 옮기는 것(스테이지가 하던 것)은 그 장면의 어둠 속에서(`rise_after_fall`).
+        if self.world.player.hp <= 0 && self.fall.is_none() {
+            self.fall = Some(crate::fall::Fall::default());
+            return;
         }
         let mut out = self.run.tick(&mut self.world, TICK_DT);
         // 주민 말풍선(0122): 같은 주민에게 말풍선이 떠 있는 동안 다시 누르면 다음 말, 아니면 처음 말.
@@ -154,6 +196,25 @@ impl App {
         if out == crate::stage::StageOut::Respawned {
             // 쉼터에서 다시 일어섰다(0032): 카메라를 그 자리로 바로(멀리서 날아오지 않게).
             self.cam = Camera::new(self.world.player.pos, &self.t);
+        }
+        if let Some(next) = flow::after_stage(out) {
+            self.ending = 0.0;
+            self.go(Go::Root(next));
+        }
+    }
+
+    /// 쓰러짐의 어둠 속(0175): 스테이지가 쉼터 곁으로 옮긴다(쉰 적이 없으면 다른 지역의 쉼터 · 거기도 없으면 끝 장면).
+    /// 그전에는 쓰러진 그 틱에 이 일을 했다 — 이제 쓰러짐 장면이 다 어두워진 순간에.
+    fn rise_after_fall(&mut self) {
+        let mut out = self.run.tick(&mut self.world, TICK_DT);
+        if out == crate::stage::StageOut::Defeated && self.respawn_elsewhere() {
+            out = crate::stage::StageOut::Respawned;
+        }
+        self.sync_progress(out);
+        if out == crate::stage::StageOut::Respawned {
+            let close = self.cam.close;
+            self.cam = Camera::new(self.world.player.pos, &self.t);
+            self.cam.close = close;
         }
         if let Some(next) = flow::after_stage(out) {
             self.ending = 0.0;

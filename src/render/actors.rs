@@ -190,7 +190,7 @@ impl Renderer {
         pp: Vec3,
         t: &Tuning,
         lights: &[Light],
-        wake: Option<f32>,
+        scene: Option<(&'static str, f32)>,
     ) {
         let pl = &w.player;
         // 무적 깜빡임: 짝수 프레임은 밝게.
@@ -219,9 +219,11 @@ impl Renderer {
             let combo_anim = |hit: u8| wpn.hit(hit).map_or("attack", |h| h.anim);
             let owned: [&str; 3];
             // 서 있는 동안(0153): 숨 고리 + 조용할 때 가끔 몸짓. 조용함 = 락온이 아니고 가까이 깨어 있는 적이 없다.
+            // 월드 시계로 지난 초(멈춤 창·히트스톱 동안 0) — 서 있는 몸짓·걸음 시계·섞기가 같이 쓴다.
+            let wdt = (w.time - self.idle_at).clamp(0.0, 0.1);
             let idle_pose = {
                 use crate::idle::FIDGETS;
-                let dt = (w.time - self.idle_at).clamp(0.0, 0.1);
+                let dt = wdt;
                 self.idle_at = w.time;
                 let standing = matches!(pl.state, PState::Idle) && speed <= 0.5;
                 let calm = w.lock.is_none()
@@ -325,12 +327,14 @@ impl Renderer {
                     }
                 }
                 // 달리기(0076): `run` 동작이 없으면 걷기를 빠르게(발 구르기가 속도를 따라간다).
-                PState::Idle if pl.running && speed > 0.5 => {
-                    (&["run", "walk"], w.time * (speed / 4.0).clamp(0.6, 2.2))
-                }
+                // 걸음 시계는 쌓는다(0175 — `w.time × 빠르기`는 가속하는 동안 걸음 주기를 건너뛰었다, `gait.rs`).
+                PState::Idle if pl.running && speed > 0.5 => (
+                    &["run", "walk"],
+                    self.gait.advance(wdt, true, (speed / 4.0).clamp(0.6, 2.2)),
+                ),
                 PState::Idle if speed > 0.5 => (
                     move_anim(pl.pos - pl.prev, pl.facing_dir(), w.lock.is_some()),
-                    w.time * (speed / 4.0).clamp(0.6, 1.6),
+                    self.gait.advance(wdt, true, (speed / 4.0).clamp(0.6, 1.6)),
                 ),
                 PState::Idle => match idle_pose {
                     crate::idle::Pose::Loop(t) => (&["idle"], t),
@@ -340,12 +344,20 @@ impl Renderer {
                     }
                 },
             };
-            // 깨어나는 첫 장면(0171): 장면의 시계가 `wake` 동작을 튼다(0초 = 엎드린 채). 그 동작이 없는 모델이면 그냥 선다.
-            let (names, at): (&[&str], f32) = match wake {
-                Some(at) if e.model.anim("wake").is_some() => (&["wake"], at),
+            // 장면의 자세(0171 깨어남 · 0175 쓰러짐): 장면의 시계가 그 동작을 튼다. 그 동작이 없는 모델이면 상태대로.
+            let scene_clip: [&str; 1];
+            let (names, at): (&[&str], f32) = match scene {
+                Some((clip, at)) if e.model.anim(clip).is_some() => {
+                    scene_clip = [clip];
+                    (&scene_clip, at)
+                }
                 _ => (names, at),
             };
+            let wake = scene;
             let anim = e.pick(names);
+            if !(matches!(pl.state, PState::Idle) && speed > 0.5) {
+                self.gait.advance(wdt, false, 0.0);
+            }
             let looped = matches!(pl.state, PState::Idle) && wake.is_none();
             let dur = e.duration(anim);
             let at = if looped { at } else { at.min(dur * 0.999) };
@@ -371,7 +383,30 @@ impl Renderer {
                     }
                 }
             }
-            e.model.pose_with(anim, at, &self.sec_extra, &mut self.pose);
+            // 조용한 동작(서기·걷기·달리기·몸짓)으로 들어갈 때는 지난 자세에서 짧게 섞는다(0175, `gait.rs`) — 누르는 순간 보여야 하는
+            // 동작(공격·회피·패링 …)은 바로. 깨어나는 장면 동안은 섞지 않는다.
+            let target = e.model.locals(anim, at);
+            let calm = anim
+                .and_then(|i| e.model.anims.get(i))
+                .is_some_and(|a| crate::gait::calm(&a.name));
+            if anim != self.shown_anim {
+                self.blend_left = if calm && wake.is_none() && self.shown.len() == target.len() {
+                    self.blend_from = self.shown.clone();
+                    crate::gait::BLEND
+                } else {
+                    0.0
+                };
+                self.shown_anim = anim;
+            }
+            self.shown = if self.blend_left > 0.0 {
+                let k = crate::gait::weight(self.blend_left);
+                self.blend_left = (self.blend_left - wdt).max(0.0);
+                crate::model::blend_locals(&self.blend_from, &target, k)
+            } else {
+                target
+            };
+            e.model
+                .pose_from_locals(&self.shown, &self.sec_extra, &mut self.pose);
             // 맞으면 몸이 밀리는 쪽으로 젖혀졌다 떨며 돌아온다(0020) — 발을 축으로, 경직 동안.
             let recoil = match pl.state {
                 PState::Hurt { t: e, dur } => {
@@ -412,7 +447,10 @@ impl Renderer {
                 * Mat4::from_quat(recoil)
                 * Mat4::from_rotation_y(yaw);
             // 맞은 순간(0143): 몸 전체가 희게 — 히트스톱 동안 그대로 멈춰 있다(KB: 흰 실루엣 → 맞은 자세). 그 뒤는 무적 깜빡임.
-            let tint = if pl.hurt.since < HURT_WHITE {
+            let tint = if wake.is_some() {
+                // 장면의 자세 동안(쓰러짐 — 월드가 멈춰 맞은 시계가 서 있다)은 흰 몸·깜빡임 없이.
+                Color::new(1.0, 1.0, 1.0, a)
+            } else if pl.hurt.since < HURT_WHITE {
                 Color::new(3.0, 3.0, 3.0, a)
             } else if blink {
                 Color::new(1.8, 1.8, 1.8, a)

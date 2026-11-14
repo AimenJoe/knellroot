@@ -134,6 +134,111 @@ pub fn draw_wake(ui: &Ui, f: &Frame, w: &crate::wake::Wake, lines: [&str; 2], sk
 }
 
 /// 깨어나는 장면의 서술 글: 자리(화면 높이의 몫)·크기.
+/// 쓰러짐(0175): HUD 대신 — 화면 가장자리에서 뿌리가 감겨 들고(`Fall::roots`), 어둠이 들고(`dark`), 다 어두운 동안 한 줄
+/// ("뿌리가 몸을 감는다…" — 이미 있던 쓰러짐의 글). 쉼터 곁에서 밝아지며 뿌리도 물러난다.
+pub fn draw_fall(ui: &Ui, f: &Frame, fl: &crate::fall::Fall, line: &str) {
+    let s = u(f);
+    let dark = fl.dark();
+    if dark > 0.003 {
+        draw_rectangle(
+            f.ox,
+            f.oy,
+            f.w,
+            f.h,
+            Color::new(0.02, 0.012, 0.035, dark * 0.96),
+        );
+    }
+    // 가장자리의 어둠(뿌리가 오기 전에 먼저 오므라든다).
+    let edge = fl.roots();
+    if edge > 0.003 {
+        const STEPS: usize = 8;
+        let depth = f.h * 0.22 * edge;
+        for i in 0..STEPS {
+            let k = 1.0 - (i as f32 + 0.5) / STEPS as f32;
+            let band = depth / STEPS as f32;
+            let c = Color::new(0.02, 0.012, 0.035, k * k * 0.8 * edge);
+            let d = band * i as f32;
+            draw_rectangle(f.ox, f.oy + d, f.w, band, c);
+            draw_rectangle(f.ox, f.oy + f.h - d - band, f.w, band, c);
+            draw_rectangle(f.ox + d, f.oy, band, f.h, c);
+            draw_rectangle(f.ox + f.w - d - band, f.oy, band, f.h, c);
+        }
+        draw_fall_roots(f, s, edge);
+    }
+    let a = fl.line();
+    if a > 0.004 {
+        let cx = f.ox + f.w * 0.5;
+        let y = f.oy + f.h * 0.46;
+        ui.text_center_wrapped(
+            line,
+            cx,
+            y,
+            WAKE_TEXT_K,
+            Color::new(INK.r, INK.g, INK.b, a),
+            f.w * 0.84,
+        );
+    }
+}
+
+/// 가장자리에서 안으로 자라는 뿌리 열넷(갈래 하나씩) — 굵은 밑동에서 가늘어지며 구불구불. 같은 자리·같은 모양(씨앗 고정).
+fn draw_fall_roots(f: &Frame, s: f32, grow: f32) {
+    let ink = Color::new(0.10, 0.05, 0.13, 0.95 * grow.min(1.0) + 0.05);
+    let h = |a: u32, b: u32| {
+        let mut v = a.wrapping_mul(0x9E37_79B9) ^ b.wrapping_mul(0x85EB_CA6B);
+        v ^= v >> 15;
+        v = v.wrapping_mul(0x2C1B_3C6D);
+        v ^= v >> 12;
+        (v & 0xFFFF) as f32 / 65535.0
+    };
+    let (cx, cy) = (f.ox + f.w * 0.5, f.oy + f.h * 0.5);
+    for k in 0..14u32 {
+        // 둘레 위의 밑동(네 변에 고루) — 가운데를 향해 자란다.
+        let around = (k as f32 + h(k, 1) * 0.6) / 14.0;
+        let (bx, by) = edge_point(f, around);
+        let to = vec2(cx - bx, cy - by).normalize_or_zero();
+        let side = vec2(-to.y, to.x);
+        let len = (f.w.min(f.h) * (0.22 + 0.16 * h(k, 2))) * grow;
+        let width = (5.0 + 4.0 * h(k, 3)) * s;
+        const SEG: usize = 9;
+        let mut p = vec2(bx, by);
+        let mut prev = p;
+        for i in 1..=SEG {
+            let t = i as f32 / SEG as f32;
+            let wig =
+                ((t * 7.0 + k as f32 * 1.7).sin() * 0.6 + (h(k, 10 + i as u32) - 0.5)) * 9.0 * s;
+            p = vec2(bx, by) + to * len * t + side * wig * t;
+            let w = width * (1.0 - 0.8 * t);
+            draw_line(prev.x, prev.y, p.x, p.y, w.max(1.0), ink);
+            // 잔가지 하나(중간쯤에서 옆으로).
+            if i == SEG / 2 + (k as usize % 2) {
+                let dir = (to + side * if k % 2 == 0 { 1.1 } else { -1.1 }).normalize_or_zero();
+                let tip = p + dir * len * 0.3;
+                draw_line(p.x, p.y, tip.x, tip.y, (w * 0.5).max(1.0), ink);
+            }
+            prev = p;
+        }
+    }
+}
+
+/// 화면 둘레를 0..1로 한 바퀴 돌 때의 자리(위 → 오른쪽 → 아래 → 왼쪽).
+fn edge_point(f: &Frame, t: f32) -> (f32, f32) {
+    let per = 2.0 * (f.w + f.h);
+    let mut d = t.rem_euclid(1.0) * per;
+    if d < f.w {
+        return (f.ox + d, f.oy);
+    }
+    d -= f.w;
+    if d < f.h {
+        return (f.ox + f.w, f.oy + d);
+    }
+    d -= f.h;
+    if d < f.w {
+        return (f.ox + f.w - d, f.oy + f.h);
+    }
+    d -= f.w;
+    (f.ox, f.oy + f.h - d)
+}
+
 const WAKE_TEXT_Y: f32 = 0.68;
 const WAKE_TEXT_K: f32 = 1.1;
 

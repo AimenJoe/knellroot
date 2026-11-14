@@ -5,6 +5,8 @@
 use super::*;
 use crate::descent::{self as dsc, Passage, DROP, ROOT_R, SHAFT_R};
 
+const TAU_F: f32 = std::f32::consts::TAU;
+
 /// 면 하나(굴 안의 자리). `glow` = 스스로 빛남(빛을 받지 않는다).
 struct Face {
     p: [Vec3; 3],
@@ -22,11 +24,17 @@ pub(super) struct ShaftMesh {
 /// 굴 벽이 이어지는 높이(위·아래 — 카메라가 보는 끝보다 넉넉히).
 const WALL_TOP: f32 = 7.0;
 const WALL_BOTTOM: f32 = -DROP - 8.0;
-const SIDES: usize = 18;
-const RING_H: f32 = 1.1;
+const SIDES: usize = 26;
+const RING_H: f32 = 0.78;
 /// 뿌리의 빛(식생의 뿌리와 같은 보라 — `flora::ROOT`), 스스로 빛나는 옹이(호박).
 const ROOT: Color = Color::new(0.27, 0.15, 0.34, 1.0);
 const KNOT: Color = Color::new(1.0, 0.72, 0.36, 1.0);
+/// 디테일(0175 — 사장 "이제 디테일이 들어가면 될 듯"): 이끼(큰 뿌리 윗면·돌 위), 썩은 뿌리에 핀 희미한 버섯(스스로 빛남 —
+/// 푸른 빛, 뿌리의 호박빛 옹이와 갈린다), 벽을 기는 검은 균사 줄(뽕나무버섯의 "신발끈" 균사다발 — KB 동물·생태 사실).
+const MOSS: Color = Color::new(0.20, 0.33, 0.27, 1.0);
+const CAP: Color = Color::new(0.55, 0.95, 0.82, 1.0);
+const STALK: Color = Color::new(0.62, 0.58, 0.52, 1.0);
+const CORD: Color = Color::new(0.07, 0.05, 0.08, 1.0);
 /// 등잔 빛·달빛(굴 위의 틈)의 색.
 const LANTERN: Color = Color::new(1.0, 0.70, 0.36, 1.0);
 const MOONBEAM: Color = Color::new(0.52, 0.58, 0.92, 1.0);
@@ -232,9 +240,152 @@ fn build(from_m: u32, to_m: u32) -> ShaftMesh {
         let c = dsc::path(s) + vec3(a.sin(), 0.0, a.cos()) * (ROOT_R + 0.02) * side - Vec3::Y * 0.1;
         knob(&mut f, c, Vec3::splat(0.05 + 0.03 * h(k, 62)), KNOT, true);
     }
+    details(&mut f, &depth_at);
     ShaftMesh {
         key: (from_m, to_m),
         faces: f,
+    }
+}
+
+/// 굴의 디테일(0175): 벽의 턱(지층의 이음마다 튀어나온 얇은 선반) · 큰 뿌리의 곁가지와 윗면의 이끼 · 버섯 무리 · 균사 줄 · 작은 돌.
+fn details(f: &mut Vec<Face>, depth_at: &dyn Fn(f32) -> f32) {
+    use std::f32::consts::TAU;
+    // 지층의 이음: 몇 띠마다 벽에서 튀어나온 얇은 턱(한 바퀴의 몇 조각) — 띠의 빛이 바뀌는 자리를 꼴로도.
+    let mut y = WALL_TOP - 1.4;
+    let mut band = 0u32;
+    while y > WALL_BOTTOM + 1.0 {
+        let pieces = 3 + (h(band, 81) * 3.0) as u32;
+        for q in 0..pieces {
+            let a0 = TAU * (q as f32 + h(band * 7 + q, 82) * 0.5) / pieces as f32;
+            let span = 0.5 + 0.6 * h(band + q, 83);
+            let col = mul(dsc::soil(depth_at(y) + 12.0), 1.15);
+            const N: usize = 6;
+            for i in 0..N {
+                let (t0, t1) = (i as f32 / N as f32, (i + 1) as f32 / N as f32);
+                let (b0, b1) = (a0 + span * t0, a0 + span * t1);
+                let (o0, o1) = (on_wall(b0, y, 0.0), on_wall(b1, y, 0.0));
+                let jut = 0.28 + 0.12 * h(band + q, 84 + i as u32);
+                let (i0, i1) = (on_wall(b0, y, jut), on_wall(b1, y, jut));
+                let lip = Vec3::Y * -0.14;
+                // 윗면(위를 본다)과 앞면(축을 본다).
+                face(f, [o0, o1, i1], vec3(0.0, y - 5.0, 0.0), col, false);
+                face(f, [o0, i1, i0], vec3(0.0, y - 5.0, 0.0), col, false);
+                face(
+                    f,
+                    [i0, i1, i1 + lip],
+                    vec3(i0.x, y, i0.z) * 2.0,
+                    mul(col, 0.8),
+                    false,
+                );
+                face(
+                    f,
+                    [i0, i1 + lip, i0 + lip],
+                    vec3(i0.x, y, i0.z) * 2.0,
+                    mul(col, 0.8),
+                    false,
+                );
+            }
+        }
+        y -= RING_H * (3.0 + 2.0 * h(band, 85));
+        band += 1;
+    }
+    // 큰 뿌리의 곁가지: 몸에서 비스듬히 위·옆으로 돋아 끝이 가늘다(몇은 굽어 오른다).
+    for k in 0..12u32 {
+        let s = -0.25 + 1.5 * (k as f32 + h(k, 91)) / 12.0;
+        let base = dsc::path(s);
+        let a = dsc::angle(s);
+        let out = vec3(a.sin(), 0.0, a.cos()) * if k % 2 == 0 { 1.0 } else { -1.0 };
+        let up = 0.3 + 0.6 * h(k, 92);
+        let len = 0.7 + 0.8 * h(k, 93);
+        let p0 = base + out * ROOT_R * 0.7 + Vec3::Y * ROOT_R * 0.2;
+        let p1 = p0 + (out + Vec3::Y * up).normalize() * len * 0.55;
+        let p2 = p1 + (out * 0.6 + Vec3::Y * (up + 0.4)).normalize() * len * 0.45;
+        strand(
+            f,
+            &[p0, p1, p2],
+            0.13,
+            0.03,
+            mul(ROOT, 0.9 + 0.15 * h(k, 94)),
+        );
+    }
+    // 이끼: 큰 뿌리 윗면의 둥근 조각(여섯모 — 낱장 세모는 부스러기로 읽혔다), 걷는 줄 곁 — 발밑은 비운다.
+    for k in 0..16u32 {
+        let s = -0.2 + 1.4 * h(k, 101);
+        let a = dsc::angle(s);
+        let side = vec3(a.sin(), 0.0, a.cos())
+            * (0.28 + 0.12 * h(k, 102))
+            * if k % 2 == 0 { 1.0 } else { -1.0 };
+        let c = dsc::path(s) + Vec3::Y * (ROOT_R + 0.015) + side;
+        let below = c - Vec3::Y;
+        let col = mul(MOSS, 0.85 + 0.3 * h(k, 105));
+        let r = 0.16 + 0.14 * h(k, 103);
+        let ring: Vec<Vec3> = (0..6)
+            .map(|i| {
+                let t = TAU * i as f32 / 6.0 + h(k, 106);
+                c + vec3(t.cos(), 0.0, t.sin()) * r * (0.7 + 0.5 * h(k * 7 + i, 107))
+            })
+            .collect();
+        for i in 0..6 {
+            face(f, [c, ring[i], ring[(i + 1) % 6]], below, col, false);
+        }
+    }
+    // 버섯 무리: 벽과 큰 뿌리의 옆구리에 셋~다섯씩(대 + 납작한 갓, 갓이 스스로 빛난다) — 걷는 길 곁에 몇은 꼭(눈에 닿게).
+    let cluster = |f: &mut Vec<Face>, k: u32, foot0: Vec3, into: Vec3| {
+        let n = 3 + (h(k, 113) * 3.0) as u32;
+        let along = Vec3::Y.cross(into).normalize_or_zero();
+        for j in 0..n {
+            let off = along * (h(k * 13 + j, 114) - 0.5) * 0.5
+                + Vec3::Y * (h(k * 13 + j, 115) - 0.5) * 0.3;
+            let foot = foot0 + off;
+            let tall = 0.14 + 0.14 * h(k * 13 + j, 116);
+            let top = foot + into * tall * 0.6 + Vec3::Y * tall;
+            strand(f, &[foot, top], 0.03, 0.025, STALK);
+            let r = 0.09 + 0.08 * h(k * 13 + j, 117);
+            knob(f, top, vec3(r, r * 0.35, r), CAP, true);
+        }
+    };
+    for k in 0..10u32 {
+        let a = TAU * h(k, 111);
+        let y = WALL_TOP - 2.0 - (WALL_TOP - WALL_BOTTOM - 4.0) * h(k, 112);
+        let foot = on_wall(a, y, 0.12);
+        cluster(f, k, foot, vec3(-foot.x, 0.0, -foot.z).normalize_or_zero());
+    }
+    for k in 0..6u32 {
+        let s = -0.05 + 1.1 * (k as f32 + 0.5) / 6.0;
+        let a = dsc::angle(s);
+        let out = vec3(a.sin(), 0.0, a.cos()) * if k % 2 == 0 { 1.0 } else { -1.0 };
+        let foot = dsc::path(s) + out * (ROOT_R + 0.02);
+        cluster(f, 40 + k, foot, out);
+    }
+    // 균사 줄: 벽을 길게 기는 검고 가는 줄(갈래 하나씩).
+    for k in 0..10u32 {
+        let a0 = TAU * h(k, 121);
+        let y0 = WALL_TOP - (WALL_TOP - WALL_BOTTOM - 3.0) * h(k, 122);
+        let line: Vec<Vec3> = (0..=7)
+            .map(|i| {
+                let t = i as f32 / 7.0;
+                let wig = (h(k, 130 + i) - 0.5) * 0.35;
+                on_wall(a0 + t * 0.9 + wig, y0 - t * 3.2, 0.08)
+            })
+            .collect();
+        strand(f, &line, 0.035, 0.02, CORD);
+        let mid = line[3];
+        let a1 = a0 + 0.35;
+        strand(
+            f,
+            &[mid, on_wall(a1, mid.y - 1.0, 0.08)],
+            0.025,
+            0.015,
+            CORD,
+        );
+    }
+    // 작은 돌(벽에 박힌 자갈 — 큰 돌 사이의 크기).
+    for k in 0..40u32 {
+        let a = TAU * h(k, 141);
+        let y = WALL_TOP - (WALL_TOP - WALL_BOTTOM) * h(k, 142);
+        let r = 0.1 + 0.12 * h(k, 143);
+        let col = mul(dsc::soil(depth_at(y) + 30.0), 1.1 + 0.3 * h(k, 144));
+        knob(f, on_wall(a, y, 0.08), vec3(r, r * 0.8, r), col, false);
     }
 }
 
@@ -296,10 +447,12 @@ impl Renderer {
         // 빛 셋: 등잔(방랑자 곁) · 위의 달빛(위 지역에 달이 있을 때, 위에 가까울수록) · 아래에서 올라오는 닿을 곳의 빛.
         let near_top = (1.0 - s * 1.6).clamp(0.0, 1.0);
         let near_bottom = ((s - 0.45) * 1.8).clamp(0.0, 1.0);
+        // 등잔은 살짝 일렁인다(불꽃 — 두 사인의 합, 실제 시간).
+        let flick = 1.0 + 0.06 * (clock * 9.3).sin() + 0.04 * (clock * 23.7 + 1.3).sin();
         let mut lights = vec![Light {
             pos: feet + Vec3::Y * 1.25 + fwd * 0.45,
-            color: LANTERN,
-            radius: 7.5,
+            color: mul(LANTERN, flick),
+            radius: 7.5 * (0.97 + 0.03 * flick),
             shaft: false,
         }];
         if upper.moon && near_top > 0.0 {
@@ -398,7 +551,52 @@ impl Renderer {
             );
         }
         // 등잔의 빛무리와 떠다니는 먼지(내려가면 위로 흐르는 듯, 실제 시간으로).
-        glow_disc(feet + Vec3::Y * 1.2 + fwd * 0.4, 0.9, with_a(LANTERN, 0.16));
+        glow_disc(
+            feet + Vec3::Y * 1.2 + fwd * 0.4,
+            0.9 * flick,
+            with_a(LANTERN, 0.16 * flick),
+        );
+        // 발걸음(0175): 걷기 동작(0.8초)의 두 디딤마다 발밑에서 흙 부스러기가 튀어 떨어진다 — 뿌리를 밟는 무게.
+        let step = 0.4;
+        let since = clock.rem_euclid(step);
+        let n_step = (clock / step).floor() as u32;
+        let side = vec3(fwd.z, 0.0, -fwd.x)
+            * if n_step.is_multiple_of(2) {
+                0.14
+            } else {
+                -0.14
+            };
+        for k in 0..5u32 {
+            let life = 0.45;
+            if since > life {
+                break;
+            }
+            let u = since / life;
+            let dir = vec3(
+                h(n_step * 5 + k, 151) - 0.5,
+                0.0,
+                h(n_step * 5 + k, 152) - 0.5,
+            ) * 0.9;
+            let p = feet + side + dir * u + Vec3::Y * (0.12 * u * 4.0 * (1.0 - u) - 0.25 * u * u);
+            gem(
+                p,
+                0.035 + 0.02 * h(k, 153),
+                with_a(Color::new(0.62, 0.5, 0.42, 1.0), 0.8 * (1.0 - u)),
+            );
+        }
+        // 위에서 떨어지는 흙 알갱이 몇(굴이 살아 있다 — 가끔, 곧게).
+        for k in 0..6u32 {
+            let period = 2.2 + 1.6 * h(k, 161);
+            let ph = (clock / period + h(k, 162)).rem_euclid(1.0);
+            let a = TAU_F * h(k, 163) + (clock / period).floor() * 1.7;
+            let r = SHAFT_R * (0.55 + 0.35 * h(k, 164));
+            let y = feet.y + 5.0 - ph * 9.0;
+            gem(
+                vec3(r * a.sin(), y, r * a.cos()),
+                0.045,
+                with_a(Color::new(0.72, 0.6, 0.5, 1.0), 0.7 * (1.0 - ph)),
+            );
+        }
         let drift = if p.up { -0.25 } else { 0.25 };
         for k in 0..36u32 {
             let a = std::f32::consts::TAU * h(k, 71) + clock * 0.05 * (h(k, 72) - 0.5);

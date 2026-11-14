@@ -64,6 +64,12 @@ pub struct Renderer {
     /// 서 있는 동안의 몸짓(0153)과 그 시계의 기준(월드 시간 — 멈춤 창 아래에서는 같이 선다).
     idle: crate::idle::Idle,
     idle_at: f32,
+    /// 걸음 시계·동작 섞기(0175): 걷기 동작의 시각(쌓는다), 지난 프레임의 동작, 보여 준 자세, 섞기 시작할 때의 자세와 남은 초.
+    gait: crate::gait::Gait,
+    shown_anim: Option<usize>,
+    shown: Vec<(Vec3, Quat, Vec3)>,
+    blend_from: Vec<(Vec3, Quat, Vec3)>,
+    blend_left: f32,
     sec_rig: Option<Rig>,
     sec_extra: Vec<(usize, Quat, Vec3)>,
     /// 락온 중 과녁을 가릴 때의 진하기(0040, 부드럽게 따라간다).
@@ -149,8 +155,9 @@ pub struct View<'a> {
     pub tell_timing: bool,
     /// 그림 이펙트(0141 — 앱이 사건을 듣고 채운다).
     pub fx: &'a crate::fx::Fx,
-    /// 깨어나는 첫 장면(0171)이 흐르는 동안의 `wake` 동작 시각 — 방랑자는 상태와 상관없이 그 자세로 그린다(월드는 모른다).
-    pub wake: Option<f32>,
+    /// 장면이 정하는 방랑자의 자세(동작 이름, 그 동작의 초) — 깨어나는 첫 장면(0171 `wake`)·쓰러짐(0175 `fall` → `wake`).
+    /// 상태와 상관없이 그 자세로 그린다(월드는 모른다).
+    pub pose: Option<(&'static str, f32)>,
 }
 /// 화로의 빛은 바닥 1.2m 위(`stage` 지도 읽기), 그릇 테는 0.86m(`props.py`) — 불티가 그릇에서 오르게.
 const BRAZIER_LIGHT_ABOVE_BOWL: f32 = 1.2 - 0.86;
@@ -170,6 +177,11 @@ impl Renderer {
             sec: Secondary::default(),
             idle: crate::idle::Idle::default(),
             idle_at: 0.0,
+            gait: Default::default(),
+            shown_anim: None,
+            shown: Vec::new(),
+            blend_from: Vec::new(),
+            blend_left: 0.0,
             sec_rig: None,
             sec_extra: Vec::new(),
             lock_fade: 1.0,
@@ -295,7 +307,7 @@ impl Renderer {
             self.enemy(en, w, alpha, v.stage, &lights, fall);
         }
         // 플레이어.
-        self.player(w, cam, pp, t, &lights, v.wake);
+        self.player(w, cam, pp, t, &lights, v.pose);
         // 던진 무기(0158 G2): 날아가는 자리에 돌며.
         self.blades(w, alpha, &lights);
         self.batch.casting = false;

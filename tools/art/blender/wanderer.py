@@ -903,6 +903,24 @@ def acts(m):
              "arm_l": {"r": (-128, -34, 0)}, "arm_r": {"r": (-112, 40, 0)}, "hand_r": {"r": (20, 0, 0)},
              "leg_l": {"r": (0, 0, 10)}, "leg_r": {"r": (0, 0, -8)},
              "cloak": {"r": (0, 0, 0)}, "tail": {"r": (0, 0, -26)}, "hood_tip": {"r": (0, 0, 8)}}
+    # 0175 fall 1.3초: 쓰러짐 — 맞아 젖혀졌다(0.12) 무릎이 꺾여 주저앉고(0.5) 앞으로 넘어져(0.85) 땅에 닿아 조금 튀었다(1.0)
+    # 엎드린 채 가라앉는다(1.3 = `wake`의 0초 자세 그대로 — 어둠 속에서 `wake`로 넘어가도 튀지 않는다, 게임 `fall.rs`).
+    m.action("fall", 1.3, [
+        (0.0, idle0),
+        (0.12, {"root": {"l": (0, 0.05, -0.03), "s": sq(0.9)}, "body": {"r": (-20, 0, 6)}, "head": {"r": (-26, 0, 6)},
+                "arm_l": {"r": (-34, -40, 0)}, "arm_r": {"r": (-44, 36, 0)}, "hand_r": {"r": (30, 0, 0)},
+                "leg_l": {"r": (-10, 0, 0)}, "leg_r": {"r": (12, 0, 0)}, "cloak": {"r": (-12, 0, 0)},
+                "tail": {"r": (0, 0, 14)}}),
+        (0.5, {"root": {"r": (14, 0, 4), "l": (0, 0.04, -0.3), "s": sq(0.88)}, "body": {"r": (26, 0, -4)},
+               "head": {"r": (14, 0, -8)}, "arm_l": {"r": (-18, -24, 0)}, "arm_r": {"r": (-22, 26, 0)},
+               "hand_r": {"r": (50, 0, 0)}, "leg_l": {"r": (-40, 0, 0), "l": (0, 0, 0.22)},
+               "leg_r": {"r": (-24, 0, 0), "l": (0, 0, 0.22)}, "cloak": {"r": (14, 0, 0)}, "tail": {"r": (0, 0, -6)},
+               "hood_tip": {"r": (8, 0, 0)}}),
+        (0.85, dict(prone, root={"r": (78, 0, 0), "l": (0, 0, 0.42), "s": sq(0.93)}, head={"r": (-20, 0, 30)},
+                    arm_l={"r": (-140, -40, 0)}, arm_r={"r": (-126, 44, 0)}, tail={"r": (0, 0, -8)})),
+        (1.0, dict(prone, root={"r": (90, 0, 0), "l": (0, 0, 0.34), "s": sq(1.05)}, tail={"r": (0, 0, -34)})),
+        (1.3, prone),
+    ])
     m.action("wake", 4.0, [
         (0.0, prone),
         # 숨: 등이 조금 부푼다.
@@ -1179,7 +1197,7 @@ PREVIEWS = [("idle", 0.0, ""), ("idle", 0.0, "_front"), ("attack", 0.15, "_attac
             ("attack3", 0.18, "_attack3"), ("hammer1", 0.3, "_hammer1"), ("hammer_slam", 0.18, "_hammer_slam"),
             ("staff4", 0.24, "_staff4"), ("xbow_shoot", 0.08, "_xbow"), ("throw", 0.2, "_throw"), ("turn_r", 0.13, "_turn"), ("strafe_l", 0.15, "_strafe"),
             ("wake", 0.0, "_wake_prone"), ("wake", 2.0, "_wake_push"), ("wake", 2.6, "_wake_crouch")]
-CHECK = [("wake", 0.0), ("wake", 1.35), ("wake", 2.0), ("wake", 2.6), ("wake", 3.1), ("walk", 0.0), ("walk", 0.2), ("attack", 0.08), ("attack", 0.18), ("dodge", 0.15), ("hurt", 0.06), ("turn_r", 0.06), ("turn_r", 0.13)]
+CHECK = [("fall", 0.12), ("fall", 0.5), ("fall", 0.85), ("fall", 1.3), ("wake", 0.0), ("wake", 1.35), ("wake", 2.0), ("wake", 2.6), ("wake", 3.1), ("walk", 0.0), ("walk", 0.2), ("attack", 0.08), ("attack", 0.18), ("dodge", 0.15), ("hurt", 0.06), ("turn_r", 0.06), ("turn_r", 0.13)]
 
 
 def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, check_dir=None):

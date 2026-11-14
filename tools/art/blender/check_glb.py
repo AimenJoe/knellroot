@@ -34,7 +34,7 @@ BUDGET = {"wanderer": 4800, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 
 PROP_BUDGET = 400
 # 동작 이름과 길이(초) — 명세 그대로인지 본다.
 EXPECT = {
-    "wanderer": {"idle": 2.4, "idle_look": 2.6, "idle_shake": 1.3, "idle_bell": 2.2, "wake": 4.0, "walk": 0.8, "attack": 0.43, "dodge": 0.25, "hurt": 0.35, "turn_r": 0.25, "turn_l": 0.25,
+    "wanderer": {"idle": 2.4, "idle_look": 2.6, "idle_shake": 1.3, "idle_bell": 2.2, "wake": 4.0, "fall": 1.3, "walk": 0.8, "attack": 0.43, "dodge": 0.25, "hurt": 0.35, "turn_r": 0.25, "turn_l": 0.25,
                  "strafe_l": 0.6, "strafe_r": 0.6, "walk_back": 0.7, "charge": 0.3, "heavy": 0.58, "drink": 0.8,
                  # 0158 G2 스킬 동작 — 길이 = 시동 + 이어짐 + 후딜(`skills.rs` 표의 바탕값).
                  "sk_whirl": 0.67, "sk_cut": 0.57, "sk_gather": 0.5, "sk_quake": 0.7, "sk_brace": 1.65, "sk_echo": 0.45,

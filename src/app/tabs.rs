@@ -101,12 +101,12 @@ impl App {
         host.edits() && !self.dev_board_on()
     }
 
-    /// 탭 넘기기 한 틱: 스킬 버튼 둘(LT·RT / Q·E) = 옆 탭, 탭 머리 누르기 = 그 탭. 넘겼으면 참(그 틱은 여기서 끝난다).
+    /// 탭 넘기기 한 틱: 패드 LB·RB / 키보드 Q·E(0175) = 옆 탭, 탭 머리 누르기 = 그 탭. 넘겼으면 참(그 틱은 여기서 끝난다).
     pub(super) fn tab_input(&mut self, a: &Actions) -> bool {
         let scene = self.scene();
         let go = match a.tap.and_then(|p| self.hit_at(p)) {
             Some(Hit::Tab(i)) => flow::tab_pick(scene, i),
-            _ => match a.skill2 as i32 - a.skill1 as i32 {
+            _ => match a.tab_next as i32 - a.tab_prev as i32 {
                 0 => Go::Stay,
                 dir => flow::tab_step(scene, dir),
             },
