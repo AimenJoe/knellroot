@@ -856,7 +856,9 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
         }
     };
     match (wpn.rb, wpn.grenade) {
-        (Rb::Shot { mag, reload, .. }, g) => {
+        (Rb::Shot { reload, .. }, g) => {
+            // 탄창은 벼린 단까지(0180 — `World::mag_of`).
+            let mag = w.mag_of(pl.weapon);
             for i in 0..mag as i32 {
                 let (bx, by) = (mx0 + i as f32 * 4.0 * s, y0 + 17.0 * s);
                 draw_rectangle(bx, by, 2.5 * s, 7.0 * s, HP_OFF);

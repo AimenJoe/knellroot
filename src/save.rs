@@ -49,6 +49,8 @@ pub mod key {
     pub const ULT_WORN: &str = "ult.worn";
     /// 걸친 덧옷(0176 — 값은 `garb::Def::key`). 안 걸쳤으면 쓰지 않는다. 가진 덧옷은 `finds`에서 센다.
     pub const GARB_WORN: &str = "garb.worn";
+    /// 벼린 단(0180): `forge.<무기 키>` = 1~3(0단이면 쓰지 않는다). 가진 숫돌은 `finds`에서 센다.
+    pub const FORGE: &str = "forge.";
     /// 가진 무기(0117): 무기 기록 키들("sword,hammer") — 맨손은 늘 있다. 키가 없는 옛 기록(판을 한 번이라도 한 것)은 다 가진 것으로.
     pub const WEAPONS: &str = "weapons";
     /// 쌓인 플레이 시간(초, 0081 — 이어하기 목록의 "시간"). 개발 판·메뉴·타이틀에 있는 동안은 세지 않는다.
@@ -207,6 +209,8 @@ pub struct Progress {
     pub ult: crate::skills::Ult,
     /// 걸친 덧옷(0176 — 하나, 가진 것만).
     pub garb: Option<crate::garb::Id>,
+    /// 무기마다 벼린 단(0180 — 주운 숫돌 안에서).
+    pub forged: crate::forge::Forged,
     /// 기술 판(0158 → 0161): 스킬마다의 단·고르기, 큰 기술의 단, 연 패시브 칸(`board.cells` — 옛 `tree`).
     pub board: crate::skills::Board,
     /// 기록의 몫(0167 → 0169): 셈 밖에서 받은 기술 점수 — 옛 기록의 처음 둘(2) 또는 튜토리얼의 상(1). 새 판은 0에서 선다.
@@ -389,7 +393,18 @@ impl Progress {
             .get(key::GARB_WORN)
             .and_then(crate::garb::by_key)
             .filter(|&id| crate::garb::owned(&finds).contains(&id));
+        // 벼린 단(0180): 주운 숫돌 안으로 바로잡는다.
+        let forged = {
+            let mut f = crate::forge::Forged::default();
+            for w in crate::weapons::IDS {
+                if let Some(r) = r.num(&format!("{}{}", key::FORGE, w.key())) {
+                    f.set(w, r.min(crate::forge::RANKS as u32) as u8);
+                }
+            }
+            f.sane(crate::forge::stones(&finds))
+        };
         let mut p = Progress {
+            forged,
             growth,
             level,
             finds,
@@ -637,6 +652,13 @@ impl Progress {
             Some(id) => r.set(key::GARB_WORN, crate::garb::def(id).key),
             None => r.remove(key::GARB_WORN),
         }
+        for w in crate::weapons::IDS {
+            let k = format!("{}{}", key::FORGE, w.key());
+            match self.forged.rank(w) {
+                0 => r.remove(&k),
+                n => r.set(&k, n),
+            }
+        }
         r.set(
             key::WEAPONS,
             self.weapons
@@ -690,6 +712,10 @@ impl Progress {
     pub fn stats(&self) -> crate::stats::Stats {
         let mut mods = crate::charms::mods(&self.worn);
         mods.push(crate::garb::mods(self.garb));
+        // 든 무기의 벼린 단(0180 — 들고 있는 무기에만).
+        if let Some(w) = self.weapon {
+            mods.push(self.forged.mods(w));
+        }
         mods.push(self.growth.mods());
         mods.push(self.level.mods());
         mods.push(crate::progression::find_mods(&self.finds));
@@ -935,6 +961,46 @@ weapon=crossbow
         assert!(crate::weapons::IDS.iter().all(|&w| old.owns_weapon(w)));
         let empty = Progress::from_record(Record::parse(""));
         assert_eq!(empty.owned_weapons(), vec![Id::Sword, Id::Fists]);
+    }
+
+    /// 0180: 벼린 단은 무기마다 `forge.<키>`로 남고, 든 무기의 단만 능력치에 든다. 주운 숫돌보다 많이 쓴 기록은 읽을 때 내린다.
+    #[test]
+    fn forged_ranks_round_trip_and_only_the_held_weapon_counts() {
+        use crate::weapons::Id;
+        let mut p = Progress {
+            finds: vec![
+                "sanctuary.stone.0".to_string(),
+                "village.stone.0".to_string(),
+                "village.stone.1".to_string(),
+            ],
+            weapon: Some(Id::Hammer),
+            ..Progress::default()
+        };
+        p.forged.set(Id::Sword, 2);
+        p.forged.set(Id::Hammer, 1);
+        let text = p.to_record().to_text();
+        assert!(
+            text.contains("forge.sword=2") && text.contains("forge.hammer=1"),
+            "{text}"
+        );
+        assert!(!text.contains("forge.staff"), "rank 0 is not written");
+        let back = Progress::from_record(Record::parse(&text));
+        assert_eq!(back.forged, p.forged);
+        let base = Progress::default().stats();
+        assert_eq!(
+            back.stats().light_dmg - base.light_dmg,
+            5,
+            "only the hammer's rank"
+        );
+        // 숫돌 하나뿐인 기록(손으로 고친 것)은 높은 단부터 내린다.
+        let lean = Progress::from_record(Record::parse(
+            "v=1
+finds=sanctuary.stone.0
+forge.sword=3
+",
+        ));
+        assert!(lean.forged.spent() <= 1);
+        assert_eq!(lean.forged.rank(Id::Sword), 1);
     }
 
     /// 0122: 판 수·주민을 처음 본 판·바뀐 주민은 기록에 남고, 키가 없는 옛 기록은 0·빈 것(NPC-07).

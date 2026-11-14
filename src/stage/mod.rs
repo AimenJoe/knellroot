@@ -460,10 +460,12 @@ pub enum Find {
     Shard,
     /// 덧옷(0176): 몸에 걸치는 것 — 어느 덧옷인지는 기록 이름으로(`garb::TABLE`의 `find`).
     Garb,
+    /// 숫돌(0180): 무기를 벼리는 재료 — 정해진 수만 지도에 놓인다(`forge.rs`).
+    Stone,
 }
 
 impl Find {
-    pub const ALL: [Find; 4] = [Find::Lamp, Find::Sip, Find::Shard, Find::Garb];
+    pub const ALL: [Find; 5] = [Find::Lamp, Find::Sip, Find::Shard, Find::Garb, Find::Stone];
 
     pub fn glyph(self) -> char {
         match self {
@@ -471,6 +473,7 @@ impl Find {
             Find::Sip => 'H',
             Find::Shard => 'K',
             Find::Garb => 'M',
+            Find::Stone => 'O',
         }
     }
 
@@ -481,6 +484,7 @@ impl Find {
             Find::Sip => "sip",
             Find::Shard => "shard",
             Find::Garb => "garb",
+            Find::Stone => crate::forge::STONE_KEY,
         }
     }
 }
@@ -2264,7 +2268,7 @@ mod tests {
         assert_eq!(run.chest_open, vec![true, false, false, false]);
     }
 
-    /// 0105·0106 → 0123: 숨은 물건 넷(등잔 하나 · 한 모금 하나 · 종소리 조각 둘 — 덜 후하게) + 덧옷 둘(0176)은 걸어서 닿는 바닥에 있고,
+    /// 0105·0106 → 0123: 숨은 물건 넷(등잔 하나 · 한 모금 하나 · 종소리 조각 둘 — 덜 후하게) + 덧옷 둘(0176) + 숫돌 하나(0180)는 걸어서 닿는 바닥에 있고,
     /// 점프 버튼으로 한 번 줍고, 기록의 것은 새 판에 없다.
     #[test]
     fn hidden_finds_are_reachable_picked_once_and_gone_from_the_record() {
@@ -2278,7 +2282,8 @@ mod tests {
                 Find::Shard,
                 Find::Shard,
                 Find::Garb,
-                Find::Garb
+                Find::Garb,
+                Find::Stone
             ]
         );
         let ids: Vec<&str> = run.finds.iter().map(|f| f.2.as_str()).collect();
@@ -2290,7 +2295,8 @@ mod tests {
                 "sanctuary.shard.0",
                 "sanctuary.shard.1",
                 "sanctuary.garb.0",
-                "sanctuary.garb.1"
+                "sanctuary.garb.1",
+                "sanctuary.stone.0"
             ]
         );
         for (p, _, id) in &run.finds {
@@ -2318,7 +2324,10 @@ mod tests {
         assert_eq!(run.take_picked(), None, "gone after picking");
         let (mut run, _) = StageRun::start(&sanctuary::DEF);
         run.set_found(&[id, "elsewhere.sip.0".to_string()]);
-        assert_eq!(run.found, vec![false, true, false, false, false, false]);
+        assert_eq!(
+            run.found,
+            vec![false, true, false, false, false, false, false]
+        );
     }
 
     /// 0105(lore CANON 0101): 처음 이긴 문지기의 핵은 다가오면 스스로 방랑자 쪽으로 온다. 그다음 판부터는 그 자리에 있다.

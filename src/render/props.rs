@@ -574,6 +574,7 @@ fn hidden_finds(run: &StageRun, w: &World, fl: &Drape) {
             crate::stage::Find::Sip => LOOT_SIP,
             crate::stage::Find::Shard => LOOT_SHARD,
             crate::stage::Find::Garb => LOOT_GARB,
+            crate::stage::Find::Stone => LOOT_STONE,
         };
         loot_beam(
             fl,
@@ -633,6 +634,31 @@ fn hidden_finds(run: &StageRun, w: &World, fl: &Drape) {
                 0.0,
                 360.0,
                 with_a(col, 0.22 + 0.22 * k),
+            );
+            continue;
+        }
+        // 숫돌(0180): 길쭉하고 납작한 돌 — 기울어 천천히 돈다(둥근 덩이·조각·개어 놓은 천과 꼴부터 다르게, 쇠의 푸른빛).
+        if *kind == crate::stage::Find::Stone {
+            let col = Color::new(0.66, 0.76, 0.9, 1.0);
+            let c = loot_front(*p + Vec3::Y * (0.4 + 0.05 * k));
+            fl.shadow(*p, 0.26);
+            let bar: Vec<[Vec3; 3]> = ball_faces(0.17)
+                .into_iter()
+                .map(|t| t.map(|v| vec3(v.x * 1.7, v.y * 0.5, v.z * 0.75)))
+                .collect();
+            loot_body(
+                c,
+                &bar,
+                col,
+                Quat::from_rotation_y(w.time * 0.7 + i as f32) * Quat::from_rotation_z(0.3),
+            );
+            glow_disc(c, 0.28, with_a(col, 0.18 + 0.14 * k));
+            fl.ring(
+                *p,
+                0.55 + 0.12 * k,
+                0.0,
+                360.0,
+                with_a(col, 0.22 + 0.24 * k),
             );
             continue;
         }
@@ -756,6 +782,8 @@ const LOOT_SIP: Color = Color::new(0.62, 0.92, 0.8, 1.0);
 const LOOT_SHARD: Color = Color::new(0.96, 0.94, 0.86, 1.0);
 /// 덧옷(0176): 옅은 라벤더 — 금빛(등잔)·민트(한 모금)·크림(조각)과 갈린다.
 const LOOT_GARB: Color = Color::new(0.86, 0.8, 0.98, 1.0);
+/// 숫돌(0180) — 쇠의 푸른빛(상자의 흰빛보다 짙게).
+const LOOT_STONE: Color = Color::new(0.6, 0.74, 0.96, 1.0);
 const LOOT_CHEST: Color = Color::new(0.9, 0.93, 1.0, 1.0);
 /// 빛기둥이 다 보이는 거리·사라지는 거리(m) — 가까이 와야 서서히(사장 2026-11-09 "가까이서만 서서히").
 const LOOT_NEAR: f32 = 10.0;

@@ -73,6 +73,18 @@ async function main() {
   // 왼쪽 클릭 = 공격.
   await page.mouse.down(); await page.waitForTimeout(40); await page.mouse.up();
   await page.waitForTimeout(150); await shot('m4-attack');
+  // 시점(0181): 휠 클릭으로 락온을 풀고(쿼터뷰로), 휠 위 셋 = 거리 둘 + 숄더뷰. 숄더뷰에서는 마우스가 시점(커서를 잡고 조준 표시 없음),
+  // 왼쪽 클릭은 그대로 공격, Esc = 멈춤 창(커서를 놓는다), 닫고 휠 아래 = 쿼터뷰.
+  await page.mouse.down({ button: 'middle' }); await page.waitForTimeout(40); await page.mouse.up({ button: 'middle' });
+  await page.waitForTimeout(700);
+  for (let i = 0; i < 3; i++) { await page.mouse.wheel(0, -120); await page.waitForTimeout(250); }
+  await page.waitForTimeout(600); await shot('m5-free');
+  await page.mouse.move(900, 300, { steps: 12 }); await page.waitForTimeout(400); await shot('m6-free-look');
+  await page.mouse.down(); await page.waitForTimeout(40); await page.mouse.up();
+  await page.waitForTimeout(150); await shot('m7-free-attack');
+  await press('Escape'); await page.waitForTimeout(400); await shot('m8-free-pause');
+  await press('Escape'); await page.waitForTimeout(400);
+  await page.mouse.wheel(0, 120); await page.waitForTimeout(900); await shot('m9-back-quarter');
 
   await browser.close();
   server.close();

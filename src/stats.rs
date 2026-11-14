@@ -43,6 +43,10 @@ pub struct Mods {
     pub knock: f32,
     /// 맞을 때 휘청이는(경직) 시간의 배(0176 덧옷).
     pub flinch: f32,
+    /// 쇠뇌 볼트·모은 사격·수류탄 피해 +(0180 벼린 쇠뇌).
+    pub shot_dmg: i32,
+    /// 탄창 +(0180 벼린 쇠뇌).
+    pub mag: i32,
 }
 
 impl Default for Mods {
@@ -66,6 +70,8 @@ impl Default for Mods {
             opened_dmg: 0,
             knock: 1.0,
             flinch: 1.0,
+            shot_dmg: 0,
+            mag: 0,
         }
     }
 }
@@ -94,6 +100,10 @@ pub struct Stats {
     pub knock: f32,
     /// 맞을 때 휘청이는(경직) 시간의 배(0176 덧옷).
     pub flinch: f32,
+    /// 쇠뇌 볼트·모은 사격·수류탄 피해 +(0180 벼린 쇠뇌).
+    pub shot_dmg: i32,
+    /// 탄창 +(0180 벼린 쇠뇌).
+    pub mag: i32,
 }
 
 /// 상한·하한(극단 조합을 막는다 — KB).
@@ -133,6 +143,8 @@ impl Stats {
             opened_dmg: 0,
             knock: 1.0,
             flinch: 1.0,
+            shot_dmg: 0,
+            mag: 0,
         };
         for m in mods {
             s.max_hp += m.hp;
@@ -153,6 +165,8 @@ impl Stats {
             s.opened_dmg += m.opened_dmg;
             s.knock *= m.knock;
             s.flinch *= m.flinch;
+            s.shot_dmg += m.shot_dmg;
+            s.mag += m.mag;
         }
         s.max_hp = s.max_hp.clamp(HP_RANGE.0, HP_RANGE.1);
         s.flask = s.flask.clamp(FLASK_RANGE.0, FLASK_RANGE.1);
@@ -172,6 +186,8 @@ impl Stats {
         s.opened_dmg = s.opened_dmg.max(0);
         s.knock = s.knock.clamp(KNOCK_RANGE.0, KNOCK_RANGE.1);
         s.flinch = s.flinch.clamp(KNOCK_RANGE.0, KNOCK_RANGE.1);
+        s.shot_dmg = s.shot_dmg.max(0);
+        s.mag = s.mag.max(0);
         s
     }
 

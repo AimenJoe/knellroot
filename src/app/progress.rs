@@ -18,7 +18,7 @@ impl App {
                 self.enter_stage(at.stage);
             }
             self.run.resume(&mut self.world, at);
-            self.cam = Camera::new(self.world.player.pos, &self.t);
+            self.cam = self.cam.renew(self.world.player.pos, &self.t);
             // 쉼터에서 잇는 판은 깨어나는 장면이 아니다(0171 — 그 장면은 시작 자리의 것).
             self.wake = None;
         }
@@ -34,7 +34,7 @@ impl App {
         }
         self.run.resume(&mut self.world, at);
         self.run.card = Some((|s| s.respawned, crate::stage::CARD_TIME));
-        self.cam = Camera::new(self.world.player.pos, &self.t);
+        self.cam = self.cam.renew(self.world.player.pos, &self.t);
         true
     }
 
@@ -46,7 +46,7 @@ impl App {
         } else {
             self.run.arrive_from_above(&mut self.world);
         }
-        self.cam = Camera::new(self.world.player.pos, &self.t);
+        self.cam = self.cam.renew(self.world.player.pos, &self.t);
     }
 
     /// 판에서 기록할 것을 옮기고(쉰 쉼터·끝낸 판), 바뀌었으면 쓴다.
@@ -130,6 +130,7 @@ impl App {
                 }
                 crate::stage::Find::Sip => s.toast_find_sip,
                 crate::stage::Find::Shard => s.toast_find_shard,
+                crate::stage::Find::Stone => s.toast_find_stone,
                 crate::stage::Find::Garb => {
                     let name = garb.map_or("", |g| tr(crate::garb::def(g).name));
                     let line = if put_on {

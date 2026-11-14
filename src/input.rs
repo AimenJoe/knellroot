@@ -85,6 +85,11 @@ pub struct Actions {
     pub cursor: Option<Vec2>,
     /// 커서를 비춘 땅 위의 점(월드 x·z) — 앱이 카메라로 `cursor`에서 채운다(0058). 있으면 월드는 오른쪽 스틱처럼 그쪽을 겨눈다.
     pub aim_at: Option<Vec2>,
+    /// 시점 거리 단계(0181): + = 당기기(패드 십자 ↑ · 키보드 ↑ · 휠 위 · 두 손가락 벌리기), − = 밀기. 틱마다 소비.
+    pub zoom: i32,
+    /// 자유 숄더뷰의 시점 돌리기(0181, 논리 px — 잡힌 마우스의 움직임·화면 오른쪽 끌기): x + = 오른쪽을 본다, y + = 아래를 본다.
+    /// 오른쪽 스틱(`aim`)·키보드 ←·→는 앱이 빠르기로 더한다.
+    pub look: Vec2,
     pub attack: bool,
     /// 공격 버튼을 쥐고 있나(상태, 강공격 모으기 0030). 눌림 `attack`과 달리 틱이 지우지 않는다.
     pub attack_held: bool,
@@ -581,6 +586,17 @@ pub fn cursor_live(on: bool, device: Device, since_mouse: f32, rest: f32) -> boo
 
 static BINDINGS: Mutex<Option<Bindings>> = Mutex::new(None);
 
+/// 자유 숄더뷰인가(0181 — 앱이 틱마다 적는다): 마우스면 커서를 잡아 움직임을 시점으로, 키보드 ←·→도 시점(`aim.x`)으로 읽는다.
+static FREE_LOOK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_free_look(on: bool) {
+    FREE_LOOK.store(on, Ordering::Relaxed);
+}
+
+pub fn free_look() -> bool {
+    FREE_LOOK.load(Ordering::Relaxed)
+}
+
 /// 지금 배치(설정에서 바꾼다).
 pub fn bindings() -> Bindings {
     BINDINGS
@@ -771,6 +787,8 @@ pub struct Input {
     pads: Gamepads,
     /// 이동 반복 억제용: 십자키는 틱마다 반복이 아니라 눌림만 받는다(랩 커서).
     _pad_seen: bool,
+    /// 자유 숄더뷰에서 커서를 잡았나(0181 — 웹은 포인터 잠금).
+    grabbed: bool,
 }
 
 impl Input {
@@ -789,6 +807,7 @@ impl Input {
             #[cfg(not(pad_keys))]
             pads: Gamepads::new(),
             _pad_seen: false,
+            grabbed: false,
         }
     }
 
@@ -800,6 +819,10 @@ impl Input {
 
     /// 조준에 쓰는 커서 자리(0058) — 조준 표시를 그릴 때. `poll`과 같은 규칙.
     pub fn cursor(&self) -> Option<Vec2> {
+        // 자유 숄더뷰(0181)에서 잡힌 커서는 시점이지 조준이 아니다 — 조준 표시를 그리지 않는다.
+        if self.grabbed {
+            return None;
+        }
         let m = mouse_aim();
         cursor_live(m.on, device(), self.since_mouse, m.rest_secs()).then_some(self.mouse_pos)
     }
@@ -819,19 +842,27 @@ impl Input {
         let mut m = Vec2::ZERO;
         #[allow(unused_mut)]
         let mut aim = Vec2::ZERO;
-        // 화살표로 걷는 것은 키보드뿐: Android·iOS에서는 화살표 키코드가 패드의 십자 키다 — 십자 키는 걷지 않는다(0151).
-        let arrow = |k: KeyCode| !cfg!(pad_keys) && is_key_down(k);
-        if is_key_down(KeyCode::A) || arrow(KeyCode::Left) {
+        // 화살표는 걷지 않는다(0181 — 패드의 십자 키와 같은 일): ↑·↓ = 시점 당기기·밀기, ←·→ = 자유 숄더뷰에서 시점 돌리기.
+        // Android·iOS에서는 화살표 키코드가 곧 패드의 십자 키다(0151).
+        if is_key_down(KeyCode::A) {
             m.x -= 1.0;
         }
-        if is_key_down(KeyCode::D) || arrow(KeyCode::Right) {
+        if is_key_down(KeyCode::D) {
             m.x += 1.0;
         }
-        if is_key_down(KeyCode::W) || arrow(KeyCode::Up) {
+        if is_key_down(KeyCode::W) {
             m.y += 1.0;
         }
-        if is_key_down(KeyCode::S) || arrow(KeyCode::Down) {
+        if is_key_down(KeyCode::S) {
             m.y -= 1.0;
+        }
+        if !menu {
+            a.zoom += is_key_pressed(KeyCode::Up) as i32 - is_key_pressed(KeyCode::Down) as i32;
+        }
+        #[cfg(not(pad_keys))]
+        if free_look() && !menu {
+            aim.x += is_key_down(KeyCode::Right) as i32 as f32
+                - is_key_down(KeyCode::Left) as i32 as f32;
         }
         // 게임 동작은 배치표에서(0024).
         let bind = bindings();
@@ -937,6 +968,11 @@ impl Input {
                 a.equip |= pad.is_just_pressed(Button::LeftCenterCluster);
                 a.menu_up |= pad.is_just_pressed(Button::DPadUp);
                 a.menu_down |= pad.is_just_pressed(Button::DPadDown);
+                // 십자 ↑·↓ = 시점 당기기·밀기(0181 — 싸움 화면에서만 쓴다).
+                if !menu {
+                    a.zoom += pad.is_just_pressed(Button::DPadUp) as i32
+                        - pad.is_just_pressed(Button::DPadDown) as i32;
+                }
                 a.menu_left |= pad.is_just_pressed(Button::DPadLeft);
                 a.menu_right |= pad.is_just_pressed(Button::DPadRight);
                 a.confirm |= pad.is_just_pressed(Button::ActionDown);
@@ -993,6 +1029,11 @@ impl Input {
                 a.pressed_pad = PADS.iter().copied().find(|p| p.bindable() && j(*p));
             }
             a.equip |= j(Pad::Select);
+            // 십자 ↑·↓ = 시점(0181): 키코드(Android — 위의 키보드 줄이 이미 받았다)가 아니면 HAT 축이 새로 기운 프레임(iOS).
+            if !menu {
+                a.zoom +=
+                    (hat.y > 0.0 && was.y <= 0.0) as i32 - (hat.y < 0.0 && was.y >= 0.0) as i32;
+            }
             a.confirm |= j(Pad::South);
             a.back |= j(Pad::East) || is_key_pressed(KeyCode::Back);
             a.pause |= j(Pad::Start);
@@ -1043,6 +1084,7 @@ impl Input {
         // 첫 프레임의 자리는 기준만 잡는다(켜자마자 "만졌다"가 되지 않게).
         let anchor = *self.mouse_anchor.get_or_insert(mp);
         let used_mouse = mouse_real && ((mp - anchor).length() > MOUSE_MOVE_PX || clicked);
+        let prev_mouse = self.mouse_pos;
         if mouse_real {
             self.mouse_pos = mp;
         }
@@ -1052,16 +1094,36 @@ impl Input {
         } else {
             self.since_mouse = (self.since_mouse + fdt).min(f32::MAX);
         }
-        // 메뉴 굴리기: 휠은 부호만 한 칸(기기마다 값 크기가 다르다, KB gamepad-and-android-input).
-        if menu && mouse_real {
+        // 메뉴 굴리기: 휠은 부호만 한 칸(기기마다 값 크기가 다르다, KB gamepad-and-android-input). 싸움에서는 시점 당기기·밀기(0181).
+        if mouse_real {
             let wy = mouse_wheel().1;
             if wy.abs() > 0.0 {
-                a.wheel = if wy > 0.0 { -1 } else { 1 };
-                a.point = Some(mp);
+                if menu {
+                    a.wheel = if wy > 0.0 { -1 } else { 1 };
+                    a.point = Some(mp);
+                } else {
+                    a.zoom += if wy > 0.0 { 1 } else { -1 };
+                }
             }
+        }
+        // 자유 숄더뷰(0181): 마우스로 하는 사람이면 커서를 잡아(웹은 포인터 잠금) 움직임을 시점으로 — 패드·터치·메뉴에서는 놓는다.
+        let grab = free_look() && !menu && !cfg!(pad_keys) && device() == Device::Keys;
+        // 잡은 첫 프레임은 자리가 튈 수 있어 세지 않는다.
+        if grab && self.grabbed && mouse_real {
+            a.look += mp - prev_mouse;
+        }
+        if grab != self.grabbed {
+            self.grabbed = grab;
+            set_cursor_grab(grab);
+            show_mouse(!grab);
+        } else if grab && clicked {
+            // 웹: Esc는 브라우저가 포인터 잠금을 먼저 풀어 버린다(게임은 아직 잡은 줄 안다) — 누를 때마다 다시 청한다(누름 = 사용자 동작).
+            set_cursor_grab(true);
         }
         a.drag = t.drag;
         a.point = a.point.or(t.drag_at);
+        a.look += t.look;
+        a.zoom += t.zoom;
         // 메뉴는 마우스 왼쪽을 뗄 때 탭(터치와 같은 규칙, nail 0199).
         if menu && mouse_real && a.tap.is_none() && is_mouse_button_released(MouseButton::Left) {
             a.tap = Some(mp);
@@ -1075,7 +1137,9 @@ impl Input {
             set_device(Device::Keys);
         }
         let ma = mouse_aim();
-        a.cursor = cursor_live(ma.on, device(), self.since_mouse, ma.rest_secs()).then_some(mp);
+        a.cursor = (!self.grabbed)
+            .then(|| cursor_live(ma.on, device(), self.since_mouse, ma.rest_secs()).then_some(mp))
+            .flatten();
 
         if m.length() > 1.0 {
             m = m.normalize();
@@ -1089,6 +1153,8 @@ impl Input {
             aim,
             cursor: a.cursor,
             aim_at: None,
+            zoom: self.latch.zoom + a.zoom,
+            look: self.latch.look + a.look,
             attack: self.latch.attack | a.attack,
             attack_held: a.attack_held,
             cast_held: a.cast_held,

@@ -20,7 +20,21 @@ pub enum Mode {
     Quarter,
     /// 락온 대상의 월드 위치는 월드가 준다(여기는 "어떻게 볼까"만).
     Lock,
+    /// 자유 숄더뷰(0181): 락온과 같은 어깨 리그를 대상 없이 — 방위·높이는 플레이어가 돌린다(오른쪽 스틱·마우스·화면 끌기).
+    /// 쿼터뷰에서 가장 가까이 당긴 뒤 한 번 더 당기면, 또는 락온 대상을 잃으면(쓰러지고 넘길 적이 없음) 여기.
+    Free,
 }
+
+/// 쿼터뷰 거리 단계(0181 — 십자 ↑ 당기기 · ↓ 밀기): `cam.quarter.dist`에 곱한다. 가장 가까운 단계에서 한 번 더 당기면 자유 숄더뷰.
+/// 연속 줌이 아니라 단계인 까닭: 거리는 멀미와 타격감의 맞바꿈이라(KB camera-mode-switch) 사람이 판정한 범위 안에서 고르게.
+pub const QUARTER_ZOOM: [f32; 3] = [1.3, 1.0, 0.75];
+/// 처음 단계(= 랩 거리 그대로).
+pub const ZOOM_HOME: u8 = 1;
+/// 거리 단계를 바꿀 때 옮겨 가는 시간(초).
+const ZOOM_BLEND: f32 = 0.3;
+/// 자유 숄더뷰의 높이 각(라디안, 락온 리그에서 더하는 몫) 범위: 아래(올려보기)·위(내려다보기). 땅 밑·머리 위로 넘어가지 않게.
+pub const FREE_PITCH_MIN: f32 = -0.25;
+pub const FREE_PITCH_MAX: f32 = 0.65;
 
 /// 눈에서 볼 때 가까운 공(가운데·반지름)이 먼 공을 얼마나 가리나(0..1, 각도 원판 둘의 겹침 근사). 0040: 락온 중
 /// 방랑자가 과녁을 가리면 옅게 — 렌더가 쓴다. 가까운 쪽이 더 멀리 있으면 0.
@@ -163,6 +177,12 @@ pub struct Camera {
     push: Vec3,
     /// 쿼터뷰 카메라 방위(라디안). None = 랩 값 `cam.quarter.yaw` 그대로(고정 방식, 또는 아직 락온을 푼 적 없음).
     q_azimuth: Option<f32>,
+    /// 쿼터뷰 거리 단계(`QUARTER_ZOOM`의 자리, 0181).
+    pub zoom_step: u8,
+    /// 자유 숄더뷰의 높이 각(라디안, `FREE_PITCH_*` 안) — 락온 리그에 더한다.
+    pitch: f32,
+    /// 락온을 버튼으로 풀면 돌아갈 곳(0181): 자유 숄더뷰에서 락온했으면 거기로, 아니면 쿼터뷰.
+    back_free: bool,
     /// 방금 락온을 풀었다: 풀던 순간의 락온 카메라 방위(라디안). 다음 갱신에서 방식에 따라 `q_azimuth`로.
     unlock_azimuth: Option<f32>,
     /// 직전 플레이어 자리와 부드럽게 한 속도(쿼터뷰 앞서 보기, 0008).
@@ -206,6 +226,9 @@ impl Camera {
             yaw: 0.0,
             push: Vec3::ZERO,
             q_azimuth: None,
+            zoom_step: ZOOM_HOME,
+            pitch: 0.0,
+            back_free: false,
             unlock_azimuth: None,
             last_player: None,
             vel: Vec3::ZERO,
@@ -255,9 +278,17 @@ impl Camera {
                 let d = tg - player;
                 self.yaw = d.x.atan2(d.z);
             }
+            self.back_free = self.mode == Mode::Free;
+            self.pitch = 0.0;
         }
-        if mode == Mode::Quarter && self.mode == Mode::Lock {
-            // 락온 카메라는 대상 반대편(요 + 180°)에 있다.
+        if mode == Mode::Free && self.mode == Mode::Quarter {
+            // 쿼터뷰에서 당겨 들어가면 화면 위였던 쪽을 그대로 앞으로(카메라 자리 방위 + 180° = 앞).
+            let d = self.rig.pos - self.rig.look;
+            self.yaw = d.x.atan2(d.z) + std::f32::consts::PI;
+            self.pitch = 0.0;
+        }
+        if mode == Mode::Quarter && self.mode != Mode::Quarter {
+            // 숄더 리그(락온·자유)의 카메라는 앞의 반대편(요 + 180°)에 있다.
             self.unlock_azimuth = Some(self.yaw + std::f32::consts::PI);
         }
         self.mode = mode;
@@ -278,8 +309,13 @@ impl Camera {
             return;
         }
         let q = std::f32::consts::FRAC_PI_2;
-        let cur = self.quarter_yaw_deg(t).to_radians();
-        self.q_azimuth = Some(wrap(cur + q * quarters as f32));
+        if self.mode == Mode::Free {
+            // 자유 숄더뷰(0181): 같은 쪽으로 앞을 90°씩(카메라 자리 방위 = 앞 + 180°라 같은 각을 더한다).
+            self.yaw = wrap(self.yaw + q * quarters as f32);
+        } else {
+            let cur = self.quarter_yaw_deg(t).to_radians();
+            self.q_azimuth = Some(wrap(cur + q * quarters as f32));
+        }
         // 지나쳤다 돌아오기(`turn.overshoot deg`): 목표+α까지 같은 빠르기로 가고(그래서 그만큼 길게), `turn.settle s` 동안 목표로 되돌아와 선다.
         let over = t[P::TurnOver].to_radians();
         let (go, settle) = crate::tuning::turn_phases_q(t, quarters);
@@ -302,6 +338,85 @@ impl Camera {
         self.q_azimuth.map_or(t[P::CamQYaw], f32::to_degrees)
     }
 
+    /// 입력 기준의 방위(도, 0181): 쿼터뷰면 그 방위, 자유 숄더뷰면 카메라가 선 방위(앞의 반대) — 스틱의 위 = 카메라가 보는 쪽.
+    pub fn basis_yaw_deg(&self, t: &Tuning) -> f32 {
+        match self.mode {
+            Mode::Free => (self.yaw + std::f32::consts::PI).to_degrees(),
+            _ => self.quarter_yaw_deg(t),
+        }
+    }
+
+    /// 거리 단계 한 칸(0181 — `dir` + = 당기기). 쿼터뷰의 가장 가까운 단계에서 더 당기면 자유 숄더뷰로, 자유 숄더뷰에서 밀면
+    /// 쿼터뷰의 가장 가까운 단계로. 락온 중에는 아무것도 하지 않는다(카메라는 대상이 정한다). 바뀌었으면 참.
+    pub fn step_zoom(&mut self, dir: i32, player: Vec3) -> bool {
+        let last = QUARTER_ZOOM.len() as u8 - 1;
+        match (self.mode, dir.signum()) {
+            (Mode::Quarter, 1) if self.zoom_step >= last => {
+                self.set_mode(Mode::Free, None, player);
+                true
+            }
+            (Mode::Quarter, s) if s != 0 => {
+                let to = (self.zoom_step as i32 + s).clamp(0, last as i32) as u8;
+                if to == self.zoom_step {
+                    return false;
+                }
+                self.zoom_step = to;
+                self.blend = Some((
+                    Orbit::from_rig(&self.rig, self.follow),
+                    0.0,
+                    Some(ZOOM_BLEND),
+                    Curve::Delay(0.0),
+                ));
+                true
+            }
+            (Mode::Free, -1) => {
+                self.zoom_step = last;
+                self.set_mode(Mode::Quarter, None, player);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// 자유 숄더뷰의 시점 돌리기(0181): 방위 `dyaw`(라디안, + = 오른쪽을 본다)·높이 `dpitch`(+ = 내려다본다). 다른 모드에서는 없다.
+    pub fn look(&mut self, dyaw: f32, dpitch: f32) {
+        if self.mode != Mode::Free {
+            return;
+        }
+        // 앞 = (sin 요, cos 요): 요가 줄면 오른쪽(앞 × 위 = 오른쪽 축 쪽)으로 돈다.
+        self.yaw = wrap(self.yaw - dyaw);
+        self.pitch = (self.pitch + dpitch).clamp(FREE_PITCH_MIN, FREE_PITCH_MAX);
+    }
+
+    /// 락온 대상을 잃었다(0181 — `Event::LockLost`): 풀린 뒤 쿼터뷰로 돌아가지 않고 자유 숄더뷰에 머문다.
+    pub fn lose_lock(&mut self) {
+        self.back_free = true;
+    }
+
+    /// 새 판·쉼터·지역 전환의 새 카메라(0181): 고른 거리 단계와 자유 숄더뷰(그 방위·높이)는 이어 간다 — 쉴 때마다 쿼터뷰로 돌아가지 않게.
+    pub fn renew(&self, player: Vec3, t: &Tuning) -> Camera {
+        let mut c = Camera::new(player, t);
+        c.zoom_step = self.zoom_step;
+        if self.mode == Mode::Free || (self.mode == Mode::Lock && self.back_free) {
+            c.mode = Mode::Free;
+            c.yaw = self.yaw;
+            c.pitch = self.pitch;
+        }
+        c.rig = c.desired(t, None);
+        c.settle();
+        c.present(1.0);
+        c
+    }
+
+    /// 락온을 버튼으로 풀었을 때 돌아갈 모드(0181).
+    pub fn unlock_mode(&self) -> Mode {
+        if self.back_free {
+            Mode::Free
+        } else {
+            Mode::Quarter
+        }
+    }
+
     /// 카메라가 플레이어 머리에 얼마나 가까운가(가림 당기기 뒤). 렌더가 가까우면 플레이어를 옅게.
     pub fn closeness(&self, player: Vec3) -> f32 {
         self.rig
@@ -319,34 +434,44 @@ impl Camera {
         self.blend.map(|(_, e, _, _)| e)
     }
 
+    /// 숄더 리그(락온·자유 숄더뷰가 같이 쓴다): 요 = 앞, `pitch` = 주시점 둘레로 더 내려다보는 각(자유 숄더뷰만, 락온은 0).
+    fn shoulder(&self, t: &Tuning, pitch: f32) -> Rig {
+        // 자리는 부드럽게 따라가는 점(`follow`)에서: 대상 곁을 빠르게 돌 때 카메라가 플레이어와 함께 옆으로 홱 밀리지 않게(0007).
+        let player = self.follow;
+        let (s, c) = self.yaw.sin_cos();
+        let fwd = vec3(s, 0.0, c);
+        let right = fwd.cross(Vec3::Y);
+        let pos =
+            player - fwd * t[P::CamLDist] + Vec3::Y * t[P::CamLHeight] + right * t[P::CamLShoulder];
+        // 주시점 = 플레이어 앞 일정 거리(대상과의 사이 점이 아니다): 대상에 다가가도 카메라가 고개를 숙이며 플레이어가
+        // 화면 위로 떠오르지 않는다(예전 사이 점: 다가가면 −5° → −11°, 0008). 옆으로 밀어야 플레이어가 화면 1/3에 선다.
+        let look = player
+            + Vec3::Y * (PLAYER_HEIGHT * 0.6)
+            + fwd * t[P::CamLLookAhead]
+            + right * t[P::CamLFrame];
+        // 높이 각(0181): 카메라를 주시점 둘레로 오른쪽 축을 따라 돌린다(+ = 위로 올라 내려다본다).
+        let pos = if pitch.abs() > 1e-5 {
+            look + Quat::from_axis_angle(right.normalize_or_zero(), -pitch) * (pos - look)
+        } else {
+            pos
+        };
+        Rig {
+            pos,
+            look,
+            fov: t[P::CamLFov].to_radians(),
+        }
+    }
+
     /// 원하는 리그(전환·충돌 전).
     fn desired(&self, t: &Tuning, target: Option<Vec3>) -> Rig {
         match (self.mode, target) {
-            (Mode::Lock, Some(tg)) => {
-                // 자리는 부드럽게 따라가는 점(`follow`)에서: 대상 곁을 빠르게 돌 때 카메라가 플레이어와 함께 옆으로 홱 밀리지 않게(0007).
-                let player = self.follow;
-                let (s, c) = self.yaw.sin_cos();
-                let fwd = vec3(s, 0.0, c);
-                let right = fwd.cross(Vec3::Y);
-                let pos = player - fwd * t[P::CamLDist]
-                    + Vec3::Y * t[P::CamLHeight]
-                    + right * t[P::CamLShoulder];
-                let _ = tg; // 방향은 요(대상 쪽)가 정한다.
-                            // 주시점 = 플레이어 앞 일정 거리(대상과의 사이 점이 아니다): 대상에 다가가도 카메라가 고개를 숙이며 플레이어가
-                            // 화면 위로 떠오르지 않는다(예전 사이 점: 다가가면 −5° → −11°, 0008). 옆으로 밀어야 플레이어가 화면 1/3에 선다.
-                let look = player
-                    + Vec3::Y * (PLAYER_HEIGHT * 0.6)
-                    + fwd * t[P::CamLLookAhead]
-                    + right * t[P::CamLFrame];
-                Rig {
-                    pos,
-                    look,
-                    fov: t[P::CamLFov].to_radians(),
-                }
-            }
+            // 방향은 요(대상 쪽)가 정한다.
+            (Mode::Lock, Some(_)) => self.shoulder(t, 0.0),
+            (Mode::Free, _) => self.shoulder(t, self.pitch),
             _ => {
                 let pitch = t[P::CamQPitch].to_radians();
-                let d = t[P::CamQDist];
+                let d = t[P::CamQDist]
+                    * QUARTER_ZOOM[(self.zoom_step as usize).min(QUARTER_ZOOM.len() - 1)];
                 // 요를 돌려 상자의 두 면이 보이게(축 정렬이면 정면 한 면만 보여 납작하다). 화면 위 = `quarter_forward`.
                 let (sy, cy) = self.quarter_yaw_deg(t).to_radians().sin_cos();
                 let pos =
@@ -805,6 +930,123 @@ pub fn view_points(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn settle(c: &mut Camera, t: &Tuning, p: Vec3, target: Option<Vec3>) {
+        for _ in 0..240 {
+            c.update(1.0 / 60.0, t, p, target, &[]);
+        }
+    }
+
+    /// 0181: 십자 ↑ = 당기기 — 쿼터뷰 거리 단계를 지나 가장 가까운 단계에서 한 번 더 당기면 자유 숄더뷰, ↓로 쿼터뷰에 돌아온다.
+    #[test]
+    fn zooming_in_steps_the_quarter_distance_then_enters_the_free_shoulder_view() {
+        let t = Tuning::default();
+        let p = Vec3::ZERO;
+        let mut c = Camera::new(p, &t);
+        settle(&mut c, &t, p, None);
+        let far = c.rig.pos.distance(c.rig.look);
+        assert!(c.step_zoom(1, p));
+        settle(&mut c, &t, p, None);
+        let near = c.rig.pos.distance(c.rig.look);
+        assert!(near < far * 0.85, "{near} < {far}");
+        assert_eq!(c.mode, Mode::Quarter);
+        assert!(c.step_zoom(1, p));
+        assert_eq!(c.mode, Mode::Free, "past the nearest step = shoulder view");
+        settle(&mut c, &t, p, None);
+        assert!(c.rig.pos.distance(c.rig.look) < near);
+        assert!(!c.step_zoom(1, p), "nothing nearer than the shoulder");
+        assert!(c.step_zoom(-1, p));
+        assert_eq!((c.mode, c.zoom_step), (Mode::Quarter, 2));
+        assert!(c.step_zoom(-1, p) && c.step_zoom(-1, p));
+        assert_eq!(c.zoom_step, 0);
+        assert!(!c.step_zoom(-1, p), "farthest step");
+        // 락온 중에는 카메라를 대상이 정한다.
+        c.set_mode(Mode::Lock, Some(vec3(0.0, 0.0, -5.0)), p);
+        assert!(!c.step_zoom(1, p) && !c.step_zoom(-1, p));
+    }
+
+    /// 0181: 자유 숄더뷰로 들어가도 스틱의 위는 그대로(화면 위였던 쪽이 앞) — 들어가는 순간 걷던 쪽이 꺾이지 않는다.
+    #[test]
+    fn entering_the_free_view_keeps_stick_up_pointing_the_same_way() {
+        let t = Tuning::default();
+        let p = Vec3::ZERO;
+        let mut c = Camera::new(p, &t);
+        c.turn(1, &t);
+        settle(&mut c, &t, p, None);
+        let before = quarter_forward(c.basis_yaw_deg(&t));
+        c.step_zoom(1, p);
+        c.step_zoom(1, p);
+        assert_eq!(c.mode, Mode::Free);
+        let after = quarter_forward(c.basis_yaw_deg(&t));
+        assert!(before.dot(after) > 0.99, "{before} vs {after}");
+        // 그리고 화면도 그쪽을 본다(카메라 앞 = 스틱 위).
+        settle(&mut c, &t, p, None);
+        let view = (c.rig.look - c.rig.pos) * vec3(1.0, 0.0, 1.0);
+        assert!(view.normalize().dot(after) > 0.95);
+    }
+
+    /// 0181: 자유 숄더뷰의 시점 돌리기 — + 방위는 오른쪽을 보고, + 높이는 위로 올라 내려다보며, 높이는 범위 안에 묶인다.
+    /// 쿼터뷰·락온에서는 돌지 않는다. 땅 돌리기는 자유 숄더뷰에서도 앞을 90° 돌린다.
+    #[test]
+    fn free_look_turns_right_and_tilts_within_limits() {
+        let t = Tuning::default();
+        let p = Vec3::ZERO;
+        let mut c = Camera::new(p, &t);
+        let q = c.basis_yaw_deg(&t);
+        c.look(1.0, 1.0);
+        assert_eq!(c.basis_yaw_deg(&t), q, "quarter view does not free-look");
+        c.step_zoom(1, p);
+        c.step_zoom(1, p);
+        settle(&mut c, &t, p, None);
+        let fwd0 = quarter_forward(c.basis_yaw_deg(&t));
+        let right0 = fwd0.cross(Vec3::Y);
+        let h0 = c.rig.pos.y;
+        c.look(0.6, 0.0);
+        let fwd1 = quarter_forward(c.basis_yaw_deg(&t));
+        assert!(fwd1.dot(right0) > 0.3, "turned toward the right");
+        c.look(0.0, 0.4);
+        settle(&mut c, &t, p, None);
+        assert!(c.rig.pos.y > h0 + 0.5, "higher, looking down");
+        c.look(0.0, 10.0);
+        assert!(c.pitch <= FREE_PITCH_MAX);
+        c.look(0.0, -10.0);
+        assert!(c.pitch >= FREE_PITCH_MIN);
+        // 땅 돌리기(0012)는 자유 숄더뷰에서 앞을 90°.
+        let a = c.basis_yaw_deg(&t);
+        c.turn(1, &t);
+        let d = (c.basis_yaw_deg(&t) - a).rem_euclid(360.0);
+        assert!((d - 90.0).abs() < 0.01, "{d}");
+    }
+
+    /// 0181: 락온을 버튼으로 풀면 락온한 곳으로(쿼터뷰 → 쿼터뷰, 자유 → 자유), 대상을 잃으면 숄더뷰에 머문다.
+    /// 새 카메라(쉼터·지역 전환)는 고른 거리와 자유 숄더뷰를 이어 간다.
+    #[test]
+    fn unlocking_returns_where_it_came_from_and_losing_the_target_stays_in_the_shoulder() {
+        let t = Tuning::default();
+        let p = Vec3::ZERO;
+        let tg = Some(vec3(0.0, 0.0, -5.0));
+        let mut c = Camera::new(p, &t);
+        c.set_mode(Mode::Lock, tg, p);
+        assert_eq!(c.unlock_mode(), Mode::Quarter);
+        c.lose_lock();
+        assert_eq!(
+            c.unlock_mode(),
+            Mode::Free,
+            "lost target keeps the shoulder view"
+        );
+        c.set_mode(Mode::Free, None, p);
+        c.set_mode(Mode::Lock, tg, p);
+        assert_eq!(c.unlock_mode(), Mode::Free, "locked from the free view");
+        // 이어 가기.
+        c.set_mode(Mode::Free, None, p);
+        c.zoom_step = 0;
+        let n = c.renew(vec3(3.0, 0.0, 3.0), &t);
+        assert_eq!((n.mode, n.zoom_step), (Mode::Free, 0));
+        let mut q = Camera::new(p, &t);
+        q.step_zoom(-1, p);
+        let n = q.renew(p, &t);
+        assert_eq!((n.mode, n.zoom_step), (Mode::Quarter, 0));
+    }
 
     /// 0040: 바로 뒤에서 보면 가리고, 옆으로 비키면 안 가리고, 가까운 쪽이 더 멀면(대상 뒤) 안 가린다.
     #[test]

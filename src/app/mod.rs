@@ -339,7 +339,7 @@ impl App {
         self.world.embers = self.progress.embers;
         self.world.apply_stats(self.progress.stats(), true);
         self.seed_run();
-        self.cam = Camera::new(self.world.player.pos, &self.t);
+        self.cam = self.cam.renew(self.world.player.pos, &self.t);
     }
 
     /// 다른 지역으로(0118): 그 지역을 새로 세우고 방랑자(체력·등잔·기력·탄…)와 잔불은 그대로 옮긴다.
@@ -991,6 +991,21 @@ impl App {
                 Color::new(AMBER.r, AMBER.g, AMBER.b, a),
             );
         }
+    }
+}
+
+impl App {
+    /// 벼린 단이 붙은 무기 이름(0180 — "검 +2", 0단이면 이름만).
+    pub(super) fn forged_name(&self, w: weapons::Id) -> String {
+        forged_label(w, self.progress.forged.rank(w))
+    }
+}
+
+/// 무기 이름 + 단(0180).
+fn forged_label(w: weapons::Id, rank: u8) -> String {
+    match rank {
+        0 => weapon_name(w).to_string(),
+        r => fill(s().forge_named, &[weapon_name(w), &r.to_string()]),
     }
 }
 

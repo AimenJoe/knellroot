@@ -133,7 +133,14 @@ pub struct Read {
     pub drag_at: Option<Vec2>,
     /// 화면에 손가락이 있었다(버튼·스틱이 아니어도) → 장치 = 터치.
     pub active: bool,
+    /// 시점 돌리기(0181, 원신 식): 화면 오른쪽 반의 버튼 아닌 자리를 한 손가락으로 끈 거리(논리 px, 이번 프레임).
+    pub look: Vec2,
+    /// 시점 거리 단계(0181): 그 자리의 두 손가락을 벌리면 +(당기기)·오므리면 −, `PINCH_STEP`마다 한 칸.
+    pub zoom: i32,
 }
+
+/// 두 손가락을 이만큼(논리 px) 벌리거나 오므리면 시점 거리 한 칸(0181).
+const PINCH_STEP: f32 = 60.0;
 
 #[derive(Clone, Copy)]
 struct Stick {
@@ -162,6 +169,10 @@ pub struct Touch {
     /// 싸움 중에 닿아 있던 손가락(멈춤 버튼을 누른 손가락 등) — 메뉴가 열린 뒤 떼도 탭이 아니다(2026-11-06: 멈춤 버튼을 뗀 자리가
     /// "창 밖 탭"이 되어 멈춤 창이 바로 닫혔다).
     stale: Vec<u64>,
+    /// 시점 손가락(0181): 화면 오른쪽 반의 버튼 아닌 자리에 닿은 손가락의 (id, 지난 자리). 하나 = 끌기, 둘 = 꼬집기.
+    lookers: Vec<(u64, Vec2)>,
+    /// 꼬집기로 쌓인 거리(논리 px, + = 벌림) — `PINCH_STEP`마다 한 칸씩 빼 간다.
+    pinch: f32,
 }
 
 /// 버튼 크기·거리의 기준(짧은 변)의 상한(논리 px) — 태블릿에서 버튼이 너무 커지지 않게.
@@ -349,6 +360,8 @@ impl Touch {
             self.attack_finger = None;
             self.cast_finger = None;
             self.dodge_finger = None;
+            self.lookers.clear();
+            self.pinch = 0.0;
             self.stale.append(&mut self.known);
             for t in &touches {
                 let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
@@ -393,6 +406,8 @@ impl Touch {
             self.attack_finger = None;
             self.cast_finger = None;
             self.dodge_finger = None;
+            self.lookers.clear();
+            self.pinch = 0.0;
             return a;
         }
         let (w, h) = (screen_width(), screen_height());
@@ -424,6 +439,9 @@ impl Touch {
                         origin: t.position,
                         pos: t.position,
                     });
+                } else if t.position.x >= w * 0.5 && !ended && self.lookers.len() < 2 {
+                    // 화면 오른쪽 반의 빈 자리(0181, 원신 식): 시점 손가락.
+                    self.lookers.push((t.id, t.position));
                 }
             }
             if let Some(s) = self.stick.as_mut() {
@@ -464,6 +482,32 @@ impl Touch {
         if let Some(s) = self.stick {
             a.move_dir = stick_vector(s.pos - s.origin, stick_radius(w, h));
         }
+        // 시점 손가락(0181): 뗀 손가락은 빼고, 하나면 끈 만큼 돌리기, 둘이면 사이가 벌어진 만큼 거리 단계.
+        let now: Vec<Option<Vec2>> = self
+            .lookers
+            .iter()
+            .map(|(id, _)| {
+                touches
+                    .iter()
+                    .find(|t| {
+                        t.id == *id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
+                    })
+                    .map(|t| t.position)
+            })
+            .collect();
+        let (look, zoom) = look_from(&self.lookers, &now, &mut self.pinch);
+        a.look = look;
+        a.zoom = zoom;
+        let mut kept = Vec::new();
+        for ((id, _), p) in self.lookers.iter().zip(&now) {
+            if let Some(p) = p {
+                kept.push((*id, *p));
+            }
+        }
+        if kept.len() < 2 {
+            self.pinch = 0.0;
+        }
+        self.lookers = kept;
         a
     }
 
@@ -504,6 +548,33 @@ fn press(a: &mut Read, k: Kind) {
 }
 
 /// 손가락이 중심에서 벗어난 만큼 → 스틱 값(x 오른쪽, y 위). 화면 y는 아래가 +라 뒤집는다. 데드존 뒤 0..1로 다시 편다.
+/// 시점 손가락의 지난 자리 `was`와 지금 자리 `now`(뗀 손가락은 `None`)로 (끈 거리, 거리 단계) — 순수(시험). 둘이 다 있으면 꼬집기만
+/// (돌리지 않는다 — 두 손가락을 벌리는데 화면이 같이 돌면 어지럽다), 하나면 끌기만. `pinch`에 벌어진 거리를 쌓고 `PINCH_STEP`마다 한 칸.
+pub fn look_from(was: &[(u64, Vec2)], now: &[Option<Vec2>], pinch: &mut f32) -> (Vec2, i32) {
+    let both: Vec<(Vec2, Vec2)> = was
+        .iter()
+        .zip(now)
+        .filter_map(|((_, w), n)| n.map(|n| (*w, n)))
+        .collect();
+    match both.as_slice() {
+        [(w0, n0), (w1, n1)] => {
+            *pinch += (*n0 - *n1).length() - (*w0 - *w1).length();
+            let mut zoom = 0;
+            while *pinch >= PINCH_STEP {
+                *pinch -= PINCH_STEP;
+                zoom += 1;
+            }
+            while *pinch <= -PINCH_STEP {
+                *pinch += PINCH_STEP;
+                zoom -= 1;
+            }
+            (Vec2::ZERO, zoom)
+        }
+        [(w, n)] if was.len() == 1 => (*n - *w, 0),
+        _ => (Vec2::ZERO, 0),
+    }
+}
+
 pub fn stick_vector(d: Vec2, radius: f32) -> Vec2 {
     let v = vec2(d.x, -d.y) / radius.max(1.0);
     let len = v.length();
@@ -1507,6 +1578,42 @@ mod tests {
         use crate::weapons::Id;
         assert_eq!(cast_icon(Id::Crossbow), Kind::Bomb);
         assert_eq!(cast_icon(Id::Sword), Kind::Cast);
+    }
+
+    #[test]
+    fn one_finger_drags_the_view_and_two_fingers_pinch_the_zoom() {
+        let mut pinch = 0.0;
+        // 한 손가락: 끈 만큼.
+        let was = [(1, vec2(700.0, 300.0))];
+        let (l, z) = look_from(&was, &[Some(vec2(730.0, 290.0))], &mut pinch);
+        assert_eq!((l, z), (vec2(30.0, -10.0), 0));
+        // 뗀 손가락은 돌리지 않는다.
+        assert_eq!(look_from(&was, &[None], &mut pinch), (Vec2::ZERO, 0));
+        // 두 손가락: 벌리면 + 한 칸(돌리지는 않는다), 오므리면 −, 조금씩 벌린 것도 쌓인다.
+        let two = [(1, vec2(600.0, 300.0)), (2, vec2(800.0, 300.0))];
+        let (l, z) = look_from(
+            &two,
+            &[Some(vec2(560.0, 300.0)), Some(vec2(840.0, 300.0))],
+            &mut pinch,
+        );
+        assert_eq!((l, z), (Vec2::ZERO, 1));
+        let mut pinch = 0.0;
+        let (_, z) = look_from(
+            &two,
+            &[Some(vec2(640.0, 300.0)), Some(vec2(760.0, 300.0))],
+            &mut pinch,
+        );
+        assert_eq!(z, -1);
+        let mut pinch = 0.0;
+        let small = [Some(vec2(580.0, 300.0)), Some(vec2(820.0, 300.0))];
+        assert_eq!(look_from(&two, &small, &mut pinch).1, 0);
+        let wider = [(1, vec2(580.0, 300.0)), (2, vec2(820.0, 300.0))];
+        let (_, z) = look_from(
+            &wider,
+            &[Some(vec2(560.0, 300.0)), Some(vec2(840.0, 300.0))],
+            &mut pinch,
+        );
+        assert_eq!(z, 1, "40 + 40 = 80 px");
     }
 
     #[test]

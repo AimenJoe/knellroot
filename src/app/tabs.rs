@@ -141,7 +141,7 @@ impl App {
             self.world.embers,
             &self.progress.owned,
             &self.progress.growth,
-        );
+        ) || self.can_forge();
         let tabs: Vec<(&str, bool)> = flow::tabs(host)
             .iter()
             .map(|&t| (Self::tab_name(t), tab_marked(host, t, level, skills, shop)))

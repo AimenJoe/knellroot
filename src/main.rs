@@ -22,6 +22,7 @@ mod ember;
 mod enemy;
 mod fall;
 mod flora;
+mod forge;
 mod fx;
 mod gait;
 mod garb;

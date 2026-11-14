@@ -196,7 +196,7 @@ impl App {
                 if e == DevStart::Gate {
                     self.run.dev_skip_to_gate(&mut self.world);
                 }
-                self.cam = Camera::new(self.world.player.pos, &self.t);
+                self.cam = self.cam.renew(self.world.player.pos, &self.t);
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Village => {
@@ -220,7 +220,7 @@ impl App {
                 if let Some(&(_, at)) = self.run.residents.first() {
                     self.world.player.pos = at + vec3(0.0, 0.0, 1.6);
                     self.world.player.prev = self.world.player.pos;
-                    self.cam = Camera::new(self.world.player.pos, &self.t);
+                    self.cam = self.cam.renew(self.world.player.pos, &self.t);
                 }
                 self.go(Go::Root(Scene::Play));
             }
@@ -232,7 +232,7 @@ impl App {
                 if let Some(&at) = self.run.stones.last() {
                     self.world.player.pos = at + vec3(0.0, 0.0, 1.4);
                     self.world.player.prev = self.world.player.pos;
-                    self.cam = Camera::new(self.world.player.pos, &self.t);
+                    self.cam = self.cam.renew(self.world.player.pos, &self.t);
                 }
                 self.go(Go::Root(Scene::Play));
             }
@@ -244,7 +244,7 @@ impl App {
                 if let Some(&at) = self.run.chests.first() {
                     self.world.player.pos = at + vec3(-1.2, 0.0, 0.0);
                     self.world.player.prev = self.world.player.pos;
-                    self.cam = Camera::new(self.world.player.pos, &self.t);
+                    self.cam = self.cam.renew(self.world.player.pos, &self.t);
                 }
                 self.go(Go::Root(Scene::Play));
             }
@@ -253,7 +253,7 @@ impl App {
                 self.world = scenario::build(sc);
                 self.fx.clear();
                 self.world.set_weapon(self.weapon);
-                self.cam = Camera::new(self.world.player.pos, &self.t);
+                self.cam = self.cam.renew(self.world.player.pos, &self.t);
                 self.go(Go::Root(Scene::Sandbox));
                 // 놀이터가 선 뒤에: 판(`App::board`)이 놀이터인지를 보고 처음의 둘을 배운 것으로 친다(0166).
                 self.apply_board();
