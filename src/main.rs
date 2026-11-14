@@ -24,6 +24,7 @@ mod fall;
 mod flora;
 mod fx;
 mod gait;
+mod garb;
 mod ground;
 mod growth;
 mod hud;

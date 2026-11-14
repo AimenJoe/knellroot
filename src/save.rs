@@ -47,6 +47,8 @@ pub mod key {
     pub const ULT_RANK: &str = "ult.rank.";
     /// 끼운 큰 기술(0158 G2 — 값은 `skills::Ult::key`). 쟁반 뒤집기(처음의 것)면 쓰지 않는다.
     pub const ULT_WORN: &str = "ult.worn";
+    /// 걸친 덧옷(0176 — 값은 `garb::Def::key`). 안 걸쳤으면 쓰지 않는다. 가진 덧옷은 `finds`에서 센다.
+    pub const GARB_WORN: &str = "garb.worn";
     /// 가진 무기(0117): 무기 기록 키들("sword,hammer") — 맨손은 늘 있다. 키가 없는 옛 기록(판을 한 번이라도 한 것)은 다 가진 것으로.
     pub const WEAPONS: &str = "weapons";
     /// 쌓인 플레이 시간(초, 0081 — 이어하기 목록의 "시간"). 개발 판·메뉴·타이틀에 있는 동안은 세지 않는다.
@@ -203,6 +205,8 @@ pub struct Progress {
     pub skills: crate::skills::Worn,
     /// 끼운 큰 기술(0158 G2 — 하나). 기록에 없으면 쟁반 뒤집기. 배운 것만 끼운다.
     pub ult: crate::skills::Ult,
+    /// 걸친 덧옷(0176 — 하나, 가진 것만).
+    pub garb: Option<crate::garb::Id>,
     /// 기술 판(0158 → 0161): 스킬마다의 단·고르기, 큰 기술의 단, 연 패시브 칸(`board.cells` — 옛 `tree`).
     pub board: crate::skills::Board,
     /// 기록의 몫(0167 → 0169): 셈 밖에서 받은 기술 점수 — 옛 기록의 처음 둘(2) 또는 튜토리얼의 상(1). 새 판은 0에서 선다.
@@ -380,6 +384,11 @@ impl Progress {
         };
         let r_has_no_weapons = r.get(key::WEAPONS).is_none();
         let r_weapons = r.get(key::WEAPONS).map(str::to_string);
+        // 덧옷(0176): 가진 것만 걸친다(주운 기록이 없으면 벗은 채).
+        let garb = r
+            .get(key::GARB_WORN)
+            .and_then(crate::garb::by_key)
+            .filter(|&id| crate::garb::owned(&finds).contains(&id));
         let mut p = Progress {
             growth,
             level,
@@ -406,6 +415,7 @@ impl Progress {
                 .get(key::ULT_WORN)
                 .and_then(crate::skills::Ult::by_key)
                 .unwrap_or_default(),
+            garb,
             board,
             tutorial: match r.num(key::TUTORIAL) {
                 Some(n) => n.min(crate::tutorial::DONE as u32) as u8,
@@ -623,6 +633,10 @@ impl Progress {
                 r.set(key::ULT_WORN, self.ult.key());
             }
         }
+        match self.garb {
+            Some(id) => r.set(key::GARB_WORN, crate::garb::def(id).key),
+            None => r.remove(key::GARB_WORN),
+        }
         r.set(
             key::WEAPONS,
             self.weapons
@@ -663,7 +677,7 @@ impl Progress {
             || self.board.cells.count() > 0
     }
 
-    /// 장신구를 뺀 능력치(성장만) — 장비 창이 "장신구가 바꾸는 줄"을 고를 때의 기본값(0104).
+    /// 장비(장신구·덧옷)를 뺀 능력치(성장만) — 장비 창이 "장비가 바꾸는 줄"을 고를 때의 기본값(0104 · 0176).
     pub fn stats_without_charms(&self) -> crate::stats::Stats {
         crate::stats::Stats::compute(&[
             self.growth.mods(),
@@ -675,6 +689,7 @@ impl Progress {
     /// 낀 장신구 + 성장(핵 고르기·레벨)으로 합친 능력치.
     pub fn stats(&self) -> crate::stats::Stats {
         let mut mods = crate::charms::mods(&self.worn);
+        mods.push(crate::garb::mods(self.garb));
         mods.push(self.growth.mods());
         mods.push(self.level.mods());
         mods.push(crate::progression::find_mods(&self.finds));
@@ -1669,5 +1684,22 @@ weapon=crossbow
         assert_eq!(back.summary().map(|m| m.play), Some(3725));
         assert_eq!(play_text(3725), "1:02");
         assert_eq!(play_text(59), "0:00");
+    }
+
+    /// 0176: 걸친 덧옷은 기록 `garb.worn`에 남고, 가진 덧옷(주운 숨은 물건)이 아니면 벗은 채로 읽는다. 안 걸쳤으면 키를 쓰지 않는다.
+    #[test]
+    fn the_worn_garment_round_trips_only_when_owned() {
+        use crate::garb::Id;
+        let mut p = Progress::from_record(Record::parse(""));
+        assert_eq!(p.garb, None);
+        assert!(!p.to_record().to_text().contains("garb.worn"));
+        p.finds = vec!["sanctuary.garb.1".to_string()];
+        p.garb = Some(Id::Bark);
+        let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        assert_eq!(back.garb, Some(Id::Bark));
+        assert!(back.stats().knock < 1.0, "the worn garment counts");
+        assert_eq!(back.stats_without_charms().knock, 1.0);
+        let stray = Progress::from_record(Record::parse("garb.worn=bark\n"));
+        assert_eq!(stray.garb, None, "not owned — not worn");
     }
 }

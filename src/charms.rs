@@ -56,6 +56,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -81,6 +83,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -106,6 +110,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -131,6 +137,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -156,6 +164,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 10,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -181,6 +191,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -206,6 +218,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -231,6 +245,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -256,6 +272,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 10,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
 ];

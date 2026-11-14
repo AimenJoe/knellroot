@@ -22,8 +22,8 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
   '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.txt': 'text/plain' };
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
-// 문 앞 쉼터(0)에서 쉰 기록, 잔불은 레벨 몇 단 + 가게 + 기술 되돌리기를 볼 만큼. 기력·힘은 이미 4단(다음이 마지막 단 — "다 올림" 줄·평타 +1도 본다).
-const SEED = 'v=1\nembers=700\nclears=1\nrun.rest=0\nrun.gate=1\ncharm.owned=shell\ncharm.worn=shell,,\nlv.life=1\nlv.stamina=4\nlv.might=4\ncore.warden=1\nfinds=sanctuary.shard.0\nmigrated.v04=1\n';
+// 문 앞 쉼터(0)에서 쉰 기록(뿌리껍질 덧옷을 걸쳤다 — 0176), 잔불은 레벨 몇 단 + 가게 + 기술 되돌리기를 볼 만큼. 기력·힘은 이미 4단(다음이 마지막 단 — "다 올림" 줄·평타 +1도 본다).
+const SEED = 'v=1\nembers=700\nclears=1\nrun.rest=0\nrun.gate=1\ncharm.owned=shell\ncharm.worn=shell,,\nlv.life=1\nlv.stamina=4\nlv.might=4\ncore.warden=1\nfinds=sanctuary.garb.1,sanctuary.shard.0\ngarb.worn=bark\nmigrated.v04=1\n';
 // 단을 미리 찍은 기록(0158 → 0161): 점수 23(레벨 15 + 엘리트 6 + 핵 둘). 첫 넷(휘돌이·가로지르기·끌어모으기·땅울림)과
 // 새 넷(버팀·되울림·던지기·잔불 흩기, G2)을 따로 같은 단·같은 고르기에, 큰 기술은 (뒤집기, 몰아치기, 한 줄기)의 단.
 // 기술 화면의 상세는 다섯 단의 줄과 고르기 둘을 늘 다 보여 주므로(0161) 단마다 글이 갈리지 않는다 — 기록은 상태 줄과 표지가
@@ -138,9 +138,9 @@ async function run(browser, lang) {
   await press('Enter'); await page.waitForTimeout(300);
   await shot('7e-status-to-skills');
   await press('KeyQ'); await page.waitForTimeout(300);
-  // 탭마다 한 바퀴(0164): 장비(무기 칸에 서 있다 — → 가운데 장신구 칸, ↑ 첫 칸) — 칸을 걷고 후보의 작은 목록(장신구 칸·무기 칸)을 열어 본다.
+  // 탭마다 한 바퀴(0164): 장비(무기 칸에 서 있다 — → 같은 높이의 첫 장신구 칸, 0176) — 칸을 걷고 후보의 작은 목록(장신구 칸·무기 칸)을 열어 본다.
   await shot('8a-equip');
-  await press('ArrowRight'); await page.waitForTimeout(150); await press('ArrowUp'); await page.waitForTimeout(150);
+  await press('ArrowRight'); await page.waitForTimeout(150);
   await shot('8b-equip-charm');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('8c-equip-charm-pick');
@@ -149,16 +149,27 @@ async function run(browser, lang) {
   await press('Escape'); await page.waitForTimeout(300);
   await press('ArrowDown'); await page.waitForTimeout(150);
   await shot('8e-equip-empty-slot');
-  await press('ArrowLeft'); await page.waitForTimeout(150); await press('Enter'); await page.waitForTimeout(300);
+  // 덧옷 칸(0176 — 무기 밑): 가운데 장신구 칸 ← = 무기 칸, ↓ = 덧옷 칸(뿌리껍질을 걸쳤다) → 목록(벗기 · 뿌리껍질), 벗기에서 견주는 줄.
+  await press('ArrowLeft'); await page.waitForTimeout(150); await press('ArrowDown'); await page.waitForTimeout(150);
+  await shot('8e2-equip-garb-slot');
+  await press('Enter'); await page.waitForTimeout(300);
+  await shot('8e3-equip-garb-pick');
+  await press('ArrowUp'); await page.waitForTimeout(150);
+  await shot('8e4-equip-garb-pick-bare');
+  await press('Escape'); await page.waitForTimeout(300);
+  await press('ArrowUp'); await page.waitForTimeout(150); await press('Enter'); await page.waitForTimeout(300);
   await shot('8f-equip-weapon-pick');
   await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8g-equip-weapon-pick-fists');
   await press('Escape'); await page.waitForTimeout(300);
-  // 도감(장비에서 E 둘 — 기술을 지나): 묶음 둘(좌우)의 모든 줄.
+  // 도감(장비에서 E 둘 — 기술을 지나): 묶음 셋(좌우)의 모든 줄.
   await press('KeyE', 2); await page.waitForTimeout(300);
   for (let i = 0; i < 6; i++) { await shot(`8h-codex-foe-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   await press('ArrowRight'); await page.waitForTimeout(300);
   for (let i = 0; i < 9; i++) { await shot(`8i-codex-charm-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  // 셋째 묶음 덧옷(0176).
+  await press('ArrowRight'); await page.waitForTimeout(300);
+  for (let i = 0; i < 3; i++) { await shot(`8k-codex-garb-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   // 가게: 살 것의 줄마다(끝에서 돈다).
   await press('KeyE'); await page.waitForTimeout(300);
   for (let i = 0; i < 9; i++) { await shot(`8-shop-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }

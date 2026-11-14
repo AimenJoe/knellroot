@@ -254,3 +254,31 @@ fn hits_soon_after_a_stun_keep_halving_it_so_a_mob_leaves_gaps() {
         "fresh after the grace: {dur}"
     );
 }
+
+/// 0176 덧옷: 무거운 덧옷(뿌리껍질)은 같은 한 대에 덜 밀리고 덜 휘청이고, 가벼운 덧옷(망토)은 더 — 받는 피해는 같다(방어력 숫자가 아니다).
+/// 월드는 덧옷을 모른다: `Stats::tune`이 휜 랩 값(`hurt.knock`·`hurt.stun`)을 맞음의 한 자리가 읽는다.
+#[test]
+fn a_garment_changes_the_push_and_the_stagger_of_a_blow_not_its_damage() {
+    use crate::garb::{mods, Id};
+    use crate::stats::Stats;
+    let t = Tuning::default();
+    let blow = |worn: Option<Id>| {
+        let mut w = World::new("test", 30.0);
+        w.apply_stats(Stats::compute(&[mods(worn)]), true);
+        let hp = w.player.hp;
+        hit_by_swing(&mut w, &t);
+        let PState::Hurt { dur, .. } = w.player.state else {
+            panic!("{:?}", w.player.state)
+        };
+        (w.player.vel.length(), dur, hp - w.player.hp)
+    };
+    let (push0, stun0, lost0) = blow(None);
+    let (push_b, stun_b, lost_b) = blow(Some(Id::Bark));
+    let (push_c, stun_c, lost_c) = blow(Some(Id::Cloak));
+    assert!(
+        push_b < push0 * 0.6 && stun_b < stun0 * 0.7,
+        "bark: {push_b} {stun_b}"
+    );
+    assert!(push_c > push0 && stun_c > stun0, "cloak: {push_c} {stun_c}");
+    assert_eq!((lost_b, lost_c), (lost0, lost0), "the same damage");
+}

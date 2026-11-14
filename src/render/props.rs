@@ -573,6 +573,7 @@ fn hidden_finds(run: &StageRun, w: &World, fl: &Drape) {
             crate::stage::Find::Lamp => LOOT_LAMP,
             crate::stage::Find::Sip => LOOT_SIP,
             crate::stage::Find::Shard => LOOT_SHARD,
+            crate::stage::Find::Garb => LOOT_GARB,
         };
         loot_beam(
             fl,
@@ -607,6 +608,31 @@ fn hidden_finds(run: &StageRun, w: &World, fl: &Drape) {
                 0.0,
                 360.0,
                 with_a(Color::new(0.95, 0.81, 0.49, 1.0), 0.2 + 0.25 * k),
+            );
+            continue;
+        }
+        // 덧옷(0176): 개어 놓은 천 — 납작하고 넓은 둥근 덩이가 바닥 가까이에서 천천히 돈다(빛나는 덩이·조각과 키부터 다르게).
+        if *kind == crate::stage::Find::Garb {
+            let col = Color::new(0.84, 0.78, 0.92, 1.0);
+            let c = loot_front(*p + Vec3::Y * (0.32 + 0.04 * k));
+            fl.shadow(*p, 0.32);
+            let folded: Vec<[Vec3; 3]> = ball_faces(0.2)
+                .into_iter()
+                .map(|t| t.map(|v| vec3(v.x * 1.35, v.y * 0.42, v.z)))
+                .collect();
+            loot_body(
+                c,
+                &folded,
+                col,
+                Quat::from_rotation_y(w.time * 0.5 + i as f32),
+            );
+            glow_disc(c, 0.3, with_a(col, 0.18 + 0.12 * k));
+            fl.ring(
+                *p,
+                0.62 + 0.12 * k,
+                0.0,
+                360.0,
+                with_a(col, 0.22 + 0.22 * k),
             );
             continue;
         }
@@ -728,6 +754,8 @@ pub(super) fn gate_box(run: &StageRun) -> Option<Aabb> {
 const LOOT_LAMP: Color = Color::new(0.98, 0.9, 0.62, 1.0);
 const LOOT_SIP: Color = Color::new(0.62, 0.92, 0.8, 1.0);
 const LOOT_SHARD: Color = Color::new(0.96, 0.94, 0.86, 1.0);
+/// 덧옷(0176): 옅은 라벤더 — 금빛(등잔)·민트(한 모금)·크림(조각)과 갈린다.
+const LOOT_GARB: Color = Color::new(0.86, 0.8, 0.98, 1.0);
 const LOOT_CHEST: Color = Color::new(0.9, 0.93, 1.0, 1.0);
 /// 빛기둥이 다 보이는 거리·사라지는 거리(m) — 가까이 와야 서서히(사장 2026-11-09 "가까이서만 서서히").
 const LOOT_NEAR: f32 = 10.0;

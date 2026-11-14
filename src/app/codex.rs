@@ -6,10 +6,11 @@ use super::menu::Hit;
 use super::tabs::{Ln, PaneHead, HEAD_H};
 use super::*;
 use crate::codex::{self, ENTRIES};
+use crate::i18n::Tr;
 use flow::Host;
 
 /// 몸 안의 묶음 둘(적 · 장신구).
-const GROUPS: usize = 2;
+const GROUPS: usize = 3;
 /// 묶음 머리 줄의 높이(기준 px) — 그 아래부터 목록.
 const GROUP_H: f32 = 18.0;
 /// 오른쪽 칸의 그림 자리(기준 px): 적은 선 몸(이름 아래의 세로로 긴 칸), 장신구는 머리의 그림 칸.
@@ -45,10 +46,10 @@ impl App {
             self.snd(crate::sfx::Id::UiMove);
             return;
         }
-        let n = if tab == 0 {
-            ENTRIES.len()
-        } else {
-            crate::charms::TABLE.len()
+        let n = match tab {
+            0 => ENTRIES.len(),
+            1 => crate::charms::TABLE.len(),
+            _ => crate::garb::TABLE.len(),
         };
         let _ = self.menu_pick(a, n);
         if self.cursor != before {
@@ -66,7 +67,7 @@ impl App {
         let w = self.draw_tab_window(f, scene);
         let (k, u) = (w.k, w.s);
         // 묶음 머리: 위 탭과 다른 꼴 — 밑줄 하나짜리 작은 글 둘, 양 끝에 ◀ ▶(좌우로 넘긴다).
-        let names = [s.codex_tab_foes, s.codex_tab_charms];
+        let names = [s.codex_tab_foes, s.codex_tab_charms, s.codex_tab_garb];
         let tk = 0.85 * k;
         let ty = w.at(0.0, 2.0).y;
         let mut x = w.at(4.0, 0.0).x;
@@ -106,15 +107,9 @@ impl App {
                 })
                 .collect()
         } else {
-            crate::charms::TABLE
+            self.codex_things(tab)
                 .iter()
-                .map(|d| {
-                    ui::Row::plain(if self.progress.owned.contains(&d.id) {
-                        tr(d.name)
-                    } else {
-                        s.codex_unknown
-                    })
-                })
+                .map(|t| ui::Row::plain(if t.owned { tr(t.name) } else { s.codex_unknown }))
                 .collect()
         };
         let cursor = self.cursor.min(rows.len().saturating_sub(1));
@@ -162,20 +157,20 @@ impl App {
             }
             self.draw_pane(&w, PIC_TOP + PIC_H + 4.0, &lines);
         } else {
-            let d = &crate::charms::TABLE[cursor.min(crate::charms::TABLE.len() - 1)];
-            let owned = self.progress.owned.contains(&d.id);
+            let things = self.codex_things(tab);
+            let d = &things[cursor.min(things.len() - 1)];
             let icon = self.draw_pane_head(
                 &w,
                 &PaneHead {
-                    name: if owned { tr(d.name) } else { s.codex_unknown },
-                    gold: owned,
-                    kind: s.codex_tab_charms.to_string(),
+                    name: if d.owned { tr(d.name) } else { s.codex_unknown },
+                    gold: d.owned,
+                    kind: names[tab].to_string(),
                     state: (String::new(), DIM),
                     icon: true,
                 },
             );
-            if owned {
-                self.draw_pane_item(crate::item_view::Item::Charm(d.id), icon);
+            if d.owned {
+                self.draw_pane_item(d.item, icon);
                 lines.extend(self.pane_wrap(&w, tr(d.desc), DIM));
                 lines.push(Ln::Gap);
                 lines.extend(self.pane_wrap(&w, tr(d.flavor), GUESS));
@@ -190,15 +185,53 @@ impl App {
                 lines.extend(self.pane_wrap(&w, s.codex_not_owned, DIM));
             }
             lines.push(Ln::Gap);
-            lines.extend(self.pane_wrap(
-                &w,
-                &fill(s.codex_place, &[tr(codex::charm_place(d.id))]),
-                PLACE,
-            ));
+            lines.extend(self.pane_wrap(&w, &fill(s.codex_place, &[tr(d.place)]), PLACE));
             self.draw_pane(&w, HEAD_H, &lines);
         }
         let right = w.panel.x + w.panel.w;
         self.tab_foot(f, &w, scene, right, &[(Act::Walk, s.verb_choose)]);
+    }
+}
+
+/// 도감의 물건 한 줄(장신구·덧옷 0176 — 같은 꼴로 보인다).
+struct Thing {
+    owned: bool,
+    name: Tr,
+    desc: Tr,
+    flavor: Tr,
+    place: Tr,
+    item: crate::item_view::Item,
+}
+
+impl App {
+    /// 묶음 `tab`(1 = 장신구, 2 = 덧옷)의 물건들(표 순서).
+    fn codex_things(&self, tab: usize) -> Vec<Thing> {
+        if tab == 1 {
+            crate::charms::TABLE
+                .iter()
+                .map(|d| Thing {
+                    owned: self.progress.owned.contains(&d.id),
+                    name: d.name,
+                    desc: d.desc,
+                    flavor: d.flavor,
+                    place: codex::charm_place(d.id),
+                    item: crate::item_view::Item::Charm(d.id),
+                })
+                .collect()
+        } else {
+            let have = self.garbs();
+            crate::garb::TABLE
+                .iter()
+                .map(|d| Thing {
+                    owned: have.contains(&d.id),
+                    name: d.name,
+                    desc: d.desc,
+                    flavor: d.flavor,
+                    place: d.place,
+                    item: crate::item_view::Item::Garb(d.id),
+                })
+                .collect()
+        }
     }
 }
 
