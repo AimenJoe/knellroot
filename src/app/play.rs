@@ -424,6 +424,8 @@ impl App {
         self.fx.watch(&self.world, TICK_DT);
         let slow = if self.world.hitstop > 0.0 { 0.25 } else { 1.0 };
         self.fx.tick(TICK_DT * slow);
+        let w = &self.world;
+        self.fx.settle(|p| w.ground_y(p));
         self.follow_camera();
     }
 

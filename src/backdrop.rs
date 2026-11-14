@@ -578,6 +578,19 @@ impl Backdrop {
                 Shape::Dot => billboard(&mut verts, &mut idx, p.pos, right, up, size, col),
                 Shape::Puff => billboard(&mut puffs, &mut puff_idx, p.pos, right, up, size, col),
                 Shape::Star => star(&mut verts, &mut idx, p.pos, right, up, size, col),
+                // 진액 방울(0182): 빛줄과 같은 꼴이되 꼬리가 짧다(물방울이 늘어난 만큼만).
+                Shape::Drop => {
+                    let tail = p.pos - p.vel * 0.035;
+                    let end = Color::new(col.r, col.g, col.b, col.a * 0.6);
+                    streak(&mut verts, &mut idx, p.pos, tail, size, view, col, end);
+                }
+                // 바닥 얼룩(0182): 땅에 눕힌 계단진 원판 — 떨어질 때 가던 쪽으로 길쭉하게.
+                Shape::Splat => {
+                    let d = p.vel.normalize_or(Vec3::X);
+                    let long = 1.0 + (p.vel.length() * 0.18).min(0.9);
+                    let side = vec3(-d.z, 0.0, d.x);
+                    billboard(&mut puffs, &mut puff_idx, p.pos, d * long, side, size, col);
+                }
                 Shape::Streak => {
                     let tail = p.pos - p.vel * 0.045;
                     let end = Color::new(col.r, col.g, col.b, 0.0);
