@@ -143,6 +143,42 @@ pub static UNDERGROUND: Env = Env {
     trees: false,
 };
 
+/// 땅속 더 깊은 곳(잔뿌리의 정원, 지하 75m — 0185): 마을의 흙빛 동굴에서 물기·이끼의 옅은 초록이 섞인다(설계 — 생명색은 물기·이끼·작은
+/// 생명체에 나눠 둔다, 보라 뿌리와 잿빛만으로 채우지 않는다). 천장 틈이 드물어 달빛은 더 약하고, 떨어지는 것은 흙 대신 물방울로 읽힌다.
+pub static GARDEN: Env = Env {
+    sky: [
+        Color::new(0.07, 0.09, 0.09, 1.0),
+        Color::new(0.11, 0.14, 0.13, 1.0),
+        Color::new(0.09, 0.11, 0.11, 1.0),
+        Color::new(0.07, 0.08, 0.09, 1.0),
+        Color::new(0.05, 0.06, 0.07, 1.0),
+        Color::new(0.035, 0.04, 0.055, 1.0),
+    ],
+    zenith: Color::new(0.03, 0.035, 0.045, 1.0),
+    ridges: [
+        (
+            Color::new(0.11, 0.14, 0.13, 1.0),
+            Color::new(0.18, 0.24, 0.20, 1.0),
+        ),
+        (
+            Color::new(0.08, 0.10, 0.10, 1.0),
+            Color::new(0.13, 0.17, 0.15, 1.0),
+        ),
+        (
+            Color::new(0.05, 0.065, 0.07, 1.0),
+            Color::new(0.09, 0.12, 0.11, 1.0),
+        ),
+    ],
+    ridge_h: 2.4,
+    moon: false,
+    moonlight: 0.32,
+    fog: Color::new(0.11, 0.15, 0.15, 1.0),
+    fog_deep: Color::new(0.06, 0.085, 0.09, 1.0),
+    fireflies: false,
+    falling: true,
+    trees: false,
+};
+
 /// 이어 붙여도 이음매가 없는 점 무늬(정수 주파수 사인 합) → 세 단 알파(픽셀 그림처럼 계단).
 fn fog_pixels(n: u16) -> Vec<u8> {
     let n = n as usize;

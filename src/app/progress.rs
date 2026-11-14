@@ -173,16 +173,18 @@ impl App {
             self.progress.run = None;
             self.rest_at = None;
         }
-        // 둘째 지역 문지기(깨진 종지기, 0125): 핵은 따로 셋까지 — 기술 점수는 같이 센다(0161).
-        if core && self.stage == 1 {
+        // 둘째·셋째 지역 문지기(깨진 종지기 0125 · 이끼 덮인 문지기 0185): 핵은 문지기마다 따로 셋까지 — 기술 점수는 같이 센다(0161).
+        if core && self.stage >= 1 {
             let s = s();
-            let first = self.progress.bell_cores == 0;
-            if self.progress.bell_cores < crate::progression::CORE_CAP {
-                self.progress.bell_cores += 1;
-                let (n, m) = (
-                    self.progress.bell_cores.to_string(),
-                    crate::progression::CORE_CAP.to_string(),
-                );
+            let cores = if self.stage == 1 {
+                &mut self.progress.bell_cores
+            } else {
+                &mut self.progress.moss_cores
+            };
+            let first = *cores == 0;
+            if *cores < crate::progression::CORE_CAP {
+                *cores += 1;
+                let (n, m) = (cores.to_string(), crate::progression::CORE_CAP.to_string());
                 self.toast = Some((fill(s.toast_core, &[&n, &m]), TOAST_TIME));
             } else {
                 self.toast = Some((s.toast_core_full.to_string(), TOAST_TIME));

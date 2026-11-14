@@ -14,6 +14,8 @@ pub enum Kind {
     Pod,
     /// 깨진 종지기(0116 이름, 0125 — 둘째 문지기): 울림 고리·종 조각·종 끌기 돌진.
     Bellkeeper,
+    /// 이끼 덮인 문지기(0185 — 셋째 문지기, 설계 내부 작업명 "문턱지기"): 쓸기·껍질 받기·틈새 돌진.
+    Mossward,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -319,7 +321,46 @@ pub static BELLKEEPER: Def = Def {
     model: "bellkeeper",
 };
 
-pub static ALL: [&Def; 6] = [&HUSK, &THORN, &WARDEN, &SHELL, &POD, &BELLKEEPER];
+/// 이끼 덮인 문지기(0185 — 셋째 문지기, 잔뿌리의 정원 문턱 아래). 지역 생태의 큰 몸: 낮게 나아가 앞을 쓸고, 웅크려 정면을 흘리고
+/// (등딱지짐승의 앞 막기 — 옆·뒤·강타로 연다), 거리가 벌어지면 틈새 돌진. 체력 반 아래 간격이 짧아지고 쓸기 뒤 돌진을 잇는다.
+pub static MOSSWARD: Def = Def {
+    kind: Kind::Mossward,
+    name: |s: &Strings| s.boss_mossward,
+    hp: 640,
+    radius: 1.1,
+    height: 2.6,
+    speed: 2.4,
+    reach: 3.6,
+    tele: 0.85,
+    recover: 1.0,
+    arc: 150.0,
+    charge_range: 10.0,
+    charge_tele: 0.8,
+    charge_speed: 12.0,
+    charge_time: 0.55,
+    wave_tele: 1.0,
+    wave_radius: 8.0,
+    wave_speed: 8.0,
+    guard_arc: 0.0,
+    plant_range: 0.0,
+    plant_r: 0.0,
+    retreat: 0.0,
+    rings: 0,
+    shards: 0,
+    rhythm: Rhythm {
+        delay: 0.35,
+        fast: 0.2,
+        chain: 0.35,
+        gaps: &[0.45, 1.2],
+        feint: 0.3,
+    },
+    behavior: Behavior::Warden,
+    boss: true,
+    embers: 30,
+    model: "gatekeeper",
+};
+
+pub static ALL: [&Def; 7] = [&HUSK, &THORN, &WARDEN, &SHELL, &POD, &BELLKEEPER, &MOSSWARD];
 
 /// 종류의 줄(표 `ALL`에서 찾는다 — 새 종류 = `Kind` 한 줄 + 표 한 줄, 빠뜨리면 시험이 잡는다).
 pub fn def(kind: Kind) -> &'static Def {
@@ -351,7 +392,10 @@ mod tests {
             }
             assert!((0.0..=180.0).contains(&d.guard_arc), "{:?}", d.kind);
         }
-        // 문지기는 지역마다 하나(성소 문지기·깨진 종지기).
-        assert!(ALL.iter().filter(|d| d.boss).count() == 2);
+        // 문지기는 지역마다 하나(성소 문지기·깨진 종지기·이끼 덮인 문지기 0185).
+        assert_eq!(
+            ALL.iter().filter(|d| d.boss).count(),
+            crate::stage::STAGES.len()
+        );
     }
 }

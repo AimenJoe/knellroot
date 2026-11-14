@@ -1479,10 +1479,12 @@ mod tests {
                     .count() as u32
             })
             .sum();
-        assert_eq!((levels, elites, cores, shards), (15, 6, 6, 3));
-        assert_eq!(points(levels, elites, cores, shards), 30);
-        // 다 익히는 값 65의 반이 조금 안 된다(0160 2절 — 0166: 처음의 둘도 값이 있다).
-        assert!(2 * 30 < Board::maxed(Pick::A).spent());
+        // 0185: 셋째 지역(엘리트 셋·핵 셋·조각 둘)이 더해져 30 → 38.
+        assert_eq!((levels, elites, cores, shards), (15, 9, 9, 5));
+        let all = points(levels, elites, cores, shards);
+        assert_eq!(all, 38);
+        // 다 익히는 값(65)에는 못 미친다 — 고르게 한다(0160 2절). 여정의 기술 점수(지역마다 하나, 0183)를 더해도.
+        assert!(all + (crate::stage::STAGES.len() as u32) < Board::maxed(Pick::A).spent());
     }
 
     /// 0161: 패시브 칸은 판의 칸이다 — 칸마다 1점, 잠금은 줄(쓴 점수 합)뿐. 갈래의 앞 칸을 열지 않아도 같은 줄의 뒤 칸이 열리고,

@@ -38,6 +38,8 @@ pub(super) enum DevStart {
     Gate,
     /// 둘째 지역 어귀(0118 — 이 판에 첫 문지기를 이긴 셈) — 기록은 쓰지 않는다.
     Village,
+    /// 셋째 지역 어귀(0185 — 이 판에 두 문지기를 이긴 셈) — 기록은 쓰지 않는다.
+    Garden,
     /// 둘째 지역의 첫 주민 곁(0122 — 말풍선·돌아봄 판정) — 기록은 쓰지 않는다.
     Residents,
     /// 둘째 지역의 새긴 돌 곁(0129 — 글 판 판정) — 기록은 쓰지 않는다.
@@ -57,7 +59,7 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 24] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 25] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Tools, DevStart::Skills),
@@ -69,6 +71,7 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 24] = [
     (DevCat::Stage, DevStart::Residents),
     (DevCat::Stage, DevStart::Stones),
     (DevCat::Stage, DevStart::Chest),
+    (DevCat::Stage, DevStart::Garden),
     (DevCat::Combat, DevStart::Scenario(Scenario::Boss)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Pillars)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Duel)),
@@ -100,6 +103,7 @@ impl DevStart {
             DevStart::Entrance => t(dv::ENTRANCE),
             DevStart::Gate => t(dv::GATE),
             DevStart::Village => t(dv::VILLAGE),
+            DevStart::Garden => t(dv::GARDEN),
             DevStart::Residents => t(dv::RESIDENTS),
             DevStart::Stones => t(dv::STONES),
             DevStart::Chest => t(dv::CHEST),
@@ -119,6 +123,7 @@ impl DevStart {
             DevStart::Entrance
             | DevStart::Gate
             | DevStart::Village
+            | DevStart::Garden
             | DevStart::Residents
             | DevStart::Stones
             | DevStart::Chest => t(dv::STAGE_NOTE).to_string(),
@@ -209,6 +214,20 @@ impl App {
                     false,
                     self.run.def.depth_m,
                     crate::stage::STAGES[1].depth_m,
+                ));
+                self.go(Go::Root(Scene::Play));
+            }
+            DevStart::Garden => {
+                self.dev_run = true;
+                self.restart();
+                // 이 판에 두 문지기를 이긴 셈 — 마을에서 내려가는 뿌리 굴부터.
+                self.down = 2;
+                self.cross_to(1, false);
+                self.passage = Some(crate::descent::Passage::new(
+                    2,
+                    false,
+                    crate::stage::STAGES[1].depth_m,
+                    crate::stage::STAGES[2].depth_m,
                 ));
                 self.go(Go::Root(Scene::Play));
             }
