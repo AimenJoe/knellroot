@@ -64,7 +64,12 @@ impl Renderer {
             * Quat::from_rotation_z(v.roll.to_radians())
             * Quat::from_rotation_x(v.pitch.to_radians())
             * Quat::from_rotation_y(v.yaw.to_radians());
-        let inst = Mat4::from_quat(rot) * Mat4::from_translation(-c);
+        // 무기는 손뼈에 쥔 방향으로 붙어 있다(0193 스킨 몸) — 제 모양의 축으로 되돌린 뒤 표의 각도로.
+        let undo = match item {
+            crate::item_view::Item::Weapon(_) => e.model.rest_rotation(i).inverse(),
+            _ => Quat::IDENTITY,
+        };
+        let inst = Mat4::from_quat(rot * undo) * Mat4::from_translation(-c);
         let fovy: f32 = 0.5;
         let cam = Camera3D {
             position: vec3(0.0, 0.0, rad.max(0.01) / (fovy * 0.5).sin() * 1.02),

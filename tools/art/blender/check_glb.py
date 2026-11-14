@@ -21,6 +21,7 @@ REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 # wanderer: 0051 무기 넷(검·망치·지팡이·쇠뇌)이 한 모델에 있고 게임은 든 것만 보인다(나머지 크기 0). 0153: 몸을 정점 2,800·텍스처 512로 다시
 # 줄이고 두건 꼬리·주머니를 더했다 — 보이는 정점은 약 3,200(한 그리기 호출 10,000 미만, 0135).
 # 0155: 무기 넷·등잔을 상자 조합에서 제 꼴(잎 꼴 날·통 머리·굽은 활)로, 두건 꼭지 — 4,524(무기 넷이 1,233). 색인은 13,668 — 한 호출 15,000 아래를 지킨다.
+# 0193: 스킨 몸(Meshy 리깅, 줄여 정점 2,963) + 무기 넷·등잔 그대로 — 4,196.
 # charms: 0155에서 돌린 꼴·꺾인 관으로 다시(1,939) — 한 번에 하나만 그린다(아이콘은 캐시).
 BUDGET = {"mossgrazer": 900, "mossward": 2200, "wanderer": 4800, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
           # 0068 장신구 여섯이 한 파일(게임은 하나씩만 그린다) — 하나 280 안팎.
@@ -34,8 +35,10 @@ BUDGET = {"mossgrazer": 900, "mossward": 2200, "wanderer": 4800, "root_husk": 76
 PROP_BUDGET = 400
 # 동작 이름과 길이(초) — 명세 그대로인지 본다.
 EXPECT = {
-    "wanderer": {"idle": 2.4, "idle_look": 2.6, "idle_shake": 1.3, "idle_bell": 2.2, "wake": 4.0, "fall": 1.3, "walk": 0.8, "attack": 0.43, "dodge": 0.25, "hurt": 0.35, "turn_r": 0.25, "turn_l": 0.25,
-                 "strafe_l": 0.6, "strafe_r": 0.6, "walk_back": 0.7, "charge": 0.3, "heavy": 0.58, "drink": 0.8,
+    # 0193 스킨 몸 + Meshy 동작(`wanderer_skin.py`): 게임 상태에 맞춘 동작은 옛 길이 그대로. 서기·몸짓은 원본 길이(되풀이·몸짓
+    # 시계가 모델의 길이를 읽는다), 뒷걸음은 한 주기(1.2), 달리기 `run`이 새로 생겼다. 옆걸음·종 몸짓은 원본이 없다(걷기·건너뜀).
+    "wanderer": {"idle": 1.67, "idle_look": 1.83, "idle_shake": 1.12, "run": 0.63, "wake": 4.0, "fall": 1.3, "walk": 0.8, "attack": 0.43, "dodge": 0.25, "hurt": 0.35, "turn_r": 0.25, "turn_l": 0.25,
+                 "walk_back": 1.2, "charge": 0.3, "heavy": 0.58, "drink": 0.8,
                  # 0158 G2 스킬 동작 — 길이 = 시동 + 이어짐 + 후딜(`skills.rs` 표의 바탕값).
                  "sk_whirl": 0.67, "sk_cut": 0.57, "sk_gather": 0.5, "sk_quake": 0.7, "sk_brace": 1.65, "sk_echo": 0.45,
                  "sk_throw": 0.53, "sk_embers": 0.55, "ult_upend": 1.0, "ult_flurry": 0.5, "ult_line": 0.9},
@@ -59,7 +62,7 @@ EXPECT = {
     "chest": {"open": 0.4},
     "lever": {"pull": 0.4},
 }
-MUST_NODES = {"mossward": ["glow_core", "glow_eyes", "head_geo"], "gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["head_geo", "sword", "glow_lamp"],
+MUST_NODES = {"mossward": ["glow_core", "glow_eyes", "head_geo"], "gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["body", "root", "sword", "w_hammer", "w_staff", "w_crossbow", "glow_lamp", "lamp"],
               "root_husk": ["glow_eye"], "thorn_beast": ["glow_eyes"], "shellback": ["glow_eyes", "head_geo"], "pod": ["glow_eyes", "head_geo", "seed_geo"],
               "bellkeeper": ["glow_eyes", "glow_core", "bell_geo", "head_geo"], "res_hearth": ["head_geo"], "res_water": ["head_geo"], "res_cloth": ["head_geo"], "brazier": ["glow_flame"],
               "core_crystal": ["glow_core"], "bell": ["bell", "bell_frame"],
@@ -117,9 +120,14 @@ def check(path):
             continue
         for p in meshes[n["mesh"]]["primitives"]:
             at = p["attributes"]
+            # 0193: 스킨 몸(노드에 skin이 있음)만 뼈 가중치를 갖는다 — 게임이 CPU에서 휜다(`model::skin_into`, 정점마다 넷까지).
             for bad in ("JOINTS_0", "WEIGHTS_0"):
-                if bad in at:
+                if bad in at and "skin" not in n:
                     problems.append(f"메시 {n.get('name')}에 {bad}")
+            if "skin" in n and not ("JOINTS_0" in at and "WEIGHTS_0" in at):
+                problems.append(f"스킨 메시 {n.get('name')}에 가중치 없음")
+            if "JOINTS_1" in at:
+                problems.append(f"메시 {n.get('name')}에 JOINTS_1(영향 다섯 이상 — 로더는 넷까지)")
             for need in ("POSITION", "NORMAL", "TEXCOORD_0"):
                 if need not in at:
                     problems.append(f"메시 {n.get('name')}에 {need} 없음")

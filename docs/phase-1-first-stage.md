@@ -139,6 +139,7 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 | 시점 거리 단계 · 자유 숄더뷰(0181) | `camera.rs`(`Mode::Free`·`QUARTER_ZOOM`·`step_zoom`·`look`·`shoulder`·`basis_yaw_deg`·`unlock_mode`·`lose_lock`·`renew`), `world.rs` `Event::LockLost`, `input.rs`(`Actions::zoom`·`look`, 커서 잡기 `set_free_look`, 화살표는 걷지 않음), `touch.rs`(`look_from` — 오른쪽 반 끌기·꼬집기), `app/play.rs` `camera_input`·`follow_camera`, `tools/test/view.js` | 십자 ↑·↓(키보드 ↑·↓·휠·두 손가락)로 쿼터뷰 거리 셋 → 넘으면 자유 숄더뷰. 숄더뷰에서는 오른쪽 스틱·마우스·화면 끌기로 시점. 잃은 락온은 숄더뷰에 머물고, 버튼으로 풀면 락온한 곳으로. 판정 전(체크리스트 36) |
 | 맞으면 뿌리 진액(0182) | `fx.rs`(`Fx::sap`·`settle`, `Shape::Drop`·`Splat`, 빛 `SAP`·`SAP_DEEP`·`SAP_STAIN`), `backdrop.rs`(방울 = 짧은 빛줄 · 얼룩 = 땅에 눕힌 원판), `app/play.rs`(틱마다 `settle`) | 사장 "피 튀듯이 파티클이 튀게". 빨강은 예고 전용이라 뿌리의 보라 진액 — 옆·위로 튀어 바닥에 얼룩(1초). 평타 < 치명타 < 강타 < 쓰러짐. 판정 전(체크리스트 37) |
 | 여정 탭(0183) | `journey.rs`(표 `GOALS`·`count`·`ready`·`points`), `save.rs`(`read`·`journey`), `app/journey.rs`(탭·받기·알림 `journey_watch`), `app/flow.rs`(`Tab::Journey`·`Scene::Journey`), `app/tabs.rs`(여정 점은 멈춤에서도), i18n 한·영 | 사장 "좋은 건 넣어야지" — 지역마다 갈 길·발견 목표, 진행은 기록에서 세고 받기로 잔불 조금·기술 점수(지역마다 하나). 판정 전(체크리스트 38) |
+| 스킨 방랑자 + Meshy 동작(0193) | `model.rs`(`Skin`·`skin_into`·`rest_rotation`), `render/batch.rs`(`parts` — 스킨·숨김), `render/items.rs`·`actors.rs`(무기 축 되돌리기), `tools/art/blender/meshy_rig.py` → `sources/meshy/raccoon_v2_rig.glb`, `wanderer_skin.py`(`CLIPS`) → `assets/models/wanderer.glb` | 사장 "너무 인형 같아" → Meshy Pro 리깅·동작 셋. 길이는 옛 동작 그대로, 닿는 순간을 맞춰 자름. 판정 전(체크리스트 48) |
 | v0.6.2 판정 반영(0191) | `tuning.rs` `render.rows` 540·`render.ssaa` 1, `render/post.rs`(배율 1이면 2배 끔), `app/status.rs`(큰 기술 키캡), `app/tabs.rs`(굴림 막대), `app/codex.rs`(무기 묶음 `weapon_texts`), `prefs.rs` 칸 33·34 + `app/settings.rs`·`flow.rs` `LookYaw`·`LookPitch`·`app/play.rs` | 사장 실기 판정 다섯. v0.6.2 (체크리스트 46) |
 | 계단현상 스위치(0190) | `render/post.rs`(`fit_internal_rows`·`fit_screen`의 2배 타깃·`present`의 줄이기), `render/mod.rs`(`rows_target`·`ssaa`·`half`), `tuning.rs` `render.rows`·`render.ssaa` | 사장 "계단현상이 너무 과해". 기본값은 그대로 — 같은 장면 비교 뒤 사장이 고른다(체크리스트 45) |
 | 방랑자 몸 v2(0189) | `tools/art/sources/meshy/raccoon_v2*.glb`, `tools/art/blender/wanderer.py`(`BODY`·`classify_v2`·`lift_purples`), `assets/models/wanderer.glb` | 사장이 뽑은 "Hooded Raccoon Rogue". 옛 몸은 `KR_WANDERER_BODY=v1`로 다시 굽는다. 판정 전(체크리스트 44) |
@@ -161,6 +162,8 @@ PoC를 닫고(0019) 이야기 첫 장을 한 판으로 만든다. **초안이다
 **0182(2026-11-14, 개발판 — 맞으면 뿌리 진액, 체크리스트 37번)**: 사장 "컴뱃이 일단 재밌어야해 … 피 튀듯이 파티클이 튀게 해줘 손맛이 살게". 처음엔 맞은 쪽 뒤로 튀게 했다가 카메라에서 맞은 몸에 가려 안 보여 옆·위로 바꿨다. **사람이 할 일**: 실제 60fps에서 손맛 · 보라가 피로 읽히나 · 떼싸움에서 어지럽지 않나(37-1~4).
 
 **0183(2026-11-14, 개발판 — 여정 탭, 체크리스트 38번)**: PR 21 리뷰에서 퀘스트 체계를 "새 기능 — 결정 필요"로 적었더니 사장 "좋은 건 넣어야지". 인터뷰: 작은 보상·받기 / 큰 창의 새 탭 / 지금 두 지역 + 체계. 목표 열(성소 다섯·마을 다섯). **사람이 할 일**: 보상 크기·숙제처럼 느껴지는지·풀이의 양(38-1~4). Stage 3을 만들 때 같은 표에 줄을 더한다.
+
+**0193(2026-11-14, 개발판 — 스킨 몸 + Meshy 동작, 체크리스트 48번)**: 사장 "각 모션들을 실제랑 비슷하게 … 지금은 너무 인형 같아" → Meshy Pro로 받은 리깅·동작 GLB 셋 → "자 쓸 수 있는 것 써". 게임이 스킨(뼈 가중치)을 읽어 CPU에서 몸을 휜다. 동작 46개를 원본 클립 구간에서 잘라 옛 길이·닿는 순간에 맞췄다(옆걸음·종 몸짓은 원본이 없다). **사람이 할 일**: 실기 판정(48-1~8) — 특히 회피(0.25초 구르기)·폰 프레임·Pro 플랜 결과물 라이선스 확인.
 
 **0191(2026-11-14, v0.6.2 — 판정 반영, 체크리스트 46번)**: 사장 "540에 두배로 해도 느려지지 않음" → 기본값으로. 상태 탭 큰 기술 키캡 · 오른쪽 칸 굴림 막대 · 도감 무기 묶음 · 설정 시점 가로·세로 감도. **사람이 할 일**: 46-2~5.
 

@@ -54,6 +54,11 @@ Text to Motion으로 붙인다. 이름 = `tools/art/blender/wanderer.py`의 동�
 
 아직 없는 것: `wake`(엎드리거나 누운 데서 일어나기), `walk_back`, `turn_l`·`turn_r`, 몸짓 둘, `drink`, `cast`·`cast_charge`, `throw`, 지팡이 여섯, 쇠뇌 둘, `hammer2`·`hammer_charge`, 기술 다섯(`sk_gather`·`sk_brace`·`sk_echo`·`sk_throw`·`sk_embers`), `ult_upend`.
 
+### 셋째 묶음(2026-11-14, 이름 없는 18 + Walking·Running) — 게임에 넣음(0193)
+만든 차례 = 위 "빠진 것" 표의 차례: M01 깨어남 · M02 뒷걸음 · M03 땅 돌리기 · M04 몸짓 · M05 마시기 · M06 마법 · M07 던지기 · M08 지팡이 콤보 ·
+M09 지팡이 모으기·떼기 · M10 망치 모으기 · M11 망치 두 타 · M12 쇠뇌 · M13~M17 기술 다섯 · M18 쟁반 뒤집기.
+자른 구간·맞춘 순간은 `tools/art/blender/wanderer_skin.py` `CLIPS`. 아직 없는 것: 락온 옆걸음 둘(`strafe_l`·`strafe_r`), 종 몸짓(`idle_bell`).
+
 ### 둘째 묶음 뒤에 만들 것(2026-11-14)
 | 이름 | 길이 | 프롬프트 |
 |---|---|---|

@@ -516,6 +516,7 @@ impl Renderer {
             .map(|(n, _)| (n, Quat::IDENTITY, Vec3::ZERO))
             .collect();
         e.model.pose_with(None, 0.0, &hide, &mut self.pose);
+        let undo = e.model.rest_rotation(node).inverse();
         for b in &w.skill_blades {
             let p = b.prev.lerp(b.pos, alpha);
             // 눕혀서(긴 축이 수평) 세로축으로 빠르게 — 부메랑처럼.
@@ -523,7 +524,7 @@ impl Renderer {
                 * Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
             let inst = Mat4::from_translation(p)
                 * Mat4::from_scale(Vec3::splat(BLADE_SCALE))
-                * Mat4::from_quat(rot)
+                * Mat4::from_quat(rot * undo)
                 * Mat4::from_translation(-c);
             self.batch.model(
                 e,
