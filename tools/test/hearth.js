@@ -170,6 +170,23 @@ async function run(browser, lang) {
   // 셋째 묶음 덧옷(0176).
   await press('ArrowRight'); await page.waitForTimeout(300);
   for (let i = 0; i < 3; i++) { await shot(`8k-codex-garb-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  // 여정(0183 — 도감 다음 탭): 줄마다. 심은 기록은 성소의 문지기를 넘었다(core.warden=1) — 둘째 줄 "성소의 문지기를 넘어라"를
+  // 받으면(확인) 기록에 journey=s.warden, 잔불 +60. 마을의 목표도 보인다.
+  await press('KeyE'); await page.waitForTimeout(300);
+  for (let i = 0; i < 10; i++) { await shot(`8m-journey-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  // 열 줄을 다 지나면 목록은 첫 줄로 돈다 — 한 줄 아래가 문지기 목표.
+  await press('ArrowDown'); await page.waitForTimeout(150);
+  {
+    const before = Number(/embers=(\d+)\n/.exec(await record())[1]);
+    await press('Enter'); await page.waitForTimeout(400);
+    await shot('8m-journey-taken');
+    const j = await record();
+    if (!/journey=s\.warden\n/.test(j)) errors.push(`journey: taking a goal must be saved: ${JSON.stringify(j)}`);
+    const after = Number(/embers=(\d+)\n/.exec(j)[1]);
+    if (after !== before + 60) errors.push(`journey: the warden goal gives 60 embers (${before} → ${after})`);
+    await press('Enter'); await page.waitForTimeout(300);
+    if (!/journey=s\.warden\n/.test(await record())) errors.push('journey: a taken goal is taken once');
+  }
   // 가게: 살 것의 줄마다(끝에서 돈다).
   await press('KeyE'); await page.waitForTimeout(300);
   // 진열 다섯 + 벼리기 넷 + 거두기 하나(0180 — 숫돌 둘·벼린 검 +1을 심었다).
@@ -177,8 +194,8 @@ async function run(browser, lang) {
   // 설정: 줄마다(화로에서는 처음부터·타이틀로가 없다).
   await press('KeyE'); await page.waitForTimeout(300);
   for (let i = 0; i < 11; i++) { await shot(`8j-settings-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
-  // 기술 탭(설정에서 Q 셋 — 가게 · 도감을 지나): 탭 머리의 민트 점 = 남은 기술 점수로 올릴 것이 있다.
-  await press('KeyQ', 3); await page.waitForTimeout(300);
+  // 기술 탭(설정에서 Q 넷 — 가게 · 여정 · 도감을 지나): 탭 머리의 민트 점 = 남은 기술 점수로 올릴 것이 있다.
+  await press('KeyQ', 4); await page.waitForTimeout(300);
   // 기술 화면: 처음 서는 칸 = 올릴 수 있는 첫 칸(휘돌이). 왼쪽 위로 가도 같은 칸 — 가장자리에서 돌지 않는다.
   await shot('12-skills');
   await home();
@@ -252,6 +269,8 @@ async function run(browser, lang) {
   // 도감 → 설정(멈춤에서는 끝에 개발 · 처음부터 · 타이틀로): 줄마다, 끝 줄에서 묻는 창을 열어 보고 취소.
   await press('KeyE'); await page.waitForTimeout(300);
   await shot('17-pause-codex');
+  await press('KeyE'); await page.waitForTimeout(300);
+  await shot('17a-pause-journey');
   await press('KeyE'); await page.waitForTimeout(300);
   for (let i = 0; i < 13; i++) { await shot(`18-pause-settings-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);

@@ -62,7 +62,7 @@ async function main() {
   for (let i = 0; i < 5; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(260); }
   await shot('00d-fight');
   await press('Escape'); await page.waitForTimeout(300); await shot('00e-pause');
-  // 멈춤 = 큰 창(0164): 탭 상태·장비·기술·도감·설정(Q·E로 넘긴다 — 끝에서 돈다), 이 판에서 마지막에 보던 탭에서 열린다(새 판은 상태).
+  // 멈춤 = 큰 창(0164): 탭 상태·장비·기술·도감·여정·설정(Q·E로 넘긴다 — 끝에서 돈다), 이 판에서 마지막에 보던 탭에서 열린다(새 판은 상태).
   // 설정 탭의 끝 줄들: … 조작 설정·개발(개발판)·처음부터·타이틀로. 타이틀: 시작·설정·개발(0094).
   // 개발 창(0083, nail 구조): 위 묶음 탭(도구 · 스테이지 · 전투·적 · 성능, 좌우로) + 그 묶음의 줄 — 스테이지 둘째 줄 = 문 앞, 전투·적 첫 줄 = 보스 아레나.
   // 타이틀로는 묻는 창(0064 — 커서가 "취소"에서 시작): 위로 한 번 = "타이틀로".
@@ -83,10 +83,11 @@ async function main() {
   await press('KeyE'); await page.waitForTimeout(300);
   await press('ArrowRight'); await page.waitForTimeout(200); await shot('00h1-skills');
   await press('ArrowLeft'); await page.waitForTimeout(150); await press('Escape'); await page.waitForTimeout(300);
-  // 설정(0052 → 0164 탭): 다시 멈추면 마지막에 보던 기술 탭에서 열린다 → E 둘(도감 → 설정). 조작 설정은 끝에서 넷째
+  // 설정(0052 → 0164 탭): 다시 멈추면 마지막에 보던 기술 탭에서 열린다 → E 셋(도감 → 여정 → 설정). 조작 설정은 끝에서 넷째
   // (개발·처음부터·타이틀로 위 — 위로 네 번, 전체 화면 줄이 있든 없든).
   await press('Escape'); await page.waitForTimeout(300);
   await press('KeyE'); await page.waitForTimeout(200); await shot('00h1-codex');
+  await press('KeyE'); await page.waitForTimeout(200); await shot('00h1-journey');
   await press('KeyE'); await page.waitForTimeout(300);
   await shot('00h2-settings');
   await press('ArrowUp', 4); await press('Enter'); await page.waitForTimeout(300);

@@ -134,6 +134,12 @@ impl App {
         }
         // 새긴 돌(0129): 읽으면 글 판, 떠 있는 동안 같은 돌을 다시 누르면 닫힌다.
         if let Some(k) = self.run.take_read() {
+            // 여정(0183): 읽은 새긴 돌을 기록에(판을 넘어 남는다).
+            let id = crate::journey::read_id(self.run.def.find_prefix, k);
+            if !self.progress.read.contains(&id) {
+                self.progress.read.push(id);
+                self.progress.read.sort();
+            }
             self.stone_card = match self.stone_card {
                 Some((b, _)) if b == k => None,
                 _ => Some((k, STONE_TIME)),

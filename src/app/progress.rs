@@ -224,6 +224,7 @@ impl App {
             self.progress.clears += 1;
         }
         self.progress.embers = self.world.embers;
+        self.journey_watch();
         self.persist();
     }
 

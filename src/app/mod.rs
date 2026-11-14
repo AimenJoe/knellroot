@@ -11,6 +11,7 @@ mod dev;
 mod equip;
 pub mod flow;
 mod frame;
+mod journey;
 #[cfg(feature = "dev")]
 mod lab_screen;
 mod menu;
@@ -137,6 +138,8 @@ pub struct App {
     mouse_hidden: bool,
     /// 갈 곳이 화면 밖에 있은 초(0060 W1 — 잠깐 뒤에 가장자리 화살).
     goal_off: f32,
+    /// 여정(0183): 알린 목표(처음 본 기록은 조용히 채운다 — `None` = 아직 안 봤다).
+    journey_told: Option<Vec<&'static str>>,
     /// 기록(0064 M2): 지금 것과 마지막으로 쓴 것(바뀌었을 때만 쓴다).
     progress: crate::save::Progress,
     saved: crate::save::Progress,
@@ -294,6 +297,7 @@ impl App {
             frame: None,
             mouse_hidden: false,
             goal_off: 0.0,
+            journey_told: None,
             progress: progress.clone(),
             saved: progress,
             slot,
@@ -663,6 +667,7 @@ impl App {
             Scene::Skills { host } => self.tick_skills(&a, host.edits()),
             Scene::SkillAct => self.tick_skill_act(&a),
             Scene::Codex { host, tab } => self.tick_codex(&a, host, tab as usize),
+            Scene::Journey { host } => self.tick_journey(&a, host),
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
             s @ (Scene::Settings { .. } | Scene::Shop | Scene::Result { .. }) => {
                 self.tick_menu(&a, s)
@@ -718,6 +723,7 @@ impl App {
             | Scene::Skills { .. }
             | Scene::SkillAct
             | Scene::Codex { .. }
+            | Scene::Journey { .. }
             | Scene::EquipPick { .. } => None,
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } => None,
@@ -746,6 +752,7 @@ impl App {
             | Scene::Skills { .. }
             | Scene::SkillAct
             | Scene::Codex { .. }
+            | Scene::Journey { .. }
             | Scene::EquipPick { .. } => {}
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } => {}
@@ -936,6 +943,7 @@ impl App {
             Scene::Skills { host } => self.draw_skills(f, self.cursor, host),
             Scene::SkillAct => self.draw_skill_act(f),
             Scene::Codex { host, tab } => self.draw_codex(f, host, tab as usize),
+            Scene::Journey { host } => self.draw_journey(f, host),
             Scene::Shop => self.draw_shop(f),
             Scene::Settings { host } => self.draw_settings(f, host),
             #[cfg(feature = "dev")]

@@ -57,15 +57,22 @@ pub(super) struct PaneHead<'a> {
 }
 
 /// 탭 머리에 "지금 할 수 있는 것" 표시(민트 점)를 붙일까 — 쉬는 동안(화로)에만: 올릴 단이 있는 상태, 살 점수가 있는 기술,
-/// 살 것이 있는 가게. 멈춤에서는 읽기·끼우기뿐이라 표시가 없다.
-pub(super) fn tab_marked(host: Host, tab: Tab, level: bool, skills: bool, shop: bool) -> bool {
-    host.edits()
-        && match tab {
-            Tab::Status => level,
-            Tab::Skills => skills,
-            Tab::Shop => shop,
-            Tab::Equip | Tab::Codex | Tab::Settings => false,
-        }
+/// 살 것이 있는 가게. 멈춤에서는 읽기·끼우기뿐이라 표시가 없다. 여정(0183)만은 멈춤에서도 — 받기는 어디서나 된다.
+pub(super) fn tab_marked(
+    host: Host,
+    tab: Tab,
+    level: bool,
+    skills: bool,
+    shop: bool,
+    journey: bool,
+) -> bool {
+    match tab {
+        Tab::Journey => journey,
+        Tab::Status => host.edits() && level,
+        Tab::Skills => host.edits() && skills,
+        Tab::Shop => host.edits() && shop,
+        Tab::Equip | Tab::Codex | Tab::Settings => false,
+    }
 }
 
 impl App {
@@ -76,6 +83,7 @@ impl App {
             Tab::Equip => s.menu_equip,
             Tab::Skills => s.menu_skills,
             Tab::Codex => s.menu_codex,
+            Tab::Journey => s.menu_journey,
             Tab::Shop => s.hearth_shop,
             Tab::Settings => s.menu_settings,
         }
@@ -142,9 +150,13 @@ impl App {
             &self.progress.owned,
             &self.progress.growth,
         ) || self.can_forge();
+        let journey = crate::journey::any_ready(&self.progress);
         let tabs: Vec<(&str, bool)> = flow::tabs(host)
             .iter()
-            .map(|&t| (Self::tab_name(t), tab_marked(host, t, level, skills, shop)))
+            .map(|&t| {
+                let on = tab_marked(host, t, level, skills, shop, journey);
+                (Self::tab_name(t), on)
+            })
             .collect();
         let purse = self.purse(host);
         let w = self.draw_window(f, &tabs, flow::tab_index(scene).unwrap_or(0), &purse);
@@ -380,22 +392,87 @@ mod tests {
     #[test]
     fn tab_marks_show_only_what_can_be_done_now_and_only_at_the_hearth() {
         for &t in flow::tabs(Host::Hearth) {
-            assert!(!tab_marked(Host::Hearth, t, false, false, false), "{t:?}");
             assert!(
-                !tab_marked(Host::Pause, t, true, true, true),
+                !tab_marked(Host::Hearth, t, false, false, false, false),
+                "{t:?}"
+            );
+            assert!(
+                !tab_marked(Host::Pause, t, true, true, true, false),
                 "{t:?}: nothing to buy while paused"
             );
         }
-        assert!(tab_marked(Host::Hearth, Tab::Status, true, false, false));
-        assert!(tab_marked(Host::Hearth, Tab::Skills, false, true, false));
-        assert!(tab_marked(Host::Hearth, Tab::Shop, false, false, true));
+        assert!(tab_marked(
+            Host::Hearth,
+            Tab::Status,
+            true,
+            false,
+            false,
+            false
+        ));
+        assert!(tab_marked(
+            Host::Hearth,
+            Tab::Skills,
+            false,
+            true,
+            false,
+            false
+        ));
+        assert!(tab_marked(
+            Host::Hearth,
+            Tab::Shop,
+            false,
+            false,
+            true,
+            false
+        ));
         // 저마다 제 것만 본다.
-        assert!(!tab_marked(Host::Hearth, Tab::Status, false, true, true));
-        assert!(!tab_marked(Host::Hearth, Tab::Skills, true, false, true));
-        assert!(!tab_marked(Host::Hearth, Tab::Shop, true, true, false));
+        assert!(!tab_marked(
+            Host::Hearth,
+            Tab::Status,
+            false,
+            true,
+            true,
+            false
+        ));
+        assert!(!tab_marked(
+            Host::Hearth,
+            Tab::Skills,
+            true,
+            false,
+            true,
+            false
+        ));
+        assert!(!tab_marked(
+            Host::Hearth,
+            Tab::Shop,
+            true,
+            true,
+            false,
+            false
+        ));
         for t in [Tab::Equip, Tab::Codex, Tab::Settings] {
-            assert!(!tab_marked(Host::Hearth, t, true, true, true), "{t:?}");
+            assert!(
+                !tab_marked(Host::Hearth, t, true, true, true, false),
+                "{t:?}"
+            );
         }
+        // 여정(0183): 받을 것이 있으면 멈춤에서도 점이 붙는다(받기는 어디서나).
+        assert!(tab_marked(
+            Host::Pause,
+            Tab::Journey,
+            false,
+            false,
+            false,
+            true
+        ));
+        assert!(!tab_marked(
+            Host::Hearth,
+            Tab::Journey,
+            true,
+            true,
+            true,
+            false
+        ));
     }
 
     #[test]
