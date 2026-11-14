@@ -172,6 +172,21 @@ async function main() {
     await pp.tap('#rotate');
     await pp.waitForTimeout(1000);
     if (await on()) errors.push('portrait: tapping the hint should rotate or, if it cannot lock, let it go on upright');
+    // 돌린 뒤 늦은 크기(0187): 폰은 회전 때 resize를 레이아웃이 끝나기 전에 보내기도 한다 — 번들의 처리기가 그 이벤트를 놓친(옛 크기를
+    // 읽은) 것처럼, 처리기를 잠시 떼고 가로로 돌린 뒤 되돌린다. 조금 뒤 캔버스의 그리기 크기가 화면의 크기와 같아야 한다(안 그러면 늘어난다).
+    await pp.evaluate(() => document.fullscreenElement ? document.exitFullscreen().catch(() => {}) : null);
+    await pp.waitForTimeout(300);
+    await pp.evaluate(() => { window.__mqResize = window.onresize; window.onresize = null; });
+    await pp.setViewportSize({ width: W, height: H });
+    await pp.waitForTimeout(30);
+    await pp.evaluate(() => { window.onresize = window.__mqResize; });
+    await pp.waitForTimeout(1500);
+    const fit = await pp.evaluate(() => {
+      const c = document.getElementById('glcanvas'); const d = window.high_dpi ? devicePixelRatio : 1;
+      return [c.width, c.height, Math.floor(c.clientWidth * d), Math.floor(c.clientHeight * d)];
+    });
+    if (fit[0] !== fit[2] || fit[1] !== fit[3]) errors.push('rotate: canvas size ' + fit.slice(0, 2) + ' != box ' + fit.slice(2) + ' after a late resize (stretched)');
+    await pp.screenshot({ path: path.join(OUT, 't15-landscape-after-rotate.png') });
     await pctx.close();
   }
   await browser.close();

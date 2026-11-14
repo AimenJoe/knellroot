@@ -111,6 +111,31 @@
       c.addEventListener("mousedown", function (e) { if (e.button === 1) e.preventDefault(); });
       c.addEventListener("auxclick", function (e) { if (e.button === 1) e.preventDefault(); });
     })();
+    // 돌린 뒤 캔버스 크기 다시 맞추기(0187, 사장 "로딩 후 가로로 돌릴 때 가끔 화면이 꽉 차지 않고 일그러진다"): 번들은 window.onresize 때
+    // 한 번만 캔버스의 CSS 크기를 읽어 그리기 크기를 정한다(miniquad js/gl.js resize). 폰은 회전·전체 화면 때 그 이벤트를 레이아웃이
+    // 끝나기 전에 보내기도 해서(iOS Safari·Android Firefox 버그 보고) 옛 크기가 박혀 늘어난다. 번들은 고치지 않고, 크기가 바뀔 만한
+    // 일 뒤에 몇 번 더 재서 어긋나 있으면 번들의 처리기를 다시 부른다(ResizeObserver는 레이아웃이 끝난 크기를 준다).
+    (function () {
+      var c = document.getElementById("glcanvas");
+      function check() {
+        if (typeof window.onresize !== "function") return; // 번들이 아직 처리기를 달기 전
+        var d = window.high_dpi ? (window.devicePixelRatio || 1) : 1;
+        if (c.width !== Math.floor(c.clientWidth * d) || c.height !== Math.floor(c.clientHeight * d)) window.onresize();
+      }
+      var timers = [];
+      function soon() {
+        timers.forEach(clearTimeout);
+        timers = [50, 150, 350, 700, 1200].map(function (ms) { return setTimeout(check, ms); });
+        requestAnimationFrame(check);
+      }
+      window.addEventListener("resize", soon);
+      window.addEventListener("orientationchange", soon);
+      document.addEventListener("fullscreenchange", soon);
+      document.addEventListener("webkitfullscreenchange", soon);
+      if (window.visualViewport) window.visualViewport.addEventListener("resize", soon);
+      if (window.ResizeObserver) new ResizeObserver(check).observe(c);
+      window.knellCanvasCheck = check; // 시험(tools/test/touch.js)이 부른다
+    })();
     // 처음 장치가 터치인지(폰·태블릿): 아무것도 만지기 전 첫 화면부터 터치 버튼을 보이게(src/input.rs initial_device).
     miniquad_add_plugin({
       name: "knell_device",
