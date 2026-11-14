@@ -148,9 +148,8 @@ pub struct App {
     /// 지금 슬롯(0066)과 슬롯 셋의 요약(타이틀 "이어하기"·슬롯 창, 쓸 때마다 고친다).
     slot: usize,
     slots: [Option<crate::save::Summary>; crate::save::SLOTS],
-    /// 지금 화면의 둘째 축(슬롯 창의 단추)·두 번째 누름을 기다리나(덮어쓰기·지우기). 장면이 바뀌면 처음으로.
+    /// 지금 화면의 둘째 축(슬롯 창의 단추). 장면이 바뀌면 처음으로.
     col: usize,
-    armed: bool,
     /// 지금 화면의 글 칸(설명)을 몇 줄 내렸나(0068 — 넘치는 설명은 오른쪽 스틱·휠·끌기로 굴린다). 장면이 바뀌면 처음으로.
     scroll: f32,
     /// 옛 prefs 칸 21(든 무기) — 읽은 값 그대로 다시 적는다(0066에서 기록으로 옮김).
@@ -308,7 +307,6 @@ impl App {
             slot,
             slots: crate::save::summaries(),
             col: 0,
-            armed: false,
             scroll: 0.0,
             legacy_weapon,
             save_failed: false,
@@ -518,7 +516,6 @@ impl App {
             self.cursor = cursor;
             self.view = view;
             self.col = 0;
-            self.armed = false;
             self.scroll = 0.0;
             self.hits.clear();
             self.ctl = controls::Controls::default();

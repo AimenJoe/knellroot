@@ -16,6 +16,20 @@ impl App {
             return;
         };
         let yes = i == 0;
+        // 슬롯 창의 물음(0192): 닫고 나서 한다 — 덮어쓰기는 판을 열고(장면을 바꾼다), 지우기는 슬롯 창에 남는다.
+        match (k, yes) {
+            (flow::Ask::Overwrite(slot), true) => {
+                self.go(Go::Back);
+                self.overwrite_slot(slot as usize);
+                return;
+            }
+            (flow::Ask::Erase(slot), true) => {
+                self.go(Go::Back);
+                self.erase_slot(slot as usize);
+                return;
+            }
+            _ => {}
+        }
         let (next, rebuild) = flow::answer(k, yes);
         if yes {
             match k {
@@ -30,7 +44,10 @@ impl App {
                 flow::Ask::Respec => self.respec_skills(),
                 flow::Ask::Forge(i) => self.forge_weapon(crate::weapons::IDS[i as usize]),
                 flow::Ask::Recall(i) => self.recall_weapon(crate::weapons::IDS[i as usize]),
-                flow::Ask::Restart | flow::Ask::ToTitle => {}
+                flow::Ask::Restart
+                | flow::Ask::ToTitle
+                | flow::Ask::Overwrite(_)
+                | flow::Ask::Erase(_) => {}
             }
         }
         if rebuild {
@@ -56,6 +73,14 @@ impl App {
         let (q, yes) = match k {
             flow::Ask::Restart => (s.ask_restart.to_string(), s.menu_restart),
             flow::Ask::ToTitle => (s.ask_to_title.to_string(), s.menu_to_title),
+            flow::Ask::Overwrite(i) => (
+                fill(s.ask_overwrite, &[&self.slot_label(i as usize)]),
+                s.slot_overwrite,
+            ),
+            flow::Ask::Erase(i) => (
+                fill(s.ask_erase, &[&self.slot_label(i as usize)]),
+                s.slot_erase,
+            ),
             flow::Ask::Buy(i) => {
                 let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
                 let (name, price) = match wares.get(i) {
