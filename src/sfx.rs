@@ -49,6 +49,10 @@ pub enum Id {
     Beat3,
     /// 지연 공격이 풀린다(0128): 짧게 들이쉬는 바람 + 낮은 딸깍 — 이 뒤 0.22초에 맞는다.
     TeleRelease,
+    /// 튜토리얼의 걸음이 넘어간다(0171): 낮고 부드러운 두 음 — 박자의 '팅'(높다)·사는 소리와 다르게, 무언가 떠오르듯.
+    Recall,
+    /// 종소리의 길 안내(0171): 땅 밑의 큰 종 한 번 — 환경음의 먼 종보다 가깝고 낮다. 문을 찾는 동안 가끔.
+    Knell,
 }
 
 /// 잇단 박자 수(1부터) → 종소리(셋째부터는 가장 높은 것).
@@ -160,11 +164,16 @@ fn synth_gain(id: Id) -> f32 {
         Id::Thwack => 0.5,
         // 휘두르는 소리(0.45)와 같은 틱에 나도 묻히지 않게(0076 — 0.35는 안 들렸다).
         Id::Beat | Id::Beat2 | Id::Beat3 => 0.6,
+        Id::Recall => 0.4,
+        // 0175: 0.65 → 0.95 — 길 안내의 종은 들려야 한다(폰 스피커에서 화면의 물결만 보였다).
+        Id::Knell => 0.95,
         _ => 0.5,
     }
 }
 
-const SYNTHS: [Id; 13] = [
+const SYNTHS: [Id; 15] = [
+    Id::Recall,
+    Id::Knell,
     Id::TeleRelease,
     Id::Thwack,
     Id::Beat,
@@ -481,6 +490,52 @@ pub fn synth(id: Id) -> Vec<i16> {
                 })
                 .collect()
         }
+        // 떠오름: E5 → A5 두 음이 0.09초 사이로 겹친다(부드러운 시작 — 딱 소리 없이, 0.5초에 사라진다).
+        Id::Recall => (0..len(0.55))
+            .map(|i| {
+                let t = i as f32 / SR as f32;
+                let note = |t0: f32, f: f32| {
+                    let d = t - t0;
+                    if d < 0.0 {
+                        0.0
+                    } else {
+                        ((TAU * f * d).sin() + 0.25 * (TAU * f * 2.0 * d).sin())
+                            * (d / 0.012).min(1.0)
+                            * (-d * 7.0).exp()
+                    }
+                };
+                note(0.0, 659.3) + 0.9 * note(0.09, 880.0)
+            })
+            .collect(),
+        // 큰 종: 종의 겹(울림 0.5 · 으뜸 1 · 단3도 1.2 · 5도 1.5 · 옥타브 2 · 위의 겹 2.5·3·4.2 — 높은 겹일수록 빨리 사라진다) +
+        // 치는 순간의 짧은 쇳소리. 0175: 으뜸 D3(147Hz)이던 것을 D4(294Hz)로 — 겹 다섯이 73~294Hz에 몰려 폰·노트북 스피커
+        // (450Hz 아래가 −10dB 안팎)에서는 거의 안 들렸다(사장 "화면 표시만 되고 잘 안 들려"). 위의 겹 셋을 더해 울림의 몸을
+        // 300~1,300Hz에 두고, 울림 겹(147Hz)은 이어폰의 무게로 남긴다. 3.6초.
+        Id::Knell => {
+            const F0: f32 = 293.7;
+            const PARTS: [(f32, f32, f32); 8] = [
+                (0.5, 0.35, 0.6),
+                (1.0, 0.8, 0.9),
+                (1.2, 0.6, 1.3),
+                (1.5, 0.45, 1.9),
+                (2.0, 1.0, 2.0),
+                (2.5, 0.5, 2.8),
+                (3.0, 0.45, 3.4),
+                (4.2, 0.3, 4.6),
+            ];
+            (0..len(3.6))
+                .map(|i| {
+                    let t = i as f32 / SR as f32;
+                    let ring: f32 = PARTS
+                        .iter()
+                        .map(|&(k, a, d)| a * (TAU * F0 * k * t).sin() * (-t * d).exp())
+                        .sum();
+                    let strike = (TAU * F0 * 5.4 * t).sin() * (-t * 22.0).exp() * 0.6
+                        + rng(&mut seed) * (-t * 90.0).exp() * 0.25;
+                    (ring + strike) * (t / 0.003).min(1.0)
+                })
+                .collect()
+        }
         _ => vec![0.0; 64],
     };
     // 끝 5ms를 줄인다(딸깍 없이).
@@ -561,6 +616,26 @@ pub fn wav_bytes(samples: &[i16]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+
+    /// 0175: 종(길 안내·굴)은 폰·노트북 스피커가 내는 대역에 몸이 있어야 한다 — 300Hz 1차 고역 통과를 지난 몫이 반 넘게
+    /// (예전 147Hz 종은 0.2 — 화면의 물결만 보이고 소리는 안 들렸다. 지금 0.58, 450Hz 위는 0.11 → 0.41).
+    #[test]
+    fn the_bell_lives_where_small_speakers_can_play_it() {
+        let x: Vec<f32> = synth(Id::Knell).iter().map(|&v| v as f32).collect();
+        // 1차 고역 통과(300Hz)를 지난 에너지의 몫.
+        let dt = 1.0 / SR as f32;
+        let rc = 1.0 / (std::f32::consts::TAU * 300.0);
+        let k = rc / (rc + dt);
+        let (mut y, mut prev, mut hi, mut all) = (0.0f32, 0.0f32, 0.0f64, 0.0f64);
+        for &v in &x {
+            y = k * (y + v - prev);
+            prev = v;
+            hi += (y as f64).powi(2);
+            all += (v as f64).powi(2);
+        }
+        assert!(hi / all > 0.5, "{}", hi / all);
+    }
+
     use super::*;
 
     #[test]

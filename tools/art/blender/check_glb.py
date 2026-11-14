@@ -18,15 +18,27 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 
 # 정점 예산(캐릭터 700, 보스 1600, 소품 400)
-# wanderer: 0051 무기 넷(검·망치·지팡이·쇠뇌)이 한 모델에 있고 게임은 든 것만 보인다(나머지 크기 0) — 보이는 정점은 약 2,300.
-BUDGET = {"wanderer": 2600, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
+# wanderer: 0051 무기 넷(검·망치·지팡이·쇠뇌)이 한 모델에 있고 게임은 든 것만 보인다(나머지 크기 0). 0153: 몸을 정점 2,800·텍스처 512로 다시
+# 줄이고 두건 꼬리·주머니를 더했다 — 보이는 정점은 약 3,200(한 그리기 호출 10,000 미만, 0135).
+# 0155: 무기 넷·등잔을 상자 조합에서 제 꼴(잎 꼴 날·통 머리·굽은 활)로, 두건 꼭지 — 4,524(무기 넷이 1,233). 색인은 13,668 — 한 호출 15,000 아래를 지킨다.
+# charms: 0155에서 돌린 꼴·꺾인 관으로 다시(1,939) — 한 번에 하나만 그린다(아이콘은 캐시).
+BUDGET = {"wanderer": 4800, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
           # 0068 장신구 여섯이 한 파일(게임은 하나씩만 그린다) — 하나 280 안팎.
-          "charms": 1800}
+          "charms": 2200,
+          # 0139 다듬은 소품: 깎은 돌 하나가 정점 64(면마다 따로 — 각진 음영), 스테이지에 60개 안쪽이라 넉넉히.
+          # 문은 하나뿐이고 널 여덟 + 띠 + 설주 돌이라 크다.
+          "wall_segment": 960, "pillar_broken": 560, "root_clump": 480, "brazier": 440, "gate": 1900, "core_crystal": 400,
+          "bell": 800, "rubble": 480, "chest": 560,
+          # 0142 주민의 생활 물건: 주민 하나에 하나(마을에 셋) — 돌 다섯 + 장작 + 불꽃, 장대 둘 + 천 두 벌.
+          "work_fire": 520, "work_tent": 480}
 PROP_BUDGET = 400
 # 동작 이름과 길이(초) — 명세 그대로인지 본다.
 EXPECT = {
-    "wanderer": {"idle": 1.2, "walk": 0.8, "attack": 0.43, "dodge": 0.25, "hurt": 0.35, "turn_r": 0.25, "turn_l": 0.25,
-                 "strafe_l": 0.6, "strafe_r": 0.6, "walk_back": 0.7, "charge": 0.3, "heavy": 0.58, "drink": 0.8},
+    "wanderer": {"idle": 2.4, "idle_look": 2.6, "idle_shake": 1.3, "idle_bell": 2.2, "wake": 4.0, "fall": 1.3, "walk": 0.8, "attack": 0.43, "dodge": 0.25, "hurt": 0.35, "turn_r": 0.25, "turn_l": 0.25,
+                 "strafe_l": 0.6, "strafe_r": 0.6, "walk_back": 0.7, "charge": 0.3, "heavy": 0.58, "drink": 0.8,
+                 # 0158 G2 스킬 동작 — 길이 = 시동 + 이어짐 + 후딜(`skills.rs` 표의 바탕값).
+                 "sk_whirl": 0.67, "sk_cut": 0.57, "sk_gather": 0.5, "sk_quake": 0.7, "sk_brace": 1.65, "sk_echo": 0.45,
+                 "sk_throw": 0.53, "sk_embers": 0.55, "ult_upend": 1.0, "ult_flurry": 0.5, "ult_line": 0.9},
     "root_husk": {"idle": 1.6, "walk": 1.0, "attack": 1.3, "hurt": 0.3},
     "thorn_beast": {"idle": 1.4, "run": 0.5, "charge_windup": 0.6, "charge": 0.4, "recover": 0.7, "hurt": 0.3},
     "gatekeeper": {"idle": 2.0, "walk": 1.4, "slam": 1.5, "charge_windup": 0.8, "charge": 0.5,
@@ -41,11 +53,15 @@ EXPECT = {
     "gate": {"open": 1.5},
     "core_crystal": {"pulse": 1.0},
     "bell": {"toll": 2.0},
+    "chest": {"open": 0.4},
+    "lever": {"pull": 0.4},
 }
 MUST_NODES = {"gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["head_geo", "sword", "glow_lamp"],
               "root_husk": ["glow_eye"], "thorn_beast": ["glow_eyes"], "shellback": ["glow_eyes", "head_geo"], "pod": ["glow_eyes", "head_geo", "seed_geo"],
               "bellkeeper": ["glow_eyes", "glow_core", "bell_geo", "head_geo"], "res_hearth": ["head_geo"], "res_water": ["head_geo"], "res_cloth": ["head_geo"], "brazier": ["glow_flame"],
-              "core_crystal": ["glow_core"],
+              "core_crystal": ["glow_core"], "bell": ["bell", "bell_frame"],
+              "chest": ["lid", "glow_lock"], "stone_tablet": ["glow_carve"], "lever": ["handle", "glow_grip"],
+              "work_fire": ["fire", "glow_fire"], "work_jar": ["jar"], "work_tent": ["torn", "whole"],
               "charms": ["shell", "feet", "ear", "hunger", "hand", "pouch"]}
 
 CT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2), 5123: ("H", 2), 5125: ("I", 4), 5126: ("f", 4)}

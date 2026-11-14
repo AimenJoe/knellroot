@@ -19,3 +19,9 @@ miniquad를 올릴 때는 새 원본을 받아 같은 패치를 다시 넣는다
 - 몰입 모드(Knellroot 0046): `java/MainActivity.java` `setFullScreen` — API 30+에서 원본은 `setDecorFitsSystemWindows(false)`만 해서
   바가 숨지 않고 내용이 바 밑까지 그려질 뿐이었다. `getInsetsController()`로 상태·내비게이션 바를 `hide`하고
   `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`(쓸면 잠깐 보였다 다시 숨음), 끌 때는 `show`. import `WindowInsetsController`.
+- iOS 게임 컨트롤러(Knellroot 0137): 원본 iOS 백엔드는 패드를 읽지 않는다(gilrs에도 iOS가 없다). 새 파일 `src/native/ios_pad.rs`가
+  Apple GameController(`GCController.controllers` → 첫 `extendedGamepad`)를 그리기마다 읽어 버튼 열둘을 Android 패치와 같은
+  `KeyCode::F13`~`F24` 눌림·뗌 이벤트로, 스틱·D패드를 `joystick_axes()`(Android와 같은 배열·같은 부호, 아래가 +y)로 넘긴다.
+  `src/native/ios.rs` `draw_in_rect`가 `update()` 직전에 `ios_pad::poll`을 부르고, `src/native.rs`가 iOS에서 `joystick_axes`를 내보낸다.
+  GameController 프레임워크는 `ios_pad.rs`의 `#[link]` + 알림 상수 참조로 잇는다(링크가 빠지면 panic하지 않고 "패드 없음" — `Class::get`).
+  연결·끊김 알림 구독·`autoreleasepool`·패드 여럿 합치기는 nail 0288과 견주어 더했다(0137 손질).

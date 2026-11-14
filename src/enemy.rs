@@ -152,6 +152,9 @@ pub struct Enemy {
     pub atk_count: u32,
     /// 체력 반 아래로 깨어났다(문지기 — 핵이 밝아지고 빨라진다).
     pub roused: bool,
+    /// 잠에서 깨어나는 중(0149 — 스테이지가 켠다): 아직 맞지도 움직이지도 않지만 **락온에는 잡힌다**. 깨어나는 2초 동안
+    /// 보스가 락온 후보에서 빠져, 락온을 누르면 범위 안의 엉뚱한 적이 잡혔다(사장 2026-11-11).
+    pub waking: bool,
     /// 이번 고리들 가운데 이미 맞힌 것(울림 고리 0125 — 고리마다 한 번).
     pub rings_hit: u8,
     /// 이번 돌진·파동이 이미 맞혔다(한 번만).
@@ -162,6 +165,8 @@ pub struct Enemy {
     pub hit_by: u32,
     /// 땅 돌리기로 쏟아지는 중 — 이때 벽에 부딪히면 벽 쿵(한 번).
     pub spilling: bool,
+    /// 큰 기술(0151)로 쏟긴 동안: 벽·기둥에 박히면 `spill.slam dmg`에 더해지는 피해. 쏟김이 끝나면 0.
+    pub slam_bonus: i32,
     /// 휘청 몸짓(렌더가 기울인다).
     pub sway: Vec3,
     pub sway_t: f32,
@@ -219,6 +224,12 @@ pub struct Enemy {
     pub home: Option<(Vec3, f32)>,
     /// 턱을 뛰어오르거나 뛰어내리는 중(0100) — 그동안 몸은 포물선을 따라가고 생각하지도 치지도 않는다.
     pub hop: Option<Hop>,
+    /// 스킬이 남긴 것(0158 G1): 더 다치는 남은 초와 그 배(끌어모으기 맺음), 걷는 빠르기의 배(갈라진 땅 — 월드가 틱마다 적는다, 1 = 그대로).
+    pub frail: f32,
+    pub frail_mult: f32,
+    pub slow: f32,
+    /// 남는 불씨(0158 G2, 잔불 흩기 ㄴ): 지금 선 자리의 불티가 쓰러질 때 더 남기는 잔불 수(월드가 틱마다 적는다, 0 = 없음).
+    pub kindled: u32,
 }
 
 /// 뛰기 한 번(0100): 어디서 어디로, 지난 초·걸리는 초·포물선 높이.
@@ -292,12 +303,14 @@ impl Enemy {
             atk: Atk::Smash,
             atk_count: 0,
             roused: false,
+            waking: false,
             landed: false,
             rings_hit: 0,
             hurt: 0.0,
             knock: Vec3::ZERO,
             hit_by: 0,
             spilling: false,
+            slam_bonus: 0,
             sway: Vec3::ZERO,
             sway_t: 0.0,
             dead_t: 0.0,
@@ -334,6 +347,10 @@ impl Enemy {
                 | 1,
             steady: false,
             home: None,
+            frail: 0.0,
+            frail_mult: 1.0,
+            slow: 1.0,
+            kindled: 0,
         }
     }
 
@@ -355,6 +372,7 @@ impl Enemy {
     }
 
     /// 구역 등급(0112): 잡몹만 — 체력을 올림으로 키운다(자세·잔불은 등급을 보고 월드가 곱한다). 보스는 그대로.
+    /// 올림은 옛 눈금으로(`tuning::scale_up`, 0158 N0 — 옛 3 × 1.5 → 5가 30 → 50, 눈금이 잘아져도 결과는 열 배 그대로).
     pub fn set_tier(&mut self, n: u8) {
         if self.boss {
             return;
@@ -365,11 +383,11 @@ impl Enemy {
         }
         self.tier = tier;
         // 늘 종 바탕에서 다시 센다(등급을 바꿔도 배율이 겹치지 않게, 엘리트면 엘리트 배율까지 — 엘리트 뒤에 불러도 같다).
-        let mut hp = (self.def().hp as f32 * crate::tuning::tier(tier).hp).ceil();
+        let mut hp = crate::tuning::scale_up(self.def().hp, crate::tuning::tier(tier).hp);
         if self.elite.is_some() {
-            hp = (hp * crate::tuning::ELITE_HP).ceil();
+            hp = crate::tuning::scale_up(hp, crate::tuning::ELITE_HP);
         }
-        self.max_hp = hp as i32;
+        self.max_hp = hp;
         self.hp = self.max_hp;
     }
 
@@ -380,7 +398,7 @@ impl Enemy {
         }
         use crate::tuning::{ELITE_HP, ELITE_SCALE};
         self.elite = Some(affix);
-        self.max_hp = (self.max_hp as f32 * ELITE_HP).ceil() as i32;
+        self.max_hp = crate::tuning::scale_up(self.max_hp, ELITE_HP);
         self.hp = self.max_hp;
         self.radius *= ELITE_SCALE;
         self.height *= ELITE_SCALE;
@@ -444,6 +462,11 @@ impl Enemy {
     /// 싸움에 끼어 있나 — 잠든 적(`Dormant`)은 몸은 있어도(부딪힘) 맞지도, 락온·조준·땅 돌리기에 잡히지도 않는다.
     pub fn active(&self) -> bool {
         !matches!(self.state, EState::Dead | EState::Dormant)
+    }
+
+    /// 락온에 잡히나(0149): 싸움에 낀 적 + 깨어나는 중인 잠든 적. 그냥 잠든 적은 아니다(싸울 것이 아직 아니다).
+    pub fn lockable(&self) -> bool {
+        self.active() || (self.waking && self.state == EState::Dormant)
     }
 
     pub fn facing_dir(&self) -> Vec3 {
@@ -836,6 +859,7 @@ impl Enemy {
         self.hurt = (self.hurt - dt).max(0.0);
         self.hop_cd = (self.hop_cd - dt).max(0.0);
         self.exposed = (self.exposed - dt).max(0.0);
+        self.frail = (self.frail - dt).max(0.0);
         self.sway_t += dt;
         // 넉백은 빠르게 줄어든다. 굳은 엘리트(0112)는 덜 밀린다.
         let budge = if self.elite == Some(Affix::Hardened) {
@@ -847,11 +871,13 @@ impl Enemy {
         self.knock *= (1.0 - KNOCK_DECAY * dt).max(0.0);
         if self.knock.length() < SLAM_SPEED {
             self.spilling = false;
+            self.slam_bonus = 0;
         }
         // 2단계 전환(0133): 체력 반에서 한 번 — 하던 공격을 버리고 `RISE_TIME` 동안 무릎 꿇었다 터지며 일어선다.
         if d.boss && !self.roused && self.hp * 2 <= self.max_hp && self.state != EState::Dormant {
             self.roused = true;
-            self.rise_hp = self.hp.max(1);
+            // 전환은 살아서 맞는다 — 적어도 옛 한 칸(`HP_UNIT`).
+            self.rise_hp = self.hp.max(crate::tuning::HP_UNIT);
             self.state = EState::Rise { t: 0.0 };
             self.plant_at = None;
             self.feint = None;
@@ -861,7 +887,7 @@ impl Enemy {
         let to = vec3(player.x - self.pos.x, 0.0, player.z - self.pos.z);
         let dist = to.length();
         let dir = if dist > 1e-4 { to / dist } else { Vec3::Z };
-        let speed = d.speed * if self.roused { ROUSED_SPEED } else { 1.0 };
+        let speed = d.speed * if self.roused { ROUSED_SPEED } else { 1.0 } * self.slow;
         self.charge_aim = false;
         // 떼 퍼지기(0076): 가는 쪽의 옆으로만 비킨다(뒤로 물러서지 않는다), 앞이 막혔으면 조금 늦춘다.
         let steer = |go: Vec3, spread: Vec3| -> (Vec3, f32) {
@@ -880,12 +906,12 @@ impl Enemy {
                     let (s, c) = face.sin_cos();
                     self.turn_toward(vec3(s, 0.0, c), 2.0, dt);
                 }
-                // 청소자(0120): 싸움이 없으면 먹는다 — `EAT_TIME`마다 체력 1(lore ecology 청소자 "잔해를 먹고 회복").
+                // 청소자(0120): 싸움이 없으면 먹는다 — `EAT_TIME`마다 체력 한 눈금(`HP_UNIT`, lore ecology 청소자 "잔해를 먹고 회복").
                 if self.docile && self.hp < self.max_hp {
                     self.eat_t += dt;
                     if self.eat_t >= crate::tuning::EAT_TIME {
                         self.eat_t = 0.0;
-                        self.hp += 1;
+                        self.hp = (self.hp + crate::tuning::HP_UNIT).min(self.max_hp);
                     }
                 }
             }
@@ -1311,14 +1337,16 @@ mod tests {
         let mut en = Enemy::new(Kind::Husk, Vec3::ZERO);
         let base = en.max_hp;
         en.set_tier(2);
-        let tier_two = (base as f32 * crate::tuning::tier(2).hp).ceil() as i32;
+        // 올림은 옛 눈금으로(0158 N0): 잔재 30 × 1.5 = 옛 3 × 1.5 → 5의 열 배 = 50(45가 아니다).
+        let tier_two = crate::tuning::scale_up(base, crate::tuning::tier(2).hp);
+        assert_eq!((base, tier_two), (30, 50));
         assert_eq!(en.max_hp, tier_two);
-        en.hp -= 1;
+        en.hp -= 10;
         en.set_tier(2);
         assert_eq!(en.max_hp, tier_two);
         assert_eq!(
             en.hp,
-            tier_two - 1,
+            tier_two - 10,
             "reapplying the tier must not refill health"
         );
         // 등급을 바꾸면 종 바탕에서 다시 센다(겹치지 않는다), 엘리트 뒤에 불러도 같다.
@@ -1331,6 +1359,7 @@ mod tests {
         late.make_elite(Affix::Hardened);
         late.set_tier(2);
         assert_eq!(elite.max_hp, late.max_hp, "order does not matter");
+        assert_eq!(elite.max_hp, 100, "old 3 → 5 → 10, times ten");
     }
 
     /// 0112: 엘리트 = 체력 × `ELITE_HP`(올림)·몸 × `ELITE_SCALE`·성질 하나. 보스는 엘리트가 되지 않는다.
@@ -1340,7 +1369,8 @@ mod tests {
         let mut en = Enemy::new(Kind::Husk, Vec3::ZERO);
         let (hp, r) = (en.max_hp, en.radius);
         en.make_elite(Affix::Hardened);
-        assert_eq!(en.max_hp, (hp as f32 * ELITE_HP).ceil() as i32);
+        assert_eq!(en.max_hp, crate::tuning::scale_up(hp, ELITE_HP));
+        assert_eq!((hp, en.max_hp), (30, 60));
         assert_eq!(en.hp, en.max_hp);
         assert!((en.radius - r * ELITE_SCALE).abs() < 1e-5);
         assert_eq!(en.elite, Some(Affix::Hardened));
@@ -1507,7 +1537,7 @@ mod tests {
             let start = en.hp;
             let mut bursts = Vec::new();
             for i in 0..200 {
-                en.hp -= 1; // 어디서 깎여도(넓은 타·되받아친 조각) 전환 동안은 되돌아온다
+                en.hp -= 10; // 어디서 깎여도(넓은 타·되받아친 조각) 전환 동안은 되돌아온다
                 let out = en.tick(Vec3::ZERO, 1.0 / 60.0);
                 if out.burst {
                     bursts.push(i);
@@ -1525,7 +1555,7 @@ mod tests {
             assert!(!en.rising() && en.roused, "{kind:?}: phase two");
             // 잡몹은 전환하지 않는다.
             let mut mob = Enemy::new(Kind::Husk, Vec3::ZERO);
-            mob.hp = 1;
+            mob.hp = 10;
             mob.tick(vec3(0.0, 0.0, 5.0), 1.0 / 60.0);
             assert!(!mob.rising());
         }

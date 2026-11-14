@@ -64,7 +64,7 @@ impl App {
                 }
             })
             .collect();
-        Menu::new(if load { s.slots_load } else { s.slots_new }, 400.0, rows)
+        Menu::new(if load { s.slots_load } else { s.slots_new }, 440.0, rows)
     }
 
     /// 슬롯 창 한 틱: 몰이꾼 입력 + 줄을 옮기면 두 번째 누름을 푼다 + 이어하기 창은 빈 줄을 건너뛴다.
@@ -124,6 +124,7 @@ impl App {
         #[cfg(feature = "dev")]
         {
             self.dev_run = false;
+            self.dev_board = None;
         }
         self.slot = i;
         crate::save::set_last_slot(i);

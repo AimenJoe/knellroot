@@ -93,6 +93,8 @@ pub struct Level {
     /// 표지 글자 → 그 칸들의 가운데.
     pub marks: Vec<(char, Vec3)>,
     pub player_start: Vec3,
+    /// 꺼진 화로(0171 — 깨어난 자리의 것): 그 자리의 화로는 불꽃도 빛도 없이 굽는다. 거기서 처음 쉬면 불이 붙는다.
+    pub cold: Option<Vec3>,
     /// 문(닫히면 막는 상자)과 그 가운데.
     pub gate: Option<(Aabb, Vec3)>,
     /// 높낮이(0035 그림 → 0043 걸을 수 있게): 칸마다 높이(m). 바닥 칸은 땅 높이, 바깥 칸은 바위 단(+)·꺼진 땅(-),
@@ -149,6 +151,7 @@ impl Level {
             lights: Vec::new(),
             marks: Vec::new(),
             player_start: Vec3::ZERO,
+            cold: None,
             gate: None,
             heights: vec![None; w * h],
             ramps: vec![false; w * h],
@@ -423,9 +426,9 @@ pub struct StageDef {
     pub obj_explore: Tr,
     /// 장치를 당겼을 때의 카드(성소 "어딘가에서 문이 열렸다", 마을 "사다리가 내려왔다").
     pub card_lever: Tr,
-    /// 지하 몇 m(0118, 연출 표 — 지층 단면 전환·카드가 같이 쓴다). 차례대로 깊어진다(시험).
+    /// 지하 몇 m(0118, 연출 표 — 지역 사이 전환(0174)의 깊이 글·카드가 같이 쓴다). 차례대로 깊어진다(시험).
     pub depth_m: u32,
-    /// 구역 등급(0112·0116, 1부터): 잡몹의 체력·자세·잔불(등급 3부터 피해 2). 깊을수록 높다(시험).
+    /// 구역 등급(0112·0116, 1부터): 잡몹의 체력·자세·잔불(등급 3부터 피해 20 — 두 눈금). 깊을수록 높다(시험).
     pub tier: u8,
     /// 지역 환경(0118 T2): 원경·달빛·안개·떠다니는 것·식생 — `backdrop::SURFACE`·`UNDERGROUND`.
     pub env: &'static crate::backdrop::Env,
@@ -455,16 +458,19 @@ pub enum Find {
     Sip,
     /// 종소리 조각(0106, v0.4.0 G2): 기술 나무 점수 +1. 이름이 출처를 정하지 않는다(lore — 종에서 떨어진 것인지 말하지 않는다).
     Shard,
+    /// 덧옷(0176): 몸에 걸치는 것 — 어느 덧옷인지는 기록 이름으로(`garb::TABLE`의 `find`).
+    Garb,
 }
 
 impl Find {
-    pub const ALL: [Find; 3] = [Find::Lamp, Find::Sip, Find::Shard];
+    pub const ALL: [Find; 4] = [Find::Lamp, Find::Sip, Find::Shard, Find::Garb];
 
     pub fn glyph(self) -> char {
         match self {
             Find::Lamp => 'F',
             Find::Sip => 'H',
             Find::Shard => 'K',
+            Find::Garb => 'M',
         }
     }
 
@@ -474,6 +480,7 @@ impl Find {
             Find::Lamp => "lamp",
             Find::Sip => "sip",
             Find::Shard => "shard",
+            Find::Garb => "garb",
         }
     }
 }
@@ -536,7 +543,7 @@ pub enum StageOut {
     Playing,
     /// 마지막이 아닌 지역의 핵을 거뒀다(0118) — 앱은 핵 보상만, 판은 이어진다(바닥 길이 열린다).
     CoreTaken,
-    /// 열린 바닥 길·오르는 길을 밟았다(0118) — 앱이 지층 단면 전환을 열고 지역을 바꾼다.
+    /// 열린 바닥 길·오르는 길을 밟았다(0118) — 앱이 지역 사이 전환(뿌리 굴, 0174)을 열고 지역을 바꾼다.
     Descend,
     Ascend,
     Cleared,
@@ -583,6 +590,9 @@ pub struct StageRun {
     first_card: bool,
     /// 쉼터 화로들(지도 `R`).
     pub rests: Vec<Vec3>,
+    /// 바깥에서 얹는 갈 곳(0170 — 튜토리얼이 "쉼터로"를 가리킬 때의 그 쉼터): 진행의 갈 곳(`goal`의 문·핵)이 없을 때만 쓰인다.
+    /// 앱이 틱마다 다시 정한다(없으면 `None`).
+    pub guide: Option<Vec3>,
     /// 마지막으로 쉰 쉼터와, 쓰러지면 되돌아갈 진행 단계(쉰 때의 단계 — 물결 전이면 입구, 물결을 끝냈으면 문 앞).
     pub rest_at: Option<(usize, Phase)>,
     /// 곁에 있는 쉼터(HUD·터치 버튼), 지금 쉴 수 있나(가까운 깨어 있는 적이 없다).
@@ -609,6 +619,8 @@ pub struct StageRun {
     codex_new: Vec<String>,
     /// 이번 틱에 쉬었다(0064 M4 — 앱이 화로 가게를 연다), 잔불로 살 것이 있다(앱이 정한다 — 쉼터가 빛난다).
     rested: bool,
+    /// 이번 틱에 꺼진 화로에 불이 붙었다(0171 — 앱이 가져가 기록에 적고 그 순간을 보여 준다).
+    kindled: bool,
     pub shop_ready: bool,
     /// 숨은 물건(0105): 자리·종류·기록 이름, 주웠나(기록에서), 곁의 것, 이번 틱에 주운 것(앱이 가져간다).
     pub finds: Vec<(Vec3, Find, String)>,
@@ -648,7 +660,41 @@ pub struct StageRun {
 /// 시작 이야기 길이(초).
 pub const INTRO_TIME: f32 = 6.0;
 
+/// 점프(상호작용) 버튼이 지금 하는 일(0166): HUD의 동사와 터치 버튼의 그림이 같은 답을 쓴다. 차례는 월드가 처리하는 차례와 같다 —
+/// 줍기(떨어진 것 · 숨은 물건) > 열기 > 당기기 > 말 걸기 > 읽기 > 쉬기.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Near {
+    Pick,
+    Open,
+    Pull,
+    Talk,
+    Read,
+    /// 쉼터 곁. `safe`가 아니면(적이 가까이) 쉴 수 없다 — 버튼은 그대로 점프다.
+    Rest {
+        safe: bool,
+    },
+}
+
 impl StageRun {
+    /// 곁에 있는 할 일(없으면 `None`).
+    pub fn near(&self) -> Option<Near> {
+        if self.near_find.is_some() || self.near_drop.is_some() {
+            Some(Near::Pick)
+        } else if self.near_chest.is_some() {
+            Some(Near::Open)
+        } else if self.near_lever {
+            Some(Near::Pull)
+        } else if self.near_resident.is_some() {
+            Some(Near::Talk)
+        } else if self.near_stone.is_some() {
+            Some(Near::Read)
+        } else {
+            self.near_rest.map(|_| Near::Rest {
+                safe: self.rest_safe,
+            })
+        }
+    }
+
     /// 레벨을 세우고 월드를 만든다.
     pub fn start(def: &'static StageDef) -> (StageRun, World) {
         let mut level = Level::parse(def.map);
@@ -671,6 +717,7 @@ impl StageRun {
             zone: 0,
             card: None,
             objective: None,
+            guide: None,
             intro: INTRO_TIME,
             wave_ids: Vec::new(),
             boss: None,
@@ -697,6 +744,7 @@ impl StageRun {
             codex_new: Vec::new(),
             opened: None,
             rested: false,
+            kindled: false,
             shop_ready: false,
             finds: Vec::new(),
             found: Vec::new(),
@@ -1107,6 +1155,15 @@ impl StageRun {
             self.read = Some(k);
         } else if let (Some(i), true) = (self.near_rest, w.interact) {
             if self.rest_safe {
+                // 꺼진 화로(0171)에서 처음 쉰다: 불이 붙는다 — 지형이 다시 구워진다(빛·불꽃).
+                if self
+                    .level
+                    .cold
+                    .is_some_and(|c| c.distance(self.rests[i]) < 0.1)
+                {
+                    self.level.cold = None;
+                    self.kindled = true;
+                }
                 self.rest(w, i);
                 self.rested = true;
             } else {
@@ -1154,6 +1211,10 @@ impl StageRun {
                         .is_none_or(|(g, _)| w.player.pos.z < g.min.z - 0.8);
                     if inside {
                         self.set_gate(w, true);
+                        // 깨어나는 동안에도 락온에는 잡힌다(0149).
+                        if let Some(b) = self.boss.and_then(|i| w.enemies.get_mut(i)) {
+                            b.waking = true;
+                        }
                         self.phase = Phase::Waking(0.0);
                         self.objective = None;
                         self.card = Some((self.def.boss_wakes, WAKE_TIME + 1.0));
@@ -1164,6 +1225,7 @@ impl StageRun {
                 if t + dt >= WAKE_TIME {
                     if let Some(b) = self.boss.and_then(|i| w.enemies.get_mut(i)) {
                         b.state = EState::Chase;
+                        b.waking = false;
                     }
                     self.phase = Phase::Duel;
                 } else {
@@ -1229,7 +1291,7 @@ impl StageRun {
         let pl = &mut w.player;
         pl.hp = pl.max_hp;
         pl.flask = pl.flask_max;
-        pl.mana = crate::tuning::CAST_CHARGES;
+        pl.ranged.mana = crate::tuning::CAST_CHARGES;
         pl.stamina = full;
         let back = match self.phase {
             Phase::Entrance | Phase::Waves(_) => Phase::Entrance,
@@ -1263,6 +1325,7 @@ impl StageRun {
             let e = &mut w.enemies[b];
             e.hp = max;
             e.state = EState::Dormant;
+            e.waking = false;
             e.roused = false;
             e.exposed = 0.0;
             e.knock = Vec3::ZERO;
@@ -1281,7 +1344,7 @@ impl StageRun {
         pl.vel = Vec3::ZERO;
         pl.state = PState::Idle;
         pl.air = 0.0;
-        pl.hurt = 1.0;
+        pl.hurt.left = 1.0;
         self.rest(w, i);
         self.since_rest = f32::MAX;
         match back {
@@ -1324,6 +1387,21 @@ impl StageRun {
     /// 이 판에 처음 본 주민들(0122) — 앱이 한 번 가져가 기록에.
     pub fn take_residents_seen(&mut self) -> Vec<usize> {
         std::mem::take(&mut self.resident_seen_new)
+    }
+
+    /// 깨어난 자리의 화로를 끈다(0171 — 아직 불을 붙인 적 없는 기록의 첫 지역): 시작 자리에서 가장 가까운 쉼터.
+    pub fn chill_hearth(&mut self) {
+        let from = self.level.player_start;
+        self.level.cold = self
+            .rests
+            .iter()
+            .copied()
+            .min_by(|a, b| a.distance(from).total_cmp(&b.distance(from)));
+    }
+
+    /// 이번 틱에 꺼진 화로에 불이 붙었나(0171) — 앱이 한 번 가져간다.
+    pub fn take_kindled(&mut self) -> bool {
+        std::mem::take(&mut self.kindled)
     }
 
     /// 이번 틱에 쉬었나(0064 M4) — 앱이 한 번 가져가 화로 가게를 연다(쓰러진 뒤 다시 서는 것은 아니다).
@@ -1426,7 +1504,8 @@ impl StageRun {
         }
     }
 
-    /// 지금 가야 할 곳(0060 W1 길 안내): 문이 열렸으면 문, 핵이 남았으면 핵. 싸우는 동안·입구 길은 없음.
+    /// 지금 가야 할 곳(0060 W1 길 안내): 문이 열렸으면 문, 핵이 남았으면 핵. 싸우는 동안·입구 길은 없음 — 그때는 바깥에서
+    /// 얹은 갈 곳(`guide`, 0170 — 튜토리얼의 쉼터)이 있으면 그것.
     /// 렌더는 여기에 호박색 빛기둥을, HUD는 화면 밖이면 가장자리 화살을 그린다.
     pub fn goal(&self) -> Option<Vec3> {
         match self.phase {
@@ -1435,6 +1514,14 @@ impl StageRun {
             Phase::Down => self.down_at,
             _ => None,
         }
+        .or(self.guide)
+    }
+
+    /// 종소리가 들려오는 곳(0171 — 세계 법칙 D): 닫힌 문의 장치를 찾는 동안은 그 장치. 문이 열리면 갈 곳(`goal`)이 맡는다.
+    pub fn bell_from(&self) -> Option<Vec3> {
+        (self.phase == Phase::Entrance && !self.gate_opened)
+            .then_some(self.lever)
+            .flatten()
     }
 
     /// 문지기가 깨어나는 진행(0..1, 렌더의 `wake` 동작). 깨어나기 전 0, 다 깨면 1.
@@ -1454,6 +1541,47 @@ mod tests {
     use crate::tuning::Tuning;
     use crate::tuning::{FLASK_CHARGES, PLAYER_HP};
 
+    /// 0149(사장 "보스가 깨어나기 전에 타겟팅이 안 돼서 엉뚱한 적에게 락온"): 깨어나는 2초 동안에도 락온은 보스를 잡는다 —
+    /// 더 가까이 깬 잡몹이 있어도. 아직 깨어나기 시작하지 않은 잠든 보스는 잡히지 않고(싸울 것이 아니다), 다 깨면 깃발은 내려간다.
+    #[test]
+    fn lock_on_takes_the_boss_while_it_is_still_waking() {
+        let t = Tuning::default();
+        let (mut run, mut w) = StageRun::start(STAGES[STAGES.len() - 1]);
+        let b = run.boss.unwrap();
+        let home = run.level.marks_of('W').next().expect("boss mark");
+        let lock = Actions {
+            lock: true,
+            ..Default::default()
+        };
+        // 깨어나기 전: 곁에 서도 잠든 보스는 락온 후보가 아니다.
+        assert!(!w.enemies[b].lockable());
+        // 성소에 들어선다 → 깨어나기 시작.
+        w.player.pos = home + vec3(0.0, 0.0, 4.0);
+        w.player.prev = w.player.pos;
+        run.tick(&mut w, 1.0 / 60.0);
+        assert!(matches!(run.phase, Phase::Waking(_)), "{:?}", run.phase);
+        assert!(w.enemies[b].waking && w.enemies[b].lockable() && !w.enemies[b].active());
+        assert!(w.lock_candidate(), "the touch lock button shows too");
+        // 더 가까운 깬 잡몹 하나(방랑자 옆 2m) — 그래도 보스가 잡힌다.
+        let mob = w.spawn(
+            crate::species::Kind::Husk,
+            w.player.pos + vec3(2.0, 0.0, 0.0),
+        );
+        w.enemies[mob].state = EState::Chase;
+        w.player.facing = (home - w.player.pos).x.atan2((home - w.player.pos).z);
+        w.step(&lock, &t);
+        assert_eq!(w.lock, Some(b), "locked {:?}, boss is {b}", w.lock);
+        // 다 깨면 깃발이 내려가고 락온은 그대로다.
+        for _ in 0..((WAKE_TIME * 60.0) as usize + 2) {
+            w.player.hp = PLAYER_HP;
+            w.step(&Actions::default(), &t);
+            run.tick(&mut w, 1.0 / 60.0);
+        }
+        assert_eq!(run.phase, Phase::Duel);
+        assert!(!w.enemies[b].waking && w.enemies[b].active());
+        assert_eq!(w.lock, Some(b));
+    }
+
     /// 0118(PR #10 검토 뒤 분명히): C3 전까지 마을 끝은 **싸우는 임시 문지기**(첫 문지기 모델) — 종탑 터에 들어서면 깨고,
     /// 이기고 핵을 거두면 마지막 지역이라 판이 끝난다(결과 화면). 바닥 길은 없다.
     #[test]
@@ -1467,7 +1595,7 @@ mod tests {
         run.tick(&mut w, 1.0 / 60.0);
         assert!(matches!(run.phase, Phase::Waking(_)), "{:?}", run.phase);
         for _ in 0..((WAKE_TIME * 60.0) as usize + 2) {
-            w.player.hp = 5;
+            w.player.hp = PLAYER_HP;
             w.step(&Actions::default(), &t);
             run.tick(&mut w, 1.0 / 60.0);
         }
@@ -1649,6 +1777,11 @@ mod tests {
         assert_eq!(run.phase, Phase::Entrance);
         assert!(run.gate_closed);
         assert_eq!(run.goal(), None, "the way to the gate is to be found");
+        // 0170: 바깥에서 얹은 갈 곳(튜토리얼의 쉼터)은 진행의 갈 곳이 없을 때만 — 문이 열리면 문이 먼저다.
+        let hearth = run.rests[0];
+        run.guide = Some(hearth);
+        assert_eq!(run.goal(), Some(hearth));
+        run.guide = None;
         assert!(run.objective.is_some());
         // 문 장치를 당긴다.
         pull_lever(&mut run, &mut w);
@@ -1656,6 +1789,13 @@ mod tests {
         assert!(!run.gate_closed && run.gate_opened);
         assert!(run.take_gate_new(), "the app records it");
         assert!(!run.take_gate_new(), "once");
+        run.guide = Some(hearth);
+        assert_eq!(
+            run.goal(),
+            run.level.gate.map(|(_, c)| c),
+            "the open gate comes first"
+        );
+        run.guide = None;
         // 0060 W1: 문이 열리면 갈 곳 = 문. 싸우는 동안은 없다.
         assert_eq!(run.goal(), run.level.gate.map(|(_, c)| c));
         // 성소 안으로.
@@ -1666,7 +1806,7 @@ mod tests {
         assert!(run.gate_closed);
         assert_eq!(run.goal(), None, "no guide while the fight is on");
         for _ in 0..((WAKE_TIME * 60.0) as usize + 2) {
-            w.player.hp = 5;
+            w.player.hp = PLAYER_HP;
             step(&mut run, &mut w);
         }
         assert_eq!(run.phase, Phase::Duel);
@@ -2124,12 +2264,23 @@ mod tests {
         assert_eq!(run.chest_open, vec![true, false, false, false]);
     }
 
-    /// 0105·0106 → 0123: 숨은 물건 넷(등잔 하나 · 한 모금 하나 · 종소리 조각 둘 — 덜 후하게)은 걸어서 닿는 바닥에 있고, 점프 버튼으로 한 번 줍고, 기록의 것은 새 판에 없다.
+    /// 0105·0106 → 0123: 숨은 물건 넷(등잔 하나 · 한 모금 하나 · 종소리 조각 둘 — 덜 후하게) + 덧옷 둘(0176)은 걸어서 닿는 바닥에 있고,
+    /// 점프 버튼으로 한 번 줍고, 기록의 것은 새 판에 없다.
     #[test]
     fn hidden_finds_are_reachable_picked_once_and_gone_from_the_record() {
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
         let kinds: Vec<Find> = run.finds.iter().map(|f| f.1).collect();
-        assert_eq!(kinds, vec![Find::Lamp, Find::Sip, Find::Shard, Find::Shard]);
+        assert_eq!(
+            kinds,
+            vec![
+                Find::Lamp,
+                Find::Sip,
+                Find::Shard,
+                Find::Shard,
+                Find::Garb,
+                Find::Garb
+            ]
+        );
         let ids: Vec<&str> = run.finds.iter().map(|f| f.2.as_str()).collect();
         assert_eq!(
             ids,
@@ -2137,7 +2288,9 @@ mod tests {
                 "sanctuary.lamp.0",
                 "sanctuary.sip.0",
                 "sanctuary.shard.0",
-                "sanctuary.shard.1"
+                "sanctuary.shard.1",
+                "sanctuary.garb.0",
+                "sanctuary.garb.1"
             ]
         );
         for (p, _, id) in &run.finds {
@@ -2165,7 +2318,7 @@ mod tests {
         assert_eq!(run.take_picked(), None, "gone after picking");
         let (mut run, _) = StageRun::start(&sanctuary::DEF);
         run.set_found(&[id, "elsewhere.sip.0".to_string()]);
-        assert_eq!(run.found, vec![false, true, false, false]);
+        assert_eq!(run.found, vec![false, true, false, false, false, false]);
     }
 
     /// 0105(lore CANON 0101): 처음 이긴 문지기의 핵은 다가오면 스스로 방랑자 쪽으로 온다. 그다음 판부터는 그 자리에 있다.
@@ -2260,12 +2413,76 @@ mod tests {
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
         assert_eq!(run.rests.len(), 3, "gate, root hollow, entrance");
         let i = entrance_rest(&run);
-        w.player.hp = 1;
+        w.player.hp = 10;
         w.player.flask = 0;
         rest_now(&mut run, &mut w, i);
         assert_eq!(run.near_rest, Some(i));
         assert_eq!((w.player.hp, w.player.flask), (PLAYER_HP, FLASK_CHARGES));
         assert_eq!(run.rest_at, Some((i, Phase::Entrance)));
+    }
+
+    /// 0171: 방랑자는 화로 곁에서 깨어난다 — 시작 자리는 가장 가까운 쉼터의 곁(몇 걸음)이되 쉬는 거리 바로 밖이고
+    /// (일어나자마자 "쉬기"가 뜨지 않게), 깨어 있을 적이 볼 수 없는 자리다.
+    #[test]
+    fn the_wanderer_wakes_beside_a_hearth() {
+        let (run, w) = StageRun::start(&sanctuary::DEF);
+        let at = w.player.pos;
+        let near = run
+            .rests
+            .iter()
+            .map(|r| r.distance(at))
+            .fold(f32::MAX, f32::min);
+        assert!(near > REST_REACH && near < 4.0, "{near}");
+        assert_eq!(run.near(), None, "nothing to press on waking");
+        let foe = w
+            .enemies
+            .iter()
+            .map(|e| e.pos.distance(at))
+            .fold(f32::MAX, f32::min);
+        assert!(foe > REST_SAFE, "no one stands over the sleeper: {foe}");
+    }
+
+    /// 0171: 꺼진 화로 — 시작 자리에서 가장 가까운 쉼터가 꺼져 있다가, **거기서** 처음 쉴 때 불이 붙는다(한 번).
+    /// 다른 화로에서 쉬어도 그 화로는 꺼진 채다. 끄지 않은 판(옛 기록)에는 아무 일도 없다.
+    #[test]
+    fn the_cold_hearth_lights_when_first_rested_at() {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        let home = entrance_rest(&run);
+        // 끄지 않았으면 쉬어도 불 붙는 일은 없다.
+        rest_now(&mut run, &mut w, home);
+        assert!(run.level.cold.is_none() && !run.take_kindled());
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        run.chill_hearth();
+        assert_eq!(
+            run.level.cold,
+            Some(run.rests[home]),
+            "the one by the start"
+        );
+        // 다른 화로에서 쉰다: 그대로 꺼져 있다.
+        let other = (0..run.rests.len()).find(|&i| i != home).unwrap();
+        for e in &mut w.enemies {
+            e.state = EState::Dead;
+        }
+        rest_now(&mut run, &mut w, other);
+        assert!(run.take_rested() && !run.take_kindled());
+        assert!(run.level.cold.is_some());
+        // 그 화로에서 쉰다: 불이 붙는다 — 한 번만 알린다.
+        rest_now(&mut run, &mut w, home);
+        assert!(run.take_rested() && run.take_kindled());
+        assert_eq!(run.level.cold, None);
+        rest_now(&mut run, &mut w, home);
+        assert!(!run.take_kindled(), "lit stays lit");
+    }
+
+    /// 0171 종소리의 길 안내: 닫힌 문의 장치를 찾는 동안에만 종소리가 온 곳이 있다 — 장치를 당기면(문이 열리면) 갈 곳이 맡는다.
+    #[test]
+    fn the_bell_calls_from_the_lever_until_the_gate_opens() {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        assert_eq!(run.bell_from(), run.lever);
+        assert!(run.bell_from().is_some() && run.goal().is_none());
+        pull_lever(&mut run, &mut w);
+        assert_eq!(run.bell_from(), None);
+        assert!(run.goal().is_some());
     }
 
     /// 0032: 깨어 있는 적이 `REST_SAFE` 안이면 쉴 수 없다(잠든 문지기는 괜찮다).
@@ -2274,11 +2491,11 @@ mod tests {
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
         let i = entrance_rest(&run);
         w.spawn(Kind::Husk, run.rests[i] + vec3(3.0, 0.0, 0.0));
-        w.player.hp = 1;
+        w.player.hp = 10;
         rest_now(&mut run, &mut w, i);
         assert!(!run.rest_safe);
         assert_eq!(run.rest_at, None);
-        assert_eq!(w.player.hp, 1);
+        assert_eq!(w.player.hp, 10);
     }
 
     /// 0032 → 0113: 쉰 뒤 쓰러지면 그 쉼터에서 — 가득 찬 채, 서 있는 적은 다시 서고(소울 화톳불), 이 판에 쓰러뜨린 엘리트는
@@ -2381,7 +2598,7 @@ mod tests {
         }
         assert_eq!(run.phase, Phase::Duel);
         let b = run.boss.unwrap();
-        w.enemies[b].hp = 3;
+        w.enemies[b].hp = 30;
         w.player.hp = 0;
         assert_eq!(
             tick(&mut run, &mut w, Actions::default()),

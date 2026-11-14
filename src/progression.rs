@@ -1,5 +1,9 @@
 //! 성장 v0.4.0 "자라는 방랑자"(0095·0096·0102): **잔불 레벨** — 생명·기력·힘 셋, 각 다섯 단(0104 G1),
-//! **기술 나무** — 박자·맞받기·발걸음 셋 × 다섯 칸, 점수 = 문지기 핵 + 종소리 조각(0106 G2). 칸의 동작은 G5.
+//! **기술 나무** — 흐름·맞받기·자리 셋 × 다섯 칸(0106 G2), 칸의 동작은 G5.
+//!
+//! **0161 — 나무 하나**: 패시브 15칸은 기술 판(`skills::Board`)의 칸이 되었다 — 칸마다 기술 점수 1, 잠금은 줄(쓴 점수)뿐이다
+//! (갈래마다 첫 둘은 첫 줄, 셋째·넷째는 둘째 줄, 다섯째는 셋째 줄 `CELL_ROWS`). "앞 칸을 열어야 다음 칸"과 화폐 "마디"는 걷었다 —
+//! 핵과 종소리 조각은 기술 점수의 샘이다(`skills::points`). 여기에는 칸의 표·연 칸(`Tree`)·칸 동작의 값만 남는다.
 //!
 //! 뜻(lore CANON, `docs/lore/growth.md`): 힘을 빨아들이는 게 아니라 몸과 싸우는 법을 되찾는 것 — 숫자 성장은 여기,
 //! 동작 성장은 나무. 값·단은 판정(0096 L1·L2)에서 고친다 — 표 한 곳.
@@ -9,11 +13,11 @@ use crate::stats::Mods;
 /// 레벨 줄.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Line {
-    /// 버티는 힘 — 최대 체력 +1/단.
+    /// 버티는 힘 — 최대 체력 +10/단(`LIFE_PER_RANK`).
     Life,
     /// 움직이는 힘 — 최대 스태미나 +12/단, 3·5단에 차는 빠르기 +10%.
     Stamina,
-    /// 맞서는 힘 — 자세 피해 +12%/단, 3단 강타 +1, 5단 평타 +1(정수 피해를 지킨다, 0095 원칙 3).
+    /// 맞서는 힘 — 자세 피해 +12%/단, 3단 강타 +10, 5단 평타 +10(`MIGHT_DMG` — 옛 +1, 0095 원칙 3 → 눈금 0158 N0).
     Might,
 }
 
@@ -31,14 +35,18 @@ pub const STAMINA_PER_RANK: f32 = 8.0;
 pub const REGEN_RANKS: [u8; 2] = [3, 5];
 pub const REGEN_STEP: f32 = 0.06;
 pub const POISE_PER_RANK: f32 = 0.08;
-/// 강타 +1이 붙는 단·평타 +1이 붙는 단.
+/// 강타 덤이 붙는 단·평타 덤이 붙는 단, 그 덤(피해).
 pub const HEAVY_RANK: u8 = 3;
 pub const LIGHT_RANK: u8 = 5;
+pub const MIGHT_DMG: i32 = 10;
+/// 생명 한 단의 최대 체력·숨은 한 모금 하나의 회복(0105) — 눈금 0158 N0(옛 +1).
+pub const LIFE_PER_RANK: i32 = 10;
+pub const SIP_HEAL: i32 = 10;
 
-/// 문지기 핵 점수(0102 5절·0105): 이길 때마다 1점, 문지기마다 셋까지 — 기술 나무(G2) 점수의 한 몫(나머지는 종소리 조각).
+/// 문지기 핵(0102 5절·0105): 이길 때마다 하나, 문지기마다 셋까지 — 하나가 기술 점수 1(0161, `skills::points`).
 pub const CORE_CAP: u32 = 3;
 
-/// 숨은 물건(0105)의 보정: 등잔 +1회 · 한 모금 +1 — 기록 이름(`<스테이지>.<종류>.<n>`)의 가운데 칸으로 센다.
+/// 숨은 물건(0105)의 보정: 등잔 +1회 · 한 모금 +`SIP_HEAL` — 기록 이름(`<스테이지>.<종류>.<n>`)의 가운데 칸으로 센다.
 pub fn find_mods(ids: &[String]) -> Mods {
     let count = |k: &str| {
         ids.iter()
@@ -47,7 +55,7 @@ pub fn find_mods(ids: &[String]) -> Mods {
     };
     Mods {
         flask: count("lamp"),
-        heal: count("sip"),
+        heal: count("sip") * SIP_HEAL,
         ..Mods::default()
     }
 }
@@ -102,33 +110,35 @@ impl Level {
     pub fn mods(&self) -> Mods {
         let regen = REGEN_RANKS.iter().filter(|&&r| self.stamina >= r).count() as f32;
         Mods {
-            hp: self.life as i32,
+            hp: self.life as i32 * LIFE_PER_RANK,
             stamina_max: STAMINA_PER_RANK * self.stamina as f32,
             stamina_regen: 1.0 + REGEN_STEP * regen,
             poise: 1.0 + POISE_PER_RANK * self.might as f32,
-            heavy_dmg: (self.might >= HEAVY_RANK) as i32,
-            light_dmg: (self.might >= LIGHT_RANK) as i32,
+            heavy_dmg: (self.might >= HEAVY_RANK) as i32 * MIGHT_DMG,
+            light_dmg: (self.might >= LIGHT_RANK) as i32 * MIGHT_DMG,
             ..Mods::default()
         }
     }
 }
 
-/// 나무 갈래(0102 4절 — 싸움을 대하는 태도).
+/// 나무 갈래(0102 4절 — 싸움을 대하는 태도). 화면 이름은 흐름·맞받기·자리(0161) — 스킬·큰 기술도 이 셋에 선다.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Branch {
-    /// 흐름을 읽는 방랑자 — 평타 콤보·박자·딱 맞춰 떼기.
+    /// 흐름(박자)을 읽는 방랑자 — 평타 콤보·박자·딱 맞춰 떼기.
     Beat,
     /// 맞서는 방랑자 — 패링·이어 패링·모으기 패링·반격.
     Riposte,
-    /// 자리를 찾는 방랑자 — 회피·달리기·땅 돌리기·점프·내려찍기.
+    /// 자리(발걸음)를 찾는 방랑자 — 회피·달리기·땅 돌리기·점프·내려찍기.
     Footing,
 }
 
 pub const BRANCHES: [Branch; 3] = [Branch::Beat, Branch::Riposte, Branch::Footing];
-/// 갈래마다 칸 수(앞 칸을 열어야 다음 칸, 칸마다 1점).
+/// 갈래마다 패시브 칸 수(칸마다 기술 점수 1).
 pub const DEPTH: u8 = 5;
+/// 칸의 줄(0161 — `skills::ROW_NEEDS`의 자리): 갈래마다 첫 둘은 첫 줄, 셋째·넷째는 둘째 줄, 다섯째는 셋째 줄.
+pub const CELL_ROWS: [u8; DEPTH as usize] = [0, 0, 1, 1, 2];
 
-/// 나무 칸(0102 4절). 기록은 갈래마다 연 칸 수라 칸 이름은 기록에 없다 — 이름·순서를 바꿔도 연 수는 그대로.
+/// 나무 칸(0102 4절). 기록은 갈래마다 연 칸의 자리(1~5)라 칸 이름은 기록에 없다 — 이름을 바꿔도 연 자리는 그대로.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Cell {
     /// 고른 호흡: 딱 맞춰 뗀 강타가 강타 기력을 돌려준다(숫자 칸).
@@ -278,6 +288,11 @@ pub static TREE: [[CellDef; DEPTH as usize]; 3] = [
 ];
 
 impl Branch {
+    /// 표의 자리(`BRANCHES`·`TREE`의 순서).
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
     /// 갈래 이름과 태도 한 줄(0102 4절, 화면 머리).
     pub fn name(self) -> Tr {
         match self {
@@ -327,94 +342,113 @@ pub mod cell {
     pub const LANDING_RANGE: f32 = 1.8;
 }
 
-/// 나무 점수(0102 5절): 문지기 핵(이길 때마다·셋까지) + 주운 종소리 조각.
-pub fn tree_points(cores: u32, finds: &[String]) -> u32 {
-    cores
-        + finds
-            .iter()
-            .filter(|id| id.split('.').nth(1) == Some("shard"))
-            .count() as u32
+impl Cell {
+    /// 표의 자리: (갈래, 깊이 0~4).
+    pub fn at(self) -> (usize, usize) {
+        for (b, row) in TREE.iter().enumerate() {
+            if let Some(d) = row.iter().position(|def| def.cell == self) {
+                return (b, d);
+            }
+        }
+        unreachable!("TREE has every Cell")
+    }
+
+    pub fn def(self) -> &'static CellDef {
+        let (b, d) = self.at();
+        &TREE[b][d]
+    }
+
+    pub fn branch(self) -> Branch {
+        BRANCHES[self.at().0]
+    }
+
+    /// 판의 줄(0161): 쓴 점수 합이 `skills::ROW_NEEDS[row]`에 닿아야 열 수 있다.
+    pub fn row(self) -> usize {
+        CELL_ROWS[self.at().1] as usize
+    }
 }
 
-/// 연 칸(기록 `tree.beat`·`tree.riposte`·`tree.footing` = 갈래마다 연 수)과 목표 핀(`tree.pin` = "갈래.깊이").
+/// 주운 종소리 조각의 수(0105 — 기록 이름 `<스테이지>.shard.<n>`). 하나가 기술 점수 1(0161).
+pub fn shards(finds: &[String]) -> u32 {
+    finds
+        .iter()
+        .filter(|id| id.split('.').nth(1) == Some("shard"))
+        .count() as u32
+}
+
+/// 갈래 하나의 칸 다섯을 다 켠 비트.
+const FULL_BRANCH: u8 = (1 << DEPTH) - 1;
+
+/// 연 패시브 칸(0161 — 칸마다 따로: 어느 칸이든 열 수 있다). 기록은 `tree.cells.<갈래>` = 연 자리들(1~5),
+/// 옛 기록 `tree.beat`·`tree.riposte`·`tree.footing`(갈래마다 연 수 N)은 "앞에서부터 N칸"으로 읽는다(`from_counts`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Tree {
+    /// 옛 꼴: 갈래마다 **앞에서부터 연 수**. 월드 시험의 `tree_with`가 이 칸에 적는다 — 그래서 남겨 두고 `cells`와 함께 읽는다
+    /// (`mask`). 새 코드는 쓰지 않는다(`with`·`open_cell`). 월드 쪽 시험을 `Tree::with`로 옮기면 걷는다.
     pub open: [u8; 3],
-    pub pin: Option<(u8, u8)>,
-}
-
-/// 칸 하나의 지금 모양(화면 밝기 네 단 — KB `meta-progression-unlock-planning`).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum CellState {
-    Open,
-    /// 다음 칸이고 점수가 있다.
-    Ready,
-    /// 다음 칸인데 점수가 모자란다.
-    Short,
-    /// 앞 칸을 먼저 — 거기까지 n점.
-    Far(u32),
+    /// 갈래마다 연 칸의 비트(비트 d = 깊이 d의 칸).
+    pub cells: [u8; 3],
 }
 
 impl Tree {
-    /// 쓴 점수.
-    pub fn spent(&self) -> u32 {
-        self.open.iter().map(|&n| n as u32).sum()
-    }
-
-    /// 남은 점수.
-    pub fn left(&self, points: u32) -> u32 {
-        points.saturating_sub(self.spent())
+    /// 갈래 `b`의 연 칸 비트(옛 꼴의 앞 칸들 + 칸마다 연 것).
+    pub fn mask(&self, b: usize) -> u8 {
+        let prefix = (1u8 << self.open[b].min(DEPTH)) - 1;
+        (prefix | self.cells[b]) & FULL_BRANCH
     }
 
     /// 이 칸이 열렸나 — 칸 동작(0107)이 읽는다.
     pub fn has(&self, cell: Cell) -> bool {
-        TREE.iter().enumerate().any(|(b, row)| {
-            row.iter()
-                .take(self.open[b] as usize)
-                .any(|d| d.cell == cell)
-        })
+        let (b, d) = cell.at();
+        self.mask(b) & (1 << d) != 0
     }
 
-    pub fn state(&self, b: usize, d: usize, points: u32) -> CellState {
-        let open = self.open[b] as usize;
-        if d < open {
-            CellState::Open
-        } else if d == open {
-            if self.left(points) >= 1 {
-                CellState::Ready
-            } else {
-                CellState::Short
-            }
-        } else {
-            CellState::Far((d - open + 1) as u32)
+    /// 연 칸 수(= 패시브에 쓴 기술 점수).
+    pub fn count(&self) -> u32 {
+        (0..3).map(|b| self.mask(b).count_ones()).sum()
+    }
+
+    /// 칸 하나를 연다(이미 열렸으면 그대로).
+    pub fn open_cell(&mut self, cell: Cell) {
+        let (b, d) = cell.at();
+        self.cells[b] |= 1 << d;
+    }
+
+    /// 이 칸들만 연 나무(시험·월드 시험이 옮겨 올 자리 — 게임은 `open_cell`로 연다).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn with(cells: &[Cell]) -> Tree {
+        let mut t = Tree::default();
+        for &c in cells {
+            t.open_cell(c);
+        }
+        t
+    }
+
+    /// 옛 기록의 꼴(갈래마다 연 수) → 앞에서부터 그만큼 연 나무. 다섯을 넘는 수는 다섯.
+    pub fn from_counts(n: [u8; 3]) -> Tree {
+        Tree {
+            open: [0; 3],
+            cells: n.map(|n| (1u8 << n.min(DEPTH)) - 1),
         }
     }
 
-    /// 다음 칸을 연다(점수가 있고 갈래가 덜 찼을 때). 그 칸이 목표였으면 핀을 푼다.
-    pub fn open_next(&mut self, b: usize, points: u32) -> bool {
-        if self.open[b] >= DEPTH || self.left(points) == 0 {
-            return false;
-        }
-        self.open[b] += 1;
-        if self
-            .pin
-            .is_some_and(|(pb, pd)| pb as usize == b && pd < self.open[b])
-        {
-            self.pin = None;
-        }
-        true
+    /// 열다섯 칸을 다 연 나무(개발 창 "기술 다 올리기"·시험).
+    #[cfg(any(test, feature = "dev"))]
+    pub fn full() -> Tree {
+        Tree::from_counts([DEPTH; 3])
     }
 
-    /// 목표까지 남은 칸 수(핀이 있고 아직 안 열렸을 때).
-    pub fn cells_to_pin(&self) -> Option<u32> {
-        let (b, d) = self.pin?;
-        let open = self.open[b as usize];
-        (d >= open).then(|| (d - open + 1) as u32)
+    /// 갈래 `b`에서 앞에서부터 이어 연 칸 수 — 옛 키(`tree.beat` …)에 적는 값(옛 판이 읽어도 가진 것보다 많이 열리지 않는다).
+    pub fn prefix(&self, b: usize) -> u8 {
+        self.mask(b).trailing_ones() as u8
     }
 
-    /// 열 수 있는 칸이 있나(쉼터가 빛난다).
-    pub fn can_open(&self, points: u32) -> bool {
-        self.left(points) >= 1 && self.open.iter().any(|&n| n < DEPTH)
+    /// 기록에서 읽은 것을 한 꼴로: 옛 칸(`open`)을 비트로 옮기고 범위 밖 비트를 지운다.
+    pub fn sane(self) -> Tree {
+        Tree {
+            open: [0; 3],
+            cells: [self.mask(0), self.mask(1), self.mask(2)],
+        }
     }
 }
 
@@ -485,7 +519,7 @@ mod tests {
             ..Level::default()
         }
         .mods()]);
-        assert_eq!(life.max_hp, base.max_hp + 5);
+        assert_eq!(life.max_hp, base.max_hp + 50);
         let st = |r| {
             Stats::compute(&[Level {
                 stamina: r,
@@ -507,8 +541,8 @@ mod tests {
         };
         assert!((mt(1).poise - 1.08).abs() < 1e-6);
         assert_eq!((mt(2).heavy_dmg, mt(2).light_dmg), (0, 0));
-        assert_eq!((mt(3).heavy_dmg, mt(3).light_dmg), (1, 0));
-        assert_eq!((mt(5).heavy_dmg, mt(5).light_dmg), (1, 1));
+        assert_eq!((mt(3).heavy_dmg, mt(3).light_dmg), (10, 0));
+        assert_eq!((mt(5).heavy_dmg, mt(5).light_dmg), (10, 10));
         // 레벨은 판정 창을 건드리지 않는다(0095 원칙 2, 0102).
         for r in 0..=MAX_RANK {
             let lv = Level {
@@ -553,27 +587,82 @@ mod tests {
         }
     }
 
+    /// 0161: 패시브 칸은 칸마다 따로 열린다 — 앞 칸을 열지 않아도 뒤 칸이 열리고(순서 규칙 없음), 연 칸 수가 곧 쓴 점수다.
     #[test]
-    fn cells_open_in_order_one_point_each_and_the_pin_counts_down() {
+    fn any_cell_opens_on_its_own_and_the_open_count_is_the_points_spent() {
         let mut t = Tree::default();
-        assert_eq!(t.state(0, 0, 0), CellState::Short);
-        assert_eq!(t.state(0, 0, 1), CellState::Ready);
-        assert_eq!(t.state(0, 3, 1), CellState::Far(4));
-        t.pin = Some((2, 2));
-        assert_eq!(t.cells_to_pin(), Some(3));
-        assert!(t.open_next(2, 6));
-        assert_eq!(t.cells_to_pin(), Some(2));
-        assert!(t.open_next(2, 6) && t.open_next(2, 6));
-        assert_eq!(t.pin, None, "reaching the goal clears it");
-        assert!(t.has(Cell::TiltingGround));
-        assert!(!t.has(Cell::LandingBeat));
-        assert!(t.open_next(0, 6) && t.open_next(0, 6) && t.open_next(0, 6));
-        assert_eq!(t.left(6), 0);
-        assert!(!t.open_next(1, 6), "no points left");
-        assert!(!t.can_open(6));
+        assert_eq!(t.count(), 0);
+        t.open_cell(Cell::LandingBeat);
+        assert!(t.has(Cell::LandingBeat));
+        assert!(
+            !t.has(Cell::UnbrokenStride) && !t.has(Cell::TiltingGround),
+            "the cells before it stay shut"
+        );
+        t.open_cell(Cell::LandingBeat);
+        assert_eq!(t.count(), 1, "opening twice is one cell");
+        t.open_cell(Cell::EvenBreath);
+        t.open_cell(Cell::OneWhoStands);
+        assert_eq!(t.count(), 3);
         assert_eq!(
-            tree_points(3, &["sanctuary.shard.0".into(), "sanctuary.lamp.0".into()]),
-            4
+            t,
+            Tree::with(&[Cell::EvenBreath, Cell::OneWhoStands, Cell::LandingBeat])
+        );
+        assert_eq!(Tree::full().count(), 15);
+        for row in &TREE {
+            for d in row {
+                assert!(Tree::full().has(d.cell));
+                assert!(Tree::with(&[d.cell]).has(d.cell));
+                assert_eq!(Tree::with(&[d.cell]).count(), 1);
+            }
+        }
+    }
+
+    /// 0161: 옛 기록의 "갈래마다 연 수 N"은 앞에서부터 N칸 — 옛 꼴의 칸(`open`, 월드 시험이 쓴다)과 새 비트가 같은 나무로 읽힌다.
+    #[test]
+    fn an_old_count_reads_as_the_first_n_cells() {
+        let t = Tree::from_counts([2, 0, 9]);
+        assert!(t.has(Cell::EvenBreath) && t.has(Cell::FlowingBeat));
+        assert!(!t.has(Cell::ClosingBlow));
+        assert!(!t.has(Cell::Catch));
+        assert!(t.has(Cell::PathOpeningStep), "a count past five is five");
+        assert_eq!(t.count(), 7);
+        assert_eq!([t.prefix(0), t.prefix(1), t.prefix(2)], [2, 0, 5]);
+        // 옛 꼴로 적은 나무(월드 시험의 `tree_with`)도 같은 칸을 가진다.
+        let legacy = Tree {
+            open: [2, 0, 5],
+            cells: [0; 3],
+        };
+        assert_eq!(legacy.sane(), t);
+        assert_eq!(legacy.count(), 7);
+        assert!(legacy.has(Cell::FlowingBeat) && !legacy.has(Cell::ClosingBlow));
+        // 사이가 빈 나무의 "앞에서부터 이어 연 수"는 빈 칸 앞까지.
+        let gap = Tree::with(&[Cell::EvenBreath, Cell::ClosingBlow]);
+        assert_eq!(gap.prefix(0), 1);
+        // 범위 밖 비트는 지워진다.
+        let odd = Tree {
+            open: [0; 3],
+            cells: [0xff, 0, 0],
+        };
+        assert_eq!(odd.count(), 5);
+        assert_eq!(odd.sane().cells[0], 0b1_1111);
+    }
+
+    /// 0161 "갈래와 줄": 갈래마다 첫 둘은 첫 줄, 셋째·넷째는 둘째 줄, 다섯째는 셋째 줄.
+    #[test]
+    fn cells_sit_two_two_one_on_the_three_rows() {
+        for (b, row) in TREE.iter().enumerate() {
+            let rows: Vec<usize> = row.iter().map(|d| d.cell.row()).collect();
+            assert_eq!(rows, [0, 0, 1, 1, 2]);
+            for (d, def) in row.iter().enumerate() {
+                assert_eq!(def.cell.at(), (b, d));
+                assert_eq!(def.cell.branch(), BRANCHES[b]);
+                assert_eq!(def.cell.def().cell, def.cell);
+            }
+            assert_eq!(BRANCHES[b].index(), b);
+        }
+        assert_eq!(
+            shards(&["sanctuary.shard.0".into(), "sanctuary.lamp.0".into()]),
+            1
         );
     }
 
@@ -586,7 +675,7 @@ mod tests {
         ];
         let s = Stats::compute(&[find_mods(&ids)]);
         assert_eq!(s.flask, Stats::default().flask + 1);
-        assert_eq!(s.heal, 2);
+        assert_eq!(s.heal, 20);
         assert_eq!(find_mods(&[]).flask, 0);
     }
 
@@ -597,12 +686,9 @@ mod tests {
             life: MAX_RANK,
             ..Level::default()
         };
-        let shell = crate::stats::Mods {
-            hp: 1,
-            ..Mods::default()
-        };
+        let shell = crate::charms::def(crate::charms::Id::Shell).mods;
         let a = Stats::compute(&[full.mods()]);
         let b = Stats::compute(&[full.mods(), shell]);
-        assert_eq!(b.max_hp, a.max_hp + 1);
+        assert_eq!((a.max_hp, b.max_hp), (100, 110));
     }
 }

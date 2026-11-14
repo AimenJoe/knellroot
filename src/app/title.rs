@@ -1,4 +1,4 @@
-//! 타이틀(0019·0066): 키 아트 위 목록 — 창 틀 없이. [이어하기] · 시작하기 · 설정 · DEV — 이어하기·시작하기는 슬롯 창으로.
+//! 타이틀(0019·0066): 키 아트 위 목록 — 창 틀 없이. [이어하기] · 시작하기 · 설정 · DEV · [끝내기(PC, 0135)] — 이어하기·시작하기는 슬롯 창으로.
 use super::*;
 
 impl App {
@@ -10,9 +10,12 @@ impl App {
                 // 둘 다 슬롯 창으로(0066, KB): 고른 슬롯에서 판이 시작된다.
                 TitleItem::Continue => self.open_slots(true),
                 TitleItem::Start => self.open_slots(false),
-                TitleItem::Settings => self.go(Go::Open(Scene::Settings)),
+                TitleItem::Settings => self.go(Go::Open(Scene::Settings {
+                    host: flow::Host::Title,
+                })),
                 #[cfg(feature = "dev")]
                 TitleItem::Dev => self.go(Go::Open(Scene::Dev { tab: 0 })),
+                TitleItem::Quit => macroquad::miniquad::window::order_quit(),
             }
         }
     }
@@ -35,6 +38,7 @@ impl App {
                 // 개발 창 이름(언어를 따른다, 0080).
                 #[cfg(feature = "dev")]
                 TitleItem::Dev => crate::i18n::dev::t(crate::i18n::dev::DEV_TITLE).to_string(),
+                TitleItem::Quit => s.menu_quit.to_string(),
             })
             .collect();
         let bottom = self.menu_bottom(f);

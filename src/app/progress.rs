@@ -19,6 +19,8 @@ impl App {
             }
             self.run.resume(&mut self.world, at);
             self.cam = Camera::new(self.world.player.pos, &self.t);
+            // 쉼터에서 잇는 판은 깨어나는 장면이 아니다(0171 — 그 장면은 시작 자리의 것).
+            self.wake = None;
         }
     }
 
@@ -107,12 +109,19 @@ impl App {
         // 숨은 물건(0105): 기록에 이름을 넣고 능력치에 — 등잔이면 지금 한 모금도 채운다.
         if let Some((kind, id)) = self.run.take_picked() {
             self.snd(crate::sfx::Id::Chest);
+            // 덧옷(0176): 아무것도 안 걸쳤으면 바로 걸친다(장신구가 빈 칸에 끼워지는 것과 같은 꼴).
+            let garb = crate::garb::of_find(&id);
             if !self.progress.finds.contains(&id) {
                 self.progress.finds.push(id);
                 self.progress.finds.sort();
             }
+            let put_on = garb.is_some() && self.progress.garb.is_none();
+            if put_on {
+                self.progress.garb = garb;
+            }
             self.world.apply_stats(self.progress.stats(), false);
             let s = s();
+            let named;
             let text = match kind {
                 crate::stage::Find::Lamp => {
                     let pl = &mut self.world.player;
@@ -121,6 +130,16 @@ impl App {
                 }
                 crate::stage::Find::Sip => s.toast_find_sip,
                 crate::stage::Find::Shard => s.toast_find_shard,
+                crate::stage::Find::Garb => {
+                    let name = garb.map_or("", |g| tr(crate::garb::def(g).name));
+                    let line = if put_on {
+                        s.toast_find_garb
+                    } else {
+                        s.toast_find_garb_kept
+                    };
+                    named = fill(line, &[name]);
+                    &named
+                }
             };
             self.toast = Some((text.to_string(), TOAST_TIME));
         }
@@ -153,7 +172,7 @@ impl App {
             self.progress.run = None;
             self.rest_at = None;
         }
-        // 둘째 지역 문지기(깨진 종지기, 0125): 핵 점수는 따로 셋까지 — 나무 마디는 같이 센다.
+        // 둘째 지역 문지기(깨진 종지기, 0125): 핵은 따로 셋까지 — 기술 점수는 같이 센다(0161).
         if core && self.stage == 1 {
             let s = s();
             let first = self.progress.bell_cores == 0;
@@ -178,7 +197,7 @@ impl App {
         }
         // 첫 지역 문지기의 핵(0105).
         if core && self.stage == 0 {
-            // 핵(0105): 이길 때마다 나무 점수 1, 문지기마다 셋까지. 처음 이긴 판은 "핵이 몸에 스민다"(lore CANON — 핵이 다가왔다).
+            // 핵(0105 → 0161): 이길 때마다 기술 점수 1, 문지기마다 셋까지. 처음 이긴 판은 "핵이 몸에 스민다"(lore CANON — 핵이 다가왔다).
             let s = s();
             if self.progress.cores < crate::progression::CORE_CAP {
                 self.progress.cores += 1;
@@ -254,6 +273,19 @@ impl App {
     pub(super) fn step_charm(&mut self, slot: usize, step: i32) {
         self.progress.worn[slot] =
             next_charm(&self.progress.owned, &self.progress.worn, slot, step);
+        self.world.apply_stats(self.progress.stats(), false);
+        self.persist();
+    }
+
+    /// 덧옷 칸 빨리 바꾸기(0176): 벗기 → 가진 덧옷(표 순서) → 벗기로 돈다.
+    pub(super) fn step_garb(&mut self, step: i32) {
+        let mut opts: Vec<Option<crate::garb::Id>> = vec![None];
+        opts.extend(self.garbs().into_iter().map(Some));
+        let at = opts
+            .iter()
+            .position(|o| *o == self.progress.garb)
+            .unwrap_or(0) as i32;
+        self.progress.garb = opts[(at + step).rem_euclid(opts.len() as i32) as usize];
         self.world.apply_stats(self.progress.stats(), false);
         self.persist();
     }

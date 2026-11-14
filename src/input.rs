@@ -2,9 +2,9 @@
 //! 프레임마다 `poll()`로 읽고 눌림(edge)은 래치에 모아 두며, 로직 틱의 `take()`가 소비한다.
 //!
 //! 기본 배치(패드 W3C 표준 자리 / 키보드+마우스 0058 / 키보드만 0024·0048) — 표는 `Bindings::default_layout`·`keyboard_only`:
-//!   이동 = 왼쪽 스틱·십자 / WASD(·화살표)      조준 = 오른쪽 스틱 / 커서(최근 만진 것만, 0058) — 안 쓰면 자동 조준(0014)
+//!   이동 = 왼쪽 스틱(십자 키는 싸움에서 걷지 않는다, 0151) / WASD(·화살표)      조준 = 오른쪽 스틱 / 커서(최근 만진 것만, 0058) — 안 쓰면 자동 조준(0014)
 //!   공격 X / 왼쪽 클릭 / J      마법 RB / 오른쪽 클릭 / U      회피 B / Space      패링 LB / L-Shift / K
-//!   락온 R3 / 휠 클릭 / L      땅 돌리기 LT·RT / Q·E      점프·상호작용 A / F      등잔 Y / R
+//!   락온 R3 / 휠 클릭 / L      땅 돌리기 십자 ←·→ / Z·C(0151)      스킬 LT·RT / Q·E(함께 = 큰 기술)      점프·상호작용 A / F      등잔 Y / R
 //!   멈춤 = Start / Esc·P · 메뉴 = 십자·왼쪽 스틱(한 번씩)·A 확인·B 뒤로 / 화살표·WASD·Enter·Esc(0019)
 //!   장비 창 = Select / Tab(0070) · 랩 열기 = F1(개발판)          랩 안: 십자(↑↓ 고르기, ←→ 바꾸기), LB = 10배(랩이 열려 있으면 왼쪽 돌리기 대신), Y = 초기화, B·X키 = 내보내기,
 //!   LT = 슬롯에 담기, RT = A/B 바꾸기, 1~7 = 시나리오 바꾸기(dev 기능)
@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use macroquad::prelude::*;
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(pad_keys))]
 use gamepads::{Button, Gamepads};
 
 use std::sync::Mutex;
@@ -31,6 +31,12 @@ pub enum Device {
 }
 
 static DEVICE: AtomicU8 = AtomicU8::new(u8::MAX);
+
+/// 이번 프레임에 전체 화면 키(F11, PC만 — 0135, nail 0240)를 눌렀나. 창 일이라 `Actions`(게임 동작)에 넣지 않고,
+/// 키 배치(`KEYS`)에도 없다(어떤 배치에서도 같은 키).
+pub fn fullscreen_pressed() -> bool {
+    crate::DESKTOP && is_key_pressed(KeyCode::F11)
+}
 
 pub fn device() -> Device {
     match DEVICE.load(Ordering::Relaxed) {
@@ -58,11 +64,12 @@ fn initial_device() -> Device {
         }
         Device::Keys
     }
-    #[cfg(target_os = "android")]
+    // iOS 앱(0136)도 손가락이 주 포인터 — 첫 화면부터 터치 버튼이 보이게(패드는 iOS에서 아직 안 된다).
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         Device::Touch
     }
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
     {
         Device::Keys
     }
@@ -101,6 +108,16 @@ pub struct Actions {
     /// (`world::plan_turn`).
     pub turn_right: bool,
     pub turn_left: bool,
+    /// 스킬 버튼 둘(0151): LT·RT / Q·E. 싸움에서는 끼운 스킬, 메뉴에서는 빠른 바꾸기(1 = 왼쪽, 2 = 오른쪽 — 예전 돌리기 버튼의 몫).
+    /// 둘을 함께 누르면 큰 기술 — 월드가 가른다(시동 안의 바꿔치기).
+    pub skill1: bool,
+    pub skill2: bool,
+    /// 큰 창의 탭 넘기기(0164 → 0175): 패드 = 어깨 LB·RB(고정 — 메뉴의 십자·A·B처럼, KB 조작 노트 "어깨 = 탭 넘기기"),
+    /// 키보드 = 스킬 버튼 둘(배치 — Q·E). 0164는 패드도 스킬 버튼(LT·RT)이었다 — 사장 "LB, RB가 맞아"(2026-11-14).
+    pub tab_prev: bool,
+    pub tab_next: bool,
+    /// 큰 기술 버튼(터치만 — 게이지가 차면 뜬다). 패드·키보드는 스킬 둘을 함께.
+    pub ult: bool,
     /// 장비 창 바로 열기(0070 6 A, 2026-11-06): 패드 Select · 키보드 Tab(배치표에 올리지 않았을 때).
     pub equip: bool,
     pub lab_toggle: bool,
@@ -124,6 +141,8 @@ pub struct Actions {
     pub dev_overlay: bool,
     /// 개발: 글자 넘침 검사 켜고 끄기(F4, `ui::check`).
     pub ui_check: bool,
+    /// 개발: 한 프레임 = 한 틱 시계 켜고 끄기(F6, 0141) — 짧은 이펙트·동작을 틱마다 본다(느린 기기·헤드리스에서는 느린 화면이 된다).
+    pub step_clock: bool,
     /// 키 다시 붙이기(0024): 이번에 처음 눌린, 배치표에 올릴 수 있는 키(`KEYS`의 자리)·패드 버튼(Start·Select 빼고).
     pub pressed_key: Option<u8>,
     pub pressed_pad: Option<Pad>,
@@ -135,8 +154,17 @@ pub enum Act {
     Interact,
     Choose,
     Confirm,
-    /// 장비 칸 빨리 바꾸기 = 땅 돌리기 버튼 둘.
+    /// 장비 칸 빨리 바꾸기 = 공격 버튼 하나(0164 — 다음 후보로 돈다. 스킬 버튼 둘은 큰 창의 탭을 넘긴다).
+    /// 그 버튼이 메뉴에서 이미 다른 일을 하면 빈 글(`swap_free`).
     Swap,
+    /// 큰 창의 탭 넘기기(0164 → 0175): 패드 LB·RB, 키보드 스킬 버튼 둘(Q·E).
+    Tabs,
+    /// 격자 화면(기술, 0161)의 네 쪽 걷기 — 메뉴의 위·아래·왼·오른.
+    Walk,
+    /// 뒤로·닫기(고정 — 배치표에 없다).
+    Back,
+    /// 멈춤(고정 — Esc · Start). 깨어나는 첫 장면(0171)에서는 건너뛰기.
+    Pause,
 }
 
 /// 지금 장치의 키 그림(ASCII — 글꼴 상관없이). 터치는 화면 버튼이 곧 안내라 빈 글.
@@ -152,14 +180,47 @@ pub fn prompt(act: Act) -> String {
         (_, Act::Interact) => name(Bind::Jump),
         (Device::Pad, Act::Choose) => "D-PAD".into(),
         (Device::Pad, Act::Confirm) => "A".into(),
-        (Device::Pad, Act::Swap) => format!(
-            "{}/{}",
-            b.pad(Bind::TurnLeft).name(),
-            b.pad(Bind::TurnRight).name()
-        ),
-        (_, Act::Swap) => format!("{}/{}", name(Bind::TurnLeft), name(Bind::TurnRight)),
+        (_, Act::Swap) if !swap_free() => String::new(),
+        (_, Act::Swap) => name(Bind::Attack),
+        (Device::Pad, Act::Tabs) => format!("{}/{}", Pad::L1.name(), Pad::R1.name()),
+        (_, Act::Tabs) => format!("{}/{}", name(Bind::Skill1), name(Bind::Skill2)),
+        (Device::Pad, Act::Walk) => "D-PAD".into(),
+        (Device::Pad, Act::Back) => "B".into(),
+        (Device::Pad, Act::Pause) => "START".into(),
         (_, Act::Choose) => "W/S".into(),
         (_, Act::Confirm) => "ENTER".into(),
+        (_, Act::Walk) => "WASD".into(),
+        (_, Act::Back) | (_, Act::Pause) => "ESC".into(),
+    }
+}
+
+/// 싸움의 동작 하나의 지금 버튼 이름(튜토리얼의 힌트, 0167 — 지금 장치·지금 배치). 터치는 화면 버튼이 곧 안내라 빈 글.
+pub fn bind_prompt(x: Bind) -> String {
+    let b = bindings();
+    match device() {
+        Device::Touch => String::new(),
+        Device::Pad => b.pad(x).name().to_string(),
+        _ => key_name(b.keys[x as usize]).to_string(),
+    }
+}
+
+/// 장비 칸 빨리 바꾸기(공격 버튼, 0164)를 지금 장치에서 쓸 수 있나: 공격 버튼이 메뉴에서 이미 다른 일을 하면 못 쓴다 —
+/// 키보드의 J·Space는 확인이고(키보드만 배치의 공격 = J), 마우스 버튼은 누르기(기본 배치의 공격 = 왼쪽 클릭)다. 그때는 확인 →
+/// 후보 목록으로 바꾼다(안내 줄에도 뜨지 않는다). 패드는 기본 배치(공격 = X)에서 된다. 터치는 메뉴에 공격 버튼이 없다.
+pub fn swap_free() -> bool {
+    swap_free_for(device(), &bindings())
+}
+
+fn swap_free_for(device: Device, b: &Bindings) -> bool {
+    match device {
+        Device::Touch => false,
+        Device::Pad => !matches!(
+            b.pad(Bind::Attack),
+            Pad::South | Pad::East | Pad::Start | Pad::Select | Pad::DLeft | Pad::DRight
+        ),
+        Device::Keys => KEYS
+            .get(b.keys[Bind::Attack as usize] as usize)
+            .is_some_and(|(k, _)| !matches!(k, KeyCode::J | KeyCode::Space)),
     }
 }
 
@@ -179,10 +240,13 @@ pub enum Bind {
     Flask = 7,
     /// 마법(0048, RB·U) — 0032의 상호작용 칸을 물려받았다(상호작용은 점프 버튼이 같이 한다). 저장 칸 뜻이 바뀌어 prefs MAGIC을 올렸다.
     Cast = 8,
+    /// 스킬 둘(0151, LT·RT / Q·E) — 예전 땅 돌리기의 자리. 돌리기는 십자 ←·→ / Z·C로 갔다. 칸 뜻이 바뀌어 prefs MAGIC을 올렸다.
+    Skill1 = 9,
+    Skill2 = 10,
 }
 
 /// 다시 붙일 수 있는 동작 수.
-pub const NB: usize = 9;
+pub const NB: usize = 11;
 
 pub const BINDS: [Bind; NB] = [
     Bind::Attack,
@@ -194,6 +258,8 @@ pub const BINDS: [Bind; NB] = [
     Bind::Jump,
     Bind::Flask,
     Bind::Cast,
+    Bind::Skill1,
+    Bind::Skill2,
 ];
 
 /// 배치표에 올릴 수 있는 키(저장 번호 = 이 표의 자리 — 뒤에만 붙인다). 이동(WASD·화살표)·Enter·Esc·Backspace·P(멈춤)·
@@ -298,7 +364,7 @@ pub struct Bindings {
 
 impl Bindings {
     /// 기본 = 키보드+마우스(0058, 새로 설치한 판): 왼쪽 클릭 공격·오른쪽 클릭 마법(커서 쪽)·휠 클릭 락온·L-Shift 패링,
-    /// 왼손은 그대로(Space 회피·F 점프·R 등잔·Q/E 땅 돌리기 — 마우스가 오른손을 가져가도 땅 돌리기는 남는다). 패드 칸은 `keyboard_only`와 같다.
+    /// 왼손은 그대로(Space 회피·F 점프·R 등잔·Q/E 스킬·Z/C 땅 돌리기 — 0151). 패드 칸은 `keyboard_only`와 같다.
     pub fn default_layout() -> Bindings {
         Bindings {
             keys: [
@@ -306,17 +372,19 @@ impl Bindings {
                 key_index(KeyCode::Space),
                 key_index(KeyCode::LeftShift),
                 mouse_index(MouseButton::Middle),
-                key_index(KeyCode::Q),
-                key_index(KeyCode::E),
+                key_index(KeyCode::Z),
+                key_index(KeyCode::C),
                 key_index(KeyCode::F),
                 key_index(KeyCode::R),
                 mouse_index(MouseButton::Right),
+                key_index(KeyCode::Q),
+                key_index(KeyCode::E),
             ],
             ..Bindings::keyboard_only()
         }
     }
 
-    /// 키보드만(0024): 소울라이크식 — 회피 B·Space, 패링 LB, 땅 돌리기 LT·RT, 락온 R3, 점프 A·F(0027, 엘든 링). 공격만 X·J(사장: "공격만 우리식").
+    /// 키보드만(0024): 소울라이크식 — 회피 B·Space, 패링 LB, 스킬 LT·RT(0151 — 땅 돌리기는 십자 ←·→), 락온 R3, 점프 A·F(0027, 엘든 링). 공격만 X·J(사장: "공격만 우리식").
     /// 오른손은 J·K·L·U(패드의 오른쪽 넷처럼). 조작 설정의 "키보드만 배치로".
     pub fn keyboard_only() -> Bindings {
         Bindings {
@@ -325,22 +393,26 @@ impl Bindings {
                 key_index(KeyCode::Space),
                 key_index(KeyCode::K),
                 key_index(KeyCode::L),
-                key_index(KeyCode::Q),
-                key_index(KeyCode::E),
+                key_index(KeyCode::Z),
+                key_index(KeyCode::C),
                 key_index(KeyCode::F),
                 key_index(KeyCode::R),
                 key_index(KeyCode::U),
+                key_index(KeyCode::Q),
+                key_index(KeyCode::E),
             ],
             pads: [
                 Pad::West,
                 Pad::East,
                 Pad::L1,
                 Pad::R3,
-                Pad::L2,
-                Pad::R2,
+                Pad::DLeft,
+                Pad::DRight,
                 Pad::South,
                 Pad::North,
                 Pad::R1,
+                Pad::L2,
+                Pad::R2,
             ],
         }
     }
@@ -493,7 +565,7 @@ pub fn set_mouse_aim(m: MouseAim) {
 
 /// 마우스가 있을 법한 기기인가(설정의 마우스 줄을 보일지): Android·손가락이 주 포인터인 브라우저는 아니다.
 pub fn has_mouse() -> bool {
-    !cfg!(target_os = "android") && initial_device() != Device::Touch
+    !cfg!(pad_keys) && initial_device() != Device::Touch
 }
 
 /// 터치 뒤 이만큼(초)은 마우스 이벤트를 터치가 흉내 낸 것으로 본다(모바일 브라우저의 호환 마우스 이벤트) — 장치·탭으로 세지 않는다.
@@ -531,12 +603,12 @@ const MENU_STICK_OFF: f32 = 0.3;
 /// 패드 스틱(`gamepads`) → `Actions` 축(x 오른쪽, y 위). 그 크레이트는 이미 "위 = +"로 준다(웹 플러그인이 축 1·3을 뒤집는다,
 /// 문서: "negative values representing down") — 그래서 그대로. 첫 게임은 화면 아래가 +인 축을 써서 `-ly`였고, 그 줄을 가져와
 /// 여기서는 위아래가 뒤집혔다(Android 핸드헬드에서 왼쪽 스틱이 엉뚱한 쪽, D패드는 멀쩡 — 사장 2026-11-03, 0014).
-#[cfg_attr(target_os = "android", allow(dead_code))]
+#[cfg_attr(pad_keys, allow(dead_code))]
 pub fn stick((x, y): (f32, f32)) -> Vec2 {
     vec2(x, y)
 }
 
-/// 패드 버튼(위치 이름 — A·B 글자는 기기마다 다르다). 데스크톱·웹은 `gamepads` 크레이트, Android는 패치한 miniquad의 키.
+/// 패드 버튼(위치 이름 — A·B 글자는 기기마다 다르다). 데스크톱·웹은 `gamepads` 크레이트, Android·iOS는 패치한 miniquad의 키.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Pad {
     South,
@@ -551,9 +623,12 @@ pub enum Pad {
     R3,
     Start,
     Select,
+    /// 십자 키 왼쪽·오른쪽(0151 — 땅 돌리기의 기본 자리). 표 끝에 붙였다(저장 번호 = `PADS`의 자리).
+    DLeft,
+    DRight,
 }
 
-pub const PADS: [Pad; 12] = [
+pub const PADS: [Pad; 14] = [
     Pad::South,
     Pad::East,
     Pad::West,
@@ -566,6 +641,8 @@ pub const PADS: [Pad; 12] = [
     Pad::R3,
     Pad::Start,
     Pad::Select,
+    Pad::DLeft,
+    Pad::DRight,
 ];
 
 impl Pad {
@@ -584,6 +661,9 @@ impl Pad {
             Pad::R3 => "RS",
             Pad::Start => "START",
             Pad::Select => "SELECT",
+            // 십자 키는 글자 대신 세모(`i18n::UI_GLYPHS`에 있다).
+            Pad::DLeft => "◀",
+            Pad::DRight => "▶",
         }
     }
 
@@ -592,7 +672,7 @@ impl Pad {
         !matches!(self, Pad::Start | Pad::Select)
     }
 
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(pad_keys))]
     fn button(self) -> Button {
         match self {
             Pad::South => Button::ActionDown,
@@ -607,13 +687,15 @@ impl Pad {
             Pad::R3 => Button::RightStick,
             Pad::Start => Button::RightCenterCluster,
             Pad::Select => Button::LeftCenterCluster,
+            Pad::DLeft => Button::DPadLeft,
+            Pad::DRight => Button::DPadRight,
         }
     }
 }
 
-/// Android: 패치한 miniquad가 패드 버튼 키코드(KEYCODE_BUTTON_*)를 쓰지 않는 F13~F24로 넘긴다(PATCHED.md).
+/// Android·iOS: 패치한 miniquad가 패드 버튼(Android KEYCODE_BUTTON_*, iOS GCExtendedGamepad)을 쓰지 않는 F13~F24로 넘긴다(PATCHED.md).
 /// 시험이 패치 표와 맞는지 보려고 시험 빌드에서도 컴파일한다.
-#[cfg(any(target_os = "android", test))]
+#[cfg(any(pad_keys, test))]
 impl Pad {
     fn key(self) -> KeyCode {
         match self {
@@ -629,14 +711,17 @@ impl Pad {
             Pad::R3 => KeyCode::F22,
             Pad::Start => KeyCode::F23,
             Pad::Select => KeyCode::F24,
+            // 십자 키는 Android에서 화살표 키코드(또는 HAT 축 — `Input::hat`)로 온다.
+            Pad::DLeft => KeyCode::Left,
+            Pad::DRight => KeyCode::Right,
         }
     }
 }
 
-/// Android 패드 축(패치한 miniquad의 `joystick_axes`: [왼쪽 X, 왼쪽 Y, 오른쪽 X(Z), 오른쪽 Y(RZ), HAT X, HAT Y], **아래가 +y**)
-/// → (이동, 조준), 우리 축(위가 +y). 왼쪽 스틱이 서 있으면 HAT(D패드)을 이동으로.
-#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
-fn android_axes(ax: [f32; 6]) -> (Vec2, Vec2) {
+/// Android·iOS 패드 축(패치한 miniquad의 `joystick_axes`: [왼쪽 X, 왼쪽 Y, 오른쪽 X(Z), 오른쪽 Y(RZ), HAT X, HAT Y], **아래가 +y**)
+/// → (이동, 조준, 십자 키), 우리 축(위가 +y). 십자 키(HAT)는 걷지 않는다(0151) — 메뉴 고르기와 땅 돌리기(좌·우)만.
+#[cfg_attr(not(any(pad_keys, test)), allow(dead_code))]
+fn android_axes(ax: [f32; 6]) -> (Vec2, Vec2, Vec2) {
     let dead = |v: Vec2| {
         if v.length() > tuning::STICK_DEADZONE {
             v
@@ -644,11 +729,11 @@ fn android_axes(ax: [f32; 6]) -> (Vec2, Vec2) {
             Vec2::ZERO
         }
     };
-    let mut mv = dead(vec2(ax[0], -ax[1]));
-    if mv == Vec2::ZERO {
-        mv = vec2(ax[4].round(), -ax[5].round()).normalize_or_zero();
-    }
-    (mv, dead(vec2(ax[2], -ax[3])))
+    (
+        dead(vec2(ax[0], -ax[1])),
+        dead(vec2(ax[2], -ax[3])),
+        vec2(ax[4].round(), -ax[5].round()),
+    )
 }
 
 /// 메뉴 스틱: 한 번 넘을 때만 눌림(히스테리시스 — 쥐고 있으면 반복하지 않는다). `held`는 지금 기울어 있는 쪽.
@@ -673,15 +758,16 @@ pub struct Input {
     latch: Actions,
     /// 메뉴 스틱이 기울어 있는 쪽(히스테리시스).
     menu_stick: Vec2,
-    /// 마법을 누른 뒤 땅 돌리기 누름을 버리는 남은 초(0048).
-    cast_guard: f32,
+    /// 십자 키(HAT 축)가 지난 프레임에 기울어 있던 쪽(Android·iOS — 좌·우의 눌림을 가장자리로 읽는다, 0151).
+    #[cfg_attr(not(pad_keys), allow(dead_code))]
+    hat: Vec2,
     /// 마우스(0058): 지금 자리, 마지막으로 "만졌다"고 센 자리(천천히 끌어도 쌓여서 넘게), 만진 뒤 지난 초, 마지막 터치 뒤 지난 초.
     mouse_pos: Vec2,
     mouse_anchor: Option<Vec2>,
     since_mouse: f32,
     since_touch: f32,
     touch: Touch,
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(pad_keys))]
     pads: Gamepads,
     /// 이동 반복 억제용: 십자키는 틱마다 반복이 아니라 눌림만 받는다(랩 커서).
     _pad_seen: bool,
@@ -694,13 +780,13 @@ impl Input {
         Input {
             latch: Actions::default(),
             menu_stick: Vec2::ZERO,
-            cast_guard: 0.0,
+            hat: Vec2::ZERO,
             mouse_pos: Vec2::ZERO,
             mouse_anchor: None,
             since_mouse: f32::MAX,
             since_touch: f32::MAX,
             touch: Touch::default(),
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(pad_keys))]
             pads: Gamepads::new(),
             _pad_seen: false,
         }
@@ -726,23 +812,25 @@ impl Input {
     /// 프레임마다 한 번. 눌림은 OR로 모으고, 이동(상태)은 마지막 값으로 덮는다. `menu`면 터치는 탭만.
     pub fn poll(&mut self, menu: bool) {
         let mut a = Actions::default();
-        // Android에 키보드를 붙이는 일은 드물고, 패드 버튼·D패드도 키로 들어온다 — 키보드로 세지 않는다(안내 글이 키 글자로 바뀌지 않게).
-        let used_keys = !cfg!(target_os = "android") && get_last_key_pressed().is_some();
+        // Android·iOS에 키보드를 붙이는 일은 드물고, 패드 버튼·D패드도 키로 들어온다 — 키보드로 세지 않는다(안내 글이 키 글자로 바뀌지 않게).
+        let used_keys = !cfg!(pad_keys) && get_last_key_pressed().is_some();
         let mut used_pad = false;
         // 키보드 이동.
         let mut m = Vec2::ZERO;
         #[allow(unused_mut)]
         let mut aim = Vec2::ZERO;
-        if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) {
+        // 화살표로 걷는 것은 키보드뿐: Android·iOS에서는 화살표 키코드가 패드의 십자 키다 — 십자 키는 걷지 않는다(0151).
+        let arrow = |k: KeyCode| !cfg!(pad_keys) && is_key_down(k);
+        if is_key_down(KeyCode::A) || arrow(KeyCode::Left) {
             m.x -= 1.0;
         }
-        if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) {
+        if is_key_down(KeyCode::D) || arrow(KeyCode::Right) {
             m.x += 1.0;
         }
-        if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) {
+        if is_key_down(KeyCode::W) || arrow(KeyCode::Up) {
             m.y += 1.0;
         }
-        if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
+        if is_key_down(KeyCode::S) || arrow(KeyCode::Down) {
             m.y -= 1.0;
         }
         // 게임 동작은 배치표에서(0024).
@@ -760,6 +848,10 @@ impl Input {
         a.lock = kp(Bind::Lock);
         a.turn_left = kp(Bind::TurnLeft);
         a.turn_right = kp(Bind::TurnRight);
+        a.skill1 = kp(Bind::Skill1);
+        a.skill2 = kp(Bind::Skill2);
+        a.tab_prev = a.skill1;
+        a.tab_next = a.skill2;
         a.pressed_key = KEYS
             .iter()
             .position(|(k, _)| is_key_pressed(*k))
@@ -774,6 +866,7 @@ impl Input {
         a.equip = is_key_pressed(KeyCode::Tab) && !bind.keys.contains(&key_index(KeyCode::Tab));
         a.dev_overlay = is_key_pressed(KeyCode::F3);
         a.ui_check = is_key_pressed(KeyCode::F4);
+        a.step_clock = is_key_pressed(KeyCode::F6);
         a.menu_up = is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W);
         a.menu_down = is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S);
         a.menu_left = is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A);
@@ -803,7 +896,7 @@ impl Input {
             }
         }
 
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(pad_keys))]
         {
             self.pads.poll();
             for pad in self.pads.all() {
@@ -816,18 +909,6 @@ impl Input {
                 if r.length() > tuning::STICK_DEADZONE {
                     aim = r;
                     used_pad = true;
-                }
-                if pad.is_currently_pressed(Button::DPadLeft) {
-                    m.x -= 1.0;
-                }
-                if pad.is_currently_pressed(Button::DPadRight) {
-                    m.x += 1.0;
-                }
-                if pad.is_currently_pressed(Button::DPadUp) {
-                    m.y += 1.0;
-                }
-                if pad.is_currently_pressed(Button::DPadDown) {
-                    m.y -= 1.0;
                 }
                 let pj = |x: Bind| pad.is_just_pressed(bind.pad(x).button());
                 a.attack |= pj(Bind::Attack);
@@ -843,6 +924,10 @@ impl Input {
                 a.cast_held |= pad.is_currently_pressed(bind.pad(Bind::Cast).button());
                 a.turn_left |= pj(Bind::TurnLeft);
                 a.turn_right |= pj(Bind::TurnRight);
+                a.skill1 |= pj(Bind::Skill1);
+                a.skill2 |= pj(Bind::Skill2);
+                a.tab_prev |= pad.is_just_pressed(Pad::L1.button());
+                a.tab_next |= pad.is_just_pressed(Pad::R1.button());
                 if a.pressed_pad.is_none() {
                     a.pressed_pad = PADS
                         .iter()
@@ -864,12 +949,13 @@ impl Input {
             }
         }
 
-        // Android(0022): `gamepads`가 빠지고, 패치한 miniquad가 패드 버튼을 F13~F24 키로, 스틱·HAT을 `joystick_axes`로 넘긴다
-        // (third_party/miniquad/PATCHED.md, 첫 게임 nail 0075·0143). D패드가 키코드로 오는 기기는 화살표 키 — 위의 키보드 줄이 받는다.
+        // Android(0022)·iOS(0137) = `cfg(pad_keys)`: `gamepads`가 빠지고, 패치한 miniquad가 패드 버튼을 F13~F24 키로, 스틱·HAT을
+        // `joystick_axes`로 넘긴다(third_party/miniquad/PATCHED.md, 첫 게임 nail 0075·0143 — iOS는 GameController를 매 프레임 읽어 같은 꼴로).
+        // D패드가 키코드로 오는 Android 기기는 화살표 키 — 위의 키보드 줄이 받는다. iOS D패드는 HAT 축으로 온다.
         // 버튼 배치는 데스크톱 패드와 같다.
-        #[cfg(target_os = "android")]
+        #[cfg(pad_keys)]
         {
-            let (mv, r) = android_axes(macroquad::miniquad::native::joystick_axes());
+            let (mv, r, hat) = android_axes(macroquad::miniquad::native::joystick_axes());
             if mv != Vec2::ZERO {
                 m = mv;
                 used_pad = true;
@@ -878,7 +964,14 @@ impl Input {
                 aim = r;
                 used_pad = true;
             }
-            let j = |p: Pad| is_key_pressed(p.key());
+            // 십자 키 좌·우: 키코드(Android) 또는 HAT 축이 새로 기운 프레임(iOS·일부 Android).
+            let was = std::mem::replace(&mut self.hat, hat);
+            used_pad |= hat != Vec2::ZERO;
+            let j = |p: Pad| {
+                is_key_pressed(p.key())
+                    || (p == Pad::DLeft && hat.x < 0.0 && was.x >= 0.0)
+                    || (p == Pad::DRight && hat.x > 0.0 && was.x <= 0.0)
+            };
             let pj = |x: Bind| j(bind.pad(x));
             a.attack |= pj(Bind::Attack);
             a.attack_held |= is_key_down(bind.pad(Bind::Attack).key());
@@ -892,6 +985,10 @@ impl Input {
             a.cast_held |= is_key_down(bind.pad(Bind::Cast).key());
             a.turn_left |= pj(Bind::TurnLeft);
             a.turn_right |= pj(Bind::TurnRight);
+            a.skill1 |= pj(Bind::Skill1);
+            a.skill2 |= pj(Bind::Skill2);
+            a.tab_prev |= j(Pad::L1);
+            a.tab_next |= j(Pad::R1);
             if a.pressed_pad.is_none() {
                 a.pressed_pad = PADS.iter().copied().find(|p| p.bindable() && j(*p));
             }
@@ -899,7 +996,11 @@ impl Input {
             a.confirm |= j(Pad::South);
             a.back |= j(Pad::East) || is_key_pressed(KeyCode::Back);
             a.pause |= j(Pad::Start);
-            menu_from_stick(&mut self.menu_stick, mv, &mut a);
+            menu_from_stick(
+                &mut self.menu_stick,
+                if hat != Vec2::ZERO { hat } else { mv },
+                &mut a,
+            );
             let arrows = [KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right];
             used_pad |=
                 PADS.iter().any(|p| is_key_down(p.key())) || arrows.iter().any(|k| is_key_down(*k));
@@ -922,17 +1023,13 @@ impl Input {
         a.interact |= t.interact;
         a.cast |= t.cast;
         a.cast_held |= t.cast_held;
-        // 마법 직후의 돌리기 누름은 버린다(0048: RB 바로 밑이 RT).
-        self.cast_guard = (self.cast_guard - get_frame_time()).max(0.0);
-        if a.cast {
-            self.cast_guard = tuning::CAST_TURN_GUARD;
-        } else if self.cast_guard > 0.0 {
-            a.turn_left = false;
-            a.turn_right = false;
-        }
+        // 0048의 "마법 직후 돌리기 누름 버리기"(RB 바로 밑이 RT)는 걷었다(0151): RT는 이제 스킬이고 RB → RT로 잇는 것이 바라는 쓰임이다.
         a.lock |= t.lock;
         a.turn_right |= t.turn_right;
         a.turn_left |= t.turn_left;
+        a.skill1 |= t.skill1;
+        a.skill2 |= t.skill2;
+        a.ult |= t.ult;
         // 마우스(0058): 움직이거나 누르면 "만졌다". 터치 직후의 마우스 이벤트는 터치가 흉내 낸 것일 수 있어 세지 않는다.
         let fdt = get_frame_time();
         self.since_touch = if t.active {
@@ -941,7 +1038,7 @@ impl Input {
             (self.since_touch + fdt).min(f32::MAX)
         };
         let mp = Vec2::from(mouse_position());
-        let mouse_real = !cfg!(target_os = "android") && self.since_touch > MOUSE_AFTER_TOUCH;
+        let mouse_real = !cfg!(pad_keys) && self.since_touch > MOUSE_AFTER_TOUCH;
         let clicked = MICE.iter().any(|(m, _)| is_mouse_button_pressed(*m));
         // 첫 프레임의 자리는 기준만 잡는다(켜자마자 "만졌다"가 되지 않게).
         let anchor = *self.mouse_anchor.get_or_insert(mp);
@@ -1005,6 +1102,11 @@ impl Input {
             lock: self.latch.lock | a.lock,
             turn_right: self.latch.turn_right | a.turn_right,
             turn_left: self.latch.turn_left | a.turn_left,
+            skill1: self.latch.skill1 | a.skill1,
+            skill2: self.latch.skill2 | a.skill2,
+            tab_prev: self.latch.tab_prev | a.tab_prev,
+            tab_next: self.latch.tab_next | a.tab_next,
+            ult: self.latch.ult | a.ult,
             equip: self.latch.equip | a.equip,
             lab_toggle: self.latch.lab_toggle | a.lab_toggle,
             scenario: a.scenario.or(self.latch.scenario),
@@ -1021,6 +1123,7 @@ impl Input {
             point: a.point.or(self.latch.point),
             dev_overlay: self.latch.dev_overlay | a.dev_overlay,
             ui_check: self.latch.ui_check | a.ui_check,
+            step_clock: self.latch.step_clock | a.step_clock,
             pressed_key: a.pressed_key.or(self.latch.pressed_key),
             pressed_pad: a.pressed_pad.or(self.latch.pressed_pad),
         };
@@ -1070,6 +1173,25 @@ mod tests {
         );
     }
 
+    /// 0164: 장비 칸 빨리 바꾸기는 공격 버튼 — 그 버튼이 메뉴에서 이미 다른 일을 하는 장치·배치에서는 꺼진다.
+    /// 패드 기본(X)은 되고, 키보드만 배치(J = 확인)·키보드+마우스(왼쪽 클릭 = 누르기)·터치는 안 된다. 공격을 다른 키로 옮기면 된다.
+    #[test]
+    fn quick_swap_is_off_where_the_attack_button_already_means_something_in_menus() {
+        let (only, mouse) = (Bindings::keyboard_only(), Bindings::default_layout());
+        assert!(swap_free_for(Device::Pad, &only));
+        assert!(swap_free_for(Device::Pad, &mouse));
+        assert!(!swap_free_for(Device::Keys, &only), "J confirms");
+        assert!(!swap_free_for(Device::Keys, &mouse), "a click is a tap");
+        assert!(!swap_free_for(Device::Touch, &only));
+        let mut moved = only;
+        moved.set_key(Bind::Attack, key_index(KeyCode::U));
+        assert!(swap_free_for(Device::Keys, &moved));
+        // 패드에서 공격을 확인(A) 자리로 옮기면 꺼진다.
+        let mut pad = only;
+        pad.pads[Bind::Attack as usize] = Pad::South;
+        assert!(!swap_free_for(Device::Pad, &pad));
+    }
+
     /// 0058: 커서는 마우스 조준이 켜져 있고, 장치가 키보드(+마우스)이고, 만진 지 쉼 시간 안일 때만 조준한다.
     /// 키보드만으로 하는 사람의 쉬는 마우스·패드·터치는 조준을 빼앗지 않는다.
     #[test]
@@ -1115,21 +1237,20 @@ mod tests {
     /// Android 스틱(0022): 패치한 miniquad는 아래가 +y — 위로 밀면 앞(+y)으로. 데드존 안 떨림은 0, 스틱이 서 있으면 HAT.
     #[test]
     fn android_sticks_push_up_for_forward_and_fall_back_to_the_hat() {
-        assert_eq!(android_axes([0.0; 6]), (Vec2::ZERO, Vec2::ZERO));
+        assert_eq!(android_axes([0.0; 6]), (Vec2::ZERO, Vec2::ZERO, Vec2::ZERO));
         assert_eq!(
             android_axes([0.1, -0.1, 0.15, 0.0, 0.0, 0.0]),
-            (Vec2::ZERO, Vec2::ZERO)
+            (Vec2::ZERO, Vec2::ZERO, Vec2::ZERO)
         );
-        let (mv, aim) = android_axes([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]);
+        let (mv, aim, _) = android_axes([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]);
         assert_eq!(mv, vec2(0.0, 1.0), "left stick up = forward");
         assert_eq!(aim, vec2(1.0, 0.0), "right stick right = aim right");
-        let (mv, _) = android_axes([0.0, 0.0, 0.0, 0.0, -1.0, 1.0]);
-        assert!(
-            (mv - vec2(-1.0, -1.0).normalize()).length() < 1e-5,
-            "hat down-left"
-        );
-        let (mv, _) = android_axes([0.5, 0.0, 0.0, 0.0, 0.0, -1.0]);
-        assert_eq!(mv, vec2(0.5, 0.0), "the stick wins over the hat");
+        // 0151: 십자 키(HAT)는 걷지 않는다 — 따로 나온다(메뉴·땅 돌리기), 위가 +y.
+        let (mv, _, hat) = android_axes([0.0, 0.0, 0.0, 0.0, -1.0, 1.0]);
+        assert_eq!(mv, Vec2::ZERO, "the hat does not walk");
+        assert_eq!(hat, vec2(-1.0, -1.0), "hat down-left");
+        let (mv, _, hat) = android_axes([0.5, 0.0, 0.0, 0.0, 0.0, -1.0]);
+        assert_eq!((mv, hat), (vec2(0.5, 0.0), vec2(0.0, 1.0)));
     }
 
     /// Android 패드 버튼: 패치한 miniquad 표(KEYCODE_BUTTON_* → F13~F24)와 `Pad::key`가 같은 짝이고 겹치지 않는다(nail 0075).
@@ -1149,6 +1270,8 @@ mod tests {
             Pad::R3 => "BUTTON_THUMBR",
             Pad::Start => "BUTTON_START",
             Pad::Select => "BUTTON_SELECT",
+            Pad::DLeft => "DPAD_LEFT",
+            Pad::DRight => "DPAD_RIGHT",
         };
         let mut seen = Vec::new();
         for p in PADS {
@@ -1161,6 +1284,53 @@ mod tests {
                 .unwrap_or_else(|| panic!("KEYCODE_{} not in the patched table", name(p)));
             assert!(line.contains(&format!("KeyCode::{k:?}")), "{p:?}: {line}");
         }
+    }
+
+    /// iOS 패드(0137): 패치한 miniquad `ios_pad.rs`가 GameController 버튼을 `KEYS` 차례로 읽어 F13~F24로 넘긴다 —
+    /// 그 차례(버튼 이름·키)가 게임의 `Pad::key`와 같은 짝이고, 축은 Android와 같은 배열(아래가 +y, 위로 민 스틱 → 앞으로).
+    #[test]
+    fn ios_pad_keys_match_patched_miniquad() {
+        let src = include_str!("../third_party/miniquad/src/native/ios_pad.rs");
+        let name = |p: Pad| match p {
+            Pad::South => "buttonA",
+            Pad::East => "buttonB",
+            Pad::West => "buttonX",
+            Pad::North => "buttonY",
+            Pad::L1 => "leftShoulder",
+            Pad::R1 => "rightShoulder",
+            Pad::L2 => "leftTrigger",
+            Pad::R2 => "rightTrigger",
+            Pad::L3 => "leftThumbstickButton",
+            Pad::R3 => "rightThumbstickButton",
+            Pad::Start => "buttonMenu",
+            Pad::Select => "buttonOptions",
+            // 십자 키는 버튼이 아니라 HAT 축(dx·dy)으로 넘어온다.
+            Pad::DLeft | Pad::DRight => "",
+        };
+        // 버튼 읽는 차례(msg_send![g, <이름>])와 KEYS 표의 차례가 같은 자리끼리 짝이다.
+        let buttons: Vec<&str> = src
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("msg_send![g, "))
+            .filter_map(|l| l.strip_suffix("],"))
+            .collect();
+        let keys: Vec<&str> = src
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("KeyCode::"))
+            .filter_map(|l| l.strip_suffix(','))
+            .collect();
+        assert_eq!(buttons.len(), 12, "{buttons:?}");
+        assert_eq!(keys.len(), 12, "{keys:?}");
+        for p in PADS.into_iter().filter(|p| !name(*p).is_empty()) {
+            let i = buttons.iter().position(|b| *b == name(p)).unwrap();
+            assert_eq!(keys[i], format!("{:?}", p.key()), "{p:?}");
+        }
+        // 축: GameController는 위가 +라 뒤집어 Android와 같은 뜻으로 넘긴다.
+        assert!(src.contains("[lx, -ly, rx, -ry, dx, -dy]"));
+        let (mv, _, _) = android_axes([0.0, -1.0, 0.0, 0.0, 0.0, 0.0]);
+        assert!(mv.y > 0.9, "stick pushed up walks forward");
+        // D패드(스틱 가운데): HAT 칸은 걷지 않고 십자 키로 나온다(0151 — 오른쪽 = 땅 돌리기 오른쪽).
+        let (mv, _, hat) = android_axes([0.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+        assert_eq!((mv, hat), (Vec2::ZERO, vec2(1.0, 0.0)));
     }
 
     /// Android 키 반복: 패치한 miniquad가 반복 이벤트의 repeat 플래그를 넘긴다(안 그러면 누르고 있는 동안 계속 새 누름, nail 0171).

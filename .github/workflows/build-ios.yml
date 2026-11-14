@@ -1,0 +1,79 @@
+name: build-ios
+# iOS 빌드(0136, nail 0086에서 가져옴). 지금은 **서명하지 않은 .ipa**만 만든다(Actions 아티팩트, Release에는 붙이지 않는다).
+# 내 기기에서 시험: 받은 knellroot-ios-unsigned.ipa를 Sideloadly·AltStore로 내 Apple ID로 서명해 설치(무료 계정은 7일마다 다시).
+# 나중에 TestFlight·App Store로 내려면 Apple Developer Program 인증서·프로비저닝 프로필을 Secrets에 두고 서명 단계를 더한다.
+# 모델·소리·글꼴은 모두 바이너리 안이라 .app에 assets 폴더가 없다(0135와 같은 까닭).
+# 갈래(0022): main = 운영판(--no-default-features). release/**·손으로 = 개발판(개발 기능 + 번들 아이디 `.dev`, 이름 "Knellroot dev").
+# macOS 러너는 공개 레포에서 무료지만 분당 비용이 리눅스의 약 10배라(비공개로 바꾸면 유료) 관련 파일이 바뀔 때만.
+on:
+  push:
+    branches: [main, 'release/**']
+    paths:
+      - 'src/**'
+      - 'assets/**'
+      - 'ios/**'
+      - 'third_party/**'
+      - 'build.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/build-ios.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/rust
+        with:
+          targets: aarch64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build flavor
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            echo "FEATURES=--no-default-features" >> "$GITHUB_ENV"; echo "FLAVOR=release" >> "$GITHUB_ENV"
+          else
+            echo "FEATURES=" >> "$GITHUB_ENV"; echo "FLAVOR=dev" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build (aarch64-apple-ios, release)
+        run: cargo build --release --target aarch64-apple-ios $FEATURES
+
+      - name: Assemble Knellroot.app and unsigned ipa
+        run: |
+          set -e
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          b=$(sed -n 's/^version_code = \([0-9]*\)/\1/p' Cargo.toml | head -1)
+          app=Payload/Knellroot.app
+          mkdir -p "$app"
+          cp target/aarch64-apple-ios/release/knellroot "$app/knellroot"
+          cp ios/icons/*.png "$app/"
+          # 고지(0135와 같은 셋): 제3자 라이선스(Meshy CC BY 4.0 표기 포함)·에셋 출처·글꼴 OFL.
+          cp assets/THIRD_PARTY_LICENSES.txt assets/LICENSES.md assets/fonts/GowunBatang-OFL.txt "$app/"
+          sed -e "s/__VERSION__/$v/" -e "s/__BUILD__/$b/" ios/Info.plist > "$app/Info.plist"
+          if [ "$FLAVOR" = "dev" ]; then
+            # 운영 앱과 나란히 깔리게(기록도 따로): 번들 아이디·보이는 이름만 바꾼다.
+            sed -i '' -e 's|<string>io.github.aimenjoe.knellroot</string>|<string>io.github.aimenjoe.knellroot.dev</string>|' \
+                      -e 's|<string>Knellroot</string>|<string>Knellroot dev</string>|g' "$app/Info.plist"
+            grep -q "io.github.aimenjoe.knellroot.dev" "$app/Info.plist"
+          fi
+          plutil -lint "$app/Info.plist"
+          echo "APPL????" > "$app/PkgInfo"
+          ditto -c -k --sequesterRsrc --keepParent Payload knellroot-ios-unsigned.ipa
+          ls -la knellroot-ios-unsigned.ipa
+          du -sh "$app"
+          file "$app/knellroot"
+          # 패드(0137): GameController 프레임워크가 링크됐나 — 없으면 첫 그리기에서 패드 클래스를 못 찾는다(nail 0288과 같은 확인).
+          otool -L "$app/knellroot" | grep GameController.framework
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: knellroot-ios-unsigned-${{ env.FLAVOR }}-${{ github.sha }}
+          path: knellroot-ios-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7

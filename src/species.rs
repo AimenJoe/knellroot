@@ -100,7 +100,7 @@ pub struct Def {
 pub static HUSK: Def = Def {
     kind: Kind::Husk,
     name: |s: &Strings| s.enemy_husk,
-    hp: 3,
+    hp: 30,
     radius: 0.4,
     height: 1.5,
     speed: 2.6,
@@ -137,7 +137,7 @@ pub static HUSK: Def = Def {
 pub static THORN: Def = Def {
     kind: Kind::Thorn,
     name: |s: &Strings| s.enemy_thorn,
-    hp: 2,
+    hp: 20,
     radius: 0.45,
     height: 1.1,
     speed: 3.8,
@@ -174,7 +174,7 @@ pub static THORN: Def = Def {
 pub static WARDEN: Def = Def {
     kind: Kind::Warden,
     name: |s: &Strings| s.boss_warden,
-    hp: 40,
+    hp: 400,
     radius: 1.0,
     height: 3.2,
     speed: 2.6,
@@ -213,7 +213,7 @@ pub static WARDEN: Def = Def {
 pub static SHELL: Def = Def {
     kind: Kind::Shell,
     name: |s: &Strings| s.enemy_shell,
-    hp: 5,
+    hp: 50,
     radius: 0.55,
     height: 1.2,
     speed: 1.9,
@@ -252,7 +252,7 @@ pub static SHELL: Def = Def {
 pub static POD: Def = Def {
     kind: Kind::Pod,
     name: |s: &Strings| s.enemy_pod,
-    hp: 2,
+    hp: 20,
     radius: 0.35,
     height: 0.9,
     speed: 1.6,
@@ -285,7 +285,7 @@ pub static POD: Def = Def {
 pub static BELLKEEPER: Def = Def {
     kind: Kind::Bellkeeper,
     name: |s: &Strings| s.boss_bellkeeper,
-    hp: 58,
+    hp: 580,
     radius: 1.0,
     height: 3.0,
     speed: 2.2,

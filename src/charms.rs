@@ -40,7 +40,7 @@ pub static TABLE: [Def; 9] = [
         desc: |s: &Strings| s.charm_shell_d,
         flavor: |s: &Strings| s.charm_shell_f,
         mods: Mods {
-            hp: 1,
+            hp: 10,
             flask: 0,
             heal: 0,
             dmg: 0,
@@ -56,6 +56,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -69,7 +71,7 @@ pub static TABLE: [Def; 9] = [
             flask: 0,
             heal: 0,
             dmg: 0,
-            taken: 1,
+            taken: 10,
             atk_speed: 1.0,
             dodge_cost: 0.8,
             parry: 0.0,
@@ -81,6 +83,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -106,6 +110,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -131,6 +137,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -153,9 +161,11 @@ pub static TABLE: [Def; 9] = [
             stamina_max: 0.0,
             stamina_regen: 1.0,
             poise: 1.0,
-            heavy_dmg: 1,
+            heavy_dmg: 10,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -181,6 +191,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -190,7 +202,7 @@ pub static TABLE: [Def; 9] = [
         desc: |s: &Strings| s.charm_cloth_d,
         flavor: |s: &Strings| s.charm_cloth_f,
         mods: Mods {
-            hp: 1,
+            hp: 10,
             flask: 0,
             heal: 0,
             dmg: 0,
@@ -206,6 +218,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -217,7 +231,7 @@ pub static TABLE: [Def; 9] = [
         mods: Mods {
             hp: 0,
             flask: -1,
-            heal: 1,
+            heal: 10,
             dmg: 0,
             taken: 0,
             atk_speed: 1.0,
@@ -231,6 +245,8 @@ pub static TABLE: [Def; 9] = [
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
     Def {
@@ -255,7 +271,9 @@ pub static TABLE: [Def; 9] = [
             poise: 1.0,
             heavy_dmg: 0,
             light_dmg: 0,
-            opened_dmg: 1,
+            opened_dmg: 10,
+            knock: 1.0,
+            flinch: 1.0,
         },
     },
 ];
@@ -353,18 +371,18 @@ mod tests {
             assert_ne!(s, base, "{:?} changes something", d.id);
         }
         let feet = Stats::compute(&[def(Id::Feet).mods]);
-        assert!(feet.dodge_cost < 1.0 && feet.taken == 1);
+        assert!(feet.dodge_cost < 1.0 && feet.taken == 10);
         let hunger = Stats::compute(&[def(Id::Hunger).mods]);
         assert!(hunger.kill_stamina > 0.0 && hunger.flask == base.flask - 1);
-        // 무거운 손(0127, 0126 모의 — 평타 +1이 싸움 시간을 반으로 줄였다): 강타(패링 반격 포함)에만.
+        // 무거운 손(0127, 0126 모의 — 평타 +한 눈금(옛 +1)이 싸움 시간을 반으로 줄였다): 강타(패링 반격 포함)에만.
         let hand = Stats::compute(&[def(Id::Hand).mods]);
-        assert!(hand.heavy_dmg == 1 && hand.dmg == 0 && hand.atk_speed == 1.0);
+        assert!(hand.heavy_dmg == 10 && hand.dmg == 0 && hand.atk_speed == 1.0);
         // 떠난 마을(0127): 맞바꿈 둘 + 열린 틈.
         let cloth = Stats::compute(&[def(Id::Cloth).mods]);
-        assert!(cloth.max_hp == base.max_hp + 1 && cloth.stamina_regen < 1.0);
+        assert!(cloth.max_hp == base.max_hp + 10 && cloth.stamina_regen < 1.0);
         let jar = Stats::compute(&[def(Id::Jar).mods]);
-        assert!(jar.heal == 1 && jar.flask == base.flask - 1);
-        assert_eq!(Stats::compute(&[def(Id::BellShard).mods]).opened_dmg, 1);
+        assert!(jar.heal == 10 && jar.flask == base.flask - 1);
+        assert_eq!(Stats::compute(&[def(Id::BellShard).mods]).opened_dmg, 10);
         // 0129 C4: 모든 장신구에 세계 안의 말 한 줄 — 수치 글과 다르다.
         for d in &TABLE {
             let s = crate::i18n::s();

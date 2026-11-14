@@ -74,6 +74,8 @@ impl App {
                         input::Bind::Jump => s.verb_jump_interact,
                         input::Bind::Flask => s.verb_flask,
                         input::Bind::Cast => s.verb_cast,
+                        input::Bind::Skill1 => s.verb_skill1,
+                        input::Bind::Skill2 => s.verb_skill2,
                     };
                     let name = self.ui.fit(name, x_key - x_name - px * 2.5, 1.0);
                     self.ui

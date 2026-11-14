@@ -35,6 +35,10 @@ pub const LAB_HINT: Pair = (
     "default {1} | {2} x10 | confirm = default",
 );
 pub const DEV_TITLE: Pair = ("개발", "DEV");
+pub const DEV_ROW_D: Pair = (
+    "개발 창을 연다 — 스테이지·시나리오·도구를 고른다.",
+    "open the dev window: stages, scenarios, tools",
+);
 pub const TAB_TOOLS: Pair = ("도구", "tools");
 pub const TAB_STAGE: Pair = ("스테이지", "stage");
 pub const TAB_COMBAT: Pair = ("전투·적", "combat");
@@ -73,6 +77,24 @@ pub const LAB_NOTE: Pair = (
     "값을 바로 바꿔 본다. 메뉴의 설정 아래 연구소와 같은 창.",
     "change tuning live; same as the lab row under settings",
 );
+pub const SKILLS_START: Pair = ("기술 끼우기", "skill slots");
+pub const SKILLS_NOTE: Pair = (
+    "아레나에서 쓸 기술 둘과 큰 기술을 끼운다. 멈춤의 기술 화면과 같다(칸 → 확인 → 끼우기).",
+    "wear the two skills and the great skill for the arenas; the pause menu's skills screen (cell, confirm, wear)",
+);
+pub const SKILLS_MAX: Pair = ("기술 다 올리기(켬/끔)", "max skills (on/off)");
+pub const SKILLS_MAX_NOTE: Pair = (
+    "모든 기술과 큰 기술을 끝 단으로, 패시브 칸을 모두 열림으로. 다시 고르면 이 슬롯의 판으로 돌아간다. 저장하지 않는다. 지금: {0}",
+    "every skill and great skill at max rank, every passive open; pick again for this slot's board. nothing is saved. now: {0}",
+);
+pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
+pub const SKILLS_FLIP_NOTE: Pair = (
+    "끝 단으로 올린 판의 고르기를 모두 ㄱ·ㄴ으로 뒤집는다(꺼져 있으면 켠다). 저장하지 않는다. 지금: {0}",
+    "flips every pick on the maxed board (turns it on if off). nothing is saved. now: {0}",
+);
+pub const BOARD_SLOT: Pair = ("슬롯의 판", "the slot's board");
+pub const BOARD_MAX_A: Pair = ("끝 단 · 고르기 ㄱ", "max rank · pick A");
+pub const BOARD_MAX_B: Pair = ("끝 단 · 고르기 ㄴ", "max rank · pick B");
 pub const SCENARIO_NOTE: Pair = ("아레나에서 숫자 키 {0} · {1}", "key {0} in the arena · {1}");
 
 /// 위의 쌍 전부(글꼴 시험·글자 미리 굽기 `i18n::dev_texts`).
@@ -89,6 +111,7 @@ pub const PAIRS: &[Pair] = &[
     NOTE_USING,
     LAB_HINT,
     DEV_TITLE,
+    DEV_ROW_D,
     TAB_TOOLS,
     TAB_STAGE,
     TAB_COMBAT,
@@ -103,6 +126,15 @@ pub const PAIRS: &[Pair] = &[
     STAGE_NOTE,
     LAB_START,
     LAB_NOTE,
+    SKILLS_START,
+    SKILLS_NOTE,
+    SKILLS_MAX,
+    SKILLS_MAX_NOTE,
+    SKILLS_FLIP,
+    SKILLS_FLIP_NOTE,
+    BOARD_SLOT,
+    BOARD_MAX_A,
+    BOARD_MAX_B,
     SCENARIO_NOTE,
 ];
 
@@ -155,6 +187,11 @@ pub const SCENARIO_KO: &[(&str, &str, &str)] = &[
         "무리 20",
         "P1 쿼터뷰 읽힘, 그리기 비용, 떼싸움 느낌",
     ),
+    (
+        "skills: horde 24 + full gauge",
+        "기술 연습(무리 24)",
+        "0151 큰 기술 가득 — 모으고 쓸기, 기세(쓰러뜨리면 기술이 빨리 돌아옴), 두 버튼 함께 = 큰 기술",
+    ),
     ("pillars + boss", "기둥 + 보스", "P2 카메라 벽 당기기, 가림"),
     ("empty", "빈 아레나", "이동 실험(빠르기·가속·돌기·회피)"),
     (
@@ -191,7 +228,7 @@ pub fn scenario_text(name: &'static str, checks: &'static str) -> (&'static str,
 }
 
 /// 랩 묶음 이름(`lab::GROUPS` 순서와 같다 — 시험).
-pub const GROUP_KO: [&str; 16] = [
+pub const GROUP_KO: [&str; 17] = [
     "카메라: 쿼터뷰",
     "카메라: 락온",
     "카메라: 전환·벽",
@@ -205,6 +242,7 @@ pub const GROUP_KO: [&str; 16] = [
     "피격·스태미나",
     "등잔",
     "마법·던지기",
+    "기술",
     "자세",
     "동작",
     "그림(P5 스위치)",
@@ -238,11 +276,22 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("attack.arc deg", "평타 각(도)"),
     ("feel.hitstop s", "히트스톱(초)"),
     ("feel.knockback", "넉백"),
+    ("feel.zoom", "강타·패링 때 카메라 당김(0끔)"),
+    ("skill.cooldown x", "기술 대기 배율"),
+    ("skill.momentum s", "쓰러뜨리면 기술 대기 당김(초)"),
+    ("skill.momentum by skill s", "기술로 쓰러뜨리면 당김(초)"),
+    ("skill.chord s", "두 버튼 함께 누름 창(초)"),
+    ("skill.gauge per hit", "큰 기술: 맞힐 때 차는 몫"),
+    ("skill.gauge per parry", "큰 기술: 패링 때 차는 몫"),
+    ("render.enemy lift", "적 밝기(1 = 예전)"),
+    ("render.enemy ash", "적 잿빛(0 = 예전)"),
     ("lock.range", "락온 거리 한도"),
     ("lock.lose dist", "락온 풀리는 거리"),
     ("render.face shade", "면 음영"),
     ("cam.lock.yaw max deg/s", "락온 돌기 상한(도/초)"),
     ("cam.lock.near slow m", "가까우면 천천히 돌기(m)"),
+    ("cam.lock.catch deg/s", "뒤로 돌면 따라잡기(도/초)"),
+    ("cam.lock.catch at deg", "따라잡기 시작 각(도)"),
     ("cam.pull out 1/s", "벽 당긴 뒤 풀기(/초)"),
     ("cam.quarter.lead s", "쿼터뷰 앞서 보기(초)"),
     ("cam.blend turn x", "전환 돌기 배율"),
@@ -335,7 +384,7 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("combo.link x", "콤보 끊기 시점 배율"),
     ("attack.buffer s", "누름 받아 두기(초)"),
     ("poise.base", "자세 기본"),
-    ("poise.per hp", "체력당 자세"),
+    ("poise.per 10hp", "체력 10당 자세"),
     ("poise.boss", "보스 자세"),
     ("poise.break s", "자세 깨짐(초)"),
     ("poise.break boss s", "보스 자세 깨짐(초)"),
@@ -362,6 +411,14 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("turn.wobble out deg", "땅 돌리기 끝 휘청(도)"),
     ("turn.start stagger s", "땅 돌리기 시작 적 휘청(초)"),
     ("parry.stamina gain", "패링 성공 기력 회복"),
+    ("render.floor calm 0off 1on", "조용한 바닥(0끔 1켬)"),
+    ("render.key light 0old 1new", "빛 대비·진한 그림자(0끔 1켬)"),
+    ("render.grade", "어두운 중간 밝게(세기)"),
+    ("render.bloom", "빛 번짐 세기"),
+    ("render.vignette", "가장자리 그늘 세기"),
+    ("render.fx 0off 1on", "타격·먼지 입자(0끔 1켬)"),
+    ("render.wind", "풀·나무·불 흔들림(세기)"),
+    ("hurt.edge", "맞을 때 가장자리 빛(0끔)"),
 ];
 
 #[cfg(test)]

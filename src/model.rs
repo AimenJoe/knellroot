@@ -224,6 +224,12 @@ impl Model {
         extra: &[(usize, Quat, Vec3)],
         out: &mut Vec<Mat4>,
     ) {
+        let local = self.locals(anim, t);
+        self.pose_from_locals(&local, extra, out);
+    }
+
+    /// 동작 `anim`의 `t`초 자세를 노드마다의 (자리, 돌림, 크기)로 — 둘을 섞을 때(0175 걷기 섞임) 이것을 섞고 `pose_from_locals`로.
+    pub fn locals(&self, anim: Option<usize>, t: f32) -> Vec<(Vec3, Quat, Vec3)> {
         let mut local: Vec<(Vec3, Quat, Vec3)> =
             self.nodes.iter().map(|n| (n.t, n.r, n.s)).collect();
         if let Some(a) = anim.and_then(|i| self.anims.get(i)) {
@@ -242,6 +248,16 @@ impl Model {
                 }
             }
         }
+        local
+    }
+
+    /// 노드마다의 자세(`locals`)에서 노드의 세계 행렬로. `extra` = 노드마다 덧붙이는 돌림·크기(2차 동작·숨긴 무기).
+    pub fn pose_from_locals(
+        &self,
+        local: &[(Vec3, Quat, Vec3)],
+        extra: &[(usize, Quat, Vec3)],
+        out: &mut Vec<Mat4>,
+    ) {
         out.clear();
         out.resize(self.nodes.len(), Mat4::IDENTITY);
         for &i in &self.order {
@@ -358,6 +374,19 @@ fn sample(c: &Channel, t: f32) -> Vec4 {
     } else {
         a.lerp(b, k)
     }
+}
+
+/// 두 자세를 섞는다(0175): `w` = 0이면 `a`, 1이면 `b`. 자리·크기는 직선, 돌림은 구면.
+pub fn blend_locals(
+    a: &[(Vec3, Quat, Vec3)],
+    b: &[(Vec3, Quat, Vec3)],
+    w: f32,
+) -> Vec<(Vec3, Quat, Vec3)> {
+    let w = w.clamp(0.0, 1.0);
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| (x.0.lerp(y.0, w), x.1.slerp(y.1, w), x.2.lerp(y.2, w)))
+        .collect()
 }
 
 /// 시험용 모델(코드로 찍은 Blockbench 꼴 — `tools/art/make_test_model.py`). 바이너리에 넣어 웹에서 파일을 따로 받지 않는다.

@@ -19,6 +19,7 @@ pub const GROUPS: &[(&str, &[&str])] = &[
     ("hurt & stamina", &["hurt.", "stamina."]),
     ("flask", &["flask."]),
     ("magic & throw", &["cast.", "throw."]),
+    ("skills", &["skill."]),
     ("poise", &["poise."]),
     ("animation", &["anim."]),
     ("render (P5 switches)", &["render."]),

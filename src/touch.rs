@@ -24,12 +24,62 @@ pub enum Kind {
     Cast,
     /// 그림만(0053): 쉼터 곁의 점프 버튼에 그리는 모닥불.
     Rest,
+    /// 그림만(0166): 점프 버튼이 그 자리의 일을 할 때의 그림 — 줍기·열기(상자)·당기기(장치)·말 걸기·읽기(새긴 돌).
+    /// 예전에는 모두 모닥불이었다(사장 2026-11-13 "인터랙션 버튼이 다 화톳불처럼 보이네").
+    Pick,
+    Open,
+    Pull,
+    Talk,
+    Read,
+    /// 그림만(0147): 공격 버튼에 그리는 든 무기 — 검은 `Attack`의 칼 그림 그대로(`attack_icon`).
+    Hammer,
+    Staff,
+    Crossbow,
+    Fist,
     Lock,
     /// 땅 돌리기(0023): 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면.
     TurnLeft,
     TurnRight,
-    /// 멈춤(0019): 오른쪽 위.
+    /// 스킬 버튼 둘(0151): 예전 돌리기 캡슐 자리. 그림은 끼운 스킬의 것(`View::skills`).
+    Skill1,
+    Skill2,
+    /// 큰 기술(0151): 게이지가 차면 스킬 둘 위에 뜬다(상황 버튼).
+    Ult,
+    /// 그림만(0151): 스킬·큰 기술의 픽토그램, 원거리 무기의 RB(수류탄).
+    Whirl,
+    Cut,
+    Gather,
+    Quake,
+    Upend,
+    /// 그림만(0158 G2): 스킬 넷·큰 기술 둘.
+    Brace,
+    Echo,
+    Throw,
+    Embers,
+    Flurry,
+    Line,
+    Bomb,
+    /// 멈춤(0019): 왼쪽 위.
     Pause,
+}
+
+/// 그릴 때 앱이 넘기는 것(0151): 상태에 따라 바뀌는 그림·차오름.
+#[derive(Clone, Copy, Debug)]
+pub struct View {
+    pub locked: bool,
+    /// 땅 돌리기 대기(0..1, 1 = 준비).
+    pub turn: f32,
+    /// 공격 버튼의 그림(든 무기, 0147)과 RB 버튼의 그림(근접 = 별, 원거리 = 수류탄).
+    pub attack: Kind,
+    pub cast: Kind,
+    /// 스킬 둘: (그림, 대기 0..1 — 1 = 준비).
+    pub skills: [(Kind, f32); 2],
+    /// 빈 스킬 칸(0166 — 아직 배운 스킬이 없다): 그림 없이 흐린 테만.
+    pub vacant: [bool; 2],
+    /// 스킬이 남긴 것이 이어지는 몫 0..1(0158 G2 — 되울림·잔불 흩기: 버튼 둘레의 줄어드는 테).
+    pub active: [f32; 2],
+    /// 큰 기술 버튼의 그림(끼운 하나, 0158 G2).
+    pub ult: Kind,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -45,8 +95,9 @@ pub struct Overlay {
     pub stick: Option<(Vec2, Vec2)>,
     pub stick_radius: f32,
     pub buttons: Vec<Button>,
-    /// 쉼터 곁(0053): 점프 버튼에 모닥불을 그린다.
+    /// 곁에 할 일이 있다(0053): 점프 버튼에 그 일의 그림(`near` — 쉬기는 모닥불, 0166).
     pub rest: bool,
+    pub near: Near,
 }
 
 /// 터치가 이번 프레임에 만든 입력.
@@ -70,6 +121,9 @@ pub struct Read {
     pub lock: bool,
     pub turn_right: bool,
     pub turn_left: bool,
+    pub skill1: bool,
+    pub skill2: bool,
+    pub ult: bool,
     pub pause: bool,
     /// 메뉴 모드에서 손가락을 거의 움직이지 않고 뗀 자리(논리 px) — 메뉴는 뗄 때 누른다(nail 0199).
     pub tap: Option<Vec2>,
@@ -116,23 +170,53 @@ const TOUCH_U_MAX: f32 = 520.0;
 /// 이보다 덜 움직이고 떼면 탭(논리 px).
 const TAP_SLOP: f32 = 24.0;
 
+/// 점프 버튼이 지금 하는 일(0166 — 스테이지가 안다, 앱이 옮겨 준다): 버튼의 그림을 고른다.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Near {
+    #[default]
+    Rest,
+    Pick,
+    Open,
+    Pull,
+    Talk,
+    Read,
+}
+
+/// 그 일의 그림(`_` 없는 match — 새 일 = 그림 하나).
+pub fn near_icon(n: Near) -> Kind {
+    match n {
+        Near::Rest => Kind::Rest,
+        Near::Pick => Kind::Pick,
+        Near::Open => Kind::Open,
+        Near::Pull => Kind::Pull,
+        Near::Talk => Kind::Talk,
+        Near::Read => Kind::Read,
+    }
+}
+
 /// 상황 버튼(0053): 쓸 수 있을 때만 정해 둔 자리에 뜬다 — 다른 버튼을 밀지 않는다(Apple HIG Game controls: 쓸 수 없으면 숨겨 어수선함을 줄인다).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Ctx {
-    /// 쉼터 곁이고 안전하다 — 점프 버튼이 모닥불 그림이 되고 쉬기를 한다(0048: 점프 = 상호작용).
+    /// 곁에 할 일이 있다(쉼터는 안전할 때만) — 점프 버튼이 그 일의 그림이 되고 그 일을 한다(0048: 점프 = 상호작용).
     pub rest: bool,
+    /// 그 일이 무엇인가(0166 — `rest`일 때만 뜻이 있다).
+    pub near: Near,
     /// 락온할 적이 가까이 있거나 이미 락온 중.
     pub lock: bool,
     /// 마실 수 있다(체력이 가득이 아니고 등잔이 남았다).
     pub flask: bool,
+    /// 큰 기술 게이지가 가득 찼다(0151).
+    pub ult: bool,
 }
 
 impl Ctx {
     #[cfg(test)]
     pub const ALL: Ctx = Ctx {
         rest: true,
+        near: Near::Rest,
         lock: true,
         flask: true,
+        ult: true,
     };
 }
 
@@ -174,18 +258,38 @@ pub fn layout(w: f32, h: f32, ctx: Ctx) -> Vec<Button> {
         },
     ];
     // 땅 돌리기: 둘을 한 캡슐로(왼쪽 반 = 왼쪽으로, 오른쪽 반 = 오른쪽으로) — 그림이 캡슐 테두리로 묶는다.
-    let turn = at(118.0, 0.44);
-    let tr = u * 0.065;
+    // 스킬 둘(0151): 예전 돌리기 캡슐 자리(공격 위 바깥 호) — 엄지가 외운 자리를 스킬이 물려받는다.
+    let skill = at(118.0, 0.44);
+    let sr = u * 0.065;
     b.push(Button {
-        center: turn - vec2(u * 0.08, 0.0),
-        radius: tr,
+        center: skill - vec2(u * 0.08, 0.0),
+        radius: sr,
+        kind: Kind::Skill1,
+    });
+    b.push(Button {
+        center: skill + vec2(u * 0.08, 0.0),
+        radius: sr,
+        kind: Kind::Skill2,
+    });
+    // 땅 돌리기(0151): 자주 누르지 않으니 엄지 호 밖, 오른쪽 위에 작게(왼쪽 위의 멈춤과 마주 본다).
+    let (pc, ps) = pause_spot(w, h);
+    b.push(Button {
+        center: vec2(w - pc.x - ps * 2.5, pc.y),
+        radius: ps,
         kind: Kind::TurnLeft,
     });
     b.push(Button {
-        center: turn + vec2(u * 0.08, 0.0),
-        radius: tr,
+        center: vec2(w - pc.x, pc.y),
+        radius: ps,
         kind: Kind::TurnRight,
     });
+    if ctx.ult {
+        b.push(Button {
+            center: at(118.0, 0.6),
+            radius: u * 0.06,
+            kind: Kind::Ult,
+        });
+    }
     if ctx.lock {
         b.push(Button {
             center: at(80.0, 0.44),
@@ -370,22 +474,31 @@ impl Touch {
             stick_radius: stick_radius(w, h),
             buttons: layout(w, h, self.ctx),
             rest: self.ctx.rest,
+            near: self.ctx.near,
         }
     }
 }
 
 fn press(a: &mut Read, k: Kind) {
     match k {
-        Kind::Attack => a.attack = true,
+        Kind::Attack | Kind::Hammer | Kind::Staff | Kind::Crossbow | Kind::Fist => a.attack = true,
         Kind::Dodge => a.dodge = true,
         Kind::Parry => a.parry = true,
         Kind::Jump => a.jump = true,
         Kind::Flask => a.flask = true,
         Kind::Cast => a.cast = true,
-        Kind::Rest => a.jump = true,
+        Kind::Rest | Kind::Pick | Kind::Open | Kind::Pull | Kind::Talk | Kind::Read => {
+            a.jump = true
+        }
         Kind::Lock => a.lock = true,
         Kind::TurnLeft => a.turn_left = true,
         Kind::TurnRight => a.turn_right = true,
+        Kind::Skill1 => a.skill1 = true,
+        Kind::Skill2 => a.skill2 = true,
+        Kind::Ult | Kind::Upend => a.ult = true,
+        // 그림만인 것은 버튼이 되지 않는다.
+        Kind::Whirl | Kind::Cut | Kind::Gather | Kind::Quake | Kind::Bomb => {}
+        Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
 }
@@ -400,14 +513,79 @@ pub fn stick_vector(d: Vec2, radius: f32) -> Vec2 {
     v / len * ((len - DEAD) / (1.0 - DEAD)).min(1.0)
 }
 
-/// 터치 오버레이 그리기(화면 패스). `locked`면 락온 버튼을 채운다. `turn` = 땅 돌리기 준비 0..1 — 차오르는 동안 옅고, 다 차면 밝다.
-pub fn draw(o: &Overlay, locked: bool, turn: f32) {
-    let line = Color::new(1.0, 1.0, 1.0, 0.4);
-    let fill = Color::new(1.0, 1.0, 1.0, 0.12);
+/// 터치 UI의 잉크(어두운 바탕·테)·따뜻한 강조(공격 테·락온) — HUD의 호박빛과 같은 줄기.
+const INK: Color = Color::new(0.07, 0.05, 0.1, 1.0);
+const WARM: Color = Color::new(1.0, 0.8, 0.42, 1.0);
+
+/// 공격 버튼에 그릴 그림(0147 — 사장 "어차피 종류는 정해졌으니까"): 든 무기마다 하나. `_` 없는 match라 새 무기는 여기서 그림을 고르게 된다.
+pub fn attack_icon(w: crate::weapons::Id) -> Kind {
+    use crate::weapons::Id;
+    match w {
+        Id::Sword => Kind::Attack,
+        Id::Hammer => Kind::Hammer,
+        Id::Staff => Kind::Staff,
+        Id::Crossbow => Kind::Crossbow,
+        Id::Fists => Kind::Fist,
+    }
+}
+
+/// 터치 오버레이 그리기(화면 패스). `attack` = 공격 버튼의 그림(`attack_icon`). `locked`면 락온 버튼을 채운다. `turn` = 땅 돌리기 준비 0..1 — 차오르는 동안 옅고, 다 차면 밝다.
+/// 버튼의 몸(0146): 어두운 반투명 바탕 + 밝은 테 — 흰 반투명만으로는 밝은 바닥·불빛 위에서 그림이 묻혔다. 공격만 굵은 호박빛 테
+/// (가장 큰 버튼이 가장 먼저 읽히게), 나머지는 흰 테.
+/// 스킬 버튼의 그림(0151) — 새 스킬 = 그림 하나(`_` 없는 match).
+pub fn skill_icon(id: crate::skills::Id) -> Kind {
+    use crate::skills::Id;
+    match id {
+        Id::Whirl => Kind::Whirl,
+        Id::Cut => Kind::Cut,
+        Id::Gather => Kind::Gather,
+        Id::Quake => Kind::Quake,
+        Id::Brace => Kind::Brace,
+        Id::Echo => Kind::Echo,
+        Id::Throw => Kind::Throw,
+        Id::Embers => Kind::Embers,
+    }
+}
+
+/// 큰 기술 버튼의 그림(0158 G2) — 새 큰 기술 = 그림 하나(`_` 없는 match).
+pub fn ult_icon(u: crate::skills::Ult) -> Kind {
+    use crate::skills::Ult;
+    match u {
+        Ult::Upend => Kind::Upend,
+        Ult::Flurry => Kind::Flurry,
+        Ult::Line => Kind::Line,
+    }
+}
+
+/// RB 버튼의 그림(0151): 근접 무기 = 마법 탄의 별, 원거리 무기 = 수류탄.
+pub fn cast_icon(w: crate::weapons::Id) -> Kind {
+    if w.def().grenade.is_some() {
+        Kind::Bomb
+    } else {
+        Kind::Cast
+    }
+}
+
+pub fn draw(o: &Overlay, v: &View) {
+    let (locked, turn, attack) = (v.locked, v.turn, v.attack);
+    let line = Color::new(1.0, 1.0, 1.0, 0.5);
+    let back = Color::new(INK.r, INK.g, INK.b, 0.42);
     if let Some((origin, pos)) = o.stick {
+        draw_circle(
+            origin.x,
+            origin.y,
+            o.stick_radius,
+            Color::new(INK.r, INK.g, INK.b, 0.22),
+        );
         draw_circle_lines(origin.x, origin.y, o.stick_radius, 2.0, line);
         let knob = origin + (pos - origin).clamp_length_max(o.stick_radius);
-        draw_circle(knob.x, knob.y, o.stick_radius * 0.4, fill);
+        draw_circle(knob.x, knob.y, o.stick_radius * 0.4, back);
+        draw_circle(
+            knob.x,
+            knob.y,
+            o.stick_radius * 0.4,
+            Color::new(1.0, 1.0, 1.0, 0.18),
+        );
         draw_circle_lines(knob.x, knob.y, o.stick_radius * 0.4, 2.0, line);
     }
     // 돌리기 둘을 한 캡슐로 묶는 테(0053).
@@ -416,20 +594,22 @@ pub fn draw(o: &Overlay, locked: bool, turn: f32) {
     if let (Some(l), Some(r)) = (tl, trn) {
         let pad = l.radius * 0.25;
         let rr = l.radius + pad;
+        let faint = Color::new(INK.r, INK.g, INK.b, 0.2);
         draw_rectangle(
             l.center.x,
             l.center.y - rr,
             r.center.x - l.center.x,
             rr * 2.0,
-            Color::new(1.0, 1.0, 1.0, 0.06),
+            faint,
         );
+        let soft = Color::new(1.0, 1.0, 1.0, 0.3);
         draw_line(
             l.center.x,
             l.center.y - rr,
             r.center.x,
             r.center.y - rr,
             2.0,
-            line,
+            soft,
         );
         draw_line(
             l.center.x,
@@ -437,36 +617,107 @@ pub fn draw(o: &Overlay, locked: bool, turn: f32) {
             r.center.x,
             r.center.y + rr,
             2.0,
-            line,
+            soft,
         );
-        draw_arc_left_right(l.center, r.center, rr, line);
+        draw_arc_left_right(l.center, r.center, rr, soft);
     }
     for b in &o.buttons {
         let on = b.kind == Kind::Lock && locked;
-        let f = if on {
-            Color::new(1.0, 0.85, 0.3, 0.35)
-        } else {
-            fill
-        };
         let is_turn = matches!(b.kind, Kind::TurnLeft | Kind::TurnRight);
-        draw_circle(b.center.x, b.center.y, b.radius, f);
+        draw_circle(b.center.x, b.center.y, b.radius, back);
+        if on {
+            draw_circle(
+                b.center.x,
+                b.center.y,
+                b.radius,
+                Color::new(WARM.r, WARM.g, WARM.b, 0.3),
+            );
+        }
         if is_turn && turn < 1.0 {
-            // 대기: 차오르는 몫만큼 아래부터 채운다(그림은 옅게).
+            // 대기: 차오르는 몫만큼 가운데부터 채운다(그림은 옅게).
             draw_circle(
                 b.center.x,
                 b.center.y,
                 b.radius * turn.clamp(0.0, 1.0),
-                Color::new(1.0, 1.0, 1.0, 0.08),
+                Color::new(1.0, 1.0, 1.0, 0.1),
             );
         }
-        draw_circle_lines(b.center.x, b.center.y, b.radius, 2.0, line);
-        let dim = if is_turn && turn < 1.0 { 0.35 } else { 1.0 };
-        let kind = if b.kind == Kind::Jump && o.rest {
-            Kind::Rest
-        } else {
-            b.kind
+        // 스킬(0151): 대기는 돌리기와 같은 꼴 — 가운데부터 차오르고 그림은 옅게.
+        let skill = match b.kind {
+            Kind::Skill1 => Some(v.skills[0]),
+            Kind::Skill2 => Some(v.skills[1]),
+            _ => None,
         };
-        icon(kind, b.center, b.radius, dim);
+        if let Some((_, ready)) = skill.filter(|(_, r)| *r < 1.0) {
+            draw_circle(
+                b.center.x,
+                b.center.y,
+                b.radius * ready.clamp(0.0, 1.0),
+                Color::new(1.0, 1.0, 1.0, 0.1),
+            );
+        }
+        // 스킬이 남긴 것이 이어지는 동안(0158 G2): 버튼 둘레에 줄어드는 밝은 호.
+        let active = match b.kind {
+            Kind::Skill1 => v.active[0],
+            Kind::Skill2 => v.active[1],
+            _ => 0.0,
+        };
+        if active > 0.0 {
+            let n = 24;
+            let lit = (active.clamp(0.0, 1.0) * n as f32).ceil() as usize;
+            let rr = b.radius + 3.0;
+            for i in 0..lit {
+                let a0 = (-90.0 + 360.0 * i as f32 / n as f32).to_radians();
+                let a1 = (-90.0 + 360.0 * (i + 1) as f32 / n as f32).to_radians();
+                draw_line(
+                    b.center.x + rr * a0.cos(),
+                    b.center.y + rr * a0.sin(),
+                    b.center.x + rr * a1.cos(),
+                    b.center.y + rr * a1.sin(),
+                    3.0,
+                    Color::new(WARM.r, WARM.g, WARM.b, 0.9),
+                );
+            }
+        }
+        let ult = b.kind == Kind::Ult;
+        if ult {
+            draw_circle(
+                b.center.x,
+                b.center.y,
+                b.radius,
+                Color::new(WARM.r, WARM.g, WARM.b, 0.3),
+            );
+        }
+        let (ring, thick) = match b.kind {
+            Kind::Attack => (Color::new(WARM.r, WARM.g, WARM.b, 0.8), 3.0),
+            _ if on || ult => (Color::new(WARM.r, WARM.g, WARM.b, 0.9), 2.0),
+            _ => (line, 2.0),
+        };
+        draw_circle_lines(b.center.x, b.center.y, b.radius, thick, ring);
+        let cooling = (is_turn && turn < 1.0) || skill.is_some_and(|(_, r)| r < 1.0);
+        let dim = if cooling { 0.4 } else { 1.0 };
+        let kind = match b.kind {
+            Kind::Jump if o.rest => near_icon(o.near),
+            Kind::Attack => attack,
+            Kind::Cast => v.cast,
+            Kind::Skill1 => v.skills[0].0,
+            Kind::Skill2 => v.skills[1].0,
+            Kind::Ult => v.ult,
+            k => k,
+        };
+        let tint = if on || ult || (o.rest && b.kind == Kind::Jump) {
+            Color::new(1.0, 0.9, 0.66, 1.0)
+        } else {
+            Color::new(1.0, 0.99, 0.95, 1.0)
+        };
+        let vacant = match b.kind {
+            Kind::Skill1 => v.vacant[0],
+            Kind::Skill2 => v.vacant[1],
+            _ => false,
+        };
+        if !vacant {
+            icon(kind, b.center, b.radius, dim, tint);
+        }
     }
 }
 
@@ -489,188 +740,645 @@ fn draw_arc_left_right(l: Vec2, r: Vec2, rr: f32, col: Color) {
     }
 }
 
-/// 픽토그램(선 그림). 플레이어용 셋은 글자 없이, dev 버튼만 짧은 ASCII.
-fn icon(k: Kind, c: Vec2, r: f32, dim: f32) {
-    let col = Color::new(1.0, 1.0, 1.0, 0.85 * dim);
-    let s = r * 0.5;
-    let th = (r * 0.09).max(2.0);
+/// 픽토그램의 한 변(칸).
+pub const ICON_N: usize = 13;
+
+/// 터치 픽토그램(0146·0147 — 사장 "터치스크린의 아이콘도 좀 거시기 하네"): 13×13 도트 그림(`#` = 칠한 칸). 가는 선 그림은 도트 화면 위에서
+/// 다른 게임의 UI처럼 떠 보였다 — 첫 게임도 같은 판정을 도트 그림으로 풀었다(nail 0172 판정 11). 돌리기 둘은 한 그림을 좌우로 뒤집는다
+/// (`icon_cell`). 고치면 시험 `touch_icons_are_13_by_13_and_tell_each_other_apart`.
+pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
     match k {
-        Kind::Attack => {
-            // 칼: 대각 날 + 가드.
-            draw_line(c.x - s, c.y + s, c.x + s, c.y - s, th * 1.4, col);
-            draw_line(
-                c.x - s * 0.75,
-                c.y + s * 0.05,
-                c.x - s * 0.05,
-                c.y + s * 0.75,
-                th,
-                col,
-            );
-        }
-        Kind::Dodge => {
-            // 겹 화살촉(옆으로 굴러 빠지기).
-            for dx in [-s * 0.45, s * 0.25] {
-                draw_line(c.x + dx, c.y - s * 0.6, c.x + dx + s * 0.6, c.y, th, col);
-                draw_line(c.x + dx + s * 0.6, c.y, c.x + dx, c.y + s * 0.6, th, col);
-            }
-        }
-        Kind::Jump => {
-            // 위 화살표 + 바닥 줄(뛰어오르기).
-            draw_line(c.x, c.y + s * 0.5, c.x, c.y - s * 0.7, th, col);
-            draw_line(c.x - s * 0.5, c.y - s * 0.2, c.x, c.y - s * 0.7, th, col);
-            draw_line(c.x + s * 0.5, c.y - s * 0.2, c.x, c.y - s * 0.7, th, col);
-            draw_line(
-                c.x - s * 0.7,
-                c.y + s * 0.8,
-                c.x + s * 0.7,
-                c.y + s * 0.8,
-                th,
-                col,
-            );
-        }
-        Kind::Flask => {
-            // 등잔: 둥근 몸 + 목 + 불꽃.
-            let body = [
-                vec2(-0.6, 0.15),
-                vec2(0.6, 0.15),
-                vec2(0.45, 0.8),
-                vec2(-0.45, 0.8),
-            ];
-            for i in 0..body.len() {
-                let (p, q) = (c + body[i] * s, c + body[(i + 1) % body.len()] * s);
-                draw_line(p.x, p.y, q.x, q.y, th, col);
-            }
-            draw_line(
-                c.x - s * 0.2,
-                c.y + s * 0.15,
-                c.x - s * 0.2,
-                c.y - s * 0.1,
-                th,
-                col,
-            );
-            draw_line(
-                c.x + s * 0.2,
-                c.y + s * 0.15,
-                c.x + s * 0.2,
-                c.y - s * 0.1,
-                th,
-                col,
-            );
-            draw_line(c.x, c.y - s * 0.3, c.x - s * 0.22, c.y - s * 0.55, th, col);
-            draw_line(c.x - s * 0.22, c.y - s * 0.55, c.x, c.y - s * 0.85, th, col);
-            draw_line(c.x, c.y - s * 0.85, c.x + s * 0.22, c.y - s * 0.55, th, col);
-            draw_line(c.x + s * 0.22, c.y - s * 0.55, c.x, c.y - s * 0.3, th, col);
-        }
-        Kind::Cast => {
-            // 마법: 네 갈래 별(가는 마름모 둘).
-            let pts = [
-                vec2(0.0, -0.9),
-                vec2(0.22, -0.22),
-                vec2(0.9, 0.0),
-                vec2(0.22, 0.22),
-                vec2(0.0, 0.9),
-                vec2(-0.22, 0.22),
-                vec2(-0.9, 0.0),
-                vec2(-0.22, -0.22),
-            ];
-            for i in 0..pts.len() {
-                let (p, q) = (c + pts[i] * s, c + pts[(i + 1) % pts.len()] * s);
-                draw_line(p.x, p.y, q.x, q.y, th, col);
-            }
-        }
-        Kind::Parry => {
-            // 방패: 위가 넓고 아래가 뾰족한 오각형 윤곽.
-            let pts = [
-                vec2(-0.7, -0.75),
-                vec2(0.7, -0.75),
-                vec2(0.7, 0.05),
-                vec2(0.0, 0.85),
-                vec2(-0.7, 0.05),
-            ];
-            for i in 0..pts.len() {
-                let (p, q) = (c + pts[i] * s, c + pts[(i + 1) % pts.len()] * s);
-                draw_line(p.x, p.y, q.x, q.y, th, col);
-            }
-        }
-        Kind::Rest => {
-            // 모닥불: 엇갈린 장작 둘 + 불꽃.
-            draw_line(
-                c.x - s * 0.7,
-                c.y + s * 0.75,
-                c.x + s * 0.7,
-                c.y + s * 0.35,
-                th,
-                col,
-            );
-            draw_line(
-                c.x + s * 0.7,
-                c.y + s * 0.75,
-                c.x - s * 0.7,
-                c.y + s * 0.35,
-                th,
-                col,
-            );
-            draw_line(c.x, c.y + s * 0.25, c.x - s * 0.4, c.y - s * 0.2, th, col);
-            draw_line(c.x - s * 0.4, c.y - s * 0.2, c.x, c.y - s * 0.85, th, col);
-            draw_line(c.x, c.y - s * 0.85, c.x + s * 0.4, c.y - s * 0.2, th, col);
-            draw_line(c.x + s * 0.4, c.y - s * 0.2, c.x, c.y + s * 0.25, th, col);
-        }
-        Kind::Lock => {
-            // 조준 고리 + 십자.
-            draw_circle_lines(c.x, c.y, s * 0.7, th, col);
-            for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
-                draw_line(
-                    c.x + dx * s * 0.45,
-                    c.y + dy * s * 0.45,
-                    c.x + dx * s * 1.1,
-                    c.y + dy * s * 1.1,
-                    th,
-                    col,
-                );
-            }
-        }
-        Kind::TurnLeft | Kind::TurnRight => {
-            // 위쪽 반원 화살표(↶ ↷): 반대쪽 끝에서 위를 지나 누르는 쪽 끝으로, 화살촉은 아래로 — 먼 쪽이 그쪽으로 = 카메라가 그쪽으로 돈다(0017).
-            let side = if k == Kind::TurnRight { 1.0 } else { -1.0 };
-            let rad = s * 0.75;
-            let n = 14;
-            let at = |a: f32| c + vec2(a.cos() * side, -a.sin()) * rad + vec2(0.0, rad * 0.35);
-            for i in 0..n {
-                let (u, v) = (
-                    std::f32::consts::PI * (1.0 - i as f32 / n as f32),
-                    std::f32::consts::PI * (1.0 - (i + 1) as f32 / n as f32),
-                );
-                let (p, q) = (at(u), at(v));
-                draw_line(p.x, p.y, q.x, q.y, th, col);
-            }
-            let tip = at(0.0) + vec2(0.0, s * 0.15);
-            let h = s * 0.45;
-            draw_triangle(
-                tip + vec2(0.0, h * 0.6),
-                tip + vec2(-h * 0.55, -h * 0.4),
-                tip + vec2(h * 0.55, -h * 0.4),
-                col,
-            );
-        }
-        Kind::Pause => {
-            // 두 줄(멈춤).
-            for dx in [-s * 0.3, s * 0.3] {
-                draw_line(
-                    c.x + dx,
-                    c.y - s * 0.55,
-                    c.x + dx,
-                    c.y + s * 0.55,
-                    th * 1.6,
-                    col,
-                );
-            }
-        }
+        Kind::Hammer => [
+            "......##.....",
+            ".....####....",
+            "....######...",
+            "...########..",
+            "....########.",
+            ".....########",
+            "....#.######.",
+            "...###.####..",
+            "..###...##...",
+            ".###.........",
+            "###..........",
+            "##...........",
+            ".............",
+        ],
+        Kind::Staff => [
+            ".........###.",
+            "........#####",
+            "........#####",
+            "........#####",
+            ".......#.###.",
+            "......###....",
+            ".....###.....",
+            "....###......",
+            "...###.......",
+            "..###........",
+            ".###.........",
+            "###..........",
+            "##...........",
+        ],
+        Kind::Crossbow => [
+            "......#......",
+            "..#########..",
+            ".###..#..###.",
+            "##....#....##",
+            "#.#...#...#.#",
+            "...#..#..#...",
+            "....#.#.#....",
+            ".....###.....",
+            "......#......",
+            ".....###.....",
+            ".....###.....",
+            ".....###.....",
+            ".............",
+        ],
+        Kind::Fist => [
+            ".............",
+            "...##.##.##..",
+            "..###.##.###.",
+            "..##########.",
+            ".###########.",
+            "############.",
+            "####.......#.",
+            "####.#######.",
+            ".###########.",
+            ".###########.",
+            "..#########..",
+            "...#######...",
+            ".............",
+        ],
+        Kind::Attack => [
+            "..........###",
+            ".........####",
+            "........####.",
+            ".......####..",
+            "......####...",
+            ".##..####....",
+            ".###.###.....",
+            "..#####......",
+            "...####......",
+            "..######.....",
+            ".###..###....",
+            "###....##....",
+            "##...........",
+        ],
+        Kind::Dodge => [
+            ".............",
+            ".............",
+            "###...###....",
+            ".###...###...",
+            "..###...###..",
+            "...###...###.",
+            "....###...###",
+            "...###...###.",
+            "..###...###..",
+            ".###...###...",
+            "###...###....",
+            ".............",
+            ".............",
+        ],
+        Kind::Parry => [
+            ".............",
+            ".###########.",
+            ".###########.",
+            ".##.......##.",
+            ".##...#...##.",
+            ".##..###..##.",
+            ".##...#...##.",
+            ".##.......##.",
+            "..##.....##..",
+            "...##...##...",
+            "....##.##....",
+            ".....###.....",
+            "......#......",
+        ],
+        Kind::Cast => [
+            "......#......",
+            "......#......",
+            ".....###.....",
+            ".....###.....",
+            "....#####....",
+            "..#########..",
+            "#############",
+            "..#########..",
+            "....#####....",
+            ".....###.....",
+            ".....###.....",
+            "......#......",
+            "......#......",
+        ],
+        Kind::Jump => [
+            "......#......",
+            ".....###.....",
+            "....#####....",
+            "...#######...",
+            "..#########..",
+            ".....###.....",
+            ".....###.....",
+            ".....###.....",
+            ".....###.....",
+            ".............",
+            "..#########..",
+            "..#########..",
+            ".............",
+        ],
+        Kind::Pick => [
+            "......#......",
+            "......#......",
+            "......#......",
+            "...#..#..#...",
+            "....#.#.#....",
+            ".....###.....",
+            "......#......",
+            ".............",
+            ".#.........#.",
+            ".#.........#.",
+            ".#.........#.",
+            ".###########.",
+            ".............",
+        ],
+        Kind::Open => [
+            ".............",
+            "..#########..",
+            ".###########.",
+            ".###########.",
+            ".###########.",
+            ".............",
+            ".####...####.",
+            ".####...####.",
+            ".###########.",
+            ".###########.",
+            ".###########.",
+            ".###########.",
+            ".............",
+        ],
+        Kind::Pull => [
+            ".........##..",
+            "........####.",
+            "........####.",
+            ".......###...",
+            "......##.....",
+            ".....##......",
+            "....##.......",
+            "...##........",
+            "...##........",
+            ".#########...",
+            ".#########...",
+            "###########..",
+            ".............",
+        ],
+        Kind::Talk => [
+            ".............",
+            "..#########..",
+            ".###########.",
+            ".###########.",
+            ".##.##.##.##.",
+            ".###########.",
+            ".###########.",
+            "..#########..",
+            "....###......",
+            "...##........",
+            "..##.........",
+            ".............",
+            ".............",
+        ],
+        Kind::Read => [
+            "...#######...",
+            "..#########..",
+            "..##.....##..",
+            "..#.#####.#..",
+            "..##.....##..",
+            "..#.####..#..",
+            "..##.....##..",
+            "..#.#####.#..",
+            "..##.....##..",
+            "..#########..",
+            ".###########.",
+            ".###########.",
+            ".............",
+        ],
+        Kind::Rest => [
+            "......#......",
+            ".....##......",
+            ".....###.....",
+            "....####.#...",
+            "...#####.##..",
+            "...########..",
+            "..#########..",
+            "..####.####..",
+            "...###.###...",
+            "....#####....",
+            "##.........##",
+            ".###########.",
+            "##.........##",
+        ],
+        Kind::Lock => [
+            "......#......",
+            "......#......",
+            "...#######...",
+            "..#########..",
+            "..##.....##..",
+            "..##.....##..",
+            "####..#..####",
+            "..##.....##..",
+            "..##.....##..",
+            "..#########..",
+            "...#######...",
+            "......#......",
+            "......#......",
+        ],
+        Kind::Flask => [
+            "......#......",
+            ".....##......",
+            ".....###.....",
+            "....#####....",
+            "....#####....",
+            ".....###.....",
+            ".............",
+            ".###########.",
+            "..#########..",
+            "...#######...",
+            "....#####....",
+            "...#######...",
+            "..#########..",
+        ],
+        Kind::Pause => [
+            ".............",
+            ".............",
+            "...###.###...",
+            "...###.###...",
+            "...###.###...",
+            "...###.###...",
+            "...###.###...",
+            "...###.###...",
+            "...###.###...",
+            "...###.###...",
+            "...###.###...",
+            ".............",
+            ".............",
+        ],
+        // 스킬(0151). 휘돌이: 바람개비 날 넷.
+        Kind::Skill1 | Kind::Whirl => [
+            "......#......",
+            ".....##......",
+            "....###......",
+            "....###...#..",
+            ".....##.###..",
+            "..#..######..",
+            ".###########.",
+            "..######..#..",
+            "..###.##.....",
+            "..#...###....",
+            "......###....",
+            "......##.....",
+            "......#......",
+        ],
+        // 가로지르기: 선 하나를 꿰뚫고 지나가는 화살.
+        Kind::Skill2 | Kind::Cut => [
+            "...##........",
+            "...##........",
+            "...##....#...",
+            "...##....##..",
+            "...##....###.",
+            "############.",
+            "#############",
+            "############.",
+            "...##....###.",
+            "...##....##..",
+            "...##....#...",
+            "...##........",
+            "...##........",
+        ],
+        // 끌어모으기: 한 점으로 모이는 화살 넷.
+        Kind::Gather => [
+            "......#......",
+            "....#####....",
+            ".....###.....",
+            "......#......",
+            ".#.........#.",
+            ".##..###..##.",
+            "####.###.####",
+            ".##..###..##.",
+            ".#.........#.",
+            "......#......",
+            ".....###.....",
+            "....#####....",
+            "......#......",
+        ],
+        // 땅울림: 내리찍는 화살과 갈라지는 땅.
+        Kind::Quake => [
+            ".....###.....",
+            ".....###.....",
+            ".....###.....",
+            "..#########..",
+            "...#######...",
+            "....#####....",
+            ".....###.....",
+            "......#......",
+            "#############",
+            "#############",
+            "..#...#...#..",
+            ".#....#....#.",
+            "#.....#.....#",
+        ],
+        // 큰 기술 쟁반 뒤집기: 바깥으로 터지는 살과 가운데 판.
+        Kind::Ult | Kind::Upend => [
+            "#.....#.....#",
+            ".#....#....#.",
+            "..#...#...#..",
+            ".............",
+            "....#####....",
+            "....#####....",
+            "###.#####.###",
+            "....#####....",
+            "....#####....",
+            ".............",
+            "..#...#...#..",
+            ".#....#....#.",
+            "#.....#.....#",
+        ],
+        // 0158 G2. 버팀: 땅에 박은 기둥과 양옆에서 튕겨 나가는 타.
+        Kind::Brace => [
+            ".............",
+            "#....###....#",
+            ".#..#####..#.",
+            "....#####....",
+            "....#####....",
+            "##..#####..##",
+            "....#####....",
+            "....#####....",
+            ".#..#####..#.",
+            "#...#####...#",
+            "....#####....",
+            ".###########.",
+            ".###########.",
+        ],
+        // 되울림: 한 점에서 퍼지는 울림 두 겹.
+        Kind::Echo => [
+            "....#####....",
+            "..##.....##..",
+            ".#.........#.",
+            ".#...###...#.",
+            "#...#...#...#",
+            "#..#.....#..#",
+            "#..#..#..#..#",
+            "#..#.....#..#",
+            "#...#...#...#",
+            ".#...###...#.",
+            ".#.........#.",
+            "..##.....##..",
+            "....#####....",
+        ],
+        // 던지기: 도는 날과 되돌아오는 화살.
+        Kind::Throw => [
+            ".............",
+            "..####.......",
+            ".######......",
+            ".###.###.....",
+            ".###..###....",
+            "..##...###...",
+            "........###..",
+            ".....#...###.",
+            "....##...###.",
+            "...#########.",
+            "....#######..",
+            ".....#.......",
+            ".............",
+        ],
+        // 잔불 흩기: 바닥의 불과 흩어져 오르는 불티.
+        Kind::Embers => [
+            "..#.....#....",
+            ".....#.....#.",
+            ".#.......#...",
+            "....#.#......",
+            "..#..###..#..",
+            "....#####....",
+            ".#..#####..#.",
+            "...#######...",
+            "...###.###...",
+            "...##...##...",
+            "....#####....",
+            ".............",
+            "#############",
+        ],
+        // 큰 기술 몰아치기: 잇달아 긋는 빗금 셋.
+        Kind::Flurry => [
+            ".........###.",
+            ".......####..",
+            ".....####....",
+            "...####......",
+            ".###.....###.",
+            ".......####..",
+            ".....####....",
+            "...####......",
+            ".###.....###.",
+            ".......####..",
+            ".....####....",
+            "...####......",
+            ".###.........",
+        ],
+        // 큰 기술 한 줄기: 화면을 가르는 긴 한 줄과 번쩍임 둘.
+        Kind::Line => [
+            "##...........",
+            "###..........",
+            ".###.........",
+            "..###....#...",
+            "...###...#...",
+            "....###.###..",
+            ".....###.#...",
+            "......###....",
+            "..#....###...",
+            ".###....###..",
+            "..#......###.",
+            "..........###",
+            "...........##",
+        ],
+        // 수류탄(원거리 무기의 RB): 둥근 몸과 도화선.
+        Kind::Bomb => [
+            ".........##..",
+            "........#..#.",
+            ".......#.....",
+            "....#####....",
+            "...#######...",
+            "..####..###..",
+            "..###...###..",
+            "..#########..",
+            "..#########..",
+            "..#########..",
+            "...#######...",
+            "....#####....",
+            ".............",
+        ],
+        Kind::TurnLeft | Kind::TurnRight => [
+            ".............",
+            ".............",
+            "...######....",
+            "..########...",
+            ".###....###..",
+            ".##......##..",
+            "##.......##..",
+            "##....#######",
+            "##.....#####.",
+            "........###..",
+            ".........#...",
+            ".............",
+            ".............",
+        ],
     }
+}
+
+/// 픽토그램의 칸 `(x, y)`가 칠해졌나 — 왼쪽 돌리기는 오른쪽 돌리기의 거울상.
+pub fn icon_cell(k: Kind, x: usize, y: usize) -> bool {
+    if x >= ICON_N || y >= ICON_N {
+        return false;
+    }
+    let x = if k == Kind::TurnLeft {
+        ICON_N - 1 - x
+    } else {
+        x
+    };
+    icon_mask(k)[y].as_bytes()[x] == b'#'
+}
+
+/// 버튼 반지름 `r`에 맞춘 픽토그램 한 칸의 크기(논리 px, 정수 — 칸이 고르게 떨어지게).
+pub fn icon_px(r: f32) -> f32 {
+    (r * 1.25 / ICON_N as f32).floor().max(1.0)
+}
+
+/// 픽토그램 그리기: 어두운 한 칸 테(밝은 바닥·불빛 위에서도 읽히게, KB hud-readability) 위에 밝은 몸. `tint` = 몸의 빛깔.
+pub fn icon(k: Kind, c: Vec2, r: f32, dim: f32, tint: Color) {
+    icon_at(k, c, icon_px(r), dim, tint);
+}
+
+/// 한 칸의 크기 `px`(화면 px, 정수)를 직접 주는 픽토그램 — 메뉴의 칸 그림(기술 화면, 0161)이 제 칸에 맞춰 쓴다.
+pub fn icon_at(k: Kind, c: Vec2, px: f32, dim: f32, tint: Color) {
+    let body = Color::new(tint.r, tint.g, tint.b, 0.95 * dim);
+    let edge = Color::new(INK.r, INK.g, INK.b, 0.7 * dim);
+    crate::icons::draw(|x, y| icon_cell(k, x, y), c, px, body, edge);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0146 도트 픽토그램: 그림마다 13×13, `#`·`.`만, 서로 다르고(같은 그림 둘이면 버튼을 못 가른다), 칸이 너무 적지도(안 보임)
+    /// 너무 꽉 차지도(덩어리) 않다. 왼쪽 돌리기는 오른쪽 돌리기의 거울상. 칸 크기는 정수 px이고 그림이 버튼 안에 든다.
+    #[test]
+    fn touch_icons_are_13_by_13_and_tell_each_other_apart() {
+        let kinds = [
+            Kind::Attack,
+            Kind::Dodge,
+            Kind::Parry,
+            Kind::Jump,
+            Kind::Flask,
+            Kind::Cast,
+            Kind::Rest,
+            Kind::Lock,
+            Kind::TurnLeft,
+            Kind::TurnRight,
+            Kind::Pause,
+            Kind::Hammer,
+            Kind::Staff,
+            Kind::Crossbow,
+            Kind::Fist,
+            Kind::Whirl,
+            Kind::Cut,
+            Kind::Gather,
+            Kind::Quake,
+            Kind::Upend,
+            Kind::Brace,
+            Kind::Echo,
+            Kind::Throw,
+            Kind::Embers,
+            Kind::Flurry,
+            Kind::Line,
+            Kind::Bomb,
+            Kind::Pick,
+            Kind::Open,
+            Kind::Pull,
+            Kind::Talk,
+            Kind::Read,
+        ];
+        // 0166: 점프 버튼이 하는 일마다 그림이 다르다(모두 모닥불이면 무엇을 하는지 버튼이 말하지 못한다) — 모두 위 목록에 있다.
+        let nears = [
+            Near::Rest,
+            Near::Pick,
+            Near::Open,
+            Near::Pull,
+            Near::Talk,
+            Near::Read,
+        ]
+        .map(near_icon);
+        for (i, a) in nears.iter().enumerate() {
+            assert!(!nears[i + 1..].contains(a), "{a:?} twice");
+            assert!(kinds.contains(a), "{a:?} is not in the checked list");
+        }
+        // 0158 G2: 스킬·큰 기술마다 그림이 다르다(같으면 무엇을 끼웠는지 버튼이 말하지 못한다) — 모두 위 목록에 있다.
+        let skill_icons: Vec<Kind> = crate::skills::IDS
+            .iter()
+            .map(|id| skill_icon(*id))
+            .chain(crate::skills::ULTS.iter().map(|u| ult_icon(*u)))
+            .collect();
+        for (i, a) in skill_icons.iter().enumerate() {
+            assert!(!skill_icons[i + 1..].contains(a), "{a:?} twice");
+            assert!(kinds.contains(a), "{a:?} is not in the checked list");
+        }
+        // 0147: 무기마다 공격 그림이 다르다(같으면 무엇을 들었는지 버튼이 말하지 못한다).
+        let icons: Vec<Kind> = crate::weapons::IDS
+            .iter()
+            .map(|w| attack_icon(*w))
+            .collect();
+        for (i, a) in icons.iter().enumerate() {
+            assert!(!icons[i + 1..].contains(a), "{a:?} twice");
+        }
+        assert_eq!(attack_icon(crate::weapons::Id::Sword), Kind::Attack);
+        let grid = |k: Kind| -> Vec<bool> {
+            (0..ICON_N * ICON_N)
+                .map(|i| icon_cell(k, i % ICON_N, i / ICON_N))
+                .collect()
+        };
+        for k in kinds {
+            let m = icon_mask(k);
+            for row in m {
+                assert_eq!(row.len(), ICON_N, "{k:?}: {row}");
+                assert!(row.bytes().all(|b| b == b'#' || b == b'.'), "{k:?}");
+            }
+            let on = grid(k).iter().filter(|c| **c).count();
+            assert!((30..=110).contains(&on), "{k:?}: {on} cells");
+        }
+        for (i, a) in kinds.iter().enumerate() {
+            for b in &kinds[i + 1..] {
+                let differ = grid(*a)
+                    .iter()
+                    .zip(grid(*b))
+                    .filter(|(x, y)| **x != *y)
+                    .count();
+                assert!(
+                    differ >= 12,
+                    "{a:?} and {b:?} look alike ({differ} cells apart)"
+                );
+            }
+        }
+        for y in 0..ICON_N {
+            for x in 0..ICON_N {
+                assert_eq!(
+                    icon_cell(Kind::TurnLeft, x, y),
+                    icon_cell(Kind::TurnRight, ICON_N - 1 - x, y)
+                );
+            }
+        }
+        assert!(!icon_cell(Kind::Attack, ICON_N, 0) && !icon_cell(Kind::Attack, 0, ICON_N));
+        for (w, h) in [(844.0, 390.0), (667.0, 375.0), (1180.0, 820.0)] {
+            for b in layout(w, h, Ctx::ALL) {
+                let px = icon_px(b.radius);
+                assert!(px >= 2.0 && px.fract() == 0.0, "{w}x{h} {:?}: {px}", b.kind);
+                // 그림의 대각 반(테 한 칸 포함)이 버튼 안에.
+                let half = (ICON_N as f32 / 2.0 + 1.0) * px;
+                assert!(half * 1.3 <= b.radius * 1.25, "{w}x{h} {:?}", b.kind);
+            }
+        }
+    }
 
     #[test]
     fn buttons_stay_on_screen_and_do_not_overlap_on_phone_tablet_and_desktop() {
@@ -749,9 +1457,10 @@ mod tests {
             .any(|x| matches!(x.kind, Kind::Lock | Kind::Flask)));
         assert_eq!(
             none.iter().filter(|x| x.kind != Kind::Pause).count(),
-            7,
-            "attack + 4 + turn pair"
+            9,
+            "attack + 4 + skill pair + turn pair"
         );
+        assert!(!none.iter().any(|x| x.kind == Kind::Ult));
     }
 
     /// 오른쪽 버튼 = 카메라가 오른쪽으로 = 땅이 화면에서 시계 방향(0017) — 카메라 쪽 뜻은 camera 시험이 본다.
@@ -767,6 +1476,37 @@ mod tests {
         let b = layout(844.0, 390.0, Ctx::default());
         let x = |k| b.iter().find(|x| x.kind == k).unwrap().center.x;
         assert!(x(Kind::TurnRight) > x(Kind::TurnLeft));
+    }
+
+    /// 0151: 스킬 둘이 예전 돌리기 자리(엄지 호)를 물려받고, 돌리기는 오른쪽 위로 갔다. 큰 기술은 게이지가 찼을 때만 스킬 둘 위에 뜬다.
+    #[test]
+    fn skills_take_the_thumb_arc_and_turning_moves_to_the_top_right() {
+        for (w, h) in [(844.0, 390.0), (667.0, 375.0), (1180.0, 820.0)] {
+            let b = layout(w, h, Ctx::ALL);
+            let at = |k| b.iter().find(|x| x.kind == k).unwrap();
+            let (s1, s2, atk) = (at(Kind::Skill1), at(Kind::Skill2), at(Kind::Attack));
+            assert!(s1.center.x < s2.center.x && s1.center.y == s2.center.y);
+            assert!(s1.center.y < atk.center.y, "above the attack button");
+            assert!(
+                (s1.center - atk.center).length() < w.min(h) * 0.6,
+                "in reach"
+            );
+            let (tl, tr) = (at(Kind::TurnLeft), at(Kind::TurnRight));
+            assert!(tl.center.x > w * 0.7 && tr.center.y < h * 0.2, "top right");
+            assert!(tl.radius < s1.radius, "turning is the smaller pair now");
+            let u = at(Kind::Ult);
+            assert!(u.center.y < s1.center.y && u.center.x > s1.center.x - 1.0);
+            assert!(u.center.x < s2.center.x + 1.0, "between and above the two");
+        }
+        let mut a = Read::default();
+        press(&mut a, Kind::Skill1);
+        assert!(a.skill1 && !a.skill2 && !a.ult);
+        let mut a = Read::default();
+        press(&mut a, Kind::Ult);
+        assert!(a.ult && !a.skill1);
+        use crate::weapons::Id;
+        assert_eq!(cast_icon(Id::Crossbow), Kind::Bomb);
+        assert_eq!(cast_icon(Id::Sword), Kind::Cast);
     }
 
     #[test]

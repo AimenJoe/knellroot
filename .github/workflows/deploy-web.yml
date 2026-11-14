@@ -25,7 +25,7 @@ jobs:
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust
         with:
           targets: wasm32-unknown-unknown, aarch64-linux-android
           components: rustfmt, clippy

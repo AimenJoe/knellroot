@@ -1,3 +1,8 @@
+# Rust 버전은 숫자로 고정한다(0162) — "stable"은 움직이는 이름이라 새 버전이 나온 날 손댄 적 없는 코드의 clippy 지적으로 CI가 깨진다.
+# 올릴 때: 이 줄만 바꾸고 → 로컬에서 커밋 전 검사(fmt · clippy 다섯 · test · 브라우저 시험 넷)를 다 돌리고 → 커밋.
+# CI는 .github/actions/rust가 이 줄을 읽어 같은 버전을 깐다.
+# targets: 웹(wasm32) + 커밋 전 clippy가 보는 셋(Android·Windows·iOS — 리눅스에서 링크 없이 된다). 새 컨테이너에서도 rustup이 이 목록을 저절로 받는다.
 [toolchain]
-channel = "stable"
-targets = ["wasm32-unknown-unknown"]
+channel = "1.100.0"
+targets = ["wasm32-unknown-unknown", "aarch64-linux-android", "x86_64-pc-windows-msvc", "aarch64-apple-ios"]
+components = ["rustfmt", "clippy"]

@@ -39,6 +39,10 @@ pub struct Mods {
     pub light_dmg: i32,
     /// 열린 틈의 타 피해 +(0127 "깨진 종 조각") — 패링으로 드러났거나 자세가 깨진 적을 칠 때만.
     pub opened_dmg: i32,
+    /// 맞을 때 밀리는 배(0176 덧옷 — 1 = 그대로, 0.5 = 반만 밀린다).
+    pub knock: f32,
+    /// 맞을 때 휘청이는(경직) 시간의 배(0176 덧옷).
+    pub flinch: f32,
 }
 
 impl Default for Mods {
@@ -60,6 +64,8 @@ impl Default for Mods {
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         }
     }
 }
@@ -84,15 +90,21 @@ pub struct Stats {
     pub heavy_dmg: i32,
     pub light_dmg: i32,
     pub opened_dmg: i32,
+    /// 맞을 때 밀리는 배(0176 덧옷 — 1 = 그대로, 0.5 = 반만 밀린다).
+    pub knock: f32,
+    /// 맞을 때 휘청이는(경직) 시간의 배(0176 덧옷).
+    pub flinch: f32,
 }
 
 /// 상한·하한(극단 조합을 막는다 — KB).
-/// 체력 상한 12(0104): 생명 5단(5 → 10) 위에 장신구 "단단한 껍질"이 여전히 한 칸 — 상한이 10이면 다 올린 뒤 껍질이 아무것도 안 한다.
-const HP_RANGE: (i32, i32) = (1, 12);
+/// 체력 상한 120(0104, 눈금 0158 N0): 생명 5단(50 → 100) 위에 장신구 "단단한 껍질"이 여전히 한 몫(+10) — 상한이 100이면 다 올린 뒤 껍질이 아무것도 안 한다.
+const HP_RANGE: (i32, i32) = (10, 120);
 const FLASK_RANGE: (i32, i32) = (0, 8);
 const ATK_SPEED_RANGE: (f32, f32) = (0.6, 1.8);
 const DODGE_COST_RANGE: (f32, f32) = (0.3, 2.0);
 const PARRY_MAX: f32 = 0.15;
+/// 밀림·휘청임 배의 범위(0176 — 맞아도 아예 안 밀리고 안 휘청이는 몸은 만들지 않는다: 맞음이 읽혀야 한다).
+const KNOCK_RANGE: (f32, f32) = (0.35, 1.8);
 
 impl Default for Stats {
     fn default() -> Self {
@@ -119,6 +131,8 @@ impl Stats {
             heavy_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
         };
         for m in mods {
             s.max_hp += m.hp;
@@ -137,6 +151,8 @@ impl Stats {
             s.heavy_dmg += m.heavy_dmg;
             s.light_dmg += m.light_dmg;
             s.opened_dmg += m.opened_dmg;
+            s.knock *= m.knock;
+            s.flinch *= m.flinch;
         }
         s.max_hp = s.max_hp.clamp(HP_RANGE.0, HP_RANGE.1);
         s.flask = s.flask.clamp(FLASK_RANGE.0, FLASK_RANGE.1);
@@ -154,6 +170,8 @@ impl Stats {
         s.heavy_dmg = s.heavy_dmg.max(0);
         s.light_dmg = s.light_dmg.max(0);
         s.opened_dmg = s.opened_dmg.max(0);
+        s.knock = s.knock.clamp(KNOCK_RANGE.0, KNOCK_RANGE.1);
+        s.flinch = s.flinch.clamp(KNOCK_RANGE.0, KNOCK_RANGE.1);
         s
     }
 
@@ -173,6 +191,9 @@ impl Stats {
         o.bend(P::FlaskHeal, t[P::FlaskHeal] + self.heal as f32);
         o.bend(P::StaminaMax, t[P::StaminaMax] + self.stamina_max);
         o.bend(P::StaminaRegen, t[P::StaminaRegen] * self.stamina_regen);
+        // 덧옷(0176): 맞을 때의 밀림·휘청임 — 맞음을 받는 한 자리(`wanderer_takes_hit`)가 이 값을 읽는다.
+        o.bend(P::HitKnock, t[P::HitKnock] * self.knock);
+        o.bend(P::HitStun, t[P::HitStun] * self.flinch);
         for p in [
             P::AttackStartup,
             P::AttackActive,
@@ -209,9 +230,12 @@ pub enum Line {
     LightDmg,
     /// 열린 틈의 타 피해(0127).
     OpenedDmg,
+    /// 맞을 때 밀림·휘청임(0176 덧옷 — 배).
+    Knock,
+    Flinch,
 }
 
-pub const LINES: [Line; 16] = [
+pub const LINES: [Line; 18] = [
     Line::MaxHp,
     Line::Flask,
     Line::Heal,
@@ -223,6 +247,8 @@ pub const LINES: [Line; 16] = [
     Line::OpenedDmg,
     Line::Poise,
     Line::Taken,
+    Line::Knock,
+    Line::Flinch,
     Line::AtkSpeed,
     Line::DodgeCost,
     Line::Parry,
@@ -257,6 +283,8 @@ impl Line {
             Line::HeavyDmg => s.heavy_dmg as f32,
             Line::LightDmg => s.light_dmg as f32,
             Line::OpenedDmg => s.opened_dmg as f32,
+            Line::Knock => s.knock,
+            Line::Flinch => s.flinch,
         }
     }
 
@@ -268,7 +296,10 @@ impl Line {
 
     /// 작을수록 좋은 줄(받는 피해·회피 기력).
     fn lower_is_better(self) -> bool {
-        matches!(self, Line::Taken | Line::DodgeCost)
+        matches!(
+            self,
+            Line::Taken | Line::DodgeCost | Line::Knock | Line::Flinch
+        )
     }
 
     pub fn change(self, now: &Stats, then: &Stats) -> Change {
@@ -318,23 +349,23 @@ mod tests {
         let base = Stats::default();
         assert_eq!((base.max_hp, base.flask), (PLAYER_HP, FLASK_CHARGES));
         let a = Mods {
-            hp: 1,
+            hp: 10,
             atk_speed: 0.85,
             ..Mods::default()
         };
         let b = Mods {
-            hp: 2,
-            dmg: 1,
+            hp: 20,
+            dmg: 10,
             atk_speed: 0.85,
             ..Mods::default()
         };
         let s = Stats::compute(&[a, b]);
-        assert_eq!(s.max_hp, PLAYER_HP + 3);
-        assert_eq!(s.dmg, 1);
+        assert_eq!(s.max_hp, PLAYER_HP + 30);
+        assert_eq!(s.dmg, 10);
         assert!((s.atk_speed - 0.85 * 0.85).abs() < 1e-6, "rates multiply");
         // 극단은 묶인다.
         let silly = Mods {
-            hp: 50,
+            hp: 500,
             flask: -9,
             atk_speed: 0.1,
             parry: 1.0,
@@ -372,7 +403,7 @@ mod tests {
         let shown: Vec<Line> = lines(&base, None).iter().map(|l| l.0).collect();
         // 공격 속도는 무기 숫자 줄(초)이 맡고, 배율은 장신구가 바꿀 때만(2026-11-07).
         assert_eq!(shown, vec![Line::MaxHp, Line::Flask]);
-        // 맞바꿈 장신구(꿰맨 천: 체력 +1 · 기력 회복 −10%, 0127): 둘 다 보이고 하나는 좋아짐, 하나는 나빠짐.
+        // 맞바꿈 장신구(꿰맨 천: 체력 +10 · 기력 회복 −10%, 0127): 둘 다 보이고 하나는 좋아짐, 하나는 나빠짐.
         let cloth = Stats::compute(&[crate::charms::def(crate::charms::Id::Cloth).mods]);
         let preview = lines(&base, Some(&cloth));
         let hp = preview.iter().find(|l| l.0 == Line::MaxHp).unwrap();

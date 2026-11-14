@@ -11,6 +11,7 @@ use crate::stats::Mods;
 
 /// 쌓인 성장(0064 M4). 핵 고르기는 0105(v0.4.0 G3)에서 걷었다 — `hp`·`flask`·`heal`은 옛 기록을 옮기고 **남은 몫**
 /// (생명 5단을 넘은 체력, 숨은 등잔 하나를 넘은 등잔)만 들고 있다(잃지 않게, `save::migrate_v04`). 새로 늘지 않는다.
+/// `hp`·`heal`은 **몫의 수**(기록 `grow.hp`·`grow.heal` 그대로) — 한 몫이 체력·회복 한 눈금(`HP_UNIT` = 10, 0158 N0).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Growth {
     pub hp: u8,
@@ -23,9 +24,9 @@ pub struct Growth {
 impl Growth {
     pub fn mods(&self) -> Mods {
         Mods {
-            hp: self.hp as i32,
+            hp: self.hp as i32 * crate::tuning::HP_UNIT,
             flask: self.flask as i32 + self.oil as i32,
-            heal: self.heal as i32,
+            heal: self.heal as i32 * crate::tuning::HP_UNIT,
             ..Mods::default()
         }
     }
@@ -59,6 +60,19 @@ pub fn wares(owned: &[Charm], g: &Growth) -> Vec<(Ware, u32)> {
         .collect()
 }
 
+/// 가게의 진열(0164 다듬기): 살 수 있는 것이 앞(차례는 `wares` 그대로 — 사는 자리 번호가 같다), 이미 산 것이 그 뒤에 흐리게.
+/// 셋째 값이 "샀다". 가게가 한 줄만 남아도 무엇을 팔았는지 보인다.
+pub fn shelf(owned: &[Charm], g: &Growth) -> Vec<(Ware, u32, bool)> {
+    let open = wares(owned, g);
+    let sold = SHOP
+        .into_iter()
+        .filter(|(w, _)| !open.iter().any(|(o, _)| o == w));
+    open.iter()
+        .map(|&(w, p)| (w, p, false))
+        .chain(sold.map(|(w, p)| (w, p, true)))
+        .collect()
+}
+
 /// 잔불로 살 수 있는 것이 있나(쉼터가 빛난다).
 pub fn can_buy(embers: u32, owned: &[Charm], g: &Growth) -> bool {
     wares(owned, g).iter().any(|&(_, price)| embers >= price)
@@ -68,6 +82,29 @@ pub fn can_buy(embers: u32, owned: &[Charm], g: &Growth) -> bool {
 mod tests {
     use super::*;
     use crate::stats::Stats;
+
+    /// 진열은 살 것이 앞·산 것이 뒤 — 살 것의 자리 번호는 `wares`와 같고(묻는 창이 그 번호로 산다), 합치면 표의 다섯이 다 있다.
+    #[test]
+    fn the_shelf_lists_what_is_left_first_and_what_was_bought_after() {
+        let none = Growth::default();
+        let all = shelf(&[], &none);
+        assert_eq!(all.len(), SHOP.len());
+        assert!(all.iter().all(|&(_, _, sold)| !sold));
+        let g = Growth {
+            oil: true,
+            ..Growth::default()
+        };
+        let owned = [Charm::Feet];
+        let some = shelf(&owned, &g);
+        let open = wares(&owned, &g);
+        assert_eq!(some.len(), SHOP.len());
+        for (i, &(w, p)) in open.iter().enumerate() {
+            assert_eq!(some[i], (w, p, false));
+        }
+        let sold: Vec<Ware> = some[open.len()..].iter().map(|x| x.0).collect();
+        assert_eq!(sold, [Ware::Charm(Charm::Feet), Ware::Oil]);
+        assert!(some[open.len()..].iter().all(|x| x.2));
+    }
 
     #[test]
     fn leftover_growth_still_feeds_the_stats() {
@@ -79,7 +116,11 @@ mod tests {
         };
         let s = Stats::compute(&[g.mods()]);
         let base = Stats::default();
-        assert_eq!(s.max_hp, base.max_hp + 1);
+        assert_eq!(
+            s.max_hp,
+            base.max_hp + 10,
+            "one leftover share = one old point"
+        );
         assert_eq!(s.flask, base.flask + 2, "leftover lamp + oil");
     }
 

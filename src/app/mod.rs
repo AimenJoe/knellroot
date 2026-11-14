@@ -1,4 +1,4 @@
-//! 앱(0019): 장면(타이틀 → 싸움 → 멈춤 → 끝 → 결과)과 프레임 루프. 흐름은 `flow.rs`의 순수 함수가 정하고 여기서는 그대로 한다.
+//! 앱(0019): 장면(타이틀 → 싸움 → 큰 창(멈춤·화로, 0164) → 끝 → 결과)과 프레임 루프. 흐름은 `flow.rs`의 순수 함수가 정하고 여기서는 그대로 한다.
 //! 월드는 메뉴를 모르고, 스테이지(`stage`)는 월드를 지켜보며 진행만 하고, 앱이 둘을 묶어 카메라·그림·글로 보낸다.
 //!
 //! 루프: 프레임마다 입력 폴링 → 고정 60Hz 틱 N번(장면 → 월드 → 스테이지 → 카메라) → 가변 렌더(보간) → 글·메뉴(화면 패스).
@@ -10,19 +10,20 @@ mod controls_screen;
 mod dev;
 mod equip;
 pub mod flow;
-mod hearth;
+mod frame;
 #[cfg(feature = "dev")]
 mod lab_screen;
 mod menu;
-mod pause;
 mod play;
 mod progress;
 mod settings;
 mod shop;
+mod skills;
 mod slots;
 mod stack;
+mod status;
+mod tabs;
 mod title;
-mod tree;
 
 use macroquad::prelude::*;
 
@@ -41,9 +42,9 @@ use crate::tuning::{Tuning, MAX_FRAME_DT, TICK_DT};
 use crate::ui::{self, Ui, AMBER, DIM, INK};
 use crate::weapons;
 use crate::world::{Event, World};
-use flow::{Go, Layer, PauseItem, ResultItem, Scene, SettingsRow, TitleItem};
+use equip::next_charm;
+use flow::{Go, Layer, ResultItem, Scene, SettingsRow, TitleItem};
 use menu::Hit;
-use pause::next_charm;
 
 /// 타이틀 메뉴 첫 줄의 자리(화면 높이 비율) — `tools/test/touch.js`가 같은 값으로 탭한다.
 const TITLE_MENU_Y: f32 = 0.37;
@@ -74,11 +75,23 @@ pub struct App {
     world: World,
     run: StageRun,
     /// 판의 지역 잇기(0118): 지금 지역(`stage::STAGES` 차례), 이 판에 이긴 문지기 수, 마지막으로 쉰 곳(지역을 바꿔도 남는다),
-    /// 지역 사이 지층 단면 전환.
+    /// 지역 사이 전환(0118 → 0174 뿌리 굴).
     stage: usize,
     down: usize,
     rest_at: Option<crate::save::RunAt>,
     passage: Option<crate::descent::Passage>,
+    /// 이 판에서 멈춤 창이 마지막에 보던 탭(0164) — 다음에 멈추면 거기서 열린다(`flow::pause`). 판에 붙은 한 칸: 새 판이면 상태로.
+    pause_tab: flow::Tab,
+    /// 튜토리얼(0167): 지난 걸음 수(기록 `Progress::tutorial`과 같은 값) + 이 판에서 본 것. 판에 붙는다.
+    tutor: crate::tutorial::Tutor,
+    /// 종소리의 길 안내(0171): 문을 찾는 동안 가끔 우는 종의 시계 + 물결. 판에 붙는다(기록에 남지 않는다).
+    knell: crate::knell::Knell,
+    /// 깨어나는 첫 장면(0171)이 흐르는 중 — 새 기록의 첫 판에서 한 번(타이틀 바탕에서는 0초에 멈춰 있다: 엎드린 방랑자).
+    wake: Option<crate::wake::Wake>,
+    /// 쓰러짐(0175): 무너짐 → 어둠 → 쉼터 곁에서 일어남. 그동안 조작이 없다.
+    fall: Option<crate::fall::Fall>,
+    /// 꺼진 화로에 불이 붙는 순간을 보는 남은 시간(0171) — 이 동안은 조작이 멎고, 끝나면 화로의 창이 열린다.
+    kindle: f32,
     /// 주민 말풍선(0122): (주민 — 지금 지역의 번호, 몇째 말, 남은 초). 멈추지 않는다.
     bubble: Option<(usize, usize, f32)>,
     /// 새긴 돌 글 판(0129): (지금 지역의 돌 번호, 남은 초).
@@ -90,10 +103,15 @@ pub struct App {
     /// 개발 메뉴에서 시작한 스테이지 판(0075): 기록 슬롯에 쓰지 않는다. 슬롯을 고르면(`enter_slot`) 풀린다.
     #[cfg(feature = "dev")]
     dev_run: bool,
+    /// 개발 창에서 올린 기술 판(0158 — 모두 끝 단): 있으면 기록의 판 대신 이것을 쓴다. 기록에 쓰지 않고, 슬롯을 고르면 풀린다.
+    #[cfg(feature = "dev")]
+    dev_board: Option<crate::skills::Board>,
     ending: f32,
     acc: f32,
     /// 개발 줄(F3).
     dev_overlay: bool,
+    /// 개발(F6, 0141): 한 프레임에 꼭 한 틱 — 0.1초짜리 이펙트를 틱마다 찍어 보려고(`tools/test/fx.js`). 운영판에는 없다.
+    step_clock: bool,
     /// 조작 설정 화면(0024).
     ctl: controls::Controls,
     perf: Perf,
@@ -109,6 +127,8 @@ pub struct App {
     tell_timing: bool,
     sfx: Option<crate::sfx::Sfx>,
     was_dodging: bool,
+    /// 그림 이펙트(0141): 월드 사건·상태 변화를 듣고 입자를 낸다 — 월드는 모른다(소리와 같은 길).
+    fx: crate::fx::Fx,
     tele_was: Vec<u32>,
     was_waking: bool,
     /// 지난 프레임에 그린 화면 자리(커서 → 땅, 0058).
@@ -140,6 +160,20 @@ pub struct App {
 
 /// 알림이 떠 있는 시간(초).
 const TOAST_TIME: f32 = 3.5;
+
+/// 깨어나는 첫 장면(0171)의 누운 자리: 몸이 화면에 옆으로 놓이게(뒤통수만 보이면 일어나는 몸짓이 두건에 가린다) — 머리는
+/// 꺼진 화로 쪽 옆으로. 화면 위 = 월드 -z라서 화로까지의 앞뒤 몫을 줄여 거의 옆을 보게 한다.
+fn lay_by_hearth(run: &StageRun, world: &mut World) {
+    let at = world.player.pos;
+    let hearth = run
+        .rests
+        .iter()
+        .copied()
+        .min_by(|a, b| a.distance(at).total_cmp(&b.distance(at)));
+    if let Some(h) = hearth {
+        world.player.facing = (h.x - at.x).atan2((h.z - at.z) * 0.3);
+    }
+}
 
 impl App {
     /// 개발 판(DEV에서 시작한 스테이지)인가 — 운영판은 늘 거짓.
@@ -195,8 +229,17 @@ impl App {
         } else {
             weapons::Id::Sword
         };
-        let (run, mut world) = StageRun::start(FIRST_STAGE);
+        let (mut run, mut world) = StageRun::start(FIRST_STAGE);
+        // 새 기록(0171): 깨어난 자리의 화로는 꺼져 있다 — 타이틀 바탕부터.
+        if !progress.lit {
+            run.chill_hearth();
+        }
+        if !progress.woke {
+            lay_by_hearth(&run, &mut world);
+        }
         world.set_weapon(weapon);
+        world.set_skills(progress.board.loadout(progress.skills.0, progress.ult));
+        world.tree = progress.board.cells;
         let cam = Camera::new(world.player.pos, &t);
         App {
             stack: stack::Stack::new(Scene::Title),
@@ -215,6 +258,12 @@ impl App {
             down: 0,
             rest_at: None,
             passage: None,
+            pause_tab: flow::Tab::Status,
+            tutor: crate::tutorial::Tutor::new(progress.tutorial),
+            knell: crate::knell::Knell::default(),
+            wake: (!progress.woke).then(crate::wake::Wake::default),
+            fall: None,
+            kindle: 0.0,
             bubble: None,
             stone_card: None,
             clock: 0.0,
@@ -223,9 +272,12 @@ impl App {
             sc: Scenario::Boss,
             #[cfg(feature = "dev")]
             dev_run: false,
+            #[cfg(feature = "dev")]
+            dev_board: None,
             ending: 0.0,
             acc: 0.0,
             dev_overlay: false,
+            step_clock: false,
             ctl: controls::Controls::default(),
             perf: Perf::default(),
             sums: (0.0, 0.0, 0.0, 0),
@@ -236,6 +288,7 @@ impl App {
             tell_timing,
             sfx: None,
             was_dodging: false,
+            fx: crate::fx::Fx::default(),
             tele_was: Vec::new(),
             was_waking: false,
             frame: None,
@@ -266,10 +319,22 @@ impl App {
         let (run, world) = StageRun::start(FIRST_STAGE);
         self.run = run;
         self.world = world;
+        self.fx.clear();
         self.stage = 0;
         self.down = 0;
         self.rest_at = None;
         self.passage = None;
+        self.fall = None;
+        self.pause_tab = flow::Tab::Status;
+        self.tutor = crate::tutorial::Tutor::new(self.progress.tutorial);
+        self.knell = crate::knell::Knell::default();
+        // 깨어나는 첫 장면(0171): 아직 본 적 없는 기록의 판은 그 장면으로 열린다(개발 창의 판은 아니다).
+        self.wake = (!self.progress.woke && !self.dev_run_now()).then(crate::wake::Wake::default);
+        if self.wake.is_some() {
+            lay_by_hearth(&self.run, &mut self.world);
+        }
+        self.kindle = 0.0;
+        self.cam.close = 0.0;
         // 잔불은 판을 넘어 남는다(0064 M1). 장신구·성장은 능력치로, 연 상자는 비어 있다(M3).
         self.world.embers = self.progress.embers;
         self.world.apply_stats(self.progress.stats(), true);
@@ -296,16 +361,21 @@ impl App {
         world.embers = self.world.embers;
         self.run = run;
         self.world = world;
+        self.fx.clear();
         self.stage = s;
         self.world.apply_stats(self.progress.stats(), false);
         self.seed_run();
     }
 
-    /// 지역을 세운 뒤 기록에서 채운다: 무기·나무·연 상자(지역마다 번호 `지역 × 1000 + 번호`, 0118)·주운 것·쓰러뜨린 엘리트·문,
+    /// 지역을 세운 뒤 기록에서 채운다: 무기·기술(끼운 스킬과 연 패시브 칸)·연 상자(지역마다 번호 `지역 × 1000 + 번호`, 0118)·주운 것·쓰러뜨린 엘리트·문,
     /// 이 판에 이 지역 문지기를 이겼으면 바닥 길이 열린 채.
     fn seed_run(&mut self) {
         self.world.set_weapon(self.weapon);
-        self.world.tree = self.progress.tree;
+        // 깨어난 자리의 화로(0171): 불을 붙인 적 없는 기록이면 첫 지역의 그 화로가 꺼져 있다.
+        if self.stage == 0 && !self.progress.lit && !self.dev_run_now() {
+            self.run.chill_hearth();
+        }
+        self.apply_board();
         let base = self.stage as u32 * crate::stage::CHESTS_PER_STAGE;
         let opened: Vec<u32> = self
             .progress
@@ -372,7 +442,7 @@ impl App {
         self.go(Go::Open(Scene::Ask(k)));
     }
 
-    /// 무기를 바꾼다(0051, 멈춤 메뉴): 지금 판에 바로, 저장.
+    /// 무기를 바꾼다(0051, 장비 탭의 빨리 바꾸기): 지금 판에 바로, 저장.
     fn next_weapon(&mut self, step: i32) {
         // 가진 무기 사이에서만(0117).
         let arms = self.arms();
@@ -381,6 +451,14 @@ impl App {
         self.world.set_weapon(self.weapon);
         self.progress.weapon = Some(self.weapon);
         self.persist();
+    }
+
+    /// 전체 화면을 켜고 끈다(설정 줄·F11) — PC는 다음에 켤 때도 그대로(0135).
+    pub(super) fn toggle_fullscreen(&mut self) {
+        crate::screen::toggle();
+        if crate::DESKTOP {
+            self.save_prefs();
+        }
     }
 
     /// 설정을 저장한다(언어·키 배치를 바꿀 때마다).
@@ -393,6 +471,8 @@ impl App {
             volume: self.volume,
             tells: self.tells,
             tell_timing: self.tell_timing,
+            // PC만 기억한다(0135) — 웹은 브라우저가 Esc로 끌 수 있고 다음에 켤 때 사용자 입력 없이 못 연다.
+            fullscreen: crate::DESKTOP && crate::screen::active(),
             // 든 무기는 슬롯 기록으로 옮겼다(0066) — 옛 칸은 처음 읽은 값 그대로 둔다(옛 슬롯 1의 기본값).
             weapon: self.legacy_weapon,
         });
@@ -443,10 +523,23 @@ impl App {
         let pl = &self.world.player;
         self.input.set_touch_ctx(crate::touch::Ctx {
             rest: play && self.world.interact_here,
+            near: match self.run.near() {
+                Some(crate::stage::Near::Pick) => crate::touch::Near::Pick,
+                Some(crate::stage::Near::Open) => crate::touch::Near::Open,
+                Some(crate::stage::Near::Pull) => crate::touch::Near::Pull,
+                Some(crate::stage::Near::Talk) => crate::touch::Near::Talk,
+                Some(crate::stage::Near::Read) => crate::touch::Near::Read,
+                Some(crate::stage::Near::Rest { .. }) | None => crate::touch::Near::Rest,
+            },
             lock: play && (self.world.lock.is_some() || self.world.lock_candidate()),
             flask: play && pl.flask > 0 && pl.hp < pl.max_hp,
+            ult: play && pl.skill.gauge >= 1.0,
         });
         self.input.poll(self.scene().is_menu());
+        // F11(PC, 0135): 어느 장면에서나 창 ↔ 전체 화면. 창 일이라 `Actions`(게임 동작)에 넣지 않는다.
+        if input::fullscreen_pressed() {
+            self.toggle_fullscreen();
+        }
         // 싸움 중 마우스 조준이면 OS 커서 대신 조준 표시(0058). 랩은 마우스를 쓰지 않지만 화살표가 보이게 둔다.
         let hide = play && input::mouse_aim().on && input::device() == input::Device::Keys;
         if hide != self.mouse_hidden {
@@ -455,6 +548,12 @@ impl App {
         }
         let dt = get_frame_time().min(MAX_FRAME_DT);
         self.acc += dt;
+        if self.step_clock {
+            // 개발(F6): 실제 시간과 상관없이 프레임마다 한 틱.
+            self.acc = 0.0;
+            let a = self.input.take();
+            self.tick(a);
+        }
         while self.acc >= TICK_DT {
             let a = self.input.take();
             self.tick(a);
@@ -489,6 +588,8 @@ impl App {
     }
 
     fn tick(&mut self, a: Actions) {
+        // 카메라의 지난 틱 = 지금(0173): 이 틱에 카메라가 안 움직이면(멈춤 창 아래) 그림이 틱 사이를 오가지 않는다.
+        self.cam.settle();
         let (scene0, cursor0, back0) = (self.scene(), self.cursor, a.back || a.pause);
         let played0 = self.sfx.as_ref().map_or(0, |s| s.played());
         self.tick_scene(a);
@@ -522,23 +623,50 @@ impl App {
             crate::ui::check::toggle();
         }
         #[cfg(feature = "dev")]
+        if a.step_clock {
+            self.step_clock = !self.step_clock;
+        }
+        #[cfg(feature = "dev")]
         if a.lab_toggle {
             self.toggle_lab();
             return;
         }
+        // 큰 창의 탭(0164): 탭 넘기기(스킬 버튼 둘·탭 머리)가 먼저 — 넘겼으면 그 틱은 끝.
+        let swapped = flow::tab_of(self.scene()).is_some() && self.tab_input(&a);
+        if !swapped {
+            self.tick_top(a);
+        }
+        // 창이 열린 동안 카메라는 계속 따라간다(타이틀 바탕·화로) — 판 위의 멈춤 아래에서는 그대로 선다.
+        if self.scene().is_menu() && !self.paused() {
+            self.follow_camera();
+        }
+    }
+
+    /// 깨어나는 첫 장면(0171)이 지금 화면에 흐르나 — 싸움 화면이 맨 위일 때만(타이틀 바탕·멈춤 밑에서는 아니다).
+    fn waking(&self) -> Option<crate::wake::Wake> {
+        self.wake.filter(|_| self.scene() == Scene::Play)
+    }
+
+    /// 멈춤에서 연 창(과 그 위의 작은 창들)이 떠 있나.
+    fn paused(&self) -> bool {
+        self.stack
+            .any(|sc| matches!(flow::tab_of(sc), Some((flow::Host::Pause, _))))
+    }
+
+    /// 맨 위 장면의 한 틱.
+    fn tick_top(&mut self, a: Actions) {
         match self.scene() {
             Scene::Title => self.tick_title(a),
             Scene::Ask(k) => self.tick_ask(&a, k),
-            Scene::Equip => self.tick_equip(&a),
-            Scene::Tree { view } => self.tick_tree(&a, view),
-            Scene::Codex { tab } => self.tick_codex(&a, tab as usize),
+            Scene::Status { host } => self.tick_status(&a, host),
+            Scene::Equip { .. } => self.tick_equip(&a),
+            Scene::Skills { host } => self.tick_skills(&a, host.edits()),
+            Scene::SkillAct => self.tick_skill_act(&a),
+            Scene::Codex { host, tab } => self.tick_codex(&a, host, tab as usize),
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
-            s @ (Scene::Pause
-            | Scene::Settings
-            | Scene::Hearth
-            | Scene::Level
-            | Scene::Shop
-            | Scene::Result { .. }) => self.tick_menu(&a, s),
+            s @ (Scene::Settings { .. } | Scene::Shop | Scene::Result { .. }) => {
+                self.tick_menu(&a, s)
+            }
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.tick_dev(&a, tab as usize),
             #[cfg(feature = "dev")]
@@ -558,10 +686,6 @@ impl App {
             #[cfg(feature = "dev")]
             Scene::Sandbox => self.tick_sandbox(a),
         }
-        // 창이 열린 동안 카메라는 계속 따라간다(타이틀 바탕·가게·핵 고르기) — 판 위의 멈춤 아래에서는 그대로 선다.
-        if self.scene().is_menu() && !self.stack.holds(Scene::Pause) {
-            self.follow_camera();
-        }
     }
 
     /// 목록 화면 한 틱(0066): 줄 표 → 입력 → 화면의 고름.
@@ -576,10 +700,7 @@ impl App {
     /// 장면의 줄 표(목록 화면만 — 제 그림을 갖는 화면은 `None`). `_` 없는 match: 새 장면이면 컴파일러가 묻는다.
     fn menu_of(&self, scene: Scene) -> Option<menu::Menu> {
         match scene {
-            Scene::Pause => Some(self.pause_menu()),
-            Scene::Settings => Some(self.settings_menu()),
-            Scene::Hearth => Some(self.hearth_menu()),
-            Scene::Level => Some(self.level_menu()),
+            Scene::Settings { host } => Some(self.settings_menu(host)),
             Scene::Shop => Some(self.shop_menu()),
             Scene::Result { won } => Some(self.result_menu(won)),
             Scene::Slots { load } => Some(self.slots_menu(load)),
@@ -592,8 +713,10 @@ impl App {
             | Scene::Ending { .. }
             | Scene::Controls
             | Scene::Ask(_)
-            | Scene::Equip
-            | Scene::Tree { .. }
+            | Scene::Status { .. }
+            | Scene::Equip { .. }
+            | Scene::Skills { .. }
+            | Scene::SkillAct
             | Scene::Codex { .. }
             | Scene::EquipPick { .. } => None,
             #[cfg(feature = "dev")]
@@ -604,10 +727,7 @@ impl App {
     /// 목록 화면의 고름을 그 화면에(뒤로는 몰이꾼이 한다).
     fn act(&mut self, scene: Scene, out: menu::Out) {
         match scene {
-            Scene::Pause => self.pause_act(out),
-            Scene::Settings => self.settings_act(out),
-            Scene::Hearth => self.hearth_act(out),
-            Scene::Level => self.level_act(out),
+            Scene::Settings { host } => self.settings_act(host, out),
             Scene::Shop => self.shop_act(out),
             Scene::Result { .. } => self.result_act(out),
             // 슬롯 창은 제 틱(`tick_slots`)이 고름을 한다(빈 줄 건너뛰기·두 번째 누름).
@@ -621,8 +741,10 @@ impl App {
             | Scene::Ending { .. }
             | Scene::Controls
             | Scene::Ask(_)
-            | Scene::Equip
-            | Scene::Tree { .. }
+            | Scene::Status { .. }
+            | Scene::Equip { .. }
+            | Scene::Skills { .. }
+            | Scene::SkillAct
             | Scene::Codex { .. }
             | Scene::EquipPick { .. } => {}
             #[cfg(feature = "dev")]
@@ -631,68 +753,120 @@ impl App {
     }
 
     fn draw(&mut self) {
-        let alpha = (self.acc / TICK_DT).clamp(0.0, 1.0);
+        // 멈춤 창 아래의 세계는 틱이 없다 — 틱 사이를 오가지 않게 끝에 세운다(0173).
+        let alpha = if self.paused() {
+            1.0
+        } else {
+            (self.acc / TICK_DT).clamp(0.0, 1.0)
+        };
+        self.cam.present(alpha);
         let stage = self.in_stage().then_some(&self.run);
-        let f = self.renderer.draw(&View {
-            world: &self.world,
-            cam: &self.cam,
-            alpha,
-            t: &self.t,
-            stage,
-            tells: self.tells as f32 / 10.0,
-            tell_timing: self.tell_timing,
-        });
+        // 지역 사이 전환의 굴 장면(0174): 월드 대신 굴을 그린다 — 지역은 이미 닿을 곳으로 바뀌어 있고, 그 월드는 닿는 쪽의
+        // 어둠 뒤에서 처음 그려진다(지형 굽기가 거기 숨는다). HUD·화살·터치 버튼도 그동안은 걷는다.
+        let in_shaft = self
+            .passage
+            .filter(|p| self.scene() == Scene::Play && p.phase() == crate::descent::Phase::Shaft);
+        self.clock += get_frame_time();
+        let f = match in_shaft {
+            Some(p) => {
+                // 굴의 위·아래 지역(얕은 쪽·깊은 쪽)의 환경: 달이 있나 · 닿을 곳의 안개 빛.
+                let (a, b) = if p.up {
+                    (p.to, p.to + 1)
+                } else {
+                    (p.to.saturating_sub(1), p.to)
+                };
+                let env = |i: usize| {
+                    crate::stage::STAGES
+                        .get(i)
+                        .map_or(&crate::backdrop::SURFACE, |d| d.env)
+                };
+                self.renderer
+                    .draw_shaft(&p, self.weapon, &self.t, self.clock, (env(a), env(b)))
+            }
+            None => self.renderer.draw(&View {
+                world: &self.world,
+                cam: &self.cam,
+                alpha,
+                t: &self.t,
+                stage,
+                tells: self.tells as f32 / 10.0,
+                tell_timing: self.tell_timing,
+                fx: &self.fx,
+                pose: match (self.fall, self.wake) {
+                    (Some(f), _) if self.scene() == Scene::Play => Some(f.pose()),
+                    (_, Some(w)) if stage.is_some() => Some(("wake", w.pose())),
+                    _ => None,
+                },
+            }),
+        };
         self.frame = Some(f);
         self.ui.begin(f.ui);
-        let overlay = self.input.overlay();
+        let overlay = self.input.overlay().filter(|_| in_shaft.is_none());
         self.hits.clear();
-        self.draw_layered(&f, self.scene());
+        if in_shaft.is_none() {
+            self.draw_layered(&f, self.scene());
+        }
+        // 큰 창은 화면을 다 써서 알림을 제 오른쪽 칸의 상태 줄에 보인다(`draw_pane_head`) — 여기서는 싸움·타이틀만.
         if matches!(
             self.scene(),
-            Scene::Play
-                | Scene::Ending { .. }
-                | Scene::Hearth
-                | Scene::Level
-                | Scene::Tree { .. }
-                | Scene::Shop
-                | Scene::Title
+            Scene::Play | Scene::Ending { .. } | Scene::Title
         ) {
             self.draw_toast(&f);
         }
-        if self.scene() == Scene::Play {
+        // 깨어나는 첫 장면(0171) 동안은 싸움 화면의 덧그림(화살·조준점·터치 버튼)을 걷는다 — 덮개만.
+        let waking =
+            self.waking().is_some() || (self.fall.is_some() && self.scene() == Scene::Play);
+        if self.scene() == Scene::Play && !waking && in_shaft.is_none() {
             self.draw_goal_arrow(&f);
+            self.draw_knell(&f);
             self.draw_bubble(&f);
             self.draw_stone_card(&f);
         }
-        // 지역 사이 지층 단면(0118): 싸움 화면 위에(전환 중엔 멈춤·장비 창이 열리지 않는다).
-        self.clock += get_frame_time();
-        if let Some(p) = self
-            .passage
-            .as_ref()
-            .filter(|_| self.scene() == Scene::Play)
-        {
-            let m = p.depth().round() as u32;
-            let label = if m == 0 {
-                s().depth_surface.to_string()
-            } else {
-                fill(s().depth_under, &[&m.to_string()])
-            };
-            crate::descent::draw(p, &self.ui, &f, self.clock, &label);
+        // 지역 사이 전환(0174)의 화면 패스: 덮는 어둠(떠남·굴의 두 끝·닿음) + 굴을 지나는 동안의 깊이 글.
+        if let Some(p) = self.passage.filter(|_| self.scene() == Scene::Play) {
+            let dark = p.dark();
+            if dark > 0.0 {
+                draw_rectangle(f.ox, f.oy, f.w, f.h, Color::new(0.02, 0.015, 0.035, dark));
+            }
+            if in_shaft.is_some() {
+                let m = p.depth().round() as u32;
+                let label = if m == 0 {
+                    s().depth_surface.to_string()
+                } else {
+                    fill(s().depth_under, &[&m.to_string()])
+                };
+                hud::draw_depth(&self.ui, &f, &label, 1.0 - dark);
+            }
         }
-        if self.scene().ticks_world() {
+        if self.scene().ticks_world() && in_shaft.is_none() {
             self.draw_beat_note(&f);
         }
-        if self.scene().ticks_world() {
+        if self.scene().ticks_world() && !waking && in_shaft.is_none() {
             if self.mouse_hidden && self.world.lock_target().is_none() {
                 if let Some(c) = self.input.cursor() {
                     hud::draw_reticle(&f, c, input::mouse_aim().size);
                 }
             }
             if let Some(o) = &overlay {
+                let pl = &self.world.player;
+                let skill = |slot: usize| {
+                    (
+                        touch::skill_icon(pl.skill.worn[slot]),
+                        self.world.skill_ready(slot, &self.t),
+                    )
+                };
                 touch::draw(
                     o,
-                    self.world.lock_target().is_some(),
-                    self.world.turn_ready(&self.t),
+                    &touch::View {
+                        locked: self.world.lock_target().is_some(),
+                        turn: self.world.turn_ready(&self.t),
+                        attack: touch::attack_icon(pl.weapon),
+                        cast: touch::cast_icon(pl.weapon),
+                        skills: [skill(0), skill(1)],
+                        vacant: [0, 1].map(|i| pl.skill.rank[i] == 0),
+                        active: [0, 1].map(|i| self.world.skill_active(i)),
+                        ult: touch::ult_icon(pl.skill.ult),
+                    },
                 );
             }
         }
@@ -713,10 +887,43 @@ impl App {
         match scene.layer() {
             Layer::Game => {
                 let run = matches!(scene, Scene::Play | Scene::Ending { .. }).then_some(&self.run);
-                hud::draw(&self.ui, f, &self.world, run, false);
+                let edge = self.t[crate::tuning::P::HudHurtEdge];
+                let skills = [0, 1].map(|i| self.world.skill_ready(i, &self.t));
+                // 깨어나는 첫 장면(0171): HUD 대신 눈꺼풀·띠·서술 글. 싸움 화면에서만(타이틀 바탕은 그냥 엎드린 방랑자).
+                if let Some(fl) = self.fall.filter(|_| scene == Scene::Play) {
+                    hud::draw_fall(&self.ui, f, &fl, crate::i18n::s().defeat_sub);
+                } else if let Some(wk) = self.waking() {
+                    let st = crate::i18n::s();
+                    let skip = input::prompt(input::Act::Pause);
+                    hud::draw_wake(
+                        &self.ui,
+                        f,
+                        &wk,
+                        [st.wake_1, st.wake_2],
+                        (&skip, st.wake_skip),
+                    );
+                } else {
+                    // 튜토리얼의 힌트 판(0167·0171) — 싸움 화면에서만, 창 밑에서는 그리지 않는다.
+                    let hint = self.tutor_hint().filter(|_| scene == Scene::Play);
+                    let hint = hint.as_ref().map(|h| (h, self.tutor.fresh));
+                    let o = hud::Opts {
+                        under_menu: false,
+                        edge,
+                        skills,
+                        hint,
+                    };
+                    hud::draw(&self.ui, f, &self.world, run, &o);
+                }
             }
             Layer::Window { hud: true } if self.stack.base() == Scene::Play => {
-                hud::draw(&self.ui, f, &self.world, Some(&self.run), true);
+                let skills = [0, 1].map(|i| self.world.skill_ready(i, &self.t));
+                let o = hud::Opts {
+                    under_menu: true,
+                    edge: 0.0,
+                    skills,
+                    hint: None,
+                };
+                hud::draw(&self.ui, f, &self.world, Some(&self.run), &o);
             }
             Layer::Screen | Layer::Window { .. } | Layer::Modal => {}
         }
@@ -724,15 +931,24 @@ impl App {
             Scene::Title => self.draw_title(f),
             Scene::Ask(k) => self.draw_ask(f, k),
             Scene::Controls => self.draw_controls(f),
-            Scene::Equip => self.draw_equip(f, self.cursor, None),
-            Scene::Tree { view } => self.draw_tree(f, view),
-            Scene::Codex { tab } => self.draw_codex(f, tab as usize),
+            Scene::Status { host } => self.draw_status(f, host),
+            Scene::Equip { host } => self.draw_equip(f, host, self.cursor, None),
+            Scene::Skills { host } => self.draw_skills(f, self.cursor, host),
+            Scene::SkillAct => self.draw_skill_act(f),
+            Scene::Codex { host, tab } => self.draw_codex(f, host, tab as usize),
+            Scene::Shop => self.draw_shop(f),
+            Scene::Settings { host } => self.draw_settings(f, host),
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.draw_dev_screen(f, tab as usize),
             Scene::EquipPick { slot } => {
-                // 칸 커서는 아래 칸(장비 창)의 것.
-                let at = self.stack.under().map_or(slot as usize, |e| e.cursor);
-                self.draw_equip(f, at, Some(slot as usize));
+                // 칸 커서·연 곳은 아래 칸(장비 탭)의 것.
+                let under = self.stack.under().copied();
+                let at = under.map_or(slot as usize, |e| e.cursor);
+                let host = match under.map(|e| e.scene) {
+                    Some(Scene::Equip { host }) => host,
+                    _ => flow::Host::Pause,
+                };
+                self.draw_equip(f, host, at, Some(slot as usize));
             }
             s => {
                 if let Some(m) = self.menu_of(s) {
@@ -767,19 +983,10 @@ impl App {
         if let Some((text, t)) = &self.toast {
             let a = (t / 0.6).min(1.0);
             let cx = f.ox + f.w * 0.5;
-            // 화로 가게에서는 목록을 가리지 않게 맨 위에.
-            let y = if matches!(
-                self.scene(),
-                Scene::Hearth | Scene::Level | Scene::Tree { .. } | Scene::Shop
-            ) {
-                0.04
-            } else {
-                0.3
-            };
             self.ui.text_center(
                 text,
                 cx,
-                f.oy + f.h * y,
+                f.oy + f.h * 0.3,
                 1.2,
                 Color::new(AMBER.r, AMBER.g, AMBER.b, a),
             );

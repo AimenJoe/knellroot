@@ -7,6 +7,8 @@ use crate::weapons::Id as Weapon;
 pub enum Item {
     Weapon(Weapon),
     Charm(Charm),
+    /// 덧옷(0176) — `charms.glb`의 `garb_*` 부위.
+    Garb(crate::garb::Id),
 }
 
 /// 모델·부위와 보는 각도(도): 부위를 경계 상자 가운데에 놓고 y(돌기)·x(숙이기)·z(눕히기) 순으로 돌린다.
@@ -48,6 +50,13 @@ pub fn view(item: Item) -> View {
             pitch: 25.0,
             roll: 0.0,
         },
+        Item::Garb(g) => View {
+            model: "charms",
+            node: crate::garb::def(g).node,
+            yaw: 30.0,
+            pitch: 25.0,
+            roll: 0.0,
+        },
     }
 }
 
@@ -68,6 +77,7 @@ pub fn all() -> Vec<Item> {
         .into_iter()
         .map(Item::Weapon)
         .chain(crate::charms::TABLE.iter().map(|d| Item::Charm(d.id)))
+        .chain(crate::garb::TABLE.iter().map(|d| Item::Garb(d.id)))
         .filter(|&i| has_view(i))
         .collect()
 }

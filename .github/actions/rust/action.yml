@@ -1,0 +1,30 @@
+# 고정한 Rust를 깐다(0162, KB reference/github-actions/pin-actions-and-rust-toolchain).
+# 버전 숫자는 rust-toolchain.toml의 channel 한 줄에만 있다 — 여기서 그 줄을 읽어 넘긴다. 올릴 때는 그 줄만 바꾼다.
+# 액션이 까는 툴체인과 toml이 가리키는 툴체인이 같은 이름이어야 한다: 워크플로에서 dtolnay/rust-toolchain을 직접 부르지 않는다
+# (@stable로 깔면 cargo가 처음 돌 때 toml의 버전을 또 받고, 덧붙인 targets는 엉뚱한 쪽에 깔려 있다).
+# checkout 뒤에만 쓸 수 있다(로컬 액션).
+name: rust
+description: rust-toolchain.toml이 고정한 Rust 툴체인을 깐다
+inputs:
+  targets:
+    description: 덧붙일 대상(쉼표로)
+    required: false
+    default: ''
+  components:
+    description: 덧붙일 구성 요소(쉼표로)
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - id: pin
+      shell: bash
+      run: |
+        channel="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+        test -n "$channel" || { echo "rust-toolchain.toml에 channel이 없다"; exit 1; }
+        echo "channel=$channel" >> "$GITHUB_OUTPUT"
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ steps.pin.outputs.channel }}
+        targets: ${{ inputs.targets }}
+        components: ${{ inputs.components }}

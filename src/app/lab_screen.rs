@@ -23,9 +23,7 @@ impl App {
                     self.go(Go::Back);
                 }
             }
-            s if s.ticks_world() || matches!(s, Scene::Pause | Scene::Settings) => {
-                self.go(Go::Open(Scene::Lab))
-            }
+            s if s.ticks_world() || flow::tab_of(s).is_some() => self.go(Go::Open(Scene::Lab)),
             _ => {}
         }
     }
@@ -127,9 +125,9 @@ impl App {
         self.t.set(i, self.t.get(i) + SPECS[i].step * k);
     }
 
-    /// 묶음 창 한 틱: 땅 돌리기 버튼(LT·RT / Q·E) = 10걸음, 나머지는 목록 몰이꾼.
+    /// 묶음 창 한 틱: 스킬 버튼 둘(LT·RT / Q·E — 0151) = 10걸음, 나머지는 목록 몰이꾼.
     pub(super) fn tick_lab_group(&mut self, a: &Actions, g: usize) {
-        let fast = a.turn_right as i32 - a.turn_left as i32;
+        let fast = a.skill2 as i32 - a.skill1 as i32;
         if fast != 0 {
             if let Some(&i) = lab::members(g).get(self.cursor) {
                 self.lab_nudge(i, fast as f32 * 10.0);

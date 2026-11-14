@@ -34,6 +34,8 @@ pub struct Scenery {
     pub void_y: f32,
     /// 걸을 수 있는 가장 낮은 땅(높이 안개는 이보다 아래에만, 0063).
     pub walk_min: f32,
+    /// 달빛 가림 높이 지도(0044) — 구운 뒤에도 둔다: 그늘에 선 배우가 달빛을 덜 받게(0140, `render::actor_moon`).
+    pub occ: std::rc::Rc<Occluders>,
 }
 
 /// 칸 자리로 정하는 0..1 값(같은 지도 = 같은 그림).
@@ -49,6 +51,29 @@ fn hash(x: usize, z: usize, k: u32) -> f32 {
 
 // 0037 "색 = 생명": 세계는 해 질 녘 남보라(살아 있는 것만 파스텔·불빛만 따뜻하게) — 옛 숯빛·돌빛에서.
 const MORTAR: Color = Color::new(0.09, 0.09, 0.14, 1.0);
+/// 조용한 바닥(0140): 줄눈을 석판의 2/3 밝기로(예전 0.3배 — 화면에서 가장 센 대비가 바닥 격자였다), 석판마다의 밝기 차는 ±6%로 줄이고
+/// 대신 여러 칸에 걸친 큰 얼룩(±10%)으로, 석판 옆면도 덜 어둡게.
+const MORTAR_CALM: Color = Color::new(0.20, 0.19, 0.28, 1.0);
+const SLAB_SIDE_CALM: f32 = 0.82;
+/// 큰 얼룩의 한 마디(칸).
+const PATCH_CELLS: f32 = 5.0;
+/// 빛 대비(0140): 화로 빛 반지름 배율, 소품 밑 그늘(세기·닿는 거리 m), 그림자 칸(m — 예전 0.25).
+const FIRE_REACH: f32 = 1.3;
+const PROP_AO: f32 = 0.4;
+const PROP_AO_R: f32 = 0.45;
+const SHADE_RES: f32 = 0.125;
+
+/// 여러 칸에 걸쳐 천천히 바뀌는 0..1 값(격자 마디의 `hash`를 부드럽게 이음) — 석판 색의 큰 얼룩.
+fn patch(x: usize, z: usize) -> f32 {
+    let (fx, fz) = (x as f32 / PATCH_CELLS, z as f32 / PATCH_CELLS);
+    let (ix, iz) = (fx.floor(), fz.floor());
+    let s = |t: f32| t * t * (3.0 - 2.0 * t);
+    let (tx, tz) = (s(fx - ix), s(fz - iz));
+    let h = |dx: usize, dz: usize| hash(ix as usize + dx, iz as usize + dz, 77);
+    let a = h(0, 0) + (h(1, 0) - h(0, 0)) * tx;
+    let b = h(0, 1) + (h(1, 1) - h(0, 1)) * tx;
+    a + (b - a) * tz
+}
 const SLAB: Color = Color::new(0.31, 0.30, 0.41, 1.0);
 const SLAB_MOSS: Color = Color::new(0.21, 0.31, 0.31, 1.0);
 /// 바닥 다듬기(0060 W2·0061): 빠진 석판 자리의 흙, 풀 다발 밑동·끝(바랜 청록 — 해 질 녘의 옅은 생명, 0037).
@@ -191,7 +216,26 @@ fn empty(aabb: Option<Aabb>) -> Piece {
 impl Scenery {
     /// `trees` = 이 지역에 나무·덤불이 자라나(0118 T2 — 땅속은 벽 뿌리만).
     pub fn bake(lv: &Level, lib: &mut Library, flora: bool, trees: bool) -> Scenery {
-        let lights = lv.lights.clone();
+        let look = crate::render::look();
+        // 빛 대비(0140): 화로 빛 웅덩이를 넓게(빛줄기는 그대로) — 따뜻한 자리가 화면에서 더 큰 덩어리가 되게.
+        // 꺼진 화로(0171): 그 자리의 빛은 굽지 않는다(불꽃 부위도 — 아래 소품).
+        let cold = |p: Vec3| {
+            lv.cold
+                .is_some_and(|c| vec2(c.x - p.x, c.z - p.z).length() < 0.1)
+        };
+        let lights: Vec<Light> = lv
+            .lights
+            .iter()
+            .filter(|l| !cold(l.pos))
+            .map(|l| Light {
+                radius: if look.key && !l.shaft {
+                    l.radius * FIRE_REACH
+                } else {
+                    l.radius
+                },
+                ..*l
+            })
+            .collect();
         let mut pieces = Vec::new();
         let gnd = lv.ground();
         // 벽 칸 꼭대기(곁 바닥이 올라가 있으면 그만큼 높게, 0043) — 벽 그림과 달빛 가림이 같이 쓴다.
@@ -204,8 +248,9 @@ impl Scenery {
                 .unwrap_or(floor + WALL_H * (0.8 + 0.35 * hash(x, z, 3)))
                 .max(floor + 0.5)
         };
-        // 달빛 가림 높이 지도(0044): 0.25m 칸마다 가장 높은 단단한 것.
-        let res = 0.25;
+        // 달빛 가림 높이 지도(0044): 0.25m 칸마다 가장 높은 단단한 것. 빛 대비(0140)면 0.125m — 그림자 가장자리의 계단이
+        // 쿼터뷰에서 6px → 3px(캐릭터 그림자 가림판과 같은 칸).
+        let res = if look.key { SHADE_RES } else { 0.25 };
         let origin = vec2(-(lv.w as f32) * CELL * 0.5, -(lv.h as f32) * CELL * 0.5);
         let (ow, oh) = (
             (lv.w as f32 * CELL / res) as usize,
@@ -236,6 +281,15 @@ impl Scenery {
                 occ.raise_box(c - half, c + half, pr.pos.y + pr.kind.height());
             }
         }
+        let prop_boxes: Vec<(Vec2, Vec2)> = lv
+            .props
+            .iter()
+            .filter(|pr| pr.kind.half() != Vec2::ZERO)
+            .map(|pr| {
+                let c = vec2(pr.pos.x, pr.pos.z);
+                (c - pr.kind.half(), c + pr.kind.half())
+            })
+            .collect();
         // 바닥 빛 지도(0044): 칸마다 달빛(가림)·화로를 미리 — 바닥은 색 × 이 텍스처(가장 가까운 픽셀 → 또렷한 그림자 경계).
         // 텍스처는 0..1이라 빛의 반을 담고 바닥 색을 두 배로 칠한다(화로 곁은 1보다 밝다).
         crate::render::set_bake_shade(Some(occ.clone()));
@@ -273,7 +327,16 @@ impl Scenery {
                         near = near.min(d);
                     }
                 }
-                let ao = 1.0 - WALL_AO * (1.0 - (near / WALL_AO_R).min(1.0));
+                let mut ao = 1.0 - WALL_AO * (1.0 - (near / WALL_AO_R).min(1.0));
+                // 소품 밑 그늘(0140): 부딪힘 상자까지의 거리로 — 기둥·벽 조각·화로가 바닥에 "놓여" 보이게.
+                if look.key {
+                    for (lo, hi) in &prop_boxes {
+                        let d = (*lo - c).max(c - *hi).max(Vec2::ZERO).length();
+                        if d < PROP_AO_R {
+                            ao *= 1.0 - PROP_AO * (1.0 - d / PROP_AO_R);
+                        }
+                    }
+                }
                 let l = lit(p, slope_normal(&gnd, x, z), &lights) * 0.5 * ao;
                 let k = (j * ow + i) * 4;
                 lm[k] = to_u8(l.x);
@@ -313,7 +376,7 @@ impl Scenery {
                         on(c + vec3(h, MORTAR_Y, h)),
                         on(c + vec3(-h, MORTAR_Y, h)),
                     ],
-                    MORTAR,
+                    if look.calm { MORTAR_CALM } else { MORTAR },
                     &uv_of,
                 );
                 // 석판(0060 W2·0061): 칸마다 1m 넷 — 짝 둘은 가끔 하나로 붙고(긴 판), 꼭대기는 걷는 면 아래 1.5~5cm로 들쭉날쭉, 몇은 한쪽이 들리고,
@@ -368,7 +431,11 @@ impl Scenery {
                     } else {
                         SLAB
                     };
-                    let col = mul(base, 0.8 + 0.35 * r);
+                    let col = if look.calm {
+                        mul(base, (0.94 + 0.12 * r) * (0.90 + 0.20 * patch(x, z)))
+                    } else {
+                        mul(base, 0.8 + 0.35 * r)
+                    };
                     let top = SLAB_LOW + (SLAB_HIGH - SLAB_LOW) * hash(x, z, i + 13);
                     // 몇은 한쪽 변이 들린다(빛 띠가 달라지고 모서리가 선다).
                     let lift = if hash(x, z, i + 17) > 0.85 {
@@ -390,7 +457,7 @@ impl Scenery {
                         corner(-1.0, 1.0),
                     ];
                     quad_lm(&mut p, tops, col, &uv_of);
-                    let side = mul(col, SLAB_SIDE);
+                    let side = mul(col, if look.calm { SLAB_SIDE_CALM } else { SLAB_SIDE });
                     for (a, b, n) in [
                         ((-1.0, -1.0), (1.0, -1.0), Vec3::NEG_Z),
                         ((1.0, -1.0), (1.0, 1.0), Vec3::X),
@@ -706,7 +773,19 @@ impl Scenery {
             if let Some(e) = lib.get(pr.kind.model()) {
                 e.model.pose(e.pick(&["idle"]), 0.0, &mut pose);
                 let inst = Mat4::from_translation(pr.pos) * Mat4::from_rotation_y(pr.yaw);
-                Batch::bake_model(&mut p.verts, &mut p.idx, e, &pose, inst, WHITE, &lights);
+                if pr.kind == PropKind::Brazier && cold(pr.pos) {
+                    Batch::bake_model_dark(
+                        &mut p.verts,
+                        &mut p.idx,
+                        e,
+                        &pose,
+                        inst,
+                        WHITE,
+                        &lights,
+                    );
+                } else {
+                    Batch::bake_model(&mut p.verts, &mut p.idx, e, &pose, inst, WHITE, &lights);
+                }
                 p.tex = Some(e.tex.clone());
             } else {
                 let s = if half == Vec2::ZERO {
@@ -731,6 +810,7 @@ impl Scenery {
         crate::render::set_bake_shade(None);
         Scenery {
             pieces,
+            occ: std::rc::Rc::new(occ),
             lights,
             extent: lv.half_extent() * 3.0,
             void_y,
@@ -803,7 +883,9 @@ fn tuft(p: &mut Piece, at: Vec3, sx: usize, sz: usize, lights: &[Light]) {
             (tip, GRASS_TIP),
         ] {
             let l = lit(q, Vec3::Y, lights);
-            p.verts.push(with_normal(
+            // 풀 끝만 바람에 흔들린다(밑동은 땅에 박혀 있다, 0142).
+            let tip_sway = if col == GRASS_TIP { 1.0 } else { 0.0 };
+            let mut v = with_normal(
                 Vertex::new(
                     q.x,
                     q.y,
@@ -813,7 +895,9 @@ fn tuft(p: &mut Piece, at: Vec3, sx: usize, sz: usize, lights: &[Light]) {
                     Color::new(col.r * l.x, col.g * l.y, col.b * l.z, 1.0),
                 ),
                 Vec3::Y,
-            ));
+            );
+            sway(&mut v, tip_sway);
+            p.verts.push(v);
         }
         p.idx.extend_from_slice(&[base, base + 1, base + 2]);
     }
@@ -848,6 +932,12 @@ fn quad_lm(p: &mut Piece, corners: [Vec3; 4], col: Color, uv: &dyn Fn(Vec3) -> V
 pub fn with_normal(mut v: Vertex, n: Vec3) -> Vertex {
     v.normal = n.normalize_or(Vec3::Y).extend(1.0);
     v
+}
+
+/// 바람에 흔들리는 몫(0142)을 정점에 싣는다 — 법선 칸의 넷째 값: 1 = 가만히, 1 + `s` = 바람에 `s`만큼(풀 끝 1·잎 무더기 0.3),
+/// 1 − `f` = 불꽃처럼 빠르게 일렁임(`f` 0..0.9). 지형 재질(`render` 바람 셰이더)과 법선 패스가 같은 식으로 읽는다.
+pub fn sway(v: &mut Vertex, s: f32) {
+    v.normal.w = 1.0 + s;
 }
 
 fn to_u8(x: f32) -> u8 {
@@ -926,6 +1016,57 @@ fn prop_color(k: PropKind) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0140 조용한 바닥: 석판 색의 큰 얼룩은 0..1 안이고 이웃 칸끼리는 조금씩만 바뀐다(칸마다 튀면 다시 격자 잡음이 된다),
+    /// 줄눈은 석판의 반보다 밝다(예전 0.3배 — 화면에서 가장 센 대비가 바닥이었다).
+    #[test]
+    fn the_calm_floor_varies_in_big_patches_and_keeps_its_joints_soft() {
+        let mut spread = 0.0f32;
+        for z in 0..60 {
+            for x in 0..60 {
+                let a = patch(x, z);
+                assert!((0.0..=1.0).contains(&a));
+                assert!((a - patch(x + 1, z)).abs() < 0.3 && (a - patch(x, z + 1)).abs() < 0.3);
+                spread = spread.max((a - patch(30, 30)).abs());
+            }
+        }
+        assert!(spread > 0.3, "얼룩이 거의 없다: {spread}");
+        assert!(MORTAR_CALM.g / SLAB.g > 0.5 && MORTAR.g / SLAB.g < 0.35);
+    }
+
+    /// 0142 바람: 풀 다발은 끝만 흔들린다(밑동은 땅에 박혀 있다) — 바람 몫은 법선 칸의 넷째 값, 1 = 가만히.
+    #[test]
+    fn grass_sways_at_the_tip_and_stays_rooted_at_the_foot() {
+        let mut p = Piece {
+            verts: Vec::new(),
+            idx: Vec::new(),
+            tex: None,
+            aabb: None,
+            fade: 1.0,
+            lightmap: false,
+        };
+        let at = vec3(4.0, 1.0, -3.0);
+        tuft(&mut p, at, 4, 3, &[]);
+        let (mut tips, mut feet) = (0, 0);
+        for v in &p.verts {
+            if v.normal.w > 1.5 {
+                tips += 1;
+                assert!(
+                    v.position.y > at.y + 0.25,
+                    "a swaying vertex near the ground"
+                );
+            } else {
+                feet += 1;
+                assert_eq!(v.normal.w, 1.0);
+                assert!(v.position.y < at.y + 0.01, "a still vertex up in the air");
+            }
+        }
+        assert!(tips >= 7 && feet >= 14, "{tips} tips, {feet} feet");
+        // 도우미: 몫은 1에 더한다(음수 = 불꽃의 일렁임).
+        let mut v = Vertex::new(0.0, 0.0, 0.0, 0.0, 0.0, WHITE);
+        sway(&mut v, -0.5);
+        assert_eq!(v.normal.w, 0.5);
+    }
 
     /// 0094: 소품의 가림 상자는 구운 정점을 다 감싼다(돌린 모델·상자보다 큰 모델도).
     #[test]
