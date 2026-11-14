@@ -32,6 +32,25 @@ Text to Motion으로 붙인다. 이름 = `tools/art/blender/wanderer.py`의 동�
   Thrust_Slash = 18(5.8, 찌르기)·33(4.0). Sword_Judgment = 24(10.0)·80(3.4). Heavy_Hammer_Swing = 37(4.4).
 - 앞으로 가는 이동: Weapon_Combo_2·Sword_Judgment·Basic_Jump·Back_Jump는 엉덩이가 0.5~1.1m 움직인다 — 들일 때 수평 이동을 뺀다.
 
+## 빠진 것(첫 묶음 13개 뒤, 2026-11-14) — 이어 붙인 한 클립에서 자른다
+첫 묶음이 채우는 것: `idle`(Combat_Stance)·`walk`(walking_2_inplace)·달리기(Running)·`attack`·`attack2`(Weapon_Combo_2)·`attack3`(Thrust_Slash 찌르기)·`heavy`(Attack)·`hammer1`(Heavy_Hammer_Swing)·`jump`·`land`(Basic_Jump·Jump_Run). 나머지 39개 이름을 아래 열셋 클립 + 콤보 셋(지팡이·망치 위) + 기술·큰 기술 열하나(2·3순위)로 채운다.
+
+| 클립 → 자를 이름 | 길이 | 프롬프트 |
+|---|---|---|
+| react → `hurt`·`fall`·`wake` | 5초 | A sword fighter in a combat-ready stance is hit hard in the chest, staggers back two steps, then is hit again and collapses forward face down onto the ground, lies still for a moment, then slowly pushes up with the hands, gets to the knees and stands back up into a combat-ready stance. |
+| defense → `parry`·`dodge` | 3초 | A sword fighter holding a one-handed sword in the right hand first snaps the sword up diagonally to parry a blow with a short recoil, returns to stance, pauses, then does a very quick low evasive dash forward with the head and shoulders ducked, and pops back up into a combat-ready stance. |
+| charge_heavy → `charge`·`heavy` | 4초 | A sword fighter crouches low and draws a one-handed sword far back behind the right hip, holds the coiled tense pose for two seconds while trembling with gathered power, then releases a wide explosive sweeping slash across the front at waist height and rises into a combat-ready stance. |
+| `walk_back` | 2초 | A sword fighter holding a one-handed sword in the right hand walks slowly backwards while still facing forward, guard raised, small careful steps, keeping the eyes on an enemy in front. In place, looping. |
+| turn → `turn_l`·`turn_r` | 3초 | A fighter stomps the right foot down and twists the whole body sharply to the left as if turning the ground underfoot, pauses, then stomps again and twists sharply to the right, and returns to a combat-ready stance. |
+| fidgets → `idle_look`·`idle_shake` | 4초 | A small hooded fighter standing relaxed looks slowly to the left, then to the right, returns to the front, pauses, then gives the whole body a quick shake like shaking off water and settles back into a relaxed standing pose. |
+| `plunge` | 3초 | A sword fighter holding a one-handed sword jumps high, raises the sword over the head at the top of the jump, then drops straight down driving the sword point into the ground on landing, crouched from the impact, then pulls the sword out and stands in a combat-ready stance. |
+| `drink` | 2초 | A fighter holding a sword in the right hand lifts a small lantern-shaped flask with the left hand, tilts the head back and drinks from it, lowers it with a relieved breath, and returns to a combat-ready stance. |
+| cast → `cast_charge`·`cast` | 3초 | A fighter holding a sword in the right hand draws the open left hand back to the chest and gathers energy there for a moment, body tense, then thrusts the left palm forward sharply to fire a magic bolt with a slight recoil, and returns to a combat-ready stance. |
+| `throw` | 2초 | A fighter holding a weapon in the right hand takes a small round bomb with the left hand, tosses it underhand onto the ground a few steps ahead, and hops back half a step into a ready stance. |
+| staff → `staff_charge`·`staff_release` | 4초 | A fighter holding a light wooden staff with both hands crouches and holds it low across the body gathering strength for two seconds, then swings it in one full circle around the body at waist height, turning the whole body once, and returns to a ready stance. |
+| hammer → `hammer_charge`·`hammer_slam` | 4초 | A fighter holding a heavy two-handed war hammer cocks it back over the right shoulder and holds the crouched tense pose for two seconds, then leaps up and slams the hammer down onto the ground in front with both hands, landing in a deep crouch, then rises to a ready stance. |
+| crossbow → `xbow_charge`·`xbow_shoot` | 3초 | A fighter raises a crossbow to the right shoulder with both hands, aims steadily forward and holds still for a moment, then fires it, the shoulders jerk back from the recoil, and steadies the crossbow again in an aiming pose. |
+
 ## 1순위 — 검(기본 무기)
 | 이름 | 프롬프트 |
 |---|---|
