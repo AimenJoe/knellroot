@@ -819,6 +819,10 @@ impl Input {
 
     /// 조준에 쓰는 커서 자리(0058) — 조준 표시를 그릴 때. `poll`과 같은 규칙.
     pub fn cursor(&self) -> Option<Vec2> {
+        // 자유 숄더뷰(0181)에서 잡힌 커서는 시점이지 조준이 아니다 — 조준 표시를 그리지 않는다.
+        if self.grabbed {
+            return None;
+        }
         let m = mouse_aim();
         cursor_live(m.on, device(), self.since_mouse, m.rest_secs()).then_some(self.mouse_pos)
     }
@@ -1112,6 +1116,9 @@ impl Input {
             self.grabbed = grab;
             set_cursor_grab(grab);
             show_mouse(!grab);
+        } else if grab && clicked {
+            // 웹: Esc는 브라우저가 포인터 잠금을 먼저 풀어 버린다(게임은 아직 잡은 줄 안다) — 누를 때마다 다시 청한다(누름 = 사용자 동작).
+            set_cursor_grab(true);
         }
         a.drag = t.drag;
         a.point = a.point.or(t.drag_at);
