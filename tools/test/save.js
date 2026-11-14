@@ -90,11 +90,11 @@ async function main() {
   await press('Escape'); await page.waitForTimeout(300);
 
   // 3b) 장비(0064 M3 → 0164 탭): 멈춤(상태 탭) → E = 장비 탭 → 장신구 3칸(산 주머니가 2칸에 들어갔다)에 종지기의 귀 → 기록.
-  // 십자는 칸 자리대로 커서만(→ = 무기 옆 가운데 장신구 칸, ↓ = 셋째 칸), 확인 = 그 칸의 후보 목록(빈 칸 · 단단한 껍질 · 종지기의 귀 ·
+  // 십자는 칸 자리대로 커서만(→ = 무기와 같은 높이의 첫 장신구 칸(0176), ↓↓ = 셋째 칸), 확인 = 그 칸의 후보 목록(빈 칸 · 단단한 껍질 · 종지기의 귀 ·
   // 잔불 주머니 — 커서는 지금 것 "빈 칸"에서: 아래로 둘 = 종지기의 귀). 키보드+마우스 배치에는 빨리 바꾸기가 없다(공격 = 클릭).
   await press('Escape'); await page.waitForTimeout(300);
   await press('KeyE'); await page.waitForTimeout(300);
-  await press('ArrowRight'); await press('ArrowDown', 1); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowRight'); await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
   await shot('save-2b-equip-pick');
   await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
   await shot('save-2b-equip');
