@@ -56,7 +56,7 @@ fn tri(p: &mut Piece, a: Vec3, b: Vec3, c: Vec3, col: Color, lights: &[Light]) {
 }
 
 /// 정이십면체의 꼭짓점·면(바깥을 보는 감김).
-fn icosahedron() -> ([Vec3; 12], [[usize; 3]; 20]) {
+pub(crate) fn icosahedron() -> ([Vec3; 12], [[usize; 3]; 20]) {
     let t = (1.0 + 5f32.sqrt()) * 0.5;
     let v = [
         vec3(-1.0, t, 0.0),
