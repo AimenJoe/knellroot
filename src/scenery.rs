@@ -76,6 +76,46 @@ fn patch(x: usize, z: usize) -> f32 {
 }
 const SLAB: Color = Color::new(0.31, 0.30, 0.41, 1.0);
 const SLAB_MOSS: Color = Color::new(0.21, 0.31, 0.31, 1.0);
+
+/// 지역마다의 바닥(0185 — 셋째 지역은 성소·마을의 석판 바닥을 되풀이하지 않는다): 석판 빛·이끼 빛, 석판 자리의 몇이 이끼인가(`moss`),
+/// 몇이 빠져 흙 + 풀인가(`bare`).
+#[derive(Clone, Copy, Debug)]
+pub struct FloorLook {
+    pub slab: Color,
+    pub moss_slab: Color,
+    pub moss: f32,
+    pub bare: f32,
+    pub dirt: Color,
+}
+
+/// 성소·마을: 다듬은 석판(0060 W2 그대로 — 이끼 두 칸에 하나쯤, 빠진 판 7%).
+pub const STONE_FLOOR: FloorLook = FloorLook {
+    slab: SLAB,
+    moss_slab: SLAB_MOSS,
+    moss: 0.2,
+    bare: 0.07,
+    dirt: DIRT,
+};
+
+/// 잔뿌리의 정원(0185): 옛 석재는 조각만 남고(판의 반이 빠져 흙·풀), 남은 판의 반 넘게 이끼 — 물기 머금은 흙은 조금 푸르게.
+pub const GARDEN_FLOOR: FloorLook = FloorLook {
+    slab: Color::new(0.30, 0.31, 0.37, 1.0),
+    moss_slab: Color::new(0.19, 0.32, 0.27, 1.0),
+    moss: 0.6,
+    bare: 0.5,
+    dirt: Color::new(0.17, 0.19, 0.19, 1.0),
+};
+
+/// 고인 물(`~`, 0185): 어둡고 푸른 수면, 가장자리는 젖은 흙.
+const WATER: Color = Color::new(0.13, 0.23, 0.30, 1.0);
+/// 수면의 달빛 결(0185): 칸을 가로지르는 가는 밝은 띠 — 평평한 판이 아니라 물로 읽히게.
+const WATER_SHEEN: Color = Color::new(0.30, 0.40, 0.52, 1.0);
+/// 물 위의 이끼 잎(0185).
+const WATER_PAD: Color = Color::new(0.20, 0.33, 0.25, 1.0);
+const WATER_Y: f32 = -0.04;
+/// 마른 물길(`=`, 0185): 물이 지나던 자리 — 석판 없이 마른 흙과 잔돌.
+const CHANNEL: Color = Color::new(0.26, 0.23, 0.22, 1.0);
+const PEBBLE: Color = Color::new(0.40, 0.38, 0.40, 1.0);
 /// 바닥 다듬기(0060 W2·0061): 빠진 석판 자리의 흙, 풀 다발 밑동·끝(바랜 청록 — 해 질 녘의 옅은 생명, 0037).
 const DIRT: Color = Color::new(0.22, 0.19, 0.24, 1.0);
 const GRASS_ROOT: Color = Color::new(0.17, 0.27, 0.26, 1.0);
@@ -215,7 +255,13 @@ fn empty(aabb: Option<Aabb>) -> Piece {
 
 impl Scenery {
     /// `trees` = 이 지역에 나무·덤불이 자라나(0118 T2 — 땅속은 벽 뿌리만).
-    pub fn bake(lv: &Level, lib: &mut Library, flora: bool, trees: bool) -> Scenery {
+    pub fn bake(
+        lv: &Level,
+        lib: &mut Library,
+        flora: bool,
+        trees: bool,
+        floor: &FloorLook,
+    ) -> Scenery {
         let look = crate::render::look();
         // 빛 대비(0140): 화로 빛 웅덩이를 넓게(빛줄기는 그대로) — 따뜻한 자리가 화면에서 더 큰 덩어리가 되게.
         // 꺼진 화로(0171): 그 자리의 빛은 굽지 않는다(불꽃 부위도 — 아래 소품).
@@ -356,6 +402,20 @@ impl Scenery {
         // 바닥: 칸마다 1m 석판 넷(틈 = 회반죽 판), 몇 칸은 이끼. 땅 높이를 따른다(경사로는 기운다, 0043). 정점 한도 아래로 줄마다 덩어리.
         // 빛은 빛 지도 텍스처(0044) — 바닥 판은 색만(두 배), 옹벽·테는 정점 빛(따로 덩어리).
         let gy = |x: usize, z: usize, p: Vec3| gnd.height_in(x, z, p).unwrap_or(0.0);
+        // 바닥 표지(0185): 고인 물 `~`·마른 물길 `=` 칸은 석판 대신 제 그림.
+        let mut wet = vec![0u8; lv.w * lv.h];
+        for (c, at) in &lv.marks {
+            if let (Some(k), Some((x, z))) = (
+                match c {
+                    '~' => Some(1u8),
+                    '=' => Some(2u8),
+                    _ => None,
+                },
+                gnd.cell_of(*at),
+            ) {
+                wet[z * lv.w + x] = k;
+            }
+        }
         for z in 0..lv.h {
             let mut p = empty(None);
             p.tex = Some(lightmap.clone());
@@ -379,6 +439,93 @@ impl Scenery {
                     if look.calm { MORTAR_CALM } else { MORTAR },
                     &uv_of,
                 );
+                let mark = wet[z * lv.w + x];
+                if mark == 1 {
+                    // 고인 물: 칸 전체가 고른 수면(걷는 면 아래 4cm) — 빛 지도가 천장 틈 빛을 받는다.
+                    let w = mul(WATER, 0.92 + 0.16 * patch(x, z));
+                    quad_lm(
+                        &mut p,
+                        [
+                            on(c + vec3(-h, WATER_Y, -h)),
+                            on(c + vec3(h, WATER_Y, -h)),
+                            on(c + vec3(h, WATER_Y, h)),
+                            on(c + vec3(-h, WATER_Y, h)),
+                        ],
+                        w,
+                        &uv_of,
+                    );
+                    // 달빛 결: 칸의 몇에 가는 띠 하나(물결 방향은 한쪽으로 — 띠가 이어져 보이게).
+                    if hash(x, z, 81) < 0.45 {
+                        let o = (hash(x, z, 82) - 0.5) * 0.7;
+                        let (a, b) = (0.06, 0.32 + 0.12 * hash(x, z, 83));
+                        quad_lm(
+                            &mut p,
+                            [
+                                on(c + vec3(-b, WATER_Y + 0.006, o - a)),
+                                on(c + vec3(b, WATER_Y + 0.006, o - a)),
+                                on(c + vec3(b, WATER_Y + 0.006, o + a)),
+                                on(c + vec3(-b, WATER_Y + 0.006, o + a)),
+                            ],
+                            WATER_SHEEN,
+                            &uv_of,
+                        );
+                    }
+                    // 떠 있는 이끼 잎.
+                    if hash(x, z, 84) < 0.22 {
+                        let o = vec3(
+                            (hash(x, z, 85) - 0.5) * 0.5,
+                            0.0,
+                            (hash(x, z, 86) - 0.5) * 0.5,
+                        );
+                        let r = 0.14 + 0.08 * hash(x, z, 87);
+                        quad_lm(
+                            &mut p,
+                            [
+                                on(c + o + vec3(0.0, WATER_Y + 0.01, -r)),
+                                on(c + o + vec3(r, WATER_Y + 0.01, 0.0)),
+                                on(c + o + vec3(0.0, WATER_Y + 0.01, r)),
+                                on(c + o + vec3(-r, WATER_Y + 0.01, 0.0)),
+                            ],
+                            WATER_PAD,
+                            &uv_of,
+                        );
+                    }
+                    continue;
+                }
+                if mark == 2 {
+                    // 마른 물길: 마른 흙 + 잔돌 몇(석판 없음).
+                    quad_lm(
+                        &mut p,
+                        [
+                            on(c + vec3(-h, MORTAR_Y + 0.02, -h)),
+                            on(c + vec3(h, MORTAR_Y + 0.02, -h)),
+                            on(c + vec3(h, MORTAR_Y + 0.02, h)),
+                            on(c + vec3(-h, MORTAR_Y + 0.02, h)),
+                        ],
+                        mul(CHANNEL, 0.9 + 0.2 * hash(x, z, 61)),
+                        &uv_of,
+                    );
+                    for t in 0..4u32 {
+                        let o = c + vec3(
+                            (hash(x, z, 70 + t) - 0.5) * 1.6,
+                            0.0,
+                            (hash(x, z, 74 + t) - 0.5) * 1.6,
+                        );
+                        let r = 0.08 + 0.1 * hash(x, z, 78 + t);
+                        quad_lm(
+                            &mut p,
+                            [
+                                on(o + vec3(-r, MORTAR_Y + 0.05, -r)),
+                                on(o + vec3(r, MORTAR_Y + 0.05, -r)),
+                                on(o + vec3(r, MORTAR_Y + 0.05, r)),
+                                on(o + vec3(-r, MORTAR_Y + 0.05, r)),
+                            ],
+                            mul(PEBBLE, 0.8 + 0.3 * hash(x, z, 82 + t)),
+                            &uv_of,
+                        );
+                    }
+                    continue;
+                }
                 // 석판(0060 W2·0061): 칸마다 1m 넷 — 짝 둘은 가끔 하나로 붙고(긴 판), 꼭대기는 걷는 면 아래 1.5~5cm로 들쭉날쭉, 몇은 한쪽이 들리고,
                 // 몇은 빠져 흙 + 풀. 옆면이 있어 카메라 쪽 모서리에 밝은 선(0061 화면 공간 선)이 붙는다.
                 let merge_top = hash(x, z, 50) < 0.28;
@@ -397,7 +544,7 @@ impl Scenery {
                     let r = hash(x, z, i);
                     let o = c + off;
                     let g = half - vec2(0.03, 0.03) * hash(x, z, i + 7);
-                    if hash(x, z, i + 31) > 0.93 {
+                    if hash(x, z, i + 31) > 1.0 - floor.bare {
                         // 빠진 석판: 흙 + 풀 두 다발.
                         quad_lm(
                             &mut p,
@@ -407,7 +554,7 @@ impl Scenery {
                                 on(o + vec3(g.x, MORTAR_Y + 0.01, g.y)),
                                 on(o + vec3(-g.x, MORTAR_Y + 0.01, g.y)),
                             ],
-                            DIRT,
+                            floor.dirt,
                             &uv_of,
                         );
                         for t in 0..3 {
@@ -426,10 +573,10 @@ impl Scenery {
                         }
                         continue;
                     }
-                    let base = if hash(x / 2, z / 2, 99) > 0.8 && r > 0.4 {
-                        SLAB_MOSS
+                    let base = if hash(x / 2, z / 2, 99) > 1.0 - floor.moss && r > 0.4 {
+                        floor.moss_slab
                     } else {
-                        SLAB
+                        floor.slab
                     };
                     let col = if look.calm {
                         mul(base, (0.94 + 0.12 * r) * (0.90 + 0.20 * patch(x, z)))

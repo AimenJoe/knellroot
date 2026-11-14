@@ -90,6 +90,8 @@ pub struct Actions {
     /// 자유 숄더뷰의 시점 돌리기(0181, 논리 px — 잡힌 마우스의 움직임·화면 오른쪽 끌기): x + = 오른쪽을 본다, y + = 아래를 본다.
     /// 오른쪽 스틱(`aim`)·키보드 ←·→는 앱이 빠르기로 더한다.
     pub look: Vec2,
+    /// 시점 바꾸기(0184 — 터치의 시점 버튼): 쿼터뷰 ↔ 자유 숄더뷰. 틱마다 소비.
+    pub view: bool,
     pub attack: bool,
     /// 공격 버튼을 쥐고 있나(상태, 강공격 모으기 0030). 눌림 `attack`과 달리 틱이 지우지 않는다.
     pub attack_held: bool,
@@ -1124,6 +1126,7 @@ impl Input {
         a.point = a.point.or(t.drag_at);
         a.look += t.look;
         a.zoom += t.zoom;
+        a.view |= t.view;
         // 메뉴는 마우스 왼쪽을 뗄 때 탭(터치와 같은 규칙, nail 0199).
         if menu && mouse_real && a.tap.is_none() && is_mouse_button_released(MouseButton::Left) {
             a.tap = Some(mp);
@@ -1155,6 +1158,7 @@ impl Input {
             aim_at: None,
             zoom: self.latch.zoom + a.zoom,
             look: self.latch.look + a.look,
+            view: self.latch.view | a.view,
             attack: self.latch.attack | a.attack,
             attack_held: a.attack_held,
             cast_held: a.cast_held,

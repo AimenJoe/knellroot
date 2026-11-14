@@ -39,6 +39,8 @@ function layout() {
     skill2: [skill[0] + u * 0.08, skill[1]],
     turn_left: [W - pc - ps * 2.5, pc],
     turn_right: [W - pc, pc],
+    // 시점(0184): 돌리기 왼쪽, 한 칸 띄워 — 쿼터뷰 ↔ 자유 숄더뷰.
+    view: [W - pc - ps * 5.4, pc],
     lock: at(80, 0.44),
     flask: at(150, 0.44),
     // 멈춤은 왼쪽 위(2026-11-06), 랩·시나리오 터치 버튼은 없다(랩 = 타이틀·개발 창 도구 탭).
@@ -57,6 +59,8 @@ async function main() {
   page.on('console', (m) => { if (m.type() === 'error' && !KNOWN_NOISE.some((k) => k.test(m.text()))) errors.push(m.text()); });
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
   const cdp = await ctx.newCDPSession(page);
+  // CI 러너처럼 느린 CPU를 흉내(THROTTLE=4 — 실패를 집에서 재현할 때만).
+  if (process.env.THROTTLE) await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.THROTTLE) });
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i + 1 })) });
   const tap = async ([x, y]) => { await touch('touchStart', [[x, y]]); await page.waitForTimeout(60); await touch('touchEnd', []); await page.waitForTimeout(60); };
   const shot = (n) => page.screenshot({ path: path.join(OUT, n + '.png') });
@@ -81,12 +85,30 @@ async function main() {
   // 오른쪽 아래가 공격 버튼 자리다. 건너뛴 뒤에야 버튼들이 선다.
   await page.waitForTimeout(4200);
   await shot('t01a-wake');
-  await tap(b.attack); await page.waitForTimeout(1500);
+  await tap(b.attack);
   {
-    const rec = await page.evaluate(() => localStorage.getItem('knell.save.0'));
+    // 장면이 끝나 기록에 적힐 때까지(느린 러너에서는 프레임이 길어 고정 시간으로는 모자란다 — 0191 v0.6.2 CI).
+    let rec = null;
+    for (let i = 0; i < 40 && !/woke=1\n/.test(rec || ''); i++) {
+      await page.waitForTimeout(250);
+      rec = await page.evaluate(() => localStorage.getItem('knell.save.0'));
+    }
+    if (process.env.THROTTLE) console.log('woke after', JSON.stringify(rec && rec.slice(0, 40)));
     if (!/woke=1\n/.test(rec || '')) errors.push(`a touch on the attack spot must skip the waking scene: ${JSON.stringify(rec)}`);
   }
   await shot('t01-first-screen');
+  // 시점 버튼(0184 — 적이 아직 먼 첫 화면에서): 눈 버튼 = 자유 숄더뷰 → 오른쪽 반을 끌면 시점이 돈다 → 다시 눈 버튼 = 쿼터뷰.
+  await tap(b.view); await page.waitForTimeout(800);
+  await shot('t01b-shoulder');
+  {
+    const y = H * 0.4, x0 = W * 0.62;
+    await touch('touchStart', [[x0, y]]); await page.waitForTimeout(40);
+    for (let i = 1; i <= 8; i++) { await touch('touchMove', [[x0 + i * 20, y]]); await page.waitForTimeout(30); }
+    await touch('touchEnd', []); await page.waitForTimeout(300);
+  }
+  await shot('t01c-shoulder-dragged');
+  await tap(b.view); await page.waitForTimeout(800);
+  await shot('t01d-back-to-quarter');
   // 스틱: 왼쪽 아래에 대고 위로 끌어 0.8초 걷기.
   const s0 = [W * 0.2, H * 0.7];
   await touch('touchStart', [s0]);
@@ -158,6 +180,21 @@ async function main() {
     await pp.tap('#rotate');
     await pp.waitForTimeout(1000);
     if (await on()) errors.push('portrait: tapping the hint should rotate or, if it cannot lock, let it go on upright');
+    // 돌린 뒤 늦은 크기(0187): 폰은 회전 때 resize를 레이아웃이 끝나기 전에 보내기도 한다 — 번들의 처리기가 그 이벤트를 놓친(옛 크기를
+    // 읽은) 것처럼, 처리기를 잠시 떼고 가로로 돌린 뒤 되돌린다. 조금 뒤 캔버스의 그리기 크기가 화면의 크기와 같아야 한다(안 그러면 늘어난다).
+    await pp.evaluate(() => document.fullscreenElement ? document.exitFullscreen().catch(() => {}) : null);
+    await pp.waitForTimeout(300);
+    await pp.evaluate(() => { window.__mqResize = window.onresize; window.onresize = null; });
+    await pp.setViewportSize({ width: W, height: H });
+    await pp.waitForTimeout(30);
+    await pp.evaluate(() => { window.onresize = window.__mqResize; });
+    await pp.waitForTimeout(1500);
+    const fit = await pp.evaluate(() => {
+      const c = document.getElementById('glcanvas'); const d = window.high_dpi ? devicePixelRatio : 1;
+      return [c.width, c.height, Math.floor(c.clientWidth * d), Math.floor(c.clientHeight * d)];
+    });
+    if (fit[0] !== fit[2] || fit[1] !== fit[3]) errors.push('rotate: canvas size ' + fit.slice(0, 2) + ' != box ' + fit.slice(2) + ' after a late resize (stretched)');
+    await pp.screenshot({ path: path.join(OUT, 't15-landscape-after-rotate.png') });
     await pctx.close();
   }
   await browser.close();

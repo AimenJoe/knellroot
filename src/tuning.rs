@@ -280,6 +280,13 @@ pub const HURL_RING: f32 = 7.0;
 pub const HURL_THROW: f32 = 0.55;
 /// 청소자(0120): 싸움이 없을 때 이 초마다 체력 한 눈금(`HP_UNIT`)을 먹는다.
 pub const EAT_TIME: f32 = 2.5;
+/// 이끼먹이(0185 — 비적대 생명체): 방랑자가 이만큼(m) 다가오면 도망하고, 제자리에서 이만큼(m)까지만 달아난다(그 밖으로는 옆으로 비킨다),
+/// 도망하는 빠르기 배율(종의 `speed`에), 풀 뜯는 자리를 가끔 옮기는 마디(초)·한 걸음(m).
+pub const GRAZE_FLEE_R: f32 = 5.0;
+pub const GRAZE_LEASH: f32 = 6.0;
+pub const GRAZE_FLEE_SPEED: f32 = 1.0;
+pub const GRAZE_SHUFFLE_T: f32 = 2.6;
+pub const GRAZE_SHUFFLE: f32 = 0.6;
 /// 등딱지(0120): 앞을 친 평타가 튕기면 방랑자가 튀는 초·뒤로 밀리는 빠르기(m/s). 패링당한 것보다 짧게.
 pub const RECOIL_TIME: f32 = 0.35;
 pub const RECOIL_PUSH: f32 = 3.0;
@@ -316,12 +323,11 @@ pub enum P {
     CamQFov,
     CamQLag,
     CamQYaw,
-    CamLDist,
-    CamLHeight,
-    CamLShoulder,
     CamLFov,
-    CamLLookAhead,
-    CamLFrame,
+    CamFDist,
+    CamFHeight,
+    CamFLookAhead,
+    CamFLookHeight,
     CamLYawLag,
     CamBlend,
     CamCollideRadius,
@@ -456,6 +462,9 @@ pub enum P {
     RenderMotes,
     RenderSky,
     RenderFlora,
+    RenderResident,
+    RenderRows,
+    RenderSsaa,
     TurnWobbleIn,
     TurnWobbleOut,
     TurnStartStagger,
@@ -512,7 +521,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 166] = [
+pub const SPECS: [Spec; 168] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -559,33 +568,6 @@ pub const SPECS: [Spec; 166] = [
         1.0
     ),
     spec!(
-        CamLDist,
-        "cam.lock.dist",
-        "CAM_L_DIST",
-        6.0,
-        1.5,
-        12.0,
-        0.25
-    ),
-    spec!(
-        CamLHeight,
-        "cam.lock.height",
-        "CAM_L_HEIGHT",
-        4.2,
-        0.5,
-        6.0,
-        0.1
-    ),
-    spec!(
-        CamLShoulder,
-        "cam.lock.shoulder",
-        "CAM_L_SHOULDER",
-        0.8,
-        -2.0,
-        2.0,
-        0.1
-    ),
-    spec!(
         CamLFov,
         "cam.lock.fov deg",
         "CAM_L_FOV_DEG",
@@ -594,22 +576,42 @@ pub const SPECS: [Spec; 166] = [
         90.0,
         1.0
     ),
+    // 자유 숄더뷰 = 뒤에서 보는 3인칭(0188, 사장 "주인공이 너무 한쪽으로 치우쳐 … 그냥 3인칭으로, 화면 세로 1/3 부근·좌우 가운데, WoW처럼"):
+    // 어깨 비킴 없이 바로 뒤·위. 주시점을 앞으로·위로 두어 주인공이 화면 아래쪽 1/3에 선다. 락온도 같은 리그(방위만 대상 쪽, 0188 둘째).
     spec!(
-        CamLLookAhead,
-        "cam.lock.look ahead m",
-        "CAM_L_LOOK_AHEAD",
-        4.0,
+        CamFDist,
+        "cam.free.dist",
+        "CAM_F_DIST",
+        5.5,
+        2.0,
+        12.0,
+        0.25
+    ),
+    spec!(
+        CamFHeight,
+        "cam.free.height",
+        "CAM_F_HEIGHT",
+        2.6,
+        0.5,
+        6.0,
+        0.1
+    ),
+    spec!(
+        CamFLookAhead,
+        "cam.free.look ahead m",
+        "CAM_F_LOOK_AHEAD",
+        3.0,
         0.0,
         10.0,
         0.25
     ),
     spec!(
-        CamLFrame,
-        "cam.lock.frame x",
-        "CAM_L_FRAME",
-        1.0,
-        -3.0,
-        3.0,
+        CamFLookHeight,
+        "cam.free.look height m",
+        "CAM_F_LOOK_HEIGHT",
+        1.6,
+        0.0,
+        4.0,
         0.1
     ),
     spec!(
@@ -1652,6 +1654,36 @@ pub const SPECS: [Spec; 166] = [
         1.0,
         1.0
     ),
+    // 상주 지형(0186): 움직이지 않는 지형을 GPU 버퍼에 한 번 올려 둔다(0 = 옛 길 — 프레임마다 배치로 다시 올린다, A/B 재기).
+    spec!(
+        RenderResident,
+        "render.resident 0off 1on",
+        "RENDER_RESIDENT",
+        1.0,
+        0.0,
+        1.0,
+        1.0
+    ),
+    // 계단 현상 비교(0190, 사장 "픽셀이 너무 안 예뻐, 계단 현상이 너무 과해"): 내부 해상도의 줄 수(화면 높이 / 정수 배율이 이 값에 가장 가깝게)와
+    // 2배로 그려 줄이기(도트 크기는 그대로, 경계만 부드럽게). 기본값은 지금 그대로 — 판정 뒤에 바꾼다.
+    spec!(
+        RenderRows,
+        "render.rows",
+        "RENDER_ROWS",
+        540.0,
+        270.0,
+        720.0,
+        90.0
+    ),
+    spec!(
+        RenderSsaa,
+        "render.ssaa 0off 1on",
+        "RENDER_SSAA",
+        1.0,
+        0.0,
+        1.0,
+        1.0
+    ),
     // 땅 돌리기 휘청(0084, 사장 2026-11-07 "회전 시작시에 작은 휘청임, 마지막에 작은 휘청임"): 화면이 돌기 시작할 때 도는 쪽으로,
     // 멈출 때 반대쪽으로 카메라가 살짝 기울었다 흔들리며 선다(굴림 각, 도). 0 = 없음.
     spec!(
@@ -2052,3 +2084,11 @@ mod tests {
         assert!(e.contains(&format!("CAM_Q_DIST: f32 = {dist:.3};  // (default)")));
     }
 }
+
+/// 이끼 덮인 문지기의 껍질 받기(0185): 웅크려 앞을 막는 초 · 그동안 몸이 도는 빠르기(rad/s — 옆으로 돌아 들어갈 틈) ·
+/// 풀린 뒤 쉬는 틈의 배율(종의 `recover`에 곱한다).
+pub const SHELL_HOLD: f32 = 1.6;
+pub const SHELL_TURN: f32 = 0.7;
+pub const SHELL_OPEN: f32 = 1.4;
+/// 이끼 덮인 문지기의 틈새 돌진 뒤 늦게 도는 쉼(0185) — 종의 `recover`에 곱한다.
+pub const MOSS_DASH_RECOVER: f32 = 1.6;

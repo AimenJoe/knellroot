@@ -61,6 +61,8 @@ pub enum Kind {
     Bomb,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
+    /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
+    View,
 }
 
 /// 그릴 때 앱이 넘기는 것(0151): 상태에 따라 바뀌는 그림·차오름.
@@ -137,6 +139,8 @@ pub struct Read {
     pub look: Vec2,
     /// 시점 거리 단계(0181): 그 자리의 두 손가락을 벌리면 +(당기기)·오므리면 −, `PINCH_STEP`마다 한 칸.
     pub zoom: i32,
+    /// 시점 버튼(0184): 쿼터뷰 ↔ 자유 숄더뷰.
+    pub view: bool,
 }
 
 /// 두 손가락을 이만큼(논리 px) 벌리거나 오므리면 시점 거리 한 칸(0181).
@@ -294,6 +298,12 @@ pub fn layout(w: f32, h: f32, ctx: Ctx) -> Vec<Button> {
         radius: ps,
         kind: Kind::TurnRight,
     });
+    // 시점(0184): 돌리기 둘의 왼쪽, 한 칸 띄워(돌리기 캡슐과 묶여 보이지 않게) — 두 손가락 꼬집기는 숨은 길이라 보이는 버튼이 하나 있어야 한다.
+    b.push(Button {
+        center: vec2(w - pc.x - ps * 5.4, pc.y),
+        radius: ps,
+        kind: Kind::View,
+    });
     if ctx.ult {
         b.push(Button {
             center: at(118.0, 0.6),
@@ -330,6 +340,12 @@ pub fn layout(w: f32, h: f32, ctx: Ctx) -> Vec<Button> {
 fn pause_spot(w: f32, h: f32) -> (Vec2, f32) {
     let s = w.min(h).min(TOUCH_U_MAX) * 0.09 * 0.7;
     (vec2(s * 1.4, s * 1.4), s)
+}
+
+/// 터치일 때 오른쪽 위 글(목표 줄)이 버튼 줄(시점·땅 돌리기)을 비키는 높이(논리 px, 0184 — 그 줄 밑으로 내린다).
+pub fn top_right_drop(w: f32, h: f32) -> f32 {
+    let (c, s) = pause_spot(w, h);
+    c.y + s + 6.0
 }
 
 /// 터치일 때 HUD가 왼쪽 위 멈춤 버튼을 비키는 폭(논리 px).
@@ -537,6 +553,7 @@ fn press(a: &mut Read, k: Kind) {
         Kind::Lock => a.lock = true,
         Kind::TurnLeft => a.turn_left = true,
         Kind::TurnRight => a.turn_right = true,
+        Kind::View => a.view = true,
         Kind::Skill1 => a.skill1 = true,
         Kind::Skill2 => a.skill2 = true,
         Kind::Ult | Kind::Upend => a.ult = true,
@@ -1281,6 +1298,21 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             "....#####....",
             ".............",
         ],
+        Kind::View => [
+            ".............",
+            ".............",
+            ".............",
+            "....#####....",
+            "..##.....##..",
+            ".#...###...#.",
+            "#...#####...#",
+            ".#...###...#.",
+            "..##.....##..",
+            "....#####....",
+            ".............",
+            ".............",
+            ".............",
+        ],
         Kind::TurnLeft | Kind::TurnRight => [
             ".............",
             ".............",
@@ -1349,6 +1381,7 @@ mod tests {
             Kind::TurnLeft,
             Kind::TurnRight,
             Kind::Pause,
+            Kind::View,
             Kind::Hammer,
             Kind::Staff,
             Kind::Crossbow,
@@ -1528,8 +1561,8 @@ mod tests {
             .any(|x| matches!(x.kind, Kind::Lock | Kind::Flask)));
         assert_eq!(
             none.iter().filter(|x| x.kind != Kind::Pause).count(),
-            9,
-            "attack + 4 + skill pair + turn pair"
+            10,
+            "attack + 4 + skill pair + turn pair + view (0184)"
         );
         assert!(!none.iter().any(|x| x.kind == Kind::Ult));
     }

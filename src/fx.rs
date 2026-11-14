@@ -19,6 +19,10 @@ pub enum Shape {
     Puff,
     /// 네 갈래 번쩍임(타격의 한가운데 — 아주 짧다).
     Star,
+    /// 진액 방울(0182): 맞은 쪽으로 튀어 떨어지는 액체 — 빛줄처럼 그리고, 땅에 닿으면(`Fx::settle`) `Splat`이 된다.
+    Drop,
+    /// 바닥의 진액 얼룩(0182): 땅에 눕힌 원판, 떨어질 때 가던 쪽으로 길쭉하다(`vel` = 그 쪽). 움직이지 않는다.
+    Splat,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -164,6 +168,15 @@ const ASH: Color = Color::new(0.72, 0.70, 0.80, 0.75);
 const ROOT: Color = Color::new(0.56, 0.38, 0.70, 1.0);
 const SMOKE: Color = Color::new(0.22, 0.21, 0.30, 0.8);
 const STONE: Color = Color::new(0.40, 0.38, 0.50, 1.0);
+/// 뿌리 진액(0182 — "피 튀듯"): 적을 감은 보라 뿌리의 물. 빨강은 예고 전용이라(0037) 피 대신 이것 — 튀는 동안은 밝은 보라,
+/// 식으며 짙어지고, 바닥에는 짙은 자두빛으로 남는다(남보라 바닥보다 어둡고 채도가 높아 얼룩으로 읽힌다).
+const SAP: Color = Color::new(0.80, 0.50, 1.0, 1.0);
+const SAP_DEEP: Color = Color::new(0.46, 0.20, 0.66, 1.0);
+const SAP_STAIN: Color = Color::new(0.30, 0.10, 0.42, 0.85);
+/// 바닥 얼룩이 남는 시간(초) — 방울이 나는 시간(`SAP_FLIGHT`)과 합쳐 2초 안.
+pub const SPLAT_LIFE: f32 = 1.0;
+/// 진액 방울이 땅에 닿지 못하면(벼랑 밖) 사라지는 시간.
+const SAP_FLIGHT: f32 = 1.0;
 
 fn fade(c: Color) -> Color {
     Color::new(c.r, c.g, c.b, 0.0)
@@ -355,6 +368,69 @@ impl Fx {
         }
     }
 
+    /// 진액이 튄다(0182): `at`에서 `dir`(수평, 맞은 쪽) 둘레 부채꼴로 방울 `n`개 — 셋에 하나는 굵은 덩이. 위로 솟았다 떨어져
+    /// 바닥에 얼룩을 남긴다(`settle`). `up` = 위로 솟는 몫(쓰러짐은 크게 — 사방으로 터진다), `dir`가 0이면 사방.
+    fn sap(&mut self, at: Vec3, dir: Vec3, n: usize, speed: f32, up: f32) {
+        let side = vec3(-dir.z, 0.0, dir.x);
+        let around = dir.length_squared() < 1e-4;
+        for i in 0..n {
+            let flat = if around {
+                let a = self.r() * std::f32::consts::TAU;
+                vec3(a.sin(), 0.0, a.cos())
+            } else {
+                // 맞은 쪽보다 옆으로(칼이 지나가는 쪽 — 베인 피는 날을 따라 튄다): 곧장 뒤로 튀면 카메라(방랑자 뒤)에서
+                // 맞은 몸에 가려 안 보였다(헤드리스 화면). 좌우 번갈아 30~80°.
+                let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
+                let a = (30.0 + 50.0 * self.r()).to_radians();
+                (dir * a.cos() + side * (sign * a.sin())).normalize_or(dir)
+            };
+            let glob = i % 3 == 0;
+            let sp = speed * (0.5 + 0.7 * self.r()) * if glob { 0.75 } else { 1.0 };
+            let vel = flat * sp + Vec3::Y * (up * (0.6 + 0.8 * self.r()));
+            // 락온 거리 1m ≈ 46px: 방울 4~5px, 덩이 7~8px(0.055m짜리 2px 방울은 화소 하나로 사라졌다).
+            let size = if glob { 0.17 } else { 0.10 } * (0.8 + 0.4 * self.r());
+            self.push(Part {
+                pos: at + flat * 0.1,
+                vel,
+                age: 0.0,
+                life: SAP_FLIGHT,
+                size: (size, size * 0.8),
+                color: (SAP, SAP_DEEP),
+                gravity: 15.0,
+                drag: 1.2,
+                shape: Shape::Drop,
+                decor: false,
+            });
+        }
+    }
+
+    /// 진액 방울이 땅에 닿으면 얼룩이 된다(0182). `ground` = 그 자리의 땅 높이(앱은 월드의 `ground_y`).
+    pub fn settle(&mut self, ground: impl Fn(Vec3) -> f32) {
+        for p in &mut self.parts {
+            if p.shape != Shape::Drop || p.vel.y > 0.0 {
+                continue;
+            }
+            let g = ground(p.pos);
+            if p.pos.y > g {
+                continue;
+            }
+            let flat = vec3(p.vel.x, 0.0, p.vel.z);
+            let size = p.size_now() * 2.0;
+            *p = Part {
+                pos: vec3(p.pos.x, g + 0.03, p.pos.z),
+                vel: flat,
+                age: 0.0,
+                life: SPLAT_LIFE,
+                size: (size, size),
+                color: (SAP_STAIN, fade(SAP_STAIN)),
+                gravity: 0.0,
+                drag: 0.0,
+                shape: Shape::Splat,
+                decor: true,
+            };
+        }
+    }
+
     /// 꺼진 화로에 불이 붙는다(0171 — 사건이 아니라 앱이 부른다: 월드는 화로를 모른다): 그릇 위의 번쩍임 + 솟는 불티 +
     /// 둘레로 튀는 금빛 줄. `at` = 화로의 발밑.
     pub fn kindle(&mut self, at: Vec3) {
@@ -464,9 +540,17 @@ impl Fx {
         for e in events {
             match *e {
                 // 평타: 번쩍임 한 번 — 불똥은 월드의 `sparks`(같은 스윙 = 같은 무늬)가 낸다.
-                Event::Hit { at } => self.star(at, 0.95, 0.07, WHITE_HOT),
+                // + 맞은 쪽으로 뿌리 진액이 튄다(0182 — 번쩍임은 맨 뒤: 같은 틱의 마지막 입자).
+                Event::Hit { at } => {
+                    let d = from_player(at);
+                    // 멀리 튀는 방울 + 맞은 자리 곁에 쏟아지는 덩이("퍽" — 멀리 가는 것만으로는 불티처럼 읽혔다).
+                    self.sap(at, d, 10, 4.2, 3.6);
+                    self.sap(at, d, 4, 1.4, 1.6);
+                    self.star(at, 0.95, 0.07, WHITE_HOT);
+                }
                 // 치명타: 더 크고 금빛, 금 알갱이가 사방으로.
                 Event::Crit { at } => {
+                    self.sap(at, from_player(at), 6, 5.0, 3.8);
                     self.star(at, 1.7, 0.11, GOLD);
                     self.spray(
                         at,
@@ -485,6 +569,7 @@ impl Fx {
                 // 강타: 큰 번쩍임 + 돌 부스러기 + 발밑 먼지.
                 Event::Smash { at } => {
                     let d = from_player(at);
+                    self.sap(at, d, 10, 6.0, 3.4);
                     self.star(at, 1.5, 0.10, WHITE_HOT);
                     self.spray(
                         at,
@@ -557,6 +642,8 @@ impl Fx {
                 // 쓰러짐: 바랜 재가 풀려 오르고(0037 — 침식 = 색을 잃은 것), 뿌리의 보라 알갱이가 흩어진다.
                 Event::EnemyDown { at } => {
                     let c = at + Vec3::Y * 0.5;
+                    // 마지막 한 번은 사방으로 터진다(0182).
+                    self.sap(c, Vec3::ZERO, 12, 3.0, 4.2);
                     self.rise(c, 0.45, 6, Shape::Puff, (0.35, 0.75), 0.7, ASH, ASH, false);
                     self.rise(c, 0.4, 7, Shape::Dot, (0.09, 0.05), 0.8, ROOT, ROOT, false);
                 }
@@ -1398,6 +1485,9 @@ impl Fx {
     pub fn tick(&mut self, dt: f32) {
         for p in &mut self.parts {
             p.age += dt;
+            if p.shape == Shape::Splat {
+                continue;
+            }
             p.vel.y -= p.gravity * dt;
             p.vel *= (1.0 - p.drag * dt).max(0.0);
             p.pos += p.vel * dt;
@@ -1792,5 +1882,80 @@ mod tests {
                 assert!(seen > 0.9);
             }
         }
+    }
+
+    /// 진액(0182): 맞은 쪽(플레이어 → 적)으로 튀고, 떨어져 바닥 얼룩이 되고, 얼룩은 제자리에서 2초 안에 사라진다.
+    /// 강타는 평타보다 많이 흘리고, 쓰러짐은 사방으로 터진다.
+    #[test]
+    fn sap_sprays_away_from_the_player_and_stains_the_floor() {
+        let w = world();
+        let pp = w.player.pos;
+        let at = pp + vec3(0.0, 1.0, 2.0);
+        let drops = |fx: &Fx| fx.parts.iter().filter(|p| p.shape == Shape::Drop).count();
+        let mut fx = Fx::default();
+        fx.on_events(&[Event::Hit { at }], &w);
+        let hit = drops(&fx);
+        assert!(hit >= 5, "{hit}");
+        for p in fx.parts.iter().filter(|p| p.shape == Shape::Drop) {
+            assert!(
+                p.vel.z > 0.0,
+                "a drop flew back at the wanderer: {:?}",
+                p.vel
+            );
+            assert!(
+                p.vel.x.abs() > 0.3 * p.vel.z,
+                "drops fly out to the side, not hidden behind the body"
+            );
+            assert!(p.vel.y > 0.0, "drops leap before they fall");
+        }
+        let mut smash = Fx::default();
+        smash.on_events(&[Event::Hit { at }, Event::Smash { at }], &w);
+        assert!(drops(&smash) > hit);
+        // 떨어져 얼룩이 된다 — 바닥 높이 그대로, 움직이지 않는다.
+        let floor = pp.y;
+        let mut landed = 0.0;
+        for i in 0..60 {
+            fx.tick(crate::tuning::TICK_DT);
+            fx.settle(|_| floor);
+            if drops(&fx) == 0 && landed == 0.0 {
+                landed = i as f32 * crate::tuning::TICK_DT;
+            }
+        }
+        assert!(
+            landed > 0.15,
+            "the drops hung in the air a moment: {landed}"
+        );
+        let stains: Vec<Part> = fx
+            .parts
+            .iter()
+            .filter(|p| p.shape == Shape::Splat)
+            .copied()
+            .collect();
+        assert!(stains.len() >= hit, "every drop left a stain");
+        for s in &stains {
+            assert!((s.pos.y - floor).abs() < 0.05);
+            assert!(s.pos.z > at.z - 0.2, "stains lie on the far side");
+        }
+        let still = stains[0].pos;
+        fx.tick(0.1);
+        assert!(fx.parts.iter().any(|p| p.pos == still));
+        for _ in 0..120 {
+            fx.tick(crate::tuning::TICK_DT);
+            fx.settle(|_| floor);
+        }
+        assert!(fx.parts.is_empty(), "stains fade within two seconds");
+        // 쓰러짐: 사방(앞뒤 둘 다)으로.
+        let mut down = Fx::default();
+        down.on_events(&[Event::EnemyDown { at }], &w);
+        let zs: Vec<f32> = down
+            .parts
+            .iter()
+            .filter(|p| p.shape == Shape::Drop)
+            .map(|p| p.vel.z)
+            .collect();
+        assert!(
+            zs.iter().any(|z| *z > 0.0) && zs.iter().any(|z| *z < 0.0),
+            "{zs:?}"
+        );
     }
 }

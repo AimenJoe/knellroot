@@ -34,6 +34,7 @@ mod icons;
 mod idle;
 mod input;
 mod item_view;
+mod journey;
 mod knell;
 #[cfg(feature = "dev")]
 mod lab;

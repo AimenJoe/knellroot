@@ -11,6 +11,7 @@ mod dev;
 mod equip;
 pub mod flow;
 mod frame;
+mod journey;
 #[cfg(feature = "dev")]
 mod lab_screen;
 mod menu;
@@ -125,6 +126,8 @@ pub struct App {
     /// 바닥 공격 예고 진하기 0..=10(0 = 끔, 0074).
     tells: u8,
     tell_timing: bool,
+    /// 자유 시점 돌리기 민감도(가로, 세로) — `prefs::LOOK_SENS`의 자리(0191).
+    look_sens: (u8, u8),
     sfx: Option<crate::sfx::Sfx>,
     was_dodging: bool,
     /// 그림 이펙트(0141): 월드 사건·상태 변화를 듣고 입자를 낸다 — 월드는 모른다(소리와 같은 길).
@@ -137,6 +140,8 @@ pub struct App {
     mouse_hidden: bool,
     /// 갈 곳이 화면 밖에 있은 초(0060 W1 — 잠깐 뒤에 가장자리 화살).
     goal_off: f32,
+    /// 여정(0183): 알린 목표(처음 본 기록은 조용히 채운다 — `None` = 아직 안 봤다).
+    journey_told: Option<Vec<&'static str>>,
     /// 기록(0064 M2): 지금 것과 마지막으로 쓴 것(바뀌었을 때만 쓴다).
     progress: crate::save::Progress,
     saved: crate::save::Progress,
@@ -201,6 +206,7 @@ impl App {
         let mut volume = crate::prefs::VOLUME_DEFAULT;
         let mut tells = crate::prefs::TELLS_DEFAULT;
         let mut tell_timing = false;
+        let mut look_sens = (crate::prefs::LOOK_DEFAULT, crate::prefs::LOOK_DEFAULT);
         if let Some(p) = crate::prefs::load() {
             if let Some(l) = p.lang {
                 i18n::set_lang(l);
@@ -211,6 +217,7 @@ impl App {
             volume = p.volume;
             tells = p.tells;
             tell_timing = p.tell_timing;
+            look_sens = p.look;
             legacy_weapon = p.weapon;
         }
         // 기록 슬롯(0066): 마지막으로 쓴 슬롯의 기록. 든 무기는 기록에 — 없으면(옛 슬롯 1) 예전 prefs 칸 21의 값.
@@ -286,6 +293,7 @@ impl App {
             volume,
             tells,
             tell_timing,
+            look_sens,
             sfx: None,
             was_dodging: false,
             fx: crate::fx::Fx::default(),
@@ -294,6 +302,7 @@ impl App {
             frame: None,
             mouse_hidden: false,
             goal_off: 0.0,
+            journey_told: None,
             progress: progress.clone(),
             saved: progress,
             slot,
@@ -471,6 +480,7 @@ impl App {
             volume: self.volume,
             tells: self.tells,
             tell_timing: self.tell_timing,
+            look: self.look_sens,
             // PC만 기억한다(0135) — 웹은 브라우저가 Esc로 끌 수 있고 다음에 켤 때 사용자 입력 없이 못 연다.
             fullscreen: crate::DESKTOP && crate::screen::active(),
             // 든 무기는 슬롯 기록으로 옮겼다(0066) — 옛 칸은 처음 읽은 값 그대로 둔다(옛 슬롯 1의 기본값).
@@ -663,6 +673,7 @@ impl App {
             Scene::Skills { host } => self.tick_skills(&a, host.edits()),
             Scene::SkillAct => self.tick_skill_act(&a),
             Scene::Codex { host, tab } => self.tick_codex(&a, host, tab as usize),
+            Scene::Journey { host } => self.tick_journey(&a, host),
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
             s @ (Scene::Settings { .. } | Scene::Shop | Scene::Result { .. }) => {
                 self.tick_menu(&a, s)
@@ -718,6 +729,7 @@ impl App {
             | Scene::Skills { .. }
             | Scene::SkillAct
             | Scene::Codex { .. }
+            | Scene::Journey { .. }
             | Scene::EquipPick { .. } => None,
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } => None,
@@ -746,6 +758,7 @@ impl App {
             | Scene::Skills { .. }
             | Scene::SkillAct
             | Scene::Codex { .. }
+            | Scene::Journey { .. }
             | Scene::EquipPick { .. } => {}
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } => {}
@@ -936,6 +949,7 @@ impl App {
             Scene::Skills { host } => self.draw_skills(f, self.cursor, host),
             Scene::SkillAct => self.draw_skill_act(f),
             Scene::Codex { host, tab } => self.draw_codex(f, host, tab as usize),
+            Scene::Journey { host } => self.draw_journey(f, host),
             Scene::Shop => self.draw_shop(f),
             Scene::Settings { host } => self.draw_settings(f, host),
             #[cfg(feature = "dev")]

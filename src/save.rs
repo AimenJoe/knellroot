@@ -70,12 +70,18 @@ pub mod key {
     pub const RESIDENTS_CHANGED: &str = "residents.changed";
     /// 도감(0130): 본 것의 이름(`codex::obs_key`, 쉼표).
     pub const CODEX: &str = "codex";
+    /// 읽은 새긴 돌(0183 — 여정의 "새긴 돌을 모두 읽어라"): `<지역 앞>.<몇째>`, 쉼표.
+    pub const READ: &str = "read";
+    /// 받은 여정 목표(0183): 목표 아이디, 쉼표. 진행은 다른 기록에서 다시 센다 — 여기는 "받았다"만.
+    pub const JOURNEY: &str = "journey";
     /// 문 장치로 연 문(0113): 스테이지 이름 앞(`find_prefix`)들 — 한 번 열면 판을 넘어 열려 있다(지름길).
     pub const GATES: &str = "gates";
     /// 문지기 핵 점수(0105): 이긴 횟수, `progression::CORE_CAP`까지.
     pub const CORE_WARDEN: &str = "core.warden";
     /// 깨진 종지기 핵 점수(0125, v0.5.0 C3): 둘째 지역 문지기를 이긴 횟수, `CORE_CAP`까지.
     pub const CORE_BELL: &str = "core.bellkeeper";
+    /// 이끼 덮인 문지기 핵 점수(0185, `CORE_CAP`까지).
+    pub const CORE_MOSS: &str = "core.mossward";
     /// v0.4.0 옮기기를 했다(0105 — 핵 고르기 → 생명·숨은 물건·핵 점수). 한 번만.
     pub const MIGRATED_V04: &str = "migrated.v04";
     /// 0166: 처음의 둘(휘돌이·가로지르기)도 기술 점수로 배운다. 이 깃발이 없는 기록(그 전의 판)은 둘을 이미 가졌던 것이다 —
@@ -193,12 +199,18 @@ pub struct Progress {
     pub residents_changed: Vec<String>,
     /// 도감에 적힌 것(0130).
     pub codex: Vec<String>,
+    /// 읽은 새긴 돌(0183).
+    pub read: Vec<String>,
+    /// 받은 여정 목표(0183).
+    pub journey: Vec<String>,
     /// 문 장치로 연 문(0113).
     pub gates: Vec<String>,
     /// 성소 문지기 핵 점수(0105, `CORE_CAP`까지).
     pub cores: u32,
     /// 깨진 종지기 핵 점수(0125, `CORE_CAP`까지).
     pub bell_cores: u32,
+    /// 이끼 덮인 문지기 핵 점수(0185, `CORE_CAP`까지).
+    pub moss_cores: u32,
     /// 든 무기(없으면 옛 prefs 칸의 값을 쓴다).
     pub weapon: Option<crate::weapons::Id>,
     /// 가진 무기(0117 — 무기는 얻어서 쓴다). 맨손은 넣지 않는다(늘 있다).
@@ -302,6 +314,10 @@ impl Progress {
             .num(key::CORE_BELL)
             .unwrap_or(0)
             .min(crate::progression::CORE_CAP);
+        let moss_cores = r
+            .num(key::CORE_MOSS)
+            .unwrap_or(0)
+            .min(crate::progression::CORE_CAP);
         let migrated = r.num(key::MIGRATED_V04) == Some(1);
         // 패시브 칸(0161): 갈래마다 `tree.cells.*`(연 자리들)가 있으면 그것, 없으면 옛 꼴(연 수 N = 앞에서부터 N칸).
         let cells = {
@@ -352,6 +368,21 @@ impl Progress {
             .collect();
         codex.sort();
         codex.dedup();
+        let list = |k: &str| {
+            let mut v: Vec<String> = r
+                .get(k)
+                .unwrap_or("")
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect();
+            v.sort();
+            v.dedup();
+            v
+        };
+        let read = list(key::READ);
+        let journey = list(key::JOURNEY);
         let runs = r.num(key::RUNS).unwrap_or(0);
         // 0166 전의 기록: 처음의 둘은 값 없이 가졌다 — 잃지 않게 1단으로(이미 올렸으면 그대로), 그 값은 기록의 몫
         // (`gift` 둘)으로 얹어 남은 점수는 그대로다. 한 번도 쓴 적 없는 기록(빈 슬롯·깨진 글)은 옛 기록이 아니다 — 새 판으로 읽는다.
@@ -413,9 +444,12 @@ impl Progress {
             residents_seen,
             residents_changed,
             codex,
+            read,
+            journey,
             gates,
             cores,
             bell_cores,
+            moss_cores,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
             skills: {
                 let at = |k: &str, d: crate::skills::Id| {
@@ -520,10 +554,13 @@ impl Progress {
         crate::skills::points(
             self.level.total(),
             self.elites.len() as u32,
-            self.cores.min(CORE_CAP) + self.bell_cores.min(CORE_CAP),
+            self.cores.min(CORE_CAP)
+                + self.bell_cores.min(CORE_CAP)
+                + self.moss_cores.min(CORE_CAP),
             shards(&self.finds),
         ) + self.gift
             + self.ult_gift
+            + crate::journey::points(&self.journey)
     }
 
     /// 이 무기를 가졌나(0117): 맨손·검은 늘, 그 밖은 얻은 것만.
@@ -570,9 +607,12 @@ impl Progress {
         );
         r.set(key::RESIDENTS_CHANGED, self.residents_changed.join(","));
         r.set(key::CODEX, self.codex.join(","));
+        r.set(key::READ, self.read.join(","));
+        r.set(key::JOURNEY, self.journey.join(","));
         r.set(key::GATES, self.gates.join(","));
         r.set(key::CORE_WARDEN, self.cores);
         r.set(key::CORE_BELL, self.bell_cores);
+        r.set(key::CORE_MOSS, self.moss_cores);
         r.set(key::MIGRATED_V04, 1);
         r.set(key::MIGRATED_V06, 1);
         r.set(key::MIGRATED_ULT, 1);
@@ -696,6 +736,7 @@ impl Progress {
             || !self.finds.is_empty()
             || self.cores > 0
             || self.bell_cores > 0
+            || self.moss_cores > 0
             || self.board.cells.count() > 0
     }
 

@@ -27,6 +27,7 @@ mod light;
 mod overlays;
 mod post;
 mod props;
+mod resident;
 mod shadow;
 mod shapes;
 mod skill_fx;
@@ -47,11 +48,18 @@ use telegraph::*;
 use terrain::*;
 
 pub struct Renderer {
+    /// 상주 지형(0186): 움직이지 않는 지형 덩어리의 GPU 버퍼.
+    resident: resident::Resident,
     rt: RenderTarget,
     /// 선·번짐·톤을 내부 해상도에서 한 번 셈해 담는 타깃(0140) — 화면에는 이것을 가장 가까운 픽셀로 키운다.
     post: RenderTarget,
     /// 렌더 타깃 크기와 정수 배율(물리 px) — 화면에 맞춰 바뀐다(0046).
     rt_size: (u32, u32, u32),
+    /// 내부 해상도 줄 수·2배로 그려 줄이기(0190 — 연구소 `render.rows`·`render.ssaa`, 프레임 들머리에 넣는다).
+    rows_target: f32,
+    ssaa: bool,
+    /// 2배로 그렸을 때 줄여 옮기는 반 크기 타깃.
+    half: Option<RenderTarget>,
     /// 시나리오 상자마다 지금 진하기(1 = 불투명). 가리면 부드럽게 옅어지고 풀리면 돌아온다(0008).
     fade: Vec<f32>,
     pub lib: Library,
@@ -169,6 +177,9 @@ impl Renderer {
             rt,
             post: make_post(INTERNAL_W, INTERNAL_H),
             rt_size: (INTERNAL_W, INTERNAL_H, 1),
+            rows_target: INTERNAL_H as f32,
+            ssaa: false,
+            half: None,
             fade: Vec::new(),
             lib: Library::default(),
             scenery: None,
@@ -198,6 +209,7 @@ impl Renderer {
             shadow_center: Vec3::ZERO,
             edge: None,
             edge_tried: false,
+            resident: resident::Resident::new(),
             edge_ready: false,
             edge_uniform: Vec4::ZERO,
             grade_uniform: Vec4::ZERO,
@@ -213,6 +225,15 @@ impl Renderer {
     /// 지난 프레임에 보낸 모델 정점 수(개발 줄).
     pub fn vertices(&self) -> usize {
         self.batch.last_vertices
+    }
+
+    /// GPU에 상주한 지형 정점 수(0186 — 프레임마다 올리지 않는다, 개발 줄).
+    pub fn resident_vertices(&self) -> usize {
+        if self.resident.active {
+            self.resident.verts
+        } else {
+            0
+        }
     }
 
     /// 지난 프레임에 배치가 보낸 횟수(그리기 호출의 큰 몫, 개발 줄). 진짜 GL 호출 수는 `tools/test/leak.js`가 잰다.
@@ -258,6 +279,7 @@ impl Renderer {
         let edges_on = t[crate::tuning::P::RenderEdge] >= 0.5;
         self.batch.record = edges_on;
         self.batch.recorded.clear();
+        self.resident.active = false;
         let lights: Vec<Light> = match v.stage {
             Some(run) => self.terrain(run, w, cam, &pts, k, t),
             None => {
@@ -366,6 +388,8 @@ impl Renderer {
         }
         self.batch.casters.clear();
         self.batch.caster_idx.clear();
+        self.rows_target = t[crate::tuning::P::RenderRows];
+        self.ssaa = t[crate::tuning::P::RenderSsaa] >= 0.5;
         let (iw, ih) = self.fit_screen();
         let aspect = iw as f32 / ih as f32;
         let c3 = cam.to_camera3d(self.rt.clone(), aspect);
@@ -375,7 +399,8 @@ impl Renderer {
             outline_px: t[crate::tuning::P::RenderOutline],
             eye: c3.position,
             fovy: c3.fovy,
-            rows: ih as f32,
+            // 외곽선 두께는 화면에 나가는 줄 수로 센다(2배로 그리면 반 — 줄인 뒤 지금과 같은 두께).
+            rows: ih as f32 / if self.ssaa { 2.0 } else { 1.0 },
             calm: t[crate::tuning::P::RenderFloorCalm] >= 0.5,
             key: t[crate::tuning::P::RenderKeyLight] >= 0.5,
             enemy_lift: t[crate::tuning::P::RenderEnemyLift],

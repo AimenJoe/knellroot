@@ -56,6 +56,10 @@ pub const VILLAGE: Pair = (
     "둘째 지역(떠난 마을) 어귀부터",
     "region 2 (village) from its edge",
 );
+pub const GARDEN: Pair = (
+    "셋째 지역(잔뿌리의 정원) 어귀부터",
+    "region 3 (rootlet garden) from its edge",
+);
 pub const RESIDENTS: Pair = (
     "둘째 지역 주민 곁에서(말 걸기)",
     "region 2 beside a resident (talk)",
@@ -88,6 +92,11 @@ pub const SKILLS_MAX_NOTE: Pair = (
     "every skill and great skill at max rank, every passive open; pick again for this slot's board. nothing is saved. now: {0}",
 );
 pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
+pub const PERF_LINE: Pair = ("성능 줄 켬/끔", "perf line on/off");
+pub const PERF_LINE_NOTE: Pair = (
+    "화면 아래에 fps·cpu·프레임 시간·정점 수를 띄운다(F3과 같다). 연구소의 render.resident를 0·1로 바꿔 지형 상주를 견준다.",
+    "show fps, cpu, frame time and vertices at the bottom (same as F3). Flip render.resident 0/1 in the lab to compare.",
+);
 pub const SKILLS_FLIP_NOTE: Pair = (
     "끝 단으로 올린 판의 고르기를 모두 ㄱ·ㄴ으로 뒤집는다(꺼져 있으면 켠다). 저장하지 않는다. 지금: {0}",
     "flips every pick on the maxed board (turns it on if off). nothing is saved. now: {0}",
@@ -120,6 +129,7 @@ pub const PAIRS: &[Pair] = &[
     ENTRANCE,
     GATE,
     VILLAGE,
+    GARDEN,
     RESIDENTS,
     STONES,
     CHEST,
@@ -132,6 +142,8 @@ pub const PAIRS: &[Pair] = &[
     SKILLS_MAX_NOTE,
     SKILLS_FLIP,
     SKILLS_FLIP_NOTE,
+    PERF_LINE,
+    PERF_LINE_NOTE,
     BOARD_SLOT,
     BOARD_MAX_A,
     BOARD_MAX_B,
@@ -156,6 +168,16 @@ pub fn spec_label(name: &'static str) -> &'static str {
 
 /// 개발 시나리오(`scenario::LIST`의 영어 이름) → (한국어 이름, 무엇을 보나). F3 아레나 줄은 기본 글꼴이라 영어 그대로.
 pub const SCENARIO_KO: &[(&str, &str, &str)] = &[
+    (
+        "moss-clad warden",
+        "이끼 덮인 문지기",
+        "0185 낮게 쓸기·껍질 받기(앞 평타는 튕김, 옆·뒤·강타는 든다)·틈새 돌진(뒤에 늦게 돈다)",
+    ),
+    (
+        "moss-clad warden phase two",
+        "이끼 덮인 문지기 2단계",
+        "0185 시작하자마자 전환·짧은 쉼·쓸기 뒤 돌진",
+    ),
     (
         "warden phase two",
         "문지기 2단계",
@@ -255,12 +277,11 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("cam.quarter.fov deg", "쿼터뷰 시야각(도)"),
     ("cam.quarter.follow 1/s", "쿼터뷰 따라가기(/초)"),
     ("cam.quarter.yaw deg", "쿼터뷰 방향(도)"),
-    ("cam.lock.dist", "락온 거리"),
-    ("cam.lock.height", "락온 높이"),
-    ("cam.lock.shoulder", "락온 어깨 비키기"),
     ("cam.lock.fov deg", "락온 시야각(도)"),
-    ("cam.lock.look ahead m", "락온 주시점 밀기(m)"),
-    ("cam.lock.frame x", "락온 구도 배율"),
+    ("cam.free.dist", "숄더뷰 거리"),
+    ("cam.free.height", "숄더뷰 높이"),
+    ("cam.free.look ahead m", "숄더뷰 주시점 앞(m)"),
+    ("cam.free.look height m", "숄더뷰 주시점 높이(m)"),
     ("cam.lock.yaw 1/s", "락온 돌기 빠르기(/초)"),
     ("cam.blend s", "시점 전환 시간(초)"),
     ("cam.collide r", "벽 당기기 반지름"),
@@ -407,6 +428,9 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("render.motes 0off 1on", "떠다니는 입자(0끔 1켬)"),
     ("render.sky 0off 1on", "하늘·원경(0끔 1켬)"),
     ("render.flora 0off 1on", "식생(0끔 1켬)"),
+    ("render.resident 0off 1on", "지형 GPU 상주(0끔 1켬)"),
+    ("render.rows", "내부 해상도 줄 수"),
+    ("render.ssaa 0off 1on", "2배로 그려 줄이기(0끔 1켬)"),
     ("turn.wobble in deg", "땅 돌리기 시작 휘청(도)"),
     ("turn.wobble out deg", "땅 돌리기 끝 휘청(도)"),
     ("turn.start stagger s", "땅 돌리기 시작 적 휘청(초)"),

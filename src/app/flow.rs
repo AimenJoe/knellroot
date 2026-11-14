@@ -33,6 +33,10 @@ pub enum Scene {
         host: Host,
         tab: u8,
     },
+    /// 큰 창의 여정 탭(0183): 지역마다의 목표 — 왼쪽 목록 · 오른쪽 풀이와 받을 것, 이룬 것은 확인 = 받기(멈춤·화로 둘 다).
+    Journey {
+        host: Host,
+    },
     /// 큰 창의 기술 탭(0161 → 0164): 갈래 셋 × 줄 셋의 칸 그림 + 고른 칸의 상세. 화로에서는 올리기·고르기 바꾸기·되돌리기까지
     /// (`Host::edits`), 멈춤에서는 읽기와 끼우기만.
     Skills {
@@ -102,6 +106,7 @@ pub enum Tab {
     Equip,
     Skills,
     Codex,
+    Journey,
     Shop,
     Settings,
 }
@@ -117,6 +122,7 @@ pub fn tabs(host: Host) -> &'static [Tab] {
             Tab::Equip,
             Tab::Skills,
             Tab::Codex,
+            Tab::Journey,
             Tab::Settings,
         ],
         Host::Hearth => &[
@@ -124,6 +130,7 @@ pub fn tabs(host: Host) -> &'static [Tab] {
             Tab::Equip,
             Tab::Skills,
             Tab::Codex,
+            Tab::Journey,
             Tab::Shop,
             Tab::Settings,
         ],
@@ -137,6 +144,7 @@ pub fn tab_scene(host: Host, tab: Tab) -> Scene {
         Tab::Equip => Scene::Equip { host },
         Tab::Skills => Scene::Skills { host },
         Tab::Codex => Scene::Codex { host, tab: 0 },
+        Tab::Journey => Scene::Journey { host },
         Tab::Shop => Scene::Shop,
         Tab::Settings => Scene::Settings { host },
     }
@@ -149,6 +157,7 @@ pub fn tab_of(scene: Scene) -> Option<(Host, Tab)> {
         Scene::Equip { host } => Some((host, Tab::Equip)),
         Scene::Skills { host } => Some((host, Tab::Skills)),
         Scene::Codex { host, .. } => Some((host, Tab::Codex)),
+        Scene::Journey { host } => Some((host, Tab::Journey)),
         Scene::Shop => Some((Host::Hearth, Tab::Shop)),
         Scene::Settings { host } => Some((host, Tab::Settings)),
         Scene::Title
@@ -246,6 +255,7 @@ impl Scene {
             | Scene::EquipPick { .. }
             | Scene::Skills { .. }
             | Scene::Codex { .. }
+            | Scene::Journey { .. }
             | Scene::Shop
             | Scene::Settings { .. }
             | Scene::Result { .. }
@@ -451,6 +461,9 @@ pub enum SettingsRow {
     Tells,
     /// 바닥 예고의 "언제"(채움) 켬/끔(0128).
     TellTiming,
+    /// 자유 시점 돌리기 민감도 가로·세로(0191 — 오른쪽 스틱·마우스·화면 끌기, `prefs::LOOK_SENS`).
+    LookYaw,
+    LookPitch,
     /// 마우스 조준 켬/끔·커서 쉼 시간·조준 표시 크기(0058) — 마우스가 있을 법한 기기에서만.
     MouseAim,
     CursorRest,
@@ -475,6 +488,7 @@ pub fn settings_rows(fullscreen: bool, mouse: bool, host: Host) -> Vec<SettingsR
     v.push(SettingsRow::Tells);
     v.push(SettingsRow::TellTiming);
     v.push(SettingsRow::Volume);
+    v.extend([SettingsRow::LookYaw, SettingsRow::LookPitch]);
     if mouse {
         v.extend([
             SettingsRow::MouseAim,
@@ -505,6 +519,8 @@ pub fn choose_settings(row: SettingsRow) -> Option<Go> {
         | SettingsRow::Volume
         | SettingsRow::Tells
         | SettingsRow::TellTiming
+        | SettingsRow::LookYaw
+        | SettingsRow::LookPitch
         | SettingsRow::MouseAim
         | SettingsRow::CursorRest
         | SettingsRow::Reticle => None,
@@ -551,6 +567,7 @@ pub fn back(scene: Scene) -> Go {
         | Scene::Skills { .. }
         | Scene::SkillAct
         | Scene::Codex { .. }
+        | Scene::Journey { .. }
         | Scene::Shop
         | Scene::Ask(_)
         | Scene::Controls
@@ -658,10 +675,13 @@ mod tests {
     #[test]
     fn each_host_has_its_tab_row_and_every_tab_maps_to_one_scene() {
         use Tab::*;
-        assert_eq!(tabs(Host::Pause), [Status, Equip, Skills, Codex, Settings]);
+        assert_eq!(
+            tabs(Host::Pause),
+            [Status, Equip, Skills, Codex, Journey, Settings]
+        );
         assert_eq!(
             tabs(Host::Hearth),
-            [Status, Equip, Skills, Codex, Shop, Settings]
+            [Status, Equip, Skills, Codex, Journey, Shop, Settings]
         );
         assert_eq!(tabs(Host::Title), [Settings]);
         for host in [Host::Title, Host::Pause, Host::Hearth] {
@@ -722,7 +742,7 @@ mod tests {
         assert_eq!(tab_of(codex), Some((Host::Pause, Tab::Codex)));
         assert_eq!(
             tab_step(codex, 1),
-            Go::Swap(Scene::Settings { host: Host::Pause })
+            Go::Swap(Scene::Journey { host: Host::Pause })
         );
         assert_eq!(
             tab_step(codex, -1),

@@ -18,7 +18,13 @@ fn hits_to_die_to_every_species_are_what_they_were_before_the_scale_move() {
     use crate::stats::Stats;
     let t = Tuning::default();
     let mut cases = 0;
-    for d in crate::species::ALL {
+    // 치지 않는 생명체(0185 — 이끼먹이)는 뺀다: 휘두르는 틱에 넣어도 치지 않는다(아래).
+    let hitters = || {
+        crate::species::ALL
+            .iter()
+            .filter(|d| d.behavior != crate::species::Behavior::Grazer)
+    };
+    for d in hitters() {
         for tier in [1u8, 2, crate::tuning::TIER_HEAVY_HITS] {
             for feet in [false, true] {
                 let mut w = World::new("test", 30.0);
@@ -60,7 +66,27 @@ fn hits_to_die_to_every_species_are_what_they_were_before_the_scale_move() {
             }
         }
     }
-    assert_eq!(cases, crate::species::ALL.len() * 6);
+    assert_eq!(cases, hitters().count() * 6);
+    // 이끼먹이는 곁에 서도 치지 않는다 — 쫓지도 않고 달아난다.
+    let mut w = World::new("test", 30.0);
+    let full = w.player.hp;
+    let i = w.spawn(
+        crate::species::Kind::Mossgrazer,
+        w.player.pos + vec3(0.0, 0.0, -1.0),
+    );
+    w.enemies[i].home = Some((w.enemies[i].pos, 0.0));
+    w.enemies[i].state = EState::Idle;
+    let start = w.enemies[i].pos.distance(w.player.pos);
+    for _ in 0..60 {
+        let ev = w.step(&Actions::default(), &t);
+        assert!(!ev.contains(&Event::PlayerHurt));
+    }
+    assert_eq!(w.player.hp, full);
+    assert!(
+        w.enemies[i].pos.distance(w.player.pos) > start + 1.0,
+        "it ran"
+    );
+    assert!(!w.enemies[i].lockable(), "never a lock-on target");
     // 등잔 한 모금·생명 한 단도 옛 칸 수 그대로: 한 모금 = 두 대 몫, 생명 한 단 = 한 대 몫.
     assert_eq!(t[P::FlaskHeal] as i32, 2 * OLD_BLOW * HP_UNIT);
     let life = crate::progression::Level {

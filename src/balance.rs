@@ -389,6 +389,19 @@ pub fn builds() -> Vec<Build> {
             tree: tree(4),
             weapon: W::Sword,
         },
+        // 정원 도착(0185): 문지기 둘·마을의 잔불 — 레벨 일곱, 패시브 칸 여섯.
+        Build {
+            name: "D garden arrival (Lv7 life3/might4, Ear+Hand+Cloth, lamp+sip, Riposte5)",
+            level: Level {
+                life: 3,
+                stamina: 0,
+                might: 4,
+            },
+            worn: vec![Charm::Ear, Charm::Hand, Charm::Cloth],
+            finds: finds(),
+            tree: tree(5),
+            weapon: W::Sword,
+        },
     ]
 }
 
@@ -400,6 +413,7 @@ fn bellkeeper_fight_length() {
     for (kind, bs) in [
         (Kind::Warden, &builds()[..3]),
         (Kind::Bellkeeper, &builds()[..]),
+        (Kind::Mossward, &builds()[2..]),
     ] {
         for b in bs {
             let dummy = fight_vs(kind, true, b, 1.0, 1, &t).secs;

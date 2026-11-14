@@ -70,6 +70,8 @@ pub struct Env {
     pub fireflies: bool,
     pub falling: bool,
     pub trees: bool,
+    /// 바닥(0185 — 굽는 지형의 석판·이끼·흙).
+    pub floor: crate::scenery::FloorLook,
 }
 
 /// 땅 위(성소): 해 질 녘 남보라 하늘·달(0063 그대로).
@@ -105,6 +107,7 @@ pub static SURFACE: Env = Env {
     fireflies: true,
     falling: false,
     trees: true,
+    floor: crate::scenery::STONE_FLOOR,
 };
 
 /// 땅속(떠난 마을, 지하 40m): 하늘 대신 흙빛이 아래로 짙어지는 동굴, 높은 동굴 벽, 뿌리 천장(아치), 달 없음·달빛은 천장 틈으로 조금,
@@ -141,6 +144,44 @@ pub static UNDERGROUND: Env = Env {
     fireflies: false,
     falling: true,
     trees: false,
+    floor: crate::scenery::STONE_FLOOR,
+};
+
+/// 땅속 더 깊은 곳(잔뿌리의 정원, 지하 75m — 0185): 마을의 흙빛 동굴에서 물기·이끼의 옅은 초록이 섞인다(설계 — 생명색은 물기·이끼·작은
+/// 생명체에 나눠 둔다, 보라 뿌리와 잿빛만으로 채우지 않는다). 천장 틈이 드물어 달빛은 더 약하고, 떨어지는 것은 흙 대신 물방울로 읽힌다.
+pub static GARDEN: Env = Env {
+    sky: [
+        Color::new(0.07, 0.09, 0.09, 1.0),
+        Color::new(0.11, 0.14, 0.13, 1.0),
+        Color::new(0.09, 0.11, 0.11, 1.0),
+        Color::new(0.07, 0.08, 0.09, 1.0),
+        Color::new(0.05, 0.06, 0.07, 1.0),
+        Color::new(0.035, 0.04, 0.055, 1.0),
+    ],
+    zenith: Color::new(0.03, 0.035, 0.045, 1.0),
+    ridges: [
+        (
+            Color::new(0.11, 0.14, 0.13, 1.0),
+            Color::new(0.18, 0.24, 0.20, 1.0),
+        ),
+        (
+            Color::new(0.08, 0.10, 0.10, 1.0),
+            Color::new(0.13, 0.17, 0.15, 1.0),
+        ),
+        (
+            Color::new(0.05, 0.065, 0.07, 1.0),
+            Color::new(0.09, 0.12, 0.11, 1.0),
+        ),
+    ],
+    ridge_h: 2.4,
+    moon: false,
+    moonlight: 0.32,
+    fog: Color::new(0.11, 0.15, 0.15, 1.0),
+    fog_deep: Color::new(0.06, 0.085, 0.09, 1.0),
+    fireflies: false,
+    falling: true,
+    trees: false,
+    floor: crate::scenery::GARDEN_FLOOR,
 };
 
 /// 이어 붙여도 이음매가 없는 점 무늬(정수 주파수 사인 합) → 세 단 알파(픽셀 그림처럼 계단).
@@ -578,6 +619,19 @@ impl Backdrop {
                 Shape::Dot => billboard(&mut verts, &mut idx, p.pos, right, up, size, col),
                 Shape::Puff => billboard(&mut puffs, &mut puff_idx, p.pos, right, up, size, col),
                 Shape::Star => star(&mut verts, &mut idx, p.pos, right, up, size, col),
+                // 진액 방울(0182): 빛줄과 같은 꼴이되 꼬리가 짧다(물방울이 늘어난 만큼만).
+                Shape::Drop => {
+                    let tail = p.pos - p.vel * 0.035;
+                    let end = Color::new(col.r, col.g, col.b, col.a * 0.6);
+                    streak(&mut verts, &mut idx, p.pos, tail, size, view, col, end);
+                }
+                // 바닥 얼룩(0182): 땅에 눕힌 계단진 원판 — 떨어질 때 가던 쪽으로 길쭉하게.
+                Shape::Splat => {
+                    let d = p.vel.normalize_or(Vec3::X);
+                    let long = 1.0 + (p.vel.length() * 0.18).min(0.9);
+                    let side = vec3(-d.z, 0.0, d.x);
+                    billboard(&mut puffs, &mut puff_idx, p.pos, d * long, side, size, col);
+                }
                 Shape::Streak => {
                     let tail = p.pos - p.vel * 0.045;
                     let end = Color::new(col.r, col.g, col.b, 0.0);

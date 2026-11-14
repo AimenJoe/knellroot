@@ -65,7 +65,7 @@ void main() {
 }"#;
 
 /// 바닥: 색 × 빛 지도(0044) × 캐릭터 그림자(가림판, 빛 공간 자리로 읽는다).
-const FLOOR_FRAGMENT: &str = r#"#version 100
+pub(super) const FLOOR_FRAGMENT: &str = r#"#version 100
 precision mediump float;
 varying lowp vec4 color;
 varying lowp vec2 uv;
@@ -83,7 +83,7 @@ void main() {
 }"#;
 
 /// 두 재질이 같이 쓰는 꼭짓점 셰이더: 월드 자리를 빛 공간(`LightVP`, 없으면 단위)으로도 넘긴다.
-const SHADOW_VERTEX: &str = r#"#version 100
+pub(super) const SHADOW_VERTEX: &str = r#"#version 100
 attribute vec3 position;
 attribute vec2 texcoord;
 attribute vec4 color0;

@@ -134,6 +134,7 @@ impl App {
             .unwrap_or(weapons::Id::Sword);
         self.saved = progress.clone();
         self.progress = progress;
+        self.journey_told = None;
         self.slots = crate::save::summaries();
         crate::screen::touch_enter();
         self.continue_run();

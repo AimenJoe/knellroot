@@ -134,6 +134,12 @@ impl App {
         }
         // 새긴 돌(0129): 읽으면 글 판, 떠 있는 동안 같은 돌을 다시 누르면 닫힌다.
         if let Some(k) = self.run.take_read() {
+            // 여정(0183): 읽은 새긴 돌을 기록에(판을 넘어 남는다).
+            let id = crate::journey::read_id(self.run.def.find_prefix, k);
+            if !self.progress.read.contains(&id) {
+                self.progress.read.push(id);
+                self.progress.read.sort();
+            }
             self.stone_card = match self.stone_card {
                 Some((b, _)) if b == k => None,
                 _ => Some((k, STONE_TIME)),
@@ -268,6 +274,9 @@ impl App {
         for _ in 0..a.zoom.unsigned_abs().min(3) {
             self.cam.step_zoom(a.zoom.signum(), player);
         }
+        if a.view {
+            self.cam.toggle_view(player);
+        }
         if self.cam.mode == Mode::Free {
             let px = if crate::input::device() == crate::input::Device::Touch {
                 FREE_TOUCH_DEG_PER_PX
@@ -275,8 +284,12 @@ impl App {
                 FREE_MOUSE_DEG_PER_PX
             }
             .to_radians();
-            let dyaw = a.aim.x * FREE_STICK_YAW_DEG.to_radians() * TICK_DT + a.look.x * px;
-            let dpitch = -a.aim.y * FREE_STICK_PITCH_DEG.to_radians() * TICK_DT + a.look.y * px;
+            // 설정의 민감도(0191 — 스틱·마우스·끌기 모두에 같은 배율).
+            let sens = |i: u8| crate::prefs::LOOK_SENS[i as usize] as f32 / 100.0;
+            let (ky, kp) = (sens(self.look_sens.0), sens(self.look_sens.1));
+            let dyaw = (a.aim.x * FREE_STICK_YAW_DEG.to_radians() * TICK_DT + a.look.x * px) * ky;
+            let dpitch =
+                (-a.aim.y * FREE_STICK_PITCH_DEG.to_radians() * TICK_DT + a.look.y * px) * kp;
             self.cam.look(dyaw, dpitch);
             a.aim = Vec2::ZERO;
             a.cursor = None;
@@ -284,6 +297,7 @@ impl App {
         crate::input::set_free_look(self.cam.mode == Mode::Free);
         a.zoom = 0;
         a.look = Vec2::ZERO;
+        a.view = false;
         a
     }
 
@@ -424,6 +438,8 @@ impl App {
         self.fx.watch(&self.world, TICK_DT);
         let slow = if self.world.hitstop > 0.0 { 0.25 } else { 1.0 };
         self.fx.tick(TICK_DT * slow);
+        let w = &self.world;
+        self.fx.settle(|p| w.ground_y(p));
         self.follow_camera();
     }
 
@@ -886,6 +902,11 @@ impl App {
         let mut cues = Vec::new();
         for (i, en) in self.world.enemies.iter().enumerate() {
             let tele = en.telegraph();
+            // 껍질 받기(0185)는 예고 모양이 없다 — 웅크리는 첫 틱에 돌 소리 하나.
+            if en.shelled() && self.tele_was[i] != en.atk_count {
+                self.tele_was[i] = en.atk_count;
+                cues.push(Id::Shell);
+            }
             // 공격 번호로 센다(0128): 연속 공격의 다음 타·페인트로 바뀐 공격도 제 소리를 낸다.
             let fresh = tele.is_some() && self.tele_was[i] != en.atk_count;
             if let (Some((_, shape)), true) = (tele, fresh) {
@@ -944,7 +965,7 @@ impl App {
         }
         draw_text(
             format!(
-                "{} {mode}{} cam {:.0}deg fps {}  cpu {:.1}ms (max {:.1})  frame {:.1}ms  batches {} (max {})  verts {}",
+                "{} {mode}{} cam {:.0}deg fps {}  cpu {:.1}ms (max {:.1})  frame {:.1}ms  batches {} (max {})  verts {} (+{} resident)",
                 self.world.name,
                 self.cam.blending().map(|e| format!(" blend {e:.2}s")).unwrap_or_default(),
                 self.cam.azimuth_deg(),
@@ -954,7 +975,8 @@ impl App {
                 p.frame_avg_ms,
                 p.draws,
                 p.draws_max,
-                self.renderer.vertices()
+                self.renderer.vertices(),
+                self.renderer.resident_vertices()
             ),
             f.ox + 10.0,
             y,

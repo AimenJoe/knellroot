@@ -20,6 +20,11 @@ def v(*xs):
 
 # 0038: 몸은 Meshy(AI) 모델 — Gemini 그림 → Meshy Image to 3D(CC BY 4.0) → `meshy_convert.py`로 줄이고 색을 구운 것.
 MESHY_LOW = os.path.join(C.REPO, "tools", "art", "sources", "meshy", "raccoon_v1_low.glb")
+# 0189: 몸 둘 — v1 "Cozy Bell Raccoon"(연보라 두건·민트 옷, 0038) · v2 "Hooded Raccoon Rogue"(보라 두건 망토·주머니, 사장 2026-11-14
+# "난 저 새 모델이 맘에 드는데"). 기본 v2, `KR_WANDERER_BODY=v1`이면 옛 몸으로 다시 굽는다(되돌리기·견주기).
+BODY = os.environ.get("KR_WANDERER_BODY", "v2")
+if BODY == "v2":
+    MESHY_LOW = os.path.join(C.REPO, "tools", "art", "sources", "meshy", "raccoon_v2_low.glb")
 CX = 0.0  # 몸 가운데 x(머리로 맞춘 뒤 — 두 손끝이 ±0.35로 맞는다)
 # 부위 이름 → 뼈
 MESHY_PARTS = {"head_geo": "head", "body_geo": "body", "arm_l_geo": "arm_l", "arm_r_geo": "arm_r",
@@ -38,9 +43,63 @@ def _seg_dist(p, a, b):
     return (p - (a + ab * t)).length
 
 
+# v2 몸의 치수(키 1.4m, 앞 = -Y, 캐릭터 왼쪽 = +X) — 10cm 격자를 그은 앞·옆 렌더와 높이 띠 정점 분포로 잰 것(0189).
+V2_NECK_Z = 0.82  # 두건이 어깨로 늘어진 자락 아래 — 목도리·깃은 몸에 남는다
+V2_LEG_Z = 0.16  # 망토 밑단 아래로 나온 검은 발
+V2_SHOULDER = (0.24, -0.02, 0.64)
+V2_HAND = (0.385, -0.03, 0.45)
+V2_ARM_R = 0.085
+V2_TAIL_Y = 0.22  # 이보다 뒤(+Y)이고 엉덩이 아래면 꼬리
+
+
+# v2 망토 밝히기(0189): 원본의 짙은 보라는 어두운 땅속 지역(정원·뿌리 굴)에서 바닥과 같은 밝기의 덩어리가 됐다(게임 화면).
+# 원본은 두고 게임용 텍스처 사본에서 보라 계열만 밝기를 올리고 채도를 조금 낮춘다(KB ai-mesh-to-rigid-part-model "AI 텍스처의 밝기").
+# 0 = 원본 그대로. `KR_WANDERER_LIFT`로 바꿔 굽는다.
+V2_LIFT = float(os.environ.get("KR_WANDERER_LIFT", "0.45"))
+V2_DESAT = 0.8
+
+
+def lift_purples(img, lift=V2_LIFT, desat=V2_DESAT):
+    """텍스처의 보라·자주 칸(색상 0.70~0.97)만 V를 (1 − V) × lift만큼 올리고 채도를 desat배로 — 얼굴·털·가죽·꼬리는 그대로."""
+    import colorsys
+    if lift <= 0.0:
+        return
+    px = list(img.pixels[:])
+    n = 0
+    for i in range(0, len(px), 4):
+        h, s, v = colorsys.rgb_to_hsv(px[i], px[i + 1], px[i + 2])
+        if 0.70 < h < 0.97 and s > 0.15:
+            v = v + (1.0 - v) * lift
+            s = s * desat
+            px[i], px[i + 1], px[i + 2] = colorsys.hsv_to_rgb(h, s, v)
+            n += 1
+    img.pixels[:] = px
+    print(f"[wanderer] v2 cloak lifted: {n} texels (lift {lift})")
+
+
+def classify_v2(c):
+    from mathutils import Vector
+    x, y, z = c.x, c.y, c.z
+    if z > V2_NECK_Z:
+        return "head_geo"
+    if y > V2_TAIL_Y and z < 0.62:
+        return "tail_geo"
+    if z < V2_LEG_Z:
+        return "leg_l_geo" if x > 0 else "leg_r_geo"
+    p = Vector((x, y, z))
+    (sx, sy, sz), (hx, hy, hz) = V2_SHOULDER, V2_HAND
+    if _seg_dist(p, (-sx, sy, sz), (-hx, hy, hz)) < V2_ARM_R:
+        return "arm_r_geo"
+    if _seg_dist(p, (sx, sy, sz), (hx, hy, hz)) < V2_ARM_R:
+        return "arm_l_geo"
+    return "body_geo"
+
+
 def classify(c):
     """면 가운데 자리 → 부위(앞 = -Y, 캐릭터 왼쪽 = +X, 키 1.4m). 치수는 높이 띠마다 정점을 찍어 본 것."""
     from mathutils import Vector
+    if BODY == "v2":
+        return classify_v2(c)
     x, y, z = c.x - CX, c.y, c.z
     if z > 0.628:  # 두건 아래 가장자리 — 목도리는 몸에 남겨 고개를 젖혀도 자른 자리가 덜 드러난다
         return "head_geo"
@@ -199,6 +258,8 @@ def dress_hood(m, head):
 # 뼈 자리(새 몸, 키 1.4m). 손은 장갑 가운데, 어깨는 소매 위.
 HAND = (0.29, -0.085, 0.31)
 SHOULDER = (0.185, -0.05, 0.52)
+if BODY == "v2":
+    HAND, SHOULDER = V2_HAND, V2_SHOULDER
 
 
 def weapons(m, hand):
@@ -279,30 +340,33 @@ def make():
     sx, sy, sz = SHOULDER
     m.bone("root", (0, 0, 0))
     m.bone("body", (0, 0, 0.13), "root")
-    m.bone("head", (0, -0.02, 0.62), "body")
+    m.bone("head", (0, -0.02, V2_NECK_Z if BODY == "v2" else 0.62), "body")
     m.bone("arm_l", (sx, sy, sz), "body")
     m.bone("arm_r", (-sx, sy, sz), "body")
     m.bone("hand_r", (-hx, hy, hz), "arm_r")
     m.bone("hand_l", (hx, hy, hz), "arm_l")
-    m.bone("leg_l", (0.08, -0.07, 0.125), "root")
-    m.bone("leg_r", (-0.08, -0.07, 0.125), "root")
+    lx_, ly_, lz_ = (0.14, -0.02, V2_LEG_Z) if BODY == "v2" else (0.08, -0.07, 0.125)
+    m.bone("leg_l", (lx_, ly_, lz_), "root")
+    m.bone("leg_r", (-lx_, ly_, lz_), "root")
     m.bone("cloak", (0, 0.15, 0.50), "body")  # 0037 동작 표가 부르는 뼈 — 새 몸에는 따로 흔들 망토가 없다
-    m.bone("tail", TAIL_AT, "body")
+    m.bone("tail", (0.08, V2_TAIL_Y, 0.32) if BODY == "v2" else TAIL_AT, "body")
     m.bone("lamp", (hx, hy - 0.05, hz - 0.04), "hand_l")
     m.hide("lamp")
     # 0153 뒷모습의 디테일(게임에서 가장 오래 보는 쪽 — 밋밋한 두건 뒤통수와 옷 등판뿐이었다).
-    m.bone("hood_tip", HOOD_TIP_AT, "head")
+    m.bone("hood_tip", (0.0, 0.25, 1.15) if BODY == "v2" else HOOD_TIP_AT, "head")
 
     objs = m.external(MESHY_LOW, classify, MESHY_PARTS)
-    recenter_tail(objs["tail_geo"], objs["body_geo"])
-
-    dress_hood(m, objs["head_geo"])
-
-    # 허리 주머니(왼쪽 엉덩이 뒤 — 꼬리를 옮기며 메운 자리를 덮는다): 갈색 몸 + 크림 덮개 + 금빛 단추.
-    g = m.geo("pouch_geo", "body")
-    g.blob((0.225, 0.075, 0.265), (0.11, 0.14, 0.125), "p_boot", r=0.6, n=2)
-    g.blob((0.232, 0.075, 0.315), (0.115, 0.15, 0.055), "p_cream", r=0.7, n=2)
-    g.blob((0.288, 0.075, 0.285), (0.022, 0.04, 0.04), "p_gold", r=0.9, n=1)
+    if BODY == "v1":
+        recenter_tail(objs["tail_geo"], objs["body_geo"])
+        dress_hood(m, objs["head_geo"])
+        # 허리 주머니(왼쪽 엉덩이 뒤 — 꼬리를 옮기며 메운 자리를 덮는다): 갈색 몸 + 크림 덮개 + 금빛 단추.
+        g = m.geo("pouch_geo", "body")
+        g.blob((0.225, 0.075, 0.265), (0.11, 0.14, 0.125), "p_boot", r=0.6, n=2)
+        g.blob((0.232, 0.075, 0.315), (0.115, 0.15, 0.055), "p_cream", r=0.7, n=2)
+        g.blob((0.288, 0.075, 0.285), (0.022, 0.04, 0.04), "p_gold", r=0.9, n=1)
+    # v2는 원본에 주머니·띠가 있다 — 코드 꼴을 덧붙이지 않는다(0157).
+    if BODY == "v2":
+        lift_purples(m.ext_img)
 
     weapons(m, (-hx, hy, hz))
 

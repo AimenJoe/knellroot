@@ -9,8 +9,8 @@ use crate::codex::{self, ENTRIES};
 use crate::i18n::Tr;
 use flow::Host;
 
-/// 몸 안의 묶음 둘(적 · 장신구).
-const GROUPS: usize = 3;
+/// 몸 안의 묶음 넷(적 · 장신구 · 덧옷 · 무기 — 무기는 0191, 사장 "도감에 무기가 빠졌음").
+const GROUPS: usize = 4;
 /// 묶음 머리 줄의 높이(기준 px) — 그 아래부터 목록.
 const GROUP_H: f32 = 18.0;
 /// 오른쪽 칸의 그림 자리(기준 px): 적은 선 몸(이름 아래의 세로로 긴 칸), 장신구는 머리의 그림 칸.
@@ -49,7 +49,8 @@ impl App {
         let n = match tab {
             0 => ENTRIES.len(),
             1 => crate::charms::TABLE.len(),
-            _ => crate::garb::TABLE.len(),
+            2 => crate::garb::TABLE.len(),
+            _ => crate::weapons::IDS.len(),
         };
         let _ = self.menu_pick(a, n);
         if self.cursor != before {
@@ -67,7 +68,12 @@ impl App {
         let w = self.draw_tab_window(f, scene);
         let (k, u) = (w.k, w.s);
         // 묶음 머리: 위 탭과 다른 꼴 — 밑줄 하나짜리 작은 글 둘, 양 끝에 ◀ ▶(좌우로 넘긴다).
-        let names = [s.codex_tab_foes, s.codex_tab_charms, s.codex_tab_garb];
+        let names = [
+            s.codex_tab_foes,
+            s.codex_tab_charms,
+            s.codex_tab_garb,
+            s.codex_tab_weapons,
+        ];
         let tk = 0.85 * k;
         let ty = w.at(0.0, 2.0).y;
         let mut x = w.at(4.0, 0.0).x;
@@ -170,10 +176,14 @@ impl App {
                 },
             );
             if d.owned {
-                self.draw_pane_item(d.item, icon);
+                if crate::item_view::has_view(d.item) {
+                    self.draw_pane_item(d.item, icon);
+                }
                 lines.extend(self.pane_wrap(&w, tr(d.desc), DIM));
-                lines.push(Ln::Gap);
-                lines.extend(self.pane_wrap(&w, tr(d.flavor), GUESS));
+                if let Some(flavor) = d.flavor {
+                    lines.push(Ln::Gap);
+                    lines.extend(self.pane_wrap(&w, tr(flavor), GUESS));
+                }
             } else {
                 self.ui.text_center(
                     "?",
@@ -193,19 +203,37 @@ impl App {
     }
 }
 
-/// 도감의 물건 한 줄(장신구·덧옷 0176 — 같은 꼴로 보인다).
+/// 도감의 물건 한 줄(장신구·덧옷 0176·무기 0191 — 같은 꼴로 보인다). 무기는 설명에 세계 안의 말이 들어 있어 따로 없다.
 struct Thing {
     owned: bool,
     name: Tr,
     desc: Tr,
-    flavor: Tr,
+    flavor: Option<Tr>,
     place: Tr,
     item: crate::item_view::Item,
 }
 
 impl App {
-    /// 묶음 `tab`(1 = 장신구, 2 = 덧옷)의 물건들(표 순서).
+    /// 묶음 `tab`(1 = 장신구, 2 = 덧옷, 3 = 무기)의 물건들(표 순서).
     fn codex_things(&self, tab: usize) -> Vec<Thing> {
+        if tab == 3 {
+            return crate::weapons::IDS
+                .iter()
+                .map(|&id| {
+                    let (name, desc, place) = weapon_texts(id);
+                    Thing {
+                        // 맨손은 늘 있다(무기 칸을 비운 것).
+                        owned: id == crate::weapons::Id::Fists
+                            || self.progress.weapons.contains(&id),
+                        name,
+                        desc,
+                        flavor: None,
+                        place,
+                        item: crate::item_view::Item::Weapon(id),
+                    }
+                })
+                .collect();
+        }
         if tab == 1 {
             crate::charms::TABLE
                 .iter()
@@ -213,7 +241,7 @@ impl App {
                     owned: self.progress.owned.contains(&d.id),
                     name: d.name,
                     desc: d.desc,
-                    flavor: d.flavor,
+                    flavor: Some(d.flavor),
                     place: codex::charm_place(d.id),
                     item: crate::item_view::Item::Charm(d.id),
                 })
@@ -226,12 +254,44 @@ impl App {
                     owned: have.contains(&d.id),
                     name: d.name,
                     desc: d.desc,
-                    flavor: d.flavor,
+                    flavor: Some(d.flavor),
                     place: d.place,
                     item: crate::item_view::Item::Garb(d.id),
                 })
                 .collect()
         }
+    }
+}
+
+/// 무기의 이름·설명·나오는 곳(0191 — 상자 자리는 `stage/sanctuary.rs`의 `chest_loot` 차례).
+fn weapon_texts(id: crate::weapons::Id) -> (Tr, Tr, Tr) {
+    use crate::weapons::Id as W;
+    match id {
+        W::Sword => (
+            |s| s.weapon_sword,
+            |s| s.weapon_sword_d,
+            |s| s.cx_weapon_sword,
+        ),
+        W::Hammer => (
+            |s| s.weapon_hammer,
+            |s| s.weapon_hammer_d,
+            |s| s.cx_weapon_hammer,
+        ),
+        W::Staff => (
+            |s| s.weapon_staff,
+            |s| s.weapon_staff_d,
+            |s| s.cx_weapon_staff,
+        ),
+        W::Crossbow => (
+            |s| s.weapon_crossbow,
+            |s| s.weapon_crossbow_d,
+            |s| s.cx_weapon_crossbow,
+        ),
+        W::Fists => (
+            |s| s.weapon_fists,
+            |s| s.weapon_fists_d,
+            |s| s.cx_weapon_fists,
+        ),
     }
 }
 

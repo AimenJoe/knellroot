@@ -1,6 +1,7 @@
 //! 스테이지(0019): 지도(글자 격자) → 레벨(벽·소품·불빛·스폰·문) + 진행 대본(구역·물결·문·보스·핵). 새 스테이지 = 파일 하나
 //! (`StageDef` 한 개). 진행은 월드 밖에서 월드를 지켜보며 적을 세우고 문을 여닫는다 — 월드는 스테이지를 모른다(경계 그대로).
 //! 앱은 `StageRun::tick`의 결과(`StageOut`)로 장면만 바꾼다(흐름은 `app::flow`의 순수 함수).
+pub mod garden;
 pub mod sanctuary;
 pub mod village;
 
@@ -435,7 +436,7 @@ pub struct StageDef {
 }
 
 /// 판의 차례(0118, v0.5.0 T1): 성소 → 떠난 마을. 지도 `D`(내려가는 길, 핵을 거둔 뒤)로 다음, `U`(오르는 길)로 앞.
-pub static STAGES: [&StageDef; 2] = [&sanctuary::DEF, &village::DEF];
+pub static STAGES: [&StageDef; 3] = [&sanctuary::DEF, &village::DEF, &garden::DEF];
 /// 내려가는 길·오르는 길 표지(0118)와 밟는 거리(m). 표지에서 이만큼 벗어난 뒤에야 다시 밟을 수 있다.
 pub const DOWN_GLYPH: char = 'D';
 pub const UP_GLYPH: char = 'U';
@@ -1586,13 +1587,23 @@ mod tests {
         assert_eq!(w.lock, Some(b));
     }
 
-    /// 0118(PR #10 검토 뒤 분명히): C3 전까지 마을 끝은 **싸우는 임시 문지기**(첫 문지기 모델) — 종탑 터에 들어서면 깨고,
-    /// 이기고 핵을 거두면 마지막 지역이라 판이 끝난다(결과 화면). 바닥 길은 없다.
+    /// 0125 → 0185: 종탑 터에 들어서면 깨진 종지기가 깨고, 이기고 핵을 거두면 바닥 길이 열린다(셋째 지역이 생겨 마을은 마지막이
+    /// 아니다). 마지막 지역(잔뿌리의 정원)의 이끼 덮인 문지기는 핵이 판의 끝이다 — 바닥 길이 없다.
     #[test]
-    fn the_village_bellkeeper_fights_and_its_core_ends_the_run() {
+    fn the_village_bellkeeper_opens_the_way_down_and_the_last_warden_ends_the_run() {
         let t = Tuning::default();
-        let (mut run, mut w) = StageRun::start(STAGES[STAGES.len() - 1]);
-        assert!(run.down_at.is_none(), "the last region has no way down");
+        for (def, kind, last) in [
+            (STAGES[1], Kind::Bellkeeper, false),
+            (STAGES[STAGES.len() - 1], Kind::Mossward, true),
+        ] {
+            let (run, w) = StageRun::start(def);
+            assert_eq!(run.down_at.is_none(), last);
+            warden_fight_to_core(run, w, kind, &t, last);
+        }
+    }
+
+    fn warden_fight_to_core(mut run: StageRun, mut w: World, kind: Kind, t: &Tuning, last: bool) {
+        let t = t.clone();
         let home = run.level.marks_of('W').next().expect("bellkeeper mark");
         w.player.pos = home + vec3(0.0, 0.0, 4.0);
         w.player.prev = w.player.pos;
@@ -1605,21 +1616,19 @@ mod tests {
         }
         assert_eq!(run.phase, Phase::Duel);
         let b = run.boss.unwrap();
-        assert_eq!(
-            w.enemies[b].kind,
-            Kind::Bellkeeper,
-            "the second warden (0125)"
-        );
+        assert_eq!(w.enemies[b].kind, kind);
         w.enemies[b].state = EState::Dead;
         w.step(&Actions::default(), &t);
         run.tick(&mut w, 1.0 / 60.0);
         assert_eq!(run.phase, Phase::Core);
         w.player.pos = run.core.unwrap();
-        assert_eq!(
-            run.tick(&mut w, 1.0 / 60.0),
-            StageOut::Cleared,
-            "the run ends here"
-        );
+        let out = run.tick(&mut w, 1.0 / 60.0);
+        if last {
+            assert_eq!(out, StageOut::Cleared, "the run ends here");
+        } else {
+            assert_eq!(out, StageOut::CoreTaken, "the floor opens");
+            assert_eq!(run.phase, Phase::Down);
+        }
     }
 
     /// 0091: 높은 땅에 선 문은 상자도 그 땅 위에 — 가운데만 땅에 올리고 상자를 0에 두면 위 한 자락이 시야 가림 판정·막기 밖이었다.
