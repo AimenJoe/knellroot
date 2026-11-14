@@ -92,9 +92,8 @@ impl Renderer {
     }
 }
 
-/// 지형 재질(0142): 기본 재질과 같되 꼭짓점을 바람으로 민다(풀 끝·잎 무더기·불꽃 — `scenery::sway`가 실은 몫). 못 만들면 없음(바람 없이).
-pub(super) fn wind_material() -> Option<Material> {
-    const VS: &str = r#"#version 100
+/// 바람 재질의 셰이더(0142) — 상주 지형(0186)도 같은 것을 쓴다.
+pub(super) const WIND_VS: &str = r#"#version 100
     attribute vec3 position;
     attribute vec2 texcoord;
     attribute vec4 color0;
@@ -132,7 +131,7 @@ pub(super) fn wind_material() -> Option<Material> {
         color = color0 / 255.0;
         uv = texcoord;
     }"#;
-    const FS: &str = r#"#version 100
+pub(super) const WIND_FS: &str = r#"#version 100
     precision mediump float;
     varying lowp vec4 color;
     varying lowp vec2 uv;
@@ -140,10 +139,13 @@ pub(super) fn wind_material() -> Option<Material> {
     void main() {
         gl_FragColor = color * texture2D(Texture, uv);
     }"#;
+
+/// 지형 재질(0142): 기본 재질과 같되 꼭짓점을 바람으로 민다(풀 끝·잎 무더기·불꽃 — `scenery::sway`가 실은 몫). 못 만들면 없음(바람 없이).
+pub(super) fn wind_material() -> Option<Material> {
     load_material(
         ShaderSource::Glsl {
-            vertex: VS,
-            fragment: FS,
+            vertex: WIND_VS,
+            fragment: WIND_FS,
         },
         MaterialParams {
             pipeline_params: PipelineParams {
@@ -223,12 +225,27 @@ impl Renderer {
         if let Some(m) = floor {
             gl_use_material(m);
         }
-        for p in sc.pieces.iter().filter(|p| p.lightmap) {
-            self.batch.raw(&p.verts, &p.idx, p.tex.as_ref(), 1.0);
+        // 상주 지형(0186): 움직이지 않는 덩어리는 GPU에 올려 둔 버퍼로(바닥 + 가리지 않는 덩어리), 나머지만 배치로.
+        let resident = t[crate::tuning::P::RenderResident] >= 0.5 && self.resident.ready();
+        self.resident.active = resident;
+        if resident {
+            self.resident.sync(key, sc);
+            if floor.is_some() {
+                gl_use_default_material();
+            }
+            let mask = self.shadow_rt.as_ref().map(|rt| &rt.texture);
+            self.resident.draw_floor(self.light_vp, mask, floor_shade());
+        } else {
+            for p in sc.pieces.iter().filter(|p| p.lightmap) {
+                self.batch.raw(&p.verts, &p.idx, p.tex.as_ref(), 1.0);
+            }
         }
         self.batch.send();
         if floor.is_some() {
             gl_use_default_material();
+        }
+        if resident {
+            self.resident.draw_still(self.wind_uniform);
         }
         // 바람(0142): 풀 끝·잎·불꽃이 흔들린다 — 그 몫이 실린 정점만 움직이고 나머지 지형은 그대로.
         if let Some(m) = &self.wind_mat {
@@ -250,7 +267,7 @@ impl Renderer {
                 None => 1.0,
             };
             p.fade += (want - p.fade) * k;
-            if p.fade >= 0.98 {
+            if p.fade >= 0.98 && !(resident && super::resident::is_resident(p)) {
                 self.batch.raw(&p.verts, &p.idx, p.tex.as_ref(), 1.0);
             }
         }

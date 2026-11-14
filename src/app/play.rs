@@ -961,7 +961,7 @@ impl App {
         }
         draw_text(
             format!(
-                "{} {mode}{} cam {:.0}deg fps {}  cpu {:.1}ms (max {:.1})  frame {:.1}ms  batches {} (max {})  verts {}",
+                "{} {mode}{} cam {:.0}deg fps {}  cpu {:.1}ms (max {:.1})  frame {:.1}ms  batches {} (max {})  verts {} (+{} resident)",
                 self.world.name,
                 self.cam.blending().map(|e| format!(" blend {e:.2}s")).unwrap_or_default(),
                 self.cam.azimuth_deg(),
@@ -971,7 +971,8 @@ impl App {
                 p.frame_avg_ms,
                 p.draws,
                 p.draws_max,
-                self.renderer.vertices()
+                self.renderer.vertices(),
+                self.renderer.resident_vertices()
             ),
             f.ox + 10.0,
             y,

@@ -463,6 +463,7 @@ pub enum P {
     RenderMotes,
     RenderSky,
     RenderFlora,
+    RenderResident,
     TurnWobbleIn,
     TurnWobbleOut,
     TurnStartStagger,
@@ -519,7 +520,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 166] = [
+pub const SPECS: [Spec; 167] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1654,6 +1655,16 @@ pub const SPECS: [Spec; 166] = [
         RenderFlora,
         "render.flora 0off 1on",
         "RENDER_FLORA",
+        1.0,
+        0.0,
+        1.0,
+        1.0
+    ),
+    // 상주 지형(0186): 움직이지 않는 지형을 GPU 버퍼에 한 번 올려 둔다(0 = 옛 길 — 프레임마다 배치로 다시 올린다, A/B 재기).
+    spec!(
+        RenderResident,
+        "render.resident 0off 1on",
+        "RENDER_RESIDENT",
         1.0,
         0.0,
         1.0,

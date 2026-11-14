@@ -92,6 +92,11 @@ pub const SKILLS_MAX_NOTE: Pair = (
     "every skill and great skill at max rank, every passive open; pick again for this slot's board. nothing is saved. now: {0}",
 );
 pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
+pub const PERF_LINE: Pair = ("성능 줄 켬/끔", "perf line on/off");
+pub const PERF_LINE_NOTE: Pair = (
+    "화면 아래에 fps·cpu·프레임 시간·정점 수를 띄운다(F3과 같다). 연구소의 render.resident를 0·1로 바꿔 지형 상주를 견준다.",
+    "show fps, cpu, frame time and vertices at the bottom (same as F3). Flip render.resident 0/1 in the lab to compare.",
+);
 pub const SKILLS_FLIP_NOTE: Pair = (
     "끝 단으로 올린 판의 고르기를 모두 ㄱ·ㄴ으로 뒤집는다(꺼져 있으면 켠다). 저장하지 않는다. 지금: {0}",
     "flips every pick on the maxed board (turns it on if off). nothing is saved. now: {0}",
@@ -137,6 +142,8 @@ pub const PAIRS: &[Pair] = &[
     SKILLS_MAX_NOTE,
     SKILLS_FLIP,
     SKILLS_FLIP_NOTE,
+    PERF_LINE,
+    PERF_LINE_NOTE,
     BOARD_SLOT,
     BOARD_MAX_A,
     BOARD_MAX_B,
@@ -422,6 +429,7 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("render.motes 0off 1on", "떠다니는 입자(0끔 1켬)"),
     ("render.sky 0off 1on", "하늘·원경(0끔 1켬)"),
     ("render.flora 0off 1on", "식생(0끔 1켬)"),
+    ("render.resident 0off 1on", "지형 GPU 상주(0끔 1켬)"),
     ("turn.wobble in deg", "땅 돌리기 시작 휘청(도)"),
     ("turn.wobble out deg", "땅 돌리기 끝 휘청(도)"),
     ("turn.start stagger s", "땅 돌리기 시작 적 휘청(초)"),

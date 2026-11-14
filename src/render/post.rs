@@ -102,6 +102,13 @@ impl Renderer {
             });
         }
         gl_use_default_material();
+        // 상주 지형(0186)은 배치에 없으니 여기서 같은 카메라로.
+        if self.resident.active {
+            self.resident.draw_normals(
+                Mat4::look_at_rh(c3.position, c3.target, c3.up),
+                self.wind_uniform,
+            );
+        }
         true
     }
 
@@ -237,12 +244,8 @@ fn edge_rt((w, h): (u32, u32)) -> RenderTarget {
 /// 선 재질: 이웃 넷(1px)을 본다 — 뒤가 거리의 `Edge.x`배 넘게 멀면 이 픽셀은 앞 물체의 가장자리 → 어둡게(`Edge.y`).
 /// 같은 면 근처에서 이웃 법선과의 차가 `Edge.w`를 넘고 그 차가 이웃 쪽을 향하면(법선이 바깥으로 벌어짐 = 볼록) 가까운 쪽 픽셀만 밝게(`Edge.z`).
 /// 오목 모서리는 긋지 않는다(t3ssel8r의 밝은 선은 볼록에만 — 2차).
-fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
-    let ctx = unsafe { get_internal_gl().quad_context };
-    if ctx.info().backend != miniquad::Backend::OpenGl {
-        return None;
-    }
-    const NORMAL_VS: &str = r#"#version 100
+/// 법선 패스 셰이더(0061) — 상주 지형(0186)도 같은 것을 쓴다.
+pub(super) const NORMAL_VS: &str = r#"#version 100
     attribute vec3 position;
     attribute vec2 texcoord;
     attribute vec4 color0;
@@ -281,7 +284,7 @@ fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
         vd = -(View * wp).z;
         vn = (View * vec4(normal.xyz, 0.0)).xyz;
     }"#;
-    const NORMAL_FS: &str = r#"#version 100
+pub(super) const NORMAL_FS: &str = r#"#version 100
     #ifdef GL_FRAGMENT_PRECISION_HIGH
     precision highp float;
     #else
@@ -296,6 +299,12 @@ fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
         float lo = fract(v * 255.0);
         gl_FragColor = vec4(n.xy * 0.5 + 0.5, hi, lo);
     }"#;
+
+fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
+    let ctx = unsafe { get_internal_gl().quad_context };
+    if ctx.info().backend != miniquad::Backend::OpenGl {
+        return None;
+    }
     const EDGE_VS: &str = r#"#version 100
     attribute vec3 position;
     attribute vec2 texcoord;

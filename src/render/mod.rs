@@ -27,6 +27,7 @@ mod light;
 mod overlays;
 mod post;
 mod props;
+mod resident;
 mod shadow;
 mod shapes;
 mod skill_fx;
@@ -47,6 +48,8 @@ use telegraph::*;
 use terrain::*;
 
 pub struct Renderer {
+    /// 상주 지형(0186): 움직이지 않는 지형 덩어리의 GPU 버퍼.
+    resident: resident::Resident,
     rt: RenderTarget,
     /// 선·번짐·톤을 내부 해상도에서 한 번 셈해 담는 타깃(0140) — 화면에는 이것을 가장 가까운 픽셀로 키운다.
     post: RenderTarget,
@@ -198,6 +201,7 @@ impl Renderer {
             shadow_center: Vec3::ZERO,
             edge: None,
             edge_tried: false,
+            resident: resident::Resident::new(),
             edge_ready: false,
             edge_uniform: Vec4::ZERO,
             grade_uniform: Vec4::ZERO,
@@ -213,6 +217,15 @@ impl Renderer {
     /// 지난 프레임에 보낸 모델 정점 수(개발 줄).
     pub fn vertices(&self) -> usize {
         self.batch.last_vertices
+    }
+
+    /// GPU에 상주한 지형 정점 수(0186 — 프레임마다 올리지 않는다, 개발 줄).
+    pub fn resident_vertices(&self) -> usize {
+        if self.resident.active {
+            self.resident.verts
+        } else {
+            0
+        }
     }
 
     /// 지난 프레임에 배치가 보낸 횟수(그리기 호출의 큰 몫, 개발 줄). 진짜 GL 호출 수는 `tools/test/leak.js`가 잰다.
@@ -258,6 +271,7 @@ impl Renderer {
         let edges_on = t[crate::tuning::P::RenderEdge] >= 0.5;
         self.batch.record = edges_on;
         self.batch.recorded.clear();
+        self.resident.active = false;
         let lights: Vec<Light> = match v.stage {
             Some(run) => self.terrain(run, w, cam, &pts, k, t),
             None => {
