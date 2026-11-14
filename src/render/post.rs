@@ -49,9 +49,16 @@ pub(super) fn make_post(w: u32, h: u32) -> RenderTarget {
 /// 화면(물리 px)에 맞춘 내부 해상도와 정수 배율(0046): 배율은 높이가 `INTERNAL_H`에 가장 가깝게(반올림) 고르고,
 /// 내부 해상도는 그 배율로 화면을 채우는 크기 — 픽셀은 늘 정수배로 고르고 검은 테두리는 배율보다 작다.
 /// 폭은 높이의 4:3~21:9 사이로 묶는다(세로 폰·아주 넓은 창은 나머지가 테두리). 세로 시야각은 그대로라 넓은 화면은 옆을 더 본다.
+#[cfg(test)]
 pub fn fit_internal(sw: f32, sh: f32) -> (u32, u32, u32) {
-    let by_h = (sh / INTERNAL_H as f32).round();
-    let by_w = (sw / (INTERNAL_H as f32 * 4.0 / 3.0)).floor();
+    fit_internal_rows(sw, sh, INTERNAL_H as f32)
+}
+
+/// `fit_internal`을 줄 수 `rows`에 맞춰(0190 — 연구소 `render.rows`).
+pub fn fit_internal_rows(sw: f32, sh: f32, rows: f32) -> (u32, u32, u32) {
+    let rows = rows.max(90.0);
+    let by_h = (sh / rows).round();
+    let by_w = (sw / (rows * 4.0 / 3.0)).floor();
     let s = by_h.min(by_w).max(1.0) as u32;
     let mut w = ((sw / s as f32).floor() as u32).max(1);
     let mut h = ((sh / s as f32).floor() as u32).max(1);
@@ -116,12 +123,20 @@ impl Renderer {
     pub(super) fn fit_screen(&mut self) -> (u32, u32) {
         // 정수 배율은 물리 픽셀로 센다: 폰(DPR 3)의 논리 844×390에서는 논리로 세면 1배라 화면 반이 검정이었다(0006).
         let dpi = screen_dpi_scale().max(0.01);
-        let fit = fit_internal(screen_width() * dpi, screen_height() * dpi);
-        if fit != self.rt_size {
+        let (w, h, s) = fit_internal_rows(
+            screen_width() * dpi,
+            screen_height() * dpi,
+            self.rows_target,
+        );
+        // 2배로 그려 줄이기(0190): 그리는 타깃은 두 배, 화면에 올리기 전에 한 번 반으로 줄인다(2×2 평균) — 도트 크기는 그대로, 경계만 부드럽게.
+        let k = if self.ssaa { 2 } else { 1 };
+        let fit = (w * k, h * k, s);
+        if fit != self.rt_size || self.ssaa != self.half.is_some() {
             if (fit.0, fit.1) != (self.rt_size.0, self.rt_size.1) {
                 self.rt = make_rt(fit.0, fit.1);
                 self.post = make_post(fit.0, fit.1);
             }
+            self.half = self.ssaa.then(|| make_post(w, h));
             self.rt_size = fit;
         }
         (fit.0, fit.1)
@@ -135,7 +150,9 @@ impl Renderer {
         let dpi = screen_dpi_scale().max(0.01);
         let (iw, ih, s) = self.rt_size;
         let scale = s as f32 / dpi;
-        let (dw, dh) = (iw as f32 * scale, ih as f32 * scale);
+        // 2배로 그렸으면 화면의 크기는 반(줄인 타깃)으로 센다.
+        let k = if self.half.is_some() { 2 } else { 1 };
+        let (dw, dh) = ((iw / k) as f32 * scale, (ih / k) as f32 * scale);
         let (ox, oy) = (((sw - dw) * 0.5).floor(), ((sh - dh) * 0.5).floor());
         // 화면 공간 선 둘(0061): 법선 패스를 그렸으면 선 재질로 올린다.
         // 화면 공간 선 둘(0061) + 마무리 패스(0140): 내부 해상도에서 한 번만 셈해 `post`에 담고, 화면에는 그것을 가장 가까운 픽셀로 키운다
@@ -155,8 +172,9 @@ impl Renderer {
                     ..Default::default()
                 });
                 fx.edge_mat.set_texture("Normals", fx.rt.texture.clone());
+                // 2배로 그렸으면 선의 이웃을 두 칸 건너 본다 — 줄인 뒤에 지금과 같은 1px 두께(부드러운 가장자리로).
                 fx.edge_mat
-                    .set_uniform("Texel", vec2(1.0 / iw as f32, 1.0 / ih as f32));
+                    .set_uniform("Texel", vec2(k as f32 / iw as f32, k as f32 / ih as f32));
                 fx.edge_mat.set_uniform("Edge", self.edge_uniform);
                 fx.edge_mat.set_uniform("Grade", g);
                 gl_use_material(&fx.edge_mat);
@@ -175,6 +193,32 @@ impl Renderer {
                 &self.post.texture
             }
             None => &self.rt.texture,
+        };
+        // 2배로 그렸으면 반 크기 타깃에 한 번 줄여 옮긴다: 정확히 2:1에서 선형 거르기 = 2×2 평균.
+        let src = match &self.half {
+            Some(half) => {
+                set_camera(&Camera2D {
+                    zoom: vec2(2.0 / (iw / 2) as f32, 2.0 / (ih / 2) as f32),
+                    target: vec2((iw / 2) as f32 * 0.5, (ih / 2) as f32 * 0.5),
+                    render_target: Some(half.clone()),
+                    ..Default::default()
+                });
+                src.set_filter(FilterMode::Linear);
+                draw_texture_ex(
+                    src,
+                    0.0,
+                    0.0,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(vec2((iw / 2) as f32, (ih / 2) as f32)),
+                        ..Default::default()
+                    },
+                );
+                src.set_filter(FilterMode::Nearest);
+                set_default_camera();
+                &half.texture
+            }
+            None => src,
         };
         draw_texture_ex(
             src,

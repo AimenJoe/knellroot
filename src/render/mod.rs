@@ -55,6 +55,11 @@ pub struct Renderer {
     post: RenderTarget,
     /// 렌더 타깃 크기와 정수 배율(물리 px) — 화면에 맞춰 바뀐다(0046).
     rt_size: (u32, u32, u32),
+    /// 내부 해상도 줄 수·2배로 그려 줄이기(0190 — 연구소 `render.rows`·`render.ssaa`, 프레임 들머리에 넣는다).
+    rows_target: f32,
+    ssaa: bool,
+    /// 2배로 그렸을 때 줄여 옮기는 반 크기 타깃.
+    half: Option<RenderTarget>,
     /// 시나리오 상자마다 지금 진하기(1 = 불투명). 가리면 부드럽게 옅어지고 풀리면 돌아온다(0008).
     fade: Vec<f32>,
     pub lib: Library,
@@ -172,6 +177,9 @@ impl Renderer {
             rt,
             post: make_post(INTERNAL_W, INTERNAL_H),
             rt_size: (INTERNAL_W, INTERNAL_H, 1),
+            rows_target: INTERNAL_H as f32,
+            ssaa: false,
+            half: None,
             fade: Vec::new(),
             lib: Library::default(),
             scenery: None,
@@ -380,6 +388,8 @@ impl Renderer {
         }
         self.batch.casters.clear();
         self.batch.caster_idx.clear();
+        self.rows_target = t[crate::tuning::P::RenderRows];
+        self.ssaa = t[crate::tuning::P::RenderSsaa] >= 0.5;
         let (iw, ih) = self.fit_screen();
         let aspect = iw as f32 / ih as f32;
         let c3 = cam.to_camera3d(self.rt.clone(), aspect);
@@ -389,7 +399,8 @@ impl Renderer {
             outline_px: t[crate::tuning::P::RenderOutline],
             eye: c3.position,
             fovy: c3.fovy,
-            rows: ih as f32,
+            // 외곽선 두께는 화면에 나가는 줄 수로 센다(2배로 그리면 반 — 줄인 뒤 지금과 같은 두께).
+            rows: ih as f32 / if self.ssaa { 2.0 } else { 1.0 },
             calm: t[crate::tuning::P::RenderFloorCalm] >= 0.5,
             key: t[crate::tuning::P::RenderKeyLight] >= 0.5,
             enemy_lift: t[crate::tuning::P::RenderEnemyLift],

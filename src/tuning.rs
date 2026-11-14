@@ -463,6 +463,8 @@ pub enum P {
     RenderSky,
     RenderFlora,
     RenderResident,
+    RenderRows,
+    RenderSsaa,
     TurnWobbleIn,
     TurnWobbleOut,
     TurnStartStagger,
@@ -519,7 +521,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 166] = [
+pub const SPECS: [Spec; 168] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1658,6 +1660,26 @@ pub const SPECS: [Spec; 166] = [
         "render.resident 0off 1on",
         "RENDER_RESIDENT",
         1.0,
+        0.0,
+        1.0,
+        1.0
+    ),
+    // 계단 현상 비교(0190, 사장 "픽셀이 너무 안 예뻐, 계단 현상이 너무 과해"): 내부 해상도의 줄 수(화면 높이 / 정수 배율이 이 값에 가장 가깝게)와
+    // 2배로 그려 줄이기(도트 크기는 그대로, 경계만 부드럽게). 기본값은 지금 그대로 — 판정 뒤에 바꾼다.
+    spec!(
+        RenderRows,
+        "render.rows",
+        "RENDER_ROWS",
+        360.0,
+        270.0,
+        720.0,
+        90.0
+    ),
+    spec!(
+        RenderSsaa,
+        "render.ssaa 0off 1on",
+        "RENDER_SSAA",
+        0.0,
         0.0,
         1.0,
         1.0
