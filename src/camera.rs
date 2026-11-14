@@ -445,7 +445,7 @@ impl Camera {
         self.blend.map(|(_, e, _, _)| e)
     }
 
-    /// 숄더 리그(락온·자유 숄더뷰가 같이 쓴다): 요 = 앞, `pitch` = 주시점 둘레로 더 내려다보는 각(자유 숄더뷰만, 락온은 0).
+    /// 숄더 리그(락온): 요 = 앞(대상 쪽), 어깨를 비켜 과녁이 보이게. 자유 숄더뷰는 0188부터 `chase`(가운데 3인칭).
     fn shoulder(&self, t: &Tuning, pitch: f32) -> Rig {
         // 자리는 부드럽게 따라가는 점(`follow`)에서: 대상 곁을 빠르게 돌 때 카메라가 플레이어와 함께 옆으로 홱 밀리지 않게(0007).
         let player = self.follow;
@@ -473,12 +473,36 @@ impl Camera {
         }
     }
 
+    /// 자유 숄더뷰 = 뒤에서 보는 3인칭(0188): 어깨 비킴 없이 바로 뒤·위, 주시점은 앞·위 — 주인공이 좌우 가운데·화면 아래쪽 1/3에 선다
+    /// (WoW식). `pitch` = 주시점 둘레로 더 내려다보는 각(플레이어가 돌린다).
+    fn chase(&self, t: &Tuning, pitch: f32) -> Rig {
+        let player = self.follow;
+        let (s, c) = self.yaw.sin_cos();
+        let fwd = vec3(s, 0.0, c);
+        let right = fwd.cross(Vec3::Y);
+        let pos = player - fwd * t[P::CamFDist] + Vec3::Y * t[P::CamFHeight];
+        let look = player + Vec3::Y * t[P::CamFLookHeight] + fwd * t[P::CamFLookAhead];
+        // 위아래로 돌릴 때는 카메라째(자리·주시점 함께) 주인공 몸 둘레로 돈다 — 주인공이 화면의 같은 자리(아래쪽 1/3)에 머문다.
+        let (pos, look) = if pitch.abs() > 1e-5 {
+            let pivot = player + Vec3::Y * (PLAYER_HEIGHT * 0.5);
+            let q = Quat::from_axis_angle(right.normalize_or_zero(), -pitch);
+            (pivot + q * (pos - pivot), pivot + q * (look - pivot))
+        } else {
+            (pos, look)
+        };
+        Rig {
+            pos,
+            look,
+            fov: t[P::CamLFov].to_radians(),
+        }
+    }
+
     /// 원하는 리그(전환·충돌 전).
     fn desired(&self, t: &Tuning, target: Option<Vec3>) -> Rig {
         match (self.mode, target) {
             // 방향은 요(대상 쪽)가 정한다.
             (Mode::Lock, Some(_)) => self.shoulder(t, 0.0),
-            (Mode::Free, _) => self.shoulder(t, self.pitch),
+            (Mode::Free, _) => self.chase(t, self.pitch),
             _ => {
                 let pitch = t[P::CamQPitch].to_radians();
                 let d = t[P::CamQDist]
@@ -645,7 +669,17 @@ impl Camera {
         // 가는 기둥은 밀지 않는다 — 카메라가 뚫고 지나가고 렌더가 옅게 그린다(`occluders`). 락온 거리 7m에서 카메라가 기둥을 돌아
         // 나가며 한 틱 133~169°/s로 꺾였다(0012). 밀어낼 것은 벽처럼 넓은 상자뿐.
         let solid: Vec<Aabb> = obstacles.iter().copied().filter(|b| !is_thin(b)).collect();
-        let want_push = push_out(rig.pos, r, &solid, self.rig.pos) - rig.pos;
+        // 자유 숄더뷰(0188 — 뒤에서 보는 3인칭)는 옆으로 밀지 않고 주인공 쪽으로 다가온다(시선 줄 위 — 주인공이 화면 가운데에 남는다).
+        let want_push = if self.mode == Mode::Free && self.blend.is_none() {
+            pull_in(
+                self.follow + Vec3::Y * (PLAYER_HEIGHT * 0.5),
+                rig.pos,
+                r,
+                &solid,
+            ) - rig.pos
+        } else {
+            push_out(rig.pos, r, &solid, self.rig.pos) - rig.pos
+        };
         // 미는 것은 바로(늦으면 카메라 중심이 상자 안에 들어가 면 고르기로 튄다 — 밖에서 미는 것은 연속이라 바로 해도 매끄럽다),
         // 풀리는 것만 천천히.
         if want_push.length_squared() >= self.push.length_squared() {
@@ -892,6 +926,35 @@ pub fn push_out(p: Vec3, r: f32, obstacles: &[Aabb], prev: Vec3) -> Vec3 {
         }
     }
     q
+}
+
+/// 구(`p`, `r`)가 상자에 들면 `pivot`(주인공 몸) 쪽으로 시선 줄을 따라 당긴 자리 — 들지 않으면 그대로(0188). 가리기만 하는 상자는
+/// 지금처럼 렌더가 옅게 그린다. 줄 위를 10cm씩 안으로 걸어 처음 빈 자리, 주인공 몸에서 `PULL_MIN`보다는 멀리.
+pub fn pull_in(pivot: Vec3, p: Vec3, r: f32, obstacles: &[Aabb]) -> Vec3 {
+    const PULL_MIN: f32 = 0.6;
+    let hits = |q: Vec3| {
+        obstacles
+            .iter()
+            .any(|b| q.clamp(b.min, b.max).distance_squared(q) < r * r)
+    };
+    if !hits(p) {
+        return p;
+    }
+    let to = p - pivot;
+    let len = to.length();
+    if len <= PULL_MIN {
+        return p;
+    }
+    let dir = to / len;
+    let mut d = len;
+    while d > PULL_MIN {
+        d = (d - 0.1).max(PULL_MIN);
+        let q = pivot + dir * d;
+        if !hits(q) {
+            return q;
+        }
+    }
+    pivot + dir * PULL_MIN
 }
 
 /// 카메라에서 `points`(플레이어 몸 여러 점, 락온 대상) 중 하나라도 가리는 상자들(렌더가 옅게 그린다).
@@ -1516,6 +1579,66 @@ mod frame_probe {
             hi - lo
         );
         (n, hi - lo)
+    }
+
+    /// 0188: 자유 숄더뷰의 카메라가 벽에 들면 옆으로 밀리지 않고 주인공 쪽으로 다가온다 — 주인공은 화면 가운데에 남는다.
+    #[test]
+    fn a_wall_behind_pulls_the_free_view_in_along_the_line_and_keeps_the_wanderer_centred() {
+        let pivot = vec3(0.0, 0.9, 0.0);
+        let cam = vec3(-3.0, 2.6, -4.6);
+        // 카메라를 품은 벽(옆으로 길다).
+        let wall = Aabb {
+            min: vec3(-6.0, 0.0, -5.5),
+            max: vec3(-2.0, 4.0, -3.5),
+        };
+        let q = pull_in(pivot, cam, 0.3, &[wall]);
+        assert!(q.distance(pivot) < cam.distance(pivot), "closer");
+        let along = (q - pivot).normalize().dot((cam - pivot).normalize());
+        assert!(along > 0.9999, "on the same line: {along}");
+        assert!(
+            q.clamp(wall.min, wall.max).distance(q) >= 0.3 - 1e-3,
+            "out of the wall"
+        );
+        // 벽이 없으면 그대로.
+        assert_eq!(pull_in(pivot, cam, 0.3, &[]), cam);
+    }
+
+    /// 0188: 자유 숄더뷰는 뒤에서 보는 3인칭 — 주인공(몸 가운데)이 좌우 가운데, 세로는 화면 아래쪽 1/3 부근(WoW식).
+    /// 돌린 방위·내려다본 각이 달라도 좌우 가운데. 락온은 어깨 리그 그대로(과녁 쪽으로 비킨다).
+    #[test]
+    fn the_free_shoulder_view_centres_the_wanderer_in_the_lower_third() {
+        let t = Tuning::default();
+        let p = vec3(3.0, 0.0, -2.0);
+        for (yaw, pitch) in [
+            (0.0f32, 0.0f32),
+            (1.3, 0.0),
+            (-2.4, 0.2),
+            (0.7, -0.1),
+            (2.0, 0.65),
+            (-1.0, -0.25),
+        ] {
+            let mut c = Camera::new(p, &t);
+            c.set_mode(Mode::Free, None, p);
+            c.yaw = yaw;
+            c.pitch = pitch;
+            c.follow = p;
+            let r = c.chase(&t, c.pitch);
+            let n = ndc(&r, p + Vec3::Y * 0.9);
+            assert!(n.x.abs() < 0.02, "yaw {yaw} pitch {pitch}: x {}", n.x);
+            assert!(
+                (-0.55..=-0.2).contains(&n.y),
+                "yaw {yaw} pitch {pitch}: y {}",
+                n.y
+            );
+            if pitch == 0.0 {
+                assert!((n.y + 1.0 / 3.0).abs() < 0.08, "lower third: y {}", n.y);
+            }
+        }
+        // 락온은 어깨를 비킨다 — 가운데가 아니다.
+        let mut c = Camera::new(p, &t);
+        c.follow = p;
+        let r = c.shoulder(&t, 0.0);
+        assert!(ndc(&r, p + Vec3::Y * 0.9).x.abs() > 0.05);
     }
 
     #[test]
