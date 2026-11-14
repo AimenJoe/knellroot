@@ -36,6 +36,10 @@ pub enum Behavior {
     /// 깨진 종지기(0125): 가까우면 땅을 쳐 울림 고리(`rings`겹 — 사이에 서거나 뛰어넘는다), 멀면 종 조각 부채꼴(`shards`개 —
     /// 패링하면 되돌아가 종지기를 깎는다)과 종 끌기 돌진을 번갈아. 체력 반 아래 고리·조각이 하나·둘 는다.
     Bellkeeper,
+    /// 이끼 덮인 문지기(0185): 붙으면 몸을 낮춰 앞을 쓸고(넓은 부채꼴), 셋째마다 웅크려 껍질로 앞을 받는다(`guard_arc` —
+    /// 껍질인 동안만, 평타는 튕기고 옆·뒤·강타는 든다, 몸은 느리게 돈다 → 풀린 뒤 틈), 떨어지면 곧게 돌진하고 늦게 돈다.
+    /// 2단계(0133): 쉬는 틈이 짧고 쓸기 뒤 돌진을 잇는다.
+    Mossward,
 }
 
 /// 공격 박자 변주(0128, 사장 "정박에만 때리면 난이도가 확 내려간다"): 같은 공격을 다른 박자로.
@@ -331,7 +335,7 @@ pub static BELLKEEPER: Def = Def {
 pub static MOSSWARD: Def = Def {
     kind: Kind::Mossward,
     name: |s: &Strings| s.boss_mossward,
-    hp: 640,
+    hp: 960,
     radius: 1.1,
     height: 2.6,
     speed: 2.4,
@@ -346,7 +350,8 @@ pub static MOSSWARD: Def = Def {
     wave_tele: 1.0,
     wave_radius: 8.0,
     wave_speed: 8.0,
-    guard_arc: 0.0,
+    // 껍질(0185): 웅크린 동안만 막는 앞쪽 각.
+    guard_arc: 160.0,
     plant_range: 0.0,
     plant_r: 0.0,
     retreat: 0.0,
@@ -355,14 +360,14 @@ pub static MOSSWARD: Def = Def {
     rhythm: Rhythm {
         delay: 0.35,
         fast: 0.2,
-        chain: 0.35,
+        chain: 0.4,
         gaps: &[0.45, 1.2],
-        feint: 0.3,
+        feint: 0.0,
     },
-    behavior: Behavior::Warden,
+    behavior: Behavior::Mossward,
     boss: true,
     embers: 30,
-    model: "gatekeeper",
+    model: "mossward",
 };
 
 /// 이끼먹이(0185 — 정상 피식자): 작고 둥근 몸, 공격·보상 없음(잔불 0). 맞으면 아프지만 싸우지 않고 달아난다.
@@ -427,7 +432,10 @@ mod tests {
             assert!(d.hp > 0 && d.radius > 0.0 && d.height > 0.0 && d.speed > 0.0);
             match d.behavior {
                 Behavior::Melee => assert!(d.reach > d.radius, "{:?}", d.kind),
-                Behavior::Charger | Behavior::Warden | Behavior::Bellkeeper => {
+                Behavior::Charger
+                | Behavior::Warden
+                | Behavior::Bellkeeper
+                | Behavior::Mossward => {
                     assert!(d.reach > d.radius, "{:?}", d.kind);
                     assert!(d.charge_speed > 0.0 && d.charge_time > 0.0 && d.charge_tele > 0.0);
                 }

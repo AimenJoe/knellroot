@@ -55,6 +55,9 @@ pub enum Atk {
     Roots,
     /// 종 내던지기(종지기 2단계, 0133): 예고 첫 틱의 방랑자 자리(`plant_at`)에 종이 떨어지고(원판), 거기서 고리 한 겹.
     Hurl,
+    /// 껍질 받기(이끼 덮인 문지기, 0185): 공격이 아니다 — 예고 동안 웅크려 앞을 막고(`Enemy::guards`), 끝나면 풀며 쉰다(틈).
+    /// 바닥 예고·소리는 없다(몸이 말한다).
+    Shell,
 }
 
 /// 바닥 예고 모양(렌더가 그린다).
@@ -443,12 +446,14 @@ impl Enemy {
 
     /// 2단계(0133)에서 돌진 끝에 곧장 이을 공격(없으면 None — 1단계, 보스 아님, 이미 이었음).
     fn link_after(&self) -> Option<Atk> {
-        if !(self.boss && self.roused) || self.linked || self.atk != Atk::Charge {
+        if !(self.boss && self.roused) || self.linked {
             return None;
         }
-        match self.def().behavior {
-            Behavior::Warden => Some(Atk::Slam),
-            Behavior::Bellkeeper => Some(Atk::Toll),
+        match (self.def().behavior, self.atk) {
+            (Behavior::Warden, Atk::Charge) => Some(Atk::Slam),
+            (Behavior::Bellkeeper, Atk::Charge) => Some(Atk::Toll),
+            // 이끼 덮인 문지기(0185): 쓸기 뒤 곧장 돌진.
+            (Behavior::Mossward, Atk::Slam) => Some(Atk::Charge),
             _ => None,
         }
     }
@@ -518,12 +523,22 @@ impl Enemy {
             return true;
         }
         let d = self.def();
-        d.guard_arc > 0.0
+        // 이끼 덮인 문지기(0185)의 껍질은 웅크린 동안만.
+        let arc = if d.behavior == Behavior::Mossward && !self.shelled() {
+            0.0
+        } else {
+            d.guard_arc
+        };
+        arc > 0.0
             && self.alive()
             && self.broken <= 0.0
             && !matches!(self.state, EState::Stagger { .. } | EState::Dormant)
-            && self.facing_dir().dot(from.normalize_or_zero())
-                >= (d.guard_arc * 0.5).to_radians().cos()
+            && self.facing_dir().dot(from.normalize_or_zero()) >= (arc * 0.5).to_radians().cos()
+    }
+
+    /// 껍질로 웅크렸나(이끼 덮인 문지기, 0185).
+    pub fn shelled(&self) -> bool {
+        self.atk == Atk::Shell && matches!(self.state, EState::Tele { .. })
     }
 
     /// 예고를 그릴 자리: 심은 원판(꼬투리)·종이 떨어질 자리(종지기 2단계)면 그 자리, 아니면 몸.
@@ -590,12 +605,19 @@ impl Enemy {
                 Atk::Wave => d.wave_tele,
                 Atk::Plant | Atk::Shards => d.tele,
                 Atk::Toll | Atk::Roots | Atk::Hurl => d.wave_tele,
+                Atk::Shell => crate::tuning::SHELL_HOLD,
             }
     }
 
     fn recover_dur(&self) -> f32 {
         let d = self.def();
-        d.recover * if self.roused { ROUSED_RECOVER } else { 1.0 }
+        // 이끼 덮인 문지기(0185): 돌진 뒤엔 늦게 돌고, 껍질을 푼 뒤엔 틈이 길다 — 둘 다 쉬는 동안이 반격 창.
+        let after = match (d.behavior, self.atk) {
+            (Behavior::Mossward, Atk::Charge) => crate::tuning::MOSS_DASH_RECOVER,
+            (Behavior::Mossward, Atk::Shell) => crate::tuning::SHELL_OPEN,
+            _ => 1.0,
+        };
+        d.recover * after * if self.roused { ROUSED_RECOVER } else { 1.0 }
     }
 
     /// 지금 공격의 예고 모양.
@@ -638,6 +660,8 @@ impl Enemy {
             Atk::Hurl => TeleShape::Disc {
                 r: HURL_R + PLAYER_RADIUS,
             },
+            // 껍질은 공격이 아니다 — `telegraph`가 그리지 않는다.
+            Atk::Shell => TeleShape::Disc { r: 0.0 },
         }
     }
 
@@ -648,6 +672,7 @@ impl Enemy {
         let whole = self.tele_dur() + if charge { self.charge_eta } else { 0.0 };
         let k = |e: f32| (e / whole.max(1e-3)).clamp(0.0, 1.0);
         match self.state {
+            EState::Tele { .. } if self.atk == Atk::Shell => None,
             EState::Tele { t: e } => Some((k(e), self.tele_shape())),
             EState::Charge { t: e, .. } if !self.landed => {
                 let d = self.def();
@@ -840,6 +865,20 @@ impl Enemy {
             Behavior::Planter => (dist <= d.plant_range).then_some(Atk::Plant),
             // 이끼먹이(0185)는 치지 않는다.
             Behavior::Grazer => None,
+            // 이끼 덮인 문지기(0185): 붙으면 쓸기 둘에 껍질 하나, 떨어지면 틈새 돌진.
+            Behavior::Mossward => {
+                if dist <= d.reach - 0.5 {
+                    Some(if self.atk_count % 3 == 2 {
+                        Atk::Shell
+                    } else {
+                        Atk::Slam
+                    })
+                } else if dist <= d.charge_range && dist > 4.5 {
+                    Some(Atk::Charge)
+                } else {
+                    None
+                }
+            }
             Behavior::Warden => {
                 // 2단계(0133): 넷에 한 번 뿌리 기둥 줄 — 바로 붙어 있을 땐 아니다(내려치기가 낫다).
                 if self.roused && self.atk_count % 4 == 1 && dist > 3.0 && dist <= ROOTS_LEN - 1.0 {
@@ -1041,7 +1080,12 @@ impl Enemy {
                     out.release = true;
                 }
                 if e < dur - TELE_LOCK {
-                    let rate = if self.atk == Atk::Charge { 4.0 } else { 2.0 };
+                    let rate = match self.atk {
+                        Atk::Charge => 4.0,
+                        // 웅크린 껍질은 느리게 돈다(0185) — 옆으로 돌아 들어갈 틈.
+                        Atk::Shell => crate::tuning::SHELL_TURN,
+                        _ => 2.0,
+                    };
                     self.turn_toward(dir, rate, dt);
                     // 방향이 굳기 전까지는 닿는 때를 다시 잰다(굳은 뒤엔 그대로 — 채움이 일정한 빠르기로).
                     if self.atk == Atk::Charge {
@@ -1062,6 +1106,8 @@ impl Enemy {
                             dir: self.facing_dir(),
                         },
                         Atk::Wave => EState::Wave { t: 0.0 },
+                        // 껍질을 푼다 — 곧장 쉰다(틈).
+                        Atk::Shell => EState::Recover { t: 0.0 },
                     }
                 };
             }
@@ -1585,7 +1631,7 @@ mod tests {
     /// 0133: 반에서 하던 공격을 버리고 전환 — 그동안 튕기고(사방), 체력이 시작한 값 아래로 안 깎이고, 터지는 틱에 한 번 밀쳐낸다.
     #[test]
     fn a_boss_at_half_hp_kneels_untouchable_then_bursts_once_and_rises() {
-        for kind in [Kind::Warden, Kind::Bellkeeper] {
+        for kind in [Kind::Warden, Kind::Bellkeeper, Kind::Mossward] {
             let mut en = Enemy::new(kind, vec3(0.0, 0.0, -3.0));
             en.state = EState::Tele { t: 0.1 };
             en.hp = en.max_hp / 2;
@@ -1644,6 +1690,90 @@ mod tests {
                 "{kind:?}"
             );
         }
+    }
+
+    /// 0185 이끼 덮인 문지기: 2단계에서는 쓸기 뒤 곧장 돌진(돌진 뒤엔 잇지 않는다), 1단계는 쉰다.
+    #[test]
+    fn the_moss_clad_warden_links_a_dash_after_a_sweep_in_phase_two() {
+        let mut en = Enemy::new(Kind::Mossward, Vec3::ZERO);
+        en.roused = true;
+        en.atk = Atk::Slam;
+        assert_eq!(en.after_attack(), EState::Tele { t: 0.0 });
+        assert_eq!(en.atk, Atk::Charge);
+        assert!(matches!(en.after_attack(), EState::Recover { .. }));
+        let mut calm = Enemy::new(Kind::Mossward, Vec3::ZERO);
+        calm.atk = Atk::Slam;
+        assert!(matches!(calm.after_attack(), EState::Recover { .. }));
+    }
+
+    /// 0185 껍질 받기: 붙어 있으면 쓸기 둘 뒤 웅크린다 — 그동안 앞만 막고(옆·뒤는 든다), 바닥 예고·타격이 없고, 느리게 돈다.
+    /// 풀리면 보통 쉼보다 긴 틈. 껍질이 아닐 때는 앞도 막지 않는다.
+    #[test]
+    fn the_moss_clad_warden_shells_its_front_after_two_sweeps_then_opens() {
+        let dt = 1.0 / 60.0;
+        let player = vec3(0.0, 0.0, 2.0);
+        let mut en = Enemy::new(Kind::Mossward, Vec3::ZERO);
+        en.state = EState::Chase;
+        en.facing = 0.0;
+        assert!(!en.guards(vec3(0.0, 0.0, 1.0)), "no shell while not curled");
+        let mut seen = Vec::new();
+        let mut shell_ticks = 0;
+        let mut hits_in_shell = 0;
+        for _ in 0..1800 {
+            let out = en.tick(player, dt);
+            if !seen.contains(&en.atk_count) && matches!(en.state, EState::Tele { .. }) {
+                seen.push(en.atk_count);
+            }
+            if en.shelled() {
+                shell_ticks += 1;
+                hits_in_shell += out.hit as u32;
+                assert!(en.telegraph().is_none(), "no floor tell for the shell");
+                let f = en.facing_dir();
+                assert!(en.guards(f), "front deflects");
+                assert!(!en.guards(-f), "back goes in");
+                assert!(!en.guards(vec3(f.z, 0.0, -f.x)), "side goes in");
+            }
+            if en.atk_count >= 3
+                && matches!(en.state, EState::Recover { .. })
+                && en.atk == Atk::Shell
+            {
+                break;
+            }
+        }
+        assert_eq!(en.atk, Atk::Shell, "third move up close is the shell");
+        assert_eq!(hits_in_shell, 0);
+        let held = shell_ticks as f32 * dt;
+        assert!(
+            (held - crate::tuning::SHELL_HOLD).abs() < 0.05,
+            "held {held}"
+        );
+        let d = en.def();
+        assert!(
+            en.recover_dur() > d.recover * 1.2,
+            "a clear opening after the shell"
+        );
+        // 웅크린 동안은 느리게 돈다: 뒤로 돌아간 방랑자를 1초 안에 다 따라오지 못한다.
+        let mut c = Enemy::new(Kind::Mossward, Vec3::ZERO);
+        c.facing = 0.0;
+        c.begin(Atk::Shell);
+        for _ in 0..60 {
+            c.tick(vec3(0.0, 0.0, -2.0), dt);
+        }
+        assert!(
+            c.shelled() && c.facing_dir().z > -0.5,
+            "still facing away-ish: {:?}",
+            c.facing_dir()
+        );
+    }
+
+    /// 0185 틈새 돌진: 돌진 뒤의 쉼이 쓸기 뒤보다 길다(늦게 돈다 — 반격 창).
+    #[test]
+    fn the_moss_clad_warden_turns_late_after_a_dash() {
+        let mut en = Enemy::new(Kind::Mossward, Vec3::ZERO);
+        en.atk = Atk::Charge;
+        let dash = en.recover_dur();
+        en.atk = Atk::Slam;
+        assert!(dash > en.recover_dur() * 1.3);
     }
 
     /// 0133 문지기 2단계: 뿌리 기둥 줄 — 바라보는 쪽 줄 위의 방랑자를 앞머리가 지날 때 한 번 친다, 옆으로 비키면 빈다. 받지 못한다.

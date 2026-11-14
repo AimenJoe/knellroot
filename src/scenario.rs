@@ -22,6 +22,10 @@ pub enum Scenario {
     WardenTwo,
     /// 보스 2단계(0133): 종지기 체력 반 — 시작하자마자 전환, 이어 종 내던지기·돌진 뒤 울림.
     BellkeeperTwo,
+    /// 이끼 덮인 문지기(0185): 쓸기·껍질 받기(앞 평타 튕김, 옆·뒤·강타는 든다)·틈새 돌진(뒤에 늦게 돈다).
+    Mossward,
+    /// 이끼 덮인 문지기 2단계(0185): 체력 반 — 시작하자마자 전환, 쓸기 뒤 돌진.
+    MosswardTwo,
     /// 스킬 연습(0151 S0 판정): 두 겹으로 둘러싼 떼 + 큰 기술 게이지 가득 — "모으고 → 쓸고"와 쟁반 뒤집기를 바로.
     Skills,
 }
@@ -33,7 +37,7 @@ pub struct Entry {
     pub checks: &'static str,
 }
 
-pub const LIST: [Entry; 14] = [
+pub const LIST: [Entry; 16] = [
     Entry {
         scenario: Scenario::Boss,
         name: "boss arena",
@@ -100,6 +104,16 @@ pub const LIST: [Entry; 14] = [
         scenario: Scenario::BellkeeperTwo,
         name: "bellkeeper phase two",
         checks: "0133 rise at once (untouchable, burst push), bell hurled to your spot + ring, charge then toll",
+    },
+    Entry {
+        scenario: Scenario::Mossward,
+        name: "moss-clad warden",
+        checks: "0185 low sweep, shell (front light hits bounce, side/back/heavy go in), gap dash then a late turn",
+    },
+    Entry {
+        scenario: Scenario::MosswardTwo,
+        name: "moss-clad warden phase two",
+        checks: "0185 rise at once, shorter rests, sweep then dash",
     },
     Entry {
         scenario: Scenario::Skills,
@@ -197,12 +211,19 @@ pub fn build(s: Scenario) -> World {
             w.obstacles.push(pillar(10.0, -10.0, 1.6, 4.0));
             w
         }
+        Scenario::Mossward => {
+            let mut w = World::new("moss-clad warden arena", 16.0);
+            w.spawn(crate::species::Kind::Mossward, vec3(0.0, 0.0, -9.0));
+            w.obstacles.push(pillar(-10.0, -10.0, 1.6, 4.0));
+            w.obstacles.push(pillar(10.0, -10.0, 1.6, 4.0));
+            w
+        }
         // 2단계(0133): 같은 아레나, 체력만 반 — 시작하자마자 전환(잠든 문지기는 깨어난 뒤).
-        Scenario::WardenTwo | Scenario::BellkeeperTwo => {
-            let mut w = build(if s == Scenario::WardenTwo {
-                Scenario::Boss
-            } else {
-                Scenario::Bellkeeper
+        Scenario::WardenTwo | Scenario::BellkeeperTwo | Scenario::MosswardTwo => {
+            let mut w = build(match s {
+                Scenario::WardenTwo => Scenario::Boss,
+                Scenario::BellkeeperTwo => Scenario::Bellkeeper,
+                _ => Scenario::Mossward,
             });
             for en in &mut w.enemies {
                 if en.boss {

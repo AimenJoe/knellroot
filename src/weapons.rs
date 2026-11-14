@@ -713,7 +713,7 @@ mod tests {
     const OLD_SKILLS: [i32; 4] = [1, 2, 0, 2];
     /// 옛 종 체력(표 `species::ALL` 순서: 잔재 · 가시짐승 · 문지기 · 등딱지짐승 · 꼬투리 · 종지기).
     /// 이끼 덮인 문지기·이끼먹이(0185)는 눈금을 옮긴 뒤에 생겼다 — 옛 눈금으로 64·2(새 640·20의 열의 하나).
-    const OLD_SPECIES_HP: [i32; 8] = [3, 2, 40, 5, 2, 58, 64, 2];
+    const OLD_SPECIES_HP: [i32; 8] = [3, 2, 40, 5, 2, 58, 96, 2];
     /// 옛 등급 2·엘리트 배율(올림) — `tuning::TIERS[1].hp`·`ELITE_HP`.
     const OLD_TIER2: f32 = 1.5;
     const OLD_ELITE: f32 = 2.0;

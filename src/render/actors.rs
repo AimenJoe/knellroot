@@ -604,6 +604,7 @@ fn enemy_anim(
         Atk::Shards => &["throw", "attack"],
         Atk::Roots => &["roots", "slam", "attack"],
         Atk::Hurl => &["hurl", "toll", "throw", "attack"],
+        Atk::Shell => &["shell", "guard", "idle"],
     };
     let once = |names: &[&str], k: f32| {
         let a = e.pick(names);
@@ -697,6 +698,9 @@ pub(super) const STRIKE_KEYS: &[(&str, &str, f32, f32)] = &[
     ("bellkeeper", "toll", 1.0, 1.12),
     ("bellkeeper", "slam", 0.9, 1.0),
     ("bellkeeper", "throw", 0.6, 0.7),
+    ("mossward", "slam", 0.9, 1.0),
+    // 껍질(0185): 0.5에 다 웅크리고 거기서 버틴다 — 맞음은 거의 같은 자세(풀기는 `recover`).
+    ("mossward", "shell", 0.5, 0.55),
 ];
 
 fn strike_keys(model: &str, a: Option<usize>, e: &Entry) -> (f32, f32) {

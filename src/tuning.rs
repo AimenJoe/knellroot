@@ -2059,3 +2059,11 @@ mod tests {
         assert!(e.contains(&format!("CAM_Q_DIST: f32 = {dist:.3};  // (default)")));
     }
 }
+
+/// 이끼 덮인 문지기의 껍질 받기(0185): 웅크려 앞을 막는 초 · 그동안 몸이 도는 빠르기(rad/s — 옆으로 돌아 들어갈 틈) ·
+/// 풀린 뒤 쉬는 틈의 배율(종의 `recover`에 곱한다).
+pub const SHELL_HOLD: f32 = 1.6;
+pub const SHELL_TURN: f32 = 0.7;
+pub const SHELL_OPEN: f32 = 1.4;
+/// 이끼 덮인 문지기의 틈새 돌진 뒤 늦게 도는 쉼(0185) — 종의 `recover`에 곱한다.
+pub const MOSS_DASH_RECOVER: f32 = 1.6;

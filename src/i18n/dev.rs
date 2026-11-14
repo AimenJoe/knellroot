@@ -162,6 +162,16 @@ pub fn spec_label(name: &'static str) -> &'static str {
 /// 개발 시나리오(`scenario::LIST`의 영어 이름) → (한국어 이름, 무엇을 보나). F3 아레나 줄은 기본 글꼴이라 영어 그대로.
 pub const SCENARIO_KO: &[(&str, &str, &str)] = &[
     (
+        "moss-clad warden",
+        "이끼 덮인 문지기",
+        "0185 낮게 쓸기·껍질 받기(앞 평타는 튕김, 옆·뒤·강타는 든다)·틈새 돌진(뒤에 늦게 돈다)",
+    ),
+    (
+        "moss-clad warden phase two",
+        "이끼 덮인 문지기 2단계",
+        "0185 시작하자마자 전환·짧은 쉼·쓸기 뒤 돌진",
+    ),
+    (
         "warden phase two",
         "문지기 2단계",
         "0133 시작하자마자 전환(맞지 않음·밀쳐냄)·뿌리 기둥 줄·돌진 뒤 내려치기",
