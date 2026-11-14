@@ -59,6 +59,8 @@ async function main() {
   page.on('console', (m) => { if (m.type() === 'error' && !KNOWN_NOISE.some((k) => k.test(m.text()))) errors.push(m.text()); });
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
   const cdp = await ctx.newCDPSession(page);
+  // CI 러너처럼 느린 CPU를 흉내(THROTTLE=4 — 실패를 집에서 재현할 때만).
+  if (process.env.THROTTLE) await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.THROTTLE) });
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i + 1 })) });
   const tap = async ([x, y]) => { await touch('touchStart', [[x, y]]); await page.waitForTimeout(60); await touch('touchEnd', []); await page.waitForTimeout(60); };
   const shot = (n) => page.screenshot({ path: path.join(OUT, n + '.png') });
@@ -83,9 +85,15 @@ async function main() {
   // 오른쪽 아래가 공격 버튼 자리다. 건너뛴 뒤에야 버튼들이 선다.
   await page.waitForTimeout(4200);
   await shot('t01a-wake');
-  await tap(b.attack); await page.waitForTimeout(1500);
+  await tap(b.attack);
   {
-    const rec = await page.evaluate(() => localStorage.getItem('knell.save.0'));
+    // 장면이 끝나 기록에 적힐 때까지(느린 러너에서는 프레임이 길어 고정 시간으로는 모자란다 — 0191 v0.6.2 CI).
+    let rec = null;
+    for (let i = 0; i < 40 && !/woke=1\n/.test(rec || ''); i++) {
+      await page.waitForTimeout(250);
+      rec = await page.evaluate(() => localStorage.getItem('knell.save.0'));
+    }
+    if (process.env.THROTTLE) console.log('woke after', JSON.stringify(rec && rec.slice(0, 40)));
     if (!/woke=1\n/.test(rec || '')) errors.push(`a touch on the attack spot must skip the waking scene: ${JSON.stringify(rec)}`);
   }
   await shot('t01-first-screen');
