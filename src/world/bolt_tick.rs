@@ -151,12 +151,12 @@ impl World {
     /// 이번 틱에 던진 수류탄(0051)을 세운다.
     fn throw_bomb(&mut self, ev: &mut Vec<Event>, wpn: &weapons::Weapon) {
         if let (Some(to), Some(g)) = (self.throw_to.take(), wpn.grenade) {
-            // 포물선: 날아가는 시간을 거리로 정하고(가까우면 낮게·빨리) 그 시간에 `to`에 닿는 속도.
+            // 포물선: 날아가는 시간을 거리로 정하고(가까우면 낮게·빨리) 그 시간에 `to`에 닿는 속도. 발 앞에 떨구니(0178) 짧고 낮게.
             let pl = &self.player;
             let from = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT);
             let ground_to = self.ground.as_ref().map_or(0.0, |gr| gr.height(to));
             let flat = vec3(to.x - from.x, 0.0, to.z - from.z);
-            let tf = (flat.length() / 10.0).clamp(0.45, 0.9);
+            let tf = (flat.length() / 10.0).clamp(0.3, 0.9);
             let vy = (ground_to + 0.2 - from.y + 0.5 * BOMB_GRAVITY * tf * tf) / tf;
             self.bombs.push(Bomb {
                 pos: from,

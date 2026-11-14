@@ -82,20 +82,20 @@ fn the_cursor_point_aims_like_the_right_stick_and_lock_on_ignores_it() {
     );
 }
 
-/// 0058: 커서는 자리까지 준다 — 수류탄 톡은 커서 자리에(2m..먼 거리로 자른다).
+/// 0178: 수류탄은 발 바로 앞에 떨군다 — 커서가 멀리 있어도 그 쪽으로 `drop`만큼(예전 0058은 커서 자리까지 던졌다).
 #[test]
-fn a_tossed_grenade_lands_at_the_cursor() {
+fn a_grenade_drops_just_ahead_toward_the_cursor() {
     let t = Tuning::default();
     let g = weapons::Id::Crossbow.def().grenade.unwrap();
     let mut w = World::new("test", 40.0);
     w.set_weapon(weapons::Id::Crossbow);
     w.view_yaw = Some(0.0);
     let p0 = w.player.pos;
-    let want = vec2(p0.x + 4.0, p0.z + 3.0);
+    let far = vec2(p0.x + 8.0, p0.z + 6.0);
     w.step(
         &Actions {
             cast: true,
-            aim_at: Some(want),
+            aim_at: Some(far),
             ..Default::default()
         },
         &t,
@@ -104,8 +104,13 @@ fn a_tossed_grenade_lands_at_the_cursor() {
         PState::Throw { to, .. } => to,
         ref s => panic!("{s:?}"),
     };
-    assert!(vec2(to.x, to.z).distance(want) < 0.05, "{to:?}");
-    assert!(want.distance(vec2(p0.x, p0.z)) < g.far);
+    let d = vec2(to.x - p0.x, to.z - p0.z);
+    assert!((d.length() - g.drop).abs() < 0.05, "just ahead: {d:?}");
+    assert!(
+        d.normalize().dot((far - vec2(p0.x, p0.z)).normalize()) > 0.99,
+        "toward the cursor"
+    );
+    assert!(g.drop < 2.0);
 }
 
 /// 0048: 칸이 모자라면 쏘지 않고(몸짓 없음) 칸이 깜빡인다. 0111: 칸은 시간으로만 찬다(`cast.cooldown s`에 한 칸) —
@@ -382,7 +387,7 @@ fn a_grenade_flies_bounces_and_blows_up() {
     let mut w = World::new("test", 40.0);
     w.set_weapon(weapons::Id::Crossbow);
     let g = weapons::Id::Crossbow.def().grenade.unwrap();
-    let m = mob_with(&mut w, vec3(0.0, 0.0, -5.0), 200);
+    let m = mob_with(&mut w, vec3(0.0, 0.0, -2.0), 200);
     idle(&mut w);
     let mut ev = w.step(
         &Actions {
@@ -395,7 +400,7 @@ fn a_grenade_flies_bounces_and_blows_up() {
     for _ in 0..((g.fuse + 0.6) / TICK_DT) as usize {
         ev.extend(w.step(&Actions::default(), &t));
         idle(&mut w);
-        w.enemies[m].pos = vec3(0.0, 0.0, -5.0);
+        w.enemies[m].pos = vec3(0.0, 0.0, -2.0);
     }
     assert!(ev.iter().any(|e| matches!(e, Event::Throw)));
     assert!(ev.iter().any(|e| matches!(e, Event::Boom { .. })));
@@ -407,37 +412,37 @@ fn a_grenade_flies_bounces_and_blows_up() {
     assert!(w.bombs.is_empty());
 }
 
-/// 0055: 쇠뇌 X를 꾹 쥐면 손을 든 채 겨누다가 떼면 가장 먼 자리로 던진다(톡은 가까운 자동 조준 자리).
+/// 0178: 쥐고 있어도 겨누지 않는다(0055의 꾹 = 가장 멀리를 걷었다) — 손을 떠나 발 앞에 떨어진다, 적이 멀리 있어도 그 쪽으로 던지지 않는다.
 #[test]
-fn holding_the_grenade_aims_far() {
+fn holding_the_grenade_still_drops_it_ahead() {
     let t = Tuning::default();
     let g = weapons::Id::Crossbow.def().grenade.unwrap();
     let mut w = World::new("test", 40.0);
     w.set_weapon(weapons::Id::Crossbow);
+    mob_with(&mut w, vec3(6.0, 0.0, 0.0), 200);
     let hold = Actions {
         cast_held: true,
-        move_dir: vec2(1.0, 0.0),
         ..Default::default()
     };
     w.view_yaw = Some(0.0);
-    w.step(&Actions { cast: true, ..hold }, &t);
+    let p0 = w.player.pos;
+    let mut ev = w.step(&Actions { cast: true, ..hold }, &t);
     for _ in 0..40 {
-        w.step(&hold, &t);
+        ev.extend(w.step(&hold, &t));
     }
-    let PState::Throw {
-        to, thrown: false, ..
-    } = w.player.state
-    else {
-        panic!("aiming: {:?}", w.player.state)
-    };
-    let d = vec3(to.x - w.player.pos.x, 0.0, to.z - w.player.pos.z).length();
-    assert!((d - g.far).abs() < 0.2, "aims at the far ring: {d}");
-    let mut ev = Vec::new();
-    for _ in 0..3 {
-        ev.extend(w.step(&Actions::default(), &t));
-    }
-    assert!(ev.iter().any(|e| matches!(e, Event::Throw)));
+    assert!(
+        ev.iter().any(|e| matches!(e, Event::Throw)),
+        "it leaves the hand"
+    );
     assert_eq!(w.bombs.len(), 1);
+    // 떨어지는 자리: 발 앞 `drop` 안팎(땅에서 튕기니 조금 더).
+    for _ in 0..30 {
+        w.step(&Actions::default(), &t);
+    }
+    if let Some(b) = w.bombs.first() {
+        let d = vec2(b.pos.x - p0.x, b.pos.z - p0.z).length();
+        assert!(d < g.drop + 1.5, "dropped near the feet: {d}");
+    }
 }
 
 /// 쏘는 버튼을 누른 채 쥔다(0151: 근접 무기 = RB 마법, 원거리 무기 = X 사격): 한 발 쏘고 모으기로 들어가 `ticks`틱 쥔 뒤 뗀다 —

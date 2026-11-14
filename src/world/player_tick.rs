@@ -24,7 +24,6 @@ pub(super) struct Ctx<'a> {
     pub wpn: &'static weapons::Weapon,
     /// 수류탄을 떨굴 자리(0051)와 꾹 쥐어 겨눌 때의 커서 자리(0055·0058).
     pub throw_to: Option<Vec3>,
-    pub hold_throw_to: Option<Vec3>,
     /// 이동 입력을 월드로(시계 뒤에 계산 — 처음 코드와 같은 자리).
     pub world_move: Vec3,
     /// 원거리 강공격을 모을 수 있나(0056).
@@ -214,40 +213,18 @@ impl World {
         } else {
             self.player.facing_dir()
         };
-        // 수류탄을 떨굴 자리(0051): 조준 스틱 쪽 가까운 거리 > 락온 대상 > 먼 거리 안 가장 가까운 적 > 바라보는 쪽.
+        // 수류탄을 떨굴 자리(0051 → 0178): 발 바로 앞 — 조준 스틱 쪽 > 커서 쪽 > 바라보는 쪽. 적을 찾아 멀리 던지지 않는다.
         let wpn = self.player.weapon.def();
         let throw_to = wpn.grenade.map(|g| {
             let p0 = self.player.pos;
-            let clamp_to = |q: Vec3| {
+            let toward_cursor = aim_point.filter(|_| aim.is_some()).and_then(|q| {
                 let d = vec3(q.x - p0.x, 0.0, q.z - p0.z);
-                let n = d.length().clamp(2.0, g.far);
-                p0 + d.normalize_or(self.player.facing_dir()) * n
-            };
-            if let Some(q) = aim_point.filter(|_| aim.is_some()) {
-                // 커서는 자리까지 준다(0058): 그 자리로, 2m..먼 거리 안으로.
-                clamp_to(q)
-            } else if let Some(d) = aim {
-                p0 + d * g.near
-            } else if let Some(tg) = target {
-                clamp_to(tg)
-            } else if let Some(d) = nearest_in_reach(&self.enemies, p0, g.far, None) {
-                let e = self
-                    .enemies
-                    .iter()
-                    .filter(|e| e.active())
-                    .min_by(|a, b| a.pos.distance(p0).total_cmp(&b.pos.distance(p0)));
-                e.map_or(p0 + d * g.near, |e| clamp_to(e.pos))
-            } else {
-                p0 + self.player.facing_dir() * g.near
-            }
-        });
-        // 꾹 쥐어 겨누는 수류탄(0055)도 커서가 있으면 그 자리(0058) — 없으면 가장 멀리.
-        let hold_throw_to = wpn.grenade.and_then(|g| {
-            let p0 = self.player.pos;
-            aim_point.filter(|_| aim.is_some()).map(|q| {
-                let d = vec3(q.x - p0.x, 0.0, q.z - p0.z);
-                p0 + d.normalize_or(self.player.facing_dir()) * d.length().clamp(2.0, g.far)
-            })
+                (d.length_squared() > 1e-4).then(|| d.normalize())
+            });
+            let dir = toward_cursor
+                .or(aim)
+                .unwrap_or_else(|| self.player.facing_dir());
+            p0 + dir * g.drop
         });
         Ctx {
             a,
@@ -260,7 +237,6 @@ impl World {
             cast_dir,
             wpn,
             throw_to,
-            hold_throw_to,
             world_move: Vec3::ZERO,
             can_charge_cast: false,
             fire: None,
@@ -863,29 +839,13 @@ impl World {
         };
     }
 
-    /// 수류탄 던지기(0051·0055): 손을 떠난 뒤엔 회피로 끊고, 손을 떠나기 전 꾹 쥐면 겨누기.
+    /// 수류탄 떨구기(0051 → 0178): 손을 떠난 뒤엔 회피로 끊는다. 쥐고 있어도 겨누지 않는다(0055의 꾹 = 멀리를 걷었다 — 늘 발 앞).
     fn tick_throw(&mut self, cx: &mut Ctx, e: f32, to: Vec3, done: bool) {
         if done && self.try_dodge(cx) {
             return;
         }
-        let (a, t, wpn) = (&cx.a, cx.t, cx.wpn);
+        let t = cx.t;
         let pl = &mut self.player;
-        if !done && e + cx.dt >= t[P::ThrowStartup] && a.attack_held {
-            // 꾹 쥐면 겨누기(0055): 손을 든 채 멈추고, 떨굴 자리 = 조준 스틱·이동 쪽(없으면 바라보는 쪽) 가장 멀리.
-            // 떼면 그 자리로. 톡(손을 떠나기 전에 뗌)은 자동 조준 자리(0051).
-            let dir = cx
-                .aim
-                .or((cx.world_move.length_squared() > 1e-4).then(|| cx.world_move.normalize()))
-                .unwrap_or_else(|| pl.facing_dir());
-            pl.facing = dir.x.atan2(dir.z);
-            let far = wpn.grenade.map_or(8.0, |g| g.far);
-            pl.state = PState::Throw {
-                t: t[P::ThrowStartup] - 1e-4,
-                to: cx.hold_throw_to.unwrap_or(pl.pos + dir * far),
-                thrown: false,
-            };
-            return;
-        }
         let e2 = e + cx.dt;
         let mut done = done;
         if !done && e2 >= t[P::ThrowStartup] {

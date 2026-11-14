@@ -132,7 +132,7 @@ pub const EN: Strings = Strings {
     weapon_staff_d:
         "Fast 4-hit combo · charged spin · piercing bolt. A pilgrim's light staff",
     weapon_crossbow_d:
-        "Grenades · aimed shots (4 bolts) · dodge to reload. An old hunter's powder crossbow",
+        "Grenades dropped at your feet · aimed shots (4 bolts) · dodge to reload. An old hunter's powder crossbow",
     weapon_fists_d: "3-hit combo · charged punch · magic bolt. With the weapon slot empty you fight bare-handed — light, and you must get close",
     slots_new: "New game",
     slots_load: "Continue",

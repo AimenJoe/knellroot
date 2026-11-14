@@ -141,9 +141,9 @@ pub struct Grenade {
     pub radius: f32,
     pub damage: i32,
     pub poise: f32,
-    /// 던지는 거리(톡 = 자동 조준 자리까지 이 안에서, 꾹 = 가장 멀리).
-    pub near: f32,
-    pub far: f32,
+    /// 떨구는 자리: 발 앞 이 거리(m) — 조준 쪽(스틱·커서), 없으면 바라보는 쪽. 멀리 던지지 않는다(0178 — 사장 "수류탄은 바로 앞에
+    /// 떨어뜨리는 걸로", 예전 0051 자동 조준 7m · 0055 꾹 = 11m).
+    pub drop: f32,
 }
 
 /// 무기 이름표.
@@ -464,8 +464,7 @@ pub const WEAPONS: [Weapon; 5] = [
             radius: 2.2,
             damage: 30,
             poise: 5.0,
-            near: 7.0,
-            far: 11.0,
+            drop: 1.4,
         }),
         // 모은 사격: 시위를 끝까지 당긴 무거운 볼트 — 꿰뚫고 밀어낸다(수류탄도 맞히면 터진다).
         charged: Bolt {
