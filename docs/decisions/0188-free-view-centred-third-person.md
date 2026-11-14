@@ -21,3 +21,13 @@
 - 게임 화면(정원, 헤드리스): 들어선 순간·걷는 중·시점을 돌려 벽 곁 — 주인공이 가운데 세로선 위, 몸 가운데가 아래 1/3 선 근처. 벽 곁에서는
   다가와 크게 보인다(WoW와 같은 꼴).
 - 브라우저 시험 shot·touch·pwa·save·view 통과.
+
+## 덧붙임(같은 날) — 락온도 같은 리그 · 확대는 몸 쪽으로
+- 사장: "락온도 동일한 방식이 좋은 거 아냐? 좀 헷갈릴 것 같은데" · "죽었을 때 확대되는 포커스가 잘못된 듯".
+- **락온도 `chase`**(방위만 대상 쪽, 높이 각 0): 주인공 좌우 가운데·아래쪽, 과녁은 머리 너머 화면 위. 0050의 "조금 왼쪽" 어깨 구도는 걷었다
+  (주인공이 과녁을 가리면 0040의 옅게 그리기가 그대로 돈다). 쓰지 않게 된 어깨 리그와 랩 값 다섯(`cam.lock.dist·height·shoulder·look ahead·frame`)은
+  지웠다 — 연구소에서 아무 일도 안 하는 값이 헷갈리지 않게. `cam.lock.fov`·락온 회전 값은 그대로.
+- **확대(쓰러짐·깨어남 `close`, 센 타격 줌)는 주인공 몸 둘레로** 자리·주시점을 함께 줄인다. 예전엔 주시점 쪽으로만 당겨, 주시점이 앞 땅에 있는
+  3인칭 리그에서 쓰러질 때 빈 땅으로 다가갔다. 시험 `closing_in_moves_toward_the_wanderer_and_keeps_them_in_place_on_screen`(쿼터뷰·3인칭).
+- 시험 고침: `lock_on_frames_the_player_left_of_center…` → `lock_on_centres_the_player_low_and_shows_the_target_above_the_head`.
+

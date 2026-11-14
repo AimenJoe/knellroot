@@ -20,7 +20,7 @@ pub enum Mode {
     Quarter,
     /// 락온 대상의 월드 위치는 월드가 준다(여기는 "어떻게 볼까"만).
     Lock,
-    /// 자유 숄더뷰(0181): 락온과 같은 어깨 리그를 대상 없이 — 방위·높이는 플레이어가 돌린다(오른쪽 스틱·마우스·화면 끌기).
+    /// 자유 숄더뷰(0181): 뒤에서 보는 3인칭(0188 `Camera::chase`, 락온과 같은 리그를 대상 없이) — 방위·높이는 플레이어가 돌린다(오른쪽 스틱·마우스·화면 끌기).
     /// 쿼터뷰에서 가장 가까이 당긴 뒤 한 번 더 당기면, 또는 락온 대상을 잃으면(쓰러지고 넘길 적이 없음) 여기.
     Free,
 }
@@ -445,34 +445,6 @@ impl Camera {
         self.blend.map(|(_, e, _, _)| e)
     }
 
-    /// 숄더 리그(락온): 요 = 앞(대상 쪽), 어깨를 비켜 과녁이 보이게. 자유 숄더뷰는 0188부터 `chase`(가운데 3인칭).
-    fn shoulder(&self, t: &Tuning, pitch: f32) -> Rig {
-        // 자리는 부드럽게 따라가는 점(`follow`)에서: 대상 곁을 빠르게 돌 때 카메라가 플레이어와 함께 옆으로 홱 밀리지 않게(0007).
-        let player = self.follow;
-        let (s, c) = self.yaw.sin_cos();
-        let fwd = vec3(s, 0.0, c);
-        let right = fwd.cross(Vec3::Y);
-        let pos =
-            player - fwd * t[P::CamLDist] + Vec3::Y * t[P::CamLHeight] + right * t[P::CamLShoulder];
-        // 주시점 = 플레이어 앞 일정 거리(대상과의 사이 점이 아니다): 대상에 다가가도 카메라가 고개를 숙이며 플레이어가
-        // 화면 위로 떠오르지 않는다(예전 사이 점: 다가가면 −5° → −11°, 0008). 옆으로 밀어야 플레이어가 화면 1/3에 선다.
-        let look = player
-            + Vec3::Y * (PLAYER_HEIGHT * 0.6)
-            + fwd * t[P::CamLLookAhead]
-            + right * t[P::CamLFrame];
-        // 높이 각(0181): 카메라를 주시점 둘레로 오른쪽 축을 따라 돌린다(+ = 위로 올라 내려다본다).
-        let pos = if pitch.abs() > 1e-5 {
-            look + Quat::from_axis_angle(right.normalize_or_zero(), -pitch) * (pos - look)
-        } else {
-            pos
-        };
-        Rig {
-            pos,
-            look,
-            fov: t[P::CamLFov].to_radians(),
-        }
-    }
-
     /// 자유 숄더뷰 = 뒤에서 보는 3인칭(0188): 어깨 비킴 없이 바로 뒤·위, 주시점은 앞·위 — 주인공이 좌우 가운데·화면 아래쪽 1/3에 선다
     /// (WoW식). `pitch` = 주시점 둘레로 더 내려다보는 각(플레이어가 돌린다).
     fn chase(&self, t: &Tuning, pitch: f32) -> Rig {
@@ -501,7 +473,8 @@ impl Camera {
     fn desired(&self, t: &Tuning, target: Option<Vec3>) -> Rig {
         match (self.mode, target) {
             // 방향은 요(대상 쪽)가 정한다.
-            (Mode::Lock, Some(_)) => self.shoulder(t, 0.0),
+            // 락온도 같은 3인칭 구도(0188, 사장 "락온도 동일한 방식이 좋은 거 아냐? 헷갈릴 것 같은데") — 방위만 대상 쪽.
+            (Mode::Lock, Some(_)) => self.chase(t, 0.0),
             (Mode::Free, _) => self.chase(t, self.pitch),
             _ => {
                 let pitch = t[P::CamQPitch].to_radians();
@@ -696,8 +669,14 @@ impl Camera {
                 self.zoom = 0.0;
             }
         }
-        rig.pos = rig.look
-            + (rig.pos - rig.look) * (1.0 - self.zoom) * (1.0 - self.close.clamp(0.0, 0.9));
+        // 다가가는 것은 주인공 몸 쪽으로(0188): 자리와 주시점을 몸 둘레로 함께 줄여 — 몸은 화면의 같은 자리에서 커진다. 예전엔 주시점
+        // 쪽으로만 당겨, 주시점이 앞 땅에 있는 3인칭 리그에서 쓰러질 때 확대가 빈 땅으로 갔다(사장 "죽었을 때 확대되는 포커스가 잘못").
+        let k = (1.0 - self.zoom) * (1.0 - self.close.clamp(0.0, 0.9));
+        if k < 1.0 {
+            let body = self.follow + Vec3::Y * (PLAYER_HEIGHT * 0.5);
+            rig.pos = body + (rig.pos - body) * k;
+            rig.look = body + (rig.look - body) * k;
+        }
         // 흔들림: trauma² 크기의 무작위 오프셋(로직 시계를 쓰므로 히트스톱 중엔 멈춘다).
         self.trauma = (self.trauma - dt * 2.5).max(0.0);
         // 크기는 각으로(0020): 카메라 거리 × tan(각) — 먼 쿼터뷰에서도 화면에서 보이게. 카메라의 오른쪽·위로 민다(위치·주시점 같이 = 화면 평행 이동).
@@ -1224,9 +1203,9 @@ mod tests {
             c.update(1.0 / 60.0, &t, player, Some(boss), &[]);
         }
         assert!(c.blending().is_none());
-        // 플레이어 뒤(+z 쪽), 높이 CamLHeight, 대상(-z)을 본다.
+        // 플레이어 뒤(+z 쪽), 높이 CamFHeight(0188 — 락온도 3인칭 리그), 대상(-z)을 본다.
         assert!(
-            c.rig.pos.z > 0.0 && (c.rig.pos.y - t[P::CamLHeight]).abs() < 1e-3,
+            c.rig.pos.z > 0.0 && (c.rig.pos.y - t[P::CamFHeight]).abs() < 1e-3,
             "{:?}",
             c.rig
         );
@@ -1391,8 +1370,10 @@ mod framing_tests {
         c.x / c.w
     }
 
+    /// 0188: 락온도 뒤에서 보는 3인칭 — 주인공은 좌우 가운데·아래쪽, 과녁은 그보다 화면 위(머리 너머로 보인다).
+    /// (0050의 "조금 왼쪽" 어깨 구도는 사장 "락온도 동일한 방식이 좋은 거 아냐? 헷갈릴 것 같은데"로 걷었다.)
     #[test]
-    fn lock_on_frames_the_player_left_of_center_and_the_target_right_of_the_player() {
+    fn lock_on_centres_the_player_low_and_shows_the_target_above_the_head() {
         let t = Tuning::default();
         let player = vec3(0.0, 0.0, -4.5);
         let boss = vec3(0.0, 0.0, -7.1);
@@ -1402,14 +1383,21 @@ mod framing_tests {
             c.update(1.0 / 60.0, &t, player, Some(boss), &[]);
         }
         let px = ndc_x(&c.rig, player + Vec3::Y * 0.9);
-        let bx = ndc_x(&c.rig, boss + Vec3::Y * 1.6);
-        println!("player ndc x {px}, boss ndc x {bx}, rig {:?}", c.rig);
-        // 0050: 조금만 왼쪽(사장: "너무 왼쪽으로 치우쳐 있어") — 가운데 가까이, 그래도 과녁을 덜 가리게 왼쪽.
-        assert!(
-            px < -0.05 && px > -0.2,
-            "player should sit a little left of center: {px}"
+        let m = Mat4::perspective_rh_gl(c.rig.fov, 16.0 / 9.0, 0.1, 200.0)
+            * Mat4::look_at_rh(c.rig.pos, c.rig.look, Vec3::Y);
+        let y = |p: Vec3| {
+            let v = m * p.extend(1.0);
+            v.y / v.w
+        };
+        let (py, head, by) = (
+            y(player + Vec3::Y * 0.9),
+            y(player + Vec3::Y * PLAYER_HEIGHT),
+            y(boss + Vec3::Y * 1.6),
         );
-        assert!(bx > px, "target right of the player: {bx} vs {px}");
+        println!("player ({px}, {py}), head {head}, boss y {by}");
+        assert!(px.abs() < 0.02, "player centred: {px}");
+        assert!(py < -0.15, "player low: {py}");
+        assert!(by > head, "target shows above the head: {by} vs {head}");
     }
 }
 
@@ -1581,6 +1569,36 @@ mod frame_probe {
         (n, hi - lo)
     }
 
+    /// 0188: 쓰러질 때·깨어날 때의 확대(`close`)와 센 타격 줌은 주인공 몸 쪽으로 — 몸이 화면의 같은 자리에 남고 커진다
+    /// (예전엔 주시점 쪽이라 3인칭 리그에서 앞 땅으로 다가갔다). 쿼터뷰·3인칭 둘 다.
+    #[test]
+    fn closing_in_moves_toward_the_wanderer_and_keeps_them_in_place_on_screen() {
+        let t = Tuning::default();
+        let p = vec3(2.0, 0.0, 1.0);
+        for free in [false, true] {
+            let mut c = Camera::new(p, &t);
+            if free {
+                c.set_mode(Mode::Free, None, p);
+            }
+            for _ in 0..120 {
+                c.update(1.0 / 60.0, &t, p, None, &[]);
+            }
+            let body = p + Vec3::Y * (PLAYER_HEIGHT * 0.5);
+            let (n0, d0) = (ndc(&c.rig, body), c.rig.pos.distance(body));
+            c.close = 0.6;
+            c.update(1.0 / 60.0, &t, p, None, &[]);
+            let (n1, d1) = (ndc(&c.rig, body), c.rig.pos.distance(body));
+            assert!(
+                d1 < d0 * 0.6,
+                "free {free}: closer to the body {d0} -> {d1}"
+            );
+            assert!(
+                n0.distance(n1) < 0.02,
+                "free {free}: stays put on screen {n0:?} -> {n1:?}"
+            );
+        }
+    }
+
     /// 0188: 자유 숄더뷰의 카메라가 벽에 들면 옆으로 밀리지 않고 주인공 쪽으로 다가온다 — 주인공은 화면 가운데에 남는다.
     #[test]
     fn a_wall_behind_pulls_the_free_view_in_along_the_line_and_keeps_the_wanderer_centred() {
@@ -1604,7 +1622,7 @@ mod frame_probe {
     }
 
     /// 0188: 자유 숄더뷰는 뒤에서 보는 3인칭 — 주인공(몸 가운데)이 좌우 가운데, 세로는 화면 아래쪽 1/3 부근(WoW식).
-    /// 돌린 방위·내려다본 각이 달라도 좌우 가운데. 락온은 어깨 리그 그대로(과녁 쪽으로 비킨다).
+    /// 돌린 방위·내려다본 각이 달라도 좌우 가운데. 락온도 같은 구도.
     #[test]
     fn the_free_shoulder_view_centres_the_wanderer_in_the_lower_third() {
         let t = Tuning::default();
@@ -1634,11 +1652,12 @@ mod frame_probe {
                 assert!((n.y + 1.0 / 3.0).abs() < 0.08, "lower third: y {}", n.y);
             }
         }
-        // 락온은 어깨를 비킨다 — 가운데가 아니다.
+        // 락온도 같은 구도(desired가 chase를 쓴다).
         let mut c = Camera::new(p, &t);
         c.follow = p;
-        let r = c.shoulder(&t, 0.0);
-        assert!(ndc(&r, p + Vec3::Y * 0.9).x.abs() > 0.05);
+        c.mode = Mode::Lock;
+        let r = c.desired(&t, Some(p + vec3(0.0, 0.0, 6.0)));
+        assert!(ndc(&r, p + Vec3::Y * 0.9).x.abs() < 0.02);
     }
 
     #[test]

@@ -323,12 +323,7 @@ pub enum P {
     CamQFov,
     CamQLag,
     CamQYaw,
-    CamLDist,
-    CamLHeight,
-    CamLShoulder,
     CamLFov,
-    CamLLookAhead,
-    CamLFrame,
     CamFDist,
     CamFHeight,
     CamFLookAhead,
@@ -524,7 +519,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 171] = [
+pub const SPECS: [Spec; 166] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -571,33 +566,6 @@ pub const SPECS: [Spec; 171] = [
         1.0
     ),
     spec!(
-        CamLDist,
-        "cam.lock.dist",
-        "CAM_L_DIST",
-        6.0,
-        1.5,
-        12.0,
-        0.25
-    ),
-    spec!(
-        CamLHeight,
-        "cam.lock.height",
-        "CAM_L_HEIGHT",
-        4.2,
-        0.5,
-        6.0,
-        0.1
-    ),
-    spec!(
-        CamLShoulder,
-        "cam.lock.shoulder",
-        "CAM_L_SHOULDER",
-        0.8,
-        -2.0,
-        2.0,
-        0.1
-    ),
-    spec!(
         CamLFov,
         "cam.lock.fov deg",
         "CAM_L_FOV_DEG",
@@ -606,26 +574,8 @@ pub const SPECS: [Spec; 171] = [
         90.0,
         1.0
     ),
-    spec!(
-        CamLLookAhead,
-        "cam.lock.look ahead m",
-        "CAM_L_LOOK_AHEAD",
-        4.0,
-        0.0,
-        10.0,
-        0.25
-    ),
-    spec!(
-        CamLFrame,
-        "cam.lock.frame x",
-        "CAM_L_FRAME",
-        1.0,
-        -3.0,
-        3.0,
-        0.1
-    ),
     // 자유 숄더뷰 = 뒤에서 보는 3인칭(0188, 사장 "주인공이 너무 한쪽으로 치우쳐 … 그냥 3인칭으로, 화면 세로 1/3 부근·좌우 가운데, WoW처럼"):
-    // 어깨 비킴 없이 바로 뒤·위. 주시점을 앞으로·위로 두어 주인공이 화면 아래쪽 1/3에 선다. 락온은 과녁 때문에 어깨 리그 그대로.
+    // 어깨 비킴 없이 바로 뒤·위. 주시점을 앞으로·위로 두어 주인공이 화면 아래쪽 1/3에 선다. 락온도 같은 리그(방위만 대상 쪽, 0188 둘째).
     spec!(
         CamFDist,
         "cam.free.dist",
