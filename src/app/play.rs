@@ -898,6 +898,11 @@ impl App {
         let mut cues = Vec::new();
         for (i, en) in self.world.enemies.iter().enumerate() {
             let tele = en.telegraph();
+            // 껍질 받기(0185)는 예고 모양이 없다 — 웅크리는 첫 틱에 돌 소리 하나.
+            if en.shelled() && self.tele_was[i] != en.atk_count {
+                self.tele_was[i] = en.atk_count;
+                cues.push(Id::Shell);
+            }
             // 공격 번호로 센다(0128): 연속 공격의 다음 타·페인트로 바뀐 공격도 제 소리를 낸다.
             let fresh = tele.is_some() && self.tele_was[i] != en.atk_count;
             if let (Some((_, shape)), true) = (tele, fresh) {

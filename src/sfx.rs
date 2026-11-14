@@ -53,6 +53,8 @@ pub enum Id {
     Recall,
     /// 종소리의 길 안내(0171): 땅 밑의 큰 종 한 번 — 환경음의 먼 종보다 가깝고 낮다. 문을 찾는 동안 가끔.
     Knell,
+    /// 껍질 받기(0185 — 이끼 덮인 문지기가 웅크린다): 돌이 갈리며 닫히는 낮은 소리 + 끝의 둔한 탁. 예고가 아니다(치지 않는다).
+    Shell,
 }
 
 /// 잇단 박자 수(1부터) → 종소리(셋째부터는 가장 높은 것).
@@ -167,11 +169,13 @@ fn synth_gain(id: Id) -> f32 {
         Id::Recall => 0.4,
         // 0175: 0.65 → 0.95 — 길 안내의 종은 들려야 한다(폰 스피커에서 화면의 물결만 보였다).
         Id::Knell => 0.95,
+        Id::Shell => 0.6,
         _ => 0.5,
     }
 }
 
-const SYNTHS: [Id; 15] = [
+const SYNTHS: [Id; 16] = [
+    Id::Shell,
     Id::Recall,
     Id::Knell,
     Id::TeleRelease,
@@ -487,6 +491,31 @@ pub fn synth(id: Id) -> Vec<i16> {
                     let e = (-t * 13.0).exp();
                     let strike = (-t * 60.0).exp();
                     ((TAU * f0 * t).sin() + 0.35 * (TAU * f0 * 2.76 * t).sin() * strike) * e
+                })
+                .collect()
+        }
+        // 껍질: 돌 긁힘(띠 걸러진 잡음 — 작은 스피커에도 들리게 300~900Hz) + 낮은 웅(70Hz)이 0.35초 자라고, 끝에 둔한 탁.
+        Id::Shell => {
+            let n = len(0.5);
+            let (mut lp, mut hp) = (0.0f32, 0.0f32);
+            (0..n)
+                .map(|i| {
+                    let t = i as f32 / SR as f32;
+                    let x = rng(&mut seed);
+                    lp += (x - lp) * 0.12;
+                    hp += (lp - hp) * 0.02;
+                    let grind = (lp - hp) * 2.2 * (1.0 + 0.5 * (TAU * 23.0 * t).sin());
+                    let rise = (t / 0.35).min(1.0);
+                    let hum = (TAU * 70.0 * t).sin() * 0.5;
+                    let body = (grind + hum) * rise * (1.0 - ((t - 0.36) / 0.04).clamp(0.0, 1.0));
+                    let d = t - 0.36;
+                    let clunk = if d >= 0.0 {
+                        ((TAU * 110.0 * d).sin() + 0.4 * (TAU * 420.0 * d).sin())
+                            * (-d * 28.0).exp()
+                    } else {
+                        0.0
+                    };
+                    body + clunk
                 })
                 .collect()
         }
