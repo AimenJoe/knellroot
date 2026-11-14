@@ -32,6 +32,28 @@ Text to Motion으로 붙인다. 이름 = `tools/art/blender/wanderer.py`의 동�
   Thrust_Slash = 18(5.8, 찌르기)·33(4.0). Sword_Judgment = 24(10.0)·80(3.4). Heavy_Hammer_Swing = 37(4.4).
 - 앞으로 가는 이동: Weapon_Combo_2·Sword_Judgment·Basic_Jump·Back_Jump는 엉덩이가 0.5~1.1m 움직인다 — 들일 때 수평 이동을 뺀다.
 
+### 둘째 묶음(2026-11-14, 20 동작 — 첫 묶음과 뼈 이름·바인드 포즈가 같다, 섞어 쓴다)
+| 게임 이름 | 쓸 클립(프레임 @30fps) | 메모 |
+|---|---|---|
+| `idle` | 첫 묶음 Combat_Stance | 둘째 묶음에는 없다 — 첫 묶음에서 |
+| `walk`·달리기 | Walking · Running | |
+| `attack`·`attack2`·`attack3` | Triple_Combo_Attack(손 봉우리 18·36·54) | 셋째가 찌르기가 아니면 Thrust_Slash 18로 |
+| `charge`·`heavy` | Attack(봉우리 26, 11m/s) | 모으기 = 휘두르기 전 자세를 잡아 둔다 |
+| `parry` | Sword_Parry_Backward_2(0.53s) | |
+| `dodge` | Roll_Dodge_3(1.63s, 1.65m 앞으로) | 게임 회피는 0.25초 — 줄이면 급해진다(회피 시간은 얼린 값, 판정 뒤에) |
+| `hurt`·`fall` | Dead(맞음 봉우리 4 → 쓰러짐) | **뒤로(등으로) 눕는다** — 지금 `wake`·타이틀은 엎드린 자세라 일어나는 동작이 따로 필요 |
+| `jump`·`land` | Basic_Jump · Jump_Over_Obstacle_2 | |
+| `plunge`·`sk_quake`·`hammer_slam` | Charged_Ground_Slam(봉우리 39) | |
+| `sk_whirl` | Skill_03(봉우리 29, 15m/s 회전) | |
+| `ult_line` | Sword_Judgment(봉우리 24) | |
+| `sk_cut` | Thrust_Slash | |
+| `ult_flurry` | Weapon_Combo(봉우리 13·31·54·69) | |
+| `hammer1` | Heavy_Hammer_Swing | `hammer2`·`hammer_charge`는 아직 |
+| 줍기(새) | Collect_Object | 지금 게임에 줍기 동작은 없다 — 상자·숨은 물건에 쓸 수 있다 |
+| ? | 이름 없는 클립(_01a1db4a, 2.97s) | 제자리에서 조금 움직이는 자세 — 무엇으로 만든 것인지 사장 확인 |
+
+아직 없는 것: `wake`(엎드리거나 누운 데서 일어나기), `walk_back`, `turn_l`·`turn_r`, 몸짓 둘, `drink`, `cast`·`cast_charge`, `throw`, 지팡이 여섯, 쇠뇌 둘, `hammer2`·`hammer_charge`, 기술 다섯(`sk_gather`·`sk_brace`·`sk_echo`·`sk_throw`·`sk_embers`), `ult_upend`.
+
 ## 빠진 것(첫 묶음 13개 뒤, 2026-11-14) — 이어 붙인 한 클립에서 자른다
 첫 묶음이 채우는 것: `idle`(Combat_Stance)·`walk`(walking_2_inplace)·달리기(Running)·`attack`·`attack2`(Weapon_Combo_2)·`attack3`(Thrust_Slash 찌르기)·`heavy`(Attack)·`hammer1`(Heavy_Hammer_Swing)·`jump`·`land`(Basic_Jump·Jump_Run). 나머지 39개 이름을 아래 열셋 클립 + 콤보 셋(지팡이·망치 위) + 기술·큰 기술 열하나(2·3순위)로 채운다.
 
