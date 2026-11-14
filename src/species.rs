@@ -14,6 +14,8 @@ pub enum Kind {
     Pod,
     /// 깨진 종지기(0116 이름, 0125 — 둘째 문지기): 울림 고리·종 조각·종 끌기 돌진.
     Bellkeeper,
+    /// 이끼먹이(0185 — 비적대 생명체 한 종): 젖은 바닥에서 이끼를 뜯고, 다가오면 바위 틈 쪽으로 달아난다. 치지 않는다.
+    Mossgrazer,
     /// 이끼 덮인 문지기(0185 — 셋째 문지기, 설계 내부 작업명 "문턱지기"): 쓸기·껍질 받기·틈새 돌진.
     Mossward,
 }
@@ -28,6 +30,9 @@ pub enum Behavior {
     Warden,
     /// 심기(꼬투리, 0120): `plant_range` 안이면 플레이어 자리에 원판 예고를 심고(끝 = 판정), 너무 가까우면(`retreat`) 깡충 물러난다.
     Planter,
+    /// 풀 뜯기(이끼먹이, 0185): 공격이 없다. 제자리 둘레에서 뜯고, 방랑자가 `GRAZE_FLEE_R` 안이면 반대쪽으로 달아나고(제자리에서
+    /// `GRAZE_LEASH`까지), 멀어지면 돌아온다. 락온·알아차림에 잡히지 않는다.
+    Grazer,
     /// 깨진 종지기(0125): 가까우면 땅을 쳐 울림 고리(`rings`겹 — 사이에 서거나 뛰어넘는다), 멀면 종 조각 부채꼴(`shards`개 —
     /// 패링하면 되돌아가 종지기를 깎는다)과 종 끌기 돌진을 번갈아. 체력 반 아래 고리·조각이 하나·둘 는다.
     Bellkeeper,
@@ -360,7 +365,48 @@ pub static MOSSWARD: Def = Def {
     model: "gatekeeper",
 };
 
-pub static ALL: [&Def; 7] = [&HUSK, &THORN, &WARDEN, &SHELL, &POD, &BELLKEEPER, &MOSSWARD];
+/// 이끼먹이(0185 — 정상 피식자): 작고 둥근 몸, 공격·보상 없음(잔불 0). 맞으면 아프지만 싸우지 않고 달아난다.
+pub static MOSSGRAZER: Def = Def {
+    kind: Kind::Mossgrazer,
+    name: |s: &Strings| s.creature_mossgrazer,
+    hp: 20,
+    radius: 0.32,
+    height: 0.6,
+    speed: 3.4,
+    reach: 0.0,
+    tele: 0.0,
+    recover: 0.0,
+    arc: 0.0,
+    charge_range: 0.0,
+    charge_tele: 0.0,
+    charge_speed: 0.0,
+    charge_time: 0.0,
+    wave_tele: 0.0,
+    wave_radius: 0.0,
+    wave_speed: 0.0,
+    guard_arc: 0.0,
+    plant_range: 0.0,
+    plant_r: 0.0,
+    retreat: 0.0,
+    rings: 0,
+    shards: 0,
+    rhythm: STEADY,
+    behavior: Behavior::Grazer,
+    boss: false,
+    embers: 0,
+    model: "mossgrazer",
+};
+
+pub static ALL: [&Def; 8] = [
+    &HUSK,
+    &THORN,
+    &WARDEN,
+    &SHELL,
+    &POD,
+    &BELLKEEPER,
+    &MOSSWARD,
+    &MOSSGRAZER,
+];
 
 /// 종류의 줄(표 `ALL`에서 찾는다 — 새 종류 = `Kind` 한 줄 + 표 한 줄, 빠뜨리면 시험이 잡는다).
 pub fn def(kind: Kind) -> &'static Def {
@@ -389,6 +435,8 @@ mod tests {
                 Behavior::Planter => {
                     assert!(d.plant_range > d.retreat && d.retreat > d.plant_r && d.plant_r > 0.0);
                 }
+                // 이끼먹이(0185): 치지 않고(닿는 거리 0) 잔불도 없다.
+                Behavior::Grazer => assert!(d.reach == 0.0 && d.embers == 0 && !d.boss),
             }
             assert!((0.0..=180.0).contains(&d.guard_arc), "{:?}", d.kind);
         }

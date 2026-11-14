@@ -363,6 +363,9 @@ impl Enemy {
 
     /// 알아차렸다(0113): 제자리·돌아가는 중이면 쫓기 시작. 이미 싸우는 중이면 그대로.
     pub fn notice(&mut self) -> bool {
+        if self.harmless() {
+            return false;
+        }
         if matches!(self.state, EState::Idle | EState::Return) {
             self.state = EState::Chase;
             true
@@ -466,7 +469,12 @@ impl Enemy {
 
     /// 락온에 잡히나(0149): 싸움에 낀 적 + 깨어나는 중인 잠든 적. 그냥 잠든 적은 아니다(싸울 것이 아직 아니다).
     pub fn lockable(&self) -> bool {
-        self.active() || (self.waking && self.state == EState::Dormant)
+        !self.harmless() && (self.active() || (self.waking && self.state == EState::Dormant))
+    }
+
+    /// 싸우지 않는 생명체(0185 — 이끼먹이): 맞을 수는 있어도 락온·알아차림·쫓기에 들지 않는다.
+    pub fn harmless(&self) -> bool {
+        self.def().behavior == Behavior::Grazer
     }
 
     pub fn facing_dir(&self) -> Vec3 {
@@ -830,6 +838,8 @@ impl Enemy {
             }
             // 심기(0120): 거리 안이면 심는다(물러나기는 월드가 길을 보고 뛴다 — `hop_cd`).
             Behavior::Planter => (dist <= d.plant_range).then_some(Atk::Plant),
+            // 이끼먹이(0185)는 치지 않는다.
+            Behavior::Grazer => None,
             Behavior::Warden => {
                 // 2단계(0133): 넷에 한 번 뿌리 기둥 줄 — 바로 붙어 있을 땐 아니다(내려치기가 낫다).
                 if self.roused && self.atk_count % 4 == 1 && dist > 3.0 && dist <= ROOTS_LEN - 1.0 {
@@ -849,6 +859,53 @@ impl Enemy {
     }
 
     /// 한 틱. `player` = 플레이어 자리.
+    /// 이끼먹이(0185): 가까우면 달아나고(제자리 끈 안), 아니면 제자리로 돌아가 뜯는다. 그림은 움직이면 `walk`, 서면 `idle`(뜯기).
+    fn graze(&mut self, player: Vec3, dt: f32) {
+        use crate::tuning::{
+            GRAZE_FLEE_R, GRAZE_FLEE_SPEED, GRAZE_LEASH, GRAZE_SHUFFLE, GRAZE_SHUFFLE_T,
+        };
+        let Some((home, face)) = self.home else {
+            return;
+        };
+        let speed = self.def().speed;
+        let away = vec3(self.pos.x - player.x, 0.0, self.pos.z - player.z);
+        let near = away.length() < GRAZE_FLEE_R;
+        let from_home = vec3(self.pos.x - home.x, 0.0, self.pos.z - home.z);
+        // 맞았거나 다가오면 달아난다 — 끈 밖으로는 나가지 않고 옆으로 비킨다.
+        if near || self.hurt > 0.0 {
+            let mut go = away.normalize_or(Vec3::X);
+            if from_home.length() > GRAZE_LEASH && go.dot(from_home) > 0.0 {
+                let side = vec3(-go.z, 0.0, go.x);
+                go = if side.dot(from_home) < 0.0 {
+                    side
+                } else {
+                    -side
+                };
+            }
+            self.turn_toward(go, 9.0, dt);
+            self.pos += go * speed * GRAZE_FLEE_SPEED * dt;
+            self.state = EState::Return;
+            return;
+        }
+        if from_home.length() > 0.4 {
+            let to = -from_home.normalize_or(Vec3::X);
+            self.turn_toward(to, 5.0, dt);
+            self.pos += to * (speed * 0.45 * dt).min(from_home.length());
+            self.state = EState::Return;
+            return;
+        }
+        // 뜯기: 가끔 머리를 돌려 곁의 자리로(제자리 둘레 반 걸음).
+        self.state = EState::Idle;
+        self.eat_t += dt;
+        if self.eat_t >= GRAZE_SHUFFLE_T {
+            self.eat_t = 0.0;
+            let a = (self.pos.x * 12.9898 + self.pos.z * 78.233).sin() * 43_758.547;
+            let t = a.fract().abs() * std::f32::consts::TAU;
+            self.facing = face + t;
+            self.pos += vec3(t.sin(), 0.0, t.cos()) * GRAZE_SHUFFLE * 0.3;
+        }
+    }
+
     pub fn tick(&mut self, player: Vec3, dt: f32) -> Out {
         let mut out = Out::default();
         if !self.alive() {
@@ -872,6 +929,10 @@ impl Enemy {
         if self.knock.length() < SLAM_SPEED {
             self.spilling = false;
             self.slam_bonus = 0;
+        }
+        if d.behavior == Behavior::Grazer {
+            self.graze(player, dt);
+            return out;
         }
         // 2단계 전환(0133): 체력 반에서 한 번 — 하던 공격을 버리고 `RISE_TIME` 동안 무릎 꿇었다 터지며 일어선다.
         if d.boss && !self.roused && self.hp * 2 <= self.max_hp && self.state != EState::Dormant {

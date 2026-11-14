@@ -60,7 +60,7 @@ pub struct Goal {
 }
 
 /// 여정 목표(지역 차례 · 주요 먼저). 새 지역 = 이 표에 줄을 더한다(아이디는 `<지역>.<무엇>`).
-pub static GOALS: [Goal; 13] = [
+pub static GOALS: [Goal; 14] = [
     Goal {
         id: "s.gate",
         stage: 0,
@@ -177,6 +177,15 @@ pub static GOALS: [Goal; 13] = [
         hint: |s| s.jg_g_elites_d,
         need: Need::Elites,
         reward: Reward::Embers(30),
+    },
+    Goal {
+        id: "g.grazer",
+        stage: 2,
+        kind: Branch::Find,
+        title: |s| s.jg_g_grazer,
+        hint: |s| s.jg_g_grazer_d,
+        need: Need::Seen(Kind::Mossgrazer, Obs::Seen),
+        reward: Reward::Embers(20),
     },
 ];
 

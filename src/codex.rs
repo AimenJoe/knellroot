@@ -29,7 +29,7 @@ pub struct Entry {
 }
 
 /// 표 순서 = 도감 순서(만나는 차례).
-pub static ENTRIES: [Entry; 7] = [
+pub static ENTRIES: [Entry; 8] = [
     Entry {
         kind: Kind::Husk,
         place: |s| s.cx_place_both,
@@ -93,6 +93,15 @@ pub static ENTRIES: [Entry; 7] = [
         ],
     },
     Entry {
+        kind: Kind::Mossgrazer,
+        place: |s| s.cx_place_hollow,
+        lines: &[
+            (Obs::Seen, |s| s.cx_grazer_1),
+            (Obs::Seen, |s| s.cx_grazer_2),
+            (Obs::Guess, |s| s.cx_grazer_g),
+        ],
+    },
+    Entry {
         kind: Kind::Mossward,
         place: |s| s.cx_place_sill,
         lines: &[
@@ -114,6 +123,7 @@ pub fn kind_key(k: Kind) -> &'static str {
         Kind::Pod => "pod",
         Kind::Bellkeeper => "bellkeeper",
         Kind::Mossward => "mossward",
+        Kind::Mossgrazer => "mossgrazer",
     }
 }
 

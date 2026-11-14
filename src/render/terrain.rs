@@ -193,7 +193,11 @@ impl Renderer {
             + 16 * run.level.cold.is_some() as usize;
         if self.scenery.as_ref().is_none_or(|(k, _)| *k != key) {
             let trees = run.def.env.trees;
-            self.scenery = Some((key, Scenery::bake(&run.level, &mut self.lib, flora, trees)));
+            let floor = &run.def.env.floor;
+            self.scenery = Some((
+                key,
+                Scenery::bake(&run.level, &mut self.lib, flora, trees, floor),
+            ));
         }
         let sc = &mut self.scenery.as_mut().unwrap().1;
         // 그늘에 선 배우는 달빛을 덜 받는다(0140) — 구운 그림자와 같은 가림 지도.

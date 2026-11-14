@@ -70,6 +70,8 @@ pub struct Env {
     pub fireflies: bool,
     pub falling: bool,
     pub trees: bool,
+    /// 바닥(0185 — 굽는 지형의 석판·이끼·흙).
+    pub floor: crate::scenery::FloorLook,
 }
 
 /// 땅 위(성소): 해 질 녘 남보라 하늘·달(0063 그대로).
@@ -105,6 +107,7 @@ pub static SURFACE: Env = Env {
     fireflies: true,
     falling: false,
     trees: true,
+    floor: crate::scenery::STONE_FLOOR,
 };
 
 /// 땅속(떠난 마을, 지하 40m): 하늘 대신 흙빛이 아래로 짙어지는 동굴, 높은 동굴 벽, 뿌리 천장(아치), 달 없음·달빛은 천장 틈으로 조금,
@@ -141,6 +144,7 @@ pub static UNDERGROUND: Env = Env {
     fireflies: false,
     falling: true,
     trees: false,
+    floor: crate::scenery::STONE_FLOOR,
 };
 
 /// 땅속 더 깊은 곳(잔뿌리의 정원, 지하 75m — 0185): 마을의 흙빛 동굴에서 물기·이끼의 옅은 초록이 섞인다(설계 — 생명색은 물기·이끼·작은
@@ -177,6 +181,7 @@ pub static GARDEN: Env = Env {
     fireflies: false,
     falling: true,
     trees: false,
+    floor: crate::scenery::GARDEN_FLOOR,
 };
 
 /// 이어 붙여도 이음매가 없는 점 무늬(정수 주파수 사인 합) → 세 단 알파(픽셀 그림처럼 계단).
