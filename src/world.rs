@@ -123,6 +123,8 @@ pub enum Event {
     PlayerHurt,
     LockOn,
     LockOff,
+    /// 락온이 버튼 없이 풀렸다(대상이 쓰러지고 넘길 적이 없음·사라짐·너무 멀어짐, 0181): 카메라는 숄더뷰에 머문다(자유 숄더뷰).
+    LockLost,
     /// 땅을 비틀었다(0012·0023). `quarters` = 카메라가 도는 90° 칸 수(+ = 요 +90°, 화면에서 땅이 시계 방향 —
     /// 0이면 캐릭터만 돌아선다, ±2면 180°). 앱이 카메라를 돌린다.
     Turn {
@@ -1442,7 +1444,7 @@ impl World {
                     let at = dead.map(|e| e.pos);
                     self.lock = at.and_then(|at| self.handoff_target(at));
                     if self.lock.is_none() {
-                        ev.push(Event::LockOff);
+                        ev.push(Event::LockLost);
                     }
                 }
             }
@@ -1841,7 +1843,7 @@ impl World {
             {
                 if d > self.lock_lose {
                     self.lock = None;
-                    ev.push(Event::LockOff);
+                    ev.push(Event::LockLost);
                 }
             }
         }

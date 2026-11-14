@@ -135,7 +135,8 @@ fn lock_drops_when_the_target_dies() {
     assert!(w.lock.is_some());
     w.enemies[0].state = EState::Dead;
     let ev = w.step(&Actions::default(), &t);
-    assert!(ev.contains(&Event::LockOff) && w.lock.is_none());
+    // 0181: 버튼 없이 풀림 = LockLost(카메라는 숄더뷰에 머문다).
+    assert!(ev.contains(&Event::LockLost) && w.lock.is_none());
 }
 
 /// 2026-11-06: 락온한 적이 쓰러지면 그 자리에서 가장 가까운 적으로 넘어가고, 둘레에 아무도 없으면 풀린다.
@@ -151,11 +152,11 @@ fn a_fallen_lock_target_hands_off_to_the_nearest_enemy_or_lets_go() {
     w.enemies[0].state = EState::Dead;
     let ev = w.step(&Actions::default(), &t);
     assert_eq!(w.lock, Some(2), "next to where the target fell");
-    assert!(!ev.contains(&Event::LockOff), "stays in lock-on");
+    assert!(!ev.contains(&Event::LockLost), "stays in lock-on");
     // 그 적도 쓰러지고, 남은 적(1)은 둘레 밖 → 풀린다.
     w.enemies[2].hp = 0;
     w.enemies[2].state = EState::Dead;
     let ev = w.step(&Actions::default(), &t);
     assert_eq!(w.lock, None);
-    assert!(ev.contains(&Event::LockOff));
+    assert!(ev.contains(&Event::LockLost));
 }

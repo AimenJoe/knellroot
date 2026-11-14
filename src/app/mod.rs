@@ -339,7 +339,7 @@ impl App {
         self.world.embers = self.progress.embers;
         self.world.apply_stats(self.progress.stats(), true);
         self.seed_run();
-        self.cam = Camera::new(self.world.player.pos, &self.t);
+        self.cam = self.cam.renew(self.world.player.pos, &self.t);
     }
 
     /// 다른 지역으로(0118): 그 지역을 새로 세우고 방랑자(체력·등잔·기력·탄…)와 잔불은 그대로 옮긴다.

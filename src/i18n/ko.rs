@@ -326,7 +326,7 @@ pub const KO: Strings = Strings {
     controls_preset_keys: "키보드만 배치로",
     controls_back: "돌아가기",
     controls_press: "누르세요… {0}",
-    controls_fixed: "이동·확인·뒤로·멈춤은 고정",
+    controls_fixed: "이동·확인·뒤로·멈춤·시점(↑↓ 거리)은 고정",
     verb_aim: "조준",
     verb_choose: "고르기",
     verb_confirm: "확인",

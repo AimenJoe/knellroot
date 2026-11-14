@@ -99,6 +99,13 @@ pub const ZOOM_PARRY: f32 = 0.06;
 pub const ZOOM_PERFECT: f32 = 0.035;
 /// 겹쳐도 이 몫까지·돌아오는 빠르기(1/s — 0.25초쯤에 거의 다).
 pub const ZOOM_MAX: f32 = 0.14;
+
+/// 자유 숄더뷰의 시점 돌리기 빠르기(0181): 오른쪽 스틱·키보드 ←·→를 끝까지 기울였을 때 초당 방위·높이(도),
+/// 잡힌 마우스·화면 끌기는 논리 px당(도). 높이는 방위보다 느리게(위아래로 흔들리면 멀미 — KB camera-mode-switch "수평축 회전").
+pub const FREE_STICK_YAW_DEG: f32 = 150.0;
+pub const FREE_STICK_PITCH_DEG: f32 = 80.0;
+pub const FREE_MOUSE_DEG_PER_PX: f32 = 0.2;
+pub const FREE_TOUCH_DEG_PER_PX: f32 = 0.3;
 pub const ZOOM_RETURN: f32 = 11.0;
 /// 서 있는 몸짓(0153): 이 거리(m) 안에 깨어 있는 적이 있으면 몸짓을 틀지 않는다(싸움 자세를 흐리지 않게).
 pub const IDLE_CALM_RADIUS: f32 = 14.0;

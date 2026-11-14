@@ -107,6 +107,7 @@ impl App {
             self.show(Go::Open(flow::SELECT_OPENS));
             return;
         }
+        let a = self.camera_input(a);
         let a = self.cursor_aim(a);
         self.step_world(&a);
         // 플레이 시간(0081): 싸움 화면의 로직 틱만 센다(멈춤·메뉴·타이틀·개발 판은 빼고). 기록에는 다음 저장 때 같이 들어간다.
@@ -196,7 +197,7 @@ impl App {
         self.was_waking = waking;
         if out == crate::stage::StageOut::Respawned {
             // 쉼터에서 다시 일어섰다(0032): 카메라를 그 자리로 바로(멀리서 날아오지 않게).
-            self.cam = Camera::new(self.world.player.pos, &self.t);
+            self.cam = self.cam.renew(self.world.player.pos, &self.t);
         }
         if let Some(next) = flow::after_stage(out) {
             self.ending = 0.0;
@@ -214,7 +215,7 @@ impl App {
         self.sync_progress(out);
         if out == crate::stage::StageOut::Respawned {
             let close = self.cam.close;
-            self.cam = Camera::new(self.world.player.pos, &self.t);
+            self.cam = self.cam.renew(self.world.player.pos, &self.t);
             self.cam.close = close;
         }
         if let Some(next) = flow::after_stage(out) {
@@ -250,10 +251,40 @@ impl App {
             self.fx.clear();
             self.world.set_weapon(self.weapon);
             self.apply_board();
-            self.cam = Camera::new(self.world.player.pos, &self.t);
+            self.cam = self.cam.renew(self.world.player.pos, &self.t);
         }
+        let a = self.camera_input(a);
         let a = self.cursor_aim(a);
         self.step_world(&a);
+    }
+
+    /// 시점 입력(0181): 거리 단계(십자 ↑·↓ · 키보드 ↑·↓ · 휠 · 꼬집기)를 카메라에, 자유 숄더뷰면 오른쪽 스틱·키보드 ←·→·잡힌 마우스·
+    /// 화면 끌기를 시점 돌리기로 — 그때 오른쪽 스틱은 조준이 아니다(월드에 넘기지 않는다). 입력에 지금이 자유 숄더뷰인지 알린다(커서 잡기).
+    pub(super) fn camera_input(&mut self, mut a: Actions) -> Actions {
+        use crate::tuning::{
+            FREE_MOUSE_DEG_PER_PX, FREE_STICK_PITCH_DEG, FREE_STICK_YAW_DEG, FREE_TOUCH_DEG_PER_PX,
+        };
+        let player = self.world.player.pos;
+        for _ in 0..a.zoom.unsigned_abs().min(3) {
+            self.cam.step_zoom(a.zoom.signum(), player);
+        }
+        if self.cam.mode == Mode::Free {
+            let px = if crate::input::device() == crate::input::Device::Touch {
+                FREE_TOUCH_DEG_PER_PX
+            } else {
+                FREE_MOUSE_DEG_PER_PX
+            }
+            .to_radians();
+            let dyaw = a.aim.x * FREE_STICK_YAW_DEG.to_radians() * TICK_DT + a.look.x * px;
+            let dpitch = -a.aim.y * FREE_STICK_PITCH_DEG.to_radians() * TICK_DT + a.look.y * px;
+            self.cam.look(dyaw, dpitch);
+            a.aim = Vec2::ZERO;
+            a.cursor = None;
+        }
+        crate::input::set_free_look(self.cam.mode == Mode::Free);
+        a.zoom = 0;
+        a.look = Vec2::ZERO;
+        a
     }
 
     /// 커서 → 땅 위의 점(0058): 지난 프레임 화면 자리로 NDC, 카메라 리그의 시선이 플레이어 발 높이 면에 닿는 점.
@@ -282,7 +313,8 @@ impl App {
 
     pub(super) fn step_world(&mut self, a: &Actions) {
         let (cam, t) = (&mut self.cam, &self.t);
-        self.world.view_yaw = Some(cam.quarter_yaw_deg(t));
+        // 입력 기준(0011 → 0181): 쿼터뷰는 그 방위, 자유 숄더뷰는 카메라가 보는 쪽.
+        self.world.view_yaw = Some(cam.basis_yaw_deg(t));
         use crate::tuning::{
             KICK_HIT_DEG, KICK_SMASH_DEG, SHAKE_CHARGED, SHAKE_CRIT, SHAKE_DOWN, SHAKE_HIT,
             SHAKE_HURT, SHAKE_PARRY, SHAKE_PLUNGE, SHAKE_ROUSE, SHAKE_SLAM, SHAKE_SMASH,
@@ -313,6 +345,11 @@ impl App {
                 Event::Break { .. } => SHAKE_SMASH,
                 Event::Aftershock { .. } | Event::Boom { .. } => SHAKE_PLUNGE,
                 Event::Perfect { .. } => SHAKE_CHARGED,
+                // 락온 대상을 잃으면(0181) 풀린 뒤 자유 숄더뷰에 머문다 — 버튼으로 풀면 락온한 곳(쿼터뷰·자유)으로.
+                Event::LockLost => {
+                    cam.lose_lock();
+                    0.0
+                }
                 Event::Swing | Event::LockOn | Event::LockOff | Event::Beat => 0.0,
                 // 스킬(0151): 판정이 나간 순간에 한 번, 큰 기술은 깨어나는 보스만큼.
                 // 되울림·잔불 흩기의 시동(몸에 두르는 것·흩는 것)은 흔들지 않는다 — 울림·불티의 타가 제 몫을 낸다.
@@ -393,15 +430,13 @@ impl App {
     pub(super) fn follow_camera(&mut self) {
         let target = self.world.lock_target();
         self.cam.freeze = self.world.hitstop > 0.0;
-        self.cam.set_mode(
-            if target.is_some() {
-                Mode::Lock
-            } else {
-                Mode::Quarter
-            },
-            target,
-            self.world.player.pos,
-        );
+        // 락온 = 숄더뷰. 풀리면 락온한 곳으로(잃었으면 자유 숄더뷰 — `lose_lock`), 아니면 지금 모드(쿼터뷰 · 자유) 그대로(0181).
+        let mode = match (target, self.cam.mode) {
+            (Some(_), _) => Mode::Lock,
+            (None, Mode::Lock) => self.cam.unlock_mode(),
+            (None, m) => m,
+        };
+        self.cam.set_mode(mode, target, self.world.player.pos);
         self.cam.update(
             TICK_DT,
             &self.t,
@@ -890,6 +925,7 @@ impl App {
         let mode = match self.cam.mode {
             Mode::Quarter => "QUARTER",
             Mode::Lock => "LOCK-ON",
+            Mode::Free => "FREE",
         };
         let y = f.oy + f.h - 40.0;
         #[cfg(feature = "dev")]

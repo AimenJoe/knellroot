@@ -323,7 +323,7 @@ pub const EN: Strings = Strings {
     controls_preset_keys: "Keyboard-only layout",
     controls_back: "Back",
     controls_press: "Press a key… {0}",
-    controls_fixed: "Move, confirm, back and pause are fixed",
+    controls_fixed: "Move, confirm, back, pause and view (↑↓ zoom) are fixed",
     verb_aim: "Aim",
     verb_choose: "Choose",
     verb_confirm: "Confirm",
