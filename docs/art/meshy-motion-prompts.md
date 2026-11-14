@@ -11,14 +11,16 @@ Text to Motion으로 붙인다. 이름 = `tools/art/blender/wanderer.py`의 동�
 - 모든 프롬프트는 **같은 리깅 결과**에 붙이고, 내려받을 때 GLB · Mixamo 템플릿 · All Added.
 - 앞으로 나아가는 이동이 있어도 된다 — 들일 때 몸통의 수평 이동은 빼고(게임이 몸을 옮긴다) 높이만 남긴다.
 - 회피: 지금 게임의 회피는 0.25초의 낮은 앞 돌진이다. 첫 줄이 그 꼴, 둘째 줄(구르기)은 회피 시간을 늘릴 때의 안 — 둘 다 받아 보고 고른다.
+- **반복 막기**(사장 2026-11-14 "2타는 두 번 때리는데"): 길이가 최소 2초라 짧은 동작은 남은 시간을 한 번 더 휘둘러 채운다. "performs exactly one …"로 시작하고 끝에 "holds completely still until the end. No second swing."을 붙인다. 두 번 휘두른 클립도 첫 휘두르기만 잘라 쓰면 되므로 버리지 않아도 된다.
+- 3타는 게임에서 **내디디며 찌르기**(`weapons.rs` `SWORD_COMBO` — 좁고 길게)다. 처음 적은 내려치기 프롬프트는 틀렸다.
 - 끝 자세는 늘 "칼을 든 준비 자세"로 — 다음 타·서기와 이어 붙이기 쉽다.
 
 ## 1순위 — 검(기본 무기)
 | 이름 | 프롬프트 |
 |---|---|
 | `attack` | A sword fighter holding a one-handed sword in the right hand does one quick horizontal slash from right to left at chest height. Short wind-up drawing the sword back past the right shoulder, fast snappy swing driven by the hips, brief follow-through, then settles back into a combat-ready stance. Feet stay planted. |
-| `attack2` | A sword fighter holding a one-handed sword in the right hand does one fast backhand slash from left to right at waist height, stepping half a step forward with the left foot as the torso uncoils, short follow-through, then returns to a combat-ready stance. |
-| `attack3` | A sword fighter holding a one-handed sword in the right hand does a heavy finishing overhead chop: raises the sword high above the head, steps forward and cuts straight down with full body weight, leans into the strike, holds the low follow-through for a beat, then recovers to a combat-ready stance. |
+| `attack2` | A sword fighter holding a one-handed sword in the right hand performs exactly one backhand slash from left to right at waist height, with a half step forward as the torso uncoils. After this single strike, the fighter returns to a combat-ready stance and holds completely still until the end. No second swing. |
+| `attack3` | A sword fighter holding a one-handed sword in the right hand performs exactly one strong lunging thrust: steps forward deeply and drives the sword point straight ahead at chest height with the arm fully extended, holds the extended lunge for a beat, then pulls back to a combat-ready stance and holds still until the end. No second strike. |
 | `charge` | A sword fighter crouches low and draws a one-handed sword far back behind the right hip, gathering power, body coiled and tense, trembling slightly while holding the pose. Looping hold, no release. |
 | `heavy` | A sword fighter crouched low with a one-handed sword drawn back behind the right hip releases a powerful wide sweeping slash: explosive hip turn, the blade sweeps a full half circle in front at waist height, body follows through low and wide, then rises back into a combat-ready stance. |
 | `parry` | A sword fighter does a sharp defensive parry: snaps a one-handed sword up diagonally in front of the body to deflect an incoming blow, short recoil back from the impact, then quickly returns to a combat-ready stance. |
