@@ -98,14 +98,41 @@ impl Renderer {
         true
     }
 
+    /// 인형·도감 칸의 타깃(0190): 화면의 칸 `dest`를 게임 화면과 같은 도트 크기(한 칸 = 화면 배율 px)로 나눈 크기 —
+    /// 내부 해상도 줄 수(`render.rows`)를 바꾸면 인형의 도트도 같이 바뀐다. 남는 px은 칸 가운데로 모은다. 돌려주는 것: 타깃·붙일 자리·가로세로 비.
+    fn fit_doll_rt(&mut self, creature: bool, dest: Rect) -> (RenderTarget, Rect, f32) {
+        let px = self.rt_size.2.max(1) as f32;
+        let (tw, th) = (
+            ((dest.w / px).floor() as u32).max(DOLL_W / 4),
+            ((dest.h / px).floor() as u32).max(DOLL_H / 4),
+        );
+        let slot = if creature {
+            &mut self.creature_rt
+        } else {
+            &mut self.doll_rt
+        };
+        if slot
+            .as_ref()
+            .is_none_or(|r| (r.texture.width() as u32, r.texture.height() as u32) != (tw, th))
+        {
+            *slot = Some(make_rt(tw, th));
+        }
+        let rt = slot.clone().unwrap();
+        let (w, h) = (tw as f32 * px, th as f32 * px);
+        let at = Rect::new(
+            (dest.x + (dest.w - w) * 0.5).round(),
+            (dest.y + (dest.h - h) * 0.5).round(),
+            w,
+            h,
+        );
+        (rt, at, tw as f32 / th as f32)
+    }
+
     /// 장비 창의 인형(0067 D, 디아블로식): 방랑자만(든 무기만 보이게) 고정 카메라로 작은 타깃에 그리고, 화면 `dest`에 붙인다.
     /// `spin` = 몸 방향(라디안), `time` = 숨쉬기 동작 시간. 모델이 없으면 아무것도 그리지 않는다(창이 초상 없이 그대로).
     /// 화면 패스 중에 불러도 된다: 카메라를 바꿨다가 기본 카메라로 돌려놓는다.
     pub fn draw_doll(&mut self, weapon: crate::weapons::Id, dest: Rect, spin: f32, time: f32) {
-        let rt = self
-            .doll_rt
-            .get_or_insert_with(|| make_rt(DOLL_W, DOLL_H))
-            .clone();
+        let (rt, dest, aspect) = self.fit_doll_rt(false, dest);
         let Some(e) = self.lib.get("wanderer") else {
             return;
         };
@@ -126,7 +153,7 @@ impl Renderer {
             target: vec3(0.0, 0.85, 0.0),
             up: Vec3::Y,
             fovy: 0.48,
-            aspect: Some(DOLL_W as f32 / DOLL_H as f32),
+            aspect: Some(aspect),
             projection: Projection::Perspective,
             render_target: Some(rt.clone()),
             ..Default::default()
@@ -135,7 +162,7 @@ impl Renderer {
         set_look(Look {
             eye: cam.position,
             fovy: cam.fovy,
-            rows: DOLL_H as f32,
+            rows: rt.texture.height(),
             ..saved
         });
         set_camera(&cam);
@@ -171,10 +198,7 @@ impl Renderer {
         time: f32,
         dark: bool,
     ) {
-        let rt = self
-            .creature_rt
-            .get_or_insert_with(|| make_rt(DOLL_W, DOLL_H))
-            .clone();
+        let (rt, dest, aspect) = self.fit_doll_rt(true, dest);
         let d = crate::species::def(kind);
         let h = d.height.max(0.5);
         let cam = Camera3D {
@@ -182,7 +206,7 @@ impl Renderer {
             target: vec3(0.0, h * 0.48, 0.0),
             up: Vec3::Y,
             fovy: 0.55,
-            aspect: Some(DOLL_W as f32 / DOLL_H as f32),
+            aspect: Some(aspect),
             projection: Projection::Perspective,
             render_target: Some(rt.clone()),
             ..Default::default()
@@ -191,7 +215,7 @@ impl Renderer {
         set_look(Look {
             eye: cam.position,
             fovy: cam.fovy,
-            rows: DOLL_H as f32,
+            rows: rt.texture.height(),
             ..saved
         });
         set_camera(&cam);
