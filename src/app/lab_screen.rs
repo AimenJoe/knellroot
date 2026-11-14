@@ -14,6 +14,9 @@ fn group_name(g: usize) -> &'static str {
 /// 묶음 목록 위의 줄 넷.
 const TOP: usize = 4;
 
+/// 랩 창의 줄 배율(0190): 묶음 하나에 값이 스물 넘게 있어 보통 크기면 한 화면에 여섯 줄뿐이었다(사장 "하위메뉴가 다 나오지 않음").
+const LAB_K: f32 = 0.7;
+
 impl App {
     /// 싸움·아레나에서 F1·터치 LAB: 랩 창을 연다(이미 랩 안이면 그 창들을 닫는다).
     pub(super) fn toggle_lab(&mut self) {
@@ -58,6 +61,8 @@ impl App {
         Menu {
             note_room: true,
             note: (!self.lab.note.is_empty()).then(|| self.lab.note.clone()),
+            note_lines: 1,
+            k: LAB_K,
             ..Menu::new(s().menu_lab, 360.0, rows)
         }
     }
@@ -108,6 +113,8 @@ impl App {
         Menu {
             note_room: true,
             note,
+            note_lines: 1,
+            k: LAB_K,
             ..Menu::new(group_name(g), 400.0, rows)
         }
     }

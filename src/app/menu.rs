@@ -29,6 +29,8 @@ pub(super) struct Menu {
     pub note_lines: usize,
     /// 설명 자리에 잠깐 대신 뜨는 알림(밝게) — 창이 화면을 다 써서 위쪽 알림 자리가 없는 화면(기술 판)이 쓴다.
     pub alert: Option<String>,
+    /// 줄·글의 배율(1 = 보통). 줄이 많은 개발 창(랩)은 작게 — 한 화면에 더 많은 줄(0190).
+    pub k: f32,
 }
 
 impl Menu {
@@ -43,6 +45,7 @@ impl Menu {
             note_room: false,
             note: None,
             note_lines: 2,
+            k: 1.0,
             alert: None,
         }
     }
@@ -202,7 +205,7 @@ impl App {
         } else {
             0.0
         };
-        let h = PANEL_HEAD + m.rows.len() as f32 * ui::GLYPH * 1.75 + sub + note + PANEL_FOOT;
+        let h = PANEL_HEAD + m.rows.len() as f32 * ui::GLYPH * 1.75 * m.k + sub + note + PANEL_FOOT;
         let panel = self.panel_rect(f, m.width, h);
         let top = self.ui.panel(panel, Some(&m.title));
         let close = m.closable.then(|| self.ui.close(panel));
@@ -218,7 +221,9 @@ impl App {
             panel.w - u * 12.0,
             bottom - list_top,
         );
-        let mut hits = self.ui.list(&m.rows, self.cursor, &mut self.view, area);
+        let mut hits = self
+            .ui
+            .list_k(&m.rows, self.cursor, &mut self.view, area, m.k);
         hits.arrows = self.ui.title_arrows(&self.view, m.rows.len(), panel);
         // 지갑은 제목 줄 오른쪽 — 목록이 넘쳐 ▲▼가 뜨면 그 왼쪽으로 비킨다(겹치지 않게).
         if let Some(p) = &m.purse {
