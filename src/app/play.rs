@@ -470,13 +470,15 @@ impl App {
         );
     }
 
-    /// 튜토리얼(0167)이 이 판에서 도나: 슬롯의 판이고(개발 창의 판·놀이터가 아니다) 걸음이 남았다.
+    /// 튜토리얼(0167)이 이 판에서 보나: 슬롯의 판이고(개발 창의 판·놀이터가 아니다) 깨어나는 첫 장면(0171)이 끝났다.
+    /// 걸음을 다 지났어도 본 것은 쌓인다 — 상황 힌트(0209 T2)가 읽는다.
+    fn tutor_live(&self) -> bool {
+        !self.dev_run_now() && self.stack.base() == Scene::Play && self.wake.is_none()
+    }
+
+    /// 튜토리얼의 걸음이 도나: 위 + 걸음이 남았다.
     fn tutor_on(&self) -> bool {
-        !self.dev_run_now()
-            && self.stack.base() == Scene::Play
-            && self.tutor.step().is_some()
-            // 깨어나는 첫 장면(0171) 동안은 아직 아무것도 시키지 않는다.
-            && self.wake.is_none()
+        self.tutor_live() && self.tutor.step().is_some()
     }
 
     /// 튜토리얼이 읽는 지금의 사실 — 잔불·다음 레벨 값·총 레벨·기술 판.
@@ -500,6 +502,19 @@ impl App {
     fn tutor_watch(&mut self, events: &[Event]) {
         // 길 안내(0170)는 틱마다 다시 정한다 — 튜토리얼이 꺼졌으면 걷는다.
         self.run.guide = None;
+        if !self.tutor_live() {
+            self.tip = None;
+            return;
+        }
+        // 다 지난 판도 맞힌 타·모으기는 센다(상황 힌트 0209 T2).
+        for e in events {
+            match e {
+                Event::Hit { .. } | Event::Crit { .. } => self.tutor.seen.hits += 1,
+                Event::Charged => self.tutor.seen.charged += 1,
+                _ => {}
+            }
+        }
+        self.tip_watch();
         if !self.tutor_on() {
             return;
         }
@@ -512,14 +527,25 @@ impl App {
             .enemies
             .iter()
             .any(|e| e.active() && (e.pos - pl.pos).length() < crate::tutorial::FIGHT_RANGE);
+        // 곁에서 시작한 적의 공격 예고(0209 T3 — 공격 번호로 한 번씩, 소리와 같은 셈).
+        self.tell_seen.resize(self.world.enemies.len(), u32::MAX);
+        let mut tells = 0;
+        for (i, en) in self.world.enemies.iter().enumerate() {
+            if en.telegraph().is_some() && self.tell_seen[i] != en.atk_count {
+                self.tell_seen[i] = en.atk_count;
+                if (en.pos - pl.pos).length() < crate::tutorial::FIGHT_RANGE {
+                    tells += 1;
+                }
+            }
+        }
         let seen = &mut self.tutor.seen;
+        seen.tells += tells;
         seen.moved += vec2(step.x, step.z).length();
         if dodging && !self.tutor.dodging {
             seen.dodges += 1;
         }
         for e in events {
             match e {
-                Event::Hit { .. } | Event::Crit { .. } => seen.hits += 1,
                 Event::Parry { .. } => seen.parries += 1,
                 Event::SkillStart { .. } => seen.skills += 1,
                 _ => {}
@@ -560,8 +586,65 @@ impl App {
         }
     }
 
-    /// 지금 보일 튜토리얼의 힌트 줄(없으면 그리지 않는다). 스킬 걸음의 버튼은 배운 스킬이 놓인 칸의 것.
+    /// 상황 힌트(0209 T2): 떠 있으면 시간을 줄이고(할 일을 하면 먼저 걷힌다), 없으면 때가 된 첫 것을 띄운다 — 띄우는
+    /// 순간 기록의 비트에 적어 판을 넘어 한 번뿐.
+    fn tip_watch(&mut self) {
+        use crate::tutorial::{next_tip, Situation, TIP_TIME};
+        let pl = &self.world.player;
+        let now = Situation {
+            hp_low: pl.hp * 2 < pl.max_hp,
+            has_flask: pl.flask > 0,
+            big_foe: self.world.enemies.iter().any(|e| {
+                e.active()
+                    && (e.boss || e.elite.is_some())
+                    && (e.pos - pl.pos).length() < crate::tutorial::FIGHT_RANGE
+            }),
+            locked: self.world.lock.is_some(),
+        };
+        if let Some((t, left)) = self.tip {
+            let left = left - TICK_DT;
+            self.tip = (left > 0.0 && !t.done(&now, &self.tutor.seen)).then_some((t, left));
+            return;
+        }
+        if let Some(t) = next_tip(self.progress.tips, self.tutor.at, &now, &self.tutor.seen) {
+            self.tip = Some((t, TIP_TIME));
+            self.progress.tips |= t.bit();
+            self.persist();
+            self.snd(crate::sfx::Id::Recall);
+        }
+    }
+
+    /// 튜토리얼이 큰 창 안에서 시키는 일의 탭(0209 — 창을 열어 하는 걸음에 반짝임): 배우기 = 기술 탭, 올리기 = 상태 탭
+    /// (잔불이 모였을 때만). 그 탭의 머리와 할 수 있는 칸·줄이 반짝인다.
+    pub(super) fn tutor_menu(&self) -> Option<crate::app::flow::Tab> {
+        use crate::app::flow::Tab;
+        use crate::tutorial::Step;
+        if !self.tutor_on() {
+            return None;
+        }
+        let f = self.tutor_facts();
+        match self.tutor.step()? {
+            Step::Learn if f.can_learn => Some(Tab::Skills),
+            Step::Level if Step::Level.shown(&f) && !Step::Level.gathering(&f) => Some(Tab::Status),
+            _ => None,
+        }
+    }
+
+    /// 지금 보일 튜토리얼의 힌트 줄(없으면 그리지 않는다). 스킬 걸음의 버튼은 배운 스킬이 놓인 칸의 것. 상황 힌트가
+    /// 떠 있으면 그것이 먼저다(몇 초뿐).
     pub(super) fn tutor_hint(&self) -> Option<crate::tutorial::Hint> {
+        // 버튼 이름은 키캡으로(사장 2026-11-13 "버튼처럼") — 터치는 이름이 없다(화면 버튼이 곧 안내).
+        let cap = |b| {
+            let name = crate::input::bind_prompt(b);
+            if name.is_empty() {
+                name
+            } else {
+                crate::ui::key(&name)
+            }
+        };
+        if let (Some((t, _)), true) = (self.tip, self.tutor_live()) {
+            return Some(t.hint(crate::i18n::s(), cap));
+        }
         if !self.tutor_on() {
             return None;
         }
@@ -573,15 +656,6 @@ impl App {
             .iter()
             .position(|&id| board.learned(id))
             .unwrap_or(0);
-        // 버튼 이름은 키캡으로(사장 2026-11-13 "버튼처럼") — 터치는 이름이 없다(화면 버튼이 곧 안내).
-        let cap = |b| {
-            let name = crate::input::bind_prompt(b);
-            if name.is_empty() {
-                name
-            } else {
-                crate::ui::key(&name)
-            }
-        };
         self.tutor
             .hint(crate::i18n::s(), &self.tutor_facts(), slot, cap)
     }

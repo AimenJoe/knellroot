@@ -159,7 +159,18 @@ impl App {
             })
             .collect();
         let purse = self.purse(host);
-        let w = self.draw_window(f, &tabs, flow::tab_index(scene).unwrap_or(0), &purse);
+        // 튜토리얼이 창 안에서 시키는 일(0209 — 배우기·올리기)의 탭: 화로에서만(멈춤에서는 못 한다).
+        let sparkle = self
+            .tutor_menu()
+            .filter(|_| host.edits())
+            .and_then(|t| flow::tabs(host).iter().position(|&x| x == t));
+        let w = self.draw_window(
+            f,
+            &tabs,
+            flow::tab_index(scene).unwrap_or(0),
+            &purse,
+            sparkle,
+        );
         let x = w.at(LEFT_W + 6.0, 0.0).x.round();
         draw_rectangle(
             x,

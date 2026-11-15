@@ -890,6 +890,29 @@ impl Ui {
     }
 
     /// 화면 전체를 어둡게(메뉴 뒤).
+    /// 반짝이는 별 ✦(0209 — 튜토리얼이 창 안에서 가리키는 곳): 네 끝 별이 숨 쉬듯 커졌다 작아지고, 가운데 흰 점.
+    /// `r` = 화면 px 반지름. 어두운 테를 먼저 그려 어느 바탕에서도 보이게.
+    pub fn sparkle(&self, c: Vec2, r: f32) {
+        let t = get_time() as f32;
+        let p = 0.5 + 0.5 * (t * 4.2).sin();
+        let r = r * (0.8 + 0.35 * p);
+        let star = |r: f32, w: f32, col: Color| {
+            for (dx, dy) in [(1.0f32, 0.0f32), (0.0, 1.0)] {
+                let (a, b) = (vec2(dx, dy) * r, vec2(-dy, dx) * w);
+                draw_triangle(c + a, c + b, c - b, col);
+                draw_triangle(c - a, c + b, c - b, col);
+            }
+        };
+        star(r + 1.5, r * 0.32 + 1.5, Color::new(0.08, 0.06, 0.05, 0.6));
+        star(r, r * 0.3, Color::new(1.0, 0.86, 0.45, 0.75 + 0.25 * p));
+        draw_circle(
+            c.x,
+            c.y,
+            (r * 0.22).max(1.0),
+            Color::new(1.0, 1.0, 0.95, 0.9),
+        );
+    }
+
     pub fn dim(&self, a: f32) {
         draw_rectangle(
             0.0,

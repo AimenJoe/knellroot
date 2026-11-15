@@ -1148,6 +1148,9 @@ impl App {
         let great = board.wearable_ult(self.progress.ult);
         let spots = spots();
         let mut cells = Vec::new();
+        // 튜토리얼의 배우기 걸음(0209): 지금 살 수 있는 칸에 반짝임.
+        let guide = self.tutor_menu() == Some(flow::Tab::Skills)
+            && flow::tab_of(self.scene()).is_some_and(|(h, _)| h.edits());
         for (i, &e) in ENTRIES.iter().enumerate() {
             let sp = spots[i];
             let (c, half) = (w.at(sp.c.x, sp.c.y - off), sp.half * u);
@@ -1187,6 +1190,9 @@ impl App {
                     }
                 }
                 Entry::Cell(_) => {}
+            }
+            if guide && ready && whole && board.rank(e) == 0 {
+                self.ui.sparkle(c + vec2(half, -half), u * 4.0);
             }
             // 누를 자리는 그림보다 넉넉히(터치) — 보이는 자리 안으로만.
             let r = half + u * 3.0;

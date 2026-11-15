@@ -97,6 +97,8 @@ pub mod key {
     pub const ULT_GIFT: &str = "ult.gift";
     /// 튜토리얼(0167): 지난 걸음 수(`tutorial::DONE`이면 다 지났다). 이 키가 없는 옛 기록은 `tutorial::start_for_old`.
     pub const TUTORIAL: &str = "tut.step";
+    /// 상황 힌트(0209 T2 — `tutorial::Tip`)를 본 비트. 없으면 0(아무것도 안 봤다).
+    pub const TIPS: &str = "tut.tips";
     /// 깨어나는 첫 장면(0171)을 보았다(1) / 아직(0). 이 키가 없는 옛 기록은 본 것으로 친다(이미 걷던 방랑자다).
     pub const WOKE: &str = "woke";
     /// 깨어난 자리의 화로에 불을 붙였다(0171 — 처음 거기서 쉴 때). 이 키가 없는 옛 기록은 붙인 것으로.
@@ -231,6 +233,8 @@ pub struct Progress {
     pub ult_gift: u32,
     /// 튜토리얼에서 지난 걸음 수(0167). 새 판은 0.
     pub tutorial: u8,
+    /// 본 상황 힌트의 비트(0209 T2 — `tutorial::Tip::bit`).
+    pub tips: u8,
     /// 깨어나는 첫 장면을 보았다(0171). 새 기록은 거짓 — 첫 판이 그 장면으로 열린다.
     pub woke: bool,
     /// 깨어난 자리의 화로에 불이 붙었다(0171). 새 기록은 거짓 — 그 화로가 꺼진 채 서 있다.
@@ -474,6 +478,7 @@ impl Progress {
                 }
                 None => 0,
             },
+            tips: r.num(key::TIPS).unwrap_or(0).min(u8::MAX as u32) as u8,
             // 0171: 이 게임이 쓴 적 있는 기록인데 키가 없으면 옛 판 — 이미 깨어나 걷던 방랑자다.
             woke: r
                 .num(key::WOKE)
@@ -622,6 +627,7 @@ impl Progress {
             r.remove(key::ULT_GIFT);
         }
         r.set(key::TUTORIAL, self.tutorial);
+        r.set(key::TIPS, self.tips);
         r.set(key::WOKE, self.woke as u32);
         r.set(key::HEARTH_LIT, self.lit as u32);
         if self.gift > 0 {
