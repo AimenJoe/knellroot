@@ -1,8 +1,8 @@
 """Meshy 리깅·동작 GLB 여러 장 → 줄인 스킨 몸 + 뼈 + 쓸 동작만 담은 원본 한 장(0193).
 
-    blender -b -P tools/art/blender/meshy_rig.py -- <출력.glb> <A.glb> <B.glb> <C.glb>
+    blender -b -P tools/art/blender/meshy_rig.py -- <출력.glb> <A.glb> <B.glb> <C.glb> <D.glb>
 
-- 사장이 Meshy Pro로 리깅·동작을 받은 방랑자 셋(같은 몸 "Hooded Raccoon Rogue", 뼈 이름·바인드 포즈가 같다 —
+- 사장이 Meshy Pro로 리깅·동작을 받은 방랑자 넷(셋 + 대기 하나)(같은 몸 "Hooded Raccoon Rogue", 뼈 이름·바인드 포즈가 같다 —
   역 바인드 행렬 md5가 같음을 확인). 몸은 첫 장에서, 동작은 표 `KEEP`에 든 것만 이름을 붙여 모은다.
 - 몸: `meshy_convert.py`와 같은 길(정점 합치기 → 줄이기 → 새 UV → 원본 색을 Cycles로 굽기). 줄여도 뼈 가중치는
   남는다(Decimate는 정점 그룹을 보간한다). 굽는 동안은 뼈대를 쉬는 자세로.
@@ -28,6 +28,7 @@ KEEP = {
                        "Running", "Skill_03", "Sword_Judgment", "Sword_Parry_Backward_2", "Thrust_Slash",
                        "Triple_Combo_Attack", "Walking", "Weapon_Combo", "Heavy_Hammer_Swing"]},
     2: "numbered",
+    3: {"Idle_02": "Idle_02"},  # 2026-11-14 사장이 다시 준 대기 동작(곧게 선 숨 고리) — Combat_Stance는 23° 숙였다
 }
 
 bpy.ops.wm.read_factory_settings(use_empty=True)

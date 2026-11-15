@@ -41,7 +41,7 @@ Text to Motion·동작 라이브러리가 그 동작을 준다.
 ### 동작 대응(요약 — 전체는 `wanderer_skin.py` `CLIPS`)
 | 게임 | 원본 |
 |---|---|
-| `idle`·`walk`·`run`(새로) | Combat_Stance · Walking · Running |
+| `idle`·`walk`·`run`(새로) | Idle_02(2026-11-15 — 처음엔 Combat_Stance) · Walking · Running |
 | `attack`·`attack2`·`attack3` | Triple_Combo_Attack 봉우리 18·36·54 |
 | `charge`·`heavy` | Attack(봉우리 26) |
 | `parry` · `dodge` · `hurt`·`fall` | Sword_Parry_Backward_2 · Roll_Dodge_3 · Dead |
@@ -65,6 +65,10 @@ Text to Motion·동작 라이브러리가 그 동작을 준다.
   망치 머리·쇠뇌 활도 같은 축(날의 폭)이라 휘두르는 쪽을 본다. 아이콘·던진 무기는 그대로(무기 마디의 쉬는 방향은 옛 그대로).
 - **대기 숙임**: 원본 Combat_Stance는 앞 23°·옆 18°(몸을 비스듬히 낮춘 싸움 자세) — 걷기는 5°. 등뼈 셋을 나눠 돌려 클립 평균을 앞 8°·옆 5°로
   세운다(`UPRIGHT`, 머리 자리를 위 등뼈부터 차례로 돌려 셈한 뒤 각을 찾는다 `solve_upright`). 숨쉬는 흔들림은 남는다.
+
+- **대기 동작 바꿈(2026-11-15)**: 사장이 대기 동작을 새로 받아 줌(`…_animated_mixamo_Idle_02.glb` — 같은 뼈대, 역 바인드 행렬 md5 같음).
+  곧게 선 숨 고리(앞뒤 −2~0°, 1.87초, 처음 = 끝)라 `idle`을 이것으로 바꾸고 숙임 바로잡기는 비웠다(`UPRIGHT = {}` — 장치는 남김).
+  `meshy_rig.py`가 넷째 파일로 받는다.
 
 ## 아직 모르는 것(판정)
 - 회피 0.25초에 1.6초짜리 구르기를 넣었다 — 6배 빠르다. 회피 시간은 얼린 값(0013)이라 동작 쪽을 잘라 맞췄다. 어색하면: 구르기 앞부분만 쓰거나,

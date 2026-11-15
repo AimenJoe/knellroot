@@ -37,7 +37,7 @@ PROP_BUDGET = 400
 EXPECT = {
     # 0193 스킨 몸 + Meshy 동작(`wanderer_skin.py`): 게임 상태에 맞춘 동작은 옛 길이 그대로. 서기·몸짓은 원본 길이(되풀이·몸짓
     # 시계가 모델의 길이를 읽는다), 뒷걸음은 한 주기(1.2), 달리기 `run`이 새로 생겼다. 옆걸음·종 몸짓은 원본이 없다(걷기·건너뜀).
-    "wanderer": {"idle": 1.67, "idle_look": 1.83, "idle_shake": 1.12, "run": 0.63, "wake": 4.0, "fall": 1.3, "walk": 0.8, "attack": 0.43, "dodge": 0.25, "hurt": 0.35, "turn_r": 0.25, "turn_l": 0.25,
+    "wanderer": {"idle": 1.87, "idle_look": 1.83, "idle_shake": 1.12, "run": 0.63, "wake": 4.0, "fall": 1.3, "walk": 0.8, "attack": 0.43, "dodge": 0.25, "hurt": 0.35, "turn_r": 0.25, "turn_l": 0.25,
                  "walk_back": 1.2, "charge": 0.3, "heavy": 0.58, "drink": 0.8,
                  # 0158 G2 스킬 동작 — 길이 = 시동 + 이어짐 + 후딜(`skills.rs` 표의 바탕값).
                  "sk_whirl": 0.67, "sk_cut": 0.57, "sk_gather": 0.5, "sk_quake": 0.7, "sk_brace": 1.65, "sk_echo": 0.45,
