@@ -40,10 +40,10 @@ pub const SWEEPS: [(&str, Sweep, (f32, f32)); 18] = [
     ("hammer1", Sweep::RightToLeft, (0.14, 0.17)),
     ("hammer2", Sweep::Center, (0.16, 0.20)),
     ("hammer_slam", Sweep::Center, (0.08, 0.16)),
-    ("staff1", Sweep::Center, (0.06, 0.07)),
-    ("staff2", Sweep::Center, (0.06, 0.07)),
-    ("staff3", Sweep::Center, (0.06, 0.08)),
-    ("staff4", Sweep::LeftToRight, (0.10, 0.13)),
+    ("staff1", Sweep::RightToLeft, (0.06, 0.07)),
+    ("staff2", Sweep::LeftToRight, (0.06, 0.07)),
+    ("staff3", Sweep::RightToLeft, (0.06, 0.08)),
+    ("staff4", Sweep::Center, (0.10, 0.13)),
     ("staff_release", Sweep::LeftToRight, (0.05, 0.11)),
     // 맨손(0198): 잽 둘·어퍼컷·앞차기 — 모두 앞으로 내지른다.
     ("fist1", Sweep::Center, (0.048, 0.06)),
@@ -337,7 +337,7 @@ const HAMMER_COMBO: [Hit; 2] = [
     },
 ];
 
-/// 순례자 지팡이 — 빠른 4연타, 넷째는 둘레 회전 마무리(느림).
+/// 순례자 지팡이 — 빠른 4연타(0203 — 올려 베기 → 내려 베기 → 머리 위에서 내려치기), 넷째는 두 손으로 내려쳐 둘레를 친다(느림).
 const STAFF_COMBO: [Hit; 4] = [
     hit(0.7, 1.15, 0.8, 0.7, 10, 0.6, "staff1"),
     hit(0.7, 1.15, 0.8, 0.7, 10, 0.6, "staff2"),
@@ -408,9 +408,10 @@ pub const WEAPONS: [Weapon; 5] = [
     Weapon {
         id: Id::Hammer,
         combo: &HAMMER_COMBO,
-        // 달려들며 앞차기(0200 — 사장 "망치에만 달리기 공격 시 스파르탄 킥"): 예전엔 둘째 타의 한 바퀴 내려치기를 빌려 달리기 공격 뒤 같은
-        // 내려치기를 두 번 했다. 차기라 둘레가 아니라 앞 부채꼴로(시간·거리·피해·자세 피해·밀어냄은 그대로, 무거워 늦다).
+        // 달려들며 몸 전체로 내려치기(0203 — 0200의 앞차기는 발이 작아 안 보였다, 사장): 웅크리며 땅을 쳐 둘레를 친다(앞차기 때 앞
+        // 부채꼴로 바꾼 것을 되돌림). 0200 전엔 둘째 타의 한 바퀴 내려치기를 빌려 달리기 공격 뒤 같은 내려치기를 두 번 했다.
         dash: Some(Hit {
+            shape: Shape::Circle,
             knock: 1.8,
             cancel: 0.45,
             ..hit(1.6, 1.0, 1.0, 2.0, 20, 3.0, "hammer_dash")
@@ -459,8 +460,8 @@ pub const WEAPONS: [Weapon; 5] = [
     Weapon {
         id: Id::Staff,
         combo: &STAFF_COMBO,
-        // 달려들며 찌르기: 빠르고 가볍다.
-        dash: Some(hit(0.8, 1.3, 0.6, 2.2, 10, 1.0, "staff3")),
+        // 달려들며 올려 베기(0203 — 1타 동작이라 다음 누름의 2타로 원본 그대로 이어진다): 빠르고 가볍다.
+        dash: Some(hit(0.8, 1.3, 0.6, 2.2, 10, 1.0, "staff1")),
         heavy: Some(Heavy {
             time: 0.9,
             charge: 0.9,
@@ -993,7 +994,7 @@ mod swing_tests {
                 // 0198: 맨손의 왼 잽은 왼손, 앞차기는 오른발이 친다.
                 let limb = match anim {
                     "fist1" => m.node("mixamorig:LeftHand"),
-                    "fist_heavy" | "fist_dash" | "hammer_dash" => m.node("mixamorig:RightFoot"),
+                    "fist_heavy" | "fist_dash" => m.node("mixamorig:RightFoot"),
                     _ => None,
                 };
                 let r = clip_rate(anim, s0);
