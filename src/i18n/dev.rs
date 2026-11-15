@@ -84,6 +84,10 @@ pub const GARDEN: Pair = (
     "셋째 지역(잔뿌리의 정원) 어귀부터",
     "region 3 (rootlet garden) from its edge",
 );
+pub const WORKS: Pair = (
+    "넷째 지역(작업층) 어귀부터",
+    "region 4 (the workings) from its edge",
+);
 pub const RESIDENTS: Pair = (
     "둘째 지역 주민 곁에서(말 걸기)",
     "region 2 beside a resident (talk)",
@@ -165,6 +169,7 @@ pub const PAIRS: &[Pair] = &[
     GATE,
     VILLAGE,
     GARDEN,
+    WORKS,
     RESIDENTS,
     STONES,
     CHEST,

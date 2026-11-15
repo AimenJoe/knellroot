@@ -18,6 +18,9 @@ pub enum Kind {
     Mossgrazer,
     /// 이끼 덮인 문지기(0185 — 셋째 문지기, 설계 내부 작업명 "문턱지기"): 쓸기·껍질 받기·틈새 돌진.
     Mossward,
+    /// 넷째 문지기(0208 — 작업층 권양기 갱도, 이름은 후보에서 고른다: 내부 이름 "감독", 기록 `core.overseer`): 사슬 휘두르기·
+    /// 갈고리 끌기·추 떨어뜨리기, 2단계 레일 수레, 3단계 사슬이 끊겨 쫓는다(S4-5). 회색 박스(S4-1)는 이끼 덮인 문지기의 수를 빌린다.
+    Overseer,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -40,6 +43,10 @@ pub enum Behavior {
     /// 껍질인 동안만, 평타는 튕기고 옆·뒤·강타는 든다, 몸은 느리게 돈다 → 풀린 뒤 틈), 떨어지면 곧게 돌진하고 늦게 돈다.
     /// 2단계(0133): 쉬는 틈이 짧고 쓸기 뒤 돌진을 잇는다.
     Mossward,
+    /// 사슬에 묶인 권양지기(0208): 사슬 끈 안(`CHAIN_LEN`)에서만 움직인다 — 붙으면 내려치기(부채꼴)·셋째마다 사슬 휘두르기(고리),
+    /// 떨어지면 갈고리 끌기(띠 — 받아친다)와 추 떨어뜨리기(원판 + 고리)를 번갈아. 2단계: 빨라지고 갱도 레일의 수레가 돈다(월드).
+    /// 3단계(체력 넷에 하나): 사슬이 끊긴다 — 끈 없이 쫓으며 내려치기·돌진(수레는 멈춘다).
+    Overseer,
 }
 
 /// 공격 박자 변주(0128, 사장 "정박에만 때리면 난이도가 확 내려간다"): 같은 공격을 다른 박자로.
@@ -402,7 +409,47 @@ pub static MOSSGRAZER: Def = Def {
     model: "mossgrazer",
 };
 
-pub static ALL: [&Def; 8] = [
+/// 넷째 문지기(0208, 회색 박스 S4-1): 수는 이끼 덮인 문지기를 빌리고(S4-5에서 제 수), 체력은 한 등급 위 — 보스 모의로 다시 맞춘다.
+pub static OVERSEER: Def = Def {
+    kind: Kind::Overseer,
+    name: |s: &Strings| s.boss_overseer,
+    hp: 1200,
+    radius: 1.2,
+    height: 2.8,
+    speed: 2.6,
+    reach: 3.8,
+    tele: 0.85,
+    recover: 0.95,
+    arc: 140.0,
+    // 갈고리가 닿는 거리(띠 길이)·3단계 돌진.
+    charge_range: 13.0,
+    charge_tele: 0.8,
+    charge_speed: 12.0,
+    charge_time: 0.6,
+    // 사슬 휘두르기(고리)의 끝·빠르기, 추 떨어뜨리기의 예고.
+    wave_tele: 0.95,
+    wave_radius: 7.5,
+    wave_speed: 9.0,
+    guard_arc: 0.0,
+    plant_range: 0.0,
+    plant_r: 0.0,
+    retreat: 0.0,
+    rings: 0,
+    shards: 0,
+    rhythm: Rhythm {
+        delay: 0.3,
+        fast: 0.2,
+        chain: 0.4,
+        gaps: &[0.5, 1.1],
+        feint: 0.0,
+    },
+    behavior: Behavior::Overseer,
+    boss: true,
+    embers: 30,
+    model: "mossward",
+};
+
+pub static ALL: [&Def; 9] = [
     &HUSK,
     &THORN,
     &WARDEN,
@@ -410,6 +457,7 @@ pub static ALL: [&Def; 8] = [
     &POD,
     &BELLKEEPER,
     &MOSSWARD,
+    &OVERSEER,
     &MOSSGRAZER,
 ];
 
@@ -435,7 +483,8 @@ mod tests {
                 Behavior::Charger
                 | Behavior::Warden
                 | Behavior::Bellkeeper
-                | Behavior::Mossward => {
+                | Behavior::Mossward
+                | Behavior::Overseer => {
                     assert!(d.reach > d.radius, "{:?}", d.kind);
                     assert!(d.charge_speed > 0.0 && d.charge_time > 0.0 && d.charge_tele > 0.0);
                 }

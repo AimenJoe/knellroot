@@ -1062,8 +1062,8 @@ impl Fx {
                 Event::UltReady => self.star(pp + Vec3::Y * 1.2, 1.2, 0.12, GOLD),
                 // 다 모였다: 손 높이의 작은 금빛 번쩍임.
                 Event::Charged => self.star(pp + Vec3::Y * 1.0, 0.9, 0.09, GOLD),
-                // 보스가 깨어남(2단계): 호박빛 불티가 사방으로 + 넓은 먼지 고리.
-                Event::Rouse { at } => {
+                // 보스가 깨어남(2단계) · 사슬이 끊김(0208 3단계): 호박빛 불티가 사방으로 + 넓은 먼지 고리.
+                Event::Rouse { at } | Event::Unchain { at } => {
                     self.star(at, 2.8, 0.14, AMBER);
                     self.spray(
                         at,

@@ -4,6 +4,7 @@
 pub mod garden;
 pub mod sanctuary;
 pub mod village;
+pub mod workings;
 
 use macroquad::prelude::*;
 
@@ -433,10 +434,13 @@ pub struct StageDef {
     pub tier: u8,
     /// 지역 환경(0118 T2): 원경·달빛·안개·떠다니는 것·식생 — `backdrop::SURFACE`·`UNDERGROUND`.
     pub env: &'static crate::backdrop::Env,
+    /// 문(`G`)이 지름길일 뿐인 지역(0208 — 작업층의 화물 승강대): 문지기 싸움터의 문이 아니라서 처음부터 문 앞 단계(문지기는 장치와
+    /// 상관없이 깬다), 문은 장치를 당겨야만 열리고 연 뒤에는 닫히지 않는다(문지기가 깨도).
+    pub shortcut: bool,
 }
 
 /// 판의 차례(0118, v0.5.0 T1): 성소 → 떠난 마을. 지도 `D`(내려가는 길, 핵을 거둔 뒤)로 다음, `U`(오르는 길)로 앞.
-pub static STAGES: [&StageDef; 3] = [&sanctuary::DEF, &village::DEF, &garden::DEF];
+pub static STAGES: [&StageDef; 4] = [&sanctuary::DEF, &village::DEF, &garden::DEF, &workings::DEF];
 /// 내려가는 길·오르는 길 표지(0118)와 밟는 거리(m). 표지에서 이만큼 벗어난 뒤에야 다시 밟을 수 있다.
 pub const DOWN_GLYPH: char = 'D';
 pub const UP_GLYPH: char = 'U';
@@ -447,6 +451,48 @@ pub const SHAFT_R: f32 = 1.7;
 /// 상자 기록 번호(0118): 지역마다 `지역 × 이것 + 상자 번호`(성소는 그대로 — 옛 기록이 이어진다).
 pub const CHESTS_PER_STAGE: u32 = 1000;
 const PASSAGE_ARM: f32 = 2.6;
+
+/// 레일 표지(0208): 수레가 오가는 줄(나란한 두 칸이 한 짝).
+pub const RAIL_GLYPH: char = '|';
+
+/// 레일 칸들을 이어진 묶음으로 — 묶음마다 (남쪽 끝, 북쪽 끝)의 가운데 줄(길이 방향이 긴 쪽).
+pub fn rail_lanes(cells: &[Vec3]) -> Vec<(Vec3, Vec3)> {
+    let mut seen = vec![false; cells.len()];
+    let mut out = Vec::new();
+    for s in 0..cells.len() {
+        if seen[s] {
+            continue;
+        }
+        let mut group = vec![s];
+        seen[s] = true;
+        let mut k = 0;
+        while k < group.len() {
+            let c = cells[group[k]];
+            for (j, d) in cells.iter().enumerate() {
+                if !seen[j] && (d.x - c.x).abs() <= CELL * 1.01 && (d.z - c.z).abs() <= CELL * 1.01
+                {
+                    seen[j] = true;
+                    group.push(j);
+                }
+            }
+            k += 1;
+        }
+        let pts: Vec<Vec3> = group.iter().map(|&i| cells[i]).collect();
+        let (x0, x1) = pts
+            .iter()
+            .fold((f32::MAX, f32::MIN), |m, p| (m.0.min(p.x), m.1.max(p.x)));
+        let (z0, z1) = pts
+            .iter()
+            .fold((f32::MAX, f32::MIN), |m, p| (m.0.min(p.z), m.1.max(p.z)));
+        let (cx, cz) = ((x0 + x1) * 0.5, (z0 + z1) * 0.5);
+        if z1 - z0 >= x1 - x0 {
+            out.push((vec3(cx, 0.0, z1), vec3(cx, 0.0, z0)));
+        } else {
+            out.push((vec3(x0, 0.0, cz), vec3(x1, 0.0, cz)));
+        }
+    }
+    out
+}
 
 /// 문을 여는 장치(0113): 지도 `V`. 곁에서 상호작용 = 당기기 — 문이 열리고 기록에 남는다(지름길, 소울 고리).
 pub const LEVER_GLYPH: char = 'V';
@@ -808,6 +854,23 @@ impl StageRun {
                 max: *c + vec3(CHEST_HALF.x, CHEST_HALF.y * 2.0, CHEST_HALF.z),
             });
         }
+        // 레일 수레(0208): 지도의 레일 `|` 묶음마다 하나 — 남쪽 끝에서 쉰다(묶음마다 박자를 조금 엇갈려).
+        w.carts = rail_lanes(&run.level.marks_of(RAIL_GLYPH).collect::<Vec<_>>())
+            .into_iter()
+            .enumerate()
+            .map(|(i, (a, b))| {
+                let y = |p: Vec3| w.ground.as_ref().map_or(p.y, |g| g.height(p));
+                let (a, b) = (vec3(a.x, y(a), a.z), vec3(b.x, y(b), b.z));
+                crate::world::cart::Cart::new(a, b, i as f32 * 0.9)
+            })
+            .collect();
+        // 마지막 구역(문지기 싸움터)의 레일은 문지기 2단계에만 돈다(0208 6절).
+        for c in &mut w.carts {
+            c.boss = run.zone_at((c.a + c.b) * 0.5) + 1 >= def.zones.len();
+            if c.boss {
+                c.wait = crate::tuning::CART_WAIT;
+            }
+        }
         // 보스는 처음부터 잠든 채 성소에 있다(보인다 — 기대감).
         if let Some(p) = run.level.marks_of(def.boss.0).next() {
             let i = w.spawn(def.boss.1, p);
@@ -820,8 +883,8 @@ impl StageRun {
             run.populate(&mut w);
             run.objective = Some(def.obj_explore);
         }
-        // 문 장치도 물결도 없는 지역(0118)은 처음부터 문이 열린 단계.
-        if run.lever.is_none() && def.waves.is_empty() {
+        // 문 장치도 물결도 없는 지역(0118)은 처음부터 문이 열린 단계. 문이 지름길인 지역(0208)도 — 문은 `set_gate`가 닫아 둔다.
+        if (run.lever.is_none() && def.waves.is_empty()) || def.shortcut {
             run.phase = Phase::GateOpen;
             run.set_gate(&mut w, false);
             run.objective = Some(def.obj_gate);
@@ -881,6 +944,12 @@ impl StageRun {
     }
 
     fn set_gate(&mut self, w: &mut World, closed: bool) {
+        // 지름길 문(0208 승강대): 장치를 당겨야만 열리고, 연 뒤에는 닫히지 않는다 — 단계가 바라는 것과 상관없이.
+        let closed = if self.def.shortcut {
+            !self.gate_opened
+        } else {
+            closed
+        };
         if closed == self.gate_closed {
             return;
         }
@@ -1218,10 +1287,11 @@ impl StageRun {
                 // 마지막 구역(성소)에 들어서면.
                 if z + 1 >= self.def.zones.len() {
                     // 문이 닫히고 문지기가 깨어난다(플레이어가 문 안으로 다 들어온 뒤 닫는다).
-                    let inside = self
-                        .level
-                        .gate
-                        .is_none_or(|(g, _)| w.player.pos.z < g.min.z - 0.8);
+                    let inside = self.def.shortcut
+                        || self
+                            .level
+                            .gate
+                            .is_none_or(|(g, _)| w.player.pos.z < g.min.z - 0.8);
                     if inside {
                         self.set_gate(w, true);
                         // 깨어나는 동안에도 락온에는 잡힌다(0149).
@@ -1595,14 +1665,63 @@ mod tests {
         assert_eq!(w.lock, Some(b));
     }
 
-    /// 0125 → 0185: 종탑 터에 들어서면 깨진 종지기가 깨고, 이기고 핵을 거두면 바닥 길이 열린다(셋째 지역이 생겨 마을은 마지막이
-    /// 아니다). 마지막 지역(잔뿌리의 정원)의 이끼 덮인 문지기는 핵이 판의 끝이다 — 바닥 길이 없다.
+    /// 0208: 작업층의 문은 화물 승강대(지름길) — 처음부터 문 앞 단계(문지기는 장치와 상관없이 깬다), 문은 닫혀 있다가 장치를
+    /// 당기면 열리고, 문지기가 깨어도 다시 닫히지 않는다. 레일 `|` 묶음마다 수레 하나.
+    #[test]
+    fn the_workings_lift_is_a_shortcut_and_the_rail_carries_a_cart() {
+        let t = Tuning::default();
+        let def = STAGES[3];
+        assert!(def.shortcut);
+        let (mut run, mut w) = StageRun::start(def);
+        assert_eq!(run.phase, Phase::GateOpen);
+        assert!(run.gate_closed, "the lift starts shut");
+        // 레일 둘: 운반 회랑(늘 돈다) · 갱도 싸움터(문지기 2단계에만).
+        assert_eq!(w.carts.len(), 2, "two rails, a cart each");
+        assert_eq!(w.carts.iter().filter(|c| c.boss).count(), 1);
+        let c = w.carts.iter().find(|c| !c.boss).unwrap();
+        assert!((c.a - c.b).length() > 15.0, "a long rail");
+        // 장치를 당긴다.
+        let lever = run.lever.expect("lever");
+        w.player.pos = lever;
+        w.player.prev = lever;
+        run.tick(&mut w, 1.0 / 60.0);
+        assert!(run.near_lever);
+        w.interact = true;
+        run.tick(&mut w, 1.0 / 60.0);
+        w.interact = false;
+        assert!(!run.gate_closed && run.gate_opened && run.take_pulled());
+        // 문지기 곁으로: 깨어도 승강대는 열린 채.
+        let home = run.level.marks_of('W').next().unwrap();
+        w.player.pos = home + vec3(0.0, 0.0, 4.0);
+        w.player.prev = w.player.pos;
+        run.tick(&mut w, 1.0 / 60.0);
+        assert!(matches!(run.phase, Phase::Waking(_)), "{:?}", run.phase);
+        assert!(!run.gate_closed, "the lift stays open");
+        let _ = t;
+    }
+
+    /// 장치를 당기지 않아도 문지기는 깬다(승강대는 싸움터의 문이 아니다) — 승강대는 닫힌 채.
+    #[test]
+    fn the_workings_warden_wakes_without_the_lift() {
+        let (mut run, mut w) = StageRun::start(STAGES[3]);
+        let home = run.level.marks_of('W').next().unwrap();
+        w.player.pos = home + vec3(0.0, 0.0, 4.0);
+        w.player.prev = w.player.pos;
+        run.tick(&mut w, 1.0 / 60.0);
+        assert!(matches!(run.phase, Phase::Waking(_)), "{:?}", run.phase);
+        assert!(run.gate_closed);
+    }
+
+    /// 0125 → 0185 → 0208: 종탑 터에 들어서면 깨진 종지기가 깨고, 이기고 핵을 거두면 바닥 길이 열린다. 정원의 이끼 덮인 문지기도
+    /// 이제 바닥 길을 연다(넷째 지역이 생겼다). 마지막 지역(작업층)의 문지기는 핵이 판의 끝이다 — 바닥 길이 없다. 작업층의 문은
+    /// 승강대(지름길)라 장치를 당기지 않아도 문지기가 깬다.
     #[test]
     fn the_village_bellkeeper_opens_the_way_down_and_the_last_warden_ends_the_run() {
         let t = Tuning::default();
         for (def, kind, last) in [
             (STAGES[1], Kind::Bellkeeper, false),
-            (STAGES[STAGES.len() - 1], Kind::Mossward, true),
+            (STAGES[2], Kind::Mossward, false),
+            (STAGES[STAGES.len() - 1], Kind::Overseer, true),
         ] {
             let (run, w) = StageRun::start(def);
             assert_eq!(run.down_at.is_none(), last);

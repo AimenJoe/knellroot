@@ -82,6 +82,8 @@ pub mod key {
     pub const CORE_BELL: &str = "core.bellkeeper";
     /// 이끼 덮인 문지기 핵 점수(0185, `CORE_CAP`까지).
     pub const CORE_MOSS: &str = "core.mossward";
+    /// 넷째 문지기 핵 점수(0208, `CORE_CAP`까지 — 내부 이름 "감독", 기록 키는 바꾸지 않는다).
+    pub const CORE_OVERSEER: &str = "core.overseer";
     /// v0.4.0 옮기기를 했다(0105 — 핵 고르기 → 생명·숨은 물건·핵 점수). 한 번만.
     pub const MIGRATED_V04: &str = "migrated.v04";
     /// 0166: 처음의 둘(휘돌이·가로지르기)도 기술 점수로 배운다. 이 깃발이 없는 기록(그 전의 판)은 둘을 이미 가졌던 것이다 —
@@ -213,6 +215,8 @@ pub struct Progress {
     pub bell_cores: u32,
     /// 이끼 덮인 문지기 핵 점수(0185, `CORE_CAP`까지).
     pub moss_cores: u32,
+    /// 넷째 문지기 핵 점수(0208, `CORE_CAP`까지).
+    pub overseer_cores: u32,
     /// 든 무기(없으면 옛 prefs 칸의 값을 쓴다).
     pub weapon: Option<crate::weapons::Id>,
     /// 가진 무기(0117 — 무기는 얻어서 쓴다). 맨손은 넣지 않는다(늘 있다).
@@ -320,6 +324,10 @@ impl Progress {
             .min(crate::progression::CORE_CAP);
         let moss_cores = r
             .num(key::CORE_MOSS)
+            .unwrap_or(0)
+            .min(crate::progression::CORE_CAP);
+        let overseer_cores = r
+            .num(key::CORE_OVERSEER)
             .unwrap_or(0)
             .min(crate::progression::CORE_CAP);
         let migrated = r.num(key::MIGRATED_V04) == Some(1);
@@ -454,6 +462,7 @@ impl Progress {
             cores,
             bell_cores,
             moss_cores,
+            overseer_cores,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
             skills: {
                 let at = |k: &str, d: crate::skills::Id| {
@@ -561,7 +570,8 @@ impl Progress {
             self.elites.len() as u32,
             self.cores.min(CORE_CAP)
                 + self.bell_cores.min(CORE_CAP)
-                + self.moss_cores.min(CORE_CAP),
+                + self.moss_cores.min(CORE_CAP)
+                + self.overseer_cores.min(CORE_CAP),
             shards(&self.finds),
         ) + self.gift
             + self.ult_gift
@@ -618,6 +628,7 @@ impl Progress {
         r.set(key::CORE_WARDEN, self.cores);
         r.set(key::CORE_BELL, self.bell_cores);
         r.set(key::CORE_MOSS, self.moss_cores);
+        r.set(key::CORE_OVERSEER, self.overseer_cores);
         r.set(key::MIGRATED_V04, 1);
         r.set(key::MIGRATED_V06, 1);
         r.set(key::MIGRATED_ULT, 1);
@@ -743,6 +754,7 @@ impl Progress {
             || self.cores > 0
             || self.bell_cores > 0
             || self.moss_cores > 0
+            || self.overseer_cores > 0
             || self.board.cells.count() > 0
     }
 

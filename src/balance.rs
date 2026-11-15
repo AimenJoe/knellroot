@@ -414,6 +414,7 @@ fn bellkeeper_fight_length() {
         (Kind::Warden, &builds()[..3]),
         (Kind::Bellkeeper, &builds()[..]),
         (Kind::Mossward, &builds()[2..]),
+        (Kind::Overseer, &builds()[3..]),
     ] {
         for b in bs {
             let dummy = fight_vs(kind, true, b, 1.0, 1, &t).secs;

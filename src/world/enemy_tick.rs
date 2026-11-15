@@ -19,6 +19,8 @@ struct EnemyActs {
     burst_push: Option<Vec3>,
     /// 맞서는 자(0107)가 못 받는 공격을 막았나.
     blocked: bool,
+    /// 갈고리(0208)가 방랑자를 걸었으면 그 적의 자리 — 맞은 뒤 그쪽으로 끌려간다.
+    pull_to: Option<Vec3>,
 }
 
 impl World {
@@ -48,6 +50,7 @@ impl World {
             mut thrown,
             burst_push,
             blocked,
+            pull_to,
         } = self.enemies_act(t, dt, ev, p, body, parrying, in_front);
         // 종 조각(0125): 날아가 플레이어에 닿으면 — 앞에서 패링 중이면 되돌아가고, 아니면 맞는다. 되돌아간 조각은 종지기를 깎는다.
         // 던진 종지기가 쓰러지면 날던 조각은 사라진다(KB ranged-boss — 쓰러진 뒤에 맞지 않게).
@@ -71,6 +74,12 @@ impl World {
             - parries_before;
         self.echo_ring(t, parries, ev);
         self.wanderer_takes_hit(t, ev, hurt_player, hurt_tier);
+        // 갈고리(0208): 이번 틱에 맞았으면(받아내지 않았으면) 권양지기 쪽으로 끌려간다 — 밀림 대신.
+        if let (Some(to), true) = (pull_to, self.player.hurt.since == 0.0 && !self.bracing()) {
+            let pl = &mut self.player;
+            let d = vec3(to.x - pl.pos.x, 0.0, to.z - pl.pos.z);
+            pl.vel = d.normalize_or_zero() * crate::tuning::HOOK_PULL;
+        }
     }
 
     fn refresh_nav(&mut self) {
@@ -254,6 +263,7 @@ impl World {
         // 2단계 전환이 터지며 밀어낼 쪽(0133).
         let mut burst_push: Option<Vec3> = None;
         let mut blocked = false;
+        let mut pull_to: Option<Vec3> = None;
         let stand = self.tree.has(Cell::OneWhoStands)
             && self.player.parry.chain_left > 0.0
             && self.player.parry.chain_n >= cell::STAND_CHAIN;
@@ -343,6 +353,9 @@ impl World {
                 } else {
                     hurt_player.get_or_insert(en.pos);
                     hurt_tier = hurt_tier.max(en.tier);
+                    if out.pull {
+                        pull_to = Some(en.pos);
+                    }
                 }
             }
             if out.release {
@@ -355,6 +368,11 @@ impl World {
                     at: en.pos + Vec3::Y * en.height * 0.6,
                 });
             }
+            if out.unchained {
+                ev.push(Event::Unchain {
+                    at: en.pos + Vec3::Y * en.height * 0.6,
+                });
+            }
         }
         EnemyActs {
             hurt_player,
@@ -363,6 +381,7 @@ impl World {
             thrown,
             burst_push,
             blocked,
+            pull_to,
         }
     }
 
@@ -569,7 +588,7 @@ impl World {
     }
 
     /// 방랑자가 맞는다 — **체력을 깎는 한 자리**(0143). 적이 주는 피해는 모두 `hurt_player`(친 자리)로 모여 여기로 온다: 맞음 피드백 다섯 겹(멈춤·붉은 테·체력 칸·흰 몸·밀림)이 여기서 난다. 새 피해 경로도 이 길을 탄다.
-    fn wanderer_takes_hit(
+    pub(super) fn wanderer_takes_hit(
         &mut self,
         t: &Tuning,
         ev: &mut Vec<Event>,

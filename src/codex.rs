@@ -29,7 +29,7 @@ pub struct Entry {
 }
 
 /// 표 순서 = 도감 순서(만나는 차례).
-pub static ENTRIES: [Entry; 8] = [
+pub static ENTRIES: [Entry; 9] = [
     Entry {
         kind: Kind::Husk,
         place: |s| s.cx_place_both,
@@ -111,6 +111,16 @@ pub static ENTRIES: [Entry; 8] = [
             (Obs::Roused, |s| s.cx_roused),
         ],
     },
+    Entry {
+        kind: Kind::Overseer,
+        place: |s| s.cx_place_winch,
+        lines: &[
+            (Obs::Seen, |s| s.cx_overseer_1),
+            (Obs::Seen, |s| s.cx_overseer_2),
+            (Obs::Guess, |s| s.cx_overseer_g),
+            (Obs::Roused, |s| s.cx_roused),
+        ],
+    },
 ];
 
 /// 종의 기록 이름(바꾸지 않는다 — `_` 없는 match: 새 종이면 컴파일러가 묻는다).
@@ -124,6 +134,7 @@ pub fn kind_key(k: Kind) -> &'static str {
         Kind::Bellkeeper => "bellkeeper",
         Kind::Mossward => "mossward",
         Kind::Mossgrazer => "mossgrazer",
+        Kind::Overseer => "overseer",
     }
 }
 

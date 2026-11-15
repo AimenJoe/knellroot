@@ -692,6 +692,7 @@ fn enemy_anim(
         Atk::Shards => &["throw", "attack"],
         Atk::Roots => &["roots", "slam", "attack"],
         Atk::Hurl => &["hurl", "toll", "throw", "attack"],
+        Atk::Hook => &["hook", "charge_windup", "throw", "attack"],
         Atk::Shell => &["shell", "guard", "idle"],
     };
     let once = |names: &[&str], k: f32| {

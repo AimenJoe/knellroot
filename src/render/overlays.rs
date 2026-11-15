@@ -37,6 +37,7 @@ impl Renderer {
         bolts(w, alpha);
         bell_shards(w, &fl);
         bombs(w, alpha);
+        carts(w, alpha);
         cast_charge(w, pp, t, &fl);
         throw_aim(w, pp, t, &fl);
         cracks(w, &fl);
@@ -284,6 +285,44 @@ fn bell_shards(w: &World, fl: &Drape) {
         gem(sh.pos, 0.56, glow);
         gem(sh.pos, 0.3, core);
         fl.shadow(sh.pos, 0.18);
+    }
+}
+
+fn carts(w: &World, alpha: f32) {
+    // 레일 수레(0208, 회색 박스 — 그림은 코드 상자): 녹슨 짐칸 + 바퀴 넷 + 짐(돌덩이). 땅 높이를 따른다.
+    const BODY: Color = Color::new(0.44, 0.31, 0.24, 1.0);
+    const RIM: Color = Color::new(0.30, 0.22, 0.18, 1.0);
+    const WHEEL: Color = Color::new(0.24, 0.23, 0.25, 1.0);
+    const LOAD: Color = Color::new(0.42, 0.41, 0.44, 1.0);
+    for c in &w.carts {
+        let k = c.prev + (c.at - c.prev) * alpha;
+        let mut p = c.pos_at(k);
+        p.y = w.ground.as_ref().map_or(p.y, |g| g.height(p));
+        let (hw, hl) = (crate::tuning::CART_HALF_W, crate::tuning::CART_HALF_L);
+        let along_z = (c.b - c.a).z.abs() >= (c.b - c.a).x.abs();
+        let size = |x: f32, y: f32, l: f32| {
+            if along_z {
+                vec3(x, y, l)
+            } else {
+                vec3(l, y, x)
+            }
+        };
+        shaded_box(
+            p + Vec3::Y * 0.75,
+            size(hw * 1.8, 0.7, hl * 1.8),
+            BODY,
+            0.55,
+        );
+        shaded_box(p + Vec3::Y * 1.12, size(hw * 1.9, 0.08, hl * 1.9), RIM, 0.5);
+        shaded_box(p + Vec3::Y * 1.2, size(hw * 1.1, 0.35, hl * 1.0), LOAD, 0.6);
+        for (sx, sl) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+            let o = if along_z {
+                vec3(sx * hw * 0.8, 0.3, sl * hl * 0.6)
+            } else {
+                vec3(sl * hl * 0.6, 0.3, sx * hw * 0.8)
+            };
+            shaded_box(p + o, size(0.18, 0.5, 0.5), WHEEL, 0.5);
+        }
     }
 }
 

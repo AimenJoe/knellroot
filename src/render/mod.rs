@@ -299,6 +299,7 @@ impl Renderer {
 
         ground_marks(v, w, alpha);
         linger_tells(v, w);
+        cart_tells(v, w);
         let pp = w.player.prev.lerp(w.player.pos, alpha);
         // 그림자는 땅에, 높이 뜰수록 작고 옅게 — 쿼터뷰에서 높이를 읽는 단서(0027).
         let lift = (w.player.air / JUMP_SHADOW_H).clamp(0.0, 1.0);

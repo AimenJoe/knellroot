@@ -354,7 +354,18 @@ impl App {
                     SHAKE_TURN
                 }
                 Event::Slam { .. } => SHAKE_SLAM,
+                // 수레가 떠나는 덜컹(0208): 가까울 때만 작게 — 멀리 있는 수레가 화면을 흔들지 않게.
+                Event::CartGo { at } => {
+                    if at.distance(self.world.player.pos) < 14.0 {
+                        SHAKE_SLAM * 0.5
+                    } else {
+                        0.0
+                    }
+                }
+                Event::CartWarn { .. } => 0.0,
                 Event::Rouse { .. } => SHAKE_ROUSE,
+                // 사슬이 끊긴다(0208 — 3단계): 2단계 전환보다 크게.
+                Event::Unchain { .. } => SHAKE_ROUSE * 1.4,
                 Event::Parry { .. } => SHAKE_PARRY,
                 Event::Deflect { .. } => SHAKE_HIT,
                 Event::Crit { .. } => SHAKE_CRIT,
@@ -566,7 +577,10 @@ impl App {
         let to_hearth = matches!(
             self.tutor.step(),
             Some(crate::tutorial::Step::Learn | crate::tutorial::Step::Level)
-        ) && self.tutor.step().is_some_and(|s| s.shown(&facts));
+        ) && self
+            .tutor
+            .step()
+            .is_some_and(|s| s.shown(&facts) && !s.gathering(&facts));
         if to_hearth && !fight {
             let at = self.world.player.pos;
             self.run.guide = self
@@ -926,6 +940,14 @@ impl App {
                 Event::Gulp { .. } => Id::Gulp,
                 // 지연 공격이 풀린다(0128): 짧게 들이쉬는 소리 — 이 뒤 `RELEASE_LEAD`초에 맞는다.
                 Event::Release { .. } => Id::TeleRelease,
+                // 수레가 떠난다(0208): 둔한 덜컹 — 가까울 때만(멀리서 내내 울리지 않게).
+                Event::CartGo { at } if at.distance(self.world.player.pos) < 18.0 => Id::Thwack,
+                Event::CartWarn { at } if at.distance(self.world.player.pos) < 18.0 => Id::TeleLane,
+                // 사슬이 끊긴다(0208 3단계): 깊은 울림 + 글 한 줄.
+                Event::Unchain { .. } => {
+                    self.run.card = Some((|s| s.overseer_unchained, crate::stage::CARD_TIME));
+                    Id::Wake
+                }
                 Event::FlaskDenied | Event::CastDenied | Event::StaminaDenied => Id::Deny,
                 // 스킬(0151 — S0는 있는 소리를 겹쳐 쓴다, 전용 소리는 S1): 시동 = 휘두름, 큰 기술 시동 = 깊은 울림, 터짐 = 타격,
                 // 게이지 가득 = 가장 높은 종.

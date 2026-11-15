@@ -184,6 +184,42 @@ pub static GARDEN: Env = Env {
     floor: crate::scenery::GARDEN_FLOOR,
 };
 
+/// 작업층(0208, 지하 110m): 차가운 청록 물빛 — 정원보다 푸르고 어둡게, 높은 갱 벽(×2.6), 녹 가루·물방울이 떨어진다. 달빛은 환기 구멍으로만.
+pub static WORKS: Env = Env {
+    sky: [
+        Color::new(0.05, 0.08, 0.09, 1.0),
+        Color::new(0.08, 0.12, 0.13, 1.0),
+        Color::new(0.07, 0.10, 0.11, 1.0),
+        Color::new(0.05, 0.07, 0.085, 1.0),
+        Color::new(0.04, 0.05, 0.065, 1.0),
+        Color::new(0.03, 0.035, 0.05, 1.0),
+    ],
+    zenith: Color::new(0.025, 0.03, 0.04, 1.0),
+    ridges: [
+        (
+            Color::new(0.10, 0.13, 0.14, 1.0),
+            Color::new(0.20, 0.17, 0.15, 1.0),
+        ),
+        (
+            Color::new(0.07, 0.09, 0.10, 1.0),
+            Color::new(0.14, 0.12, 0.11, 1.0),
+        ),
+        (
+            Color::new(0.045, 0.06, 0.07, 1.0),
+            Color::new(0.09, 0.08, 0.08, 1.0),
+        ),
+    ],
+    ridge_h: 2.6,
+    moon: false,
+    moonlight: 0.3,
+    fog: Color::new(0.09, 0.14, 0.16, 1.0),
+    fog_deep: Color::new(0.05, 0.08, 0.10, 1.0),
+    fireflies: false,
+    falling: true,
+    trees: false,
+    floor: crate::scenery::WORKS_FLOOR,
+};
+
 /// 이어 붙여도 이음매가 없는 점 무늬(정수 주파수 사인 합) → 세 단 알파(픽셀 그림처럼 계단).
 fn fog_pixels(n: u16) -> Vec<u8> {
     let n = n as usize;

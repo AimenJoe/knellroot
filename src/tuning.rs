@@ -304,6 +304,23 @@ pub fn tier(n: u8) -> &'static Tier {
 /// 굳은(0112): 자세 막대 배율·밀려나는 배율.
 pub const ELITE_HARD_POISE: f32 = 2.5;
 pub const ELITE_HARD_KNOCK: f32 = 0.35;
+/// 사슬에 묶인 권양지기(0208): 사슬 끈(처음 자리에서 m) · 갈고리의 반 폭(m)·날아가는 빠르기(m/s)·끌어당기는 빠르기(m/s) ·
+/// 3단계(사슬이 끊긴 뒤) 걸음 배율·예고 배율(2단계 위에 곱한다).
+pub const CHAIN_LEN: f32 = 6.5;
+pub const HOOK_R: f32 = 0.6;
+pub const HOOK_SPEED: f32 = 26.0;
+pub const HOOK_PULL: f32 = 13.0;
+pub const UNCHAIN_SPEED: f32 = 1.3;
+pub const UNCHAIN_TELE: f32 = 0.9;
+/// 레일 수레(0208 4절): 끝에서 쉬는 초 · 그 마지막 예고 초 · 빠르기(m/s) · 닿는 상자(레일 방향 반 길이 · 옆 반 폭, m) ·
+/// 적에게 주는 피해 · 적을 미는 빠르기(m/s). 방랑자는 맞음 한 자리(`wanderer_takes_hit`)로 한 눈금.
+pub const CART_WAIT: f32 = 2.4;
+pub const CART_TELE: f32 = 1.0;
+pub const CART_SPEED: f32 = 9.0;
+pub const CART_HALF_L: f32 = 1.2;
+pub const CART_HALF_W: f32 = 1.1;
+pub const CART_DAMAGE: i32 = 40;
+pub const CART_KNOCK: f32 = 9.0;
 /// 남는(0112): 쓰러진 자리에 남는 고리 — 터지기까지의 초(그동안 예고)·반지름(m).
 pub const ELITE_LINGER_DELAY: f32 = 1.0;
 pub const ELITE_LINGER_RADIUS: f32 = 2.6;

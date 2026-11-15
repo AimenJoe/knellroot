@@ -22,6 +22,8 @@ use crate::weapons::{self, Rb, Shape};
 
 /// 날아가는 것·늦게 터지는 것의 틱 — 단계마다 메서드(0159 R2).
 mod bolt_tick;
+/// 레일 수레(0208 — 작업층의 기믹).
+pub mod cart;
 /// 적 틱 — 단계마다 메서드(0159 R2).
 mod enemy_tick;
 /// 플레이어 틱 — 단계·상태마다 메서드(0103).
@@ -132,6 +134,18 @@ pub enum Event {
     },
     /// 쏟아진 적이 벽·기둥·아레나 끝에 부딪혔다.
     Slam {
+        at: Vec3,
+    },
+    /// 레일 수레가 떠났다(0208 — 앱이 덜컹 소리).
+    CartGo {
+        at: Vec3,
+    },
+    /// 3단계(0208 권양지기): 사슬이 끊겼다 — 앱이 연출(흔들림·소리·글).
+    Unchain {
+        at: Vec3,
+    },
+    /// 레일 수레의 예고가 시작했다(0208 — 띠 예고와 같은 소리).
+    CartWarn {
         at: Vec3,
     },
     /// 지연 공격이 곧 풀린다(0128 — 정점에서 버티던 적이 내리치기 직전, 앱이 소리를 낸다).
@@ -729,6 +743,8 @@ pub struct World {
     pub drops: Vec<crate::ember::Ember>,
     /// 남는 엘리트의 고리(0112).
     pub lingers: Vec<Linger>,
+    /// 레일 수레(0208) — 스테이지가 지도의 레일 `|`에서 세운다.
+    pub carts: Vec<cart::Cart>,
     /// 날아가는 종 조각(0125).
     pub shards: Vec<Shard>,
     /// 방랑자만 밀어내는 둥근 몸(0122 — 주민): 적·탄·공격은 지나간다(싸움에 끼지 않는다). (가운데, 반지름).
@@ -915,6 +931,7 @@ impl World {
             embers: 0,
             drops: Vec::new(),
             lingers: Vec::new(),
+            carts: Vec::new(),
             shards: Vec::new(),
             bodies: Vec::new(),
             stats: crate::stats::Stats::default(),
@@ -1382,6 +1399,7 @@ impl World {
         self.tick_bolts(t, dt, &mut ev);
         self.apply_turn(t, &mut ev);
         self.tick_enemies(t, dt, &mut ev);
+        self.tick_carts(t, dt, &mut ev);
         self.collide(t, &mut ev);
         self.cleanup(&mut ev);
         self.tick_embers(t, dt, &mut ev);

@@ -1483,10 +1483,10 @@ mod tests {
                     .count() as u32
             })
             .sum();
-        // 0185: 셋째 지역(엘리트 셋·핵 셋·조각 둘)이 더해져 30 → 38.
-        assert_eq!((levels, elites, cores, shards), (15, 9, 9, 5));
+        // 0185: 셋째 지역(엘리트 셋·핵 셋·조각 둘)이 더해져 30 → 38. 0208: 넷째 지역(엘리트 셋·핵 셋·조각 하나) → 45.
+        assert_eq!((levels, elites, cores, shards), (15, 12, 12, 6));
         let all = points(levels, elites, cores, shards);
-        assert_eq!(all, 38);
+        assert_eq!(all, 45);
         // 다 익히는 값(65)에는 못 미친다 — 고르게 한다(0160 2절). 여정의 기술 점수(지역마다 하나, 0183)를 더해도.
         assert!(all + (crate::stage::STAGES.len() as u32) < Board::maxed(Pick::A).spent());
     }

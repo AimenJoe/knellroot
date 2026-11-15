@@ -183,10 +183,10 @@ impl App {
         // 둘째·셋째 지역 문지기(깨진 종지기 0125 · 이끼 덮인 문지기 0185): 핵은 문지기마다 따로 셋까지 — 기술 점수는 같이 센다(0161).
         if core && self.stage >= 1 {
             let s = s();
-            let cores = if self.stage == 1 {
-                &mut self.progress.bell_cores
-            } else {
-                &mut self.progress.moss_cores
+            let cores = match self.stage {
+                1 => &mut self.progress.bell_cores,
+                2 => &mut self.progress.moss_cores,
+                _ => &mut self.progress.overseer_cores,
             };
             let first = *cores == 0;
             if *cores < crate::progression::CORE_CAP {
