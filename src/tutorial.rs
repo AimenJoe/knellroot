@@ -19,7 +19,8 @@ pub enum Step {
     Move,
     Attack,
     Dodge,
-    /// 실패가 잦다 — 싸움 속에서 `PARRY_GIVE_UP`초를 못 하면 넘어간다(막히면 뒤의 걸음이 다 멈춘다, nail 0023).
+    /// 실패가 잦다 — 곁에서 적의 예고를 `PARRY_TELLS`번 보면(맞든 피하든) 넘어간다(막히면 뒤의 걸음이 다 멈춘다, nail 0023).
+    /// 0209 T3: 옛 "곁에 20초"는 그 사이 쓰러질 수 있었다 — 시간이 아니라 본 공격의 수로.
     Parry,
     /// 쉼터 화로에서 쉬고 기술 판에서 하나를 배운다(상으로 받은 점수로).
     Learn,
@@ -55,6 +56,8 @@ pub const HITS: u32 = 3;
 pub const PARRY_GIVE_UP: f32 = 20.0;
 /// "싸움 속"의 거리(m): 깨어 있는 적이 이 안에 있을 때만 패링의 시계가 간다.
 pub const FIGHT_RANGE: f32 = 10.0;
+/// 패링: 곁에서(`FIGHT_RANGE`) 시작한 적의 공격 예고를 이만큼 보면 넘어간다(0209 T3).
+pub const PARRY_TELLS: u32 = 3;
 /// 걸음이 바뀐 뒤 힌트가 밝게 뜨는 시간(초).
 pub const FRESH_TIME: f32 = 1.2;
 
@@ -67,7 +70,11 @@ pub struct Seen {
     pub parries: u32,
     /// 패링 걸음에서 깨어 있는 적 곁에 있던 시간.
     pub parry_wait: f32,
+    /// 곁에서 시작한 적의 공격 예고(0209 T3).
+    pub tells: u32,
     pub skills: u32,
+    /// 다 모은 강타·모은 사격(0209 T2 — 모으기를 아직 모르면 한 번 알린다).
+    pub charged: u32,
 }
 
 /// 지금의 사실(앱이 기록·월드에서 모은다).
@@ -94,7 +101,9 @@ impl Step {
             Step::Move => s.moved >= MOVE_M,
             Step::Attack => s.hits >= HITS,
             Step::Dodge => s.dodges >= 1,
-            Step::Parry => s.parries >= 1 || s.parry_wait >= PARRY_GIVE_UP,
+            Step::Parry => {
+                s.parries >= 1 || s.tells >= PARRY_TELLS || s.parry_wait >= PARRY_GIVE_UP
+            }
             Step::Learn => f.spent,
             // 아는 스킬이 없으면(패시브만 열었다) 쓸 것이 없다 — 붙잡지 않는다.
             Step::Skill => s.skills >= 1 || !f.knows_skill,
@@ -102,14 +111,19 @@ impl Step {
         }
     }
 
-    /// 이 걸음의 힌트를 지금 보이나 — 할 수 없는 일을 시키지 않는다: 배울 점수가 없으면 "배운다"를, 잔불이 모자라면
-    /// "올린다"를 띄우지 않는다(걸음은 그대로 기다린다).
+    /// 이 걸음의 힌트를 지금 보이나 — 할 수 없는 일을 시키지 않는다: 배울 점수가 없으면 "배운다"를 띄우지 않는다.
+    /// 한 단 올리기는 잔불이 모자라도 뜬다 — "잔불을 모은다 n / 값"으로(0209 T4: 판이 사라지면 끝난 줄 알았다).
     pub fn shown(self, f: &Facts) -> bool {
         match self {
             Step::Learn => f.can_learn,
-            Step::Level => f.cost.is_some_and(|c| f.embers >= c),
+            Step::Level => f.cost.is_some(),
             _ => true,
         }
+    }
+
+    /// 한 단 올리기 걸음에서 아직 잔불을 모으는 중인가(값까지 모자란다).
+    pub fn gathering(self, f: &Facts) -> bool {
+        self == Step::Level && f.cost.is_some_and(|c| f.embers < c)
     }
 
     /// 힌트에 붙는 버튼(지금 배치의 이름 — 글에 키 이름을 박지 않는다). `slot` = 배운 스킬이 놓인 칸.
@@ -129,7 +143,10 @@ impl Step {
 
     /// 힌트의 글 둘(버튼 이름 없이 — 동작의 이름으로): 할 일 한마디 + 작은 풀이. 풀이는 기능의 설명이 아니라 **몸의
     /// 기억**으로 말한다(0171 — 과거를 잃은 방랑자: 잊었지만 몸은 안다).
-    pub fn text(self, st: &Strings) -> (&'static str, &'static str) {
+    pub fn text(self, st: &Strings, f: &Facts) -> (&'static str, &'static str) {
+        if self.gathering(f) {
+            return (st.tut_gather, st.tut_gather_d);
+        }
         match self {
             Step::Move => (st.tut_move, st.tut_move_d),
             Step::Attack => (st.tut_attack, st.tut_attack_d),
@@ -143,9 +160,10 @@ impl Step {
     }
 
     /// 세는 걸음의 (지금, 목표) — 머리 줄 곁에 따로 그린다(0171: 글 속의 "(0/3)"이 아니라 제 빛의 수).
-    pub fn count(self, s: &Seen) -> Option<(u32, u32)> {
+    pub fn count(self, s: &Seen, f: &Facts) -> Option<(u32, u32)> {
         match self {
             Step::Attack => Some((s.hits.min(HITS), HITS)),
+            Step::Level if self.gathering(f) => f.cost.map(|c| (f.embers.min(c), c)),
             _ => None,
         }
     }
@@ -154,8 +172,8 @@ impl Step {
 /// 힌트 한 장(0171 — 판 위에): 걸음 점의 자리, 버튼의 표시(없으면 빈 글), 할 일, 세는 수, 풀이.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Hint {
-    /// 지금 걸음의 자리(0부터) — 그 앞은 지난 점, 뒤는 남은 점. 모두 `DONE`개.
-    pub at: u8,
+    /// 지금 걸음의 자리(0부터) — 그 앞은 지난 점, 뒤는 남은 점. 모두 `DONE`개. 상황 힌트(`Tip`)는 없음 — 점을 그리지 않는다.
+    pub at: Option<u8>,
     pub key: String,
     pub text: &'static str,
     pub count: Option<(u32, u32)>,
@@ -219,15 +237,104 @@ impl Tutor {
         key: impl Fn(Bind) -> String,
     ) -> Option<Hint> {
         let step = self.step().filter(|s| s.shown(f))?;
-        let (text, more) = step.text(st);
+        let (text, more) = step.text(st, f);
         Some(Hint {
-            at: self.at,
+            at: Some(self.at),
             key: step.bind(slot).map(key).unwrap_or_default(),
             text,
-            count: step.count(&self.seen),
+            count: step.count(&self.seen, f),
             more,
         })
     }
+}
+
+/// 상황 힌트(0209 T2): 걸음 줄에 넣지 않는 핵심 조작 셋 — 처음 그 상황이 오면 같은 판에 한 번(점 없이), 막지 않는다.
+/// 본 것은 기록의 비트(`save::key::TIPS`)에 남아 판을 넘어 한 번뿐이다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tip {
+    /// 체력이 처음 반 아래로 — 등잔.
+    Flask,
+    /// 엘리트·문지기가 처음 깼다 — 락온.
+    Lock,
+    /// 평타를 여럿 맞혔는데 아직 모아 친 적이 없다 — 쥐었다 떼기.
+    Charge,
+}
+
+pub const TIPS: [Tip; 3] = [Tip::Flask, Tip::Lock, Tip::Charge];
+/// 상황 힌트가 떠 있는 시간(초) — 그 일을 하면 먼저 걷힌다.
+pub const TIP_TIME: f32 = 6.0;
+/// 모으기 힌트: 이만큼 맞혀도 한 번도 모아 치지 않았으면.
+pub const CHARGE_TIP_HITS: u32 = 12;
+
+/// 지금의 상황(앱이 월드에서 모은다).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Situation {
+    pub hp_low: bool,
+    pub has_flask: bool,
+    /// 깨어 있는 엘리트·문지기가 곁에 있다.
+    pub big_foe: bool,
+    pub locked: bool,
+}
+
+impl Tip {
+    pub fn bit(self) -> u8 {
+        1 << self as u8
+    }
+
+    /// 이 힌트를 띄울 때인가. 몸의 걸음(걷기~패링) 동안은 그 판과 겹치지 않게 기다린다(`at` = 튜토리얼의 지난 걸음 수).
+    pub fn due(self, at: u8, now: &Situation, s: &Seen) -> bool {
+        if at < AFTER_BASICS {
+            return false;
+        }
+        match self {
+            Tip::Flask => now.hp_low && now.has_flask,
+            Tip::Lock => now.big_foe && !now.locked,
+            Tip::Charge => s.hits >= CHARGE_TIP_HITS && s.charged == 0,
+        }
+    }
+
+    /// 할 일을 했다 — 일찍 걷는다.
+    pub fn done(self, now: &Situation, s: &Seen) -> bool {
+        match self {
+            Tip::Flask => !now.hp_low,
+            Tip::Lock => now.locked,
+            Tip::Charge => s.charged > 0,
+        }
+    }
+
+    pub fn bind(self) -> Bind {
+        match self {
+            Tip::Flask => Bind::Flask,
+            Tip::Lock => Bind::Lock,
+            Tip::Charge => Bind::Attack,
+        }
+    }
+
+    pub fn text(self, st: &Strings) -> (&'static str, &'static str) {
+        match self {
+            Tip::Flask => (st.tip_flask, st.tip_flask_d),
+            Tip::Lock => (st.tip_lock, st.tip_lock_d),
+            Tip::Charge => (st.tip_charge, st.tip_charge_d),
+        }
+    }
+
+    /// 판에 그릴 한 장(점 없음).
+    pub fn hint(self, st: &Strings, key: impl Fn(Bind) -> String) -> Hint {
+        let (text, more) = self.text(st);
+        Hint {
+            at: None,
+            key: key(self.bind()),
+            text,
+            count: None,
+            more,
+        }
+    }
+}
+
+/// 다음에 띄울 상황 힌트(본 것 `shown` 비트에 없는 것 가운데 표 차례로 처음 때가 된 것).
+pub fn next_tip(shown: u8, at: u8, now: &Situation, s: &Seen) -> Option<Tip> {
+    TIPS.into_iter()
+        .find(|t| shown & t.bit() == 0 && t.due(at, now, s))
 }
 
 /// 이 값이 없는 옛 기록이 설 자리: 이미 레벨을 올려 본 방랑자에게는 가르칠 것이 없다. 한 번도 안 올렸으면 몸의 걸음은
@@ -328,6 +435,88 @@ mod tests {
         assert_eq!(at(&t), Some(Step::Parry), "attack and dodge went by");
     }
 
+    /// 0209 T3: 패링은 곁에서 적의 공격 예고를 `PARRY_TELLS`번 보면 넘어간다(맞든 피하든 — 20초를 버티다 쓰러지지 않게).
+    #[test]
+    fn parry_passes_after_seeing_a_few_attacks() {
+        let mut t = Tutor::new(3);
+        t.seen.tells = PARRY_TELLS - 1;
+        t.tick(&facts(), true, 0.1);
+        assert_eq!(at(&t), Some(Step::Parry));
+        t.seen.tells = PARRY_TELLS;
+        t.tick(&facts(), true, 0.1);
+        assert_eq!(at(&t), Some(Step::Learn));
+    }
+
+    /// 0209 T2: 상황 힌트 — 몸의 걸음 동안은 기다리고, 때가 오면 표 차례로 하나, 본 것(비트)은 다시 띄우지 않는다.
+    /// 할 일을 하면 일찍 걷힌다. 판에 점이 없다.
+    #[test]
+    fn situational_tips_come_once_when_their_moment_comes() {
+        let low = Situation {
+            hp_low: true,
+            has_flask: true,
+            ..Situation::default()
+        };
+        let s = Seen::default();
+        assert_eq!(
+            next_tip(0, AFTER_BASICS - 1, &low, &s),
+            None,
+            "not during the body steps"
+        );
+        assert_eq!(next_tip(0, AFTER_BASICS, &low, &s), Some(Tip::Flask));
+        assert_eq!(
+            next_tip(0, DONE, &low, &s),
+            Some(Tip::Flask),
+            "after the tutorial too"
+        );
+        assert_eq!(next_tip(Tip::Flask.bit(), DONE, &low, &s), None, "once");
+        let dry = Situation {
+            has_flask: false,
+            ..low
+        };
+        assert_eq!(
+            next_tip(0, DONE, &dry, &s),
+            None,
+            "no lamp left, nothing to say"
+        );
+        let big = Situation {
+            big_foe: true,
+            ..Situation::default()
+        };
+        assert_eq!(next_tip(0, DONE, &big, &s), Some(Tip::Lock));
+        assert!(Tip::Lock.done(
+            &Situation {
+                locked: true,
+                ..big
+            },
+            &s
+        ));
+        let mashing = Seen {
+            hits: CHARGE_TIP_HITS,
+            ..Seen::default()
+        };
+        assert_eq!(
+            next_tip(0, DONE, &Situation::default(), &mashing),
+            Some(Tip::Charge)
+        );
+        let charged = Seen {
+            charged: 1,
+            ..mashing
+        };
+        assert_eq!(next_tip(0, DONE, &Situation::default(), &charged), None);
+        for st in [&crate::i18n::KO, &crate::i18n::EN] {
+            for t in TIPS {
+                let h = t.hint(st, |_| "K".into());
+                assert!(h.at.is_none() && !h.text.is_empty() && !h.more.is_empty());
+            }
+        }
+        // 비트는 서로 겹치지 않는다(기록 하나에 셋).
+        let bits: u8 = TIPS.iter().map(|t| t.bit()).fold(0, |a, b| {
+            assert_eq!(a & b, 0);
+            a | b
+        });
+        assert_eq!(bits.count_ones(), TIPS.len() as u32);
+    }
+
     /// 패링은 막히지 않는다: 깨어 있는 적 곁에서 `PARRY_GIVE_UP`초를 못 하면 넘어간다(상도 받는다 — 해 본 것으로 친다).
     /// 적이 없는 동안은 세지 않는다.
     #[test]
@@ -384,8 +573,11 @@ mod tests {
         assert!(learn.hint(st, &ready, 0, key).is_some());
         let level = Tutor::new(6);
         assert_eq!(level.step(), Some(Step::Level));
-        assert_eq!(level.hint(st, &Facts { embers: 49, ..f }, 0, key), None);
-        assert!(level.hint(st, &Facts { embers: 50, ..f }, 0, key).is_some());
+        // 0209 T4: 잔불이 모자라도 판은 남는다 — "잔불을 모은다 n / 값"으로. 모이면 "쉼터에서 쉰다".
+        let short = level.hint(st, &Facts { embers: 49, ..f }, 0, key).unwrap();
+        assert_eq!((short.text, short.count), (st.tut_gather, Some((49, 50))));
+        let full = level.hint(st, &Facts { embers: 50, ..f }, 0, key).unwrap();
+        assert_eq!((full.text, full.count), (st.tut_rest, None));
         // 다 올린 판(값이 없다)은 지난 것.
         assert!(Step::Level.met(&Seen::default(), &Facts { cost: None, ..f }));
         // 몸의 걸음은 늘 보인다.
@@ -454,12 +646,15 @@ mod tests {
         for st in [&crate::i18n::KO, &crate::i18n::EN] {
             let mut t = Tutor::new(0);
             let h = t.hint(st, &f, 0, key).unwrap();
-            assert!((h.at, h.key.as_str(), h.count) == (0, "", None), "{h:?}");
+            assert!(
+                (h.at, h.key.as_str(), h.count) == (Some(0), "", None),
+                "{h:?}"
+            );
             t.at = 1;
             t.seen.hits = 9;
             let h = t.hint(st, &f, 0, key).unwrap();
             assert_eq!(h.key, format!("<{}>", Bind::Attack as usize));
-            assert_eq!((h.at, h.count), (1, Some((HITS, HITS))), "capped");
+            assert_eq!((h.at, h.count), (Some(1), Some((HITS, HITS))), "capped");
             assert!(!h.more.is_empty());
             // 터치: 버튼 이름이 비면 글만.
             let bare = t.hint(st, &f, 0, |_| String::new()).unwrap();

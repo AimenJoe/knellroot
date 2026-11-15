@@ -328,7 +328,7 @@ impl World {
         // 원거리 강공격(0056)을 모을 수 있나 — 떼는 순간 칸(마법)·볼트(쇠뇌) 하나를 쓴다.
         cx.can_charge_cast = match wpn.rb {
             Rb::Magic(_) => pl.ranged.mana >= 1.0,
-            Rb::Shot { .. } => pl.ranged.ammo >= 1,
+            Rb::Shot { heavy, .. } => pl.ranged.ammo >= heavy.max(1),
         };
         pl.since_spill = (pl.since_spill + dt).min(f32::MAX);
         cx.world_move = move_to_world(a.move_dir, cx.basis, pl.pos);
@@ -609,7 +609,8 @@ impl World {
             } else {
                 pl.beat.chain = 0;
                 pl.ranged.ammo -= 1;
-                if pl.ranged.ammo == 0 {
+                // 회피로 넣은 한 발을 장전 중에 쏘면 장전은 이어 간다(처음부터 다시 세지 않는다, 0210).
+                if pl.ranged.ammo == 0 && pl.ranged.reload <= 0.0 {
                     pl.ranged.reload = reload;
                 }
             }
@@ -807,9 +808,10 @@ impl World {
         // 떼면 모은 탄 — 칸·볼트 하나, 다 모았으면 무기 표의 `charged`, 덜 모았으면 약하게. 쏘는 동작의 뒷부분으로 이어진다.
         match wpn.rb {
             Rb::Magic(_) => pl.ranged.mana -= 1.0,
-            Rb::Shot { reload, .. } => {
-                pl.ranged.ammo -= 1;
-                if pl.ranged.ammo == 0 {
+            Rb::Shot { reload, heavy, .. } => {
+                // 모은 사격은 볼트 `heavy`발(0210 — 모으기를 잇달아 하면 장전이 곧 온다).
+                pl.ranged.ammo = pl.ranged.ammo.saturating_sub(heavy.max(1));
+                if pl.ranged.ammo == 0 && pl.ranged.reload <= 0.0 {
                     pl.ranged.reload = reload;
                 }
                 // 모은 사격은 강타 값(0117) — 이미 모았으니 막지 않고 0까지 쓴다(소울류).

@@ -125,6 +125,14 @@ pub const EN: Strings = Strings {
     tut_learn_d: "By the fire, what was forgotten returns — Skills tab",
     tut_skill: "Use what came back",
     tut_skill_d: "Then a breath — and it is ready again",
+    tut_gather: "Gather embers",
+    tut_gather_d: "What falls leaves embers behind — enough, and rise a step at a hearth",
+    tip_flask: "Drink from the lamp",
+    tip_flask_d: "When the body grows heavy, drink the flame — a hearth refills it",
+    tip_lock: "Lock on",
+    tip_lock_d: "Before something large, keep your eyes on it — press again to let go",
+    tip_charge: "Hold, then release",
+    tip_charge_d: "Hold attack to gather strength — let go the moment it is full for more",
     weapon_sword_d:
         "3-hit combo · charged wide slash · magic bolt. The plain blade most pilgrims carry",
     weapon_hammer_d:
@@ -132,7 +140,7 @@ pub const EN: Strings = Strings {
     weapon_staff_d:
         "Fast 4-hit combo · charged spin · piercing bolt. A pilgrim's light staff",
     weapon_crossbow_d:
-        "Grenades dropped at your feet · aimed shots (4 bolts) · dodge to reload. An old hunter's powder crossbow",
+        "Grenades dropped at your feet · aimed shots (4 bolts) · hold and release for a piercing shot (2 bolts) · dodge to reload. An old hunter's powder crossbow",
     weapon_fists_d: "3-hit combo · charged punch · magic bolt. With the weapon slot empty you fight bare-handed — light, and you must get close",
     slots_new: "New game",
     slots_load: "Continue",

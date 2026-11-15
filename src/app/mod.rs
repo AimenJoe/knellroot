@@ -127,6 +127,10 @@ pub struct App {
     pause_tab: flow::Tab,
     /// 튜토리얼(0167): 지난 걸음 수(기록 `Progress::tutorial`과 같은 값) + 이 판에서 본 것. 판에 붙는다.
     tutor: crate::tutorial::Tutor,
+    /// 떠 있는 상황 힌트와 남은 시간(0209 T2).
+    tip: Option<(crate::tutorial::Tip, f32)>,
+    /// 튜토리얼이 센 적의 공격 번호(0209 T3 — 예고마다 한 번 센다).
+    tell_seen: Vec<u32>,
     /// 종소리의 길 안내(0171): 문을 찾는 동안 가끔 우는 종의 시계 + 물결. 판에 붙는다(기록에 남지 않는다).
     knell: crate::knell::Knell,
     /// 깨어나는 첫 장면(0171)이 흐르는 중 — 새 기록의 첫 판에서 한 번(타이틀 바탕에서는 0초에 멈춰 있다: 엎드린 방랑자).
@@ -313,6 +317,8 @@ impl App {
             passage: None,
             pause_tab: flow::Tab::Status,
             tutor: crate::tutorial::Tutor::new(progress.tutorial),
+            tip: None,
+            tell_seen: Vec::new(),
             knell: crate::knell::Knell::default(),
             wake: (!progress.woke).then(crate::wake::Wake::default),
             fall: None,
@@ -382,6 +388,8 @@ impl App {
         self.fall = None;
         self.pause_tab = flow::Tab::Status;
         self.tutor = crate::tutorial::Tutor::new(self.progress.tutorial);
+        self.tip = None;
+        self.tell_seen.clear();
         self.knell = crate::knell::Knell::default();
         // 깨어나는 첫 장면(0171): 아직 본 적 없는 기록의 판은 그 장면으로 열린다(개발 창의 판은 아니다).
         self.wake = (!self.progress.woke && !self.dev_run_now()).then(crate::wake::Wake::default);

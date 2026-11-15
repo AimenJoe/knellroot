@@ -338,6 +338,7 @@ impl App {
         let (k, u) = (w.k, w.s);
         let lv = self.progress.level;
         let embers = self.world.embers;
+        let guide = edits && self.tutor_menu() == Some(flow::Tab::Status);
         let kk = tabs::K_KIND * k;
         // 묶음 머리글: 작은 글 + 가는 선.
         let n = LV_LINES.len();
@@ -379,6 +380,12 @@ impl App {
                 self.ui.edge(r, self.ui.u(1.0), ui::KEY_TEXT);
             }
             self.hits.push((r, Hit::Row(i)));
+            // 튜토리얼의 올리기 걸음(0209): 지금 올릴 수 있는 줄의 오른쪽 위 귀퉁이에 반짝임.
+            if let Row::Level(l) = what {
+                if guide && matches!(level_state(&lv, l, embers, edits), LevelState::Ready(_)) {
+                    self.ui.sparkle(vec2(r.x + r.w, r.y), u * 4.0);
+                }
+            }
             let x = PICK_X + 6.0;
             let y = row_top(i);
             let right = PICK_X + PICK_W - 6.0;
