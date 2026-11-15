@@ -222,6 +222,8 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("fist3", ("주먹 — 어퍼컷", "fists: uppercut")),
     ("fist_charge", ("주먹 — 차기 모으기", "fists: kick charge")),
     ("fist_heavy", ("주먹 — 앞차기", "fists: front kick")),
+    ("fist_dash", ("주먹 — 달리며 앞차기", "fists: running kick")),
+    ("parry_push", ("패링 성공 — 밀쳐내기", "parry: shove")),
     ("dodge_back", ("뒤로 뛰기(회피)", "back hop (dodge)")),
     ("land", ("내려서기", "land")),
     ("plunge", ("내려찍기", "plunge")),

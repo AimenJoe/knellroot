@@ -46,6 +46,8 @@ EXPECT = {
                  # 0198 넷째 묶음: 맨손 잽 둘(0.258)·어퍼컷(0.344)·차기 모으기·차기(0.464), 패링 막기·마법은 옛 길이 그대로.
                  "fist1": 0.26, "fist2": 0.26, "fist3": 0.34, "fist_charge": 0.3, "fist_heavy": 0.46, "parry": 0.3, "cast": 0.4,
                  "cast_charge": 0.3,
+                 # 0199: 맨손 달리기 앞차기 0.3, 패링 성공의 밀쳐내기 0.4.
+                 "fist_dash": 0.3, "parry_push": 0.4,
                  # 0158 G2 스킬 동작 — 길이 = 시동 + 이어짐 + 후딜(`skills.rs` 표의 바탕값).
                  "sk_whirl": 0.67, "sk_cut": 0.57, "sk_gather": 0.5, "sk_quake": 0.7, "sk_brace": 1.65, "sk_echo": 0.45,
                  "sk_throw": 0.53, "sk_embers": 0.55, "ult_upend": 1.0, "ult_flurry": 0.5, "ult_line": 0.9},

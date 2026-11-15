@@ -377,6 +377,10 @@ impl Renderer {
                             .advance(wdt, true, (speed / 4.0).clamp(0.6, 1.6) * k),
                     )
                 }
+                // 패링이 튕긴 뒤(0199): 서 있으면 막은 자리에서 밀쳐낸다(튕기면 월드가 곧장 서기로 돌린다 — 반격하라고).
+                PState::Idle if pl.parry.since < PARRY_PUSH_CLIP => {
+                    (&["parry_push", "idle"], pl.parry.since)
+                }
                 // 쇠뇌를 쏜 뒤(0197): 서 있으면 잠깐 겨눈 채(쏘기의 끝 자세).
                 PState::Idle if self.aim_hold > 0.0 => (&["xbow_shoot", "idle"], XBOW_HOLD_AT),
                 PState::Idle => match idle_pose {
@@ -919,6 +923,8 @@ pub(crate) const LAND_CLIP: f32 = 0.15;
 pub(crate) const PLUNGE_STRIKE: f32 = 0.29;
 /// 줍기·상자 열기 몸짓의 길이(초, 0196 — 앱이 이만큼 흐르면 그친다).
 pub const PICKUP_CLIP: f32 = 0.9;
+/// 패링 성공의 밀쳐내기 길이(초, 0199).
+pub(crate) const PARRY_PUSH_CLIP: f32 = 0.4;
 /// 장치 당기기 몸짓의 길이(초, 0197).
 pub const PULL_CLIP: f32 = 0.65;
 

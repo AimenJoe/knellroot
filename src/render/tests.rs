@@ -419,6 +419,7 @@ fn render_clip_lengths_match_the_wanderer_model() {
         ("jump", JUMP_CLIP),
         ("land", LAND_CLIP),
         ("pickup", PICKUP_CLIP),
+        ("parry_push", PARRY_PUSH_CLIP),
     ] {
         assert!((len(n) - want).abs() < 0.011, "{n}: {} vs {want}", len(n));
     }

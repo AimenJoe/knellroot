@@ -32,11 +32,11 @@ pub enum Sweep {
 /// 구간(시작 s, 길이 s): `tools/art/blender/wanderer_skin.py` `HIT_WINDOWS` 그대로(시험 `swing_windows_match_the_blender_table`) —
 /// 동작 시계는 타의 판정 시작이 이 시작에 오게 돈다(`clip_rate` — 맨손처럼 남의 동작을 빌린 타·대시 공격도 칼이 닿는 순간에 맞는다).
 /// 새 동작을 무기 표에 쓰면 여기에도 한 줄(시험 `every_weapon_motion_has_a_sweep`).
-pub const SWEEPS: [(&str, Sweep, (f32, f32)); 16] = [
+pub const SWEEPS: [(&str, Sweep, (f32, f32)); 17] = [
     ("attack", Sweep::LeftToRight, (0.08, 0.10)),
     ("attack2", Sweep::RightToLeft, (0.08, 0.10)),
     ("attack3", Sweep::LeftToRight, (0.10, 0.12)),
-    ("heavy", Sweep::Center, (0.06, 0.12)),
+    ("heavy", Sweep::LeftToRight, (0.06, 0.12)),
     ("hammer1", Sweep::RightToLeft, (0.14, 0.17)),
     ("hammer2", Sweep::Center, (0.16, 0.20)),
     ("hammer_slam", Sweep::Center, (0.08, 0.16)),
@@ -50,6 +50,7 @@ pub const SWEEPS: [(&str, Sweep, (f32, f32)); 16] = [
     ("fist2", Sweep::Center, (0.048, 0.06)),
     ("fist3", Sweep::Center, (0.064, 0.08)),
     ("fist_heavy", Sweep::Center, (0.048, 0.096)),
+    ("fist_dash", Sweep::Center, (0.056, 0.07)),
 ];
 
 /// 동작의 휘두르는 쪽(표에 없으면 가운데).
@@ -562,8 +563,8 @@ pub const WEAPONS: [Weapon; 5] = [
     Weapon {
         id: Id::Fists,
         combo: &FISTS_COMBO,
-        // 달려들며 한 방(어퍼컷).
-        dash: Some(hit(0.7, 0.8, 0.6, 2.0, 10, 1.0, "fist3")),
+        // 달려들며 앞차기(0199).
+        dash: Some(hit(0.7, 0.8, 0.6, 2.0, 10, 1.0, "fist_dash")),
         // 모아 치기: 검보다 짧고 빠르다, 피해 10(다 모으면 + `heavy.full bonus`).
         heavy: Some(Heavy {
             time: 0.8,
@@ -989,7 +990,7 @@ mod swing_tests {
                 // 0198: 맨손의 왼 잽은 왼손, 앞차기는 오른발이 친다.
                 let limb = match anim {
                     "fist1" => m.node("mixamorig:LeftHand"),
-                    "fist_heavy" => m.node("mixamorig:RightFoot"),
+                    "fist_heavy" | "fist_dash" => m.node("mixamorig:RightFoot"),
                     _ => None,
                 };
                 let r = clip_rate(anim, s0);
@@ -1087,8 +1088,8 @@ mod swing_tests {
             );
         }
         assert!(
-            rate(DASH) > 1.05,
-            "the dash borrows the third punch and plays it faster"
+            (rate(DASH) - 1.0).abs() < 0.02,
+            "the running kick is baked for the dash (0199)"
         );
         assert_eq!(clip_rate("idle", 0.1), 1.0);
     }

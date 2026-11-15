@@ -71,6 +71,7 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
     }
     for a in [
         "parry",
+        "parry_push",
         "dodge",
         "dodge_back",
         "jump",
