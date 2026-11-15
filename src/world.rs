@@ -274,23 +274,6 @@ pub enum Event {
     },
 }
 
-/// 무기의 버튼 길(0151, 사장 "원거리는 공격 버튼이 전부 평타인 거고 RB는 스페셜"): 어느 무기든 X = 평타, RB = 스페셜.
-/// 근접 무기는 그대로다(X 콤보 · RB 마법 탄). 원거리 무기는 평타가 사격이고 스페셜이 수류탄이라, 월드 안쪽의 이름
-/// (`attack` = 수류탄 던지기, `cast` = 사격 — 0048·0051의 자리)과 맞바꾼다. 쥐고 있음도 같이(X 꾹 = 모은 사격, RB 꾹 = 멀리 던지기).
-pub fn weapon_buttons(a: Actions, w: &weapons::Weapon) -> Actions {
-    if matches!(w.rb, Rb::Shot { .. }) {
-        Actions {
-            attack: a.cast,
-            attack_held: a.cast_held,
-            cast: a.attack,
-            cast_held: a.attack_held,
-            ..a
-        }
-    } else {
-        a
-    }
-}
-
 /// 금 간 땅(0051, 망치 여진): `left`초 뒤 둘레를 친다.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Crack {
@@ -1381,8 +1364,8 @@ impl World {
             jump: merged.jump && !via_jump,
             ..merged
         };
-        // 무기의 버튼 길(0151): X = 그 무기의 평타, RB = 그 무기의 스페셜.
-        let merged = weapon_buttons(merged, self.player.weapon.def());
+        // 무기의 버튼 길(0213 — 0151의 맞바꿈을 걷음, 사장 "쇠뇌는 rb로 발사하는게 맞겠어"): 어느 무기든 X = `attack`·RB = `cast`
+        // 그대로 — 쇠뇌는 RB = 사격(꾹 = 모은 사격), X = 수류탄(0048·0051의 자리로 돌아감).
         let a = &merged;
         self.time += dt;
         self.player.prev = self.player.pos;

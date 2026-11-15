@@ -7,7 +7,7 @@
 //! **상(0169)**: 몸의 걸음 넷(걷기·공격·회피·패링)을 마치면 기술 점수 하나를 받는다(`REWARD_POINTS` — 앱이 기록의 몫에 적는다).
 //! 새 판은 스킬도 점수도 없이 서는데(0166·0167) 잔불로 사는 첫 레벨은 한 판이 걸린다(0109·0123 "한 판 ≈ 한 레벨") — 첫 스킬을
 //! 그 뒤로 미루지 않으려고 튜토리얼이 준다. 레벨의 값은 건드리지 않는다. 그 뒤의 걸음은 쉬고 배우기 → 쓰기, 그리고 잔불이
-//! 첫 레벨 값만큼 모였을 때에야 뜨는 "한 단 올리기".
+//! 첫 레벨 값의 반쯤 모였을 때 뜨는 "한 단 올리기"(`GATHER_FROM`, 0213).
 //!
 //! 지난 걸음 수는 기록에 남는다(`save::key::TUTORIAL`) — 이어하면 그 걸음부터. 개발 창에서 시작한 판·놀이터에서는 돌지 않는다.
 
@@ -26,7 +26,7 @@ pub enum Step {
     Learn,
     /// 배운 스킬을 한 번 쓴다.
     Skill,
-    /// 쉼터 화로에서 쉬고 한 단을 올린다 — 잔불이 그 값만큼 모였을 때에야 뜬다(그 전에는 조용하다).
+    /// 쉼터 화로에서 쉬고 한 단을 올린다 — 잔불이 값의 반(`GATHER_FROM`)을 넘어야 뜬다("잔불을 모은다 n / 값"), 다 모이면 "쉰다".
     Level,
 }
 
@@ -58,6 +58,9 @@ pub const PARRY_GIVE_UP: f32 = 20.0;
 pub const FIGHT_RANGE: f32 = 10.0;
 /// 패링: 곁에서(`FIGHT_RANGE`) 시작한 적의 공격 예고를 이만큼 보면 넘어간다(0209 T3).
 pub const PARRY_TELLS: u32 = 3;
+/// 한 단 올리기 걸음이 뜨는 잔불의 몫(값에 대해, 0213): 스킬을 쓰자마자 "잔불을 모은다 0 / 40"이 오래 떠 있었다(사장 "잔불
+/// 모으는게 너무 일찍 나오고") — 반쯤 모였을 때 띄워 곧 닿을 목표로. 그 전에는 조용하다.
+pub const GATHER_FROM: f32 = 0.5;
 /// 걸음이 바뀐 뒤 힌트가 밝게 뜨는 시간(초).
 pub const FRESH_TIME: f32 = 1.2;
 
@@ -75,6 +78,8 @@ pub struct Seen {
     pub skills: u32,
     /// 다 모은 강타·모은 사격(0209 T2 — 모으기를 아직 모르면 한 번 알린다).
     pub charged: u32,
+    /// 등잔을 마셨다(0213 — 마셔 보기 전까지는 체력이 반 아래로 갈 때마다 등잔을 알린다).
+    pub gulps: u32,
 }
 
 /// 지금의 사실(앱이 기록·월드에서 모은다).
@@ -112,11 +117,14 @@ impl Step {
     }
 
     /// 이 걸음의 힌트를 지금 보이나 — 할 수 없는 일을 시키지 않는다: 배울 점수가 없으면 "배운다"를 띄우지 않는다.
-    /// 한 단 올리기는 잔불이 모자라도 뜬다 — "잔불을 모은다 n / 값"으로(0209 T4: 판이 사라지면 끝난 줄 알았다).
+    /// 한 단 올리기는 값의 반부터 뜬다 — "잔불을 모은다 n / 값"으로(0209 T4: 다 모일 때까지 숨으면 끝난 줄 알았다 · 0213:
+    /// 처음부터 띄우면 너무 일렀다).
     pub fn shown(self, f: &Facts) -> bool {
         match self {
             Step::Learn => f.can_learn,
-            Step::Level => f.cost.is_some(),
+            Step::Level => f
+                .cost
+                .is_some_and(|c| f.embers as f32 >= c as f32 * GATHER_FROM),
             _ => true,
         }
     }
@@ -281,13 +289,14 @@ impl Tip {
         1 << self as u8
     }
 
-    /// 이 힌트를 띄울 때인가. 몸의 걸음(걷기~패링) 동안은 그 판과 겹치지 않게 기다린다(`at` = 튜토리얼의 지난 걸음 수).
+    /// 이 힌트를 띄울 때인가. 몸의 걸음(걷기~패링) 동안은 그 판과 겹치지 않게 기다린다(`at` = 튜토리얼의 지난 걸음 수) —
+    /// 등잔만은 기다리지 않는다(0213, 사장 "물약 먹는 안내가 없음": 처음 크게 맞는 때가 바로 패링 걸음이다. 살아남는 일이 먼저).
     pub fn due(self, at: u8, now: &Situation, s: &Seen) -> bool {
-        if at < AFTER_BASICS {
+        if at < AFTER_BASICS && self != Tip::Flask {
             return false;
         }
         match self {
-            Tip::Flask => now.hp_low && now.has_flask,
+            Tip::Flask => now.hp_low && now.has_flask && s.gulps == 0,
             Tip::Lock => now.big_foe && !now.locked,
             Tip::Charge => s.hits >= CHARGE_TIP_HITS && s.charged == 0,
         }
@@ -296,7 +305,7 @@ impl Tip {
     /// 할 일을 했다 — 일찍 걷는다.
     pub fn done(self, now: &Situation, s: &Seen) -> bool {
         match self {
-            Tip::Flask => !now.hp_low,
+            Tip::Flask => !now.hp_low || s.gulps > 0,
             Tip::Lock => now.locked,
             Tip::Charge => s.charged > 0,
         }
@@ -457,12 +466,16 @@ mod tests {
             ..Situation::default()
         };
         let s = Seen::default();
+        // 0213: 등잔은 몸의 걸음 동안에도 — 처음 크게 맞는 때가 패링 걸음이다.
         assert_eq!(
             next_tip(0, AFTER_BASICS - 1, &low, &s),
-            None,
-            "not during the body steps"
+            Some(Tip::Flask),
+            "the lamp does not wait for the body steps"
         );
         assert_eq!(next_tip(0, AFTER_BASICS, &low, &s), Some(Tip::Flask));
+        let drank = Seen { gulps: 1, ..s };
+        assert_eq!(next_tip(0, DONE, &low, &drank), None, "drunk once — known");
+        assert!(Tip::Flask.done(&low, &drank), "drinking clears it");
         assert_eq!(
             next_tip(0, DONE, &low, &s),
             Some(Tip::Flask),
@@ -482,6 +495,11 @@ mod tests {
             big_foe: true,
             ..Situation::default()
         };
+        assert_eq!(
+            next_tip(0, AFTER_BASICS - 1, &big, &s),
+            None,
+            "the others wait for the body steps"
+        );
         assert_eq!(next_tip(0, DONE, &big, &s), Some(Tip::Lock));
         assert!(Tip::Lock.done(
             &Situation {
@@ -573,7 +591,11 @@ mod tests {
         assert!(learn.hint(st, &ready, 0, key).is_some());
         let level = Tutor::new(6);
         assert_eq!(level.step(), Some(Step::Level));
-        // 0209 T4: 잔불이 모자라도 판은 남는다 — "잔불을 모은다 n / 값"으로. 모이면 "쉼터에서 쉰다".
+        // 0213: 값의 반이 모이기 전에는 조용하다(스킬을 쓰자마자 "0 / 50"이 떠 있지 않게).
+        assert_eq!(level.hint(st, &Facts { embers: 24, ..f }, 0, key), None);
+        // 0209 T4: 반부터는 판이 남는다 — "잔불을 모은다 n / 값"으로. 모이면 "쉼터에서 쉰다".
+        let half = level.hint(st, &Facts { embers: 25, ..f }, 0, key).unwrap();
+        assert_eq!((half.text, half.count), (st.tut_gather, Some((25, 50))));
         let short = level.hint(st, &Facts { embers: 49, ..f }, 0, key).unwrap();
         assert_eq!((short.text, short.count), (st.tut_gather, Some((49, 50))));
         let full = level.hint(st, &Facts { embers: 50, ..f }, 0, key).unwrap();

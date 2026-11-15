@@ -205,14 +205,21 @@ impl World {
             None
         };
         // 마법 쏘는 쪽(0048): 조준 스틱 > 락온 대상 > `cast.range m` 안의 가장 가까운 적 > 바라보는 쪽.
+        // 쇠뇌(0213, 사장 "자동 조준 없애고")는 가까운 적을 찾지 않는다 — 조준(스틱·커서) > 락온 > 바라보는 쪽. 겨누는 것이 손의 일.
         let charging_cast = matches!(self.player.state, PState::CastCharge { .. });
         let cast_dir = if a.cast || charging_cast {
             let lock_dir = target.map(|tg| {
                 let d = vec3(tg.x - self.player.pos.x, 0.0, tg.z - self.player.pos.z);
                 d.normalize_or_zero()
             });
+            let seek = !matches!(self.player.weapon.def().rb, Rb::Shot { .. });
             aim.or(lock_dir.filter(|d| d.length_squared() > 0.5))
-                .or_else(|| nearest_in_reach(&self.enemies, self.player.pos, t[P::CastRange], None))
+                .or_else(|| {
+                    seek.then(|| {
+                        nearest_in_reach(&self.enemies, self.player.pos, t[P::CastRange], None)
+                    })
+                    .flatten()
+                })
                 .unwrap_or_else(|| self.player.facing_dir())
         } else {
             self.player.facing_dir()

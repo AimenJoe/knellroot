@@ -612,7 +612,8 @@ pub fn attack_icon(w: crate::weapons::Id) -> Kind {
         Id::Sword => Kind::Attack,
         Id::Hammer => Kind::Hammer,
         Id::Staff => Kind::Staff,
-        Id::Crossbow => Kind::Crossbow,
+        // 쇠뇌의 X는 수류탄(0213 — 사격은 RB, `cast_icon`).
+        Id::Crossbow => Kind::Bomb,
         Id::Fists => Kind::Fist,
     }
 }
@@ -645,10 +646,10 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
     }
 }
 
-/// RB 버튼의 그림(0151): 근접 무기 = 마법 탄의 별, 원거리 무기 = 수류탄.
+/// RB 버튼의 그림(0151 → 0213): 근접 무기 = 마법 탄의 별, 쇠뇌 = 쇠뇌(사격은 RB).
 pub fn cast_icon(w: crate::weapons::Id) -> Kind {
-    if w.def().grenade.is_some() {
-        Kind::Bomb
+    if matches!(w.def().rb, crate::weapons::Rb::Shot { .. }) {
+        Kind::Crossbow
     } else {
         Kind::Cast
     }
@@ -1609,7 +1610,8 @@ mod tests {
         press(&mut a, Kind::Ult);
         assert!(a.ult && !a.skill1);
         use crate::weapons::Id;
-        assert_eq!(cast_icon(Id::Crossbow), Kind::Bomb);
+        assert_eq!(cast_icon(Id::Crossbow), Kind::Crossbow);
+        assert_eq!(attack_icon(Id::Crossbow), Kind::Bomb);
         assert_eq!(cast_icon(Id::Sword), Kind::Cast);
     }
 
