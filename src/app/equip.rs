@@ -302,6 +302,7 @@ pub(super) fn weapon_numbers(
         mag,
         reload,
         time,
+        ..
     } = w.rb
     {
         let shot_dmg = bolt.damage + dmg + st.shot_dmg;

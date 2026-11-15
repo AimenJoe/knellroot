@@ -505,7 +505,7 @@ fn holding_rb_charges_a_stronger_magic_bolt() {
     assert!(!got[0].def.pierce);
 }
 
-/// 0056: 쇠뇌는 모은 사격 — 볼트 하나를 쓰고 꿰뚫는다. 볼트가 없으면 모으지 않는다.
+/// 0056: 쇠뇌는 모은 사격 — 볼트 둘(0210)을 쓰고 꿰뚫는다. 볼트가 없으면 모으지 않는다.
 #[test]
 fn the_crossbow_charges_a_piercing_shot() {
     let t = Tuning::default();
@@ -517,7 +517,8 @@ fn the_crossbow_charges_a_piercing_shot() {
     let mag = w.player.ranged.ammo;
     let got = charge_cast(&mut w, &t, full + past_perfect);
     assert!(got[0].def.pierce && got[0].def.damage == charged.damage);
-    assert_eq!(w.player.ranged.ammo, mag - 2);
+    // 톡 하나 + 모은 탄 둘(0210).
+    assert_eq!(w.player.ranged.ammo, mag - 3);
     // 딱 맞춰 떼기(0078): 다 모인 바로 뒤에 떼면 피해 +10(옛 +1) — 강타와 같은 규칙.
     let mut w = World::new("test", 40.0);
     w.set_weapon(weapons::Id::Crossbow);
@@ -796,5 +797,227 @@ fn a_forged_crossbow_stays_under_seven_tenths_of_the_sword_at_every_rank() {
             "+{rank}: crossbow {bow:.1}/s vs sword {sword:.1}/s"
         );
         assert!(sword > 0.0 && bow > 0.0);
+    }
+}
+
+/// 재는 도구(0210): 쇠뇌를 "실제로 쓰는 꼴"로 — 박자 사격·모은 사격(딱 맞춰 떼기)·빈 탄창에 회피 장전.
+/// 서서 쏘는 탐침(`weapon_dps_probe`)은 모은 사격(볼트 둘에 10 + 50·꿰뚫기·기력에 막히지 않음)을 안 쟀다.
+/// `cargo test plan_dps_probe -- --ignored --nocapture`
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Plan {
+    /// 박자에 맞춰 쏘기(`dps`의 beat).
+    Beat,
+    /// 쥐고 모아 딱 맞춰 떼기를 되풀이.
+    Charge,
+    /// 모으기 + 탄창이 비면 회피(한 발 장전).
+    ChargeDodge,
+    /// 박자 사격 + 탄창이 비면 회피.
+    BeatDodge,
+}
+
+fn dps_plan(id: weapons::Id, rank: u8, secs: f32, dist: f32, plan: Plan) -> (f32, f32) {
+    let t = Tuning::default();
+    let mut w = World::new("test", 40.0);
+    let mut f = crate::forge::Forged::default();
+    f.set(id, rank);
+    w.apply_stats(crate::stats::Stats::compute(&[f.mods(id)]), true);
+    w.set_weapon(id);
+    let hp0 = 1_000_000;
+    let i = mob_with(&mut w, vec3(0.0, 0.0, -dist), hp0);
+    let n = (secs / TICK_DT) as usize;
+    let mut starved = 0;
+    let mut released = false;
+    for _ in 0..n {
+        idle(&mut w);
+        w.enemies[i].pos = vec3(0.0, 0.0, -dist);
+        w.enemies[i].poise = 0.0;
+        w.player.pos = Vec3::ZERO;
+        if w.player.stamina < 1.0 {
+            starved += 1;
+        }
+        let pl = &w.player;
+        let empty = pl.ranged.ammo == 0 && matches!(pl.weapon.def().rb, Rb::Shot { .. });
+        let dodge = matches!(plan, Plan::ChargeDodge | Plan::BeatDodge)
+            && empty
+            && matches!(pl.state, PState::Idle);
+        let mut a = Actions {
+            dodge,
+            move_dir: if dodge { vec2(1.0, 0.0) } else { Vec2::ZERO },
+            ..Default::default()
+        };
+        match plan {
+            Plan::Beat | Plan::BeatDodge => {
+                let beat = pl.beat.period;
+                a.attack = beat <= 0.0 || pl.beat.since_swing >= beat - TICK_DT * 0.5;
+            }
+            Plan::Charge | Plan::ChargeDodge => {
+                // 근접은 강타(`Charging`), 쇠뇌는 모은 사격(`CastCharge`): 다 모인 뒤 한 틱 지나 뗀다(딱 맞춤 창 안).
+                let full = match pl.state {
+                    PState::CastCharge { t: e } => e >= t[P::CastCharge] + TICK_DT,
+                    PState::Charging { t: e } => {
+                        e >= t[P::HeavyCharge] * pl.weapon.def().heavy.map_or(1.0, |h| h.charge)
+                            + TICK_DT
+                    }
+                    _ => false,
+                };
+                if full || released {
+                    released = !released && full;
+                } else {
+                    a.attack = !matches!(
+                        pl.state,
+                        PState::Attack { .. }
+                            | PState::Cast { .. }
+                            | PState::Charging { .. }
+                            | PState::CastCharge { .. }
+                    );
+                    a.attack_held = true;
+                }
+            }
+        }
+        if dodge {
+            a.attack = false;
+            a.attack_held = false;
+        }
+        w.step(&a, &t);
+    }
+    (
+        (hp0 - w.enemies[i].hp) as f32 / secs,
+        starved as f32 / n as f32,
+    )
+}
+
+#[test]
+#[ignore]
+fn plan_dps_probe() {
+    for id in weapons::IDS {
+        let d = if id == weapons::Id::Crossbow {
+            8.0
+        } else {
+            1.2
+        };
+        for plan in [Plan::Beat, Plan::Charge, Plan::ChargeDodge, Plan::BeatDodge] {
+            for secs in [4.0, 20.0] {
+                for rank in [0, crate::forge::RANKS] {
+                    let (v, s) = dps_plan(id, rank, secs, d, plan);
+                    println!(
+                        "{id:?} +{rank} {plan:?} {secs}s: {v:.1}/s (기력 바닥 {:.0}%)",
+                        s * 100.0
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// 0210: 모은 사격은 볼트 둘 — 한 발만 남았으면 모으지 못한다(그 한 발은 그냥 쏜다).
+#[test]
+fn a_charged_bolt_spends_two_bolts_and_needs_two_to_charge() {
+    let t = Tuning::default();
+    let mut w = World::new("test", 40.0);
+    w.set_weapon(weapons::Id::Crossbow);
+    idle(&mut w);
+    let mag = w.mag_of(weapons::Id::Crossbow);
+    // 쥐고 있으면: 첫 발(하나) → 모으기 → 떼면 모은 탄(둘).
+    let hold = Actions {
+        attack: true,
+        attack_held: true,
+        ..Default::default()
+    };
+    w.step(&hold, &t);
+    let held = Actions {
+        attack_held: true,
+        ..Default::default()
+    };
+    let mut charged = false;
+    for _ in 0..120 {
+        w.step(&held, &t);
+        if matches!(w.player.state, PState::CastCharge { t: e } if e >= t[P::CastCharge] + TICK_DT)
+        {
+            charged = true;
+            break;
+        }
+    }
+    assert!(charged, "holding charges the shot");
+    w.step(&Actions::default(), &t);
+    assert_eq!(
+        w.player.ranged.ammo,
+        mag - 3,
+        "first bolt + two for the charged one"
+    );
+    // 한 발만 남기면 쥐어도 모으기에 들지 않는다.
+    w.player.ranged.ammo = 1;
+    w.player.state = PState::Idle;
+    w.player.beat.period = 0.0;
+    w.step(&hold, &t);
+    for _ in 0..120 {
+        w.step(&held, &t);
+        assert!(
+            !matches!(w.player.state, PState::CastCharge { .. }),
+            "one bolt cannot charge"
+        );
+    }
+}
+
+/// 0210: 장전 중 회피로 넣은 한 발을 쏴도 장전을 처음부터 다시 세지 않는다(회피 장전이 손해가 되지 않게).
+#[test]
+fn firing_a_dodge_loaded_bolt_does_not_restart_the_reload() {
+    let t = Tuning::default();
+    let mut w = World::new("test", 40.0);
+    w.set_weapon(weapons::Id::Crossbow);
+    idle(&mut w);
+    let Rb::Shot { reload, .. } = weapons::Id::Crossbow.def().rb else {
+        unreachable!()
+    };
+    w.player.ranged.ammo = 0;
+    w.player.ranged.reload = reload * 0.5;
+    w.step(
+        &Actions {
+            dodge: true,
+            move_dir: vec2(1.0, 0.0),
+            ..Default::default()
+        },
+        &t,
+    );
+    assert_eq!(w.player.ranged.ammo, 1, "a dodge loads one bolt");
+    for _ in 0..60 {
+        if matches!(w.player.state, PState::Idle) {
+            break;
+        }
+        w.step(&Actions::default(), &t);
+    }
+    let left = w.player.ranged.reload;
+    w.step(
+        &Actions {
+            attack: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    assert_eq!(w.player.ranged.ammo, 0);
+    assert!(
+        w.player.ranged.reload <= left && w.player.ranged.reload > 0.0,
+        "the reload keeps counting down: {left} -> {}",
+        w.player.ranged.reload
+    );
+}
+
+/// 0210(0173을 지킨다): 쇠뇌를 가장 세게 쓰는 꼴(모아 쏘기 되풀이·박자)도 오래 쏘면 검을 가장 세게 쓰는 꼴의 여덟 할 밑 — 어느 단에서나.
+/// 모은 사격이 볼트 하나에 50을 내고 기력에 막히지 않아 오래 35/초(검 23)이던 구멍을 막는다.
+#[test]
+fn the_crossbow_at_its_best_stays_under_the_sword_at_its_best() {
+    let best = |id: weapons::Id, rank: u8, d: f32| {
+        [Plan::Beat, Plan::Charge]
+            .into_iter()
+            .map(|p| dps_plan(id, rank, 20.0, d, p).0)
+            .fold(0.0, f32::max)
+    };
+    // 벼린 단마다(0180 — 같은 단끼리).
+    for rank in 0..=crate::forge::RANKS {
+        let bow = best(weapons::Id::Crossbow, rank, 8.0);
+        let sword = best(weapons::Id::Sword, rank, 1.2);
+        assert!(
+            bow < sword * 0.8,
+            "+{rank}: crossbow {bow:.1}/s vs sword {sword:.1}/s"
+        );
     }
 }
