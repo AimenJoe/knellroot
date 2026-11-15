@@ -44,6 +44,9 @@ pub(super) fn skill_text(id: sk::Id) -> (&'static str, &'static str) {
         sk::Id::Echo => (s.skill_echo, s.skill_echo_d),
         sk::Id::Throw => (s.skill_throw, s.skill_throw_d),
         sk::Id::Embers => (s.skill_embers, s.skill_embers_d),
+        sk::Id::Swallow => (s.skill_swallow, s.skill_swallow_d),
+        sk::Id::Bash => (s.skill_bash, s.skill_bash_d),
+        sk::Id::Roots => (s.skill_roots, s.skill_roots_d),
     }
 }
 
@@ -94,6 +97,12 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Throw, Pick::B) => (s.pick_throw_b, s.pick_throw_b_d),
         (sk::Id::Embers, Pick::A) => (s.pick_embers_a, s.pick_embers_a_d),
         (sk::Id::Embers, Pick::B) => (s.pick_embers_b, s.pick_embers_b_d),
+        (sk::Id::Swallow, Pick::A) => (s.pick_swallow_a, s.pick_swallow_a_d),
+        (sk::Id::Swallow, Pick::B) => (s.pick_swallow_b, s.pick_swallow_b_d),
+        (sk::Id::Bash, Pick::A) => (s.pick_bash_a, s.pick_bash_a_d),
+        (sk::Id::Bash, Pick::B) => (s.pick_bash_b, s.pick_bash_b_d),
+        (sk::Id::Roots, Pick::A) => (s.pick_roots_a, s.pick_roots_a_d),
+        (sk::Id::Roots, Pick::B) => (s.pick_roots_b, s.pick_roots_b_d),
     };
     (mark, name, desc)
 }
@@ -110,6 +119,9 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Echo => s.cap_echo,
         sk::Id::Throw => s.cap_throw,
         sk::Id::Embers => s.cap_embers,
+        sk::Id::Swallow => s.cap_swallow,
+        sk::Id::Bash => s.cap_bash,
+        sk::Id::Roots => s.cap_roots,
     }
 }
 
@@ -144,9 +156,9 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
                 Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. } => {
                     s.rk_radius
                 }
-                Form::Lane { .. } => s.rk_length,
-                Form::Pull { .. } | Form::Throw { .. } => s.rk_range,
-                Form::Cone { .. } => s.rk_arc,
+                Form::Lane { .. } | Form::Erupt { .. } => s.rk_length,
+                Form::Pull { .. } | Form::Throw { .. } | Form::Hop { .. } => s.rk_range,
+                Form::Cone { .. } | Form::Bash { .. } => s.rk_arc,
             };
             fill(t, &[&pct(sk::RANK4_SIZE)])
         }
@@ -1837,9 +1849,11 @@ mod tests {
         let measure = at(Entry::Key(crate::progression::Key::Measure));
         assert_eq!(walk(measure, 0, 1, false), measure);
         assert_eq!(walk(flurry, -1, 0, true), flurry);
-        // 0214: 큰 기술 줄 아래로 넷째 줄(패시브), 그 아래 맺음.
+        // 0214: 큰 기술 줄 아래로 넷째 줄(새 스킬 → 그 아래 패시브), 그 아래 맺음.
+        let swallow = at(Entry::Skill(Id::Swallow));
         let held = at(Entry::Cell(Cell::HeldBreath));
-        assert_eq!(walk(flurry, 0, 1, true), held);
+        assert_eq!(walk(flurry, 0, 1, true), swallow);
+        assert_eq!(walk(swallow, 0, 1, true), held);
         assert_eq!(walk(held, 0, 1, true), measure);
         assert_eq!(walk(measure, 0, -1, true), held);
         assert_eq!(

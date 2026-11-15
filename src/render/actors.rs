@@ -926,6 +926,8 @@ fn clip_period(form: &crate::skills::Form) -> Option<f32> {
     match *form {
         crate::skills::Form::Ring { gap, .. } => Some(gap),
         crate::skills::Form::Lane { time, .. } => Some(time),
+        // 제비걸음(0214): 걸음마다 찌름을 되풀이한다.
+        crate::skills::Form::Hop { gap, .. } => Some(gap),
         _ => None,
     }
 }

@@ -1480,9 +1480,12 @@ forge.sword=3
             },
             // 휘돌이 5·ㄴ, 가로지르기 3·ㄱ, 끌어모으기 2, 땅울림 1, 큰 기술 3 — 쓴 점수 5 + 3 + 2 + 1 + 2 = 13(레벨 15 안).
             board: Board {
-                rank: [5, 3, 2, 1, 0, 0, 0, 0],
+                rank: [5, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0],
                 pick: [
                     Pick::B,
+                    Pick::A,
+                    Pick::A,
+                    Pick::A,
                     Pick::A,
                     Pick::A,
                     Pick::A,
@@ -1540,7 +1543,7 @@ forge.sword=3
              core.warden=3\ncore.bellkeeper=1\nskill.1=gather\nskill.2=quake\n",
         ));
         assert_eq!(old.board, Board::default().with_starters().with_upend());
-        assert_eq!(old.board.rank, [1, 1, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(old.board.rank, [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         assert_eq!(old.board.ult, [1, 0, 0]);
         assert_eq!(old.ult, crate::skills::Ult::Upend);
         assert_eq!(
@@ -1577,7 +1580,7 @@ forge.sword=3
         // 0166과 0172 사이의 기록(스킬은 점수로 배우던 때 — 쟁반 뒤집기는 아직 값 없이 가졌다): 스킬은 모르고, 쟁반 뒤집기와
         // 그 몫만 지닌다. 남은 점수는 그대로 0.
         let mid = Progress::from_record(Record::parse("v=1\nmigrated.v06=1\ntut.step=2\n"));
-        assert_eq!((mid.board.rank, mid.board.ult), ([0; 8], [1, 0, 0]));
+        assert_eq!((mid.board.rank, mid.board.ult), ([0; 11], [1, 0, 0]));
         assert_eq!((mid.gift, mid.ult_gift), (0, 2));
         assert_eq!(mid.board.left(mid.skill_points()), 0);
         // 손댄 기록의 큰 몫은 둘에서 멈춘다.
@@ -1651,7 +1654,7 @@ forge.sword=3
             "{rich}skill.rank.quake=99\nskill.rank.whirl=0\nskill.rank.gather=x\nult.rank.upend=0\n\
              skill.pick.quake=zzz\nskill.pick.cut=b\nskill.1=quake\nskill.2=cut\n"
         )));
-        assert_eq!(odd.board.rank, [0, 0, 0, MAX_RANK, 0, 0, 0, 0]);
+        assert_eq!(odd.board.rank, [0, 0, 0, MAX_RANK, 0, 0, 0, 0, 0, 0, 0]);
         assert_eq!(odd.board.ult, [0, 0, 0], "0172: not given");
         assert_eq!(
             odd.board.pick,
@@ -1754,7 +1757,7 @@ forge.sword=3
             "lv.life=5\nlv.stamina=5\nlv.might=5\nskill.rank.whirl=5\nskill.pick.whirl=b\nskill.rank.cut=3\n\
              skill.pick.cut=a\nskill.rank.gather=2\nskill.rank.quake=1\nult.rank.upend=3\nskill.1=quake\nskill.2=gather\n",
         ));
-        assert_eq!(g1.board.rank, [5, 3, 2, 1, 0, 0, 0, 0]);
+        assert_eq!(g1.board.rank, [5, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0]);
         assert_eq!(g1.board.pick[..2], [Pick::B, Pick::A]);
         assert_eq!((g1.board.ult, g1.ult), ([3, 0, 0], Ult::Upend));
         assert_eq!(g1.skills.0, [Id::Quake, Id::Gather]);

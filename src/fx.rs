@@ -717,6 +717,31 @@ impl Fx {
                         false,
                     );
                 }
+                // 막아치기가 준비하던 공격을 끊었다(0214): 흰 별 + 금빛 고리 + 바깥으로 튀는 줄.
+                Event::Interrupt { at } => {
+                    self.star(at, 1.6, 0.12, WHITE_HOT);
+                    let g = vec3(at.x, w.ground_y(at), at.z);
+                    self.mark(g, MarkKind::Ring { r0: 0.3, r1: 1.3 }, 0.22, GOLD);
+                    self.ring_sparks(at, 0.4, 8, 6.5, 0.2, WHITE_HOT, GOLD);
+                }
+                // 뿌리 하나가 솟았다(0214): 흙이 튀고 먼지가 핀다(뿌리 자체는 렌더가 `skill_spikes`로).
+                Event::RootSpike { at } => {
+                    let g = vec3(at.x, w.ground_y(at), at.z);
+                    self.dust_ring(g, 0.3, 6, 2.6, 0.45, DUST);
+                    self.spray(
+                        g + Vec3::Y * 0.2,
+                        Vec3::Y,
+                        0.6,
+                        4,
+                        4.5,
+                        Shape::Dot,
+                        0.08,
+                        0.4,
+                        14.0,
+                        STONE,
+                        STONE,
+                    );
+                }
                 // 되찾는 살(0214): 등잔보다 작게 — 패링으로 되찾은 한 눈금.
                 Event::Mend { at } => {
                     self.rise(
@@ -1374,6 +1399,51 @@ impl Fx {
                         decor: false,
                     });
                 }
+            }
+            // 제비걸음(0214): 걸음마다 떠나는 자리의 흰 별 + 뛰어드는 쪽으로 짧은 금빛 띠 + 차이는 먼지.
+            (Sk::Swallow, Form::Hop { .. }) => {
+                self.star(g + Vec3::Y * 0.9, 1.2, 0.09, WHITE_HOT);
+                self.mark(
+                    g,
+                    MarkKind::Streak {
+                        dir,
+                        len: 2.2,
+                        half: 0.45,
+                    },
+                    0.35,
+                    GOLD,
+                );
+                self.dust_kick(g, -dir, 3, 0.4);
+            }
+            // 막아치기(0214): 내민 자리의 흰 별 + 짧은 부채꼴 충격파(민트) — 끊긴 적은 따로(`Interrupt`).
+            (Sk::Bash, Form::Bash { range, arc_deg, .. }) => {
+                self.star(g + dir * 0.9 + Vec3::Y * 0.9, 1.6, 0.1, WHITE_HOT);
+                self.mark(
+                    g,
+                    MarkKind::Shock {
+                        dir,
+                        r0: 0.5,
+                        r1: range,
+                        arc_deg,
+                    },
+                    0.2,
+                    MINT,
+                );
+            }
+            // 뿌리 솟기(0214): 뿌리가 솟을 길을 따라 먼저 달리는 땅의 금(호박빛) — 뿌리와 흙은 하나씩(`RootSpike`).
+            (Sk::Roots, Form::Erupt { len, .. }) => {
+                self.mark(
+                    g,
+                    MarkKind::Cracks {
+                        dir,
+                        r: len,
+                        n: 2,
+                        arc_deg: 8.0,
+                    },
+                    0.8,
+                    AMBER,
+                );
+                self.star(g + dir * 0.8 + Vec3::Y * 0.3, 1.3, 0.1, AMBER);
             }
             _ => {}
         }

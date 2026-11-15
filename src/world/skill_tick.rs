@@ -11,7 +11,8 @@ use super::player_tick::Ctx;
 use super::*;
 use crate::skills::{Cap, Eff, Form, Twist, FLURRY, LINE, UPEND};
 use crate::tuning::{
-    BLADE_CATCH, BLADE_HEIGHT, SKILL_DENIED_SHOW, SKILL_HITSTOP, ULT_HITSTOP, ULT_KILL_WINDOW,
+    BASH_CUT_STAGGER, BASH_PUSH, BLADE_CATCH, BLADE_HEIGHT, ERUPT_RING_MAX, HOP_DASH, HOP_EMPTY,
+    HOP_GAP, SKILL_DENIED_SHOW, SKILL_HITSTOP, SPIRE_DELAY, ULT_HITSTOP, ULT_KILL_WINDOW,
 };
 
 /// 곧 터질 "모인 자리"(끌어모으기 ㄱ): `left`초 뒤 `at` 둘레 `radius` m에 `damage`.
@@ -213,6 +214,12 @@ impl World {
             self.brace_caught.clear();
         }
         let pl = &mut self.player;
+        pl.skill.hop_home = pl.pos;
+        pl.skill.hop_from = pl.pos;
+        pl.skill.hop_to = pl.pos;
+        pl.skill.hop_first = None;
+        self.hop_seen.clear();
+        let pl = &mut self.player;
         pl.swings += 1;
         pl.facing = dir.x.atan2(dir.z);
         pl.state = PState::Skill {
@@ -251,6 +258,14 @@ impl World {
                     cx.aim.or(lock).unwrap_or(facing)
                 }
             }
+            // 제비걸음(0214): 첫 걸음의 쪽은 걸음마다 다시 정한다 — 처음 보는 쪽만(조준 > 락온 > 바라보는 쪽).
+            Form::Hop { .. } | Form::Erupt { .. } => cx.aim.or(lock).unwrap_or(facing),
+            // 뿌리 솟기·막아치기(0214): 조준 > 락온 > 닿는 거리의 가장 가까운 적 > 바라보는 쪽.
+            Form::Bash { range, .. } => cx
+                .aim
+                .or(lock)
+                .or_else(|| nearest_in_reach(&self.enemies, pl.pos, range + 1.0, None))
+                .unwrap_or(facing),
             Form::Pull { range, .. } | Form::Cone { range, .. } => {
                 let reach = range
                     + match d.twist {
@@ -451,6 +466,119 @@ impl World {
                             total: secs,
                             slow,
                         });
+                    }
+                }
+            }
+            // 제비걸음(0214): 걸음마다 가장 가까운 아직 안 벤 적(한 곳만 = 첫 적)에게 뛰어들어(`gap`의 앞 6할) 닿은 자리 둘레를 벤다.
+            // 돌아오는 걸음(ㄴ)은 다 벤 뒤 한 걸음 더 — 처음 자리로. 마지막 걸음(맺음)은 넓게·자세를 더.
+            Form::Hop {
+                range,
+                hops,
+                gap,
+                reach,
+            } => {
+                let home = matches!(d.twist, Some(Twist::HomeStep));
+                let steps = hops + home as u8;
+                for k in 0..steps {
+                    let start = s.startup + gap * k as f32;
+                    if crossed(start) {
+                        let back = k == hops;
+                        let to = if back {
+                            self.player.skill.hop_home
+                        } else {
+                            self.hop_target(range, matches!(d.twist, Some(Twist::Focus)), dir)
+                        };
+                        let pl = &mut self.player;
+                        let way = vec3(to.x - pl.pos.x, 0.0, to.z - pl.pos.z);
+                        if way.length_squared() > 1e-4 {
+                            pl.facing = way.x.atan2(way.z);
+                        }
+                        pl.skill.hop_from = pl.pos;
+                        pl.skill.hop_to = vec3(to.x, pl.pos.y, to.z);
+                        if !back {
+                            self.skill_ev.push(Event::Skill {
+                                id,
+                                at: self.player.pos,
+                                dir: way.normalize_or(dir),
+                            });
+                        }
+                    }
+                    if k < hops && crossed(start + gap * HOP_DASH) {
+                        // 걸음마다 새 타 번호 — 같은 적도 걸음마다 한 번씩.
+                        if k > 0 {
+                            self.player.swings += 1;
+                            swing = self.player.swings;
+                        }
+                        let last = k + 1 == hops;
+                        let (r, pk) = match d.cap {
+                            Some(Cap::Finale { reach, poise }) if last => (reach, poise),
+                            _ => (reach, 1.0),
+                        };
+                        self.skill_area(
+                            t,
+                            &Sweep {
+                                reach: r,
+                                cone: None,
+                                push: 0.0,
+                                stagger: 0.0,
+                                swing,
+                                damage: s.damage,
+                                poise: s.poise * pk,
+                                shatter: 1.0,
+                            },
+                        );
+                    }
+                }
+            }
+            // 막아치기(0214): 앞 부채꼴을 밀어친다 — 공격을 준비하던 적은 그 공격이 끊긴다.
+            Form::Bash {
+                range,
+                arc_deg,
+                stagger,
+                mult,
+            } => {
+                if crossed(s.startup) {
+                    self.skill_ev.push(Event::Skill { id, at, dir });
+                    self.skill_bash(t, &d, dir, swing, range, arc_deg, stagger, mult);
+                }
+            }
+            // 뿌리 솟기(0214): 뿌리가 `every`초마다 하나씩 솟는다 — 앞으로 줄지어(또는 ㄱ 둘레로 돌며). 한 번 쓸 때 적마다 한 번.
+            Form::Erupt {
+                len,
+                step,
+                every,
+                radius,
+                stagger,
+            } => {
+                let n = skills::erupt_count(len, step);
+                let circle = matches!(d.twist, Some(Twist::Circle));
+                let bind = match d.twist {
+                    Some(Twist::Bind { secs }) => secs,
+                    _ => 0.0,
+                };
+                for k in 0..n {
+                    if !crossed(s.startup + every * k as f32) {
+                        continue;
+                    }
+                    let spot = if circle {
+                        let a = dir.x.atan2(dir.z) + k as f32 / n as f32 * std::f32::consts::TAU;
+                        at + vec3(a.sin(), 0.0, a.cos()) * (len * 0.5).min(ERUPT_RING_MAX)
+                    } else {
+                        at + dir * (step * (k + 1) as f32)
+                    };
+                    if k == 0 {
+                        self.skill_ev.push(Event::Skill { id, at, dir });
+                    }
+                    self.skill_root(t, spot, radius, swing, &s, stagger, bind, k);
+                    if k + 1 == n {
+                        if let Some(Cap::Spire { radius, damage }) = d.cap {
+                            self.skill_bursts.push(Burst {
+                                at: spot,
+                                left: SPIRE_DELAY,
+                                radius,
+                                damage,
+                            });
+                        }
                     }
                 }
             }
@@ -765,12 +893,16 @@ impl World {
         for en in &mut self.enemies {
             en.slow = 1.0;
             en.snare = (en.snare - dt).max(0.0);
+            en.bind = (en.bind - dt).max(0.0);
             if en.boss || !en.active() {
                 continue;
             }
-            // 엉킨 뿌리(0214): 스킬에 맞은 적은 잠깐 느리게.
+            // 엉킨 뿌리(0214): 스킬에 맞은 적은 잠깐 느리게. 묶는 뿌리(뿌리 솟기 ㄴ)면 걷지 못한다.
             if en.snare > 0.0 {
                 en.slow = en.slow.min(crate::progression::cell::SNARE_SLOW);
+            }
+            if en.bind > 0.0 {
+                en.slow = 0.0;
             }
             for z in &self.skill_zones {
                 if z.holds(en.pos, en.radius) {
@@ -778,6 +910,10 @@ impl World {
                 }
             }
         }
+        for sp in &mut self.skill_spikes {
+            sp.age += dt;
+        }
+        self.skill_spikes.retain(|sp| sp.age < SPIKE_LIFE);
         self.tick_blades(t, dt);
         self.tick_fields(t, dt);
     }
@@ -1091,6 +1227,224 @@ impl World {
 
     /// 모인 자리가 터진다: 둘레의 깨어 있는 적에게 피해(밀지 않는다 — 모아 둔 것을 흩지 않게, 휘청도 없다).
     /// 스킬의 타라 게이지는 채우지 않고, 쓰러뜨리면 스킬 몫의 기세.
+    /// 제비걸음(0214)의 다음 걸음이 닿을 자리: `range` m 안의 가장 가까운 아직 안 벤 적(한 곳만이면 첫 적, 그 적이 없으면 가까운 적)의
+    /// 이쪽 앞 — 적이 없으면 `dir` 쪽으로 `HOP_EMPTY` m.
+    fn hop_target(&mut self, range: f32, focus: bool, dir: Vec3) -> Vec3 {
+        let p = self.player.pos;
+        let body = p.y + self.player.air;
+        let near = |en: &crate::enemy::Enemy| {
+            en.active()
+                && (en.pos.y - body).abs() <= HIT_DY
+                && vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z).length() - en.radius <= range
+        };
+        let first = self
+            .player
+            .skill
+            .hop_first
+            .filter(|&i| focus && self.enemies.get(i).is_some_and(near));
+        let pick = first.or_else(|| {
+            let fresh = |i: &usize| !self.hop_seen.contains(i);
+            let by_dist = |i: &usize| {
+                let en = &self.enemies[*i];
+                vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z).length()
+            };
+            let all: Vec<usize> = (0..self.enemies.len())
+                .filter(|&i| near(&self.enemies[i]))
+                .collect();
+            all.iter()
+                .copied()
+                .filter(fresh)
+                .min_by(|a, b| by_dist(a).total_cmp(&by_dist(b)))
+                .or_else(|| {
+                    all.iter()
+                        .copied()
+                        .min_by(|a, b| by_dist(a).total_cmp(&by_dist(b)))
+                })
+        });
+        match pick {
+            Some(i) => {
+                self.hop_seen.push(i);
+                if self.player.skill.hop_first.is_none() {
+                    self.player.skill.hop_first = Some(i);
+                }
+                let en = &self.enemies[i];
+                let way = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+                let d = way.length();
+                // 적의 이쪽 앞에 선다(몸이 겹치지 않게).
+                p + way.normalize_or(dir) * (d - en.radius - PLAYER_RADIUS - HOP_GAP).max(0.0)
+            }
+            None => p + dir * HOP_EMPTY,
+        }
+    }
+
+    /// 막아치기(0214): 앞 부채꼴의 깨어 있는 적을 한 번씩 친다. 공격을 준비하던(예고 중인) 적은 그 공격이 끊기고(더 길게 휘청)
+    /// 자세 피해 × `mult` — 드러난 틈(ㄴ)이면 한동안 더 다치고, 무너뜨림(맺음)이면 자세가 곧바로 깨진다. 보스는 끊기지 않고 자세
+    /// 피해만 더 받는다. 나머지는 `stagger`초 휘청(보스는 아니다).
+    #[allow(clippy::too_many_arguments)]
+    fn skill_bash(
+        &mut self,
+        t: &Tuning,
+        d: &Eff,
+        dir: Vec3,
+        swing: u32,
+        range: f32,
+        arc_deg: f32,
+        stagger: f32,
+        mult: f32,
+    ) {
+        let mut ev = std::mem::take(&mut self.skill_ev);
+        let p = self.player.pos;
+        let body = p.y + self.player.air;
+        let half = (arc_deg * 0.5).to_radians().cos();
+        let snare = self.snare_secs();
+        let poise_k = self.stats.poise;
+        let mut n = 0;
+        for en in &mut self.enemies {
+            if !en.active() || en.hit_by == swing || (en.pos.y - body).abs() > HIT_DY {
+                continue;
+            }
+            let dv = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+            if dv.length() - en.radius > range || dv.normalize_or(dir).dot(dir) < half {
+                continue;
+            }
+            en.hit_by = swing;
+            n += 1;
+            if !en.boss {
+                en.snare = en.snare.max(snare);
+            }
+            let at = en.pos + Vec3::Y * en.height * 0.6;
+            let winding = en.telegraph().is_some() && !en.rising();
+            let crit = en.exposed > 0.0;
+            en.hp -= hurt_by(
+                en,
+                self.stats.dmg + d.skill.damage,
+                crit,
+                self.stats.opened_dmg,
+                t,
+            );
+            if crit {
+                en.exposed = 0.0;
+                ev.push(Event::Crit { at });
+            }
+            en.hurt = 0.15;
+            en.knock =
+                dv.normalize_or(dir) * BASH_PUSH * KNOCK_DECAY * if en.boss { 0.25 } else { 1.0 };
+            ev.push(Event::Hit { at });
+            let pk = if winding { mult } else { 1.0 };
+            add_poise(en, d.skill.poise * poise_k * pk, None, t, &mut ev);
+            if en.hp <= 0 {
+                en.state = EState::Dead;
+                self.kills += 1;
+                ev.push(Event::EnemyDown { at: en.pos });
+                continue;
+            }
+            if winding && !en.boss {
+                // 끊는다: 준비하던 공격은 나가지 않고 더 길게 휘청인다.
+                en.state = EState::Stagger {
+                    t: 0.0,
+                    dur: stagger * BASH_CUT_STAGGER,
+                };
+                ev.push(Event::Interrupt { at });
+                if let Some(Twist::Expose { secs, mult }) = d.twist {
+                    en.frail = en.frail.max(secs);
+                    en.frail_mult = mult;
+                }
+                if matches!(d.cap, Some(Cap::Break)) {
+                    add_poise(en, poise_max(en, t), None, t, &mut ev);
+                }
+            } else if !en.boss && !en.rising() && !matches!(en.state, EState::Stagger { .. }) {
+                en.state = EState::Stagger {
+                    t: 0.0,
+                    dur: stagger,
+                };
+            }
+        }
+        if n > 0 {
+            self.skill_hit_tick = true;
+            self.hitstop = self.hitstop.max(t[P::Hitstop] * SKILL_HITSTOP);
+        }
+        self.skill_ev = ev;
+    }
+
+    /// 뿌리 솟기(0214)의 뿌리 하나: `spot` 둘레 `radius` m의 깨어 있는 적을 한 번씩(이번 스킬에 아직 안 맞은 적만) 찌르고 휘청이게,
+    /// 묶는 뿌리(ㄴ)면 `bind`초 묶는다(보스는 휘청·묶임 없음). 솟은 뿌리는 그림으로 남는다(`skill_spikes`).
+    #[allow(clippy::too_many_arguments)]
+    fn skill_root(
+        &mut self,
+        t: &Tuning,
+        spot: Vec3,
+        radius: f32,
+        swing: u32,
+        s: &skills::Skill,
+        stagger: f32,
+        bind: f32,
+        k: u8,
+    ) {
+        let ground = self.ground.as_ref().map_or(spot.y, |g| g.height(spot));
+        let at = vec3(spot.x, ground, spot.z);
+        let side = if k.is_multiple_of(2) { 1.0 } else { -1.0 };
+        self.skill_spikes.push(Spike {
+            pos: at,
+            age: 0.0,
+            lean: vec3(side * 0.12, 0.0, 0.05),
+        });
+        let mut ev = std::mem::take(&mut self.skill_ev);
+        ev.push(Event::RootSpike { at });
+        let snare = self.snare_secs();
+        let poise_k = self.stats.poise;
+        let mut n = 0;
+        for en in &mut self.enemies {
+            if !en.active() || en.hit_by == swing || (en.pos.y - at.y).abs() > HIT_DY {
+                continue;
+            }
+            let dv = vec3(en.pos.x - at.x, 0.0, en.pos.z - at.z);
+            if dv.length() - en.radius > radius {
+                continue;
+            }
+            en.hit_by = swing;
+            n += 1;
+            if !en.boss {
+                en.snare = en.snare.max(snare);
+                en.bind = en.bind.max(bind);
+            }
+            let hit_at = en.pos + Vec3::Y * en.height * 0.6;
+            let crit = en.exposed > 0.0;
+            en.hp -= hurt_by(
+                en,
+                self.stats.dmg + s.damage,
+                crit,
+                self.stats.opened_dmg,
+                t,
+            );
+            if crit {
+                en.exposed = 0.0;
+                ev.push(Event::Crit { at: hit_at });
+            }
+            en.hurt = 0.15;
+            ev.push(Event::Hit { at: hit_at });
+            add_poise(en, s.poise * poise_k, None, t, &mut ev);
+            if en.hp <= 0 {
+                en.state = EState::Dead;
+                self.kills += 1;
+                ev.push(Event::EnemyDown { at: en.pos });
+            } else if stagger > 0.0
+                && !en.boss
+                && !en.rising()
+                && !matches!(en.state, EState::Stagger { .. })
+            {
+                en.state = EState::Stagger {
+                    t: 0.0,
+                    dur: stagger,
+                };
+            }
+        }
+        if n > 0 {
+            self.skill_hit_tick = true;
+            self.hitstop = self.hitstop.max(t[P::Hitstop] * SKILL_HITSTOP);
+        }
+        self.skill_ev = ev;
+    }
+
     fn skill_burst(&mut self, t: &Tuning, b: Burst) {
         let mut ev = std::mem::take(&mut self.skill_ev);
         let snare = self.snare_secs();
@@ -2580,6 +2934,10 @@ mod tests {
                 if id == Sk::Gather {
                     assert!(flat(w.enemies[0].pos, boss_was) < 0.05, "{tag}: pulled");
                     assert_eq!(w.enemies[0].hp, boss_hp, "{tag}: gather alone does no harm");
+                } else if id == Sk::Swallow {
+                    // 제비걸음(0214)은 방랑자가 뛰어든다 — 보스가 처음 자리에서 끌려오지 않았는지만.
+                    let moved = flat(w.enemies[0].pos, Vec3::ZERO);
+                    assert!(moved > was - 0.6, "{tag}: drawn in ({was} -> {moved})");
                 } else if !(id == Sk::Quake && pick == Pick::A) {
                     assert!(now > was - 0.6, "{tag}: drawn in ({was} -> {now})");
                 }
@@ -3402,5 +3760,166 @@ mod tests {
                 assert_eq!(g, i == want, "{great:?}");
             }
         }
+    }
+
+    // ---- 0214 넷째 줄: 제비걸음·막아치기·뿌리 솟기 ----
+
+    /// 스킬이 다 끝날 때까지 돈다(적은 멈춘 채).
+    fn finish(w: &mut World, t: &Tuning, slot: usize) -> Vec<Event> {
+        let mut ev = w.step(&skill(slot), t);
+        for _ in 0..120 {
+            still_keep(w);
+            ev.extend(w.step(&Actions::default(), t));
+            if !matches!(w.player.state, PState::Skill { .. }) {
+                break;
+            }
+        }
+        ev
+    }
+
+    /// 체력은 두고 멈춰 세운다.
+    fn still_keep(w: &mut World) {
+        for e in &mut w.enemies {
+            if e.active() && !matches!(e.state, EState::Stagger { .. }) {
+                e.state = EState::Recover { t: -1000.0 };
+            }
+        }
+    }
+
+    /// 제비걸음: 6 m 안의 적 셋에게 차례로 뛰어들어 한 번씩 벤다 — 방랑자는 마지막 적 곁에 선다. 돌아오는 걸음(ㄴ)이면 처음 자리로.
+    #[test]
+    fn swallow_step_darts_to_each_foe_in_turn() {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Swallow, 1, Pick::A);
+        for p in [
+            vec3(0.0, 0.0, -3.0),
+            vec3(3.0, 0.0, -4.0),
+            vec3(-3.0, 0.0, -5.0),
+        ] {
+            w.spawn_mob(p);
+        }
+        still(&mut w);
+        let p0 = w.player.pos;
+        finish(&mut w, &t, 0);
+        let hit: Vec<bool> = w.enemies.iter().map(|e| e.hp < 90).collect();
+        assert_eq!(hit, [true, true, true], "every foe once");
+        assert!(
+            flat(w.player.pos, p0) > 2.0,
+            "the wanderer moved: {:?}",
+            w.player.pos
+        );
+        // 한 곳만(ㄱ — 3단): 첫 적만 거듭.
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Swallow, 3, Pick::A);
+        w.spawn_mob(vec3(0.0, 0.0, -3.0));
+        w.spawn_mob(vec3(4.0, 0.0, -3.0));
+        still(&mut w);
+        finish(&mut w, &t, 0);
+        let (a, b) = (90 - w.enemies[0].hp, 90 - w.enemies[1].hp);
+        assert!(
+            a > b * 2,
+            "focus cuts the first again and again: {a} vs {b}"
+        );
+        // 돌아오는 걸음(ㄴ): 끝에 처음 자리로.
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Swallow, 3, Pick::B);
+        w.spawn_mob(vec3(0.0, 0.0, -4.0));
+        still(&mut w);
+        let p0 = w.player.pos;
+        finish(&mut w, &t, 0);
+        assert!(
+            flat(w.player.pos, p0) < 0.6,
+            "home again: {:?}",
+            w.player.pos
+        );
+    }
+
+    /// 막아치기: 공격을 준비하던 적은 그 공격이 끊기고(휘청) 자세 피해를 더 받는다 — 서 있는 적은 그냥 맞는다. 보스는 끊기지 않는다.
+    /// 무너뜨림(맺음)이면 끊긴 적의 자세가 곧바로 깨진다.
+    #[test]
+    fn bash_cuts_off_a_winding_attack_but_not_a_boss() {
+        let run = |rank: u8, boss: bool| {
+            let (mut w, t) = world();
+            wear(&mut w, Sk::Bash, rank, Pick::A);
+            if boss {
+                w.spawn_boss(vec3(0.0, 0.0, -2.0));
+            } else {
+                w.spawn_mob(vec3(0.0, 0.0, -1.8));
+            }
+            w.spawn_mob(vec3(0.8, 0.0, -1.8));
+            still(&mut w);
+            let en = &mut w.enemies[0];
+            en.facing = 0.0;
+            en.atk = Atk::Smash;
+            en.state = EState::Tele { t: 0.0 };
+            let ev = w.step(&skill(0), &t);
+            let mut ev = ev;
+            for _ in 0..30 {
+                ev.extend(w.step(&Actions::default(), &t));
+            }
+            let cut = ev
+                .iter()
+                .filter(|e| matches!(e, Event::Interrupt { .. }))
+                .count();
+            (w, t, cut)
+        };
+        let (w, t, cut) = run(1, false);
+        assert_eq!(cut, 1, "only the winding foe is cut off");
+        assert!(
+            w.enemies[0].poise > w.enemies[1].poise * 2.0,
+            "more posture damage"
+        );
+        assert!(w.enemies[1].hp < 90, "the other is simply hit");
+        let _ = t;
+        let (w, _, cut) = run(1, true);
+        assert_eq!(cut, 0, "a boss is not cut off");
+        assert!(!matches!(w.enemies[0].state, EState::Stagger { .. }));
+        let (w, t, _) = run(5, false);
+        assert!(
+            w.enemies[0].broken > 0.0 || w.enemies[0].poise >= poise_max(&w.enemies[0], &t) - 1e-3
+        );
+    }
+
+    /// 뿌리 솟기: 앞 줄의 적은 한 번씩 찔리고 휘청인다, 옆의 적은 아니다. 묶는 뿌리(ㄴ)면 묶여 걷지 못한다. 솟은 뿌리는 그림으로 남았다 사라진다.
+    #[test]
+    fn root_eruption_runs_ahead_and_binding_roots_hold() {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Roots, 1, Pick::A);
+        w.spawn_mob(vec3(0.0, 0.0, -2.0));
+        w.spawn_mob(vec3(0.0, 0.0, -6.0));
+        w.spawn_mob(vec3(5.0, 0.0, 0.0));
+        still(&mut w);
+        let ev = finish(&mut w, &t, 0);
+        assert!(
+            w.enemies[0].hp < 90 && w.enemies[1].hp < 90,
+            "the line ahead"
+        );
+        assert_eq!(w.enemies[2].hp, 90, "not the one beside");
+        let spikes = ev
+            .iter()
+            .filter(|e| matches!(e, Event::RootSpike { .. }))
+            .count();
+        assert_eq!(spikes as u8, skills::erupt_count(7.0, 1.0));
+        assert!(!w.skill_spikes.is_empty());
+        for _ in 0..90 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(w.skill_spikes.is_empty(), "the roots sink back");
+        // 묶는 뿌리(ㄴ — 3단): 맞은 잡몹은 묶인다.
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Roots, 3, Pick::B);
+        w.spawn_mob(vec3(0.0, 0.0, -3.0));
+        still(&mut w);
+        finish(&mut w, &t, 0);
+        assert!(w.enemies[0].bind > 0.0);
+        w.step(&Actions::default(), &t);
+        assert_eq!(w.enemies[0].slow, 0.0, "held in place");
+        // 둘레로(ㄱ): 옆의 적도 찔린다.
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Roots, 3, Pick::A);
+        w.spawn_mob(vec3(2.6, 0.0, 0.0));
+        still(&mut w);
+        finish(&mut w, &t, 0);
+        assert!(w.enemies[0].hp < 90, "the ring reaches beside");
     }
 }

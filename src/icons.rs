@@ -513,6 +513,9 @@ mod tests {
             touch::Kind::Flurry,
             touch::Kind::Line,
             touch::Kind::Bomb,
+            touch::Kind::Swallow,
+            touch::Kind::Bash,
+            touch::Kind::Roots,
         ];
         let others: Vec<(String, Vec<bool>)> = touch_kinds
             .iter()

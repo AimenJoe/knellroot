@@ -116,6 +116,16 @@ pub const ULT_HITSTOP: f32 = 3.0;
 pub const SKILL_DENIED_SHOW: f32 = 0.5;
 pub const ULT_KILL_WINDOW: f32 = 1.5;
 pub const ULT_SLAM_DAMAGE: i32 = 20;
+/// 제비걸음(0214): 걸음의 앞 이만큼(몫)이 뛰는 걸음(그 끝에 벤다), 적의 몸에서 이만큼(m) 앞에 선다, 적이 없으면 이만큼(m) 앞으로.
+pub const HOP_DASH: f32 = 0.6;
+pub const HOP_GAP: f32 = 0.5;
+pub const HOP_EMPTY: f32 = 2.5;
+/// 막아치기(0214): 맞은 적을 미는 거리(m), 끊긴 적의 휘청 배.
+pub const BASH_PUSH: f32 = 1.2;
+pub const BASH_CUT_STAGGER: f32 = 2.0;
+/// 뿌리 솟기(0214): 둘레로(ㄱ)의 반지름 상한(m), 마지막 가시가 터지기까지(초).
+pub const ERUPT_RING_MAX: f32 = 3.0;
+pub const SPIRE_DELAY: f32 = 0.12;
 /// 던지기(0158 G2): 던진 것이 나는 높이(m — 가슴), 돌아와 손에 잡히는 거리(m).
 pub const BLADE_HEIGHT: f32 = 1.0;
 pub const BLADE_CATCH: f32 = 0.5;

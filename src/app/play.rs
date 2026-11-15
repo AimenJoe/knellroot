@@ -386,7 +386,8 @@ impl App {
                 Event::Ult { .. } | Event::LineCut { .. } => SHAKE_ROUSE,
                 // 0158 G2: 터지는 것은 내려찍기만큼, 받아냄·울림·되돎은 가볍게, 불티의 타·손에 돌아옴·몰아치기의 시작은 조용히.
                 Event::ThrowBoom { .. } => SHAKE_PLUNGE,
-                Event::Soak { .. } | Event::EchoRing { .. } => SHAKE_HIT,
+                Event::Soak { .. } | Event::EchoRing { .. } | Event::Interrupt { .. } => SHAKE_HIT,
+                Event::RootSpike { .. } => 0.0,
                 Event::ThrowTurn { .. }
                 | Event::ThrowBack { .. }
                 | Event::FieldPulse { .. }
@@ -969,7 +970,14 @@ impl App {
                         Sk::Brace => Id::Thwack,
                         Sk::Echo => Id::Beat,
                         Sk::Embers => Id::Ember,
-                        Sk::Whirl | Sk::Cut | Sk::Gather | Sk::Quake | Sk::Throw => Id::Swing,
+                        Sk::Bash => Id::Thwack,
+                        Sk::Whirl
+                        | Sk::Cut
+                        | Sk::Gather
+                        | Sk::Quake
+                        | Sk::Throw
+                        | Sk::Swallow
+                        | Sk::Roots => Id::Swing,
                     }
                 }
                 Event::Skill { id, .. } => {
@@ -981,6 +989,9 @@ impl App {
                         Sk::Quake => Id::Wake,
                         Sk::Echo => Id::Beat2,
                         Sk::Embers => Id::Ember,
+                        Sk::Swallow => Id::Dodge,
+                        Sk::Bash => Id::Parry,
+                        Sk::Roots => Id::Wake,
                     }
                 }
                 Event::SkillDenied => Id::Deny,
@@ -989,7 +1000,7 @@ impl App {
                 Event::UltReady => Id::Beat3,
                 // 0158 G2(새 소리 파일 없이 있는 것을 겹친다 — 스킬마다 다른 짝): 받아냄 = 쇳소리, 울림 = 가운데 종,
                 // 되돎 = 휘두름, 터짐·한 줄기 = 타격, 손에 돌아옴 = 낮은 종, 불티의 타 = 잔불 소리, 몰아치기 = 가장 높은 종.
-                Event::Soak { .. } => Id::Parry,
+                Event::Soak { .. } | Event::Interrupt { .. } => Id::Parry,
                 Event::EchoRing { .. } => Id::Beat2,
                 Event::ThrowTurn { .. } => Id::Swing,
                 Event::ThrowBoom { .. } | Event::LineCut { .. } => Id::Hit,
