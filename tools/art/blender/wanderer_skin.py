@@ -41,6 +41,16 @@ EDGE_SMOOTH = 6  # 앞뒤 프레임(100fps) — 손 속도를 고르게
 # 지금은 비어 있다 — 숙였던 Combat_Stance 대신 곧게 선 Idle_02를 쓴다(그때는 {"idle": (8.0, 5.0)}, 앞 23°·옆 18° → 8°·5°).
 UPRIGHT = {}
 SPINE = ("mixamorig:Spine", "mixamorig:Spine1", "mixamorig:Spine2")
+# 판정 구간(초 — 시작, 길이): 게임의 `world::hit_times`·`heavy_times`(랩 평타·강타 시간 × 무기 표의 `time`)와 같은 값.
+# 콤보·돌기 동작의 가운데를 잘라 와서 판정 순간에 몸이 옆·뒤를 보던 것(지팡이 둘째·셋째 타는 엉덩이가 뒤)을, 이 구간 동안 몸 전체를 돌려
+# 주먹(= 칼)이 정면을 지나게 맞춘다(`face_hit` — 시작·끝은 원본 방향 그대로, 사이를 매끄럽게). 판정·초승달은 늘 정면 부채꼴이다.
+# 값이 게임과 어긋나면 `weapons::tests`의 칼끝 시험이 잡는다.
+HIT_WINDOWS = {
+    "attack": (0.08, 0.10), "attack2": (0.08, 0.10), "attack3": (0.10, 0.12), "heavy": (0.06, 0.12),
+    "hammer1": (0.14, 0.17), "hammer2": (0.16, 0.20), "hammer_slam": (0.08, 0.16),
+    "staff1": (0.06, 0.07), "staff2": (0.06, 0.07), "staff3": (0.06, 0.08), "staff4": (0.10, 0.13),
+    "staff_release": (0.05, 0.11),
+}
 
 # (게임 이름, 원본, 앵커[(게임 초, 원본 프레임)] 또는 ("loop", 시작, 끝, 길이) 또는 ("hit", 시작, 봉우리 찾기 (a, b), 끝, 길이, 게임의 순간)).
 # 옛 동작 길이·순간은 옛 wanderer.glb에서 잰 값(오른손 속도 봉우리).
@@ -366,14 +376,15 @@ def sample(arm, src, anchors, upright=None):
         corr = (fwd, side)
         print(f"[skin] {src}: lean fwd/side {math.degrees(sum(b[0] for b in before) / len(before)):.0f}/"
               f"{math.degrees(sum(b[1] for b in before) / len(before)):.0f} -> {got[0]:.0f}/{got[1]:.0f}")
-    poses, hips = [], []
+    poses, hips, hands = [], [], []
     for f in times:
         go(f)
         if corr is not None:
             uprighten(arm, *corr)
         poses.append({pb.name: pb.matrix_basis.decompose() for pb in arm.pose.bones if pb.name not in ("lamp", "weapon")})
         hips.append(arm.pose.bones["mixamorig:Hips"].head.copy())
-    return n, poses, hips
+        hands.append((arm.pose.bones[HAND_R].head.copy(), arm.pose.bones["mixamorig:RightArm"].head.copy()))
+    return n, poses, hips, hands
 
 
 def strip_travel(arm, poses, hips, loop):
@@ -447,6 +458,50 @@ def moving_bones(arm, body):
                 keep.add(p.name)
                 p = p.parent
     return keep
+
+
+BLADE_REACH = 0.5  # 칼끝 어림: 주먹에서 `weapon_pass`의 날 방향으로 이만큼(뼈대 단위)
+
+
+def hand_yaw(hip, hand):
+    """칼끝이 몸 둘레 어느 쪽인가(라디안, 정면 0 · 왼쪽 +, 뼈대 공간 — 앞 = −Y, 왼쪽 = +X).
+    `hand` = (주먹, 어깨) — 칼끝 = 주먹 + 날 방향(`weapon_pass`와 같은 셈) × `BLADE_REACH`."""
+    fist, shoulder = hand
+    d = fist - shoulder
+    d.z *= BLADE_RISE
+    v = fist + d.normalized() * BLADE_REACH - hip
+    return math.atan2(v.x, -v.y)
+
+
+def smooth01(x):
+    x = min(max(x, 0.0), 1.0)
+    return x * x * (3 - 2 * x)
+
+
+def face_hit(arm, name, poses, hips, hands, window):
+    """판정 구간 동안 몸을 세로축으로 돌려 구간 가운데에 칼끝이 정면에 오게(`HIT_WINDOWS`). 들어가고 나오는 몫은 매끄럽게."""
+    s0, a0 = window
+    n = len(poses) - 1
+    dur = n / OUT_FPS
+    mid = min(n, round((s0 + a0 / 2) * OUT_FPS))
+    turn = -hand_yaw(hips[mid], hands[mid])
+    b = arm.data.bones["mixamorig:Hips"]
+    rr = b.matrix_local.to_3x3()
+    for k in range(n + 1):
+        t = k / OUT_FPS
+        if t < s0:
+            w = smooth01(t / s0) if s0 > 1e-4 else 1.0
+        elif t <= s0 + a0:
+            w = 1.0
+        else:
+            w = 1.0 - smooth01((t - s0 - a0) / max(dur - s0 - a0, 1e-4))
+        r = Matrix.Rotation(turn * w, 3, "Z")
+        loc, q, sc = poses[k]["mixamorig:Hips"]
+        poses[k]["mixamorig:Hips"] = (loc, (rr.inverted() @ r @ rr @ q.to_matrix()).to_quaternion(), sc)
+    a = hand_yaw(hips[min(n, round(s0 * OUT_FPS))], hands[min(n, round(s0 * OUT_FPS))]) + turn
+    z = hand_yaw(hips[min(n, round((s0 + a0) * OUT_FPS))], hands[min(n, round((s0 + a0) * OUT_FPS))]) + turn
+    span = math.degrees(math.atan2(math.sin(z - a), math.cos(z - a)))
+    print(f"[skin] face {name}: turn {math.degrees(turn):+.0f}°, tip {math.degrees(a):+.0f}° -> {math.degrees(z):+.0f}° (sweep {span:+.0f}°)")
 
 
 def write_action(arm, name, n, poses, lamp, keep):
@@ -540,8 +595,10 @@ def make_actions(arm, body):
     made = []
     for name, src, spec in CLIPS:
         anchors = anchors_of(arm, name, src, spec)
-        n, poses, hips = sample(arm, src, anchors, UPRIGHT.get(name))
+        n, poses, hips, hands = sample(arm, src, anchors, UPRIGHT.get(name))
         strip_travel(arm, poses, hips, name in LOOPS)
+        if name in HIT_WINDOWS:
+            face_hit(arm, name, poses, hips, hands, HIT_WINDOWS[name])
         if spec[0] == "cycle":  # 되풀이 이음매: 끝 = 처음
             poses[-1] = poses[0]
         act = write_action(arm, name, n, poses, 1.0 if name == "drink" else 0.0, keep)

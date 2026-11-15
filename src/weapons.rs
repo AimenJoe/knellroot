@@ -26,18 +26,20 @@ pub enum Sweep {
     Center,
 }
 
-/// 동작 이름 → 휘두르는 쪽(`wanderer.py`의 키프레임에서 읽음: 몸·오른팔의 z 회전이 음수 = 오른쪽, 양수 = 왼쪽).
+/// 동작 이름 → 휘두르는 쪽: 판정 구간 동안 칼끝이 몸 둘레로 가는 쪽(0193 — 스킨 몸의 Meshy 동작에서 잰 값, 옛 표는 `wanderer.py`
+/// 키프레임에서 읽었다). 60° 넘게 가로로 가면 그 쪽, 아니면 가운데(찌르기·내려치기). 시험
+/// `melee_swings_cross_the_front_in_the_table_direction`이 모델에서 다시 잰다 — 동작을 바꾸면 여기도.
 /// 새 동작을 무기 표에 쓰면 여기에도 한 줄(시험 `every_weapon_motion_has_a_sweep`).
 pub const SWEEPS: [(&str, Sweep); 12] = [
-    ("attack", Sweep::RightToLeft),
-    ("attack2", Sweep::LeftToRight),
-    ("attack3", Sweep::Center),
-    ("heavy", Sweep::RightToLeft),
+    ("attack", Sweep::LeftToRight),
+    ("attack2", Sweep::RightToLeft),
+    ("attack3", Sweep::LeftToRight),
+    ("heavy", Sweep::Center),
     ("hammer1", Sweep::RightToLeft),
-    ("hammer2", Sweep::LeftToRight),
+    ("hammer2", Sweep::Center),
     ("hammer_slam", Sweep::Center),
     ("staff1", Sweep::Center),
-    ("staff2", Sweep::RightToLeft),
+    ("staff2", Sweep::Center),
     ("staff3", Sweep::Center),
     ("staff4", Sweep::LeftToRight),
     ("staff_release", Sweep::LeftToRight),
@@ -629,10 +631,8 @@ mod tests {
                 assert!(SWEEPS.iter().any(|(n, _)| *n == a), "{:?}: {a}", w.id);
             }
         }
-        // 검 1타는 오른쪽 → 왼쪽, 2타는 되돌려 왼쪽 → 오른쪽, 3타 찌르기는 가운데(wanderer.py 주석).
-        assert_eq!(sweep_of("attack"), Sweep::RightToLeft);
-        assert_eq!(sweep_of("attack2"), Sweep::LeftToRight);
-        assert_eq!(sweep_of("attack3"), Sweep::Center);
+        // 쪽이 동작과 맞는지는 모델에서 다시 잰다(0193 — `swing_tests`). 검의 타는 번갈아 되돌아온다.
+        assert_ne!(sweep_of("attack"), sweep_of("attack2"));
     }
 
     // ── 눈금 옮기기(0158 N0): 체력·피해가 ×10이 되어도 몇 대에 쓰러지는가는 그대로 ──────────────────────────────
@@ -921,5 +921,78 @@ mod tests {
         whole(crate::tuning::PLAYER_HP, "player hp");
         whole(crate::tuning::ULT_SLAM_DAMAGE, "ult slam");
         whole(crate::tuning::SHARD_REFLECT_DAMAGE, "shard");
+    }
+}
+
+#[cfg(test)]
+mod swing_tests {
+    use super::*;
+    use crate::model::Model;
+    use crate::tuning::Tuning;
+    use macroquad::prelude::*;
+
+    /// 0193: 판정·초승달은 정면 부채꼴이다 — 모델의 칼끝도 판정 구간 가운데에 정면을 지나고(`wanderer_skin.py` `face_hit`),
+    /// 표의 쪽으로 가야 초승달이 칼을 따라간다. 판정 구간은 게임의 셈(`hit_times`·`heavy_times`) 그대로.
+    #[test]
+    fn melee_swings_cross_the_front_in_the_table_direction() {
+        let m = Model::from_bytes(include_bytes!("../assets/models/wanderer.glb")).unwrap();
+        let t = Tuning::default();
+        let grip = m.node("weapon").unwrap();
+        let mut rest = Vec::new();
+        m.pose(None, 0.0, &mut rest);
+        let mut pose = Vec::new();
+        for w in WEAPONS
+            .iter()
+            .filter(|w| matches!(w.rb, Rb::Magic(_)) && !w.node.is_empty())
+        {
+            let node = m.node(w.node).unwrap();
+            let mesh = &m.meshes[m.nodes[node].mesh.unwrap()];
+            // 날끝 = 쉬는 자세에서 주먹(`weapon` 뼈)에서 가장 먼 정점.
+            let g = rest[grip].w_axis.truncate();
+            let far = mesh
+                .pos
+                .iter()
+                .copied()
+                .max_by(|a, b| {
+                    let d = |p: Vec3| rest[node].transform_point3(p).distance(g);
+                    d(*a).total_cmp(&d(*b))
+                })
+                .unwrap();
+            let mut swings: Vec<(&str, (f32, f32, f32))> = (0..w.combo.len())
+                .map(|k| (w.combo[k].anim, crate::world::hit_times(&t, w, k as u8)))
+                .collect();
+            if let Some(h) = w.heavy {
+                swings.push((h.anim_heavy, crate::world::heavy_times(&t, w)));
+            }
+            for (anim, (s0, a0, _)) in swings {
+                let ai = m.anim(anim).unwrap_or_else(|| panic!("{anim}"));
+                // 칼끝의 몸 둘레 각(도 — 정면 0, 왼쪽 +), 구간을 여덟으로 나눠 풀어 이은 것.
+                let (mut yaws, mut last) = (Vec::new(), None::<f32>);
+                for j in 0..=8 {
+                    m.pose(Some(ai), s0 + a0 * j as f32 / 8.0, &mut pose);
+                    let p = pose[node].transform_point3(far);
+                    let mut y = p.x.atan2(p.z).to_degrees();
+                    if let Some(l) = last {
+                        y = l + (y - l + 540.0).rem_euclid(360.0) - 180.0;
+                    }
+                    last = Some(y);
+                    yaws.push(y);
+                }
+                let mid = yaws[4];
+                assert!(
+                    mid.abs() < 20.0,
+                    "{anim}: the blade crosses the front mid-swing ({mid:.0}°)"
+                );
+                let span = yaws[8] - yaws[0];
+                let want = if span.abs() < 60.0 {
+                    Sweep::Center
+                } else if span > 0.0 {
+                    Sweep::RightToLeft
+                } else {
+                    Sweep::LeftToRight
+                };
+                assert_eq!(sweep_of(anim), want, "{anim}: the blade goes {span:+.0}°");
+            }
+        }
     }
 }
