@@ -173,13 +173,18 @@ async function main() {
     const pctx = await browser.newContext({ viewport: { width: H, height: W }, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
     const pp = await pctx.newPage();
     await pp.goto(`http://localhost:${PORT}/`);
-    await pp.waitForTimeout(4000); // 로딩 덮개가 걷힌 뒤
+    // 회전 안내는 로딩 덮개 위에 뜬다(z 11 — 로딩 중에도 "돌려 주세요"). 고정 4초 → 덮개가 걷히길 기다리기(30초)는 느린 러너의
+    // 큰 세로 캔버스(DPR 3)에서 첫 프레임이 늦어 깨졌다(v0.6.4·v0.6.5 PR, 2026-11-15) — 안내가 덮이는 것만 기다린다.
+    await pp.waitForFunction(() => document.getElementById('rotate').classList.contains('on'), null, { timeout: 30000 });
+    await pp.waitForTimeout(300);
     const on = () => pp.evaluate(() => document.getElementById('rotate').classList.contains('on'));
     if (!(await on())) errors.push('portrait: the rotate hint should cover the game');
     await pp.screenshot({ path: path.join(OUT, 't14-portrait-rotate.png') });
     await pp.tap('#rotate');
     await pp.waitForTimeout(1000);
     if (await on()) errors.push('portrait: tapping the hint should rotate or, if it cannot lock, let it go on upright');
+    // 아래는 번들의 크기 처리기를 쓴다 — 게임이 첫 프레임을 그린 뒤에(느린 러너는 오래 걸린다).
+    await pp.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 120000 });
     // 돌린 뒤 늦은 크기(0187): 폰은 회전 때 resize를 레이아웃이 끝나기 전에 보내기도 한다 — 번들의 처리기가 그 이벤트를 놓친(옛 크기를
     // 읽은) 것처럼, 처리기를 잠시 떼고 가로로 돌린 뒤 되돌린다. 조금 뒤 캔버스의 그리기 크기가 화면의 크기와 같아야 한다(안 그러면 늘어난다).
     await pp.evaluate(() => document.fullscreenElement ? document.exitFullscreen().catch(() => {}) : null);

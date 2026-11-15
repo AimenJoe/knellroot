@@ -4,7 +4,7 @@
 //! → 이동 → 바라보기 → 떨어지기 → 마무리. 새 동작(나무 칸, 0102)은 그 상태의 메서드에 한 줄씩 넣는다.
 //! 상태가 서로 쓰는 시작(회피·패링)은 `try_dodge`·`try_parry` 한 곳.
 use super::*;
-use crate::progression::{cell, Cell};
+use crate::progression::{cell, Cell, Link};
 
 /// 이번 틱 플레이어 단계가 같이 보는 것 — 입력 기준·조준을 한 번 계산해 상태 메서드들이 나눠 쓴다.
 pub(super) struct Ctx<'a> {
@@ -205,14 +205,21 @@ impl World {
             None
         };
         // 마법 쏘는 쪽(0048): 조준 스틱 > 락온 대상 > `cast.range m` 안의 가장 가까운 적 > 바라보는 쪽.
+        // 쇠뇌(0213, 사장 "자동 조준 없애고")는 가까운 적을 찾지 않는다 — 조준(스틱·커서) > 락온 > 바라보는 쪽. 겨누는 것이 손의 일.
         let charging_cast = matches!(self.player.state, PState::CastCharge { .. });
         let cast_dir = if a.cast || charging_cast {
             let lock_dir = target.map(|tg| {
                 let d = vec3(tg.x - self.player.pos.x, 0.0, tg.z - self.player.pos.z);
                 d.normalize_or_zero()
             });
+            let seek = !matches!(self.player.weapon.def().rb, Rb::Shot { .. });
             aim.or(lock_dir.filter(|d| d.length_squared() > 0.5))
-                .or_else(|| nearest_in_reach(&self.enemies, self.player.pos, t[P::CastRange], None))
+                .or_else(|| {
+                    seek.then(|| {
+                        nearest_in_reach(&self.enemies, self.player.pos, t[P::CastRange], None)
+                    })
+                    .flatten()
+                })
                 .unwrap_or_else(|| self.player.facing_dir())
         } else {
             self.player.facing_dir()
@@ -256,6 +263,10 @@ impl World {
         let pl = &mut self.player;
         // 콤보·원거리 무기 시계(0051).
         pl.combo_left = (pl.combo_left - dt).max(0.0);
+        // 뿌리내린 몸(0214): 땅에 서서 움직이지 않은 시간 — 걷거나 구르거나 뜨면 처음부터.
+        let still = pl.air <= 0.0 && vec3(pl.vel.x, 0.0, pl.vel.z).length() < 0.3;
+        pl.hurt.still = if still { pl.hurt.still + dt } else { 0.0 };
+        pl.parry.deflect = (pl.parry.deflect - dt).max(0.0);
         if let Rb::Shot { .. } = wpn.rb {
             if pl.ranged.reload > 0.0 {
                 pl.ranged.reload -= dt;
@@ -370,10 +381,20 @@ impl World {
     /// 회피 시작(0029): 눌렀고·대기가 끝났고·스태미나를 쓸 수 있으면. 쪽은 이동 입력, 없으면 뒤로.
     /// 상태마다 다른 조건(삼키기 전·쏜 뒤·후딜레이 …)은 부르는 쪽이 `&&`로 앞에 둔다.
     pub(super) fn try_dodge(&mut self, cx: &Ctx) -> bool {
+        // 가벼운 구르기(0215 — 멈추지 않는 걸음 II): 회피 기력 ×0.8.
+        let cost = cx.t[P::StaminaDodge]
+            * if self.tree.picked_b(Cell::UnbrokenStride) {
+                cell::LIGHT_ROLL
+            } else {
+                1.0
+            };
         let pl = &mut self.player;
-        if !(cx.a.dodge && pl.dodge_cd <= 0.0 && pl.spend(cx.t[P::StaminaDodge])) {
+        // 이어지는 숨(0214)·디딘 받기(0215): 기력 없이 나가는 회피 하나.
+        let free = pl.beat.free_dodge;
+        if !(cx.a.dodge && pl.dodge_cd <= 0.0 && (free || pl.spend(cost))) {
             return false;
         }
+        pl.beat.free_dodge = false;
         let dir = if cx.world_move.length_squared() > 1e-4 {
             cx.world_move.normalize()
         } else {
@@ -483,11 +504,13 @@ impl World {
         // 몰아치기(0158 G2): 그동안의 평타는 모두 기력 없이 나가는 박자 타.
         let flurry = pl.skill.flurry_left > 0.0;
         let free = flurry || (pl.beat.on && pl.combo_left > 0.0 && !riposte && !dash);
+        // 받아치는 박(0215 다리): 패링 반격도 박자 타로 친다(값은 그대로 치른다).
+        let beat = free || (riposte && self.tree.linked(Link::RiposteBeat));
         pl.beat.on = false;
         let go = free || pl.spend(cx.t[P::StaminaAttack] * wpn.stamina);
         if go {
-            pl.beat.swing_beat = free;
-            if free {
+            pl.beat.swing_beat = beat;
+            if beat {
                 self.beat_now = true;
                 pl.beat.chain += 1;
                 pl.beat.since = 0.0;
@@ -499,6 +522,10 @@ impl World {
                 // 이어지는 박자(0107): 박자 타 셋마다 둘레 충격.
                 if tree.has(Cell::FlowingBeat) && pl.beat.chain.is_multiple_of(cell::FLOW_EVERY) {
                     self.shock_now = true;
+                }
+                // 이어지는 숨(0214): 박자 셋을 이으면 다음 회피가 기력 없이.
+                if tree.has(Cell::HeldBreath) && pl.beat.chain >= cell::HELD_BREATH_CHAIN {
+                    pl.beat.free_dodge = true;
                 }
                 // 끝맺음(0107): 박자를 다섯 이은 뒤 박자로 낸 마지막 타 → 다음 강타는 다 모여 있다.
                 let hit = if pl.combo_left > 0.0 {
@@ -720,7 +747,7 @@ impl World {
             pl.parry.release_guard = t[P::ParryWindow];
             // 고른 호흡(0107): 딱 맞춰 뗀 강타는 강타 기력을 돌려준다.
             let perfect = e >= full_at && e <= full_at + PERFECT_RELEASE;
-            if perfect && self.tree.has(Cell::EvenBreath) {
+            if perfect && self.tree.picked_a(Cell::EvenBreath) {
                 pl.stamina =
                     (pl.stamina + t[P::HeavyStamina] * cx.wpn.stamina).min(t[P::StaminaMax]);
             }
@@ -990,7 +1017,7 @@ impl World {
             && pl.stamina > 0.0;
         if keep {
             // 멈추지 않는 걸음(0107): 달리기 기력 ×0.7.
-            let k = if self.tree.has(Cell::UnbrokenStride) {
+            let k = if self.tree.picked_a(Cell::UnbrokenStride) {
                 cell::STRIDE_RUN
             } else {
                 1.0
@@ -1010,6 +1037,12 @@ impl World {
         let d_skill = match self.player.state {
             PState::Skill { id, .. } => Some(self.skill_eff(id)),
             _ => None,
+        };
+        // 모으는 걸음(0215 — 고른 호흡 II): 강타를 모으는 동안 ×1.4.
+        let charge_walk = if self.tree.picked_b(Cell::EvenBreath) {
+            cell::CHARGE_WALK
+        } else {
+            1.0
         };
         let pl = &mut self.player;
         match pl.state {
@@ -1083,6 +1116,17 @@ impl World {
                     (Form::Cone { .. }, Some(Twist::Leap { .. })) if e < s.startup => {
                         dir * (pl.skill.leap / s.startup.max(1e-3))
                     }
+                    // 제비걸음(0214): 걸음마다 앞 6할 동안 닿을 자리로 뛴다.
+                    (Form::Hop { gap, .. }, _) if e >= s.startup && e < s.startup + d.active() => {
+                        let into = (e - s.startup) % gap.max(1e-3);
+                        let dash = gap * crate::tuning::HOP_DASH;
+                        if into < dash {
+                            let way = pl.skill.hop_to - pl.skill.hop_from;
+                            vec3(way.x, 0.0, way.z) / dash.max(1e-3)
+                        } else {
+                            Vec3::ZERO
+                        }
+                    }
                     _ => Vec3::ZERO,
                 };
             }
@@ -1120,7 +1164,7 @@ impl World {
                 let slow = match pl.state {
                     PState::Drink { .. } => t[P::FlaskWalk],
                     PState::Charging { .. } => {
-                        t[P::HeavyChargeWalk] * wpn.heavy.map_or(1.0, |h| h.walk)
+                        t[P::HeavyChargeWalk] * wpn.heavy.map_or(1.0, |h| h.walk) * charge_walk
                     }
                     PState::Cast { .. } | PState::Throw { .. } | PState::CastCharge { .. } => {
                         t[P::CastWalk]

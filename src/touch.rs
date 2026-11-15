@@ -59,6 +59,10 @@ pub enum Kind {
     Flurry,
     Line,
     Bomb,
+    /// 그림만(0214): 넷째 줄의 스킬 셋.
+    Swallow,
+    Bash,
+    Roots,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
@@ -558,7 +562,14 @@ fn press(a: &mut Read, k: Kind) {
         Kind::Skill2 => a.skill2 = true,
         Kind::Ult | Kind::Upend => a.ult = true,
         // 그림만인 것은 버튼이 되지 않는다.
-        Kind::Whirl | Kind::Cut | Kind::Gather | Kind::Quake | Kind::Bomb => {}
+        Kind::Whirl
+        | Kind::Cut
+        | Kind::Gather
+        | Kind::Quake
+        | Kind::Bomb
+        | Kind::Swallow
+        | Kind::Bash
+        | Kind::Roots => {}
         Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
@@ -612,7 +623,8 @@ pub fn attack_icon(w: crate::weapons::Id) -> Kind {
         Id::Sword => Kind::Attack,
         Id::Hammer => Kind::Hammer,
         Id::Staff => Kind::Staff,
-        Id::Crossbow => Kind::Crossbow,
+        // 쇠뇌의 X는 수류탄(0213 — 사격은 RB, `cast_icon`).
+        Id::Crossbow => Kind::Bomb,
         Id::Fists => Kind::Fist,
     }
 }
@@ -632,6 +644,9 @@ pub fn skill_icon(id: crate::skills::Id) -> Kind {
         Id::Echo => Kind::Echo,
         Id::Throw => Kind::Throw,
         Id::Embers => Kind::Embers,
+        Id::Swallow => Kind::Swallow,
+        Id::Bash => Kind::Bash,
+        Id::Roots => Kind::Roots,
     }
 }
 
@@ -645,10 +660,10 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
     }
 }
 
-/// RB 버튼의 그림(0151): 근접 무기 = 마법 탄의 별, 원거리 무기 = 수류탄.
+/// RB 버튼의 그림(0151 → 0213): 근접 무기 = 마법 탄의 별, 쇠뇌 = 쇠뇌(사격은 RB).
 pub fn cast_icon(w: crate::weapons::Id) -> Kind {
-    if w.def().grenade.is_some() {
-        Kind::Bomb
+    if matches!(w.def().rb, crate::weapons::Rb::Shot { .. }) {
+        Kind::Crossbow
     } else {
         Kind::Cast
     }
@@ -1250,6 +1265,54 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             ".............",
             "#############",
         ],
+        // 제비걸음(0214): 꼬리가 갈라진 제비.
+        Kind::Swallow => [
+            ".............",
+            "#...........#",
+            "##.........##",
+            ".##.......##.",
+            "..###...###..",
+            "...#######...",
+            "....#####....",
+            ".....###.....",
+            "....##.##....",
+            "...##...##...",
+            "..##.....##..",
+            ".............",
+            ".............",
+        ],
+        // 막아치기(0214): 내민 주먹과 부딪는 결.
+        Kind::Bash => [
+            ".............",
+            ".......#.....",
+            "...####.#....",
+            "..######.#...",
+            "..######..#..",
+            "..######...#.",
+            "..######..#..",
+            "..######.#...",
+            "...####.#....",
+            ".......#.....",
+            ".............",
+            ".............",
+            ".............",
+        ],
+        // 뿌리 솟기(0214): 땅에서 차례로 솟는 뿌리 셋.
+        Kind::Roots => [
+            ".............",
+            ".............",
+            ".........#...",
+            ".....#...#...",
+            ".....#..###..",
+            ".#..###.###..",
+            ".#..###.###..",
+            "###.###.###..",
+            "###.###.###.#",
+            "###.###.###.#",
+            "#############",
+            ".............",
+            ".............",
+        ],
         // 큰 기술 몰아치기: 잇달아 긋는 빗금 셋.
         Kind::Flurry => [
             ".........###.",
@@ -1398,6 +1461,9 @@ mod tests {
             Kind::Flurry,
             Kind::Line,
             Kind::Bomb,
+            Kind::Swallow,
+            Kind::Bash,
+            Kind::Roots,
             Kind::Pick,
             Kind::Open,
             Kind::Pull,
@@ -1609,7 +1675,8 @@ mod tests {
         press(&mut a, Kind::Ult);
         assert!(a.ult && !a.skill1);
         use crate::weapons::Id;
-        assert_eq!(cast_icon(Id::Crossbow), Kind::Bomb);
+        assert_eq!(cast_icon(Id::Crossbow), Kind::Crossbow);
+        assert_eq!(attack_icon(Id::Crossbow), Kind::Bomb);
         assert_eq!(cast_icon(Id::Sword), Kind::Cast);
     }
 

@@ -466,10 +466,10 @@ fn the_beat_fan_follows_the_swing_and_peaks_when_a_press_counts() {
         assert_eq!(w.beat_cue(&t), None, "the finisher has no beat");
         press(&mut w, false, false);
     }
-    // 쇠뇌: 쏜 순간부터, 가운데로.
+    // 쇠뇌: 쏜 순간부터(RB — 0213), 가운데로.
     let mut w = World::new("test", 20.0);
     w.set_weapon(weapons::Id::Crossbow);
-    press(&mut w, true, false);
+    press(&mut w, false, true);
     let c = w.beat_cue(&t).expect("a shot starts its beat fan");
     assert_eq!(c.sweep, weapons::Sweep::Center);
     assert!(c.left > 0.9 && !c.ripe);

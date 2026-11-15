@@ -116,6 +116,16 @@ pub mod key {
         "tree.cells.footing",
     ];
     pub const TREE_COUNTS: [&str; 3] = [TREE_BEAT, TREE_RIPOSTE, TREE_FOOTING];
+    /// 켠 맺음(0214 — 키 이름 `progression::Key::key`, 없으면 줄이 없다).
+    pub const TREE_KEY: &str = "tree.key";
+    /// 연 다리 칸(0215 — `progression::Link::key`들, 쉼표). 없으면 줄이 없다.
+    pub const TREE_LINKS: &str = "tree.links";
+    /// 숫자 칸의 고르기 II(0215 — 갈래마다 II인 칸의 자리들, `tree.cells.*`와 같은 꼴). 없으면 모두 I.
+    pub const TREE_PICKS: [&str; 3] = [
+        "tree.picks.beat",
+        "tree.picks.riposte",
+        "tree.picks.footing",
+    ];
 }
 
 /// 글 기록(키 → 값). 모르는 키도 지키며 들고 다닌다.
@@ -325,7 +335,7 @@ impl Progress {
         let migrated = r.num(key::MIGRATED_V04) == Some(1);
         // 패시브 칸(0161): 갈래마다 `tree.cells.*`(연 자리들)가 있으면 그것, 없으면 옛 꼴(연 수 N = 앞에서부터 N칸).
         let cells = {
-            use crate::progression::{Tree, DEPTH};
+            use crate::progression::{Tree, DEPTH, LEGACY_DEPTH};
             let mut t = Tree::default();
             let keys = key::TREE_CELLS.iter().zip(key::TREE_COUNTS);
             for (cell, (cells_key, count_key)) in t.cells.iter_mut().zip(keys) {
@@ -336,12 +346,31 @@ impl Progress {
                         .filter(|d| (1..=DEPTH).contains(d))
                         .fold(0, |m, d| m | 1 << (d - 1)),
                     None => {
-                        let n = r.num(count_key).unwrap_or(0).min(DEPTH as u32) as u8;
+                        // 옛 꼴의 수는 그때의 칸 수(다섯)까지 — 0214의 넷째 줄 칸은 옛 수로 열리지 않는다.
+                        let n = r.num(count_key).unwrap_or(0).min(LEGACY_DEPTH as u32) as u8;
                         Tree::from_counts([n, 0, 0]).cells[0]
                     }
                 };
             }
-            t
+            t.key = r
+                .get(key::TREE_KEY)
+                .and_then(crate::progression::Key::by_key);
+            t.links = r
+                .get(key::TREE_LINKS)
+                .unwrap_or("")
+                .split(',')
+                .filter_map(|k| crate::progression::Link::by_key(k.trim()))
+                .fold(0, |m, l| m | 1 << l.index());
+            for (pick, k) in t.picks.iter_mut().zip(key::TREE_PICKS) {
+                *pick = r
+                    .get(k)
+                    .unwrap_or("")
+                    .split(',')
+                    .filter_map(|c| c.trim().parse::<u8>().ok())
+                    .filter(|d| (1..=DEPTH).contains(d))
+                    .fold(0, |m, d| m | 1 << (d - 1));
+            }
+            t.sane()
         };
         let residents_seen: Vec<(String, u32)> = r
             .get(key::RESIDENTS_SEEN)
@@ -647,6 +676,32 @@ impl Progress {
                 r.remove(key::TREE_CELLS[b]);
             } else {
                 r.set(key::TREE_CELLS[b], open.join(","));
+            }
+        }
+        match self.board.cells.key {
+            Some(k) => r.set(key::TREE_KEY, k.key()),
+            None => r.remove(key::TREE_KEY),
+        }
+        // 다리 칸·숫자 칸의 고르기(0215).
+        let links: Vec<&str> = crate::progression::LINKS
+            .into_iter()
+            .filter(|&l| self.board.cells.linked(l))
+            .map(|l| l.key())
+            .collect();
+        if links.is_empty() {
+            r.remove(key::TREE_LINKS);
+        } else {
+            r.set(key::TREE_LINKS, links.join(","));
+        }
+        for (&picks, k) in self.board.cells.picks.iter().zip(key::TREE_PICKS) {
+            let on: Vec<String> = (0..crate::progression::DEPTH)
+                .filter(|d| picks & (1 << d) != 0)
+                .map(|d| (d + 1).to_string())
+                .collect();
+            if on.is_empty() {
+                r.remove(k);
+            } else {
+                r.set(k, on.join(","));
             }
         }
         match self.weapon {
@@ -1176,6 +1231,42 @@ forge.sword=3
         assert!(p.finds.is_empty() && p.cores == 0 && !p.has_any());
     }
 
+    /// 0215: 다리 칸(`tree.links` = 키들)과 숫자 칸의 고르기 II(`tree.picks.<갈래>` = 자리들)가 왕복한다. 없으면 줄이 없고,
+    /// 모르는 키·닫힌 칸의 고르기는 걸러진다.
+    #[test]
+    fn bridges_and_number_picks_round_trip() {
+        use crate::progression::{Cell, Link, Tree};
+        // 넷(칸 둘 + 다리 둘)을 가질 만큼의 점수: 핵 셋 + 조각 하나.
+        let mut p = Progress {
+            cores: 3,
+            finds: vec!["sanctuary.shard.0".into()],
+            ..Progress::default()
+        };
+        let mut t = Tree::with(&[Cell::Catch, Cell::GapBeat]);
+        t.open_link(Link::RiposteBeat);
+        t.open_link(Link::RootedRiposte);
+        assert!(t.flip_cell(Cell::Catch));
+        p.board.cells = t;
+        let r = p.to_record();
+        assert_eq!(r.get(key::TREE_LINKS), Some("riposte_beat,rooted_riposte"));
+        assert_eq!(r.get("tree.picks.riposte"), Some("1"));
+        assert_eq!(r.get("tree.picks.beat"), None);
+        let back = Progress::from_record(Record::parse(&r.to_text()));
+        assert_eq!(back.board.cells, t);
+        assert!(back.board.cells.picked_b(Cell::Catch));
+        // 다 지우면 줄이 없다.
+        let r = Progress::default().to_record();
+        assert_eq!(
+            (r.get(key::TREE_LINKS), r.get("tree.picks.riposte")),
+            (None, None)
+        );
+        // 손댄 기록: 모르는 다리는 버리고, 닫힌 칸의 고르기는 지운다.
+        let odd = Record::parse("v=1\ntree.links=riposte_beat,bogus\ntree.picks.beat=1,9\n");
+        let back = Progress::from_record(odd);
+        assert_eq!(back.board.cells.links, 1 << Link::RiposteBeat.index());
+        assert_eq!(back.board.cells.picks, [0; 3]);
+    }
+
     /// 0161: 패시브 칸은 칸마다 따로 남는다(`tree.cells.<갈래>` = 연 자리들) — 사이가 빈 나무도 그대로 왕복하고, 옛 키에는
     /// 앞에서부터 이어 연 수가 적힌다. 연 칸이 없는 갈래는 새 키를 쓰지 않는다. 고친 기록의 이상한 자리는 걸러진다.
     #[test]
@@ -1470,9 +1561,12 @@ forge.sword=3
             },
             // 휘돌이 5·ㄴ, 가로지르기 3·ㄱ, 끌어모으기 2, 땅울림 1, 큰 기술 3 — 쓴 점수 5 + 3 + 2 + 1 + 2 = 13(레벨 15 안).
             board: Board {
-                rank: [5, 3, 2, 1, 0, 0, 0, 0],
+                rank: [5, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0],
                 pick: [
                     Pick::B,
+                    Pick::A,
+                    Pick::A,
+                    Pick::A,
                     Pick::A,
                     Pick::A,
                     Pick::A,
@@ -1530,7 +1624,7 @@ forge.sword=3
              core.warden=3\ncore.bellkeeper=1\nskill.1=gather\nskill.2=quake\n",
         ));
         assert_eq!(old.board, Board::default().with_starters().with_upend());
-        assert_eq!(old.board.rank, [1, 1, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(old.board.rank, [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         assert_eq!(old.board.ult, [1, 0, 0]);
         assert_eq!(old.ult, crate::skills::Ult::Upend);
         assert_eq!(
@@ -1567,7 +1661,7 @@ forge.sword=3
         // 0166과 0172 사이의 기록(스킬은 점수로 배우던 때 — 쟁반 뒤집기는 아직 값 없이 가졌다): 스킬은 모르고, 쟁반 뒤집기와
         // 그 몫만 지닌다. 남은 점수는 그대로 0.
         let mid = Progress::from_record(Record::parse("v=1\nmigrated.v06=1\ntut.step=2\n"));
-        assert_eq!((mid.board.rank, mid.board.ult), ([0; 8], [1, 0, 0]));
+        assert_eq!((mid.board.rank, mid.board.ult), ([0; 11], [1, 0, 0]));
         assert_eq!((mid.gift, mid.ult_gift), (0, 2));
         assert_eq!(mid.board.left(mid.skill_points()), 0);
         // 손댄 기록의 큰 몫은 둘에서 멈춘다.
@@ -1641,7 +1735,7 @@ forge.sword=3
             "{rich}skill.rank.quake=99\nskill.rank.whirl=0\nskill.rank.gather=x\nult.rank.upend=0\n\
              skill.pick.quake=zzz\nskill.pick.cut=b\nskill.1=quake\nskill.2=cut\n"
         )));
-        assert_eq!(odd.board.rank, [0, 0, 0, MAX_RANK, 0, 0, 0, 0]);
+        assert_eq!(odd.board.rank, [0, 0, 0, MAX_RANK, 0, 0, 0, 0, 0, 0, 0]);
         assert_eq!(odd.board.ult, [0, 0, 0], "0172: not given");
         assert_eq!(
             odd.board.pick,
@@ -1744,7 +1838,7 @@ forge.sword=3
             "lv.life=5\nlv.stamina=5\nlv.might=5\nskill.rank.whirl=5\nskill.pick.whirl=b\nskill.rank.cut=3\n\
              skill.pick.cut=a\nskill.rank.gather=2\nskill.rank.quake=1\nult.rank.upend=3\nskill.1=quake\nskill.2=gather\n",
         ));
-        assert_eq!(g1.board.rank, [5, 3, 2, 1, 0, 0, 0, 0]);
+        assert_eq!(g1.board.rank, [5, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0]);
         assert_eq!(g1.board.pick[..2], [Pick::B, Pick::A]);
         assert_eq!((g1.board.ult, g1.ult), ([3, 0, 0], Ult::Upend));
         assert_eq!(g1.skills.0, [Id::Quake, Id::Gather]);

@@ -37,6 +37,7 @@ impl Renderer {
         bolts(w, alpha);
         bell_shards(w, &fl);
         bombs(w, alpha);
+        skill_spikes(w);
         cast_charge(w, pp, t, &fl);
         throw_aim(w, pp, t, &fl);
         cracks(w, &fl);
@@ -233,7 +234,13 @@ impl Renderer {
                         }
                     }
                     // 되울림·던지기·잔불 흩기: 몸에서 떠난 것은 남는 빛·이어지는 것(`marks`·`skill_auras`)이 그린다.
-                    Form::Echo { .. } | Form::Throw { .. } | Form::Field { .. } => {}
+                    // 0214: 제비걸음·뿌리 솟기는 이펙트(빛 띠·뿌리)가, 막아치기는 부채꼴 번쩍임이 말한다.
+                    Form::Echo { .. }
+                    | Form::Throw { .. }
+                    | Form::Field { .. }
+                    | Form::Hop { .. }
+                    | Form::Bash { .. }
+                    | Form::Erupt { .. } => {}
                 }
             }
         }
@@ -284,6 +291,31 @@ fn bell_shards(w: &World, fl: &Drape) {
         gem(sh.pos, 0.56, glow);
         gem(sh.pos, 0.3, core);
         fl.shadow(sh.pos, 0.18);
+    }
+}
+
+/// 뿌리 솟기(0214)의 뿌리: 문지기의 뿌리 기둥과 같은 꼴(굵은 밑동 → 뾰족한 끝)을 따뜻한 흙빛으로 — 빠르게 솟았다 가라앉는다.
+fn skill_spikes(w: &World) {
+    use crate::world::SPIKE_LIFE;
+    const BODY: Color = Color::new(0.36, 0.25, 0.16, 1.0);
+    const TIP: Color = Color::new(0.80, 0.62, 0.36, 1.0);
+    for (i, sp) in w.skill_spikes.iter().enumerate() {
+        let k = sp.age / SPIKE_LIFE;
+        let rise = if k < 0.12 {
+            k / 0.12
+        } else if k > 0.6 {
+            ((1.0 - k) / 0.4).max(0.0)
+        } else {
+            1.0
+        };
+        let h = 1.2 * rise * if i % 2 == 0 { 1.0 } else { 0.8 };
+        if h < 0.02 {
+            continue;
+        }
+        let (body, tip) = spike_faces(0.2, 0.08, h, 0.38 * rise, sp.lean);
+        let turn = Quat::from_rotation_y(i as f32 * 0.9);
+        shaded_tris(sp.pos, &body, BODY, 0.8, turn);
+        shaded_tris(sp.pos, &tip, TIP, 0.9, turn);
     }
 }
 

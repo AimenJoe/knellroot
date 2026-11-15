@@ -4,7 +4,7 @@ use macroquad::prelude::*;
 
 use crate::ground::Ground;
 use crate::input::Actions;
-use crate::progression::{cell, Cell};
+use crate::progression::{cell, link, Cell, Link};
 use crate::skills;
 use crate::tuning::{
     Tuning, AIR_SHOT_HOVER, AIR_SHOT_MIN, AIR_SHOT_REACH, AIR_VOLLEY, AIR_VOLLEY_SPREAD_DEG,
@@ -221,6 +221,18 @@ pub enum Event {
     SkillBurst {
         at: Vec3,
     },
+    /// 되찾는 살(0214): 패링 셋으로 체력 한 눈금이 돌아왔다.
+    Mend {
+        at: Vec3,
+    },
+    /// 막아치기(0214)가 적의 준비하던 공격을 끊었다.
+    Interrupt {
+        at: Vec3,
+    },
+    /// 뿌리 솟기(0214): 뿌리 하나가 솟았다.
+    RootSpike {
+        at: Vec3,
+    },
     /// 버팀(0158 G2)이 한 대를 받아냈다 — 받아낸 수(`n`번째).
     Soak {
         at: Vec3,
@@ -258,23 +270,6 @@ pub enum Event {
         len: f32,
         half: f32,
     },
-}
-
-/// 무기의 버튼 길(0151, 사장 "원거리는 공격 버튼이 전부 평타인 거고 RB는 스페셜"): 어느 무기든 X = 평타, RB = 스페셜.
-/// 근접 무기는 그대로다(X 콤보 · RB 마법 탄). 원거리 무기는 평타가 사격이고 스페셜이 수류탄이라, 월드 안쪽의 이름
-/// (`attack` = 수류탄 던지기, `cast` = 사격 — 0048·0051의 자리)과 맞바꾼다. 쥐고 있음도 같이(X 꾹 = 모은 사격, RB 꾹 = 멀리 던지기).
-pub fn weapon_buttons(a: Actions, w: &weapons::Weapon) -> Actions {
-    if matches!(w.rb, Rb::Shot { .. }) {
-        Actions {
-            attack: a.cast,
-            attack_held: a.cast_held,
-            cast: a.attack,
-            cast_held: a.attack_held,
-            ..a
-        }
-    } else {
-        a
-    }
 }
 
 /// 금 간 땅(0051, 망치 여진): `left`초 뒤 둘레를 친다.
@@ -586,7 +581,23 @@ pub struct SkillState {
     pub leap: f32,
     pub refunded: bool,
     pub ghost: bool,
+    /// 제비걸음(0214): 이번 걸음이 떠난 자리·닿을 자리, 처음 자리(돌아오는 걸음), 첫 적(한 곳만 — 적의 자리 번호).
+    pub hop_from: Vec3,
+    pub hop_to: Vec3,
+    pub hop_home: Vec3,
+    pub hop_first: Option<usize>,
 }
+
+/// 솟은 뿌리 하나(0214 뿌리 솟기 — 그림만): 자리·지난 초·쪽(기울기).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Spike {
+    pub pos: Vec3,
+    pub age: f32,
+    pub lean: Vec3,
+}
+
+/// 솟은 뿌리가 솟았다 가라앉는 초.
+pub const SPIKE_LIFE: f32 = 0.9;
 
 /// 패링과 그 뒤(0076~0090·0107): 마지막 패링 뒤의 시간, 이어 패링, 떼기 지킴, 패링이 연 다음 타(강공격·반격·맞받기·맺음타). `Player::parry`.
 pub struct ParryState {
@@ -605,6 +616,10 @@ pub struct ParryState {
     pub primed_heavy: bool,
     pub riposte_swing: u32,
     pub gathered_swing: u32,
+    /// 되찾는 살(0214): 체력으로 바꾸지 않은 패링 수.
+    pub mends: u32,
+    /// 받아 넘기기(0215 — 받아내기 II): 패링 뒤 받는 피해가 줄어 있는 남은 초.
+    pub deflect: f32,
 }
 
 /// 무기 박자(0071·0076): 마지막 평타 뒤의 시간과 그 타의 박자, 박자에 맞았나, 이어 맞춘 수. `Player::beat`.
@@ -623,6 +638,8 @@ pub struct BeatState {
     pub swing_beat: bool,
     /// 마지막 딱 맞춰 떼기(0078)에서 지난 초 — 렌더가 발밑에 크게 퍼지는 금빛 고리.
     pub since_perfect: f32,
+    /// 이어지는 숨(0214): 다음 회피가 기력을 쓰지 않는다.
+    pub free_dodge: bool,
 }
 
 /// 마법·사격·수류탄(0048·0051·0111): 마법 칸, 공중 사격과 체공, 쇠뇌의 탄과 재장전, 수류탄. `Player::ranged`.
@@ -651,6 +668,8 @@ pub struct HurtState {
     /// 경직 + `STUN_CHAIN_GRACE`, 맞을 때마다 새로). 창이 닫히면 다음 경직은 다시 처음 길이.
     pub stun_chain: i32,
     pub stun_window: f32,
+    /// 뿌리내린 몸(0214 맺음): 땅에 서서 움직이지 않은 초.
+    pub still: f32,
 }
 
 impl Player {
@@ -764,6 +783,10 @@ pub struct World {
     pub skill_blades: Vec<skill_tick::Blade>,
     pub skill_fields: Vec<skill_tick::Field>,
     brace_caught: Vec<usize>,
+    /// 제비걸음(0214): 이번에 이미 뛰어든 적(자리 번호).
+    hop_seen: Vec<usize>,
+    /// 뿌리 솟기(0214): 솟은 뿌리(그림).
+    pub skill_spikes: Vec<Spike>,
     /// 이번 틱에 방랑자의 탄이 적을 맞혔다(게이지 — `skill_books`).
     bolt_hit_tick: bool,
     /// 이번 틱에 박자에 맞춘 평타가 나갔다(`Event::Beat`).
@@ -794,6 +817,7 @@ impl World {
                     stun_window: 0.0,
                     since: f32::MAX,
                     blow: 0,
+                    still: 0.0,
                 },
                 dodge_cd: 0.0,
                 turn_cd: 0.0,
@@ -826,6 +850,10 @@ impl World {
                     leap: 0.0,
                     refunded: false,
                     ghost: false,
+                    hop_from: Vec3::ZERO,
+                    hop_to: Vec3::ZERO,
+                    hop_home: Vec3::ZERO,
+                    hop_first: None,
                 },
                 parry: ParryState {
                     since: f32::MAX,
@@ -837,6 +865,8 @@ impl World {
                     primed_heavy: false,
                     riposte_swing: 0,
                     gathered_swing: 0,
+                    mends: 0,
+                    deflect: 0.0,
                 },
                 flank: false,
                 flank_swing: 0,
@@ -851,6 +881,7 @@ impl World {
                     since: f32::MAX,
                     swing_beat: false,
                     since_perfect: f32::MAX,
+                    free_dodge: false,
                 },
                 running: false,
                 attack_hold: 0.0,
@@ -893,6 +924,8 @@ impl World {
             skill_blades: Vec::new(),
             skill_fields: Vec::new(),
             brace_caught: Vec::new(),
+            hop_seen: Vec::new(),
+            skill_spikes: Vec::new(),
             bolt_hit_tick: false,
             time: 0.0,
             kills: 0,
@@ -1288,6 +1321,14 @@ impl World {
     /// 평타의 선딜·활성·후딜을 `FLURRY.speed`로 나눈다).
     pub fn tuned(&self, t: &Tuning) -> Tuning {
         let mut o = self.stats.tune(t);
+        // 맺음(0214)의 값: 벼린 손은 패링 창이 좁고, 뿌리내린 몸은 회피가 짧다.
+        use crate::progression::{key, Key};
+        if self.tree.keyed(Key::Edge) {
+            o.bend(P::ParryWindow, o[P::ParryWindow] * key::EDGE_WINDOW);
+        }
+        if self.tree.keyed(Key::Rooted) {
+            o.bend(P::DodgeDist, o[P::DodgeDist] * key::ROOTED_DODGE);
+        }
         let rate = self.flurry_rate();
         if rate != 1.0 {
             for p in [P::AttackStartup, P::AttackActive, P::AttackRecovery] {
@@ -1364,8 +1405,8 @@ impl World {
             jump: merged.jump && !via_jump,
             ..merged
         };
-        // 무기의 버튼 길(0151): X = 그 무기의 평타, RB = 그 무기의 스페셜.
-        let merged = weapon_buttons(merged, self.player.weapon.def());
+        // 무기의 버튼 길(0213 — 0151의 맞바꿈을 걷음, 사장 "쇠뇌는 rb로 발사하는게 맞겠어"): 어느 무기든 X = `attack`·RB = `cast`
+        // 그대로 — 쇠뇌는 RB = 사격(꾹 = 모은 사격), X = 수류탄(0048·0051의 자리로 돌아감).
         let a = &merged;
         self.time += dt;
         self.player.prev = self.player.pos;

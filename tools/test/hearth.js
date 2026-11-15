@@ -70,13 +70,15 @@ async function run(browser, lang) {
   // 끝나면 맨 아래 줄의 왼쪽 칸(몰아치기)에 선다.
   const sweep = async (name, shots) => {
     await home();
-    const COLS = [4, 6, 4, 6, 6];
+    // 줄마다의 칸(위 → 아래): 스킬 넷 · 패시브 여섯 · 스킬 넷 · 패시브 여섯 + 다리 둘 · 큰 기술과 패시브 여섯 · 새 스킬 셋 ·
+    // 패시브 여섯 + 다리 둘 · 맺음 셋(0214 · 0215).
+    const COLS = [4, 6, 4, 8, 6, 3, 8, 3];
     for (let row = 0; row < COLS.length; row++) {
       for (let col = 0; col < COLS[row]; col++) {
         if (!shots || shots.includes(row)) await shot(`${name}-r${row}c${col}`);
         if (col + 1 < COLS[row]) { await press('ArrowRight'); await page.waitForTimeout(120); }
       }
-      await press('ArrowLeft', 6);
+      await press('ArrowLeft', 8);
       if (row + 1 < COLS.length) { await press('ArrowDown'); await page.waitForTimeout(120); }
     }
   };
@@ -231,9 +233,9 @@ async function run(browser, lang) {
   b = await record();
   if (!/tree\.cells\.beat=1\n/.test(b)) errors.push(`cell not saved: ${JSON.stringify(b)}`);
   await page.waitForTimeout(1800);
-  // 모든 칸의 상세(줄 다섯 — 스킬 넷 · 패시브 여섯 · 스킬 넷 · 패시브 여섯 · 큰 기술과 패시브 여섯).
+  // 모든 칸의 상세(줄 여덟 — 0214의 넷째·다섯째 줄까지).
   await sweep('13-skills');
-  // 잠긴 줄(셋째 — 쓴 점수 8부터)의 칸은 확인해도 목록이 없다(안 됨 소리만).
+  // 잠긴 줄(맺음 — 쓴 점수 22부터)의 칸은 확인해도 목록이 없다(안 됨 소리만).
   await press('Enter'); await page.waitForTimeout(300);
   await shot('14-skills-locked');
   // 되돌리기 단추(창 아래 오른쪽 — 맨 아래 줄에서 아래): 묻는 창(커서 "취소") → 왼쪽 = "되돌리기" → 쓴 점수 7(산 것 셋 + 옛 기록이 지닌 처음의 둘 0166 + 쟁반 뒤집기의 배움 2 0172)을 돌려받고 잔불 65(30 + 5 × 7).
