@@ -144,6 +144,8 @@ pub struct App {
     gesture: Option<(&'static str, f32)>,
     /// 꺼진 화로에 불이 붙는 순간을 보는 남은 시간(0171) — 이 동안은 조작이 멎고, 끝나면 화로의 창이 열린다.
     kindle: f32,
+    /// 마지막 핵의 반응(0216 W3 — `core_echo`): 핵을 쥔 뒤 흐른 초. 이 동안 세계가 멈추고, 끝나면 끝 장면.
+    echo: Option<f32>,
     /// 주민 말풍선(0122): (주민 — 지금 지역의 번호, 몇째 말, 남은 초). 멈추지 않는다.
     bubble: Option<(usize, usize, f32)>,
     /// 새긴 돌 글 판(0129): (지금 지역의 돌 번호, 남은 초).
@@ -327,6 +329,7 @@ impl App {
             fall: None,
             gesture: None,
             kindle: 0.0,
+            echo: None,
             bubble: None,
             stone_card: None,
             clock: 0.0,
@@ -1085,6 +1088,10 @@ impl App {
                         hint,
                     };
                     hud::draw(&self.ui, f, &self.world, run, &o);
+                    // 마지막 핵의 잔상(0216 W3): HUD 위 화면 가장자리에.
+                    if let Some(t) = self.echo.filter(|_| scene == Scene::Play) {
+                        hud::draw_echo(f, crate::core_echo::glow(t));
+                    }
                 }
             }
             Layer::Window { hud: true } if self.stack.base() == Scene::Play => {

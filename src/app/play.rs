@@ -27,6 +27,26 @@ impl App {
             }
             return;
         }
+        // 마지막 핵의 반응(0216 W3): 세계가 멈춘 채 잔상 둘·먼 종소리 한 번 → 끝 장면. 조작은 없다(짧다).
+        if let Some(t) = self.echo {
+            self.world.player.prev = self.world.player.pos;
+            for e in &mut self.world.enemies {
+                e.prev = e.pos;
+            }
+            self.follow_camera();
+            if crate::core_echo::bell(t, TICK_DT) {
+                self.snd(crate::sfx::Id::Knell);
+            }
+            let t = t + TICK_DT;
+            if crate::core_echo::done(t) {
+                self.echo = None;
+                self.ending = 0.0;
+                self.go(Go::Root(Scene::Ending { won: true }));
+            } else {
+                self.echo = Some(t);
+            }
+            return;
+        }
         // 쓰러짐(0175): 체력이 다하면 세계가 멈추고 방랑자만 무너진다 → 뿌리가 감겨 들며 어두워진다 → 다 어두울 때 쉼터 곁으로
         // (그전에는 쓰러진 그 틱에 쉼터 곁에 서 있었다) → 화로 곁에서 일어난다. 조작은 없고, 일어나는 동안만 건너뛸 수 있다.
         if let Some(mut fl) = self.fall.take() {
@@ -212,6 +232,11 @@ impl App {
         if out == crate::stage::StageOut::Respawned {
             // 쉼터에서 다시 일어섰다(0032): 카메라를 그 자리로 바로(멀리서 날아오지 않게).
             self.cam = self.cam.renew(self.world.player.pos, &self.t);
+        }
+        // 마지막 핵을 쥐었다(0216 W3): 끝 장면 전에 핵의 반응 — 세계가 멈추고 잔상·먼 종소리.
+        if out == crate::stage::StageOut::Cleared {
+            self.echo = Some(0.0);
+            return;
         }
         if let Some(next) = flow::after_stage(out) {
             self.ending = 0.0;

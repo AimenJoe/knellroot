@@ -17,6 +17,7 @@ mod balance;
 mod camera;
 mod charms;
 mod codex;
+mod core_echo;
 mod descent;
 mod ember;
 mod enemy;

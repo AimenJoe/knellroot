@@ -447,6 +447,27 @@ fn draw_edge(s: f32, a: f32) {
     }
 }
 
+/// 마지막 핵의 잔상(0216 W3 — `core_echo`): 화면 가장자리에서 안으로 옅어지는 차가운 흰빛 — 맞음 테(`draw_edge`)와 같은 계단 꼴이되
+/// 붉지 않고, 위아래가 더 두껍다(눈꺼풀처럼). `k` = 세기 0..1. 글은 없다(무엇인지 말하지 않는다).
+pub fn draw_echo(f: &Frame, k: f32) {
+    if k <= 0.004 {
+        return;
+    }
+    const BANDS: usize = 9;
+    let (sw, sh) = (screen_width(), screen_height());
+    let step = (4.0 * f.ui).max(2.0);
+    for i in 0..BANDS {
+        let fade = 1.0 - i as f32 / BANDS as f32;
+        let col = Color::new(0.86, 0.92, 1.0, 0.55 * k * fade * fade);
+        let o = i as f32 * step;
+        let tall = step * 1.6;
+        draw_rectangle(0.0, o * 1.6, sw, tall, col);
+        draw_rectangle(0.0, sh - o * 1.6 - tall, sw, tall, col);
+        draw_rectangle(o, 0.0, step, sh, col);
+        draw_rectangle(sw - o - step, 0.0, step, sh, col);
+    }
+}
+
 /// `edge`: 맞음 테의 세기 배율(랩 `hurt.edge`, 0 = 끔 — 창이 위에 뜬 동안은 0).
 /// 스킬 칸(0151): 오른쪽 아래 — 끼운 둘의 그림(터치 버튼과 같은 픽토그램) + 대기(위에서 덮였다 걷힌다) + 버튼 이름,
 /// 그 위에 큰 기술 게이지(가득 차면 금빛으로 숨 쉰다). 터치는 화면 버튼이 같은 것을 보여 주므로 그리지 않는다.
