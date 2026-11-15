@@ -29,6 +29,11 @@ pub struct Ui {
     /// 정수 배율(렌더 타깃과 같은 값). 글 크기는 `GLYPH × 배수 × scale`.
     pub scale: f32,
     warmed: (u32, f32),
+    /// 눌림(0207, 사장 "버튼 눌리는 감이 없으니"): 0 = 없음, 1 = 막 눌림. 앱이 확인을 잠깐 붙잡는 동안(`press::HOLD`) 고른 줄·단추를
+    /// 눌린 꼴로 그린다(면이 그림자 쪽으로 가라앉고 호박색으로 번쩍). 그린 위젯은 `pressed_drawn`을 켠다 — 앱은 아무도 안 그렸으면
+    /// 고른 줄의 누를 자리에 덧그린다.
+    pub press: f32,
+    pub pressed_drawn: std::cell::Cell<bool>,
 }
 
 pub const INK: Color = Color::new(0.88, 0.84, 0.76, 1.0);
@@ -177,6 +182,8 @@ impl Ui {
             bold,
             scale: 1.0,
             warmed: (0, 0.0),
+            press: 0.0,
+            pressed_drawn: std::cell::Cell::new(false),
         }
     }
 
@@ -431,8 +438,18 @@ impl Ui {
                 (false, false) => INK,
                 (false, true) => Color::new(INK.r, INK.g, INK.b, 0.4),
             };
-            self.text_center(it, cx, yy, 1.0, col);
-            rows[i] = Rect::new(cx - w * 0.5 - px * 1.5, yy - gap * 0.25, w + px * 3.0, gap);
+            let r = Rect::new(cx - w * 0.5 - px * 1.5, yy - gap * 0.25, w + px * 3.0, gap);
+            // 눌린 줄(0207): 글이 한 칸 가라앉고 번쩍.
+            let sink = if sel && self.press > 0.0 {
+                self.scale
+            } else {
+                0.0
+            };
+            self.text_center(it, cx, yy + sink, 1.0, col);
+            if sink > 0.0 {
+                self.press_overlay(r);
+            }
+            rows[i] = r;
         }
         let arrows = self.scroll_arrows(
             view,
@@ -662,6 +679,39 @@ impl Ui {
         Rect::new(c.x - h * 2.0, c.y - h * 2.0, h * 4.0, h * 4.0)
     }
 
+    /// 눌림의 덧그림(0207): 사각형 `r`을 가라앉히고(위·왼쪽 어두운 턱) 호박색으로 번쩍 — 줄·칸 어디에나.
+    pub fn press_overlay(&self, r: Rect) {
+        let k = self.press.clamp(0.0, 1.0);
+        if k <= 0.0 {
+            return;
+        }
+        let u = self.scale;
+        draw_rectangle(
+            r.x,
+            r.y,
+            r.w,
+            r.h,
+            Color {
+                a: 0.28 * k,
+                ..AMBER
+            },
+        );
+        draw_rectangle(r.x, r.y, r.w, u * 2.0, Color::new(0.0, 0.0, 0.0, 0.45 * k));
+        draw_rectangle(r.x, r.y, u * 2.0, r.h, Color::new(0.0, 0.0, 0.0, 0.45 * k));
+        draw_rectangle_lines(
+            r.x,
+            r.y,
+            r.w,
+            r.h,
+            u.max(1.0),
+            Color {
+                a: 0.9 * k,
+                ..AMBER
+            },
+        );
+        self.pressed_drawn.set(true);
+    }
+
     /// 눌리는 단추(nail `button`, 0157): 오른쪽 아래 그림자 위에 얹힌 면, 위·왼쪽 밝은 모서리. 고르면 면이 밝고 테두리가 호박색.
     pub fn button(&self, r: Rect, label: &str, sel: bool) {
         let u = self.scale;
@@ -672,6 +722,13 @@ impl Ui {
             r.h,
             Color::new(0.02, 0.01, 0.03, 0.9),
         );
+        // 눌린 단추(0207): 면이 그림자 자리로 가라앉는다.
+        let pressed = sel && self.press > 0.0;
+        let r = if pressed {
+            Rect::new(r.x + u * 2.0, r.y + u * 2.0, r.w, r.h)
+        } else {
+            r
+        };
         draw_rectangle(r.x, r.y, r.w, r.h, if sel { PANEL_LIGHT } else { PANEL });
         let edge = if sel { AMBER } else { BORDER };
         let hi = Color { a: 0.45, ..edge };
@@ -687,6 +744,9 @@ impl Ui {
             1.0,
             if sel { INK } else { DIM },
         );
+        if pressed {
+            self.press_overlay(r);
+        }
     }
 
     /// 창 안 목록(0066, nail `menu_list`·`setting_row`): `area` 안에 줄을 왼쪽 맞춤으로, 고른 줄은 밝은 면 + ▶.
@@ -766,6 +826,9 @@ impl Ui {
             };
             let label = self.fit(&row.label, value_left - label_x - u * 6.0, k);
             self.text(&label, label_x, ty, k, ink);
+            if sel && self.press > 0.0 {
+                self.press_overlay(r);
+            }
             hits.rows[i] = r;
         }
         hits
