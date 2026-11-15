@@ -32,7 +32,7 @@ pub enum Sweep {
 /// 구간(시작 s, 길이 s): `tools/art/blender/wanderer_skin.py` `HIT_WINDOWS` 그대로(시험 `swing_windows_match_the_blender_table`) —
 /// 동작 시계는 타의 판정 시작이 이 시작에 오게 돈다(`clip_rate` — 맨손처럼 남의 동작을 빌린 타·대시 공격도 칼이 닿는 순간에 맞는다).
 /// 새 동작을 무기 표에 쓰면 여기에도 한 줄(시험 `every_weapon_motion_has_a_sweep`).
-pub const SWEEPS: [(&str, Sweep, (f32, f32)); 18] = [
+pub const SWEEPS: [(&str, Sweep, (f32, f32)); 19] = [
     ("attack", Sweep::RightToLeft, (0.08, 0.10)),
     ("attack2", Sweep::LeftToRight, (0.08, 0.10)),
     ("attack3", Sweep::Center, (0.10, 0.12)),
@@ -44,7 +44,8 @@ pub const SWEEPS: [(&str, Sweep, (f32, f32)); 18] = [
     ("staff2", Sweep::LeftToRight, (0.06, 0.07)),
     ("staff3", Sweep::RightToLeft, (0.06, 0.08)),
     ("staff4", Sweep::Center, (0.10, 0.13)),
-    ("staff_release", Sweep::LeftToRight, (0.05, 0.11)),
+    ("staff_release", Sweep::Center, (0.05, 0.11)),
+    ("sword_dash", Sweep::RightToLeft, (0.08, 0.10)),
     // 맨손(0198): 잽 둘·어퍼컷·앞차기 — 모두 앞으로 내지른다.
     ("fist1", Sweep::Center, (0.048, 0.06)),
     ("fist2", Sweep::Center, (0.048, 0.06)),
@@ -365,12 +366,11 @@ pub const WEAPONS: [Weapon; 5] = [
     Weapon {
         id: Id::Sword,
         combo: &SWORD_COMBO,
-        // 달려들며 크게 베기(0201 — 1타의 오른쪽 위 → 왼쪽 대각이라 다음 누름의 2타로 원본 그대로 이어진다): 판정은 좁고 길게,
-        // 회피 거리만큼 더 내딛는다.
+        // 달려들며 올려 베기(0206 — Charged_Upward_Slash, 예전엔 1타를 빌렸다 0201): 판정은 좁고 길게, 회피 거리만큼 더 내딛는다.
         dash: Some(Hit {
             knock: 1.4,
             cancel: 0.2,
-            ..hit(1.0, 1.25, 0.5, 2.4, 20, 2.0, "attack")
+            ..hit(1.0, 1.25, 0.5, 2.4, 20, 2.0, "sword_dash")
         }),
         heavy: Some(Heavy {
             time: 1.0,

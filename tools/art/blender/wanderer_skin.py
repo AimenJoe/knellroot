@@ -85,7 +85,7 @@ XBOW_BLEND = {"throw": [(0.0, 1.0), (0.06, 0.0), (0.38, 0.0), (0.5, 1.0)]}
 # 왼손과 따로 놀며 엉뚱한 쪽을 가리켰다(사장 "지팡이는 다 이상하고"). 두 손이 가까이(`TWO_HAND_NEAR` 안) 있으면 지팡이를
 # 오른손 → 왼손 줄로 눕히고, 한 손을 떼어 휘두르면(멀어지면 `TWO_HAND_FAR`까지) 옛 규칙으로 돌아간다.
 # 0203: 평타 1~3타는 한 손으로 크게 휘두르는 Weapon_Combo라 옛 규칙(어깨 → 주먹), 넷째(Attack)는 두 손으로 들어 내려친다.
-TWO_HAND = {"staff4", "staff_charge", "staff_release"}
+TWO_HAND = {"staff4"}  # 0206: 모으기·모아 치기는 한 손 내려찍기(Charged_Axe_Chop)
 TWO_HAND_NEAR, TWO_HAND_FAR = 0.30, 0.55
 SPIN = -1.0  # 휘돌이가 도는 쪽(원본 Skill_03은 오른쪽으로 돈다 — 요가 줄어드는 쪽). 이펙트 `render::overlays::WHIRL_CLIP_TURN`과 같아야 한다
 
@@ -93,7 +93,7 @@ HIT_WINDOWS = {
     "attack": (0.08, 0.10), "attack2": (0.08, 0.10), "attack3": (0.10, 0.12), "heavy": (0.06, 0.12),
     "hammer1": (0.14, 0.17), "hammer2": (0.16, 0.20), "hammer_slam": (0.08, 0.16),
     "staff1": (0.06, 0.07), "staff2": (0.06, 0.07), "staff3": (0.06, 0.08), "staff4": (0.10, 0.13),
-    "staff_release": (0.05, 0.11),
+    "staff_release": (0.05, 0.11), "sword_dash": (0.08, 0.10),
     "fist1": (0.048, 0.06), "fist2": (0.048, 0.06), "fist3": (0.064, 0.08), "fist_heavy": (0.048, 0.096),
     "fist_dash": (0.056, 0.07), "hammer_dash": (0.128, 0.16),
 }
@@ -171,8 +171,12 @@ CLIPS = [
     ("staff2", "Weapon_Combo", ("anchors", [(0.0, 24), (0.06, 28), (0.13, 32), (0.3, 35)])),
     ("staff3", "Weapon_Combo", ("anchors", [(0.0, 44), (0.06, 50), (0.14, 55), (0.32, 60)])),
     ("staff4", "Attack", ("anchors", [(0.0, 8), (0.10, 21), (0.23, 26), (0.56, 40)])),
-    ("staff_charge", "M09", ("span", 0, 22, 0.3)),
-    ("staff_release", "M09", ("hit", 22, (24, 34), 56, 0.52, 0.05)),
+    # 0206(사장 "charged 시리즈 — 모으기 모션이 겹치거나 없는 거에"): 느린 M09 한 바퀴 대신 Charged_Axe_Chop — 모으며 일어나 머리
+    # 위로 들어(74 → 93) 쥐고, 떼면 내려찍는다(103~107, 5 m/s).
+    ("staff_charge", "Charged_Axe_Chop", ("anchors", [(0.0, 74), (0.3, 93)])),
+    ("staff_release", "Charged_Axe_Chop", ("anchors", [(0.0, 93), (0.05, 103), (0.16, 108), (0.52, 124)])),
+    # 0206: 검 달리기 공격 = Charged_Upward_Slash 달려들며 아래에서 머리 위까지 올려 베기(21~27) — 예전엔 1타를 빌렸다.
+    ("sword_dash", "Charged_Upward_Slash", ("anchors", [(0.0, 6), (0.08, 21), (0.18, 27), (0.43, 36)])),
     # 망치(M10 모으기·M11 두 타)
     # 망치 모으기·강타(0199): Heavy_Hammer_Swing — 머리 위로 들어(7 → 27, 모으는 동안 버팀) 내려친다(33~37). 옛 강타는 Charged_Ground_Slam이라
     # 점프 내려찍기·땅울림과 같은 동작이었다. 모으기도 같은 원본이라야 떼는 순간 자세가 이어진다(옛 M10은 들지 않았다).

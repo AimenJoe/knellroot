@@ -198,6 +198,10 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("attack", ("평타 1", "hit 1")),
     ("attack2", ("평타 2", "hit 2")),
     ("attack3", ("평타 3", "hit 3")),
+    (
+        "sword_dash",
+        ("검 — 달리며 올려 베기", "sword: running rising slash"),
+    ),
     ("charge", ("강타 모으기", "heavy charge")),
     ("heavy", ("강타", "heavy")),
     ("hammer1", ("평타 1", "hit 1")),
