@@ -65,6 +65,8 @@ SKILL_FACE = {
 # 몸이 스스로 돌지 않는 동작(0196): 게임이 몸의 쪽(`facing`)을 돌리는 동안의 발 디딤 — 원본은 몸이 150° 넘게 돌아 게임의 90°와
 # 겹쳐 두 번 돌고, 끝에 서기로 홱 돌아왔다(돌아서기). 프레임마다 엉덩이를 정면으로.
 FACE_STILL = {"turn_l", "turn_r"}
+# 몸을 움직여 가는 동작(0197): 원본에서 엉덩이가 간 쪽을 몸의 앞("front")·뒤("back")에 맞춘다 — 게임이 그 쪽으로 몸을 옮긴다.
+FACE_TRAVEL = {"dodge": "front", "dodge_back": "back"}
 # 모아 친 강타는 모으기 동작이 끝난 쪽에서 시작한다(0196 — 망치 모으기는 몸을 −60° 감아 쥔다: 정면에서 시작하면 떼는 순간 홱 돈다).
 CHAIN = {"heavy": "charge", "hammer_slam": "hammer_charge", "staff_release": "staff_charge"}
 # 떠 있는 동안 엉덩이를 올리지 않는 동작(0196): 게임이 몸을 `air`만큼 올린다 — 원본의 뛰어오름(엉덩이 +0.2)을 그대로 두면 두 번 뜬다.
@@ -101,7 +103,10 @@ CLIPS = [
     # 패링(2026-11-15): 라이브러리 Sword_Parry_Backward_2는 오른손이 몸 뒤(엉덩이보다 0.2~0.28 m 뒤)라 칼이 가려지고 공격 준비처럼 보였다 —
     # 되울림 원본(M15 "칼을 얼굴 앞에 세워 든다")에서 손이 몸 앞 가슴 높이로 올라오는 구간(12~21프레임)을 쓴다. 0.08초에 들고 버틴다.
     ("parry", "M15", ("anchors", [(0.0, 10), (0.08, 15), (0.3, 21)])),
-    ("dodge", "Roll_Dodge_3", ("hit", 2, (10, 20), 30, 0.25, 0.1)),
+    # 회피(0197): 구르기의 몸통 구간만(3 뜀 → 14 말림 → 26 웅크려 닿음 — 옛 2~30은 0.25초에 4.7배로 뭉갰다). 원본은 왼쪽 앞 37°로 굴러
+    # 몸을 돌려 구르는 쪽 = 앞(`FACE_TRAVEL`). 뒤로 피할 때(입력 없이·락온 뒷걸음)는 Back_Jump(2 웅크림 → 4 뜀 → 14 닿음 → 17 받음).
+    ("dodge", "Roll_Dodge_3", ("anchors", [(0.0, 3), (0.12, 14), (0.25, 26)])),
+    ("dodge_back", "Back_Jump", ("anchors", [(0.0, 2), (0.04, 4), (0.19, 14), (0.25, 17)])),
     ("hurt", "Dead", ("hit", 0, (2, 6), 12, 0.35, 0.058)),
     ("fall", "Dead", ("span", 4, 71, 1.3)),
     ("wake", "M01", ("span", 0, 71, 4.0)),
@@ -112,11 +117,14 @@ CLIPS = [
     ("jump", "Jump_Over_Obstacle_2", ("anchors", [(0.0, 2), (0.5, 14)])),
     ("land", "Jump_Over_Obstacle_2", ("anchors", [(0.0, 14), (0.15, 18)])),
     # 줍기·상자 열기(0196): 원본 Collect_Object(144프레임 — 11~29 웅크림, 59~80 오른손을 앞 아래로 뻗어 집음, 83~104 일어섬)를 0.9초로.
+    # 장치 당기기(0197): 끌어모으기 원본 M13(7 손을 뻗음 → 19 잡음 → 43 몸으로 당김 → 59 놓음)을 0.65초로.
+    ("pull", "M13", ("anchors", [(0.0, 7), (0.15, 19), (0.45, 43), (0.65, 59)])),
     ("pickup", "Collect_Object", ("anchors", [(0.0, 11), (0.22, 29), (0.30, 59), (0.55, 80), (0.62, 83), (0.9, 104)])),
     ("plunge", "Charged_Ground_Slam", ("anchors", [(0.0, 18), (0.12, 30), (0.29, 39), (0.3, 41)])),
     ("drink", "M05", ("span", 0, 60, 0.8)),
     ("cast_charge", "M06", ("span", 4, 28, 0.3)),
-    ("cast", "M06", ("hit", 28, (29, 40), 56, 0.4, 0.075)),
+    # 마법(0197): 왼손을 앞으로 내밀어(28 → 35) 내민 채 버티고(46) 거둔다(58) — 옛 판은 내미는 순간 바로 거둬 손만 까딱였다.
+    ("cast", "M06", ("anchors", [(0.0, 28), (0.075, 35), (0.25, 46), (0.4, 58)])),
     ("throw", "M07", ("hit", 12, (24, 40), 56, 0.5, 0.175)),
     # 지팡이(M08 봉우리 11·24·29·42 — 찌르기·가로 치기·올려 치기·돌아 내려치기)
     ("staff1", "M08", ("hit", 2, (6, 14), 17, 0.3, 0.042)),
@@ -620,6 +628,16 @@ def face_still(arm, name, poses):
     print(f"[skin] face {name}: still ({math.degrees(min(turns)):+.0f}..{math.degrees(max(turns)):+.0f}°)")
 
 
+def face_travel(arm, name, poses, hips, way):
+    """`FACE_TRAVEL`: 처음 → 끝 엉덩이 이동이 몸의 앞(또는 뒤)이 되게 몸 전체를 한 각만큼 돌린다."""
+    d = hips[-1] - hips[0]
+    if way == "back":
+        d = -d
+    turn = -math.atan2(d.x, -d.y)
+    turn_body(arm, poses, [turn] * len(poses))
+    print(f"[skin] face {name}: travel {way} — turned {math.degrees(turn):+.0f}° ({d.length:.2f} m)")
+
+
 def aim_yaw(hand):
     """겨누는 줄(오른손 → 왼손)의 쪽(라디안, 정면 0 · 왼쪽 +, 뼈대 공간)."""
     v = hand[2] - hand[0]
@@ -749,6 +767,8 @@ def make_actions(arm, body):
     for name, src, spec in CLIPS:
         anchors = anchors_of(arm, name, src, spec)
         n, poses, hips, hands = sample(arm, src, anchors, UPRIGHT.get(name))
+        if name in FACE_TRAVEL:
+            face_travel(arm, name, poses, hips, FACE_TRAVEL[name])
         strip_travel(arm, poses, hips, name in LOOPS)
         if name == "idle":
             stand = sum(h.z for h in hips) / len(hips)

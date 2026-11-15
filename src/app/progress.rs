@@ -70,11 +70,11 @@ impl App {
         // 상자(0064 M3 → 0131): 열면 소리만 — 얻는 것은 바닥에 떨어진 것을 주울 때. 기록도 그때(줍지 않고 떠나면 다음에 다시 닫혀 있다).
         if self.run.take_opened().is_some() {
             self.snd(crate::sfx::Id::Chest);
-            self.gesture = Some(0.0);
+            self.gesture = Some(("pickup", 0.0));
         }
         if let Some(i) = self.run.take_looted() {
             use crate::stage::Loot;
-            self.gesture = Some(0.0);
+            self.gesture = Some(("pickup", 0.0));
             self.snd(crate::sfx::Id::Ember);
             self.progress
                 .chests
@@ -111,7 +111,7 @@ impl App {
         // 숨은 물건(0105): 기록에 이름을 넣고 능력치에 — 등잔이면 지금 한 모금도 채운다.
         if let Some((kind, id)) = self.run.take_picked() {
             self.snd(crate::sfx::Id::Chest);
-            self.gesture = Some(0.0);
+            self.gesture = Some(("pickup", 0.0));
             // 덧옷(0176): 아무것도 안 걸쳤으면 바로 걸친다(장신구가 빈 칸에 끼워지는 것과 같은 꼴).
             let garb = crate::garb::of_find(&id);
             if !self.progress.finds.contains(&id) {
@@ -149,6 +149,10 @@ impl App {
         }
         // 엘리트(0112): 처음 쓰러뜨린 것을 기록에(덤 잔불은 스테이지가 이미 흩었다).
         // 문 장치(0113): 처음 연 문을 기록에(판을 넘어 열려 있다).
+        // 장치 당기기 몸짓(0197).
+        if self.run.take_pulled() {
+            self.gesture = Some(("pull", 0.0));
+        }
         if self.run.take_gate_new() {
             let id = self.run.def.find_prefix.to_string();
             if !self.progress.gates.contains(&id) {

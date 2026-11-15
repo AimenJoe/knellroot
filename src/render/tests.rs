@@ -546,3 +546,51 @@ fn the_crossbow_points_where_the_bolt_goes() {
         );
     }
 }
+
+/// 0197: 뒷걸음은 걷기와 같은 빠르기로 발이 간다 — 발이 가는 빠르기(엉덩이에 대한 발의 앞뒤 폭 × 2 / 주기)에
+/// `WALK_BACK_RATE`를 곱하면 걷기와 15% 안(같은 땅 빠르기에서 발이 미끄러지지 않는다).
+#[test]
+fn walk_back_steps_keep_pace_with_the_ground() {
+    let m = crate::model::Model::from_bytes(include_bytes!("../../assets/models/wanderer.glb"))
+        .unwrap();
+    let (hips, foot) = (
+        m.node("mixamorig:Hips").unwrap(),
+        m.node("mixamorig:LeftFoot").unwrap(),
+    );
+    let mut pose = Vec::new();
+    let mut pace = |n: &str| {
+        let i = m.anim(n).unwrap();
+        let d = m.anims[i].duration;
+        let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+        for k in 0..=40 {
+            m.pose(Some(i), d * k as f32 / 40.0, &mut pose);
+            let z = pose[foot].w_axis.z - pose[hips].w_axis.z;
+            lo = lo.min(z);
+            hi = hi.max(z);
+        }
+        2.0 * (hi - lo) / d
+    };
+    let (walk, back) = (pace("walk"), pace("walk_back"));
+    let r = back * WALK_BACK_RATE / walk;
+    assert!(
+        (r - 1.0).abs() < 0.15,
+        "walk {walk:.3} vs back {back:.3} × rate = {r:.2}"
+    );
+}
+
+/// 0197: 손으로 하는 일의 몸짓 길이는 모델의 동작과 같다.
+#[test]
+fn gesture_lengths_match_the_model() {
+    let m = crate::model::Model::from_bytes(include_bytes!("../../assets/models/wanderer.glb"))
+        .unwrap();
+    for n in ["pickup", "pull"] {
+        let d = m.anims[m.anim(n).unwrap()].duration;
+        assert!(
+            (d - gesture_len(n)).abs() < 0.011,
+            "{n}: {d} vs {}",
+            gesture_len(n)
+        );
+    }
+    assert!(m.anim("dodge_back").is_some());
+    assert_eq!(gesture_len("nothing"), 0.0);
+}

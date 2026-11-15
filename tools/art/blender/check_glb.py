@@ -41,6 +41,8 @@ EXPECT = {
                  "walk_back": 1.2, "charge": 0.3, "heavy": 0.58, "drink": 0.8,
                  # 0196: 점프는 체공의 앞뒤 반(게임이 위 속도로 자리를 고른다), 줍기 0.9, 쇠뇌(활쏘기 원본) 겨누기 0.3 · 쏘기 0.24.
                  "jump": 0.5, "land": 0.15, "pickup": 0.9, "xbow_charge": 0.3, "xbow_shoot": 0.24,
+                 # 0197: 뒤로 뛰기 회피 0.25(회피와 같다), 장치 당기기 0.65.
+                 "dodge_back": 0.25, "pull": 0.65,
                  # 0158 G2 스킬 동작 — 길이 = 시동 + 이어짐 + 후딜(`skills.rs` 표의 바탕값).
                  "sk_whirl": 0.67, "sk_cut": 0.57, "sk_gather": 0.5, "sk_quake": 0.7, "sk_brace": 1.65, "sk_echo": 0.45,
                  "sk_throw": 0.53, "sk_embers": 0.55, "ult_upend": 1.0, "ult_flurry": 0.5, "ult_line": 0.9},

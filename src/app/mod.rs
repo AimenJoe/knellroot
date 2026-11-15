@@ -93,8 +93,9 @@ pub struct App {
     wake: Option<crate::wake::Wake>,
     /// 쓰러짐(0175): 무너짐 → 어둠 → 쉼터 곁에서 일어남. 그동안 조작이 없다.
     fall: Option<crate::fall::Fall>,
-    /// 줍기·상자 열기 몸짓(0196)이 흐른 초 — 렌더만 안다(월드는 줍기를 바로 끝낸다). 서 있는 동안만, 움직이거나 다른 동작이 시작되면 그친다.
-    gesture: Option<f32>,
+    /// 손으로 하는 일의 몸짓(0196 줍기·상자 열기 → 0197 장치 당기기)과 흐른 초 — 렌더만 안다(월드는 그 일을 바로 끝낸다).
+    /// 서 있는 동안만, 움직이거나 다른 동작이 시작되면 그친다.
+    gesture: Option<(&'static str, f32)>,
     /// 꺼진 화로에 불이 붙는 순간을 보는 남은 시간(0171) — 이 동안은 조작이 멎고, 끝나면 화로의 창이 열린다.
     kindle: f32,
     /// 주민 말풍선(0122): (주민 — 지금 지역의 번호, 몇째 말, 남은 초). 멈추지 않는다.
@@ -817,10 +818,7 @@ impl App {
                 pose: match (self.fall, self.wake) {
                     (Some(f), _) if self.scene() == Scene::Play => Some(f.pose()),
                     (_, Some(w)) if stage.is_some() => Some(("wake", w.pose())),
-                    _ => self
-                        .gesture
-                        .filter(|_| stage.is_some())
-                        .map(|g| ("pickup", g)),
+                    _ => self.gesture.filter(|_| stage.is_some()),
                 },
             }),
         };

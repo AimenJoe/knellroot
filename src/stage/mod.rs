@@ -641,6 +641,8 @@ pub struct StageRun {
     pub near_lever: bool,
     pub gate_opened: bool,
     gate_new: bool,
+    /// 방랑자가 장치를 당겼다(0197 — 앱이 당기는 몸짓을 튼다).
+    pulled: bool,
     beaten: Vec<String>,
     elite_new: Vec<String>,
     /// 이 문지기를 처음 이기는 판인가(앱이 기록에서 — 핵이 스스로 다가온다, lore CANON 0101).
@@ -761,6 +763,7 @@ impl StageRun {
             near_lever: false,
             gate_opened: false,
             gate_new: false,
+            pulled: false,
             beaten: Vec::new(),
             elite_new: Vec::new(),
             first_core: false,
@@ -960,6 +963,10 @@ impl StageRun {
     }
 
     /// 이번 틱에 처음 문을 열었다(0113) — 앱이 한 번 가져가 기록에.
+    pub fn take_pulled(&mut self) -> bool {
+        std::mem::take(&mut self.pulled)
+    }
+
     pub fn take_gate_new(&mut self) -> bool {
         std::mem::take(&mut self.gate_new)
     }
@@ -1146,6 +1153,7 @@ impl StageRun {
         } else if let (true, true) = (self.near_lever, w.interact) {
             self.gate_opened = true;
             self.gate_new = true;
+            self.pulled = true;
             self.near_lever = false;
             self.set_gate(w, false);
             if self.phase == Phase::Entrance {
@@ -1802,6 +1810,8 @@ mod tests {
         assert!(!run.gate_closed && run.gate_opened);
         assert!(run.take_gate_new(), "the app records it");
         assert!(!run.take_gate_new(), "once");
+        assert!(run.take_pulled(), "the app plays the pull (0197)");
+        assert!(!run.take_pulled());
         run.guide = Some(hearth);
         assert_eq!(
             run.goal(),

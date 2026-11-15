@@ -116,8 +116,8 @@ impl App {
             matches!(pl.state, crate::world::PState::Idle) && pl.pos.distance(pl.prev) < 1e-4;
         self.gesture = self
             .gesture
-            .map(|g| g + TICK_DT)
-            .filter(|g| still && *g < crate::render::PICKUP_CLIP);
+            .map(|(n, g)| (n, g + TICK_DT))
+            .filter(|(n, g)| still && *g < crate::render::gesture_len(n));
         // 플레이 시간(0081): 싸움 화면의 로직 틱만 센다(멈춤·메뉴·타이틀·개발 판은 빼고). 기록에는 다음 저장 때 같이 들어간다.
         if !self.dev_run_now() {
             self.play_acc += TICK_DT;
