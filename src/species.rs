@@ -414,11 +414,12 @@ pub static MOSSGRAZER: Def = Def {
     model: "mossgrazer",
 };
 
-/// 넷째 문지기(0208, 회색 박스 S4-1): 수는 이끼 덮인 문지기를 빌리고(S4-5에서 제 수), 체력은 한 등급 위 — 보스 모의로 다시 맞춘다.
+/// 넷째 문지기(0208, 회색 박스 S4-1): 수는 이끼 덮인 문지기를 빌리고(S4-5에서 제 수). 체력 1200 → 1600(0216 W4 보스 모의 —
+/// 작업층 도달 몸 E가 반쯤 받아내면 88% · 53초: 셋째 문지기(D 92%)와 종지기(B 65%) 사이, 마지막 싸움이라 더 길게).
 pub static OVERSEER: Def = Def {
     kind: Kind::Overseer,
     name: |s: &Strings| s.boss_overseer,
-    hp: 1200,
+    hp: 1600,
     radius: 1.2,
     height: 2.8,
     speed: 2.6,

@@ -402,6 +402,19 @@ pub fn builds() -> Vec<Build> {
             tree: tree(5),
             weapon: W::Sword,
         },
+        // 작업층 도달(0216 W1): 문지기 셋 — 레벨 열, 힘 5단(평타 +10), 패시브 칸 여섯.
+        Build {
+            name: "E workings arrival (Lv10 life4/stamina1/might5, Ear+Hand+Cloth, lamp+sip, Riposte6)",
+            level: Level {
+                life: 4,
+                stamina: 1,
+                might: 5,
+            },
+            worn: vec![Charm::Ear, Charm::Hand, Charm::Cloth],
+            finds: finds(),
+            tree: tree(6),
+            weapon: W::Sword,
+        },
     ]
 }
 
@@ -412,8 +425,8 @@ fn bellkeeper_fight_length() {
     let runs = 40;
     for (kind, bs) in [
         (Kind::Warden, &builds()[..3]),
-        (Kind::Bellkeeper, &builds()[..]),
-        (Kind::Mossward, &builds()[2..]),
+        (Kind::Bellkeeper, &builds()[..4]),
+        (Kind::Mossward, &builds()[2..4]),
         (Kind::Overseer, &builds()[3..]),
     ] {
         for b in bs {

@@ -308,7 +308,7 @@ fn packbearer_loads(w: &World, alpha: f32) {
         let p = en.prev.lerp(en.pos, alpha);
         let fwd = vec3(en.facing.sin(), 0.0, en.facing.cos());
         let scale = en.radius / en.def().radius;
-        let c = p + Vec3::Y * (en.height * 0.95) - fwd * 0.15 * scale;
+        let c = p + Vec3::Y * (en.height * 0.8) - fwd * 0.2 * scale;
         let turn = Quat::from_rotation_y(en.facing);
         shaded_tris(c, &ball_faces(0.48 * scale), BODY, 0.75, turn);
         // 짐을 묶은 띠.
