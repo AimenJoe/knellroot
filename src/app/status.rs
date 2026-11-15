@@ -98,20 +98,20 @@ pub(super) fn skills_cursor(
     }
 }
 
-/// 연 패시브 칸들(판의 차례).
+/// 연 패시브 칸들(판의 차례 — 다리 칸까지, 0215).
 pub(super) fn open_cells(board: &sk::Board) -> Vec<Entry> {
     ENTRIES
         .iter()
         .copied()
-        .filter(|e| matches!(e, Entry::Cell(_)) && board.rank(*e) >= 1)
+        .filter(|e| matches!(e, Entry::Cell(_) | Entry::Link(_)) && board.rank(*e) >= 1)
         .collect()
 }
 
-/// 패시브 칸의 수.
+/// 패시브 칸의 수(다리 칸까지, 0215).
 pub(super) fn cell_count() -> usize {
     ENTRIES
         .iter()
-        .filter(|e| matches!(e, Entry::Cell(_)))
+        .filter(|e| matches!(e, Entry::Cell(_) | Entry::Link(_)))
         .count()
 }
 
@@ -810,6 +810,6 @@ mod tests {
             skills_cursor(Row::Ult, &old, worn, sk::Ult::Upend),
             at(Entry::Ult(sk::Ult::Upend))
         );
-        assert_eq!(cell_count(), 21);
+        assert_eq!(cell_count(), 25);
     }
 }

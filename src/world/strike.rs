@@ -87,7 +87,8 @@ impl World {
                     knock: t[P::HeavyKnock] * if perfect { 1.5 } else { 1.0 },
                     heavy: Some(full),
                     perfect,
-                    beat: false,
+                    // 받아치는 박(0215 다리): 박자로 친 반격(`swing_pays`가 그 스윙에 표시했다).
+                    beat: swing == self.player.parry.riposte_swing && self.player.beat.swing_beat,
                     dash: false,
                 }
             }
@@ -201,6 +202,8 @@ impl World {
         let mut heavy_hit = false;
         let mut first_hit: Option<(Vec3, f32, Vec3)> = None;
         let measure = self.tree.keyed(crate::progression::Key::Measure);
+        let rooted_riposte = self.tree.linked(Link::RootedRiposte);
+        let breaking_beat = self.tree.linked(Link::BreakingBeat);
         let mut deflected: Option<Vec3> = None;
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing {
@@ -227,6 +230,8 @@ impl World {
             }
             // 패링으로 드러난 적은 한 대가 치명타(0025).
             let crit = en.exposed > 0.0;
+            // 끊는 박(0215 다리): 휘청이거나 드러난 적 — 치명타가 드러남을 지우기 전에 본다.
+            let opened = crit || matches!(en.state, EState::Stagger { .. });
             // 레벨 힘(0104): 강타·패링 반격 +`heavy_dmg`, 콤보·대시 공격 +`light_dmg` — 장신구 `dmg`는 모든 타.
             let lv = if s.heavy.is_some() {
                 self.stats.heavy_dmg
@@ -242,6 +247,15 @@ impl World {
                     crate::progression::key::MEASURE_OFF
                 };
                 (raw as f32 * k).round() as i32
+            } else {
+                raw
+            };
+            // 뿌리로 받기(0215 다리): 엉키거나 묶인 적에게 반격 ×1.5.
+            let raw = if rooted_riposte
+                && swing == self.player.parry.riposte_swing
+                && (en.snare > 0.0 || en.bind > 0.0)
+            {
+                (raw as f32 * link::ROOTED_RIPOSTE).round() as i32
             } else {
                 raw
             };
@@ -280,6 +294,9 @@ impl World {
             }
             if swing == self.player.flank_swing && self.tree.has(Cell::Sidestep) {
                 pk *= cell::SIDESTEP_POISE;
+            }
+            if s.beat && opened && breaking_beat {
+                pk *= link::BREAK_POISE;
             }
             // 무너진 틈(0107): 깨진 적에게 다 모은 강타 = 깨짐을 처음부터.
             let was_broken = en.broken > 0.0;

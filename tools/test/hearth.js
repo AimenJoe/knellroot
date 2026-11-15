@@ -70,14 +70,15 @@ async function run(browser, lang) {
   // 끝나면 맨 아래 줄의 왼쪽 칸(몰아치기)에 선다.
   const sweep = async (name, shots) => {
     await home();
-    // 줄마다의 칸(위 → 아래): 스킬 넷 · 패시브 여섯 · 스킬 넷 · 패시브 여섯 · 큰 기술과 패시브 여섯 · 새 스킬 셋 · 패시브 여섯 · 맺음 셋(0214).
-    const COLS = [4, 6, 4, 6, 6, 3, 6, 3];
+    // 줄마다의 칸(위 → 아래): 스킬 넷 · 패시브 여섯 · 스킬 넷 · 패시브 여섯 + 다리 둘 · 큰 기술과 패시브 여섯 · 새 스킬 셋 ·
+    // 패시브 여섯 + 다리 둘 · 맺음 셋(0214 · 0215).
+    const COLS = [4, 6, 4, 8, 6, 3, 8, 3];
     for (let row = 0; row < COLS.length; row++) {
       for (let col = 0; col < COLS[row]; col++) {
         if (!shots || shots.includes(row)) await shot(`${name}-r${row}c${col}`);
         if (col + 1 < COLS[row]) { await press('ArrowRight'); await page.waitForTimeout(120); }
       }
-      await press('ArrowLeft', 6);
+      await press('ArrowLeft', 8);
       if (row + 1 < COLS.length) { await press('ArrowDown'); await page.waitForTimeout(120); }
     }
   };

@@ -4,7 +4,7 @@ use macroquad::prelude::*;
 
 use crate::ground::Ground;
 use crate::input::Actions;
-use crate::progression::{cell, Cell};
+use crate::progression::{cell, link, Cell, Link};
 use crate::skills;
 use crate::tuning::{
     Tuning, AIR_SHOT_HOVER, AIR_SHOT_MIN, AIR_SHOT_REACH, AIR_VOLLEY, AIR_VOLLEY_SPREAD_DEG,
@@ -632,6 +632,8 @@ pub struct ParryState {
     pub gathered_swing: u32,
     /// 되찾는 살(0214): 체력으로 바꾸지 않은 패링 수.
     pub mends: u32,
+    /// 받아 넘기기(0215 — 받아내기 II): 패링 뒤 받는 피해가 줄어 있는 남은 초.
+    pub deflect: f32,
 }
 
 /// 무기 박자(0071·0076): 마지막 평타 뒤의 시간과 그 타의 박자, 박자에 맞았나, 이어 맞춘 수. `Player::beat`.
@@ -880,6 +882,7 @@ impl World {
                     riposte_swing: 0,
                     gathered_swing: 0,
                     mends: 0,
+                    deflect: 0.0,
                 },
                 flank: false,
                 flank_swing: 0,
