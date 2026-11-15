@@ -70,7 +70,7 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
         add("throw", None);
     }
     for a in [
-        "parry", "dodge", "jump", "land", "plunge", "drink", "hurt", "fall", "wake",
+        "parry", "dodge", "jump", "land", "plunge", "drink", "pickup", "hurt", "fall", "wake",
     ] {
         add(a, None);
     }

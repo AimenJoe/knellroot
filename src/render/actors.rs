@@ -289,22 +289,32 @@ impl Renderer {
                 PState::CastCharge { t: e } => (&["cast_charge", "cast", "parry"], e),
                 // 공중(0027): 방랑자의 jump·plunge·land 동작(없는 모델이면 회피·공격 자세로).
                 // 공중 RB(0111): 떠 있는 동안 쏘는 자세(쇠뇌는 겨누고 쏘기, 마법은 손을 내밂).
+                // 0196: 떠 있는 동안 쏜 순간(놓는 자리)부터 흐른다 — 예전엔 한 장을 세워 두었다.
                 PState::Jump { plunge: false, .. }
                     if pl.ranged.hover > 0.0
                         && matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) =>
                 {
-                    (&["xbow_shoot", "cast"], 0.1)
+                    (
+                        &["xbow_shoot", "cast"],
+                        XBOW_RELEASE + (crate::tuning::AIR_SHOT_HOVER - pl.ranged.hover),
+                    )
                 }
-                PState::Jump { plunge: false, .. } if pl.ranged.hover > 0.0 => {
-                    (&["cast", "jump"], 0.12)
-                }
-                PState::Jump { plunge: false, .. } => (&["jump", "dodge", "idle"], 0.1),
-                // 내려찍기: 떨어지는 동안 칼을 들고 있다가 땅에 가까우면 꽂는 자세로.
+                PState::Jump { plunge: false, .. } if pl.ranged.hover > 0.0 => (
+                    &["cast", "jump"],
+                    CAST_RELEASE + (crate::tuning::AIR_SHOT_HOVER - pl.ranged.hover),
+                ),
+                // 점프(0196): 위 속도로 동작의 자리를 고른다 — 오르는 동안 앞 반, 꼭대기 = 가운데, 내려오는 동안 뒤 반(턱에서 떨어지면
+                // 꼭대기에서 시작). 예전엔 꼭대기 한 장을 세워 두었다.
+                PState::Jump { plunge: false, .. } => (
+                    &["jump", "dodge", "idle"],
+                    JUMP_CLIP * jump_phase(pl.vy, crate::tuning::jump_ballistics(t).0),
+                ),
+                // 내려찍기: 높이로 동작의 자리를 고른다 — 꼭대기에서 칼을 들고, 땅에 가까울수록 꽂는 자세로(예전엔 두 장을 바꿔 끼웠다).
                 PState::Jump { plunge: true, .. } => (
                     &["plunge", "attack"],
-                    if pl.air < 0.35 { 0.29 } else { 0.12 },
+                    PLUNGE_STRIKE * plunge_phase(pl.air, t[crate::tuning::P::JumpHeight]),
                 ),
-                PState::Land { t: e, .. } => (&["land", "idle"], e),
+                PState::Land { t: e, dur } => (&["land", "idle"], LAND_CLIP * e / dur.max(1e-3)),
                 // 스킬·큰 기술(0151 → 0158 G2): 전용 동작(`sk_*`·`ult_*`)이 모델에 있으면 그것을 — 상태의 구간(시동·이어짐·후딜)을
                 // 동작의 구간에 맞춘다(`Clip::at`: 단·고르기가 길이를 바꿔도 판정의 순간에 그 자세). 없으면 빌려 쓰던 동작(표의 `anim`).
                 PState::Skill { id, t: el, .. } => {
@@ -827,4 +837,32 @@ fn clip_period(form: &crate::skills::Form) -> Option<f32> {
         crate::skills::Form::Lane { time, .. } => Some(time),
         _ => None,
     }
+}
+
+/// 점프 동작의 길이(초, `wanderer_skin.py` — 뜨는 순간부터 닿는 순간까지).
+pub(crate) const JUMP_CLIP: f32 = 0.5;
+/// 닿은 뒤 무릎을 받는 동작의 길이(초) — 착지 상태의 길이에 맞춰 돈다.
+pub(crate) const LAND_CLIP: f32 = 0.15;
+/// 내려찍기 동작에서 칼이 땅에 닿는 자리(초).
+pub(crate) const PLUNGE_STRIKE: f32 = 0.29;
+/// 줍기·상자 열기 몸짓의 길이(초, 0196 — 앱이 이만큼 흐르면 그친다).
+pub const PICKUP_CLIP: f32 = 0.9;
+/// 쇠뇌 쏘기·마법 동작의 놓는 자리(초) — 떠 있는 동안 쏠 때 여기서부터.
+pub(crate) const XBOW_RELEASE: f32 = 0.058;
+pub(crate) const CAST_RELEASE: f32 = 0.075;
+
+/// 점프 동작의 자리(0..1, 0196): 오르는 동안 0 → 0.5(꼭대기), 내려오는 동안 0.5 → 1(처음 위 속도만큼 빨라지면 끝 — 다리를 내린 자세).
+pub(crate) fn jump_phase(vy: f32, v0: f32) -> f32 {
+    let v0 = v0.max(1e-3);
+    if vy >= 0.0 {
+        0.5 * (1.0 - vy / v0)
+    } else {
+        0.5 + 0.5 * (-vy / v0)
+    }
+    .clamp(0.0, 1.0)
+}
+
+/// 내려찍기 동작의 자리(0..1, 0196): 점프 높이에서 0(칼을 든다) → 땅에서 1(꽂는다).
+pub(crate) fn plunge_phase(air: f32, height: f32) -> f32 {
+    (1.0 - air / height.max(1e-3)).clamp(0.0, 1.0)
 }

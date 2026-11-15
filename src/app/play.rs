@@ -110,6 +110,14 @@ impl App {
         let a = self.camera_input(a);
         let a = self.cursor_aim(a);
         self.step_world(&a);
+        // 줍기 몸짓(0196): 서서 가만히 있는 동안만 흐르고, 다 돌았거나 움직이면 그친다.
+        let pl = &self.world.player;
+        let still =
+            matches!(pl.state, crate::world::PState::Idle) && pl.pos.distance(pl.prev) < 1e-4;
+        self.gesture = self
+            .gesture
+            .map(|g| g + TICK_DT)
+            .filter(|g| still && *g < crate::render::PICKUP_CLIP);
         // 플레이 시간(0081): 싸움 화면의 로직 틱만 센다(멈춤·메뉴·타이틀·개발 판은 빼고). 기록에는 다음 저장 때 같이 들어간다.
         if !self.dev_run_now() {
             self.play_acc += TICK_DT;

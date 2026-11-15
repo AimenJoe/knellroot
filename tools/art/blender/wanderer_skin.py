@@ -62,6 +62,17 @@ SKILL_FACE = {
     "ult_line": ((0.30, 0.15, 0.45), "tip"),
     "parry": ((0.08, 0.22, 0.0), "hold"),  # 기술은 아니지만 같은 장치 — 막는 동안 몸이 정면(원본 M15는 들며 옆으로 비튼다)
 }
+# 몸이 스스로 돌지 않는 동작(0196): 게임이 몸의 쪽(`facing`)을 돌리는 동안의 발 디딤 — 원본은 몸이 150° 넘게 돌아 게임의 90°와
+# 겹쳐 두 번 돌고, 끝에 서기로 홱 돌아왔다(돌아서기). 프레임마다 엉덩이를 정면으로.
+FACE_STILL = {"turn_l", "turn_r"}
+# 모아 친 강타는 모으기 동작이 끝난 쪽에서 시작한다(0196 — 망치 모으기는 몸을 −60° 감아 쥔다: 정면에서 시작하면 떼는 순간 홱 돈다).
+CHAIN = {"heavy": "charge", "hammer_slam": "hammer_charge", "staff_release": "staff_charge"}
+# 떠 있는 동안 엉덩이를 올리지 않는 동작(0196): 게임이 몸을 `air`만큼 올린다 — 원본의 뛰어오름(엉덩이 +0.2)을 그대로 두면 두 번 뜬다.
+# 엉덩이 높이를 서기의 높이 위로 올리지 않는다(웅크림은 남는다).
+FLAT = {"jump", "land"}
+# 겨누기(0196, 쇠뇌 — 원본은 활쏘기 Archery_Shot): 활을 든 왼팔이 몸 왼쪽을 가리킨다 → 몸을 돌려 오른손 → 왼손(겨누는 줄)이 정면을 보게,
+# 쇠뇌는 그 줄을 따라 눕힌다(날 = 오른손 → 왼손, 위 = 하늘). (이름, 들어가는 몫): 그 몫 동안 서기 방향에서 겨누는 방향으로.
+AIM = {"xbow_charge": 1.0, "xbow_shoot": 0.0}
 SPIN = -1.0  # 휘돌이가 도는 쪽(원본 Skill_03은 오른쪽으로 돈다 — 요가 줄어드는 쪽). 이펙트 `render::overlays::WHIRL_CLIP_TURN`과 같아야 한다
 
 HIT_WINDOWS = {
@@ -96,8 +107,12 @@ CLIPS = [
     ("wake", "M01", ("span", 0, 71, 4.0)),
     ("turn_l", "M03", ("hit", 0, (2, 10), 24, 0.25, 0.1)),
     ("turn_r", "M03", ("hit", 40, (44, 64), 68, 0.25, 0.075)),
-    ("jump", "Basic_Jump", ("apex", 0.3)),
-    ("land", "Basic_Jump", ("touch", 0.15)),
+    # 점프(0196): 원본 Jump_Over_Obstacle_2(24프레임 — 2에 발이 뜨고 8~9가 꼭대기, 14에 닿는다). 게임은 위 속도로 이 동작의 자리를
+    # 고른다(`render::actors` — 오르는 동안 앞 반, 내려오는 동안 뒤 반, 오래 떨어지면 다리를 내린 끝). 옛 Basic_Jump는 꼭대기 한 장을 세웠다.
+    ("jump", "Jump_Over_Obstacle_2", ("anchors", [(0.0, 2), (0.5, 14)])),
+    ("land", "Jump_Over_Obstacle_2", ("anchors", [(0.0, 14), (0.15, 18)])),
+    # 줍기·상자 열기(0196): 원본 Collect_Object(144프레임 — 11~29 웅크림, 59~80 오른손을 앞 아래로 뻗어 집음, 83~104 일어섬)를 0.9초로.
+    ("pickup", "Collect_Object", ("anchors", [(0.0, 11), (0.22, 29), (0.30, 59), (0.55, 80), (0.62, 83), (0.9, 104)])),
     ("plunge", "Charged_Ground_Slam", ("anchors", [(0.0, 18), (0.12, 30), (0.29, 39), (0.3, 41)])),
     ("drink", "M05", ("span", 0, 60, 0.8)),
     ("cast_charge", "M06", ("span", 4, 28, 0.3)),
@@ -115,9 +130,10 @@ CLIPS = [
     ("hammer1", "M11", ("hit", 10, (18, 30), 36, 0.73, 0.225)),
     ("hammer2", "M11", ("hit", 36, (42, 54), 72, 0.86, 0.233)),
     ("hammer_slam", "Charged_Ground_Slam", ("hit", 22, (34, 44), 64, 0.75, 0.108)),
-    # 쇠뇌(M12)
-    ("xbow_charge", "M12", ("span", 12, 48, 0.3)),
-    ("xbow_shoot", "M12", ("hit", 48, (50, 58), 64, 0.24, 0.058)),
+    # 쇠뇌(0196): 원본 Archery_Shot(120프레임 — 45~57 두 팔을 들어 겨눔, 57~91 겨눈 채 버팀, 92 놓음, 95~ 내림). 옛 M12는 가슴 앞에
+    # 쥔 채 거의 움직이지 않았다. 몸은 겨누는 줄이 정면을 보게(`AIM`).
+    ("xbow_charge", "Archery_Shot", ("span", 45, 60, 0.3)),
+    ("xbow_shoot", "Archery_Shot", ("anchors", [(0.0, 86), (0.058, 92), (0.24, 100)])),
     # 기술(구간 = `skills.rs`의 `Clip::seg` — 시동 끝 = 닿는 순간)
     ("sk_whirl", "Skill_03", ("anchors", [(0.0, 16), (0.15, 24), (0.37, 33), (0.67, 39)])),
     ("sk_cut", "Thrust_Slash", ("anchors", [(0.0, 8), (0.12, 18), (0.32, 33), (0.57, 50)])),
@@ -404,7 +420,8 @@ def sample(arm, src, anchors, upright=None):
             uprighten(arm, *corr)
         poses.append({pb.name: pb.matrix_basis.decompose() for pb in arm.pose.bones if pb.name not in ("lamp", "weapon")})
         hips.append(arm.pose.bones["mixamorig:Hips"].head.copy())
-        hands.append((arm.pose.bones[HAND_R].head.copy(), arm.pose.bones["mixamorig:RightArm"].head.copy()))
+        hands.append((arm.pose.bones[HAND_R].head.copy(), arm.pose.bones["mixamorig:RightArm"].head.copy(),
+                      arm.pose.bones[HAND_L].head.copy()))
     return n, poses, hips, hands
 
 
@@ -487,7 +504,7 @@ BLADE_REACH = 0.5  # 칼끝 어림: 주먹에서 `weapon_pass`의 날 방향으�
 def hand_yaw(hip, hand):
     """칼끝이 몸 둘레 어느 쪽인가(라디안, 정면 0 · 왼쪽 +, 뼈대 공간 — 앞 = −Y, 왼쪽 = +X).
     `hand` = (주먹, 어깨) — 칼끝 = 주먹 + 날 방향(`weapon_pass`와 같은 셈) × `BLADE_REACH`."""
-    fist, shoulder = hand
+    fist, shoulder = hand[0], hand[1]
     d = fist - shoulder
     d.z *= BLADE_RISE
     v = fist + d.normalized() * BLADE_REACH - hip
@@ -520,11 +537,11 @@ def turn_body(arm, poses, turns):
         poses[k]["mixamorig:Hips"] = (loc, (rr.inverted() @ r @ rr @ q.to_matrix()).to_quaternion(), sc)
 
 
-def keyed_turns(n, keys):
-    """(초, 돌림) 열쇠 사이를 매끄럽게 이은 프레임별 돌림(돌림은 앞 열쇠에 가까운 각으로 풀어 잇는다)."""
+def keyed_turns(n, keys, wrap=True):
+    """(초, 돌림) 열쇠 사이를 매끄럽게 이은 프레임별 돌림(`wrap`이면 돌림은 앞 열쇠에 가까운 각으로 풀어 잇는다 — 아니면 준 그대로)."""
     ks = []
     for t, c in sorted(keys):
-        ks.append((t, near(c, ks[-1][1]) if ks else c))
+        ks.append((t, near(c, ks[-1][1]) if ks and wrap else c))
     out = []
     for k in range(n + 1):
         t = k / OUT_FPS
@@ -544,13 +561,22 @@ def at_frame(n, t):
     return min(n, max(0, round(t * OUT_FPS)))
 
 
-def face_hit(arm, name, poses, hips, hands, window):
-    """판정 구간 동안 몸을 세로축으로 돌려 구간 가운데에 칼끝이 정면에 오게(`HIT_WINDOWS`). 시작·끝은 원본 방향 그대로."""
+def face_hit(arm, name, poses, hips, hands, window, start=0.0):
+    """판정 구간 동안 몸을 세로축으로 돌려 구간 가운데에 칼끝이 정면에 오게(`HIT_WINDOWS`). 시작·끝은 몸이 정면(0196 — 원본 콤보는
+    타마다 몸이 돌아 끝에 옆·뒤를 보았다: 검 둘째 타 +80°, 망치 첫 타 −150°, 지팡이 둘째·셋째 타 내내 뒤 — 콤보를 거기서 멈추면 서기로
+    홱 돌았다. 다음 타도 정면에서 시작하니 이어 쳐도 같은 자리에서 잇는다)."""
     s0, a0 = window
     n = len(poses) - 1
     dur = n / OUT_FPS
-    turn = -hand_yaw(hips[at_frame(n, s0 + a0 / 2)], hands[at_frame(n, s0 + a0 / 2)])
-    turns = keyed_turns(n, [(0.0, 0.0), (s0, turn), (s0 + a0, turn), (dur, 0.0)])
+    own = [own_yaw(arm, p) for p in poses]
+    for k in range(1, n + 1):
+        own[k] = near(own[k], own[k - 1])
+    # 몸의 쪽(= 원본 쪽 + 돌림)이 열쇠 사이에서 가장 덜 돌게 각을 고른다(돌림만 풀어 이으면 원본이 도는 만큼 한 바퀴를 더 돌았다 —
+    # 검 셋째 타·망치 두 타). 시작은 `start`(모으기 동작 끝의 쪽 — `CHAIN`, 없으면 정면).
+    k0, k1 = at_frame(n, s0), at_frame(n, s0 + a0)
+    turn = near(-hand_yaw(hips[at_frame(n, s0 + a0 / 2)], hands[at_frame(n, s0 + a0 / 2)]), start - own[k0])
+    end = near(-own[n], own[k1] + turn - own[n])
+    turns = keyed_turns(n, [(0.0, start - own[0]), (s0, turn), (s0 + a0, turn), (dur, end)], wrap=False)
     turn_body(arm, poses, turns)
     a = hand_yaw(hips[at_frame(n, s0)], hands[at_frame(n, s0)]) + turns[at_frame(n, s0)]
     z = hand_yaw(hips[at_frame(n, s0 + a0)], hands[at_frame(n, s0 + a0)]) + turns[at_frame(n, s0 + a0)]
@@ -585,6 +611,40 @@ def face_skill(arm, name, poses, hips, hands, spec):
     print(f"[skin] face {name}: {mode} — start {math.degrees(own[0] + turns[0]):+.0f}°, "
           f"hit {math.degrees(own[at_frame(n, s0)] + turns[at_frame(n, s0)]):+.0f}°, end {math.degrees(own[n] + turns[n]):+.0f}° "
           f"(turned {math.degrees(min(turns)):+.0f}..{math.degrees(max(turns)):+.0f}°)")
+
+
+def face_still(arm, name, poses):
+    """`FACE_STILL`: 프레임마다 엉덩이를 정면으로."""
+    turns = [-own_yaw(arm, p) for p in poses]
+    turn_body(arm, poses, turns)
+    print(f"[skin] face {name}: still ({math.degrees(min(turns)):+.0f}..{math.degrees(max(turns)):+.0f}°)")
+
+
+def aim_yaw(hand):
+    """겨누는 줄(오른손 → 왼손)의 쪽(라디안, 정면 0 · 왼쪽 +, 뼈대 공간)."""
+    v = hand[2] - hand[0]
+    return math.atan2(v.x, -v.y)
+
+
+def face_aim(arm, name, poses, hands, ramp):
+    """`AIM`: 겨누는 줄이 정면을 보게 몸을 돌린다 — `ramp` 몫 동안 서기(엉덩이 정면)에서 옮겨 간다."""
+    n = len(poses) - 1
+    end = n / OUT_FPS
+    own0 = own_yaw(arm, poses[0])
+    want = -aim_yaw(hands[n])
+    keys = [(0.0, -own0 if ramp > 0 else want), (end * max(ramp, 1e-3), want), (end, want)]
+    turns = keyed_turns(n, keys)
+    turn_body(arm, poses, turns)
+    print(f"[skin] face {name}: aim {math.degrees(want):+.0f}° (start {math.degrees(turns[0]):+.0f}°)")
+
+
+def flatten(arm, poses, hips, top):
+    """`FLAT`: 엉덩이를 `top`(뼈대 공간 z) 위로 올리지 않는다."""
+    r_inv = arm.data.bones["mixamorig:Hips"].matrix_local.to_3x3().inverted()
+    for k, h in enumerate(hips):
+        if h.z > top:
+            loc, q, sc = poses[k]["mixamorig:Hips"]
+            poses[k]["mixamorig:Hips"] = (loc + r_inv @ Vector((0, 0, top - h.z)), q, sc)
 
 
 def write_action(arm, name, n, poses, lamp, keep):
@@ -626,7 +686,7 @@ def weapon_pass(arm, act, loop):
     ad = arm.animation_data
     ad.action = act
     n = int(act.frame_range[1])
-    hand, sh, hips = (arm.pose.bones[k] for k in (HAND_R, "mixamorig:RightArm", "mixamorig:Hips"))
+    hand, sh, hips, lh = (arm.pose.bones[k] for k in (HAND_R, "mixamorig:RightArm", "mixamorig:Hips", HAND_L))
     hr = arm.data.bones[HAND_R].matrix_local
     br = arm.data.bones["weapon"].matrix_local
     rb = br.to_3x3().normalized()
@@ -635,14 +695,14 @@ def weapon_pass(arm, act, loop):
     for k in range(n + 1):
         sc.frame_set(k)
         q = (hand.matrix @ hr.inverted() @ br).to_3x3().normalized()
-        snaps.append((hand.head.copy(), sh.head.copy(), hips.head.copy(), q))
-    rel = [h - p for h, _, p, _ in snaps]
+        snaps.append((hand.head.copy(), sh.head.copy(), hips.head.copy(), q, lh.head.copy()))
+    rel = [h - p for h, _, p, _, _ in snaps]
 
     def at(i):
         return rel[i % (n + 1)] if loop else rel[min(max(i, 0), n)]
 
     qs, prev_e, prev_q = [], None, None
-    for k, (h, s_, _, q) in enumerate(snaps):
+    for k, (h, s_, _, q, l_) in enumerate(snaps):
         d = h - s_
         d.z *= BLADE_RISE
         d.normalize()
@@ -661,6 +721,10 @@ def weapon_pass(arm, act, loop):
             g = smooth01(k / max(n * GUARD[act.name], 1))
             d = (d * (1 - g) + GUARD_BLADE.normalized() * g).normalized()
             e = e * (1 - g) + Vector((0, -1, 0)) * g
+        if act.name in AIM:
+            g = smooth01(k / max(n * AIM[act.name], 1)) if AIM[act.name] > 0 else 1.0
+            d = (d * (1 - g) + (l_ - h).normalized() * g).normalized()
+            e = e * (1 - g) + Vector((0, 0, 1)) * g
         e = (e - d * e.dot(d)).normalized()
         if prev_e is not None and e.dot(prev_e) < 0:  # 손이 되돌아도 날을 뒤집지 않는다(망치 머리가 홱 돌지 않게)
             e.negate()
@@ -680,14 +744,26 @@ def make_actions(arm, body):
     keep = moving_bones(arm, body)
     print("[skin] bones with channels", len(keep), "of", len(arm.data.bones))
     made = []
+    stand = None  # 서기의 엉덩이 높이(첫 줄 `idle`에서 잰다 — `FLAT`이 쓴다)
+    ends = {}  # 동작마다 끝의 몸 쪽(`CHAIN`)
     for name, src, spec in CLIPS:
         anchors = anchors_of(arm, name, src, spec)
         n, poses, hips, hands = sample(arm, src, anchors, UPRIGHT.get(name))
         strip_travel(arm, poses, hips, name in LOOPS)
+        if name == "idle":
+            stand = sum(h.z for h in hips) / len(hips)
+        if name in FLAT:
+            flatten(arm, poses, hips, stand)
+        if name in FACE_STILL:
+            face_still(arm, name, poses)
+        if name in AIM:
+            face_aim(arm, name, poses, hands, AIM[name])
         if name in HIT_WINDOWS:
-            face_hit(arm, name, poses, hips, hands, HIT_WINDOWS[name])
+            start = ends.get(CHAIN.get(name), 0.0)
+            face_hit(arm, name, poses, hips, hands, HIT_WINDOWS[name], math.atan2(math.sin(start), math.cos(start)))
         if name in SKILL_FACE:
             face_skill(arm, name, poses, hips, hands, SKILL_FACE[name])
+        ends[name] = own_yaw(arm, poses[-1])
         if spec[0] == "cycle":  # 되풀이 이음매: 끝 = 처음
             poses[-1] = poses[0]
         act = write_action(arm, name, n, poses, 1.0 if name == "drink" else 0.0, keep)

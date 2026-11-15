@@ -215,6 +215,7 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("parry", ("패링", "parry")),
     ("dodge", ("회피", "dodge")),
     ("jump", ("점프", "jump")),
+    ("pickup", ("줍기·상자 열기", "pick up / open")),
     ("land", ("내려서기", "land")),
     ("plunge", ("내려찍기", "plunge")),
     ("drink", ("등잔 마시기", "drink")),
