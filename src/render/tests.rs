@@ -500,10 +500,11 @@ fn wanderer_clips_start_and_end_facing_front_and_do_not_spin() {
             "{n} lifts the hips: {hs:?}"
         );
     }
+    // 0204(사장 "쇠뇌도 너무 옆으로 돌아서고"): 활쏘기 원본은 몸이 옆으로 섰다 — 쇠뇌는 몸이 정면을 보고 두 손으로 앞에 든다.
     let shoot = track("xbow_shoot").0;
     assert!(
-        !near(shoot[0], front, 45.0),
-        "the crossbow is aimed side-on"
+        shoot.iter().all(|y| near(*y, front, 25.0)),
+        "the crossbow is aimed facing front: {shoot:?}"
     );
     assert!(
         near(track("xbow_charge").0[10], shoot[0], 20.0),
