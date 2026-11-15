@@ -30,6 +30,16 @@ SRC_FPS = 24  # 원본 프레임 단위(`meshy_rig.py`가 24로 가져온다 —
 HAND_R, HAND_L = "mixamorig:RightHand", "mixamorig:LeftHand"
 TEX = 256
 GRIP_IN = 0.55  # 손목 → 가운데 손가락 뿌리의 이 몫이 주먹 가운데
+# 쥔 방향(사장 2026-11-14 "무기가 손에 붙은 위치와 방향"): Meshy 동작의 손은 칼을 쥔 주먹이 아니라 펼친 손이고, 손의 돌림이
+# 동작마다 제각각이다 — 원본 검 동작 열 곳의 닿는 순간을 손뼈 좌표로 재니 날 방향이 평균에서 22~72° 흩어졌다(손에 못 박은 한 방향은
+# 어느 동작에선가 하늘·땅을 본다). 그래서 무기는 손뼈 밑 `weapon` 뼈에 달고 그 돌림을 프레임마다 몸에서 계산해 굽는다(`weapon_pass`):
+# 날 = 어깨 → 주먹(위아래는 `BLADE_RISE`배 — 팔이 짧아 늘 아래로 처진다), 날이 앞서는 쪽 = 주먹이 가는 쪽(느리면 몸 앞).
+BLADE_RISE = 0.5
+EDGE_SPEED = 1.0  # m/s(뼈대 단위) — 이보다 빠르면 날이 손이 가는 쪽을 본다
+EDGE_SMOOTH = 6  # 앞뒤 프레임(100fps) — 손 속도를 고르게
+# 숙임 바로잡기(도, 엉덩이 → 머리가 수직에서 앞으로): 원본 Combat_Stance는 30° — 걷기(5°)와 이어지게 등뼈 셋으로 나눠 세운다.
+UPRIGHT = {"idle": (8.0, 5.0)}  # (앞, 옆) 도 — 원본은 앞 23°·옆 18°(몸을 비스듬히 낮춘 싸움 자세)
+SPINE = ("mixamorig:Spine", "mixamorig:Spine1", "mixamorig:Spine2")
 
 # (게임 이름, 원본, 앵커[(게임 초, 원본 프레임)] 또는 ("loop", 시작, 끝, 길이) 또는 ("hit", 시작, 봉우리 찾기 (a, b), 끝, 길이, 게임의 순간)).
 # 옛 동작 길이·순간은 옛 wanderer.glb에서 잰 값(오른손 속도 봉우리).
@@ -95,12 +105,6 @@ LOOPS = {"idle", "walk", "run", "walk_back"}
 def world_pt(arm, bone, which="head"):
     b = arm.data.bones[bone]
     return arm.matrix_world @ (b.head_local if which == "head" else b.tail_local)
-
-
-def frame_of(m4):
-    """뼈 행렬(월드) → 정규 직교 축 셋(x, y, z)."""
-    r = m4.to_3x3()
-    return [Vector(r.col[i]).normalized() for i in range(3)]
 
 
 def basis(a, b):
@@ -174,36 +178,41 @@ def place(arm, body):
     return k
 
 
-def add_lamp_bone(arm, at_world):
+def add_bone(arm, name, parent, at_world):
     bpy.context.view_layer.objects.active = arm
     bpy.ops.object.select_all(action="DESELECT")
     arm.select_set(True)
     bpy.ops.object.mode_set(mode="EDIT")
     eb = arm.data.edit_bones
-    b = eb.new("lamp")
+    b = eb.new(name)
     p = arm.matrix_world.inverted() @ at_world
     b.head = p
     b.tail = p + Vector((0, 0, 0.1))
-    b.parent = eb[HAND_L]
+    b.parent = eb[parent]
     bpy.ops.object.mode_set(mode="OBJECT")
-    arm.pose.bones["lamp"].rotation_mode = "QUATERNION"
+    arm.pose.bones[name].rotation_mode = "QUATERNION"
 
 
 def attach(arm, old):
-    """무기는 옛 손 자리·방향에서 새 오른손으로(날 −Y → 손뼈 z, 넓은 면 +Z → 손뼈 x), 등잔은 자리만 왼손 밑으로."""
-    hand = arm.matrix_world @ arm.data.bones[HAND_R].matrix_local
-    hx, hy, hz = frame_of(hand)
+    """무기 넷은 옛 방향 그대로 주먹 자리의 `weapon` 뼈(오른손 자식)에 — 돌림은 `weapon_pass`가 동작마다 굽는다.
+    등잔은 자리만 왼손 밑 `lamp` 뼈로."""
+    # 쉬는 자세에서 붙인다 — 가져온 뼈대는 마지막 동작의 자세를 들고 있어서, 그대로 붙이면 그 자세 기준으로 어긋나 붙는다
+    # (0193 첫 판의 "무기가 손에서 떨어진" 까닭).
+    arm.animation_data.action = None
+    for pb in arm.pose.bones:
+        pb.matrix_basis.identity()
+    bpy.context.view_layer.update()
     grip = world_pt(arm, HAND_R).lerp(world_pt(arm, "mixamorig:RightHandMiddle1"), GRIP_IN)
-    rot = basis(hz, hx) @ basis(Vector((0, -1, 0)), Vector((0, 0, 1))).transposed()
-    xf = Matrix.Translation(grip) @ rot.to_4x4() @ Matrix.Translation(-old["hand_r"])
+    add_bone(arm, "weapon", HAND_R, grip)
+    xf = Matrix.Translation(grip - old["hand_r"])
     for o in old["weapons"]:
         mw = xf @ o.matrix_world
         o.parent = arm
         o.parent_type = "BONE"
-        o.parent_bone = HAND_R
+        o.parent_bone = "weapon"
         o.matrix_world = mw
     grip_l = world_pt(arm, HAND_L).lerp(world_pt(arm, "mixamorig:LeftHandMiddle1"), GRIP_IN)
-    add_lamp_bone(arm, grip_l)
+    add_bone(arm, "lamp", HAND_L, grip_l)
     lf = Matrix.Translation(grip_l - old["hand_l"])
     for o in old["lamp"]:
         mw = lf @ o.matrix_world
@@ -282,21 +291,86 @@ def src_at(anchors, t):
     return anchors[-1][1]
 
 
-def sample(arm, src, anchors):
-    """게임 프레임(OUT_FPS)마다 원본을 읽는다 → {뼈: [(loc, quat, scale)]}, 엉덩이 머리(뼈대 공간)."""
+def lean_of(v):
+    """엉덩이 → 머리 벡터의 (앞, 옆) 기울기(라디안, 뼈대 공간 — 앞 = −Y, 옆 = +X)."""
+    return math.atan2(-v.y, v.z), math.atan2(v.x, v.z)
+
+
+def spine_rot(fwd, side):
+    """등뼈 하나가 맡는 몫(셋으로 나눔): 옆축(X)으로 `fwd`, 앞축(Y)으로 `side`."""
+    k = len(SPINE)
+    return Matrix.Rotation(side / k, 3, "Y") @ Matrix.Rotation(fwd / k, 3, "X")
+
+
+def lean_after(snap, fwd, side):
+    """등뼈를 돌린 뒤 엉덩이 → 머리의 기울기: 머리 자리를 위 등뼈부터 제 머리를 축으로 차례로 돌린다(부모가 돌면 아래 축도 따라 돈다)."""
+    hips, pivots, head = snap
+    r = spine_rot(fwd, side)
+    x = head
+    for p in reversed(pivots):
+        x = p + r @ (x - p)
+    return lean_of(x - hips)
+
+
+def solve_upright(snaps, want):
+    """클립 평균 기울기가 `want`(앞, 옆 도)가 되는 등뼈 돌림(앞, 옆 라디안)."""
+    wf, ws = (math.radians(x) for x in want)
+    fwd = side = 0.0
+    for _ in range(8):
+        got = [lean_after(s, fwd, side) for s in snaps]
+        mf = sum(g[0] for g in got) / len(got)
+        ms = sum(g[1] for g in got) / len(got)
+        fwd -= mf - wf
+        side -= ms - ws
+    return fwd, side, (math.degrees(mf), math.degrees(ms))
+
+
+def uprighten(arm, fwd, side):
+    """등뼈 셋을 돌린다 — 바뀌기 전 자세에서 읽은 틀로 바탕 회전을 고친다(자식은 따라온다)."""
+    r = spine_rot(fwd, side)
+    frames = {n: arm.pose.bones[n].matrix.to_3x3() @ arm.pose.bones[n].matrix_basis.to_3x3().inverted() for n in SPINE}
+    for n in SPINE:
+        pb = arm.pose.bones[n]
+        loc, q, sc = pb.matrix_basis.decompose()
+        a = frames[n]
+        rot = a.inverted() @ r @ a @ q.to_matrix()
+        pb.matrix_basis = Matrix.LocRotScale(loc, rot.to_quaternion(), sc)
+
+
+def sample(arm, src, anchors, upright=None):
+    """게임 프레임(OUT_FPS)마다 원본을 읽는다 → {뼈: [(loc, quat, scale)]}, 엉덩이 머리(뼈대 공간).
+    `upright`(도)면 클립 평균 숙임을 그 각까지 등뼈로 세운다(한 클립에 한 각 — 숨쉬는 흔들림은 남는다)."""
     sc = bpy.context.scene
     arm.animation_data.action = bpy.data.actions[src]
     dur = anchors[-1][0]
     n = max(1, int(round(dur * OUT_FPS)))
-    poses, hips = [], []
-    for k in range(n + 1):
-        f = src_at(anchors, k / OUT_FPS)
+    times = [src_at(anchors, k / OUT_FPS) for k in range(n + 1)]
+
+    def go(f):
         for pb in arm.pose.bones:  # 채널이 없는 뼈는 쉬는 자세
             pb.location = (0, 0, 0)
             pb.rotation_quaternion = (1, 0, 0, 0)
             pb.scale = (1, 1, 1)
         sc.frame_set(int(math.floor(f)), subframe=f - math.floor(f))
-        poses.append({pb.name: pb.matrix_basis.decompose() for pb in arm.pose.bones if pb.name != "lamp"})
+
+    corr = None
+    if upright is not None:
+        snaps = []
+        for f in times:
+            go(f)
+            pb = arm.pose.bones
+            snaps.append((pb["mixamorig:Hips"].head.copy(), [pb[n].head.copy() for n in SPINE], pb["mixamorig:Head"].head.copy()))
+        before = [lean_of(h - p) for p, _, h in snaps]
+        fwd, side, got = solve_upright(snaps, upright)
+        corr = (fwd, side)
+        print(f"[skin] {src}: lean fwd/side {math.degrees(sum(b[0] for b in before) / len(before)):.0f}/"
+              f"{math.degrees(sum(b[1] for b in before) / len(before)):.0f} -> {got[0]:.0f}/{got[1]:.0f}")
+    poses, hips = [], []
+    for f in times:
+        go(f)
+        if corr is not None:
+            uprighten(arm, *corr)
+        poses.append({pb.name: pb.matrix_basis.decompose() for pb in arm.pose.bones if pb.name not in ("lamp", "weapon")})
         hips.append(arm.pose.bones["mixamorig:Hips"].head.copy())
     return n, poses, hips
 
@@ -407,6 +481,56 @@ def write_action(arm, name, n, poses, lamp, keep):
     return act
 
 
+def weapon_pass(arm, act, loop):
+    """굽힌 동작을 다시 돌며 `weapon` 뼈의 돌림을 프레임마다 정해 키로(머리 주석의 규칙)."""
+    sc = bpy.context.scene
+    ad = arm.animation_data
+    ad.action = act
+    n = int(act.frame_range[1])
+    hand, sh, hips = (arm.pose.bones[k] for k in (HAND_R, "mixamorig:RightArm", "mixamorig:Hips"))
+    hr = arm.data.bones[HAND_R].matrix_local
+    br = arm.data.bones["weapon"].matrix_local
+    rb = br.to_3x3().normalized()
+    old_frame = basis(Vector((0, -1, 0)), Vector((1, 0, 0)))
+    snaps = []
+    for k in range(n + 1):
+        sc.frame_set(k)
+        q = (hand.matrix @ hr.inverted() @ br).to_3x3().normalized()
+        snaps.append((hand.head.copy(), sh.head.copy(), hips.head.copy(), q))
+    rel = [h - p for h, _, p, _ in snaps]
+
+    def at(i):
+        return rel[i % (n + 1)] if loop else rel[min(max(i, 0), n)]
+
+    qs, prev_e, prev_q = [], None, None
+    for k, (h, s_, _, q) in enumerate(snaps):
+        d = h - s_
+        d.z *= BLADE_RISE
+        d.normalize()
+        v = Vector()
+        for j in range(-EDGE_SMOOTH, EDGE_SMOOTH + 1):
+            v += (at(k + j + 1) - at(k + j - 1)) * (OUT_FPS / 2)
+        v /= 2 * EDGE_SMOOTH + 1
+        e0 = Vector((0, -1, 0)) - d * (-d.y)
+        if e0.length < 1e-3:
+            e0 = Vector((0, 0, 1)) - d * d.z
+        e0.normalize()
+        ev = v - d * v.dot(d)
+        w = min(ev.length / EDGE_SPEED, 1.0)
+        e = e0 * (1 - w) + (ev.normalized() if ev.length > 1e-6 else e0) * w
+        e = (e - d * e.dot(d)).normalized()
+        if prev_e is not None and e.dot(prev_e) < 0:  # 손이 되돌아도 날을 뒤집지 않는다(망치 머리가 홱 돌지 않게)
+            e.negate()
+        prev_e = e
+        rot = (q.inverted() @ basis(d, e) @ old_frame.transposed() @ rb).to_quaternion()
+        if prev_q is not None and prev_q.dot(rot) < 0:
+            rot.negate()
+        prev_q = rot
+        qs.append(tuple(rot))
+    put(act, "weapon", "rotation_quaternion", qs, reduce(qs, ROT_TOL))
+    ad.action = None
+
+
 def make_actions(arm, body):
     if arm.animation_data is None:
         arm.animation_data_create()
@@ -415,11 +539,13 @@ def make_actions(arm, body):
     made = []
     for name, src, spec in CLIPS:
         anchors = anchors_of(arm, name, src, spec)
-        n, poses, hips = sample(arm, src, anchors)
+        n, poses, hips = sample(arm, src, anchors, UPRIGHT.get(name))
         strip_travel(arm, poses, hips, name in LOOPS)
         if spec[0] == "cycle":  # 되풀이 이음매: 끝 = 처음
             poses[-1] = poses[0]
-        made.append(write_action(arm, name, n, poses, 1.0 if name == "drink" else 0.0, keep))
+        act = write_action(arm, name, n, poses, 1.0 if name == "drink" else 0.0, keep)
+        weapon_pass(arm, act, name in LOOPS)
+        made.append(act)
     for a in list(bpy.data.actions):
         if a not in made:
             bpy.data.actions.remove(a)

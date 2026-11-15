@@ -560,7 +560,7 @@ mod tests {
     }
 
     #[test]
-    fn a_swing_moves_the_skinned_body_and_the_sword_follows_the_hand() {
+    fn a_swing_moves_the_skinned_body_and_the_blade_turns_in_the_fist() {
         let m = wanderer();
         let a = m.anim("attack").unwrap();
         let (mut p0, mut p1) = (Vec::new(), Vec::new());
@@ -572,13 +572,20 @@ mod tests {
             .map(|(a, b)| a.distance(b))
             .fold(0.0, f32::max);
         assert!(moved > 0.1, "the body bends: {moved}");
+        // 무기는 주먹 자리의 `weapon` 뼈에 달려 있고(0193), 그 뼈는 돌기만 한다 — 주먹을 떠나지 않는다.
         let hand = m.node("mixamorig:RightHand").unwrap();
+        let grip = m.node("weapon").unwrap();
         let sword = m.node("sword").unwrap();
-        assert!(m.is_under(sword, hand));
-        let grip = |pose: &[Mat4]| pose[sword].w_axis.distance(pose[hand].w_axis);
+        assert!(m.is_under(sword, grip) && m.is_under(grip, hand));
+        let gap = |pose: &[Mat4]| pose[grip].w_axis.distance(pose[hand].w_axis);
         assert!(
-            (grip(&p0) - grip(&p1)).abs() < 1e-3,
-            "the sword stays in the fist"
+            (gap(&p0) - gap(&p1)).abs() < 1e-3,
+            "the grip stays in the fist"
+        );
+        let turn = |pose: &[Mat4]| pose[grip].to_scale_rotation_translation().1;
+        assert!(
+            turn(&p0).angle_between(turn(&p1)) > 0.2,
+            "the blade turns with the swing"
         );
     }
 }
