@@ -45,6 +45,19 @@ SPINE = ("mixamorig:Spine", "mixamorig:Spine1", "mixamorig:Spine2")
 # 콤보·돌기 동작의 가운데를 잘라 와서 판정 순간에 몸이 옆·뒤를 보던 것(지팡이 둘째·셋째 타는 엉덩이가 뒤)을, 이 구간 동안 몸 전체를 돌려
 # 주먹(= 칼)이 정면을 지나게 맞춘다(`face_hit` — 시작·끝은 원본 방향 그대로, 사이를 매끄럽게). 판정·초승달은 늘 정면 부채꼴이다.
 # 값이 게임과 어긋나면 `weapons::tests`의 칼끝 시험이 잡는다.
+# 기술·큰 기술(구간 = `skills.rs`의 `Clip::seg` — 시동 · 이어짐 · 후딜, 시동 끝 = 판정의 순간)의 몸 방향(`face_skill`):
+# 시작·끝은 정면(누르는 순간·서기로 돌아갈 때 홱 돌지 않게), 판정의 순간은 "tip" = 칼끝이 정면 · "hips" = 몸이 정면 ·
+# "hold" = 이어짐 내내 몸이 정면 · "spin" = 이어짐 구간에 몸이 정확히 한 바퀴(`SPIN`쪽 — 이 구간이 바퀴마다 되풀이된다).
+SKILL_FACE = {
+    "sk_whirl": ((0.15, 0.22, 0.30), "spin"), "sk_cut": ((0.12, 0.20, 0.25), "tip"),
+    "sk_gather": ((0.20, 0.0, 0.30), "hips"), "sk_quake": ((0.30, 0.0, 0.40), "tip"),
+    "sk_brace": ((0.10, 1.20, 0.35), "hold"), "sk_echo": ((0.25, 0.0, 0.20), "hips"),
+    "sk_throw": ((0.18, 0.10, 0.25), "tip"), "sk_embers": ((0.25, 0.0, 0.30), "hips"),
+    "ult_upend": ((0.30, 0.20, 0.50), "hips"), "ult_flurry": ((0.30, 0.0, 0.20), "hips"),
+    "ult_line": ((0.30, 0.15, 0.45), "tip"),
+}
+SPIN = -1.0  # 휘돌이가 도는 쪽(원본 Skill_03은 오른쪽으로 돈다 — 요가 줄어드는 쪽). 이펙트 `render::overlays::WHIRL_CLIP_TURN`과 같아야 한다
+
 HIT_WINDOWS = {
     "attack": (0.08, 0.10), "attack2": (0.08, 0.10), "attack3": (0.10, 0.12), "heavy": (0.06, 0.12),
     "hammer1": (0.14, 0.17), "hammer2": (0.16, 0.20), "hammer_slam": (0.08, 0.16),
@@ -478,30 +491,92 @@ def smooth01(x):
     return x * x * (3 - 2 * x)
 
 
+def own_yaw(arm, pose):
+    """한 프레임의 엉덩이가 보는 쪽(라디안, 정면 0 · 왼쪽 +) — 엉덩이 뼈의 z(쉬는 자세의 앞)."""
+    rr = arm.data.bones["mixamorig:Hips"].matrix_local.to_3x3()
+    f = rr @ pose["mixamorig:Hips"][1].to_matrix() @ Vector((0, 0, 1))
+    return math.atan2(f.x, -f.y)
+
+
+def near(a, ref):
+    """`a`를 `ref`에 가장 가까운 같은 각으로(±2π)."""
+    return a + 2 * math.pi * round((ref - a) / (2 * math.pi))
+
+
+def turn_body(arm, poses, turns):
+    """프레임마다 몸 전체를 세로축으로 `turns[k]`(라디안)만큼 돌린다(엉덩이 머리를 축으로)."""
+    rr = arm.data.bones["mixamorig:Hips"].matrix_local.to_3x3()
+    for k, c in enumerate(turns):
+        loc, q, sc = poses[k]["mixamorig:Hips"]
+        r = Matrix.Rotation(c, 3, "Z")
+        poses[k]["mixamorig:Hips"] = (loc, (rr.inverted() @ r @ rr @ q.to_matrix()).to_quaternion(), sc)
+
+
+def keyed_turns(n, keys):
+    """(초, 돌림) 열쇠 사이를 매끄럽게 이은 프레임별 돌림(돌림은 앞 열쇠에 가까운 각으로 풀어 잇는다)."""
+    ks = []
+    for t, c in sorted(keys):
+        ks.append((t, near(c, ks[-1][1]) if ks else c))
+    out = []
+    for k in range(n + 1):
+        t = k / OUT_FPS
+        if t <= ks[0][0]:
+            out.append(ks[0][1])
+            continue
+        for (t0, c0), (t1, c1) in zip(ks, ks[1:]):
+            if t <= t1:
+                out.append(c0 + (c1 - c0) * smooth01((t - t0) / max(t1 - t0, 1e-4)))
+                break
+        else:
+            out.append(ks[-1][1])
+    return out
+
+
+def at_frame(n, t):
+    return min(n, max(0, round(t * OUT_FPS)))
+
+
 def face_hit(arm, name, poses, hips, hands, window):
-    """판정 구간 동안 몸을 세로축으로 돌려 구간 가운데에 칼끝이 정면에 오게(`HIT_WINDOWS`). 들어가고 나오는 몫은 매끄럽게."""
+    """판정 구간 동안 몸을 세로축으로 돌려 구간 가운데에 칼끝이 정면에 오게(`HIT_WINDOWS`). 시작·끝은 원본 방향 그대로."""
     s0, a0 = window
     n = len(poses) - 1
     dur = n / OUT_FPS
-    mid = min(n, round((s0 + a0 / 2) * OUT_FPS))
-    turn = -hand_yaw(hips[mid], hands[mid])
-    b = arm.data.bones["mixamorig:Hips"]
-    rr = b.matrix_local.to_3x3()
-    for k in range(n + 1):
-        t = k / OUT_FPS
-        if t < s0:
-            w = smooth01(t / s0) if s0 > 1e-4 else 1.0
-        elif t <= s0 + a0:
-            w = 1.0
-        else:
-            w = 1.0 - smooth01((t - s0 - a0) / max(dur - s0 - a0, 1e-4))
-        r = Matrix.Rotation(turn * w, 3, "Z")
-        loc, q, sc = poses[k]["mixamorig:Hips"]
-        poses[k]["mixamorig:Hips"] = (loc, (rr.inverted() @ r @ rr @ q.to_matrix()).to_quaternion(), sc)
-    a = hand_yaw(hips[min(n, round(s0 * OUT_FPS))], hands[min(n, round(s0 * OUT_FPS))]) + turn
-    z = hand_yaw(hips[min(n, round((s0 + a0) * OUT_FPS))], hands[min(n, round((s0 + a0) * OUT_FPS))]) + turn
+    turn = -hand_yaw(hips[at_frame(n, s0 + a0 / 2)], hands[at_frame(n, s0 + a0 / 2)])
+    turns = keyed_turns(n, [(0.0, 0.0), (s0, turn), (s0 + a0, turn), (dur, 0.0)])
+    turn_body(arm, poses, turns)
+    a = hand_yaw(hips[at_frame(n, s0)], hands[at_frame(n, s0)]) + turns[at_frame(n, s0)]
+    z = hand_yaw(hips[at_frame(n, s0 + a0)], hands[at_frame(n, s0 + a0)]) + turns[at_frame(n, s0 + a0)]
     span = math.degrees(math.atan2(math.sin(z - a), math.cos(z - a)))
     print(f"[skin] face {name}: turn {math.degrees(turn):+.0f}°, tip {math.degrees(a):+.0f}° -> {math.degrees(z):+.0f}° (sweep {span:+.0f}°)")
+
+
+def face_skill(arm, name, poses, hips, hands, spec):
+    """기술 동작의 몸 방향(`SKILL_FACE`): 시작·끝 정면 + 판정의 순간(또는 이어짐 내내) 정면, 휘돌이는 이어짐에 한 바퀴."""
+    (s0, a0, r0), mode = spec
+    n = len(poses) - 1
+    end = n / OUT_FPS
+    own = [own_yaw(arm, p) for p in poses]
+    for k in range(1, n + 1):  # 풀어 잇기
+        own[k] = near(own[k], own[k - 1])
+    if mode == "spin":
+        # 바라는 엉덩이 쪽: 시동 동안 정면, 이어짐 동안 정면에서 한 바퀴, 그 뒤 정면(= 한 바퀴 뒤). 돌림 = 바라는 쪽 − 원본 쪽.
+        want = [0.0 if t < s0 else SPIN * 2 * math.pi * min((t - s0) / max(a0, 1e-4), 1.0)
+                for t in (k / OUT_FPS for k in range(n + 1))]
+        turns = [w - o for w, o in zip(want, own)]
+    else:
+        keys = [(0.0, -own[0]), (end, -own[n])]
+        hit = at_frame(n, s0)
+        if mode == "tip":
+            keys.append((s0, -hand_yaw(hips[hit], hands[hit])))
+        else:
+            keys.append((s0, -own[hit]))
+        if mode == "hold":
+            keys.append((s0 + a0, -own[at_frame(n, s0 + a0)]))
+        turns = keyed_turns(n, keys)
+    turn_body(arm, poses, turns)
+    print(f"[skin] face {name}: {mode} — start {math.degrees(own[0] + turns[0]):+.0f}°, "
+          f"hit {math.degrees(own[at_frame(n, s0)] + turns[at_frame(n, s0)]):+.0f}°, end {math.degrees(own[n] + turns[n]):+.0f}° "
+          f"(turned {math.degrees(min(turns)):+.0f}..{math.degrees(max(turns)):+.0f}°)")
 
 
 def write_action(arm, name, n, poses, lamp, keep):
@@ -599,6 +674,8 @@ def make_actions(arm, body):
         strip_travel(arm, poses, hips, name in LOOPS)
         if name in HIT_WINDOWS:
             face_hit(arm, name, poses, hips, hands, HIT_WINDOWS[name])
+        if name in SKILL_FACE:
+            face_skill(arm, name, poses, hips, hands, SKILL_FACE[name])
         if spec[0] == "cycle":  # 되풀이 이음매: 끝 = 처음
             poses[-1] = poses[0]
         act = write_action(arm, name, n, poses, 1.0 if name == "drink" else 0.0, keep)

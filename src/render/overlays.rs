@@ -96,7 +96,7 @@ impl Renderer {
                             // 머리 = 몸이 지금 보는 쪽: 전용 동작이면 동작의 한 바퀴(이어짐 구간을 바퀴마다)를, 아니면 월드의 쪽을 따른다.
                             let head = if self.whirl_clip {
                                 let turns = (e0 / gap.max(1e-3)).min(hits.saturating_sub(1) as f32);
-                                yaw + WHIRL_CLIP_TURN * turns * std::f32::consts::TAU
+                                yaw + crate::skills::WHIRL_CLIP_TURN * turns * std::f32::consts::TAU
                             } else {
                                 w.player.facing
                             };
@@ -932,9 +932,6 @@ pub fn slash_arcs(yaw: f32, arc: f32, sweep: crate::weapons::Sweep, q: f32) -> V
     }
 }
 const SLASH_TAIL: f32 = 2.2;
-
-/// 휘돌이의 전용 동작이 몸을 도는 쪽(+1 = 요가 느는 쪽 — 월드의 도는 쪽과 같다).
-const WHIRL_CLIP_TURN: f32 = 1.0;
 
 /// 스킬의 빛(0151)이 판정 뒤에 남는 초.
 const SKILL_GLOW_FADE: f32 = 0.25;
