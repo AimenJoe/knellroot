@@ -240,9 +240,12 @@ impl Renderer {
             let (names, at): (&[&str], f32) = match pl.state {
                 // 콤보(0051): 무기 표의 타마다 동작(없는 모델이면 평타).
                 // 몰아치기(0158 G2) 동안은 평타의 시계가 빨라진다 — 동작도 같은 배로 돌린다.
+                // 동작 시계는 타의 판정 시작에 동작이 만든 판정 시작이 오게(0195 — 맨손·대시처럼 남의 동작을 빌린 타).
                 PState::Attack { t: e, hit, .. } => {
                     owned = [combo_anim(hit), "attack", "attack"];
-                    (&owned, e * w.flurry_rate())
+                    let s0 = crate::world::hit_times(t, wpn, hit).0;
+                    let rate = crate::weapons::clip_rate(combo_anim(hit), s0);
+                    (&owned, e * w.flurry_rate() * rate)
                 }
                 // 강공격(0030): 모으는 동안 칼을 뒤로 끌어 든 자세(없는 모델이면 공격 첫 자세), 떼면 크게 내려친다 — 무기마다(0051).
                 PState::Charging { t: e } => {
@@ -250,8 +253,10 @@ impl Renderer {
                     (&owned, e)
                 }
                 PState::Heavy { t: e, .. } => {
-                    owned = [hv.map_or("heavy", |h| h.anim_heavy), "heavy", "attack"];
-                    (&owned, e)
+                    let anim = hv.map_or("heavy", |h| h.anim_heavy);
+                    owned = [anim, "heavy", "attack"];
+                    let s0 = crate::world::heavy_times(t, wpn).0;
+                    (&owned, e * crate::weapons::clip_rate(anim, s0))
                 }
                 // 수류탄(0051): 오른손으로 아래에서 위로 던진다.
                 PState::Throw { t: e, .. } => (&["throw", "cast", "attack"], e),

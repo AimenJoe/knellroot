@@ -7,11 +7,13 @@ use super::*;
 use crate::i18n::dev::{self as dv, t};
 use crate::weapons::{Rb, Weapon, IDS};
 
-/// 동작 한 줄: 모델의 동작 이름과 판정 구간(초 — 시작, 끝; 없으면 판정 없음).
+/// 동작 한 줄: 모델의 동작 이름과 판정 구간(게임 초 — 시작, 끝; 없으면 판정 없음), 동작 시계의 배(게임과 같이
+/// `weapons::clip_rate` — 맨손이 빌린 검 동작은 빨리 돈다, 0195). 막대·시각은 게임 초.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(super) struct Row {
     pub anim: &'static str,
     pub window: Option<(f32, f32)>,
+    pub rate: f32,
 }
 
 /// 빠르기 칸(0 = 1×, 1 = ½, 2 = ¼, 3 = 멈춤).
@@ -26,7 +28,8 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
     let mut out: Vec<Row> = Vec::new();
     let mut add = |anim: &'static str, window: Option<(f32, f32)>| {
         if !out.iter().any(|r| r.anim == anim) {
-            out.push(Row { anim, window });
+            let rate = window.map_or(1.0, |(s, _)| crate::weapons::clip_rate(anim, s));
+            out.push(Row { anim, window, rate });
         }
     };
     for a in [
@@ -207,7 +210,10 @@ impl App {
         let dw = rx_end - dx;
         let info_h = px * 1.3 * 2.0 + u * 10.0;
         let doll = Rect::new(dx, body, dw, hint_y - u * 6.0 - body - info_h);
-        let len = self.renderer.wanderer_anim_len(row.anim);
+        let len = self
+            .renderer
+            .wanderer_anim_len(row.anim)
+            .map(|d| d / row.rate);
         let dur = len.unwrap_or(1.0);
         let cycle = dur + HOLD_END;
         let at = (t_ms as f32 / 1000.0) % cycle;
@@ -217,7 +223,7 @@ impl App {
             doll,
             (spin as f32 * SPIN_STEP).to_radians(),
             row.anim,
-            shown,
+            shown * row.rate,
         );
         let bar = Rect::new(dx, doll.y + doll.h + u * 4.0, dw, u * 4.0);
         draw_rectangle(bar.x, bar.y, bar.w, bar.h, Color::new(1.0, 1.0, 1.0, 0.12));
@@ -290,7 +296,7 @@ mod tests {
                     .anim(r.anim)
                     .unwrap_or_else(|| panic!("{id:?}: no clip {}", r.anim));
                 if let Some((s, e)) = r.window {
-                    let d = m.anims[ai].duration;
+                    let d = m.anims[ai].duration / r.rate;
                     assert!(
                         0.0 <= s && s < e && e <= d + 1e-3,
                         "{id:?} {}: window {s}..{e} in {d}",

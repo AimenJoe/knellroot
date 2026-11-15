@@ -97,7 +97,7 @@ impl Renderer {
                         yaw,
                         arc_deg.to_radians(),
                         crate::weapons::Sweep::Center,
-                        1.0,
+                        (1.0, 0.0),
                         with_a(m.color, a),
                         0.7,
                     );
@@ -339,7 +339,7 @@ impl Renderer {
                         b.age * BLADE_SPIN + turn,
                         2.4,
                         crate::weapons::Sweep::LeftToRight,
-                        1.0,
+                        (1.0, 0.0),
                         with_a(gold, 0.9),
                         1.3,
                     );

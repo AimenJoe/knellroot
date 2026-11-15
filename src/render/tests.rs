@@ -90,27 +90,46 @@ fn loot_bodies_are_a_crystal_and_a_round_bead_of_the_asked_size() {
 }
 
 /// 0141 휘두름의 초승달: 가로 베기는 칼이 지나간 쪽에서 시작해 머리가 반대쪽 끝에 닿고(오른쪽 → 왼쪽 = 작은 각에서 큰 각으로),
-/// 꼬리는 부채꼴 밖으로 나가지 않는다. 찌르기·세로는 가운데에서 양쪽으로 벌어진다.
+/// 꼬리는 부채꼴 밖으로 나가지 않는다. 0195: 활성 뒤에는 꼬리가 머리를 따라잡아 휘두른 쪽으로 사라지고, 세로(가운데)는 머리가
+/// 가운데에 있고 양 끝에서부터 가운데로 줄어 사라진다.
 #[test]
 fn the_slash_crescent_follows_the_blade_and_stays_inside_the_arc() {
     use crate::weapons::Sweep;
     let (yaw, arc) = (0.3f32, 2.0f32);
     for q in [0.0, 0.3, 0.7, 1.0] {
-        for sw in [Sweep::RightToLeft, Sweep::LeftToRight, Sweep::Center] {
-            for (tail, head) in slash_arcs(yaw, arc, sw, q) {
-                for a in [tail, head] {
-                    assert!((a - yaw).abs() <= arc * 0.5 + 1e-4, "{sw:?} {q}: {a}");
+        for gone in [0.0, 0.5, 1.0] {
+            for sw in [Sweep::RightToLeft, Sweep::LeftToRight, Sweep::Center] {
+                for (tail, head) in slash_arcs(yaw, arc, sw, q, gone) {
+                    for a in [tail, head] {
+                        assert!((a - yaw).abs() <= arc * 0.5 + 1e-4, "{sw:?} {q}: {a}");
+                    }
                 }
             }
         }
     }
-    let r2l = |q| slash_arcs(yaw, arc, Sweep::RightToLeft, q)[0].1;
-    assert!((r2l(0.0) - (yaw - 1.0)).abs() < 1e-5 && (r2l(1.0) - (yaw + 1.0)).abs() < 1e-5);
-    let l2r = |q| slash_arcs(yaw, arc, Sweep::LeftToRight, q)[0].1;
-    assert!(l2r(1.0) < l2r(0.0));
-    let mid = slash_arcs(yaw, arc, Sweep::Center, 1.0);
-    assert_eq!(mid.len(), 2);
-    assert!(mid[0].0 == yaw && mid[1].0 == yaw && mid[0].1 > yaw && mid[1].1 < yaw);
+    let r2l = |q, g| slash_arcs(yaw, arc, Sweep::RightToLeft, q, g)[0];
+    assert!(
+        (r2l(0.0, 0.0).1 - (yaw - 1.0)).abs() < 1e-5
+            && (r2l(1.0, 0.0).1 - (yaw + 1.0)).abs() < 1e-5
+    );
+    let l2r = |q, g| slash_arcs(yaw, arc, Sweep::LeftToRight, q, g)[0];
+    assert!(l2r(1.0, 0.0).1 < l2r(0.0, 0.0).1);
+    // 활성 뒤: 머리는 그 자리, 꼬리가 휘두른 쪽(머리 쪽)으로 다가가 끝에 하나가 된다.
+    let pair: [&dyn Fn(f32, f32) -> (f32, f32); 2] = [&r2l, &l2r];
+    for f in pair {
+        let (a, b, c) = (f(1.0, 0.0), f(1.0, 0.5), f(1.0, 1.0));
+        assert!(a.1 == b.1 && b.1 == c.1);
+        assert!((b.0 - b.1).abs() < (a.0 - a.1).abs() && (c.0 - c.1).abs() < 1e-5);
+    }
+    // 세로: 머리 = 바라보는 쪽, 꼬리 = 양 끝 — 펴졌다가 양 끝에서부터 줄어든다.
+    let mid = |q, g| slash_arcs(yaw, arc, Sweep::Center, q, g);
+    let full = mid(1.0, 0.0);
+    assert_eq!(full.len(), 2);
+    assert!(full.iter().all(|(_, h)| *h == yaw));
+    assert!((full[0].0 - (yaw + 1.0)).abs() < 1e-5 && (full[1].0 - (yaw - 1.0)).abs() < 1e-5);
+    let spread = |v: Vec<(f32, f32)>| (v[0].0 - v[1].0).abs();
+    assert!(spread(mid(0.1, 0.0)) < spread(full.clone()));
+    assert!(spread(mid(1.0, 0.5)) < spread(full) && spread(mid(1.0, 1.0)) < 1e-5);
 }
 
 fn with_key<T>(key: bool, f: impl FnOnce() -> T) -> T {

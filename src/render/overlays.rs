@@ -106,7 +106,7 @@ impl Renderer {
                                 head + std::f32::consts::PI * 0.75,
                                 std::f32::consts::PI * 1.5,
                                 crate::weapons::Sweep::LeftToRight,
-                                1.0,
+                                (1.0, 0.0),
                                 with_a(gold, fade * fade),
                                 1.4,
                             );
@@ -117,7 +117,7 @@ impl Renderer {
                                 head + std::f32::consts::PI * 1.75,
                                 std::f32::consts::PI * 1.2,
                                 crate::weapons::Sweep::LeftToRight,
-                                1.0,
+                                (1.0, 0.0),
                                 with_a(WHITE, 0.6 * fade * fade),
                                 0.9,
                             );
@@ -184,7 +184,7 @@ impl Renderer {
                                     yaw,
                                     arc_deg.to_radians(),
                                     crate::weapons::Sweep::Center,
-                                    1.0,
+                                    (1.0, 0.0),
                                     with_a(gold, (1.0 - k) * (1.0 - k)),
                                     1.5,
                                 );
@@ -386,7 +386,9 @@ fn swing_crescent(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon)
             let (s0, a0, _) = crate::world::hit_times(t, wpn, hit);
             if let Some(h) = wpn.hit(hit).filter(|_| e >= s0 && e < s0 + a0 + SLASH_FADE) {
                 let q = ((e - s0) / a0.max(1e-3)).clamp(0.0, 1.0);
-                let fade = 1.0 - ((e - s0 - a0) / SLASH_FADE).clamp(0.0, 1.0);
+                // 활성 뒤: 휘두른 쪽으로(세로는 양 끝에서) 줄어들며 옅어진다(0195).
+                let gone = ((e - s0 - a0) / SLASH_FADE).clamp(0.0, 1.0);
+                let fade = 1.0 - gone * gone;
                 let arc = if h.shape == crate::weapons::Shape::Circle {
                     360.0
                 } else {
@@ -403,7 +405,7 @@ fn swing_crescent(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon)
                     w.player.facing,
                     arc.to_radians(),
                     crate::weapons::sweep_of(h.anim),
-                    q,
+                    (q, gone),
                     with_a(col, col.a * fade),
                     1.0,
                 );
@@ -531,10 +533,12 @@ fn heavy_swing(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon, fl
                 },
             );
         }
-        // 강타의 초승달(0145): 평타보다 두껍고 오래 남는다 — 다 모았으면 호박빛. 강타는 가운데에서 양쪽으로 벌어진다.
+        // 강타의 초승달(0145): 평타보다 두껍고 오래 남는다 — 다 모았으면 호박빛. 쪽은 동작의 표대로(0195 — 지팡이 강타는 가로로 돈다,
+        // 내려치기는 가운데에서 펴졌다가 양 끝에서부터 사라진다).
         if t[crate::tuning::P::RenderFx] >= 0.5 && e >= s0 && e < s1 + HEAVY_SLASH_FADE {
             let q = ((e - s0) / a0.max(1e-3)).clamp(0.0, 1.0);
-            let fade = 1.0 - ((e - s1) / HEAVY_SLASH_FADE).clamp(0.0, 1.0);
+            let gone = ((e - s1) / HEAVY_SLASH_FADE).clamp(0.0, 1.0);
+            let fade = 1.0 - gone;
             let col = if full {
                 Color::new(1.0, 0.78, 0.4, 1.0)
             } else {
@@ -545,8 +549,8 @@ fn heavy_swing(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon, fl
                 t[crate::tuning::P::HeavyRange] * h.reach,
                 w.player.facing,
                 arc.to_radians(),
-                crate::weapons::Sweep::Center,
-                q,
+                crate::weapons::sweep_of(h.anim_heavy),
+                (q, gone),
                 with_a(col, col.a * fade * fade),
                 if full { 1.5 } else { 1.25 },
             );
@@ -913,24 +917,41 @@ const SLASH_FADE: f32 = 0.2;
 /// 강타의 초승달이 남는 시간(초).
 const HEAVY_SLASH_FADE: f32 = 0.3;
 
-/// 초승달이 덮는 각(라디안): `(꼬리, 머리)` 쌍들. 머리 = 칼끝이 지금 있는 각, 꼬리 = 지나온 쪽(길어야 `SLASH_TAIL`).
-/// 가로 베기는 한쪽 끝에서 반대쪽으로(캐릭터의 오른쪽 = 바라보는 쪽 − 반각), 찌르기·세로는 가운데에서 양쪽으로.
-pub fn slash_arcs(yaw: f32, arc: f32, sweep: crate::weapons::Sweep, q: f32) -> Vec<(f32, f32)> {
+/// 초승달이 덮는 각(라디안): `(꼬리, 머리)` 쌍들. 머리 = 밝고 두꺼운 끝, 꼬리 = 옅어지는 끝(0195 — 사장 "기본적으로 휘두르는
+/// 방향대로, 수직 기술은 양끝에서부터 사라지게").
+/// - 가로 베기: 머리 = 칼끝이 지금 있는 각(활성 `q`에 한쪽 끝에서 반대쪽으로 — 캐릭터의 오른쪽 = 바라보는 쪽 − 반각), 꼬리는 지나온
+///   쪽(길어야 `SLASH_TAIL`). 활성 뒤(`gone` 0 → 1)에는 꼬리가 머리를 따라잡는다 — 휘두른 쪽으로 사라진다.
+/// - 찌르기·세로(가운데): 머리 = 바라보는 쪽(칼이 내려온 자리), 꼬리 = 양 끝. 활성 앞쪽에 가운데에서 양쪽으로 펴지고
+///   (`CENTER_SPREAD`), 활성 뒤에는 양 끝에서부터 가운데로 줄어 사라진다.
+pub fn slash_arcs(
+    yaw: f32,
+    arc: f32,
+    sweep: crate::weapons::Sweep,
+    q: f32,
+    gone: f32,
+) -> Vec<(f32, f32)> {
     use crate::weapons::Sweep;
     let half = arc * 0.5;
-    let q = q.clamp(0.0, 1.0);
+    let (q, gone) = (q.clamp(0.0, 1.0), gone.clamp(0.0, 1.0));
     match sweep {
         Sweep::RightToLeft => {
             let head = yaw - half + arc * q;
-            vec![((head - SLASH_TAIL).max(yaw - half), head)]
+            let tail = (head - SLASH_TAIL).max(yaw - half);
+            vec![(tail + (head - tail) * gone, head)]
         }
         Sweep::LeftToRight => {
             let head = yaw + half - arc * q;
-            vec![((head + SLASH_TAIL).min(yaw + half), head)]
+            let tail = (head + SLASH_TAIL).min(yaw + half);
+            vec![(tail + (head - tail) * gone, head)]
         }
-        Sweep::Center => vec![(yaw, yaw + half * q), (yaw, yaw - half * q)],
+        Sweep::Center => {
+            let w = half * (q / CENTER_SPREAD).min(1.0) * (1.0 - gone);
+            vec![(yaw + w, yaw), (yaw - w, yaw)]
+        }
     }
 }
+/// 세로 초승달이 다 펴지는 활성의 몫.
+const CENTER_SPREAD: f32 = 0.4;
 const SLASH_TAIL: f32 = 2.2;
 
 /// 스킬의 빛(0151)이 판정 뒤에 남는 초.
@@ -956,13 +977,13 @@ pub(super) fn crescent(
     yaw: f32,
     arc: f32,
     sweep: crate::weapons::Sweep,
-    q: f32,
+    (q, gone): (f32, f32),
     col: Color,
     weight: f32,
 ) {
     const N: usize = 14;
     let hot = Color::new(1.0, 1.0, 0.96, col.a);
-    for (tail, head) in slash_arcs(yaw, arc, sweep, q) {
+    for (tail, head) in slash_arcs(yaw, arc, sweep, q, gone) {
         if (head - tail).abs() < 0.02 {
             continue;
         }
