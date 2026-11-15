@@ -239,6 +239,14 @@ pub enum Event {
     Mend {
         at: Vec3,
     },
+    /// 막아치기(0214)가 적의 준비하던 공격을 끊었다.
+    Interrupt {
+        at: Vec3,
+    },
+    /// 뿌리 솟기(0214): 뿌리 하나가 솟았다.
+    RootSpike {
+        at: Vec3,
+    },
     /// 버팀(0158 G2)이 한 대를 받아냈다 — 받아낸 수(`n`번째).
     Soak {
         at: Vec3,
@@ -587,7 +595,23 @@ pub struct SkillState {
     pub leap: f32,
     pub refunded: bool,
     pub ghost: bool,
+    /// 제비걸음(0214): 이번 걸음이 떠난 자리·닿을 자리, 처음 자리(돌아오는 걸음), 첫 적(한 곳만 — 적의 자리 번호).
+    pub hop_from: Vec3,
+    pub hop_to: Vec3,
+    pub hop_home: Vec3,
+    pub hop_first: Option<usize>,
 }
+
+/// 솟은 뿌리 하나(0214 뿌리 솟기 — 그림만): 자리·지난 초·쪽(기울기).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Spike {
+    pub pos: Vec3,
+    pub age: f32,
+    pub lean: Vec3,
+}
+
+/// 솟은 뿌리가 솟았다 가라앉는 초.
+pub const SPIKE_LIFE: f32 = 0.9;
 
 /// 패링과 그 뒤(0076~0090·0107): 마지막 패링 뒤의 시간, 이어 패링, 떼기 지킴, 패링이 연 다음 타(강공격·반격·맞받기·맺음타). `Player::parry`.
 pub struct ParryState {
@@ -773,6 +797,10 @@ pub struct World {
     pub skill_blades: Vec<skill_tick::Blade>,
     pub skill_fields: Vec<skill_tick::Field>,
     brace_caught: Vec<usize>,
+    /// 제비걸음(0214): 이번에 이미 뛰어든 적(자리 번호).
+    hop_seen: Vec<usize>,
+    /// 뿌리 솟기(0214): 솟은 뿌리(그림).
+    pub skill_spikes: Vec<Spike>,
     /// 이번 틱에 방랑자의 탄이 적을 맞혔다(게이지 — `skill_books`).
     bolt_hit_tick: bool,
     /// 이번 틱에 박자에 맞춘 평타가 나갔다(`Event::Beat`).
@@ -836,6 +864,10 @@ impl World {
                     leap: 0.0,
                     refunded: false,
                     ghost: false,
+                    hop_from: Vec3::ZERO,
+                    hop_to: Vec3::ZERO,
+                    hop_home: Vec3::ZERO,
+                    hop_first: None,
                 },
                 parry: ParryState {
                     since: f32::MAX,
@@ -905,6 +937,8 @@ impl World {
             skill_blades: Vec::new(),
             skill_fields: Vec::new(),
             brace_caught: Vec::new(),
+            hop_seen: Vec::new(),
+            skill_spikes: Vec::new(),
             bolt_hit_tick: false,
             time: 0.0,
             kills: 0,

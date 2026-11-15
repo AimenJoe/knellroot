@@ -240,6 +240,8 @@ pub struct Enemy {
     pub slow: f32,
     /// 엉킨 뿌리(0214 패시브): 스킬에 맞아 느리게 걷는 남은 초.
     pub snare: f32,
+    /// 묶는 뿌리(0214 뿌리 솟기 ㄴ): 걷지 못하는 남은 초.
+    pub bind: f32,
     /// 남는 불씨(0158 G2, 잔불 흩기 ㄴ): 지금 선 자리의 불티가 쓰러질 때 더 남기는 잔불 수(월드가 틱마다 적는다, 0 = 없음).
     pub kindled: u32,
 }
@@ -369,6 +371,7 @@ impl Enemy {
             frail_mult: 1.0,
             slow: 1.0,
             snare: 0.0,
+            bind: 0.0,
             kindled: 0,
         }
     }

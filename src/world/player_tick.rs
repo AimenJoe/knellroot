@@ -1100,6 +1100,17 @@ impl World {
                     (Form::Cone { .. }, Some(Twist::Leap { .. })) if e < s.startup => {
                         dir * (pl.skill.leap / s.startup.max(1e-3))
                     }
+                    // 제비걸음(0214): 걸음마다 앞 6할 동안 닿을 자리로 뛴다.
+                    (Form::Hop { gap, .. }, _) if e >= s.startup && e < s.startup + d.active() => {
+                        let into = (e - s.startup) % gap.max(1e-3);
+                        let dash = gap * crate::tuning::HOP_DASH;
+                        if into < dash {
+                            let way = pl.skill.hop_to - pl.skill.hop_from;
+                            vec3(way.x, 0.0, way.z) / dash.max(1e-3)
+                        } else {
+                            Vec3::ZERO
+                        }
+                    }
                     _ => Vec3::ZERO,
                 };
             }
