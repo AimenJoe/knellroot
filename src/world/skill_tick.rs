@@ -612,6 +612,7 @@ impl World {
         let p = self.player.pos;
         let body = p.y + self.player.air;
         let facing = self.player.facing_dir();
+        let snare = self.snare_secs();
         let mut n = 0;
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == sw.swing || (en.pos.y - body).abs() > HIT_DY {
@@ -627,6 +628,9 @@ impl World {
             }
             en.hit_by = sw.swing;
             n += 1;
+            if !en.boss {
+                en.snare = en.snare.max(snare);
+            }
             let at = en.pos + Vec3::Y * en.height * 0.6;
             let crit = en.exposed > 0.0;
             let dmg = hurt_by(
@@ -731,6 +735,15 @@ impl World {
 
     /// 스킬이 남긴 것의 틱(0158 G1) — 방랑자가 다른 일을 하는 동안에도 돈다(히트스톱 동안은 멈춘다):
     /// "모인 자리"는 때가 되면 둘레를 치고, 갈라진 땅은 그 안의 적을 느리게 한다(보스는 아니다).
+    /// 엉킨 뿌리(0214): 스킬에 맞은 적이 느리게 걷는 초(칸이 없으면 0).
+    fn snare_secs(&self) -> f32 {
+        if self.tree.has(crate::progression::Cell::Snare) {
+            crate::progression::cell::SNARE_SECS
+        } else {
+            0.0
+        }
+    }
+
     pub(super) fn tick_skill_fields(&mut self, t: &Tuning, dt: f32) {
         for b in &mut self.skill_bursts {
             b.left -= dt;
@@ -751,8 +764,13 @@ impl World {
         self.skill_zones.retain(|z| z.left > 0.0);
         for en in &mut self.enemies {
             en.slow = 1.0;
+            en.snare = (en.snare - dt).max(0.0);
             if en.boss || !en.active() {
                 continue;
+            }
+            // 엉킨 뿌리(0214): 스킬에 맞은 적은 잠깐 느리게.
+            if en.snare > 0.0 {
+                en.slow = en.slow.min(crate::progression::cell::SNARE_SLOW);
             }
             for z in &self.skill_zones {
                 if z.holds(en.pos, en.radius) {
@@ -937,7 +955,11 @@ impl World {
     /// 더 다치는 표지), 자세 피해, 쓰러짐, 휘청(보스·전환 중인 보스는 휘청이지 않는다 — 이미 더 길게 휘청이는 적은 그대로).
     /// 스킬의 타라 큰 기술 게이지를 채우지 않고(`connected`를 건드리지 않는다), 쓰러뜨리면 스킬 몫의 기세. 쓰러뜨렸으면 참.
     fn skill_touch(&mut self, t: &Tuning, ev: &mut Vec<Event>, i: usize, c: &Touch) -> bool {
+        let snare = self.snare_secs();
         let en = &mut self.enemies[i];
+        if !en.boss {
+            en.snare = en.snare.max(snare);
+        }
         let at = en.pos + Vec3::Y * en.height * 0.6;
         if c.damage > 0 {
             let crit = c.crit && en.exposed > 0.0;
@@ -1071,6 +1093,7 @@ impl World {
     /// 스킬의 타라 게이지는 채우지 않고, 쓰러뜨리면 스킬 몫의 기세.
     fn skill_burst(&mut self, t: &Tuning, b: Burst) {
         let mut ev = std::mem::take(&mut self.skill_ev);
+        let snare = self.snare_secs();
         let mut n = 0;
         for en in &mut self.enemies {
             if !en.active() || (en.pos.y - b.at.y).abs() > HIT_DY {
@@ -1081,6 +1104,9 @@ impl World {
                 continue;
             }
             n += 1;
+            if !en.boss {
+                en.snare = en.snare.max(snare);
+            }
             let at = en.pos + Vec3::Y * en.height * 0.6;
             let crit = en.exposed > 0.0;
             en.hp -= hurt_by(
@@ -1268,6 +1294,7 @@ impl World {
         let parries = count(|e| matches!(e, Event::Parry { .. }));
         let perfects = count(|e| matches!(e, Event::Perfect { .. }));
         let by_skill = self.skill_hit_tick || self.skill_kill_left > 0.0;
+        let gathering = self.tree.has(crate::progression::Cell::GatheringBeat);
         let pl = &mut self.player;
         if downs > 0.0 {
             let per = if by_skill {
@@ -1299,6 +1326,10 @@ impl World {
         if pl.connected != 0 && pl.connected != pl.skill.gauge_swing {
             pl.skill.gauge_swing = pl.connected;
             gain += hit;
+            // 다잡은 박(0214): 박자 타가 맞으면 반 번 더.
+            if gathering && pl.beat.swing_beat {
+                gain += hit * crate::progression::cell::GATHERING_BEAT;
+            }
         }
         if std::mem::take(&mut self.bolt_hit_tick) {
             gain += hit;

@@ -118,6 +118,8 @@ pub mod key {
         "tree.cells.footing",
     ];
     pub const TREE_COUNTS: [&str; 3] = [TREE_BEAT, TREE_RIPOSTE, TREE_FOOTING];
+    /// 켠 맺음(0214 — 키 이름 `progression::Key::key`, 없으면 줄이 없다).
+    pub const TREE_KEY: &str = "tree.key";
 }
 
 /// 글 기록(키 → 값). 모르는 키도 지키며 들고 다닌다.
@@ -333,7 +335,7 @@ impl Progress {
         let migrated = r.num(key::MIGRATED_V04) == Some(1);
         // 패시브 칸(0161): 갈래마다 `tree.cells.*`(연 자리들)가 있으면 그것, 없으면 옛 꼴(연 수 N = 앞에서부터 N칸).
         let cells = {
-            use crate::progression::{Tree, DEPTH};
+            use crate::progression::{Tree, DEPTH, LEGACY_DEPTH};
             let mut t = Tree::default();
             let keys = key::TREE_CELLS.iter().zip(key::TREE_COUNTS);
             for (cell, (cells_key, count_key)) in t.cells.iter_mut().zip(keys) {
@@ -344,11 +346,15 @@ impl Progress {
                         .filter(|d| (1..=DEPTH).contains(d))
                         .fold(0, |m, d| m | 1 << (d - 1)),
                     None => {
-                        let n = r.num(count_key).unwrap_or(0).min(DEPTH as u32) as u8;
+                        // 옛 꼴의 수는 그때의 칸 수(다섯)까지 — 0214의 넷째 줄 칸은 옛 수로 열리지 않는다.
+                        let n = r.num(count_key).unwrap_or(0).min(LEGACY_DEPTH as u32) as u8;
                         Tree::from_counts([n, 0, 0]).cells[0]
                     }
                 };
             }
+            t.key = r
+                .get(key::TREE_KEY)
+                .and_then(crate::progression::Key::by_key);
             t
         };
         let residents_seen: Vec<(String, u32)> = r
@@ -659,6 +665,10 @@ impl Progress {
             } else {
                 r.set(key::TREE_CELLS[b], open.join(","));
             }
+        }
+        match self.board.cells.key {
+            Some(k) => r.set(key::TREE_KEY, k.key()),
+            None => r.remove(key::TREE_KEY),
         }
         match self.weapon {
             Some(w) => r.set(key::WEAPON, w.key()),

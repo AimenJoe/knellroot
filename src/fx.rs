@@ -717,6 +717,20 @@ impl Fx {
                         false,
                     );
                 }
+                // 되찾는 살(0214): 등잔보다 작게 — 패링으로 되찾은 한 눈금.
+                Event::Mend { at } => {
+                    self.rise(
+                        at - Vec3::Y * 0.6,
+                        0.3,
+                        5,
+                        Shape::Dot,
+                        (0.07, 0.035),
+                        0.6,
+                        HEAL,
+                        WHITE_HOT,
+                        false,
+                    );
+                }
                 // 마법 탄 발사: 손끝의 작은 라벤더 번쩍임.
                 Event::Cast { at } => {
                     self.star(at, 0.8, 0.07, LAVENDER);

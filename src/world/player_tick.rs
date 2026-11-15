@@ -263,6 +263,9 @@ impl World {
         let pl = &mut self.player;
         // 콤보·원거리 무기 시계(0051).
         pl.combo_left = (pl.combo_left - dt).max(0.0);
+        // 뿌리내린 몸(0214): 땅에 서서 움직이지 않은 시간 — 걷거나 구르거나 뜨면 처음부터.
+        let still = pl.air <= 0.0 && vec3(pl.vel.x, 0.0, pl.vel.z).length() < 0.3;
+        pl.hurt.still = if still { pl.hurt.still + dt } else { 0.0 };
         if let Rb::Shot { .. } = wpn.rb {
             if pl.ranged.reload > 0.0 {
                 pl.ranged.reload -= dt;
@@ -378,9 +381,12 @@ impl World {
     /// 상태마다 다른 조건(삼키기 전·쏜 뒤·후딜레이 …)은 부르는 쪽이 `&&`로 앞에 둔다.
     pub(super) fn try_dodge(&mut self, cx: &Ctx) -> bool {
         let pl = &mut self.player;
-        if !(cx.a.dodge && pl.dodge_cd <= 0.0 && pl.spend(cx.t[P::StaminaDodge])) {
+        // 이어지는 숨(0214): 박자 셋을 이은 뒤의 회피 하나는 기력 없이.
+        let free = pl.beat.free_dodge;
+        if !(cx.a.dodge && pl.dodge_cd <= 0.0 && (free || pl.spend(cx.t[P::StaminaDodge]))) {
             return false;
         }
+        pl.beat.free_dodge = false;
         let dir = if cx.world_move.length_squared() > 1e-4 {
             cx.world_move.normalize()
         } else {
@@ -506,6 +512,10 @@ impl World {
                 // 이어지는 박자(0107): 박자 타 셋마다 둘레 충격.
                 if tree.has(Cell::FlowingBeat) && pl.beat.chain.is_multiple_of(cell::FLOW_EVERY) {
                     self.shock_now = true;
+                }
+                // 이어지는 숨(0214): 박자 셋을 이으면 다음 회피가 기력 없이.
+                if tree.has(Cell::HeldBreath) && pl.beat.chain >= cell::HELD_BREATH_CHAIN {
+                    pl.beat.free_dodge = true;
                 }
                 // 끝맺음(0107): 박자를 다섯 이은 뒤 박자로 낸 마지막 타 → 다음 강타는 다 모여 있다.
                 let hit = if pl.combo_left > 0.0 {
