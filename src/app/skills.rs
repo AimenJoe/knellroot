@@ -1153,7 +1153,7 @@ impl App {
         ui::clip(Some(port));
         // 줄 띠: 가는 선 + 오른쪽 끝의 이름("처음부터" / "쓴 점수 4부터" — 잠겼으면 몇 점 더). 글은 다 보일 때만(잘린 글은 그리지 않는다).
         let spent = board.spent();
-        for row in 0..3 {
+        for row in 0..sk::ROW_NEEDS.len() {
             let need = sk::ROW_NEEDS[row];
             let label = if need == 0 {
                 s.sk_row_first.to_string()
