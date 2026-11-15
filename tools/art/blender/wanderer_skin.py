@@ -79,6 +79,8 @@ AIM = {}  # 0204: 쇠뇌는 활쏘기 대신 두 손을 앞으로 내민 시전 
 # 앞으로 겨누기(0204, 쇠뇌): 원본은 두 손을 어깨 높이로 앞에 내민 시전(mage_soell_cast_8) — 몸이 정면을 본다. 쇠뇌는 몸 앞(−Y)을
 # 가리키고 날개는 가로(쉬는 자세의 쇠뇌 그대로 — 0196의 겨누기는 날개 축을 하늘로 세워 "쇠뇌를 세로로 든다").
 XBOW_FWD = {"xbow_charge", "xbow_shoot"}
+# 겨눈 자세에서 나갔다 돌아오는 동작(0205): [(초, 몫)] — 몫 1 = `XBOW_FWD`의 방향, 0 = 팔을 따라(어깨 → 주먹). 토스는 처음·끝이 겨눈 자세다.
+XBOW_BLEND = {"throw": [(0.0, 1.0), (0.06, 0.0), (0.38, 0.0), (0.5, 1.0)]}
 # 두 손 쥠(0202, 지팡이 — 원본 M08·M09는 두 손으로 쥔 지팡이 동작): 무기는 오른손 뼈에만 달려 있어 어깨 → 주먹 규칙으로 두면
 # 왼손과 따로 놀며 엉뚱한 쪽을 가리켰다(사장 "지팡이는 다 이상하고"). 두 손이 가까이(`TWO_HAND_NEAR` 안) 있으면 지팡이를
 # 오른손 → 왼손 줄로 눕히고, 한 손을 떼어 휘두르면(멀어지면 `TWO_HAND_FAR`까지) 옛 규칙으로 돌아간다.
@@ -161,7 +163,7 @@ CLIPS = [
     ("cast_charge", "mage_soell_cast_8", ("span", 0, 7, 0.3)),
     # 마법(0197): 왼손을 앞으로 내밀어(28 → 35) 내민 채 버티고(46) 거둔다(58) — 옛 판은 내미는 순간 바로 거둬 손만 까딱였다.
     ("cast", "mage_soell_cast_8", ("anchors", [(0.0, 7), (0.075, 14), (0.25, 25), (0.4, 31)])),
-    ("throw", "M16", ("anchors", [(0.0, 8), (0.12, 15), (0.2, 24), (0.5, 34)])),  # 0204: M07(던지기)은 손이 거의 안 움직였다 — 팔을 들어 휘둘러 던지는 M16
+    ("throw", "Toss", ("anchors", [(0.0, 0), (0.5, 12)])),  # 0205: 지은 언더핸드 토스(`CRAFT`) — 0204의 M16은 머리 위로 휘둘러 던졌다
     # 지팡이(M08 봉우리 11·24·29·42 — 찌르기·가로 치기·올려 치기·돌아 내려치기)
     # 0203(사장 "지팡이는 아직 휘두르는 느낌이 없어"): M08은 손이 가장 빠를 때도 3.8 m/s — Weapon_Combo 앞쪽의 휘두르기 셋(4.7~5.3 m/s,
     # 올려 베기 → 내려 베기 → 머리 위에서 내려치기)과 Attack의 두 손 내려치기(9 m/s)로.
@@ -806,6 +808,10 @@ def weapon_pass(arm, act, loop):
             e = e * (1 - g) + Vector((0, 0, 1)) * g
         if act.name in XBOW_FWD:
             d, e = Vector((0, -1, 0)), Vector((1, 0, 0))
+        if act.name in XBOW_BLEND:
+            g = keyed(XBOW_BLEND[act.name], k / OUT_FPS)
+            d = (d * (1 - g) + Vector((0, -1, 0)) * g).normalized()
+            e = e * (1 - g) + Vector((1, 0, 0)) * g
         if act.name in TWO_HAND:
             g = two_hand_mix(h, l_)
             if g > 0.0:
@@ -821,6 +827,70 @@ def weapon_pass(arm, act, loop):
         qs.append(tuple(rot))
     put(act, "weapon", "rotation_quaternion", qs, reduce(qs, ROT_TOL))
     ad.action = None
+
+
+# 지은 동작(0205): 원본에 없는 동작을 원본의 한 자세 위에 관절을 돌려 짓는다 — 뼈대 공간의 축(앞 −Y · 왼쪽 +X · 위 +Z)으로
+# 뼈의 머리를 돌림 중심으로. 각(도)의 열쇠 [(초, 각)]는 사이를 매끄럽게(코사인) 잇는다. 원본 프레임 = 1/24초.
+# 언더핸드 토스(사장 "쇠뇌 공격 모션에서 오른손으로 언더핸드로 툭 던지는 — 조준은 좀 흐트러지고, 오른발을 약간 내밀면서"):
+# 쇠뇌 겨눈 자세(시전 24)에서 오른팔을 엉덩이 옆 뒤로 크게 뺐다가(0.1초) 앞 아래로 툭(0.2초 = `throw.startup`, 놓는 순간),
+# 오른발은 반 걸음 나갔다 돌아오고 몸은 살짝 숙인다. 쇠뇌는 오른손에 든 채 팔을 따라 돈다(조준이 흐트러진다).
+CRAFT = {
+    "Toss": {
+        "base": ("mage_soell_cast_8", 24),
+        "len": 0.5,
+        "turns": [  # (뼈, 축, [(초, 도)]) — 축 X: + = 앞이 아래로(팔·등뼈), 다리는 − = 앞으로 든다
+            ("mixamorig:Spine1", "X", [(0.0, 0), (0.1, -4), (0.2, 9), (0.3, 7), (0.5, 0)]),
+            ("mixamorig:RightArm", "X", [(0.0, 0), (0.1, 118), (0.2, 48), (0.27, 30), (0.5, 0)]),
+            ("mixamorig:RightForeArm", "X", [(0.0, 0), (0.1, -10), (0.2, 12), (0.5, 0)]),
+            ("mixamorig:LeftArm", "X", [(0.0, 0), (0.1, 18), (0.2, 30), (0.5, 0)]),
+            ("mixamorig:RightUpLeg", "X", [(0.0, 0), (0.08, -14), (0.16, -18), (0.34, -18), (0.5, -4)]),
+            ("mixamorig:RightLeg", "X", [(0.0, 0), (0.08, 28), (0.16, 12), (0.34, 12), (0.5, 2)]),
+        ],
+    },
+}
+
+
+def keyed(keys, t):
+    for (t0, a0), (t1, a1) in zip(keys, keys[1:]):
+        if t <= t1:
+            u = 0.0 if t1 <= t0 else (t - t0) / (t1 - t0)
+            return a0 + (a1 - a0) * (0.5 - 0.5 * math.cos(math.pi * min(max(u, 0.0), 1.0)))
+    return keys[-1][1]
+
+
+def craft_actions(arm):
+    """`CRAFT`의 동작을 짓는다(원본 동작처럼 이름으로 `CLIPS`가 읽는다)."""
+    sc = bpy.context.scene
+    if arm.animation_data is None:
+        arm.animation_data_create()
+    for name, c in CRAFT.items():
+        src, f = c["base"]
+        arm.animation_data.action = bpy.data.actions[src]
+        for pb in arm.pose.bones:
+            pb.location, pb.rotation_quaternion, pb.scale = (0, 0, 0), (1, 0, 0, 0), (1, 1, 1)
+        sc.frame_set(f)
+        base = {pb.name: pb.matrix_basis.copy() for pb in arm.pose.bones}
+        act = bpy.data.actions.new(name)
+        arm.animation_data.action = act
+        n = int(round(c["len"] * 24))
+        for k in range(n + 1):
+            t = k / 24
+            for pb in arm.pose.bones:
+                pb.matrix_basis = base[pb.name]
+            bpy.context.view_layer.update()
+            for bone, axis, keys in c["turns"]:
+                pb = arm.pose.bones[bone]
+                a = math.radians(keyed(keys, t))
+                if abs(a) < 1e-6:
+                    continue
+                head = pb.head.copy()
+                rot = Matrix.Translation(head) @ Matrix.Rotation(a, 4, axis) @ Matrix.Translation(-head)
+                pb.matrix = rot @ pb.matrix
+                bpy.context.view_layer.update()
+            for pb in arm.pose.bones:
+                for path in ("location", "rotation_quaternion", "scale"):
+                    pb.keyframe_insert(path, frame=k)
+        print(f"[skin] craft {name}: {n} frames from {src} {f}")
 
 
 def make_actions(arm, body):
@@ -930,6 +1000,7 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, sheet_dir=None):
     W._flat_where_folded(body.data)  # 줄이며 접힌 작은 면(면 법선 ↔ 매끈한 법선이 반대)은 각지게 — `check_glb` 뒤집힌 면
     attach(arm, old)
     texture(body, old)
+    craft_actions(arm)
     make_actions(arm, body)
     objs = [body] + old["weapons"] + old["lamp"]
     for o in old["weapons"][1:]:  # 미리보기에서는 칼만
