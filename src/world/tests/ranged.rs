@@ -35,6 +35,57 @@ fn a_cast_spends_a_charge_and_the_bolt_hits() {
     assert!(matches!(w.player.state, PState::Idle));
 }
 
+/// 0213(사장 "쇠뇌는 rb로 발사하는게 맞겠어. 자동 조준 없애고"): 쇠뇌는 RB로 쏘고, 곁의 적을 찾아 돌지 않는다 — 바라보는 쪽으로
+/// 날아간다. 같은 자리에서 마법(지팡이)은 그 적을 찾는다(0048 그대로). X는 수류탄.
+#[test]
+fn the_crossbow_fires_on_rb_where_it_faces_without_auto_aim() {
+    let t = Tuning::default();
+    let shot_dir = |id: weapons::Id| {
+        let mut w = World::new("test", 30.0);
+        w.set_weapon(id);
+        w.spawn_mob(vec3(6.0, 0.0, 0.0)); // 옆(오른쪽) — 바라보는 쪽(앞 = -z)이 아니다
+        idle(&mut w);
+        let face = w.player.facing_dir();
+        w.step(
+            &Actions {
+                cast: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        for _ in 0..30 {
+            if !w.bolts.is_empty() {
+                break;
+            }
+            w.step(&Actions::default(), &t);
+        }
+        let b = w.bolts.first().expect("a bolt flies");
+        (vec3(b.dir.x, 0.0, b.dir.z).normalize(), face)
+    };
+    let (d, face) = shot_dir(weapons::Id::Crossbow);
+    assert!(
+        d.dot(face) > 0.99,
+        "the bolt goes where the wanderer faces: {d:?} vs {face:?}"
+    );
+    let (d, _) = shot_dir(weapons::Id::Staff);
+    assert!(d.x > 0.9, "magic still seeks the foe beside: {d:?}");
+    // X(attack)는 쇠뇌로 수류탄을 던진다.
+    let mut w = World::new("test", 30.0);
+    w.set_weapon(weapons::Id::Crossbow);
+    w.step(
+        &Actions {
+            attack: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    assert!(
+        matches!(w.player.state, PState::Throw { .. }),
+        "{:?}",
+        w.player.state
+    );
+}
+
 /// 0058: 커서를 비춘 땅 위의 점은 오른쪽 스틱처럼 겨눈다 — 가까운 적(자동 조준)이 아니라 커서 쪽 적을 맞힌다.
 /// 락온 중이면 커서는 쓰지 않는다(대상을 본다 — 스틱과 같다).
 #[test]
@@ -94,7 +145,7 @@ fn a_grenade_drops_just_ahead_toward_the_cursor() {
     let far = vec2(p0.x + 8.0, p0.z + 6.0);
     w.step(
         &Actions {
-            cast: true,
+            attack: true,
             aim_at: Some(far),
             ..Default::default()
         },
@@ -250,7 +301,7 @@ fn the_crossbow_shoots_a_downward_volley_from_the_air() {
     let ammo = w.player.ranged.ammo;
     w.step(
         &Actions {
-            attack: true,
+            cast: true,
             ..Default::default()
         },
         &t,
@@ -273,7 +324,7 @@ fn shots_and_grenades_cost_stamina_and_stop_when_empty() {
     let (s0, ammo) = (w.player.stamina, w.player.ranged.ammo);
     w.step(
         &Actions {
-            attack: true,
+            cast: true,
             ..Default::default()
         },
         &t,
@@ -290,7 +341,7 @@ fn shots_and_grenades_cost_stamina_and_stop_when_empty() {
     let bombs = w.player.ranged.grenades;
     w.step(
         &Actions {
-            attack: true,
+            cast: true,
             ..Default::default()
         },
         &t,
@@ -300,7 +351,7 @@ fn shots_and_grenades_cost_stamina_and_stop_when_empty() {
     w.player.stamina_idle = 0.0;
     w.step(
         &Actions {
-            cast: true,
+            attack: true,
             ..Default::default()
         },
         &t,
@@ -349,7 +400,7 @@ fn the_crossbow_shoots_from_a_magazine_and_reloads() {
     assert_eq!(w.player.ranged.ammo, mag);
     let mana = w.player.ranged.mana;
     let cast = Actions {
-        attack: true,
+        cast: true,
         ..Default::default()
     };
     for _ in 0..mag {
@@ -391,7 +442,7 @@ fn a_grenade_flies_bounces_and_blows_up() {
     idle(&mut w);
     let mut ev = w.step(
         &Actions {
-            cast: true,
+            attack: true,
             ..Default::default()
         },
         &t,
@@ -421,12 +472,18 @@ fn holding_the_grenade_still_drops_it_ahead() {
     w.set_weapon(weapons::Id::Crossbow);
     mob_with(&mut w, vec3(6.0, 0.0, 0.0), 200);
     let hold = Actions {
-        cast_held: true,
+        attack_held: true,
         ..Default::default()
     };
     w.view_yaw = Some(0.0);
     let p0 = w.player.pos;
-    let mut ev = w.step(&Actions { cast: true, ..hold }, &t);
+    let mut ev = w.step(
+        &Actions {
+            attack: true,
+            ..hold
+        },
+        &t,
+    );
     for _ in 0..40 {
         ev.extend(w.step(&hold, &t));
     }
@@ -445,23 +502,30 @@ fn holding_the_grenade_still_drops_it_ahead() {
     }
 }
 
-/// 쏘는 버튼을 누른 채 쥔다(0151: 근접 무기 = RB 마법, 원거리 무기 = X 사격): 한 발 쏘고 모으기로 들어가 `ticks`틱 쥔 뒤 뗀다 —
+/// 무기의 첫 공격 버튼(0213): 근접 = X(`attack`), 쇠뇌 = RB(`cast` — 사격). 시간당 피해 탐침이 무기마다 "가장 세게 쓰는 꼴"을 같은
+/// 손으로 재게 한다.
+fn primary(w: &World, a: Actions) -> Actions {
+    if matches!(w.player.weapon.def().rb, Rb::Shot { .. }) {
+        Actions {
+            cast: a.attack,
+            cast_held: a.attack_held,
+            attack: false,
+            attack_held: false,
+            ..a
+        }
+    } else {
+        a
+    }
+}
+
+/// 쏘는 버튼(RB — 근접 무기 = 마법, 쇠뇌 = 사격, 0213)을 누른 채 쥔다: 한 발 쏘고 모으기로 들어가 `ticks`틱 쥔 뒤 뗀다 —
 /// 뗀 직후의 탄들.
 fn charge_cast(w: &mut World, t: &Tuning, ticks: usize) -> Vec<Bolt> {
-    let ranged = w.player.weapon.def().grenade.is_some();
     let held = Actions {
-        attack_held: ranged,
-        cast_held: !ranged,
+        cast_held: true,
         ..Default::default()
     };
-    w.step(
-        &Actions {
-            attack: ranged,
-            cast: !ranged,
-            ..held
-        },
-        t,
-    );
+    w.step(&Actions { cast: true, ..held }, t);
     for _ in 0..200 {
         if matches!(w.player.state, PState::CastCharge { .. }) {
             break;
@@ -531,16 +595,10 @@ fn the_crossbow_charges_a_piercing_shot() {
     // 볼트가 다 떨어지면 쥐어도 모으기로 가지 않는다.
     w.player.ranged.ammo = 1;
     let held = Actions {
-        attack_held: true,
+        cast_held: true,
         ..Default::default()
     };
-    w.step(
-        &Actions {
-            attack: true,
-            ..held
-        },
-        &t,
-    );
+    w.step(&Actions { cast: true, ..held }, &t);
     for _ in 0..80 {
         w.step(&held, &t);
         assert!(!matches!(w.player.state, PState::CastCharge { .. }));
@@ -555,7 +613,7 @@ fn a_crossbow_shot_on_the_beat_keeps_its_bolt_and_mashing_spends_them() {
     let shoot = |w: &mut World, press: bool| {
         w.step(
             &Actions {
-                attack: press,
+                cast: press,
                 ..Default::default()
             },
             &t,
@@ -702,13 +760,11 @@ fn dps_at(id: weapons::Id, rank: u8, secs: f32, on_beat: bool, dist: f32) -> (f3
         if w.player.stamina < 1.0 {
             starved += 1;
         }
-        w.step(
-            &Actions {
-                attack: press,
-                ..Default::default()
-            },
-            &t,
-        );
+        let a = Actions {
+            attack: press,
+            ..Default::default()
+        };
+        w.step(&primary(&w, a), &t);
     }
     (
         (hp0 - w.enemies[i].hp) as f32 / secs,
@@ -878,7 +934,7 @@ fn dps_plan(id: weapons::Id, rank: u8, secs: f32, dist: f32, plan: Plan) -> (f32
             a.attack = false;
             a.attack_held = false;
         }
-        w.step(&a, &t);
+        w.step(&primary(&w, a), &t);
     }
     (
         (hp0 - w.enemies[i].hp) as f32 / secs,
@@ -919,13 +975,13 @@ fn a_charged_bolt_spends_two_bolts_and_needs_two_to_charge() {
     let mag = w.mag_of(weapons::Id::Crossbow);
     // 쥐고 있으면: 첫 발(하나) → 모으기 → 떼면 모은 탄(둘).
     let hold = Actions {
-        attack: true,
-        attack_held: true,
+        cast: true,
+        cast_held: true,
         ..Default::default()
     };
     w.step(&hold, &t);
     let held = Actions {
-        attack_held: true,
+        cast_held: true,
         ..Default::default()
     };
     let mut charged = false;
@@ -988,7 +1044,7 @@ fn firing_a_dodge_loaded_bolt_does_not_restart_the_reload() {
     let left = w.player.ranged.reload;
     w.step(
         &Actions {
-            attack: true,
+            cast: true,
             ..Default::default()
         },
         &t,

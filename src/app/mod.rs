@@ -129,6 +129,8 @@ pub struct App {
     tutor: crate::tutorial::Tutor,
     /// 떠 있는 상황 힌트와 남은 시간(0209 T2).
     tip: Option<(crate::tutorial::Tip, f32)>,
+    /// 이 판에서 띄운 상황 힌트(기록에 안 남는 것 — 등잔은 마셔 볼 때까지 체력이 반 아래로 갈 때마다, 0213).
+    tips_now: u8,
     /// 튜토리얼이 센 적의 공격 번호(0209 T3 — 예고마다 한 번 센다).
     tell_seen: Vec<u32>,
     /// 종소리의 길 안내(0171): 문을 찾는 동안 가끔 우는 종의 시계 + 물결. 판에 붙는다(기록에 남지 않는다).
@@ -318,6 +320,7 @@ impl App {
             pause_tab: flow::Tab::Status,
             tutor: crate::tutorial::Tutor::new(progress.tutorial),
             tip: None,
+            tips_now: 0,
             tell_seen: Vec::new(),
             knell: crate::knell::Knell::default(),
             wake: (!progress.woke).then(crate::wake::Wake::default),
@@ -389,6 +392,7 @@ impl App {
         self.pause_tab = flow::Tab::Status;
         self.tutor = crate::tutorial::Tutor::new(self.progress.tutorial);
         self.tip = None;
+        self.tips_now = 0;
         self.tell_seen.clear();
         self.knell = crate::knell::Knell::default();
         // 깨어나는 첫 장면(0171): 아직 본 적 없는 기록의 판은 그 장면으로 열린다(개발 창의 판은 아니다).

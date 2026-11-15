@@ -19,13 +19,13 @@ const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
 // 문 앞 쉼터에 선 새 판의 기록(처음의 둘도 기술 점수도 없다) + 걸음마다의 사실.
 const BASE = 'v=1\nrun.rest=0\nrun.gate=0\nplay=1\nweapons=\nmigrated.v04=1\nmigrated.v06=1\nmigrated.ult=1\n';
-// 0169: 몸의 걸음 넷 뒤에 상(기술 점수 1 — `skill.gift=1`) → 쉬고 배우기 → 쓰기 → 잔불이 첫 레벨 값만큼 모였을 때에야 뜨는
-// "한 단 올리기"(0209 T4: 모자라면 "잔불을 모은다 n / 값" — `7q`).
+// 0169: 몸의 걸음 넷 뒤에 상(기술 점수 1 — `skill.gift=1`) → 쉬고 배우기 → 쓰기 → 잔불이 첫 레벨 값(50)의 반부터 뜨는
+// "한 단 올리기"(0209 T4 · 0213: 반~값 사이는 "잔불을 모은다 n / 값" — `7q`, 반 아래는 조용하다).
 const STEPS = [
   ['1-move', 'tut.step=0\n'], ['2-attack', 'tut.step=1\n'], ['3-dodge', 'tut.step=2\n'], ['4-parry', 'tut.step=3\n'],
   ['5-learn', 'tut.step=4\nskill.gift=1\n'], ['6-skill', 'tut.step=5\nskill.gift=1\nskill.rank.whirl=1\n'],
   ['7-level', 'tut.step=6\nskill.gift=1\nskill.rank.whirl=1\nembers=60\n'],
-  ['7q-level-gather', 'tut.step=6\nskill.gift=1\nskill.rank.whirl=1\nembers=20\n'],
+  ['7q-level-gather', 'tut.step=6\nskill.gift=1\nskill.rank.whirl=1\nembers=30\n'],
 ];
 
 const server = http.createServer((req, res) => {

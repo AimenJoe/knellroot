@@ -511,6 +511,15 @@ impl App {
             match e {
                 Event::Hit { .. } | Event::Crit { .. } => self.tutor.seen.hits += 1,
                 Event::Charged => self.tutor.seen.charged += 1,
+                // 등잔을 한 번 마셔 보면 그 뒤로는 알리지 않는다(기록의 비트 — 판을 넘어, 0213).
+                Event::Gulp { .. } => {
+                    self.tutor.seen.gulps += 1;
+                    let bit = crate::tutorial::Tip::Flask.bit();
+                    if self.progress.tips & bit == 0 {
+                        self.progress.tips |= bit;
+                        self.persist();
+                    }
+                }
                 _ => {}
             }
         }
@@ -589,7 +598,7 @@ impl App {
     /// 상황 힌트(0209 T2): 떠 있으면 시간을 줄이고(할 일을 하면 먼저 걷힌다), 없으면 때가 된 첫 것을 띄운다 — 띄우는
     /// 순간 기록의 비트에 적어 판을 넘어 한 번뿐.
     fn tip_watch(&mut self) {
-        use crate::tutorial::{next_tip, Situation, TIP_TIME};
+        use crate::tutorial::{next_tip, Situation, Tip, TIP_TIME};
         let pl = &self.world.player;
         let now = Situation {
             hp_low: pl.hp * 2 < pl.max_hp,
@@ -601,15 +610,24 @@ impl App {
             }),
             locked: self.world.lock.is_some(),
         };
+        // 등잔은 체력이 반 위로 돌아오면 다시 알릴 수 있다(마셔 보기 전까지 — 기록의 비트는 마실 때 선다, 0213).
+        let flask = Tip::Flask.bit();
+        if !now.hp_low {
+            self.tips_now &= !flask;
+        }
         if let Some((t, left)) = self.tip {
             let left = left - TICK_DT;
             self.tip = (left > 0.0 && !t.done(&now, &self.tutor.seen)).then_some((t, left));
             return;
         }
-        if let Some(t) = next_tip(self.progress.tips, self.tutor.at, &now, &self.tutor.seen) {
+        let shown = self.progress.tips | self.tips_now;
+        if let Some(t) = next_tip(shown, self.tutor.at, &now, &self.tutor.seen) {
             self.tip = Some((t, TIP_TIME));
-            self.progress.tips |= t.bit();
-            self.persist();
+            self.tips_now |= t.bit();
+            if t != Tip::Flask {
+                self.progress.tips |= t.bit();
+                self.persist();
+            }
             self.snd(crate::sfx::Id::Recall);
         }
     }
@@ -643,7 +661,17 @@ impl App {
             }
         };
         if let (Some((t, _)), true) = (self.tip, self.tutor_live()) {
-            return Some(t.hint(crate::i18n::s(), cap));
+            // 쇠뇌는 모으기가 RB(사격)에 있다(0213).
+            let shots = matches!(
+                self.world.player.weapon.def().rb,
+                crate::weapons::Rb::Shot { .. }
+            );
+            return Some(t.hint(crate::i18n::s(), |b| {
+                cap(match b {
+                    crate::input::Bind::Attack if shots => crate::input::Bind::Cast,
+                    b => b,
+                })
+            }));
         }
         if !self.tutor_on() {
             return None;
