@@ -15,6 +15,8 @@ mod journey;
 #[cfg(feature = "dev")]
 mod lab_screen;
 mod menu;
+#[cfg(feature = "dev")]
+mod motions;
 mod play;
 mod progress;
 mod settings;
@@ -678,6 +680,13 @@ impl App {
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.tick_dev(&a, tab as usize),
             #[cfg(feature = "dev")]
+            Scene::Motions {
+                weapon,
+                speed,
+                spin,
+                t_ms,
+            } => self.tick_motions(&a, weapon, speed, spin, t_ms),
+            #[cfg(feature = "dev")]
             Scene::Lab => self.tick_menu(&a, Scene::Lab),
             #[cfg(feature = "dev")]
             Scene::LabGroup { g } => self.tick_lab_group(&a, g as usize),
@@ -729,7 +738,7 @@ impl App {
             | Scene::Journey { .. }
             | Scene::EquipPick { .. } => None,
             #[cfg(feature = "dev")]
-            Scene::Sandbox | Scene::Dev { .. } => None,
+            Scene::Sandbox | Scene::Dev { .. } | Scene::Motions { .. } => None,
         }
     }
 
@@ -758,7 +767,7 @@ impl App {
             | Scene::Journey { .. }
             | Scene::EquipPick { .. } => {}
             #[cfg(feature = "dev")]
-            Scene::Sandbox | Scene::Dev { .. } => {}
+            Scene::Sandbox | Scene::Dev { .. } | Scene::Motions { .. } => {}
         }
     }
 
@@ -951,6 +960,13 @@ impl App {
             Scene::Settings { host } => self.draw_settings(f, host),
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.draw_dev_screen(f, tab as usize),
+            #[cfg(feature = "dev")]
+            Scene::Motions {
+                weapon,
+                speed,
+                spin,
+                t_ms,
+            } => self.draw_motions(f, weapon, speed, spin, t_ms),
             Scene::EquipPick { slot } => {
                 // 칸 커서·연 곳은 아래 칸(장비 탭)의 것.
                 let under = self.stack.under().copied();

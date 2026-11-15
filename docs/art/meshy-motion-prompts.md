@@ -140,3 +140,11 @@ M09 지팡이 모으기·떼기 · M10 망치 모으기 · M11 망치 두 타 ·
 
 ## 그다음(공격 밖 — 몸의 반응)
 `hurt`(맞고 휘청), `fall`(쓰러짐), `wake`(엎드렸다 일어남), `jump`·`land`·`plunge`(공중에서 내려찍기), `drink`(등잔 마시기)는 공격을 들인 뒤에.
+
+## 패링(막기) — 다시 받을 것(2026-11-15)
+지금 `parry`는 되울림(M15)의 칼을 드는 구간을 빌려 쓴다(라이브러리 Sword_Parry_Backward_2는 손이 몸 뒤라 못 쓴다). 라이브러리(Fighting)에 Block·Guard가
+있으면 그것이 먼저, 없으면 Text to Motion 2초:
+
+| 이름 | 길이 | 프롬프트 |
+|---|---|---|
+| `parry` | 2초 | A sword fighter holding a one-handed sword in the right hand snaps the sword up in front of the chest, blade pointing up and slightly forward, to catch an incoming strike, the arms brace and the body leans slightly into the block, holds the block firmly for a moment, then lowers the sword back to a guard stance. The sword stays in front of the body the whole time. Only one block. |

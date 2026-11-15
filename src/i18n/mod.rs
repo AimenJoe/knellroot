@@ -717,6 +717,7 @@ pub fn dev_texts() -> Vec<&'static str> {
         .chain(dev::GROUP_KO)
         .chain(dev::SCENARIO_KO.iter().flat_map(|(_, n, c)| [*n, *c]))
         .chain(dev::PAIRS.iter().map(|p| p.0))
+        .chain(dev::MOTION_LABELS.iter().map(|(_, p)| p.0))
         .collect()
 }
 

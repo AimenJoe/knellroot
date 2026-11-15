@@ -37,6 +37,11 @@ GRIP_IN = 0.55  # 손목 → 가운데 손가락 뿌리의 이 몫이 주먹 가
 BLADE_RISE = 0.5
 EDGE_SPEED = 1.0  # m/s(뼈대 단위) — 이보다 빠르면 날이 손이 가는 쪽을 본다
 EDGE_SMOOTH = 6  # 앞뒤 프레임(100fps) — 손 속도를 고르게
+# 막기 꼴(사장 2026-11-15 "패링이 공격 1타라서 이상한데"): 원본 Sword_Parry_Backward_2는 칼을 아래로 늘어뜨린 채 거의 움직이지 않아
+# 공격 준비처럼 보인다 — 막는 동작을 새로 받기 전까지 칼만 "몸 앞쪽에 세워 든" 막기 꼴로(날이 오는 쪽 = 앞).
+# (이름, 들어가는 몫 — 동작 길이의 비): 그 몫 동안 규칙의 방향에서 막기 꼴로 옮겨 가고 그 뒤는 머문다.
+GUARD = {"parry": 0.25}
+GUARD_BLADE = Vector((0.25, -0.45, 0.85))  # 뼈대 공간: 왼쪽(+X) · 앞(−Y) · 위(+Z) — 앞쪽으로 세워 든 칼(가로로 들면 주먹이 허리께라 몸을 지난다)
 # 숙임 바로잡기(앞, 옆 도 — 엉덩이 → 머리가 수직에서 기운 각): 클립 평균을 등뼈 셋에 나눠 돌려 그 각으로 세운다(`solve_upright`).
 # 지금은 비어 있다 — 숙였던 Combat_Stance 대신 곧게 선 Idle_02를 쓴다(그때는 {"idle": (8.0, 5.0)}, 앞 23°·옆 18° → 8°·5°).
 UPRIGHT = {}
@@ -55,6 +60,7 @@ SKILL_FACE = {
     "sk_throw": ((0.18, 0.10, 0.25), "tip"), "sk_embers": ((0.25, 0.0, 0.30), "hips"),
     "ult_upend": ((0.30, 0.20, 0.50), "hips"), "ult_flurry": ((0.30, 0.0, 0.20), "hips"),
     "ult_line": ((0.30, 0.15, 0.45), "tip"),
+    "parry": ((0.08, 0.22, 0.0), "hold"),  # 기술은 아니지만 같은 장치 — 막는 동안 몸이 정면(원본 M15는 들며 옆으로 비튼다)
 }
 SPIN = -1.0  # 휘돌이가 도는 쪽(원본 Skill_03은 오른쪽으로 돈다 — 요가 줄어드는 쪽). 이펙트 `render::overlays::WHIRL_CLIP_TURN`과 같아야 한다
 
@@ -81,7 +87,9 @@ CLIPS = [
     ("attack3", "Triple_Combo_Attack", ("hit", 45, (48, 60), 70, 0.52, 0.10)),
     ("charge", "Attack", ("span", 0, 21, 0.3)),
     ("heavy", "Attack", ("hit", 21, (22, 30), 50, 0.58, 0.133)),
-    ("parry", "Sword_Parry_Backward_2", ("hit", 0, (2, 9), 12.8, 0.3, 0.06)),
+    # 패링(2026-11-15): 라이브러리 Sword_Parry_Backward_2는 오른손이 몸 뒤(엉덩이보다 0.2~0.28 m 뒤)라 칼이 가려지고 공격 준비처럼 보였다 —
+    # 되울림 원본(M15 "칼을 얼굴 앞에 세워 든다")에서 손이 몸 앞 가슴 높이로 올라오는 구간(12~21프레임)을 쓴다. 0.08초에 들고 버틴다.
+    ("parry", "M15", ("anchors", [(0.0, 10), (0.08, 15), (0.3, 21)])),
     ("dodge", "Roll_Dodge_3", ("hit", 2, (10, 20), 30, 0.25, 0.1)),
     ("hurt", "Dead", ("hit", 0, (2, 6), 12, 0.35, 0.058)),
     ("fall", "Dead", ("span", 4, 71, 1.3)),
@@ -649,6 +657,10 @@ def weapon_pass(arm, act, loop):
         ev = v - d * v.dot(d)
         w = min(ev.length / EDGE_SPEED, 1.0)
         e = e0 * (1 - w) + (ev.normalized() if ev.length > 1e-6 else e0) * w
+        if act.name in GUARD:
+            g = smooth01(k / max(n * GUARD[act.name], 1))
+            d = (d * (1 - g) + GUARD_BLADE.normalized() * g).normalized()
+            e = e * (1 - g) + Vector((0, -1, 0)) * g
         e = (e - d * e.dot(d)).normalized()
         if prev_e is not None and e.dot(prev_e) < 0:  # 손이 되돌아도 날을 뒤집지 않는다(망치 머리가 홱 돌지 않게)
             e.negate()

@@ -67,6 +67,15 @@ pub enum Scene {
     /// 개발 시나리오(PoC 아레나). 개발판에만.
     #[cfg(feature = "dev")]
     Sandbox,
+    /// 모션 보기(개발, 2026-11-15): 무기(`weapons::IDS`의 자리)를 든 방랑자의 동작을 하나씩 — 빠르기(0 = 1×, 1 = ½, 2 = ¼, 3 = 멈춤)·
+    /// 돌린 칸(30°씩)·재생 시각(ms)을 장면이 들고 다닌다(`App`에 화면 필드를 두지 않는다). 고른 동작 = 칸의 커서.
+    #[cfg(feature = "dev")]
+    Motions {
+        weapon: u8,
+        speed: u8,
+        spin: i8,
+        t_ms: u32,
+    },
     /// 연구소(랩, 0070·0079, 개발판): 묶음 목록 + A/B·내보내기. 개발 창의 도구 탭·F1에서 연다. 게임은 멈추고 값은 바로 들어간다.
     #[cfg(feature = "dev")]
     Lab,
@@ -170,7 +179,11 @@ pub fn tab_of(scene: Scene) -> Option<(Host, Tab)> {
         | Scene::Ask(_)
         | Scene::Slots { .. } => None,
         #[cfg(feature = "dev")]
-        Scene::Dev { .. } | Scene::Sandbox | Scene::Lab | Scene::LabGroup { .. } => None,
+        Scene::Dev { .. }
+        | Scene::Sandbox
+        | Scene::Lab
+        | Scene::LabGroup { .. }
+        | Scene::Motions { .. } => None,
     }
 }
 
@@ -262,7 +275,7 @@ impl Scene {
             | Scene::Controls
             | Scene::Slots { .. } => Layer::Window { hud: false },
             #[cfg(feature = "dev")]
-            Scene::Dev { .. } => Layer::Window { hud: false },
+            Scene::Dev { .. } | Scene::Motions { .. } => Layer::Window { hud: false },
             #[cfg(feature = "dev")]
             Scene::Lab | Scene::LabGroup { .. } => Layer::Window { hud: true },
             Scene::Ask(_) | Scene::SkillAct => Layer::Modal,
@@ -579,7 +592,7 @@ pub fn back(scene: Scene) -> Go {
         | Scene::Settings { .. }
         | Scene::Slots { .. } => Go::Back,
         #[cfg(feature = "dev")]
-        Scene::Dev { .. } | Scene::Lab | Scene::LabGroup { .. } => Go::Back,
+        Scene::Dev { .. } | Scene::Lab | Scene::LabGroup { .. } | Scene::Motions { .. } => Go::Back,
         Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Result { .. } => Go::Stay,
         #[cfg(feature = "dev")]
         Scene::Sandbox => Go::Stay,

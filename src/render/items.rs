@@ -103,6 +103,14 @@ impl Renderer {
         true
     }
 
+    /// 방랑자 동작의 길이(초) — 모델에 없으면 None(모션 보기의 시간 막대, 개발판).
+    #[cfg(feature = "dev")]
+    pub fn wanderer_anim_len(&mut self, anim: &str) -> Option<f32> {
+        let e = self.lib.get("wanderer")?;
+        let i = e.model.anim(anim)?;
+        Some(e.duration(Some(i)))
+    }
+
     /// 인형·도감 칸의 타깃(0190): 화면의 칸 `dest`를 게임 화면과 같은 도트 크기(한 칸 = 화면 배율 px)로 나눈 크기 —
     /// 내부 해상도 줄 수(`render.rows`)를 바꾸면 인형의 도트도 같이 바뀐다. 남는 px은 칸 가운데로 모은다. 돌려주는 것: 타깃·붙일 자리·가로세로 비.
     fn fit_doll_rt(&mut self, creature: bool, dest: Rect) -> (RenderTarget, Rect, f32) {
@@ -137,6 +145,18 @@ impl Renderer {
     /// `spin` = 몸 방향(라디안), `time` = 숨쉬기 동작 시간. 모델이 없으면 아무것도 그리지 않는다(창이 초상 없이 그대로).
     /// 화면 패스 중에 불러도 된다: 카메라를 바꿨다가 기본 카메라로 돌려놓는다.
     pub fn draw_doll(&mut self, weapon: crate::weapons::Id, dest: Rect, spin: f32, time: f32) {
+        self.draw_doll_anim(weapon, dest, spin, "idle", time);
+    }
+
+    /// 인형이 `anim` 동작의 `time`초 자세로(개발 창의 모션 보기 — 없는 동작이면 서기).
+    pub fn draw_doll_anim(
+        &mut self,
+        weapon: crate::weapons::Id,
+        dest: Rect,
+        spin: f32,
+        anim: &str,
+        time: f32,
+    ) {
         let (rt, dest, aspect) = self.fit_doll_rt(false, dest);
         let Some(e) = self.lib.get("wanderer") else {
             return;
@@ -151,7 +171,7 @@ impl Renderer {
             }
         }
         e.model
-            .pose_with(e.pick(&["idle"]), time, &hide, &mut self.pose);
+            .pose_with(e.pick(&[anim, "idle"]), time, &hide, &mut self.pose);
         // 키 1.8 몸이 칸에 꽉 차게: 가슴 높이를 보고 조금 위에서.
         let cam = Camera3D {
             position: vec3(0.0, 1.35, 4.6),

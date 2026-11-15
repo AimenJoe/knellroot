@@ -6,22 +6,33 @@ use super::menu::Hit;
 use super::*;
 use crate::i18n::dev::{self as dv, scenario_text, t};
 
-/// 묶음(탭 순서 = 이 순서, 도구가 앞 — nail 0269).
+/// 묶음(탭 순서 = 이 순서, 도구가 앞 — nail 0269). 2026-11-15 사장 "체계적으로 정리된 게 아닌 듯": 하는 일로 가른다 —
+/// 도구(연구소·놀이터) · 모션(무기별 동작 보기) · 기술(끼우기·판 바꾸기·기술 아레나) · 스테이지 · 전투(적·보스) · 성능(성능 줄·부하).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum DevCat {
     Tools,
+    Motion,
+    Skills,
     Stage,
     Combat,
     Perf,
 }
 
-pub(super) const DEV_CATS: [DevCat; 4] =
-    [DevCat::Tools, DevCat::Stage, DevCat::Combat, DevCat::Perf];
+pub(super) const DEV_CATS: [DevCat; 6] = [
+    DevCat::Tools,
+    DevCat::Motion,
+    DevCat::Skills,
+    DevCat::Stage,
+    DevCat::Combat,
+    DevCat::Perf,
+];
 
 impl DevCat {
     fn name(self) -> &'static str {
         t(match self {
             DevCat::Tools => dv::TAB_TOOLS,
+            DevCat::Motion => dv::TAB_MOTION,
+            DevCat::Skills => dv::TAB_SKILLS,
             DevCat::Stage => dv::TAB_STAGE,
             DevCat::Combat => dv::TAB_COMBAT,
             DevCat::Perf => dv::TAB_PERF,
@@ -58,16 +69,24 @@ pub(super) enum DevStart {
     SkillsFlip,
     /// 성능 줄(F3과 같은 개발 줄) 켬/끔 — 키보드가 없는 기기(Android·iOS)에서 프레임 시간을 본다(0186 상주 지형 A/B).
     PerfLine,
+    /// 모션 보기(2026-11-15): 이 무기(`weapons::IDS`의 자리)를 든 방랑자의 동작을 하나씩.
+    Motion(u8),
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 28] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 33] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
-    (DevCat::Tools, DevStart::Skills),
-    (DevCat::Tools, DevStart::SkillsMax),
-    (DevCat::Tools, DevStart::SkillsFlip),
-    (DevCat::Tools, DevStart::PerfLine),
+    (DevCat::Motion, DevStart::Motion(0)),
+    (DevCat::Motion, DevStart::Motion(1)),
+    (DevCat::Motion, DevStart::Motion(2)),
+    (DevCat::Motion, DevStart::Motion(3)),
+    (DevCat::Motion, DevStart::Motion(4)),
+    (DevCat::Skills, DevStart::Skills),
+    (DevCat::Skills, DevStart::SkillsMax),
+    (DevCat::Skills, DevStart::SkillsFlip),
+    (DevCat::Skills, DevStart::Scenario(Scenario::Skills)),
+    (DevCat::Skills, DevStart::Scenario(Scenario::Tray)),
     (DevCat::Stage, DevStart::Entrance),
     (DevCat::Stage, DevStart::Gate),
     (DevCat::Stage, DevStart::Village),
@@ -86,8 +105,7 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 28] = [
     (DevCat::Combat, DevStart::Scenario(Scenario::Mossward)),
     (DevCat::Combat, DevStart::Scenario(Scenario::MosswardTwo)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Horde)),
-    (DevCat::Combat, DevStart::Scenario(Scenario::Skills)),
-    (DevCat::Combat, DevStart::Scenario(Scenario::Tray)),
+    (DevCat::Perf, DevStart::PerfLine),
     (DevCat::Perf, DevStart::Scenario(Scenario::Stress40)),
     (DevCat::Perf, DevStart::Scenario(Scenario::Stress80)),
 ];
@@ -121,6 +139,8 @@ impl DevStart {
             DevStart::SkillsMax => t(dv::SKILLS_MAX),
             DevStart::SkillsFlip => t(dv::SKILLS_FLIP),
             DevStart::PerfLine => t(dv::PERF_LINE),
+            // 이름은 무기를 채워야 해서 `App::dev_name`이 만든다 — 여기는 바탕.
+            DevStart::Motion(_) => t(dv::MOTION_START),
         }
     }
 
@@ -149,6 +169,7 @@ impl DevStart {
             DevStart::SkillsMax => t(dv::SKILLS_MAX_NOTE).to_string(),
             DevStart::SkillsFlip => t(dv::SKILLS_FLIP_NOTE).to_string(),
             DevStart::PerfLine => t(dv::PERF_LINE_NOTE).to_string(),
+            DevStart::Motion(_) => t(dv::MOTION_NOTE).to_string(),
         }
     }
 }
@@ -298,6 +319,25 @@ impl App {
                 self.dev_overlay = !self.dev_overlay;
                 self.snd(crate::sfx::Id::Buy);
             }
+            DevStart::Motion(w) => self.go(Go::Open(Scene::Motions {
+                weapon: w,
+                speed: 0,
+                spin: 0,
+                t_ms: 0,
+            })),
+        }
+    }
+
+    /// 줄 이름 — 모션 보기 줄은 무기 이름을 채운다.
+    fn dev_name(&self, e: DevStart) -> String {
+        match e {
+            DevStart::Motion(w) => fill(
+                e.name(),
+                &[weapon_name(
+                    crate::weapons::IDS[w as usize % crate::weapons::IDS.len()],
+                )],
+            ),
+            _ => e.name().to_string(),
         }
     }
 
@@ -349,7 +389,12 @@ impl App {
         let split = panel.x + panel.w * 0.45;
         draw_line(split, body, split, hint_y - u * 4.0, u.max(1.0), ui::BORDER);
         let items = dev_items(tab);
-        let rows: Vec<ui::Row> = items.iter().map(|e| ui::Row::plain(e.name())).collect();
+        let names: Vec<String> = items.iter().map(|e| self.dev_name(*e)).collect();
+        let rows: Vec<ui::Row> = names
+            .iter()
+            .map(String::as_str)
+            .map(ui::Row::plain)
+            .collect();
         let area = Rect::new(
             lx - u * 4.0,
             body,
@@ -362,7 +407,7 @@ impl App {
         if let Some(e) = items.get(cursor) {
             let dx = split + u * 10.0;
             let w = rx_end - dx;
-            let name = self.ui.fit(e.name(), w, 1.0);
+            let name = self.ui.fit(&self.dev_name(*e), w, 1.0);
             self.ui.text(&name, dx, body, 1.0, AMBER);
             let line_h = px * 1.3;
             let fit = ((hint_y - u * 6.0 - body - px * 1.6) / line_h)
@@ -400,13 +445,33 @@ mod tests {
         for (i, c) in DEV_CATS.iter().enumerate() {
             assert!(!dev_items(i).is_empty(), "{c:?} is empty");
         }
-        // 시험 스크립트(shot·mouse·leak): 전투·적(셋째 묶음) 첫 줄 = 보스 아레나, 성능(넷째) 첫 줄 = 부하 40.
-        assert_eq!(dev_items(2)[0], DevStart::Scenario(Scenario::Boss));
-        assert_eq!(dev_items(3)[0], DevStart::Scenario(Scenario::Stress40));
-        // 도구 묶음: 기술 판 줄 둘은 끝에(앞 줄들의 자리는 그대로 — 헤드리스 길).
+        // 시험 스크립트(shot·mouse·leak·fx)의 길: 전투(다섯째 묶음) 첫 줄 = 보스 아레나, 성능(여섯째) = 성능 줄 · 부하 40 · 부하 80,
+        // 기술(셋째) = 끼우기 · 다 올리기 · 고르기 바꾸기 · 기술 아레나, 스테이지(넷째) 첫 줄 = 입구.
+        assert_eq!(dev_items(4)[0], DevStart::Scenario(Scenario::Boss));
         assert_eq!(
-            dev_items(0)[2..5],
-            [DevStart::Skills, DevStart::SkillsMax, DevStart::SkillsFlip]
+            dev_items(5),
+            [
+                DevStart::PerfLine,
+                DevStart::Scenario(Scenario::Stress40),
+                DevStart::Scenario(Scenario::Stress80)
+            ]
+        );
+        assert_eq!(
+            dev_items(2)[0..4],
+            [
+                DevStart::Skills,
+                DevStart::SkillsMax,
+                DevStart::SkillsFlip,
+                DevStart::Scenario(Scenario::Skills)
+            ]
+        );
+        assert_eq!(dev_items(3)[0], DevStart::Entrance);
+        // 모션: 무기마다 한 줄(무기 표의 차례).
+        assert_eq!(
+            dev_items(1),
+            (0..crate::weapons::IDS.len() as u8)
+                .map(DevStart::Motion)
+                .collect::<Vec<_>>()
         );
     }
 
