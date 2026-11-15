@@ -517,7 +517,7 @@ impl World {
     /// 튕긴 적마다 휘청·드러남·밀림(받아내기 0107), 방랑자는 곧바로 움직이고 이어 패링 창이 열린다(0081 → 0086), 세상은 한 박자 멈춘다.
     fn parries_land(&mut self, t: &Tuning, ev: &mut Vec<Event>, p: Vec3, parried: Vec<usize>) {
         if !parried.is_empty() {
-            let catch = self.tree.has(Cell::Catch);
+            let catch = self.tree.picked_a(Cell::Catch);
             // 벼린 손(0214 맺음): 패링이 주는 자세 피해 ×2 — 받아내기의 몫에도.
             let edge = if self.tree.keyed(crate::progression::Key::Edge) {
                 crate::progression::key::EDGE_POISE
@@ -554,6 +554,13 @@ impl World {
             }
             // 숨 고르기(0214): 튕긴 적마다 기력. 되찾는 살(0214): 패링 셋마다 체력 한 눈금.
             let n = parried.len() as u32;
+            // 받아 넘기기(0215 — 받아내기 II): 한동안 덜 다친다. 디딘 받기(0215 다리): 다음 회피는 기력 없이.
+            if self.tree.picked_b(Cell::Catch) {
+                self.player.parry.deflect = cell::DEFLECT_SECS;
+            }
+            if self.tree.linked(Link::ParryStep) {
+                self.player.beat.free_dodge = true;
+            }
             if self.tree.has(Cell::SecondWind) {
                 let pl = &mut self.player;
                 pl.stamina = (pl.stamina + cell::SECOND_WIND * n as f32).min(t[P::StaminaMax]);
@@ -629,6 +636,11 @@ impl World {
             };
             let taken = if rooted {
                 (taken as f32 * crate::progression::key::ROOTED_TAKEN).round() as i32
+            } else {
+                taken
+            };
+            let taken = if self.player.parry.deflect > 0.0 {
+                (taken as f32 * cell::DEFLECT_TAKEN).round() as i32
             } else {
                 taken
             };

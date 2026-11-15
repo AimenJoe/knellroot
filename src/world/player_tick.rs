@@ -4,7 +4,7 @@
 //! → 이동 → 바라보기 → 떨어지기 → 마무리. 새 동작(나무 칸, 0102)은 그 상태의 메서드에 한 줄씩 넣는다.
 //! 상태가 서로 쓰는 시작(회피·패링)은 `try_dodge`·`try_parry` 한 곳.
 use super::*;
-use crate::progression::{cell, Cell};
+use crate::progression::{cell, Cell, Link};
 
 /// 이번 틱 플레이어 단계가 같이 보는 것 — 입력 기준·조준을 한 번 계산해 상태 메서드들이 나눠 쓴다.
 pub(super) struct Ctx<'a> {
@@ -266,6 +266,7 @@ impl World {
         // 뿌리내린 몸(0214): 땅에 서서 움직이지 않은 시간 — 걷거나 구르거나 뜨면 처음부터.
         let still = pl.air <= 0.0 && vec3(pl.vel.x, 0.0, pl.vel.z).length() < 0.3;
         pl.hurt.still = if still { pl.hurt.still + dt } else { 0.0 };
+        pl.parry.deflect = (pl.parry.deflect - dt).max(0.0);
         if let Rb::Shot { .. } = wpn.rb {
             if pl.ranged.reload > 0.0 {
                 pl.ranged.reload -= dt;
@@ -380,10 +381,17 @@ impl World {
     /// 회피 시작(0029): 눌렀고·대기가 끝났고·스태미나를 쓸 수 있으면. 쪽은 이동 입력, 없으면 뒤로.
     /// 상태마다 다른 조건(삼키기 전·쏜 뒤·후딜레이 …)은 부르는 쪽이 `&&`로 앞에 둔다.
     pub(super) fn try_dodge(&mut self, cx: &Ctx) -> bool {
+        // 가벼운 구르기(0215 — 멈추지 않는 걸음 II): 회피 기력 ×0.8.
+        let cost = cx.t[P::StaminaDodge]
+            * if self.tree.picked_b(Cell::UnbrokenStride) {
+                cell::LIGHT_ROLL
+            } else {
+                1.0
+            };
         let pl = &mut self.player;
-        // 이어지는 숨(0214): 박자 셋을 이은 뒤의 회피 하나는 기력 없이.
+        // 이어지는 숨(0214)·디딘 받기(0215): 기력 없이 나가는 회피 하나.
         let free = pl.beat.free_dodge;
-        if !(cx.a.dodge && pl.dodge_cd <= 0.0 && (free || pl.spend(cx.t[P::StaminaDodge]))) {
+        if !(cx.a.dodge && pl.dodge_cd <= 0.0 && (free || pl.spend(cost))) {
             return false;
         }
         pl.beat.free_dodge = false;
@@ -496,11 +504,13 @@ impl World {
         // 몰아치기(0158 G2): 그동안의 평타는 모두 기력 없이 나가는 박자 타.
         let flurry = pl.skill.flurry_left > 0.0;
         let free = flurry || (pl.beat.on && pl.combo_left > 0.0 && !riposte && !dash);
+        // 받아치는 박(0215 다리): 패링 반격도 박자 타로 친다(값은 그대로 치른다).
+        let beat = free || (riposte && self.tree.linked(Link::RiposteBeat));
         pl.beat.on = false;
         let go = free || pl.spend(cx.t[P::StaminaAttack] * wpn.stamina);
         if go {
-            pl.beat.swing_beat = free;
-            if free {
+            pl.beat.swing_beat = beat;
+            if beat {
                 self.beat_now = true;
                 pl.beat.chain += 1;
                 pl.beat.since = 0.0;
@@ -737,7 +747,7 @@ impl World {
             pl.parry.release_guard = t[P::ParryWindow];
             // 고른 호흡(0107): 딱 맞춰 뗀 강타는 강타 기력을 돌려준다.
             let perfect = e >= full_at && e <= full_at + PERFECT_RELEASE;
-            if perfect && self.tree.has(Cell::EvenBreath) {
+            if perfect && self.tree.picked_a(Cell::EvenBreath) {
                 pl.stamina =
                     (pl.stamina + t[P::HeavyStamina] * cx.wpn.stamina).min(t[P::StaminaMax]);
             }
@@ -1007,7 +1017,7 @@ impl World {
             && pl.stamina > 0.0;
         if keep {
             // 멈추지 않는 걸음(0107): 달리기 기력 ×0.7.
-            let k = if self.tree.has(Cell::UnbrokenStride) {
+            let k = if self.tree.picked_a(Cell::UnbrokenStride) {
                 cell::STRIDE_RUN
             } else {
                 1.0
@@ -1027,6 +1037,12 @@ impl World {
         let d_skill = match self.player.state {
             PState::Skill { id, .. } => Some(self.skill_eff(id)),
             _ => None,
+        };
+        // 모으는 걸음(0215 — 고른 호흡 II): 강타를 모으는 동안 ×1.4.
+        let charge_walk = if self.tree.picked_b(Cell::EvenBreath) {
+            cell::CHARGE_WALK
+        } else {
+            1.0
         };
         let pl = &mut self.player;
         match pl.state {
@@ -1148,7 +1164,7 @@ impl World {
                 let slow = match pl.state {
                     PState::Drink { .. } => t[P::FlaskWalk],
                     PState::Charging { .. } => {
-                        t[P::HeavyChargeWalk] * wpn.heavy.map_or(1.0, |h| h.walk)
+                        t[P::HeavyChargeWalk] * wpn.heavy.map_or(1.0, |h| h.walk) * charge_walk
                     }
                     PState::Cast { .. } | PState::Throw { .. } | PState::CastCharge { .. } => {
                         t[P::CastWalk]

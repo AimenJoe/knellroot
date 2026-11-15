@@ -118,6 +118,14 @@ pub mod key {
     pub const TREE_COUNTS: [&str; 3] = [TREE_BEAT, TREE_RIPOSTE, TREE_FOOTING];
     /// 켠 맺음(0214 — 키 이름 `progression::Key::key`, 없으면 줄이 없다).
     pub const TREE_KEY: &str = "tree.key";
+    /// 연 다리 칸(0215 — `progression::Link::key`들, 쉼표). 없으면 줄이 없다.
+    pub const TREE_LINKS: &str = "tree.links";
+    /// 숫자 칸의 고르기 II(0215 — 갈래마다 II인 칸의 자리들, `tree.cells.*`와 같은 꼴). 없으면 모두 I.
+    pub const TREE_PICKS: [&str; 3] = [
+        "tree.picks.beat",
+        "tree.picks.riposte",
+        "tree.picks.footing",
+    ];
 }
 
 /// 글 기록(키 → 값). 모르는 키도 지키며 들고 다닌다.
@@ -347,7 +355,22 @@ impl Progress {
             t.key = r
                 .get(key::TREE_KEY)
                 .and_then(crate::progression::Key::by_key);
-            t
+            t.links = r
+                .get(key::TREE_LINKS)
+                .unwrap_or("")
+                .split(',')
+                .filter_map(|k| crate::progression::Link::by_key(k.trim()))
+                .fold(0, |m, l| m | 1 << l.index());
+            for (pick, k) in t.picks.iter_mut().zip(key::TREE_PICKS) {
+                *pick = r
+                    .get(k)
+                    .unwrap_or("")
+                    .split(',')
+                    .filter_map(|c| c.trim().parse::<u8>().ok())
+                    .filter(|d| (1..=DEPTH).contains(d))
+                    .fold(0, |m, d| m | 1 << (d - 1));
+            }
+            t.sane()
         };
         let residents_seen: Vec<(String, u32)> = r
             .get(key::RESIDENTS_SEEN)
@@ -658,6 +681,28 @@ impl Progress {
         match self.board.cells.key {
             Some(k) => r.set(key::TREE_KEY, k.key()),
             None => r.remove(key::TREE_KEY),
+        }
+        // 다리 칸·숫자 칸의 고르기(0215).
+        let links: Vec<&str> = crate::progression::LINKS
+            .into_iter()
+            .filter(|&l| self.board.cells.linked(l))
+            .map(|l| l.key())
+            .collect();
+        if links.is_empty() {
+            r.remove(key::TREE_LINKS);
+        } else {
+            r.set(key::TREE_LINKS, links.join(","));
+        }
+        for (&picks, k) in self.board.cells.picks.iter().zip(key::TREE_PICKS) {
+            let on: Vec<String> = (0..crate::progression::DEPTH)
+                .filter(|d| picks & (1 << d) != 0)
+                .map(|d| (d + 1).to_string())
+                .collect();
+            if on.is_empty() {
+                r.remove(k);
+            } else {
+                r.set(k, on.join(","));
+            }
         }
         match self.weapon {
             Some(w) => r.set(key::WEAPON, w.key()),
@@ -1184,6 +1229,42 @@ forge.sword=3
         // 새 기록은 옮길 것이 없다.
         let p = Progress::from_record(Record::parse(""));
         assert!(p.finds.is_empty() && p.cores == 0 && !p.has_any());
+    }
+
+    /// 0215: 다리 칸(`tree.links` = 키들)과 숫자 칸의 고르기 II(`tree.picks.<갈래>` = 자리들)가 왕복한다. 없으면 줄이 없고,
+    /// 모르는 키·닫힌 칸의 고르기는 걸러진다.
+    #[test]
+    fn bridges_and_number_picks_round_trip() {
+        use crate::progression::{Cell, Link, Tree};
+        // 넷(칸 둘 + 다리 둘)을 가질 만큼의 점수: 핵 셋 + 조각 하나.
+        let mut p = Progress {
+            cores: 3,
+            finds: vec!["sanctuary.shard.0".into()],
+            ..Progress::default()
+        };
+        let mut t = Tree::with(&[Cell::Catch, Cell::GapBeat]);
+        t.open_link(Link::RiposteBeat);
+        t.open_link(Link::RootedRiposte);
+        assert!(t.flip_cell(Cell::Catch));
+        p.board.cells = t;
+        let r = p.to_record();
+        assert_eq!(r.get(key::TREE_LINKS), Some("riposte_beat,rooted_riposte"));
+        assert_eq!(r.get("tree.picks.riposte"), Some("1"));
+        assert_eq!(r.get("tree.picks.beat"), None);
+        let back = Progress::from_record(Record::parse(&r.to_text()));
+        assert_eq!(back.board.cells, t);
+        assert!(back.board.cells.picked_b(Cell::Catch));
+        // 다 지우면 줄이 없다.
+        let r = Progress::default().to_record();
+        assert_eq!(
+            (r.get(key::TREE_LINKS), r.get("tree.picks.riposte")),
+            (None, None)
+        );
+        // 손댄 기록: 모르는 다리는 버리고, 닫힌 칸의 고르기는 지운다.
+        let odd = Record::parse("v=1\ntree.links=riposte_beat,bogus\ntree.picks.beat=1,9\n");
+        let back = Progress::from_record(odd);
+        assert_eq!(back.board.cells.links, 1 << Link::RiposteBeat.index());
+        assert_eq!(back.board.cells.picks, [0; 3]);
     }
 
     /// 0161: 패시브 칸은 칸마다 따로 남는다(`tree.cells.<갈래>` = 연 자리들) — 사이가 빈 나무도 그대로 왕복하고, 옛 키에는

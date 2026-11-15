@@ -155,6 +155,89 @@ pub enum Key {
 
 pub const KEYS: [Key; 3] = [Key::Measure, Key::Edge, Key::Rooted];
 
+/// 다리 칸(0215): 맞닿은 두 갈래의 경계에 서서 둘을 잇는다 — 판의 길로는 양쪽 갈래와 이어지고, 하는 일은 두 갈래의 시너지.
+/// 기록 `tree.links` = 연 다리의 키들(바꾸지 않는다).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Link {
+    /// 받아치는 박(둘째 줄 · 흐름 ↔ 맞받기): 패링 반격 타가 박자 타로 친다.
+    RiposteBeat,
+    /// 디딘 받기(둘째 줄 · 맞받기 ↔ 자리): 패링에 성공하면 다음 회피가 기력을 쓰지 않는다.
+    ParryStep,
+    /// 끊는 박(넷째 줄 · 흐름 ↔ 맞받기): 패링·막아치기로 드러난(휘청인) 적에게 박자 타 자세 피해 ×`link::BREAK_POISE`.
+    BreakingBeat,
+    /// 뿌리로 받기(넷째 줄 · 맞받기 ↔ 자리): 엉키거나 묶인 적에게 반격 타 피해 ×`link::ROOTED_RIPOSTE`.
+    RootedRiposte,
+}
+
+pub const LINKS: [Link; 4] = [
+    Link::RiposteBeat,
+    Link::ParryStep,
+    Link::BreakingBeat,
+    Link::RootedRiposte,
+];
+
+impl Link {
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    /// 기록 값(바꾸지 않는다).
+    pub fn key(self) -> &'static str {
+        match self {
+            Link::RiposteBeat => "riposte_beat",
+            Link::ParryStep => "parry_step",
+            Link::BreakingBeat => "breaking_beat",
+            Link::RootedRiposte => "rooted_riposte",
+        }
+    }
+
+    pub fn by_key(k: &str) -> Option<Link> {
+        LINKS.into_iter().find(|x| x.key() == k)
+    }
+
+    /// 판의 줄(`skills::ROW_NEEDS`의 자리): 둘째 줄 또는 넷째 줄.
+    pub fn row(self) -> usize {
+        match self {
+            Link::RiposteBeat | Link::ParryStep => 1,
+            Link::BreakingBeat | Link::RootedRiposte => 3,
+        }
+    }
+
+    /// 잇는 두 갈래 가운데 왼쪽(`BRANCHES`의 자리) — 오른쪽은 그다음.
+    pub fn left(self) -> usize {
+        match self {
+            Link::RiposteBeat | Link::BreakingBeat => 0,
+            Link::ParryStep | Link::RootedRiposte => 1,
+        }
+    }
+
+    pub fn name(self) -> Tr {
+        match self {
+            Link::RiposteBeat => |s| s.link_riposte_beat,
+            Link::ParryStep => |s| s.link_parry_step,
+            Link::BreakingBeat => |s| s.link_breaking_beat,
+            Link::RootedRiposte => |s| s.link_rooted_riposte,
+        }
+    }
+
+    pub fn desc(self) -> Tr {
+        match self {
+            Link::RiposteBeat => |s| s.link_riposte_beat_d,
+            Link::ParryStep => |s| s.link_parry_step_d,
+            Link::BreakingBeat => |s| s.link_breaking_beat_d,
+            Link::RootedRiposte => |s| s.link_rooted_riposte_d,
+        }
+    }
+}
+
+/// 다리 칸의 값(0215).
+pub mod link {
+    /// 끊는 박: 드러난 적에게 박자 타 자세 배.
+    pub const BREAK_POISE: f32 = 1.5;
+    /// 뿌리로 받기: 엉키거나 묶인 적에게 반격 타 피해 배.
+    pub const ROOTED_RIPOSTE: f32 = 1.5;
+}
+
 impl Key {
     pub fn branch(self) -> Branch {
         BRANCHES[self as usize]
@@ -252,7 +335,7 @@ pub enum Cell {
 }
 
 /// 칸 하나의 표 줄: 칸·이름·설명·숫자 칸인가(갈래마다 하나까지 — 0095 원칙, 시험).
-/// `number`는 표 규칙 시험만 읽는다(갈래마다 숫자 칸 하나).
+/// `number` = 숫자 칸(갈래마다 하나) — 0215부터 둘 가운데 하나를 고른다(`Tree::picked_b`).
 pub struct CellDef {
     pub cell: Cell,
     pub name: Tr,
@@ -455,9 +538,24 @@ pub mod cell {
     /// 엉킨 뿌리(0214): 스킬에 맞은 적의 걸음 배·초.
     pub const SNARE_SLOW: f32 = 0.7;
     pub const SNARE_SECS: f32 = 2.0;
+    /// 숫자 칸의 ㄴ(0215): 모으는 걸음(강타를 모으는 동안 걸음 배) · 받아 넘기기(패링 뒤 초·받는 피해 배) · 가벼운 구르기(회피 기력 배).
+    pub const CHARGE_WALK: f32 = 1.4;
+    pub const DEFLECT_SECS: f32 = 1.0;
+    pub const DEFLECT_TAKEN: f32 = 0.5;
+    pub const LIGHT_ROLL: f32 = 0.8;
 }
 
 impl Cell {
+    /// 숫자 칸의 ㄴ(0215 D): 이름·하는 일. ㄱ은 칸 자체의 이름·하는 일. 숫자 칸이 아니면 없다.
+    pub fn pick_b(self) -> Option<(Tr, Tr)> {
+        match self {
+            Cell::EvenBreath => Some((|s| s.cell_even_breath_b, |s| s.cell_even_breath_b_d)),
+            Cell::Catch => Some((|s| s.cell_catch_b, |s| s.cell_catch_b_d)),
+            Cell::UnbrokenStride => Some((|s| s.cell_stride_b, |s| s.cell_stride_b_d)),
+            _ => None,
+        }
+    }
+
     /// 표의 자리: (갈래, 깊이 0~4).
     pub fn at(self) -> (usize, usize) {
         for (b, row) in TREE.iter().enumerate() {
@@ -505,6 +603,10 @@ pub struct Tree {
     pub cells: [u8; 3],
     /// 켠 맺음(0214 — 하나만, 기록 `tree.key`).
     pub key: Option<Key>,
+    /// 연 다리 칸(0215 — 비트 = `Link::index`, 기록 `tree.links`).
+    pub links: u8,
+    /// 숫자 칸의 고르기(0215 — 갈래마다 비트 d = 깊이 d의 칸이 ㄴ, 기록 `tree.picks.<갈래>`).
+    pub picks: [u8; 3],
 }
 
 impl Tree {
@@ -530,6 +632,37 @@ impl Tree {
         self.key == Some(k)
     }
 
+    /// 이 다리 칸을 열었나(0215).
+    pub fn linked(&self, l: Link) -> bool {
+        self.links & (1 << l.index()) != 0
+    }
+
+    /// 다리 칸을 연다.
+    pub fn open_link(&mut self, l: Link) {
+        self.links |= 1 << l.index();
+    }
+
+    /// 숫자 칸을 열었고 그 고르기가 ㄴ인가(0215). 고르기가 없는 칸은 늘 거짓.
+    pub fn picked_b(&self, c: Cell) -> bool {
+        let (b, d) = c.at();
+        c.def().number && self.has(c) && self.picks[b] & (1 << d) != 0
+    }
+
+    /// 숫자 칸을 열었고 ㄱ인가 — 옛 동작(고른 호흡·받아내기·멈추지 않는 걸음)이 읽는다.
+    pub fn picked_a(&self, c: Cell) -> bool {
+        self.has(c) && !self.picked_b(c)
+    }
+
+    /// 숫자 칸의 고르기를 뒤집는다(값 없이 — 열린 숫자 칸만).
+    pub fn flip_cell(&mut self, c: Cell) -> bool {
+        if !c.def().number || !self.has(c) {
+            return false;
+        }
+        let (b, d) = c.at();
+        self.picks[b] ^= 1 << d;
+        true
+    }
+
     /// 칸 하나를 연다(이미 열렸으면 그대로).
     pub fn open_cell(&mut self, cell: Cell) {
         let (b, d) = cell.at();
@@ -552,13 +685,19 @@ impl Tree {
             open: [0; 3],
             cells: n.map(|n| (1u8 << n.min(DEPTH)) - 1),
             key: None,
+            links: 0,
+            picks: [0; 3],
         }
     }
 
-    /// 모든 칸을 다 연 나무(개발 창 "기술 다 올리기"·시험). 맺음은 켜지 않는다(하나만이라 고를 것이 없다).
+    /// 모든 칸을 다 연 나무(개발 창 "기술 다 올리기"·시험) — 다리 칸까지(0215), 숫자 칸은 I. 맺음은 켜지 않는다(하나만이라
+    /// 고를 것이 없다).
     #[cfg(any(test, feature = "dev"))]
     pub fn full() -> Tree {
-        Tree::from_counts([DEPTH; 3])
+        Tree {
+            links: (1 << LINKS.len()) - 1,
+            ..Tree::from_counts([DEPTH; 3])
+        }
     }
 
     /// 갈래 `b`에서 앞에서부터 이어 연 칸 수 — 옛 키(`tree.beat` …)에 적는 값(옛 판이 읽어도 가진 것보다 많이 열리지 않는다).
@@ -568,10 +707,21 @@ impl Tree {
 
     /// 기록에서 읽은 것을 한 꼴로: 옛 칸(`open`)을 비트로 옮기고 범위 밖 비트를 지운다.
     pub fn sane(self) -> Tree {
+        let cells = [self.mask(0), self.mask(1), self.mask(2)];
         Tree {
             open: [0; 3],
-            cells: [self.mask(0), self.mask(1), self.mask(2)],
+            cells,
             key: self.key,
+            links: self.links & ((1 << LINKS.len()) - 1),
+            // 고르기는 열린 숫자 칸에만.
+            picks: [0, 1, 2].map(|b| {
+                let numbers = TREE[b]
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, d)| d.number)
+                    .fold(0u8, |m, (i, _)| m | 1 << i);
+                self.picks[b] & cells[b] & numbers
+            }),
         }
     }
 }
@@ -756,6 +906,8 @@ mod tests {
             open: [2, 0, DEPTH],
             cells: [0; 3],
             key: None,
+            links: 0,
+            picks: [0; 3],
         };
         assert_eq!(legacy.sane(), t);
         assert_eq!(legacy.count(), 2 + DEPTH as u32);
@@ -771,6 +923,8 @@ mod tests {
             open: [0; 3],
             cells: [0xff, 0, 0],
             key: None,
+            links: 0,
+            picks: [0; 3],
         };
         assert_eq!(odd.count(), DEPTH as u32);
         assert_eq!(odd.sane().cells[0], 0b111_1111);
