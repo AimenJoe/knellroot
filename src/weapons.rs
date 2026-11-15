@@ -32,7 +32,7 @@ pub enum Sweep {
 /// 구간(시작 s, 길이 s): `tools/art/blender/wanderer_skin.py` `HIT_WINDOWS` 그대로(시험 `swing_windows_match_the_blender_table`) —
 /// 동작 시계는 타의 판정 시작이 이 시작에 오게 돈다(`clip_rate` — 맨손처럼 남의 동작을 빌린 타·대시 공격도 칼이 닿는 순간에 맞는다).
 /// 새 동작을 무기 표에 쓰면 여기에도 한 줄(시험 `every_weapon_motion_has_a_sweep`).
-pub const SWEEPS: [(&str, Sweep, (f32, f32)); 17] = [
+pub const SWEEPS: [(&str, Sweep, (f32, f32)); 18] = [
     ("attack", Sweep::LeftToRight, (0.08, 0.10)),
     ("attack2", Sweep::RightToLeft, (0.08, 0.10)),
     ("attack3", Sweep::LeftToRight, (0.10, 0.12)),
@@ -51,6 +51,7 @@ pub const SWEEPS: [(&str, Sweep, (f32, f32)); 17] = [
     ("fist3", Sweep::Center, (0.064, 0.08)),
     ("fist_heavy", Sweep::Center, (0.048, 0.096)),
     ("fist_dash", Sweep::Center, (0.056, 0.07)),
+    ("hammer_dash", Sweep::Center, (0.128, 0.16)),
 ];
 
 /// 동작의 휘두르는 쪽(표에 없으면 가운데).
@@ -405,12 +406,12 @@ pub const WEAPONS: [Weapon; 5] = [
     Weapon {
         id: Id::Hammer,
         combo: &HAMMER_COMBO,
-        // 달려들며 휘두르기: 한 바퀴 둘레(무거워 늦다).
+        // 달려들며 앞차기(0200 — 사장 "망치에만 달리기 공격 시 스파르탄 킥"): 예전엔 둘째 타의 한 바퀴 내려치기를 빌려 달리기 공격 뒤 같은
+        // 내려치기를 두 번 했다. 차기라 둘레가 아니라 앞 부채꼴로(시간·거리·피해·자세 피해·밀어냄은 그대로, 무거워 늦다).
         dash: Some(Hit {
-            shape: Shape::Circle,
             knock: 1.8,
             cancel: 0.45,
-            ..hit(1.6, 1.0, 1.0, 2.0, 20, 3.0, "hammer2")
+            ..hit(1.6, 1.0, 1.0, 2.0, 20, 3.0, "hammer_dash")
         }),
         heavy: Some(Heavy {
             time: 1.3,
@@ -990,7 +991,7 @@ mod swing_tests {
                 // 0198: 맨손의 왼 잽은 왼손, 앞차기는 오른발이 친다.
                 let limb = match anim {
                     "fist1" => m.node("mixamorig:LeftHand"),
-                    "fist_heavy" | "fist_dash" => m.node("mixamorig:RightFoot"),
+                    "fist_heavy" | "fist_dash" | "hammer_dash" => m.node("mixamorig:RightFoot"),
                     _ => None,
                 };
                 let r = clip_rate(anim, s0);
@@ -1013,8 +1014,8 @@ mod swing_tests {
                 }
                 let mid = yaws[4];
                 let span = yaws[8] - yaws[0];
-                // 맨손의 주먹은 칼끝보다 몸에 가까워 각이 크게 흔들린다 — 가운데는 덜 엄하게, 가로는 45°부터.
-                let (front, wide) = if tip.is_some() {
+                // 주먹·발(맨손, 앞차기)은 칼끝보다 몸에 가까워 각이 크게 흔들린다 — 가운데는 덜 엄하게, 가로는 45°부터.
+                let (front, wide) = if tip.is_some() && limb.is_none() {
                     (20.0, 60.0)
                 } else {
                     (35.0, 45.0)

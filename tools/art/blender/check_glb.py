@@ -48,6 +48,8 @@ EXPECT = {
                  "cast_charge": 0.3,
                  # 0199: 맨손 달리기 앞차기 0.3, 패링 성공의 밀쳐내기 0.4.
                  "fist_dash": 0.3, "parry_push": 0.4,
+                 # 0200: 망치 달리기 앞차기(망치 대시 구간 0.688).
+                 "hammer_dash": 0.69,
                  # 0158 G2 스킬 동작 — 길이 = 시동 + 이어짐 + 후딜(`skills.rs` 표의 바탕값).
                  "sk_whirl": 0.67, "sk_cut": 0.57, "sk_gather": 0.5, "sk_quake": 0.7, "sk_brace": 1.65, "sk_echo": 0.45,
                  "sk_throw": 0.53, "sk_embers": 0.55, "ult_upend": 1.0, "ult_flurry": 0.5, "ult_line": 0.9},
