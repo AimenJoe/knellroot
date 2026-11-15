@@ -17,7 +17,7 @@ nail `docs/release.md`를 줄인 것. 웹(Netlify) + Android APK(0022) + PC 묶�
 | APK(시험용) | `main` push(같은 경로), 또는 Actions → build-android → Run workflow | `build-android.yml` | Actions 아티팩트 `knellroot-apk-<release·dev>-<sha>` |
 
 ## 갈래(0022, nail 0193)
-- `main` = 운영판, 패치만. `release/v0.6` = 개발판이자 작업 갈래(작업은 여기에 커밋·push, 0134 — 앞 갈래 `release/v0.5`·`v0.4`·옛 `release/v0.3`은 패치용으로 그대로 둠). 마일스톤을 닫으면 release → main + 버전 올리기, 다음 갈래는 새 main에서.
+- `main` = 운영판, 패치만. `release/v0.7` = 개발판이자 작업 갈래(0216 — v0.7.0 = 넷째 지역 마무리, `release/v0.6`에서 땀. 운영판 v0.6.x 패치는 main에서 `patch/v0.6.x`로 골라 옮긴다), 그 전 `release/v0.6`(작업은 여기에 커밋·push, 0134 — 앞 갈래 `release/v0.5`·`v0.4`·옛 `release/v0.3`은 패치용으로 그대로 둠). 마일스톤을 닫으면 release → main + 버전 올리기, 다음 갈래는 새 main에서.
 - main에 패치를 넣었으면 release 갈래에도 합친다.
 - **배포(main push·버전 올리기)는 사장이 정한다.** 고친 것을 모아 "이것들을 고쳤는데 v<버전>으로 배포할까요?"
 - **main 룰셋(0092, `.github/rulesets/main.json`·`release.json`)**: 지우기·강제 push 막기, PR 필수, 검사 `build`(웹 CI 잡) 통과, 우회는 레포 관리자만 — 운영 반영은 사장의 Merge로만.

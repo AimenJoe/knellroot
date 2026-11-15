@@ -228,13 +228,16 @@ pub const ELITE_SCALE: f32 = 1.25;
 pub const ELITE_EMBERS: u32 = 2;
 pub const ELITE_FIRST_EMBERS: u32 = 15;
 /// 구역 등급(0112 1절 — 잡몹 레벨은 지역마다 고정 등급, 숫자는 화면에 없다): 체력·자세 막대·떨구는 잔불 배율(올림).
-/// 예고 길이·움직임은 바꾸지 않는다(읽히는 싸움 0071·0075). 등급 2 값은 0116 3절. 등급 3 값은 셋째 지역 때 정한다.
+/// 예고 길이·움직임은 바꾸지 않는다(읽히는 싸움 0071·0075). 등급 2 값은 0116 3절. 등급 3·4(0216 W1 — 정원·작업층): 도달한
+/// 몸(정원 Lv7·힘 4·벼림 1~2, 작업층 Lv10·힘 5·벼림 2~3)의 검 평타로 쓰러뜨리는 대 수가 마을에 닿았을 때와 같게(체력),
+/// 힘 단이 키운 자세 피해만큼 조금 더(자세), 그 지역의 레벨 값(40 + 20 × 레벨)이 커진 만큼 잔불 — 피해 두 눈금(등급 3부터)이
+/// 어려움을 더한다. 시험 `tiers_keep_the_hits_to_kill_at_arrival`.
 pub struct Tier {
     pub hp: f32,
     pub poise: f32,
     pub embers: f32,
 }
-pub const TIERS: [Tier; 2] = [
+pub const TIERS: [Tier; 4] = [
     Tier {
         hp: 1.0,
         poise: 1.0,
@@ -245,6 +248,16 @@ pub const TIERS: [Tier; 2] = [
         poise: 1.3,
         // 0123: 1.6 → 1.3(아이템·성장 덜 후하게).
         embers: 1.3,
+    },
+    Tier {
+        hp: 2.4,
+        poise: 1.5,
+        embers: 1.7,
+    },
+    Tier {
+        hp: 3.5,
+        poise: 1.7,
+        embers: 2.1,
     },
 ];
 /// 깨진 종지기(0125): 울림 고리 사이(m), 종 조각 빠르기(m/s)·날아가는 거리(m)·맞는 반지름(m)·되돌아가 종지기를 깎는 피해·
@@ -2011,6 +2024,53 @@ mod tests {
             "0116 → 0123 잔불 1.3"
         );
         assert_eq!(tier(0).hp, one.hp, "tier is one-based");
+        // 등급은 오를수록 모든 배율이 커진다(표 밖은 가장 높은 줄).
+        for w in TIERS.windows(2) {
+            assert!(w[1].hp > w[0].hp && w[1].poise > w[0].poise && w[1].embers > w[0].embers);
+        }
+        assert_eq!(tier(9).hp, TIERS[TIERS.len() - 1].hp);
+    }
+
+    /// 0216 W1: 도달한 몸의 검 평타(첫 타 10 + 벼림, 작업층은 힘 5단의 +10)로 쓰러뜨리는 대 수가 마을에 닿았을 때(등급 2 ·
+    /// 벼림 0~1)의 폭 안에 든다 — 정원(등급 3 · 벼림 1~2), 작업층(등급 4 · 힘 5단 · 벼림 2~3). 대 수는 지역마다 같고 맞는 피해만
+    /// 두 눈금이 된다.
+    #[test]
+    fn tiers_keep_the_hits_to_kill_at_arrival() {
+        use crate::species::{def, Kind};
+        let sword = crate::weapons::Id::Sword.def().hit(0).unwrap().damage;
+        assert_eq!(sword, 10, "the probe below assumes the first sword hit");
+        let forged = |n: usize| {
+            sword
+                + n.checked_sub(1)
+                    .map_or(0, |i| crate::weapons::Id::Sword.def().forge.unwrap()[i].hit)
+        };
+        let might = crate::progression::MIGHT_DMG;
+        let hits = |kind: Kind, t: u8, dmg: i32| {
+            let hp = (def(kind).hp as f32 * tier(t).hp).ceil() as i32;
+            (hp + dmg - 1) / dmg
+        };
+        for kind in [
+            Kind::Husk,
+            Kind::Thorn,
+            Kind::Shell,
+            Kind::Pod,
+            Kind::Repeater,
+            Kind::Packbearer,
+        ] {
+            // 마을의 폭: 벼림 1(적게) ~ 벼림 0(많게).
+            let (few, many) = (hits(kind, 2, forged(1)), hits(kind, 2, forged(0)));
+            for (name, h) in [
+                ("garden f1", hits(kind, 3, forged(1))),
+                ("garden f2", hits(kind, 3, forged(2))),
+                ("workings f2", hits(kind, 4, forged(2) + might)),
+                ("workings f3", hits(kind, 4, forged(3) + might)),
+            ] {
+                assert!(
+                    (few..=many + 1).contains(&h),
+                    "{kind:?} {name}: {h} hits, village {few}..{many}"
+                );
+            }
+        }
     }
 
     #[test]
