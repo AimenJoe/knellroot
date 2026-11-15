@@ -99,11 +99,15 @@ impl World {
             PState::Throw { t: e, to, thrown } => self.tick_throw(&mut cx, e, to, thrown),
             PState::Dodge { t: e, dir } => self.tick_dodge(&cx, e, dir),
             PState::Jump { t: e, plunge } => self.tick_jump(&mut cx, e, plunge),
-            PState::Land { t: e, dur } => {
+            PState::Land { t: e, dur, plunge } => {
                 self.player.state = if e + dt >= dur {
                     PState::Idle
                 } else {
-                    PState::Land { t: e + dt, dur }
+                    PState::Land {
+                        t: e + dt,
+                        dur,
+                        plunge,
+                    }
                 };
             }
             PState::Parry { t: e } => {
@@ -944,7 +948,11 @@ impl World {
             } else {
                 t[P::JumpLand]
             };
-            pl.state = PState::Land { t: 0.0, dur };
+            pl.state = PState::Land {
+                t: 0.0,
+                dur,
+                plunge,
+            };
             cx.landed_plunge = plunge;
         } else {
             pl.state = PState::Jump { t: e + dt, plunge };

@@ -65,6 +65,8 @@ pub const MOTION_NONE: Pair = (
     "the model has no such motion (shows idle)",
 );
 pub const MOTION_PAUSED: Pair = ("멈춤", "paused");
+/// 달리기 공격 줄(0202 — 콤보의 타와 같은 동작을 빌려도 줄을 따로 둔다): {0} = 빌린 동작의 이름.
+pub const MOTION_DASH: Pair = ("달리기 공격 — {0}", "dash attack: {0}");
 pub const DEV_HINT: Pair = (
     "좌우: 묶음 · 위아래: 고르기 · 확인: 시작 · 뒤로: 나가기",
     "left/right: group · up/down: pick · confirm: start · back: leave",
@@ -157,6 +159,7 @@ pub const PAIRS: &[Pair] = &[
     MOTION_HIT,
     MOTION_NONE,
     MOTION_PAUSED,
+    MOTION_DASH,
     DEV_HINT,
     ENTRANCE,
     GATE,
@@ -231,6 +234,7 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("dodge_back", ("뒤로 뛰기(회피)", "back hop (dodge)")),
     ("land", ("내려서기", "land")),
     ("plunge", ("내려찍기", "plunge")),
+    ("plunge_land", ("내려찍고 일어나기", "plunge landing")),
     ("drink", ("등잔 마시기", "drink")),
     ("hurt", ("맞음", "hurt")),
     ("fall", ("쓰러짐", "fall")),

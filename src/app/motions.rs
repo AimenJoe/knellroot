@@ -14,6 +14,20 @@ pub(super) struct Row {
     pub anim: &'static str,
     pub window: Option<(f32, f32)>,
     pub rate: f32,
+    /// 달리기 공격 줄(0202): 콤보의 타와 같은 동작이어도 따로 한 줄 — 판정 구간·시계는 달리기 공격의 것.
+    pub dash: bool,
+}
+
+impl Row {
+    /// 왼쪽 줄의 이름.
+    pub fn label(&self) -> String {
+        let name = dv::motion_label(self.anim);
+        if self.dash {
+            fill(t(dv::MOTION_DASH), &[&name])
+        } else {
+            name
+        }
+    }
 }
 
 /// 빠르기 칸(0 = 1×, 1 = ½, 2 = ¼, 3 = 멈춤).
@@ -26,12 +40,22 @@ const SPIN_STEP: f32 = 30.0;
 /// 이 무기로 볼 동작들(차례 = 몸 → 무기 → 막기·피하기 → 맞음 → 기술). 같은 동작은 한 번만. 순수 — 시험.
 pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
     let mut out: Vec<Row> = Vec::new();
-    let mut add = |anim: &'static str, window: Option<(f32, f32)>| {
-        if !out.iter().any(|r| r.anim == anim) {
+    fn put(out: &mut Vec<Row>, anim: &'static str, window: Option<(f32, f32)>) {
+        if !out.iter().any(|r| r.anim == anim && !r.dash) {
             let rate = window.map_or(1.0, |(s, _)| crate::weapons::clip_rate(anim, s));
-            out.push(Row { anim, window, rate });
+            out.push(Row {
+                anim,
+                window,
+                rate,
+                dash: false,
+            });
         }
-    };
+    }
+    macro_rules! add {
+        ($a:expr, $w:expr) => {
+            put(&mut out, $a, $w)
+        };
+    }
     for a in [
         "idle",
         "idle_look",
@@ -42,32 +66,38 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
         "turn_l",
         "turn_r",
     ] {
-        add(a, None);
+        add!(a, None);
     }
     for (k, h) in w.combo.iter().enumerate() {
         let (s0, a0, _) = crate::world::hit_times(tn, w, k as u8);
-        add(h.anim, Some((s0, s0 + a0)));
+        add!(h.anim, Some((s0, s0 + a0)));
     }
     if let Some(d) = w.dash {
-        add(d.anim, None);
+        let (s0, a0, _) = crate::world::hit_times(tn, w, crate::weapons::DASH);
+        out.push(Row {
+            anim: d.anim,
+            window: Some((s0, s0 + a0)),
+            rate: crate::weapons::clip_rate(d.anim, s0),
+            dash: true,
+        });
     }
     if let Some(h) = w.heavy {
-        add(h.anim_charge, None);
+        add!(h.anim_charge, None);
         let (s0, a0, _) = crate::world::heavy_times(tn, w);
-        add(h.anim_heavy, Some((s0, s0 + a0)));
+        add!(h.anim_heavy, Some((s0, s0 + a0)));
     }
     match w.rb {
         Rb::Magic(_) => {
-            add("cast_charge", None);
-            add("cast", None);
+            add!("cast_charge", None);
+            add!("cast", None);
         }
         Rb::Shot { .. } => {
-            add("xbow_charge", None);
-            add("xbow_shoot", None);
+            add!("xbow_charge", None);
+            add!("xbow_shoot", None);
         }
     }
     if w.grenade.is_some() {
-        add("throw", None);
+        add!("throw", None);
     }
     for a in [
         "parry",
@@ -77,6 +107,7 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
         "jump",
         "land",
         "plunge",
+        "plunge_land",
         "drink",
         "pickup",
         "pull",
@@ -84,7 +115,7 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
         "fall",
         "wake",
     ] {
-        add(a, None);
+        add!(a, None);
     }
     let clips = crate::skills::SKILLS.iter().map(|s| s.clip).chain(
         [
@@ -96,7 +127,7 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
     );
     for c in clips {
         let [s, a, _] = c.seg;
-        add(c.name, Some((s, s + a.max(0.03))));
+        add!(c.name, Some((s, s + a.max(0.03))));
     }
     out
 }
@@ -199,7 +230,7 @@ impl App {
         let split = panel.x + panel.w * 0.36;
         draw_line(split, body, split, hint_y - u * 4.0, u.max(1.0), ui::BORDER);
         let list = rows(w, &self.t);
-        let labels: Vec<String> = list.iter().map(|r| dv::motion_label(r.anim)).collect();
+        let labels: Vec<String> = list.iter().map(Row::label).collect();
         let ui_rows: Vec<ui::Row> = labels
             .iter()
             .map(String::as_str)
@@ -298,12 +329,18 @@ mod tests {
             for h in w.combo {
                 assert!(list.iter().any(|r| r.anim == h.anim), "{id:?}: {}", h.anim);
             }
+            // 달리기 공격은 콤보의 타와 같은 동작이어도 따로 한 줄(0202).
+            assert_eq!(
+                list.iter().filter(|r| r.dash).count(),
+                w.dash.iter().count(),
+                "{id:?}"
+            );
             for a in ["idle", "walk", "parry", "dodge", "sk_whirl", "ult_line"] {
                 assert!(list.iter().any(|r| r.anim == a), "{id:?}: {a}");
             }
             let mut seen = std::collections::HashSet::new();
             for r in &list {
-                assert!(seen.insert(r.anim), "{id:?}: {} twice", r.anim);
+                assert!(seen.insert((r.anim, r.dash)), "{id:?}: {} twice", r.anim);
                 let ai = m
                     .anim(r.anim)
                     .unwrap_or_else(|| panic!("{id:?}: no clip {}", r.anim));

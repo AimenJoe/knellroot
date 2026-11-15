@@ -767,7 +767,7 @@ fn flank_ring(w: &World, pp: Vec3, fl: &Drape) {
 
 fn plunge_ring(w: &World, pp: Vec3, t: &Tuning, fl: &Drape) {
     // 내려찍기(0027): 내려앉은 자리에서 범위만큼 퍼지는 고리(`plunge.range m`).
-    if let PState::Land { t: e, dur } = w.player.state {
+    if let PState::Land { t: e, dur, .. } = w.player.state {
         if (dur - t[crate::tuning::P::PlungeLand]).abs() < 1e-4 && e < 0.25 {
             let k = e / 0.25;
             let r = t[crate::tuning::P::PlungeRange] * (0.4 + 0.6 * k);

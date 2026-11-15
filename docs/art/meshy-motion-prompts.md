@@ -37,7 +37,8 @@ Text to Motion으로 붙인다. 이름 = `tools/art/blender/wanderer.py`의 동�
 |---|---|---|
 | `idle` | 첫 묶음 Combat_Stance | 둘째 묶음에는 없다 — 첫 묶음에서 |
 | `walk`·달리기 | Walking · Running | |
-| `attack`·`attack2`·`attack3` | Double_Combo_Attack(대각 베기 13~17 · 올려 베기 26~31 · 내리치기 38~43, 24fps) | 0201 — 옛 Triple_Combo_Attack은 1타가 왼→오라 뺐다 |
+| `attack`·`attack2` | Double_Combo_Attack(대각 베기 13~17 · 올려 베기 26~31, 24fps) | 0201 — 옛 Triple_Combo_Attack은 1타가 왼→오라 뺐다 |
+| `attack3` | Thrust_Slash 찌르기(17~21) | 0202 — Double_Combo 셋째 내리치기는 느렸다 |
 | `charge`·`heavy` | Attack(봉우리 26, 11m/s) | 모으기 = 휘두르기 전 자세를 잡아 둔다 |
 | `parry` | Sword_Parry_Backward_2(0.53s) | |
 | `dodge` | Roll_Dodge_3(1.63s, 1.65m 앞으로) | 게임 회피는 0.25초 — 줄이면 급해진다(회피 시간은 얼린 값, 판정 뒤에) |

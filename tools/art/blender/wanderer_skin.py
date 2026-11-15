@@ -40,7 +40,7 @@ EDGE_SMOOTH = 6  # 앞뒤 프레임(100fps) — 손 속도를 고르게
 # 막기 꼴(사장 2026-11-15 "패링이 공격 1타라서 이상한데"): 원본 Sword_Parry_Backward_2는 칼을 아래로 늘어뜨린 채 거의 움직이지 않아
 # 공격 준비처럼 보인다 — 막는 동작을 새로 받기 전까지 칼만 "몸 앞쪽에 세워 든" 막기 꼴로(날이 오는 쪽 = 앞).
 # (이름, 들어가는 몫 — 동작 길이의 비): 그 몫 동안 규칙의 방향에서 막기 꼴로 옮겨 가고 그 뒤는 머문다.
-GUARD = {"parry": 0.25}
+GUARD = {}  # 0202: 패링은 방패 밀기(Shield_Push_Left — 왼팔로 민다)라 칼을 세우지 않는다. 옛 Block10 막기는 {"parry": 0.25}
 GUARD_BLADE = Vector((0.25, -0.45, 0.85))  # 뼈대 공간: 왼쪽(+X) · 앞(−Y) · 위(+Z) — 앞쪽으로 세워 든 칼(가로로 들면 주먹이 허리께라 몸을 지난다)
 # 숙임 바로잡기(앞, 옆 도 — 엉덩이 → 머리가 수직에서 기운 각): 클립 평균을 등뼈 셋에 나눠 돌려 그 각으로 세운다(`solve_upright`).
 # 지금은 비어 있다 — 숙였던 Combat_Stance 대신 곧게 선 Idle_02를 쓴다(그때는 {"idle": (8.0, 5.0)}, 앞 23°·옆 18° → 8°·5°).
@@ -75,6 +75,12 @@ FLAT = {"jump", "land"}
 # 겨누기(0196, 쇠뇌 — 원본은 활쏘기 Archery_Shot): 활을 든 왼팔이 몸 왼쪽을 가리킨다 → 몸을 돌려 오른손 → 왼손(겨누는 줄)이 정면을 보게,
 # 쇠뇌는 그 줄을 따라 눕힌다(날 = 오른손 → 왼손, 위 = 하늘). (이름, 들어가는 몫): 그 몫 동안 서기 방향에서 겨누는 방향으로.
 AIM = {"xbow_charge": 1.0, "xbow_shoot": 0.0}
+# 두 손 쥠(0202, 지팡이 — 원본 M08·M09는 두 손으로 쥔 지팡이 동작): 무기는 오른손 뼈에만 달려 있어 어깨 → 주먹 규칙으로 두면
+# 왼손과 따로 놀며 엉뚱한 쪽을 가리켰다(사장 "지팡이는 다 이상하고"). 두 손이 가까이(`TWO_HAND_NEAR` 안) 있으면 지팡이를
+# 오른손 → 왼손 줄로 눕히고, 한 손을 떼어 휘두르면(멀어지면 `TWO_HAND_FAR`까지) 옛 규칙으로 돌아간다.
+# 둘째 타(가로 휘두르기)는 원본이 한 손을 떼고 휘둘러 옛 규칙 그대로 — 두 손 줄로 눕히면 끝이 몸 뒤로 돌았다.
+TWO_HAND = {"staff1", "staff3", "staff4", "staff_charge", "staff_release"}
+TWO_HAND_NEAR, TWO_HAND_FAR = 0.30, 0.55
 SPIN = -1.0  # 휘돌이가 도는 쪽(원본 Skill_03은 오른쪽으로 돈다 — 요가 줄어드는 쪽). 이펙트 `render::overlays::WHIRL_CLIP_TURN`과 같아야 한다
 
 HIT_WINDOWS = {
@@ -105,7 +111,7 @@ CLIPS = [
     # 왼쪽 아래에서 오른쪽 위로 올려 베고(29), 오른쪽에서 내려친다(41). 한 원본이라 타 사이의 자세가 이어진다. 옛 Triple_Combo_Attack은 왼→오가 1타였다.
     ("attack", "Double_Combo_Attack", ("anchors", [(0.0, 4), (0.08, 13), (0.13, 15), (0.18, 17), (0.43, 23)])),
     ("attack2", "Double_Combo_Attack", ("hit", 23, (26, 31), 36, 0.43, 0.13)),
-    ("attack3", "Double_Combo_Attack", ("hit", 36, (38, 43), 56, 0.52, 0.15)),
+    ("attack3", "Thrust_Slash", ("anchors", [(0.0, 6), (0.10, 17), (0.16, 19), (0.22, 21), (0.52, 25)])),  # 0202: 내디디며 찌르기(처음 뜻)
     # 검 모아 베기(0199): Charged_Slash — 칼을 왼쪽 앞으로 감아 쥐고(13 → 22, 모으는 동안 버팀) 오른쪽으로 크게 벤다(27~29, 손 속도 5.0).
     # 옛 판은 Attack(내려치기)이었다.
     ("charge", "Charged_Slash", ("span", 13, 22, 0.3)),
@@ -113,7 +119,7 @@ CLIPS = [
     # 패링(2026-11-15): 라이브러리 Sword_Parry_Backward_2는 오른손이 몸 뒤(엉덩이보다 0.2~0.28 m 뒤)라 칼이 가려지고 공격 준비처럼 보였다 —
     # 되울림 원본(M15 "칼을 얼굴 앞에 세워 든다")에서 손이 몸 앞 가슴 높이로 올라오는 구간(12~21프레임)을 쓴다. 0.08초에 들고 버틴다.
     # 패링(0198): 막기 원본 Block10(두 손을 앞으로 모으며 무릎을 굽혀 버틴다, 0 → 5 → 12) — 임시로 빌리던 M15 대신.
-    ("parry", "Block10", ("anchors", [(0.0, 0), (0.08, 5), (0.3, 12)])),
+    ("parry", "Shield_Push_Left", ("anchors", [(0.0, 16), (0.05, 24), (0.10, 28), (0.2, 31), (0.5, 45)])),  # 0202: 누르자마자 왼팔로 민다
     # 회피(0197): 구르기의 몸통 구간만(3 뜀 → 14 말림 → 26 웅크려 닿음 — 옛 2~30은 0.25초에 4.7배로 뭉갰다). 원본은 왼쪽 앞 37°로 굴러
     # 몸을 돌려 구르는 쪽 = 앞(`FACE_TRAVEL`). 뒤로 피할 때(입력 없이·락온 뒷걸음)는 Back_Jump(2 웅크림 → 4 뜀 → 14 닿음 → 17 받음).
     ("dodge", "Roll_Dodge_3", ("anchors", [(0.0, 3), (0.12, 14), (0.25, 26)])),
@@ -140,11 +146,12 @@ CLIPS = [
     # 망치 달리기 공격(0200): 같은 앞차기를 망치의 대시 구간(무거워 1.6배 — 무릎을 들어 0.128초에 닿는다)에. 망치는 든 채.
     ("hammer_dash", "Spartan_Kick", ("anchors", [(0.0, 0), (0.128, 12), (0.288, 17), (0.688, 30)])),
     # 패링 성공(0199): 막은 자리에서 왼팔로 밀쳐낸다 — Shield_Push_Left(22 → 27 밀침 → 45). 렌더가 튕긴 뒤 서 있는 동안 튼다.
-    ("parry_push", "Shield_Push_Left", ("anchors", [(0.0, 22), (0.05, 27), (0.15, 31), (0.4, 45)])),
+    ("parry_push", "Shield_Push_Left", ("anchors", [(0.0, 28), (0.1, 31), (0.4, 45)])),  # 0202: 튕긴 뒤 = 민 자리에서 거두기
     ("fist_heavy", "Spartan_Kick", ("anchors", [(0.0, 9), (0.048, 12), (0.144, 17), (0.464, 30)])),
     ("pull", "M13", ("anchors", [(0.0, 7), (0.15, 19), (0.45, 43), (0.65, 59)])),
     ("pickup", "Collect_Object", ("anchors", [(0.0, 11), (0.22, 29), (0.30, 59), (0.55, 80), (0.62, 83), (0.9, 104)])),
-    ("plunge", "Charged_Ground_Slam", ("anchors", [(0.0, 18), (0.12, 30), (0.29, 39), (0.3, 41)])),
+    ("plunge", "Charged_Ground_Slam", ("anchors", [(0.0, 4), (0.10, 11), (0.22, 34), (0.29, 39), (0.3, 40)])),  # 0202: 공중에서 든다
+    ("plunge_land", "Charged_Ground_Slam", ("anchors", [(0.0, 40), (0.05, 42), (0.2, 52), (0.35, 62)])),  # 0202: 내려찍고 웅크렸다 일어남
     ("drink", "M05", ("span", 0, 60, 0.8)),
     # 마법(0198): 시전 원본 mage_soell_cast_8 — 두 손을 가슴 앞에 모으고(0 → 7, 모으기는 여기서 버틴다) 앞으로 밀어낸다(7 → 25).
     ("cast_charge", "mage_soell_cast_8", ("span", 0, 7, 0.3)),
@@ -536,13 +543,23 @@ def moving_bones(arm, body):
 BLADE_REACH = 0.5  # 칼끝 어림: 주먹에서 `weapon_pass`의 날 방향으로 이만큼(뼈대 단위)
 
 
-def hand_yaw(hip, hand):
+def two_hand_mix(fist, left):
+    """두 손 쥠(`TWO_HAND`)의 몫: 두 손이 가까우면 1(무기 = 오른손 → 왼손 줄), 멀면 0(어깨 → 주먹)."""
+    span = (left - fist).length
+    return smooth01((TWO_HAND_FAR - span) / (TWO_HAND_FAR - TWO_HAND_NEAR)) if span > 1e-3 else 0.0
+
+
+def hand_yaw(hip, hand, two=False):
     """칼끝이 몸 둘레 어느 쪽인가(라디안, 정면 0 · 왼쪽 +, 뼈대 공간 — 앞 = −Y, 왼쪽 = +X).
-    `hand` = (주먹, 어깨) — 칼끝 = 주먹 + 날 방향(`weapon_pass`와 같은 셈) × `BLADE_REACH`."""
+    `hand` = (주먹, 어깨, 왼손) — 칼끝 = 주먹 + 날 방향(`weapon_pass`와 같은 셈) × `BLADE_REACH`. `two` = 두 손 쥠(0202)."""
     fist, shoulder = hand[0], hand[1]
     d = fist - shoulder
     d.z *= BLADE_RISE
-    v = fist + d.normalized() * BLADE_REACH - hip
+    d.normalize()
+    if two:
+        g = two_hand_mix(fist, hand[2])
+        d = (d * (1 - g) + (hand[2] - fist).normalized() * g).normalized()
+    v = fist + d * BLADE_REACH - hip
     return math.atan2(v.x, -v.y)
 
 
@@ -617,13 +634,14 @@ def face_hit(arm, name, poses, hips, hands, window, start=0.0):
         v = hands[km][2] - hips[km]
         aim = math.atan2(v.x, -v.y)
     else:
-        aim = hand_yaw(hips[km], hands[km])
+        aim = hand_yaw(hips[km], hands[km], name in TWO_HAND)
     turn = near(-aim, start - own[k0])
     end = near(-own[n], own[k1] + turn - own[n])
     turns = keyed_turns(n, [(0.0, start - own[0]), (s0, turn), (s0 + a0, turn), (dur, end)], wrap=False)
     turn_body(arm, poses, turns)
-    a = hand_yaw(hips[at_frame(n, s0)], hands[at_frame(n, s0)]) + turns[at_frame(n, s0)]
-    z = hand_yaw(hips[at_frame(n, s0 + a0)], hands[at_frame(n, s0 + a0)]) + turns[at_frame(n, s0 + a0)]
+    two = name in TWO_HAND
+    a = hand_yaw(hips[at_frame(n, s0)], hands[at_frame(n, s0)], two) + turns[at_frame(n, s0)]
+    z = hand_yaw(hips[at_frame(n, s0 + a0)], hands[at_frame(n, s0 + a0)], two) + turns[at_frame(n, s0 + a0)]
     span = math.degrees(math.atan2(math.sin(z - a), math.cos(z - a)))
     print(f"[skin] face {name}: turn {math.degrees(turn):+.0f}°, tip {math.degrees(a):+.0f}° -> {math.degrees(z):+.0f}° (sweep {span:+.0f}°)")
 
@@ -779,6 +797,10 @@ def weapon_pass(arm, act, loop):
             g = smooth01(k / max(n * AIM[act.name], 1)) if AIM[act.name] > 0 else 1.0
             d = (d * (1 - g) + (l_ - h).normalized() * g).normalized()
             e = e * (1 - g) + Vector((0, 0, 1)) * g
+        if act.name in TWO_HAND:
+            g = two_hand_mix(h, l_)
+            if g > 0.0:
+                d = (d * (1 - g) + (l_ - h).normalized() * g).normalized()
         e = (e - d * e.dot(d)).normalized()
         if prev_e is not None and e.dot(prev_e) < 0:  # 손이 되돌아도 날을 뒤집지 않는다(망치 머리가 홱 돌지 않게)
             e.negate()

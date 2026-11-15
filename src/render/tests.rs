@@ -420,11 +420,14 @@ fn render_clip_lengths_match_the_wanderer_model() {
         ("land", LAND_CLIP),
         ("pickup", PICKUP_CLIP),
         ("parry_push", PARRY_PUSH_CLIP),
+        ("plunge_land", PLUNGE_LAND_CLIP),
     ] {
         assert!((len(n) - want).abs() < 0.011, "{n}: {} vs {want}", len(n));
     }
     assert!(PLUNGE_STRIKE < len("plunge") && XBOW_RELEASE < len("xbow_shoot"));
     assert!(CAST_RELEASE < len("cast"));
+    // 0202: 패링(방패 밀기)은 헛친 패링이 묶인 동안(`parry.time s`) 내내 돈다.
+    assert!(len("parry") + 0.011 >= crate::tuning::Tuning::default()[crate::tuning::P::ParryTime]);
 }
 
 /// 0196(사장 "개발 버전처럼 보이는 성의 없는 모션"): 몸의 쪽(엉덩이)이 동작 안에서 어떻게 도는가 —

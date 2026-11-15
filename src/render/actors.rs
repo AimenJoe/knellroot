@@ -328,7 +328,18 @@ impl Renderer {
                     &["plunge", "attack"],
                     PLUNGE_STRIKE * plunge_phase(pl.air, t[crate::tuning::P::JumpHeight]),
                 ),
-                PState::Land { t: e, dur } => (&["land", "idle"], LAND_CLIP * e / dur.max(1e-3)),
+                // 0202: 내려찍기로 내려앉으면 칼을 꽂은 웅크림에서 일어난다(예전엔 보통 착지라 내려찍은 자세가 한 틱뿐이었다).
+                PState::Land {
+                    t: e,
+                    dur,
+                    plunge: true,
+                } => (
+                    &["plunge_land", "land", "idle"],
+                    PLUNGE_LAND_CLIP * e / dur.max(1e-3),
+                ),
+                PState::Land { t: e, dur, .. } => {
+                    (&["land", "idle"], LAND_CLIP * e / dur.max(1e-3))
+                }
                 // 스킬·큰 기술(0151 → 0158 G2): 전용 동작(`sk_*`·`ult_*`)이 모델에 있으면 그것을 — 상태의 구간(시동·이어짐·후딜)을
                 // 동작의 구간에 맞춘다(`Clip::at`: 단·고르기가 길이를 바꿔도 판정의 순간에 그 자세). 없으면 빌려 쓰던 동작(표의 `anim`).
                 PState::Skill { id, t: el, .. } => {
@@ -360,6 +371,14 @@ impl Renderer {
                 }
                 // 달리기(0076): `run` 동작이 없으면 걷기를 빠르게(발 구르기가 속도를 따라간다).
                 // 걸음 시계는 쌓는다(0175 — `w.time × 빠르기`는 가속하는 동안 걸음 주기를 건너뛰었다, `gait.rs`).
+                // 패링이 튕긴 뒤(0199 → 0202): 민 자리에서 거둔다 — 걷기보다 먼저(튕기자마자 걸으면 밀기가 사라져 "방패 동작이
+                // 안 보인다"). 튕기면 월드가 곧장 서기로 돌린다(반격하라고), 그 짧은 동안만.
+                PState::Idle
+                    if pl.parry.since < PARRY_PUSH_FIRM
+                        || (pl.parry.since < PARRY_PUSH_CLIP && speed <= 0.5) =>
+                {
+                    (&["parry_push", "idle"], pl.parry.since)
+                }
                 PState::Idle if pl.running && speed > 0.5 => (
                     &["run", "walk"],
                     self.gait.advance(wdt, true, (speed / 4.0).clamp(0.6, 2.2)),
@@ -376,10 +395,6 @@ impl Renderer {
                         self.gait
                             .advance(wdt, true, (speed / 4.0).clamp(0.6, 1.6) * k),
                     )
-                }
-                // 패링이 튕긴 뒤(0199): 서 있으면 막은 자리에서 밀쳐낸다(튕기면 월드가 곧장 서기로 돌린다 — 반격하라고).
-                PState::Idle if pl.parry.since < PARRY_PUSH_CLIP => {
-                    (&["parry_push", "idle"], pl.parry.since)
                 }
                 // 쇠뇌를 쏜 뒤(0197): 서 있으면 잠깐 겨눈 채(쏘기의 끝 자세).
                 PState::Idle if self.aim_hold > 0.0 => (&["xbow_shoot", "idle"], XBOW_HOLD_AT),
@@ -921,10 +936,14 @@ pub(crate) const JUMP_CLIP: f32 = 0.5;
 pub(crate) const LAND_CLIP: f32 = 0.15;
 /// 내려찍기 동작에서 칼이 땅에 닿는 자리(초).
 pub(crate) const PLUNGE_STRIKE: f32 = 0.29;
+/// 내려찍고 내려앉은 뒤 웅크렸다 일어나는 동작의 길이(초, 0202) — 착지 상태(`plunge.land s`)에 맞춰 돈다.
+pub(crate) const PLUNGE_LAND_CLIP: f32 = 0.35;
 /// 줍기·상자 열기 몸짓의 길이(초, 0196 — 앱이 이만큼 흐르면 그친다).
 pub const PICKUP_CLIP: f32 = 0.9;
 /// 패링 성공의 밀쳐내기 길이(초, 0199).
 pub(crate) const PARRY_PUSH_CLIP: f32 = 0.4;
+/// 튕긴 뒤 이만큼(초)은 걸어도 거두는 팔을 보인다(0202) — 그 뒤로는 서 있을 때만.
+pub(crate) const PARRY_PUSH_FIRM: f32 = 0.2;
 /// 장치 당기기 몸짓의 길이(초, 0197).
 pub const PULL_CLIP: f32 = 0.65;
 
