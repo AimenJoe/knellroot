@@ -378,7 +378,7 @@ impl App {
                 | Event::Ember { .. } => 0.0,
                 Event::Cast { .. } | Event::CastDenied | Event::Throw => 0.0,
                 Event::StaminaDenied | Event::Release { .. } => 0.0,
-                Event::Break { .. } => SHAKE_SMASH,
+                Event::Break { .. } | Event::LoadBreak { .. } => SHAKE_SMASH,
                 Event::Aftershock { .. } | Event::Boom { .. } => SHAKE_PLUNGE,
                 Event::Perfect { .. } => SHAKE_CHARGED,
                 // 락온 대상을 잃으면(0181) 풀린 뒤 자유 숄더뷰에 머문다 — 버튼으로 풀면 락온한 곳(쿼터뷰·자유)으로.
@@ -960,7 +960,7 @@ impl App {
                 Event::Swing => Id::Swing,
                 Event::Hit { .. } | Event::Crit { .. } => Id::Hit,
                 Event::Plunge { .. } | Event::Smash { .. } | Event::Aftershock { .. } => Id::Hit,
-                Event::Break { .. } | Event::Boom { .. } => Id::Hit,
+                Event::Break { .. } | Event::Boom { .. } | Event::LoadBreak { .. } => Id::Hit,
                 Event::EnemyDown { .. } => Id::Die,
                 Event::PlayerHurt => Id::Hurt,
                 // 등딱지 튕김(0120)은 패링의 거울 — 같은 쇳소리.

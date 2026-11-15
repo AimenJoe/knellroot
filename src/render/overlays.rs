@@ -39,6 +39,7 @@ impl Renderer {
         bombs(w, alpha);
         carts(w, alpha);
         skill_spikes(w);
+        packbearer_loads(w, alpha);
         cast_charge(w, pp, t, &fl);
         throw_aim(w, pp, t, &fl);
         cracks(w, &fl);
@@ -292,6 +293,26 @@ fn bell_shards(w: &World, fl: &Drape) {
         gem(sh.pos, 0.56, glow);
         gem(sh.pos, 0.3, core);
         fl.shadow(sh.pos, 0.18);
+    }
+}
+
+/// 등짐꾼의 짐(0216 W2): 등에 진 둥근 돌덩이 — 자세가 깨지면 깨져 사라진다(`Enemy::load_lost`). 모델은 빌린 것이라 짐만 코드로
+/// 얹는다(돌은 매끈하게 — 0139).
+fn packbearer_loads(w: &World, alpha: f32) {
+    const BODY: Color = Color::new(0.47, 0.45, 0.50, 1.0);
+    const BAND: Color = Color::new(0.36, 0.27, 0.20, 1.0);
+    for en in &w.enemies {
+        if en.kind != crate::species::Kind::Packbearer || en.load_lost || !en.alive() {
+            continue;
+        }
+        let p = en.prev.lerp(en.pos, alpha);
+        let fwd = vec3(en.facing.sin(), 0.0, en.facing.cos());
+        let scale = en.radius / en.def().radius;
+        let c = p + Vec3::Y * (en.height * 0.95) - fwd * 0.15 * scale;
+        let turn = Quat::from_rotation_y(en.facing);
+        shaded_tris(c, &ball_faces(0.48 * scale), BODY, 0.75, turn);
+        // 짐을 묶은 띠.
+        shaded_box_rot(c, vec3(1.02, 0.12, 0.2) * scale, BAND, 0.6, turn, c);
     }
 }
 

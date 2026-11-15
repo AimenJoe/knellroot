@@ -611,6 +611,7 @@ pub const KO: Strings = Strings {
     cx_repeater_g: "파던 벽은 오래전에 끝났을지도 모른다.",
     cx_packbearer_1: "등에 돌덩이를 지고 정해진 길을 오간다.",
     cx_packbearer_2: "앞을 막으면 짐을 앞세워 곧게 밀고 온다.",
+    cx_packbearer_3: "몸을 무너뜨리면 짐이 깨진다. 짐을 잃은 몸은 더는 밀고 오지 못하고 느리다.",
     cx_packbearer_g: "짐을 내려놓을 곳을 아직 찾는 것처럼 보인다.",
     enemy_thorn: "가시짐승",
     enemy_shell: "등딱지짐승",

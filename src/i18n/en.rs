@@ -608,6 +608,7 @@ pub const EN: Strings = Strings {
     cx_repeater_g: "The wall it digs may have been finished long ago.",
     cx_packbearer_1: "It carries a stone on its back along a fixed path.",
     cx_packbearer_2: "Block its way, and it drives straight at you, load first.",
+    cx_packbearer_3: "Break its posture and the load shatters. Without it, it can no longer drive at you and moves slower.",
     cx_packbearer_g: "It looks as if it is still searching for a place to set its load down.",
     enemy_thorn: "Thornbeast",
     enemy_shell: "Shellback",

@@ -344,6 +344,8 @@ pub const CART_HALF_L: f32 = 1.2;
 pub const CART_HALF_W: f32 = 1.1;
 pub const CART_DAMAGE: i32 = 40;
 pub const CART_KNOCK: f32 = 9.0;
+/// 등짐꾼(0216 W2): 짐이 깨진 뒤 걸음 배율 — 짐을 잃으면 밀고 오지 못하고 이만큼 느리다.
+pub const LOAD_LOST_SPEED: f32 = 0.7;
 /// 남는(0112): 쓰러진 자리에 남는 고리 — 터지기까지의 초(그동안 예고)·반지름(m).
 pub const ELITE_LINGER_DELAY: f32 = 1.0;
 pub const ELITE_LINGER_RADIUS: f32 = 2.6;

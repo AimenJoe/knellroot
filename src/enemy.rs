@@ -242,6 +242,8 @@ pub struct Enemy {
     pub snare: f32,
     /// 묶는 뿌리(0214 뿌리 솟기 ㄴ): 걷지 못하는 남은 초.
     pub bind: f32,
+    /// 등짐꾼의 짐이 깨졌다(0216 W2 — 자세 막대가 처음 깨질 때): 더는 밀고 오지 못하고 느리게 걷는다.
+    pub load_lost: bool,
     /// 남는 불씨(0158 G2, 잔불 흩기 ㄴ): 지금 선 자리의 불티가 쓰러질 때 더 남기는 잔불 수(월드가 틱마다 적는다, 0 = 없음).
     pub kindled: u32,
 }
@@ -372,6 +374,7 @@ impl Enemy {
             slow: 1.0,
             snare: 0.0,
             bind: 0.0,
+            load_lost: false,
             kindled: 0,
         }
     }
@@ -855,7 +858,7 @@ impl Enemy {
             Behavior::Charger => {
                 if dist <= d.reach - 0.2 {
                     Some(Atk::Smash)
-                } else if dist <= d.charge_range && dist > 2.5 {
+                } else if dist <= d.charge_range && dist > 2.5 && !self.load_lost {
                     Some(Atk::Charge)
                 } else {
                     None
@@ -1066,7 +1069,12 @@ impl Enemy {
             } else {
                 1.0
             }
-            * self.slow;
+            * self.slow
+            * if self.load_lost {
+                crate::tuning::LOAD_LOST_SPEED
+            } else {
+                1.0
+            };
         self.charge_aim = false;
         // 떼 퍼지기(0076): 가는 쪽의 옆으로만 비킨다(뒤로 물러서지 않는다), 앞이 막혔으면 조금 늦춘다.
         let steer = |go: Vec3, spread: Vec3| -> (Vec3, f32) {
@@ -2173,7 +2181,7 @@ mod works_tests {
         assert!(a.abs_diff(b) <= 1, "{hits:?}");
     }
 
-    /// 등짐꾼: 떨어져 있으면 띠 예고 뒤 곧게 밀고 온다(받아친다 — 돌진은 띠).
+    /// 등짐꾼: 떨어져 있으면 띠 예고 뒤 곧게 밀고 온다(받아친다 — 돌진은 띠). 짐이 깨지면(0216 W2) 밀고 오지 못한다.
     #[test]
     fn the_packbearer_drives_its_load_straight_at_you() {
         let en = Enemy::new(Kind::Packbearer, Vec3::ZERO);
@@ -2183,5 +2191,8 @@ mod works_tests {
         en.atk = Atk::Charge;
         assert!(en.parryable());
         assert!(matches!(en.tele_shape(), TeleShape::Lane { .. }));
+        en.load_lost = true;
+        assert_eq!(en.choose(6.0), None, "no load to drive");
+        assert_eq!(en.choose(1.0), Some(Atk::Smash));
     }
 }

@@ -196,6 +196,10 @@ pub enum Event {
     Break {
         at: Vec3,
     },
+    /// 등짐꾼의 짐이 깨졌다(0216 W2 — 자세가 처음 깨질 때).
+    LoadBreak {
+        at: Vec3,
+    },
     /// 망치 강타의 금 간 땅이 여진으로 터졌다(0051).
     Aftershock {
         at: Vec3,
@@ -2177,6 +2181,13 @@ fn add_poise(en: &mut Enemy, amount: f32, primed: Option<f32>, t: &Tuning, ev: &
         ev.push(Event::Break {
             at: en.pos + Vec3::Y * en.height * 0.7,
         });
+        // 등짐꾼(0216 W2): 처음 깨지는 자세가 짐을 깬다 — 그 뒤로는 밀고 오지 못하고 느리다.
+        if en.kind == Kind::Packbearer && !en.load_lost {
+            en.load_lost = true;
+            ev.push(Event::LoadBreak {
+                at: en.pos + Vec3::Y * (en.height + 0.2),
+            });
+        }
     }
 }
 

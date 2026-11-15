@@ -137,6 +137,7 @@ pub static ENTRIES: [Entry; 11] = [
         lines: &[
             (Obs::Seen, |s| s.cx_packbearer_1),
             (Obs::Seen, |s| s.cx_packbearer_2),
+            (Obs::Seen, |s| s.cx_packbearer_3),
             (Obs::Guess, |s| s.cx_packbearer_g),
         ],
     },

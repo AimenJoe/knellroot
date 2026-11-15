@@ -639,6 +639,23 @@ impl Fx {
                         AMBER,
                     );
                 }
+                // 등짐꾼의 짐이 깨짐(0216 W2): 돌 부스러기가 사방으로 + 먼지 — 금빛 자세 깨짐(같은 틱) 위에 돌의 덩이를 더한다.
+                Event::LoadBreak { at } => {
+                    self.spray(
+                        at,
+                        Vec3::Y,
+                        1.4,
+                        10,
+                        5.0,
+                        Shape::Dot,
+                        0.14,
+                        0.6,
+                        9.0,
+                        STONE,
+                        DUST,
+                    );
+                    self.rise(at, 0.6, 6, Shape::Puff, (0.4, 0.8), 0.7, DUST, DUST, true);
+                }
                 // 쓰러짐: 바랜 재가 풀려 오르고(0037 — 침식 = 색을 잃은 것), 뿌리의 보라 알갱이가 흩어진다.
                 Event::EnemyDown { at } => {
                     let c = at + Vec3::Y * 0.5;
