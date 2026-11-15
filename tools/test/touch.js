@@ -173,7 +173,9 @@ async function main() {
     const pctx = await browser.newContext({ viewport: { width: H, height: W }, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
     const pp = await pctx.newPage();
     await pp.goto(`http://localhost:${PORT}/`);
-    await pp.waitForTimeout(4000); // 로딩 덮개가 걷힌 뒤
+    // 로딩 덮개가 걷힌 뒤 — 고정 4초는 느린 러너에서 덮개(90%)가 남아 #rotate 누르기를 가로챘다(v0.6.4 배포, 2026-11-15).
+    await pp.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 30000 });
+    await pp.waitForTimeout(300);
     const on = () => pp.evaluate(() => document.getElementById('rotate').classList.contains('on'));
     if (!(await on())) errors.push('portrait: the rotate hint should cover the game');
     await pp.screenshot({ path: path.join(OUT, 't14-portrait-rotate.png') });
