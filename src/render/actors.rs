@@ -846,9 +846,9 @@ const BACK_FROM: f32 = 110.0;
 pub(crate) const LEG_TURN_MAX: f32 = 1.4;
 /// 다리 돌림이 따라가는 빠르기(1/초).
 const LEG_TURN_RATE: f32 = 12.0;
-/// 뒷걸음의 걸음 시계 배(0197): 원본 뒷걸음은 보폭이 걷기의 0.6배·주기가 1.5배라, 같은 빠르기로 돌리면 발이 땅을 미끄러진다 —
-/// 발이 가는 빠르기(보폭 / 주기)를 걷기와 맞춘 배(시험 `walk_back_steps_keep_pace_with_the_ground`).
-pub(crate) const WALK_BACK_RATE: f32 = 2.4;
+/// 뒷걸음의 걸음 시계 배(0197 → 0198): 싸움 자세 뒷걸음(Walk_Fight_Back)은 보폭이 작고 주기가 길어(발 빠르기 0.32 vs 걷기 0.90),
+/// 같은 빠르기로 돌리면 발이 땅을 미끄러진다 — 발이 가는 빠르기를 걷기와 맞춘 배(시험 `walk_back_steps_keep_pace_with_the_ground`).
+pub(crate) const WALK_BACK_RATE: f32 = 2.8;
 /// 이만큼(안쪽 곱)보다 뒤로 피하면 뒤로 뛰기(0197 — 몸이 보는 쪽의 반대로 가는 회피: 입력 없이 누름·락온 뒷걸음).
 pub(crate) const BACKSTEP_DOT: f32 = -0.5;
 /// 쇠뇌를 쏜 뒤 서 있으면 이만큼(초) 겨눈 채 머문다(0197 — 쏠 때마다 정면 ↔ 옆으로 홱 돌지 않게, 끝나면 `AIM_BLEND`로 천천히 내린다).

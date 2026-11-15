@@ -68,7 +68,7 @@ FACE_STILL = {"turn_l", "turn_r"}
 # 몸을 움직여 가는 동작(0197): 원본에서 엉덩이가 간 쪽을 몸의 앞("front")·뒤("back")에 맞춘다 — 게임이 그 쪽으로 몸을 옮긴다.
 FACE_TRAVEL = {"dodge": "front", "dodge_back": "back"}
 # 모아 친 강타는 모으기 동작이 끝난 쪽에서 시작한다(0196 — 망치 모으기는 몸을 −60° 감아 쥔다: 정면에서 시작하면 떼는 순간 홱 돈다).
-CHAIN = {"heavy": "charge", "hammer_slam": "hammer_charge", "staff_release": "staff_charge"}
+CHAIN = {"heavy": "charge", "hammer_slam": "hammer_charge", "staff_release": "staff_charge", "fist_heavy": "fist_charge"}
 # 떠 있는 동안 엉덩이를 올리지 않는 동작(0196): 게임이 몸을 `air`만큼 올린다 — 원본의 뛰어오름(엉덩이 +0.2)을 그대로 두면 두 번 뜬다.
 # 엉덩이 높이를 서기의 높이 위로 올리지 않는다(웅크림은 남는다).
 FLAT = {"jump", "land"}
@@ -82,7 +82,11 @@ HIT_WINDOWS = {
     "hammer1": (0.14, 0.17), "hammer2": (0.16, 0.20), "hammer_slam": (0.08, 0.16),
     "staff1": (0.06, 0.07), "staff2": (0.06, 0.07), "staff3": (0.06, 0.08), "staff4": (0.10, 0.13),
     "staff_release": (0.05, 0.11),
+    "fist1": (0.048, 0.06), "fist2": (0.048, 0.06), "fist3": (0.064, 0.08), "fist_heavy": (0.048, 0.096),
 }
+# 판정 순간에 무엇을 정면에 두나(0198): 기본은 칼끝(오른손), 왼 잽은 왼손(오른손은 막는 자리 — 원본은 옆으로 선 권투 자세라 엉덩이가
+# −80°를 본다), 발차기는 몸(엉덩이).
+HIT_FACE = {"fist1": "lhand", "fist_heavy": "hips"}
 
 # (게임 이름, 원본, 앵커[(게임 초, 원본 프레임)] 또는 ("loop", 시작, 끝, 길이) 또는 ("hit", 시작, 봉우리 찾기 (a, b), 끝, 길이, 게임의 순간)).
 # 옛 동작 길이·순간은 옛 wanderer.glb에서 잰 값(오른손 속도 봉우리).
@@ -91,7 +95,8 @@ CLIPS = [
     ("idle", "Idle_02", ("loop", 0, 44.8, None)),  # 사장이 다시 준 대기(곧게 선 숨 고리, 1.87초) — 옛 Combat_Stance는 23° 숙였다
     ("walk", "Walking", ("loop", 0, 24.8, 0.8)),
     ("run", "Running", ("loop", 0, 15.2, None)),
-    ("walk_back", "M02", ("cycle", 10, 48, 1.2)),  # 한 주기(두 걸음) 38프레임 — 걷기와 같은 배(1.29)로 빠르게
+    # 뒷걸음(0198): 싸움 자세로 물러나는 Walk_Fight_Back(제자리, 한 주기 40프레임) — 옛 M02는 보폭이 작았다.
+    ("walk_back", "Walk_Fight_Back", ("cycle", 0, 40, None)),
     ("idle_look", "M04", ("span", 0, 44, None)),
     ("idle_shake", "M04", ("span", 44, 71, None)),
     # 검 세 타(Triple_Combo_Attack 봉우리 18·36·54)
@@ -102,7 +107,8 @@ CLIPS = [
     ("heavy", "Attack", ("hit", 21, (22, 30), 50, 0.58, 0.133)),
     # 패링(2026-11-15): 라이브러리 Sword_Parry_Backward_2는 오른손이 몸 뒤(엉덩이보다 0.2~0.28 m 뒤)라 칼이 가려지고 공격 준비처럼 보였다 —
     # 되울림 원본(M15 "칼을 얼굴 앞에 세워 든다")에서 손이 몸 앞 가슴 높이로 올라오는 구간(12~21프레임)을 쓴다. 0.08초에 들고 버틴다.
-    ("parry", "M15", ("anchors", [(0.0, 10), (0.08, 15), (0.3, 21)])),
+    # 패링(0198): 막기 원본 Block10(두 손을 앞으로 모으며 무릎을 굽혀 버틴다, 0 → 5 → 12) — 임시로 빌리던 M15 대신.
+    ("parry", "Block10", ("anchors", [(0.0, 0), (0.08, 5), (0.3, 12)])),
     # 회피(0197): 구르기의 몸통 구간만(3 뜀 → 14 말림 → 26 웅크려 닿음 — 옛 2~30은 0.25초에 4.7배로 뭉갰다). 원본은 왼쪽 앞 37°로 굴러
     # 몸을 돌려 구르는 쪽 = 앞(`FACE_TRAVEL`). 뒤로 피할 때(입력 없이·락온 뒷걸음)는 Back_Jump(2 웅크림 → 4 뜀 → 14 닿음 → 17 받음).
     ("dodge", "Roll_Dodge_3", ("anchors", [(0.0, 3), (0.12, 14), (0.25, 26)])),
@@ -118,13 +124,21 @@ CLIPS = [
     ("land", "Jump_Over_Obstacle_2", ("anchors", [(0.0, 14), (0.15, 18)])),
     # 줍기·상자 열기(0196): 원본 Collect_Object(144프레임 — 11~29 웅크림, 59~80 오른손을 앞 아래로 뻗어 집음, 83~104 일어섬)를 0.9초로.
     # 장치 당기기(0197): 끌어모으기 원본 M13(7 손을 뻗음 → 19 잡음 → 43 몸으로 당김 → 59 놓음)을 0.65초로.
+    # 맨손(0198): 검 동작을 빌리던 것을 주먹으로 — 왼 잽(9에 닿음) → 오른 잽(11~14) → 오른 어퍼컷(12~16), 모아 치기 = 앞차기
+    # (Spartan_Kick: 0~9 무릎을 들어 버팀 = 모으기, 12~17 발을 내지름). 길이·판정 구간은 맨손 표(`weapons::FISTS_COMBO`)의 셈 그대로.
+    ("fist1", "Left_Jab_from_Guard", ("anchors", [(0.0, 5), (0.048, 9), (0.108, 12), (0.258, 26)])),
+    ("fist2", "Right_Jab_from_Guard", ("anchors", [(0.0, 7), (0.048, 11), (0.108, 14), (0.258, 26)])),
+    ("fist3", "Right_Uppercut_from_Guard", ("anchors", [(0.0, 4), (0.064, 12), (0.144, 16), (0.344, 24)])),
+    ("fist_charge", "Spartan_Kick", ("span", 0, 9, 0.3)),
+    ("fist_heavy", "Spartan_Kick", ("anchors", [(0.0, 9), (0.048, 12), (0.144, 17), (0.464, 30)])),
     ("pull", "M13", ("anchors", [(0.0, 7), (0.15, 19), (0.45, 43), (0.65, 59)])),
     ("pickup", "Collect_Object", ("anchors", [(0.0, 11), (0.22, 29), (0.30, 59), (0.55, 80), (0.62, 83), (0.9, 104)])),
     ("plunge", "Charged_Ground_Slam", ("anchors", [(0.0, 18), (0.12, 30), (0.29, 39), (0.3, 41)])),
     ("drink", "M05", ("span", 0, 60, 0.8)),
-    ("cast_charge", "M06", ("span", 4, 28, 0.3)),
+    # 마법(0198): 시전 원본 mage_soell_cast_8 — 두 손을 가슴 앞에 모으고(0 → 7, 모으기는 여기서 버틴다) 앞으로 밀어낸다(7 → 25).
+    ("cast_charge", "mage_soell_cast_8", ("span", 0, 7, 0.3)),
     # 마법(0197): 왼손을 앞으로 내밀어(28 → 35) 내민 채 버티고(46) 거둔다(58) — 옛 판은 내미는 순간 바로 거둬 손만 까딱였다.
-    ("cast", "M06", ("anchors", [(0.0, 28), (0.075, 35), (0.25, 46), (0.4, 58)])),
+    ("cast", "mage_soell_cast_8", ("anchors", [(0.0, 7), (0.075, 14), (0.25, 25), (0.4, 31)])),
     ("throw", "M07", ("hit", 12, (24, 40), 56, 0.5, 0.175)),
     # 지팡이(M08 봉우리 11·24·29·42 — 찌르기·가로 치기·올려 치기·돌아 내려치기)
     ("staff1", "M08", ("hit", 2, (6, 14), 17, 0.3, 0.042)),
@@ -582,7 +596,16 @@ def face_hit(arm, name, poses, hips, hands, window, start=0.0):
     # 몸의 쪽(= 원본 쪽 + 돌림)이 열쇠 사이에서 가장 덜 돌게 각을 고른다(돌림만 풀어 이으면 원본이 도는 만큼 한 바퀴를 더 돌았다 —
     # 검 셋째 타·망치 두 타). 시작은 `start`(모으기 동작 끝의 쪽 — `CHAIN`, 없으면 정면).
     k0, k1 = at_frame(n, s0), at_frame(n, s0 + a0)
-    turn = near(-hand_yaw(hips[at_frame(n, s0 + a0 / 2)], hands[at_frame(n, s0 + a0 / 2)]), start - own[k0])
+    km = at_frame(n, s0 + a0 / 2)
+    mode = HIT_FACE.get(name)
+    if mode == "hips":
+        aim = own[km]
+    elif mode == "lhand":
+        v = hands[km][2] - hips[km]
+        aim = math.atan2(v.x, -v.y)
+    else:
+        aim = hand_yaw(hips[km], hands[km])
+    turn = near(-aim, start - own[k0])
     end = near(-own[n], own[k1] + turn - own[n])
     turns = keyed_turns(n, [(0.0, start - own[0]), (s0, turn), (s0 + a0, turn), (dur, end)], wrap=False)
     turn_body(arm, poses, turns)

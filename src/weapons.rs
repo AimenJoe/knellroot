@@ -32,7 +32,7 @@ pub enum Sweep {
 /// 구간(시작 s, 길이 s): `tools/art/blender/wanderer_skin.py` `HIT_WINDOWS` 그대로(시험 `swing_windows_match_the_blender_table`) —
 /// 동작 시계는 타의 판정 시작이 이 시작에 오게 돈다(`clip_rate` — 맨손처럼 남의 동작을 빌린 타·대시 공격도 칼이 닿는 순간에 맞는다).
 /// 새 동작을 무기 표에 쓰면 여기에도 한 줄(시험 `every_weapon_motion_has_a_sweep`).
-pub const SWEEPS: [(&str, Sweep, (f32, f32)); 12] = [
+pub const SWEEPS: [(&str, Sweep, (f32, f32)); 16] = [
     ("attack", Sweep::LeftToRight, (0.08, 0.10)),
     ("attack2", Sweep::RightToLeft, (0.08, 0.10)),
     ("attack3", Sweep::LeftToRight, (0.10, 0.12)),
@@ -45,6 +45,11 @@ pub const SWEEPS: [(&str, Sweep, (f32, f32)); 12] = [
     ("staff3", Sweep::Center, (0.06, 0.08)),
     ("staff4", Sweep::LeftToRight, (0.10, 0.13)),
     ("staff_release", Sweep::LeftToRight, (0.05, 0.11)),
+    // 맨손(0198): 잽 둘·어퍼컷·앞차기 — 모두 앞으로 내지른다.
+    ("fist1", Sweep::Center, (0.048, 0.06)),
+    ("fist2", Sweep::Center, (0.048, 0.06)),
+    ("fist3", Sweep::Center, (0.064, 0.08)),
+    ("fist_heavy", Sweep::Center, (0.048, 0.096)),
 ];
 
 /// 동작의 휘두르는 쪽(표에 없으면 가운데).
@@ -341,15 +346,15 @@ const STAFF_COMBO: [Hit; 4] = [
     },
 ];
 
-/// 맨손 — 짧고 빠른 주먹 3연타(가까이 붙어야 닿는다, 피해 10·자세 피해 작음), 셋째는 내디디며 한 방. 동작은 검의 것을 빈손으로
-/// (주먹 동작은 아직 없다).
+/// 맨손 — 짧고 빠른 주먹 3연타(가까이 붙어야 닿는다, 피해 10·자세 피해 작음), 셋째는 내디디며 한 방. 동작은 왼 잽 → 오른 잽 →
+/// 오른 어퍼컷(0198 — 전에는 검의 동작을 빈손으로 빌렸다).
 const FISTS_COMBO: [Hit; 3] = [
-    hit(0.6, 0.7, 0.8, 0.6, 10, 0.5, "attack"),
-    hit(0.6, 0.7, 0.8, 0.6, 10, 0.5, "attack2"),
+    hit(0.6, 0.7, 0.8, 0.6, 10, 0.5, "fist1"),
+    hit(0.6, 0.7, 0.8, 0.6, 10, 0.5, "fist2"),
     Hit {
         knock: 1.3,
         cancel: 0.1,
-        ..hit(0.8, 0.8, 0.6, 1.2, 10, 1.2, "attack3")
+        ..hit(0.8, 0.8, 0.6, 1.2, 10, 1.2, "fist3")
     },
 ];
 
@@ -557,8 +562,8 @@ pub const WEAPONS: [Weapon; 5] = [
     Weapon {
         id: Id::Fists,
         combo: &FISTS_COMBO,
-        // 달려들며 한 방.
-        dash: Some(hit(0.7, 0.8, 0.6, 2.0, 10, 1.0, "attack3")),
+        // 달려들며 한 방(어퍼컷).
+        dash: Some(hit(0.7, 0.8, 0.6, 2.0, 10, 1.0, "fist3")),
         // 모아 치기: 검보다 짧고 빠르다, 피해 10(다 모으면 + `heavy.full bonus`).
         heavy: Some(Heavy {
             time: 0.8,
@@ -572,8 +577,8 @@ pub const WEAPONS: [Weapon; 5] = [
             walk: 1.2,
             aftershock: None,
             breaks_primed: None,
-            anim_charge: "charge",
-            anim_heavy: "heavy",
+            anim_charge: "fist_charge",
+            anim_heavy: "fist_heavy",
             cancel: 0.1,
         }),
         // 마법은 무기가 아니라 방랑자의 것 — 맨손이어도 쏜다.
@@ -981,15 +986,22 @@ mod swing_tests {
             }
             for (anim, (s0, a0, _)) in swings {
                 let ai = m.anim(anim).unwrap_or_else(|| panic!("{anim}"));
+                // 0198: 맨손의 왼 잽은 왼손, 앞차기는 오른발이 친다.
+                let limb = match anim {
+                    "fist1" => m.node("mixamorig:LeftHand"),
+                    "fist_heavy" => m.node("mixamorig:RightFoot"),
+                    _ => None,
+                };
                 let r = clip_rate(anim, s0);
                 let (s0, a0) = (s0 * r, a0 * r);
                 // 끝점의 몸 둘레 각(도 — 정면 0, 왼쪽 +), 구간을 여덟으로 나눠 풀어 이은 것.
                 let (mut yaws, mut last) = (Vec::new(), None::<f32>);
                 for j in 0..=8 {
                     m.pose(Some(ai), s0 + a0 * j as f32 / 8.0, &mut pose);
-                    let p = match tip {
-                        Some((node, far)) => pose[node].transform_point3(far),
-                        None => pose[grip].w_axis.truncate(),
+                    let p = match (limb, tip) {
+                        (Some(l), _) => pose[l].w_axis.truncate(),
+                        (None, Some((node, far))) => pose[node].transform_point3(far),
+                        (None, None) => pose[grip].w_axis.truncate(),
                     };
                     let mut y = p.x.atan2(p.z).to_degrees();
                     if let Some(l) = last {
@@ -1054,18 +1066,30 @@ mod swing_tests {
         assert_eq!(n, SWEEPS.len());
     }
 
-    /// 0195: 맨손은 검의 동작을 더 빨리 돌린다 — 동작이 만든 판정 시작이 맨손의 판정 시작에 온다.
+    /// 0195 → 0198: 제 동작은 제 판정 구간으로 구웠으니 1배, 남의 구간으로 구운 동작을 빌린 타(대시 공격)는 동작이 만든 판정 시작이
+    /// 그 타의 판정 시작에 오게 빨리(늦게) 돈다.
     #[test]
     fn borrowed_swings_play_faster_so_the_blow_lands_on_the_hit() {
         let t = Tuning::default();
         let fists = Id::Fists.def();
-        for k in 0..fists.combo.len() as u8 {
+        let rate = |k: u8| {
             let anim = fists.hit(k).unwrap().anim;
             let s0 = crate::world::hit_times(&t, fists, k).0;
             let c0 = SWEEPS.iter().find(|(a, _, _)| *a == anim).unwrap().2 .0;
             let r = clip_rate(anim, s0);
-            assert!(r > 1.0 && (s0 * r - c0).abs() < 1e-5, "{anim}: {r}");
+            assert!((s0 * r - c0).abs() < 1e-5, "{anim}: {r}");
+            r
+        };
+        for k in 0..fists.combo.len() as u8 {
+            assert!(
+                (rate(k) - 1.0).abs() < 0.02,
+                "fists' own clips play as baked"
+            );
         }
+        assert!(
+            rate(DASH) > 1.05,
+            "the dash borrows the third punch and plays it faster"
+        );
         assert_eq!(clip_rate("idle", 0.1), 1.0);
     }
 }

@@ -30,7 +30,10 @@ KEEP = {
                        "Triple_Combo_Attack", "Walking", "Weapon_Combo", "Heavy_Hammer_Swing",
                        "Collect_Object"]},  # 2026-11-15: 줍기
     2: "numbered",
-    3: {"Idle_02": "Idle_02"},  # 2026-11-14 사장이 다시 준 대기 동작(곧게 선 숨 고리) — Combat_Stance는 23° 숙였다
+    3: {"Idle_02": "Idle_02"},
+    # 2026-11-15 넷째 묶음(0198): 주먹(잽 둘·어퍼컷·앞차기)·막기·마법 시전·싸움 자세 뒷걸음
+    4: {n: n for n in ["Left_Jab_from_Guard", "Right_Jab_from_Guard", "Right_Uppercut_from_Guard", "Spartan_Kick",
+                       "Block10", "mage_soell_cast_8", "Walk_Fight_Back"]},  # 2026-11-14 사장이 다시 준 대기 동작(곧게 선 숨 고리) — Combat_Stance는 23° 숙였다
 }
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
