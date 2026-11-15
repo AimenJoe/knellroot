@@ -87,7 +87,8 @@ async function run(browser, lang, size) {
   }
   // 새 판에서 실제로 걷는다: [1/7] → 넉 미터 걸으면 [2/7], 기록에 지난 걸음 수가 남는다.
   await boot(BASE + STEPS[0][1]);
-  await page.keyboard.down('KeyS'); await page.waitForTimeout(1600); await page.keyboard.up('KeyS');
+  // 2026-11-15: 1.6초는 걷기 걸음의 4 m에 못 미쳤다(첫 몇 프레임의 가속·몸 돌림) — 넉넉히.
+  await page.keyboard.down('KeyS'); await page.waitForTimeout(2600); await page.keyboard.up('KeyS');
   await page.waitForTimeout(300);
   await shot('9-walked');
   let b = await record();
