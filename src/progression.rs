@@ -133,10 +133,76 @@ pub enum Branch {
 }
 
 pub const BRANCHES: [Branch; 3] = [Branch::Beat, Branch::Riposte, Branch::Footing];
-/// 갈래마다 패시브 칸 수(칸마다 기술 점수 1).
-pub const DEPTH: u8 = 5;
-/// 칸의 줄(0161 — `skills::ROW_NEEDS`의 자리): 갈래마다 첫 둘은 첫 줄, 셋째·넷째는 둘째 줄, 다섯째는 셋째 줄.
-pub const CELL_ROWS: [u8; DEPTH as usize] = [0, 0, 1, 1, 2];
+/// 갈래마다 패시브 칸 수(칸마다 기술 점수 1). 0214: 다섯 → 일곱(넷째 줄에 둘씩 — 뒤에만 붙인다, 기록은 칸의 자리).
+pub const DEPTH: u8 = 7;
+/// 0214 전의 칸 수 — 옛 꼴의 기록(`tree.beat` = 앞에서부터 연 수)은 이만큼까지만 읽는다.
+pub const LEGACY_DEPTH: u8 = 5;
+/// 칸의 줄(0161 — `skills::ROW_NEEDS`의 자리): 갈래마다 첫 둘은 첫 줄, 셋째·넷째는 둘째 줄, 다섯째는 셋째 줄, 여섯째·일곱째는
+/// 넷째 줄(0214).
+pub const CELL_ROWS: [u8; DEPTH as usize] = [0, 0, 1, 1, 2, 3, 3];
+
+/// 맺음(0214 — Keystone): 갈래마다 하나, 다섯째 줄. **하나만** 켠다(1점, 켠 뒤 화로에서 값 없이 바꾼다). 덤과 값이 함께 있는 규칙 —
+/// 판정 창을 넓히는 맺음은 없다(0095 원칙 2). 기록 `tree.key` = 키 이름(바꾸지 않는다).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Key {
+    /// 박자의 사람(흐름): 박자 타 피해 ×`key::MEASURE_ON`, 박자 밖의 평타 ×`key::MEASURE_OFF`.
+    Measure,
+    /// 벼린 손(맞받기): 패링이 주는 자세 피해 ×`key::EDGE_POISE`, 패링 창 ×`key::EDGE_WINDOW`.
+    Edge,
+    /// 뿌리내린 몸(자리): `key::ROOTED_STILL`초 넘게 서 있으면 받는 피해 ×`key::ROOTED_TAKEN`·밀리지 않는다, 회피 거리 ×`key::ROOTED_DODGE`.
+    Rooted,
+}
+
+pub const KEYS: [Key; 3] = [Key::Measure, Key::Edge, Key::Rooted];
+
+impl Key {
+    pub fn branch(self) -> Branch {
+        BRANCHES[self as usize]
+    }
+
+    /// 기록 값(바꾸지 않는다).
+    pub fn key(self) -> &'static str {
+        match self {
+            Key::Measure => "measure",
+            Key::Edge => "edge",
+            Key::Rooted => "rooted",
+        }
+    }
+
+    pub fn by_key(k: &str) -> Option<Key> {
+        KEYS.into_iter().find(|x| x.key() == k)
+    }
+
+    pub fn name(self) -> Tr {
+        match self {
+            Key::Measure => |s| s.key_measure,
+            Key::Edge => |s| s.key_edge,
+            Key::Rooted => |s| s.key_rooted,
+        }
+    }
+
+    pub fn desc(self) -> Tr {
+        match self {
+            Key::Measure => |s| s.key_measure_d,
+            Key::Edge => |s| s.key_edge_d,
+            Key::Rooted => |s| s.key_rooted_d,
+        }
+    }
+}
+
+/// 맺음의 값(0214 — 판정에서 고친다).
+pub mod key {
+    /// 박자의 사람: 박자 타 · 박자 밖의 평타 피해 배.
+    pub const MEASURE_ON: f32 = 1.3;
+    pub const MEASURE_OFF: f32 = 0.75;
+    /// 벼린 손: 패링이 주는 자세 피해 배 · 패링 창 배.
+    pub const EDGE_POISE: f32 = 2.0;
+    pub const EDGE_WINDOW: f32 = 0.75;
+    /// 뿌리내린 몸: 이만큼(초) 움직이지 않으면 서 있다 — 받는 피해 배·회피 거리 배.
+    pub const ROOTED_STILL: f32 = 0.4;
+    pub const ROOTED_TAKEN: f32 = 0.7;
+    pub const ROOTED_DODGE: f32 = 0.65;
+}
 
 /// 나무 칸(0102 4절). 기록은 갈래마다 연 칸의 자리(1~5)라 칸 이름은 기록에 없다 — 이름을 바꿔도 연 자리는 그대로.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -171,6 +237,18 @@ pub enum Cell {
     LandingBeat,
     /// 길을 여는 발: 대시 공격이 맞힌 적을 지나쳐 등 뒤에 선다.
     PathOpeningStep,
+    /// 이어지는 숨(0214): 박자 타 셋을 잇달아 맞히면 다음 회피가 기력을 쓰지 않는다.
+    HeldBreath,
+    /// 다잡은 박(0214): 박자 타가 큰 기술 게이지를 반 번 더 채운다.
+    GatheringBeat,
+    /// 숨 고르기(0214): 패링에 성공하면 기력 +`cell::SECOND_WIND`.
+    SecondWind,
+    /// 되찾는 살(0214): 패링 `cell::MEND_EVERY`번마다 체력 한 눈금.
+    Mend,
+    /// 디딘 발(0214): 스킬 시동 동안 맞아도 끊기지 않는다(피해는 받는다).
+    Planted,
+    /// 엉킨 뿌리(0214): 스킬에 맞은 적은 `cell::SNARE_SECS`초 동안 `cell::SNARE_SLOW`배로 걷는다(보스는 아니다).
+    Snare,
 }
 
 /// 칸 하나의 표 줄: 칸·이름·설명·숫자 칸인가(갈래마다 하나까지 — 0095 원칙, 시험).
@@ -225,6 +303,18 @@ pub static TREE: [[CellDef; DEPTH as usize]; 3] = [
             |s| s.cell_final_measure_d,
             false,
         ),
+        c(
+            Cell::HeldBreath,
+            |s| s.cell_held_breath,
+            |s| s.cell_held_breath_d,
+            false,
+        ),
+        c(
+            Cell::GatheringBeat,
+            |s| s.cell_gathering_beat,
+            |s| s.cell_gathering_beat_d,
+            false,
+        ),
     ],
     [
         c(Cell::Catch, |s| s.cell_catch, |s| s.cell_catch_d, true),
@@ -252,6 +342,13 @@ pub static TREE: [[CellDef; DEPTH as usize]; 3] = [
             |s| s.cell_one_who_stands_d,
             false,
         ),
+        c(
+            Cell::SecondWind,
+            |s| s.cell_second_wind,
+            |s| s.cell_second_wind_d,
+            false,
+        ),
+        c(Cell::Mend, |s| s.cell_mend, |s| s.cell_mend_d, false),
     ],
     [
         c(
@@ -284,6 +381,13 @@ pub static TREE: [[CellDef; DEPTH as usize]; 3] = [
             |s| s.cell_path_d,
             false,
         ),
+        c(
+            Cell::Planted,
+            |s| s.cell_planted,
+            |s| s.cell_planted_d,
+            false,
+        ),
+        c(Cell::Snare, |s| s.cell_snare, |s| s.cell_snare_d, false),
     ],
 ];
 
@@ -340,6 +444,17 @@ pub mod cell {
     /// 착지의 순간: 내려찍기 뒤 늦은 바깥 고리(초, 반지름 배).
     pub const LANDING_DELAY: f32 = 0.3;
     pub const LANDING_RANGE: f32 = 1.8;
+    /// 이어지는 숨(0214): 박자 타를 이만큼 잇달아 맞히면 다음 회피가 기력을 쓰지 않는다.
+    pub const HELD_BREATH_CHAIN: u32 = 3;
+    /// 다잡은 박(0214): 박자 타가 게이지를 이만큼 더(한 번 휘두름의 몫에 대해).
+    pub const GATHERING_BEAT: f32 = 0.5;
+    /// 숨 고르기(0214): 패링 성공의 기력.
+    pub const SECOND_WIND: f32 = 20.0;
+    /// 되찾는 살(0214): 패링 이만큼마다 체력 한 눈금(`HP_UNIT`).
+    pub const MEND_EVERY: u32 = 3;
+    /// 엉킨 뿌리(0214): 스킬에 맞은 적의 걸음 배·초.
+    pub const SNARE_SLOW: f32 = 0.7;
+    pub const SNARE_SECS: f32 = 2.0;
 }
 
 impl Cell {
@@ -376,7 +491,7 @@ pub fn shards(finds: &[String]) -> u32 {
         .count() as u32
 }
 
-/// 갈래 하나의 칸 다섯을 다 켠 비트.
+/// 갈래 하나의 칸을 다 켠 비트.
 const FULL_BRANCH: u8 = (1 << DEPTH) - 1;
 
 /// 연 패시브 칸(0161 — 칸마다 따로: 어느 칸이든 열 수 있다). 기록은 `tree.cells.<갈래>` = 연 자리들(1~5),
@@ -388,6 +503,8 @@ pub struct Tree {
     pub open: [u8; 3],
     /// 갈래마다 연 칸의 비트(비트 d = 깊이 d의 칸).
     pub cells: [u8; 3],
+    /// 켠 맺음(0214 — 하나만, 기록 `tree.key`).
+    pub key: Option<Key>,
 }
 
 impl Tree {
@@ -403,9 +520,14 @@ impl Tree {
         self.mask(b) & (1 << d) != 0
     }
 
-    /// 연 칸 수(= 패시브에 쓴 기술 점수).
+    /// 연 칸 수(= 패시브에 쓴 기술 점수 — 맺음은 따로, `skills::Board::spent`가 센다).
     pub fn count(&self) -> u32 {
         (0..3).map(|b| self.mask(b).count_ones()).sum()
+    }
+
+    /// 이 맺음을 켰나 — 맺음 동작(0214)이 읽는다.
+    pub fn keyed(&self, k: Key) -> bool {
+        self.key == Some(k)
     }
 
     /// 칸 하나를 연다(이미 열렸으면 그대로).
@@ -429,10 +551,11 @@ impl Tree {
         Tree {
             open: [0; 3],
             cells: n.map(|n| (1u8 << n.min(DEPTH)) - 1),
+            key: None,
         }
     }
 
-    /// 열다섯 칸을 다 연 나무(개발 창 "기술 다 올리기"·시험).
+    /// 모든 칸을 다 연 나무(개발 창 "기술 다 올리기"·시험). 맺음은 켜지 않는다(하나만이라 고를 것이 없다).
     #[cfg(any(test, feature = "dev"))]
     pub fn full() -> Tree {
         Tree::from_counts([DEPTH; 3])
@@ -448,6 +571,7 @@ impl Tree {
         Tree {
             open: [0; 3],
             cells: [self.mask(0), self.mask(1), self.mask(2)],
+            key: self.key,
         }
     }
 }
@@ -570,7 +694,7 @@ mod tests {
                 seen.push(d.cell);
             }
         }
-        assert_eq!(seen.len(), 15);
+        assert_eq!(seen.len(), 3 * DEPTH as usize);
         // 칸 이름은 장신구 이름과 겹치지 않는다(0102 — "가벼운 발").
         for lang in crate::i18n::Lang::ALL {
             let s = lang.strings();
@@ -607,7 +731,7 @@ mod tests {
             t,
             Tree::with(&[Cell::EvenBreath, Cell::OneWhoStands, Cell::LandingBeat])
         );
-        assert_eq!(Tree::full().count(), 15);
+        assert_eq!(Tree::full().count(), 3 * DEPTH as u32);
         for row in &TREE {
             for d in row {
                 assert!(Tree::full().has(d.cell));
@@ -624,16 +748,20 @@ mod tests {
         assert!(t.has(Cell::EvenBreath) && t.has(Cell::FlowingBeat));
         assert!(!t.has(Cell::ClosingBlow));
         assert!(!t.has(Cell::Catch));
-        assert!(t.has(Cell::PathOpeningStep), "a count past five is five");
-        assert_eq!(t.count(), 7);
-        assert_eq!([t.prefix(0), t.prefix(1), t.prefix(2)], [2, 0, 5]);
+        assert!(t.has(Cell::Snare), "a count past the depth is the depth");
+        assert_eq!(t.count(), 2 + DEPTH as u32);
+        assert_eq!([t.prefix(0), t.prefix(1), t.prefix(2)], [2, 0, DEPTH]);
         // 옛 꼴로 적은 나무(월드 시험의 `tree_with`)도 같은 칸을 가진다.
         let legacy = Tree {
-            open: [2, 0, 5],
+            open: [2, 0, DEPTH],
             cells: [0; 3],
+            key: None,
         };
         assert_eq!(legacy.sane(), t);
-        assert_eq!(legacy.count(), 7);
+        assert_eq!(legacy.count(), 2 + DEPTH as u32);
+        // 옛 판의 수(다섯까지)는 그 다섯 칸 — 0214의 넷째 줄 칸은 열리지 않는다.
+        let old = Tree::from_counts([5, 0, 0]);
+        assert!(old.has(Cell::FinalMeasure) && !old.has(Cell::HeldBreath));
         assert!(legacy.has(Cell::FlowingBeat) && !legacy.has(Cell::ClosingBlow));
         // 사이가 빈 나무의 "앞에서부터 이어 연 수"는 빈 칸 앞까지.
         let gap = Tree::with(&[Cell::EvenBreath, Cell::ClosingBlow]);
@@ -642,17 +770,23 @@ mod tests {
         let odd = Tree {
             open: [0; 3],
             cells: [0xff, 0, 0],
+            key: None,
         };
-        assert_eq!(odd.count(), 5);
-        assert_eq!(odd.sane().cells[0], 0b1_1111);
+        assert_eq!(odd.count(), DEPTH as u32);
+        assert_eq!(odd.sane().cells[0], 0b111_1111);
     }
 
-    /// 0161 "갈래와 줄": 갈래마다 첫 둘은 첫 줄, 셋째·넷째는 둘째 줄, 다섯째는 셋째 줄.
+    /// 0161 "갈래와 줄": 갈래마다 첫 둘은 첫 줄, 셋째·넷째는 둘째 줄, 다섯째는 셋째 줄 — 0214: 여섯째·일곱째는 넷째 줄.
+    /// 맺음은 갈래마다 하나, 키는 서로 다르고 되읽힌다.
     #[test]
-    fn cells_sit_two_two_one_on_the_three_rows() {
+    fn cells_sit_two_two_one_two_on_the_four_rows() {
+        for k in KEYS {
+            assert_eq!(Key::by_key(k.key()), Some(k));
+            assert_eq!(KEYS.iter().filter(|x| x.branch() == k.branch()).count(), 1);
+        }
         for (b, row) in TREE.iter().enumerate() {
             let rows: Vec<usize> = row.iter().map(|d| d.cell.row()).collect();
-            assert_eq!(rows, [0, 0, 1, 1, 2]);
+            assert_eq!(rows, [0, 0, 1, 1, 2, 3, 3]);
             for (d, def) in row.iter().enumerate() {
                 assert_eq!(def.cell.at(), (b, d));
                 assert_eq!(def.cell.branch(), BRANCHES[b]);

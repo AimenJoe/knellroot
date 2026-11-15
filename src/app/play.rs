@@ -361,7 +361,10 @@ impl App {
                 Event::Plunge { .. } => SHAKE_PLUNGE,
                 Event::Smash { .. } => SHAKE_SMASH,
                 Event::Charged => SHAKE_CHARGED,
-                Event::Gulp { .. } | Event::FlaskDenied | Event::Ember { .. } => 0.0,
+                Event::Gulp { .. }
+                | Event::Mend { .. }
+                | Event::FlaskDenied
+                | Event::Ember { .. } => 0.0,
                 Event::Cast { .. } | Event::CastDenied | Event::Throw => 0.0,
                 Event::StaminaDenied | Event::Release { .. } => 0.0,
                 Event::Break { .. } => SHAKE_SMASH,
@@ -951,7 +954,7 @@ impl App {
                 // 딱 맞춰 떼기(0078): 박자와 같은 "맞췄다" 종 — 가장 높은 음.
                 Event::Perfect { .. } => Id::Beat3,
                 Event::Ember { .. } => Id::Ember,
-                Event::Gulp { .. } => Id::Gulp,
+                Event::Gulp { .. } | Event::Mend { .. } => Id::Gulp,
                 // 지연 공격이 풀린다(0128): 짧게 들이쉬는 소리 — 이 뒤 `RELEASE_LEAD`초에 맞는다.
                 Event::Release { .. } => Id::TeleRelease,
                 Event::FlaskDenied | Event::CastDenied | Event::StaminaDenied => Id::Deny,

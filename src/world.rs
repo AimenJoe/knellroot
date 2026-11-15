@@ -221,6 +221,10 @@ pub enum Event {
     SkillBurst {
         at: Vec3,
     },
+    /// 되찾는 살(0214): 패링 셋으로 체력 한 눈금이 돌아왔다.
+    Mend {
+        at: Vec3,
+    },
     /// 버팀(0158 G2)이 한 대를 받아냈다 — 받아낸 수(`n`번째).
     Soak {
         at: Vec3,
@@ -588,6 +592,8 @@ pub struct ParryState {
     pub primed_heavy: bool,
     pub riposte_swing: u32,
     pub gathered_swing: u32,
+    /// 되찾는 살(0214): 체력으로 바꾸지 않은 패링 수.
+    pub mends: u32,
 }
 
 /// 무기 박자(0071·0076): 마지막 평타 뒤의 시간과 그 타의 박자, 박자에 맞았나, 이어 맞춘 수. `Player::beat`.
@@ -606,6 +612,8 @@ pub struct BeatState {
     pub swing_beat: bool,
     /// 마지막 딱 맞춰 떼기(0078)에서 지난 초 — 렌더가 발밑에 크게 퍼지는 금빛 고리.
     pub since_perfect: f32,
+    /// 이어지는 숨(0214): 다음 회피가 기력을 쓰지 않는다.
+    pub free_dodge: bool,
 }
 
 /// 마법·사격·수류탄(0048·0051·0111): 마법 칸, 공중 사격과 체공, 쇠뇌의 탄과 재장전, 수류탄. `Player::ranged`.
@@ -634,6 +642,8 @@ pub struct HurtState {
     /// 경직 + `STUN_CHAIN_GRACE`, 맞을 때마다 새로). 창이 닫히면 다음 경직은 다시 처음 길이.
     pub stun_chain: i32,
     pub stun_window: f32,
+    /// 뿌리내린 몸(0214 맺음): 땅에 서서 움직이지 않은 초.
+    pub still: f32,
 }
 
 impl Player {
@@ -777,6 +787,7 @@ impl World {
                     stun_window: 0.0,
                     since: f32::MAX,
                     blow: 0,
+                    still: 0.0,
                 },
                 dodge_cd: 0.0,
                 turn_cd: 0.0,
@@ -820,6 +831,7 @@ impl World {
                     primed_heavy: false,
                     riposte_swing: 0,
                     gathered_swing: 0,
+                    mends: 0,
                 },
                 flank: false,
                 flank_swing: 0,
@@ -834,6 +846,7 @@ impl World {
                     since: f32::MAX,
                     swing_beat: false,
                     since_perfect: f32::MAX,
+                    free_dodge: false,
                 },
                 running: false,
                 attack_hold: 0.0,
@@ -1271,6 +1284,14 @@ impl World {
     /// 평타의 선딜·활성·후딜을 `FLURRY.speed`로 나눈다).
     pub fn tuned(&self, t: &Tuning) -> Tuning {
         let mut o = self.stats.tune(t);
+        // 맺음(0214)의 값: 벼린 손은 패링 창이 좁고, 뿌리내린 몸은 회피가 짧다.
+        use crate::progression::{key, Key};
+        if self.tree.keyed(Key::Edge) {
+            o.bend(P::ParryWindow, o[P::ParryWindow] * key::EDGE_WINDOW);
+        }
+        if self.tree.keyed(Key::Rooted) {
+            o.bend(P::DodgeDist, o[P::DodgeDist] * key::ROOTED_DODGE);
+        }
         let rate = self.flurry_rate();
         if rate != 1.0 {
             for p in [P::AttackStartup, P::AttackActive, P::AttackRecovery] {

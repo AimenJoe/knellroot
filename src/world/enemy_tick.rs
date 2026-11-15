@@ -518,6 +518,12 @@ impl World {
     fn parries_land(&mut self, t: &Tuning, ev: &mut Vec<Event>, p: Vec3, parried: Vec<usize>) {
         if !parried.is_empty() {
             let catch = self.tree.has(Cell::Catch);
+            // 벼린 손(0214 맺음): 패링이 주는 자세 피해 ×2 — 받아내기의 몫에도.
+            let edge = if self.tree.keyed(crate::progression::Key::Edge) {
+                crate::progression::key::EDGE_POISE
+            } else {
+                1.0
+            };
             for &i in &parried {
                 let en = &mut self.enemies[i];
                 let dur = if en.boss {
@@ -535,12 +541,34 @@ impl World {
                 // 받아내기(0107): 패링이 적의 자세 막대를 채운다(문지기는 반).
                 if catch {
                     let k = if en.boss { 0.5 } else { 1.0 };
-                    let amount = poise_max(en, t) * cell::CATCH_POISE * k;
+                    let amount = poise_max(en, t) * cell::CATCH_POISE * k * edge;
+                    add_poise(en, amount, None, t, ev);
+                } else if edge > 1.0 {
+                    let k = if en.boss { 0.5 } else { 1.0 };
+                    let amount = poise_max(en, t) * cell::CATCH_POISE * k * (edge - 1.0);
                     add_poise(en, amount, None, t, ev);
                 }
                 ev.push(Event::Parry {
                     at: en.pos + Vec3::Y * en.height * 0.6,
                 });
+            }
+            // 숨 고르기(0214): 튕긴 적마다 기력. 되찾는 살(0214): 패링 셋마다 체력 한 눈금.
+            let n = parried.len() as u32;
+            if self.tree.has(Cell::SecondWind) {
+                let pl = &mut self.player;
+                pl.stamina = (pl.stamina + cell::SECOND_WIND * n as f32).min(t[P::StaminaMax]);
+            }
+            if self.tree.has(Cell::Mend) {
+                let pl = &mut self.player;
+                pl.parry.mends += n;
+                let heal = (pl.parry.mends / cell::MEND_EVERY) as i32 * HP_UNIT;
+                pl.parry.mends %= cell::MEND_EVERY;
+                if heal > 0 && pl.hp < pl.max_hp {
+                    pl.hp = (pl.hp + heal).min(pl.max_hp);
+                    ev.push(Event::Mend {
+                        at: pl.pos + Vec3::Y * 1.0,
+                    });
+                }
             }
             // 모은 맞받기(0107): 모으기 패링(떼는 순간의 창)으로 튕겼으면 그 강타 스윙을 기억한다 — 맞으면 자세가 깨진다.
             if let (PState::Heavy { swing, .. }, true) =
@@ -585,10 +613,24 @@ impl World {
             };
             // 버팀(0158 G2): 버티는 동안은 타마다 덜 다치고(0 아래로는 안 내려간다) 밀리지도 끊기지도 않는다 — 받아낸 타를 센다.
             let braced = self.bracing();
+            // 디딘 발(0214): 스킬의 시동 동안 맞아도 끊기지 않는다 — 피해는 받는다.
+            let planted = self.tree.has(Cell::Planted)
+                && match self.player.state {
+                    PState::Skill { id, t: e, .. } => e < self.skill_eff(id).skill.startup,
+                    _ => false,
+                };
+            // 뿌리내린 몸(0214 맺음): 서 있으면 덜 다치고 밀리지 않는다.
+            let rooted = self.tree.keyed(crate::progression::Key::Rooted)
+                && self.player.hurt.still >= crate::progression::key::ROOTED_STILL;
             let taken = if braced {
                 (blow + self.stats.taken - self.player.skill.brace).max(0)
             } else {
                 blow + self.stats.taken
+            };
+            let taken = if rooted {
+                (taken as f32 * crate::progression::key::ROOTED_TAKEN).round() as i32
+            } else {
+                taken
             };
             let pl = &mut self.player;
             pl.hp -= taken;
@@ -617,14 +659,18 @@ impl World {
                 (pl.hurt.stun_chain, pl.hurt.stun_window) =
                     stun_chain_next(pl.hurt.stun_window, pl.hurt.stun_chain, t[P::HitStun]);
                 let dur = t[P::HitStun] * 0.5f32.powi(pl.hurt.stun_chain);
-                if dur > 0.0 {
+                if planted {
+                    // 스킬은 그대로 나간다.
+                } else if dur > 0.0 {
                     pl.state = PState::Hurt { t: 0.0, dur };
                 } else if matches!(pl.state, PState::Drink { .. }) {
                     // 맞으면 마시기는 끊긴다(삼키기 전이면 등잔 그대로, 0031).
                     pl.state = PState::Idle;
                 }
-                let away = vec3(pl.pos.x - from.x, 0.0, pl.pos.z - from.z).normalize_or_zero();
-                pl.vel = away * t[P::HitKnock] * KNOCK_DECAY;
+                if !planted && !rooted {
+                    let away = vec3(pl.pos.x - from.x, 0.0, pl.pos.z - from.z).normalize_or_zero();
+                    pl.vel = away * t[P::HitKnock] * KNOCK_DECAY;
+                }
             }
             if felt {
                 // 맞은 순간 세계가 멈춘다(0143): 때릴 때보다 길게, 센 타격은 더 길게. 이어 맞으면 경직처럼 반씩(떼 속에서 화면이 얼어붙지 않게).

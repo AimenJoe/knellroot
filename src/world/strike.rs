@@ -200,6 +200,7 @@ impl World {
         let mut stop = false;
         let mut heavy_hit = false;
         let mut first_hit: Option<(Vec3, f32, Vec3)> = None;
+        let measure = self.tree.keyed(crate::progression::Key::Measure);
         let mut deflected: Option<Vec3> = None;
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing {
@@ -232,13 +233,19 @@ impl World {
             } else {
                 self.stats.light_dmg
             };
-            en.hp -= hurt_by(
-                en,
-                self.stats.dmg + lv + s.damage,
-                crit,
-                self.stats.opened_dmg,
-                t,
-            );
+            // 박자의 사람(0214 맺음): 평타(강타·대시 공격이 아닌 콤보)는 박자에 ×1.3, 박자 밖에 ×0.75.
+            let raw = self.stats.dmg + lv + s.damage;
+            let raw = if measure && s.heavy.is_none() && !s.dash {
+                let k = if s.beat {
+                    crate::progression::key::MEASURE_ON
+                } else {
+                    crate::progression::key::MEASURE_OFF
+                };
+                (raw as f32 * k).round() as i32
+            } else {
+                raw
+            };
+            en.hp -= hurt_by(en, raw, crit, self.stats.opened_dmg, t);
             if crit {
                 en.exposed = 0.0;
                 ev.push(Event::Crit {

@@ -66,6 +66,7 @@ pub(super) fn entry_text(e: Entry) -> (&'static str, &'static str) {
             let d = c.def();
             (tr(d.name), tr(d.desc))
         }
+        Entry::Key(k) => (tr(k.name()), tr(k.desc())),
     }
 }
 
@@ -191,6 +192,7 @@ pub(super) fn kind_line(board: &Board, e: Entry) -> String {
         }
         Entry::Ult(_) => fill(s.sk_kind_ult, &[branch]),
         Entry::Cell(_) => fill(s.sk_kind_cell, &[branch]),
+        Entry::Key(_) => fill(s.sk_kind_key, &[branch]),
     }
 }
 
@@ -212,7 +214,7 @@ pub(super) fn look(board: &Board, total: u32, e: Entry) -> (Look, bool) {
     } else {
         match offer {
             Offer::Ready => Look::Ready,
-            Offer::Short => Look::Short,
+            Offer::Short | Offer::Swap => Look::Short,
             Offer::Locked(_) => Look::Locked,
             Offer::Full => Look::Owned,
         }
@@ -226,6 +228,10 @@ pub(super) fn state_line(board: &Board, total: u32, e: Entry, edit: bool) -> (St
     let price = e.price(board.rank(e)).to_string();
     match board.offer(e, total) {
         Offer::Full if matches!(e, Entry::Cell(_)) => (s.sk_st_open_cell.to_string(), AMBER),
+        Offer::Full if matches!(e, Entry::Key(_)) => (s.sk_st_key_on.to_string(), AMBER),
+        // 다른 맺음을 켰다(0214): 바꾸기는 값이 없다 — 화로에서.
+        Offer::Swap if !edit => (s.sk_st_key_view.to_string(), INK),
+        Offer::Swap => (s.sk_st_key_swap.to_string(), ui::MINT),
         Offer::Full => (s.board_full.to_string(), AMBER),
         Offer::Locked(n) => (fill(s.sk_st_locked, &[&n.to_string()]), DIM),
         Offer::Short => (fill(s.sk_st_short, &[&price]), DIM),
@@ -262,7 +268,8 @@ pub(super) fn node_acts(
     edit: bool,
 ) -> Vec<Do> {
     let mut v = Vec::new();
-    if edit && board.offer(e, total) == Offer::Ready {
+    let offer = board.offer(e, total);
+    if edit && matches!(offer, Offer::Ready | Offer::Swap) {
         v.push(Do::Buy);
     }
     match e {
@@ -276,7 +283,7 @@ pub(super) fn node_acts(
         _ => {}
     }
     // 멈춤(0173): 점수가 있어 올릴 수 있는 칸인데 올리는 줄이 없으면 왜인지 알 수 없었다 — 끝에 흐린 줄로 남긴다.
-    if !edit && board.offer(e, total) == Offer::Ready {
+    if !edit && matches!(offer, Offer::Ready | Offer::Swap) {
         v.push(Do::Away);
     }
     v
@@ -297,6 +304,8 @@ fn act_label(board: &Board, e: Entry, d: Do) -> String {
     let s = s();
     match (d, e) {
         (Do::Buy, Entry::Cell(_)) => fill(s.act_open, &[&e.price(0).to_string()]),
+        (Do::Buy, Entry::Key(_)) if board.key_swap(e) => s.act_key_swap.to_string(),
+        (Do::Buy, Entry::Key(_)) => fill(s.act_key_on, &[&e.price(0).to_string()]),
         (Do::Buy, _) => fill(s.act_raise, &[&e.price(board.rank(e)).to_string()]),
         (Do::Wear(k), _) => fill(s.act_wear, &[&(k + 1).to_string()]),
         (Do::WearUlt, _) => s.act_wear_ult.to_string(),
@@ -318,7 +327,10 @@ pub(super) mod geo {
     pub const HEAD_H: f32 = 27.0;
     /// 줄 띠의 높이(첫 줄·둘째 줄 = 스킬 줄 + 패시브 줄, 셋째 줄 = 큰 기술과 패시브가 한 줄). 띠 셋의 합이 보이는 높이를 넘는다 —
     /// 격자는 위아래로 굴린다(0163: 이름표와 칸 사이를 띄우고, 줄이 늘어도 같은 꼴).
-    pub const BAND_H: [f32; 3] = [72.0, 72.0, 56.0];
+    /// 0214: 넷째 줄(스킬 + 패시브 — 첫·둘째 줄과 같은 꼴) · 맺음 줄(마름모 하나씩).
+    pub const BAND_H: [f32; 5] = [72.0, 72.0, 56.0, 72.0, 56.0];
+    /// 맺음 칸의 반 대각선(마름모 — 패시브보다 크게).
+    pub const KEY: f32 = 26.0;
     /// 띠 안: 스킬 칸의 위·한 변, 단의 점, 패시브 칸의 위·지름.
     pub const CELL_TOP: f32 = 17.0;
     pub const SKILL: f32 = 24.0;
@@ -367,13 +379,15 @@ pub(super) fn spots() -> [Spot; NE] {
         c: Vec2::ZERO,
         half: 0.0,
     }; NE];
-    for row in 0..3 {
+    for row in 0..BAND_H.len() {
         for b in BRANCHES {
             let of = |big: bool| -> Vec<usize> {
                 (0..NE)
                     .filter(|&i| {
                         let e = ENTRIES[i];
-                        e.row() == row && e.branch() == b && matches!(e, Entry::Cell(_)) != big
+                        e.row() == row
+                            && e.branch() == b
+                            && matches!(e, Entry::Cell(_) | Entry::Key(_)) != big
                     })
                     .collect()
             };
@@ -392,7 +406,14 @@ pub(super) fn spots() -> [Spot; NE] {
                     };
                 }
             };
-            if row == 2 {
+            if row == sk::KEY_ROW {
+                for &i in &of(false) {
+                    out[i] = Spot {
+                        c: vec2(x0 + SLOT_1, big_y),
+                        half: KEY * 0.5,
+                    };
+                }
+            } else if row == 2 {
                 for (k, &i) in of(true).iter().chain(&of(false)).enumerate() {
                     let half = if matches!(ENTRIES[i], Entry::Cell(_)) {
                         PASSIVE * 0.5
@@ -427,8 +448,8 @@ pub(super) fn reveal_span(i: usize) -> (f32, f32) {
     let (top, bottom) = (band_top(row) - HEAD_H, band_top(row) + BAND_H[row] - HEAD_H);
     let (y, h) = (sp.c.y - HEAD_H, sp.half);
     match e {
-        Entry::Cell(_) if row < 2 => (y - h - REVEAL_PAD, bottom),
-        _ if row == 2 => (top, bottom),
+        Entry::Cell(_) if row != 2 => (y - h - REVEAL_PAD, bottom),
+        _ if row == 2 || row == sk::KEY_ROW => (top, bottom),
         _ => (top, y + h + 6.0 + REVEAL_PAD),
     }
 }
@@ -472,6 +493,8 @@ enum Shape {
     Square,
     Oct,
     Round,
+    /// 맺음(0214).
+    Diamond,
 }
 
 fn shape_of(e: Entry) -> Shape {
@@ -479,6 +502,7 @@ fn shape_of(e: Entry) -> Shape {
         Entry::Skill(_) => Shape::Square,
         Entry::Ult(_) => Shape::Oct,
         Entry::Cell(_) => Shape::Round,
+        Entry::Key(_) => Shape::Diamond,
     }
 }
 
@@ -488,6 +512,7 @@ fn pic(e: Entry, x: usize, y: usize) -> bool {
         Entry::Skill(id) => touch::icon_cell(touch::skill_icon(id), x, y),
         Entry::Ult(u) => touch::icon_cell(touch::ult_icon(u), x, y),
         Entry::Cell(c) => crate::icons::on(&crate::icons::cell_mask(c), x, y),
+        Entry::Key(k) => crate::icons::on(&crate::icons::key_mask(k), x, y),
     }
 }
 
@@ -548,6 +573,12 @@ fn outline(shape: Shape, c: Vec2, half: f32) -> Vec<Vec2> {
                 c + vec2(a.cos(), a.sin()) * half
             })
             .collect(),
+        Shape::Diamond => vec![
+            c + vec2(0.0, -half),
+            c + vec2(half, 0.0),
+            c + vec2(0.0, half),
+            c + vec2(-half, 0.0),
+        ],
     }
 }
 
@@ -575,7 +606,9 @@ pub(super) fn draw_node(e: Entry, c: Vec2, half: f32, s: f32, look: Look, focus:
     let line = (s * 1.2).max(1.0);
     // 면·테·그림의 빛.
     let (face, edge, body, shade) = match (look, shape) {
-        (Look::Owned, Shape::Round) => (GOLD, GOLD_HI, DARK, Color::new(0.0, 0.0, 0.0, 0.0)),
+        (Look::Owned, Shape::Round | Shape::Diamond) => {
+            (GOLD, GOLD_HI, DARK, Color::new(0.0, 0.0, 0.0, 0.0))
+        }
         (Look::Owned, _) => (WARM, AMBER, CREAM, Color::new(0.04, 0.03, 0.05, 0.75)),
         (Look::Ready, _) => (
             Color::new(0.10, 0.11, 0.13, 1.0),
@@ -626,7 +659,7 @@ pub(super) fn draw_node(e: Entry, c: Vec2, half: f32, s: f32, look: Look, focus:
         // 고른 칸: 밝은 바깥 테(어두운 테를 한 겹 깔아 금빛 칸 위에서도 갈린다). 둥근 칸은 둥글게, 나머지는 점까지 두른 네모.
         let r = half + s * 3.0;
         let out = match shape {
-            Shape::Round => outline(shape, c, r),
+            Shape::Round | Shape::Diamond => outline(shape, c, r),
             _ => {
                 let low = (bottom + s * 2.0).max(c.y + r);
                 vec![
@@ -932,6 +965,8 @@ impl App {
         };
         self.go(Go::Back);
         match (acts[i], e) {
+            // 맺음 바꾸기(0214)는 값이 없다 — 묻지 않고 바로.
+            (Do::Buy, Entry::Key(_)) if self.board().key_swap(e) => self.buy_skill(at),
             // 사는 일은 한 번 묻는다(0065) — 목록을 닫고 기술 화면 위에 묻는 창.
             (Do::Buy, _) => self.ask(flow::Ask::Skill(at as u8)),
             (Do::Wear(slot), Entry::Skill(id)) => {
@@ -994,6 +1029,7 @@ impl App {
         let name = entry_text(e).0;
         let text = match e {
             Entry::Cell(_) => fill(s().toast_cell, &[name]),
+            Entry::Key(_) => fill(s().toast_key, &[name]),
             _ => {
                 // 기술을 올린 알림은 단만 말한다 — 레벨의 "기술 점수 +1"(0167)을 같이 쓰면 점수를 **쓴** 자리에서 얻었다고 읽힌다.
                 let rank = self.progress.board.rank(e).to_string();
@@ -1034,6 +1070,7 @@ impl App {
         let (name, price) = (entry_text(e).0, e.price(rank).to_string());
         match e {
             Entry::Cell(_) => (fill(s.ask_cell, &[name, &price]), s.ask_cell_yes),
+            Entry::Key(_) => (fill(s.ask_key, &[name, &price]), s.ask_key_yes),
             _ => {
                 let next = (rank + 1).min(e.max()).to_string();
                 (fill(s.ask_skill, &[name, &next, &price]), s.ask_level_yes)
@@ -1189,7 +1226,7 @@ impl App {
                         self.node_badge(c, half, u, k, "◆", true);
                     }
                 }
-                Entry::Cell(_) => {}
+                Entry::Cell(_) | Entry::Key(_) => {}
             }
             if guide && ready && whole && board.rank(e) == 0 {
                 self.ui.sparkle(c + vec2(half, -half), u * 4.0);
@@ -1476,8 +1513,8 @@ impl App {
                     });
                 }
             }
-            // 패시브 칸: 하는 일이 곧 전부 — 값은 상태 줄이 말한다.
-            Entry::Cell(_) => {}
+            // 패시브 칸·맺음: 하는 일이 곧 전부 — 값은 상태 줄이 말한다.
+            Entry::Cell(_) | Entry::Key(_) => {}
         }
         v
     }
@@ -1746,7 +1783,7 @@ mod tests {
         assert_eq!(view.offset(), 0.0);
         // 아래로 끝까지: 걸음마다 그 칸이 보인다. 첫 두 줄은 창이 움직이지 않고(이미 보인다) 셋째 줄에서 내려간다.
         let mut moved_at = None;
-        for step in 0..8 {
+        for step in 0..14 {
             let next = walk(at_, 0, 1, false);
             if next == at_ {
                 break;
@@ -1760,11 +1797,11 @@ mod tests {
                 moved_at = Some((step, ENTRIES[at_].row()));
             }
         }
-        assert_eq!(ENTRIES[at_].row(), 2);
+        assert_eq!(ENTRIES[at_].row(), sk::KEY_ROW, "down to the keystones");
         assert_eq!(
             moved_at.map(|m| m.1),
             Some(2),
-            "only the last band needs a scroll"
+            "the first two bands need no scroll"
         );
         assert_eq!(
             view.offset(),
@@ -1772,7 +1809,7 @@ mod tests {
             "the bottom of the board"
         );
         // 다시 위로: 맨 위 칸에 서면 창도 맨 위(갈래 머리 아래 첫 이름표가 보인다).
-        for _ in 0..8 {
+        for _ in 0..14 {
             at_ = walk(at_, 0, -1, false);
             let (y0, y1) = reveal_span(at_);
             view.reveal(y0, y1);
@@ -1797,8 +1834,18 @@ mod tests {
         assert_eq!(walk(whirl, -1, 0, true), whirl);
         assert_eq!(walk(whirl, 0, -1, true), whirl);
         let flurry = at(Entry::Ult(Ult::Flurry));
-        assert_eq!(walk(flurry, 0, 1, false), flurry);
+        let measure = at(Entry::Key(crate::progression::Key::Measure));
+        assert_eq!(walk(measure, 0, 1, false), measure);
         assert_eq!(walk(flurry, -1, 0, true), flurry);
+        // 0214: 큰 기술 줄 아래로 넷째 줄(패시브), 그 아래 맺음.
+        let held = at(Entry::Cell(Cell::HeldBreath));
+        assert_eq!(walk(flurry, 0, 1, true), held);
+        assert_eq!(walk(held, 0, 1, true), measure);
+        assert_eq!(walk(measure, 0, -1, true), held);
+        assert_eq!(
+            walk(measure, 1, 0, true),
+            at(Entry::Key(crate::progression::Key::Edge))
+        );
         // 아래로: 스킬 → 그 아래 패시브 → 다음 줄의 스킬 → … → 큰 기술.
         let breath = at(Entry::Cell(Cell::EvenBreath));
         assert_eq!(walk(whirl, 0, 1, true), breath);
@@ -1814,11 +1861,11 @@ mod tests {
         );
         // 되돌리기 단추(창 아래 오른쪽 — 화로에서만): 격자의 오른쪽 끝에서 오른쪽·맨 아래에서 아래로 닿고, 거기서 위·왼쪽은
         // 격자의 오른쪽 아래 칸. 단추에서 오른쪽·아래는 그대로.
-        let step = at(Entry::Cell(Cell::PathOpeningStep));
+        let step = at(Entry::Key(crate::progression::Key::Rooted));
         assert_eq!(step, NE - 1);
         assert_eq!(walk(step, 1, 0, true), RESPEC);
         assert_eq!(walk(step, 0, 1, true), RESPEC);
-        assert_eq!(walk(flurry, 0, 1, true), RESPEC);
+        assert_eq!(walk(measure, 0, 1, true), RESPEC);
         assert_eq!(walk(step, 1, 0, false), step, "no button in the pause");
         assert_eq!(walk(step, 0, 1, false), step);
         assert_eq!(walk(gather, 1, 0, true), RESPEC);
@@ -1949,7 +1996,12 @@ mod tests {
         );
         let all = Board::maxed(Pick::A);
         for e in ENTRIES {
-            assert_eq!(look(&all, 99, e), (Look::Owned, false), "{e:?}");
+            // 0214: 켜지 않은 맺음은 바꿀 수 있을 뿐(살 것이 아니다 — 흐리게).
+            let want = match e {
+                Entry::Key(k) if all.cells.key != Some(k) => (Look::Short, false),
+                _ => (Look::Owned, false),
+            };
+            assert_eq!(look(&all, 99, e), want, "{e:?}");
         }
     }
 

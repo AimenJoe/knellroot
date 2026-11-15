@@ -580,8 +580,14 @@ impl App {
                         icon: false,
                     },
                 );
-                if cells.is_empty() {
+                if cells.is_empty() && board.cells.key.is_none() {
                     lines.extend(self.pane_wrap(w, s.status_passives_none, DIM));
+                }
+                // 켠 맺음(0214)이 먼저 — 빌드의 가운데.
+                if let Some(k) = board.cells.key {
+                    let (name, desc) = super::skills::entry_text(Entry::Key(k));
+                    lines.push(Ln::Head(format!("◆ {name}")));
+                    lines.extend(self.pane_wrap(w, desc, DIM));
                 }
                 for e in cells {
                     let (name, desc) = super::skills::entry_text(e);
@@ -804,6 +810,6 @@ mod tests {
             skills_cursor(Row::Ult, &old, worn, sk::Ult::Upend),
             at(Entry::Ult(sk::Ult::Upend))
         );
-        assert_eq!(cell_count(), 15);
+        assert_eq!(cell_count(), 21);
     }
 }
