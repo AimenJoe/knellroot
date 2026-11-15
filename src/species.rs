@@ -21,6 +21,11 @@ pub enum Kind {
     /// 넷째 문지기(0208 — 작업층 권양기 갱도, 이름은 후보에서 고른다: 내부 이름 "감독", 기록 `core.overseer`): 사슬 휘두르기·
     /// 갈고리 끌기·추 떨어뜨리기, 2단계 레일 수레, 3단계 사슬이 끊겨 쫓는다(S4-5). 회색 박스(S4-1)는 이끼 덮인 문지기의 수를 빌린다.
     Overseer,
+    /// 되풀이꾼(0208 — 작업층의 재활동체, 곡괭이): 같은 박자로 세 번 내려찍기를 되풀이한다(연속 공격 늘, 지연·빠름 없음 —
+    /// 패링하면 박자가 끊긴다). 일부(`docile` 자리)는 끝까지 벽만 판다.
+    Repeater,
+    /// 등짐꾼(0208 — 작업층의 재활동체, 짐 진 몸): 짐을 앞세워 곧게 밀고 온다(띠 예고 — 레일 수레와 같은 꼴). 느리고 무겁다.
+    Packbearer,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -449,7 +454,58 @@ pub static OVERSEER: Def = Def {
     model: "mossward",
 };
 
-pub static ALL: [&Def; 9] = [
+/// 되풀이꾼(0208): 잔재의 몸에 같은 박자의 세 번 내려찍기. 모델은 그림이 나오기 전까지 잔재의 것.
+pub static REPEATER: Def = Def {
+    kind: Kind::Repeater,
+    name: |s: &Strings| s.enemy_repeater,
+    hp: 40,
+    radius: 0.45,
+    height: 1.6,
+    speed: 2.4,
+    reach: 1.6,
+    tele: 0.6,
+    recover: 1.0,
+    arc: 120.0,
+    rhythm: Rhythm {
+        delay: 0.0,
+        fast: 0.0,
+        // 늘 셋을 같은 박자로(앞 타와 같은 예고 길이 둘 더).
+        chain: 1.0,
+        gaps: &[1.0, 1.0],
+        feint: 0.0,
+    },
+    embers: 2,
+    ..HUSK
+};
+
+/// 등짐꾼(0208): 가시짐승의 돌진 꼴을 무겁게 — 예고가 길고 느리게 오래 민다, 몸이 크고 단단하다. 모델은 등딱지짐승의 것.
+pub static PACKBEARER: Def = Def {
+    kind: Kind::Packbearer,
+    name: |s: &Strings| s.enemy_packbearer,
+    hp: 60,
+    radius: 0.65,
+    height: 1.5,
+    speed: 1.9,
+    reach: 1.5,
+    tele: 0.7,
+    recover: 1.2,
+    charge_range: 9.0,
+    charge_tele: 0.95,
+    charge_speed: 9.0,
+    charge_time: 0.9,
+    rhythm: Rhythm {
+        delay: 0.2,
+        fast: 0.0,
+        chain: 0.0,
+        gaps: &[],
+        feint: 0.0,
+    },
+    embers: 3,
+    model: "shellback",
+    ..THORN
+};
+
+pub static ALL: [&Def; 11] = [
     &HUSK,
     &THORN,
     &WARDEN,
@@ -458,6 +514,8 @@ pub static ALL: [&Def; 9] = [
     &BELLKEEPER,
     &MOSSWARD,
     &OVERSEER,
+    &REPEATER,
+    &PACKBEARER,
     &MOSSGRAZER,
 ];
 

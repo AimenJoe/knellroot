@@ -2127,3 +2127,55 @@ mod overseer_tests {
         assert!(!moss.unchained);
     }
 }
+
+/// 작업층의 재활동체(0208 S4-3).
+#[cfg(test)]
+mod works_tests {
+    use super::*;
+
+    /// 되풀이꾼: 붙으면 내려찍기를 같은 박자로 셋 — 세 타의 예고 길이가 같다(지연·빠름이 없다).
+    #[test]
+    fn the_repeater_strikes_three_times_on_the_same_beat() {
+        let mut en = Enemy::new(Kind::Repeater, Vec3::ZERO);
+        en.state = EState::Chase;
+        let p = vec3(0.0, 0.0, -1.2);
+        let mut hits: Vec<usize> = Vec::new();
+        let mut teles = Vec::new();
+        let mut was_tele = false;
+        for k in 0..600 {
+            let out = en.tick(p, 1.0 / 60.0);
+            let tele = matches!(en.state, EState::Tele { .. });
+            if tele && !was_tele {
+                teles.push(en.tele_dur());
+            }
+            was_tele = tele;
+            if out.hit {
+                hits.push(k);
+            }
+            if hits.len() >= 3 {
+                break;
+            }
+        }
+        assert_eq!(hits.len(), 3, "three blows");
+        assert!(teles.len() >= 3);
+        assert!(
+            teles[..3].iter().all(|t| (t - teles[0]).abs() < 1e-4),
+            "the same beat: {teles:?}"
+        );
+        // 세 타 사이가 쉬기 없이 이어진다(되풀이 — 같은 간격).
+        let (a, b) = (hits[1] - hits[0], hits[2] - hits[1]);
+        assert!(a.abs_diff(b) <= 1, "{hits:?}");
+    }
+
+    /// 등짐꾼: 떨어져 있으면 띠 예고 뒤 곧게 밀고 온다(받아친다 — 돌진은 띠).
+    #[test]
+    fn the_packbearer_drives_its_load_straight_at_you() {
+        let en = Enemy::new(Kind::Packbearer, Vec3::ZERO);
+        assert_eq!(en.choose(6.0), Some(Atk::Charge));
+        assert_eq!(en.choose(1.0), Some(Atk::Smash));
+        let mut en = en;
+        en.atk = Atk::Charge;
+        assert!(en.parryable());
+        assert!(matches!(en.tele_shape(), TeleShape::Lane { .. }));
+    }
+}
