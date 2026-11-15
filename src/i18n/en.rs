@@ -125,6 +125,14 @@ pub const EN: Strings = Strings {
     tut_learn_d: "By the fire, what was forgotten returns — Skills tab",
     tut_skill: "Use what came back",
     tut_skill_d: "Then a breath — and it is ready again",
+    tut_gather: "Gather embers",
+    tut_gather_d: "What falls leaves embers behind — enough, and rise a step at a hearth",
+    tip_flask: "Drink from the lamp",
+    tip_flask_d: "When the body grows heavy, drink the flame — a hearth refills it",
+    tip_lock: "Lock on",
+    tip_lock_d: "Before something large, keep your eyes on it — press again to let go",
+    tip_charge: "Hold, then release",
+    tip_charge_d: "Hold attack to gather strength — let go the moment it is full for more",
     weapon_sword_d:
         "3-hit combo · charged wide slash · magic bolt. The plain blade most pilgrims carry",
     weapon_hammer_d:

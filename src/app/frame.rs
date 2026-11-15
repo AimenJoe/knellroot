@@ -57,10 +57,16 @@ impl App {
         tabs: &[(&str, bool)],
         active: usize,
         purse: &[(&str, String)],
+        sparkle: Option<usize>,
     ) -> Window {
         self.ui.dim(0.45);
         let w = self.window_geo(f);
         let heads = self.ui.window(w.panel, w.k, tabs, active, purse);
+        // 튜토리얼이 가리키는 탭(0209): 탭 머리의 오른쪽 위에 반짝이는 별.
+        if let Some(r) = sparkle.and_then(|i| heads.get(i)) {
+            self.ui
+                .sparkle(vec2(r.x + r.w - w.s * 3.0, r.y + w.s * 3.0), w.s * 4.0);
+        }
         let x = self.ui.close(w.panel);
         self.hits.push((x, Hit::Close));
         if heads.len() > 1 {

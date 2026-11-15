@@ -537,14 +537,14 @@ fn draw_hint(ui: &Ui, f: &Frame, h: &Hint, fresh: f32) {
     #[cfg(feature = "dev")]
     crate::ui::check::frame(r);
     let cx = r.x + r.w * 0.5;
-    // 걸음 점.
+    // 걸음 점(상황 힌트는 없다 — 0209 T2).
     let n = crate::tutorial::DONE as usize;
     let pitch = HINT_DOT_PITCH * s;
     let mut y = r.y + HINT_PAD_TOP * s;
     let dy = y + HINT_DOT * s;
-    for i in 0..n {
+    for i in 0..n * h.at.is_some() as usize {
         let dx = cx + (i as f32 - (n as f32 - 1.0) * 0.5) * pitch;
-        match i.cmp(&(h.at as usize)) {
+        match i.cmp(&(h.at.unwrap_or(0) as usize)) {
             std::cmp::Ordering::Less => draw_circle(dx, dy, HINT_DOT * s * 0.8, crate::ui::MINT),
             std::cmp::Ordering::Equal => {
                 draw_circle(dx, dy, HINT_DOT * s * 1.25, crate::ui::SHADOW);
@@ -555,7 +555,9 @@ fn draw_hint(ui: &Ui, f: &Frame, h: &Hint, fresh: f32) {
             }
         }
     }
-    y += (HINT_DOT * 2.0 + HINT_GAP) * s;
+    if h.at.is_some() {
+        y += (HINT_DOT * 2.0 + HINT_GAP) * s;
+    }
     // 머리 줄: 키캡 + 할 일 + 세는 수.
     let k = (fresh / crate::tutorial::FRESH_TIME).clamp(0.0, 1.0);
     let mix = |a: f32, b: f32| a + (b - a) * k;
@@ -632,11 +634,13 @@ fn hint_box(ui: &Ui, f: &Frame, h: &Hint) -> HintBox {
         .iter()
         .map(|l| ui.width(l, HINT_MORE_SCALE))
         .fold(0.0, f32::max);
-    let dots_w = HINT_DOT_PITCH * s * crate::tutorial::DONE as f32;
+    let dots = h.at.is_some() as u8 as f32;
+    let dots_w = HINT_DOT_PITCH * s * crate::tutorial::DONE as f32 * dots;
     let w = (head_w.max(more_w).max(dots_w) + pad * 2.0)
         .max(HINT_MIN_W * s)
         .min(f.w * HINT_W);
-    let hh = (HINT_PAD_TOP + HINT_DOT * 2.0 + HINT_GAP + HINT_GAP * 0.5 + HINT_PAD_BOTTOM) * s
+    let hh = (HINT_PAD_TOP + (HINT_DOT * 2.0 + HINT_GAP) * dots + HINT_GAP * 0.5 + HINT_PAD_BOTTOM)
+        * s
         + ui.px(head_k)
         + ui.px(HINT_MORE_SCALE) * HINT_LINE * more.len() as f32;
     let (cx, bottom) = (f.ox + f.w * 0.5, f.oy + f.h - HINT_FLOOR * s);
@@ -924,7 +928,13 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
     // 곁의 할 일(0105·0064 M3 → 0166 `StageRun::near` — 터치 버튼의 그림과 같은 답): "키 줍기"·"키 열기"·… ·"키 쉬기".
     // 쉼터 곁인데 적이 가까우면 쉴 수 없다는 한 줄.
     // 튜토리얼의 힌트 판(0171)이 떠 있으면 그 위로 비킨다. 보스 띠가 같은 자리를 쓰는 동안은 힌트를 그리지 않는다.
-    let hint = hint.filter(|_| !under_menu && run.boss_bar(w).is_none());
+    // 0209 T1: 몸의 걸음(걷기~패링) 동안인가 — 화로 곁의 "쉬기"를 흐리게 한다(판이 늦게 떠도).
+    let body_steps =
+        hint.is_some_and(|(h, _)| h.at.is_some_and(|a| a < crate::tutorial::AFTER_BASICS));
+    // 0209 T1: 시작 이야기·구역 카드가 뜬 동안은 판을 늦춘다(글 넷이 한꺼번에 겹쳤다).
+    let hint = hint.filter(|_| {
+        !under_menu && run.boss_bar(w).is_none() && run.intro <= 0.0 && run.card.is_none()
+    });
     let hint_top = hint.map(|(h, _)| hint_box(ui, f, h).rect.y);
     if let (Some(near), false) = (run.near(), under_menu) {
         use crate::stage::Near;
@@ -943,7 +953,9 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
         match verb {
             Some(verb) => {
                 let key = crate::input::prompt(crate::input::Act::Interact);
-                key_line(ui, &key, verb, cx, y, 1.0, AMBER);
+                // 0209 T1: 몸의 걸음(걷기~패링) 동안 화로 곁의 "쉬기"는 흐리게 — 둘을 동시에 시키지 않는다(누르면 여전히 된다).
+                let quiet = matches!(near, Near::Rest { .. }) && body_steps;
+                key_line(ui, &key, verb, cx, y, 1.0, if quiet { DIM } else { AMBER });
             }
             None => ui.text_center(i18n::s().rest_blocked, cx, y, 1.0, DIM),
         }
