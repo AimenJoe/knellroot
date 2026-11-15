@@ -1,5 +1,5 @@
 //! glTF 읽기(P4 스파이크, 0013): 부위 강체 모델 — 노드 트리(TRS) + 노드마다 메시 + 노드 TRS 애니메이션 채널.
-//! 스키닝 없음(KB reference/assets/retro-3d-models-blockbench-gltf.md). macroquad에는 모델 로더가 없어(0.4.16 소스로 확인)
+//! 0193부터 스킨도 읽는다(뼈 = 노드, 정점마다 뼈 넷·무게 — `Model::skin_into`가 CPU에서 섞는다). 스킨이 없는 모델은 예전 그대로. macroquad에는 모델 로더가 없어(0.4.16 소스로 확인)
 //! 여기서 읽고, 렌더가 CPU에서 행렬을 곱해 정점을 한 배치로 보낸다(`render::ModelBatch`).
 //! 이 모듈은 그림 핸들을 모른다 — 텍스처는 PNG 바이트로만 들고 있고 렌더가 한 번 올린다(로직·시험이 GL 없이 돈다).
 use base64::Engine;
@@ -14,6 +14,15 @@ pub struct Node {
     pub r: Quat,
     pub s: Vec3,
     pub mesh: Option<usize>,
+    /// 이 노드의 메시가 스킨이면 그 스킨(0193) — 노드 자신의 행렬은 쓰지 않고 뼈 행렬로 섞는다(glTF 약속).
+    pub skin: Option<usize>,
+}
+
+/// 스킨(0193): 뼈 노드들과 그 바인드의 역행렬(메시 공간 → 뼈 공간).
+#[derive(Clone, Debug, Default)]
+pub struct Skin {
+    pub joints: Vec<usize>,
+    pub ibm: Vec<Mat4>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -22,6 +31,9 @@ pub struct MeshData {
     pub nrm: Vec<Vec3>,
     pub uv: Vec<Vec2>,
     pub idx: Vec<u32>,
+    /// 스킨 메시면 정점마다 뼈 넷(스킨의 `joints` 자리)과 무게(0193). 아니면 비어 있다.
+    pub joints: Vec<[u16; 4]>,
+    pub weights: Vec<[f32; 4]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -53,6 +65,7 @@ pub struct Model {
     pub nodes: Vec<Node>,
     pub meshes: Vec<MeshData>,
     pub anims: Vec<Anim>,
+    pub skins: Vec<Skin>,
     /// 부모가 자식보다 먼저 오는 순서(자세 계산용).
     pub order: Vec<usize>,
     pub texture_png: Option<Vec<u8>>,
@@ -92,6 +105,7 @@ impl Model {
                     r: Quat::from_array(r),
                     s: Vec3::from(s),
                     mesh: n.mesh().map(|m| m.index()),
+                    skin: n.skin().map(|k| k.index()),
                 }
             })
             .collect();
@@ -123,6 +137,10 @@ impl Model {
                         .map(|it| it.into_f32().map(Vec2::from).collect())
                         .unwrap_or_else(|| vec![Vec2::ZERO; n]),
                 );
+                if let (Some(j), Some(w)) = (r.read_joints(0), r.read_weights(0)) {
+                    out.joints.extend(j.into_u16());
+                    out.weights.extend(w.into_f32());
+                }
                 out.pos.extend(pos);
                 match r.read_indices() {
                     Some(ix) => out.idx.extend(ix.into_u32().map(|i| base + i)),
@@ -174,6 +192,16 @@ impl Model {
             });
         }
 
+        let mut skins = Vec::new();
+        for k in g.document.skins() {
+            let joints: Vec<usize> = k.joints().map(|j| j.index()).collect();
+            let ibm: Vec<Mat4> = match k.reader(get).read_inverse_bind_matrices() {
+                Some(it) => it.map(|m| Mat4::from_cols_array_2d(&m)).collect(),
+                None => vec![Mat4::IDENTITY; joints.len()],
+            };
+            skins.push(Skin { joints, ibm });
+        }
+
         let texture_png = match g.document.images().next().map(|i| i.source()) {
             Some(gltf::image::Source::Uri { uri, .. }) => Some(data_uri(uri)?),
             Some(gltf::image::Source::View { view, .. }) => {
@@ -201,6 +229,7 @@ impl Model {
             nodes,
             meshes,
             anims,
+            skins,
             order,
             texture_png,
         })
@@ -279,6 +308,53 @@ impl Model {
         }
     }
 
+    /// 스킨 메시 노드 `i`를 자세 `pose`로 섞은 정점·법선(모델 공간, 0193 — 정점마다 Σ 무게 × 뼈 행렬 × 바인드 역행렬).
+    /// 스킨이 아니면 거짓(부르는 쪽이 노드 행렬로 그린다).
+    pub fn skin_into(
+        &self,
+        i: usize,
+        pose: &[Mat4],
+        pos: &mut Vec<Vec3>,
+        nrm: &mut Vec<Vec3>,
+    ) -> bool {
+        let (Some(k), Some(mi)) = (self.nodes[i].skin, self.nodes[i].mesh) else {
+            return false;
+        };
+        let (skin, mesh) = (&self.skins[k], &self.meshes[mi]);
+        if mesh.joints.len() != mesh.pos.len() {
+            return false;
+        }
+        let mats: Vec<Mat4> = skin
+            .joints
+            .iter()
+            .zip(&skin.ibm)
+            .map(|(&j, ibm)| pose.get(j).copied().unwrap_or(Mat4::IDENTITY) * *ibm)
+            .collect();
+        pos.clear();
+        nrm.clear();
+        for v in 0..mesh.pos.len() {
+            let (js, ws) = (mesh.joints[v], mesh.weights[v]);
+            let mut m = Mat4::ZERO;
+            let mut total = 0.0;
+            for c in 0..4 {
+                if ws[c] > 0.0 {
+                    if let Some(jm) = mats.get(js[c] as usize) {
+                        m += *jm * ws[c];
+                        total += ws[c];
+                    }
+                }
+            }
+            if total <= 1e-6 {
+                m = Mat4::IDENTITY;
+            } else if (total - 1.0).abs() > 1e-3 {
+                m *= 1.0 / total;
+            }
+            pos.push(m.transform_point3(mesh.pos[v]));
+            nrm.push(m.transform_vector3(mesh.nrm[v]).normalize_or_zero());
+        }
+        true
+    }
+
     pub fn node(&self, name: &str) -> Option<usize> {
         self.nodes.iter().position(|n| n.name == name)
     }
@@ -297,6 +373,14 @@ impl Model {
     }
 
     /// 쉬는 자세에서 노드 `i` 아래 메시 정점의 경계 상자 가운데와 그 가운데에서 가장 먼 점까지(모델 공간) — 아이템 그림(0068)의 틀 맞추기.
+    /// 쉬는 자세에서 마디 `i`의 월드 회전 — 손뼈에 붙은 무기를 제 모양의 축으로 되돌려 보일 때(아이콘·던진 무기, 0193).
+    pub fn rest_rotation(&self, i: usize) -> Quat {
+        let mut pose = Vec::new();
+        self.pose(None, 0.0, &mut pose);
+        pose.get(i)
+            .map_or(Quat::IDENTITY, |m| m.to_scale_rotation_translation().1)
+    }
+
     pub fn rest_bounds_under(&self, i: usize) -> Option<(Vec3, f32)> {
         let mut pose = Vec::new();
         self.pose(None, 0.0, &mut pose);
@@ -441,5 +525,67 @@ mod tests {
         let mut later = Vec::new();
         m.pose(walk, 1.0, &mut later);
         assert!(pose[leg].abs_diff_eq(later[leg], 1e-5));
+    }
+
+    // 0193: 방랑자는 스킨 몸(뼈 가중치로 CPU에서 휜다) — 쉬는 자세에서 바인드 자리 그대로, 동작이 몸을 움직이고 무기는 손을 따른다.
+    fn wanderer() -> Model {
+        Model::from_bytes(include_bytes!("../assets/models/wanderer.glb")).unwrap()
+    }
+
+    fn skinned_body(m: &Model, pose: &[Mat4]) -> Vec<Vec3> {
+        let i = m
+            .nodes
+            .iter()
+            .position(|n| n.skin.is_some())
+            .expect("skinned body");
+        let (mut p, mut n) = (Vec::new(), Vec::new());
+        assert!(m.skin_into(i, pose, &mut p, &mut n));
+        assert_eq!(p.len(), n.len());
+        p
+    }
+
+    #[test]
+    fn the_wanderer_body_is_skinned_and_stands_where_the_old_one_stood() {
+        let m = wanderer();
+        assert_eq!(m.skins.len(), 1);
+        let mut rest = Vec::new();
+        m.pose(None, 0.0, &mut rest);
+        let p = skinned_body(&m, &rest);
+        let lo = p.iter().fold(Vec3::splat(f32::MAX), |a, v| a.min(*v));
+        let hi = p.iter().fold(Vec3::splat(f32::MIN), |a, v| a.max(*v));
+        assert!((hi.y - lo.y - 1.4).abs() < 0.05, "height {}", hi.y - lo.y);
+        assert!(lo.y.abs() < 0.03, "feet on the ground: {}", lo.y);
+        let mid = (lo + hi) * 0.5;
+        assert!(mid.x.abs() < 0.25 && mid.z.abs() < 0.25, "centred: {mid}");
+    }
+
+    #[test]
+    fn a_swing_moves_the_skinned_body_and_the_blade_turns_in_the_fist() {
+        let m = wanderer();
+        let a = m.anim("attack").unwrap();
+        let (mut p0, mut p1) = (Vec::new(), Vec::new());
+        m.pose(Some(a), 0.0, &mut p0);
+        m.pose(Some(a), 0.125, &mut p1);
+        let moved = skinned_body(&m, &p0)
+            .iter()
+            .zip(skinned_body(&m, &p1))
+            .map(|(a, b)| a.distance(b))
+            .fold(0.0, f32::max);
+        assert!(moved > 0.1, "the body bends: {moved}");
+        // 무기는 주먹 자리의 `weapon` 뼈에 달려 있고(0193), 그 뼈는 돌기만 한다 — 주먹을 떠나지 않는다.
+        let hand = m.node("mixamorig:RightHand").unwrap();
+        let grip = m.node("weapon").unwrap();
+        let sword = m.node("sword").unwrap();
+        assert!(m.is_under(sword, grip) && m.is_under(grip, hand));
+        let gap = |pose: &[Mat4]| pose[grip].w_axis.distance(pose[hand].w_axis);
+        assert!(
+            (gap(&p0) - gap(&p1)).abs() < 1e-3,
+            "the grip stays in the fist"
+        );
+        let turn = |pose: &[Mat4]| pose[grip].to_scale_rotation_translation().1;
+        assert!(
+            turn(&p0).angle_between(turn(&p1)) > 0.2,
+            "the blade turns with the swing"
+        );
     }
 }

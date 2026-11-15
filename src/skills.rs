@@ -78,6 +78,10 @@ pub enum Form {
     Field { radius: f32, secs: f32, every: f32 },
 }
 
+/// 휘돌이의 전용 동작이 몸을 도는 쪽(+1 = 요가 느는 쪽 · −1 = 주는 쪽): 이펙트의 도는 초승달이 이 쪽으로 바퀴마다 한 바퀴 돈다.
+/// 0193 스킨 몸의 원본(Meshy Skill_03)은 오른쪽으로 돈다 — `wanderer_skin.py` `SPIN`과 같아야 한다(시험).
+pub const WHIRL_CLIP_TURN: f32 = -1.0;
+
 /// 스킬 전용 동작(0158 G2, `wanderer.glb`의 `sk_*`·`ult_*`): 이름과 구간 셋(시동 · 이어짐 · 후딜)의 길이(초 — 바탕값으로 만든 것).
 /// 구간의 경계가 판정의 순간이다. 모델에 아직 없으면 렌더가 표의 `anim`(빌려 쓰던 동작)으로 넘어간다.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2357,5 +2361,128 @@ mod tests {
             c.seg[0] * 0.5
         ));
         assert!(near(Ult::Flurry.clip_at(FLURRY.startup, 0.0), c.seg[0]));
+    }
+}
+
+#[cfg(test)]
+mod clip_facing {
+    use crate::model::Model;
+    use macroquad::prelude::*;
+
+    /// 0193: 기술 동작의 몸 방향(`wanderer_skin.py` `SKILL_FACE`)과 같은 표 — 판정의 순간에 무엇이 정면이어야 하나.
+    enum Face {
+        Tip,
+        Hips,
+        Hold,
+        Spin,
+    }
+    const FACES: [(&str, Face); 11] = [
+        ("sk_whirl", Face::Spin),
+        ("sk_cut", Face::Tip),
+        ("sk_gather", Face::Hips),
+        ("sk_quake", Face::Tip),
+        ("sk_brace", Face::Hold),
+        ("sk_echo", Face::Hips),
+        ("sk_throw", Face::Tip),
+        ("sk_embers", Face::Hips),
+        ("ult_upend", Face::Hips),
+        ("ult_flurry", Face::Hips),
+        ("ult_line", Face::Tip),
+    ];
+
+    fn deg(a: f32) -> f32 {
+        (a.to_degrees() + 540.0).rem_euclid(360.0) - 180.0
+    }
+
+    /// 기술을 누르는 순간·끝나 서기로 돌아갈 때 몸이 홱 돌지 않고(정면 ±25°), 판정의 순간에 칼끝·몸이 정면이며,
+    /// 휘돌이는 이어짐 구간(바퀴마다 되풀이되는 몫)에 이펙트와 같은 쪽으로 한 바퀴 돈다.
+    #[test]
+    fn skill_clips_start_and_end_facing_front_and_hit_in_front() {
+        let m = Model::from_bytes(include_bytes!("../assets/models/wanderer.glb")).unwrap();
+        let (hips, sword, grip) = (
+            m.node("mixamorig:Hips").unwrap(),
+            m.node("sword").unwrap(),
+            m.node("weapon").unwrap(),
+        );
+        let mut rest = Vec::new();
+        m.pose(None, 0.0, &mut rest);
+        let g = rest[grip].w_axis.truncate();
+        let far = m.meshes[m.nodes[sword].mesh.unwrap()]
+            .pos
+            .iter()
+            .copied()
+            .max_by(|a, b| {
+                let d = |p: Vec3| rest[sword].transform_point3(p).distance(g);
+                d(*a).total_cmp(&d(*b))
+            })
+            .unwrap();
+        let clips = super::SKILLS
+            .iter()
+            .map(|s| s.clip)
+            .chain([super::Ult::Upend, super::Ult::Flurry, super::Ult::Line].map(|u| u.clip()));
+        let mut pose = Vec::new();
+        let mut body = |ai, t: f32| {
+            m.pose(Some(ai), t, &mut pose);
+            let z = pose[hips].z_axis.truncate();
+            let p = pose[sword].transform_point3(far);
+            (z.x.atan2(z.z), p.x.atan2(p.z))
+        };
+        for clip in clips {
+            let [s, a, r] = clip.seg;
+            let ai = m.anim(clip.name).unwrap_or_else(|| panic!("{}", clip.name));
+            let face = &FACES.iter().find(|(n, _)| *n == clip.name).unwrap().1;
+            for t in [0.0, s + a + r - 0.005] {
+                let y = deg(body(ai, t).0);
+                assert!(
+                    y.abs() < 25.0,
+                    "{}: the body faces front at {t:.2}s ({y:.0}°)",
+                    clip.name
+                );
+            }
+            let (h, tip) = body(ai, s);
+            match face {
+                Face::Tip => assert!(
+                    deg(tip).abs() < 25.0,
+                    "{}: the blade is in front at the hit ({:.0}°)",
+                    clip.name,
+                    deg(tip)
+                ),
+                Face::Hips => assert!(
+                    deg(h).abs() < 25.0,
+                    "{}: the body faces front at the hit ({:.0}°)",
+                    clip.name,
+                    deg(h)
+                ),
+                Face::Hold => {
+                    for t in [s, s + a - 0.005] {
+                        let y = deg(body(ai, t).0);
+                        assert!(
+                            y.abs() < 25.0,
+                            "{}: the body faces front while holding ({y:.0}°)",
+                            clip.name
+                        );
+                    }
+                }
+                Face::Spin => {
+                    let mut turned = 0.0;
+                    let mut last = body(ai, s).0;
+                    for j in 1..=20 {
+                        let y = body(
+                            ai,
+                            s + a * j as f32 / 20.0 - if j == 20 { 0.005 } else { 0.0 },
+                        )
+                        .0;
+                        turned += deg(y - last);
+                        last = y;
+                    }
+                    let want = super::WHIRL_CLIP_TURN * 360.0;
+                    assert!(
+                        (turned - want).abs() < 30.0,
+                        "{}: one turn per beat, the way the effect turns ({turned:.0}°)",
+                        clip.name
+                    );
+                }
+            }
+        }
     }
 }

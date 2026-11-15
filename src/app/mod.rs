@@ -15,6 +15,8 @@ mod journey;
 #[cfg(feature = "dev")]
 mod lab_screen;
 mod menu;
+#[cfg(feature = "dev")]
+mod motions;
 mod play;
 mod progress;
 mod settings;
@@ -57,12 +59,52 @@ const GOAL_ARROW_INSET: f32 = 0.12;
 /// 판의 첫 지역(0118 — 차례는 `stage::STAGES`).
 const FIRST_STAGE: &StageDef = &sanctuary::DEF;
 
+/// 메뉴 누름을 붙잡는 시간(초, 0207) — 눌린 꼴이 보이고 장면이 넘어간다. UI 누름 피드백 100~160 ms 안쪽 끝(늦게 느껴지지 않게).
+const PRESS_HOLD: f32 = 0.09;
+
+/// 메뉴에서 줄 세울 입력(0207): 누르는 순간의 것만 — 쥐고 있는 스틱·버튼은 매 틱 같은 값이라 줄에 쌓이면 지연이 남는다.
+fn is_edge(a: &Actions) -> bool {
+    a.menu_up
+        || a.menu_down
+        || a.menu_left
+        || a.menu_right
+        || a.confirm
+        || a.back
+        || a.pause
+        || a.tap.is_some()
+        || a.tab_prev
+        || a.tab_next
+        || a.attack
+        || a.turn_left
+        || a.turn_right
+        || a.skill1
+        || a.skill2
+        || a.equip
+        || a.pressed_key.is_some()
+        || a.pressed_pad.is_some()
+        || a.wheel != 0
+}
+
+/// 붙잡아 둔 메뉴 누름(0207).
+#[derive(Clone, Copy, Debug)]
+struct Press {
+    left: f32,
+    confirm: bool,
+    tap: Option<Vec2>,
+    /// 탭이면 누른 자리(지난 프레임의 누를 자리), 키·패드 확인이면 없음(고른 줄이 눌린 꼴).
+    rect: Option<Rect>,
+}
+
 pub struct App {
     /// 장면 스택(0066): 맨 위가 지금 장면, 아래 칸은 커서·창을 맡아 둔다. 지금 칸의 커서·창은 `cursor`·`view`.
     stack: stack::Stack,
     cursor: usize,
     /// 지난 프레임에 그린 메뉴 줄·▲▼ 자리(탭 판정).
     hits: Vec<(Rect, Hit)>,
+    /// 붙잡아 둔 메뉴 누름(0207): 눌린 꼴을 `PRESS_HOLD` 동안 보인 뒤 그 확인·탭을 장면에 넘긴다.
+    press: Option<Press>,
+    /// 누름을 붙잡은 동안 들어온 입력(0207) — 버리지 않고 넘긴 뒤 차례로(빠르게 연달아 누른 것이 사라지지 않게).
+    press_queue: std::collections::VecDeque<Actions>,
     /// 지금 화면의 굴리는 목록 창(메뉴·조작 설정 공통, 장면이 바뀌면 처음부터).
     view: ui::ListView,
     input: Input,
@@ -91,6 +133,9 @@ pub struct App {
     wake: Option<crate::wake::Wake>,
     /// 쓰러짐(0175): 무너짐 → 어둠 → 쉼터 곁에서 일어남. 그동안 조작이 없다.
     fall: Option<crate::fall::Fall>,
+    /// 손으로 하는 일의 몸짓(0196 줍기·상자 열기 → 0197 장치 당기기)과 흐른 초 — 렌더만 안다(월드는 그 일을 바로 끝낸다).
+    /// 서 있는 동안만, 움직이거나 다른 동작이 시작되면 그친다.
+    gesture: Option<(&'static str, f32)>,
     /// 꺼진 화로에 불이 붙는 순간을 보는 남은 시간(0171) — 이 동안은 조작이 멎고, 끝나면 화로의 창이 열린다.
     kindle: f32,
     /// 주민 말풍선(0122): (주민 — 지금 지역의 번호, 몇째 말, 남은 초). 멈추지 않는다.
@@ -148,9 +193,8 @@ pub struct App {
     /// 지금 슬롯(0066)과 슬롯 셋의 요약(타이틀 "이어하기"·슬롯 창, 쓸 때마다 고친다).
     slot: usize,
     slots: [Option<crate::save::Summary>; crate::save::SLOTS],
-    /// 지금 화면의 둘째 축(슬롯 창의 단추)·두 번째 누름을 기다리나(덮어쓰기·지우기). 장면이 바뀌면 처음으로.
+    /// 지금 화면의 둘째 축(슬롯 창의 단추). 장면이 바뀌면 처음으로.
     col: usize,
-    armed: bool,
     /// 지금 화면의 글 칸(설명)을 몇 줄 내렸나(0068 — 넘치는 설명은 오른쪽 스틱·휠·끌기로 굴린다). 장면이 바뀌면 처음으로.
     scroll: f32,
     /// 옛 prefs 칸 21(든 무기) — 읽은 값 그대로 다시 적는다(0066에서 기록으로 옮김).
@@ -252,6 +296,8 @@ impl App {
             stack: stack::Stack::new(Scene::Title),
             cursor: 0,
             hits: Vec::new(),
+            press: None,
+            press_queue: std::collections::VecDeque::new(),
             view: ui::ListView::default(),
             input: Input::new(),
             #[cfg(feature = "dev")]
@@ -270,6 +316,7 @@ impl App {
             knell: crate::knell::Knell::default(),
             wake: (!progress.woke).then(crate::wake::Wake::default),
             fall: None,
+            gesture: None,
             kindle: 0.0,
             bubble: None,
             stone_card: None,
@@ -308,7 +355,6 @@ impl App {
             slot,
             slots: crate::save::summaries(),
             col: 0,
-            armed: false,
             scroll: 0.0,
             legacy_weapon,
             save_failed: false,
@@ -518,7 +564,6 @@ impl App {
             self.cursor = cursor;
             self.view = view;
             self.col = 0;
-            self.armed = false;
             self.scroll = 0.0;
             self.hits.clear();
             self.ctl = controls::Controls::default();
@@ -600,6 +645,7 @@ impl App {
     fn tick(&mut self, a: Actions) {
         // 카메라의 지난 틱 = 지금(0173): 이 틱에 카메라가 안 움직이면(멈춤 창 아래) 그림이 틱 사이를 오가지 않는다.
         self.cam.settle();
+        let (a, injected) = self.hold_press(a);
         let (scene0, cursor0, back0) = (self.scene(), self.cursor, a.back || a.pause);
         let played0 = self.sfx.as_ref().map_or(0, |s| s.played());
         self.tick_scene(a);
@@ -607,7 +653,7 @@ impl App {
         // 나지 않았을 때만 — 뒤로 > 확인(장면이 바뀜) > 커서.
         let quiet = self.sfx.as_ref().map_or(0, |s| s.played()) == played0;
         if scene0.is_menu() && quiet {
-            if self.scene() != scene0 {
+            if self.scene() != scene0 && !(injected && !back0) {
                 self.snd(if back0 {
                     crate::sfx::Id::UiBack
                 } else {
@@ -617,6 +663,73 @@ impl App {
                 self.snd(crate::sfx::Id::UiMove);
             }
         }
+    }
+
+    /// 메뉴 누름 붙잡기(0207, 사장 "UI 메뉴에서 버튼 눌리는 감이 없으니"): 메뉴 장면의 확인·줄 탭은 바로 넘기지 않고
+    /// `PRESS_HOLD` 동안 눌린 꼴(`Ui::press`)을 보인 뒤 그대로 넘긴다 — 누르는 순간 장면이 바뀌면 눌린 꼴이 한 프레임도 안 보인다
+    /// (UI 피드백 100~160 ms, 넘어가기 전 짧은 지연). 소리는 누르는 순간에. 붙잡은 동안의 입력은 줄 세워 두었다
+    /// 넘긴 뒤 차례로(그 사이 커서가 먼저 움직이지 않게).
+    /// ◀▶·▲▼·끌기·휠은 붙잡지 않는다(값·창을 바로 옮기는 일). 돌려주는 참 = 이번 틱이 붙잡았던 누름을 넘긴 틱.
+    fn hold_press(&mut self, a: Actions) -> (Actions, bool) {
+        if let Some(p) = &mut self.press {
+            p.left -= TICK_DT;
+            if is_edge(&a) {
+                self.press_queue.push_back(a);
+            }
+            if p.left > 0.0 {
+                return (Actions::default(), false);
+            }
+            let p = self.press.take().unwrap();
+            return (
+                Actions {
+                    confirm: p.confirm,
+                    tap: p.tap,
+                    ..Actions::default()
+                },
+                true,
+            );
+        }
+        // 붙잡은 동안 쌓인 입력부터(이번 틱의 것은 뒤로).
+        let a = match self.press_queue.pop_front() {
+            Some(q) => {
+                if is_edge(&a) {
+                    self.press_queue.push_back(a);
+                }
+                q
+            }
+            None => a,
+        };
+        let scene = self.scene();
+        if !scene.is_menu() || matches!(scene, Scene::Controls) {
+            return (a, false);
+        }
+        let tapped = a.tap.and_then(|p| {
+            self.hits
+                .iter()
+                .find(|(r, _)| r.contains(p))
+                .filter(|(_, h)| {
+                    matches!(h, Hit::Row(_) | Hit::Cell(..) | Hit::Tab(_) | Hit::Close)
+                })
+                .map(|(r, _)| *r)
+        });
+        if !(a.confirm || tapped.is_some()) {
+            return (a, false);
+        }
+        self.press = Some(Press {
+            left: PRESS_HOLD,
+            confirm: a.confirm,
+            tap: a.tap,
+            rect: tapped,
+        });
+        self.snd(crate::sfx::Id::UiConfirm);
+        (
+            Actions {
+                confirm: false,
+                tap: None,
+                ..a
+            },
+            false,
+        )
     }
 
     fn tick_scene(&mut self, a: Actions) {
@@ -681,6 +794,13 @@ impl App {
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.tick_dev(&a, tab as usize),
             #[cfg(feature = "dev")]
+            Scene::Motions {
+                weapon,
+                speed,
+                spin,
+                t_ms,
+            } => self.tick_motions(&a, weapon, speed, spin, t_ms),
+            #[cfg(feature = "dev")]
             Scene::Lab => self.tick_menu(&a, Scene::Lab),
             #[cfg(feature = "dev")]
             Scene::LabGroup { g } => self.tick_lab_group(&a, g as usize),
@@ -732,7 +852,7 @@ impl App {
             | Scene::Journey { .. }
             | Scene::EquipPick { .. } => None,
             #[cfg(feature = "dev")]
-            Scene::Sandbox | Scene::Dev { .. } => None,
+            Scene::Sandbox | Scene::Dev { .. } | Scene::Motions { .. } => None,
         }
     }
 
@@ -761,7 +881,7 @@ impl App {
             | Scene::Journey { .. }
             | Scene::EquipPick { .. } => {}
             #[cfg(feature = "dev")]
-            Scene::Sandbox | Scene::Dev { .. } => {}
+            Scene::Sandbox | Scene::Dev { .. } | Scene::Motions { .. } => {}
         }
     }
 
@@ -808,17 +928,42 @@ impl App {
                 pose: match (self.fall, self.wake) {
                     (Some(f), _) if self.scene() == Scene::Play => Some(f.pose()),
                     (_, Some(w)) if stage.is_some() => Some(("wake", w.pose())),
-                    _ => None,
+                    _ => self.gesture.filter(|_| stage.is_some()),
                 },
             }),
         };
         self.frame = Some(f);
         self.ui.begin(f.ui);
         let overlay = self.input.overlay().filter(|_| in_shaft.is_none());
+        // 눌린 꼴(0207): 키·패드 확인은 고른 줄·단추가 그리고(`Ui::press`), 탭은 누른 자리에 덧그린다.
+        let pressing = self
+            .press
+            .map(|p| (p.left / PRESS_HOLD).clamp(0.0, 1.0).sqrt());
+        self.ui.press = match self.press {
+            Some(p) if p.rect.is_none() => pressing.unwrap_or(0.0),
+            _ => 0.0,
+        };
+        self.ui.pressed_drawn.set(false);
+        let cursor_row = self
+            .hits
+            .iter()
+            .find(|(_, h)| *h == Hit::Row(self.cursor))
+            .map(|(r, _)| *r);
         self.hits.clear();
         if in_shaft.is_none() {
             self.draw_layered(&f, self.scene());
         }
+        if let (Some(p), Some(k)) = (self.press, pressing) {
+            // 줄 표가 아닌 화면(칸 격자 등)에서 키로 눌렀으면 고른 줄의 자리에, 탭이면 누른 자리에.
+            let at = p
+                .rect
+                .or(cursor_row.filter(|_| !self.ui.pressed_drawn.get()));
+            if let Some(r) = at {
+                self.ui.press = k;
+                self.ui.press_overlay(r);
+            }
+        }
+        self.ui.press = 0.0;
         // 큰 창은 화면을 다 써서 알림을 제 오른쪽 칸의 상태 줄에 보인다(`draw_pane_head`) — 여기서는 싸움·타이틀만.
         if matches!(
             self.scene(),
@@ -954,6 +1099,13 @@ impl App {
             Scene::Settings { host } => self.draw_settings(f, host),
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.draw_dev_screen(f, tab as usize),
+            #[cfg(feature = "dev")]
+            Scene::Motions {
+                weapon,
+                speed,
+                spin,
+                t_ms,
+            } => self.draw_motions(f, weapon, speed, spin, t_ms),
             Scene::EquipPick { slot } => {
                 // 칸 커서·연 곳은 아래 칸(장비 탭)의 것.
                 let under = self.stack.under().copied();
@@ -1032,5 +1184,44 @@ fn weapon_name(id: weapons::Id) -> &'static str {
         weapons::Id::Staff => s.weapon_staff,
         weapons::Id::Crossbow => s.weapon_crossbow,
         weapons::Id::Fists => s.weapon_fists,
+    }
+}
+
+#[cfg(test)]
+mod press_tests {
+    use super::*;
+
+    /// 0207: 누름을 붙잡은 동안 줄 세우는 것은 누르는 순간의 입력뿐 — 쥐고 있는 스틱은 매 틱 같은 값이라 쌓이면 지연이 남는다.
+    #[test]
+    fn only_edges_queue_while_a_press_is_held() {
+        let held = Actions {
+            move_dir: Vec2::new(0.0, 1.0),
+            attack_held: true,
+            ..Actions::default()
+        };
+        assert!(!is_edge(&held));
+        assert!(!is_edge(&Actions::default()));
+        for a in [
+            Actions {
+                menu_down: true,
+                ..Actions::default()
+            },
+            Actions {
+                confirm: true,
+                ..Actions::default()
+            },
+            Actions {
+                back: true,
+                ..Actions::default()
+            },
+            Actions {
+                tap: Some(Vec2::ZERO),
+                ..Actions::default()
+            },
+        ] {
+            assert!(is_edge(&a), "{a:?}");
+        }
+        // 눌린 꼴은 UI 누름 피드백(100~160 ms)보다 길지 않게 — 늦게 넘어간다고 느끼지 않게.
+        const { assert!(PRESS_HOLD > 0.05 && PRESS_HOLD <= 0.12) };
     }
 }

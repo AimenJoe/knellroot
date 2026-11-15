@@ -26,29 +26,50 @@ pub enum Sweep {
     Center,
 }
 
-/// 동작 이름 → 휘두르는 쪽(`wanderer.py`의 키프레임에서 읽음: 몸·오른팔의 z 회전이 음수 = 오른쪽, 양수 = 왼쪽).
+/// 동작 이름 → 휘두르는 쪽과 그 동작을 만든 판정 구간(0193·0195).
+/// 쪽: 판정 구간 동안 칼끝이 몸 둘레로 가는 쪽(스킨 몸의 Meshy 동작에서 잰 값). 60° 넘게 가로로 가면 그 쪽, 아니면 가운데
+/// (찌르기·내려치기). 시험 `melee_swings_cross_the_front_in_the_table_direction`이 모델에서 다시 잰다 — 동작을 바꾸면 여기도.
+/// 구간(시작 s, 길이 s): `tools/art/blender/wanderer_skin.py` `HIT_WINDOWS` 그대로(시험 `swing_windows_match_the_blender_table`) —
+/// 동작 시계는 타의 판정 시작이 이 시작에 오게 돈다(`clip_rate` — 맨손처럼 남의 동작을 빌린 타·대시 공격도 칼이 닿는 순간에 맞는다).
 /// 새 동작을 무기 표에 쓰면 여기에도 한 줄(시험 `every_weapon_motion_has_a_sweep`).
-pub const SWEEPS: [(&str, Sweep); 12] = [
-    ("attack", Sweep::RightToLeft),
-    ("attack2", Sweep::LeftToRight),
-    ("attack3", Sweep::Center),
-    ("heavy", Sweep::RightToLeft),
-    ("hammer1", Sweep::RightToLeft),
-    ("hammer2", Sweep::LeftToRight),
-    ("hammer_slam", Sweep::Center),
-    ("staff1", Sweep::Center),
-    ("staff2", Sweep::RightToLeft),
-    ("staff3", Sweep::Center),
-    ("staff4", Sweep::LeftToRight),
-    ("staff_release", Sweep::LeftToRight),
+pub const SWEEPS: [(&str, Sweep, (f32, f32)); 19] = [
+    ("attack", Sweep::RightToLeft, (0.08, 0.10)),
+    ("attack2", Sweep::LeftToRight, (0.08, 0.10)),
+    ("attack3", Sweep::Center, (0.10, 0.12)),
+    ("heavy", Sweep::LeftToRight, (0.06, 0.12)),
+    ("hammer1", Sweep::RightToLeft, (0.14, 0.17)),
+    ("hammer2", Sweep::Center, (0.16, 0.20)),
+    ("hammer_slam", Sweep::Center, (0.08, 0.16)),
+    ("staff1", Sweep::RightToLeft, (0.06, 0.07)),
+    ("staff2", Sweep::LeftToRight, (0.06, 0.07)),
+    ("staff3", Sweep::RightToLeft, (0.06, 0.08)),
+    ("staff4", Sweep::Center, (0.10, 0.13)),
+    ("staff_release", Sweep::Center, (0.05, 0.11)),
+    ("sword_dash", Sweep::RightToLeft, (0.08, 0.10)),
+    // 맨손(0198): 잽 둘·어퍼컷·앞차기 — 모두 앞으로 내지른다.
+    ("fist1", Sweep::Center, (0.048, 0.06)),
+    ("fist2", Sweep::Center, (0.048, 0.06)),
+    ("fist3", Sweep::Center, (0.064, 0.08)),
+    ("fist_heavy", Sweep::Center, (0.048, 0.096)),
+    ("fist_dash", Sweep::Center, (0.056, 0.07)),
+    ("hammer_dash", Sweep::Center, (0.128, 0.16)),
 ];
 
 /// 동작의 휘두르는 쪽(표에 없으면 가운데).
 pub fn sweep_of(anim: &str) -> Sweep {
     SWEEPS
         .iter()
-        .find(|(a, _)| *a == anim)
-        .map_or(Sweep::Center, |(_, s)| *s)
+        .find(|(a, _, _)| *a == anim)
+        .map_or(Sweep::Center, |(_, s, _)| *s)
+}
+
+/// 동작 시계의 배(0195): 판정이 `s0`초에 시작하는 타에서 동작을 이만큼 빨리(1보다 크면) 돌리면 동작이 만든 판정 시작이 `s0`에 온다.
+/// 표에 없는 동작은 1. 판정 구간의 길이도 같은 배로 맞는다(시작·길이 모두 랩 값 × 무기 표의 `time`).
+pub fn clip_rate(anim: &str, s0: f32) -> f32 {
+    SWEEPS
+        .iter()
+        .find(|(a, _, _)| *a == anim)
+        .map_or(1.0, |(_, _, (c0, _))| if s0 > 1e-4 { c0 / s0 } else { 1.0 })
 }
 
 /// 콤보 한 타.
@@ -290,7 +311,8 @@ const MAGIC: Bolt = Bolt {
     scale: 1.0,
 };
 
-/// 순례자의 검 — 기준. 3연타: 가로 → 되돌려 가로 → 내디디며 찌르기(좁고 길게, 자세 피해 큼).
+/// 순례자의 검 — 기준. 3연타(0201 — Meshy Double_Combo_Attack): 오른쪽 위 → 왼쪽 대각 베기 → 올려 베기(왼 → 오른) →
+/// 오른쪽에서 내리치기(좁고 길게, 자세 피해 큼).
 const SWORD_COMBO: [Hit; 3] = [
     hit(1.0, 1.0, 1.0, 1.0, 10, 1.0, "attack"),
     hit(1.0, 1.0, 1.0, 1.0, 10, 1.0, "attack2"),
@@ -316,7 +338,7 @@ const HAMMER_COMBO: [Hit; 2] = [
     },
 ];
 
-/// 순례자 지팡이 — 빠른 4연타, 넷째는 둘레 회전 마무리(느림).
+/// 순례자 지팡이 — 빠른 4연타(0203 — 올려 베기 → 내려 베기 → 머리 위에서 내려치기), 넷째는 두 손으로 내려쳐 둘레를 친다(느림).
 const STAFF_COMBO: [Hit; 4] = [
     hit(0.7, 1.15, 0.8, 0.7, 10, 0.6, "staff1"),
     hit(0.7, 1.15, 0.8, 0.7, 10, 0.6, "staff2"),
@@ -328,15 +350,15 @@ const STAFF_COMBO: [Hit; 4] = [
     },
 ];
 
-/// 맨손 — 짧고 빠른 주먹 3연타(가까이 붙어야 닿는다, 피해 10·자세 피해 작음), 셋째는 내디디며 한 방. 동작은 검의 것을 빈손으로
-/// (주먹 동작은 아직 없다).
+/// 맨손 — 짧고 빠른 주먹 3연타(가까이 붙어야 닿는다, 피해 10·자세 피해 작음), 셋째는 내디디며 한 방. 동작은 왼 잽 → 오른 잽 →
+/// 오른 어퍼컷(0198 — 전에는 검의 동작을 빈손으로 빌렸다).
 const FISTS_COMBO: [Hit; 3] = [
-    hit(0.6, 0.7, 0.8, 0.6, 10, 0.5, "attack"),
-    hit(0.6, 0.7, 0.8, 0.6, 10, 0.5, "attack2"),
+    hit(0.6, 0.7, 0.8, 0.6, 10, 0.5, "fist1"),
+    hit(0.6, 0.7, 0.8, 0.6, 10, 0.5, "fist2"),
     Hit {
         knock: 1.3,
         cancel: 0.1,
-        ..hit(0.8, 0.8, 0.6, 1.2, 10, 1.2, "attack3")
+        ..hit(0.8, 0.8, 0.6, 1.2, 10, 1.2, "fist3")
     },
 ];
 
@@ -344,11 +366,11 @@ pub const WEAPONS: [Weapon; 5] = [
     Weapon {
         id: Id::Sword,
         combo: &SWORD_COMBO,
-        // 달려들며 찌르기: 좁고 길게, 회피 거리만큼 더 내딛는다.
+        // 달려들며 올려 베기(0206 — Charged_Upward_Slash, 예전엔 1타를 빌렸다 0201): 판정은 좁고 길게, 회피 거리만큼 더 내딛는다.
         dash: Some(Hit {
             knock: 1.4,
             cancel: 0.2,
-            ..hit(1.0, 1.25, 0.5, 2.4, 20, 2.0, "attack3")
+            ..hit(1.0, 1.25, 0.5, 2.4, 20, 2.0, "sword_dash")
         }),
         heavy: Some(Heavy {
             time: 1.0,
@@ -386,12 +408,13 @@ pub const WEAPONS: [Weapon; 5] = [
     Weapon {
         id: Id::Hammer,
         combo: &HAMMER_COMBO,
-        // 달려들며 휘두르기: 한 바퀴 둘레(무거워 늦다).
+        // 달려들며 몸 전체로 내려치기(0203 — 0200의 앞차기는 발이 작아 안 보였다, 사장): 웅크리며 땅을 쳐 둘레를 친다(앞차기 때 앞
+        // 부채꼴로 바꾼 것을 되돌림). 0200 전엔 둘째 타의 한 바퀴 내려치기를 빌려 달리기 공격 뒤 같은 내려치기를 두 번 했다.
         dash: Some(Hit {
             shape: Shape::Circle,
             knock: 1.8,
             cancel: 0.45,
-            ..hit(1.6, 1.0, 1.0, 2.0, 20, 3.0, "hammer2")
+            ..hit(1.6, 1.0, 1.0, 2.0, 20, 3.0, "hammer_dash")
         }),
         heavy: Some(Heavy {
             time: 1.3,
@@ -437,8 +460,8 @@ pub const WEAPONS: [Weapon; 5] = [
     Weapon {
         id: Id::Staff,
         combo: &STAFF_COMBO,
-        // 달려들며 찌르기: 빠르고 가볍다.
-        dash: Some(hit(0.8, 1.3, 0.6, 2.2, 10, 1.0, "staff3")),
+        // 달려들며 올려 베기(0203 — 1타 동작이라 다음 누름의 2타로 원본 그대로 이어진다): 빠르고 가볍다.
+        dash: Some(hit(0.8, 1.3, 0.6, 2.2, 10, 1.0, "staff1")),
         heavy: Some(Heavy {
             time: 0.9,
             charge: 0.9,
@@ -544,8 +567,8 @@ pub const WEAPONS: [Weapon; 5] = [
     Weapon {
         id: Id::Fists,
         combo: &FISTS_COMBO,
-        // 달려들며 한 방.
-        dash: Some(hit(0.7, 0.8, 0.6, 2.0, 10, 1.0, "attack3")),
+        // 달려들며 앞차기(0199).
+        dash: Some(hit(0.7, 0.8, 0.6, 2.0, 10, 1.0, "fist_dash")),
         // 모아 치기: 검보다 짧고 빠르다, 피해 10(다 모으면 + `heavy.full bonus`).
         heavy: Some(Heavy {
             time: 0.8,
@@ -559,8 +582,8 @@ pub const WEAPONS: [Weapon; 5] = [
             walk: 1.2,
             aftershock: None,
             breaks_primed: None,
-            anim_charge: "charge",
-            anim_heavy: "heavy",
+            anim_charge: "fist_charge",
+            anim_heavy: "fist_heavy",
             cancel: 0.1,
         }),
         // 마법은 무기가 아니라 방랑자의 것 — 맨손이어도 쏜다.
@@ -626,13 +649,11 @@ mod tests {
                 .map(|h| h.anim)
                 .chain(w.heavy.iter().map(|h| h.anim_heavy));
             for a in anims {
-                assert!(SWEEPS.iter().any(|(n, _)| *n == a), "{:?}: {a}", w.id);
+                assert!(SWEEPS.iter().any(|(n, _, _)| *n == a), "{:?}: {a}", w.id);
             }
         }
-        // 검 1타는 오른쪽 → 왼쪽, 2타는 되돌려 왼쪽 → 오른쪽, 3타 찌르기는 가운데(wanderer.py 주석).
-        assert_eq!(sweep_of("attack"), Sweep::RightToLeft);
-        assert_eq!(sweep_of("attack2"), Sweep::LeftToRight);
-        assert_eq!(sweep_of("attack3"), Sweep::Center);
+        // 쪽이 동작과 맞는지는 모델에서 다시 잰다(0193 — `swing_tests`). 검의 타는 번갈아 되돌아온다.
+        assert_ne!(sweep_of("attack"), sweep_of("attack2"));
     }
 
     // ── 눈금 옮기기(0158 N0): 체력·피해가 ×10이 되어도 몇 대에 쓰러지는가는 그대로 ──────────────────────────────
@@ -921,5 +942,159 @@ mod tests {
         whole(crate::tuning::PLAYER_HP, "player hp");
         whole(crate::tuning::ULT_SLAM_DAMAGE, "ult slam");
         whole(crate::tuning::SHARD_REFLECT_DAMAGE, "shard");
+    }
+}
+
+#[cfg(test)]
+mod swing_tests {
+    use super::*;
+    use crate::model::Model;
+    use crate::tuning::Tuning;
+    use macroquad::prelude::*;
+
+    /// 0193: 판정·초승달은 정면 부채꼴이다 — 모델의 칼끝도 판정 구간 가운데에 정면을 지나고(`wanderer_skin.py` `face_hit`),
+    /// 표의 쪽으로 가야 초승달이 칼을 따라간다. 판정 구간은 게임의 셈(`hit_times`·`heavy_times`)을 동작 시계로 옮긴 것(`clip_rate`,
+    /// 0195). 맨손(0195)은 칼끝 대신 주먹(`weapon` 뼈)으로 — 검의 동작을 빌려도 주먹이 표의 쪽으로 가야 한다. 대시 공격도.
+    #[test]
+    fn melee_swings_cross_the_front_in_the_table_direction() {
+        let m = Model::from_bytes(include_bytes!("../assets/models/wanderer.glb")).unwrap();
+        let t = Tuning::default();
+        let grip = m.node("weapon").unwrap();
+        let mut rest = Vec::new();
+        m.pose(None, 0.0, &mut rest);
+        let mut pose = Vec::new();
+        for w in WEAPONS.iter().filter(|w| !w.combo.is_empty()) {
+            // 끝점: 무기 = 쉬는 자세에서 주먹에서 가장 먼 정점, 맨손 = 주먹.
+            let tip: Option<(usize, Vec3)> = (w.id != Id::Fists).then(|| {
+                let node = m.node(w.node).unwrap();
+                let mesh = &m.meshes[m.nodes[node].mesh.unwrap()];
+                let g = rest[grip].w_axis.truncate();
+                let far = mesh
+                    .pos
+                    .iter()
+                    .copied()
+                    .max_by(|a, b| {
+                        let d = |p: Vec3| rest[node].transform_point3(p).distance(g);
+                        d(*a).total_cmp(&d(*b))
+                    })
+                    .unwrap();
+                (node, far)
+            });
+            let mut swings: Vec<(&str, (f32, f32, f32))> = (0..w.combo.len())
+                .map(|k| (w.combo[k].anim, crate::world::hit_times(&t, w, k as u8)))
+                .collect();
+            if let Some(d) = w.dash {
+                swings.push((d.anim, crate::world::hit_times(&t, w, DASH)));
+            }
+            if let Some(h) = w.heavy {
+                swings.push((h.anim_heavy, crate::world::heavy_times(&t, w)));
+            }
+            for (anim, (s0, a0, _)) in swings {
+                let ai = m.anim(anim).unwrap_or_else(|| panic!("{anim}"));
+                // 0198: 맨손의 왼 잽은 왼손, 앞차기는 오른발이 친다.
+                let limb = match anim {
+                    "fist1" => m.node("mixamorig:LeftHand"),
+                    "fist_heavy" | "fist_dash" => m.node("mixamorig:RightFoot"),
+                    _ => None,
+                };
+                let r = clip_rate(anim, s0);
+                let (s0, a0) = (s0 * r, a0 * r);
+                // 끝점의 몸 둘레 각(도 — 정면 0, 왼쪽 +), 구간을 여덟으로 나눠 풀어 이은 것.
+                let (mut yaws, mut last) = (Vec::new(), None::<f32>);
+                for j in 0..=8 {
+                    m.pose(Some(ai), s0 + a0 * j as f32 / 8.0, &mut pose);
+                    let p = match (limb, tip) {
+                        (Some(l), _) => pose[l].w_axis.truncate(),
+                        (None, Some((node, far))) => pose[node].transform_point3(far),
+                        (None, None) => pose[grip].w_axis.truncate(),
+                    };
+                    let mut y = p.x.atan2(p.z).to_degrees();
+                    if let Some(l) = last {
+                        y = l + (y - l + 540.0).rem_euclid(360.0) - 180.0;
+                    }
+                    last = Some(y);
+                    yaws.push(y);
+                }
+                let mid = (yaws[4] + 540.0).rem_euclid(360.0) - 180.0;
+                let span = yaws[8] - yaws[0];
+                // 주먹·발(맨손, 앞차기)은 칼끝보다 몸에 가까워 각이 크게 흔들린다 — 가운데는 덜 엄하게, 가로는 45°부터.
+                let (front, wide) = if tip.is_some() && limb.is_none() {
+                    (20.0, 60.0)
+                } else {
+                    (35.0, 45.0)
+                };
+                assert!(
+                    mid.abs() < front,
+                    "{:?} {anim}: crosses the front mid-swing ({mid:.0}°)",
+                    w.id
+                );
+                let want = if span.abs() < wide {
+                    Sweep::Center
+                } else if span > 0.0 {
+                    Sweep::RightToLeft
+                } else {
+                    Sweep::LeftToRight
+                };
+                assert_eq!(sweep_of(anim), want, "{:?} {anim}: goes {span:+.0}°", w.id);
+            }
+        }
+    }
+
+    /// 0195: 동작 시계를 맞추는 구간은 Blender 쪽 표(`HIT_WINDOWS`)와 같다 — 한쪽만 고치면 칼이 닿는 순간과 판정이 어긋난다.
+    #[test]
+    fn swing_windows_match_the_blender_table() {
+        let py = include_str!("../tools/art/blender/wanderer_skin.py");
+        let start = py.find("HIT_WINDOWS = {").unwrap();
+        let body = &py[start..start + py[start..].find('}').unwrap()];
+        let mut n = 0;
+        for part in body
+            .split("\"")
+            .skip(1)
+            .step_by(2)
+            .zip(body.split('(').skip(1))
+        {
+            let (name, nums) = part;
+            let nums: Vec<f32> = nums
+                .split(')')
+                .next()
+                .unwrap()
+                .split(',')
+                .map(|x| x.trim().parse().unwrap())
+                .collect();
+            let (_, _, (c0, ca)) = SWEEPS
+                .iter()
+                .find(|(a, _, _)| *a == name)
+                .unwrap_or_else(|| panic!("{name} is not in SWEEPS"));
+            assert_eq!((*c0, *ca), (nums[0], nums[1]), "{name}");
+            n += 1;
+        }
+        assert_eq!(n, SWEEPS.len());
+    }
+
+    /// 0195 → 0198: 제 동작은 제 판정 구간으로 구웠으니 1배, 남의 구간으로 구운 동작을 빌린 타(대시 공격)는 동작이 만든 판정 시작이
+    /// 그 타의 판정 시작에 오게 빨리(늦게) 돈다.
+    #[test]
+    fn borrowed_swings_play_faster_so_the_blow_lands_on_the_hit() {
+        let t = Tuning::default();
+        let fists = Id::Fists.def();
+        let rate = |k: u8| {
+            let anim = fists.hit(k).unwrap().anim;
+            let s0 = crate::world::hit_times(&t, fists, k).0;
+            let c0 = SWEEPS.iter().find(|(a, _, _)| *a == anim).unwrap().2 .0;
+            let r = clip_rate(anim, s0);
+            assert!((s0 * r - c0).abs() < 1e-5, "{anim}: {r}");
+            r
+        };
+        for k in 0..fists.combo.len() as u8 {
+            assert!(
+                (rate(k) - 1.0).abs() < 0.02,
+                "fists' own clips play as baked"
+            );
+        }
+        assert!(
+            (rate(DASH) - 1.0).abs() < 0.02,
+            "the running kick is baked for the dash (0199)"
+        );
+        assert_eq!(clip_rate("idle", 0.1), 1.0);
     }
 }

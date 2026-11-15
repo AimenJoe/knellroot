@@ -64,7 +64,12 @@ impl Renderer {
             * Quat::from_rotation_z(v.roll.to_radians())
             * Quat::from_rotation_x(v.pitch.to_radians())
             * Quat::from_rotation_y(v.yaw.to_radians());
-        let inst = Mat4::from_quat(rot) * Mat4::from_translation(-c);
+        // 무기는 손뼈에 쥔 방향으로 붙어 있다(0193 스킨 몸) — 제 모양의 축으로 되돌린 뒤 표의 각도로.
+        let undo = match item {
+            crate::item_view::Item::Weapon(_) => e.model.rest_rotation(i).inverse(),
+            _ => Quat::IDENTITY,
+        };
+        let inst = Mat4::from_quat(rot * undo) * Mat4::from_translation(-c);
         let fovy: f32 = 0.5;
         let cam = Camera3D {
             position: vec3(0.0, 0.0, rad.max(0.01) / (fovy * 0.5).sin() * 1.02),
@@ -96,6 +101,14 @@ impl Renderer {
         set_look(saved);
         set_default_camera();
         true
+    }
+
+    /// 방랑자 동작의 길이(초) — 모델에 없으면 None(모션 보기의 시간 막대, 개발판).
+    #[cfg(feature = "dev")]
+    pub fn wanderer_anim_len(&mut self, anim: &str) -> Option<f32> {
+        let e = self.lib.get("wanderer")?;
+        let i = e.model.anim(anim)?;
+        Some(e.duration(Some(i)))
     }
 
     /// 인형·도감 칸의 타깃(0190): 화면의 칸 `dest`를 게임 화면과 같은 도트 크기(한 칸 = 화면 배율 px)로 나눈 크기 —
@@ -132,6 +145,18 @@ impl Renderer {
     /// `spin` = 몸 방향(라디안), `time` = 숨쉬기 동작 시간. 모델이 없으면 아무것도 그리지 않는다(창이 초상 없이 그대로).
     /// 화면 패스 중에 불러도 된다: 카메라를 바꿨다가 기본 카메라로 돌려놓는다.
     pub fn draw_doll(&mut self, weapon: crate::weapons::Id, dest: Rect, spin: f32, time: f32) {
+        self.draw_doll_anim(weapon, dest, spin, "idle", time);
+    }
+
+    /// 인형이 `anim` 동작의 `time`초 자세로(개발 창의 모션 보기 — 없는 동작이면 서기).
+    pub fn draw_doll_anim(
+        &mut self,
+        weapon: crate::weapons::Id,
+        dest: Rect,
+        spin: f32,
+        anim: &str,
+        time: f32,
+    ) {
         let (rt, dest, aspect) = self.fit_doll_rt(false, dest);
         let Some(e) = self.lib.get("wanderer") else {
             return;
@@ -146,7 +171,7 @@ impl Renderer {
             }
         }
         e.model
-            .pose_with(e.pick(&["idle"]), time, &hide, &mut self.pose);
+            .pose_with(e.pick(&[anim, "idle"]), time, &hide, &mut self.pose);
         // 키 1.8 몸이 칸에 꽉 차게: 가슴 높이를 보고 조금 위에서.
         let cam = Camera3D {
             position: vec3(0.0, 1.35, 4.6),

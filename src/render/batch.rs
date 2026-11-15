@@ -49,6 +49,56 @@ pub struct Batch {
 /// `bake_glow`의 빛남 값: 이 값이면 스스로 빛나는 부위를 아예 굽지 않는다(꺼진 것).
 const GLOW_OFF: f32 = -1.0;
 
+/// 그릴 부위 하나(0193): 그 행렬과 정점·법선 — 강체 부위는 메시의 것을 빌리고(행렬 = 인스턴스 × 노드),
+/// 스킨 부위는 뼈로 섞은 모델 공간의 것을 가진다(행렬 = 인스턴스).
+pub(super) struct Part<'a> {
+    pub node: usize,
+    pub mat: Mat4,
+    pub pos: std::borrow::Cow<'a, [Vec3]>,
+    pub nrm: std::borrow::Cow<'a, [Vec3]>,
+    pub mesh: &'a crate::model::MeshData,
+    pub skinned: bool,
+}
+
+/// 모델 한 자세의 부위들(0193 — 스킨이 있으면 여기서 한 번 섞는다).
+pub(super) fn parts<'a>(e: &'a Entry, pose: &[Mat4], inst: Mat4) -> Vec<Part<'a>> {
+    use std::borrow::Cow;
+    let m = &e.model;
+    let mut out = Vec::new();
+    for (i, node) in m.nodes.iter().enumerate() {
+        let Some(mi) = node.mesh else { continue };
+        // 크기 0으로 숨긴 부위(든 것이 아닌 무기·아이콘의 다른 부위) — 스킨 몸은 제 마디의 행렬을 쓰지 않으니 여기서 거른다.
+        if pose
+            .get(i)
+            .is_some_and(|p| p.x_axis.length_squared() < 1e-10)
+        {
+            continue;
+        }
+        let mesh = &m.meshes[mi];
+        let (mut p, mut n) = (Vec::new(), Vec::new());
+        if m.skin_into(i, pose, &mut p, &mut n) {
+            out.push(Part {
+                node: i,
+                mat: inst,
+                pos: Cow::Owned(p),
+                nrm: Cow::Owned(n),
+                mesh,
+                skinned: true,
+            });
+        } else {
+            out.push(Part {
+                node: i,
+                mat: inst * pose.get(i).copied().unwrap_or(Mat4::IDENTITY),
+                pos: Cow::Borrowed(&mesh.pos),
+                nrm: Cow::Borrowed(&mesh.nrm),
+                mesh,
+                skinned: false,
+            });
+        }
+    }
+    out
+}
+
 fn to_u8(x: f32) -> u8 {
     (x.clamp(0.0, 1.0) * 255.0) as u8
 }
@@ -92,26 +142,23 @@ impl Batch {
         glow: f32,
         actor: bool,
     ) {
-        let m = &e.model;
         let look = look();
-        for (i, node) in m.nodes.iter().enumerate() {
-            let Some(mi) = node.mesh else { continue };
-            let mesh = &m.meshes[mi];
-            let mat = inst * pose[i];
+        for part in parts(e, pose, inst) {
+            let (i, mat, mesh) = (part.node, part.mat, part.mesh);
             let base = verts.len() as u16;
             let bright = e.glow.get(i).copied().unwrap_or(false);
             if bright && glow == GLOW_OFF {
                 continue;
             }
             // 구운 불꽃(0142): 지형에 굽는 스스로 빛나는 부위(화로 불꽃)는 밑동은 그대로, 끝으로 갈수록 일렁인다(바람 셰이더).
-            let (y0, y1) = mesh
+            let (y0, y1) = part
                 .pos
                 .iter()
                 .map(|q| mat.transform_point3(*q).y)
                 .fold((f32::MAX, f32::MIN), |(a, b), y| (a.min(y), b.max(y)));
-            for k in 0..mesh.pos.len() {
-                let p = mat.transform_point3(mesh.pos[k]);
-                let n = mat.transform_vector3(mesh.nrm[k]).normalize_or_zero();
+            for k in 0..part.pos.len() {
+                let p = mat.transform_point3(part.pos[k]);
+                let n = mat.transform_vector3(part.nrm[k]).normalize_or_zero();
                 let f = if bright {
                     Vec3::splat(glow)
                 } else {
@@ -191,18 +238,14 @@ impl Batch {
         MOON_GATE.with(|g| g.set(1.0));
         // 그림자 지도는 한 번에 그린다 — 다 차면 그 뒤 배우는 그림자 없이(반쯤 잘린 그림자보다 낫다).
         if self.casting && tint.a > 0.5 && fits(self.casters.len(), self.caster_idx.len(), nv, ni) {
-            let m = &e.model;
-            for (i, node) in m.nodes.iter().enumerate() {
-                let Some(mi) = node.mesh else { continue };
-                let mesh = &m.meshes[mi];
-                let mat = inst * pose[i];
+            for part in parts(e, pose, inst) {
                 let base = self.casters.len() as u16;
-                self.casters.extend(mesh.pos.iter().map(|q| {
-                    let p = mat.transform_point3(*q);
+                self.casters.extend(part.pos.iter().map(|q| {
+                    let p = part.mat.transform_point3(*q);
                     Vertex::new(p.x, p.y, p.z, 0.0, 0.0, WHITE)
                 }));
                 self.caster_idx
-                    .extend(mesh.idx.iter().map(|&j| base + j as u16));
+                    .extend(part.mesh.idx.iter().map(|&j| base + j as u16));
             }
         }
         let k = look();
@@ -240,18 +283,26 @@ impl Batch {
         w: f32,
         eye: Vec3,
     ) {
-        let m = &e.model;
-        for (i, node) in m.nodes.iter().enumerate() {
-            let Some(mi) = node.mesh else { continue };
+        for part in parts(e, pose, inst) {
+            let (i, mesh, mat) = (part.node, part.mesh, part.mat);
             if e.glow.get(i).copied().unwrap_or(false) {
                 continue;
             }
-            let mesh = &m.meshes[mi];
-            if mesh.pos.is_empty() {
+            if part.pos.is_empty() {
                 continue;
             }
-            let mat = inst * pose[i];
-            let c = mesh.pos.iter().copied().sum::<Vec3>() / mesh.pos.len() as f32;
+            // 스킨 몸(0193)은 한 덩어리라 상자처럼 축마다 밀면 몸 꼴을 잃는다 — 정점 법선으로 민다(매끈한 법선이라 벌어지지 않는다).
+            if part.skinned {
+                let base = verts.len() as u16;
+                for (p, n) in part.pos.iter().zip(part.nrm.iter()) {
+                    let q = mat.transform_point3(*p + *n * w);
+                    let q = q + (q - eye).normalize_or_zero() * OUTLINE_PUSH;
+                    verts.push(Vertex::new(q.x, q.y, q.z, 0.0, 0.0, OUTLINE));
+                }
+                idx.extend(mesh.idx.iter().map(|&j| base + j as u16));
+                continue;
+            }
+            let c = part.pos.iter().copied().sum::<Vec3>() / part.pos.len() as f32;
             let base = verts.len() as u16;
             let sign = |x: f32| {
                 if x > 1e-5 {
@@ -262,7 +313,7 @@ impl Batch {
                     0.0
                 }
             };
-            for p in &mesh.pos {
+            for p in part.pos.iter() {
                 let d = *p - c;
                 let q = *p + vec3(sign(d.x), sign(d.y), sign(d.z)) * w;
                 let q = mat.transform_point3(q);

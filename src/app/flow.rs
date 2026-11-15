@@ -67,6 +67,15 @@ pub enum Scene {
     /// 개발 시나리오(PoC 아레나). 개발판에만.
     #[cfg(feature = "dev")]
     Sandbox,
+    /// 모션 보기(개발, 2026-11-15): 무기(`weapons::IDS`의 자리)를 든 방랑자의 동작을 하나씩 — 빠르기(0 = 1×, 1 = ½, 2 = ¼, 3 = 멈춤)·
+    /// 돌린 칸(30°씩)·재생 시각(ms)을 장면이 들고 다닌다(`App`에 화면 필드를 두지 않는다). 고른 동작 = 칸의 커서.
+    #[cfg(feature = "dev")]
+    Motions {
+        weapon: u8,
+        speed: u8,
+        spin: i8,
+        t_ms: u32,
+    },
     /// 연구소(랩, 0070·0079, 개발판): 묶음 목록 + A/B·내보내기. 개발 창의 도구 탭·F1에서 연다. 게임은 멈추고 값은 바로 들어간다.
     #[cfg(feature = "dev")]
     Lab,
@@ -170,7 +179,11 @@ pub fn tab_of(scene: Scene) -> Option<(Host, Tab)> {
         | Scene::Ask(_)
         | Scene::Slots { .. } => None,
         #[cfg(feature = "dev")]
-        Scene::Dev { .. } | Scene::Sandbox | Scene::Lab | Scene::LabGroup { .. } => None,
+        Scene::Dev { .. }
+        | Scene::Sandbox
+        | Scene::Lab
+        | Scene::LabGroup { .. }
+        | Scene::Motions { .. } => None,
     }
 }
 
@@ -262,7 +275,7 @@ impl Scene {
             | Scene::Controls
             | Scene::Slots { .. } => Layer::Window { hud: false },
             #[cfg(feature = "dev")]
-            Scene::Dev { .. } => Layer::Window { hud: false },
+            Scene::Dev { .. } | Scene::Motions { .. } => Layer::Window { hud: false },
             #[cfg(feature = "dev")]
             Scene::Lab | Scene::LabGroup { .. } => Layer::Window { hud: true },
             Scene::Ask(_) | Scene::SkillAct => Layer::Modal,
@@ -334,6 +347,10 @@ pub enum Ask {
     Forge(u8),
     /// 화로 가게의 거두기(0180): 이 무기의 단을 모두 거둔다 — 숫돌은 돌아오고 잔불은 안 돌아온다.
     Recall(u8),
+    /// 슬롯 창(0192 — 사장 "덮어쓸 때 얼럿이 나와야 해, 텍스트만 바꾸는 것으로는 인지가 잘 안 됨"): 기록 있는 슬롯에 새로 시작.
+    Overwrite(u8),
+    /// 슬롯 창의 지우기(0192 — 덮어쓰기와 같은 꼴).
+    Erase(u8),
 }
 
 /// 묻는 창의 커서 처음 자리: 버리는 일은 "취소"(1)에서 — 연타가 실행되지 않게(KB). 사기는 nail 가게처럼 "사기"(0)에서.
@@ -343,6 +360,8 @@ pub fn ask_default(k: Ask) -> usize {
         Ask::Buy(_) | Ask::Level(_) | Ask::Skill(_) | Ask::Forge(_) => 0,
         // 거두기는 쓴 잔불을 버린다 — 취소에서.
         Ask::Restart | Ask::ToTitle | Ask::Respec | Ask::Recall(_) => 1,
+        // 기록을 지우는 일 — 취소에서.
+        Ask::Overwrite(_) | Ask::Erase(_) => 1,
     }
 }
 
@@ -359,7 +378,10 @@ pub fn answer(k: Ask, yes: bool) -> (Go, bool) {
         | Ask::Skill(_)
         | Ask::Respec
         | Ask::Forge(_)
-        | Ask::Recall(_) => (Go::Back, false),
+        | Ask::Recall(_)
+        | Ask::Erase(_) => (Go::Back, false),
+        // 판을 여는 일은 앱이 한다(`App::enter_slot`이 장면을 바꾼다) — 여기서는 그대로.
+        Ask::Overwrite(_) => (Go::Stay, false),
     }
 }
 
@@ -424,26 +446,22 @@ pub fn slot_step(from: usize, dir: i32, filled: &[bool]) -> usize {
 pub enum SlotDo {
     /// 아무것도(이어하기 창의 빈 슬롯).
     Nothing,
-    /// 한 번 더 눌러야 한다(덮어쓰기·지우기 — 단추 글이 "정말 …?"로 바뀐다).
-    Arm,
+    /// 묻는 창을 연다(덮어쓰기·지우기 — 0192: 단추 글을 바꾸던 "두 번 누르기"는 알아채기 어려웠다).
+    Ask(Ask),
     /// 이 슬롯을 비우고(이미 비었으면 그대로) 새로 시작.
     Fresh,
     /// 이 슬롯의 기록으로 이어한다.
     Load,
-    /// 이 슬롯을 지운다.
-    Erase,
 }
 
-/// 고름 → 할 일(`col`: 이어하기 창의 단추 0 = 이어하기 · 1 = 지우기, `armed`: 이미 한 번 눌렀나).
-pub fn slot_pick(load: bool, filled: bool, col: usize, armed: bool) -> SlotDo {
-    match (load, filled, col, armed) {
-        (true, false, _, _) => SlotDo::Nothing,
-        (true, true, 0, _) => SlotDo::Load,
-        (true, true, _, false) => SlotDo::Arm,
-        (true, true, _, true) => SlotDo::Erase,
-        (false, false, _, _) => SlotDo::Fresh,
-        (false, true, _, false) => SlotDo::Arm,
-        (false, true, _, true) => SlotDo::Fresh,
+/// 고름 → 할 일(`col`: 이어하기 창의 단추 0 = 이어하기 · 1 = 지우기, `slot`: 고른 슬롯).
+pub fn slot_pick(load: bool, filled: bool, col: usize, slot: usize) -> SlotDo {
+    match (load, filled, col) {
+        (true, false, _) => SlotDo::Nothing,
+        (true, true, 0) => SlotDo::Load,
+        (true, true, _) => SlotDo::Ask(Ask::Erase(slot as u8)),
+        (false, false, _) => SlotDo::Fresh,
+        (false, true, _) => SlotDo::Ask(Ask::Overwrite(slot as u8)),
     }
 }
 
@@ -574,7 +592,7 @@ pub fn back(scene: Scene) -> Go {
         | Scene::Settings { .. }
         | Scene::Slots { .. } => Go::Back,
         #[cfg(feature = "dev")]
-        Scene::Dev { .. } | Scene::Lab | Scene::LabGroup { .. } => Go::Back,
+        Scene::Dev { .. } | Scene::Lab | Scene::LabGroup { .. } | Scene::Motions { .. } => Go::Back,
         Scene::Title | Scene::Play | Scene::Ending { .. } | Scene::Result { .. } => Go::Stay,
         #[cfg(feature = "dev")]
         Scene::Sandbox => Go::Stay,
@@ -902,14 +920,24 @@ mod tests {
         assert_eq!(slot_step(2, 1, &filled), 0);
         assert_eq!(slot_step(0, -1, &filled), 2);
         assert_eq!(slot_step(1, 1, &[false; 3]), 1, "nothing to stand on");
-        // 덮어쓰기·지우기는 두 번, 이어하기·빈 슬롯 시작은 한 번.
-        assert_eq!(slot_pick(false, false, 0, false), SlotDo::Fresh);
-        assert_eq!(slot_pick(false, true, 0, false), SlotDo::Arm);
-        assert_eq!(slot_pick(false, true, 0, true), SlotDo::Fresh);
-        assert_eq!(slot_pick(true, true, 0, false), SlotDo::Load);
-        assert_eq!(slot_pick(true, true, 1, false), SlotDo::Arm);
-        assert_eq!(slot_pick(true, true, 1, true), SlotDo::Erase);
-        assert_eq!(slot_pick(true, false, 0, true), SlotDo::Nothing);
+        // 덮어쓰기·지우기는 묻는 창(0192 — 커서는 취소에서, 예는 기록을 지운다), 이어하기·빈 슬롯 시작은 바로.
+        assert_eq!(slot_pick(false, false, 0, 1), SlotDo::Fresh);
+        assert_eq!(slot_pick(false, true, 0, 1), SlotDo::Ask(Ask::Overwrite(1)));
+        assert_eq!(slot_pick(true, true, 0, 2), SlotDo::Load);
+        assert_eq!(slot_pick(true, true, 1, 2), SlotDo::Ask(Ask::Erase(2)));
+        assert_eq!(slot_pick(true, false, 0, 0), SlotDo::Nothing);
+        assert_eq!(
+            focus(Scene::Ask(Ask::Overwrite(0))),
+            1,
+            "overwrite asks from cancel"
+        );
+        assert_eq!(
+            focus(Scene::Ask(Ask::Erase(0))),
+            1,
+            "erase asks from cancel"
+        );
+        assert_eq!(answer(Ask::Erase(0), false), (Go::Back, false));
+        assert_eq!(answer(Ask::Overwrite(0), true), (Go::Stay, false));
         assert_eq!(back(Scene::Slots { load: true }), Go::Back);
         assert_eq!(
             Scene::Slots { load: false }.layer(),

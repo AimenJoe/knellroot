@@ -427,7 +427,11 @@ fn the_beat_fan_follows_the_swing_and_peaks_when_a_press_counts() {
             assert_eq!(cue, None, "not before the hit is live");
         }
         if let Some(c) = cue {
-            assert_eq!(c.sweep, weapons::Sweep::RightToLeft);
+            assert_eq!(
+                c.sweep,
+                weapons::sweep_of("attack"),
+                "the first hit's sweep"
+            );
             seen = Some(c);
             if c.ripe && (w.player.beat.since_swing - w.player.beat.period).abs() < TICK_DT * 0.6 {
                 assert!((c.left - BEAT_CUE_MIN).abs() < 0.05, "smallest on the beat");
@@ -443,13 +447,13 @@ fn the_beat_fan_follows_the_swing_and_peaks_when_a_press_counts() {
         press(&mut w, false, false);
     }
     assert!(seen.is_some() && beat);
-    // 둘째 타(왼쪽 → 오른쪽)를 박자로 쳤다 — 이제 부채꼴은 그 타의 쪽.
+    // 둘째 타(첫 타의 반대쪽 — 쪽은 동작에서 잰 표, 0193)를 박자로 쳤다 — 이제 부채꼴은 그 타의 쪽.
     for _ in 0..12 {
         press(&mut w, false, false);
     }
     assert_eq!(
         w.beat_cue(&t).map(|c| c.sweep),
-        Some(weapons::Sweep::LeftToRight)
+        Some(weapons::sweep_of("attack2"))
     );
     // 셋째(마지막) 타 찌르기: 이을 타가 없으니 박자도 없다.
     let mut w = World::new("test", 20.0);

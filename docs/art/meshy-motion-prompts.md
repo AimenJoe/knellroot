@@ -32,6 +32,63 @@ Text to Motion으로 붙인다. 이름 = `tools/art/blender/wanderer.py`의 동�
   Thrust_Slash = 18(5.8, 찌르기)·33(4.0). Sword_Judgment = 24(10.0)·80(3.4). Heavy_Hammer_Swing = 37(4.4).
 - 앞으로 가는 이동: Weapon_Combo_2·Sword_Judgment·Basic_Jump·Back_Jump는 엉덩이가 0.5~1.1m 움직인다 — 들일 때 수평 이동을 뺀다.
 
+### 둘째 묶음(2026-11-14, 20 동작 — 첫 묶음과 뼈 이름·바인드 포즈가 같다, 섞어 쓴다)
+| 게임 이름 | 쓸 클립(프레임 @30fps) | 메모 |
+|---|---|---|
+| `idle` | 첫 묶음 Combat_Stance | 둘째 묶음에는 없다 — 첫 묶음에서 |
+| `walk`·달리기 | Walking · Running | |
+| `attack`·`attack2` | Double_Combo_Attack(대각 베기 13~17 · 올려 베기 26~31, 24fps) | 0201 — 옛 Triple_Combo_Attack은 1타가 왼→오라 뺐다 |
+| `attack3` | Thrust_Slash 찌르기(17~21) | 0202 — Double_Combo 셋째 내리치기는 느렸다 |
+| `charge`·`heavy` | Attack(봉우리 26, 11m/s) | 모으기 = 휘두르기 전 자세를 잡아 둔다 |
+| `parry` | Sword_Parry_Backward_2(0.53s) | |
+| `dodge` | Roll_Dodge_3(1.63s, 1.65m 앞으로) | 게임 회피는 0.25초 — 줄이면 급해진다(회피 시간은 얼린 값, 판정 뒤에) |
+| `hurt`·`fall` | Dead(맞음 봉우리 4 → 쓰러짐) | **뒤로(등으로) 눕는다** — 지금 `wake`·타이틀은 엎드린 자세라 일어나는 동작이 따로 필요 |
+| `jump`·`land` | Basic_Jump · Jump_Over_Obstacle_2 | |
+| `plunge`·`sk_quake`·`hammer_slam` | Charged_Ground_Slam(봉우리 39) | |
+| `sk_whirl` | Skill_03(봉우리 29, 15m/s 회전) | |
+| `ult_line` | Sword_Judgment(봉우리 24) | |
+| `sk_cut` | Thrust_Slash | |
+| `ult_flurry` | Weapon_Combo(봉우리 13·31·54·69) | |
+| `hammer1` | Heavy_Hammer_Swing | `hammer2`·`hammer_charge`는 아직 |
+| 줍기(새) | Collect_Object | 지금 게임에 줍기 동작은 없다 — 상자·숨은 물건에 쓸 수 있다 |
+| ? | 이름 없는 클립(_01a1db4a, 2.97s) | 제자리에서 조금 움직이는 자세 — 무엇으로 만든 것인지 사장 확인 |
+
+아직 없는 것: `wake`(엎드리거나 누운 데서 일어나기), `walk_back`, `turn_l`·`turn_r`, 몸짓 둘, `drink`, `cast`·`cast_charge`, `throw`, 지팡이 여섯, 쇠뇌 둘, `hammer2`·`hammer_charge`, 기술 다섯(`sk_gather`·`sk_brace`·`sk_echo`·`sk_throw`·`sk_embers`), `ult_upend`.
+
+### 셋째 묶음(2026-11-14, 이름 없는 18 + Walking·Running) — 게임에 넣음(0193)
+만든 차례 = 위 "빠진 것" 표의 차례: M01 깨어남 · M02 뒷걸음 · M03 땅 돌리기 · M04 몸짓 · M05 마시기 · M06 마법 · M07 던지기 · M08 지팡이 콤보 ·
+M09 지팡이 모으기·떼기 · M10 망치 모으기 · M11 망치 두 타 · M12 쇠뇌 · M13~M17 기술 다섯 · M18 쟁반 뒤집기.
+자른 구간·맞춘 순간은 `tools/art/blender/wanderer_skin.py` `CLIPS`. 아직 없는 것: 락온 옆걸음 둘(`strafe_l`·`strafe_r`), 종 몸짓(`idle_bell`).
+
+### 둘째 묶음 뒤에 만들 것(2026-11-14)
+| 이름 | 길이 | 프롬프트 |
+|---|---|---|
+| `wake`(등으로 누운 데서 — Dead에 이어진다) | 4초 | A small hooded fighter lies flat on the back on the ground, unconscious, then stirs, slowly sits up, rolls onto the hands and knees, pushes up to stand, shakes the head once, and settles into a combat-ready stance. |
+| `hammer_charge` | 2초 | A fighter holding a heavy two-handed war hammer cocks it back over the right shoulder and crouches, gathering strength, body tense and trembling slightly, holding the pose. Looping hold, no release. |
+나머지(뒷걸음·땅 돌리기·몸짓·마시기·마법·던지기·지팡이·쇠뇌·망치 2연타·기술 다섯·쟁반 뒤집기)는 위 표들의 프롬프트 그대로.
+
+## 빠진 것(첫 묶음 13개 뒤, 2026-11-14) — 이어 붙인 한 클립에서 자른다
+첫 묶음이 채우는 것: `idle`(Combat_Stance)·`walk`(walking_2_inplace)·달리기(Running)·`attack`·`attack2`(Weapon_Combo_2)·`attack3`(Thrust_Slash 찌르기)·`heavy`(Attack)·`hammer1`(Heavy_Hammer_Swing)·`jump`·`land`(Basic_Jump·Jump_Run). 나머지 39개 이름을 아래 열셋 클립 + 콤보 셋(지팡이·망치 위) + 기술·큰 기술 열하나(2·3순위)로 채운다.
+
+(2026-11-14 사장 "Parry dodge 이상하게 나왔어": 성질이 다른 둘을 한 클립에 이으면 뒤섞인다 — 패링·회피는 따로. 패링은 "칼을 가로로 들어 내려치는 것을 막는다"처럼 꼴이 분명하게, 회피는 Text to Motion이 잘 아는 앞구르기로. 라이브러리(Fighting)에 Block·Roll·Dodge가 있으면 그쪽이 먼저.)
+
+| 클립 → 자를 이름 | 길이 | 프롬프트 |
+|---|---|---|
+| react → `hurt`·`fall`·`wake` | 5초 | A sword fighter in a combat-ready stance is hit hard in the chest, staggers back two steps, then is hit again and collapses forward face down onto the ground, lies still for a moment, then slowly pushes up with the hands, gets to the knees and stands back up into a combat-ready stance. |
+| `parry`(따로) | 2초 | A sword fighter holding a one-handed sword in the right hand stands in a guard stance, then quickly raises the sword horizontally in front of the face with the left hand bracing the blade to block a heavy overhead strike, the knees bend from the impact, then pushes the blade away and returns to the guard stance. Only one block. |
+| `dodge`(따로) | 2초 | A sword fighter holding a one-handed sword in the right hand does one quick forward dive roll: crouches, rolls forward over one shoulder along the ground, and comes back up onto the feet into a crouched guard stance. Only one roll, then holds still. |
+| charge_heavy → `charge`·`heavy` | 4초 | A sword fighter crouches low and draws a one-handed sword far back behind the right hip, holds the coiled tense pose for two seconds while trembling with gathered power, then releases a wide explosive sweeping slash across the front at waist height and rises into a combat-ready stance. |
+| `walk_back` | 2초 | A sword fighter holding a one-handed sword in the right hand walks slowly backwards while still facing forward, guard raised, small careful steps, keeping the eyes on an enemy in front. In place, looping. |
+| turn → `turn_l`·`turn_r` | 3초 | A fighter stomps the right foot down and twists the whole body sharply to the left as if turning the ground underfoot, pauses, then stomps again and twists sharply to the right, and returns to a combat-ready stance. |
+| fidgets → `idle_look`·`idle_shake` | 4초 | A small hooded fighter standing relaxed looks slowly to the left, then to the right, returns to the front, pauses, then gives the whole body a quick shake like shaking off water and settles back into a relaxed standing pose. |
+| `plunge` | 3초 | A sword fighter holding a one-handed sword jumps high, raises the sword over the head at the top of the jump, then drops straight down driving the sword point into the ground on landing, crouched from the impact, then pulls the sword out and stands in a combat-ready stance. |
+| `drink` | 2초 | A fighter holding a sword in the right hand lifts a small lantern-shaped flask with the left hand, tilts the head back and drinks from it, lowers it with a relieved breath, and returns to a combat-ready stance. |
+| cast → `cast_charge`·`cast` | 3초 | A fighter holding a sword in the right hand draws the open left hand back to the chest and gathers energy there for a moment, body tense, then thrusts the left palm forward sharply to fire a magic bolt with a slight recoil, and returns to a combat-ready stance. |
+| `throw` | 2초 | A fighter holding a weapon in the right hand takes a small round bomb with the left hand, tosses it underhand onto the ground a few steps ahead, and hops back half a step into a ready stance. |
+| staff → `staff_charge`·`staff_release` | 4초 | A fighter holding a light wooden staff with both hands crouches and holds it low across the body gathering strength for two seconds, then swings it in one full circle around the body at waist height, turning the whole body once, and returns to a ready stance. |
+| hammer → `hammer_charge`·`hammer_slam` | 4초 | A fighter holding a heavy two-handed war hammer cocks it back over the right shoulder and holds the crouched tense pose for two seconds, then leaps up and slams the hammer down onto the ground in front with both hands, landing in a deep crouch, then rises to a ready stance. |
+| crossbow → `xbow_charge`·`xbow_shoot` | 3초 | A fighter raises a crossbow to the right shoulder with both hands, aims steadily forward and holds still for a moment, then fires it, the shoulders jerk back from the recoil, and steadies the crossbow again in an aiming pose. |
+
 ## 1순위 — 검(기본 무기)
 | 이름 | 프롬프트 |
 |---|---|
@@ -84,3 +141,11 @@ Text to Motion으로 붙인다. 이름 = `tools/art/blender/wanderer.py`의 동�
 
 ## 그다음(공격 밖 — 몸의 반응)
 `hurt`(맞고 휘청), `fall`(쓰러짐), `wake`(엎드렸다 일어남), `jump`·`land`·`plunge`(공중에서 내려찍기), `drink`(등잔 마시기)는 공격을 들인 뒤에.
+
+## 패링(막기) — 다시 받을 것(2026-11-15)
+지금 `parry`는 되울림(M15)의 칼을 드는 구간을 빌려 쓴다(라이브러리 Sword_Parry_Backward_2는 손이 몸 뒤라 못 쓴다). 라이브러리(Fighting)에 Block·Guard가
+있으면 그것이 먼저, 없으면 Text to Motion 2초:
+
+| 이름 | 길이 | 프롬프트 |
+|---|---|---|
+| `parry` | 2초 | A sword fighter holding a one-handed sword in the right hand snaps the sword up in front of the chest, blade pointing up and slightly forward, to catch an incoming strike, the arms brace and the body leans slightly into the block, holds the block firmly for a moment, then lowers the sword back to a guard stance. The sword stays in front of the body the whole time. Only one block. |

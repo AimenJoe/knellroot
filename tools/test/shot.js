@@ -64,7 +64,7 @@ async function main() {
   await press('Escape'); await page.waitForTimeout(300); await shot('00e-pause');
   // 멈춤 = 큰 창(0164): 탭 상태·장비·기술·도감·여정·설정(Q·E로 넘긴다 — 끝에서 돈다), 이 판에서 마지막에 보던 탭에서 열린다(새 판은 상태).
   // 설정 탭의 끝 줄들: … 조작 설정·개발(개발판)·처음부터·타이틀로. 타이틀: 시작·설정·개발(0094).
-  // 개발 창(0083, nail 구조): 위 묶음 탭(도구 · 스테이지 · 전투·적 · 성능, 좌우로) + 그 묶음의 줄 — 스테이지 둘째 줄 = 문 앞, 전투·적 첫 줄 = 보스 아레나.
+  // 개발 창(0083, nail 구조 → 2026-11-15 정리): 위 묶음 탭(도구 · 모션 · 기술 · 스테이지 · 전투·적 · 성능, 좌우로) + 그 묶음의 줄 — 스테이지 둘째 줄 = 문 앞, 전투·적 첫 줄 = 보스 아레나.
   // 타이틀로는 묻는 창(0064 — 커서가 "취소"에서 시작): 위로 한 번 = "타이틀로".
   // 타이틀의 DEV는 맨 끝 — 기록이 생겨 "이어하기"가 붙어도 위로 한 번(돌아서)이면 DEV(0066).
   // 상태 탭에서 Q = 설정 탭(끝에서 돈다) → 위로 한 번 = 맨 끝 줄 "타이틀로".
@@ -73,7 +73,7 @@ async function main() {
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await shot('00e2-title-continue');
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
-  await press('ArrowRight'); await page.waitForTimeout(150); await press('ArrowDown', 1); await press('Enter'); await page.waitForTimeout(800); await shot('00f-gate');
+  await press('ArrowRight', 3); await page.waitForTimeout(150); await press('ArrowDown', 1); await press('Enter'); await page.waitForTimeout(800); await shot('00f-gate');
   await page.keyboard.down('KeyW'); await page.waitForTimeout(2200); await page.keyboard.up('KeyW');
   await page.waitForTimeout(800); await shot('00g-waking');
   await page.waitForTimeout(1500); await press('KeyL'); await page.waitForTimeout(900); await shot('00h-boss-lock');
@@ -99,7 +99,11 @@ async function main() {
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await shot('00j-dev');
-  await press('ArrowRight', 2); await press('Enter'); await page.waitForTimeout(400);  // 개발 창: 전투·적 묶음 첫 줄 = 보스 아레나(0083)
+  // 모션 보기(2026-11-15): 모션 묶음(둘째) 첫 줄 = 검 → 서기 → 아래로 여덟 = 평타 1(서기·몸짓 둘·걷기·달리기·뒷걸음·땅 돌리기 둘 다음) → 나가기.
+  await press('ArrowRight', 1); await press('Enter'); await page.waitForTimeout(700); await shot('00j1-motions');
+  await press('ArrowDown', 8); await page.waitForTimeout(500); await shot('00j2-motions-hit');
+  await press('Escape'); await page.waitForTimeout(300);
+  await press('ArrowRight', 3); await press('Enter'); await page.waitForTimeout(400);  // 개발 창: 전투·적(다섯째 묶음) 첫 줄 = 보스 아레나(0083)
   // 1 보스 아레나: 쿼터뷰 → 앞으로 걷기 → 락온 → 전환 중·전환 뒤 → 공격 → 회피 → 해제.
   await page.keyboard.press('Digit1'); await page.waitForTimeout(400);
   await shot('01-quarter');

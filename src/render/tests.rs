@@ -90,27 +90,46 @@ fn loot_bodies_are_a_crystal_and_a_round_bead_of_the_asked_size() {
 }
 
 /// 0141 휘두름의 초승달: 가로 베기는 칼이 지나간 쪽에서 시작해 머리가 반대쪽 끝에 닿고(오른쪽 → 왼쪽 = 작은 각에서 큰 각으로),
-/// 꼬리는 부채꼴 밖으로 나가지 않는다. 찌르기·세로는 가운데에서 양쪽으로 벌어진다.
+/// 꼬리는 부채꼴 밖으로 나가지 않는다. 0195: 활성 뒤에는 꼬리가 머리를 따라잡아 휘두른 쪽으로 사라지고, 세로(가운데)는 머리가
+/// 가운데에 있고 양 끝에서부터 가운데로 줄어 사라진다.
 #[test]
 fn the_slash_crescent_follows_the_blade_and_stays_inside_the_arc() {
     use crate::weapons::Sweep;
     let (yaw, arc) = (0.3f32, 2.0f32);
     for q in [0.0, 0.3, 0.7, 1.0] {
-        for sw in [Sweep::RightToLeft, Sweep::LeftToRight, Sweep::Center] {
-            for (tail, head) in slash_arcs(yaw, arc, sw, q) {
-                for a in [tail, head] {
-                    assert!((a - yaw).abs() <= arc * 0.5 + 1e-4, "{sw:?} {q}: {a}");
+        for gone in [0.0, 0.5, 1.0] {
+            for sw in [Sweep::RightToLeft, Sweep::LeftToRight, Sweep::Center] {
+                for (tail, head) in slash_arcs(yaw, arc, sw, q, gone) {
+                    for a in [tail, head] {
+                        assert!((a - yaw).abs() <= arc * 0.5 + 1e-4, "{sw:?} {q}: {a}");
+                    }
                 }
             }
         }
     }
-    let r2l = |q| slash_arcs(yaw, arc, Sweep::RightToLeft, q)[0].1;
-    assert!((r2l(0.0) - (yaw - 1.0)).abs() < 1e-5 && (r2l(1.0) - (yaw + 1.0)).abs() < 1e-5);
-    let l2r = |q| slash_arcs(yaw, arc, Sweep::LeftToRight, q)[0].1;
-    assert!(l2r(1.0) < l2r(0.0));
-    let mid = slash_arcs(yaw, arc, Sweep::Center, 1.0);
-    assert_eq!(mid.len(), 2);
-    assert!(mid[0].0 == yaw && mid[1].0 == yaw && mid[0].1 > yaw && mid[1].1 < yaw);
+    let r2l = |q, g| slash_arcs(yaw, arc, Sweep::RightToLeft, q, g)[0];
+    assert!(
+        (r2l(0.0, 0.0).1 - (yaw - 1.0)).abs() < 1e-5
+            && (r2l(1.0, 0.0).1 - (yaw + 1.0)).abs() < 1e-5
+    );
+    let l2r = |q, g| slash_arcs(yaw, arc, Sweep::LeftToRight, q, g)[0];
+    assert!(l2r(1.0, 0.0).1 < l2r(0.0, 0.0).1);
+    // 활성 뒤: 머리는 그 자리, 꼬리가 휘두른 쪽(머리 쪽)으로 다가가 끝에 하나가 된다.
+    let pair: [&dyn Fn(f32, f32) -> (f32, f32); 2] = [&r2l, &l2r];
+    for f in pair {
+        let (a, b, c) = (f(1.0, 0.0), f(1.0, 0.5), f(1.0, 1.0));
+        assert!(a.1 == b.1 && b.1 == c.1);
+        assert!((b.0 - b.1).abs() < (a.0 - a.1).abs() && (c.0 - c.1).abs() < 1e-5);
+    }
+    // 세로: 머리 = 바라보는 쪽, 꼬리 = 양 끝 — 펴졌다가 양 끝에서부터 줄어든다.
+    let mid = |q, g| slash_arcs(yaw, arc, Sweep::Center, q, g);
+    let full = mid(1.0, 0.0);
+    assert_eq!(full.len(), 2);
+    assert!(full.iter().all(|(_, h)| *h == yaw));
+    assert!((full[0].0 - (yaw + 1.0)).abs() < 1e-5 && (full[1].0 - (yaw - 1.0)).abs() < 1e-5);
+    let spread = |v: Vec<(f32, f32)>| (v[0].0 - v[1].0).abs();
+    assert!(spread(mid(0.1, 0.0)) < spread(full.clone()));
+    assert!(spread(mid(1.0, 0.5)) < spread(full) && spread(mid(1.0, 1.0)) < 1e-5);
 }
 
 fn with_key<T>(key: bool, f: impl FnOnce() -> T) -> T {
@@ -367,4 +386,216 @@ fn a_spilled_enemy_leans_the_way_it_slides_then_rocks_back_and_settles() {
         .map(|i| lean(sway * 0.35, i as f32 / 60.0, 0.0, 0.0).x)
         .fold(f32::MIN, f32::max);
     assert!(small < peak * 0.5);
+}
+
+/// 0196: 점프 동작은 위 속도로 자리를 고른다 — 뜨는 순간 0, 꼭대기 가운데, 처음 속도로 떨어지면 끝(더 떨어져도 끝에 머문다).
+/// 내려찍기는 높이로 — 점프 높이에서 0, 땅에서 1.
+#[test]
+fn jump_and_plunge_poses_follow_the_body_in_the_air() {
+    let v0 = 5.0;
+    assert_eq!(jump_phase(v0, v0), 0.0);
+    assert!((jump_phase(0.0, v0) - 0.5).abs() < 1e-6);
+    assert_eq!(jump_phase(-v0, v0), 1.0);
+    assert_eq!(jump_phase(-3.0 * v0, v0), 1.0);
+    let mut last = -1.0;
+    for k in 0..=20 {
+        let vy = v0 - 2.0 * v0 * k as f32 / 20.0;
+        let p = jump_phase(vy, v0);
+        assert!(p >= last, "the jump pose only goes forward");
+        last = p;
+    }
+    assert_eq!(plunge_phase(1.2, 1.2), 0.0);
+    assert_eq!(plunge_phase(0.0, 1.2), 1.0);
+    assert!(plunge_phase(0.6, 1.2) > 0.4 && plunge_phase(0.6, 1.2) < 0.6);
+}
+
+/// 0196: 렌더가 쓰는 동작 길이·자리는 모델의 동작과 같다(동작을 다시 구우면 여기도).
+#[test]
+fn render_clip_lengths_match_the_wanderer_model() {
+    let m = crate::model::Model::from_bytes(include_bytes!("../../assets/models/wanderer.glb"))
+        .unwrap();
+    let len = |n: &str| m.anims[m.anim(n).unwrap_or_else(|| panic!("{n}"))].duration;
+    for (n, want) in [
+        ("jump", JUMP_CLIP),
+        ("land", LAND_CLIP),
+        ("pickup", PICKUP_CLIP),
+        ("parry_push", PARRY_PUSH_CLIP),
+        ("plunge_land", PLUNGE_LAND_CLIP),
+    ] {
+        assert!((len(n) - want).abs() < 0.011, "{n}: {} vs {want}", len(n));
+    }
+    assert!(PLUNGE_STRIKE < len("plunge") && XBOW_RELEASE < len("xbow_shoot"));
+    assert!(CAST_RELEASE < len("cast"));
+    // 0202: 패링(방패 밀기)은 헛친 패링이 묶인 동안(`parry.time s`) 내내 돈다.
+    assert!(len("parry") + 0.011 >= crate::tuning::Tuning::default()[crate::tuning::P::ParryTime]);
+}
+
+/// 0196(사장 "개발 버전처럼 보이는 성의 없는 모션"): 몸의 쪽(엉덩이)이 동작 안에서 어떻게 도는가 —
+/// 평타·강타는 정면에서 시작해 정면으로 끝나고(멈추면 서기로 홱 돌지 않게, 이어 치면 같은 자리에서), 한 바퀴를 돌지 않는다(휘돌이·
+/// 지팡이 강타·한 줄기처럼 도는 것이 수인 동작 빼고). 돌아서기는 몸이 스스로 돌지 않는다(게임이 쪽을 돌린다). 점프는 엉덩이를 올리지
+/// 않는다(게임이 몸을 띄운다). 쇠뇌는 겨누는 쪽(몸이 옆으로 선 채)에서 쏜다.
+#[test]
+fn wanderer_clips_start_and_end_facing_front_and_do_not_spin() {
+    use macroquad::prelude::*;
+    let m = crate::model::Model::from_bytes(include_bytes!("../../assets/models/wanderer.glb"))
+        .unwrap();
+    let hips = m.node("mixamorig:Hips").unwrap();
+    let mut rest = Vec::new();
+    m.pose(None, 0.0, &mut rest);
+    let r0 = Quat::from_mat4(&rest[hips]).inverse();
+    let mut pose = Vec::new();
+    // 동작의 시각 열한 자리에서 엉덩이 쪽(도, 풀어 이은 것)과 엉덩이 높이.
+    let mut track = |name: &str| -> (Vec<f32>, Vec<f32>) {
+        let i = m.anim(name).unwrap_or_else(|| panic!("{name}"));
+        let d = m.anims[i].duration;
+        let (mut ys, mut hs, mut last) = (Vec::new(), Vec::new(), None::<f32>);
+        for k in 0..=10 {
+            m.pose(Some(i), d * 0.995 * k as f32 / 10.0, &mut pose);
+            let f = Quat::from_mat4(&pose[hips]) * r0 * Vec3::Z;
+            let mut y = f.x.atan2(f.z).to_degrees();
+            if let Some(l) = last {
+                y = l + (y - l + 540.0).rem_euclid(360.0) - 180.0;
+            }
+            last = Some(y);
+            ys.push(y);
+            hs.push(pose[hips].w_axis.y);
+        }
+        (ys, hs)
+    };
+    let front = track("parry").0[0];
+    let near = |a: f32, b: f32, tol: f32| ((a - b + 540.0).rem_euclid(360.0) - 180.0).abs() < tol;
+    for w in crate::weapons::WEAPONS.iter() {
+        let mut names: Vec<&str> = w.combo.iter().map(|h| h.anim).collect();
+        names.extend(w.heavy.map(|h| h.anim_heavy));
+        for n in names {
+            let (ys, _) = track(n);
+            let spins = matches!(n, "staff_release");
+            assert!(
+                near(*ys.last().unwrap(), front, 25.0),
+                "{n} ends facing {:+.0}°",
+                ys[10]
+            );
+            if !matches!(n, "heavy" | "hammer_slam" | "staff_release" | "fist_heavy") {
+                assert!(near(ys[0], front, 25.0), "{n} starts facing {:+.0}°", ys[0]);
+            }
+            let (lo, hi) = ys
+                .iter()
+                .fold((f32::MAX, f32::MIN), |(a, b), y| (a.min(*y), b.max(*y)));
+            assert!(
+                spins || hi - lo < 200.0,
+                "{n} turns {:.0}° — a spin",
+                hi - lo
+            );
+        }
+    }
+    for n in ["turn_l", "turn_r"] {
+        let (ys, _) = track(n);
+        assert!(ys.iter().all(|y| near(*y, front, 15.0)), "{n}: {ys:?}");
+    }
+    let stand = track("idle").1[0];
+    for n in ["jump", "land"] {
+        let (_, hs) = track(n);
+        assert!(
+            hs.iter().all(|h| *h <= stand + 0.01),
+            "{n} lifts the hips: {hs:?}"
+        );
+    }
+    // 0204(사장 "쇠뇌도 너무 옆으로 돌아서고"): 활쏘기 원본은 몸이 옆으로 섰다 — 쇠뇌는 몸이 정면을 보고 두 손으로 앞에 든다.
+    let shoot = track("xbow_shoot").0;
+    assert!(
+        shoot.iter().all(|y| near(*y, front, 25.0)),
+        "the crossbow is aimed facing front: {shoot:?}"
+    );
+    assert!(
+        near(track("xbow_charge").0[10], shoot[0], 20.0),
+        "aiming flows into the shot"
+    );
+}
+
+/// 0196: 쇠뇌는 겨누는 동안·쏘는 순간 앞(모델 +Z)을 본다 — 몸은 옆으로 서도 쇠뇌가 탄이 나가는 쪽을 가리킨다.
+#[test]
+fn the_crossbow_points_where_the_bolt_goes() {
+    use macroquad::prelude::*;
+    let m = crate::model::Model::from_bytes(include_bytes!("../../assets/models/wanderer.glb"))
+        .unwrap();
+    let (grip, node) = (m.node("weapon").unwrap(), m.node("w_crossbow").unwrap());
+    let mesh = &m.meshes[m.nodes[node].mesh.unwrap()];
+    let mut rest = Vec::new();
+    m.pose(None, 0.0, &mut rest);
+    let g = rest[grip].w_axis.truncate();
+    // 쇠뇌의 앞 = 쉬는 자세에서 쥔 자리에서 가장 먼 정점(활 쪽 끝).
+    let far = mesh
+        .pos
+        .iter()
+        .copied()
+        .max_by(|a, b| {
+            let d = |p: Vec3| rest[node].transform_point3(p).distance(g);
+            d(*a).total_cmp(&d(*b))
+        })
+        .unwrap();
+    let mut pose = Vec::new();
+    // 겨누기는 끝에(들어 올리는 동안은 옮겨 간다), 쏘기는 처음부터 끝까지.
+    for (clip, at) in [
+        ("xbow_charge", 0.28),
+        ("xbow_shoot", 0.0),
+        ("xbow_shoot", XBOW_RELEASE),
+        ("xbow_shoot", 0.22),
+    ] {
+        m.pose(Some(m.anim(clip).unwrap()), at, &mut pose);
+        let d = (pose[node].transform_point3(far) - pose[grip].w_axis.truncate()).normalize();
+        let yaw = d.x.atan2(d.z).to_degrees();
+        assert!(
+            yaw.abs() < 30.0 && d.y.abs() < 0.5,
+            "{clip} at {at}: points {yaw:+.0}° (up {:.2})",
+            d.y
+        );
+    }
+}
+
+/// 0197: 뒷걸음은 걷기와 같은 빠르기로 발이 간다 — 발이 가는 빠르기(엉덩이에 대한 발의 앞뒤 폭 × 2 / 주기)에
+/// `WALK_BACK_RATE`를 곱하면 걷기와 15% 안(같은 땅 빠르기에서 발이 미끄러지지 않는다).
+#[test]
+fn walk_back_steps_keep_pace_with_the_ground() {
+    let m = crate::model::Model::from_bytes(include_bytes!("../../assets/models/wanderer.glb"))
+        .unwrap();
+    let (hips, foot) = (
+        m.node("mixamorig:Hips").unwrap(),
+        m.node("mixamorig:LeftFoot").unwrap(),
+    );
+    let mut pose = Vec::new();
+    let mut pace = |n: &str| {
+        let i = m.anim(n).unwrap();
+        let d = m.anims[i].duration;
+        let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+        for k in 0..=40 {
+            m.pose(Some(i), d * k as f32 / 40.0, &mut pose);
+            let z = pose[foot].w_axis.z - pose[hips].w_axis.z;
+            lo = lo.min(z);
+            hi = hi.max(z);
+        }
+        2.0 * (hi - lo) / d
+    };
+    let (walk, back) = (pace("walk"), pace("walk_back"));
+    let r = back * WALK_BACK_RATE / walk;
+    assert!(
+        (r - 1.0).abs() < 0.15,
+        "walk {walk:.3} vs back {back:.3} × rate = {r:.2}"
+    );
+}
+
+/// 0197: 손으로 하는 일의 몸짓 길이는 모델의 동작과 같다.
+#[test]
+fn gesture_lengths_match_the_model() {
+    let m = crate::model::Model::from_bytes(include_bytes!("../../assets/models/wanderer.glb"))
+        .unwrap();
+    for n in ["pickup", "pull"] {
+        let d = m.anims[m.anim(n).unwrap()].duration;
+        assert!(
+            (d - gesture_len(n)).abs() < 0.011,
+            "{n}: {d} vs {}",
+            gesture_len(n)
+        );
+    }
+    assert!(m.anim("dodge_back").is_some());
+    assert_eq!(gesture_len("nothing"), 0.0);
 }

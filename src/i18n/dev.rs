@@ -43,6 +43,30 @@ pub const TAB_TOOLS: Pair = ("도구", "tools");
 pub const TAB_STAGE: Pair = ("스테이지", "stage");
 pub const TAB_COMBAT: Pair = ("전투·적", "combat");
 pub const TAB_PERF: Pair = ("성능", "perf");
+pub const TAB_MOTION: Pair = ("모션", "motion");
+pub const TAB_SKILLS: Pair = ("기술", "skills");
+pub const MOTION_START: Pair = ("모션 보기 — {0}", "motions: {0}");
+pub const MOTION_NOTE: Pair = (
+    "이 무기를 든 방랑자의 동작을 하나씩 인형으로 돌려 본다 — 평타·강타·패링·회피·맞음·기술. 판정이 있는 동작은 시간 막대에 판정 구간이 호박색으로 보인다.",
+    "plays each motion of the wanderer holding this weapon on the doll: hits, heavy, parry, dodge, hurt, skills. the hit window shows in amber on the time bar.",
+);
+pub const MOTION_TITLE: Pair = ("모션 — {0}", "motions: {0}");
+pub const MOTION_HINT: Pair = (
+    "위아래: 동작 · 좌우: 돌리기 · 확인: 빠르기 · 탭 넘기기: 무기 · 뒤로: 나가기",
+    "up/down: motion · left/right: turn · confirm: speed · tabs: weapon · back: leave",
+);
+pub const MOTION_LEN: Pair = (
+    "길이 {0}초 · 지금 {1}초 · 빠르기 {2}",
+    "length {0}s · now {1}s · speed {2}",
+);
+pub const MOTION_HIT: Pair = ("판정 {0}~{1}초", "hit window {0}–{1}s");
+pub const MOTION_NONE: Pair = (
+    "모델에 이 동작이 없다(서기로 보인다)",
+    "the model has no such motion (shows idle)",
+);
+pub const MOTION_PAUSED: Pair = ("멈춤", "paused");
+/// 달리기 공격 줄(0202 — 콤보의 타와 같은 동작을 빌려도 줄을 따로 둔다): {0} = 빌린 동작의 이름.
+pub const MOTION_DASH: Pair = ("달리기 공격 — {0}", "dash attack: {0}");
 pub const DEV_HINT: Pair = (
     "좌우: 묶음 · 위아래: 고르기 · 확인: 시작 · 뒤로: 나가기",
     "left/right: group · up/down: pick · confirm: start · back: leave",
@@ -125,6 +149,17 @@ pub const PAIRS: &[Pair] = &[
     TAB_STAGE,
     TAB_COMBAT,
     TAB_PERF,
+    TAB_MOTION,
+    TAB_SKILLS,
+    MOTION_START,
+    MOTION_NOTE,
+    MOTION_TITLE,
+    MOTION_HINT,
+    MOTION_LEN,
+    MOTION_HIT,
+    MOTION_NONE,
+    MOTION_PAUSED,
+    MOTION_DASH,
     DEV_HINT,
     ENTRANCE,
     GATE,
@@ -149,6 +184,85 @@ pub const PAIRS: &[Pair] = &[
     BOARD_MAX_B,
     SCENARIO_NOTE,
 ];
+
+/// 모션 보기의 동작 이름(모델의 동작 이름 → 화면 이름). 표에 없으면 동작 이름 그대로.
+pub const MOTION_LABELS: &[(&str, Pair)] = &[
+    ("idle", ("서기", "idle")),
+    ("idle_look", ("몸짓 — 둘러보기", "fidget: look")),
+    ("idle_shake", ("몸짓 — 털기", "fidget: shake")),
+    ("walk", ("걷기", "walk")),
+    ("run", ("달리기", "run")),
+    ("walk_back", ("뒷걸음(락온)", "walk back (lock-on)")),
+    ("turn_l", ("땅 돌리기 왼쪽", "turn left")),
+    ("turn_r", ("땅 돌리기 오른쪽", "turn right")),
+    ("attack", ("평타 1", "hit 1")),
+    ("attack2", ("평타 2", "hit 2")),
+    ("attack3", ("평타 3", "hit 3")),
+    (
+        "sword_dash",
+        ("검 — 달리며 올려 베기", "sword: running rising slash"),
+    ),
+    ("charge", ("강타 모으기", "heavy charge")),
+    ("heavy", ("강타", "heavy")),
+    ("hammer1", ("평타 1", "hit 1")),
+    ("hammer2", ("평타 2", "hit 2")),
+    ("hammer_charge", ("강타 모으기", "heavy charge")),
+    ("hammer_slam", ("강타", "heavy")),
+    ("staff1", ("평타 1", "hit 1")),
+    ("staff2", ("평타 2", "hit 2")),
+    ("staff3", ("평타 3", "hit 3")),
+    ("staff4", ("평타 4", "hit 4")),
+    ("staff_charge", ("강타 모으기", "heavy charge")),
+    ("staff_release", ("강타", "heavy")),
+    ("cast_charge", ("마법 모으기", "magic charge")),
+    ("cast", ("마법", "magic")),
+    ("xbow_charge", ("쇠뇌 모으기", "crossbow charge")),
+    ("xbow_shoot", ("쇠뇌 쏘기", "crossbow shot")),
+    ("throw", ("수류탄 던지기", "grenade")),
+    ("parry", ("패링", "parry")),
+    ("dodge", ("회피", "dodge")),
+    ("jump", ("점프", "jump")),
+    ("pickup", ("줍기·상자 열기", "pick up / open")),
+    ("pull", ("장치 당기기", "pull lever")),
+    ("fist1", ("주먹 — 왼 잽", "fists: left jab")),
+    ("fist2", ("주먹 — 오른 잽", "fists: right jab")),
+    ("fist3", ("주먹 — 어퍼컷", "fists: uppercut")),
+    ("fist_charge", ("주먹 — 차기 모으기", "fists: kick charge")),
+    ("fist_heavy", ("주먹 — 앞차기", "fists: front kick")),
+    ("fist_dash", ("주먹 — 달리며 앞차기", "fists: running kick")),
+    (
+        "hammer_dash",
+        ("망치 — 달리며 앞차기", "hammer: running kick"),
+    ),
+    ("parry_push", ("패링 성공 — 밀쳐내기", "parry: shove")),
+    ("dodge_back", ("뒤로 뛰기(회피)", "back hop (dodge)")),
+    ("land", ("내려서기", "land")),
+    ("plunge", ("내려찍기", "plunge")),
+    ("plunge_land", ("내려찍고 일어나기", "plunge landing")),
+    ("drink", ("등잔 마시기", "drink")),
+    ("hurt", ("맞음", "hurt")),
+    ("fall", ("쓰러짐", "fall")),
+    ("wake", ("깨어남", "wake")),
+    ("sk_whirl", ("기술 — 휘돌이", "skill: whirl")),
+    ("sk_cut", ("기술 — 가로지르기", "skill: cut")),
+    ("sk_gather", ("기술 — 모아 끌기", "skill: gather")),
+    ("sk_quake", ("기술 — 땅울림", "skill: quake")),
+    ("sk_brace", ("기술 — 버티기", "skill: brace")),
+    ("sk_echo", ("기술 — 되울림", "skill: echo")),
+    ("sk_throw", ("기술 — 던지기", "skill: throw")),
+    ("sk_embers", ("기술 — 잔불 흩기", "skill: embers")),
+    ("ult_upend", ("큰 기술 — 쟁반 뒤집기", "ult: upend")),
+    ("ult_flurry", ("큰 기술 — 몰아치기", "ult: flurry")),
+    ("ult_line", ("큰 기술 — 한 줄기", "ult: line")),
+];
+
+/// 동작 이름의 화면 이름(표에 없으면 동작 이름 그대로 — 모델의 동작 이름은 오른쪽 칸에 따로 보인다).
+pub fn motion_label(anim: &str) -> String {
+    match MOTION_LABELS.iter().find(|(a, _)| *a == anim) {
+        Some((_, p)) => t(*p).to_string(),
+        None => anim.to_string(),
+    }
+}
 
 /// 쌍에서 지금 언어의 것.
 pub fn t(p: Pair) -> &'static str {

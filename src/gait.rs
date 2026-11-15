@@ -41,8 +41,14 @@ impl Gait {
 }
 
 /// 섞이는 동안의 무게(0 = 앞 자세, 1 = 새 동작): 남은 초 `left`에서. 부드럽게(시작·끝에서 느리게).
+#[cfg(test)]
 pub fn weight(left: f32) -> f32 {
-    let x = (1.0 - left / BLEND).clamp(0.0, 1.0);
+    weight_over(left, BLEND)
+}
+
+/// 섞기 무게(0 = 지난 자세, 1 = 새 동작): `len`초 섞기에서 `left`초가 남았을 때.
+pub fn weight_over(left: f32, len: f32) -> f32 {
+    let x = (1.0 - left / len.max(1e-3)).clamp(0.0, 1.0);
     x * x * (3.0 - 2.0 * x)
 }
 

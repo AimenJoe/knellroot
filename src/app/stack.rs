@@ -54,6 +54,12 @@ impl Stack {
         self.v.iter().any(|e| f(e.scene))
     }
 
+    /// 맨 위 칸의 장면 값만 바꾼다 — 커서·창은 그대로(장면이 들고 다니는 작은 상태를 틱마다 고칠 때, 모션 보기).
+    #[cfg(feature = "dev")]
+    pub fn retag(&mut self, scene: Scene) {
+        self.v.last_mut().expect("never empty").scene = scene;
+    }
+
     /// 바꾼다. 지금 칸의 커서·창(`cursor`·`view`)을 받아 맡겨 두고, 바뀌었으면 새 맨 위의 커서·창을 돌려준다.
     pub fn go(&mut self, go: Go, cursor: usize, view: ListView) -> Option<(usize, ListView)> {
         let top = self.v.last_mut().expect("never empty");

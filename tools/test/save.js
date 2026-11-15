@@ -2,7 +2,7 @@
 //   1) 기록이 없으면 타이틀 = 시작·설정(새로 하기 없음), 2) 기록을 심어 두면 = 이어하기·설정·새로 하기,
 //   3) 이어하기 → 기록의 쉼터(문 앞)에서 선다(스크린숏), 4) 멈춤 → 처음부터 → 기록에서 판 안의 자리가 지워지고 남는 것은 그대로,
 //   3a) 쉼터에서 쉬면 화로(0104: 레벨 · 가게 · 떠나기) — 생명을 한 단 올리고(lv.life), 가게에서 장신구를 사면 기록에(0064 M4).
-//   5) 기록 슬롯(0066): 이어하기·시작하기 → 슬롯 창, 지우기·덮어쓰기는 두 번 눌러야, 다른 슬롯에서 시작해도 슬롯 1은 그대로, 마지막 슬롯 칸.
+//   5) 기록 슬롯(0066): 이어하기·시작하기 → 슬롯 창, 지우기·덮어쓰기는 묻는 창(0192 — 커서는 취소에서), 다른 슬롯에서 시작해도 슬롯 1은 그대로, 마지막 슬롯 칸.
 //   처음부터·타이틀로·사기는 묻는 창. 그 사이 장비 창에서 장신구를 끼면 기록에 남는지(0064 M3).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/save.js dist shots
 const { chromium } = require('playwright');
@@ -130,11 +130,13 @@ async function main() {
     await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(600);
   };
   await toTitle();
-  // 5a) 이어하기 → 지우기(좌우) → 한 번 누르면 "정말 지울까요?"만 — 기록은 그대로. 닫아도 그대로.
+  // 5a) 이어하기 → 지우기(좌우) → 묻는 창(0192)만 뜬다 — 기록은 그대로. 묻는 창·슬롯 창을 닫아도 그대로.
   await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowRight'); await press('Enter'); await page.waitForTimeout(300);
-  await shot('save-3-erase-armed');
+  await shot('save-3-erase-ask');
   if ((await record()) === null) fail('one press must not erase');
+  await press('Escape'); await page.waitForTimeout(300);
+  if ((await record()) === null) fail('closing the ask must not erase');
   await press('Escape'); await page.waitForTimeout(300);
   if ((await record()) === null) fail('closing must not erase');
   // 5b) 시작하기(둘째 줄 — 닫으면 커서는 이어하기에 돌아와 있다) → 새로 시작 창(커서는 첫 빈 슬롯 = 슬롯 2) → 시작.
@@ -155,9 +157,14 @@ async function main() {
   await toTitle();
   await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
   await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(300);
-  await shot('save-5-overwrite-armed');
+  await shot('save-5-overwrite-ask');
   if ((await record()) === null) fail('one press must not overwrite');
-  await press('Enter'); await page.waitForTimeout(800);
+  // 묻는 창의 커서는 "취소"에서 — 그대로 확인하면 아무것도 지우지 않고 슬롯 창으로.
+  await press('Enter'); await page.waitForTimeout(300);
+  if ((await record()) === null || !/embers=5\n/.test(await record())) fail('cancel must keep slot 1');
+  // 다시 묻고 왼쪽(덮어쓰기) → 확인.
+  await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowLeft'); await press('Enter'); await page.waitForTimeout(800);
   r = await record();
   console.log('덮어쓰기 뒤 슬롯 1:', JSON.stringify(r));
   if (r !== null && /embers=5\n/.test(r)) fail('overwrite must clear slot 1');

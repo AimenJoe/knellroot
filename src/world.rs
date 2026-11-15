@@ -429,6 +429,8 @@ pub enum PState {
     Land {
         t: f32,
         dur: f32,
+        /// 내려찍기로 내려앉았다(0202 — 렌더가 내려찍은 뒤의 웅크림 `plunge_land`를 튼다).
+        plunge: bool,
     },
     /// 강공격 모으기(0030): 평타의 활성 구간이 끝날 때 아직 공격을 쥐고 있으면. 서서(돌아볼 수는 있다) `heavy.charge s`까지 모은다.
     /// 떼면 늘 강타(덜 모았으면 약하게). 회피·패링으로 끊는다.
@@ -1087,7 +1089,7 @@ impl World {
             PState::Dodge { t: e, .. } => e >= t[P::DodgeTime] * t[P::DodgeCancel],
             PState::Cast { fired, .. } => fired,
             PState::Throw { thrown, .. } => thrown,
-            PState::Land { t: e, dur } => e >= dur * t[P::LandCancel],
+            PState::Land { t: e, dur, .. } => e >= dur * t[P::LandCancel],
             PState::Drink { gulped, .. } => gulped,
             // 스킬·큰 기술의 후딜(0151): 판정이 끝나면 회피·다른 스킬·평타로 끊는다.
             PState::Skill { .. } => skill_done,
