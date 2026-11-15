@@ -101,9 +101,11 @@ CLIPS = [
     ("idle_look", "M04", ("span", 0, 44, None)),
     ("idle_shake", "M04", ("span", 44, 71, None)),
     # 검 세 타(Triple_Combo_Attack 봉우리 18·36·54)
-    ("attack", "Triple_Combo_Attack", ("hit", 6, (12, 24), 27, 0.43, 0.125)),
-    ("attack2", "Triple_Combo_Attack", ("hit", 27, (30, 42), 45, 0.43, 0.142)),
-    ("attack3", "Triple_Combo_Attack", ("hit", 45, (48, 60), 70, 0.52, 0.10)),
+    # 검 3연타(0201 — 사장 "우에서 좌가 1타인 모션으로"): Double_Combo_Attack — 오른쪽 위로 들어(0~8) 왼쪽 아래로 크게 내려 베고(봉우리 15),
+    # 왼쪽 아래에서 오른쪽 위로 올려 베고(29), 오른쪽에서 내려친다(41). 한 원본이라 타 사이의 자세가 이어진다. 옛 Triple_Combo_Attack은 왼→오가 1타였다.
+    ("attack", "Double_Combo_Attack", ("anchors", [(0.0, 4), (0.08, 13), (0.13, 15), (0.18, 17), (0.43, 23)])),
+    ("attack2", "Double_Combo_Attack", ("hit", 23, (26, 31), 36, 0.43, 0.13)),
+    ("attack3", "Double_Combo_Attack", ("hit", 36, (38, 43), 56, 0.52, 0.15)),
     # 검 모아 베기(0199): Charged_Slash — 칼을 왼쪽 앞으로 감아 쥐고(13 → 22, 모으는 동안 버팀) 오른쪽으로 크게 벤다(27~29, 손 속도 5.0).
     # 옛 판은 Attack(내려치기)이었다.
     ("charge", "Charged_Slash", ("span", 13, 22, 0.3)),

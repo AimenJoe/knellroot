@@ -27,7 +27,7 @@ KEEP = {
         "Back_Jump": "Back_Jump"},  # 2026-11-15: 뒤로 뛰기 = 뒤로 피하기(0197)
     1: {n: n for n in ["Attack", "Basic_Jump", "Charged_Ground_Slam", "Dead", "Jump_Over_Obstacle_2", "Roll_Dodge_3",
                        "Running", "Skill_03", "Sword_Judgment", "Sword_Parry_Backward_2", "Thrust_Slash",
-                       "Triple_Combo_Attack", "Walking", "Weapon_Combo", "Heavy_Hammer_Swing",
+                       "Double_Combo_Attack", "Walking", "Weapon_Combo", "Heavy_Hammer_Swing",
                        "Collect_Object"]},  # 2026-11-15: 줍기
     2: "numbered",
     3: {"Idle_02": "Idle_02"},

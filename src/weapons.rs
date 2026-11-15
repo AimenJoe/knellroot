@@ -33,9 +33,9 @@ pub enum Sweep {
 /// 동작 시계는 타의 판정 시작이 이 시작에 오게 돈다(`clip_rate` — 맨손처럼 남의 동작을 빌린 타·대시 공격도 칼이 닿는 순간에 맞는다).
 /// 새 동작을 무기 표에 쓰면 여기에도 한 줄(시험 `every_weapon_motion_has_a_sweep`).
 pub const SWEEPS: [(&str, Sweep, (f32, f32)); 18] = [
-    ("attack", Sweep::LeftToRight, (0.08, 0.10)),
-    ("attack2", Sweep::RightToLeft, (0.08, 0.10)),
-    ("attack3", Sweep::LeftToRight, (0.10, 0.12)),
+    ("attack", Sweep::RightToLeft, (0.08, 0.10)),
+    ("attack2", Sweep::LeftToRight, (0.08, 0.10)),
+    ("attack3", Sweep::Center, (0.10, 0.12)),
     ("heavy", Sweep::LeftToRight, (0.06, 0.12)),
     ("hammer1", Sweep::RightToLeft, (0.14, 0.17)),
     ("hammer2", Sweep::Center, (0.16, 0.20)),
@@ -310,7 +310,8 @@ const MAGIC: Bolt = Bolt {
     scale: 1.0,
 };
 
-/// 순례자의 검 — 기준. 3연타: 가로 → 되돌려 가로 → 내디디며 찌르기(좁고 길게, 자세 피해 큼).
+/// 순례자의 검 — 기준. 3연타(0201 — Meshy Double_Combo_Attack): 오른쪽 위 → 왼쪽 대각 베기 → 올려 베기(왼 → 오른) →
+/// 오른쪽에서 내리치기(좁고 길게, 자세 피해 큼).
 const SWORD_COMBO: [Hit; 3] = [
     hit(1.0, 1.0, 1.0, 1.0, 10, 1.0, "attack"),
     hit(1.0, 1.0, 1.0, 1.0, 10, 1.0, "attack2"),
@@ -364,11 +365,12 @@ pub const WEAPONS: [Weapon; 5] = [
     Weapon {
         id: Id::Sword,
         combo: &SWORD_COMBO,
-        // 달려들며 찌르기: 좁고 길게, 회피 거리만큼 더 내딛는다.
+        // 달려들며 크게 베기(0201 — 1타의 오른쪽 위 → 왼쪽 대각이라 다음 누름의 2타로 원본 그대로 이어진다): 판정은 좁고 길게,
+        // 회피 거리만큼 더 내딛는다.
         dash: Some(Hit {
             knock: 1.4,
             cancel: 0.2,
-            ..hit(1.0, 1.25, 0.5, 2.4, 20, 2.0, "attack3")
+            ..hit(1.0, 1.25, 0.5, 2.4, 20, 2.0, "attack")
         }),
         heavy: Some(Heavy {
             time: 1.0,
@@ -1012,7 +1014,7 @@ mod swing_tests {
                     last = Some(y);
                     yaws.push(y);
                 }
-                let mid = yaws[4];
+                let mid = (yaws[4] + 540.0).rem_euclid(360.0) - 180.0;
                 let span = yaws[8] - yaws[0];
                 // 주먹·발(맨손, 앞차기)은 칼끝보다 몸에 가까워 각이 크게 흔들린다 — 가운데는 덜 엄하게, 가로는 45°부터.
                 let (front, wide) = if tip.is_some() && limb.is_none() {
