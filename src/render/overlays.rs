@@ -1056,7 +1056,7 @@ fn wpn_look(w: &World) -> u8 {
 /// 쏘기 = 탄이 닿는 거리의 줄, 수류탄 = 떨굴 자리의 폭발 고리, 스킬 = 그 꼴(줄·부채꼴·던지는 줄).
 /// 색은 옅은 흰 금빛 하나 — 빨강은 적의 예고만 쓴다(0141).
 pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>) {
-    let (Some(show), Some(dir)) = (show, w.drag_aim) else {
+    let (Some(show), Some(dir)) = (show, w.aim_line) else {
         return;
     };
     let fl = Drape {
@@ -1078,6 +1078,18 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
     match show {
         // 진실한 표시(0218): 길이는 탄을 쏠 때와 같은 길·같은 벽·땅 규칙으로 돌려 본 멈추는 자리(`World::shot_reach`), 폭은 탄이
         // 맞히는 폭. 모으는 중이면 모은 탄의 길.
+        AimShow::Reticle => {
+            let def = match w.player.weapon.def().rb {
+                crate::weapons::Rb::Magic(b) => b,
+                crate::weapons::Rb::Shot { bolt, .. } => bolt,
+            };
+            let len = w.shot_reach(dir, def, t);
+            let quiet = Color::new(1.0, 0.95, 0.8, 0.35);
+            fl.lane(foot, dir, len, 0.06, quiet);
+            let end = foot + dir * len;
+            fl.ring(end, 0.45, 0.0, 360.0, edge);
+            fl.ring(end, 0.12, 0.0, 360.0, edge);
+        }
         AimShow::Cast => {
             let wpn = w.player.weapon.def();
             let def = if matches!(w.player.state, PState::CastCharge { .. }) {

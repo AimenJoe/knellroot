@@ -231,6 +231,35 @@ fn lay_by_hearth(run: &StageRun, world: &mut World) {
 }
 
 impl App {
+    /// 땅 위 조준 표시의 꼴(0217 → 0219): 터치로 끄는 버튼이면 그 일, 아니면 원거리가 겨누는 쪽이 있을 때 —
+    /// 쏘거나 모으는 동안은 띠(어느 장치나), 숄더뷰는 가는 줄 + 멈추는 자리, 쿼터뷰의 패드 스틱은 띠. 마우스 커서는 그리지 않는다
+    /// (커서 자체가 겨누는 자리다).
+    fn aim_show(&self) -> Option<AimShow> {
+        if let Some(k) = self.input.aiming() {
+            return match k {
+                touch::Kind::Attack => Some(AimShow::Grenade),
+                touch::Kind::Cast => Some(AimShow::Cast),
+                touch::Kind::Skill1 => Some(AimShow::Skill(0)),
+                touch::Kind::Skill2 => Some(AimShow::Skill(1)),
+                _ => None,
+            };
+        }
+        self.world.aim_line?;
+        let firing = matches!(
+            self.world.player.state,
+            crate::world::PState::Cast { .. } | crate::world::PState::CastCharge { .. }
+        );
+        if firing {
+            Some(AimShow::Cast)
+        } else if self.cam.mode == Mode::Free {
+            Some(AimShow::Reticle)
+        } else if input::device() == input::Device::Pad {
+            Some(AimShow::Cast)
+        } else {
+            None
+        }
+    }
+
     /// 개발 판(DEV에서 시작한 스테이지)인가 — 운영판은 늘 거짓.
     fn dev_run_now(&self) -> bool {
         #[cfg(feature = "dev")]
@@ -949,13 +978,7 @@ impl App {
                     (_, Some(w)) if stage.is_some() => Some(("wake", w.pose())),
                     _ => self.gesture.filter(|_| stage.is_some()),
                 },
-                aim_show: self.input.aiming().and_then(|k| match k {
-                    touch::Kind::Attack => Some(AimShow::Grenade),
-                    touch::Kind::Cast => Some(AimShow::Cast),
-                    touch::Kind::Skill1 => Some(AimShow::Skill(0)),
-                    touch::Kind::Skill2 => Some(AimShow::Skill(1)),
-                    _ => None,
-                }),
+                aim_show: self.aim_show(),
             }),
         };
         self.frame = Some(f);

@@ -766,8 +766,9 @@ pub struct World {
     pub sparks: Vec<Spark>,
     /// 이번 틱에 손을 떠난 수류탄(던질 자리).
     throw_to: Option<Vec3>,
-    /// 터치로 끌어 겨누는 쪽(0217 — 수평, 길이 1). 렌더가 땅 위 미리보기를 그린다. 끌지 않으면 None.
-    pub drag_aim: Option<Vec3>,
+    /// 원거리가 지금 겨누는 쪽(0217 → 0219 — 수평, 길이 1): 터치로 끈 쪽·패드 스틱(보조를 붙인 뒤)·숄더뷰의 카메라 앞·커서.
+    /// 렌더가 땅 위 미리보기를 그린다(무엇을 그릴지는 앱이 `View::aim_show`로). 손이 겨누지 않으면 None.
+    pub aim_line: Option<Vec3>,
     /// 이번 틱에 쏜 쪽과 세기(0 = 보통, 1 = 덜 모음, 2 = 다 모음, 0056) — `tick_bolts`가 탄을 세운다.
     cast_fire: Option<(Vec3, u8)>,
     /// 공중 RB(0111): 이번 틱에 공중에서 쏜 쪽(수평) — `tick_bolts`가 내려 쏘는 탄을 만든다.
@@ -960,7 +961,7 @@ impl World {
             blasts: Vec::new(),
             sparks: Vec::new(),
             throw_to: None,
-            drag_aim: None,
+            aim_line: None,
             cast_fire: None,
             air_fire: None,
             cast_denied_now: false,
