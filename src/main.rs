@@ -59,6 +59,7 @@ mod skills;
 mod species;
 mod stage;
 mod stats;
+mod status;
 mod text;
 mod touch;
 mod tuning;

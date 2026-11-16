@@ -10,6 +10,7 @@
 use super::player_tick::Ctx;
 use super::*;
 use crate::skills::{Cap, Eff, Form, Twist, FLURRY, LINE, UPEND};
+use crate::status::{Dose, NO_DOSE};
 use crate::tuning::{
     BASH_CUT_STAGGER, BASH_PUSH, BLADE_CATCH, BLADE_HEIGHT, ERUPT_RING_MAX, HOP_DASH, HOP_EMPTY,
     HOP_GAP, SKILL_DENIED_SHOW, SKILL_HITSTOP, SPIRE_DELAY, ULT_HITSTOP, ULT_KILL_WINDOW,
@@ -105,12 +106,16 @@ impl Field {
 /// 새 스킬들의 타 하나(`skill_touch`): 피해(0 = 없음)·자세 피해·휘청(보스는 휘청이지 않는다)·밀려나는 속도·치명타를 쓰나
 /// (남는 피해 — 불티·울림 — 는 드러난 틈을 쓰지 않는다: 반격의 치명타를 먹어 치우지 않게).
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Touch {
-    damage: i32,
-    poise: f32,
-    stagger: f32,
-    knock: Vec3,
-    crit: bool,
+pub(super) struct Touch {
+    pub(super) damage: i32,
+    pub(super) poise: f32,
+    pub(super) stagger: f32,
+    pub(super) knock: Vec3,
+    pub(super) crit: bool,
+    /// 싣는 타입과 쌓는 양(0223 V2).
+    pub(super) dose: Dose,
+    /// 타마다의 피해 덤(`Stats::dmg`)을 뺀다 — 타입이 스스로 내는 타(울림).
+    pub(super) flat: bool,
 }
 
 /// 스킬의 넓은 타 한 번(`skill_area`): 닿는 거리·부채꼴(쪽, cos 반각)·밀기·휘청·타 번호·피해·자세 피해·깨진 적에게의 배.
@@ -123,6 +128,8 @@ struct Sweep {
     damage: i32,
     poise: f32,
     shatter: f32,
+    /// 싣는 타입과 쌓는 양(0223 V2).
+    dose: Dose,
 }
 
 impl World {
@@ -380,6 +387,7 @@ impl World {
                             damage: s.damage,
                             poise: s.poise,
                             shatter: 1.0,
+                            dose: s.dose(),
                         },
                     );
                 }
@@ -410,6 +418,7 @@ impl World {
                             damage: s.damage,
                             poise: s.poise,
                             shatter: 1.0,
+                            dose: s.dose(),
                         },
                     );
                     // 맺음: 이 스킬로 쓰러뜨리면 대기의 몫을 돌려받는다(한 번 쓸 때 한 번).
@@ -476,6 +485,7 @@ impl World {
                             damage: s.damage,
                             poise: s.poise,
                             shatter,
+                            dose: s.dose(),
                         },
                     );
                     // 갈라진 땅(ㄴ): 찍은 부채꼴이 남는다.
@@ -548,6 +558,7 @@ impl World {
                                 damage: s.damage,
                                 poise: s.poise * pk,
                                 shatter: 1.0,
+                                dose: s.dose(),
                             },
                         );
                     }
@@ -645,6 +656,7 @@ impl World {
                             damage: s.damage + more * n,
                             poise: s.poise,
                             shatter: 1.0,
+                            dose: s.dose(),
                         },
                     );
                     // 되쏘기(ㄴ): 받아 둔 조각을 던진 쪽으로 — 패링으로 되돌린 조각과 같은 길(`reflected`).
@@ -813,6 +825,7 @@ impl World {
                 true,
             ));
             add_poise(en, sw.poise * self.stats.poise, None, t, &mut ev);
+            afflict(en, sw.dose, &mut ev);
             ev.push(Event::Hit { at });
             if en.hp <= 0 {
                 en.state = EState::Dead;
@@ -879,6 +892,7 @@ impl World {
                 en.frail = secs;
                 en.frail_mult = mult;
             }
+            afflict(en, id.def().dose(), &mut self.skill_ev);
         }
         self.skill_ev.push(Event::Skill { id, at: spot, dir });
         spot
@@ -1025,6 +1039,8 @@ impl World {
                         stagger: 0.0,
                         knock,
                         crit: true,
+                        dose: skills::Id::Throw.def().dose(),
+                        flat: false,
                     },
                 );
                 if !b.out && b.drag > 0.0 {
@@ -1037,7 +1053,7 @@ impl World {
                 // 박힌 자리(ㄱ): 돌아오지 않고 끝에서 터진다.
                 (true, true, Some((radius, damage))) => {
                     let at = vec3(b.pos.x, feet, b.pos.z);
-                    self.skill_blast(t, &mut ev, at, radius, damage);
+                    self.skill_blast(t, &mut ev, at, radius, damage, NO_DOSE);
                     ev.push(Event::ThrowBoom { at, radius });
                 }
                 (true, true, None) => {
@@ -1097,6 +1113,8 @@ impl World {
                             stagger: 0.0,
                             knock: Vec3::ZERO,
                             crit: false,
+                            dose: skills::Id::Embers.def().dose(),
+                            flat: false,
                         },
                     );
                 }
@@ -1113,7 +1131,13 @@ impl World {
     /// 새 스킬들의 타 하나(G2 — 던진 무기·불티·울림·한 줄기): 피해는 여느 타와 같은 길(`hurt_by` — 장신구의 덤·깨진 동안의 배·
     /// 더 다치는 표지), 자세 피해, 쓰러짐, 휘청(보스·전환 중인 보스는 휘청이지 않는다 — 이미 더 길게 휘청이는 적은 그대로).
     /// 스킬의 타라 큰 기술 게이지를 채우지 않고(`connected`를 건드리지 않는다), 쓰러뜨리면 스킬 몫의 기세. 쓰러뜨렸으면 참.
-    fn skill_touch(&mut self, t: &Tuning, ev: &mut Vec<Event>, i: usize, c: &Touch) -> bool {
+    pub(super) fn skill_touch(
+        &mut self,
+        t: &Tuning,
+        ev: &mut Vec<Event>,
+        i: usize,
+        c: &Touch,
+    ) -> bool {
         let snare = self.snare_secs();
         let en = &mut self.enemies[i];
         if !en.boss {
@@ -1122,13 +1146,8 @@ impl World {
         let at = en.pos + Vec3::Y * en.height * 0.6;
         if c.damage > 0 {
             let crit = c.crit && en.exposed > 0.0;
-            en.hp -= hurt_by(
-                en,
-                self.stats.dmg + c.damage,
-                crit,
-                self.stats.opened_dmg,
-                t,
-            );
+            let bonus = if c.flat { 0 } else { self.stats.dmg };
+            en.hp -= hurt_by(en, bonus + c.damage, crit, self.stats.opened_dmg, t);
             if crit {
                 en.exposed = 0.0;
                 ev.push(Event::Crit { at });
@@ -1149,6 +1168,7 @@ impl World {
             ev.push(Event::EnemyDown { at: en.pos });
             return true;
         }
+        afflict(en, c.dose, ev);
         if c.stagger > 0.0 && !en.boss && !en.rising() {
             let longer = matches!(en.state, EState::Stagger { t: e, dur } if dur - e >= c.stagger);
             if !longer {
@@ -1162,7 +1182,15 @@ impl World {
     }
 
     /// 둘레 터짐(G2 — 던지기의 박힌 자리): `at` 둘레 `radius` m의 깨어 있는 적에게 피해, 바깥으로 민다(보스는 조금).
-    fn skill_blast(&mut self, t: &Tuning, ev: &mut Vec<Event>, at: Vec3, radius: f32, damage: i32) {
+    pub(super) fn skill_blast(
+        &mut self,
+        t: &Tuning,
+        ev: &mut Vec<Event>,
+        at: Vec3,
+        radius: f32,
+        damage: i32,
+        dose: Dose,
+    ) {
         let mut n = 0;
         for i in 0..self.enemies.len() {
             let en = &self.enemies[i];
@@ -1184,6 +1212,8 @@ impl World {
                     stagger: 0.0,
                     knock,
                     crit: true,
+                    dose,
+                    flat: false,
                 },
             );
             n += 1;
@@ -1236,6 +1266,8 @@ impl World {
                         stagger,
                         knock: Vec3::ZERO,
                         crit: false,
+                        dose: d.skill.dose(),
+                        flat: false,
                     },
                 );
             }
@@ -1355,6 +1387,7 @@ impl World {
             ev.push(Event::Hit { at });
             let pk = if winding { mult } else { 1.0 };
             add_poise(en, d.skill.poise * poise_k * pk, None, t, &mut ev);
+            afflict(en, d.skill.dose(), &mut ev);
             if en.hp <= 0 {
                 en.state = EState::Dead;
                 self.kills += 1;
@@ -1446,6 +1479,7 @@ impl World {
             en.hurt = 0.15;
             ev.push(Event::Hit { at: hit_at });
             add_poise(en, s.poise * poise_k, None, t, &mut ev);
+            afflict(en, s.dose(), &mut ev);
             if en.hp <= 0 {
                 en.state = EState::Dead;
                 self.kills += 1;
@@ -1613,6 +1647,8 @@ impl World {
                     stagger: 0.0,
                     knock,
                     crit: true,
+                    dose: skills::LINE_DOSE,
+                    flat: false,
                 },
             );
         }
@@ -2419,9 +2455,12 @@ mod tests {
             "back at the start: {:?}",
             w.player.pos
         );
+        // 가는 길의 타가 금을 내고(균열 타입 — 0223 V2) 오는 길의 타는 그 금에 더 아프다.
         let dmg = w.skill_eff(Sk::Cut).skill.damage + w.stats.dmg;
+        let back = skills::scaled(dmg, crate::tuning::RIFT_MULT);
         for e in &w.enemies[..3] {
-            assert_eq!(e.hp, 90 - 2 * dmg, "cut going and coming");
+            assert!(e.ail.rift > 0.0);
+            assert_eq!(e.hp, 90 - dmg - back, "cut going and coming");
         }
         assert_eq!(w.enemies[3].hp, 90, "off the lane");
         let flashes: Vec<Vec3> = ev
@@ -3099,8 +3138,14 @@ mod tests {
             assert_eq!(w.player.hp, hp, "a blow of 10 minus 10");
             assert!(flat(w.player.pos, at) < 0.05, "not pushed");
             assert!(!ev.contains(&Event::PlayerHurt), "no hurt feedback");
+            // 터뜨림은 잔불 타입(0223 V2)이라 맞은 적에 화상이 붙는다 — 그 뒤에 탄 몫은 빼고 터뜨림만 센다.
+            let side_at = w.enemies[side].pos;
+            let burns = ev
+                .iter()
+                .filter(|e| matches!(e, Event::Burn { at } if flat(*at, side_at) < 0.1))
+                .count() as i32;
             (
-                90 - w.enemies[side].hp,
+                90 - w.enemies[side].hp - burns * crate::tuning::BURN_DMG,
                 w.enemies[2].hp,
                 w.player.skill.brace_soaked,
             )
@@ -3296,10 +3341,17 @@ mod tests {
             !matches!(w.enemies[3].state, EState::Stagger { .. }),
             "a boss"
         );
-        assert!(
-            w.enemies.iter().skip(1).all(|e| e.hp == e.max_hp),
-            "no damage"
-        );
+        // 울림 자체의 피해는 없다 — 울림 타입(0223 V2)이라 닿은 잡몹이 한 박 뒤에 울리고, 그 울림이 둘레를 조금 다치게 한다.
+        let tolls = ev
+            .iter()
+            .filter(|e| matches!(e, Event::Toll { .. }))
+            .count() as i32;
+        assert!(tolls >= 1);
+        assert!(w
+            .enemies
+            .iter()
+            .skip(1)
+            .all(|e| e.max_hp - e.hp <= tolls * crate::tuning::TOLL_DMG));
         // 울림 없이 같은 패링.
         let (mut w, t) = echo_world(1, Pick::A);
         let (ev, open_plain) = parry_the_front(&mut w, &t);
@@ -3357,8 +3409,10 @@ mod tests {
             assert!(!matches!(w.enemies[3].state, EState::Stagger { .. }));
             (90 - w.enemies[1].hp, boss - w.enemies[3].hp)
         };
-        assert_eq!(hurt(MAX_RANK), (10, 10));
-        assert_eq!(hurt(4), (0, 0));
+        // 맺음 없이도 울림 타입(0223 V2)의 울림이 조금 다치게 한다 — 맺음의 몫은 그 위의 10.
+        let (plain, capped) = (hurt(4), hurt(MAX_RANK));
+        assert_eq!((capped.0 - plain.0, capped.1 - plain.1), (10, 10));
+        assert!(plain.0 > 0 && plain.0 % crate::tuning::TOLL_DMG == 0);
     }
 
     /// 던지고 다 돌아올 때까지(또는 `n`틱).
@@ -3516,7 +3570,9 @@ mod tests {
                 .count();
         }
         assert_eq!(pulses, 3);
-        assert_eq!(w.enemies[0].hp, 90 - 30);
+        // 불티는 잔불 타입(0223 V2): 둘째 타에 화상 한 겹이 붙어 셋째 타와 같은 때 한 번 탄다(겹마다 3).
+        assert_eq!(w.enemies[0].ail.burn, 1);
+        assert_eq!(w.enemies[0].hp, 90 - 30 - crate::tuning::BURN_DMG);
         assert_eq!(w.enemies[1].hp, 90, "outside");
         assert!(w.skill_fields.is_empty() && w.skill_active(0) == 0.0);
         assert_eq!(w.embers, 50, "costs no embers");
@@ -3542,7 +3598,12 @@ mod tests {
             }
             90 - w.enemies[0].hp
         };
-        assert_eq!(burnt(Pick::A), 36, "three pulses of 12");
+        // 세 타 + 그 사이에 붙은 화상 한 겹이 한 번 탄 몫(0223 V2).
+        assert_eq!(
+            burnt(Pick::A),
+            36 + crate::tuning::BURN_DMG,
+            "three pulses of 12 and one burn"
+        );
         assert_eq!(burnt(Pick::B), 0);
     }
 

@@ -491,6 +491,17 @@ pub struct Strings {
     pub shield_none: &'static str,
     pub shield_none_d: &'static str,
     pub shield_idle: &'static str,
+    /// 피해 타입(0223 V2): 이름 넷 · 기술 탭의 풀이 넷 · 도감의 한 줄 둘({0} = 타입 이름들).
+    pub ail_ember: &'static str,
+    pub ail_root: &'static str,
+    pub ail_knell: &'static str,
+    pub ail_rift: &'static str,
+    pub ail_ember_d: &'static str,
+    pub ail_root_d: &'static str,
+    pub ail_knell_d: &'static str,
+    pub ail_rift_d: &'static str,
+    pub ail_weak: &'static str,
+    pub ail_resist: &'static str,
     /// 무기 갈래 줄(0223): 이름 · 한손 · 양손 · 원거리.
     pub hand_label: &'static str,
     pub hand_one: &'static str,
@@ -1237,6 +1248,16 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.shield_none,
         s.shield_none_d,
         s.shield_idle,
+        s.ail_ember,
+        s.ail_root,
+        s.ail_knell,
+        s.ail_rift,
+        s.ail_ember_d,
+        s.ail_root_d,
+        s.ail_knell_d,
+        s.ail_rift_d,
+        s.ail_weak,
+        s.ail_resist,
         s.sub_empty_d,
         s.hand_label,
         s.hand_one,
@@ -1570,6 +1591,46 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
 
 /// 표 밖에서 화면에 찍는 기호(메뉴 표지 등). 글꼴 시험이 같이 본다.
 pub const UI_GLYPHS: &str = "◆◇…·▲▼▶◀→";
+
+/// 피해 타입의 이름(0223 V2 — 물리는 이름이 없다).
+pub fn ail_name(k: crate::status::Kind) -> &'static str {
+    use crate::status::Kind;
+    let s = s();
+    match k {
+        Kind::Physical => "",
+        Kind::Ember => s.ail_ember,
+        Kind::Root => s.ail_root,
+        Kind::Knell => s.ail_knell,
+        Kind::Rift => s.ail_rift,
+    }
+}
+
+/// 피해 타입의 풀이(기술 탭 — 무엇이 쌓이고, 차면 어떻게 되나).
+pub fn ail_desc(k: crate::status::Kind) -> &'static str {
+    use crate::status::Kind;
+    let s = s();
+    match k {
+        Kind::Physical => "",
+        Kind::Ember => s.ail_ember_d,
+        Kind::Root => s.ail_root_d,
+        Kind::Knell => s.ail_knell_d,
+        Kind::Rift => s.ail_rift_d,
+    }
+}
+
+/// 종의 타입 배율 → (잘 듣는 타입 이름들, 덜 듣는 타입 이름들) — " · "로 이은 글(도감).
+pub fn ail_leanings(mult: &[f32; crate::status::N]) -> (String, String) {
+    let pick = |want: fn(f32) -> bool| {
+        crate::status::TYPED
+            .iter()
+            .zip(mult)
+            .filter(|(_, m)| want(**m))
+            .map(|(k, _)| ail_name(*k))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    };
+    (pick(|m| m > 1.0), pick(|m| m < 1.0))
+}
 
 #[cfg(test)]
 mod tests {

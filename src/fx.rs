@@ -160,6 +160,8 @@ const STEEL: Color = Color::new(0.74, 0.78, 0.88, 1.0);
 const LAVENDER: Color = Color::new(0.82, 0.74, 1.0, 1.0);
 /// 스킬의 민트(0151 — 땅을 다루는 기술의 빛).
 const MINT: Color = Color::new(0.66, 1.0, 0.86, 1.0);
+/// 균열의 하늘빛(0223 V2 — 패링의 `COOL`보다 짙다: 금 간 적의 표지와 같은 빛).
+const SKY: Color = Color::new(0.50, 0.80, 1.0, 1.0);
 const HEAL: Color = Color::new(1.0, 0.86, 0.56, 1.0);
 /// 먼지 = 바닥 석판보다 한 단 밝은 남보라 — 바닥과 같은 빛이면(처음 0.50·0.48·0.62) 깔리는 게 아니라 안 보였다.
 const DUST: Color = Color::new(0.63, 0.61, 0.74, 0.72);
@@ -774,6 +776,95 @@ impl Fx {
                     let g = vec3(at.x, w.ground_y(at), at.z);
                     self.mark(g, MarkKind::Ring { r0: 0.3, r1: 1.3 }, 0.22, GOLD);
                     self.ring_sparks(at, 0.4, 8, 6.5, 0.2, WHITE_HOT, GOLD);
+                }
+                // 타입 게이지가 가득 찼다(0223 V2): 타입마다 제 빛·제 꼴 — 화상은 솟는 불티, 묶임은 조여드는 민트 고리,
+                // 금은 하늘빛 별과 튀는 줄(울림·터짐은 제 사건).
+                Event::Ail { at, kind } => {
+                    use crate::status::Kind;
+                    let g = vec3(at.x, w.ground_y(at), at.z);
+                    match kind {
+                        Kind::Ember => {
+                            self.star(at, 1.2, 0.12, AMBER);
+                            self.rise(
+                                at - Vec3::Y * 0.4,
+                                0.4,
+                                8,
+                                Shape::Dot,
+                                (0.1, 0.03),
+                                0.5,
+                                WHITE_HOT,
+                                AMBER,
+                                false,
+                            );
+                        }
+                        Kind::Root => {
+                            self.mark(g, MarkKind::Ring { r0: 1.5, r1: 0.5 }, 0.25, MINT);
+                            self.ring_sparks(
+                                g + Vec3::Y * 0.2,
+                                0.9,
+                                8,
+                                -3.0,
+                                0.22,
+                                WHITE_HOT,
+                                MINT,
+                            );
+                        }
+                        Kind::Rift => {
+                            self.star(at, 1.7, 0.13, SKY);
+                            self.ring_sparks(at, 0.2, 7, 7.5, 0.2, WHITE_HOT, SKY);
+                        }
+                        Kind::Knell | Kind::Physical => {}
+                    }
+                }
+                // 화상이 탔다: 몸에서 솟는 불티 몇(꾸밈 — 많으면 건너뛴다).
+                Event::Burn { at } => {
+                    self.rise(
+                        at - Vec3::Y * 0.3,
+                        0.35,
+                        5,
+                        Shape::Dot,
+                        (0.09, 0.02),
+                        0.45,
+                        AMBER,
+                        AMBER,
+                        true,
+                    );
+                }
+                // 울렸다: 쇳빛 고리 둘이 닿는 거리까지 번지고 한가운데 별.
+                Event::Toll { at, radius } => {
+                    let g = vec3(at.x, w.ground_y(at), at.z);
+                    self.star(g + Vec3::Y * 1.0, 1.5, 0.12, WHITE_HOT);
+                    for (i, col) in [WHITE_HOT, STEEL].into_iter().enumerate() {
+                        self.mark_with(
+                            g,
+                            MarkKind::Ring {
+                                r0: 0.4,
+                                r1: radius,
+                            },
+                            0.3,
+                            col,
+                            0.08 * i as f32,
+                            false,
+                            false,
+                        );
+                    }
+                    self.ring_sparks(g + Vec3::Y * 0.9, 0.5, 8, 8.0, 0.2, WHITE_HOT, STEEL);
+                }
+                // 화상 중에 묶여 터졌다: 큰 호박빛 별 + 번지는 고리 + 사방의 불티 + 바닥 먼지.
+                Event::AilBurst { at, radius } => {
+                    let g = vec3(at.x, w.ground_y(at), at.z);
+                    self.star(g + Vec3::Y * 0.8, 2.4, 0.13, WHITE_HOT);
+                    self.mark(
+                        g,
+                        MarkKind::Ring {
+                            r0: 0.4,
+                            r1: radius,
+                        },
+                        0.26,
+                        AMBER,
+                    );
+                    self.ring_sparks(g + Vec3::Y * 0.7, 0.3, 12, 9.0, 0.24, WHITE_HOT, AMBER);
+                    self.dust_ring(g, 0.5, 8, 3.2, 0.5, DUST);
                 }
                 // 뿌리 하나가 솟았다(0214): 흙이 튀고 먼지가 핀다(뿌리 자체는 렌더가 `skill_spikes`로).
                 Event::RootSpike { at } => {
@@ -1715,6 +1806,21 @@ mod tests {
             Event::ThrowBoom { at, radius: 2.5 },
             Event::ThrowBack { at },
             Event::FieldPulse { at, radius: 4.0 },
+            Event::Ail {
+                at,
+                kind: crate::status::Kind::Ember,
+            },
+            Event::Ail {
+                at,
+                kind: crate::status::Kind::Root,
+            },
+            Event::Ail {
+                at,
+                kind: crate::status::Kind::Rift,
+            },
+            Event::Burn { at },
+            Event::Toll { at, radius: 4.0 },
+            Event::AilBurst { at, radius: 2.5 },
             Event::Flurry { at },
             Event::LineCut {
                 at,

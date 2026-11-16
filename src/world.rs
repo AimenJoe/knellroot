@@ -21,6 +21,7 @@ use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG, RIPOS
 use crate::weapons::{self, Rb, Shape};
 
 /// 날아가는 것·늦게 터지는 것의 틱 — 단계마다 메서드(0159 R2).
+mod ail_tick;
 mod bolt_tick;
 /// 레일 수레(0208 — 작업층의 기믹).
 pub mod cart;
@@ -167,6 +168,25 @@ pub enum Event {
     /// 막기가 깨졌다(0223): 기력이 바닥나 휘청인다.
     GuardBreak {
         at: Vec3,
+    },
+    /// 타입 게이지가 가득 찼다(0223 V2): 화상이 붙음·묶임·금 감(울림은 `Toll`, 터짐은 `AilBurst`).
+    Ail {
+        at: Vec3,
+        kind: crate::status::Kind,
+    },
+    /// 화상이 탔다(초마다 — 0223 V2).
+    Burn {
+        at: Vec3,
+    },
+    /// 울렸다(0223 V2): `at` 둘레 `radius` m의 적을 치고 게이지를 나눠 줬다.
+    Toll {
+        at: Vec3,
+        radius: f32,
+    },
+    /// 화상 중에 묶여 터졌다(0223 V2 겹침).
+    AilBurst {
+        at: Vec3,
+        radius: f32,
     },
     /// 주무기와 부무기를 바꿔 들었다(0223 — 패링 + 평타). `to` = 새로 든 주무기.
     WeaponSwap {
@@ -1570,6 +1590,7 @@ impl World {
         self.tick_lock(a, &mut ev);
         self.tick_player(a, t, dt);
         self.tick_skill_fields(t, dt);
+        self.tick_ails(t, dt);
         ev.append(&mut self.skill_ev);
         self.apply_strike(t, &mut ev);
         self.tick_bolts(t, dt, &mut ev);
@@ -2281,11 +2302,45 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, t: &Tuning) -> i32 {
     } else {
         d
     };
-    // 끌어모으기 맺음(0158 G1): 모인 적은 잠깐 더 다친다.
-    if en.frail > 0.0 {
-        skills::scaled(d, en.frail_mult)
+    // 더 다치는 적: 끌어모으기 맺음(0158 G1)의 표지와 균열의 금(0223 V2) — 둘 가운데 큰 배 하나만(곱하지 않는다).
+    let frail = if en.frail > 0.0 { en.frail_mult } else { 1.0 };
+    let k = frail.max(rift_mult(en));
+    if k > 1.0 {
+        skills::scaled(d, k)
     } else {
         d
+    }
+}
+
+/// 금 간 적이 받는 피해의 배(0223 V2 — 보스는 낮게). 금이 없으면 1.
+pub fn rift_mult(en: &Enemy) -> f32 {
+    if en.ail.rift <= 0.0 {
+        1.0
+    } else if en.boss {
+        crate::tuning::RIFT_BOSS_MULT
+    } else {
+        crate::tuning::RIFT_MULT
+    }
+}
+
+/// 타입 게이지를 쌓는다(0223 V2 — 규칙은 `status::Ail::build`): 타입 있는 스킬의 타가 닿은 자리마다 부른다. 가득 차면 그 타입의 일 —
+/// 화상·묶임·금은 그 자리에서, 울림과 터짐(화상 중에 묶임)은 `tick_ails`가 둘레를 친다. 전환 중인 보스에게는 쌓이지 않는다.
+fn afflict(en: &mut Enemy, dose: crate::status::Dose, ev: &mut Vec<Event>) {
+    use crate::status::{Proc, Who};
+    if dose.1 <= 0.0 || !en.alive() || en.rising() {
+        return;
+    }
+    let who = Who {
+        boss: en.boss,
+        elite: en.elite.is_some(),
+        mult: en.def().ail,
+    };
+    match en.ail.build(dose.0, dose.1, &who) {
+        Some(Proc::Burn(_) | Proc::Bind | Proc::Rift) => ev.push(Event::Ail {
+            at: en.pos + Vec3::Y * en.height * 0.6,
+            kind: dose.0,
+        }),
+        Some(Proc::Toll | Proc::Burst(_)) | None => {}
     }
 }
 
@@ -2294,6 +2349,12 @@ fn add_poise(en: &mut Enemy, amount: f32, primed: Option<f32>, t: &Tuning, ev: &
     if amount <= 0.0 || en.poise_lock > 0.0 || !en.alive() || en.rising() {
         return;
     }
+    // 묶인 적(0223 V2 뿌리)은 자세가 더 깎인다.
+    let amount = if en.ail.bound > 0.0 {
+        amount * crate::tuning::ROOT_POISE
+    } else {
+        amount
+    };
     let max = poise_max(en, t);
     let was_primed = primed.is_some_and(|k| en.poise >= max * k);
     en.poise += amount;

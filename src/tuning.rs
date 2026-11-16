@@ -126,6 +126,44 @@ pub const ULT_HITSTOP: f32 = 3.0;
 pub const SKILL_DENIED_SHOW: f32 = 0.5;
 pub const ULT_KILL_WINDOW: f32 = 1.5;
 pub const ULT_SLAM_DAMAGE: i32 = 20;
+
+// 피해 타입(0223 V2 — `status.rs`): 타입 있는 타가 적의 게이지(0..1)를 쌓고, 가득 차면 그 타입의 일이 일어난다.
+/// 보스·엘리트에게 쌓이는 배율(면역은 없다).
+pub const AIL_BOSS: f32 = 0.5;
+pub const AIL_ELITE: f32 = 0.7;
+/// 묶임·균열은 걸릴 때마다 다음이 이 배로 더디다(바닥 `AIL_WEAR_MIN`) — 되풀이 묶기를 막는다.
+pub const AIL_WEAR: f32 = 0.7;
+pub const AIL_WEAR_MIN: f32 = 0.35;
+/// 안 쌓인 지 이 초가 지나면 게이지가 초당 `AIL_DECAY`씩 빠진다 — 스킬의 대기(7~12초)보다 길게 남아야 덜 쌓이는 적(엘리트·보스·
+/// 버티는 종)에게 두 번째 타가 이어 쌓는다.
+pub const AIL_HOLD: f32 = 10.0;
+pub const AIL_DECAY: f32 = 0.1;
+/// 잔불(화상): 겹 상한(보스는 둘) · 이어지는 초(겹이 붙을 때마다 처음부터) · 타는 간격 · 겹마다 한 번에 타는 피해.
+pub const BURN_STACKS: u8 = 3;
+pub const BURN_BOSS_STACKS: u8 = 2;
+pub const BURN_SECS: f32 = 5.5;
+pub const BURN_EVERY: f32 = 1.0;
+pub const BURN_DMG: i32 = 3;
+/// 뿌리(묶임): 묶인 초(걷지 못한다) · 묶인 적이 받는 자세 피해 배 · 보스는 묶이는 대신 이 배로 걷는다.
+pub const ROOT_SECS: f32 = 1.6;
+pub const ROOT_POISE: f32 = 1.5;
+pub const ROOT_BOSS_SLOW: f32 = 0.7;
+/// 균열(취약): 금 간 초 · 그동안 받는 피해 배(보스는 낮게).
+pub const RIFT_SECS: f32 = 4.0;
+pub const RIFT_MULT: f32 = 1.3;
+pub const RIFT_BOSS_MULT: f32 = 1.15;
+/// 울림: 게이지가 찬 뒤 울리기까지 · 울리는 둘레(m) · 그 안의 적(울린 적도)이 받는 피해(타마다의 덤 없이 — 떼가 클수록 울림이
+/// 겹친다: 다섯이 함께 울리면 저마다 다섯 번 듣는다) · 이웃이 나눠 받는 게이지 · 금 간 적이 울릴 때 이웃에 번지는 금의 초.
+pub const TOLL_DELAY: f32 = 0.15;
+/// 울린 적이 다시 울릴 수 있을 때까지(초) — 떼 안의 되울림이 한 바퀴로 끝나게.
+pub const TOLL_REST: f32 = 3.0;
+pub const TOLL_RADIUS: f32 = 4.0;
+pub const TOLL_DMG: i32 = 4;
+pub const TOLL_SHARE: f32 = 0.4;
+pub const TOLL_RIFT_SECS: f32 = 2.0;
+/// 겹침(화상 중에 묶임): 터지는 둘레(m) · 쓴 겹마다의 피해.
+pub const BURST_RADIUS: f32 = 2.5;
+pub const BURST_DMG: i32 = 10;
 /// 제비걸음(0214): 걸음의 앞 이만큼(몫)이 뛰는 걸음(그 끝에 벤다), 적의 몸에서 이만큼(m) 앞에 선다, 적이 없으면 이만큼(m) 앞으로.
 pub const HOP_DASH: f32 = 0.6;
 pub const HOP_GAP: f32 = 0.5;

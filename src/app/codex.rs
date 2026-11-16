@@ -158,6 +158,13 @@ impl App {
                     lines.extend(self.pane_wrap(&w, &format!("{head} {}", tr(l)), col));
                     lines.push(Ln::Gap);
                 }
+                // 타입(0223 V2): 잘 듣는 것·덜 듣는 것 한 줄씩(배율이 1인 타입은 말하지 않는다).
+                let (weak, resist) = crate::i18n::ail_leanings(&crate::species::def(e.kind).ail);
+                for (t, names) in [(s.ail_weak, weak), (s.ail_resist, resist)] {
+                    if !names.is_empty() {
+                        lines.extend(self.pane_wrap(&w, &fill(t, &[&names]), DIM));
+                    }
+                }
             } else {
                 lines.extend(self.pane_wrap(&w, s.codex_not_seen, DIM));
             }

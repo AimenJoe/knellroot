@@ -13,7 +13,7 @@ thread_local! {
 }
 
 /// 카메라를 보는 판의 오른쪽·위(길이 1) — 그 자리에서 눈을 보게.
-fn facing_axes(p: Vec3) -> (Vec3, Vec3) {
+pub(super) fn facing_axes(p: Vec3) -> (Vec3, Vec3) {
     let f = (p - look().eye).normalize_or(Vec3::NEG_Z);
     let r = f.cross(Vec3::Y).normalize_or(Vec3::X);
     (r, r.cross(f).normalize_or(Vec3::Y))

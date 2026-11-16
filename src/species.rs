@@ -116,6 +116,9 @@ pub struct Def {
     pub boss: bool,
     /// 쓰러지면 떨구는 잔불(0064 M1).
     pub embers: u32,
+    /// 타입 게이지가 쌓이는 배율(0223 V2 — 잔불·뿌리·울림·균열 순, `status::TYPED`): 0.5~1.5, 면역은 없다(시험).
+    /// 1이 아닌 칸은 도감이 한 줄로 알린다.
+    pub ail: [f32; crate::status::N],
     /// 모델(`assets/models/<이름>.glb`).
     pub model: &'static str,
 }
@@ -154,6 +157,7 @@ pub static HUSK: Def = Def {
     behavior: Behavior::Melee,
     boss: false,
     embers: 1,
+    ail: [1.5, 0.75, 1.0, 1.0],
     model: "root_husk",
 };
 
@@ -191,6 +195,7 @@ pub static THORN: Def = Def {
     behavior: Behavior::Charger,
     boss: false,
     embers: 2,
+    ail: [1.25, 0.5, 1.0, 1.0],
     model: "thorn_beast",
 };
 
@@ -228,6 +233,7 @@ pub static WARDEN: Def = Def {
     behavior: Behavior::Warden,
     boss: true,
     embers: 30,
+    ail: [1.25, 0.5, 1.0, 1.0],
     model: "gatekeeper",
 };
 
@@ -267,6 +273,7 @@ pub static SHELL: Def = Def {
     behavior: Behavior::Melee,
     boss: false,
     embers: 3,
+    ail: [0.5, 1.0, 1.25, 1.5],
     model: "shellback",
 };
 
@@ -300,6 +307,7 @@ pub static POD: Def = Def {
     behavior: Behavior::Planter,
     boss: false,
     embers: 2,
+    ail: [1.5, 0.5, 1.0, 1.0],
     model: "pod",
 };
 
@@ -339,6 +347,7 @@ pub static BELLKEEPER: Def = Def {
     behavior: Behavior::Bellkeeper,
     boss: true,
     embers: 30,
+    ail: [1.0, 1.0, 0.5, 1.5],
     model: "bellkeeper",
 };
 
@@ -379,6 +388,7 @@ pub static MOSSWARD: Def = Def {
     behavior: Behavior::Mossward,
     boss: true,
     embers: 30,
+    ail: [0.5, 1.0, 1.0, 1.25],
     model: "mossward",
 };
 
@@ -411,6 +421,7 @@ pub static MOSSGRAZER: Def = Def {
     behavior: Behavior::Grazer,
     boss: false,
     embers: 0,
+    ail: [0.5, 1.0, 1.0, 1.0],
     model: "mossgrazer",
 };
 
@@ -452,6 +463,7 @@ pub static OVERSEER: Def = Def {
     behavior: Behavior::Overseer,
     boss: true,
     embers: 30,
+    ail: [1.0, 0.75, 1.5, 1.0],
     model: "mossward",
 };
 
@@ -476,6 +488,8 @@ pub static REPEATER: Def = Def {
         feint: 0.0,
     },
     embers: 2,
+    // 같은 박자로 되풀이하는 몸 — 울림이 잘 든다.
+    ail: [1.0, 1.0, 1.5, 1.0],
     ..HUSK
 };
 
@@ -502,6 +516,7 @@ pub static PACKBEARER: Def = Def {
         feint: 0.0,
     },
     embers: 3,
+    ail: [1.0, 0.75, 1.0, 1.5],
     model: "shellback",
     ..THORN
 };
@@ -555,6 +570,12 @@ mod tests {
                 Behavior::Grazer => assert!(d.reach == 0.0 && d.embers == 0 && !d.boss),
             }
             assert!((0.0..=180.0).contains(&d.guard_arc), "{:?}", d.kind);
+            // 타입 배율(0223 V2): 0.5~1.5 — 면역도, 한 방도 없다.
+            assert!(
+                d.ail.iter().all(|m| (0.5..=1.5).contains(m)),
+                "{:?}",
+                d.kind
+            );
         }
         // 문지기는 지역마다 하나(성소 문지기·깨진 종지기·이끼 덮인 문지기 0185).
         assert_eq!(

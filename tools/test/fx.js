@@ -1,6 +1,6 @@
 // 이펙트를 틱마다 찍는다(0141): 헤드리스 Chromium으로 개발 시나리오를 띄우고, 개발 키 F6(한 프레임 = 한 틱)을 켠 뒤
 // 동작마다 연달아 스크린숏 — 0.1초짜리 번쩍임·먼지를 실제 시간으로는 못 잡는다(헤드리스는 초당 8프레임 남짓).
-//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills]
+//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills] [스킬 이름들]
 // skills(0158 G2): 개발 창 기술 탭 "기술 다 올리기"(끝 단 · 고르기 ㄱ, 기록에 안 쓴다) → "기술 끼우기"에서 칸·큰 기술을 고르고 →
 //   전투 탭 "skills" 판에서 Q(칸 1)·E(칸 2)·Q+E(큰 기술)를 틱마다 찍는다 — 스킬·큰 기술마다 새 판(sk-<이름>-<n>.png).
 // 눈으로 볼 것: 맞힌 자리의 별·불똥, 휘두름의 초승달, 쓰러진 적의 재, 뛰기·회피·적 내리침의 먼지, 마법 탄의 마름모, 화로 불티.
@@ -69,7 +69,10 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       await pick(p, 6, 'ArrowLeft'); await pick(p, 6, 'ArrowUp'); await pick(p, row, 'ArrowDown'); await pick(p, 6, 'ArrowLeft'); await pick(p, col);
       await p.keyboard.press('Enter'); await p.waitForTimeout(250); await p.keyboard.press('Enter'); await p.waitForTimeout(250);
     };
+    // 다섯째 인자로 스킬 이름을 고르면 그것만(예: … skills cut,embers).
+    const names = process.argv[5] ? process.argv[5].split(',') : null;
     for (const [name, slot, ult, wait, key, n] of RUNS) {
+      if (names && !names.includes(name)) continue;
       p = await open(2, 1); await p.waitForTimeout(300); // 기술 탭(셋째 묶음) 둘째 줄 = 기술 다 올리기(켬)
       await p.keyboard.press('ArrowUp'); await p.waitForTimeout(90); await p.keyboard.press('Enter'); await p.waitForTimeout(300); // 기술 끼우기
       if (slot) await wear(p, slot[0], slot[1]);

@@ -19,6 +19,7 @@
 //! 총 레벨 + 처음 쓰러뜨린 엘리트 + 핵 + 종소리 조각(`points`) — 화폐 "마디"는 없다.
 
 use crate::progression::{Branch, Cell, Key, Link, Tree, DEPTH, KEYS, LINKS};
+use crate::status::{Dose, Kind};
 use crate::tuning::{HP_UNIT, ULT_SLAM_DAMAGE};
 
 /// 스킬의 모양(판정과 움직임).
@@ -228,6 +229,10 @@ pub struct Skill {
     pub clip: Clip,
     /// 판의 줄(0158 라): 쓴 점수 합이 `ROW_NEEDS[row]`에 닿아야 살 수 있다.
     pub row: u8,
+    /// 타입(0223 V2)과 한 타가 쌓는 게이지(보통 적의 1 가운데 몫 — 물리는 0). 단·고르기는 이 값을 바꾸지 않는다.
+    /// 한 번 쓰면 보통 적은 걸리게(한 타짜리 = 1, 여러 타짜리는 나눠서) — 덜 쌓이는 적(엘리트·보스·버티는 종)은 두 번.
+    pub kind: Kind,
+    pub build: f32,
     /// 판의 갈래(0161 "갈래와 줄").
     pub branch: Branch,
     /// 3단의 둘 가운데 하나(ㄱ·ㄴ)와 5단의 맺음(0158 마).
@@ -393,6 +398,11 @@ impl Eff {
 }
 
 impl Skill {
+    /// 이 스킬의 타 하나가 싣는 타입과 쌓는 양(0223 V2).
+    pub fn dose(&self) -> Dose {
+        (self.kind, self.build)
+    }
+
     /// `rank`단(1~5로 맞춘다 — 끼운 스킬은 배운 스킬이다)·`pick` 고르기의 실제 값.
     pub fn at(&self, rank: u8, pick: Pick) -> Eff {
         let rank = rank.clamp(1, MAX_RANK);
@@ -607,6 +617,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.15, 0.22, 0.30],
         },
         row: 0,
+        kind: Kind::Physical,
+        build: 0.0,
         branch: Branch::Beat,
         picks: [Twist::Walk { speed: 0.6 }, Twist::Spins { more: 1 }],
         cap: Cap::Lift { stagger: 0.4 },
@@ -629,6 +641,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.12, 0.20, 0.25],
         },
         row: 0,
+        kind: Kind::Rift,
+        build: 1.0,
         branch: Branch::Beat,
         picks: [Twist::Return, Twist::Ghost],
         cap: Cap::Refund { part: 0.5 },
@@ -652,6 +666,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.20, 0.0, 0.30],
         },
         row: 0,
+        kind: Kind::Root,
+        build: 1.0,
         branch: Branch::Footing,
         picks: [
             Twist::Burst {
@@ -684,6 +700,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.30, 0.0, 0.40],
         },
         row: 1,
+        kind: Kind::Physical,
+        build: 0.0,
         branch: Branch::Beat,
         picks: [
             Twist::Leap {
@@ -720,6 +738,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.10, 1.20, 0.35],
         },
         row: 0,
+        kind: Kind::Ember,
+        build: 1.0,
         branch: Branch::Riposte,
         picks: [Twist::Walk { speed: 0.45 }, Twist::Reflect],
         cap: Cap::Stun { stagger: 1.0 },
@@ -742,6 +762,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.0, 0.20],
         },
         row: 1,
+        kind: Kind::Knell,
+        build: 1.0,
         branch: Branch::Riposte,
         picks: [Twist::Rattle { poise: 2.5 }, Twist::Tempo { secs: 0.6 }],
         cap: Cap::Toll { damage: HP_UNIT },
@@ -765,6 +787,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.18, 0.10, 0.25],
         },
         row: 1,
+        kind: Kind::Rift,
+        build: 0.5,
         branch: Branch::Footing,
         picks: [
             Twist::Stick {
@@ -796,6 +820,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.0, 0.30],
         },
         row: 1,
+        kind: Kind::Ember,
+        build: 0.5,
         branch: Branch::Footing,
         picks: [Twist::Follow, Twist::Kindle { embers: 1 }],
         cap: Cap::Smolder {
@@ -823,6 +849,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.12, 0.45, 0.25],
         },
         row: 3,
+        kind: Kind::Physical,
+        build: 0.0,
         branch: Branch::Beat,
         picks: [Twist::Focus, Twist::HomeStep],
         cap: Cap::Finale {
@@ -849,6 +877,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.15, 0.0, 0.35],
         },
         row: 3,
+        kind: Kind::Knell,
+        build: 1.0,
         branch: Branch::Riposte,
         picks: [
             Twist::Wide { arc_deg: 180.0 },
@@ -879,6 +909,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.30, 0.35],
         },
         row: 3,
+        kind: Kind::Root,
+        build: 1.0,
         branch: Branch::Footing,
         picks: [Twist::Circle, Twist::Bind { secs: 1.2 }],
         cap: Cap::Spire {
@@ -1111,6 +1143,9 @@ pub struct Line {
     pub anim: &'static str,
     pub clip: Clip,
 }
+
+/// 한 줄기의 타입(0223 V2): 가르는 줄 — 닿은 적마다 금이 간다(큰 기술이라 보스도 한 번에 — 닳기 전이면).
+pub const LINE_DOSE: Dose = (Kind::Rift, 2.0);
 
 pub const LINE: Line = Line {
     freeze: 0.3,
@@ -2576,6 +2611,19 @@ mod tests {
     }
 
     /// 0158 마: 고르기와 맺음의 표 — 스킬마다 둘(서로 다르다)과 하나, 값은 결정문의 것. 길이가 달라지는 고르기를 골라도 1초 안에 끝난다.
+    /// 0223 V2: 타입 있는 스킬은 게이지를 쌓고(물리는 0), 네 타입 모두 적어도 한 스킬이 싣는다 — 어느 타입도 판에서 못 고르는 일이 없다.
+    #[test]
+    fn typed_skills_build_their_gauge_and_every_type_has_a_skill() {
+        for s in &SKILLS {
+            assert_eq!(s.kind == Kind::Physical, s.build == 0.0, "{:?}", s.id);
+            assert!((0.0..=1.0).contains(&s.build), "{:?}", s.id);
+        }
+        for k in crate::status::TYPED {
+            assert!(SKILLS.iter().any(|s| s.kind == k), "{k:?}");
+        }
+        assert!(LINE_DOSE.0 != Kind::Physical && LINE_DOSE.1 > 0.0);
+    }
+
     #[test]
     fn every_skill_has_two_different_picks_a_capstone_and_stays_under_a_second() {
         for id in IDS {

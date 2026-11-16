@@ -496,6 +496,10 @@ impl App {
                 Event::ThrowBoom { .. } => SHAKE_PLUNGE,
                 Event::Soak { .. } | Event::EchoRing { .. } | Event::Interrupt { .. } => SHAKE_HIT,
                 Event::RootSpike { .. } => 0.0,
+                // 피해 타입(0223 V2): 울림·터짐은 둘레를 치는 순간이라 가볍게, 화상이 타는 것·게이지가 차는 것은 조용히.
+                Event::Toll { .. } => SHAKE_HIT,
+                Event::AilBurst { .. } => SHAKE_PLUNGE,
+                Event::Ail { .. } | Event::Burn { .. } => 0.0,
                 Event::ThrowTurn { .. }
                 | Event::ThrowBack { .. }
                 | Event::FieldPulse { .. }
@@ -1128,6 +1132,15 @@ impl App {
                 Event::ThrowBoom { .. } | Event::LineCut { .. } => Id::Hit,
                 Event::ThrowBack { .. } => Id::Beat,
                 Event::FieldPulse { .. } => Id::Ember,
+                // 피해 타입(0223 V2): 화상이 붙음·탐 = 잔불 소리, 묶임 = 뿌리가 깨는 소리, 금 = 쇳소리, 울림 = 낮은 종, 터짐 = 타격.
+                Event::Ail { kind, .. } => match kind {
+                    crate::status::Kind::Ember => Id::Ember,
+                    crate::status::Kind::Root => Id::Wake,
+                    crate::status::Kind::Rift => Id::Parry,
+                    _ => continue,
+                },
+                Event::Toll { .. } => Id::Beat,
+                Event::AilBurst { .. } => Id::Hit,
                 Event::Flurry { .. } => Id::Beat3,
                 _ => continue,
             };

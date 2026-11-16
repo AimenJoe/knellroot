@@ -63,6 +63,7 @@ impl Renderer {
         parry_ring(w, pp, &fl);
         exposed_rings(w, alpha, &fl);
         frail_rings(w, alpha, &fl);
+        ail_marks(w, alpha, &fl);
         spill_rings(w, pp, t, &fl);
         stagger_stars(w, alpha);
         lock_mark(w, alpha, &fl);
@@ -936,6 +937,78 @@ fn frail_rings(w: &World, alpha: f32, fl: &Drape) {
                 360.0,
                 Color::new(0.66, 1.0, 0.86, 0.3 + 0.5 * en.frail.min(1.0)),
             );
+        }
+    }
+}
+
+fn ail_marks(w: &World, alpha: f32, fl: &Drape) {
+    // 타입 상태(0223 V2): 머리 위 작은 마름모 줄 — 쌓이는 게이지는 흐리고 작게 자라고, 걸린 것은 밝게 뛴다(화상은 겹만큼).
+    // 발밑: 묶인 적은 민트 고리 둘, 금 간 적은 하늘빛 고리(남은 시간만큼 옅어진다).
+    for en in &w.enemies {
+        if !en.alive() {
+            continue;
+        }
+        let a = &en.ail;
+        let p = en.prev.lerp(en.pos, alpha);
+        let ink = |i: usize| {
+            let [r, g, b] = crate::status::INK[i];
+            Color::new(r, g, b, 1.0)
+        };
+        if a.bound > 0.0 {
+            let k = 0.35 + 0.5 * a.bound.min(1.0);
+            let ink = ink(1);
+            for r in [0.2, 0.34] {
+                fl.ring(
+                    p + Vec3::Y * 0.05,
+                    en.radius + r,
+                    0.0,
+                    360.0,
+                    Color::new(ink.r, ink.g, ink.b, k),
+                );
+            }
+        }
+        if a.rift > 0.0 {
+            let ink = ink(3);
+            let beat = 0.75 + 0.25 * (w.time * 9.0).sin();
+            fl.ring(
+                p + Vec3::Y * 0.06,
+                en.radius + 0.48,
+                0.0,
+                360.0,
+                Color::new(ink.r, ink.g, ink.b, (0.3 + 0.5 * a.rift.min(1.0)) * beat),
+            );
+        }
+        // 머리 위 줄: (빛, 크기, 진하기) — 걸린 것 먼저, 그다음 쌓이는 게이지.
+        let mut pips: Vec<(Color, f32, f32)> = Vec::new();
+        let beat = 1.0 + 0.18 * (w.time * 8.0).sin();
+        for _ in 0..a.burn {
+            pips.push((ink(0), 0.26 * beat, 1.0));
+        }
+        if a.bound > 0.0 {
+            pips.push((ink(1), 0.26 * beat, 1.0));
+        }
+        if a.toll_in.is_some() {
+            pips.push((ink(2), 0.3 * beat, 1.0));
+        }
+        if a.rift > 0.0 {
+            pips.push((ink(3), 0.26 * beat, 1.0));
+        }
+        for (i, g) in a.gauge.iter().enumerate() {
+            if *g > 0.02 {
+                pips.push((ink(i), 0.1 + 0.12 * g.min(1.0), 0.6));
+            }
+        }
+        if pips.is_empty() {
+            continue;
+        }
+        let top = p + Vec3::Y * (en.height + 0.55);
+        let (right, _) = facing_axes(top);
+        let gap = 0.3;
+        let x0 = -(pips.len() as f32 - 1.0) * 0.5 * gap;
+        for (i, (ink, size, k)) in pips.into_iter().enumerate() {
+            let at = top + right * (x0 + i as f32 * gap);
+            gem(at, size + 0.07, Color::new(0.07, 0.06, 0.12, 0.8 * k));
+            gem(at, size, Color::new(ink.r, ink.g, ink.b, k));
         }
     }
 }

@@ -1529,6 +1529,21 @@ impl App {
             },
             Block::Gap(5.0),
         ];
+        // 타입(0223 V2): 타입 있는 스킬·큰 기술은 그 타입의 빛으로 한 줄 — 무엇이 쌓이고, 차면 어떻게 되나.
+        let dose = match e {
+            Entry::Skill(id) => id.def().dose(),
+            Entry::Ult(sk::Ult::Line) => sk::LINE_DOSE,
+            _ => crate::status::NO_DOSE,
+        };
+        if let Some(i) = dose.0.slot() {
+            let [r, g, b] = crate::status::INK[i];
+            v.push(Block::Text {
+                lines: wrap(crate::i18n::ail_desc(dose.0), width, K_BODY),
+                k: K_BODY,
+                ink: Color::new(r, g, b, 1.0),
+            });
+            v.push(Block::Gap(5.0));
+        }
         // 단 줄: 익힌 단은 밝게, 다음 단은 밝은 띠 + 값, 그 뒤는 흐리게.
         let state = |n: u8| -> u8 {
             if n <= rank {

@@ -242,6 +242,8 @@ pub struct Enemy {
     pub snare: f32,
     /// 묶는 뿌리(0214 뿌리 솟기 ㄴ): 걷지 못하는 남은 초.
     pub bind: f32,
+    /// 타입 상태(0223 V2 — 게이지·화상 겹·묶임·금·울림): 규칙은 `status.rs`, 번지는 일은 월드(`world/ail_tick.rs`).
+    pub ail: crate::status::Ail,
     /// 등짐꾼의 짐이 깨졌다(0216 W2 — 자세 막대가 처음 깨질 때): 더는 밀고 오지 못하고 느리게 걷는다.
     pub load_lost: bool,
     /// 남는 불씨(0158 G2, 잔불 흩기 ㄴ): 지금 선 자리의 불티가 쓰러질 때 더 남기는 잔불 수(월드가 틱마다 적는다, 0 = 없음).
@@ -374,6 +376,7 @@ impl Enemy {
             slow: 1.0,
             snare: 0.0,
             bind: 0.0,
+            ail: crate::status::Ail::default(),
             load_lost: false,
             kindled: 0,
         }
