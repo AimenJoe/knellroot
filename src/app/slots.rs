@@ -146,7 +146,7 @@ impl App {
         self.weapon = progress
             .weapon
             .filter(|&w| progress.owns_weapon(w))
-            .unwrap_or(weapons::Id::Sword);
+            .unwrap_or(weapons::Id::Fists);
         self.saved = progress.clone();
         self.progress = progress;
         self.journey_told = None;

@@ -93,6 +93,9 @@ pub mod key {
     /// 0172: 쟁반 뒤집기(큰 기술)도 기술 점수로 배운다. 이 깃발이 없는 기록(그 전의 판)은 그것을 값 없이 가졌던 것이다 —
     /// 1단으로 읽고 그 값(`skills::ULT_LEARN`)을 점수로 지닌다(`ULT_GIFT` — 남은 점수는 그대로).
     pub const MIGRATED_ULT: &str = "migrated.ult";
+    /// 0220: 검도 얻어서 쓴다(새 판은 맨손 — 깨어난 자리 곁에 떨어진 검을 줍는다). 이 깃발이 없는 기록(그 전의 판)은 검을 이미
+    /// 가졌던 것이다 — 읽을 때 가진 무기에 넣는다.
+    pub const MIGRATED_SWORD: &str = "migrated.sword";
     /// 옛 기록이 값 없이 받았던 쟁반 뒤집기의 몫(0172): 셈 밖에서 받은 기술 점수 — 튜토리얼의 상(`SKILL_GIFT`)과 따로 센다.
     pub const ULT_GIFT: &str = "ult.gift";
     /// 튜토리얼(0167): 지난 걸음 수(`tutorial::DONE`이면 다 지났다). 이 키가 없는 옛 기록은 `tutorial::start_for_old`.
@@ -451,6 +454,8 @@ impl Progress {
             b
         };
         let r_has_no_weapons = r.get(key::WEAPONS).is_none();
+        // 0220 전의 기록: 검은 처음부터 가졌다 — 잃지 않게 가진 무기에 넣는다. 한 번도 쓴 적 없는 기록은 새 판(맨손).
+        let before_sword = r.num(key::VERSION).is_some() && r.num(key::MIGRATED_SWORD) != Some(1);
         let r_weapons = r.get(key::WEAPONS).map(str::to_string);
         // 덧옷(0176): 가진 것만 걸친다(주운 기록이 없으면 벗은 채).
         let garb = r
@@ -529,14 +534,20 @@ impl Progress {
                     .unwrap_or(0)
                     .min(crate::skills::GIFT_POINTS)
             },
-            weapons: r_weapons
-                .map(|v| {
-                    v.split(',')
-                        .filter_map(|k| crate::weapons::Id::by_key(k.trim()))
-                        .filter(|&w| w != crate::weapons::Id::Fists)
-                        .collect()
-                })
-                .unwrap_or_default(),
+            weapons: {
+                let mut v: Vec<crate::weapons::Id> = r_weapons
+                    .map(|v| {
+                        v.split(',')
+                            .filter_map(|k| crate::weapons::Id::by_key(k.trim()))
+                            .filter(|&w| w != crate::weapons::Id::Fists)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if before_sword && !v.contains(&crate::weapons::Id::Sword) {
+                    v.insert(0, crate::weapons::Id::Sword);
+                }
+                v
+            },
             play: r.num(key::PLAY).unwrap_or(0),
             embers: r.num(key::EMBERS).unwrap_or(0),
             clears: r.num(key::CLEARS).unwrap_or(0),
@@ -597,10 +608,9 @@ impl Progress {
             + crate::journey::points(&self.journey)
     }
 
-    /// 이 무기를 가졌나(0117): 맨손·검은 늘, 그 밖은 얻은 것만.
+    /// 이 무기를 가졌나(0117 → 0220): 맨손은 늘, 그 밖은 얻은 것만 — 검도 깨어난 자리 곁에서 줍는다.
     pub fn owns_weapon(&self, w: crate::weapons::Id) -> bool {
-        matches!(w, crate::weapons::Id::Fists | crate::weapons::Id::Sword)
-            || self.weapons.contains(&w)
+        w == crate::weapons::Id::Fists || self.weapons.contains(&w)
     }
 
     /// 가진 무기(표 순서, 맨손 포함).
@@ -650,6 +660,7 @@ impl Progress {
         r.set(key::MIGRATED_V04, 1);
         r.set(key::MIGRATED_V06, 1);
         r.set(key::MIGRATED_ULT, 1);
+        r.set(key::MIGRATED_SWORD, 1);
         if self.ult_gift > 0 {
             r.set(key::ULT_GIFT, self.ult_gift);
         } else {
@@ -1041,7 +1052,11 @@ mod tests {
     fn weapons_are_earned_and_old_records_keep_them_all() {
         use crate::weapons::Id;
         let fresh = Progress::default();
-        assert_eq!(fresh.owned_weapons(), vec![Id::Sword, Id::Fists]);
+        assert_eq!(
+            fresh.owned_weapons(),
+            vec![Id::Fists],
+            "0220: a new run starts bare-handed"
+        );
         // 빈 목록도 키로 남아 다시 읽어도 옮기기가 돌지 않는다.
         let mut p = Progress {
             play: 3,
@@ -1062,7 +1077,18 @@ weapon=crossbow
         ));
         assert!(crate::weapons::IDS.iter().all(|&w| old.owns_weapon(w)));
         let empty = Progress::from_record(Record::parse(""));
-        assert_eq!(empty.owned_weapons(), vec![Id::Sword, Id::Fists]);
+        assert_eq!(empty.owned_weapons(), vec![Id::Fists]);
+        // 0220: 검을 처음부터 가졌던 옛 기록(깃발 없음)은 검을 지닌다 — 한 번 쓴 기록은 깃발이 있어 줍기 전엔 맨손.
+        let before = Progress::from_record(Record::parse("v=1\nweapons=crossbow\n"));
+        assert!(before.owns_weapon(Id::Sword) && before.owns_weapon(Id::Crossbow));
+        let kept = Progress::from_record(Record::parse(&before.to_record().to_text()));
+        assert!(kept.owns_weapon(Id::Sword), "the sword stays after a save");
+        let new_run =
+            Progress::from_record(Record::parse(&Progress::default().to_record().to_text()));
+        assert!(
+            !new_run.owns_weapon(Id::Sword),
+            "a new run has to pick it up"
+        );
     }
 
     /// 0180: 벼린 단은 무기마다 `forge.<키>`로 남고, 든 무기의 단만 능력치에 든다. 주운 숫돌보다 많이 쓴 기록은 읽을 때 내린다.
