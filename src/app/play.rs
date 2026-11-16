@@ -206,6 +206,7 @@ impl App {
             self.world.embers,
             &self.progress.owned,
             &self.progress.growth,
+            &self.progress.shields,
         ) || self.progress.level.can_raise(self.world.embers)
             || self.progress.board.can_buy(self.progress.skill_points())
             || self.can_forge();
@@ -471,6 +472,8 @@ impl App {
                 | Event::Ember { .. } => 0.0,
                 Event::Cast { .. } | Event::CastDenied | Event::Throw => 0.0,
                 Event::WeaponSwap { .. } => 0.0,
+                Event::Guard { .. } => SHAKE_HIT,
+                Event::GuardBreak { .. } => SHAKE_HURT,
                 Event::StaminaDenied | Event::Release { .. } => 0.0,
                 Event::Break { .. } | Event::LoadBreak { .. } => SHAKE_SMASH,
                 Event::Aftershock { .. } | Event::Boom { .. } => SHAKE_PLUNGE,
@@ -1059,6 +1062,9 @@ impl App {
                 Event::PlayerHurt => Id::Hurt,
                 // 등딱지 튕김(0120)은 패링의 거울 — 같은 쇳소리.
                 Event::Parry { .. } | Event::Deflect { .. } => Id::Parry,
+                // 방패(0223): 받은 타는 둔한 '둥'(튕김의 맑은 소리와 갈린다), 깨지면 맞은 소리.
+                Event::Guard { .. } => Id::Thwack,
+                Event::GuardBreak { .. } => Id::Hurt,
                 Event::Beat => crate::sfx::beat_id(self.world.player.beat.chain),
                 // 딱 맞춰 떼기(0078): 박자와 같은 "맞췄다" 종 — 가장 높은 음.
                 Event::Perfect { .. } => Id::Beat3,

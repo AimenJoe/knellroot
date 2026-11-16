@@ -160,6 +160,14 @@ pub enum Event {
     Ember {
         value: u32,
     },
+    /// 방패로 막았다(0223): 체력 대신 기력이 깎였다.
+    Guard {
+        at: Vec3,
+    },
+    /// 막기가 깨졌다(0223): 기력이 바닥나 휘청인다.
+    GuardBreak {
+        at: Vec3,
+    },
     /// 주무기와 부무기를 바꿔 들었다(0223 — 패링 + 평타). `to` = 새로 든 주무기.
     WeaponSwap {
         to: weapons::Id,
@@ -437,6 +445,11 @@ pub enum PState {
     Parry {
         t: f32,
     },
+    /// 방패 막기(0223 — 한손 무기 + 방패, 패링 버튼을 쥔 동안): 앞에서 오는 받을 수 있는 공격을 체력 대신 기력으로 받는다.
+    /// 느리게 걷고 기력이 차지 않는다. 기력이 바닥나는 타에 막기가 깨진다(`BLOCK_BREAK_STUN`). `t` = 막은 지.
+    Block {
+        t: f32,
+    },
     /// 공중(0027): 뛰기 전 속도를 잇고 조금만 조종한다. `plunge`면 내려앉을 때 둘레를 친다.
     Jump {
         t: f32,
@@ -568,6 +581,8 @@ pub struct Player {
     pub sub_load: Option<(u8, f32, f32)>,
     /// 두 버튼 바꾸기(0223)의 시계: 패링·평타 버튼을 누른 뒤 흐른 초.
     pub chord: (f32, f32),
+    /// 든 방패(0223 — 한손 무기일 때만 쓰인다, `World::can_block`).
+    pub shield: Option<crate::shield::Id>,
     /// 미리 받아 둔 다음 행동과 남은 초(0057 — 후딜레이를 끊는 캔슬 시점에 나간다).
     pub pending: Option<Next>,
     pub pending_left: f32,
@@ -938,6 +953,7 @@ impl World {
                 sub: None,
                 sub_load: None,
                 chord: (f32::MAX, f32::MAX),
+                shield: None,
                 pending: None,
                 pending_left: 0.0,
                 combo_next: 0,
@@ -1104,7 +1120,8 @@ impl World {
         };
         // 지금 동작이 직접 받는 누름.
         let own = match pl.state {
-            PState::Idle => true,
+            // 막는 동안(0223)도 서 있을 때처럼 바로 받는다 — 막다가 치기·피하기가 늦지 않게.
+            PState::Idle | PState::Block { .. } => true,
             PState::Charging { .. } => matches!(n, Next::Dodge | Next::Parry),
             PState::CastCharge { .. } => n == Next::Dodge,
             PState::Drink { gulped: false, .. } => n == Next::Dodge,
@@ -1195,6 +1212,21 @@ impl World {
     }
 
     /// 무기를 바꾼다(0051): 콤보는 처음부터, 원거리 무기는 탄창·수류탄 가득.
+    /// 방패를 정한다(0223 — 기록에서 앱이).
+    pub fn set_shield(&mut self, shield: Option<crate::shield::Id>) {
+        self.player.shield = shield;
+    }
+
+    /// 지금 막을 수 있나(0223): 방패를 들었고 든 무기가 한손이다.
+    pub fn can_block(&self) -> bool {
+        self.player.shield.is_some() && self.player.weapon.hand() == weapons::Hand::One
+    }
+
+    /// 지금 막고 있나.
+    pub fn guarding(&self) -> bool {
+        matches!(self.player.state, PState::Block { .. })
+    }
+
     /// 부무기를 정한다(0223 — 기록에서 앱이). 주무기와 같으면 비운다. 탄은 처음 드는 것처럼(가득).
     pub fn set_sub(&mut self, sub: Option<weapons::Id>) {
         let pl = &mut self.player;

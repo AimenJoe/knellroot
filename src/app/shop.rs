@@ -9,6 +9,7 @@ pub(super) fn ware_name(w: crate::growth::Ware) -> &'static str {
     match w {
         crate::growth::Ware::Charm(id) => tr(crate::charms::def(id).name),
         crate::growth::Ware::Oil => s().shop_oil,
+        crate::growth::Ware::Shield(id) => tr(id.def().name),
     }
 }
 
@@ -51,7 +52,11 @@ fn weapon_index(w: weapons::Id) -> u8 {
 
 impl App {
     fn shop_list(&self) -> Vec<ShopRow> {
-        let shelf = crate::growth::shelf(&self.progress.owned, &self.progress.growth);
+        let shelf = crate::growth::shelf(
+            &self.progress.owned,
+            &self.progress.growth,
+            &self.progress.shields,
+        );
         shop_rows(shelf.len(), &self.arms(), &self.progress.forged)
     }
 
@@ -71,7 +76,11 @@ impl App {
     /// 닫는 줄은 없다 — 창을 닫으면 떠난다(0164).
     pub(super) fn shop_menu(&self) -> Menu {
         let s = s();
-        let shelf = crate::growth::shelf(&self.progress.owned, &self.progress.growth);
+        let shelf = crate::growth::shelf(
+            &self.progress.owned,
+            &self.progress.growth,
+            &self.progress.shields,
+        );
         let have = self.world.embers;
         let (finds, forged) = (&self.progress.finds, &self.progress.forged);
         let rows: Vec<ui::Row> = self
@@ -142,7 +151,11 @@ impl App {
     /// 진열의 물건: 머리(그림 · 이름 · 갈래와 값 · 살 수 있나) + 하는 일.
     fn ware_pane(&mut self, w: &super::frame::Window, i: usize) -> Vec<Ln> {
         let s = s();
-        let shelf = crate::growth::shelf(&self.progress.owned, &self.progress.growth);
+        let shelf = crate::growth::shelf(
+            &self.progress.owned,
+            &self.progress.growth,
+            &self.progress.shields,
+        );
         let have = self.world.embers;
         let (ware, price, sold) = shelf[i];
         let (kind, desc, flavor, item) = match ware {
@@ -156,6 +169,7 @@ impl App {
                 )
             }
             crate::growth::Ware::Oil => (s.stat_flask, s.shop_oil_d, None, None),
+            crate::growth::Ware::Shield(id) => (s.menu_shield, tr(id.def().desc), None, None),
         };
         // 상태 한 줄: 산 것은 금빛("샀다" — 내 것), 살 수 있으면 민트, 모자라면 흐림.
         let state = if sold {
@@ -276,7 +290,11 @@ impl App {
         let list = self.shop_list();
         match list.get(i).copied() {
             Some(ShopRow::Ware(i)) => {
-                let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
+                let wares = crate::growth::wares(
+                    &self.progress.owned,
+                    &self.progress.growth,
+                    &self.progress.shields,
+                );
                 match wares.get(i).copied() {
                     // 모자라면 묻지 않고 알림만(nail 가게와 같다 — 흐린 줄).
                     Some((_, price)) if self.world.embers < price => {

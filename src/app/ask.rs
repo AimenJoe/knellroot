@@ -34,7 +34,11 @@ impl App {
         if yes {
             match k {
                 flow::Ask::Buy(w) => {
-                    let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
+                    let wares = crate::growth::wares(
+                        &self.progress.owned,
+                        &self.progress.growth,
+                        &self.progress.shields,
+                    );
                     if let Some(&w) = wares.get(w) {
                         self.buy(w);
                     }
@@ -82,12 +86,17 @@ impl App {
                 s.slot_erase,
             ),
             flow::Ask::Buy(i) => {
-                let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
+                let wares = crate::growth::wares(
+                    &self.progress.owned,
+                    &self.progress.growth,
+                    &self.progress.shields,
+                );
                 let (name, price) = match wares.get(i) {
                     Some((crate::growth::Ware::Charm(id), p)) => {
                         (tr(crate::charms::def(*id).name), *p)
                     }
                     Some((crate::growth::Ware::Oil, p)) => (s.shop_oil, *p),
+                    Some((crate::growth::Ware::Shield(id), p)) => (tr(id.def().name), *p),
                     None => ("", 0),
                 };
                 (fill(s.ask_buy, &[name, &price.to_string()]), s.ask_buy_yes)

@@ -36,6 +36,9 @@ pub mod key {
     pub const SHOP_OIL: &str = "shop.oil";
     /// 든 무기(0066: prefs 칸 21에서 옮김 — 슬롯 사이에 새지 않게).
     pub const WEAPON: &str = "weapon";
+    /// 가진 방패(0223 — 키 목록, 쉼표)와 든 방패(키). 없으면 키가 없다.
+    pub const SHIELDS: &str = "shields";
+    pub const SHIELD_WORN: &str = "shield.worn";
     /// 부무기(0223 — 패링 + 평타로 주무기와 바꿔 든다). 없으면 키가 없다.
     pub const SUB: &str = "weapon.sub";
     /// 끼운 스킬 둘(0151 — 값은 `skills::Id::key`).
@@ -236,6 +239,9 @@ pub struct Progress {
     pub weapon: Option<crate::weapons::Id>,
     /// 부무기(0223).
     pub sub: Option<crate::weapons::Id>,
+    /// 가진 방패·든 방패(0223 — 가진 것만 든다).
+    pub shields: Vec<crate::shield::Id>,
+    pub shield: Option<crate::shield::Id>,
     /// 가진 무기(0117 — 무기는 얻어서 쓴다). 맨손은 넣지 않는다(늘 있다).
     pub weapons: Vec<crate::weapons::Id>,
     /// 끼운 스킬 둘(0151). 기록에 없으면 처음의 둘(`skills::START`). 배운 스킬만 끼운다(0158).
@@ -474,6 +480,18 @@ impl Progress {
             .get(key::GARB_WORN)
             .and_then(crate::garb::by_key)
             .filter(|&id| crate::garb::owned(&finds).contains(&id));
+        // 방패(0223): 가진 것의 키 목록(모르는 키는 건너뛴다 — 한 번씩만).
+        let mut shields: Vec<crate::shield::Id> = Vec::new();
+        for id in r
+            .get(key::SHIELDS)
+            .unwrap_or("")
+            .split(',')
+            .filter_map(|k| crate::shield::Id::by_key(k.trim()))
+        {
+            if !shields.contains(&id) {
+                shields.push(id);
+            }
+        }
         // 벼린 단(0180): 주운 숫돌 안으로 바로잡는다.
         let forged = {
             let mut f = crate::forge::Forged::default();
@@ -503,6 +521,11 @@ impl Progress {
             overseer_cores,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
             sub: r.get(key::SUB).and_then(crate::weapons::Id::by_key),
+            shield: r
+                .get(key::SHIELD_WORN)
+                .and_then(crate::shield::Id::by_key)
+                .filter(|id| shields.contains(id)),
+            shields,
             skills: {
                 let at = |k: &str, d: crate::skills::Id| {
                     r.get(k).and_then(crate::skills::Id::by_key).unwrap_or(d)
@@ -738,6 +761,16 @@ impl Progress {
         match self.sub {
             Some(w) => r.set(key::SUB, w.key()),
             None => r.remove(key::SUB),
+        }
+        if self.shields.is_empty() {
+            r.remove(key::SHIELDS);
+        } else {
+            let keys: Vec<&str> = self.shields.iter().map(|s| s.key()).collect();
+            r.set(key::SHIELDS, keys.join(","));
+        }
+        match self.shield {
+            Some(id) => r.set(key::SHIELD_WORN, id.key()),
+            None => r.remove(key::SHIELD_WORN),
         }
         // 처음의 둘이면 쓰지 않는다(기록이 없는 슬롯이 "기록 있음"이 되지 않게).
         if self.skills.0 == crate::skills::START {
@@ -1938,6 +1971,27 @@ forge.sword=3
         assert_eq!(back.summary().map(|m| m.play), Some(3725));
         assert_eq!(play_text(3725), "1:02");
         assert_eq!(play_text(59), "0:00");
+    }
+
+    /// 0223: 가진 방패·든 방패·부무기는 기록에 남는다 — 가지지 않은 방패는 든 것으로 읽지 않고, 없으면 키를 쓰지 않는다.
+    #[test]
+    fn shields_and_the_off_weapon_round_trip() {
+        use crate::shield::Id;
+        let mut p = Progress::default();
+        let text = p.to_record().to_text();
+        assert!(
+            !text.contains("shield") && !text.contains("weapon.sub"),
+            "{text}"
+        );
+        p.shields = vec![Id::Pilgrim];
+        p.shield = Some(Id::Pilgrim);
+        p.sub = Some(crate::weapons::Id::Crossbow);
+        let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        assert_eq!(back.shields, vec![Id::Pilgrim]);
+        assert_eq!(back.shield, Some(Id::Pilgrim));
+        assert_eq!(back.sub, Some(crate::weapons::Id::Crossbow));
+        let stray = Progress::from_record(Record::parse("shield.worn=pilgrim\n"));
+        assert_eq!(stray.shield, None, "a shield you do not own is not worn");
     }
 
     /// 0176: 걸친 덧옷은 기록 `garb.worn`에 남고, 가진 덧옷(주운 숨은 물건)이 아니면 벗은 채로 읽는다. 안 걸쳤으면 키를 쓰지 않는다.

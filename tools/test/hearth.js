@@ -151,15 +151,17 @@ async function run(browser, lang) {
   await press('Escape'); await page.waitForTimeout(300);
   await press('ArrowDown'); await page.waitForTimeout(150);
   await shot('8e-equip-empty-slot');
-  // 덧옷 칸(0176 — 왼쪽 열 아래): 가운데 장신구 칸 ← = 부무기 칸(0223), ↓ = 덧옷 칸(뿌리껍질을 걸쳤다) → 목록(벗기 · 뿌리껍질), 벗기에서 견주는 줄.
-  await press('ArrowLeft'); await page.waitForTimeout(150); await press('ArrowDown'); await page.waitForTimeout(150);
+  // 덧옷 칸(0176 — 왼쪽 열 아래): 가운데 장신구 칸 ← = 부무기 칸(0223), ↓ 둘 = 방패 칸을 지나 덧옷 칸(뿌리껍질을 걸쳤다) → 목록(벗기 · 뿌리껍질), 벗기에서 견주는 줄.
+  await press('ArrowLeft'); await page.waitForTimeout(150); await press('ArrowDown', 2); await page.waitForTimeout(150);
   await shot('8e2-equip-garb-slot');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('8e3-equip-garb-pick');
   await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8e4-equip-garb-pick-bare');
   await press('Escape'); await page.waitForTimeout(300);
-  // 부무기 칸(0223 — 왼쪽 열 가운데): 덧옷에서 ↑, 목록(비우기 · 가진 무기 · 맨손).
+  // 방패 칸·부무기 칸(0223 — 왼쪽 열: 주무기 · 부무기 · 방패 · 덧옷): 덧옷에서 ↑ = 방패(없으면 빈 칸의 말), 또 ↑ = 부무기 → 목록(비우기 · 가진 무기 · 맨손).
+  await press('ArrowUp'); await page.waitForTimeout(150);
+  await shot('8e4b-equip-shield-slot');
   await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8e5-equip-sub-slot');
   await press('Enter'); await page.waitForTimeout(300);
@@ -201,7 +203,7 @@ async function run(browser, lang) {
   // 가게: 살 것의 줄마다(끝에서 돈다).
   await press('KeyE'); await page.waitForTimeout(300);
   // 진열 다섯 + 벼리기 넷 + 거두기 하나(0180 — 숫돌 둘·벼린 검 +1을 심었다).
-  for (let i = 0; i < 10; i++) { await shot(`8-shop-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  for (let i = 0; i < 11; i++) { await shot(`8-shop-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   // 설정: 줄마다(화로에서는 처음부터·타이틀로가 없다).
   await press('KeyE'); await page.waitForTimeout(300);
   for (let i = 0; i < 11; i++) { await shot(`8j-settings-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }

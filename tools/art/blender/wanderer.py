@@ -382,9 +382,29 @@ def make():
     g.lathe((lx, ly, lz + 0.064), [(0.0, 0.0), (0.026, 0.018), (0.020, 0.044), (0.0, 0.082)], "ember", sides=6, smooth=True,
             caps=(False, False))
 
+    # 방패(0223 — 왼팔, 한손 무기와 함께 든다): 얕게 부푼 둥근 나무 판 + 금빛 테 + 가운데 쇠 돌기. 단단한 소품이라 코드 꼴(0157).
+    # 여기서는 옛 왼손 자리에 판의 축을 +z로 세워 둔다 — 스킨 몸(`wanderer_skin.py attach`)이 왼팔뚝 바깥으로 옮겨 붙인다.
+    shield(m, (hx, hy, hz))
+
     m.build()
     acts(m)
     return m
+
+
+SHIELD_R = 0.185  # 방패 반지름 — 게임 거리에서 팔뚝을 덮는 한 덩어리로 읽히게(키 1.4의 몸에 지름 0.37)
+
+
+def shield(m, at):
+    """방패(0223). 축 = +z(앞면이 +z를 본다), 가운데 = at. 뒤(−z)는 막힌 판."""
+    g = m.geo("shield", "hand_l")
+    r = SHIELD_R
+    # 테(금빛, 또렷한 모서리 — 밝은 선이 붙는다) → 나무 앞면(얕은 돔, 매끈) → 가운데 돌기(쇠).
+    g.lathe(at, [(r * 0.90, -0.016), (r, -0.010), (r, 0.008), (r * 0.88, 0.018)], "p_gold", sides=12, caps=(True, False),
+            cap_mat="p_boot")
+    g.lathe(at, [(r * 0.88, 0.018), (r * 0.62, 0.034), (r * 0.30, 0.042)], ["p_boot", "brown"], sides=12, smooth=True,
+            caps=(False, False))
+    g.lathe(at, [(r * 0.30, 0.042), (r * 0.26, 0.062), (r * 0.14, 0.076), (0.0, 0.080)], "p_steel", sides=8, smooth=True,
+            caps=(False, False))
 
 
 def make_blocks():

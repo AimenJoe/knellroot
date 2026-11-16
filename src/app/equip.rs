@@ -10,20 +10,26 @@ use super::*;
 use crate::charms::{self, Id as Charm};
 use crate::stats::{Change, Line, Stats};
 
-/// 칸: 0 = 주무기, 1..=3 = 장신구 칸, 4 = 덧옷(0176), 5 = 부무기(0223 — 뒤에 붙여 옛 칸 번호가 그대로).
-pub(super) const SLOTS: usize = 3 + charms::SLOTS;
+/// 칸: 0 = 주무기, 1..=3 = 장신구 칸, 4 = 덧옷(0176), 5 = 부무기·6 = 방패(0223 — 뒤에 붙여 옛 칸 번호가 그대로).
+pub(super) const SLOTS: usize = 4 + charms::SLOTS;
 pub(super) const GARB_SLOT: usize = 1 + charms::SLOTS;
 pub(super) const SUB_SLOT: usize = 2 + charms::SLOTS;
+pub(super) const SHIELD_SLOT: usize = 3 + charms::SLOTS;
 
-/// 인형 왼쪽 열의 칸(위에서 아래로 주무기·부무기·덧옷 — 후보 목록이 오른쪽에 뜬다).
-const LEFT: [usize; 3] = [0, SUB_SLOT, GARB_SLOT];
+/// 인형 왼쪽 열의 칸(위에서 아래로 주무기·부무기·방패·덧옷 — 후보 목록이 오른쪽에 뜬다).
+const LEFT: [usize; 4] = [0, SUB_SLOT, SHIELD_SLOT, GARB_SLOT];
+/// 오른쪽 열(장신구 셋)의 줄 ↔ 왼쪽 열(넷)의 줄: 높이가 가까운 쪽으로.
+const LEFT_OF_CHARM: [usize; charms::SLOTS] = [0, 1, 3];
+const CHARM_OF_LEFT: [usize; 4] = [1, 2, 2, 3];
 
 fn left_column(slot: usize) -> bool {
     LEFT.contains(&slot)
 }
 
 /// 칸 상자의 자리(480×270 기준 px, 왼쪽 칸 안): 무기 상자·장신구 상자의 한 변, 장신구 상자 사이, 칸의 가장자리에서 들인 몫.
-const WEAPON_BOX: f32 = 36.0;
+const WEAPON_BOX: f32 = 34.0;
+/// 왼쪽 열(넷)의 높이.
+const LEFT_H: f32 = WEAPON_BOX * 4.0 + BOX_GAP * 3.0;
 const CHARM_BOX: f32 = 34.0;
 const BOX_GAP: f32 = 6.0;
 const BOX_INSET: f32 = 8.0;
@@ -32,14 +38,14 @@ const BOXES_H: f32 = CHARM_BOX * 3.0 + BOX_GAP * 2.0;
 const PICK_W: f32 = 170.0;
 const PICK_ROWS: usize = 6;
 
-/// 칸 커서의 공간 이동(칸이 놓인 자리대로): 왼쪽 열 = 주무기(위)·부무기(가운데, 0223)·덧옷(아래), 오른쪽 열 = 장신구 셋.
-/// `up`(+1 = 위)은 그 열 안에서 돌고, `right`(+1 = 오른쪽)는 같은 높이 쪽으로 — 셋과 셋이 줄마다 마주 본다.
+/// 칸 커서의 공간 이동(칸이 놓인 자리대로): 왼쪽 열 = 주무기·부무기·방패(0223)·덧옷, 오른쪽 열 = 장신구 셋.
+/// `up`(+1 = 위)은 그 열 안에서 돌고, `right`(+1 = 오른쪽)는 높이가 가까운 쪽으로.
 pub(super) fn slot_nav(cur: usize, up: i32, right: i32) -> usize {
     let mut c = cur;
     if right > 0 && left_column(c) {
-        c = 1 + LEFT.iter().position(|&s| s == c).unwrap_or(0);
+        c = CHARM_OF_LEFT[LEFT.iter().position(|&s| s == c).unwrap_or(0)];
     } else if right < 0 && !left_column(c) {
-        c = LEFT[(c - 1).min(LEFT.len() - 1)];
+        c = LEFT[LEFT_OF_CHARM[(c - 1).min(charms::SLOTS - 1)]];
     }
     if up != 0 {
         if left_column(c) {
@@ -63,6 +69,8 @@ pub(super) enum Cand {
     /// 덧옷 칸 비우기(0176).
     Bare,
     Garb(crate::garb::Id),
+    /// 방패(0223) — 비우기는 `Empty`.
+    Shield(crate::shield::Id),
 }
 
 /// 칸의 후보 목록(표 순서): 무기 칸 = 맨손 + 무기 넷, 장신구 칸 = 빈 칸 + **가진** 장신구만.
@@ -74,7 +82,19 @@ pub(super) fn candidates(
     owned: &[Charm],
     arms: &[weapons::Id],
     garbs: &[crate::garb::Id],
+    shields: &[crate::shield::Id],
 ) -> Vec<Cand> {
+    if slot == SHIELD_SLOT {
+        // 방패 칸(0223) = 비우기 + 가진 방패(표 순서).
+        return std::iter::once(Cand::Empty)
+            .chain(
+                crate::shield::TABLE
+                    .iter()
+                    .filter(|d| shields.contains(&d.id))
+                    .map(|d| Cand::Shield(d.id)),
+            )
+            .collect();
+    }
     if slot == GARB_SLOT {
         // 덧옷 칸 = 벗기 + 가진 덧옷(0176).
         return std::iter::once(Cand::Bare)
@@ -397,6 +417,9 @@ fn item_of(c: Cand) -> Option<crate::item_view::Item> {
         }
         Cand::Charm(id) => Some(crate::item_view::Item::Charm(id)),
         Cand::Garb(id) => Some(crate::item_view::Item::Garb(id)),
+        Cand::Shield(id) => {
+            Some(crate::item_view::Item::Shield(id)).filter(|&i| crate::item_view::has_view(i))
+        }
         Cand::Empty | Cand::Bare => None,
     }
 }
@@ -430,6 +453,7 @@ impl App {
         match slot {
             0 => Cand::Weapon(self.weapon),
             SUB_SLOT => self.progress.sub.map_or(Cand::Empty, Cand::Weapon),
+            SHIELD_SLOT => self.progress.shield.map_or(Cand::Empty, Cand::Shield),
             GARB_SLOT => self.progress.garb.map_or(Cand::Bare, Cand::Garb),
             i => self.progress.worn[i - 1].map_or(Cand::Empty, Cand::Charm),
         }
@@ -442,7 +466,13 @@ impl App {
 
     /// 칸의 후보(가진 것에서).
     fn cands(&self, slot: usize) -> Vec<Cand> {
-        candidates(slot, &self.progress.owned, &self.arms(), &self.garbs())
+        candidates(
+            slot,
+            &self.progress.owned,
+            &self.arms(),
+            &self.garbs(),
+            &self.progress.shields,
+        )
     }
 
     /// 줄·머리에 쓰는 이름: 무기는 벼린 단이 붙는다(0180 "검 +2").
@@ -460,6 +490,7 @@ impl App {
             Cand::Charm(id) => tr(charms::def(id).name),
             Cand::Bare => s().garb_none,
             Cand::Garb(id) => tr(crate::garb::def(id).name),
+            Cand::Shield(id) => tr(id.def().name),
         }
     }
 
@@ -474,6 +505,7 @@ impl App {
             Cand::Bare if self.garbs().is_empty() => s.garb_none_yet,
             Cand::Bare => s.garb_none_d,
             Cand::Garb(id) => tr(crate::garb::def(id).desc),
+            Cand::Shield(id) => tr(id.def().desc),
         }
     }
 
@@ -535,6 +567,7 @@ impl App {
             match self.cursor {
                 0 => self.next_weapon(1),
                 SUB_SLOT => self.step_sub(1),
+                SHIELD_SLOT => self.step_shield(1),
                 GARB_SLOT => self.step_garb(1),
                 i => self.step_charm(i - 1, 1),
             }
@@ -619,6 +652,10 @@ impl App {
                 Cand::Weapon(w) => Some(w),
                 _ => None,
             }),
+            c if slot == SHIELD_SLOT => self.set_shield(match c {
+                Cand::Shield(id) => Some(id),
+                _ => None,
+            }),
             Cand::Weapon(w) => self.wield(w),
             c if slot == GARB_SLOT => {
                 self.progress.garb = match c {
@@ -658,20 +695,16 @@ impl App {
         // 칸 상자(0068 — 디아블로 인형처럼 칸에는 아이템 그림): 인형 왼쪽 위 = 무기·아래 = 덧옷(0176), 장신구 셋은 오른쪽.
         // 인형은 그 사이 가운데.
         let boxes_top = (w.body_h - BOXES_H) * 0.5;
+        let left_top = (w.body_h - LEFT_H) * 0.5;
         let mut boxes = [Rect::default(); SLOTS];
-        boxes[0] = w.rect(BOX_INSET, boxes_top, WEAPON_BOX, WEAPON_BOX);
-        boxes[SUB_SLOT] = w.rect(
-            BOX_INSET,
-            boxes_top + (BOXES_H - WEAPON_BOX) * 0.5,
-            WEAPON_BOX,
-            WEAPON_BOX,
-        );
-        boxes[GARB_SLOT] = w.rect(
-            BOX_INSET,
-            boxes_top + BOXES_H - WEAPON_BOX,
-            WEAPON_BOX,
-            WEAPON_BOX,
-        );
+        for (row, &slot) in LEFT.iter().enumerate() {
+            boxes[slot] = w.rect(
+                BOX_INSET,
+                left_top + (WEAPON_BOX + BOX_GAP) * row as f32,
+                WEAPON_BOX,
+                WEAPON_BOX,
+            );
+        }
         for (i, b) in boxes.iter_mut().enumerate().skip(1).take(charms::SLOTS) {
             *b = w.rect(
                 tabs::LEFT_W - CHARM_BOX - BOX_INSET,
@@ -740,6 +773,8 @@ impl App {
                 s.menu_weapon.to_string()
             } else if slot == SUB_SLOT {
                 s.menu_sub_weapon.to_string()
+            } else if slot == SHIELD_SLOT {
+                s.menu_shield.to_string()
             } else if slot == GARB_SLOT {
                 s.menu_garb.to_string()
             } else {
@@ -947,7 +982,7 @@ impl App {
                 };
                 lines.push(Ln::Pair(v.line.name().to_string(), val, col));
             }
-        } else if picking && slot != SUB_SLOT {
+        } else if picking && slot != SUB_SLOT && slot != SHIELD_SLOT {
             // 부무기 칸(0223)은 능력치를 바꾸지 않는다 — "바뀌는 것 없음"을 쓰지 않는다.
             let then = self.stats_with(slot, focus);
             let changed: Vec<_> = crate::stats::lines(&now_stats, Some(&then))
@@ -969,10 +1004,17 @@ impl App {
         // 부무기 칸의 비우기(0223)는 장신구의 빈 칸과 다른 말.
         let desc = if slot == SUB_SLOT && focus == Cand::Empty {
             s.sub_empty_d
+        } else if slot == SHIELD_SLOT && focus == Cand::Empty {
+            s.shield_none_d
         } else {
             self.cand_desc(focus)
         };
         lines.extend(self.pane_wrap(w, desc, DIM));
+        // 방패(0223)는 한손 무기일 때만 쓰인다 — 지금 든 무기가 두 손을 쓰면 알린다.
+        if matches!(focus, Cand::Shield(_)) && self.weapon.hand() != weapons::Hand::One {
+            lines.push(Ln::Gap);
+            lines.extend(self.pane_wrap(w, s.shield_idle, AMBER));
+        }
         let flavor = match focus {
             Cand::Charm(id) => Some(tr(charms::def(id).flavor)),
             Cand::Garb(id) => Some(tr(crate::garb::def(id).flavor)),
@@ -1047,19 +1089,13 @@ mod tests {
 
     #[test]
     fn the_slot_cursor_moves_by_where_the_boxes_sit() {
-        // 왼쪽 열 = 주무기(0, 위)·부무기(5, 가운데 — 0223)·덧옷(4, 아래 — 0176), 오른쪽 열 = 장신구 1..=3(위에서 아래로).
-        // 줄마다 마주 본다.
-        for (left, right) in [(0, 1), (SUB_SLOT, 2), (GARB_SLOT, 3)] {
-            assert_eq!(
-                slot_nav(left, 0, 1),
-                right,
-                "right from {left} lands level with it"
-            );
-            assert_eq!(
-                slot_nav(right, 0, -1),
-                left,
-                "left from {right} lands level with it"
-            );
+        // 왼쪽 열 = 주무기(0)·부무기(5)·방패(6 — 0223)·덧옷(4 — 0176), 오른쪽 열 = 장신구 1..=3(위에서 아래로).
+        // 좌우는 높이가 가까운 쪽으로: 넷 → 셋은 [1, 2, 2, 3], 셋 → 넷은 [주무기, 부무기, 덧옷].
+        for (left, right) in [(0, 1), (SUB_SLOT, 2), (SHIELD_SLOT, 2), (GARB_SLOT, 3)] {
+            assert_eq!(slot_nav(left, 0, 1), right, "right from {left}");
+        }
+        for (right, left) in [(1, 0), (2, SUB_SLOT), (3, GARB_SLOT)] {
+            assert_eq!(slot_nav(right, 0, -1), left, "left from {right}");
         }
         assert_eq!(slot_nav(1, 0, 1), 1, "nothing further right");
         assert_eq!(slot_nav(0, 0, -1), 0);
@@ -1067,25 +1103,40 @@ mod tests {
         assert_eq!(slot_nav(3, -1, 0), 1, "down wraps in the charm column");
         assert_eq!(slot_nav(1, 1, 0), 3, "up wraps");
         assert_eq!(slot_nav(0, -1, 0), SUB_SLOT, "down the left column");
-        assert_eq!(slot_nav(SUB_SLOT, -1, 0), GARB_SLOT);
+        assert_eq!(slot_nav(SUB_SLOT, -1, 0), SHIELD_SLOT);
+        assert_eq!(slot_nav(SHIELD_SLOT, -1, 0), GARB_SLOT);
         assert_eq!(slot_nav(GARB_SLOT, -1, 0), 0, "wraps");
         assert_eq!(slot_nav(0, 1, 0), GARB_SLOT, "up wraps");
-        // 칸은 여섯 다 닿는다.
+        // 칸은 일곱 다 닿는다.
         let mut seen = [false; SLOTS];
         let mut c = 0;
         seen[c] = true;
-        for (up, right) in [(0, 1), (-1, 0), (-1, 0), (0, -1), (1, 0)] {
+        for (up, right) in [(0, 1), (-1, 0), (-1, 0), (0, -1), (1, 0), (1, 0), (1, 0)] {
             c = slot_nav(c, up, right);
             seen[c] = true;
         }
         assert!(seen.iter().all(|&x| x), "{seen:?}");
     }
 
+    /// 0223: 방패 칸의 후보 = 비우기 + 가진 방패.
+    #[test]
+    fn the_shield_slot_offers_none_and_the_shields_you_own() {
+        use crate::shield::Id;
+        assert_eq!(
+            candidates(SHIELD_SLOT, &[], &[], &[], &[]),
+            vec![Cand::Empty]
+        );
+        assert_eq!(
+            candidates(SHIELD_SLOT, &[], &[], &[], &[Id::Pilgrim]),
+            vec![Cand::Empty, Cand::Shield(Id::Pilgrim)]
+        );
+    }
+
     /// 0223: 부무기 칸의 후보 = 비우기 + 맨손 + 가진 무기(주무기도 — 고르면 맞바꾼다).
     #[test]
     fn the_off_weapon_slot_offers_none_fists_and_the_weapons_you_own() {
         use weapons::Id;
-        let got = candidates(SUB_SLOT, &[], &[Id::Sword, Id::Crossbow], &[]);
+        let got = candidates(SUB_SLOT, &[], &[Id::Sword, Id::Crossbow], &[], &[]);
         assert_eq!(
             got,
             vec![
@@ -1126,7 +1177,7 @@ mod tests {
     fn slots_list_what_you_own_and_the_cursor_opens_on_what_is_worn() {
         // 무기 칸: 맨손이 맨 위, 든 것도 목록에 있고 커서가 거기서 시작한다.
         let held = Cand::Weapon(weapons::Id::Staff);
-        let weapons = candidates(0, &[], &weapons::IDS, &[]);
+        let weapons = candidates(0, &[], &weapons::IDS, &[], &[]);
         assert_eq!(weapons.len(), weapons::IDS.len());
         assert_eq!(
             weapons[0],
@@ -1139,7 +1190,7 @@ mod tests {
             "the cursor starts on it"
         );
         // 0117: 무기 칸은 가진 것만(맨손·검 + 얻은 것).
-        let earned = candidates(0, &[], &[weapons::Id::Sword, weapons::Id::Hammer], &[]);
+        let earned = candidates(0, &[], &[weapons::Id::Sword, weapons::Id::Hammer], &[], &[]);
         assert_eq!(
             earned,
             vec![
@@ -1150,7 +1201,7 @@ mod tests {
         );
         // 장신구 칸(사장 2026-11-07): 빈 칸 + 가진 것, 낀 것도 목록에 있고 커서가 거기.
         let owned = [Charm::Ear, Charm::Shell];
-        let list = candidates(3, &owned, &[], &[]);
+        let list = candidates(3, &owned, &[], &[], &[]);
         assert_eq!(
             list,
             vec![
@@ -1171,7 +1222,7 @@ mod tests {
         );
         assert!(wears_something(Cand::Charm(Charm::Ear)) && wears_something(held));
         // 장신구가 없고 칸이 비었으면 바꿀 것이 없다 — 못 얻은 것은 장비 창에 없다(도감 몫).
-        assert!(!has_choice(&candidates(1, &[], &[], &[]), Cand::Empty));
+        assert!(!has_choice(&candidates(1, &[], &[], &[], &[]), Cand::Empty));
         assert!(has_choice(&list, Cand::Empty));
     }
 }

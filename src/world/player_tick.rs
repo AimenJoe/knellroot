@@ -110,12 +110,17 @@ impl World {
                     }
                 };
             }
+            PState::Block { t: e } => self.tick_block(&cx, e),
             PState::Parry { t: e } => {
-                self.player.state = if e + dt >= t[P::ParryTime] {
-                    PState::Idle
-                } else {
-                    PState::Parry { t: e + dt }
-                };
+                // 방패(0223): 패링 창이 지나도 쥐고 있으면 막기로 잇는다 — 헛친 패링의 굳음 대신 방패 뒤에 선다.
+                self.player.state =
+                    if e + dt >= t[P::ParryWindow] && cx.a.parry_held && self.can_block() {
+                        PState::Block { t: 0.0 }
+                    } else if e + dt >= t[P::ParryTime] {
+                        PState::Idle
+                    } else {
+                        PState::Parry { t: e + dt }
+                    };
             }
             PState::Turn { t: e, from, to } => self.tick_turning(&cx, e, from, to),
             PState::Skill {
@@ -431,7 +436,14 @@ impl World {
         pl.dodge_cd = cx.t[P::DodgeTime] + 0.15;
         true
     }
+}
 
+/// 막기를 푸는 누름(0223): 막는 동안 이 가운데 하나를 누르면 그 동작이 나간다.
+fn block_breaks(a: &Actions) -> bool {
+    a.dodge || a.jump || a.attack || a.cast || a.flask || a.skill1 || a.skill2 || a.ult
+}
+
+impl World {
     /// 패링 시작(0025): 가까운 적 쪽으로 돌아서 막는다(공격 자동 조준과 같은 고르기).
     fn try_parry(&mut self, cx: &Ctx) -> bool {
         let pl = &mut self.player;
@@ -445,12 +457,29 @@ impl World {
         true
     }
 
+    /// 방패 막기(0223): 쥔 동안 머문다. 떼거나 다른 것을 누르면 그 틱에 그 동작으로(막다가 치기·피하기가 늦지 않게).
+    fn tick_block(&mut self, cx: &Ctx, e: f32) {
+        if !cx.a.parry_held || block_breaks(&cx.a) || !self.can_block() {
+            self.player.state = PState::Idle;
+            self.tick_idle(cx);
+            return;
+        }
+        // 막는 동안은 기력이 차지 않는다 — 방패 뒤에 오래 서면 칠 기력이 없다.
+        self.player.stamina_idle = 0.0;
+        self.player.state = PState::Block { t: e + cx.dt };
+    }
+
     fn tick_idle(&mut self, cx: &Ctx) {
         let (t, wpn) = (cx.t, cx.wpn);
         if self.try_dodge(cx) {
             return;
         }
         let a = &cx.a;
+        // 방패(0223): 누르는 것 없이 패링 버튼만 쥐고 있으면 막는다(튕긴 뒤·공격을 마친 뒤에도 쥐고 있으면 다시 방패 뒤로).
+        if a.parry_held && !block_breaks(a) && !a.parry && self.can_block() {
+            self.player.state = PState::Block { t: 0.0 };
+            return;
+        }
         if a.jump && self.player.spend(t[P::JumpStamina]) {
             // 점프(0027): 뛰기 전 속도를 그대로 잇는다(달리다 뛰면 멀리).
             let pl = &mut self.player;
@@ -1195,6 +1224,7 @@ impl World {
                 };
             }
             PState::Idle
+            | PState::Block { .. }
             | PState::Drink { .. }
             | PState::Charging { .. }
             | PState::Cast { .. }
@@ -1209,6 +1239,7 @@ impl World {
                     PState::Cast { .. } | PState::Throw { .. } | PState::CastCharge { .. } => {
                         t[P::CastWalk]
                     }
+                    PState::Block { .. } => crate::tuning::BLOCK_WALK,
                     PState::Idle if pl.running => RUN_SPEED_X,
                     _ => 1.0,
                 };
@@ -1249,6 +1280,8 @@ impl World {
                 Some(d.x.atan2(d.z))
             }
             _ if cx.aim.is_some() => cx.aim.map(|d| d.x.atan2(d.z)),
+            // 막는 동안(0223)은 걷는 쪽으로 돌지 않는다 — 방패를 든 채 뒤로 물러설 수 있게(락온·조준 스틱은 위에서 돌린다).
+            (_, PState::Block { .. }) => None,
             (Basis::Quarter { .. } | Basis::Frozen(_), _)
                 if cx.world_move.length_squared() > 1e-4 =>
             {

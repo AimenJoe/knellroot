@@ -484,6 +484,13 @@ pub struct Strings {
     pub menu_weapon: &'static str,
     /// 장비 탭의 부무기 칸 이름(0223).
     pub menu_sub_weapon: &'static str,
+    /// 방패(0223): 이름 · 설명 · 장비 탭의 칸 이름 · 비운 칸의 설명 · 든 무기가 한손이 아닐 때의 알림.
+    pub shield_pilgrim: &'static str,
+    pub shield_pilgrim_d: &'static str,
+    pub menu_shield: &'static str,
+    pub shield_none: &'static str,
+    pub shield_none_d: &'static str,
+    pub shield_idle: &'static str,
     /// 무기 갈래 줄(0223): 이름 · 한손 · 양손 · 원거리.
     pub hand_label: &'static str,
     pub hand_one: &'static str,
@@ -1224,6 +1231,12 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.menu_look_pitch,
         s.menu_weapon,
         s.menu_sub_weapon,
+        s.shield_pilgrim,
+        s.shield_pilgrim_d,
+        s.menu_shield,
+        s.shield_none,
+        s.shield_none_d,
+        s.shield_idle,
         s.sub_empty_d,
         s.hand_label,
         s.hand_one,

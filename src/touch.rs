@@ -119,6 +119,8 @@ pub struct Read {
     /// 회피 버튼을 쥐고 있나(0076 — 쥐면 회피 뒤 달리기).
     pub dodge_held: bool,
     pub parry: bool,
+    /// 패링 버튼을 쥐고 있나(0223 — 방패 막기).
+    pub parry_held: bool,
     pub jump: bool,
     /// 등잔(0031).
     pub flask: bool,
@@ -180,6 +182,7 @@ pub struct Touch {
     cast_finger: Option<u64>,
     /// 회피 버튼을 누른 손가락(0076).
     dodge_finger: Option<u64>,
+    parry_finger: Option<u64>,
     /// 끌어 조준하는 손가락(0217).
     aimer: Option<Aimer>,
     /// 상황 버튼(0053, 앱이 매 프레임 정한다).
@@ -471,6 +474,7 @@ impl Touch {
             self.attack_finger = None;
             self.cast_finger = None;
             self.dodge_finger = None;
+            self.parry_finger = None;
             self.lookers.clear();
             self.pinch = 0.0;
             self.stale.append(&mut self.known);
@@ -518,6 +522,7 @@ impl Touch {
             self.attack_finger = None;
             self.cast_finger = None;
             self.dodge_finger = None;
+            self.parry_finger = None;
             self.lookers.clear();
             self.pinch = 0.0;
             return a;
@@ -567,6 +572,9 @@ impl Touch {
                     }
                     if b.kind == Kind::Dodge && !ended {
                         self.dodge_finger = Some(t.id);
+                    }
+                    if b.kind == Kind::Parry && !ended {
+                        self.parry_finger = Some(t.id);
                     }
                 } else if t.position.x < w * 0.5 && self.stick.is_none() && !ended {
                     self.stick = Some(Stick {
@@ -654,9 +662,11 @@ impl Touch {
         self.attack_finger = alive(self.attack_finger);
         self.cast_finger = alive(self.cast_finger);
         self.dodge_finger = alive(self.dodge_finger);
+        self.parry_finger = alive(self.parry_finger);
         a.attack_held = self.attack_finger.is_some();
         a.cast_held = self.cast_finger.is_some();
         a.dodge_held = self.dodge_finger.is_some();
+        a.parry_held = self.parry_finger.is_some();
         if self
             .stick
             .is_some_and(|s| !touches.iter().any(|t| t.id == s.id))

@@ -149,6 +149,7 @@ impl App {
             self.world.embers,
             &self.progress.owned,
             &self.progress.growth,
+            &self.progress.shields,
         ) || self.can_forge();
         let journey = crate::journey::any_ready(&self.progress);
         let tabs: Vec<(&str, bool)> = flow::tabs(host)

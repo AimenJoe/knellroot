@@ -100,6 +100,8 @@ pub struct Actions {
     pub dodge_held: bool,
     /// 패링(0025): 누른 뒤 짧은 창 안에 앞쪽에서 오는 근접 공격을 튕긴다.
     pub parry: bool,
+    /// 패링 버튼을 쥐고 있다(0223 — 한손 무기 + 방패면 패링 창 뒤에 막기로 이어진다).
+    pub parry_held: bool,
     /// 점프(0027). 공중에서 공격 = 내려찍기.
     pub jump: bool,
     /// 등잔 마시기(0031).
@@ -925,6 +927,7 @@ impl Input {
         a.cast = kp(Bind::Cast);
         a.cast_held = bind.key(Bind::Cast).down();
         a.dodge_held = bind.key(Bind::Dodge).down();
+        a.parry_held = bind.key(Bind::Parry).down();
         a.lock = kp(Bind::Lock);
         a.turn_left = kp(Bind::TurnLeft);
         a.turn_right = kp(Bind::TurnRight);
@@ -999,6 +1002,7 @@ impl Input {
                 a.lock |= pj(Bind::Lock);
                 // 랩이 열려 있으면 어깨·트리거는 랩 단계(LB 10배·LT 담기·RT 바꾸기)다 — 패링·돌리기로 같이 읽지 않는다.
                 a.parry |= pj(Bind::Parry);
+                a.parry_held |= pad.is_currently_pressed(bind.pad(Bind::Parry).button());
                 a.flask |= pj(Bind::Flask);
                 a.cast |= pj(Bind::Cast);
                 a.cast_held |= pad.is_currently_pressed(bind.pad(Bind::Cast).button());
@@ -1065,6 +1069,7 @@ impl Input {
             a.jump |= pj(Bind::Jump);
             a.lock |= pj(Bind::Lock);
             a.parry |= pj(Bind::Parry);
+            a.parry_held |= is_key_down(bind.pad(Bind::Parry).key());
             a.flask |= pj(Bind::Flask);
             a.cast |= pj(Bind::Cast);
             a.cast_held |= is_key_down(bind.pad(Bind::Cast).key());
@@ -1108,6 +1113,7 @@ impl Input {
         a.dodge |= t.dodge;
         a.dodge_held |= t.dodge_held;
         a.parry |= t.parry;
+        a.parry_held |= t.parry_held;
         a.jump |= t.jump;
         a.flask |= t.flask;
         a.interact |= t.interact;
@@ -1225,6 +1231,7 @@ impl Input {
             attack_held: a.attack_held,
             cast_held: a.cast_held,
             dodge_held: a.dodge_held,
+            parry_held: a.parry_held,
             dodge: self.latch.dodge | a.dodge,
             parry: self.latch.parry | a.parry,
             jump: self.latch.jump | a.jump,
@@ -1297,6 +1304,7 @@ fn carry(a: &Actions) -> Actions {
         attack_held: a.attack_held,
         cast_held: a.cast_held,
         dodge_held: a.dodge_held,
+        parry_held: a.parry_held,
         aim_hold: a.aim_hold,
         aim_drag: a.aim_drag,
         auto_aim: a.auto_aim,

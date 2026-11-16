@@ -28,6 +28,8 @@ HEIGHT = 1.4  # 옛 방랑자와 같은 키(귀 끝까지)
 OUT_FPS = 100  # 옛 동작처럼 — 길이(0.43·0.25 …)가 프레임에 딱 떨어진다. 키는 줄이므로 크기는 늘지 않는다
 SRC_FPS = 24  # 원본 프레임 단위(`meshy_rig.py`가 24로 가져온다 — 아래 표의 수)
 HAND_R, HAND_L = "mixamorig:RightHand", "mixamorig:LeftHand"
+FORE_L = "mixamorig:LeftForeArm"
+SHIELD_AT, SHIELD_OFF = 0.55, 0.055  # 방패(0223): 팔뚝의 어디(팔꿈치 0 → 손목 1) · 팔뚝에서 손등 쪽으로 띄운 몫(m)
 TEX = 256
 GRIP_IN = 0.55  # 손목 → 가운데 손가락 뿌리의 이 몫이 주먹 가운데
 # 쥔 방향(사장 2026-11-14 "무기가 손에 붙은 위치와 방향"): Meshy 동작의 손은 칼을 쥔 주먹이 아니라 펼친 손이고, 손의 돌림이
@@ -65,7 +67,18 @@ SKILL_FACE = {
     "sk_roots": ((0.25, 0.30, 0.35), "tip"),
     "throw": ((0.2, 0.0, 0.3), "hips"),  # 0204: 수류탄이 손을 떠나는 순간 몸이 정면(원본 M16은 몸 왼쪽으로 휘둘러 던진다)
     "parry": ((0.08, 0.22, 0.0), "hold"),  # 기술은 아니지만 같은 장치 — 막는 동안 몸이 정면(원본 M15는 들며 옆으로 비튼다)
+    "block": ((0.0, 0.2, 0.0), "hold"),  # 방패 막기(0223) — 내내 정면
 }
+# 방패의 앞면(0223): 방패는 왼팔뚝의 손등 쪽에 붙어 있어 서 있을 때는 팔 바깥을 본다. 방패를 내미는 동작에서는 팔뚝이 앞으로 뻗고
+# 손등이 위라 판이 쟁반처럼 눕는다 — 이 동작들에서는 `shield` 뼈를 돌려 앞면이 앞(조금 위)을 보게 한다. 값 = [(초, 몫 0..1)].
+SHIELD_FRONT = {
+    "parry": [(0.0, 0.0), (0.05, 1.0), (0.3, 1.0), (0.5, 0.0)],
+    "block": [(0.0, 1.0), (0.2, 1.0)],
+    "parry_push": [(0.0, 1.0), (0.15, 1.0), (0.4, 0.0)],
+    "sk_bash": [(0.0, 0.0), (0.1, 1.0), (0.3, 1.0), (0.5, 0.0)],
+}
+SHIELD_FACE = Vector((0.0, -1.0, 0.3)).normalized()  # 앞(−Y) + 조금 위 — 위에서 내려다보는 카메라에 판이 보이게
+SHIELD_OUT = [Vector((0.0, 0.0, 1.0))]  # 쉬는 자세에서 판의 앞면이 보는 쪽(뼈대 공간) — `attach`가 채운다
 # 몸이 스스로 돌지 않는 동작(0196): 게임이 몸의 쪽(`facing`)을 돌리는 동안의 발 디딤 — 원본은 몸이 150° 넘게 돌아 게임의 90°와
 # 겹쳐 두 번 돌고, 끝에 서기로 홱 돌아왔다(돌아서기). 프레임마다 엉덩이를 정면으로.
 FACE_STILL = {"turn_l", "turn_r"}
@@ -129,6 +142,9 @@ CLIPS = [
     # 되울림 원본(M15 "칼을 얼굴 앞에 세워 든다")에서 손이 몸 앞 가슴 높이로 올라오는 구간(12~21프레임)을 쓴다. 0.08초에 들고 버틴다.
     # 패링(0198): 막기 원본 Block10(두 손을 앞으로 모으며 무릎을 굽혀 버틴다, 0 → 5 → 12) — 임시로 빌리던 M15 대신.
     ("parry", "Shield_Push_Left", ("anchors", [(0.0, 16), (0.05, 24), (0.10, 28), (0.2, 31), (0.5, 45)])),  # 0202: 누르자마자 왼팔로 민다
+    # 방패 막기(0223): 패링 버튼을 쥔 동안 — 패링(방패 밀기)의 민 자리(패링 창이 끝나는 0.18초 ≈ 원본 30)에서 조금 거둬(28) 머문다.
+    # 막기 원본 Block10은 칼을 가로로 세우고 몸을 옆으로 돌려 선 자세라 방패 막기로는 안 읽혔다.
+    ("block", "Shield_Push_Left", ("anchors", [(0.0, 30), (0.2, 28)])),
     # 회피(0197): 구르기의 몸통 구간만(3 뜀 → 14 말림 → 26 웅크려 닿음 — 옛 2~30은 0.25초에 4.7배로 뭉갰다). 원본은 왼쪽 앞 37°로 굴러
     # 몸을 돌려 구르는 쪽 = 앞(`FACE_TRAVEL`). 뒤로 피할 때(입력 없이·락온 뒷걸음)는 Back_Jump(2 웅크림 → 4 뜀 → 14 닿음 → 17 받음).
     ("dodge", "Roll_Dodge_3", ("anchors", [(0.0, 3), (0.12, 14), (0.25, 26)])),
@@ -240,8 +256,9 @@ def load_old():
         "atlas": m.mat.node_tree.nodes["Image Texture"].image,
         "weapons": [m.objects[n] for n in ("sword", "w_hammer", "w_staff", "w_crossbow")],
         "lamp": [m.objects[n] for n in ("lamp_geo", "glow_lamp")],
+        "shield": m.objects["shield"],
     }
-    keep = set(old["weapons"] + old["lamp"])
+    keep = set(old["weapons"] + old["lamp"] + [old["shield"]])
     for o in list(bpy.data.objects):
         if o not in keep:
             if o.type == "MESH" and o.parent and o.parent.type == "ARMATURE" and o not in keep:
@@ -332,6 +349,22 @@ def attach(arm, old):
         o.parent_type = "BONE"
         o.parent_bone = "lamp"
         o.matrix_world = mw
+    # 방패(0223): 왼팔뚝 바깥(손등 쪽)에 판을 붙인다 — 팔뚝의 `shield` 뼈(팔꿈치와 손목 사이). 판의 축(+z로 지은 것)을 손등 쪽으로,
+    # 손등 쪽 = 팔뚝 방향 × 뒤(+y) — 쉬는 자세의 팔(손바닥이 아래)에서 위·바깥을 본다. 막는 자세에서 팔뚝을 세우면 앞을 본다.
+    elbow, wrist = world_pt(arm, FORE_L), world_pt(arm, HAND_L)
+    along = (wrist - elbow).normalized()
+    out = along.cross(Vector((0.0, 1.0, 0.0))).normalized()
+    side = along.cross(out).normalized()
+    mid = elbow.lerp(wrist, SHIELD_AT) + out * SHIELD_OFF
+    add_bone(arm, "shield", FORE_L, mid)
+    SHIELD_OUT[0] = (arm.matrix_world.inverted().to_3x3() @ out).normalized()
+    o = old["shield"]
+    rot = Matrix((side, along, out)).transposed().to_4x4()  # 열 = x·y·z가 가는 곳(z = 판의 축 → 손등 쪽)
+    mw = Matrix.Translation(mid) @ rot @ Matrix.Translation(-old["hand_l"]) @ o.matrix_world
+    o.parent = arm
+    o.parent_type = "BONE"
+    o.parent_bone = "shield"
+    o.matrix_world = mw
 
 
 # ---------------------------------------------------------------- 동작
@@ -482,7 +515,7 @@ def sample(arm, src, anchors, upright=None):
         go(f)
         if corr is not None:
             uprighten(arm, *corr)
-        poses.append({pb.name: pb.matrix_basis.decompose() for pb in arm.pose.bones if pb.name not in ("lamp", "weapon")})
+        poses.append({pb.name: pb.matrix_basis.decompose() for pb in arm.pose.bones if pb.name not in ("lamp", "weapon", "shield")})
         hips.append(arm.pose.bones["mixamorig:Hips"].head.copy())
         hands.append((arm.pose.bones[HAND_R].head.copy(), arm.pose.bones["mixamorig:RightArm"].head.copy(),
                       arm.pose.bones[HAND_L].head.copy()))
@@ -842,6 +875,37 @@ def weapon_pass(arm, act, loop):
     ad.action = None
 
 
+def shield_pass(arm, act):
+    """방패를 내미는 동작(`SHIELD_FRONT`)에서 `shield` 뼈를 프레임마다 돌려 판의 앞면이 앞을 보게 — 판 가운데(뼈의 머리)가 돌림 중심."""
+    keys = SHIELD_FRONT.get(act.name)
+    if not keys:
+        return
+    sc = bpy.context.scene
+    ad = arm.animation_data
+    ad.action = act
+    n = int(act.frame_range[1])
+    fore = arm.pose.bones[FORE_L]
+    fr = arm.data.bones[FORE_L].matrix_local
+    br = arm.data.bones["shield"].matrix_local
+    rb = br.to_3x3().normalized()
+    local_n = rb.inverted() @ SHIELD_OUT[0]
+    qs, prev = [], None
+    for k in range(n + 1):
+        sc.frame_set(k)
+        q = (fore.matrix @ fr.inverted() @ br).to_3x3().normalized()  # 이 자세에서 방패 뼈의 방향(제 돌림 없이)
+        cur = (q @ local_n).normalized()
+        g = keyed(keys, k / OUT_FPS)
+        dq = cur.rotation_difference(SHIELD_FACE)
+        turn = Matrix.Identity(3).to_quaternion().slerp(dq, g)
+        rot = (q.inverted() @ turn.to_matrix() @ q).to_quaternion()
+        if prev is not None and prev.dot(rot) < 0:
+            rot.negate()
+        prev = rot
+        qs.append(tuple(rot))
+    put(act, "shield", "rotation_quaternion", qs, reduce(qs, ROT_TOL))
+    ad.action = None
+
+
 # 지은 동작(0205): 원본에 없는 동작을 원본의 한 자세 위에 관절을 돌려 짓는다 — 뼈대 공간의 축(앞 −Y · 왼쪽 +X · 위 +Z)으로
 # 뼈의 머리를 돌림 중심으로. 각(도)의 열쇠 [(초, 각)]는 사이를 매끄럽게(코사인) 잇는다. 원본 프레임 = 1/24초.
 # 언더핸드 토스(사장 "쇠뇌 공격 모션에서 오른손으로 언더핸드로 툭 던지는 — 조준은 좀 흐트러지고, 오른발을 약간 내밀면서"):
@@ -938,6 +1002,7 @@ def make_actions(arm, body):
             poses[-1] = poses[0]
         act = write_action(arm, name, n, poses, 1.0 if name == "drink" else 0.0, keep)
         weapon_pass(arm, act, name in LOOPS)
+        shield_pass(arm, act)
         made.append(act)
     for a in list(bpy.data.actions):
         if a not in made:
@@ -949,7 +1014,7 @@ def texture(body, old):
     img = next(n.image for n in body.data.materials[0].node_tree.nodes if n.type == "TEX_IMAGE")
     img.scale(TEX, TEX)  # 옛 방랑자와 같은 256 — 게임 거리에서 몸은 100px 남짓
     W.lift_purples(img)
-    C.merge_textures([body], img, old["weapons"] + old["lamp"], old["atlas"], NAME)
+    C.merge_textures([body], img, old["weapons"] + old["lamp"] + [old["shield"]], old["atlas"], NAME)
 
 
 def export(arm, objs, out_dir):
@@ -995,7 +1060,8 @@ def _preview_keep_pose(m, path, yaw, elev, frame=None):
     keep = C.Model.pose_at
     C.Model.pose_at = lambda self, action=None, t=0.0: None
     try:
-        C.Model.preview(m, path, None, 0.0, yaw=yaw, elev=elev, frame=frame, size=200)
+        C.Model.preview(m, path, None, 0.0, yaw=yaw, elev=elev, frame=frame,
+                        size=int(os.environ.get("KR_PREVIEW_SIZE", "200")))
     finally:
         C.Model.pose_at = keep
 
@@ -1015,12 +1081,15 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, sheet_dir=None):
     texture(body, old)
     craft_actions(arm)
     make_actions(arm, body)
-    objs = [body] + old["weapons"] + old["lamp"]
+    objs = [body] + old["weapons"] + old["lamp"] + [old["shield"]]
     for o in old["weapons"][1:]:  # 미리보기에서는 칼만
         o.hide_render = True
     path = export(arm, objs, models_dir)
     preview(arm, objs, os.path.join(preview_dir, f"{NAME}.png"), "idle", 0.0)
     preview(arm, objs, os.path.join(preview_dir, f"{NAME}_front.png"), "idle", 0.0, yaw=-8.0, elev=14.0)
+    # 방패(0223): 막는 자세(패링 동작의 민 자리)를 앞·옆에서 — 판의 앞면이 앞을 보는지 본다.
+    preview(arm, objs, os.path.join(preview_dir, f"{NAME}_guard.png"), "block", 0.2, yaw=-20.0, elev=14.0)
+    preview(arm, objs, os.path.join(preview_dir, f"{NAME}_guard_side.png"), "block", 0.2, yaw=-80.0, elev=14.0)
     if sheet_dir:
         for name, _, _ in CLIPS:
             act = bpy.data.actions[name]

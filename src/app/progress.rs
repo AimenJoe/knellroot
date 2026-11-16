@@ -286,6 +286,17 @@ impl App {
                 self.world.apply_stats(self.progress.stats(), true);
                 self.toast = Some((fill(s.toast_bought, &[s.shop_oil]), TOAST_TIME));
             }
+            crate::growth::Ware::Shield(id) => {
+                // 방패(0223): 사면 바로 든다(빈 왼손이면) — 한손 무기를 들고 있어야 쓰인다.
+                if !self.progress.shields.contains(&id) {
+                    self.progress.shields.push(id);
+                }
+                if self.progress.shield.is_none() {
+                    self.progress.shield = Some(id);
+                }
+                self.arm_world();
+                self.toast = Some((fill(s.toast_bought, &[tr(id.def().name)]), TOAST_TIME));
+            }
         }
         self.persist();
     }
@@ -295,6 +306,29 @@ impl App {
         self.progress.worn[slot] =
             next_charm(&self.progress.owned, &self.progress.worn, slot, step);
         self.world.apply_stats(self.progress.stats(), false);
+        self.persist();
+    }
+
+    /// 방패 칸 빨리 바꾸기(0223): 비우기 → 가진 방패(표 순서) → 비우기로 돈다.
+    pub(super) fn step_shield(&mut self, step: i32) {
+        let mut opts: Vec<Option<crate::shield::Id>> = vec![None];
+        opts.extend(
+            crate::shield::TABLE
+                .iter()
+                .filter(|d| self.progress.shields.contains(&d.id))
+                .map(|d| Some(d.id)),
+        );
+        let at = opts
+            .iter()
+            .position(|o| *o == self.progress.shield)
+            .unwrap_or(0) as i32;
+        self.set_shield(opts[(at + step).rem_euclid(opts.len() as i32) as usize]);
+    }
+
+    /// 방패를 든다·내린다(0223 — 가진 것만).
+    pub(super) fn set_shield(&mut self, s: Option<crate::shield::Id>) {
+        self.progress.shield = s.filter(|id| self.progress.shields.contains(id));
+        self.arm_world();
         self.persist();
     }
 

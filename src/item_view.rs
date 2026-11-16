@@ -9,6 +9,8 @@ pub enum Item {
     Charm(Charm),
     /// 덧옷(0176) — `charms.glb`의 `garb_*` 부위.
     Garb(crate::garb::Id),
+    /// 방패(0223) — 방랑자 모델의 왼팔 부위.
+    Shield(crate::shield::Id),
 }
 
 /// 모델·부위와 보는 각도(도): 부위를 경계 상자 가운데에 놓고 y(돌기)·x(숙이기)·z(눕히기) 순으로 돌린다.
@@ -57,8 +59,19 @@ pub fn view(item: Item) -> View {
             pitch: 25.0,
             roll: 0.0,
         },
+        // 방패는 넓은 면이 카메라를 보게(납작한 물건 — KB `action-rpg-stats-and-equipment` "넓은 면이 카메라를").
+        Item::Shield(s) => View {
+            model: "wanderer",
+            node: s.def().node,
+            yaw: SHIELD_VIEW.0,
+            pitch: SHIELD_VIEW.1,
+            roll: SHIELD_VIEW.2,
+        },
     }
 }
+
+/// 방패를 보는 각(도 — 쉬는 자세의 왼팔에 붙은 판을 세워 앞면이 보이게).
+const SHIELD_VIEW: (f32, f32, f32) = (-72.0, 38.0, 0.0);
 
 /// 그림으로 보일 것이 있나(맨손은 없다).
 pub fn has_view(item: Item) -> bool {
@@ -78,6 +91,7 @@ pub fn all() -> Vec<Item> {
         .map(Item::Weapon)
         .chain(crate::charms::TABLE.iter().map(|d| Item::Charm(d.id)))
         .chain(crate::garb::TABLE.iter().map(|d| Item::Garb(d.id)))
+        .chain(crate::shield::TABLE.iter().map(|d| Item::Shield(d.id)))
         .filter(|&i| has_view(i))
         .collect()
 }

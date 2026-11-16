@@ -289,6 +289,8 @@ impl Renderer {
                     e,
                 ),
                 PState::Parry { t: e } => (&["parry", "attack"], e),
+                // 방패 막기(0223): 방패를 내민 자리에 머문다(`block` — 끝 자세에서 멈춘다).
+                PState::Block { t: e } => (&["block", "parry", "attack"], e),
                 // 마법(0048): 손을 앞으로 내미는 자세(전용 동작이 생기기 전엔 패링 자세).
                 PState::Cast { t: e, .. } if matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) => {
                     (&["xbow_shoot", "cast", "attack"], e)
@@ -438,13 +440,7 @@ impl Renderer {
             // 든 무기만 보인다(0051): 다른 무기 부위는 크기 0.
             // 던진 동안(0158 G2 던지기)은 든 것도 손에 없다 — 날아가는 자리에 그린다(`blades`).
             let away = w.weapon_away();
-            for w2 in crate::weapons::WEAPONS.iter() {
-                if w2.id != pl.weapon || away {
-                    if let Some(n) = e.model.node(w2.node) {
-                        self.sec_extra.push((n, Quat::IDENTITY, Vec3::ZERO));
-                    }
-                }
-            }
+            super::hide_unheld(&e.model, pl.weapon, pl.shield, away, &mut self.sec_extra);
             // 락온 중 옆·비스듬히 걸을 때(0197): 다리(엉덩이)를 가는 쪽으로 돌리고 윗몸(첫 등뼈)을 되돌려 과녁을 본다 — 부드럽게 따라간다.
             let leg_want = if matches!(pl.state, PState::Idle) && speed > 0.5 {
                 move_anim(pl.pos - pl.prev, pl.facing_dir(), w.lock.is_some()).1
@@ -558,7 +554,9 @@ impl Renderer {
                 PState::Heavy { .. } => Color::new(1.0, 0.6, 0.3, 1.0),
                 PState::Drink { .. } => Color::new(0.75, 0.9, 0.6, 1.0),
                 PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
-                PState::Parry { .. } | PState::Recoil { .. } => Color::new(0.7, 0.85, 1.0, 1.0),
+                PState::Parry { .. } | PState::Recoil { .. } | PState::Block { .. } => {
+                    Color::new(0.7, 0.85, 1.0, 1.0)
+                }
                 PState::Cast { .. } | PState::Throw { .. } | PState::CastCharge { .. } => {
                     Color::new(0.75, 0.7, 1.0, 1.0)
                 }

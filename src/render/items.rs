@@ -163,13 +163,7 @@ impl Renderer {
         };
         // 든 무기만 보인다(0051): 다른 무기 부위는 크기 0.
         let mut hide: Vec<(usize, Quat, Vec3)> = Vec::new();
-        for w in crate::weapons::WEAPONS.iter() {
-            if w.id != weapon {
-                if let Some(n) = e.model.node(w.node) {
-                    hide.push((n, Quat::IDENTITY, Vec3::ZERO));
-                }
-            }
-        }
+        super::hide_unheld(&e.model, weapon, self.shield, false, &mut hide);
         e.model
             .pose_with(e.pick(&[anim, "idle"]), time, &hide, &mut self.pose);
         // 키 1.8 몸이 칸에 꽉 차게: 가슴 높이를 보고 조금 위에서.

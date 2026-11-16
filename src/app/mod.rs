@@ -561,6 +561,8 @@ impl App {
     pub(super) fn arm_world(&mut self) {
         self.world.set_weapon(self.weapon);
         self.world.set_sub(self.progress.sub);
+        self.world.set_shield(self.progress.shield);
+        self.renderer.shield = self.progress.shield;
     }
 
     /// 주무기를 바꾼다(0223): 부무기 칸에 있던 것이면 둘을 맞바꾼다(같은 무기 두 칸 금지 — 맨손은 부무기로 남기지 않는다). 지금 판에 바로, 저장.

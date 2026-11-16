@@ -622,6 +622,40 @@ impl Fx {
                         STEEL,
                     );
                 }
+                // 방패가 받았다(0223): 작은 쇳빛 별 + 방패에서 옆으로 튀는 짧은 불똥 — 패링(차가운 큰 별)보다 작고 둔하게.
+                Event::Guard { at } => {
+                    self.star(at, 0.7, 0.07, STEEL);
+                    self.spray(
+                        at,
+                        from_player(at) + Vec3::Y * 0.3,
+                        0.9,
+                        5,
+                        4.5,
+                        Shape::Streak,
+                        0.05,
+                        0.16,
+                        8.0,
+                        WHITE_HOT,
+                        STEEL,
+                    );
+                }
+                // 막기가 깨졌다(0223): 큰 쇳빛 별 + 사방으로 흩어지는 불똥 — 방패가 튕겨 나간 느낌.
+                Event::GuardBreak { at } => {
+                    self.star(at, 1.5, 0.12, STEEL);
+                    self.spray(
+                        at,
+                        Vec3::Y,
+                        1.0,
+                        10,
+                        6.0,
+                        Shape::Streak,
+                        0.06,
+                        0.3,
+                        9.0,
+                        WHITE_HOT,
+                        STEEL,
+                    );
+                }
                 // 자세 깨짐: 금빛 별 + 머리 높이에서 옆으로 퍼지는 금 알갱이.
                 Event::Break { at } => {
                     self.star(at, 1.6, 0.12, GOLD);
@@ -1853,6 +1887,8 @@ mod tests {
             Event::Smash { at },
             Event::Parry { at },
             Event::Deflect { at },
+            Event::Guard { at },
+            Event::GuardBreak { at },
             Event::Break { at },
             Event::EnemyDown { at },
             Event::Plunge { at },

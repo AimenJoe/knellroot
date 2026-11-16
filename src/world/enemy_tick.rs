@@ -19,6 +19,8 @@ struct EnemyActs {
     burst_push: Option<Vec3>,
     /// 맞서는 자(0107)가 못 받는 공격을 막았나.
     blocked: bool,
+    /// 방패(0223)가 받은 타들 — (친 자리, 그 적의 구역 등급).
+    guarded: Vec<(Vec3, u8)>,
     /// 갈고리(0208)가 방랑자를 걸었으면 그 적의 자리 — 맞은 뒤 그쪽으로 끌려간다.
     pull_to: Option<Vec3>,
 }
@@ -50,14 +52,23 @@ impl World {
             mut thrown,
             burst_push,
             blocked,
+            mut guarded,
             pull_to,
         } = self.enemies_act(t, dt, ev, p, body, parrying, in_front);
         // 종 조각(0125): 날아가 플레이어에 닿으면 — 앞에서 패링 중이면 되돌아가고, 아니면 맞는다. 되돌아간 조각은 종지기를 깎는다.
         // 던진 종지기가 쓰러지면 날던 조각은 사라진다(KB ranged-boss — 쓰러진 뒤에 맞지 않게).
         self.shards.append(&mut thrown);
         self.rise_push(burst_push);
-        let parries_before =
-            self.tick_shards(dt, ev, p, body, parrying, in_front, &mut hurt_player);
+        let parries_before = self.tick_shards(
+            dt,
+            ev,
+            p,
+            body,
+            parrying,
+            in_front,
+            &mut hurt_player,
+            &mut guarded,
+        );
         self.tick_lingers(t, dt, ev, p, body, &mut hurt_player);
         self.parry_charges(t, p, parrying, in_front, &mut parried);
         if blocked {
@@ -73,6 +84,7 @@ impl World {
             .count()
             - parries_before;
         self.echo_ring(t, parries, ev);
+        let (hurt_player, hurt_tier) = self.guards_land(t, ev, guarded, hurt_player, hurt_tier);
         self.wanderer_takes_hit(t, ev, hurt_player, hurt_tier);
         // 갈고리(0208): 이번 틱에 맞았으면(받아내지 않았으면) 권양지기 쪽으로 끌려간다 — 밀림 대신.
         if let (Some(to), true) = (pull_to, self.player.hurt.since == 0.0 && !self.bracing()) {
@@ -258,6 +270,8 @@ impl World {
         // 맞힌 적 가운데 가장 높은 구역 등급(0112 — 등급 3부터 한 대 2).
         let mut hurt_tier: u8 = 1;
         let mut parried: Vec<usize> = Vec::new();
+        let guarding = self.guarding();
+        let mut guarded: Vec<(Vec3, u8)> = Vec::new();
         // 이번 틱에 던진 종 조각(0125 — 적을 도는 동안은 목록을 빌릴 수 없어 모았다가 넣는다).
         let mut thrown: Vec<Shard> = Vec::new();
         // 2단계 전환이 터지며 밀어낼 쪽(0133).
@@ -350,6 +364,9 @@ impl World {
                 } else if parrying && !en.parryable() && in_front(en.pos) && stand {
                     // 맞서는 자(0107): 이어 패링이 쌓인 동안은 못 받는 공격도 막는다(튕기지는 못한다 — 드러남·휘청 없음).
                     blocked = true;
+                } else if guarding && en.parryable() && in_front(en.pos) {
+                    // 방패(0223): 받을 수 있는 공격을 앞에서 — 체력 대신 기력으로(`guards_land`). 못 받는 공격은 방패도 못 막는다.
+                    guarded.push((en.pos, en.tier));
                 } else {
                     hurt_player.get_or_insert(en.pos);
                     hurt_tier = hurt_tier.max(en.tier);
@@ -381,6 +398,7 @@ impl World {
             thrown,
             burst_push,
             blocked,
+            guarded,
             pull_to,
         }
     }
@@ -406,7 +424,9 @@ impl World {
         parrying: bool,
         in_front: impl Fn(Vec3) -> bool,
         hurt_player: &mut Option<Vec3>,
+        guarded: &mut Vec<(Vec3, u8)>,
     ) -> usize {
+        let guarding = self.guarding();
         let mut shard_hits: Vec<(usize, Vec3)> = Vec::new();
         // 되쏘기(0158 G2, 버팀 ㄴ): 버티는 동안 몸에 닿은 조각은 받아 두었다가 터뜨릴 때 던진 쪽으로 되쏜다.
         let catching = self.bracing() && self.player.skill.reflect && !self.player.invulnerable();
@@ -450,6 +470,11 @@ impl World {
                     s.went = 0.0;
                     ev.push(Event::Parry { at: s.pos });
                     return true;
+                }
+                // 방패(0223): 앞에서 온 조각은 방패가 받는다(되돌리지는 못한다).
+                if guarding && in_front(s.pos - s.dir) {
+                    guarded.push((s.pos - s.dir, 1));
+                    return false;
                 }
                 if catching {
                     caught.push(s.from);
@@ -620,6 +645,51 @@ impl World {
             self.hitstop = self.hitstop.max(t[P::Hitstop] * PARRY_HITSTOP);
             // 같은 틱이라도 뒤·옆에서 맞은 것·받을 수 없는 파동은 그대로 맞는다(패링은 앞쪽 반원만).
         }
+    }
+
+    /// 방패가 받은 타들(0223): 타마다 기력 `BLOCK_STAMINA`(높은 등급은 두 배 · 방패의 몫)로 받고 조금 밀린다. 기력이 바닥나는 타에
+    /// 막기가 깨진다 — 그 타의 피해는 없지만 `BLOCK_BREAK_STUN` 동안 휘청이고, 같은 틱의 남은 타는 그대로 맞는다.
+    /// 돌려주는 것 = 방패를 지난 뒤의 (맞은 자리, 등급).
+    fn guards_land(
+        &mut self,
+        t: &Tuning,
+        ev: &mut Vec<Event>,
+        guarded: Vec<(Vec3, u8)>,
+        mut hurt_player: Option<Vec3>,
+        mut hurt_tier: u8,
+    ) -> (Option<Vec3>, u8) {
+        use crate::tuning::{
+            BLOCK_BREAK_STUN, BLOCK_HITSTOP, BLOCK_PUSH, BLOCK_STAMINA, TIER_HEAVY_HITS,
+        };
+        for (from, tier) in guarded {
+            if !self.guarding() {
+                hurt_player.get_or_insert(from);
+                hurt_tier = hurt_tier.max(tier);
+                continue;
+            }
+            let weight = self.player.shield.map_or(1.0, |s| s.def().cost);
+            let cost = BLOCK_STAMINA * weight * if tier >= TIER_HEAVY_HITS { 2.0 } else { 1.0 };
+            let pl = &mut self.player;
+            let away = vec3(pl.pos.x - from.x, 0.0, pl.pos.z - from.z).normalize_or_zero();
+            let at = pl.pos + Vec3::Y * 1.0 - away * 0.5;
+            pl.stamina = (pl.stamina - cost).max(0.0);
+            pl.stamina_idle = 0.0;
+            if pl.stamina > 0.0 {
+                pl.vel = away * t[P::HitKnock] * BLOCK_PUSH * KNOCK_DECAY;
+                self.hitstop = self.hitstop.max(t[P::Hitstop] * BLOCK_HITSTOP);
+                ev.push(Event::Guard { at });
+            } else {
+                pl.state = PState::Hurt {
+                    t: 0.0,
+                    dur: BLOCK_BREAK_STUN,
+                };
+                pl.pending = None;
+                pl.vel = away * t[P::HitKnock] * KNOCK_DECAY;
+                self.hitstop = self.hitstop.max(t[P::Hitstop] * PARRY_HITSTOP);
+                ev.push(Event::GuardBreak { at });
+            }
+        }
+        (hurt_player, hurt_tier)
     }
 
     /// 방랑자가 맞는다 — **체력을 깎는 한 자리**(0143). 적이 주는 피해는 모두 `hurt_player`(친 자리)로 모여 여기로 온다: 맞음 피드백 다섯 겹(멈춤·붉은 테·체력 칸·흰 몸·밀림)이 여기서 난다. 새 피해 경로도 이 길을 탄다.

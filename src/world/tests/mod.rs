@@ -4,6 +4,7 @@ use super::*;
 
 mod attack;
 mod basis_lock;
+mod block;
 mod bridges;
 mod deep_tree;
 mod dodge_stamina;
