@@ -295,13 +295,25 @@ impl App {
             // 설정의 민감도(0191 — 스틱·마우스·끌기 모두에 같은 배율).
             let sens = |i: u8| crate::prefs::LOOK_SENS[i as usize] as f32 / 100.0;
             let (ky, kp) = (sens(self.look_sens.0), sens(self.look_sens.1));
-            let dyaw = (a.aim.x * FREE_STICK_YAW_DEG.to_radians() * TICK_DT + a.look.x * px) * ky;
+            // 터치로 끌어 겨누는 손가락(0217)은 시점이 아니라 조준이다 — 숄더뷰에서도 그대로 넘긴다.
+            let stick = if a.aim_drag { Vec2::ZERO } else { a.aim };
+            let dyaw = (stick.x * FREE_STICK_YAW_DEG.to_radians() * TICK_DT + a.look.x * px) * ky;
             let dpitch =
-                (-a.aim.y * FREE_STICK_PITCH_DEG.to_radians() * TICK_DT + a.look.y * px) * kp;
+                (-stick.y * FREE_STICK_PITCH_DEG.to_radians() * TICK_DT + a.look.y * px) * kp;
             self.cam.look(dyaw, dpitch);
-            a.aim = Vec2::ZERO;
+            if !a.aim_drag {
+                a.aim = Vec2::ZERO;
+            }
             a.cursor = None;
+            // 숄더뷰의 원거리는 카메라가 보는 쪽으로(0219 — 사장 "지금은 캐릭터가 움직이는 방향으로 쏘니까 이상함").
+            a.aim_ahead = true;
         }
+        // 패드 조준 보조(0219): 엄지로 겨눈 것만 — 마우스·터치 끌기는 손이 정확하다.
+        a.aim_assist = if crate::input::device() == crate::input::Device::Pad {
+            crate::tuning::PAD_AIM_ASSIST_DEG
+        } else {
+            0.0
+        };
         crate::input::set_free_look(self.cam.mode == Mode::Free);
         a.zoom = 0;
         a.look = Vec2::ZERO;

@@ -172,6 +172,18 @@ pub struct View<'a> {
     /// 장면이 정하는 방랑자의 자세(동작 이름, 그 동작의 초) — 깨어나는 첫 장면(0171 `wake`)·쓰러짐(0175 `fall` → `wake`).
     /// 상태와 상관없이 그 자세로 그린다(월드는 모른다).
     pub pose: Option<(&'static str, f32)>,
+    /// 터치로 끌어 겨누는 버튼의 일(0217) — 땅 위 미리보기의 꼴. 쪽은 `World::aim_line`.
+    pub aim_show: Option<AimShow>,
+}
+
+/// 끌어 겨누는 일(0217): 쏘기(마법·사격)·수류탄·끼운 스킬 칸.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum AimShow {
+    Cast,
+    Grenade,
+    Skill(usize),
+    /// 숄더뷰에서 쏘기 전(0219): 탄이 갈 길의 가는 줄 + 멈추는 자리의 작은 고리 — 늘 떠 있으니 띠보다 조용하게.
+    Reticle,
 }
 /// 화로의 빛은 바닥 1.2m 위(`stage` 지도 읽기), 그릇 테는 0.86m(`props.py`) — 불티가 그릇에서 오르게.
 const BRAZIER_LIGHT_ABOVE_BOWL: f32 = 1.2 - 0.86;
@@ -344,8 +356,13 @@ impl Renderer {
         self.batch.casting = false;
         self.batch.flush();
         self.batch.record = false;
+        // 반투명한 스테이지 빛은 배우 뒤에(`stage_glows` — 먼저 그리면 빛 속의 몸이 깊이에 가려졌다).
+        if let Some(run) = v.stage {
+            self.stage_glows(run, w);
+        }
 
         self.overlays(w, pp, alpha, t);
+        aim_preview(w, pp, t, v.aim_show);
         // 스킬이 남긴 빛(0158 G2 — `fx::Mark`)과 이어지는 것들(울림·불티·몰아치기의 기운).
         if t[crate::tuning::P::RenderFx] >= 0.5 {
             self.marks(w, &v.fx.marks, pp);

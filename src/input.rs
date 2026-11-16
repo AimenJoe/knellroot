@@ -110,6 +110,16 @@ pub struct Actions {
     pub cast: bool,
     /// RB를 쥐고 있나(상태, 0056 원거리 강공격 모으기).
     pub cast_held: bool,
+    /// 끌어 조준(0217, 터치만): `aim`이 손가락이 끈 쪽이다 — 락온보다 앞선다. 뗀 프레임의 쪽은 그 누름과 함께 틱까지 남는다.
+    pub aim_drag: bool,
+    /// 겨눌 일이 올라간 버튼을 끌지 않고 눌렀다(터치만) — 사격·수류탄·스킬도 가까운 적을 찾는다(브롤스타즈 꼴).
+    pub auto_aim: bool,
+    /// 원거리 버튼을 누름 없이 쥐고 있다(터치 끌어 조준 — 떼야 쏜다): 오래 쥐면 모으기로 들어간다.
+    pub aim_hold: bool,
+    /// 자유 숄더뷰(0219): 원거리는 카메라가 보는 쪽으로 겨눈다(조준 표시 = 화면 가운데의 앞). 앱이 틱마다 채운다(래치 밖).
+    pub aim_ahead: bool,
+    /// 패드 조준 보조(0219): 겨눈 쪽 ± 이 각(도) 안의 적에게 원거리를 붙인다 — 0 = 없음(마우스·터치·키보드). 앱이 틱마다 채운다.
+    pub aim_assist: f32,
     pub lock: bool,
     /// 땅 돌리기 오른쪽·왼쪽 버튼(0012·0028): 캐릭터 기준 90° — 몸이 제 오른쪽(왼쪽)으로 돌아서고 화면도 같은 쪽으로 90°
     /// (`world::plan_turn`).
@@ -791,6 +801,8 @@ pub struct Input {
     _pad_seen: bool,
     /// 자유 숄더뷰에서 커서를 잡았나(0181 — 웹은 포인터 잠금).
     grabbed: bool,
+    /// 지난 `poll` 뒤에 틱이 래치를 가져갔나 — 끌어 조준(0217)의 래치가 가져간 뒤에 남은 "끄는 중"을 다시 OR하지 않게.
+    taken: bool,
 }
 
 impl Input {
@@ -799,6 +811,7 @@ impl Input {
         simulate_mouse_with_touch(false);
         Input {
             latch: Actions::default(),
+            taken: false,
             menu_stick: Vec2::ZERO,
             hat: Vec2::ZERO,
             mouse_pos: Vec2::ZERO,
@@ -827,6 +840,13 @@ impl Input {
         }
         let m = mouse_aim();
         cursor_live(m.on, device(), self.since_mouse, m.rest_secs()).then_some(self.mouse_pos)
+    }
+
+    /// 터치로 끌어 겨누는 버튼(0217).
+    pub fn aiming(&self) -> Option<crate::touch::Kind> {
+        (device() == Device::Touch)
+            .then(|| self.touch.aiming())
+            .flatten()
     }
 
     /// 터치 장치일 때 렌더가 그릴 오버레이.
@@ -1066,6 +1086,10 @@ impl Input {
         a.interact |= t.interact;
         a.cast |= t.cast;
         a.cast_held |= t.cast_held;
+        // 끌어 조준(0217): 터치의 조준은 오른쪽 스틱처럼 — 끈 쪽이 있으면 그것.
+        a.aim_drag |= t.aim_drag;
+        a.auto_aim |= t.auto_aim;
+        a.aim_hold |= t.aim_hold;
         // 0048의 "마법 직후 돌리기 누름 버리기"(RB 바로 밑이 RT)는 걷었다(0151): RT는 이제 스킬이고 RB → RT로 잇는 것이 바라는 쓰임이다.
         a.lock |= t.lock;
         a.turn_right |= t.turn_right;
@@ -1148,12 +1172,23 @@ impl Input {
             m = m.normalize();
         }
         a.move_dir = m;
+        if t.aim != Vec2::ZERO {
+            aim = t.aim;
+        }
         if aim.length() > 1.0 {
             aim = aim.normalize();
         }
+        // 끌어 조준(0217): 이번 프레임의 손가락 + 아직 틱이 안 가져간 지난 프레임의 것(뗀 프레임의 끈 쪽은 그 누름과 함께 남는다).
+        let (aim, aim_drag, auto_aim) = merge_drag(&self.latch, self.taken, aim, &a);
+        self.taken = false;
         self.latch = Actions {
             move_dir: m,
             aim,
+            aim_drag,
+            auto_aim,
+            aim_hold: a.aim_hold,
+            aim_ahead: false,
+            aim_assist: 0.0,
             cursor: a.cursor,
             aim_at: None,
             zoom: self.latch.zoom + a.zoom,
@@ -1203,8 +1238,26 @@ impl Input {
     pub fn take(&mut self) -> Actions {
         let a = self.latch;
         self.latch = carry(&a);
+        self.taken = true;
         a
     }
+}
+
+/// 끌어 조준(0217)의 래치: (조준, 끄는 중, 톡). 끄는 중·톡은 손가락을 쥐고 있는 동안의 **상태**라 틱이 가져가도 남고(`carry` — 한 프레임에
+/// 틱이 둘이면 둘째 틱도 끄는 중이다: 안 그러면 땅 위 미리보기가 그 프레임마다 꺼져 깜빡였다), 뗀 프레임의 것은 그 누름과 함께 틱이
+/// 가져갈 때까지 남는다. 지난 래치를 OR하는 것은 틱이 아직 안 가져갔을 때만 — 가져간 뒤의 남은 상태를 OR하면 뗀 뒤에도 끄는 중이 남는다.
+fn merge_drag(prev: &Actions, taken: bool, aim: Vec2, now: &Actions) -> (Vec2, bool, bool) {
+    let keep = !taken;
+    let aim = if now.aim_drag || !(keep && prev.aim_drag) {
+        aim
+    } else {
+        prev.aim
+    };
+    (
+        aim,
+        now.aim_drag || (keep && prev.aim_drag),
+        now.auto_aim || (keep && prev.auto_aim),
+    )
 }
 
 /// 틱이 눌림을 가져간 뒤 다음 틱에 남는 것: 이동·조준·쥐고 있음(상태). 눌림은 한 번만.
@@ -1217,6 +1270,9 @@ fn carry(a: &Actions) -> Actions {
         attack_held: a.attack_held,
         cast_held: a.cast_held,
         dodge_held: a.dodge_held,
+        aim_hold: a.aim_hold,
+        aim_drag: a.aim_drag,
+        auto_aim: a.auto_aim,
         ..Actions::default()
     }
 }
@@ -1224,6 +1280,35 @@ fn carry(a: &Actions) -> Actions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0217: 끄는 중은 한 프레임의 둘째 틱에도 남고(미리보기가 깜빡이지 않게), 뗀 뒤에는 틱이 한 번 가져가면 사라진다.
+    #[test]
+    fn a_drag_survives_two_ticks_in_a_frame_and_ends_after_release() {
+        let right = vec2(1.0, 0.0);
+        let held = Actions {
+            aim: right,
+            aim_drag: true,
+            ..Default::default()
+        };
+        // 쥔 프레임: 틱 둘.
+        let (aim, drag, _) = merge_drag(&Actions::default(), true, right, &held);
+        let latch = Actions {
+            aim,
+            aim_drag: drag,
+            ..Default::default()
+        };
+        let second = carry(&latch);
+        assert!(
+            second.aim_drag && second.aim == right,
+            "the 2nd tick still drags"
+        );
+        // 뗀 프레임(손가락 없음): 지난 래치는 틱이 가져갔으니 OR하지 않는다.
+        let (_, drag, tap) = merge_drag(&second, true, Vec2::ZERO, &Actions::default());
+        assert!(!drag && !tap, "released: no drag left over");
+        // 뗀 프레임의 끈 쪽은 틱이 없는 프레임을 지나도 남는다.
+        let (aim, drag, _) = merge_drag(&held, false, Vec2::ZERO, &Actions::default());
+        assert!(drag && aim == right);
+    }
 
     /// 0056: 쥐고 있는 상태(공격·RB)는 틱이 눌림을 가져가도 남는다 — 한 프레임에 틱이 여럿이어도 모으기가 끊기지 않게.
     #[test]

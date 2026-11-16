@@ -251,15 +251,31 @@ impl World {
                 .or(lock)
                 .or_else(|| nearest_in_reach(&self.enemies, pl.pos, dist, None))
                 .unwrap_or(facing),
-            Form::Lane { .. } => {
-                if cx.world_move.length_squared() > 1e-4 {
+            // 터치로 끌어 겨눈 것(0217)은 걷는 쪽보다 앞선다 — 손가락이 가리킨 쪽으로 간다.
+            Form::Lane { dist, .. } => {
+                if let Some(d) = cx.aim.filter(|_| cx.a.aim_drag) {
+                    d
+                } else if cx.world_move.length_squared() > 1e-4 {
                     cx.world_move.normalize()
                 } else {
-                    cx.aim.or(lock).unwrap_or(facing)
+                    cx.aim
+                        .or(lock)
+                        .or_else(|| self.tap_seek(cx, dist))
+                        .unwrap_or(facing)
                 }
             }
             // 제비걸음(0214): 첫 걸음의 쪽은 걸음마다 다시 정한다 — 처음 보는 쪽만(조준 > 락온 > 바라보는 쪽).
-            Form::Hop { .. } | Form::Erupt { .. } => cx.aim.or(lock).unwrap_or(facing),
+            // 터치의 톡(0217)이면 바라보는 쪽 대신 닿는 거리의 가장 가까운 적.
+            Form::Hop { range, .. } => cx
+                .aim
+                .or(lock)
+                .or_else(|| self.tap_seek(cx, range))
+                .unwrap_or(facing),
+            Form::Erupt { len, .. } => cx
+                .aim
+                .or(lock)
+                .or_else(|| self.tap_seek(cx, len))
+                .unwrap_or(facing),
             // 뿌리 솟기·막아치기(0214): 조준 > 락온 > 닿는 거리의 가장 가까운 적 > 바라보는 쪽.
             Form::Bash { range, .. } => cx
                 .aim
@@ -278,6 +294,13 @@ impl World {
                     .unwrap_or(facing)
             }
         }
+    }
+
+    /// 터치의 톡(0217): 끌지 않고 뗀 버튼은 `reach` m 안의 가장 가까운 적 쪽 — 찾지 않는 꼴도 톡이면 찾는다.
+    fn tap_seek(&self, cx: &Ctx, reach: f32) -> Option<Vec3> {
+        cx.a.auto_aim
+            .then(|| nearest_in_reach(&self.enemies, self.player.pos, reach, None))
+            .flatten()
     }
 
     /// 멀리 뛰기의 거리: `dir` 쪽 길(반 폭 `half` m) 위의 가장 가까운 깨어 있는 적 `short` m 앞까지, 많아야 `dist` m.

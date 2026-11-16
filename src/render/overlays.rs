@@ -363,8 +363,11 @@ fn throw_aim(w: &World, pp: Vec3, t: &Tuning, fl: &Drape) {
     {
         if let Some(g) = w.player.weapon.def().grenade {
             if e >= t[crate::tuning::P::ThrowStartup] * 0.99 {
-                let y = w.ground.as_ref().map_or(0.0, |gr| gr.height(to));
-                let c = vec3(to.x, y + 0.08, to.z);
+                // 터지는 자리(0218 — 튕긴 뒤): 떨굴 자리 `to`가 아니다.
+                let Some(c) = w.grenade_lands(to) else {
+                    return;
+                };
+                let c = c + Vec3::Y * 0.08;
                 fl.ring(c, g.radius, 0.0, 360.0, Color::new(1.0, 0.82, 0.45, 0.8));
                 draw_line_3d(pp + Vec3::Y * 1.0, c, Color::new(1.0, 0.82, 0.45, 0.35));
             }
@@ -1047,4 +1050,88 @@ pub(super) fn crescent(
 /// 든 무기의 모은 탄 색(0056).
 fn wpn_look(w: &World) -> u8 {
     w.player.weapon.def().charged.look
+}
+
+/// 터치로 끌어 겨누는 동안의 땅 위 미리보기(0217 — 브롤스타즈 꼴): 떼면 무엇이 어디로 가는지.
+/// 쏘기 = 탄이 닿는 거리의 줄, 수류탄 = 떨굴 자리의 폭발 고리, 스킬 = 그 꼴(줄·부채꼴·던지는 줄).
+/// 색은 옅은 흰 금빛 하나 — 빨강은 적의 예고만 쓴다(0141).
+pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>) {
+    let (Some(show), Some(dir)) = (show, w.aim_line) else {
+        return;
+    };
+    let fl = Drape {
+        ground: w.ground.as_ref(),
+    };
+    // 밤의 바닥 위에서도 띠로 읽히게(처음 0.16·0.55는 헤드리스 화면에서 거의 안 보였다) — 브롤스타즈의 흰 띠처럼 몸은 반투명, 테는 또렷하게.
+    let fill = Color::new(1.0, 0.96, 0.84, 0.32);
+    let edge = Color::new(1.0, 0.95, 0.8, 0.95);
+    let foot = pp + Vec3::Y * 0.05;
+    let yaw = dir.x.atan2(dir.z);
+    let lane = |len: f32, wid: f32| {
+        fl.lane(foot, dir, len, wid, fill);
+        fl.lane_edge(foot, dir, len, wid, edge);
+    };
+    let fan = |range: f32, arc: f32| {
+        fl.sector(foot, range, yaw, arc, fill);
+        fl.ring(foot, range, yaw, arc, edge);
+    };
+    match show {
+        // 진실한 표시(0218): 길이는 탄을 쏠 때와 같은 길·같은 벽·땅 규칙으로 돌려 본 멈추는 자리(`World::shot_reach`), 폭은 탄이
+        // 맞히는 폭. 모으는 중이면 모은 탄의 길.
+        AimShow::Reticle => {
+            let def = match w.player.weapon.def().rb {
+                crate::weapons::Rb::Magic(b) => b,
+                crate::weapons::Rb::Shot { bolt, .. } => bolt,
+            };
+            let len = w.shot_reach(dir, def, t);
+            let quiet = Color::new(1.0, 0.95, 0.8, 0.35);
+            fl.lane(foot, dir, len, 0.06, quiet);
+            let end = foot + dir * len;
+            fl.ring(end, 0.45, 0.0, 360.0, edge);
+            fl.ring(end, 0.12, 0.0, 360.0, edge);
+        }
+        AimShow::Cast => {
+            let wpn = w.player.weapon.def();
+            let def = if matches!(w.player.state, PState::CastCharge { .. }) {
+                wpn.charged
+            } else {
+                match wpn.rb {
+                    crate::weapons::Rb::Magic(b) => b,
+                    crate::weapons::Rb::Shot { bolt, .. } => bolt,
+                }
+            };
+            lane(
+                w.shot_reach(dir, def, t),
+                2.0 * crate::tuning::BOLT_RADIUS * def.scale,
+            );
+        }
+        // 터지는 자리(0218): 떨굴 자리가 아니라 같은 포물선·튕김을 돌려 본 도화선 끝의 자리(`World::grenade_lands`).
+        AimShow::Grenade => {
+            if let Some(g) = w.player.weapon.def().grenade {
+                if let Some(c) = w.grenade_lands(pp + dir * g.drop) {
+                    let c = c + Vec3::Y * 0.06;
+                    fl.sector(c, g.radius, 0.0, 360.0, fill);
+                    fl.ring(c, g.radius, 0.0, 360.0, edge);
+                    fl.line(foot, c, edge);
+                }
+            }
+        }
+        AimShow::Skill(i) => {
+            let Some(id) = w.player.skill.worn.get(i).copied() else {
+                return;
+            };
+            use crate::skills::Form;
+            match w.skill_eff(id).skill.form {
+                Form::Lane { dist, half, .. } => lane(dist, half * 2.0),
+                Form::Throw { dist, half, .. } => lane(dist, half * 2.0),
+                Form::Hop { range, .. } => lane(range, 0.6),
+                Form::Erupt { len, radius, .. } => lane(len, radius * 2.0),
+                Form::Pull { range, arc_deg, .. }
+                | Form::Cone { range, arc_deg, .. }
+                | Form::Bash { range, arc_deg, .. } => fan(range, arc_deg),
+                Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. } => {
+                }
+            }
+        }
+    }
 }

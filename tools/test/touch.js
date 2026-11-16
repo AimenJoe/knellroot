@@ -123,6 +123,19 @@ async function main() {
   await shot('t03-lock-on');
   await tap(b.dodge); await page.waitForTimeout(100);
   await shot('t04-dodge');
+  // 끌어 조준(0217 — 브롤스타즈 꼴): 원거리 버튼을 짚고 왼쪽 위(화면 안쪽)로 끈다 → 버튼 둘레 고리 + 손잡이 + 땅 위의 줄(락온이어도 끈 쪽).
+  // 쥔 채 찍고, 가운데로 되돌리면 취소(✕), 다시 끌어 뗀다(쏜다).
+  {
+    const c = b.cast, R = Math.min(W, H) * 0.14;
+    await touch('touchStart', [c]); await page.waitForTimeout(50);
+    for (let i = 1; i <= 5; i++) { await touch('touchMove', [[c[0] - R * 0.12 * i, c[1] - R * 0.16 * i]]); await page.waitForTimeout(30); }
+    await page.waitForTimeout(150);
+    await shot('t05-drag-aim');
+    await touch('touchMove', [c]); await page.waitForTimeout(80);
+    await shot('t06-drag-cancel');
+    await touch('touchMove', [[c[0] - R * 0.9, c[1]]]); await page.waitForTimeout(80);
+    await touch('touchEnd', []); await page.waitForTimeout(300);
+  }
   // 땅 돌리기 오른쪽 ↷(0012·0017 — 카메라가 오른쪽으로): 도는 중 · 다 돈 뒤(버튼이 대기로 옅어짐).
   await tap(b.turn_right); await page.waitForTimeout(120);
   await shot('t08-turn-cw');
@@ -134,7 +147,7 @@ async function main() {
   await shot('t10-pause-stays');
   // 장비 탭 터치(2026-11-06 → 0164): 멈춤 = 큰 창(상태 탭에서 열린다) → 탭 머리 "장비"를 누른다 → 칸은 두 걸음(누르면 고르기,
   // 다시 누르면 그 칸 곁에 후보의 작은 목록) → 후보도 두 걸음(고르기 = 미리 보기, 다시 = 끼우기).
-  // 0076·0077 → 0117: 새 기록의 무기 후보 = 맨손 · 검(착용 중)뿐(무기는 상자에서 얻는다). 맨손은 첫 줄 — 같은 자리의 둘째 탭이 끼운다.
+  // 0076·0077 → 0117 → 0220: 새 기록의 무기 후보 = 맨손(착용 중)뿐 — 검도 줍는다. 맨손은 첫 줄 — 같은 자리의 둘째 탭이 끼운다.
   // 자리는 코드와 같은 셈(480×270 기준 단위 u): 창 464×228(`app::frame` — 위 6u와 아래 안내 줄(2.8글) 사이 가운데), 머리 줄 22,
   // 몸의 원점 = 창 + (8, 27). 탭 머리는 왼쪽 10부터 폭 44씩(두 글자 26 + 여백 18, 틈 2 — `ui::window`).
   // 장비 탭의 칸(`app::equip`): 장신구 상자 34 × 3(오른쪽 끝에서 8 들여, 사이 6 — 세로 가운데), 무기 상자 40은 왼쪽 8에 장신구 열의
@@ -164,7 +177,9 @@ async function main() {
   await tap(PICK_ROW); await page.waitForTimeout(400);     // 다시 = 끼우기
   await shot('t13-equip-worn');
   const rec = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('knell.save')).map((k) => localStorage.getItem(k)).join('\n'));
-  if (!/weapon=fists/i.test(rec)) errors.push('touch equip: two taps on bare hands should wear them: ' + JSON.stringify(rec));
+  // 0220: 새 판은 맨손으로 깨어난다(검은 깨어난 자리 곁에 떨어져 있다 — 주워야 가진다). 후보는 맨손 하나라 두 번 눌러도 맨손 그대로.
+  if (/weapon=(?!fists)/i.test(rec)) errors.push('touch equip: a new run holds bare hands: ' + JSON.stringify(rec));
+  if (/weapons=[^\n]*sword/i.test(rec)) errors.push('touch equip: the sword is not owned until picked up: ' + JSON.stringify(rec));
   // 창 밖을 누르면 창이 닫힌다(어느 탭에서든 한 번에 — 0164).
   await tap([W - 4, H - 4]); await page.waitForTimeout(300);
   await shot('t11-pause-closed');

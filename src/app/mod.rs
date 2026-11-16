@@ -36,7 +36,7 @@ use crate::i18n::{self, fill, s, tr};
 use crate::input::{self, Act, Actions, Input};
 #[cfg(feature = "dev")]
 use crate::lab::Lab;
-use crate::render::{Frame, Perf, Renderer, View};
+use crate::render::{AimShow, Frame, Perf, Renderer, View};
 #[cfg(feature = "dev")]
 use crate::scenario::{self, Scenario};
 use crate::stage::{sanctuary, StageDef, StageRun};
@@ -231,6 +231,35 @@ fn lay_by_hearth(run: &StageRun, world: &mut World) {
 }
 
 impl App {
+    /// 땅 위 조준 표시의 꼴(0217 → 0219): 터치로 끄는 버튼이면 그 일, 아니면 원거리가 겨누는 쪽이 있을 때 —
+    /// 쏘거나 모으는 동안은 띠(어느 장치나), 숄더뷰는 가는 줄 + 멈추는 자리, 쿼터뷰의 패드 스틱은 띠. 마우스 커서는 그리지 않는다
+    /// (커서 자체가 겨누는 자리다).
+    fn aim_show(&self) -> Option<AimShow> {
+        if let Some(k) = self.input.aiming() {
+            return match k {
+                touch::Kind::Attack => Some(AimShow::Grenade),
+                touch::Kind::Cast => Some(AimShow::Cast),
+                touch::Kind::Skill1 => Some(AimShow::Skill(0)),
+                touch::Kind::Skill2 => Some(AimShow::Skill(1)),
+                _ => None,
+            };
+        }
+        self.world.aim_line?;
+        let firing = matches!(
+            self.world.player.state,
+            crate::world::PState::Cast { .. } | crate::world::PState::CastCharge { .. }
+        );
+        if firing {
+            Some(AimShow::Cast)
+        } else if self.cam.mode == Mode::Free {
+            Some(AimShow::Reticle)
+        } else if input::device() == input::Device::Pad {
+            Some(AimShow::Cast)
+        } else {
+            None
+        }
+    }
+
     /// 개발 판(DEV에서 시작한 스테이지)인가 — 운영판은 늘 거짓.
     fn dev_run_now(&self) -> bool {
         #[cfg(feature = "dev")]
@@ -280,11 +309,11 @@ impl App {
                 weapons::Id::Sword
             }
         });
-        // 가지지 않은 무기는 들 수 없다(0117).
+        // 가지지 않은 무기는 들 수 없다(0117) — 새 판은 맨손(0220).
         let weapon = if progress.owns_weapon(weapon) {
             weapon
         } else {
-            weapons::Id::Sword
+            weapons::Id::Fists
         };
         let (mut run, mut world) = StageRun::start(FIRST_STAGE);
         // 새 기록(0171): 깨어난 자리의 화로는 꺼져 있다 — 타이틀 바탕부터.
@@ -452,6 +481,11 @@ impl App {
             .map(|c| c - base)
             .collect();
         self.run.set_opened(&opened);
+        // 깨어난 자리 곁의 검(0220): 아직 검이 없는 기록의 첫 지역에만.
+        if self.stage == 0 && !self.progress.owns_weapon(weapons::Id::Sword) && !self.dev_run_now()
+        {
+            self.run.lay_start_sword();
+        }
         self.run.set_found(&self.progress.finds);
         self.run.set_beaten(&self.progress.elites);
         let open = self
@@ -601,6 +635,13 @@ impl App {
             lock: play && (self.world.lock.is_some() || self.world.lock_candidate()),
             flask: play && pl.flask > 0 && pl.hp < pl.max_hp,
             ult: play && pl.skill.gauge >= 1.0,
+            // 끌어 조준(0217): 그 버튼에 올라간 일이 쪽을 가지면 — 무기·끼운 스킬이 바뀌어도 같은 규칙.
+            aim_attack: pl.weapon.def().grenade.is_some(),
+            aim_cast: true,
+            aim_skills: [0, 1].map(|i| {
+                pl.skill.rank[i] > 0 && self.world.skill_eff(pl.skill.worn[i]).skill.form.aims()
+            }),
+            charging: matches!(pl.state, crate::world::PState::CastCharge { .. }),
         });
         self.input.poll(self.scene().is_menu());
         // F11(PC, 0135): 어느 장면에서나 창 ↔ 전체 화면. 창 일이라 `Actions`(게임 동작)에 넣지 않는다.
@@ -942,6 +983,7 @@ impl App {
                     (_, Some(w)) if stage.is_some() => Some(("wake", w.pose())),
                     _ => self.gesture.filter(|_| stage.is_some()),
                 },
+                aim_show: self.aim_show(),
             }),
         };
         self.frame = Some(f);

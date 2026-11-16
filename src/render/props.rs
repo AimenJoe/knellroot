@@ -44,15 +44,24 @@ impl Renderer {
         self.stone_tablets(run, lights, &fl);
         self.chests(run, w, lights, &fl);
         self.gate_lever(run, w, lights, &fl);
-        way_down(run, w, &fl);
         self.residents(run, w, lights, &fl);
+        self.core_crystal(run, w, lights, &fl);
+    }
+
+    /// 반투명한 빛(빛줄기·빛기둥·바닥 빛 웅덩이·떠 있는 줍는 것)은 배우를 그린 **뒤에**(사장 "환경 빛줄기 속에서 더 잘 안 보이는 버그"):
+    /// 반투명 면도 깊이를 쓴다 — 배우보다 먼저 그리면 기둥의 앞면 뒤에 선 배우의 화소가 깊이 시험에서 버려져, 빛 속에 선 몸이 옅은
+    /// 빛 색으로만 남았다. 뒤에 그리면 배우는 이미 그려져 있고 빛은 그 위에 얹힌다.
+    pub(super) fn stage_glows(&mut self, run: &StageRun, w: &World) {
+        let fl = Drape {
+            ground: w.ground.as_ref(),
+        };
+        way_down(run, w, &fl);
         light_shafts(run, w, &fl);
         way_up(run, w, &fl);
         chest_drops(run, w, &fl);
         hidden_finds(run, w, &fl);
         rest_rings(run, w, &fl);
         guide_beam(run, w, &fl);
-        self.core_crystal(run, w, lights, &fl);
     }
 
     fn stone_tablets(&mut self, run: &StageRun, lights: &[Light], fl: &Drape) {

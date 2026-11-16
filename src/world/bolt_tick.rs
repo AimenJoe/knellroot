@@ -87,11 +87,13 @@ impl World {
                 self.player.beat.since_perfect = 0.0;
                 ev.push(Event::Perfect { at: pos });
             }
+            let left = t[P::CastRange] * def.range;
+            let dir = self.shot_line(pos, dir, &def, left);
             self.bolts.push(Bolt {
                 pos,
                 prev: pos,
                 dir,
-                left: t[P::CastRange] * def.range,
+                left,
                 def,
                 hits: 0,
             });
@@ -151,23 +153,162 @@ impl World {
     /// 이번 틱에 던진 수류탄(0051)을 세운다.
     fn throw_bomb(&mut self, ev: &mut Vec<Event>, wpn: &weapons::Weapon) {
         if let (Some(to), Some(g)) = (self.throw_to.take(), wpn.grenade) {
-            // 포물선: 날아가는 시간을 거리로 정하고(가까우면 낮게·빨리) 그 시간에 `to`에 닿는 속도. 발 앞에 떨구니(0178) 짧고 낮게.
-            let pl = &self.player;
-            let from = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT);
-            let ground_to = self.ground.as_ref().map_or(0.0, |gr| gr.height(to));
-            let flat = vec3(to.x - from.x, 0.0, to.z - from.z);
-            let tf = (flat.length() / 10.0).clamp(0.3, 0.9);
-            let vy = (ground_to + 0.2 - from.y + 0.5 * BOMB_GRAVITY * tf * tf) / tf;
-            self.bombs.push(Bomb {
-                pos: from,
-                prev: from,
-                vel: flat / tf + Vec3::Y * vy,
-                fuse: g.fuse,
-                radius: g.radius,
-                damage: g.damage + self.stats.shot_dmg,
-                poise: g.poise,
-            });
+            let bomb = self.new_bomb(to, &g);
+            self.bombs.push(bomb);
             ev.push(Event::Throw);
+        }
+    }
+
+    /// 손을 떠나는 수류탄(0051): 포물선 — 날아가는 시간을 거리로 정하고(가까우면 낮게·빨리) 그 시간에 `to`에 닿는 속도.
+    fn new_bomb(&self, to: Vec3, g: &weapons::Grenade) -> Bomb {
+        let pl = &self.player;
+        let from = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT);
+        let ground_to = self.ground.as_ref().map_or(0.0, |gr| gr.height(to));
+        let flat = vec3(to.x - from.x, 0.0, to.z - from.z);
+        let tf = (flat.length() / 10.0).clamp(0.3, 0.9);
+        let vy = (ground_to + 0.2 - from.y + 0.5 * BOMB_GRAVITY * tf * tf) / tf;
+        Bomb {
+            pos: from,
+            prev: from,
+            vel: flat / tf + Vec3::Y * vy,
+            fuse: g.fuse,
+            radius: g.radius,
+            damage: g.damage + self.stats.shot_dmg,
+            poise: g.poise,
+        }
+    }
+
+    /// 수류탄이 한 걸음 구른다: 중력, 벽에서 되튐, 땅에서 튕김(줄어드는 위·옆 속도). 틱과 미리보기(`grenade_lands`)가 같이 쓴다.
+    fn roll_bomb(&self, bomb: &mut Bomb, dt: f32) {
+        bomb.prev = bomb.pos;
+        bomb.fuse -= dt;
+        bomb.vel.y -= BOMB_GRAVITY * dt;
+        let next = bomb.pos + bomb.vel * dt;
+        if self.obstacles.iter().any(|o| {
+            next.x > o.min.x
+                && next.x < o.max.x
+                && next.z > o.min.z
+                && next.z < o.max.z
+                && next.y < o.max.y
+        }) {
+            bomb.vel.x *= -BOMB_SKID;
+            bomb.vel.z *= -BOMB_SKID;
+        } else {
+            bomb.pos = next;
+        }
+        let floor = self.ground.as_ref().map_or(0.0, |g| g.height(bomb.pos)) + 0.15;
+        if bomb.pos.y < floor {
+            bomb.pos.y = floor;
+            if bomb.vel.y < 0.0 {
+                bomb.vel.y = -bomb.vel.y * BOMB_BOUNCE;
+                bomb.vel.x *= BOMB_SKID;
+                bomb.vel.z *= BOMB_SKID;
+            }
+        }
+    }
+
+    /// 지금 `to`로 던지면 터지는 자리(0218 — 미리보기가 진실하게): 같은 포물선·같은 튕김을 도화선이 다할 때까지 돌려 본다.
+    pub fn grenade_lands(&self, to: Vec3) -> Option<Vec3> {
+        let g = self.player.weapon.def().grenade?;
+        let mut bomb = self.new_bomb(to, &g);
+        while bomb.fuse > 0.0 {
+            self.roll_bomb(&mut bomb, TICK_DT);
+        }
+        Some(bomb.pos)
+    }
+
+    /// 쇠뇌 볼트의 길(0218 — 사장 "땅을 타고 가면 안 되고, 직선이어야지"): 수평으로 겨눈 쪽(`flat`)의 줄 위에 선 첫 적이 있으면
+    /// 그 몸통 높이로 비스듬히 곧게, 없으면 쏜 높이 그대로 곧게. 화면 위의 쪽(수평)은 그대로라 조준 표시와 어긋나지 않는다.
+    /// 마법 탄은 그대로 땅을 따라 흐른다(0173) — 수평 쪽을 돌려준다.
+    pub(super) fn shot_line(
+        &self,
+        from: Vec3,
+        flat: Vec3,
+        def: &weapons::Bolt,
+        reach: f32,
+    ) -> Vec3 {
+        if !def.is_shot() || flat.y.abs() > 1e-4 {
+            return flat;
+        }
+        let first = self
+            .enemies
+            .iter()
+            .filter(|en| en.active() && !en.harmless())
+            .filter_map(|en| {
+                let d = vec3(en.pos.x - from.x, 0.0, en.pos.z - from.z);
+                let along = d.dot(flat);
+                let off = (d - flat * along).length();
+                (along > 0.0 && along <= reach && off <= en.radius + BOLT_RADIUS * def.scale)
+                    .then_some((along, en.pos.y + en.height * 0.5))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        match first {
+            Some((along, y)) => (flat * along + Vec3::Y * (y - from.y)).normalize_or(flat),
+            None => flat,
+        }
+    }
+
+    /// 지금 `flat` 쪽으로 쏘면 탄이 멈추는 데까지의 수평 거리(0218 — 미리보기가 진실하게): 쏠 때와 같은 자리·같은 길로,
+    /// 같은 벽·땅 규칙을 돌려 본다(적은 빼고 — 맞으면 거기서 멈추는 것은 보인다).
+    pub fn shot_reach(&self, flat: Vec3, def: weapons::Bolt, t: &Tuning) -> f32 {
+        let pl = &self.player;
+        let from = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT) + flat * (PLAYER_RADIUS + 0.2);
+        let left = t[P::CastRange] * def.range;
+        let mut b = Bolt {
+            pos: from,
+            prev: from,
+            dir: self.shot_line(from, flat, &def, left),
+            left,
+            def,
+            hits: 0,
+        };
+        let step = t[P::CastSpeed] * TICK_DT * def.speed;
+        for _ in 0..2000 {
+            let mut len = step.min(b.left);
+            let mut gone = false;
+            for o in &self.obstacles {
+                if let Some(d) = o.ray(b.pos, b.dir) {
+                    if d <= len {
+                        len = d;
+                        gone = true;
+                    }
+                }
+            }
+            b.pos += b.dir * len;
+            b.left -= len;
+            gone |= self.bolt_lands(&mut b, len);
+            if gone || b.left <= 1e-3 {
+                break;
+            }
+        }
+        vec2(b.pos.x - pl.pos.x, b.pos.z - pl.pos.z).length()
+    }
+
+    /// 걸음을 마친 탄과 땅(0173·0218): 마법 탄(수평)은 땅을 따라 흐르고 높은 벼랑·벽 칸에서 사라진다. 쇠뇌 볼트와 내려 쏜 탄은
+    /// 곧게 가다 땅에 닿으면 사라진다. 사라지면 참.
+    fn bolt_lands(&self, b: &mut Bolt, len: f32) -> bool {
+        if let Some(g) = &self.ground {
+            let floor = g.cell_of(b.pos).and_then(|(x, z)| g.height_in(x, z, b.pos));
+            let level = b.dir.y.abs() < 1e-4 && !b.def.is_shot();
+            match floor {
+                None => true,
+                Some(h) if level => {
+                    let want = h + BOLT_HEIGHT;
+                    if want - b.pos.y > BOLT_STEP {
+                        true
+                    } else {
+                        let reach = (len * BOLT_FOLLOW).max(0.02);
+                        b.pos.y += (want - b.pos.y).clamp(-reach, reach);
+                        // 막 넘은 턱의 모서리에 묻히지 않게.
+                        b.pos.y = b.pos.y.max(h + 0.15);
+                        false
+                    }
+                }
+                Some(h) => h > b.pos.y - 0.1,
+            }
+        } else {
+            // 평평한 시험 판: 내려 쏜 탄(0111)은 바닥(0)에 닿으면 사라진다.
+            b.pos.y < 0.1
         }
     }
 
@@ -273,33 +414,9 @@ impl World {
             }
             b.pos += b.dir * len;
             b.left -= len;
-            // 땅: 수평으로 쏜 탄은 **땅을 따라 흐른다**(사장 2026-11-13 "고도 차이가 있을 때 원거리 공격이 안 맞는다" — 조준은 평면인데
-            // 탄은 쏜 높이로 곧게 날아, 낮은 곳의 적 머리 위로 지나가고 턱 위의 적 앞에서 턱에 박혔다). 땅 위 `BOLT_HEIGHT`를 향해
-            // 걸음마다 `BOLT_FOLLOW`(거리당 높이)만큼 오르내린다 — 턱(`BOLT_STEP`까지)은 넘고, 그보다 높은 벼랑·벽 칸에서는 사라진다.
-            // 내려 쏜 탄(0111 — 방향에 높이가 있다)은 곧게 가다 땅에 닿으면 사라진다.
-            if let Some(g) = &self.ground {
-                let floor = g.cell_of(b.pos).and_then(|(x, z)| g.height_in(x, z, b.pos));
-                let level = b.dir.y.abs() < 1e-4;
-                gone |= match floor {
-                    None => true,
-                    Some(h) if level => {
-                        let want = h + BOLT_HEIGHT;
-                        if want - b.pos.y > BOLT_STEP {
-                            true
-                        } else {
-                            let reach = (len * BOLT_FOLLOW).max(0.02);
-                            b.pos.y += (want - b.pos.y).clamp(-reach, reach);
-                            // 막 넘은 턱의 모서리에 묻히지 않게.
-                            b.pos.y = b.pos.y.max(h + 0.15);
-                            false
-                        }
-                    }
-                    Some(h) => h > b.pos.y - 0.1,
-                };
-            } else {
-                // 평평한 시험 판: 내려 쏜 탄(0111)은 바닥(0)에 닿으면 사라진다.
-                gone |= b.pos.y < 0.1;
-            }
+            // 땅(0173 → 0218): 마법 탄은 땅을 따라 흐르고(사장 2026-11-13 "고도 차이가 있을 때 원거리 공격이 안 맞는다"), 쇠뇌 볼트는
+            // 곧게 난다(사장 2026-11-16 "땅을 타고 가면 안 되고, 직선이어야지" — 높이는 쏠 때 줄 위의 적 몸통으로 겨눈다, `shot_line`).
+            gone |= self.bolt_lands(&mut b, len);
             if !gone
                 && b.left > 1e-3
                 && b.pos.x.abs() <= self.arena + 2.0
@@ -314,37 +431,15 @@ impl World {
     fn tick_bombs(&mut self, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
         // 수류탄(0051): 중력으로 날다 땅에서 튕기고(줄어드는 위·옆 속도) 벽에서 되튄다, 도화선이 다하면 터진다.
         let mut booms: Vec<(Vec3, f32, i32, f32)> = Vec::new();
-        for bomb in &mut self.bombs {
-            bomb.prev = bomb.pos;
-            bomb.fuse -= dt;
-            bomb.vel.y -= BOMB_GRAVITY * dt;
-            let next = bomb.pos + bomb.vel * dt;
-            if self.obstacles.iter().any(|o| {
-                next.x > o.min.x
-                    && next.x < o.max.x
-                    && next.z > o.min.z
-                    && next.z < o.max.z
-                    && next.y < o.max.y
-            }) {
-                bomb.vel.x *= -BOMB_SKID;
-                bomb.vel.z *= -BOMB_SKID;
-            } else {
-                bomb.pos = next;
-            }
-            let floor = self.ground.as_ref().map_or(0.0, |g| g.height(bomb.pos)) + 0.15;
-            if bomb.pos.y < floor {
-                bomb.pos.y = floor;
-                if bomb.vel.y < 0.0 {
-                    bomb.vel.y = -bomb.vel.y * BOMB_BOUNCE;
-                    bomb.vel.x *= BOMB_SKID;
-                    bomb.vel.z *= BOMB_SKID;
-                }
-            }
+        let mut bombs = std::mem::take(&mut self.bombs);
+        for bomb in &mut bombs {
+            self.roll_bomb(bomb, dt);
             if bomb.fuse <= 0.0 {
                 booms.push((bomb.pos, bomb.radius, bomb.damage, bomb.poise));
             }
         }
-        self.bombs.retain(|b| b.fuse > 0.0);
+        bombs.retain(|b| b.fuse > 0.0);
+        self.bombs = bombs;
         for (at, radius, damage, poise) in booms {
             self.burst(at, radius, damage, poise, t, ev);
             self.blasts.push(Blast {

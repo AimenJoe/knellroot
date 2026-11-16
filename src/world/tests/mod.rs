@@ -15,6 +15,7 @@ mod hurt;
 mod jump_ledge;
 mod parry;
 mod ranged;
+mod touch_aim;
 mod turn;
 
 fn world_with_boss() -> World {

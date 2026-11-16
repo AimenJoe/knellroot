@@ -178,7 +178,12 @@ impl World {
             .aim_at
             .filter(|_| target.is_none())
             .map(|q| vec3(q.x, self.player.pos.y, q.y));
-        let aim = if target.is_some() {
+        // 터치로 끌어 겨눈 것(0217)은 락온보다 앞선다 — 손가락이 가리킨 쪽이 그 순간의 뜻이다.
+        let dragged = a.aim_drag && a.aim.length() > AIM_STICK;
+        let aim = if dragged {
+            let w = move_to_world(a.aim.normalize(), basis, self.player.pos);
+            (w.length_squared() > 1e-6).then(|| w.normalize())
+        } else if target.is_some() {
             None
         } else if let Some(q) = aim_point {
             let d = vec3(q.x - self.player.pos.x, 0.0, q.z - self.player.pos.z);
@@ -204,6 +209,20 @@ impl World {
         } else {
             None
         };
+        // 원거리가 겨누는 쪽(0219): 손이 겨눈 쪽(끌기·스틱·커서) > 숄더뷰의 카메라 앞(`aim_ahead` — 근접 자동 조준은 그대로라
+        // `aim`에 섞지 않는다). 패드면 그 쪽 ± `aim_assist`° 안의 적에게 붙인다(엄지의 몫 — 끌기·커서는 붙이지 않는다).
+        let ahead = (a.aim_ahead && target.is_none())
+            .then(|| move_to_world(vec2(0.0, 1.0), basis, self.player.pos))
+            .filter(|w| w.length_squared() > 1e-6)
+            .map(|w| w.normalize());
+        let ranged_aim = aim.or(ahead).map(|d| {
+            if a.aim_assist > 0.0 && !dragged && aim_point.is_none() {
+                self.assist_aim(d, a.aim_assist, t)
+            } else {
+                d
+            }
+        });
+        self.aim_line = ranged_aim;
         // 마법 쏘는 쪽(0048): 조준 스틱 > 락온 대상 > `cast.range m` 안의 가장 가까운 적 > 바라보는 쪽.
         // 쇠뇌(0213, 사장 "자동 조준 없애고")는 가까운 적을 찾지 않는다 — 조준(스틱·커서) > 락온 > 바라보는 쪽. 겨누는 것이 손의 일.
         let charging_cast = matches!(self.player.state, PState::CastCharge { .. });
@@ -212,8 +231,10 @@ impl World {
                 let d = vec3(tg.x - self.player.pos.x, 0.0, tg.z - self.player.pos.z);
                 d.normalize_or_zero()
             });
-            let seek = !matches!(self.player.weapon.def().rb, Rb::Shot { .. });
-            aim.or(lock_dir.filter(|d| d.length_squared() > 0.5))
+            // 터치의 톡(0217)은 쇠뇌도 가까운 적에게 — 끌 틈이 없는 손의 몫.
+            let seek = !matches!(self.player.weapon.def().rb, Rb::Shot { .. }) || a.auto_aim;
+            ranged_aim
+                .or(lock_dir.filter(|d| d.length_squared() > 0.5))
                 .or_else(|| {
                     seek.then(|| {
                         nearest_in_reach(&self.enemies, self.player.pos, t[P::CastRange], None)
@@ -232,8 +253,13 @@ impl World {
                 let d = vec3(q.x - p0.x, 0.0, q.z - p0.z);
                 (d.length_squared() > 1e-4).then(|| d.normalize())
             });
+            // 터치의 톡(0217)은 가까운 적 쪽으로 떨군다(멀리 던지지는 않는다 — 쪽만).
+            let near = a
+                .auto_aim
+                .then(|| nearest_in_reach(&self.enemies, p0, t[P::CastRange], None));
             let dir = toward_cursor
-                .or(aim)
+                .or(ranged_aim)
+                .or(near.flatten())
                 .unwrap_or_else(|| self.player.facing_dir());
             p0 + dir * g.drop
         });
@@ -438,6 +464,15 @@ impl World {
             self.throw_grenade(cx);
         } else if a.attack && !a.dodge && self.swing_pays(cx) {
             self.start_swing(cx);
+        } else if a.aim_hold
+            && a.cast_held
+            && self.player.ranged.cast_hold >= t[P::CastHoldStart]
+            && cx.can_charge_cast
+        {
+            // 터치로 끌어 겨누는 동안(0217)은 쏘지 않고 쥐고 있으니, 쥔 채로 모으기에 든다 — 떼는 순간 모은 탄.
+            let pl = &mut self.player;
+            pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+            pl.state = PState::CastCharge { t: 0.0 };
         } else if a.cast && matches!(wpn.rb, Rb::Shot { .. }) {
             self.start_shot(cx);
         } else if a.cast {
@@ -824,6 +859,10 @@ impl World {
         let full = t[P::CastCharge];
         if a.cast_held && cx.can_charge_cast {
             self.charged_now |= e < full && e + dt >= full;
+            if self.aim_line.is_some() {
+                // 겨누는 손(끌기·스틱·숄더뷰의 카메라, 0217·0219)을 몸이 따라 돈다 — 뗄 때 어디로 갈지 보이게.
+                self.player.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+            }
             self.player.state = PState::CastCharge { t: e + dt };
             return;
         }
@@ -1276,5 +1315,31 @@ impl World {
                 }
             }
         }
+    }
+}
+
+impl World {
+    /// 패드 조준 보조(0219): 겨눈 쪽 `d` ± `deg`° 안, 지금 원거리의 사거리 안에 선 깨어 있는 적 가운데 겨눈 쪽에 가장 가까운 적 쪽.
+    /// 없으면 `d` 그대로 — 원뿔 밖의 적을 찾아 돌지 않는다(0213).
+    pub(super) fn assist_aim(&self, d: Vec3, deg: f32, t: &Tuning) -> Vec3 {
+        let wpn = self.player.weapon.def();
+        let range = match wpn.rb {
+            Rb::Magic(b) => b.range,
+            Rb::Shot { bolt, .. } => bolt.range,
+        };
+        let reach = t[P::CastRange] * range;
+        let cos = deg.to_radians().cos();
+        let p = self.player.pos;
+        self.enemies
+            .iter()
+            .filter(|en| en.active() && !en.harmless())
+            .filter_map(|en| {
+                let v = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+                let n = v.length();
+                let c = if n > 1e-3 { v.dot(d) / n } else { -1.0 };
+                (n <= reach + en.radius && c >= cos).then_some((c, v / n))
+            })
+            .max_by(|a, b| a.0.total_cmp(&b.0))
+            .map_or(d, |(_, v)| v)
     }
 }
