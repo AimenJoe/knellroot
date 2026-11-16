@@ -178,7 +178,15 @@ impl World {
             .aim_at
             .filter(|_| target.is_none())
             .map(|q| vec3(q.x, self.player.pos.y, q.y));
-        let aim = if target.is_some() {
+        // 터치로 끌어 겨눈 것(0217)은 락온보다 앞선다 — 손가락이 가리킨 쪽이 그 순간의 뜻이다.
+        let dragged = a.aim_drag && a.aim.length() > AIM_STICK;
+        self.drag_aim = dragged
+            .then(|| move_to_world(a.aim.normalize(), basis, self.player.pos))
+            .filter(|w| w.length_squared() > 1e-6)
+            .map(|w| w.normalize());
+        let aim = if dragged {
+            self.drag_aim
+        } else if target.is_some() {
             None
         } else if let Some(q) = aim_point {
             let d = vec3(q.x - self.player.pos.x, 0.0, q.z - self.player.pos.z);
@@ -212,7 +220,8 @@ impl World {
                 let d = vec3(tg.x - self.player.pos.x, 0.0, tg.z - self.player.pos.z);
                 d.normalize_or_zero()
             });
-            let seek = !matches!(self.player.weapon.def().rb, Rb::Shot { .. });
+            // 터치의 톡(0217)은 쇠뇌도 가까운 적에게 — 끌 틈이 없는 손의 몫.
+            let seek = !matches!(self.player.weapon.def().rb, Rb::Shot { .. }) || a.auto_aim;
             aim.or(lock_dir.filter(|d| d.length_squared() > 0.5))
                 .or_else(|| {
                     seek.then(|| {
@@ -232,8 +241,13 @@ impl World {
                 let d = vec3(q.x - p0.x, 0.0, q.z - p0.z);
                 (d.length_squared() > 1e-4).then(|| d.normalize())
             });
+            // 터치의 톡(0217)은 가까운 적 쪽으로 떨군다(멀리 던지지는 않는다 — 쪽만).
+            let near = a
+                .auto_aim
+                .then(|| nearest_in_reach(&self.enemies, p0, t[P::CastRange], None));
             let dir = toward_cursor
                 .or(aim)
+                .or(near.flatten())
                 .unwrap_or_else(|| self.player.facing_dir());
             p0 + dir * g.drop
         });
@@ -438,6 +452,15 @@ impl World {
             self.throw_grenade(cx);
         } else if a.attack && !a.dodge && self.swing_pays(cx) {
             self.start_swing(cx);
+        } else if a.aim_hold
+            && a.cast_held
+            && self.player.ranged.cast_hold >= t[P::CastHoldStart]
+            && cx.can_charge_cast
+        {
+            // 터치로 끌어 겨누는 동안(0217)은 쏘지 않고 쥐고 있으니, 쥔 채로 모으기에 든다 — 떼는 순간 모은 탄.
+            let pl = &mut self.player;
+            pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+            pl.state = PState::CastCharge { t: 0.0 };
         } else if a.cast && matches!(wpn.rb, Rb::Shot { .. }) {
             self.start_shot(cx);
         } else if a.cast {
@@ -824,6 +847,10 @@ impl World {
         let full = t[P::CastCharge];
         if a.cast_held && cx.can_charge_cast {
             self.charged_now |= e < full && e + dt >= full;
+            if a.aim_drag {
+                // 끌어 겨누는 손가락(0217)을 몸이 따라 돈다 — 뗄 때 어디로 갈지 보이게.
+                self.player.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+            }
             self.player.state = PState::CastCharge { t: e + dt };
             return;
         }

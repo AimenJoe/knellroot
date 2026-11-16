@@ -110,6 +110,12 @@ pub struct Actions {
     pub cast: bool,
     /// RB를 쥐고 있나(상태, 0056 원거리 강공격 모으기).
     pub cast_held: bool,
+    /// 끌어 조준(0217, 터치만): `aim`이 손가락이 끈 쪽이다 — 락온보다 앞선다. 뗀 프레임의 쪽은 그 누름과 함께 틱까지 남는다.
+    pub aim_drag: bool,
+    /// 겨눌 일이 올라간 버튼을 끌지 않고 눌렀다(터치만) — 사격·수류탄·스킬도 가까운 적을 찾는다(브롤스타즈 꼴).
+    pub auto_aim: bool,
+    /// 원거리 버튼을 누름 없이 쥐고 있다(터치 끌어 조준 — 떼야 쏜다): 오래 쥐면 모으기로 들어간다.
+    pub aim_hold: bool,
     pub lock: bool,
     /// 땅 돌리기 오른쪽·왼쪽 버튼(0012·0028): 캐릭터 기준 90° — 몸이 제 오른쪽(왼쪽)으로 돌아서고 화면도 같은 쪽으로 90°
     /// (`world::plan_turn`).
@@ -829,6 +835,13 @@ impl Input {
         cursor_live(m.on, device(), self.since_mouse, m.rest_secs()).then_some(self.mouse_pos)
     }
 
+    /// 터치로 끌어 겨누는 버튼(0217).
+    pub fn aiming(&self) -> Option<crate::touch::Kind> {
+        (device() == Device::Touch)
+            .then(|| self.touch.aiming())
+            .flatten()
+    }
+
     /// 터치 장치일 때 렌더가 그릴 오버레이.
     pub fn overlay(&self) -> Option<Overlay> {
         (device() == Device::Touch).then(|| self.touch.overlay())
@@ -1066,6 +1079,10 @@ impl Input {
         a.interact |= t.interact;
         a.cast |= t.cast;
         a.cast_held |= t.cast_held;
+        // 끌어 조준(0217): 터치의 조준은 오른쪽 스틱처럼 — 끈 쪽이 있으면 그것.
+        a.aim_drag |= t.aim_drag;
+        a.auto_aim |= t.auto_aim;
+        a.aim_hold |= t.aim_hold;
         // 0048의 "마법 직후 돌리기 누름 버리기"(RB 바로 밑이 RT)는 걷었다(0151): RT는 이제 스킬이고 RB → RT로 잇는 것이 바라는 쓰임이다.
         a.lock |= t.lock;
         a.turn_right |= t.turn_right;
@@ -1148,12 +1165,24 @@ impl Input {
             m = m.normalize();
         }
         a.move_dir = m;
+        if t.aim != Vec2::ZERO {
+            aim = t.aim;
+        }
         if aim.length() > 1.0 {
             aim = aim.normalize();
         }
+        // 뗀 프레임의 끈 쪽(0217)은 그 누름과 함께 틱까지 남는다 — 이 프레임에 틱이 없어도 다음 프레임의 0으로 지워지지 않게.
+        let aim = if a.aim_drag || !self.latch.aim_drag {
+            aim
+        } else {
+            self.latch.aim
+        };
         self.latch = Actions {
             move_dir: m,
             aim,
+            aim_drag: self.latch.aim_drag | a.aim_drag,
+            auto_aim: self.latch.auto_aim | a.auto_aim,
+            aim_hold: a.aim_hold,
             cursor: a.cursor,
             aim_at: None,
             zoom: self.latch.zoom + a.zoom,
@@ -1217,6 +1246,7 @@ fn carry(a: &Actions) -> Actions {
         attack_held: a.attack_held,
         cast_held: a.cast_held,
         dodge_held: a.dodge_held,
+        aim_hold: a.aim_hold,
         ..Actions::default()
     }
 }

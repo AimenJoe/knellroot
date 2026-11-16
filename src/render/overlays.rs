@@ -1108,3 +1108,64 @@ pub(super) fn crescent(
 fn wpn_look(w: &World) -> u8 {
     w.player.weapon.def().charged.look
 }
+
+/// 터치로 끌어 겨누는 동안의 땅 위 미리보기(0217 — 브롤스타즈 꼴): 떼면 무엇이 어디로 가는지.
+/// 쏘기 = 탄이 닿는 거리의 줄, 수류탄 = 떨굴 자리의 폭발 고리, 스킬 = 그 꼴(줄·부채꼴·던지는 줄).
+/// 색은 옅은 흰 금빛 하나 — 빨강은 적의 예고만 쓴다(0141).
+pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>) {
+    let (Some(show), Some(dir)) = (show, w.drag_aim) else {
+        return;
+    };
+    let fl = Drape {
+        ground: w.ground.as_ref(),
+    };
+    let fill = Color::new(1.0, 0.95, 0.8, 0.16);
+    let edge = Color::new(1.0, 0.93, 0.75, 0.55);
+    let foot = pp + Vec3::Y * 0.05;
+    let yaw = dir.x.atan2(dir.z);
+    let lane = |len: f32, wid: f32| {
+        fl.lane(foot, dir, len, wid, fill);
+        fl.lane_edge(foot, dir, len, wid, edge);
+    };
+    let fan = |range: f32, arc: f32| {
+        fl.sector(foot, range, yaw, arc, fill);
+        fl.ring(foot, range, yaw, arc, edge);
+    };
+    match show {
+        AimShow::Cast => {
+            let wpn = w.player.weapon.def();
+            let range = match wpn.rb {
+                crate::weapons::Rb::Magic(b) => b.range,
+                crate::weapons::Rb::Shot { bolt, .. } => bolt.range,
+            };
+            lane(t[crate::tuning::P::CastRange] * range, 0.5);
+        }
+        AimShow::Grenade => {
+            if let Some(g) = w.player.weapon.def().grenade {
+                let to = pp + dir * g.drop;
+                let y = w.ground.as_ref().map_or(pp.y, |gr| gr.height(to));
+                let c = vec3(to.x, y + 0.06, to.z);
+                fl.sector(c, g.radius, 0.0, 360.0, fill);
+                fl.ring(c, g.radius, 0.0, 360.0, edge);
+                fl.line(foot, c, edge);
+            }
+        }
+        AimShow::Skill(i) => {
+            let Some(id) = w.player.skill.worn.get(i).copied() else {
+                return;
+            };
+            use crate::skills::Form;
+            match w.skill_eff(id).skill.form {
+                Form::Lane { dist, half, .. } => lane(dist, half * 2.0),
+                Form::Throw { dist, half, .. } => lane(dist, half * 2.0),
+                Form::Hop { range, .. } => lane(range, 0.6),
+                Form::Erupt { len, radius, .. } => lane(len, radius * 2.0),
+                Form::Pull { range, arc_deg, .. }
+                | Form::Cone { range, arc_deg, .. }
+                | Form::Bash { range, arc_deg, .. } => fan(range, arc_deg),
+                Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. } => {
+                }
+            }
+        }
+    }
+}

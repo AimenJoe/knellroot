@@ -103,6 +103,16 @@ pub enum Form {
     },
 }
 
+impl Form {
+    /// 쪽이 있는 모양인가(0217 — 터치에서 끌어 겨눈다): 몸 둘레(고리·버팀·되울림·불티)는 쪽이 없다.
+    pub fn aims(&self) -> bool {
+        !matches!(
+            self,
+            Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. }
+        )
+    }
+}
+
 /// 뿌리 솟기의 뿌리 수(`len` ÷ `step`, 적어도 하나).
 pub fn erupt_count(len: f32, step: f32) -> u8 {
     (len / step.max(0.1)).round().clamp(1.0, 24.0) as u8
