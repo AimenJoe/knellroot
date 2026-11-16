@@ -1,5 +1,5 @@
 // 아이템 시험(0223 V4): 등급·옵션이 든 아이템이 있는 기록으로 — 장비 탭의 주무기 후보에 여벌이 서고(바탕의 줄 아래), 여벌을 고르면
-//   옵션 줄과 바뀌는 능력치가 보이고, 끼면 기록의 낀 자리(gear.main)가 그 아이템을 가리킨다. 옛 기록(아이템 줄 없음)은 보통 것으로 옮겨진다.
+//   옵션 줄과 바뀌는 능력치가 보이고, 끼면 기록의 낀 자리(gear.main)가 그 아이템을 가리킨다. 옛 기록(아이템 줄 없음)은 보통 것으로 옮겨진다. 화로의 가게에서 여벌을 잔불로 바꾼다.
 //   화면마다 스크린숏, 개발판 F4 넘침 검사(`[ui-check]` 줄이 있으면 실패).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/items.js dist shots
 const { chromium } = require('playwright');
@@ -85,6 +85,23 @@ async function open(browser, seed, tag) {
     for (const want of ['item.0=w.sword|p||0', 'w.hammer|p||0', 'c.ear|p||0', 'gear.main=']) {
       if (!r.includes(want)) errors.push(`old record: missing ${want}: ${JSON.stringify(r)}`);
     }
+    errors.push(...g.bad);
+  }
+  {
+    // 화로의 가게(쉬기 F → 가게 탭): 줄의 끝에 여벌을 잔불로 바꾸는 줄 — 묻는 창(커서는 취소)에서 바꾸면 가방에서 빠지고 잔불이 는다.
+    const g = await open(browser, ITEMS, 'salvage');
+    await g.press('KeyF'); await g.page.waitForTimeout(700);
+    await g.press('KeyE', 5); await g.page.waitForTimeout(300);
+    await g.press('ArrowUp'); await g.page.waitForTimeout(250); // 목록은 끝에서 돈다 — 위로 한 번 = 마지막 줄(거두기)
+    await g.shot('1-shop-salvage-row');
+    await g.press('Enter'); await g.page.waitForTimeout(300);
+    await g.shot('2-ask');
+    await g.press('ArrowLeft'); await g.press('Enter'); await g.page.waitForTimeout(400);
+    await g.shot('3-salvaged');
+    const r = await g.record();
+    if (/item\.1=/.test(r)) errors.push(`the spare was not salvaged: ${JSON.stringify(r)}`);
+    if (!/embers=328\n/.test(r)) errors.push(`embers after salvage: ${JSON.stringify(r)}`);
+    if (!r.includes('item.0=w.sword|p||0')) errors.push(`the worn sword must stay: ${JSON.stringify(r)}`);
     errors.push(...g.bad);
   }
   await browser.close();

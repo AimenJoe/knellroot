@@ -19,6 +19,8 @@ pub(super) enum ShopRow {
     Ware(usize),
     Forge(weapons::Id),
     Recall(weapons::Id),
+    /// 가방의 여벌(번호)을 잔불로 바꾼다(0223 V4) — 줄의 끝에.
+    Salvage(u32),
 }
 
 /// 가게의 줄 차례(순수): 진열 `shelf`개 → 가진 무기 가운데 벼릴 수 있는 것 → 그 가운데 벼린 것.
@@ -57,7 +59,89 @@ impl App {
             &self.progress.growth,
             &self.progress.shields,
         );
-        shop_rows(shelf.len(), &self.arms(), &self.progress.forged)
+        let mut rows = shop_rows(shelf.len(), &self.arms(), &self.progress.forged);
+        rows.extend(self.progress.bag.spares().into_iter().map(ShopRow::Salvage));
+        rows
+    }
+
+    /// 가방의 아이템 이름(등급 말 + 바탕 이름 — 0223 V4).
+    pub(super) fn item_name(&self, id: u32) -> String {
+        use crate::items::Base;
+        let Some(it) = self.progress.bag.get(id) else {
+            return String::new();
+        };
+        let name = match it.base {
+            Base::Weapon(w) => weapon_name(w),
+            Base::Shield(sh) => tr(sh.def().name),
+            Base::Charm(c) => tr(crate::charms::def(c).name),
+        };
+        crate::i18n::item_label(it.rarity, name)
+    }
+
+    /// 여벌을 잔불로 바꾼다(묻는 창의 답 — 0223 V4): 가방에서 빼고 그 값만큼 잔불.
+    pub(super) fn salvage_item(&mut self, id: u32) {
+        if !self.progress.bag.spares().contains(&id) {
+            self.snd(crate::sfx::Id::Deny);
+            return;
+        }
+        let name = self.item_name(id);
+        let Some(it) = self.progress.bag.remove(id) else {
+            return;
+        };
+        let n = it.salvage();
+        self.world.embers += n;
+        self.progress.embers = self.world.embers;
+        self.snd(crate::sfx::Id::Recall);
+        self.toast = Some((
+            fill(s().toast_salvaged, &[&name, &n.to_string()]),
+            TOAST_TIME,
+        ));
+        self.cursor = self.cursor.min(self.shop_list().len().saturating_sub(1));
+        self.persist();
+    }
+
+    /// 가게의 거두기 줄 오른쪽: 그 아이템의 옵션 줄 + 무엇이 되는지.
+    fn salvage_pane(&mut self, w: &super::frame::Window, id: u32) -> Vec<Ln> {
+        use crate::items::Base;
+        let s = s();
+        let mut lines = Vec::new();
+        let name = self.item_name(id);
+        let it = self.progress.bag.get(id).copied();
+        let view = it.map(|it| match it.base {
+            Base::Weapon(wp) => crate::item_view::Item::Weapon(wp),
+            Base::Shield(sh) => crate::item_view::Item::Shield(sh),
+            Base::Charm(c) => crate::item_view::Item::Charm(c),
+        });
+        let shown = view.filter(|v| crate::item_view::has_view(*v));
+        let icon = self.draw_pane_head(
+            w,
+            &PaneHead {
+                name: &name,
+                gold: false,
+                kind: s.equip_spare.to_string(),
+                state: (
+                    fill(
+                        s.salvage_gain,
+                        &[&it.map_or(0, |i| i.salvage()).to_string()],
+                    ),
+                    ui::MINT,
+                ),
+                icon: shown.is_some(),
+            },
+        );
+        if let Some(v) = shown {
+            self.draw_pane_item(v, icon);
+        }
+        if let Some(it) = it {
+            for a in it.affixes.iter().flatten() {
+                lines.push(Ln::Text(format!("· {}", crate::i18n::affix_line(a)), INK));
+            }
+            if !lines.is_empty() {
+                lines.push(Ln::Gap);
+            }
+            lines.extend(self.pane_wrap(w, &fill(s.salvage_d, &[&it.salvage().to_string()]), DIM));
+        }
+        lines
     }
 
     /// 벼릴 수 있는 무기가 하나라도 있나(가게 탭의 민트 점·쉼터의 빛 — 0180).
@@ -111,6 +195,18 @@ impl App {
                         &[&crate::forge::cost_to(forged.rank(w)).0.to_string()],
                     ),
                 ),
+                ShopRow::Salvage(id) => ui::Row::value(
+                    fill(s.salvage_row, &[&self.item_name(id)]),
+                    fill(
+                        s.salvage_gain,
+                        &[&self
+                            .progress
+                            .bag
+                            .get(id)
+                            .map_or(0, |it| it.salvage())
+                            .to_string()],
+                    ),
+                ),
             })
             .collect();
         Menu::new(s.hearth_shop, tabs::LEFT_W, rows)
@@ -130,6 +226,7 @@ impl App {
             ShopRow::Forge(wp) | ShopRow::Recall(wp) => {
                 self.forge_pane(&w, wp, matches!(row, ShopRow::Recall(_)))
             }
+            ShopRow::Salvage(id) => self.salvage_pane(&w, id),
         };
         self.draw_pane(&w, HEAD_H, &lines);
         let s = s();
@@ -137,6 +234,7 @@ impl App {
             ShopRow::Ware(_) => s.ask_buy_yes,
             ShopRow::Forge(_) => s.forge_do,
             ShopRow::Recall(_) => s.forge_recall,
+            ShopRow::Salvage(_) => s.salvage_do,
         };
         let right = w.panel.x + w.panel.w;
         self.tab_foot(
@@ -322,6 +420,7 @@ impl App {
                 }
             }
             Some(ShopRow::Recall(w)) => self.ask(flow::Ask::Recall(weapon_index(w))),
+            Some(ShopRow::Salvage(id)) => self.ask(flow::Ask::Salvage(id)),
             None => {}
         }
     }

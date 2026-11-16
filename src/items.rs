@@ -394,6 +394,30 @@ impl Bag {
         id
     }
 
+    /// 가방에서 뺀다(거두기).
+    pub fn remove(&mut self, id: u32) -> Option<Item> {
+        let at = self.items.iter().position(|(i, _)| *i == id)?;
+        Some(self.items.remove(at).1)
+    }
+
+    /// 거둘 수 있는 여벌(0223 V4): 낀 자리가 가리키지 않고, 같은 바탕의 다른 아이템이 남는 것 — 거둬도 가진 바탕이 사라지지 않는다.
+    pub fn spares(&self) -> Vec<u32> {
+        let g = &self.gear;
+        let worn = [
+            g.main,
+            g.sub,
+            g.shield,
+            g.charms[0],
+            g.charms[1],
+            g.charms[2],
+        ];
+        self.items
+            .iter()
+            .filter(|(id, it)| !worn.contains(&Some(*id)) && self.of(it.base).count() > 1)
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
     /// 그 바탕의 아이템들.
     pub fn of(&self, base: Base) -> impl Iterator<Item = (u32, &Item)> {
         self.items
@@ -843,6 +867,32 @@ mod tests {
         let st = Stats::compute(&bag.mods(&swapped));
         assert_eq!((st.dmg, st.heavy_dmg), (none.dmg, none.heavy_dmg + 7));
         let _ = spare;
+    }
+
+    /// 거둘 수 있는 것은 여벌뿐: 낀 것은 아니고, 그 바탕의 마지막 하나도 아니다(가진 바탕이 사라지지 않는다).
+    #[test]
+    fn only_spares_can_be_salvaged_never_the_worn_or_the_last_of_a_base() {
+        let (sword, hammer) = (
+            Base::Weapon(weapons::Id::Sword),
+            Base::Weapon(weapons::Id::Hammer),
+        );
+        let mut bag = Bag::default();
+        let worn = bag.add(Item::plain(sword));
+        let spare = bag.add(roll(sword, Rarity::Sturdy, 1, 3));
+        let only = bag.add(Item::plain(hammer));
+        bag.gear.main = Some(worn);
+        assert_eq!(bag.spares(), [spare]);
+        assert!(bag.remove(spare).is_some());
+        assert!(
+            bag.spares().is_empty(),
+            "the worn sword and the only hammer stay"
+        );
+        assert!(bag.get(only).is_some() && bag.remove(spare).is_none());
+        // 끼지 않은 바탕이 둘이면 하나는 거둘 수 있고, 거두고 나면 남은 하나는 못 거둔다.
+        let second = bag.add(Item::plain(hammer));
+        assert_eq!(bag.spares(), [only, second]);
+        bag.remove(only);
+        assert!(bag.spares().is_empty());
     }
 
     /// 가방은 기록에 갔다 와도 같다. 빈 가방은 아무 줄도 쓰지 않고, 없어진 아이템의 옛 줄은 지워진다.

@@ -347,6 +347,8 @@ pub enum Ask {
     Forge(u8),
     /// 화로 가게의 거두기(0180): 이 무기의 단을 모두 거둔다 — 숫돌은 돌아오고 잔불은 안 돌아온다.
     Recall(u8),
+    /// 화로 가게의 아이템 거두기(0223 V4): 가방의 이 여벌(번호)을 잔불로 바꾼다 — 되돌릴 수 없다.
+    Salvage(u32),
     /// 슬롯 창(0192 — 사장 "덮어쓸 때 얼럿이 나와야 해, 텍스트만 바꾸는 것으로는 인지가 잘 안 됨"): 기록 있는 슬롯에 새로 시작.
     Overwrite(u8),
     /// 슬롯 창의 지우기(0192 — 덮어쓰기와 같은 꼴).
@@ -359,7 +361,7 @@ pub fn ask_default(k: Ask) -> usize {
     match k {
         Ask::Buy(_) | Ask::Level(_) | Ask::Skill(_) | Ask::Forge(_) => 0,
         // 거두기는 쓴 잔불을 버린다 — 취소에서.
-        Ask::Restart | Ask::ToTitle | Ask::Respec | Ask::Recall(_) => 1,
+        Ask::Restart | Ask::ToTitle | Ask::Respec | Ask::Recall(_) | Ask::Salvage(_) => 1,
         // 기록을 지우는 일 — 취소에서.
         Ask::Overwrite(_) | Ask::Erase(_) => 1,
     }
@@ -379,6 +381,7 @@ pub fn answer(k: Ask, yes: bool) -> (Go, bool) {
         | Ask::Respec
         | Ask::Forge(_)
         | Ask::Recall(_)
+        | Ask::Salvage(_)
         | Ask::Erase(_) => (Go::Back, false),
         // 판을 여는 일은 앱이 한다(`App::enter_slot`이 장면을 바꾼다) — 여기서는 그대로.
         Ask::Overwrite(_) => (Go::Stay, false),

@@ -48,6 +48,7 @@ impl App {
                 flow::Ask::Respec => self.respec_skills(),
                 flow::Ask::Forge(i) => self.forge_weapon(crate::weapons::IDS[i as usize]),
                 flow::Ask::Recall(i) => self.recall_weapon(crate::weapons::IDS[i as usize]),
+                flow::Ask::Salvage(id) => self.salvage_item(id),
                 flow::Ask::Restart
                 | flow::Ask::ToTitle
                 | flow::Ask::Overwrite(_)
@@ -114,6 +115,13 @@ impl App {
                         &[&forged_label(w, to), &st.to_string(), &em.to_string()],
                     ),
                     s.forge_do,
+                )
+            }
+            flow::Ask::Salvage(id) => {
+                let n = self.progress.bag.get(id).map_or(0, |it| it.salvage());
+                (
+                    fill(s.ask_salvage, &[&self.item_name(id), &n.to_string()]),
+                    s.salvage_do,
                 )
             }
             flow::Ask::Recall(i) => {
