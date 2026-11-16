@@ -357,6 +357,10 @@ impl Renderer {
         self.batch.casting = false;
         self.batch.flush();
         self.batch.record = false;
+        // 반투명한 스테이지 빛은 배우 뒤에(`stage_glows` — 먼저 그리면 빛 속의 몸이 깊이에 가려졌다).
+        if let Some(run) = v.stage {
+            self.stage_glows(run, w);
+        }
 
         self.overlays(w, pp, alpha, t);
         aim_preview(w, pp, t, v.aim_show);

@@ -551,6 +551,11 @@ pub const FIND_REACH: f32 = 1.8;
 /// 떨어진 아이템(0131): 상자에서 튀어나오는 거리(m), 튀어나와 내려앉는 초(그동안 줍지 못한다 — 렌더의 포물선과 같은 길이).
 pub const DROP_OUT: f32 = 1.3;
 pub const DROP_SETTLE: f32 = 0.45;
+/// 깨어난 자리 곁에 떨어진 검(0220 — 사장 "맨손으로 시작하되 바로 옆에 검이 떨어져 있어야 도감이 제대로 작동할 듯"): `drops`의
+/// 상자 번호 자리에 이 값이 든 것 — 상자에서 나온 것이 아니라 처음부터 놓여 있다.
+pub const START_SWORD: usize = usize::MAX;
+/// 그 검이 놓이는 자리: 시작 자리에서 이만큼(m, 월드 x·z).
+const START_SWORD_AT: Vec3 = Vec3::new(1.6, 0.0, -0.8);
 /// 떨어지는 쪽: 방랑자 쪽에서 이만큼(도) 비껴.
 const DROP_SIDE: f32 = 65.0;
 
@@ -1498,6 +1503,14 @@ impl StageRun {
     }
 
     /// 이번 틱에 주운 떨어진 아이템의 상자 번호(0131) — 앱이 그 상자의 것을 주고 기록한다.
+    /// 깨어난 자리 곁에 검을 놓는다(0220 — 앱이 그 기록이 아직 검이 없을 때만 부른다). 곧바로 주울 수 있다.
+    pub fn lay_start_sword(&mut self) {
+        let at = self.level.player_start + START_SWORD_AT;
+        if !self.drops.iter().any(|d| d.1 == START_SWORD) {
+            self.drops.push((at, START_SWORD, DROP_SETTLE));
+        }
+    }
+
     pub fn take_looted(&mut self) -> Option<usize> {
         self.looted.take()
     }
@@ -2354,6 +2367,36 @@ mod tests {
     }
 
     /// 0032: 성소 지도에 쉼터 둘(입구·문 앞), 곁에서 상호작용 = 체력·등잔 가득 + 다시 일어설 곳.
+    /// 0220(사장 "맨손으로 시작하되 바로 옆에 검이 떨어져 있어야 도감이 제대로 작동할 듯"): 첫 지역의 깨어난 자리 곁(걸을 수 있는
+    /// 바닥, 화로와 겹치지 않게)에 검이 떨어져 있고, 곧바로 주울 수 있다 — 주우면 그 표지(`START_SWORD`)가 나온다. 두 번 놓지 않는다.
+    #[test]
+    fn the_starting_sword_lies_by_the_waking_spot_and_can_be_picked_up() {
+        let (mut run, mut w) = StageRun::start(STAGES[0]);
+        run.intro = 0.0;
+        run.lay_start_sword();
+        run.lay_start_sword();
+        assert_eq!(run.drops.len(), 1, "laid once");
+        let p = run.drops[0].0;
+        let start = run.level.player_start;
+        let d = vec2(p.x - start.x, p.z - start.z).length();
+        assert!((1.0..2.5).contains(&d), "right beside the start: {d}");
+        let (x, z) = (
+            (p.x / CELL + run.level.w as f32 * 0.5).floor() as usize,
+            (p.z / CELL + run.level.h as f32 * 0.5).floor() as usize,
+        );
+        assert!(run.level.walkable(x, z), "on walkable floor");
+        assert!(
+            run.rests.iter().all(|r| r.distance(p) > 1.2),
+            "not on the hearth"
+        );
+        w.player.pos = p;
+        w.player.prev = p;
+        w.interact = true;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.take_looted(), Some(START_SWORD));
+        assert!(run.drops.is_empty());
+    }
+
     #[test]
     fn a_chest_opens_once_with_the_interact_button_and_stays_open_from_the_record() {
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);

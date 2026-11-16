@@ -311,11 +311,11 @@ impl App {
                 weapons::Id::Sword
             }
         });
-        // 가지지 않은 무기는 들 수 없다(0117).
+        // 가지지 않은 무기는 들 수 없다(0117) — 새 판은 맨손(0220).
         let weapon = if progress.owns_weapon(weapon) {
             weapon
         } else {
-            weapons::Id::Sword
+            weapons::Id::Fists
         };
         let (mut run, mut world) = StageRun::start(FIRST_STAGE);
         // 새 기록(0171): 깨어난 자리의 화로는 꺼져 있다 — 타이틀 바탕부터.
@@ -484,6 +484,11 @@ impl App {
             .map(|c| c - base)
             .collect();
         self.run.set_opened(&opened);
+        // 깨어난 자리 곁의 검(0220): 아직 검이 없는 기록의 첫 지역에만.
+        if self.stage == 0 && !self.progress.owns_weapon(weapons::Id::Sword) && !self.dev_run_now()
+        {
+            self.run.lay_start_sword();
+        }
         self.run.set_found(&self.progress.finds);
         self.run.set_beaten(&self.progress.elites);
         let open = self

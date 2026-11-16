@@ -76,16 +76,28 @@ impl App {
             use crate::stage::Loot;
             self.gesture = Some(("pickup", 0.0));
             self.snd(crate::sfx::Id::Ember);
-            self.progress
-                .chests
-                .push(self.stage as u32 * crate::stage::CHESTS_PER_STAGE + i as u32);
-            match self.run.def.chest_loot.get(i).copied() {
-                Some(Loot::Charm(id)) if !self.progress.owned.contains(&id) => self.gain_charm(id),
-                Some(Loot::Weapon(w)) if !self.progress.owns_weapon(w) => self.gain_weapon(w),
-                _ => {
-                    self.world.embers += crate::stage::CHEST_EMBERS;
-                    let n = crate::stage::CHEST_EMBERS.to_string();
-                    self.toast = Some((fill(s().toast_embers, &[&n]), TOAST_TIME));
+            // 깨어난 자리 곁의 검(0220): 얻고 바로 든다(맨손이었으니). 상자 기록은 없다.
+            if i == crate::stage::START_SWORD {
+                self.gain_weapon(weapons::Id::Sword);
+                if self.weapon == weapons::Id::Fists {
+                    self.weapon = weapons::Id::Sword;
+                    self.world.set_weapon(self.weapon);
+                    self.progress.weapon = Some(self.weapon);
+                }
+            } else {
+                self.progress
+                    .chests
+                    .push(self.stage as u32 * crate::stage::CHESTS_PER_STAGE + i as u32);
+                match self.run.def.chest_loot.get(i).copied() {
+                    Some(Loot::Charm(id)) if !self.progress.owned.contains(&id) => {
+                        self.gain_charm(id)
+                    }
+                    Some(Loot::Weapon(w)) if !self.progress.owns_weapon(w) => self.gain_weapon(w),
+                    _ => {
+                        self.world.embers += crate::stage::CHEST_EMBERS;
+                        let n = crate::stage::CHEST_EMBERS.to_string();
+                        self.toast = Some((fill(s().toast_embers, &[&n]), TOAST_TIME));
+                    }
                 }
             }
         }
