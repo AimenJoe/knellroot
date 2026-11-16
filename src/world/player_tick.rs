@@ -222,7 +222,18 @@ impl World {
                 d
             }
         });
-        self.aim_line = ranged_aim;
+        // 헤어라인(0221 — 사장 "원거리 무기 장착중에는 화면에 헤어라인이 있어야 할듯"): 쇠뇌를 든 동안은 손이 겨누지 않아도
+        // 지금 쏘면 갈 쪽(락온 대상 > 바라보는 쪽 — 쇠뇌는 가까운 적을 찾지 않는다, 0213)을 늘 내놓는다.
+        self.aim_line_held = ranged_aim.is_some();
+        self.aim_line = ranged_aim.or_else(|| {
+            matches!(self.player.weapon.def().rb, Rb::Shot { .. }).then(|| {
+                target
+                    .map(|tg| vec3(tg.x - self.player.pos.x, 0.0, tg.z - self.player.pos.z))
+                    .filter(|d| d.length_squared() > 0.25)
+                    .map(|d| d.normalize())
+                    .unwrap_or_else(|| self.player.facing_dir())
+            })
+        });
         // 마법 쏘는 쪽(0048): 조준 스틱 > 락온 대상 > `cast.range m` 안의 가장 가까운 적 > 바라보는 쪽.
         // 쇠뇌(0213, 사장 "자동 조준 없애고")는 가까운 적을 찾지 않는다 — 조준(스틱·커서) > 락온 > 바라보는 쪽. 겨누는 것이 손의 일.
         let charging_cast = matches!(self.player.state, PState::CastCharge { .. });
@@ -859,7 +870,7 @@ impl World {
         let full = t[P::CastCharge];
         if a.cast_held && cx.can_charge_cast {
             self.charged_now |= e < full && e + dt >= full;
-            if self.aim_line.is_some() {
+            if ranged_aim_given(&cx.a) {
                 // 겨누는 손(끌기·스틱·숄더뷰의 카메라, 0217·0219)을 몸이 따라 돈다 — 뗄 때 어디로 갈지 보이게.
                 self.player.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
             }
@@ -1342,4 +1353,9 @@ impl World {
             .max_by(|a, b| a.0.total_cmp(&b.0))
             .map_or(d, |(_, v)| v)
     }
+}
+
+/// 손이 원거리를 겨누고 있나(0219 → 0221): 터치 끌기·스틱·커서·숄더뷰의 카메라 앞 — 헤어라인의 "바라보는 쪽"은 아니다.
+fn ranged_aim_given(a: &Actions) -> bool {
+    a.aim_drag || a.aim_ahead || a.aim.length() > AIM_STICK || a.aim_at.is_some()
 }

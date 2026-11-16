@@ -251,12 +251,19 @@ impl App {
             self.world.player.state,
             crate::world::PState::Cast { .. } | crate::world::PState::CastCharge { .. }
         );
+        let shooter = matches!(
+            self.world.player.weapon.def().rb,
+            crate::weapons::Rb::Shot { .. }
+        );
         if firing {
             Some(AimShow::Cast)
         } else if self.cam.mode == Mode::Free {
             Some(AimShow::Reticle)
-        } else if input::device() == input::Device::Pad {
+        } else if input::device() == input::Device::Pad && self.world.aim_line_held {
             Some(AimShow::Cast)
+        } else if shooter {
+            // 헤어라인(0221): 쇠뇌를 든 동안은 늘 — 지금 쏘면 갈 길의 가는 줄 + 멈추는 자리.
+            Some(AimShow::Reticle)
         } else {
             None
         }

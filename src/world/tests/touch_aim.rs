@@ -314,3 +314,21 @@ fn in_the_shoulder_view_the_shot_goes_where_the_camera_looks() {
     );
     assert!(w.aim_line.is_some(), "the reticle has a line to draw");
 }
+
+/// 0221(사장 "원거리 무기 장착중에는 화면에 헤어라인이 있어야 할듯"): 쇠뇌를 든 동안은 손이 겨누지 않아도 지금 쏘면 갈 쪽(바라보는
+/// 쪽)이 늘 있고 — 그 쪽이 실제로 쏜 쪽과 같다. 검(마법)은 손이 겨눌 때만.
+#[test]
+fn the_crossbow_always_has_a_hairline_that_matches_the_shot() {
+    let t = Tuning::default();
+    let mut w = World::new("test", 40.0);
+    w.set_weapon(weapons::Id::Crossbow);
+    w.step(&Actions::default(), &t);
+    let line = w.aim_line.expect("a hairline with nothing held");
+    assert!(!w.aim_line_held);
+    assert!(line.dot(w.player.facing_dir()) > 0.999, "where it faces");
+    let d = crossbow_shot(&mut w, Actions::default());
+    assert!(d.dot(line) > 0.999, "the shot goes down the hairline");
+    let mut w = World::new("test", 40.0);
+    w.step(&Actions::default(), &t);
+    assert!(w.aim_line.is_none(), "a sword shows none until aimed");
+}
