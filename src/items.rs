@@ -4,7 +4,7 @@
 //!
 //! 이 파일은 순수한 규칙이다: 옵션 표·굴리기(씨앗이 같으면 같은 아이템)·기록의 글 꼴·`Mods`. 가방과 떨굼은 다음 걸음(V4b·V4c).
 
-// V4a는 규칙과 시험만이다 — 가방(V4b)·떨굼(V4c)이 붙으면 이 줄을 걷는다.
+// 굴리기·거두는 값·지역 상한은 떨굼(V4c)이 붙을 때까지 시험만 쓴다 — 그때 이 줄을 걷는다.
 #![allow(dead_code)]
 
 use crate::stats::Mods;
@@ -349,6 +349,176 @@ impl Item {
     }
 }
 
+/// 낀 자리들이 가리키는 아이템(가방의 번호). 바탕은 기록의 옛 칸(든 무기·부무기·방패·장신구 셋)이 말하고, 이것은 그 바탕의
+/// **어느 것**인지를 말한다.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Gear {
+    pub main: Option<u32>,
+    pub sub: Option<u32>,
+    pub shield: Option<u32>,
+    pub charms: [Option<u32>; charms::SLOTS],
+}
+
+/// 지금 낀 바탕들(기록의 옛 칸에서 — 맨손은 아이템이 아니다).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Worn {
+    pub main: Option<weapons::Id>,
+    pub sub: Option<weapons::Id>,
+    pub shield: Option<shield::Id>,
+    pub charms: [Option<charms::Id>; charms::SLOTS],
+}
+
+/// 가방(0223 V4b): 가진 아이템들(번호는 바뀌지 않는다)과 낀 자리.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Bag {
+    pub items: Vec<(u32, Item)>,
+    next: u32,
+    pub gear: Gear,
+}
+
+/// 기록의 키(바꾸지 않는다): `item.<번호>` = 아이템의 글 · `item.next` = 다음 번호 · `gear.*` = 낀 자리의 번호.
+const KEY_ITEM: &str = "item.";
+const KEY_NEXT: &str = "item.next";
+const KEY_GEAR: [&str; 3] = ["gear.main", "gear.sub", "gear.shield"];
+const KEY_GEAR_CHARM: &str = "gear.charm.";
+
+impl Bag {
+    pub fn get(&self, id: u32) -> Option<&Item> {
+        self.items.iter().find(|(i, _)| *i == id).map(|(_, it)| it)
+    }
+
+    /// 가방에 넣는다 — 새 번호를 돌려준다.
+    pub fn add(&mut self, item: Item) -> u32 {
+        let id = self
+            .next
+            .max(self.items.iter().map(|(i, _)| i + 1).max().unwrap_or(0));
+        self.next = id + 1;
+        self.items.push((id, item));
+        id
+    }
+
+    /// 그 바탕의 아이템들.
+    pub fn of(&self, base: Base) -> impl Iterator<Item = (u32, &Item)> {
+        self.items
+            .iter()
+            .filter(move |(_, it)| it.base == base)
+            .map(|(i, it)| (*i, it))
+    }
+
+    /// 자리가 가리키는 아이템이 그 바탕의 것이면 그것 — 아니면(막 바꿔 껴서 자리가 아직 안 맞춰졌으면) 그 바탕의 첫 아이템.
+    fn held(&self, id: Option<u32>, base: Option<Base>) -> Option<&Item> {
+        let base = base?;
+        id.and_then(|i| self.get(i))
+            .filter(|it| it.base == base)
+            .or_else(|| self.of(base).next().map(|(_, it)| it))
+    }
+
+    /// 가방을 기록의 옛 칸에 맞춘다: 가진 바탕마다 아이템이 적어도 하나(없으면 보통 것 하나 — 옛 기록이 이렇게 옮겨진다),
+    /// 낀 자리는 낀 바탕의 아이템을 가리킨다(맞으면 그대로, 아니면 그 바탕의 아직 안 낀 첫 아이템). 맨손은 아이템이 없다.
+    pub fn settle(&mut self, owned: &[Base], worn: &Worn) {
+        for &b in owned {
+            if b != Base::Weapon(weapons::Id::Fists) && self.of(b).next().is_none() {
+                self.add(Item::plain(b));
+            }
+        }
+        let mut used: Vec<u32> = Vec::new();
+        let mut fix = |bag: &Bag, slot: Option<u32>, base: Option<Base>| -> Option<u32> {
+            let base = base.filter(|b| *b != Base::Weapon(weapons::Id::Fists))?;
+            let keep = slot
+                .filter(|id| bag.get(*id).is_some_and(|it| it.base == base) && !used.contains(id));
+            let id = keep.or_else(|| bag.of(base).map(|(i, _)| i).find(|i| !used.contains(i)))?;
+            used.push(id);
+            Some(id)
+        };
+        let g = self.gear;
+        let main = fix(self, g.main, worn.main.map(Base::Weapon));
+        let sub = fix(self, g.sub, worn.sub.map(Base::Weapon));
+        let shield = fix(self, g.shield, worn.shield.map(Base::Shield));
+        let mut charms_at = [None; charms::SLOTS];
+        for (i, slot) in charms_at.iter_mut().enumerate() {
+            *slot = fix(self, g.charms[i], worn.charms[i].map(Base::Charm));
+        }
+        self.gear = Gear {
+            main,
+            sub,
+            shield,
+            charms: charms_at,
+        };
+    }
+
+    /// 낀 아이템들의 옵션 보정: **든** 무기(부무기는 들었을 때만 — 벼린 단과 같은 규칙) + 방패 + 장신구 셋.
+    pub fn mods(&self, worn: &Worn) -> Vec<Mods> {
+        let g = &self.gear;
+        let mut v = Vec::new();
+        let slots = [
+            (g.main, worn.main.map(Base::Weapon)),
+            (g.shield, worn.shield.map(Base::Shield)),
+            (g.charms[0], worn.charms[0].map(Base::Charm)),
+            (g.charms[1], worn.charms[1].map(Base::Charm)),
+            (g.charms[2], worn.charms[2].map(Base::Charm)),
+        ];
+        for (id, base) in slots {
+            if let Some(it) = self.held(id, base) {
+                v.extend(it.mods());
+            }
+        }
+        v
+    }
+
+    /// 주무기와 부무기를 바꿔 들었다 — 자리의 아이템도 맞바뀐다.
+    pub fn swap_weapons(&mut self) {
+        std::mem::swap(&mut self.gear.main, &mut self.gear.sub);
+    }
+
+    /// 기록에서 읽는다(모르는 글의 아이템은 버린다).
+    pub fn read(r: &crate::save::Record) -> Bag {
+        let mut items: Vec<(u32, Item)> = r
+            .with_prefix(KEY_ITEM)
+            .filter_map(|(id, text)| Some((id.parse::<u32>().ok()?, Item::decode(text)?)))
+            .collect();
+        items.sort_by_key(|(i, _)| *i);
+        let at = |k: &str| r.num(k);
+        let mut charms_at = [None; charms::SLOTS];
+        for (i, slot) in charms_at.iter_mut().enumerate() {
+            *slot = at(&format!("{KEY_GEAR_CHARM}{i}"));
+        }
+        Bag {
+            next: at(KEY_NEXT).unwrap_or(0),
+            items,
+            gear: Gear {
+                main: at(KEY_GEAR[0]),
+                sub: at(KEY_GEAR[1]),
+                shield: at(KEY_GEAR[2]),
+                charms: charms_at,
+            },
+        }
+    }
+
+    /// 기록에 쓴다 — 옛 줄을 다 지우고 지금 것만. 빈 가방은 아무 줄도 쓰지 않는다(빈 슬롯이 "기록 있음"이 되지 않게).
+    pub fn write(&self, r: &mut crate::save::Record) {
+        r.remove_prefix(KEY_ITEM);
+        r.remove_prefix("gear.");
+        if self.items.is_empty() {
+            return;
+        }
+        for (id, it) in &self.items {
+            r.set(&format!("{KEY_ITEM}{id}"), it.encode());
+        }
+        r.set(KEY_NEXT, self.next);
+        let g = &self.gear;
+        for (k, v) in KEY_GEAR.into_iter().zip([g.main, g.sub, g.shield]) {
+            if let Some(v) = v {
+                r.set(k, v);
+            }
+        }
+        for (i, v) in g.charms.iter().enumerate() {
+            if let Some(v) = v {
+                r.set(&format!("{KEY_GEAR_CHARM}{i}"), v);
+            }
+        }
+    }
+}
+
 /// 거두는 값: 등급마다의 바탕(보통·단단한·드문·고유)과 옵션 단 하나의 몫.
 pub const SALVAGE: [u32; 4] = [4, 10, 20, 40];
 pub const SALVAGE_PER_TIER: u32 = 4;
@@ -575,6 +745,132 @@ mod tests {
             [tier_cap(0), tier_cap(1), tier_cap(2), tier_cap(3)],
             [1, 2, 3, 3]
         );
+    }
+
+    fn worn_sword_and(sub: Option<weapons::Id>) -> Worn {
+        Worn {
+            main: Some(weapons::Id::Sword),
+            sub,
+            shield: Some(shield::Id::Pilgrim),
+            charms: [Some(charms::Id::Ear), None, None],
+        }
+    }
+
+    /// 가방 맞추기(V4b): 가진 바탕마다 아이템이 하나는 생기고(이미 있으면 그대로 — 두 번 맞춰도 같다), 낀 자리는 낀 바탕의 아이템을
+    /// 가리킨다. 맨손은 아이템이 없다. 이미 가리키던 아이템이 그 바탕의 것이면 바꾸지 않는다(더 좋은 것을 골라 낀 것을 지킨다).
+    #[test]
+    fn settling_gives_every_owned_base_an_item_and_points_gear_at_what_is_worn() {
+        let sword = Base::Weapon(weapons::Id::Sword);
+        let owned = [
+            sword,
+            Base::Weapon(weapons::Id::Hammer),
+            Base::Weapon(weapons::Id::Fists),
+            Base::Shield(shield::Id::Pilgrim),
+            Base::Charm(charms::Id::Ear),
+        ];
+        let worn = worn_sword_and(Some(weapons::Id::Hammer));
+        let mut bag = Bag::default();
+        bag.settle(&owned, &worn);
+        assert_eq!(bag.items.len(), 4, "no item for bare fists");
+        assert!(bag.items.iter().all(|(_, it)| it.rarity == Rarity::Plain));
+        let g = bag.gear;
+        assert_eq!(bag.get(g.main.unwrap()).unwrap().base, sword);
+        assert_eq!(
+            bag.get(g.sub.unwrap()).unwrap().base,
+            Base::Weapon(weapons::Id::Hammer)
+        );
+        assert!(g.shield.is_some() && g.charms[0].is_some() && g.charms[1].is_none());
+        let once = bag.clone();
+        bag.settle(&owned, &worn);
+        assert_eq!(bag, once, "settling twice changes nothing");
+        // 더 좋은 검을 주워 그것을 꼈다 — 맞춰도 그대로다. 맨손으로 바꾸면 주무기 자리는 빈다.
+        let better = bag.add(roll(sword, Rarity::Rare, 3, 7));
+        bag.gear.main = Some(better);
+        bag.settle(&owned, &worn);
+        assert_eq!(bag.gear.main, Some(better));
+        let bare = Worn {
+            main: Some(weapons::Id::Fists),
+            ..worn
+        };
+        bag.settle(&owned, &bare);
+        assert_eq!(bag.gear.main, None);
+    }
+
+    /// 옵션은 낀 것만 — 무기는 **든** 것만(부무기의 옵션은 바꿔 들어야 먹는다), 방패·장신구는 낀 동안.
+    #[test]
+    fn only_worn_items_count_and_a_weapon_only_while_held() {
+        let (sword, hammer) = (
+            Base::Weapon(weapons::Id::Sword),
+            Base::Weapon(weapons::Id::Hammer),
+        );
+        let affix = |stat| [Some(Affix { stat, tier: 2 }), None];
+        let item = |base, stat| Item {
+            base,
+            rarity: Rarity::Sturdy,
+            affixes: affix(stat),
+            forge: 0,
+        };
+        let mut bag = Bag::default();
+        let s = bag.add(item(sword, Stat::Dmg));
+        let h = bag.add(item(hammer, Stat::Heavy));
+        let spare = bag.add(item(sword, Stat::Swift));
+        let c = bag.add(item(Base::Charm(charms::Id::Ear), Stat::Hp));
+        bag.gear = Gear {
+            main: Some(s),
+            sub: Some(h),
+            shield: None,
+            charms: [Some(c), None, None],
+        };
+        let worn = Worn {
+            main: Some(weapons::Id::Sword),
+            sub: Some(weapons::Id::Hammer),
+            shield: None,
+            charms: [Some(charms::Id::Ear), None, None],
+        };
+        let st = Stats::compute(&bag.mods(&worn));
+        let none = Stats::default();
+        assert_eq!(st.dmg, none.dmg + 4);
+        assert_eq!(st.max_hp, none.max_hp + 10);
+        assert_eq!(st.heavy_dmg, none.heavy_dmg, "the off weapon waits");
+        assert_eq!(st.atk_speed, none.atk_speed, "the spare stays in the bag");
+        // 바꿔 든다.
+        bag.swap_weapons();
+        let swapped = Worn {
+            main: worn.sub,
+            sub: worn.main,
+            ..worn
+        };
+        let st = Stats::compute(&bag.mods(&swapped));
+        assert_eq!((st.dmg, st.heavy_dmg), (none.dmg, none.heavy_dmg + 7));
+        let _ = spare;
+    }
+
+    /// 가방은 기록에 갔다 와도 같다. 빈 가방은 아무 줄도 쓰지 않고, 없어진 아이템의 옛 줄은 지워진다.
+    #[test]
+    fn the_bag_round_trips_and_an_empty_one_writes_nothing() {
+        use crate::save::Record;
+        let mut r = Record::parse("clears=1\n");
+        Bag::default().write(&mut r);
+        assert_eq!(r.to_text(), "clears=1\n");
+        let mut bag = Bag::default();
+        bag.settle(
+            &[
+                Base::Weapon(weapons::Id::Sword),
+                Base::Shield(shield::Id::Pilgrim),
+                Base::Charm(charms::Id::Ear),
+            ],
+            &worn_sword_and(None),
+        );
+        let extra = bag.add(roll(Base::Weapon(weapons::Id::Sword), Rarity::Rare, 3, 11));
+        bag.write(&mut r);
+        assert_eq!(Bag::read(&r), bag);
+        // 하나를 없애고 다시 쓰면 그 줄은 남지 않는다 — 번호는 다시 쓰지 않는다(다음 아이템은 새 번호).
+        bag.items.retain(|(i, _)| *i != extra);
+        bag.write(&mut r);
+        assert!(r.get(&format!("item.{extra}")).is_none());
+        let mut back = Bag::read(&r);
+        assert_eq!(back, bag);
+        assert!(back.add(Item::plain(Base::Weapon(weapons::Id::Hammer))) > extra);
     }
 
     /// 거두는 값은 등급과 옵션의 세기를 따른다 — 보통이 가장 싸다.

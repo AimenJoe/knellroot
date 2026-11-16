@@ -412,6 +412,7 @@ impl App {
         self.progress.sub = self.world.player.sub;
         // 스킬 칸도 무기를 따라 맞바뀐다(0223 V3 — 월드는 이미 바꿨다).
         std::mem::swap(&mut self.progress.skills, &mut self.progress.sub_skills);
+        self.progress.bag.swap_weapons();
         // 벼린 단(0180)은 든 무기에만 — 바꿔 든 무기의 것으로 능력치를 다시 합친다(V1b에서 빠뜨렸다: 바꿔 들어도 옛 무기의 단이 남았다).
         self.world.apply_stats(self.progress.stats(), false);
         self.persist();

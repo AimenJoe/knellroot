@@ -191,6 +191,18 @@ impl Record {
     pub fn remove(&mut self, k: &str) {
         self.map.remove(k);
     }
+
+    /// `prefix`로 시작하는 키들(키의 나머지, 값) — 수가 정해지지 않은 줄(아이템)을 읽는다.
+    pub fn with_prefix<'a>(&'a self, prefix: &'a str) -> impl Iterator<Item = (&'a str, &'a str)> {
+        self.map
+            .iter()
+            .filter_map(move |(k, v)| k.strip_prefix(prefix).map(|rest| (rest, v.as_str())))
+    }
+
+    /// `prefix`로 시작하는 키를 모두 지운다(다시 쓰기 전에 — 없어진 아이템의 줄이 남지 않게).
+    pub fn remove_prefix(&mut self, prefix: &str) {
+        self.map.retain(|k, _| !k.starts_with(prefix));
+    }
 }
 
 /// 판 안의 자리: 쉼터 번호와 문이 열린 뒤인지, 어느 지역(0118)의 쉼터인지, 이 판에 이긴 문지기 수.
@@ -251,6 +263,9 @@ pub struct Progress {
     pub skills: crate::skills::Worn,
     /// 부무기 칸에 끼운 스킬 둘(0223 V3). 주무기와 부무기를 바꿔 들면 `skills`와 맞바뀐다.
     pub sub_skills: crate::skills::Worn,
+    /// 가방(0223 V4b): 가진 아이템 하나하나(등급·옵션)와 낀 자리. 바탕(무엇을 가졌고 무엇을 꼈나)은 위의 옛 칸들이 말하고,
+    /// 가방은 그 바탕의 **어느 것**인지를 말한다 — `settle_items`가 둘을 맞춘다(옛 기록은 바탕마다 보통 것 하나로 옮겨진다).
+    pub bag: crate::items::Bag,
     /// 끼운 큰 기술(0158 G2 — 하나). 기록에 없으면 쟁반 뒤집기. 배운 것만 끼운다.
     pub ult: crate::skills::Ult,
     /// 걸친 덧옷(0176 — 하나, 가진 것만).
@@ -606,6 +621,7 @@ impl Progress {
             owned,
             worn,
             chests,
+            bag: crate::items::Bag::read(&r),
             base: r,
         };
         if !migrated {
@@ -640,6 +656,8 @@ impl Progress {
             }
         }
         p.ult = p.board.wearable_ult(p.ult);
+        // 가방(0223 V4b): 가진 바탕마다 아이템 하나는 있게 — 옛 기록의 무기·방패·장신구가 보통 것으로 옮겨진다.
+        p.settle_items();
         p
     }
 
@@ -661,6 +679,27 @@ impl Progress {
     }
 
     /// 이 무기를 가졌나(0117 → 0220): 맨손은 늘, 그 밖은 얻은 것만 — 검도 깨어난 자리 곁에서 줍는다.
+    /// 지금 낀 바탕들(가방이 자리를 맞출 때 읽는다).
+    pub fn worn_bases(&self) -> crate::items::Worn {
+        crate::items::Worn {
+            main: self.weapon,
+            sub: self.sub,
+            shield: self.shield,
+            charms: self.worn,
+        }
+    }
+
+    /// 가방을 가진 것·낀 것에 맞춘다(0223 V4b — 읽은 뒤·얻은 뒤·쓰기 전에): 가진 바탕마다 아이템이 하나는 있고, 낀 자리는 낀 바탕의
+    /// 아이템을 가리킨다.
+    pub fn settle_items(&mut self) {
+        use crate::items::Base;
+        let mut owned: Vec<Base> = self.weapons.iter().map(|w| Base::Weapon(*w)).collect();
+        owned.extend(self.shields.iter().map(|s| Base::Shield(*s)));
+        owned.extend(self.owned.iter().map(|c| Base::Charm(*c)));
+        let worn = self.worn_bases();
+        self.bag.settle(&owned, &worn);
+    }
+
     pub fn owns_weapon(&self, w: crate::weapons::Id) -> bool {
         w == crate::weapons::Id::Fists || self.weapons.contains(&w)
     }
@@ -794,6 +833,7 @@ impl Progress {
             r.set(key::SKILL1, self.skills.0[0].key());
             r.set(key::SKILL2, self.skills.0[1].key());
         }
+        self.bag.write(&mut r);
         if self.sub_skills.0 == crate::skills::START {
             r.remove(key::SKILL_SUB1);
             r.remove(key::SKILL_SUB2);
@@ -904,6 +944,8 @@ impl Progress {
         if let Some(w) = self.weapon {
             mods.push(self.forged.mods(w));
         }
+        // 낀 아이템의 옵션(0223 V4b — 무기는 든 것만).
+        mods.extend(self.bag.mods(&self.worn_bases()));
         mods.push(self.growth.mods());
         mods.push(self.level.mods());
         mods.push(crate::progression::find_mods(&self.finds));
@@ -2013,6 +2055,47 @@ forge.sword=3
         assert_eq!(back.sub, Some(crate::weapons::Id::Crossbow));
         let stray = Progress::from_record(Record::parse("shield.worn=pilgrim\n"));
         assert_eq!(stray.shield, None, "a shield you do not own is not worn");
+    }
+
+    /// 0223 V4b: 옛 기록(아이템 줄이 없다)의 무기·방패·장신구는 보통 아이템 하나씩으로 옮겨지고, 다시 써도 그대로다. 새 기록은 아이템
+    /// 줄을 쓰지 않는다(빈 슬롯이 "기록 있음"이 되지 않게). 낀 아이템의 옵션은 능력치에 든다.
+    #[test]
+    fn old_records_gain_plain_items_and_worn_affixes_reach_the_stats() {
+        use crate::items::{Affix, Base, Item, Rarity, Stat};
+        use crate::weapons::Id as W;
+        let old = "v=1\nclears=2\nweapons=sword,hammer\nweapon=sword\nweapon.sub=hammer\n\
+                   shields=pilgrim\nshield.worn=pilgrim\ncharm.owned=ear\ncharm.worn=ear,,\n";
+        let p = Progress::from_record(Record::parse(old));
+        assert_eq!(p.bag.items.len(), 4);
+        assert!(p.bag.items.iter().all(|(_, it)| it.rarity == Rarity::Plain));
+        assert!(
+            p.bag.gear.main.is_some() && p.bag.gear.sub.is_some() && p.bag.gear.shield.is_some()
+        );
+        let text = p.to_record().to_text();
+        assert!(text.contains("item.0=") && text.contains("gear.main="));
+        let back = Progress::from_record(Record::parse(&text));
+        assert_eq!(back.bag, p.bag);
+        assert!(!Progress::default().to_record().to_text().contains("item."));
+        // 든 검에 "주는 피해 +4"가 붙으면 능력치에 든다 — 부무기(망치)의 옵션은 들기 전에는 아니다.
+        let mut p = p;
+        let plain = p.stats();
+        let with = |base, stat| Item {
+            base,
+            rarity: Rarity::Sturdy,
+            affixes: [Some(Affix { stat, tier: 2 }), None],
+            forge: 0,
+        };
+        let sword = p.bag.add(with(Base::Weapon(W::Sword), Stat::Dmg));
+        let hammer = p.bag.add(with(Base::Weapon(W::Hammer), Stat::Heavy));
+        p.bag.gear.main = Some(sword);
+        p.bag.gear.sub = Some(hammer);
+        p.settle_items();
+        assert_eq!(
+            (p.bag.gear.main, p.bag.gear.sub),
+            (Some(sword), Some(hammer))
+        );
+        let st = p.stats();
+        assert_eq!((st.dmg, st.heavy_dmg), (plain.dmg + 4, plain.heavy_dmg));
     }
 
     /// 0223 V3: 부무기 칸에 끼운 스킬 둘은 기록 `skill.sub.1`·`skill.sub.2`에 남는다 — 처음의 둘이면 쓰지 않는다. 주무기의 칸과는 따로다.
