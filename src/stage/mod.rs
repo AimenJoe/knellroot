@@ -687,6 +687,8 @@ pub struct StageRun {
     elite_ids: Vec<(usize, String)>,
     /// 이 판에 쓰러뜨린 엘리트(표의 몇째, 0113) — 쉬어도 다시 서지 않는다.
     elites_down: Vec<usize>,
+    /// 이번 틱에 쓰러진 엘리트(앱이 가져가 여벌을 준다 — 0223 V4c).
+    elite_loot: Vec<usize>,
     /// 문 장치(0113): 자리, 곁인가, 문이 열려 있나(기록 — 한 번 열면 판을 넘어 열려 있다), 이번 틱에 처음 열었다(앱이 가져간다).
     pub lever: Option<Vec3>,
     pub near_lever: bool,
@@ -810,6 +812,7 @@ impl StageRun {
             picked: None,
             elite_ids: Vec::new(),
             elites_down: Vec::new(),
+            elite_loot: Vec::new(),
             lever: None,
             near_lever: false,
             gate_opened: false,
@@ -1061,6 +1064,7 @@ impl StageRun {
                 (0..self.def.elites.len()).find(|&k| elite_id(self.def.find_prefix, k) == id)
             {
                 self.elites_down.push(k);
+                self.elite_loot.push(k);
             }
             if self.beaten.contains(&id) {
                 continue;
@@ -1074,6 +1078,11 @@ impl StageRun {
             self.beaten.push(id.clone());
             self.elite_new.push(id);
         }
+    }
+
+    /// 이번 틱에 쓰러진 엘리트들(표의 자리 — 처음이든 아니든, 0223 V4c): 앱이 한 번 가져가 여벌을 준다.
+    pub fn take_elites_down(&mut self) -> Vec<usize> {
+        std::mem::take(&mut self.elite_loot)
     }
 
     /// 이번 틱에 처음 쓰러뜨린 엘리트들(0112, 한 틱에 여럿 — 수류탄) — 앱이 한 번 가져가 기록·알림에.

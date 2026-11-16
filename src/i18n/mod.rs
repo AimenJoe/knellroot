@@ -512,6 +512,30 @@ pub struct Strings {
     pub hands_two: &'static str,
     pub hands_ranged: &'static str,
     pub sk_hands: &'static str,
+    /// 아이템(0223 V4): 등급 이름 · 이름 꼴({0} 등급 {1} 바탕) · 옵션 이름 열셋 · 옵션 줄의 꼴 · 얻음 알림 · 가방에 있는 것 표지.
+    pub rarity_sturdy: &'static str,
+    pub rarity_rare: &'static str,
+    pub rarity_unique: &'static str,
+    pub item_label: &'static str,
+    pub affix_dmg: &'static str,
+    pub affix_heavy: &'static str,
+    pub affix_shot: &'static str,
+    pub affix_poise: &'static str,
+    pub affix_swift: &'static str,
+    pub affix_opened: &'static str,
+    pub affix_stamina: &'static str,
+    pub affix_regen: &'static str,
+    pub affix_kill: &'static str,
+    pub affix_ember: &'static str,
+    pub affix_hp: &'static str,
+    pub affix_cd: &'static str,
+    pub affix_build: &'static str,
+    pub affix_plus: &'static str,
+    pub affix_plus_pct: &'static str,
+    pub affix_minus_pct: &'static str,
+    pub toast_item: &'static str,
+    pub toast_item_full: &'static str,
+    pub equip_spare: &'static str,
     /// 무기 갈래 줄(0223): 이름 · 한손 · 양손 · 원거리.
     pub hand_label: &'static str,
     pub hand_one: &'static str,
@@ -1277,6 +1301,29 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.hands_two,
         s.hands_ranged,
         s.sk_hands,
+        s.rarity_sturdy,
+        s.rarity_rare,
+        s.rarity_unique,
+        s.item_label,
+        s.affix_dmg,
+        s.affix_heavy,
+        s.affix_shot,
+        s.affix_poise,
+        s.affix_swift,
+        s.affix_opened,
+        s.affix_stamina,
+        s.affix_regen,
+        s.affix_kill,
+        s.affix_ember,
+        s.affix_hp,
+        s.affix_cd,
+        s.affix_build,
+        s.affix_plus,
+        s.affix_plus_pct,
+        s.affix_minus_pct,
+        s.toast_item,
+        s.toast_item_full,
+        s.equip_spare,
         s.sub_empty_d,
         s.hand_label,
         s.hand_one,
@@ -1610,6 +1657,47 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
 
 /// 표 밖에서 화면에 찍는 기호(메뉴 표지 등). 글꼴 시험이 같이 본다.
 pub const UI_GLYPHS: &str = "◆◇…·▲▼▶◀→";
+
+/// 아이템 옵션 한 줄의 글(0223 V4 — "주는 피해 +4" · "자세 피해 +14%" · "스킬 대기 −7%").
+pub fn affix_line(a: &crate::items::Affix) -> String {
+    use crate::items::Stat;
+    let s = s();
+    let name = match a.stat {
+        Stat::Dmg => s.affix_dmg,
+        Stat::Heavy => s.affix_heavy,
+        Stat::Shot => s.affix_shot,
+        Stat::Poise => s.affix_poise,
+        Stat::Swift => s.affix_swift,
+        Stat::Opened => s.affix_opened,
+        Stat::Stamina => s.affix_stamina,
+        Stat::Regen => s.affix_regen,
+        Stat::KillStamina => s.affix_kill,
+        Stat::Ember => s.affix_ember,
+        Stat::Hp => s.affix_hp,
+        Stat::Cooldown => s.affix_cd,
+        Stat::Build => s.affix_build,
+    };
+    let v = (a.stat.value(a.tier).round() as i32).to_string();
+    let form = match (a.stat, a.stat.percent()) {
+        (Stat::Cooldown, _) => s.affix_minus_pct,
+        (_, true) => s.affix_plus_pct,
+        (_, false) => s.affix_plus,
+    };
+    fill(form, &[name, &v])
+}
+
+/// 아이템의 이름: 등급이 있으면 "단단한 낡은 검", 보통이면 바탕 이름 그대로.
+pub fn item_label(rarity: crate::items::Rarity, base_name: &str) -> String {
+    use crate::items::Rarity;
+    let s = s();
+    let word = match rarity {
+        Rarity::Plain => return base_name.to_string(),
+        Rarity::Sturdy => s.rarity_sturdy,
+        Rarity::Rare => s.rarity_rare,
+        Rarity::Unique => s.rarity_unique,
+    };
+    fill(s.item_label, &[word, base_name])
+}
 
 /// 피해 타입의 이름(0223 V2 — 물리는 이름이 없다).
 pub fn ail_name(k: crate::status::Kind) -> &'static str {

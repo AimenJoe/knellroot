@@ -71,6 +71,9 @@ pub(super) enum Cand {
     Garb(crate::garb::Id),
     /// 방패(0223) — 비우기는 `Empty`.
     Shield(crate::shield::Id),
+    /// 가방의 여벌(0223 V4d — 가방의 번호): 같은 바탕의 **다른 아이템**(등급·옵션이 다르다). 바탕의 여느 후보(`Weapon`·`Charm`·
+    /// `Shield`)는 그 바탕의 "지금 것"(낀 자리가 가리키는 아이템 — 없으면 첫 것)이고, 여벌은 그 바로 아래 줄에 선다.
+    Item(u32),
 }
 
 /// 칸의 후보 목록(표 순서): 무기 칸 = 맨손 + 무기 넷, 장신구 칸 = 빈 칸 + **가진** 장신구만.
@@ -131,6 +134,57 @@ pub(super) fn candidates(
                 .map(|d| Cand::Charm(d.id)),
         )
         .collect()
+}
+
+/// 후보의 바탕(0223 V4d — 아이템이 되는 것만: 맨손·빈 칸·덧옷은 없다). 여벌은 가방에서 읽는다.
+pub(super) fn base_of(c: Cand, bag: &crate::items::Bag) -> Option<crate::items::Base> {
+    use crate::items::Base;
+    match c {
+        Cand::Weapon(w) if w != weapons::Id::Fists => Some(Base::Weapon(w)),
+        Cand::Charm(id) => Some(Base::Charm(id)),
+        Cand::Shield(id) => Some(Base::Shield(id)),
+        Cand::Item(id) => bag.get(id).map(|it| it.base),
+        _ => None,
+    }
+}
+
+/// 후보가 가리키는 아이템: 여벌이면 그것, 바탕의 후보면 그 바탕의 "지금 것"(낀 자리가 가리키는 것 — 없으면 가방의 첫 것).
+pub(super) fn item_at(c: Cand, bag: &crate::items::Bag) -> Option<(u32, crate::items::Item)> {
+    if let Cand::Item(id) = c {
+        return bag.get(id).map(|it| (id, *it));
+    }
+    let base = base_of(c, bag)?;
+    let g = &bag.gear;
+    [
+        g.main,
+        g.sub,
+        g.shield,
+        g.charms[0],
+        g.charms[1],
+        g.charms[2],
+    ]
+    .into_iter()
+    .flatten()
+    .find(|id| bag.get(*id).is_some_and(|it| it.base == base))
+    .or_else(|| bag.of(base).next().map(|(i, _)| i))
+    .and_then(|id| bag.get(id).map(|it| (id, *it)))
+}
+
+/// 후보 목록에 가방의 여벌을 끼워 넣는다(0223 V4d): 바탕의 줄 바로 아래에 같은 바탕의 **다른** 아이템들(가방의 차례).
+pub(super) fn with_spares(list: Vec<Cand>, bag: &crate::items::Bag) -> Vec<Cand> {
+    let mut out = Vec::with_capacity(list.len());
+    for c in list {
+        out.push(c);
+        let (Some(base), now) = (base_of(c, bag), item_at(c, bag).map(|(i, _)| i)) else {
+            continue;
+        };
+        out.extend(
+            bag.of(base)
+                .filter(|(id, _)| Some(*id) != now)
+                .map(|(id, _)| Cand::Item(id)),
+        );
+    }
+    out
 }
 
 /// 바꿀 것이 있나(목록에 지금 것 말고도 있나) — 없으면 목록을 열지 않는다(설명 칸이 얻는 곳을 말한다).
@@ -420,7 +474,8 @@ fn item_of(c: Cand) -> Option<crate::item_view::Item> {
         Cand::Shield(id) => {
             Some(crate::item_view::Item::Shield(id)).filter(|&i| crate::item_view::has_view(i))
         }
-        Cand::Empty | Cand::Bare => None,
+        // 여벌은 바탕의 후보로 바꿔서 묻는다(`App::base_cand`).
+        Cand::Empty | Cand::Bare | Cand::Item(_) => None,
     }
 }
 
@@ -444,6 +499,18 @@ pub(super) fn pane_step(
 
 const PANE_LINES_PER_SEC: f32 = 6.0;
 
+/// 등급의 빛(0223 V4d — 옵션 줄): 보통 = 흐린 글 · 단단한 = 하늘빛 · 드문 = 금빛 · 고유 = 민트. 이름 앞의 등급 말과 함께 쓴다
+/// (색만으로 말하지 않는다).
+fn rarity_ink(r: crate::items::Rarity) -> Color {
+    use crate::items::Rarity;
+    match r {
+        Rarity::Plain => DIM,
+        Rarity::Sturdy => Color::new(0.62, 0.82, 1.0, 1.0),
+        Rarity::Rare => Color::new(1.0, 0.80, 0.42, 1.0),
+        Rarity::Unique => ui::MINT,
+    }
+}
+
 /// 나빠지는 값의 색(붉은 계열 — 화살표 ▼와 함께, 색만으로 말하지 않는다).
 const WORSE: Color = Color::new(0.88, 0.42, 0.36, 1.0);
 
@@ -466,20 +533,87 @@ impl App {
 
     /// 칸의 후보(가진 것에서).
     fn cands(&self, slot: usize) -> Vec<Cand> {
-        candidates(
+        let list = candidates(
             slot,
             &self.progress.owned,
             &self.arms(),
             &self.garbs(),
             &self.progress.shields,
-        )
+        );
+        with_spares(list, &self.progress.bag)
+    }
+
+    /// 후보의 바탕(아이템이 되는 것만 — 맨손·빈 칸·덧옷은 없다).
+    fn cand_base(&self, c: Cand) -> Option<crate::items::Base> {
+        base_of(c, &self.progress.bag)
+    }
+
+    /// 여벌을 그 바탕의 여느 후보로(이름·그림·설명·숫자는 바탕의 것) — 다른 후보는 그대로.
+    fn base_cand(&self, c: Cand) -> Cand {
+        use crate::items::Base;
+        match c {
+            Cand::Item(_) => match self.cand_base(c) {
+                Some(Base::Weapon(w)) => Cand::Weapon(w),
+                Some(Base::Charm(id)) => Cand::Charm(id),
+                Some(Base::Shield(id)) => Cand::Shield(id),
+                None => Cand::Empty,
+            },
+            c => c,
+        }
+    }
+
+    /// 후보가 가리키는 아이템: 여벌이면 그것, 바탕의 후보면 그 바탕의 "지금 것"(낀 자리가 가리키는 것 — 없으면 가방의 첫 것).
+    fn cand_item(&self, c: Cand) -> Option<(u32, crate::items::Item)> {
+        item_at(c, &self.progress.bag)
+    }
+
+    /// 여벌을 칸에 낀다(0223 V4d): 그 바탕을 그 칸에 끼는 여느 길을 그대로 타고, 칸이 이 아이템을 가리키게 한다.
+    fn wear_item(&mut self, slot: usize, id: u32) {
+        use crate::items::Base;
+        let Some(base) = self.progress.bag.get(id).map(|it| it.base) else {
+            return;
+        };
+        let gear = &mut self.progress.bag.gear;
+        match (slot, base) {
+            (0, Base::Weapon(w)) => {
+                // 부무기 칸의 바탕을 주무기로 고르면 둘이 맞바뀐다 — 옛 주무기의 아이템도 부무기 칸으로.
+                if self.progress.sub == Some(w) {
+                    gear.sub = gear.main;
+                }
+                gear.main = Some(id);
+                self.wield(w);
+            }
+            (SUB_SLOT, Base::Weapon(w)) => {
+                if self.weapon == w {
+                    gear.main = gear.sub;
+                }
+                gear.sub = Some(id);
+                self.set_sub_weapon(Some(w));
+            }
+            (SHIELD_SLOT, Base::Shield(s)) => {
+                gear.shield = Some(id);
+                self.set_shield(Some(s));
+            }
+            (i, Base::Charm(c)) if (1..=charms::SLOTS).contains(&i) => {
+                gear.charms[i - 1] = Some(id);
+                self.progress.worn = wear(self.progress.worn, i - 1, Some(c));
+                self.world.apply_stats(self.progress.stats(), false);
+                self.persist();
+            }
+            _ => {}
+        }
     }
 
     /// 줄·머리에 쓰는 이름: 무기는 벼린 단이 붙는다(0180 "검 +2").
     fn cand_label(&self, c: Cand) -> String {
-        match c {
+        let name = match self.base_cand(c) {
             Cand::Weapon(w) => self.forged_name(w),
-            _ => self.cand_name(c).to_string(),
+            b => self.cand_name(b).to_string(),
+        };
+        // 등급이 있는 아이템은 이름 앞에(0223 V4d — "단단한 낡은 검").
+        match self.cand_item(c) {
+            Some((_, it)) => crate::i18n::item_label(it.rarity, &name),
+            None => name,
         }
     }
 
@@ -491,6 +625,7 @@ impl App {
             Cand::Bare => s().garb_none,
             Cand::Garb(id) => tr(crate::garb::def(id).name),
             Cand::Shield(id) => tr(id.def().name),
+            Cand::Item(_) => self.cand_name(self.base_cand(c)),
         }
     }
 
@@ -506,13 +641,27 @@ impl App {
             Cand::Bare => s.garb_none_d,
             Cand::Garb(id) => tr(crate::garb::def(id).desc),
             Cand::Shield(id) => tr(id.def().desc),
+            Cand::Item(_) => self.cand_desc(self.base_cand(c)),
         }
     }
 
-    /// 칸 `slot`에 `c`를 끼우면 능력치(무기는 능력치를 바꾸지 않는다).
+    /// 칸 `slot`에 `c`를 끼우면 능력치 — 무기·방패·장신구는 그 아이템의 옵션까지(0223 V4d, 부무기 칸은 들기 전이라 그대로).
     fn stats_with(&self, slot: usize, c: Cand) -> Stats {
         let mut p = self.progress.clone();
-        if slot == GARB_SLOT {
+        let inst = self.cand_item(c).map(|(i, _)| i);
+        let c = self.base_cand(c);
+        if slot == 0 {
+            if let Cand::Weapon(w) = c {
+                p.weapon = Some(w);
+                p.bag.gear.main = inst;
+            }
+        } else if slot == SHIELD_SLOT {
+            p.shield = match c {
+                Cand::Shield(id) => Some(id),
+                _ => None,
+            };
+            p.bag.gear.shield = inst;
+        } else if slot == GARB_SLOT {
             p.garb = match c {
                 Cand::Garb(id) => Some(id),
                 _ => None,
@@ -523,6 +672,7 @@ impl App {
                 _ => None,
             };
             p.worn = wear(p.worn, slot - 1, pick);
+            p.bag.gear.charms[slot - 1] = inst;
         }
         p.stats()
     }
@@ -646,6 +796,8 @@ impl App {
             return;
         };
         match list[i] {
+            // 가방의 여벌(0223 V4d): 그 바탕을 끼는 길 + 칸이 그 아이템을 가리키게.
+            Cand::Item(id) => self.wear_item(slot, id),
             // 지금 낀 것을 다시 고르면 그대로 닫는다(기록도 그대로).
             c if c == self.slot_now(slot) => {}
             c if slot == SUB_SLOT => self.set_sub_weapon(match c {
@@ -781,7 +933,12 @@ impl App {
                 fill(s.menu_charm_slot, &[&slot.to_string()])
             }
         };
-        let state = match (pick, focus) {
+        // 여벌(0223 V4d)의 이름·그림·갈래는 바탕의 것, 등급·옵션은 그 아이템의 것.
+        let inst = self.cand_item(focus);
+        let spare = matches!(focus, Cand::Item(_));
+        let fbase = self.base_cand(focus);
+        let state = match (pick, fbase) {
+            (Some(_), _) if spare => (s.equip_spare.to_string(), DIM),
             (Some(_), c) if c == here && wears_something(c) => (s.equip_worn.to_string(), AMBER),
             (Some(_), Cand::Charm(id)) => (
                 self.progress
@@ -794,14 +951,18 @@ impl App {
             ),
             _ => (String::new(), DIM),
         };
-        let item = item_of(focus);
+        let item = item_of(fbase);
+        let head_name = match inst {
+            Some((_, it)) => crate::i18n::item_label(it.rarity, self.cand_name(fbase)),
+            None => self.cand_name(fbase).to_string(),
+        };
         let icon = self.draw_pane_head(
             &w,
             &PaneHead {
-                name: self.cand_name(focus),
-                gold: wears_something(focus),
+                name: &head_name,
+                gold: wears_something(fbase),
                 // 벼린 단(0180)은 갈래 줄에 — 머리의 이름 칸은 긴 무기 이름으로 이미 찬다.
-                kind: match focus {
+                kind: match fbase {
                     Cand::Weapon(w) if self.progress.forged.rank(w) > 0 => fill(
                         s.forge_named,
                         &[&slot_name(slot), &self.progress.forged.rank(w).to_string()],
@@ -921,7 +1082,8 @@ impl App {
                 }
             }
             // 줄마다 아이템 그림(빈 칸은 비워 둔다) — 아이콘은 한 번 찍어 둔 것(0068).
-            for (r, c) in hits.rows.iter().zip(list.iter()) {
+            let bases: Vec<Cand> = list.iter().map(|c| self.base_cand(*c)).collect();
+            for (r, c) in hits.rows.iter().zip(bases.iter()) {
                 if let (true, Some(item)) = (r.w > 0.0, item_of(*c)) {
                     let slot_r = self.ui.list_icon(*r, w.k);
                     let side = crate::render::ICON_PX as f32
@@ -962,6 +1124,19 @@ impl App {
             Change::Same => ("", INK),
         };
         let mut lines: Vec<Ln> = Vec::new();
+        // 아이템의 옵션(0223 V4d — 등급의 빛으로, 맨 위에): 이 아이템을 다른 것과 가르는 줄들.
+        let inst = self.cand_item(focus);
+        let picked = focus;
+        let focus = self.base_cand(focus);
+        if let Some((_, it)) = inst {
+            let ink = rarity_ink(it.rarity);
+            for a in it.affixes.iter().flatten() {
+                lines.push(Ln::Text(format!("· {}", crate::i18n::affix_line(a)), ink));
+            }
+            if it.affixes.iter().any(Option::is_some) {
+                lines.push(Ln::Gap);
+            }
+        }
         if let Cand::Weapon(id) = focus {
             // 무기 갈래(0223): 한손(방패를 들 수 있다)·양손·원거리.
             let hand = match id.hand() {
@@ -982,14 +1157,26 @@ impl App {
                 };
                 lines.push(Ln::Pair(v.line.name().to_string(), val, col));
             }
-        } else if picking && slot != SUB_SLOT && slot != SHIELD_SLOT {
+            // 주무기 칸: 옵션이 바꾸는 능력치도(0223 V4d — 든 무기의 옵션만 먹는다).
+            if picking && slot == 0 {
+                let then = self.stats_with(slot, picked);
+                for (l, v, t) in crate::stats::lines(&now_stats, Some(&then)) {
+                    if let Some((t2, ch)) = t.filter(|(_, c)| *c != Change::Same) {
+                        let (mark, col) = arrow(ch);
+                        let val = format!("{} → {} {mark}", stat_value(l, v), stat_value(l, t2));
+                        lines.push(Ln::Pair(stat_name(l).to_string(), val, col));
+                    }
+                }
+            }
+        } else if picking && slot != SUB_SLOT {
             // 부무기 칸(0223)은 능력치를 바꾸지 않는다 — "바뀌는 것 없음"을 쓰지 않는다.
-            let then = self.stats_with(slot, focus);
+            let then = self.stats_with(slot, picked);
             let changed: Vec<_> = crate::stats::lines(&now_stats, Some(&then))
                 .into_iter()
                 .filter_map(|(l, v, t)| t.filter(|(_, c)| *c != Change::Same).map(|t| (l, v, t)))
                 .collect();
-            if changed.is_empty() {
+            // 방패(0223)는 옵션이 없으면 능력치를 바꾸지 않는다 — 부무기처럼 "바뀌는 것 없음"을 쓰지 않는다.
+            if changed.is_empty() && slot != SHIELD_SLOT {
                 lines.push(Ln::Text(s.equip_no_change.to_string(), DIM));
             }
             for (l, v, (t2, ch)) in changed {
@@ -1119,6 +1306,55 @@ mod tests {
     }
 
     /// 0223: 방패 칸의 후보 = 비우기 + 가진 방패.
+    /// 0223 V4d: 같은 바탕의 아이템이 둘 이상이면 바탕의 줄(= 지금 낀 것) 아래에 여벌이 선다. 여벌을 끼면(칸이 그것을 가리키면)
+    /// 바탕의 줄이 그것이 되고 옛 것이 여벌로 내려간다. 맨손·빈 칸에는 여벌이 없다.
+    #[test]
+    fn spares_sit_under_their_base_and_the_worn_one_is_the_base_row() {
+        use crate::items::{Bag, Base, Item, Rarity, Worn};
+        use weapons::Id;
+        let mut bag = Bag::default();
+        let owned = [Base::Weapon(Id::Sword), Base::Weapon(Id::Hammer)];
+        let worn = Worn {
+            main: Some(Id::Sword),
+            ..Worn::default()
+        };
+        bag.settle(&owned, &worn);
+        let first = bag.gear.main.unwrap();
+        let rare = bag.add(crate::items::roll(
+            Base::Weapon(Id::Sword),
+            Rarity::Rare,
+            3,
+            5,
+        ));
+        let list = candidates(0, &[], &[Id::Sword, Id::Hammer], &[], &[]);
+        let got = with_spares(list.clone(), &bag);
+        assert_eq!(
+            got,
+            [
+                Cand::Weapon(Id::Fists),
+                Cand::Weapon(Id::Sword),
+                Cand::Item(rare),
+                Cand::Weapon(Id::Hammer)
+            ]
+        );
+        assert_eq!(item_at(Cand::Weapon(Id::Sword), &bag).unwrap().0, first);
+        assert_eq!(
+            item_at(Cand::Item(rare), &bag).unwrap().1.rarity,
+            Rarity::Rare
+        );
+        assert_eq!(
+            base_of(Cand::Item(rare), &bag),
+            Some(Base::Weapon(Id::Sword))
+        );
+        assert_eq!(base_of(Cand::Weapon(Id::Fists), &bag), None);
+        // 드문 검을 낀다.
+        bag.gear.main = Some(rare);
+        let got = with_spares(list, &bag);
+        assert_eq!(got[1..3], [Cand::Weapon(Id::Sword), Cand::Item(first)]);
+        assert_eq!(item_at(Cand::Weapon(Id::Sword), &bag).unwrap().0, rare);
+        let _ = Item::plain(Base::Weapon(Id::Sword));
+    }
+
     #[test]
     fn the_shield_slot_offers_none_and_the_shields_you_own() {
         use crate::shield::Id;

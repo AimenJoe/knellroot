@@ -564,6 +564,8 @@ impl App {
         self.world.set_sub(self.progress.sub);
         self.world.set_shield(self.progress.shield);
         self.renderer.shield = self.progress.shield;
+        // 든 것이 바뀌면 능력치도 다시 합친다(벼린 단 0180 · 낀 아이템의 옵션 0223 V4 — 무기는 든 것만).
+        self.world.apply_stats(self.progress.stats(), false);
     }
 
     /// 주무기를 바꾼다(0223): 부무기 칸에 있던 것이면 둘을 맞바꾼다(같은 무기 두 칸 금지 — 맨손은 부무기로 남기지 않는다). 지금 판에 바로, 저장.
