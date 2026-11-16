@@ -182,8 +182,6 @@ pub enum AimShow {
     Cast,
     Grenade,
     Skill(usize),
-    /// 숄더뷰에서 쏘기 전(0219): 탄이 갈 길의 가는 줄 + 멈추는 자리의 작은 고리 — 늘 떠 있으니 띠보다 조용하게.
-    Reticle,
 }
 /// 화로의 빛은 바닥 1.2m 위(`stage` 지도 읽기), 그릇 테는 0.86m(`props.py`) — 불티가 그릇에서 오르게.
 const BRAZIER_LIGHT_ABOVE_BOWL: f32 = 1.2 - 0.86;

@@ -383,6 +383,23 @@ pub fn draw_reticle(f: &Frame, at: Vec2, size: u8) {
     draw_circle(at.x, at.y, w * 0.6, INK);
 }
 
+/// 숄더뷰 크로스헤어(0222 — 사장 "숄더뷰일 때 화면에 크로스헤어가 있으면 되고, 그곳으로 발사되도록"): 화면 가운데에 틈 있는 십자 +
+/// 가운데 점, 어두운 테. 가운데의 적에게 겨눠지면(`on` — 원거리가 그 적에게 간다) 호박빛으로 좁혀진다. 붉은색은 쓰지 않는다.
+pub fn draw_crosshair(f: &Frame, at: Vec2, on: bool) {
+    let (gap, len) = if on { (2.0, 4.0) } else { (3.5, 4.5) };
+    let (gap, len) = (gap * f.ui, len * f.ui);
+    let w = (f.ui * 0.9).max(1.0);
+    let shade = Color::new(0.05, 0.04, 0.06, 0.75);
+    let ink = if on { AMBER } else { INK };
+    for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+        let (a, b) = (at + vec2(dx, dy) * gap, at + vec2(dx, dy) * (gap + len));
+        draw_line(a.x, a.y, b.x, b.y, w + 2.0, shade);
+        draw_line(a.x, a.y, b.x, b.y, w, ink);
+    }
+    draw_circle(at.x, at.y, w + 1.0, shade);
+    draw_circle(at.x, at.y, w * 0.6, ink);
+}
+
 /// 맞음 테의 세기(0..1): 맞은 순간부터 `HURT_EDGE_HOLD` 동안 가득, 그 뒤 `HURT_EDGE_FADE`에 걸쳐 제곱으로 사라진다.
 /// 센 타격(잃은 체력 `HURT_HEAVY_BLOW` 이상)은 `HURT_HEAVY`배(1 안). 로직 시계라 히트스톱 동안은 가득한 채 멈춰 있다.
 pub fn hurt_edge_k(since: f32, blow: i32) -> f32 {

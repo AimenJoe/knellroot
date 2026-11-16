@@ -350,6 +350,11 @@ impl App {
     /// 락온 중이면 쓰지 않는다(오른쪽 스틱처럼 — 대상을 본다). 화면 밖이면 없음.
     pub(super) fn cursor_aim(&self, mut a: Actions) -> Actions {
         a.aim_at = None;
+        // 숄더뷰 크로스헤어(0222): 화면 가운데의 시선이 닿는 적이 있으면 그 적 쪽으로 — 원거리가 "그곳으로" 간다.
+        if self.cam.mode == Mode::Free {
+            a.aim_at = self.crosshair_target().map(|p| vec2(p.x, p.z));
+            return a;
+        }
         let (Some(c), Some(f)) = (a.cursor, self.frame) else {
             return a;
         };
@@ -368,6 +373,36 @@ impl App {
         a.aim_at = crate::camera::ground_hit(rig.pos, dir, self.world.player.pos.y)
             .map(|p| vec2(p.x, p.z));
         a
+    }
+
+    /// 숄더뷰 크로스헤어(0222)가 겨누는 적: 화면 가운데에서 나가는 시선(카메라 리그)이 지나는 깨어 있는 적의 몸(가운데 높이,
+    /// 반지름 몸 + 볼트 몫) 가운데 가장 가까운 것 — 지금 원거리의 사거리 안. 없으면 None(카메라 앞으로 곧게 쏜다, `aim_ahead`).
+    pub(super) fn crosshair_target(&self) -> Option<Vec3> {
+        let f = self.frame?;
+        if f.w < 1.0 || f.h < 1.0 || self.world.lock_target().is_some() {
+            return None;
+        }
+        let rig = &self.cam.rig;
+        let dir = crate::camera::screen_ray(rig, f.w / f.h, Vec2::ZERO);
+        let w = &self.world;
+        let range = match w.player.weapon.def().rb {
+            crate::weapons::Rb::Magic(b) => b.range,
+            crate::weapons::Rb::Shot { bolt, .. } => bolt.range,
+        };
+        let reach = self.t[crate::tuning::P::CastRange] * range;
+        let pp = w.player.pos;
+        w.enemies
+            .iter()
+            .filter(|en| en.active() && !en.harmless())
+            .filter(|en| vec2(en.pos.x - pp.x, en.pos.z - pp.z).length() <= reach + en.radius)
+            .filter_map(|en| {
+                let c = en.pos + Vec3::Y * (en.height * 0.5);
+                let t = (c - rig.pos).dot(dir);
+                let miss = (rig.pos + dir * t - c).length();
+                (t > 0.0 && miss <= en.radius + crate::tuning::BOLT_RADIUS).then_some((t, en.pos))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, p)| p)
     }
 
     pub(super) fn step_world(&mut self, a: &Actions) {

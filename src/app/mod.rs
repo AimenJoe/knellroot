@@ -251,19 +251,12 @@ impl App {
             self.world.player.state,
             crate::world::PState::Cast { .. } | crate::world::PState::CastCharge { .. }
         );
-        let shooter = matches!(
-            self.world.player.weapon.def().rb,
-            crate::weapons::Rb::Shot { .. }
-        );
-        if firing {
+        // 숄더뷰는 바닥에 그리지 않는다 — 화면 가운데 크로스헤어(`draw_crosshair`, 0222). 쿼터뷰는 조준할 때만(쏘거나 모으는 동안·
+        // 패드 스틱) 연한 띠.
+        if self.cam.mode == Mode::Free {
+            None
+        } else if firing || input::device() == input::Device::Pad {
             Some(AimShow::Cast)
-        } else if self.cam.mode == Mode::Free {
-            Some(AimShow::Reticle)
-        } else if input::device() == input::Device::Pad && self.world.aim_line_held {
-            Some(AimShow::Cast)
-        } else if shooter {
-            // 헤어라인(0221): 쇠뇌를 든 동안은 늘 — 지금 쏘면 갈 길의 가는 줄 + 멈추는 자리.
-            Some(AimShow::Reticle)
         } else {
             None
         }
@@ -1066,10 +1059,18 @@ impl App {
             self.draw_beat_note(&f);
         }
         if self.scene().ticks_world() && !waking && in_shaft.is_none() {
-            if self.mouse_hidden && self.world.lock_target().is_none() {
+            if self.mouse_hidden
+                && self.world.lock_target().is_none()
+                && self.cam.mode != Mode::Free
+            {
                 if let Some(c) = self.input.cursor() {
                     hud::draw_reticle(&f, c, input::mouse_aim().size);
                 }
+            }
+            // 숄더뷰 크로스헤어(0222): 화면 가운데 — 원거리는 여기로 간다(가운데의 적이 있으면 호박빛).
+            if self.cam.mode == Mode::Free && self.world.lock_target().is_none() {
+                let at = vec2(f.ox + f.w * 0.5, f.oy + f.h * 0.5);
+                hud::draw_crosshair(&f, at, self.crosshair_target().is_some());
             }
             if let Some(o) = &overlay {
                 let pl = &self.world.player;

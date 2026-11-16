@@ -222,18 +222,8 @@ impl World {
                 d
             }
         });
-        // 헤어라인(0221 — 사장 "원거리 무기 장착중에는 화면에 헤어라인이 있어야 할듯"): 쇠뇌를 든 동안은 손이 겨누지 않아도
-        // 지금 쏘면 갈 쪽(락온 대상 > 바라보는 쪽 — 쇠뇌는 가까운 적을 찾지 않는다, 0213)을 늘 내놓는다.
-        self.aim_line_held = ranged_aim.is_some();
-        self.aim_line = ranged_aim.or_else(|| {
-            matches!(self.player.weapon.def().rb, Rb::Shot { .. }).then(|| {
-                target
-                    .map(|tg| vec3(tg.x - self.player.pos.x, 0.0, tg.z - self.player.pos.z))
-                    .filter(|d| d.length_squared() > 0.25)
-                    .map(|d| d.normalize())
-                    .unwrap_or_else(|| self.player.facing_dir())
-            })
-        });
+        // 0221의 늘 떠 있는 바닥 헤어라인은 걷었다(0222 — 사장 "조준 전 바닥의 헤어라인 필요없음"): 손이 겨눌 때만.
+        self.aim_line = ranged_aim;
         // 마법 쏘는 쪽(0048): 조준 스틱 > 락온 대상 > `cast.range m` 안의 가장 가까운 적 > 바라보는 쪽.
         // 쇠뇌(0213, 사장 "자동 조준 없애고")는 가까운 적을 찾지 않는다 — 조준(스틱·커서) > 락온 > 바라보는 쪽. 겨누는 것이 손의 일.
         let charging_cast = matches!(self.player.state, PState::CastCharge { .. });

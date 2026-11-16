@@ -1122,9 +1122,10 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
     let fl = Drape {
         ground: w.ground.as_ref(),
     };
-    // 밤의 바닥 위에서도 띠로 읽히게(처음 0.16·0.55는 헤드리스 화면에서 거의 안 보였다) — 브롤스타즈의 흰 띠처럼 몸은 반투명, 테는 또렷하게.
-    let fill = Color::new(1.0, 0.96, 0.84, 0.32);
-    let edge = Color::new(1.0, 0.95, 0.8, 0.95);
+    // 밤의 바닥 위에서도 띠로 읽히게(처음 0.16·0.55는 헤드리스 화면에서 거의 안 보였다) — 0222(사장 "지금보다 연하게"): 0.32·0.95에서
+    // 내렸다. 몸은 은은하게, 테로 길을 읽는다.
+    let fill = Color::new(1.0, 0.96, 0.84, 0.18);
+    let edge = Color::new(1.0, 0.95, 0.8, 0.6);
     let foot = pp + Vec3::Y * 0.05;
     let yaw = dir.x.atan2(dir.z);
     let lane = |len: f32, wid: f32| {
@@ -1138,18 +1139,6 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
     match show {
         // 진실한 표시(0218): 길이는 탄을 쏠 때와 같은 길·같은 벽·땅 규칙으로 돌려 본 멈추는 자리(`World::shot_reach`), 폭은 탄이
         // 맞히는 폭. 모으는 중이면 모은 탄의 길.
-        AimShow::Reticle => {
-            let def = match w.player.weapon.def().rb {
-                crate::weapons::Rb::Magic(b) => b,
-                crate::weapons::Rb::Shot { bolt, .. } => bolt,
-            };
-            let len = w.shot_reach(dir, def, t);
-            let quiet = Color::new(1.0, 0.95, 0.8, 0.35);
-            fl.lane(foot, dir, len, 0.06, quiet);
-            let end = foot + dir * len;
-            fl.ring(end, 0.45, 0.0, 360.0, edge);
-            fl.ring(end, 0.12, 0.0, 360.0, edge);
-        }
         AimShow::Cast => {
             let wpn = w.player.weapon.def();
             let def = if matches!(w.player.state, PState::CastCharge { .. }) {
