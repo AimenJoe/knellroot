@@ -198,7 +198,7 @@ pub fn prompt(act: Act) -> String {
         (Device::Pad, Act::Choose) => "D-PAD".into(),
         (Device::Pad, Act::Confirm) => "A".into(),
         (_, Act::Swap) if !swap_free() => String::new(),
-        (_, Act::Swap) => name(Bind::Attack),
+        (_, Act::Swap) => name(Bind::Cast),
         (Device::Pad, Act::Tabs) => format!("{}/{}", Pad::L1.name(), Pad::R1.name()),
         (_, Act::Tabs) => format!("{}/{}", name(Bind::Skill1), name(Bind::Skill2)),
         (Device::Pad, Act::Walk) => "D-PAD".into(),
@@ -232,12 +232,22 @@ fn swap_free_for(device: Device, b: &Bindings) -> bool {
     match device {
         Device::Touch => false,
         Device::Pad => !matches!(
-            b.pad(Bind::Attack),
-            Pad::South | Pad::East | Pad::Start | Pad::Select | Pad::DLeft | Pad::DRight
+            b.pad(Bind::Cast),
+            // LB·RB는 큰 창의 탭 넘기기(0175, 물리 고정).
+            Pad::South
+                | Pad::East
+                | Pad::Start
+                | Pad::Select
+                | Pad::DLeft
+                | Pad::DRight
+                | Pad::L1
+                | Pad::R1
         ),
-        Device::Keys => KEYS
-            .get(b.keys[Bind::Attack as usize] as usize)
-            .is_some_and(|(k, _)| !matches!(k, KeyCode::J | KeyCode::Space)),
+        Device::Keys => match b.key(Bind::Cast) {
+            Slot::Key(k) => !matches!(k, KeyCode::J | KeyCode::Space),
+            // 왼쪽 클릭은 메뉴의 누르기 — 오른쪽·가운데는 메뉴에서 쓰지 않는다.
+            Slot::Mouse(m) => m != MouseButton::Left,
+        },
     }
 }
 
@@ -1345,23 +1355,26 @@ mod tests {
         );
     }
 
-    /// 0164: 장비 칸 빨리 바꾸기는 공격 버튼 — 그 버튼이 메뉴에서 이미 다른 일을 하는 장치·배치에서는 꺼진다.
-    /// 패드 기본(X)은 되고, 키보드만 배치(J = 확인)·키보드+마우스(왼쪽 클릭 = 누르기)·터치는 안 된다. 공격을 다른 키로 옮기면 된다.
+    /// 0164 → 0223: 장비 칸 빨리 바꾸기는 특수 버튼(패드 X·U·오른쪽 클릭 — 평타가 RB로 가서 RB는 탭 넘기기와 겹친다) —
+    /// 그 버튼이 메뉴에서 이미 다른 일을 하는 장치·배치에서는 꺼진다(J = 확인·왼쪽 클릭 = 누르기·A·B·LB·RB·터치).
     #[test]
-    fn quick_swap_is_off_where_the_attack_button_already_means_something_in_menus() {
+    fn quick_swap_is_on_the_special_button_and_off_where_that_already_means_something_in_menus() {
         let (only, mouse) = (Bindings::keyboard_only(), Bindings::default_layout());
         assert!(swap_free_for(Device::Pad, &only));
-        assert!(swap_free_for(Device::Pad, &mouse));
-        assert!(!swap_free_for(Device::Keys, &only), "J confirms");
-        assert!(!swap_free_for(Device::Keys, &mouse), "a click is a tap");
+        assert!(swap_free_for(Device::Keys, &only), "U");
+        assert!(swap_free_for(Device::Keys, &mouse), "right click");
         assert!(!swap_free_for(Device::Touch, &only));
-        let mut moved = only;
-        moved.set_key(Bind::Attack, key_index(KeyCode::U));
-        assert!(swap_free_for(Device::Keys, &moved));
-        // 패드에서 공격을 확인(A) 자리로 옮기면 꺼진다.
-        let mut pad = only;
-        pad.pads[Bind::Attack as usize] = Pad::South;
-        assert!(!swap_free_for(Device::Pad, &pad));
+        let mut j = only;
+        j.set_key(Bind::Cast, key_index(KeyCode::J));
+        assert!(!swap_free_for(Device::Keys, &j), "J confirms");
+        let mut left = mouse;
+        left.set_key(Bind::Cast, mouse_index(MouseButton::Left));
+        assert!(!swap_free_for(Device::Keys, &left), "a click is a tap");
+        for p in [Pad::South, Pad::R1] {
+            let mut pad = only;
+            pad.set_pad(Bind::Cast, p);
+            assert!(!swap_free_for(Device::Pad, &pad), "{p:?}");
+        }
     }
 
     /// 0058: 커서는 마우스 조준이 켜져 있고, 장치가 키보드(+마우스)이고, 만진 지 쉼 시간 안일 때만 조준한다.

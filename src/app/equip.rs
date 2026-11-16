@@ -512,7 +512,7 @@ impl App {
             return;
         }
         // 십자·스틱은 커서만 옮긴다 — 위아래는 장신구 칸 셋 안, 좌우는 무기 칸 ↔ 장신구 칸(칸이 놓인 자리대로,
-        // 사장 2026-11-06 "좌우로는 커서가 움직이는게 더 직관적"). 빨리 바꾸기는 공격 버튼 하나(다음 것으로 돈다, 0164 — 스킬 버튼
+        // 사장 2026-11-06 "좌우로는 커서가 움직이는게 더 직관적"). 빨리 바꾸기는 특수 버튼 하나(0223 — 그 전엔 공격 버튼, 다음 것으로 돈다, 0164 — 스킬 버튼
         // 둘은 탭을 넘긴다). 그 버튼이 메뉴의 확인·누르기와 겹치는 장치(키보드 J·마우스 클릭)에서는 꺼진다 — `input::swap_free`.
         self.cursor = slot_nav(
             self.cursor,
@@ -522,7 +522,7 @@ impl App {
         if self.cursor != before {
             self.scroll = 0.0;
         }
-        if a.attack && !a.confirm && input::swap_free() {
+        if a.cast && !a.confirm && input::swap_free() {
             match self.cursor {
                 0 => self.next_weapon(1),
                 GARB_SLOT => self.step_garb(1),
