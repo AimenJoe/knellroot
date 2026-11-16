@@ -363,8 +363,11 @@ fn throw_aim(w: &World, pp: Vec3, t: &Tuning, fl: &Drape) {
     {
         if let Some(g) = w.player.weapon.def().grenade {
             if e >= t[crate::tuning::P::ThrowStartup] * 0.99 {
-                let y = w.ground.as_ref().map_or(0.0, |gr| gr.height(to));
-                let c = vec3(to.x, y + 0.08, to.z);
+                // 터지는 자리(0218 — 튕긴 뒤): 떨굴 자리 `to`가 아니다.
+                let Some(c) = w.grenade_lands(to) else {
+                    return;
+                };
+                let c = c + Vec3::Y * 0.08;
                 fl.ring(c, g.radius, 0.0, 360.0, Color::new(1.0, 0.82, 0.45, 0.8));
                 draw_line_3d(pp + Vec3::Y * 1.0, c, Color::new(1.0, 0.82, 0.45, 0.35));
             }
@@ -1073,22 +1076,32 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
         fl.ring(foot, range, yaw, arc, edge);
     };
     match show {
+        // 진실한 표시(0218): 길이는 탄을 쏠 때와 같은 길·같은 벽·땅 규칙으로 돌려 본 멈추는 자리(`World::shot_reach`), 폭은 탄이
+        // 맞히는 폭. 모으는 중이면 모은 탄의 길.
         AimShow::Cast => {
             let wpn = w.player.weapon.def();
-            let range = match wpn.rb {
-                crate::weapons::Rb::Magic(b) => b.range,
-                crate::weapons::Rb::Shot { bolt, .. } => bolt.range,
+            let def = if matches!(w.player.state, PState::CastCharge { .. }) {
+                wpn.charged
+            } else {
+                match wpn.rb {
+                    crate::weapons::Rb::Magic(b) => b,
+                    crate::weapons::Rb::Shot { bolt, .. } => bolt,
+                }
             };
-            lane(t[crate::tuning::P::CastRange] * range, 0.5);
+            lane(
+                w.shot_reach(dir, def, t),
+                2.0 * crate::tuning::BOLT_RADIUS * def.scale,
+            );
         }
+        // 터지는 자리(0218): 떨굴 자리가 아니라 같은 포물선·튕김을 돌려 본 도화선 끝의 자리(`World::grenade_lands`).
         AimShow::Grenade => {
             if let Some(g) = w.player.weapon.def().grenade {
-                let to = pp + dir * g.drop;
-                let y = w.ground.as_ref().map_or(pp.y, |gr| gr.height(to));
-                let c = vec3(to.x, y + 0.06, to.z);
-                fl.sector(c, g.radius, 0.0, 360.0, fill);
-                fl.ring(c, g.radius, 0.0, 360.0, edge);
-                fl.line(foot, c, edge);
+                if let Some(c) = w.grenade_lands(pp + dir * g.drop) {
+                    let c = c + Vec3::Y * 0.06;
+                    fl.sector(c, g.radius, 0.0, 360.0, fill);
+                    fl.ring(c, g.radius, 0.0, 360.0, edge);
+                    fl.line(foot, c, edge);
+                }
             }
         }
         AimShow::Skill(i) => {
