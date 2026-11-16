@@ -947,7 +947,8 @@ impl App {
                 };
                 lines.push(Ln::Pair(v.line.name().to_string(), val, col));
             }
-        } else if picking {
+        } else if picking && slot != SUB_SLOT {
+            // 부무기 칸(0223)은 능력치를 바꾸지 않는다 — "바뀌는 것 없음"을 쓰지 않는다.
             let then = self.stats_with(slot, focus);
             let changed: Vec<_> = crate::stats::lines(&now_stats, Some(&then))
                 .into_iter()
