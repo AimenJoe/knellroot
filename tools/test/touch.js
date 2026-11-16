@@ -123,6 +123,19 @@ async function main() {
   await shot('t03-lock-on');
   await tap(b.dodge); await page.waitForTimeout(100);
   await shot('t04-dodge');
+  // 끌어 조준(0217 — 브롤스타즈 꼴): 원거리 버튼을 짚고 왼쪽 아래로 끈다 → 버튼 둘레 고리 + 손잡이 + 땅 위의 줄(락온이어도 끈 쪽).
+  // 쥔 채 찍고, 가운데로 되돌리면 취소(✕), 다시 끌어 뗀다(쏜다).
+  {
+    const c = b.cast, R = Math.min(W, H) * 0.14;
+    await touch('touchStart', [c]); await page.waitForTimeout(50);
+    for (let i = 1; i <= 5; i++) { await touch('touchMove', [[c[0] - R * 0.18 * i, c[1] + R * 0.1 * i]]); await page.waitForTimeout(30); }
+    await page.waitForTimeout(150);
+    await shot('t05-drag-aim');
+    await touch('touchMove', [c]); await page.waitForTimeout(80);
+    await shot('t06-drag-cancel');
+    await touch('touchMove', [[c[0] - R * 0.9, c[1]]]); await page.waitForTimeout(80);
+    await touch('touchEnd', []); await page.waitForTimeout(300);
+  }
   // 땅 돌리기 오른쪽 ↷(0012·0017 — 카메라가 오른쪽으로): 도는 중 · 다 돈 뒤(버튼이 대기로 옅어짐).
   await tap(b.turn_right); await page.waitForTimeout(120);
   await shot('t08-turn-cw');

@@ -99,6 +99,8 @@ pub struct Button {
 #[derive(Clone, Debug)]
 pub struct Overlay {
     pub stick: Option<(Vec2, Vec2)>,
+    /// 끌어 조준(0217): 짚은 버튼의 가운데·손가락 자리·조준 반지름·취소 자리인가.
+    pub aim: Option<(Vec2, Vec2, f32, bool)>,
     pub stick_radius: f32,
     pub buttons: Vec<Button>,
     /// 곁에 할 일이 있다(0053): 점프 버튼에 그 일의 그림(`near` — 쉬기는 모닥불, 0166).
@@ -145,6 +147,14 @@ pub struct Read {
     pub zoom: i32,
     /// 시점 버튼(0184): 쿼터뷰 ↔ 자유 숄더뷰.
     pub view: bool,
+    /// 끌어 조준(0217): 겨눌 일이 올라간 버튼을 짚고 끈 쪽(스틱과 같은 축 — 길이 1). 0이면 겨누지 않음.
+    pub aim: Vec2,
+    /// 이 조준은 손가락이 끈 것이다 — 락온보다 앞선다.
+    pub aim_drag: bool,
+    /// 그 버튼을 끌지 않고 톡 눌렀다(쥐고 있는 동안도) — 가까운 적을 찾는다(브롤스타즈 꼴, 터치만).
+    pub auto_aim: bool,
+    /// 원거리 버튼을 쥐고 있다(누름 없이) — 오래 쥐면 모으기로 들어간다(끄는 동안 모인다).
+    pub aim_hold: bool,
 }
 
 /// 두 손가락을 이만큼(논리 px) 벌리거나 오므리면 시점 거리 한 칸(0181).
@@ -170,6 +180,8 @@ pub struct Touch {
     cast_finger: Option<u64>,
     /// 회피 버튼을 누른 손가락(0076).
     dodge_finger: Option<u64>,
+    /// 끌어 조준하는 손가락(0217).
+    aimer: Option<Aimer>,
     /// 상황 버튼(0053, 앱이 매 프레임 정한다).
     pub ctx: Ctx,
     /// 메뉴 모드: 손가락마다 (id, 처음 자리, 멀리 움직였나 = 끌기, 지난 자리).
@@ -226,6 +238,13 @@ pub struct Ctx {
     pub flask: bool,
     /// 큰 기술 게이지가 가득 찼다(0151).
     pub ult: bool,
+    /// 끌어 조준(0217)할 수 있는 버튼: 공격(수류탄을 던지는 무기) · 원거리(마법·사격 — 늘) · 스킬 칸 둘(쪽이 있는 스킬) — 버튼에
+    /// 무엇이 올라가 있든 그 일이 겨눌 수 있으면 같은 규칙이다(앱이 매 프레임 정한다).
+    pub aim_attack: bool,
+    pub aim_cast: bool,
+    pub aim_skills: [bool; 2],
+    /// 지금 원거리를 모으는 중이다 — 떼면 월드가 모은 탄을 낸다(누름을 다시 보내지 않는다).
+    pub charging: bool,
 }
 
 impl Ctx {
@@ -236,7 +255,66 @@ impl Ctx {
         lock: true,
         flask: true,
         ult: true,
+        aim_attack: true,
+        aim_cast: true,
+        aim_skills: [true; 2],
+        charging: false,
     };
+
+    /// 이 버튼은 끌어 겨누나(0217).
+    pub fn aims(&self, k: Kind) -> bool {
+        match k {
+            Kind::Attack => self.aim_attack,
+            Kind::Cast => self.aim_cast,
+            Kind::Skill1 => self.aim_skills[0],
+            Kind::Skill2 => self.aim_skills[1],
+            _ => false,
+        }
+    }
+}
+
+/// 끌어 조준(0217, 브롤스타즈 꼴 — KB `touch-action-layout`): 겨눌 일이 올라간 버튼을 짚은 손가락.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Aimer {
+    id: u64,
+    kind: Kind,
+    center: Vec2,
+    pos: Vec2,
+    /// 한 번이라도 조준 반지름의 `AIM_OUT`를 넘었다(끌었다) — 아니면 톡 누름.
+    out: bool,
+    /// 마지막으로 겨눈 쪽(취소 자리로 돌아와도 모으던 탄은 이쪽으로).
+    last: Vec2,
+}
+
+/// 끌어 조준의 반지름(스틱과 같은 크기)에 대해: 넘으면 "끌었다", 끈 뒤 이 안으로 돌아와 떼면 취소.
+const AIM_OUT: f32 = 0.3;
+const AIM_CANCEL: f32 = 0.22;
+
+/// 겨누는 손가락을 뗐을 때(0217).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum AimEnd {
+    /// 끌지 않았다 — 가까운 적에게.
+    Tap,
+    /// 끈 쪽으로(스틱 축, 길이 1).
+    Fire(Vec2),
+    /// 끌었다가 가운데로 되돌렸다 — 하지 않는다.
+    Cancel,
+}
+
+/// 끈 거리 `d`(버튼 가운데에서, 논리 px)와 조준 반지름 `r`로 뗀 뒤의 일.
+pub fn aim_end(out: bool, d: Vec2, r: f32) -> AimEnd {
+    if !out && d.length() <= r * AIM_OUT {
+        AimEnd::Tap
+    } else if d.length() <= r * AIM_CANCEL {
+        AimEnd::Cancel
+    } else {
+        AimEnd::Fire(aim_dir(d))
+    }
+}
+
+/// 끈 쪽 → 스틱 축의 쪽(x = 오른쪽, y = 위, 길이 1).
+pub fn aim_dir(d: Vec2) -> Vec2 {
+    vec2(d.x, -d.y).normalize_or_zero()
 }
 
 /// 버튼 배치(0053, `docs/decisions/0053`). `w`·`h`는 논리 px, 기준은 짧은 변 `u`(태블릿에서 너무 커지지 않게 상한).
@@ -377,6 +455,7 @@ impl Touch {
         a.active = !touches.is_empty();
         if menu {
             self.stick = None;
+            self.aimer = None;
             self.attack_finger = None;
             self.cast_finger = None;
             self.dodge_finger = None;
@@ -423,6 +502,7 @@ impl Touch {
         self.taps.clear();
         self.stale.clear();
         if touches.is_empty() && self.stick.is_none() && self.known.is_empty() {
+            self.aimer = None;
             self.attack_finger = None;
             self.cast_finger = None;
             self.dodge_finger = None;
@@ -443,6 +523,26 @@ impl Touch {
                     .iter()
                     .find(|b| (t.position - b.center).length() <= b.radius * 1.25)
                 {
+                    // 겨눌 일이 올라간 버튼(0217): 누르는 순간이 아니라 뗄 때 한다 — 끌면 그 쪽으로, 톡이면 가까운 적에게.
+                    if self.ctx.aims(b.kind) {
+                        if ended {
+                            press(&mut a, b.kind);
+                            a.auto_aim = true;
+                        } else {
+                            self.aimer = Some(Aimer {
+                                id: t.id,
+                                kind: b.kind,
+                                center: b.center,
+                                pos: t.position,
+                                out: false,
+                                last: Vec2::ZERO,
+                            });
+                            if b.kind == Kind::Cast {
+                                self.cast_finger = Some(t.id);
+                            }
+                        }
+                        continue;
+                    }
                     press(&mut a, b.kind);
                     if b.kind == Kind::Attack && !ended {
                         self.attack_finger = Some(t.id);
@@ -469,6 +569,11 @@ impl Touch {
                     s.pos = t.position;
                 }
             }
+            if let Some(m) = self.aimer.as_mut() {
+                if m.id == t.id {
+                    m.pos = t.position;
+                }
+            }
             if ended {
                 self.known.retain(|id| *id != t.id);
                 if self.stick.map(|s| s.id) == Some(t.id) {
@@ -487,6 +592,50 @@ impl Touch {
                 })
             })
         };
+        // 끌어 조준(0217): 쥐고 있는 동안은 끈 쪽(끌기 전에는 가까운 적), 떼면 그 일 — 원거리를 모으던 중이면 누름 없이(월드가 뗀
+        // 것을 보고 모은 탄을 낸다).
+        if let Some(m) = self.aimer {
+            let r = stick_radius(w, h);
+            let d = m.pos - m.center;
+            let out = m.out || d.length() > r * AIM_OUT;
+            let still = alive(Some(m.id)).is_some();
+            let charging = m.kind == Kind::Cast && self.ctx.charging;
+            if still {
+                let mut m = Aimer { out, ..m };
+                if out && d.length() > r * AIM_CANCEL {
+                    m.last = aim_dir(d);
+                    a.aim = m.last;
+                    a.aim_drag = true;
+                } else if !out {
+                    a.auto_aim = true;
+                }
+                a.aim_hold = m.kind == Kind::Cast;
+                self.aimer = Some(m);
+            } else {
+                self.aimer = None;
+                match aim_end(out, d, r) {
+                    AimEnd::Tap => {
+                        if !charging {
+                            press(&mut a, m.kind);
+                        }
+                        a.auto_aim = true;
+                    }
+                    AimEnd::Fire(dir) => {
+                        if !charging {
+                            press(&mut a, m.kind);
+                        }
+                        a.aim = dir;
+                        a.aim_drag = true;
+                    }
+                    // 모으던 탄은 거둘 수 없다 — 마지막으로 겨눈 쪽으로 나간다.
+                    AimEnd::Cancel if charging => {
+                        a.aim = m.last;
+                        a.aim_drag = m.last != Vec2::ZERO;
+                    }
+                    AimEnd::Cancel => {}
+                }
+            }
+        }
         self.attack_finger = alive(self.attack_finger);
         self.cast_finger = alive(self.cast_finger);
         self.dodge_finger = alive(self.dodge_finger);
@@ -531,10 +680,23 @@ impl Touch {
         a
     }
 
+    /// 끌어 겨누는 중인 버튼(0217 — 끈 뒤, 취소 자리 밖) — 렌더가 땅 위 미리보기를 그린다.
+    pub fn aiming(&self) -> Option<Kind> {
+        let r = stick_radius(screen_width(), screen_height());
+        self.aimer
+            .filter(|m| m.out && (m.pos - m.center).length() > r * AIM_CANCEL)
+            .map(|m| m.kind)
+    }
+
     pub fn overlay(&self) -> Overlay {
         let (w, h) = (screen_width(), screen_height());
+        let r = stick_radius(w, h);
         Overlay {
             stick: self.stick.map(|s| (s.origin, s.pos)),
+            aim: self.aimer.filter(|m| m.out).map(|m| {
+                let d = m.pos - m.center;
+                (m.center, m.pos, r, d.length() <= r * AIM_CANCEL)
+            }),
             stick_radius: stick_radius(w, h),
             buttons: layout(w, h, self.ctx),
             rest: self.ctx.rest,
@@ -821,6 +983,48 @@ pub fn draw(o: &Overlay, v: &View) {
         if !vacant {
             icon(kind, b.center, b.radius, dim, tint);
         }
+    }
+    draw_aim(o.aim);
+}
+
+/// 끌어 조준(0217): 짚은 버튼 둘레의 고리 + 손가락을 따라가는 손잡이 + 가운데에서 손잡이까지의 줄.
+/// 가운데 취소 자리로 돌아오면 모두 흐려지고 손잡이에 ✕ — 떼면 하지 않는다. 빨강은 쓰지 않는다(위험 예고의 색).
+fn draw_aim(aim: Option<(Vec2, Vec2, f32, bool)>) {
+    let Some((c, pos, r, cancel)) = aim else {
+        return;
+    };
+    let (ring, knob_col) = if cancel {
+        (
+            Color::new(1.0, 1.0, 1.0, 0.25),
+            Color::new(INK.r, INK.g, INK.b, 0.55),
+        )
+    } else {
+        (
+            Color::new(WARM.r, WARM.g, WARM.b, 0.75),
+            Color::new(WARM.r, WARM.g, WARM.b, 0.55),
+        )
+    };
+    draw_circle(c.x, c.y, r, Color::new(INK.r, INK.g, INK.b, 0.18));
+    draw_circle_lines(c.x, c.y, r, 2.0, ring);
+    draw_circle_lines(
+        c.x,
+        c.y,
+        r * AIM_CANCEL,
+        1.5,
+        Color::new(1.0, 1.0, 1.0, 0.3),
+    );
+    let knob = c + (pos - c).clamp_length_max(r);
+    if !cancel {
+        draw_line(c.x, c.y, knob.x, knob.y, 3.0, ring);
+    }
+    let kr = r * 0.32;
+    draw_circle(knob.x, knob.y, kr, knob_col);
+    draw_circle_lines(knob.x, knob.y, kr, 2.0, Color::new(1.0, 1.0, 1.0, 0.8));
+    if cancel {
+        let k = kr * 0.5;
+        let white = Color::new(1.0, 1.0, 1.0, 0.85);
+        draw_line(knob.x - k, knob.y - k, knob.x + k, knob.y + k, 2.5, white);
+        draw_line(knob.x - k, knob.y + k, knob.x + k, knob.y - k, 2.5, white);
     }
 }
 
@@ -1723,5 +1927,41 @@ mod tests {
         assert!(up.y > 0.4 && up.x.abs() < 1e-6, "{up:?}");
         let far = stick_vector(vec2(500.0, 0.0), 100.0);
         assert!((far.length() - 1.0).abs() < 1e-5);
+    }
+
+    /// 0217: 끌어 조준의 뗌 — 끌지 않고 떼면 톡(가까운 적), 끈 뒤 가운데로 되돌려 떼면 취소, 그 밖은 끈 쪽(화면 위 = 스틱 위).
+    #[test]
+    fn letting_go_of_an_aim_drag_taps_fires_or_cancels() {
+        let r = 100.0;
+        assert_eq!(aim_end(false, vec2(5.0, 5.0), r), AimEnd::Tap);
+        assert_eq!(
+            aim_end(false, vec2(0.0, -80.0), r),
+            AimEnd::Fire(vec2(0.0, 1.0))
+        );
+        assert_eq!(
+            aim_end(true, vec2(10.0, 0.0), r),
+            AimEnd::Cancel,
+            "dragged then back"
+        );
+        assert_eq!(
+            aim_end(true, vec2(60.0, 0.0), r),
+            AimEnd::Fire(vec2(1.0, 0.0))
+        );
+        assert!(AIM_CANCEL < AIM_OUT, "a tap is never read as a cancel");
+    }
+
+    /// 0217: 버튼의 지금 일이 정한다 — 같은 스킬 칸이라도 끼운 것이 둥근 꼴이면 끌지 않는다.
+    #[test]
+    fn a_button_takes_the_drag_by_what_it_does_now() {
+        let ctx = Ctx {
+            aim_attack: false,
+            aim_cast: true,
+            aim_skills: [true, false],
+            ..Ctx::default()
+        };
+        assert!(!ctx.aims(Kind::Attack), "a melee swing is not aimed");
+        assert!(ctx.aims(Kind::Cast));
+        assert!(ctx.aims(Kind::Skill1) && !ctx.aims(Kind::Skill2));
+        assert!(!ctx.aims(Kind::Dodge) && !ctx.aims(Kind::Ult));
     }
 }

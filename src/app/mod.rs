@@ -36,7 +36,7 @@ use crate::i18n::{self, fill, s, tr};
 use crate::input::{self, Act, Actions, Input};
 #[cfg(feature = "dev")]
 use crate::lab::Lab;
-use crate::render::{Frame, Perf, Renderer, View};
+use crate::render::{AimShow, Frame, Perf, Renderer, View};
 #[cfg(feature = "dev")]
 use crate::scenario::{self, Scenario};
 use crate::stage::{sanctuary, StageDef, StageRun};
@@ -601,6 +601,13 @@ impl App {
             lock: play && (self.world.lock.is_some() || self.world.lock_candidate()),
             flask: play && pl.flask > 0 && pl.hp < pl.max_hp,
             ult: play && pl.skill.gauge >= 1.0,
+            // 끌어 조준(0217): 그 버튼에 올라간 일이 쪽을 가지면 — 무기·끼운 스킬이 바뀌어도 같은 규칙.
+            aim_attack: pl.weapon.def().grenade.is_some(),
+            aim_cast: true,
+            aim_skills: [0, 1].map(|i| {
+                pl.skill.rank[i] > 0 && self.world.skill_eff(pl.skill.worn[i]).skill.form.aims()
+            }),
+            charging: matches!(pl.state, crate::world::PState::CastCharge { .. }),
         });
         self.input.poll(self.scene().is_menu());
         // F11(PC, 0135): 어느 장면에서나 창 ↔ 전체 화면. 창 일이라 `Actions`(게임 동작)에 넣지 않는다.
@@ -942,6 +949,13 @@ impl App {
                     (_, Some(w)) if stage.is_some() => Some(("wake", w.pose())),
                     _ => self.gesture.filter(|_| stage.is_some()),
                 },
+                aim_show: self.input.aiming().and_then(|k| match k {
+                    touch::Kind::Attack => Some(AimShow::Grenade),
+                    touch::Kind::Cast => Some(AimShow::Cast),
+                    touch::Kind::Skill1 => Some(AimShow::Skill(0)),
+                    touch::Kind::Skill2 => Some(AimShow::Skill(1)),
+                    _ => None,
+                }),
             }),
         };
         self.frame = Some(f);
