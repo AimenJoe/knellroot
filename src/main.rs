@@ -35,6 +35,7 @@ mod icons;
 mod idle;
 mod input;
 mod item_view;
+mod items;
 mod journey;
 mod knell;
 #[cfg(feature = "dev")]

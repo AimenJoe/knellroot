@@ -111,6 +111,8 @@ const MODS0: Mods = Mods {
     flinch: 1.0,
     shot_dmg: 0,
     mag: 0,
+    skill_cd: 1.0,
+    ail: 1.0,
 };
 
 pub fn def(id: Id) -> &'static Def {

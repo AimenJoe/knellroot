@@ -47,6 +47,10 @@ pub struct Mods {
     pub shot_dmg: i32,
     /// 탄창 +(0180 벼린 쇠뇌).
     pub mag: i32,
+    /// 스킬 대기 배(0223 V4 아이템 옵션 — 1 = 그대로, 0.9 = 10% 짧게).
+    pub skill_cd: f32,
+    /// 타입 게이지가 쌓이는 배(0223 V4 아이템 옵션 — 1 = 그대로).
+    pub ail: f32,
 }
 
 impl Default for Mods {
@@ -72,6 +76,8 @@ impl Default for Mods {
             flinch: 1.0,
             shot_dmg: 0,
             mag: 0,
+            skill_cd: 1.0,
+            ail: 1.0,
         }
     }
 }
@@ -104,6 +110,9 @@ pub struct Stats {
     pub shot_dmg: i32,
     /// 탄창 +(0180 벼린 쇠뇌).
     pub mag: i32,
+    /// 스킬 대기 배 · 타입 게이지가 쌓이는 배(0223 V4 아이템 옵션).
+    pub skill_cd: f32,
+    pub ail: f32,
 }
 
 /// 상한·하한(극단 조합을 막는다 — KB).
@@ -145,6 +154,8 @@ impl Stats {
             flinch: 1.0,
             shot_dmg: 0,
             mag: 0,
+            skill_cd: 1.0,
+            ail: 1.0,
         };
         for m in mods {
             s.max_hp += m.hp;
@@ -167,6 +178,8 @@ impl Stats {
             s.flinch *= m.flinch;
             s.shot_dmg += m.shot_dmg;
             s.mag += m.mag;
+            s.skill_cd *= m.skill_cd;
+            s.ail *= m.ail;
         }
         s.max_hp = s.max_hp.clamp(HP_RANGE.0, HP_RANGE.1);
         s.flask = s.flask.clamp(FLASK_RANGE.0, FLASK_RANGE.1);
@@ -188,6 +201,9 @@ impl Stats {
         s.flinch = s.flinch.clamp(KNOCK_RANGE.0, KNOCK_RANGE.1);
         s.shot_dmg = s.shot_dmg.max(0);
         s.mag = s.mag.max(0);
+        // 옵션을 다 모아도 스킬이 반보다 빨리 돌지 않고, 게이지가 배보다 빨리 차지 않는다.
+        s.skill_cd = s.skill_cd.clamp(0.5, 1.5);
+        s.ail = s.ail.clamp(0.5, 2.0);
         s
     }
 

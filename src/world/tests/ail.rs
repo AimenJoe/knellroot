@@ -275,3 +275,41 @@ fn a_typed_skill_leaves_its_mark_and_a_physical_one_none() {
     assert_eq!((ail.gauge, ail.rift, ail.burn), ([0.0; 4], 0.0, 0));
     assert_eq!(count(&ev, |e| matches!(e, Event::Ail { .. })), 0);
 }
+
+/// 0223 V4: 아이템 옵션 둘이 월드에 닿는다 — "타입 게이지 +%"는 스킬의 타가 쌓는 양을, "스킬 대기 −%"는 쓴 뒤의 대기를 바꾼다.
+#[test]
+fn item_affixes_scale_the_type_build_and_the_skill_cooldown() {
+    use crate::stats::{Mods, Stats};
+    let t = Tuning::default();
+    let cast = |mods: Mods| {
+        let mut w = World::new("test", 30.0);
+        w.player.facing = std::f32::consts::PI;
+        w.apply_stats(Stats::compute(&[mods]), true);
+        w.set_skills([Sk::Cut, Sk::Whirl]);
+        let i = foe(&mut w, vec3(0.0, 0.0, -2.0));
+        w.step(
+            &Actions {
+                skill1: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        let cd = w.player.skill.cd[Sk::Cut.index()];
+        run(&mut w, &t, 1.0);
+        (w.enemies[i].ail, cd)
+    };
+    let (plain, cd) = cast(Mods::default());
+    assert!(plain.rift > 0.0, "one cut cracks a plain foe");
+    // 게이지가 반만 쌓이면 한 번으로는 금이 가지 않는다(반만 찬 채 남는다).
+    let (half, _) = cast(Mods {
+        ail: 0.5,
+        ..Mods::default()
+    });
+    assert_eq!(half.rift, 0.0);
+    assert!((half.gauge[3] - 0.5).abs() < 0.05, "{:?}", half.gauge);
+    let (_, short) = cast(Mods {
+        skill_cd: 0.9,
+        ..Mods::default()
+    });
+    assert!((short - cd * 0.9).abs() < 1e-3, "{short} vs {cd}");
+}

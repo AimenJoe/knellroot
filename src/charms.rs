@@ -60,6 +60,8 @@ pub static TABLE: [Def; 9] = [
             flinch: 1.0,
             shot_dmg: 0,
             mag: 0,
+            skill_cd: 1.0,
+            ail: 1.0,
         },
     },
     Def {
@@ -89,6 +91,8 @@ pub static TABLE: [Def; 9] = [
             flinch: 1.0,
             shot_dmg: 0,
             mag: 0,
+            skill_cd: 1.0,
+            ail: 1.0,
         },
     },
     Def {
@@ -118,6 +122,8 @@ pub static TABLE: [Def; 9] = [
             flinch: 1.0,
             shot_dmg: 0,
             mag: 0,
+            skill_cd: 1.0,
+            ail: 1.0,
         },
     },
     Def {
@@ -147,6 +153,8 @@ pub static TABLE: [Def; 9] = [
             flinch: 1.0,
             shot_dmg: 0,
             mag: 0,
+            skill_cd: 1.0,
+            ail: 1.0,
         },
     },
     Def {
@@ -176,6 +184,8 @@ pub static TABLE: [Def; 9] = [
             flinch: 1.0,
             shot_dmg: 0,
             mag: 0,
+            skill_cd: 1.0,
+            ail: 1.0,
         },
     },
     Def {
@@ -205,6 +215,8 @@ pub static TABLE: [Def; 9] = [
             flinch: 1.0,
             shot_dmg: 0,
             mag: 0,
+            skill_cd: 1.0,
+            ail: 1.0,
         },
     },
     Def {
@@ -234,6 +246,8 @@ pub static TABLE: [Def; 9] = [
             flinch: 1.0,
             shot_dmg: 0,
             mag: 0,
+            skill_cd: 1.0,
+            ail: 1.0,
         },
     },
     Def {
@@ -263,6 +277,8 @@ pub static TABLE: [Def; 9] = [
             flinch: 1.0,
             shot_dmg: 0,
             mag: 0,
+            skill_cd: 1.0,
+            ail: 1.0,
         },
     },
     Def {
@@ -292,6 +308,8 @@ pub static TABLE: [Def; 9] = [
             flinch: 1.0,
             shot_dmg: 0,
             mag: 0,
+            skill_cd: 1.0,
+            ail: 1.0,
         },
     },
 ];

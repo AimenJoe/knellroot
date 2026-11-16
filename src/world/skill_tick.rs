@@ -133,6 +133,11 @@ struct Sweep {
 }
 
 impl World {
+    /// 타가 싣는 타입 게이지에 아이템 옵션의 배(`Stats::ail`)를 입힌다(0223 V4) — 스킬의 타가 나가는 자리마다.
+    pub(super) fn dosed(&self, d: Dose) -> Dose {
+        (d.0, d.1 * self.stats.ail)
+    }
+
     /// 스킬 `id`의 지금 값: 끼운 칸의 단·고르기를 입힌 것(끼우지 않은 스킬은 1단 — 시험·바꿔 끼운 직후).
     pub fn skill_eff(&self, id: skills::Id) -> Eff {
         let pl = &self.player;
@@ -211,7 +216,7 @@ impl World {
             _ => 0.0,
         };
         let pl = &mut self.player;
-        pl.skill.cd[id.index()] = d.skill.cooldown * cx.t[P::SkillCooldownX];
+        pl.skill.cd[id.index()] = d.skill.cooldown * cx.t[P::SkillCooldownX] * self.stats.skill_cd;
         pl.skill.leap = leap;
         pl.skill.refunded = false;
         pl.skill.ghost = false;
@@ -387,7 +392,7 @@ impl World {
                             damage: s.damage,
                             poise: s.poise,
                             shatter: 1.0,
-                            dose: s.dose(),
+                            dose: self.dosed(s.dose()),
                         },
                     );
                 }
@@ -418,7 +423,7 @@ impl World {
                             damage: s.damage,
                             poise: s.poise,
                             shatter: 1.0,
-                            dose: s.dose(),
+                            dose: self.dosed(s.dose()),
                         },
                     );
                     // 맺음: 이 스킬로 쓰러뜨리면 대기의 몫을 돌려받는다(한 번 쓸 때 한 번).
@@ -426,7 +431,8 @@ impl World {
                         let pl = &mut self.player;
                         if self.kills > kills && !pl.skill.refunded {
                             pl.skill.refunded = true;
-                            let back = s.cooldown * t[P::SkillCooldownX] * part;
+                            let back =
+                                s.cooldown * t[P::SkillCooldownX] * self.stats.skill_cd * part;
                             let cd = &mut pl.skill.cd[id.index()];
                             *cd = (*cd - back).max(0.0);
                         }
@@ -485,7 +491,7 @@ impl World {
                             damage: s.damage,
                             poise: s.poise,
                             shatter,
-                            dose: s.dose(),
+                            dose: self.dosed(s.dose()),
                         },
                     );
                     // 갈라진 땅(ㄴ): 찍은 부채꼴이 남는다.
@@ -558,7 +564,7 @@ impl World {
                                 damage: s.damage,
                                 poise: s.poise * pk,
                                 shatter: 1.0,
-                                dose: s.dose(),
+                                dose: self.dosed(s.dose()),
                             },
                         );
                     }
@@ -656,7 +662,7 @@ impl World {
                             damage: s.damage + more * n,
                             poise: s.poise,
                             shatter: 1.0,
-                            dose: s.dose(),
+                            dose: self.dosed(s.dose()),
                         },
                     );
                     // 되쏘기(ㄴ): 받아 둔 조각을 던진 쪽으로 — 패링으로 되돌린 조각과 같은 길(`reflected`).
@@ -865,6 +871,7 @@ impl World {
         let body = p.y + self.player.air;
         let spot = p + dir * to;
         let half = (arc_deg * 0.5).to_radians().cos();
+        let dose = self.dosed(id.def().dose());
         for en in &mut self.enemies {
             if !en.active() || en.boss || (en.elite.is_some() && !heavy) || en.rising() {
                 continue;
@@ -892,7 +899,7 @@ impl World {
                 en.frail = secs;
                 en.frail_mult = mult;
             }
-            afflict(en, id.def().dose(), &mut self.skill_ev);
+            afflict(en, dose, &mut self.skill_ev);
         }
         self.skill_ev.push(Event::Skill { id, at: spot, dir });
         spot
@@ -1039,7 +1046,7 @@ impl World {
                         stagger: 0.0,
                         knock,
                         crit: true,
-                        dose: skills::Id::Throw.def().dose(),
+                        dose: self.dosed(skills::Id::Throw.def().dose()),
                         flat: false,
                     },
                 );
@@ -1113,7 +1120,7 @@ impl World {
                             stagger: 0.0,
                             knock: Vec3::ZERO,
                             crit: false,
-                            dose: skills::Id::Embers.def().dose(),
+                            dose: self.dosed(skills::Id::Embers.def().dose()),
                             flat: false,
                         },
                     );
@@ -1266,7 +1273,7 @@ impl World {
                         stagger,
                         knock: Vec3::ZERO,
                         crit: false,
-                        dose: d.skill.dose(),
+                        dose: self.dosed(d.skill.dose()),
                         flat: false,
                     },
                 );
@@ -1353,6 +1360,7 @@ impl World {
         let half = (arc_deg * 0.5).to_radians().cos();
         let snare = self.snare_secs();
         let poise_k = self.stats.poise;
+        let dose = self.dosed(d.skill.dose());
         let mut n = 0;
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing || (en.pos.y - body).abs() > HIT_DY {
@@ -1387,7 +1395,7 @@ impl World {
             ev.push(Event::Hit { at });
             let pk = if winding { mult } else { 1.0 };
             add_poise(en, d.skill.poise * poise_k * pk, None, t, &mut ev);
-            afflict(en, d.skill.dose(), &mut ev);
+            afflict(en, dose, &mut ev);
             if en.hp <= 0 {
                 en.state = EState::Dead;
                 self.kills += 1;
@@ -1448,6 +1456,7 @@ impl World {
         ev.push(Event::RootSpike { at });
         let snare = self.snare_secs();
         let poise_k = self.stats.poise;
+        let dose = self.dosed(s.dose());
         let mut n = 0;
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing || (en.pos.y - at.y).abs() > HIT_DY {
@@ -1479,7 +1488,7 @@ impl World {
             en.hurt = 0.15;
             ev.push(Event::Hit { at: hit_at });
             add_poise(en, s.poise * poise_k, None, t, &mut ev);
-            afflict(en, s.dose(), &mut ev);
+            afflict(en, dose, &mut ev);
             if en.hp <= 0 {
                 en.state = EState::Dead;
                 self.kills += 1;
@@ -1647,7 +1656,7 @@ impl World {
                     stagger: 0.0,
                     knock,
                     crit: true,
-                    dose: skills::LINE_DOSE,
+                    dose: self.dosed(skills::LINE_DOSE),
                     flat: false,
                 },
             );
@@ -1756,7 +1765,7 @@ impl World {
     /// 스킬 칸 `slot`(0·1)의 준비 0..1(1 = 쓸 수 있다) — HUD·터치.
     pub fn skill_ready(&self, slot: usize, t: &Tuning) -> f32 {
         let id = self.player.skill.worn[slot % 2];
-        let full = self.skill_eff(id).skill.cooldown * t[P::SkillCooldownX];
+        let full = self.skill_eff(id).skill.cooldown * t[P::SkillCooldownX] * self.stats.skill_cd;
         if full <= 0.0 {
             1.0
         } else {

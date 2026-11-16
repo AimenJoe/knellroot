@@ -1,0 +1,591 @@
+//! 아이템 인스턴스와 랜덤 옵션(0223 V4 — 사장 답 1 "적게, 숫자만"). 아이템 하나 = 바탕(무기·방패·장신구) + 등급 + 옵션 0~2줄 + 벼린 단.
+//! 옵션은 **숫자만**(`stats::Mods`의 한 칸씩 — 동작을 바꾸는 효과는 고유 아이템의 몫, V5), 세기는 세 단, **지역이 세기의 상한**이다.
+//! 받는 피해를 줄이는 옵션·패링 창을 넓히는 옵션은 없다("방어는 손" — 0095 원칙 2, 시험).
+//!
+//! 이 파일은 순수한 규칙이다: 옵션 표·굴리기(씨앗이 같으면 같은 아이템)·기록의 글 꼴·`Mods`. 가방과 떨굼은 다음 걸음(V4b·V4c).
+
+// V4a는 규칙과 시험만이다 — 가방(V4b)·떨굼(V4c)이 붙으면 이 줄을 걷는다.
+#![allow(dead_code)]
+
+use crate::stats::Mods;
+use crate::{charms, shield, weapons};
+
+/// 아이템의 바탕.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Base {
+    Weapon(weapons::Id),
+    Shield(shield::Id),
+    Charm(charms::Id),
+}
+
+/// 등급: 옵션의 줄 수(보통 0 · 단단한 1 · 드문 2). 고유는 정해진 것(굴리지 않는다 — 표는 V5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Rarity {
+    Plain,
+    Sturdy,
+    Rare,
+    Unique,
+}
+
+impl Rarity {
+    /// 굴리는 옵션의 줄 수.
+    pub fn lines(self) -> usize {
+        match self {
+            Rarity::Plain => 0,
+            Rarity::Sturdy => 1,
+            Rarity::Rare | Rarity::Unique => 2,
+        }
+    }
+
+    /// 기록의 글자(바꾸지 않는다).
+    fn key(self) -> &'static str {
+        match self {
+            Rarity::Plain => "p",
+            Rarity::Sturdy => "s",
+            Rarity::Rare => "r",
+            Rarity::Unique => "u",
+        }
+    }
+
+    fn by_key(k: &str) -> Option<Rarity> {
+        [Rarity::Plain, Rarity::Sturdy, Rarity::Rare, Rarity::Unique]
+            .into_iter()
+            .find(|r| r.key() == k)
+    }
+}
+
+/// 옵션이 바꾸는 것(숫자 하나).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stat {
+    /// 주는 피해 +(타마다).
+    Dmg,
+    /// 강타 피해 +.
+    Heavy,
+    /// 사격 피해 +(원거리 무기).
+    Shot,
+    /// 자세 피해 +%.
+    Poise,
+    /// 공격 빠르기 +%.
+    Swift,
+    /// 열린 틈의 타 피해 +.
+    Opened,
+    /// 최대 기력 +.
+    Stamina,
+    /// 기력 회복 +%.
+    Regen,
+    /// 쓰러뜨릴 때 기력 +.
+    KillStamina,
+    /// 잔불 +%.
+    Ember,
+    /// 최대 체력 +.
+    Hp,
+    /// 스킬 대기 −%.
+    Cooldown,
+    /// 타입 게이지 +%.
+    Build,
+}
+
+pub const STATS: [Stat; 13] = [
+    Stat::Dmg,
+    Stat::Heavy,
+    Stat::Shot,
+    Stat::Poise,
+    Stat::Swift,
+    Stat::Opened,
+    Stat::Stamina,
+    Stat::Regen,
+    Stat::KillStamina,
+    Stat::Ember,
+    Stat::Hp,
+    Stat::Cooldown,
+    Stat::Build,
+];
+
+/// 세기의 단 수(1~3). 지역이 상한이다(`tier_cap`).
+pub const TIERS: u8 = 3;
+
+impl Stat {
+    /// 기록 키(바꾸지 않는다).
+    pub fn key(self) -> &'static str {
+        match self {
+            Stat::Dmg => "dmg",
+            Stat::Heavy => "heavy",
+            Stat::Shot => "shot",
+            Stat::Poise => "poise",
+            Stat::Swift => "swift",
+            Stat::Opened => "opened",
+            Stat::Stamina => "stamina",
+            Stat::Regen => "regen",
+            Stat::KillStamina => "kill",
+            Stat::Ember => "ember",
+            Stat::Hp => "hp",
+            Stat::Cooldown => "cd",
+            Stat::Build => "build",
+        }
+    }
+
+    pub fn by_key(k: &str) -> Option<Stat> {
+        STATS.into_iter().find(|s| s.key() == k)
+    }
+
+    /// 단마다의 값(화면에 보이는 수 — 더하기는 그 수, %는 퍼센트).
+    pub fn values(self) -> [f32; TIERS as usize] {
+        match self {
+            Stat::Dmg => [2.0, 4.0, 6.0],
+            Stat::Heavy => [4.0, 7.0, 10.0],
+            Stat::Shot => [2.0, 4.0, 6.0],
+            Stat::Poise => [8.0, 14.0, 20.0],
+            Stat::Swift => [4.0, 7.0, 10.0],
+            Stat::Opened => [3.0, 5.0, 8.0],
+            Stat::Stamina => [8.0, 14.0, 20.0],
+            Stat::Regen => [6.0, 10.0, 15.0],
+            Stat::KillStamina => [4.0, 7.0, 10.0],
+            Stat::Ember => [6.0, 10.0, 15.0],
+            Stat::Hp => [5.0, 10.0, 15.0],
+            Stat::Cooldown => [4.0, 7.0, 10.0],
+            Stat::Build => [10.0, 18.0, 25.0],
+        }
+    }
+
+    pub fn value(self, tier: u8) -> f32 {
+        self.values()[(tier.clamp(1, TIERS) - 1) as usize]
+    }
+
+    /// 값이 퍼센트인가(화면의 "+8%" — 아니면 "+4").
+    pub fn percent(self) -> bool {
+        matches!(
+            self,
+            Stat::Poise | Stat::Swift | Stat::Regen | Stat::Ember | Stat::Cooldown | Stat::Build
+        )
+    }
+
+    /// 이 옵션이 붙을 수 있는 바탕인가: 무기는 치는 것(원거리는 사격·근접은 강타와 자세), 방패는 버티는 몸, 장신구는 그 밖.
+    pub fn fits(self, base: Base) -> bool {
+        match base {
+            Base::Weapon(w) => {
+                let ranged = w.is_ranged();
+                match self {
+                    Stat::Dmg | Stat::Swift | Stat::Opened | Stat::Build | Stat::Cooldown => true,
+                    Stat::Heavy | Stat::Poise => !ranged,
+                    Stat::Shot => ranged,
+                    _ => false,
+                }
+            }
+            Base::Shield(_) => matches!(
+                self,
+                Stat::Stamina | Stat::Regen | Stat::Hp | Stat::KillStamina
+            ),
+            Base::Charm(_) => matches!(
+                self,
+                Stat::Stamina
+                    | Stat::Regen
+                    | Stat::Hp
+                    | Stat::KillStamina
+                    | Stat::Ember
+                    | Stat::Cooldown
+                    | Stat::Build
+            ),
+        }
+    }
+
+    /// 이 옵션 한 줄의 보정.
+    pub fn mods(self, tier: u8) -> Mods {
+        let v = self.value(tier);
+        let up = 1.0 + v / 100.0;
+        let d = Mods::default();
+        match self {
+            Stat::Dmg => Mods { dmg: v as i32, ..d },
+            Stat::Heavy => Mods {
+                heavy_dmg: v as i32,
+                ..d
+            },
+            Stat::Shot => Mods {
+                shot_dmg: v as i32,
+                ..d
+            },
+            Stat::Poise => Mods { poise: up, ..d },
+            Stat::Swift => Mods { atk_speed: up, ..d },
+            Stat::Opened => Mods {
+                opened_dmg: v as i32,
+                ..d
+            },
+            Stat::Stamina => Mods {
+                stamina_max: v,
+                ..d
+            },
+            Stat::Regen => Mods {
+                stamina_regen: up,
+                ..d
+            },
+            Stat::KillStamina => Mods {
+                kill_stamina: v,
+                ..d
+            },
+            Stat::Ember => Mods { ember: up, ..d },
+            Stat::Hp => Mods { hp: v as i32, ..d },
+            Stat::Cooldown => Mods {
+                skill_cd: 1.0 - v / 100.0,
+                ..d
+            },
+            Stat::Build => Mods { ail: up, ..d },
+        }
+    }
+}
+
+/// 옵션 한 줄: 무엇을·몇 단으로.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Affix {
+    pub stat: Stat,
+    pub tier: u8,
+}
+
+/// 옵션의 줄 수 상한.
+pub const AFFIXES: usize = 2;
+
+/// 아이템 하나.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Item {
+    pub base: Base,
+    pub rarity: Rarity,
+    pub affixes: [Option<Affix>; AFFIXES],
+    /// 벼린 단(0180 — 무기만, 아이템 하나에 붙는다).
+    pub forge: u8,
+}
+
+impl Item {
+    /// 옵션 없는 보통 아이템(옛 기록의 무기·장신구·방패가 이것으로 옮겨진다).
+    pub fn plain(base: Base) -> Item {
+        Item {
+            base,
+            rarity: Rarity::Plain,
+            affixes: [None; AFFIXES],
+            forge: 0,
+        }
+    }
+
+    /// 옵션들의 보정(바탕의 몫 — 무기 표·장신구 표·벼린 단 — 은 저마다의 자리에서 그대로 더해진다).
+    pub fn mods(&self) -> Vec<Mods> {
+        self.affixes
+            .iter()
+            .flatten()
+            .map(|a| a.stat.mods(a.tier))
+            .collect()
+    }
+
+    /// 거두면 돌아오는 잔불(0223 D — 화폐는 늘리지 않는다): 등급의 바탕 + 옵션 단의 합마다.
+    pub fn salvage(&self) -> u32 {
+        let base = match self.rarity {
+            Rarity::Plain => SALVAGE[0],
+            Rarity::Sturdy => SALVAGE[1],
+            Rarity::Rare => SALVAGE[2],
+            Rarity::Unique => SALVAGE[3],
+        };
+        let tiers: u32 = self.affixes.iter().flatten().map(|a| a.tier as u32).sum();
+        base + tiers * SALVAGE_PER_TIER
+    }
+
+    /// 기록의 글(바꾸지 않는다): `<바탕>|<등급>|<옵션.단>+<옵션.단>|<벼린 단>` — 예 `w.sword|r|dmg.2+poise.1|0`.
+    pub fn encode(&self) -> String {
+        let base = match self.base {
+            Base::Weapon(w) => format!("w.{}", w.key()),
+            Base::Shield(s) => format!("s.{}", s.key()),
+            Base::Charm(c) => format!("c.{}", charms::def(c).key),
+        };
+        let affixes: Vec<String> = self
+            .affixes
+            .iter()
+            .flatten()
+            .map(|a| format!("{}.{}", a.stat.key(), a.tier))
+            .collect();
+        format!(
+            "{base}|{}|{}|{}",
+            self.rarity.key(),
+            affixes.join("+"),
+            self.forge
+        )
+    }
+
+    /// 기록의 글 → 아이템. 모르는 바탕·등급이면 None(그 줄은 버린다), 모르는 옵션·바탕에 안 맞는 옵션은 그 줄만 버린다.
+    pub fn decode(text: &str) -> Option<Item> {
+        let mut parts = text.split('|');
+        let (kind, key) = parts.next()?.split_once('.')?;
+        let base = match kind {
+            "w" => Base::Weapon(weapons::Id::by_key(key)?),
+            "s" => Base::Shield(shield::Id::by_key(key)?),
+            "c" => Base::Charm(charms::by_key(key)?),
+            _ => return None,
+        };
+        let rarity = Rarity::by_key(parts.next()?)?;
+        let mut affixes = [None; AFFIXES];
+        let mut n = 0;
+        for a in parts.next().unwrap_or("").split('+') {
+            let Some((stat, tier)) = a.split_once('.') else {
+                continue;
+            };
+            let (Some(stat), Ok(tier)) = (Stat::by_key(stat), tier.parse::<u8>()) else {
+                continue;
+            };
+            let dup = affixes.iter().flatten().any(|x: &Affix| x.stat == stat);
+            if n < rarity.lines() && stat.fits(base) && (1..=TIERS).contains(&tier) && !dup {
+                affixes[n] = Some(Affix { stat, tier });
+                n += 1;
+            }
+        }
+        let forge = parts
+            .next()
+            .and_then(|f| f.parse::<u8>().ok())
+            .unwrap_or(0)
+            .min(crate::forge::RANKS);
+        Some(Item {
+            base,
+            rarity,
+            affixes,
+            forge: if matches!(base, Base::Weapon(_)) {
+                forge
+            } else {
+                0
+            },
+        })
+    }
+}
+
+/// 거두는 값: 등급마다의 바탕(보통·단단한·드문·고유)과 옵션 단 하나의 몫.
+pub const SALVAGE: [u32; 4] = [4, 10, 20, 40];
+pub const SALVAGE_PER_TIER: u32 = 4;
+
+/// 지역(스테이지 번호 0~)마다의 옵션 세기 상한: 성소 1 · 마을 2 · 정원 3 · 작업층 3.
+pub fn tier_cap(stage: usize) -> u8 {
+    match stage {
+        0 => 1,
+        1 => 2,
+        _ => TIERS,
+    }
+}
+
+/// 굴리는 난수(씨앗이 같으면 같은 아이템 — 시험·되살아난 상자가 같은 것을 낸다).
+struct Rng(u64);
+
+impl Rng {
+    fn new(seed: u64) -> Rng {
+        // 0은 xorshift에서 멈춘다 — 섞어서 넣는다.
+        Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xD1B5_4A32_D192_ED03)
+    }
+
+    fn next(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.0 = x;
+        x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+
+    fn below(&mut self, n: usize) -> usize {
+        ((self.next() >> 33) as usize) % n.max(1)
+    }
+}
+
+/// 등급을 굴린다: 떨군 것의 급(`luck` 0 = 잡몹·상자 · 1 = 엘리트 · 2 = 문지기)이 높을수록 드문 쪽으로.
+/// 백에 몇 — 잡몹·상자 [보통 60 · 단단한 32 · 드문 8], 엘리트 [20 · 55 · 25], 문지기 [0 · 40 · 60].
+pub fn roll_rarity(luck: u8, seed: u64) -> Rarity {
+    let odds = RARITY_ODDS[(luck as usize).min(RARITY_ODDS.len() - 1)];
+    let r = Rng::new(seed ^ 0xA5A5).below(100) as u32;
+    if r < odds[0] {
+        Rarity::Plain
+    } else if r < odds[0] + odds[1] {
+        Rarity::Sturdy
+    } else {
+        Rarity::Rare
+    }
+}
+
+pub const RARITY_ODDS: [[u32; 3]; 3] = [[60, 32, 8], [20, 55, 25], [0, 40, 60]];
+
+/// 옵션을 굴려 아이템을 만든다: 등급만큼의 줄(서로 다른 옵션 — 바탕에 맞는 것만), 세기는 1~`cap`(낮은 단이 더 흔하다).
+pub fn roll(base: Base, rarity: Rarity, cap: u8, seed: u64) -> Item {
+    let mut rng = Rng::new(seed);
+    let cap = cap.clamp(1, TIERS);
+    let mut pool: Vec<Stat> = STATS.into_iter().filter(|s| s.fits(base)).collect();
+    let mut affixes = [None; AFFIXES];
+    let lines = if rarity == Rarity::Unique {
+        0
+    } else {
+        rarity.lines()
+    };
+    for slot in affixes.iter_mut().take(lines) {
+        if pool.is_empty() {
+            break;
+        }
+        let stat = pool.remove(rng.below(pool.len()));
+        // 단: 둘을 굴려 낮은 쪽(높은 단은 드물다).
+        let tier = 1 + rng.below(cap as usize).min(rng.below(cap as usize)) as u8;
+        *slot = Some(Affix { stat, tier });
+    }
+    Item {
+        base,
+        rarity,
+        affixes,
+        forge: 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stats::Stats;
+
+    fn bases() -> Vec<Base> {
+        let mut v: Vec<Base> = weapons::IDS.into_iter().map(Base::Weapon).collect();
+        v.extend(shield::TABLE.iter().map(|d| Base::Shield(d.id)));
+        v.extend(charms::TABLE.iter().map(|d| Base::Charm(d.id)));
+        v
+    }
+
+    /// 등급 = 옵션의 줄 수. 줄마다 다른 옵션이고 바탕에 맞는 것만, 세기는 지역의 상한 안. 씨앗이 같으면 같은 아이템.
+    #[test]
+    fn a_roll_gives_as_many_lines_as_the_rarity_all_fitting_distinct_and_under_the_cap() {
+        for base in bases() {
+            for (rarity, lines) in [(Rarity::Plain, 0), (Rarity::Sturdy, 1), (Rarity::Rare, 2)] {
+                for cap in 1..=TIERS {
+                    for seed in 0..200u64 {
+                        let it = roll(base, rarity, cap, seed);
+                        let got: Vec<Affix> = it.affixes.iter().flatten().copied().collect();
+                        assert_eq!(got.len(), lines, "{base:?} {rarity:?}");
+                        assert!(got.iter().all(|a| a.stat.fits(base)));
+                        assert!(got.iter().all(|a| (1..=cap).contains(&a.tier)));
+                        assert!(lines < 2 || got[0].stat != got[1].stat);
+                        assert_eq!(it, roll(base, rarity, cap, seed), "same seed, same item");
+                    }
+                }
+            }
+        }
+    }
+
+    /// 높은 단은 드물다: 상한 3에서 3단은 1단보다 적게 나온다(그래도 나온다).
+    #[test]
+    fn high_tiers_are_rarer_but_do_drop() {
+        let base = Base::Weapon(weapons::Id::Sword);
+        let mut n = [0u32; 3];
+        for seed in 0..3000u64 {
+            let it = roll(base, Rarity::Sturdy, 3, seed);
+            n[(it.affixes[0].unwrap().tier - 1) as usize] += 1;
+        }
+        assert!(n[0] > n[1] && n[1] > n[2] && n[2] > 100, "{n:?}");
+    }
+
+    /// 모든 옵션이 어딘가에는 붙는다(붙을 바탕이 없는 옵션은 없다), 바탕마다 굴릴 옵션이 둘 이상이다.
+    #[test]
+    fn every_stat_has_a_home_and_every_base_has_two_to_roll() {
+        for s in STATS {
+            assert!(bases().into_iter().any(|b| s.fits(b)), "{s:?}");
+            assert_eq!(Stat::by_key(s.key()), Some(s));
+            let v = s.values();
+            assert!(v[0] > 0.0 && v[0] < v[1] && v[1] < v[2], "{s:?}");
+        }
+        for b in bases() {
+            assert!(
+                STATS.into_iter().filter(|s| s.fits(b)).count() >= 2,
+                "{b:?}"
+            );
+        }
+    }
+
+    /// 0223 D·0095 원칙 2: 옵션은 받는 피해를 줄이지도, 패링 창·회피를 넓히지도 않는다 — 방어는 손이다. 한 줄은 능력치를 낫게만 바꾼다.
+    #[test]
+    fn no_affix_touches_defence_or_the_parry_window() {
+        let none = Stats::default();
+        for s in STATS {
+            for tier in 1..=TIERS {
+                let got = Stats::compute(&[s.mods(tier)]);
+                assert_eq!(
+                    (got.taken, got.parry, got.dodge_cost, got.knock, got.flinch),
+                    (
+                        none.taken,
+                        none.parry,
+                        none.dodge_cost,
+                        none.knock,
+                        none.flinch
+                    ),
+                    "{s:?}"
+                );
+                assert_ne!(got, none, "{s:?} does something");
+                assert!(got.skill_cd <= 1.0 && got.ail >= 1.0);
+            }
+        }
+    }
+
+    /// 기록의 글로 갔다 와도 같은 아이템. 모르는 바탕은 버리고, 모르는 옵션·안 맞는 옵션·넘치는 줄은 그 줄만 버린다.
+    #[test]
+    fn items_round_trip_through_the_record_text() {
+        for base in bases() {
+            for seed in 0..40u64 {
+                let mut it = roll(base, roll_rarity((seed % 3) as u8, seed), 3, seed);
+                if matches!(base, Base::Weapon(_)) {
+                    it.forge = (seed % 4) as u8;
+                }
+                assert_eq!(Item::decode(&it.encode()), Some(it), "{}", it.encode());
+            }
+        }
+        assert_eq!(
+            Item::plain(Base::Weapon(weapons::Id::Sword)).encode(),
+            "w.sword|p||0"
+        );
+        assert_eq!(Item::decode("w.nothing|p||0"), None);
+        assert_eq!(Item::decode("x.sword|p||0"), None);
+        // 안 맞는 옵션(검에 사격)·모르는 옵션은 빠지고 맞는 줄은 남는다. 보통 등급에 적힌 옵션은 버린다.
+        let it = Item::decode("w.sword|r|shot.2+zzz.1+dmg.3|1").unwrap();
+        assert_eq!(
+            it.affixes,
+            [
+                Some(Affix {
+                    stat: Stat::Dmg,
+                    tier: 3
+                }),
+                None
+            ]
+        );
+        assert_eq!(it.forge, 1);
+        assert_eq!(
+            Item::decode("w.sword|p|dmg.3|0").unwrap().affixes,
+            [None; 2]
+        );
+        // 방패·장신구는 벼리지 않는다.
+        assert_eq!(Item::decode("s.pilgrim|p||3").unwrap().forge, 0);
+    }
+
+    /// 급이 높은 것이 떨군 아이템일수록 드문 쪽이다 — 문지기는 보통을 떨구지 않는다. 지역의 상한은 성소 1 · 마을 2 · 그 뒤 3.
+    #[test]
+    fn better_sources_roll_rarer_and_regions_cap_the_tier() {
+        let count = |luck: u8| {
+            let mut n = [0u32; 3];
+            for seed in 0..2000u64 {
+                n[roll_rarity(luck, seed) as usize] += 1;
+            }
+            n
+        };
+        let (mob, elite, boss) = (count(0), count(1), count(2));
+        assert!(mob[0] > mob[1] && mob[1] > mob[2] && mob[2] > 0, "{mob:?}");
+        assert!(elite[2] > mob[2] && elite[0] < mob[0], "{elite:?}");
+        assert_eq!(boss[0], 0);
+        assert!(boss[2] > boss[1], "{boss:?}");
+        for odds in RARITY_ODDS {
+            assert_eq!(odds.iter().sum::<u32>(), 100);
+        }
+        assert_eq!(
+            [tier_cap(0), tier_cap(1), tier_cap(2), tier_cap(3)],
+            [1, 2, 3, 3]
+        );
+    }
+
+    /// 거두는 값은 등급과 옵션의 세기를 따른다 — 보통이 가장 싸다.
+    #[test]
+    fn salvage_follows_rarity_and_tiers() {
+        let base = Base::Weapon(weapons::Id::Sword);
+        let plain = Item::plain(base).salvage();
+        let sturdy = roll(base, Rarity::Sturdy, 1, 1).salvage();
+        let rare_low = roll(base, Rarity::Rare, 1, 1).salvage();
+        assert!(plain < sturdy && sturdy < rare_low);
+        assert_eq!(plain, SALVAGE[0]);
+        assert_eq!(rare_low, SALVAGE[2] + 2 * SALVAGE_PER_TIER);
+    }
+}
