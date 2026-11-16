@@ -615,6 +615,11 @@ pub const WEAPONS: [Weapon; 5] = [
 ];
 
 impl Id {
+    /// 원거리 무기인가(0223 — 양손, 평타 버튼 = 사격·특수 버튼 = 수류탄).
+    pub fn is_ranged(self) -> bool {
+        matches!(self.def().rb, Rb::Shot { .. })
+    }
+
     pub fn def(self) -> &'static Weapon {
         WEAPONS
             .iter()

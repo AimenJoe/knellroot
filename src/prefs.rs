@@ -8,7 +8,9 @@ use crate::i18n::Lang;
 use crate::input::{Bindings, MouseAim, REST_SECS, RETICLE_SIZES};
 
 /// 0x…0002(0048): 18..20 칸이 상호작용 → 마법으로 바뀌고 등잔·마법의 기본 버튼이 바뀌었다. 옛 표식(0x…0001)은 언어만 살리고 배치는 기본값.
-const MAGIC: u32 = 0x4B4E_0003;
+const MAGIC: u32 = 0x4B4E_0004;
+/// 0223 전 표식: 패드 평타 = X·특수 = RB였다(지금은 RB·X). 패드의 그 둘이 옛 기본 그대로면 맞바꾸고, 사람이 바꾼 배치는 그대로 둔다.
+const MAGIC_V3: u32 = 0x4B4E_0003;
 const MAGIC_V1: u32 = 0x4B4E_0001;
 /// 0151 전 표식: 배치 칸 4·5가 Q·E / LT·RT = 땅 돌리기였다(지금은 스킬) — 배치만 기본으로 되돌리고 다른 설정은 그대로 읽는다.
 const MAGIC_V2: u32 = 0x4B4E_0002;
@@ -138,7 +140,7 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
             look: (LOOK_DEFAULT, LOOK_DEFAULT),
         });
     }
-    if v[0] != MAGIC && v[0] != MAGIC_V2 {
+    if v[0] != MAGIC && v[0] != MAGIC_V2 && v[0] != MAGIC_V3 {
         return None;
     }
     let keys: Vec<u32> = v[2..20].iter().chain(&v[29..33]).copied().collect();
@@ -146,6 +148,8 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
         lang: lang_from(v[1]),
         bindings: if v[0] == MAGIC_V2 {
             Bindings::default_layout()
+        } else if v[0] == MAGIC_V3 {
+            Bindings::decode(&keys).rb_attack()
         } else {
             Bindings::decode(&keys)
         },
@@ -282,6 +286,47 @@ mod tests {
     use super::*;
     use crate::input::{Bind, Pad};
     use macroquad::prelude::MouseButton;
+
+    /// 0223: 0x…0003 저장의 패드 평타·특수가 옛 기본(X·RB) 그대로면 RB·X로 맞바꾸고, 사람이 바꾼 배치는 그대로 둔다.
+    #[test]
+    fn an_untouched_pad_moves_the_attack_to_rb_and_a_remapped_one_stays() {
+        let mut old_default = Bindings::default_layout();
+        old_default.set_pad(Bind::Attack, Pad::West);
+        assert_eq!(
+            old_default.pad(Bind::Cast),
+            Pad::R1,
+            "the old default: X attack, RB special"
+        );
+        let p = |b: Bindings| Prefs {
+            lang: Some(Lang::Ko),
+            bindings: b,
+            shake: 4,
+            weapon: 0,
+            mouse: MouseAim::default(),
+            volume: 3,
+            tells: 8,
+            tell_timing: false,
+            fullscreen: false,
+            look: (5, 5),
+        };
+        let mut v = encode(&p(old_default));
+        v[0] = MAGIC_V3;
+        let got = decode(&v).unwrap().bindings;
+        assert_eq!(
+            (got.pad(Bind::Attack), got.pad(Bind::Cast)),
+            (Pad::R1, Pad::West)
+        );
+        assert_eq!(got, Bindings::default_layout());
+        let mut mine = old_default;
+        mine.set_pad(Bind::Attack, Pad::South);
+        let mut v = encode(&p(mine));
+        v[0] = MAGIC_V3;
+        assert_eq!(
+            decode(&v).unwrap().bindings,
+            mine,
+            "a layout the player changed is theirs"
+        );
+    }
 
     /// 0151: 표식이 0x…0002인 저장(배치 칸 4·5 = Q·E / LT·RT가 땅 돌리기였다)은 **배치만** 기본으로 되돌린다 — 다른 설정은 그대로.
     /// 새 기본: 스킬 = Q·E / LT·RT, 땅 돌리기 = Z·C / 십자 ←·→. 스킬 칸(29..33)까지 왕복한다.
@@ -435,7 +480,8 @@ mod tests {
         assert_eq!(got.lang, Some(Lang::En));
         assert_eq!(got.bindings, Bindings::default_layout());
         assert_eq!(got.bindings.pad(Bind::Flask), Pad::North);
-        assert_eq!(got.bindings.pad(Bind::Cast), Pad::R1);
+        assert_eq!(got.bindings.pad(Bind::Cast), Pad::West);
+        assert_eq!(got.bindings.pad(Bind::Attack), Pad::R1);
         // 0052 전 저장(흔들림·무기 칸이 0): 흔들림 기본값 10, 무기는 첫째(검).
         let mut old = encode(&p);
         old[20] = 0;

@@ -372,6 +372,14 @@ pub fn key_name(i: u8) -> &'static str {
         .unwrap_or("?")
 }
 
+/// 원거리 무기의 버튼 맞바꾸기(0223): 평타 버튼 = 사격(월드 `cast`), 특수 버튼 = 수류탄(월드 `attack`). 누름·쥠을 함께 바꾼다.
+pub fn weapon_buttons(a: &mut Actions, ranged: bool) {
+    if ranged {
+        std::mem::swap(&mut a.attack, &mut a.cast);
+        std::mem::swap(&mut a.attack_held, &mut a.cast_held);
+    }
+}
+
 /// 동작 → (키 하나, 패드 버튼 하나). 겹치면 맞바꾼다(빈 동작이 생기지 않게).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Bindings {
@@ -419,7 +427,7 @@ impl Bindings {
                 key_index(KeyCode::E),
             ],
             pads: [
-                Pad::West,
+                Pad::R1,
                 Pad::East,
                 Pad::L1,
                 Pad::R3,
@@ -427,7 +435,7 @@ impl Bindings {
                 Pad::DRight,
                 Pad::South,
                 Pad::North,
-                Pad::R1,
+                Pad::West,
                 Pad::L2,
                 Pad::R2,
             ],
@@ -456,6 +464,15 @@ impl Bindings {
             self.keys[other] = old;
         }
         self.keys[b as usize] = k;
+    }
+
+    /// 0223(사장 "평타 공격버튼 RB, 기존 공격버튼은 특수 공격"): 패드의 평타·특수가 옛 기본(X·RB) 그대로면 맞바꾼다 —
+    /// 바꾼 적 없는 배치만 새 기본으로(KB `controller-layout-and-remapping`). 키보드·마우스 칸은 그대로(왼쪽 클릭 = 평타).
+    pub fn rb_attack(mut self) -> Bindings {
+        if self.pad(Bind::Attack) == Pad::West && self.pad(Bind::Cast) == Pad::R1 {
+            self.set_pad(Bind::Attack, Pad::R1);
+        }
+        self
     }
 
     pub fn set_pad(&mut self, b: Bind, p: Pad) {

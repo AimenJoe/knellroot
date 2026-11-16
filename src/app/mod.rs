@@ -641,12 +641,14 @@ impl App {
             flask: play && pl.flask > 0 && pl.hp < pl.max_hp,
             ult: play && pl.skill.gauge >= 1.0,
             // 끌어 조준(0217): 그 버튼에 올라간 일이 쪽을 가지면 — 무기·끼운 스킬이 바뀌어도 같은 규칙.
-            aim_attack: pl.weapon.def().grenade.is_some(),
+            // 0223: 원거리 무기는 평타 버튼이 사격·특수가 수류탄이라 둘 다 겨눈다. 근접은 특수(마법 탄)만.
+            aim_attack: pl.weapon.is_ranged(),
             aim_cast: true,
             aim_skills: [0, 1].map(|i| {
                 pl.skill.rank[i] > 0 && self.world.skill_eff(pl.skill.worn[i]).skill.form.aims()
             }),
             charging: matches!(pl.state, crate::world::PState::CastCharge { .. }),
+            ranged: pl.weapon.is_ranged(),
         });
         self.input.poll(self.scene().is_menu());
         // F11(PC, 0135): 어느 장면에서나 창 ↔ 전체 화면. 창 일이라 `Actions`(게임 동작)에 넣지 않는다.

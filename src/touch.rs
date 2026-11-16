@@ -245,6 +245,8 @@ pub struct Ctx {
     pub aim_skills: [bool; 2],
     /// 지금 원거리를 모으는 중이다 — 떼면 월드가 모은 탄을 낸다(누름을 다시 보내지 않는다).
     pub charging: bool,
+    /// 원거리 무기를 들었다(0223) — 쥐고 끄는 동안 모으는 탄의 버튼이 평타(`Attack` — 사격)다. 아니면 특수(`Cast` — 마법 탄).
+    pub ranged: bool,
 }
 
 impl Ctx {
@@ -259,7 +261,17 @@ impl Ctx {
         aim_cast: true,
         aim_skills: [true; 2],
         charging: false,
+        ranged: false,
     };
+
+    /// 쥐고 끄는 동안 모으는 탄의 버튼(0217 → 0223).
+    pub fn shot(&self) -> Kind {
+        if self.ranged {
+            Kind::Attack
+        } else {
+            Kind::Cast
+        }
+    }
 
     /// 이 버튼은 끌어 겨누나(0217).
     pub fn aims(&self, k: Kind) -> bool {
@@ -537,8 +549,11 @@ impl Touch {
                                 out: false,
                                 last: Vec2::ZERO,
                             });
-                            if b.kind == Kind::Cast {
-                                self.cast_finger = Some(t.id);
+                            if b.kind == self.ctx.shot() {
+                                match b.kind {
+                                    Kind::Attack => self.attack_finger = Some(t.id),
+                                    _ => self.cast_finger = Some(t.id),
+                                }
                             }
                         }
                         continue;
@@ -599,7 +614,7 @@ impl Touch {
             let d = m.pos - m.center;
             let out = m.out || d.length() > r * AIM_OUT;
             let still = alive(Some(m.id)).is_some();
-            let charging = m.kind == Kind::Cast && self.ctx.charging;
+            let charging = m.kind == self.ctx.shot() && self.ctx.charging;
             if still {
                 let mut m = Aimer { out, ..m };
                 if out && d.length() > r * AIM_CANCEL {
@@ -609,7 +624,7 @@ impl Touch {
                 } else if !out {
                     a.auto_aim = true;
                 }
-                a.aim_hold = m.kind == Kind::Cast;
+                a.aim_hold = m.kind == self.ctx.shot();
                 self.aimer = Some(m);
             } else {
                 self.aimer = None;
@@ -785,8 +800,8 @@ pub fn attack_icon(w: crate::weapons::Id) -> Kind {
         Id::Sword => Kind::Attack,
         Id::Hammer => Kind::Hammer,
         Id::Staff => Kind::Staff,
-        // 쇠뇌의 X는 수류탄(0213 — 사격은 RB, `cast_icon`).
-        Id::Crossbow => Kind::Bomb,
+        // 쇠뇌의 평타는 사격(0223 — 수류탄은 특수, `cast_icon`).
+        Id::Crossbow => Kind::Crossbow,
         Id::Fists => Kind::Fist,
     }
 }
@@ -822,10 +837,10 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
     }
 }
 
-/// RB 버튼의 그림(0151 → 0213): 근접 무기 = 마법 탄의 별, 쇠뇌 = 쇠뇌(사격은 RB).
+/// 특수 버튼의 그림(0151 → 0213 → 0223): 근접 무기 = 마법 탄의 별, 쇠뇌 = 수류탄(사격은 평타 버튼).
 pub fn cast_icon(w: crate::weapons::Id) -> Kind {
     if matches!(w.def().rb, crate::weapons::Rb::Shot { .. }) {
-        Kind::Crossbow
+        Kind::Bomb
     } else {
         Kind::Cast
     }
@@ -1879,8 +1894,8 @@ mod tests {
         press(&mut a, Kind::Ult);
         assert!(a.ult && !a.skill1);
         use crate::weapons::Id;
-        assert_eq!(cast_icon(Id::Crossbow), Kind::Crossbow);
-        assert_eq!(attack_icon(Id::Crossbow), Kind::Bomb);
+        assert_eq!(cast_icon(Id::Crossbow), Kind::Bomb);
+        assert_eq!(attack_icon(Id::Crossbow), Kind::Crossbow);
         assert_eq!(cast_icon(Id::Sword), Kind::Cast);
     }
 

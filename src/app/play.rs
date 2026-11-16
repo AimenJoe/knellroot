@@ -406,6 +406,11 @@ impl App {
     }
 
     pub(super) fn step_world(&mut self, a: &Actions) {
+        // 버튼 → 월드의 일(0223): 평타 버튼(패드 RB·왼쪽 클릭·J)은 `attack`, 특수(X·오른쪽 클릭·U)는 `cast` — 원거리 무기는
+        // 평타가 사격(월드의 `cast`)이고 특수가 수류탄(`attack`)이라 맞바꿔 넘긴다. 월드·시험은 옛 이름 그대로.
+        let mut a = *a;
+        input::weapon_buttons(&mut a, self.world.player.weapon.is_ranged());
+        let a = &a;
         let (cam, t) = (&mut self.cam, &self.t);
         // 입력 기준(0011 → 0181): 쿼터뷰는 그 방위, 자유 숄더뷰는 카메라가 보는 쪽.
         self.world.view_yaw = Some(cam.basis_yaw_deg(t));

@@ -134,3 +134,14 @@
 - D4 밀도 +58%: https://www.wowhead.com/diablo-4/it/news/monster-density-increased-for-nightmare-dungeons-and-helltides-in-patch-1-1-1-334365
 - PoE2 반응형 전투(인터뷰 요약): https://maxroll.gg/poe/news/pax-west-path-of-exile-2-interview-with-jonathan-rogers
 - 동시 공격 티켓: https://signalsandlight.substack.com/p/how-do-simultaneous-enemy-attacks
+
+## 7. 만든 것
+### V1a(2026-11-16) — 버튼: RB 평타 · X 특수
+- 패드 기본 배치: `Bind::Attack` = RB, `Bind::Cast` = X(`Bindings::keyboard_only`의 패드 칸 — 기본 배치도 같은 패드 칸). 키보드·마우스 칸은 그대로
+  (왼쪽 클릭·J = 평타, 오른쪽 클릭·U = 특수).
+- prefs 표식 `…0003` → `…0004`: 옛 저장의 패드 평타·특수가 옛 기본(X·RB) 그대로면 맞바꾸고(`Bindings::rb_attack`), 사람이 바꾼 배치는 그대로 —
+  다른 설정은 그대로 읽는다(시험 `an_untouched_pad_moves_the_attack_to_rb_and_a_remapped_one_stays`).
+- 원거리 무기: 평타 버튼 = 사격, 특수 버튼 = 수류탄. 월드의 안쪽 이름(`attack` = 콤보·수류탄, `cast` = 마법·사격)과 월드 시험은 그대로 두고,
+  앱이 월드에 넘기기 전에 맞바꾼다(`input::weapon_buttons` — `App::step_world` 한 곳). 마우스로는 쇠뇌가 왼쪽 클릭으로 쏜다(전엔 오른쪽).
+- 터치: 큰 공격 버튼 = 평타(쇠뇌면 쇠뇌 그림·끌어 조준·쥐고 끄는 동안 모으기 `Ctx::ranged`/`shot()`), 원거리 버튼 = 특수(쇠뇌면 수류탄 그림).
+- 조작 화면 이름: "평타(꾹: 강공격·쇠뇌: 사격)" · "특수 공격(쇠뇌: 수류탄)". 글꼴 서브셋에 '특'을 더했다.
