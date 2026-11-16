@@ -35,7 +35,7 @@ async function open(browser, seed, tag) {
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) bad.push(String(e)); });
   const shot = (name, clip) => page.screenshot({ path: path.join(OUT, `shield-${tag}-${name}.png`), clip });
   const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.waitForTimeout(90); } };
-  const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 20000 });
+  const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 60000 });
   await page.goto(`http://localhost:${PORT}/`);
   await ready();
   await page.evaluate(([k, v]) => localStorage.setItem(k, v), [KEY, seed]);
@@ -52,7 +52,7 @@ async function open(browser, seed, tag) {
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
   await new Promise((r) => server.listen(PORT, r));
-  const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
+  const browser = await chromium.launch();
   const errors = [];
   const body = { x: 440, y: 160, width: 400, height: 400 };
   {
@@ -62,6 +62,7 @@ async function open(browser, seed, tag) {
     await g.page.keyboard.down('KeyS'); await g.page.waitForTimeout(350); await g.page.keyboard.up('KeyS');
     await g.page.waitForTimeout(400);
     await g.shot('1-stand', body);
+    await g.shot('1b-hud');
     await g.page.keyboard.down('ShiftLeft');
     await g.page.waitForTimeout(700);
     await g.shot('2-guard', body);

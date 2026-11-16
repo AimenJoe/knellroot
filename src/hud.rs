@@ -503,6 +503,22 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
     let y = f.oy + f.h - 6.0 * s - ui.px(label) - side;
     let blink = pl.skill.denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
     let b = input::bindings();
+    // 부무기(0223): 스킬 칸 왼쪽에 바꿔 들 무기의 그림(흐리게 — 지금 든 것이 아니다) + 바꾸는 두 버튼(패링 + 평타)의 키캡.
+    if let Some(sub) = pl.sub {
+        let x = x0 - 26.0 * s - side;
+        draw_rectangle(x - s, y - s, side + 2.0 * s, side + 2.0 * s, BAR_BG);
+        draw_rectangle(x, y, side, side, HP_OFF);
+        let c = vec2(x + side * 0.5, y + side * 0.5);
+        let r = crate::touch::ICON_N as f32 * s / 1.25 + 0.01;
+        let tint = Color::new(1.0, 0.99, 0.95, 1.0);
+        crate::touch::icon(crate::touch::attack_icon(sub), c, r, 0.6, tint);
+        let caps = format!(
+            "{}{}",
+            crate::ui::key(&input::bind_prompt(Bind::Parry)),
+            crate::ui::key(&input::bind_prompt(Bind::Attack))
+        );
+        ui.text_center(&caps, x + side * 0.5, y + side + 2.5 * s, label, INK);
+    }
     for (i, (x, bind)) in [(x0, Bind::Skill1), (x1, Bind::Skill2)]
         .into_iter()
         .enumerate()

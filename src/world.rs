@@ -1264,6 +1264,14 @@ impl World {
         pl.chord.0 = if a.parry { 0.0 } else { pl.chord.0 + dt };
         pl.chord.1 = if basic { 0.0 } else { pl.chord.1 + dt };
         let (p, b) = pl.chord;
+        // 터치의 바꾸기 버튼(0223): 서 있거나 막는 동안이면 바로.
+        if a.swap && matches!(pl.state, PState::Idle | PState::Block { .. }) && pl.sub.is_some() {
+            pl.state = PState::Idle;
+            if let Some(to) = self.swap_weapons() {
+                ev.push(Event::WeaponSwap { to });
+            }
+            return;
+        }
         if !(a.parry || basic)
             || p > crate::tuning::WEAPON_CHORD
             || b > crate::tuning::WEAPON_CHORD

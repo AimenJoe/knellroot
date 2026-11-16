@@ -92,6 +92,8 @@ pub struct Actions {
     pub look: Vec2,
     /// 시점 바꾸기(0184 — 터치의 시점 버튼): 쿼터뷰 ↔ 자유 숄더뷰. 틱마다 소비.
     pub view: bool,
+    /// 주/부무기 바꾸기(0223 — 터치의 바꾸기 버튼. 패드·키보드는 패링 + 평타를 함께). 틱마다 소비.
+    pub swap: bool,
     pub attack: bool,
     /// 공격 버튼을 쥐고 있나(상태, 강공격 모으기 0030). 눌림 `attack`과 달리 틱이 지우지 않는다.
     pub attack_held: bool,
@@ -1184,6 +1186,7 @@ impl Input {
         a.look += t.look;
         a.zoom += t.zoom;
         a.view |= t.view;
+        a.swap |= t.swap;
         // 메뉴는 마우스 왼쪽을 뗄 때 탭(터치와 같은 규칙, nail 0199).
         if menu && mouse_real && a.tap.is_none() && is_mouse_button_released(MouseButton::Left) {
             a.tap = Some(mp);
@@ -1227,6 +1230,7 @@ impl Input {
             zoom: self.latch.zoom + a.zoom,
             look: self.latch.look + a.look,
             view: self.latch.view | a.view,
+            swap: self.latch.swap | a.swap,
             attack: self.latch.attack | a.attack,
             attack_held: a.attack_held,
             cast_held: a.cast_held,

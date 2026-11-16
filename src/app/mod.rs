@@ -673,6 +673,7 @@ impl App {
             // 0223: 원거리 무기는 평타 버튼이 사격·특수가 수류탄이라 둘 다 겨눈다. 근접은 특수(마법 탄)만.
             aim_attack: pl.weapon.is_ranged(),
             aim_cast: true,
+            swap: play && pl.sub.is_some(),
             aim_skills: [0, 1].map(|i| {
                 pl.skill.rank[i] > 0 && self.world.skill_eff(pl.skill.worn[i]).skill.form.aims()
             }),
@@ -1118,6 +1119,7 @@ impl App {
                         turn: self.world.turn_ready(&self.t),
                         attack: touch::attack_icon(pl.weapon),
                         cast: touch::cast_icon(pl.weapon),
+                        swap: pl.sub.map_or(touch::Kind::Swap, touch::attack_icon),
                         skills: [skill(0), skill(1)],
                         vacant: [0, 1].map(|i| pl.skill.rank[i] == 0),
                         active: [0, 1].map(|i| self.world.skill_active(i)),

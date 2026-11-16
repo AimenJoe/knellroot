@@ -67,6 +67,8 @@ pub enum Kind {
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
     View,
+    /// 주/부무기 바꾸기(0223): 부무기가 있을 때만 뜨는 상황 버튼(회피 왼쪽 바깥 호). 그림은 바꿔 들 무기(`View::swap`).
+    Swap,
 }
 
 /// 그릴 때 앱이 넘기는 것(0151): 상태에 따라 바뀌는 그림·차오름.
@@ -78,6 +80,8 @@ pub struct View {
     /// 공격 버튼의 그림(든 무기, 0147)과 RB 버튼의 그림(근접 = 별, 원거리 = 수류탄).
     pub attack: Kind,
     pub cast: Kind,
+    /// 바꾸기 버튼의 그림(0223 — 부무기의 무기 그림).
+    pub swap: Kind,
     /// 스킬 둘: (그림, 대기 0..1 — 1 = 준비).
     pub skills: [(Kind, f32); 2],
     /// 빈 스킬 칸(0166 — 아직 배운 스킬이 없다): 그림 없이 흐린 테만.
@@ -149,6 +153,8 @@ pub struct Read {
     pub zoom: i32,
     /// 시점 버튼(0184): 쿼터뷰 ↔ 자유 숄더뷰.
     pub view: bool,
+    /// 주/부무기 바꾸기 버튼(0223).
+    pub swap: bool,
     /// 끌어 조준(0217): 겨눌 일이 올라간 버튼을 짚고 끈 쪽(스틱과 같은 축 — 길이 1). 0이면 겨누지 않음.
     pub aim: Vec2,
     /// 이 조준은 손가락이 끈 것이다 — 락온보다 앞선다.
@@ -246,6 +252,8 @@ pub struct Ctx {
     pub aim_attack: bool,
     pub aim_cast: bool,
     pub aim_skills: [bool; 2],
+    /// 부무기가 있다(0223) — 바꾸기 버튼이 뜬다.
+    pub swap: bool,
     /// 지금 원거리를 모으는 중이다 — 떼면 월드가 모은 탄을 낸다(누름을 다시 보내지 않는다).
     pub charging: bool,
     /// 원거리 무기를 들었다(0223) — 쥐고 끄는 동안 모으는 탄의 버튼이 평타(`Attack` — 사격)다. 아니면 특수(`Cast` — 마법 탄).
@@ -263,6 +271,7 @@ impl Ctx {
         aim_attack: true,
         aim_cast: true,
         aim_skills: [true; 2],
+        swap: true,
         charging: false,
         ranged: false,
     };
@@ -420,6 +429,14 @@ pub fn layout(w: f32, h: f32, ctx: Ctx) -> Vec<Button> {
             center: at(150.0, 0.44),
             radius: u * 0.0625,
             kind: Kind::Flask,
+        });
+    }
+    // 바꾸기(0223): 회피 왼쪽 바깥 호 — 자주 누르지 않지만 싸움 중에 엄지가 닿는 자리. 부무기가 있을 때만.
+    if ctx.swap {
+        b.push(Button {
+            center: at(176.0, 0.44),
+            radius: u * 0.06,
+            kind: Kind::Swap,
         });
     }
     // 멈춤: 왼쪽 위 끝(2026-11-06 — 사장, 메뉴 버튼은 왼쪽 위). HUD는 그만큼 오른쪽으로 비킨다(`hud_inset`).
@@ -745,6 +762,7 @@ fn press(a: &mut Read, k: Kind) {
         Kind::TurnLeft => a.turn_left = true,
         Kind::TurnRight => a.turn_right = true,
         Kind::View => a.view = true,
+        Kind::Swap => a.swap = true,
         Kind::Skill1 => a.skill1 = true,
         Kind::Skill2 => a.skill2 = true,
         Kind::Ult | Kind::Upend => a.ult = true,
@@ -990,6 +1008,7 @@ pub fn draw(o: &Overlay, v: &View) {
             Kind::Jump if o.rest => near_icon(o.near),
             Kind::Attack => attack,
             Kind::Cast => v.cast,
+            Kind::Swap => v.swap,
             Kind::Skill1 => v.skills[0].0,
             Kind::Skill2 => v.skills[1].0,
             Kind::Ult => v.ult,
@@ -1590,6 +1609,22 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             "....#####....",
             ".............",
         ],
+        // 바꾸기(0223): 마주 가는 화살 둘 — 버튼에는 바꿔 들 무기의 그림이 올라가고, 이 그림은 그 무기에 그림이 없을 때만.
+        Kind::Swap => [
+            ".............",
+            ".............",
+            "....#........",
+            "...##........",
+            "..#########..",
+            "...##........",
+            "....#........",
+            "........#....",
+            "........##...",
+            "..#########..",
+            "........##...",
+            "........#....",
+            ".............",
+        ],
         Kind::View => [
             ".............",
             ".............",
@@ -1674,6 +1709,7 @@ mod tests {
             Kind::TurnRight,
             Kind::Pause,
             Kind::View,
+            Kind::Swap,
             Kind::Hammer,
             Kind::Staff,
             Kind::Crossbow,

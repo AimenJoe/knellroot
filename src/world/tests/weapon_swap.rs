@@ -171,3 +171,68 @@ fn swapping_back_does_not_refill_the_crossbow() {
     assert_eq!(w.player.ranged.ammo, 1, "the magazine waited where it was");
     let _ = t;
 }
+
+/// 터치의 바꾸기 버튼(`Actions::swap`): 서 있으면 바로 바꾼다. 부무기가 없으면 아무 일도 없다.
+#[test]
+fn the_swap_button_swaps_at_once_when_standing() {
+    let t = Tuning::default();
+    let press = Actions {
+        swap: true,
+        ..Default::default()
+    };
+    let mut w = armed(Id::Sword, Id::Crossbow);
+    assert_eq!(swapped(&w.step(&press, &t)), Some(Id::Crossbow));
+    assert_eq!(w.player.sub, Some(Id::Sword));
+    let mut w = World::new("test", 20.0);
+    assert_eq!(swapped(&w.step(&press, &t)), None);
+}
+
+/// 바꿔 치기: 튕겨 낸 뒤 반격 창 안에 바꿔 들고 치면 **새 무기의** 반격(모으지 않은 다 모은 강타)이 나간다 — 바꾸기가 반격 창을 닫지 않는다.
+#[test]
+fn swapping_inside_the_riposte_window_ripostes_with_the_new_weapon() {
+    let t = Tuning::default();
+    let mut w = mob_swinging_in_front(&t);
+    w.set_sub(Some(Id::Hammer));
+    let mut ev = w.step(
+        &Actions {
+            parry: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    let mut n = 0;
+    while !ev.iter().any(|e| matches!(e, Event::Parry { .. })) && n < 30 {
+        ev = w.step(&Actions::default(), &t);
+        n += 1;
+    }
+    assert!(
+        ev.iter().any(|e| matches!(e, Event::Parry { .. })),
+        "parried"
+    );
+    // 히트스톱이 풀릴 때까지 기다렸다가 패링 + 평타를 함께(바꾸기), 그리고 평타.
+    while w.hitstop > 0.0 {
+        w.step(&Actions::default(), &t);
+    }
+    let ev = w.step(
+        &Actions {
+            parry: true,
+            attack: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    assert_eq!(swapped(&ev), Some(Id::Hammer));
+    w.step(
+        &Actions {
+            attack: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    assert_eq!(w.player.weapon, Id::Hammer);
+    assert!(
+        matches!(w.player.state, PState::Heavy { full: true, .. }),
+        "the hammer's riposte: {:?}",
+        w.player.state
+    );
+}
