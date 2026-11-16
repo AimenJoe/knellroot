@@ -7,7 +7,7 @@ use super::*;
 use crate::status::{Kind, NO_DOSE};
 use crate::tuning::{
     BURN_DMG, BURST_DMG, BURST_RADIUS, ROOT_BOSS_SLOW, TOLL_DMG, TOLL_RADIUS, TOLL_RIFT_SECS,
-    TOLL_SHARE,
+    TOLL_SHARE, TOLL_STACK,
 };
 
 impl World {
@@ -42,15 +42,18 @@ impl World {
                     continue;
                 }
             }
-            if out.toll {
+            if out.toll && en.active() {
                 tolls.push(i);
             }
             if out.burst > 0 {
                 bursts.push((en.pos, out.burst));
             }
         }
+        // 한꺼번에 울리는 떼: 한 적이 받는 울림의 피해는 `TOLL_STACK` 번까지(떼가 클수록 한 번의 스킬이 곱절로 세지지 않게 —
+        // 게이지 나눔·겹침은 그대로 번진다).
+        let mut rung = vec![0u8; self.enemies.len()];
         for i in tolls {
-            self.toll(t, &mut ev, i);
+            self.toll(t, &mut ev, i, &mut rung);
         }
         // 겹침: 화상 중에 묶인 적은 쓴 겹만큼 둘레를 터뜨린다.
         for (at, n) in bursts {
@@ -58,15 +61,23 @@ impl World {
                 at,
                 radius: BURST_RADIUS,
             });
-            self.skill_blast(t, &mut ev, at, BURST_RADIUS, BURST_DMG * n as i32, NO_DOSE);
+            self.skill_blast(
+                t,
+                &mut ev,
+                at,
+                BURST_RADIUS,
+                BURST_DMG * n as i32,
+                NO_DOSE,
+                false,
+            );
         }
         self.skill_ev = ev;
     }
 
-    /// 울림: `i`번 적이 울린다 — 둘레 `TOLL_RADIUS` m의 적(울린 적도)이 피해를 받고(자세는 깎지 않는다), 이웃은 울림 게이지를 나눠 받는다
+    /// 울림: `i`번 적이 울린다 — 둘레 `TOLL_RADIUS` m의 적(울린 적도)이 피해를 받고(자세는 깎지 않는다 — 한 틱에 여럿이 울리면 `TOLL_STACK` 번까지만 아프다), 이웃은 울림 게이지를 나눠 받는다
     /// (가득 차면 그 적도 조금 뒤에 울린다 — 떼를 타고 번진다. 한 번 울린 적은 `TOLL_REST` 동안 다시 울리지 않는다).
     /// 겹침: 타는 적이 울리면 이웃에 불이 한 겹 옮고, 금 간 적이 울리면 이웃에도 금이 번진다.
-    fn toll(&mut self, t: &Tuning, ev: &mut Vec<Event>, i: usize) {
+    fn toll(&mut self, t: &Tuning, ev: &mut Vec<Event>, i: usize, rung: &mut [u8]) {
         let src = &self.enemies[i];
         if !src.alive() {
             return;
@@ -85,20 +96,23 @@ impl World {
             if dv.length() - en.radius > TOLL_RADIUS {
                 continue;
             }
-            let down = self.skill_touch(
-                t,
-                ev,
-                j,
-                &Touch {
-                    damage: TOLL_DMG,
-                    poise: 0.0,
-                    stagger: 0.0,
-                    knock: Vec3::ZERO,
-                    crit: false,
-                    dose: NO_DOSE,
-                    flat: true,
-                },
-            );
+            let loud = rung[j] < TOLL_STACK;
+            rung[j] = rung[j].saturating_add(1);
+            let down = loud
+                && self.skill_touch(
+                    t,
+                    ev,
+                    j,
+                    &Touch {
+                        damage: TOLL_DMG,
+                        poise: 0.0,
+                        stagger: 0.0,
+                        knock: Vec3::ZERO,
+                        crit: false,
+                        dose: NO_DOSE,
+                        flat: true,
+                    },
+                );
             if down || j == i {
                 continue;
             }

@@ -2353,7 +2353,8 @@ pub fn rift_mult(en: &Enemy) -> f32 {
 /// 화상·묶임·금은 그 자리에서, 울림과 터짐(화상 중에 묶임)은 `tick_ails`가 둘레를 친다. 전환 중인 보스에게는 쌓이지 않는다.
 fn afflict(en: &mut Enemy, dose: crate::status::Dose, ev: &mut Vec<Event>) {
     use crate::status::{Proc, Who};
-    if dose.1 <= 0.0 || !en.alive() || en.rising() {
+    // 이 타에 쓰러진 적(체력 0 — 상태는 부른 쪽이 곧 바꾼다)에는 걸리지 않는다: 주검 위에 상태 표지·소리가 뜨지 않게.
+    if dose.1 <= 0.0 || !en.alive() || en.hp <= 0 || en.rising() {
         return;
     }
     let who = Who {

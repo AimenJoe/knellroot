@@ -6,7 +6,7 @@ use crate::skills::{Id as Sk, Loadout, Pick, Slot};
 use crate::status::Kind as Ty;
 use crate::tuning::{
     BURN_DMG, BURST_DMG, RIFT_BOSS_MULT, RIFT_MULT, ROOT_BOSS_SLOW, ROOT_POISE, TOLL_DMG,
-    TOLL_RIFT_SECS, TOLL_SHARE,
+    TOLL_RIFT_SECS, TOLL_SHARE, TOLL_STACK,
 };
 
 /// 가만히 서 있는(쉬는) 튼튼한 잡몹 하나.
@@ -170,10 +170,11 @@ fn ringing_runs_once_through_a_pack_and_stops() {
     let ev = run(&mut w, &t, 9.0);
     assert_eq!(count(&ev, |e| matches!(e, Event::Toll { .. })), 6);
     for &i in &pack {
+        // 첫 울림 하나 + 뒤따라 한꺼번에 울린 다섯 가운데 아픈 것은 `TOLL_STACK` 번까지.
         assert_eq!(
             w.enemies[i].hp,
-            500 - 6 * TOLL_DMG,
-            "six tolls, each heard by all"
+            500 - (1 + TOLL_STACK as i32) * TOLL_DMG,
+            "six tolls: the first, then the five at once — capped"
         );
     }
 }
@@ -312,4 +313,41 @@ fn item_affixes_scale_the_type_build_and_the_skill_cooldown() {
         ..Mods::default()
     });
     assert!((short - cd * 0.9).abs() < 1e-3, "{short} vs {cd}");
+}
+
+/// 떼가 한꺼번에 울려도 한 적이 받는 울림의 피해는 `TOLL_STACK` 번까지 — 떼가 클수록 스킬 한 번이 곱절로 세지지 않는다.
+#[test]
+fn a_whole_pack_tolling_at_once_hurts_each_foe_only_a_few_tolls_worth() {
+    let t = Tuning::default();
+    for n in [2usize, 4, 10, 24] {
+        let mut w = World::new("test", 30.0);
+        let ids: Vec<usize> = (0..n)
+            .map(|k| {
+                let (a, r) = (k as f32 * 2.4, 0.6 + 0.35 * (k as f32).sqrt());
+                foe(&mut w, vec3(6.0 + r * a.cos(), 0.0, r * a.sin()))
+            })
+            .collect();
+        for &i in &ids {
+            fill(&mut w, i, Ty::Knell);
+        }
+        let ev = run(&mut w, &t, 8.0);
+        assert_eq!(count(&ev, |e| matches!(e, Event::Toll { .. })), n);
+        let most = TOLL_DMG * (n as i32).min(TOLL_STACK as i32);
+        for &i in &ids {
+            assert_eq!(500 - w.enemies[i].hp, most, "pack of {n}");
+        }
+    }
+}
+
+/// 이 타에 쓰러진 적에게는 걸리지 않는다 — 주검 위에 상태 표지·소리가 뜨지 않는다(터짐도 남지 않는다).
+#[test]
+fn a_foe_the_hit_just_killed_takes_no_affliction() {
+    let mut w = World::new("test", 30.0);
+    let i = foe(&mut w, vec3(6.0, 0.0, 0.0));
+    fill(&mut w, i, Ty::Ember);
+    w.enemies[i].hp = 0;
+    let before = w.enemies[i].ail;
+    let ev = fill(&mut w, i, Ty::Root);
+    assert!(ev.is_empty(), "{ev:?}");
+    assert_eq!(w.enemies[i].ail, before);
 }

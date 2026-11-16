@@ -485,6 +485,9 @@ pub fn draw_echo(f: &Frame, k: f32) {
     }
 }
 
+/// 든 무기로 못 쓰는 스킬의 그림 밝기(대기 중 0.45보다 어둡게 — 기다리면 되는 것과 갈린다).
+const UNFIT_DIM: f32 = 0.18;
+
 /// `edge`: 맞음 테의 세기 배율(랩 `hurt.edge`, 0 = 끔 — 창이 위에 뜬 동안은 0).
 /// 스킬 칸(0151): 오른쪽 아래 — 끼운 둘의 그림(터치 버튼과 같은 픽토그램) + 대기(위에서 덮였다 걷힌다) + 버튼 이름,
 /// 그 위에 큰 기술 게이지(가득 차면 금빛으로 숨 쉰다). 터치는 화면 버튼이 같은 것을 보여 주므로 그리지 않는다.
@@ -536,6 +539,15 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
         let vacant = pl.skill.rank[i] == 0;
         if !vacant {
             crate::touch::icon(crate::touch::skill_icon(pl.skill.worn[i]), c, r, dim, tint);
+        } else if pl.skill.known[i] > 0 {
+            // 배웠지만 지금 든 무기로는 못 쓰는 스킬(0223 V3): 사라진 것이 아니다 — 아주 흐린 그림으로 자리를 남긴다(빈 칸과 갈린다).
+            crate::touch::icon(
+                crate::touch::skill_icon(pl.skill.worn[i]),
+                c,
+                r,
+                UNFIT_DIM,
+                tint,
+            );
         }
         if k < 1.0 && !vacant {
             draw_rectangle(x, y, side, side * (1.0 - k), Color::new(0.0, 0.0, 0.0, 0.5));

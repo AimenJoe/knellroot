@@ -159,6 +159,9 @@ pub const TOLL_DELAY: f32 = 0.15;
 pub const TOLL_REST: f32 = 3.0;
 pub const TOLL_RADIUS: f32 = 4.0;
 pub const TOLL_DMG: i32 = 4;
+/// 한 틱에 여럿이 울릴 때 한 적이 받는 울림 피해의 횟수 상한 — 없으면 떼의 크기만큼 곱절이 된다(열이 한꺼번에 울리면 저마다 40:
+/// 스킬 한 번에 잡몹 떼가 사라진다. 잰 것 0223 V2 검증).
+pub const TOLL_STACK: u8 = 3;
 pub const TOLL_SHARE: f32 = 0.4;
 pub const TOLL_RIFT_SECS: f32 = 2.0;
 /// 겹침(화상 중에 묶임): 터지는 둘레(m) · 쓴 겹마다의 피해.

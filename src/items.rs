@@ -128,9 +128,11 @@ impl Stat {
     /// 단마다의 값(화면에 보이는 수 — 더하기는 그 수, %는 퍼센트).
     pub fn values(self) -> [f32; TIERS as usize] {
         match self {
-            Stat::Dmg => [2.0, 4.0, 6.0],
-            Stat::Heavy => [4.0, 7.0, 10.0],
-            Stat::Shot => [2.0, 4.0, 6.0],
+            // 피해 줄은 벼리기 한 단(+5, 0180)보다 작게: 보스 모의(허수아비)에서 +2/+4/+6은 싸움을 18/31/43% 줄였고
+            // 벼리기 한 단은 37% — 굴려 얻는 줄 하나가 정해진 수의 숫돌로 사는 단을 넘지 않는다(0223 검증).
+            Stat::Dmg => [1.0, 2.0, 3.0],
+            Stat::Heavy => [3.0, 5.0, 7.0],
+            Stat::Shot => [1.0, 2.0, 3.0],
             Stat::Poise => [8.0, 14.0, 20.0],
             Stat::Swift => [4.0, 7.0, 10.0],
             Stat::Opened => [3.0, 5.0, 8.0],
@@ -384,12 +386,21 @@ impl Bag {
         self.items.iter().find(|(i, _)| *i == id).map(|(_, it)| it)
     }
 
+    /// 지금까지 넣은 수(다음 번호) — 떨굼의 씨앗에 섞는다(같은 자리를 다시 쓰러뜨려도 다른 것이 나오게).
+    pub fn serial(&self) -> u32 {
+        self.next
+    }
+
     /// 가방에 넣는다 — 새 번호를 돌려준다.
     pub fn add(&mut self, item: Item) -> u32 {
-        let id = self
-            .next
-            .max(self.items.iter().map(|(i, _)| i + 1).max().unwrap_or(0));
-        self.next = id + 1;
+        let id = self.next.max(
+            self.items
+                .iter()
+                .map(|(i, _)| i.saturating_add(1))
+                .max()
+                .unwrap_or(0),
+        );
+        self.next = id.saturating_add(1);
         self.items.push((id, item));
         id
     }
@@ -443,15 +454,31 @@ impl Bag {
             }
         }
         let mut used: Vec<u32> = Vec::new();
+        let g = self.gear;
+        let was = [
+            g.main,
+            g.sub,
+            g.shield,
+            g.charms[0],
+            g.charms[1],
+            g.charms[2],
+        ];
         let mut fix = |bag: &Bag, slot: Option<u32>, base: Option<Base>| -> Option<u32> {
             let base = base.filter(|b| *b != Base::Weapon(weapons::Id::Fists))?;
             let keep = slot
                 .filter(|id| bag.get(*id).is_some_and(|it| it.base == base) && !used.contains(id));
-            let id = keep.or_else(|| bag.of(base).map(|(i, _)| i).find(|i| !used.contains(i)))?;
+            // 자리가 안 맞으면: 방금까지 다른 자리에 끼고 있던 그 바탕의 아이템이 먼저(주·부무기를 맞바꾸거나 장신구의 칸을
+            // 옮겨도 끼던 그 아이템이 따라간다 — 바탕의 첫 아이템(보통 것)으로 슬쩍 바뀌지 않는다), 없으면 그 바탕의 첫 아이템.
+            let id = keep
+                .or_else(|| {
+                    was.iter().flatten().copied().find(|i| {
+                        bag.get(*i).is_some_and(|it| it.base == base) && !used.contains(i)
+                    })
+                })
+                .or_else(|| bag.of(base).map(|(i, _)| i).find(|i| !used.contains(i)))?;
             used.push(id);
             Some(id)
         };
-        let g = self.gear;
         let main = fix(self, g.main, worn.main.map(Base::Weapon));
         let sub = fix(self, g.sub, worn.sub.map(Base::Weapon));
         let shield = fix(self, g.shield, worn.shield.map(Base::Shield));
@@ -498,6 +525,8 @@ impl Bag {
             .filter_map(|(id, text)| Some((id.parse::<u32>().ok()?, Item::decode(text)?)))
             .collect();
         items.sort_by_key(|(i, _)| *i);
+        // 손댄 기록의 같은 번호(`item.7`·`item.007`)는 하나만.
+        items.dedup_by_key(|(i, _)| *i);
         let at = |k: &str| r.num(k);
         let mut charms_at = [None; charms::SLOTS];
         for (i, slot) in charms_at.iter_mut().enumerate() {
@@ -579,6 +608,28 @@ impl Rng {
     }
 }
 
+/// 여벌의 바탕을 고른다(0223 V4c): 씨앗을 섞어 무게대로 — 지금 낀 바탕은 `WORN_WEIGHT`배(쓰는 것의 여벌이 더 자주 나온다 —
+/// 견줄 것이 생긴다), 나머지는 1. 씨앗의 낮은 자리(자리 번호)만 달라도 다른 바탕이 나온다.
+pub fn pick_base(pool: &[Base], worn: &[Base], seed: u64) -> Option<Base> {
+    let weight = |b: &Base| if worn.contains(b) { WORN_WEIGHT } else { 1 };
+    let total: usize = pool.iter().map(weight).sum();
+    if total == 0 {
+        return None;
+    }
+    let mut r = Rng::new(seed ^ 0x0B45_E5ED).below(total);
+    for b in pool {
+        let w = weight(b);
+        if r < w {
+            return Some(*b);
+        }
+        r -= w;
+    }
+    pool.last().copied()
+}
+
+/// 낀 바탕의 무게(여벌 고르기).
+pub const WORN_WEIGHT: usize = 3;
+
 /// 등급을 굴린다: 떨군 것의 급(`luck` 0 = 잡몹·상자 · 1 = 엘리트 · 2 = 문지기)이 높을수록 드문 쪽으로.
 /// 백에 몇 — 잡몹·상자 [보통 60 · 단단한 32 · 드문 8], 엘리트 [20 · 55 · 25], 문지기 [0 · 40 · 60].
 pub fn roll_rarity(luck: u8, seed: u64) -> Rarity {
@@ -633,6 +684,30 @@ mod tests {
         v.extend(shield::TABLE.iter().map(|d| Base::Shield(d.id)));
         v.extend(charms::TABLE.iter().map(|d| Base::Charm(d.id)));
         v
+    }
+
+    /// 여벌의 바탕: 자리 번호만 다른 씨앗들이 여러 바탕을 낸다(한 판의 엘리트가 모두 같은 것을 주지 않는다), 낀 바탕이 더 자주.
+    #[test]
+    fn spare_bases_vary_by_spot_and_lean_to_what_is_worn() {
+        let pool = bases();
+        let worn = [pool[0]];
+        let seed = |i: u64| (3u64 << 48) ^ (2u64 << 32) ^ (5u64 << 12) ^ i;
+        let mut seen = std::collections::BTreeSet::new();
+        for i in 0..6 {
+            let b = pick_base(&pool, &worn, seed(i)).unwrap();
+            seen.insert(format!("{b:?}"));
+        }
+        assert!(seen.len() >= 3, "six spots gave only {seen:?}");
+        let n = 4000;
+        let hits = (0..n)
+            .filter(|&i| pick_base(&pool, &worn, seed(i)) == Some(pool[0]))
+            .count() as f32;
+        let fair = WORN_WEIGHT as f32 / (pool.len() - 1 + WORN_WEIGHT) as f32;
+        assert!(
+            (hits / n as f32 - fair).abs() < 0.03,
+            "{hits} of {n}, want {fair}"
+        );
+        assert_eq!(pick_base(&[], &worn, 1), None);
     }
 
     /// 등급 = 옵션의 줄 수. 줄마다 다른 옵션이고 바탕에 맞는 것만, 세기는 지역의 상한 안. 씨앗이 같으면 같은 아이템.
@@ -853,7 +928,7 @@ mod tests {
         };
         let st = Stats::compute(&bag.mods(&worn));
         let none = Stats::default();
-        assert_eq!(st.dmg, none.dmg + 4);
+        assert_eq!(st.dmg, none.dmg + Stat::Dmg.value(2) as i32);
         assert_eq!(st.max_hp, none.max_hp + 10);
         assert_eq!(st.heavy_dmg, none.heavy_dmg, "the off weapon waits");
         assert_eq!(st.atk_speed, none.atk_speed, "the spare stays in the bag");
@@ -865,8 +940,46 @@ mod tests {
             ..worn
         };
         let st = Stats::compute(&bag.mods(&swapped));
-        assert_eq!((st.dmg, st.heavy_dmg), (none.dmg, none.heavy_dmg + 7));
+        assert_eq!(
+            (st.dmg, st.heavy_dmg),
+            (none.dmg, none.heavy_dmg + Stat::Heavy.value(2) as i32)
+        );
         let _ = spare;
+    }
+
+    /// 주·부무기를 맞바꾸거나 장신구의 칸을 옮겨도 끼던 그 아이템이 따라간다 — 바탕의 첫 아이템(보통 것)으로 슬쩍 바뀌지 않는다.
+    #[test]
+    fn worn_items_follow_their_base_when_slots_are_exchanged() {
+        let (sword, hammer) = (
+            Base::Weapon(weapons::Id::Sword),
+            Base::Weapon(weapons::Id::Hammer),
+        );
+        let (ear, hand) = (Base::Charm(charms::Id::Ear), Base::Charm(charms::Id::Hand));
+        let mut bag = Bag::default();
+        for b in [sword, hammer, ear, hand] {
+            bag.add(Item::plain(b));
+        }
+        let rs = bag.add(roll(sword, Rarity::Rare, 3, 1));
+        let rh = bag.add(roll(hammer, Rarity::Rare, 3, 2));
+        let re = bag.add(roll(ear, Rarity::Rare, 3, 3));
+        bag.gear = Gear {
+            main: Some(rs),
+            sub: Some(rh),
+            shield: None,
+            charms: [Some(re), None, None],
+        };
+        let owned = [sword, hammer, ear, hand];
+        // 장비 탭에서 망치를 주무기로(검이 부무기로), 귀를 둘째 칸으로 옮기고 첫 칸에 손.
+        let worn = Worn {
+            main: Some(weapons::Id::Hammer),
+            sub: Some(weapons::Id::Sword),
+            shield: None,
+            charms: [Some(charms::Id::Hand), Some(charms::Id::Ear), None],
+        };
+        bag.settle(&owned, &worn);
+        assert_eq!((bag.gear.main, bag.gear.sub), (Some(rh), Some(rs)));
+        assert_eq!(bag.gear.charms[1], Some(re));
+        assert_eq!(bag.get(bag.gear.charms[0].unwrap()).unwrap().base, hand);
     }
 
     /// 거둘 수 있는 것은 여벌뿐: 낀 것은 아니고, 그 바탕의 마지막 하나도 아니다(가진 바탕이 사라지지 않는다).

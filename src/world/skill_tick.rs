@@ -1060,7 +1060,7 @@ impl World {
                 // 박힌 자리(ㄱ): 돌아오지 않고 끝에서 터진다.
                 (true, true, Some((radius, damage))) => {
                     let at = vec3(b.pos.x, feet, b.pos.z);
-                    self.skill_blast(t, &mut ev, at, radius, damage, NO_DOSE);
+                    self.skill_blast(t, &mut ev, at, radius, damage, NO_DOSE, true);
                     ev.push(Event::ThrowBoom { at, radius });
                 }
                 (true, true, None) => {
@@ -1188,7 +1188,8 @@ impl World {
         false
     }
 
-    /// 둘레 터짐(G2 — 던지기의 박힌 자리): `at` 둘레 `radius` m의 깨어 있는 적에게 피해, 바깥으로 민다(보스는 조금).
+    /// 둘레 터짐(G2 — 던지기의 박힌 자리 · 0223 V2 화상 중에 묶여 터짐): `at` 둘레 `radius` m의 깨어 있는 적에게 피해, 바깥으로 민다(보스는 조금).
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn skill_blast(
         &mut self,
         t: &Tuning,
@@ -1197,6 +1198,7 @@ impl World {
         radius: f32,
         damage: i32,
         dose: Dose,
+        own: bool,
     ) {
         let mut n = 0;
         for i in 0..self.enemies.len() {
@@ -1218,9 +1220,11 @@ impl World {
                     poise: 0.0,
                     stagger: 0.0,
                     knock,
-                    crit: true,
+                    // 스킬이 낸 터짐은 타의 덤·드러난 틈의 치명타를 받고, 타입이 스스로 낸 터짐(`own`이 거짓)은 화상·울림처럼
+                    // 덤 없이 — 드러난 틈도 쓰지 않는다.
+                    crit: own,
                     dose,
-                    flat: false,
+                    flat: !own,
                 },
             );
             n += 1;

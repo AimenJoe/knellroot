@@ -76,7 +76,15 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     if let Some(r) = std::env::var("SIM_FORGE").ok().and_then(|v| v.parse().ok()) {
         prog.forged.set(b.weapon, r);
     }
-    w.apply_stats(prog.stats(), true);
+    // 옵션 훑기(0223 V4): `SIM_DMG=6`이면 "주는 피해" 옵션을 얹어 잰다.
+    let mut st = prog.stats();
+    if let Some(d) = std::env::var("SIM_DMG")
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+    {
+        st.dmg += d;
+    }
+    w.apply_stats(st, true);
     w.tree = b.tree;
     let boss = w.spawn(kind, vec3(0.0, 0.0, -7.0));
     // 체력 훑기(0127): `SIM_BOSS_HP=600`이면 보스 체력을 바꿔 잰다(자세 막대는 보스 고정값이라 그대로).

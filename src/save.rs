@@ -2076,7 +2076,7 @@ forge.sword=3
         let back = Progress::from_record(Record::parse(&text));
         assert_eq!(back.bag, p.bag);
         assert!(!Progress::default().to_record().to_text().contains("item."));
-        // 든 검에 "주는 피해 +4"가 붙으면 능력치에 든다 — 부무기(망치)의 옵션은 들기 전에는 아니다.
+        // 든 검에 "주는 피해" 줄이 붙으면 능력치에 든다 — 부무기(망치)의 옵션은 들기 전에는 아니다.
         let mut p = p;
         let plain = p.stats();
         let with = |base, stat| Item {
@@ -2095,7 +2095,8 @@ forge.sword=3
             (Some(sword), Some(hammer))
         );
         let st = p.stats();
-        assert_eq!((st.dmg, st.heavy_dmg), (plain.dmg + 4, plain.heavy_dmg));
+        let more = Stat::Dmg.value(2) as i32;
+        assert_eq!((st.dmg, st.heavy_dmg), (plain.dmg + more, plain.heavy_dmg));
     }
 
     /// 0223 V3: 부무기 칸에 끼운 스킬 둘은 기록 `skill.sub.1`·`skill.sub.2`에 남는다 — 처음의 둘이면 쓰지 않는다. 주무기의 칸과는 따로다.

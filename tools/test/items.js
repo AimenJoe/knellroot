@@ -73,6 +73,7 @@ async function open(browser, seed, tag) {
     await g.press('ArrowRight'); await g.page.waitForTimeout(250);
     await g.shot('5-charm-slot');
     errors.push(...g.bad);
+    await g.page.context().close(); // 장면마다 닫는다 — 2배 화면 셋이 함께 살아 있으면 셋째가 뜨다 죽는다
   }
   {
     // 옛 기록(아이템 줄 없음): 장비 탭을 한 번 열고 닫으면(저장) 가진 바탕마다 보통 아이템이 생긴다.
@@ -86,6 +87,7 @@ async function open(browser, seed, tag) {
       if (!r.includes(want)) errors.push(`old record: missing ${want}: ${JSON.stringify(r)}`);
     }
     errors.push(...g.bad);
+    await g.page.context().close(); // 장면마다 닫는다 — 2배 화면 셋이 함께 살아 있으면 셋째가 뜨다 죽는다
   }
   {
     // 화로의 가게(쉬기 F → 가게 탭): 줄의 끝에 여벌을 잔불로 바꾸는 줄 — 묻는 창(커서는 취소)에서 바꾸면 가방에서 빠지고 잔불이 는다.
@@ -103,6 +105,7 @@ async function open(browser, seed, tag) {
     if (!/embers=328\n/.test(r)) errors.push(`embers after salvage: ${JSON.stringify(r)}`);
     if (!r.includes('item.0=w.sword|p||0')) errors.push(`the worn sword must stay: ${JSON.stringify(r)}`);
     errors.push(...g.bad);
+    await g.page.context().close(); // 장면마다 닫는다 — 2배 화면 셋이 함께 살아 있으면 셋째가 뜨다 죽는다
   }
   await browser.close();
   server.close();

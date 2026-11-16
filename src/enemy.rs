@@ -1123,6 +1123,8 @@ impl Enemy {
                     self.facing = face;
                     self.hp = self.max_hp;
                     self.poise = 0.0;
+                    // 타입 상태(0223 V2)도 걷힌다 — 가득 찬 적이 화상으로 다시 깎이지 않게.
+                    self.ail = Default::default();
                     self.repeated = false;
                 }
             }

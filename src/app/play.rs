@@ -408,13 +408,22 @@ impl App {
 
     fn on_weapon_swap(&mut self, to: crate::weapons::Id) {
         self.weapon = to;
+        // 개발 놀이터(아레나): 든 무기는 개발 창이 정한 것(가진 것이 아닐 수 있다) — 기록의 무기·칸·가방을 건드리지 않는다.
+        #[cfg(feature = "dev")]
+        if self.stack.base() == Scene::Sandbox {
+            self.snd(crate::sfx::Id::UiConfirm);
+            return;
+        }
         self.progress.weapon = Some(to);
         self.progress.sub = self.world.player.sub;
         // 스킬 칸도 무기를 따라 맞바뀐다(0223 V3 — 월드는 이미 바꿨다).
         std::mem::swap(&mut self.progress.skills, &mut self.progress.sub_skills);
         self.progress.bag.swap_weapons();
         // 벼린 단(0180)은 든 무기에만 — 바꿔 든 무기의 것으로 능력치를 다시 합친다(V1b에서 빠뜨렸다: 바꿔 들어도 옛 무기의 단이 남았다).
+        // 탄창은 월드가 바꿔 든 그대로(가득이었나를 옛 무기의 능력치로 재면, 벼려 늘린 탄창이 바꿔 들 때마다 차오른다).
+        let ammo = self.world.player.ranged.ammo;
         self.world.apply_stats(self.progress.stats(), false);
+        self.world.player.ranged.ammo = ammo.min(self.world.mag_of(to));
         self.persist();
         self.snd(crate::sfx::Id::UiConfirm);
     }

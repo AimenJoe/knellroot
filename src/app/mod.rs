@@ -213,6 +213,8 @@ pub struct App {
     play_acc: f32,
     /// 잠깐 뜨는 알림(0064 M3 — 상자에서 얻은 것 등)과 남은 초.
     toast: Option<(String, f32)>,
+    /// 지금 알림이 끝난 뒤에 뜰 알림(0223 V4 — 여벌을 얻은 틱에 핵·엘리트의 알림도 뜬다: 한 칸뿐이라 덮어쓰면 하나가 안 보인다).
+    toast_wait: Vec<String>,
 }
 
 /// 알림이 떠 있는 시간(초).
@@ -402,6 +404,7 @@ impl App {
             save_failed: false,
             play_acc: 0.0,
             toast: None,
+            toast_wait: Vec::new(),
         }
     }
 
@@ -573,6 +576,7 @@ impl App {
         let old = self.weapon;
         if self.progress.sub == Some(w) {
             self.progress.sub = (old != weapons::Id::Fists).then_some(old);
+            self.swap_kits();
         }
         self.weapon = w;
         self.progress.weapon = Some(w);
@@ -580,11 +584,19 @@ impl App {
         self.persist();
     }
 
+    /// 주·부무기를 장비 탭에서 맞바꿨다(0223 V3): 스킬 칸도 무기를 따라간다 — 싸움 중의 바꿔 들기(`on_weapon_swap`)와 같은 규칙
+    /// (안 그러면 맞바꾼 두 무기의 칸 넷이 모두 안 맞는 스킬이 된다). 낀 아이템은 `settle_items`가 따라가게 한다.
+    fn swap_kits(&mut self) {
+        std::mem::swap(&mut self.progress.skills, &mut self.progress.sub_skills);
+        self.apply_board();
+    }
+
     /// 부무기를 정한다(0223): 지금 주무기를 고르면 둘을 맞바꾼다(주무기 자리에는 옛 부무기, 없으면 맨손).
     pub(super) fn set_sub_weapon(&mut self, s: Option<weapons::Id>) {
         if s.is_some() && s == Some(self.weapon) {
             self.weapon = self.progress.sub.unwrap_or(weapons::Id::Fists);
             self.progress.weapon = Some(self.weapon);
+            self.swap_kits();
         }
         self.progress.sub = s;
         self.arm_world();
@@ -831,6 +843,9 @@ impl App {
             *t -= TICK_DT;
         }
         self.toast = self.toast.take().filter(|(_, t)| *t > 0.0);
+        if self.toast.is_none() && !self.toast_wait.is_empty() {
+            self.toast = Some((self.toast_wait.remove(0), TOAST_TIME));
+        }
         if a.dev_overlay {
             self.dev_overlay = !self.dev_overlay;
         }

@@ -280,7 +280,13 @@ impl App {
 
     /// 이 판의 떨굼에 쓰는 씨앗: 지역 · 자리 · 몇째 판 — 같은 기록의 같은 자리라도 판이 다르면 다른 것이 나온다.
     pub(super) fn loot_seed(&self, kind: u64, i: usize) -> u64 {
-        (kind << 48) ^ ((self.stage as u64) << 32) ^ ((self.progress.runs as u64) << 12) ^ i as u64
+        // 가방의 다음 번호도 섞는다: 지역을 오가거나 이어하면 그 판의 엘리트가 다시 서는데(판 수는 그대로), 같은 씨앗이면
+        // 다시 쓰러뜨릴 때마다 똑같은 아이템이 나온다.
+        (kind << 48)
+            ^ ((self.stage as u64) << 32)
+            ^ ((self.progress.bag.serial() as u64) << 20)
+            ^ ((self.progress.runs as u64) << 12)
+            ^ i as u64
     }
 
     /// 장신구를 얻는다: 가진 것에 넣고, 빈 칸이 있으면 바로 끼운다(얻자마자 효과가 보이게). 알림. `roll`이 있으면 등급·옵션을 굴린다.
@@ -315,10 +321,16 @@ impl App {
         let mut pool: Vec<Base> = p.weapons.iter().map(|w| Base::Weapon(*w)).collect();
         pool.extend(p.shields.iter().map(|s| Base::Shield(*s)));
         pool.extend(p.owned.iter().map(|c| Base::Charm(*c)));
-        if pool.is_empty() {
+        let mut worn: Vec<Base> = [p.weapon, p.sub]
+            .into_iter()
+            .flatten()
+            .map(Base::Weapon)
+            .collect();
+        worn.extend(p.shield.map(Base::Shield));
+        worn.extend(p.worn.iter().flatten().map(|c| Base::Charm(*c)));
+        let Some(base) = items::pick_base(&pool, &worn, seed) else {
             return;
-        }
-        let base = pool[(seed >> 7) as usize % pool.len()];
+        };
         let name = match base {
             Base::Weapon(w) => weapon_name(w),
             Base::Shield(s) => tr(s.def().name),
@@ -336,14 +348,13 @@ impl App {
             self.world.embers += n;
             self.progress.embers = self.world.embers;
             let label = crate::i18n::item_label(item.rarity, name);
-            self.toast = Some((
-                fill(s.toast_item_full, &[&label, &n.to_string()]),
-                TOAST_TIME,
-            ));
+            self.toast_wait
+                .push(fill(s.toast_item_full, &[&label, &n.to_string()]));
             return;
         }
         let label = self.bag_in(base, Some((luck, seed)), name);
-        self.toast = Some((fill(s.toast_item, &[&label]), TOAST_TIME));
+        // 같은 틱에 핵·엘리트의 알림도 뜬다 — 덮어쓰지 않고 그 뒤에 잇는다.
+        self.toast_wait.push(fill(s.toast_item, &[&label]));
     }
 
     /// 화로 가게에서 산다(0064 M4): 잔불이 모자라면 알림만.

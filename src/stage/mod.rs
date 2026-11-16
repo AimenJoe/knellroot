@@ -1425,6 +1425,8 @@ impl StageRun {
             e.waking = false;
             e.roused = false;
             e.exposed = 0.0;
+            // 타입 상태(0223 V2)도 처음부터 — 지난 싸움의 화상·금·닳은 게이지가 다시 선 문지기에 남지 않게.
+            e.ail = Default::default();
             e.knock = Vec3::ZERO;
             e.pos = home;
             e.prev = home;
