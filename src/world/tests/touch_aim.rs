@@ -218,3 +218,99 @@ fn only_skills_with_a_direction_take_the_drag() {
         assert_eq!(form.aims(), !round, "{id:?}");
     }
 }
+
+/// 쇠뇌의 첫 볼트 쪽(수평).
+fn crossbow_shot(w: &mut World, a: Actions) -> Vec3 {
+    let t = Tuning::default();
+    w.step(&Actions { cast: true, ..a }, &t);
+    for _ in 0..30 {
+        if !w.bolts.is_empty() {
+            break;
+        }
+        w.step(&a, &t);
+    }
+    let b = w.bolts.first().expect("a bolt flies");
+    vec3(b.dir.x, 0.0, b.dir.z).normalize()
+}
+
+/// 0219 패드 조준 보조: 스틱이 적에게서 5° 빗나가도 ±8° 안이면 그 적에게 붙는다. 보조가 없으면(마우스·터치 끌기) 스틱 그대로,
+/// 원뿔 밖(20°)의 적은 찾지 않고, 스틱을 안 기울이면 바라보는 쪽(0213 그대로).
+#[test]
+fn a_pad_stick_snaps_to_a_foe_within_the_narrow_cone() {
+    let off = |deg: f32| vec2(deg.to_radians().sin(), deg.to_radians().cos());
+    let foe = vec3(0.0, 0.0, -10.0); // 앞(화면 위 = -z) 10m
+    let shoot = |stick: Vec2, assist: f32| {
+        let mut w = World::new("test", 40.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        w.view_yaw = Some(0.0);
+        w.spawn_mob(w.player.pos + foe);
+        idle(&mut w);
+        crossbow_shot(
+            &mut w,
+            Actions {
+                aim: stick,
+                aim_assist: assist,
+                ..Default::default()
+            },
+        )
+    };
+    let d = shoot(off(5.0), 8.0);
+    assert!(d.z < -0.999, "snapped onto the foe: {d:?}");
+    let d = shoot(off(5.0), 0.0);
+    assert!(
+        (d.x - 5f32.to_radians().sin()).abs() < 0.01,
+        "no assist: the stick as is {d:?}"
+    );
+    let d = shoot(off(20.0), 8.0);
+    assert!(d.x > 0.3, "outside the cone: not pulled {d:?}");
+    // 스틱을 안 기울이면 바라보는 쪽 — 적이 옆에 있어도 찾지 않는다.
+    let mut w = World::new("test", 40.0);
+    w.set_weapon(weapons::Id::Crossbow);
+    w.view_yaw = Some(0.0);
+    w.spawn_mob(w.player.pos + vec3(6.0, 0.0, 0.0));
+    idle(&mut w);
+    let face = w.player.facing_dir();
+    let d = crossbow_shot(
+        &mut w,
+        Actions {
+            aim_assist: 8.0,
+            ..Default::default()
+        },
+    );
+    assert!(d.dot(face) > 0.99, "no stick, no seeking (0213)");
+}
+
+/// 0219(사장 "숄더뷰에서의 원거리 무기 조준도 필요해 — 지금은 캐릭터가 움직이는 방향으로 쏘니까 이상함"): 숄더뷰의 원거리는
+/// 카메라가 보는 쪽으로 — 옆으로 걸으며 쏴도 앞으로 간다. 근접의 자동 조준은 건드리지 않는다.
+#[test]
+fn in_the_shoulder_view_the_shot_goes_where_the_camera_looks() {
+    let mut w = World::new("test", 40.0);
+    w.set_weapon(weapons::Id::Crossbow);
+    w.view_yaw = Some(0.0); // 카메라 앞 = 화면 위 = -z
+    let t = Tuning::default();
+    // 오른쪽으로 걸어 몸이 오른쪽을 본다.
+    for _ in 0..20 {
+        w.step(
+            &Actions {
+                move_dir: vec2(1.0, 0.0),
+                aim_ahead: true,
+                ..Default::default()
+            },
+            &t,
+        );
+    }
+    assert!(w.player.facing_dir().x > 0.9, "walking right faces right");
+    let d = crossbow_shot(
+        &mut w,
+        Actions {
+            move_dir: vec2(1.0, 0.0),
+            aim_ahead: true,
+            ..Default::default()
+        },
+    );
+    assert!(
+        d.z < -0.99,
+        "the camera's ahead, not the walking way: {d:?}"
+    );
+    assert!(w.aim_line.is_some(), "the reticle has a line to draw");
+}
