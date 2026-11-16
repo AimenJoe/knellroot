@@ -44,6 +44,9 @@ pub mod key {
     /// 끼운 스킬 둘(0151 — 값은 `skills::Id::key`).
     pub const SKILL1: &str = "skill.1";
     pub const SKILL2: &str = "skill.2";
+    /// 부무기의 칸 둘(0223 V3 — 무기 칸마다 스킬 둘).
+    pub const SKILL_SUB1: &str = "skill.sub.1";
+    pub const SKILL_SUB2: &str = "skill.sub.2";
     /// 기술 판(0158): 스킬마다의 단 `skill.rank.<스킬 키>`(0~5)·3단의 고르기 `skill.pick.<스킬 키>`("a"·"b"),
     /// 큰 기술의 단 `ult.rank.<큰 기술 키>`(1~3). 뒤에 스킬 키(`skills::Id::key`·`skills::UPEND_KEY`)를 붙인다.
     /// 처음 그대로인 칸은 쓰지 않는다 — 키가 없는 옛 기록은 처음의 둘 1단·큰 기술 1단.
@@ -246,6 +249,8 @@ pub struct Progress {
     pub weapons: Vec<crate::weapons::Id>,
     /// 끼운 스킬 둘(0151). 기록에 없으면 처음의 둘(`skills::START`). 배운 스킬만 끼운다(0158).
     pub skills: crate::skills::Worn,
+    /// 부무기 칸에 끼운 스킬 둘(0223 V3). 주무기와 부무기를 바꿔 들면 `skills`와 맞바뀐다.
+    pub sub_skills: crate::skills::Worn,
     /// 끼운 큰 기술(0158 G2 — 하나). 기록에 없으면 쟁반 뒤집기. 배운 것만 끼운다.
     pub ult: crate::skills::Ult,
     /// 걸친 덧옷(0176 — 하나, 가진 것만).
@@ -535,6 +540,15 @@ impl Progress {
                     at(key::SKILL2, crate::skills::START[1]),
                 ]))
             },
+            sub_skills: {
+                let at = |k: &str, d: crate::skills::Id| {
+                    r.get(k).and_then(crate::skills::Id::by_key).unwrap_or(d)
+                };
+                crate::skills::Worn(crate::skills::sane([
+                    at(key::SKILL_SUB1, crate::skills::START[0]),
+                    at(key::SKILL_SUB2, crate::skills::START[1]),
+                ]))
+            },
             ult: r
                 .get(key::ULT_WORN)
                 .and_then(crate::skills::Ult::by_key)
@@ -779,6 +793,13 @@ impl Progress {
         } else {
             r.set(key::SKILL1, self.skills.0[0].key());
             r.set(key::SKILL2, self.skills.0[1].key());
+        }
+        if self.sub_skills.0 == crate::skills::START {
+            r.remove(key::SKILL_SUB1);
+            r.remove(key::SKILL_SUB2);
+        } else {
+            r.set(key::SKILL_SUB1, self.sub_skills.0[0].key());
+            r.set(key::SKILL_SUB2, self.sub_skills.0[1].key());
         }
         // 기술 판(0158): 처음 그대로인 칸은 쓰지 않는다(빈 슬롯이 "기록 있음"이 되지 않게, 옛 판으로 읽어도 그대로).
         {
@@ -1992,6 +2013,27 @@ forge.sword=3
         assert_eq!(back.sub, Some(crate::weapons::Id::Crossbow));
         let stray = Progress::from_record(Record::parse("shield.worn=pilgrim\n"));
         assert_eq!(stray.shield, None, "a shield you do not own is not worn");
+    }
+
+    /// 0223 V3: 부무기 칸에 끼운 스킬 둘은 기록 `skill.sub.1`·`skill.sub.2`에 남는다 — 처음의 둘이면 쓰지 않는다. 주무기의 칸과는 따로다.
+    #[test]
+    fn the_off_weapon_skill_slots_round_trip_apart_from_the_main_ones() {
+        use crate::skills::{Id, Worn, START};
+        let p = Progress {
+            skills: Worn([Id::Swallow, Id::Bash]),
+            sub_skills: Worn([Id::Quake, Id::Brace]),
+            ..Progress::default()
+        };
+        let text = p.to_record().to_text();
+        assert!(text.contains("skill.sub.1=quake") && text.contains("skill.sub.2=brace"));
+        let back = Progress::from_record(Record::parse(&text));
+        assert_eq!(back.sub_skills.0, [Id::Quake, Id::Brace]);
+        let plain = Progress::default().to_record().to_text();
+        assert!(!plain.contains("skill.sub"));
+        assert_eq!(
+            Progress::from_record(Record::parse("v=1\n")).sub_skills.0,
+            START
+        );
     }
 
     /// 0176: 걸친 덧옷은 기록 `garb.worn`에 남고, 가진 덧옷(주운 숨은 물건)이 아니면 벗은 채로 읽는다. 안 걸쳤으면 키를 쓰지 않는다.

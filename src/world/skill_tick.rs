@@ -1805,7 +1805,7 @@ impl World {
         for (i, id) in ids.into_iter().enumerate() {
             // 같은 스킬 둘이라 바꿔 끼운 칸은 1단. 단 0 = 빈 칸(0166 — 안 배운 스킬이 놓인 자리: 눌러도 아무 일 없다).
             let same = l.slots[i].id == id;
-            pl.skill.rank[i] = if same { l.slots[i].rank } else { 1 };
+            pl.skill.known[i] = if same { l.slots[i].rank } else { 1 };
             pl.skill.pick[i] = if same {
                 l.slots[i].pick
             } else {
@@ -1815,6 +1815,24 @@ impl World {
         // 단 0 = 큰 기술을 아직 안 배웠다(0172): 게이지가 차지 않는다 — 두 버튼 함께도 아무 일 없다.
         pl.skill.ult_rank = l.ult;
         pl.skill.ult = l.great;
+        self.refit_skills();
+    }
+
+    /// 부무기의 칸 둘(0223 V3): 바꿔 들면 이 둘이 버튼에 온다. 큰 기술은 무기와 상관없이 하나다(`set_skills`의 것).
+    pub fn set_sub_skills(&mut self, l: impl Into<skills::Loadout>) {
+        let l = l.into();
+        let ids = skills::sane([l.slots[0].id, l.slots[1].id]);
+        let sub = &mut self.player.skill.sub;
+        sub.0 = ids;
+        for (i, id) in ids.into_iter().enumerate() {
+            let same = l.slots[i].id == id;
+            sub.1[i] = if same { l.slots[i].rank } else { 1 };
+            sub.2[i] = if same {
+                l.slots[i].pick
+            } else {
+                skills::Pick::A
+            };
+        }
     }
 }
 
@@ -2015,6 +2033,8 @@ mod tests {
     #[test]
     fn quake_slams_the_cone_ahead_and_a_boss_does_not_stagger() {
         let (mut w, t) = world();
+        // 땅울림은 양손 무기의 스킬(0223 V3).
+        w.set_weapon(crate::weapons::Id::Hammer);
         w.set_skills([Sk::Quake, Sk::Gather]);
         // 겨누는 쪽 = 닿는 거리의 가장 가까운 적(앞의 것). 뒤·옆의 적은 부채꼴 밖.
         w.spawn_mob(vec3(0.5, 0.0, -3.0));
@@ -2269,6 +2289,8 @@ mod tests {
     #[test]
     fn a_skill_recovers_into_a_dodge() {
         let (mut w, t) = world();
+        // 땅울림은 양손 무기의 스킬(0223 V3).
+        w.set_weapon(crate::weapons::Id::Hammer);
         w.set_skills([Sk::Quake, Sk::Whirl]);
         w.step(&skill(0), &t);
         let d = Sk::Quake.def();
@@ -2296,6 +2318,10 @@ mod tests {
 
     /// 칸 0에 `id`를 `rank`단·`pick`으로 끼운다(칸 1은 남는 스킬 1단), 큰 기술은 1단.
     fn wear(w: &mut World, id: Sk, rank: u8, pick: Pick) {
+        // 손에 든 검으로 못 쓰는 스킬(0223 V3 — 땅울림은 양손)은 맞는 무기를 든다.
+        if !id.def().fits(w.player.weapon.hand()) {
+            w.set_weapon(crate::weapons::Id::Hammer);
+        }
         let other = if id == Sk::Whirl { Sk::Cut } else { Sk::Whirl };
         w.set_skills(Loadout {
             slots: [
@@ -2315,6 +2341,8 @@ mod tests {
     #[test]
     fn worn_ranks_reach_the_world_and_the_cooldown_bar_uses_the_ranked_cooldown() {
         let (mut w, t) = world();
+        // 땅울림은 양손 무기의 스킬(0223 V3).
+        w.set_weapon(crate::weapons::Id::Hammer);
         w.set_skills(Loadout {
             slots: [
                 Slot {

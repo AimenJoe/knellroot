@@ -621,8 +621,12 @@ pub struct SkillState {
     pub gauge_swing: u32,
     pub denied: f32,
     /// 기술 판(0158): 끼운 칸의 단·고르기, 큰 기술의 단 — 앱이 `set_skills`로 넣는다(월드는 기록을 모른다).
+    /// `rank`는 **지금 든 무기로 쓸 수 있는** 단이다(0223 V3): 갈래가 안 맞는 스킬이 놓인 칸은 0 = 빈 칸. 배운 단은 `known`.
     pub rank: [u8; 2],
     pub pick: [skills::Pick; 2],
+    pub known: [u8; 2],
+    /// 부무기의 칸 둘(0223 V3 — 무기 칸마다 스킬 둘): 스킬·배운 단·고르기. 바꿔 들면 주무기의 칸과 맞바뀐다.
+    pub sub: ([skills::Id; 2], [u8; 2], [skills::Pick; 2]),
     pub ult_rank: u8,
     /// 끼운 큰 기술(0158 G2 — 하나).
     pub ult: skills::Ult,
@@ -904,6 +908,8 @@ impl World {
                     denied: 0.0,
                     rank: [1; 2],
                     pick: [skills::Pick::A; 2],
+                    known: [1; 2],
+                    sub: (skills::START, [0; 2], [skills::Pick::A; 2]),
                     ult_rank: 1,
                     ult: skills::Ult::Upend,
                     brace: 0,
@@ -1262,6 +1268,11 @@ impl World {
         let from = pl.weapon;
         let keep = (pl.ranged.ammo, pl.ranged.grenades, pl.ranged.reload);
         let load = pl.sub_load.take();
+        // 스킬 칸도 무기를 따라 통째로 바뀐다(0223 V3) — 대기는 스킬마다라 그대로 흐른다.
+        let sk = &mut pl.skill;
+        std::mem::swap(&mut sk.worn, &mut sk.sub.0);
+        std::mem::swap(&mut sk.known, &mut sk.sub.1);
+        std::mem::swap(&mut sk.pick, &mut sk.sub.2);
         self.set_weapon(to);
         let pl = &mut self.player;
         if let Some((ammo, grenades, reload)) = load {
@@ -1342,6 +1353,21 @@ impl World {
         pl.ranged.grenades = w.grenade.map_or(0.0, |g| g.count as f32);
         if !matches!(pl.state, PState::Hurt { .. } | PState::Jump { .. }) {
             pl.state = PState::Idle;
+        }
+        self.refit_skills();
+    }
+
+    /// 끼운 칸을 지금 든 무기에 맞춘다(0223 V3): 그 갈래로 쓸 수 없는 스킬이 놓인 칸은 빈 칸(단 0)이 된다 — 누름·HUD·터치가 모두
+    /// `rank`를 본다. 무기를 들 때·바꿔 들 때·칸을 끼울 때 부른다.
+    pub(crate) fn refit_skills(&mut self) {
+        let pl = &mut self.player;
+        let hand = pl.weapon.hand();
+        for i in 0..2 {
+            pl.skill.rank[i] = if pl.skill.worn[i].def().fits(hand) {
+                pl.skill.known[i]
+            } else {
+                0
+            };
         }
     }
 

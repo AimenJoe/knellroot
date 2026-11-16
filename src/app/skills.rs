@@ -18,9 +18,12 @@ use crate::progression::{Cell, BRANCHES};
 use crate::skills::{
     self as sk, Board, Entry, Form, Offer, Pick, ENTRIES, NE, PICK_RANK, SIZE_RANK,
 };
+use crate::weapons::Hand;
 
 /// 화면의 알림(산 것·되돌린 것)이 상태 줄에 떠 있는 초.
 const ALERT: f32 = 1.4;
+/// 상세 칸이 넘칠 때 굴림 표시(▲▼)에 비워 두는 맨 아래 줄의 높이(창 단위).
+const PANE_MARKS: f32 = 9.0;
 /// 커서의 자리: 판의 칸들(`ENTRIES`의 자리) 다음이 "되돌리기" 단추.
 pub(super) const RESPEC: usize = NE;
 
@@ -282,8 +285,11 @@ pub(super) fn state_line(board: &Board, total: u32, e: Entry, edit: bool) -> (St
 pub(super) enum Do {
     /// 다음 단을 산다·칸을 연다(화로에서만 — 묻는 창을 거친다).
     Buy,
-    /// 이 스킬을 칸 0·1에 끼운다(다른 칸에 있었으면 맞바꾼다).
+    /// 이 스킬을 칸에 끼운다(같은 무기의 다른 칸에 있었으면 맞바꾼다): 0·1 = 주무기의 칸, 2·3 = 부무기의 칸(0223 V3).
+    /// 그 무기의 갈래로 쓸 수 있을 때만 줄이 선다.
     Wear(usize),
+    /// 배웠지만 지금 든 무기(주·부)의 갈래로는 쓸 수 없다(0223 V3) — 흐린 줄: 고르면 어느 무기의 스킬인지 말한다.
+    Unfit,
     /// 이 큰 기술을 끼운다(하나만).
     WearUlt,
     /// 3단의 고르기를 뒤집는다(화로에서만, 값 없이).
@@ -294,10 +300,17 @@ pub(super) enum Do {
 
 /// 칸 `e`에 지금 할 수 있는 일만, 가장 앞이 으뜸(커서가 거기서 시작한다): 올리기·열기 → 끼우기 → 고르기 바꾸기.
 /// 멈춤(`edit` 아님)에서는 끼우기만 — 올릴 수 있는 칸이면 끝에 "쉼터 화로에서" 줄(`Do::Away`). 비면 확인은 까닭을 알린다.
+/// 끼우는 자리의 사정(0223 V3 — 무기 칸마다 스킬 둘): 주무기의 갈래와 그 칸 둘, 부무기를 들었으면 그 갈래와 칸 둘.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Kits {
+    pub main: (Hand, [sk::Id; 2]),
+    pub sub: Option<(Hand, [sk::Id; 2])>,
+}
+
 pub(super) fn node_acts(
     board: &Board,
     total: u32,
-    worn: [sk::Id; 2],
+    kits: &Kits,
     great: sk::Ult,
     e: Entry,
     edit: bool,
@@ -309,7 +322,18 @@ pub(super) fn node_acts(
     }
     match e {
         Entry::Skill(id) if board.learned(id) => {
-            v.extend((0..2).filter(|&k| worn[k] != id).map(Do::Wear));
+            let def = id.def();
+            let before = v.len();
+            if def.fits(kits.main.0) {
+                v.extend((0..2).filter(|&k| kits.main.1[k] != id).map(Do::Wear));
+            }
+            let fit_sub = kits.sub.is_some_and(|(h, _)| def.fits(h));
+            if let Some((_, worn)) = kits.sub.filter(|_| fit_sub) {
+                v.extend((0..2).filter(|&k| worn[k] != id).map(|k| Do::Wear(k + 2)));
+            }
+            if v.len() == before && !def.fits(kits.main.0) && !fit_sub {
+                v.push(Do::Unfit);
+            }
             if edit && board.rank[id.index()] >= PICK_RANK {
                 v.push(Do::Flip);
             }
@@ -336,15 +360,43 @@ pub(super) fn wear_skill(worn: [sk::Id; 2], slot: usize, id: sk::Id) -> [sk::Id;
     out
 }
 
+/// 그 스킬을 쓰는 무기 갈래의 이름들(" · "로 이은 글 — 어느 무기나 되면 그 말).
+pub(super) fn hands_text(id: sk::Id) -> String {
+    let s = s();
+    let h = id.def().hands;
+    if h == sk::ANY {
+        return s.hands_any.to_string();
+    }
+    [
+        (sk::ONE, s.hands_one),
+        (sk::TWO, s.hands_two),
+        (sk::RANGED, s.hands_ranged),
+    ]
+    .into_iter()
+    .filter(|(bit, _)| h & bit != 0)
+    .map(|(_, name)| name)
+    .collect::<Vec<_>>()
+    .join(" · ")
+}
+
+/// 든 무기로 못 쓰는 스킬을 고르면 뜨는 알림.
+fn unfit_toast(id: sk::Id) -> String {
+    fill(s().toast_unfit, &[&hands_text(id)])
+}
+
 /// 목록 한 줄의 글.
-fn act_label(board: &Board, e: Entry, d: Do) -> String {
+fn act_label(board: &Board, e: Entry, d: Do, has_sub: bool) -> String {
     let s = s();
     match (d, e) {
         (Do::Buy, Entry::Cell(_) | Entry::Link(_)) => fill(s.act_open, &[&e.price(0).to_string()]),
         (Do::Buy, Entry::Key(_)) if board.key_swap(e) => s.act_key_swap.to_string(),
         (Do::Buy, Entry::Key(_)) => fill(s.act_key_on, &[&e.price(0).to_string()]),
         (Do::Buy, _) => fill(s.act_raise, &[&e.price(board.rank(e)).to_string()]),
+        // 부무기가 있으면 어느 무기의 칸인지 말한다(0223 V3).
+        (Do::Wear(k), _) if k >= 2 => fill(s.act_wear_sub, &[&(k - 1).to_string()]),
+        (Do::Wear(k), _) if has_sub => fill(s.act_wear_main, &[&(k + 1).to_string()]),
         (Do::Wear(k), _) => fill(s.act_wear, &[&(k + 1).to_string()]),
+        (Do::Unfit, _) => s.act_unfit.to_string(),
         (Do::WearUlt, _) => s.act_wear_ult.to_string(),
         (Do::Flip, Entry::Skill(id)) => {
             let (mark, name, _) = pick_text(id, board.pick[id.index()].other());
@@ -801,6 +853,10 @@ impl App {
     /// 판이 바뀌었다: 지금 판의 월드에 끼운 스킬(단·고르기)과 연 패시브 칸을 넣는다.
     pub(super) fn apply_board(&mut self) {
         self.world.set_skills(self.loadout());
+        let sub = self
+            .board()
+            .loadout(self.progress.sub_skills.0, self.progress.ult);
+        self.world.set_sub_skills(sub);
         self.world.tree = self.board().cells;
     }
 
@@ -857,9 +913,10 @@ impl App {
             return self.pick_respec(edit);
         }
         let acts = self.acts_at(self.cursor, edit);
-        if acts.iter().all(|d| *d == Do::Away) {
+        if acts.iter().all(|d| matches!(d, Do::Away | Do::Unfit)) {
             // 할 수 있는 일이 없다 — 까닭을 상태 줄 자리에 한 번 밝게(0173: 소리만으로는 왜 안 되는지 몰랐다).
             let why = match (acts.is_empty(), ENTRIES.get(self.cursor)) {
+                (false, Some(&Entry::Skill(id))) if acts.contains(&Do::Unfit) => unfit_toast(id),
                 (false, _) => s().toast_away.to_string(),
                 (true, Some(&e)) => {
                     state_line(&self.board(), self.progress.skill_points(), e, edit).0
@@ -910,6 +967,17 @@ impl App {
     }
 
     /// 칸 `i`에 지금 할 수 있는 일.
+    /// 지금 든 주무기·부무기와 그 칸들(0223 V3).
+    pub(super) fn kits(&self) -> Kits {
+        Kits {
+            main: (self.weapon.hand(), self.progress.skills.0),
+            sub: self
+                .progress
+                .sub
+                .map(|w| (w.hand(), self.progress.sub_skills.0)),
+        }
+    }
+
     fn acts_at(&self, i: usize, edit: bool) -> Vec<Do> {
         let Some(&e) = ENTRIES.get(i) else {
             return Vec::new();
@@ -917,7 +985,7 @@ impl App {
         node_acts(
             &self.board(),
             self.progress.skill_points(),
-            self.progress.skills.0,
+            &self.kits(),
             self.progress.ult,
             e,
             // 개발 창의 판은 메모리의 덮어쓰기라 사지 않는다(다 올린 판이라 살 것도 없다) — 고르기 바꾸기는 된다.
@@ -972,8 +1040,17 @@ impl App {
             // 사는 일은 한 번 묻는다(0065) — 목록을 닫고 기술 화면 위에 묻는 창.
             (Do::Buy, _) => self.ask(flow::Ask::Skill(at as u8)),
             (Do::Wear(slot), Entry::Skill(id)) => {
-                self.progress.skills = sk::Worn(wear_skill(self.progress.skills.0, slot, id));
+                if slot < 2 {
+                    self.progress.skills = sk::Worn(wear_skill(self.progress.skills.0, slot, id));
+                } else {
+                    let worn = self.progress.sub_skills.0;
+                    self.progress.sub_skills = sk::Worn(wear_skill(worn, slot - 2, id));
+                }
                 self.after_wear();
+            }
+            (Do::Unfit, Entry::Skill(id)) => {
+                self.toast = Some((unfit_toast(id), ALERT));
+                self.snd(crate::sfx::Id::Deny);
             }
             (Do::WearUlt, Entry::Ult(u)) => {
                 self.progress.ult = u;
@@ -1028,8 +1105,18 @@ impl App {
         // 막 배운 스킬은 빈 칸에 저절로(0166 — 처음 배운 스킬이 버튼에 바로 있다).
         if let Entry::Skill(id) = e {
             if self.progress.board.rank(e) == 1 {
-                let worn = self.progress.skills.0;
-                self.progress.skills = sk::Worn(self.progress.board.wear_on_learn(worn, id));
+                // 주무기의 갈래로 못 쓰고 부무기로는 쓰는 스킬이면 부무기의 빈 칸에(0223 V3).
+                let kits = self.kits();
+                let def = id.def();
+                let to_sub = !def.fits(kits.main.0) && kits.sub.is_some_and(|(h, _)| def.fits(h));
+                let board = self.progress.board;
+                if to_sub {
+                    let worn = self.progress.sub_skills.0;
+                    self.progress.sub_skills = sk::Worn(board.wear_on_learn(worn, id));
+                } else {
+                    let worn = self.progress.skills.0;
+                    self.progress.skills = sk::Worn(board.wear_on_learn(worn, id));
+                }
             }
         }
         // 처음 배운 큰 기술도 저절로 끼워진다(0172 — 끼운 것이 아직 안 배운 것이면).
@@ -1408,10 +1495,17 @@ impl App {
         // 몸: 하는 일 + 단마다 한 줄. 넘치면 덩이 단위로 굴린다.
         let width = dw * u;
         let blocks = self.detail_blocks(board, total, entry, width, k);
-        let (top, bottom) = (geo::DETAIL_HEAD, w.body_h);
+        let (top, full) = (geo::DETAIL_HEAD, w.body_h);
+        let heights: Vec<f32> = blocks.iter().map(Block::height).collect();
+        // 넘치면 맨 아래 한 줄은 굴림 표시(▲▼)의 자리로 비운다 — 표시가 단 줄의 값("1점") 위에 겹치지 않게(0223 V2·V3에서 상세에
+        // 타입·쓰는 무기 줄이 늘어 넘치는 칸이 많아졌다).
+        let bottom = if heights.iter().sum::<f32>() > full - top + 0.5 {
+            full - PANE_MARKS
+        } else {
+            full
+        };
         let room = bottom - top;
         // 보이는 첫 덩이: 뒤의 덩이들이 다 들어가는 가장 앞자리까지만 내려간다.
-        let heights: Vec<f32> = blocks.iter().map(Block::height).collect();
         let mut max_first = 0;
         while heights[max_first..].iter().sum::<f32>() > room + 0.5 && max_first + 1 < blocks.len()
         {
@@ -1431,16 +1525,18 @@ impl App {
             shown += 1;
         }
         if max_first > 0 {
-            let ax = w.at(x0 + dw, 0.0).x - self.ui.width("▼", 0.7 * k);
+            // 비워 둔 맨 아래 줄의 오른쪽 끝에 나란히: 위로 더 있으면 ▲, 아래로 더 있으면 ▼.
+            let mw = self.ui.width("▼", 0.7 * k);
+            let ax = w.at(x0 + dw, 0.0).x - mw;
+            let ay = w.at(0.0, full).y - self.ui.px(0.7 * k);
             if first > 0 {
-                self.ui.text("▲", ax, w.at(0.0, top).y, 0.7 * k, DIM);
+                self.ui.text("▲", ax - mw * 1.5, ay, 0.7 * k, DIM);
             }
             if shown < blocks.len() {
-                let ay = w.at(0.0, bottom).y - self.ui.px(0.7 * k);
                 self.ui.text("▼", ax, ay, 0.7 * k, DIM);
             }
         }
-        self.hits.push((w.rect(x0, top, dw, room), Hit::Pane));
+        self.hits.push((w.rect(x0, top, dw, full - top), Hit::Pane));
     }
 
     /// 되돌리기 단추(화로): 창 아래 안내 줄의 오른쪽 끝, 늘 같은 자리(0160 시안의 "되돌리기 · 잔불 55"). 그 자리를 돌려준다.
@@ -1535,6 +1631,16 @@ impl App {
             Entry::Ult(sk::Ult::Line) => sk::LINE_DOSE,
             _ => crate::status::NO_DOSE,
         };
+        // 쓰는 무기(0223 V3): 스킬마다 쓸 수 있는 갈래 — 지금 든 주무기와 안 맞으면 밝게 알린다.
+        if let Entry::Skill(id) = e {
+            let fits = id.def().fits(self.weapon.hand());
+            v.push(Block::Text {
+                lines: wrap(&fill(s.sk_hands, &[&hands_text(id)]), width, K_BODY),
+                k: K_BODY,
+                ink: if fits { DIM } else { AMBER },
+            });
+            v.push(Block::Gap(5.0));
+        }
         if let Some(i) = dose.0.slot() {
             let [r, g, b] = crate::status::INK[i];
             v.push(Block::Text {
@@ -1741,8 +1847,8 @@ impl App {
             .acts_at(under.cursor, edit)
             .into_iter()
             .map(|d| ui::Row {
-                dim: d == Do::Away,
-                ..ui::Row::plain(act_label(&board, e, d))
+                dim: matches!(d, Do::Away | Do::Unfit),
+                ..ui::Row::plain(act_label(&board, e, d, self.progress.sub.is_some()))
             })
             .collect();
         if rows.is_empty() {
@@ -2014,8 +2120,12 @@ mod tests {
     #[test]
     fn the_action_list_holds_only_what_applies_with_the_primary_row_first() {
         let worn = sk::START;
+        let kits = Kits {
+            main: (Hand::One, worn),
+            sub: None,
+        };
         let b = started();
-        let acts = |b: &Board, total, e, edit| node_acts(b, total, worn, Ult::Upend, e, edit);
+        let acts = |b: &Board, total, e, edit| node_acts(b, total, &kits, Ult::Upend, e, edit);
         // 0166: 새 판에서는 끼워 둔 자리의 스킬도 안 배운 것 — 화로에서 배우기만, 멈춤에서는 "쉼터 화로에서"만(0173).
         let fresh = Board::default();
         assert_eq!(acts(&fresh, 2, Entry::Skill(Id::Whirl), true), [Do::Buy]);
@@ -2076,7 +2186,28 @@ mod tests {
         let all = Board::maxed(Pick::A);
         assert!(acts(&all, 99, Entry::Ult(Ult::Upend), true).is_empty());
         assert_eq!(acts(&all, 99, Entry::Ult(Ult::Line), false), [Do::WearUlt]);
-        assert!(node_acts(&all, 99, worn, Ult::Line, Entry::Ult(Ult::Line), false).is_empty());
+        assert!(node_acts(&all, 99, &kits, Ult::Line, Entry::Ult(Ult::Line), false).is_empty());
+        // 0223 V3: 스킬은 그 갈래의 무기 칸에만 — 한손 검으로는 땅울림(양손)을 끼울 줄이 없고 까닭 줄이 선다. 망치를 부무기로
+        // 들면 부무기의 칸(2·3)에 끼우는 줄이 서고, 두 무기에 다 되는 스킬은 네 칸 모두.
+        assert_eq!(
+            node_acts(&all, 99, &kits, Ult::Upend, Entry::Skill(Id::Quake), false),
+            [Do::Unfit]
+        );
+        let both = Kits {
+            main: (Hand::One, worn),
+            sub: Some((Hand::Two, [Id::Quake, Id::Gather])),
+        };
+        let at = |id| node_acts(&all, 99, &both, Ult::Upend, Entry::Skill(id), false);
+        assert_eq!(
+            at(Id::Quake),
+            [Do::Wear(3)],
+            "already in the hammer's first slot"
+        );
+        assert_eq!(
+            at(Id::Brace),
+            [Do::Wear(0), Do::Wear(1), Do::Wear(2), Do::Wear(3)]
+        );
+        assert_eq!(at(Id::Swallow), [Do::Wear(0), Do::Wear(1)], "one hand only");
     }
 
     /// 끼우기: 다른 칸에 끼어 있던 스킬이면 맞바꾼다 — 같은 스킬이 두 칸에 서지 않는다.

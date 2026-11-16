@@ -59,8 +59,9 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     // 기술 화면(0161)의 자리: 스킬은 보이는 줄 0(휘돌이·가로지르기·버팀·끌어모으기)·줄 2(땅울림·되울림·던지기·잔불 흩기), 큰 기술은 줄 4의
     // 칸 0·2·4(몰아치기·한 줄기·쟁반 뒤집기). 칸에서 확인 = 목록의 첫 줄 "칸 1에 끼우기"(큰 기술은 "끼우기"). 처음 끼워진 것은 휘돌이(Q)·
     // 가로지르기(E)·쟁반 뒤집기라 그 셋은 건드리지 않는다. 큰 기술은 Q+E.
+    // 일곱째 = 개발 창 "든 무기 바꾸기"를 누를 횟수(0223 V3 — 땅울림은 양손 무기의 스킬: 끼우기 전에 망치를 든다).
     const RUNS = [['whirl', null, null, 1500, 'Q', 22], ['cut', null, null, 1100, 'E', 26], ['gather', [0, 3], null, 900, 'Q', 26],
-      ['quake', [2, 0], null, 1000, 'Q', 26], ['brace', [0, 2], null, 1300, 'Q', 40], ['echo', [2, 1], null, 1300, 'Q', 16],
+      ['quake', [2, 0], null, 1000, 'Q', 26, 2], ['brace', [0, 2], null, 1300, 'Q', 40], ['echo', [2, 1], null, 1300, 'Q', 16],
       ['throw', [2, 2], null, 900, 'Q', 30], ['embers', [2, 3], null, 1300, 'Q', 50],
       ['upend', null, null, 1500, 'ult', 30], ['flurry', null, 0, 1300, 'ult', 14], ['line', null, 2, 900, 'ult', 30]];
     const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.waitForTimeout(90); } };
@@ -71,11 +72,16 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     };
     // 다섯째 인자로 스킬 이름을 고르면 그것만(예: … skills cut,embers).
     const names = process.argv[5] ? process.argv[5].split(',') : null;
-    for (const [name, slot, ult, wait, key, n] of RUNS) {
+    for (const [name, slot, ult, wait, key, n, arm] of RUNS) {
       if (names && !names.includes(name)) continue;
       p = await open(2, 1); await p.waitForTimeout(300); // 기술 탭(셋째 묶음) 둘째 줄 = 기술 다 올리기(켬)
+      if (arm) { // 끝 줄 "든 무기 바꾸기"를 `arm`번(새 판은 맨손 → 검 → 망치) — 그 무기로 끼우고 아레나에 선다
+        await pick(p, 4, 'ArrowDown'); for (let i = 0; i < arm; i++) { await p.keyboard.press('Enter'); await p.waitForTimeout(150); }
+        await p.screenshot({ path: path.join(OUT, `sk-arm-${name}.png`) }); await pick(p, 4, 'ArrowUp');
+      }
       await p.keyboard.press('ArrowUp'); await p.waitForTimeout(90); await p.keyboard.press('Enter'); await p.waitForTimeout(300); // 기술 끼우기
       if (slot) await wear(p, slot[0], slot[1]);
+      if (arm) await p.screenshot({ path: path.join(OUT, `sk-arm-${name}-worn.png`) });
       if (ult !== null) await wear(p, 4, ult);
       if (name === 'whirl' || name === 'line') await p.screenshot({ path: path.join(OUT, `sk-window-${name}.png`) });
       await p.keyboard.press('Escape'); await p.waitForTimeout(300);

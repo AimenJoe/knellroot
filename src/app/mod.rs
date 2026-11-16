@@ -327,6 +327,7 @@ impl App {
         }
         world.set_weapon(weapon);
         world.set_skills(progress.board.loadout(progress.skills.0, progress.ult));
+        world.set_sub_skills(progress.board.loadout(progress.sub_skills.0, progress.ult));
         world.tree = progress.board.cells;
         let cam = Camera::new(world.player.pos, &t);
         App {

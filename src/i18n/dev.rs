@@ -120,6 +120,11 @@ pub const SKILLS_MAX_NOTE: Pair = (
     "every skill and great skill at max rank, every passive open; pick again for this slot's board. nothing is saved. now: {0}",
 );
 pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
+pub const ARM: Pair = ("든 무기 바꾸기", "change the held weapon");
+pub const ARM_NOTE: Pair = (
+    "든 무기를 다음 것으로 바꾼다(검 → 망치 → 지팡이 → 쇠뇌 → 맨손). 스킬은 무기 갈래를 탄다 — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다. 지금: {0}",
+    "cycle the held weapon (sword, hammer, staff, crossbow, fists). Skills go by weapon grip: wear and enter arenas with this one. nothing is saved. now: {0}",
+);
 pub const PERF_LINE: Pair = ("성능 줄 켬/끔", "perf line on/off");
 pub const PERF_LINE_NOTE: Pair = (
     "화면 아래에 fps·cpu·프레임 시간·정점 수를 띄운다(F3과 같다). 연구소의 render.resident를 0·1로 바꿔 지형 상주를 견준다.",
@@ -182,6 +187,8 @@ pub const PAIRS: &[Pair] = &[
     SKILLS_MAX_NOTE,
     SKILLS_FLIP,
     SKILLS_FLIP_NOTE,
+    ARM,
+    ARM_NOTE,
     PERF_LINE,
     PERF_LINE_NOTE,
     BOARD_SLOT,

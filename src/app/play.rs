@@ -410,6 +410,8 @@ impl App {
         self.weapon = to;
         self.progress.weapon = Some(to);
         self.progress.sub = self.world.player.sub;
+        // 스킬 칸도 무기를 따라 맞바뀐다(0223 V3 — 월드는 이미 바꿨다).
+        std::mem::swap(&mut self.progress.skills, &mut self.progress.sub_skills);
         self.persist();
         self.snd(crate::sfx::Id::UiConfirm);
     }

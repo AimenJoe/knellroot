@@ -22,6 +22,23 @@ use crate::progression::{Branch, Cell, Key, Link, Tree, DEPTH, KEYS, LINKS};
 use crate::status::{Dose, Kind};
 use crate::tuning::{HP_UNIT, ULT_SLAM_DAMAGE};
 
+/// 무기 갈래의 모음(0223 V3 — 스킬·패시브가 "어느 무기를 들었을 때 되나"): 비트의 합.
+pub type Hands = u8;
+pub const ONE: Hands = 1;
+pub const TWO: Hands = 2;
+pub const RANGED: Hands = 4;
+pub const MELEE: Hands = ONE | TWO;
+pub const ANY: Hands = ONE | TWO | RANGED;
+
+/// 갈래 하나의 비트.
+pub const fn hand_bit(h: crate::weapons::Hand) -> Hands {
+    match h {
+        crate::weapons::Hand::One => ONE,
+        crate::weapons::Hand::Two => TWO,
+        crate::weapons::Hand::Ranged => RANGED,
+    }
+}
+
 /// 스킬의 모양(판정과 움직임).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Form {
@@ -229,6 +246,8 @@ pub struct Skill {
     pub clip: Clip,
     /// 판의 줄(0158 라): 쓴 점수 합이 `ROW_NEEDS[row]`에 닿아야 살 수 있다.
     pub row: u8,
+    /// 쓸 수 있는 무기 갈래(0223 V3 — `ONE`·`TWO`·`RANGED`의 합): 맞지 않는 무기를 들면 그 칸은 빈 칸이다.
+    pub hands: Hands,
     /// 타입(0223 V2)과 한 타가 쌓는 게이지(보통 적의 1 가운데 몫 — 물리는 0). 단·고르기는 이 값을 바꾸지 않는다.
     /// 한 번 쓰면 보통 적은 걸리게(한 타짜리 = 1, 여러 타짜리는 나눠서) — 덜 쌓이는 적(엘리트·보스·버티는 종)은 두 번.
     pub kind: Kind,
@@ -398,6 +417,11 @@ impl Eff {
 }
 
 impl Skill {
+    /// 그 갈래의 무기로 쓸 수 있나(0223 V3).
+    pub fn fits(&self, h: crate::weapons::Hand) -> bool {
+        self.hands & hand_bit(h) != 0
+    }
+
     /// 이 스킬의 타 하나가 싣는 타입과 쌓는 양(0223 V2).
     pub fn dose(&self) -> Dose {
         (self.kind, self.build)
@@ -617,6 +641,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.15, 0.22, 0.30],
         },
         row: 0,
+        hands: MELEE,
         kind: Kind::Physical,
         build: 0.0,
         branch: Branch::Beat,
@@ -641,6 +666,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.12, 0.20, 0.25],
         },
         row: 0,
+        hands: MELEE,
         kind: Kind::Rift,
         build: 1.0,
         branch: Branch::Beat,
@@ -666,6 +692,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.20, 0.0, 0.30],
         },
         row: 0,
+        hands: ANY,
         kind: Kind::Root,
         build: 1.0,
         branch: Branch::Footing,
@@ -700,6 +727,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.30, 0.0, 0.40],
         },
         row: 1,
+        hands: TWO,
         kind: Kind::Physical,
         build: 0.0,
         branch: Branch::Beat,
@@ -738,6 +766,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.10, 1.20, 0.35],
         },
         row: 0,
+        hands: MELEE,
         kind: Kind::Ember,
         build: 1.0,
         branch: Branch::Riposte,
@@ -762,6 +791,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.0, 0.20],
         },
         row: 1,
+        hands: ONE | RANGED,
         kind: Kind::Knell,
         build: 1.0,
         branch: Branch::Riposte,
@@ -787,6 +817,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.18, 0.10, 0.25],
         },
         row: 1,
+        hands: MELEE,
         kind: Kind::Rift,
         build: 0.5,
         branch: Branch::Footing,
@@ -820,6 +851,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.0, 0.30],
         },
         row: 1,
+        hands: ANY,
         kind: Kind::Ember,
         build: 0.5,
         branch: Branch::Footing,
@@ -849,6 +881,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.12, 0.45, 0.25],
         },
         row: 3,
+        hands: ONE,
         kind: Kind::Physical,
         build: 0.0,
         branch: Branch::Beat,
@@ -877,6 +910,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.15, 0.0, 0.35],
         },
         row: 3,
+        hands: ONE,
         kind: Kind::Knell,
         build: 1.0,
         branch: Branch::Riposte,
@@ -909,6 +943,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.30, 0.35],
         },
         row: 3,
+        hands: ANY,
         kind: Kind::Root,
         build: 1.0,
         branch: Branch::Footing,
@@ -2611,6 +2646,25 @@ mod tests {
     }
 
     /// 0158 마: 고르기와 맺음의 표 — 스킬마다 둘(서로 다르다)과 하나, 값은 결정문의 것. 길이가 달라지는 고르기를 골라도 1초 안에 끝난다.
+    /// 0223 V3: 스킬마다 쓸 수 있는 갈래가 있다 — 갈래마다 고를 것이 넉넉하고(넷 이상), 첫 줄의 스킬(새 판이 가장 먼저 배운다)은
+    /// 한손 무기(처음 줍는 검·맨손)로 쓸 수 있다 — 처음 배운 스킬이 손에 든 것과 안 맞아 막히는 일이 없다.
+    #[test]
+    fn every_hand_has_skills_to_choose_and_the_first_row_fits_the_first_sword() {
+        use crate::weapons::Hand;
+        for h in [Hand::One, Hand::Two, Hand::Ranged] {
+            let n = SKILLS.iter().filter(|s| s.fits(h)).count();
+            assert!(n >= 4, "{h:?}: {n}");
+        }
+        for s in &SKILLS {
+            assert!(s.hands != 0 && s.hands & !ANY == 0, "{:?}", s.id);
+            if s.row == 0 {
+                assert!(s.fits(Hand::One), "{:?}", s.id);
+            }
+        }
+        // 어느 갈래에서나 되는 것만은 아니다 — 갈래를 가르는 스킬이 있다.
+        assert!(SKILLS.iter().any(|s| s.hands == TWO) && SKILLS.iter().any(|s| s.hands == ONE));
+    }
+
     /// 0223 V2: 타입 있는 스킬은 게이지를 쌓고(물리는 0), 네 타입 모두 적어도 한 스킬이 싣는다 — 어느 타입도 판에서 못 고르는 일이 없다.
     #[test]
     fn typed_skills_build_their_gauge_and_every_type_has_a_skill() {

@@ -236,3 +236,47 @@ fn swapping_inside_the_riposte_window_ripostes_with_the_new_weapon() {
         w.player.state
     );
 }
+
+/// 0223 V3: 스킬 칸은 무기 칸마다 둘 — 바꿔 들면 통째로 바뀐다. 든 무기의 갈래로 쓸 수 없는 스킬이 놓인 칸은 빈 칸이다
+/// (눌러도 아무 일 없다 — 맞는 무기를 들면 되살아난다). 대기는 스킬마다라 바꿔도 그대로 흐른다.
+#[test]
+fn swapping_weapons_swaps_the_skill_slots_and_an_unfit_skill_is_an_empty_slot() {
+    use crate::skills::Id as Sk;
+    let t = Tuning::default();
+    let mut w = armed(Id::Sword, Id::Hammer);
+    // 검의 칸: 제비걸음(한손) · 땅울림(양손 — 검으로는 못 쓴다). 망치의 칸: 땅울림 · 휘돌이.
+    w.set_skills([Sk::Swallow, Sk::Quake]);
+    w.set_sub_skills([Sk::Quake, Sk::Whirl]);
+    assert_eq!(w.player.skill.rank, [1, 0]);
+    let quake = Actions {
+        skill2: true,
+        ..Default::default()
+    };
+    let ev = w.step(&quake, &t);
+    assert_eq!(w.player.state, PState::Idle, "an empty slot");
+    assert!(!ev.contains(&Event::SkillDenied));
+    assert_eq!(w.swap_weapons(), Some(Id::Hammer));
+    assert_eq!(w.player.skill.worn, [Sk::Quake, Sk::Whirl]);
+    assert_eq!(w.player.skill.rank, [1, 1]);
+    w.step(
+        &Actions {
+            skill1: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    assert!(
+        matches!(w.player.state, PState::Skill { id: Sk::Quake, .. }),
+        "{:?}",
+        w.player.state
+    );
+    // 다시 검으로: 검의 칸이 돌아오고, 방금 쓴 땅울림의 대기는 흐르는 채다.
+    w.player.state = PState::Idle;
+    assert_eq!(w.swap_weapons(), Some(Id::Sword));
+    assert_eq!(w.player.skill.worn, [Sk::Swallow, Sk::Quake]);
+    assert_eq!(w.player.skill.rank, [1, 0]);
+    assert!(w.player.skill.cd[Sk::Quake.index()] > 0.0);
+    // 무기를 통째로 바꿔 들어도(장비 탭) 칸은 그 자리의 것 — 망치를 주무기로 들면 땅울림이 살아난다.
+    w.set_weapon(Id::Hammer);
+    assert_eq!(w.player.skill.rank, [0, 1], "swallow step needs one hand");
+}

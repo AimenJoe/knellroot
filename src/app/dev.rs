@@ -69,6 +69,8 @@ pub(super) enum DevStart {
     SkillsMax,
     /// 끝 단으로 올린 판의 3단 고르기를 모두 뒤집는다(ㄱ ↔ ㄴ). 기록에 쓰지 않는다.
     SkillsFlip,
+    /// 든 무기 바꾸기(0223 V3 — 스킬은 무기 갈래를 탄다: 아레나에는 장비 탭이 없어 여기서 든다). 기록에 쓰지 않는다.
+    Arm,
     /// 성능 줄(F3과 같은 개발 줄) 켬/끔 — 키보드가 없는 기기(Android·iOS)에서 프레임 시간을 본다(0186 상주 지형 A/B).
     PerfLine,
     /// 모션 보기(2026-11-15): 이 무기(`weapons::IDS`의 자리)를 든 방랑자의 동작을 하나씩.
@@ -76,7 +78,7 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 35] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 36] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Motion, DevStart::Motion(0)),
@@ -89,6 +91,8 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 35] = [
     (DevCat::Skills, DevStart::SkillsFlip),
     (DevCat::Skills, DevStart::Scenario(Scenario::Skills)),
     (DevCat::Skills, DevStart::Scenario(Scenario::Tray)),
+    // 끝에 둔다 — 시험 스크립트가 세는 앞 줄들의 자리를 밀지 않는다.
+    (DevCat::Skills, DevStart::Arm),
     (DevCat::Stage, DevStart::Entrance),
     (DevCat::Stage, DevStart::Gate),
     (DevCat::Stage, DevStart::Village),
@@ -143,6 +147,7 @@ impl DevStart {
             DevStart::Skills => t(dv::SKILLS_START),
             DevStart::SkillsMax => t(dv::SKILLS_MAX),
             DevStart::SkillsFlip => t(dv::SKILLS_FLIP),
+            DevStart::Arm => t(dv::ARM),
             DevStart::PerfLine => t(dv::PERF_LINE),
             // 이름은 무기를 채워야 해서 `App::dev_name`이 만든다 — 여기는 바탕.
             DevStart::Motion(_) => t(dv::MOTION_START),
@@ -174,6 +179,8 @@ impl DevStart {
             // 지금 상태({0})는 앱이 채운다(`App::dev_note`).
             DevStart::SkillsMax => t(dv::SKILLS_MAX_NOTE).to_string(),
             DevStart::SkillsFlip => t(dv::SKILLS_FLIP_NOTE).to_string(),
+            // 지금 든 무기({0})는 앱이 채운다.
+            DevStart::Arm => t(dv::ARM_NOTE).to_string(),
             DevStart::PerfLine => t(dv::PERF_LINE_NOTE).to_string(),
             DevStart::Motion(_) => t(dv::MOTION_NOTE).to_string(),
         }
@@ -339,6 +346,13 @@ impl App {
                 self.dev_overlay = !self.dev_overlay;
                 self.snd(crate::sfx::Id::Buy);
             }
+            // 든 무기를 표의 다음 것으로(0223 V3) — 이 창에서 시작하는 아레나와 "기술 끼우기"가 그 무기로 선다. 기록은 그대로.
+            DevStart::Arm => {
+                let ids = crate::weapons::IDS;
+                let at = ids.iter().position(|w| *w == self.weapon).unwrap_or(0);
+                self.weapon = ids[(at + 1) % ids.len()];
+                self.snd(crate::sfx::Id::Buy);
+            }
             DevStart::Motion(w) => self.go(Go::Open(Scene::Motions {
                 weapon: w,
                 speed: 0,
@@ -372,6 +386,7 @@ impl App {
                 };
                 fill(&e.note(), &[t(state)])
             }
+            DevStart::Arm => fill(&e.note(), &[weapon_name(self.weapon)]),
             _ => e.note(),
         }
     }
