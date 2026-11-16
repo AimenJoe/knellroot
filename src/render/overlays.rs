@@ -1119,8 +1119,9 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
     let fl = Drape {
         ground: w.ground.as_ref(),
     };
-    let fill = Color::new(1.0, 0.95, 0.8, 0.16);
-    let edge = Color::new(1.0, 0.93, 0.75, 0.55);
+    // 밤의 바닥 위에서도 띠로 읽히게(처음 0.16·0.55는 헤드리스 화면에서 거의 안 보였다) — 브롤스타즈의 흰 띠처럼 몸은 반투명, 테는 또렷하게.
+    let fill = Color::new(1.0, 0.96, 0.84, 0.32);
+    let edge = Color::new(1.0, 0.95, 0.8, 0.95);
     let foot = pp + Vec3::Y * 0.05;
     let yaw = dir.x.atan2(dir.z);
     let lane = |len: f32, wid: f32| {
