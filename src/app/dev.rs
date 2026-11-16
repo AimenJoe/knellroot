@@ -319,7 +319,7 @@ impl App {
                 self.sc = sc;
                 self.world = scenario::build(sc);
                 self.fx.clear();
-                self.world.set_weapon(self.weapon);
+                self.arm_world();
                 self.cam = self.cam.renew(self.world.player.pos, &self.t);
                 self.go(Go::Root(Scene::Sandbox));
                 // 놀이터가 선 뒤에: 판(`App::board`)이 놀이터인지를 보고 처음의 둘을 배운 것으로 친다(0166).

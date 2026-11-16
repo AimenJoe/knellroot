@@ -160,6 +160,10 @@ pub enum Event {
     Ember {
         value: u32,
     },
+    /// 주무기와 부무기를 바꿔 들었다(0223 — 패링 + 평타). `to` = 새로 든 주무기.
+    WeaponSwap {
+        to: weapons::Id,
+    },
     /// 패링 성공(0025): 적의 근접 공격을 튕겼다.
     Parry {
         at: Vec3,
@@ -556,8 +560,14 @@ pub struct Player {
     pub swings: u32,
     /// 마법·사격·수류탄(0048·0051·0111): 마법 칸, 공중 사격과 체공, 쇠뇌의 탄과 재장전, 수류탄.
     pub ranged: RangedState,
-    /// 든 무기(0051, `weapons.rs` 표).
+    /// 든 무기(0051, `weapons.rs` 표) — 주무기.
     pub weapon: weapons::Id,
+    /// 부무기(0223): 패링 + 평타를 함께 누르면 주무기와 바꿔 든다. 없으면 바꾸지 않는다.
+    pub sub: Option<weapons::Id>,
+    /// 부무기의 탄·수류탄·장전(바꿔 들 때 남겨 둔 것 — 바꾸기로 탄창을 채우지 못하게). 처음 드는 것이면 없음.
+    pub sub_load: Option<(u8, f32, f32)>,
+    /// 두 버튼 바꾸기(0223)의 시계: 패링·평타 버튼을 누른 뒤 흐른 초.
+    pub chord: (f32, f32),
     /// 미리 받아 둔 다음 행동과 남은 초(0057 — 후딜레이를 끊는 캔슬 시점에 나간다).
     pub pending: Option<Next>,
     pub pending_left: f32,
@@ -925,6 +935,9 @@ impl World {
                     grenades: 0.0,
                 },
                 weapon: weapons::Id::Sword,
+                sub: None,
+                sub_load: None,
+                chord: (f32::MAX, f32::MAX),
                 pending: None,
                 pending_left: 0.0,
                 combo_next: 0,
@@ -1182,6 +1195,78 @@ impl World {
     }
 
     /// 무기를 바꾼다(0051): 콤보는 처음부터, 원거리 무기는 탄창·수류탄 가득.
+    /// 부무기를 정한다(0223 — 기록에서 앱이). 주무기와 같으면 비운다. 탄은 처음 드는 것처럼(가득).
+    pub fn set_sub(&mut self, sub: Option<weapons::Id>) {
+        let pl = &mut self.player;
+        pl.sub = sub.filter(|&w| w != pl.weapon);
+        pl.sub_load = None;
+    }
+
+    /// 주무기와 부무기를 바꿔 든다(0223). 내려놓는 무기의 탄·수류탄·장전은 남겨 두고, 드는 무기는 남겨 둔 것이 있으면 그것으로 —
+    /// 바꿔 들어 탄창을 채우는 길이 없게. 장전 시계는 내려놓은 동안 흐르지 않는다.
+    pub fn swap_weapons(&mut self) -> Option<weapons::Id> {
+        let pl = &mut self.player;
+        let to = pl.sub?;
+        let from = pl.weapon;
+        let keep = (pl.ranged.ammo, pl.ranged.grenades, pl.ranged.reload);
+        let load = pl.sub_load.take();
+        self.set_weapon(to);
+        let pl = &mut self.player;
+        if let Some((ammo, grenades, reload)) = load {
+            pl.ranged.ammo = ammo;
+            pl.ranged.grenades = grenades;
+            pl.ranged.reload = reload;
+        }
+        pl.sub = Some(from);
+        pl.sub_load = Some(keep);
+        Some(to)
+    }
+
+    /// 패링 + 평타 = 바꾸기(0223, 사장 "패링+공격 버튼으로 주/부무기 바꿀 수 있음"). 큰 기술의 "함께"(0151)처럼 늦추지 않는다:
+    /// 두 누름이 같은 틱이거나 둘째가 첫째 뒤 `WEAPON_CHORD` 안이면, 첫째가 시작한 패링·휘두르기를 아직 시동 안일 때 거두고 바꾼다.
+    /// 단 패링이 튕겨 낸 뒤의 평타는 반격이다(바꾸지 않는다). 평타 버튼 = 근접은 `attack`, 원거리는 `cast`(앱이 맞바꾼 뒤).
+    fn weapon_chord(&mut self, a: &mut Actions, dt: f32, ev: &mut Vec<Event>) {
+        let ranged = self.player.weapon.is_ranged();
+        let basic = if ranged { a.cast } else { a.attack };
+        let pl = &mut self.player;
+        pl.chord.0 = if a.parry { 0.0 } else { pl.chord.0 + dt };
+        pl.chord.1 = if basic { 0.0 } else { pl.chord.1 + dt };
+        let (p, b) = pl.chord;
+        if !(a.parry || basic)
+            || p > crate::tuning::WEAPON_CHORD
+            || b > crate::tuning::WEAPON_CHORD
+            || pl.sub.is_none()
+        {
+            return;
+        }
+        // 패링이 먼저였고 그 뒤에 튕겨 냈다 → 이 평타는 반격.
+        if !a.parry && pl.parry.since <= p {
+            return;
+        }
+        // 첫 누름이 시작한 것이 아직 시동 안이면 거둔다(쓴 기력은 그대로 — 한 대 값). 원거리의 첫 평타는 이미 나간 한 발이다.
+        let busy = match pl.state {
+            PState::Idle => false,
+            PState::Parry { t } | PState::Attack { t, .. } | PState::Cast { t, .. } => {
+                t > crate::tuning::WEAPON_CHORD
+            }
+            _ => true,
+        };
+        if busy {
+            return;
+        }
+        pl.state = PState::Idle;
+        pl.chord = (f32::MAX, f32::MAX);
+        a.parry = false;
+        if ranged {
+            a.cast = false;
+        } else {
+            a.attack = false;
+        }
+        if let Some(to) = self.swap_weapons() {
+            ev.push(Event::WeaponSwap { to });
+        }
+    }
+
     pub fn set_weapon(&mut self, id: weapons::Id) {
         let pl = &mut self.player;
         pl.weapon = id;
@@ -1430,8 +1515,10 @@ impl World {
             jump: merged.jump && !via_jump,
             ..merged
         };
-        // 무기의 버튼 길(0213 — 0151의 맞바꿈을 걷음, 사장 "쇠뇌는 rb로 발사하는게 맞겠어"): 어느 무기든 X = `attack`·RB = `cast`
-        // 그대로 — 쇠뇌는 RB = 사격(꾹 = 모은 사격), X = 수류탄(0048·0051의 자리로 돌아감).
+        // 무기의 버튼 길(0213 → 0223): 월드의 `attack` = 콤보·수류탄, `cast` = 마법·사격. 평타 버튼(RB)이 어느 쪽인지는 앱이
+        // 넘기기 전에 맞바꾼다(`input::weapon_buttons`). 패링 + 평타 = 주/부무기 바꾸기(`weapon_chord`).
+        let mut merged = merged;
+        self.weapon_chord(&mut merged, dt, &mut ev);
         let a = &merged;
         self.time += dt;
         self.player.prev = self.player.pos;

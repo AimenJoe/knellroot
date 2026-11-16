@@ -469,7 +469,7 @@ impl App {
     /// 지역을 세운 뒤 기록에서 채운다: 무기·기술(끼운 스킬과 연 패시브 칸)·연 상자(지역마다 번호 `지역 × 1000 + 번호`, 0118)·주운 것·쓰러뜨린 엘리트·문,
     /// 이 판에 이 지역 문지기를 이겼으면 바닥 길이 열린 채.
     fn seed_run(&mut self) {
-        self.world.set_weapon(self.weapon);
+        self.arm_world();
         // 깨어난 자리의 화로(0171): 불을 붙인 적 없는 기록이면 첫 지역의 그 화로가 꺼져 있다.
         if self.stage == 0 && !self.progress.lit && !self.dev_run_now() {
             self.run.chill_hearth();
@@ -553,9 +553,36 @@ impl App {
         // 가진 무기 사이에서만(0117).
         let arms = self.arms();
         let i = arms.iter().position(|&w| w == self.weapon).unwrap_or(0) as i32;
-        self.weapon = arms[(i + step).rem_euclid(arms.len() as i32) as usize];
+        let next = arms[(i + step).rem_euclid(arms.len() as i32) as usize];
+        self.wield(next);
+    }
+
+    /// 무기 둘(주·부, 0223)을 월드에.
+    pub(super) fn arm_world(&mut self) {
         self.world.set_weapon(self.weapon);
-        self.progress.weapon = Some(self.weapon);
+        self.world.set_sub(self.progress.sub);
+    }
+
+    /// 주무기를 바꾼다(0223): 부무기 칸에 있던 것이면 둘을 맞바꾼다(같은 무기 두 칸 금지 — 맨손은 부무기로 남기지 않는다). 지금 판에 바로, 저장.
+    pub(super) fn wield(&mut self, w: weapons::Id) {
+        let old = self.weapon;
+        if self.progress.sub == Some(w) {
+            self.progress.sub = (old != weapons::Id::Fists).then_some(old);
+        }
+        self.weapon = w;
+        self.progress.weapon = Some(w);
+        self.arm_world();
+        self.persist();
+    }
+
+    /// 부무기를 정한다(0223): 지금 주무기를 고르면 둘을 맞바꾼다(주무기 자리에는 옛 부무기, 없으면 맨손).
+    pub(super) fn set_sub_weapon(&mut self, s: Option<weapons::Id>) {
+        if s.is_some() && s == Some(self.weapon) {
+            self.weapon = self.progress.sub.unwrap_or(weapons::Id::Fists);
+            self.progress.weapon = Some(self.weapon);
+        }
+        self.progress.sub = s;
+        self.arm_world();
         self.persist();
     }
 

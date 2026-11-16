@@ -36,6 +36,8 @@ pub mod key {
     pub const SHOP_OIL: &str = "shop.oil";
     /// 든 무기(0066: prefs 칸 21에서 옮김 — 슬롯 사이에 새지 않게).
     pub const WEAPON: &str = "weapon";
+    /// 부무기(0223 — 패링 + 평타로 주무기와 바꿔 든다). 없으면 키가 없다.
+    pub const SUB: &str = "weapon.sub";
     /// 끼운 스킬 둘(0151 — 값은 `skills::Id::key`).
     pub const SKILL1: &str = "skill.1";
     pub const SKILL2: &str = "skill.2";
@@ -232,6 +234,8 @@ pub struct Progress {
     pub overseer_cores: u32,
     /// 든 무기(없으면 옛 prefs 칸의 값을 쓴다).
     pub weapon: Option<crate::weapons::Id>,
+    /// 부무기(0223).
+    pub sub: Option<crate::weapons::Id>,
     /// 가진 무기(0117 — 무기는 얻어서 쓴다). 맨손은 넣지 않는다(늘 있다).
     pub weapons: Vec<crate::weapons::Id>,
     /// 끼운 스킬 둘(0151). 기록에 없으면 처음의 둘(`skills::START`). 배운 스킬만 끼운다(0158).
@@ -498,6 +502,7 @@ impl Progress {
             moss_cores,
             overseer_cores,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
+            sub: r.get(key::SUB).and_then(crate::weapons::Id::by_key),
             skills: {
                 let at = |k: &str, d: crate::skills::Id| {
                     r.get(k).and_then(crate::skills::Id::by_key).unwrap_or(d)
@@ -729,6 +734,10 @@ impl Progress {
         match self.weapon {
             Some(w) => r.set(key::WEAPON, w.key()),
             None => r.remove(key::WEAPON),
+        }
+        match self.sub {
+            Some(w) => r.set(key::SUB, w.key()),
+            None => r.remove(key::SUB),
         }
         // 처음의 둘이면 쓰지 않는다(기록이 없는 슬롯이 "기록 있음"이 되지 않게).
         if self.skills.0 == crate::skills::START {

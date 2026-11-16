@@ -17,6 +17,7 @@ mod parry;
 mod ranged;
 mod touch_aim;
 mod turn;
+mod weapon_swap;
 
 fn world_with_boss() -> World {
     let mut w = World::new("test", 20.0);

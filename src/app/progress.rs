@@ -80,9 +80,7 @@ impl App {
             if i == crate::stage::START_SWORD {
                 self.gain_weapon(weapons::Id::Sword);
                 if self.weapon == weapons::Id::Fists {
-                    self.weapon = weapons::Id::Sword;
-                    self.world.set_weapon(self.weapon);
-                    self.progress.weapon = Some(self.weapon);
+                    self.wield(weapons::Id::Sword);
                 }
             } else {
                 self.progress
@@ -298,6 +296,24 @@ impl App {
             next_charm(&self.progress.owned, &self.progress.worn, slot, step);
         self.world.apply_stats(self.progress.stats(), false);
         self.persist();
+    }
+
+    /// 부무기 칸 빨리 바꾸기(0223): 비우기 → 맨손 → 가진 무기(표 순서, 주무기 빼고) → 비우기로 돈다.
+    pub(super) fn step_sub(&mut self, step: i32) {
+        let main = self.weapon;
+        let mut opts: Vec<Option<weapons::Id>> = vec![None];
+        opts.extend(
+            weapons::IDS
+                .into_iter()
+                .filter(|&w| w != main && (w == weapons::Id::Fists || self.arms().contains(&w)))
+                .map(Some),
+        );
+        let at = opts
+            .iter()
+            .position(|o| *o == self.progress.sub)
+            .unwrap_or(0) as i32;
+        let next = opts[(at + step).rem_euclid(opts.len() as i32) as usize];
+        self.set_sub_weapon(next);
     }
 
     /// 덧옷 칸 빨리 바꾸기(0176): 벗기 → 가진 덧옷(표 순서) → 벗기로 돈다.

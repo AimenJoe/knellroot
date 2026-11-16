@@ -151,13 +151,19 @@ async function run(browser, lang) {
   await press('Escape'); await page.waitForTimeout(300);
   await press('ArrowDown'); await page.waitForTimeout(150);
   await shot('8e-equip-empty-slot');
-  // 덧옷 칸(0176 — 무기 밑): 가운데 장신구 칸 ← = 무기 칸, ↓ = 덧옷 칸(뿌리껍질을 걸쳤다) → 목록(벗기 · 뿌리껍질), 벗기에서 견주는 줄.
+  // 덧옷 칸(0176 — 왼쪽 열 아래): 가운데 장신구 칸 ← = 부무기 칸(0223), ↓ = 덧옷 칸(뿌리껍질을 걸쳤다) → 목록(벗기 · 뿌리껍질), 벗기에서 견주는 줄.
   await press('ArrowLeft'); await page.waitForTimeout(150); await press('ArrowDown'); await page.waitForTimeout(150);
   await shot('8e2-equip-garb-slot');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('8e3-equip-garb-pick');
   await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8e4-equip-garb-pick-bare');
+  await press('Escape'); await page.waitForTimeout(300);
+  // 부무기 칸(0223 — 왼쪽 열 가운데): 덧옷에서 ↑, 목록(비우기 · 가진 무기 · 맨손).
+  await press('ArrowUp'); await page.waitForTimeout(150);
+  await shot('8e5-equip-sub-slot');
+  await press('Enter'); await page.waitForTimeout(300);
+  await shot('8e6-equip-sub-pick');
   await press('Escape'); await page.waitForTimeout(300);
   await press('ArrowUp'); await page.waitForTimeout(150); await press('Enter'); await page.waitForTimeout(300);
   await shot('8f-equip-weapon-pick');

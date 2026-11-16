@@ -288,7 +288,7 @@ impl App {
             };
             self.world = scenario::build(self.sc);
             self.fx.clear();
-            self.world.set_weapon(self.weapon);
+            self.arm_world();
             self.apply_board();
             self.cam = self.cam.renew(self.world.player.pos, &self.t);
         }
@@ -405,6 +405,14 @@ impl App {
             .map(|(_, p)| p)
     }
 
+    fn on_weapon_swap(&mut self, to: crate::weapons::Id) {
+        self.weapon = to;
+        self.progress.weapon = Some(to);
+        self.progress.sub = self.world.player.sub;
+        self.persist();
+        self.snd(crate::sfx::Id::UiConfirm);
+    }
+
     pub(super) fn step_world(&mut self, a: &Actions) {
         // 버튼 → 월드의 일(0223): 평타 버튼(패드 RB·왼쪽 클릭·J)은 `attack`, 특수(X·오른쪽 클릭·U)는 `cast` — 원거리 무기는
         // 평타가 사격(월드의 `cast`)이고 특수가 수류탄(`attack`)이라 맞바꿔 넘긴다. 월드·시험은 옛 이름 그대로.
@@ -420,6 +428,14 @@ impl App {
             SHAKE_TURN,
         };
         let events = self.world.step(a, t);
+        // 바꿔 든 무기를 기록에(0223 — 다음 판·멈춤의 장비 탭도 그것으로).
+        if let Some(to) = events.iter().find_map(|e| match e {
+            Event::WeaponSwap { to } => Some(*to),
+            _ => None,
+        }) {
+            self.on_weapon_swap(to);
+        }
+        let (cam, t) = (&mut self.cam, &self.t);
         for &e in &events {
             let kick = match e {
                 Event::Hit { .. } => SHAKE_HIT,
@@ -454,6 +470,7 @@ impl App {
                 | Event::FlaskDenied
                 | Event::Ember { .. } => 0.0,
                 Event::Cast { .. } | Event::CastDenied | Event::Throw => 0.0,
+                Event::WeaponSwap { .. } => 0.0,
                 Event::StaminaDenied | Event::Release { .. } => 0.0,
                 Event::Break { .. } | Event::LoadBreak { .. } => SHAKE_SMASH,
                 Event::Aftershock { .. } | Event::Boom { .. } => SHAKE_PLUNGE,

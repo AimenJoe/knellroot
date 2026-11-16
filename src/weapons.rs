@@ -614,7 +614,24 @@ pub const WEAPONS: [Weapon; 5] = [
     },
 ];
 
+/// 무기 갈래(0223): 한손 근접은 왼손에 방패를 들 수 있다 · 양손 근접 · 원거리(양손, 장전).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hand {
+    One,
+    Two,
+    Ranged,
+}
+
 impl Id {
+    /// 무기 갈래(0223). `_` 없는 match — 새 무기는 여기서 갈래를 고르게 된다.
+    pub fn hand(self) -> Hand {
+        match self {
+            Id::Sword | Id::Fists => Hand::One,
+            Id::Hammer | Id::Staff => Hand::Two,
+            Id::Crossbow => Hand::Ranged,
+        }
+    }
+
     /// 원거리 무기인가(0223 — 양손, 평타 버튼 = 사격·특수 버튼 = 수류탄).
     pub fn is_ranged(self) -> bool {
         matches!(self.def().rb, Rb::Shot { .. })

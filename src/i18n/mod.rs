@@ -482,6 +482,15 @@ pub struct Strings {
     pub menu_look_pitch: &'static str,
     /// 멈춤의 무기 줄(0051, "{0}" = 무기 이름)과 무기 이름.
     pub menu_weapon: &'static str,
+    /// 장비 탭의 부무기 칸 이름(0223).
+    pub menu_sub_weapon: &'static str,
+    /// 무기 갈래 줄(0223): 이름 · 한손 · 양손 · 원거리.
+    pub hand_label: &'static str,
+    pub hand_one: &'static str,
+    pub hand_two: &'static str,
+    pub hand_ranged: &'static str,
+    /// 부무기 칸을 비웠을 때의 설명(0223).
+    pub sub_empty_d: &'static str,
     pub weapon_sword: &'static str,
     pub weapon_hammer: &'static str,
     pub weapon_staff: &'static str,
