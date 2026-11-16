@@ -161,7 +161,7 @@ fn a_grenade_drops_just_ahead_toward_the_cursor() {
         d.normalize().dot((far - vec2(p0.x, p0.z)).normalize()) > 0.99,
         "toward the cursor"
     );
-    assert!(g.drop < 2.0);
+    assert!(g.drop <= 2.0, "still near the feet (0178 → 0218)");
 }
 
 /// 0048: 칸이 모자라면 쏘지 않고(몸짓 없음) 칸이 깜빡인다. 0111: 칸은 시간으로만 찬다(`cast.cooldown s`에 한 칸) —
@@ -1076,4 +1076,145 @@ fn the_crossbow_at_its_best_stays_under_the_sword_at_its_best() {
             "+{rank}: crossbow {bow:.1}/s vs sword {sword:.1}/s"
         );
     }
+}
+
+/// 0218(사장 "쇠뇌 발사 궤도가 이상함. 땅을 타고 가면 안 되고, 직선이어야지"): 쇠뇌 볼트는 곧게 난다 — 낮은 땅 위로 쏘면 그 높이
+/// 그대로 지나가고(땅을 따라 내려가지 않는다), 줄 위에 선 낮은 곳의 적에게는 그 몸통으로 비스듬히 곧게 간다. 마법 탄은 그대로
+/// 땅을 따라 흐른다(0173).
+#[test]
+fn a_crossbow_bolt_flies_straight_and_pitches_to_the_foe_on_its_line() {
+    let t = Tuning::default();
+    let first_bolt = |w: &mut World| {
+        w.step(
+            &Actions {
+                cast: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        for _ in 0..30 {
+            if !w.bolts.is_empty() {
+                break;
+            }
+            w.step(&Actions::default(), &t);
+        }
+        *w.bolts.first().expect("a bolt flies")
+    };
+    // 2.5m 아래 마당(`split_yard`)으로 쏜다 — 적이 없으면 쏜 높이 그대로.
+    let mut w = split_yard(-2.5);
+    w.enemies.clear();
+    w.set_weapon(weapons::Id::Crossbow);
+    let b0 = first_bolt(&mut w);
+    assert!(b0.dir.y.abs() < 1e-4, "level: {:?}", b0.dir);
+    let y0 = b0.pos.y;
+    for _ in 0..20 {
+        w.step(&Actions::default(), &t);
+    }
+    if let Some(b) = w.bolts.first() {
+        assert!(
+            (b.pos.y - y0).abs() < 1e-3,
+            "it does not follow the ground: {} vs {y0}",
+            b.pos.y
+        );
+    }
+    // 마법은 그대로 흐른다.
+    let mut w = split_yard(-2.5);
+    w.enemies.clear();
+    let b = first_bolt(&mut w);
+    assert!(b.dir.y.abs() < 1e-4 && !b.def.is_shot());
+    // 줄 위의 위·아래 적: 몸통으로 비스듬히 곧게 — 맞는다(0173이 지키던 것). 깊은 구덩이 너머의 적은 선 자리의 모서리에 가려
+    // 곧은 줄이 닿지 않는다 — 그것이 곧은 탄의 참이다(미리보기도 모서리에서 끊긴다).
+    for (far, tag) in [
+        (-1.0, "one metre below"),
+        (1.0, "up a one-metre ledge"),
+        (0.0, "flat"),
+    ] {
+        let mut w = split_yard(far);
+        w.set_weapon(weapons::Id::Crossbow);
+        w.spawn_mob(vec3(0.0, far, -4.0));
+        w.enemies[0].hp = 900;
+        idle(&mut w);
+        let b = first_bolt(&mut w);
+        assert_eq!(
+            b.dir.y > 1e-3,
+            far > 0.0,
+            "{tag}: pitched toward the body {:?}",
+            b.dir
+        );
+        for _ in 0..60 {
+            w.step(&Actions::default(), &t);
+        }
+        assert!(w.enemies[0].hp < 900, "{tag}");
+    }
+}
+
+/// 0218: 미리보기는 진실하다 — 쇠뇌 볼트가 실제로 멈추는 수평 거리 = `shot_reach`, 수류탄이 실제로 터지는 자리 = `grenade_lands`.
+#[test]
+fn the_aim_previews_match_where_the_shot_stops_and_the_grenade_bursts() {
+    let t = Tuning::default();
+    let mut w = World::new("test", 40.0);
+    w.set_weapon(weapons::Id::Crossbow);
+    w.view_yaw = Some(0.0);
+    // 앞 6m에 기둥 — 볼트는 거기서 멈춘다.
+    let p0 = w.player.pos;
+    w.obstacles.push(Aabb {
+        min: vec3(p0.x - 1.0, 0.0, p0.z - 7.0),
+        max: vec3(p0.x + 1.0, 3.0, p0.z - 6.0),
+    });
+    let face = w.player.facing_dir();
+    let bolt = match w.player.weapon.def().rb {
+        Rb::Shot { bolt, .. } => bolt,
+        Rb::Magic(b) => b,
+    };
+    let said = w.shot_reach(face, bolt, &t);
+    w.step(
+        &Actions {
+            cast: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    let mut last = None;
+    for _ in 0..120 {
+        if let Some(b) = w.bolts.first() {
+            last = Some(b.pos);
+        } else if last.is_some() {
+            break;
+        }
+        w.step(&Actions::default(), &t);
+    }
+    let end = last.expect("the bolt flew");
+    let went = vec2(end.x - p0.x, end.z - p0.z).length();
+    assert!((5.5..6.2).contains(&said), "stops at the pillar: {said}");
+    assert!((went - said).abs() < 0.8, "said {said}, went {went}");
+    // 수류탄: 말한 자리에서 터진다.
+    let mut w = World::new("test", 40.0);
+    w.set_weapon(weapons::Id::Crossbow);
+    w.view_yaw = Some(0.0);
+    let g = w.player.weapon.def().grenade.unwrap();
+    let to = w.player.pos + w.player.facing_dir() * g.drop;
+    let said = w.grenade_lands(to).unwrap();
+    let mut ev = w.step(
+        &Actions {
+            attack: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    for _ in 0..240 {
+        ev.extend(w.step(&Actions::default(), &t));
+    }
+    let at = ev
+        .iter()
+        .find_map(|e| match e {
+            Event::Boom { at } => Some(*at),
+            _ => None,
+        })
+        .expect("it bursts");
+    assert!(at.distance(said) < 0.05, "said {said:?}, burst {at:?}");
+    let d = vec2(at.x - w.player.pos.x, at.z - w.player.pos.z).length();
+    assert!(
+        (2.6..3.6).contains(&d),
+        "a little farther than before (2.2m): {d}"
+    );
 }
