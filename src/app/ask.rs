@@ -49,6 +49,7 @@ impl App {
                 flow::Ask::Forge(i) => self.forge_weapon(crate::weapons::IDS[i as usize]),
                 flow::Ask::Recall(i) => self.recall_weapon(crate::weapons::IDS[i as usize]),
                 flow::Ask::Salvage(id) => self.salvage_item(id),
+                flow::Ask::Tidy => self.tidy_bag(),
                 flow::Ask::Restart
                 | flow::Ask::ToTitle
                 | flow::Ask::Overwrite(_)
@@ -59,8 +60,8 @@ impl App {
             self.restart();
         }
         self.go(next);
-        // 줄이 준 가게(여벌을 잔불로 · 벼린 단을 거둠): 돌아온 커서는 묻기 전의 자리다 — 줄 안으로.
-        if yes && matches!(k, flow::Ask::Salvage(_) | flow::Ask::Recall(_)) {
+        // 줄이 준 가게(벼린 단을 거둠): 돌아온 커서는 묻기 전의 자리다 — 줄 안으로.
+        if yes && matches!(k, flow::Ask::Recall(_)) {
             self.cursor = self.cursor.min(self.shop_list().len().saturating_sub(1));
         }
     }
@@ -126,6 +127,13 @@ impl App {
                 (
                     fill(s.ask_salvage, &[&self.item_name(id), &n.to_string()]),
                     s.salvage_do,
+                )
+            }
+            flow::Ask::Tidy => {
+                let (n, embers) = self.tidy_count();
+                (
+                    fill(s.ask_tidy, &[&n.to_string(), &embers.to_string()]),
+                    s.bag_tidy,
                 )
             }
             flow::Ask::Recall(i) => {

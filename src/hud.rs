@@ -1026,7 +1026,7 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
             Near::Talk => Some(i18n::s().talk_verb),
             Near::Read => Some(i18n::s().read_verb),
             Near::Rest { safe: true } => Some(s_rest()),
-            Near::Rest { safe: false } => None,
+            Near::Rest { safe: false } | Near::Full => None,
         };
         match verb {
             Some(verb) => {
@@ -1035,6 +1035,8 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
                 let quiet = matches!(near, Near::Rest { .. }) && body_steps;
                 key_line(ui, &key, verb, cx, y, 1.0, if quiet { DIM } else { AMBER });
             }
+            // 못 하는 까닭을 말한다: 가방이 가득이라 못 줍는다(0226) · 적이 가까워 못 쉰다.
+            None if near == Near::Full => ui.text_center(i18n::s().bag_full, cx, y, 1.0, AMBER),
             None => ui.text_center(i18n::s().rest_blocked, cx, y, 1.0, DIM),
         }
     }

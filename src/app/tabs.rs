@@ -71,7 +71,8 @@ pub(super) fn tab_marked(
         Tab::Status => host.edits() && level,
         Tab::Skills => host.edits() && skills,
         Tab::Shop => host.edits() && shop,
-        Tab::Equip | Tab::Codex | Tab::Settings => false,
+        // 가방(0226)의 점은 "새 것이 있다" — 창이 따로 센다(`draw_tab_window`).
+        Tab::Equip | Tab::Bag | Tab::Codex | Tab::Settings => false,
     }
 }
 
@@ -81,6 +82,7 @@ impl App {
         match tab {
             Tab::Status => s.equip_status,
             Tab::Equip => s.menu_equip,
+            Tab::Bag => s.menu_bag,
             Tab::Skills => s.menu_skills,
             Tab::Codex => s.menu_codex,
             Tab::Journey => s.menu_journey,
@@ -92,6 +94,10 @@ impl App {
     /// 창을 연다·탭을 넘긴다: 장면을 바꾸고, 그 탭이 처음 설 자리를 정한다(기술 = 화로면 살 수 있는 첫 칸·아니면 배운 첫 스킬).
     /// 멈춤에서 본 탭은 판에 적어 둔다 — 다음에 멈추면 거기서 열린다(`flow::pause`).
     pub(super) fn show(&mut self, go: Go) {
+        // 가방 탭을 떠난다(0226): 지금 있는 것은 본 것 — 새 것의 점이 꺼진다.
+        if matches!(self.scene(), Scene::Bag { .. }) && go != Go::Stay {
+            self.leave_bag();
+        }
         self.go(go);
         let scene = self.scene();
         if let Scene::Skills { host } = scene {
@@ -152,10 +158,13 @@ impl App {
             &self.progress.shields,
         ) || self.can_forge();
         let journey = crate::journey::any_ready(&self.progress);
+        let fresh = self.progress.bag.any_fresh();
         let tabs: Vec<(&str, bool)> = flow::tabs(host)
             .iter()
             .map(|&t| {
-                let on = tab_marked(host, t, level, skills, shop, journey);
+                // 가방(0226): 아직 안 본 새 것이 있으면 — 멈춤에서도(보는 일이다).
+                let on =
+                    tab_marked(host, t, level, skills, shop, journey) || (t == Tab::Bag && fresh);
                 (Self::tab_name(t), on)
             })
             .collect();

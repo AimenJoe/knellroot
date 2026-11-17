@@ -281,9 +281,11 @@ pub enum Tip {
     Type,
     /// 여벌이 처음 가방에 들었다 — 견주는 곳·잔불로 바꾸는 곳.
     Spare,
+    /// 가방이 가득이라 떨어진 것을 못 줍는다(0226) — 자리를 만드는 법.
+    Full,
 }
 
-pub const TIPS: [Tip; 8] = [
+pub const TIPS: [Tip; 9] = [
     Tip::Flask,
     Tip::Lock,
     Tip::Charge,
@@ -292,6 +294,7 @@ pub const TIPS: [Tip; 8] = [
     Tip::Unfit,
     Tip::Type,
     Tip::Spare,
+    Tip::Full,
 ];
 /// 상황 힌트가 떠 있는 시간(초) — 그 일을 하면 먼저 걷힌다.
 pub const TIP_TIME: f32 = 6.0;
@@ -313,6 +316,8 @@ pub struct Situation {
     pub can_block: bool,
     pub unfit: bool,
     pub spare: bool,
+    /// 곁에 떨어진 것이 있는데 가방이 가득이다(0226).
+    pub bag_blocked: bool,
 }
 
 impl Tip {
@@ -335,6 +340,7 @@ impl Tip {
             Tip::Unfit => now.unfit,
             Tip::Type => s.ails > 0,
             Tip::Spare => now.spare,
+            Tip::Full => now.bag_blocked,
         }
     }
 
@@ -348,6 +354,7 @@ impl Tip {
             Tip::Block => s.blocks > 0,
             Tip::Unfit => !now.unfit,
             Tip::Type | Tip::Spare => false,
+            Tip::Full => !now.bag_blocked,
         }
     }
 
@@ -359,7 +366,7 @@ impl Tip {
             Tip::Charge => &[Bind::Attack],
             Tip::Swap => &[Bind::Parry, Bind::Attack],
             Tip::Block => &[Bind::Parry],
-            Tip::Unfit | Tip::Type | Tip::Spare => &[],
+            Tip::Unfit | Tip::Type | Tip::Spare | Tip::Full => &[],
         }
     }
 
@@ -373,6 +380,7 @@ impl Tip {
             Tip::Unfit => (st.tip_unfit, st.tip_unfit_d),
             Tip::Type => (st.tip_type, st.tip_type_d),
             Tip::Spare => (st.tip_spare, st.tip_spare_d),
+            Tip::Full => (st.tip_full, st.tip_full_d),
         }
     }
 
@@ -613,6 +621,10 @@ mod tests {
         );
         let spare = with(|n| n.spare = true);
         assert_eq!(next_tip(0, DONE, &spare, &s), Some(Tip::Spare));
+        // 0226: 가방이 가득이라 못 줍는 것 곁에서 — 자리를 만들거나 떠나면 걷힌다.
+        let blocked = with(|n| n.bag_blocked = true);
+        assert_eq!(next_tip(0, DONE, &blocked, &s), Some(Tip::Full));
+        assert!(Tip::Full.done(&none, &s) && !Tip::Full.done(&blocked, &s));
         // 몸의 걸음 동안은 모두 기다린다.
         assert_eq!(next_tip(0, AFTER_BASICS - 1, &sub, &s), None);
     }

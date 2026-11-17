@@ -74,6 +74,17 @@ pub fn view(item: Item) -> View {
 const SHIELD_VIEW: (f32, f32, f32) = (-72.0, 38.0, 0.0);
 
 /// 그림으로 보일 것이 있나(맨손은 없다).
+/// 가방 아이템의 바탕 → 그림으로 보일 아이템(그림이 없으면 없음).
+pub fn of_base(base: crate::items::Base) -> Option<Item> {
+    use crate::items::Base;
+    let item = match base {
+        Base::Weapon(w) => Item::Weapon(w),
+        Base::Shield(s) => Item::Shield(s),
+        Base::Charm(c) => Item::Charm(c),
+    };
+    Some(item).filter(|i| has_view(*i))
+}
+
 pub fn has_view(item: Item) -> bool {
     !view(item).node.is_empty()
 }

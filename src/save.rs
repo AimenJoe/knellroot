@@ -268,6 +268,8 @@ pub struct Progress {
     /// 가방(0223 V4b): 가진 아이템 하나하나(등급·옵션)와 낀 자리. 바탕(무엇을 가졌고 무엇을 꼈나)은 위의 옛 칸들이 말하고,
     /// 가방은 그 바탕의 **어느 것**인지를 말한다 — `settle_items`가 둘을 맞춘다(옛 기록은 바탕마다 보통 것 하나로 옮겨진다).
     pub bag: crate::items::Bag,
+    /// 바닥에 둔 아이템(0226) — 지역마다, 게임을 꺼도 남는다.
+    pub ground: crate::items::Ground,
     /// 끼운 큰 기술(0158 G2 — 하나). 기록에 없으면 쟁반 뒤집기. 배운 것만 끼운다.
     pub ult: crate::skills::Ult,
     /// 걸친 덧옷(0176 — 하나, 가진 것만).
@@ -643,6 +645,7 @@ impl Progress {
             worn,
             chests,
             bag: crate::items::Bag::read(&r),
+            ground: crate::items::Ground::read(&r),
             base: r,
         };
         if !migrated {
@@ -865,6 +868,7 @@ impl Progress {
             r.set(key::SKILL2, self.skills.0[1].key());
         }
         self.bag.write(&mut r);
+        self.ground.write(&mut r);
         if self.sub_skills.0 == crate::skills::START {
             r.remove(key::SKILL_SUB1);
             r.remove(key::SKILL_SUB2);

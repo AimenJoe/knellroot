@@ -454,6 +454,55 @@ impl Fx {
         self.ring_sparks(bowl, 0.3, 12, 2.6, 0.5, GOLD, AMBER);
     }
 
+    /// 아이템이 바닥에 떨어진다(0226 — 사장 "바닥에 떨어지고 비주얼적인 효과가 있어야 해"): 번쩍임 + 위로 솟는 빛 알갱이 + 둘레로
+    /// 튀는 빛줄. 빛은 등급의 빛(`col`), `rank` 0~3(보통~고유) — 드물수록 크고 많다. 사건이 아니라 앱이 부른다(월드는 아이템을 모른다).
+    pub fn loot_drop(&mut self, at: Vec3, col: Color, rank: u8) {
+        let k = rank.min(3) as f32;
+        let c = at + Vec3::Y * 0.5;
+        self.star(c, 0.9 + 0.35 * k, 0.14 + 0.02 * k, WHITE_HOT);
+        self.spray(
+            c,
+            Vec3::Y,
+            0.55,
+            8 + 6 * rank.min(3) as usize,
+            2.6 + 0.5 * k,
+            Shape::Dot,
+            0.08,
+            0.8 + 0.15 * k,
+            2.2,
+            WHITE_HOT,
+            col,
+        );
+        self.ring_sparks(
+            at + Vec3::Y * 0.15,
+            0.25,
+            6 + 4 * rank.min(3) as usize,
+            2.0 + 0.5 * k,
+            0.45,
+            col,
+            col,
+        );
+    }
+
+    /// 아이템을 주웠다(0226): 그 자리에서 몸 쪽으로 솟는 빛 알갱이 + 짧은 번쩍임.
+    pub fn loot_take(&mut self, at: Vec3, col: Color) {
+        let c = at + Vec3::Y * 0.5;
+        self.star(c, 0.8, 0.12, col);
+        self.spray(
+            c,
+            Vec3::Y,
+            0.3,
+            10,
+            3.0,
+            Shape::Streak,
+            0.07,
+            0.4,
+            0.0,
+            WHITE_HOT,
+            col,
+        );
+    }
+
     /// 바닥에서 둘레로 퍼지는 먼지 `n`덩이(반지름 `r`의 고리에서 바깥으로 `speed`).
     fn dust_ring(&mut self, at: Vec3, r: f32, n: usize, speed: f32, size: f32, col: Color) {
         let turn = self.r() * std::f32::consts::TAU;

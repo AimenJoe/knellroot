@@ -151,6 +151,7 @@ impl App {
             self.fall = Some(crate::fall::Fall::default());
             return;
         }
+        self.tell_bag();
         let mut out = self.run.tick(&mut self.world, TICK_DT);
         // 주민 말풍선(0122): 같은 주민에게 말풍선이 떠 있는 동안 다시 누르면 다음 말, 아니면 처음 말.
         if let Some(k) = self.run.take_talked() {
@@ -752,6 +753,7 @@ impl App {
             can_block: self.world.can_block(),
             unfit: (0..2).any(|i| pl.skill.rank[i] == 0 && pl.skill.known[i] > 0),
             spare: !self.progress.bag.spares().is_empty(),
+            bag_blocked: self.run.near_blocked,
         };
         // 등잔은 체력이 반 위로 돌아오면 다시 알릴 수 있다(마셔 보기 전까지 — 기록의 비트는 마실 때 선다, 0213).
         let flask = Tip::Flask.bit();

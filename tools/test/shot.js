@@ -80,6 +80,7 @@ async function main() {
   // 기술(0151 → 0161 기술 화면 → 0164 탭): 멈춤(새 판이라 상태 탭) → E 둘 = 기술 탭 — 칸을 오른쪽으로 한 번 옮겨 본 뒤 되돌리고 닫는다.
   await press('Escape'); await page.waitForTimeout(300); await shot('00h0-status');
   await press('KeyE'); await page.waitForTimeout(200); await shot('00h0-equip');
+  await press('KeyE'); await page.waitForTimeout(200); await shot('00h0-bag');
   await press('KeyE'); await page.waitForTimeout(300);
   await press('ArrowRight'); await page.waitForTimeout(200); await shot('00h1-skills');
   await press('ArrowLeft'); await page.waitForTimeout(150); await press('Escape'); await page.waitForTimeout(300);

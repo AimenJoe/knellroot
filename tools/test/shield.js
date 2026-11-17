@@ -92,7 +92,7 @@ async function open(browser, seed, tag) {
     // 방패가 없는 기록: 쉬기(F) → 가게 탭(상태에서 E 넷 — 장비·기술·도감·여정… 가게) → 방패 줄 → 산다.
     const g = await open(browser, BASE, 'buy');
     await g.press('KeyF'); await g.page.waitForTimeout(700);
-    await g.press('KeyE', 5); await g.page.waitForTimeout(300);
+    await g.press('KeyE', 6); await g.page.waitForTimeout(300);
     await g.shot('1-shop');
     await g.press('ArrowDown', 5); await g.page.waitForTimeout(200);
     await g.shot('2-shop-shield');

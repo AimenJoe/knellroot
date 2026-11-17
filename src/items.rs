@@ -25,6 +25,27 @@ pub enum Rarity {
 }
 
 impl Rarity {
+    /// 등급의 차례(0 = 보통 … 3 = 고유) — 떨어질 때의 이펙트·빛기둥의 크기.
+    pub fn rank(self) -> u8 {
+        match self {
+            Rarity::Plain => 0,
+            Rarity::Sturdy => 1,
+            Rarity::Rare => 2,
+            Rarity::Unique => 3,
+        }
+    }
+
+    /// 바닥에 떨어진 것의 빛(0226 — 장비 탭의 등급 빛과 같은 말: 보통 = 흰빛 · 단단한 = 하늘빛 · 드문 = 금빛 · 고유 = 민트).
+    /// 빨강은 쓰지 않는다(위험 예고의 색).
+    pub fn glow(self) -> [f32; 3] {
+        match self {
+            Rarity::Plain => [0.9, 0.93, 1.0],
+            Rarity::Sturdy => [0.62, 0.82, 1.0],
+            Rarity::Rare => [1.0, 0.80, 0.42],
+            Rarity::Unique => [0.62, 0.92, 0.8],
+        }
+    }
+
     /// 굴리는 옵션의 줄 수.
     pub fn lines(self) -> usize {
         match self {
@@ -373,11 +394,18 @@ pub struct Bag {
     pub items: Vec<(u32, Item)>,
     next: u32,
     pub gear: Gear,
+    /// 지키는 것(0226 — 번호, 작은 차례): 내려놓지도 거두지도 않는다.
+    locked: Vec<u32>,
+    /// 가방 탭에서 본 데까지의 번호(0226) — 이 번호부터는 "새 것"(탭 머리·칸의 민트 점).
+    seen: u32,
 }
 
 /// 기록의 키(바꾸지 않는다): `item.<번호>` = 아이템의 글 · `item.next` = 다음 번호 · `gear.*` = 낀 자리의 번호.
 const KEY_ITEM: &str = "item.";
 const KEY_NEXT: &str = "item.next";
+/// 0226: `item.lock` = 지키는 번호들(쉼표) · `item.seen` = 가방 탭에서 본 데까지의 번호.
+const KEY_LOCK: &str = "item.lock";
+const KEY_SEEN: &str = "item.seen";
 const KEY_GEAR: [&str; 3] = ["gear.main", "gear.sub", "gear.shield"];
 const KEY_GEAR_CHARM: &str = "gear.charm.";
 
@@ -405,10 +433,94 @@ impl Bag {
         id
     }
 
-    /// 가방에서 뺀다(거두기).
+    /// 가방에서 뺀다(거두기·내려놓기).
     pub fn remove(&mut self, id: u32) -> Option<Item> {
         let at = self.items.iter().position(|(i, _)| *i == id)?;
+        self.locked.retain(|l| *l != id);
         Some(self.items.remove(at).1)
+    }
+
+    /// 가득인가(0226): 가득이면 떨어진 것을 줍지 못한다 — 바닥에 남는다.
+    pub fn full(&self) -> bool {
+        self.items.len() >= BAG_CAP
+    }
+
+    /// 낀 것인가(어느 칸이든).
+    pub fn worn(&self, id: u32) -> bool {
+        let g = &self.gear;
+        [g.main, g.sub, g.shield]
+            .into_iter()
+            .chain(g.charms)
+            .any(|w| w == Some(id))
+    }
+
+    pub fn locked(&self, id: u32) -> bool {
+        self.locked.contains(&id)
+    }
+
+    /// 지키기를 켜고 끈다 — 켰으면 참.
+    pub fn toggle_lock(&mut self, id: u32) -> bool {
+        if self.locked(id) {
+            self.locked.retain(|l| *l != id);
+            false
+        } else if self.get(id).is_some() {
+            self.locked.push(id);
+            self.locked.sort_unstable();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 아직 가방 탭에서 못 본 새 것인가.
+    pub fn fresh(&self, id: u32) -> bool {
+        id >= self.seen && self.get(id).is_some()
+    }
+
+    pub fn any_fresh(&self) -> bool {
+        self.items.iter().any(|(id, _)| *id >= self.seen)
+    }
+
+    /// 가방 탭을 닫았다 — 지금 있는 것은 모두 본 것.
+    pub fn mark_seen(&mut self) {
+        self.seen = self.next;
+    }
+
+    /// 내려놓거나 거둘 수 있는 것(0226): 여벌(`spares`) 가운데 지키지 않는 것.
+    pub fn loose(&self) -> Vec<u32> {
+        self.spares()
+            .into_iter()
+            .filter(|id| !self.locked(*id))
+            .collect()
+    }
+
+    /// 그 바탕에서 가장 값진 하나인가(0226 — 여벌 정리가 남기는 것): 값이 같으면 낀 것 · 지키는 것 · 먼저 얻은 것.
+    fn best_of_base(&self, id: u32) -> bool {
+        let Some(it) = self.get(id) else {
+            return false;
+        };
+        self.of(it.base)
+            .max_by_key(|(i, x)| {
+                (
+                    x.salvage(),
+                    self.worn(*i),
+                    self.locked(*i),
+                    std::cmp::Reverse(*i),
+                )
+            })
+            .is_some_and(|(best, _)| best == id)
+    }
+
+    /// 한꺼번에 정리할 때 나갈 것들(0226 "여벌 정리"): 지키지 않는 여벌 가운데 **그 바탕의 가장 값진 하나가 아닌 것** — 값싼 것부터.
+    /// 낀 것보다 값진 여벌(막 주워 아직 안 낀 것)은 남는다. 가방은 건드리지 않는다.
+    pub fn clearable(&self) -> Vec<u32> {
+        let mut out: Vec<u32> = self
+            .loose()
+            .into_iter()
+            .filter(|id| !self.best_of_base(*id))
+            .collect();
+        out.sort_by_key(|id| (self.get(*id).map_or(0, Item::salvage), *id));
+        out
     }
 
     /// 거둘 수 있는 여벌(0223 V4): 낀 자리가 가리키지 않고, 같은 바탕의 다른 아이템이 남는 것 — 거둬도 가진 바탕이 사라지지 않는다.
@@ -450,7 +562,11 @@ impl Bag {
     pub fn settle(&mut self, owned: &[Base], worn: &Worn) {
         for &b in owned {
             if b != Base::Weapon(weapons::Id::Fists) && self.of(b).next().is_none() {
-                self.add(Item::plain(b));
+                // 여기서 채우는 것은 옛 기록을 옮긴 것 — "새 것"이 아니다(앞의 것을 다 봤으면 이것도 본 것으로).
+                let id = self.add(Item::plain(b));
+                if self.seen == id {
+                    self.seen = id + 1;
+                }
             }
         }
         let mut used: Vec<u32> = Vec::new();
@@ -532,8 +648,21 @@ impl Bag {
         for (i, slot) in charms_at.iter_mut().enumerate() {
             *slot = at(&format!("{KEY_GEAR_CHARM}{i}"));
         }
+        let next = at(KEY_NEXT).unwrap_or(0);
+        let mut locked: Vec<u32> = r
+            .get(KEY_LOCK)
+            .unwrap_or("")
+            .split(',')
+            .filter_map(|t| t.trim().parse().ok())
+            .filter(|id| items.iter().any(|(i, _)| i == id))
+            .collect();
+        locked.sort_unstable();
+        locked.dedup();
         Bag {
-            next: at(KEY_NEXT).unwrap_or(0),
+            next,
+            // 이 줄이 없는 옛 기록: 가진 것은 모두 본 것.
+            seen: at(KEY_SEEN).unwrap_or(next),
+            locked,
             items,
             gear: Gear {
                 main: at(KEY_GEAR[0]),
@@ -555,6 +684,11 @@ impl Bag {
             r.set(&format!("{KEY_ITEM}{id}"), it.encode());
         }
         r.set(KEY_NEXT, self.next);
+        r.set(KEY_SEEN, self.seen);
+        if !self.locked.is_empty() {
+            let ids: Vec<String> = self.locked.iter().map(u32::to_string).collect();
+            r.set(KEY_LOCK, ids.join(","));
+        }
         let g = &self.gear;
         for (k, v) in KEY_GEAR.into_iter().zip([g.main, g.sub, g.shield]) {
             if let Some(v) = v {
@@ -569,7 +703,68 @@ impl Bag {
     }
 }
 
-/// 가방의 상한(0223 D) — 가득이면 새로 얻은 여벌은 잔불로 거둔다(처음 얻는 바탕은 상한과 상관없이 든다).
+/// 바닥에 둔 아이템의 기록(0226 — 사장 "바닥에 떨어져 있어야지"): 지역마다 (자리 cm, 아이템). 게임을 끄거나 지역을 떠났다 와도
+/// 그 자리에 있다. 기록 `ground.<n>` = `<지역>|<x>|<y>|<z>|<아이템의 글>`. 지역마다 `GROUND_CAP`개까지(새 것부터) 적는다.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Ground(pub Vec<Lain>);
+
+/// 바닥에 둔 것 하나: (지역, 자리 cm, 아이템).
+pub type Lain = (u8, [i32; 3], Item);
+
+pub const GROUND_CAP: usize = 12;
+const KEY_GROUND: &str = "ground.";
+
+impl Ground {
+    /// 그 지역의 것들(자리 m).
+    pub fn of(&self, stage: usize) -> impl Iterator<Item = ([f32; 3], Item)> + '_ {
+        self.0
+            .iter()
+            .filter(move |(s, _, _)| *s as usize == stage)
+            .map(|(_, p, it)| (p.map(|c| c as f32 * 0.01), *it))
+    }
+
+    /// 그 지역의 것을 지금 바닥에 있는 것들로 바꾼다(차례 = 떨어진 차례 — 넘치면 새 것부터 `GROUND_CAP`개).
+    pub fn set(&mut self, stage: usize, drops: impl Iterator<Item = ([f32; 3], Item)>) {
+        self.0.retain(|(s, _, _)| *s as usize != stage);
+        let all: Vec<_> = drops.collect();
+        let skip = all.len().saturating_sub(GROUND_CAP);
+        self.0.extend(
+            all.into_iter()
+                .skip(skip)
+                .map(|(p, it)| (stage as u8, p.map(|c| (c * 100.0).round() as i32), it)),
+        );
+    }
+
+    pub fn read(r: &crate::save::Record) -> Ground {
+        let mut rows: Vec<(u32, Lain)> = r
+            .with_prefix(KEY_GROUND)
+            .filter_map(|(n, text)| {
+                let mut parts = text.splitn(5, '|');
+                let stage = parts.next()?.parse().ok()?;
+                let mut pos = [0i32; 3];
+                for c in &mut pos {
+                    *c = parts.next()?.parse().ok()?;
+                }
+                Some((n.parse().ok()?, (stage, pos, Item::decode(parts.next()?)?)))
+            })
+            .collect();
+        rows.sort_by_key(|(n, _)| *n);
+        Ground(rows.into_iter().map(|(_, g)| g).collect())
+    }
+
+    pub fn write(&self, r: &mut crate::save::Record) {
+        r.remove_prefix(KEY_GROUND);
+        for (n, (stage, p, it)) in self.0.iter().enumerate() {
+            r.set(
+                &format!("{KEY_GROUND}{n}"),
+                format!("{stage}|{}|{}|{}|{}", p[0], p[1], p[2], it.encode()),
+            );
+        }
+    }
+}
+
+/// 가방의 상한(0223 D → 0226): 무기·방패·장신구 아이템 전부(낀 것 포함). 가득이면 떨어진 것을 **줍지 못한다** — 바닥에 남는다
+/// (사장 2026-11-17). 셈: 바탕 14 + 한 바퀴의 여벌 16. 문지기가 처음 주는 장신구만은 상한을 넘겨도 든다(다시 얻을 길이 없다).
 pub const BAG_CAP: usize = 30;
 
 /// 거두는 값: 등급마다의 바탕(보통·단단한·드문·고유)과 옵션 단 하나의 몫.
@@ -1046,5 +1241,117 @@ mod tests {
         assert!(plain < sturdy && sturdy < rare_low);
         assert_eq!(plain, SALVAGE[0]);
         assert_eq!(rare_low, SALVAGE[2] + 2 * SALVAGE_PER_TIER);
+    }
+    /// 0226: 가방은 `BAG_CAP`에서 가득이다. 지키는 것은 내려놓지도 거두지도 않고, 빼면 지키기도 풀린다. 새 것은 가방 탭을
+    /// 닫을 때까지 새 것이고, 옛 기록을 옮기며 채운 것은 새 것이 아니다. 지키기·본 데는 기록에 갔다 온다.
+    #[test]
+    fn the_bag_fills_keeps_and_remembers_what_was_seen() {
+        use crate::save::Record;
+        let sword = Base::Weapon(weapons::Id::Sword);
+        let mut bag = Bag::default();
+        bag.settle(&[sword], &worn_sword_and(None));
+        let worn = bag.gear.main.unwrap();
+        assert!(!bag.fresh(worn) && !bag.any_fresh(), "settled, not found");
+        assert!(bag.worn(worn));
+        let a = bag.add(roll(sword, Rarity::Sturdy, 1, 3));
+        let b = bag.add(roll(sword, Rarity::Rare, 2, 5));
+        assert!(bag.fresh(a) && bag.fresh(b) && bag.any_fresh());
+        assert_eq!(bag.loose(), [a, b]);
+        assert!(bag.toggle_lock(b));
+        assert!(bag.locked(b) && !bag.locked(a));
+        assert_eq!(bag.loose(), [a], "the kept one stays out of it");
+        assert_eq!(bag.spares(), [a, b], "still a spare");
+        assert!(!bag.toggle_lock(999), "nothing to keep");
+        let mut r = Record::parse("");
+        bag.write(&mut r);
+        assert_eq!(r.get("item.lock"), Some(b.to_string().as_str()));
+        assert_eq!(Bag::read(&r), bag);
+        bag.mark_seen();
+        assert!(!bag.any_fresh());
+        bag.write(&mut r);
+        assert_eq!(Bag::read(&r), bag);
+        // 뺀 것의 지키기는 남지 않는다.
+        assert!(bag.remove(b).is_some());
+        assert!(!bag.locked(b));
+        bag.write(&mut r);
+        assert_eq!(r.get("item.lock"), None);
+        // 본 데가 없는 옛 기록: 가진 것은 모두 본 것.
+        let mut old = Record::parse("");
+        bag.write(&mut old);
+        old.remove("item.seen");
+        assert!(!Bag::read(&old).any_fresh());
+        // 가득.
+        assert!(!bag.full());
+        while bag.items.len() < BAG_CAP {
+            bag.add(Item::plain(sword));
+        }
+        assert!(bag.full());
+    }
+
+    /// 0226 "여벌 정리": 지키지 않는 여벌을 값싼 것부터 — 바탕마다 가장 값진 하나는 남고(낀 것보다 값진 여벌도), 낀 것·지키는 것은
+    /// 건드리지 않는다. 가방은 그대로다(셈만).
+    #[test]
+    fn clearing_spares_leaves_the_best_of_each_base_and_what_is_kept() {
+        let (sword, hammer) = (
+            Base::Weapon(weapons::Id::Sword),
+            Base::Weapon(weapons::Id::Hammer),
+        );
+        let mut bag = Bag::default();
+        let worn = bag.add(Item::plain(sword));
+        bag.gear.main = Some(worn);
+        let cheap = bag.add(roll(sword, Rarity::Sturdy, 1, 3));
+        let kept = bag.add(roll(sword, Rarity::Sturdy, 1, 4));
+        bag.toggle_lock(kept);
+        // 망치는 셋 다 안 꼈다: 가장 값진 것 하나가 남는다.
+        let h_plain = bag.add(Item::plain(hammer));
+        let h_rare = bag.add(roll(hammer, Rarity::Rare, 3, 9));
+        let h_sturdy = bag.add(roll(hammer, Rarity::Sturdy, 1, 2));
+        let before = bag.clone();
+        let out = bag.clearable();
+        assert_eq!(bag, before, "only counted");
+        assert!(out.contains(&cheap) && out.contains(&h_plain) && out.contains(&h_sturdy));
+        assert!(!out.contains(&worn) && !out.contains(&kept) && !out.contains(&h_rare));
+        assert_eq!(out.len(), 3);
+        // 값싼 것부터.
+        let worth: Vec<u32> = out
+            .iter()
+            .map(|id| bag.get(*id).unwrap().salvage())
+            .collect();
+        assert!(worth.windows(2).all(|w| w[0] <= w[1]), "{worth:?}");
+        // 낀 보통 검보다 값진 것을 막 주웠다: 정리해도 남는다 — 그 아래의 지키지 않는 것은 나간다.
+        let found = bag.add(roll(sword, Rarity::Rare, 3, 21));
+        let out = bag.clearable();
+        assert!(!out.contains(&found), "better than what is worn");
+        assert!(out.contains(&cheap) && !out.contains(&kept) && !out.contains(&worn));
+    }
+
+    /// 0226: 바닥에 둔 것은 기록에 갔다 온다(지역 · 자리 · 아이템), 지역마다 따로 바꾸고, 넘치면 새 것부터 남긴다.
+    #[test]
+    fn what_lies_on_the_ground_round_trips_per_region() {
+        use crate::save::Record;
+        let sword = Base::Weapon(weapons::Id::Sword);
+        let (a, b) = (roll(sword, Rarity::Rare, 2, 5), Item::plain(sword));
+        let mut g = Ground::default();
+        g.set(0, [([1.25, 0.5, -3.0], a)].into_iter());
+        g.set(2, [([0.0, 0.0, 7.0], b), ([4.0, 1.0, 2.0], a)].into_iter());
+        let mut r = Record::parse("clears=1\n");
+        g.write(&mut r);
+        assert_eq!(Ground::read(&r), g);
+        assert_eq!(g.of(0).collect::<Vec<_>>(), [([1.25, 0.5, -3.0], a)]);
+        assert_eq!(g.of(2).count(), 2);
+        assert_eq!(g.of(1).count(), 0);
+        // 지역 2의 것을 주웠다: 그 지역만 비고 줄도 지워진다.
+        g.set(2, std::iter::empty());
+        g.write(&mut r);
+        assert_eq!(Ground::read(&r).0.len(), 1);
+        assert!(r.get("ground.1").is_none());
+        Ground::default().write(&mut r);
+        assert_eq!(r.to_text(), "clears=1\n");
+        // 넘치면 새 것부터.
+        let many = (0..GROUND_CAP + 3).map(|i| ([i as f32, 0.0, 0.0], b));
+        g.set(1, many);
+        let kept: Vec<f32> = g.of(1).map(|(p, _)| p[0]).collect();
+        assert_eq!(kept.len(), GROUND_CAP);
+        assert_eq!(kept[0], 3.0);
     }
 }

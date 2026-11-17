@@ -3,6 +3,7 @@
 //!
 //! 루프: 프레임마다 입력 폴링 → 고정 60Hz 틱 N번(장면 → 월드 → 스테이지 → 카메라) → 가변 렌더(보간) → 글·메뉴(화면 패스).
 mod ask;
+mod bag;
 mod codex;
 pub mod controls;
 mod controls_screen;
@@ -495,6 +496,7 @@ impl App {
         }
         self.run.set_found(&self.progress.finds);
         self.run.set_beaten(&self.progress.elites);
+        self.lay_ground();
         let open = self
             .progress
             .gates
@@ -683,7 +685,9 @@ impl App {
                 Some(crate::stage::Near::Pull) => crate::touch::Near::Pull,
                 Some(crate::stage::Near::Talk) => crate::touch::Near::Talk,
                 Some(crate::stage::Near::Read) => crate::touch::Near::Read,
-                Some(crate::stage::Near::Rest { .. }) | None => crate::touch::Near::Rest,
+                Some(crate::stage::Near::Rest { .. } | crate::stage::Near::Full) | None => {
+                    crate::touch::Near::Rest
+                }
             },
             lock: play && (self.world.lock.is_some() || self.world.lock_candidate()),
             flask: play && pl.flask > 0 && pl.hp < pl.max_hp,
@@ -900,6 +904,8 @@ impl App {
             Scene::Codex { host, tab } => self.tick_codex(&a, host, tab as usize),
             Scene::Journey { host } => self.tick_journey(&a, host),
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
+            Scene::Bag { host } => self.tick_bag(&a, host),
+            Scene::BagAct => self.tick_bag_act(&a),
             s @ (Scene::Settings { .. } | Scene::Shop | Scene::Result { .. }) => {
                 self.tick_menu(&a, s)
             }
@@ -962,6 +968,8 @@ impl App {
             | Scene::SkillAct
             | Scene::Codex { .. }
             | Scene::Journey { .. }
+            | Scene::Bag { .. }
+            | Scene::BagAct
             | Scene::EquipPick { .. } => None,
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } | Scene::Motions { .. } => None,
@@ -991,6 +999,8 @@ impl App {
             | Scene::SkillAct
             | Scene::Codex { .. }
             | Scene::Journey { .. }
+            | Scene::Bag { .. }
+            | Scene::BagAct
             | Scene::EquipPick { .. } => {}
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } | Scene::Motions { .. } => {}
@@ -1222,6 +1232,8 @@ impl App {
             Scene::SkillAct => self.draw_skill_act(f),
             Scene::Codex { host, tab } => self.draw_codex(f, host, tab as usize),
             Scene::Journey { host } => self.draw_journey(f, host),
+            Scene::Bag { host } => self.draw_bag(f, host, self.cursor),
+            Scene::BagAct => self.draw_bag_act(f),
             Scene::Shop => self.draw_shop(f),
             Scene::Settings { host } => self.draw_settings(f, host),
             #[cfg(feature = "dev")]

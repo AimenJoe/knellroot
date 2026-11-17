@@ -477,7 +477,7 @@ fn item_of(c: Cand) -> Option<crate::item_view::Item> {
 }
 
 /// 타깃 한 변 `native` px을 화면 `want` px 안에 넣는 정수 배율(도트가 고르게 — 1 아래면 1).
-fn icon_scale(native: u32, want: f32) -> f32 {
+pub(super) fn icon_scale(native: u32, want: f32) -> f32 {
     (want / native as f32).floor().max(1.0)
 }
 
@@ -498,7 +498,7 @@ const PANE_LINES_PER_SEC: f32 = 6.0;
 
 /// 등급의 빛(0223 V4d — 옵션 줄): 보통 = 흐린 글 · 단단한 = 하늘빛 · 드문 = 금빛 · 고유 = 민트. 이름 앞의 등급 말과 함께 쓴다
 /// (색만으로 말하지 않는다).
-fn rarity_ink(r: crate::items::Rarity) -> Color {
+pub(super) fn rarity_ink(r: crate::items::Rarity) -> Color {
     use crate::items::Rarity;
     match r {
         Rarity::Plain => DIM,
@@ -513,7 +513,7 @@ const WORSE: Color = Color::new(0.88, 0.42, 0.36, 1.0);
 
 impl App {
     /// 칸의 지금 것.
-    fn slot_now(&self, slot: usize) -> Cand {
+    pub(super) fn slot_now(&self, slot: usize) -> Cand {
         match slot {
             0 => Cand::Weapon(self.weapon),
             // 보조무기 칸(0224): 무기가 먼저, 없으면 방패.
@@ -569,7 +569,7 @@ impl App {
     }
 
     /// 여벌을 칸에 낀다(0223 V4d): 그 바탕을 그 칸에 끼는 여느 길을 그대로 타고, 칸이 이 아이템을 가리키게 한다.
-    fn wear_item(&mut self, slot: usize, id: u32) {
+    pub(super) fn wear_item(&mut self, slot: usize, id: u32) {
         use crate::items::Base;
         let Some(base) = self.progress.bag.get(id).map(|it| it.base) else {
             return;
@@ -1118,7 +1118,13 @@ impl App {
 
     /// 오른쪽 칸의 몸: 칸 `slot`의 `focus`(지금 것·후보) — 무기는 숫자(후보면 지금 무기와 견줘 "값 → 값 ▲▼"), 장신구 후보는
     /// 바뀌는 상태 줄, 그 아래 설명(장신구는 세계 안의 말까지). 칸 고르기에서는 끝에 지금의 상태(장신구가 바꾸는 줄 — 0104).
-    fn equip_lines(&self, w: &Window, slot: usize, focus: Cand, picking: bool) -> Vec<Ln> {
+    pub(super) fn equip_lines(
+        &self,
+        w: &Window,
+        slot: usize,
+        focus: Cand,
+        picking: bool,
+    ) -> Vec<Ln> {
         let s = s();
         let now_stats = self.progress.stats();
         // 벼린 단(0180)은 그 무기를 들었을 때만 — 후보마다 그 무기를 든 능력치로 센다.
