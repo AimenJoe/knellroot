@@ -205,6 +205,8 @@ impl World {
         let rooted_riposte = self.tree.linked(Link::RootedRiposte);
         let breaking_beat = self.tree.linked(Link::BreakingBeat);
         let mut deflected: Option<Vec3> = None;
+        // 결(0223 11절): 이 휘두르기가 묶인 적·금 간 적에 닿았나(맞기 전의 상태로 본다).
+        let (mut bound_hit, mut cracked_hit) = (false, false);
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing {
                 continue;
@@ -227,6 +229,11 @@ impl World {
             if s.heavy.is_none() && en.guards(-dir) {
                 deflected.get_or_insert(en.pos + Vec3::Y * en.height * 0.6);
                 continue;
+            }
+            // 전환 중인 보스(강타는 닿아도 피해가 없다)는 세지 않는다.
+            if !en.rising() {
+                bound_hit |= en.ail.bound > 0.0 || en.bind > 0.0;
+                cracked_hit |= en.ail.rift > 0.0;
             }
             // 패링으로 드러난 적은 한 대가 치명타(0025).
             let crit = en.exposed > 0.0;
@@ -330,7 +337,8 @@ impl World {
                     (false, true) => t[P::HeavyStagger],
                     (false, false) => t[P::HeavyStagger] * 0.5,
                 };
-                if dur > 0.0 {
+                // 전환 중인 보스(0133)는 휘청이지 않는다 — 강타가 전환을 끊지 못한다.
+                if dur > 0.0 && !en.rising() {
                     en.state = EState::Stagger { t: 0.0, dur };
                 }
                 ev.push(Event::Smash {
@@ -344,6 +352,17 @@ impl World {
                 self.kills += 1;
                 ev.push(Event::EnemyDown { at: en.pos });
             }
+        }
+        // 결의 몫은 휘두르기 한 번에 한 번(광역이 몇 배로 돌려받지 않는다) — 틱 끝 `skill_books`가 준다.
+        // (둘은 저마다 센다 — 금 간 적을 먼저 벤 휘두르기가 뒤에 닿은 묶인 적의 몫을 삼키지 않게.)
+        let paid = &mut self.player.skill.vein_swing;
+        if bound_hit && paid[0] != swing {
+            paid[0] = swing;
+            self.vein_bound = true;
+        }
+        if cracked_hit && paid[1] != swing {
+            paid[1] = swing;
+            self.vein_cracked = true;
         }
         Landed {
             stop,

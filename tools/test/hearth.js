@@ -72,7 +72,8 @@ async function run(browser, lang) {
     await home();
     // 줄마다의 칸(위 → 아래): 스킬 넷 · 패시브 여섯 · 스킬 넷 · 패시브 여섯 + 다리 둘 · 큰 기술과 패시브 여섯 · 새 스킬 셋 ·
     // 패시브 여섯 + 다리 둘 · 맺음 셋(0214 · 0215).
-    const COLS = [4, 6, 4, 8, 6, 3, 8, 3];
+    // 맨 아래는 결의 줄(0223 11절 — 타입 넷).
+    const COLS = [4, 6, 4, 8, 6, 3, 8, 3, 4];
     for (let row = 0; row < COLS.length; row++) {
       for (let col = 0; col < COLS[row]; col++) {
         if (!shots || shots.includes(row)) await shot(`${name}-r${row}c${col}`);
@@ -243,12 +244,26 @@ async function run(browser, lang) {
   await page.waitForTimeout(1800);
   // 모든 칸의 상세(줄 여덟 — 0214의 넷째·다섯째 줄까지).
   await sweep('13-skills');
-  // 잠긴 줄(맺음 — 쓴 점수 22부터)의 칸은 확인해도 목록이 없다(안 됨 소리만).
+  // 결의 칸(0223 11절 — 맨 아래 줄): 그 타입의 스킬을 배웠으면 연다. 옛 기록은 가로지르기(균열)를 안다 — 균열의 결(줄의 오른쪽 끝):
+  // 목록(열기) → 묻는 창 → 열림(`tree.veins`). 잔불의 결(왼쪽 끝)은 그 타입의 스킬을 몰라 목록이 없다.
+  await press('Enter'); await page.waitForTimeout(300);
+  await shot('13v-vein-needs-skill');
+  await press('ArrowRight', 3); await page.waitForTimeout(200);
+  await shot('13w-vein');
+  await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(300);
+  await shot('13x-vein-ask');
+  await press('Enter'); await page.waitForTimeout(400);
+  await shot('13y-vein-open');
+  b = await record();
+  if (!/tree\.veins=rift\n/.test(b)) errors.push(`vein not saved: ${JSON.stringify(b)}`);
+  await page.waitForTimeout(1800);
+  // 잠긴 줄(맺음 — 쓴 점수 22부터)의 칸은 확인해도 목록이 없다(안 됨 소리만). 결의 줄 바로 위.
+  await press('ArrowUp'); await page.waitForTimeout(200);
   await press('Enter'); await page.waitForTimeout(300);
   await shot('14-skills-locked');
-  // 되돌리기 단추(창 아래 오른쪽 — 맨 아래 줄에서 아래): 묻는 창(커서 "취소") → 왼쪽 = "되돌리기" → 쓴 점수 7(산 것 셋 + 옛 기록이 지닌 처음의 둘 0166 + 쟁반 뒤집기의 배움 2 0172)을 돌려받고 잔불 65(30 + 5 × 7).
+  // 되돌리기 단추(창 아래 오른쪽 — 맨 아래 줄에서 아래): 묻는 창(커서 "취소") → 왼쪽 = "되돌리기" → 쓴 점수 8(산 것 넷 — 결 하나까지 + 옛 기록이 지닌 처음의 둘 0166 + 쟁반 뒤집기의 배움 2 0172)을 돌려받고 잔불 70(30 + 5 × 8).
   const embers = Number(/embers=(\d+)\n/.exec(b)[1]);
-  await press('ArrowDown'); await page.waitForTimeout(200);
+  await press('ArrowDown', 2); await page.waitForTimeout(200);
   await shot('15-respec-focus');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('15a-respec-ask');
@@ -257,8 +272,8 @@ async function run(browser, lang) {
   await page.waitForTimeout(1800);
   await shot('15c-skills-after-respec');
   b = await record();
-  if (/skill\.rank\./.test(b) || /skill\.pick\./.test(b) || /tree\.cells\./.test(b)) errors.push(`respec must clear the board: ${JSON.stringify(b)}`);
-  if (!new RegExp(`embers=${embers - 65}\\n`).test(b)) errors.push(`respec must cost 65 embers: ${JSON.stringify(b)}`);
+  if (/skill\.rank\./.test(b) || /skill\.pick\./.test(b) || /tree\.cells\./.test(b) || /tree\.veins/.test(b)) errors.push(`respec must clear the board: ${JSON.stringify(b)}`);
+  if (!new RegExp(`embers=${embers - 70}\\n`).test(b)) errors.push(`respec must cost 70 embers: ${JSON.stringify(b)}`);
   if (/ult\.rank\./.test(b)) errors.push(`respec must forget the great skill too (0172): ${JSON.stringify(b)}`);
   // 창을 닫으면 떠난다(한 번에) → 싸움(HUD 기력 막대가 길어졌는지).
   await press('Escape'); await page.waitForTimeout(400);

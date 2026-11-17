@@ -1721,7 +1721,28 @@ impl World {
         let perfects = count(|e| matches!(e, Event::Perfect { .. }));
         let by_skill = self.skill_hit_tick || self.skill_kill_left > 0.0;
         let gathering = self.tree.has(crate::progression::Cell::GatheringBeat);
+        // 결(0223 11절): 이번 틱에 무기의 타가 묶인 적·금 간 적에 닿았나, 몇이 울렸나 — 칸을 열었을 때만 몫이 있다.
+        use crate::progression::{vein, Vein};
+        let bound = std::mem::take(&mut self.vein_bound) && self.tree.veined(Vein::Root);
+        let cracked = std::mem::take(&mut self.vein_cracked) && self.tree.veined(Vein::Rift);
+        // 탄이 맞은 틱(게이지): 큰 기술이 없어도 여기서 걷는다 — 안 걷으면 배운 뒤의 첫 틱에 옛 것이 한 번 찬다.
+        let bolt_hit = std::mem::take(&mut self.bolt_hit_tick);
+        let tolls = std::mem::take(&mut self.vein_tolls).min(vein::KNELL_TOLLS);
+        let tolls = if self.tree.veined(Vein::Knell) {
+            tolls as f32
+        } else {
+            0.0
+        };
         let pl = &mut self.player;
+        // 뿌리의 숨: 묶인 적을 맞힌 타 — 기력이 조금 돌아온다. 금을 따라: 금 간 적을 맞힌 타 — 모든 스킬 대기가 조금 당겨진다.
+        if bound {
+            pl.stamina = (pl.stamina + vein::ROOT_BREATH).min(t[P::StaminaMax]);
+        }
+        if cracked {
+            for cd in &mut pl.skill.cd {
+                *cd = (*cd - vein::RIFT_PULL).max(0.0);
+            }
+        }
         if downs > 0.0 {
             let per = if by_skill {
                 t[P::SkillMomentumOwn]
@@ -1757,9 +1778,11 @@ impl World {
                 gain += hit * crate::progression::cell::GATHERING_BEAT;
             }
         }
-        if std::mem::take(&mut self.bolt_hit_tick) {
+        if bolt_hit {
             gain += hit;
         }
+        // 울림 모으기: 울림 하나가 평타 한 번만큼.
+        gain += hit * tolls;
         pl.skill.gauge = (pl.skill.gauge + gain).min(1.0);
         if !was_full && pl.skill.gauge >= 1.0 {
             ev.push(Event::UltReady);

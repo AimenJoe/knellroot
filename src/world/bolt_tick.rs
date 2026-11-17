@@ -96,6 +96,7 @@ impl World {
                 left,
                 def,
                 hits: 0,
+                veined: [false; 2],
             });
             ev.push(Event::Cast { at: pos });
         }
@@ -144,6 +145,7 @@ impl World {
                     left: t[P::CastRange] * def.range,
                     def,
                     hits: 0,
+                    veined: [false; 2],
                 });
             }
             ev.push(Event::Cast { at: from });
@@ -261,6 +263,7 @@ impl World {
             left,
             def,
             hits: 0,
+            veined: [false; 2],
         };
         let step = t[P::CastSpeed] * TICK_DT * def.speed;
         for _ in 0..2000 {
@@ -371,6 +374,15 @@ impl World {
                         at: b.pos + b.dir * k,
                     });
                     continue;
+                }
+                // 결(0223 11절): 탄도 무기의 타다 — 묶인 적·금 간 적에 닿았나(탄 하나에 한 번 — 꿰뚫어도).
+                if !b.veined[0] && (en.ail.bound > 0.0 || en.bind > 0.0) {
+                    b.veined[0] = true;
+                    self.vein_bound = true;
+                }
+                if !b.veined[1] && en.ail.rift > 0.0 {
+                    b.veined[1] = true;
+                    self.vein_cracked = true;
                 }
                 let crit = en.exposed > 0.0;
                 en.hp -= hurt_by(

@@ -435,6 +435,8 @@ pub struct Bolt {
     pub def: weapons::Bolt,
     /// 이미 맞힌 적(꿰뚫는 탄, 번호 비트).
     pub hits: u64,
+    /// 결(0223 11절)의 몫을 이미 줬다(뿌리의 숨 · 금을 따라 — 꿰뚫는 탄도 탄 하나에 한 번).
+    pub veined: [bool; 2],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -619,6 +621,8 @@ pub struct SkillState {
     pub cd: [f32; skills::N],
     pub gauge: f32,
     pub gauge_swing: u32,
+    /// 결(0223 11절)의 몫을 준 마지막 휘두르기(한 번 휘두르기에 한 번만 — 뿌리의 숨 · 금을 따라 저마다).
+    pub vein_swing: [u32; 2],
     pub denied: f32,
     /// 기술 판(0158): 끼운 칸의 단·고르기, 큰 기술의 단 — 앱이 `set_skills`로 넣는다(월드는 기록을 모른다).
     /// `rank`는 **지금 든 무기로 쓸 수 있는** 단이다(0223 V3): 갈래가 안 맞는 스킬이 놓인 칸은 0 = 빈 칸. 배운 단은 `known`.
@@ -861,6 +865,10 @@ pub struct World {
     pub skill_spikes: Vec<Spike>,
     /// 이번 틱에 방랑자의 탄이 적을 맞혔다(게이지 — `skill_books`).
     bolt_hit_tick: bool,
+    /// 결(0223 11절): 이번 틱에 무기의 타가 묶인 적·금 간 적에 닿았다, 이번 틱에 울린 수 — `skill_books`가 걷는다.
+    vein_bound: bool,
+    vein_cracked: bool,
+    vein_tolls: u8,
     /// 이번 틱에 박자에 맞춘 평타가 나갔다(`Event::Beat`).
     beat_now: bool,
     /// 이번 틱에 등잔을 삼켰다·못 마셨다(사건은 `apply_strike`가 낸다).
@@ -905,6 +913,7 @@ impl World {
                     cd: [0.0; skills::N],
                     gauge: 0.0,
                     gauge_swing: 0,
+                    vein_swing: [0; 2],
                     denied: 0.0,
                     rank: [1; 2],
                     pick: [skills::Pick::A; 2],
@@ -1005,6 +1014,9 @@ impl World {
             hop_seen: Vec::new(),
             skill_spikes: Vec::new(),
             bolt_hit_tick: false,
+            vein_bound: false,
+            vein_cracked: false,
+            vein_tolls: 0,
             time: 0.0,
             kills: 0,
             lock_range: 18.0,

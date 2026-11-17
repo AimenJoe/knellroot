@@ -4,6 +4,7 @@
 
 use super::skill_tick::Touch;
 use super::*;
+use crate::progression::{vein, Vein};
 use crate::status::{Kind, NO_DOSE};
 use crate::tuning::{
     BURN_DMG, BURST_DMG, BURST_RADIUS, ROOT_BOSS_SLOW, TOLL_DMG, TOLL_RADIUS, TOLL_RIFT_SECS,
@@ -15,8 +16,13 @@ impl World {
         let mut ev = std::mem::take(&mut self.skill_ev);
         let mut tolls = Vec::new();
         let mut bursts = Vec::new();
+        // 타다가 쓰러진 적의 남은 불(자리·겹) — 옮겨붙는 불(결, 0223 11절)이 쓴다. 쓰러진 몸의 불은 여기서 꺼진다(한 번만 옮는다).
+        let mut cinders = Vec::new();
         for (i, en) in self.enemies.iter_mut().enumerate() {
             if !en.alive() {
+                if en.ail.burn > 0 {
+                    cinders.push((en.pos, std::mem::take(&mut en.ail.burn)));
+                }
                 continue;
             }
             let out = en.ail.tick(dt);
@@ -52,8 +58,16 @@ impl World {
         // 한꺼번에 울리는 떼: 한 적이 받는 울림의 피해는 `TOLL_STACK` 번까지(떼가 클수록 한 번의 스킬이 곱절로 세지지 않게 —
         // 게이지 나눔·겹침은 그대로 번진다).
         let mut rung = vec![0u8; self.enemies.len()];
+        if self.tree.veined(Vein::Ember) {
+            for (at, stacks) in cinders {
+                self.catch_fire(&mut ev, at, stacks);
+            }
+        }
         for i in tolls {
-            self.toll(t, &mut ev, i, &mut rung);
+            // 울림 모으기(결): 실제로 울린 수 — 틱 끝의 셈이 큰 기술 게이지에 더한다.
+            if self.toll(t, &mut ev, i, &mut rung) {
+                self.vein_tolls = self.vein_tolls.saturating_add(1);
+            }
         }
         // 겹침: 화상 중에 묶인 적은 쓴 겹만큼 둘레를 터뜨린다.
         for (at, n) in bursts {
@@ -74,13 +88,39 @@ impl World {
         self.skill_ev = ev;
     }
 
+    /// 옮겨붙는 불(결, 0223 11절): `at`에서 쓰러진 적의 남은 불 `stacks`겹이 `vein::EMBER_REACH` m 안의 가장 가까운 적
+    /// 하나에 옮겨붙는다(같은 층 — 전환 중인 보스는 아니다). 겹의 상한은 그대로(`Ail::kindle`).
+    fn catch_fire(&mut self, ev: &mut Vec<Event>, at: Vec3, stacks: u8) {
+        let near = self
+            .enemies
+            .iter_mut()
+            .filter(|en| {
+                en.active() && !en.harmless() && !en.rising() && (en.pos.y - at.y).abs() <= HIT_DY
+            })
+            .map(|en| {
+                let d = vec3(en.pos.x - at.x, 0.0, en.pos.z - at.z).length() - en.radius;
+                (d, en)
+            })
+            .filter(|(d, _)| *d <= vein::EMBER_REACH)
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        if let Some((_, en)) = near {
+            // 제자리에 서 있던 적이면 알아차린다 — 모르는 채 서서 타 죽지 않게.
+            en.notice();
+            en.ail.kindle(stacks, en.boss);
+            ev.push(Event::Ail {
+                at: en.pos + Vec3::Y * en.height * 0.6,
+                kind: Kind::Ember,
+            });
+        }
+    }
+
     /// 울림: `i`번 적이 울린다 — 둘레 `TOLL_RADIUS` m의 적(울린 적도)이 피해를 받고(자세는 깎지 않는다 — 한 틱에 여럿이 울리면 `TOLL_STACK` 번까지만 아프다), 이웃은 울림 게이지를 나눠 받는다
     /// (가득 차면 그 적도 조금 뒤에 울린다 — 떼를 타고 번진다. 한 번 울린 적은 `TOLL_REST` 동안 다시 울리지 않는다).
     /// 겹침: 타는 적이 울리면 이웃에 불이 한 겹 옮고, 금 간 적이 울리면 이웃에도 금이 번진다.
-    fn toll(&mut self, t: &Tuning, ev: &mut Vec<Event>, i: usize, rung: &mut [u8]) {
+    fn toll(&mut self, t: &Tuning, ev: &mut Vec<Event>, i: usize, rung: &mut [u8]) -> bool {
         let src = &self.enemies[i];
         if !src.alive() {
-            return;
+            return false;
         }
         let (at, burning, cracked) = (src.pos, src.ail.burn > 0, src.ail.rift > 0.0);
         ev.push(Event::Toll {
@@ -132,5 +172,6 @@ impl World {
                 en.ail.crack(TOLL_RIFT_SECS);
             }
         }
+        true
     }
 }

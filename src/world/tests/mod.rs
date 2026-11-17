@@ -19,6 +19,7 @@ mod parry;
 mod ranged;
 mod touch_aim;
 mod turn;
+mod veins;
 mod weapon_swap;
 
 fn world_with_boss() -> World {

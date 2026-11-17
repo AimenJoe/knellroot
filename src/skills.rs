@@ -18,7 +18,7 @@
 //! 갈래 셋(흐름·맞받기·자리 — `Skill::branch`·`Ult::branch`)에 서고, 판의 칸 순서 `ENTRIES`가 곧 화면의 차례다. 기술 점수의 샘은
 //! 총 레벨 + 처음 쓰러뜨린 엘리트 + 핵 + 종소리 조각(`points`) — 화폐 "마디"는 없다.
 
-use crate::progression::{Branch, Cell, Key, Link, Tree, DEPTH, KEYS, LINKS};
+use crate::progression::{Branch, Cell, Key, Link, Tree, Vein, DEPTH, KEYS, LINKS, VEINS};
 use crate::status::{Dose, Kind};
 use crate::tuning::{HP_UNIT, ULT_SLAM_DAMAGE};
 
@@ -1304,9 +1304,13 @@ pub fn points(level: u32, elites: u32, cores: u32, shards: u32) -> u32 {
 
 /// 줄이 열리는 때(쓴 점수 합): 첫 줄 · 둘째 줄 · 큰 기술 줄(0158 라) · 넷째 줄(새 스킬·패시브) · 맺음 줄(0214 — Diablo IV의
 /// 묶음처럼 깊은 줄일수록 더 써야 열린다. 있는 줄의 열림은 그대로 — 이미 산 칸이 잠기지 않게).
-pub const ROW_NEEDS: [u32; 5] = [0, 4, 8, 14, 22];
+pub const ROW_NEEDS: [u32; 6] = [0, 4, 8, 14, 22, 0];
 /// 맺음의 줄(`ROW_NEEDS`의 자리).
 pub const KEY_ROW: usize = 4;
+/// 결의 줄(0223 11절 — 판의 맨 아래 띠): 쓴 점수로 열리지 않는다(`ROW_NEEDS` 0) — 그 타입의 스킬을 배웠나만 본다
+/// (`Board::reachable`). 가로 자리는 판의 폭을 넷으로 나눈 가운데들.
+pub const VEIN_ROW: usize = 5;
+pub const LANE_VEIN: [f32; 4] = [34.0, 101.0, 169.0, 236.0];
 /// 맺음을 켜는 데 그 갈래에 써 둔 점수(0215 A — 갈래의 스킬 단 + 큰 기술 단 + 패시브 칸, 다리 칸은 어느 갈래에도 세지 않는다).
 pub const KEY_BRANCH: u32 = 10;
 /// 판의 가로 자리(0215 B — 화면의 칸 자리 `app::skills::spots`도 이것을 쓴다): 갈래 폭 안에서 칸 둘이면 `LANE_2`, 하나면
@@ -1330,10 +1334,12 @@ pub enum Entry {
     Key(Key),
     /// 다리 칸(0215 C — 두 갈래의 경계, 시너지).
     Link(Link),
+    /// 결의 칸(0223 11절 — 피해 타입마다 하나).
+    Vein(Vein),
 }
 
 /// 판의 칸 수: 스킬 + 큰 기술 + 패시브(갈래마다 `DEPTH`) + 맺음 셋 + 다리 넷.
-pub const NE: usize = N + NU + 3 * DEPTH as usize + KEYS.len() + LINKS.len();
+pub const NE: usize = N + NU + 3 * DEPTH as usize + KEYS.len() + LINKS.len() + VEINS.len();
 
 /// 판의 칸 순서(0161 "갈래와 줄" — 화면의 차례이기도 하다): 줄(처음부터 · 쓴 점수 4 · 쓴 점수 8)마다 갈래(흐름 · 맞받기 · 자리)
 /// 순으로, 갈래 안에서는 스킬(큰 기술) 먼저·패시브 다음. 대기 칸의 자리(`IDS`)와는 따로다. 묻는 창 `Ask::Skill`이 이 자리를 든다.
@@ -1385,6 +1391,11 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Key(Key::Measure),
     Entry::Key(Key::Edge),
     Entry::Key(Key::Rooted),
+    // 결(0223 11절) — 그 타입의 스킬을 배우면
+    Entry::Vein(Vein::Ember),
+    Entry::Vein(Vein::Root),
+    Entry::Vein(Vein::Knell),
+    Entry::Vein(Vein::Rift),
 ];
 
 impl Entry {
@@ -1393,7 +1404,7 @@ impl Entry {
         match self {
             Entry::Skill(_) => MAX_RANK,
             Entry::Ult(_) => ULT_MAX_RANK,
-            Entry::Cell(_) | Entry::Key(_) | Entry::Link(_) => 1,
+            Entry::Cell(_) | Entry::Key(_) | Entry::Link(_) | Entry::Vein(_) => 1,
         }
     }
 
@@ -1404,6 +1415,7 @@ impl Entry {
             Entry::Cell(c) => c.row(),
             Entry::Key(_) => KEY_ROW,
             Entry::Link(l) => l.row(),
+            Entry::Vein(_) => VEIN_ROW,
         }
     }
 
@@ -1415,20 +1427,25 @@ impl Entry {
             Entry::Cell(c) => c.branch(),
             Entry::Key(k) => k.branch(),
             Entry::Link(l) => crate::progression::BRANCHES[l.left()],
+            Entry::Vein(v) => v.branch(),
         }
     }
 
     /// 작은 칸(패시브·맺음·다리)인가 — 줄 안에서 스킬·큰 기술 아래에 선다.
     pub fn small(self) -> bool {
-        matches!(self, Entry::Cell(_) | Entry::Key(_) | Entry::Link(_))
+        matches!(
+            self,
+            Entry::Cell(_) | Entry::Key(_) | Entry::Link(_) | Entry::Vein(_)
+        )
     }
 
     /// 판의 길의 줄(0215 B, 0~7 — 첫 줄 스킬 · 첫 줄 패시브 · 둘째 줄 스킬 · 둘째 줄 패시브(+ 다리) · 큰 기술 줄 · 넷째 줄 스킬 ·
     /// 넷째 줄 패시브(+ 다리) · 맺음): 줄(`row`)마다 스킬 줄과 패시브 줄 — 큰 기술 줄과 맺음 줄은 하나.
     pub fn line(self) -> usize {
         let row = self.row();
-        let base = [0, 2, 4, 5, 7][row];
-        base + usize::from(self.small() && row != ULT_ROW as usize && row != KEY_ROW)
+        let base = [0, 2, 4, 5, 7, 8][row];
+        let one_line = row == ULT_ROW as usize || row == KEY_ROW || row == VEIN_ROW;
+        base + usize::from(self.small() && !one_line)
     }
 
     /// 판의 가로 자리(0215 B — 셋째 갈래의 오른쪽 끝이 `3 × LANE_W`). 같은 줄·갈래의 같은 크기 칸 가운데 몇째인가로 정한다
@@ -1437,13 +1454,16 @@ impl Entry {
         if let Entry::Link(l) = self {
             return LANE_W * (l.left() + 1) as f32;
         }
+        if let Entry::Vein(v) = self {
+            return LANE_VEIN[v.index()];
+        }
         let (row, b) = (self.row(), self.branch());
         let x0 = LANE_W * b.index() as f32;
         let peers = |small: bool| {
             ENTRIES.iter().filter(move |e| {
                 e.row() == row
                     && e.branch() == b
-                    && !matches!(e, Entry::Link(_))
+                    && !matches!(e, Entry::Link(_) | Entry::Vein(_))
                     && e.small() == small
             })
         };
@@ -1462,6 +1482,8 @@ impl Entry {
         let near = (self.lane() - to.lane()).abs() <= LANE_DX;
         let (a, b) = (self.line(), to.line());
         match (self, to) {
+            // 결의 칸은 판의 길 밖이다(0223 11절 — 그 타입의 스킬을 배웠나만 본다).
+            (Entry::Vein(_), _) | (_, Entry::Vein(_)) => false,
             (Entry::Link(_), Entry::Link(_)) => false,
             (Entry::Link(_), _) => near && (b == a || b == a + 1),
             (_, Entry::Link(_)) => near && b == a,
@@ -1538,6 +1560,7 @@ impl Board {
             Entry::Cell(c) => self.cells.has(c) as u8,
             Entry::Key(k) => self.cells.keyed(k) as u8,
             Entry::Link(l) => self.cells.linked(l) as u8,
+            Entry::Vein(v) => self.cells.veined(v) as u8,
         }
     }
 
@@ -1545,7 +1568,9 @@ impl Board {
     pub fn branch_spent(&self, b: Branch) -> u32 {
         ENTRIES
             .iter()
-            .filter(|e| e.branch() == b && !matches!(e, Entry::Key(_) | Entry::Link(_)))
+            .filter(|e| {
+                e.branch() == b && !matches!(e, Entry::Key(_) | Entry::Link(_) | Entry::Vein(_))
+            })
             .map(|&e| e.paid(self.rank(e)))
             .sum()
     }
@@ -1553,6 +1578,13 @@ impl Board {
     /// 길이 이어졌나(0215 B): 첫 줄 스킬은 늘(뿌리), 그 밖은 가진 칸 가운데 이것으로 이어지는 것이 있어야. 이미 가진 칸(단을
     /// 올리는 것·옛 기록)은 묻지 않는다.
     pub fn reachable(&self, e: Entry) -> bool {
+        // 결의 칸(0223 11절): 그 타입을 싣는 스킬을 하나라도 배웠어야 한다.
+        if let Entry::Vein(v) = e {
+            return self.rank(e) > 0
+                || IDS
+                    .into_iter()
+                    .any(|id| self.learned(id) && id.def().kind == v.kind());
+        }
         e.line() == 0
             || self.rank(e) > 0
             || ENTRIES
@@ -1620,6 +1652,7 @@ impl Board {
             Entry::Cell(c) => self.cells.open_cell(c),
             Entry::Key(k) => self.cells.key = Some(k),
             Entry::Link(l) => self.cells.open_link(l),
+            Entry::Vein(v) => self.cells.open_vein(v),
         }
         true
     }
@@ -1712,7 +1745,21 @@ impl Board {
     /// 지우고, 가진 점수보다 많이 썼으면 처음으로 — 점수는 그대로 남으니 다시 찍으면 된다. 처음으로 돌리는 차례(0161): 먼저 스킬·
     /// 큰 기술만(연 패시브 칸은 남긴다 — 옛 기록의 칸은 핵·조각으로 열었고 그 둘은 지금도 점수라 칸만으로는 넘지 않는다. 0158의
     /// "보스 첫 쓰러뜨림 +1"이 핵의 수로 바뀌어 개발판 기록이 한두 점 넘칠 수 있다), 그래도 넘으면(손댄 기록) 칸까지.
-    pub fn sane(mut self, total: u32) -> Board {
+    pub fn sane(self, total: u32) -> Board {
+        let mut b = self.sane_ranks(total);
+        // 결의 칸(0223 11절): 그 타입의 스킬을 모르면 닫는다(넘쳐서 스킬을 돌려받은 기록·손댄 기록).
+        for v in VEINS {
+            if !IDS
+                .into_iter()
+                .any(|id| b.learned(id) && id.def().kind == v.kind())
+            {
+                b.cells.veins &= !(1 << v.index());
+            }
+        }
+        b
+    }
+
+    fn sane_ranks(mut self, total: u32) -> Board {
         self.cells = self.cells.sane();
         for (i, id) in IDS.into_iter().enumerate() {
             let e = Entry::Skill(id);
@@ -1967,10 +2014,14 @@ mod tests {
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
         // 줄 여덟, 칸마다 자리.
         let lines: Vec<usize> = ENTRIES.iter().map(|e| e.line()).collect();
-        assert_eq!((0..8).filter(|l| lines.contains(l)).count(), 8, "{lines:?}");
-        assert!(lines.iter().all(|&l| l < 8));
-        // 첫 줄 스킬 말고 모든 칸은 위에서 들어서는 길이 있다(갇힌 칸이 없다).
+        assert_eq!((0..9).filter(|l| lines.contains(l)).count(), 9, "{lines:?}");
+        assert!(lines.iter().all(|&l| l < 9));
+        // 첫 줄 스킬 말고 모든 칸은 위에서 들어서는 길이 있다(갇힌 칸이 없다) — 결의 칸은 길 밖이다(그 타입의 스킬이 연다).
         for &e in &ENTRIES {
+            if let Entry::Vein(_) = e {
+                assert!(!ENTRIES.iter().any(|&f| f.feeds(e) || e.feeds(f)), "{e:?}");
+                continue;
+            }
             assert!(
                 e.line() == 0 || ENTRIES.iter().any(|&f| f.feeds(e)),
                 "{e:?} has no way in"
@@ -2116,7 +2167,7 @@ mod tests {
     fn the_board_stands_as_the_0161_table_says() {
         use Branch::{Beat, Footing, Riposte};
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-        let table: [(usize, Branch, &[Entry]); 19] = [
+        let table: [(usize, Branch, &[Entry]); 22] = [
             (
                 0,
                 Beat,
@@ -2183,6 +2234,14 @@ mod tests {
             (4, Beat, &[Entry::Key(Key::Measure)]),
             (4, Riposte, &[Entry::Key(Key::Edge)]),
             (4, Footing, &[Entry::Key(Key::Rooted)]),
+            // 결의 줄(0223 11절): 타입 넷 — 빛깔만 그 타입의 스킬이 많은 갈래에 기댄다.
+            (
+                5,
+                Footing,
+                &[Entry::Vein(Vein::Ember), Entry::Vein(Vein::Root)],
+            ),
+            (5, Riposte, &[Entry::Vein(Vein::Knell)]),
+            (5, Beat, &[Entry::Vein(Vein::Rift)]),
         ];
         let flat: Vec<Entry> = table
             .iter()
@@ -2194,7 +2253,7 @@ mod tests {
                 assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
             }
         }
-        assert_eq!(NE, 42);
+        assert_eq!(NE, 46);
         for (i, e) in ENTRIES.iter().enumerate() {
             assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
         }
@@ -2273,10 +2332,48 @@ mod tests {
         assert_eq!((b.rank(Entry::Skill(Id::Gather)), b.spent()), (1, 1));
     }
 
+    /// 0223 11절: 결의 칸은 그 타입을 싣는 스킬을 배워야 열린다(쓴 점수·판의 길과 상관없이), 값은 1점, 어느 갈래의 점수도
+    /// 아니고(맺음의 문턱을 당기지 않는다), 되돌리면 닫힌다. 타입마다 그 타입의 스킬이 판에 있다(열 수 없는 결은 없다).
+    #[test]
+    fn a_vein_opens_once_a_skill_of_its_type_is_known_and_counts_for_no_branch() {
+        use crate::progression::BRANCHES;
+        let total = 30;
+        let mut b = Board::default();
+        for v in VEINS {
+            assert_eq!(b.offer(Entry::Vein(v), total), Offer::Cut, "{v:?}");
+            assert!(
+                IDS.into_iter().any(|id| id.def().kind == v.kind()),
+                "{v:?} has a skill"
+            );
+        }
+        assert_eq!(Id::Cut.def().kind, Vein::Rift.kind());
+        assert!(b.buy(Entry::Skill(Id::Cut), total));
+        let rift = Entry::Vein(Vein::Rift);
+        assert_eq!(b.offer(rift, total), Offer::Ready);
+        assert_eq!(
+            b.offer(rift, 1),
+            Offer::Short,
+            "the point went on the skill"
+        );
+        assert_eq!(b.offer(Entry::Vein(Vein::Ember), total), Offer::Cut);
+        let (spent, by_branch) = (b.spent(), BRANCHES.map(|x| b.branch_spent(x)));
+        assert!(b.buy(rift, total));
+        assert!(b.cells.veined(Vein::Rift) && !b.cells.veined(Vein::Ember));
+        assert_eq!(b.spent(), spent + 1);
+        assert_eq!(BRANCHES.map(|x| b.branch_spent(x)), by_branch);
+        assert_eq!(b.offer(rift, total), Offer::Full);
+        assert!(!b.buy(rift, total));
+        let mut great = Ult::Upend;
+        b.respec(&mut great);
+        assert!(!b.cells.veined(Vein::Rift));
+        assert_eq!(b.spent(), 0);
+    }
+
     /// 0158 라: 줄은 **쓴 점수의 합**으로 열린다 — 둘째 줄(땅울림) 4, 큰 기술 줄 8. 어디에 썼든 상관없다. 잠긴 칸은 점수가 있어도 못 산다.
     #[test]
     fn rows_open_by_points_spent_wherever_they_went() {
-        assert_eq!(ROW_NEEDS, [0, 4, 8, 14, 22]);
+        // 끝의 0은 결의 줄(0223 11절) — 점수가 아니라 그 타입의 스킬이 연다.
+        assert_eq!(ROW_NEEDS, [0, 4, 8, 14, 22, 0]);
         for id in [Id::Whirl, Id::Cut, Id::Gather, Id::Brace] {
             assert_eq!(Entry::Skill(id).row(), 0, "{id:?}");
         }
@@ -2333,7 +2430,8 @@ mod tests {
             4,
             "0215: four bridges"
         );
-        assert_eq!(all.spent(), 93);
+        assert_eq!(paid(|e| matches!(e, Entry::Vein(_))), 4, "0223: four veins");
+        assert_eq!(all.spent(), 97);
         // 판의 칸 순서: 줄 번호가 내려가지 않는다.
         let rows: Vec<usize> = ENTRIES.iter().map(|e| e.row()).collect();
         assert!(rows.windows(2).all(|w| w[0] <= w[1]), "{rows:?}");
@@ -2883,6 +2981,7 @@ mod tests {
                 key: None,
                 links: 0,
                 picks: [0; 3],
+                veins: 0,
             },
             ..Board::default()
         };

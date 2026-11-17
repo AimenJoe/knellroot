@@ -103,7 +103,9 @@ pub(super) fn open_cells(board: &sk::Board) -> Vec<Entry> {
     ENTRIES
         .iter()
         .copied()
-        .filter(|e| matches!(e, Entry::Cell(_) | Entry::Link(_)) && board.rank(*e) >= 1)
+        .filter(|e| {
+            matches!(e, Entry::Cell(_) | Entry::Link(_) | Entry::Vein(_)) && board.rank(*e) >= 1
+        })
         .collect()
 }
 
@@ -111,7 +113,7 @@ pub(super) fn open_cells(board: &sk::Board) -> Vec<Entry> {
 pub(super) fn cell_count() -> usize {
     ENTRIES
         .iter()
-        .filter(|e| matches!(e, Entry::Cell(_) | Entry::Link(_)))
+        .filter(|e| matches!(e, Entry::Cell(_) | Entry::Link(_) | Entry::Vein(_)))
         .count()
 }
 
@@ -814,6 +816,6 @@ mod tests {
             skills_cursor(Row::Ult, &old, worn, sk::Ult::Upend),
             at(Entry::Ult(sk::Ult::Upend))
         );
-        assert_eq!(cell_count(), 25);
+        assert_eq!(cell_count(), 29);
     }
 }
