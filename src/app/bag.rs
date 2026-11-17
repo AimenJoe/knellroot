@@ -206,8 +206,13 @@ impl App {
             return;
         };
         // 바라보는 쪽 앞의 땅에(뛰는 중에 멈췄어도) — 한 번 곁을 떠나야 다시 줍는다(`ItemDrop::wait`).
+        // 앞이 벽·소품 칸이면 걸을 수 있는 땅까지 물러난다(`floor_toward` — 벽 속·건너편에 놓이지 않게).
         let pl = &self.world.player;
-        let (here, ahead) = (pl.pos, pl.pos + pl.facing_dir() * PUT_AHEAD);
+        let here = pl.pos;
+        let ahead = self
+            .run
+            .level
+            .floor_toward(here, here + pl.facing_dir() * PUT_AHEAD);
         let (y0, y1) = (self.world.ground_y(here), self.world.ground_y(ahead));
         let at = if (-1.0..=0.5).contains(&(y1 - y0)) {
             vec3(ahead.x, y1, ahead.z)

@@ -208,6 +208,7 @@ impl App {
             &self.progress.owned,
             &self.progress.growth,
             &self.progress.shields,
+            !self.progress.bag.full(),
         ) || self.progress.level.can_raise(self.world.embers)
             || self.progress.board.can_buy(self.progress.skill_points())
             || self.can_forge();

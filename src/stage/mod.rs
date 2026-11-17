@@ -300,6 +300,52 @@ impl Level {
         self.cell(x, z) == b'.'
     }
 
+    /// 월드 자리 → 칸(`at`의 거꾸로). 지도 밖이면 없음.
+    pub fn cell_of(&self, p: Vec3) -> Option<(usize, usize)> {
+        let fx = (p.x / CELL + self.w as f32 * 0.5).floor();
+        let fz = (p.z / CELL + self.h as f32 * 0.5).floor();
+        (fx >= 0.0 && fz >= 0.0 && (fx as usize) < self.w && (fz as usize) < self.h)
+            .then_some((fx as usize, fz as usize))
+    }
+
+    /// 그 자리가 걸을 수 있는 땅인가.
+    pub fn on_floor(&self, p: Vec3) -> bool {
+        self.cell_of(p).is_some_and(|(x, z)| self.walkable(x, z))
+    }
+
+    /// 떨굼을 놓을 자리(0226 — 줍지 못할 자리에 떨어지지 않게): `to`가 걸을 수 있는 땅이면 그대로, 아니면 `from`(쓰러진 자리·
+    /// 방랑자)으로 곧게 물러나며 처음 닿는 땅. 그 줄에 땅이 없으면(`from`도 벽 속 — 밀려 들어간 몸) `to` 둘레에서 가장 가까운
+    /// 땅 칸의 가운데. 지도의 모든 땅은 이어져 있다(`every_floor_is_reachable…` 시험) — 땅이면 주울 수 있다. 높이는 부른 쪽이.
+    pub fn floor_toward(&self, from: Vec3, to: Vec3) -> Vec3 {
+        const STEPS: usize = 12;
+        for k in 0..=STEPS {
+            let p = to.lerp(from, k as f32 / STEPS as f32);
+            if self.on_floor(p) {
+                return p;
+            }
+        }
+        let (cx, cz) = self.cell_of(to).unwrap_or((self.w / 2, self.h / 2));
+        let mut best: Option<(f32, Vec3)> = None;
+        for r in 1..=6usize {
+            for z in cz.saturating_sub(r)..=(cz + r).min(self.h.saturating_sub(1)) {
+                for x in cx.saturating_sub(r)..=(cx + r).min(self.w.saturating_sub(1)) {
+                    if !self.walkable(x, z) {
+                        continue;
+                    }
+                    let c = self.at(x, z);
+                    let d = vec2(c.x - to.x, c.z - to.z).length();
+                    if best.is_none_or(|(b, _)| d < b) {
+                        best = Some((d, c));
+                    }
+                }
+            }
+            if let Some((_, c)) = best {
+                return vec3(c.x, to.y, c.z);
+            }
+        }
+        to
+    }
+
     /// 걸을 수 있는 땅(0043): 바닥 칸은 높이(없으면 0), 경사로 칸은 같은 줄(가로 또는 세로)로 이어진 경사로 묶음의
     /// 양 끝 이웃 높이를 곧게 잇는다(높이 차가 큰 쪽 축). 벽·바깥은 `Solid`.
     pub fn ground(&self) -> Ground {
@@ -676,6 +722,8 @@ pub struct StageRun {
     /// 못 줍는 상자의 것(비트 = 상자 번호 — 아직 없는 바탕이 든 상자: 잔불이 될 것은 줍는다).
     pub bag_full: bool,
     pub chest_block: u64,
+    /// 가득일 때 깨어난 자리의 검(0220 — 아직 없는 바탕)도 못 줍는다.
+    pub start_block: bool,
     /// 곁에 가방이 가득이라 못 줍는 것이 있다(HUD가 까닭을 말한다 — 버튼은 그대로 점프).
     pub near_blocked: bool,
     taken: Option<crate::items::Item>,
@@ -835,6 +883,7 @@ impl StageRun {
             near_item: None,
             bag_full: false,
             chest_block: 0,
+            start_block: false,
             near_blocked: false,
             taken: None,
             taken_at: None,
@@ -1228,8 +1277,14 @@ impl StageRun {
             }
         }
         // 가방이 가득이면(0226) 칸이 드는 것은 줍지 못한다 — 바닥에 남는다. 잔불이 될 상자의 것은 줍는다.
-        let (full, block) = (self.bag_full, self.chest_block);
-        let held = |chest: usize| full && chest < 64 && block >> chest & 1 == 1;
+        let (full, block, sword) = (self.bag_full, self.chest_block, self.start_block);
+        let held = |chest: usize| {
+            full && if chest == START_SWORD {
+                sword
+            } else {
+                chest < 64 && block >> chest & 1 == 1
+            }
+        };
         self.near_drop = self
             .drops
             .iter()
@@ -2601,6 +2656,49 @@ mod tests {
         run.lay_item(at, sword);
         run.tick(&mut w, 0.016);
         assert_eq!(run.near_item, Some(0));
+    }
+
+    /// 0226: 떨굼은 걸을 수 있는 땅에만 놓인다 — 벽 속을 겨누면 떨군 자리 쪽으로 물러나고, 줄 위에 땅이 없으면 가장 가까운
+    /// 땅 칸으로. 땅이면 그대로.
+    #[test]
+    fn drops_land_only_on_the_floor() {
+        let (run, w) = StageRun::start(&sanctuary::DEF);
+        let lv = &run.level;
+        let start = w.player.pos;
+        assert!(lv.on_floor(start));
+        assert_eq!(lv.floor_toward(start, start), start, "already on the floor");
+        // 가장 가까운 벽 칸의 가운데를 겨눈다.
+        let (sx, sz) = lv.cell_of(start).unwrap();
+        let wall = (0..lv.h)
+            .flat_map(|z| (0..lv.w).map(move |x| (x, z)))
+            .filter(|&(x, z)| !lv.walkable(x, z))
+            .min_by_key(|&(x, z)| x.abs_diff(sx) + z.abs_diff(sz))
+            .unwrap();
+        let into = lv.at(wall.0, wall.1);
+        assert!(!lv.on_floor(into));
+        let got = lv.floor_toward(start, into);
+        assert!(lv.on_floor(got), "pulled back onto the floor");
+        assert!(got.distance(start) <= into.distance(start) + 0.01);
+        // 떨군 자리도 벽 속이면: 가장 가까운 땅 칸.
+        let lost = lv.floor_toward(into, into);
+        assert!(lv.on_floor(lost));
+        assert!(vec2(lost.x - into.x, lost.z - into.z).length() < CELL * 2.0);
+    }
+
+    /// 0226: 가방이 가득이면 깨어난 자리의 검(아직 없는 바탕)도 못 줍는다 — 자리가 나면 줍는다.
+    #[test]
+    fn a_full_bag_also_holds_back_the_starting_sword() {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        run.intro = 0.0;
+        run.drops.push((w.player.pos, START_SWORD, DROP_SETTLE));
+        run.bag_full = true;
+        run.start_block = true;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.near_drop, None);
+        assert_eq!(run.near(), Some(Near::Full));
+        run.bag_full = false;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.near_drop, Some(0));
     }
 
     /// 0226: 가방이 가득일 때 상자의 것 — 아직 없는 바탕(칸이 든다)은 못 줍고, 이미 가진 것(잔불이 된다)은 줍는다.

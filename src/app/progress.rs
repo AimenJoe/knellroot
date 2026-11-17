@@ -206,7 +206,7 @@ impl App {
         // 떨어지고 비주얼적인 효과가 있어야 해"). 핵은 쓰러진 자리에 남으니 그 옆으로 비킨다. 아직 없는 문지기의 장신구도
         // 여기서 떨어진다(가졌거나 이미 바닥에 놓여 있으면 아니다 — 줍지 않고 두면 그 자리에 남는다).
         if let Some(at) = self.run.take_boss_down() {
-            self.drop_spare(2, self.loot_seed(4, 0), at + super::bag::BESIDE);
+            self.drop_spare_from(2, self.loot_seed(4, 0), at, at + super::bag::BESIDE);
             if let Some(id) = self.run.def.boss_charm {
                 let base = crate::items::Base::Charm(id);
                 let lying = self.run.item_drops.iter().any(|d| d.item.base == base);
@@ -218,7 +218,7 @@ impl App {
                         crate::items::tier_cap(self.stage),
                         seed,
                     );
-                    self.lay_drop(at - super::bag::BESIDE, item);
+                    self.lay_drop(at, at - super::bag::BESIDE, item);
                 }
             }
         }
@@ -393,13 +393,21 @@ impl App {
 
     /// 여벌이 바닥에 떨어진다(0226 — 사장 "가득이면 못 주워야지, 바닥에 떨어져 있어야지"): 주워야 가방에 든다.
     pub(super) fn drop_spare(&mut self, luck: u8, seed: u64, at: Vec3) {
+        self.drop_spare_from(luck, seed, at, at);
+    }
+
+    /// `from`(쓰러진 자리)에서 `at`(옆으로 비킨 자리)으로 — `lay_drop`.
+    fn drop_spare_from(&mut self, luck: u8, seed: u64, from: Vec3, at: Vec3) {
         if let Some(item) = self.roll_spare(luck, seed) {
-            self.lay_drop(at, item);
+            self.lay_drop(from, at, item);
         }
     }
 
     /// 아이템 하나를 그 자리의 땅에 떨군다(공중에서 쓰러졌어도 — 쟁반 뒤집기): 등급의 빛으로 번쩍이고 소리가 난다.
-    fn lay_drop(&mut self, at: Vec3, item: crate::items::Item) {
+    /// `from` = 떨군 것의 자리(쓰러진 적) — `at`이 벽·소품 칸이면 그쪽으로 물러나 걸을 수 있는 땅에 놓는다(0226 — 줍지 못할 자리에
+    /// 떨어지지 않게).
+    fn lay_drop(&mut self, from: Vec3, at: Vec3, item: crate::items::Item) {
+        let at = self.run.level.floor_toward(from, at);
         let at = vec3(at.x, self.world.ground_y(at), at.z);
         self.run.drop_item(at, item, false);
         self.fx.loot_drop(at, glow_of(&item), item.rarity.rank());
@@ -437,6 +445,8 @@ impl App {
         use crate::stage::Loot;
         let full = self.progress.bag.full();
         self.run.bag_full = full;
+        // 깨어난 자리의 검(0220)도 처음 얻는 바탕 — 칸이 든다.
+        self.run.start_block = full && !self.progress.owns_weapon(weapons::Id::Sword);
         self.run.chest_block = if full {
             self.run
                 .def
@@ -465,12 +475,7 @@ impl App {
             return;
         }
         // 가방이 가득이면(0226) 칸이 드는 것(장신구·방패)은 못 산다.
-        if self.progress.bag.full()
-            && matches!(
-                ware,
-                crate::growth::Ware::Charm(_) | crate::growth::Ware::Shield(_)
-            )
-        {
+        if self.progress.bag.full() && crate::growth::needs_room(ware) {
             self.toast = Some((s.bag_full.to_string(), 1.6));
             self.snd(crate::sfx::Id::Deny);
             return;

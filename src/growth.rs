@@ -78,11 +78,23 @@ pub fn shelf(owned: &[Charm], g: &Growth, shields: &[crate::shield::Id]) -> Vec<
         .collect()
 }
 
-/// 잔불로 살 수 있는 것이 있나(쉼터가 빛난다).
-pub fn can_buy(embers: u32, owned: &[Charm], g: &Growth, shields: &[crate::shield::Id]) -> bool {
+/// 가방에 칸이 드는 물건인가(0226 — 장신구·방패는 아이템이라 가방이 가득이면 못 산다).
+pub fn needs_room(w: Ware) -> bool {
+    matches!(w, Ware::Charm(_) | Ware::Shield(_))
+}
+
+/// 잔불로 살 수 있는 것이 있나(쉼터가 빛난다·가게 탭의 점). `room` = 가방에 자리가 있나 — 없으면 칸이 드는 것은 셈에 넣지 않는다
+/// (사려 해도 "가방이 가득 찼다"로 막히니 "살 것이 있다"고 말하지 않는다).
+pub fn can_buy(
+    embers: u32,
+    owned: &[Charm],
+    g: &Growth,
+    shields: &[crate::shield::Id],
+    room: bool,
+) -> bool {
     wares(owned, g, shields)
         .iter()
-        .any(|&(_, price)| embers >= price)
+        .any(|&(w, price)| embers >= price && (room || !needs_room(w)))
 }
 
 #[cfg(test)]
@@ -161,8 +173,8 @@ mod tests {
             .all(|(w, _)| *w != Ware::Charm(Charm::Pouch) && *w != Ware::Oil));
         // 가장 싼 것보다 적으면 빛나지 않는다.
         let cheapest = SHOP.iter().map(|s| s.1).min().unwrap();
-        assert!(!can_buy(cheapest - 1, &[], &g, &[]));
-        assert!(can_buy(cheapest, &[], &g, &[]));
+        assert!(!can_buy(cheapest - 1, &[], &g, &[], true));
+        assert!(can_buy(cheapest, &[], &g, &[], true));
         // 상자·문지기에서 얻는 장신구는 팔지 않는다(얻는 곳이 겹치지 않게). 등껍질은 0117에서 가게로 옮겼다.
         for id in [
             Charm::Ear,
@@ -173,5 +185,26 @@ mod tests {
         ] {
             assert!(SHOP.iter().all(|(w, _)| *w != Ware::Charm(id)));
         }
+    }
+
+    /// 0226: 가방이 가득이면 장신구·방패는 "살 것"으로 치지 않는다 — 기름은 칸이 들지 않으니 그대로.
+    #[test]
+    fn a_full_bag_counts_only_what_needs_no_room() {
+        let rich = u32::MAX;
+        let none = Growth::default();
+        assert!(
+            can_buy(rich, &[], &none, &[], false),
+            "the oil is still for sale"
+        );
+        let oiled = Growth {
+            oil: true,
+            ..Growth::default()
+        };
+        assert!(can_buy(rich, &[], &oiled, &[], true));
+        assert!(
+            !can_buy(rich, &[], &oiled, &[], false),
+            "only charms and shields left — nothing to buy with a full bag"
+        );
+        assert!(needs_room(Ware::Shield(crate::shield::Id::Pilgrim)) && !needs_room(Ware::Oil));
     }
 }

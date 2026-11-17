@@ -1354,4 +1354,24 @@ mod tests {
         assert_eq!(kept.len(), GROUND_CAP);
         assert_eq!(kept[0], 3.0);
     }
+
+    /// 0226 5절: 엘리트가 떨군 여벌 하나를 잔불로 바꾸면 지역마다 얼마인가(평균) — 레벨 값(`LEVEL_BASE + LEVEL_STEP × 레벨`)과
+    /// 견주려고. 잰 값은 결정 문서에. `cargo test salvage_of_spares_probe -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn salvage_of_spares_probe() {
+        let base = Base::Weapon(weapons::Id::Sword);
+        for (luck, who) in [(1u8, "elite"), (2, "warden")] {
+            for stage in 0..4 {
+                let n = 20_000u64;
+                let sum: u64 = (0..n)
+                    .map(|seed| {
+                        let seed = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+                        roll(base, roll_rarity(luck, seed), tier_cap(stage), seed).salvage() as u64
+                    })
+                    .sum();
+                println!("{who} stage {stage}: {:.1}", sum as f64 / n as f64);
+            }
+        }
+    }
 }

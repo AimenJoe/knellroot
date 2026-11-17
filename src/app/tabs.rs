@@ -156,6 +156,7 @@ impl App {
             &self.progress.owned,
             &self.progress.growth,
             &self.progress.shields,
+            !self.progress.bag.full(),
         ) || self.can_forge();
         let journey = crate::journey::any_ready(&self.progress);
         let fresh = self.progress.bag.any_fresh();
