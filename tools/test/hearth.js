@@ -142,7 +142,7 @@ async function run(browser, lang) {
   await shot('7e-status-to-skills');
   await press('KeyQ'); await page.waitForTimeout(300);
   // 탭마다 한 바퀴(0164): 장비(무기 칸에 서 있다 — → 같은 높이의 첫 장신구 칸, 0176) — 칸을 걷고 후보의 작은 목록(장신구 칸·무기 칸)을 열어 본다.
-  // 장신구 칸은 종류마다 하나(0224 — 목걸이 · 반지 · 띠): 가진 것(단단한 껍질)은 띠라 셋째 칸에 끼워져 있다 — → 뒤 ↓ 둘.
+  // 장신구 칸은 종류마다 하나(0224 — 목걸이 · 반지 · 팔찌): 가진 것(단단한 껍질)은 팔찌라 셋째 칸에 끼워져 있다 — → 뒤 ↓ 둘.
   await shot('8a-equip');
   await press('ArrowRight'); await page.waitForTimeout(150);
   await shot('8b0-equip-neck-empty');

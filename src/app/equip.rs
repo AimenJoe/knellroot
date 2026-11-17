@@ -10,7 +10,7 @@ use super::*;
 use crate::charms::{self, Id as Charm};
 use crate::stats::{Change, Line, Stats};
 
-/// 칸: 0 = 주무기, 1..=3 = 장신구 칸(목걸이·반지·띠 — 0224), 4 = 덧옷(0176), 5 = 보조무기(0223 → 0224: 무기 **또는** 방패 —
+/// 칸: 0 = 주무기, 1..=3 = 장신구 칸(목걸이·반지·팔찌 — 0224), 4 = 덧옷(0176), 5 = 보조무기(0223 → 0224: 무기 **또는** 방패 —
 /// 방패 칸은 따로 없다, 사장 "방패는 보조무기로 편입하고").
 pub(super) const SLOTS: usize = 3 + charms::SLOTS;
 pub(super) const GARB_SLOT: usize = 1 + charms::SLOTS;
@@ -122,7 +122,7 @@ pub(super) fn candidates(
             .map(Cand::Weapon)
             .collect();
     }
-    // 장신구 칸(0224): 그 칸의 종류만(목걸이·반지·띠).
+    // 장신구 칸(0224): 그 칸의 종류만(목걸이·반지·팔찌).
     let kind = charms::SLOT_KINDS[(slot - 1).min(charms::SLOTS - 1)];
     std::iter::once(Cand::Empty)
         .chain(
@@ -1401,7 +1401,7 @@ mod tests {
         );
     }
 
-    /// 0224: 장신구 칸은 제 종류만 내놓는다(목걸이·반지·띠) — 다음 것으로 돌리기도 그 종류 안에서.
+    /// 0224: 장신구 칸은 제 종류만 내놓는다(목걸이·반지·팔찌) — 다음 것으로 돌리기도 그 종류 안에서.
     #[test]
     fn a_charm_slot_offers_only_its_kind() {
         use crate::charms::{Id as C, Kind, SLOT_KINDS};
@@ -1414,7 +1414,7 @@ mod tests {
                 assert_eq!(id.kind(), SLOT_KINDS[slot - 1], "{id:?} in slot {slot}");
             }
         }
-        assert_eq!(SLOT_KINDS[2], Kind::Band);
+        assert_eq!(SLOT_KINDS[2], Kind::Bracelet);
         let worn = [None, None, Some(C::Shell)];
         assert_eq!(next_charm(&owned, &worn, 2, 1), Some(C::Cloth));
         assert_eq!(next_charm(&owned, &worn, 1, 1), Some(C::Hand));
@@ -1444,12 +1444,12 @@ mod tests {
     /// 0224: 장신구는 제 종류의 칸에만 낀다 — 같은 종류의 다른 것을 끼면 그 칸의 것이 바뀌고, 다른 칸은 그대로다.
     #[test]
     fn wearing_a_charm_takes_its_own_kinds_slot() {
-        // 껍질 = 띠(칸 3), 귀 = 목걸이(칸 1).
+        // 껍질 = 팔찌(칸 3), 귀 = 목걸이(칸 1).
         let worn = [Some(Charm::Ear), None, Some(Charm::Shell)];
         assert_eq!(
             wear(worn, 2, Some(Charm::Cloth)),
             [Some(Charm::Ear), None, Some(Charm::Cloth)],
-            "the cloth replaces the shell: both are bands"
+            "the cloth replaces the shell: both are bracelets"
         );
         assert_eq!(
             wear(worn, 1, Some(Charm::Hand)),

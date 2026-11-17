@@ -110,7 +110,7 @@ pub const KO: Strings = Strings {
     charm_empty: "빈 칸",
     charm_kind_neck: "목걸이",
     charm_kind_ring: "반지",
-    charm_kind_band: "띠",
+    charm_kind_bracelet: "팔찌",
     equip_none_kind: "이 자리에 낄 것을 아직 얻지 못했다",
     equip_none_yet: "아직 장신구가 없다 — 상자와 문지기에게서 얻는다",
     toast_charm: "장신구를 얻었다: {0}",

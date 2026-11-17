@@ -108,7 +108,7 @@ pub const EN: Strings = Strings {
     charm_empty: "empty",
     charm_kind_neck: "Necklace",
     charm_kind_ring: "Ring",
-    charm_kind_band: "Band",
+    charm_kind_bracelet: "Bracelet",
     equip_none_kind: "Nothing for this place yet",
     equip_none_yet: "No charms yet — chests and the gatekeeper hold them",
     toast_charm: "Found a charm: {0}",

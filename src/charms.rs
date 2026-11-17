@@ -22,16 +22,16 @@ pub const SLOTS: usize = 3;
 
 /// 장신구의 종류(0224 — 사장 "조합이 가능/불가능할 수 있도록 목걸이·반지 등등 나눠야"): 칸마다 종류 하나, 장신구는 제 종류의
 /// 칸에만 낀다 — 같은 종류 둘은 함께 낄 수 없다. 묶음은 하는 일로 갈랐다(같은 일을 겹쳐 쌓지 못하게):
-/// 목걸이 = 살림과 감각(패링 창·등잔·잔불) · 반지 = 손의 힘(강타·열린 틈·쓰러뜨림의 기력) · 띠 = 몸(체력·회피).
+/// 목걸이 = 살림과 감각(패링 창·등잔·잔불) · 반지 = 손의 힘(강타·열린 틈·쓰러뜨림의 기력) · 팔찌 = 몸(체력·회피).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
     Neck,
     Ring,
-    Band,
+    Bracelet,
 }
 
 /// 칸의 종류(칸 번호 = 기록 `charm.worn`의 자리).
-pub const SLOT_KINDS: [Kind; SLOTS] = [Kind::Neck, Kind::Ring, Kind::Band];
+pub const SLOT_KINDS: [Kind; SLOTS] = [Kind::Neck, Kind::Ring, Kind::Bracelet];
 
 impl Kind {
     /// 이 종류의 칸.
@@ -43,7 +43,7 @@ impl Kind {
         match self {
             Kind::Neck => |s| s.charm_kind_neck,
             Kind::Ring => |s| s.charm_kind_ring,
-            Kind::Band => |s| s.charm_kind_band,
+            Kind::Bracelet => |s| s.charm_kind_bracelet,
         }
     }
 }
@@ -54,7 +54,7 @@ impl Id {
         match self {
             Id::Ear | Id::Jar | Id::Pouch => Kind::Neck,
             Id::Hand | Id::BellShard | Id::Hunger => Kind::Ring,
-            Id::Shell | Id::Cloth | Id::Feet => Kind::Band,
+            Id::Shell | Id::Cloth | Id::Feet => Kind::Bracelet,
         }
     }
 }
