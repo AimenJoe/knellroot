@@ -270,10 +270,9 @@ pub enum Tip {
     Lock,
     /// 평타를 여럿 맞혔는데 아직 모아 친 적이 없다 — 쥐었다 떼기.
     Charge,
-    /// 0223 전의 기록을 패드로 이었다 — 평타 버튼이 옮겨 갔다(새 기록은 본 것으로 시작한다 — 가르칠 옛 손이 없다).
-    Remap,
-    /// 부무기가 생겼는데 아직 바꿔 든 적이 없다 — 패링 + 평타.
-    Swap,
+    /// 부무기가 생겼는데 아직 바꿔 든 적이 없다 — 패링 + 평타. (비트 3은 비워 둔다 — 잠깐 있던 "버튼이 바뀌었다" 알림의 자리:
+    /// 공개 전이라 옛 손이 없어 걷었다, 0223 10절.)
+    Swap = 4,
     /// 한손 무기에 방패를 들었는데 아직 막아 본 적이 없다 — 패링을 쥔다.
     Block,
     /// 배운 스킬이 지금 든 무기로는 안 나간다 — 흐린 칸의 뜻.
@@ -284,19 +283,16 @@ pub enum Tip {
     Spare,
 }
 
-pub const TIPS: [Tip; 9] = [
+pub const TIPS: [Tip; 8] = [
     Tip::Flask,
     Tip::Lock,
     Tip::Charge,
-    Tip::Remap,
     Tip::Swap,
     Tip::Block,
     Tip::Unfit,
     Tip::Type,
     Tip::Spare,
 ];
-/// 0223 전의 기록에는 없던 힌트의 비트 — 새 기록은 버튼 바뀜(`Remap`)을 본 것으로 시작한다.
-pub const NEW_RECORD_TIPS: u16 = 1 << Tip::Remap as u16;
 /// 상황 힌트가 떠 있는 시간(초) — 그 일을 하면 먼저 걷힌다.
 pub const TIP_TIME: f32 = 6.0;
 /// 힌트 하나가 걷힌 뒤 다음 힌트까지의 쉼(초) — 여럿이 때를 맞아도 줄지어 덮지 않는다.
@@ -312,8 +308,6 @@ pub struct Situation {
     /// 깨어 있는 엘리트·문지기가 곁에 있다.
     pub big_foe: bool,
     pub locked: bool,
-    /// 지금 패드로 친다(버튼 바뀜은 패드에만 있었다).
-    pub pad: bool,
     /// 부무기가 있다 · 한손 무기에 방패를 들었다 · 배운 스킬이 든 무기로 안 나가는 칸이 있다 · 가방에 여벌이 있다(0223).
     pub has_sub: bool,
     pub can_block: bool,
@@ -336,7 +330,6 @@ impl Tip {
             Tip::Flask => now.hp_low && now.has_flask && s.gulps == 0,
             Tip::Lock => now.big_foe && !now.locked,
             Tip::Charge => s.hits >= CHARGE_TIP_HITS && s.charged == 0,
-            Tip::Remap => now.pad,
             Tip::Swap => now.has_sub && s.swaps == 0,
             Tip::Block => now.can_block && s.blocks == 0,
             Tip::Unfit => now.unfit,
@@ -345,7 +338,7 @@ impl Tip {
         }
     }
 
-    /// 할 일을 했다 — 일찍 걷는다. 알리기만 하는 힌트(버튼 바뀜·타입·여벌)는 제 시간만큼 떠 있다.
+    /// 할 일을 했다 — 일찍 걷는다. 알리기만 하는 힌트(타입·여벌)는 제 시간만큼 떠 있다.
     pub fn done(self, now: &Situation, s: &Seen) -> bool {
         match self {
             Tip::Flask => !now.hp_low || s.gulps > 0,
@@ -354,7 +347,7 @@ impl Tip {
             Tip::Swap => s.swaps > 0,
             Tip::Block => s.blocks > 0,
             Tip::Unfit => !now.unfit,
-            Tip::Remap | Tip::Type | Tip::Spare => false,
+            Tip::Type | Tip::Spare => false,
         }
     }
 
@@ -363,7 +356,7 @@ impl Tip {
         match self {
             Tip::Flask => &[Bind::Flask],
             Tip::Lock => &[Bind::Lock],
-            Tip::Charge | Tip::Remap => &[Bind::Attack],
+            Tip::Charge => &[Bind::Attack],
             Tip::Swap => &[Bind::Parry, Bind::Attack],
             Tip::Block => &[Bind::Parry],
             Tip::Unfit | Tip::Type | Tip::Spare => &[],
@@ -375,7 +368,6 @@ impl Tip {
             Tip::Flask => (st.tip_flask, st.tip_flask_d),
             Tip::Lock => (st.tip_lock, st.tip_lock_d),
             Tip::Charge => (st.tip_charge, st.tip_charge_d),
-            Tip::Remap => (st.tip_remap, st.tip_remap_d),
             Tip::Swap => (st.tip_swap, st.tip_swap_d),
             Tip::Block => (st.tip_block, st.tip_block_d),
             Tip::Unfit => (st.tip_unfit, st.tip_unfit_d),
@@ -593,7 +585,7 @@ mod tests {
     }
 
     /// 0223의 새 것들: 부무기가 생기면 바꿔 들기(바꿔 들면 걷힌다), 방패를 들면 막기, 안 맞는 스킬 칸, 처음 걸린 타입, 처음 든 여벌 —
-    /// 저마다 그 때에 한 번. 버튼 바뀜은 패드로 잇는 옛 기록에만(새 기록은 본 것으로 시작한다).
+    /// 저마다 그 때에 한 번.
     #[test]
     fn the_new_arms_and_loot_get_their_one_tip_each() {
         let s = Seen::default();
@@ -623,12 +615,6 @@ mod tests {
         assert_eq!(next_tip(0, DONE, &spare, &s), Some(Tip::Spare));
         // 몸의 걸음 동안은 모두 기다린다.
         assert_eq!(next_tip(0, AFTER_BASICS - 1, &sub, &s), None);
-        // 버튼 바뀜: 패드일 때만, 새 기록은 이미 본 것.
-        let pad = with(|n| n.pad = true);
-        assert_eq!(next_tip(0, DONE, &pad, &s), Some(Tip::Remap));
-        assert_eq!(next_tip(0, DONE, &none, &s), None, "keys never moved");
-        assert_eq!(next_tip(NEW_RECORD_TIPS, DONE, &pad, &s), None);
-        assert!(!Tip::Remap.done(&pad, &s), "a notice stays its time");
     }
 
     /// 패링은 막히지 않는다: 깨어 있는 적 곁에서 `PARRY_GIVE_UP`초를 못 하면 넘어간다(상도 받는다 — 해 본 것으로 친다).

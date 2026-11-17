@@ -167,8 +167,6 @@ pub const KO: Strings = Strings {
     tip_lock_d: "큰 것 앞에서는 눈을 떼지 않는다 — 다시 누르면 놓는다",
     tip_charge: "쥐었다 뗀다",
     tip_charge_d: "공격을 쥐고 있으면 힘이 모인다 — 다 모인 순간 떼면 더",
-    tip_remap: "평타의 자리가 옮겨 갔다",
-    tip_remap_d: "손이 기억하던 버튼은 이제 특수다 — 설정의 조작에서 되돌릴 수 있다",
     tip_swap: "바꿔 든다",
     tip_swap_d: "둘을 함께 누르면 등의 것을 손에 쥔다 — 스킬 칸도 그 무기의 것으로",
     tip_block: "쥐고 버틴다",

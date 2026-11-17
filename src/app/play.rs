@@ -746,7 +746,6 @@ impl App {
                     && (e.pos - pl.pos).length() < crate::tutorial::FIGHT_RANGE
             }),
             locked: self.world.lock.is_some(),
-            pad: input::device() == input::Device::Pad,
             has_sub: pl.sub.is_some(),
             can_block: self.world.can_block(),
             unfit: (0..2).any(|i| pl.skill.rank[i] == 0 && pl.skill.known[i] > 0),

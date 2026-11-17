@@ -578,13 +578,7 @@ impl Progress {
                 }
                 None => 0,
             },
-            // 상황 힌트의 본 것(비트). 0223: 버튼이 바뀌었다는 알림은 옛 기록에만 — 한 번도 쓴 적 없는 기록(새 판)은 본 것으로
-            // 시작한다(가르칠 옛 손이 없다).
-            tips: match r.num(key::TIPS) {
-                Some(n) => n.min(u16::MAX as u32) as u16,
-                None if r.num(key::VERSION).is_some() => 0,
-                None => crate::tutorial::NEW_RECORD_TIPS,
-            },
+            tips: r.num(key::TIPS).unwrap_or(0).min(u16::MAX as u32) as u16,
             // 0171: 이 게임이 쓴 적 있는 기록인데 키가 없으면 옛 판 — 이미 깨어나 걷던 방랑자다.
             woke: r
                 .num(key::WOKE)
@@ -1605,16 +1599,10 @@ forge.sword=3
 
     #[test]
     fn an_empty_or_garbage_store_reads_as_a_fresh_start() {
-        // 새 판은 "버튼이 바뀌었다"는 알림을 본 것으로 시작한다(0223 — 옛 기록에만 띄운다).
         assert_eq!(
             Progress::from_record(Record::parse("")),
-            Progress {
-                tips: crate::tutorial::NEW_RECORD_TIPS,
-                ..Progress::default()
-            }
+            Progress::default()
         );
-        // 이 게임이 쓴 적 있는 기록(옛 판)에 그 키가 없으면 아직 못 본 것이다.
-        assert_eq!(Progress::from_record(Record::parse("v=1\n")).tips, 0);
         let p = Progress::from_record(Record::parse("\u{0}\u{1}garbage"));
         assert_eq!((p.embers, p.clears, p.run), (0, 0, None));
         assert!(p.owned.is_empty() && p.chests.is_empty());

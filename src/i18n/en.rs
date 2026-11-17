@@ -165,8 +165,6 @@ pub const EN: Strings = Strings {
     tip_lock_d: "Before something large, keep your eyes on it — press again to let go",
     tip_charge: "Hold, then release",
     tip_charge_d: "Hold attack to gather strength — let go the moment it is full for more",
-    tip_remap: "The strike has moved",
-    tip_remap_d: "The button the hand remembers is now the special — Controls in Settings can put it back",
     tip_swap: "Change hands",
     tip_swap_d: "Press both to draw what rides the back — the skill slots follow the weapon",
     tip_block: "Hold and bear it",
