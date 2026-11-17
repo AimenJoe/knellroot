@@ -332,3 +332,35 @@ fn nothing_held_means_no_aim_line_even_with_the_crossbow() {
     );
     assert!(w.aim_line.is_some(), "the stick aims");
 }
+
+/// 숄더뷰 크로스헤어(0222)가 적을 겨눠도 그것은 원거리의 쪽일 뿐 — 몸은 걷는 쪽을 본다(0219 "근접의 쪽은 섞지 않는다").
+/// 쏘면 그 적에게 간다.
+#[test]
+fn the_shoulder_crosshair_steers_the_shot_not_the_body() {
+    let t = Tuning::default();
+    let mut w = World::new("test", 40.0);
+    w.set_weapon(weapons::Id::Crossbow);
+    w.view_yaw = Some(0.0);
+    let foe = w.player.pos + vec3(-3.0, 0.0, -8.0); // 앞 왼쪽
+    w.spawn_mob(foe);
+    let walk = Actions {
+        move_dir: vec2(1.0, 0.0),
+        aim_ahead: true,
+        aim_sight: Some(vec2(foe.x, foe.z)),
+        ..Default::default()
+    };
+    for _ in 0..30 {
+        w.step(&walk, &t);
+    }
+    assert!(
+        w.player.facing_dir().x > 0.9,
+        "walking right still faces right: {:?}",
+        w.player.facing_dir()
+    );
+    let d = crossbow_shot(&mut w, walk);
+    let want = vec3(foe.x - w.player.pos.x, 0.0, foe.z - w.player.pos.z).normalize();
+    assert!(
+        d.dot(want) > 0.995,
+        "the shot goes to the crosshair's foe: {d:?}"
+    );
+}

@@ -353,9 +353,12 @@ impl App {
     /// 락온 중이면 쓰지 않는다(오른쪽 스틱처럼 — 대상을 본다). 화면 밖이면 없음.
     pub(super) fn cursor_aim(&self, mut a: Actions) -> Actions {
         a.aim_at = None;
+        a.aim_sight = None;
         // 숄더뷰 크로스헤어(0222): 화면 가운데의 시선이 닿는 적이 있으면 그 적 쪽으로 — 원거리가 "그곳으로" 간다.
+        // 커서(`aim_at`)가 아니라 `aim_sight`로(0227): `aim_at`은 몸을 돌리고 근접 자동 조준의 원뿔을 정한다 — 크로스헤어가 적을
+        // 지날 때마다 걷던 몸이 그 적에게 돌아갔다.
         if self.cam.mode == Mode::Free {
-            a.aim_at = self.crosshair_target().map(|p| vec2(p.x, p.z));
+            a.aim_sight = self.crosshair_target().map(|p| vec2(p.x, p.z));
             return a;
         }
         let (Some(c), Some(f)) = (a.cursor, self.frame) else {

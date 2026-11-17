@@ -122,6 +122,9 @@ pub struct Actions {
     pub aim_hold: bool,
     /// 자유 숄더뷰(0219): 원거리는 카메라가 보는 쪽으로 겨눈다(조준 표시 = 화면 가운데의 앞). 앱이 틱마다 채운다(래치 밖).
     pub aim_ahead: bool,
+    /// 숄더뷰 크로스헤어(0222 → 0227)가 겨누는 적의 자리(XZ): 원거리의 쪽만 바꾼다 — 몸·근접 자동 조준은 모른다(`aim_at`과 다르다).
+    /// 앱이 틱마다 채운다(래치 밖).
+    pub aim_sight: Option<Vec2>,
     /// 패드 조준 보조(0219): 겨눈 쪽 ± 이 각(도) 안의 적에게 원거리를 붙인다 — 0 = 없음(마우스·터치·키보드). 앱이 틱마다 채운다.
     pub aim_assist: f32,
     pub lock: bool,
@@ -1215,6 +1218,7 @@ impl Input {
             auto_aim,
             aim_hold: a.aim_hold,
             aim_ahead: false,
+            aim_sight: None,
             aim_assist: 0.0,
             cursor: a.cursor,
             aim_at: None,

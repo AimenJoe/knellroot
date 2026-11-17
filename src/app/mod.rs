@@ -235,19 +235,27 @@ fn lay_by_hearth(run: &StageRun, world: &mut World) {
     }
 }
 
+/// 터치로 끄는 버튼의 미리보기(0217): 버튼이 아니라 그 버튼의 지금 일로 고른다 — 원거리 무기는 평타 버튼(`Attack`)이 사격·
+/// 특수(`Cast`)가 수류탄(0223 → 0227: 이 맞바꿈을 빠뜨려 쇠뇌로 사격을 끌면 수류탄 원이, 수류탄을 끌면 사격 띠가 그려졌다).
+fn touch_aim_show(k: touch::Kind, ranged: bool) -> Option<AimShow> {
+    match k {
+        // 근접 무기의 평타는 끌지 않는다(`touch::Ctx::aim_attack`).
+        touch::Kind::Attack => ranged.then_some(AimShow::Cast),
+        touch::Kind::Cast if ranged => Some(AimShow::Grenade),
+        touch::Kind::Cast => Some(AimShow::Cast),
+        touch::Kind::Skill1 => Some(AimShow::Skill(0)),
+        touch::Kind::Skill2 => Some(AimShow::Skill(1)),
+        _ => None,
+    }
+}
+
 impl App {
     /// 땅 위 조준 표시의 꼴(0217 → 0219): 터치로 끄는 버튼이면 그 일, 아니면 원거리가 겨누는 쪽이 있을 때 —
     /// 쏘거나 모으는 동안은 띠(어느 장치나), 숄더뷰는 가는 줄 + 멈추는 자리, 쿼터뷰의 패드 스틱은 띠. 마우스 커서는 그리지 않는다
     /// (커서 자체가 겨누는 자리다).
     fn aim_show(&self) -> Option<AimShow> {
         if let Some(k) = self.input.aiming() {
-            return match k {
-                touch::Kind::Attack => Some(AimShow::Grenade),
-                touch::Kind::Cast => Some(AimShow::Cast),
-                touch::Kind::Skill1 => Some(AimShow::Skill(0)),
-                touch::Kind::Skill2 => Some(AimShow::Skill(1)),
-                _ => None,
-            };
+            return touch_aim_show(k, self.world.player.weapon.is_ranged());
         }
         self.world.aim_line?;
         let firing = matches!(
@@ -1362,5 +1370,32 @@ mod press_tests {
         }
         // 눌린 꼴은 UI 누름 피드백(100~160 ms)보다 길지 않게 — 늦게 넘어간다고 느끼지 않게.
         const { assert!(PRESS_HOLD > 0.05 && PRESS_HOLD <= 0.12) };
+    }
+}
+
+#[cfg(test)]
+mod aim_show_tests {
+    use super::*;
+
+    /// 0227: 쇠뇌로 평타(사격)를 끌면 사격 띠, 특수(수류탄)를 끌면 터지는 원 — 근접 무기의 특수는 마법 탄 띠.
+    #[test]
+    fn a_dragged_touch_button_previews_what_it_now_does() {
+        assert_eq!(
+            touch_aim_show(touch::Kind::Attack, true),
+            Some(AimShow::Cast)
+        );
+        assert_eq!(
+            touch_aim_show(touch::Kind::Cast, true),
+            Some(AimShow::Grenade)
+        );
+        assert_eq!(
+            touch_aim_show(touch::Kind::Cast, false),
+            Some(AimShow::Cast)
+        );
+        assert_eq!(touch_aim_show(touch::Kind::Attack, false), None);
+        assert_eq!(
+            touch_aim_show(touch::Kind::Skill2, false),
+            Some(AimShow::Skill(1))
+        );
     }
 }

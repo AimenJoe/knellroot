@@ -216,12 +216,18 @@ impl World {
         };
         // 원거리가 겨누는 쪽(0219): 손이 겨눈 쪽(끌기·스틱·커서) > 숄더뷰의 카메라 앞(`aim_ahead` — 근접 자동 조준은 그대로라
         // `aim`에 섞지 않는다). 패드면 그 쪽 ± `aim_assist`° 안의 적에게 붙인다(엄지의 몫 — 끌기·커서는 붙이지 않는다).
+        // 크로스헤어가 적을 겨누면(0222 → 0227 `aim_sight`) 그 적 쪽 — 원거리의 쪽만이고 몸·근접은 모른다.
+        let sight = a
+            .aim_sight
+            .map(|q| vec3(q.x - self.player.pos.x, 0.0, q.y - self.player.pos.z))
+            .filter(|d| d.length() > CURSOR_DEAD_M)
+            .map(|d| d.normalize());
         let ahead = (a.aim_ahead && target.is_none())
-            .then(|| move_to_world(vec2(0.0, 1.0), basis, self.player.pos))
+            .then(|| sight.unwrap_or_else(|| move_to_world(vec2(0.0, 1.0), basis, self.player.pos)))
             .filter(|w| w.length_squared() > 1e-6)
             .map(|w| w.normalize());
         let ranged_aim = aim.or(ahead).map(|d| {
-            if a.aim_assist > 0.0 && !dragged && aim_point.is_none() {
+            if a.aim_assist > 0.0 && !dragged && aim_point.is_none() && sight.is_none() {
                 self.assist_aim(d, a.aim_assist, t)
             } else {
                 d
