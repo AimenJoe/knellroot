@@ -129,7 +129,7 @@ async function run(browser, lang) {
   await shot('7-level-full');
   await page.waitForTimeout(1800);
   // 상태 탭의 기술 줄 넷(레벨 줄 아래, 0173 — 그전에는 장신구 세 칸): 스킬 두 칸 · 큰 기술 · 패시브의 상세 → 패시브 줄에서 확인 =
-  // 기술 탭의 그 칸으로(탭 사이의 이음). 거기서 Q = 장비 탭(무기 칸).
+  // 기술 탭의 그 칸으로(탭 사이의 이음). 거기서 Q 둘 = 장비 탭(무기 칸 — 가방 탭을 지나).
   await press('ArrowDown', 2); await page.waitForTimeout(150);
   await shot('7a-status-skill-1');
   await press('ArrowDown'); await page.waitForTimeout(150);
@@ -140,7 +140,7 @@ async function run(browser, lang) {
   await shot('7d-status-passives');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('7e-status-to-skills');
-  await press('KeyQ'); await page.waitForTimeout(300);
+  await press('KeyQ', 2); await page.waitForTimeout(300); // 기술 ← 가방(0226) ← 장비
   // 탭마다 한 바퀴(0164): 장비(무기 칸에 서 있다 — → 같은 높이의 첫 장신구 칸, 0176) — 칸을 걷고 후보의 작은 목록(장신구 칸·무기 칸)을 열어 본다.
   // 장신구 칸은 종류마다 하나(0224 — 목걸이 · 반지 · 팔찌): 가진 것(단단한 껍질)은 팔찌라 셋째 칸에 끼워져 있다 — → 뒤 ↓ 둘.
   await shot('8a-equip');
@@ -387,8 +387,8 @@ async function run(browser, lang) {
   b = await record();
   if (!/skill\.rank\.whirl=1\n/.test(b) || !/skill\.gift=1\n/.test(b)) errors.push(`fresh: whirl not learned: ${JSON.stringify(b)}`);
   await page.waitForTimeout(1800);
-  // 한 단 올린다(Q 둘 = 상태 탭, 잔불 50 → 기술 점수 +1) → 기술 탭에서 오른쪽으로 둘째 칸(맞받기 갈래의 버팀) → 남은 빈 칸(칸 2)에.
-  await press('KeyQ', 2); await page.waitForTimeout(300);
+  // 한 단 올린다(Q 셋 = 상태 탭 — 가방 · 장비를 지나, 잔불 50 → 기술 점수 +1) → 기술 탭에서 오른쪽으로 둘째 칸(맞받기 갈래의 버팀) → 남은 빈 칸(칸 2)에.
+  await press('KeyQ', 3); await page.waitForTimeout(300);
   await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(500);
   await shot('31d-fresh-level-one');
   b = await record();
