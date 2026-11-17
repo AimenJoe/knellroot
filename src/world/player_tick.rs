@@ -248,10 +248,9 @@ impl World {
             ranged_aim
                 .or(lock_dir.filter(|d| d.length_squared() > 0.5))
                 .or_else(|| {
-                    seek.then(|| {
-                        nearest_in_reach(&self.enemies, self.player.pos, t[P::CastRange], None)
-                    })
-                    .flatten()
+                    // 찾는 것은 탄이 닿는 적만(0228 — 벽 너머의 적을 찾아 벽에 쏘지 않는다).
+                    seek.then(|| self.nearest_shootable(t[P::CastRange], t))
+                        .flatten()
                 })
                 .unwrap_or_else(|| self.player.facing_dir())
         } else {
@@ -1361,6 +1360,23 @@ impl World {
 impl World {
     /// 패드 조준 보조(0219): 겨눈 쪽 `d` ± `deg`° 안, 지금 원거리의 사거리 안에 선 깨어 있는 적 가운데 겨눈 쪽에 가장 가까운 적 쪽.
     /// 없으면 `d` 그대로 — 원뿔 밖의 적을 찾아 돌지 않는다(0213).
+    /// 탄이 닿는(`shot_clear`) 가장 가까운 깨어 있는 적 쪽(0048 마법 탄·0217 터치 톡의 찾기 — 0228부터 벽 너머는 빼고).
+    pub(super) fn nearest_shootable(&self, reach: f32, t: &Tuning) -> Option<Vec3> {
+        let p = self.player.pos;
+        let mut near: Vec<(f32, &crate::enemy::Enemy)> = self
+            .enemies
+            .iter()
+            .filter(|e| e.active())
+            .map(|e| (vec2(e.pos.x - p.x, e.pos.z - p.z).length() - e.radius, e))
+            .filter(|(d, _)| *d <= reach)
+            .collect();
+        near.sort_by(|a, b| a.0.total_cmp(&b.0));
+        near.into_iter()
+            .find(|(_, e)| self.shot_clear(e.pos, e.radius, t))
+            .map(|(_, e)| vec3(e.pos.x - p.x, 0.0, e.pos.z - p.z).normalize_or_zero())
+            .filter(|d| *d != Vec3::ZERO)
+    }
+
     pub(super) fn assist_aim(&self, d: Vec3, deg: f32, t: &Tuning) -> Vec3 {
         let wpn = self.player.weapon.def();
         let range = match wpn.rb {
@@ -1377,8 +1393,11 @@ impl World {
                 let v = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
                 let n = v.length();
                 let c = if n > 1e-3 { v.dot(d) / n } else { -1.0 };
-                (n <= reach + en.radius && c >= cos).then_some((c, v / n))
+                (n <= reach + en.radius && c >= cos).then_some((c, v / n, en))
             })
+            // 벽 너머의 적에게는 붙지 않는다(0228) — 원뿔 안에서 가까운 차례로 보고 탄이 닿는 첫 적.
+            .filter(|(_, _, en)| self.shot_clear(en.pos, en.radius, t))
+            .map(|(c, v, _)| (c, v))
             .max_by(|a, b| a.0.total_cmp(&b.0))
             .map_or(d, |(_, v)| v)
     }

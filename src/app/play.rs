@@ -405,10 +405,12 @@ impl App {
                 let c = en.pos + Vec3::Y * (en.height * 0.5);
                 let t = (c - rig.pos).dot(dir);
                 let miss = (rig.pos + dir * t - c).length();
-                (t > 0.0 && miss <= en.radius + crate::tuning::BOLT_RADIUS).then_some((t, en.pos))
+                (t > 0.0 && miss <= en.radius + crate::tuning::BOLT_RADIUS).then_some((t, en))
             })
+            // 벽 너머의 적은 잡지 않는다(0228) — 크로스헤어가 호박빛으로 "맞는다"고 말하면 탄이 거기 닿아야 한다.
+            .filter(|(_, en)| w.shot_clear(en.pos, en.radius, &self.t))
             .min_by(|a, b| a.0.total_cmp(&b.0))
-            .map(|(_, p)| p)
+            .map(|(_, en)| en.pos)
     }
 
     fn on_weapon_swap(&mut self, to: crate::weapons::Id) {

@@ -364,3 +364,56 @@ fn the_shoulder_crosshair_steers_the_shot_not_the_body() {
         "the shot goes to the crosshair's foe: {d:?}"
     );
 }
+
+/// 0228(사장 "벽 너머의 적에게 조준 보정이 들어가는 건 아니지?"): 패드 보조(±8°)와 마법 탄의 가까운 적 찾기는 탄이 닿는 적에게만 —
+/// 벽 너머의 적에게는 붙지 않는다. 벽이 없으면 그대로 붙는다.
+#[test]
+fn aim_help_skips_foes_behind_a_wall() {
+    let t = Tuning::default();
+    let wall = Aabb {
+        min: vec3(-3.0, 0.0, -5.2),
+        max: vec3(3.0, 4.0, -4.8),
+    };
+    let off = |deg: f32| vec2(deg.to_radians().sin(), deg.to_radians().cos());
+    // 패드 보조: 앞 10m의 적, 스틱은 5° 빗나감.
+    let assisted = |walled: bool| {
+        let mut w = World::new("test", 40.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        w.view_yaw = Some(0.0);
+        if walled {
+            w.obstacles.push(wall);
+        }
+        let foe = w.player.pos + vec3(0.0, 0.0, -10.0);
+        w.spawn_mob(foe);
+        idle(&mut w);
+        let d = crossbow_shot(
+            &mut w,
+            Actions {
+                aim: off(5.0),
+                aim_assist: 8.0,
+                ..Default::default()
+            },
+        );
+        d.x.abs() < 0.01
+    };
+    assert!(assisted(false), "open ground: the stick snaps to the foe");
+    assert!(
+        !assisted(true),
+        "a wall between: the stick stays where it points"
+    );
+    // 마법 탄의 찾기: 앞(벽 너머)의 가까운 적이 아니라 옆의 트인 적에게.
+    let mut w = World::new("test", 40.0);
+    w.set_weapon(weapons::Id::Staff);
+    w.view_yaw = Some(0.0);
+    w.obstacles.push(wall);
+    let p = w.player.pos;
+    w.spawn_mob(p + vec3(0.0, 0.0, -6.0)); // 벽 너머, 더 가깝다
+    w.spawn_mob(p + vec3(7.0, 0.0, 0.0)); // 옆, 트였다
+    idle(&mut w);
+    assert!(!w.shot_clear(w.enemies[0].pos, w.enemies[0].radius, &t));
+    assert!(w.shot_clear(w.enemies[1].pos, w.enemies[1].radius, &t));
+    let d = w
+        .nearest_shootable(t[P::CastRange], &t)
+        .expect("the open foe");
+    assert!(d.x > 0.99, "seeks the foe it can hit: {d:?}");
+}
