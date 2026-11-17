@@ -165,6 +165,18 @@ pub const EN: Strings = Strings {
     tip_lock_d: "Before something large, keep your eyes on it — press again to let go",
     tip_charge: "Hold, then release",
     tip_charge_d: "Hold attack to gather strength — let go the moment it is full for more",
+    tip_remap: "The strike has moved",
+    tip_remap_d: "The button the hand remembers is now the special — Controls in Settings can put it back",
+    tip_swap: "Change hands",
+    tip_swap_d: "Press both to draw what rides the back — the skill slots follow the weapon",
+    tip_block: "Hold and bear it",
+    tip_block_d: "The press deflects; held, the shield takes it — stamina pays instead of health",
+    tip_unfit: "A dim slot is not this weapon's",
+    tip_unfit_d: "A learned skill still needs the right thing in hand — refill the slots in the Skills tab",
+    tip_type: "The marks overhead",
+    tip_type_d: "Skill hits build up — burning, bound, tolling, cracked. The Codex notes how each kind leans",
+    tip_spare: "The same thing, another hand",
+    tip_spare_d: "Compare spares in the Equipment tab — the hearth turns the unwanted into embers",
     weapon_sword_d:
         "3-hit combo · charged wide slash · magic bolt. The plain blade most pilgrims carry",
     weapon_hammer_d:

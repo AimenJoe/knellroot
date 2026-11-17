@@ -641,6 +641,10 @@ impl App {
             match e {
                 Event::Hit { .. } | Event::Crit { .. } => self.tutor.seen.hits += 1,
                 Event::Charged => self.tutor.seen.charged += 1,
+                // 0223의 새 것들(상황 힌트가 본다): 바꿔 듦 · 방패로 받음 · 타입의 일이 걸림.
+                Event::WeaponSwap { .. } => self.tutor.seen.swaps += 1,
+                Event::Guard { .. } => self.tutor.seen.blocks += 1,
+                Event::Ail { .. } | Event::Toll { .. } => self.tutor.seen.ails += 1,
                 // 등잔을 한 번 마셔 보면 그 뒤로는 알리지 않는다(기록의 비트 — 판을 넘어, 0213).
                 Event::Gulp { .. } => {
                     self.tutor.seen.gulps += 1;
@@ -742,16 +746,40 @@ impl App {
                     && (e.pos - pl.pos).length() < crate::tutorial::FIGHT_RANGE
             }),
             locked: self.world.lock.is_some(),
+            pad: input::device() == input::Device::Pad,
+            has_sub: pl.sub.is_some(),
+            can_block: self.world.can_block(),
+            unfit: (0..2).any(|i| pl.skill.rank[i] == 0 && pl.skill.known[i] > 0),
+            spare: !self.progress.bag.spares().is_empty(),
         };
         // 등잔은 체력이 반 위로 돌아오면 다시 알릴 수 있다(마셔 보기 전까지 — 기록의 비트는 마실 때 선다, 0213).
         let flask = Tip::Flask.bit();
         if !now.hp_low {
             self.tips_now &= !flask;
         }
-        if let Some((t, left)) = self.tip {
-            let left = left - TICK_DT;
-            self.tip = (left > 0.0 && !t.done(&now, &self.tutor.seen)).then_some((t, left));
+        // 판이 가려진 동안(시작 이야기·구역 카드·보스 띠 — `hud::draw`가 판을 그리지 않는다)에는 힌트의 시계를 세우고 새로
+        // 띄우지도 않는다: 안 보이는 사이에 한 번뿐인 힌트가 지나가 버렸다(구역 카드 밑에서 "바꿔 든다"가 사라졌다).
+        if self.run.intro > 0.0
+            || self.run.card.is_some()
+            || self.run.boss_bar(&self.world).is_some()
+        {
             return;
+        }
+        if let Some((t, left)) = self.tip {
+            // 떠 있는 동안(남은 시간 > 0) 할 일을 하면 걷히고, 걷힌 뒤에는 `TIP_REST`만큼 쉰다(남은 시간이 0 아래로 —
+            // 여럿이 때를 맞아도 줄지어 덮지 않는다). 급한 것(등잔)은 쉼을 기다리지 않는다.
+            let left = if left > 0.0 && t.done(&now, &self.tutor.seen) {
+                0.0
+            } else {
+                left - TICK_DT
+            };
+            let urgent = left <= 0.0
+                && (self.progress.tips | self.tips_now) & flask == 0
+                && Tip::Flask.due(self.tutor.at, &now, &self.tutor.seen);
+            self.tip = (left > -crate::tutorial::TIP_REST && !urgent).then_some((t, left));
+            if !urgent {
+                return;
+            }
         }
         let shown = self.progress.tips | self.tips_now;
         if let Some(t) = next_tip(shown, self.tutor.at, &now, &self.tutor.seen) {
@@ -793,18 +821,22 @@ impl App {
                 crate::ui::key(&name)
             }
         };
-        if let (Some((t, _)), true) = (self.tip, self.tutor_live()) {
-            // 쇠뇌는 모으기가 RB(사격)에 있다(0213).
-            let shots = matches!(
-                self.world.player.weapon.def().rb,
-                crate::weapons::Rb::Shot { .. }
-            );
-            return Some(t.hint(crate::i18n::s(), |b| {
-                cap(match b {
-                    crate::input::Bind::Attack if shots => crate::input::Bind::Cast,
-                    b => b,
-                })
-            }));
+        if let (Some((t, left)), true) = (self.tip, self.tutor_live()) {
+            // 걷힌 뒤의 쉼(남은 시간 0 아래)에는 그리지 않는다 — 걸음의 힌트가 그 자리에 돌아온다.
+            if left > 0.0 {
+                // 쇠뇌는 모으기가 RB(사격)에 있다(0213) — 모으기 힌트만: 바꿔 들기의 평타는 손의 버튼 그대로다.
+                let shots = t == crate::tutorial::Tip::Charge
+                    && matches!(
+                        self.world.player.weapon.def().rb,
+                        crate::weapons::Rb::Shot { .. }
+                    );
+                return Some(t.hint(crate::i18n::s(), |b| {
+                    cap(match b {
+                        crate::input::Bind::Attack if shots => crate::input::Bind::Cast,
+                        b => b,
+                    })
+                }));
+            }
         }
         if !self.tutor_on() {
             return None;
