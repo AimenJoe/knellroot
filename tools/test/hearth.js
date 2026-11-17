@@ -142,17 +142,21 @@ async function run(browser, lang) {
   await shot('7e-status-to-skills');
   await press('KeyQ'); await page.waitForTimeout(300);
   // 탭마다 한 바퀴(0164): 장비(무기 칸에 서 있다 — → 같은 높이의 첫 장신구 칸, 0176) — 칸을 걷고 후보의 작은 목록(장신구 칸·무기 칸)을 열어 본다.
+  // 장신구 칸은 종류마다 하나(0224 — 목걸이 · 반지 · 띠): 가진 것(단단한 껍질)은 띠라 셋째 칸에 끼워져 있다 — → 뒤 ↓ 둘.
   await shot('8a-equip');
   await press('ArrowRight'); await page.waitForTimeout(150);
+  await shot('8b0-equip-neck-empty');
+  await press('ArrowDown', 2); await page.waitForTimeout(150);
   await shot('8b-equip-charm');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('8c-equip-charm-pick');
   await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8d-equip-charm-pick-empty');
   await press('Escape'); await page.waitForTimeout(300);
+  // 아래로 한 번 = 첫 칸(목걸이 — 그 종류는 아직 없다: "이 자리에 낄 것을 아직 얻지 못했다").
   await press('ArrowDown'); await page.waitForTimeout(150);
   await shot('8e-equip-empty-slot');
-  // 덧옷 칸(0176 — 왼쪽 열 아래): 가운데 장신구 칸 ← = 부무기 칸(0223), ↓ 둘 = 방패 칸을 지나 덧옷 칸(뿌리껍질을 걸쳤다) → 목록(벗기 · 뿌리껍질), 벗기에서 견주는 줄.
+  // 덧옷 칸(0176 — 왼쪽 열 아래): 첫 장신구 칸 ← = 주무기 칸, ↓ 둘 = 보조무기 칸을 지나 덧옷 칸(뿌리껍질을 걸쳤다) → 목록(벗기 · 뿌리껍질), 벗기에서 견주는 줄.
   await press('ArrowLeft'); await page.waitForTimeout(150); await press('ArrowDown', 2); await page.waitForTimeout(150);
   await shot('8e2-equip-garb-slot');
   await press('Enter'); await page.waitForTimeout(300);
@@ -160,9 +164,7 @@ async function run(browser, lang) {
   await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8e4-equip-garb-pick-bare');
   await press('Escape'); await page.waitForTimeout(300);
-  // 방패 칸·부무기 칸(0223 — 왼쪽 열: 주무기 · 부무기 · 방패 · 덧옷): 덧옷에서 ↑ = 방패(없으면 빈 칸의 말), 또 ↑ = 부무기 → 목록(비우기 · 가진 무기 · 맨손).
-  await press('ArrowUp'); await page.waitForTimeout(150);
-  await shot('8e4b-equip-shield-slot');
+  // 보조무기 칸(0223 → 0224 — 왼쪽 열: 주무기 · 보조무기 · 덧옷, 방패는 이 칸의 후보): 덧옷에서 ↑ → 목록(비우기 · 맨손 · 가진 무기 · 가진 방패).
   await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8e5-equip-sub-slot');
   await press('Enter'); await page.waitForTimeout(300);

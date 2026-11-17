@@ -295,7 +295,9 @@ impl App {
         let label = self.bag_in(crate::items::Base::Charm(id), roll, name);
         self.progress.owned.push(id);
         self.progress.owned.sort();
-        if let Some(slot) = self.progress.worn.iter_mut().find(|w| w.is_none()) {
+        // 제 종류의 칸(0224)이 비어 있으면.
+        let slot = &mut self.progress.worn[id.kind().slot()];
+        if slot.is_none() {
             *slot = Some(id);
         }
         self.progress.settle_items();
@@ -377,11 +379,11 @@ impl App {
                 self.toast = Some((fill(s.toast_bought, &[s.shop_oil]), TOAST_TIME));
             }
             crate::growth::Ware::Shield(id) => {
-                // 방패(0223): 사면 바로 든다(빈 왼손이면) — 한손 무기를 들고 있어야 쓰인다.
+                // 방패(0223): 사면 바로 든다(보조무기 칸이 비었으면 — 0224) — 한손 무기를 들고 있어야 쓰인다.
                 if !self.progress.shields.contains(&id) {
                     self.progress.shields.push(id);
                 }
-                if self.progress.shield.is_none() {
+                if self.progress.shield.is_none() && self.progress.sub.is_none() {
                     self.progress.shield = Some(id);
                 }
                 self.arm_world();
@@ -399,45 +401,52 @@ impl App {
         self.persist();
     }
 
-    /// 방패 칸 빨리 바꾸기(0223): 비우기 → 가진 방패(표 순서) → 비우기로 돈다.
-    pub(super) fn step_shield(&mut self, step: i32) {
-        let mut opts: Vec<Option<crate::shield::Id>> = vec![None];
-        opts.extend(
-            crate::shield::TABLE
-                .iter()
-                .filter(|d| self.progress.shields.contains(&d.id))
-                .map(|d| Some(d.id)),
-        );
-        let at = opts
-            .iter()
-            .position(|o| *o == self.progress.shield)
-            .unwrap_or(0) as i32;
-        self.set_shield(opts[(at + step).rem_euclid(opts.len() as i32) as usize]);
-    }
-
-    /// 방패를 든다·내린다(0223 — 가진 것만).
+    /// 방패를 든다·내린다(0223 — 가진 것만). 방패는 보조무기 칸에 든다(0224) — 들면 그 칸의 무기는 내린다.
     pub(super) fn set_shield(&mut self, s: Option<crate::shield::Id>) {
         self.progress.shield = s.filter(|id| self.progress.shields.contains(id));
+        if self.progress.shield.is_some() {
+            self.progress.sub = None;
+        }
         self.arm_world();
         self.persist();
     }
 
-    /// 부무기 칸 빨리 바꾸기(0223): 비우기 → 맨손 → 가진 무기(표 순서, 주무기 빼고) → 비우기로 돈다.
+    /// 보조무기 칸 빨리 바꾸기(0223 → 0224): 비우기 → 맨손 → 가진 무기(표 순서, 주무기 빼고) → 가진 방패 → 비우기로 돈다.
     pub(super) fn step_sub(&mut self, step: i32) {
+        #[derive(Clone, Copy, PartialEq)]
+        enum Off {
+            None,
+            Arm(weapons::Id),
+            Guard(crate::shield::Id),
+        }
         let main = self.weapon;
-        let mut opts: Vec<Option<weapons::Id>> = vec![None];
+        let mut opts = vec![Off::None];
         opts.extend(
             weapons::IDS
                 .into_iter()
                 .filter(|&w| w != main && (w == weapons::Id::Fists || self.arms().contains(&w)))
-                .map(Some),
+                .map(Off::Arm),
         );
-        let at = opts
-            .iter()
-            .position(|o| *o == self.progress.sub)
-            .unwrap_or(0) as i32;
-        let next = opts[(at + step).rem_euclid(opts.len() as i32) as usize];
-        self.set_sub_weapon(next);
+        opts.extend(
+            crate::shield::TABLE
+                .iter()
+                .filter(|d| self.progress.shields.contains(&d.id))
+                .map(|d| Off::Guard(d.id)),
+        );
+        let now = match (self.progress.sub, self.progress.shield) {
+            (Some(w), _) => Off::Arm(w),
+            (None, Some(s)) => Off::Guard(s),
+            (None, None) => Off::None,
+        };
+        let at = opts.iter().position(|o| *o == now).unwrap_or(0) as i32;
+        match opts[(at + step).rem_euclid(opts.len() as i32) as usize] {
+            Off::Guard(s) => self.set_shield(Some(s)),
+            Off::Arm(w) => self.set_sub_weapon(Some(w)),
+            Off::None => {
+                self.set_shield(None);
+                self.set_sub_weapon(None);
+            }
+        }
     }
 
     /// 덧옷 칸 빨리 바꾸기(0176): 벗기 → 가진 덧옷(표 순서) → 벗기로 돈다.

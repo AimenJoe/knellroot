@@ -20,6 +20,58 @@ pub enum Id {
 /// 낄 수 있는 칸 수.
 pub const SLOTS: usize = 3;
 
+/// 장신구의 종류(0224 — 사장 "조합이 가능/불가능할 수 있도록 목걸이·반지 등등 나눠야"): 칸마다 종류 하나, 장신구는 제 종류의
+/// 칸에만 낀다 — 같은 종류 둘은 함께 낄 수 없다. 묶음은 하는 일로 갈랐다(같은 일을 겹쳐 쌓지 못하게):
+/// 목걸이 = 살림과 감각(패링 창·등잔·잔불) · 반지 = 손의 힘(강타·열린 틈·쓰러뜨림의 기력) · 띠 = 몸(체력·회피).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Kind {
+    Neck,
+    Ring,
+    Band,
+}
+
+/// 칸의 종류(칸 번호 = 기록 `charm.worn`의 자리).
+pub const SLOT_KINDS: [Kind; SLOTS] = [Kind::Neck, Kind::Ring, Kind::Band];
+
+impl Kind {
+    /// 이 종류의 칸.
+    pub fn slot(self) -> usize {
+        self as usize
+    }
+
+    pub fn name(self) -> Tr {
+        match self {
+            Kind::Neck => |s| s.charm_kind_neck,
+            Kind::Ring => |s| s.charm_kind_ring,
+            Kind::Band => |s| s.charm_kind_band,
+        }
+    }
+}
+
+impl Id {
+    /// 종류(`_` 없는 match — 새 장신구는 여기서 종류를 정한다).
+    pub fn kind(self) -> Kind {
+        match self {
+            Id::Ear | Id::Jar | Id::Pouch => Kind::Neck,
+            Id::Hand | Id::BellShard | Id::Hunger => Kind::Ring,
+            Id::Shell | Id::Cloth | Id::Feet => Kind::Band,
+        }
+    }
+}
+
+/// 낀 것을 제 종류의 칸에 앉힌다(0224 — 옛 기록의 낀 것을 옮긴다): 같은 종류가 둘이면 앞 칸의 것이 남고 뒤의 것은 벗는다
+/// (가진 것에는 그대로 있다).
+pub fn seat(worn: [Option<Id>; SLOTS]) -> [Option<Id>; SLOTS] {
+    let mut out = [None; SLOTS];
+    for id in worn.into_iter().flatten() {
+        let k = id.kind().slot();
+        if out[k].is_none() {
+            out[k] = Some(id);
+        }
+    }
+    out
+}
+
 pub struct Def {
     pub id: Id,
     /// 기록 키(바꾸지 않는다).
@@ -353,7 +405,7 @@ pub fn encode_worn(worn: &[Option<Id>; SLOTS]) -> String {
         .join(",")
 }
 
-/// 낀 것은 가진 것만, 같은 것은 한 칸에만.
+/// 낀 것은 가진 것만, 같은 것은 한 칸에만, 제 종류의 칸에만.
 pub fn decode_worn(s: &str, owned: &[Id]) -> [Option<Id>; SLOTS] {
     let mut out = [None; SLOTS];
     for (slot, k) in out.iter_mut().zip(s.split(',')) {
@@ -364,7 +416,8 @@ pub fn decode_worn(s: &str, owned: &[Id]) -> [Option<Id>; SLOTS] {
             out[i] = None;
         }
     }
-    out
+    // 제 종류의 칸으로(0224 — 옛 기록은 아무 칸에나 끼워져 있다).
+    seat(out)
 }
 
 #[cfg(test)]
@@ -392,10 +445,40 @@ mod tests {
         // 가지지 않은 것·모르는 키·같은 것 두 칸은 빈다.
         assert_eq!(
             decode_worn("hand,nope,ear", &owned),
-            [None, None, Some(Id::Ear)]
+            [Some(Id::Ear), None, None],
+            "the ear is a necklace: it moves to the necklace slot"
         );
         assert_eq!(decode_worn("ear,ear,", &owned), [Some(Id::Ear), None, None]);
         assert_eq!(decode_owned("ear,ear,,zzz,shell"), vec![Id::Shell, Id::Ear]);
+    }
+
+    /// 0224: 종류는 셋, 종류마다 칸 하나, 장신구는 종류마다 고르게(셋씩) — 같은 종류 둘은 함께 못 낀다(앞 칸의 것이 남는다).
+    /// 같은 일을 하는 것끼리 한 종류다: 체력을 주는 둘(껍질·천)·피해를 더하는 둘(손·종 조각)은 겹쳐 쌓지 못한다.
+    #[test]
+    fn charms_have_kinds_and_only_one_of_a_kind_is_worn() {
+        for (i, k) in SLOT_KINDS.iter().enumerate() {
+            assert_eq!(k.slot(), i);
+            assert_eq!(
+                TABLE.iter().filter(|d| d.id.kind() == *k).count(),
+                3,
+                "{k:?}"
+            );
+        }
+        assert_eq!(Id::Shell.kind(), Id::Cloth.kind());
+        assert_eq!(Id::Hand.kind(), Id::BellShard.kind());
+        assert_ne!(
+            Id::Ear.kind(),
+            Id::BellShard.kind(),
+            "parry and its payoff still combine"
+        );
+        assert_eq!(
+            seat([Some(Id::Shell), Some(Id::Cloth), Some(Id::Ear)]),
+            [Some(Id::Ear), None, Some(Id::Shell)]
+        );
+        assert_eq!(
+            seat([None, Some(Id::Hand), None]),
+            [None, Some(Id::Hand), None]
+        );
     }
 
     #[test]

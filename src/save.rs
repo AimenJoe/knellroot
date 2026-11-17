@@ -548,11 +548,24 @@ impl Progress {
             moss_cores,
             overseer_cores,
             weapon: r.get(key::WEAPON).and_then(crate::weapons::Id::by_key),
-            sub: r.get(key::SUB).and_then(crate::weapons::Id::by_key),
+            sub: {
+                let main = r.get(key::WEAPON).and_then(crate::weapons::Id::by_key);
+                r.get(key::SUB)
+                    .and_then(crate::weapons::Id::by_key)
+                    .filter(|w| Some(*w) != main)
+            },
+            // 방패는 보조무기 칸에 든다(0224): 그 칸에 무기가 있는 옛 기록은 방패를 내린다(가진 것에는 남는다).
             shield: r
                 .get(key::SHIELD_WORN)
                 .and_then(crate::shield::Id::by_key)
-                .filter(|id| shields.contains(id)),
+                .filter(|id| shields.contains(id))
+                .filter(|_| {
+                    // (주무기와 같은 보조무기는 월드가 버린다 — 그런 기록은 보조무기가 없는 것으로 본다.)
+                    let main = r.get(key::WEAPON).and_then(crate::weapons::Id::by_key);
+                    r.get(key::SUB)
+                        .and_then(crate::weapons::Id::by_key)
+                        .is_none_or(|w| Some(w) == main)
+                }),
             shields,
             skills: {
                 let at = |k: &str, d: crate::skills::Id| {
@@ -1618,7 +1631,8 @@ forge.sword=3
         use crate::charms::Id;
         let mut p = Progress::default();
         p.owned = vec![Id::Shell, Id::Ear];
-        p.worn = [None, Some(Id::Ear), None];
+        // 귀는 목걸이 — 첫 칸(0224).
+        p.worn = [Some(Id::Ear), None, None];
         p.chests = vec![0, 2];
         p.growth = crate::growth::Growth {
             hp: 2,
@@ -2098,10 +2112,14 @@ forge.sword=3
         );
         p.shields = vec![Id::Pilgrim];
         p.shield = Some(Id::Pilgrim);
+        let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        assert_eq!(back.shields, vec![Id::Pilgrim]);
+        assert_eq!((back.shield, back.sub), (Some(Id::Pilgrim), None));
+        // 0224: 방패는 보조무기 칸에 든다 — 그 칸에 무기가 있는 (옛) 기록은 방패를 내린다(가진 것에는 남는다).
         p.sub = Some(crate::weapons::Id::Crossbow);
         let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
         assert_eq!(back.shields, vec![Id::Pilgrim]);
-        assert_eq!(back.shield, Some(Id::Pilgrim));
+        assert_eq!(back.shield, None);
         assert_eq!(back.sub, Some(crate::weapons::Id::Crossbow));
         let stray = Progress::from_record(Record::parse("shield.worn=pilgrim\n"));
         assert_eq!(stray.shield, None, "a shield you do not own is not worn");
@@ -2118,8 +2136,9 @@ forge.sword=3
         let p = Progress::from_record(Record::parse(old));
         assert_eq!(p.bag.items.len(), 4);
         assert!(p.bag.items.iter().all(|(_, it)| it.rarity == Rarity::Plain));
+        // 보조무기 칸의 무기가 남고 방패는 내려진다(0224) — 아이템은 넷 그대로.
         assert!(
-            p.bag.gear.main.is_some() && p.bag.gear.sub.is_some() && p.bag.gear.shield.is_some()
+            p.bag.gear.main.is_some() && p.bag.gear.sub.is_some() && p.bag.gear.shield.is_none()
         );
         let text = p.to_record().to_text();
         assert!(text.contains("item.0=") && text.contains("gear.main="));

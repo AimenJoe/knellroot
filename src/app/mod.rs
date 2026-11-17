@@ -599,6 +599,10 @@ impl App {
             self.swap_kits();
         }
         self.progress.sub = s;
+        // 보조무기 칸에는 하나만(0224): 무기를 들면 방패는 내린다.
+        if s.is_some() {
+            self.progress.shield = None;
+        }
         self.arm_world();
         self.persist();
     }

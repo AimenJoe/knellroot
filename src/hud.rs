@@ -521,6 +521,18 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
             crate::ui::key(&input::bind_prompt(Bind::Attack))
         );
         ui.text_center(&caps, x + side * 0.5, y + side + 2.5 * s, label, INK);
+    } else if pl.shield.is_some() {
+        // 보조무기 칸에 방패(0224): 같은 자리에 방패의 그림 + 쥐는 버튼(패링)의 키캡 — 두 손 무기를 들어 쉬고 있으면 흐리게.
+        let x = x0 - 26.0 * s - side;
+        draw_rectangle(x - s, y - s, side + 2.0 * s, side + 2.0 * s, BAR_BG);
+        draw_rectangle(x, y, side, side, HP_OFF);
+        let c = vec2(x + side * 0.5, y + side * 0.5);
+        let r = crate::touch::ICON_N as f32 * s / 1.25 + 0.01;
+        let tint = Color::new(1.0, 0.99, 0.95, 1.0);
+        let dim = if w.can_block() { 0.6 } else { 0.2 };
+        crate::touch::icon(crate::touch::Kind::Parry, c, r, dim, tint);
+        let cap = crate::ui::key(&input::bind_prompt(Bind::Parry));
+        ui.text_center(&cap, x + side * 0.5, y + side + 2.5 * s, label, INK);
     }
     for (i, (x, bind)) in [(x0, Bind::Skill1), (x1, Bind::Skill2)]
         .into_iter()

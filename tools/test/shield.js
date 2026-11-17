@@ -14,7 +14,8 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
 const BASE = 'v=1\nembers=300\nclears=1\nrun.rest=0\nrun.gate=1\nweapon=sword\nmigrated.v04=1\n';
-const OWNED = BASE + 'shields=pilgrim\nshield.worn=pilgrim\nweapon.sub=hammer\n';
+// 방패는 보조무기 칸에 든다(0224) — 그 칸에 무기가 있으면 방패는 내려진다(둘 가운데 하나).
+const OWNED = BASE + 'shields=pilgrim\nshield.worn=pilgrim\n';
 
 const server = http.createServer((req, res) => {
   const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
@@ -74,11 +75,13 @@ async function open(browser, seed, tag) {
     await g.page.waitForTimeout(300);
     await g.press('Tab'); await g.page.waitForTimeout(500);
     await g.shot('4-equip');
-    await g.press('ArrowDown', 2); await g.page.waitForTimeout(200);
+    // 보조무기 칸(주무기 아래 — 0224: 방패 칸은 따로 없다) → 목록(비우기 · 맨손 · 가진 무기 · 방패 — 커서는 낀 방패 = 끝 줄) →
+    // 아래로 한 번 = 끝에서 돌아 첫 줄 "비우기".
+    await g.press('ArrowDown'); await g.page.waitForTimeout(200);
     await g.shot('5-equip-shield-slot');
     await g.press('Enter'); await g.page.waitForTimeout(300);
     await g.shot('6-equip-shield-pick');
-    await g.press('ArrowUp'); await g.press('Enter'); await g.page.waitForTimeout(300);
+    await g.press('ArrowDown'); await g.press('Enter'); await g.page.waitForTimeout(300);
     const r = await g.record();
     if (/shield\.worn=/.test(r)) errors.push(`the shield was not taken off: ${JSON.stringify(r)}`);
     if (!/shields=pilgrim\n/.test(r)) errors.push(`the owned shield was lost: ${JSON.stringify(r)}`);

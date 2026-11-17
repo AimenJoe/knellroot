@@ -65,8 +65,12 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     w.set_weapon(b.weapon);
     let mut prog = crate::save::Progress::default();
     prog.level = b.level;
-    for (k, &c) in b.worn.iter().enumerate().take(crate::charms::SLOTS) {
-        prog.worn[k] = Some(c);
+    // 장신구는 제 종류의 칸에(0224 — 같은 종류 둘은 앞의 것만).
+    for &c in b.worn.iter() {
+        let slot = &mut prog.worn[c.kind().slot()];
+        if slot.is_none() {
+            *slot = Some(c);
+        }
     }
     prog.owned = b.worn.clone();
     prog.finds = b.finds.clone();

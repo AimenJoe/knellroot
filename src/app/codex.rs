@@ -177,7 +177,13 @@ impl App {
                 &PaneHead {
                     name: if d.owned { tr(d.name) } else { s.codex_unknown },
                     gold: d.owned,
-                    kind: names[tab].to_string(),
+                    // 장신구는 종류까지(0224 — "장신구 · 목걸이": 같은 종류 둘은 함께 못 낀다).
+                    kind: match d.item {
+                        crate::item_view::Item::Charm(id) => {
+                            format!("{} · {}", names[tab], tr(id.kind().name()))
+                        }
+                        _ => names[tab].to_string(),
+                    },
                     state: (String::new(), DIM),
                     icon: true,
                 },

@@ -89,18 +89,19 @@ async function main() {
   // 창을 닫으면 떠난다(어느 탭에서든 한 번에 — 0164) → 싸움.
   await press('Escape'); await page.waitForTimeout(300);
 
-  // 3b) 장비(0064 M3 → 0164 탭): 멈춤(상태 탭) → E = 장비 탭 → 장신구 3칸(산 주머니가 2칸에 들어갔다)에 종지기의 귀 → 기록.
-  // 십자는 칸 자리대로 커서만(→ = 무기와 같은 높이의 첫 장신구 칸(0176), ↓↓ = 셋째 칸), 확인 = 그 칸의 후보 목록(빈 칸 · 단단한 껍질 · 종지기의 귀 ·
-  // 잔불 주머니 — 커서는 지금 것 "빈 칸"에서: 아래로 둘 = 종지기의 귀). 키보드+마우스 배치에는 빨리 바꾸기가 없다(공격 = 클릭).
+  // 3b) 장비(0064 M3 → 0164 탭): 멈춤(상태 탭) → E = 장비 탭 → 장신구 칸은 종류마다 하나(0224 — 목걸이 · 반지 · 띠): 가진 껍질은 띠(셋째 칸),
+  // 산 주머니는 목걸이(첫 칸)에 들어갔다. 첫 칸에 종지기의 귀(목걸이)를 끼면 주머니와 바뀐다 → 기록.
+  // 십자는 칸 자리대로 커서만(→ = 무기와 같은 높이의 첫 장신구 칸, 0176), 확인 = 그 칸의 후보 목록(빈 칸 · 종지기의 귀 · 잔불 주머니 —
+  // 커서는 지금 것 "잔불 주머니"에서: 위로 하나 = 종지기의 귀). 키보드+마우스 배치에는 빨리 바꾸기가 없다(공격 = 클릭).
   await press('Escape'); await page.waitForTimeout(300);
   await press('KeyE'); await page.waitForTimeout(300);
-  await press('ArrowRight'); await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowRight'); await press('Enter'); await page.waitForTimeout(300);
   await shot('save-2b-equip-pick');
-  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await shot('save-2b-equip');
   r = await record();
   console.log('장신구를 낀 뒤 기록:', JSON.stringify(r));
-  if (!/charm\.worn=shell,pouch,ear/.test(r)) fail('equipping a charm must be saved');
+  if (!/charm\.worn=ear,,shell/.test(r)) fail('equipping a charm must be saved in its kind\'s slot (0224): ' + JSON.stringify(r));
   await press('Escape'); await page.waitForTimeout(300);
 
   // 4) 멈춤 → 처음부터: 창은 마지막에 보던 장비 탭에서 열린다 → Q 둘(상태 → 설정) → 설정 탭의 끝에서 둘째 줄(… 처음부터 · 타이틀로).
