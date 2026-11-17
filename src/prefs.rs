@@ -146,10 +146,10 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
     let keys: Vec<u32> = v[2..20].iter().chain(&v[29..33]).copied().collect();
     Some(Prefs {
         lang: lang_from(v[1]),
-        bindings: if v[0] == MAGIC_V2 {
+        // 옛 표식(…0002·…0003)의 저장은 **배치만** 기본으로 되돌린다(0151 · 0223 — 패드 평타가 RB로 옮겨 갔다). 공개 전이라
+        // 옛 배치를 하나하나 옮겨 주는 코드는 두지 않는다(사장 2026-11-17).
+        bindings: if v[0] == MAGIC_V2 || v[0] == MAGIC_V3 {
             Bindings::default_layout()
-        } else if v[0] == MAGIC_V3 {
-            Bindings::decode(&keys).rb_attack()
         } else {
             Bindings::decode(&keys)
         },
@@ -287,19 +287,14 @@ mod tests {
     use crate::input::{Bind, Pad};
     use macroquad::prelude::MouseButton;
 
-    /// 0223: 0x…0003 저장의 패드 평타·특수가 옛 기본(X·RB) 그대로면 RB·X로 맞바꾸고, 사람이 바꾼 배치는 그대로 둔다.
+    /// 0223: 0x…0003 저장(패드 평타 = X이던 때)은 **배치만** 기본으로 되돌린다(평타 = RB) — 다른 설정은 그대로.
     #[test]
-    fn an_untouched_pad_moves_the_attack_to_rb_and_a_remapped_one_stays() {
-        let mut old_default = Bindings::default_layout();
-        old_default.set_pad(Bind::Attack, Pad::West);
-        assert_eq!(
-            old_default.pad(Bind::Cast),
-            Pad::R1,
-            "the old default: X attack, RB special"
-        );
-        let p = |b: Bindings| Prefs {
+    fn a_pre_rb_attack_layout_resets_the_bindings_only() {
+        let mut old = Bindings::default_layout();
+        old.set_pad(Bind::Attack, Pad::West);
+        let p = Prefs {
             lang: Some(Lang::Ko),
-            bindings: b,
+            bindings: old,
             shake: 4,
             weapon: 0,
             mouse: MouseAim::default(),
@@ -309,23 +304,12 @@ mod tests {
             fullscreen: false,
             look: (5, 5),
         };
-        let mut v = encode(&p(old_default));
+        let mut v = encode(&p);
         v[0] = MAGIC_V3;
-        let got = decode(&v).unwrap().bindings;
-        assert_eq!(
-            (got.pad(Bind::Attack), got.pad(Bind::Cast)),
-            (Pad::R1, Pad::West)
-        );
-        assert_eq!(got, Bindings::default_layout());
-        let mut mine = old_default;
-        mine.set_pad(Bind::Attack, Pad::South);
-        let mut v = encode(&p(mine));
-        v[0] = MAGIC_V3;
-        assert_eq!(
-            decode(&v).unwrap().bindings,
-            mine,
-            "a layout the player changed is theirs"
-        );
+        let got = decode(&v).unwrap();
+        assert_eq!(got.bindings, Bindings::default_layout());
+        assert_eq!(got.bindings.pad(Bind::Attack), Pad::R1);
+        assert_eq!((got.lang, got.shake, got.volume), (p.lang, 4, 3));
     }
 
     /// 0151: 표식이 0x…0002인 저장(배치 칸 4·5 = Q·E / LT·RT가 땅 돌리기였다)은 **배치만** 기본으로 되돌린다 — 다른 설정은 그대로.

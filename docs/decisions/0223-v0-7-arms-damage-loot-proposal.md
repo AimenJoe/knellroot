@@ -139,8 +139,9 @@
 ### V1a(2026-11-16) — 버튼: RB 평타 · X 특수
 - 패드 기본 배치: `Bind::Attack` = RB, `Bind::Cast` = X(`Bindings::keyboard_only`의 패드 칸 — 기본 배치도 같은 패드 칸). 키보드·마우스 칸은 그대로
   (왼쪽 클릭·J = 평타, 오른쪽 클릭·U = 특수).
-- prefs 표식 `…0003` → `…0004`: 옛 저장의 패드 평타·특수가 옛 기본(X·RB) 그대로면 맞바꾸고(`Bindings::rb_attack`), 사람이 바꾼 배치는 그대로 —
-  다른 설정은 그대로 읽는다(시험 `an_untouched_pad_moves_the_attack_to_rb_and_a_remapped_one_stays`).
+- prefs 표식 `…0003` → `…0004`: 옛 저장은 **배치만** 기본으로 되돌린다(다른 설정은 그대로 — 시험 `a_pre_rb_attack_layout_resets_the_bindings_only`).
+  처음엔 옛 기본(X·RB) 그대로인 배치만 맞바꾸고 사람이 바꾼 배치는 지켰는데(`Bindings::rb_attack`), 공개 전이라 지킬 옛 배치가 없어 걷었다
+  (사장 2026-11-17 "빼줘").
 - 원거리 무기: 평타 버튼 = 사격, 특수 버튼 = 수류탄. 월드의 안쪽 이름(`attack` = 콤보·수류탄, `cast` = 마법·사격)과 월드 시험은 그대로 두고,
   앱이 월드에 넘기기 전에 맞바꾼다(`input::weapon_buttons` — `App::step_world` 한 곳). 마우스로는 쇠뇌가 왼쪽 클릭으로 쏜다(전엔 오른쪽).
 - 터치: 큰 공격 버튼 = 평타(쇠뇌면 쇠뇌 그림·끌어 조준·쥐고 끄는 동안 모으기 `Ctx::ranged`/`shot()`), 원거리 버튼 = 특수(쇠뇌면 수류탄 그림).

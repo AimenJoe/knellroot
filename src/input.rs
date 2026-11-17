@@ -480,15 +480,6 @@ impl Bindings {
         self.keys[b as usize] = k;
     }
 
-    /// 0223(사장 "평타 공격버튼 RB, 기존 공격버튼은 특수 공격"): 패드의 평타·특수가 옛 기본(X·RB) 그대로면 맞바꾼다 —
-    /// 바꾼 적 없는 배치만 새 기본으로(KB `controller-layout-and-remapping`). 키보드·마우스 칸은 그대로(왼쪽 클릭 = 평타).
-    pub fn rb_attack(mut self) -> Bindings {
-        if self.pad(Bind::Attack) == Pad::West && self.pad(Bind::Cast) == Pad::R1 {
-            self.set_pad(Bind::Attack, Pad::R1);
-        }
-        self
-    }
-
     pub fn set_pad(&mut self, b: Bind, p: Pad) {
         let old = self.pads[b as usize];
         if let Some(other) = self.pads.iter().position(|x| *x == p) {
