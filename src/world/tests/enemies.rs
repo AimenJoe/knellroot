@@ -540,3 +540,57 @@ fn a_charge_stops_at_a_pillar_and_its_lane_says_so() {
     );
     assert_eq!(w.player.hp, w.player.max_hp, "never reached you");
 }
+
+/// 0216 W2: 등짐꾼의 자세가 처음 깨지면 짐이 깨진다(사건 하나) — 그 뒤로는 밀고 오지 못하고 느리다. 두 번째 깨짐은 사건이 없다.
+#[test]
+fn breaking_a_packbearers_posture_breaks_its_load() {
+    let t = Tuning::default();
+    let mut w = World::new("test", 20.0);
+    let i = w.spawn(Kind::Packbearer, vec3(0.0, 0.0, -6.0));
+    let max = poise_max(&w.enemies[i], &t);
+    let mut ev = Vec::new();
+    add_poise(&mut w.enemies[i], max * 0.5, None, &t, &mut ev);
+    assert!(!w.enemies[i].load_lost, "half a bar is not enough");
+    add_poise(&mut w.enemies[i], max, None, &t, &mut ev);
+    assert!(w.enemies[i].load_lost);
+    assert_eq!(
+        ev.iter()
+            .filter(|e| matches!(e, Event::LoadBreak { .. }))
+            .count(),
+        1
+    );
+    // 다시 깨져도 짐은 하나뿐.
+    w.enemies[i].poise_lock = 0.0;
+    let mut ev = Vec::new();
+    add_poise(&mut w.enemies[i], max * 2.0, None, &t, &mut ev);
+    assert!(!ev.iter().any(|e| matches!(e, Event::LoadBreak { .. })));
+    // 다른 종은 짐이 없다.
+    let j = w.spawn(Kind::Husk, vec3(4.0, 0.0, -6.0));
+    let mut ev = Vec::new();
+    add_poise(&mut w.enemies[j], 999.0, None, &t, &mut ev);
+    assert!(!w.enemies[j].load_lost && !ev.iter().any(|e| matches!(e, Event::LoadBreak { .. })));
+}
+
+/// 0216 W2: 짐을 잃은 등짐꾼은 `LOAD_LOST_SPEED`만큼 느리게 쫓는다.
+#[test]
+fn a_packbearer_without_its_load_walks_slower() {
+    let t = Tuning::default();
+    let walked = |lost: bool| {
+        let mut w = World::new("test", 20.0);
+        let i = w.spawn(Kind::Packbearer, vec3(0.0, 0.0, -1.5));
+        w.enemies[i].load_lost = lost;
+        // 붙어 있으면 내려치기 — 멀리(돌진 거리 밖) 두고 걸어오는 것을 잰다.
+        w.enemies[i].pos = vec3(0.0, 0.0, -14.0);
+        w.enemies[i].prev = w.enemies[i].pos;
+        for _ in 0..30 {
+            w.step(&Actions::default(), &t);
+        }
+        14.0 + w.enemies[i].pos.z
+    };
+    let (full, light) = (walked(false), walked(true));
+    assert!(full > 0.3, "it walks: {full}");
+    assert!(
+        (light / full - crate::tuning::LOAD_LOST_SPEED).abs() < 0.08,
+        "{full} → {light}"
+    );
+}

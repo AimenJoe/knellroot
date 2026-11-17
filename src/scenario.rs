@@ -26,6 +26,8 @@ pub enum Scenario {
     Mossward,
     /// 이끼 덮인 문지기 2단계(0185): 체력 반 — 시작하자마자 전환, 쓸기 뒤 돌진.
     MosswardTwo,
+    /// 작업층의 새 적(0212·0216 W2): 등짐꾼(짐 — 자세를 깨면 깨진다)·되풀이꾼·일만 하는 되풀이꾼.
+    Workers,
     /// 스킬 연습(0151 S0 판정): 두 겹으로 둘러싼 떼 + 큰 기술 게이지 가득 — "모으고 → 쓸고"와 쟁반 뒤집기를 바로.
     Skills,
 }
@@ -37,7 +39,7 @@ pub struct Entry {
     pub checks: &'static str,
 }
 
-pub const LIST: [Entry; 16] = [
+pub const LIST: [Entry; 17] = [
     Entry {
         scenario: Scenario::Boss,
         name: "boss arena",
@@ -88,6 +90,11 @@ pub const LIST: [Entry; 16] = [
         name: "shellback + pods + scavenger",
         checks:
             "0120 guard (front light hits bounce), planted discs, hop away, scavenger ignores you",
+    },
+    Entry {
+        scenario: Scenario::Workers,
+        name: "packbearer + repeaters",
+        checks: "0216 W2 load on its back breaks with its posture (no more drive, slower), 0212 repeater beat",
     },
     Entry {
         scenario: Scenario::Bellkeeper,
@@ -241,6 +248,18 @@ pub fn build(s: Scenario) -> World {
             w.spawn(Kind::Pod, vec3(6.0, 0.0, -9.0));
             w.spawn(Kind::Pod, vec3(-6.0, 0.0, -9.0));
             let e = w.spawn(Kind::Husk, vec3(0.0, 0.0, 8.0));
+            w.enemies[e].place(std::f32::consts::PI);
+            w.enemies[e].docile = true;
+            w
+        }
+        Scenario::Workers => {
+            // 0216 W2: 앞의 등짐꾼(이쪽을 본다 — 짐을 지고 밀고 온다)·옆의 되풀이꾼·뒤의 일만 하는 되풀이꾼(쳐야 싸운다).
+            use crate::species::Kind;
+            let mut w = World::new("workers", 16.0);
+            let p = w.spawn(Kind::Packbearer, vec3(0.0, 0.0, -9.0));
+            w.enemies[p].facing = 0.0;
+            w.spawn(Kind::Repeater, vec3(6.0, 0.0, -6.0));
+            let e = w.spawn(Kind::Repeater, vec3(0.0, 0.0, 8.0));
             w.enemies[e].place(std::f32::consts::PI);
             w.enemies[e].docile = true;
             w

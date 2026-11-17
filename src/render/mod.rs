@@ -47,6 +47,32 @@ pub use shapes::*;
 use telegraph::*;
 use terrain::*;
 
+/// 손에 든 것만 보인다(0051 · 0223): 다른 무기 부위와 들지 않은 방패는 크기 0 — `away`면(던진 동안) 든 무기도.
+/// 방패는 한손 무기일 때만 팔에 있다(두 손을 쓰는 무기면 등에 멘 셈 — 그리지 않는다).
+pub(crate) fn hide_unheld(
+    model: &crate::model::Model,
+    weapon: crate::weapons::Id,
+    shield: Option<crate::shield::Id>,
+    away: bool,
+    hide: &mut Vec<(usize, Quat, Vec3)>,
+) {
+    for w in crate::weapons::WEAPONS.iter() {
+        if w.id != weapon || away {
+            if let Some(n) = model.node(w.node) {
+                hide.push((n, Quat::IDENTITY, Vec3::ZERO));
+            }
+        }
+    }
+    let one = weapon.hand() == crate::weapons::Hand::One;
+    for d in crate::shield::TABLE.iter() {
+        if !(one && shield == Some(d.id)) {
+            if let Some(n) = model.node(d.node) {
+                hide.push((n, Quat::IDENTITY, Vec3::ZERO));
+            }
+        }
+    }
+}
+
 pub struct Renderer {
     /// 상주 지형(0186): 움직이지 않는 지형 덩어리의 GPU 버퍼.
     resident: resident::Resident,
@@ -63,6 +89,8 @@ pub struct Renderer {
     /// 시나리오 상자마다 지금 진하기(1 = 불투명). 가리면 부드럽게 옅어지고 풀리면 돌아온다(0008).
     fade: Vec<f32>,
     pub lib: Library,
+    /// 든 방패(0223 — 앱이 프레임마다 기록에서. 인형·굴의 방랑자가 읽는다 — 싸움의 방랑자는 월드의 `Player::shield`).
+    pub shield: Option<crate::shield::Id>,
     /// 굽힌 스테이지(어느 레벨인지 = 지도 글의 주소).
     scenery: Option<(usize, Scenery)>,
     pose: Vec<Mat4>,
@@ -182,8 +210,6 @@ pub enum AimShow {
     Cast,
     Grenade,
     Skill(usize),
-    /// 숄더뷰에서 쏘기 전(0219): 탄이 갈 길의 가는 줄 + 멈추는 자리의 작은 고리 — 늘 떠 있으니 띠보다 조용하게.
-    Reticle,
 }
 /// 화로의 빛은 바닥 1.2m 위(`stage` 지도 읽기), 그릇 테는 0.86m(`props.py`) — 불티가 그릇에서 오르게.
 const BRAZIER_LIGHT_ABOVE_BOWL: f32 = 1.2 - 0.86;
@@ -200,6 +226,7 @@ impl Renderer {
             half: None,
             fade: Vec::new(),
             lib: Library::default(),
+            shield: None,
             scenery: None,
             pose: Vec::new(),
             batch: Batch::default(),
@@ -311,6 +338,7 @@ impl Renderer {
 
         ground_marks(v, w, alpha);
         linger_tells(v, w);
+        cart_tells(v, w);
         let pp = w.player.prev.lerp(w.player.pos, alpha);
         // 그림자는 땅에, 높이 뜰수록 작고 옅게 — 쿼터뷰에서 높이를 읽는 단서(0027).
         let lift = (w.player.air / JUMP_SHADOW_H).clamp(0.0, 1.0);

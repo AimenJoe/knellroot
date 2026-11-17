@@ -722,13 +722,7 @@ impl Renderer {
         // 방랑자: 걷기 동작, 든 무기만 보인다(0051).
         if let Some(e) = self.lib.get("wanderer") {
             let mut hide: Vec<(usize, Quat, Vec3)> = Vec::new();
-            for w in crate::weapons::WEAPONS.iter() {
-                if w.id != weapon {
-                    if let Some(n) = e.model.node(w.node) {
-                        hide.push((n, Quat::IDENTITY, Vec3::ZERO));
-                    }
-                }
-            }
+            super::hide_unheld(&e.model, weapon, self.shield, false, &mut hide);
             e.model
                 .pose_with(e.pick(&["walk", "idle"]), clock, &hide, &mut self.pose);
             self.batch.model(

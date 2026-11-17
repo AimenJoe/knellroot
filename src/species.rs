@@ -18,6 +18,14 @@ pub enum Kind {
     Mossgrazer,
     /// 이끼 덮인 문지기(0185 — 셋째 문지기, 설계 내부 작업명 "문턱지기"): 쓸기·껍질 받기·틈새 돌진.
     Mossward,
+    /// 넷째 문지기(0208 — 작업층 권양기 갱도, 이름은 후보에서 고른다: 내부 이름 "감독", 기록 `core.overseer`): 사슬 휘두르기·
+    /// 갈고리 끌기·추 떨어뜨리기, 2단계 레일 수레, 3단계 사슬이 끊겨 쫓는다(S4-5). 회색 박스(S4-1)는 이끼 덮인 문지기의 수를 빌린다.
+    Overseer,
+    /// 되풀이꾼(0208 — 작업층의 재활동체, 곡괭이): 같은 박자로 세 번 내려찍기를 되풀이한다(연속 공격 늘, 지연·빠름 없음 —
+    /// 패링하면 박자가 끊긴다). 일부(`docile` 자리)는 끝까지 벽만 판다.
+    Repeater,
+    /// 등짐꾼(0208 — 작업층의 재활동체, 짐 진 몸): 짐을 앞세워 곧게 밀고 온다(띠 예고 — 레일 수레와 같은 꼴). 느리고 무겁다.
+    Packbearer,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -40,6 +48,10 @@ pub enum Behavior {
     /// 껍질인 동안만, 평타는 튕기고 옆·뒤·강타는 든다, 몸은 느리게 돈다 → 풀린 뒤 틈), 떨어지면 곧게 돌진하고 늦게 돈다.
     /// 2단계(0133): 쉬는 틈이 짧고 쓸기 뒤 돌진을 잇는다.
     Mossward,
+    /// 사슬에 묶인 권양지기(0208): 사슬 끈 안(`CHAIN_LEN`)에서만 움직인다 — 붙으면 내려치기(부채꼴)·셋째마다 사슬 휘두르기(고리),
+    /// 떨어지면 갈고리 끌기(띠 — 받아친다)와 추 떨어뜨리기(원판 + 고리)를 번갈아. 2단계: 빨라지고 갱도 레일의 수레가 돈다(월드).
+    /// 3단계(체력 넷에 하나): 사슬이 끊긴다 — 끈 없이 쫓으며 내려치기·돌진(수레는 멈춘다).
+    Overseer,
 }
 
 /// 공격 박자 변주(0128, 사장 "정박에만 때리면 난이도가 확 내려간다"): 같은 공격을 다른 박자로.
@@ -104,6 +116,9 @@ pub struct Def {
     pub boss: bool,
     /// 쓰러지면 떨구는 잔불(0064 M1).
     pub embers: u32,
+    /// 타입 게이지가 쌓이는 배율(0223 V2 — 잔불·뿌리·울림·균열 순, `status::TYPED`): 0.5~1.5, 면역은 없다(시험).
+    /// 1이 아닌 칸은 도감이 한 줄로 알린다.
+    pub ail: [f32; crate::status::N],
     /// 모델(`assets/models/<이름>.glb`).
     pub model: &'static str,
 }
@@ -142,6 +157,7 @@ pub static HUSK: Def = Def {
     behavior: Behavior::Melee,
     boss: false,
     embers: 1,
+    ail: [1.5, 0.75, 1.0, 1.0],
     model: "root_husk",
 };
 
@@ -179,6 +195,7 @@ pub static THORN: Def = Def {
     behavior: Behavior::Charger,
     boss: false,
     embers: 2,
+    ail: [1.25, 0.5, 1.0, 1.0],
     model: "thorn_beast",
 };
 
@@ -216,6 +233,7 @@ pub static WARDEN: Def = Def {
     behavior: Behavior::Warden,
     boss: true,
     embers: 30,
+    ail: [1.25, 0.5, 1.0, 1.0],
     model: "gatekeeper",
 };
 
@@ -255,6 +273,7 @@ pub static SHELL: Def = Def {
     behavior: Behavior::Melee,
     boss: false,
     embers: 3,
+    ail: [0.5, 1.0, 1.25, 1.5],
     model: "shellback",
 };
 
@@ -288,6 +307,7 @@ pub static POD: Def = Def {
     behavior: Behavior::Planter,
     boss: false,
     embers: 2,
+    ail: [1.5, 0.5, 1.0, 1.0],
     model: "pod",
 };
 
@@ -327,6 +347,7 @@ pub static BELLKEEPER: Def = Def {
     behavior: Behavior::Bellkeeper,
     boss: true,
     embers: 30,
+    ail: [1.0, 1.0, 0.5, 1.5],
     model: "bellkeeper",
 };
 
@@ -367,6 +388,7 @@ pub static MOSSWARD: Def = Def {
     behavior: Behavior::Mossward,
     boss: true,
     embers: 30,
+    ail: [0.5, 1.0, 1.0, 1.25],
     model: "mossward",
 };
 
@@ -399,10 +421,107 @@ pub static MOSSGRAZER: Def = Def {
     behavior: Behavior::Grazer,
     boss: false,
     embers: 0,
+    ail: [0.5, 1.0, 1.0, 1.0],
     model: "mossgrazer",
 };
 
-pub static ALL: [&Def; 8] = [
+/// 넷째 문지기(0208, 회색 박스 S4-1): 수는 이끼 덮인 문지기를 빌리고(S4-5에서 제 수). 체력 1200 → 1600(0216 W4 보스 모의 —
+/// 작업층 도달 몸 E가 반쯤 받아내면 88% · 53초: 셋째 문지기(D 92%)와 종지기(B 65%) 사이, 마지막 싸움이라 더 길게).
+pub static OVERSEER: Def = Def {
+    kind: Kind::Overseer,
+    name: |s: &Strings| s.boss_overseer,
+    hp: 1600,
+    radius: 1.2,
+    height: 2.8,
+    speed: 2.6,
+    reach: 3.8,
+    tele: 0.85,
+    recover: 0.95,
+    arc: 140.0,
+    // 갈고리가 닿는 거리(띠 길이)·3단계 돌진.
+    charge_range: 13.0,
+    charge_tele: 0.8,
+    charge_speed: 12.0,
+    charge_time: 0.6,
+    // 사슬 휘두르기(고리)의 끝·빠르기, 추 떨어뜨리기의 예고.
+    wave_tele: 0.95,
+    wave_radius: 7.5,
+    wave_speed: 9.0,
+    guard_arc: 0.0,
+    plant_range: 0.0,
+    plant_r: 0.0,
+    retreat: 0.0,
+    rings: 0,
+    shards: 0,
+    rhythm: Rhythm {
+        delay: 0.3,
+        fast: 0.2,
+        chain: 0.4,
+        gaps: &[0.5, 1.1],
+        feint: 0.0,
+    },
+    behavior: Behavior::Overseer,
+    boss: true,
+    embers: 30,
+    ail: [1.0, 0.75, 1.5, 1.0],
+    model: "mossward",
+};
+
+/// 되풀이꾼(0208): 잔재의 몸에 같은 박자의 세 번 내려찍기. 모델은 그림이 나오기 전까지 잔재의 것.
+pub static REPEATER: Def = Def {
+    kind: Kind::Repeater,
+    name: |s: &Strings| s.enemy_repeater,
+    hp: 40,
+    radius: 0.45,
+    height: 1.6,
+    speed: 2.4,
+    reach: 1.6,
+    tele: 0.6,
+    recover: 1.0,
+    arc: 120.0,
+    rhythm: Rhythm {
+        delay: 0.0,
+        fast: 0.0,
+        // 늘 셋을 같은 박자로(앞 타와 같은 예고 길이 둘 더).
+        chain: 1.0,
+        gaps: &[1.0, 1.0],
+        feint: 0.0,
+    },
+    embers: 2,
+    // 같은 박자로 되풀이하는 몸 — 울림이 잘 든다.
+    ail: [1.0, 1.0, 1.5, 1.0],
+    ..HUSK
+};
+
+/// 등짐꾼(0208): 가시짐승의 돌진 꼴을 무겁게 — 예고가 길고 느리게 오래 민다, 몸이 크고 단단하다. 모델은 등딱지짐승의 것.
+pub static PACKBEARER: Def = Def {
+    kind: Kind::Packbearer,
+    name: |s: &Strings| s.enemy_packbearer,
+    hp: 60,
+    radius: 0.65,
+    height: 1.5,
+    speed: 1.9,
+    reach: 1.5,
+    tele: 0.7,
+    recover: 1.2,
+    charge_range: 9.0,
+    charge_tele: 0.95,
+    charge_speed: 9.0,
+    charge_time: 0.9,
+    rhythm: Rhythm {
+        delay: 0.2,
+        fast: 0.0,
+        chain: 0.0,
+        gaps: &[],
+        feint: 0.0,
+    },
+    embers: 3,
+    ail: [1.0, 0.75, 1.0, 1.5],
+    model: "shellback",
+    ..THORN
+};
+
+pub static ALL: [&Def; 11] = [
     &HUSK,
     &THORN,
     &WARDEN,
@@ -410,6 +529,9 @@ pub static ALL: [&Def; 8] = [
     &POD,
     &BELLKEEPER,
     &MOSSWARD,
+    &OVERSEER,
+    &REPEATER,
+    &PACKBEARER,
     &MOSSGRAZER,
 ];
 
@@ -435,7 +557,8 @@ mod tests {
                 Behavior::Charger
                 | Behavior::Warden
                 | Behavior::Bellkeeper
-                | Behavior::Mossward => {
+                | Behavior::Mossward
+                | Behavior::Overseer => {
                     assert!(d.reach > d.radius, "{:?}", d.kind);
                     assert!(d.charge_speed > 0.0 && d.charge_time > 0.0 && d.charge_tele > 0.0);
                 }
@@ -447,6 +570,12 @@ mod tests {
                 Behavior::Grazer => assert!(d.reach == 0.0 && d.embers == 0 && !d.boss),
             }
             assert!((0.0..=180.0).contains(&d.guard_arc), "{:?}", d.kind);
+            // 타입 배율(0223 V2): 0.5~1.5 — 면역도, 한 방도 없다.
+            assert!(
+                d.ail.iter().all(|m| (0.5..=1.5).contains(m)),
+                "{:?}",
+                d.kind
+            );
         }
         // 문지기는 지역마다 하나(성소 문지기·깨진 종지기·이끼 덮인 문지기 0185).
         assert_eq!(

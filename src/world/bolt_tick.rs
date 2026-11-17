@@ -96,6 +96,7 @@ impl World {
                 left,
                 def,
                 hits: 0,
+                veined: [false; 2],
             });
             ev.push(Event::Cast { at: pos });
         }
@@ -144,6 +145,7 @@ impl World {
                     left: t[P::CastRange] * def.range,
                     def,
                     hits: 0,
+                    veined: [false; 2],
                 });
             }
             ev.push(Event::Cast { at: from });
@@ -261,6 +263,7 @@ impl World {
             left,
             def,
             hits: 0,
+            veined: [false; 2],
         };
         let step = t[P::CastSpeed] * TICK_DT * def.speed;
         for _ in 0..2000 {
@@ -282,6 +285,23 @@ impl World {
             }
         }
         vec2(b.pos.x - pl.pos.x, b.pos.z - pl.pos.z).length()
+    }
+
+    /// 지금 든 무기의 탄이 그 적(`at`, 몸 반지름 `radius`)에게 닿나(0228 — 사장 "벽 너머의 적에게 조준 보정이 들어가는 건 아니지?"):
+    /// 그 쪽으로 쏘면 멈추는 거리(`shot_reach` — 쏠 때와 같은 길·벽·땅 규칙)가 몸까지 가면 참. 조준 보정(패드 보조·크로스헤어·
+    /// 가까운 적 찾기)은 이것이 거짓인 적에게 붙지 않는다 — 벽에 대고 쏘게 하는 보정은 보정이 아니다.
+    pub fn shot_clear(&self, at: Vec3, radius: f32, t: &Tuning) -> bool {
+        let p = self.player.pos;
+        let v = vec3(at.x - p.x, 0.0, at.z - p.z);
+        let n = v.length();
+        if n < 1e-3 {
+            return true;
+        }
+        let def = match self.player.weapon.def().rb {
+            weapons::Rb::Magic(b) => b,
+            weapons::Rb::Shot { bolt, .. } => bolt,
+        };
+        self.shot_reach(v / n, def, t) + radius >= n - 0.05
     }
 
     /// 걸음을 마친 탄과 땅(0173·0218): 마법 탄(수평)은 땅을 따라 흐르고 높은 벼랑·벽 칸에서 사라진다. 쇠뇌 볼트와 내려 쏜 탄은
@@ -371,6 +391,15 @@ impl World {
                         at: b.pos + b.dir * k,
                     });
                     continue;
+                }
+                // 결(0223 11절): 탄도 무기의 타다 — 묶인 적·금 간 적에 닿았나(탄 하나에 한 번 — 꿰뚫어도).
+                if !b.veined[0] && (en.ail.bound > 0.0 || en.bind > 0.0) {
+                    b.veined[0] = true;
+                    self.vein_bound = true;
+                }
+                if !b.veined[1] && en.ail.rift > 0.0 {
+                    b.veined[1] = true;
+                    self.vein_cracked = true;
                 }
                 let crit = en.exposed > 0.0;
                 en.hp -= hurt_by(

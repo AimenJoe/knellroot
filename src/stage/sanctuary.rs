@@ -57,6 +57,7 @@ pub static DEF: StageDef = StageDef {
         ('Y', Kind::Thorn, Affix::Repeating),
         ('Z', Kind::Husk, Affix::Lingering),
     ],
+    shortcut: false,
 };
 
 const MAP: &str = "

@@ -43,6 +43,8 @@ function layout() {
     view: [W - pc - ps * 5.4, pc],
     lock: at(80, 0.44),
     flask: at(150, 0.44),
+    // 바꾸기(0223): 부무기가 있을 때만 — 회피 왼쪽 바깥 호.
+    swap: at(176, 0.44),
     // 멈춤은 왼쪽 위(2026-11-06), 랩·시나리오 터치 버튼은 없다(랩 = 타이틀·개발 창 도구 탭).
     pause: [r * 0.7 * 1.4, r * 0.7 * 1.4],
   };
@@ -196,7 +198,9 @@ async function main() {
     if (!(await on())) errors.push('portrait: the rotate hint should cover the game');
     await pp.screenshot({ path: path.join(OUT, 't14-portrait-rotate.png') });
     await pp.tap('#rotate');
-    await pp.waitForTimeout(1000);
+    // 누른 뒤 0.7초 타이머가 안내를 걷는다 — 로딩(wasm 컴파일·첫 프레임)이 메인 스레드를 잡고 있는 느린 러너에서는 그 타이머가
+    // 1초 안에 못 돈다(고정 1초 대기가 2026-11-16 개발판 배포를 깼다). 걷히는 것을 기다린다.
+    await pp.waitForFunction(() => !document.getElementById('rotate').classList.contains('on'), null, { timeout: 30000 }).catch(() => {});
     if (await on()) errors.push('portrait: tapping the hint should rotate or, if it cannot lock, let it go on upright');
     // 아래는 번들의 크기 처리기를 쓴다 — 게임이 첫 프레임을 그린 뒤에(느린 러너는 오래 걸린다).
     await pp.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 120000 });

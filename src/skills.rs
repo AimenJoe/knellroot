@@ -18,8 +18,38 @@
 //! 갈래 셋(흐름·맞받기·자리 — `Skill::branch`·`Ult::branch`)에 서고, 판의 칸 순서 `ENTRIES`가 곧 화면의 차례다. 기술 점수의 샘은
 //! 총 레벨 + 처음 쓰러뜨린 엘리트 + 핵 + 종소리 조각(`points`) — 화폐 "마디"는 없다.
 
-use crate::progression::{Branch, Cell, Key, Link, Tree, DEPTH, KEYS, LINKS};
+use crate::progression::{Branch, Cell, Key, Link, Tree, Vein, DEPTH, KEYS, LINKS, VEINS};
+use crate::status::{Dose, Kind};
 use crate::tuning::{HP_UNIT, ULT_SLAM_DAMAGE};
+
+/// 손에 쥔 꼴의 모음(0223 V3 → 0225 — 스킬이 "무엇을 들었을 때 되나"): 비트의 합. 한손은 방패로 갈리고(결투 · 방패),
+/// 양손은 무기로 갈린다(망치 · 지팡이).
+pub type Hands = u8;
+/// 한손 무기, 방패 없이(결투 기술).
+pub const DUEL: Hands = 1;
+/// 망치.
+pub const HEAVY: Hands = 2;
+pub const RANGED: Hands = 4;
+/// 한손 무기와 방패(방패 기술).
+pub const SHIELD: Hands = 8;
+/// 지팡이.
+pub const FOCUS: Hands = 16;
+pub const ONE: Hands = DUEL | SHIELD;
+pub const TWO: Hands = HEAVY | FOCUS;
+pub const MELEE: Hands = ONE | TWO;
+pub const ANY: Hands = ONE | TWO | RANGED;
+
+/// 쥔 꼴 하나의 비트.
+pub const fn grip_bit(g: crate::weapons::Grip) -> Hands {
+    use crate::weapons::Grip;
+    match g {
+        Grip::Duel => DUEL,
+        Grip::Shield => SHIELD,
+        Grip::Heavy => HEAVY,
+        Grip::Focus => FOCUS,
+        Grip::Ranged => RANGED,
+    }
+}
 
 /// 스킬의 모양(판정과 움직임).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -228,6 +258,13 @@ pub struct Skill {
     pub clip: Clip,
     /// 판의 줄(0158 라): 쓴 점수 합이 `ROW_NEEDS[row]`에 닿아야 살 수 있다.
     pub row: u8,
+    /// 쓸 수 있는 쥔 꼴(0223 V3 → 0225 — `DUEL`·`SHIELD`·`HEAVY`·`FOCUS`·`RANGED`의 합): 맞지 않는 것을 들면 그 칸은 빈 칸이다.
+    /// 결투 기술 = `DUEL`만 · 방패 기술 = `SHIELD`만.
+    pub hands: Hands,
+    /// 타입(0223 V2)과 한 타가 쌓는 게이지(보통 적의 1 가운데 몫 — 물리는 0). 단·고르기는 이 값을 바꾸지 않는다.
+    /// 한 번 쓰면 보통 적은 걸리게(한 타짜리 = 1, 여러 타짜리는 나눠서) — 덜 쌓이는 적(엘리트·보스·버티는 종)은 두 번.
+    pub kind: Kind,
+    pub build: f32,
     /// 판의 갈래(0161 "갈래와 줄").
     pub branch: Branch,
     /// 3단의 둘 가운데 하나(ㄱ·ㄴ)와 5단의 맺음(0158 마).
@@ -393,6 +430,16 @@ impl Eff {
 }
 
 impl Skill {
+    /// 그 갈래의 무기로 쓸 수 있나(0223 V3).
+    pub fn fits(&self, g: crate::weapons::Grip) -> bool {
+        self.hands & grip_bit(g) != 0
+    }
+
+    /// 이 스킬의 타 하나가 싣는 타입과 쌓는 양(0223 V2).
+    pub fn dose(&self) -> Dose {
+        (self.kind, self.build)
+    }
+
     /// `rank`단(1~5로 맞춘다 — 끼운 스킬은 배운 스킬이다)·`pick` 고르기의 실제 값.
     pub fn at(&self, rank: u8, pick: Pick) -> Eff {
         let rank = rank.clamp(1, MAX_RANK);
@@ -607,6 +654,9 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.15, 0.22, 0.30],
         },
         row: 0,
+        hands: ONE | HEAVY,
+        kind: Kind::Physical,
+        build: 0.0,
         branch: Branch::Beat,
         picks: [Twist::Walk { speed: 0.6 }, Twist::Spins { more: 1 }],
         cap: Cap::Lift { stagger: 0.4 },
@@ -629,6 +679,9 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.12, 0.20, 0.25],
         },
         row: 0,
+        hands: DUEL,
+        kind: Kind::Rift,
+        build: 1.0,
         branch: Branch::Beat,
         picks: [Twist::Return, Twist::Ghost],
         cap: Cap::Refund { part: 0.5 },
@@ -652,6 +705,9 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.20, 0.0, 0.30],
         },
         row: 0,
+        hands: ANY,
+        kind: Kind::Root,
+        build: 1.0,
         branch: Branch::Footing,
         picks: [
             Twist::Burst {
@@ -684,6 +740,9 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.30, 0.0, 0.40],
         },
         row: 1,
+        hands: HEAVY,
+        kind: Kind::Physical,
+        build: 0.0,
         branch: Branch::Beat,
         picks: [
             Twist::Leap {
@@ -720,6 +779,9 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.10, 1.20, 0.35],
         },
         row: 0,
+        hands: MELEE,
+        kind: Kind::Ember,
+        build: 1.0,
         branch: Branch::Riposte,
         picks: [Twist::Walk { speed: 0.45 }, Twist::Reflect],
         cap: Cap::Stun { stagger: 1.0 },
@@ -742,6 +804,9 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.0, 0.20],
         },
         row: 1,
+        hands: SHIELD | FOCUS | RANGED,
+        kind: Kind::Knell,
+        build: 1.0,
         branch: Branch::Riposte,
         picks: [Twist::Rattle { poise: 2.5 }, Twist::Tempo { secs: 0.6 }],
         cap: Cap::Toll { damage: HP_UNIT },
@@ -765,6 +830,9 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.18, 0.10, 0.25],
         },
         row: 1,
+        hands: DUEL | HEAVY,
+        kind: Kind::Rift,
+        build: 0.5,
         branch: Branch::Footing,
         picks: [
             Twist::Stick {
@@ -796,6 +864,9 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.0, 0.30],
         },
         row: 1,
+        hands: FOCUS | RANGED,
+        kind: Kind::Ember,
+        build: 0.5,
         branch: Branch::Footing,
         picks: [Twist::Follow, Twist::Kindle { embers: 1 }],
         cap: Cap::Smolder {
@@ -823,6 +894,9 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.12, 0.45, 0.25],
         },
         row: 3,
+        hands: DUEL,
+        kind: Kind::Physical,
+        build: 0.0,
         branch: Branch::Beat,
         picks: [Twist::Focus, Twist::HomeStep],
         cap: Cap::Finale {
@@ -849,6 +923,9 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.15, 0.0, 0.35],
         },
         row: 3,
+        hands: SHIELD,
+        kind: Kind::Knell,
+        build: 1.0,
         branch: Branch::Riposte,
         picks: [
             Twist::Wide { arc_deg: 180.0 },
@@ -879,6 +956,9 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.30, 0.35],
         },
         row: 3,
+        hands: FOCUS | RANGED,
+        kind: Kind::Root,
+        build: 1.0,
         branch: Branch::Footing,
         picks: [Twist::Circle, Twist::Bind { secs: 1.2 }],
         cap: Cap::Spire {
@@ -1112,6 +1192,9 @@ pub struct Line {
     pub clip: Clip,
 }
 
+/// 한 줄기의 타입(0223 V2): 가르는 줄 — 닿은 적마다 금이 간다(큰 기술이라 보스도 한 번에 — 닳기 전이면).
+pub const LINE_DOSE: Dose = (Kind::Rift, 2.0);
+
 pub const LINE: Line = Line {
     freeze: 0.3,
     startup: 0.15,
@@ -1234,9 +1317,13 @@ pub fn points(level: u32, elites: u32, cores: u32, shards: u32) -> u32 {
 
 /// 줄이 열리는 때(쓴 점수 합): 첫 줄 · 둘째 줄 · 큰 기술 줄(0158 라) · 넷째 줄(새 스킬·패시브) · 맺음 줄(0214 — Diablo IV의
 /// 묶음처럼 깊은 줄일수록 더 써야 열린다. 있는 줄의 열림은 그대로 — 이미 산 칸이 잠기지 않게).
-pub const ROW_NEEDS: [u32; 5] = [0, 4, 8, 14, 22];
+pub const ROW_NEEDS: [u32; 6] = [0, 4, 8, 14, 22, 0];
 /// 맺음의 줄(`ROW_NEEDS`의 자리).
 pub const KEY_ROW: usize = 4;
+/// 결의 줄(0223 11절 — 판의 맨 아래 띠): 쓴 점수로 열리지 않는다(`ROW_NEEDS` 0) — 그 타입의 스킬을 배웠나만 본다
+/// (`Board::reachable`). 가로 자리는 판의 폭을 넷으로 나눈 가운데들.
+pub const VEIN_ROW: usize = 5;
+pub const LANE_VEIN: [f32; 4] = [34.0, 101.0, 169.0, 236.0];
 /// 맺음을 켜는 데 그 갈래에 써 둔 점수(0215 A — 갈래의 스킬 단 + 큰 기술 단 + 패시브 칸, 다리 칸은 어느 갈래에도 세지 않는다).
 pub const KEY_BRANCH: u32 = 10;
 /// 판의 가로 자리(0215 B — 화면의 칸 자리 `app::skills::spots`도 이것을 쓴다): 갈래 폭 안에서 칸 둘이면 `LANE_2`, 하나면
@@ -1260,10 +1347,12 @@ pub enum Entry {
     Key(Key),
     /// 다리 칸(0215 C — 두 갈래의 경계, 시너지).
     Link(Link),
+    /// 결의 칸(0223 11절 — 피해 타입마다 하나).
+    Vein(Vein),
 }
 
 /// 판의 칸 수: 스킬 + 큰 기술 + 패시브(갈래마다 `DEPTH`) + 맺음 셋 + 다리 넷.
-pub const NE: usize = N + NU + 3 * DEPTH as usize + KEYS.len() + LINKS.len();
+pub const NE: usize = N + NU + 3 * DEPTH as usize + KEYS.len() + LINKS.len() + VEINS.len();
 
 /// 판의 칸 순서(0161 "갈래와 줄" — 화면의 차례이기도 하다): 줄(처음부터 · 쓴 점수 4 · 쓴 점수 8)마다 갈래(흐름 · 맞받기 · 자리)
 /// 순으로, 갈래 안에서는 스킬(큰 기술) 먼저·패시브 다음. 대기 칸의 자리(`IDS`)와는 따로다. 묻는 창 `Ask::Skill`이 이 자리를 든다.
@@ -1315,6 +1404,11 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Key(Key::Measure),
     Entry::Key(Key::Edge),
     Entry::Key(Key::Rooted),
+    // 결(0223 11절) — 그 타입의 스킬을 배우면
+    Entry::Vein(Vein::Ember),
+    Entry::Vein(Vein::Root),
+    Entry::Vein(Vein::Knell),
+    Entry::Vein(Vein::Rift),
 ];
 
 impl Entry {
@@ -1323,7 +1417,7 @@ impl Entry {
         match self {
             Entry::Skill(_) => MAX_RANK,
             Entry::Ult(_) => ULT_MAX_RANK,
-            Entry::Cell(_) | Entry::Key(_) | Entry::Link(_) => 1,
+            Entry::Cell(_) | Entry::Key(_) | Entry::Link(_) | Entry::Vein(_) => 1,
         }
     }
 
@@ -1334,6 +1428,7 @@ impl Entry {
             Entry::Cell(c) => c.row(),
             Entry::Key(_) => KEY_ROW,
             Entry::Link(l) => l.row(),
+            Entry::Vein(_) => VEIN_ROW,
         }
     }
 
@@ -1345,20 +1440,25 @@ impl Entry {
             Entry::Cell(c) => c.branch(),
             Entry::Key(k) => k.branch(),
             Entry::Link(l) => crate::progression::BRANCHES[l.left()],
+            Entry::Vein(v) => v.branch(),
         }
     }
 
     /// 작은 칸(패시브·맺음·다리)인가 — 줄 안에서 스킬·큰 기술 아래에 선다.
     pub fn small(self) -> bool {
-        matches!(self, Entry::Cell(_) | Entry::Key(_) | Entry::Link(_))
+        matches!(
+            self,
+            Entry::Cell(_) | Entry::Key(_) | Entry::Link(_) | Entry::Vein(_)
+        )
     }
 
     /// 판의 길의 줄(0215 B, 0~7 — 첫 줄 스킬 · 첫 줄 패시브 · 둘째 줄 스킬 · 둘째 줄 패시브(+ 다리) · 큰 기술 줄 · 넷째 줄 스킬 ·
     /// 넷째 줄 패시브(+ 다리) · 맺음): 줄(`row`)마다 스킬 줄과 패시브 줄 — 큰 기술 줄과 맺음 줄은 하나.
     pub fn line(self) -> usize {
         let row = self.row();
-        let base = [0, 2, 4, 5, 7][row];
-        base + usize::from(self.small() && row != ULT_ROW as usize && row != KEY_ROW)
+        let base = [0, 2, 4, 5, 7, 8][row];
+        let one_line = row == ULT_ROW as usize || row == KEY_ROW || row == VEIN_ROW;
+        base + usize::from(self.small() && !one_line)
     }
 
     /// 판의 가로 자리(0215 B — 셋째 갈래의 오른쪽 끝이 `3 × LANE_W`). 같은 줄·갈래의 같은 크기 칸 가운데 몇째인가로 정한다
@@ -1367,13 +1467,16 @@ impl Entry {
         if let Entry::Link(l) = self {
             return LANE_W * (l.left() + 1) as f32;
         }
+        if let Entry::Vein(v) = self {
+            return LANE_VEIN[v.index()];
+        }
         let (row, b) = (self.row(), self.branch());
         let x0 = LANE_W * b.index() as f32;
         let peers = |small: bool| {
             ENTRIES.iter().filter(move |e| {
                 e.row() == row
                     && e.branch() == b
-                    && !matches!(e, Entry::Link(_))
+                    && !matches!(e, Entry::Link(_) | Entry::Vein(_))
                     && e.small() == small
             })
         };
@@ -1392,6 +1495,8 @@ impl Entry {
         let near = (self.lane() - to.lane()).abs() <= LANE_DX;
         let (a, b) = (self.line(), to.line());
         match (self, to) {
+            // 결의 칸은 판의 길 밖이다(0223 11절 — 그 타입의 스킬을 배웠나만 본다).
+            (Entry::Vein(_), _) | (_, Entry::Vein(_)) => false,
             (Entry::Link(_), Entry::Link(_)) => false,
             (Entry::Link(_), _) => near && (b == a || b == a + 1),
             (_, Entry::Link(_)) => near && b == a,
@@ -1468,6 +1573,7 @@ impl Board {
             Entry::Cell(c) => self.cells.has(c) as u8,
             Entry::Key(k) => self.cells.keyed(k) as u8,
             Entry::Link(l) => self.cells.linked(l) as u8,
+            Entry::Vein(v) => self.cells.veined(v) as u8,
         }
     }
 
@@ -1475,7 +1581,9 @@ impl Board {
     pub fn branch_spent(&self, b: Branch) -> u32 {
         ENTRIES
             .iter()
-            .filter(|e| e.branch() == b && !matches!(e, Entry::Key(_) | Entry::Link(_)))
+            .filter(|e| {
+                e.branch() == b && !matches!(e, Entry::Key(_) | Entry::Link(_) | Entry::Vein(_))
+            })
             .map(|&e| e.paid(self.rank(e)))
             .sum()
     }
@@ -1483,6 +1591,13 @@ impl Board {
     /// 길이 이어졌나(0215 B): 첫 줄 스킬은 늘(뿌리), 그 밖은 가진 칸 가운데 이것으로 이어지는 것이 있어야. 이미 가진 칸(단을
     /// 올리는 것·옛 기록)은 묻지 않는다.
     pub fn reachable(&self, e: Entry) -> bool {
+        // 결의 칸(0223 11절): 그 타입을 싣는 스킬을 하나라도 배웠어야 한다.
+        if let Entry::Vein(v) = e {
+            return self.rank(e) > 0
+                || IDS
+                    .into_iter()
+                    .any(|id| self.learned(id) && id.def().kind == v.kind());
+        }
         e.line() == 0
             || self.rank(e) > 0
             || ENTRIES
@@ -1550,6 +1665,7 @@ impl Board {
             Entry::Cell(c) => self.cells.open_cell(c),
             Entry::Key(k) => self.cells.key = Some(k),
             Entry::Link(l) => self.cells.open_link(l),
+            Entry::Vein(v) => self.cells.open_vein(v),
         }
         true
     }
@@ -1642,7 +1758,21 @@ impl Board {
     /// 지우고, 가진 점수보다 많이 썼으면 처음으로 — 점수는 그대로 남으니 다시 찍으면 된다. 처음으로 돌리는 차례(0161): 먼저 스킬·
     /// 큰 기술만(연 패시브 칸은 남긴다 — 옛 기록의 칸은 핵·조각으로 열었고 그 둘은 지금도 점수라 칸만으로는 넘지 않는다. 0158의
     /// "보스 첫 쓰러뜨림 +1"이 핵의 수로 바뀌어 개발판 기록이 한두 점 넘칠 수 있다), 그래도 넘으면(손댄 기록) 칸까지.
-    pub fn sane(mut self, total: u32) -> Board {
+    pub fn sane(self, total: u32) -> Board {
+        let mut b = self.sane_ranks(total);
+        // 결의 칸(0223 11절): 그 타입의 스킬을 모르면 닫는다(넘쳐서 스킬을 돌려받은 기록·손댄 기록).
+        for v in VEINS {
+            if !IDS
+                .into_iter()
+                .any(|id| b.learned(id) && id.def().kind == v.kind())
+            {
+                b.cells.veins &= !(1 << v.index());
+            }
+        }
+        b
+    }
+
+    fn sane_ranks(mut self, total: u32) -> Board {
         self.cells = self.cells.sane();
         for (i, id) in IDS.into_iter().enumerate() {
             let e = Entry::Skill(id);
@@ -1824,10 +1954,10 @@ mod tests {
                     .count() as u32
             })
             .sum();
-        // 0185: 셋째 지역(엘리트 셋·핵 셋·조각 둘)이 더해져 30 → 38.
-        assert_eq!((levels, elites, cores, shards), (15, 9, 9, 5));
+        // 0185: 셋째 지역(엘리트 셋·핵 셋·조각 둘)이 더해져 30 → 38. 0208: 넷째 지역(엘리트 셋·핵 셋·조각 하나) → 45.
+        assert_eq!((levels, elites, cores, shards), (15, 12, 12, 6));
         let all = points(levels, elites, cores, shards);
-        assert_eq!(all, 38);
+        assert_eq!(all, 45);
         // 다 익히는 값(65)에는 못 미친다 — 고르게 한다(0160 2절). 여정의 기술 점수(지역마다 하나, 0183)를 더해도.
         assert!(all + (crate::stage::STAGES.len() as u32) < Board::maxed(Pick::A).spent());
     }
@@ -1897,10 +2027,14 @@ mod tests {
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
         // 줄 여덟, 칸마다 자리.
         let lines: Vec<usize> = ENTRIES.iter().map(|e| e.line()).collect();
-        assert_eq!((0..8).filter(|l| lines.contains(l)).count(), 8, "{lines:?}");
-        assert!(lines.iter().all(|&l| l < 8));
-        // 첫 줄 스킬 말고 모든 칸은 위에서 들어서는 길이 있다(갇힌 칸이 없다).
+        assert_eq!((0..9).filter(|l| lines.contains(l)).count(), 9, "{lines:?}");
+        assert!(lines.iter().all(|&l| l < 9));
+        // 첫 줄 스킬 말고 모든 칸은 위에서 들어서는 길이 있다(갇힌 칸이 없다) — 결의 칸은 길 밖이다(그 타입의 스킬이 연다).
         for &e in &ENTRIES {
+            if let Entry::Vein(_) = e {
+                assert!(!ENTRIES.iter().any(|&f| f.feeds(e) || e.feeds(f)), "{e:?}");
+                continue;
+            }
             assert!(
                 e.line() == 0 || ENTRIES.iter().any(|&f| f.feeds(e)),
                 "{e:?} has no way in"
@@ -2046,7 +2180,7 @@ mod tests {
     fn the_board_stands_as_the_0161_table_says() {
         use Branch::{Beat, Footing, Riposte};
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-        let table: [(usize, Branch, &[Entry]); 19] = [
+        let table: [(usize, Branch, &[Entry]); 22] = [
             (
                 0,
                 Beat,
@@ -2113,6 +2247,14 @@ mod tests {
             (4, Beat, &[Entry::Key(Key::Measure)]),
             (4, Riposte, &[Entry::Key(Key::Edge)]),
             (4, Footing, &[Entry::Key(Key::Rooted)]),
+            // 결의 줄(0223 11절): 타입 넷 — 빛깔만 그 타입의 스킬이 많은 갈래에 기댄다.
+            (
+                5,
+                Footing,
+                &[Entry::Vein(Vein::Ember), Entry::Vein(Vein::Root)],
+            ),
+            (5, Riposte, &[Entry::Vein(Vein::Knell)]),
+            (5, Beat, &[Entry::Vein(Vein::Rift)]),
         ];
         let flat: Vec<Entry> = table
             .iter()
@@ -2124,7 +2266,7 @@ mod tests {
                 assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
             }
         }
-        assert_eq!(NE, 42);
+        assert_eq!(NE, 46);
         for (i, e) in ENTRIES.iter().enumerate() {
             assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
         }
@@ -2203,10 +2345,48 @@ mod tests {
         assert_eq!((b.rank(Entry::Skill(Id::Gather)), b.spent()), (1, 1));
     }
 
+    /// 0223 11절: 결의 칸은 그 타입을 싣는 스킬을 배워야 열린다(쓴 점수·판의 길과 상관없이), 값은 1점, 어느 갈래의 점수도
+    /// 아니고(맺음의 문턱을 당기지 않는다), 되돌리면 닫힌다. 타입마다 그 타입의 스킬이 판에 있다(열 수 없는 결은 없다).
+    #[test]
+    fn a_vein_opens_once_a_skill_of_its_type_is_known_and_counts_for_no_branch() {
+        use crate::progression::BRANCHES;
+        let total = 30;
+        let mut b = Board::default();
+        for v in VEINS {
+            assert_eq!(b.offer(Entry::Vein(v), total), Offer::Cut, "{v:?}");
+            assert!(
+                IDS.into_iter().any(|id| id.def().kind == v.kind()),
+                "{v:?} has a skill"
+            );
+        }
+        assert_eq!(Id::Cut.def().kind, Vein::Rift.kind());
+        assert!(b.buy(Entry::Skill(Id::Cut), total));
+        let rift = Entry::Vein(Vein::Rift);
+        assert_eq!(b.offer(rift, total), Offer::Ready);
+        assert_eq!(
+            b.offer(rift, 1),
+            Offer::Short,
+            "the point went on the skill"
+        );
+        assert_eq!(b.offer(Entry::Vein(Vein::Ember), total), Offer::Cut);
+        let (spent, by_branch) = (b.spent(), BRANCHES.map(|x| b.branch_spent(x)));
+        assert!(b.buy(rift, total));
+        assert!(b.cells.veined(Vein::Rift) && !b.cells.veined(Vein::Ember));
+        assert_eq!(b.spent(), spent + 1);
+        assert_eq!(BRANCHES.map(|x| b.branch_spent(x)), by_branch);
+        assert_eq!(b.offer(rift, total), Offer::Full);
+        assert!(!b.buy(rift, total));
+        let mut great = Ult::Upend;
+        b.respec(&mut great);
+        assert!(!b.cells.veined(Vein::Rift));
+        assert_eq!(b.spent(), 0);
+    }
+
     /// 0158 라: 줄은 **쓴 점수의 합**으로 열린다 — 둘째 줄(땅울림) 4, 큰 기술 줄 8. 어디에 썼든 상관없다. 잠긴 칸은 점수가 있어도 못 산다.
     #[test]
     fn rows_open_by_points_spent_wherever_they_went() {
-        assert_eq!(ROW_NEEDS, [0, 4, 8, 14, 22]);
+        // 끝의 0은 결의 줄(0223 11절) — 점수가 아니라 그 타입의 스킬이 연다.
+        assert_eq!(ROW_NEEDS, [0, 4, 8, 14, 22, 0]);
         for id in [Id::Whirl, Id::Cut, Id::Gather, Id::Brace] {
             assert_eq!(Entry::Skill(id).row(), 0, "{id:?}");
         }
@@ -2263,7 +2443,8 @@ mod tests {
             4,
             "0215: four bridges"
         );
-        assert_eq!(all.spent(), 93);
+        assert_eq!(paid(|e| matches!(e, Entry::Vein(_))), 4, "0223: four veins");
+        assert_eq!(all.spent(), 97);
         // 판의 칸 순서: 줄 번호가 내려가지 않는다.
         let rows: Vec<usize> = ENTRIES.iter().map(|e| e.row()).collect();
         assert!(rows.windows(2).all(|w| w[0] <= w[1]), "{rows:?}");
@@ -2576,6 +2757,55 @@ mod tests {
     }
 
     /// 0158 마: 고르기와 맺음의 표 — 스킬마다 둘(서로 다르다)과 하나, 값은 결정문의 것. 길이가 달라지는 고르기를 골라도 1초 안에 끝난다.
+    /// 0223 V3 → 0225: 스킬마다 쓸 수 있는 쥔 꼴이 있다 — 꼴마다 고를 것이 넉넉하고(넷 이상), 첫 줄의 스킬(새 판이 가장 먼저 배운다)은
+    /// 방패 없는 한손(처음 줍는 검·맨손)으로 쓸 수 있다 — 처음 배운 스킬이 손에 든 것과 안 맞아 막히는 일이 없다.
+    /// 한손검은 방패로 갈린다: 방패 기술(방패와 함께만)과 결투 기술(방패 없이만)이 둘 이상씩. 망치만의 것·지팡이 쪽의 것도 있다.
+    #[test]
+    fn every_grip_has_skills_to_choose_and_the_first_row_fits_the_first_sword() {
+        use crate::weapons::{Grip, GRIPS};
+        for g in GRIPS {
+            let n = SKILLS.iter().filter(|s| s.fits(g)).count();
+            assert!(n >= 4, "{g:?}: {n}");
+        }
+        for s in &SKILLS {
+            assert!(s.hands != 0 && s.hands & !ANY == 0, "{:?}", s.id);
+            if s.row == 0 {
+                assert!(s.fits(Grip::Duel), "{:?}", s.id);
+            }
+        }
+        // 한손으로는 방패가 있어야만 되는 것(방패 기술)·방패가 없어야만 되는 것(결투 기술).
+        let split = |with: Grip, without: Grip| {
+            SKILLS
+                .iter()
+                .filter(|s| s.fits(with) && !s.fits(without))
+                .count()
+        };
+        assert!(split(Grip::Shield, Grip::Duel) >= 2, "shield arts");
+        assert!(split(Grip::Duel, Grip::Shield) >= 2, "duelling arts");
+        assert!(SKILLS.iter().any(|s| s.hands == HEAVY), "the hammer's own");
+        assert!(SKILLS.iter().any(|s| s.hands == SHIELD));
+        // 망치는 물리 스킬을, 지팡이는 타입 있는 스킬을 쥔다 — 지팡이로 쓰는 스킬에는 타입이 있다.
+        for s in SKILLS.iter().filter(|s| s.fits(Grip::Focus)) {
+            assert_ne!(s.kind, Kind::Physical, "{:?} in a staff's hands", s.id);
+        }
+        assert!(SKILLS
+            .iter()
+            .any(|s| s.fits(Grip::Heavy) && s.kind == Kind::Physical));
+    }
+
+    /// 0223 V2: 타입 있는 스킬은 게이지를 쌓고(물리는 0), 네 타입 모두 적어도 한 스킬이 싣는다 — 어느 타입도 판에서 못 고르는 일이 없다.
+    #[test]
+    fn typed_skills_build_their_gauge_and_every_type_has_a_skill() {
+        for s in &SKILLS {
+            assert_eq!(s.kind == Kind::Physical, s.build == 0.0, "{:?}", s.id);
+            assert!((0.0..=1.0).contains(&s.build), "{:?}", s.id);
+        }
+        for k in crate::status::TYPED {
+            assert!(SKILLS.iter().any(|s| s.kind == k), "{k:?}");
+        }
+        assert!(LINE_DOSE.0 != Kind::Physical && LINE_DOSE.1 > 0.0);
+    }
+
     #[test]
     fn every_skill_has_two_different_picks_a_capstone_and_stays_under_a_second() {
         for id in IDS {
@@ -2781,6 +3011,7 @@ mod tests {
                 key: None,
                 links: 0,
                 picks: [0; 3],
+                veins: 0,
             },
             ..Board::default()
         };

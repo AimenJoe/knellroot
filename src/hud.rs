@@ -383,6 +383,23 @@ pub fn draw_reticle(f: &Frame, at: Vec2, size: u8) {
     draw_circle(at.x, at.y, w * 0.6, INK);
 }
 
+/// 숄더뷰 크로스헤어(0222 — 사장 "숄더뷰일 때 화면에 크로스헤어가 있으면 되고, 그곳으로 발사되도록"): 화면 가운데에 틈 있는 십자 +
+/// 가운데 점, 어두운 테. 가운데의 적에게 겨눠지면(`on` — 원거리가 그 적에게 간다) 호박빛으로 좁혀진다. 붉은색은 쓰지 않는다.
+pub fn draw_crosshair(f: &Frame, at: Vec2, on: bool) {
+    let (gap, len) = if on { (2.0, 4.0) } else { (3.5, 4.5) };
+    let (gap, len) = (gap * f.ui, len * f.ui);
+    let w = (f.ui * 0.9).max(1.0);
+    let shade = Color::new(0.05, 0.04, 0.06, 0.75);
+    let ink = if on { AMBER } else { INK };
+    for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+        let (a, b) = (at + vec2(dx, dy) * gap, at + vec2(dx, dy) * (gap + len));
+        draw_line(a.x, a.y, b.x, b.y, w + 2.0, shade);
+        draw_line(a.x, a.y, b.x, b.y, w, ink);
+    }
+    draw_circle(at.x, at.y, w + 1.0, shade);
+    draw_circle(at.x, at.y, w * 0.6, ink);
+}
+
 /// 맞음 테의 세기(0..1): 맞은 순간부터 `HURT_EDGE_HOLD` 동안 가득, 그 뒤 `HURT_EDGE_FADE`에 걸쳐 제곱으로 사라진다.
 /// 센 타격(잃은 체력 `HURT_HEAVY_BLOW` 이상)은 `HURT_HEAVY`배(1 안). 로직 시계라 히트스톱 동안은 가득한 채 멈춰 있다.
 pub fn hurt_edge_k(since: f32, blow: i32) -> f32 {
@@ -447,6 +464,30 @@ fn draw_edge(s: f32, a: f32) {
     }
 }
 
+/// 마지막 핵의 잔상(0216 W3 — `core_echo`): 화면 가장자리에서 안으로 옅어지는 차가운 흰빛 — 맞음 테(`draw_edge`)와 같은 계단 꼴이되
+/// 붉지 않고, 위아래가 더 두껍다(눈꺼풀처럼). `k` = 세기 0..1. 글은 없다(무엇인지 말하지 않는다).
+pub fn draw_echo(f: &Frame, k: f32) {
+    if k <= 0.004 {
+        return;
+    }
+    const BANDS: usize = 9;
+    let (sw, sh) = (screen_width(), screen_height());
+    let step = (4.0 * f.ui).max(2.0);
+    for i in 0..BANDS {
+        let fade = 1.0 - i as f32 / BANDS as f32;
+        let col = Color::new(0.86, 0.92, 1.0, 0.55 * k * fade * fade);
+        let o = i as f32 * step;
+        let tall = step * 1.6;
+        draw_rectangle(0.0, o * 1.6, sw, tall, col);
+        draw_rectangle(0.0, sh - o * 1.6 - tall, sw, tall, col);
+        draw_rectangle(o, 0.0, step, sh, col);
+        draw_rectangle(sw - o - step, 0.0, step, sh, col);
+    }
+}
+
+/// 든 무기로 못 쓰는 스킬의 그림 밝기(대기 중 0.45보다 어둡게 — 기다리면 되는 것과 갈린다).
+const UNFIT_DIM: f32 = 0.18;
+
 /// `edge`: 맞음 테의 세기 배율(랩 `hurt.edge`, 0 = 끔 — 창이 위에 뜬 동안은 0).
 /// 스킬 칸(0151): 오른쪽 아래 — 끼운 둘의 그림(터치 버튼과 같은 픽토그램) + 대기(위에서 덮였다 걷힌다) + 버튼 이름,
 /// 그 위에 큰 기술 게이지(가득 차면 금빛으로 숨 쉰다). 터치는 화면 버튼이 같은 것을 보여 주므로 그리지 않는다.
@@ -465,6 +506,34 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
     let y = f.oy + f.h - 6.0 * s - ui.px(label) - side;
     let blink = pl.skill.denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
     let b = input::bindings();
+    // 부무기(0223): 스킬 칸 왼쪽에 바꿔 들 무기의 그림(흐리게 — 지금 든 것이 아니다) + 바꾸는 두 버튼(패링 + 평타)의 키캡.
+    if let Some(sub) = pl.sub {
+        let x = x0 - 26.0 * s - side;
+        draw_rectangle(x - s, y - s, side + 2.0 * s, side + 2.0 * s, BAR_BG);
+        draw_rectangle(x, y, side, side, HP_OFF);
+        let c = vec2(x + side * 0.5, y + side * 0.5);
+        let r = crate::touch::ICON_N as f32 * s / 1.25 + 0.01;
+        let tint = Color::new(1.0, 0.99, 0.95, 1.0);
+        crate::touch::icon(crate::touch::attack_icon(sub), c, r, 0.6, tint);
+        let caps = format!(
+            "{}{}",
+            crate::ui::key(&input::bind_prompt(Bind::Parry)),
+            crate::ui::key(&input::bind_prompt(Bind::Attack))
+        );
+        ui.text_center(&caps, x + side * 0.5, y + side + 2.5 * s, label, INK);
+    } else if pl.shield.is_some() {
+        // 보조무기 칸에 방패(0224): 같은 자리에 방패의 그림 + 쥐는 버튼(패링)의 키캡 — 두 손 무기를 들어 쉬고 있으면 흐리게.
+        let x = x0 - 26.0 * s - side;
+        draw_rectangle(x - s, y - s, side + 2.0 * s, side + 2.0 * s, BAR_BG);
+        draw_rectangle(x, y, side, side, HP_OFF);
+        let c = vec2(x + side * 0.5, y + side * 0.5);
+        let r = crate::touch::ICON_N as f32 * s / 1.25 + 0.01;
+        let tint = Color::new(1.0, 0.99, 0.95, 1.0);
+        let dim = if w.can_block() { 0.6 } else { 0.2 };
+        crate::touch::icon(crate::touch::Kind::Parry, c, r, dim, tint);
+        let cap = crate::ui::key(&input::bind_prompt(Bind::Parry));
+        ui.text_center(&cap, x + side * 0.5, y + side + 2.5 * s, label, INK);
+    }
     for (i, (x, bind)) in [(x0, Bind::Skill1), (x1, Bind::Skill2)]
         .into_iter()
         .enumerate()
@@ -482,6 +551,15 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
         let vacant = pl.skill.rank[i] == 0;
         if !vacant {
             crate::touch::icon(crate::touch::skill_icon(pl.skill.worn[i]), c, r, dim, tint);
+        } else if pl.skill.known[i] > 0 {
+            // 배웠지만 지금 든 무기로는 못 쓰는 스킬(0223 V3): 사라진 것이 아니다 — 아주 흐린 그림으로 자리를 남긴다(빈 칸과 갈린다).
+            crate::touch::icon(
+                crate::touch::skill_icon(pl.skill.worn[i]),
+                c,
+                r,
+                UNFIT_DIM,
+                tint,
+            );
         }
         if k < 1.0 && !vacant {
             draw_rectangle(x, y, side, side * (1.0 - k), Color::new(0.0, 0.0, 0.0, 0.5));
@@ -948,7 +1026,7 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
             Near::Talk => Some(i18n::s().talk_verb),
             Near::Read => Some(i18n::s().read_verb),
             Near::Rest { safe: true } => Some(s_rest()),
-            Near::Rest { safe: false } => None,
+            Near::Rest { safe: false } | Near::Full => None,
         };
         match verb {
             Some(verb) => {
@@ -957,6 +1035,8 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
                 let quiet = matches!(near, Near::Rest { .. }) && body_steps;
                 key_line(ui, &key, verb, cx, y, 1.0, if quiet { DIM } else { AMBER });
             }
+            // 못 하는 까닭을 말한다: 가방이 가득이라 못 줍는다(0226) · 적이 가까워 못 쉰다.
+            None if near == Near::Full => ui.text_center(i18n::s().bag_full, cx, y, 1.0, AMBER),
             None => ui.text_center(i18n::s().rest_blocked, cx, y, 1.0, DIM),
         }
     }

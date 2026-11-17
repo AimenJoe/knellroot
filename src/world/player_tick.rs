@@ -110,12 +110,17 @@ impl World {
                     }
                 };
             }
+            PState::Block { t: e } => self.tick_block(&cx, e),
             PState::Parry { t: e } => {
-                self.player.state = if e + dt >= t[P::ParryTime] {
-                    PState::Idle
-                } else {
-                    PState::Parry { t: e + dt }
-                };
+                // 방패(0223): 패링 창이 지나도 쥐고 있으면 막기로 잇는다 — 헛친 패링의 굳음 대신 방패 뒤에 선다.
+                self.player.state =
+                    if e + dt >= t[P::ParryWindow] && cx.a.parry_held && self.can_block() {
+                        PState::Block { t: 0.0 }
+                    } else if e + dt >= t[P::ParryTime] {
+                        PState::Idle
+                    } else {
+                        PState::Parry { t: e + dt }
+                    };
             }
             PState::Turn { t: e, from, to } => self.tick_turning(&cx, e, from, to),
             PState::Skill {
@@ -211,17 +216,24 @@ impl World {
         };
         // 원거리가 겨누는 쪽(0219): 손이 겨눈 쪽(끌기·스틱·커서) > 숄더뷰의 카메라 앞(`aim_ahead` — 근접 자동 조준은 그대로라
         // `aim`에 섞지 않는다). 패드면 그 쪽 ± `aim_assist`° 안의 적에게 붙인다(엄지의 몫 — 끌기·커서는 붙이지 않는다).
+        // 크로스헤어가 적을 겨누면(0222 → 0227 `aim_sight`) 그 적 쪽 — 원거리의 쪽만이고 몸·근접은 모른다.
+        let sight = a
+            .aim_sight
+            .map(|q| vec3(q.x - self.player.pos.x, 0.0, q.y - self.player.pos.z))
+            .filter(|d| d.length() > CURSOR_DEAD_M)
+            .map(|d| d.normalize());
         let ahead = (a.aim_ahead && target.is_none())
-            .then(|| move_to_world(vec2(0.0, 1.0), basis, self.player.pos))
+            .then(|| sight.unwrap_or_else(|| move_to_world(vec2(0.0, 1.0), basis, self.player.pos)))
             .filter(|w| w.length_squared() > 1e-6)
             .map(|w| w.normalize());
         let ranged_aim = aim.or(ahead).map(|d| {
-            if a.aim_assist > 0.0 && !dragged && aim_point.is_none() {
+            if a.aim_assist > 0.0 && !dragged && aim_point.is_none() && sight.is_none() {
                 self.assist_aim(d, a.aim_assist, t)
             } else {
                 d
             }
         });
+        // 0221의 늘 떠 있는 바닥 헤어라인은 걷었다(0222 — 사장 "조준 전 바닥의 헤어라인 필요없음"): 손이 겨눌 때만.
         self.aim_line = ranged_aim;
         // 마법 쏘는 쪽(0048): 조준 스틱 > 락온 대상 > `cast.range m` 안의 가장 가까운 적 > 바라보는 쪽.
         // 쇠뇌(0213, 사장 "자동 조준 없애고")는 가까운 적을 찾지 않는다 — 조준(스틱·커서) > 락온 > 바라보는 쪽. 겨누는 것이 손의 일.
@@ -236,10 +248,9 @@ impl World {
             ranged_aim
                 .or(lock_dir.filter(|d| d.length_squared() > 0.5))
                 .or_else(|| {
-                    seek.then(|| {
-                        nearest_in_reach(&self.enemies, self.player.pos, t[P::CastRange], None)
-                    })
-                    .flatten()
+                    // 찾는 것은 탄이 닿는 적만(0228 — 벽 너머의 적을 찾아 벽에 쏘지 않는다).
+                    seek.then(|| self.nearest_shootable(t[P::CastRange], t))
+                        .flatten()
                 })
                 .unwrap_or_else(|| self.player.facing_dir())
         } else {
@@ -430,7 +441,14 @@ impl World {
         pl.dodge_cd = cx.t[P::DodgeTime] + 0.15;
         true
     }
+}
 
+/// 막기를 푸는 누름(0223): 막는 동안 이 가운데 하나를 누르면 그 동작이 나간다.
+fn block_breaks(a: &Actions) -> bool {
+    a.dodge || a.jump || a.attack || a.cast || a.flask || a.skill1 || a.skill2 || a.ult
+}
+
+impl World {
     /// 패링 시작(0025): 가까운 적 쪽으로 돌아서 막는다(공격 자동 조준과 같은 고르기).
     fn try_parry(&mut self, cx: &Ctx) -> bool {
         let pl = &mut self.player;
@@ -444,12 +462,29 @@ impl World {
         true
     }
 
+    /// 방패 막기(0223): 쥔 동안 머문다. 떼거나 다른 것을 누르면 그 틱에 그 동작으로(막다가 치기·피하기가 늦지 않게).
+    fn tick_block(&mut self, cx: &Ctx, e: f32) {
+        if !cx.a.parry_held || block_breaks(&cx.a) || !self.can_block() {
+            self.player.state = PState::Idle;
+            self.tick_idle(cx);
+            return;
+        }
+        // 막는 동안은 기력이 차지 않는다 — 방패 뒤에 오래 서면 칠 기력이 없다.
+        self.player.stamina_idle = 0.0;
+        self.player.state = PState::Block { t: e + cx.dt };
+    }
+
     fn tick_idle(&mut self, cx: &Ctx) {
         let (t, wpn) = (cx.t, cx.wpn);
         if self.try_dodge(cx) {
             return;
         }
         let a = &cx.a;
+        // 방패(0223): 누르는 것 없이 패링 버튼만 쥐고 있으면 막는다(튕긴 뒤·공격을 마친 뒤에도 쥐고 있으면 다시 방패 뒤로).
+        if a.parry_held && !block_breaks(a) && !a.parry && self.can_block() {
+            self.player.state = PState::Block { t: 0.0 };
+            return;
+        }
         if a.jump && self.player.spend(t[P::JumpStamina]) {
             // 점프(0027): 뛰기 전 속도를 그대로 잇는다(달리다 뛰면 멀리).
             let pl = &mut self.player;
@@ -859,7 +894,7 @@ impl World {
         let full = t[P::CastCharge];
         if a.cast_held && cx.can_charge_cast {
             self.charged_now |= e < full && e + dt >= full;
-            if self.aim_line.is_some() {
+            if ranged_aim_given(&cx.a) {
                 // 겨누는 손(끌기·스틱·숄더뷰의 카메라, 0217·0219)을 몸이 따라 돈다 — 뗄 때 어디로 갈지 보이게.
                 self.player.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
             }
@@ -1194,6 +1229,7 @@ impl World {
                 };
             }
             PState::Idle
+            | PState::Block { .. }
             | PState::Drink { .. }
             | PState::Charging { .. }
             | PState::Cast { .. }
@@ -1208,6 +1244,7 @@ impl World {
                     PState::Cast { .. } | PState::Throw { .. } | PState::CastCharge { .. } => {
                         t[P::CastWalk]
                     }
+                    PState::Block { .. } => crate::tuning::BLOCK_WALK,
                     PState::Idle if pl.running => RUN_SPEED_X,
                     _ => 1.0,
                 };
@@ -1248,6 +1285,8 @@ impl World {
                 Some(d.x.atan2(d.z))
             }
             _ if cx.aim.is_some() => cx.aim.map(|d| d.x.atan2(d.z)),
+            // 막는 동안(0223)은 걷는 쪽으로 돌지 않는다 — 방패를 든 채 뒤로 물러설 수 있게(락온·조준 스틱은 위에서 돌린다).
+            (_, PState::Block { .. }) => None,
             (Basis::Quarter { .. } | Basis::Frozen(_), _)
                 if cx.world_move.length_squared() > 1e-4 =>
             {
@@ -1321,6 +1360,23 @@ impl World {
 impl World {
     /// 패드 조준 보조(0219): 겨눈 쪽 `d` ± `deg`° 안, 지금 원거리의 사거리 안에 선 깨어 있는 적 가운데 겨눈 쪽에 가장 가까운 적 쪽.
     /// 없으면 `d` 그대로 — 원뿔 밖의 적을 찾아 돌지 않는다(0213).
+    /// 탄이 닿는(`shot_clear`) 가장 가까운 깨어 있는 적 쪽(0048 마법 탄·0217 터치 톡의 찾기 — 0228부터 벽 너머는 빼고).
+    pub(super) fn nearest_shootable(&self, reach: f32, t: &Tuning) -> Option<Vec3> {
+        let p = self.player.pos;
+        let mut near: Vec<(f32, &crate::enemy::Enemy)> = self
+            .enemies
+            .iter()
+            .filter(|e| e.active())
+            .map(|e| (vec2(e.pos.x - p.x, e.pos.z - p.z).length() - e.radius, e))
+            .filter(|(d, _)| *d <= reach)
+            .collect();
+        near.sort_by(|a, b| a.0.total_cmp(&b.0));
+        near.into_iter()
+            .find(|(_, e)| self.shot_clear(e.pos, e.radius, t))
+            .map(|(_, e)| vec3(e.pos.x - p.x, 0.0, e.pos.z - p.z).normalize_or_zero())
+            .filter(|d| *d != Vec3::ZERO)
+    }
+
     pub(super) fn assist_aim(&self, d: Vec3, deg: f32, t: &Tuning) -> Vec3 {
         let wpn = self.player.weapon.def();
         let range = match wpn.rb {
@@ -1337,9 +1393,17 @@ impl World {
                 let v = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
                 let n = v.length();
                 let c = if n > 1e-3 { v.dot(d) / n } else { -1.0 };
-                (n <= reach + en.radius && c >= cos).then_some((c, v / n))
+                (n <= reach + en.radius && c >= cos).then_some((c, v / n, en))
             })
+            // 벽 너머의 적에게는 붙지 않는다(0228) — 원뿔 안에서 가까운 차례로 보고 탄이 닿는 첫 적.
+            .filter(|(_, _, en)| self.shot_clear(en.pos, en.radius, t))
+            .map(|(c, v, _)| (c, v))
             .max_by(|a, b| a.0.total_cmp(&b.0))
             .map_or(d, |(_, v)| v)
     }
+}
+
+/// 손이 원거리를 겨누고 있나(0219 → 0221): 터치 끌기·스틱·커서·숄더뷰의 카메라 앞 — 헤어라인의 "바라보는 쪽"은 아니다.
+fn ranged_aim_given(a: &Actions) -> bool {
+    a.aim_drag || a.aim_ahead || a.aim.length() > AIM_STICK || a.aim_at.is_some()
 }

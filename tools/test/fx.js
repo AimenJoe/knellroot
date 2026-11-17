@@ -1,6 +1,6 @@
 // 이펙트를 틱마다 찍는다(0141): 헤드리스 Chromium으로 개발 시나리오를 띄우고, 개발 키 F6(한 프레임 = 한 틱)을 켠 뒤
 // 동작마다 연달아 스크린숏 — 0.1초짜리 번쩍임·먼지를 실제 시간으로는 못 잡는다(헤드리스는 초당 8프레임 남짓).
-//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills]
+//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills] [스킬 이름들]
 // skills(0158 G2): 개발 창 기술 탭 "기술 다 올리기"(끝 단 · 고르기 ㄱ, 기록에 안 쓴다) → "기술 끼우기"에서 칸·큰 기술을 고르고 →
 //   전투 탭 "skills" 판에서 Q(칸 1)·E(칸 2)·Q+E(큰 기술)를 틱마다 찍는다 — 스킬·큰 기술마다 새 판(sk-<이름>-<n>.png).
 // 눈으로 볼 것: 맞힌 자리의 별·불똥, 휘두름의 초승달, 쓰러진 적의 재, 뛰기·회피·적 내리침의 먼지, 마법 탄의 마름모, 화로 불티.
@@ -59,9 +59,11 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     // 기술 화면(0161)의 자리: 스킬은 보이는 줄 0(휘돌이·가로지르기·버팀·끌어모으기)·줄 2(땅울림·되울림·던지기·잔불 흩기), 큰 기술은 줄 4의
     // 칸 0·2·4(몰아치기·한 줄기·쟁반 뒤집기). 칸에서 확인 = 목록의 첫 줄 "칸 1에 끼우기"(큰 기술은 "끼우기"). 처음 끼워진 것은 휘돌이(Q)·
     // 가로지르기(E)·쟁반 뒤집기라 그 셋은 건드리지 않는다. 큰 기술은 Q+E.
+    // 일곱째 = 개발 창 "든 무기 바꾸기"를 누를 횟수(0223 V3 — 땅울림은 양손 무기의 스킬: 끼우기 전에 망치를 든다).
+    // 0225: 스킬마다 쥔 꼴이 있다 — 땅울림 = 망치(둘), 되울림·잔불 흩기 = 지팡이(셋: 맨손 → 검 → 망치 → 지팡이).
     const RUNS = [['whirl', null, null, 1500, 'Q', 22], ['cut', null, null, 1100, 'E', 26], ['gather', [0, 3], null, 900, 'Q', 26],
-      ['quake', [2, 0], null, 1000, 'Q', 26], ['brace', [0, 2], null, 1300, 'Q', 40], ['echo', [2, 1], null, 1300, 'Q', 16],
-      ['throw', [2, 2], null, 900, 'Q', 30], ['embers', [2, 3], null, 1300, 'Q', 50],
+      ['quake', [2, 0], null, 1000, 'Q', 26, 2], ['brace', [0, 2], null, 1300, 'Q', 40], ['echo', [2, 1], null, 1300, 'Q', 16, 3],
+      ['throw', [2, 2], null, 900, 'Q', 30], ['embers', [2, 3], null, 1300, 'Q', 50, 3],
       ['upend', null, null, 1500, 'ult', 30], ['flurry', null, 0, 1300, 'ult', 14], ['line', null, 2, 900, 'ult', 30]];
     const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.waitForTimeout(90); } };
     // 왼쪽 위(가장자리에서 돌지 않는다) → 줄 → 그 줄의 왼쪽 끝 → 칸 → 확인(목록) → 확인(첫 줄).
@@ -69,10 +71,18 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       await pick(p, 6, 'ArrowLeft'); await pick(p, 6, 'ArrowUp'); await pick(p, row, 'ArrowDown'); await pick(p, 6, 'ArrowLeft'); await pick(p, col);
       await p.keyboard.press('Enter'); await p.waitForTimeout(250); await p.keyboard.press('Enter'); await p.waitForTimeout(250);
     };
-    for (const [name, slot, ult, wait, key, n] of RUNS) {
+    // 다섯째 인자로 스킬 이름을 고르면 그것만(예: … skills cut,embers).
+    const names = process.argv[5] ? process.argv[5].split(',') : null;
+    for (const [name, slot, ult, wait, key, n, arm] of RUNS) {
+      if (names && !names.includes(name)) continue;
       p = await open(2, 1); await p.waitForTimeout(300); // 기술 탭(셋째 묶음) 둘째 줄 = 기술 다 올리기(켬)
+      if (arm) { // 끝 줄 "든 무기 바꾸기"를 `arm`번(새 판은 맨손 → 검 → 망치) — 그 무기로 끼우고 아레나에 선다
+        await pick(p, 4, 'ArrowDown'); for (let i = 0; i < arm; i++) { await p.keyboard.press('Enter'); await p.waitForTimeout(150); }
+        await p.screenshot({ path: path.join(OUT, `sk-arm-${name}.png`) }); await pick(p, 4, 'ArrowUp');
+      }
       await p.keyboard.press('ArrowUp'); await p.waitForTimeout(90); await p.keyboard.press('Enter'); await p.waitForTimeout(300); // 기술 끼우기
       if (slot) await wear(p, slot[0], slot[1]);
+      if (arm) await p.screenshot({ path: path.join(OUT, `sk-arm-${name}-worn.png`) });
       if (ult !== null) await wear(p, 4, ult);
       if (name === 'whirl' || name === 'line') await p.screenshot({ path: path.join(OUT, `sk-window-${name}.png`) });
       await p.keyboard.press('Escape'); await p.waitForTimeout(300);

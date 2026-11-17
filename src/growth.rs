@@ -38,32 +38,37 @@ pub enum Ware {
     Charm(Charm),
     /// 등잔 기름: 등잔 +1회(한 번).
     Oil,
+    /// 방패(0223 — 한손 무기와 함께 든다, `shield.rs`).
+    Shield(crate::shield::Id),
 }
 
 /// 쉼터 화로의 가게(값은 잔불). 0117: 서 있는 적 39(잔재 2·가시짐승 3)·엘리트·문지기 40으로 한 판 ≈ 150 —
 /// 레벨(40 + 20×L)과 나눠 쓰니 한 판에 하나쯤 되게 값을 올렸다(초반에 강해지는 것이 몰리지 않게). 단단한 껍질은 입구 상자에서 옮겨 왔다.
-pub const SHOP: [(Ware, u32); 5] = [
+pub const SHOP: [(Ware, u32); 6] = [
     (Ware::Charm(Charm::Pouch), 60),
     (Ware::Charm(Charm::Feet), 90),
     (Ware::Charm(Charm::Shell), 110),
     (Ware::Charm(Charm::Hunger), 120),
     (Ware::Oil, 150),
+    // 방패(0223 — `shield.rs`): 한 판 반쯤의 잔불. 방패마다 한 줄(시험).
+    (Ware::Shield(crate::shield::Id::Pilgrim), 120),
 ];
 
 /// 아직 살 수 있는 것(가진 장신구·산 기름은 빠진다).
-pub fn wares(owned: &[Charm], g: &Growth) -> Vec<(Ware, u32)> {
+pub fn wares(owned: &[Charm], g: &Growth, shields: &[crate::shield::Id]) -> Vec<(Ware, u32)> {
     SHOP.into_iter()
         .filter(|(w, _)| match w {
             Ware::Charm(id) => !owned.contains(id),
             Ware::Oil => !g.oil,
+            Ware::Shield(id) => !shields.contains(id),
         })
         .collect()
 }
 
 /// 가게의 진열(0164 다듬기): 살 수 있는 것이 앞(차례는 `wares` 그대로 — 사는 자리 번호가 같다), 이미 산 것이 그 뒤에 흐리게.
 /// 셋째 값이 "샀다". 가게가 한 줄만 남아도 무엇을 팔았는지 보인다.
-pub fn shelf(owned: &[Charm], g: &Growth) -> Vec<(Ware, u32, bool)> {
-    let open = wares(owned, g);
+pub fn shelf(owned: &[Charm], g: &Growth, shields: &[crate::shield::Id]) -> Vec<(Ware, u32, bool)> {
+    let open = wares(owned, g, shields);
     let sold = SHOP
         .into_iter()
         .filter(|(w, _)| !open.iter().any(|(o, _)| o == w));
@@ -73,9 +78,23 @@ pub fn shelf(owned: &[Charm], g: &Growth) -> Vec<(Ware, u32, bool)> {
         .collect()
 }
 
-/// 잔불로 살 수 있는 것이 있나(쉼터가 빛난다).
-pub fn can_buy(embers: u32, owned: &[Charm], g: &Growth) -> bool {
-    wares(owned, g).iter().any(|&(_, price)| embers >= price)
+/// 가방에 칸이 드는 물건인가(0226 — 장신구·방패는 아이템이라 가방이 가득이면 못 산다).
+pub fn needs_room(w: Ware) -> bool {
+    matches!(w, Ware::Charm(_) | Ware::Shield(_))
+}
+
+/// 잔불로 살 수 있는 것이 있나(쉼터가 빛난다·가게 탭의 점). `room` = 가방에 자리가 있나 — 없으면 칸이 드는 것은 셈에 넣지 않는다
+/// (사려 해도 "가방이 가득 찼다"로 막히니 "살 것이 있다"고 말하지 않는다).
+pub fn can_buy(
+    embers: u32,
+    owned: &[Charm],
+    g: &Growth,
+    shields: &[crate::shield::Id],
+    room: bool,
+) -> bool {
+    wares(owned, g, shields)
+        .iter()
+        .any(|&(w, price)| embers >= price && (room || !needs_room(w)))
 }
 
 #[cfg(test)]
@@ -87,7 +106,7 @@ mod tests {
     #[test]
     fn the_shelf_lists_what_is_left_first_and_what_was_bought_after() {
         let none = Growth::default();
-        let all = shelf(&[], &none);
+        let all = shelf(&[], &none, &[]);
         assert_eq!(all.len(), SHOP.len());
         assert!(all.iter().all(|&(_, _, sold)| !sold));
         let g = Growth {
@@ -95,8 +114,8 @@ mod tests {
             ..Growth::default()
         };
         let owned = [Charm::Feet];
-        let some = shelf(&owned, &g);
-        let open = wares(&owned, &g);
+        let some = shelf(&owned, &g, &[]);
+        let open = wares(&owned, &g, &[]);
         assert_eq!(some.len(), SHOP.len());
         for (i, &(w, p)) in open.iter().enumerate() {
             assert_eq!(some[i], (w, p, false));
@@ -104,6 +123,23 @@ mod tests {
         let sold: Vec<Ware> = some[open.len()..].iter().map(|x| x.0).collect();
         assert_eq!(sold, [Ware::Charm(Charm::Feet), Ware::Oil]);
         assert!(some[open.len()..].iter().all(|x| x.2));
+    }
+
+    /// 0223: 방패는 가게에서 한 번 — 표의 방패마다 줄이 있고, 가진 방패는 안 판다.
+    #[test]
+    fn the_shop_sells_each_shield_once() {
+        use crate::shield;
+        let g = Growth::default();
+        for d in &shield::TABLE {
+            let row = SHOP.iter().find(|(w, _)| *w == Ware::Shield(d.id));
+            assert!(row.is_some_and(|r| r.1 > 0), "{}", d.key);
+            assert!(wares(&[], &g, &[])
+                .iter()
+                .any(|(w, _)| *w == Ware::Shield(d.id)));
+            assert!(wares(&[], &g, &[d.id])
+                .iter()
+                .all(|(w, _)| *w != Ware::Shield(d.id)));
+        }
     }
 
     #[test]
@@ -127,18 +163,18 @@ mod tests {
     #[test]
     fn the_shop_sells_what_you_lack_and_glows_only_when_you_can_pay() {
         let g = Growth::default();
-        assert_eq!(wares(&[], &g).len(), SHOP.len());
+        assert_eq!(wares(&[], &g, &[]).len(), SHOP.len());
         // 가진 장신구는 안 판다, 산 기름도.
         let owned = [Charm::Pouch];
         let got = Growth { oil: true, ..g };
-        let left = wares(&owned, &got);
+        let left = wares(&owned, &got, &[]);
         assert!(left
             .iter()
             .all(|(w, _)| *w != Ware::Charm(Charm::Pouch) && *w != Ware::Oil));
         // 가장 싼 것보다 적으면 빛나지 않는다.
         let cheapest = SHOP.iter().map(|s| s.1).min().unwrap();
-        assert!(!can_buy(cheapest - 1, &[], &g));
-        assert!(can_buy(cheapest, &[], &g));
+        assert!(!can_buy(cheapest - 1, &[], &g, &[], true));
+        assert!(can_buy(cheapest, &[], &g, &[], true));
         // 상자·문지기에서 얻는 장신구는 팔지 않는다(얻는 곳이 겹치지 않게). 등껍질은 0117에서 가게로 옮겼다.
         for id in [
             Charm::Ear,
@@ -149,5 +185,26 @@ mod tests {
         ] {
             assert!(SHOP.iter().all(|(w, _)| *w != Ware::Charm(id)));
         }
+    }
+
+    /// 0226: 가방이 가득이면 장신구·방패는 "살 것"으로 치지 않는다 — 기름은 칸이 들지 않으니 그대로.
+    #[test]
+    fn a_full_bag_counts_only_what_needs_no_room() {
+        let rich = u32::MAX;
+        let none = Growth::default();
+        assert!(
+            can_buy(rich, &[], &none, &[], false),
+            "the oil is still for sale"
+        );
+        let oiled = Growth {
+            oil: true,
+            ..Growth::default()
+        };
+        assert!(can_buy(rich, &[], &oiled, &[], true));
+        assert!(
+            !can_buy(rich, &[], &oiled, &[], false),
+            "only charms and shields left — nothing to buy with a full bag"
+        );
+        assert!(needs_room(Ware::Shield(crate::shield::Id::Pilgrim)) && !needs_room(Ware::Oil));
     }
 }

@@ -28,6 +28,13 @@ pub enum Scene {
     EquipPick {
         slot: u8,
     },
+    /// 큰 창의 가방 탭(0226): 가진 무기·방패·장신구 아이템 전부 — 왼쪽 6×5 칸(빈 칸이 보인다 = 한도), 오른쪽 고른 것의 상세.
+    /// 끼기·지키기·내려놓기는 어디서나, 잔불로 바꾸기·여벌 정리는 화로에서만.
+    Bag {
+        host: Host,
+    },
+    /// 가방 탭에서 고른 아이템에 할 수 있는 일의 작은 목록(0226 — `SkillAct`와 같은 꼴): 가방 탭 위에 얹는다.
+    BagAct,
     /// 큰 창의 도감 탭(0130 C5 → 0164): 몸 안의 묶음 둘(`tab`: 적 · 장신구), 왼쪽 목록 · 오른쪽 그림과 관찰.
     Codex {
         host: Host,
@@ -113,6 +120,7 @@ impl Host {
 pub enum Tab {
     Status,
     Equip,
+    Bag,
     Skills,
     Codex,
     Journey,
@@ -129,6 +137,7 @@ pub fn tabs(host: Host) -> &'static [Tab] {
         Host::Pause => &[
             Tab::Status,
             Tab::Equip,
+            Tab::Bag,
             Tab::Skills,
             Tab::Codex,
             Tab::Journey,
@@ -137,6 +146,7 @@ pub fn tabs(host: Host) -> &'static [Tab] {
         Host::Hearth => &[
             Tab::Status,
             Tab::Equip,
+            Tab::Bag,
             Tab::Skills,
             Tab::Codex,
             Tab::Journey,
@@ -151,6 +161,7 @@ pub fn tab_scene(host: Host, tab: Tab) -> Scene {
     match tab {
         Tab::Status => Scene::Status { host },
         Tab::Equip => Scene::Equip { host },
+        Tab::Bag => Scene::Bag { host },
         Tab::Skills => Scene::Skills { host },
         Tab::Codex => Scene::Codex { host, tab: 0 },
         Tab::Journey => Scene::Journey { host },
@@ -164,6 +175,7 @@ pub fn tab_of(scene: Scene) -> Option<(Host, Tab)> {
     match scene {
         Scene::Status { host } => Some((host, Tab::Status)),
         Scene::Equip { host } => Some((host, Tab::Equip)),
+        Scene::Bag { host } => Some((host, Tab::Bag)),
         Scene::Skills { host } => Some((host, Tab::Skills)),
         Scene::Codex { host, .. } => Some((host, Tab::Codex)),
         Scene::Journey { host } => Some((host, Tab::Journey)),
@@ -175,6 +187,7 @@ pub fn tab_of(scene: Scene) -> Option<(Host, Tab)> {
         | Scene::Result { .. }
         | Scene::Controls
         | Scene::EquipPick { .. }
+        | Scene::BagAct
         | Scene::SkillAct
         | Scene::Ask(_)
         | Scene::Slots { .. } => None,
@@ -266,6 +279,7 @@ impl Scene {
             Scene::Status { .. }
             | Scene::Equip { .. }
             | Scene::EquipPick { .. }
+            | Scene::Bag { .. }
             | Scene::Skills { .. }
             | Scene::Codex { .. }
             | Scene::Journey { .. }
@@ -278,7 +292,7 @@ impl Scene {
             Scene::Dev { .. } | Scene::Motions { .. } => Layer::Window { hud: false },
             #[cfg(feature = "dev")]
             Scene::Lab | Scene::LabGroup { .. } => Layer::Window { hud: true },
-            Scene::Ask(_) | Scene::SkillAct => Layer::Modal,
+            Scene::Ask(_) | Scene::SkillAct | Scene::BagAct => Layer::Modal,
         }
     }
 
@@ -347,6 +361,10 @@ pub enum Ask {
     Forge(u8),
     /// 화로 가게의 거두기(0180): 이 무기의 단을 모두 거둔다 — 숫돌은 돌아오고 잔불은 안 돌아온다.
     Recall(u8),
+    /// 화로 가게의 아이템 거두기(0223 V4): 가방의 이 여벌(번호)을 잔불로 바꾼다 — 되돌릴 수 없다.
+    Salvage(u32),
+    /// 가방 탭의 여벌 정리(0226): 지키지 않는 여벌을 한꺼번에 잔불로 — 되돌릴 수 없다.
+    Tidy,
     /// 슬롯 창(0192 — 사장 "덮어쓸 때 얼럿이 나와야 해, 텍스트만 바꾸는 것으로는 인지가 잘 안 됨"): 기록 있는 슬롯에 새로 시작.
     Overwrite(u8),
     /// 슬롯 창의 지우기(0192 — 덮어쓰기와 같은 꼴).
@@ -359,7 +377,12 @@ pub fn ask_default(k: Ask) -> usize {
     match k {
         Ask::Buy(_) | Ask::Level(_) | Ask::Skill(_) | Ask::Forge(_) => 0,
         // 거두기는 쓴 잔불을 버린다 — 취소에서.
-        Ask::Restart | Ask::ToTitle | Ask::Respec | Ask::Recall(_) => 1,
+        Ask::Restart
+        | Ask::ToTitle
+        | Ask::Respec
+        | Ask::Recall(_)
+        | Ask::Salvage(_)
+        | Ask::Tidy => 1,
         // 기록을 지우는 일 — 취소에서.
         Ask::Overwrite(_) | Ask::Erase(_) => 1,
     }
@@ -379,6 +402,8 @@ pub fn answer(k: Ask, yes: bool) -> (Go, bool) {
         | Ask::Respec
         | Ask::Forge(_)
         | Ask::Recall(_)
+        | Ask::Salvage(_)
+        | Ask::Tidy
         | Ask::Erase(_) => (Go::Back, false),
         // 판을 여는 일은 앱이 한다(`App::enter_slot`이 장면을 바꾼다) — 여기서는 그대로.
         Ask::Overwrite(_) => (Go::Stay, false),
@@ -582,6 +607,8 @@ pub fn back(scene: Scene) -> Go {
         Scene::Status { .. }
         | Scene::Equip { .. }
         | Scene::EquipPick { .. }
+        | Scene::Bag { .. }
+        | Scene::BagAct
         | Scene::Skills { .. }
         | Scene::SkillAct
         | Scene::Codex { .. }
@@ -695,11 +722,11 @@ mod tests {
         use Tab::*;
         assert_eq!(
             tabs(Host::Pause),
-            [Status, Equip, Skills, Codex, Journey, Settings]
+            [Status, Equip, Bag, Skills, Codex, Journey, Settings]
         );
         assert_eq!(
             tabs(Host::Hearth),
-            [Status, Equip, Skills, Codex, Journey, Shop, Settings]
+            [Status, Equip, Bag, Skills, Codex, Journey, Shop, Settings]
         );
         assert_eq!(tabs(Host::Title), [Settings]);
         for host in [Host::Title, Host::Pause, Host::Hearth] {

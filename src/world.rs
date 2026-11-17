@@ -21,7 +21,10 @@ use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG, RIPOS
 use crate::weapons::{self, Rb, Shape};
 
 /// 날아가는 것·늦게 터지는 것의 틱 — 단계마다 메서드(0159 R2).
+mod ail_tick;
 mod bolt_tick;
+/// 레일 수레(0208 — 작업층의 기믹).
+pub mod cart;
 /// 적 틱 — 단계마다 메서드(0159 R2).
 mod enemy_tick;
 /// 플레이어 틱 — 단계·상태마다 메서드(0103).
@@ -134,6 +137,18 @@ pub enum Event {
     Slam {
         at: Vec3,
     },
+    /// 레일 수레가 떠났다(0208 — 앱이 덜컹 소리).
+    CartGo {
+        at: Vec3,
+    },
+    /// 3단계(0208 권양지기): 사슬이 끊겼다 — 앱이 연출(흔들림·소리·글).
+    Unchain {
+        at: Vec3,
+    },
+    /// 레일 수레의 예고가 시작했다(0208 — 띠 예고와 같은 소리).
+    CartWarn {
+        at: Vec3,
+    },
     /// 지연 공격이 곧 풀린다(0128 — 정점에서 버티던 적이 내리치기 직전, 앱이 소리를 낸다).
     Release {
         at: Vec3,
@@ -145,6 +160,37 @@ pub enum Event {
     /// 잔불을 주웠다(0064 M1) — 조각 하나의 값.
     Ember {
         value: u32,
+    },
+    /// 방패로 막았다(0223): 체력 대신 기력이 깎였다.
+    Guard {
+        at: Vec3,
+    },
+    /// 막기가 깨졌다(0223): 기력이 바닥나 휘청인다.
+    GuardBreak {
+        at: Vec3,
+    },
+    /// 타입 게이지가 가득 찼다(0223 V2): 화상이 붙음·묶임·금 감(울림은 `Toll`, 터짐은 `AilBurst`).
+    Ail {
+        at: Vec3,
+        kind: crate::status::Kind,
+    },
+    /// 화상이 탔다(초마다 — 0223 V2).
+    Burn {
+        at: Vec3,
+    },
+    /// 울렸다(0223 V2): `at` 둘레 `radius` m의 적을 치고 게이지를 나눠 줬다.
+    Toll {
+        at: Vec3,
+        radius: f32,
+    },
+    /// 화상 중에 묶여 터졌다(0223 V2 겹침).
+    AilBurst {
+        at: Vec3,
+        radius: f32,
+    },
+    /// 주무기와 부무기를 바꿔 들었다(0223 — 패링 + 평타). `to` = 새로 든 주무기.
+    WeaponSwap {
+        to: weapons::Id,
     },
     /// 패링 성공(0025): 적의 근접 공격을 튕겼다.
     Parry {
@@ -180,6 +226,10 @@ pub enum Event {
     StaminaDenied,
     /// 적의 자세가 깨졌다(0051) — 휘청 + 드러남.
     Break {
+        at: Vec3,
+    },
+    /// 등짐꾼의 짐이 깨졌다(0216 W2 — 자세가 처음 깨질 때).
+    LoadBreak {
         at: Vec3,
     },
     /// 망치 강타의 금 간 땅이 여진으로 터졌다(0051).
@@ -385,6 +435,8 @@ pub struct Bolt {
     pub def: weapons::Bolt,
     /// 이미 맞힌 적(꿰뚫는 탄, 번호 비트).
     pub hits: u64,
+    /// 결(0223 11절)의 몫을 이미 줬다(뿌리의 숨 · 금을 따라 — 꿰뚫는 탄도 탄 하나에 한 번).
+    pub veined: [bool; 2],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -413,6 +465,11 @@ pub enum PState {
     },
     /// 패링(0025): `parry.window s` 동안 앞쪽 근접 공격을 튕긴다. 헛치면 `parry.time s`까지 못 움직인다. 튕기면 바로 풀린다.
     Parry {
+        t: f32,
+    },
+    /// 방패 막기(0223 — 한손 무기 + 방패, 패링 버튼을 쥔 동안): 앞에서 오는 받을 수 있는 공격을 체력 대신 기력으로 받는다.
+    /// 느리게 걷고 기력이 차지 않는다. 기력이 바닥나는 타에 막기가 깨진다(`BLOCK_BREAK_STUN`). `t` = 막은 지.
+    Block {
         t: f32,
     },
     /// 공중(0027): 뛰기 전 속도를 잇고 조금만 조종한다. `plunge`면 내려앉을 때 둘레를 친다.
@@ -538,8 +595,16 @@ pub struct Player {
     pub swings: u32,
     /// 마법·사격·수류탄(0048·0051·0111): 마법 칸, 공중 사격과 체공, 쇠뇌의 탄과 재장전, 수류탄.
     pub ranged: RangedState,
-    /// 든 무기(0051, `weapons.rs` 표).
+    /// 든 무기(0051, `weapons.rs` 표) — 주무기.
     pub weapon: weapons::Id,
+    /// 부무기(0223): 패링 + 평타를 함께 누르면 주무기와 바꿔 든다. 없으면 바꾸지 않는다.
+    pub sub: Option<weapons::Id>,
+    /// 부무기의 탄·수류탄·장전(바꿔 들 때 남겨 둔 것 — 바꾸기로 탄창을 채우지 못하게). 처음 드는 것이면 없음.
+    pub sub_load: Option<(u8, f32, f32)>,
+    /// 두 버튼 바꾸기(0223)의 시계: 패링·평타 버튼을 누른 뒤 흐른 초.
+    pub chord: (f32, f32),
+    /// 든 방패(0223 — 한손 무기일 때만 쓰인다, `World::can_block`).
+    pub shield: Option<crate::shield::Id>,
     /// 미리 받아 둔 다음 행동과 남은 초(0057 — 후딜레이를 끊는 캔슬 시점에 나간다).
     pub pending: Option<Next>,
     pub pending_left: f32,
@@ -556,10 +621,16 @@ pub struct SkillState {
     pub cd: [f32; skills::N],
     pub gauge: f32,
     pub gauge_swing: u32,
+    /// 결(0223 11절)의 몫을 준 마지막 휘두르기(한 번 휘두르기에 한 번만 — 뿌리의 숨 · 금을 따라 저마다).
+    pub vein_swing: [u32; 2],
     pub denied: f32,
     /// 기술 판(0158): 끼운 칸의 단·고르기, 큰 기술의 단 — 앱이 `set_skills`로 넣는다(월드는 기록을 모른다).
+    /// `rank`는 **지금 든 무기로 쓸 수 있는** 단이다(0223 V3): 갈래가 안 맞는 스킬이 놓인 칸은 0 = 빈 칸. 배운 단은 `known`.
     pub rank: [u8; 2],
     pub pick: [skills::Pick; 2],
+    pub known: [u8; 2],
+    /// 부무기의 칸 둘(0223 V3 — 무기 칸마다 스킬 둘): 스킬·배운 단·고르기. 바꿔 들면 주무기의 칸과 맞바뀐다.
+    pub sub: ([skills::Id; 2], [u8; 2], [skills::Pick; 2]),
     pub ult_rank: u8,
     /// 끼운 큰 기술(0158 G2 — 하나).
     pub ult: skills::Ult,
@@ -748,6 +819,8 @@ pub struct World {
     pub drops: Vec<crate::ember::Ember>,
     /// 남는 엘리트의 고리(0112).
     pub lingers: Vec<Linger>,
+    /// 레일 수레(0208) — 스테이지가 지도의 레일 `|`에서 세운다.
+    pub carts: Vec<cart::Cart>,
     /// 날아가는 종 조각(0125).
     pub shards: Vec<Shard>,
     /// 방랑자만 밀어내는 둥근 몸(0122 — 주민): 적·탄·공격은 지나간다(싸움에 끼지 않는다). (가운데, 반지름).
@@ -792,6 +865,10 @@ pub struct World {
     pub skill_spikes: Vec<Spike>,
     /// 이번 틱에 방랑자의 탄이 적을 맞혔다(게이지 — `skill_books`).
     bolt_hit_tick: bool,
+    /// 결(0223 11절): 이번 틱에 무기의 타가 묶인 적·금 간 적에 닿았다, 이번 틱에 울린 수 — `skill_books`가 걷는다.
+    vein_bound: bool,
+    vein_cracked: bool,
+    vein_tolls: u8,
     /// 이번 틱에 박자에 맞춘 평타가 나갔다(`Event::Beat`).
     beat_now: bool,
     /// 이번 틱에 등잔을 삼켰다·못 마셨다(사건은 `apply_strike`가 낸다).
@@ -836,9 +913,12 @@ impl World {
                     cd: [0.0; skills::N],
                     gauge: 0.0,
                     gauge_swing: 0,
+                    vein_swing: [0; 2],
                     denied: 0.0,
                     rank: [1; 2],
                     pick: [skills::Pick::A; 2],
+                    known: [1; 2],
+                    sub: (skills::START, [0; 2], [skills::Pick::A; 2]),
                     ult_rank: 1,
                     ult: skills::Ult::Upend,
                     brace: 0,
@@ -905,6 +985,10 @@ impl World {
                     grenades: 0.0,
                 },
                 weapon: weapons::Id::Sword,
+                sub: None,
+                sub_load: None,
+                chord: (f32::MAX, f32::MAX),
+                shield: None,
                 pending: None,
                 pending_left: 0.0,
                 combo_next: 0,
@@ -930,6 +1014,9 @@ impl World {
             hop_seen: Vec::new(),
             skill_spikes: Vec::new(),
             bolt_hit_tick: false,
+            vein_bound: false,
+            vein_cracked: false,
+            vein_tolls: 0,
             time: 0.0,
             kills: 0,
             lock_range: 18.0,
@@ -951,6 +1038,7 @@ impl World {
             embers: 0,
             drops: Vec::new(),
             lingers: Vec::new(),
+            carts: Vec::new(),
             shards: Vec::new(),
             bodies: Vec::new(),
             stats: crate::stats::Stats::default(),
@@ -1070,7 +1158,8 @@ impl World {
         };
         // 지금 동작이 직접 받는 누름.
         let own = match pl.state {
-            PState::Idle => true,
+            // 막는 동안(0223)도 서 있을 때처럼 바로 받는다 — 막다가 치기·피하기가 늦지 않게.
+            PState::Idle | PState::Block { .. } => true,
             PState::Charging { .. } => matches!(n, Next::Dodge | Next::Parry),
             PState::CastCharge { .. } => n == Next::Dodge,
             PState::Drink { gulped: false, .. } => n == Next::Dodge,
@@ -1161,6 +1250,113 @@ impl World {
     }
 
     /// 무기를 바꾼다(0051): 콤보는 처음부터, 원거리 무기는 탄창·수류탄 가득.
+    /// 방패를 정한다(0223 — 기록에서 앱이).
+    pub fn set_shield(&mut self, shield: Option<crate::shield::Id>) {
+        self.player.shield = shield;
+        // 방패가 한손 무기의 쥔 꼴을 가른다(0225 — 방패 기술 · 결투 기술).
+        self.refit_skills();
+    }
+
+    /// 지금 손에 쥔 꼴(0225): 한손 무기는 방패와 함께인가로 갈린다.
+    pub fn grip(&self) -> weapons::Grip {
+        self.player.weapon.grip(self.player.shield.is_some())
+    }
+
+    /// 지금 막을 수 있나(0223): 방패를 들었고 든 무기가 한손이다.
+    pub fn can_block(&self) -> bool {
+        self.player.shield.is_some() && self.player.weapon.hand() == weapons::Hand::One
+    }
+
+    /// 지금 막고 있나.
+    pub fn guarding(&self) -> bool {
+        matches!(self.player.state, PState::Block { .. })
+    }
+
+    /// 부무기를 정한다(0223 — 기록에서 앱이). 주무기와 같으면 비운다. 탄은 처음 드는 것처럼(가득).
+    pub fn set_sub(&mut self, sub: Option<weapons::Id>) {
+        let pl = &mut self.player;
+        pl.sub = sub.filter(|&w| w != pl.weapon);
+        pl.sub_load = None;
+    }
+
+    /// 주무기와 부무기를 바꿔 든다(0223). 내려놓는 무기의 탄·수류탄·장전은 남겨 두고, 드는 무기는 남겨 둔 것이 있으면 그것으로 —
+    /// 바꿔 들어 탄창을 채우는 길이 없게. 장전 시계는 내려놓은 동안 흐르지 않는다.
+    pub fn swap_weapons(&mut self) -> Option<weapons::Id> {
+        let pl = &mut self.player;
+        let to = pl.sub?;
+        let from = pl.weapon;
+        let keep = (pl.ranged.ammo, pl.ranged.grenades, pl.ranged.reload);
+        let load = pl.sub_load.take();
+        // 스킬 칸도 무기를 따라 통째로 바뀐다(0223 V3) — 대기는 스킬마다라 그대로 흐른다.
+        let sk = &mut pl.skill;
+        std::mem::swap(&mut sk.worn, &mut sk.sub.0);
+        std::mem::swap(&mut sk.known, &mut sk.sub.1);
+        std::mem::swap(&mut sk.pick, &mut sk.sub.2);
+        self.set_weapon(to);
+        let pl = &mut self.player;
+        if let Some((ammo, grenades, reload)) = load {
+            pl.ranged.ammo = ammo;
+            pl.ranged.grenades = grenades;
+            pl.ranged.reload = reload;
+        }
+        pl.sub = Some(from);
+        pl.sub_load = Some(keep);
+        Some(to)
+    }
+
+    /// 패링 + 평타 = 바꾸기(0223, 사장 "패링+공격 버튼으로 주/부무기 바꿀 수 있음"). 큰 기술의 "함께"(0151)처럼 늦추지 않는다:
+    /// 두 누름이 같은 틱이거나 둘째가 첫째 뒤 `WEAPON_CHORD` 안이면, 첫째가 시작한 패링·휘두르기를 아직 시동 안일 때 거두고 바꾼다.
+    /// 단 패링이 튕겨 낸 뒤의 평타는 반격이다(바꾸지 않는다). 평타 버튼 = 근접은 `attack`, 원거리는 `cast`(앱이 맞바꾼 뒤).
+    fn weapon_chord(&mut self, a: &mut Actions, dt: f32, ev: &mut Vec<Event>) {
+        let ranged = self.player.weapon.is_ranged();
+        let basic = if ranged { a.cast } else { a.attack };
+        let pl = &mut self.player;
+        pl.chord.0 = if a.parry { 0.0 } else { pl.chord.0 + dt };
+        pl.chord.1 = if basic { 0.0 } else { pl.chord.1 + dt };
+        let (p, b) = pl.chord;
+        // 터치의 바꾸기 버튼(0223): 서 있거나 막는 동안이면 바로.
+        if a.swap && matches!(pl.state, PState::Idle | PState::Block { .. }) && pl.sub.is_some() {
+            pl.state = PState::Idle;
+            if let Some(to) = self.swap_weapons() {
+                ev.push(Event::WeaponSwap { to });
+            }
+            return;
+        }
+        if !(a.parry || basic)
+            || p > crate::tuning::WEAPON_CHORD
+            || b > crate::tuning::WEAPON_CHORD
+            || pl.sub.is_none()
+        {
+            return;
+        }
+        // 패링이 먼저였고 그 뒤에 튕겨 냈다 → 이 평타는 반격.
+        if !a.parry && pl.parry.since <= p {
+            return;
+        }
+        // 첫 누름이 시작한 것이 아직 시동 안이면 거둔다(쓴 기력은 그대로 — 한 대 값). 원거리의 첫 평타는 이미 나간 한 발이다.
+        let busy = match pl.state {
+            PState::Idle => false,
+            PState::Parry { t } | PState::Attack { t, .. } | PState::Cast { t, .. } => {
+                t > crate::tuning::WEAPON_CHORD
+            }
+            _ => true,
+        };
+        if busy {
+            return;
+        }
+        pl.state = PState::Idle;
+        pl.chord = (f32::MAX, f32::MAX);
+        a.parry = false;
+        if ranged {
+            a.cast = false;
+        } else {
+            a.attack = false;
+        }
+        if let Some(to) = self.swap_weapons() {
+            ev.push(Event::WeaponSwap { to });
+        }
+    }
+
     pub fn set_weapon(&mut self, id: weapons::Id) {
         let pl = &mut self.player;
         pl.weapon = id;
@@ -1176,6 +1372,21 @@ impl World {
         pl.ranged.grenades = w.grenade.map_or(0.0, |g| g.count as f32);
         if !matches!(pl.state, PState::Hurt { .. } | PState::Jump { .. }) {
             pl.state = PState::Idle;
+        }
+        self.refit_skills();
+    }
+
+    /// 끼운 칸을 지금 쥔 꼴에 맞춘다(0223 V3 → 0225): 그 꼴로 쓸 수 없는 스킬이 놓인 칸은 빈 칸(단 0)이 된다 — 누름·HUD·터치가 모두
+    /// `rank`를 본다. 무기를 들 때·바꿔 들 때·방패를 들고 내릴 때·칸을 끼울 때 부른다.
+    pub(crate) fn refit_skills(&mut self) {
+        let grip = self.grip();
+        let pl = &mut self.player;
+        for i in 0..2 {
+            pl.skill.rank[i] = if pl.skill.worn[i].def().fits(grip) {
+                pl.skill.known[i]
+            } else {
+                0
+            };
         }
     }
 
@@ -1409,8 +1620,10 @@ impl World {
             jump: merged.jump && !via_jump,
             ..merged
         };
-        // 무기의 버튼 길(0213 — 0151의 맞바꿈을 걷음, 사장 "쇠뇌는 rb로 발사하는게 맞겠어"): 어느 무기든 X = `attack`·RB = `cast`
-        // 그대로 — 쇠뇌는 RB = 사격(꾹 = 모은 사격), X = 수류탄(0048·0051의 자리로 돌아감).
+        // 무기의 버튼 길(0213 → 0223): 월드의 `attack` = 콤보·수류탄, `cast` = 마법·사격. 평타 버튼(RB)이 어느 쪽인지는 앱이
+        // 넘기기 전에 맞바꾼다(`input::weapon_buttons`). 패링 + 평타 = 주/부무기 바꾸기(`weapon_chord`).
+        let mut merged = merged;
+        self.weapon_chord(&mut merged, dt, &mut ev);
         let a = &merged;
         self.time += dt;
         self.player.prev = self.player.pos;
@@ -1422,11 +1635,13 @@ impl World {
         self.tick_lock(a, &mut ev);
         self.tick_player(a, t, dt);
         self.tick_skill_fields(t, dt);
+        self.tick_ails(t, dt);
         ev.append(&mut self.skill_ev);
         self.apply_strike(t, &mut ev);
         self.tick_bolts(t, dt, &mut ev);
         self.apply_turn(t, &mut ev);
         self.tick_enemies(t, dt, &mut ev);
+        self.tick_carts(t, dt, &mut ev);
         self.collide(t, &mut ev);
         self.cleanup(&mut ev);
         self.tick_embers(t, dt, &mut ev);
@@ -2132,11 +2347,46 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, t: &Tuning) -> i32 {
     } else {
         d
     };
-    // 끌어모으기 맺음(0158 G1): 모인 적은 잠깐 더 다친다.
-    if en.frail > 0.0 {
-        skills::scaled(d, en.frail_mult)
+    // 더 다치는 적: 끌어모으기 맺음(0158 G1)의 표지와 균열의 금(0223 V2) — 둘 가운데 큰 배 하나만(곱하지 않는다).
+    let frail = if en.frail > 0.0 { en.frail_mult } else { 1.0 };
+    let k = frail.max(rift_mult(en));
+    if k > 1.0 {
+        skills::scaled(d, k)
     } else {
         d
+    }
+}
+
+/// 금 간 적이 받는 피해의 배(0223 V2 — 보스는 낮게). 금이 없으면 1.
+pub fn rift_mult(en: &Enemy) -> f32 {
+    if en.ail.rift <= 0.0 {
+        1.0
+    } else if en.boss {
+        crate::tuning::RIFT_BOSS_MULT
+    } else {
+        crate::tuning::RIFT_MULT
+    }
+}
+
+/// 타입 게이지를 쌓는다(0223 V2 — 규칙은 `status::Ail::build`): 타입 있는 스킬의 타가 닿은 자리마다 부른다. 가득 차면 그 타입의 일 —
+/// 화상·묶임·금은 그 자리에서, 울림과 터짐(화상 중에 묶임)은 `tick_ails`가 둘레를 친다. 전환 중인 보스에게는 쌓이지 않는다.
+fn afflict(en: &mut Enemy, dose: crate::status::Dose, ev: &mut Vec<Event>) {
+    use crate::status::{Proc, Who};
+    // 이 타에 쓰러진 적(체력 0 — 상태는 부른 쪽이 곧 바꾼다)에는 걸리지 않는다: 주검 위에 상태 표지·소리가 뜨지 않게.
+    if dose.1 <= 0.0 || !en.alive() || en.hp <= 0 || en.rising() {
+        return;
+    }
+    let who = Who {
+        boss: en.boss,
+        elite: en.elite.is_some(),
+        mult: en.def().ail,
+    };
+    match en.ail.build(dose.0, dose.1, &who) {
+        Some(Proc::Burn(_) | Proc::Bind | Proc::Rift) => ev.push(Event::Ail {
+            at: en.pos + Vec3::Y * en.height * 0.6,
+            kind: dose.0,
+        }),
+        Some(Proc::Toll | Proc::Burst(_)) | None => {}
     }
 }
 
@@ -2145,6 +2395,12 @@ fn add_poise(en: &mut Enemy, amount: f32, primed: Option<f32>, t: &Tuning, ev: &
     if amount <= 0.0 || en.poise_lock > 0.0 || !en.alive() || en.rising() {
         return;
     }
+    // 묶인 적(0223 V2 뿌리)은 자세가 더 깎인다.
+    let amount = if en.ail.bound > 0.0 {
+        amount * crate::tuning::ROOT_POISE
+    } else {
+        amount
+    };
     let max = poise_max(en, t);
     let was_primed = primed.is_some_and(|k| en.poise >= max * k);
     en.poise += amount;
@@ -2163,6 +2419,13 @@ fn add_poise(en: &mut Enemy, amount: f32, primed: Option<f32>, t: &Tuning, ev: &
         ev.push(Event::Break {
             at: en.pos + Vec3::Y * en.height * 0.7,
         });
+        // 등짐꾼(0216 W2): 처음 깨지는 자세가 짐을 깬다 — 그 뒤로는 밀고 오지 못하고 느리다.
+        if en.kind == Kind::Packbearer && !en.load_lost {
+            en.load_lost = true;
+            ev.push(Event::LoadBreak {
+                at: en.pos + Vec3::Y * (en.height + 0.2),
+            });
+        }
     }
 }
 

@@ -55,6 +55,9 @@ pub enum Atk {
     Roots,
     /// 종 내던지기(종지기 2단계, 0133): 예고 첫 틱의 방랑자 자리(`plant_at`)에 종이 떨어지고(원판), 거기서 고리 한 겹.
     Hurl,
+    /// 갈고리 끌기(권양지기, 0208): 바라보는 쪽 곧은 띠로 갈고리가 날아간다(앞머리가 지나는 자리 한 번) — 닿으면 몸 쪽으로 끌려온다.
+    /// 띠라서 받아친다(0187) — 패링하면 갈고리가 튕겨 권양지기가 드러난다.
+    Hook,
     /// 껍질 받기(이끼 덮인 문지기, 0185): 공격이 아니다 — 예고 동안 웅크려 앞을 막고(`Enemy::guards`), 끝나면 풀며 쉰다(틈).
     /// 바닥 예고·소리는 없다(몸이 말한다).
     Shell,
@@ -218,6 +221,10 @@ pub struct Enemy {
     pub feint: Option<Atk>,
     /// 2단계 전환을 시작한 체력(0133) — 전환 동안 이 아래로 깎이지 않는다.
     pub rise_hp: i32,
+    /// 3단계(0208 — 권양지기): 사슬이 끊겨 끈 없이 쫓는다. 체력 넷에 하나 아래에서 한 번(두 번째 `Rise`).
+    pub unchained: bool,
+    /// 처음 선 자리(0208 — 사슬에 묶인 권양지기의 끈 가운데).
+    pub anchor: Vec3,
     /// 2단계 잇기(0133): 돌진 끝에 곧장 이은 공격을 이미 했다(한 번만, 다음에 새로 고를 때 풀린다).
     pub linked: bool,
     pub cued: bool,
@@ -235,6 +242,10 @@ pub struct Enemy {
     pub snare: f32,
     /// 묶는 뿌리(0214 뿌리 솟기 ㄴ): 걷지 못하는 남은 초.
     pub bind: f32,
+    /// 타입 상태(0223 V2 — 게이지·화상 겹·묶임·금·울림): 규칙은 `status.rs`, 번지는 일은 월드(`world/ail_tick.rs`).
+    pub ail: crate::status::Ail,
+    /// 등짐꾼의 짐이 깨졌다(0216 W2 — 자세 막대가 처음 깨질 때): 더는 밀고 오지 못하고 느리게 걷는다.
+    pub load_lost: bool,
     /// 남는 불씨(0158 G2, 잔불 흩기 ㄴ): 지금 선 자리의 불티가 쓰러질 때 더 남기는 잔불 수(월드가 틱마다 적는다, 0 = 없음).
     pub kindled: u32,
 }
@@ -291,6 +302,10 @@ pub struct Out {
     pub shards: u8,
     /// 2단계 전환이 터졌다(0133 — 월드가 둘레의 방랑자를 밀어낸다).
     pub burst: bool,
+    /// 갈고리가 방랑자를 걸었다(0208 — 월드가 몸 쪽으로 끌어당긴다, `hit`과 같이).
+    pub pull: bool,
+    /// 3단계(0208 권양지기): 이번 틱에 사슬이 끊겼다.
+    pub unchained: bool,
 }
 
 impl Enemy {
@@ -346,6 +361,8 @@ impl Enemy {
             chain_i: 0,
             feint: None,
             rise_hp: 0,
+            unchained: false,
+            anchor: pos,
             linked: false,
             cued: false,
             dice: (pos.x.to_bits()
@@ -359,6 +376,8 @@ impl Enemy {
             slow: 1.0,
             snare: 0.0,
             bind: 0.0,
+            ail: crate::status::Ail::default(),
+            load_lost: false,
             kindled: 0,
         }
     }
@@ -494,7 +513,9 @@ impl Enemy {
     }
 
     fn tele_mul(&self) -> f32 {
-        if self.roused {
+        if self.unchained {
+            ROUSED_TELE * crate::tuning::UNCHAIN_TELE
+        } else if self.roused {
             ROUSED_TELE
         } else {
             1.0
@@ -611,6 +632,7 @@ impl Enemy {
                 Atk::Wave => d.wave_tele,
                 Atk::Plant | Atk::Shards => d.tele,
                 Atk::Toll | Atk::Roots | Atk::Hurl => d.wave_tele,
+                Atk::Hook => d.charge_tele,
                 Atk::Shell => crate::tuning::SHELL_HOLD,
             }
     }
@@ -665,6 +687,11 @@ impl Enemy {
             }
             Atk::Hurl => TeleShape::Disc {
                 r: HURL_R + PLAYER_RADIUS,
+            },
+            // 갈고리(0208): 날아가는 길 = 띠(받아침).
+            Atk::Hook => TeleShape::Lane {
+                len: self.charge_len,
+                w: (crate::tuning::HOOK_R + PLAYER_RADIUS) * 2.0,
             },
             // 껍질은 공격이 아니다 — `telegraph`가 그리지 않는다.
             Atk::Shell => TeleShape::Disc { r: 0.0 },
@@ -834,7 +861,7 @@ impl Enemy {
             Behavior::Charger => {
                 if dist <= d.reach - 0.2 {
                     Some(Atk::Smash)
-                } else if dist <= d.charge_range && dist > 2.5 {
+                } else if dist <= d.charge_range && dist > 2.5 && !self.load_lost {
                     Some(Atk::Charge)
                 } else {
                     None
@@ -872,6 +899,35 @@ impl Enemy {
             // 이끼먹이(0185)는 치지 않는다.
             Behavior::Grazer => None,
             // 이끼 덮인 문지기(0185): 붙으면 쓸기 둘에 껍질 하나, 떨어지면 틈새 돌진.
+            // 사슬에 묶인 권양지기(0208): 사슬이 끊기기 전(1·2단계)은 붙으면 내려치기 둘에 사슬 휘두르기 하나, 떨어지면 갈고리와
+            // 추를 번갈아. 끊긴 뒤(3단계)는 끈 없이 쫓으며 내려치기·돌진(넷에 한 번 사슬 휘두르기).
+            Behavior::Overseer => {
+                if self.unchained {
+                    if self.atk_count % 4 == 3 && dist <= d.wave_radius - 1.0 {
+                        Some(Atk::Wave)
+                    } else if dist <= d.reach - 0.5 {
+                        Some(Atk::Slam)
+                    } else if dist <= d.charge_range && dist > 4.5 {
+                        Some(Atk::Charge)
+                    } else {
+                        None
+                    }
+                } else if dist <= d.reach - 0.5 {
+                    Some(if self.atk_count % 3 == 2 {
+                        Atk::Wave
+                    } else {
+                        Atk::Slam
+                    })
+                } else if dist <= d.charge_range && dist > 4.0 {
+                    Some(if self.atk_count.is_multiple_of(2) {
+                        Atk::Hook
+                    } else {
+                        Atk::Hurl
+                    })
+                } else {
+                    None
+                }
+            }
             Behavior::Mossward => {
                 if dist <= d.reach - 0.5 {
                     Some(if self.atk_count % 3 == 2 {
@@ -912,7 +968,8 @@ impl Enemy {
         let Some((home, face)) = self.home else {
             return;
         };
-        let speed = self.def().speed;
+        // 묶이거나(뿌리 0223 V2) 느려진 몸은 달아날 때도 그만큼 — 걷는 적과 같은 `slow`.
+        let speed = self.def().speed * self.slow;
         let away = vec3(self.pos.x - player.x, 0.0, self.pos.z - player.z);
         let near = away.length() < GRAZE_FLEE_R;
         let from_home = vec3(self.pos.x - home.x, 0.0, self.pos.z - home.z);
@@ -993,7 +1050,35 @@ impl Enemy {
         let to = vec3(player.x - self.pos.x, 0.0, player.z - self.pos.z);
         let dist = to.length();
         let dir = if dist > 1e-4 { to / dist } else { Vec3::Z };
-        let speed = d.speed * if self.roused { ROUSED_SPEED } else { 1.0 } * self.slow;
+        // 3단계(0208 권양지기): 체력 넷에 하나 아래에서 한 번 — 사슬이 끊긴다(두 번째 전환, 2단계와 같은 꼴: 맞지 않고 터지며 일어선다).
+        if d.behavior == Behavior::Overseer
+            && self.roused
+            && !self.unchained
+            && self.hp * 4 <= self.max_hp
+            && !self.rising()
+        {
+            self.unchained = true;
+            out.unchained = true;
+            self.rise_hp = self.hp.max(crate::tuning::HP_UNIT);
+            self.state = EState::Rise { t: 0.0 };
+            self.plant_at = None;
+            self.feint = None;
+            self.chain_on = false;
+            self.knock = Vec3::ZERO;
+        }
+        let speed = d.speed
+            * if self.roused { ROUSED_SPEED } else { 1.0 }
+            * if self.unchained {
+                crate::tuning::UNCHAIN_SPEED
+            } else {
+                1.0
+            }
+            * self.slow
+            * if self.load_lost {
+                crate::tuning::LOAD_LOST_SPEED
+            } else {
+                1.0
+            };
         self.charge_aim = false;
         // 떼 퍼지기(0076): 가는 쪽의 옆으로만 비킨다(뒤로 물러서지 않는다), 앞이 막혔으면 조금 늦춘다.
         let steer = |go: Vec3, spread: Vec3| -> (Vec3, f32) {
@@ -1039,6 +1124,8 @@ impl Enemy {
                     self.facing = face;
                     self.hp = self.max_hp;
                     self.poise = 0.0;
+                    // 타입 상태(0223 V2)도 걷힌다 — 가득 찬 적이 화상으로 다시 깎이지 않게.
+                    self.ail = Default::default();
                     self.repeated = false;
                 }
             }
@@ -1106,7 +1193,7 @@ impl Enemy {
                         Atk::Smash | Atk::Slam | Atk::Plant | Atk::Shards | Atk::Hurl => {
                             EState::Swing { t: 0.0 }
                         }
-                        Atk::Toll | Atk::Roots => EState::Wave { t: 0.0 },
+                        Atk::Toll | Atk::Roots | Atk::Hook => EState::Wave { t: 0.0 },
                         Atk::Charge => EState::Charge {
                             t: 0.0,
                             dir: self.facing_dir(),
@@ -1201,6 +1288,30 @@ impl Enemy {
                     }
                 };
             }
+            EState::Wave { t: e } if self.atk == Atk::Hook => {
+                // 갈고리(0208): 앞머리가 지나는 자리의 방랑자를 한 번 걸어(`pull` — 월드가 끌어당긴다), 끝까지 가면 거둔다.
+                let f = self.facing_dir();
+                let to = vec3(player.x - self.pos.x, 0.0, player.z - self.pos.z);
+                let along = to.dot(f);
+                let side = (to - f * along).length();
+                let speed = crate::tuning::HOOK_SPEED;
+                let front = (self.radius + (e + dt) * speed).min(self.charge_len);
+                if self.rings_hit == 0
+                    && along > 0.0
+                    && side <= crate::tuning::HOOK_R + PLAYER_RADIUS
+                    && along <= front
+                    && along >= front - speed * 0.12 - 0.6
+                {
+                    self.rings_hit = 1;
+                    out.hit = true;
+                    out.pull = true;
+                }
+                self.state = if front >= self.charge_len {
+                    EState::Recover { t: 0.0 }
+                } else {
+                    EState::Wave { t: e + dt }
+                };
+            }
             EState::Wave { t: e } if self.atk == Atk::Roots => {
                 // 뿌리 기둥 줄(0133): 앞머리가 지나는 자리의 방랑자를 한 번 친다 — 바라보는 쪽 줄 위(옆 `ROOTS_R` 안).
                 let f = self.facing_dir();
@@ -1279,6 +1390,15 @@ impl Enemy {
                 } else {
                     EState::Stagger { t: e + dt, dur }
                 };
+            }
+        }
+        // 사슬(0208 권양지기): 끊기기 전에는 처음 선 자리에서 `CHAIN_LEN`까지만 — 더 가려 하면 사슬이 붙잡는다.
+        if d.behavior == Behavior::Overseer && !self.unchained {
+            let off = vec3(self.pos.x - self.anchor.x, 0.0, self.pos.z - self.anchor.z);
+            let len = off.length();
+            if len > crate::tuning::CHAIN_LEN {
+                let back = off * (crate::tuning::CHAIN_LEN / len) - off;
+                self.pos += back;
             }
         }
         out
@@ -1935,5 +2055,150 @@ mod tests {
         en.state = EState::Dormant;
         assert_eq!(run(&mut en, Vec3::ZERO, 300), 0);
         assert_eq!(en.state, EState::Dormant);
+    }
+}
+
+/// 사슬에 묶인 권양지기(0208)의 수.
+#[cfg(test)]
+mod overseer_tests {
+    use super::*;
+
+    fn awake() -> Enemy {
+        let mut en = Enemy::new(Kind::Overseer, Vec3::ZERO);
+        en.state = EState::Chase;
+        en
+    }
+
+    /// 사슬이 끊기기 전: 붙으면 내려치기 둘에 사슬 휘두르기(고리) 하나, 떨어지면 갈고리(띠 — 받아친다)와 추(원판)를 번갈아.
+    /// 끊긴 뒤: 떨어지면 돌진.
+    #[test]
+    fn the_overseer_slams_and_sweeps_up_close_and_hooks_or_drops_the_weight_afar() {
+        let mut en = awake();
+        let d = en.def();
+        let near = d.reach - 0.6;
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            seen.push(en.choose(near).unwrap());
+            en.atk_count += 1;
+        }
+        assert_eq!(seen, [Atk::Slam, Atk::Slam, Atk::Wave]);
+        en.atk_count = 0;
+        let far = 9.0;
+        let a = en.choose(far).unwrap();
+        en.atk_count += 1;
+        let b = en.choose(far).unwrap();
+        assert_eq!((a, b), (Atk::Hook, Atk::Hurl));
+        en.atk = Atk::Hook;
+        assert!(en.parryable(), "the hook is a lane — parry it");
+        en.unchained = true;
+        en.atk_count = 0;
+        assert_eq!(
+            en.choose(far),
+            Some(Atk::Charge),
+            "unchained, it runs at you"
+        );
+    }
+
+    /// 사슬: 끊기기 전에는 처음 자리에서 `CHAIN_LEN` 밖으로 못 간다 — 끊긴 뒤에는 쫓아온다.
+    #[test]
+    fn the_chain_holds_it_until_it_snaps() {
+        let mut en = awake();
+        let far = vec3(0.0, 0.0, -40.0);
+        for _ in 0..600 {
+            en.tick(far, 1.0 / 60.0);
+        }
+        assert!(
+            vec3(en.pos.x, 0.0, en.pos.z).length() <= crate::tuning::CHAIN_LEN + 1e-3,
+            "{:?}",
+            en.pos
+        );
+        en.unchained = true;
+        en.roused = true;
+        for _ in 0..600 {
+            en.tick(far, 1.0 / 60.0);
+        }
+        assert!(
+            en.pos.length() > crate::tuning::CHAIN_LEN + 3.0,
+            "free to chase"
+        );
+    }
+
+    /// 단계: 반 아래에서 2단계(`roused`), 넷에 하나 아래에서 사슬이 끊긴다(3단계 — 두 번째 전환, 그동안 맞지 않는다).
+    #[test]
+    fn the_overseer_has_three_phases() {
+        let mut en = awake();
+        let max = en.max_hp;
+        en.hp = max / 2 - 1;
+        en.tick(vec3(0.0, 0.0, -3.0), 1.0 / 60.0);
+        assert!(en.roused && !en.unchained && en.rising());
+        for _ in 0..600 {
+            en.tick(vec3(0.0, 0.0, -3.0), 1.0 / 60.0);
+        }
+        assert!(!en.rising());
+        en.hp = max / 4 - 1;
+        let out = en.tick(vec3(0.0, 0.0, -3.0), 1.0 / 60.0);
+        assert!(out.unchained && en.unchained && en.rising());
+        // 다른 문지기는 3단계가 없다.
+        let mut moss = Enemy::new(Kind::Mossward, Vec3::ZERO);
+        moss.state = EState::Chase;
+        moss.roused = true;
+        moss.hp = moss.max_hp / 5;
+        moss.tick(vec3(0.0, 0.0, -3.0), 1.0 / 60.0);
+        assert!(!moss.unchained);
+    }
+}
+
+/// 작업층의 재활동체(0208 S4-3).
+#[cfg(test)]
+mod works_tests {
+    use super::*;
+
+    /// 되풀이꾼: 붙으면 내려찍기를 같은 박자로 셋 — 세 타의 예고 길이가 같다(지연·빠름이 없다).
+    #[test]
+    fn the_repeater_strikes_three_times_on_the_same_beat() {
+        let mut en = Enemy::new(Kind::Repeater, Vec3::ZERO);
+        en.state = EState::Chase;
+        let p = vec3(0.0, 0.0, -1.2);
+        let mut hits: Vec<usize> = Vec::new();
+        let mut teles = Vec::new();
+        let mut was_tele = false;
+        for k in 0..600 {
+            let out = en.tick(p, 1.0 / 60.0);
+            let tele = matches!(en.state, EState::Tele { .. });
+            if tele && !was_tele {
+                teles.push(en.tele_dur());
+            }
+            was_tele = tele;
+            if out.hit {
+                hits.push(k);
+            }
+            if hits.len() >= 3 {
+                break;
+            }
+        }
+        assert_eq!(hits.len(), 3, "three blows");
+        assert!(teles.len() >= 3);
+        assert!(
+            teles[..3].iter().all(|t| (t - teles[0]).abs() < 1e-4),
+            "the same beat: {teles:?}"
+        );
+        // 세 타 사이가 쉬기 없이 이어진다(되풀이 — 같은 간격).
+        let (a, b) = (hits[1] - hits[0], hits[2] - hits[1]);
+        assert!(a.abs_diff(b) <= 1, "{hits:?}");
+    }
+
+    /// 등짐꾼: 떨어져 있으면 띠 예고 뒤 곧게 밀고 온다(받아친다 — 돌진은 띠). 짐이 깨지면(0216 W2) 밀고 오지 못한다.
+    #[test]
+    fn the_packbearer_drives_its_load_straight_at_you() {
+        let en = Enemy::new(Kind::Packbearer, Vec3::ZERO);
+        assert_eq!(en.choose(6.0), Some(Atk::Charge));
+        assert_eq!(en.choose(1.0), Some(Atk::Smash));
+        let mut en = en;
+        en.atk = Atk::Charge;
+        assert!(en.parryable());
+        assert!(matches!(en.tele_shape(), TeleShape::Lane { .. }));
+        en.load_lost = true;
+        assert_eq!(en.choose(6.0), None, "no load to drive");
+        assert_eq!(en.choose(1.0), Some(Atk::Smash));
     }
 }

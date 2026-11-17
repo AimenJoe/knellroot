@@ -103,7 +103,9 @@ pub(super) fn open_cells(board: &sk::Board) -> Vec<Entry> {
     ENTRIES
         .iter()
         .copied()
-        .filter(|e| matches!(e, Entry::Cell(_) | Entry::Link(_)) && board.rank(*e) >= 1)
+        .filter(|e| {
+            matches!(e, Entry::Cell(_) | Entry::Link(_) | Entry::Vein(_)) && board.rank(*e) >= 1
+        })
         .collect()
 }
 
@@ -111,7 +113,7 @@ pub(super) fn open_cells(board: &sk::Board) -> Vec<Entry> {
 pub(super) fn cell_count() -> usize {
     ENTRIES
         .iter()
-        .filter(|e| matches!(e, Entry::Cell(_) | Entry::Link(_)))
+        .filter(|e| matches!(e, Entry::Cell(_) | Entry::Link(_) | Entry::Vein(_)))
         .count()
 }
 
@@ -346,7 +348,11 @@ impl App {
             (0.0, s.status_levels.to_string()),
             (
                 HEAD + LEVEL_H * n as f32 + GROUP_GAP,
-                s.status_skills.to_string(),
+                // 부무기가 있으면 칸이 무기마다 따로다(0223 V3) — 이 줄들이 어느 무기의 칸인지 머리글이 말한다.
+                match self.progress.sub {
+                    Some(_) => format!("{} — {}", s.status_skills, weapon_name(self.weapon)),
+                    None => s.status_skills.to_string(),
+                },
             ),
         ];
         let board = self.board();
@@ -444,7 +450,13 @@ impl App {
                             c,
                             (CHARM_H - 5.0) * 0.5 * u,
                             u,
-                            super::skills::Look::Owned,
+                            // 지금 쥔 꼴로 못 쓰는 스킬(0225)은 흐리게 — 싸움 화면의 흐린 칸과 같은 말.
+                            match e {
+                                Entry::Skill(id) if !id.def().fits(self.kits().main.0) => {
+                                    super::skills::Look::Short
+                                }
+                                _ => super::skills::Look::Owned,
+                            },
                             None,
                         );
                     }
@@ -810,6 +822,6 @@ mod tests {
             skills_cursor(Row::Ult, &old, worn, sk::Ult::Upend),
             at(Entry::Ult(sk::Ult::Upend))
         );
-        assert_eq!(cell_count(), 25);
+        assert_eq!(cell_count(), 29);
     }
 }

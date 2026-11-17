@@ -80,6 +80,10 @@ pub struct Seen {
     pub charged: u32,
     /// 등잔을 마셨다(0213 — 마셔 보기 전까지는 체력이 반 아래로 갈 때마다 등잔을 알린다).
     pub gulps: u32,
+    /// 0223: 무기를 바꿔 들었다 · 방패로 막았다 · 타입의 일이 걸렸다(상황 힌트가 본다).
+    pub swaps: u32,
+    pub blocks: u32,
+    pub ails: u32,
 }
 
 /// 지금의 사실(앱이 기록·월드에서 모은다).
@@ -266,11 +270,36 @@ pub enum Tip {
     Lock,
     /// 평타를 여럿 맞혔는데 아직 모아 친 적이 없다 — 쥐었다 떼기.
     Charge,
+    /// 부무기가 생겼는데 아직 바꿔 든 적이 없다 — 패링 + 평타. (비트 3은 비워 둔다 — 잠깐 있던 "버튼이 바뀌었다" 알림의 자리:
+    /// 공개 전이라 옛 손이 없어 걷었다, 0223 10절.)
+    Swap = 4,
+    /// 한손 무기에 방패를 들었는데 아직 막아 본 적이 없다 — 패링을 쥔다.
+    Block,
+    /// 배운 스킬이 지금 든 무기로는 안 나간다 — 흐린 칸의 뜻.
+    Unfit,
+    /// 타입의 일이 처음 걸렸다 — 머리 위 표지의 뜻.
+    Type,
+    /// 여벌이 처음 가방에 들었다 — 견주는 곳·잔불로 바꾸는 곳.
+    Spare,
+    /// 가방이 가득이라 떨어진 것을 못 줍는다(0226) — 자리를 만드는 법.
+    Full,
 }
 
-pub const TIPS: [Tip; 3] = [Tip::Flask, Tip::Lock, Tip::Charge];
+pub const TIPS: [Tip; 9] = [
+    Tip::Flask,
+    Tip::Lock,
+    Tip::Charge,
+    Tip::Swap,
+    Tip::Block,
+    Tip::Unfit,
+    Tip::Type,
+    Tip::Spare,
+    Tip::Full,
+];
 /// 상황 힌트가 떠 있는 시간(초) — 그 일을 하면 먼저 걷힌다.
 pub const TIP_TIME: f32 = 6.0;
+/// 힌트 하나가 걷힌 뒤 다음 힌트까지의 쉼(초) — 여럿이 때를 맞아도 줄지어 덮지 않는다.
+pub const TIP_REST: f32 = 5.0;
 /// 모으기 힌트: 이만큼 맞혀도 한 번도 모아 치지 않았으면.
 pub const CHARGE_TIP_HITS: u32 = 12;
 
@@ -282,11 +311,18 @@ pub struct Situation {
     /// 깨어 있는 엘리트·문지기가 곁에 있다.
     pub big_foe: bool,
     pub locked: bool,
+    /// 부무기가 있다 · 한손 무기에 방패를 들었다 · 배운 스킬이 든 무기로 안 나가는 칸이 있다 · 가방에 여벌이 있다(0223).
+    pub has_sub: bool,
+    pub can_block: bool,
+    pub unfit: bool,
+    pub spare: bool,
+    /// 곁에 떨어진 것이 있는데 가방이 가득이다(0226).
+    pub bag_blocked: bool,
 }
 
 impl Tip {
-    pub fn bit(self) -> u8 {
-        1 << self as u8
+    pub fn bit(self) -> u16 {
+        1 << self as u16
     }
 
     /// 이 힌트를 띄울 때인가. 몸의 걸음(걷기~패링) 동안은 그 판과 겹치지 않게 기다린다(`at` = 튜토리얼의 지난 걸음 수) —
@@ -299,23 +335,38 @@ impl Tip {
             Tip::Flask => now.hp_low && now.has_flask && s.gulps == 0,
             Tip::Lock => now.big_foe && !now.locked,
             Tip::Charge => s.hits >= CHARGE_TIP_HITS && s.charged == 0,
+            Tip::Swap => now.has_sub && s.swaps == 0,
+            Tip::Block => now.can_block && s.blocks == 0,
+            Tip::Unfit => now.unfit,
+            Tip::Type => s.ails > 0,
+            Tip::Spare => now.spare,
+            Tip::Full => now.bag_blocked,
         }
     }
 
-    /// 할 일을 했다 — 일찍 걷는다.
+    /// 할 일을 했다 — 일찍 걷는다. 알리기만 하는 힌트(타입·여벌)는 제 시간만큼 떠 있다.
     pub fn done(self, now: &Situation, s: &Seen) -> bool {
         match self {
             Tip::Flask => !now.hp_low || s.gulps > 0,
             Tip::Lock => now.locked,
             Tip::Charge => s.charged > 0,
+            Tip::Swap => s.swaps > 0,
+            Tip::Block => s.blocks > 0,
+            Tip::Unfit => !now.unfit,
+            Tip::Type | Tip::Spare => false,
+            Tip::Full => !now.bag_blocked,
         }
     }
 
-    pub fn bind(self) -> Bind {
+    /// 이 힌트의 버튼들(차례대로 — 둘이면 함께 누른다, 없으면 버튼 없는 알림).
+    pub fn binds(self) -> &'static [Bind] {
         match self {
-            Tip::Flask => Bind::Flask,
-            Tip::Lock => Bind::Lock,
-            Tip::Charge => Bind::Attack,
+            Tip::Flask => &[Bind::Flask],
+            Tip::Lock => &[Bind::Lock],
+            Tip::Charge => &[Bind::Attack],
+            Tip::Swap => &[Bind::Parry, Bind::Attack],
+            Tip::Block => &[Bind::Parry],
+            Tip::Unfit | Tip::Type | Tip::Spare | Tip::Full => &[],
         }
     }
 
@@ -324,15 +375,21 @@ impl Tip {
             Tip::Flask => (st.tip_flask, st.tip_flask_d),
             Tip::Lock => (st.tip_lock, st.tip_lock_d),
             Tip::Charge => (st.tip_charge, st.tip_charge_d),
+            Tip::Swap => (st.tip_swap, st.tip_swap_d),
+            Tip::Block => (st.tip_block, st.tip_block_d),
+            Tip::Unfit => (st.tip_unfit, st.tip_unfit_d),
+            Tip::Type => (st.tip_type, st.tip_type_d),
+            Tip::Spare => (st.tip_spare, st.tip_spare_d),
+            Tip::Full => (st.tip_full, st.tip_full_d),
         }
     }
 
-    /// 판에 그릴 한 장(점 없음).
+    /// 판에 그릴 한 장(점 없음). 버튼이 둘이면 키캡을 나란히(함께 누른다 — HUD의 부무기 칸과 같은 꼴).
     pub fn hint(self, st: &Strings, key: impl Fn(Bind) -> String) -> Hint {
         let (text, more) = self.text(st);
         Hint {
             at: None,
-            key: key(self.bind()),
+            key: self.binds().iter().map(|b| key(*b)).collect(),
             text,
             count: None,
             more,
@@ -341,7 +398,7 @@ impl Tip {
 }
 
 /// 다음에 띄울 상황 힌트(본 것 `shown` 비트에 없는 것 가운데 표 차례로 처음 때가 된 것).
-pub fn next_tip(shown: u8, at: u8, now: &Situation, s: &Seen) -> Option<Tip> {
+pub fn next_tip(shown: u16, at: u8, now: &Situation, s: &Seen) -> Option<Tip> {
     TIPS.into_iter()
         .find(|t| shown & t.bit() == 0 && t.due(at, now, s))
 }
@@ -528,11 +585,48 @@ mod tests {
             }
         }
         // 비트는 서로 겹치지 않는다(기록 하나에 셋).
-        let bits: u8 = TIPS.iter().map(|t| t.bit()).fold(0, |a, b| {
+        let bits: u16 = TIPS.iter().map(|t| t.bit()).fold(0, |a, b| {
             assert_eq!(a & b, 0);
             a | b
         });
         assert_eq!(bits.count_ones(), TIPS.len() as u32);
+    }
+
+    /// 0223의 새 것들: 부무기가 생기면 바꿔 들기(바꿔 들면 걷힌다), 방패를 들면 막기, 안 맞는 스킬 칸, 처음 걸린 타입, 처음 든 여벌 —
+    /// 저마다 그 때에 한 번.
+    #[test]
+    fn the_new_arms_and_loot_get_their_one_tip_each() {
+        let s = Seen::default();
+        let none = Situation::default();
+        let with = |f: fn(&mut Situation)| {
+            let mut n = none;
+            f(&mut n);
+            n
+        };
+        let sub = with(|n| n.has_sub = true);
+        assert_eq!(next_tip(0, DONE, &sub, &s), Some(Tip::Swap));
+        assert_eq!(Tip::Swap.binds(), [Bind::Parry, Bind::Attack]);
+        let swapped = Seen { swaps: 1, ..s };
+        assert_eq!(next_tip(0, DONE, &sub, &swapped), None, "already knows");
+        assert!(Tip::Swap.done(&sub, &swapped));
+        let shield = with(|n| n.can_block = true);
+        assert_eq!(next_tip(0, DONE, &shield, &s), Some(Tip::Block));
+        assert!(Tip::Block.done(&shield, &Seen { blocks: 1, ..s }));
+        let unfit = with(|n| n.unfit = true);
+        assert_eq!(next_tip(0, DONE, &unfit, &s), Some(Tip::Unfit));
+        assert!(Tip::Unfit.done(&none, &s), "fits again — gone");
+        assert_eq!(
+            next_tip(0, DONE, &none, &Seen { ails: 1, ..s }),
+            Some(Tip::Type)
+        );
+        let spare = with(|n| n.spare = true);
+        assert_eq!(next_tip(0, DONE, &spare, &s), Some(Tip::Spare));
+        // 0226: 가방이 가득이라 못 줍는 것 곁에서 — 자리를 만들거나 떠나면 걷힌다.
+        let blocked = with(|n| n.bag_blocked = true);
+        assert_eq!(next_tip(0, DONE, &blocked, &s), Some(Tip::Full));
+        assert!(Tip::Full.done(&none, &s) && !Tip::Full.done(&blocked, &s));
+        // 몸의 걸음 동안은 모두 기다린다.
+        assert_eq!(next_tip(0, AFTER_BASICS - 1, &sub, &s), None);
     }
 
     /// 패링은 막히지 않는다: 깨어 있는 적 곁에서 `PARRY_GIVE_UP`초를 못 하면 넘어간다(상도 받는다 — 해 본 것으로 친다).

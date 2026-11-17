@@ -4,6 +4,7 @@
 pub mod garden;
 pub mod sanctuary;
 pub mod village;
+pub mod workings;
 
 use macroquad::prelude::*;
 
@@ -299,6 +300,52 @@ impl Level {
         self.cell(x, z) == b'.'
     }
 
+    /// 월드 자리 → 칸(`at`의 거꾸로). 지도 밖이면 없음.
+    pub fn cell_of(&self, p: Vec3) -> Option<(usize, usize)> {
+        let fx = (p.x / CELL + self.w as f32 * 0.5).floor();
+        let fz = (p.z / CELL + self.h as f32 * 0.5).floor();
+        (fx >= 0.0 && fz >= 0.0 && (fx as usize) < self.w && (fz as usize) < self.h)
+            .then_some((fx as usize, fz as usize))
+    }
+
+    /// 그 자리가 걸을 수 있는 땅인가.
+    pub fn on_floor(&self, p: Vec3) -> bool {
+        self.cell_of(p).is_some_and(|(x, z)| self.walkable(x, z))
+    }
+
+    /// 떨굼을 놓을 자리(0226 — 줍지 못할 자리에 떨어지지 않게): `to`가 걸을 수 있는 땅이면 그대로, 아니면 `from`(쓰러진 자리·
+    /// 방랑자)으로 곧게 물러나며 처음 닿는 땅. 그 줄에 땅이 없으면(`from`도 벽 속 — 밀려 들어간 몸) `to` 둘레에서 가장 가까운
+    /// 땅 칸의 가운데. 지도의 모든 땅은 이어져 있다(`every_floor_is_reachable…` 시험) — 땅이면 주울 수 있다. 높이는 부른 쪽이.
+    pub fn floor_toward(&self, from: Vec3, to: Vec3) -> Vec3 {
+        const STEPS: usize = 12;
+        for k in 0..=STEPS {
+            let p = to.lerp(from, k as f32 / STEPS as f32);
+            if self.on_floor(p) {
+                return p;
+            }
+        }
+        let (cx, cz) = self.cell_of(to).unwrap_or((self.w / 2, self.h / 2));
+        let mut best: Option<(f32, Vec3)> = None;
+        for r in 1..=6usize {
+            for z in cz.saturating_sub(r)..=(cz + r).min(self.h.saturating_sub(1)) {
+                for x in cx.saturating_sub(r)..=(cx + r).min(self.w.saturating_sub(1)) {
+                    if !self.walkable(x, z) {
+                        continue;
+                    }
+                    let c = self.at(x, z);
+                    let d = vec2(c.x - to.x, c.z - to.z).length();
+                    if best.is_none_or(|(b, _)| d < b) {
+                        best = Some((d, c));
+                    }
+                }
+            }
+            if let Some((_, c)) = best {
+                return vec3(c.x, to.y, c.z);
+            }
+        }
+        to
+    }
+
     /// 걸을 수 있는 땅(0043): 바닥 칸은 높이(없으면 0), 경사로 칸은 같은 줄(가로 또는 세로)로 이어진 경사로 묶음의
     /// 양 끝 이웃 높이를 곧게 잇는다(높이 차가 큰 쪽 축). 벽·바깥은 `Solid`.
     pub fn ground(&self) -> Ground {
@@ -433,10 +480,13 @@ pub struct StageDef {
     pub tier: u8,
     /// 지역 환경(0118 T2): 원경·달빛·안개·떠다니는 것·식생 — `backdrop::SURFACE`·`UNDERGROUND`.
     pub env: &'static crate::backdrop::Env,
+    /// 문(`G`)이 지름길일 뿐인 지역(0208 — 작업층의 화물 승강대): 문지기 싸움터의 문이 아니라서 처음부터 문 앞 단계(문지기는 장치와
+    /// 상관없이 깬다), 문은 장치를 당겨야만 열리고 연 뒤에는 닫히지 않는다(문지기가 깨도).
+    pub shortcut: bool,
 }
 
 /// 판의 차례(0118, v0.5.0 T1): 성소 → 떠난 마을. 지도 `D`(내려가는 길, 핵을 거둔 뒤)로 다음, `U`(오르는 길)로 앞.
-pub static STAGES: [&StageDef; 3] = [&sanctuary::DEF, &village::DEF, &garden::DEF];
+pub static STAGES: [&StageDef; 4] = [&sanctuary::DEF, &village::DEF, &garden::DEF, &workings::DEF];
 /// 내려가는 길·오르는 길 표지(0118)와 밟는 거리(m). 표지에서 이만큼 벗어난 뒤에야 다시 밟을 수 있다.
 pub const DOWN_GLYPH: char = 'D';
 pub const UP_GLYPH: char = 'U';
@@ -447,6 +497,48 @@ pub const SHAFT_R: f32 = 1.7;
 /// 상자 기록 번호(0118): 지역마다 `지역 × 이것 + 상자 번호`(성소는 그대로 — 옛 기록이 이어진다).
 pub const CHESTS_PER_STAGE: u32 = 1000;
 const PASSAGE_ARM: f32 = 2.6;
+
+/// 레일 표지(0208): 수레가 오가는 줄(나란한 두 칸이 한 짝).
+pub const RAIL_GLYPH: char = '|';
+
+/// 레일 칸들을 이어진 묶음으로 — 묶음마다 (남쪽 끝, 북쪽 끝)의 가운데 줄(길이 방향이 긴 쪽).
+pub fn rail_lanes(cells: &[Vec3]) -> Vec<(Vec3, Vec3)> {
+    let mut seen = vec![false; cells.len()];
+    let mut out = Vec::new();
+    for s in 0..cells.len() {
+        if seen[s] {
+            continue;
+        }
+        let mut group = vec![s];
+        seen[s] = true;
+        let mut k = 0;
+        while k < group.len() {
+            let c = cells[group[k]];
+            for (j, d) in cells.iter().enumerate() {
+                if !seen[j] && (d.x - c.x).abs() <= CELL * 1.01 && (d.z - c.z).abs() <= CELL * 1.01
+                {
+                    seen[j] = true;
+                    group.push(j);
+                }
+            }
+            k += 1;
+        }
+        let pts: Vec<Vec3> = group.iter().map(|&i| cells[i]).collect();
+        let (x0, x1) = pts
+            .iter()
+            .fold((f32::MAX, f32::MIN), |m, p| (m.0.min(p.x), m.1.max(p.x)));
+        let (z0, z1) = pts
+            .iter()
+            .fold((f32::MAX, f32::MIN), |m, p| (m.0.min(p.z), m.1.max(p.z)));
+        let (cx, cz) = ((x0 + x1) * 0.5, (z0 + z1) * 0.5);
+        if z1 - z0 >= x1 - x0 {
+            out.push((vec3(cx, 0.0, z1), vec3(cx, 0.0, z0)));
+        } else {
+            out.push((vec3(x0, 0.0, cz), vec3(x1, 0.0, cz)));
+        }
+    }
+    out
+}
 
 /// 문을 여는 장치(0113): 지도 `V`. 곁에서 상호작용 = 당기기 — 문이 열리고 기록에 남는다(지름길, 소울 고리).
 pub const LEVER_GLYPH: char = 'V';
@@ -512,6 +604,8 @@ pub const START_SWORD: usize = usize::MAX;
 const START_SWORD_AT: Vec3 = Vec3::new(1.6, 0.0, -0.8);
 /// 떨어지는 쪽: 방랑자 쪽에서 이만큼(도) 비껴.
 const DROP_SIDE: f32 = 65.0;
+/// 같은 자리에 떨어진 아이템 사이의 거리(0226 — 겹치면 하나로 보인다).
+pub const DROP_APART: f32 = 0.7;
 
 /// 상자 곁(m)과, 든 장신구를 이미 가졌을 때 대신 주는 잔불.
 pub const CHEST_REACH: f32 = 1.8;
@@ -620,6 +714,25 @@ pub struct StageRun {
     pub drops: Vec<(Vec3, usize, f32)>,
     pub near_drop: Option<usize>,
     looted: Option<usize>,
+    /// 떨어진 아이템 하나하나(0226 — 사장 "가득이면 못 주워야지, 바닥에 떨어져 있어야지"): 엘리트·문지기가 떨군 여벌과
+    /// 방랑자가 가방에서 내려놓은 것(`ItemDrop`). 앱이 기록에도 적는다 — 지역을 떠났다 와도, 껐다 켜도 그 자리에 있다.
+    pub item_drops: Vec<ItemDrop>,
+    pub near_item: Option<usize>,
+    /// 가방이 가득인가(0226 — 앱이 틱마다 알린다): 가득이면 떨어진 아이템을 줍지 못한다. `chest_block`은 가득일 때
+    /// 못 줍는 상자의 것(비트 = 상자 번호 — 아직 없는 바탕이 든 상자: 잔불이 될 것은 줍는다).
+    pub bag_full: bool,
+    pub chest_block: u64,
+    /// 가득일 때 깨어난 자리의 검(0220 — 아직 없는 바탕)도 못 줍는다.
+    pub start_block: bool,
+    /// 곁에 가방이 가득이라 못 줍는 것이 있다(HUD가 까닭을 말한다 — 버튼은 그대로 점프).
+    pub near_blocked: bool,
+    taken: Option<crate::items::Item>,
+    /// 이번 틱에 주운 아이템의 자리(앱이 가져가 줍는 이펙트를 낸다) · 이번 틱에 쓰러진 문지기의 자리(앱이 가져가 그 곁에
+    /// 떨굼을 놓는다 — 0226: 문지기의 것도 바로 얻지 않고 바닥에 떨어진다).
+    taken_at: Option<Vec3>,
+    boss_down: Option<Vec3>,
+    /// 이 판에 떨어뜨린 아이템 수 — 떨굼의 씨앗에 섞는다(줍지 않고 둔 채 다시 쓰러뜨려도 다른 것이 나오게).
+    item_serial: u32,
     /// 새긴 돌(0129): 자리, 곁의 돌, 이번 틱에 읽은 돌(앱이 가져간다).
     pub stones: Vec<Vec3>,
     pub near_stone: Option<usize>,
@@ -641,6 +754,8 @@ pub struct StageRun {
     elite_ids: Vec<(usize, String)>,
     /// 이 판에 쓰러뜨린 엘리트(표의 몇째, 0113) — 쉬어도 다시 서지 않는다.
     elites_down: Vec<usize>,
+    /// 이번 틱에 쓰러진 엘리트(표의 몇째, 쓰러진 자리) — 앱이 가져가 그 자리에 여벌을 떨군다(0223 V4c → 0226).
+    elite_loot: Vec<(usize, Vec3)>,
     /// 문 장치(0113): 자리, 곁인가, 문이 열려 있나(기록 — 한 번 열면 판을 넘어 열려 있다), 이번 틱에 처음 열었다(앱이 가져간다).
     pub lever: Option<Vec3>,
     pub near_lever: bool,
@@ -669,6 +784,17 @@ pub struct StageRun {
     talked: Option<usize>,
 }
 
+/// 바닥에 떨어진 아이템 하나(0226). `wait` = 방랑자가 한 번 곁을 떠나야 주울 수 있다 — 발치에 내려놓은 것이 곧바로 "줍기"가 되어
+/// 같은 버튼의 다른 일(쉬기)을 가리지 않게, 그리고 방금 내려놓은 것을 도로 줍지 않게.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ItemDrop {
+    pub pos: Vec3,
+    pub item: crate::items::Item,
+    /// 떨어진 뒤 초.
+    pub age: f32,
+    pub wait: bool,
+}
+
 /// 시작 이야기 길이(초).
 pub const INTRO_TIME: f32 = 6.0;
 
@@ -685,12 +811,14 @@ pub enum Near {
     Rest {
         safe: bool,
     },
+    /// 곁에 떨어진 아이템이 있지만 가방이 가득이다(0226) — 버튼은 그대로 점프, HUD가 까닭을 말한다.
+    Full,
 }
 
 impl StageRun {
     /// 곁에 있는 할 일(없으면 `None`).
     pub fn near(&self) -> Option<Near> {
-        if self.near_find.is_some() || self.near_drop.is_some() {
+        if self.near_find.is_some() || self.near_drop.is_some() || self.near_item.is_some() {
             Some(Near::Pick)
         } else if self.near_chest.is_some() {
             Some(Near::Open)
@@ -700,10 +828,12 @@ impl StageRun {
             Some(Near::Talk)
         } else if self.near_stone.is_some() {
             Some(Near::Read)
+        } else if self.near_rest.is_some() && self.rest_safe {
+            Some(Near::Rest { safe: true })
+        } else if self.near_blocked {
+            Some(Near::Full)
         } else {
-            self.near_rest.map(|_| Near::Rest {
-                safe: self.rest_safe,
-            })
+            self.near_rest.map(|_| Near::Rest { safe: false })
         }
     }
 
@@ -749,6 +879,16 @@ impl StageRun {
             drops: Vec::new(),
             near_drop: None,
             looted: None,
+            item_drops: Vec::new(),
+            near_item: None,
+            bag_full: false,
+            chest_block: 0,
+            start_block: false,
+            near_blocked: false,
+            taken: None,
+            taken_at: None,
+            boss_down: None,
+            item_serial: 0,
             stones: Vec::new(),
             near_stone: None,
             read: None,
@@ -764,6 +904,7 @@ impl StageRun {
             picked: None,
             elite_ids: Vec::new(),
             elites_down: Vec::new(),
+            elite_loot: Vec::new(),
             lever: None,
             near_lever: false,
             gate_opened: false,
@@ -813,6 +954,23 @@ impl StageRun {
                 max: *c + vec3(CHEST_HALF.x, CHEST_HALF.y * 2.0, CHEST_HALF.z),
             });
         }
+        // 레일 수레(0208): 지도의 레일 `|` 묶음마다 하나 — 남쪽 끝에서 쉰다(묶음마다 박자를 조금 엇갈려).
+        w.carts = rail_lanes(&run.level.marks_of(RAIL_GLYPH).collect::<Vec<_>>())
+            .into_iter()
+            .enumerate()
+            .map(|(i, (a, b))| {
+                let y = |p: Vec3| w.ground.as_ref().map_or(p.y, |g| g.height(p));
+                let (a, b) = (vec3(a.x, y(a), a.z), vec3(b.x, y(b), b.z));
+                crate::world::cart::Cart::new(a, b, i as f32 * 0.9)
+            })
+            .collect();
+        // 마지막 구역(문지기 싸움터)의 레일은 문지기 2단계에만 돈다(0208 6절).
+        for c in &mut w.carts {
+            c.boss = run.zone_at((c.a + c.b) * 0.5) + 1 >= def.zones.len();
+            if c.boss {
+                c.wait = crate::tuning::CART_WAIT;
+            }
+        }
         // 보스는 처음부터 잠든 채 성소에 있다(보인다 — 기대감).
         if let Some(p) = run.level.marks_of(def.boss.0).next() {
             let i = w.spawn(def.boss.1, p);
@@ -825,8 +983,8 @@ impl StageRun {
             run.populate(&mut w);
             run.objective = Some(def.obj_explore);
         }
-        // 문 장치도 물결도 없는 지역(0118)은 처음부터 문이 열린 단계.
-        if run.lever.is_none() && def.waves.is_empty() {
+        // 문 장치도 물결도 없는 지역(0118)은 처음부터 문이 열린 단계. 문이 지름길인 지역(0208)도 — 문은 `set_gate`가 닫아 둔다.
+        if (run.lever.is_none() && def.waves.is_empty()) || def.shortcut {
             run.phase = Phase::GateOpen;
             run.set_gate(&mut w, false);
             run.objective = Some(def.obj_gate);
@@ -886,6 +1044,12 @@ impl StageRun {
     }
 
     fn set_gate(&mut self, w: &mut World, closed: bool) {
+        // 지름길 문(0208 승강대): 장치를 당겨야만 열리고, 연 뒤에는 닫히지 않는다 — 단계가 바라는 것과 상관없이.
+        let closed = if self.def.shortcut {
+            !self.gate_opened
+        } else {
+            closed
+        };
         if closed == self.gate_closed {
             return;
         }
@@ -992,6 +1156,7 @@ impl StageRun {
                 (0..self.def.elites.len()).find(|&k| elite_id(self.def.find_prefix, k) == id)
             {
                 self.elites_down.push(k);
+                self.elite_loot.push((k, pos));
             }
             if self.beaten.contains(&id) {
                 continue;
@@ -1005,6 +1170,11 @@ impl StageRun {
             self.beaten.push(id.clone());
             self.elite_new.push(id);
         }
+    }
+
+    /// 이번 틱에 쓰러진 엘리트들(표의 자리 — 처음이든 아니든, 0223 V4c): 앱이 한 번 가져가 여벌을 준다.
+    pub fn take_elites_down(&mut self) -> Vec<(usize, Vec3)> {
+        std::mem::take(&mut self.elite_loot)
     }
 
     /// 이번 틱에 처음 쓰러뜨린 엘리트들(0112, 한 틱에 여럿 — 수류탄) — 앱이 한 번 가져가 기록·알림에.
@@ -1096,9 +1266,39 @@ impl StageRun {
         for d in &mut self.drops {
             d.2 += dt;
         }
-        self.near_drop = self.drops.iter().position(|(p, _, age)| {
-            *age >= DROP_SETTLE && vec2(p.x - pp.x, p.z - pp.z).length() <= FIND_REACH
-        });
+        let reach = |p: &Vec3, age: f32| {
+            age >= DROP_SETTLE && vec2(p.x - pp.x, p.z - pp.z).length() <= FIND_REACH
+        };
+        for d in &mut self.item_drops {
+            d.age += dt;
+            // 내려놓은 것: 한 번 곁을 떠나면 여느 떨어진 것과 같다.
+            if d.wait && !reach(&d.pos, d.age.max(DROP_SETTLE)) {
+                d.wait = false;
+            }
+        }
+        // 가방이 가득이면(0226) 칸이 드는 것은 줍지 못한다 — 바닥에 남는다. 잔불이 될 상자의 것은 줍는다.
+        let (full, block, sword) = (self.bag_full, self.chest_block, self.start_block);
+        let held = |chest: usize| {
+            full && if chest == START_SWORD {
+                sword
+            } else {
+                chest < 64 && block >> chest & 1 == 1
+            }
+        };
+        self.near_drop = self
+            .drops
+            .iter()
+            .position(|(p, chest, age)| reach(p, *age) && !held(*chest));
+        let by_item = self
+            .item_drops
+            .iter()
+            .position(|d| !d.wait && reach(&d.pos, d.age));
+        self.near_item = by_item.filter(|_| !full);
+        self.near_blocked = (full && by_item.is_some())
+            || self
+                .drops
+                .iter()
+                .any(|(p, chest, age)| reach(p, *age) && held(*chest));
         // 숨은 물건(0105): 상자와 같은 꼴 — 곁이면 점프 버튼이 줍기.
         self.near_find = self.finds.iter().enumerate().position(|(i, (p, _, _))| {
             !self.found[i] && vec2(p.x - pp.x, p.z - pp.z).length() <= FIND_REACH
@@ -1133,6 +1333,7 @@ impl StageRun {
         // 점프 버튼이 다음 틱부터 쉬기·열기·줍기가 되는 자리(0048): 곁이고(쉬기는 안전할 때만) — 아니면 그대로 점프.
         w.interact_here = (self.near_rest.is_some() && self.rest_safe)
             || self.near_drop.is_some()
+            || self.near_item.is_some()
             || self.near_chest.is_some()
             || self.near_find.is_some()
             || self.near_lever
@@ -1143,6 +1344,11 @@ impl StageRun {
             let (_, chest, _) = self.drops.remove(k);
             self.looted = Some(chest);
             self.near_drop = None;
+        } else if let (Some(k), true) = (self.near_item, w.interact) {
+            let d = self.item_drops.remove(k);
+            self.taken = Some(d.item);
+            self.taken_at = Some(d.pos);
+            self.near_item = None;
         } else if let (Some(i), true) = (self.near_find, w.interact) {
             self.found[i] = true;
             self.picked = Some(i);
@@ -1223,10 +1429,11 @@ impl StageRun {
                 // 마지막 구역(성소)에 들어서면.
                 if z + 1 >= self.def.zones.len() {
                     // 문이 닫히고 문지기가 깨어난다(플레이어가 문 안으로 다 들어온 뒤 닫는다).
-                    let inside = self
-                        .level
-                        .gate
-                        .is_none_or(|(g, _)| w.player.pos.z < g.min.z - 0.8);
+                    let inside = self.def.shortcut
+                        || self
+                            .level
+                            .gate
+                            .is_none_or(|(g, _)| w.player.pos.z < g.min.z - 0.8);
                     if inside {
                         self.set_gate(w, true);
                         // 깨어나는 동안에도 락온에는 잡힌다(0149).
@@ -1257,6 +1464,7 @@ impl StageRun {
                     .is_none_or(|b| !b.alive());
                 if dead {
                     self.core = self.boss.and_then(|i| w.enemies.get(i)).map(|b| b.pos);
+                    self.boss_down = self.core;
                     self.phase = Phase::Core;
                     self.objective = Some(self.def.obj_core);
                     w.lock = None;
@@ -1346,6 +1554,8 @@ impl StageRun {
             e.waking = false;
             e.roused = false;
             e.exposed = 0.0;
+            // 타입 상태(0223 V2)도 처음부터 — 지난 싸움의 화상·금·닳은 게이지가 다시 선 문지기에 남지 않게.
+            e.ail = Default::default();
             e.knock = Vec3::ZERO;
             e.pos = home;
             e.prev = home;
@@ -1443,6 +1653,55 @@ impl StageRun {
 
     pub fn take_looted(&mut self) -> Option<usize> {
         self.looted.take()
+    }
+
+    /// 아이템을 바닥에 떨군다(0226): 엘리트가 쓰러진 자리·핵을 거둔 자리·방랑자가 내려놓은 발치(`wait` — 한 번 곁을 떠나야
+    /// 줍는다). 떨어지는 동안(`DROP_SETTLE`)은 줍지 못한다. 같은 자리에 겹치면 옆으로 비킨다. 높이는 부른 쪽이 땅에 맞춘다.
+    pub fn drop_item(&mut self, at: Vec3, item: crate::items::Item, wait: bool) {
+        let n = self
+            .item_drops
+            .iter()
+            .filter(|d| vec2(d.pos.x - at.x, d.pos.z - at.z).length() < DROP_APART * 3.0)
+            .count();
+        let turn = Quat::from_rotation_y(n as f32 * 2.4);
+        let pos = if n == 0 {
+            at
+        } else {
+            at + turn * Vec3::X * DROP_APART
+        };
+        self.item_drops.push(ItemDrop {
+            pos,
+            item,
+            age: 0.0,
+            wait,
+        });
+        self.item_serial = self.item_serial.wrapping_add(1);
+    }
+
+    /// 기록에서 되놓는다(0226 — 이어하기·지역에 다시 들어설 때): 이미 내려앉은 채, 그 자리 그대로.
+    pub fn lay_item(&mut self, pos: Vec3, item: crate::items::Item) {
+        self.item_drops.push(ItemDrop {
+            pos,
+            item,
+            age: DROP_SETTLE,
+            wait: false,
+        });
+    }
+
+    /// 이번 틱에 주운 아이템(0226)과 그 자리 — 앱이 한 번 가져가 가방에 넣는다.
+    pub fn take_item(&mut self) -> Option<(crate::items::Item, Vec3)> {
+        let item = self.taken.take()?;
+        Some((item, self.taken_at.take().unwrap_or_default()))
+    }
+
+    /// 이번 틱에 쓰러진 문지기의 자리(0226) — 앱이 한 번 가져가 그 곁에 떨굼을 놓는다.
+    pub fn take_boss_down(&mut self) -> Option<Vec3> {
+        self.boss_down.take()
+    }
+
+    /// 이 판에 떨어뜨린 아이템 수(떨굼의 씨앗에).
+    pub fn item_serial(&self) -> u32 {
+        self.item_serial
     }
 
     /// 이번 틱에 주운 숨은 물건(0105): (종류, 기록 이름) — 앱이 한 번 가져가 기록·능력치에.
@@ -1608,14 +1867,63 @@ mod tests {
         assert_eq!(w.lock, Some(b));
     }
 
-    /// 0125 → 0185: 종탑 터에 들어서면 깨진 종지기가 깨고, 이기고 핵을 거두면 바닥 길이 열린다(셋째 지역이 생겨 마을은 마지막이
-    /// 아니다). 마지막 지역(잔뿌리의 정원)의 이끼 덮인 문지기는 핵이 판의 끝이다 — 바닥 길이 없다.
+    /// 0208: 작업층의 문은 화물 승강대(지름길) — 처음부터 문 앞 단계(문지기는 장치와 상관없이 깬다), 문은 닫혀 있다가 장치를
+    /// 당기면 열리고, 문지기가 깨어도 다시 닫히지 않는다. 레일 `|` 묶음마다 수레 하나.
+    #[test]
+    fn the_workings_lift_is_a_shortcut_and_the_rail_carries_a_cart() {
+        let t = Tuning::default();
+        let def = STAGES[3];
+        assert!(def.shortcut);
+        let (mut run, mut w) = StageRun::start(def);
+        assert_eq!(run.phase, Phase::GateOpen);
+        assert!(run.gate_closed, "the lift starts shut");
+        // 레일 둘: 운반 회랑(늘 돈다) · 갱도 싸움터(문지기 2단계에만).
+        assert_eq!(w.carts.len(), 2, "two rails, a cart each");
+        assert_eq!(w.carts.iter().filter(|c| c.boss).count(), 1);
+        let c = w.carts.iter().find(|c| !c.boss).unwrap();
+        assert!((c.a - c.b).length() > 15.0, "a long rail");
+        // 장치를 당긴다.
+        let lever = run.lever.expect("lever");
+        w.player.pos = lever;
+        w.player.prev = lever;
+        run.tick(&mut w, 1.0 / 60.0);
+        assert!(run.near_lever);
+        w.interact = true;
+        run.tick(&mut w, 1.0 / 60.0);
+        w.interact = false;
+        assert!(!run.gate_closed && run.gate_opened && run.take_pulled());
+        // 문지기 곁으로: 깨어도 승강대는 열린 채.
+        let home = run.level.marks_of('W').next().unwrap();
+        w.player.pos = home + vec3(0.0, 0.0, 4.0);
+        w.player.prev = w.player.pos;
+        run.tick(&mut w, 1.0 / 60.0);
+        assert!(matches!(run.phase, Phase::Waking(_)), "{:?}", run.phase);
+        assert!(!run.gate_closed, "the lift stays open");
+        let _ = t;
+    }
+
+    /// 장치를 당기지 않아도 문지기는 깬다(승강대는 싸움터의 문이 아니다) — 승강대는 닫힌 채.
+    #[test]
+    fn the_workings_warden_wakes_without_the_lift() {
+        let (mut run, mut w) = StageRun::start(STAGES[3]);
+        let home = run.level.marks_of('W').next().unwrap();
+        w.player.pos = home + vec3(0.0, 0.0, 4.0);
+        w.player.prev = w.player.pos;
+        run.tick(&mut w, 1.0 / 60.0);
+        assert!(matches!(run.phase, Phase::Waking(_)), "{:?}", run.phase);
+        assert!(run.gate_closed);
+    }
+
+    /// 0125 → 0185 → 0208: 종탑 터에 들어서면 깨진 종지기가 깨고, 이기고 핵을 거두면 바닥 길이 열린다. 정원의 이끼 덮인 문지기도
+    /// 이제 바닥 길을 연다(넷째 지역이 생겼다). 마지막 지역(작업층)의 문지기는 핵이 판의 끝이다 — 바닥 길이 없다. 작업층의 문은
+    /// 승강대(지름길)라 장치를 당기지 않아도 문지기가 깬다.
     #[test]
     fn the_village_bellkeeper_opens_the_way_down_and_the_last_warden_ends_the_run() {
         let t = Tuning::default();
         for (def, kind, last) in [
             (STAGES[1], Kind::Bellkeeper, false),
-            (STAGES[STAGES.len() - 1], Kind::Mossward, true),
+            (STAGES[2], Kind::Mossward, false),
+            (STAGES[STAGES.len() - 1], Kind::Overseer, true),
         ] {
             let (run, w) = StageRun::start(def);
             assert_eq!(run.down_at.is_none(), last);
@@ -1853,6 +2161,9 @@ mod tests {
         step(&mut run, &mut w);
         assert_eq!(run.phase, Phase::Core);
         assert_eq!(run.goal(), run.core, "then the core");
+        // 0226: 쓰러진 자리를 한 번 알린다 — 앱이 그 곁에 문지기의 것을 떨군다(바로 얻지 않는다).
+        assert_eq!(run.take_boss_down(), run.core);
+        assert_eq!(run.take_boss_down(), None, "told once");
         w.player.pos = run.core.unwrap();
         // 0118: 아래 지역이 있으면 핵은 판을 끝내지 않고 바닥 길을 연다 — 길이 갈 곳, 밟으면 내려간다.
         assert_eq!(step(&mut run, &mut w), StageOut::CoreTaken);
@@ -2276,6 +2587,136 @@ mod tests {
         run.tick(&mut w, 0.016);
         assert_eq!(run.take_looted(), Some(START_SWORD));
         assert!(run.drops.is_empty());
+    }
+
+    /// 0226: 떨어진 아이템은 주워야 얻는다 — 내려앉기 전엔 못 줍고, **가방이 가득이면 못 줍는다**(바닥에 남는다, 버튼은 그대로
+    /// 점프·HUD가 까닭을 말한다). 자리가 나면 줍는다. 같은 자리에 떨어진 것은 옆으로 비킨다.
+    #[test]
+    fn a_fallen_item_is_picked_up_unless_the_bag_is_full() {
+        use crate::items::{Base, Item};
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        run.intro = 0.0;
+        let at = w.player.pos;
+        let sword = Item::plain(Base::Weapon(crate::weapons::Id::Sword));
+        run.drop_item(at, sword, false);
+        run.drop_item(at, sword, false);
+        assert_eq!(run.item_serial(), 2);
+        assert!(
+            run.item_drops[0].pos.distance(run.item_drops[1].pos) > 0.5,
+            "side by side, not stacked"
+        );
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.near_item, None, "still falling");
+        for _ in 0..40 {
+            run.tick(&mut w, 0.016);
+        }
+        assert!(run.near_item.is_some());
+        assert_eq!(run.near(), Some(Near::Pick));
+        // 가득이면: 곁에 있어도 줍기가 아니다.
+        run.bag_full = true;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.near_item, None);
+        assert!(run.near_blocked);
+        assert_eq!(run.near(), Some(Near::Full));
+        assert!(!w.interact_here, "the button stays a jump");
+        w.interact = true;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.take_item(), None);
+        assert_eq!(run.item_drops.len(), 2, "left on the ground");
+        // 자리가 났다.
+        run.bag_full = false;
+        w.interact = false;
+        run.tick(&mut w, 0.016);
+        assert!(w.interact_here);
+        w.interact = true;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.take_item().map(|(it, _)| it), Some(sword));
+        assert_eq!(run.take_item(), None, "taken once");
+        assert_eq!(run.item_drops.len(), 1);
+        // 발치에 내려놓은 것은 한 번 곁을 떠나야 줍는다(쉬기를 가리지 않는다 · 도로 줍지 않는다).
+        run.item_drops.clear();
+        w.interact = false;
+        run.drop_item(at, sword, true);
+        for _ in 0..40 {
+            run.tick(&mut w, 0.016);
+        }
+        assert_eq!(run.near_item, None, "just put down");
+        assert!(!run.near_blocked);
+        w.player.pos = at + Vec3::X * (FIND_REACH + 0.5);
+        run.tick(&mut w, 0.016);
+        w.player.pos = at;
+        run.tick(&mut w, 0.016);
+        assert_eq!(
+            run.near_item,
+            Some(0),
+            "back again — an item like any other"
+        );
+        // 기록에서 되놓은 것은 바로 주울 수 있다.
+        run.item_drops.clear();
+        run.lay_item(at, sword);
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.near_item, Some(0));
+    }
+
+    /// 0226: 떨굼은 걸을 수 있는 땅에만 놓인다 — 벽 속을 겨누면 떨군 자리 쪽으로 물러나고, 줄 위에 땅이 없으면 가장 가까운
+    /// 땅 칸으로. 땅이면 그대로.
+    #[test]
+    fn drops_land_only_on_the_floor() {
+        let (run, w) = StageRun::start(&sanctuary::DEF);
+        let lv = &run.level;
+        let start = w.player.pos;
+        assert!(lv.on_floor(start));
+        assert_eq!(lv.floor_toward(start, start), start, "already on the floor");
+        // 가장 가까운 벽 칸의 가운데를 겨눈다.
+        let (sx, sz) = lv.cell_of(start).unwrap();
+        let wall = (0..lv.h)
+            .flat_map(|z| (0..lv.w).map(move |x| (x, z)))
+            .filter(|&(x, z)| !lv.walkable(x, z))
+            .min_by_key(|&(x, z)| x.abs_diff(sx) + z.abs_diff(sz))
+            .unwrap();
+        let into = lv.at(wall.0, wall.1);
+        assert!(!lv.on_floor(into));
+        let got = lv.floor_toward(start, into);
+        assert!(lv.on_floor(got), "pulled back onto the floor");
+        assert!(got.distance(start) <= into.distance(start) + 0.01);
+        // 떨군 자리도 벽 속이면: 가장 가까운 땅 칸.
+        let lost = lv.floor_toward(into, into);
+        assert!(lv.on_floor(lost));
+        assert!(vec2(lost.x - into.x, lost.z - into.z).length() < CELL * 2.0);
+    }
+
+    /// 0226: 가방이 가득이면 깨어난 자리의 검(아직 없는 바탕)도 못 줍는다 — 자리가 나면 줍는다.
+    #[test]
+    fn a_full_bag_also_holds_back_the_starting_sword() {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        run.intro = 0.0;
+        run.drops.push((w.player.pos, START_SWORD, DROP_SETTLE));
+        run.bag_full = true;
+        run.start_block = true;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.near_drop, None);
+        assert_eq!(run.near(), Some(Near::Full));
+        run.bag_full = false;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.near_drop, Some(0));
+    }
+
+    /// 0226: 가방이 가득일 때 상자의 것 — 아직 없는 바탕(칸이 든다)은 못 줍고, 이미 가진 것(잔불이 된다)은 줍는다.
+    #[test]
+    fn a_full_bag_holds_back_only_the_chest_loot_that_needs_a_slot() {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        run.intro = 0.0;
+        let at = w.player.pos;
+        run.drops.push((at, 1, DROP_SETTLE));
+        run.bag_full = true;
+        run.chest_block = 1 << 1;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.near_drop, None);
+        assert_eq!(run.near(), Some(Near::Full));
+        run.chest_block = 0;
+        run.tick(&mut w, 0.016);
+        assert_eq!(run.near_drop, Some(0), "embers need no room");
+        assert!(!run.near_blocked);
     }
 
     #[test]

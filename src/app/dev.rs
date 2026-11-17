@@ -51,6 +51,8 @@ pub(super) enum DevStart {
     Village,
     /// 셋째 지역 어귀(0185 — 이 판에 두 문지기를 이긴 셈) — 기록은 쓰지 않는다.
     Garden,
+    /// 넷째 지역 어귀(0208 — 이 판에 세 문지기를 이긴 셈) — 기록은 쓰지 않는다.
+    Works,
     /// 둘째 지역의 첫 주민 곁(0122 — 말풍선·돌아봄 판정) — 기록은 쓰지 않는다.
     Residents,
     /// 둘째 지역의 새긴 돌 곁(0129 — 글 판 판정) — 기록은 쓰지 않는다.
@@ -67,6 +69,8 @@ pub(super) enum DevStart {
     SkillsMax,
     /// 끝 단으로 올린 판의 3단 고르기를 모두 뒤집는다(ㄱ ↔ ㄴ). 기록에 쓰지 않는다.
     SkillsFlip,
+    /// 든 무기 바꾸기(0223 V3 — 스킬은 무기 갈래를 탄다: 아레나에는 장비 탭이 없어 여기서 든다). 기록에 쓰지 않는다.
+    Arm,
     /// 성능 줄(F3과 같은 개발 줄) 켬/끔 — 키보드가 없는 기기(Android·iOS)에서 프레임 시간을 본다(0186 상주 지형 A/B).
     PerfLine,
     /// 모션 보기(2026-11-15): 이 무기(`weapons::IDS`의 자리)를 든 방랑자의 동작을 하나씩.
@@ -74,7 +78,7 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 33] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 36] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Motion, DevStart::Motion(0)),
@@ -87,6 +91,8 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 33] = [
     (DevCat::Skills, DevStart::SkillsFlip),
     (DevCat::Skills, DevStart::Scenario(Scenario::Skills)),
     (DevCat::Skills, DevStart::Scenario(Scenario::Tray)),
+    // 끝에 둔다 — 시험 스크립트가 세는 앞 줄들의 자리를 밀지 않는다.
+    (DevCat::Skills, DevStart::Arm),
     (DevCat::Stage, DevStart::Entrance),
     (DevCat::Stage, DevStart::Gate),
     (DevCat::Stage, DevStart::Village),
@@ -94,6 +100,7 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 33] = [
     (DevCat::Stage, DevStart::Stones),
     (DevCat::Stage, DevStart::Chest),
     (DevCat::Stage, DevStart::Garden),
+    (DevCat::Stage, DevStart::Works),
     (DevCat::Combat, DevStart::Scenario(Scenario::Boss)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Pillars)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Duel)),
@@ -105,6 +112,7 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 33] = [
     (DevCat::Combat, DevStart::Scenario(Scenario::Mossward)),
     (DevCat::Combat, DevStart::Scenario(Scenario::MosswardTwo)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Horde)),
+    (DevCat::Combat, DevStart::Scenario(Scenario::Workers)),
     (DevCat::Perf, DevStart::PerfLine),
     (DevCat::Perf, DevStart::Scenario(Scenario::Stress40)),
     (DevCat::Perf, DevStart::Scenario(Scenario::Stress80)),
@@ -127,6 +135,7 @@ impl DevStart {
             DevStart::Gate => t(dv::GATE),
             DevStart::Village => t(dv::VILLAGE),
             DevStart::Garden => t(dv::GARDEN),
+            DevStart::Works => t(dv::WORKS),
             DevStart::Residents => t(dv::RESIDENTS),
             DevStart::Stones => t(dv::STONES),
             DevStart::Chest => t(dv::CHEST),
@@ -138,6 +147,7 @@ impl DevStart {
             DevStart::Skills => t(dv::SKILLS_START),
             DevStart::SkillsMax => t(dv::SKILLS_MAX),
             DevStart::SkillsFlip => t(dv::SKILLS_FLIP),
+            DevStart::Arm => t(dv::ARM),
             DevStart::PerfLine => t(dv::PERF_LINE),
             // 이름은 무기를 채워야 해서 `App::dev_name`이 만든다 — 여기는 바탕.
             DevStart::Motion(_) => t(dv::MOTION_START),
@@ -150,6 +160,7 @@ impl DevStart {
             | DevStart::Gate
             | DevStart::Village
             | DevStart::Garden
+            | DevStart::Works
             | DevStart::Residents
             | DevStart::Stones
             | DevStart::Chest => t(dv::STAGE_NOTE).to_string(),
@@ -168,6 +179,8 @@ impl DevStart {
             // 지금 상태({0})는 앱이 채운다(`App::dev_note`).
             DevStart::SkillsMax => t(dv::SKILLS_MAX_NOTE).to_string(),
             DevStart::SkillsFlip => t(dv::SKILLS_FLIP_NOTE).to_string(),
+            // 지금 든 무기({0})는 앱이 채운다.
+            DevStart::Arm => t(dv::ARM_NOTE).to_string(),
             DevStart::PerfLine => t(dv::PERF_LINE_NOTE).to_string(),
             DevStart::Motion(_) => t(dv::MOTION_NOTE).to_string(),
         }
@@ -259,6 +272,20 @@ impl App {
                 ));
                 self.go(Go::Root(Scene::Play));
             }
+            DevStart::Works => {
+                self.dev_run = true;
+                self.restart();
+                // 이 판에 세 문지기를 이긴 셈 — 정원에서 내려가는 뿌리 굴부터.
+                self.down = 3;
+                self.cross_to(2, false);
+                self.passage = Some(crate::descent::Passage::new(
+                    3,
+                    false,
+                    crate::stage::STAGES[2].depth_m,
+                    crate::stage::STAGES[3].depth_m,
+                ));
+                self.go(Go::Root(Scene::Play));
+            }
             DevStart::Residents => {
                 self.dev_run = true;
                 self.restart();
@@ -299,7 +326,7 @@ impl App {
                 self.sc = sc;
                 self.world = scenario::build(sc);
                 self.fx.clear();
-                self.world.set_weapon(self.weapon);
+                self.arm_world();
                 self.cam = self.cam.renew(self.world.player.pos, &self.t);
                 self.go(Go::Root(Scene::Sandbox));
                 // 놀이터가 선 뒤에: 판(`App::board`)이 놀이터인지를 보고 처음의 둘을 배운 것으로 친다(0166).
@@ -317,6 +344,13 @@ impl App {
             }
             DevStart::PerfLine => {
                 self.dev_overlay = !self.dev_overlay;
+                self.snd(crate::sfx::Id::Buy);
+            }
+            // 든 무기를 표의 다음 것으로(0223 V3) — 이 창에서 시작하는 아레나와 "기술 끼우기"가 그 무기로 선다. 기록은 그대로.
+            DevStart::Arm => {
+                let ids = crate::weapons::IDS;
+                let at = ids.iter().position(|w| *w == self.weapon).unwrap_or(0);
+                self.weapon = ids[(at + 1) % ids.len()];
                 self.snd(crate::sfx::Id::Buy);
             }
             DevStart::Motion(w) => self.go(Go::Open(Scene::Motions {
@@ -352,6 +386,7 @@ impl App {
                 };
                 fill(&e.note(), &[t(state)])
             }
+            DevStart::Arm => fill(&e.note(), &[weapon_name(self.weapon)]),
             _ => e.note(),
         }
     }

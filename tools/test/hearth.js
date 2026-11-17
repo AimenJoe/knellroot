@@ -72,7 +72,8 @@ async function run(browser, lang) {
     await home();
     // 줄마다의 칸(위 → 아래): 스킬 넷 · 패시브 여섯 · 스킬 넷 · 패시브 여섯 + 다리 둘 · 큰 기술과 패시브 여섯 · 새 스킬 셋 ·
     // 패시브 여섯 + 다리 둘 · 맺음 셋(0214 · 0215).
-    const COLS = [4, 6, 4, 8, 6, 3, 8, 3];
+    // 맨 아래는 결의 줄(0223 11절 — 타입 넷).
+    const COLS = [4, 6, 4, 8, 6, 3, 8, 3, 4];
     for (let row = 0; row < COLS.length; row++) {
       for (let col = 0; col < COLS[row]; col++) {
         if (!shots || shots.includes(row)) await shot(`${name}-r${row}c${col}`);
@@ -128,7 +129,7 @@ async function run(browser, lang) {
   await shot('7-level-full');
   await page.waitForTimeout(1800);
   // 상태 탭의 기술 줄 넷(레벨 줄 아래, 0173 — 그전에는 장신구 세 칸): 스킬 두 칸 · 큰 기술 · 패시브의 상세 → 패시브 줄에서 확인 =
-  // 기술 탭의 그 칸으로(탭 사이의 이음). 거기서 Q = 장비 탭(무기 칸).
+  // 기술 탭의 그 칸으로(탭 사이의 이음). 거기서 Q 둘 = 장비 탭(무기 칸 — 가방 탭을 지나).
   await press('ArrowDown', 2); await page.waitForTimeout(150);
   await shot('7a-status-skill-1');
   await press('ArrowDown'); await page.waitForTimeout(150);
@@ -139,32 +140,53 @@ async function run(browser, lang) {
   await shot('7d-status-passives');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('7e-status-to-skills');
-  await press('KeyQ'); await page.waitForTimeout(300);
+  await press('KeyQ', 2); await page.waitForTimeout(300); // 기술 ← 가방(0226) ← 장비
   // 탭마다 한 바퀴(0164): 장비(무기 칸에 서 있다 — → 같은 높이의 첫 장신구 칸, 0176) — 칸을 걷고 후보의 작은 목록(장신구 칸·무기 칸)을 열어 본다.
+  // 장신구 칸은 종류마다 하나(0224 — 목걸이 · 반지 · 팔찌): 가진 것(단단한 껍질)은 팔찌라 셋째 칸에 끼워져 있다 — → 뒤 ↓ 둘.
   await shot('8a-equip');
   await press('ArrowRight'); await page.waitForTimeout(150);
+  await shot('8b0-equip-neck-empty');
+  await press('ArrowDown', 2); await page.waitForTimeout(150);
   await shot('8b-equip-charm');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('8c-equip-charm-pick');
   await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8d-equip-charm-pick-empty');
   await press('Escape'); await page.waitForTimeout(300);
+  // 아래로 한 번 = 첫 칸(목걸이 — 그 종류는 아직 없다: "이 자리에 낄 것을 아직 얻지 못했다").
   await press('ArrowDown'); await page.waitForTimeout(150);
   await shot('8e-equip-empty-slot');
-  // 덧옷 칸(0176 — 무기 밑): 가운데 장신구 칸 ← = 무기 칸, ↓ = 덧옷 칸(뿌리껍질을 걸쳤다) → 목록(벗기 · 뿌리껍질), 벗기에서 견주는 줄.
-  await press('ArrowLeft'); await page.waitForTimeout(150); await press('ArrowDown'); await page.waitForTimeout(150);
+  // 덧옷 칸(0176 — 왼쪽 열 아래): 첫 장신구 칸 ← = 주무기 칸, ↓ 둘 = 보조무기 칸을 지나 덧옷 칸(뿌리껍질을 걸쳤다) → 목록(벗기 · 뿌리껍질), 벗기에서 견주는 줄.
+  await press('ArrowLeft'); await page.waitForTimeout(150); await press('ArrowDown', 2); await page.waitForTimeout(150);
   await shot('8e2-equip-garb-slot');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('8e3-equip-garb-pick');
   await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8e4-equip-garb-pick-bare');
   await press('Escape'); await page.waitForTimeout(300);
+  // 보조무기 칸(0223 → 0224 — 왼쪽 열: 주무기 · 보조무기 · 덧옷, 방패는 이 칸의 후보): 덧옷에서 ↑ → 목록(비우기 · 맨손 · 가진 무기 · 가진 방패).
+  await press('ArrowUp'); await page.waitForTimeout(150);
+  await shot('8e5-equip-sub-slot');
+  await press('Enter'); await page.waitForTimeout(300);
+  await shot('8e6-equip-sub-pick');
+  await press('Escape'); await page.waitForTimeout(300);
   await press('ArrowUp'); await page.waitForTimeout(150); await press('Enter'); await page.waitForTimeout(300);
   await shot('8f-equip-weapon-pick');
   await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8g-equip-weapon-pick-fists');
   await press('Escape'); await page.waitForTimeout(300);
-  // 도감(장비에서 E 둘 — 기술을 지나): 묶음 넷(좌우)의 모든 줄.
+  // 가방(0226 — 장비 다음 탭): 칸마다(첫 줄 여섯 + 빈 칸), 아이템의 작은 목록(화로 = 잔불로 줄), 맨 아랫줄 아래 "여벌 정리".
+  await press('KeyE'); await page.waitForTimeout(300);
+  for (let i = 0; i < 6; i++) { await shot(`8n-bag-${i}`); await press('ArrowRight'); await page.waitForTimeout(120); }
+  await press('ArrowLeft', 5); await page.waitForTimeout(150);
+  await press('Enter'); await page.waitForTimeout(300);
+  await shot('8n-bag-acts');
+  await press('Escape'); await page.waitForTimeout(300);
+  await press('ArrowDown', 5); await page.waitForTimeout(200);
+  await shot('8n-bag-tidy');
+  await press('Enter'); await page.waitForTimeout(400); // 심은 기록에는 여벌이 없다 — 묻는 창 없이 "정리할 여벌이 없다" 알림
+  await shot('8n-bag-tidy-enter');
+  // 도감(가방에서 E 둘 — 기술을 지나): 묶음 넷(좌우)의 모든 줄.
   await press('KeyE', 2); await page.waitForTimeout(300);
   for (let i = 0; i < 6; i++) { await shot(`8h-codex-foe-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   await press('ArrowRight'); await page.waitForTimeout(300);
@@ -195,7 +217,7 @@ async function run(browser, lang) {
   // 가게: 살 것의 줄마다(끝에서 돈다).
   await press('KeyE'); await page.waitForTimeout(300);
   // 진열 다섯 + 벼리기 넷 + 거두기 하나(0180 — 숫돌 둘·벼린 검 +1을 심었다).
-  for (let i = 0; i < 10; i++) { await shot(`8-shop-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  for (let i = 0; i < 11; i++) { await shot(`8-shop-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   // 설정: 줄마다(화로에서는 처음부터·타이틀로가 없다).
   await press('KeyE'); await page.waitForTimeout(300);
   for (let i = 0; i < 11; i++) { await shot(`8j-settings-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
@@ -235,12 +257,26 @@ async function run(browser, lang) {
   await page.waitForTimeout(1800);
   // 모든 칸의 상세(줄 여덟 — 0214의 넷째·다섯째 줄까지).
   await sweep('13-skills');
-  // 잠긴 줄(맺음 — 쓴 점수 22부터)의 칸은 확인해도 목록이 없다(안 됨 소리만).
+  // 결의 칸(0223 11절 — 맨 아래 줄): 그 타입의 스킬을 배웠으면 연다. 옛 기록은 가로지르기(균열)를 안다 — 균열의 결(줄의 오른쪽 끝):
+  // 목록(열기) → 묻는 창 → 열림(`tree.veins`). 잔불의 결(왼쪽 끝)은 그 타입의 스킬을 몰라 목록이 없다.
+  await press('Enter'); await page.waitForTimeout(300);
+  await shot('13v-vein-needs-skill');
+  await press('ArrowRight', 3); await page.waitForTimeout(200);
+  await shot('13w-vein');
+  await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(300);
+  await shot('13x-vein-ask');
+  await press('Enter'); await page.waitForTimeout(400);
+  await shot('13y-vein-open');
+  b = await record();
+  if (!/tree\.veins=rift\n/.test(b)) errors.push(`vein not saved: ${JSON.stringify(b)}`);
+  await page.waitForTimeout(1800);
+  // 잠긴 줄(맺음 — 쓴 점수 22부터)의 칸은 확인해도 목록이 없다(안 됨 소리만). 결의 줄 바로 위.
+  await press('ArrowUp'); await page.waitForTimeout(200);
   await press('Enter'); await page.waitForTimeout(300);
   await shot('14-skills-locked');
-  // 되돌리기 단추(창 아래 오른쪽 — 맨 아래 줄에서 아래): 묻는 창(커서 "취소") → 왼쪽 = "되돌리기" → 쓴 점수 7(산 것 셋 + 옛 기록이 지닌 처음의 둘 0166 + 쟁반 뒤집기의 배움 2 0172)을 돌려받고 잔불 65(30 + 5 × 7).
+  // 되돌리기 단추(창 아래 오른쪽 — 맨 아래 줄에서 아래): 묻는 창(커서 "취소") → 왼쪽 = "되돌리기" → 쓴 점수 8(산 것 넷 — 결 하나까지 + 옛 기록이 지닌 처음의 둘 0166 + 쟁반 뒤집기의 배움 2 0172)을 돌려받고 잔불 70(30 + 5 × 8).
   const embers = Number(/embers=(\d+)\n/.exec(b)[1]);
-  await press('ArrowDown'); await page.waitForTimeout(200);
+  await press('ArrowDown', 2); await page.waitForTimeout(200);
   await shot('15-respec-focus');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('15a-respec-ask');
@@ -249,8 +285,8 @@ async function run(browser, lang) {
   await page.waitForTimeout(1800);
   await shot('15c-skills-after-respec');
   b = await record();
-  if (/skill\.rank\./.test(b) || /skill\.pick\./.test(b) || /tree\.cells\./.test(b)) errors.push(`respec must clear the board: ${JSON.stringify(b)}`);
-  if (!new RegExp(`embers=${embers - 65}\\n`).test(b)) errors.push(`respec must cost 65 embers: ${JSON.stringify(b)}`);
+  if (/skill\.rank\./.test(b) || /skill\.pick\./.test(b) || /tree\.cells\./.test(b) || /tree\.veins/.test(b)) errors.push(`respec must clear the board: ${JSON.stringify(b)}`);
+  if (!new RegExp(`embers=${embers - 70}\\n`).test(b)) errors.push(`respec must cost 70 embers: ${JSON.stringify(b)}`);
   if (/ult\.rank\./.test(b)) errors.push(`respec must forget the great skill too (0172): ${JSON.stringify(b)}`);
   // 창을 닫으면 떠난다(한 번에) → 싸움(HUD 기력 막대가 길어졌는지).
   await press('Escape'); await page.waitForTimeout(400);
@@ -263,6 +299,9 @@ async function run(browser, lang) {
   // 장비: 레벨 줄(최대 기력·기력 회복·평타·강타·자세)이 상태 줄에 더해져도 칸 안에(넘치면 굴린다).
   await press('KeyE'); await page.waitForTimeout(400);
   await shot('10-equip');
+  // 가방(0226): 멈춤에서는 "여벌 정리" 단추가 없다.
+  await press('KeyE'); await page.waitForTimeout(400);
+  await shot('16-pause-bag');
   // 기술: 같은 화면, 끼우기만(되돌리기 단추 없음).
   await press('KeyE'); await page.waitForTimeout(400);
   await shot('16-pause-skills');
@@ -297,13 +336,13 @@ async function run(browser, lang) {
     await press('Enter'); await page.waitForTimeout(1500);
     await press('KeyF'); await page.waitForTimeout(600);
     await shot(`20-${name}-status`);
-    await press('KeyE', 2); await page.waitForTimeout(300);
+    await press('KeyE', 3); await page.waitForTimeout(300);
     await shot(`20-${name}-skills`);
     await sweep(`20-${name}`, [0, 4]);
     await press('Escape'); await page.waitForTimeout(400);
-    // 멈춤(다시 띄운 판이라 상태 탭) → E 둘 = 기술.
+    // 멈춤(다시 띄운 판이라 상태 탭) → E 셋 = 기술(장비 · 가방을 지나).
     await press('Escape'); await page.waitForTimeout(300);
-    await press('KeyE', 2); await page.waitForTimeout(300);
+    await press('KeyE', 3); await page.waitForTimeout(300);
     await shot(`21-${name}-pause-skills`);
     // 배운 스킬(휘돌이 — 칸 1에 끼움)에서 확인: "칸 2에 끼우기" + 올릴 수 있으면 끝에 흐린 "올리기 — 쉼터 화로에서"(0173) → 닫기.
     await home(); await press('Enter'); await page.waitForTimeout(300);
@@ -348,13 +387,13 @@ async function run(browser, lang) {
   b = await record();
   if (!/skill\.rank\.whirl=1\n/.test(b) || !/skill\.gift=1\n/.test(b)) errors.push(`fresh: whirl not learned: ${JSON.stringify(b)}`);
   await page.waitForTimeout(1800);
-  // 한 단 올린다(Q 둘 = 상태 탭, 잔불 50 → 기술 점수 +1) → 기술 탭에서 오른쪽으로 둘째 칸(맞받기 갈래의 버팀) → 남은 빈 칸(칸 2)에.
-  await press('KeyQ', 2); await page.waitForTimeout(300);
+  // 한 단 올린다(Q 셋 = 상태 탭 — 가방 · 장비를 지나, 잔불 50 → 기술 점수 +1) → 기술 탭에서 오른쪽으로 둘째 칸(맞받기 갈래의 버팀) → 남은 빈 칸(칸 2)에.
+  await press('KeyQ', 3); await page.waitForTimeout(300);
   await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(500);
   await shot('31d-fresh-level-one');
   b = await record();
   if (!/lv\.life=1\n/.test(b) || !/embers=80\n/.test(b)) errors.push(`fresh: the first level costs 50: ${JSON.stringify(b)}`);
-  await press('KeyE', 2); await page.waitForTimeout(300);
+  await press('KeyE', 3); await page.waitForTimeout(300);
   await home(); await press('ArrowRight', 2); await page.waitForTimeout(200);
   await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(300);
   await press('Enter'); await page.waitForTimeout(2200);

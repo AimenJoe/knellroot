@@ -216,7 +216,8 @@ pub struct Weapon {
     /// 방랑자 모델에서 이 무기 부위 이름(다른 무기 부위는 숨긴다).
     pub node: &'static str,
     /// 공격 기력 배율(0117, 사장 "큰 무기는 더 많은 기력 — 높은 피해의 보정"): 평타·대시 공격 `stamina.attack`, 강타 `heavy.stamina`,
-    /// 원거리 무기는 사격·모은 사격·공중 볼트에 곱한다. 맨손 < 지팡이 < 쇠뇌(0173: 0.7 → 0.9) < 검 < 망치.
+    /// 원거리 무기는 사격·모은 사격·공중 볼트에 곱한다. 맨손 < 지팡이 < 검 < 쇠뇌 < 망치
+    /// (쇠뇌 0173: 0.7 → 0.9 → 0223 사장 "원거리는 기력을 더 많이 소모함": 1.2 — 20초 지속 17 → 14/초, 검의 여섯 할쯤).
     pub stamina: f32,
     /// 벼린 단(0180 — 1·2·3단에 쌓인 몫, `forge.rs`). 근접 = 타마다 피해(평타·대시·강타), 쇠뇌 = 탄창 먼저·볼트 피해는 뒤에
     /// (볼트는 10이라 +10이면 곱절 — 원거리는 근접의 여섯~일곱 할 밑을 지킨다, 0173). 맨손은 벼리지 않는다(`None`).
@@ -553,7 +554,7 @@ pub const WEAPONS: [Weapon; 5] = [
             scale: 1.6,
         },
         node: "w_crossbow",
-        stamina: 0.9,
+        stamina: 1.2,
         forge: Some([
             Forge {
                 hit: 0,
@@ -614,7 +615,93 @@ pub const WEAPONS: [Weapon; 5] = [
     },
 ];
 
+/// 손에 쥔 꼴(0225 — `Id::grip`): 스킬마다 쓸 수 있는 꼴이 있다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Grip {
+    /// 한손 무기, 방패 없이 — 결투 기술.
+    Duel,
+    /// 한손 무기와 방패 — 방패 기술.
+    Shield,
+    /// 망치 — 물리력.
+    Heavy,
+    /// 지팡이 — 마법력.
+    Focus,
+    Ranged,
+}
+
+#[cfg(test)]
+pub const GRIPS: [Grip; 5] = [
+    Grip::Duel,
+    Grip::Shield,
+    Grip::Heavy,
+    Grip::Focus,
+    Grip::Ranged,
+];
+
+/// 무기의 특색이 스킬에 얹는 배(0225): `force` = 타입 없는(물리) 스킬의 피해·자세 피해, `channel` = 스킬의 타가 쌓는 타입 게이지.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Art {
+    pub force: f32,
+    pub channel: f32,
+}
+
+/// 망치의 물리력 · 지팡이의 마법력(0225 — 처음 값, 판정에서 고친다).
+pub const ART_FORCE: f32 = 1.3;
+pub const ART_CHANNEL: f32 = 1.5;
+
+/// 무기 갈래(0223): 한손 근접은 왼손에 방패를 들 수 있다 · 양손 근접 · 원거리(양손, 장전).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hand {
+    One,
+    Two,
+    Ranged,
+}
+
 impl Id {
+    /// 무기 갈래(0223). `_` 없는 match — 새 무기는 여기서 갈래를 고르게 된다.
+    pub fn hand(self) -> Hand {
+        match self {
+            Id::Sword | Id::Fists => Hand::One,
+            Id::Hammer | Id::Staff => Hand::Two,
+            Id::Crossbow => Hand::Ranged,
+        }
+    }
+
+    /// 손에 쥔 꼴(0225): 한손 무기는 왼손의 방패로 갈린다 — 방패와 함께(`Shield`)·방패 없이(`Duel`). 양손은 무기마다
+    /// (망치 `Heavy` · 지팡이 `Focus`). 스킬이 이것으로 쓸 수 있나를 가른다(`skills::Skill::fits`).
+    pub fn grip(self, shield: bool) -> Grip {
+        match self {
+            Id::Sword | Id::Fists if shield => Grip::Shield,
+            Id::Sword | Id::Fists => Grip::Duel,
+            Id::Hammer => Grip::Heavy,
+            Id::Staff => Grip::Focus,
+            Id::Crossbow => Grip::Ranged,
+        }
+    }
+
+    /// 무기의 특색(0225 — 사장 "망치는 물리력을, 지팡이는 마법력에 대한 특색"): 스킬에 얹는 배. `_` 없는 match.
+    pub fn art(self) -> Art {
+        match self {
+            Id::Hammer => Art {
+                force: ART_FORCE,
+                channel: 1.0,
+            },
+            Id::Staff => Art {
+                force: 1.0,
+                channel: ART_CHANNEL,
+            },
+            Id::Sword | Id::Crossbow | Id::Fists => Art {
+                force: 1.0,
+                channel: 1.0,
+            },
+        }
+    }
+
+    /// 원거리 무기인가(0223 — 양손, 평타 버튼 = 사격·특수 버튼 = 수류탄).
+    pub fn is_ranged(self) -> bool {
+        matches!(self.def().rb, Rb::Shot { .. })
+    }
+
     pub fn def(self) -> &'static Weapon {
         WEAPONS
             .iter()
@@ -742,8 +829,9 @@ mod tests {
     /// 옛 스킬 피해(표 순서: 휘돌이 · 가로지르기 · 끌어모으기 · 땅울림).
     const OLD_SKILLS: [i32; 4] = [1, 2, 0, 2];
     /// 옛 종 체력(표 `species::ALL` 순서: 잔재 · 가시짐승 · 문지기 · 등딱지짐승 · 꼬투리 · 종지기).
-    /// 이끼 덮인 문지기·이끼먹이(0185)는 눈금을 옮긴 뒤에 생겼다 — 옛 눈금으로 64·2(새 640·20의 열의 하나).
-    const OLD_SPECIES_HP: [i32; 8] = [3, 2, 40, 5, 2, 58, 96, 2];
+    /// 이끼 덮인 문지기·이끼먹이(0185)는 눈금을 옮긴 뒤에 생겼다 — 옛 눈금으로 64·2(새 640·20의 열의 하나). 작업층의 넷(0212)도
+    /// 그 뒤 — 권양지기는 0216 W4에서 1200 → 1600(옛 눈금 160).
+    const OLD_SPECIES_HP: [i32; 11] = [3, 2, 40, 5, 2, 58, 96, 160, 4, 6, 2];
     /// 옛 등급 2·엘리트 배율(올림) — `tuning::TIERS[1].hp`·`ELITE_HP`.
     const OLD_TIER2: f32 = 1.5;
     const OLD_ELITE: f32 = 2.0;

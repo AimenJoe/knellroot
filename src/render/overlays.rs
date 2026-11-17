@@ -37,7 +37,9 @@ impl Renderer {
         bolts(w, alpha);
         bell_shards(w, &fl);
         bombs(w, alpha);
+        carts(w, alpha);
         skill_spikes(w);
+        packbearer_loads(w, alpha);
         cast_charge(w, pp, t, &fl);
         throw_aim(w, pp, t, &fl);
         cracks(w, &fl);
@@ -61,6 +63,7 @@ impl Renderer {
         parry_ring(w, pp, &fl);
         exposed_rings(w, alpha, &fl);
         frail_rings(w, alpha, &fl);
+        ail_marks(w, alpha, &fl);
         spill_rings(w, pp, t, &fl);
         stagger_stars(w, alpha);
         lock_mark(w, alpha, &fl);
@@ -294,6 +297,26 @@ fn bell_shards(w: &World, fl: &Drape) {
     }
 }
 
+/// 등짐꾼의 짐(0216 W2): 등에 진 둥근 돌덩이 — 자세가 깨지면 깨져 사라진다(`Enemy::load_lost`). 모델은 빌린 것이라 짐만 코드로
+/// 얹는다(돌은 매끈하게 — 0139).
+fn packbearer_loads(w: &World, alpha: f32) {
+    const BODY: Color = Color::new(0.47, 0.45, 0.50, 1.0);
+    const BAND: Color = Color::new(0.36, 0.27, 0.20, 1.0);
+    for en in &w.enemies {
+        if en.kind != crate::species::Kind::Packbearer || en.load_lost || !en.alive() {
+            continue;
+        }
+        let p = en.prev.lerp(en.pos, alpha);
+        let fwd = vec3(en.facing.sin(), 0.0, en.facing.cos());
+        let scale = en.radius / en.def().radius;
+        let c = p + Vec3::Y * (en.height * 0.8) - fwd * 0.2 * scale;
+        let turn = Quat::from_rotation_y(en.facing);
+        shaded_tris(c, &ball_faces(0.48 * scale), BODY, 0.75, turn);
+        // 짐을 묶은 띠.
+        shaded_box_rot(c, vec3(1.02, 0.12, 0.2) * scale, BAND, 0.6, turn, c);
+    }
+}
+
 /// 뿌리 솟기(0214)의 뿌리: 문지기의 뿌리 기둥과 같은 꼴(굵은 밑동 → 뾰족한 끝)을 따뜻한 흙빛으로 — 빠르게 솟았다 가라앉는다.
 fn skill_spikes(w: &World) {
     use crate::world::SPIKE_LIFE;
@@ -316,6 +339,44 @@ fn skill_spikes(w: &World) {
         let turn = Quat::from_rotation_y(i as f32 * 0.9);
         shaded_tris(sp.pos, &body, BODY, 0.8, turn);
         shaded_tris(sp.pos, &tip, TIP, 0.9, turn);
+    }
+}
+
+fn carts(w: &World, alpha: f32) {
+    // 레일 수레(0208, 회색 박스 — 그림은 코드 상자): 녹슨 짐칸 + 바퀴 넷 + 짐(돌덩이). 땅 높이를 따른다.
+    const BODY: Color = Color::new(0.44, 0.31, 0.24, 1.0);
+    const RIM: Color = Color::new(0.30, 0.22, 0.18, 1.0);
+    const WHEEL: Color = Color::new(0.24, 0.23, 0.25, 1.0);
+    const LOAD: Color = Color::new(0.42, 0.41, 0.44, 1.0);
+    for c in &w.carts {
+        let k = c.prev + (c.at - c.prev) * alpha;
+        let mut p = c.pos_at(k);
+        p.y = w.ground.as_ref().map_or(p.y, |g| g.height(p));
+        let (hw, hl) = (crate::tuning::CART_HALF_W, crate::tuning::CART_HALF_L);
+        let along_z = (c.b - c.a).z.abs() >= (c.b - c.a).x.abs();
+        let size = |x: f32, y: f32, l: f32| {
+            if along_z {
+                vec3(x, y, l)
+            } else {
+                vec3(l, y, x)
+            }
+        };
+        shaded_box(
+            p + Vec3::Y * 0.75,
+            size(hw * 1.8, 0.7, hl * 1.8),
+            BODY,
+            0.55,
+        );
+        shaded_box(p + Vec3::Y * 1.12, size(hw * 1.9, 0.08, hl * 1.9), RIM, 0.5);
+        shaded_box(p + Vec3::Y * 1.2, size(hw * 1.1, 0.35, hl * 1.0), LOAD, 0.6);
+        for (sx, sl) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+            let o = if along_z {
+                vec3(sx * hw * 0.8, 0.3, sl * hl * 0.6)
+            } else {
+                vec3(sl * hl * 0.6, 0.3, sx * hw * 0.8)
+            };
+            shaded_box(p + o, size(0.18, 0.5, 0.5), WHEEL, 0.5);
+        }
     }
 }
 
@@ -880,6 +941,78 @@ fn frail_rings(w: &World, alpha: f32, fl: &Drape) {
     }
 }
 
+fn ail_marks(w: &World, alpha: f32, fl: &Drape) {
+    // 타입 상태(0223 V2): 머리 위 작은 마름모 줄 — 쌓이는 게이지는 흐리고 작게 자라고, 걸린 것은 밝게 뛴다(화상은 겹만큼).
+    // 발밑: 묶인 적은 민트 고리 둘, 금 간 적은 하늘빛 고리(남은 시간만큼 옅어진다).
+    for en in &w.enemies {
+        if !en.alive() {
+            continue;
+        }
+        let a = &en.ail;
+        let p = en.prev.lerp(en.pos, alpha);
+        let ink = |i: usize| {
+            let [r, g, b] = crate::status::INK[i];
+            Color::new(r, g, b, 1.0)
+        };
+        if a.bound > 0.0 {
+            let k = 0.35 + 0.5 * a.bound.min(1.0);
+            let ink = ink(1);
+            for r in [0.2, 0.34] {
+                fl.ring(
+                    p + Vec3::Y * 0.05,
+                    en.radius + r,
+                    0.0,
+                    360.0,
+                    Color::new(ink.r, ink.g, ink.b, k),
+                );
+            }
+        }
+        if a.rift > 0.0 {
+            let ink = ink(3);
+            let beat = 0.75 + 0.25 * (w.time * 9.0).sin();
+            fl.ring(
+                p + Vec3::Y * 0.06,
+                en.radius + 0.48,
+                0.0,
+                360.0,
+                Color::new(ink.r, ink.g, ink.b, (0.3 + 0.5 * a.rift.min(1.0)) * beat),
+            );
+        }
+        // 머리 위 줄: (빛, 크기, 진하기) — 걸린 것 먼저, 그다음 쌓이는 게이지.
+        let mut pips: Vec<(Color, f32, f32)> = Vec::new();
+        let beat = 1.0 + 0.18 * (w.time * 8.0).sin();
+        for _ in 0..a.burn {
+            pips.push((ink(0), 0.26 * beat, 1.0));
+        }
+        if a.bound > 0.0 {
+            pips.push((ink(1), 0.26 * beat, 1.0));
+        }
+        if a.toll_in.is_some() {
+            pips.push((ink(2), 0.3 * beat, 1.0));
+        }
+        if a.rift > 0.0 {
+            pips.push((ink(3), 0.26 * beat, 1.0));
+        }
+        for (i, g) in a.gauge.iter().enumerate() {
+            if *g > 0.02 {
+                pips.push((ink(i), 0.1 + 0.12 * g.min(1.0), 0.6));
+            }
+        }
+        if pips.is_empty() {
+            continue;
+        }
+        let top = p + Vec3::Y * (en.height + 0.55);
+        let (right, _) = facing_axes(top);
+        let gap = 0.3;
+        let x0 = -(pips.len() as f32 - 1.0) * 0.5 * gap;
+        for (i, (ink, size, k)) in pips.into_iter().enumerate() {
+            let at = top + right * (x0 + i as f32 * gap);
+            gem(at, size + 0.07, Color::new(0.07, 0.06, 0.12, 0.8 * k));
+            gem(at, size, Color::new(ink.r, ink.g, ink.b, k));
+        }
+    }
+}
+
 fn spill_rings(w: &World, pp: Vec3, t: &Tuning, fl: &Drape) {
     // 땅 돌리기(0012): 쟁반의 테 — 멈추는 순간 범위 고리가 밝게 떴다 옅어지고, 안쪽 물결이 바깥으로 퍼진다.
     let shown = 0.5;
@@ -1062,9 +1195,10 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
     let fl = Drape {
         ground: w.ground.as_ref(),
     };
-    // 밤의 바닥 위에서도 띠로 읽히게(처음 0.16·0.55는 헤드리스 화면에서 거의 안 보였다) — 브롤스타즈의 흰 띠처럼 몸은 반투명, 테는 또렷하게.
-    let fill = Color::new(1.0, 0.96, 0.84, 0.32);
-    let edge = Color::new(1.0, 0.95, 0.8, 0.95);
+    // 밤의 바닥 위에서도 띠로 읽히게(처음 0.16·0.55는 헤드리스 화면에서 거의 안 보였다) — 0222(사장 "지금보다 연하게"): 0.32·0.95에서
+    // 내렸다. 몸은 은은하게, 테로 길을 읽는다.
+    let fill = Color::new(1.0, 0.96, 0.84, 0.18);
+    let edge = Color::new(1.0, 0.95, 0.8, 0.6);
     let foot = pp + Vec3::Y * 0.05;
     let yaw = dir.x.atan2(dir.z);
     let lane = |len: f32, wid: f32| {
@@ -1078,18 +1212,6 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
     match show {
         // 진실한 표시(0218): 길이는 탄을 쏠 때와 같은 길·같은 벽·땅 규칙으로 돌려 본 멈추는 자리(`World::shot_reach`), 폭은 탄이
         // 맞히는 폭. 모으는 중이면 모은 탄의 길.
-        AimShow::Reticle => {
-            let def = match w.player.weapon.def().rb {
-                crate::weapons::Rb::Magic(b) => b,
-                crate::weapons::Rb::Shot { bolt, .. } => bolt,
-            };
-            let len = w.shot_reach(dir, def, t);
-            let quiet = Color::new(1.0, 0.95, 0.8, 0.35);
-            fl.lane(foot, dir, len, 0.06, quiet);
-            let end = foot + dir * len;
-            fl.ring(end, 0.45, 0.0, 360.0, edge);
-            fl.ring(end, 0.12, 0.0, 360.0, edge);
-        }
         AimShow::Cast => {
             let wpn = w.player.weapon.def();
             let def = if matches!(w.player.state, PState::CastCharge { .. }) {

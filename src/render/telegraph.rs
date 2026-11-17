@@ -238,6 +238,31 @@ fn elite_mark(en: &Enemy, p: Vec3, w: &World, drape: &Drape) {
     }
 }
 
+/// 레일 수레의 예고(0208): 떠나기 전 `CART_TELE`초 — 갈 길 전체에 띠(받아칠 수 없다 — 피할 것, 옆으로 비킨다).
+pub(super) fn cart_tells(v: &View, w: &World) {
+    let drape = Drape {
+        ground: w.ground.as_ref(),
+    };
+    for c in &w.carts {
+        let Some(k) = c.telling() else { continue };
+        let head = c.heading();
+        let p = c.pos();
+        let len = if c.dir > 0.0 { 1.0 - c.at } else { c.at } * c.len();
+        telegraph(
+            &drape,
+            p,
+            head.x.atan2(head.z),
+            k,
+            TeleShape::Lane {
+                len: len + crate::tuning::CART_HALF_L,
+                w: crate::tuning::CART_HALF_W * 2.0,
+            },
+            (v.tells / TELLS_BASE).max(0.6),
+            v.tell_timing,
+        );
+    }
+}
+
 pub(super) fn linger_tells(v: &View, w: &World) {
     // 남는 엘리트의 고리(0112): 뿌리 파동과 같은 "패링 못 함" 고리 예고(가운데 X), 다 차는 순간 터진다.
     for l in &w.lingers {

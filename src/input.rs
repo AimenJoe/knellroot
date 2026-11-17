@@ -92,6 +92,8 @@ pub struct Actions {
     pub look: Vec2,
     /// 시점 바꾸기(0184 — 터치의 시점 버튼): 쿼터뷰 ↔ 자유 숄더뷰. 틱마다 소비.
     pub view: bool,
+    /// 주/부무기 바꾸기(0223 — 터치의 바꾸기 버튼. 패드·키보드는 패링 + 평타를 함께). 틱마다 소비.
+    pub swap: bool,
     pub attack: bool,
     /// 공격 버튼을 쥐고 있나(상태, 강공격 모으기 0030). 눌림 `attack`과 달리 틱이 지우지 않는다.
     pub attack_held: bool,
@@ -100,6 +102,8 @@ pub struct Actions {
     pub dodge_held: bool,
     /// 패링(0025): 누른 뒤 짧은 창 안에 앞쪽에서 오는 근접 공격을 튕긴다.
     pub parry: bool,
+    /// 패링 버튼을 쥐고 있다(0223 — 한손 무기 + 방패면 패링 창 뒤에 막기로 이어진다).
+    pub parry_held: bool,
     /// 점프(0027). 공중에서 공격 = 내려찍기.
     pub jump: bool,
     /// 등잔 마시기(0031).
@@ -118,6 +122,9 @@ pub struct Actions {
     pub aim_hold: bool,
     /// 자유 숄더뷰(0219): 원거리는 카메라가 보는 쪽으로 겨눈다(조준 표시 = 화면 가운데의 앞). 앱이 틱마다 채운다(래치 밖).
     pub aim_ahead: bool,
+    /// 숄더뷰 크로스헤어(0222 → 0227)가 겨누는 적의 자리(XZ): 원거리의 쪽만 바꾼다 — 몸·근접 자동 조준은 모른다(`aim_at`과 다르다).
+    /// 앱이 틱마다 채운다(래치 밖).
+    pub aim_sight: Option<Vec2>,
     /// 패드 조준 보조(0219): 겨눈 쪽 ± 이 각(도) 안의 적에게 원거리를 붙인다 — 0 = 없음(마우스·터치·키보드). 앱이 틱마다 채운다.
     pub aim_assist: f32,
     pub lock: bool,
@@ -198,7 +205,7 @@ pub fn prompt(act: Act) -> String {
         (Device::Pad, Act::Choose) => "D-PAD".into(),
         (Device::Pad, Act::Confirm) => "A".into(),
         (_, Act::Swap) if !swap_free() => String::new(),
-        (_, Act::Swap) => name(Bind::Attack),
+        (_, Act::Swap) => name(Bind::Cast),
         (Device::Pad, Act::Tabs) => format!("{}/{}", Pad::L1.name(), Pad::R1.name()),
         (_, Act::Tabs) => format!("{}/{}", name(Bind::Skill1), name(Bind::Skill2)),
         (Device::Pad, Act::Walk) => "D-PAD".into(),
@@ -232,12 +239,22 @@ fn swap_free_for(device: Device, b: &Bindings) -> bool {
     match device {
         Device::Touch => false,
         Device::Pad => !matches!(
-            b.pad(Bind::Attack),
-            Pad::South | Pad::East | Pad::Start | Pad::Select | Pad::DLeft | Pad::DRight
+            b.pad(Bind::Cast),
+            // LB·RB는 큰 창의 탭 넘기기(0175, 물리 고정).
+            Pad::South
+                | Pad::East
+                | Pad::Start
+                | Pad::Select
+                | Pad::DLeft
+                | Pad::DRight
+                | Pad::L1
+                | Pad::R1
         ),
-        Device::Keys => KEYS
-            .get(b.keys[Bind::Attack as usize] as usize)
-            .is_some_and(|(k, _)| !matches!(k, KeyCode::J | KeyCode::Space)),
+        Device::Keys => match b.key(Bind::Cast) {
+            Slot::Key(k) => !matches!(k, KeyCode::J | KeyCode::Space),
+            // 왼쪽 클릭은 메뉴의 누르기 — 오른쪽·가운데는 메뉴에서 쓰지 않는다.
+            Slot::Mouse(m) => m != MouseButton::Left,
+        },
     }
 }
 
@@ -372,6 +389,14 @@ pub fn key_name(i: u8) -> &'static str {
         .unwrap_or("?")
 }
 
+/// 원거리 무기의 버튼 맞바꾸기(0223): 평타 버튼 = 사격(월드 `cast`), 특수 버튼 = 수류탄(월드 `attack`). 누름·쥠을 함께 바꾼다.
+pub fn weapon_buttons(a: &mut Actions, ranged: bool) {
+    if ranged {
+        std::mem::swap(&mut a.attack, &mut a.cast);
+        std::mem::swap(&mut a.attack_held, &mut a.cast_held);
+    }
+}
+
 /// 동작 → (키 하나, 패드 버튼 하나). 겹치면 맞바꾼다(빈 동작이 생기지 않게).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Bindings {
@@ -419,7 +444,7 @@ impl Bindings {
                 key_index(KeyCode::E),
             ],
             pads: [
-                Pad::West,
+                Pad::R1,
                 Pad::East,
                 Pad::L1,
                 Pad::R3,
@@ -427,7 +452,7 @@ impl Bindings {
                 Pad::DRight,
                 Pad::South,
                 Pad::North,
-                Pad::R1,
+                Pad::West,
                 Pad::L2,
                 Pad::R2,
             ],
@@ -898,6 +923,7 @@ impl Input {
         a.cast = kp(Bind::Cast);
         a.cast_held = bind.key(Bind::Cast).down();
         a.dodge_held = bind.key(Bind::Dodge).down();
+        a.parry_held = bind.key(Bind::Parry).down();
         a.lock = kp(Bind::Lock);
         a.turn_left = kp(Bind::TurnLeft);
         a.turn_right = kp(Bind::TurnRight);
@@ -972,6 +998,7 @@ impl Input {
                 a.lock |= pj(Bind::Lock);
                 // 랩이 열려 있으면 어깨·트리거는 랩 단계(LB 10배·LT 담기·RT 바꾸기)다 — 패링·돌리기로 같이 읽지 않는다.
                 a.parry |= pj(Bind::Parry);
+                a.parry_held |= pad.is_currently_pressed(bind.pad(Bind::Parry).button());
                 a.flask |= pj(Bind::Flask);
                 a.cast |= pj(Bind::Cast);
                 a.cast_held |= pad.is_currently_pressed(bind.pad(Bind::Cast).button());
@@ -1038,6 +1065,7 @@ impl Input {
             a.jump |= pj(Bind::Jump);
             a.lock |= pj(Bind::Lock);
             a.parry |= pj(Bind::Parry);
+            a.parry_held |= is_key_down(bind.pad(Bind::Parry).key());
             a.flask |= pj(Bind::Flask);
             a.cast |= pj(Bind::Cast);
             a.cast_held |= is_key_down(bind.pad(Bind::Cast).key());
@@ -1081,6 +1109,7 @@ impl Input {
         a.dodge |= t.dodge;
         a.dodge_held |= t.dodge_held;
         a.parry |= t.parry;
+        a.parry_held |= t.parry_held;
         a.jump |= t.jump;
         a.flask |= t.flask;
         a.interact |= t.interact;
@@ -1151,6 +1180,7 @@ impl Input {
         a.look += t.look;
         a.zoom += t.zoom;
         a.view |= t.view;
+        a.swap |= t.swap;
         // 메뉴는 마우스 왼쪽을 뗄 때 탭(터치와 같은 규칙, nail 0199).
         if menu && mouse_real && a.tap.is_none() && is_mouse_button_released(MouseButton::Left) {
             a.tap = Some(mp);
@@ -1188,16 +1218,19 @@ impl Input {
             auto_aim,
             aim_hold: a.aim_hold,
             aim_ahead: false,
+            aim_sight: None,
             aim_assist: 0.0,
             cursor: a.cursor,
             aim_at: None,
             zoom: self.latch.zoom + a.zoom,
             look: self.latch.look + a.look,
             view: self.latch.view | a.view,
+            swap: self.latch.swap | a.swap,
             attack: self.latch.attack | a.attack,
             attack_held: a.attack_held,
             cast_held: a.cast_held,
             dodge_held: a.dodge_held,
+            parry_held: a.parry_held,
             dodge: self.latch.dodge | a.dodge,
             parry: self.latch.parry | a.parry,
             jump: self.latch.jump | a.jump,
@@ -1270,6 +1303,7 @@ fn carry(a: &Actions) -> Actions {
         attack_held: a.attack_held,
         cast_held: a.cast_held,
         dodge_held: a.dodge_held,
+        parry_held: a.parry_held,
         aim_hold: a.aim_hold,
         aim_drag: a.aim_drag,
         auto_aim: a.auto_aim,
@@ -1328,23 +1362,26 @@ mod tests {
         );
     }
 
-    /// 0164: 장비 칸 빨리 바꾸기는 공격 버튼 — 그 버튼이 메뉴에서 이미 다른 일을 하는 장치·배치에서는 꺼진다.
-    /// 패드 기본(X)은 되고, 키보드만 배치(J = 확인)·키보드+마우스(왼쪽 클릭 = 누르기)·터치는 안 된다. 공격을 다른 키로 옮기면 된다.
+    /// 0164 → 0223: 장비 칸 빨리 바꾸기는 특수 버튼(패드 X·U·오른쪽 클릭 — 평타가 RB로 가서 RB는 탭 넘기기와 겹친다) —
+    /// 그 버튼이 메뉴에서 이미 다른 일을 하는 장치·배치에서는 꺼진다(J = 확인·왼쪽 클릭 = 누르기·A·B·LB·RB·터치).
     #[test]
-    fn quick_swap_is_off_where_the_attack_button_already_means_something_in_menus() {
+    fn quick_swap_is_on_the_special_button_and_off_where_that_already_means_something_in_menus() {
         let (only, mouse) = (Bindings::keyboard_only(), Bindings::default_layout());
         assert!(swap_free_for(Device::Pad, &only));
-        assert!(swap_free_for(Device::Pad, &mouse));
-        assert!(!swap_free_for(Device::Keys, &only), "J confirms");
-        assert!(!swap_free_for(Device::Keys, &mouse), "a click is a tap");
+        assert!(swap_free_for(Device::Keys, &only), "U");
+        assert!(swap_free_for(Device::Keys, &mouse), "right click");
         assert!(!swap_free_for(Device::Touch, &only));
-        let mut moved = only;
-        moved.set_key(Bind::Attack, key_index(KeyCode::U));
-        assert!(swap_free_for(Device::Keys, &moved));
-        // 패드에서 공격을 확인(A) 자리로 옮기면 꺼진다.
-        let mut pad = only;
-        pad.pads[Bind::Attack as usize] = Pad::South;
-        assert!(!swap_free_for(Device::Pad, &pad));
+        let mut j = only;
+        j.set_key(Bind::Cast, key_index(KeyCode::J));
+        assert!(!swap_free_for(Device::Keys, &j), "J confirms");
+        let mut left = mouse;
+        left.set_key(Bind::Cast, mouse_index(MouseButton::Left));
+        assert!(!swap_free_for(Device::Keys, &left), "a click is a tap");
+        for p in [Pad::South, Pad::R1] {
+            let mut pad = only;
+            pad.set_pad(Bind::Cast, p);
+            assert!(!swap_free_for(Device::Pad, &pad), "{p:?}");
+        }
     }
 
     /// 0058: 커서는 마우스 조준이 켜져 있고, 장치가 키보드(+마우스)이고, 만진 지 쉼 시간 안일 때만 조준한다.

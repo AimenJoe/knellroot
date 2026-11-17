@@ -27,6 +27,26 @@ impl App {
             }
             return;
         }
+        // 마지막 핵의 반응(0216 W3): 세계가 멈춘 채 잔상 둘·먼 종소리 한 번 → 끝 장면. 조작은 없다(짧다).
+        if let Some(t) = self.echo {
+            self.world.player.prev = self.world.player.pos;
+            for e in &mut self.world.enemies {
+                e.prev = e.pos;
+            }
+            self.follow_camera();
+            if crate::core_echo::bell(t, TICK_DT) {
+                self.snd(crate::sfx::Id::Knell);
+            }
+            let t = t + TICK_DT;
+            if crate::core_echo::done(t) {
+                self.echo = None;
+                self.ending = 0.0;
+                self.go(Go::Root(Scene::Ending { won: true }));
+            } else {
+                self.echo = Some(t);
+            }
+            return;
+        }
         // 쓰러짐(0175): 체력이 다하면 세계가 멈추고 방랑자만 무너진다 → 뿌리가 감겨 들며 어두워진다 → 다 어두울 때 쉼터 곁으로
         // (그전에는 쓰러진 그 틱에 쉼터 곁에 서 있었다) → 화로 곁에서 일어난다. 조작은 없고, 일어나는 동안만 건너뛸 수 있다.
         if let Some(mut fl) = self.fall.take() {
@@ -131,6 +151,7 @@ impl App {
             self.fall = Some(crate::fall::Fall::default());
             return;
         }
+        self.tell_bag();
         let mut out = self.run.tick(&mut self.world, TICK_DT);
         // 주민 말풍선(0122): 같은 주민에게 말풍선이 떠 있는 동안 다시 누르면 다음 말, 아니면 처음 말.
         if let Some(k) = self.run.take_talked() {
@@ -186,6 +207,8 @@ impl App {
             self.world.embers,
             &self.progress.owned,
             &self.progress.growth,
+            &self.progress.shields,
+            !self.progress.bag.full(),
         ) || self.progress.level.can_raise(self.world.embers)
             || self.progress.board.can_buy(self.progress.skill_points())
             || self.can_forge();
@@ -212,6 +235,11 @@ impl App {
         if out == crate::stage::StageOut::Respawned {
             // 쉼터에서 다시 일어섰다(0032): 카메라를 그 자리로 바로(멀리서 날아오지 않게).
             self.cam = self.cam.renew(self.world.player.pos, &self.t);
+        }
+        // 마지막 핵을 쥐었다(0216 W3): 끝 장면 전에 핵의 반응 — 세계가 멈추고 잔상·먼 종소리.
+        if out == crate::stage::StageOut::Cleared {
+            self.echo = Some(0.0);
+            return;
         }
         if let Some(next) = flow::after_stage(out) {
             self.ending = 0.0;
@@ -263,7 +291,7 @@ impl App {
             };
             self.world = scenario::build(self.sc);
             self.fx.clear();
-            self.world.set_weapon(self.weapon);
+            self.arm_world();
             self.apply_board();
             self.cam = self.cam.renew(self.world.player.pos, &self.t);
         }
@@ -325,6 +353,14 @@ impl App {
     /// 락온 중이면 쓰지 않는다(오른쪽 스틱처럼 — 대상을 본다). 화면 밖이면 없음.
     pub(super) fn cursor_aim(&self, mut a: Actions) -> Actions {
         a.aim_at = None;
+        a.aim_sight = None;
+        // 숄더뷰 크로스헤어(0222): 화면 가운데의 시선이 닿는 적이 있으면 그 적 쪽으로 — 원거리가 "그곳으로" 간다.
+        // 커서(`aim_at`)가 아니라 `aim_sight`로(0227): `aim_at`은 몸을 돌리고 근접 자동 조준의 원뿔을 정한다 — 크로스헤어가 적을
+        // 지날 때마다 걷던 몸이 그 적에게 돌아갔다.
+        if self.cam.mode == Mode::Free {
+            a.aim_sight = self.crosshair_target().map(|p| vec2(p.x, p.z));
+            return a;
+        }
         let (Some(c), Some(f)) = (a.cursor, self.frame) else {
             return a;
         };
@@ -345,7 +381,66 @@ impl App {
         a
     }
 
+    /// 숄더뷰 크로스헤어(0222)가 겨누는 적: 화면 가운데에서 나가는 시선(카메라 리그)이 지나는 깨어 있는 적의 몸(가운데 높이,
+    /// 반지름 몸 + 볼트 몫) 가운데 가장 가까운 것 — 지금 원거리의 사거리 안. 없으면 None(카메라 앞으로 곧게 쏜다, `aim_ahead`).
+    pub(super) fn crosshair_target(&self) -> Option<Vec3> {
+        let f = self.frame?;
+        if f.w < 1.0 || f.h < 1.0 || self.world.lock_target().is_some() {
+            return None;
+        }
+        let rig = &self.cam.rig;
+        let dir = crate::camera::screen_ray(rig, f.w / f.h, Vec2::ZERO);
+        let w = &self.world;
+        let range = match w.player.weapon.def().rb {
+            crate::weapons::Rb::Magic(b) => b.range,
+            crate::weapons::Rb::Shot { bolt, .. } => bolt.range,
+        };
+        let reach = self.t[crate::tuning::P::CastRange] * range;
+        let pp = w.player.pos;
+        w.enemies
+            .iter()
+            .filter(|en| en.active() && !en.harmless())
+            .filter(|en| vec2(en.pos.x - pp.x, en.pos.z - pp.z).length() <= reach + en.radius)
+            .filter_map(|en| {
+                let c = en.pos + Vec3::Y * (en.height * 0.5);
+                let t = (c - rig.pos).dot(dir);
+                let miss = (rig.pos + dir * t - c).length();
+                (t > 0.0 && miss <= en.radius + crate::tuning::BOLT_RADIUS).then_some((t, en))
+            })
+            // 벽 너머의 적은 잡지 않는다(0228) — 크로스헤어가 호박빛으로 "맞는다"고 말하면 탄이 거기 닿아야 한다.
+            .filter(|(_, en)| w.shot_clear(en.pos, en.radius, &self.t))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, en)| en.pos)
+    }
+
+    fn on_weapon_swap(&mut self, to: crate::weapons::Id) {
+        self.weapon = to;
+        // 개발 놀이터(아레나): 든 무기는 개발 창이 정한 것(가진 것이 아닐 수 있다) — 기록의 무기·칸·가방을 건드리지 않는다.
+        #[cfg(feature = "dev")]
+        if self.stack.base() == Scene::Sandbox {
+            self.snd(crate::sfx::Id::UiConfirm);
+            return;
+        }
+        self.progress.weapon = Some(to);
+        self.progress.sub = self.world.player.sub;
+        // 스킬 칸도 무기를 따라 맞바뀐다(0223 V3 — 월드는 이미 바꿨다).
+        std::mem::swap(&mut self.progress.skills, &mut self.progress.sub_skills);
+        self.progress.bag.swap_weapons();
+        // 벼린 단(0180)은 든 무기에만 — 바꿔 든 무기의 것으로 능력치를 다시 합친다(V1b에서 빠뜨렸다: 바꿔 들어도 옛 무기의 단이 남았다).
+        // 탄창은 월드가 바꿔 든 그대로(가득이었나를 옛 무기의 능력치로 재면, 벼려 늘린 탄창이 바꿔 들 때마다 차오른다).
+        let ammo = self.world.player.ranged.ammo;
+        self.world.apply_stats(self.progress.stats(), false);
+        self.world.player.ranged.ammo = ammo.min(self.world.mag_of(to));
+        self.persist();
+        self.snd(crate::sfx::Id::UiConfirm);
+    }
+
     pub(super) fn step_world(&mut self, a: &Actions) {
+        // 버튼 → 월드의 일(0223): 평타 버튼(패드 RB·왼쪽 클릭·J)은 `attack`, 특수(X·오른쪽 클릭·U)는 `cast` — 원거리 무기는
+        // 평타가 사격(월드의 `cast`)이고 특수가 수류탄(`attack`)이라 맞바꿔 넘긴다. 월드·시험은 옛 이름 그대로.
+        let mut a = *a;
+        input::weapon_buttons(&mut a, self.world.player.weapon.is_ranged());
+        let a = &a;
         let (cam, t) = (&mut self.cam, &self.t);
         // 입력 기준(0011 → 0181): 쿼터뷰는 그 방위, 자유 숄더뷰는 카메라가 보는 쪽.
         self.world.view_yaw = Some(cam.basis_yaw_deg(t));
@@ -355,6 +450,14 @@ impl App {
             SHAKE_TURN,
         };
         let events = self.world.step(a, t);
+        // 바꿔 든 무기를 기록에(0223 — 다음 판·멈춤의 장비 탭도 그것으로).
+        if let Some(to) = events.iter().find_map(|e| match e {
+            Event::WeaponSwap { to } => Some(*to),
+            _ => None,
+        }) {
+            self.on_weapon_swap(to);
+        }
+        let (cam, t) = (&mut self.cam, &self.t);
         for &e in &events {
             let kick = match e {
                 Event::Hit { .. } => SHAKE_HIT,
@@ -366,7 +469,18 @@ impl App {
                     SHAKE_TURN
                 }
                 Event::Slam { .. } => SHAKE_SLAM,
+                // 수레가 떠나는 덜컹(0208): 가까울 때만 작게 — 멀리 있는 수레가 화면을 흔들지 않게.
+                Event::CartGo { at } => {
+                    if at.distance(self.world.player.pos) < 14.0 {
+                        SHAKE_SLAM * 0.5
+                    } else {
+                        0.0
+                    }
+                }
+                Event::CartWarn { .. } => 0.0,
                 Event::Rouse { .. } => SHAKE_ROUSE,
+                // 사슬이 끊긴다(0208 — 3단계): 2단계 전환보다 크게.
+                Event::Unchain { .. } => SHAKE_ROUSE * 1.4,
                 Event::Parry { .. } => SHAKE_PARRY,
                 Event::Deflect { .. } => SHAKE_HIT,
                 Event::Crit { .. } => SHAKE_CRIT,
@@ -378,8 +492,11 @@ impl App {
                 | Event::FlaskDenied
                 | Event::Ember { .. } => 0.0,
                 Event::Cast { .. } | Event::CastDenied | Event::Throw => 0.0,
+                Event::WeaponSwap { .. } => 0.0,
+                Event::Guard { .. } => SHAKE_HIT,
+                Event::GuardBreak { .. } => SHAKE_HURT,
                 Event::StaminaDenied | Event::Release { .. } => 0.0,
-                Event::Break { .. } => SHAKE_SMASH,
+                Event::Break { .. } | Event::LoadBreak { .. } => SHAKE_SMASH,
                 Event::Aftershock { .. } | Event::Boom { .. } => SHAKE_PLUNGE,
                 Event::Perfect { .. } => SHAKE_CHARGED,
                 // 락온 대상을 잃으면(0181) 풀린 뒤 자유 숄더뷰에 머문다 — 버튼으로 풀면 락온한 곳(쿼터뷰·자유)으로.
@@ -400,6 +517,10 @@ impl App {
                 Event::ThrowBoom { .. } => SHAKE_PLUNGE,
                 Event::Soak { .. } | Event::EchoRing { .. } | Event::Interrupt { .. } => SHAKE_HIT,
                 Event::RootSpike { .. } => 0.0,
+                // 피해 타입(0223 V2): 울림·터짐은 둘레를 치는 순간이라 가볍게, 화상이 타는 것·게이지가 차는 것은 조용히.
+                Event::Toll { .. } => SHAKE_HIT,
+                Event::AilBurst { .. } => SHAKE_PLUNGE,
+                Event::Ail { .. } | Event::Burn { .. } => 0.0,
                 Event::ThrowTurn { .. }
                 | Event::ThrowBack { .. }
                 | Event::FieldPulse { .. }
@@ -507,7 +628,9 @@ impl App {
                 .find_map(|&l| level.next_cost(l)),
             level: level.total(),
             spent: board.spent() > 0,
-            knows_skill: board.knows_a_skill(),
+            // 쓸 수 있는 스킬(0225): 배웠어도 지금 쥔 꼴과 안 맞으면 누를 것이 없다 — "쓰기" 걸음이 막히지 않게.
+            knows_skill: board.knows_a_skill()
+                && self.world.player.skill.rank.iter().any(|r| *r > 0),
             can_learn: board.can_buy(self.progress.skill_points()),
             gift: self.progress.gift,
         }
@@ -527,6 +650,10 @@ impl App {
             match e {
                 Event::Hit { .. } | Event::Crit { .. } => self.tutor.seen.hits += 1,
                 Event::Charged => self.tutor.seen.charged += 1,
+                // 0223의 새 것들(상황 힌트가 본다): 바꿔 듦 · 방패로 받음 · 타입의 일이 걸림.
+                Event::WeaponSwap { .. } => self.tutor.seen.swaps += 1,
+                Event::Guard { .. } => self.tutor.seen.blocks += 1,
+                Event::Ail { .. } | Event::Toll { .. } => self.tutor.seen.ails += 1,
                 // 등잔을 한 번 마셔 보면 그 뒤로는 알리지 않는다(기록의 비트 — 판을 넘어, 0213).
                 Event::Gulp { .. } => {
                     self.tutor.seen.gulps += 1;
@@ -591,7 +718,10 @@ impl App {
         let to_hearth = matches!(
             self.tutor.step(),
             Some(crate::tutorial::Step::Learn | crate::tutorial::Step::Level)
-        ) && self.tutor.step().is_some_and(|s| s.shown(&facts));
+        ) && self
+            .tutor
+            .step()
+            .is_some_and(|s| s.shown(&facts) && !s.gathering(&facts));
         if to_hearth && !fight {
             let at = self.world.player.pos;
             self.run.guide = self
@@ -625,16 +755,40 @@ impl App {
                     && (e.pos - pl.pos).length() < crate::tutorial::FIGHT_RANGE
             }),
             locked: self.world.lock.is_some(),
+            has_sub: pl.sub.is_some(),
+            can_block: self.world.can_block(),
+            unfit: (0..2).any(|i| pl.skill.rank[i] == 0 && pl.skill.known[i] > 0),
+            spare: !self.progress.bag.spares().is_empty(),
+            bag_blocked: self.run.near_blocked,
         };
         // 등잔은 체력이 반 위로 돌아오면 다시 알릴 수 있다(마셔 보기 전까지 — 기록의 비트는 마실 때 선다, 0213).
         let flask = Tip::Flask.bit();
         if !now.hp_low {
             self.tips_now &= !flask;
         }
-        if let Some((t, left)) = self.tip {
-            let left = left - TICK_DT;
-            self.tip = (left > 0.0 && !t.done(&now, &self.tutor.seen)).then_some((t, left));
+        // 판이 가려진 동안(시작 이야기·구역 카드·보스 띠 — `hud::draw`가 판을 그리지 않는다)에는 힌트의 시계를 세우고 새로
+        // 띄우지도 않는다: 안 보이는 사이에 한 번뿐인 힌트가 지나가 버렸다(구역 카드 밑에서 "바꿔 든다"가 사라졌다).
+        if self.run.intro > 0.0
+            || self.run.card.is_some()
+            || self.run.boss_bar(&self.world).is_some()
+        {
             return;
+        }
+        if let Some((t, left)) = self.tip {
+            // 떠 있는 동안(남은 시간 > 0) 할 일을 하면 걷히고, 걷힌 뒤에는 `TIP_REST`만큼 쉰다(남은 시간이 0 아래로 —
+            // 여럿이 때를 맞아도 줄지어 덮지 않는다). 급한 것(등잔)은 쉼을 기다리지 않는다.
+            let left = if left > 0.0 && t.done(&now, &self.tutor.seen) {
+                0.0
+            } else {
+                left - TICK_DT
+            };
+            let urgent = left <= 0.0
+                && (self.progress.tips | self.tips_now) & flask == 0
+                && Tip::Flask.due(self.tutor.at, &now, &self.tutor.seen);
+            self.tip = (left > -crate::tutorial::TIP_REST && !urgent).then_some((t, left));
+            if !urgent {
+                return;
+            }
         }
         let shown = self.progress.tips | self.tips_now;
         if let Some(t) = next_tip(shown, self.tutor.at, &now, &self.tutor.seen) {
@@ -676,18 +830,22 @@ impl App {
                 crate::ui::key(&name)
             }
         };
-        if let (Some((t, _)), true) = (self.tip, self.tutor_live()) {
-            // 쇠뇌는 모으기가 RB(사격)에 있다(0213).
-            let shots = matches!(
-                self.world.player.weapon.def().rb,
-                crate::weapons::Rb::Shot { .. }
-            );
-            return Some(t.hint(crate::i18n::s(), |b| {
-                cap(match b {
-                    crate::input::Bind::Attack if shots => crate::input::Bind::Cast,
-                    b => b,
-                })
-            }));
+        if let (Some((t, left)), true) = (self.tip, self.tutor_live()) {
+            // 걷힌 뒤의 쉼(남은 시간 0 아래)에는 그리지 않는다 — 걸음의 힌트가 그 자리에 돌아온다.
+            if left > 0.0 {
+                // 쇠뇌는 모으기가 RB(사격)에 있다(0213) — 모으기 힌트만: 바꿔 들기의 평타는 손의 버튼 그대로다.
+                let shots = t == crate::tutorial::Tip::Charge
+                    && matches!(
+                        self.world.player.weapon.def().rb,
+                        crate::weapons::Rb::Shot { .. }
+                    );
+                return Some(t.hint(crate::i18n::s(), |b| {
+                    cap(match b {
+                        crate::input::Bind::Attack if shots => crate::input::Bind::Cast,
+                        b => b,
+                    })
+                }));
+            }
         }
         if !self.tutor_on() {
             return None;
@@ -953,16 +1111,20 @@ impl App {
     /// 월드 사건·상태 변화 → 소리(0064 M5). 월드는 소리를 모른다 — 여기서만 듣는다.
     pub(super) fn world_sounds(&mut self, events: &[Event]) {
         use crate::sfx::Id;
+        let mut typed: Vec<Id> = Vec::new();
         for e in events {
             let id = match e {
                 Event::Swing => Id::Swing,
                 Event::Hit { .. } | Event::Crit { .. } => Id::Hit,
                 Event::Plunge { .. } | Event::Smash { .. } | Event::Aftershock { .. } => Id::Hit,
-                Event::Break { .. } | Event::Boom { .. } => Id::Hit,
+                Event::Break { .. } | Event::Boom { .. } | Event::LoadBreak { .. } => Id::Hit,
                 Event::EnemyDown { .. } => Id::Die,
                 Event::PlayerHurt => Id::Hurt,
                 // 등딱지 튕김(0120)은 패링의 거울 — 같은 쇳소리.
                 Event::Parry { .. } | Event::Deflect { .. } => Id::Parry,
+                // 방패(0223): 받은 타는 둔한 '둥'(튕김의 맑은 소리와 갈린다), 깨지면 맞은 소리.
+                Event::Guard { .. } => Id::Thwack,
+                Event::GuardBreak { .. } => Id::Hurt,
                 Event::Beat => crate::sfx::beat_id(self.world.player.beat.chain),
                 // 딱 맞춰 떼기(0078): 박자와 같은 "맞췄다" 종 — 가장 높은 음.
                 Event::Perfect { .. } => Id::Beat3,
@@ -970,6 +1132,14 @@ impl App {
                 Event::Gulp { .. } | Event::Mend { .. } => Id::Gulp,
                 // 지연 공격이 풀린다(0128): 짧게 들이쉬는 소리 — 이 뒤 `RELEASE_LEAD`초에 맞는다.
                 Event::Release { .. } => Id::TeleRelease,
+                // 수레가 떠난다(0208): 둔한 덜컹 — 가까울 때만(멀리서 내내 울리지 않게).
+                Event::CartGo { at } if at.distance(self.world.player.pos) < 18.0 => Id::Thwack,
+                Event::CartWarn { at } if at.distance(self.world.player.pos) < 18.0 => Id::TeleLane,
+                // 사슬이 끊긴다(0208 3단계): 깊은 울림 + 글 한 줄.
+                Event::Unchain { .. } => {
+                    self.run.card = Some((|s| s.overseer_unchained, crate::stage::CARD_TIME));
+                    Id::Wake
+                }
                 Event::FlaskDenied | Event::CastDenied | Event::StaminaDenied => Id::Deny,
                 // 스킬(0151 — S0는 있는 소리를 겹쳐 쓴다, 전용 소리는 S1): 시동 = 휘두름, 큰 기술 시동 = 깊은 울림, 터짐 = 타격,
                 // 게이지 가득 = 가장 높은 종.
@@ -1018,9 +1188,28 @@ impl App {
                 Event::ThrowBoom { .. } | Event::LineCut { .. } => Id::Hit,
                 Event::ThrowBack { .. } => Id::Beat,
                 Event::FieldPulse { .. } => Id::Ember,
+                // 피해 타입(0223 V2): 화상이 붙음·탐 = 잔불 소리, 묶임 = 뿌리가 깨는 소리, 금 = 쇳소리, 울림 = 낮은 종, 터짐 = 타격.
+                Event::Ail { kind, .. } => match kind {
+                    crate::status::Kind::Ember => Id::Ember,
+                    crate::status::Kind::Root => Id::Wake,
+                    crate::status::Kind::Rift => Id::Parry,
+                    _ => continue,
+                },
+                Event::Toll { .. } => Id::Beat,
+                Event::AilBurst { .. } => Id::Hit,
                 Event::Flurry { .. } => Id::Beat3,
                 _ => continue,
             };
+            // 타입의 일(0223 V2)은 떼에서 한 틱에 여럿이 겹친다(스물이 한꺼번에 울린다) — 같은 소리는 틱에 한 번만.
+            if matches!(
+                e,
+                Event::Ail { .. } | Event::Toll { .. } | Event::AilBurst { .. }
+            ) {
+                if typed.contains(&id) {
+                    continue;
+                }
+                typed.push(id);
+            }
             self.snd(id);
             if id == Id::Hit {
                 self.snd(Id::Thwack);

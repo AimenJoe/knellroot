@@ -9,6 +9,7 @@ pub(super) fn ware_name(w: crate::growth::Ware) -> &'static str {
     match w {
         crate::growth::Ware::Charm(id) => tr(crate::charms::def(id).name),
         crate::growth::Ware::Oil => s().shop_oil,
+        crate::growth::Ware::Shield(id) => tr(id.def().name),
     }
 }
 
@@ -50,9 +51,49 @@ fn weapon_index(w: weapons::Id) -> u8 {
 }
 
 impl App {
-    fn shop_list(&self) -> Vec<ShopRow> {
-        let shelf = crate::growth::shelf(&self.progress.owned, &self.progress.growth);
+    pub(super) fn shop_list(&self) -> Vec<ShopRow> {
+        let shelf = crate::growth::shelf(
+            &self.progress.owned,
+            &self.progress.growth,
+            &self.progress.shields,
+        );
+        // 여벌을 잔불로 바꾸는 줄(0223 V4)은 가방 탭으로 옮겼다(0226 — 한 일은 한 곳).
         shop_rows(shelf.len(), &self.arms(), &self.progress.forged)
+    }
+
+    /// 가방의 아이템 이름(등급 말 + 바탕 이름 — 0223 V4).
+    pub(super) fn item_name(&self, id: u32) -> String {
+        use crate::items::Base;
+        let Some(it) = self.progress.bag.get(id) else {
+            return String::new();
+        };
+        let name = match it.base {
+            Base::Weapon(w) => weapon_name(w),
+            Base::Shield(sh) => tr(sh.def().name),
+            Base::Charm(c) => tr(crate::charms::def(c).name),
+        };
+        crate::i18n::item_label(it.rarity, name)
+    }
+
+    /// 여벌을 잔불로 바꾼다(묻는 창의 답 — 0223 V4): 가방에서 빼고 그 값만큼 잔불.
+    pub(super) fn salvage_item(&mut self, id: u32) {
+        if !self.progress.bag.loose().contains(&id) {
+            self.snd(crate::sfx::Id::Deny);
+            return;
+        }
+        let name = self.item_name(id);
+        let Some(it) = self.progress.bag.remove(id) else {
+            return;
+        };
+        let n = it.salvage();
+        self.world.embers += n;
+        self.progress.embers = self.world.embers;
+        self.snd(crate::sfx::Id::Recall);
+        self.toast = Some((
+            fill(s().toast_salvaged, &[&name, &n.to_string()]),
+            TOAST_TIME,
+        ));
+        self.persist();
     }
 
     /// 벼릴 수 있는 무기가 하나라도 있나(가게 탭의 민트 점·쉼터의 빛 — 0180).
@@ -71,7 +112,11 @@ impl App {
     /// 닫는 줄은 없다 — 창을 닫으면 떠난다(0164).
     pub(super) fn shop_menu(&self) -> Menu {
         let s = s();
-        let shelf = crate::growth::shelf(&self.progress.owned, &self.progress.growth);
+        let shelf = crate::growth::shelf(
+            &self.progress.owned,
+            &self.progress.growth,
+            &self.progress.shields,
+        );
         let have = self.world.embers;
         let (finds, forged) = (&self.progress.finds, &self.progress.forged);
         let rows: Vec<ui::Row> = self
@@ -142,7 +187,11 @@ impl App {
     /// 진열의 물건: 머리(그림 · 이름 · 갈래와 값 · 살 수 있나) + 하는 일.
     fn ware_pane(&mut self, w: &super::frame::Window, i: usize) -> Vec<Ln> {
         let s = s();
-        let shelf = crate::growth::shelf(&self.progress.owned, &self.progress.growth);
+        let shelf = crate::growth::shelf(
+            &self.progress.owned,
+            &self.progress.growth,
+            &self.progress.shields,
+        );
         let have = self.world.embers;
         let (ware, price, sold) = shelf[i];
         let (kind, desc, flavor, item) = match ware {
@@ -156,6 +205,7 @@ impl App {
                 )
             }
             crate::growth::Ware::Oil => (s.stat_flask, s.shop_oil_d, None, None),
+            crate::growth::Ware::Shield(id) => (s.menu_shield, tr(id.def().desc), None, None),
         };
         // 상태 한 줄: 산 것은 금빛("샀다" — 내 것), 살 수 있으면 민트, 모자라면 흐림.
         let state = if sold {
@@ -276,7 +326,11 @@ impl App {
         let list = self.shop_list();
         match list.get(i).copied() {
             Some(ShopRow::Ware(i)) => {
-                let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
+                let wares = crate::growth::wares(
+                    &self.progress.owned,
+                    &self.progress.growth,
+                    &self.progress.shields,
+                );
                 match wares.get(i).copied() {
                     // 모자라면 묻지 않고 알림만(nail 가게와 같다 — 흐린 줄).
                     Some((_, price)) if self.world.embers < price => {

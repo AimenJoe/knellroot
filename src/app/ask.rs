@@ -34,7 +34,11 @@ impl App {
         if yes {
             match k {
                 flow::Ask::Buy(w) => {
-                    let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
+                    let wares = crate::growth::wares(
+                        &self.progress.owned,
+                        &self.progress.growth,
+                        &self.progress.shields,
+                    );
                     if let Some(&w) = wares.get(w) {
                         self.buy(w);
                     }
@@ -44,6 +48,8 @@ impl App {
                 flow::Ask::Respec => self.respec_skills(),
                 flow::Ask::Forge(i) => self.forge_weapon(crate::weapons::IDS[i as usize]),
                 flow::Ask::Recall(i) => self.recall_weapon(crate::weapons::IDS[i as usize]),
+                flow::Ask::Salvage(id) => self.salvage_item(id),
+                flow::Ask::Tidy => self.tidy_bag(),
                 flow::Ask::Restart
                 | flow::Ask::ToTitle
                 | flow::Ask::Overwrite(_)
@@ -54,6 +60,10 @@ impl App {
             self.restart();
         }
         self.go(next);
+        // 줄이 준 가게(벼린 단을 거둠): 돌아온 커서는 묻기 전의 자리다 — 줄 안으로.
+        if yes && matches!(k, flow::Ask::Recall(_)) {
+            self.cursor = self.cursor.min(self.shop_list().len().saturating_sub(1));
+        }
     }
 
     pub(super) fn draw_ask(&mut self, f: &Frame, k: flow::Ask) {
@@ -82,12 +92,17 @@ impl App {
                 s.slot_erase,
             ),
             flow::Ask::Buy(i) => {
-                let wares = crate::growth::wares(&self.progress.owned, &self.progress.growth);
+                let wares = crate::growth::wares(
+                    &self.progress.owned,
+                    &self.progress.growth,
+                    &self.progress.shields,
+                );
                 let (name, price) = match wares.get(i) {
                     Some((crate::growth::Ware::Charm(id), p)) => {
                         (tr(crate::charms::def(*id).name), *p)
                     }
                     Some((crate::growth::Ware::Oil, p)) => (s.shop_oil, *p),
+                    Some((crate::growth::Ware::Shield(id), p)) => (tr(id.def().name), *p),
                     None => ("", 0),
                 };
                 (fill(s.ask_buy, &[name, &price.to_string()]), s.ask_buy_yes)
@@ -105,6 +120,20 @@ impl App {
                         &[&forged_label(w, to), &st.to_string(), &em.to_string()],
                     ),
                     s.forge_do,
+                )
+            }
+            flow::Ask::Salvage(id) => {
+                let n = self.progress.bag.get(id).map_or(0, |it| it.salvage());
+                (
+                    fill(s.ask_salvage, &[&self.item_name(id), &n.to_string()]),
+                    s.salvage_do,
+                )
+            }
+            flow::Ask::Tidy => {
+                let (n, embers) = self.tidy_count();
+                (
+                    fill(s.ask_tidy, &[&n.to_string(), &embers.to_string()]),
+                    s.bag_tidy,
                 )
             }
             flow::Ask::Recall(i) => {

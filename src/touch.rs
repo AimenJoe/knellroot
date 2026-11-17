@@ -67,6 +67,8 @@ pub enum Kind {
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
     View,
+    /// 주/부무기 바꾸기(0223): 부무기가 있을 때만 뜨는 상황 버튼(회피 왼쪽 바깥 호). 그림은 바꿔 들 무기(`View::swap`).
+    Swap,
 }
 
 /// 그릴 때 앱이 넘기는 것(0151): 상태에 따라 바뀌는 그림·차오름.
@@ -78,10 +80,14 @@ pub struct View {
     /// 공격 버튼의 그림(든 무기, 0147)과 RB 버튼의 그림(근접 = 별, 원거리 = 수류탄).
     pub attack: Kind,
     pub cast: Kind,
+    /// 바꾸기 버튼의 그림(0223 — 부무기의 무기 그림).
+    pub swap: Kind,
     /// 스킬 둘: (그림, 대기 0..1 — 1 = 준비).
     pub skills: [(Kind, f32); 2],
     /// 빈 스킬 칸(0166 — 아직 배운 스킬이 없다): 그림 없이 흐린 테만.
     pub vacant: [bool; 2],
+    /// 배웠지만 지금 든 무기로는 못 쓰는 스킬(0223 V3): 빈 칸이되 아주 흐린 그림을 남긴다 — 사라진 것이 아니다(HUD와 같은 꼴).
+    pub unfit: [bool; 2],
     /// 스킬이 남긴 것이 이어지는 몫 0..1(0158 G2 — 되울림·잔불 흩기: 버튼 둘레의 줄어드는 테).
     pub active: [f32; 2],
     /// 큰 기술 버튼의 그림(끼운 하나, 0158 G2).
@@ -119,6 +125,8 @@ pub struct Read {
     /// 회피 버튼을 쥐고 있나(0076 — 쥐면 회피 뒤 달리기).
     pub dodge_held: bool,
     pub parry: bool,
+    /// 패링 버튼을 쥐고 있나(0223 — 방패 막기).
+    pub parry_held: bool,
     pub jump: bool,
     /// 등잔(0031).
     pub flask: bool,
@@ -147,6 +155,8 @@ pub struct Read {
     pub zoom: i32,
     /// 시점 버튼(0184): 쿼터뷰 ↔ 자유 숄더뷰.
     pub view: bool,
+    /// 주/부무기 바꾸기 버튼(0223).
+    pub swap: bool,
     /// 끌어 조준(0217): 겨눌 일이 올라간 버튼을 짚고 끈 쪽(스틱과 같은 축 — 길이 1). 0이면 겨누지 않음.
     pub aim: Vec2,
     /// 이 조준은 손가락이 끈 것이다 — 락온보다 앞선다.
@@ -180,6 +190,7 @@ pub struct Touch {
     cast_finger: Option<u64>,
     /// 회피 버튼을 누른 손가락(0076).
     dodge_finger: Option<u64>,
+    parry_finger: Option<u64>,
     /// 끌어 조준하는 손가락(0217).
     aimer: Option<Aimer>,
     /// 상황 버튼(0053, 앱이 매 프레임 정한다).
@@ -243,8 +254,12 @@ pub struct Ctx {
     pub aim_attack: bool,
     pub aim_cast: bool,
     pub aim_skills: [bool; 2],
+    /// 부무기가 있다(0223) — 바꾸기 버튼이 뜬다.
+    pub swap: bool,
     /// 지금 원거리를 모으는 중이다 — 떼면 월드가 모은 탄을 낸다(누름을 다시 보내지 않는다).
     pub charging: bool,
+    /// 원거리 무기를 들었다(0223) — 쥐고 끄는 동안 모으는 탄의 버튼이 평타(`Attack` — 사격)다. 아니면 특수(`Cast` — 마법 탄).
+    pub ranged: bool,
 }
 
 impl Ctx {
@@ -258,8 +273,19 @@ impl Ctx {
         aim_attack: true,
         aim_cast: true,
         aim_skills: [true; 2],
+        swap: true,
         charging: false,
+        ranged: false,
     };
+
+    /// 쥐고 끄는 동안 모으는 탄의 버튼(0217 → 0223).
+    pub fn shot(&self) -> Kind {
+        if self.ranged {
+            Kind::Attack
+        } else {
+            Kind::Cast
+        }
+    }
 
     /// 이 버튼은 끌어 겨누나(0217).
     pub fn aims(&self, k: Kind) -> bool {
@@ -407,6 +433,14 @@ pub fn layout(w: f32, h: f32, ctx: Ctx) -> Vec<Button> {
             kind: Kind::Flask,
         });
     }
+    // 바꾸기(0223): 회피 왼쪽 바깥 호 — 자주 누르지 않지만 싸움 중에 엄지가 닿는 자리. 부무기가 있을 때만.
+    if ctx.swap {
+        b.push(Button {
+            center: at(176.0, 0.44),
+            radius: u * 0.06,
+            kind: Kind::Swap,
+        });
+    }
     // 멈춤: 왼쪽 위 끝(2026-11-06 — 사장, 메뉴 버튼은 왼쪽 위). HUD는 그만큼 오른쪽으로 비킨다(`hud_inset`).
     // 랩·시나리오 터치 버튼은 걷었다 — 랩은 멈춤 메뉴의 LAB, 시나리오는 DEV 메뉴에서.
     let (c, s) = pause_spot(w, h);
@@ -459,6 +493,7 @@ impl Touch {
             self.attack_finger = None;
             self.cast_finger = None;
             self.dodge_finger = None;
+            self.parry_finger = None;
             self.lookers.clear();
             self.pinch = 0.0;
             self.stale.append(&mut self.known);
@@ -506,6 +541,7 @@ impl Touch {
             self.attack_finger = None;
             self.cast_finger = None;
             self.dodge_finger = None;
+            self.parry_finger = None;
             self.lookers.clear();
             self.pinch = 0.0;
             return a;
@@ -537,8 +573,11 @@ impl Touch {
                                 out: false,
                                 last: Vec2::ZERO,
                             });
-                            if b.kind == Kind::Cast {
-                                self.cast_finger = Some(t.id);
+                            if b.kind == self.ctx.shot() {
+                                match b.kind {
+                                    Kind::Attack => self.attack_finger = Some(t.id),
+                                    _ => self.cast_finger = Some(t.id),
+                                }
                             }
                         }
                         continue;
@@ -552,6 +591,9 @@ impl Touch {
                     }
                     if b.kind == Kind::Dodge && !ended {
                         self.dodge_finger = Some(t.id);
+                    }
+                    if b.kind == Kind::Parry && !ended {
+                        self.parry_finger = Some(t.id);
                     }
                 } else if t.position.x < w * 0.5 && self.stick.is_none() && !ended {
                     self.stick = Some(Stick {
@@ -599,7 +641,7 @@ impl Touch {
             let d = m.pos - m.center;
             let out = m.out || d.length() > r * AIM_OUT;
             let still = alive(Some(m.id)).is_some();
-            let charging = m.kind == Kind::Cast && self.ctx.charging;
+            let charging = m.kind == self.ctx.shot() && self.ctx.charging;
             if still {
                 let mut m = Aimer { out, ..m };
                 if out && d.length() > r * AIM_CANCEL {
@@ -609,7 +651,7 @@ impl Touch {
                 } else if !out {
                     a.auto_aim = true;
                 }
-                a.aim_hold = m.kind == Kind::Cast;
+                a.aim_hold = m.kind == self.ctx.shot();
                 self.aimer = Some(m);
             } else {
                 self.aimer = None;
@@ -639,9 +681,11 @@ impl Touch {
         self.attack_finger = alive(self.attack_finger);
         self.cast_finger = alive(self.cast_finger);
         self.dodge_finger = alive(self.dodge_finger);
+        self.parry_finger = alive(self.parry_finger);
         a.attack_held = self.attack_finger.is_some();
         a.cast_held = self.cast_finger.is_some();
         a.dodge_held = self.dodge_finger.is_some();
+        a.parry_held = self.parry_finger.is_some();
         if self
             .stick
             .is_some_and(|s| !touches.iter().any(|t| t.id == s.id))
@@ -720,6 +764,7 @@ fn press(a: &mut Read, k: Kind) {
         Kind::TurnLeft => a.turn_left = true,
         Kind::TurnRight => a.turn_right = true,
         Kind::View => a.view = true,
+        Kind::Swap => a.swap = true,
         Kind::Skill1 => a.skill1 = true,
         Kind::Skill2 => a.skill2 = true,
         Kind::Ult | Kind::Upend => a.ult = true,
@@ -785,8 +830,8 @@ pub fn attack_icon(w: crate::weapons::Id) -> Kind {
         Id::Sword => Kind::Attack,
         Id::Hammer => Kind::Hammer,
         Id::Staff => Kind::Staff,
-        // 쇠뇌의 X는 수류탄(0213 — 사격은 RB, `cast_icon`).
-        Id::Crossbow => Kind::Bomb,
+        // 쇠뇌의 평타는 사격(0223 — 수류탄은 특수, `cast_icon`).
+        Id::Crossbow => Kind::Crossbow,
         Id::Fists => Kind::Fist,
     }
 }
@@ -822,10 +867,10 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
     }
 }
 
-/// RB 버튼의 그림(0151 → 0213): 근접 무기 = 마법 탄의 별, 쇠뇌 = 쇠뇌(사격은 RB).
+/// 특수 버튼의 그림(0151 → 0213 → 0223): 근접 무기 = 마법 탄의 별, 쇠뇌 = 수류탄(사격은 평타 버튼).
 pub fn cast_icon(w: crate::weapons::Id) -> Kind {
     if matches!(w.def().rb, crate::weapons::Rb::Shot { .. }) {
-        Kind::Crossbow
+        Kind::Bomb
     } else {
         Kind::Cast
     }
@@ -965,6 +1010,7 @@ pub fn draw(o: &Overlay, v: &View) {
             Kind::Jump if o.rest => near_icon(o.near),
             Kind::Attack => attack,
             Kind::Cast => v.cast,
+            Kind::Swap => v.swap,
             Kind::Skill1 => v.skills[0].0,
             Kind::Skill2 => v.skills[1].0,
             Kind::Ult => v.ult,
@@ -980,12 +1026,22 @@ pub fn draw(o: &Overlay, v: &View) {
             Kind::Skill2 => v.vacant[1],
             _ => false,
         };
+        let unfit = match b.kind {
+            Kind::Skill1 => v.unfit[0],
+            Kind::Skill2 => v.unfit[1],
+            _ => false,
+        };
         if !vacant {
             icon(kind, b.center, b.radius, dim, tint);
+        } else if unfit {
+            icon(kind, b.center, b.radius, UNFIT_DIM, tint);
         }
     }
     draw_aim(o.aim);
 }
+
+/// 든 무기로 못 쓰는 스킬의 그림 밝기(대기 중보다 어둡게 — `hud`의 같은 값).
+const UNFIT_DIM: f32 = 0.18;
 
 /// 끌어 조준(0217): 짚은 버튼 둘레의 고리 + 손가락을 따라가는 손잡이 + 가운데에서 손잡이까지의 줄.
 /// 가운데 취소 자리로 돌아오면 모두 흐려지고 손잡이에 ✕ — 떼면 하지 않는다. 빨강은 쓰지 않는다(위험 예고의 색).
@@ -1565,6 +1621,22 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             "....#####....",
             ".............",
         ],
+        // 바꾸기(0223): 마주 가는 화살 둘 — 버튼에는 바꿔 들 무기의 그림이 올라가고, 이 그림은 그 무기에 그림이 없을 때만.
+        Kind::Swap => [
+            ".............",
+            ".............",
+            "....#........",
+            "...##........",
+            "..#########..",
+            "...##........",
+            "....#........",
+            "........#....",
+            "........##...",
+            "..#########..",
+            "........##...",
+            "........#....",
+            ".............",
+        ],
         Kind::View => [
             ".............",
             ".............",
@@ -1649,6 +1721,7 @@ mod tests {
             Kind::TurnRight,
             Kind::Pause,
             Kind::View,
+            Kind::Swap,
             Kind::Hammer,
             Kind::Staff,
             Kind::Crossbow,
@@ -1879,8 +1952,8 @@ mod tests {
         press(&mut a, Kind::Ult);
         assert!(a.ult && !a.skill1);
         use crate::weapons::Id;
-        assert_eq!(cast_icon(Id::Crossbow), Kind::Crossbow);
-        assert_eq!(attack_icon(Id::Crossbow), Kind::Bomb);
+        assert_eq!(cast_icon(Id::Crossbow), Kind::Bomb);
+        assert_eq!(attack_icon(Id::Crossbow), Kind::Crossbow);
         assert_eq!(cast_icon(Id::Sword), Kind::Cast);
     }
 

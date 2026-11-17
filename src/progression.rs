@@ -176,6 +176,87 @@ pub const LINKS: [Link; 4] = [
     Link::RootedRiposte,
 ];
 
+/// 결의 칸(0223 11절): 피해 타입마다 하나 — 그 타입의 스킬을 배워야 연다(판의 길 밖, 어느 갈래의 점수도 아니다). 타입마다 다른
+/// **자원**을 돌려준다(숫자만 다른 넷이 아니게): 잔불 = 번짐 · 뿌리 = 기력 · 울림 = 큰 기술 게이지 · 균열 = 스킬 대기.
+/// 받는 피해·패링 창·회피를 건드리지 않는다(0095 원칙 2). 기록 `tree.veins` = 연 결의 키들(바꾸지 않는다).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Vein {
+    /// 옮겨붙는 불(잔불): 타는 적이 쓰러지면 남은 불이 `vein::EMBER_REACH` m 안의 가장 가까운 적 하나에 옮겨붙는다.
+    Ember,
+    /// 뿌리의 숨(뿌리): 묶인 적을 스킬이 아닌 타로 치면 휘두르기 한 번에 기력 +`vein::ROOT_BREATH`.
+    Root,
+    /// 울림 모으기(울림): 울림이 터질 때마다 큰 기술 게이지가 평타 한 번만큼 찬다(한 틱에 `vein::KNELL_TOLLS` 번까지).
+    Knell,
+    /// 금을 따라(균열): 금 간 적을 스킬이 아닌 타로 치면 휘두르기 한 번에 모든 스킬 대기가 `vein::RIFT_PULL`초 당겨진다.
+    Rift,
+}
+
+pub const VEINS: [Vein; 4] = [Vein::Ember, Vein::Root, Vein::Knell, Vein::Rift];
+
+impl Vein {
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    /// 이 결의 피해 타입.
+    pub fn kind(self) -> crate::status::Kind {
+        crate::status::TYPED[self.index()]
+    }
+
+    /// 기록 값(바꾸지 않는다).
+    pub fn key(self) -> &'static str {
+        match self {
+            Vein::Ember => "ember",
+            Vein::Root => "root",
+            Vein::Knell => "knell",
+            Vein::Rift => "rift",
+        }
+    }
+
+    pub fn by_key(k: &str) -> Option<Vein> {
+        VEINS.into_iter().find(|x| x.key() == k)
+    }
+
+    /// 화면의 빛깔이 기대는 갈래(그 타입의 스킬이 많이 선 곳 — 갈래의 점수에는 세지 않는다).
+    pub fn branch(self) -> Branch {
+        match self {
+            Vein::Rift => Branch::Beat,
+            Vein::Knell => Branch::Riposte,
+            Vein::Ember | Vein::Root => Branch::Footing,
+        }
+    }
+
+    pub fn name(self) -> Tr {
+        match self {
+            Vein::Ember => |s| s.vein_ember,
+            Vein::Root => |s| s.vein_root,
+            Vein::Knell => |s| s.vein_knell,
+            Vein::Rift => |s| s.vein_rift,
+        }
+    }
+
+    pub fn desc(self) -> Tr {
+        match self {
+            Vein::Ember => |s| s.vein_ember_d,
+            Vein::Root => |s| s.vein_root_d,
+            Vein::Knell => |s| s.vein_knell_d,
+            Vein::Rift => |s| s.vein_rift_d,
+        }
+    }
+}
+
+/// 결의 값(0223 11절 — 판정에서 고친다).
+pub mod vein {
+    /// 옮겨붙는 불: 닿는 거리(m).
+    pub const EMBER_REACH: f32 = 4.0;
+    /// 뿌리의 숨: 묶인 적을 맞힌 휘두르기 한 번에 돌아오는 기력.
+    pub const ROOT_BREATH: f32 = 6.0;
+    /// 울림 모으기: 한 틱에 세는 울림의 수(떼가 한꺼번에 울려도 게이지가 통째로 차지 않게).
+    pub const KNELL_TOLLS: u8 = 2;
+    /// 금을 따라: 금 간 적을 맞힌 휘두르기 한 번에 당겨지는 스킬 대기(초).
+    pub const RIFT_PULL: f32 = 0.5;
+}
+
 impl Link {
     pub fn index(self) -> usize {
         self as usize
@@ -607,6 +688,8 @@ pub struct Tree {
     pub links: u8,
     /// 숫자 칸의 고르기(0215 — 갈래마다 비트 d = 깊이 d의 칸이 ㄴ, 기록 `tree.picks.<갈래>`).
     pub picks: [u8; 3],
+    /// 연 결의 칸(0223 11절 — 비트 = `Vein::index`, 기록 `tree.veins`).
+    pub veins: u8,
 }
 
 impl Tree {
@@ -640,6 +723,16 @@ impl Tree {
     /// 다리 칸을 연다.
     pub fn open_link(&mut self, l: Link) {
         self.links |= 1 << l.index();
+    }
+
+    /// 이 결을 열었나(0223 11절) — 결의 동작이 읽는다.
+    pub fn veined(&self, v: Vein) -> bool {
+        self.veins & (1 << v.index()) != 0
+    }
+
+    /// 결의 칸을 연다.
+    pub fn open_vein(&mut self, v: Vein) {
+        self.veins |= 1 << v.index();
     }
 
     /// 숫자 칸을 열었고 그 고르기가 ㄴ인가(0215). 고르기가 없는 칸은 늘 거짓.
@@ -687,6 +780,7 @@ impl Tree {
             key: None,
             links: 0,
             picks: [0; 3],
+            veins: 0,
         }
     }
 
@@ -696,6 +790,7 @@ impl Tree {
     pub fn full() -> Tree {
         Tree {
             links: (1 << LINKS.len()) - 1,
+            veins: (1 << VEINS.len()) - 1,
             ..Tree::from_counts([DEPTH; 3])
         }
     }
@@ -713,6 +808,7 @@ impl Tree {
             cells,
             key: self.key,
             links: self.links & ((1 << LINKS.len()) - 1),
+            veins: self.veins & ((1 << VEINS.len()) - 1),
             // 고르기는 열린 숫자 칸에만.
             picks: [0, 1, 2].map(|b| {
                 let numbers = TREE[b]
@@ -908,6 +1004,7 @@ mod tests {
             key: None,
             links: 0,
             picks: [0; 3],
+            veins: 0,
         };
         assert_eq!(legacy.sane(), t);
         assert_eq!(legacy.count(), 2 + DEPTH as u32);
@@ -925,6 +1022,7 @@ mod tests {
             key: None,
             links: 0,
             picks: [0; 3],
+            veins: 0,
         };
         assert_eq!(odd.count(), DEPTH as u32);
         assert_eq!(odd.sane().cells[0], 0b111_1111);

@@ -60,7 +60,7 @@ pub struct Goal {
 }
 
 /// 여정 목표(지역 차례 · 주요 먼저). 새 지역 = 이 표에 줄을 더한다(아이디는 `<지역>.<무엇>`).
-pub static GOALS: [Goal; 14] = [
+pub static GOALS: [Goal; 18] = [
     Goal {
         id: "s.gate",
         stage: 0,
@@ -187,6 +187,42 @@ pub static GOALS: [Goal; 14] = [
         need: Need::Seen(Kind::Mossgrazer, Obs::Seen),
         reward: Reward::Embers(20),
     },
+    Goal {
+        id: "w.keeper",
+        stage: 3,
+        kind: Branch::Main,
+        title: |s| s.jg_w_keeper,
+        hint: |s| s.jg_w_keeper_d,
+        need: Need::Keeper,
+        reward: Reward::Embers(70),
+    },
+    Goal {
+        id: "w.lift",
+        stage: 3,
+        kind: Branch::Find,
+        title: |s| s.jg_w_lift,
+        hint: |s| s.jg_w_lift_d,
+        need: Need::Gate,
+        reward: Reward::Embers(30),
+    },
+    Goal {
+        id: "w.stones",
+        stage: 3,
+        kind: Branch::Find,
+        title: |s| s.jg_w_stones,
+        hint: |s| s.jg_w_stones_d,
+        need: Need::Read,
+        reward: Reward::Point,
+    },
+    Goal {
+        id: "w.elites",
+        stage: 3,
+        kind: Branch::Find,
+        title: |s| s.jg_w_elites,
+        hint: |s| s.jg_w_elites_d,
+        need: Need::Elites,
+        reward: Reward::Embers(40),
+    },
 ];
 
 /// 지도에 이 글자가 몇 개.
@@ -212,7 +248,8 @@ pub fn count(g: &Goal, p: &Progress) -> (u32, u32) {
             let cores = match g.stage {
                 0 => p.cores,
                 1 => p.bell_cores,
-                _ => p.moss_cores,
+                2 => p.moss_cores,
+                _ => p.overseer_cores,
             };
             ((cores > 0) as u32, 1)
         }
@@ -252,6 +289,7 @@ pub fn reached(stage: usize, p: &Progress) -> bool {
         0 => true,
         1 => p.cores > 0,
         2 => p.bell_cores > 0,
+        3 => p.moss_cores > 0,
         _ => false,
     }
 }

@@ -55,6 +55,16 @@ pub const DASH_ATTACK_LATE: f32 = 0.15;
 /// 이어 패링(0081, 사장 2026-11-07 "패링 성공하면 패링시간이 조금 연장 되면서 비슷한 타이밍의 공격들도 같이"):
 /// 튕긴 뒤 이 초 동안 패링 창이 열려 있다 — 그 사이 앞쪽에서 오는 받을 수 있는 공격도 튕긴다(튕길 때마다 다시 이만큼).
 /// 반격(공격)을 시작하면 닫힌다(`since_parry`를 반격이 쓴다).
+/// 방패 막기(0223 — 한손 무기 + 방패, 패링 버튼을 쥔 동안): 한 대를 받는 기력(높은 등급의 적은 두 배 — 체력의 두 눈금처럼),
+/// 막으며 걷는 빠르기, 받을 때 밀리는 몫(맞을 때의 `hurt.knock`에 곱한다), 막기가 깨졌을 때의 휘청임(초), 받은 순간의 멈춤(명중의 배).
+/// 기력 100이면 네 대를 받고 다섯째에 깨진다 — 막기는 버티는 길이 아니라 숨 돌릴 틈이다.
+pub const BLOCK_STAMINA: f32 = 22.0;
+pub const BLOCK_WALK: f32 = 0.5;
+pub const BLOCK_PUSH: f32 = 0.5;
+pub const BLOCK_BREAK_STUN: f32 = 0.8;
+pub const BLOCK_HITSTOP: f32 = 1.2;
+/// 주/부무기 바꾸기(0223 — 패링 + 평타): 둘째 누름이 첫째 뒤 이 초 안이면 "함께"(큰 기술의 `skill.chord s` 0.12와 같은 폭).
+pub const WEAPON_CHORD: f32 = 0.12;
 pub const PARRY_CHAIN: f32 = 0.2;
 /// 이어 패링 쌓기(0086, 사장 "연장 중에 또 성공하면 남은 창이 또 늘되 늘어나는 몫은 50%씩 줄고, 범위는 늘어나게 — 둘러싸였을 때도
 /// 빠져나가게"): 이어지는 동안 n번째 더 튕기면 남은 창에 `PARRY_CHAIN × PARRY_CHAIN_DECAY^n`을 더하고(0.2 → +0.1 → +0.05 …),
@@ -116,6 +126,47 @@ pub const ULT_HITSTOP: f32 = 3.0;
 pub const SKILL_DENIED_SHOW: f32 = 0.5;
 pub const ULT_KILL_WINDOW: f32 = 1.5;
 pub const ULT_SLAM_DAMAGE: i32 = 20;
+
+// 피해 타입(0223 V2 — `status.rs`): 타입 있는 타가 적의 게이지(0..1)를 쌓고, 가득 차면 그 타입의 일이 일어난다.
+/// 보스·엘리트에게 쌓이는 배율(면역은 없다).
+pub const AIL_BOSS: f32 = 0.5;
+pub const AIL_ELITE: f32 = 0.7;
+/// 묶임·균열은 걸릴 때마다 다음이 이 배로 더디다(바닥 `AIL_WEAR_MIN`) — 되풀이 묶기를 막는다.
+pub const AIL_WEAR: f32 = 0.7;
+pub const AIL_WEAR_MIN: f32 = 0.35;
+/// 안 쌓인 지 이 초가 지나면 게이지가 초당 `AIL_DECAY`씩 빠진다 — 스킬의 대기(7~12초)보다 길게 남아야 덜 쌓이는 적(엘리트·보스·
+/// 버티는 종)에게 두 번째 타가 이어 쌓는다.
+pub const AIL_HOLD: f32 = 10.0;
+pub const AIL_DECAY: f32 = 0.1;
+/// 잔불(화상): 겹 상한(보스는 둘) · 이어지는 초(겹이 붙을 때마다 처음부터) · 타는 간격 · 겹마다 한 번에 타는 피해.
+pub const BURN_STACKS: u8 = 3;
+pub const BURN_BOSS_STACKS: u8 = 2;
+pub const BURN_SECS: f32 = 5.5;
+pub const BURN_EVERY: f32 = 1.0;
+pub const BURN_DMG: i32 = 3;
+/// 뿌리(묶임): 묶인 초(걷지 못한다) · 묶인 적이 받는 자세 피해 배 · 보스는 묶이는 대신 이 배로 걷는다.
+pub const ROOT_SECS: f32 = 1.6;
+pub const ROOT_POISE: f32 = 1.5;
+pub const ROOT_BOSS_SLOW: f32 = 0.7;
+/// 균열(취약): 금 간 초 · 그동안 받는 피해 배(보스는 낮게).
+pub const RIFT_SECS: f32 = 4.0;
+pub const RIFT_MULT: f32 = 1.3;
+pub const RIFT_BOSS_MULT: f32 = 1.15;
+/// 울림: 게이지가 찬 뒤 울리기까지 · 울리는 둘레(m) · 그 안의 적(울린 적도)이 받는 피해(타마다의 덤 없이 — 떼가 클수록 울림이
+/// 겹친다: 다섯이 함께 울리면 저마다 다섯 번 듣는다) · 이웃이 나눠 받는 게이지 · 금 간 적이 울릴 때 이웃에 번지는 금의 초.
+pub const TOLL_DELAY: f32 = 0.15;
+/// 울린 적이 다시 울릴 수 있을 때까지(초) — 떼 안의 되울림이 한 바퀴로 끝나게.
+pub const TOLL_REST: f32 = 3.0;
+pub const TOLL_RADIUS: f32 = 4.0;
+pub const TOLL_DMG: i32 = 4;
+/// 한 틱에 여럿이 울릴 때 한 적이 받는 울림 피해의 횟수 상한 — 없으면 떼의 크기만큼 곱절이 된다(열이 한꺼번에 울리면 저마다 40:
+/// 스킬 한 번에 잡몹 떼가 사라진다. 잰 것 0223 V2 검증).
+pub const TOLL_STACK: u8 = 3;
+pub const TOLL_SHARE: f32 = 0.4;
+pub const TOLL_RIFT_SECS: f32 = 2.0;
+/// 겹침(화상 중에 묶임): 터지는 둘레(m) · 쓴 겹마다의 피해.
+pub const BURST_RADIUS: f32 = 2.5;
+pub const BURST_DMG: i32 = 10;
 /// 제비걸음(0214): 걸음의 앞 이만큼(몫)이 뛰는 걸음(그 끝에 벤다), 적의 몸에서 이만큼(m) 앞에 선다, 적이 없으면 이만큼(m) 앞으로.
 pub const HOP_DASH: f32 = 0.6;
 pub const HOP_GAP: f32 = 0.5;
@@ -232,13 +283,16 @@ pub const ELITE_SCALE: f32 = 1.25;
 pub const ELITE_EMBERS: u32 = 2;
 pub const ELITE_FIRST_EMBERS: u32 = 15;
 /// 구역 등급(0112 1절 — 잡몹 레벨은 지역마다 고정 등급, 숫자는 화면에 없다): 체력·자세 막대·떨구는 잔불 배율(올림).
-/// 예고 길이·움직임은 바꾸지 않는다(읽히는 싸움 0071·0075). 등급 2 값은 0116 3절. 등급 3 값은 셋째 지역 때 정한다.
+/// 예고 길이·움직임은 바꾸지 않는다(읽히는 싸움 0071·0075). 등급 2 값은 0116 3절. 등급 3·4(0216 W1 — 정원·작업층): 도달한
+/// 몸(정원 Lv7·힘 4·벼림 1~2, 작업층 Lv10·힘 5·벼림 2~3)의 검 평타로 쓰러뜨리는 대 수가 마을에 닿았을 때와 같게(체력),
+/// 힘 단이 키운 자세 피해만큼 조금 더(자세), 그 지역의 레벨 값(40 + 20 × 레벨)이 커진 만큼 잔불 — 피해 두 눈금(등급 3부터)이
+/// 어려움을 더한다. 시험 `tiers_keep_the_hits_to_kill_at_arrival`.
 pub struct Tier {
     pub hp: f32,
     pub poise: f32,
     pub embers: f32,
 }
-pub const TIERS: [Tier; 2] = [
+pub const TIERS: [Tier; 4] = [
     Tier {
         hp: 1.0,
         poise: 1.0,
@@ -249,6 +303,16 @@ pub const TIERS: [Tier; 2] = [
         poise: 1.3,
         // 0123: 1.6 → 1.3(아이템·성장 덜 후하게).
         embers: 1.3,
+    },
+    Tier {
+        hp: 2.4,
+        poise: 1.5,
+        embers: 1.7,
+    },
+    Tier {
+        hp: 3.5,
+        poise: 1.7,
+        embers: 2.1,
     },
 ];
 /// 깨진 종지기(0125): 울림 고리 사이(m), 종 조각 빠르기(m/s)·날아가는 거리(m)·맞는 반지름(m)·되돌아가 종지기를 깎는 피해·
@@ -318,6 +382,25 @@ pub fn tier(n: u8) -> &'static Tier {
 /// 굳은(0112): 자세 막대 배율·밀려나는 배율.
 pub const ELITE_HARD_POISE: f32 = 2.5;
 pub const ELITE_HARD_KNOCK: f32 = 0.35;
+/// 사슬에 묶인 권양지기(0208): 사슬 끈(처음 자리에서 m) · 갈고리의 반 폭(m)·날아가는 빠르기(m/s)·끌어당기는 빠르기(m/s) ·
+/// 3단계(사슬이 끊긴 뒤) 걸음 배율·예고 배율(2단계 위에 곱한다).
+pub const CHAIN_LEN: f32 = 6.5;
+pub const HOOK_R: f32 = 0.6;
+pub const HOOK_SPEED: f32 = 26.0;
+pub const HOOK_PULL: f32 = 13.0;
+pub const UNCHAIN_SPEED: f32 = 1.3;
+pub const UNCHAIN_TELE: f32 = 0.9;
+/// 레일 수레(0208 4절): 끝에서 쉬는 초 · 그 마지막 예고 초 · 빠르기(m/s) · 닿는 상자(레일 방향 반 길이 · 옆 반 폭, m) ·
+/// 적에게 주는 피해 · 적을 미는 빠르기(m/s). 방랑자는 맞음 한 자리(`wanderer_takes_hit`)로 한 눈금.
+pub const CART_WAIT: f32 = 2.4;
+pub const CART_TELE: f32 = 1.0;
+pub const CART_SPEED: f32 = 9.0;
+pub const CART_HALF_L: f32 = 1.2;
+pub const CART_HALF_W: f32 = 1.1;
+pub const CART_DAMAGE: i32 = 40;
+pub const CART_KNOCK: f32 = 9.0;
+/// 등짐꾼(0216 W2): 짐이 깨진 뒤 걸음 배율 — 짐을 잃으면 밀고 오지 못하고 이만큼 느리다.
+pub const LOAD_LOST_SPEED: f32 = 0.7;
 /// 남는(0112): 쓰러진 자리에 남는 고리 — 터지기까지의 초(그동안 예고)·반지름(m).
 pub const ELITE_LINGER_DELAY: f32 = 1.0;
 pub const ELITE_LINGER_RADIUS: f32 = 2.6;
@@ -1998,6 +2081,53 @@ mod tests {
             "0116 → 0123 잔불 1.3"
         );
         assert_eq!(tier(0).hp, one.hp, "tier is one-based");
+        // 등급은 오를수록 모든 배율이 커진다(표 밖은 가장 높은 줄).
+        for w in TIERS.windows(2) {
+            assert!(w[1].hp > w[0].hp && w[1].poise > w[0].poise && w[1].embers > w[0].embers);
+        }
+        assert_eq!(tier(9).hp, TIERS[TIERS.len() - 1].hp);
+    }
+
+    /// 0216 W1: 도달한 몸의 검 평타(첫 타 10 + 벼림, 작업층은 힘 5단의 +10)로 쓰러뜨리는 대 수가 마을에 닿았을 때(등급 2 ·
+    /// 벼림 0~1)의 폭 안에 든다 — 정원(등급 3 · 벼림 1~2), 작업층(등급 4 · 힘 5단 · 벼림 2~3). 대 수는 지역마다 같고 맞는 피해만
+    /// 두 눈금이 된다.
+    #[test]
+    fn tiers_keep_the_hits_to_kill_at_arrival() {
+        use crate::species::{def, Kind};
+        let sword = crate::weapons::Id::Sword.def().hit(0).unwrap().damage;
+        assert_eq!(sword, 10, "the probe below assumes the first sword hit");
+        let forged = |n: usize| {
+            sword
+                + n.checked_sub(1)
+                    .map_or(0, |i| crate::weapons::Id::Sword.def().forge.unwrap()[i].hit)
+        };
+        let might = crate::progression::MIGHT_DMG;
+        let hits = |kind: Kind, t: u8, dmg: i32| {
+            let hp = (def(kind).hp as f32 * tier(t).hp).ceil() as i32;
+            (hp + dmg - 1) / dmg
+        };
+        for kind in [
+            Kind::Husk,
+            Kind::Thorn,
+            Kind::Shell,
+            Kind::Pod,
+            Kind::Repeater,
+            Kind::Packbearer,
+        ] {
+            // 마을의 폭: 벼림 1(적게) ~ 벼림 0(많게).
+            let (few, many) = (hits(kind, 2, forged(1)), hits(kind, 2, forged(0)));
+            for (name, h) in [
+                ("garden f1", hits(kind, 3, forged(1))),
+                ("garden f2", hits(kind, 3, forged(2))),
+                ("workings f2", hits(kind, 4, forged(2) + might)),
+                ("workings f3", hits(kind, 4, forged(3) + might)),
+            ] {
+                assert!(
+                    (few..=many + 1).contains(&h),
+                    "{kind:?} {name}: {h} hits, village {few}..{many}"
+                );
+            }
+        }
     }
 
     #[test]

@@ -2,8 +2,11 @@
 //! 둘 이상의 주제가 쓰는 도우미만 여기에, 한 주제만 쓰는 도우미는 그 파일에 있다. 새 시험은 맞는 주제 파일에(없으면 파일 하나 + 아래 한 줄).
 use super::*;
 
+mod ail;
+mod arts;
 mod attack;
 mod basis_lock;
+mod block;
 mod bridges;
 mod deep_tree;
 mod dodge_stamina;
@@ -17,6 +20,8 @@ mod parry;
 mod ranged;
 mod touch_aim;
 mod turn;
+mod veins;
+mod weapon_swap;
 
 fn world_with_boss() -> World {
     let mut w = World::new("test", 20.0);

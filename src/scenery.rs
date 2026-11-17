@@ -106,6 +106,15 @@ pub const GARDEN_FLOOR: FloorLook = FloorLook {
     dirt: Color::new(0.17, 0.19, 0.19, 1.0),
 };
 
+/// 작업층(0208): 닳은 철판·돌판이 섞인 바닥 — 이끼는 적고(빛이 없다), 빠진 자리는 녹 슨 흙.
+pub const WORKS_FLOOR: FloorLook = FloorLook {
+    slab: Color::new(0.30, 0.31, 0.34, 1.0),
+    moss_slab: Color::new(0.33, 0.27, 0.24, 1.0),
+    moss: 0.25,
+    bare: 0.22,
+    dirt: Color::new(0.22, 0.18, 0.16, 1.0),
+};
+
 /// 고인 물(`~`, 0185): 어둡고 푸른 수면, 가장자리는 젖은 흙.
 const WATER: Color = Color::new(0.13, 0.23, 0.30, 1.0);
 /// 수면의 달빛 결(0185): 칸을 가로지르는 가는 밝은 띠 — 평평한 판이 아니라 물로 읽히게.
@@ -116,6 +125,10 @@ const WATER_Y: f32 = -0.04;
 /// 마른 물길(`=`, 0185): 물이 지나던 자리 — 석판 없이 마른 흙과 잔돌.
 const CHANNEL: Color = Color::new(0.26, 0.23, 0.22, 1.0);
 const PEBBLE: Color = Color::new(0.40, 0.38, 0.40, 1.0);
+/// 레일(`|`, 0208): 자갈 바닥 · 가로 침목 · 세로 쇠 레일 한 줄(두 칸이 한 짝 — 수레 폭 2m).
+const BALLAST: Color = Color::new(0.20, 0.19, 0.20, 1.0);
+const SLEEPER: Color = Color::new(0.27, 0.20, 0.16, 1.0);
+const RAIL: Color = Color::new(0.46, 0.44, 0.46, 1.0);
 /// 바닥 다듬기(0060 W2·0061): 빠진 석판 자리의 흙, 풀 다발 밑동·끝(바랜 청록 — 해 질 녘의 옅은 생명, 0037).
 const DIRT: Color = Color::new(0.22, 0.19, 0.24, 1.0);
 const GRASS_ROOT: Color = Color::new(0.17, 0.27, 0.26, 1.0);
@@ -409,6 +422,7 @@ impl Scenery {
                 match c {
                     '~' => Some(1u8),
                     '=' => Some(2u8),
+                    '|' => Some(3u8),
                     _ => None,
                 },
                 gnd.cell_of(*at),
@@ -490,6 +504,39 @@ impl Scenery {
                             &uv_of,
                         );
                     }
+                    continue;
+                }
+                if mark == 3 {
+                    // 레일(0208): 자갈 바닥 + 침목 셋(가로) + 쇠 레일(세로, 칸 가운데).
+                    let flat = |y: f32, x0: f32, x1: f32, z0: f32, z1: f32| {
+                        [
+                            on(c + vec3(x0, y, z0)),
+                            on(c + vec3(x1, y, z0)),
+                            on(c + vec3(x1, y, z1)),
+                            on(c + vec3(x0, y, z1)),
+                        ]
+                    };
+                    quad_lm(
+                        &mut p,
+                        flat(MORTAR_Y + 0.02, -h, h, -h, h),
+                        mul(BALLAST, 0.9 + 0.2 * hash(x, z, 63)),
+                        &uv_of,
+                    );
+                    for t in 0..3 {
+                        let zc = -h + (t as f32 + 0.5) * (2.0 * h / 3.0);
+                        quad_lm(
+                            &mut p,
+                            flat(SLAB_LOW, -h * 0.95, h * 0.95, zc - 0.13, zc + 0.13),
+                            mul(SLEEPER, 0.85 + 0.25 * hash(x, z, 64 + t)),
+                            &uv_of,
+                        );
+                    }
+                    quad_lm(
+                        &mut p,
+                        flat(SLAB_HIGH + 0.005, -0.07, 0.07, -h, h),
+                        RAIL,
+                        &uv_of,
+                    );
                     continue;
                 }
                 if mark == 2 {

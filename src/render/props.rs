@@ -46,6 +46,76 @@ impl Renderer {
         self.gate_lever(run, w, lights, &fl);
         self.residents(run, w, lights, &fl);
         self.core_crystal(run, w, lights, &fl);
+        self.drop_models(run, w, lights);
+    }
+
+    /// 바닥에 떨어진 아이템의 몸(0226 — 사장 "바닥에 떨어지고 비주얼적인 효과가 있어야 해"): **그 아이템의 모델**(장비 창의 그림과
+    /// 같은 부위 — 떨어진 것이 무엇인지 줍기 전에 보인다)이 솟았다 내려앉아 떠서 천천히 돈다. 단단한 것이라 배우 앞에(`stage_props`),
+    /// 빛기둥·빛무리는 빛 패스(`item_drops`). 모델이 없는 바탕은 빛 패스가 결정으로 그린다(`drop_has_model`).
+    fn drop_models(&mut self, run: &StageRun, w: &World, lights: &[Light]) {
+        for (j, d) in run.item_drops.iter().enumerate() {
+            let Some(item) = crate::item_view::of_base(d.item.base) else {
+                continue;
+            };
+            let v = crate::item_view::view(item);
+            let Some(e) = self.lib.get(v.model) else {
+                continue;
+            };
+            let Some(i) = e.model.node(v.node) else {
+                continue;
+            };
+            let Some((c, rad)) = e.model.rest_bounds_under(i) else {
+                continue;
+            };
+            // 같은 모델의 다른 부위는 크기 0(장비 창의 아이템 그림과 같은 길 — `render_item`).
+            let hide: Vec<(usize, Quat, Vec3)> = e
+                .model
+                .nodes
+                .iter()
+                .enumerate()
+                .filter(|(n, node)| node.mesh.is_some() && !e.model.is_under(*n, i))
+                .map(|(n, _)| (n, Quat::IDENTITY, Vec3::ZERO))
+                .collect();
+            e.model.pose_with(None, 0.0, &hide, &mut self.pose);
+            // 장비 창의 그림과 같은 각도(실루엣이 가장 잘 읽히는 쪽)를 **카메라 쪽으로** 세운다 — 제자리에서 빙빙 돌리면 얇은 무기는
+            // 반은 날만 보인다. 대신 좌우로 느리게 흔들린다.
+            let at = drop_float(d, w.time, j);
+            let to_eye = (look().eye - at).normalize_or(Vec3::Z);
+            let sway = 0.45 * (w.time * 1.3 + 1.7 * j as f32).sin();
+            let rot = Quat::from_rotation_arc(Vec3::Z, to_eye)
+                * Quat::from_rotation_y(sway)
+                * Quat::from_rotation_z(v.roll.to_radians())
+                * Quat::from_rotation_x(v.pitch.to_radians())
+                * Quat::from_rotation_y(v.yaw.to_radians());
+            let undo = match item {
+                crate::item_view::Item::Weapon(_) => e.model.rest_rotation(i).inverse(),
+                _ => Quat::IDENTITY,
+            };
+            let inst = Mat4::from_translation(at)
+                * Mat4::from_quat(rot * undo)
+                * Mat4::from_scale(Vec3::splat(DROP_MODEL_R / rad.max(0.01)))
+                * Mat4::from_translation(-c);
+            // 어두운 곳에서도 제 색이 보이게: 카메라 쪽 위에서 비추는 제 빛 하나(등급의 빛을 조금 섞어).
+            let [r, g, b] = d.item.rarity.glow();
+            let mut lit: Vec<Light> = lights.to_vec();
+            lit.push(Light {
+                pos: at + to_eye * 1.2 + Vec3::Y * 0.6,
+                color: Color::new(0.6 + 0.4 * r, 0.6 + 0.4 * g, 0.6 + 0.4 * b, 1.0),
+                radius: 3.5,
+                shaft: false,
+            });
+            self.batch.model(e, &self.pose, inst, WHITE, &lit, 1.0);
+        }
+    }
+
+    /// 그 바탕의 아이템을 모델로 그릴 수 있나(없으면 결정으로).
+    fn drop_has_model(&mut self, base: crate::items::Base) -> bool {
+        crate::item_view::of_base(base).is_some_and(|item| {
+            let v = crate::item_view::view(item);
+            self.lib
+                .get(v.model)
+                .is_some_and(|e| e.model.node(v.node).is_some())
+        })
     }
 
     /// 반투명한 빛(빛줄기·빛기둥·바닥 빛 웅덩이·떠 있는 줍는 것)은 배우를 그린 **뒤에**(사장 "환경 빛줄기 속에서 더 잘 안 보이는 버그"):
@@ -59,6 +129,12 @@ impl Renderer {
         light_shafts(run, w, &fl);
         way_up(run, w, &fl);
         chest_drops(run, w, &fl);
+        let solid: Vec<bool> = run
+            .item_drops
+            .iter()
+            .map(|d| self.drop_has_model(d.item.base))
+            .collect();
+        item_drops(run, w, &fl, &solid);
         hidden_finds(run, w, &fl);
         rest_rings(run, w, &fl);
         guide_beam(run, w, &fl);
@@ -566,6 +642,92 @@ fn chest_drops(run: &StageRun, w: &World, fl: &Drape) {
                 w.time,
                 7.0 + j as f32,
             );
+        }
+    }
+}
+
+/// 떨어진 아이템의 몸이 뜨는 높이(m)와 모델의 반지름(m — 부위를 이 크기로 맞춘다: 작은 장신구도 검도 같은 눈에 띄는 크기).
+const DROP_FLOAT: f32 = 0.7;
+const DROP_MODEL_R: f32 = 0.6;
+/// 빛기둥이 서는 높이(몸 위에서 — 반투명한 기둥이 몸을 덮으면 몸의 색이 기둥 색으로 물든다).
+const DROP_BEAM_FROM: f32 = 1.35;
+
+/// 떨어진 아이템의 몸 자리: 제자리에서 솟았다 내려앉고(떨어지는 동안은 줍지 못한다), 내려앉은 뒤에는 떠서 숨 쉰다.
+fn drop_float(d: &crate::stage::ItemDrop, time: f32, j: usize) -> Vec3 {
+    let k = (d.age / crate::stage::DROP_SETTLE).clamp(0.0, 1.0);
+    let bob = if k >= 1.0 {
+        0.06 * (time * 2.4 + 1.7 * j as f32).sin()
+    } else {
+        0.0
+    };
+    d.pos + Vec3::Y * (DROP_FLOAT + 2.4 * k * (1.0 - k) + bob)
+}
+
+fn item_drops(run: &StageRun, w: &World, fl: &Drape, solid: &[bool]) {
+    // 떨어진 아이템 하나하나(0226 — 엘리트·문지기의 것 · 내려놓은 것)의 빛: 등급의 빛 기둥 + 빛무리 — 드물수록 기둥이 굵고 높다.
+    // 몸은 그 아이템의 모델(`drop_models`), 모델이 없는 것만 여기서 결정으로.
+    for (j, d) in run.item_drops.iter().enumerate() {
+        let p = d.pos;
+        let k = (d.age / crate::stage::DROP_SETTLE).clamp(0.0, 1.0);
+        let [r, g, b] = d.item.rarity.glow();
+        let col = Color::new(r, g, b, 1.0);
+        let rank = d.item.rarity.rank() as f32;
+        let c = drop_float(d, w.time, j);
+        let has_model = solid.get(j).copied().unwrap_or(false);
+        fl.shadow(p, 0.22);
+        if !has_model {
+            let rot = Quat::from_rotation_y(w.time * 1.4 + 1.7 * j as f32)
+                * Quat::from_rotation_z(std::f32::consts::FRAC_PI_4)
+                * Quat::from_rotation_x(std::f32::consts::FRAC_PI_4);
+            loot_body(
+                loot_front(c),
+                &octa_faces(vec2(0.15, 0.15), 0.23, 0.23),
+                col,
+                rot,
+            );
+        }
+        // 빛무리는 몸의 **뒤에**(카메라에서 먼 쪽 — 몸이 가려 준다: 앞에 두면 몸이 빛 색으로 물든다).
+        let back = c - (look().eye - c).normalize_or_zero() * 0.5;
+        glow_disc(back, 0.5 + 0.07 * rank, with_a(col, 0.3 + 0.05 * rank));
+        if k >= 1.0 {
+            let fade = loot_fade(p, w.player.pos);
+            if fade > 0.01 {
+                // 바닥의 고리 + 몸 위에서 솟는 기둥(드물수록 굵고 높다) + 기둥을 타고 오르는 빛 알갱이.
+                let pulse = 0.85 + 0.15 * (w.time * 2.0 + j as f32).sin();
+                let top = p + Vec3::Y * DROP_BEAM_FROM;
+                fl.ring(p, 0.42 + 0.06 * rank, 0.0, 360.0, with_a(col, 0.5 * fade));
+                beam(
+                    top,
+                    0.09 + 0.02 * rank,
+                    1.8 + 0.5 * rank,
+                    with_a(col, 0.55 * fade * pulse),
+                );
+                beam(
+                    top,
+                    0.24 + 0.06 * rank,
+                    1.4 + 0.5 * rank,
+                    with_a(col, 0.16 * fade),
+                );
+                for n in 0..3 {
+                    let u = (w.time * 0.55 + n as f32 / 3.0 + j as f32 * 0.37).fract();
+                    let x = (j as f32 * 1.3 + n as f32 * 2.1 + w.time).sin() * 0.1;
+                    gem(
+                        top + vec3(x, u * (1.6 + 0.5 * rank), -x),
+                        0.09,
+                        with_a(col, (1.0 - u) * fade),
+                    );
+                }
+                // 드문 것·고유한 것: 바닥의 큰 고리 한 겹 더 — 멀리서도 "좋은 것이 떨어졌다".
+                if rank >= 2.0 {
+                    fl.ring(
+                        p,
+                        0.62 + 0.1 * rank,
+                        0.0,
+                        360.0,
+                        with_a(col, 0.28 * fade * pulse),
+                    );
+                }
+            }
         }
     }
 }

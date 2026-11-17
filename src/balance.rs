@@ -65,8 +65,12 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     w.set_weapon(b.weapon);
     let mut prog = crate::save::Progress::default();
     prog.level = b.level;
-    for (k, &c) in b.worn.iter().enumerate().take(crate::charms::SLOTS) {
-        prog.worn[k] = Some(c);
+    // 장신구는 제 종류의 칸에(0224 — 같은 종류 둘은 앞의 것만).
+    for &c in b.worn.iter() {
+        let slot = &mut prog.worn[c.kind().slot()];
+        if slot.is_none() {
+            *slot = Some(c);
+        }
     }
     prog.owned = b.worn.clone();
     prog.finds = b.finds.clone();
@@ -76,7 +80,15 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     if let Some(r) = std::env::var("SIM_FORGE").ok().and_then(|v| v.parse().ok()) {
         prog.forged.set(b.weapon, r);
     }
-    w.apply_stats(prog.stats(), true);
+    // 옵션 훑기(0223 V4): `SIM_DMG=6`이면 "주는 피해" 옵션을 얹어 잰다.
+    let mut st = prog.stats();
+    if let Some(d) = std::env::var("SIM_DMG")
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+    {
+        st.dmg += d;
+    }
+    w.apply_stats(st, true);
     w.tree = b.tree;
     let boss = w.spawn(kind, vec3(0.0, 0.0, -7.0));
     // 체력 훑기(0127): `SIM_BOSS_HP=600`이면 보스 체력을 바꿔 잰다(자세 막대는 보스 고정값이라 그대로).
@@ -402,6 +414,19 @@ pub fn builds() -> Vec<Build> {
             tree: tree(5),
             weapon: W::Sword,
         },
+        // 작업층 도달(0216 W1): 문지기 셋 — 레벨 열, 힘 5단(평타 +10), 패시브 칸 여섯.
+        Build {
+            name: "E workings arrival (Lv10 life4/stamina1/might5, Ear+Hand+Cloth, lamp+sip, Riposte6)",
+            level: Level {
+                life: 4,
+                stamina: 1,
+                might: 5,
+            },
+            worn: vec![Charm::Ear, Charm::Hand, Charm::Cloth],
+            finds: finds(),
+            tree: tree(6),
+            weapon: W::Sword,
+        },
     ]
 }
 
@@ -412,8 +437,9 @@ fn bellkeeper_fight_length() {
     let runs = 40;
     for (kind, bs) in [
         (Kind::Warden, &builds()[..3]),
-        (Kind::Bellkeeper, &builds()[..]),
-        (Kind::Mossward, &builds()[2..]),
+        (Kind::Bellkeeper, &builds()[..4]),
+        (Kind::Mossward, &builds()[2..4]),
+        (Kind::Overseer, &builds()[3..]),
     ] {
         for b in bs {
             let dummy = fight_vs(kind, true, b, 1.0, 1, &t).secs;

@@ -3,6 +3,7 @@
 //!
 //! 루프: 프레임마다 입력 폴링 → 고정 60Hz 틱 N번(장면 → 월드 → 스테이지 → 카메라) → 가변 렌더(보간) → 글·메뉴(화면 패스).
 mod ask;
+mod bag;
 mod codex;
 pub mod controls;
 mod controls_screen;
@@ -130,7 +131,7 @@ pub struct App {
     /// 떠 있는 상황 힌트와 남은 시간(0209 T2).
     tip: Option<(crate::tutorial::Tip, f32)>,
     /// 이 판에서 띄운 상황 힌트(기록에 안 남는 것 — 등잔은 마셔 볼 때까지 체력이 반 아래로 갈 때마다, 0213).
-    tips_now: u8,
+    tips_now: u16,
     /// 튜토리얼이 센 적의 공격 번호(0209 T3 — 예고마다 한 번 센다).
     tell_seen: Vec<u32>,
     /// 종소리의 길 안내(0171): 문을 찾는 동안 가끔 우는 종의 시계 + 물결. 판에 붙는다(기록에 남지 않는다).
@@ -144,6 +145,8 @@ pub struct App {
     gesture: Option<(&'static str, f32)>,
     /// 꺼진 화로에 불이 붙는 순간을 보는 남은 시간(0171) — 이 동안은 조작이 멎고, 끝나면 화로의 창이 열린다.
     kindle: f32,
+    /// 마지막 핵의 반응(0216 W3 — `core_echo`): 핵을 쥔 뒤 흐른 초. 이 동안 세계가 멈추고, 끝나면 끝 장면.
+    echo: Option<f32>,
     /// 주민 말풍선(0122): (주민 — 지금 지역의 번호, 몇째 말, 남은 초). 멈추지 않는다.
     bubble: Option<(usize, usize, f32)>,
     /// 새긴 돌 글 판(0129): (지금 지역의 돌 번호, 남은 초).
@@ -211,6 +214,8 @@ pub struct App {
     play_acc: f32,
     /// 잠깐 뜨는 알림(0064 M3 — 상자에서 얻은 것 등)과 남은 초.
     toast: Option<(String, f32)>,
+    /// 지금 알림이 끝난 뒤에 뜰 알림(0223 V4 — 여벌을 얻은 틱에 핵·엘리트의 알림도 뜬다: 한 칸뿐이라 덮어쓰면 하나가 안 보인다).
+    toast_wait: Vec<String>,
 }
 
 /// 알림이 떠 있는 시간(초).
@@ -230,30 +235,38 @@ fn lay_by_hearth(run: &StageRun, world: &mut World) {
     }
 }
 
+/// 터치로 끄는 버튼의 미리보기(0217): 버튼이 아니라 그 버튼의 지금 일로 고른다 — 원거리 무기는 평타 버튼(`Attack`)이 사격·
+/// 특수(`Cast`)가 수류탄(0223 → 0227: 이 맞바꿈을 빠뜨려 쇠뇌로 사격을 끌면 수류탄 원이, 수류탄을 끌면 사격 띠가 그려졌다).
+fn touch_aim_show(k: touch::Kind, ranged: bool) -> Option<AimShow> {
+    match k {
+        // 근접 무기의 평타는 끌지 않는다(`touch::Ctx::aim_attack`).
+        touch::Kind::Attack => ranged.then_some(AimShow::Cast),
+        touch::Kind::Cast if ranged => Some(AimShow::Grenade),
+        touch::Kind::Cast => Some(AimShow::Cast),
+        touch::Kind::Skill1 => Some(AimShow::Skill(0)),
+        touch::Kind::Skill2 => Some(AimShow::Skill(1)),
+        _ => None,
+    }
+}
+
 impl App {
     /// 땅 위 조준 표시의 꼴(0217 → 0219): 터치로 끄는 버튼이면 그 일, 아니면 원거리가 겨누는 쪽이 있을 때 —
     /// 쏘거나 모으는 동안은 띠(어느 장치나), 숄더뷰는 가는 줄 + 멈추는 자리, 쿼터뷰의 패드 스틱은 띠. 마우스 커서는 그리지 않는다
     /// (커서 자체가 겨누는 자리다).
     fn aim_show(&self) -> Option<AimShow> {
         if let Some(k) = self.input.aiming() {
-            return match k {
-                touch::Kind::Attack => Some(AimShow::Grenade),
-                touch::Kind::Cast => Some(AimShow::Cast),
-                touch::Kind::Skill1 => Some(AimShow::Skill(0)),
-                touch::Kind::Skill2 => Some(AimShow::Skill(1)),
-                _ => None,
-            };
+            return touch_aim_show(k, self.world.player.weapon.is_ranged());
         }
         self.world.aim_line?;
         let firing = matches!(
             self.world.player.state,
             crate::world::PState::Cast { .. } | crate::world::PState::CastCharge { .. }
         );
-        if firing {
-            Some(AimShow::Cast)
-        } else if self.cam.mode == Mode::Free {
-            Some(AimShow::Reticle)
-        } else if input::device() == input::Device::Pad {
+        // 숄더뷰는 바닥에 그리지 않는다 — 화면 가운데 크로스헤어(`draw_crosshair`, 0222). 쿼터뷰는 조준할 때만(쏘거나 모으는 동안·
+        // 패드 스틱) 연한 띠.
+        if self.cam.mode == Mode::Free {
+            None
+        } else if firing || input::device() == input::Device::Pad {
             Some(AimShow::Cast)
         } else {
             None
@@ -325,6 +338,7 @@ impl App {
         }
         world.set_weapon(weapon);
         world.set_skills(progress.board.loadout(progress.skills.0, progress.ult));
+        world.set_sub_skills(progress.board.loadout(progress.sub_skills.0, progress.ult));
         world.tree = progress.board.cells;
         let cam = Camera::new(world.player.pos, &t);
         App {
@@ -356,6 +370,7 @@ impl App {
             fall: None,
             gesture: None,
             kindle: 0.0,
+            echo: None,
             bubble: None,
             stone_card: None,
             clock: 0.0,
@@ -398,6 +413,7 @@ impl App {
             save_failed: false,
             play_acc: 0.0,
             toast: None,
+            toast_wait: Vec::new(),
         }
     }
 
@@ -466,7 +482,7 @@ impl App {
     /// 지역을 세운 뒤 기록에서 채운다: 무기·기술(끼운 스킬과 연 패시브 칸)·연 상자(지역마다 번호 `지역 × 1000 + 번호`, 0118)·주운 것·쓰러뜨린 엘리트·문,
     /// 이 판에 이 지역 문지기를 이겼으면 바닥 길이 열린 채.
     fn seed_run(&mut self) {
-        self.world.set_weapon(self.weapon);
+        self.arm_world();
         // 깨어난 자리의 화로(0171): 불을 붙인 적 없는 기록이면 첫 지역의 그 화로가 꺼져 있다.
         if self.stage == 0 && !self.progress.lit && !self.dev_run_now() {
             self.run.chill_hearth();
@@ -488,6 +504,7 @@ impl App {
         }
         self.run.set_found(&self.progress.finds);
         self.run.set_beaten(&self.progress.elites);
+        self.lay_ground();
         let open = self
             .progress
             .gates
@@ -508,7 +525,9 @@ impl App {
         // 처음 이기는 판이면 핵이 스스로 다가온다(lore CANON, 0105) — 첫 지역 문지기만(둘째 문지기는 C3).
         self.run.first_core = match self.stage {
             0 => self.progress.clears == 0,
-            _ => self.progress.bell_cores == 0,
+            1 => self.progress.bell_cores == 0,
+            2 => self.progress.moss_cores == 0,
+            _ => self.progress.overseer_cores == 0,
         };
         if self.down > self.stage {
             self.run.down_open = true;
@@ -548,9 +567,53 @@ impl App {
         // 가진 무기 사이에서만(0117).
         let arms = self.arms();
         let i = arms.iter().position(|&w| w == self.weapon).unwrap_or(0) as i32;
-        self.weapon = arms[(i + step).rem_euclid(arms.len() as i32) as usize];
+        let next = arms[(i + step).rem_euclid(arms.len() as i32) as usize];
+        self.wield(next);
+    }
+
+    /// 무기 둘(주·부, 0223)을 월드에.
+    pub(super) fn arm_world(&mut self) {
         self.world.set_weapon(self.weapon);
-        self.progress.weapon = Some(self.weapon);
+        self.world.set_sub(self.progress.sub);
+        self.world.set_shield(self.progress.shield);
+        self.renderer.shield = self.progress.shield;
+        // 든 것이 바뀌면 능력치도 다시 합친다(벼린 단 0180 · 낀 아이템의 옵션 0223 V4 — 무기는 든 것만).
+        self.world.apply_stats(self.progress.stats(), false);
+    }
+
+    /// 주무기를 바꾼다(0223): 부무기 칸에 있던 것이면 둘을 맞바꾼다(같은 무기 두 칸 금지 — 맨손은 부무기로 남기지 않는다). 지금 판에 바로, 저장.
+    pub(super) fn wield(&mut self, w: weapons::Id) {
+        let old = self.weapon;
+        if self.progress.sub == Some(w) {
+            self.progress.sub = (old != weapons::Id::Fists).then_some(old);
+            self.swap_kits();
+        }
+        self.weapon = w;
+        self.progress.weapon = Some(w);
+        self.arm_world();
+        self.persist();
+    }
+
+    /// 주·부무기를 장비 탭에서 맞바꿨다(0223 V3): 스킬 칸도 무기를 따라간다 — 싸움 중의 바꿔 들기(`on_weapon_swap`)와 같은 규칙
+    /// (안 그러면 맞바꾼 두 무기의 칸 넷이 모두 안 맞는 스킬이 된다). 낀 아이템은 `settle_items`가 따라가게 한다.
+    fn swap_kits(&mut self) {
+        std::mem::swap(&mut self.progress.skills, &mut self.progress.sub_skills);
+        self.apply_board();
+    }
+
+    /// 부무기를 정한다(0223): 지금 주무기를 고르면 둘을 맞바꾼다(주무기 자리에는 옛 부무기, 없으면 맨손).
+    pub(super) fn set_sub_weapon(&mut self, s: Option<weapons::Id>) {
+        if s.is_some() && s == Some(self.weapon) {
+            self.weapon = self.progress.sub.unwrap_or(weapons::Id::Fists);
+            self.progress.weapon = Some(self.weapon);
+            self.swap_kits();
+        }
+        self.progress.sub = s;
+        // 보조무기 칸에는 하나만(0224): 무기를 들면 방패는 내린다.
+        if s.is_some() {
+            self.progress.shield = None;
+        }
+        self.arm_world();
         self.persist();
     }
 
@@ -630,18 +693,23 @@ impl App {
                 Some(crate::stage::Near::Pull) => crate::touch::Near::Pull,
                 Some(crate::stage::Near::Talk) => crate::touch::Near::Talk,
                 Some(crate::stage::Near::Read) => crate::touch::Near::Read,
-                Some(crate::stage::Near::Rest { .. }) | None => crate::touch::Near::Rest,
+                Some(crate::stage::Near::Rest { .. } | crate::stage::Near::Full) | None => {
+                    crate::touch::Near::Rest
+                }
             },
             lock: play && (self.world.lock.is_some() || self.world.lock_candidate()),
             flask: play && pl.flask > 0 && pl.hp < pl.max_hp,
             ult: play && pl.skill.gauge >= 1.0,
             // 끌어 조준(0217): 그 버튼에 올라간 일이 쪽을 가지면 — 무기·끼운 스킬이 바뀌어도 같은 규칙.
-            aim_attack: pl.weapon.def().grenade.is_some(),
+            // 0223: 원거리 무기는 평타 버튼이 사격·특수가 수류탄이라 둘 다 겨눈다. 근접은 특수(마법 탄)만.
+            aim_attack: pl.weapon.is_ranged(),
             aim_cast: true,
+            swap: play && pl.sub.is_some(),
             aim_skills: [0, 1].map(|i| {
                 pl.skill.rank[i] > 0 && self.world.skill_eff(pl.skill.worn[i]).skill.form.aims()
             }),
             charging: matches!(pl.state, crate::world::PState::CastCharge { .. }),
+            ranged: pl.weapon.is_ranged(),
         });
         self.input.poll(self.scene().is_menu());
         // F11(PC, 0135): 어느 장면에서나 창 ↔ 전체 화면. 창 일이라 `Actions`(게임 동작)에 넣지 않는다.
@@ -791,6 +859,9 @@ impl App {
             *t -= TICK_DT;
         }
         self.toast = self.toast.take().filter(|(_, t)| *t > 0.0);
+        if self.toast.is_none() && !self.toast_wait.is_empty() {
+            self.toast = Some((self.toast_wait.remove(0), TOAST_TIME));
+        }
         if a.dev_overlay {
             self.dev_overlay = !self.dev_overlay;
         }
@@ -841,6 +912,8 @@ impl App {
             Scene::Codex { host, tab } => self.tick_codex(&a, host, tab as usize),
             Scene::Journey { host } => self.tick_journey(&a, host),
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
+            Scene::Bag { host } => self.tick_bag(&a, host),
+            Scene::BagAct => self.tick_bag_act(&a),
             s @ (Scene::Settings { .. } | Scene::Shop | Scene::Result { .. }) => {
                 self.tick_menu(&a, s)
             }
@@ -903,6 +976,8 @@ impl App {
             | Scene::SkillAct
             | Scene::Codex { .. }
             | Scene::Journey { .. }
+            | Scene::Bag { .. }
+            | Scene::BagAct
             | Scene::EquipPick { .. } => None,
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } | Scene::Motions { .. } => None,
@@ -932,6 +1007,8 @@ impl App {
             | Scene::SkillAct
             | Scene::Codex { .. }
             | Scene::Journey { .. }
+            | Scene::Bag { .. }
+            | Scene::BagAct
             | Scene::EquipPick { .. } => {}
             #[cfg(feature = "dev")]
             Scene::Sandbox | Scene::Dev { .. } | Scene::Motions { .. } => {}
@@ -1054,10 +1131,18 @@ impl App {
             self.draw_beat_note(&f);
         }
         if self.scene().ticks_world() && !waking && in_shaft.is_none() {
-            if self.mouse_hidden && self.world.lock_target().is_none() {
+            if self.mouse_hidden
+                && self.world.lock_target().is_none()
+                && self.cam.mode != Mode::Free
+            {
                 if let Some(c) = self.input.cursor() {
                     hud::draw_reticle(&f, c, input::mouse_aim().size);
                 }
+            }
+            // 숄더뷰 크로스헤어(0222): 화면 가운데 — 원거리는 여기로 간다(가운데의 적이 있으면 호박빛).
+            if self.cam.mode == Mode::Free && self.world.lock_target().is_none() {
+                let at = vec2(f.ox + f.w * 0.5, f.oy + f.h * 0.5);
+                hud::draw_crosshair(&f, at, self.crosshair_target().is_some());
             }
             if let Some(o) = &overlay {
                 let pl = &self.world.player;
@@ -1074,8 +1159,10 @@ impl App {
                         turn: self.world.turn_ready(&self.t),
                         attack: touch::attack_icon(pl.weapon),
                         cast: touch::cast_icon(pl.weapon),
+                        swap: pl.sub.map_or(touch::Kind::Swap, touch::attack_icon),
                         skills: [skill(0), skill(1)],
                         vacant: [0, 1].map(|i| pl.skill.rank[i] == 0),
+                        unfit: [0, 1].map(|i| pl.skill.rank[i] == 0 && pl.skill.known[i] > 0),
                         active: [0, 1].map(|i| self.world.skill_active(i)),
                         ult: touch::ult_icon(pl.skill.ult),
                     },
@@ -1125,6 +1212,10 @@ impl App {
                         hint,
                     };
                     hud::draw(&self.ui, f, &self.world, run, &o);
+                    // 마지막 핵의 잔상(0216 W3): HUD 위 화면 가장자리에.
+                    if let Some(t) = self.echo.filter(|_| scene == Scene::Play) {
+                        hud::draw_echo(f, crate::core_echo::glow(t));
+                    }
                 }
             }
             Layer::Window { hud: true } if self.stack.base() == Scene::Play => {
@@ -1149,6 +1240,8 @@ impl App {
             Scene::SkillAct => self.draw_skill_act(f),
             Scene::Codex { host, tab } => self.draw_codex(f, host, tab as usize),
             Scene::Journey { host } => self.draw_journey(f, host),
+            Scene::Bag { host } => self.draw_bag(f, host, self.cursor),
+            Scene::BagAct => self.draw_bag_act(f),
             Scene::Shop => self.draw_shop(f),
             Scene::Settings { host } => self.draw_settings(f, host),
             #[cfg(feature = "dev")]
@@ -1277,5 +1370,32 @@ mod press_tests {
         }
         // 눌린 꼴은 UI 누름 피드백(100~160 ms)보다 길지 않게 — 늦게 넘어간다고 느끼지 않게.
         const { assert!(PRESS_HOLD > 0.05 && PRESS_HOLD <= 0.12) };
+    }
+}
+
+#[cfg(test)]
+mod aim_show_tests {
+    use super::*;
+
+    /// 0227: 쇠뇌로 평타(사격)를 끌면 사격 띠, 특수(수류탄)를 끌면 터지는 원 — 근접 무기의 특수는 마법 탄 띠.
+    #[test]
+    fn a_dragged_touch_button_previews_what_it_now_does() {
+        assert_eq!(
+            touch_aim_show(touch::Kind::Attack, true),
+            Some(AimShow::Cast)
+        );
+        assert_eq!(
+            touch_aim_show(touch::Kind::Cast, true),
+            Some(AimShow::Grenade)
+        );
+        assert_eq!(
+            touch_aim_show(touch::Kind::Cast, false),
+            Some(AimShow::Cast)
+        );
+        assert_eq!(touch_aim_show(touch::Kind::Attack, false), None);
+        assert_eq!(
+            touch_aim_show(touch::Kind::Skill2, false),
+            Some(AimShow::Skill(1))
+        );
     }
 }
