@@ -450,7 +450,13 @@ impl App {
                             c,
                             (CHARM_H - 5.0) * 0.5 * u,
                             u,
-                            super::skills::Look::Owned,
+                            // 지금 쥔 꼴로 못 쓰는 스킬(0225)은 흐리게 — 싸움 화면의 흐린 칸과 같은 말.
+                            match e {
+                                Entry::Skill(id) if !id.def().fits(self.kits().main.0) => {
+                                    super::skills::Look::Short
+                                }
+                                _ => super::skills::Look::Owned,
+                            },
                             None,
                         );
                     }

@@ -1157,6 +1157,17 @@ impl App {
                 weapons::Hand::Ranged => s.hand_ranged,
             };
             lines.push(Ln::Pair(s.hand_label.to_string(), hand.to_string(), INK));
+            // 무기의 특색(0225): 한손 = 방패 기술·결투 기술 · 망치 = 물리력 · 지팡이 = 마법력.
+            let pct = |k: f32| ((k - 1.0) * 100.0).round().to_string();
+            let art = match id {
+                weapons::Id::Sword | weapons::Id::Fists => Some(s.art_sword.to_string()),
+                weapons::Id::Hammer => Some(fill(s.art_hammer, &[&pct(id.art().force)])),
+                weapons::Id::Staff => Some(fill(s.art_staff, &[&pct(id.art().channel)])),
+                weapons::Id::Crossbow => None,
+            };
+            if let Some(art) = art {
+                lines.extend(self.pane_wrap(w, &art, AMBER));
+            }
             // 견주는 상대는 그 칸에 지금 든 것: 주무기 칸 = 주무기, 부무기 칸 = 부무기(없으면 견줄 것이 없다 — 화살표 없이 값만).
             let held = if slot == SUB_SLOT {
                 self.progress.sub

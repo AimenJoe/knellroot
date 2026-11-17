@@ -60,9 +60,10 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     // 칸 0·2·4(몰아치기·한 줄기·쟁반 뒤집기). 칸에서 확인 = 목록의 첫 줄 "칸 1에 끼우기"(큰 기술은 "끼우기"). 처음 끼워진 것은 휘돌이(Q)·
     // 가로지르기(E)·쟁반 뒤집기라 그 셋은 건드리지 않는다. 큰 기술은 Q+E.
     // 일곱째 = 개발 창 "든 무기 바꾸기"를 누를 횟수(0223 V3 — 땅울림은 양손 무기의 스킬: 끼우기 전에 망치를 든다).
+    // 0225: 스킬마다 쥔 꼴이 있다 — 땅울림 = 망치(둘), 되울림·잔불 흩기 = 지팡이(셋: 맨손 → 검 → 망치 → 지팡이).
     const RUNS = [['whirl', null, null, 1500, 'Q', 22], ['cut', null, null, 1100, 'E', 26], ['gather', [0, 3], null, 900, 'Q', 26],
-      ['quake', [2, 0], null, 1000, 'Q', 26, 2], ['brace', [0, 2], null, 1300, 'Q', 40], ['echo', [2, 1], null, 1300, 'Q', 16],
-      ['throw', [2, 2], null, 900, 'Q', 30], ['embers', [2, 3], null, 1300, 'Q', 50],
+      ['quake', [2, 0], null, 1000, 'Q', 26, 2], ['brace', [0, 2], null, 1300, 'Q', 40], ['echo', [2, 1], null, 1300, 'Q', 16, 3],
+      ['throw', [2, 2], null, 900, 'Q', 30], ['embers', [2, 3], null, 1300, 'Q', 50, 3],
       ['upend', null, null, 1500, 'ult', 30], ['flurry', null, 0, 1300, 'ult', 14], ['line', null, 2, 900, 'ult', 30]];
     const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.waitForTimeout(90); } };
     // 왼쪽 위(가장자리에서 돌지 않는다) → 줄 → 그 줄의 왼쪽 끝 → 칸 → 확인(목록) → 확인(첫 줄).

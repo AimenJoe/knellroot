@@ -18,7 +18,7 @@ use crate::progression::{Cell, BRANCHES};
 use crate::skills::{
     self as sk, Board, Entry, Form, Offer, Pick, ENTRIES, NE, PICK_RANK, SIZE_RANK,
 };
-use crate::weapons::Hand;
+use crate::weapons::Grip;
 
 /// 화면의 알림(산 것·되돌린 것)이 상태 줄에 떠 있는 초.
 const ALERT: f32 = 1.4;
@@ -309,8 +309,8 @@ pub(super) enum Do {
 /// 끼우는 자리의 사정(0223 V3 — 무기 칸마다 스킬 둘): 주무기의 갈래와 그 칸 둘, 부무기를 들었으면 그 갈래와 칸 둘.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Kits {
-    pub main: (Hand, [sk::Id; 2]),
-    pub sub: Option<(Hand, [sk::Id; 2])>,
+    pub main: (Grip, [sk::Id; 2]),
+    pub sub: Option<(Grip, [sk::Id; 2])>,
 }
 
 pub(super) fn node_acts(
@@ -370,24 +370,36 @@ pub(super) fn wear_skill(worn: [sk::Id; 2], slot: usize, id: sk::Id) -> [sk::Id;
 pub(super) fn hands_text(id: sk::Id) -> String {
     let s = s();
     let h = id.def().hands;
-    if h == sk::ANY {
-        return s.hands_any.to_string();
+    // 한손검의 두 갈래(0225): 방패와 함께만 쓰는 것 = 방패 기술, 방패 없이만 쓰는 것 = 결투 기술.
+    match h {
+        sk::ANY => return s.hands_any.to_string(),
+        sk::DUEL => return s.hands_duel_art.to_string(),
+        sk::SHIELD => return s.hands_shield_art.to_string(),
+        _ => {}
     }
-    [
+    // 한손 둘(방패가 있든 없든)·양손 둘(망치·지팡이)이 다 되면 묶어서 말한다.
+    let mut names = Vec::new();
+    let mut left = h;
+    for (bits, name) in [
         (sk::ONE, s.hands_one),
         (sk::TWO, s.hands_two),
+        (sk::DUEL, s.hands_duel),
+        (sk::SHIELD, s.hands_shield),
+        (sk::HEAVY, s.hands_heavy),
+        (sk::FOCUS, s.hands_focus),
         (sk::RANGED, s.hands_ranged),
-    ]
-    .into_iter()
-    .filter(|(bit, _)| h & bit != 0)
-    .map(|(_, name)| name)
-    .collect::<Vec<_>>()
-    .join(" · ")
+    ] {
+        if left & bits == bits {
+            names.push(name);
+            left &= !bits;
+        }
+    }
+    names.join(" · ")
 }
 
-/// 든 무기로 못 쓰는 스킬을 고르면 뜨는 알림.
-fn unfit_toast(id: sk::Id) -> String {
-    fill(s().toast_unfit, &[&hands_text(id)])
+/// 든 것으로 못 쓰는 스킬을 고르면 뜨는 알림 — 한 줄 자리라 짧게(쓰는 무기의 목록은 상세 칸의 "쓰는 무기" 줄이 말한다, 0225).
+fn unfit_toast() -> String {
+    s().toast_unfit.to_string()
 }
 
 /// 목록 한 줄의 글.
@@ -938,7 +950,7 @@ impl App {
         if acts.iter().all(|d| matches!(d, Do::Away | Do::Unfit)) {
             // 할 수 있는 일이 없다 — 까닭을 상태 줄 자리에 한 번 밝게(0173: 소리만으로는 왜 안 되는지 몰랐다).
             let why = match (acts.is_empty(), ENTRIES.get(self.cursor)) {
-                (false, Some(&Entry::Skill(id))) if acts.contains(&Do::Unfit) => unfit_toast(id),
+                (false, Some(&Entry::Skill(_))) if acts.contains(&Do::Unfit) => unfit_toast(),
                 (false, _) => s().toast_away.to_string(),
                 (true, Some(&e)) => {
                     state_line(&self.board(), self.progress.skill_points(), e, edit).0
@@ -992,11 +1004,15 @@ impl App {
     /// 지금 든 주무기·부무기와 그 칸들(0223 V3).
     pub(super) fn kits(&self) -> Kits {
         Kits {
-            main: (self.weapon.hand(), self.progress.skills.0),
+            // 쥔 꼴(0225): 한손 주무기는 방패와 함께인가로 갈린다. 보조무기로 바꿔 들면 왼손에 방패는 없다.
+            main: (
+                self.weapon.grip(self.progress.shield.is_some()),
+                self.progress.skills.0,
+            ),
             sub: self
                 .progress
                 .sub
-                .map(|w| (w.hand(), self.progress.sub_skills.0)),
+                .map(|w| (w.grip(false), self.progress.sub_skills.0)),
         }
     }
 
@@ -1070,8 +1086,8 @@ impl App {
                 }
                 self.after_wear();
             }
-            (Do::Unfit, Entry::Skill(id)) => {
-                self.toast = Some((unfit_toast(id), ALERT));
+            (Do::Unfit, Entry::Skill(_)) => {
+                self.toast = Some((unfit_toast(), ALERT));
                 self.snd(crate::sfx::Id::Deny);
             }
             (Do::WearUlt, Entry::Ult(u)) => {
@@ -1681,7 +1697,7 @@ impl App {
         };
         // 쓰는 무기(0223 V3): 스킬마다 쓸 수 있는 갈래 — 지금 든 주무기와 안 맞으면 밝게 알린다.
         if let Entry::Skill(id) = e {
-            let fits = id.def().fits(self.weapon.hand());
+            let fits = id.def().fits(self.kits().main.0);
             v.push(Block::Text {
                 lines: wrap(&fill(s.sk_hands, &[&hands_text(id)]), width, K_BODY),
                 k: K_BODY,
@@ -2183,7 +2199,7 @@ mod tests {
     fn the_action_list_holds_only_what_applies_with_the_primary_row_first() {
         let worn = sk::START;
         let kits = Kits {
-            main: (Hand::One, worn),
+            main: (Grip::Duel, worn),
             sub: None,
         };
         let b = started();
@@ -2256,8 +2272,8 @@ mod tests {
             [Do::Unfit]
         );
         let both = Kits {
-            main: (Hand::One, worn),
-            sub: Some((Hand::Two, [Id::Quake, Id::Gather])),
+            main: (Grip::Duel, worn),
+            sub: Some((Grip::Heavy, [Id::Quake, Id::Gather])),
         };
         let at = |id| node_acts(&all, 99, &both, Ult::Upend, Entry::Skill(id), false);
         assert_eq!(

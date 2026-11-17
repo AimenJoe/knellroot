@@ -65,6 +65,8 @@ pub struct Blade {
     pub hits: u64,
     pub damage: i32,
     pub poise: f32,
+    /// 타가 쌓는 타입 게이지 — 던진 순간에 든 무기의 것(0225: 날아가는 동안 바꿔 든 무기의 마법력을 받지 않는다).
+    pub dose: Dose,
     /// 오는 길의 피해·자세 피해(맺음이면 더 세다).
     pub back_damage: i32,
     pub back_poise: f32,
@@ -86,6 +88,8 @@ pub struct Field {
     pub pulses: u32,
     pub damage: i32,
     pub poise: f32,
+    /// 타가 쌓는 타입 게이지 — 흩은 순간에 든 무기의 것(0225).
+    pub dose: Dose,
     pub follow: bool,
     pub kindle: u32,
 }
@@ -135,16 +139,24 @@ struct Sweep {
 impl World {
     /// 타가 싣는 타입 게이지에 아이템 옵션의 배(`Stats::ail`)를 입힌다(0223 V4) — 스킬의 타가 나가는 자리마다.
     pub(super) fn dosed(&self, d: Dose) -> Dose {
-        (d.0, d.1 * self.stats.ail)
+        // 지팡이의 마법력(0225): 스킬의 타가 쌓는 타입 게이지에 무기의 배.
+        (d.0, d.1 * self.stats.ail * self.player.weapon.art().channel)
     }
 
     /// 스킬 `id`의 지금 값: 끼운 칸의 단·고르기를 입힌 것(끼우지 않은 스킬은 1단 — 시험·바꿔 끼운 직후).
     pub fn skill_eff(&self, id: skills::Id) -> Eff {
         let pl = &self.player;
-        match pl.skill.worn.iter().position(|s| *s == id) {
+        let mut eff = match pl.skill.worn.iter().position(|s| *s == id) {
             Some(i) => id.def().at(pl.skill.rank[i], pl.skill.pick[i]),
             None => id.def().at(1, skills::Pick::A),
+        };
+        // 망치의 물리력(0225): 타입 없는 스킬의 피해·자세 피해에 무기의 배(타입 있는 스킬은 `dosed`가 지팡이의 배를 얹는다).
+        let force = pl.weapon.art().force;
+        if eff.skill.kind == crate::status::Kind::Physical && force != 1.0 {
+            eff.skill.damage = (eff.skill.damage as f32 * force).round() as i32;
+            eff.skill.poise *= force;
         }
+        eff
     }
 
     /// 이번 틱의 스킬 누름 → 받아 둘 행동(0151 3절). 둘을 함께 눌렀거나(같은 틱) 터치의 큰 기술 버튼이면 큰 기술,
@@ -715,6 +727,7 @@ impl World {
                         hits: 0,
                         damage: s.damage,
                         poise: s.poise,
+                        dose: self.dosed(s.dose()),
                         back_damage,
                         back_poise,
                         drag: match d.twist {
@@ -745,6 +758,7 @@ impl World {
                         every,
                         pulses: 0,
                         damage: s.damage,
+                        dose: self.dosed(s.dose()),
                         poise: match d.cap {
                             Some(Cap::Smolder { poise, .. }) => poise,
                             _ => 0.0,
@@ -1046,7 +1060,7 @@ impl World {
                         stagger: 0.0,
                         knock,
                         crit: true,
-                        dose: self.dosed(skills::Id::Throw.def().dose()),
+                        dose: b.dose,
                         flat: false,
                     },
                 );
@@ -1120,7 +1134,7 @@ impl World {
                             stagger: 0.0,
                             knock: Vec3::ZERO,
                             crit: false,
-                            dose: self.dosed(skills::Id::Embers.def().dose()),
+                            dose: f.dose,
                             flat: false,
                         },
                     );
@@ -2081,7 +2095,7 @@ mod tests {
         let boss_hp = w.enemies[3].hp;
         let ev = run(&mut w, &t, skill(0), 22);
         let d = Sk::Quake.def();
-        assert_eq!(w.enemies[0].hp, 90 - d.damage - w.stats.dmg);
+        assert_eq!(w.enemies[0].hp, 90 - forced(d.damage) - w.stats.dmg);
         assert!(matches!(w.enemies[0].state, EState::Stagger { .. }));
         assert_eq!(w.enemies[1].hp, 90, "behind");
         assert_eq!(w.enemies[2].hp, 90, "to the side");
@@ -2352,12 +2366,37 @@ mod tests {
 
     use crate::skills::{Loadout, Pick, Slot, MAX_RANK};
 
+    /// 망치의 물리력(0225)이 얹힌 값 — 땅울림은 망치의 스킬이라 늘 이 배를 받는다.
+    fn forced(n: i32) -> i32 {
+        (n as f32 * crate::weapons::ART_FORCE).round() as i32
+    }
+
+    /// 스킬 `id`를 쓸 수 있는 것을 든다(0225 — 이미 맞으면 그대로): 방패 → 망치 → 쇠뇌 → 지팡이 차례로.
+    fn hold_for(w: &mut World, id: Sk) {
+        use crate::weapons::Id as W;
+        let def = id.def();
+        if def.fits(w.grip()) {
+            return;
+        }
+        w.set_shield(Some(crate::shield::Id::Pilgrim));
+        if def.fits(w.grip()) {
+            return;
+        }
+        w.set_shield(None);
+        // (쇠뇌가 지팡이보다 먼저 — 타입 스킬의 시험은 바탕의 게이지로 잰다: 지팡이는 마법력의 배가 붙는다.)
+        for arm in [W::Hammer, W::Crossbow, W::Staff] {
+            w.set_weapon(arm);
+            if def.fits(w.grip()) {
+                return;
+            }
+        }
+        panic!("{id:?} fits nothing");
+    }
+
     /// 칸 0에 `id`를 `rank`단·`pick`으로 끼운다(칸 1은 남는 스킬 1단), 큰 기술은 1단.
     fn wear(w: &mut World, id: Sk, rank: u8, pick: Pick) {
-        // 손에 든 검으로 못 쓰는 스킬(0223 V3 — 땅울림은 양손)은 맞는 무기를 든다.
-        if !id.def().fits(w.player.weapon.hand()) {
-            w.set_weapon(crate::weapons::Id::Hammer);
-        }
+        // 손에 든 검으로 못 쓰는 스킬(0223 V3 → 0225)은 맞는 것을 든다: 방패 기술이면 방패를, 망치·지팡이의 것이면 그 무기를.
+        hold_for(w, id);
         let other = if id == Sk::Whirl { Sk::Cut } else { Sk::Whirl };
         w.set_skills(Loadout {
             slots: [
@@ -2399,8 +2438,8 @@ mod tests {
         assert_eq!(w.player.skill.rank, [5, 1]);
         assert_eq!(w.player.skill.pick, [Pick::B, Pick::A]);
         assert_eq!(w.player.skill.ult_rank, 3);
-        assert_eq!(w.skill_eff(Sk::Quake).skill.damage, 26);
-        assert_eq!(w.skill_eff(Sk::Whirl).skill.damage, 10);
+        assert_eq!(w.skill_eff(Sk::Quake).skill.damage, forced(26));
+        assert_eq!(w.skill_eff(Sk::Whirl).skill.damage, forced(10));
         assert_eq!(w.skill_eff(Sk::Gather).twist, None, "not worn: rank 1");
         // 5단의 대기는 ×0.9 — 쓴 직후 남은 대기가 그만큼.
         w.step(&skill(0), &t);
@@ -2940,13 +2979,16 @@ mod tests {
             (500 - w.enemies[0].hp, 500 - w.enemies[1].hp, t)
         };
         let (broken, whole, t) = hits(MAX_RANK);
-        assert_eq!(whole, 26);
+        assert_eq!(whole, forced(26));
         // 깨진 동안의 ×1.5(옛 눈금 올림)에 맺음의 두 배.
-        let opened = crate::tuning::scale_up(26, t[P::PoiseBreakDamage]);
+        let opened = crate::tuning::scale_up(forced(26), t[P::PoiseBreakDamage]);
         assert_eq!(broken, 2 * opened, "double on top of the open-poise bonus");
         let (broken, whole, t) = hits(4);
-        assert_eq!(whole, 23);
-        assert_eq!(broken, crate::tuning::scale_up(23, t[P::PoiseBreakDamage]));
+        assert_eq!(whole, forced(23));
+        assert_eq!(
+            broken,
+            crate::tuning::scale_up(forced(23), t[P::PoiseBreakDamage])
+        );
     }
 
     /// 큰 기술의 단: 2단 = 휘청 +0.6초(보스의 짧은 휘청은 그대로), 3단 = 벽에 박힌 피해 ×1.5(20 → 30). 직접 피해는 여전히 없다.

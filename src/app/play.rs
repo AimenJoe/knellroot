@@ -621,7 +621,9 @@ impl App {
                 .find_map(|&l| level.next_cost(l)),
             level: level.total(),
             spent: board.spent() > 0,
-            knows_skill: board.knows_a_skill(),
+            // 쓸 수 있는 스킬(0225): 배웠어도 지금 쥔 꼴과 안 맞으면 누를 것이 없다 — "쓰기" 걸음이 막히지 않게.
+            knows_skill: board.knows_a_skill()
+                && self.world.player.skill.rank.iter().any(|r| *r > 0),
             can_learn: board.can_buy(self.progress.skill_points()),
             gift: self.progress.gift,
         }

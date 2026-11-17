@@ -1253,6 +1253,13 @@ impl World {
     /// 방패를 정한다(0223 — 기록에서 앱이).
     pub fn set_shield(&mut self, shield: Option<crate::shield::Id>) {
         self.player.shield = shield;
+        // 방패가 한손 무기의 쥔 꼴을 가른다(0225 — 방패 기술 · 결투 기술).
+        self.refit_skills();
+    }
+
+    /// 지금 손에 쥔 꼴(0225): 한손 무기는 방패와 함께인가로 갈린다.
+    pub fn grip(&self) -> weapons::Grip {
+        self.player.weapon.grip(self.player.shield.is_some())
     }
 
     /// 지금 막을 수 있나(0223): 방패를 들었고 든 무기가 한손이다.
@@ -1369,13 +1376,13 @@ impl World {
         self.refit_skills();
     }
 
-    /// 끼운 칸을 지금 든 무기에 맞춘다(0223 V3): 그 갈래로 쓸 수 없는 스킬이 놓인 칸은 빈 칸(단 0)이 된다 — 누름·HUD·터치가 모두
-    /// `rank`를 본다. 무기를 들 때·바꿔 들 때·칸을 끼울 때 부른다.
+    /// 끼운 칸을 지금 쥔 꼴에 맞춘다(0223 V3 → 0225): 그 꼴로 쓸 수 없는 스킬이 놓인 칸은 빈 칸(단 0)이 된다 — 누름·HUD·터치가 모두
+    /// `rank`를 본다. 무기를 들 때·바꿔 들 때·방패를 들고 내릴 때·칸을 끼울 때 부른다.
     pub(crate) fn refit_skills(&mut self) {
+        let grip = self.grip();
         let pl = &mut self.player;
-        let hand = pl.weapon.hand();
         for i in 0..2 {
-            pl.skill.rank[i] = if pl.skill.worn[i].def().fits(hand) {
+            pl.skill.rank[i] = if pl.skill.worn[i].def().fits(grip) {
                 pl.skill.known[i]
             } else {
                 0

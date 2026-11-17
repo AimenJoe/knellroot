@@ -615,6 +615,40 @@ pub const WEAPONS: [Weapon; 5] = [
     },
 ];
 
+/// 손에 쥔 꼴(0225 — `Id::grip`): 스킬마다 쓸 수 있는 꼴이 있다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Grip {
+    /// 한손 무기, 방패 없이 — 결투 기술.
+    Duel,
+    /// 한손 무기와 방패 — 방패 기술.
+    Shield,
+    /// 망치 — 물리력.
+    Heavy,
+    /// 지팡이 — 마법력.
+    Focus,
+    Ranged,
+}
+
+#[cfg(test)]
+pub const GRIPS: [Grip; 5] = [
+    Grip::Duel,
+    Grip::Shield,
+    Grip::Heavy,
+    Grip::Focus,
+    Grip::Ranged,
+];
+
+/// 무기의 특색이 스킬에 얹는 배(0225): `force` = 타입 없는(물리) 스킬의 피해·자세 피해, `channel` = 스킬의 타가 쌓는 타입 게이지.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Art {
+    pub force: f32,
+    pub channel: f32,
+}
+
+/// 망치의 물리력 · 지팡이의 마법력(0225 — 처음 값, 판정에서 고친다).
+pub const ART_FORCE: f32 = 1.3;
+pub const ART_CHANNEL: f32 = 1.5;
+
 /// 무기 갈래(0223): 한손 근접은 왼손에 방패를 들 수 있다 · 양손 근접 · 원거리(양손, 장전).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hand {
@@ -630,6 +664,36 @@ impl Id {
             Id::Sword | Id::Fists => Hand::One,
             Id::Hammer | Id::Staff => Hand::Two,
             Id::Crossbow => Hand::Ranged,
+        }
+    }
+
+    /// 손에 쥔 꼴(0225): 한손 무기는 왼손의 방패로 갈린다 — 방패와 함께(`Shield`)·방패 없이(`Duel`). 양손은 무기마다
+    /// (망치 `Heavy` · 지팡이 `Focus`). 스킬이 이것으로 쓸 수 있나를 가른다(`skills::Skill::fits`).
+    pub fn grip(self, shield: bool) -> Grip {
+        match self {
+            Id::Sword | Id::Fists if shield => Grip::Shield,
+            Id::Sword | Id::Fists => Grip::Duel,
+            Id::Hammer => Grip::Heavy,
+            Id::Staff => Grip::Focus,
+            Id::Crossbow => Grip::Ranged,
+        }
+    }
+
+    /// 무기의 특색(0225 — 사장 "망치는 물리력을, 지팡이는 마법력에 대한 특색"): 스킬에 얹는 배. `_` 없는 match.
+    pub fn art(self) -> Art {
+        match self {
+            Id::Hammer => Art {
+                force: ART_FORCE,
+                channel: 1.0,
+            },
+            Id::Staff => Art {
+                force: 1.0,
+                channel: ART_CHANNEL,
+            },
+            Id::Sword | Id::Crossbow | Id::Fists => Art {
+                force: 1.0,
+                channel: 1.0,
+            },
         }
     }
 

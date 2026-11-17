@@ -22,20 +22,32 @@ use crate::progression::{Branch, Cell, Key, Link, Tree, Vein, DEPTH, KEYS, LINKS
 use crate::status::{Dose, Kind};
 use crate::tuning::{HP_UNIT, ULT_SLAM_DAMAGE};
 
-/// 무기 갈래의 모음(0223 V3 — 스킬·패시브가 "어느 무기를 들었을 때 되나"): 비트의 합.
+/// 손에 쥔 꼴의 모음(0223 V3 → 0225 — 스킬이 "무엇을 들었을 때 되나"): 비트의 합. 한손은 방패로 갈리고(결투 · 방패),
+/// 양손은 무기로 갈린다(망치 · 지팡이).
 pub type Hands = u8;
-pub const ONE: Hands = 1;
-pub const TWO: Hands = 2;
+/// 한손 무기, 방패 없이(결투 기술).
+pub const DUEL: Hands = 1;
+/// 망치.
+pub const HEAVY: Hands = 2;
 pub const RANGED: Hands = 4;
+/// 한손 무기와 방패(방패 기술).
+pub const SHIELD: Hands = 8;
+/// 지팡이.
+pub const FOCUS: Hands = 16;
+pub const ONE: Hands = DUEL | SHIELD;
+pub const TWO: Hands = HEAVY | FOCUS;
 pub const MELEE: Hands = ONE | TWO;
 pub const ANY: Hands = ONE | TWO | RANGED;
 
-/// 갈래 하나의 비트.
-pub const fn hand_bit(h: crate::weapons::Hand) -> Hands {
-    match h {
-        crate::weapons::Hand::One => ONE,
-        crate::weapons::Hand::Two => TWO,
-        crate::weapons::Hand::Ranged => RANGED,
+/// 쥔 꼴 하나의 비트.
+pub const fn grip_bit(g: crate::weapons::Grip) -> Hands {
+    use crate::weapons::Grip;
+    match g {
+        Grip::Duel => DUEL,
+        Grip::Shield => SHIELD,
+        Grip::Heavy => HEAVY,
+        Grip::Focus => FOCUS,
+        Grip::Ranged => RANGED,
     }
 }
 
@@ -246,7 +258,8 @@ pub struct Skill {
     pub clip: Clip,
     /// 판의 줄(0158 라): 쓴 점수 합이 `ROW_NEEDS[row]`에 닿아야 살 수 있다.
     pub row: u8,
-    /// 쓸 수 있는 무기 갈래(0223 V3 — `ONE`·`TWO`·`RANGED`의 합): 맞지 않는 무기를 들면 그 칸은 빈 칸이다.
+    /// 쓸 수 있는 쥔 꼴(0223 V3 → 0225 — `DUEL`·`SHIELD`·`HEAVY`·`FOCUS`·`RANGED`의 합): 맞지 않는 것을 들면 그 칸은 빈 칸이다.
+    /// 결투 기술 = `DUEL`만 · 방패 기술 = `SHIELD`만.
     pub hands: Hands,
     /// 타입(0223 V2)과 한 타가 쌓는 게이지(보통 적의 1 가운데 몫 — 물리는 0). 단·고르기는 이 값을 바꾸지 않는다.
     /// 한 번 쓰면 보통 적은 걸리게(한 타짜리 = 1, 여러 타짜리는 나눠서) — 덜 쌓이는 적(엘리트·보스·버티는 종)은 두 번.
@@ -418,8 +431,8 @@ impl Eff {
 
 impl Skill {
     /// 그 갈래의 무기로 쓸 수 있나(0223 V3).
-    pub fn fits(&self, h: crate::weapons::Hand) -> bool {
-        self.hands & hand_bit(h) != 0
+    pub fn fits(&self, g: crate::weapons::Grip) -> bool {
+        self.hands & grip_bit(g) != 0
     }
 
     /// 이 스킬의 타 하나가 싣는 타입과 쌓는 양(0223 V2).
@@ -641,7 +654,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.15, 0.22, 0.30],
         },
         row: 0,
-        hands: MELEE,
+        hands: ONE | HEAVY,
         kind: Kind::Physical,
         build: 0.0,
         branch: Branch::Beat,
@@ -666,7 +679,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.12, 0.20, 0.25],
         },
         row: 0,
-        hands: MELEE,
+        hands: DUEL,
         kind: Kind::Rift,
         build: 1.0,
         branch: Branch::Beat,
@@ -727,7 +740,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.30, 0.0, 0.40],
         },
         row: 1,
-        hands: TWO,
+        hands: HEAVY,
         kind: Kind::Physical,
         build: 0.0,
         branch: Branch::Beat,
@@ -791,7 +804,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.0, 0.20],
         },
         row: 1,
-        hands: ONE | RANGED,
+        hands: SHIELD | FOCUS | RANGED,
         kind: Kind::Knell,
         build: 1.0,
         branch: Branch::Riposte,
@@ -817,7 +830,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.18, 0.10, 0.25],
         },
         row: 1,
-        hands: MELEE,
+        hands: DUEL | HEAVY,
         kind: Kind::Rift,
         build: 0.5,
         branch: Branch::Footing,
@@ -851,7 +864,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.0, 0.30],
         },
         row: 1,
-        hands: ANY,
+        hands: FOCUS | RANGED,
         kind: Kind::Ember,
         build: 0.5,
         branch: Branch::Footing,
@@ -881,7 +894,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.12, 0.45, 0.25],
         },
         row: 3,
-        hands: ONE,
+        hands: DUEL,
         kind: Kind::Physical,
         build: 0.0,
         branch: Branch::Beat,
@@ -910,7 +923,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.15, 0.0, 0.35],
         },
         row: 3,
-        hands: ONE,
+        hands: SHIELD,
         kind: Kind::Knell,
         build: 1.0,
         branch: Branch::Riposte,
@@ -943,7 +956,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.30, 0.35],
         },
         row: 3,
-        hands: ANY,
+        hands: FOCUS | RANGED,
         kind: Kind::Root,
         build: 1.0,
         branch: Branch::Footing,
@@ -2744,23 +2757,40 @@ mod tests {
     }
 
     /// 0158 마: 고르기와 맺음의 표 — 스킬마다 둘(서로 다르다)과 하나, 값은 결정문의 것. 길이가 달라지는 고르기를 골라도 1초 안에 끝난다.
-    /// 0223 V3: 스킬마다 쓸 수 있는 갈래가 있다 — 갈래마다 고를 것이 넉넉하고(넷 이상), 첫 줄의 스킬(새 판이 가장 먼저 배운다)은
-    /// 한손 무기(처음 줍는 검·맨손)로 쓸 수 있다 — 처음 배운 스킬이 손에 든 것과 안 맞아 막히는 일이 없다.
+    /// 0223 V3 → 0225: 스킬마다 쓸 수 있는 쥔 꼴이 있다 — 꼴마다 고를 것이 넉넉하고(넷 이상), 첫 줄의 스킬(새 판이 가장 먼저 배운다)은
+    /// 방패 없는 한손(처음 줍는 검·맨손)으로 쓸 수 있다 — 처음 배운 스킬이 손에 든 것과 안 맞아 막히는 일이 없다.
+    /// 한손검은 방패로 갈린다: 방패 기술(방패와 함께만)과 결투 기술(방패 없이만)이 둘 이상씩. 망치만의 것·지팡이 쪽의 것도 있다.
     #[test]
-    fn every_hand_has_skills_to_choose_and_the_first_row_fits_the_first_sword() {
-        use crate::weapons::Hand;
-        for h in [Hand::One, Hand::Two, Hand::Ranged] {
-            let n = SKILLS.iter().filter(|s| s.fits(h)).count();
-            assert!(n >= 4, "{h:?}: {n}");
+    fn every_grip_has_skills_to_choose_and_the_first_row_fits_the_first_sword() {
+        use crate::weapons::{Grip, GRIPS};
+        for g in GRIPS {
+            let n = SKILLS.iter().filter(|s| s.fits(g)).count();
+            assert!(n >= 4, "{g:?}: {n}");
         }
         for s in &SKILLS {
             assert!(s.hands != 0 && s.hands & !ANY == 0, "{:?}", s.id);
             if s.row == 0 {
-                assert!(s.fits(Hand::One), "{:?}", s.id);
+                assert!(s.fits(Grip::Duel), "{:?}", s.id);
             }
         }
-        // 어느 갈래에서나 되는 것만은 아니다 — 갈래를 가르는 스킬이 있다.
-        assert!(SKILLS.iter().any(|s| s.hands == TWO) && SKILLS.iter().any(|s| s.hands == ONE));
+        // 한손으로는 방패가 있어야만 되는 것(방패 기술)·방패가 없어야만 되는 것(결투 기술).
+        let split = |with: Grip, without: Grip| {
+            SKILLS
+                .iter()
+                .filter(|s| s.fits(with) && !s.fits(without))
+                .count()
+        };
+        assert!(split(Grip::Shield, Grip::Duel) >= 2, "shield arts");
+        assert!(split(Grip::Duel, Grip::Shield) >= 2, "duelling arts");
+        assert!(SKILLS.iter().any(|s| s.hands == HEAVY), "the hammer's own");
+        assert!(SKILLS.iter().any(|s| s.hands == SHIELD));
+        // 망치는 물리 스킬을, 지팡이는 타입 있는 스킬을 쥔다 — 지팡이로 쓰는 스킬에는 타입이 있다.
+        for s in SKILLS.iter().filter(|s| s.fits(Grip::Focus)) {
+            assert_ne!(s.kind, Kind::Physical, "{:?} in a staff's hands", s.id);
+        }
+        assert!(SKILLS
+            .iter()
+            .any(|s| s.fits(Grip::Heavy) && s.kind == Kind::Physical));
     }
 
     /// 0223 V2: 타입 있는 스킬은 게이지를 쌓고(물리는 0), 네 타입 모두 적어도 한 스킬이 싣는다 — 어느 타입도 판에서 못 고르는 일이 없다.
