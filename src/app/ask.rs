@@ -59,6 +59,10 @@ impl App {
             self.restart();
         }
         self.go(next);
+        // 줄이 준 가게(여벌을 잔불로 · 벼린 단을 거둠): 돌아온 커서는 묻기 전의 자리다 — 줄 안으로.
+        if yes && matches!(k, flow::Ask::Salvage(_) | flow::Ask::Recall(_)) {
+            self.cursor = self.cursor.min(self.shop_list().len().saturating_sub(1));
+        }
     }
 
     pub(super) fn draw_ask(&mut self, f: &Frame, k: flow::Ask) {

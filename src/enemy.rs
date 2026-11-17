@@ -968,7 +968,8 @@ impl Enemy {
         let Some((home, face)) = self.home else {
             return;
         };
-        let speed = self.def().speed;
+        // 묶이거나(뿌리 0223 V2) 느려진 몸은 달아날 때도 그만큼 — 걷는 적과 같은 `slow`.
+        let speed = self.def().speed * self.slow;
         let away = vec3(self.pos.x - player.x, 0.0, self.pos.z - player.z);
         let near = away.length() < GRAZE_FLEE_R;
         let from_home = vec3(self.pos.x - home.x, 0.0, self.pos.z - home.z);

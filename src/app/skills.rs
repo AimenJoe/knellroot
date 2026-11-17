@@ -1281,6 +1281,7 @@ impl App {
         }
         // 칸.
         let worn = self.progress.skills.0;
+        let sub_worn = self.progress.sub.map(|_| self.progress.sub_skills.0);
         let great = board.wearable_ult(self.progress.ult);
         let spots = spots();
         // 판의 길(0215): 칸 사이 선 — 칸보다 먼저(칸의 면이 끝을 덮는다).
@@ -1313,6 +1314,12 @@ impl App {
                     let slot = worn.iter().position(|x| *x == id);
                     if let (Some(slot), true) = (slot.filter(|_| board.learned(id)), whole) {
                         self.node_badge(c, half, u, k, &(slot + 1).to_string(), true);
+                    }
+                    // 부무기의 칸(0223 V3)에 끼운 스킬: 같은 귀퉁이 아래에 테만 금빛인 번호 — 주무기의 것(금빛 면)과 갈린다.
+                    let sub_slot = sub_worn.and_then(|sw| sw.iter().position(|x| *x == id));
+                    if let (Some(j), true) = (sub_slot.filter(|_| board.learned(id)), whole) {
+                        let drop = if slot.is_some() { u * 10.0 } else { 0.0 };
+                        self.sub_badge(c, half, u, k, &(j + 1).to_string(), drop);
                     }
                     if board.rank(e) >= PICK_RANK && whole {
                         let mark = pick_text(id, board.pick[id.index()]).0;
@@ -1439,6 +1446,21 @@ impl App {
         let ty = y + (side - self.ui.px(tk)) * 0.5;
         // 표지 글은 그림자 없이 또렷하게(작은 글 — 어두운 면 위 밝은 글, 금빛 면 위 어두운 글).
         self.ui.text(text, x + (side - tw) * 0.5, ty, tk, ink);
+    }
+
+    /// 부무기 칸에 끼운 스킬의 표지: 오른쪽 위 귀퉁이(주무기의 표지가 있으면 그 아래 `drop`) — 어두운 면 + 금빛 테·글.
+    fn sub_badge(&self, c: Vec2, half: f32, u: f32, k: f32, text: &str, drop: f32) {
+        let side = (u * 9.0).round();
+        let (x, y) = (
+            (c.x + half - side * 0.55).round(),
+            (c.y - half - side * 0.2 + drop).round(),
+        );
+        draw_rectangle(x - 1.0, y - 1.0, side + 2.0, side + 2.0, AMBER);
+        draw_rectangle(x, y, side, side, Color::new(0.07, 0.05, 0.09, 1.0));
+        let tk = 0.56 * k;
+        let tw = self.ui.width(text, tk);
+        let ty = y + (side - self.ui.px(tk)) * 0.5;
+        self.ui.text(text, x + (side - tw) * 0.5, ty, tk, AMBER);
     }
 
     /// 오른쪽: 고른 칸의 상세(또는 되돌리기 단추의 설명) + 아래 되돌리기 단추(화로).

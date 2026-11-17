@@ -1140,6 +1140,7 @@ impl App {
                         swap: pl.sub.map_or(touch::Kind::Swap, touch::attack_icon),
                         skills: [skill(0), skill(1)],
                         vacant: [0, 1].map(|i| pl.skill.rank[i] == 0),
+                        unfit: [0, 1].map(|i| pl.skill.rank[i] == 0 && pl.skill.known[i] > 0),
                         active: [0, 1].map(|i| self.world.skill_active(i)),
                         ult: touch::ult_icon(pl.skill.ult),
                     },

@@ -1070,6 +1070,7 @@ impl App {
     /// 월드 사건·상태 변화 → 소리(0064 M5). 월드는 소리를 모른다 — 여기서만 듣는다.
     pub(super) fn world_sounds(&mut self, events: &[Event]) {
         use crate::sfx::Id;
+        let mut typed: Vec<Id> = Vec::new();
         for e in events {
             let id = match e {
                 Event::Swing => Id::Swing,
@@ -1158,6 +1159,16 @@ impl App {
                 Event::Flurry { .. } => Id::Beat3,
                 _ => continue,
             };
+            // 타입의 일(0223 V2)은 떼에서 한 틱에 여럿이 겹친다(스물이 한꺼번에 울린다) — 같은 소리는 틱에 한 번만.
+            if matches!(
+                e,
+                Event::Ail { .. } | Event::Toll { .. } | Event::AilBurst { .. }
+            ) {
+                if typed.contains(&id) {
+                    continue;
+                }
+                typed.push(id);
+            }
             self.snd(id);
             if id == Id::Hit {
                 self.snd(Id::Thwack);

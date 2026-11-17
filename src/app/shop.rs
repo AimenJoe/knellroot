@@ -53,7 +53,7 @@ fn weapon_index(w: weapons::Id) -> u8 {
 }
 
 impl App {
-    fn shop_list(&self) -> Vec<ShopRow> {
+    pub(super) fn shop_list(&self) -> Vec<ShopRow> {
         let shelf = crate::growth::shelf(
             &self.progress.owned,
             &self.progress.growth,

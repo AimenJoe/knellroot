@@ -995,6 +995,15 @@ impl App {
                     // "착용 중"은 낀 물건에만(사장 2026-11-07, 0085) — 빈 칸·맨손은 "아무것도 안 낌"이라 커서만 거기 둔다.
                     let mark = match c {
                         _ if c == here && wears_something(c) => s.equip_worn.to_string(),
+                        // 무기 칸 둘(0223): 다른 칸에 든 것은 그 칸의 이름 — 고르면 둘이 맞바뀐다는 것이 읽힌다(장신구 칸과 같은 꼴).
+                        Cand::Weapon(w) if slot == 0 && self.progress.sub == Some(w) => {
+                            s.menu_sub_weapon.to_string()
+                        }
+                        Cand::Weapon(w)
+                            if slot == SUB_SLOT && w == self.weapon && wears_something(c) =>
+                        {
+                            s.menu_weapon.to_string()
+                        }
                         Cand::Charm(id) => self
                             .progress
                             .worn
@@ -1112,9 +1121,11 @@ impl App {
         let s = s();
         let now_stats = self.progress.stats();
         // 벼린 단(0180)은 그 무기를 들었을 때만 — 후보마다 그 무기를 든 능력치로 센다.
-        let numbers = |id: weapons::Id| {
+        // 옵션(0223 V4)도 든 것의 것만 먹는다 — `inst`가 그 아이템(여벌이면 그것, 아니면 그 바탕의 지금 것)이다.
+        let numbers = |id: weapons::Id, inst: Option<u32>| {
             let mut p = self.progress.clone();
             p.weapon = Some(id);
+            p.bag.gear.main = inst.or_else(|| item_at(Cand::Weapon(id), &p.bag).map(|(i, _)| i));
             let st = p.stats();
             weapon_numbers(id.def(), &st.tune(&self.t), &st)
         };
@@ -1145,8 +1156,15 @@ impl App {
                 weapons::Hand::Ranged => s.hand_ranged,
             };
             lines.push(Ln::Pair(s.hand_label.to_string(), hand.to_string(), INK));
-            let now = numbers(self.weapon);
-            for (v, ch) in weapon_compare(&now, &numbers(id)) {
+            // 견주는 상대는 그 칸에 지금 든 것: 주무기 칸 = 주무기, 부무기 칸 = 부무기(없으면 견줄 것이 없다 — 화살표 없이 값만).
+            let held = if slot == SUB_SLOT {
+                self.progress.sub
+            } else {
+                Some(self.weapon)
+            };
+            let then = numbers(id, inst.map(|(i, _)| i));
+            let now = held.map_or_else(|| then.clone(), |w| numbers(w, None));
+            for (v, ch) in weapon_compare(&now, &then) {
                 let was = now.iter().find(|a| a.line == v.line);
                 let (val, col) = match (was, ch.filter(|c| picking && *c != Change::Same)) {
                     (Some(a), Some(c)) => {

@@ -346,7 +346,11 @@ impl App {
             (0.0, s.status_levels.to_string()),
             (
                 HEAD + LEVEL_H * n as f32 + GROUP_GAP,
-                s.status_skills.to_string(),
+                // 부무기가 있으면 칸이 무기마다 따로다(0223 V3) — 이 줄들이 어느 무기의 칸인지 머리글이 말한다.
+                match self.progress.sub {
+                    Some(_) => format!("{} — {}", s.status_skills, weapon_name(self.weapon)),
+                    None => s.status_skills.to_string(),
+                },
             ),
         ];
         let board = self.board();

@@ -86,6 +86,8 @@ pub struct View {
     pub skills: [(Kind, f32); 2],
     /// 빈 스킬 칸(0166 — 아직 배운 스킬이 없다): 그림 없이 흐린 테만.
     pub vacant: [bool; 2],
+    /// 배웠지만 지금 든 무기로는 못 쓰는 스킬(0223 V3): 빈 칸이되 아주 흐린 그림을 남긴다 — 사라진 것이 아니다(HUD와 같은 꼴).
+    pub unfit: [bool; 2],
     /// 스킬이 남긴 것이 이어지는 몫 0..1(0158 G2 — 되울림·잔불 흩기: 버튼 둘레의 줄어드는 테).
     pub active: [f32; 2],
     /// 큰 기술 버튼의 그림(끼운 하나, 0158 G2).
@@ -1024,12 +1026,22 @@ pub fn draw(o: &Overlay, v: &View) {
             Kind::Skill2 => v.vacant[1],
             _ => false,
         };
+        let unfit = match b.kind {
+            Kind::Skill1 => v.unfit[0],
+            Kind::Skill2 => v.unfit[1],
+            _ => false,
+        };
         if !vacant {
             icon(kind, b.center, b.radius, dim, tint);
+        } else if unfit {
+            icon(kind, b.center, b.radius, UNFIT_DIM, tint);
         }
     }
     draw_aim(o.aim);
 }
+
+/// 든 무기로 못 쓰는 스킬의 그림 밝기(대기 중보다 어둡게 — `hud`의 같은 값).
+const UNFIT_DIM: f32 = 0.18;
 
 /// 끌어 조준(0217): 짚은 버튼 둘레의 고리 + 손가락을 따라가는 손잡이 + 가운데에서 손잡이까지의 줄.
 /// 가운데 취소 자리로 돌아오면 모두 흐려지고 손잡이에 ✕ — 떼면 하지 않는다. 빨강은 쓰지 않는다(위험 예고의 색).
