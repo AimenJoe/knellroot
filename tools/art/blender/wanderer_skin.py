@@ -801,6 +801,45 @@ def face_still(arm, name, poses):
 
 TRAVEL_TURNS = {}  # 동작 → `face_travel`이 돌린 각
 
+# 땅 위로(0239 — 사장 "머리가 큰게 문제구나 … 조금 점프 해서 구르면 괜찮나?"): 원본 구르기는 어른 몸의 것이라 큰 머리가 땅에 박혔다 —
+# 원본 프레임마다 몸의 가장 낮은 정점을 재니 머리가 바닥 아래 0.57 m(키의 40%, 12~14), 닿을 때 다리·꼬리가 0.3 m(20~24).
+# 그 원본을 쓰는 동작들의 엉덩이를 원본 프레임마다 "바닥 위로 필요한 만큼"을 덮는 매끈한 곡선(필요량마다 종 모양을 겹친 위 테두리)만큼
+# 올린다 — 저절로 뛰어들며 구르는 꼴이 된다. 같은 원본이라 구르기 → 일어나기의 이음매도 같은 곡선. (원본 → 그 원본을 쓰는 동작들)
+GROUND_CLEAR = {"Roll_Dodge_3": ("dodge", "dodge_rise")}
+CLEAR_MARGIN = 0.02  # m — 바닥에서 띄우는 몫
+CLEAR_WIDTH = 4.0  # 원본 프레임 — 종 모양의 폭(넓을수록 느긋한 뜀)
+
+
+def clear_curve(arm, body, src):
+    """원본 `src`의 정수 프레임마다 올릴 높이(m, 세계) — 몸의 가장 낮은 정점이 바닥 + `CLEAR_MARGIN` 위에 오게, 매끈하게."""
+    sc = bpy.context.scene
+    arm.animation_data.action = bpy.data.actions[src]
+    dg = bpy.context.evaluated_depsgraph_get()
+    end = int(math.ceil(bpy.data.actions[src].frame_range[1]))
+    need = []
+    for f in range(end + 1):
+        for pb in arm.pose.bones:
+            pb.location = (0, 0, 0)
+            pb.rotation_quaternion = (1, 0, 0, 0)
+            pb.scale = (1, 1, 1)
+        sc.frame_set(f)
+        dg.update()
+        ev = body.evaluated_get(dg)
+        me = ev.to_mesh()
+        low = min((body.matrix_world @ v.co).z for v in me.vertices)
+        ev.to_mesh_clear()
+        need.append(max(0.0, CLEAR_MARGIN - low) if low < CLEAR_MARGIN else 0.0)
+    curve = [max([r * math.exp(-((f - k) / CLEAR_WIDTH) ** 2) for k, r in enumerate(need)] + [0.0]) for f in range(end + 1)]
+    print(f"[skin] clear {src}: need max {max(need):.2f} m at {need.index(max(need))}, lift max {max(curve):.2f} m")
+    return curve
+
+
+def lift_at(curve, f):
+    i = min(max(int(math.floor(f)), 0), len(curve) - 1)
+    j = min(i + 1, len(curve) - 1)
+    u = min(max(f - i, 0.0), 1.0)
+    return curve[i] + (curve[j] - curve[i]) * u
+
 
 def face_travel(arm, name, poses, hips, way):
     """`FACE_TRAVEL`: 처음 → 끝 엉덩이 이동이 몸의 앞(또는 뒤)이 되게 몸 전체를 한 각만큼 돌린다(다른 동작 이름이면 그 각)."""
@@ -1120,9 +1159,14 @@ def make_actions(arm, body):
     made = []
     stand = None  # 서기의 엉덩이 높이(첫 줄 `idle`에서 잰다 — `FLAT`이 쓴다)
     ends = {}  # 동작마다 끝의 몸 쪽(`CHAIN`)
+    lifts = {src: clear_curve(arm, body, src) for src in GROUND_CLEAR}
+    up = arm.matrix_world.inverted().to_3x3() @ Vector((0.0, 0.0, 1.0))  # 세계 1 m 위 = 뼈대 공간의 이만큼
     for name, src, spec in CLIPS:
         anchors = anchors_of(arm, name, src, spec)
         n, poses, hips, hands = sample(arm, src, anchors, UPRIGHT.get(name), LEAN_CAP.get(name))
+        if name in GROUND_CLEAR.get(src, ()):
+            for k in range(len(hips)):
+                hips[k] = hips[k] + up * lift_at(lifts[src], src_at(anchors, k / OUT_FPS))
         if name in FACE_TRAVEL:
             face_travel(arm, name, poses, hips, FACE_TRAVEL[name])
         strip_travel(arm, poses, hips, name in LOOPS)
@@ -1245,7 +1289,8 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, sheet_dir=None):
             k = int(os.environ.get("KR_SHEET_N", "6"))
             for i in range(k):
                 preview(arm, objs, os.path.join(sheet_dir, f"{name}_{i}.png"), name, n * i / (k - 1) / OUT_FPS,
-                        yaw=-60.0, elev=25.0, frame=(Vector((0, 0, 0.55)), 2.4))
+                        yaw=float(os.environ.get("KR_SHEET_YAW", "-60")), elev=float(os.environ.get("KR_SHEET_ELEV", "25")),
+                        frame=(Vector((0, 0, 0.55)), 2.4))
     return path
 
 
