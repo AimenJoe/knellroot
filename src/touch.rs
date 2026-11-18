@@ -260,6 +260,9 @@ pub struct Ctx {
     pub charging: bool,
     /// 원거리 무기를 들었다(0223) — 쥐고 끄는 동안 모으는 탄의 버튼이 평타(`Attack` — 사격)다. 아니면 특수(`Cast` — 마법 탄).
     pub ranged: bool,
+    /// 자유 숄더뷰다(0229): 겨누는 버튼을 끌면 쪽이 아니라 **시점이 돈다** — 겨누는 것은 화면 가운데 크로스헤어(모바일 TPS의 쏘기
+    /// 버튼 끌기). 떼면 그 일이 크로스헤어 쪽으로, 가운데로 돌아와 떼는 취소는 없다(손가락 자리가 쪽을 말하지 않으니).
+    pub look_aim: bool,
 }
 
 impl Ctx {
@@ -276,6 +279,7 @@ impl Ctx {
         swap: true,
         charging: false,
         ranged: false,
+        look_aim: false,
     };
 
     /// 쥐고 끄는 동안 모으는 탄의 버튼(0217 → 0223).
@@ -310,6 +314,8 @@ struct Aimer {
     out: bool,
     /// 마지막으로 겨눈 쪽(취소 자리로 돌아와도 모으던 탄은 이쪽으로).
     last: Vec2,
+    /// 지난 프레임의 손가락 자리(0229 — 숄더뷰에서 끈 만큼 시점을 돌린다).
+    prev: Vec2,
 }
 
 /// 끌어 조준의 반지름(스틱과 같은 크기)에 대해: 넘으면 "끌었다", 끈 뒤 이 안으로 돌아와 떼면 취소.
@@ -335,6 +341,21 @@ pub fn aim_end(out: bool, d: Vec2, r: f32) -> AimEnd {
         AimEnd::Cancel
     } else {
         AimEnd::Fire(aim_dir(d))
+    }
+}
+
+/// 숄더뷰에서 겨누는 버튼을 뗐을 때(0229): 누르나(모으던 탄은 누름 없이 — 월드가 뗀 것을 보고 낸다), 쪽을 카메라 앞으로
+/// 못 박나(쪽이 있는 스킬 — 원거리는 월드가 크로스헤어·카메라 앞으로 이미 겨눈다).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FreeEnd {
+    pub press: bool,
+    pub ahead: bool,
+}
+
+pub fn free_aim_end(kind: Kind, charging: bool) -> FreeEnd {
+    FreeEnd {
+        press: !charging,
+        ahead: matches!(kind, Kind::Skill1 | Kind::Skill2),
     }
 }
 
@@ -572,6 +593,7 @@ impl Touch {
                                 pos: t.position,
                                 out: false,
                                 last: Vec2::ZERO,
+                                prev: t.position,
                             });
                             if b.kind == self.ctx.shot() {
                                 match b.kind {
@@ -636,13 +658,35 @@ impl Touch {
         };
         // 끌어 조준(0217): 쥐고 있는 동안은 끈 쪽(끌기 전에는 가까운 적), 떼면 그 일 — 원거리를 모으던 중이면 누름 없이(월드가 뗀
         // 것을 보고 모은 탄을 낸다).
+        let mut aim_look = Vec2::ZERO;
         if let Some(m) = self.aimer {
             let r = stick_radius(w, h);
             let d = m.pos - m.center;
             let out = m.out || d.length() > r * AIM_OUT;
             let still = alive(Some(m.id)).is_some();
             let charging = m.kind == self.ctx.shot() && self.ctx.charging;
-            if still {
+            if self.ctx.look_aim {
+                // 숄더뷰(0229): 끈 만큼 시점(`look` — 화면 오른쪽 반 끌기와 같은 셈), 겨누는 쪽은 크로스헤어.
+                aim_look = m.pos - m.prev;
+                if still {
+                    a.aim_hold = m.kind == self.ctx.shot();
+                    self.aimer = Some(Aimer {
+                        out,
+                        prev: m.pos,
+                        ..m
+                    });
+                } else {
+                    self.aimer = None;
+                    let end = free_aim_end(m.kind, charging);
+                    if end.press {
+                        press(&mut a, m.kind);
+                    }
+                    if end.ahead {
+                        a.aim = vec2(0.0, 1.0);
+                        a.aim_drag = true;
+                    }
+                }
+            } else if still {
                 let mut m = Aimer { out, ..m };
                 if out && d.length() > r * AIM_CANCEL {
                     m.last = aim_dir(d);
@@ -709,7 +753,7 @@ impl Touch {
             })
             .collect();
         let (look, zoom) = look_from(&self.lookers, &now, &mut self.pinch);
-        a.look = look;
+        a.look = look + aim_look;
         a.zoom = zoom;
         let mut kept = Vec::new();
         for ((id, _), p) in self.lookers.iter().zip(&now) {
@@ -727,6 +771,10 @@ impl Touch {
     /// 끌어 겨누는 중인 버튼(0217 — 끈 뒤, 취소 자리 밖) — 렌더가 땅 위 미리보기를 그린다.
     pub fn aiming(&self) -> Option<Kind> {
         let r = stick_radius(screen_width(), screen_height());
+        // 숄더뷰(0229)는 땅에 그리지 않는다 — 크로스헤어가 표시다.
+        if self.ctx.look_aim {
+            return None;
+        }
         self.aimer
             .filter(|m| m.out && (m.pos - m.center).length() > r * AIM_CANCEL)
             .map(|m| m.kind)
@@ -739,7 +787,9 @@ impl Touch {
             stick: self.stick.map(|s| (s.origin, s.pos)),
             aim: self.aimer.filter(|m| m.out).map(|m| {
                 let d = m.pos - m.center;
-                (m.center, m.pos, r, d.length() <= r * AIM_CANCEL)
+                // 숄더뷰(0229)에는 취소 자리가 없다.
+                let cancel = !self.ctx.look_aim && d.length() <= r * AIM_CANCEL;
+                (m.center, m.pos, r, cancel)
             }),
             stick_radius: stick_radius(w, h),
             buttons: layout(w, h, self.ctx),
@@ -1703,6 +1753,20 @@ pub fn icon_at(k: Kind, c: Vec2, px: f32, dim: f32, tint: Color) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0229: 숄더뷰에서 겨누는 버튼을 떼면 누른다(모으던 탄은 누름 없이), 쪽이 있는 스킬만 카메라 앞으로 못 박는다 —
+    /// 원거리의 쪽은 월드가 크로스헤어로 정한다.
+    #[test]
+    fn in_the_shoulder_view_a_dragged_button_fires_where_the_crosshair_is() {
+        let e = free_aim_end(Kind::Cast, false);
+        assert!(e.press && !e.ahead);
+        assert!(
+            !free_aim_end(Kind::Attack, true).press,
+            "a charged shot goes out by itself"
+        );
+        let s = free_aim_end(Kind::Skill2, false);
+        assert!(s.press && s.ahead);
+    }
 
     /// 0146 도트 픽토그램: 그림마다 13×13, `#`·`.`만, 서로 다르고(같은 그림 둘이면 버튼을 못 가른다), 칸이 너무 적지도(안 보임)
     /// 너무 꽉 차지도(덩어리) 않다. 왼쪽 돌리기는 오른쪽 돌리기의 거울상. 칸 크기는 정수 px이고 그림이 버튼 안에 든다.
