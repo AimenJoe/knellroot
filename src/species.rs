@@ -490,6 +490,7 @@ pub static REPEATER: Def = Def {
     embers: 2,
     // 같은 박자로 되풀이하는 몸 — 울림이 잘 든다.
     ail: [1.0, 1.0, 1.5, 1.0],
+    model: "repeater",
     ..HUSK
 };
 
@@ -517,7 +518,7 @@ pub static PACKBEARER: Def = Def {
     },
     embers: 3,
     ail: [1.0, 0.75, 1.0, 1.5],
-    model: "shellback",
+    model: "packbearer",
     ..THORN
 };
 

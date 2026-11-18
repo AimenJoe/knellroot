@@ -100,6 +100,7 @@ for _ in range(10):
     r = (lo_r + hi_r) / 2
     cand = make_low(r)
     n = gltf_verts(cand)
+    print(f"[meshy_convert] ratio {r:.4f} -> gltf verts {n}")
     if n <= target:
         if best:
             bpy.data.objects.remove(best[1])
@@ -107,6 +108,7 @@ for _ in range(10):
     else:
         bpy.data.objects.remove(cand)
         hi_r = r
+assert best, f"정점 {target} 아래로 못 줄였다 — 위 줄의 비율·정점을 보고 목표를 올린다"
 low = best[1]
 for p in low.data.polygons:
     p.use_smooth = True

@@ -113,10 +113,20 @@ impl Renderer {
         if let Some(e) = self.lib.get(model) {
             let (anim, at) = enemy_anim(en, model, e, w.time, stage);
             // 종 내던지기(0133): 종이 손을 떠난 뒤엔 손의 종을 감춘다(날아가는·떨어진 종은 따로 그린다).
-            let hide = hurl_bell(en)
+            let mut hide: Vec<(usize, Quat, Vec3)> = hurl_bell(en)
                 .and(e.model.node("bell"))
-                .map(|n| (n, Quat::IDENTITY, Vec3::ZERO));
-            e.model.pose_with(anim, at, hide.as_slice(), &mut self.pose);
+                .map(|n| (n, Quat::IDENTITY, Vec3::ZERO))
+                .into_iter()
+                .collect();
+            // 등짐꾼의 짐(0216 W2 → 0234): 모델의 `load` 부위 — 자세가 처음 깨지면 깨져 사라진다.
+            if en.load_lost {
+                hide.extend(
+                    e.model
+                        .node("load")
+                        .map(|n| (n, Quat::IDENTITY, Vec3::ZERO)),
+                );
+            }
+            e.model.pose_with(anim, at, &hide, &mut self.pose);
             let inst = Mat4::from_translation(p + sink)
                 * Mat4::from_quat(tilt)
                 * Mat4::from_rotation_y(en.facing)
@@ -791,6 +801,7 @@ fn enemy_anim(
 /// Blender 스크립트(`tools/art/blender/<모델>.py`)의 키 시각과 같다 — 동작을 고치면 여기도. 표에 없으면 동작의 40%·50%.
 pub(super) const STRIKE_KEYS: &[(&str, &str, f32, f32)] = &[
     ("root_husk", "attack", 0.5, 0.62),
+    ("repeater", "attack", 0.5, 0.62), // 잔재의 동작 표 그대로(0234)
     ("gatekeeper", "slam", 0.9, 1.0),
     ("gatekeeper", "wave", 1.0, 1.12),
     ("shellback", "attack", 0.6, 0.72),
