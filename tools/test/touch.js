@@ -118,6 +118,15 @@ async function main() {
     await shot('t01c2-shoulder-aim-drag');
     await touch('touchEnd', []); await page.waitForTimeout(300);
   }
+  // 숄더뷰에서 버튼(패링)을 누른 채 끌어도 시점이 돈다(0236 — 버튼이 오른쪽을 덮어도 돌릴 자리가 모자라지 않게).
+  {
+    const c = b.parry;
+    await touch('touchStart', [c]); await page.waitForTimeout(50);
+    for (let i = 1; i <= 8; i++) { await touch('touchMove', [[c[0] - 18 * i, c[1] - 4 * i]]); await page.waitForTimeout(30); }
+    await page.waitForTimeout(150);
+    await shot('t01c3-shoulder-button-drag');
+    await touch('touchEnd', []); await page.waitForTimeout(300);
+  }
   await tap(b.view); await page.waitForTimeout(800);
   await shot('t01d-back-to-quarter');
   // 스틱: 왼쪽 아래에 대고 위로 끌어 0.8초 걷기.
@@ -148,6 +157,8 @@ async function main() {
     await touch('touchEnd', []); await page.waitForTimeout(300);
   }
   // 땅 돌리기 오른쪽 ↷(0012·0017 — 카메라가 오른쪽으로): 도는 중 · 다 돈 뒤(버튼이 대기로 옅어짐).
+  // 락온 중에는 돌리기 버튼이 숨는다(0236 — 월드가 막는다) — 락온을 풀고 누른다.
+  await tap(b.lock); await page.waitForTimeout(500);
   await tap(b.turn_right); await page.waitForTimeout(120);
   await shot('t08-turn-cw');
   await page.waitForTimeout(600);

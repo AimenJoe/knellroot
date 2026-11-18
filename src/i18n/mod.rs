@@ -507,6 +507,7 @@ pub struct Strings {
     pub menu_tell_timing: &'static str,
     pub menu_look_yaw: &'static str,
     pub menu_look_pitch: &'static str,
+    pub menu_touch_size: &'static str,
     /// 멈춤의 무기 줄(0051, "{0}" = 무기 이름)과 무기 이름.
     pub menu_weapon: &'static str,
     /// 장비 탭의 부무기 칸 이름(0223).
@@ -661,6 +662,7 @@ pub struct Strings {
     pub set_tell_timing_d: &'static str,
     pub set_look_yaw_d: &'static str,
     pub set_look_pitch_d: &'static str,
+    pub set_touch_size_d: &'static str,
     pub set_volume_d: &'static str,
     pub set_mouse_aim_d: &'static str,
     pub set_cursor_rest_d: &'static str,
@@ -1368,6 +1370,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.menu_tell_timing,
         s.menu_look_yaw,
         s.menu_look_pitch,
+        s.menu_touch_size,
         s.menu_weapon,
         s.menu_sub_weapon,
         s.shield_pilgrim,
@@ -1508,6 +1511,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.set_tell_timing_d,
         s.set_look_yaw_d,
         s.set_look_pitch_d,
+        s.set_touch_size_d,
         s.set_volume_d,
         s.set_mouse_aim_d,
         s.set_cursor_rest_d,

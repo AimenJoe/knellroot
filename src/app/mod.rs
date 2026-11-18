@@ -187,6 +187,8 @@ pub struct App {
     tell_timing: bool,
     /// 자유 시점 돌리기 민감도(가로, 세로) — `prefs::LOOK_SENS`의 자리(0191).
     look_sens: (u8, u8),
+    /// 터치 버튼 크기 — `prefs::TOUCH_SIZES`의 자리(0236).
+    touch_size: u8,
     sfx: Option<crate::sfx::Sfx>,
     was_dodging: bool,
     /// 그림 이펙트(0141): 월드 사건·상태 변화를 듣고 입자를 낸다 — 월드는 모른다(소리와 같은 길).
@@ -304,6 +306,7 @@ impl App {
         let mut tells = crate::prefs::TELLS_DEFAULT;
         let mut tell_timing = false;
         let mut look_sens = (crate::prefs::LOOK_DEFAULT, crate::prefs::LOOK_DEFAULT);
+        let mut touch_size = crate::prefs::TOUCH_SIZE_DEFAULT;
         if let Some(p) = crate::prefs::load() {
             if let Some(l) = p.lang {
                 i18n::set_lang(l);
@@ -315,8 +318,10 @@ impl App {
             tells = p.tells;
             tell_timing = p.tell_timing;
             look_sens = p.look;
+            touch_size = p.touch_size;
             legacy_weapon = p.weapon;
         }
+        crate::touch::set_size(crate::prefs::TOUCH_SIZES[touch_size as usize]);
         // 기록 슬롯(0066): 마지막으로 쓴 슬롯의 기록. 든 무기는 기록에 — 없으면(옛 슬롯 1) 예전 prefs 칸 21의 값.
         let slot = crate::save::last_slot();
         let progress = crate::save::load(slot);
@@ -402,6 +407,7 @@ impl App {
             tells,
             tell_timing,
             look_sens,
+            touch_size,
             sfx: None,
             was_dodging: false,
             fx: crate::fx::Fx::default(),
@@ -644,6 +650,7 @@ impl App {
             tells: self.tells,
             tell_timing: self.tell_timing,
             look: self.look_sens,
+            touch_size: self.touch_size,
             // PC만 기억한다(0135) — 웹은 브라우저가 Esc로 끌 수 있고 다음에 켤 때 사용자 입력 없이 못 연다.
             fullscreen: crate::DESKTOP && crate::screen::active(),
             // 든 무기는 슬롯 기록으로 옮겼다(0066) — 옛 칸은 처음 읽은 값 그대로 둔다(옛 슬롯 1의 기본값).
@@ -723,6 +730,9 @@ impl App {
             sight_skills: [0, 1].map(|i| {
                 pl.skill.rank[i] > 0 && self.world.skill_eff(pl.skill.worn[i]).skill.form.sighted()
             }),
+            // 0236: 쿼터뷰가 아니면 땅 돌리기를 숨긴다(숄더뷰는 끌기, 락온은 월드가 막는다), 끼운 스킬이 없는 칸도.
+            hide_turn: self.cam.mode != Mode::Quarter || self.world.lock.is_some(),
+            bare: [0, 1].map(|i| pl.skill.known[i] == 0),
         });
         self.input.poll(self.scene().is_menu());
         // F11(PC, 0135): 어느 장면에서나 창 ↔ 전체 화면. 창 일이라 `Actions`(게임 동작)에 넣지 않는다.

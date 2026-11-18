@@ -507,6 +507,8 @@ pub enum SettingsRow {
     /// 자유 시점 돌리기 민감도 가로·세로(0191 — 오른쪽 스틱·마우스·화면 끌기, `prefs::LOOK_SENS`).
     LookYaw,
     LookPitch,
+    /// 터치 버튼 크기(0236 — `prefs::TOUCH_SIZES`) — 마우스가 없을 법한(터치가 주인) 기기에서만.
+    TouchSize,
     /// 마우스 조준 켬/끔·커서 쉼 시간·조준 표시 크기(0058) — 마우스가 있을 법한 기기에서만.
     MouseAim,
     CursorRest,
@@ -532,6 +534,9 @@ pub fn settings_rows(fullscreen: bool, mouse: bool, host: Host) -> Vec<SettingsR
     v.push(SettingsRow::TellTiming);
     v.push(SettingsRow::Volume);
     v.extend([SettingsRow::LookYaw, SettingsRow::LookPitch]);
+    if !mouse {
+        v.push(SettingsRow::TouchSize);
+    }
     if mouse {
         v.extend([
             SettingsRow::MouseAim,
@@ -564,6 +569,7 @@ pub fn choose_settings(row: SettingsRow) -> Option<Go> {
         | SettingsRow::TellTiming
         | SettingsRow::LookYaw
         | SettingsRow::LookPitch
+        | SettingsRow::TouchSize
         | SettingsRow::MouseAim
         | SettingsRow::CursorRest
         | SettingsRow::Reticle => None,
@@ -834,6 +840,9 @@ mod tests {
         }
         assert!(!settings_rows(false, true, Host::Title).contains(&SettingsRow::Fullscreen));
         assert!(!settings_rows(true, false, Host::Title).contains(&SettingsRow::MouseAim));
+        // 터치 버튼 크기(0236)는 터치가 주인인 기기에서만 — 마우스 줄과 엇갈린다.
+        assert!(settings_rows(true, false, Host::Title).contains(&SettingsRow::TouchSize));
+        assert!(!settings_rows(true, true, Host::Title).contains(&SettingsRow::TouchSize));
         // 버리는 일은 한 번 묻는다(KB): 처음부터·타이틀로 → 묻는 창, 답해야 판을 다시 세운다. 값 줄은 어디로도 가지 않는다.
         assert_eq!(
             choose_settings(SettingsRow::Restart),

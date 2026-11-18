@@ -17,6 +17,7 @@ fn row_desc(r: SettingsRow) -> &'static str {
         SettingsRow::TellTiming => s.set_tell_timing_d,
         SettingsRow::LookYaw => s.set_look_yaw_d,
         SettingsRow::LookPitch => s.set_look_pitch_d,
+        SettingsRow::TouchSize => s.set_touch_size_d,
         SettingsRow::MouseAim => s.set_mouse_aim_d,
         SettingsRow::CursorRest => s.set_cursor_rest_d,
         SettingsRow::Reticle => s.set_reticle_d,
@@ -64,6 +65,10 @@ impl App {
                 SettingsRow::LookPitch => ui::Row::step(
                     s.menu_look_pitch,
                     format!("{}%", crate::prefs::LOOK_SENS[self.look_sens.1 as usize]),
+                ),
+                SettingsRow::TouchSize => ui::Row::step(
+                    s.menu_touch_size,
+                    format!("{}%", crate::prefs::TOUCH_SIZES[self.touch_size as usize]),
                 ),
                 SettingsRow::MouseAim => ui::Row::step(s.menu_mouse_aim, on_off(mouse.on)),
                 SettingsRow::CursorRest => ui::Row::step(
@@ -134,6 +139,19 @@ impl App {
         self.save_prefs();
     }
 
+    /// 터치 버튼 크기 한 걸음(0236): 좌우는 끝에서 멈추고, 확인은 끝에서 첫 단계로 돈다.
+    fn step_touch_size(&mut self, step: i32, wrap: bool) {
+        let n = crate::prefs::TOUCH_SIZES.len() as i32;
+        let to = self.touch_size as i32 + step;
+        self.touch_size = if wrap {
+            to.rem_euclid(n)
+        } else {
+            to.clamp(0, n - 1)
+        } as u8;
+        crate::touch::set_size(crate::prefs::TOUCH_SIZES[self.touch_size as usize]);
+        self.save_prefs();
+    }
+
     pub(super) fn settings_act(&mut self, host: Host, out: Out) {
         let rows = Self::settings_rows(host);
         match out {
@@ -157,6 +175,7 @@ impl App {
                 Some(&r @ (SettingsRow::LookYaw | SettingsRow::LookPitch)) => {
                     self.step_look(r, step, false)
                 }
+                Some(SettingsRow::TouchSize) => self.step_touch_size(step, false),
                 Some(
                     &r @ (SettingsRow::MouseAim | SettingsRow::CursorRest | SettingsRow::Reticle),
                 ) => self.step_mouse(r, step),
@@ -186,6 +205,7 @@ impl App {
                     self.step_mouse(r, 1)
                 }
                 r @ (SettingsRow::LookYaw | SettingsRow::LookPitch) => self.step_look(r, 1, true),
+                SettingsRow::TouchSize => self.step_touch_size(1, true),
                 r => {
                     if let Some(go) = flow::choose_settings(r) {
                         self.go(go);
