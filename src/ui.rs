@@ -617,15 +617,39 @@ impl Ui {
             }
         }
         // 탭: 고른 탭은 몸과 같은 면 + 금빛 테(위·양옆), 머리 아래 선은 그 밑에서 끊긴다.
+        // 넘치면 굴린다(0232 — 고른 탭 둘레의 몇 개 + 양끝 ◀▶, 가려진 쪽에 할 것(민트 점)이 있으면 화살도 민트).
         let x0 = r.x + u * 10.0;
         let widths: Vec<f32> = tabs.iter().map(|t| self.width(t.0, 1.0)).collect();
-        let (pad, tk) = window_tabs(&widths, right - u * 8.0 - x0, u, k);
+        let arrow = self.width("◀", k) + u * 6.0;
+        let strip = window_tabs(&widths, right - u * 8.0 - x0, u, k, active, arrow);
+        let (pad, tk) = (strip.pad, k);
+        let rolled = strip.first > 0 || strip.last + 1 < tabs.len();
         let tpx = self.px(tk);
         let tab_y = r.y + (head - tpx) * 0.5 + u;
+        let hidden = Rect::new(-1.0e4, -1.0e4, 0.0, 0.0);
+        let mut rects = vec![hidden; tabs.len()];
         let mut x = x0;
+        if rolled {
+            let more = strip.first > 0;
+            let mark = tabs[..strip.first].iter().any(|t| t.1);
+            let ink = if mark {
+                MINT
+            } else if more {
+                INK
+            } else {
+                Color { a: 0.35, ..DIM }
+            };
+            self.text_center("◀", x + arrow * 0.5, tab_y, k, ink);
+            if more {
+                rects[strip.first - 1] = Rect::new(x, r.y, arrow, head);
+            }
+            x += arrow;
+        }
         let mut gap = (x, x);
-        let mut rects = Vec::with_capacity(tabs.len());
         for (i, (t, mark)) in tabs.iter().enumerate() {
+            if i < strip.first || i > strip.last {
+                continue;
+            }
             let w = (widths[i] * tk + pad).round();
             let top = r.y + u * 4.0;
             if i == active {
@@ -655,8 +679,25 @@ impl Ui {
                 draw_rectangle(dx - line, dy - line, d + line * 2.0, d + line * 2.0, PANEL);
                 draw_rectangle(dx, dy, d, d, MINT);
             }
-            rects.push(Rect::new(x, r.y, w, head));
+            rects[i] = Rect::new(x, r.y, w, head);
             x += w + u * 2.0;
+        }
+        if rolled {
+            let more = strip.last + 1 < tabs.len();
+            let mark = tabs[strip.last + 1..].iter().any(|t| t.1);
+            let ink = if mark {
+                MINT
+            } else if more {
+                INK
+            } else {
+                Color { a: 0.35, ..DIM }
+            };
+            // 오른쪽 화살은 탭 줄이 쓸 수 있는 끝(지갑 앞)에 — 보이는 탭이 적어도 자리가 움직이지 않게.
+            let ax = right - u * 8.0 - arrow;
+            self.text_center("▶", ax + arrow * 0.5, tab_y, k, ink);
+            if more {
+                rects[strip.last + 1] = Rect::new(ax, r.y, arrow, head);
+            }
         }
         let (l, rr, y) = (r.x + inset, r.x + r.w - inset, r.y + head);
         draw_rectangle(l, y, gap.0 - l, line, BORDER);
@@ -1080,19 +1121,69 @@ impl ListView {
     }
 }
 
-/// 큰 창의 탭 줄 맞추기(0164): 글 폭들(`widths` — 배율 1의 화면 px)을 `room`(화면 px) 안에. 돌려주는 것 = (탭 하나의 옆 여백 합, 글 배율).
-/// 넉넉하면 여백 18·글은 창의 배 `k` 그대로. 모자라면 여백을 6까지 줄이고, 그래도 넘치면 글을 줄인다(0.7배까지 — 그 아래는
-/// 읽히지 않으니 넘치게 두고 개발판 넘침 검사가 알린다). `u` = 기준 px 하나의 화면 크기(탭 사이 틈 2).
-pub fn window_tabs(widths: &[f32], room: f32, u: f32, k: f32) -> (f32, f32) {
-    let n = widths.len().max(1) as f32;
+/// 큰 창의 탭 줄(0164 → 0232): 글 폭들(`widths` — 배율 1의 화면 px)을 `room`(화면 px) 안에.
+/// 넉넉하면 여백 18·글은 창의 배 `k` 그대로. 모자라면 여백을 6까지 줄이고, 그래도 넘치면 **글을 줄이지 않고 굴린다** — 고른 탭이
+/// 보이게 이어진 몇 개만 그리고 양끝에 ◀▶(`arrow` = 화살 하나의 자리 폭, 틈 포함). 글을 줄이거나 자르면 무슨 탭인지 모른다
+/// (nail 0247 — 일시정지 탭 여덟에서 "メ…"). 보이는 창은 둘 중 하나로만 정한다 — 앞에서부터 들어가는 만큼 · 끝에서부터 들어가는 만큼
+/// (고른 탭이 그 안이면 그 창, 둘 다 아니면 고른 탭으로 끝나는 창): 탭을 넘길 때 머리 줄이 덜 움직이게.
+/// `u` = 기준 px 하나의 화면 크기(탭 사이 틈 2).
+pub fn window_tabs(
+    widths: &[f32],
+    room: f32,
+    u: f32,
+    k: f32,
+    active: usize,
+    arrow: f32,
+) -> TabStrip {
+    let n = widths.len();
+    let nf = n.max(1) as f32;
     let text: f32 = widths.iter().sum::<f32>() * k;
-    let gaps = (n - 1.0) * u * 2.0;
-    let pad = ((room - text - gaps) / n).clamp(u * 6.0, u * 18.0);
-    let over = text + gaps + pad * n - room;
-    if over <= 0.0 || text <= 0.0 {
-        return (pad, k);
+    let gap = u * 2.0;
+    let gaps = (nf - 1.0) * gap;
+    let pad = ((room - text - gaps) / nf).clamp(u * 6.0, u * 18.0);
+    let all = TabStrip {
+        pad,
+        first: 0,
+        last: n.saturating_sub(1),
+    };
+    if n == 0 || text + gaps + pad * nf <= room {
+        return all;
     }
-    (pad, (k * (text - over) / text).max(k * 0.7))
+    let pad = u * 10.0;
+    let inner = room - 2.0 * arrow;
+    let w = |i: usize| widths[i] * k + pad;
+    let fits = |a: usize, b: usize| (a..=b).map(w).sum::<f32>() + (b - a) as f32 * gap <= inner;
+    let active = active.min(n - 1);
+    // 앞의 창: 0부터 들어가는 데까지(하나는 늘).
+    let mut head = 0;
+    while head + 1 < n && fits(0, head + 1) {
+        head += 1;
+    }
+    // 끝의 창: 끝에서 들어가는 데까지.
+    let mut tail = n - 1;
+    while tail > 0 && fits(tail - 1, n - 1) {
+        tail -= 1;
+    }
+    let (first, last) = if active <= head {
+        (0, head)
+    } else if active >= tail {
+        (tail, n - 1)
+    } else {
+        let mut a = active;
+        while a > 0 && fits(a - 1, active) {
+            a -= 1;
+        }
+        (a, active)
+    };
+    TabStrip { pad, first, last }
+}
+
+/// 탭 줄의 모양(`window_tabs`): 탭 하나의 옆 여백 합 · 보이는 탭 `first..=last`(다 보이면 0..=n−1 — 아니면 양끝에 ◀▶).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TabStrip {
+    pub pad: f32,
+    pub first: usize,
+    pub last: usize,
 }
 
 pub fn menu_input(cursor: &mut usize, n: usize, up: bool, down: bool) {
@@ -1124,27 +1215,47 @@ pub fn all_text(s: &Strings) -> String {
 
 #[cfg(test)]
 mod tests {
-    /// 0164: 큰 창의 탭 줄 — 넉넉하면 여백 18·글 그대로, 모자라면 여백부터(6까지), 그래도 넘치면 글을 줄여 꼭 맞춘다.
+    /// 0164 → 0232: 큰 창의 탭 줄 — 넉넉하면 여백 18·다 보임, 모자라면 여백부터(6까지), 그래도 넘치면 글을 줄이지 않고
+    /// 굴린다: 고른 탭이 늘 보이고, 창은 "앞에서부터"·"끝에서부터" 둘 중 하나(그 사이일 때만 고른 탭으로 끝나는 창).
     #[test]
-    fn window_tabs_give_up_padding_before_text_size() {
-        use super::window_tabs;
+    fn window_tabs_give_up_padding_then_roll_instead_of_shrinking_text() {
+        use super::{window_tabs, TabStrip};
         let w = [26.0; 6];
+        let all = |pad| TabStrip {
+            pad,
+            first: 0,
+            last: 5,
+        };
         // 넉넉: 6 × (26 + 18) + 5 × 2 = 274.
-        assert_eq!(window_tabs(&w, 400.0, 1.0, 1.0), (18.0, 1.0));
-        // 조금 모자람: 글은 그대로, 여백만 준다 — 합이 꼭 방에 든다.
-        let (pad, k) = window_tabs(&w, 250.0, 1.0, 1.0);
-        assert_eq!(k, 1.0);
-        assert!((6.0..18.0).contains(&pad));
-        assert!((156.0 + 10.0 + pad * 6.0 - 250.0).abs() < 0.01);
-        // 많이 모자람: 여백은 바닥(6), 글이 준다 — 그래도 꼭 맞는다.
-        let (pad, k) = window_tabs(&w, 190.0, 1.0, 1.0);
-        assert_eq!(pad, 6.0);
-        assert!(k < 1.0 && k > 0.7);
-        assert!((156.0 * k + 10.0 + 36.0 - 190.0).abs() < 0.01);
-        // 글은 0.7배 아래로 줄지 않는다.
-        assert_eq!(window_tabs(&w, 50.0, 1.0, 1.0), (6.0, 0.7));
+        assert_eq!(window_tabs(&w, 400.0, 1.0, 1.0, 0, 8.0), all(18.0));
+        // 조금 모자람: 여백만 준다 — 합이 꼭 방에 든다, 다 보인다.
+        let st = window_tabs(&w, 250.0, 1.0, 1.0, 3, 8.0);
+        assert!((6.0..18.0).contains(&st.pad) && st.first == 0 && st.last == 5);
+        assert!((156.0 + 10.0 + st.pad * 6.0 - 250.0).abs() < 0.01);
+        // 많이 모자람: 굴린다(글은 그대로) — 고른 탭은 늘 창 안, 창은 방(화살 둘을 뺀)에 든다.
+        let w8 = [30.0, 26.0, 26.0, 26.0, 30.0, 26.0, 26.0, 26.0];
+        let room = 200.0;
+        let fits = |st: TabStrip| {
+            (st.first..=st.last).map(|i| w8[i] + st.pad).sum::<f32>()
+                + (st.last - st.first) as f32 * 2.0
+                <= room - 16.0
+        };
+        let mut windows = Vec::new();
+        for active in 0..8 {
+            let st = window_tabs(&w8, room, 1.0, 1.0, active, 8.0);
+            assert!(st.first <= active && active <= st.last, "{active}: {st:?}");
+            assert!(fits(st), "{active}: {st:?}");
+            windows.push((st.first, st.last));
+        }
+        windows.dedup();
+        assert!(
+            windows.len() <= 3,
+            "the strip barely moves while paging: {windows:?}"
+        );
+        assert_eq!(windows[0].0, 0);
+        assert_eq!(windows.last().unwrap().1, 7);
         // 화면 배율·좁은 창의 배가 같이 곱해진다.
-        assert_eq!(window_tabs(&w, 2000.0, 3.0, 0.8), (54.0, 0.8));
+        assert_eq!(window_tabs(&w, 2000.0, 3.0, 0.8, 0, 8.0), all(54.0));
     }
 
     /// 굴리는 목록(nail 0199 + 가장자리 한 줄 여유): 줄 높이만큼 끌면 한 줄, 끝에서 멈추고, 커서는 창 안(가장자리에서 한 줄 띄워)으로.
