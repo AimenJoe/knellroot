@@ -17,6 +17,9 @@ pub(super) struct Ctx<'a> {
     pub basis: Basis,
     /// 조준 스틱·커서 쪽(락온이면 없음, 0014·0058).
     pub aim: Option<Vec3>,
+    /// 숄더뷰의 크로스헤어 쪽(0230 — 크로스헤어의 적 `aim_sight` > 카메라 앞, 패드면 보조까지): 한 대상을 겨누는 스킬
+    /// (`Form::sighted`)이 쓴다. 숄더뷰가 아니거나 손가락으로 끈 쪽이 있으면 없음.
+    pub sight: Option<Vec3>,
     /// 공격·패링·내려찍기의 자동 조준(0014).
     pub auto_dir: Option<Vec3>,
     /// 마법·사격 쏘는 쪽(0048).
@@ -235,6 +238,7 @@ impl World {
         });
         // 0221의 늘 떠 있는 바닥 헤어라인은 걷었다(0222 — 사장 "조준 전 바닥의 헤어라인 필요없음"): 손이 겨눌 때만.
         self.aim_line = ranged_aim;
+        let sight = ranged_aim.filter(|_| a.aim_ahead && !dragged && target.is_none());
         // 마법 쏘는 쪽(0048): 조준 스틱 > 락온 대상 > `cast.range m` 안의 가장 가까운 적 > 바라보는 쪽.
         // 쇠뇌(0213, 사장 "자동 조준 없애고")는 가까운 적을 찾지 않는다 — 조준(스틱·커서) > 락온 > 바라보는 쪽. 겨누는 것이 손의 일.
         let charging_cast = matches!(self.player.state, PState::CastCharge { .. });
@@ -281,6 +285,7 @@ impl World {
             target,
             basis,
             aim,
+            sight,
             auto_dir,
             cast_dir,
             wpn,

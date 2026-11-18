@@ -260,9 +260,12 @@ pub struct Ctx {
     pub charging: bool,
     /// 원거리 무기를 들었다(0223) — 쥐고 끄는 동안 모으는 탄의 버튼이 평타(`Attack` — 사격)다. 아니면 특수(`Cast` — 마법 탄).
     pub ranged: bool,
-    /// 자유 숄더뷰다(0229): 겨누는 버튼을 끌면 쪽이 아니라 **시점이 돈다** — 겨누는 것은 화면 가운데 크로스헤어(모바일 TPS의 쏘기
-    /// 버튼 끌기). 떼면 그 일이 크로스헤어 쪽으로, 가운데로 돌아와 떼는 취소는 없다(손가락 자리가 쪽을 말하지 않으니).
+    /// 자유 숄더뷰다(0229): 한 대상을 겨누는 버튼(`looks`)은 끌면 쪽이 아니라 **시점이 돈다** — 겨누는 것은 화면 가운데
+    /// 크로스헤어(모바일 TPS의 쏘기 버튼 끌기). 떼면 그 일이 크로스헤어 쪽으로, 가운데로 돌아와 떼는 취소는 없다(손가락 자리가
+    /// 쪽을 말하지 않으니). 범위를 겨누는 버튼(수류탄·부채꼴·줄의 스킬)은 숄더뷰에서도 0217대로 땅 위에 끌어 겨눈다(0230).
     pub look_aim: bool,
+    /// 스킬 칸 둘에 한 대상을 겨누는 스킬(`skills::Form::sighted`)이 있다(0230).
+    pub sight_skills: [bool; 2],
 }
 
 impl Ctx {
@@ -280,6 +283,7 @@ impl Ctx {
         charging: false,
         ranged: false,
         look_aim: false,
+        sight_skills: [false; 2],
     };
 
     /// 쥐고 끄는 동안 모으는 탄의 버튼(0217 → 0223).
@@ -289,6 +293,19 @@ impl Ctx {
         } else {
             Kind::Cast
         }
+    }
+
+    /// 숄더뷰에서 이 버튼은 끌면 시점이 도나(0229·0230): 탄(원거리 무기의 평타 = 사격 · 근접 무기의 특수 = 마법 탄)과 한 대상을
+    /// 겨누는 스킬. 수류탄·범위 스킬은 아니다(땅 위에 끌어 겨눈다).
+    pub fn looks(&self, k: Kind) -> bool {
+        self.look_aim
+            && match k {
+                Kind::Attack => self.ranged,
+                Kind::Cast => !self.ranged,
+                Kind::Skill1 => self.sight_skills[0],
+                Kind::Skill2 => self.sight_skills[1],
+                _ => false,
+            }
     }
 
     /// 이 버튼은 끌어 겨누나(0217).
@@ -341,21 +358,6 @@ pub fn aim_end(out: bool, d: Vec2, r: f32) -> AimEnd {
         AimEnd::Cancel
     } else {
         AimEnd::Fire(aim_dir(d))
-    }
-}
-
-/// 숄더뷰에서 겨누는 버튼을 뗐을 때(0229): 누르나(모으던 탄은 누름 없이 — 월드가 뗀 것을 보고 낸다), 쪽을 카메라 앞으로
-/// 못 박나(쪽이 있는 스킬 — 원거리는 월드가 크로스헤어·카메라 앞으로 이미 겨눈다).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct FreeEnd {
-    pub press: bool,
-    pub ahead: bool,
-}
-
-pub fn free_aim_end(kind: Kind, charging: bool) -> FreeEnd {
-    FreeEnd {
-        press: !charging,
-        ahead: matches!(kind, Kind::Skill1 | Kind::Skill2),
     }
 }
 
@@ -665,7 +667,7 @@ impl Touch {
             let out = m.out || d.length() > r * AIM_OUT;
             let still = alive(Some(m.id)).is_some();
             let charging = m.kind == self.ctx.shot() && self.ctx.charging;
-            if self.ctx.look_aim {
+            if self.ctx.looks(m.kind) {
                 // 숄더뷰(0229): 끈 만큼 시점(`look` — 화면 오른쪽 반 끌기와 같은 셈), 겨누는 쪽은 크로스헤어.
                 aim_look = m.pos - m.prev;
                 if still {
@@ -677,13 +679,9 @@ impl Touch {
                     });
                 } else {
                     self.aimer = None;
-                    let end = free_aim_end(m.kind, charging);
-                    if end.press {
+                    // 모으던 탄은 누름 없이 — 월드가 뗀 것을 보고 낸다. 쪽은 월드가 크로스헤어로(`aim_sight`·`aim_ahead`).
+                    if !charging {
                         press(&mut a, m.kind);
-                    }
-                    if end.ahead {
-                        a.aim = vec2(0.0, 1.0);
-                        a.aim_drag = true;
                     }
                 }
             } else if still {
@@ -771,11 +769,9 @@ impl Touch {
     /// 끌어 겨누는 중인 버튼(0217 — 끈 뒤, 취소 자리 밖) — 렌더가 땅 위 미리보기를 그린다.
     pub fn aiming(&self) -> Option<Kind> {
         let r = stick_radius(screen_width(), screen_height());
-        // 숄더뷰(0229)는 땅에 그리지 않는다 — 크로스헤어가 표시다.
-        if self.ctx.look_aim {
-            return None;
-        }
+        // 숄더뷰에서 한 대상을 겨누는 버튼(0229·0230)은 땅에 그리지 않는다 — 크로스헤어가 표시다.
         self.aimer
+            .filter(|m| !self.ctx.looks(m.kind))
             .filter(|m| m.out && (m.pos - m.center).length() > r * AIM_CANCEL)
             .map(|m| m.kind)
     }
@@ -788,7 +784,7 @@ impl Touch {
             aim: self.aimer.filter(|m| m.out).map(|m| {
                 let d = m.pos - m.center;
                 // 숄더뷰(0229)에는 취소 자리가 없다.
-                let cancel = !self.ctx.look_aim && d.length() <= r * AIM_CANCEL;
+                let cancel = !self.ctx.looks(m.kind) && d.length() <= r * AIM_CANCEL;
                 (m.center, m.pos, r, cancel)
             }),
             stick_radius: stick_radius(w, h),
@@ -1754,18 +1750,27 @@ pub fn icon_at(k: Kind, c: Vec2, px: f32, dim: f32, tint: Color) {
 mod tests {
     use super::*;
 
-    /// 0229: 숄더뷰에서 겨누는 버튼을 떼면 누른다(모으던 탄은 누름 없이), 쪽이 있는 스킬만 카메라 앞으로 못 박는다 —
-    /// 원거리의 쪽은 월드가 크로스헤어로 정한다.
+    /// 0229·0230: 숄더뷰에서 끌면 시점이 도는 버튼은 한 대상을 겨누는 것만 — 탄(쇠뇌의 평타 · 근접 무기의 특수)과 한 대상
+    /// 스킬. 수류탄(쇠뇌의 특수)·범위 스킬은 숄더뷰에서도 땅 위에 끌어 겨눈다. 쿼터뷰(`look_aim` 거짓)는 아무것도 아니다.
     #[test]
-    fn in_the_shoulder_view_a_dragged_button_fires_where_the_crosshair_is() {
-        let e = free_aim_end(Kind::Cast, false);
-        assert!(e.press && !e.ahead);
-        assert!(
-            !free_aim_end(Kind::Attack, true).press,
-            "a charged shot goes out by itself"
-        );
-        let s = free_aim_end(Kind::Skill2, false);
-        assert!(s.press && s.ahead);
+    fn in_the_shoulder_view_only_single_target_buttons_turn_the_view() {
+        let free = |ranged: bool, sight: [bool; 2]| Ctx {
+            look_aim: true,
+            ranged,
+            sight_skills: sight,
+            ..Ctx::default()
+        };
+        let bow = free(true, [false, true]);
+        assert!(bow.looks(Kind::Attack), "the crossbow shot");
+        assert!(!bow.looks(Kind::Cast), "the grenade is aimed on the ground");
+        assert!(!bow.looks(Kind::Skill1) && bow.looks(Kind::Skill2));
+        let sword = free(false, [false; 2]);
+        assert!(sword.looks(Kind::Cast) && !sword.looks(Kind::Attack));
+        let quarter = Ctx {
+            look_aim: false,
+            ..bow
+        };
+        assert!(!quarter.looks(Kind::Attack) && !quarter.looks(Kind::Skill2));
     }
 
     /// 0146 도트 픽토그램: 그림마다 13×13, `#`·`.`만, 서로 다르고(같은 그림 둘이면 버튼을 못 가른다), 칸이 너무 적지도(안 보임)

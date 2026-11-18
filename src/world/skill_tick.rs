@@ -269,9 +269,10 @@ impl World {
             Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. } => {
                 facing
             }
-            // 던지기: 조준 > 락온 > 닿는 거리의 가장 가까운 적 > 바라보는 쪽.
+            // 던지기: (숄더뷰) 크로스헤어 > 조준 > 락온 > 닿는 거리의 가장 가까운 적 > 바라보는 쪽.
             Form::Throw { dist, .. } => cx
-                .aim
+                .sight
+                .or(cx.aim)
                 .or(lock)
                 .or_else(|| nearest_in_reach(&self.enemies, pl.pos, dist, None))
                 .unwrap_or(facing),
@@ -290,8 +291,10 @@ impl World {
             }
             // 제비걸음(0214): 첫 걸음의 쪽은 걸음마다 다시 정한다 — 처음 보는 쪽만(조준 > 락온 > 바라보는 쪽).
             // 터치의 톡(0217)이면 바라보는 쪽 대신 닿는 거리의 가장 가까운 적.
+            // 숄더뷰에서는 크로스헤어 쪽이 먼저(0230 — 한 대상을 겨누는 꼴).
             Form::Hop { range, .. } => cx
-                .aim
+                .sight
+                .or(cx.aim)
                 .or(lock)
                 .or_else(|| self.tap_seek(cx, range))
                 .unwrap_or(facing),
@@ -2410,6 +2413,49 @@ mod tests {
             ult: 1,
             great: skills::Ult::Upend,
         });
+    }
+
+    /// 0230(사장 "범위공격이면 바닥 표시가 맞고 단일타겟이라면 크로스헤어 방식"): 숄더뷰에서 한 대상을 겨누는 스킬(던지기)은
+    /// 걷는 쪽이 아니라 크로스헤어의 적으로 — 크로스헤어에 적이 없으면 카메라 앞. 범위 스킬(내리찍기)은 그대로(크로스헤어를 모른다).
+    #[test]
+    fn in_the_shoulder_view_a_single_target_skill_goes_to_the_crosshair() {
+        let skill_dir = |id: Sk, sight: Option<Vec2>| {
+            let (mut w, t) = world();
+            w.view_yaw = Some(0.0); // 카메라 앞 = -z
+            wear(&mut w, id, 1, Pick::A);
+            let foe = w.player.pos + vec3(-4.0, 0.0, -9.0);
+            w.spawn_mob(foe);
+            still(&mut w);
+            let go = Actions {
+                move_dir: vec2(1.0, 0.0), // 오른쪽으로 걷는다
+                aim_ahead: true,
+                aim_sight: sight.map(|_| vec2(foe.x, foe.z)),
+                ..Default::default()
+            };
+            for _ in 0..20 {
+                w.step(&go, &t);
+            }
+            w.step(&Actions { skill1: true, ..go }, &t);
+            let PState::Skill { dir, .. } = w.player.state else {
+                panic!("{:?}", w.player.state)
+            };
+            (dir, (foe - w.player.pos) * vec3(1.0, 0.0, 1.0))
+        };
+        let (d, to_foe) = skill_dir(Sk::Throw, Some(Vec2::ZERO));
+        assert!(
+            d.dot(to_foe.normalize()) > 0.99,
+            "thrown at the crosshair's foe: {d:?}"
+        );
+        let (d, _) = skill_dir(Sk::Throw, None);
+        assert!(
+            d.z < -0.99,
+            "no foe under the crosshair: the camera's ahead, not the walking way: {d:?}"
+        );
+        let (d, _) = skill_dir(Sk::Quake, Some(Vec2::ZERO));
+        assert!(
+            d.z > -0.5,
+            "an area skill does not follow the crosshair: {d:?}"
+        );
     }
 
     /// 끼운 칸의 단·고르기가 월드에 들어간다 — 같은 스킬 둘이라 바꿔 끼운 칸은 1단. 준비 막대는 그 단의 대기로 잰다.

@@ -710,8 +710,11 @@ impl App {
             }),
             charging: matches!(pl.state, crate::world::PState::CastCharge { .. }),
             ranged: pl.weapon.is_ranged(),
-            // 숄더뷰(0229)에서는 겨누는 버튼을 끌면 시점이 돈다 — 락온 중은 대상을 보니 쿼터뷰처럼 쪽을 끈다(0217).
+            // 숄더뷰(0229)에서는 한 대상을 겨누는 버튼을 끌면 시점이 돈다 — 락온 중은 대상을 보니 쿼터뷰처럼 쪽을 끈다(0217).
             look_aim: self.cam.mode == Mode::Free,
+            sight_skills: [0, 1].map(|i| {
+                pl.skill.rank[i] > 0 && self.world.skill_eff(pl.skill.worn[i]).skill.form.sighted()
+            }),
         });
         self.input.poll(self.scene().is_menu());
         // F11(PC, 0135): 어느 장면에서나 창 ↔ 전체 화면. 창 일이라 `Actions`(게임 동작)에 넣지 않는다.
