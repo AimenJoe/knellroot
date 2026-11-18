@@ -110,6 +110,9 @@ pub struct Renderer {
     blend_len: f32,
     /// 쇠뇌를 쏜 뒤 겨눈 채 머무는 남은 초(0197).
     aim_hold: f32,
+    /// 구른 뒤 일어나기(0238 — `gait::rise_after_roll`): 지난 프레임이 앞구르기였나, 일어나기의 시각.
+    was_roll: bool,
+    rise: Option<f32>,
     /// 락온 중 걸을 때 다리를 가는 쪽으로 돌린 각(라디안, 부드럽게 따라간다, 0197).
     leg_turn: f32,
     sec_rig: Option<Rig>,
@@ -240,6 +243,8 @@ impl Renderer {
             blend_left: 0.0,
             blend_len: crate::gait::BLEND,
             aim_hold: 0.0,
+            was_roll: false,
+            rise: None,
             leg_turn: 0.0,
             sec_rig: None,
             sec_extra: Vec::new(),

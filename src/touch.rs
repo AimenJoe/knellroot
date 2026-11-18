@@ -474,27 +474,27 @@ fn layout_at(w: f32, h: f32, ctx: Ctx, k: f32) -> Vec<Button> {
             kind: Kind::Skill2,
         });
     }
-    // 땅 돌리기(0151): 자주 누르지 않으니 엄지 호 밖, 오른쪽 위에 작게(왼쪽 위의 멈춤과 마주 본다).
-    // 숄더뷰·락온에서는 숨긴다(0236 — 숄더뷰의 시점은 끌기, 락온은 월드가 막는다). 시점 버튼은 자리 그대로.
+    // 위 가장자리 줄(왼쪽 위의 멈춤과 마주 본다). 시점(0184)은 늘 쓸 수 있으니 오른쪽 위 구석에 박아 둔다(0238 — 사장 "시점 변환 버튼은
+    // 늘 쓸수 있으니 구석에 박아둬야지, 저 좌우회전이 없더라도 화면이 비어보이지 않지"). 땅 돌리기 둘(0151)은 그 왼쪽, 한 칸 띄워(시점과
+    // 묶여 보이지 않게) — 쿼터뷰 + 락온 아닐 때만(`Ctx::hide_turn`, 0236): 숨어도 구석은 그대로라 줄이 비어 보이지 않는다.
     let (pc, ps) = pause_spot(w, h);
+    b.push(Button {
+        center: vec2(w - pc.x, pc.y),
+        radius: ps,
+        kind: Kind::View,
+    });
     if !ctx.hide_turn {
         b.push(Button {
-            center: vec2(w - pc.x - ps * 2.5, pc.y),
+            center: vec2(w - pc.x - ps * 5.4, pc.y),
             radius: ps,
             kind: Kind::TurnLeft,
         });
         b.push(Button {
-            center: vec2(w - pc.x, pc.y),
+            center: vec2(w - pc.x - ps * 2.9, pc.y),
             radius: ps,
             kind: Kind::TurnRight,
         });
     }
-    // 시점(0184): 돌리기 둘의 왼쪽, 한 칸 띄워(돌리기 캡슐과 묶여 보이지 않게) — 두 손가락 꼬집기는 숨은 길이라 보이는 버튼이 하나 있어야 한다.
-    b.push(Button {
-        center: vec2(w - pc.x - ps * 5.4, pc.y),
-        radius: ps,
-        kind: Kind::View,
-    });
     if ctx.ult {
         b.push(Button {
             center: at(118.0, 0.6),
@@ -2132,7 +2132,12 @@ mod tests {
             let y = full.iter().find(|y| y.kind == x.kind).unwrap();
             assert_eq!(x.center, y.center, "{:?} stays put", x.kind);
         }
-        assert!(lean.iter().any(|x| x.kind == Kind::View));
+        // 0238: 시점 버튼은 오른쪽 위 구석 — 돌리기가 숨어도 그 자리(돌리기는 그 왼쪽).
+        let view = lean.iter().find(|x| x.kind == Kind::View).unwrap();
+        let (pc, _) = pause_spot(844.0, 390.0);
+        assert_eq!(view.center, vec2(844.0 - pc.x, pc.y), "the corner");
+        let tr = full.iter().find(|x| x.kind == Kind::TurnRight).unwrap();
+        assert!(tr.center.x < view.center.x && tr.center.y == view.center.y);
         assert_eq!(
             lean.iter().filter(|x| x.kind != Kind::Pause).count(),
             6,

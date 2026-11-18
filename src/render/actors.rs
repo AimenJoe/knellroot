@@ -257,6 +257,16 @@ impl Renderer {
             } else {
                 0.0
             };
+            // 구른 뒤 일어나기(0238): 앞구르기가 끝나 조용한 상태로 들어가면 `dodge_rise`를 잇는다(공격·다시 회피면 바로 그 동작).
+            let roll_now = matches!(pl.state, PState::Dodge { dir, .. } if dir.dot(pl.facing_dir()) >= BACKSTEP_DOT);
+            self.rise = crate::gait::rise_after_roll(
+                self.rise,
+                self.was_roll,
+                matches!(pl.state, PState::Idle),
+                wdt,
+            );
+            self.was_roll = roll_now;
+            let rise = self.rise.filter(|_| e.model.anim("dodge_rise").is_some());
             // 활(0231)은 활쏘기 원본의 제 동작 — 옆으로 서서 왼손의 활로 겨눈다(없는 모델이면 쇠뇌의 것).
             let bow = wpn.id == crate::weapons::Id::Bow;
             let (shoot, draw): (&[&str], &[&str]) = if bow {
@@ -398,6 +408,7 @@ impl Renderer {
                 // 걸음 시계는 쌓는다(0175 — `w.time × 빠르기`는 가속하는 동안 걸음 주기를 건너뛰었다, `gait.rs`).
                 // 패링이 튕긴 뒤(0199 → 0202): 민 자리에서 거둔다 — 걷기보다 먼저(튕기자마자 걸으면 밀기가 사라져 "방패 동작이
                 // 안 보인다"). 튕기면 월드가 곧장 서기로 돌린다(반격하라고), 그 짧은 동안만.
+                PState::Idle if rise.is_some() => (&["dodge_rise", "idle"], rise.unwrap_or(0.0)),
                 PState::Idle
                     if pl.parry.since < PARRY_PUSH_FIRM
                         || (pl.parry.since < PARRY_PUSH_CLIP && speed <= 0.5) =>

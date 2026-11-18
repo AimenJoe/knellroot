@@ -18,6 +18,24 @@ pub fn calm(name: &str) -> bool {
     ) || name.starts_with("idle_")
 }
 
+/// 구른 뒤 일어나기의 길이(초, 0238 — 모델의 `dodge_rise`와 같다, `wanderer_skin.py`).
+pub const ROLL_RISE: f32 = 0.2;
+
+/// 구른 뒤 일어나기 시계(0238, 순수 — 렌더가 프레임마다): 회피(앞구르기)가 끝나 조용한 상태(서기·걷기·달리기 — 월드의 `Idle`)로
+/// 들어가는 프레임에 0에서 시작해 `ROLL_RISE`까지 흐르고, 다른 상태(공격·다시 회피 …)가 되면 바로 끝난다. 회피 시간(얼린 값)은 그대로 둔 채
+/// 일어나는 몫을 회피 뒤로 미루는 것 — 끝나면 조용한 동작으로 섞인다(`BLEND`).
+pub fn rise_after_roll(rise: Option<f32>, was_roll: bool, idle: bool, dt: f32) -> Option<f32> {
+    if !idle {
+        return None;
+    }
+    let t = if was_roll {
+        Some(0.0)
+    } else {
+        rise.map(|t| t + dt)
+    };
+    t.filter(|t| *t < ROLL_RISE)
+}
+
 /// 걸음 시계: 걷는 동안 이번 틱 × 빠르기를 쌓는다. 걷기 시작하는 프레임에는 걸음의 첫 자세(0초)에서.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Gait {
@@ -115,5 +133,27 @@ mod tests {
         assert_eq!(weight(0.0), 1.0);
         let mid = weight(BLEND * 0.5);
         assert!((mid - 0.5).abs() < 1e-5);
+    }
+
+    /// 0238: 구르기가 끝나 서면 일어나기가 0초부터 `ROLL_RISE`까지 흐르고, 그 사이 다른 동작이 되면 바로 끝난다.
+    #[test]
+    fn a_roll_rises_into_the_calm_state_and_yields_to_any_action() {
+        let mut r = rise_after_roll(None, true, true, 1.0 / 60.0);
+        assert_eq!(r, Some(0.0), "starts on the frame the roll ends");
+        for _ in 0..5 {
+            r = rise_after_roll(r, false, true, 0.02);
+        }
+        assert!((r.unwrap() - 0.1).abs() < 1e-5);
+        assert_eq!(
+            rise_after_roll(r, false, false, 0.02),
+            None,
+            "an attack cuts it"
+        );
+        assert_eq!(rise_after_roll(Some(0.19), false, true, 0.02), None, "done");
+        assert_eq!(
+            rise_after_roll(None, false, true, 0.02),
+            None,
+            "only after a roll"
+        );
     }
 }

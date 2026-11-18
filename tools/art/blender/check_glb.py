@@ -37,7 +37,7 @@ PROP_BUDGET = 400
 EXPECT = {
     # 0193 스킨 몸 + Meshy 동작(`wanderer_skin.py`): 게임 상태에 맞춘 동작은 옛 길이 그대로. 서기·몸짓은 원본 길이(되풀이·몸짓
     # 시계가 모델의 길이를 읽는다), 뒷걸음은 한 주기(1.2), 달리기 `run`이 새로 생겼다. 옆걸음·종 몸짓은 원본이 없다(걷기·건너뜀).
-    "wanderer": {"block": 0.2, "idle": 1.87, "idle_look": 1.83, "idle_shake": 1.12, "run": 0.63, "wake": 4.0, "fall": 1.3, "walk": 0.8, "attack": 0.43, "dodge": 0.25, "hurt": 0.35, "turn_r": 0.25, "turn_l": 0.25,
+    "wanderer": {"block": 0.2, "idle": 1.87, "idle_look": 1.83, "idle_shake": 1.12, "run": 0.63, "wake": 4.0, "fall": 1.3, "walk": 0.8, "attack": 0.43, "dodge": 0.25, "dodge_rise": 0.2, "hurt": 0.35, "turn_r": 0.25, "turn_l": 0.25,
                  "walk_back": 1.67, "charge": 0.3, "heavy": 0.58, "drink": 0.8,
                  # 0196: 점프는 체공의 앞뒤 반(게임이 위 속도로 자리를 고른다), 줍기 0.9, 쇠뇌(활쏘기 원본) 겨누기 0.3 · 쏘기 0.24.
                  "jump": 0.5, "land": 0.15, "pickup": 0.9, "xbow_charge": 0.3, "xbow_shoot": 0.24, "bow_draw": 0.3, "bow_shoot": 0.24,

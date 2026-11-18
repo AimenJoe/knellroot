@@ -37,10 +37,10 @@ function layout() {
     jump: at(62, 0.26),
     skill1: [skill[0] - u * 0.08, skill[1]],
     skill2: [skill[0] + u * 0.08, skill[1]],
-    turn_left: [W - pc - ps * 2.5, pc],
-    turn_right: [W - pc, pc],
-    // 시점(0184): 돌리기 왼쪽, 한 칸 띄워 — 쿼터뷰 ↔ 자유 숄더뷰.
-    view: [W - pc - ps * 5.4, pc],
+    // 시점(0184 → 0238): 오른쪽 위 구석(늘 쓸 수 있다), 돌리기 둘은 그 왼쪽 — 쿼터뷰 + 락온 아닐 때만(0236).
+    view: [W - pc, pc],
+    turn_right: [W - pc - ps * 2.9, pc],
+    turn_left: [W - pc - ps * 5.4, pc],
     lock: at(80, 0.44),
     flask: at(150, 0.44),
     // 바꾸기(0223): 부무기가 있을 때만 — 회피 왼쪽 바깥 호.

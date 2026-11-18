@@ -52,7 +52,9 @@ SPINE = ("mixamorig:Spine", "mixamorig:Spine1", "mixamorig:Spine2")
 # 넘으면 등뼈 셋으로 그 각까지 세우고(`solve_upright`를 한 장에), 가슴 → 머리의 꺾임이 머리 상한을 넘으면 목·머리로 반씩 되돌린다
 # (`cap_lean`). Double_Combo_Attack의 1타 끝(원본 19~23)은 몸 52°에 머리가 가슴에서 55° 더 꺾여 머리가 바닥을 봤다 — 서기의 머리 꺾임은
 # 10~13°, 걷기 30°. 원본 프레임마다 같은 규칙이라 1타 → 2타의 이음매(23)가 그대로 이어진다.
-LEAN_CAP = {"attack": (30.0, 30.0), "attack2": (30.0, 30.0)}
+LEAN_CAP = {"attack": (30.0, 30.0), "attack2": (30.0, 30.0),
+            # 0238: 모아 베기도(Charged_Slash — 모으기·강타가 같은 원본, 머리 꺾임 58~68°).
+            "charge": (30.0, 30.0), "heavy": (30.0, 30.0)}
 # 판정 구간(초 — 시작, 길이): 게임의 `world::hit_times`·`heavy_times`(랩 평타·강타 시간 × 무기 표의 `time`)와 같은 값.
 # 콤보·돌기 동작의 가운데를 잘라 와서 판정 순간에 몸이 옆·뒤를 보던 것(지팡이 둘째·셋째 타는 엉덩이가 뒤)을, 이 구간 동안 몸 전체를 돌려
 # 주먹(= 칼)이 정면을 지나게 맞춘다(`face_hit` — 시작·끝은 원본 방향 그대로, 사이를 매끄럽게). 판정·초승달은 늘 정면 부채꼴이다.
@@ -88,7 +90,8 @@ SHIELD_OUT = [Vector((0.0, 0.0, 1.0))]  # 쉬는 자세에서 판의 앞면이 �
 # 겹쳐 두 번 돌고, 끝에 서기로 홱 돌아왔다(돌아서기). 프레임마다 엉덩이를 정면으로.
 FACE_STILL = {"turn_l", "turn_r"}
 # 몸을 움직여 가는 동작(0197): 원본에서 엉덩이가 간 쪽을 몸의 앞("front")·뒤("back")에 맞춘다 — 게임이 그 쪽으로 몸을 옮긴다.
-FACE_TRAVEL = {"dodge": "front", "dodge_back": "back"}
+# 다른 동작의 이름이면 그 동작이 돈 각을 그대로(0238 — 구르기에서 이어지는 일어나기는 구르기와 같은 각이라야 이음매가 맞는다).
+FACE_TRAVEL = {"dodge": "front", "dodge_back": "back", "dodge_rise": "dodge"}
 # 모아 친 강타는 모으기 동작이 끝난 쪽에서 시작한다(0196 — 망치 모으기는 몸을 −60° 감아 쥔다: 정면에서 시작하면 떼는 순간 홱 돈다).
 CHAIN = {"heavy": "charge", "hammer_slam": "hammer_charge", "staff_release": "staff_charge", "fist_heavy": "fist_charge"}
 # 떠 있는 동안 엉덩이를 올리지 않는 동작(0196): 게임이 몸을 `air`만큼 올린다 — 원본의 뛰어오름(엉덩이 +0.2)을 그대로 두면 두 번 뜬다.
@@ -158,7 +161,11 @@ CLIPS = [
     # 0237(사장 "앞구르기 할때 좀 어색한 모션"): 3에서 시작하면 첫 장이 이미 38° 숙여 서기에서 튀었고, 26(엉덩이 0.19 — 주저앉음)에서
     # 끝나 서기·걷기로 섞이는 0.14초(`gait::BLEND`) 동안 용수철처럼 튀어 올랐다 → 1(살짝 숙임)에서 들어가 굴러(5 → 21) 일어나는 33
     # (엉덩이 0.40 — 서기 0.45에 가깝다)까지. 구르는 몫은 그대로 0.12초 남짓.
-    ("dodge", "Roll_Dodge_3", ("anchors", [(0.0, 1), (0.035, 5), (0.155, 21), (0.25, 33)])),
+    # 0238(사장 "지적한 사항 구현" — 0.25초에 한 바퀴라 빠르다): 회피 시간(얼린 값)은 그대로 두고 일어나기를 떼어 냈다 — 회피 0.25초는
+    # 구르기만(1 → 5 들어감 → 21 한 바퀴 → 23 닿음, 구르는 몫 0.12 → 0.185초), 일어나기(23 → 38, 0.2초 `dodge_rise`)는 회피가 끝나
+    # 서기·걷기·달리기로 갈 때 렌더가 이어 튼다(`render::actors` `ROLL_RISE` — 공격·다시 회피면 바로 그 동작).
+    ("dodge", "Roll_Dodge_3", ("anchors", [(0.0, 1), (0.035, 5), (0.22, 21), (0.25, 23)])),
+    ("dodge_rise", "Roll_Dodge_3", ("anchors", [(0.0, 23), (0.2, 38)])),
     ("dodge_back", "Back_Jump", ("anchors", [(0.0, 2), (0.04, 4), (0.19, 14), (0.25, 17)])),
     ("hurt", "Dead", ("hit", 0, (2, 6), 12, 0.35, 0.058)),
     ("fall", "Dead", ("span", 4, 71, 1.3)),
@@ -792,12 +799,19 @@ def face_still(arm, name, poses):
     print(f"[skin] face {name}: still ({math.degrees(min(turns)):+.0f}..{math.degrees(max(turns)):+.0f}°)")
 
 
+TRAVEL_TURNS = {}  # 동작 → `face_travel`이 돌린 각
+
+
 def face_travel(arm, name, poses, hips, way):
-    """`FACE_TRAVEL`: 처음 → 끝 엉덩이 이동이 몸의 앞(또는 뒤)이 되게 몸 전체를 한 각만큼 돌린다."""
+    """`FACE_TRAVEL`: 처음 → 끝 엉덩이 이동이 몸의 앞(또는 뒤)이 되게 몸 전체를 한 각만큼 돌린다(다른 동작 이름이면 그 각)."""
     d = hips[-1] - hips[0]
-    if way == "back":
-        d = -d
-    turn = -math.atan2(d.x, -d.y)
+    if way in TRAVEL_TURNS:
+        turn = TRAVEL_TURNS[way]
+    else:
+        if way == "back":
+            d = -d
+        turn = -math.atan2(d.x, -d.y)
+    TRAVEL_TURNS[name] = turn
     turn_body(arm, poses, [turn] * len(poses))
     print(f"[skin] face {name}: travel {way} — turned {math.degrees(turn):+.0f}° ({d.length:.2f} m)")
 
