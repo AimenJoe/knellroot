@@ -781,6 +781,42 @@ def face_aim(arm, name, poses, hands, ramp):
     print(f"[skin] face {name}: aim {math.degrees(want):+.0f}° (start {math.degrees(turns[0]):+.0f}°)")
 
 
+LOOK = (("mixamorig:Neck", 0.45), ("mixamorig:Head", 1.0))  # 목이 남은 돌림의 몫 · 머리가 나머지
+LOOK_MAX = math.radians(110)
+
+
+def look_ahead(arm, name, poses):
+    """옆으로 서서 겨누는 동작(`BOW_AIM`, 0231 — 사장 "옆으로 서더라도 앞을 바라봐야지"): 몸은 겨누는 줄을 따라 옆으로 서도
+    얼굴은 과녁(정면 −Y)을 보게 목·머리를 세로축으로 돌린다. 등뼈는 두지 않는다 — 팔(겨누는 줄)이 따라 돌지 않게."""
+    head = arm.pose.bones["mixamorig:Head"]
+    face = arm.data.bones["mixamorig:Head"].matrix_local.to_3x3().inverted() @ Vector((0, -1, 0))  # 쉬는 자세의 얼굴 앞(머리 뼈 공간)
+    turned = []
+    for pose in poses:
+        for pb in arm.pose.bones:
+            if pb.name in pose:
+                loc, q, sc_ = pose[pb.name]
+                pb.matrix_basis = Matrix.LocRotScale(loc, q, sc_)
+            else:
+                pb.matrix_basis.identity()
+        bpy.context.view_layer.update()
+        f = head.matrix.to_3x3() @ face
+        left = -math.atan2(f.x, -f.y)
+        left = max(-LOOK_MAX, min(LOOK_MAX, left))
+        turned.append(left)
+        for bn, share in LOOK:
+            f = head.matrix.to_3x3() @ face
+            rest = -math.atan2(f.x, -f.y)
+            pb = arm.pose.bones[bn]
+            loc, q, sc_ = pb.matrix_basis.decompose()
+            a = pb.matrix.to_3x3() @ pb.matrix_basis.to_3x3().inverted()
+            r = Matrix.Rotation(max(-LOOK_MAX, min(LOOK_MAX, rest)) * share, 3, "Z")
+            pb.matrix_basis = Matrix.LocRotScale(loc, (a.inverted() @ r @ a @ q.to_matrix()).to_quaternion(), sc_)
+            bpy.context.view_layer.update()
+        for bn, _ in LOOK:
+            pose[bn] = arm.pose.bones[bn].matrix_basis.decompose()
+    print(f"[skin] look {name}: head turned {math.degrees(min(turned)):+.0f}..{math.degrees(max(turned)):+.0f}°")
+
+
 def flatten(arm, poses, hips, top):
     """`FLAT`: 엉덩이를 `top`(뼈대 공간 z) 위로 올리지 않는다."""
     r_inv = arm.data.bones["mixamorig:Hips"].matrix_local.to_3x3().inverted()
@@ -1045,6 +1081,8 @@ def make_actions(arm, body):
             face_still(arm, name, poses)
         if name in AIM:
             face_aim(arm, name, poses, hands, AIM[name])
+        if name in BOW_AIM:
+            look_ahead(arm, name, poses)
         if name in HIT_WINDOWS:
             start = ends.get(CHAIN.get(name), 0.0)
             face_hit(arm, name, poses, hips, hands, HIT_WINDOWS[name], math.atan2(math.sin(start), math.cos(start)))
