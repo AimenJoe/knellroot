@@ -48,6 +48,11 @@ GUARD_BLADE = Vector((0.25, -0.45, 0.85))  # 뼈대 공간: 왼쪽(+X) · 앞(�
 # 지금은 비어 있다 — 숙였던 Combat_Stance 대신 곧게 선 Idle_02를 쓴다(그때는 {"idle": (8.0, 5.0)}, 앞 23°·옆 18° → 8°·5°).
 UPRIGHT = {}
 SPINE = ("mixamorig:Spine", "mixamorig:Spine1", "mixamorig:Spine2")
+# 숙임 상한(사장 2026-11-18 "검 1타에서 머리를 너무 앞으로 숙여서 어색해"): (몸, 머리) 도 — 프레임마다 엉덩이 → 머리의 기울기가 몸 상한을
+# 넘으면 등뼈 셋으로 그 각까지 세우고(`solve_upright`를 한 장에), 가슴 → 머리의 꺾임이 머리 상한을 넘으면 목·머리로 반씩 되돌린다
+# (`cap_lean`). Double_Combo_Attack의 1타 끝(원본 19~23)은 몸 52°에 머리가 가슴에서 55° 더 꺾여 머리가 바닥을 봤다 — 서기의 머리 꺾임은
+# 10~13°, 걷기 30°. 원본 프레임마다 같은 규칙이라 1타 → 2타의 이음매(23)가 그대로 이어진다.
+LEAN_CAP = {"attack": (30.0, 30.0), "attack2": (30.0, 30.0)}
 # 판정 구간(초 — 시작, 길이): 게임의 `world::hit_times`·`heavy_times`(랩 평타·강타 시간 × 무기 표의 `time`)와 같은 값.
 # 콤보·돌기 동작의 가운데를 잘라 와서 판정 순간에 몸이 옆·뒤를 보던 것(지팡이 둘째·셋째 타는 엉덩이가 뒤)을, 이 구간 동안 몸 전체를 돌려
 # 주먹(= 칼)이 정면을 지나게 맞춘다(`face_hit` — 시작·끝은 원본 방향 그대로, 사이를 매끄럽게). 판정·초승달은 늘 정면 부채꼴이다.
@@ -150,7 +155,10 @@ CLIPS = [
     ("block", "Shield_Push_Left", ("anchors", [(0.0, 30), (0.2, 28)])),
     # 회피(0197): 구르기의 몸통 구간만(3 뜀 → 14 말림 → 26 웅크려 닿음 — 옛 2~30은 0.25초에 4.7배로 뭉갰다). 원본은 왼쪽 앞 37°로 굴러
     # 몸을 돌려 구르는 쪽 = 앞(`FACE_TRAVEL`). 뒤로 피할 때(입력 없이·락온 뒷걸음)는 Back_Jump(2 웅크림 → 4 뜀 → 14 닿음 → 17 받음).
-    ("dodge", "Roll_Dodge_3", ("anchors", [(0.0, 3), (0.12, 14), (0.25, 26)])),
+    # 0237(사장 "앞구르기 할때 좀 어색한 모션"): 3에서 시작하면 첫 장이 이미 38° 숙여 서기에서 튀었고, 26(엉덩이 0.19 — 주저앉음)에서
+    # 끝나 서기·걷기로 섞이는 0.14초(`gait::BLEND`) 동안 용수철처럼 튀어 올랐다 → 1(살짝 숙임)에서 들어가 굴러(5 → 21) 일어나는 33
+    # (엉덩이 0.40 — 서기 0.45에 가깝다)까지. 구르는 몫은 그대로 0.12초 남짓.
+    ("dodge", "Roll_Dodge_3", ("anchors", [(0.0, 1), (0.035, 5), (0.155, 21), (0.25, 33)])),
     ("dodge_back", "Back_Jump", ("anchors", [(0.0, 2), (0.04, 4), (0.19, 14), (0.25, 17)])),
     ("hurt", "Dead", ("hit", 0, (2, 6), 12, 0.35, 0.058)),
     ("fall", "Dead", ("span", 4, 71, 1.3)),
@@ -498,7 +506,36 @@ def uprighten(arm, fwd, side):
         pb.matrix_basis = Matrix.LocRotScale(loc, rot.to_quaternion(), sc)
 
 
-def sample(arm, src, anchors, upright=None):
+def turn_bone(arm, name, axis, angle):
+    """뼈 하나를 뼈대 공간의 축으로 제 머리를 중심 삼아 돌린다(자식은 따라온다)."""
+    pb = arm.pose.bones[name]
+    p = pb.head.copy()
+    pb.matrix = Matrix.Translation(p) @ Matrix.Rotation(angle, 4, axis) @ Matrix.Translation(-p) @ pb.matrix
+    bpy.context.view_layer.update()
+
+
+def cap_lean(arm, body_max, head_max):
+    """한 장의 숙임을 상한까지(`LEAN_CAP`)."""
+    bpy.context.view_layer.update()
+    pb = arm.pose.bones
+    snap = (pb["mixamorig:Hips"].head.copy(), [pb[n].head.copy() for n in SPINE], pb["mixamorig:Head"].head.copy())
+    f, s = lean_of(snap[2] - snap[0])
+    m = math.hypot(f, s)
+    if m > math.radians(body_max):
+        k = math.radians(body_max) / m
+        fwd, side, _ = solve_upright([snap], (math.degrees(f * k), math.degrees(s * k)))
+        uprighten(arm, fwd, side)
+        bpy.context.view_layer.update()
+    c = (pb["mixamorig:Neck"].head - pb["mixamorig:Spine2"].head).normalized()
+    h = (pb["mixamorig:Head"].tail - pb["mixamorig:Head"].head).normalized()
+    over = c.angle(h) - math.radians(head_max)
+    if over > 0.0:
+        axis = h.cross(c).normalized()  # 머리 축을 가슴 축 쪽으로
+        turn_bone(arm, "mixamorig:Neck", axis, over * 0.5)
+        turn_bone(arm, "mixamorig:Head", axis, over * 0.5)
+
+
+def sample(arm, src, anchors, upright=None, cap=None):
     """게임 프레임(OUT_FPS)마다 원본을 읽는다 → {뼈: [(loc, quat, scale)]}, 엉덩이 머리(뼈대 공간).
     `upright`(도)면 클립 평균 숙임을 그 각까지 등뼈로 세운다(한 클립에 한 각 — 숨쉬는 흔들림은 남는다)."""
     sc = bpy.context.scene
@@ -531,6 +568,8 @@ def sample(arm, src, anchors, upright=None):
         go(f)
         if corr is not None:
             uprighten(arm, *corr)
+        if cap is not None:
+            cap_lean(arm, *cap)
         poses.append({pb.name: pb.matrix_basis.decompose() for pb in arm.pose.bones if pb.name not in ("lamp", "weapon", "shield", "bow")})
         hips.append(arm.pose.bones["mixamorig:Hips"].head.copy())
         hands.append((arm.pose.bones[HAND_R].head.copy(), arm.pose.bones["mixamorig:RightArm"].head.copy(),
@@ -1069,7 +1108,7 @@ def make_actions(arm, body):
     ends = {}  # 동작마다 끝의 몸 쪽(`CHAIN`)
     for name, src, spec in CLIPS:
         anchors = anchors_of(arm, name, src, spec)
-        n, poses, hips, hands = sample(arm, src, anchors, UPRIGHT.get(name))
+        n, poses, hips, hands = sample(arm, src, anchors, UPRIGHT.get(name), LEAN_CAP.get(name))
         if name in FACE_TRAVEL:
             face_travel(arm, name, poses, hips, FACE_TRAVEL[name])
         strip_travel(arm, poses, hips, name in LOOPS)
@@ -1183,11 +1222,15 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, sheet_dir=None):
     preview(arm, objs, os.path.join(preview_dir, f"{NAME}_guard.png"), "block", 0.2, yaw=-20.0, elev=14.0)
     preview(arm, objs, os.path.join(preview_dir, f"{NAME}_guard_side.png"), "block", 0.2, yaw=-80.0, elev=14.0)
     if sheet_dir:
+        only = [x for x in os.environ.get("KR_SHEET_ONLY", "").split(",") if x]  # 몇 동작만(이름 쉼표로)
         for name, _, _ in CLIPS:
+            if only and name not in only:
+                continue
             act = bpy.data.actions[name]
             n = int(act.frame_range[1])
-            for i in range(6):
-                preview(arm, objs, os.path.join(sheet_dir, f"{name}_{i}.png"), name, n * i / 5 / OUT_FPS,
+            k = int(os.environ.get("KR_SHEET_N", "6"))
+            for i in range(k):
+                preview(arm, objs, os.path.join(sheet_dir, f"{name}_{i}.png"), name, n * i / (k - 1) / OUT_FPS,
                         yaw=-60.0, elev=25.0, frame=(Vector((0, 0, 0.55)), 2.4))
     return path
 
