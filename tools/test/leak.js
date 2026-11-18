@@ -73,7 +73,7 @@ async function main() {
   await page.goto(`http://localhost:${PORT}/`);
   await page.waitForTimeout(2500);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
-  const press = async (k, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(k); await page.waitForTimeout(60); } };
+  const press = async (k, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(k); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(60); } };
   // 키보드만 배치로(0058 — 이 스크립트는 J·K·L로 싸운다. 새로 설치한 판의 기본은 키보드+마우스):
   // 타이틀 → 설정(둘째) → 조작(타이틀의 설정에서는 맨 끝 줄 — 위로 한 번, 0164) → "키보드만 배치로"(끝에서 둘째) → 돌아가기 둘.
   const keyboardOnly = async () => {

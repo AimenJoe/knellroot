@@ -36,7 +36,7 @@ async function open(browser, seed, tag) {
   });
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) bad.push(String(e)); });
   const shot = (name, clip) => page.screenshot({ path: path.join(OUT, `items-${tag}-${name}.png`), clip });
-  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.waitForTimeout(90); } };
+  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(90); } };
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 60000 });
   await page.goto(`http://localhost:${PORT}/`);
   await ready();

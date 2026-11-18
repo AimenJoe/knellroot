@@ -31,7 +31,7 @@ async function main() {
   await page.waitForTimeout(2500);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
   const shot = (name) => page.screenshot({ path: path.join(OUT, name + '.png') });
-  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.waitForTimeout(80); } };
+  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(80); } };
   const hold = async (key, ms) => { await page.keyboard.down(key); await page.waitForTimeout(ms); await page.keyboard.up(key); };
   // 키보드만 배치로(shot.js와 같은 길) → 시작하기 → 첫 슬롯 → 깨어나는 장면 건너뛰기.
   await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);

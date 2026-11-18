@@ -34,7 +34,7 @@ async function main() {
   // 모서리를 눌러 초점만(가운데를 누르면 메뉴 줄을 탭한다 — 마우스도 메뉴를 뗄 때 탭, 0058).
   await canvas.click({ position: { x: 4, y: 4 } });
   const shot = (name) => page.screenshot({ path: path.join(OUT, name + '.png') });
-  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.waitForTimeout(60); } };
+  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(60); } };
   // 키보드만 배치로(0058 — 이 스크립트는 J·K·L로 싸운다. 새로 설치한 판의 기본은 키보드+마우스):
   // 타이틀 → 설정(둘째) → 조작(타이틀의 설정에서는 맨 끝 줄 — 위로 한 번, 0164) → "키보드만 배치로"(끝에서 둘째) → 돌아가기 둘.
   const keyboardOnly = async () => {
@@ -110,7 +110,7 @@ async function main() {
   await shot('01-quarter');
   // 쿼터뷰 요 비교(랩 값 cam.quarter.yaw, 표 다섯째 줄 = 0부터 4): 기본 35 → 0 → 45 → 35.
   // 누름은 틱(16ms)마다 하나만 들어가므로 사이를 띄운다. Ctrl(10배)은 헤드리스에서 안 잡혀 쓰지 않는다.
-  const tap = async (key, n) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.waitForTimeout(30); } };
+  const tap = async (key, n) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(30); } };
   await page.keyboard.press('F1'); await page.waitForTimeout(100);
   await tap('ArrowDown', 4);
   await tap('ArrowLeft', 35);

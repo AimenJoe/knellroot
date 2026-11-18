@@ -20,7 +20,7 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     p.on('console', m => { if (m.type() === 'error' && !/register_plugin/.test(m.text())) errors.push(m.text()); });
     p.on('pageerror', e => { if (!/register_plugin/.test(String(e))) errors.push(String(e)); });
     await p.goto(`http://localhost:${PORT}/`); await p.waitForTimeout(2500); await p.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
-    const press = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(k); await p.waitForTimeout(70); } };
+    const press = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(k); await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await p.waitForTimeout(70); } };
     if (first) { first = false;
       await press('ArrowDown'); await press('Enter'); await p.waitForTimeout(300); await press('ArrowUp'); await press('Enter'); await p.waitForTimeout(300); // 타이틀의 설정: 조작 설정은 맨 끝 줄(0164)
       await press('ArrowUp', 2); await press('Enter'); await p.waitForTimeout(200); await press('Escape'); await p.waitForTimeout(200); await press('Escape'); await p.waitForTimeout(300); await press('ArrowUp'); }
@@ -65,7 +65,7 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       ['quake', [2, 0], null, 1000, 'Q', 26, 2], ['brace', [0, 2], null, 1300, 'Q', 40], ['echo', [2, 1], null, 1300, 'Q', 16, 3],
       ['throw', [2, 2], null, 900, 'Q', 30], ['embers', [2, 3], null, 1300, 'Q', 50, 3],
       ['upend', null, null, 1500, 'ult', 30], ['flurry', null, 0, 1300, 'ult', 14], ['line', null, 2, 900, 'ult', 30]];
-    const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.waitForTimeout(90); } };
+    const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await p.waitForTimeout(90); } };
     // 왼쪽 위(가장자리에서 돌지 않는다) → 줄 → 그 줄의 왼쪽 끝 → 칸 → 확인(목록) → 확인(첫 줄).
     const wear = async (p, row, col) => {
       await pick(p, 6, 'ArrowLeft'); await pick(p, 6, 'ArrowUp'); await pick(p, row, 'ArrowDown'); await pick(p, 6, 'ArrowLeft'); await pick(p, col);
