@@ -528,6 +528,7 @@ impl World {
                     pos: l.pos,
                     radius: ELITE_LINGER_RADIUS,
                     age: 0.0,
+                    root: false,
                 });
                 ev.push(Event::Boom { at: l.pos });
             }

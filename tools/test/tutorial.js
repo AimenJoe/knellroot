@@ -49,7 +49,7 @@ async function run(browser, lang, size) {
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
   const tag = `${lang}-${w}x${h}`;
   const shot = (name) => page.screenshot({ path: path.join(OUT, `tut-${tag}-${name}.png`) });
-  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.waitForTimeout(90); } };
+  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(90); } };
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 20000 });
   const record = () => page.evaluate((k) => localStorage.getItem(k), KEY);
   // 기록을 심고 다시 띄워 이어하기(타이틀 → 슬롯 창 → 이어하기).

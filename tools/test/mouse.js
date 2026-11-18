@@ -33,7 +33,7 @@ async function main() {
   await page.waitForTimeout(2500);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
   const shot = (name) => page.screenshot({ path: path.join(OUT, name + '.png') });
-  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.waitForTimeout(60); } };
+  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(60); } };
 
   // 브라우저 기본 동작이 막혔나(캔버스에 보낸 이벤트의 defaultPrevented).
   const blocked = await page.evaluate(() => {

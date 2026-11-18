@@ -342,6 +342,8 @@ pub struct Bomb {
     pub radius: f32,
     pub damage: i32,
     pub poise: f32,
+    /// 뿌리 씨앗(0231 — 활): 터진 자리의 적에게 쌓는 뿌리 게이지. 0 = 화약.
+    pub root: f32,
 }
 
 /// 맞힌 자리의 불똥(그림만 — 렌더가 읽는다, 2026-11-06): 맞은 쪽으로 튀어 떨어지며 짧게 산다.
@@ -388,6 +390,8 @@ pub struct Blast {
     pub pos: Vec3,
     pub radius: f32,
     pub age: f32,
+    /// 뿌리 씨앗이 터진 자리(0231) — 고리를 뿌리 빛으로.
+    pub root: bool,
 }
 
 /// 남는 엘리트(0112)가 쓰러진 자리의 고리 — `ELITE_LINGER_DELAY` 동안 예고, 다 차면 둘레를 친다(패링 못 함).
@@ -579,6 +583,9 @@ pub struct Player {
     pub beat: BeatState,
     /// 달리는 중(0076): 회피가 끝날 때 회피 버튼을 쥐고 있었다 — 떼거나 스틱을 놓거나 스태미나가 다하거나 다른 동작을 하면 끝.
     pub running: bool,
+    /// 몸이 걷는 쪽이 아니라 다른 것을 보고 있다(0235): 락온 대상 · 쥔 조준(스틱·커서·터치 끌기 — 수류탄·사격을 겨누는 동안) ·
+    /// 방패 막기. 렌더가 이것으로 걷는 동작을 고른다(옆으로 가면 다리를 돌리고 뒤로 가면 뒷걸음 — `render::move_anim`).
+    pub faces_away: bool,
     /// 마지막으로 무언가를 맞힌 스윙 번호(맞히면 그 스윙의 내딛기를 멈춘다, 2026-11-06).
     pub connected: u32,
     /// 대시 공격을 받는 남은 시간(회피를 끊었거나 막 끝난 뒤, 2026-11-06).
@@ -967,6 +974,7 @@ impl World {
                     free_dodge: false,
                 },
                 running: false,
+                faces_away: false,
                 attack_hold: 0.0,
                 flask: FLASK_CHARGES,
                 flask_lock: 0.0,
@@ -1767,12 +1775,14 @@ impl World {
 
 impl World {
     /// 둘레 피해(수류탄·여진): 반지름 안의 깨어 있는 적(높이 차 `HIT_DY` 안)에게 피해·자세 피해·바깥으로 밀기.
+    #[allow(clippy::too_many_arguments)]
     fn burst(
         &mut self,
         at: Vec3,
         radius: f32,
         damage: i32,
         poise: f32,
+        dose: crate::status::Dose,
         t: &Tuning,
         ev: &mut Vec<Event>,
     ) {
@@ -1796,6 +1806,8 @@ impl World {
                 Event::Hit { at: hit_at }
             });
             add_poise(en, poise * self.stats.poise, None, t, ev);
+            // 뿌리 씨앗(0231): 터진 둘레를 묶는다 — 걸리는 법은 하나(`afflict`, 0223 V2).
+            afflict(en, dose, ev);
             if en.hp <= 0 {
                 en.state = EState::Dead;
                 self.kills += 1;

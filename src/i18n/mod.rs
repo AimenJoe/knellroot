@@ -281,6 +281,7 @@ pub struct Strings {
     pub weapon_hammer_d: &'static str,
     pub weapon_staff_d: &'static str,
     pub weapon_crossbow_d: &'static str,
+    pub weapon_bow_d: &'static str,
     pub weapon_fists_d: &'static str,
     /// 장비 창 무기 후보에서 지금 든 것의 표시(0076).
     pub equip_worn: &'static str,
@@ -611,6 +612,7 @@ pub struct Strings {
     pub weapon_hammer: &'static str,
     pub weapon_staff: &'static str,
     pub weapon_crossbow: &'static str,
+    pub weapon_bow: &'static str,
     pub weapon_fists: &'static str,
     /// 타이틀의 전체 화면 줄(0046, 지금 상태를 보인다).
     /// 창 안 줄의 이름(값은 오른쪽 칸 — 0066).
@@ -782,6 +784,7 @@ pub struct Strings {
     pub cx_weapon_sword: &'static str,
     pub cx_weapon_fists: &'static str,
     pub cx_weapon_crossbow: &'static str,
+    pub cx_weapon_bow: &'static str,
     pub cx_weapon_staff: &'static str,
     pub cx_weapon_hammer: &'static str,
     pub cx_garb_cloak: &'static str,
@@ -1157,6 +1160,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.weapon_hammer_d,
         s.weapon_staff_d,
         s.weapon_crossbow_d,
+        s.weapon_bow_d,
         s.weapon_fists_d,
         s.equip_worn,
         s.slots_new,
@@ -1460,6 +1464,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.weapon_hammer,
         s.weapon_staff,
         s.weapon_crossbow,
+        s.weapon_bow,
         s.weapon_fists,
         s.menu_fullscreen,
         s.value_on,
@@ -1621,6 +1626,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.cx_weapon_sword,
         s.cx_weapon_fists,
         s.cx_weapon_crossbow,
+        s.cx_weapon_bow,
         s.cx_weapon_staff,
         s.cx_weapon_hammer,
         s.cx_garb_cloak,

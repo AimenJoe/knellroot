@@ -457,6 +457,7 @@ fn weapon_desc(id: weapons::Id) -> &'static str {
         weapons::Id::Staff => s.weapon_staff_d,
         weapons::Id::Crossbow => s.weapon_crossbow_d,
         weapons::Id::Fists => s.weapon_fists_d,
+        weapons::Id::Bow => s.weapon_bow_d,
     }
 }
 
@@ -684,6 +685,7 @@ impl App {
     pub(super) fn tick_equip(&mut self, a: &Actions) {
         let mut a = *a;
         let before = self.cursor;
+        self.turn_doll(&mut a);
         // 칸 고르기에는 굴릴 목록이 없다 — 휠·끌기는 어디서든 오른쪽 상세 칸을.
         if a.wheel != 0 || a.drag != 0.0 {
             let line = self.ui.u(tabs::LH_BODY).max(1.0);
@@ -885,8 +887,9 @@ impl App {
             dh,
         );
         let t = get_time() as f32;
-        self.renderer
-            .draw_doll(self.weapon, doll, 0.55 * (t * 0.7).sin(), t);
+        self.doll_rect = Some(doll);
+        let spin = self.doll_spin();
+        self.renderer.draw_doll(self.weapon, doll, spin, t);
         for (i, r) in boxes.iter().enumerate() {
             let sel = i == slot_cursor;
             self.ui.button(*r, "", sel);
@@ -1169,7 +1172,7 @@ impl App {
                 weapons::Id::Sword | weapons::Id::Fists => Some(s.art_sword.to_string()),
                 weapons::Id::Hammer => Some(fill(s.art_hammer, &[&pct(id.art().force)])),
                 weapons::Id::Staff => Some(fill(s.art_staff, &[&pct(id.art().channel)])),
-                weapons::Id::Crossbow => None,
+                weapons::Id::Crossbow | weapons::Id::Bow => None,
             };
             if let Some(art) = art {
                 lines.extend(self.pane_wrap(w, &art, AMBER));

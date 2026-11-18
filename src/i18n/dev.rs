@@ -30,9 +30,33 @@ pub const NOTE_EXPORTED: Pair = (
     "exported to console (paste into src/tuning.rs)",
 );
 pub const NOTE_USING: Pair = ("지금 {0} 값을 씀", "now using {0}");
-pub const LAB_HINT: Pair = (
-    "{0} · 기본 {1} · {2} ×10 · 확인 = 기본값",
-    "default {1} | {2} x10 | confirm = default",
+pub const USING_D: Pair = (
+    "A와 B 두 벌의 값을 오가며 견준다. 좌우나 확인으로 바꾼다. B는 먼저 담아야 생긴다.",
+    "switch between two sets of values, A and B, to compare them. left/right or confirm. store B first.",
+);
+pub const STORE_B_D: Pair = (
+    "지금 쓰는 값을 모두 B 벌에 담는다. 그 뒤 A로 돌아가 바꿔 보고 B와 견준다.",
+    "copy every current value into set B. then go back to A, change things, and compare.",
+);
+pub const EXPORT_D: Pair = (
+    "기본값과 다른 값을 src/tuning.rs에 붙여 넣을 줄로 콘솔에 찍는다.",
+    "print every value that differs from its default to the console, as lines to paste into src/tuning.rs.",
+);
+pub const RESET_ALL_D: Pair = (
+    "모든 묶음의 값을 기본값으로 되돌린다. B 벌은 그대로 남는다.",
+    "put every value in every group back to its default. set B stays.",
+);
+pub const LAB_NOW: Pair = ("지금", "now");
+pub const LAB_DEF: Pair = ("기본", "default");
+pub const LAB_STEP: Pair = ("한 걸음", "step");
+pub const LAB_CHANGED: Pair = ("기본값과 다름", "changed from default");
+pub const LAB_FAST: Pair = ("꾹 + 좌우 ×10", "hold + left/right x10");
+pub const LAB_RESET: Pair = ("기본값으로", "reset");
+pub const LAB_COUNT: Pair = ("값 {0}개 · 바꾼 것 {1}", "{0} values · {1} changed");
+pub const LAB_ALL_DEFAULT: Pair = ("모두 기본값 그대로다.", "everything is at its default.");
+pub const LAB_GROUP_D: Pair = (
+    "확인 = 이 묶음의 탭으로.",
+    "confirm = go to this group's tab.",
 );
 pub const DEV_TITLE: Pair = ("개발", "DEV");
 pub const DEV_ROW_D: Pair = (
@@ -122,8 +146,8 @@ pub const SKILLS_MAX_NOTE: Pair = (
 pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
 pub const ARM: Pair = ("든 무기 바꾸기", "change the held weapon");
 pub const ARM_NOTE: Pair = (
-    "든 무기를 다음 것으로 바꾼다(검 → 망치 → 지팡이 → 쇠뇌 → 맨손). 스킬은 무기 갈래를 탄다 — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다. 지금: {0}",
-    "cycle the held weapon (sword, hammer, staff, crossbow, fists). Skills go by weapon grip: wear and enter arenas with this one. nothing is saved. now: {0}",
+    "든 무기를 다음 것으로 바꾼다(검 → 망치 → 지팡이 → 쇠뇌 → 맨손 → 활). 스킬은 무기 갈래를 탄다 — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다. 지금: {0}",
+    "cycle the held weapon (sword, hammer, staff, crossbow, fists, bow). Skills go by weapon grip: wear and enter arenas with this one. nothing is saved. now: {0}",
 );
 pub const PERF_LINE: Pair = ("성능 줄 켬/끔", "perf line on/off");
 pub const PERF_LINE_NOTE: Pair = (
@@ -151,7 +175,19 @@ pub const PAIRS: &[Pair] = &[
     NOTE_NO_B,
     NOTE_EXPORTED,
     NOTE_USING,
-    LAB_HINT,
+    USING_D,
+    STORE_B_D,
+    EXPORT_D,
+    RESET_ALL_D,
+    LAB_NOW,
+    LAB_DEF,
+    LAB_STEP,
+    LAB_CHANGED,
+    LAB_FAST,
+    LAB_RESET,
+    LAB_COUNT,
+    LAB_ALL_DEFAULT,
+    LAB_GROUP_D,
     DEV_TITLE,
     DEV_ROW_D,
     TAB_TOOLS,
@@ -230,6 +266,8 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("cast", ("마법", "magic")),
     ("xbow_charge", ("쇠뇌 모으기", "crossbow charge")),
     ("xbow_shoot", ("쇠뇌 쏘기", "crossbow shot")),
+    ("bow_draw", ("활 당기기", "bow draw")),
+    ("bow_shoot", ("활 쏘기", "bow shot")),
     ("throw", ("수류탄 던지기", "grenade")),
     ("parry", ("패링", "parry")),
     ("dodge", ("회피", "dodge")),
@@ -294,6 +332,11 @@ pub fn spec_label(name: &'static str) -> &'static str {
 
 /// 개발 시나리오(`scenario::LIST`의 영어 이름) → (한국어 이름, 무엇을 보나). F3 아레나 줄은 기본 글꼴이라 영어 그대로.
 pub const SCENARIO_KO: &[(&str, &str, &str)] = &[
+    (
+        "chained winchkeeper",
+        "사슬에 묶인 권양지기",
+        "0208 사슬 안에서 내려치기·사슬 휘두르기, 떨어지면 갈고리·추, 넷에 하나 아래에서 사슬이 끊긴다",
+    ),
     (
         "moss-clad warden",
         "이끼 덮인 문지기",

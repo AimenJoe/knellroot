@@ -24,6 +24,16 @@ pub(super) const K_BODY: f32 = 0.72;
 /// 몸 글의 줄 높이(기준 px).
 pub(super) const LH_BODY: f32 = 10.4;
 
+/// 인형 돌리기(0235): 끈 거리(기준 px)당 라디안 · 패드 오른쪽 스틱을 다 기울였을 때 초당 라디안 · 스틱 데드존.
+const DOLL_DRAG: f32 = 0.025;
+const DOLL_STICK: f32 = 3.0;
+const DOLL_STICK_DEAD: f32 = 0.3;
+
+/// 손대지 않은 인형의 흔들림(라디안).
+fn doll_sway(t: f32) -> f32 {
+    0.55 * (t * 0.7).sin()
+}
+
 /// 오른쪽 칸의 몸 한 줄.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum Ln {
@@ -116,7 +126,12 @@ impl App {
     }
 
     /// 탭 넘기기 한 틱: 패드 LB·RB / 키보드 Q·E(0175) = 옆 탭, 탭 머리 누르기 = 그 탭. 넘겼으면 참(그 틱은 여기서 끝난다).
-    pub(super) fn tab_input(&mut self, a: &Actions) -> bool {
+    /// 탭 줄이 넘치면(0233) 그 위의 끌기·휠은 탭 줄을 굴린다 — 몸의 목록에는 넘기지 않는다.
+    pub(super) fn tab_input(&mut self, a: &mut Actions) -> bool {
+        if self.tab_strip.over(a.point) {
+            self.tab_strip.nudge(a.point, a.drag_x, a.wheel);
+            (a.drag, a.drag_x, a.wheel) = (0.0, 0.0, 0);
+        }
         let scene = self.scene();
         let go = match a.tap.and_then(|p| self.hit_at(p)) {
             Some(Hit::Tab(i)) => flow::tab_pick(scene, i),
@@ -383,6 +398,34 @@ impl App {
 
     /// 오른쪽 칸 굴리기 한 틱(0068): 오른쪽 스틱은 늘, 휠·끌기는 그 칸 위에서 일어났을 때만(그때는 목록에 넘기지 않는다).
     /// 커서가 옮겨 가면 부른 쪽이 `scroll`을 0으로.
+    /// 상태·장비 탭의 인형 돌리기(0235, 사장 "드래그해서 살펴볼 수 있도록"): 인형 위에서 시작한 가로 끌기(손가락·마우스)와
+    /// 패드 오른쪽 스틱의 가로. 한 번 돌리면 저절로 흔들기는 멈추고 그 각에 머문다(창을 다시 열어도 — 앱이 켜져 있는 동안).
+    /// 끌기는 여기서 먹는다(아래 목록·상세가 같이 굴러가지 않게).
+    pub(super) fn turn_doll(&mut self, a: &mut Actions) {
+        let on_doll = matches!((a.point, self.doll_rect), (Some(p), Some(r)) if r.contains(p));
+        let mut d = 0.0;
+        if on_doll && a.drag_x != 0.0 {
+            // 돌림판처럼 — 오른쪽으로 끌면 앞면이 손가락을 따라 오른쪽으로(`drag_x`는 손가락이 왼쪽으로 가면 +, 각은 +면 앞면이 오른쪽으로).
+            d -= a.drag_x / self.ui.u(1.0) * DOLL_DRAG;
+            (a.drag_x, a.drag) = (0.0, 0.0);
+        }
+        if a.aim.x.abs() > DOLL_STICK_DEAD {
+            d += a.aim.x * DOLL_STICK * TICK_DT;
+        }
+        if d != 0.0 {
+            let now = self
+                .doll_yaw
+                .unwrap_or_else(|| doll_sway(get_time() as f32));
+            self.doll_yaw = Some((now + d).rem_euclid(std::f32::consts::TAU));
+        }
+    }
+
+    /// 인형의 지금 각: 손으로 돌렸으면 그 각, 아니면 천천히 좌우로 흔든다.
+    pub(super) fn doll_spin(&self) -> f32 {
+        self.doll_yaw
+            .unwrap_or_else(|| doll_sway(get_time() as f32))
+    }
+
     pub(super) fn pane_scroll_lines(&mut self, a: &mut Actions) {
         let over = a.point.and_then(|p| self.hit_at(p)) == Some(Hit::Pane);
         let (wheel, drag) = if over {

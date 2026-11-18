@@ -113,10 +113,20 @@ impl Renderer {
         if let Some(e) = self.lib.get(model) {
             let (anim, at) = enemy_anim(en, model, e, w.time, stage);
             // 종 내던지기(0133): 종이 손을 떠난 뒤엔 손의 종을 감춘다(날아가는·떨어진 종은 따로 그린다).
-            let hide = hurl_bell(en)
+            let mut hide: Vec<(usize, Quat, Vec3)> = hurl_bell(en)
                 .and(e.model.node("bell"))
-                .map(|n| (n, Quat::IDENTITY, Vec3::ZERO));
-            e.model.pose_with(anim, at, hide.as_slice(), &mut self.pose);
+                .map(|n| (n, Quat::IDENTITY, Vec3::ZERO))
+                .into_iter()
+                .collect();
+            // 등짐꾼의 짐(0216 W2 → 0234): 모델의 `load` 부위 — 자세가 처음 깨지면 깨져 사라진다.
+            if en.load_lost {
+                hide.extend(
+                    e.model
+                        .node("load")
+                        .map(|n| (n, Quat::IDENTITY, Vec3::ZERO)),
+                );
+            }
+            e.model.pose_with(anim, at, &hide, &mut self.pose);
             let inst = Mat4::from_translation(p + sink)
                 * Mat4::from_quat(tilt)
                 * Mat4::from_rotation_y(en.facing)
@@ -247,6 +257,19 @@ impl Renderer {
             } else {
                 0.0
             };
+            // 활(0231)은 활쏘기 원본의 제 동작 — 옆으로 서서 왼손의 활로 겨눈다(없는 모델이면 쇠뇌의 것).
+            let bow = wpn.id == crate::weapons::Id::Bow;
+            let (shoot, draw): (&[&str], &[&str]) = if bow {
+                (
+                    &["bow_shoot", "xbow_shoot", "cast", "attack"],
+                    &["bow_draw", "xbow_charge", "bow_shoot", "cast"],
+                )
+            } else {
+                (
+                    &["xbow_shoot", "cast", "attack"],
+                    &["xbow_charge", "xbow_shoot", "cast"],
+                )
+            };
             let (names, at): (&[&str], f32) = match pl.state {
                 // 콤보(0051): 무기 표의 타마다 동작(없는 모델이면 평타).
                 // 몰아치기(0158 G2) 동안은 평타의 시계가 빨라진다 — 동작도 같은 배로 돌린다.
@@ -293,14 +316,14 @@ impl Renderer {
                 PState::Block { t: e } => (&["block", "parry", "attack"], e),
                 // 마법(0048): 손을 앞으로 내미는 자세(전용 동작이 생기기 전엔 패링 자세).
                 PState::Cast { t: e, .. } if matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) => {
-                    (&["xbow_shoot", "cast", "attack"], e)
+                    (shoot, e)
                 }
                 PState::Cast { t: e, .. } => (&["cast", "parry", "attack"], e),
                 // 원거리 강공격 모으기(0056): 쇠뇌는 어깨에 대고 시위를 당긴 채, 마법은 두 손을 모아 빛을 키우는 자세를 쥔다.
                 PState::CastCharge { t: e }
                     if matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) =>
                 {
-                    (&["xbow_charge", "xbow_shoot", "cast"], e)
+                    (draw, e)
                 }
                 PState::CastCharge { t: e } => (&["cast_charge", "cast", "parry"], e),
                 // 공중(0027): 방랑자의 jump·plunge·land 동작(없는 모델이면 회피·공격 자세로).
@@ -311,7 +334,7 @@ impl Renderer {
                         && matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) =>
                 {
                     (
-                        &["xbow_shoot", "cast"],
+                        shoot,
                         XBOW_RELEASE + (crate::tuning::AIR_SHOT_HOVER - pl.ranged.hover),
                     )
                 }
@@ -386,7 +409,7 @@ impl Renderer {
                     self.gait.advance(wdt, true, (speed / 4.0).clamp(0.6, 2.2)),
                 ),
                 PState::Idle if speed > 0.5 => {
-                    let (names, _) = move_anim(pl.pos - pl.prev, pl.facing_dir(), w.lock.is_some());
+                    let (names, _) = move_anim(pl.pos - pl.prev, pl.facing_dir(), pl.faces_away);
                     let k = if names[0] == "walk_back" {
                         WALK_BACK_RATE
                     } else {
@@ -399,7 +422,7 @@ impl Renderer {
                     )
                 }
                 // 쇠뇌를 쏜 뒤(0197): 서 있으면 잠깐 겨눈 채(쏘기의 끝 자세).
-                PState::Idle if self.aim_hold > 0.0 => (&["xbow_shoot", "idle"], XBOW_HOLD_AT),
+                PState::Idle if self.aim_hold > 0.0 => (shoot, XBOW_HOLD_AT),
                 PState::Idle => match idle_pose {
                     crate::idle::Pose::Loop(t) => (&["idle"], t),
                     crate::idle::Pose::Fidget(i, t) => {
@@ -443,7 +466,7 @@ impl Renderer {
             super::hide_unheld(&e.model, pl.weapon, pl.shield, away, &mut self.sec_extra);
             // 락온 중 옆·비스듬히 걸을 때(0197): 다리(엉덩이)를 가는 쪽으로 돌리고 윗몸(첫 등뼈)을 되돌려 과녁을 본다 — 부드럽게 따라간다.
             let leg_want = if matches!(pl.state, PState::Idle) && speed > 0.5 {
-                move_anim(pl.pos - pl.prev, pl.facing_dir(), w.lock.is_some()).1
+                move_anim(pl.pos - pl.prev, pl.facing_dir(), pl.faces_away).1
             } else {
                 0.0
             };
@@ -778,6 +801,7 @@ fn enemy_anim(
 /// Blender 스크립트(`tools/art/blender/<모델>.py`)의 키 시각과 같다 — 동작을 고치면 여기도. 표에 없으면 동작의 40%·50%.
 pub(super) const STRIKE_KEYS: &[(&str, &str, f32, f32)] = &[
     ("root_husk", "attack", 0.5, 0.62),
+    ("repeater", "attack", 0.5, 0.62), // 잔재의 동작 표 그대로(0234)
     ("gatekeeper", "slam", 0.9, 1.0),
     ("gatekeeper", "wave", 1.0, 1.12),
     ("shellback", "attack", 0.6, 0.72),
@@ -788,6 +812,11 @@ pub(super) const STRIKE_KEYS: &[(&str, &str, f32, f32)] = &[
     ("mossward", "slam", 0.9, 1.0),
     // 껍질(0185): 0.5에 다 웅크리고 거기서 버틴다 — 맞음은 거의 같은 자세(풀기는 `recover`).
     ("mossward", "shell", 0.5, 0.55),
+    // 권양지기(0234): 문지기의 두 발 표 + 갈고리(오른팔 내던지기)·추(두 팔로 들어 던지기).
+    ("winchkeeper", "slam", 0.9, 1.0),
+    ("winchkeeper", "wave", 1.0, 1.12),
+    ("winchkeeper", "hook", 0.8, 0.9),
+    ("winchkeeper", "hurl", 0.9, 1.0),
 ];
 
 fn strike_keys(model: &str, a: Option<usize>, e: &Entry) -> (f32, f32) {
@@ -834,10 +863,11 @@ fn windup_hold(en: &Enemy) -> Option<f32> {
     (t >= start).then_some(t - start)
 }
 
-/// 걷는 동작 고르기(0034): 락온 중엔 몸이 대상을 보니 걷는 쪽이 옆이면 게걸음(`strafe_l`·`strafe_r`), 뒤면 뒷걸음.
-/// 락온이 아니면 늘 앞으로 걷는다(몸이 걷는 쪽을 본다). 없는 모델이면 `walk`로.
-pub fn move_anim(step: Vec3, facing: Vec3, locked: bool) -> (&'static [&'static str], f32) {
-    if !locked {
+/// 걷는 동작 고르기(0034 → 0235): 몸이 걷는 쪽이 아닌 것을 볼 때(락온 · 쥔 조준 · 막기 — `Player::faces_away`)는 걷는 쪽이 옆이면 게걸음(`strafe_l`·`strafe_r`), 뒤면 뒷걸음.
+/// 아니면 늘 앞으로 걷는다(몸이 걷는 쪽을 본다). 없는 모델이면 `walk`로. 수류탄을 겨눈 채 뒤로 걸으면 앞으로 걷는 동작이
+/// 뒤로 미끄러졌다(사장 "수류탄 조준 중에 뒤로 걷는 모션 이상하다", 0235) — 락온만 보던 것을 `faces_away`로.
+pub fn move_anim(step: Vec3, facing: Vec3, faces_away: bool) -> (&'static [&'static str], f32) {
+    if !faces_away {
         return (&["walk"], 0.0);
     }
     let v = vec3(step.x, 0.0, step.z);

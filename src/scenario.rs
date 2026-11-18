@@ -26,6 +26,8 @@ pub enum Scenario {
     Mossward,
     /// 이끼 덮인 문지기 2단계(0185): 체력 반 — 시작하자마자 전환, 쓸기 뒤 돌진.
     MosswardTwo,
+    /// 사슬에 묶인 권양지기(0208·0234 모델): 사슬 안에서 내려치기·사슬 휘두르기, 떨어지면 갈고리·추.
+    Overseer,
     /// 작업층의 새 적(0212·0216 W2): 등짐꾼(짐 — 자세를 깨면 깨진다)·되풀이꾼·일만 하는 되풀이꾼.
     Workers,
     /// 스킬 연습(0151 S0 판정): 두 겹으로 둘러싼 떼 + 큰 기술 게이지 가득 — "모으고 → 쓸고"와 쟁반 뒤집기를 바로.
@@ -39,7 +41,7 @@ pub struct Entry {
     pub checks: &'static str,
 }
 
-pub const LIST: [Entry; 17] = [
+pub const LIST: [Entry; 18] = [
     Entry {
         scenario: Scenario::Boss,
         name: "boss arena",
@@ -121,6 +123,11 @@ pub const LIST: [Entry; 17] = [
         scenario: Scenario::MosswardTwo,
         name: "moss-clad warden phase two",
         checks: "0185 rise at once, shorter rests, sweep then dash",
+    },
+    Entry {
+        scenario: Scenario::Overseer,
+        name: "chained winchkeeper",
+        checks: "0208 slam and chain sweep inside the chain, hook and weight when apart, chain breaks at a quarter",
     },
     Entry {
         scenario: Scenario::Skills,
@@ -223,6 +230,11 @@ pub fn build(s: Scenario) -> World {
             w.spawn(crate::species::Kind::Mossward, vec3(0.0, 0.0, -9.0));
             w.obstacles.push(pillar(-10.0, -10.0, 1.6, 4.0));
             w.obstacles.push(pillar(10.0, -10.0, 1.6, 4.0));
+            w
+        }
+        Scenario::Overseer => {
+            let mut w = World::new("winchkeeper arena", 16.0);
+            w.spawn(crate::species::Kind::Overseer, vec3(0.0, 0.0, -9.0));
             w
         }
         // 2단계(0133): 같은 아레나, 체력만 반 — 시작하자마자 전환(잠든 문지기는 깨어난 뒤).

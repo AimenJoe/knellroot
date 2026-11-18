@@ -109,6 +109,15 @@ async function main() {
     await touch('touchEnd', []); await page.waitForTimeout(300);
   }
   await shot('t01c-shoulder-dragged');
+  // 숄더뷰에서 겨누는 버튼(특수)을 끌면 시점이 돈다(0229 — 겨누는 것은 크로스헤어). 끄는 동안 땅에는 아무것도 안 그린다.
+  {
+    const c = b.cast, R = Math.min(W, H) * 0.14;
+    await touch('touchStart', [c]); await page.waitForTimeout(50);
+    for (let i = 1; i <= 8; i++) { await touch('touchMove', [[c[0] - R * 0.15 * i, c[1]]]); await page.waitForTimeout(30); }
+    await page.waitForTimeout(150);
+    await shot('t01c2-shoulder-aim-drag');
+    await touch('touchEnd', []); await page.waitForTimeout(300);
+  }
   await tap(b.view); await page.waitForTimeout(800);
   await shot('t01d-back-to-quarter');
   // 스틱: 왼쪽 아래에 대고 위로 끌어 0.8초 걷기.

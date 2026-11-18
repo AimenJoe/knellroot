@@ -34,7 +34,7 @@ async function main() {
   // 모서리를 눌러 초점만(가운데를 누르면 메뉴 줄을 탭한다 — 마우스도 메뉴를 뗄 때 탭, 0058).
   await canvas.click({ position: { x: 4, y: 4 } });
   const shot = (name) => page.screenshot({ path: path.join(OUT, name + '.png') });
-  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.waitForTimeout(60); } };
+  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(60); } };
   // 키보드만 배치로(0058 — 이 스크립트는 J·K·L로 싸운다. 새로 설치한 판의 기본은 키보드+마우스):
   // 타이틀 → 설정(둘째) → 조작(타이틀의 설정에서는 맨 끝 줄 — 위로 한 번, 0164) → "키보드만 배치로"(끝에서 둘째) → 돌아가기 둘.
   const keyboardOnly = async () => {
@@ -110,7 +110,7 @@ async function main() {
   await shot('01-quarter');
   // 쿼터뷰 요 비교(랩 값 cam.quarter.yaw, 표 다섯째 줄 = 0부터 4): 기본 35 → 0 → 45 → 35.
   // 누름은 틱(16ms)마다 하나만 들어가므로 사이를 띄운다. Ctrl(10배)은 헤드리스에서 안 잡혀 쓰지 않는다.
-  const tap = async (key, n) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.waitForTimeout(30); } };
+  const tap = async (key, n) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(30); } };
   await page.keyboard.press('F1'); await page.waitForTimeout(100);
   await tap('ArrowDown', 4);
   await tap('ArrowLeft', 35);
@@ -144,12 +144,12 @@ async function main() {
   await page.keyboard.press('Digit3'); await page.waitForTimeout(300);
   await page.keyboard.down('KeyS'); await page.waitForTimeout(1200); await page.keyboard.up('KeyS');
   await page.keyboard.press('KeyL'); await page.waitForTimeout(800); await shot('10-pillars-lock');
-  // 랩 창(0070): F1 → 묶음 목록(위 넷: A/B·담기·내보내기·되돌리기) → 첫 묶음(카메라 쿼터뷰) → → 넷 → 내보내기 → F1로 닫기.
+  // 랩 창(0070 → 0235 큰 창): F1 → 도구 탭(A/B·담기·내보내기·되돌리기) → E = 첫 묶음 탭(카메라 쿼터뷰) → → 넷 → Q = 도구 → 내보내기 → F1로 닫기.
   await page.keyboard.press('F1'); await page.waitForTimeout(300); await shot('11-lab');
-  await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(300);
+  await press('KeyE'); await page.waitForTimeout(300);
   await press('ArrowRight', 4); await page.waitForTimeout(200); await shot('11b-lab-group');
-  await press('Escape'); await page.waitForTimeout(200);
-  await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(200);
+  await press('KeyQ'); await page.waitForTimeout(200);
+  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(200);
   await page.keyboard.press('F1'); await page.waitForTimeout(200);
   // 쟁반 돌리기(0012): 시나리오 5에서 C(↻, 0151 — 예전 E) — 도는 중(적은 그대로) · 멈춘 순간 쏟아짐·휘청 · 대기 중 Z(↺)는 안 먹는다.
   await page.keyboard.press('Digit5'); await page.waitForTimeout(500); await shot('12-tray');

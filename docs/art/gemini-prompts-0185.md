@@ -1,5 +1,7 @@
 # 나노바나나(Gemini) → Meshy 참조 그림 프롬프트 — 0185(셋째 지역: 이끼먹이·이끼 덮인 문지기)
 
+> **받음(2026-11-18, 0234)**: 둘 다 이 블록 그대로 첫 장이 맞았다 — `tools/art/sources/ai/knellroot/mossgrazer_v1_front.png`·`mossward_v1_front.png`. 이끼먹이는 Meshy까지(`mossgrazer.py`), 문지기는 사장 확인 뒤 Meshy.
+
 > 사장 2026-11-14: "캐릭터에 대해서는 이미지 생성할 참조 이미지랑 프롬프트 주면 생성해서 줄게, 평가해 줘. 그런 후 Meshy로 모델 만들겠어."
 > 흐름은 0132와 같다(`docs/art/gemini-prompts-0132.md`, KB `guides/ai-mesh-to-rigid-part-model.md`): **나노바나나 = 참조 그림 한 장** →
 > Claude가 작은 크기로 평가(`tools/art/tiny_preview.py`) → **Meshy Image to 3D** → GLB를 Claude에게 → 줄이기·색 굽기·부위·뼈·동작.

@@ -23,7 +23,7 @@ REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 # 0155: 무기 넷·등잔을 상자 조합에서 제 꼴(잎 꼴 날·통 머리·굽은 활)로, 두건 꼭지 — 4,524(무기 넷이 1,233). 색인은 13,668 — 한 호출 15,000 아래를 지킨다.
 # 0193: 스킨 몸(Meshy 리깅, 줄여 정점 2,963) + 무기 넷·등잔 그대로 — 4,196.
 # charms: 0155에서 돌린 꼴·꺾인 관으로 다시(1,939) — 한 번에 하나만 그린다(아이콘은 캐시).
-BUDGET = {"mossgrazer": 900, "mossward": 2200, "wanderer": 4800, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
+BUDGET = {"mossgrazer": 900, "packbearer": 1000, "repeater": 1650, "mossward": 2600, "winchkeeper": 2600, "wanderer": 4800, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
           # 0068 장신구 여섯이 한 파일(게임은 하나씩만 그린다) — 하나 280 안팎.
           "charms": 2200,
           # 0139 다듬은 소품: 깎은 돌 하나가 정점 64(면마다 따로 — 각진 음영), 스테이지에 60개 안쪽이라 넉넉히.
@@ -40,7 +40,7 @@ EXPECT = {
     "wanderer": {"block": 0.2, "idle": 1.87, "idle_look": 1.83, "idle_shake": 1.12, "run": 0.63, "wake": 4.0, "fall": 1.3, "walk": 0.8, "attack": 0.43, "dodge": 0.25, "hurt": 0.35, "turn_r": 0.25, "turn_l": 0.25,
                  "walk_back": 1.67, "charge": 0.3, "heavy": 0.58, "drink": 0.8,
                  # 0196: 점프는 체공의 앞뒤 반(게임이 위 속도로 자리를 고른다), 줍기 0.9, 쇠뇌(활쏘기 원본) 겨누기 0.3 · 쏘기 0.24.
-                 "jump": 0.5, "land": 0.15, "pickup": 0.9, "xbow_charge": 0.3, "xbow_shoot": 0.24,
+                 "jump": 0.5, "land": 0.15, "pickup": 0.9, "xbow_charge": 0.3, "xbow_shoot": 0.24, "bow_draw": 0.3, "bow_shoot": 0.24,
                  # 0197: 뒤로 뛰기 회피 0.25(회피와 같다), 장치 당기기 0.65.
                  "dodge_back": 0.25, "pull": 0.65,
                  # 0198 넷째 묶음: 맨손 잽 둘(0.258)·어퍼컷(0.344)·차기 모으기·차기(0.464), 패링 막기·마법은 옛 길이 그대로.
@@ -60,8 +60,12 @@ EXPECT = {
     "shellback": {"idle": 1.6, "walk": 1.0, "attack": 1.3, "hurt": 0.3},
     "pod": {"idle": 1.4, "walk": 0.5, "hop": 0.4, "plant": 1.0, "hurt": 0.3},
     "mossgrazer": {"idle": 1.8, "walk": 0.4, "hurt": 0.3},
+    "packbearer": {"idle": 1.4, "run": 0.5, "charge_windup": 0.6, "charge": 0.4, "recover": 0.7, "hurt": 0.3},
+    "repeater": {"idle": 1.6, "walk": 1.0, "attack": 1.3, "hurt": 0.3},
     "mossward": {"idle": 2.0, "walk": 1.4, "slam": 1.5, "charge_windup": 0.8, "charge": 0.5, "shell": 1.6,
                  "recover": 0.8, "hurt": 0.4, "wake": 2.0},
+    "winchkeeper": {"idle": 2.0, "walk": 1.4, "slam": 1.5, "charge_windup": 0.8, "charge": 0.5,
+                    "wave": 1.6, "hurt": 0.4, "wake": 2.0, "hook": 1.3, "hurl": 1.5},
     "bellkeeper": {"idle": 2.0, "walk": 1.4, "toll": 1.6, "slam": 1.5, "throw": 1.2, "charge_windup": 0.8,
                    "charge": 0.5, "recover": 0.8, "hurt": 0.4, "wake": 2.0},
     "res_hearth": {"work": 3.2, "look": 2.4},
@@ -73,7 +77,9 @@ EXPECT = {
     "chest": {"open": 0.4},
     "lever": {"pull": 0.4},
 }
-MUST_NODES = {"mossward": ["glow_core", "glow_eyes", "head_geo"], "gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["body", "root", "sword", "w_hammer", "w_staff", "w_crossbow", "glow_lamp", "lamp", "shield"],
+MUST_NODES = {"mossward": ["glow_core", "glow_eyes", "head_geo", "shell_geo"],
+              "winchkeeper": ["glow_core", "glow_eyes", "head_geo", "club"], "packbearer": ["glow_eyes", "head_geo", "load_geo", "load"],
+              "repeater": ["glow_eyes", "head_geo", "pick"], "mossgrazer": ["head_geo", "ear_l", "ear_r"], "gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["body", "root", "sword", "w_hammer", "w_staff", "w_crossbow", "w_bow", "bow", "glow_lamp", "lamp", "shield"],
               "root_husk": ["glow_eye"], "thorn_beast": ["glow_eyes"], "shellback": ["glow_eyes", "head_geo"], "pod": ["glow_eyes", "head_geo", "seed_geo"],
               "bellkeeper": ["glow_eyes", "glow_core", "bell_geo", "head_geo"], "res_hearth": ["head_geo"], "res_water": ["head_geo"], "res_cloth": ["head_geo"], "brazier": ["glow_flame"],
               "core_crystal": ["glow_core"], "bell": ["bell", "bell_frame"],

@@ -61,9 +61,24 @@ impl App {
     ) -> Window {
         self.ui.dim(0.45);
         let w = self.window_geo(f);
-        let heads = self.ui.window(w.panel, w.k, tabs, active, purse);
+        let heads = self
+            .ui
+            .window(w.panel, w.k, tabs, active, purse, &mut self.tab_strip);
         // 튜토리얼이 가리키는 탭(0209): 탭 머리의 오른쪽 위에 반짝이는 별.
-        if let Some(r) = sparkle.and_then(|i| heads.get(i)) {
+        // 굴린 탭 줄(0232)에서 가려진 탭이면 그 쪽 화살에.
+        let shown = |i: usize| -> Option<Rect> {
+            let r = *heads.get(i)?;
+            if r.x > -1.0e3 {
+                return Some(r);
+            }
+            let side: Box<dyn Iterator<Item = usize>> = if i < active {
+                Box::new(i + 1..heads.len())
+            } else {
+                Box::new((0..i).rev())
+            };
+            side.map(|j| heads[j]).find(|r| r.x > -1.0e3)
+        };
+        if let Some(r) = sparkle.and_then(shown) {
             self.ui
                 .sparkle(vec2(r.x + r.w - w.s * 3.0, r.y + w.s * 3.0), w.s * 4.0);
         }

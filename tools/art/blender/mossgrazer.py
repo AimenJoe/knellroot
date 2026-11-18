@@ -1,4 +1,9 @@
-"""이끼먹이(0185 — 잔뿌리의 정원의 비적대 생명체, 1차 코드 모델 · 2차는 그림 → Meshy).
+"""이끼먹이(0185 — 잔뿌리의 정원의 비적대 생명체 · 2차 0234: 그림 → Meshy).
+
+지금(0234): Meshy 몸 — 크림빛 둥근 몸, 등에 민트 이끼 방석(덩이 셋 + 새싹), 연두 귀 둘, 이끼 꼬리 뭉치, 낮게 둔 검은 큰 눈.
+키 0.6m(귀·이끼 끝까지)·길이 0.87m. 원본 `tools/art/sources/meshy/mossgrazer_v1.glb`(나노바나나 Pro 그림
+`tools/art/sources/ai/knellroot/mossgrazer_v1_front.png` → Meshy 6 API, CC BY 4.0) → `meshy_convert.py ... 0.6 650 128`.
+옛 코드 몸(1차)은 `make_blocks()`에 남긴다.
 
 정상 피식자: 작고 둥근 몸(키 0.5m 남짓), 귀여움 문법(0036 — 큰 머리·낮게 둔 큰 눈·입 없음·둥근 실루엣), 살아 있는 것이라
 파스텔(0037 — 따뜻한 크림 몸 + 등의 연두 이끼). 침식된 적(잿빛 + 보라 뿌리)과 한눈에 갈린다.
@@ -14,8 +19,45 @@ import common as C  # noqa: E402
 
 NAME = "mossgrazer"
 
+MESHY_LOW = os.path.join(C.REPO, "tools", "art", "sources", "meshy", "mossgrazer_v1_low.glb")
+MESHY_PARTS = {"body_geo": "body", "head_geo": "head", "ear_l_geo": "ear_l", "ear_r_geo": "ear_r", "tail_geo": "tail"}
+# 치수(앞 = -Y, 캐릭터 왼쪽 = +X) — 정면·옆·위 직교 렌더에 0.05m 눈금을 그어 잰 것.
+LEG_Z = 0.10  # 이보다 아래는 다리 — 몸에 붙인다(깡충은 온몸으로, 0173)
+HEAD_Y = -0.13  # 이보다 앞(위 LEG_Z)은 머리
+EAR = (0.12, -0.20, 0.38)  # |x| 넘고, y 앞, z 위면 귀
+TAIL_Y = 0.33  # 이보다 뒤(엉덩이 높이)는 이끼 꼬리 뭉치
+
+
+def classify(c):
+    x, y, z = c.x, c.y, c.z
+    if z < LEG_Z:
+        return "body_geo"
+    ex, ey, ez = EAR
+    if abs(x) > ex and y < ey and z > ez:
+        return "ear_l_geo" if x > 0 else "ear_r_geo"
+    if y < HEAD_Y:
+        return "head_geo"
+    if y > TAIL_Y and 0.14 < z < 0.38:
+        return "tail_geo"
+    return "body_geo"
+
 
 def make():
+    """0234: Meshy 몸, 뼈 이름·동작은 1차 그대로 — 뼈 자리만 새 몸에."""
+    m = C.Model(NAME)
+    m.bone("root", (0, 0, 0))
+    m.bone("body", (0, 0.05, 0.12), "root")
+    m.bone("head", (0, -0.12, 0.22), "body")
+    m.bone("ear_l", (0.17, -0.27, 0.40), "head")
+    m.bone("ear_r", (-0.17, -0.27, 0.40), "head")
+    m.bone("tail", (0, 0.34, 0.26), "body")
+    m.external(MESHY_LOW, classify, MESHY_PARTS)
+    m.build()
+    acts(m)
+    return m
+
+
+def make_blocks():
     m = C.Model(NAME)
     m.bone("root", (0, 0, 0))
     m.bone("body", (0, 0.02, 0.12), "root")
@@ -48,7 +90,11 @@ def make():
     tail.blob((0, 0.3, 0.2), (0.1, 0.1, 0.1), "p_moss", r=1.0, n=2)
 
     m.build()
+    acts(m)
+    return m
 
+
+def acts(m):
     def k(**b):
         return b
 
@@ -71,7 +117,6 @@ def make():
         (0.0, k(body={"r": (-14, 0, 0), "s": (0.9, 0.9, 1.1)}, head={"r": (-12, 0, 0)})),
         (0.3, k()),
     ])
-    return m
 
 
 def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR):

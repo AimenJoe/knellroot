@@ -126,6 +126,11 @@ pub struct App {
     passage: Option<crate::descent::Passage>,
     /// 이 판에서 멈춤 창이 마지막에 보던 탭(0164) — 다음에 멈추면 거기서 열린다(`flow::pause`). 판에 붙은 한 칸: 새 판이면 상태로.
     pause_tab: flow::Tab,
+    /// 큰 창의 탭 줄이 넘칠 때의 가로 창(0233 — 탭을 넘겨도 같은 창이라 장면 칸이 아니라 여기 하나).
+    tab_strip: crate::ui::Strip,
+    /// 상태·장비 탭의 인형(0235): 손으로 돌린 각(라디안 — `None`이면 저절로 천천히 좌우로 흔든다)과 그린 자리(끌기가 그 위에서 시작했나).
+    doll_yaw: Option<f32>,
+    doll_rect: Option<Rect>,
     /// 튜토리얼(0167): 지난 걸음 수(기록 `Progress::tutorial`과 같은 값) + 이 판에서 본 것. 판에 붙는다.
     tutor: crate::tutorial::Tutor,
     /// 떠 있는 상황 힌트와 남은 시간(0209 T2).
@@ -361,6 +366,9 @@ impl App {
             rest_at: None,
             passage: None,
             pause_tab: flow::Tab::Status,
+            tab_strip: crate::ui::Strip::default(),
+            doll_yaw: None,
+            doll_rect: None,
             tutor: crate::tutorial::Tutor::new(progress.tutorial),
             tip: None,
             tips_now: 0,
@@ -710,6 +718,11 @@ impl App {
             }),
             charging: matches!(pl.state, crate::world::PState::CastCharge { .. }),
             ranged: pl.weapon.is_ranged(),
+            // 숄더뷰(0229)에서는 한 대상을 겨누는 버튼을 끌면 시점이 돈다 — 락온 중은 대상을 보니 쿼터뷰처럼 쪽을 끈다(0217).
+            look_aim: self.cam.mode == Mode::Free,
+            sight_skills: [0, 1].map(|i| {
+                pl.skill.rank[i] > 0 && self.world.skill_eff(pl.skill.worn[i]).skill.form.sighted()
+            }),
         });
         self.input.poll(self.scene().is_menu());
         // F11(PC, 0135): 어느 장면에서나 창 ↔ 전체 화면. 창 일이라 `Actions`(게임 동작)에 넣지 않는다.
@@ -853,7 +866,7 @@ impl App {
         )
     }
 
-    fn tick_scene(&mut self, a: Actions) {
+    fn tick_scene(&mut self, mut a: Actions) {
         // 알림은 어느 장면에서나 줄어든다(가게의 "잔불이 모자란다"가 떠날 때까지 남았다).
         if let Some((_, t)) = &mut self.toast {
             *t -= TICK_DT;
@@ -879,7 +892,7 @@ impl App {
             return;
         }
         // 큰 창의 탭(0164): 탭 넘기기(스킬 버튼 둘·탭 머리)가 먼저 — 넘겼으면 그 틱은 끝.
-        let swapped = flow::tab_of(self.scene()).is_some() && self.tab_input(&a);
+        let swapped = flow::tab_of(self.scene()).is_some() && self.tab_input(&mut a);
         if !swapped {
             self.tick_top(a);
         }
@@ -927,9 +940,7 @@ impl App {
                 t_ms,
             } => self.tick_motions(&a, weapon, speed, spin, t_ms),
             #[cfg(feature = "dev")]
-            Scene::Lab => self.tick_menu(&a, Scene::Lab),
-            #[cfg(feature = "dev")]
-            Scene::LabGroup { g } => self.tick_lab_group(&a, g as usize),
+            s @ (Scene::Lab | Scene::LabGroup { .. }) => self.tick_lab(a, s),
             Scene::Controls => self.tick_controls(a),
             Scene::Slots { load } => self.tick_slots(&a, load),
             Scene::Ending { won } => {
@@ -1247,6 +1258,8 @@ impl App {
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.draw_dev_screen(f, tab as usize),
             #[cfg(feature = "dev")]
+            s @ (Scene::Lab | Scene::LabGroup { .. }) => self.draw_lab(f, s),
+            #[cfg(feature = "dev")]
             Scene::Motions {
                 weapon,
                 speed,
@@ -1331,6 +1344,7 @@ fn weapon_name(id: weapons::Id) -> &'static str {
         weapons::Id::Staff => s.weapon_staff,
         weapons::Id::Crossbow => s.weapon_crossbow,
         weapons::Id::Fists => s.weapon_fists,
+        weapons::Id::Bow => s.weapon_bow,
     }
 }
 

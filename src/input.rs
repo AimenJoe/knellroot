@@ -158,6 +158,8 @@ pub struct Actions {
     pub tap: Option<Vec2>,
     /// 메뉴 굴리기: 손가락 끌기(논리 px, 위로 끌면 +)·마우스 휠(칸, 아래로 +). 틱마다 소비(`ui::ListView::scroll`).
     pub drag: f32,
+    /// 같은 끌기의 가로 거리(논리 px, 왼쪽으로 끌면 +) — 큰 창의 탭 줄(0233).
+    pub drag_x: f32,
     pub wheel: i32,
     /// 굴리기가 일어난 자리(논리 px): 휠이면 마우스 자리, 끌기면 손가락이 처음 닿은 자리 — 한 화면에 굴릴 것이 둘일 때 가른다(0068).
     pub point: Option<Vec2>,
@@ -189,6 +191,9 @@ pub enum Act {
     Back,
     /// 멈춤(고정 — Esc · Start). 깨어나는 첫 장면(0171)에서는 건너뛰기.
     Pause,
+    /// 특수 버튼(지금 배치 — 랩 창의 "쥐고 ◀▶ = 열 걸음", 0235). 랩은 개발판에만 있다.
+    #[cfg_attr(not(feature = "dev"), allow(dead_code))]
+    Special,
 }
 
 /// 지금 장치의 키 그림(ASCII — 글꼴 상관없이). 터치는 화면 버튼이 곧 안내라 빈 글.
@@ -205,7 +210,7 @@ pub fn prompt(act: Act) -> String {
         (Device::Pad, Act::Choose) => "D-PAD".into(),
         (Device::Pad, Act::Confirm) => "A".into(),
         (_, Act::Swap) if !swap_free() => String::new(),
-        (_, Act::Swap) => name(Bind::Cast),
+        (_, Act::Swap) | (_, Act::Special) => name(Bind::Cast),
         (Device::Pad, Act::Tabs) => format!("{}/{}", Pad::L1.name(), Pad::R1.name()),
         (_, Act::Tabs) => format!("{}/{}", name(Bind::Skill1), name(Bind::Skill2)),
         (Device::Pad, Act::Walk) => "D-PAD".into(),
@@ -614,6 +619,8 @@ pub fn has_mouse() -> bool {
 const MOUSE_AFTER_TOUCH: f32 = 1.0;
 /// 이만큼(논리 px) 움직여야 "마우스를 만졌다"로 센다(떨림·흔들림은 빼고).
 const MOUSE_MOVE_PX: f32 = 2.0;
+/// 메뉴에서 마우스를 쥐고 이만큼(px) 넘게 움직이면 끌기(0235) — 그 밑은 누르기(탭).
+const MOUSE_DRAG_PX: f32 = 6.0;
 
 /// 커서를 조준에 쓸까(0058, 순수 — 시험): 마우스 조준이 켜져 있고, 지금 장치가 키보드(+마우스)이고, 마우스를 만진 지 쉼 시간 안.
 /// 키보드만으로 하는 사람의 쉬는 마우스는 조준을 빼앗지 않는다 — 패드에서 오른쪽 스틱을 놓은 것과 같다.
@@ -818,6 +825,9 @@ pub struct Input {
     mouse_pos: Vec2,
     mouse_anchor: Option<Vec2>,
     since_mouse: f32,
+    /// 메뉴에서 마우스 왼쪽을 누른 자리와, 그 뒤 `MOUSE_DRAG_PX`를 넘게 끌었나(0235 — 끈 뒤 뗀 것은 탭이 아니다).
+    mouse_down_at: Option<Vec2>,
+    mouse_dragged: bool,
     since_touch: f32,
     touch: Touch,
     #[cfg(not(pad_keys))]
@@ -842,6 +852,8 @@ impl Input {
             mouse_pos: Vec2::ZERO,
             mouse_anchor: None,
             since_mouse: f32::MAX,
+            mouse_down_at: None,
+            mouse_dragged: false,
             since_touch: f32::MAX,
             touch: Touch::default(),
             #[cfg(not(pad_keys))]
@@ -1176,14 +1188,35 @@ impl Input {
             set_cursor_grab(true);
         }
         a.drag = t.drag;
+        a.drag_x = t.drag_x;
         a.point = a.point.or(t.drag_at);
         a.look += t.look;
         a.zoom += t.zoom;
         a.view |= t.view;
         a.swap |= t.swap;
+        // 메뉴의 마우스 끌기(0235): 왼쪽을 쥐고 `MOUSE_DRAG_PX`를 넘게 움직이면 터치 끌기와 같은 가로 끌기(`drag_x` — 인형 돌리기·
+        // 탭 줄 굴리기). 끈 뒤 뗀 것은 탭이 아니다(터치와 같은 규칙).
+        if menu && mouse_real {
+            if is_mouse_button_pressed(MouseButton::Left) {
+                (self.mouse_down_at, self.mouse_dragged) = (Some(mp), false);
+            }
+            if let Some(at) = self
+                .mouse_down_at
+                .filter(|_| is_mouse_button_down(MouseButton::Left))
+            {
+                self.mouse_dragged |= (mp - at).length() > MOUSE_DRAG_PX;
+                if self.mouse_dragged {
+                    a.drag_x += prev_mouse.x - mp.x;
+                    a.point = a.point.or(Some(at));
+                }
+            }
+        }
         // 메뉴는 마우스 왼쪽을 뗄 때 탭(터치와 같은 규칙, nail 0199).
         if menu && mouse_real && a.tap.is_none() && is_mouse_button_released(MouseButton::Left) {
-            a.tap = Some(mp);
+            if !std::mem::take(&mut self.mouse_dragged) {
+                a.tap = Some(mp);
+            }
+            self.mouse_down_at = None;
         }
         // 지금 쓰는 장치 = 마지막으로 만진 것.
         if t.active {
@@ -1257,6 +1290,7 @@ impl Input {
             pause: self.latch.pause | a.pause,
             tap: a.tap.or(self.latch.tap),
             drag: self.latch.drag + a.drag,
+            drag_x: self.latch.drag_x + a.drag_x,
             wheel: self.latch.wheel + a.wheel,
             point: a.point.or(self.latch.point),
             dev_overlay: self.latch.dev_overlay | a.dev_overlay,

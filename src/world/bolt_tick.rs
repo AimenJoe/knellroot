@@ -177,6 +177,7 @@ impl World {
             radius: g.radius,
             damage: g.damage + self.stats.shot_dmg,
             poise: g.poise,
+            root: g.root,
         }
     }
 
@@ -459,22 +460,25 @@ impl World {
 
     fn tick_bombs(&mut self, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
         // 수류탄(0051): 중력으로 날다 땅에서 튕기고(줄어드는 위·옆 속도) 벽에서 되튄다, 도화선이 다하면 터진다.
-        let mut booms: Vec<(Vec3, f32, i32, f32)> = Vec::new();
+        let mut booms: Vec<Bomb> = Vec::new();
         let mut bombs = std::mem::take(&mut self.bombs);
         for bomb in &mut bombs {
             self.roll_bomb(bomb, dt);
             if bomb.fuse <= 0.0 {
-                booms.push((bomb.pos, bomb.radius, bomb.damage, bomb.poise));
+                booms.push(*bomb);
             }
         }
         bombs.retain(|b| b.fuse > 0.0);
         self.bombs = bombs;
-        for (at, radius, damage, poise) in booms {
-            self.burst(at, radius, damage, poise, t, ev);
+        for b in booms {
+            let at = b.pos;
+            let dose = (crate::status::Kind::Root, b.root);
+            self.burst(at, b.radius, b.damage, b.poise, dose, t, ev);
             self.blasts.push(Blast {
                 pos: at,
-                radius,
+                radius: b.radius,
                 age: 0.0,
+                root: b.root > 0.0,
             });
             ev.push(Event::Boom { at });
         }
@@ -491,11 +495,20 @@ impl World {
         }
         self.cracks.retain(|c| c.left > 0.0);
         for c in quakes {
-            self.burst(c.pos, c.radius, c.damage, c.poise, t, ev);
+            self.burst(
+                c.pos,
+                c.radius,
+                c.damage,
+                c.poise,
+                crate::status::NO_DOSE,
+                t,
+                ev,
+            );
             self.blasts.push(Blast {
                 pos: c.pos,
                 radius: c.radius,
                 age: 0.0,
+                root: false,
             });
             ev.push(Event::Aftershock { at: c.pos });
         }

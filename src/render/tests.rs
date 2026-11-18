@@ -599,3 +599,60 @@ fn gesture_lengths_match_the_model() {
     assert!(m.anim("dodge_back").is_some());
     assert_eq!(gesture_len("nothing"), 0.0);
 }
+
+/// 0231: 활은 왼손의 `bow` 뼈에 들고 활쏘기 원본의 제 동작(`bow_draw`·`bow_shoot`)으로 겨눈다 — 겨누는 동안 화살촉(모델의
+/// 가장 앞 정점)은 탄이 나가는 앞을 보고, 활대(가장 위·아래 정점 사이)는 어느 동작에서나 세로로 선다(옆으로 누운 활은 쇠뇌로 읽힌다).
+/// 몸은 옆으로 서도 얼굴은 과녁을 본다(사장 "옆으로 서더라도 앞을 바라봐야지" — `look_ahead`).
+#[test]
+fn the_bow_stands_upright_and_its_arrow_points_where_the_shot_goes() {
+    use macroquad::prelude::*;
+    let m = crate::model::Model::from_bytes(include_bytes!("../../assets/models/wanderer.glb"))
+        .unwrap();
+    let (grip, node) = (m.node("bow").unwrap(), m.node("w_bow").unwrap());
+    let mesh = &m.meshes[m.nodes[node].mesh.unwrap()];
+    let pick = |f: fn(Vec3) -> f32| {
+        mesh.pos
+            .iter()
+            .copied()
+            .max_by(|a, b| f(*a).total_cmp(&f(*b)))
+            .unwrap()
+    };
+    let (tip, top, bottom) = (pick(|p| p.z), pick(|p| p.y), pick(|p| -p.y));
+    let head = m.node("mixamorig:Head").unwrap();
+    let mut rest = Vec::new();
+    m.pose(None, 0.0, &mut rest);
+    let face = rest[head].inverse().transform_vector3(Vec3::Z); // 쉬는 자세의 얼굴 앞(모델 +Z)
+    let mut pose = Vec::new();
+    for (clip, at, aims) in [
+        ("bow_draw", 0.28, true),
+        ("bow_shoot", 0.0, true),
+        ("bow_shoot", XBOW_RELEASE, true),
+        ("bow_shoot", 0.22, true),
+        ("idle", 0.5, false),
+        ("walk", 0.3, false),
+        ("run", 0.2, false),
+    ] {
+        m.pose(Some(m.anim(clip).unwrap()), at, &mut pose);
+        let at_ = |p: Vec3| pose[node].transform_point3(p);
+        let d = (at_(tip) - pose[grip].w_axis.truncate()).normalize();
+        let yaw = d.x.atan2(d.z).to_degrees();
+        let limb = (at_(top) - at_(bottom)).normalize();
+        assert!(
+            !aims || (yaw.abs() < 30.0 && d.y.abs() < 0.5),
+            "{clip} at {at}: arrow points {yaw:+.0}° (up {:.2})",
+            d.y
+        );
+        if aims {
+            let f = pose[head].transform_vector3(face);
+            let look = f.x.atan2(f.z).to_degrees();
+            assert!(
+                look.abs() < 30.0,
+                "{clip} at {at}: looks {look:+.0}° away from the shot"
+            );
+        }
+        assert!(
+            limb.y.abs() > 0.8,
+            "{clip} at {at}: the bow lies down {limb:?}"
+        );
+    }
+}
