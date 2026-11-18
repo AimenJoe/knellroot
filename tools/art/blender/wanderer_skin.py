@@ -91,7 +91,10 @@ CHAIN = {"heavy": "charge", "hammer_slam": "hammer_charge", "staff_release": "st
 FLAT = {"jump", "land"}
 # 겨누기(0196, 쇠뇌 — 원본은 활쏘기 Archery_Shot): 활을 든 왼팔이 몸 왼쪽을 가리킨다 → 몸을 돌려 오른손 → 왼손(겨누는 줄)이 정면을 보게,
 # 쇠뇌는 그 줄을 따라 눕힌다(날 = 오른손 → 왼손, 위 = 하늘). (이름, 들어가는 몫): 그 몫 동안 서기 방향에서 겨누는 방향으로.
-AIM = {}  # 0204: 쇠뇌는 활쏘기 대신 두 손을 앞으로 내민 시전 자세(`XBOW_FWD`) — 활쏘기는 몸이 옆으로 섰다(사장)
+AIM = {"bow_draw": 0.7, "bow_shoot": 0.0}  # 0204: 쇠뇌는 활쏘기 대신 두 손을 앞으로 내민 시전 자세(`XBOW_FWD`) — 활쏘기는 몸이 옆으로 섰다(사장)
+# 0231: 활은 활쏘기 원본 그대로 — 옆으로 서서 왼손을 과녁 쪽으로 뻗는 것이 활이다. 활은 왼손의 `bow` 뼈에(`bow_pass`).
+# 활대는 늘 하늘로 서고, 화살(활의 −y)은 겨누는 동작(`BOW_AIM`)에서는 겨누는 줄(오른손 → 왼손), 그 밖에서는 몸 앞.
+BOW_AIM = {"bow_draw", "bow_shoot"}
 # 앞으로 겨누기(0204, 쇠뇌): 원본은 두 손을 어깨 높이로 앞에 내민 시전(mage_soell_cast_8) — 몸이 정면을 본다. 쇠뇌는 몸 앞(−Y)을
 # 가리키고 날개는 가로(쉬는 자세의 쇠뇌 그대로 — 0196의 겨누기는 날개 축을 하늘로 세워 "쇠뇌를 세로로 든다").
 XBOW_FWD = {"xbow_charge", "xbow_shoot"}
@@ -208,6 +211,10 @@ CLIPS = [
     # 0204: 두 손을 앞으로 내밀어 겨눈 채(시전 20~31), 쏘면 반동으로 가슴께까지 당겼다(→ 8) 다시 내민다.
     ("xbow_charge", "mage_soell_cast_8", ("anchors", [(0.0, 20), (0.3, 28)])),
     ("xbow_shoot", "mage_soell_cast_8", ("anchors", [(0.0, 28), (0.058, 26), (0.13, 8), (0.24, 22)])),
+    # 활(0231): 같은 Archery_Shot — 당기기 = 두 팔을 들어 시위를 당겨 겨눈 자리까지(40 → 60, 끝에서 버틴다), 쏘기 = 겨눈 채(70)
+    # → 놓음(92, 쇠뇌와 같은 0.058초) → 손이 뒤로 빠짐(97) → 다시 당긴 자리(80). 길이는 쇠뇌와 같다(렌더의 놓는 순간·겨눈 채 머묾).
+    ("bow_draw", "Archery_Shot", ("anchors", [(0.0, 40), (0.3, 60)])),
+    ("bow_shoot", "Archery_Shot", ("anchors", [(0.0, 70), (0.058, 92), (0.13, 97), (0.24, 80)])),
     # 기술(구간 = `skills.rs`의 `Clip::seg` — 시동 끝 = 닿는 순간)
     ("sk_whirl", "Skill_03", ("anchors", [(0.0, 16), (0.15, 24), (0.37, 33), (0.67, 39)])),
     ("sk_cut", "Thrust_Slash", ("anchors", [(0.0, 8), (0.12, 18), (0.32, 33), (0.57, 50)])),
@@ -254,11 +261,12 @@ def load_old():
         "hand_r": rig.matrix_world @ rig.data.bones["hand_r"].head_local,
         "hand_l": rig.matrix_world @ rig.data.bones["hand_l"].head_local,
         "atlas": m.mat.node_tree.nodes["Image Texture"].image,
-        "weapons": [m.objects[n] for n in ("sword", "w_hammer", "w_staff", "w_crossbow", "w_bow")],
+        "weapons": [m.objects[n] for n in ("sword", "w_hammer", "w_staff", "w_crossbow")],
+        "bow": m.objects["w_bow"],
         "lamp": [m.objects[n] for n in ("lamp_geo", "glow_lamp")],
         "shield": m.objects["shield"],
     }
-    keep = set(old["weapons"] + old["lamp"] + [old["shield"]])
+    keep = set(old["weapons"] + old["lamp"] + [old["shield"], old["bow"]])
     for o in list(bpy.data.objects):
         if o not in keep:
             if o.type == "MESH" and o.parent and o.parent.type == "ARMATURE" and o not in keep:
@@ -343,6 +351,14 @@ def attach(arm, old):
     grip_l = world_pt(arm, HAND_L).lerp(world_pt(arm, "mixamorig:LeftHandMiddle1"), GRIP_IN)
     add_bone(arm, "lamp", HAND_L, grip_l)
     lf = Matrix.Translation(grip_l - old["hand_l"])
+    # 활(0231): 왼손 주먹의 `bow` 뼈 — 옛 빌더는 오른손 자리에 지었으니 그 자리에서 왼손 주먹으로 옮긴다. 돌림은 `bow_pass`.
+    add_bone(arm, "bow", HAND_L, grip_l)
+    o = old["bow"]
+    mw = Matrix.Translation(grip_l - old["hand_r"]) @ o.matrix_world
+    o.parent = arm
+    o.parent_type = "BONE"
+    o.parent_bone = "bow"
+    o.matrix_world = mw
     for o in old["lamp"]:
         mw = lf @ o.matrix_world
         o.parent = arm
@@ -515,7 +531,7 @@ def sample(arm, src, anchors, upright=None):
         go(f)
         if corr is not None:
             uprighten(arm, *corr)
-        poses.append({pb.name: pb.matrix_basis.decompose() for pb in arm.pose.bones if pb.name not in ("lamp", "weapon", "shield")})
+        poses.append({pb.name: pb.matrix_basis.decompose() for pb in arm.pose.bones if pb.name not in ("lamp", "weapon", "shield", "bow")})
         hips.append(arm.pose.bones["mixamorig:Hips"].head.copy())
         hands.append((arm.pose.bones[HAND_R].head.copy(), arm.pose.bones["mixamorig:RightArm"].head.copy(),
                       arm.pose.bones[HAND_L].head.copy()))
@@ -875,6 +891,43 @@ def weapon_pass(arm, act, loop):
     ad.action = None
 
 
+def bow_pass(arm, act):
+    """`bow` 뼈를 프레임마다 돌려 활대(활의 +z)가 하늘로 서고 화살(활의 −y)이 겨누는 줄(`BOW_AIM` — 오른손 → 왼손) 또는 몸 앞을
+    보게(0231). 활은 왼손 주먹이 돌림 중심."""
+    sc = bpy.context.scene
+    ad = arm.animation_data
+    ad.action = act
+    n = int(act.frame_range[1])
+    lh, rh = arm.pose.bones[HAND_L], arm.pose.bones[HAND_R]
+    lr = arm.data.bones[HAND_L].matrix_local
+    br = arm.data.bones["bow"].matrix_local
+    rb = br.to_3x3().normalized()
+    old_frame = basis(Vector((0, -1, 0)), Vector((1, 0, 0)))
+    up = Vector((0, 0, 1))
+    qs, prev = [], None
+    for k in range(n + 1):
+        sc.frame_set(k)
+        q = (lh.matrix @ lr.inverted() @ br).to_3x3().normalized()
+        if act.name in BOW_AIM:
+            d = lh.head - rh.head
+        else:
+            d = arm.pose.bones["mixamorig:Hips"].matrix.to_3x3() @ Vector((0, 0, 1))  # 엉덩이 뼈의 z = 몸 앞(`own_yaw`와 같은 셈)
+        if act.name not in BOW_AIM:
+            d.z = 0.0
+        if d.length < 1e-4:
+            d = Vector((0, -1, 0))
+        d.normalize()
+        u = (up - d * d.dot(up)).normalized()
+        e = u.cross(d)  # basis(d, e)의 셋째 열 d × e = 하늘
+        rot = (q.inverted() @ basis(d, e) @ old_frame.transposed() @ rb).to_quaternion()
+        if prev is not None and prev.dot(rot) < 0:
+            rot.negate()
+        prev = rot
+        qs.append(tuple(rot))
+    put(act, "bow", "rotation_quaternion", qs, reduce(qs, ROT_TOL))
+    ad.action = None
+
+
 def shield_pass(arm, act):
     """방패를 내미는 동작(`SHIELD_FRONT`)에서 `shield` 뼈를 프레임마다 돌려 판의 앞면이 앞을 보게 — 판 가운데(뼈의 머리)가 돌림 중심."""
     keys = SHIELD_FRONT.get(act.name)
@@ -1002,6 +1055,7 @@ def make_actions(arm, body):
             poses[-1] = poses[0]
         act = write_action(arm, name, n, poses, 1.0 if name == "drink" else 0.0, keep)
         weapon_pass(arm, act, name in LOOPS)
+        bow_pass(arm, act)
         shield_pass(arm, act)
         made.append(act)
     for a in list(bpy.data.actions):
@@ -1014,7 +1068,7 @@ def texture(body, old):
     img = next(n.image for n in body.data.materials[0].node_tree.nodes if n.type == "TEX_IMAGE")
     img.scale(TEX, TEX)  # 옛 방랑자와 같은 256 — 게임 거리에서 몸은 100px 남짓
     W.lift_purples(img)
-    C.merge_textures([body], img, old["weapons"] + old["lamp"] + [old["shield"]], old["atlas"], NAME)
+    C.merge_textures([body], img, old["weapons"] + old["lamp"] + [old["shield"], old["bow"]], old["atlas"], NAME)
 
 
 def export(arm, objs, out_dir):
@@ -1081,8 +1135,8 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, sheet_dir=None):
     texture(body, old)
     craft_actions(arm)
     make_actions(arm, body)
-    objs = [body] + old["weapons"] + old["lamp"] + [old["shield"]]
-    for o in old["weapons"][1:]:  # 미리보기에서는 칼만
+    objs = [body] + old["weapons"] + old["lamp"] + [old["shield"], old["bow"]]
+    for o in old["weapons"][1:] + [old["bow"]]:  # 미리보기에서는 칼만
         o.hide_render = True
     path = export(arm, objs, models_dir)
     preview(arm, objs, os.path.join(preview_dir, f"{NAME}.png"), "idle", 0.0)

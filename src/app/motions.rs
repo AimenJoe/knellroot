@@ -91,6 +91,10 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
             add!("cast_charge", None);
             add!("cast", None);
         }
+        Rb::Shot { .. } if w.id == crate::weapons::Id::Bow => {
+            add!("bow_draw", None);
+            add!("bow_shoot", None);
+        }
         Rb::Shot { .. } => {
             add!("xbow_charge", None);
             add!("xbow_shoot", None);

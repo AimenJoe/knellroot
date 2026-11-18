@@ -247,6 +247,19 @@ impl Renderer {
             } else {
                 0.0
             };
+            // 활(0231)은 활쏘기 원본의 제 동작 — 옆으로 서서 왼손의 활로 겨눈다(없는 모델이면 쇠뇌의 것).
+            let bow = wpn.id == crate::weapons::Id::Bow;
+            let (shoot, draw): (&[&str], &[&str]) = if bow {
+                (
+                    &["bow_shoot", "xbow_shoot", "cast", "attack"],
+                    &["bow_draw", "xbow_charge", "bow_shoot", "cast"],
+                )
+            } else {
+                (
+                    &["xbow_shoot", "cast", "attack"],
+                    &["xbow_charge", "xbow_shoot", "cast"],
+                )
+            };
             let (names, at): (&[&str], f32) = match pl.state {
                 // 콤보(0051): 무기 표의 타마다 동작(없는 모델이면 평타).
                 // 몰아치기(0158 G2) 동안은 평타의 시계가 빨라진다 — 동작도 같은 배로 돌린다.
@@ -293,14 +306,14 @@ impl Renderer {
                 PState::Block { t: e } => (&["block", "parry", "attack"], e),
                 // 마법(0048): 손을 앞으로 내미는 자세(전용 동작이 생기기 전엔 패링 자세).
                 PState::Cast { t: e, .. } if matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) => {
-                    (&["xbow_shoot", "cast", "attack"], e)
+                    (shoot, e)
                 }
                 PState::Cast { t: e, .. } => (&["cast", "parry", "attack"], e),
                 // 원거리 강공격 모으기(0056): 쇠뇌는 어깨에 대고 시위를 당긴 채, 마법은 두 손을 모아 빛을 키우는 자세를 쥔다.
                 PState::CastCharge { t: e }
                     if matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) =>
                 {
-                    (&["xbow_charge", "xbow_shoot", "cast"], e)
+                    (draw, e)
                 }
                 PState::CastCharge { t: e } => (&["cast_charge", "cast", "parry"], e),
                 // 공중(0027): 방랑자의 jump·plunge·land 동작(없는 모델이면 회피·공격 자세로).
@@ -311,7 +324,7 @@ impl Renderer {
                         && matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) =>
                 {
                     (
-                        &["xbow_shoot", "cast"],
+                        shoot,
                         XBOW_RELEASE + (crate::tuning::AIR_SHOT_HOVER - pl.ranged.hover),
                     )
                 }
@@ -399,7 +412,7 @@ impl Renderer {
                     )
                 }
                 // 쇠뇌를 쏜 뒤(0197): 서 있으면 잠깐 겨눈 채(쏘기의 끝 자세).
-                PState::Idle if self.aim_hold > 0.0 => (&["xbow_shoot", "idle"], XBOW_HOLD_AT),
+                PState::Idle if self.aim_hold > 0.0 => (shoot, XBOW_HOLD_AT),
                 PState::Idle => match idle_pose {
                     crate::idle::Pose::Loop(t) => (&["idle"], t),
                     crate::idle::Pose::Fidget(i, t) => {

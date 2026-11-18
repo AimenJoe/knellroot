@@ -600,14 +600,14 @@ fn gesture_lengths_match_the_model() {
     assert_eq!(gesture_len("nothing"), 0.0);
 }
 
-/// 0231: 활은 쇠뇌의 겨누는 동작을 빌린다 — 화살촉(모델의 가장 앞 정점)은 탄이 나가는 앞을 보고, 활대(가장 위·아래
-/// 정점 사이)는 세로로 선다(옆으로 누운 활은 쇠뇌로 읽힌다).
+/// 0231: 활은 왼손의 `bow` 뼈에 들고 활쏘기 원본의 제 동작(`bow_draw`·`bow_shoot`)으로 겨눈다 — 겨누는 동안 화살촉(모델의
+/// 가장 앞 정점)은 탄이 나가는 앞을 보고, 활대(가장 위·아래 정점 사이)는 어느 동작에서나 세로로 선다(옆으로 누운 활은 쇠뇌로 읽힌다).
 #[test]
 fn the_bow_stands_upright_and_its_arrow_points_where_the_shot_goes() {
     use macroquad::prelude::*;
     let m = crate::model::Model::from_bytes(include_bytes!("../../assets/models/wanderer.glb"))
         .unwrap();
-    let (grip, node) = (m.node("weapon").unwrap(), m.node("w_bow").unwrap());
+    let (grip, node) = (m.node("bow").unwrap(), m.node("w_bow").unwrap());
     let mesh = &m.meshes[m.nodes[node].mesh.unwrap()];
     let pick = |f: fn(Vec3) -> f32| {
         mesh.pos
@@ -618,11 +618,14 @@ fn the_bow_stands_upright_and_its_arrow_points_where_the_shot_goes() {
     };
     let (tip, top, bottom) = (pick(|p| p.z), pick(|p| p.y), pick(|p| -p.y));
     let mut pose = Vec::new();
-    for (clip, at) in [
-        ("xbow_charge", 0.28),
-        ("xbow_shoot", 0.0),
-        ("xbow_shoot", XBOW_RELEASE),
-        ("xbow_shoot", 0.22),
+    for (clip, at, aims) in [
+        ("bow_draw", 0.28, true),
+        ("bow_shoot", 0.0, true),
+        ("bow_shoot", XBOW_RELEASE, true),
+        ("bow_shoot", 0.22, true),
+        ("idle", 0.5, false),
+        ("walk", 0.3, false),
+        ("run", 0.2, false),
     ] {
         m.pose(Some(m.anim(clip).unwrap()), at, &mut pose);
         let at_ = |p: Vec3| pose[node].transform_point3(p);
@@ -630,7 +633,7 @@ fn the_bow_stands_upright_and_its_arrow_points_where_the_shot_goes() {
         let yaw = d.x.atan2(d.z).to_degrees();
         let limb = (at_(top) - at_(bottom)).normalize();
         assert!(
-            yaw.abs() < 30.0 && d.y.abs() < 0.5,
+            !aims || (yaw.abs() < 30.0 && d.y.abs() < 0.5),
             "{clip} at {at}: arrow points {yaw:+.0}° (up {:.2})",
             d.y
         );

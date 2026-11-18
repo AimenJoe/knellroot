@@ -230,6 +230,8 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("cast", ("마법", "magic")),
     ("xbow_charge", ("쇠뇌 모으기", "crossbow charge")),
     ("xbow_shoot", ("쇠뇌 쏘기", "crossbow shot")),
+    ("bow_draw", ("활 당기기", "bow draw")),
+    ("bow_shoot", ("활 쏘기", "bow shot")),
     ("throw", ("수류탄 던지기", "grenade")),
     ("parry", ("패링", "parry")),
     ("dodge", ("회피", "dodge")),
