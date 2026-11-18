@@ -52,6 +52,12 @@ pub const LAB_STEP: Pair = ("한 걸음", "step");
 pub const LAB_CHANGED: Pair = ("기본값과 다름", "changed from default");
 pub const LAB_FAST: Pair = ("꾹 + 좌우 ×10", "hold + left/right x10");
 pub const LAB_RESET: Pair = ("기본값으로", "reset");
+pub const LAB_COUNT: Pair = ("값 {0}개 · 바꾼 것 {1}", "{0} values · {1} changed");
+pub const LAB_ALL_DEFAULT: Pair = ("모두 기본값 그대로다.", "everything is at its default.");
+pub const LAB_GROUP_D: Pair = (
+    "확인 = 이 묶음의 탭으로.",
+    "confirm = go to this group's tab.",
+);
 pub const DEV_TITLE: Pair = ("개발", "DEV");
 pub const DEV_ROW_D: Pair = (
     "개발 창을 연다 — 스테이지·시나리오·도구를 고른다.",
@@ -179,6 +185,9 @@ pub const PAIRS: &[Pair] = &[
     LAB_CHANGED,
     LAB_FAST,
     LAB_RESET,
+    LAB_COUNT,
+    LAB_ALL_DEFAULT,
+    LAB_GROUP_D,
     DEV_TITLE,
     DEV_ROW_D,
     TAB_TOOLS,

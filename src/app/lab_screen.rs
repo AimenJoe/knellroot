@@ -66,13 +66,31 @@ impl App {
     }
 
     pub(super) fn lab_menu(&self) -> Menu {
-        let rows = vec![
+        let mut rows = vec![
             ui::Row::step(t(dv::USING), self.lab_ab()),
             ui::Row::plain(t(dv::STORE_B)),
             ui::Row::plain(t(dv::EXPORT)),
             ui::Row::plain(t(dv::RESET_ALL)),
         ];
+        // 아래는 묶음 열여섯의 한눈 보기(0235 — 사장 "첫 메뉴 화면 하단이 비어 보인다"): 바꾼 값의 수, 확인 = 그 탭으로.
+        for g in 0..GROUPS.len() {
+            let n = self.lab_changed(g).len();
+            let label = if n > 0 {
+                format!("{}  *{n}", group_name(g))
+            } else {
+                group_name(g).to_string()
+            };
+            rows.push(ui::Row::go(label));
+        }
         Menu::new(t(dv::TAB_TOOLS), LEFT_W, rows)
+    }
+
+    /// 묶음 `g`에서 기본값과 다른 값들.
+    fn lab_changed(&self, g: usize) -> Vec<usize> {
+        lab::members(g)
+            .into_iter()
+            .filter(|&i| lab::changed(&self.t, i))
+            .collect()
     }
 
     pub(super) fn lab_act(&mut self, out: Out) {
@@ -84,11 +102,15 @@ impl App {
                 let text = self.lab.export(&self.t);
                 info!("--- tuning export ---\n{}", text);
             }
-            Out::Pick(_) => {
+            Out::Pick(3) => {
                 for i in 0..SPECS.len() {
                     self.t.reset(i);
                 }
                 self.lab.note = t(dv::NOTE_RESET).into();
+            }
+            Out::Pick(i) => {
+                self.go(Go::Swap(lab_scene(i - TOOLS + 1)));
+                self.snd(crate::sfx::Id::UiMove);
             }
         }
     }
@@ -198,9 +220,50 @@ impl App {
         self.window_hints(f, &w, right, &hints);
     }
 
-    /// 도구 줄의 상세: 이름 · 지금 쓰는 값 · (방금 한 일) · 하는 일.
+    /// 도구 줄의 상세: 이름 · 지금 쓰는 값 · (방금 한 일) · 하는 일. 묶음 줄이면 그 묶음의 바꾼 값들.
     fn draw_lab_tool(&mut self, w: &Window, m: &Menu, at: usize) {
         let Some(row) = m.rows.get(at) else { return };
+        if at >= TOOLS {
+            let g = at - TOOLS;
+            let changed = self.lab_changed(g);
+            self.draw_pane_head(
+                w,
+                &PaneHead {
+                    name: group_name(g),
+                    gold: !changed.is_empty(),
+                    kind: fill(
+                        t(dv::LAB_COUNT),
+                        &[
+                            &lab::members(g).len().to_string(),
+                            &changed.len().to_string(),
+                        ],
+                    ),
+                    state: (t(dv::LAB_GROUP_D).to_string(), DIM),
+                    icon: false,
+                },
+            );
+            let lines: Vec<Ln> = if changed.is_empty() {
+                self.pane_wrap(w, t(dv::LAB_ALL_DEFAULT), DIM)
+            } else {
+                changed
+                    .iter()
+                    .map(|&i| {
+                        let sp = &SPECS[i];
+                        Ln::Pair(
+                            spec_label(sp.name).to_string(),
+                            format!(
+                                "{} → {}",
+                                lab::value_text(sp.def, sp.step),
+                                lab::value_text(self.t.get(i), sp.step)
+                            ),
+                            AMBER,
+                        )
+                    })
+                    .collect()
+            };
+            self.draw_pane(w, HEAD_H, &lines);
+            return;
+        }
         let note = (self.lab.note.clone(), AMBER);
         self.draw_pane_head(
             w,
@@ -212,7 +275,7 @@ impl App {
                 icon: false,
             },
         );
-        let desc = match at.min(TOOLS - 1) {
+        let desc = match at {
             0 => dv::USING_D,
             1 => dv::STORE_B_D,
             2 => dv::EXPORT_D,
