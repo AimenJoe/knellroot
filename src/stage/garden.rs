@@ -35,7 +35,11 @@ pub static DEF: StageDef = StageDef {
     obj_gate: |s| s.obj_sill,
     obj_core: |s| s.obj_core,
     boss_wakes: |s| s.mossward_wakes,
-    chest_loot: &[Loot::Charm(Charm::Feet)],
+    // 상자 차례 = 지도에서 위 → 아래(`marks_of`): 서쪽 웅덩이 가장자리 · 동쪽 갈래길(잔뿌리 활, 0231).
+    chest_loot: &[
+        Loot::Charm(Charm::Feet),
+        Loot::Weapon(crate::weapons::Id::Bow),
+    ],
     boss_charm: None,
     stones: &[],
     find_prefix: "garden",
@@ -86,7 +90,7 @@ const MAP: &str = "
   #.K...########.............###..........#  
   #.....########.............###..........#  
   #.....########..a.......a..###....o.....#  
-  #.....########....h........###..........#  
+  #.....########....h........###........C.#  
   #.o...########.............###..........#  
   #.....########.r.........r.###..........#  
   #.....########......a...................#  

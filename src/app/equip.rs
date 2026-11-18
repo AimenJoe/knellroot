@@ -457,6 +457,7 @@ fn weapon_desc(id: weapons::Id) -> &'static str {
         weapons::Id::Staff => s.weapon_staff_d,
         weapons::Id::Crossbow => s.weapon_crossbow_d,
         weapons::Id::Fists => s.weapon_fists_d,
+        weapons::Id::Bow => s.weapon_bow_d,
     }
 }
 
@@ -1169,7 +1170,7 @@ impl App {
                 weapons::Id::Sword | weapons::Id::Fists => Some(s.art_sword.to_string()),
                 weapons::Id::Hammer => Some(fill(s.art_hammer, &[&pct(id.art().force)])),
                 weapons::Id::Staff => Some(fill(s.art_staff, &[&pct(id.art().channel)])),
-                weapons::Id::Crossbow => None,
+                weapons::Id::Crossbow | weapons::Id::Bow => None,
             };
             if let Some(art) = art {
                 lines.extend(self.pane_wrap(w, &art, AMBER));

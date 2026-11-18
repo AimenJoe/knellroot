@@ -33,6 +33,8 @@ pub fn view(item: Item) -> View {
                 Weapon::Sword | Weapon::Staff => (0.0, -80.0, -45.0),
                 Weapon::Hammer => (0.0, -75.0, -40.0),
                 Weapon::Crossbow => (0.0, -70.0, 0.0),
+                // 활(0231): 활대가 세로로 길다 — 옆으로 눕혀 활대의 휨과 시위가 보이게.
+                Weapon::Bow => (0.0, -80.0, -90.0),
                 // 맨손은 그림이 없다(`has_view` 거짓 — 장비 창이 빈 칸처럼 둔다).
                 Weapon::Fists => (0.0, 0.0, 0.0),
             };

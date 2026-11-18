@@ -305,6 +305,7 @@ fn weapon_texts(id: crate::weapons::Id) -> (Tr, Tr, Tr) {
             |s| s.weapon_fists_d,
             |s| s.cx_weapon_fists,
         ),
+        W::Bow => (|s| s.weapon_bow, |s| s.weapon_bow_d, |s| s.cx_weapon_bow),
     }
 }
 

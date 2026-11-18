@@ -73,7 +73,7 @@ EXPECT = {
     "chest": {"open": 0.4},
     "lever": {"pull": 0.4},
 }
-MUST_NODES = {"mossward": ["glow_core", "glow_eyes", "head_geo"], "gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["body", "root", "sword", "w_hammer", "w_staff", "w_crossbow", "glow_lamp", "lamp", "shield"],
+MUST_NODES = {"mossward": ["glow_core", "glow_eyes", "head_geo"], "gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["body", "root", "sword", "w_hammer", "w_staff", "w_crossbow", "w_bow", "glow_lamp", "lamp", "shield"],
               "root_husk": ["glow_eye"], "thorn_beast": ["glow_eyes"], "shellback": ["glow_eyes", "head_geo"], "pod": ["glow_eyes", "head_geo", "seed_geo"],
               "bellkeeper": ["glow_eyes", "glow_core", "bell_geo", "head_geo"], "res_hearth": ["head_geo"], "res_water": ["head_geo"], "res_cloth": ["head_geo"], "brazier": ["glow_flame"],
               "core_crystal": ["glow_core"], "bell": ["bell", "bell_frame"],

@@ -36,6 +36,8 @@ pub enum Kind {
     Staff,
     Crossbow,
     Fist,
+    /// 잔뿌리 활(0231): 휜 활대 + 당긴 시위 + 화살.
+    Bow,
     Lock,
     /// 땅 돌리기(0023): 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면.
     TurnLeft,
@@ -59,6 +61,8 @@ pub enum Kind {
     Flurry,
     Line,
     Bomb,
+    /// 그림만(0231): 활의 특수 — 뿌리 씨앗(씨 + 내린 뿌리).
+    Seed,
     /// 그림만(0214): 넷째 줄의 스킬 셋.
     Swallow,
     Bash,
@@ -797,7 +801,9 @@ impl Touch {
 
 fn press(a: &mut Read, k: Kind) {
     match k {
-        Kind::Attack | Kind::Hammer | Kind::Staff | Kind::Crossbow | Kind::Fist => a.attack = true,
+        Kind::Attack | Kind::Hammer | Kind::Staff | Kind::Crossbow | Kind::Fist | Kind::Bow => {
+            a.attack = true
+        }
         Kind::Dodge => a.dodge = true,
         Kind::Parry => a.parry = true,
         Kind::Jump => a.jump = true,
@@ -820,6 +826,7 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Gather
         | Kind::Quake
         | Kind::Bomb
+        | Kind::Seed
         | Kind::Swallow
         | Kind::Bash
         | Kind::Roots => {}
@@ -879,6 +886,7 @@ pub fn attack_icon(w: crate::weapons::Id) -> Kind {
         // 쇠뇌의 평타는 사격(0223 — 수류탄은 특수, `cast_icon`).
         Id::Crossbow => Kind::Crossbow,
         Id::Fists => Kind::Fist,
+        Id::Bow => Kind::Bow,
     }
 }
 
@@ -913,12 +921,13 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
     }
 }
 
-/// 특수 버튼의 그림(0151 → 0213 → 0223): 근접 무기 = 마법 탄의 별, 쇠뇌 = 수류탄(사격은 평타 버튼).
+/// 특수 버튼의 그림(0151 → 0213 → 0223 → 0231): 근접 무기 = 마법 탄의 별, 원거리 무기 = 던지는 것(쇠뇌 = 수류탄 · 활 = 뿌리 씨앗).
 pub fn cast_icon(w: crate::weapons::Id) -> Kind {
-    if matches!(w.def().rb, crate::weapons::Rb::Shot { .. }) {
-        Kind::Bomb
-    } else {
-        Kind::Cast
+    let d = w.def();
+    match (d.rb, d.grenade) {
+        (crate::weapons::Rb::Shot { .. }, Some(g)) if g.root > 0.0 => Kind::Seed,
+        (crate::weapons::Rb::Shot { .. }, _) => Kind::Bomb,
+        _ => Kind::Cast,
     }
 }
 
@@ -1201,6 +1210,22 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             ".....###.....",
             ".....###.....",
             ".............",
+        ],
+        // 활(0231): 왼쪽에 휜 활대, 두 끝에서 가운데로 당긴 시위, 오른쪽으로 화살.
+        Kind::Bow => [
+            "...##........",
+            "..#..#.......",
+            ".#....#......",
+            ".#.....#.....",
+            "#.......#..#.",
+            "#........#.##",
+            "#############",
+            "#........#.##",
+            "#.......#..#.",
+            ".#.....#.....",
+            ".#....#......",
+            "..#..#.......",
+            "...##........",
         ],
         Kind::Fist => [
             ".............",
@@ -1667,6 +1692,22 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             "....#####....",
             ".............",
         ],
+        // 뿌리 씨앗(0231): 위에 둥근 씨, 아래로 갈라져 내리는 뿌리.
+        Kind::Seed => [
+            "....#####....",
+            "...#######...",
+            "..#########..",
+            "..#########..",
+            "..#########..",
+            "...#######...",
+            "....#####....",
+            "......#......",
+            ".....###.....",
+            "....#.#.#....",
+            "...#..#..#...",
+            "..#...#...#..",
+            ".#....#....#.",
+        ],
         // 바꾸기(0223): 마주 가는 화살 둘 — 버튼에는 바꿔 들 무기의 그림이 올라가고, 이 그림은 그 무기에 그림이 없을 때만.
         Kind::Swap => [
             ".............",
@@ -1795,6 +1836,7 @@ mod tests {
             Kind::Staff,
             Kind::Crossbow,
             Kind::Fist,
+            Kind::Bow,
             Kind::Whirl,
             Kind::Cut,
             Kind::Gather,
@@ -1807,6 +1849,7 @@ mod tests {
             Kind::Flurry,
             Kind::Line,
             Kind::Bomb,
+            Kind::Seed,
             Kind::Swallow,
             Kind::Bash,
             Kind::Roots,

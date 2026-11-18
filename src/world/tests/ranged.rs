@@ -776,11 +776,7 @@ fn dps_at(id: weapons::Id, rank: u8, secs: f32, on_beat: bool, dist: f32) -> (f3
 #[ignore]
 fn weapon_dps_probe() {
     for id in weapons::IDS {
-        let d = if id == weapons::Id::Crossbow {
-            8.0
-        } else {
-            1.2
-        };
+        let d = if id.is_ranged() { 8.0 } else { 1.2 };
         for secs in [4.0, 20.0] {
             let (mash, s1) = dps(id, secs, false, d);
             let (beat, s2) = dps(id, secs, true, d);
@@ -802,12 +798,9 @@ fn forged_dps_probe() {
         weapons::Id::Hammer,
         weapons::Id::Staff,
         weapons::Id::Crossbow,
+        weapons::Id::Bow,
     ] {
-        let d = if id == weapons::Id::Crossbow {
-            8.0
-        } else {
-            1.2
-        };
+        let d = if id.is_ranged() { 8.0 } else { 1.2 };
         for rank in 0..=crate::forge::RANKS {
             let (beat, _) = dps_at(id, rank, 20.0, true, d);
             let (mash, _) = dps_at(id, rank, 20.0, false, d);
@@ -844,15 +837,18 @@ fn a_forged_crossbow_holds_more_bolts_and_hits_harder() {
 /// 0180(0173을 지킨다): 어느 단에서나 같은 단의 쇠뇌는 검의 일곱 할 밑 — 벼려도 원거리가 근접을 앞지르지 않는다.
 #[test]
 fn a_forged_crossbow_stays_under_seven_tenths_of_the_sword_at_every_rank() {
-    for rank in 0..=crate::forge::RANKS {
-        // 20초(탐침 `weapon_dps_probe`와 같은 창 — 짧으면 처음 가득한 탄창의 몫이 비율을 부풀린다).
-        let (bow, _) = dps_at(weapons::Id::Crossbow, rank, 20.0, true, 8.0);
-        let (sword, _) = dps_at(weapons::Id::Sword, rank, 20.0, true, 1.2);
-        assert!(
-            bow < sword * 0.7,
-            "+{rank}: crossbow {bow:.1}/s vs sword {sword:.1}/s"
-        );
-        assert!(sword > 0.0 && bow > 0.0);
+    // 0231: 원거리 무기 모두(쇠뇌·활).
+    for id in weapons::IDS.into_iter().filter(|i| i.is_ranged()) {
+        for rank in 0..=crate::forge::RANKS {
+            // 20초(탐침 `weapon_dps_probe`와 같은 창 — 짧으면 처음 가득한 탄창의 몫이 비율을 부풀린다).
+            let (bow, _) = dps_at(id, rank, 20.0, true, 8.0);
+            let (sword, _) = dps_at(weapons::Id::Sword, rank, 20.0, true, 1.2);
+            assert!(
+                bow < sword * 0.7,
+                "+{rank}: {id:?} {bow:.1}/s vs sword {sword:.1}/s"
+            );
+            assert!(sword > 0.0 && bow > 0.0);
+        }
     }
 }
 
@@ -946,11 +942,7 @@ fn dps_plan(id: weapons::Id, rank: u8, secs: f32, dist: f32, plan: Plan) -> (f32
 #[ignore]
 fn plan_dps_probe() {
     for id in weapons::IDS {
-        let d = if id == weapons::Id::Crossbow {
-            8.0
-        } else {
-            1.2
-        };
+        let d = if id.is_ranged() { 8.0 } else { 1.2 };
         for plan in [Plan::Beat, Plan::Charge, Plan::ChargeDodge, Plan::BeatDodge] {
             for secs in [4.0, 20.0] {
                 for rank in [0, crate::forge::RANKS] {
@@ -1068,13 +1060,16 @@ fn the_crossbow_at_its_best_stays_under_the_sword_at_its_best() {
             .fold(0.0, f32::max)
     };
     // 벼린 단마다(0180 — 같은 단끼리).
-    for rank in 0..=crate::forge::RANKS {
-        let bow = best(weapons::Id::Crossbow, rank, 8.0);
-        let sword = best(weapons::Id::Sword, rank, 1.2);
-        assert!(
-            bow < sword * 0.8,
-            "+{rank}: crossbow {bow:.1}/s vs sword {sword:.1}/s"
-        );
+    // 0231: 원거리 무기 모두(쇠뇌·활).
+    for id in weapons::IDS.into_iter().filter(|i| i.is_ranged()) {
+        for rank in 0..=crate::forge::RANKS {
+            let bow = best(id, rank, 8.0);
+            let sword = best(weapons::Id::Sword, rank, 1.2);
+            assert!(
+                bow < sword * 0.8,
+                "+{rank}: {id:?} {bow:.1}/s vs sword {sword:.1}/s"
+            );
+        }
     }
 }
 

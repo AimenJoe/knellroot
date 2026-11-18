@@ -148,7 +148,7 @@ pub struct Bolt {
     pub pierce: bool,
     /// 맞은 적이 이 초 휘청(0 = 없음).
     pub stagger: f32,
-    /// 그림 색(0 = 마법 라벤더, 1 = 무거운 탄 놋쇠, 2 = 꿰뚫는 탄 민트, 3 = 쇠뇌 볼트).
+    /// 그림 색(0 = 마법 라벤더, 1 = 무거운 탄 놋쇠, 2 = 꿰뚫는 탄 민트, 3 = 쇠뇌 볼트, 4 = 활의 화살 — 0231).
     pub look: u8,
     /// 크기 배율(그림·맞는 반지름, 모은 탄은 크다 — 0056).
     pub scale: f32,
@@ -169,6 +169,8 @@ pub struct Grenade {
     /// 떨어뜨리는 걸로", 예전 0051 자동 조준 7m · 0055 꾹 = 11m). 0218(사장 "사정거리가 조금만 더 길었으면"): 1.4 → 2.0 —
     /// 튕긴 뒤 터지는 자리는 2.2m → 약 3.1m(`World::grenade_lands`).
     pub drop: f32,
+    /// 터진 자리의 적에게 쌓는 뿌리 게이지(0231 — 활의 뿌리 씨앗: 묶는다, `status::Kind::Root`). 0 = 화약(쇠뇌).
+    pub root: f32,
 }
 
 /// 무기 이름표.
@@ -180,10 +182,19 @@ pub enum Id {
     Crossbow,
     /// 맨손(0076, 사장 2026-11-07 "무기 장착하지 않았을 경우에는 맨손 전투") — 무기 칸을 비운 것. 짧고 빠른 주먹 3연타.
     Fists,
+    /// 잔뿌리 활(0231, 사장 "쇠뇌 말고도 원거리 무기 넣어줘"): 빠른 화살·당겨 쏘는 한 발·뿌리 씨앗(묶기).
+    Bow,
 }
 
-/// 표 순서. 맨손은 끝에(옛 기록의 무기 번호가 그대로 읽히게 — `app::legacy_weapon`).
-pub const IDS: [Id; 5] = [Id::Sword, Id::Hammer, Id::Staff, Id::Crossbow, Id::Fists];
+/// 표 순서. 맨손은 옛 끝에(옛 기록의 무기 번호가 그대로 읽히게 — `app::legacy_weapon`), 그 뒤에 새 무기.
+pub const IDS: [Id; 6] = [
+    Id::Sword,
+    Id::Hammer,
+    Id::Staff,
+    Id::Crossbow,
+    Id::Fists,
+    Id::Bow,
+];
 
 impl Id {
     /// 기록 키(0066 — 든 무기는 슬롯 기록에, 키는 바꾸지 않는다).
@@ -194,6 +205,7 @@ impl Id {
             Id::Staff => "staff",
             Id::Crossbow => "crossbow",
             Id::Fists => "fists",
+            Id::Bow => "bow",
         }
     }
 
@@ -235,6 +247,9 @@ pub struct Forge {
     pub mag: i32,
 }
 
+/// 활의 화살 그림(`Bolt::look`, 0231) — 원거리 무기의 탄(곧게 난다·벼린 몫을 받는다)이다.
+pub const ARROW: u8 = 4;
+
 /// 근접 무기의 벼린 단: 단마다 타의 피해 +5(반 눈금 — 0180: +10은 한 단에 문지기 싸움이 43초 → 18초(허수아비)라 반으로.
 /// +5도 잔재(30)를 쓰러뜨리는 검의 대 수가 셋 → 둘로 준다, KB `weapon-upgrade-design`).
 const MELEE_FORGE: [Forge; 3] = [
@@ -258,7 +273,7 @@ const MELEE_FORGE: [Forge; 3] = [
 impl Bolt {
     /// 쇠뇌의 볼트인가(0180 — 벼린 쇠뇌의 피해 몫을 받는다. 근접 무기의 마법 탄은 아니다).
     pub fn is_shot(&self) -> bool {
-        self.look == 3
+        self.look == 3 || self.look == ARROW
     }
 }
 
@@ -367,7 +382,7 @@ const FISTS_COMBO: [Hit; 3] = [
     },
 ];
 
-pub const WEAPONS: [Weapon; 5] = [
+pub const WEAPONS: [Weapon; 6] = [
     Weapon {
         id: Id::Sword,
         combo: &SWORD_COMBO,
@@ -541,6 +556,7 @@ pub const WEAPONS: [Weapon; 5] = [
             damage: 30,
             poise: 5.0,
             drop: 2.0,
+            root: 0.0,
         }),
         // 모은 사격: 시위를 끝까지 당긴 무거운 볼트 — 꿰뚫고 밀어낸다(수류탄도 맞히면 터진다).
         charged: Bolt {
@@ -613,6 +629,75 @@ pub const WEAPONS: [Weapon; 5] = [
         stamina: 0.6,
         forge: None,
     },
+    // 잔뿌리 활(0231): 쇠뇌와 같은 틀(평타 = 사격, 꾹 = 모은 사격, 특수 = 던지는 것)에서 손맛을 가른다 —
+    // 화살은 가볍고 빠르고 멀리(전통 가득 6 · 다시 채우기 짧음 · 한 발 빠름), 당겨 쏘는 한 발은 화살 하나로(쇠뇌는 둘) 꿰뚫고,
+    // 특수는 터지는 화약이 아니라 **뿌리 씨앗** — 피해는 작고 둘레의 적을 묶는다(뿌리 게이지 가득). 쇠뇌 = 한 방·떼 지우기,
+    // 활 = 거리·잦은 손·묶어 두고 쏘기. 수치는 처음 값 — 원거리 초당 피해는 근접의 여섯~일곱 할 밑(0173, 시험).
+    Weapon {
+        id: Id::Bow,
+        combo: &[],
+        dash: None,
+        heavy: None,
+        rb: Rb::Shot {
+            bolt: Bolt {
+                speed: 1.5,
+                range: 1.7,
+                damage: 10,
+                poise: 0.8,
+                pierce: false,
+                stagger: 0.0,
+                look: ARROW,
+                scale: 1.0,
+            },
+            mag: 6,
+            reload: 2.2,
+            time: 0.95,
+            heavy: 1,
+        },
+        grenade: Some(Grenade {
+            fuse: 0.9,
+            count: 2,
+            cooldown: 6.0,
+            radius: 2.4,
+            damage: 10,
+            poise: 1.0,
+            drop: 2.0,
+            root: 1.0,
+        }),
+        // 당겨 쏘는 한 발: 끝까지 당긴 화살 — 빠르고 멀리, 줄 선 적을 꿰뚫고 휘청이게 한다. 피해는 화살 그대로(10) — 화살 하나로
+        // 당기니 전통이 길어 모아 쏘기만 되풀이하면 20이던 처음 값이 24/초(검의 가장 센 꼴 23의 여덟 할 18.4를 넘었다, 탐침
+        // `plan_dps_probe`). 딱 맞춰 떼면 덤 +10은 그대로라 "당겨서 맞히는" 맛은 남는다.
+        charged: Bolt {
+            speed: 2.4,
+            range: 2.1,
+            damage: 10,
+            poise: 3.0,
+            pierce: true,
+            stagger: 0.35,
+            look: ARROW,
+            scale: 1.4,
+        },
+        node: "w_bow",
+        stamina: 1.0,
+        // 쇠뇌와 같은 꼴(전통 먼저 · 화살 피해는 뒤에).
+        forge: Some([
+            Forge {
+                hit: 0,
+                shot: 0,
+                mag: 1,
+            },
+            Forge {
+                hit: 0,
+                shot: 5,
+                mag: 1,
+            },
+            Forge {
+                hit: 0,
+                shot: 10,
+                mag: 2,
+            },
+        ]),
+    },
 ];
 
 /// 손에 쥔 꼴(0225 — `Id::grip`): 스킬마다 쓸 수 있는 꼴이 있다.
@@ -663,7 +748,7 @@ impl Id {
         match self {
             Id::Sword | Id::Fists => Hand::One,
             Id::Hammer | Id::Staff => Hand::Two,
-            Id::Crossbow => Hand::Ranged,
+            Id::Crossbow | Id::Bow => Hand::Ranged,
         }
     }
 
@@ -675,7 +760,7 @@ impl Id {
             Id::Sword | Id::Fists => Grip::Duel,
             Id::Hammer => Grip::Heavy,
             Id::Staff => Grip::Focus,
-            Id::Crossbow => Grip::Ranged,
+            Id::Crossbow | Id::Bow => Grip::Ranged,
         }
     }
 
@@ -690,7 +775,7 @@ impl Id {
                 force: 1.0,
                 channel: ART_CHANNEL,
             },
-            Id::Sword | Id::Crossbow | Id::Fists => Art {
+            Id::Sword | Id::Crossbow | Id::Fists | Id::Bow => Art {
                 force: 1.0,
                 channel: 1.0,
             },
@@ -765,7 +850,7 @@ mod tests {
         charged: i32,
         grenade: i32,
     }
-    const OLD_WEAPONS: [Old; 5] = [
+    const OLD_WEAPONS: [Old; 6] = [
         Old {
             id: Id::Sword,
             combo: &[1, 1, 2],
@@ -817,6 +902,17 @@ mod tests {
             rb: 1,
             charged: 3,
             grenade: 0,
+        },
+        // 0231: 눈금을 옮긴 뒤에 생긴 무기 — 옛 눈금으로 적어 둔다(새 수의 열의 하나).
+        Old {
+            id: Id::Bow,
+            combo: &[],
+            dash: 0,
+            heavy: 0,
+            aftershock: 0,
+            rb: 1,
+            charged: 1,
+            grenade: 1,
         },
     ];
     /// 옛 랩 값·상수: 다 모은 강타 덤 · 딱 맞춘 떼기 덤 · 내려찍기 · 치명타 덤 · 되받은 종 조각 · 큰 기술의 벽 쿵.

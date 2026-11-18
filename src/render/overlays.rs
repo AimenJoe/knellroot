@@ -8,7 +8,7 @@ const BEAT_GOLD: Color = Color::new(1.0, 0.9, 0.62, 0.24);
 pub const BEAT_RING_LIFE: f32 = 0.35;
 /// 딱 맞춰 떼기 고리가 퍼지는 시간(0078).
 const PERFECT_RING_LIFE: f32 = 0.45;
-const BOLT_LOOKS: [(Color, Color); 4] = [
+const BOLT_LOOKS: [(Color, Color); 5] = [
     (
         Color::new(0.92, 0.88, 1.0, 1.0),
         Color::new(0.7, 0.6, 1.0, 0.45),
@@ -24,6 +24,11 @@ const BOLT_LOOKS: [(Color, Color); 4] = [
     (
         Color::new(0.95, 0.85, 0.65, 1.0),
         Color::new(0.8, 0.65, 0.4, 0.3),
+    ),
+    // 활의 화살(0231): 잔뿌리의 연두 — 쇠뇌의 놋쇠 볼트와 갈린다(빨강은 쓰지 않는다).
+    (
+        Color::new(0.88, 1.0, 0.78, 1.0),
+        Color::new(0.55, 0.85, 0.5, 0.3),
     ),
 ];
 
@@ -255,7 +260,7 @@ fn bolts(w: &World, alpha: f32) {
     for b in &w.bolts {
         let p = b.prev.lerp(b.pos, alpha);
         let (core, glow) = BOLT_LOOKS[(b.def.look as usize).min(BOLT_LOOKS.len() - 1)];
-        let k = if b.def.look == 3 { 0.6 } else { 1.0 } * b.def.scale;
+        let k = if b.def.is_shot() { 0.6 } else { 1.0 } * b.def.scale;
         // 0141: 정육면체 대신 카메라를 보는 마름모 — 빛무리 + 알맹이 + 뒤로 작아지는 꼬리 셋.
         for i in 1..=3 {
             let f = i as f32;
@@ -381,13 +386,25 @@ fn carts(w: &World, alpha: f32) {
 }
 
 fn bombs(w: &World, alpha: f32) {
-    // 수류탄(0051): 어두운 덩이 + 도화선이 짧아질수록 빨리 깜빡이는 불.
+    // 수류탄(0051): 어두운 덩이 + 도화선이 짧아질수록 빨리 깜빡이는 불. 뿌리 씨앗(0231): 갈색 씨 + 깜빡이는 연두 싹.
     for bm in &w.bombs {
         let p = bm.prev.lerp(bm.pos, alpha);
-        gem(p, 0.4, Color::new(0.22, 0.19, 0.24, 1.0));
+        let seed = bm.root > 0.0;
+        let (body, spark) = if seed {
+            (
+                Color::new(0.42, 0.30, 0.20, 1.0),
+                Color::new(0.66, 1.0, 0.72, 1.0),
+            )
+        } else {
+            (
+                Color::new(0.22, 0.19, 0.24, 1.0),
+                Color::new(1.0, 0.8, 0.4, 1.0),
+            )
+        };
+        gem(p, if seed { 0.32 } else { 0.4 }, body);
         let hz = 4.0 + 10.0 * (1.0 - (bm.fuse / 1.5).clamp(0.0, 1.0));
         if (w.time * hz) as i32 % 2 == 0 {
-            spark4(p + Vec3::Y * 0.22, 0.36, Color::new(1.0, 0.8, 0.4, 1.0));
+            spark4(p + Vec3::Y * 0.22, 0.36, spark);
         }
     }
 }
@@ -462,12 +479,19 @@ fn blasts(w: &World, fl: &Drape) {
     // 폭발 고리: 퍼지며 옅어진다.
     for b in &w.blasts {
         let k = (b.age / crate::tuning::BLAST_SHOW).clamp(0.0, 1.0);
+        // 뿌리 씨앗(0231)은 뿌리의 빛(`status::INK`의 뿌리 — 민트)으로.
+        let c = if b.root {
+            let [r, g, bl] = crate::status::INK[1];
+            Color::new(r, g, bl, 0.9 * (1.0 - k))
+        } else {
+            Color::new(1.0, 0.8, 0.45, 0.9 * (1.0 - k))
+        };
         fl.ring(
             b.pos + Vec3::Y * 0.1,
             b.radius * (0.4 + 0.6 * k),
             0.0,
             360.0,
-            Color::new(1.0, 0.8, 0.45, 0.9 * (1.0 - k)),
+            c,
         );
     }
 }

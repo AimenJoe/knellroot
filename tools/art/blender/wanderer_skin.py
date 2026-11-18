@@ -254,7 +254,7 @@ def load_old():
         "hand_r": rig.matrix_world @ rig.data.bones["hand_r"].head_local,
         "hand_l": rig.matrix_world @ rig.data.bones["hand_l"].head_local,
         "atlas": m.mat.node_tree.nodes["Image Texture"].image,
-        "weapons": [m.objects[n] for n in ("sword", "w_hammer", "w_staff", "w_crossbow")],
+        "weapons": [m.objects[n] for n in ("sword", "w_hammer", "w_staff", "w_crossbow", "w_bow")],
         "lamp": [m.objects[n] for n in ("lamp_geo", "glow_lamp")],
         "shield": m.objects["shield"],
     }

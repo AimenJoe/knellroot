@@ -342,6 +342,8 @@ pub struct Bomb {
     pub radius: f32,
     pub damage: i32,
     pub poise: f32,
+    /// 뿌리 씨앗(0231 — 활): 터진 자리의 적에게 쌓는 뿌리 게이지. 0 = 화약.
+    pub root: f32,
 }
 
 /// 맞힌 자리의 불똥(그림만 — 렌더가 읽는다, 2026-11-06): 맞은 쪽으로 튀어 떨어지며 짧게 산다.
@@ -388,6 +390,8 @@ pub struct Blast {
     pub pos: Vec3,
     pub radius: f32,
     pub age: f32,
+    /// 뿌리 씨앗이 터진 자리(0231) — 고리를 뿌리 빛으로.
+    pub root: bool,
 }
 
 /// 남는 엘리트(0112)가 쓰러진 자리의 고리 — `ELITE_LINGER_DELAY` 동안 예고, 다 차면 둘레를 친다(패링 못 함).
@@ -1767,12 +1771,14 @@ impl World {
 
 impl World {
     /// 둘레 피해(수류탄·여진): 반지름 안의 깨어 있는 적(높이 차 `HIT_DY` 안)에게 피해·자세 피해·바깥으로 밀기.
+    #[allow(clippy::too_many_arguments)]
     fn burst(
         &mut self,
         at: Vec3,
         radius: f32,
         damage: i32,
         poise: f32,
+        dose: crate::status::Dose,
         t: &Tuning,
         ev: &mut Vec<Event>,
     ) {
@@ -1796,6 +1802,8 @@ impl World {
                 Event::Hit { at: hit_at }
             });
             add_poise(en, poise * self.stats.poise, None, t, ev);
+            // 뿌리 씨앗(0231): 터진 둘레를 묶는다 — 걸리는 법은 하나(`afflict`, 0223 V2).
+            afflict(en, dose, ev);
             if en.hp <= 0 {
                 en.state = EState::Dead;
                 self.kills += 1;
