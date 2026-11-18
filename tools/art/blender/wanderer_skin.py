@@ -165,7 +165,7 @@ CLIPS = [
     # 구르기만(1 → 5 들어감 → 21 한 바퀴 → 23 닿음, 구르는 몫 0.12 → 0.185초), 일어나기(23 → 38, 0.2초 `dodge_rise`)는 회피가 끝나
     # 서기·걷기·달리기로 갈 때 렌더가 이어 튼다(`render::actors` `ROLL_RISE` — 공격·다시 회피면 바로 그 동작).
     ("dodge", "Roll_Dodge_3", ("anchors", [(0.0, 1), (0.035, 5), (0.22, 21), (0.25, 23)])),
-    ("dodge_rise", "Roll_Dodge_3", ("anchors", [(0.0, 23), (0.2, 38)])),
+    ("dodge_rise", "Roll_Dodge_3", ("anchors", [(0.0, 31), (0.2, 38)])),
     ("dodge_back", "Back_Jump", ("anchors", [(0.0, 2), (0.04, 4), (0.19, 14), (0.25, 17)])),
     ("hurt", "Dead", ("hit", 0, (2, 6), 12, 0.35, 0.058)),
     ("fall", "Dead", ("span", 4, 71, 1.3)),
@@ -542,18 +542,27 @@ def cap_lean(arm, body_max, head_max):
         turn_bone(arm, "mixamorig:Head", axis, over * 0.5)
 
 
-# 몸 말기(0240 — 사장 "몸을 더 동그랗게 말수는 없나?"): 원본 구르기 위에 원본 프레임마다 등을 더 굽히고 턱을 가슴에 붙이고 무릎을 가슴으로 당긴다
-# — 공이 작아지면 바닥 위로 띄울 몫(`GROUND_CLEAR`)도 준다. (원본 → ([(원본 프레임, 몫 0..1)] 들어가고 나오는 시간표, {뼈: 굽힐 각(도)}))
+# 몸 말기 — 원본 프레임마다 몸을 더 만다(빈 표 — 0239 덧에서 구르기에 썼다가 0240 공 굴리기로 옮김).
+# (원본 → ([(원본 프레임, 몫 0..1)] 들어가고 나오는 시간표, {뼈: 굽힐 각(도)}))
 # 각은 그 뼈가 지금 지닌 몸의 옆축(쉬는 자세의 +X를 뼈와 함께 돌린 축)으로: + = 앞으로 굽힘(등·목·머리·정강이), 넓적다리는 −(무릎이 앞으로).
-TUCK = {
-    "Roll_Dodge_3": (
-        [(3.0, 0.0), (7.0, 1.0), (16.0, 1.0), (23.0, 0.0)],
-        {"mixamorig:Spine": 22.0, "mixamorig:Spine1": 22.0, "mixamorig:Spine2": 22.0,
-         "mixamorig:Neck": 28.0, "mixamorig:Head": 22.0,
-         "mixamorig:LeftUpLeg": -70.0, "mixamorig:RightUpLeg": -70.0,
-         "mixamorig:LeftLeg": 85.0, "mixamorig:RightLeg": 85.0},
-    ),
+TUCK = {}
+
+# 공처럼 구르기(0240 — 사장 "미리보기 보면 구르지 않는데?"): 어른 몸의 구르기 원본을 바닥 위로 띄우니(0239) 엉덩이를 높이 들고 거꾸로 서서 넘는
+# 물구나무로 읽혔다(엉덩이 0.78 m에서 거꾸로 세 장, 등으로 눕고, 앉는다 — 바닥을 따라 구르지 않았다). 큰 머리의 몸은 공으로 말아 그 공의
+# 가운데를 축으로 한 바퀴 돌리고 가장 낮은 점을 늘 바닥에 붙인다(제자리에서 돌고, 게임이 몸을 앞으로 옮긴다 = 바닥을 따라 구른다).
+# 처음·끝 자세는 원본에서(`start` 살짝 숙임 · `end` 웅크려 일어나는 중 — 일어나기 `dodge_rise`가 거기서 잇는다), 공 = `end` + `BALL_BEND`.
+ROLL = {
+    "name": "dodge", "src": "Roll_Dodge_3", "start": 1.0, "end": 31.0,
+    # 초 — 말기 들어감(시작 → 공) · 공 · 풀림(공 → 끝), 한 바퀴의 시간표(몫 0..1, 코사인으로 이음)
+    "curl_in": 0.05, "curl_out": 0.19,
+    "spin": [(0.02, 0.0), (0.21, 1.0)],
 }
+BALL_BEND = {"mixamorig:Spine": 25.0, "mixamorig:Spine1": 25.0, "mixamorig:Spine2": 25.0,
+             "mixamorig:Neck": 30.0, "mixamorig:Head": 25.0,
+             "mixamorig:LeftUpLeg": -80.0, "mixamorig:RightUpLeg": -80.0,
+             "mixamorig:LeftLeg": 100.0, "mixamorig:RightLeg": 100.0,
+             "mixamorig:LeftArm": -35.0, "mixamorig:RightArm": -35.0}
+ROLL_MARGIN = 0.02  # m — 공의 가장 낮은 점을 바닥에서 이만큼(일어나기의 `CLEAR_MARGIN`과 같게 — 이음매)
 
 
 def tuck_pose(arm, src, f):
@@ -570,6 +579,131 @@ def tuck_pose(arm, src, f):
         pb = arm.pose.bones[name]
         lat = pb.matrix.to_3x3() @ arm.data.bones[name].matrix_local.to_3x3().inverted() @ x
         turn_bone(arm, name, lat.normalized(), math.radians(deg) * w)
+
+
+def set_src(arm, src, f):
+    """원본 `src`의 프레임 `f` 자세로(채널 없는 뼈는 쉬는 자세)."""
+    sc = bpy.context.scene
+    arm.animation_data.action = bpy.data.actions[src]
+    for pb in arm.pose.bones:
+        pb.location = (0, 0, 0)
+        pb.rotation_quaternion = (1, 0, 0, 0)
+        pb.scale = (1, 1, 1)
+    sc.frame_set(int(math.floor(f)), subframe=f - math.floor(f))
+    bpy.context.view_layer.update()
+
+
+def grab(arm):
+    return {pb.name: pb.matrix_basis.decompose() for pb in arm.pose.bones}
+
+
+def put_pose(arm, a, b, u):
+    """두 자세(`grab`) 사이 `u`(0..1)를 뼈마다 섞어 놓는다."""
+    arm.animation_data.action = None
+    for pb in arm.pose.bones:
+        (la, qa, sa), (lb, qb, sb) = a[pb.name], b[pb.name]
+        if qa.dot(qb) < 0:
+            qb = -qb
+        pb.matrix_basis = Matrix.LocRotScale(la.lerp(lb, u), qa.slerp(qb, u), sa.lerp(sb, u))
+    bpy.context.view_layer.update()
+
+
+def rotate_about(arm, name, axis, angle, c):
+    """뼈 하나를 뼈대 공간의 점 `c`를 지나는 축으로 돌린다(자식은 따라온다)."""
+    pb = arm.pose.bones[name]
+    pb.matrix = Matrix.Translation(c) @ Matrix.Rotation(angle, 4, axis) @ Matrix.Translation(-c) @ pb.matrix
+    bpy.context.view_layer.update()
+
+
+def shift_bone(arm, name, d):
+    pb = arm.pose.bones[name]
+    pb.matrix = Matrix.Translation(d) @ pb.matrix
+    bpy.context.view_layer.update()
+
+
+def mesh_box(body):
+    """평가한 몸의 세계 정점 — (가장 낮은 z, 가운데)."""
+    dg = bpy.context.evaluated_depsgraph_get()
+    dg.update()
+    ev = body.evaluated_get(dg)
+    me = ev.to_mesh()
+    ps = [body.matrix_world @ v.co for v in me.vertices]
+    ev.to_mesh_clear()
+    lo = Vector((min(p.x for p in ps), min(p.y for p in ps), min(p.z for p in ps)))
+    hi = Vector((max(p.x for p in ps), max(p.y for p in ps), max(p.z for p in ps)))
+    return lo.z, (lo + hi) * 0.5
+
+
+def craft_roll(arm, body, anchors):
+    """`ROLL`: 시작 자세 → 공(끝 자세 + `BALL_BEND`)으로 말아 공의 가운데를 축으로 앞으로 한 바퀴 → 끝 자세. 엉덩이의 수평 자리는 쉬는 자세에
+    두고(제자리 — 게임이 옮긴다), 프레임마다 가장 낮은 정점을 바닥 + `ROLL_MARGIN`에 붙인다. 원본이 간 쪽을 몸의 앞으로 돌린 각은 `TRAVEL_TURNS`에
+    적는다(일어나기가 같은 각을 쓴다)."""
+    src = ROLL["src"]
+    hips_n = "mixamorig:Hips"
+    rest = arm.data.bones[hips_n].head_local
+    inv = arm.matrix_world.inverted()
+    up = inv.to_3x3() @ Vector((0.0, 0.0, 1.0))
+    set_src(arm, src, ROLL["start"])
+    a = grab(arm)
+    h0 = arm.pose.bones[hips_n].head.copy()
+    set_src(arm, src, ROLL["end"])
+    c_pose = grab(arm)
+    h1 = arm.pose.bones[hips_n].head.copy()
+    for name, deg in BALL_BEND.items():  # 표의 차례 = 부모 → 자식
+        pb = arm.pose.bones[name]
+        lat = pb.matrix.to_3x3() @ arm.data.bones[name].matrix_local.to_3x3().inverted() @ Vector((1.0, 0.0, 0.0))
+        turn_bone(arm, name, lat.normalized(), math.radians(deg))
+    ball = grab(arm)
+    d = h1 - h0
+    turn = -math.atan2(d.x, -d.y)
+    TRAVEL_TURNS[ROLL["name"]] = turn
+
+    x_rest = arm.data.bones[hips_n].matrix_local.to_3x3().inverted() @ Vector((1.0, 0.0, 0.0))
+
+    def placed(pa, pb_, u, square=0.0):
+        """섞은 자세 + 엉덩이를 쉬는 자리(수평)로 + 간 쪽을 앞으로 + `square`(0..1)만큼 몸의 옆축을 구르는 옆축(+X)에 맞춘다 — 원본의
+        웅크린 끝 자세는 옆으로 27° 기울어 그대로 말면 공이 옆으로 누운 채(58°) 돌아 비스듬히 굴렀다."""
+        put_pose(arm, pa, pb_, u)
+        h = arm.pose.bones[hips_n].head
+        shift_bone(arm, hips_n, Vector((rest.x - h.x, rest.y - h.y, 0.0)))
+        turn_bone(arm, hips_n, Vector((0.0, 0.0, 1.0)), turn)
+        if square > 1e-4:
+            pb = arm.pose.bones[hips_n]
+            side = (pb.matrix.to_3x3() @ x_rest).normalized()
+            q = side.rotation_difference(Vector((1.0, 0.0, 0.0)))
+            ax, ang = q.to_axis_angle()
+            if ang > 1e-5:
+                turn_bone(arm, hips_n, ax, ang * square)
+
+    placed(ball, ball, 0.0, 1.0)
+    _, mid = mesh_box(body)
+    cen = inv @ mid
+    lat = Vector((1.0, 0.0, 0.0))  # 돌린 뒤 앞 = −Y → 옆축 = +X(+각 = 머리가 앞·아래로)
+    dur = anchors[-1][0]
+    n = max(1, int(round(dur * OUT_FPS)))
+    poses, hips, hands = [], [], []
+    ci, co = ROLL["curl_in"], ROLL["curl_out"]
+    for k in range(n + 1):
+        t = k / OUT_FPS
+        if t <= ci:
+            u = smooth01(t / ci)
+            placed(a, ball, u, u)
+        elif t < co:
+            placed(ball, ball, 0.0, 1.0)
+        else:
+            u = smooth01((t - co) / max(dur - co, 1e-6))
+            placed(ball, c_pose, u, 1.0 - u)
+        th = 2.0 * math.pi * keyed(ROLL["spin"], t)
+        if th > 1e-5:
+            rotate_about(arm, hips_n, lat, th, cen)
+        low, _ = mesh_box(body)
+        shift_bone(arm, hips_n, up * (ROLL_MARGIN - low))
+        poses.append({pb.name: pb.matrix_basis.decompose() for pb in arm.pose.bones if pb.name not in ("lamp", "weapon", "shield", "bow")})
+        hips.append(arm.pose.bones[hips_n].head.copy())
+        hands.append((arm.pose.bones[HAND_R].head.copy(), arm.pose.bones["mixamorig:RightArm"].head.copy(),
+                      arm.pose.bones[HAND_L].head.copy()))
+    print(f"[skin] roll: ball turned {math.degrees(turn):+.0f}°, centre {mid.z:.2f} m, {n} frames")
+    return n, poses, hips, hands
 
 
 def sample(arm, src, anchors, upright=None, cap=None):
@@ -836,9 +970,9 @@ TRAVEL_TURNS = {}  # 동작 → `face_travel`이 돌린 각
 # 원본 프레임마다 몸의 가장 낮은 정점을 재니 머리가 바닥 아래 0.57 m(키의 40%, 12~14), 닿을 때 다리·꼬리가 0.3 m(20~24).
 # 그 원본을 쓰는 동작들의 엉덩이를 원본 프레임마다 "바닥 위로 필요한 만큼"을 덮는 매끈한 곡선(필요량마다 종 모양을 겹친 위 테두리)만큼
 # 올린다 — 저절로 뛰어들며 구르는 꼴이 된다. 같은 원본이라 구르기 → 일어나기의 이음매도 같은 곡선. (원본 → 그 원본을 쓰는 동작들)
-GROUND_CLEAR = {"Roll_Dodge_3": ("dodge", "dodge_rise")}
+GROUND_CLEAR = {"Roll_Dodge_3": ("dodge_rise",)}  # 0240: 구르기는 공 굴리기(`ROLL`)가 프레임마다 바닥에 붙인다
 CLEAR_MARGIN = 0.02  # m — 바닥에서 띄우는 몫
-CLEAR_WIDTH = 4.0  # 원본 프레임 — 종 모양의 폭(넓을수록 느긋한 뜀)
+CLEAR_WIDTH = 0.5  # 원본 프레임 — 종 모양의 폭(0240: 일어나기만 — 닿을 몫이 작아 거의 프레임마다 그대로, 공 굴리기의 끝과 이음매가 맞게)
 
 
 def clear_curve(arm, body, src):
@@ -1195,13 +1329,18 @@ def make_actions(arm, body):
     up = arm.matrix_world.inverted().to_3x3() @ Vector((0.0, 0.0, 1.0))  # 세계 1 m 위 = 뼈대 공간의 이만큼
     for name, src, spec in CLIPS:
         anchors = anchors_of(arm, name, src, spec)
-        n, poses, hips, hands = sample(arm, src, anchors, UPRIGHT.get(name), LEAN_CAP.get(name))
+        crafted = name == ROLL["name"]
+        if crafted:
+            n, poses, hips, hands = craft_roll(arm, body, anchors)
+        else:
+            n, poses, hips, hands = sample(arm, src, anchors, UPRIGHT.get(name), LEAN_CAP.get(name))
         if name in GROUND_CLEAR.get(src, ()):
             for k in range(len(hips)):
                 hips[k] = hips[k] + up * lift_at(lifts[src], src_at(anchors, k / OUT_FPS))
-        if name in FACE_TRAVEL:
+        if name in FACE_TRAVEL and not crafted:
             face_travel(arm, name, poses, hips, FACE_TRAVEL[name])
-        strip_travel(arm, poses, hips, name in LOOPS)
+        if not crafted:  # 공 굴리기는 이미 제자리
+            strip_travel(arm, poses, hips, name in LOOPS)
         if name == "idle":
             stand = sum(h.z for h in hips) / len(hips)
         if name in FLAT:
