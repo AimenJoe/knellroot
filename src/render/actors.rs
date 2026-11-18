@@ -409,7 +409,7 @@ impl Renderer {
                     self.gait.advance(wdt, true, (speed / 4.0).clamp(0.6, 2.2)),
                 ),
                 PState::Idle if speed > 0.5 => {
-                    let (names, _) = move_anim(pl.pos - pl.prev, pl.facing_dir(), w.lock.is_some());
+                    let (names, _) = move_anim(pl.pos - pl.prev, pl.facing_dir(), pl.faces_away);
                     let k = if names[0] == "walk_back" {
                         WALK_BACK_RATE
                     } else {
@@ -466,7 +466,7 @@ impl Renderer {
             super::hide_unheld(&e.model, pl.weapon, pl.shield, away, &mut self.sec_extra);
             // 락온 중 옆·비스듬히 걸을 때(0197): 다리(엉덩이)를 가는 쪽으로 돌리고 윗몸(첫 등뼈)을 되돌려 과녁을 본다 — 부드럽게 따라간다.
             let leg_want = if matches!(pl.state, PState::Idle) && speed > 0.5 {
-                move_anim(pl.pos - pl.prev, pl.facing_dir(), w.lock.is_some()).1
+                move_anim(pl.pos - pl.prev, pl.facing_dir(), pl.faces_away).1
             } else {
                 0.0
             };
@@ -863,10 +863,11 @@ fn windup_hold(en: &Enemy) -> Option<f32> {
     (t >= start).then_some(t - start)
 }
 
-/// 걷는 동작 고르기(0034): 락온 중엔 몸이 대상을 보니 걷는 쪽이 옆이면 게걸음(`strafe_l`·`strafe_r`), 뒤면 뒷걸음.
-/// 락온이 아니면 늘 앞으로 걷는다(몸이 걷는 쪽을 본다). 없는 모델이면 `walk`로.
-pub fn move_anim(step: Vec3, facing: Vec3, locked: bool) -> (&'static [&'static str], f32) {
-    if !locked {
+/// 걷는 동작 고르기(0034 → 0235): 몸이 걷는 쪽이 아닌 것을 볼 때(락온 · 쥔 조준 · 막기 — `Player::faces_away`)는 걷는 쪽이 옆이면 게걸음(`strafe_l`·`strafe_r`), 뒤면 뒷걸음.
+/// 아니면 늘 앞으로 걷는다(몸이 걷는 쪽을 본다). 없는 모델이면 `walk`로. 수류탄을 겨눈 채 뒤로 걸으면 앞으로 걷는 동작이
+/// 뒤로 미끄러졌다(사장 "수류탄 조준 중에 뒤로 걷는 모션 이상하다", 0235) — 락온만 보던 것을 `faces_away`로.
+pub fn move_anim(step: Vec3, facing: Vec3, faces_away: bool) -> (&'static [&'static str], f32) {
+    if !faces_away {
         return (&["walk"], 0.0);
     }
     let v = vec3(step.x, 0.0, step.z);

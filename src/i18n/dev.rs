@@ -30,10 +30,28 @@ pub const NOTE_EXPORTED: Pair = (
     "exported to console (paste into src/tuning.rs)",
 );
 pub const NOTE_USING: Pair = ("지금 {0} 값을 씀", "now using {0}");
-pub const LAB_HINT: Pair = (
-    "{0} · 기본 {1} · {2} ×10 · 확인 = 기본값",
-    "default {1} | {2} x10 | confirm = default",
+pub const USING_D: Pair = (
+    "A와 B 두 벌의 값을 오가며 견준다. 좌우나 확인으로 바꾼다. B는 먼저 담아야 생긴다.",
+    "switch between two sets of values, A and B, to compare them. left/right or confirm. store B first.",
 );
+pub const STORE_B_D: Pair = (
+    "지금 쓰는 값을 모두 B 벌에 담는다. 그 뒤 A로 돌아가 바꿔 보고 B와 견준다.",
+    "copy every current value into set B. then go back to A, change things, and compare.",
+);
+pub const EXPORT_D: Pair = (
+    "기본값과 다른 값을 src/tuning.rs에 붙여 넣을 줄로 콘솔에 찍는다.",
+    "print every value that differs from its default to the console, as lines to paste into src/tuning.rs.",
+);
+pub const RESET_ALL_D: Pair = (
+    "모든 묶음의 값을 기본값으로 되돌린다. B 벌은 그대로 남는다.",
+    "put every value in every group back to its default. set B stays.",
+);
+pub const LAB_NOW: Pair = ("지금", "now");
+pub const LAB_DEF: Pair = ("기본", "default");
+pub const LAB_STEP: Pair = ("한 걸음", "step");
+pub const LAB_CHANGED: Pair = ("기본값과 다름", "changed from default");
+pub const LAB_FAST: Pair = ("꾹 + 좌우 ×10", "hold + left/right x10");
+pub const LAB_RESET: Pair = ("기본값으로", "reset");
 pub const DEV_TITLE: Pair = ("개발", "DEV");
 pub const DEV_ROW_D: Pair = (
     "개발 창을 연다 — 스테이지·시나리오·도구를 고른다.",
@@ -151,7 +169,16 @@ pub const PAIRS: &[Pair] = &[
     NOTE_NO_B,
     NOTE_EXPORTED,
     NOTE_USING,
-    LAB_HINT,
+    USING_D,
+    STORE_B_D,
+    EXPORT_D,
+    RESET_ALL_D,
+    LAB_NOW,
+    LAB_DEF,
+    LAB_STEP,
+    LAB_CHANGED,
+    LAB_FAST,
+    LAB_RESET,
     DEV_TITLE,
     DEV_ROW_D,
     TAB_TOOLS,

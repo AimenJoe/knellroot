@@ -144,12 +144,12 @@ async function main() {
   await page.keyboard.press('Digit3'); await page.waitForTimeout(300);
   await page.keyboard.down('KeyS'); await page.waitForTimeout(1200); await page.keyboard.up('KeyS');
   await page.keyboard.press('KeyL'); await page.waitForTimeout(800); await shot('10-pillars-lock');
-  // 랩 창(0070): F1 → 묶음 목록(위 넷: A/B·담기·내보내기·되돌리기) → 첫 묶음(카메라 쿼터뷰) → → 넷 → 내보내기 → F1로 닫기.
+  // 랩 창(0070 → 0235 큰 창): F1 → 도구 탭(A/B·담기·내보내기·되돌리기) → E = 첫 묶음 탭(카메라 쿼터뷰) → → 넷 → Q = 도구 → 내보내기 → F1로 닫기.
   await page.keyboard.press('F1'); await page.waitForTimeout(300); await shot('11-lab');
-  await press('ArrowDown', 4); await press('Enter'); await page.waitForTimeout(300);
+  await press('KeyE'); await page.waitForTimeout(300);
   await press('ArrowRight', 4); await page.waitForTimeout(200); await shot('11b-lab-group');
-  await press('Escape'); await page.waitForTimeout(200);
-  await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(200);
+  await press('KeyQ'); await page.waitForTimeout(200);
+  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(200);
   await page.keyboard.press('F1'); await page.waitForTimeout(200);
   // 쟁반 돌리기(0012): 시나리오 5에서 C(↻, 0151 — 예전 E) — 도는 중(적은 그대로) · 멈춘 순간 쏟아짐·휘청 · 대기 중 Z(↺)는 안 먹는다.
   await page.keyboard.press('Digit5'); await page.waitForTimeout(500); await shot('12-tray');

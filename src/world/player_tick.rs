@@ -1269,6 +1269,9 @@ impl World {
     /// 바라보기: 락온이면 대상, 조준 스틱을 쥐면 그 쪽(움직이며 다른 쪽을 볼 수 있다, 0014), 아니면 이동 방향. 스윙 중엔 고정.
     fn face_player(&mut self, cx: &Ctx) {
         let pl = &mut self.player;
+        pl.faces_away = matches!(cx.basis, Basis::Lock(_))
+            || cx.aim.is_some()
+            || matches!(pl.state, PState::Block { .. });
         let want_yaw = match (cx.basis, pl.state) {
             (
                 _,

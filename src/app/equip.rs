@@ -685,6 +685,7 @@ impl App {
     pub(super) fn tick_equip(&mut self, a: &Actions) {
         let mut a = *a;
         let before = self.cursor;
+        self.turn_doll(&mut a);
         // 칸 고르기에는 굴릴 목록이 없다 — 휠·끌기는 어디서든 오른쪽 상세 칸을.
         if a.wheel != 0 || a.drag != 0.0 {
             let line = self.ui.u(tabs::LH_BODY).max(1.0);
@@ -886,8 +887,9 @@ impl App {
             dh,
         );
         let t = get_time() as f32;
-        self.renderer
-            .draw_doll(self.weapon, doll, 0.55 * (t * 0.7).sin(), t);
+        self.doll_rect = Some(doll);
+        let spin = self.doll_spin();
+        self.renderer.draw_doll(self.weapon, doll, spin, t);
         for (i, r) in boxes.iter().enumerate() {
             let sel = i == slot_cursor;
             self.ui.button(*r, "", sel);

@@ -128,6 +128,9 @@ pub struct App {
     pause_tab: flow::Tab,
     /// 큰 창의 탭 줄이 넘칠 때의 가로 창(0233 — 탭을 넘겨도 같은 창이라 장면 칸이 아니라 여기 하나).
     tab_strip: crate::ui::Strip,
+    /// 상태·장비 탭의 인형(0235): 손으로 돌린 각(라디안 — `None`이면 저절로 천천히 좌우로 흔든다)과 그린 자리(끌기가 그 위에서 시작했나).
+    doll_yaw: Option<f32>,
+    doll_rect: Option<Rect>,
     /// 튜토리얼(0167): 지난 걸음 수(기록 `Progress::tutorial`과 같은 값) + 이 판에서 본 것. 판에 붙는다.
     tutor: crate::tutorial::Tutor,
     /// 떠 있는 상황 힌트와 남은 시간(0209 T2).
@@ -364,6 +367,8 @@ impl App {
             passage: None,
             pause_tab: flow::Tab::Status,
             tab_strip: crate::ui::Strip::default(),
+            doll_yaw: None,
+            doll_rect: None,
             tutor: crate::tutorial::Tutor::new(progress.tutorial),
             tip: None,
             tips_now: 0,
@@ -935,9 +940,7 @@ impl App {
                 t_ms,
             } => self.tick_motions(&a, weapon, speed, spin, t_ms),
             #[cfg(feature = "dev")]
-            Scene::Lab => self.tick_menu(&a, Scene::Lab),
-            #[cfg(feature = "dev")]
-            Scene::LabGroup { g } => self.tick_lab_group(&a, g as usize),
+            s @ (Scene::Lab | Scene::LabGroup { .. }) => self.tick_lab(a, s),
             Scene::Controls => self.tick_controls(a),
             Scene::Slots { load } => self.tick_slots(&a, load),
             Scene::Ending { won } => {
@@ -1254,6 +1257,8 @@ impl App {
             Scene::Settings { host } => self.draw_settings(f, host),
             #[cfg(feature = "dev")]
             Scene::Dev { tab } => self.draw_dev_screen(f, tab as usize),
+            #[cfg(feature = "dev")]
+            s @ (Scene::Lab | Scene::LabGroup { .. }) => self.draw_lab(f, s),
             #[cfg(feature = "dev")]
             Scene::Motions {
                 weapon,

@@ -583,6 +583,9 @@ pub struct Player {
     pub beat: BeatState,
     /// 달리는 중(0076): 회피가 끝날 때 회피 버튼을 쥐고 있었다 — 떼거나 스틱을 놓거나 스태미나가 다하거나 다른 동작을 하면 끝.
     pub running: bool,
+    /// 몸이 걷는 쪽이 아니라 다른 것을 보고 있다(0235): 락온 대상 · 쥔 조준(스틱·커서·터치 끌기 — 수류탄·사격을 겨누는 동안) ·
+    /// 방패 막기. 렌더가 이것으로 걷는 동작을 고른다(옆으로 가면 다리를 돌리고 뒤로 가면 뒷걸음 — `render::move_anim`).
+    pub faces_away: bool,
     /// 마지막으로 무언가를 맞힌 스윙 번호(맞히면 그 스윙의 내딛기를 멈춘다, 2026-11-06).
     pub connected: u32,
     /// 대시 공격을 받는 남은 시간(회피를 끊었거나 막 끝난 뒤, 2026-11-06).
@@ -971,6 +974,7 @@ impl World {
                     free_dodge: false,
                 },
                 running: false,
+                faces_away: false,
                 attack_hold: 0.0,
                 flask: FLASK_CHARGES,
                 flask_lock: 0.0,

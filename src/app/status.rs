@@ -194,6 +194,7 @@ impl App {
     pub(super) fn tick_status(&mut self, a: &Actions, host: Host) {
         let mut a = *a;
         let before = self.cursor;
+        self.turn_doll(&mut a);
         self.pane_scroll_lines(&mut a);
         let a = &a;
         let tap = a.tap.and_then(|p| self.hit_at(p));
@@ -297,8 +298,9 @@ impl App {
             dh,
         );
         let t = get_time() as f32;
-        self.renderer
-            .draw_doll(self.weapon, doll, 0.55 * (t * 0.7).sin(), t);
+        self.doll_rect = Some(doll);
+        let spin = self.doll_spin();
+        self.renderer.draw_doll(self.weapon, doll, spin, t);
         let pl = &self.world.player;
         let smax = self.world.stats.max_stamina().max(1.0);
         let bars = [

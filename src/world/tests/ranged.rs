@@ -1213,3 +1213,40 @@ fn the_aim_previews_match_where_the_shot_stops_and_the_grenade_bursts() {
         "a little farther than before (2.2m): {d}"
     );
 }
+
+/// 0235: 수류탄·사격을 겨눈 채(쥔 조준) 걸으면 몸은 과녁을 보고 걷는 쪽은 따로다 — 렌더가 뒷걸음·다리 돌리기를 고르게
+/// `faces_away`가 선다. 조준을 놓고 걸으면 몸이 걷는 쪽을 보니 서지 않는다.
+#[test]
+fn holding_an_aim_while_walking_marks_the_body_as_facing_away() {
+    let t = Tuning::default();
+    let mut w = World::new("test", 30.0);
+    idle(&mut w);
+    let aiming = Actions {
+        move_dir: vec2(0.0, 1.0),
+        aim: vec2(0.0, -1.0),
+        ..Default::default()
+    };
+    for _ in 0..30 {
+        w.step(&aiming, &t);
+    }
+    assert!(
+        w.player.faces_away,
+        "aiming one way while walking the other"
+    );
+    let back = w.player.facing_dir().dot(w.player.pos - w.player.prev);
+    assert!(
+        back < 0.0,
+        "the body faces the aim, so this step goes backwards"
+    );
+    let walking = Actions {
+        move_dir: vec2(0.0, 1.0),
+        ..Default::default()
+    };
+    for _ in 0..30 {
+        w.step(&walking, &t);
+    }
+    assert!(
+        !w.player.faces_away,
+        "no aim: the body turns to where it walks"
+    );
+}
