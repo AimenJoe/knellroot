@@ -542,6 +542,36 @@ def cap_lean(arm, body_max, head_max):
         turn_bone(arm, "mixamorig:Head", axis, over * 0.5)
 
 
+# 몸 말기(0240 — 사장 "몸을 더 동그랗게 말수는 없나?"): 원본 구르기 위에 원본 프레임마다 등을 더 굽히고 턱을 가슴에 붙이고 무릎을 가슴으로 당긴다
+# — 공이 작아지면 바닥 위로 띄울 몫(`GROUND_CLEAR`)도 준다. (원본 → ([(원본 프레임, 몫 0..1)] 들어가고 나오는 시간표, {뼈: 굽힐 각(도)}))
+# 각은 그 뼈가 지금 지닌 몸의 옆축(쉬는 자세의 +X를 뼈와 함께 돌린 축)으로: + = 앞으로 굽힘(등·목·머리·정강이), 넓적다리는 −(무릎이 앞으로).
+TUCK = {
+    "Roll_Dodge_3": (
+        [(3.0, 0.0), (7.0, 1.0), (16.0, 1.0), (23.0, 0.0)],
+        {"mixamorig:Spine": 22.0, "mixamorig:Spine1": 22.0, "mixamorig:Spine2": 22.0,
+         "mixamorig:Neck": 28.0, "mixamorig:Head": 22.0,
+         "mixamorig:LeftUpLeg": -70.0, "mixamorig:RightUpLeg": -70.0,
+         "mixamorig:LeftLeg": 85.0, "mixamorig:RightLeg": 85.0},
+    ),
+}
+
+
+def tuck_pose(arm, src, f):
+    """`TUCK`: 원본 `src`의 프레임 `f`에 그 몫만큼 몸을 만다(부모부터 — 자식은 따라온다)."""
+    if src not in TUCK:
+        return
+    keys, bends = TUCK[src]
+    w = keyed(keys, f) if keys else 0.0
+    if w <= 1e-4:
+        return
+    bpy.context.view_layer.update()
+    x = Vector((1.0, 0.0, 0.0))
+    for name, deg in bends.items():  # 표의 차례 = 부모 → 자식
+        pb = arm.pose.bones[name]
+        lat = pb.matrix.to_3x3() @ arm.data.bones[name].matrix_local.to_3x3().inverted() @ x
+        turn_bone(arm, name, lat.normalized(), math.radians(deg) * w)
+
+
 def sample(arm, src, anchors, upright=None, cap=None):
     """게임 프레임(OUT_FPS)마다 원본을 읽는다 → {뼈: [(loc, quat, scale)]}, 엉덩이 머리(뼈대 공간).
     `upright`(도)면 클립 평균 숙임을 그 각까지 등뼈로 세운다(한 클립에 한 각 — 숨쉬는 흔들림은 남는다)."""
@@ -577,6 +607,7 @@ def sample(arm, src, anchors, upright=None, cap=None):
             uprighten(arm, *corr)
         if cap is not None:
             cap_lean(arm, *cap)
+        tuck_pose(arm, src, f)
         poses.append({pb.name: pb.matrix_basis.decompose() for pb in arm.pose.bones if pb.name not in ("lamp", "weapon", "shield", "bow")})
         hips.append(arm.pose.bones["mixamorig:Hips"].head.copy())
         hands.append((arm.pose.bones[HAND_R].head.copy(), arm.pose.bones["mixamorig:RightArm"].head.copy(),
@@ -823,6 +854,7 @@ def clear_curve(arm, body, src):
             pb.rotation_quaternion = (1, 0, 0, 0)
             pb.scale = (1, 1, 1)
         sc.frame_set(f)
+        tuck_pose(arm, src, f)
         dg.update()
         ev = body.evaluated_get(dg)
         me = ev.to_mesh()
