@@ -425,7 +425,7 @@ pub static MOSSGRAZER: Def = Def {
     model: "mossgrazer",
 };
 
-/// 넷째 문지기(0208, 회색 박스 S4-1): 수는 이끼 덮인 문지기를 빌리고(S4-5에서 제 수). 체력 1200 → 1600(0216 W4 보스 모의 —
+/// 넷째 문지기(0208, 회색 박스 S4-1 — 모델은 0234에서 제 몸 `winchkeeper`). 체력 1200 → 1600(0216 W4 보스 모의 —
 /// 작업층 도달 몸 E가 반쯤 받아내면 88% · 53초: 셋째 문지기(D 92%)와 종지기(B 65%) 사이, 마지막 싸움이라 더 길게).
 pub static OVERSEER: Def = Def {
     kind: Kind::Overseer,
@@ -464,7 +464,8 @@ pub static OVERSEER: Def = Def {
     boss: true,
     embers: 30,
     ail: [1.0, 0.75, 1.5, 1.0],
-    model: "mossward",
+    // 0234: 제 몸(늙은 오소리 — 문지기의 두 발 동작 + 갈고리·추).
+    model: "winchkeeper",
 };
 
 /// 되풀이꾼(0208): 잔재의 몸에 같은 박자의 세 번 내려찍기. 모델은 그림이 나오기 전까지 잔재의 것.

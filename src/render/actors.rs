@@ -812,6 +812,11 @@ pub(super) const STRIKE_KEYS: &[(&str, &str, f32, f32)] = &[
     ("mossward", "slam", 0.9, 1.0),
     // 껍질(0185): 0.5에 다 웅크리고 거기서 버틴다 — 맞음은 거의 같은 자세(풀기는 `recover`).
     ("mossward", "shell", 0.5, 0.55),
+    // 권양지기(0234): 문지기의 두 발 표 + 갈고리(오른팔 내던지기)·추(두 팔로 들어 던지기).
+    ("winchkeeper", "slam", 0.9, 1.0),
+    ("winchkeeper", "wave", 1.0, 1.12),
+    ("winchkeeper", "hook", 0.8, 0.9),
+    ("winchkeeper", "hurl", 0.9, 1.0),
 ];
 
 fn strike_keys(model: &str, a: Option<usize>, e: &Entry) -> (f32, f32) {

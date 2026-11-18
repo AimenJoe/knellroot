@@ -23,7 +23,7 @@ REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 # 0155: 무기 넷·등잔을 상자 조합에서 제 꼴(잎 꼴 날·통 머리·굽은 활)로, 두건 꼭지 — 4,524(무기 넷이 1,233). 색인은 13,668 — 한 호출 15,000 아래를 지킨다.
 # 0193: 스킨 몸(Meshy 리깅, 줄여 정점 2,963) + 무기 넷·등잔 그대로 — 4,196.
 # charms: 0155에서 돌린 꼴·꺾인 관으로 다시(1,939) — 한 번에 하나만 그린다(아이콘은 캐시).
-BUDGET = {"mossgrazer": 900, "packbearer": 1000, "repeater": 1650, "mossward": 2200, "wanderer": 4800, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
+BUDGET = {"mossgrazer": 900, "packbearer": 1000, "repeater": 1650, "mossward": 2600, "winchkeeper": 2600, "wanderer": 4800, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
           # 0068 장신구 여섯이 한 파일(게임은 하나씩만 그린다) — 하나 280 안팎.
           "charms": 2200,
           # 0139 다듬은 소품: 깎은 돌 하나가 정점 64(면마다 따로 — 각진 음영), 스테이지에 60개 안쪽이라 넉넉히.
@@ -64,6 +64,8 @@ EXPECT = {
     "repeater": {"idle": 1.6, "walk": 1.0, "attack": 1.3, "hurt": 0.3},
     "mossward": {"idle": 2.0, "walk": 1.4, "slam": 1.5, "charge_windup": 0.8, "charge": 0.5, "shell": 1.6,
                  "recover": 0.8, "hurt": 0.4, "wake": 2.0},
+    "winchkeeper": {"idle": 2.0, "walk": 1.4, "slam": 1.5, "charge_windup": 0.8, "charge": 0.5,
+                    "wave": 1.6, "hurt": 0.4, "wake": 2.0, "hook": 1.3, "hurl": 1.5},
     "bellkeeper": {"idle": 2.0, "walk": 1.4, "toll": 1.6, "slam": 1.5, "throw": 1.2, "charge_windup": 0.8,
                    "charge": 0.5, "recover": 0.8, "hurt": 0.4, "wake": 2.0},
     "res_hearth": {"work": 3.2, "look": 2.4},
@@ -75,7 +77,8 @@ EXPECT = {
     "chest": {"open": 0.4},
     "lever": {"pull": 0.4},
 }
-MUST_NODES = {"mossward": ["glow_core", "glow_eyes", "head_geo"], "packbearer": ["glow_eyes", "head_geo", "load_geo", "load"],
+MUST_NODES = {"mossward": ["glow_core", "glow_eyes", "head_geo", "shell_geo"],
+              "winchkeeper": ["glow_core", "glow_eyes", "head_geo", "club"], "packbearer": ["glow_eyes", "head_geo", "load_geo", "load"],
               "repeater": ["glow_eyes", "head_geo", "pick"], "mossgrazer": ["head_geo", "ear_l", "ear_r"], "gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["body", "root", "sword", "w_hammer", "w_staff", "w_crossbow", "w_bow", "bow", "glow_lamp", "lamp", "shield"],
               "root_husk": ["glow_eye"], "thorn_beast": ["glow_eyes"], "shellback": ["glow_eyes", "head_geo"], "pod": ["glow_eyes", "head_geo", "seed_geo"],
               "bellkeeper": ["glow_eyes", "glow_core", "bell_geo", "head_geo"], "res_hearth": ["head_geo"], "res_water": ["head_geo"], "res_cloth": ["head_geo"], "brazier": ["glow_flame"],

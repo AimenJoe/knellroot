@@ -6,6 +6,7 @@
 > 이번부터는 Claude가 그림을 직접 받는다 — `tools/art/nanobanana.py`(기본 = Meshy Image to Image API의 나노바나나 — 세션의 Gemini 키는 무료 등급이라 이미지 한도 0). 사장이 웹에서 같은 프롬프트로 받아도 된다.
 > 받은 그림은 `tools/art/sources/ai/knellroot/<이름>_v1_front.png`. AI로 그린 것은 숨기지 않는다.
 > **보스(권양지기)의 생김새는 그림 → 사장 확인 → 메시**(0157). 잡몹 둘은 평가가 좋으면 바로 Meshy로(크레딧은 알린다).
+> 2026-11-18: 사장이 보스 그림을 확인("그림 컨셉 괜찮다. 진행해.") → Meshy 7.1 모델 `winchkeeper.py`·`mossward.py`(0234 5절).
 
 ## 규칙(0132·0185에서 그대로)
 - **캐릭터마다 새 대화**. 매번 [첨부 설명] + [PURPOSE] + [WORLD RULES] + [CHARACTER]를 다 붙인다.
