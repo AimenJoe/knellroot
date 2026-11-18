@@ -158,6 +158,8 @@ pub struct Actions {
     pub tap: Option<Vec2>,
     /// 메뉴 굴리기: 손가락 끌기(논리 px, 위로 끌면 +)·마우스 휠(칸, 아래로 +). 틱마다 소비(`ui::ListView::scroll`).
     pub drag: f32,
+    /// 같은 끌기의 가로 거리(논리 px, 왼쪽으로 끌면 +) — 큰 창의 탭 줄(0233).
+    pub drag_x: f32,
     pub wheel: i32,
     /// 굴리기가 일어난 자리(논리 px): 휠이면 마우스 자리, 끌기면 손가락이 처음 닿은 자리 — 한 화면에 굴릴 것이 둘일 때 가른다(0068).
     pub point: Option<Vec2>,
@@ -1176,6 +1178,7 @@ impl Input {
             set_cursor_grab(true);
         }
         a.drag = t.drag;
+        a.drag_x = t.drag_x;
         a.point = a.point.or(t.drag_at);
         a.look += t.look;
         a.zoom += t.zoom;
@@ -1257,6 +1260,7 @@ impl Input {
             pause: self.latch.pause | a.pause,
             tap: a.tap.or(self.latch.tap),
             drag: self.latch.drag + a.drag,
+            drag_x: self.latch.drag_x + a.drag_x,
             wheel: self.latch.wheel + a.wheel,
             point: a.point.or(self.latch.point),
             dev_overlay: self.latch.dev_overlay | a.dev_overlay,

@@ -116,7 +116,12 @@ impl App {
     }
 
     /// 탭 넘기기 한 틱: 패드 LB·RB / 키보드 Q·E(0175) = 옆 탭, 탭 머리 누르기 = 그 탭. 넘겼으면 참(그 틱은 여기서 끝난다).
-    pub(super) fn tab_input(&mut self, a: &Actions) -> bool {
+    /// 탭 줄이 넘치면(0233) 그 위의 끌기·휠은 탭 줄을 굴린다 — 몸의 목록에는 넘기지 않는다.
+    pub(super) fn tab_input(&mut self, a: &mut Actions) -> bool {
+        if self.tab_strip.over(a.point) {
+            self.tab_strip.nudge(a.point, a.drag_x, a.wheel);
+            (a.drag, a.drag_x, a.wheel) = (0.0, 0.0, 0);
+        }
         let scene = self.scene();
         let go = match a.tap.and_then(|p| self.hit_at(p)) {
             Some(Hit::Tab(i)) => flow::tab_pick(scene, i),

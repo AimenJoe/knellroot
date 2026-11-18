@@ -149,6 +149,8 @@ pub struct Read {
     pub tap: Option<Vec2>,
     /// 메뉴 모드에서 손가락을 탭 범위 넘게 움직였으면 이번 프레임에 끈 거리(논리 px, 위로 끌면 + — 아래 줄이 드러난다). 끈 손가락은 뗄 때 탭이 아니다.
     pub drag: f32,
+    /// 같은 끌기의 가로 거리(논리 px, 왼쪽으로 끌면 + — 오른쪽 것이 드러난다). 큰 창의 탭 줄(0233)이 쓴다.
+    pub drag_x: f32,
     /// 끈 손가락이 처음 닿은 자리(논리 px) — 무엇을 굴리나(목록·설명 칸, 0068).
     pub drag_at: Option<Vec2>,
     /// 화면에 손가락이 있었다(버튼·스틱이 아니어도) → 장치 = 터치.
@@ -535,8 +537,9 @@ impl Touch {
                         x.2 |= (t.position - x.1).length() > TAP_SLOP;
                         // 끌기는 탭 범위를 넘은 뒤부터 — 넘는 순간엔 처음 자리부터 센다(손가락과 목록이 같이 간다).
                         if x.2 {
-                            let from = if was { x.3.y } else { x.1.y };
-                            a.drag += from - t.position.y;
+                            let from = if was { x.3 } else { x.1 };
+                            a.drag += from.y - t.position.y;
+                            a.drag_x += from.x - t.position.x;
                             a.drag_at = Some(x.1);
                         }
                         x.3 = t.position;

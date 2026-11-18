@@ -126,6 +126,8 @@ pub struct App {
     passage: Option<crate::descent::Passage>,
     /// 이 판에서 멈춤 창이 마지막에 보던 탭(0164) — 다음에 멈추면 거기서 열린다(`flow::pause`). 판에 붙은 한 칸: 새 판이면 상태로.
     pause_tab: flow::Tab,
+    /// 큰 창의 탭 줄이 넘칠 때의 가로 창(0233 — 탭을 넘겨도 같은 창이라 장면 칸이 아니라 여기 하나).
+    tab_strip: crate::ui::Strip,
     /// 튜토리얼(0167): 지난 걸음 수(기록 `Progress::tutorial`과 같은 값) + 이 판에서 본 것. 판에 붙는다.
     tutor: crate::tutorial::Tutor,
     /// 떠 있는 상황 힌트와 남은 시간(0209 T2).
@@ -361,6 +363,7 @@ impl App {
             rest_at: None,
             passage: None,
             pause_tab: flow::Tab::Status,
+            tab_strip: crate::ui::Strip::default(),
             tutor: crate::tutorial::Tutor::new(progress.tutorial),
             tip: None,
             tips_now: 0,
@@ -858,7 +861,7 @@ impl App {
         )
     }
 
-    fn tick_scene(&mut self, a: Actions) {
+    fn tick_scene(&mut self, mut a: Actions) {
         // 알림은 어느 장면에서나 줄어든다(가게의 "잔불이 모자란다"가 떠날 때까지 남았다).
         if let Some((_, t)) = &mut self.toast {
             *t -= TICK_DT;
@@ -884,7 +887,7 @@ impl App {
             return;
         }
         // 큰 창의 탭(0164): 탭 넘기기(스킬 버튼 둘·탭 머리)가 먼저 — 넘겼으면 그 틱은 끝.
-        let swapped = flow::tab_of(self.scene()).is_some() && self.tab_input(&a);
+        let swapped = flow::tab_of(self.scene()).is_some() && self.tab_input(&mut a);
         if !swapped {
             self.tick_top(a);
         }

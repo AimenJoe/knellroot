@@ -61,7 +61,9 @@ impl App {
     ) -> Window {
         self.ui.dim(0.45);
         let w = self.window_geo(f);
-        let heads = self.ui.window(w.panel, w.k, tabs, active, purse);
+        let heads = self
+            .ui
+            .window(w.panel, w.k, tabs, active, purse, &mut self.tab_strip);
         // 튜토리얼이 가리키는 탭(0209): 탭 머리의 오른쪽 위에 반짝이는 별.
         // 굴린 탭 줄(0232)에서 가려진 탭이면 그 쪽 화살에.
         let shown = |i: usize| -> Option<Rect> {
