@@ -19,6 +19,8 @@ pub static DEF: StageDef = StageDef {
         (|s| s.zone_garden_sill, 12),
     ],
     waves: &[],
+    // 떼 마당(0244 — 사장 설문 k13): 한 등급 아래의 잡몹을 넓은 마당 한 곳에.
+    horde: (&[Kind::Husk, Kind::Thorn, Kind::Husk], 20),
     spawns: &[
         ('a', Kind::Husk),
         ('T', Kind::Thorn),

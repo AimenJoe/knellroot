@@ -358,6 +358,8 @@ pub const HURL_RING: f32 = 7.0;
 pub const HURL_THROW: f32 = 0.55;
 /// 청소자(0120): 싸움이 없을 때 이 초마다 체력 한 눈금(`HP_UNIT`)을 먹는다.
 pub const EAT_TIME: f32 = 2.5;
+/// 이미 쓰러뜨린 적 있는 엘리트가 다시 쓰러질 때 여벌을 떨굴 확률(0244 — 첫 처치는 확정).
+pub const ELITE_REPEAT_SPARE: f32 = 0.25;
 /// 청소자가 한 자리에서 먹는 초·옮겨 가는 둘레(m)·걷는 빠르기 몫(0242 — 서 있기만 하지 않게).
 pub const GRAZE_STAY: f32 = 3.5;
 pub const GRAZE_R: f32 = 1.2;

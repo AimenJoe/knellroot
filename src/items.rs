@@ -839,6 +839,13 @@ pub fn roll_rarity(luck: u8, seed: u64) -> Rarity {
     }
 }
 
+/// 엘리트가 여벌을 떨구나(0244 — 사장 "첫 처치만 확정"): 기록에서 처음 쓰러뜨린 것은 늘, 그 뒤로는
+/// `ELITE_REPEAT_SPARE` 확률(씨앗으로 — 같은 씨앗 = 같은 결과).
+pub fn elite_drops(first: bool, seed: u64) -> bool {
+    first
+        || (Rng::new(seed ^ 0xE11E).below(1000) as f32) < crate::tuning::ELITE_REPEAT_SPARE * 1000.0
+}
+
 pub const RARITY_ODDS: [[u32; 3]; 3] = [[60, 32, 8], [20, 55, 25], [0, 40, 60]];
 
 /// 옵션을 굴려 아이템을 만든다: 등급만큼의 줄(서로 다른 옵션 — 바탕에 맞는 것만), 세기는 1~`cap`(낮은 단이 더 흔하다).
@@ -871,6 +878,16 @@ pub fn roll(base: Base, rarity: Rarity, cap: u8, seed: u64) -> Item {
 
 #[cfg(test)]
 mod tests {
+    /// 0244: 처음 쓰러뜨린 엘리트는 늘 여벌, 되풀이는 넷에 하나 안팎(씨앗 천 개로 잰다).
+    #[test]
+    fn elites_drop_a_spare_on_the_first_kill_and_only_sometimes_after() {
+        assert!((0..1000u64).all(|s| elite_drops(true, s)));
+        let n = (0..1000u64)
+            .filter(|&s| elite_drops(false, s.wrapping_mul(0x9E37_79B9_7F4A_7C15)))
+            .count();
+        assert!((180..320).contains(&n), "{n}");
+    }
+
     use super::*;
     use crate::stats::Stats;
 

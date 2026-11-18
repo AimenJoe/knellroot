@@ -15,6 +15,14 @@ use crate::world::{Aabb, EState, PState, World};
 
 /// 지도 한 칸(m).
 pub const CELL: f32 = 2.0;
+/// 떼 마당(0244)이 비키는 거리(m): 깨어난 자리 · 쉼터 · 주민(적의 끈 밖) · 문지기 · 길목(장치·문·오르내림·상자·새긴 돌).
+const HORDE_AWAY_START: f32 = 18.0;
+const HORDE_AWAY_REST: f32 = 14.0;
+const HORDE_AWAY_RESIDENT: f32 = 26.0;
+const HORDE_AWAY_BOSS: f32 = 20.0;
+const HORDE_AWAY_SPOT: f32 = 8.0;
+/// 떼 마당의 반지름(칸) — 그 안의 평평한 바닥에 칸마다 넷까지 선다.
+const HORDE_RADIUS: i32 = 4;
 /// 벽 높이(m, 굽기에서 칸마다 조금씩 다르게 깎는다).
 pub const WALL_H: f32 = 3.0;
 
@@ -300,6 +308,120 @@ impl Level {
         self.cell(x, z) == b'.'
     }
 
+    /// 떼 마당의 자리(0244): 걸을 수 있는 칸마다 "벽·턱까지의 거리"를 재서, 비킬 자리(`avoid` — 자리·거리)와 `ok`가 거르는
+    /// 곳을 빼고 가장 넓은 칸을 가운데로 고른다. 그 둘레 `HORDE_RADIUS` 칸 안에서 가운데와 같은 높이의 칸들에 가까운 차례로
+    /// 칸마다 넷(±0.5m)씩 `n`개까지. 같은 지도 = 같은 자리. 넓은 곳이 없으면 빈 목록.
+    pub fn horde_spots(
+        &self,
+        n: usize,
+        avoid: &[(Vec3, f32)],
+        ok: impl Fn(Vec3) -> bool,
+    ) -> Vec<Vec3> {
+        let (w, h) = (self.w as i32, self.h as i32);
+        let height = |x: i32, z: i32| {
+            self.heights
+                .get((z * w + x) as usize)
+                .copied()
+                .flatten()
+                .unwrap_or(0.0)
+        };
+        let flat = |x: i32, z: i32| {
+            x >= 0
+                && z >= 0
+                && x < w
+                && z < h
+                && self.walkable(x as usize, z as usize)
+                && !self
+                    .ramps
+                    .get((z * w + x) as usize)
+                    .copied()
+                    .unwrap_or(false)
+        };
+        // 벽·턱(높이 차 0.3m 넘게)까지의 칸 거리 — 여러 곳에서 퍼지는 BFS(8방향).
+        let mut dist = vec![i32::MAX; (w * h) as usize];
+        let mut q = std::collections::VecDeque::new();
+        for z in 0..h {
+            for x in 0..w {
+                let edge = !flat(x, z)
+                    || [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().any(|(dx, dz)| {
+                        !flat(x + dx, z + dz) || (height(x + dx, z + dz) - height(x, z)).abs() > 0.3
+                    });
+                if edge {
+                    dist[(z * w + x) as usize] = 0;
+                    q.push_back((x, z));
+                }
+            }
+        }
+        while let Some((x, z)) = q.pop_front() {
+            let d = dist[(z * w + x) as usize] + 1;
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    let (nx, nz) = (x + dx, z + dz);
+                    if nx < 0 || nz < 0 || nx >= w || nz >= h {
+                        continue;
+                    }
+                    let k = (nz * w + nx) as usize;
+                    if dist[k] > d {
+                        dist[k] = d;
+                        q.push_back((nx, nz));
+                    }
+                }
+            }
+        }
+        let clear = |p: Vec3| {
+            avoid
+                .iter()
+                .all(|(a, r)| vec2(p.x - a.x, p.z - a.z).length() >= *r)
+                && ok(p)
+        };
+        let mut best: Option<(i32, i32, i32)> = None;
+        for z in 0..h {
+            for x in 0..w {
+                let d = dist[(z * w + x) as usize];
+                if !flat(x, z) || d < 2 || !clear(self.at(x as usize, z as usize)) {
+                    continue;
+                }
+                if best.is_none_or(|(bd, _, _)| d > bd) {
+                    best = Some((d, x, z));
+                }
+            }
+        }
+        let Some((_, cx, cz)) = best else {
+            return Vec::new();
+        };
+        let h0 = height(cx, cz);
+        let mut cells: Vec<(i32, i32)> = Vec::new();
+        for dz in -HORDE_RADIUS..=HORDE_RADIUS {
+            for dx in -HORDE_RADIUS..=HORDE_RADIUS {
+                let (x, z) = (cx + dx, cz + dz);
+                if dx * dx + dz * dz <= HORDE_RADIUS * HORDE_RADIUS
+                    && flat(x, z)
+                    && (height(x, z) - h0).abs() <= 0.3
+                    && clear(self.at(x as usize, z as usize))
+                {
+                    cells.push((x, z));
+                }
+            }
+        }
+        cells.sort_by_key(|(x, z)| ((x - cx).pow(2) + (z - cz).pow(2), *z, *x));
+        let mut out = Vec::with_capacity(n);
+        for (x, z) in cells {
+            let c = self.at(x as usize, z as usize);
+            for o in [
+                vec3(-0.5, 0.0, -0.5),
+                vec3(0.5, 0.0, 0.5),
+                vec3(0.5, 0.0, -0.5),
+                vec3(-0.5, 0.0, 0.5),
+            ] {
+                if out.len() == n {
+                    return out;
+                }
+                out.push(c + o);
+            }
+        }
+        out
+    }
+
     /// 월드 자리 → 칸(`at`의 거꾸로). 지도 밖이면 없음.
     pub fn cell_of(&self, p: Vec3) -> Option<(usize, usize)> {
         let fx = (p.x / CELL + self.w as f32 * 0.5).floor();
@@ -465,6 +587,9 @@ pub struct StageDef {
     /// 지도에 서 있는 적(0113): (지도 표지, 종류) — 제자리에서 제 일을 하다 알아차리면 쫓는다. 화로에서 쉬면 다시 선다.
     /// 물결(`waves`)은 시험·PoC·특별한 기믹 스테이지에만 — 보통 스테이지는 넓은 지역 + 밀집도(사장 2026-11-08).
     pub spawns: &'static [(char, Kind)],
+    /// 떼 마당(0244 — 사장 설문 k13 "적들이 바글바글한 구간이 있어야 함"): 지역마다 넓은 마당 한 곳에 약한 잡몹을 몰아 세운다
+    /// (종은 차례로 돌린다, 수). 자리는 지도를 고치지 않고 `Level::horde_spots`가 고른다. 빈 표 = 없음.
+    pub horde: (&'static [Kind], usize),
     /// 청소자 자리(0120 — 0116 ECO-10 "같은 종, 다른 역할"): 이 표지에 선 적은 보고도 덤비지 않고 먹는다(맞거나 동료가 깨면 싸운다).
     pub docile: &'static [char],
     /// 엘리트(0112 → 0113): (지도 표지, 종류, 성질) — 서 있는 적과 같은 꼴, 단 그 판에 한 번 쓰러뜨리면 쉬어도 다시 서지 않는다.
@@ -694,6 +819,8 @@ pub struct StageRun {
     first_card: bool,
     /// 쉼터 화로들(지도 `R`).
     pub rests: Vec<Vec3>,
+    /// 떼 마당의 자리(0244, 판을 세울 때 한 번 — `Level::horde_spots`).
+    pub horde_at: Vec<Vec3>,
     /// 바깥에서 얹는 갈 곳(0170 — 튜토리얼이 "쉼터로"를 가리킬 때의 그 쉼터): 진행의 갈 곳(`goal`의 문·핵)이 없을 때만 쓰인다.
     /// 앱이 틱마다 다시 정한다(없으면 `None`).
     pub guide: Option<Vec3>,
@@ -754,8 +881,9 @@ pub struct StageRun {
     elite_ids: Vec<(usize, String)>,
     /// 이 판에 쓰러뜨린 엘리트(표의 몇째, 0113) — 쉬어도 다시 서지 않는다.
     elites_down: Vec<usize>,
-    /// 이번 틱에 쓰러진 엘리트(표의 몇째, 쓰러진 자리) — 앱이 가져가 그 자리에 여벌을 떨군다(0223 V4c → 0226).
-    elite_loot: Vec<(usize, Vec3)>,
+    /// 이번 틱에 쓰러진 엘리트(표의 몇째, 쓰러진 자리, 기록에서 처음인가) — 앱이 가져가 그 자리에 여벌을 떨군다
+    /// (0223 V4c → 0226, 처음이 아니면 확률로 — 0244).
+    elite_loot: Vec<(usize, Vec3, bool)>,
     /// 문 장치(0113): 자리, 곁인가, 문이 열려 있나(기록 — 한 번 열면 판을 넘어 열려 있다), 이번 틱에 처음 열었다(앱이 가져간다).
     pub lever: Option<Vec3>,
     pub near_lever: bool,
@@ -869,6 +997,7 @@ impl StageRun {
             time: 0.0,
             first_card: false,
             rests: Vec::new(),
+            horde_at: Vec::new(),
             rest_at: None,
             near_rest: None,
             rest_safe: true,
@@ -979,6 +1108,22 @@ impl StageRun {
         }
         // 서 있는 적(0113): 처음부터 제자리에. 문 장치 자리.
         run.lever = run.level.marks_of(LEVER_GLYPH).next();
+        // 떼 마당(0244): 깨어난 자리·화로·주민·문지기 싸움터·길목에서 떨어진 가장 넓은 바닥.
+        if def.horde.1 > 0 {
+            let mut avoid: Vec<(Vec3, f32)> = vec![(run.level.player_start, HORDE_AWAY_START)];
+            avoid.extend(run.rests.iter().map(|p| (*p, HORDE_AWAY_REST)));
+            avoid.extend(run.residents.iter().map(|(_, p)| (*p, HORDE_AWAY_RESIDENT)));
+            avoid.extend(run.level.marks_of(def.boss.0).map(|p| (p, HORDE_AWAY_BOSS)));
+            for c in [LEVER_GLYPH, DOWN_GLYPH, UP_GLYPH, 'C', 'N'] {
+                avoid.extend(run.level.marks_of(c).map(|p| (p, HORDE_AWAY_SPOT)));
+            }
+            avoid.extend(run.level.gate.map(|(_, c)| (c, HORDE_AWAY_SPOT)));
+            let last = def.zones.len().saturating_sub(1);
+            let zone_of = |p: Vec3| run.zone_at(p);
+            run.horde_at = run
+                .level
+                .horde_spots(def.horde.1, &avoid, |p| zone_of(p) < last);
+        }
         if def.waves.is_empty() {
             run.populate(&mut w);
             run.objective = Some(def.obj_explore);
@@ -1104,6 +1249,15 @@ impl StageRun {
                 w.enemies[i].docile = self.def.docile.contains(&mark);
             }
         }
+        // 떼 마당(0244): 한 등급 아래의 잡몹을 몰아 — 화로에서 쉬면 다시 선다(다른 서 있는 적과 같다).
+        let (kinds, _) = self.def.horde;
+        if !kinds.is_empty() {
+            for (k, p) in self.horde_at.clone().into_iter().enumerate() {
+                let i = w.spawn(kinds[k % kinds.len()], p);
+                w.enemies[i].set_tier(self.def.tier.saturating_sub(1).max(1));
+                w.enemies[i].place(face(p));
+            }
+        }
         for (k, &(mark, kind, affix)) in self.def.elites.iter().enumerate() {
             if self.elites_down.contains(&k) {
                 continue;
@@ -1152,11 +1306,12 @@ impl StageRun {
             None => false,
         });
         for (pos, id) in down {
+            let first = !self.beaten.contains(&id);
             if let Some(k) =
                 (0..self.def.elites.len()).find(|&k| elite_id(self.def.find_prefix, k) == id)
             {
                 self.elites_down.push(k);
-                self.elite_loot.push((k, pos));
+                self.elite_loot.push((k, pos, first));
             }
             if self.beaten.contains(&id) {
                 continue;
@@ -1173,7 +1328,7 @@ impl StageRun {
     }
 
     /// 이번 틱에 쓰러진 엘리트들(표의 자리 — 처음이든 아니든, 0223 V4c): 앱이 한 번 가져가 여벌을 준다.
-    pub fn take_elites_down(&mut self) -> Vec<(usize, Vec3)> {
+    pub fn take_elites_down(&mut self) -> Vec<(usize, Vec3, bool)> {
         std::mem::take(&mut self.elite_loot)
     }
 
@@ -2200,6 +2355,64 @@ mod tests {
 
     /// 0121(0115 전투 안전 설계 — "AI보다 레벨 배치로 먼저"): 주민 자리(`1`·`2`·`3`)는 모든 서 있는 적·엘리트·문지기의 제자리에서
     /// 끈(`LEASH_RANGE`) + 3m 밖 — 쫓아오는 적도 주민 곁까지는 오지 않는다. 화로와도 겹치지 않는다.
+    /// 0244(사장 설문 k13): 지역마다 떼 마당 하나 — 표의 수만큼 서고, 모두 걸을 수 있는 땅이고, 깨어난 자리·쉼터·주민·문지기
+    /// 싸움터에서 떨어져 있고, 서로 몰려 있다(마당 지름 안). 화로에서 쉬어 다시 세워도 같은 자리.
+    #[test]
+    fn every_stage_has_one_crowded_yard_away_from_rests_start_and_residents() {
+        for def in STAGES {
+            let (mut run, mut w) = StageRun::start(def);
+            let n = def.horde.1;
+            assert_eq!(
+                run.horde_at.len(),
+                n,
+                "{}: yard holds the table's count",
+                def.find_prefix
+            );
+            let c = run.horde_at.iter().copied().sum::<Vec3>() / n as f32;
+            for p in &run.horde_at {
+                assert!(
+                    run.level.on_floor(*p),
+                    "{}: on the floor {p:?}",
+                    def.find_prefix
+                );
+                assert!(
+                    vec2(p.x - c.x, p.z - c.z).length() <= (HORDE_RADIUS as f32 + 1.0) * CELL,
+                    "crowded"
+                );
+                let far = |a: Vec3, r: f32| vec2(p.x - a.x, p.z - a.z).length() >= r;
+                assert!(far(run.level.player_start, HORDE_AWAY_START));
+                assert!(
+                    run.rests.iter().all(|r| far(*r, HORDE_AWAY_REST)),
+                    "{}: away from rests",
+                    def.find_prefix
+                );
+                assert!(run
+                    .residents
+                    .iter()
+                    .all(|(_, r)| far(*r, HORDE_AWAY_RESIDENT)));
+                assert!(
+                    run.zone_at(*p) + 1 < def.zones.len(),
+                    "not in the warden's arena"
+                );
+            }
+            let before = run.horde_at.clone();
+            let count = |w: &World| {
+                w.enemies
+                    .iter()
+                    .filter(|e| {
+                        before
+                            .iter()
+                            .any(|p| vec2(e.pos.x - p.x, e.pos.z - p.z).length() < 0.6)
+                    })
+                    .count()
+            };
+            assert!(count(&w) >= n, "{}: they stand there", def.find_prefix);
+            run.populate(&mut w);
+            assert_eq!(run.horde_at, before);
+            assert!(count(&w) >= n);
+        }
+    }
+
     #[test]
     fn residents_live_beyond_every_enemy_leash() {
         use crate::tuning::LEASH_RANGE;
@@ -2365,11 +2578,22 @@ mod tests {
             if i > 0 {
                 assert!(def.tier >= STAGES[i - 1].tier);
             }
-            let (_, w) = StageRun::start(def);
+            let (run, w) = StageRun::start(def);
             for e in &w.enemies {
+                // 떼 마당(0244)은 한 등급 아래.
+                let yard = run
+                    .horde_at
+                    .iter()
+                    .any(|p| vec2(e.pos.x - p.x, e.pos.z - p.z).length() < 0.05);
                 assert_eq!(
                     e.tier,
-                    if e.boss { 1 } else { def.tier },
+                    if e.boss {
+                        1
+                    } else if yard {
+                        def.tier.saturating_sub(1).max(1)
+                    } else {
+                        def.tier
+                    },
                     "{}",
                     def.find_prefix
                 );
@@ -2457,12 +2681,14 @@ mod tests {
     }
 
     /// 지도에 서 있는 보통 적의 수(엘리트 빼고).
+    /// 지도 표지의 보통 적 + 떼 마당(0244).
     fn placed_count(run: &StageRun) -> usize {
         run.def
             .spawns
             .iter()
             .map(|(c, _)| run.level.marks_of(*c).count())
-            .sum()
+            .sum::<usize>()
+            + run.horde_at.len()
     }
 
     /// 0113: 지도의 적은 처음부터 제자리에(알아차리기 전) — 보통 적은 표의 표지 수만큼, 엘리트는 표의 차례·성질대로.

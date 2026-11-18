@@ -27,6 +27,8 @@ pub static DEF: StageDef = StageDef {
     ],
     // 물결은 쓰지 않는다(0113) — 서 있는 적.
     waves: &[],
+    // 떼 마당(0244 — 사장 설문 k13): 한 등급 아래의 잡몹을 넓은 마당 한 곳에.
+    horde: (&[Kind::Husk, Kind::Husk, Kind::Thorn], 16),
     spawns: &[('a', Kind::Husk), ('T', Kind::Thorn)],
     docile: &[],
     obj_explore: |s| s.obj_find_gate,

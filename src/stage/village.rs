@@ -20,6 +20,8 @@ pub static DEF: StageDef = StageDef {
     ],
     waves: &[],
     // 0120: `h` 등딱지짐승 · `o` 꼬투리 · `e` 청소자 잔재(같은 종, 다른 역할 — `docile`).
+    // 떼 마당(0244 — 사장 설문 k13): 한 등급 아래의 잡몹을 넓은 마당 한 곳에.
+    horde: (&[Kind::Husk, Kind::Husk, Kind::Thorn], 20),
     spawns: &[
         ('a', Kind::Husk),
         ('T', Kind::Thorn),

@@ -198,9 +198,14 @@ impl App {
             self.progress.elites.sort();
             self.toast = Some((fill(s().toast_elite, &[&n]), TOAST_TIME));
         }
-        // 엘리트는 쓰러질 때마다 여벌 하나(0223 V4c — "엘리트 확정 하나"): 쓰러진 자리에 떨어진다(0226 — 주워야 얻는다).
-        for (k, at) in self.run.take_elites_down() {
-            self.drop_spare(1, self.loot_seed(3, k), at);
+        // 엘리트의 여벌(0223 V4c — "엘리트 확정 하나"): 쓰러진 자리에 떨어진다(0226 — 주워야 얻는다).
+        // 0244(사장 설문 k16 "게임내 강제도 생각해봐야함" → "첫 처치만 확정"): 기록에서 처음 쓰러뜨린 엘리트만 확정,
+        // 그 뒤로는 `ELITE_REPEAT_SPARE` 확률 — 새 판마다 다시 서는 엘리트를 되풀이해 가방을 채우는 길을 느리게.
+        for (k, at, first) in self.run.take_elites_down() {
+            let seed = self.loot_seed(3, k);
+            if crate::items::elite_drops(first, seed) {
+                self.drop_spare(1, seed, at);
+            }
         }
         // 문지기도(쓰러질 때마다 — 더 드문 쪽으로): 쓰러진 자리 곁에 떨어진다(0226 — 사장 "아이템은 바로 획득하지 마, 바닥에
         // 떨어지고 비주얼적인 효과가 있어야 해"). 핵은 쓰러진 자리에 남으니 그 옆으로 비킨다. 아직 없는 문지기의 장신구도
