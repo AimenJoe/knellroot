@@ -29,7 +29,7 @@ BUDGET = {"mossgrazer": 900, "packbearer": 1000, "repeater": 1650, "mossward": 2
           # 0139 다듬은 소품: 깎은 돌 하나가 정점 64(면마다 따로 — 각진 음영), 스테이지에 60개 안쪽이라 넉넉히.
           # 문은 하나뿐이고 널 여덟 + 띠 + 설주 돌이라 크다.
           "wall_segment": 960, "pillar_broken": 560, "root_clump": 480, "brazier": 440, "gate": 1900, "core_crystal": 400,
-          "bell": 800, "rubble": 480, "chest": 560,
+          "bell": 800, "rubble": 480, "chest": 560, "stone_tablet": 1100,  # 0242: 종 무늬·글 줄·금·이끼·조약돌(맵에 몇 개뿐)
           # 0142 주민의 생활 물건: 주민 하나에 하나(마을에 셋) — 돌 다섯 + 장작 + 불꽃, 장대 둘 + 천 두 벌.
           "work_fire": 520, "work_tent": 480}
 PROP_BUDGET = 400

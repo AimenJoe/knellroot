@@ -512,7 +512,8 @@ fn star(
     size: f32,
     col: Color,
 ) {
-    let (h, t) = (size * 0.5, size * 0.13);
+    // 팔 두께 = 크기의 6%(0242 — 사장 설문 "별(십자형태)이 너무 두꺼운듯": 13%는 십자 덩어리로 읽혔다).
+    let (h, t) = (size * 0.5, size * 0.06);
     for (long, thin) in [(r, u), (u, r)] {
         let base = verts.len() as u16;
         for q in [p - long * h, p - thin * t, p + long * h, p + thin * t] {

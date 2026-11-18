@@ -1855,7 +1855,9 @@ pub fn icon_cell(k: Kind, x: usize, y: usize) -> bool {
 
 /// 버튼 반지름 `r`에 맞춘 픽토그램 한 칸의 크기(논리 px, 정수 — 칸이 고르게 떨어지게).
 pub fn icon_px(r: f32) -> f32 {
-    (r * 1.25 / ICON_N as f32).floor().max(1.0)
+    // 0242(사장 설문 14-1 "애들 장난 같다"): 지름의 ~62% → ~45% — 큰 공격 버튼에서 굵은 점이 장난감처럼 컸다.
+    // 반올림이라 작은 버튼(한 칸 2px)은 그대로, 큰 공격 버튼만 칸이 줄어든다.
+    (r * 0.9 / ICON_N as f32).round().max(1.0)
 }
 
 /// 픽토그램 그리기: 어두운 한 칸 테(밝은 바닥·불빛 위에서도 읽히게, KB hud-readability) 위에 밝은 몸. `tint` = 몸의 빛깔.
@@ -1865,8 +1867,9 @@ pub fn icon(k: Kind, c: Vec2, r: f32, dim: f32, tint: Color) {
 
 /// 한 칸의 크기 `px`(화면 px, 정수)를 직접 주는 픽토그램 — 메뉴의 칸 그림(기술 화면, 0161)이 제 칸에 맞춰 쓴다.
 pub fn icon_at(k: Kind, c: Vec2, px: f32, dim: f32, tint: Color) {
-    let body = Color::new(tint.r, tint.g, tint.b, 0.95 * dim);
-    let edge = Color::new(INK.r, INK.g, INK.b, 0.7 * dim);
+    // 0242: 새하얀 몸 → 조금 누른 빛(종이빛, 0.9배), 테는 옅게 — 버튼의 테·HUD 글과 같은 무게로.
+    let body = Color::new(tint.r * 0.9, tint.g * 0.9, tint.b * 0.88, 0.9 * dim);
+    let edge = Color::new(INK.r, INK.g, INK.b, 0.45 * dim);
     crate::icons::draw(|x, y| icon_cell(k, x, y), c, px, body, edge);
 }
 

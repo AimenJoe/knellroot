@@ -21,7 +21,8 @@ impl Renderer {
             );
             if self.mask_mat.is_some() && self.floor_mat.is_some() {
                 let rt = render_target(SHADOW_RES, SHADOW_RES);
-                rt.texture.set_filter(FilterMode::Nearest);
+                // 0242: 선형 + 바닥 셰이더의 네 점(PCF) — 0.125m 칸의 계단 대신 부드러운 가장자리.
+                rt.texture.set_filter(FilterMode::Linear);
                 self.shadow_rt = Some(rt);
             }
         }
@@ -77,7 +78,10 @@ void main() {
     vec4 c = color * texture2D(Texture, uv);
     float s = 0.0;
     if (sp.x > 0.0 && sp.x < 1.0 && sp.y > 0.0 && sp.y < 1.0) {
-        s = texture2D(ShadowMask, sp.xy).r;
+        // 0242: 네 점 거르기(가림판 한 칸 = 1/256) — 계단 경계가 실제 그림자처럼 부드럽게.
+        float d = 0.75 / 256.0;
+        s = 0.25 * (texture2D(ShadowMask, sp.xy + vec2(d, d)).r + texture2D(ShadowMask, sp.xy + vec2(-d, d)).r
+            + texture2D(ShadowMask, sp.xy + vec2(d, -d)).r + texture2D(ShadowMask, sp.xy + vec2(-d, -d)).r);
     }
     gl_FragColor = vec4(c.rgb * (1.0 - Shade * s), c.a);
 }"#;

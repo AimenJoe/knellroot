@@ -3,7 +3,7 @@
 //! 적: 본 것 = 돌아가는 모델 + 이름 + 관찰(`·`)·추측(`?`) 줄, 못 본 것 = 검은 실루엣 + "???" + 나오는 곳.
 //! 장신구: 가진 것 = 돌아가는 그림 + 이름 + 수치 + 세계 안의 말(0129), 못 가진 것 = "???" + 나오는 곳.
 use super::menu::Hit;
-use super::tabs::{Ln, PaneHead, HEAD_H};
+use super::tabs::{Ln, PaneHead};
 use super::*;
 use crate::codex::{self, ENTRIES};
 use crate::i18n::Tr;
@@ -17,6 +17,10 @@ const GROUP_H: f32 = 18.0;
 const PIC_TOP: f32 = 17.0;
 const PIC_W: f32 = 52.0;
 const PIC_H: f32 = 72.0;
+/// 도감 묶음 머리 한 칸의 가장 좁은 넓이(0242, 기준 px).
+const GROUP_MIN_W: f32 = 44.0;
+/// 물건 그림 칸(0242 — 머리 곁 30 → 이름 아래 64, 기준 px).
+const ITEM_PIC: f32 = 64.0;
 
 impl App {
     /// 도감 한 틱: 뒤로·✕·창 밖 = 닫기, 좌우·묶음 머리 누르기 = 묶음(적 ↔ 장신구 — 위 탭은 스킬 버튼이 넘긴다),
@@ -81,22 +85,25 @@ impl App {
         x += self.ui.width("◀", tk) + u * 6.0;
         for (i, name) in names.iter().enumerate() {
             let tw = self.ui.width(name, tk);
+            // 0242(사장 설문 23-9 "짧은 이름의 버튼도 누르기 쉽게 최소 넓이"): 칸은 `GROUP_MIN_W` 이상, 글은 칸 가운데.
+            let cw = tw.max(GROUP_MIN_W * u);
+            let tx = x + (cw - tw) * 0.5;
             let on = i == tab;
-            self.ui.text(name, x, ty, tk, if on { AMBER } else { DIM });
+            self.ui.text(name, tx, ty, tk, if on { AMBER } else { DIM });
             if on {
                 draw_rectangle(
                     x,
                     (ty + self.ui.px(tk) + u * 1.5).round(),
-                    tw,
+                    cw,
                     u.round().max(1.0),
                     AMBER,
                 );
             }
             self.hits.push((
-                Rect::new(x - u * 5.0, w.origin.y, tw + u * 10.0, GROUP_H * u),
+                Rect::new(x - u * 5.0, w.origin.y, cw + u * 10.0, GROUP_H * u),
                 Hit::Cell(1, i),
             ));
-            x += tw + u * 12.0;
+            x += cw + u * 12.0;
         }
         self.ui.text("▶", x - u * 6.0, ty, tk, DIM);
         // 왼쪽 목록: 본 것·가진 것은 이름, 아니면 "???".
@@ -172,7 +179,7 @@ impl App {
         } else {
             let things = self.codex_things(tab);
             let d = &things[cursor.min(things.len() - 1)];
-            let icon = self.draw_pane_head(
+            self.draw_pane_head(
                 &w,
                 &PaneHead {
                     name: if d.owned { tr(d.name) } else { s.codex_unknown },
@@ -185,8 +192,15 @@ impl App {
                         _ => names[tab].to_string(),
                     },
                     state: (String::new(), DIM),
-                    icon: true,
+                    icon: false,
                 },
+            );
+            // 0242(사장 설문 8-1 "물건이 너무 작다"): 머리 곁의 30칸 그림 대신 이름 아래 큰 그림 칸(적의 그림 칸과 같은 꼴).
+            let icon = w.rect(
+                tabs::RIGHT_X + (tabs::RIGHT_W - ITEM_PIC) * 0.5,
+                tabs::HEAD_H - 8.0,
+                ITEM_PIC,
+                ITEM_PIC,
             );
             if d.owned {
                 if crate::item_view::has_view(d.item) {
@@ -209,7 +223,7 @@ impl App {
             }
             lines.push(Ln::Gap);
             lines.extend(self.pane_wrap(&w, &fill(s.codex_place, &[tr(d.place)]), PLACE));
-            self.draw_pane(&w, HEAD_H, &lines);
+            self.draw_pane(&w, tabs::HEAD_H - 8.0 + ITEM_PIC + 4.0, &lines);
         }
         let right = w.panel.x + w.panel.w;
         self.tab_foot(f, &w, scene, right, &[(Act::Walk, s.verb_choose)]);

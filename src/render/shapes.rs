@@ -48,7 +48,7 @@ pub(super) fn gem(p: Vec3, size: f32, col: Color) {
 /// 카메라를 보는 네 갈래 별(0141 — 휘청의 별·도화선 불꽃): 끝이 뾰족한 마름모 둘. `size` = 끝에서 끝.
 pub(super) fn spark4(p: Vec3, size: f32, col: Color) {
     let (r, u) = facing_axes(p);
-    let (h, t) = (size * 0.5, size * 0.15);
+    let (h, t) = (size * 0.5, size * 0.08); // 0242: 15% → 8%(굵은 십자로 읽혔다)
     flat_mesh(
         &[
             (p - r * h, col),
@@ -249,6 +249,29 @@ pub fn ball_faces(r: f32) -> Vec<[Vec3; 3]> {
         out.extend_from_slice(&[[a, ab, da], [ab, b, bd], [da, bd, d], [ab, bd, da]]);
     }
     out
+}
+
+/// 카메라를 보는 가늘어지는 꼬리 띠(0242 — 탄이 "날아가는 것"으로 읽히게): `head`에서 `tail`로, 폭 `w` → 0, 빛 `col` → 투명.
+pub(super) fn trail(head: Vec3, tail: Vec3, w: f32, col: Color) {
+    const N: usize = 6;
+    let along = tail - head;
+    let view = (head - look().eye).normalize_or(Vec3::NEG_Z);
+    let side = along.cross(view).normalize_or(Vec3::X);
+    let mut pts = Vec::with_capacity((N + 1) * 2);
+    let mut idx = Vec::with_capacity(N * 6);
+    for i in 0..=N {
+        let f = i as f32 / N as f32;
+        let p = head + along * f;
+        let half = w * 0.5 * (1.0 - f).powf(0.7);
+        let c = with_a(col, col.a * (1.0 - f) * (1.0 - f));
+        pts.push((p + side * half, c));
+        pts.push((p - side * half, c));
+    }
+    for i in 0..N as u16 {
+        let q = i * 2;
+        idx.extend_from_slice(&[q, q + 1, q + 2, q + 1, q + 3, q + 2]);
+    }
+    flat_mesh(&pts, &idx);
 }
 
 /// 카메라를 보는 둥근 빛무리: 가운데 `col` → 가장자리 투명(0142 — 겹 정육면체의 반투명 겉 대신).

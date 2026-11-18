@@ -308,12 +308,14 @@ pub(super) const NORMAL_VS: &str = r#"#version 100
         float ph = w.x * 0.9 + w.z * 0.7;
         if (s > 0.0) {
             float g = sin(Wind.x * 1.7 + ph) * 0.6 + sin(Wind.x * 3.3 + ph * 1.9) * 0.4;
-            w.x += g * 0.075 * s * Wind.y;
-            w.z += g * 0.045 * s * Wind.y;
+            // 0242(사장 설문 12-5·12-6 "잘 표현되지 않는다"): 돌풍을 크게 + 잎마다 잔떨림 + 밟힘을 넓고 깊게.
+            float fl = sin(Wind.x * 7.0 + ph * 6.0) * 0.25;
+            w.x += (g * 0.12 + fl * 0.05) * s * Wind.y;
+            w.z += (g * 0.07 + fl * 0.04) * s * Wind.y;
             vec2 d = w.xz - Wind.zw;
-            float push = clamp(1.0 - length(d) / 0.9, 0.0, 1.0) * min(s, 1.0);
-            w.xz += normalize(d + vec2(0.0001, 0.0)) * push * 0.28;
-            w.y -= push * 0.14;
+            float push = clamp(1.0 - length(d) / 1.1, 0.0, 1.0) * min(s, 1.0);
+            w.xz += normalize(d + vec2(0.0001, 0.0)) * push * 0.34;
+            w.y -= push * 0.2;
         } else if (s < 0.0) {
             float f = -s;
             float g = sin(Wind.x * 9.0 + ph * 5.0) * 0.6 + sin(Wind.x * 14.3 + ph * 3.0) * 0.4;

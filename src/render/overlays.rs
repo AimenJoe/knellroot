@@ -8,6 +8,8 @@ const BEAT_GOLD: Color = Color::new(1.0, 0.9, 0.62, 0.24);
 pub const BEAT_RING_LIFE: f32 = 0.35;
 /// 딱 맞춰 떼기 고리가 퍼지는 시간(0078).
 const PERFECT_RING_LIFE: f32 = 0.45;
+/// 휘두름 초승달의 진하기(0242 — 사장 설문 13-8 "조금 더 연해도 좋겠다").
+const SLASH_ALPHA: f32 = 0.7;
 const BOLT_LOOKS: [(Color, Color); 5] = [
     (
         Color::new(0.92, 0.88, 1.0, 1.0),
@@ -255,27 +257,27 @@ impl Renderer {
 }
 
 fn bolts(w: &World, alpha: f32) {
-    // 마법 탄(0048): 라벤더 빛 덩이 + 짧은 꼬리(보간 자리).
+    // 마법 탄(0048): 라벤더 빛 덩이 + 꼬리(보간 자리).
+    // 0242(사장 "습작 같다"): 꼬리 마름모 셋 → 가늘어지는 띠 + 둥근 빛무리 + 숨 쉬는 알맹이와 작은 별.
     for b in &w.bolts {
         let p = b.prev.lerp(b.pos, alpha);
         let (core, glow) = BOLT_LOOKS[(b.def.look as usize).min(BOLT_LOOKS.len() - 1)];
         let k = if b.def.is_shot() { 0.6 } else { 1.0 } * b.def.scale;
-        // 0141: 정육면체 대신 카메라를 보는 마름모 — 빛무리 + 알맹이 + 뒤로 작아지는 꼬리 셋.
-        for i in 1..=3 {
-            let f = i as f32;
-            gem(
-                p - b.dir * (0.3 * f * k),
-                (0.42 - 0.09 * f) * k,
-                with_a(glow, glow.a * (1.0 - 0.28 * f)),
-            );
+        let pulse = 1.0 + 0.12 * (w.time * 30.0 + b.left).sin();
+        glow_disc(p, 0.62 * k, with_a(glow, glow.a * 0.8));
+        trail(p, p - b.dir * (1.5 * k), 0.5 * k, with_a(glow, 0.7));
+        trail(p, p - b.dir * (0.8 * k), 0.2 * k, with_a(core, 0.85));
+        gem(p, 0.5 * k * pulse, glow);
+        gem(p, 0.3 * k * pulse, core);
+        if !b.def.is_shot() {
+            spark4(p, 0.62 * k * pulse, with_a(core, 0.9));
         }
-        gem(p, 0.78 * k, glow);
-        gem(p, 0.42 * k, core);
     }
 }
 
 fn bell_shards(w: &World, fl: &Drape) {
     // 종 조각(0125): 돌며 나는 청동 조각 — 되받아친 것은 호박빛(패링이 "돌려보냈다"로 읽히게).
+    // 0242: 1px 선 두 개 → 음영 있는 납작한 청동 조각(면 여덟) + 꼬리 띠.
     for sh in &w.shards {
         let spin = w.time * 14.0 + sh.went;
         let rot = Quat::from_rotation_y(spin) * Quat::from_rotation_x(spin * 0.7);
@@ -290,13 +292,20 @@ fn bell_shards(w: &World, fl: &Drape) {
                 Color::new(0.85, 0.55, 0.35, 0.22),
             )
         };
-        let a = rot * vec3(0.22, 0.0, 0.0);
-        let b = rot * vec3(0.0, 0.0, 0.16);
-        draw_line_3d(sh.pos - a, sh.pos + a, core);
-        draw_line_3d(sh.pos - b, sh.pos + b, core);
-        gem(sh.pos - sh.dir * 0.3, 0.3, with_a(glow, glow.a * 0.7));
-        gem(sh.pos, 0.56, glow);
-        gem(sh.pos, 0.3, core);
+        glow_disc(sh.pos, 0.42, glow);
+        trail(
+            sh.pos,
+            sh.pos - sh.dir * 0.9,
+            0.3,
+            with_a(glow, glow.a * 1.6),
+        );
+        shaded_tris(
+            sh.pos,
+            &octa_faces(vec2(0.22, 0.05), 0.15, 0.12),
+            core,
+            0.7,
+            rot,
+        );
         fl.shadow(sh.pos, 0.18);
     }
 }
@@ -380,10 +389,25 @@ fn bombs(w: &World, alpha: f32) {
                 Color::new(1.0, 0.8, 0.4, 1.0),
             )
         };
-        gem(p, if seed { 0.32 } else { 0.4 }, body);
+        // 0242: 납작한 마름모 → 음영 있는 덩이(씨는 길쭉하게 돈다) + 불 뒤의 빛무리.
+        let r = if seed { 0.15 } else { 0.19 };
+        if seed {
+            let spin = Quat::from_rotation_y(w.time * 5.0) * Quat::from_rotation_x(w.time * 3.0);
+            shaded_tris(
+                p,
+                &octa_faces(vec2(r, r), r * 1.6, r * 1.3),
+                body,
+                0.6,
+                spin,
+            );
+        } else {
+            shaded_tris(p, &ball_faces(r), body, 0.6, Quat::IDENTITY);
+        }
         let hz = 4.0 + 10.0 * (1.0 - (bm.fuse / 1.5).clamp(0.0, 1.0));
         if (w.time * hz) as i32 % 2 == 0 {
-            spark4(p + Vec3::Y * 0.22, 0.36, spark);
+            let at = p + Vec3::Y * (r + 0.08);
+            glow_disc(at, 0.3, with_a(spark, 0.45));
+            spark4(at, 0.36, spark);
         }
     }
 }
@@ -1048,11 +1072,10 @@ fn stagger_stars(w: &World, alpha: f32) {
             for i in 0..3 {
                 let a = w.time * 6.0 + i as f32 * std::f32::consts::TAU / 3.0;
                 let r = en.radius + 0.15;
-                spark4(
-                    p + vec3(a.cos() * r, en.height + 0.3, a.sin() * r),
-                    0.34,
-                    Color::new(1.0, 0.92, 0.45, fade),
-                );
+                let at = p + vec3(a.cos() * r, en.height + 0.3, a.sin() * r);
+                // 0242: 별 뒤에 작은 빛무리 — 마른 십자만으로는 습작처럼 보였다.
+                glow_disc(at, 0.2, Color::new(1.0, 0.85, 0.4, 0.35 * fade));
+                spark4(at, 0.34, Color::new(1.0, 0.92, 0.45, fade));
             }
         }
     }
@@ -1167,7 +1190,7 @@ pub(super) fn crescent(
                 let a = tail + (head - tail) * s;
                 let dir = vec3(a.sin(), 0.0, a.cos());
                 // 꼬리 쪽도 한동안 보이게(예전 s^1.5는 머리 근처만 남았다).
-                let k = ink.a * s;
+                let k = ink.a * s * SLASH_ALPHA;
                 pts.push((c + dir * reach, with_a(ink, k)));
                 pts.push((
                     c + dir * reach * slash_inner(s, thick, weight),

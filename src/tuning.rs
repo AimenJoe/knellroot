@@ -358,6 +358,10 @@ pub const HURL_RING: f32 = 7.0;
 pub const HURL_THROW: f32 = 0.55;
 /// 청소자(0120): 싸움이 없을 때 이 초마다 체력 한 눈금(`HP_UNIT`)을 먹는다.
 pub const EAT_TIME: f32 = 2.5;
+/// 청소자가 한 자리에서 먹는 초·옮겨 가는 둘레(m)·걷는 빠르기 몫(0242 — 서 있기만 하지 않게).
+pub const GRAZE_STAY: f32 = 3.5;
+pub const GRAZE_R: f32 = 1.2;
+pub const GRAZE_SPEED: f32 = 0.35;
 /// 이끼먹이(0185 — 비적대 생명체): 방랑자가 이만큼(m) 다가오면 도망하고, 제자리에서 이만큼(m)까지만 달아난다(그 밖으로는 옆으로 비킨다),
 /// 도망하는 빠르기 배율(종의 `speed`에), 풀 뜯는 자리를 가끔 옮기는 마디(초)·한 걸음(m).
 pub const GRAZE_FLEE_R: f32 = 5.0;

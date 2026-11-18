@@ -747,6 +747,8 @@ fn enemy_anim(
                 None => (e.pick(&["idle"]), 0.0),
             }
         }
+        // 0242: 청소자가 먹는 자리를 옮기는 동안은 걷는다.
+        EState::Idle if moving => (e.pick(&["walk", "idle"]), clock * 0.6 + phase),
         EState::Idle => (e.pick(&["idle", "walk"]), clock * 0.7 + phase),
         EState::Return => (e.pick(&["walk", "run", "idle"]), clock + phase),
         EState::Chase if moving => (e.pick(&["walk", "run", "idle"]), clock * 1.0 + phase),
