@@ -31,7 +31,8 @@ impl Row {
 }
 
 /// 빠르기 칸(0 = 1×, 1 = ½, 2 = ¼, 3 = 멈춤).
-pub(super) const SPEEDS: [f32; 4] = [1.0, 0.5, 0.25, 0.0];
+/// 0243(사장 설문 k19 "모션 보는게 너무 빠른 경우도 있음"): 처음은 ½× — 확인으로 ¼× → 0.1× → 1× → 멈춤.
+pub(super) const SPEEDS: [f32; 5] = [0.5, 0.25, 0.1, 1.0, 0.0];
 /// 한 번 돈 끝에서 마지막 자세로 머무는 시간(초) — 끝 자세가 보이게.
 const HOLD_END: f32 = 0.35;
 /// 돌린 칸 하나(도).
@@ -138,11 +139,15 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
 
 /// 빠르기 칸의 글.
 fn speed_label(speed: u8) -> String {
-    match speed {
-        0 => "1×".to_string(),
-        1 => "½×".to_string(),
-        2 => "¼×".to_string(),
-        _ => t(dv::MOTION_PAUSED).to_string(),
+    let x = SPEEDS[speed as usize % SPEEDS.len()];
+    if x == 0.0 {
+        t(dv::MOTION_PAUSED).to_string()
+    } else if x == 0.5 {
+        "½×".to_string()
+    } else if x == 0.25 {
+        "¼×".to_string()
+    } else {
+        format!("{x}×")
     }
 }
 

@@ -135,6 +135,13 @@
       if (window.visualViewport) window.visualViewport.addEventListener("resize", soon);
       if (window.ResizeObserver) new ResizeObserver(check).observe(c);
       window.knellCanvasCheck = check; // 시험(tools/test/touch.js)이 부른다
+      // 0243(사장 설문 k21 "로딩 중에 화면 돌리면 화면 아래가 비어 보일 때가 있다"): 로딩 중에 돌리면 번들의 처리기가 아직 없어
+      // 위의 check가 넘어가고, 번들이 처음 잰 크기가 레이아웃이 끝나기 전 값이면 그 뒤로 바로잡을 일이 없었다 —
+      // 다 그린 순간(knell_loaded)에 몇 번 더 재고, 처음 몇 초는 1초마다 한 번 더 잰다.
+      window.knellCanvasSoon = function () {
+        soon();
+        for (var i = 1; i <= 5; i++) setTimeout(check, i * 1000);
+      };
     })();
     // 처음 장치가 터치인지(폰·태블릿): 아무것도 만지기 전 첫 화면부터 터치 버튼을 보이게(src/input.rs initial_device).
     miniquad_add_plugin({
@@ -236,7 +243,7 @@
       name: "knell_loading",
       version: 1,
       register_plugin: function (importObject) {
-        importObject.env.knell_loaded = function () { window.knellLoad.done(); };
+        importObject.env.knell_loaded = function () { window.knellLoad.done(); if (window.knellCanvasSoon) window.knellCanvasSoon(); };
       }
     });
     window.knellLoad.watch();

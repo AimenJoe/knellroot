@@ -532,6 +532,8 @@ pub const WEAPONS: [Weapon; 6] = [
         // 0210(사장 "시간당 공격력이 너무 좋음"): 서서 쏘기만 쟀던 0173이 놓친 길 — 쥐고 있으면 모은 사격이 곧장 이어져
         // 볼트 하나에 50(딱 맞춤)·꿰뚫기, 장전이 기력의 쉼이 되어 오래 쏴도 35/초(검의 가장 센 꼴 23). 모은 사격은 볼트 둘(`heavy`)·
         // 피해 40 → 30, 장전 1.5 → 2.0초. 고친 뒤 모아 쏘기 18/초 · 마구 17 · 박자 14.5(오래, 근접 가장 센 꼴 23~26의 일곱 할 안팎).
+        // 0243(사장 설문 k09 "아직도 쎄긴함"): 피해는 눈금(10)이라 그대로 두고 한 발 0.9 → 1.15·장전 2.0 → 2.4 —
+        // 오래 쏴도 검의 반 안팎, 처음 4초도 검의 여섯 할 밑.
         rb: Rb::Shot {
             bolt: Bolt {
                 speed: 1.7,
@@ -544,8 +546,8 @@ pub const WEAPONS: [Weapon; 6] = [
                 scale: 1.0,
             },
             mag: 4,
-            reload: 2.0,
-            time: 0.9,
+            reload: 2.4,
+            time: 1.15,
             heavy: 2,
         },
         grenade: Some(Grenade {
@@ -559,10 +561,11 @@ pub const WEAPONS: [Weapon; 6] = [
             root: 0.0,
         }),
         // 모은 사격: 시위를 끝까지 당긴 무거운 볼트 — 꿰뚫고 밀어낸다(수류탄도 맞히면 터진다).
+        // 0243(사장 설문 k09): 30 → 20 — 모아 쏘기만 되풀이하면 오래 17.5/초(검의 가장 센 꼴 23의 여덟 할 가까이)였다.
         charged: Bolt {
             speed: 2.2,
             range: 1.8,
-            damage: 30,
+            damage: 20,
             poise: 6.0,
             pierce: true,
             stagger: 0.4,
@@ -639,6 +642,7 @@ pub const WEAPONS: [Weapon; 6] = [
         dash: None,
         heavy: None,
         rb: Rb::Shot {
+            // 0243(사장 설문 k09): 처음 4초가 검과 같았다(30/초) — 전통 6 → 5, 한 발 0.95 → 1.3(피해는 눈금이라 그대로).
             bolt: Bolt {
                 speed: 1.5,
                 range: 1.7,
@@ -649,9 +653,9 @@ pub const WEAPONS: [Weapon; 6] = [
                 look: ARROW,
                 scale: 1.0,
             },
-            mag: 6,
+            mag: 5,
             reload: 2.2,
-            time: 0.95,
+            time: 1.3,
             heavy: 1,
         },
         grenade: Some(Grenade {
@@ -888,9 +892,9 @@ mod tests {
             heavy: 0,
             aftershock: 0,
             // 0173: 쇠뇌를 낮췄다(사격 2 → 1, 모은 사격 5 → 4) — 눈금을 옮긴 것이 아니라 값을 바꾼 것이라 이 표의 줄도 같이 고친다.
-            // 0210: 모은 사격 4 → 3(같은 까닭).
+            // 0210: 모은 사격 4 → 3(같은 까닭). 0243: 모은 사격 3 → 2(같은 까닭).
             rb: 1,
-            charged: 3,
+            charged: 2,
             grenade: 3,
         },
         Old {
