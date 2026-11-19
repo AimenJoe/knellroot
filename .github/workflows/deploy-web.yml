@@ -68,7 +68,12 @@ jobs:
       - name: Headless smoke + screenshots
         run: |
           npm init -y >/dev/null && npm install --no-audit --no-fund playwright@1.47.2 >/dev/null
-          npx playwright install --with-deps chromium
+          # Ubuntu 패키지 서버가 가끔 503을 낸다(2026-11-19 R8a 실행이 글꼴 받기에서 멈췄다) — 깔기만 세 번까지 다시 한다.
+          for i in 1 2 3; do
+            npx playwright install --with-deps chromium && break
+            [ "$i" = 3 ] && exit 1
+            echo "playwright install 실패($i) — $((i * 30))초 뒤 다시"; sleep $((i * 30))
+          done
           # 연기 시험은 개발 항목(문 앞·시나리오)을 쓴다 — 운영판이면 개발판을 따로 빌드해 돈다(배포물은 그대로).
           if [ "$FLAVOR" = "release" ]; then
             cargo build --release --target wasm32-unknown-unknown
