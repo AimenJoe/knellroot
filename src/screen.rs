@@ -11,6 +11,8 @@ mod js {
         pub fn knell_portrait() -> u32;
         pub fn knell_safe_inset(i: u32) -> u32;
         pub fn knell_scene(ptr: *const u8, len: usize);
+        #[cfg(feature = "dev")]
+        pub fn knell_test_flags() -> u32;
     }
 }
 
@@ -25,6 +27,17 @@ pub fn report_scene(name: &str) {
     }
     #[cfg(not(target_arch = "wasm32"))]
     let _ = name;
+}
+
+/// 헤드리스 시험이 페이지에 건 깃발(`window.knellTestFlags`, 웹만 — 그 밖은 0). 1 = 방랑자가 맞지 않는다(`World::unhurt`).
+/// 개발판에만 있다.
+#[cfg(feature = "dev")]
+pub fn test_flags() -> u32 {
+    #[cfg(target_arch = "wasm32")]
+    // SAFETY: 인자 없이 정수를 돌려주는 JS 함수(web/index.html).
+    return unsafe { js::knell_test_flags() };
+    #[cfg(not(target_arch = "wasm32"))]
+    0
 }
 
 #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]

@@ -449,6 +449,10 @@ impl App {
             SHAKE_HURT, SHAKE_PARRY, SHAKE_PLUNGE, SHAKE_ROUSE, SHAKE_SLAM, SHAKE_SMASH,
             SHAKE_TURN,
         };
+        #[cfg(feature = "dev")]
+        {
+            self.world.unhurt = crate::screen::test_flags() & 1 != 0;
+        }
         let events = self.world.step(a, t);
         // 바꿔 든 무기를 기록에(0223 — 다음 판·멈춤의 장비 탭도 그것으로).
         if let Some(to) = events.iter().find_map(|e| match e {

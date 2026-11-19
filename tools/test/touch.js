@@ -3,6 +3,7 @@
 // 볼 것: 첫 화면부터 버튼이 보이는지(pointer: coarse), 스틱으로 걷는지, 락온 버튼이 노랗게 차는지, 랩 줄이 폰에 들어가는지.
 // 손가락 끌기는 CDP Input.dispatchTouchEvent(Playwright touchscreen은 탭만 한다). 콘솔 에러가 있으면 종료 코드 1.
 const { chromium } = require('playwright');
+const sceneKit = require('./scene');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -63,12 +64,17 @@ async function main() {
   const cdp = await ctx.newCDPSession(page);
   // CI 러너처럼 느린 CPU를 흉내(THROTTLE=4 — 실패를 집에서 재현할 때만).
   if (process.env.THROTTLE) await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.THROTTLE) });
+  // 장면이 바뀌는 탭 뒤에는 시간이 아니라 장면을 기다린다(tools/test/scene.js).
+  const { until, scene } = sceneKit(page);
+  // 도중에 쓰러지면 멈춤·장비 탭을 못 본다 — 맞지 않게(개발판).
+  await sceneKit.unhurt(page);
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i + 1 })) });
   const tap = async ([x, y]) => { await touch('touchStart', [[x, y]]); await page.waitForTimeout(60); await touch('touchEnd', []); await page.waitForTimeout(60); };
   const shot = (n) => page.screenshot({ path: path.join(OUT, n + '.png') });
 
   await page.goto(`http://localhost:${PORT}/`);
-  await page.waitForTimeout(2500);
+  await until('Title', '타이틀', 60000);
+  await page.waitForTimeout(300);
   let b = layout();
   await shot('t00-title');
   // 타이틀(0019): 첫 줄 "시작"을 탭(뗄 때 누른다). 자리는 `app::draw_title`·`ui::menu`와 같은 셈.
@@ -78,10 +84,12 @@ async function main() {
     const w = Math.floor(W * dpi / s), rows = Math.min(Math.floor(H * dpi / s), Math.floor(w * 3 / 4));
     const dh = rows * s / dpi, oy = Math.floor((H - dh) / 2), px = 13 * dh / 270;  // ui::GLYPH × Frame::ui
     await tap([W / 2, oy + dh * 0.37 + px * 0.5]);  // app::TITLE_MENU_Y
+    await until('Slots', '타이틀 시작 탭 → 슬롯 창');
     // 시작하기 → 슬롯 창(0066): 첫 줄(슬롯 1, 비어 있음 = 시작)을 탭. 창은 480×270 기준 높이 106 —
     // 위 6·아래 안내 줄(2.8글) 사이 가운데, 제목 줄 뒤 첫 줄 가운데 ≈ 108/270(`app::menu` `draw_menu`·`ui::list`).
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(200);
     await tap([W / 2, oy + dh * 108 / 270]);
+    await until('Play', '슬롯 1 탭 → 새 판');
   }
   // 빈 기록의 첫 판은 깨어나는 장면(0171): 화면 버튼은 걷혀 있고(덮개만), 싸움 버튼 자리를 누르면 건너뛴다 — 안내 글이 선
   // 오른쪽 아래가 공격 버튼 자리다. 건너뛴 뒤에야 버튼들이 선다.
@@ -164,12 +172,14 @@ async function main() {
   await page.waitForTimeout(600);
   await shot('t09-after-turn');
   // 멈춤(2026-11-06): 버튼을 누른 채 창이 열리고 나서 떼도 창이 남아야 한다(뗀 자리가 "창 밖 탭"이 되어 닫히던 것).
-  await touch('touchStart', [b.pause]); await page.waitForTimeout(300);
+  await touch('touchStart', [b.pause]); await until('Status', '멈춤 버튼 → 큰 창(상태 탭)');
+  await page.waitForTimeout(200);
   await touch('touchEnd', []); await page.waitForTimeout(400);
+  await until('Status', '멈춤 버튼을 뗀 뒤에도 창이 남는다');
   await shot('t10-pause-stays');
   // 장비 탭 터치(2026-11-06 → 0164): 멈춤 = 큰 창(상태 탭에서 열린다) → 탭 머리 "장비"를 누른다 → 칸은 두 걸음(누르면 고르기,
   // 다시 누르면 그 칸 곁에 후보의 작은 목록) → 후보도 두 걸음(고르기 = 미리 보기, 다시 = 끼우기).
-  // 0076·0077 → 0117 → 0220: 새 기록의 무기 후보 = 맨손(착용 중)뿐 — 검도 줍는다. 맨손은 첫 줄 — 같은 자리의 둘째 탭이 끼운다.
+  // 0076·0077 → 0117 → 0220: 새 기록의 무기 후보 = 맨손(착용 중)뿐 — 검도 줍는다. 바꿀 것이 없으면 칸을 다시 눌러도 목록이 뜨지 않는다(후보를 끼우는 길은 여벌이 든 기록으로 키보드 스크립트가 본다).
   // 자리는 코드와 같은 셈(480×270 기준 단위 u): 창 464×228(`app::frame` — 위 6u와 아래 안내 줄(2.8글) 사이 가운데), 머리 줄 22,
   // 몸의 원점 = 창 + (8, 27). 탭 머리는 왼쪽 10부터 폭 44씩(두 글자 26 + 여백 18, 틈 2 — `ui::window`).
   // 장비 탭의 칸(`app::equip`): 장신구 상자 34 × 3(오른쪽 끝에서 8 들여, 사이 6 — 세로 가운데), 무기 상자 40은 왼쪽 8에 장신구 열의
@@ -184,26 +194,24 @@ async function main() {
       tab: (i) => [x + (10 + 44 * i + 22) * u, y + 12 * u],
       weapon: body(8 + 20, boxesTop + 20),
       charm: (i) => body(270 - 8 - 17, boxesTop + (34 + 6) * i + 17),
-      pick: (row) => body(8 + 40 + 5 + 85, boxesTop + 4 + 13 * 1.75 * (row + 0.5)),
     };
   })();
-  const SWORD_BOX = win.weapon, PICK_ROW = win.pick(0), CHARM_BOX = win.charm(0);
+  const SWORD_BOX = win.weapon, CHARM_BOX = win.charm(0);
   await shot('t10a-pause-status');
-  await tap(win.tab(1)); await page.waitForTimeout(400);   // 탭 머리 "장비"(상태 · 장비 · 기술 · 도감 · 설정의 둘째)
+  await tap(win.tab(1)); await until('Equip {', '탭 머리 "장비"');   // 탭 머리 "장비"(상태 · 장비 · 기술 · 도감 · 설정의 둘째)
   await shot('t10b-equip-tab');
   await tap(CHARM_BOX); await page.waitForTimeout(300);    // 고르기만(설명이 바뀜)
   await tap(SWORD_BOX); await page.waitForTimeout(300);    // 무기 칸 고르기
-  await tap(SWORD_BOX); await page.waitForTimeout(400);    // 다시 = 후보 목록
-  await tap(PICK_ROW); await page.waitForTimeout(300);     // 맨손 고르기(미리 보기)
-  await shot('t12-equip-preview');
-  await tap(PICK_ROW); await page.waitForTimeout(400);     // 다시 = 끼우기
-  await shot('t13-equip-worn');
+  // 0220: 새 판은 맨손뿐이라 바꿀 것이 없다 — 고른 칸을 다시 눌러도 후보 목록이 뜨지 않고(`equip::has_choice` → 안 됨 소리) 장비 탭에 머문다.
+  await tap(SWORD_BOX); await page.waitForTimeout(400);
+  if (!(await scene()).startsWith('Equip {')) errors.push('touch equip: nothing to swap on a new run, the slot must not open a list: ' + (await scene()));
+  await shot('t12-equip-nothing-to-swap');
   const rec = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('knell.save')).map((k) => localStorage.getItem(k)).join('\n'));
   // 0220: 새 판은 맨손으로 깨어난다(검은 깨어난 자리 곁에 떨어져 있다 — 주워야 가진다). 후보는 맨손 하나라 두 번 눌러도 맨손 그대로.
   if (/weapon=(?!fists)/i.test(rec)) errors.push('touch equip: a new run holds bare hands: ' + JSON.stringify(rec));
   if (/weapons=[^\n]*sword/i.test(rec)) errors.push('touch equip: the sword is not owned until picked up: ' + JSON.stringify(rec));
   // 창 밖을 누르면 창이 닫힌다(어느 탭에서든 한 번에 — 0164).
-  await tap([W - 4, H - 4]); await page.waitForTimeout(300);
+  await tap([W - 4, H - 4]); await until('Play', '창 밖 탭 → 닫힘');
   await shot('t11-pause-closed');
   // 세로로 든 폰(0082): 회전 안내(#rotate)가 덮인다. 누르면 전체 화면 + 가로 잠금을 해 보고, 잠금이 안 되면(헤드리스·iPhone) 세로로 계속.
   {

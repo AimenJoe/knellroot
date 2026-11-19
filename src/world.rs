@@ -799,6 +799,9 @@ pub struct World {
     lock_lose: f32,
     /// 쿼터뷰 화면 위를 정하는 카메라 방위(도). 앱이 매 틱 카메라에서 넘긴다(0011 — 락온을 풀면 돌 수 있다). None = 랩 값.
     pub view_yaw: Option<f32>,
+    /// 헤드리스 시험만(개발판 웹 `window.knellTestFlags` 1): 방랑자가 맞지 않는다 — 긴 터치·메뉴 스크립트가 도중에 쓰러져
+    /// 엉뚱한 화면을 찍지 않게. 운영판에서는 앱이 켜지 않는다.
+    pub unhurt: bool,
     /// 지난 틱의 락온 앞(수평 단위), 락온이 아니면 None — 풀리는 틱에 `hold`로 넘긴다.
     last_lock_fwd: Option<Vec3>,
     /// 풀린 뒤 쥔 스틱의 기준(앞, 경과 초). 스틱을 놓거나 `move.hold after unlock s`가 지나면 끝.
@@ -1030,6 +1033,7 @@ impl World {
             lock_range: 18.0,
             lock_lose: 26.0,
             view_yaw: None,
+            unhurt: false,
             last_lock_fwd: None,
             hold: None,
             turn_now: None,

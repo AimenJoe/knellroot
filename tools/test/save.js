@@ -6,6 +6,7 @@
 //   처음부터·타이틀로·사기는 묻는 창. 그 사이 장비 창에서 장신구를 끼면 기록에 남는지(0064 M3).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/save.js dist shots
 const { chromium } = require('playwright');
+const sceneKit = require('./scene');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -31,30 +32,16 @@ async function main() {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const page = await ctx.newPage();
-  // 느린 CI 흉내(THROTTLE=6 node tools/test/save.js …): CPU를 그만큼 느리게 — 시간에 기대는 기다림이 깨지는지 로컬에서 본다.
-  if (process.env.THROTTLE) {
-    const cdp = await ctx.newCDPSession(page);
-    await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.THROTTLE) });
-  }
+  await sceneKit.throttle(ctx, page);
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error' && !KNOWN_NOISE.some((k) => k.test(m.text()))) errors.push(m.text()); });
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
   const fail = (msg) => { console.error('FAIL ' + msg); process.exitCode = 1; };
   const shot = (name) => page.screenshot({ path: path.join(OUT, name + '.png') });
-  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(80); } };
+  const { press, until } = sceneKit(page);
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 20000 });
   const record = () => page.evaluate((k) => localStorage.getItem(k), KEY);
-  // 시간 대신 장면을 기다린다(2026-11-19): CI의 소프트웨어 GL은 10 fps 안팎이라 "300ms"가 몇 프레임인지 정해지지 않았고, 창이 뜨기 전에
-  // 키가 들어가 5c의 덮어쓰기가 네 번 빠졌다. 게임이 맨 위 장면이 바뀔 때마다 window.knellScene에 이름(Debug — "Ask(Overwrite(0))"·
-  // "Slots { load: false }"·"Play" …)을 적는다(src/screen.rs report_scene). 못 오면 그 자리에서 멈추고 지금 장면을 말한다.
-  const scene = () => page.evaluate(() => window.knellScene || '');
-  const until = async (want, what, ms = 20000) => {
-    try {
-      await page.waitForFunction((w) => (window.knellScene || '').startsWith(w), want, { timeout: ms, polling: 50 });
-    } catch (e) {
-      throw new Error(`${what}: "${want}" 장면이 오지 않았다 — 지금 "${await scene()}"`);
-    }
-  };
+  // 시간 대신 장면을 기다린다(2026-11-19, tools/test/scene.js): 5c의 덮어쓰기가 느린 CI에서 네 번 빠졌다.
   // 기록이 바뀌기를 기다린다(쓰기는 장면이 바뀐 뒤 몇 프레임 안에 — 바뀌지 않으면 그대로 돌려주고 검사가 말한다).
   const recordUntil = async (ok, ms = 10000) => {
     try {
