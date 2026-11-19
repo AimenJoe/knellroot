@@ -11,8 +11,9 @@ use crate::scenery::{with_normal, Piece};
 use crate::stage::Light;
 use crate::world::Aabb;
 
-const TRUNK: Color = Color::new(0.25, 0.20, 0.27, 1.0);
-const LEAF_DEAD: Color = Color::new(0.31, 0.31, 0.41, 1.0);
+// 0249: 죽은 나무는 잿빛 갈색 줄기·푸른 잿빛 잎(옛 보랏빛은 주인공 망토와 같은 색상이었다). 보라 뿌리(`ROOT`)는 침식의 표지라 그대로.
+const TRUNK: Color = Color::new(0.241, 0.212, 0.192, 1.0);
+const LEAF_DEAD: Color = Color::new(0.292, 0.322, 0.356, 1.0);
 const LEAF_LIVE: Color = Color::new(0.34, 0.50, 0.45, 1.0);
 const ROOT: Color = Color::new(0.27, 0.15, 0.34, 1.0);
 /// 살아 있는 나무의 몫.

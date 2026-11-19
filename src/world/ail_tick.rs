@@ -28,8 +28,8 @@ impl World {
             let out = en.ail.tick(dt);
             // 묶임: 걷지 못한다(공격은 그대로 — 패링할 것은 남는다). 보스는 묶이지 않고 느려지기만.
             if en.ail.bound > 0.0 {
-                en.slow = if en.boss {
-                    en.slow.min(ROOT_BOSS_SLOW)
+                en.marks.slow = if en.boss {
+                    en.marks.slow.min(ROOT_BOSS_SLOW)
                 } else {
                     0.0
                 };

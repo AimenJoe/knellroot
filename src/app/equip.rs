@@ -717,7 +717,12 @@ impl App {
         if self.cursor != before {
             self.scroll = 0.0;
         }
-        if a.cast && !a.confirm && input::swap_free() {
+        let quick = match input::swap_bind() {
+            Some(input::Bind::Cast) => a.cast,
+            Some(input::Bind::Attack) => a.attack,
+            _ => false,
+        };
+        if quick && !a.confirm {
             match self.cursor {
                 0 => self.next_weapon(1),
                 SUB_SLOT => self.step_sub(1),

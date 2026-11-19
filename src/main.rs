@@ -11,6 +11,7 @@
     windows_subsystem = "windows"
 )]
 
+mod anim;
 mod app;
 mod backdrop;
 mod balance;
@@ -27,6 +28,7 @@ mod forge;
 mod fx;
 mod gait;
 mod garb;
+mod glyph_shards;
 mod ground;
 mod growth;
 mod hud;
@@ -44,6 +46,7 @@ mod model;
 mod models;
 mod nav;
 mod prefs;
+mod progress_notes;
 mod progression;
 mod render;
 mod residents;

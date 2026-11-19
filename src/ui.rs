@@ -24,8 +24,9 @@ pub const GLYPH: f32 = 13.0;
 const BAKE: f32 = 48.0;
 
 pub struct Ui {
-    font: Font,
-    bold: Font,
+    /// 본문·굵게 — 글꼴마다 아틀라스 여러 장(0254, `glyph_shards`).
+    font: Face,
+    bold: Face,
     /// 정수 배율(렌더 타깃과 같은 값). 글 크기는 `GLYPH × 배수 × scale`.
     pub scale: f32,
     warmed: (u32, f32),
@@ -169,14 +170,8 @@ fn key_segments(s: &str) -> Vec<(String, bool)> {
 
 impl Ui {
     pub fn new() -> Self {
-        let load = |bytes: &[u8]| {
-            let mut f = load_ttf_font_from_bytes(bytes).expect("UI font");
-            // 명조는 픽셀 격자가 아니라 부드럽게(고밀도 화면의 소수 배율에서도 매끈하게).
-            f.set_filter(FilterMode::Linear);
-            f
-        };
-        let font = load(include_bytes!("../assets/fonts/GowunBatang-UI-Regular.ttf"));
-        let bold = load(include_bytes!("../assets/fonts/GowunBatang-UI-Bold.ttf"));
+        let font = Face::new(include_bytes!("../assets/fonts/GowunBatang-UI-Regular.ttf"));
+        let bold = Face::new(include_bytes!("../assets/fonts/GowunBatang-UI-Bold.ttf"));
         Ui {
             font,
             bold,
@@ -207,12 +202,11 @@ impl Ui {
         let (fs, _) = self.sizing(1.0);
         let dpi = screen_dpi_scale();
         // macroquad는 `ceil(font_size × dpi)`로 굽는다 — 그리는 크기와 같은 셈이어야 구운 것을 쓴다.
-        self.font
-            .populate_font_cache(&chars, (fs as f32 * dpi).ceil() as u16);
+        self.font.warm(&chars, (fs as f32 * dpi).ceil() as u16);
     }
 
     /// 큰 제목(2배 이상)은 굵게.
-    fn face(&self, k: f32) -> &Font {
+    fn face(&self, k: f32) -> &Face {
         if k >= 2.0 {
             &self.bold
         } else {
@@ -230,20 +224,9 @@ impl Ui {
         bake_size(self.px(k), screen_dpi_scale())
     }
 
-    fn params(&self, k: f32, color: Color) -> TextParams<'_> {
-        let (fs, scale) = self.sizing(k);
-        TextParams {
-            font: Some(self.face(k)),
-            font_size: fs,
-            font_scale: scale,
-            color,
-            ..Default::default()
-        }
-    }
-
     fn plain_w(&self, s: &str, k: f32) -> f32 {
         let (fs, scale) = self.sizing(k);
-        measure_text(s, Some(self.face(k)), fs, scale).width
+        self.face(k).width(s, fs, scale)
     }
 
     /// 글 폭(키캡이면 칸 여백까지).
@@ -327,8 +310,10 @@ impl Ui {
     fn plain_text(&self, s: &str, x: f32, y: f32, k: f32, color: Color) {
         let base = y + self.px(k) * 0.85;
         let o = self.scale * k;
-        draw_text_ex(s, x + o, base + o, self.params(k, SHADOW));
-        draw_text_ex(s, x, base, self.params(k, color));
+        let (fs, scale) = self.sizing(k);
+        let face = self.face(k);
+        face.draw(s, x + o, base + o, fs, scale, SHADOW);
+        face.draw(s, x, base, fs, scale, color);
     }
 
     /// 폭에 안 맞으면 뒤를 잘라 "…"를 붙인다(nail `fit`). 언어마다 길이가 달라 고정 칸에서 넘칠 때의 마지막 안전장치.
@@ -791,6 +776,60 @@ impl Ui {
     }
 
     /// 눌리는 단추(nail `button`, 0157): 오른쪽 아래 그림자 위에 얹힌 면, 위·왼쪽 밝은 모서리. 고르면 면이 밝고 테두리가 호박색.
+    /// 단추 탭 줄(0257 — 개발 창·모션 보기): `strip_tabs`로 자리를 정하고 단추로 그린다. 넘치면 창으로 자르고 양끝에 ◀▶("더 있다").
+    /// 누를 자리를 돌려준다(보이는 몫만 — 가려진 탭은 화면 밖).
+    #[cfg_attr(not(feature = "dev"), allow(dead_code))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn button_strip(
+        &self,
+        strip: &mut Strip,
+        labels: &[&str],
+        active: usize,
+        x0: f32,
+        x1: f32,
+        top: f32,
+        h: f32,
+    ) -> Vec<Rect> {
+        let u = self.scale;
+        let widths: Vec<f32> = labels
+            .iter()
+            .map(|n| self.width(n, 1.0) + u * 14.0)
+            .collect();
+        let arrow = self.width("◀", 1.0) + u * 6.0;
+        let (at, view) = strip_tabs(strip, &widths, x0, x1, top, h, u * 4.0, arrow, active);
+        let hidden = Rect::new(-1.0e4, -1.0e4, 0.0, 0.0);
+        let mut rects = vec![hidden; labels.len()];
+        if let Some(v) = view {
+            clip(Some(Rect::new(v.x, v.y - u * 2.0, v.w, v.h + u * 6.0)));
+        }
+        for (i, (&(x, w), n)) in at.iter().zip(labels).enumerate() {
+            let r = Rect::new(x, top, w, h);
+            if let Some(v) = view {
+                if x + w <= v.x || x >= v.x + v.w {
+                    continue;
+                }
+                // 가장자리에 걸친 단추: 넘침 검사는 자르기를 모른다 — 글 없이 면만(검사 밖으로).
+                if x < v.x - 0.5 || x + w > v.x + v.w + 0.5 {
+                    self.button(r, "", i == active);
+                    let l = x.max(v.x);
+                    rects[i] = Rect::new(l, top, (x + w).min(v.x + v.w) - l, h);
+                    continue;
+                }
+            }
+            self.button(r, n, i == active);
+            rects[i] = r;
+        }
+        if let Some(v) = view {
+            clip(None);
+            let (l, r) = strip.more();
+            let ink = |more: bool| if more { INK } else { Color { a: 0.35, ..DIM } };
+            let ty = top + (h - self.px(1.0)) * 0.5;
+            self.text_center("◀", x0 + arrow * 0.5, ty, 1.0, ink(l));
+            self.text_center("▶", v.x + v.w + arrow * 0.5, ty, 1.0, ink(r));
+        }
+        rects
+    }
+
     pub fn button(&self, r: Rect, label: &str, sel: bool) {
         let u = self.scale;
         draw_rectangle(
@@ -1162,6 +1201,67 @@ impl ListView {
 /// 넘치나). 넉넉하면 여백 18·글은 창의 배 `k` 그대로. 모자라면 여백을 6까지 줄이고, 그래도 넘치면 **글을 줄이지 않는다** —
 /// 탭 줄을 굴린다(`Strip`, 여백 10). 글을 줄이거나 자르면 무슨 탭인지 모른다(nail 0247 — 일시정지 탭 여덟에서 "メ…").
 /// `u` = 기준 px 하나의 화면 크기(탭 사이 틈 2).
+/// 창 안의 작은 탭 줄(개발 창의 묶음·모션 보기의 무기·도감의 묶음, 0256 → 0257): 다 들면 남는 폭을 고르게 나눠 `x0..x1`을 꽉 채우고,
+/// 넘치면 큰 창의 탭 줄(0233)처럼 **가로로 굴린다** — 양끝에 ◀▶ 자리(`arrow` 폭)를 비우고 `strip`의 창으로 보며, 고른 탭이 바뀌면
+/// 그 탭이 보이게 가장 적게 옮긴다(사장 2026-11-19 "좌우 스크롤되게 할 수 있으면 그게 더 좋은 거지" — 0256의 여러 줄을 걷음).
+/// `widths` = 탭마다 폭(여백 포함). 돌려주는 것 = (탭마다 화면의 왼쪽 x · 폭, 보이는 창 — 넘칠 때만 `Some`).
+/// 끌기·휠은 부른 쪽이 `strip.nudge`로(그 창 위에서만).
+#[allow(clippy::too_many_arguments)]
+pub fn strip_tabs(
+    strip: &mut Strip,
+    widths: &[f32],
+    x0: f32,
+    x1: f32,
+    y: f32,
+    h: f32,
+    gap: f32,
+    arrow: f32,
+    active: usize,
+) -> (Vec<(f32, f32)>, Option<Rect>) {
+    let room = (x1 - x0).max(1.0);
+    let n = widths.len().max(1) as f32;
+    let sum: f32 = widths.iter().sum::<f32>() + gap * (n - 1.0);
+    if sum <= room {
+        strip.fit(0.0, sum, 0.0, Rect::new(x0, y, room, h));
+        let extra = (room - sum) / n;
+        let mut x = x0;
+        let out = widths
+            .iter()
+            .map(|&w| {
+                let at = (x, w + extra);
+                x += w + extra + gap;
+                at
+            })
+            .collect();
+        return (out, None);
+    }
+    let view = Rect::new(x0 + arrow, y, (room - 2.0 * arrow).max(1.0), h);
+    let mut at = Vec::with_capacity(widths.len());
+    let mut acc = 0.0;
+    for &w in widths {
+        at.push(acc);
+        acc += w + gap;
+    }
+    strip.fit(
+        view.w,
+        sum,
+        widths.iter().copied().fold(0.0, f32::max).max(1.0),
+        view,
+    );
+    if strip.follow(active) {
+        if let (Some(&a0), Some(&w)) = (at.get(active), widths.get(active)) {
+            strip.reveal(a0, a0 + w);
+        }
+    }
+    let off = strip.offset();
+    let out = at
+        .iter()
+        .zip(widths)
+        .map(|(&a0, &w)| ((view.x + a0 - off).round(), w))
+        .collect();
+    (out, Some(view))
+}
+
 pub fn window_tabs(widths: &[f32], room: f32, u: f32, k: f32) -> (f32, bool) {
     let n = widths.len().max(1) as f32;
     let text: f32 = widths.iter().sum::<f32>() * k;
@@ -1258,6 +1358,78 @@ pub fn bake_size(want: f32, dpi: f32) -> (u16, f32) {
     (fs as u16, want / fs)
 }
 
+/// 글꼴 하나 = 같은 글꼴을 읽은 `Font` 여러 장(0254): 장마다 아틀라스 하나가 1024² 안에 머물게 글자를 나눠 담는다
+/// (`glyph_shards::Router`). 글은 장마다의 토막으로 그리고 잰다 — macroquad는 글자마다 advance로 나아가니 토막의 폭을 더하면
+/// 한 번에 그린 것과 같다(장 사이의 커닝만 빠진다).
+struct Face {
+    bytes: &'static [u8],
+    shards: std::cell::RefCell<Vec<Font>>,
+    router: std::cell::RefCell<crate::glyph_shards::Router>,
+}
+
+impl Face {
+    fn new(bytes: &'static [u8]) -> Self {
+        let f = Face {
+            bytes,
+            shards: Default::default(),
+            router: Default::default(),
+        };
+        f.grow(1);
+        f
+    }
+
+    /// 장이 `n`개가 되게 읽는다.
+    fn grow(&self, n: usize) {
+        let mut v = self.shards.borrow_mut();
+        while v.len() < n {
+            let mut f = load_ttf_font_from_bytes(self.bytes).expect("UI font");
+            // 명조는 픽셀 격자가 아니라 부드럽게(고밀도 화면의 소수 배율에서도 매끈하게).
+            f.set_filter(FilterMode::Linear);
+            v.push(f);
+        }
+    }
+
+    /// 미리 굽기 — 글자를 장에 나눠 그 장에 굽는다.
+    fn warm(&self, chars: &[char], size: u16) {
+        let parts = self.router.borrow_mut().split(chars);
+        self.grow(parts.len());
+        let v = self.shards.borrow();
+        for (i, part) in parts.iter().enumerate() {
+            v[i].populate_font_cache(part, size);
+        }
+    }
+
+    fn runs(&self, s: &str) -> Vec<(usize, std::ops::Range<usize>)> {
+        let runs = self.router.borrow_mut().runs(s);
+        self.grow(self.router.borrow().shards());
+        runs
+    }
+
+    fn width(&self, s: &str, fs: u16, scale: f32) -> f32 {
+        let runs = self.runs(s);
+        let v = self.shards.borrow();
+        runs.into_iter()
+            .map(|(i, r)| measure_text(&s[r], Some(&v[i]), fs, scale).width)
+            .sum()
+    }
+
+    fn draw(&self, s: &str, x: f32, y: f32, fs: u16, scale: f32, color: Color) {
+        let runs = self.runs(s);
+        let v = self.shards.borrow();
+        let mut cx = x;
+        for (i, r) in runs {
+            let p = TextParams {
+                font: Some(&v[i]),
+                font_size: fs,
+                font_scale: scale,
+                color,
+                ..Default::default()
+            };
+            cx += draw_text_ex(&s[r], cx, y, p).width;
+        }
+    }
+}
+
 /// 표의 모든 글 + 기호(글자 굽기).
 pub fn all_text(s: &Strings) -> String {
     let mut v = i18n::all(s).concat();
@@ -1270,6 +1442,35 @@ pub fn all_text(s: &Strings) -> String {
 #[cfg(test)]
 mod tests {
     /// 0164 → 0233: 큰 창의 탭 줄 — 넉넉하면 여백 18, 모자라면 여백부터(6까지), 그래도 넘치면 글을 줄이지 않고 굴린다(여백 10).
+    #[test]
+    fn small_tab_strips_fill_when_they_fit_and_scroll_when_they_do_not() {
+        use super::{strip_tabs, Strip};
+        use macroquad::prelude::vec2;
+        // 다 든다: 남는 폭을 나눠 꽉 채우고 굴리지 않는다.
+        let mut st = Strip::default();
+        let (at, view) = strip_tabs(&mut st, &[40.0, 60.0], 0.0, 200.0, 0.0, 12.0, 4.0, 10.0, 0);
+        assert!(view.is_none());
+        assert!((at[1].0 + at[1].1 - 200.0).abs() < 0.01);
+        assert!(!st.over(Some(vec2(50.0, 5.0))));
+        // 넘친다: 한 줄 그대로(줄을 늘리지 않는다), 양끝 ◀▶ 자리 안이 창 — 마지막 탭을 고르면 그 탭이 창 안으로.
+        let w = [70.0; 7];
+        let (at, view) = strip_tabs(&mut st, &w, 0.0, 200.0, 0.0, 12.0, 4.0, 10.0, 0);
+        let v = view.expect("scrolls");
+        assert!(at.iter().all(|x| x.0.is_finite()));
+        assert_eq!((v.x, v.w), (10.0, 180.0));
+        assert!(st.over(Some(vec2(50.0, 5.0))));
+        let (at, _) = strip_tabs(&mut st, &w, 0.0, 200.0, 0.0, 12.0, 4.0, 10.0, 6);
+        assert!(
+            at[6].0 >= v.x - 0.5 && at[6].0 + at[6].1 <= v.x + v.w + 0.5,
+            "{:?}",
+            at[6]
+        );
+        // 끌기로 처음으로 돌아간다.
+        assert!(st.nudge(Some(vec2(50.0, 5.0)), -1000.0, 0));
+        let (at, _) = strip_tabs(&mut st, &w, 0.0, 200.0, 0.0, 12.0, 4.0, 10.0, 6);
+        assert_eq!(at[0].0, v.x);
+    }
+
     #[test]
     fn window_tabs_give_up_padding_then_roll_instead_of_shrinking_text() {
         use super::window_tabs;

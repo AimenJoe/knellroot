@@ -3,6 +3,7 @@
 //!
 //! 루프: 프레임마다 입력 폴링 → 고정 60Hz 틱 N번(장면 → 월드 → 스테이지 → 카메라) → 가변 렌더(보간) → 글·메뉴(화면 패스).
 mod ask;
+mod away;
 mod bag;
 mod codex;
 pub mod controls;
@@ -12,6 +13,7 @@ mod dev;
 mod equip;
 pub mod flow;
 mod frame;
+mod interlude;
 mod journey;
 #[cfg(feature = "dev")]
 mod lab_screen;
@@ -107,6 +109,40 @@ struct Press {
     rect: Option<Rect>,
 }
 
+thread_local! {
+    /// 마지막으로 페이지에 알린 맨 위 장면(`App::frame` — 바뀐 프레임에만 알린다).
+    static REPORTED: std::cell::Cell<Option<(Scene, Option<crate::skills::Entry>)>> = const { std::cell::Cell::new(None) };
+}
+
+/// 개발판만의 칸(0075 · 0158): 개발 창이 고른 시나리오, 개발 창에서 시작한 판(기록 슬롯에 쓰지 않는다 — 슬롯을 고르면
+/// `enter_slot`이 푼다), 개발 창에서 올린 기술 판(있으면 기록의 판 대신 — 기록에 쓰지 않는다).
+#[cfg(feature = "dev")]
+struct DevState {
+    sc: Scenario,
+    run: bool,
+    board: Option<crate::skills::Board>,
+}
+
+#[cfg(feature = "dev")]
+impl Default for DevState {
+    fn default() -> Self {
+        DevState {
+            sc: Scenario::Boss,
+            run: false,
+            board: None,
+        }
+    }
+}
+
+/// 소리가 듣는 상태 변화(0064 M5): 지난 틱에 회피 중이었나, 적마다 소리를 낸 예고 번호, 문지기가 깨어나는 중이었나 —
+/// 시작한 순간만 소리를 낸다.
+#[derive(Default)]
+struct Heard {
+    was_dodging: bool,
+    tele_was: Vec<u32>,
+    was_waking: bool,
+}
+
 pub struct App {
     /// 장면 스택(0066): 맨 위가 지금 장면, 아래 칸은 커서·창을 맡아 둔다. 지금 칸의 커서·창은 `cursor`·`view`.
     stack: stack::Stack,
@@ -134,13 +170,19 @@ pub struct App {
     stage: usize,
     down: usize,
     rest_at: Option<crate::save::RunAt>,
-    passage: Option<crate::descent::Passage>,
+    /// 싸움 화면의 연출 칸(0251 R5 — `interlude`): 뿌리 굴·핵의 반응·쓰러짐·깨어나는 첫 장면·불 붙는 화로 가운데 하나.
+    /// 그동안 조작이 없고 세계는 멈추거나 빈 입력으로 흐른다. 깨어나는 장면은 타이틀 바탕에서 0초에 멈춰 있다(엎드린 방랑자).
+    interlude: Option<interlude::Interlude>,
     /// 이 판에서 멈춤 창이 마지막에 보던 탭(0164) — 다음에 멈추면 거기서 열린다(`flow::pause`). 판에 붙은 한 칸: 새 판이면 상태로.
     pause_tab: flow::Tab,
     /// 큰 창의 탭 줄이 넘칠 때의 가로 창(0233 — 탭을 넘겨도 같은 창이라 장면 칸이 아니라 여기 하나).
     tab_strip: crate::ui::Strip,
+    /// 창 안의 작은 탭 줄(개발 창·모션 보기·도감의 묶음, 0257) — 한 번에 하나만 보인다.
+    small_strip: crate::ui::Strip,
     /// 상태·장비 탭의 인형(0235): 손으로 돌린 각(라디안 — `None`이면 저절로 천천히 좌우로 흔든다)과 그린 자리(끌기가 그 위에서 시작했나).
     doll_yaw: Option<f32>,
+    /// 도감 그림을 손으로 보기(끌어 돌리기·크게 — 2026-11-19).
+    codex_view: codex::CodexView,
     doll_rect: Option<Rect>,
     /// 튜토리얼(0167): 지난 걸음 수(기록 `Progress::tutorial`과 같은 값) + 이 판에서 본 것. 판에 붙는다.
     tutor: crate::tutorial::Tutor,
@@ -152,31 +194,18 @@ pub struct App {
     tell_seen: Vec<u32>,
     /// 종소리의 길 안내(0171): 문을 찾는 동안 가끔 우는 종의 시계 + 물결. 판에 붙는다(기록에 남지 않는다).
     knell: crate::knell::Knell,
-    /// 깨어나는 첫 장면(0171)이 흐르는 중 — 새 기록의 첫 판에서 한 번(타이틀 바탕에서는 0초에 멈춰 있다: 엎드린 방랑자).
-    wake: Option<crate::wake::Wake>,
-    /// 쓰러짐(0175): 무너짐 → 어둠 → 쉼터 곁에서 일어남. 그동안 조작이 없다.
-    fall: Option<crate::fall::Fall>,
     /// 손으로 하는 일의 몸짓(0196 줍기·상자 열기 → 0197 장치 당기기)과 흐른 초 — 렌더만 안다(월드는 그 일을 바로 끝낸다).
     /// 서 있는 동안만, 움직이거나 다른 동작이 시작되면 그친다.
     gesture: Option<(&'static str, f32)>,
-    /// 꺼진 화로에 불이 붙는 순간을 보는 남은 시간(0171) — 이 동안은 조작이 멎고, 끝나면 화로의 창이 열린다.
-    kindle: f32,
-    /// 마지막 핵의 반응(0216 W3 — `core_echo`): 핵을 쥔 뒤 흐른 초. 이 동안 세계가 멈추고, 끝나면 끝 장면.
-    echo: Option<f32>,
     /// 주민 말풍선(0122): (주민 — 지금 지역의 번호, 몇째 말, 남은 초). 멈추지 않는다.
     bubble: Option<(usize, usize, f32)>,
     /// 새긴 돌 글 판(0129): (지금 지역의 돌 번호, 남은 초).
     stone_card: Option<(usize, f32)>,
     /// 실제 시간(전환의 작은 움직임 — 지형을 굽는 동안에도 흐른다).
     clock: f32,
+    /// 개발판만의 칸(시나리오·개발에서 시작한 판·개발 기술 판 — 0251 R10).
     #[cfg(feature = "dev")]
-    sc: Scenario,
-    /// 개발 메뉴에서 시작한 스테이지 판(0075): 기록 슬롯에 쓰지 않는다. 슬롯을 고르면(`enter_slot`) 풀린다.
-    #[cfg(feature = "dev")]
-    dev_run: bool,
-    /// 개발 창에서 올린 기술 판(0158 — 모두 끝 단): 있으면 기록의 판 대신 이것을 쓴다. 기록에 쓰지 않고, 슬롯을 고르면 풀린다.
-    #[cfg(feature = "dev")]
-    dev_board: Option<crate::skills::Board>,
+    dev: DevState,
     ending: f32,
     acc: f32,
     /// 개발 줄(F3).
@@ -189,23 +218,17 @@ pub struct App {
     sums: (f64, f64, f64, u32),
     /// 든 무기(0051) — 다시 시작해도 그대로, 설정과 함께 저장.
     weapon: weapons::Id,
-    /// 화면 흔들림 0..=10(설정, 0052).
-    shake: u8,
-    /// 소리(0064 M5): 크기 0..=10, 소리 묶음(main이 올린 뒤 `set_sfx`), 지난 틱의 회피·적 예고(시작한 순간만 소리).
-    volume: u8,
-    /// 바닥 공격 예고 진하기 0..=10(0 = 끔, 0074).
-    tells: u8,
-    tell_timing: bool,
-    /// 자유 시점 돌리기 민감도(가로, 세로) — `prefs::LOOK_SENS`의 자리(0191).
-    look_sens: (u8, u8),
-    /// 터치 버튼 크기 — `prefs::TOUCH_SIZES`의 자리(0236).
-    touch_size: u8,
+    /// 설정 화면의 값(흔들림·소리·예고·시점 민감도·터치 크기 — prefs에 적는 기기의 것, 0251 R10).
+    opts: settings::Opts,
+    /// 소리 묶음(main이 올린 뒤 `set_sfx`), 지난 틱의 회피·적 예고(시작한 순간만 소리).
     sfx: Option<crate::sfx::Sfx>,
-    was_dodging: bool,
+    /// 소리가 듣는 상태 변화(시작한 순간만 — 0251 R10).
+    heard: Heard,
+    /// 앱이 내려간 것을 엔진에서 듣는 귀(0257)와 아직 싸움 틱이 받지 않은 내려감.
+    away: away::Away,
+    went_away: bool,
     /// 그림 이펙트(0141): 월드 사건·상태 변화를 듣고 입자를 낸다 — 월드는 모른다(소리와 같은 길).
     fx: crate::fx::Fx,
-    tele_was: Vec<u32>,
-    was_waking: bool,
     /// 지난 프레임에 그린 화면 자리(커서 → 땅, 0058).
     frame: Option<Frame>,
     /// OS 커서를 숨겼나(싸움 중 마우스 조준이면 숨기고 조준 표시를 그린다, 0058).
@@ -294,7 +317,7 @@ impl App {
     /// 개발 판(DEV에서 시작한 스테이지)인가 — 운영판은 늘 거짓.
     fn dev_run_now(&self) -> bool {
         #[cfg(feature = "dev")]
-        return self.dev_run;
+        return self.dev.run;
         #[cfg(not(feature = "dev"))]
         false
     }
@@ -302,7 +325,7 @@ impl App {
     /// 들 수 있는 무기(0117): 기록에 가진 것 — 개발 판·놀이터(시나리오)는 다(무기를 시험하려고).
     fn arms(&self) -> Vec<weapons::Id> {
         #[cfg(feature = "dev")]
-        if self.dev_run || self.stack.base() == Scene::Sandbox {
+        if self.dev.run || self.stack.base() == Scene::Sandbox {
             return weapons::IDS.to_vec();
         }
         self.progress.owned_weapons()
@@ -312,27 +335,17 @@ impl App {
         let t = Tuning::default();
         // 저장한 설정(0024·0052·0058): 언어·키 배치·흔들림·무기·마우스 조준.
         let mut legacy_weapon = 0;
-        let mut shake = crate::prefs::SHAKE_DEFAULT;
-        let mut volume = crate::prefs::VOLUME_DEFAULT;
-        let mut tells = crate::prefs::TELLS_DEFAULT;
-        let mut tell_timing = false;
-        let mut look_sens = (crate::prefs::LOOK_DEFAULT, crate::prefs::LOOK_DEFAULT);
-        let mut touch_size = crate::prefs::TOUCH_SIZE_DEFAULT;
+        let mut opts = settings::Opts::default();
         if let Some(p) = crate::prefs::load() {
             if let Some(l) = p.lang {
                 i18n::set_lang(l);
             }
             input::set_bindings(p.bindings);
             input::set_mouse_aim(p.mouse);
-            shake = p.shake;
-            volume = p.volume;
-            tells = p.tells;
-            tell_timing = p.tell_timing;
-            look_sens = p.look;
-            touch_size = p.touch_size;
+            opts = settings::Opts::of(&p);
             legacy_weapon = p.weapon;
         }
-        crate::touch::set_size(crate::prefs::TOUCH_SIZES[touch_size as usize]);
+        crate::touch::set_size(crate::prefs::TOUCH_SIZES[opts.touch_size as usize]);
         // 기록 슬롯(0066): 마지막으로 쓴 슬롯의 기록. 든 무기는 기록에 — 없으면(옛 슬롯 1) 예전 prefs 칸 21의 값.
         let slot = crate::save::last_slot();
         let progress = crate::save::load(slot);
@@ -380,31 +393,26 @@ impl App {
             stage: 0,
             down: 0,
             rest_at: None,
-            passage: None,
+            interlude: (!progress.woke)
+                .then(|| interlude::Interlude::Wake(crate::wake::Wake::default())),
             pause_tab: flow::Tab::Status,
             tab_strip: crate::ui::Strip::default(),
+            small_strip: crate::ui::Strip::default(),
             doll_yaw: None,
+            codex_view: Default::default(),
             doll_rect: None,
             tutor: crate::tutorial::Tutor::new(progress.tutorial),
             tip: None,
             tips_now: 0,
             tell_seen: Vec::new(),
             knell: crate::knell::Knell::default(),
-            wake: (!progress.woke).then(crate::wake::Wake::default),
-            fall: None,
             gesture: None,
-            kindle: 0.0,
-            echo: None,
             bubble: None,
             stone_card: None,
             clock: 0.0,
             t,
             #[cfg(feature = "dev")]
-            sc: Scenario::Boss,
-            #[cfg(feature = "dev")]
-            dev_run: false,
-            #[cfg(feature = "dev")]
-            dev_board: None,
+            dev: DevState::default(),
             ending: 0.0,
             acc: 0.0,
             dev_overlay: false,
@@ -413,17 +421,12 @@ impl App {
             perf: Perf::default(),
             sums: (0.0, 0.0, 0.0, 0),
             weapon,
-            shake,
-            volume,
-            tells,
-            tell_timing,
-            look_sens,
-            touch_size,
+            opts,
             sfx: None,
-            was_dodging: false,
+            heard: Heard::default(),
+            away: away::Away::new(),
+            went_away: false,
             fx: crate::fx::Fx::default(),
-            tele_was: Vec::new(),
-            was_waking: false,
             frame: None,
             mouse_hidden: false,
             goal_off: 0.0,
@@ -457,8 +460,6 @@ impl App {
         self.stage = 0;
         self.down = 0;
         self.rest_at = None;
-        self.passage = None;
-        self.fall = None;
         self.pause_tab = flow::Tab::Status;
         self.tutor = crate::tutorial::Tutor::new(self.progress.tutorial);
         self.tip = None;
@@ -466,11 +467,11 @@ impl App {
         self.tell_seen.clear();
         self.knell = crate::knell::Knell::default();
         // 깨어나는 첫 장면(0171): 아직 본 적 없는 기록의 판은 그 장면으로 열린다(개발 창의 판은 아니다).
-        self.wake = (!self.progress.woke && !self.dev_run_now()).then(crate::wake::Wake::default);
-        if self.wake.is_some() {
+        self.interlude = (!self.progress.woke && !self.dev_run_now())
+            .then(|| interlude::Interlude::Wake(crate::wake::Wake::default()));
+        if self.interlude.is_some() {
             lay_by_hearth(&self.run, &mut self.world);
         }
-        self.kindle = 0.0;
         self.cam.close = 0.0;
         // 잔불은 판을 넘어 남는다(0064 M1). 장신구·성장은 능력치로, 연 상자는 비어 있다(M3).
         self.world.embers = self.progress.embers;
@@ -538,9 +539,9 @@ impl App {
         self.run.set_gate_opened(&mut self.world, open);
         // 주민 재방문(0122, 0116): 처음 본 판보다 뒤의 판이면 한 번 바뀐다(단방향, 기록).
         self.bubble = None;
-        for k in 0..self.run.residents.len() {
-            let id = crate::residents::RESIDENTS[self.run.residents[k].0].id;
-            self.run.resident_changed[k] = crate::residents::settle(
+        for k in 0..self.run.folk.list.len() {
+            let id = crate::residents::RESIDENTS[self.run.folk.list[k].0].id;
+            self.run.folk.changed[k] = crate::residents::settle(
                 id,
                 &self.progress.residents_seen,
                 &mut self.progress.residents_changed,
@@ -562,7 +563,7 @@ impl App {
 
     /// 소리 묶음을 받는다(0064 M5 — main이 올린 뒤). 환경음을 튼다.
     pub fn set_sfx(&mut self, sfx: crate::sfx::Sfx) {
-        sfx.set_volume(self.volume as f32 / 10.0);
+        sfx.set_volume(self.opts.volume as f32 / 10.0);
         sfx.ambience(true);
         self.sfx = Some(sfx);
     }
@@ -574,7 +575,7 @@ impl App {
     }
 
     fn set_volume(&mut self, v: u8) {
-        self.volume = v;
+        self.opts.volume = v;
         if let Some(s) = &self.sfx {
             s.set_volume(v as f32 / 10.0);
         }
@@ -656,12 +657,12 @@ impl App {
             lang: Some(i18n::lang()),
             bindings: input::bindings(),
             mouse: input::mouse_aim(),
-            shake: self.shake,
-            volume: self.volume,
-            tells: self.tells,
-            tell_timing: self.tell_timing,
-            look: self.look_sens,
-            touch_size: self.touch_size,
+            shake: self.opts.shake,
+            volume: self.opts.volume,
+            tells: self.opts.tells,
+            tell_timing: self.opts.tell_timing,
+            look: self.opts.look_sens,
+            touch_size: self.opts.touch_size,
             // PC만 기억한다(0135) — 웹은 브라우저가 Esc로 끌 수 있고 다음에 켤 때 사용자 입력 없이 못 연다.
             fullscreen: crate::DESKTOP && crate::screen::active(),
             // 든 무기는 슬롯 기록으로 옮겼다(0066) — 옛 칸은 처음 읽은 값 그대로 둔다(옛 슬롯 1의 기본값).
@@ -706,8 +707,34 @@ impl App {
     }
 
     /// 한 프레임.
+    /// 창 안의 작은 탭 줄(0257)이 넘쳐 굴리는 동안, 그 위의 끌기·휠은 탭 줄을 굴린다 — 몸의 목록에는 넘기지 않는다.
+    pub(super) fn small_strip_input(&mut self, a: &Actions) -> Actions {
+        let mut a = *a;
+        if self.small_strip.over(a.point) {
+            self.small_strip.nudge(a.point, a.drag_x, a.wheel);
+            (a.drag, a.drag_x, a.wheel) = (0.0, 0.0, 0);
+        }
+        a
+    }
+
     pub fn frame(&mut self) {
         let cpu_start = get_time();
+        // 헤드리스 시험의 기다림(`screen::report_scene`): 맨 위 장면이 바뀐 프레임에만 이름을 알린다.
+        // 기술 탭은 고른 칸도 붙인다(개발판 — `Skills { host: Dev } @Skill(Embers)`): 칸의 자리는 판이 바뀌면 낡으니 시험이 이름으로 찾는다.
+        let top = self.scene();
+        #[cfg(feature = "dev")]
+        let focus = match top {
+            Scene::Skills { .. } => crate::skills::ENTRIES.get(self.cursor).copied(),
+            _ => None,
+        };
+        #[cfg(not(feature = "dev"))]
+        let focus: Option<crate::skills::Entry> = None;
+        if REPORTED.with(|r| r.replace(Some((top, focus)))) != Some((top, focus)) {
+            match focus {
+                Some(e) => crate::screen::report_scene(&format!("{top:?} @{e:?}")),
+                None => crate::screen::report_scene(&format!("{top:?}")),
+            }
+        }
         // 터치의 상황 버튼(0053): 쉼터 곁이면 점프가 쉬기, 락온할 적이 있거나 락온 중이면 락온, 마실 수 있으면 등잔.
         let play = self.scene().ticks_world();
         let pl = &self.world.player;
@@ -746,6 +773,10 @@ impl App {
             bare: [0, 1].map(|i| pl.skill.known[i] == 0),
         });
         self.input.poll(self.scene().is_menu());
+        // 앱이 내려갔으면(0257) 다음 싸움 틱이 멈춤 창을 연다 — 싸움이 아닌 장면은 이미 입력을 기다리니 버린다.
+        if self.away.take() {
+            self.went_away = self.scene().ticks_world();
+        }
         // F11(PC, 0135): 어느 장면에서나 창 ↔ 전체 화면. 창 일이라 `Actions`(게임 동작)에 넣지 않는다.
         if input::fullscreen_pressed() {
             self.toggle_fullscreen();
@@ -808,7 +839,14 @@ impl App {
         // 나지 않았을 때만 — 뒤로 > 확인(장면이 바뀜) > 커서.
         let quiet = self.sfx.as_ref().map_or(0, |s| s.played()) == played0;
         if scene0.is_menu() && quiet {
-            if self.scene() != scene0 && !(injected && !back0) {
+            // 모션 보기는 재생 시각을 장면에 들고 다녀 틱마다 값이 바뀐다 — 그것은 장면이 바뀐 것이 아니다(0256: 확인 소리가 틱마다 났다).
+            let (now, was) = (self.scene(), scene0);
+            #[cfg(feature = "dev")]
+            let moved =
+                !matches!((now, was), (Scene::Motions { .. }, Scene::Motions { .. })) && now != was;
+            #[cfg(not(feature = "dev"))]
+            let moved = now != was;
+            if moved && !(injected && !back0) {
                 self.snd(if back0 {
                     crate::sfx::Id::UiBack
                 } else {
@@ -922,7 +960,43 @@ impl App {
 
     /// 깨어나는 첫 장면(0171)이 지금 화면에 흐르나 — 싸움 화면이 맨 위일 때만(타이틀 바탕·멈춤 밑에서는 아니다).
     fn waking(&self) -> Option<crate::wake::Wake> {
-        self.wake.filter(|_| self.scene() == Scene::Play)
+        self.wake().filter(|_| self.scene() == Scene::Play)
+    }
+
+    /// 연출 칸 읽기(0251 R5) — 그 장면일 때만.
+    fn wake(&self) -> Option<crate::wake::Wake> {
+        match self.interlude {
+            Some(interlude::Interlude::Wake(w)) => Some(w),
+            _ => None,
+        }
+    }
+
+    fn fall(&self) -> Option<crate::fall::Fall> {
+        match self.interlude {
+            Some(interlude::Interlude::Fall(f)) => Some(f),
+            _ => None,
+        }
+    }
+
+    fn passage(&self) -> Option<crate::descent::Passage> {
+        match self.interlude {
+            Some(interlude::Interlude::Passage(p)) => Some(p),
+            _ => None,
+        }
+    }
+
+    fn echo(&self) -> Option<f32> {
+        match self.interlude {
+            Some(interlude::Interlude::Echo(t)) => Some(t),
+            _ => None,
+        }
+    }
+
+    /// 깨어나는 장면을 끝낸다(쉼터에서 잇는 판 — 0171). 다른 연출(쓰러짐의 어둠 속에서 다른 지역으로 다시 설 때)은 건드리지 않는다.
+    fn end_wake(&mut self) {
+        if self.wake().is_some() {
+            self.interlude = None;
+        }
     }
 
     /// 멈춤에서 연 창(과 그 위의 작은 창들)이 떠 있나.
@@ -1056,7 +1130,7 @@ impl App {
         // 지역 사이 전환의 굴 장면(0174): 월드 대신 굴을 그린다 — 지역은 이미 닿을 곳으로 바뀌어 있고, 그 월드는 닿는 쪽의
         // 어둠 뒤에서 처음 그려진다(지형 굽기가 거기 숨는다). HUD·화살·터치 버튼도 그동안은 걷는다.
         let in_shaft = self
-            .passage
+            .passage()
             .filter(|p| self.scene() == Scene::Play && p.phase() == crate::descent::Phase::Shaft);
         self.clock += get_frame_time();
         let f = match in_shaft {
@@ -1081,10 +1155,10 @@ impl App {
                 alpha,
                 t: &self.t,
                 stage,
-                tells: self.tells as f32 / 10.0,
-                tell_timing: self.tell_timing,
+                tells: self.opts.tells as f32 / 10.0,
+                tell_timing: self.opts.tell_timing,
                 fx: &self.fx,
-                pose: match (self.fall, self.wake) {
+                pose: match (self.fall(), self.wake()) {
                     (Some(f), _) if self.scene() == Scene::Play => Some(f.pose()),
                     (_, Some(w)) if stage.is_some() => Some(("wake", w.pose())),
                     _ => self.gesture.filter(|_| stage.is_some()),
@@ -1133,7 +1207,7 @@ impl App {
         }
         // 깨어나는 첫 장면(0171) 동안은 싸움 화면의 덧그림(화살·조준점·터치 버튼)을 걷는다 — 덮개만.
         let waking =
-            self.waking().is_some() || (self.fall.is_some() && self.scene() == Scene::Play);
+            self.waking().is_some() || (self.fall().is_some() && self.scene() == Scene::Play);
         if self.scene() == Scene::Play && !waking && in_shaft.is_none() {
             self.draw_goal_arrow(&f);
             self.draw_knell(&f);
@@ -1141,7 +1215,7 @@ impl App {
             self.draw_stone_card(&f);
         }
         // 지역 사이 전환(0174)의 화면 패스: 덮는 어둠(떠남·굴의 두 끝·닿음) + 굴을 지나는 동안의 깊이 글.
-        if let Some(p) = self.passage.filter(|_| self.scene() == Scene::Play) {
+        if let Some(p) = self.passage().filter(|_| self.scene() == Scene::Play) {
             let dark = p.dark();
             if dark > 0.0 {
                 draw_rectangle(f.ox, f.oy, f.w, f.h, Color::new(0.02, 0.015, 0.035, dark));
@@ -1218,7 +1292,7 @@ impl App {
                 let edge = self.t[crate::tuning::P::HudHurtEdge];
                 let skills = [0, 1].map(|i| self.world.skill_ready(i, &self.t));
                 // 깨어나는 첫 장면(0171): HUD 대신 눈꺼풀·띠·서술 글. 싸움 화면에서만(타이틀 바탕은 그냥 엎드린 방랑자).
-                if let Some(fl) = self.fall.filter(|_| scene == Scene::Play) {
+                if let Some(fl) = self.fall().filter(|_| scene == Scene::Play) {
                     hud::draw_fall(&self.ui, f, &fl, crate::i18n::s().defeat_sub);
                 } else if let Some(wk) = self.waking() {
                     let st = crate::i18n::s();
@@ -1242,7 +1316,7 @@ impl App {
                     };
                     hud::draw(&self.ui, f, &self.world, run, &o);
                     // 마지막 핵의 잔상(0216 W3): HUD 위 화면 가장자리에.
-                    if let Some(t) = self.echo.filter(|_| scene == Scene::Play) {
+                    if let Some(t) = self.echo().filter(|_| scene == Scene::Play) {
                         hud::draw_echo(f, crate::core_echo::glow(t));
                     }
                 }

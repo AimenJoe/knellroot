@@ -701,7 +701,7 @@ impl World {
         hurt_player: Option<Vec3>,
         hurt_tier: u8,
     ) {
-        if let (Some(from), false) = (hurt_player, self.player.invulnerable()) {
+        if let (Some(from), false) = (hurt_player, self.player.invulnerable() || self.unhurt) {
             // 한 대 = 한 눈금(`HP_UNIT`, 0158 N0), 높은 등급의 적은 두 눈금.
             let blow = if hurt_tier >= crate::tuning::TIER_HEAVY_HITS {
                 2 * HP_UNIT

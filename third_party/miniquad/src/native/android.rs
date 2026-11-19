@@ -702,6 +702,24 @@ extern "C" fn Java_quad_1native_QuadNative_surfaceOnJoystick(
     }
 }
 
+// Knellroot 패치(2026-11-19): 화면 밀도(Java `DisplayMetrics.density` — dp 하나의 화소 수). miniquad의 Android dpi_scale은
+// 늘 1이라 게임이 화면을 화소로만 알았다(터치 버튼 크기 상한이 큰 폰에서 너무 작게 걸렸다). 받기 전엔 0.
+static DENSITY: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+#[no_mangle]
+extern "C" fn Java_quad_1native_QuadNative_activityOnDensity(
+    _: *mut ndk_sys::JNIEnv,
+    _: ndk_sys::jobject,
+    density: f32,
+) {
+    DENSITY.store(density.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// 화면 밀도(dp당 화소, 예: 2.75). 아직 못 받았으면 0.
+pub fn display_density() -> f32 {
+    f32::from_bits(DENSITY.load(std::sync::atomic::Ordering::Relaxed))
+}
+
 /// 마지막으로 받은 패드 축: [왼쪽 X, 왼쪽 Y, 오른쪽 X(AXIS_Z), 오른쪽 Y(AXIS_RZ), HAT X, HAT Y]. 아래가 +y. 패드가 없으면 0.
 pub fn joystick_axes() -> [f32; 6] {
     let mut out = [0.0; 6];

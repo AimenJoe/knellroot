@@ -799,6 +799,9 @@ pub struct World {
     lock_lose: f32,
     /// 쿼터뷰 화면 위를 정하는 카메라 방위(도). 앱이 매 틱 카메라에서 넘긴다(0011 — 락온을 풀면 돌 수 있다). None = 랩 값.
     pub view_yaw: Option<f32>,
+    /// 헤드리스 시험만(개발판 웹 `window.knellTestFlags` 1): 방랑자가 맞지 않는다 — 긴 터치·메뉴 스크립트가 도중에 쓰러져
+    /// 엉뚱한 화면을 찍지 않게. 운영판에서는 앱이 켜지 않는다.
+    pub unhurt: bool,
     /// 지난 틱의 락온 앞(수평 단위), 락온이 아니면 None — 풀리는 틱에 `hold`로 넘긴다.
     last_lock_fwd: Option<Vec3>,
     /// 풀린 뒤 쥔 스틱의 기준(앞, 경과 초). 스틱을 놓거나 `move.hold after unlock s`가 지나면 끝.
@@ -1030,6 +1033,7 @@ impl World {
             lock_range: 18.0,
             lock_lose: 26.0,
             view_yaw: None,
+            unhurt: false,
             last_lock_fwd: None,
             hold: None,
             turn_now: None,
@@ -1314,10 +1318,10 @@ impl World {
 
     /// 패링 + 평타 = 바꾸기(0223, 사장 "패링+공격 버튼으로 주/부무기 바꿀 수 있음"). 큰 기술의 "함께"(0151)처럼 늦추지 않는다:
     /// 두 누름이 같은 틱이거나 둘째가 첫째 뒤 `WEAPON_CHORD` 안이면, 첫째가 시작한 패링·휘두르기를 아직 시동 안일 때 거두고 바꾼다.
-    /// 단 패링이 튕겨 낸 뒤의 평타는 반격이다(바꾸지 않는다). 평타 버튼 = 근접은 `attack`, 원거리는 `cast`(앱이 맞바꾼 뒤).
+    /// 단 패링이 튕겨 낸 뒤의 공격은 반격이다(바꾸지 않는다). 공격 버튼 = 근접(`attack`)이나 원거리(`cast`) 어느 쪽이든(0255 —
+    /// 패드 X·RB가 무기와 상관없이 근접·원거리라, 무기마다 다른 버튼이 바꾸지 않게 둘 다 받는다).
     fn weapon_chord(&mut self, a: &mut Actions, dt: f32, ev: &mut Vec<Event>) {
-        let ranged = self.player.weapon.is_ranged();
-        let basic = if ranged { a.cast } else { a.attack };
+        let basic = a.attack || a.cast;
         let pl = &mut self.player;
         pl.chord.0 = if a.parry { 0.0 } else { pl.chord.0 + dt };
         pl.chord.1 = if basic { 0.0 } else { pl.chord.1 + dt };
@@ -1355,11 +1359,8 @@ impl World {
         pl.state = PState::Idle;
         pl.chord = (f32::MAX, f32::MAX);
         a.parry = false;
-        if ranged {
-            a.cast = false;
-        } else {
-            a.attack = false;
-        }
+        a.attack = false;
+        a.cast = false;
         if let Some(to) = self.swap_weapons() {
             ev.push(Event::WeaponSwap { to });
         }
@@ -2353,15 +2354,19 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, t: &Tuning) -> i32 {
     if en.rising() {
         return 0;
     }
-    let open = crit || en.broken > 0.0;
+    let open = crit || en.stance.broken > 0.0;
     let d = base + if crit { t[P::ParryCrit] as i32 } else { 0 } + if open { opened } else { 0 };
-    let d = if en.broken > 0.0 {
+    let d = if en.stance.broken > 0.0 {
         crate::tuning::scale_up(d, t[P::PoiseBreakDamage])
     } else {
         d
     };
     // 더 다치는 적: 끌어모으기 맺음(0158 G1)의 표지와 균열의 금(0223 V2) — 둘 가운데 큰 배 하나만(곱하지 않는다).
-    let frail = if en.frail > 0.0 { en.frail_mult } else { 1.0 };
+    let frail = if en.marks.frail > 0.0 {
+        en.marks.frail_mult
+    } else {
+        1.0
+    };
     let k = frail.max(rift_mult(en));
     if k > 1.0 {
         skills::scaled(d, k)
@@ -2405,7 +2410,7 @@ fn afflict(en: &mut Enemy, dose: crate::status::Dose, ev: &mut Vec<Event>) {
 
 /// 자세 피해를 준다(0051). 다 차면(또는 `primed` 비율을 넘은 적을 무거운 타가 치면) 깨진다: 휘청 + 드러남(다음 한 대 치명타).
 fn add_poise(en: &mut Enemy, amount: f32, primed: Option<f32>, t: &Tuning, ev: &mut Vec<Event>) {
-    if amount <= 0.0 || en.poise_lock > 0.0 || !en.alive() || en.rising() {
+    if amount <= 0.0 || en.stance.lock > 0.0 || !en.alive() || en.rising() {
         return;
     }
     // 묶인 적(0223 V2 뿌리)은 자세가 더 깎인다.
@@ -2415,12 +2420,12 @@ fn add_poise(en: &mut Enemy, amount: f32, primed: Option<f32>, t: &Tuning, ev: &
         amount
     };
     let max = poise_max(en, t);
-    let was_primed = primed.is_some_and(|k| en.poise >= max * k);
-    en.poise += amount;
-    en.poise_idle = 0.0;
-    if en.poise >= max || was_primed {
-        en.poise = 0.0;
-        en.poise_lock = t[P::PoiseLock];
+    let was_primed = primed.is_some_and(|k| en.stance.poise >= max * k);
+    en.stance.poise += amount;
+    en.stance.idle = 0.0;
+    if en.stance.poise >= max || was_primed {
+        en.stance.poise = 0.0;
+        en.stance.lock = t[P::PoiseLock];
         let dur = if en.boss {
             t[P::PoiseBreakBoss]
         } else {
@@ -2428,7 +2433,7 @@ fn add_poise(en: &mut Enemy, amount: f32, primed: Option<f32>, t: &Tuning, ev: &
         };
         en.state = EState::Stagger { t: 0.0, dur };
         en.exposed = en.exposed.max(dur);
-        en.broken = dur;
+        en.stance.broken = dur;
         ev.push(Event::Break {
             at: en.pos + Vec3::Y * en.height * 0.7,
         });

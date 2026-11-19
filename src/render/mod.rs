@@ -13,9 +13,7 @@ use crate::models::{Entry, Library};
 use crate::scenery::Scenery;
 use crate::secondary::{Rig, Secondary};
 use crate::stage::{Light, Phase, StageRun};
-use crate::tuning::{
-    Tuning, INTERNAL_H, INTERNAL_W, PLAYER_HEIGHT, PLAYER_RADIUS, TICK_DT, UI_REF_H,
-};
+use crate::tuning::{Tuning, INTERNAL_H, INTERNAL_W, PLAYER_HEIGHT, PLAYER_RADIUS, UI_REF_H};
 use crate::world::{Aabb, Atk, EState, Enemy, PState, TeleShape, World};
 
 mod actors;
@@ -84,6 +82,8 @@ pub struct Renderer {
     /// 내부 해상도 줄 수·2배로 그려 줄이기(0190 — 연구소 `render.rows`·`render.ssaa`, 프레임 들머리에 넣는다).
     rows_target: f32,
     ssaa: bool,
+    /// 메뉴 그림(인형·아이템·도감 생명체)을 화면의 물리 픽셀 × 2로 그려 줄인다(0250 — 연구소 `render.menu fine`, 끄면 게임 도트).
+    menu_fine: bool,
     /// 2배로 그렸을 때 줄여 옮기는 반 크기 타깃.
     half: Option<RenderTarget>,
     /// 시나리오 상자마다 지금 진하기(1 = 불투명). 가리면 부드럽게 옅어지고 풀리면 돌아온다(0008).
@@ -97,22 +97,15 @@ pub struct Renderer {
     batch: Batch,
     /// 방랑자의 2차 동작 층(0039): 상태·부위(처음 그릴 때 모델에서 찾음)·이번 프레임 덧붙이기.
     sec: Secondary,
-    /// 서 있는 동안의 몸짓(0153)과 그 시계의 기준(월드 시간 — 멈춤 창 아래에서는 같이 선다).
-    idle: crate::idle::Idle,
-    idle_at: f32,
-    /// 걸음 시계·동작 섞기(0175): 걷기 동작의 시각(쌓는다), 지난 프레임의 동작, 보여 준 자세, 섞기 시작할 때의 자세와 남은 초.
-    gait: crate::gait::Gait,
+    /// 방랑자의 동작 고르기가 프레임을 넘어 쥐는 것(숨 고리·걸음 시계·겨눈 채 머묾·구른 뒤 일어나기 — 0251 R9 `anim.rs`).
+    anim: crate::anim::Memory,
+    /// 동작 섞기(0175): 지난 프레임의 동작, 보여 준 자세, 섞기 시작할 때의 자세와 남은 초.
     shown_anim: Option<usize>,
     shown: Vec<(Vec3, Quat, Vec3)>,
     blend_from: Vec<(Vec3, Quat, Vec3)>,
     blend_left: f32,
     /// 이번 섞기의 길이(초 — 겨눈 자세에서 내릴 때는 길다, 0197).
     blend_len: f32,
-    /// 쇠뇌를 쏜 뒤 겨눈 채 머무는 남은 초(0197).
-    aim_hold: f32,
-    /// 구른 뒤 일어나기(0238 — `gait::rise_after_roll`): 지난 프레임이 앞구르기였나, 일어나기의 시각.
-    was_roll: bool,
-    rise: Option<f32>,
     /// 락온 중 걸을 때 다리를 가는 쪽으로 돌린 각(라디안, 부드럽게 따라간다, 0197).
     leg_turn: f32,
     sec_rig: Option<Rig>,
@@ -152,7 +145,7 @@ pub struct Renderer {
     /// 도감 생명체(0130).
     creature_rt: Option<RenderTarget>,
     /// 아이템 그림(0068): 아이콘은 아이템마다 한 번 찍어 둔 타깃, 고른 것 하나는 도는 큰 타깃.
-    icons: std::collections::HashMap<&'static str, RenderTarget>,
+    icons: std::collections::HashMap<(&'static str, u32), RenderTarget>,
     item_rt: Option<RenderTarget>,
     /// 지역 사이 전환의 굴(0174) — 전환마다 한 번 짓는다.
     shaft: Option<descent::ShaftMesh>,
@@ -161,6 +154,8 @@ pub struct Renderer {
 /// 아이템 아이콘·도는 그림의 타깃 크기(내부 px, 정사각).
 pub const ICON_PX: u32 = 32;
 pub const ITEM_PX: u32 = 56;
+/// 메뉴 그림 타깃 한 변의 상한(0250 — 4K 화면의 큰 인형이 타깃을 끝없이 키우지 않게).
+pub const MENU_MAX_PX: u32 = 1536;
 
 /// 인형 렌더 타깃 크기(내부 px) — 게임 화면과 같은 도트 굵기로 보이게 작게 굽고 정수배로 늘린다.
 pub const DOLL_W: u32 = 64;
@@ -228,6 +223,7 @@ impl Renderer {
             rt_size: (INTERNAL_W, INTERNAL_H, 1),
             rows_target: INTERNAL_H as f32,
             ssaa: false,
+            menu_fine: true,
             half: None,
             fade: Vec::new(),
             lib: Library::default(),
@@ -236,17 +232,12 @@ impl Renderer {
             pose: Vec::new(),
             batch: Batch::default(),
             sec: Secondary::default(),
-            idle: crate::idle::Idle::default(),
-            idle_at: 0.0,
-            gait: Default::default(),
+            anim: Default::default(),
             shown_anim: None,
             shown: Vec::new(),
             blend_from: Vec::new(),
             blend_left: 0.0,
             blend_len: crate::gait::BLEND,
-            aim_hold: 0.0,
-            was_roll: false,
-            rise: None,
             leg_turn: 0.0,
             sec_rig: None,
             sec_extra: Vec::new(),
@@ -452,6 +443,7 @@ impl Renderer {
         self.batch.caster_idx.clear();
         self.rows_target = t[crate::tuning::P::RenderRows];
         self.ssaa = t[crate::tuning::P::RenderSsaa] >= 0.5;
+        self.menu_fine = t[crate::tuning::P::RenderMenuFine] >= 0.5;
         let (iw, ih) = self.fit_screen();
         let aspect = iw as f32 / ih as f32;
         let c3 = cam.to_camera3d(self.rt.clone(), aspect);
@@ -486,6 +478,7 @@ impl Renderer {
         // 지역 환경(0118 T2): 스테이지면 그 지역의 것, 개발 놀이터는 땅 위.
         self.backdrop.env = v.stage.map_or(&crate::backdrop::SURFACE, |r| r.def.env);
         set_moonlight(self.backdrop.env.moonlight);
+        set_sky(self.backdrop.env.light);
         clear_background(self.backdrop.env.zenith);
         (iw, ih, c3)
     }
@@ -523,42 +516,3 @@ impl Renderer {
 
 /// 이 높이(m)에서 그림자가 가장 작다.
 const JUMP_SHADOW_H: f32 = 1.2;
-
-#[cfg(test)]
-mod move_anim_tests {
-    use super::*;
-
-    /// 0034 → 0197: 락온 중 옆으로 걸으면 걷기의 다리를 가는 쪽으로 돌리고(+ = 모델의 왼쪽, 한도 `LEG_TURN_MAX`), 뒤로 걸으면 뒷걸음
-    /// (다리는 가는 쪽의 반대), 락온이 아니면 늘 걷기·돌림 없음.
-    #[test]
-    fn locked_on_sideways_steps_turn_the_legs_and_backwards_walks_back() {
-        let facing = vec3(0.0, 0.0, -1.0); // 북을 본다 → 오른쪽 = +x
-        let (n, a) = move_anim(vec3(1.0, 0.0, 0.0), facing, true);
-        assert_eq!(n[0], "walk");
-        assert!(
-            (a + LEG_TURN_MAX).abs() < 1e-5,
-            "right: legs turn right (model −) to the limit: {a}"
-        );
-        let (n, a) = move_anim(vec3(-1.0, 0.0, -1.0), facing, true);
-        assert_eq!(n[0], "walk");
-        assert!(
-            (a - std::f32::consts::FRAC_PI_4).abs() < 1e-4,
-            "front-left 45°: {a}"
-        );
-        let (n, a) = move_anim(vec3(0.0, 0.0, 1.0), facing, true);
-        assert!(n[0] == "walk_back" && a.abs() < 1e-5);
-        let (n, a) = move_anim(vec3(0.5, 0.0, 1.0), facing, true);
-        assert!(
-            n[0] == "walk_back" && a > 0.0,
-            "back-right: legs turn so their back points there: {a}"
-        );
-        assert_eq!(
-            move_anim(vec3(0.0, 0.0, -1.0), facing, true),
-            (&["walk"][..], 0.0)
-        );
-        assert_eq!(
-            move_anim(vec3(1.0, 0.0, 0.0), facing, false),
-            (&["walk"][..], 0.0)
-        );
-    }
-}

@@ -182,24 +182,12 @@ pub struct Enemy {
     pub dead_t: f32,
     /// 패링당해 드러난 남은 초(0025) — 이동안 맞는 한 대가 치명타.
     pub exposed: f32,
-    /// 자세 막대(0051, PoE2 Heavy Stun): 자세 피해로 차고, 다 차면 깨진다(휘청 + 드러남). 깬 뒤 `poise_lock`초는 안 찬다,
-    /// 맞지 않은 지 `poise.delay s`가 지나면 줄어든다.
-    pub poise: f32,
-    pub poise_lock: f32,
-    pub poise_idle: f32,
-    /// 자세가 깨진 동안 남은 초 — 그동안 받는 피해 × `poise.break damage x`(폭딜 창, 0055). 막대가 찬 비율(HUD, 매 틱).
-    pub broken: f32,
-    pub poise_frac: f32,
+    /// 자세 막대(0051 · 0055 — `Stance`).
+    pub stance: Stance,
     /// 높낮이(0043): 곧게 못 가면 월드가 주는 다음 칸 가운데(거리 지도) — 그쪽으로 걷고 공격을 고르지 않는다.
     pub way: Option<Vec3>,
-    /// 돌진(2026-11-06): 돌진을 시작한 뒤 몸이 플레이어에 닿기까지의 초(예고를 굳힐 때 잰다, 길 밖이면 돌진 끝까지).
-    /// 띠 예고의 채움이 예고 끝이 아니라 **닿는 순간**에 다 찬다 — 거리마다 박자가 달라 헷갈리지 않게.
-    pub charge_eta: f32,
-    /// 돌진이 갈 수 있는 길이(m, 0076): 월드가 벽·기둥·턱까지 재어 준다(`nav::charge_room`). 기본은 끝까지(`charge_speed × charge_time`).
-    /// 몸은 여기서 멈추고 예고 띠도 여기까지 — 띠가 벽을 뚫고 그려지는데 몸은 벽에서 멈추던 것.
-    pub charge_len: f32,
-    /// 이번 틱에 돌진 예고가 아직 방향을 겨누고 있었다(월드가 길이·닿는 때를 다시 재라고).
-    pub charge_aim: bool,
+    /// 돌진의 길이·닿는 때(2026-11-06 · 0076 — `Charge`).
+    pub charge: Charge,
     /// 떼 퍼지기(0076): 곁의 적에게서 비키는 쪽(월드가 매 틱 준다) — 한 줄로 늘어서지 않고 둘러싼다.
     pub spread: Vec3,
     /// 엘리트(0112): 성질 하나. 없으면 보통 개체.
@@ -215,13 +203,8 @@ pub struct Enemy {
     /// 청소자가 먹는 자리를 옮기는 시계·몇째 자리(0242 — 사장 설문 2-3 "너무 고정적으로 서 있다").
     pub graze_t: f32,
     pub graze_n: u32,
-    /// 되풀이(0112): 이번 공격이 되풀이한 둘째 번인가.
-    pub repeated: bool,
-    /// 박자 변주(0128): 이번 공격의 박자, 연속 공격(켜졌나·다음 간격 차례), 페인트(바꿀 공격), 지연 소리를 냈나, 결정적 굴림, 변주 끔(시험).
-    pub tempo: Tempo,
-    pub chain_on: bool,
-    pub chain_i: u8,
-    pub feint: Option<Atk>,
+    /// 공격의 박자(0112 되풀이 · 0128 박자 변주 — `Rhythm`).
+    pub rhythm: Rhythm,
     /// 2단계 전환을 시작한 체력(0133) — 전환 동안 이 아래로 깎이지 않는다.
     pub rise_hp: i32,
     /// 3단계(0208 — 권양지기): 사슬이 끊겨 끈 없이 쫓는다. 체력 넷에 하나 아래에서 한 번(두 번째 `Rise`).
@@ -237,6 +220,69 @@ pub struct Enemy {
     pub home: Option<(Vec3, f32)>,
     /// 턱을 뛰어오르거나 뛰어내리는 중(0100) — 그동안 몸은 포물선을 따라가고 생각하지도 치지도 않는다.
     pub hop: Option<Hop>,
+    /// 스킬이 남긴 것(0158 G1 · 0214 — `Marks`).
+    pub marks: Marks,
+    /// 타입 상태(0223 V2 — 게이지·화상 겹·묶임·금·울림): 규칙은 `status.rs`, 번지는 일은 월드(`world/ail_tick.rs`).
+    pub ail: crate::status::Ail,
+    /// 등짐꾼의 짐이 깨졌다(0216 W2 — 자세 막대가 처음 깨질 때): 더는 밀고 오지 못하고 느리게 걷는다.
+    pub load_lost: bool,
+    /// 남는 불씨(0158 G2, 잔불 흩기 ㄴ): 지금 선 자리의 불티가 쓰러질 때 더 남기는 잔불 수(월드가 틱마다 적는다, 0 = 없음).
+    pub kindled: u32,
+}
+
+/// 자세 막대(0051, PoE2 Heavy Stun — 0251 R10에서 묶음).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Stance {
+    /// 막대(0051, PoE2 Heavy Stun): 자세 피해로 차고, 다 차면 깨진다(휘청 + 드러남). 깬 뒤 `poise_lock`초는 안 찬다,
+    /// 맞지 않은 지 `poise.delay s`가 지나면 줄어든다.
+    pub poise: f32,
+    pub lock: f32,
+    pub idle: f32,
+    /// 자세가 깨진 동안 남은 초 — 그동안 받는 피해 × `poise.break damage x`(폭딜 창, 0055). 막대가 찬 비율(HUD, 매 틱).
+    pub broken: f32,
+    pub frac: f32,
+}
+
+/// 돌진(2026-11-06 · 0076 — 0251 R10에서 묶음).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Charge {
+    /// 돌진(2026-11-06): 돌진을 시작한 뒤 몸이 플레이어에 닿기까지의 초(예고를 굳힐 때 잰다, 길 밖이면 돌진 끝까지).
+    /// 띠 예고의 채움이 예고 끝이 아니라 **닿는 순간**에 다 찬다 — 거리마다 박자가 달라 헷갈리지 않게.
+    pub eta: f32,
+    /// 돌진이 갈 수 있는 길이(m, 0076): 월드가 벽·기둥·턱까지 재어 준다(`nav::charge_room`). 기본은 끝까지(`charge_speed × charge_time`).
+    /// 몸은 여기서 멈추고 예고 띠도 여기까지 — 띠가 벽을 뚫고 그려지는데 몸은 벽에서 멈추던 것.
+    pub len: f32,
+    /// 이번 틱에 돌진 예고가 아직 방향을 겨누고 있었다(월드가 길이·닿는 때를 다시 재라고).
+    pub aim: bool,
+}
+
+/// 공격의 박자(0112 · 0128 — 0251 R10에서 묶음).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rhythm {
+    /// 되풀이(0112): 이번 공격이 되풀이한 둘째 번인가.
+    pub repeated: bool,
+    /// 박자 변주(0128): 이번 공격의 박자, 연속 공격(켜졌나·다음 간격 차례), 페인트(바꿀 공격), 지연 소리를 냈나, 결정적 굴림, 변주 끔(시험).
+    pub tempo: Tempo,
+    pub chain_on: bool,
+    pub chain_i: u8,
+    pub feint: Option<Atk>,
+}
+
+impl Default for Rhythm {
+    fn default() -> Self {
+        Rhythm {
+            repeated: false,
+            tempo: Tempo::Normal,
+            chain_on: false,
+            chain_i: 0,
+            feint: None,
+        }
+    }
+}
+
+/// 스킬이 남긴 것(0158 G1 · 0214 — 0251 R10에서 묶음).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Marks {
     /// 스킬이 남긴 것(0158 G1): 더 다치는 남은 초와 그 배(끌어모으기 맺음), 걷는 빠르기의 배(갈라진 땅 — 월드가 틱마다 적는다, 1 = 그대로).
     pub frail: f32,
     pub frail_mult: f32,
@@ -245,12 +291,18 @@ pub struct Enemy {
     pub snare: f32,
     /// 묶는 뿌리(0214 뿌리 솟기 ㄴ): 걷지 못하는 남은 초.
     pub bind: f32,
-    /// 타입 상태(0223 V2 — 게이지·화상 겹·묶임·금·울림): 규칙은 `status.rs`, 번지는 일은 월드(`world/ail_tick.rs`).
-    pub ail: crate::status::Ail,
-    /// 등짐꾼의 짐이 깨졌다(0216 W2 — 자세 막대가 처음 깨질 때): 더는 밀고 오지 못하고 느리게 걷는다.
-    pub load_lost: bool,
-    /// 남는 불씨(0158 G2, 잔불 흩기 ㄴ): 지금 선 자리의 불티가 쓰러질 때 더 남기는 잔불 수(월드가 틱마다 적는다, 0 = 없음).
-    pub kindled: u32,
+}
+
+impl Default for Marks {
+    fn default() -> Self {
+        Marks {
+            frail: 0.0,
+            frail_mult: 1.0,
+            slow: 1.0,
+            snare: 0.0,
+            bind: 0.0,
+        }
+    }
 }
 
 /// 뛰기 한 번(0100): 어디서 어디로, 지난 초·걸리는 초·포물선 높이.
@@ -362,15 +414,13 @@ impl Enemy {
             dead_t: 0.0,
             dropped: false,
             exposed: 0.0,
-            poise: 0.0,
-            poise_lock: 0.0,
-            poise_idle: 0.0,
-            broken: 0.0,
-            poise_frac: 0.0,
+            stance: Stance::default(),
             way: None,
-            charge_eta: 0.0,
-            charge_len: d.charge_speed * d.charge_time,
-            charge_aim: false,
+            charge: Charge {
+                eta: 0.0,
+                len: d.charge_speed * d.charge_time,
+                aim: false,
+            },
             spread: Vec3::ZERO,
             hop: None,
             elite: None,
@@ -381,11 +431,7 @@ impl Enemy {
             eat_t: 0.0,
             graze_t: 0.0,
             graze_n: 0,
-            repeated: false,
-            tempo: Tempo::Normal,
-            chain_on: false,
-            chain_i: 0,
-            feint: None,
+            rhythm: Rhythm::default(),
             rise_hp: 0,
             unchained: false,
             anchor: pos,
@@ -397,11 +443,7 @@ impl Enemy {
                 | 1,
             steady: false,
             home: None,
-            frail: 0.0,
-            frail_mult: 1.0,
-            slow: 1.0,
-            snare: 0.0,
-            bind: 0.0,
+            marks: Marks::default(),
             ail: crate::status::Ail::default(),
             load_lost: false,
             kindled: 0,
@@ -465,28 +507,28 @@ impl Enemy {
     fn after_attack(&mut self) -> EState {
         // 연속 공격(0128): 같은 공격이 고르지 않은 간격으로 더(굴림 없이 — 묶음 안에서는 간격이 박자다).
         let gaps = self.rhythm().gaps;
-        if self.chain_on && (self.chain_i as usize) < gaps.len() {
-            let m = gaps[self.chain_i as usize];
-            self.chain_i += 1;
+        if self.rhythm.chain_on && (self.rhythm.chain_i as usize) < gaps.len() {
+            let m = gaps[self.rhythm.chain_i as usize];
+            self.rhythm.chain_i += 1;
             let atk = self.atk;
             self.begin(atk);
-            self.tempo = Tempo::Chain(m);
+            self.rhythm.tempo = Tempo::Chain(m);
             return self.state;
         }
-        self.chain_on = false;
+        self.rhythm.chain_on = false;
         // 2단계 잇기(0133): 돌진이 끝나면 쉬지 않고 곧장 한 수 더(문지기 = 앞 내려치기, 종지기 = 울림 고리) — 한 번만.
         if let Some(next) = self.link_after() {
             self.linked = true;
             self.start(next);
             return self.state;
         }
-        if self.elite == Some(Affix::Repeating) && !self.repeated {
-            self.repeated = true;
+        if self.elite == Some(Affix::Repeating) && !self.rhythm.repeated {
+            self.rhythm.repeated = true;
             let atk = self.atk;
             self.start(atk);
             self.state
         } else {
-            self.repeated = false;
+            self.rhythm.repeated = false;
             EState::Recover { t: 0.0 }
         }
     }
@@ -584,7 +626,7 @@ impl Enemy {
         };
         arc > 0.0
             && self.alive()
-            && self.broken <= 0.0
+            && self.stance.broken <= 0.0
             && !matches!(self.state, EState::Stagger { .. } | EState::Dormant)
             && self.facing_dir().dot(from.normalize_or_zero()) >= (arc * 0.5).to_radians().cos()
     }
@@ -621,7 +663,7 @@ impl Enemy {
     pub fn roots_front(&self) -> Option<f32> {
         match (self.state, self.atk) {
             (EState::Wave { t }, Atk::Roots) => {
-                Some((self.radius + t * ROOTS_SPEED).min(self.charge_len))
+                Some((self.radius + t * ROOTS_SPEED).min(self.charge.len))
             }
             _ => None,
         }
@@ -630,7 +672,7 @@ impl Enemy {
     /// 지금 공격의 예고 길이(초) = 들어 올림 + 지연 버팀(0128).
     pub fn tele_dur(&self) -> f32 {
         self.lift_dur()
-            + match self.tempo {
+            + match self.rhythm.tempo {
                 Tempo::Delayed(h) => h,
                 _ => 0.0,
             }
@@ -639,7 +681,7 @@ impl Enemy {
     /// 들어 올려 정점에 닿기까지의 예고(지연 버팀 빼고) — 렌더가 준비 동작을 이 길이로 든다.
     pub fn lift_dur(&self) -> f32 {
         let base = self.base_tele();
-        match self.tempo {
+        match self.rhythm.tempo {
             Tempo::Fast => (base * crate::tuning::FAST_TELE)
                 .max(crate::tuning::TELE_FLOOR)
                 .min(base),
@@ -688,7 +730,7 @@ impl Enemy {
             // 띠 = 플레이어 가운데가 들어가면 맞는 곳(0076): 몸이 지나는 길 + 닿는 거리(몸 + 플레이어 + 여유) — 폭도 끝도.
             // 예전 띠는 폭이 여유만큼 좁고 끝이 짧아, 띠 밖에 섰는데 맞았다.
             Atk::Charge => TeleShape::Lane {
-                len: self.charge_len + self.touch(),
+                len: self.charge.len + self.touch(),
                 w: self.touch() * 2.0,
             },
             Atk::Wave => TeleShape::Ring { r: d.wave_radius },
@@ -705,7 +747,7 @@ impl Enemy {
                 let r = ROOTS_R + PLAYER_RADIUS;
                 let step = r * 1.3;
                 TeleShape::Row {
-                    n: ((self.charge_len - self.radius) / step).ceil().max(1.0) as u8,
+                    n: ((self.charge.len - self.radius) / step).ceil().max(1.0) as u8,
                     r,
                     step,
                     start: self.radius + r * 0.5,
@@ -716,7 +758,7 @@ impl Enemy {
             },
             // 갈고리(0208): 날아가는 길 = 띠(받아침).
             Atk::Hook => TeleShape::Lane {
-                len: self.charge_len,
+                len: self.charge.len,
                 w: (crate::tuning::HOOK_R + PLAYER_RADIUS) * 2.0,
             },
             // 껍질은 공격이 아니다 — `telegraph`가 그리지 않는다.
@@ -728,7 +770,7 @@ impl Enemy {
     /// 돌진은 예고 + 달려오는 동안까지 한 번에 차서 **몸이 닿는 순간** 다 찬다(띠는 남은 길만, 닿으면 사라짐).
     pub fn telegraph(&self) -> Option<(f32, TeleShape)> {
         let charge = self.atk == Atk::Charge;
-        let whole = self.tele_dur() + if charge { self.charge_eta } else { 0.0 };
+        let whole = self.tele_dur() + if charge { self.charge.eta } else { 0.0 };
         let k = |e: f32| (e / whole.max(1e-3)).clamp(0.0, 1.0);
         match self.state {
             EState::Tele { .. } if self.atk == Atk::Shell => None,
@@ -738,7 +780,7 @@ impl Enemy {
                 let TeleShape::Lane { len, w } = self.tele_shape() else {
                     return None;
                 };
-                let left = len - (e * d.charge_speed).min(self.charge_len);
+                let left = len - (e * d.charge_speed).min(self.charge.len);
                 (left > self.touch() * 0.5)
                     .then(|| (k(self.tele_dur() + e), TeleShape::Lane { len: left, w }))
             }
@@ -759,7 +801,7 @@ impl Enemy {
         let along = to.dot(f);
         let side = (to - f * along).length();
         let touch = self.touch();
-        let end = self.charge_len / d.charge_speed;
+        let end = self.charge.len / d.charge_speed;
         if along <= 0.0 || side > touch {
             return end;
         }
@@ -770,9 +812,9 @@ impl Enemy {
 
     /// 월드가 잰 돌진 길이(`charge_len`)를 넣는다. 아직 겨누는 중(`charge_aim`)이면 닿는 때도 다시 잰다.
     pub fn set_charge_room(&mut self, room: f32, player: Vec3) {
-        self.charge_len = room;
-        if self.charge_aim {
-            self.charge_eta = self.eta_to(player);
+        self.charge.len = room;
+        if self.charge.aim {
+            self.charge.eta = self.eta_to(player);
         }
     }
 
@@ -801,8 +843,8 @@ impl Enemy {
 
     fn start(&mut self, atk: Atk) {
         self.begin(atk);
-        self.chain_on = false;
-        self.chain_i = 0;
+        self.rhythm.chain_on = false;
+        self.rhythm.chain_i = 0;
         if !self.steady {
             self.roll_tempo();
         }
@@ -816,14 +858,14 @@ impl Enemy {
         self.landed = false;
         self.rings_hit = 0;
         // 돌진 길이 칸은 뿌리 기둥 줄(0133)의 길이로도 쓴다 — 월드가 벽·기둥 앞까지로 줄인다(`set_charge_room`).
-        self.charge_len = if atk == Atk::Roots {
+        self.charge.len = if atk == Atk::Roots {
             ROOTS_LEN
         } else {
             d.charge_speed * d.charge_time
         };
         self.state = EState::Tele { t: 0.0 };
-        self.tempo = Tempo::Normal;
-        self.feint = None;
+        self.rhythm.tempo = Tempo::Normal;
+        self.rhythm.feint = None;
         self.cued = false;
     }
 
@@ -858,24 +900,24 @@ impl Enemy {
             return;
         }
         if swing && self.boss && self.roused && self.roll() < r.feint {
-            self.feint = match self.def().behavior {
+            self.rhythm.feint = match self.def().behavior {
                 Behavior::Warden => Some(Atk::Wave),
                 Behavior::Bellkeeper => Some(Atk::Toll),
                 _ => None,
             };
-            if self.feint.is_some() {
+            if self.rhythm.feint.is_some() {
                 return;
             }
         }
         let x = self.roll();
         if x < r.delay {
             let long = self.roll() < 0.5;
-            self.tempo = Tempo::Delayed(crate::tuning::DELAY_HOLDS[long as usize]);
+            self.rhythm.tempo = Tempo::Delayed(crate::tuning::DELAY_HOLDS[long as usize]);
         } else if x < r.delay + r.fast {
-            self.tempo = Tempo::Fast;
+            self.rhythm.tempo = Tempo::Fast;
         }
         if swing && !r.gaps.is_empty() && self.roll() < r.chain {
-            self.chain_on = true;
+            self.rhythm.chain_on = true;
         }
     }
 
@@ -995,7 +1037,7 @@ impl Enemy {
             return;
         };
         // 묶이거나(뿌리 0223 V2) 느려진 몸은 달아날 때도 그만큼 — 걷는 적과 같은 `slow`.
-        let speed = self.def().speed * self.slow;
+        let speed = self.def().speed * self.marks.slow;
         let away = vec3(self.pos.x - player.x, 0.0, self.pos.z - player.z);
         let near = away.length() < GRAZE_FLEE_R;
         let from_home = vec3(self.pos.x - home.x, 0.0, self.pos.z - home.z);
@@ -1044,7 +1086,7 @@ impl Enemy {
         self.hurt = (self.hurt - dt).max(0.0);
         self.hop_cd = (self.hop_cd - dt).max(0.0);
         self.exposed = (self.exposed - dt).max(0.0);
-        self.frail = (self.frail - dt).max(0.0);
+        self.marks.frail = (self.marks.frail - dt).max(0.0);
         self.sway_t += dt;
         // 넉백은 빠르게 줄어든다. 굳은 엘리트(0112)는 덜 밀린다.
         let budge = if self.elite == Some(Affix::Hardened) {
@@ -1069,8 +1111,8 @@ impl Enemy {
             self.rise_hp = self.hp.max(crate::tuning::HP_UNIT);
             self.state = EState::Rise { t: 0.0 };
             self.plant_at = None;
-            self.feint = None;
-            self.chain_on = false;
+            self.rhythm.feint = None;
+            self.rhythm.chain_on = false;
             self.knock = Vec3::ZERO;
         }
         let to = vec3(player.x - self.pos.x, 0.0, player.z - self.pos.z);
@@ -1088,8 +1130,8 @@ impl Enemy {
             self.rise_hp = self.hp.max(crate::tuning::HP_UNIT);
             self.state = EState::Rise { t: 0.0 };
             self.plant_at = None;
-            self.feint = None;
-            self.chain_on = false;
+            self.rhythm.feint = None;
+            self.rhythm.chain_on = false;
             self.knock = Vec3::ZERO;
         }
         let speed = d.speed
@@ -1099,13 +1141,13 @@ impl Enemy {
             } else {
                 1.0
             }
-            * self.slow
+            * self.marks.slow
             * if self.load_lost {
                 crate::tuning::LOAD_LOST_SPEED
             } else {
                 1.0
             };
-        self.charge_aim = false;
+        self.charge.aim = false;
         // 떼 퍼지기(0076): 가는 쪽의 옆으로만 비킨다(뒤로 물러서지 않는다), 앞이 막혔으면 조금 늦춘다.
         let steer = |go: Vec3, spread: Vec3| -> (Vec3, f32) {
             let side = spread - go * spread.dot(go);
@@ -1156,10 +1198,10 @@ impl Enemy {
                     self.state = EState::Idle;
                     self.facing = face;
                     self.hp = self.max_hp;
-                    self.poise = 0.0;
+                    self.stance.poise = 0.0;
                     // 타입 상태(0223 V2)도 걷힌다 — 가득 찬 적이 화상으로 다시 깎이지 않게.
                     self.ail = Default::default();
-                    self.repeated = false;
+                    self.rhythm.repeated = false;
                 }
             }
             EState::Chase => {
@@ -1190,7 +1232,7 @@ impl Enemy {
             }
             EState::Tele { t: e } => {
                 // 페인트(0128): 들어 올림의 `FEINT_AT`에서 끊고 다른 공격의 예고로(그 예고는 그 공격의 모양·소리).
-                if let Some(next) = self.feint {
+                if let Some(next) = self.rhythm.feint {
                     if e >= self.lift_dur() * crate::tuning::FEINT_AT {
                         self.begin(next);
                         return out;
@@ -1198,7 +1240,7 @@ impl Enemy {
                 }
                 let dur = self.tele_dur();
                 // 지연이 풀리기 직전 소리(0128 "몸 + 소리") — 맞기 `RELEASE_LEAD`초 전, 한 번.
-                if matches!(self.tempo, Tempo::Delayed(_))
+                if matches!(self.rhythm.tempo, Tempo::Delayed(_))
                     && !self.cued
                     && dur - (e + dt) <= crate::tuning::RELEASE_LEAD
                 {
@@ -1215,8 +1257,8 @@ impl Enemy {
                     self.turn_toward(dir, rate, dt);
                     // 방향이 굳기 전까지는 닿는 때를 다시 잰다(굳은 뒤엔 그대로 — 채움이 일정한 빠르기로).
                     if self.atk == Atk::Charge {
-                        self.charge_aim = true;
-                        self.charge_eta = self.eta_to(player);
+                        self.charge.aim = true;
+                        self.charge.eta = self.eta_to(player);
                     }
                 }
                 self.state = if e + dt < dur {
@@ -1299,8 +1341,8 @@ impl Enemy {
             }
             EState::Charge { t: e, dir: cdir } => {
                 // 벽·기둥·턱 앞(`charge_len`)에서 멈춘다. 닿았나는 움직인 뒤의 몸으로(마지막 자리도 맞는다 — 띠 끝과 같게).
-                let went = (e * d.charge_speed).min(self.charge_len);
-                let step = (d.charge_speed * dt).min(self.charge_len - went).max(0.0);
+                let went = (e * d.charge_speed).min(self.charge.len);
+                let step = (d.charge_speed * dt).min(self.charge.len - went).max(0.0);
                 let from = self.pos;
                 self.pos += cdir * step;
                 // 이번 틱에 몸이 쓸고 간 선분과 플레이어 사이 — 틱마다 점으로 재면 띠 가장자리에 빈틈이 생긴다.
@@ -1311,7 +1353,7 @@ impl Enemy {
                     self.landed = true;
                     out.hit = true;
                 }
-                let done = went + step >= self.charge_len - 1e-4;
+                let done = went + step >= self.charge.len - 1e-4;
                 self.state = if e + dt >= d.charge_time || done {
                     self.after_attack()
                 } else {
@@ -1328,7 +1370,7 @@ impl Enemy {
                 let along = to.dot(f);
                 let side = (to - f * along).length();
                 let speed = crate::tuning::HOOK_SPEED;
-                let front = (self.radius + (e + dt) * speed).min(self.charge_len);
+                let front = (self.radius + (e + dt) * speed).min(self.charge.len);
                 if self.rings_hit == 0
                     && along > 0.0
                     && side <= crate::tuning::HOOK_R + PLAYER_RADIUS
@@ -1339,7 +1381,7 @@ impl Enemy {
                     out.hit = true;
                     out.pull = true;
                 }
-                self.state = if front >= self.charge_len {
+                self.state = if front >= self.charge.len {
                     EState::Recover { t: 0.0 }
                 } else {
                     EState::Wave { t: e + dt }
@@ -1351,7 +1393,7 @@ impl Enemy {
                 let to = vec3(player.x - self.pos.x, 0.0, player.z - self.pos.z);
                 let along = to.dot(f);
                 let side = (to - f * along).length();
-                let front = (self.radius + (e + dt) * ROOTS_SPEED).min(self.charge_len);
+                let front = (self.radius + (e + dt) * ROOTS_SPEED).min(self.charge.len);
                 if self.rings_hit == 0
                     && along > 0.0
                     && side <= ROOTS_R + PLAYER_RADIUS
@@ -1361,7 +1403,7 @@ impl Enemy {
                     self.rings_hit = 1;
                     out.hit = true;
                 }
-                self.state = if front >= self.charge_len {
+                self.state = if front >= self.charge.len {
                     EState::Recover { t: 0.0 }
                 } else {
                     EState::Wave { t: e + dt }
@@ -1484,7 +1526,7 @@ mod tests {
         en.steady = true;
         en.start(Atk::Slam);
         let normal = en.tele_dur();
-        en.tempo = Tempo::Delayed(DELAY_HOLDS[1]);
+        en.rhythm.tempo = Tempo::Delayed(DELAY_HOLDS[1]);
         assert_eq!(en.lift_dur(), normal, "the lift is the same");
         assert!((en.tele_dur() - normal - DELAY_HOLDS[1]).abs() < 1e-5);
         let p = vec3(0.0, 0.0, -3.0);
@@ -1505,7 +1547,7 @@ mod tests {
             (lead - RELEASE_LEAD).abs() < 0.04,
             "cue {lead:.3}s before the hit"
         );
-        en.tempo = Tempo::Fast;
+        en.rhythm.tempo = Tempo::Fast;
         assert!(en.tele_dur() < normal && en.tele_dur() >= TELE_FLOOR - 1e-5);
     }
 
@@ -1515,14 +1557,14 @@ mod tests {
         let mut en = Enemy::new(Kind::Warden, Vec3::ZERO);
         en.steady = true;
         en.start(Atk::Slam);
-        en.chain_on = true;
+        en.rhythm.chain_on = true;
         let p = vec3(0.0, 0.0, -2.0);
         let mut tempos = Vec::new();
         for _ in 0..600 {
             let was = en.atk_count;
             en.tick(p, 1.0 / 60.0);
             if en.atk_count != was {
-                tempos.push(en.tempo);
+                tempos.push(en.rhythm.tempo);
             }
             if matches!(en.state, EState::Recover { .. }) {
                 break;
@@ -1537,7 +1579,7 @@ mod tests {
         b.steady = true;
         b.roused = true;
         b.start(Atk::Slam);
-        b.feint = Some(Atk::Toll);
+        b.rhythm.feint = Some(Atk::Toll);
         let lift = b.lift_dur();
         let mut switched_at = None;
         for i in 0..120 {
@@ -1566,10 +1608,10 @@ mod tests {
             let (mut delay, mut fast, mut chain, mut feint) = (0, 0, 0, 0);
             for _ in 0..n {
                 en.start(Atk::Slam);
-                delay += matches!(en.tempo, Tempo::Delayed(_)) as i32;
-                fast += (en.tempo == Tempo::Fast) as i32;
-                chain += en.chain_on as i32;
-                feint += en.feint.is_some() as i32;
+                delay += matches!(en.rhythm.tempo, Tempo::Delayed(_)) as i32;
+                fast += (en.rhythm.tempo == Tempo::Fast) as i32;
+                chain += en.rhythm.chain_on as i32;
+                feint += en.rhythm.feint.is_some() as i32;
             }
             let f = |c: i32| c as f32 / n as f32;
             (f(delay), f(fast), f(chain), f(feint))
@@ -1594,7 +1636,7 @@ mod tests {
         let mut steady = Enemy::new(Kind::Bellkeeper, Vec3::ZERO);
         steady.steady = true;
         steady.start(Atk::Slam);
-        assert_eq!(steady.tempo, Tempo::Normal);
+        assert_eq!(steady.rhythm.tempo, Tempo::Normal);
     }
 
     /// 0116 T3: 등급 배율은 한 번만 적용한다(재설정 호출로 체력이 누적 증가하지 않게).
@@ -1943,7 +1985,7 @@ mod tests {
             en.roused = true;
             en.facing = 0.0; // +Z
             en.atk = Atk::Roots;
-            en.charge_len = ROOTS_LEN;
+            en.charge.len = ROOTS_LEN;
             en.state = EState::Wave { t: 0.0 };
             let mut hits = 0;
             for _ in 0..120 {
@@ -2071,7 +2113,7 @@ mod tests {
         assert!(en.guards(vec3(0.5, 0.0, 1.0)), "inside 120°");
         assert!(!en.guards(vec3(1.0, 0.0, 0.0)), "side");
         assert!(!en.guards(vec3(0.0, 0.0, -1.0)), "back");
-        en.broken = 1.0;
+        en.stance.broken = 1.0;
         assert!(
             !en.guards(vec3(0.0, 0.0, 1.0)),
             "broken poise drops the guard"

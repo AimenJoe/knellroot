@@ -13,21 +13,33 @@ use flow::Host;
 const GROUPS: usize = 4;
 /// 묶음 머리 줄의 높이(기준 px) — 그 아래부터 목록.
 const GROUP_H: f32 = 18.0;
-/// 오른쪽 칸의 그림 자리(기준 px): 적은 선 몸(이름 아래의 세로로 긴 칸), 장신구는 머리의 그림 칸.
+/// 오른쪽 칸의 그림 자리(기준 px): 적은 이름 아래 오른쪽 칸 폭 전체(2026-11-19 사장 "나오는 곳 설명은 다음 줄로, 모델은 가로로 더
+/// 채워지게" — 전엔 왼쪽 52 폭에 세우고 나오는 곳을 그 오른쪽에 썼다), 나오는 곳·관찰은 그 아래로 흐른다.
 const PIC_TOP: f32 = 17.0;
-const PIC_W: f32 = 52.0;
-const PIC_H: f32 = 72.0;
+const PIC_H: f32 = 100.0;
 /// 도감 묶음 머리 한 칸의 가장 좁은 넓이(0242, 기준 px).
 const GROUP_MIN_W: f32 = 44.0;
 /// 물건 그림 칸(0242 — 머리 곁 30 → 이름 아래 64, 기준 px).
-const ITEM_PIC: f32 = 64.0;
+const ITEM_PIC: f32 = 96.0;
+
+/// 도감 그림을 손으로 보기(2026-11-19, 사장 "도감의 아이템 및 생물들도 잘 안 보임. 드래그로 살펴볼 수 있어야 함"):
+/// 그림 위를 가로로 끌면(패드는 오른쪽 스틱) 돈다. 고른 줄이 바뀌면 처음(저절로 흔들기)으로. 크게 보기는 걷었다(사장 "확대 필요없고").
+#[derive(Default)]
+pub(super) struct CodexView {
+    /// 손으로 돌린 각(없으면 저절로 흔든다).
+    yaw: Option<f32>,
+    /// 지난 프레임에 그림을 그린 자리(끌기를 받는 곳) — 볼 그림이 없으면(못 가진 물건) 없다.
+    rect: Option<Rect>,
+}
 
 impl App {
     /// 도감 한 틱: 뒤로·✕·창 밖 = 닫기, 좌우·묶음 머리 누르기 = 묶음(적 ↔ 장신구 — 위 탭은 스킬 버튼이 넘긴다),
     /// 위아래·굴리기·줄 누르기 = 고르기(고름은 보기만 — 할 일 없음).
     pub(super) fn tick_codex(&mut self, a: &Actions, host: Host, tab: usize) {
-        let mut a = *a;
+        let mut a = self.small_strip_input(a);
         let before = self.cursor;
+        let u = self.ui.u(1.0);
+        tabs::turn_by_hand(&mut a, self.codex_view.rect, &mut self.codex_view.yaw, u);
         self.pane_scroll_lines(&mut a);
         let a = &a;
         let tap = a.tap.and_then(|p| self.hit_at(p));
@@ -59,6 +71,7 @@ impl App {
         let _ = self.menu_pick(a, n);
         if self.cursor != before {
             self.scroll = 0.0;
+            self.codex_view = CodexView::default();
         }
     }
 
@@ -80,16 +93,46 @@ impl App {
         ];
         let tk = 0.85 * k;
         let ty = w.at(0.0, 2.0).y;
-        let mut x = w.at(4.0, 0.0).x;
-        self.ui.text("◀", x, ty, tk, DIM);
-        x += self.ui.width("◀", tk) + u * 6.0;
+        // 0257(사장 "도감 속에 있는 작은 탭도 마찬가지"): 칸이 왼쪽 열에 다 들지 않으면(긴 언어·좁은 화면) 가로로 굴린다 —
+        // ◀ ▶는 늘 그 자리(좌우로 넘긴다는 안내), 넘칠 때는 "더 있다"로 밝아진다.
+        let arrow = self.ui.width("◀", tk) + u * 6.0;
+        let (x0, x1) = (w.at(4.0, 0.0).x, w.at(tabs::LEFT_W - 6.0, 0.0).x);
+        let tws: Vec<f32> = names.iter().map(|n| self.ui.width(n, tk)).collect();
+        // 0242(사장 설문 23-9 "짧은 이름의 버튼도 누르기 쉽게 최소 넓이"): 칸은 `GROUP_MIN_W` 이상, 글은 칸 가운데.
+        let cws: Vec<f32> = tws.iter().map(|tw| tw.max(GROUP_MIN_W * u)).collect();
+        let (at, view) = ui::strip_tabs(
+            &mut self.small_strip,
+            &cws,
+            x0 + arrow,
+            x1 - arrow,
+            w.origin.y,
+            GROUP_H * u,
+            u * 12.0,
+            0.0,
+            tab,
+        );
+        let (more_l, more_r) = self.small_strip.more();
+        let ink = |more: bool| if view.is_some() && more { INK } else { DIM };
+        self.ui.text("◀", x0, ty, tk, ink(more_l));
+        self.ui
+            .text("▶", x1 - self.ui.width("▶", tk), ty, tk, ink(more_r));
+        if let Some(v) = view {
+            ui::clip(Some(Rect::new(v.x - u * 5.0, v.y, v.w + u * 10.0, v.h)));
+        }
         for (i, name) in names.iter().enumerate() {
-            let tw = self.ui.width(name, tk);
-            // 0242(사장 설문 23-9 "짧은 이름의 버튼도 누르기 쉽게 최소 넓이"): 칸은 `GROUP_MIN_W` 이상, 글은 칸 가운데.
-            let cw = tw.max(GROUP_MIN_W * u);
+            let (x, cw) = at[i];
+            if let Some(v) = view {
+                if x + cw <= v.x || x >= v.x + v.w {
+                    continue;
+                }
+            }
+            let tw = tws[i];
             let tx = x + (cw - tw) * 0.5;
             let on = i == tab;
-            self.ui.text(name, tx, ty, tk, if on { AMBER } else { DIM });
+            let whole = view.is_none_or(|v| x >= v.x - 0.5 && x + cw <= v.x + v.w + 0.5);
+            if whole {
+                self.ui.text(name, tx, ty, tk, if on { AMBER } else { DIM });
+            }
             if on {
                 draw_rectangle(
                     x,
@@ -103,9 +146,10 @@ impl App {
                 Rect::new(x - u * 5.0, w.origin.y, cw + u * 10.0, GROUP_H * u),
                 Hit::Cell(1, i),
             ));
-            x += cw + u * 12.0;
         }
-        self.ui.text("▶", x - u * 6.0, ty, tk, DIM);
+        if view.is_some() {
+            ui::clip(None);
+        }
         // 왼쪽 목록: 본 것·가진 것은 이름, 아니면 "???".
         let rec = &self.progress.codex.clone();
         let rows: Vec<ui::Row> = if tab == 0 {
@@ -133,7 +177,7 @@ impl App {
         if tab == 0 {
             let e = &ENTRIES[cursor.min(ENTRIES.len() - 1)];
             let seen = codex::seen(rec, e.kind);
-            // 선 몸은 세로로 길다 — 머리의 그림 칸 대신 이름 아래 왼쪽에 세워 두고, 나오는 곳은 그 오른쪽에, 관찰은 그 아래로 흐른다.
+            // 이름 아래 칸 폭 전체에 몸, 그 아래로 나오는 곳 · 관찰.
             let name = if seen {
                 tr(crate::species::def(e.kind).name)
             } else {
@@ -143,21 +187,12 @@ impl App {
             let fit = self.ui.fit(name, tabs::RIGHT_W * u, tabs::K_NAME * k);
             let ink = if seen { AMBER } else { INK };
             self.ui.text(&fit, p.x, p.y, tabs::K_NAME * k, ink);
-            let pic = w.rect(tabs::RIGHT_X, PIC_TOP, PIC_W, PIC_H);
-            self.renderer
-                .draw_creature(e.kind, pic, 0.6 * (t * 0.6).sin(), t, !seen);
-            let tx = tabs::RIGHT_X + PIC_W + 6.0;
-            let room = (tabs::RIGHT_X + tabs::RIGHT_W - tx) * u;
-            let kk = tabs::K_KIND * k;
-            let mut y = PIC_TOP + 2.0;
-            for part in ui::wrap(&self.ui, &fill(s.codex_place, &[tr(e.place)]), room, kk)
-                .iter()
-                .take(6)
-            {
-                self.ui
-                    .text(part, w.at(tx, 0.0).x, w.at(0.0, y).y, kk, PLACE);
-                y += 9.5;
-            }
+            let pic = w.rect(tabs::RIGHT_X, PIC_TOP, tabs::RIGHT_W, PIC_H);
+            let spin = self.codex_view.yaw.unwrap_or(0.6 * (t * 0.6).sin());
+            self.renderer.draw_creature(e.kind, pic, spin, t, !seen);
+            self.codex_view.rect = Some(pic);
+            lines.extend(self.pane_wrap(&w, &fill(s.codex_place, &[tr(e.place)]), PLACE));
+            lines.push(Ln::Gap);
             if seen {
                 for (guess, l) in codex::open_lines(rec, e) {
                     let head = if guess { "?" } else { "·" };
@@ -202,9 +237,11 @@ impl App {
                 ITEM_PIC,
                 ITEM_PIC,
             );
+            self.codex_view.rect = None;
             if d.owned {
                 if crate::item_view::has_view(d.item) {
-                    self.draw_pane_item(d.item, icon);
+                    self.draw_pane_item_turned(d.item, icon, self.codex_view.yaw);
+                    self.codex_view.rect = Some(icon);
                 }
                 lines.extend(self.pane_wrap(&w, tr(d.desc), DIM));
                 if let Some(flavor) = d.flavor {

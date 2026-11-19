@@ -25,3 +25,6 @@ miniquad를 올릴 때는 새 원본을 받아 같은 패치를 다시 넣는다
   `src/native/ios.rs` `draw_in_rect`가 `update()` 직전에 `ios_pad::poll`을 부르고, `src/native.rs`가 iOS에서 `joystick_axes`를 내보낸다.
   GameController 프레임워크는 `ios_pad.rs`의 `#[link]` + 알림 상수 참조로 잇는다(링크가 빠지면 panic하지 않고 "패드 없음" — `Class::get`).
   연결·끊김 알림 구독·`autoreleasepool`·패드 여럿 합치기는 nail 0288과 견주어 더했다(0137 손질).
+- 화면 밀도(Knellroot 0252, 2026-11-19): 원본 Android 백엔드는 dpi_scale을 늘 1로 둔다. `java/MainActivity.java` `onCreate`가
+  `QuadNative.activityOnDensity(getResources().getDisplayMetrics().density)`, `java/QuadNative.java`·`src/native/android.rs`의 JNI 진입점
+  `activityOnDensity` + `pub fn display_density()`(못 받았으면 0). 게임은 `screen::dp()`로 읽는다.

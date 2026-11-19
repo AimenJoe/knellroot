@@ -14,6 +14,7 @@ const { chromium } = require('playwright');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const sceneKit = require('./scene');
 
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
@@ -62,7 +63,13 @@ async function run(browser, lang) {
   });
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
   const shot = (name) => page.screenshot({ path: path.join(OUT, `hearth-${lang}-${name}.png`) });
-  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(90); } };
+  // 누름마다 게임 프레임 둘(창 안의 커서 옮기기는 그것으로 넉넉하다). 판이 서고·화로가 열리고·창이 닫히는 곳은 장면을 기다린다
+  // (tools/test/scene.js — 느린 CI에서 판이 서기 전에 F가 들어가 화로 대신 싸움 화면을 찍던 길).
+  const { press, until } = sceneKit(page, 90);
+  const toPlay = async () => { await until('Title', '타이틀'); await press('F4'); await press('Enter'); await until('Slots', '이어하기 → 슬롯 창'); await press('Enter'); await until('Play', '슬롯 → 판'); await page.waitForTimeout(1500); };
+  const rest = async (what) => { await press('KeyF'); await until(/host: Hearth/, what || '화로에서 쉬기'); await page.waitForTimeout(300); };
+  const close = async (what) => { await press('Escape'); await until('Play', what || '창 닫기'); await page.waitForTimeout(200); };
+  const pause = async (what) => { await press('Escape'); await until(/host: Pause/, what || '멈춤'); await page.waitForTimeout(200); };
   // 기술 화면의 걸음(0161): 가장자리에서 돌지 않는다 — 왼쪽·위로 넉넉히 누르면 왼쪽 위 칸(휘돌이).
   const home = async () => { await press('ArrowLeft', 6); await press('ArrowUp', 6); };
   // 모든 칸을 지난다: 보이는 줄 다섯(스킬 넷 · 패시브 여섯 · 스킬 넷 · 패시브 여섯 · 큰 기술과 패시브 여섯)을 왼쪽에서 오른쪽으로.
@@ -93,20 +100,21 @@ async function run(browser, lang) {
   await ready();
   await page.waitForTimeout(600);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
+  await until('Title', '타이틀');
   await press('F4'); // 넘침 검사 켬(개발판)
   // 타이틀(이어하기·시작하기·설정·개발) → 설정 → 언어(첫 줄): 영어 판이면 → 한 번(한국어 → English).
   if (lang === 'en') {
-    await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
+    await press('ArrowDown', 2); await press('Enter'); await until('Settings { host: Title', '타이틀 → 설정');
     await press('ArrowRight'); await page.waitForTimeout(200);
     await shot('0-title-settings');
-    await press('Escape'); await page.waitForTimeout(300);
+    await press('Escape'); await until('Title', '설정 → 타이틀');
     await press('ArrowUp', 2);
   }
   // 이어하기 → 슬롯 창 → 이어하기 → 문 앞 쉼터.
-  await press('Enter'); await page.waitForTimeout(300);
-  await press('Enter'); await page.waitForTimeout(1500);
+  await press('Enter'); await until('Slots', '이어하기 → 슬롯 창');
+  await press('Enter'); await until('Play', '슬롯 → 판'); await page.waitForTimeout(1500);
   // 쉬기 → 큰 창(0164)이 상태 탭에서 열린다. 탭은 E(오른쪽)·Q(왼쪽)로 넘긴다 — 상태 · 장비 · 기술 · 도감 · 가게 · 설정.
-  await press('KeyF'); await page.waitForTimeout(600);
+  await rest();
   await shot('1-hearth');
   // 상태 탭의 레벨 줄: 줄마다 커서를 옮겨 미리보기 글을 본다(생명 1단 · 기력 4단(다음이 끝) · 힘 4단(다음 단에 평타 +1)).
   await shot('2-level-life');
@@ -289,10 +297,10 @@ async function run(browser, lang) {
   if (!new RegExp(`embers=${embers - 70}\\n`).test(b)) errors.push(`respec must cost 70 embers: ${JSON.stringify(b)}`);
   if (/ult\.rank\./.test(b)) errors.push(`respec must forget the great skill too (0172): ${JSON.stringify(b)}`);
   // 창을 닫으면 떠난다(한 번에) → 싸움(HUD 기력 막대가 길어졌는지).
-  await press('Escape'); await page.waitForTimeout(400);
+  await close('화로 창 닫기');
   await shot('9-play-hud');
   // 멈춤 = 같은 창(탭 다섯 — 가게가 없다), 상태 탭에서 열린다: 읽기만(확인해도 묻는 창이 없다).
-  await press('Escape'); await page.waitForTimeout(300);
+  await pause('멈춤 = 상태 탭');
   await shot('10a-pause-status');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('10b-pause-status-deny');
@@ -319,8 +327,8 @@ async function run(browser, lang) {
   for (let i = 0; i < 13; i++) { await shot(`18-pause-settings-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
   await shot('18a-pause-to-title-ask');
-  await press('Escape'); await page.waitForTimeout(300);
-  await press('Escape'); await page.waitForTimeout(300);
+  await press('Escape'); await until(/host: Pause/, '묻는 창 → 설정 탭');
+  await close('멈춤 닫기');
   // 모든 단(0158): 단을 미리 찍은 기록마다 — 화로의 기술 화면에서 모든 칸의 상세를 지나고, 멈춤의 기술 화면에서도 한 번 더
   // (멈춤은 상태 줄·목록이 다르다 — 끼우기만).
   for (const [name, text] of BOARDS) {
@@ -331,17 +339,15 @@ async function run(browser, lang) {
     await ready();
     await page.waitForTimeout(600);
     await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
-    await press('F4');
-    await press('Enter'); await page.waitForTimeout(300);
-    await press('Enter'); await page.waitForTimeout(1500);
-    await press('KeyF'); await page.waitForTimeout(600);
+    await toPlay();
+    await rest(`${name}: 화로`);
     await shot(`20-${name}-status`);
     await press('KeyE', 3); await page.waitForTimeout(300);
     await shot(`20-${name}-skills`);
     await sweep(`20-${name}`, [0, 4]);
-    await press('Escape'); await page.waitForTimeout(400);
+    await close(`${name}: 화로 창 닫기`);
     // 멈춤(다시 띄운 판이라 상태 탭) → E 셋 = 기술(장비 · 가방을 지나).
-    await press('Escape'); await page.waitForTimeout(300);
+    await pause(`${name}: 멈춤`);
     await press('KeyE', 3); await page.waitForTimeout(300);
     await shot(`21-${name}-pause-skills`);
     // 배운 스킬(휘돌이 — 칸 1에 끼움)에서 확인: "칸 2에 끼우기" + 올릴 수 있으면 끝에 흐린 "올리기 — 쉼터 화로에서"(0173) → 닫기.
@@ -366,16 +372,14 @@ async function run(browser, lang) {
     await ready();
     await page.waitForTimeout(600);
     await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
-    await press('F4');
-    await press('Enter'); await page.waitForTimeout(300);
-    await press('Enter'); await page.waitForTimeout(1500);
+    await toPlay();
   };
   await boot(FRESH);
   await shot('30-fresh-hud');
   // 빈 칸은 눌러도 아무 일 없다(Q·E = 스킬 둘).
   await press('KeyQ'); await page.waitForTimeout(300);
   await shot('30a-fresh-press-empty');
-  await press('KeyF'); await page.waitForTimeout(600);
+  await rest('새 판: 화로');
   await shot('31-fresh-rest-skills');
   // 처음 서는 칸 = 살 수 있는 첫 칸(휘돌이): 목록(배우기뿐) → 묻는 창 → 배움.
   await press('Enter'); await page.waitForTimeout(300);
@@ -401,10 +405,10 @@ async function run(browser, lang) {
   b = await record();
   if (!/skill\.rank\.brace=1\n/.test(b) || !/skill\.2=brace\n/.test(b)) errors.push(`fresh: the second skill must fill slot 2: ${JSON.stringify(b)}`);
   if (/skill\.rank\.cut=/.test(b)) errors.push(`fresh: cut was never learned: ${JSON.stringify(b)}`);
-  await press('Escape'); await page.waitForTimeout(400);
+  await close('새 판: 화로 창 닫기');
   await shot('32-fresh-hud-two');
   // 다시 쉬면 상태 탭(아는 스킬이 있다).
-  await press('KeyF'); await page.waitForTimeout(600);
+  await rest('새 판: 다시 쉬기');
   await shot('33-fresh-rest-status');
   await press('Escape'); await page.waitForTimeout(300);
   await ctx.close();

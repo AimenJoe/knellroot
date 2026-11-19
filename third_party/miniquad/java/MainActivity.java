@@ -291,6 +291,8 @@ public class MainActivity extends Activity {
         setContentView(layout);
 
         QuadNative.activityOnCreate(this);
+        // Knellroot 패치: 화면 밀도를 넘긴다(터치 버튼·UI의 실제 크기 — dpi_scale은 Android에서 늘 1).
+        QuadNative.activityOnDensity(getResources().getDisplayMetrics().density);
 
         //% MAIN_ACTIVITY_ON_CREATE
     }

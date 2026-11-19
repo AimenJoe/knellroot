@@ -8,6 +8,7 @@ const { chromium } = require('playwright');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const sceneKit = require('./scene');
 
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
@@ -39,7 +40,8 @@ async function run(browser, lang, size) {
   });
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
   const shot = (name) => page.screenshot({ path: path.join(OUT, `tabs-${lang}-${w}-${name}.png`) });
-  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(90); } };
+  // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js).
+  const { press, until, flip } = sceneKit(page, 90);
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 20000 });
   await page.goto(`http://localhost:${PORT}/`);
   await ready();
@@ -48,22 +50,23 @@ async function run(browser, lang, size) {
   await ready();
   await page.waitForTimeout(600);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
+  await until('Title', '타이틀');
   await press('F4');
   if (lang === 'en') {
-    await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
+    await press('ArrowDown', 2); await press('Enter'); await until('Settings { host: Title', '타이틀 → 설정');
     await press('ArrowRight'); await page.waitForTimeout(200);
-    await press('Escape'); await page.waitForTimeout(300);
+    await press('Escape'); await until('Title', '설정 → 타이틀');
     await press('ArrowUp', 2);
   }
-  await press('Enter'); await page.waitForTimeout(300);
-  await press('Enter'); await page.waitForTimeout(1500);
-  await press('KeyF'); await page.waitForTimeout(600);
+  await press('Enter'); await until('Slots', '이어하기 → 슬롯 창');
+  await press('Enter'); await until('Play', '슬롯 → 판'); await page.waitForTimeout(1500);
+  await press('KeyF'); await until(/host: Hearth/, '화로에서 쉬기 → 큰 창'); await page.waitForTimeout(300);
   for (let i = 0; i < TABS; i++) {
     await shot(`e${i}`);
-    if (i + 1 < TABS) { await press('KeyE'); await page.waitForTimeout(250); }
+    if (i + 1 < TABS) { await flip('KeyE', `E — 탭 ${i + 1}`); await page.waitForTimeout(150); }
   }
   for (let i = TABS - 1; i > 0; i--) {
-    await press('KeyQ'); await page.waitForTimeout(250);
+    await flip('KeyQ', `Q — 탭 ${i - 1}`); await page.waitForTimeout(150);
     await shot(`q${i - 1}`);
   }
   await ctx.close();
@@ -86,7 +89,8 @@ async function touchRun(browser) {
   const cdp = await ctx.newCDPSession(page);
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i + 1 })) });
   const shot = (name) => page.screenshot({ path: path.join(OUT, `tabs-touch-${name}.png`) });
-  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(90); } };
+  // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js).
+  const { press, until, flip } = sceneKit(page, 90);
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 20000 });
   await page.goto(`http://localhost:${PORT}/`);
   await ready();
@@ -95,14 +99,15 @@ async function touchRun(browser) {
   await ready();
   await page.waitForTimeout(600);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
+  await until('Title', '타이틀');
   await press('F4');
-  await press('ArrowDown', 2); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowDown', 2); await press('Enter'); await until('Settings { host: Title', '타이틀 → 설정');
   await press('ArrowRight'); await page.waitForTimeout(200);
-  await press('Escape'); await page.waitForTimeout(300);
+  await press('Escape'); await until('Title', '설정 → 타이틀');
   await press('ArrowUp', 2);
-  await press('Enter'); await page.waitForTimeout(300);
-  await press('Enter'); await page.waitForTimeout(1500);
-  await press('KeyF'); await page.waitForTimeout(600);
+  await press('Enter'); await until('Slots', '이어하기 → 슬롯 창');
+  await press('Enter'); await until('Play', '슬롯 → 판'); await page.waitForTimeout(1500);
+  await press('KeyF'); await until(/host: Hearth/, '화로에서 쉬기 → 큰 창'); await page.waitForTimeout(300);
   await shot('0-open');
   // 탭 줄(창 머리, 화면 위쪽)을 오른쪽 → 왼쪽으로 천천히 끈다.
   const y = 26;
@@ -115,7 +120,8 @@ async function touchRun(browser) {
   await touch('touchStart', [[455, y]]);
   await page.waitForTimeout(60);
   await touch('touchEnd', []);
-  await page.waitForTimeout(400);
+  await until('Settings { host: Hearth', '끌어 드러난 끝 탭(설정)을 누른다');
+  await page.waitForTimeout(200);
   await shot('2-tapped');
   await ctx.close();
   return { errors, checks };

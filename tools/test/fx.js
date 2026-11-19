@@ -6,6 +6,7 @@
 // 눈으로 볼 것: 맞힌 자리의 별·불똥, 휘두름의 초승달, 쓰러진 적의 재, 뛰기·회피·적 내리침의 먼지, 마법 탄의 마름모, 화로 불티.
 // 메뉴 길은 shot.js와 같다(처음에 "키보드만 배치로" — J 공격·K 패링·L 락온·Space 회피·F 점프·U 마법). 콘솔 에러가 있으면 종료 코드 1.
 const { chromium } = require('playwright'); const http = require('http'); const fs = require('fs'); const path = require('path');
+const sceneKit = require('./scene');
 const DIST = path.resolve(process.argv[2] || 'dist'); const OUT = path.resolve(process.argv[3] || 'shots-fx'); const PORT = 8141;
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm' };
 const server = http.createServer((req, res) => { const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
@@ -19,12 +20,15 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     const p = await ctx.newPage();
     p.on('console', m => { if (m.type() === 'error' && !/register_plugin/.test(m.text())) errors.push(m.text()); });
     p.on('pageerror', e => { if (!/register_plugin/.test(String(e))) errors.push(String(e)); });
-    await p.goto(`http://localhost:${PORT}/`); await p.waitForTimeout(2500); await p.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
-    const press = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(k); await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await p.waitForTimeout(70); } };
+    // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js).
+    const kit = sceneKit(p, 70); const { press, until } = kit; p.kit = kit;
+    await p.goto(`http://localhost:${PORT}/`); await until('Title', '타이틀', 60000); await p.waitForTimeout(300); await p.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
     if (first) { first = false;
-      await press('ArrowDown'); await press('Enter'); await p.waitForTimeout(300); await press('ArrowUp'); await press('Enter'); await p.waitForTimeout(300); // 타이틀의 설정: 조작 설정은 맨 끝 줄(0164)
-      await press('ArrowUp', 2); await press('Enter'); await p.waitForTimeout(200); await press('Escape'); await p.waitForTimeout(200); await press('Escape'); await p.waitForTimeout(300); await press('ArrowUp'); }
-    await press('ArrowUp'); await press('Enter'); await p.waitForTimeout(300); await press('ArrowRight', tab); await p.waitForTimeout(150); await press('ArrowDown', row); await press('Enter');
+      await press('ArrowDown'); await press('Enter'); await until('Settings { host: Title', '타이틀 → 설정'); await press('ArrowUp'); await press('Enter'); await until('Controls', '설정 → 조작'); // 타이틀의 설정: 조작 설정은 맨 끝 줄(0164)
+      await press('ArrowUp', 2); await press('Enter'); await p.waitForTimeout(200); await press('Escape'); await until('Settings { host: Title', '조작 → 설정'); await press('Escape'); await until('Title', '설정 → 타이틀'); await press('ArrowUp'); }
+    await press('ArrowUp'); await press('Enter'); await until('Dev { tab: 0', '타이틀 → 개발 창'); await press('ArrowRight', tab); await until(`Dev { tab: ${tab}`, `개발 묶음 ${tab}`); await press('ArrowDown', row); await press('Enter');
+    // 기술 묶음의 "기술 다 올리기"(켬)는 창에 머문다 — 그 밖은 판이 선다.
+    if (!(tab === 2 && row === 1)) await until(['Play', 'Sandbox'], `개발 줄 ${tab}·${row} → 판`);
     return p;
   };
   const burst = async (p, name, n) => { for (let i = 0; i < n; i++) await p.screenshot({ path: path.join(OUT, `${name}-${i}.png`) }); };
@@ -60,34 +64,51 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     // 칸 0·2·4(몰아치기·한 줄기·쟁반 뒤집기). 칸에서 확인 = 목록의 첫 줄 "칸 1에 끼우기"(큰 기술은 "끼우기"). 처음 끼워진 것은 휘돌이(Q)·
     // 가로지르기(E)·쟁반 뒤집기라 그 셋은 건드리지 않는다. 큰 기술은 Q+E.
     // 일곱째 = 개발 창 "든 무기 바꾸기"를 누를 횟수(0223 V3 — 땅울림은 양손 무기의 스킬: 끼우기 전에 망치를 든다).
-    // 0225: 스킬마다 쥔 꼴이 있다 — 땅울림 = 망치(둘), 되울림·잔불 흩기 = 지팡이(셋: 맨손 → 검 → 망치 → 지팡이).
-    const RUNS = [['whirl', null, null, 1500, 'Q', 22], ['cut', null, null, 1100, 'E', 26], ['gather', [0, 3], null, 900, 'Q', 26],
-      ['quake', [2, 0], null, 1000, 'Q', 26, 2], ['brace', [0, 2], null, 1300, 'Q', 40], ['echo', [2, 1], null, 1300, 'Q', 16, 3],
-      ['throw', [2, 2], null, 900, 'Q', 30], ['embers', [2, 3], null, 1300, 'Q', 50, 3],
-      ['upend', null, null, 1500, 'ult', 30], ['flurry', null, 0, 1300, 'ult', 14], ['line', null, 2, 900, 'ult', 30]];
+    // 0225: 스킬마다 쥔 꼴이 있다 — 땅울림 = 망치(셋), 되울림·잔불 흩기 = 지팡이(넷: 맨손 → 활 → 검 → 망치 → 지팡이 — 활(0231)이
+    // 돌림에 끼어 하나씩 밀렸다. 그 전엔 둘·셋이라 망치 대신 검을 들고 "못 쓴다"로 끼우지 못했다).
+    // 끼울 칸은 이름(게임이 기술 탭의 고른 칸을 장면 이름 끝에 붙인다 — `… @Skill(Embers)`, 개발판)으로 찾는다: 자리 숫자는 판이 넓어질
+    // 때마다 낡았다(0214·0215 뒤 잔불 흩기를 못 찾았다).
+    const RUNS = [['whirl', null, null, 1500, 'Q', 22], ['cut', null, null, 1100, 'E', 26], ['gather', 'Skill(Gather)', null, 900, 'Q', 26],
+      ['quake', 'Skill(Quake)', null, 1000, 'Q', 26, 3], ['brace', 'Skill(Brace)', null, 1300, 'Q', 40], ['echo', 'Skill(Echo)', null, 1300, 'Q', 16, 4],
+      ['throw', 'Skill(Throw)', null, 900, 'Q', 30], ['embers', 'Skill(Embers)', null, 1300, 'Q', 50, 4],
+      ['upend', null, null, 1500, 'ult', 30], ['flurry', null, 'Ult(Flurry)', 1300, 'ult', 14], ['line', null, 'Ult(Line)', 900, 'ult', 30]];
     const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await p.waitForTimeout(90); } };
-    // 왼쪽 위(가장자리에서 돌지 않는다) → 줄 → 그 줄의 왼쪽 끝 → 칸 → 확인(목록) → 확인(첫 줄).
-    const wear = async (p, row, col) => {
-      await pick(p, 6, 'ArrowLeft'); await pick(p, 6, 'ArrowUp'); await pick(p, row, 'ArrowDown'); await pick(p, 6, 'ArrowLeft'); await pick(p, col);
-      await p.keyboard.press('Enter'); await p.waitForTimeout(250); await p.keyboard.press('Enter'); await p.waitForTimeout(250);
+    // 이름으로 칸 찾기: 왼쪽 위(가장자리에서 돌지 않는다)에서 줄마다 왼쪽 끝 → 오른쪽으로 훑으며 장면 이름 끝의 `@칸`을 본다 →
+    // 찾으면 확인(목록) → 확인(첫 줄 "칸 1에 끼우기", 큰 기술은 "끼우기"). 못 찾으면 실패(조용히 지나가 끼우지 않은 채 찍지 않게).
+    const at = (p) => p.evaluate(() => window.knellScene || '');
+    const wear = async (p, target) => {
+      const hit = async () => (await at(p)).endsWith(`@${target}`);
+      await pick(p, 8, 'ArrowLeft'); await pick(p, 12, 'ArrowUp');
+      let found = await hit();
+      for (let row = 0; row < 14 && !found; row++) {
+        if (row > 0) await pick(p, 1, 'ArrowDown');
+        await pick(p, 8, 'ArrowLeft');
+        for (let col = 0; col < 9 && !(found = await hit()); col++) await pick(p, 1);
+      }
+      if (!found) throw new Error(`기술 판에서 ${target} 칸을 못 찾았다 — 지금 ${await at(p)}`);
+      await p.keyboard.press('Enter');
+      try { await p.kit.until('SkillAct', `${target} → 할 일 목록`, 4000); } catch (e) {
+        await p.screenshot({ path: path.join(OUT, `sk-wear-fail-${target}.png`) }); throw e;
+      }
+      await p.keyboard.press('Enter'); await p.kit.until('Skills', '끼우기 → 기술 탭');
     };
     // 다섯째 인자로 스킬 이름을 고르면 그것만(예: … skills cut,embers).
     const names = process.argv[5] ? process.argv[5].split(',') : null;
     for (const [name, slot, ult, wait, key, n, arm] of RUNS) {
       if (names && !names.includes(name)) continue;
       p = await open(2, 1); await p.waitForTimeout(300); // 기술 탭(셋째 묶음) 둘째 줄 = 기술 다 올리기(켬)
-      if (arm) { // 끝 줄 "든 무기 바꾸기"를 `arm`번(새 판은 맨손 → 검 → 망치) — 그 무기로 끼우고 아레나에 선다
+      if (arm) { // 끝 줄 "든 무기 바꾸기"를 `arm`번(새 판은 맨손 → 활 → 검 → 망치 → 지팡이) — 그 무기로 끼우고 아레나에 선다
         await pick(p, 4, 'ArrowDown'); for (let i = 0; i < arm; i++) { await p.keyboard.press('Enter'); await p.waitForTimeout(150); }
         await p.screenshot({ path: path.join(OUT, `sk-arm-${name}.png`) }); await pick(p, 4, 'ArrowUp');
       }
-      await p.keyboard.press('ArrowUp'); await p.waitForTimeout(90); await p.keyboard.press('Enter'); await p.waitForTimeout(300); // 기술 끼우기
-      if (slot) await wear(p, slot[0], slot[1]);
+      await p.keyboard.press('ArrowUp'); await p.waitForTimeout(90); await p.keyboard.press('Enter'); await p.kit.until('Skills', '기술 끼우기 → 기술 탭'); // 기술 끼우기
+      if (slot) await wear(p, slot);
       if (arm) await p.screenshot({ path: path.join(OUT, `sk-arm-${name}-worn.png`) });
-      if (ult !== null) await wear(p, 4, ult);
+      if (ult !== null) await wear(p, ult);
       if (name === 'whirl' || name === 'line') await p.screenshot({ path: path.join(OUT, `sk-window-${name}.png`) });
-      await p.keyboard.press('Escape'); await p.waitForTimeout(300);
-      await p.waitForTimeout(200); for (let i = 0; i < 3; i++) await p.keyboard.press('ArrowDown'); // 같은 기술 탭의 넷째 줄 = 기술 아레나
-      await p.keyboard.press('Enter'); await p.waitForTimeout(wait); // 떼가 다가오게
+      await p.keyboard.press('Escape'); await p.kit.until('Dev', '기술 탭 → 개발 창');
+      await p.waitForTimeout(200); await p.kit.press('ArrowDown', 3); // 같은 기술 탭의 넷째 줄 = 기술 아레나
+      await p.keyboard.press('Enter'); await p.kit.until(['Play', 'Sandbox'], '기술 아레나'); await p.waitForTimeout(wait); // 떼가 다가오게
       await p.keyboard.press('F6'); await p.waitForTimeout(300);
       if (key === 'ult') {
         await p.keyboard.down('KeyQ'); await p.keyboard.down('KeyE'); await p.waitForTimeout(40);

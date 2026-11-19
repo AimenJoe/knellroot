@@ -155,6 +155,7 @@ impl App {
     /// 모션 보기 한 틱: 뒤로·✕·창 밖 = 나가기, 탭 넘기기·탭 누르기 = 무기, 위아래·굴리기·줄 누르기 = 동작, 좌우 = 돌리기,
     /// 확인 = 빠르기(1 → ½ → ¼ → 멈춤). 동작을 바꾸면 처음부터.
     pub(super) fn tick_motions(&mut self, a: &Actions, weapon: u8, speed: u8, spin: i8, t_ms: u32) {
+        let a = &self.small_strip_input(a);
         let tap = a.tap.and_then(|p| self.hit_at(p));
         if a.back || a.pause || tap == Some(Hit::Close) {
             self.go(Go::Back);
@@ -217,24 +218,23 @@ impl App {
         let x = self.ui.close(panel);
         self.hits.push((x, Hit::Close));
         let (lx, rx_end) = (panel.x + u * 10.0, panel.x + panel.w - u * 10.0);
-        // 무기 탭: 한 줄에 다(개발 창의 묶음 탭과 같은 꼴).
+        // 무기 탭: 개발 창의 묶음 탭과 같은 꼴 — 넘치면 가로로 굴린다(0257).
         let tab_h = px * 1.6;
-        let gap = u * 4.0;
         let names: Vec<&str> = IDS.iter().map(|&i| weapon_name(i)).collect();
-        let widths: Vec<f32> = names
-            .iter()
-            .map(|n| self.ui.width(n, 1.0) + u * 14.0)
-            .collect();
-        let room = rx_end - lx - gap * (IDS.len() - 1) as f32;
-        let extra = ((room - widths.iter().sum::<f32>()) / IDS.len() as f32).max(0.0);
-        let mut tx = lx;
-        for (i, n) in names.iter().enumerate() {
-            let r = Rect::new(tx, top, widths[i] + extra, tab_h);
-            self.ui.button(r, n, i == weapon as usize);
+        let rects = self.ui.button_strip(
+            &mut self.small_strip,
+            &names,
+            weapon as usize,
+            lx,
+            rx_end,
+            top,
+            tab_h,
+        );
+        for (i, r) in rects.into_iter().enumerate() {
             self.hits.push((r, Hit::Cell(1, i)));
-            tx += r.w + gap;
         }
-        let body = top + tab_h + u * 8.0;
+        let tabs_end = top + tab_h;
+        let body = tabs_end + u * 8.0;
         let hint_y = panel.y + panel.h - u * 8.0 - px;
         let split = panel.x + panel.w * 0.36;
         draw_line(split, body, split, hint_y - u * 4.0, u.max(1.0), ui::BORDER);

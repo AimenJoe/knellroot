@@ -26,7 +26,7 @@ impl App {
             self.run.resume(&mut self.world, at);
             self.cam = self.cam.renew(self.world.player.pos, &self.t);
             // 쉼터에서 잇는 판은 깨어나는 장면이 아니다(0171 — 그 장면은 시작 자리의 것).
-            self.wake = None;
+            self.end_wake();
         }
     }
 
@@ -57,6 +57,22 @@ impl App {
 
     /// 판에서 기록할 것을 옮기고(쉰 쉼터·끝낸 판), 바뀌었으면 쓴다.
     pub(super) fn sync_progress(&mut self, out: crate::stage::StageOut) {
+        self.note_rest(out);
+        self.on_chests();
+        self.on_item_taken();
+        self.on_seen();
+        self.on_find();
+        self.on_gates_and_elites();
+        self.on_drops();
+        self.on_core(out);
+        self.progress.embers = self.world.embers;
+        self.journey_watch();
+        self.note_ground();
+        self.persist();
+    }
+
+    /// 쉰 곳과 이 판에 이긴 문지기 수.
+    fn note_rest(&mut self, out: crate::stage::StageOut) {
         // 마지막으로 쉰 곳(0118): 이 지역에서 쉬었으면 그곳, 아니면 이 판에 앞서 쉰 곳 그대로(지역을 바꿔도 남는다).
         if let Some(at) = self.run.run_at() {
             self.rest_at = Some(crate::save::RunAt {
@@ -72,6 +88,10 @@ impl App {
             at.down = self.down;
         }
         self.progress.run = self.rest_at;
+    }
+
+    /// 상자를 열었다 · 바닥의 것을 주웠다(상자의 것).
+    fn on_chests(&mut self) {
         // 상자(0064 M3 → 0117): 든 장신구·무기를 얻는다(이미 가졌으면 잔불).
         // 상자(0064 M3 → 0131): 열면 소리만 — 얻는 것은 바닥에 떨어진 것을 주울 때. 기록도 그때(줍지 않고 떠나면 다음에 다시 닫혀 있다).
         if self.run.take_opened().is_some() {
@@ -108,6 +128,10 @@ impl App {
                 }
             }
         }
+    }
+
+    /// 떨어진 아이템을 주웠다.
+    fn on_item_taken(&mut self) {
         // 떨어진 아이템(0226): 주워야 가방에 든다 — 가득이면 스테이지가 줍게 두지 않는다(`tell_bag`).
         if let Some((item, at)) = self.run.take_item() {
             self.gesture = Some(("pickup", 0.0));
@@ -115,39 +139,27 @@ impl App {
             self.fx.loot_take(at, glow_of(&item));
             self.take_item(item);
         }
+    }
+
+    /// 처음 본 것(도감·주민).
+    fn on_seen(&mut self) {
         // 도감(0130): 처음 본 것을 적는다(기록은 정렬해 둔다 — 같은 기록이면 같은 글).
-        let seen = self.run.take_codex();
-        if !seen.is_empty() {
-            for k in seen {
-                if !self.progress.codex.contains(&k) {
-                    self.progress.codex.push(k);
-                }
-            }
-            self.progress.codex.sort();
-        }
+        self.progress.note_codex(self.run.take_codex());
         // 주민(0122): 이 판에 처음 본 주민은 몇째 판에 봤는지 기록(재방문 규칙).
         for k in self.run.take_residents_seen() {
-            let id = crate::residents::RESIDENTS[self.run.residents[k].0].id;
-            if !self.progress.residents_seen.iter().any(|(s, _)| s == id) {
-                self.progress
-                    .residents_seen
-                    .push((id.to_string(), self.progress.runs));
-            }
+            let id = crate::residents::RESIDENTS[self.run.folk.list[k].0].id;
+            self.progress.note_resident_seen(id);
         }
+    }
+
+    /// 숨은 물건을 주웠다.
+    fn on_find(&mut self) {
         // 숨은 물건(0105): 기록에 이름을 넣고 능력치에 — 등잔이면 지금 한 모금도 채운다.
         if let Some((kind, id)) = self.run.take_picked() {
             self.snd(crate::sfx::Id::Chest);
             self.gesture = Some(("pickup", 0.0));
             // 덧옷(0176): 아무것도 안 걸쳤으면 바로 걸친다(장신구가 빈 칸에 끼워지는 것과 같은 꼴).
-            let garb = crate::garb::of_find(&id);
-            if !self.progress.finds.contains(&id) {
-                self.progress.finds.push(id);
-                self.progress.finds.sort();
-            }
-            let put_on = garb.is_some() && self.progress.garb.is_none();
-            if put_on {
-                self.progress.garb = garb;
-            }
+            let crate::progress_notes::Found { garb, put_on } = self.progress.note_find(id);
             self.world.apply_stats(self.progress.stats(), false);
             let s = s();
             let named;
@@ -173,6 +185,10 @@ impl App {
             };
             self.toast = Some((text.to_string(), TOAST_TIME));
         }
+    }
+
+    /// 장치를 당겼다 · 문을 처음 열었다 · 엘리트를 처음 쓰러뜨렸다.
+    fn on_gates_and_elites(&mut self) {
         // 엘리트(0112): 처음 쓰러뜨린 것을 기록에(덤 잔불은 스테이지가 이미 흩었다).
         // 문 장치(0113): 처음 연 문을 기록에(판을 넘어 열려 있다).
         // 장치 당기기 몸짓(0197).
@@ -180,24 +196,20 @@ impl App {
             self.gesture = Some(("pull", 0.0));
         }
         if self.run.take_gate_new() {
-            let id = self.run.def.find_prefix.to_string();
-            if !self.progress.gates.contains(&id) {
-                self.progress.gates.push(id);
-                self.progress.gates.sort();
-            }
+            self.progress
+                .note_gate(self.run.def.find_prefix.to_string());
             self.snd(crate::sfx::Id::Chest);
         }
         let new = self.run.take_elites_new();
         if !new.is_empty() {
             let n = (crate::tuning::ELITE_FIRST_EMBERS * new.len() as u32).to_string();
-            for id in new {
-                if !self.progress.elites.contains(&id) {
-                    self.progress.elites.push(id);
-                }
-            }
-            self.progress.elites.sort();
+            self.progress.note_elites(new);
             self.toast = Some((fill(s().toast_elite, &[&n]), TOAST_TIME));
         }
+    }
+
+    /// 엘리트·문지기가 쓰러진 자리에 떨어지는 것.
+    fn on_drops(&mut self) {
         // 엘리트의 여벌(0223 V4c — "엘리트 확정 하나"): 쓰러진 자리에 떨어진다(0226 — 주워야 얻는다).
         // 0244(사장 설문 k16 "게임내 강제도 생각해봐야함" → "첫 처치만 확정"): 기록에서 처음 쓰러뜨린 엘리트만 확정,
         // 그 뒤로는 `ELITE_REPEAT_SPARE` 확률 — 새 판마다 다시 서는 엘리트를 되풀이해 가방을 채우는 길을 느리게.
@@ -227,6 +239,10 @@ impl App {
                 }
             }
         }
+    }
+
+    /// 판을 끝냈다 · 핵을 쥐었다.
+    fn on_core(&mut self, out: crate::stage::StageOut) {
         let core = matches!(
             out,
             crate::stage::StageOut::Cleared | crate::stage::StageOut::CoreTaken
@@ -235,49 +251,22 @@ impl App {
             self.progress.run = None;
             self.rest_at = None;
         }
-        // 둘째·셋째 지역 문지기(깨진 종지기 0125 · 이끼 덮인 문지기 0185): 핵은 문지기마다 따로 셋까지 — 기술 점수는 같이 센다(0161).
-        if core && self.stage >= 1 {
+        // 문지기의 핵(0105 · 0125 · 0185 · 0208 → 0161): 이길 때마다 기술 점수 1, 문지기마다 따로 셋까지. 처음 이긴 판은
+        // "핵이 몸에 스민다"(lore CANON — 핵이 다가왔다). 셈은 `Progress::take_core`(0251 R7).
+        if core {
             let s = s();
-            let cores = match self.stage {
-                1 => &mut self.progress.bell_cores,
-                2 => &mut self.progress.moss_cores,
-                _ => &mut self.progress.overseer_cores,
-            };
-            let first = *cores == 0;
-            if *cores < crate::progression::CORE_CAP {
-                *cores += 1;
-                let (n, m) = (cores.to_string(), crate::progression::CORE_CAP.to_string());
-                self.toast = Some((fill(s.toast_core, &[&n, &m]), TOAST_TIME));
-            } else {
-                self.toast = Some((s.toast_core_full.to_string(), TOAST_TIME));
-            }
-            if first {
+            let taken = self.progress.take_core(self.stage);
+            self.toast = Some(match taken.count {
+                Some(n) => {
+                    let (n, m) = (n.to_string(), crate::progression::CORE_CAP.to_string());
+                    (fill(s.toast_core, &[&n, &m]), TOAST_TIME)
+                }
+                None => (s.toast_core_full.to_string(), TOAST_TIME),
+            });
+            if taken.first {
                 self.run.card = Some((|s| s.core_title, crate::stage::CARD_TIME));
             }
         }
-        // 첫 지역 문지기의 핵(0105).
-        if core && self.stage == 0 {
-            // 핵(0105 → 0161): 이길 때마다 기술 점수 1, 문지기마다 셋까지. 처음 이긴 판은 "핵이 몸에 스민다"(lore CANON — 핵이 다가왔다).
-            let s = s();
-            if self.progress.cores < crate::progression::CORE_CAP {
-                self.progress.cores += 1;
-                let (n, m) = (
-                    self.progress.cores.to_string(),
-                    crate::progression::CORE_CAP.to_string(),
-                );
-                self.toast = Some((fill(s.toast_core, &[&n, &m]), TOAST_TIME));
-            } else {
-                self.toast = Some((s.toast_core_full.to_string(), TOAST_TIME));
-            }
-            if self.progress.clears == 0 {
-                self.run.card = Some((|s| s.core_title, crate::stage::CARD_TIME));
-            }
-            self.progress.clears += 1;
-        }
-        self.progress.embers = self.world.embers;
-        self.journey_watch();
-        self.note_ground();
-        self.persist();
     }
 
     /// 바닥에 둔 아이템을 기록에 옮긴다(0226): 이 지역의 것을 지금 바닥에 있는 것들로 — 게임을 꺼도, 지역을 떠났다 와도
@@ -588,7 +577,7 @@ impl App {
         self.progress.settle_items();
         // 개발 판(0075, nail 0269 B3의 꼴): 메모리의 기록만 바뀌고 슬롯은 그대로 — 슬롯을 다시 고르면 슬롯 것을 읽는다.
         #[cfg(feature = "dev")]
-        if self.dev_run {
+        if self.dev.run {
             return;
         }
         if self.progress != self.saved {

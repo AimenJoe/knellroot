@@ -4,28 +4,53 @@ use super::*;
 impl Renderer {
     /// 아이템 아이콘(0068): 처음 부를 때 한 번 찍어 두고(정한 각도), 다음부터는 그 그림을 `dest`에 붙인다.
     /// 모델·부위가 없으면 아무것도 그리지 않는다(칸은 비어 보인다).
+    /// 0250: 메뉴 그림을 촘촘하게 켜면 칸의 화면 크기(물리 px × 2)로 찍는다 — 크기마다 따로 둔다(칸 크기는 화면마다 몇 가지뿐).
     pub fn draw_icon(&mut self, item: crate::item_view::Item, dest: Rect) {
         let key = crate::item_view::key(item);
-        let rt = match self.icons.get(key) {
+        let side = self.menu_texels(dest.w, ICON_PX);
+        let rt = match self.icons.get(&(key, side)) {
             Some(rt) => rt.clone(),
             None => {
-                let rt = make_rt(ICON_PX, ICON_PX);
+                let rt = self.menu_rt(side, side);
                 if !self.render_item(item, &rt, ICON_PX, 0.0) {
                     return;
                 }
-                self.icons.insert(key, rt.clone());
+                self.icons.insert((key, side), rt.clone());
                 rt
             }
         };
         blit(&rt, dest);
     }
 
+    /// 메뉴 그림 타깃의 한 변(0250): 촘촘하면 칸의 물리 px × 2(줄여 붙이며 섞는다 — 계단 없이), 아니면 예전 고정 크기 `native`.
+    fn menu_texels(&self, logical: f32, native: u32) -> u32 {
+        if !self.menu_fine {
+            return native;
+        }
+        let dpi = screen_dpi_scale().max(0.01);
+        ((logical * dpi * 2.0).round() as u32).clamp(native, MENU_MAX_PX)
+    }
+
+    /// 메뉴 그림 타깃: 촘촘하면 선형으로 줄여 붙인다(2×2가 한 화소로 섞인다), 아니면 게임처럼 가장 가까운 화소.
+    fn menu_rt(&self, w: u32, h: u32) -> RenderTarget {
+        let rt = make_rt(w, h);
+        if self.menu_fine {
+            rt.texture.set_filter(FilterMode::Linear);
+        }
+        rt
+    }
+
     /// 고른 아이템 하나를 천천히 돌려 크게(0068): 타깃 하나를 매 프레임 다시 그린다(인형과 같은 값싼 패스).
     pub fn draw_item(&mut self, item: crate::item_view::Item, dest: Rect, spin: f32) {
-        let rt = self
+        let side = self.menu_texels(dest.w, ITEM_PX);
+        if self
             .item_rt
-            .get_or_insert_with(|| make_rt(ITEM_PX, ITEM_PX))
-            .clone();
+            .as_ref()
+            .is_none_or(|r| r.texture.width() as u32 != side)
+        {
+            self.item_rt = Some(self.menu_rt(side, side));
+        }
+        let rt = self.item_rt.clone().unwrap();
         if self.render_item(item, &rt, ITEM_PX, spin) {
             blit(&rt, dest);
         }
@@ -33,6 +58,7 @@ impl Renderer {
 
     /// 아이템 부위 하나만(같은 모델의 다른 부위는 크기 0) 경계 상자 가운데에 놓고 표의 각도 + `spin`으로 돌려, 틀에 꽉 차게 그린다.
     /// 게임과 같은 툰 빛·외곽선(`Batch::model`). 그렸으면 참. 화면 패스 중에 불러도 기본 카메라로 돌려놓는다.
+    /// `px` = 외곽선을 셀 줄 수 — 타깃이 촘촘해도 예전 고정 크기(`ICON_PX`·`ITEM_PX`)로 세어 선의 굵기(그림에 대한 몫)가 그대로다(0250).
     fn render_item(
         &mut self,
         item: crate::item_view::Item,
@@ -82,6 +108,9 @@ impl Renderer {
             ..Default::default()
         };
         let saved = look();
+        // 인형·아이템 그림은 어느 지역에서 열든 같은 빛으로(0249 — 지역의 빛 색은 세계에만).
+        let saved_sky = sky();
+        set_sky(crate::backdrop::SURFACE.light);
         set_look(Look {
             eye: cam.position,
             fovy,
@@ -99,6 +128,7 @@ impl Renderer {
         self.batch.model(e, &self.pose, inst, WHITE, &[fire], 1.0);
         self.batch.flush();
         set_look(saved);
+        set_sky(saved_sky);
         set_default_camera();
         true
     }
@@ -113,11 +143,26 @@ impl Renderer {
 
     /// 인형·도감 칸의 타깃(0190): 화면의 칸 `dest`를 게임 화면과 같은 도트 크기(한 칸 = 화면 배율 px)로 나눈 크기 —
     /// 내부 해상도 줄 수(`render.rows`)를 바꾸면 인형의 도트도 같이 바뀐다. 남는 px은 칸 가운데로 모은다. 돌려주는 것: 타깃·붙일 자리·가로세로 비.
-    fn fit_doll_rt(&mut self, creature: bool, dest: Rect) -> (RenderTarget, Rect, f32) {
-        let px = self.rt_size.2.max(1) as f32;
+    ///
+    /// 0250(사장 "메뉴에서는 해상도가 좀 높게"): 연구소 `render.menu fine`이 켜지면(기본) 칸을 물리 px × 2로 그려 선형으로 줄여 붙인다 —
+    /// 게임 화면과 달리 메뉴의 그림은 가까이 보는 것이라 도트가 아니라 또렷함이 먼저다. 외곽선 굵기는 게임 도트로 센 줄 수(`rows`)로
+    /// 그대로 둔다. 예전 셈은 논리 px 칸을 물리 px 배율로 나눠, 폰(DPR 3)에서는 도트가 게임의 세 배였다.
+    /// 돌려주는 것: 타깃·붙일 자리·가로세로 비·외곽선을 셀 줄 수.
+    fn fit_doll_rt(&mut self, creature: bool, dest: Rect) -> (RenderTarget, Rect, f32, f32) {
+        let dpi = screen_dpi_scale().max(0.01);
+        // 게임의 도트 한 칸(논리 px).
+        let dot = self.rt_size.2.max(1) as f32 / dpi;
+        let fine = self.menu_fine;
+        // 타깃 화소 하나가 덮는 논리 px.
+        let texel = if fine {
+            0.5 / dpi
+        } else {
+            self.rt_size.2.max(1) as f32
+        };
+        let cap = if fine { MENU_MAX_PX } else { u32::MAX };
         let (tw, th) = (
-            ((dest.w / px).floor() as u32).max(DOLL_W / 4),
-            ((dest.h / px).floor() as u32).max(DOLL_H / 4),
+            ((dest.w / texel).floor() as u32).clamp(DOLL_W / 4, cap),
+            ((dest.h / texel).floor() as u32).clamp(DOLL_H / 4, cap),
         );
         let slot = if creature {
             &mut self.creature_rt
@@ -128,17 +173,28 @@ impl Renderer {
             .as_ref()
             .is_none_or(|r| (r.texture.width() as u32, r.texture.height() as u32) != (tw, th))
         {
-            *slot = Some(make_rt(tw, th));
+            let rt = make_rt(tw, th);
+            if fine {
+                rt.texture.set_filter(FilterMode::Linear);
+            }
+            *slot = Some(rt);
         }
         let rt = slot.clone().unwrap();
-        let (w, h) = (tw as f32 * px, th as f32 * px);
+        let (w, h) = if fine {
+            // 큰 칸이 상한에 걸리면 비를 지키며 칸 안에.
+            let k = (dest.w / tw as f32).min(dest.h / th as f32);
+            (tw as f32 * k, th as f32 * k)
+        } else {
+            (tw as f32 * texel, th as f32 * texel)
+        };
         let at = Rect::new(
             (dest.x + (dest.w - w) * 0.5).round(),
             (dest.y + (dest.h - h) * 0.5).round(),
             w,
             h,
         );
-        (rt, at, tw as f32 / th as f32)
+        let rows = if fine { h / dot } else { th as f32 };
+        (rt, at, tw as f32 / th as f32, rows)
     }
 
     /// 장비 창의 인형(0067 D, 디아블로식): 방랑자만(든 무기만 보이게) 고정 카메라로 작은 타깃에 그리고, 화면 `dest`에 붙인다.
@@ -158,7 +214,7 @@ impl Renderer {
         time: f32,
         fit: bool,
     ) {
-        let (rt, dest, aspect) = self.fit_doll_rt(false, dest);
+        let (rt, dest, aspect, rows) = self.fit_doll_rt(false, dest);
         let Some(e) = self.lib.get("wanderer") else {
             return;
         };
@@ -190,10 +246,13 @@ impl Renderer {
             ..Default::default()
         };
         let saved = look();
+        // 인형·아이템 그림은 어느 지역에서 열든 같은 빛으로(0249 — 지역의 빛 색은 세계에만).
+        let saved_sky = sky();
+        set_sky(crate::backdrop::SURFACE.light);
         set_look(Look {
             eye: cam.position,
             fovy: cam.fovy,
-            rows: rt.texture.height(),
+            rows,
             ..saved
         });
         set_camera(&cam);
@@ -215,6 +274,7 @@ impl Renderer {
         );
         self.batch.flush();
         set_look(saved);
+        set_sky(saved_sky);
         set_default_camera();
         blit(&rt, dest);
     }
@@ -229,24 +289,33 @@ impl Renderer {
         time: f32,
         dark: bool,
     ) {
-        let (rt, dest, aspect) = self.fit_doll_rt(true, dest);
+        let (rt, dest, aspect, rows) = self.fit_doll_rt(true, dest);
         let d = crate::species::def(kind);
         let h = d.height.max(0.5);
+        // 칸에 맞춰 당긴다(2026-11-19 사장 "모델들이 가로로 더 채워지면"): 키(위아래 반 + 여유)와 몸 둘레(돌려도 들어가게 — 가로 반)
+        // 가운데 더 먼 쪽에 선다. 예전엔 키에 상관없이 멀찍이(키 × 2.3 + 1m) 서서 칸의 반도 안 찼다.
+        let half_tan = (CREATURE_FOVY * 0.5).tan();
+        let need_v = h * 0.56 / half_tan;
+        let need_h = (d.radius * 1.35).max(h * 0.36) / (half_tan * aspect.max(0.1));
+        let dist = need_v.max(need_h) * 1.14;
         let cam = Camera3D {
-            position: vec3(0.0, h * 0.75, h * 2.3 + d.radius * 2.0 + 1.0),
-            target: vec3(0.0, h * 0.48, 0.0),
+            position: vec3(0.0, h * 0.5 + dist * 0.16, dist),
+            target: vec3(0.0, h * 0.47, 0.0),
             up: Vec3::Y,
-            fovy: 0.55,
+            fovy: CREATURE_FOVY,
             aspect: Some(aspect),
             projection: Projection::Perspective,
             render_target: Some(rt.clone()),
             ..Default::default()
         };
         let saved = look();
+        // 인형·아이템 그림은 어느 지역에서 열든 같은 빛으로(0249 — 지역의 빛 색은 세계에만).
+        let saved_sky = sky();
+        set_sky(crate::backdrop::SURFACE.light);
         set_look(Look {
             eye: cam.position,
             fovy: cam.fovy,
-            rows: rt.texture.height(),
+            rows,
             ..saved
         });
         set_camera(&cam);
@@ -309,6 +378,7 @@ impl Renderer {
             );
         }
         set_look(saved);
+        set_sky(saved_sky);
         set_default_camera();
         blit(&rt, dest);
     }
@@ -380,3 +450,6 @@ pub(crate) fn doll_eye(b: (f32, f32, f32), aspect: f32) -> (Vec3, Vec3) {
     let target = vec3(0.0, (lo + hi) * 0.5, 0.0);
     (target + vec3(0.0, d * 0.11, d), target)
 }
+
+/// 도감 생물 그림의 세로 시야(라디안).
+const CREATURE_FOVY: f32 = 0.55;

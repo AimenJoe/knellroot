@@ -10,7 +10,34 @@ mod js {
         pub fn knell_fs_touch_enter();
         pub fn knell_portrait() -> u32;
         pub fn knell_safe_inset(i: u32) -> u32;
+        pub fn knell_scene(ptr: *const u8, len: usize);
+        #[cfg(feature = "dev")]
+        pub fn knell_test_flags() -> u32;
     }
+}
+
+/// 맨 위 장면의 이름을 페이지에 알린다(웹만 — `window.knellScene`). 헤드리스 시험이 시간 대신 이것을 기다린다:
+/// CI의 소프트웨어 GL은 10 fps 안팎이라 "300ms 기다리기"가 몇 프레임인지 정해지지 않았고, 창이 뜨기 전에 키가 들어가
+/// `save.js`의 덮어쓰기가 네 번 빠졌다(2026-11-18·19). 장면이 바뀐 프레임에만 부른다.
+pub fn report_scene(name: &str) {
+    #[cfg(target_arch = "wasm32")]
+    // SAFETY: 바이트를 읽기만 하는 JS 함수(web/index.html) — 이 호출 동안만 살아 있는 글을 넘긴다.
+    unsafe {
+        js::knell_scene(name.as_ptr(), name.len())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = name;
+}
+
+/// 헤드리스 시험이 페이지에 건 깃발(`window.knellTestFlags`, 웹만 — 그 밖은 0). 1 = 방랑자가 맞지 않는다(`World::unhurt`).
+/// 개발판에만 있다.
+#[cfg(feature = "dev")]
+pub fn test_flags() -> u32 {
+    #[cfg(target_arch = "wasm32")]
+    // SAFETY: 인자 없이 정수를 돌려주는 JS 함수(web/index.html).
+    return unsafe { js::knell_test_flags() };
+    #[cfg(not(target_arch = "wasm32"))]
+    0
 }
 
 #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
@@ -87,4 +114,24 @@ pub fn safe_insets() -> [f32; 4] {
     return [0, 1, 2, 3].map(|i| unsafe { js::knell_safe_inset(i) } as f32);
     #[cfg(not(target_arch = "wasm32"))]
     [0.0; 4]
+}
+
+/// 게임의 화면 단위(`screen_width()`의 1) 하나가 몇 dp인지의 역 — dp 하나가 몇 단위인가(2026-11-19).
+/// 웹·데스크톱·iOS는 miniquad가 dpi 배율을 나눠 주니 단위가 곧 dp(1). Android의 miniquad는 dpi 배율을 늘 1로 두어 단위가 물리
+/// 화소다 — 패치한 miniquad가 받은 `DisplayMetrics.density`(예: 2.75)를 쓴다. 아직 못 받았으면 가로 화면 높이를 400dp로 셈한다.
+pub fn dp() -> f32 {
+    #[cfg(target_os = "android")]
+    {
+        let d = macroquad::miniquad::native::display_density();
+        if d > 0.5 {
+            return d;
+        }
+        let (w, h) = (
+            macroquad::window::screen_width(),
+            macroquad::window::screen_height(),
+        );
+        (w.min(h) / 400.0).max(1.0)
+    }
+    #[cfg(not(target_os = "android"))]
+    1.0
 }

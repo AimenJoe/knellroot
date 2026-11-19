@@ -24,15 +24,26 @@ pub struct Look {
     pub enemy_ash: f32,
 }
 
-/// 달빛에 물든 색을 되돌리는 곱(0170): 남보라 빛을 받은 잿빛에 이것을 곱하면 붉은 쪽이 살고 푸른 쪽이 눌려 중성 잿빛이 된다.
-const ASH: Color = Color::new(1.0, 0.93, 0.70, 1.0);
+/// 달빛에 물든 색을 되돌리는 곱(0170 → 0249): 지역의 달빛을 받은 잿빛에 이것을 곱하면 중성 잿빛이 된다 — 달빛 색의 역수를
+/// 가장 낮은 칸에 맞춘 것(남보라 달빛이면 예전 손으로 맞춘 값 1.0·0.93·0.70과 거의 같다).
+fn ash() -> Color {
+    let m = sky().moon;
+    let lo = m.min_element().max(1e-3);
+    Color::new(
+        lo / m.x.max(1e-3),
+        lo / m.y.max(1e-3),
+        lo / m.z.max(1e-3),
+        1.0,
+    )
+}
 
 /// 적 모델의 색조(0170): 바닥과 같은 밝기·같은 색으로 묻히지 않게 — 더 밝게, 달빛의 물을 뺀 잿빛으로. "침식 = 색을 잃은 것"
 /// (0037)이 남보라 세계에서 **색이 없어서** 눈에 띄게 한다(위험의 빨강·산 것의 파스텔은 건드리지 않는다).
 pub fn enemy_tint() -> Color {
     let k = look();
+    let a = ash();
     let mix = |c: f32| (1.0 + (c - 1.0) * k.enemy_ash) * k.enemy_lift;
-    Color::new(mix(ASH.r), mix(ASH.g), mix(ASH.b), 1.0)
+    Color::new(mix(a.r), mix(a.g), mix(a.b), 1.0)
 }
 
 thread_local! {
@@ -93,6 +104,31 @@ thread_local! {
     static MOONLIGHT: std::cell::Cell<f32> = const { std::cell::Cell::new(1.0) };
 }
 
+/// 지역의 빛 색(0249 — 지역마다 다른 분위기, 주인공·생물의 색상대를 피한다): 바탕빛·달빛(빛 대비 0140의 값)·배우 가장자리 빛.
+/// 지역 환경 `Env::light`에서 렌더가 프레임마다(지형 굽기 앞에도) 넣는다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SkyLight {
+    pub ambient: Vec3,
+    pub moon: Vec3,
+    pub rim: Vec3,
+}
+
+thread_local! {
+    static SKY: std::cell::Cell<SkyLight> = const { std::cell::Cell::new(crate::backdrop::SURFACE.light) };
+}
+
+pub fn sky() -> SkyLight {
+    SKY.with(|s| s.get())
+}
+
+pub fn set_sky(l: SkyLight) {
+    SKY.with(|s| s.set(l));
+}
+
+/// 빛 대비를 끈 옛 길(0140 앞 — 랩 `key` 끔): 바탕빛을 밝게, 달빛을 약하게(옛 남보라 값의 비 0.29 / 0.21 · 0.44 / 0.62).
+const OLD_AMBIENT: f32 = 1.35;
+const OLD_MOON: f32 = 0.71;
+
 pub fn moonlight() -> f32 {
     MOONLIGHT.with(|m| m.get())
 }
@@ -133,11 +169,7 @@ pub fn lit(p: Vec3, n: Vec3, lights: &[Light]) -> Vec3 {
         d = band(d, 2.0);
     }
     d *= MOON_GATE.with(|g| g.get());
-    let (ambient, moon) = if look().key {
-        (AMBIENT_KEY, MOON_KEY)
-    } else {
-        (AMBIENT, MOON)
-    };
+    let (ambient, moon) = ambient_moon();
     let mut c = ambient + moon * (d * moonlight());
     for li in lights {
         // 빛줄기(0124): 기둥 안이면 위에서 — 가운데일수록·위를 볼수록 밝다(둥근 화로 빛과 달리 높이로 줄지 않는다).
@@ -176,25 +208,22 @@ pub(super) fn rim(p: Vec3, n: Vec3, k: Look) -> Vec3 {
     }
     let v = (k.eye - p).normalize_or_zero();
     let e = 1.0 - n.dot(v).max(0.0);
-    RIM * (k.rim * e * e)
+    sky().rim * (k.rim * e * e)
 }
 
-const RIM: Vec3 = Vec3::new(0.55, 0.62, 0.85);
-
-// 0037: 해 질 녘 — 바탕빛은 보랏빛을 조금, 달빛은 차갑게(파스텔 주인공이 그 위에서 선다).
-const AMBIENT: Vec3 = Vec3::new(0.29, 0.28, 0.40);
-const MOON: Vec3 = Vec3::new(0.44, 0.45, 0.62);
-/// 빛 대비(0140): 달빛을 주광으로 세게, 바탕빛은 낮고 차갑게 — 달빛 받는 바닥의 밝기는 그대로(0.51 → 0.52) 두고 그림자만 어둡게(0.29 → 0.21),
-/// 빛 : 그늘 = 1.8 : 1 → 2.5 : 1. 달을 바로 보는 면은 0.73 → 0.83(더 올리면 배우처럼 그리는 돌 문이 하얗게 뜬다). 그늘의 색은 검정이 아니라 남보라(0037).
-const AMBIENT_KEY: Vec3 = Vec3::new(0.21, 0.21, 0.36);
-const MOON_KEY: Vec3 = Vec3::new(0.62, 0.64, 0.86);
-/// 달빛 받는 바닥에 견준 그늘의 밝기(붉은 칸 기준 — 툰이면 바닥의 달빛 몫은 반 단): 캐릭터 그림자(가림판)를 구운 그림자와 같은 진하기로.
-pub fn floor_shade() -> f32 {
-    let (a, m) = if look().key {
-        (AMBIENT_KEY, MOON_KEY)
+/// 바탕빛·달빛(0140 빛 대비 — 달빛을 주광으로 세게, 바탕빛은 낮게: 빛 : 그늘 2.5 : 1). 색은 지역의 것(0249).
+fn ambient_moon() -> (Vec3, Vec3) {
+    let s = sky();
+    if look().key {
+        (s.ambient, s.moon)
     } else {
-        (AMBIENT, MOON)
-    };
+        (s.ambient * OLD_AMBIENT, s.moon * OLD_MOON)
+    }
+}
+
+/// 달빛 받는 바닥에 견준 그늘의 밝기(초록 칸 기준 — 툰이면 바닥의 달빛 몫은 반 단): 캐릭터 그림자(가림판)를 구운 그림자와 같은 진하기로.
+pub fn floor_shade() -> f32 {
+    let (a, m) = ambient_moon();
     let k = 0.5 * moonlight();
     1.0 - a.y / (a.y + m.y * k)
 }

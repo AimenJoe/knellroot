@@ -586,7 +586,7 @@ fn breaking_a_packbearers_posture_breaks_its_load() {
         1
     );
     // 다시 깨져도 짐은 하나뿐.
-    w.enemies[i].poise_lock = 0.0;
+    w.enemies[i].stance.lock = 0.0;
     let mut ev = Vec::new();
     add_poise(&mut w.enemies[i], max * 2.0, None, &t, &mut ev);
     assert!(!ev.iter().any(|e| matches!(e, Event::LoadBreak { .. })));

@@ -192,8 +192,8 @@ impl Renderer {
 
     fn chests(&mut self, run: &StageRun, w: &World, lights: &[Light], fl: &Drape) {
         // 장신구 상자(0064 M3): 짙은 나무 궤 + 호박빛 자물쇠(닫힌 것만 숨 쉬듯), 열리면 뚜껑이 뒤로 젖혀지고 빛이 꺼진다.
-        for (i, c) in run.chests.iter().enumerate() {
-            let open = run.chest_open.get(i).copied().unwrap_or(false);
+        for (i, c) in run.chest.at.iter().enumerate() {
+            let open = run.chest.open.get(i).copied().unwrap_or(false);
             fl.shadow(*c, 0.6);
             let pulse = 0.75 + 0.25 * (w.time * 2.4 + i as f32).sin();
             // 모델(0139): 열린 상자 = `open` 동작의 끝 자세 + 자물쇠 감춤, 닫힌 상자는 자물쇠(`glow_lock`)가 숨 쉰다.
@@ -316,10 +316,10 @@ impl Renderer {
     fn residents(&mut self, run: &StageRun, w: &World, lights: &[Light], fl: &Drape) {
         // 남은 주민(0122): 모델(0132, `Resident::model`)이 없으면 상자 배우 — 둥근 몸 + 큰 머리 + 귀 둘(작은 동물), 바라보는 쪽으로 코.
         // 곁의 생활 물건이 재방문 변화를 보인다 — 아궁이 불빛이 살아남 · 항아리가 바로 섬 · 천막이 꿰매짐.
-        for (k, &(i, at)) in run.residents.iter().enumerate() {
+        for (k, &(i, at)) in run.folk.list.iter().enumerate() {
             let r = &crate::residents::RESIDENTS[i];
-            let face = run.resident_face.get(k).copied().unwrap_or(0.0);
-            let changed = run.resident_changed.get(k).copied().unwrap_or(false);
+            let face = run.folk.face.get(k).copied().unwrap_or(0.0);
+            let changed = run.folk.changed.get(k).copied().unwrap_or(false);
             let q = Quat::from_rotation_y(face);
             let breath = (w.time * 1.3 + at.x).sin() * 0.02;
             fl.shadow(at, 0.5);
@@ -610,7 +610,7 @@ fn chest_drops(run: &StageRun, w: &World, fl: &Drape) {
     // 떨어진 아이템(0131): 상자에서 포물선으로 튀어나와 내려앉고, 내려앉은 뒤 천천히 돌며 떠 있는 흰 마름모 + 흰 빛기둥.
     for (j, (p, chest, age)) in run.drops.iter().enumerate() {
         let k = (age / crate::stage::DROP_SETTLE).clamp(0.0, 1.0);
-        let from = run.chests.get(*chest).copied().unwrap_or(*p) + Vec3::Y * 0.7;
+        let from = run.chest.at.get(*chest).copied().unwrap_or(*p) + Vec3::Y * 0.7;
         let to = *p + Vec3::Y * 0.45;
         let arc = from.lerp(to, k) + Vec3::Y * (4.0 * k * (1.0 - k)) * 1.0;
         let bob = if k >= 1.0 {
@@ -735,8 +735,8 @@ fn item_drops(run: &StageRun, w: &World, fl: &Drape, solid: &[bool]) {
 fn hidden_finds(run: &StageRun, w: &World, fl: &Drape) {
     // 숨은 물건(0105): 흔적 자리의 작은 빛 — 등잔 +1은 금빛, 한 모금 +1은 민트(0037 생명 색). 살짝 떠서 숨 쉬고 발밑에 옅은 테.
     // 생김새는 성소의 종과 닮지 않게(lore — 울리는 종은 보이지 않는다): 둥근 덩어리 하나.
-    for (i, (p, kind, _)) in run.finds.iter().enumerate() {
-        if run.found.get(i).copied().unwrap_or(true) {
+    for (i, (p, kind, _)) in run.hidden.list.iter().enumerate() {
+        if run.hidden.found.get(i).copied().unwrap_or(true) {
             continue;
         }
         // 떨어진 아이템의 빛기둥(0131): 종류 색, 가까이 와야 서서히 — 뒤지는 맛은 남긴다.

@@ -5,6 +5,7 @@ const { chromium } = require('playwright');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const sceneKit = require('./scene');
 
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
@@ -35,7 +36,8 @@ async function open(browser, seed, tag) {
   });
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) bad.push(String(e)); });
   const shot = (name, clip) => page.screenshot({ path: path.join(OUT, `shield-${tag}-${name}.png`), clip });
-  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(90); } };
+  // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js).
+  const { press, until, flip } = sceneKit(page, 90);
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 60000 });
   await page.goto(`http://localhost:${PORT}/`);
   await ready();
@@ -44,10 +46,11 @@ async function open(browser, seed, tag) {
   await ready();
   await page.waitForTimeout(600);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
+  await until('Title', '타이틀');
   await press('F4');
-  await press('Enter'); await page.waitForTimeout(300);
-  await press('Enter'); await page.waitForTimeout(1500);
-  return { page, shot, press, bad, record: () => page.evaluate((k) => localStorage.getItem(k), KEY) };
+  await press('Enter'); await until('Slots', '이어하기 → 슬롯 창');
+  await press('Enter'); await until('Play', '슬롯 → 판'); await page.waitForTimeout(1500);
+  return { page, shot, press, until, flip, bad, record: () => page.evaluate((k) => localStorage.getItem(k), KEY) };
 }
 
 (async () => {
@@ -73,15 +76,15 @@ async function open(browser, seed, tag) {
     await g.page.keyboard.up('KeyW');
     await g.page.keyboard.up('ShiftLeft');
     await g.page.waitForTimeout(300);
-    await g.press('Tab'); await g.page.waitForTimeout(500);
+    await g.press('Tab'); await g.until('Equip {', 'Tab = 장비 탭'); await g.page.waitForTimeout(300);
     await g.shot('4-equip');
     // 보조무기 칸(주무기 아래 — 0224: 방패 칸은 따로 없다) → 목록(비우기 · 맨손 · 가진 무기 · 방패 — 커서는 낀 방패 = 끝 줄) →
     // 아래로 한 번 = 끝에서 돌아 첫 줄 "비우기".
     await g.press('ArrowDown'); await g.page.waitForTimeout(200);
     await g.shot('5-equip-shield-slot');
-    await g.press('Enter'); await g.page.waitForTimeout(300);
+    await g.press('Enter'); await g.until('EquipPick', '보조무기 칸 → 후보 목록');
     await g.shot('6-equip-shield-pick');
-    await g.press('ArrowDown'); await g.press('Enter'); await g.page.waitForTimeout(300);
+    await g.press('ArrowDown'); await g.press('Enter'); await g.until('Equip {', '비우기 → 장비 탭'); await g.page.waitForTimeout(200);
     const r = await g.record();
     if (/shield\.worn=/.test(r)) errors.push(`the shield was not taken off: ${JSON.stringify(r)}`);
     if (!/shields=pilgrim\n/.test(r)) errors.push(`the owned shield was lost: ${JSON.stringify(r)}`);
@@ -91,14 +94,15 @@ async function open(browser, seed, tag) {
   {
     // 방패가 없는 기록: 쉬기(F) → 가게 탭(상태에서 E 넷 — 장비·기술·도감·여정… 가게) → 방패 줄 → 산다.
     const g = await open(browser, BASE, 'buy');
-    await g.press('KeyF'); await g.page.waitForTimeout(700);
-    await g.press('KeyE', 6); await g.page.waitForTimeout(300);
+    await g.press('KeyF'); await g.until(/host: Hearth/, '화로에서 쉬기 → 큰 창');
+    for (let i = 0; i < 6; i++) await g.flip('KeyE', `E ${i + 1}`);
+    await g.until('Shop', '가게 탭'); await g.page.waitForTimeout(200);
     await g.shot('1-shop');
     await g.press('ArrowDown', 5); await g.page.waitForTimeout(200);
     await g.shot('2-shop-shield');
-    await g.press('Enter'); await g.page.waitForTimeout(300);
+    await g.press('Enter'); await g.until('Ask(Buy', '방패 줄 → 사기 묻는 창');
     await g.shot('3-shop-ask');
-    await g.press('Enter'); await g.page.waitForTimeout(400);
+    await g.press('Enter'); await g.until('Shop', '산다 → 가게 탭'); await g.page.waitForTimeout(300);
     await g.shot('4-shop-bought');
     const r = await g.record();
     if (!/shields=pilgrim\n/.test(r) || !/shield\.worn=pilgrim\n/.test(r)) errors.push(`buying did not give and wear the shield: ${JSON.stringify(r)}`);

@@ -1955,7 +1955,8 @@ mod tests {
             .iter()
             .map(|d| {
                 let (run, _) = crate::stage::StageRun::start(d);
-                run.finds
+                run.hidden
+                    .list
                     .iter()
                     .filter(|f| f.1 == crate::stage::Find::Shard)
                     .count() as u32

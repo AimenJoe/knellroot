@@ -198,6 +198,8 @@ impl Renderer {
         if self.scenery.as_ref().is_none_or(|(k, _)| *k != key) {
             let trees = run.def.env.trees;
             let floor = &run.def.env.floor;
+            // 굽는 빛은 그 지역의 것(0249 — 렌더가 프레임 들머리에 넣지만 굽기는 그것에 기대지 않는다).
+            set_sky(run.def.env.light);
             self.scenery = Some((
                 key,
                 Scenery::bake(&run.level, &mut self.lib, flora, trees, floor),

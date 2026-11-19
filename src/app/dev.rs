@@ -209,6 +209,7 @@ pub(super) fn dev_board_step(
 impl App {
     /// 개발 창 한 틱: 뒤로·✕·창 밖 = 나가기, 좌우·스킬 버튼(Q/E, 0151)·탭 누르기 = 묶음, 위아래·굴리기 = 줄, 확인·줄 누르기 = 시작.
     pub(super) fn tick_dev(&mut self, a: &Actions, tab: usize) {
+        let a = &self.small_strip_input(a);
         let tap = a.tap.and_then(|p| self.hit_at(p));
         if a.back || a.pause || tap == Some(Hit::Close) {
             self.go(Go::Back);
@@ -240,7 +241,7 @@ impl App {
     fn dev_start(&mut self, e: DevStart) {
         match e {
             DevStart::Entrance | DevStart::Gate => {
-                self.dev_run = true;
+                self.dev.run = true;
                 self.restart();
                 if e == DevStart::Gate {
                     self.run.dev_skip_to_gate(&mut self.world);
@@ -249,52 +250,58 @@ impl App {
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Village => {
-                self.dev_run = true;
+                self.dev.run = true;
                 self.restart();
                 // 이 판에 첫 문지기를 이긴 셈 — 내려가는 뿌리 굴(0174)부터 보인다.
                 self.down = 1;
-                self.passage = Some(crate::descent::Passage::new(
-                    1,
-                    false,
-                    self.run.def.depth_m,
-                    crate::stage::STAGES[1].depth_m,
+                self.interlude = Some(super::interlude::Interlude::Passage(
+                    crate::descent::Passage::new(
+                        1,
+                        false,
+                        self.run.def.depth_m,
+                        crate::stage::STAGES[1].depth_m,
+                    ),
                 ));
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Garden => {
-                self.dev_run = true;
+                self.dev.run = true;
                 self.restart();
                 // 이 판에 두 문지기를 이긴 셈 — 마을에서 내려가는 뿌리 굴부터.
                 self.down = 2;
                 self.cross_to(1, false);
-                self.passage = Some(crate::descent::Passage::new(
-                    2,
-                    false,
-                    crate::stage::STAGES[1].depth_m,
-                    crate::stage::STAGES[2].depth_m,
+                self.interlude = Some(super::interlude::Interlude::Passage(
+                    crate::descent::Passage::new(
+                        2,
+                        false,
+                        crate::stage::STAGES[1].depth_m,
+                        crate::stage::STAGES[2].depth_m,
+                    ),
                 ));
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Works => {
-                self.dev_run = true;
+                self.dev.run = true;
                 self.restart();
                 // 이 판에 세 문지기를 이긴 셈 — 정원에서 내려가는 뿌리 굴부터.
                 self.down = 3;
                 self.cross_to(2, false);
-                self.passage = Some(crate::descent::Passage::new(
-                    3,
-                    false,
-                    crate::stage::STAGES[2].depth_m,
-                    crate::stage::STAGES[3].depth_m,
+                self.interlude = Some(super::interlude::Interlude::Passage(
+                    crate::descent::Passage::new(
+                        3,
+                        false,
+                        crate::stage::STAGES[2].depth_m,
+                        crate::stage::STAGES[3].depth_m,
+                    ),
                 ));
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Residents => {
-                self.dev_run = true;
+                self.dev.run = true;
                 self.restart();
                 self.down = 1;
                 self.cross_to(1, false);
-                if let Some(&(_, at)) = self.run.residents.first() {
+                if let Some(&(_, at)) = self.run.folk.list.first() {
                     self.world.player.pos = at + vec3(0.0, 0.0, 1.6);
                     self.world.player.prev = self.world.player.pos;
                     self.cam = self.cam.renew(self.world.player.pos, &self.t);
@@ -302,7 +309,7 @@ impl App {
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Stones => {
-                self.dev_run = true;
+                self.dev.run = true;
                 self.restart();
                 self.down = 1;
                 self.cross_to(1, false);
@@ -314,11 +321,11 @@ impl App {
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Chest => {
-                self.dev_run = true;
+                self.dev.run = true;
                 self.restart();
                 self.down = 1;
                 self.cross_to(1, false);
-                if let Some(&at) = self.run.chests.first() {
+                if let Some(&at) = self.run.chest.at.first() {
                     self.world.player.pos = at + vec3(-1.2, 0.0, 0.0);
                     self.world.player.prev = self.world.player.pos;
                     self.cam = self.cam.renew(self.world.player.pos, &self.t);
@@ -326,7 +333,7 @@ impl App {
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Scenario(sc) => {
-                self.sc = sc;
+                self.dev.sc = sc;
                 self.world = scenario::build(sc);
                 self.fx.clear();
                 self.arm_world();
@@ -341,7 +348,7 @@ impl App {
             })),
             // 기술 판(0158): 메모리의 덮어쓰기만 바꾼다 — 기록(`progress`)과 슬롯은 건드리지 않는다. 창은 그대로(설명 줄이 상태를 보인다).
             DevStart::SkillsMax | DevStart::SkillsFlip => {
-                self.dev_board = dev_board_step(self.dev_board, e);
+                self.dev.board = dev_board_step(self.dev.board, e);
                 self.apply_board();
                 self.snd(crate::sfx::Id::Buy);
             }
@@ -382,7 +389,7 @@ impl App {
     fn dev_note(&self, e: DevStart) -> String {
         match e {
             DevStart::SkillsMax | DevStart::SkillsFlip => {
-                let state = match self.dev_board {
+                let state = match self.dev.board {
                     None => dv::BOARD_SLOT,
                     Some(b) if b.pick[0] == crate::skills::Pick::A => dv::BOARD_MAX_A,
                     Some(_) => dv::BOARD_MAX_B,
@@ -405,24 +412,18 @@ impl App {
         let x = self.ui.close(panel);
         self.hits.push((x, Hit::Close));
         let (lx, rx_end) = (panel.x + u * 10.0, panel.x + panel.w - u * 10.0);
-        // 묶음 탭: 한 줄에 다 — 고른 탭은 밝은 단추. 폭은 글자에 맞추고 남으면 고르게 나눈다.
+        // 묶음 탭: 고른 탭은 밝은 단추 — 다 들면 꽉 채우고, 넘치면 가로로 굴린다(0257, `ui::button_strip`).
         let tab_h = px * 1.6;
-        let gap = u * 4.0;
-        let widths: Vec<f32> = DEV_CATS
-            .iter()
-            .map(|c| self.ui.width(c.name(), 1.0) + u * 14.0)
-            .collect();
-        let room = rx_end - lx - gap * (DEV_CATS.len() - 1) as f32;
-        let extra = ((room - widths.iter().sum::<f32>()) / DEV_CATS.len() as f32).max(0.0);
-        let mut tx = lx;
-        for (i, c) in DEV_CATS.iter().enumerate() {
-            let r = Rect::new(tx, top, widths[i] + extra, tab_h);
-            self.ui.button(r, c.name(), i == tab);
+        let names: Vec<&str> = DEV_CATS.iter().map(|c| c.name()).collect();
+        let rects =
+            self.ui
+                .button_strip(&mut self.small_strip, &names, tab, lx, rx_end, top, tab_h);
+        for (i, r) in rects.into_iter().enumerate() {
             self.hits.push((r, Hit::Cell(1, i)));
-            tx += r.w + gap;
         }
+        let tabs_end = top + tab_h;
         // 왼쪽 줄 목록 · 오른쪽 이름·설명(세로 선으로 가름).
-        let body = top + tab_h + u * 8.0;
+        let body = tabs_end + u * 8.0;
         let hint_y = panel.y + panel.h - u * 8.0 - px;
         let split = panel.x + panel.w * 0.45;
         draw_line(split, body, split, hint_y - u * 4.0, u.max(1.0), ui::BORDER);

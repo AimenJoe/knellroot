@@ -167,14 +167,14 @@ fn snaring_roots_slow_what_a_skill_hits_but_not_a_boss() {
         w.step(&Actions::default(), &t);
         idle(&mut w);
     }
-    assert!(w.enemies[0].snare > 0.0, "the mob is snared");
-    assert!((w.enemies[0].slow - cell::SNARE_SLOW).abs() < 1e-5);
-    assert_eq!(w.enemies[1].snare, 0.0, "a boss is not");
+    assert!(w.enemies[0].marks.snare > 0.0, "the mob is snared");
+    assert!((w.enemies[0].marks.slow - cell::SNARE_SLOW).abs() < 1e-5);
+    assert_eq!(w.enemies[1].marks.snare, 0.0, "a boss is not");
     for _ in 0..(cell::SNARE_SECS / TICK_DT) as usize + 2 {
         w.step(&Actions::default(), &t);
         idle(&mut w);
     }
-    assert_eq!(w.enemies[0].slow, 1.0, "it wears off");
+    assert_eq!(w.enemies[0].marks.slow, 1.0, "it wears off");
 }
 
 /// 박자의 사람: 박자 밖의 평타는 ×0.75 — 맺음이 없으면 그대로.
@@ -222,7 +222,7 @@ fn honed_hand_narrows_the_window_and_breaks_more_posture() {
         let mut w = mob_swinging_in_front(&t);
         w.tree = with(cells, k);
         assert!(parry_once(&mut w, &t));
-        w.enemies[0].poise / poise_max(&w.enemies[0], &t)
+        w.enemies[0].stance.poise / poise_max(&w.enemies[0], &t)
     };
     assert_eq!(poise(&[], None), 0.0);
     assert!((poise(&[], Some(Key::Edge)) - cell::CATCH_POISE).abs() < 1e-3);

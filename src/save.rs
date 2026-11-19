@@ -378,51 +378,7 @@ impl Progress {
             .unwrap_or(0)
             .min(crate::progression::CORE_CAP);
         let migrated = r.num(key::MIGRATED_V04) == Some(1);
-        // 패시브 칸(0161): 갈래마다 `tree.cells.*`(연 자리들)가 있으면 그것, 없으면 옛 꼴(연 수 N = 앞에서부터 N칸).
-        let cells = {
-            use crate::progression::{Tree, DEPTH, LEGACY_DEPTH};
-            let mut t = Tree::default();
-            let keys = key::TREE_CELLS.iter().zip(key::TREE_COUNTS);
-            for (cell, (cells_key, count_key)) in t.cells.iter_mut().zip(keys) {
-                *cell = match r.get(cells_key) {
-                    Some(list) => list
-                        .split(',')
-                        .filter_map(|c| c.trim().parse::<u8>().ok())
-                        .filter(|d| (1..=DEPTH).contains(d))
-                        .fold(0, |m, d| m | 1 << (d - 1)),
-                    None => {
-                        // 옛 꼴의 수는 그때의 칸 수(다섯)까지 — 0214의 넷째 줄 칸은 옛 수로 열리지 않는다.
-                        let n = r.num(count_key).unwrap_or(0).min(LEGACY_DEPTH as u32) as u8;
-                        Tree::from_counts([n, 0, 0]).cells[0]
-                    }
-                };
-            }
-            t.key = r
-                .get(key::TREE_KEY)
-                .and_then(crate::progression::Key::by_key);
-            t.links = r
-                .get(key::TREE_LINKS)
-                .unwrap_or("")
-                .split(',')
-                .filter_map(|k| crate::progression::Link::by_key(k.trim()))
-                .fold(0, |m, l| m | 1 << l.index());
-            t.veins = r
-                .get(key::TREE_VEINS)
-                .unwrap_or("")
-                .split(',')
-                .filter_map(|k| crate::progression::Vein::by_key(k.trim()))
-                .fold(0, |m, v| m | 1 << v.index());
-            for (pick, k) in t.picks.iter_mut().zip(key::TREE_PICKS) {
-                *pick = r
-                    .get(k)
-                    .unwrap_or("")
-                    .split(',')
-                    .filter_map(|c| c.trim().parse::<u8>().ok())
-                    .filter(|d| (1..=DEPTH).contains(d))
-                    .fold(0, |m, d| m | 1 << (d - 1));
-            }
-            t.sane()
-        };
+        let cells = read_tree(&r);
         let residents_seen: Vec<(String, u32)> = r
             .get(key::RESIDENTS_SEEN)
             .unwrap_or("")
@@ -432,75 +388,17 @@ impl Progress {
                 Some((id.to_string(), n.parse().ok()?))
             })
             .collect();
-        let mut residents_changed: Vec<String> = r
-            .get(key::RESIDENTS_CHANGED)
-            .unwrap_or("")
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .collect();
-        residents_changed.sort();
-        residents_changed.dedup();
-        let mut codex: Vec<String> = r
-            .get(key::CODEX)
-            .unwrap_or("")
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .collect();
-        codex.sort();
-        codex.dedup();
-        let list = |k: &str| {
-            let mut v: Vec<String> = r
-                .get(k)
-                .unwrap_or("")
-                .split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string)
-                .collect();
-            v.sort();
-            v.dedup();
-            v
-        };
-        let read = list(key::READ);
-        let journey = list(key::JOURNEY);
+        let residents_changed = read_list(&r, key::RESIDENTS_CHANGED);
+        let codex = read_list(&r, key::CODEX);
+        let read = read_list(&r, key::READ);
+        let journey = read_list(&r, key::JOURNEY);
         let runs = r.num(key::RUNS).unwrap_or(0);
         // 0166 전의 기록: 처음의 둘은 값 없이 가졌다 — 잃지 않게 1단으로(이미 올렸으면 그대로), 그 값은 기록의 몫
         // (`gift` 둘)으로 얹어 남은 점수는 그대로다. 한 번도 쓴 적 없는 기록(빈 슬롯·깨진 글)은 옛 기록이 아니다 — 새 판으로 읽는다.
         let before_v06 = r.num(key::VERSION).is_some() && r.num(key::MIGRATED_V06) != Some(1);
         // 0172 전의 기록: 쟁반 뒤집기(큰 기술)를 값 없이 가졌다 — 같은 꼴로 지킨다(1단 + 그 값을 기록의 몫으로).
         let before_ult = r.num(key::VERSION).is_some() && r.num(key::MIGRATED_ULT) != Some(1);
-        // 기술 판(0158): 키가 없으면 처음 그대로. 범위·점수는 아래에서 바로잡는다(`Board::sane`).
-        let board = {
-            use crate::skills::{Board, Pick, IDS, ULTS};
-            let mut b = Board::default();
-            let small = |k: String| r.num(&k).map(|n| n.min(u8::MAX as u32) as u8);
-            for (i, id) in IDS.into_iter().enumerate() {
-                if let Some(n) = small(format!("{}{}", key::SKILL_RANK, id.key())) {
-                    b.rank[i] = n;
-                }
-                b.pick[i] = r
-                    .get(&format!("{}{}", key::SKILL_PICK, id.key()))
-                    .and_then(Pick::by_key)
-                    .unwrap_or_default();
-            }
-            for (i, u) in ULTS.into_iter().enumerate() {
-                if let Some(n) = small(format!("{}{}", key::ULT_RANK, u.key())) {
-                    b.ult[i] = n;
-                }
-            }
-            b.cells = cells;
-            if before_v06 {
-                b = b.with_starters();
-            }
-            if before_ult {
-                b = b.with_upend();
-            }
-            b
-        };
+        let board = read_board(&r, cells, before_v06, before_ult);
         let r_has_no_weapons = r.get(key::WEAPONS).is_none();
         // 0220 전의 기록: 검은 처음부터 가졌다 — 잃지 않게 가진 무기에 넣는다. 한 번도 쓴 적 없는 기록은 새 판(맨손).
         let before_sword = r.num(key::VERSION).is_some() && r.num(key::MIGRATED_SWORD) != Some(1);
@@ -510,28 +408,8 @@ impl Progress {
             .get(key::GARB_WORN)
             .and_then(crate::garb::by_key)
             .filter(|&id| crate::garb::owned(&finds).contains(&id));
-        // 방패(0223): 가진 것의 키 목록(모르는 키는 건너뛴다 — 한 번씩만).
-        let mut shields: Vec<crate::shield::Id> = Vec::new();
-        for id in r
-            .get(key::SHIELDS)
-            .unwrap_or("")
-            .split(',')
-            .filter_map(|k| crate::shield::Id::by_key(k.trim()))
-        {
-            if !shields.contains(&id) {
-                shields.push(id);
-            }
-        }
-        // 벼린 단(0180): 주운 숫돌 안으로 바로잡는다.
-        let forged = {
-            let mut f = crate::forge::Forged::default();
-            for w in crate::weapons::IDS {
-                if let Some(r) = r.num(&format!("{}{}", key::FORGE, w.key())) {
-                    f.set(w, r.min(crate::forge::RANKS as u32) as u8);
-                }
-            }
-            f.sane(crate::forge::stones(&finds))
-        };
+        let shields = read_shields(&r);
+        let forged = read_forged(&r, &finds);
         let mut p = Progress {
             forged,
             growth,
@@ -648,41 +526,52 @@ impl Progress {
             ground: crate::items::Ground::read(&r),
             base: r,
         };
+        p.migrate_after_read(migrated, r_has_no_weapons, before_v06, before_ult);
+        // 가방(0223 V4b): 가진 바탕마다 아이템 하나는 있게 — 옛 기록의 무기·방패·장신구가 보통 것으로 옮겨진다.
+        p.settle_items();
+        p
+    }
+
+    /// 읽은 뒤의 옛 기록 옮기기(0105 · 0117 · 0158 · 0166 · 0172): 옛 칸을 지금 규칙으로 — 값은 잃지 않는다(0251 R8b).
+    fn migrate_after_read(
+        &mut self,
+        migrated: bool,
+        no_weapons: bool,
+        before_v06: bool,
+        before_ult: bool,
+    ) {
         if !migrated {
-            migrate_v04(&mut p);
+            migrate_v04(self);
         }
         // 0117: 가진 무기 키가 없는 옛 기록은 — 판을 한 번이라도 했으면 무기를 다 가진 채로(잃는 것 없이), 새 기록은 검만.
-        if r_has_no_weapons && p.has_any() {
-            p.weapons = crate::weapons::IDS
+        if no_weapons && self.has_any() {
+            self.weapons = crate::weapons::IDS
                 .into_iter()
                 .filter(|&w| w != crate::weapons::Id::Fists)
                 .collect();
         }
         // 기술 판(0158): 가진 점수 안으로 바로잡는다. 안 배운 스킬이 놓인 칸은 빈 칸으로 둔다(0166).
-        let total = p.skill_points();
-        p.board = p.board.sane(total);
+        let total = self.skill_points();
+        self.board = self.board.sane(total);
         // 넘쳐서 처음으로 돌아간 옛 기록도 처음의 둘은 지닌다(그 값이 기록의 몫이다).
         if before_v06 {
-            let kept = p.board.with_starters();
+            let kept = self.board.with_starters();
             if kept.spent() <= total {
-                p.board = kept;
+                self.board = kept;
             }
             // 옛 규칙(0158): 안 배운 스킬이 끼워진 옛 기록은 처음의 둘로 — 스킬 버튼이 빈 채로 돌아오지 않게.
-            if p.skills.0.iter().any(|&id| !p.board.learned(id)) {
-                p.skills = crate::skills::Worn(crate::skills::START);
+            if self.skills.0.iter().any(|&id| !self.board.learned(id)) {
+                self.skills = crate::skills::Worn(crate::skills::START);
             }
         }
         // 넘쳐서 처음으로 돌아간 옛 기록도 쟁반 뒤집기는 지닌다(0172 — 그 값이 기록의 몫이다).
         if before_ult {
-            let kept = p.board.with_upend();
+            let kept = self.board.with_upend();
             if kept.spent() <= total {
-                p.board = kept;
+                self.board = kept;
             }
         }
-        p.ult = p.board.wearable_ult(p.ult);
-        // 가방(0223 V4b): 가진 바탕마다 아이템 하나는 있게 — 옛 기록의 무기·방패·장신구가 보통 것으로 옮겨진다.
-        p.settle_items();
-        p
+        self.ult = self.board.wearable_ult(self.ult);
     }
 
     /// 기술 점수(0158 나 → 0161)의 합: 총 레벨 + 처음 쓰러뜨린 엘리트 수 + 핵(문지기마다 `CORE_CAP`까지) + 주운 종소리 조각 —
@@ -734,6 +623,133 @@ impl Progress {
             .into_iter()
             .filter(|&w| self.owns_weapon(w))
             .collect()
+    }
+
+    /// 패시브 칸(0161): 새 키는 연 자리들, 옛 키는 앞에서부터 이어 연 수(키 이름은 그대로 — 옛 판이 읽어도 터지지 않는다).
+    /// 맺음·다리 칸·결·숫자 칸의 고르기(0214·0215·0223).
+    fn write_tree(&self, r: &mut Record) {
+        for b in 0..3 {
+            let cells = self.board.cells;
+            r.set(key::TREE_COUNTS[b], cells.prefix(b));
+            let open: Vec<String> = (0..crate::progression::DEPTH)
+                .filter(|d| cells.mask(b) & (1 << d) != 0)
+                .map(|d| (d + 1).to_string())
+                .collect();
+            if open.is_empty() {
+                r.remove(key::TREE_CELLS[b]);
+            } else {
+                r.set(key::TREE_CELLS[b], open.join(","));
+            }
+        }
+        match self.board.cells.key {
+            Some(k) => r.set(key::TREE_KEY, k.key()),
+            None => r.remove(key::TREE_KEY),
+        }
+        // 다리 칸·숫자 칸의 고르기(0215).
+        let links: Vec<&str> = crate::progression::LINKS
+            .into_iter()
+            .filter(|&l| self.board.cells.linked(l))
+            .map(|l| l.key())
+            .collect();
+        if links.is_empty() {
+            r.remove(key::TREE_LINKS);
+        } else {
+            r.set(key::TREE_LINKS, links.join(","));
+        }
+        let veins: Vec<&str> = crate::progression::VEINS
+            .into_iter()
+            .filter(|&v| self.board.cells.veined(v))
+            .map(|v| v.key())
+            .collect();
+        if veins.is_empty() {
+            r.remove(key::TREE_VEINS);
+        } else {
+            r.set(key::TREE_VEINS, veins.join(","));
+        }
+        for (&picks, k) in self.board.cells.picks.iter().zip(key::TREE_PICKS) {
+            let on: Vec<String> = (0..crate::progression::DEPTH)
+                .filter(|d| picks & (1 << d) != 0)
+                .map(|d| (d + 1).to_string())
+                .collect();
+            if on.is_empty() {
+                r.remove(k);
+            } else {
+                r.set(k, on.join(","));
+            }
+        }
+    }
+
+    /// 든 것: 주무기·부무기·방패·끼운 스킬(주·부무기 칸), 가방·바닥(0223·0226).
+    fn write_hands(&self, r: &mut Record) {
+        match self.weapon {
+            Some(w) => r.set(key::WEAPON, w.key()),
+            None => r.remove(key::WEAPON),
+        }
+        match self.sub {
+            Some(w) => r.set(key::SUB, w.key()),
+            None => r.remove(key::SUB),
+        }
+        if self.shields.is_empty() {
+            r.remove(key::SHIELDS);
+        } else {
+            let keys: Vec<&str> = self.shields.iter().map(|s| s.key()).collect();
+            r.set(key::SHIELDS, keys.join(","));
+        }
+        match self.shield {
+            Some(id) => r.set(key::SHIELD_WORN, id.key()),
+            None => r.remove(key::SHIELD_WORN),
+        }
+        // 처음의 둘이면 쓰지 않는다(기록이 없는 슬롯이 "기록 있음"이 되지 않게).
+        if self.skills.0 == crate::skills::START {
+            r.remove(key::SKILL1);
+            r.remove(key::SKILL2);
+        } else {
+            r.set(key::SKILL1, self.skills.0[0].key());
+            r.set(key::SKILL2, self.skills.0[1].key());
+        }
+        self.bag.write(r);
+        self.ground.write(r);
+        if self.sub_skills.0 == crate::skills::START {
+            r.remove(key::SKILL_SUB1);
+            r.remove(key::SKILL_SUB2);
+        } else {
+            r.set(key::SKILL_SUB1, self.sub_skills.0[0].key());
+            r.set(key::SKILL_SUB2, self.sub_skills.0[1].key());
+        }
+    }
+
+    /// 기술 판(0158): 처음 그대로인 칸은 쓰지 않는다(빈 슬롯이 "기록 있음"이 되지 않게, 옛 판으로 읽어도 그대로).
+    fn write_board(&self, r: &mut Record) {
+        use crate::skills::{Entry, Ult, IDS, PICK_RANK, ULTS};
+        for (i, id) in IDS.into_iter().enumerate() {
+            let (rk, pk) = (
+                format!("{}{}", key::SKILL_RANK, id.key()),
+                format!("{}{}", key::SKILL_PICK, id.key()),
+            );
+            if self.board.rank[i] == Entry::Skill(id).free() {
+                r.remove(&rk);
+            } else {
+                r.set(&rk, self.board.rank[i]);
+            }
+            if self.board.rank[i] >= PICK_RANK {
+                r.set(&pk, self.board.pick[i].key());
+            } else {
+                r.remove(&pk);
+            }
+        }
+        for (i, u) in ULTS.into_iter().enumerate() {
+            let uk = format!("{}{}", key::ULT_RANK, u.key());
+            if self.board.ult[i] == Entry::Ult(u).free() {
+                r.remove(&uk);
+            } else {
+                r.set(&uk, self.board.ult[i]);
+            }
+        }
+        if self.ult == Ult::Upend {
+            r.remove(key::ULT_WORN);
+        } else {
+            r.set(key::ULT_WORN, self.ult.key());
+        }
     }
 
     pub fn to_record(&self) -> Record {
@@ -791,124 +807,9 @@ impl Progress {
         } else {
             r.remove(key::SKILL_GIFT);
         }
-        // 패시브 칸(0161): 새 키는 연 자리들, 옛 키는 앞에서부터 이어 연 수(키 이름은 그대로 — 옛 판이 읽어도 터지지 않는다).
-        for b in 0..3 {
-            let cells = self.board.cells;
-            r.set(key::TREE_COUNTS[b], cells.prefix(b));
-            let open: Vec<String> = (0..crate::progression::DEPTH)
-                .filter(|d| cells.mask(b) & (1 << d) != 0)
-                .map(|d| (d + 1).to_string())
-                .collect();
-            if open.is_empty() {
-                r.remove(key::TREE_CELLS[b]);
-            } else {
-                r.set(key::TREE_CELLS[b], open.join(","));
-            }
-        }
-        match self.board.cells.key {
-            Some(k) => r.set(key::TREE_KEY, k.key()),
-            None => r.remove(key::TREE_KEY),
-        }
-        // 다리 칸·숫자 칸의 고르기(0215).
-        let links: Vec<&str> = crate::progression::LINKS
-            .into_iter()
-            .filter(|&l| self.board.cells.linked(l))
-            .map(|l| l.key())
-            .collect();
-        if links.is_empty() {
-            r.remove(key::TREE_LINKS);
-        } else {
-            r.set(key::TREE_LINKS, links.join(","));
-        }
-        let veins: Vec<&str> = crate::progression::VEINS
-            .into_iter()
-            .filter(|&v| self.board.cells.veined(v))
-            .map(|v| v.key())
-            .collect();
-        if veins.is_empty() {
-            r.remove(key::TREE_VEINS);
-        } else {
-            r.set(key::TREE_VEINS, veins.join(","));
-        }
-        for (&picks, k) in self.board.cells.picks.iter().zip(key::TREE_PICKS) {
-            let on: Vec<String> = (0..crate::progression::DEPTH)
-                .filter(|d| picks & (1 << d) != 0)
-                .map(|d| (d + 1).to_string())
-                .collect();
-            if on.is_empty() {
-                r.remove(k);
-            } else {
-                r.set(k, on.join(","));
-            }
-        }
-        match self.weapon {
-            Some(w) => r.set(key::WEAPON, w.key()),
-            None => r.remove(key::WEAPON),
-        }
-        match self.sub {
-            Some(w) => r.set(key::SUB, w.key()),
-            None => r.remove(key::SUB),
-        }
-        if self.shields.is_empty() {
-            r.remove(key::SHIELDS);
-        } else {
-            let keys: Vec<&str> = self.shields.iter().map(|s| s.key()).collect();
-            r.set(key::SHIELDS, keys.join(","));
-        }
-        match self.shield {
-            Some(id) => r.set(key::SHIELD_WORN, id.key()),
-            None => r.remove(key::SHIELD_WORN),
-        }
-        // 처음의 둘이면 쓰지 않는다(기록이 없는 슬롯이 "기록 있음"이 되지 않게).
-        if self.skills.0 == crate::skills::START {
-            r.remove(key::SKILL1);
-            r.remove(key::SKILL2);
-        } else {
-            r.set(key::SKILL1, self.skills.0[0].key());
-            r.set(key::SKILL2, self.skills.0[1].key());
-        }
-        self.bag.write(&mut r);
-        self.ground.write(&mut r);
-        if self.sub_skills.0 == crate::skills::START {
-            r.remove(key::SKILL_SUB1);
-            r.remove(key::SKILL_SUB2);
-        } else {
-            r.set(key::SKILL_SUB1, self.sub_skills.0[0].key());
-            r.set(key::SKILL_SUB2, self.sub_skills.0[1].key());
-        }
-        // 기술 판(0158): 처음 그대로인 칸은 쓰지 않는다(빈 슬롯이 "기록 있음"이 되지 않게, 옛 판으로 읽어도 그대로).
-        {
-            use crate::skills::{Entry, Ult, IDS, PICK_RANK, ULTS};
-            for (i, id) in IDS.into_iter().enumerate() {
-                let (rk, pk) = (
-                    format!("{}{}", key::SKILL_RANK, id.key()),
-                    format!("{}{}", key::SKILL_PICK, id.key()),
-                );
-                if self.board.rank[i] == Entry::Skill(id).free() {
-                    r.remove(&rk);
-                } else {
-                    r.set(&rk, self.board.rank[i]);
-                }
-                if self.board.rank[i] >= PICK_RANK {
-                    r.set(&pk, self.board.pick[i].key());
-                } else {
-                    r.remove(&pk);
-                }
-            }
-            for (i, u) in ULTS.into_iter().enumerate() {
-                let uk = format!("{}{}", key::ULT_RANK, u.key());
-                if self.board.ult[i] == Entry::Ult(u).free() {
-                    r.remove(&uk);
-                } else {
-                    r.set(&uk, self.board.ult[i]);
-                }
-            }
-            if self.ult == Ult::Upend {
-                r.remove(key::ULT_WORN);
-            } else {
-                r.set(key::ULT_WORN, self.ult.key());
-            }
-        }
+        self.write_tree(&mut r);
+        self.write_hands(&mut r);
+        self.write_board(&mut r);
         match self.garb {
             Some(id) => r.set(key::GARB_WORN, crate::garb::def(id).key),
             None => r.remove(key::GARB_WORN),
@@ -1142,6 +1043,128 @@ pub fn play_text(secs: u32) -> String {
 /// 슬롯 셋의 요약(타이틀 "이어하기"가 보이나, 슬롯 창의 줄).
 pub fn summaries() -> [Option<Summary>; SLOTS] {
     std::array::from_fn(|i| load(i).summary())
+}
+
+/// 패시브 칸(0161): 갈래마다 `tree.cells.*`(연 자리들)가 있으면 그것, 없으면 옛 꼴(연 수 N = 앞에서부터 N칸).
+fn read_tree(r: &Record) -> crate::progression::Tree {
+    use crate::progression::{Tree, DEPTH, LEGACY_DEPTH};
+    let mut t = Tree::default();
+    let keys = key::TREE_CELLS.iter().zip(key::TREE_COUNTS);
+    for (cell, (cells_key, count_key)) in t.cells.iter_mut().zip(keys) {
+        *cell = match r.get(cells_key) {
+            Some(list) => list
+                .split(',')
+                .filter_map(|c| c.trim().parse::<u8>().ok())
+                .filter(|d| (1..=DEPTH).contains(d))
+                .fold(0, |m, d| m | 1 << (d - 1)),
+            None => {
+                // 옛 꼴의 수는 그때의 칸 수(다섯)까지 — 0214의 넷째 줄 칸은 옛 수로 열리지 않는다.
+                let n = r.num(count_key).unwrap_or(0).min(LEGACY_DEPTH as u32) as u8;
+                Tree::from_counts([n, 0, 0]).cells[0]
+            }
+        };
+    }
+    t.key = r
+        .get(key::TREE_KEY)
+        .and_then(crate::progression::Key::by_key);
+    t.links = r
+        .get(key::TREE_LINKS)
+        .unwrap_or("")
+        .split(',')
+        .filter_map(|k| crate::progression::Link::by_key(k.trim()))
+        .fold(0, |m, l| m | 1 << l.index());
+    t.veins = r
+        .get(key::TREE_VEINS)
+        .unwrap_or("")
+        .split(',')
+        .filter_map(|k| crate::progression::Vein::by_key(k.trim()))
+        .fold(0, |m, v| m | 1 << v.index());
+    for (pick, k) in t.picks.iter_mut().zip(key::TREE_PICKS) {
+        *pick = r
+            .get(k)
+            .unwrap_or("")
+            .split(',')
+            .filter_map(|c| c.trim().parse::<u8>().ok())
+            .filter(|d| (1..=DEPTH).contains(d))
+            .fold(0, |m, d| m | 1 << (d - 1));
+    }
+    t.sane()
+}
+
+/// 쉼표 목록(정렬 · 겹치지 않게 — 같은 기록이면 같은 글).
+fn read_list(r: &Record, k: &str) -> Vec<String> {
+    let mut v: Vec<String> = r
+        .get(k)
+        .unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    v.sort();
+    v.dedup();
+    v
+}
+
+/// 기술 판(0158): 키가 없으면 처음 그대로. 범위·점수는 `Progress::from_record`가 바로잡는다(`Board::sane`).
+fn read_board(
+    r: &Record,
+    cells: crate::progression::Tree,
+    before_v06: bool,
+    before_ult: bool,
+) -> crate::skills::Board {
+    use crate::skills::{Board, Pick, IDS, ULTS};
+    let mut b = Board::default();
+    let small = |k: String| r.num(&k).map(|n| n.min(u8::MAX as u32) as u8);
+    for (i, id) in IDS.into_iter().enumerate() {
+        if let Some(n) = small(format!("{}{}", key::SKILL_RANK, id.key())) {
+            b.rank[i] = n;
+        }
+        b.pick[i] = r
+            .get(&format!("{}{}", key::SKILL_PICK, id.key()))
+            .and_then(Pick::by_key)
+            .unwrap_or_default();
+    }
+    for (i, u) in ULTS.into_iter().enumerate() {
+        if let Some(n) = small(format!("{}{}", key::ULT_RANK, u.key())) {
+            b.ult[i] = n;
+        }
+    }
+    b.cells = cells;
+    if before_v06 {
+        b = b.with_starters();
+    }
+    if before_ult {
+        b = b.with_upend();
+    }
+    b
+}
+
+/// 방패(0223): 가진 것의 키 목록(모르는 키는 건너뛴다 — 한 번씩만).
+fn read_shields(r: &Record) -> Vec<crate::shield::Id> {
+    let mut shields: Vec<crate::shield::Id> = Vec::new();
+    for id in r
+        .get(key::SHIELDS)
+        .unwrap_or("")
+        .split(',')
+        .filter_map(|k| crate::shield::Id::by_key(k.trim()))
+    {
+        if !shields.contains(&id) {
+            shields.push(id);
+        }
+    }
+    shields
+}
+
+/// 벼린 단(0180): 주운 숫돌 안으로 바로잡는다.
+fn read_forged(r: &Record, finds: &[String]) -> crate::forge::Forged {
+    let mut f = crate::forge::Forged::default();
+    for w in crate::weapons::IDS {
+        if let Some(r) = r.num(&format!("{}{}", key::FORGE, w.key())) {
+            f.set(w, r.min(crate::forge::RANKS as u32) as u8);
+        }
+    }
+    f.sane(crate::forge::stones(finds))
 }
 
 #[cfg(test)]
@@ -2208,5 +2231,218 @@ forge.sword=3
         assert_eq!(back.stats_without_charms().knock, 1.0);
         let stray = Progress::from_record(Record::parse("garb.worn=bark\n"));
         assert_eq!(stray.garb, None, "not owned — not worn");
+    }
+
+    /// 0251 R8: 기록 한 번에 왕복 — 모든 칸이 기본값이 아닌 기록이 한 번 읽고 쓰면 고정점이다(같은 기록을 다시 읽고 쓰면 그대로).
+    /// 칸마다의 왕복 시험(위)은 그 칸을 만든 날 쓴 것이라, "새 칸을 쓰기에만 더하고 읽기에는 잊은" 경우를 잡지 못했다.
+    /// 아래의 풀어 쓰기(`let Progress { … } = …`)는 `..` 없이 모든 칸의 이름을 부른다 — 칸을 더하면 이 시험부터 컴파일이 깨지고,
+    /// 새 칸을 여기 채워 넣어야 한다(기본값이면 아래 `assert_ne!`가 깨진다).
+    #[test]
+    fn every_field_survives_one_full_round_trip() {
+        use crate::items::{Base, Item};
+        use crate::skills::{Board, Id as S, Pick, Ult, Worn};
+        use crate::weapons::Id as W;
+        let mut board = Board::default();
+        for (id, rank, pick) in [
+            (S::Whirl, 3, Pick::B),
+            (S::Cut, 2, Pick::A),
+            (S::Brace, 1, Pick::A),
+        ] {
+            board.rank[id.index()] = rank;
+            board.pick[id.index()] = pick;
+        }
+        board.ult = [2, 1, 0];
+        board.cells.open_cell(crate::progression::Cell::Planted);
+        board.cells.open_link(crate::progression::Link::RiposteBeat);
+        board.cells.open_vein(crate::progression::Vein::Root);
+        board.cells.key = Some(crate::progression::Key::Measure);
+        board.cells.picks = [1, 0, 0];
+        let mut forged = crate::forge::Forged::default();
+        forged.set(W::Sword, 2);
+        let rare = Item::decode("w.sword|r|dmg.1+swift.1|0").expect("item");
+        let mut bag = crate::items::Bag::default();
+        bag.add(rare.clone());
+        let mut p0 = Progress {
+            embers: 321,
+            clears: 2,
+            run: Some(RunAt {
+                rest: 2,
+                gate_open: true,
+                stage: 1,
+                down: 2,
+            }),
+            owned: vec![crate::charms::Id::Ear, crate::charms::Id::Shell],
+            chests: vec![1, 4],
+            growth: crate::growth::Growth {
+                hp: 1,
+                flask: 2,
+                heal: 1,
+                oil: true,
+            },
+            level: crate::progression::Level {
+                life: 2,
+                stamina: 3,
+                might: 1,
+            },
+            finds: [
+                "sanctuary.garb.0",
+                "sanctuary.lamp.0",
+                "sanctuary.stone.0",
+                "sanctuary.stone.1",
+                "sanctuary.stone.2",
+            ]
+            .map(String::from)
+            .to_vec(),
+            elites: vec!["sanctuary.elite.0".into()],
+            runs: 5,
+            residents_seen: vec![("fire".into(), 2)],
+            residents_changed: vec!["water".into()],
+            codex: vec!["husk".into(), "thorn".into()],
+            read: vec!["sanctuary.0".into()],
+            journey: vec!["sanctuary.gates".into()],
+            gates: vec!["sanctuary.gate.0".into()],
+            cores: 1,
+            bell_cores: 2,
+            moss_cores: 1,
+            overseer_cores: 3,
+            weapon: Some(W::Sword),
+            sub: Some(W::Hammer),
+            shields: vec![crate::shield::Id::Pilgrim],
+            weapons: vec![W::Sword, W::Hammer],
+            skills: Worn([S::Cut, S::Whirl]),
+            sub_skills: Worn([S::Brace, S::Whirl]),
+            bag,
+            ground: crate::items::Ground(vec![(
+                1,
+                [3, 0, -4],
+                Item::plain(Base::Charm(crate::charms::Id::Hand)),
+            )]),
+            ult: Ult::Flurry,
+            garb: Some(crate::garb::Id::Cloak),
+            forged,
+            board,
+            gift: 1,
+            ult_gift: 2,
+            tutorial: 4,
+            tips: 0b101,
+            woke: true,
+            lit: true,
+            play: 777,
+            ..Progress::default()
+        };
+        p0.worn = [Some(crate::charms::Id::Ear), None, None];
+        // 한 번 읽고 쓰면 정리(옛 칸 → 가방 · 낀 자리 맞추기 · 칸에 앉히기)가 끝난다 — 그 뒤로는 고정점이어야 한다.
+        let once = Progress::from_record(Record::parse(&p0.to_record().to_text()));
+        let text = once.to_record().to_text();
+        let twice = Progress::from_record(Record::parse(&text));
+        assert_eq!(
+            twice.to_record().to_text(),
+            text,
+            "a record read back must write the same text"
+        );
+        let strip = |mut p: Progress| {
+            p.base = Record::default();
+            p
+        };
+        assert_eq!(
+            strip(twice),
+            strip(once.clone()),
+            "every field must read back as it was written"
+        );
+        // 모든 칸이 기본값이 아니다(기본값이면 "쓰고 안 읽는" 칸을 이 시험이 보지 못한다). 예외는 이름을 대고 까닭을 적는다.
+        let d = Progress::default();
+        let Progress {
+            embers,
+            clears,
+            run,
+            owned,
+            worn,
+            chests,
+            growth,
+            level,
+            finds,
+            elites,
+            runs,
+            residents_seen,
+            residents_changed,
+            codex,
+            read,
+            journey,
+            gates,
+            cores,
+            bell_cores,
+            moss_cores,
+            overseer_cores,
+            weapon,
+            sub,
+            shields,
+            shield,
+            weapons,
+            skills,
+            sub_skills,
+            bag,
+            ground,
+            ult,
+            garb,
+            forged,
+            board,
+            gift,
+            ult_gift,
+            tutorial,
+            tips,
+            woke,
+            lit,
+            play,
+            base: _,
+        } = once;
+        assert_ne!(embers, d.embers, "embers");
+        assert_ne!(clears, d.clears, "clears");
+        assert_ne!(run, d.run, "run");
+        assert_ne!(owned, d.owned, "owned");
+        assert_ne!(worn, d.worn, "worn");
+        assert_ne!(chests, d.chests, "chests");
+        assert_ne!(growth, d.growth, "growth");
+        assert_ne!(level, d.level, "level");
+        assert_ne!(finds, d.finds, "finds");
+        assert_ne!(elites, d.elites, "elites");
+        assert_ne!(runs, d.runs, "runs");
+        assert_ne!(residents_seen, d.residents_seen, "residents_seen");
+        assert_ne!(residents_changed, d.residents_changed, "residents_changed");
+        assert_ne!(codex, d.codex, "codex");
+        assert_ne!(read, d.read, "read");
+        assert_ne!(journey, d.journey, "journey");
+        assert_ne!(gates, d.gates, "gates");
+        assert_ne!(cores, d.cores, "cores");
+        assert_ne!(bell_cores, d.bell_cores, "bell_cores");
+        assert_ne!(moss_cores, d.moss_cores, "moss_cores");
+        assert_ne!(overseer_cores, d.overseer_cores, "overseer_cores");
+        assert_ne!(weapon, d.weapon, "weapon");
+        assert_ne!(sub, d.sub, "sub");
+        assert_ne!(shields, d.shields, "shields");
+        // 방패를 든 것은 보조무기와 같은 칸이라(0224) 부무기를 든 이 기록에서는 늘 None — `shields_and_the_off_weapon_round_trip`이 본다.
+        assert_eq!(
+            shield, None,
+            "shield shares the off-hand with the sub weapon"
+        );
+        assert_ne!(weapons, d.weapons, "weapons");
+        assert_ne!(skills, d.skills, "skills");
+        assert_ne!(sub_skills, d.sub_skills, "sub_skills");
+        assert_ne!(bag, d.bag, "bag");
+        assert!(
+            bag.items.iter().any(|(_, it)| *it == rare),
+            "the rare item keeps its grade and affixes"
+        );
+        assert_ne!(ground, d.ground, "ground");
+        assert_ne!(ult, d.ult, "ult");
+        assert_ne!(garb, d.garb, "garb");
+        assert_ne!(forged, d.forged, "forged");
+        assert_ne!(board, d.board, "board");
+        assert_ne!(gift, d.gift, "gift");
+        assert_ne!(ult_gift, d.ult_gift, "ult_gift");
+        assert_ne!(tutorial, d.tutorial, "tutorial");
+        assert_ne!(tips, d.tips, "tips");
+        assert_ne!(woke, d.woke, "woke");
+        assert_ne!(lit, d.lit, "lit");
+        assert_ne!(play, d.play, "play");
     }
 }
