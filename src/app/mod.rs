@@ -110,7 +110,7 @@ struct Press {
 
 thread_local! {
     /// 마지막으로 페이지에 알린 맨 위 장면(`App::frame` — 바뀐 프레임에만 알린다).
-    static REPORTED: std::cell::Cell<Option<Scene>> = const { std::cell::Cell::new(None) };
+    static REPORTED: std::cell::Cell<Option<(Scene, Option<crate::skills::Entry>)>> = const { std::cell::Cell::new(None) };
 }
 
 /// 개발판만의 칸(0075 · 0158): 개발 창이 고른 시나리오, 개발 창에서 시작한 판(기록 슬롯에 쓰지 않는다 — 슬롯을 고르면
@@ -701,9 +701,20 @@ impl App {
     pub fn frame(&mut self) {
         let cpu_start = get_time();
         // 헤드리스 시험의 기다림(`screen::report_scene`): 맨 위 장면이 바뀐 프레임에만 이름을 알린다.
+        // 기술 탭은 고른 칸도 붙인다(개발판 — `Skills { host: Dev } @Skill(Embers)`): 칸의 자리는 판이 바뀌면 낡으니 시험이 이름으로 찾는다.
         let top = self.scene();
-        if REPORTED.with(|r| r.replace(Some(top))) != Some(top) {
-            crate::screen::report_scene(&format!("{top:?}"));
+        #[cfg(feature = "dev")]
+        let focus = match top {
+            Scene::Skills { .. } => crate::skills::ENTRIES.get(self.cursor).copied(),
+            _ => None,
+        };
+        #[cfg(not(feature = "dev"))]
+        let focus: Option<crate::skills::Entry> = None;
+        if REPORTED.with(|r| r.replace(Some((top, focus)))) != Some((top, focus)) {
+            match focus {
+                Some(e) => crate::screen::report_scene(&format!("{top:?} @{e:?}")),
+                None => crate::screen::report_scene(&format!("{top:?}")),
+            }
         }
         // 터치의 상황 버튼(0053): 쉼터 곁이면 점프가 쉬기, 락온할 적이 있거나 락온 중이면 락온, 마실 수 있으면 등잔.
         let play = self.scene().ticks_world();
