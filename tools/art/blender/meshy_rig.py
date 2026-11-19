@@ -212,9 +212,8 @@ print(f"[meshy_rig] ratio {best[0]:.4f} glTF verts {gltf_verts(low)} tris {sum(l
 
 
 def retarget(src_path, tgt):
-    """다른 몸(같은 `mixamorig:*` 뼈 이름)의 동작을 이 뼈대로 옮긴다(0246). 뼈마다 쉬는 자세의 방향이 다를 수 있어(T·A 자세)
-    먼저 원본의 쉬는 방향을 대상의 쉬는 방향으로 돌리는 A를 재고, 매 프레임 대상의 월드 회전 = Ps · Rs⁻¹ · A⁻¹ · Rt
-    (Ps 원본 자세·Rs 원본 쉬는 자세·Rt 대상 쉬는 자세 — 원본이 쉬는 자세면 대상은 원본의 쉬는 방향을 가리킨다).
+    """다른 몸(같은 `mixamorig:*` 뼈 이름)의 동작을 이 뼈대로 옮긴다(0246): 매 프레임 대상의 월드 회전 = Ps · Rs⁻¹ · Rt
+    (Ps 원본 자세·Rs 원본 쉬는 자세·Rt 대상 쉬는 자세 — 원본이 쉬는 자세면 대상도 제 쉬는 자세).
     엉덩이의 움직임은 엉덩이 높이의 비로 줄인다. 원본에 없는 뼈(두건·망토·꼬리 `Bone_*`, 대상의 왼손가락)는 쉬는 자세 그대로."""
     from mathutils import Matrix, Quaternion, Vector
 
@@ -254,23 +253,23 @@ def retarget(src_path, tgt):
     rest_arm = {b.name: b.matrix_local.copy() for b in tgt.data.bones}
     rs = {n: (Sw @ src.data.bones[n].matrix_local).to_quaternion() for n in names}
     rt = {n: (Tw @ rest_arm[n]).to_quaternion() for n in names}
-    align = {}
-    for n in names:
-        bs, bt = src.data.bones[n], tgt.data.bones[n]
-        ds = (Sw.to_3x3() @ (bs.tail_local - bs.head_local)).normalized()
-        dt = (Tw.to_3x3() @ (bt.tail_local - bt.head_local)).normalized()
-        # 뼈 방향만 맞추면 그 축 둘레의 돌림(엉덩이·척추는 곧 몸의 방위)이 비어 몸이 비뚤게 선다 — 둘째 축으로 몸 앞(−y)을 함께 맞춘다
-        # (뼈가 앞을 향하면(발가락) 위(+z)로).
-        def frame(d):
-            ref = Vector((0, -1, 0)) if abs(d.dot(Vector((0, -1, 0)))) < 0.9 else Vector((0, 0, 1))
-            x = d.cross(ref).normalized()
-            return Matrix((x, d, x.cross(d))).transposed().to_quaternion()
-        align[n] = frame(dt) @ frame(ds).inverted()
+    # 원본의 쉬는 자세에서 바뀐 몫(월드 회전)만 대상의 쉬는 자세에 얹는다(Pt = Ps · Rs⁻¹ · Rt). 처음에는 뼈 방향을 원본과 같게
+    # 베꼈는데(쉬는 틀 맞춤), v3 리깅은 목뼈가 뒤로 29° 젖혀져 있어(몸통·목은 뼈의 자리가 몸마다 다르다) 목이 앞으로 꺾여 머리가
+    # 가슴 앞으로 쏠렸다(사장 "기본 모션의 머리 각도가 이상해"). 두 몸의 쉬는 자세는 같은 A 자세라(팔 차 10° 안팎) 몫만 옮긴다.
+    align = {n: Quaternion() for n in names}
     hip = "mixamorig:Hips"
     hs = (Sw @ src.data.bones[hip].head_local).z - min((Sw @ b.head_local).z for b in src.data.bones)
     ht = (Tw @ tgt.data.bones[hip].head_local).z - min((Tw @ b.head_local).z for b in tgt.data.bones)
     k = ht / hs
     print(f"[meshy_rig] retarget {len(names)} bones, hip ratio {k:.3f}")
+    FEET = [f"mixamorig:{s}{p}" for s in ("Left", "Right") for p in ("Foot", "ToeBase", "Toe_End")]
+
+    def feet_low(o, w):
+        return min((w @ o.pose.bones[n].head).z for n in FEET if n in o.pose.bones)
+
+    bpy.context.view_layer.update()
+    s_feet0 = min((Sw @ src.data.bones[n].head_local).z for n in FEET if n in src.data.bones)
+    t_feet0 = min((Tw @ tgt.data.bones[n].head_local).z for n in FEET if n in tgt.data.bones)
     sc = bpy.context.scene
     made = []
     for a in new_a:
@@ -310,6 +309,14 @@ def retarget(src_path, tgt):
                     loc_arm = Tw.inverted() @ want
                     pb.location = rest_arm[n].to_quaternion().inverted() @ (loc_arm - rest_arm[n].translation)
                     pb.keyframe_insert("location", frame=f, group=n)
+            # 발은 땅에(엉덩이 높이의 비만으로는 다리 길이·굽힘이 다른 몸의 발이 땅을 파고들었다 — 내려찍기 착지 −0.3m): 대상의 가장 낮은 발이
+            # 원본의 가장 낮은 발이 쉬는 자세에서 오르내린 만큼(비 k)만 오르내리게 엉덩이를 위아래로 민다.
+            bpy.context.view_layer.update()
+            want_low = t_feet0 + (feet_low(src, Sw) - s_feet0) * k
+            dz = want_low - feet_low(tgt, Tw)
+            hp = tgt.pose.bones[hip]
+            hp.location = hp.location + rest_arm[hip].to_quaternion().inverted() @ (Tw.inverted().to_3x3() @ Vector((0, 0, dz)))
+            hp.keyframe_insert("location", frame=f, group=hip)
         act.use_fake_user = True
         made.append(act)
     tgt.animation_data.action = None

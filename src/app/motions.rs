@@ -374,7 +374,7 @@ mod tests {
         let m = crate::model::Model::from_bytes(include_bytes!("../../assets/models/wanderer.glb"))
             .unwrap();
         let idle = sweep_box(&m, m.anim("idle"));
-        for a in ["idle_look", "idle_shake", "walk", "turn_l"] {
+        for a in ["idle_look", "walk", "attack"] {
             assert_eq!(
                 idle,
                 sweep_box(&m, m.anim(a)),

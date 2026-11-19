@@ -317,10 +317,10 @@ impl Renderer {
 /// 모션 보기 인형의 쉬는 틀(아래 끝·위 끝·가로 반지름, m)의 바닥값 — 서기(`idle`)가 쓸고 가는 틀과 합쳐 쉬는 틀이 된다.
 /// 서서 하는 동작은 모두 그 틀로 같은 크기에 보인다(줄을 넘겨도 인형이 커졌다 작아졌다 하지 않게).
 const DOLL_BASE: (f32, f32, f32) = (0.0, 1.45, 0.5);
-/// 뼈 자리에서 몸의 겉(두건·꼬리·무기 날)까지의 여유(m).
-const DOLL_MARGIN: f32 = 0.35;
+/// 몸의 겉에서 칸 가장자리까지의 여유(m) — 든 무기의 날이 몸 밖으로 나간다.
+const DOLL_MARGIN: f32 = 0.3;
 
-/// 동작이 쓸고 가는 틀: 동작을 고르게 스물넷 자리에서 세워 본 뼈 자리의 높이 범위와 가로 반지름(돌려 보아도 들게 — 원점 둘레),
+/// 동작이 쓸고 가는 틀: 동작을 고르게 스물다섯 자리에서 세워 본 몸(스킨 정점)의 높이 범위와 가로 반지름(돌려 보아도 들게 — 원점 둘레),
 /// 쉬는 틀 `DOLL_BASE`와 합친다. 순수 — 시험.
 pub(crate) fn sweep_box(m: &crate::model::Model, anim: Option<usize>) -> (f32, f32, f32) {
     let rest = sweep_of(m, m.anim("idle"), DOLL_BASE);
@@ -346,31 +346,37 @@ fn sweep_of(
     let d = anim
         .and_then(|i| m.anims.get(i))
         .map_or(0.0, |a| a.duration);
-    let mut pose = Vec::new();
+    let (mut pose, mut pos, mut nrm) = (Vec::new(), Vec::new(), Vec::new());
+    // 휜 몸의 정점으로 잰다(뼈 자리만으로는 모자랐다 — 쓰러짐은 몸이 땅 밑 0.3m까지 들어가 칸 아래가 잘렸다, 2026-11-19).
+    // 무기·방패 조각은 든 것만 보이니 빼고 스킨 몸만.
+    let skinned: Vec<usize> = (0..m.nodes.len())
+        .filter(|&i| m.nodes[i].skin.is_some())
+        .collect();
     for k in 0..=24 {
         m.pose(anim, d * k as f32 / 24.0, &mut pose);
-        // 몸의 뼈만(`mixamorig:*`): 무기 노드는 든 것만 보이고(숨긴 무기의 자리가 땅 밑으로 간다), 두건·꼬리 뼈는 여유가 덮는다.
-        for (n, p) in m.nodes.iter().zip(&pose) {
-            if !n.name.starts_with("mixamorig:") {
+        for &i in &skinned {
+            if !m.skin_into(i, &pose, &mut pos, &mut nrm) {
                 continue;
             }
-            let v = p.w_axis;
-            lo = lo.min(v.y);
-            hi = hi.max(v.y);
-            r = r.max(v.x.hypot(v.z));
+            for v in &pos {
+                lo = lo.min(v.y);
+                hi = hi.max(v.y);
+                r = r.max(v.x.hypot(v.z));
+            }
         }
     }
     (lo, hi, r)
 }
 
 /// 틀 `(lo, hi, r)`이 가로세로 비 `aspect`의 칸에 들게 하는 눈과 보는 곳: 틀 가운데를 조금 위에서(서 있는 인형과 같은 숙임).
-/// 깊이 쪽 반지름만큼 더 물러선다(가까운 쪽이 원근으로 커져도 들게).
+/// 깊이 쪽 반지름의 반만큼 더 물러선다(가까운 쪽이 원근으로 커져도 들게).
 pub(crate) fn doll_eye(b: (f32, f32, f32), aspect: f32) -> (Vec3, Vec3) {
     let (lo, hi, r) = b;
     let half = 0.24_f32.tan(); // fovy 0.48의 반
     let need_h = (hi - lo) * 0.5 + DOLL_MARGIN;
     let need_w = r + DOLL_MARGIN;
-    let d = (need_h / half).max(need_w / (half * aspect.max(0.1))) + r;
+    // 깊이 쪽은 반지름의 반만 — 반지름은 원점 둘레의 가장 먼 점(꼬리 끝)이라 앞쪽이 늘 그만큼 다가오지는 않는다.
+    let d = (need_h / half).max(need_w / (half * aspect.max(0.1))) + r * 0.5;
     let target = vec3(0.0, (lo + hi) * 0.5, 0.0);
     (target + vec3(0.0, d * 0.11, d), target)
 }
