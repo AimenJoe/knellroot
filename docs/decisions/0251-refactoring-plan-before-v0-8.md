@@ -87,3 +87,8 @@ ECS·플러그인 같은 다시 짜기는 하지 않는다 — 문제는 시험�
   `Enemy` 66 → 52(자세 막대 `Stance` · 돌진 `Charge` · 공격 박자 `Rhythm` · 스킬이 남긴 것 `Marks`), `StageRun` 72 → 60(상자 `Chests` ·
   숨은 물건 `Finds` · 남은 주민 `Folk`). 쓰는 곳은 컴파일러가 알려 준 자리만 고쳤다(`no field` 오류의 자리를 새 경로로 — 손으로 grep 하지
   않는다: 이름이 같은 다른 구조체의 칸을 건드리지 않게). 동작은 그대로 — 시험 768 · clippy 다섯.
+- **R11**: 큰 파일 셋을 나눴다 — 몸은 그대로 옮기고 시험 이름 목록이 앞·뒤로 같은지 봤다(새로 든 것은 아래 하나뿐).
+  `world/skill_tick.rs` 4162줄 → 몸통 1370 + `skill_tick/fields.rs`(놓인 것·던진 무기·불티와 그 타 380) + `skill_tick/ult.rs`(큰 기술 155) +
+  `skill_tick/tests.rs`(2268 — 감춘 함수를 부르는 시험이라 자식 모듈에). `fx::on_events` 750줄 match → 사건 묶음 넷(`on_strike`·`on_ail`·
+  `on_skill_event`·`on_body`, 저마다 "내 사건이면 참") + 시험 `every_event_belongs_to_at_most_one_group`(두 묶음에 든 사건이 없고, 나눈 뒤의
+  그림 = 묶음이 낸 그림). `stage/mod.rs` 3377줄 → 1551 + `stage/level.rs`(글자 지도의 땅 446) + `stage/tests.rs`(1382).
