@@ -16,14 +16,14 @@ import bmesh
 import bpy
 
 argv = sys.argv[sys.argv.index("--") + 1:]
-# 0246: `--retarget <동작 원본 리그.glb>` — 동작 없는 새 몸(Meshy 자동 리깅)에 다른 몸의 동작을 뼈 이름으로 옮겨 담는다(아래 `retarget`).
+# 0247: `--retarget <동작 원본 리그.glb>` — 동작 없는 새 몸(Meshy 자동 리깅)에 다른 몸의 동작을 뼈 이름으로 옮겨 담는다(아래 `retarget`).
 RETARGET = None
 if "--retarget" in argv:
     i = argv.index("--retarget")
     RETARGET = argv[i + 1]
     argv = argv[:i] + argv[i + 2:]
 TARGET_ARG = None
-if "--target" in argv:  # 0246: 몸의 정점 수(v3은 무기·등잔과 합쳐 `check_glb` 예산 4800 안에 들게 2850)
+if "--target" in argv:  # 0247: 몸의 정점 수(v3은 무기·등잔과 합쳐 `check_glb` 예산 4800 안에 들게 2850)
     i = argv.index("--target")
     TARGET_ARG = int(argv[i + 1])
     argv = argv[:i] + argv[i + 2:]
@@ -212,7 +212,7 @@ print(f"[meshy_rig] ratio {best[0]:.4f} glTF verts {gltf_verts(low)} tris {sum(l
 
 
 def retarget(src_path, tgt):
-    """다른 몸(같은 `mixamorig:*` 뼈 이름)의 동작을 이 뼈대로 옮긴다(0246): 매 프레임 대상의 월드 회전 = Ps · Rs⁻¹ · Rt
+    """다른 몸(같은 `mixamorig:*` 뼈 이름)의 동작을 이 뼈대로 옮긴다(0247): 매 프레임 대상의 월드 회전 = Ps · Rs⁻¹ · Rt
     (Ps 원본 자세·Rs 원본 쉬는 자세·Rt 대상 쉬는 자세 — 원본이 쉬는 자세면 대상도 제 쉬는 자세).
     엉덩이의 움직임은 엉덩이 높이의 비로 줄인다. 원본에 없는 뼈(두건·망토·꼬리 `Bone_*`, 대상의 왼손가락)는 쉬는 자세 그대로."""
     from mathutils import Matrix, Quaternion, Vector

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Meshy Rigging API로 Image to 3D 결과(작업 번호)에 뼈 붙이기 — 0246.
+"""Meshy Rigging API로 Image to 3D 결과(작업 번호)에 뼈 붙이기 — 0247.
 
     python3 tools/art/meshy_rigging.py <image-to-3d 작업 번호> <나올.glb> [--template mixamo] [--height 1.0] [--fingers]
 

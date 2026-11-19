@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 import wanderer as W  # noqa: E402
 
-# 0246: v3 몸(Meshy 7.1 — 그림 A) + v2 동작을 뼈 이름으로 옮겨 담은 것(`meshy_rig.py --retarget`)
+# 0247: v3 몸(Meshy 7.1 — 그림 A) + v2 동작을 뼈 이름으로 옮겨 담은 것(`meshy_rig.py --retarget`)
 RIG = os.path.join(C.REPO, "tools", "art", "sources", "meshy", "raccoon_v3_rig_anim.glb")
 NAME = "wanderer"
 HEIGHT = 1.4  # 옛 방랑자와 같은 키(귀 끝까지)
@@ -259,7 +259,7 @@ def world_pt(arm, bone, which="head"):
 
 
 def knuckle(arm, side):
-    """주먹 쪽 가운데 손가락 뿌리. v3 몸(0246)은 왼손가락 뼈가 없다 — 그때는 손뼈의 꼬리 쪽으로, 오른손의 손목 → 손가락 뿌리 길이만큼."""
+    """주먹 쪽 가운데 손가락 뿌리. v3 몸(0247)은 왼손가락 뼈가 없다 — 그때는 손뼈의 꼬리 쪽으로, 오른손의 손목 → 손가락 뿌리 길이만큼."""
     hand, mid = ("mixamorig:RightHand", "mixamorig:RightHandMiddle1") if side == "R" else ("mixamorig:LeftHand", "mixamorig:LeftHandMiddle1")
     if mid in arm.data.bones:
         return world_pt(arm, mid)
