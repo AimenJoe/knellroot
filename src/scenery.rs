@@ -36,7 +36,12 @@ pub struct Scenery {
     pub walk_min: f32,
     /// 달빛 가림 높이 지도(0044) — 구운 뒤에도 둔다: 그늘에 선 배우가 달빛을 덜 받게(0140, `render::actor_moon`).
     pub occ: std::rc::Rc<Occluders>,
+    /// 덩어리마다 시야 거르기 상자(0258 — `pieces`와 같은 차례): 구운 정점의 범위 + 바람에 흔들리는 몫(`SWAY_PAD`).
+    pub bounds: Vec<(Vec3, Vec3)>,
 }
+
+/// 바람에 흔들리는 정점이 구운 자리에서 벗어나는 가장 큰 거리(m, `WIND_VS` — 밟혀 눕기 0.34 + 돌풍 0.17)보다 넉넉히.
+pub const SWAY_PAD: f32 = 0.6;
 
 /// 칸 자리로 정하는 0..1 값(같은 지도 = 같은 그림).
 fn hash(x: usize, z: usize, k: u32) -> f32 {
@@ -1067,7 +1072,15 @@ impl Scenery {
             pieces.push(p);
         }
         crate::render::set_bake_shade(None);
+        let bounds = pieces
+            .iter()
+            .map(|p| {
+                let (lo, hi) = crate::render::bounds(p.verts.iter().map(|v| v.position));
+                (lo - Vec3::splat(SWAY_PAD), hi + Vec3::splat(SWAY_PAD))
+            })
+            .collect();
         Scenery {
+            bounds,
             pieces,
             occ: std::rc::Rc::new(occ),
             lights,

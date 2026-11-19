@@ -598,6 +598,8 @@ pub enum P {
     /// 달빛에 물든 색을 잿빛으로 되돌리는 몫(0 = 그대로 · 1 = 다).
     RenderEnemyLift,
     RenderEnemyAsh,
+    /// 시야 밖 거르기(0258): 카메라에 안 보이는 지형 덩어리·적은 그리지 않는다(0 = 옛 길, A/B 재기).
+    RenderCull,
 }
 
 /// 랩이 읽는 칸(이름·걸음·범위·내보내기 이름)은 개발판에만 쓰인다(운영판에는 랩이 없다, 0070).
@@ -629,7 +631,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 169] = [
+pub const SPECS: [Spec; 170] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1982,6 +1984,16 @@ pub const SPECS: [Spec; 169] = [
         0.0,
         1.0,
         0.05
+    ),
+    // 시야 밖 거르기(0258): 지도 전체를 프레임마다 그리던 것을 카메라에 드는 것만(0 = 옛 길 — 같은 판에서 A/B).
+    spec!(
+        RenderCull,
+        "render.cull 0off 1on",
+        "RENDER_CULL",
+        1.0,
+        0.0,
+        1.0,
+        1.0
     ),
 ];
 

@@ -46,6 +46,7 @@ mod model;
 mod models;
 mod nav;
 mod prefs;
+mod prof;
 mod progress_notes;
 mod progression;
 mod render;
@@ -98,11 +99,12 @@ fn window_icon() -> Option<macroquad::miniquad::conf::Icon> {
 }
 
 fn window_conf() -> macroquad::conf::Conf {
+    let (window_width, window_height) = window_size();
     macroquad::conf::Conf {
         miniquad_conf: Conf {
             window_title: "Knellroot".to_owned(),
-            window_width: 1280,
-            window_height: 720,
+            window_width,
+            window_height,
             high_dpi: true,
             // Android는 처음부터 몰입 모드(0046): miniquad는 이 값이 참일 때만 시작·복귀 때 바를 숨긴다
             // (`Cargo.toml`의 `fullscreen = true`는 매니페스트 테마뿐이라 내비게이션 바가 남았다).
@@ -121,6 +123,22 @@ fn window_conf() -> macroquad::conf::Conf {
     }
 }
 
+/// 창 크기: 1280×720 — PC 개발판은 환경 변수 `KNELL_WINDOW=1920x1080`으로 바꾼다(0258 재기: 화면 크기마다의 채움 비용).
+fn window_size() -> (i32, i32) {
+    #[cfg(all(feature = "dev", not(target_arch = "wasm32")))]
+    if let Some((w, h)) = std::env::var("KNELL_WINDOW")
+        .ok()
+        .and_then(|v| {
+            v.split_once('x')
+                .map(|(w, h)| (w.parse().ok(), h.parse().ok()))
+        })
+        .and_then(|(w, h)| Some((w?, h?)))
+    {
+        return (w, h);
+    }
+    (1280, 720)
+}
+
 /// PC(0135): 마지막에 고른 대로 전체 화면으로 연다(prefs 칸 28). 웹은 사용자 입력 없이 못 켜고, Android는 늘 몰입 모드.
 fn desktop_fullscreen() -> bool {
     let on = DESKTOP && prefs::load().is_some_and(|p| p.fullscreen);
@@ -131,6 +149,8 @@ fn desktop_fullscreen() -> bool {
 #[macroquad::main(window_conf)]
 async fn main() {
     let mut app = app::App::new();
+    #[cfg(all(feature = "dev", not(target_arch = "wasm32")))]
+    app.dev_boot();
     // 소리(0064 M5): 파일은 바이너리 안, 합성은 여기서 — 첫 프레임 전에 올린다(웹은 브라우저가 뒤에서 푼다).
     app.set_sfx(sfx::Sfx::load().await);
     app.frame();

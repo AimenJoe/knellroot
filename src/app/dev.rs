@@ -372,6 +372,32 @@ impl App {
         }
     }
 
+    /// 재기용 바로 시작(0258 — PC 개발판): 환경 변수 `KNELL_BOOT`가 개발 창 줄의 이름(`Garden`·`Scenario(Stress80)` …)이면
+    /// 타이틀을 거치지 않고 그 줄로 연다. 구간 시간 재기(`prof`)를 같은 장면에서 되풀이하려고.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn dev_boot(&mut self) {
+        // 연구소 값 덮어쓰기(`KNELL_LAB=render.cull=0,render.ssaa=0`) — 이름은 연구소 줄의 머리(빈칸 앞)로 찾는다.
+        for kv in std::env::var("KNELL_LAB").unwrap_or_default().split(',') {
+            let Some((name, v)) = kv.split_once('=') else {
+                continue;
+            };
+            let at = crate::tuning::SPECS
+                .iter()
+                .position(|sp| sp.name.split(' ').next() == Some(name));
+            match (at, v.parse::<f32>()) {
+                (Some(i), Ok(v)) => self.t.set(i, v),
+                _ => eprintln!("KNELL_LAB: 모르는 값 {kv}"),
+            }
+        }
+        let Ok(want) = std::env::var("KNELL_BOOT") else {
+            return;
+        };
+        match DEV_LIST.iter().find(|(_, e)| format!("{e:?}") == want) {
+            Some((_, e)) => self.dev_start(*e),
+            None => eprintln!("KNELL_BOOT: 모르는 줄 {want}"),
+        }
+    }
+
     /// 줄 이름 — 모션 보기 줄은 무기 이름을 채운다.
     fn dev_name(&self, e: DevStart) -> String {
         match e {

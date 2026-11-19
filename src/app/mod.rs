@@ -718,6 +718,7 @@ impl App {
     }
 
     pub fn frame(&mut self) {
+        crate::prof::frame_start();
         let cpu_start = get_time();
         // 헤드리스 시험의 기다림(`screen::report_scene`): 맨 위 장면이 바뀐 프레임에만 이름을 알린다.
         // 기술 탭은 고른 칸도 붙인다(개발판 — `Skills { host: Dev } @Skill(Embers)`): 칸의 자리는 판이 바뀌면 낡으니 시험이 이름으로 찾는다.
@@ -795,14 +796,20 @@ impl App {
             let a = self.input.take();
             self.tick(a);
         }
-        while self.acc >= TICK_DT {
-            let a = self.input.take();
-            self.tick(a);
-            self.acc -= TICK_DT;
+        {
+            let _p = crate::prof::span("tick");
+            while self.acc >= TICK_DT {
+                let a = self.input.take();
+                self.tick(a);
+                self.acc -= TICK_DT;
+            }
         }
         // 글자 아틀라스를 그리기 전에 다 굽는다(프레임 중간에 키우면 앞서 쌓은 글자가 지워진 텍스처를 가리킨다).
         crate::text::warm();
-        self.draw();
+        {
+            let _p = crate::prof::span("draw");
+            self.draw();
+        }
         // 그리기 호출 수는 우리 배치가 보낸 수로 센다. macroquad `telemetry::capture_frame`은 잡은 프레임의 호출마다
         // 128×128 텍스처를 만들고 지우지 않아(0.4.16 `telemetry::track_drawcall`) 오래 켜 두면 GPU 메모리가 차서 꺼졌다(0020).
         self.perf.draws = self.renderer.batches();
@@ -821,6 +828,7 @@ impl App {
             *cm = 0.0;
             *fs = 0.0;
         }
+        crate::prof::frame_end(|| format!("{:?}", self.scene()));
     }
 
     /// 화면 아래 안내 줄 위까지(메뉴가 굴리는 아래 끝).
@@ -1167,6 +1175,7 @@ impl App {
             }),
         };
         self.frame = Some(f);
+        let _p = crate::prof::span("ui·hud");
         self.ui.begin(f.ui);
         let overlay = self.input.overlay().filter(|_| in_shaft.is_none());
         // 눌린 꼴(0207): 키·패드 확인은 고른 줄·단추가 그리고(`Ui::press`), 탭은 누른 자리에 덧그린다.

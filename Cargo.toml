@@ -51,7 +51,8 @@ version_code = 28
 "android:exported" = "true"
 
 [profile.release]
-opt-level = "z"
+# 속도 우선(0258): "z"(크기 우선)보다 우리 코드 CPU 30~60% 빠르다(틱·방랑자·소품, PC 재기) — 웹 파일은 gzip 4.32 → 4.56MB.
+opt-level = 3
 lto = true
 codegen-units = 1
 

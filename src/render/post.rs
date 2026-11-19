@@ -7,6 +7,8 @@ pub(super) struct EdgeFx {
     size: (u32, u32),
     normal_mat: Material,
     edge_mat: Material,
+    /// 같은 셰이더의 둘째 재질(0258): 2배로 그렸을 때 마무리(번짐·톤·가장자리)만 줄인 타깃에서 — 재질의 값이 패스마다 따로다.
+    grade_mat: Material,
 }
 
 /// 작은 렌더 타깃을 화면 `dest`에(뒤집어서 — 렌더 타깃은 위아래가 바뀌어 나온다).
@@ -112,6 +114,7 @@ impl Renderer {
         // 상주 지형(0186)은 배치에 없으니 여기서 같은 카메라로.
         if self.resident.active {
             self.resident.draw_normals(
+                &self.frustum,
                 Mat4::look_at_rh(c3.position, c3.target, c3.up),
                 self.wind_uniform,
             );
@@ -165,6 +168,8 @@ impl Renderer {
             .edge
             .as_ref()
             .filter(|_| self.edge_ready || g.x > 0.0 || g.y > 0.0 || g.z > 0.0);
+        // 2배로 그렸으면(0258) 첫 패스는 선만 — 번짐(이웃 열여섯 칸)·톤·가장자리는 줄이는 패스에서 반 크기로(화소 수 ¼).
+        let split = self.half.is_some() && edge.is_some();
         let src = match edge {
             Some(fx) => {
                 set_camera(&Camera2D {
@@ -178,7 +183,8 @@ impl Renderer {
                 fx.edge_mat
                     .set_uniform("Texel", vec2(k as f32 / iw as f32, k as f32 / ih as f32));
                 fx.edge_mat.set_uniform("Edge", self.edge_uniform);
-                fx.edge_mat.set_uniform("Grade", g);
+                fx.edge_mat
+                    .set_uniform("Grade", if split { vec4(0.0, 0.0, 0.0, g.w) } else { g });
                 gl_use_material(&fx.edge_mat);
                 draw_texture_ex(
                     &self.rt.texture,
@@ -206,6 +212,16 @@ impl Renderer {
                     ..Default::default()
                 });
                 src.set_filter(FilterMode::Linear);
+                // 줄이며 마무리(0258): 정확히 2:1이라 화소 가운데의 선형 읽기 = 2×2 평균, 이웃 읽기도 2×2 평균이 된다.
+                let grade = edge.filter(|_| split);
+                if let Some(fx) = grade {
+                    fx.grade_mat.set_texture("Normals", fx.rt.texture.clone());
+                    fx.grade_mat
+                        .set_uniform("Texel", vec2(2.0 / iw as f32, 2.0 / ih as f32));
+                    fx.grade_mat.set_uniform("Edge", self.edge_uniform);
+                    fx.grade_mat.set_uniform("Grade", vec4(g.x, g.y, g.z, 0.0));
+                    gl_use_material(&fx.grade_mat);
+                }
                 draw_texture_ex(
                     src,
                     0.0,
@@ -216,6 +232,9 @@ impl Renderer {
                         ..Default::default()
                     },
                 );
+                if grade.is_some() {
+                    gl_use_default_material();
+                }
                 src.set_filter(FilterMode::Nearest);
                 set_default_camera();
                 &half.texture
@@ -458,30 +477,35 @@ fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
         warn!("edge normal material: {e:?}");
     })
     .ok()?;
-    let edge_mat = load_material(
-        ShaderSource::Glsl {
-            vertex: EDGE_VS,
-            fragment: EDGE_FS,
-        },
-        MaterialParams {
-            uniforms: vec![
-                UniformDesc::new("Texel", UniformType::Float2),
-                UniformDesc::new("Edge", UniformType::Float4),
-                UniformDesc::new("Grade", UniformType::Float4),
-            ],
-            textures: vec!["Normals".to_string()],
-            ..Default::default()
-        },
-    )
-    .map_err(|e| {
-        warn!("edge material: {e:?}");
-    })
-    .ok()?;
+    let edge = || {
+        load_material(
+            ShaderSource::Glsl {
+                vertex: EDGE_VS,
+                fragment: EDGE_FS,
+            },
+            MaterialParams {
+                uniforms: vec![
+                    UniformDesc::new("Texel", UniformType::Float2),
+                    UniformDesc::new("Edge", UniformType::Float4),
+                    UniformDesc::new("Grade", UniformType::Float4),
+                ],
+                textures: vec!["Normals".to_string()],
+                ..Default::default()
+            },
+        )
+        .map_err(|e| {
+            warn!("edge material: {e:?}");
+        })
+        .ok()
+    };
+    let edge_mat = edge()?;
+    let grade_mat = edge()?;
     Some(EdgeFx {
         rt: edge_rt(size),
         size,
         normal_mat,
         edge_mat,
+        grade_mat,
     })
 }
 
