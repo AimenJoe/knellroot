@@ -276,6 +276,7 @@ impl App {
             (spin as f32 * SPIN_STEP).to_radians(),
             row.anim,
             shown * row.rate,
+            true,
         );
         let bar = Rect::new(dx, doll.y + doll.h + u * 4.0, dw, u * 4.0);
         draw_rectangle(bar.x, bar.y, bar.w, bar.h, Color::new(1.0, 1.0, 1.0, 0.12));
@@ -362,6 +363,53 @@ mod tests {
                     );
                 }
                 assert!(!dv::motion_label(r.anim).is_empty());
+            }
+        }
+    }
+
+    /// 모션 보기 인형은 동작 내내 칸 안에 있다: 동작이 쓸고 가는 뼈 자리를 다 담고, 제자리 동작(서기·몸짓·걷기·돌기)은 같은 틀(같은 크기)이다.
+    #[test]
+    fn the_motion_doll_frames_the_whole_sweep_and_keeps_standing_moves_the_same_size() {
+        use crate::render::items::{doll_eye, sweep_box};
+        let m = crate::model::Model::from_bytes(include_bytes!("../../assets/models/wanderer.glb"))
+            .unwrap();
+        let idle = sweep_box(&m, m.anim("idle"));
+        for a in ["idle_look", "idle_shake", "walk", "turn_l"] {
+            assert_eq!(
+                idle,
+                sweep_box(&m, m.anim(a)),
+                "standing moves share a frame: {a}"
+            );
+        }
+        let fall = sweep_box(&m, m.anim("fall"));
+        assert!(
+            fall.2 > idle.2 || fall.0 < idle.0,
+            "the fall leaves the standing frame: {fall:?}"
+        );
+        for a in ["fall", "dodge", "plunge_land", "wake", "jump", "ult_upend"] {
+            let b = sweep_box(&m, m.anim(a));
+            let (eye, at) = doll_eye(b, 1.6);
+            // 틀의 꼭짓점이 모두 시야(fovy 0.48) 안 — 위·아래 끝, 가장 가까운 쪽.
+            for p in [
+                vec3(0.0, b.0, b.2),
+                vec3(0.0, b.1, b.2),
+                vec3(b.2, b.1, 0.0),
+                vec3(-b.2, b.0, 0.0),
+            ] {
+                let fwd = (at - eye).normalize();
+                let right = fwd.cross(Vec3::Y).normalize();
+                let up = right.cross(fwd);
+                let to = p - eye;
+                let z = to.dot(fwd);
+                let half = 0.24_f32.tan();
+                assert!(
+                    (to.dot(up) / z).abs() <= half,
+                    "{a}: {p} above/below the doll view"
+                );
+                assert!(
+                    (to.dot(right) / z).abs() <= half * 1.6,
+                    "{a}: {p} beside the doll view"
+                );
             }
         }
     }

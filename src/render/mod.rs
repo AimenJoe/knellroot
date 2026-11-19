@@ -22,7 +22,7 @@ mod actors;
 mod batch;
 mod descent;
 mod drape;
-mod items;
+pub(crate) mod items;
 mod light;
 mod overlays;
 mod post;
@@ -147,6 +147,8 @@ pub struct Renderer {
     backdrop: crate::backdrop::Backdrop,
     /// 장비 창 인형(0067 D): 방랑자만 그리는 작은 렌더 타깃(처음 쓸 때 만든다).
     doll_rt: Option<RenderTarget>,
+    /// 모션 보기의 동작마다 담을 틀(`items::sweep_box` — 아래 끝·위 끝·가로 반지름, 개발판).
+    doll_fit: std::collections::HashMap<String, (f32, f32, f32)>,
     /// 도감 생명체(0130).
     creature_rt: Option<RenderTarget>,
     /// 아이템 그림(0068): 아이콘은 아이템마다 한 번 찍어 둔 타깃, 고른 것 하나는 도는 큰 타깃.
@@ -268,6 +270,7 @@ impl Renderer {
             grade_uniform: Vec4::ZERO,
             backdrop: Default::default(),
             doll_rt: None,
+            doll_fit: Default::default(),
             creature_rt: None,
             icons: Default::default(),
             item_rt: None,
