@@ -107,6 +107,11 @@ struct Press {
     rect: Option<Rect>,
 }
 
+thread_local! {
+    /// 마지막으로 페이지에 알린 맨 위 장면(`App::frame` — 바뀐 프레임에만 알린다).
+    static REPORTED: std::cell::Cell<Option<Scene>> = const { std::cell::Cell::new(None) };
+}
+
 pub struct App {
     /// 장면 스택(0066): 맨 위가 지금 장면, 아래 칸은 커서·창을 맡아 둔다. 지금 칸의 커서·창은 `cursor`·`view`.
     stack: stack::Stack,
@@ -708,6 +713,11 @@ impl App {
     /// 한 프레임.
     pub fn frame(&mut self) {
         let cpu_start = get_time();
+        // 헤드리스 시험의 기다림(`screen::report_scene`): 맨 위 장면이 바뀐 프레임에만 이름을 알린다.
+        let top = self.scene();
+        if REPORTED.with(|r| r.replace(Some(top))) != Some(top) {
+            crate::screen::report_scene(&format!("{top:?}"));
+        }
         // 터치의 상황 버튼(0053): 쉼터 곁이면 점프가 쉬기, 락온할 적이 있거나 락온 중이면 락온, 마실 수 있으면 등잔.
         let play = self.scene().ticks_world();
         let pl = &self.world.player;

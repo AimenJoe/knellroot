@@ -10,7 +10,21 @@ mod js {
         pub fn knell_fs_touch_enter();
         pub fn knell_portrait() -> u32;
         pub fn knell_safe_inset(i: u32) -> u32;
+        pub fn knell_scene(ptr: *const u8, len: usize);
     }
+}
+
+/// 맨 위 장면의 이름을 페이지에 알린다(웹만 — `window.knellScene`). 헤드리스 시험이 시간 대신 이것을 기다린다:
+/// CI의 소프트웨어 GL은 10 fps 안팎이라 "300ms 기다리기"가 몇 프레임인지 정해지지 않았고, 창이 뜨기 전에 키가 들어가
+/// `save.js`의 덮어쓰기가 네 번 빠졌다(2026-11-18·19). 장면이 바뀐 프레임에만 부른다.
+pub fn report_scene(name: &str) {
+    #[cfg(target_arch = "wasm32")]
+    // SAFETY: 바이트를 읽기만 하는 JS 함수(web/index.html) — 이 호출 동안만 살아 있는 글을 넘긴다.
+    unsafe {
+        js::knell_scene(name.as_ptr(), name.len())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = name;
 }
 
 #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]

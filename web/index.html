@@ -199,6 +199,10 @@
         function recBytes(cell) {
           try { return new TextEncoder().encode(window.localStorage.getItem(recKey(cell)) || ""); } catch (e) { return new Uint8Array(0); }
         }
+        // 맨 위 장면의 이름(src/screen.rs report_scene — 바뀐 프레임에만): 헤드리스 시험이 시간 대신 이것을 기다린다.
+        importObject.env.knell_scene = function (ptr, len) {
+          window.knellScene = new TextDecoder().decode(new Uint8Array(wasm_memory.buffer, ptr, len).slice());
+        };
         importObject.env.knell_rec_len = function (cell) { return recBytes(cell).length; };
         importObject.env.knell_rec_read = function (cell, ptr, len) {
           new Uint8Array(wasm_memory.buffer, ptr, len).set(recBytes(cell).subarray(0, len));
