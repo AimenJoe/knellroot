@@ -254,9 +254,10 @@ const HAZE_PITCH: (f32, f32) = (0.36, 0.52);
 
 /// 하늘빛 아지랑이 띠: 위 끝 진하기 0.9에서 `frac × h` 아래로 0이 된다. 렌더 타깃은 화면에 뒤집혀(`flip_y`) 나가므로
 /// 이 2D 좌표의 y = h 쪽이 화면 위다(처음엔 y = 0에 그려 화면 아래에 깔렸다 — 스크린숏으로 잡음).
-pub(super) fn draw_haze(w: f32, h: f32, frac: f32) {
-    let sky = Color::new(0.22, 0.21, 0.33, 0.9);
-    let clear = Color::new(0.22, 0.21, 0.33, 0.0);
+pub(super) fn draw_haze(w: f32, h: f32, frac: f32, tint: Color) {
+    // 빛은 지역 하늘의 가장 낮은 띠(0249 — 예전엔 남보라 한 빛).
+    let sky = Color::new(tint.r, tint.g, tint.b, 0.9);
+    let clear = Color::new(tint.r, tint.g, tint.b, 0.0);
     let band = h * (1.0 - frac);
     let v = |x: f32, y: f32, c: Color| Vertex::new(x, y, 0.0, 0.0, 0.0, c);
     draw_mesh(&Mesh {
@@ -415,7 +416,7 @@ fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
         }
         vec3 rgb = col.rgb;
         if (dark > 0.5) {
-            rgb = mix(rgb, vec3(0.05, 0.04, 0.08), Edge.y);
+            rgb = mix(rgb, vec3(0.045, 0.048, 0.055), Edge.y);
         } else if (light > 0.5) {
             rgb = mix(rgb, min(rgb * 1.7 + 0.06, vec3(1.0)), Edge.z);
         }
@@ -497,7 +498,7 @@ impl Renderer {
                 render_target: Some(self.rt.clone()),
                 ..Default::default()
             });
-            draw_haze(iw as f32, ih as f32, haze);
+            draw_haze(iw as f32, ih as f32, haze, self.backdrop.env.sky[0]);
         }
     }
 }

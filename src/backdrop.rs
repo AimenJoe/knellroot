@@ -14,10 +14,10 @@ use macroquad::prelude::*;
 use crate::ground::Ground;
 use crate::render::Batch;
 
-/// 안개 빛(해 질 녘 남보라 — 0037 세계 빛, 아지랑이·하늘과 같은 계열).
-pub const FOG: Color = Color::new(0.30, 0.28, 0.46, 1.0);
+/// 성소의 안개 빛(달빛 해 질 녘의 푸른 잿빛 — 0249, 아지랑이·하늘과 같은 계열).
+pub const FOG: Color = Color::new(0.256, 0.307, 0.365, 1.0);
 /// 허공 판 빛 = 안개 가장 깊은 곳(옛 검정 0.06·0.06·0.10 대신).
-pub const FOG_DEEP: Color = Color::new(0.20, 0.19, 0.33, 1.0);
+pub const FOG_DEEP: Color = Color::new(0.175, 0.21, 0.25, 1.0);
 /// 걷는 땅보다 이만큼 아래부터 안개(걷는 땅·배우는 안개 밖).
 const FOG_CLEAR: f32 = 0.3;
 /// 판 사이 간격(m)·판 하나의 진하기.
@@ -70,33 +70,35 @@ pub struct Env {
     pub fireflies: bool,
     pub falling: bool,
     pub trees: bool,
-    /// 바닥(0185 — 굽는 지형의 석판·이끼·흙).
+    /// 땅(0185 — 굽는 지형의 석판·이끼·흙, 0249 — 벽·바위·턱까지).
     pub floor: crate::scenery::FloorLook,
+    /// 빛 색(0249 — 바탕빛·달빛·배우 가장자리 빛). 지역마다 분위기를 바꾸되 주인공·생물의 색상대(보라·빨강·짙은 호박)는 피한다.
+    pub light: crate::render::SkyLight,
 }
 
-/// 땅 위(성소): 해 질 녘 남보라 하늘·달(0063 그대로).
+/// 땅 위(성소): 달빛 해 질 녘 — 푸른 잿빛 하늘·달, 지평선 위는 옅은 물빛(0063 꼴 그대로, 색은 0249 — 옛 남보라는 주인공 망토와 같은 색상이었다).
 pub static SURFACE: Env = Env {
     sky: [
-        Color::new(0.22, 0.20, 0.34, 1.0),
-        Color::new(0.40, 0.30, 0.44, 1.0),
-        Color::new(0.33, 0.26, 0.43, 1.0),
-        Color::new(0.25, 0.21, 0.39, 1.0),
-        Color::new(0.18, 0.16, 0.33, 1.0),
-        Color::new(0.12, 0.11, 0.25, 1.0),
+        Color::new(0.175, 0.222, 0.282, 1.0),
+        Color::new(0.291, 0.345, 0.363, 1.0),
+        Color::new(0.25, 0.299, 0.334, 1.0),
+        Color::new(0.193, 0.242, 0.297, 1.0),
+        Color::new(0.144, 0.185, 0.248, 1.0),
+        Color::new(0.098, 0.129, 0.189, 1.0),
     ],
     zenith: ZENITH,
     ridges: [
         (
-            Color::new(0.27, 0.22, 0.38, 1.0),
-            Color::new(0.36, 0.30, 0.48, 1.0),
+            Color::new(0.209, 0.249, 0.317, 1.0),
+            Color::new(0.284, 0.336, 0.395, 1.0),
         ),
         (
-            Color::new(0.19, 0.16, 0.30, 1.0),
-            Color::new(0.28, 0.24, 0.40, 1.0),
+            Color::new(0.153, 0.182, 0.233, 1.0),
+            Color::new(0.227, 0.268, 0.316, 1.0),
         ),
         (
-            Color::new(0.12, 0.11, 0.21, 1.0),
-            Color::new(0.20, 0.18, 0.32, 1.0),
+            Color::new(0.104, 0.124, 0.158, 1.0),
+            Color::new(0.171, 0.202, 0.237, 1.0),
         ),
     ],
     ridge_h: 1.0,
@@ -107,117 +109,137 @@ pub static SURFACE: Env = Env {
     fireflies: true,
     falling: false,
     trees: true,
-    floor: crate::scenery::STONE_FLOOR,
+    floor: crate::scenery::SANCTUARY_FLOOR,
+    light: crate::render::SkyLight {
+        ambient: Vec3::new(0.191, 0.228, 0.28),
+        moon: Vec3::new(0.59, 0.664, 0.738),
+        rim: Vec3::new(0.541, 0.642, 0.693),
+    },
 };
 
 /// 땅속(떠난 마을, 지하 40m): 하늘 대신 흙빛이 아래로 짙어지는 동굴, 높은 동굴 벽, 뿌리 천장(아치), 달 없음·달빛은 천장 틈으로 조금,
-/// 흙이 떨어진다(KB conveying-descent "방 안의 위"). 색은 같은 남보라 계열을 흙빛 쪽으로 낮춘다(0037 — 세계의 빛은 이어진다).
+/// 흙이 떨어진다(KB conveying-descent "방 안의 위"). 색은 바랜 황토·흙빛(0249 — 성소의 푸른 밤과 갈리게, 채도는 낮게 두어 불빛의 호박색과도 갈린다).
 pub static UNDERGROUND: Env = Env {
     sky: [
-        Color::new(0.10, 0.08, 0.12, 1.0),
-        Color::new(0.17, 0.13, 0.17, 1.0),
-        Color::new(0.13, 0.10, 0.15, 1.0),
-        Color::new(0.10, 0.08, 0.12, 1.0),
-        Color::new(0.07, 0.06, 0.10, 1.0),
-        Color::new(0.05, 0.045, 0.08, 1.0),
+        Color::new(0.097, 0.087, 0.074, 1.0),
+        Color::new(0.157, 0.14, 0.119, 1.0),
+        Color::new(0.122, 0.11, 0.093, 1.0),
+        Color::new(0.097, 0.087, 0.074, 1.0),
+        Color::new(0.073, 0.065, 0.055, 1.0),
+        Color::new(0.054, 0.049, 0.041, 1.0),
     ],
-    zenith: Color::new(0.04, 0.035, 0.06, 1.0),
+    zenith: Color::new(0.043, 0.038, 0.033, 1.0),
     ridges: [
         (
-            Color::new(0.16, 0.12, 0.15, 1.0),
-            Color::new(0.24, 0.18, 0.21, 1.0),
+            Color::new(0.146, 0.13, 0.111, 1.0),
+            Color::new(0.215, 0.194, 0.163, 1.0),
         ),
         (
-            Color::new(0.11, 0.09, 0.12, 1.0),
-            Color::new(0.18, 0.14, 0.17, 1.0),
+            Color::new(0.107, 0.095, 0.082, 1.0),
+            Color::new(0.166, 0.15, 0.126, 1.0),
         ),
         (
-            Color::new(0.07, 0.06, 0.09, 1.0),
-            Color::new(0.13, 0.10, 0.13, 1.0),
+            Color::new(0.072, 0.064, 0.055, 1.0),
+            Color::new(0.12, 0.108, 0.091, 1.0),
         ),
     ],
     ridge_h: 2.2,
     moon: false,
     moonlight: 0.4,
-    fog: Color::new(0.16, 0.13, 0.20, 1.0),
-    fog_deep: Color::new(0.09, 0.075, 0.12, 1.0),
+    fog: Color::new(0.156, 0.141, 0.119, 1.0),
+    fog_deep: Color::new(0.09, 0.081, 0.068, 1.0),
     fireflies: false,
     falling: true,
     trees: false,
-    floor: crate::scenery::STONE_FLOOR,
+    floor: crate::scenery::VILLAGE_FLOOR,
+    light: crate::render::SkyLight {
+        ambient: Vec3::new(0.245, 0.222, 0.184),
+        moon: Vec3::new(0.602, 0.664, 0.708),
+        rim: Vec3::new(0.646, 0.626, 0.568),
+    },
 };
 
 /// 땅속 더 깊은 곳(잔뿌리의 정원, 지하 75m — 0185): 마을의 흙빛 동굴에서 물기·이끼의 옅은 초록이 섞인다(설계 — 생명색은 물기·이끼·작은
 /// 생명체에 나눠 둔다, 보라 뿌리와 잿빛만으로 채우지 않는다). 천장 틈이 드물어 달빛은 더 약하고, 떨어지는 것은 흙 대신 물방울로 읽힌다.
 pub static GARDEN: Env = Env {
     sky: [
-        Color::new(0.07, 0.09, 0.09, 1.0),
-        Color::new(0.11, 0.14, 0.13, 1.0),
-        Color::new(0.09, 0.11, 0.11, 1.0),
-        Color::new(0.07, 0.08, 0.09, 1.0),
-        Color::new(0.05, 0.06, 0.07, 1.0),
-        Color::new(0.035, 0.04, 0.055, 1.0),
+        Color::new(0.068, 0.091, 0.087, 1.0),
+        Color::new(0.105, 0.141, 0.135, 1.0),
+        Color::new(0.084, 0.112, 0.107, 1.0),
+        Color::new(0.062, 0.083, 0.079, 1.0),
+        Color::new(0.046, 0.062, 0.059, 1.0),
+        Color::new(0.032, 0.042, 0.041, 1.0),
     ],
-    zenith: Color::new(0.03, 0.035, 0.045, 1.0),
+    zenith: Color::new(0.026, 0.037, 0.036, 1.0),
     ridges: [
         (
-            Color::new(0.11, 0.14, 0.13, 1.0),
-            Color::new(0.18, 0.24, 0.20, 1.0),
+            Color::new(0.105, 0.14, 0.136, 1.0),
+            Color::new(0.173, 0.24, 0.218, 1.0),
         ),
         (
-            Color::new(0.08, 0.10, 0.10, 1.0),
-            Color::new(0.13, 0.17, 0.15, 1.0),
+            Color::new(0.076, 0.101, 0.098, 1.0),
+            Color::new(0.123, 0.171, 0.155, 1.0),
         ),
         (
-            Color::new(0.05, 0.065, 0.07, 1.0),
-            Color::new(0.09, 0.12, 0.11, 1.0),
+            Color::new(0.049, 0.066, 0.064, 1.0),
+            Color::new(0.087, 0.121, 0.109, 1.0),
         ),
     ],
     ridge_h: 2.4,
     moon: false,
     moonlight: 0.32,
-    fog: Color::new(0.11, 0.15, 0.15, 1.0),
-    fog_deep: Color::new(0.06, 0.085, 0.09, 1.0),
+    fog: Color::new(0.109, 0.151, 0.144, 1.0),
+    fog_deep: Color::new(0.062, 0.086, 0.082, 1.0),
     fireflies: false,
     falling: true,
     trees: false,
     floor: crate::scenery::GARDEN_FLOOR,
+    light: crate::render::SkyLight {
+        ambient: Vec3::new(0.167, 0.239, 0.227),
+        moon: Vec3::new(0.579, 0.673, 0.681),
+        rim: Vec3::new(0.55, 0.647, 0.623),
+    },
 };
 
-/// 작업층(0208, 지하 110m): 차가운 청록 물빛 — 정원보다 푸르고 어둡게, 높은 갱 벽(×2.6), 녹 가루·물방울이 떨어진다. 달빛은 환기 구멍으로만.
+/// 작업층(0208, 지하 110m): 낡은 쇳빛 — 올리브빛 등잔 그늘과 녹(0249 — 정원의 청록과 갈리게, 옛 0208은 차가운 청록), 어둡게, 높은 갱 벽(×2.6), 녹 가루·물방울이 떨어진다. 달빛은 환기 구멍으로만.
 pub static WORKS: Env = Env {
     sky: [
-        Color::new(0.05, 0.08, 0.09, 1.0),
-        Color::new(0.08, 0.12, 0.13, 1.0),
-        Color::new(0.07, 0.10, 0.11, 1.0),
-        Color::new(0.05, 0.07, 0.085, 1.0),
-        Color::new(0.04, 0.05, 0.065, 1.0),
-        Color::new(0.03, 0.035, 0.05, 1.0),
+        Color::new(0.072, 0.078, 0.055, 1.0),
+        Color::new(0.109, 0.118, 0.082, 1.0),
+        Color::new(0.091, 0.099, 0.069, 1.0),
+        Color::new(0.065, 0.07, 0.049, 1.0),
+        Color::new(0.047, 0.051, 0.036, 1.0),
+        Color::new(0.034, 0.037, 0.026, 1.0),
     ],
-    zenith: Color::new(0.025, 0.03, 0.04, 1.0),
+    zenith: Color::new(0.029, 0.031, 0.022, 1.0),
     ridges: [
         (
-            Color::new(0.10, 0.13, 0.14, 1.0),
-            Color::new(0.20, 0.17, 0.15, 1.0),
+            Color::new(0.12, 0.129, 0.093, 1.0),
+            Color::new(0.2, 0.17, 0.152, 1.0),
         ),
         (
-            Color::new(0.07, 0.09, 0.10, 1.0),
-            Color::new(0.14, 0.12, 0.11, 1.0),
+            Color::new(0.084, 0.09, 0.065, 1.0),
+            Color::new(0.141, 0.12, 0.107, 1.0),
         ),
         (
-            Color::new(0.045, 0.06, 0.07, 1.0),
-            Color::new(0.09, 0.08, 0.08, 1.0),
+            Color::new(0.056, 0.06, 0.043, 1.0),
+            Color::new(0.094, 0.08, 0.071, 1.0),
         ),
     ],
     ridge_h: 2.6,
     moon: false,
     moonlight: 0.3,
-    fog: Color::new(0.09, 0.14, 0.16, 1.0),
-    fog_deep: Color::new(0.05, 0.08, 0.10, 1.0),
+    fog: Color::new(0.126, 0.138, 0.099, 1.0),
+    fog_deep: Color::new(0.073, 0.079, 0.057, 1.0),
     fireflies: false,
     falling: true,
     trees: false,
     floor: crate::scenery::WORKS_FLOOR,
+    light: crate::render::SkyLight {
+        ambient: Vec3::new(0.31, 0.33, 0.232),
+        moon: Vec3::new(0.609, 0.666, 0.677),
+        rim: Vec3::new(0.627, 0.634, 0.539),
+    },
 };
 
 /// 이어 붙여도 이음매가 없는 점 무늬(정수 주파수 사인 합) → 세 단 알파(픽셀 그림처럼 계단).
@@ -732,7 +754,7 @@ impl Backdrop {
 }
 
 /// 하늘 꼭대기 = 렌더 타깃을 지우는 빛(원통 위는 이것).
-pub const ZENITH: Color = Color::new(0.08, 0.08, 0.18, 1.0);
+pub const ZENITH: Color = Color::new(0.07, 0.091, 0.14, 1.0);
 /// 하늘 띠: (아래 높이각°, 위 높이각°) — 빛은 지역 환경(`Env::sky`). 땅 위는 지평선 바로 위가 가장 밝은 해 질 녘 띠.
 const SKY_BANDS: [(f32, f32); 6] = [
     (-25.0, -3.0),
@@ -845,15 +867,15 @@ fn moon_mesh(
         }
     };
     let h = size * 0.5;
-    ring(c, h * 0.75, h, Color::new(0.55, 0.50, 0.80, 0.07));
-    ring(c, h * 0.55, h * 0.75, Color::new(0.60, 0.55, 0.85, 0.16));
-    ring(c, h * 0.4, h * 0.55, Color::new(0.70, 0.66, 0.90, 0.35));
-    ring(c, 0.0, h * 0.4, Color::new(0.95, 0.93, 1.0, 1.0));
+    ring(c, h * 0.75, h, Color::new(0.50, 0.58, 0.75, 0.07));
+    ring(c, h * 0.55, h * 0.75, Color::new(0.56, 0.63, 0.80, 0.16));
+    ring(c, h * 0.4, h * 0.55, Color::new(0.66, 0.72, 0.86, 0.35));
+    ring(c, 0.0, h * 0.4, Color::new(0.93, 0.96, 1.0, 1.0));
     // 얼룩(원판 위, 카메라 쪽으로 조금 — 150m에서는 깊이 한 칸이 몇 m라 같은 칸이면 그리는 차례로 덮는다).
     let toward = right.cross(up);
     for (dx, dy, r) in [(-0.16, -0.09, 0.16), (0.19, 0.19, 0.11)] {
         let o = c + (right * dx + up * dy) * h + toward * 2.0;
-        ring(o, 0.0, h * r, Color::new(0.80, 0.80, 0.92, 1.0));
+        ring(o, 0.0, h * r, Color::new(0.78, 0.82, 0.90, 1.0));
     }
 }
 
@@ -1279,5 +1301,101 @@ mod tests {
             (ridge_top(far, a) - (far.low + (far.high - far.low) * ridge_noise(far.seed, a))).abs()
                 < 1e-4
         );
+    }
+
+    /// 0249: 세계(하늘·안개·땅·빛)는 주인공과 생물의 색상대를 밟지 않는다 — 망토·침식 뿌리의 보라(250~340°)와 위험 예고의 빨강
+    /// (345~15°)은 채도 0.12 위로 쓰지 않고, 불빛·눈빛·갈 곳의 호박색(15~55°)은 흙빛(채도 0.26 아래)으로만.
+    /// (생물 쪽 값은 모델 텍스처에서 잰 것: 방랑자 270~330°, 적·보스의 뿌리 270~300°·눈과 핵 30~60°, 결정 0249.)
+    #[test]
+    fn world_colors_keep_off_the_creatures_hues() {
+        fn hsv(r: f32, g: f32, b: f32) -> (f32, f32) {
+            let (mx, mn) = (r.max(g).max(b), r.min(g).min(b));
+            let s = if mx > 0.0 { (mx - mn) / mx } else { 0.0 };
+            if mx - mn < 1e-6 {
+                return (0.0, s);
+            }
+            let h = if mx == r {
+                60.0 * ((g - b) / (mx - mn)).rem_euclid(6.0)
+            } else if mx == g {
+                60.0 * ((b - r) / (mx - mn) + 2.0)
+            } else {
+                60.0 * ((r - g) / (mx - mn) + 4.0)
+            };
+            (h, s)
+        }
+        for (name, env) in [
+            ("성소", &SURFACE),
+            ("마을", &UNDERGROUND),
+            ("정원", &GARDEN),
+            ("작업층", &WORKS),
+        ] {
+            let f = env.floor;
+            let l = env.light;
+            let mut all: Vec<(&str, f32, f32, f32)> = vec![
+                ("zenith", env.zenith.r, env.zenith.g, env.zenith.b),
+                ("fog", env.fog.r, env.fog.g, env.fog.b),
+                ("fog_deep", env.fog_deep.r, env.fog_deep.g, env.fog_deep.b),
+                ("ambient", l.ambient.x, l.ambient.y, l.ambient.z),
+                ("moon", l.moon.x, l.moon.y, l.moon.z),
+                ("rim", l.rim.x, l.rim.y, l.rim.z),
+            ];
+            for c in env.sky {
+                all.push(("sky", c.r, c.g, c.b));
+            }
+            for (a, b) in env.ridges {
+                all.push(("ridge", a.r, a.g, a.b));
+                all.push(("ridge top", b.r, b.g, b.b));
+            }
+            for (k, c) in [
+                ("slab", f.slab),
+                ("moss_slab", f.moss_slab),
+                ("dirt", f.dirt),
+                ("mortar", f.mortar),
+                ("mortar_calm", f.mortar_calm),
+                ("wall", f.wall),
+                ("wall_top", f.wall_top),
+                ("rock", f.rock),
+                ("rock_top", f.rock_top),
+                ("pit", f.pit),
+                ("ledge", f.ledge),
+                ("edge", f.edge),
+            ] {
+                all.push((k, c.r, c.g, c.b));
+            }
+            for (k, r, g, b) in all {
+                let (h, s) = hsv(r, g, b);
+                let violet = (250.0..=340.0).contains(&h) && s > 0.12;
+                let red = (h >= 345.0 || h <= 15.0) && s > 0.12;
+                let amber = (15.0..=55.0).contains(&h) && s > 0.26;
+                assert!(
+                    !(violet || red || amber),
+                    "{name} {k}: {h:.0}° 채도 {s:.2} — 생물의 색상대"
+                );
+            }
+        }
+    }
+
+    /// 0249: 지역마다 분위기가 다르다 — 바탕빛(땅속에서 화면을 물들이는 빛)의 색상이 서로 30° 넘게 떨어져 있다.
+    #[test]
+    fn each_region_has_its_own_light() {
+        let hue = |v: Vec3| {
+            let (mx, mn) = (v.max_element(), v.min_element());
+            let d = mx - mn;
+            if mx == v.x {
+                60.0 * ((v.y - v.z) / d).rem_euclid(6.0)
+            } else if mx == v.y {
+                60.0 * ((v.z - v.x) / d + 2.0)
+            } else {
+                60.0 * ((v.x - v.y) / d + 4.0)
+            }
+        };
+        let envs = [&SURFACE, &UNDERGROUND, &GARDEN, &WORKS];
+        for (i, a) in envs.iter().enumerate() {
+            for b in &envs[i + 1..] {
+                let d = (hue(a.light.ambient) - hue(b.light.ambient)).abs();
+                let d = d.min(360.0 - d);
+                assert!(d > 30.0, "바탕빛 색상이 {d:.0}°만 다르다");
+            }
+        }
     }
 }

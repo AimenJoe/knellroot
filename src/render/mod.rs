@@ -486,6 +486,7 @@ impl Renderer {
         // 지역 환경(0118 T2): 스테이지면 그 지역의 것, 개발 놀이터는 땅 위.
         self.backdrop.env = v.stage.map_or(&crate::backdrop::SURFACE, |r| r.def.env);
         set_moonlight(self.backdrop.env.moonlight);
+        set_sky(self.backdrop.env.light);
         clear_background(self.backdrop.env.zenith);
         (iw, ih, c3)
     }

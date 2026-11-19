@@ -49,11 +49,8 @@ fn hash(x: usize, z: usize, k: u32) -> f32 {
     (h & 0xffff) as f32 / 65535.0
 }
 
-// 0037 "색 = 생명": 세계는 해 질 녘 남보라(살아 있는 것만 파스텔·불빛만 따뜻하게) — 옛 숯빛·돌빛에서.
-const MORTAR: Color = Color::new(0.09, 0.09, 0.14, 1.0);
-/// 조용한 바닥(0140): 줄눈을 석판의 2/3 밝기로(예전 0.3배 — 화면에서 가장 센 대비가 바닥 격자였다), 석판마다의 밝기 차는 ±6%로 줄이고
-/// 대신 여러 칸에 걸친 큰 얼룩(±10%)으로, 석판 옆면도 덜 어둡게.
-const MORTAR_CALM: Color = Color::new(0.20, 0.19, 0.28, 1.0);
+/// 조용한 바닥(0140): 줄눈(`FloorLook::mortar_calm`)을 석판의 2/3 밝기로(예전 0.3배 — 화면에서 가장 센 대비가 바닥 격자였다),
+/// 석판마다의 밝기 차는 ±6%로 줄이고 대신 여러 칸에 걸친 큰 얼룩(±10%)으로, 석판 옆면도 덜 어둡게.
 const SLAB_SIDE_CALM: f32 = 0.82;
 /// 큰 얼룩의 한 마디(칸).
 const PATCH_CELLS: f32 = 5.0;
@@ -74,11 +71,14 @@ fn patch(x: usize, z: usize) -> f32 {
     let b = h(0, 1) + (h(1, 1) - h(0, 1)) * tx;
     a + (b - a) * tz
 }
-const SLAB: Color = Color::new(0.31, 0.30, 0.41, 1.0);
-const SLAB_MOSS: Color = Color::new(0.21, 0.31, 0.31, 1.0);
 
-/// 지역마다의 바닥(0185 — 셋째 지역은 성소·마을의 석판 바닥을 되풀이하지 않는다): 석판 빛·이끼 빛, 석판 자리의 몇이 이끼인가(`moss`),
-/// 몇이 빠져 흙 + 풀인가(`bare`).
+/// 지역마다의 땅 빛(0185 바닥 → 0249 바닥·벽·바위·턱까지): 석판 빛·이끼 빛, 석판 자리의 몇이 이끼인가(`moss`), 몇이 빠져 흙 + 풀인가(`bare`),
+/// 줄눈(옛 그림·조용한 바닥), 벽(옆면·윗면), 배경 바위 단(옆면·이끼 낀 윗면), 꺼진 땅 바닥, 걸을 수 있는 층의 옹벽(0043)과 턱 가장자리의
+/// 밝은 테(쿼터뷰에서 턱이 읽히게).
+///
+/// **색상대(0249)**: 주인공의 망토·적의 뿌리(보라 250~340°)·위험 예고(빨강 345~15°)는 세계가 쓰지 않는다. 불빛·눈빛·갈 곳의 호박색
+/// (15~55°)은 채도 0.25 아래로만(흙빛) — 시험 `world_colors_keep_off_the_creatures_hues`. 값은 옛 남보라 값의 밝기(선형 휘도)를
+/// 그대로 두고 색상·채도만 바꿨다(0140의 대비를 잃지 않게).
 #[derive(Clone, Copy, Debug)]
 pub struct FloorLook {
     pub slab: Color,
@@ -86,33 +86,87 @@ pub struct FloorLook {
     pub moss: f32,
     pub bare: f32,
     pub dirt: Color,
+    pub mortar: Color,
+    pub mortar_calm: Color,
+    pub wall: Color,
+    pub wall_top: Color,
+    pub rock: Color,
+    pub rock_top: Color,
+    pub pit: Color,
+    pub ledge: Color,
+    pub edge: Color,
 }
 
-/// 성소·마을: 다듬은 석판(0060 W2 그대로 — 이끼 두 칸에 하나쯤, 빠진 판 7%).
-pub const STONE_FLOOR: FloorLook = FloorLook {
-    slab: SLAB,
-    moss_slab: SLAB_MOSS,
+/// 성소(땅 위, 달빛 해 질 녘): 푸른 잿빛 석판(212°) — 다듬은 석판(0060 W2 그대로 — 이끼 두 칸에 하나쯤, 빠진 판 7%), 이끼는 청록, 흙은 옅은 갈색.
+pub const SANCTUARY_FLOOR: FloorLook = FloorLook {
     moss: 0.2,
     bare: 0.07,
-    dirt: DIRT,
+    slab: Color::new(0.282, 0.315, 0.353, 1.0),
+    moss_slab: Color::new(0.218, 0.311, 0.287, 1.0),
+    dirt: Color::new(0.214, 0.198, 0.182, 1.0),
+    mortar: Color::new(0.084, 0.096, 0.11, 1.0),
+    mortar_calm: Color::new(0.177, 0.203, 0.233, 1.0),
+    wall: Color::new(0.337, 0.377, 0.422, 1.0),
+    wall_top: Color::new(0.209, 0.234, 0.262, 1.0),
+    rock: Color::new(0.245, 0.274, 0.307, 1.0),
+    rock_top: Color::new(0.19, 0.272, 0.251, 1.0),
+    pit: Color::new(0.108, 0.128, 0.155, 1.0),
+    ledge: Color::new(0.301, 0.336, 0.377, 1.0),
+    edge: Color::new(0.58, 0.618, 0.645, 1.0),
 };
 
-/// 잔뿌리의 정원(0185): 옛 석재는 조각만 남고(판의 반이 빠져 흙·풀), 남은 판의 반 넘게 이끼 — 물기 머금은 흙은 조금 푸르게.
+/// 떠난 마을(지하 40m): 흙빛 동굴 — 바랜 황토 석판(38°, 채도 0.16), 마른 올리브 이끼, 갈색 흙.
+pub const VILLAGE_FLOOR: FloorLook = FloorLook {
+    moss: 0.2,
+    bare: 0.07,
+    slab: Color::new(0.329, 0.31, 0.276, 1.0),
+    moss_slab: Color::new(0.274, 0.302, 0.236, 1.0),
+    dirt: Color::new(0.223, 0.196, 0.174, 1.0),
+    mortar: Color::new(0.102, 0.094, 0.081, 1.0),
+    mortar_calm: Color::new(0.215, 0.198, 0.172, 1.0),
+    wall: Color::new(0.393, 0.37, 0.33, 1.0),
+    wall_top: Color::new(0.244, 0.23, 0.205, 1.0),
+    rock: Color::new(0.286, 0.269, 0.24, 1.0),
+    rock_top: Color::new(0.24, 0.264, 0.206, 1.0),
+    pit: Color::new(0.139, 0.125, 0.106, 1.0),
+    ledge: Color::new(0.351, 0.33, 0.295, 1.0),
+    edge: Color::new(0.628, 0.611, 0.577, 1.0),
+};
+
+/// 잔뿌리의 정원(0185, 지하 75m): 옛 석재는 조각만 남고(판의 반이 빠져 흙·풀), 남은 판의 반 넘게 이끼 — 물기 머금은 청록(155~185°).
 pub const GARDEN_FLOOR: FloorLook = FloorLook {
-    slab: Color::new(0.30, 0.31, 0.37, 1.0),
-    moss_slab: Color::new(0.19, 0.32, 0.27, 1.0),
     moss: 0.6,
     bare: 0.5,
-    dirt: Color::new(0.17, 0.19, 0.19, 1.0),
+    slab: Color::new(0.284, 0.32, 0.323, 1.0),
+    moss_slab: Color::new(0.206, 0.317, 0.271, 1.0),
+    dirt: Color::new(0.168, 0.191, 0.187, 1.0),
+    mortar: Color::new(0.08, 0.098, 0.098, 1.0),
+    mortar_calm: Color::new(0.17, 0.208, 0.208, 1.0),
+    wall: Color::new(0.338, 0.381, 0.384, 1.0),
+    wall_top: Color::new(0.21, 0.236, 0.239, 1.0),
+    rock: Color::new(0.246, 0.277, 0.28, 1.0),
+    rock_top: Color::new(0.179, 0.275, 0.235, 1.0),
+    pit: Color::new(0.103, 0.132, 0.131, 1.0),
+    ledge: Color::new(0.302, 0.34, 0.343, 1.0),
+    edge: Color::new(0.573, 0.623, 0.615, 1.0),
 };
 
-/// 작업층(0208): 닳은 철판·돌판이 섞인 바닥 — 이끼는 적고(빛이 없다), 빠진 자리는 녹 슨 흙.
+/// 작업층(0208, 지하 110m): 닳은 철판·돌판 — 올리브빛 쇳빛(70°, 채도 0.08), 이끼 대신 녹(22°)·녹 슨 흙(빛이 없다).
 pub const WORKS_FLOOR: FloorLook = FloorLook {
-    slab: Color::new(0.30, 0.31, 0.34, 1.0),
-    moss_slab: Color::new(0.33, 0.27, 0.24, 1.0),
     moss: 0.25,
     bare: 0.22,
-    dirt: Color::new(0.22, 0.18, 0.16, 1.0),
+    slab: Color::new(0.309, 0.313, 0.288, 1.0),
+    moss_slab: Color::new(0.32, 0.274, 0.248, 1.0),
+    dirt: Color::new(0.213, 0.182, 0.162, 1.0),
+    mortar: Color::new(0.094, 0.096, 0.084, 1.0),
+    mortar_calm: Color::new(0.199, 0.203, 0.178, 1.0),
+    wall: Color::new(0.37, 0.375, 0.345, 1.0),
+    wall_top: Color::new(0.23, 0.233, 0.214, 1.0),
+    rock: Color::new(0.269, 0.273, 0.251, 1.0),
+    rock_top: Color::new(0.258, 0.258, 0.219, 1.0),
+    pit: Color::new(0.125, 0.129, 0.109, 1.0),
+    ledge: Color::new(0.331, 0.335, 0.309, 1.0),
+    edge: Color::new(0.615, 0.615, 0.578, 1.0),
 };
 
 /// 고인 물(`~`, 0185): 어둡고 푸른 수면, 가장자리는 젖은 흙.
@@ -129,8 +183,6 @@ const PEBBLE: Color = Color::new(0.40, 0.38, 0.40, 1.0);
 const BALLAST: Color = Color::new(0.20, 0.19, 0.20, 1.0);
 const SLEEPER: Color = Color::new(0.27, 0.20, 0.16, 1.0);
 const RAIL: Color = Color::new(0.46, 0.44, 0.46, 1.0);
-/// 바닥 다듬기(0060 W2·0061): 빠진 석판 자리의 흙, 풀 다발 밑동·끝(바랜 청록 — 해 질 녘의 옅은 생명, 0037).
-const DIRT: Color = Color::new(0.22, 0.19, 0.24, 1.0);
 // 0242(사장 설문 12-6 "풀이 있는지도 잘 모르겠다"): 끝을 노란 연두로 밝게 — 남보라 달빛 아래 바닥과 같은 청록이라 묻혔다.
 const GRASS_ROOT: Color = Color::new(0.19, 0.30, 0.25, 1.0);
 const GRASS_TIP: Color = Color::new(0.66, 0.84, 0.50, 1.0);
@@ -143,19 +195,10 @@ const SLAB_LIFT: f32 = 0.03;
 const SLAB_SIDE: f32 = 0.62;
 const WALL_AO: f32 = 0.45;
 const WALL_AO_R: f32 = 0.6;
-const WALL: Color = Color::new(0.37, 0.36, 0.48, 1.0);
-const WALL_TOP: Color = Color::new(0.23, 0.22, 0.32, 1.0);
-/// 배경 높낮이(0035): 바위 단 옆면·윗면(이끼 낀 흙), 꺼진 땅 바닥(어둡게).
-const ROCK: Color = Color::new(0.27, 0.26, 0.36, 1.0);
-const ROCK_TOP: Color = Color::new(0.19, 0.27, 0.27, 1.0);
-const PIT: Color = Color::new(0.12, 0.12, 0.19, 1.0);
-/// 걸을 수 있는 층의 옹벽(0043)과 턱 가장자리의 밝은 테(쿼터뷰에서 턱이 읽히게 — 0035 "다음"의 플레이 후기).
 /// 식생(0063 E3): 바위 단 칸마다 나무·덤불이 설 몫, 걸을 수 있는 쪽 벽 면마다 뿌리가 탈 몫.
 const TREE_SHARE: f32 = 0.22;
 const BUSH_SHARE: f32 = 0.35;
 const ROOT_SHARE: f32 = 0.16;
-const LEDGE: Color = Color::new(0.33, 0.32, 0.44, 1.0);
-const RIM: Color = Color::new(0.62, 0.60, 0.70, 1.0);
 
 fn mul(c: Color, k: f32) -> Color {
     Color::new(c.r * k, c.g * k, c.b * k, c.a)
@@ -454,7 +497,11 @@ impl Scenery {
                         on(c + vec3(h, MORTAR_Y, h)),
                         on(c + vec3(-h, MORTAR_Y, h)),
                     ],
-                    if look.calm { MORTAR_CALM } else { MORTAR },
+                    if look.calm {
+                        floor.mortar_calm
+                    } else {
+                        floor.mortar
+                    },
                     &uv_of,
                 );
                 let mark = wet[z * lv.w + x];
@@ -737,7 +784,7 @@ impl Scenery {
                             a + Vec3::Y * ha,
                         ],
                         d,
-                        LEDGE,
+                        floor.ledge,
                         &lights,
                     );
                     if (ha - la).max(hb - lb) > GROUND_STEP {
@@ -751,7 +798,7 @@ impl Scenery {
                                 a + inset + Vec3::Y * (ha + 0.03),
                             ],
                             Vec3::Y,
-                            RIM,
+                            floor.edge,
                             &lights,
                         );
                     }
@@ -785,7 +832,14 @@ impl Scenery {
                 let max = vec3(c.x + h, top, c.z + h);
                 let mut p = empty(Some(Aabb { min, max }));
                 let shade = 0.85 + 0.25 * hash(x, z, 5);
-                block(&mut p, min, max, mul(WALL, shade), WALL_TOP, &lights);
+                block(
+                    &mut p,
+                    min,
+                    max,
+                    mul(floor.wall, shade),
+                    floor.wall_top,
+                    &lights,
+                );
                 // 위에 얹힌 돌 하나(몇 칸만).
                 if hash(x, z, 9) > 0.6 {
                     let s = 0.35 + 0.3 * hash(x, z, 11);
@@ -798,8 +852,8 @@ impl Scenery {
                         &mut p,
                         o - vec3(s, 0.0, s),
                         o + vec3(s, s * 0.9, s),
-                        mul(WALL, shade * 0.9),
-                        WALL_TOP,
+                        mul(floor.wall, shade * 0.9),
+                        floor.wall_top,
                         &lights,
                     );
                 }
@@ -842,8 +896,8 @@ impl Scenery {
                         &mut p,
                         min,
                         max,
-                        mul(ROCK, shade),
-                        mul(ROCK_TOP, shade),
+                        mul(floor.rock, shade),
+                        mul(floor.rock_top, shade),
                         &lights,
                     );
                     if hash(x, z, 22) > 0.55 {
@@ -857,8 +911,8 @@ impl Scenery {
                             &mut p,
                             o - vec3(s, 0.0, s),
                             o + vec3(s, s, s),
-                            mul(ROCK, shade * 0.9),
-                            ROCK_TOP,
+                            mul(floor.rock, shade * 0.9),
+                            floor.rock_top,
                             &lights,
                         );
                     }
@@ -893,7 +947,7 @@ impl Scenery {
                             vec3(c.x - hh, hgt, c.z + hh),
                         ],
                         Vec3::Y,
-                        mul(PIT, k),
+                        mul(floor.pit, k),
                         &lights,
                     );
                     // 떨어진 돌덩이 몇 개(깊이 단서).
@@ -908,8 +962,8 @@ impl Scenery {
                             &mut p,
                             o - vec3(s, 0.0, s),
                             o + vec3(s, s * 0.8, s),
-                            mul(WALL, 0.6 * k),
-                            mul(WALL_TOP, k),
+                            mul(floor.wall, 0.6 * k),
+                            mul(floor.wall_top, k),
                             &lights,
                         );
                     }
@@ -939,7 +993,7 @@ impl Scenery {
                         ];
                         for (i, v) in corners.iter().enumerate() {
                             let l = lit(*v, -d, &lights) * if i < 2 { 0.3 } else { 1.0 };
-                            let col = mul(WALL, 0.9 * k);
+                            let col = mul(floor.wall, 0.9 * k);
                             p.verts.push(with_normal(
                                 Vertex::new(
                                     v.x,
@@ -1003,7 +1057,7 @@ impl Scenery {
                     vec3(pr.pos.x - s.x, pr.pos.y, pr.pos.z - s.y),
                     vec3(pr.pos.x + s.x, pr.pos.y + hh, pr.pos.z + s.y),
                     prop_color(pr.kind),
-                    WALL_TOP,
+                    floor.wall_top,
                     &lights,
                 );
             }
@@ -1341,7 +1395,9 @@ mod tests {
             }
         }
         assert!(spread > 0.3, "얼룩이 거의 없다: {spread}");
-        assert!(MORTAR_CALM.g / SLAB.g > 0.5 && MORTAR.g / SLAB.g < 0.35);
+        for f in [SANCTUARY_FLOOR, VILLAGE_FLOOR, GARDEN_FLOOR, WORKS_FLOOR] {
+            assert!(f.mortar_calm.g / f.slab.g > 0.5 && f.mortar.g / f.slab.g < 0.35);
+        }
     }
 
     /// 0142 바람: 풀 다발은 끝만 흔들린다(밑동은 땅에 박혀 있다) — 바람 몫은 법선 칸의 넷째 값, 1 = 가만히.

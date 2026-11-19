@@ -82,6 +82,9 @@ impl Renderer {
             ..Default::default()
         };
         let saved = look();
+        // 인형·아이템 그림은 어느 지역에서 열든 같은 빛으로(0249 — 지역의 빛 색은 세계에만).
+        let saved_sky = sky();
+        set_sky(crate::backdrop::SURFACE.light);
         set_look(Look {
             eye: cam.position,
             fovy,
@@ -99,6 +102,7 @@ impl Renderer {
         self.batch.model(e, &self.pose, inst, WHITE, &[fire], 1.0);
         self.batch.flush();
         set_look(saved);
+        set_sky(saved_sky);
         set_default_camera();
         true
     }
@@ -190,6 +194,9 @@ impl Renderer {
             ..Default::default()
         };
         let saved = look();
+        // 인형·아이템 그림은 어느 지역에서 열든 같은 빛으로(0249 — 지역의 빛 색은 세계에만).
+        let saved_sky = sky();
+        set_sky(crate::backdrop::SURFACE.light);
         set_look(Look {
             eye: cam.position,
             fovy: cam.fovy,
@@ -215,6 +222,7 @@ impl Renderer {
         );
         self.batch.flush();
         set_look(saved);
+        set_sky(saved_sky);
         set_default_camera();
         blit(&rt, dest);
     }
@@ -243,6 +251,9 @@ impl Renderer {
             ..Default::default()
         };
         let saved = look();
+        // 인형·아이템 그림은 어느 지역에서 열든 같은 빛으로(0249 — 지역의 빛 색은 세계에만).
+        let saved_sky = sky();
+        set_sky(crate::backdrop::SURFACE.light);
         set_look(Look {
             eye: cam.position,
             fovy: cam.fovy,
@@ -309,6 +320,7 @@ impl Renderer {
             );
         }
         set_look(saved);
+        set_sky(saved_sky);
         set_default_camera();
         blit(&rt, dest);
     }
