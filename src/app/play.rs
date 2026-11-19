@@ -145,10 +145,10 @@ impl App {
         }
         // 문지기가 깨어나는 순간(0064 M5): 낮은 땅울림.
         let waking = matches!(self.run.phase, crate::stage::Phase::Waking(_));
-        if waking && !self.was_waking {
+        if waking && !self.heard.was_waking {
             self.snd(crate::sfx::Id::Wake);
         }
-        self.was_waking = waking;
+        self.heard.was_waking = waking;
         if out == crate::stage::StageOut::Respawned {
             // 쉼터에서 다시 일어섰다(0032): 카메라를 그 자리로 바로(멀리서 날아오지 않게).
             self.cam = self.cam.renew(self.world.player.pos, &self.t);
@@ -268,12 +268,12 @@ impl App {
             return;
         }
         if let Some(n) = a.scenario {
-            self.sc = if n == 0 {
-                scenario::next(self.sc)
+            self.dev.sc = if n == 0 {
+                scenario::next(self.dev.sc)
             } else {
-                scenario::by_number(n).unwrap_or(self.sc)
+                scenario::by_number(n).unwrap_or(self.dev.sc)
             };
-            self.world = scenario::build(self.sc);
+            self.world = scenario::build(self.dev.sc);
             self.fx.clear();
             self.arm_world();
             self.apply_board();
@@ -306,7 +306,7 @@ impl App {
             .to_radians();
             // 설정의 민감도(0191 — 스틱·마우스·끌기 모두에 같은 배율).
             let sens = |i: u8| crate::prefs::LOOK_SENS[i as usize] as f32 / 100.0;
-            let (ky, kp) = (sens(self.look_sens.0), sens(self.look_sens.1));
+            let (ky, kp) = (sens(self.opts.look_sens.0), sens(self.opts.look_sens.1));
             // 터치로 끌어 겨누는 손가락(0217)은 시점이 아니라 조준이다 — 숄더뷰에서도 그대로 넘긴다.
             let stick = if a.aim_drag { Vec2::ZERO } else { a.aim };
             let dyaw = (stick.x * FREE_STICK_YAW_DEG.to_radians() * TICK_DT + a.look.x * px) * ky;
@@ -519,7 +519,7 @@ impl App {
                 | Event::UltReady => 0.0,
             };
             // 화면 흔들림 설정(0052): 0..=10 → 0..100%.
-            cam.trauma = (cam.trauma + kick * self.shake as f32 / 10.0).min(1.0);
+            cam.trauma = (cam.trauma + kick * self.opts.shake as f32 / 10.0).min(1.0);
             // 카메라 킥(2026-11-06, KB melee-light…: 작은 타격은 trauma²에서 0이 된다 — 맞은 쪽으로 2~3px 찼다 돌아온다).
             let punch = match e {
                 Event::Hit { at } | Event::Crit { at } => Some((at, KICK_HIT_DEG)),
@@ -533,7 +533,7 @@ impl App {
             };
             if let Some((at, deg)) = punch {
                 let d = at - self.world.player.pos;
-                cam.kick(vec3(d.x, 0.0, d.z), deg * self.shake as f32 / 10.0);
+                cam.kick(vec3(d.x, 0.0, d.z), deg * self.opts.shake as f32 / 10.0);
             }
             // 타격 줌(0145): 센 타격의 순간에만 — 흔들림 설정과 랩 `feel.zoom`을 따른다.
             use crate::tuning::{ZOOM_CRIT, ZOOM_PARRY, ZOOM_PERFECT, ZOOM_SMASH};
@@ -560,7 +560,7 @@ impl App {
                 _ => 0.0,
             };
             if zoom > 0.0 {
-                cam.punch_in(zoom * t[crate::tuning::P::FeelZoom] * self.shake as f32 / 10.0);
+                cam.punch_in(zoom * t[crate::tuning::P::FeelZoom] * self.opts.shake as f32 / 10.0);
             }
         }
         self.world_sounds(&events);
@@ -958,11 +958,11 @@ impl App {
     /// 주민 말풍선(0122, nail 말 걸기 말풍선 꼴): 그 주민 머리 위, 판 + 테두리 + 짧은 말. 처음·끝에 옅게.
     pub(super) fn draw_bubble(&mut self, f: &Frame) {
         let Some((k, n, t)) = self.bubble else { return };
-        let Some(&(i, at)) = self.run.residents.get(k) else {
+        let Some(&(i, at)) = self.run.folk.list.get(k) else {
             return;
         };
         let r = &crate::residents::RESIDENTS[i];
-        let changed = self.run.resident_changed.get(k).copied().unwrap_or(false);
+        let changed = self.run.folk.changed.get(k).copied().unwrap_or(false);
         let text = tr(crate::residents::line(r, changed, n));
         let (ndc, front) =
             crate::camera::world_to_ndc(&self.cam.view, f.w / f.h.max(1.0), at + Vec3::Y * 1.75);
@@ -1205,23 +1205,23 @@ impl App {
         }
         // 회피를 시작한 틱.
         let dodging = matches!(self.world.player.state, crate::world::PState::Dodge { .. });
-        if dodging && !self.was_dodging {
+        if dodging && !self.heard.was_dodging {
             self.snd(Id::Dodge);
         }
-        self.was_dodging = dodging;
+        self.heard.was_dodging = dodging;
         // 적의 예고가 시작한 틱: 모양마다 다른 소리(소리만 듣고도 가르게, 0064 R4).
         let n = self.world.enemies.len();
-        self.tele_was.resize(n, u32::MAX);
+        self.heard.tele_was.resize(n, u32::MAX);
         let mut cues = Vec::new();
         for (i, en) in self.world.enemies.iter().enumerate() {
             let tele = en.telegraph();
             // 껍질 받기(0185)는 예고 모양이 없다 — 웅크리는 첫 틱에 돌 소리 하나.
-            if en.shelled() && self.tele_was[i] != en.atk_count {
-                self.tele_was[i] = en.atk_count;
+            if en.shelled() && self.heard.tele_was[i] != en.atk_count {
+                self.heard.tele_was[i] = en.atk_count;
                 cues.push(Id::Shell);
             }
             // 공격 번호로 센다(0128): 연속 공격의 다음 타·페인트로 바뀐 공격도 제 소리를 낸다.
-            let fresh = tele.is_some() && self.tele_was[i] != en.atk_count;
+            let fresh = tele.is_some() && self.heard.tele_was[i] != en.atk_count;
             if let (Some((_, shape)), true) = (tele, fresh) {
                 cues.push(match shape {
                     crate::enemy::TeleShape::Disc { .. } => Id::TeleDisk,
@@ -1234,7 +1234,7 @@ impl App {
                 });
             }
             if tele.is_some() {
-                self.tele_was[i] = en.atk_count;
+                self.heard.tele_was[i] = en.atk_count;
             }
         }
         for id in cues {
@@ -1264,7 +1264,7 @@ impl App {
         let y = f.oy + f.h - 40.0;
         #[cfg(feature = "dev")]
         if self.scene() == Scene::Sandbox {
-            let e = scenario::entry(self.sc);
+            let e = scenario::entry(self.dev.sc);
             draw_text(
                 format!(
                     "{} [{}]  checks: {}  (1-9 scenario, ESC title)",

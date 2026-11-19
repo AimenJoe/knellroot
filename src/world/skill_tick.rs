@@ -815,7 +815,7 @@ impl World {
             en.hit_by = sw.swing;
             n += 1;
             if !en.boss {
-                en.snare = en.snare.max(snare);
+                en.marks.snare = en.marks.snare.max(snare);
             }
             let at = en.pos + Vec3::Y * en.height * 0.6;
             let crit = en.exposed > 0.0;
@@ -827,7 +827,7 @@ impl World {
                 t,
             );
             // 땅울림 맺음: 이미 자세가 깨져 있던 적에게는 배로(이 타로 깨진 적은 다음부터).
-            en.hp -= if en.broken > 0.0 {
+            en.hp -= if en.stance.broken > 0.0 {
                 skills::scaled(dmg, sw.shatter)
             } else {
                 dmg
@@ -913,8 +913,8 @@ impl World {
                 dur: stagger,
             };
             if let Some((secs, mult)) = frail {
-                en.frail = secs;
-                en.frail_mult = mult;
+                en.marks.frail = secs;
+                en.marks.frail_mult = mult;
             }
             afflict(en, dose, &mut self.skill_ev);
         }
@@ -952,22 +952,22 @@ impl World {
         }
         self.skill_zones.retain(|z| z.left > 0.0);
         for en in &mut self.enemies {
-            en.slow = 1.0;
-            en.snare = (en.snare - dt).max(0.0);
-            en.bind = (en.bind - dt).max(0.0);
+            en.marks.slow = 1.0;
+            en.marks.snare = (en.marks.snare - dt).max(0.0);
+            en.marks.bind = (en.marks.bind - dt).max(0.0);
             if en.boss || !en.active() {
                 continue;
             }
             // 엉킨 뿌리(0214): 스킬에 맞은 적은 잠깐 느리게. 묶는 뿌리(뿌리 솟기 ㄴ)면 걷지 못한다.
-            if en.snare > 0.0 {
-                en.slow = en.slow.min(crate::progression::cell::SNARE_SLOW);
+            if en.marks.snare > 0.0 {
+                en.marks.slow = en.marks.slow.min(crate::progression::cell::SNARE_SLOW);
             }
-            if en.bind > 0.0 {
-                en.slow = 0.0;
+            if en.marks.bind > 0.0 {
+                en.marks.slow = 0.0;
             }
             for z in &self.skill_zones {
                 if z.holds(en.pos, en.radius) {
-                    en.slow = en.slow.min(z.slow);
+                    en.marks.slow = en.marks.slow.min(z.slow);
                 }
             }
         }
@@ -1165,7 +1165,7 @@ impl World {
         let snare = self.snare_secs();
         let en = &mut self.enemies[i];
         if !en.boss {
-            en.snare = en.snare.max(snare);
+            en.marks.snare = en.marks.snare.max(snare);
         }
         let at = en.pos + Vec3::Y * en.height * 0.6;
         if c.damage > 0 {
@@ -1394,7 +1394,7 @@ impl World {
             en.hit_by = swing;
             n += 1;
             if !en.boss {
-                en.snare = en.snare.max(snare);
+                en.marks.snare = en.marks.snare.max(snare);
             }
             let at = en.pos + Vec3::Y * en.height * 0.6;
             let winding = en.telegraph().is_some() && !en.rising();
@@ -1431,8 +1431,8 @@ impl World {
                 };
                 ev.push(Event::Interrupt { at });
                 if let Some(Twist::Expose { secs, mult }) = d.twist {
-                    en.frail = en.frail.max(secs);
-                    en.frail_mult = mult;
+                    en.marks.frail = en.marks.frail.max(secs);
+                    en.marks.frail_mult = mult;
                 }
                 if matches!(d.cap, Some(Cap::Break)) {
                     add_poise(en, poise_max(en, t), None, t, &mut ev);
@@ -1490,8 +1490,8 @@ impl World {
             en.hit_by = swing;
             n += 1;
             if !en.boss {
-                en.snare = en.snare.max(snare);
-                en.bind = en.bind.max(bind);
+                en.marks.snare = en.marks.snare.max(snare);
+                en.marks.bind = en.marks.bind.max(bind);
             }
             let hit_at = en.pos + Vec3::Y * en.height * 0.6;
             let crit = en.exposed > 0.0;
@@ -1546,7 +1546,7 @@ impl World {
             }
             n += 1;
             if !en.boss {
-                en.snare = en.snare.max(snare);
+                en.marks.snare = en.marks.snare.max(snare);
             }
             let at = en.pos + Vec3::Y * en.height * 0.6;
             let crit = en.exposed > 0.0;
@@ -2848,9 +2848,9 @@ mod tests {
         let z = w.skill_zones[0];
         assert!(z.holds(vec3(0.0, 0.0, -4.0), 0.0) && !z.holds(vec3(0.0, 0.0, 4.0), 0.0));
         w.step(&Actions::default(), &t);
-        assert_eq!(w.enemies[0].slow, 0.5, "inside");
-        assert_eq!(w.enemies[1].slow, 1.0, "behind: outside the cone");
-        assert_eq!(w.enemies[2].slow, 1.0, "a boss is not slowed");
+        assert_eq!(w.enemies[0].marks.slow, 0.5, "inside");
+        assert_eq!(w.enemies[1].marks.slow, 1.0, "behind: outside the cone");
+        assert_eq!(w.enemies[2].marks.slow, 1.0, "a boss is not slowed");
         // 실제 걸음: 안의 적과 밖의 적을 같은 거리에서 쫓게 하면 안쪽이 반만 간다.
         for e in &mut w.enemies[..2] {
             e.state = EState::Chase;
@@ -2873,7 +2873,7 @@ mod tests {
         still(&mut w);
         run(&mut w, &t, Actions::default(), 125);
         assert!(w.skill_zones.is_empty());
-        assert!(w.enemies.iter().all(|e| e.slow == 1.0));
+        assert!(w.enemies.iter().all(|e| e.marks.slow == 1.0));
         // 고르기가 없으면 남는 땅이 없다.
         let (mut w, t) = world();
         wear(&mut w, Sk::Quake, 3, Pick::A);
@@ -2986,8 +2986,8 @@ mod tests {
         w.spawn_mob(vec3(0.0, 0.0, 2.6));
         still(&mut w);
         run(&mut w, &t, skill(0), 40);
-        assert!(w.enemies[0].frail > 1.0 && w.enemies[0].frail <= 2.0);
-        assert_eq!(w.enemies[1].frail, 0.0, "behind: not gathered");
+        assert!(w.enemies[0].marks.frail > 1.0 && w.enemies[0].marks.frail <= 2.0);
+        assert_eq!(w.enemies[1].marks.frail, 0.0, "behind: not gathered");
         assert_eq!(w.enemies[0].hp, 90);
         // 모인 적 곁에서 휘돌이(1단, 한 타 10): 모인 적은 12씩, 뒤의 적은 10씩.
         run(&mut w, &t, skill(1), 60);
@@ -2996,7 +2996,7 @@ mod tests {
         // 2초가 지나면 풀린다.
         still(&mut w);
         run(&mut w, &t, Actions::default(), 90);
-        assert_eq!(w.enemies[0].frail, 0.0);
+        assert_eq!(w.enemies[0].marks.frail, 0.0);
         assert_eq!(hurt_by(&w.enemies[0], 10, false, 0, &t), 10);
         // 4단에는 없다.
         let (mut w, t) = world();
@@ -3004,7 +3004,7 @@ mod tests {
         w.spawn_mob(vec3(0.0, 0.0, -4.0));
         still(&mut w);
         run(&mut w, &t, skill(0), 20);
-        assert_eq!(w.enemies[0].frail, 0.0);
+        assert_eq!(w.enemies[0].marks.frail, 0.0);
     }
 
     /// 땅울림 5단 맺음: 자세가 깨져 있는 적에게 두 배 — 멀쩡한 적은 그대로(26). 4단에는 없다.
@@ -3020,7 +3020,7 @@ mod tests {
                 e.hp = 500;
                 e.max_hp = 500;
             }
-            w.enemies[0].broken = 5.0;
+            w.enemies[0].stance.broken = 5.0;
             run(&mut w, &t, skill(0), 30);
             (500 - w.enemies[0].hp, 500 - w.enemies[1].hp, t)
         };
@@ -3133,8 +3133,8 @@ mod tests {
                         !matches!(b.state, EState::Stagger { .. }),
                         "{tag}: staggered"
                     );
-                    assert_eq!(b.slow, 1.0, "{tag}: slowed");
-                    assert_eq!(b.frail, 0.0, "{tag}: marked");
+                    assert_eq!(b.marks.slow, 1.0, "{tag}: slowed");
+                    assert_eq!(b.marks.frail, 0.0, "{tag}: marked");
                 }
                 assert!(
                     ev.iter().any(|e| matches!(e, Event::Skill { .. })),
@@ -3537,7 +3537,7 @@ mod tests {
             let cd0 = w.player.skill.cd[Sk::Whirl.index()];
             let (_, _) = parry_the_front(&mut w, &t);
             let spent = cd0 - w.player.skill.cd[Sk::Whirl.index()];
-            (w.enemies[1].poise, w.enemies[3].poise, spent)
+            (w.enemies[1].stance.poise, w.enemies[3].stance.poise, spent)
         };
         let (poise_a, boss_a, spent_a) = echo(Pick::A);
         let (poise_b, _, spent_b) = echo(Pick::B);
@@ -3681,10 +3681,10 @@ mod tests {
                 let e = &w.enemies[0];
                 if e.hp != hp {
                     hits.push(hp - e.hp);
-                    poise.push(e.poise - last_poise);
+                    poise.push(e.stance.poise - last_poise);
                     hp = e.hp;
                 }
-                last_poise = e.poise;
+                last_poise = e.stance.poise;
             }
             (hits, poise)
         };
@@ -3796,7 +3796,7 @@ mod tests {
                 .count();
             (
                 pulses,
-                w.enemies[0].poise > 0.0 || w.enemies[0].broken > 0.0,
+                w.enemies[0].stance.poise > 0.0 || w.enemies[0].stance.broken > 0.0,
             )
         };
         assert_eq!(burn(MAX_RANK), (4, true));
@@ -3959,7 +3959,7 @@ mod tests {
             }
             assert!(ev.iter().any(|e| matches!(e, Event::LineCut { .. })));
             assert!(!staggered, "a boss is not staggered");
-            assert!(w.enemies[4].poise > 0.0, "but its poise is worn");
+            assert!(w.enemies[4].stance.poise > 0.0, "but its poise is worn");
             assert_eq!(w.player.skill.gauge, 0.0);
             let lost: Vec<i32> = w.enemies[..4].iter().map(|e| 90 - e.hp).collect();
             (lost, boss - w.enemies[4].hp)
@@ -4102,7 +4102,7 @@ mod tests {
         let (w, t, cut) = run(1, false);
         assert_eq!(cut, 1, "only the winding foe is cut off");
         assert!(
-            w.enemies[0].poise > w.enemies[1].poise * 2.0,
+            w.enemies[0].stance.poise > w.enemies[1].stance.poise * 2.0,
             "more posture damage"
         );
         assert!(w.enemies[1].hp < 90, "the other is simply hit");
@@ -4112,7 +4112,8 @@ mod tests {
         assert!(!matches!(w.enemies[0].state, EState::Stagger { .. }));
         let (w, t, _) = run(5, false);
         assert!(
-            w.enemies[0].broken > 0.0 || w.enemies[0].poise >= poise_max(&w.enemies[0], &t) - 1e-3
+            w.enemies[0].stance.broken > 0.0
+                || w.enemies[0].stance.poise >= poise_max(&w.enemies[0], &t) - 1e-3
         );
     }
 
@@ -4147,9 +4148,9 @@ mod tests {
         w.spawn_mob(vec3(0.0, 0.0, -3.0));
         still(&mut w);
         finish(&mut w, &t, 0);
-        assert!(w.enemies[0].bind > 0.0);
+        assert!(w.enemies[0].marks.bind > 0.0);
         w.step(&Actions::default(), &t);
-        assert_eq!(w.enemies[0].slow, 0.0, "held in place");
+        assert_eq!(w.enemies[0].marks.slow, 0.0, "held in place");
         // 둘레로(ㄱ): 옆의 적도 찔린다.
         let (mut w, t) = world();
         wear(&mut w, Sk::Roots, 3, Pick::A);

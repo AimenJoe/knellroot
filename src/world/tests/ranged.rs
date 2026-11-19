@@ -749,7 +749,7 @@ fn dps_at(id: weapons::Id, rank: u8, secs: f32, on_beat: bool, dist: f32) -> (f3
     for k in 0..n {
         idle(&mut w);
         w.enemies[i].pos = vec3(0.0, 0.0, -dist);
-        w.enemies[i].poise = 0.0;
+        w.enemies[i].stance.poise = 0.0;
         w.player.pos = Vec3::ZERO;
         let press = if on_beat {
             let beat = w.player.beat.period;
@@ -882,7 +882,7 @@ fn dps_plan(id: weapons::Id, rank: u8, secs: f32, dist: f32, plan: Plan) -> (f32
     for _ in 0..n {
         idle(&mut w);
         w.enemies[i].pos = vec3(0.0, 0.0, -dist);
-        w.enemies[i].poise = 0.0;
+        w.enemies[i].stance.poise = 0.0;
         w.player.pos = Vec3::ZERO;
         if w.player.stamina < 1.0 {
             starved += 1;

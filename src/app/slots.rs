@@ -138,8 +138,8 @@ impl App {
     fn enter_slot(&mut self, i: usize, progress: crate::save::Progress) {
         #[cfg(feature = "dev")]
         {
-            self.dev_run = false;
-            self.dev_board = None;
+            self.dev.run = false;
+            self.dev.board = None;
         }
         self.slot = i;
         crate::save::set_last_slot(i);

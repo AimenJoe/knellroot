@@ -197,7 +197,7 @@ fn filling_the_poise_bar_breaks_the_enemy() {
     assert!(matches!(w.enemies[i].state, EState::Stagger { .. }));
     assert!(w.enemies[i].exposed > 0.0);
     // 0055: 깨진 동안은 모든 타격이 × `poise.break damage x`(폭딜 창) — 첫 대는 치명타 덤까지.
-    assert!(w.enemies[i].broken > 0.0);
+    assert!(w.enemies[i].stance.broken > 0.0);
     let base = 20;
     let want = crate::tuning::scale_up(base, t[P::PoiseBreakDamage]);
     assert_eq!(hurt_by(&w.enemies[i], base, false, 0, &t), want);
@@ -211,7 +211,7 @@ fn filling_the_poise_bar_breaks_the_enemy() {
     let open = crate::tuning::scale_up(base + 10, t[P::PoiseBreakDamage]);
     assert_eq!((want, open), (30, 50));
     assert_eq!(hurt_by(&w.enemies[i], base, false, 10, &t), open);
-    w.enemies[i].broken = 0.0;
+    w.enemies[i].stance.broken = 0.0;
     assert_eq!(hurt_by(&w.enemies[i], base, false, 0, &t), base);
     assert_eq!(
         hurt_by(&w.enemies[i], base, false, 10, &t),
@@ -224,9 +224,9 @@ fn filling_the_poise_bar_breaks_the_enemy() {
         crit + 10,
         "exposed: bonus"
     );
-    let before = w.enemies[i].poise;
+    let before = w.enemies[i].stance.poise;
     add_poise(&mut w.enemies[i], max, None, &t, &mut ev);
-    assert_eq!(w.enemies[i].poise, before, "locked after a break");
+    assert_eq!(w.enemies[i].stance.poise, before, "locked after a break");
     // 망치처럼 "깨지기 직전"을 깨는 타는 반만 차 있어도 깬다.
     let j = mob_with(&mut w, vec3(2.0, 0.0, -3.0), 990);
     let mut ev = Vec::new();

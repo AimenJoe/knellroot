@@ -32,12 +32,12 @@ impl World {
     fn tick_poise(&mut self, t: &Tuning, dt: f32) {
         // 자세 막대(0051): 깬 뒤 잠금이 풀리고, 맞지 않은 지 오래면 줄어든다.
         for en in &mut self.enemies {
-            en.poise_lock = (en.poise_lock - dt).max(0.0);
-            en.broken = (en.broken - dt).max(0.0);
-            en.poise_frac = (en.poise / poise_max(en, t).max(0.01)).clamp(0.0, 1.0);
-            en.poise_idle += dt;
-            if en.poise_idle >= t[P::PoiseDelay] {
-                en.poise = (en.poise - t[P::PoiseDecay] * dt).max(0.0);
+            en.stance.lock = (en.stance.lock - dt).max(0.0);
+            en.stance.broken = (en.stance.broken - dt).max(0.0);
+            en.stance.frac = (en.stance.poise / poise_max(en, t).max(0.01)).clamp(0.0, 1.0);
+            en.stance.idle += dt;
+            if en.stance.idle >= t[P::PoiseDelay] {
+                en.stance.poise = (en.stance.poise - t[P::PoiseDecay] * dt).max(0.0);
             }
         }
     }
@@ -394,7 +394,7 @@ impl World {
                     continue;
                 }
                 // 결(0223 11절): 탄도 무기의 타다 — 묶인 적·금 간 적에 닿았나(탄 하나에 한 번 — 꿰뚫어도).
-                if !b.veined[0] && (en.ail.bound > 0.0 || en.bind > 0.0) {
+                if !b.veined[0] && (en.ail.bound > 0.0 || en.marks.bind > 0.0) {
                     b.veined[0] = true;
                     self.vein_bound = true;
                 }

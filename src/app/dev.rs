@@ -240,7 +240,7 @@ impl App {
     fn dev_start(&mut self, e: DevStart) {
         match e {
             DevStart::Entrance | DevStart::Gate => {
-                self.dev_run = true;
+                self.dev.run = true;
                 self.restart();
                 if e == DevStart::Gate {
                     self.run.dev_skip_to_gate(&mut self.world);
@@ -249,7 +249,7 @@ impl App {
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Village => {
-                self.dev_run = true;
+                self.dev.run = true;
                 self.restart();
                 // 이 판에 첫 문지기를 이긴 셈 — 내려가는 뿌리 굴(0174)부터 보인다.
                 self.down = 1;
@@ -264,7 +264,7 @@ impl App {
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Garden => {
-                self.dev_run = true;
+                self.dev.run = true;
                 self.restart();
                 // 이 판에 두 문지기를 이긴 셈 — 마을에서 내려가는 뿌리 굴부터.
                 self.down = 2;
@@ -280,7 +280,7 @@ impl App {
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Works => {
-                self.dev_run = true;
+                self.dev.run = true;
                 self.restart();
                 // 이 판에 세 문지기를 이긴 셈 — 정원에서 내려가는 뿌리 굴부터.
                 self.down = 3;
@@ -296,11 +296,11 @@ impl App {
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Residents => {
-                self.dev_run = true;
+                self.dev.run = true;
                 self.restart();
                 self.down = 1;
                 self.cross_to(1, false);
-                if let Some(&(_, at)) = self.run.residents.first() {
+                if let Some(&(_, at)) = self.run.folk.list.first() {
                     self.world.player.pos = at + vec3(0.0, 0.0, 1.6);
                     self.world.player.prev = self.world.player.pos;
                     self.cam = self.cam.renew(self.world.player.pos, &self.t);
@@ -308,7 +308,7 @@ impl App {
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Stones => {
-                self.dev_run = true;
+                self.dev.run = true;
                 self.restart();
                 self.down = 1;
                 self.cross_to(1, false);
@@ -320,11 +320,11 @@ impl App {
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Chest => {
-                self.dev_run = true;
+                self.dev.run = true;
                 self.restart();
                 self.down = 1;
                 self.cross_to(1, false);
-                if let Some(&at) = self.run.chests.first() {
+                if let Some(&at) = self.run.chest.at.first() {
                     self.world.player.pos = at + vec3(-1.2, 0.0, 0.0);
                     self.world.player.prev = self.world.player.pos;
                     self.cam = self.cam.renew(self.world.player.pos, &self.t);
@@ -332,7 +332,7 @@ impl App {
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Scenario(sc) => {
-                self.sc = sc;
+                self.dev.sc = sc;
                 self.world = scenario::build(sc);
                 self.fx.clear();
                 self.arm_world();
@@ -347,7 +347,7 @@ impl App {
             })),
             // 기술 판(0158): 메모리의 덮어쓰기만 바꾼다 — 기록(`progress`)과 슬롯은 건드리지 않는다. 창은 그대로(설명 줄이 상태를 보인다).
             DevStart::SkillsMax | DevStart::SkillsFlip => {
-                self.dev_board = dev_board_step(self.dev_board, e);
+                self.dev.board = dev_board_step(self.dev.board, e);
                 self.apply_board();
                 self.snd(crate::sfx::Id::Buy);
             }
@@ -388,7 +388,7 @@ impl App {
     fn dev_note(&self, e: DevStart) -> String {
         match e {
             DevStart::SkillsMax | DevStart::SkillsFlip => {
-                let state = match self.dev_board {
+                let state = match self.dev.board {
                     None => dv::BOARD_SLOT,
                     Some(b) if b.pick[0] == crate::skills::Pick::A => dv::BOARD_MAX_A,
                     Some(_) => dv::BOARD_MAX_B,

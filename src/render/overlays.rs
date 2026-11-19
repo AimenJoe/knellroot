@@ -955,14 +955,14 @@ fn exposed_rings(w: &World, alpha: f32, fl: &Drape) {
 fn frail_rings(w: &World, alpha: f32, fl: &Drape) {
     // 더 다치는 적(0158 G1, 끌어모으기 맺음): 발밑에 민트빛 고리 — 남은 시간만큼 옅어진다(드러난 적의 금빛 고리보다 좁게).
     for en in &w.enemies {
-        if en.frail > 0.0 && en.alive() {
+        if en.marks.frail > 0.0 && en.alive() {
             let p = en.prev.lerp(en.pos, alpha);
             fl.ring(
                 p + Vec3::Y * 0.04,
                 en.radius + 0.25,
                 0.0,
                 360.0,
-                Color::new(0.66, 1.0, 0.86, 0.3 + 0.5 * en.frail.min(1.0)),
+                Color::new(0.66, 1.0, 0.86, 0.3 + 0.5 * en.marks.frail.min(1.0)),
             );
         }
     }

@@ -72,7 +72,7 @@ impl Renderer {
         // 들어 올리는 동안 몸이 늘어나며(부피 그대로 — KB believable-cute-character-motion) 뒤로 젖고, 내리칠 때 바로 돌아온다.
         let mut stretch = 1.0;
         // 지연 공격(0128): 들어 올림은 같은 빠르기(`lift_dur`), 정점에서 더 젖히고 더 떨며 버틴다 — 늦게 친다는 것이 몸에 보이게.
-        let delayed = matches!(en.tempo, crate::enemy::Tempo::Delayed(_));
+        let delayed = matches!(en.rhythm.tempo, crate::enemy::Tempo::Delayed(_));
         if let EState::Tele { t } = en.state {
             let dur = en.tele_dur().max(1e-3);
             let lift = en.lift_dur().max(1e-3);

@@ -143,7 +143,7 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
             roll_for = e.atk_count;
             // 엇박(0128): 지연·빠름·연속의 이어지는 타·페인트 뒤의 공격은 사람이 덜 받아낸다고 볼 때 — `SIM_OFFBEAT=0.75`면 p × 0.75.
             // 몇 배인지는 확인하지 못했다(가정 — 판정에서 잴 것). 봇 자체는 상태를 읽으니 속지 않는다.
-            let off = !matches!(e.tempo, crate::enemy::Tempo::Normal);
+            let off = !matches!(e.rhythm.tempo, crate::enemy::Tempo::Normal);
             let pen = if off { offbeat } else { 1.0 };
             ok = rng.f() < p * pen;
             for r in &mut ring_ok {
@@ -265,7 +265,7 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
         }
         let (hp_b, opened_b) = (
             w.enemies[boss].hp,
-            w.enemies[boss].exposed > 0.0 || w.enemies[boss].broken > 0.0,
+            w.enemies[boss].exposed > 0.0 || w.enemies[boss].stance.broken > 0.0,
         );
         let back_b = w.shards.iter().filter(|s| s.reflected).count();
         let attacking = matches!(w.player.state, PState::Attack { .. });

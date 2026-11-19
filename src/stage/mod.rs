@@ -798,6 +798,40 @@ const CORE_DRAW_SPEED: f32 = 2.2;
 /// 이름 카드가 떠 있는 시간(초).
 pub const CARD_TIME: f32 = 3.0;
 
+/// 장신구 상자(0064 M3 — 0251 R10에서 묶음).
+#[derive(Default)]
+pub struct Chests {
+    /// 장신구 상자(0064 M3): 자리, 열렸나(기록에서 — 한 번 연 상자는 판을 넘어 비어 있다), 곁의 닫힌 상자, 이번 틱에 연 상자(앱이 가져간다).
+    pub at: Vec<Vec3>,
+    pub open: Vec<bool>,
+    pub near: Option<usize>,
+    opened: Option<usize>,
+}
+
+/// 숨은 물건(0105 — 0251 R10에서 묶음).
+#[derive(Default)]
+pub struct Finds {
+    /// 숨은 물건(0105): 자리·종류·기록 이름, 주웠나(기록에서), 곁의 것, 이번 틱에 주운 것(앱이 가져간다).
+    pub list: Vec<(Vec3, Find, String)>,
+    pub found: Vec<bool>,
+    pub near: Option<usize>,
+    picked: Option<usize>,
+}
+
+/// 남은 주민(0122 — 0251 R10에서 묶음).
+#[derive(Default)]
+pub struct Folk {
+    /// 남은 주민(0122): (표 번호, 자리), 지금 바라보는 쪽(가까이 오면 돌아본다), 재방문으로 바뀌었나(앱이 기록에서),
+    /// 이 판에 봤나(처음 본 틱에 앱이 기록에), 곁의 주민, 이번 틱에 말 건 주민(앱이 가져간다 — 말풍선).
+    pub list: Vec<(usize, Vec3)>,
+    pub face: Vec<f32>,
+    pub changed: Vec<bool>,
+    seen: Vec<bool>,
+    seen_new: Vec<usize>,
+    pub near: Option<usize>,
+    talked: Option<usize>,
+}
+
 pub struct StageRun {
     pub def: &'static StageDef,
     pub level: Level,
@@ -831,11 +865,8 @@ pub struct StageRun {
     pub rest_safe: bool,
     /// 마지막으로 쉰 뒤 지난 초(렌더의 퍼지는 빛).
     pub since_rest: f32,
-    /// 장신구 상자(0064 M3): 자리, 열렸나(기록에서 — 한 번 연 상자는 판을 넘어 비어 있다), 곁의 닫힌 상자, 이번 틱에 연 상자(앱이 가져간다).
-    pub chests: Vec<Vec3>,
-    pub chest_open: Vec<bool>,
-    pub near_chest: Option<usize>,
-    opened: Option<usize>,
+    /// 장신구 상자(0064 M3 — `Chests`).
+    pub chest: Chests,
     /// 떨어진 아이템(0131, 사장 "디아블로식 — 상자를 열면 아이템이 떨어짐, 바로 습득되는 것이 아니라"): 연 상자 앞 바닥에 놓이고
     /// 주워야 얻는다. (자리, 어느 상자, 떨어진 뒤 초). 곁의 것, 이번 틱에 주운 상자 번호(앱이 가져가 그 상자의 것을 준다·기록한다).
     pub drops: Vec<(Vec3, usize, f32)>,
@@ -872,11 +903,8 @@ pub struct StageRun {
     /// 이번 틱에 꺼진 화로에 불이 붙었다(0171 — 앱이 가져가 기록에 적고 그 순간을 보여 준다).
     kindled: bool,
     pub shop_ready: bool,
-    /// 숨은 물건(0105): 자리·종류·기록 이름, 주웠나(기록에서), 곁의 것, 이번 틱에 주운 것(앱이 가져간다).
-    pub finds: Vec<(Vec3, Find, String)>,
-    pub found: Vec<bool>,
-    pub near_find: Option<usize>,
-    picked: Option<usize>,
+    /// 숨은 물건(0105 — `Finds`).
+    pub hidden: Finds,
     /// 엘리트(0112): 지금 서 있는 (적 번호, 기록 이름), 기록에서 이미 쓰러뜨린 것, 이번 틱에 처음 쓰러뜨린 것(앱이 가져간다).
     elite_ids: Vec<(usize, String)>,
     /// 이 판에 쓰러뜨린 엘리트(표의 몇째, 0113) — 쉬어도 다시 서지 않는다.
@@ -901,15 +929,8 @@ pub struct StageRun {
     pub up_at: Option<Vec3>,
     pub down_open: bool,
     passage_armed: bool,
-    /// 남은 주민(0122): (표 번호, 자리), 지금 바라보는 쪽(가까이 오면 돌아본다), 재방문으로 바뀌었나(앱이 기록에서),
-    /// 이 판에 봤나(처음 본 틱에 앱이 기록에), 곁의 주민, 이번 틱에 말 건 주민(앱이 가져간다 — 말풍선).
-    pub residents: Vec<(usize, Vec3)>,
-    pub resident_face: Vec<f32>,
-    pub resident_changed: Vec<bool>,
-    resident_seen: Vec<bool>,
-    resident_seen_new: Vec<usize>,
-    pub near_resident: Option<usize>,
-    talked: Option<usize>,
+    /// 남은 주민(0122 — `Folk`).
+    pub folk: Folk,
 }
 
 /// 바닥에 떨어진 아이템 하나(0226). `wait` = 방랑자가 한 번 곁을 떠나야 주울 수 있다 — 발치에 내려놓은 것이 곧바로 "줍기"가 되어
@@ -946,13 +967,13 @@ pub enum Near {
 impl StageRun {
     /// 곁에 있는 할 일(없으면 `None`).
     pub fn near(&self) -> Option<Near> {
-        if self.near_find.is_some() || self.near_drop.is_some() || self.near_item.is_some() {
+        if self.hidden.near.is_some() || self.near_drop.is_some() || self.near_item.is_some() {
             Some(Near::Pick)
-        } else if self.near_chest.is_some() {
+        } else if self.chest.near.is_some() {
             Some(Near::Open)
         } else if self.near_lever {
             Some(Near::Pull)
-        } else if self.near_resident.is_some() {
+        } else if self.folk.near.is_some() {
             Some(Near::Talk)
         } else if self.near_stone.is_some() {
             Some(Near::Read)
@@ -1002,9 +1023,7 @@ impl StageRun {
             near_rest: None,
             rest_safe: true,
             since_rest: f32::MAX,
-            chests: Vec::new(),
-            chest_open: Vec::new(),
-            near_chest: None,
+            chest: Chests::default(),
             drops: Vec::new(),
             near_drop: None,
             looted: None,
@@ -1023,14 +1042,10 @@ impl StageRun {
             read: None,
             codex_told: Vec::new(),
             codex_new: Vec::new(),
-            opened: None,
             rested: false,
             kindled: false,
             shop_ready: false,
-            finds: Vec::new(),
-            found: Vec::new(),
-            near_find: None,
-            picked: None,
+            hidden: Finds::default(),
             elite_ids: Vec::new(),
             elites_down: Vec::new(),
             elite_loot: Vec::new(),
@@ -1046,38 +1061,34 @@ impl StageRun {
             up_at: None,
             down_open: false,
             passage_armed: true,
-            residents: Vec::new(),
-            resident_face: Vec::new(),
-            resident_changed: Vec::new(),
-            resident_seen: Vec::new(),
-            resident_seen_new: Vec::new(),
-            near_resident: None,
-            talked: None,
+            folk: Folk::default(),
         };
         // 주민(0122): 표지마다 — 처음엔 제 일 쪽을 본다(0132), 몸은 방랑자만 밀어낸다.
         for (c, p) in run.level.marks.clone() {
             if let Some(i) = crate::residents::by_mark(c) {
-                run.residents.push((i, p));
-                run.resident_face.push(crate::residents::WORK_FACE);
+                run.folk.list.push((i, p));
+                run.folk.face.push(crate::residents::WORK_FACE);
                 w.bodies.push((p, crate::residents::BODY_R));
             }
         }
-        run.resident_changed = vec![false; run.residents.len()];
-        run.resident_seen = vec![false; run.residents.len()];
+        run.folk.changed = vec![false; run.folk.list.len()];
+        run.folk.seen = vec![false; run.folk.list.len()];
         run.down_at = run.level.marks_of(DOWN_GLYPH).next();
         run.up_at = run.level.marks_of(UP_GLYPH).next();
         run.rests = run.level.marks_of('R').collect();
-        run.chests = run.level.marks_of('C').collect();
+        run.chest.at = run.level.marks_of('C').collect();
         run.stones = run.level.marks_of('N').collect();
-        run.chest_open = vec![false; run.chests.len()];
+        run.chest.open = vec![false; run.chest.at.len()];
         for kind in Find::ALL {
             let at: Vec<Vec3> = run.level.marks_of(kind.glyph()).collect();
             for (n, p) in at.into_iter().enumerate() {
-                run.finds.push((p, kind, find_id(def.find_prefix, kind, n)));
+                run.hidden
+                    .list
+                    .push((p, kind, find_id(def.find_prefix, kind, n)));
             }
         }
-        run.found = vec![false; run.finds.len()];
-        for c in &run.chests {
+        run.hidden.found = vec![false; run.hidden.list.len()];
+        for c in &run.chest.at {
             w.obstacles.push(crate::world::Aabb {
                 min: *c - vec3(CHEST_HALF.x, 0.0, CHEST_HALF.z),
                 max: *c + vec3(CHEST_HALF.x, CHEST_HALF.y * 2.0, CHEST_HALF.z),
@@ -1112,7 +1123,7 @@ impl StageRun {
         if def.horde.1 > 0 {
             let mut avoid: Vec<(Vec3, f32)> = vec![(run.level.player_start, HORDE_AWAY_START)];
             avoid.extend(run.rests.iter().map(|p| (*p, HORDE_AWAY_REST)));
-            avoid.extend(run.residents.iter().map(|(_, p)| (*p, HORDE_AWAY_RESIDENT)));
+            avoid.extend(run.folk.list.iter().map(|(_, p)| (*p, HORDE_AWAY_RESIDENT)));
             avoid.extend(run.level.marks_of(def.boss.0).map(|p| (p, HORDE_AWAY_BOSS)));
             for c in [LEVER_GLYPH, DOWN_GLYPH, UP_GLYPH, 'C', 'N'] {
                 avoid.extend(run.level.marks_of(c).map(|p| (p, HORDE_AWAY_SPOT)));
@@ -1397,8 +1408,8 @@ impl StageRun {
                 && vec2(e.pos.x - pp.x, e.pos.z - pp.z).length() <= REST_SAFE
         });
         // 상자(0064 M3): 곁의 닫힌 상자는 적이 가까워도 연다(쉬기와 달리 몸이 묶이지 않는다).
-        self.near_chest = self.chests.iter().enumerate().position(|(i, c)| {
-            !self.chest_open[i] && vec2(c.x - pp.x, c.z - pp.z).length() <= CHEST_REACH
+        self.chest.near = self.chest.at.iter().enumerate().position(|(i, c)| {
+            !self.chest.open[i] && vec2(c.x - pp.x, c.z - pp.z).length() <= CHEST_REACH
         });
         // 도감(0130): 깨어난 적을 가까이(적 시야만큼) 보면 그 종·역할·성질·깨어남을 한 번씩 알린다.
         for e in w.enemies.iter().filter(|e| e.active() && e.alive()) {
@@ -1455,21 +1466,26 @@ impl StageRun {
                 .iter()
                 .any(|(p, chest, age)| reach(p, *age) && held(*chest));
         // 숨은 물건(0105): 상자와 같은 꼴 — 곁이면 점프 버튼이 줍기.
-        self.near_find = self.finds.iter().enumerate().position(|(i, (p, _, _))| {
-            !self.found[i] && vec2(p.x - pp.x, p.z - pp.z).length() <= FIND_REACH
-        });
+        self.hidden.near = self
+            .hidden
+            .list
+            .iter()
+            .enumerate()
+            .position(|(i, (p, _, _))| {
+                !self.hidden.found[i] && vec2(p.x - pp.x, p.z - pp.z).length() <= FIND_REACH
+            });
         // 문 장치(0113): 문이 닫혀 있을 때만 곁이면 당기기.
         self.near_lever = !self.gate_opened
             && self
                 .lever
                 .is_some_and(|l| vec2(l.x - pp.x, l.z - pp.z).length() <= LEVER_REACH);
         // 주민(0122): 보면 기록, 가까이 오면 돌아보고(무심한 경계 — 천천히), 멀어지면 제 일 쪽으로. 곁이면 말 걸기.
-        self.near_resident = None;
-        for (k, &(_, at)) in self.residents.iter().enumerate() {
+        self.folk.near = None;
+        for (k, &(_, at)) in self.folk.list.iter().enumerate() {
             let d = flat(at);
-            if d <= crate::residents::SEE_RANGE && !self.resident_seen[k] {
-                self.resident_seen[k] = true;
-                self.resident_seen_new.push(k);
+            if d <= crate::residents::SEE_RANGE && !self.folk.seen[k] {
+                self.folk.seen[k] = true;
+                self.folk.seen_new.push(k);
             }
             let home = crate::residents::WORK_FACE;
             let want = if d <= crate::residents::GLANCE_RANGE {
@@ -1477,22 +1493,22 @@ impl StageRun {
             } else {
                 home
             };
-            let f = &mut self.resident_face[k];
+            let f = &mut self.folk.face[k];
             let diff = (want - *f + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
                 - std::f32::consts::PI;
             *f += diff.clamp(-1.5 * dt, 1.5 * dt);
-            if d <= crate::residents::TALK_RANGE && self.near_resident.is_none() {
-                self.near_resident = Some(k);
+            if d <= crate::residents::TALK_RANGE && self.folk.near.is_none() {
+                self.folk.near = Some(k);
             }
         }
         // 점프 버튼이 다음 틱부터 쉬기·열기·줍기가 되는 자리(0048): 곁이고(쉬기는 안전할 때만) — 아니면 그대로 점프.
         w.interact_here = (self.near_rest.is_some() && self.rest_safe)
             || self.near_drop.is_some()
             || self.near_item.is_some()
-            || self.near_chest.is_some()
-            || self.near_find.is_some()
+            || self.chest.near.is_some()
+            || self.hidden.near.is_some()
             || self.near_lever
-            || self.near_resident.is_some()
+            || self.folk.near.is_some()
             || self.near_stone.is_some();
         // 같은 버튼: 줍기(떨어진 것 · 숨은 물건) > 열기 > 당기기 > 쉬기(HUD 안내와 같은 차례).
         if let (Some(k), true) = (self.near_drop, w.interact) {
@@ -1504,14 +1520,14 @@ impl StageRun {
             self.taken = Some(d.item);
             self.taken_at = Some(d.pos);
             self.near_item = None;
-        } else if let (Some(i), true) = (self.near_find, w.interact) {
-            self.found[i] = true;
-            self.picked = Some(i);
-        } else if let (Some(i), true) = (self.near_chest, w.interact) {
-            self.chest_open[i] = true;
-            self.opened = Some(i);
+        } else if let (Some(i), true) = (self.hidden.near, w.interact) {
+            self.hidden.found[i] = true;
+            self.hidden.picked = Some(i);
+        } else if let (Some(i), true) = (self.chest.near, w.interact) {
+            self.chest.open[i] = true;
+            self.chest.opened = Some(i);
             // 상자 앞(방랑자 쪽)으로 튀어나와 떨어진다(0131) — 기록은 주울 때.
-            let c = self.chests[i];
+            let c = self.chest.at[i];
             // 방랑자 쪽에서 옆으로 비껴(발밑에 떨어지면 몸에 가려 빛기둥이 안 보였다, 헤드리스).
             let to = vec3(pp.x - c.x, 0.0, pp.z - c.z).normalize_or(Vec3::Z);
             let side = Quat::from_rotation_y(DROP_SIDE.to_radians()) * to;
@@ -1527,9 +1543,9 @@ impl StageRun {
                 self.objective = Some(self.def.obj_gate);
             }
             self.card = Some((self.def.card_lever, CARD_TIME));
-        } else if let (Some(k), true) = (self.near_resident, w.interact) {
+        } else if let (Some(k), true) = (self.folk.near, w.interact) {
             // 말 걸기(0122): 멈추지 않는다 — 앱이 머리 위 말풍선을 띄운다(다시 누르면 다음 줄).
-            self.talked = Some(k);
+            self.folk.talked = Some(k);
         } else if let (Some(k), true) = (self.near_stone, w.interact) {
             self.read = Some(k);
         } else if let (Some(i), true) = (self.near_rest, w.interact) {
@@ -1764,12 +1780,12 @@ impl StageRun {
     }
 
     pub fn take_talked(&mut self) -> Option<usize> {
-        self.talked.take()
+        self.folk.talked.take()
     }
 
     /// 이 판에 처음 본 주민들(0122) — 앱이 한 번 가져가 기록에.
     pub fn take_residents_seen(&mut self) -> Vec<usize> {
-        std::mem::take(&mut self.resident_seen_new)
+        std::mem::take(&mut self.folk.seen_new)
     }
 
     /// 깨어난 자리의 화로를 끈다(0171 — 아직 불을 붙인 적 없는 기록의 첫 지역): 시작 자리에서 가장 가까운 쉼터.
@@ -1794,7 +1810,7 @@ impl StageRun {
 
     /// 이번 틱에 연 상자(0064 M3) — 앱이 한 번 가져가 여는 소리를 낸다(0131부터 얻는 것은 주울 때 — `take_looted`).
     pub fn take_opened(&mut self) -> Option<usize> {
-        self.opened.take()
+        self.chest.opened.take()
     }
 
     /// 이번 틱에 주운 떨어진 아이템의 상자 번호(0131) — 앱이 그 상자의 것을 주고 기록한다.
@@ -1861,15 +1877,15 @@ impl StageRun {
 
     /// 이번 틱에 주운 숨은 물건(0105): (종류, 기록 이름) — 앱이 한 번 가져가 기록·능력치에.
     pub fn take_picked(&mut self) -> Option<(Find, String)> {
-        let i = self.picked.take()?;
-        self.finds.get(i).map(|(_, k, id)| (*k, id.clone()))
+        let i = self.hidden.picked.take()?;
+        self.hidden.list.get(i).map(|(_, k, id)| (*k, id.clone()))
     }
 
     /// 기록의 주운 숨은 물건들(판을 넘어 없다).
     pub fn set_found(&mut self, ids: &[String]) {
-        for (i, (_, _, id)) in self.finds.iter().enumerate() {
+        for (i, (_, _, id)) in self.hidden.list.iter().enumerate() {
             if ids.contains(id) {
-                self.found[i] = true;
+                self.hidden.found[i] = true;
             }
         }
     }
@@ -1877,7 +1893,7 @@ impl StageRun {
     /// 기록의 연 상자들(판을 넘어 비어 있다).
     pub fn set_opened(&mut self, opened: &[u32]) {
         for &i in opened {
-            if let Some(o) = self.chest_open.get_mut(i as usize) {
+            if let Some(o) = self.chest.open.get_mut(i as usize) {
                 *o = true;
             }
         }
@@ -2387,7 +2403,8 @@ mod tests {
                     def.find_prefix
                 );
                 assert!(run
-                    .residents
+                    .folk
+                    .list
                     .iter()
                     .all(|(_, r)| far(*r, HORDE_AWAY_RESIDENT)));
                 assert!(
@@ -2519,22 +2536,22 @@ mod tests {
     #[test]
     fn residents_talk_glance_and_stay_out_of_the_fight() {
         let (mut run, mut w) = StageRun::start(STAGES[1]);
-        assert_eq!(run.residents.len(), 3);
+        assert_eq!(run.folk.list.len(), 3);
         assert_eq!(w.bodies.len(), 3);
-        for &(_, at) in &run.residents {
+        for &(_, at) in &run.folk.list {
             assert!(
                 w.enemies.iter().all(|e| e.pos.distance(at) > 1.0),
                 "not an enemy"
             );
         }
-        let (_, at) = run.residents[0];
+        let (_, at) = run.folk.list[0];
         // 멀리서는 안 보인다 → 다가가면 기록 한 번.
         w.player.pos = at + vec3(0.0, 0.0, crate::residents::SEE_RANGE + 6.0);
         tick(&mut run, &mut w, Actions::default());
         assert!(run.take_residents_seen().is_empty());
         w.player.pos = at + vec3(0.0, 0.0, 1.6);
         w.player.prev = w.player.pos;
-        let face0 = run.resident_face[0];
+        let face0 = run.folk.face[0];
         for _ in 0..90 {
             tick(&mut run, &mut w, Actions::default());
         }
@@ -2547,10 +2564,10 @@ mod tests {
                 .abs()
         };
         assert!(
-            off(run.resident_face[0]) <= off(face0).max(0.05),
+            off(run.folk.face[0]) <= off(face0).max(0.05),
             "turned toward the wanderer"
         );
-        assert_eq!(run.near_resident, Some(0));
+        assert_eq!(run.folk.near, Some(0));
         assert!(w.interact_here);
         tick(
             &mut run,
@@ -2949,16 +2966,16 @@ mod tests {
     fn a_chest_opens_once_with_the_interact_button_and_stays_open_from_the_record() {
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
         assert_eq!(
-            run.chests.len(),
+            run.chest.at.len(),
             sanctuary::DEF.chest_loot.len(),
             "loot per chest"
         );
         run.intro = 0.0;
-        let c = run.chests[1];
+        let c = run.chest.at[1];
         w.player.pos = c + vec3(0.0, 0.0, 1.2);
         w.player.prev = w.player.pos;
         run.tick(&mut w, 0.016);
-        assert_eq!(run.near_chest, Some(1));
+        assert_eq!(run.chest.near, Some(1));
         assert!(w.interact_here, "the jump button opens it");
         w.interact = true;
         run.tick(&mut w, 0.016);
@@ -2967,7 +2984,7 @@ mod tests {
         w.interact = true;
         run.tick(&mut w, 0.016);
         assert_eq!(run.take_opened(), None, "an open chest stays open");
-        assert_eq!(run.near_chest, None);
+        assert_eq!(run.chest.near, None);
         // 0131: 열면 얻는 것이 아니라 상자 앞 바닥에 떨어진다 — 내려앉기 전엔 못 줍고, 주우면 그 상자의 것.
         assert_eq!(run.drops.len(), 1);
         assert!(
@@ -2994,7 +3011,7 @@ mod tests {
         // 기록에서 연 상자는 새 판에서도 열려 있다.
         let (mut run, _) = StageRun::start(&sanctuary::DEF);
         run.set_opened(&[0, 9]);
-        assert_eq!(run.chest_open, vec![true, false, false, false]);
+        assert_eq!(run.chest.open, vec![true, false, false, false]);
     }
 
     /// 0105·0106 → 0123: 숨은 물건 넷(등잔 하나 · 한 모금 하나 · 종소리 조각 둘 — 덜 후하게) + 덧옷 둘(0176) + 숫돌 하나(0180)는 걸어서 닿는 바닥에 있고,
@@ -3002,7 +3019,7 @@ mod tests {
     #[test]
     fn hidden_finds_are_reachable_picked_once_and_gone_from_the_record() {
         let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
-        let kinds: Vec<Find> = run.finds.iter().map(|f| f.1).collect();
+        let kinds: Vec<Find> = run.hidden.list.iter().map(|f| f.1).collect();
         assert_eq!(
             kinds,
             vec![
@@ -3015,7 +3032,7 @@ mod tests {
                 Find::Stone
             ]
         );
-        let ids: Vec<&str> = run.finds.iter().map(|f| f.2.as_str()).collect();
+        let ids: Vec<&str> = run.hidden.list.iter().map(|f| f.2.as_str()).collect();
         assert_eq!(
             ids,
             vec![
@@ -3028,7 +3045,7 @@ mod tests {
                 "sanctuary.stone.0"
             ]
         );
-        for (p, _, id) in &run.finds {
+        for (p, _, id) in &run.hidden.list {
             // `Level::at`의 거꾸로.
             let cell = (
                 (p.x / CELL + run.level.w as f32 * 0.5 - 0.5).round() as usize,
@@ -3038,11 +3055,11 @@ mod tests {
             assert!(run.level.walkable(cell.0, cell.1), "{id} on a floor");
         }
         run.intro = 0.0;
-        let (p, kind, id) = run.finds[1].clone();
+        let (p, kind, id) = run.hidden.list[1].clone();
         w.player.pos = p + vec3(0.0, 0.0, 1.0);
         w.player.prev = w.player.pos;
         run.tick(&mut w, 0.016);
-        assert_eq!(run.near_find, Some(1));
+        assert_eq!(run.hidden.near, Some(1));
         assert!(w.interact_here, "the jump button picks it up");
         w.interact = true;
         run.tick(&mut w, 0.016);
@@ -3054,7 +3071,7 @@ mod tests {
         let (mut run, _) = StageRun::start(&sanctuary::DEF);
         run.set_found(&[id, "elsewhere.sip.0".to_string()]);
         assert_eq!(
-            run.found,
+            run.hidden.found,
             vec![false, true, false, false, false, false, false]
         );
     }

@@ -147,7 +147,7 @@ impl App {
         self.progress.note_codex(self.run.take_codex());
         // 주민(0122): 이 판에 처음 본 주민은 몇째 판에 봤는지 기록(재방문 규칙).
         for k in self.run.take_residents_seen() {
-            let id = crate::residents::RESIDENTS[self.run.residents[k].0].id;
+            let id = crate::residents::RESIDENTS[self.run.folk.list[k].0].id;
             self.progress.note_resident_seen(id);
         }
     }
@@ -577,7 +577,7 @@ impl App {
         self.progress.settle_items();
         // 개발 판(0075, nail 0269 B3의 꼴): 메모리의 기록만 바뀌고 슬롯은 그대로 — 슬롯을 다시 고르면 슬롯 것을 읽는다.
         #[cfg(feature = "dev")]
-        if self.dev_run {
+        if self.dev.run {
             return;
         }
         if self.progress != self.saved {

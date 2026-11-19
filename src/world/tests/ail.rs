@@ -80,8 +80,8 @@ fn a_bound_foe_stands_where_it_is_and_a_boss_only_slows() {
     let mut w = world_with_boss();
     fill(&mut w, 0, Ty::Root);
     w.step(&Actions::default(), &t);
-    assert_eq!(w.enemies[0].slow, ROOT_BOSS_SLOW);
-    assert_eq!(w.enemies[0].bind, 0.0);
+    assert_eq!(w.enemies[0].marks.slow, ROOT_BOSS_SLOW);
+    assert_eq!(w.enemies[0].marks.bind, 0.0);
 }
 
 /// 균열: 금 간 적은 모든 피해를 더 받는다(보스는 덜) — 끌어모으기 맺음의 "더 다치는" 표지와는 곱하지 않고 큰 쪽 하나만.
@@ -96,8 +96,8 @@ fn a_cracked_foe_takes_more_from_every_blow_and_a_boss_less() {
         hurt_by(&w.enemies[i], 100, false, 0, &t),
         (100.0 * RIFT_MULT) as i32
     );
-    w.enemies[i].frail = 1.0;
-    w.enemies[i].frail_mult = 1.5;
+    w.enemies[i].marks.frail = 1.0;
+    w.enemies[i].marks.frail_mult = 1.5;
     assert_eq!(
         hurt_by(&w.enemies[i], 100, false, 0, &t),
         150,
@@ -111,7 +111,7 @@ fn a_cracked_foe_takes_more_from_every_blow_and_a_boss_less() {
     );
     // 금은 때가 되면 닫힌다.
     run(&mut w, &t, crate::tuning::RIFT_SECS + 0.1);
-    w.enemies[i].frail = 0.0;
+    w.enemies[i].marks.frail = 0.0;
     assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, &t), 100);
 }
 
@@ -126,7 +126,7 @@ fn a_bound_foe_loses_more_poise() {
     let mut ev = Vec::new();
     add_poise(&mut w.enemies[a], 1.0, None, &t, &mut ev);
     add_poise(&mut w.enemies[b], 1.0, None, &t, &mut ev);
-    assert!((w.enemies[a].poise - w.enemies[b].poise * ROOT_POISE).abs() < 1e-4);
+    assert!((w.enemies[a].stance.poise - w.enemies[b].stance.poise * ROOT_POISE).abs() < 1e-4);
 }
 
 /// 울림: 게이지가 찬 적이 한 박 뒤에 울린다 — 둘레의 적(울린 적도)이 다치고 이웃은 울림 게이지를 나눠 받는다. 먼 적은 그대로.

@@ -2357,15 +2357,19 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, t: &Tuning) -> i32 {
     if en.rising() {
         return 0;
     }
-    let open = crit || en.broken > 0.0;
+    let open = crit || en.stance.broken > 0.0;
     let d = base + if crit { t[P::ParryCrit] as i32 } else { 0 } + if open { opened } else { 0 };
-    let d = if en.broken > 0.0 {
+    let d = if en.stance.broken > 0.0 {
         crate::tuning::scale_up(d, t[P::PoiseBreakDamage])
     } else {
         d
     };
     // 더 다치는 적: 끌어모으기 맺음(0158 G1)의 표지와 균열의 금(0223 V2) — 둘 가운데 큰 배 하나만(곱하지 않는다).
-    let frail = if en.frail > 0.0 { en.frail_mult } else { 1.0 };
+    let frail = if en.marks.frail > 0.0 {
+        en.marks.frail_mult
+    } else {
+        1.0
+    };
     let k = frail.max(rift_mult(en));
     if k > 1.0 {
         skills::scaled(d, k)
@@ -2409,7 +2413,7 @@ fn afflict(en: &mut Enemy, dose: crate::status::Dose, ev: &mut Vec<Event>) {
 
 /// 자세 피해를 준다(0051). 다 차면(또는 `primed` 비율을 넘은 적을 무거운 타가 치면) 깨진다: 휘청 + 드러남(다음 한 대 치명타).
 fn add_poise(en: &mut Enemy, amount: f32, primed: Option<f32>, t: &Tuning, ev: &mut Vec<Event>) {
-    if amount <= 0.0 || en.poise_lock > 0.0 || !en.alive() || en.rising() {
+    if amount <= 0.0 || en.stance.lock > 0.0 || !en.alive() || en.rising() {
         return;
     }
     // 묶인 적(0223 V2 뿌리)은 자세가 더 깎인다.
@@ -2419,12 +2423,12 @@ fn add_poise(en: &mut Enemy, amount: f32, primed: Option<f32>, t: &Tuning, ev: &
         amount
     };
     let max = poise_max(en, t);
-    let was_primed = primed.is_some_and(|k| en.poise >= max * k);
-    en.poise += amount;
-    en.poise_idle = 0.0;
-    if en.poise >= max || was_primed {
-        en.poise = 0.0;
-        en.poise_lock = t[P::PoiseLock];
+    let was_primed = primed.is_some_and(|k| en.stance.poise >= max * k);
+    en.stance.poise += amount;
+    en.stance.idle = 0.0;
+    if en.stance.poise >= max || was_primed {
+        en.stance.poise = 0.0;
+        en.stance.lock = t[P::PoiseLock];
         let dur = if en.boss {
             t[P::PoiseBreakBoss]
         } else {
@@ -2432,7 +2436,7 @@ fn add_poise(en: &mut Enemy, amount: f32, primed: Option<f32>, t: &Tuning, ev: &
         };
         en.state = EState::Stagger { t: 0.0, dur };
         en.exposed = en.exposed.max(dur);
-        en.broken = dur;
+        en.stance.broken = dur;
         ev.push(Event::Break {
             at: en.pos + Vec3::Y * en.height * 0.7,
         });

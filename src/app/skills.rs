@@ -858,13 +858,13 @@ impl App {
     /// 지금 쓰는 판: 기록의 것 — 개발 창에서 끝 단으로 올렸으면 그것(기록에 쓰지 않는다, 0075).
     pub(super) fn board(&self) -> Board {
         #[cfg(feature = "dev")]
-        if let Some(b) = self.dev_board {
+        if let Some(b) = self.dev.board {
             return b;
         }
         // 개발 창에서 시작한 판·놀이터(시나리오 — 기록에 안 쓴다): 처음의 둘은 배운 것으로 — 스킬 버튼이 비지 않게
         // (0166, 무기를 다 드는 `App::arms`와 같은 갈림).
         #[cfg(feature = "dev")]
-        if self.dev_run || self.stack.base() == Scene::Sandbox {
+        if self.dev.run || self.stack.base() == Scene::Sandbox {
             return self.progress.board.with_starters().with_upend();
         }
         self.progress.board
@@ -873,7 +873,7 @@ impl App {
     /// 개발 창에서 올린 판을 쓰는 중인가(그동안 끼운 것·뒤집은 것은 슬롯에 쓰지 않는다).
     pub(super) fn dev_board_on(&self) -> bool {
         #[cfg(feature = "dev")]
-        return self.dev_board.is_some();
+        return self.dev.board.is_some();
         #[cfg(not(feature = "dev"))]
         false
     }
@@ -1096,7 +1096,7 @@ impl App {
             }
             (Do::Flip, Entry::Skill(id)) => {
                 #[cfg(feature = "dev")]
-                if let Some(b) = self.dev_board.as_mut() {
+                if let Some(b) = self.dev.board.as_mut() {
                     b.flip(id);
                 }
                 if !self.dev_board_on() {
@@ -1106,7 +1106,7 @@ impl App {
             }
             (Do::Flip, Entry::Cell(c)) => {
                 #[cfg(feature = "dev")]
-                if let Some(b) = self.dev_board.as_mut() {
+                if let Some(b) = self.dev.board.as_mut() {
                     b.flip_cell(c);
                 }
                 if !self.dev_board_on() {

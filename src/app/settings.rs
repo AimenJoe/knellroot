@@ -5,6 +5,49 @@ use super::tabs::{Ln, PaneHead, HEAD_H};
 use super::*;
 use flow::Host;
 
+/// 설정 화면의 값(0251 R10 — `App`에 흩어져 있던 여섯 칸): 기기의 것이라 prefs에 적고 기록 슬롯 밖이다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Opts {
+    /// 화면 흔들림 0..=10(0052).
+    pub shake: u8,
+    /// 소리 크기 0..=10(0064 M5).
+    pub volume: u8,
+    /// 바닥 공격 예고 진하기 0..=10(0 = 끔, 0074), "언제"를 채움으로(0128).
+    pub tells: u8,
+    pub tell_timing: bool,
+    /// 자유 시점 돌리기 민감도(가로, 세로) — `prefs::LOOK_SENS`의 자리(0191).
+    pub look_sens: (u8, u8),
+    /// 터치 버튼 크기 — `prefs::TOUCH_SIZES`의 자리(0236).
+    pub touch_size: u8,
+}
+
+impl Default for Opts {
+    fn default() -> Self {
+        Opts {
+            shake: crate::prefs::SHAKE_DEFAULT,
+            volume: crate::prefs::VOLUME_DEFAULT,
+            tells: crate::prefs::TELLS_DEFAULT,
+            tell_timing: false,
+            look_sens: (crate::prefs::LOOK_DEFAULT, crate::prefs::LOOK_DEFAULT),
+            touch_size: crate::prefs::TOUCH_SIZE_DEFAULT,
+        }
+    }
+}
+
+impl Opts {
+    /// 저장한 설정에서.
+    pub fn of(p: &crate::prefs::Prefs) -> Self {
+        Opts {
+            shake: p.shake,
+            volume: p.volume,
+            tells: p.tells,
+            tell_timing: p.tell_timing,
+            look_sens: p.look,
+            touch_size: p.touch_size,
+        }
+    }
+}
+
 /// 설정 줄이 하는 일(오른쪽 칸의 설명).
 fn row_desc(r: SettingsRow) -> &'static str {
     let s = s();
@@ -46,29 +89,40 @@ impl App {
                     ui::Row::value(s.menu_fullscreen, on_off(crate::screen::active()))
                 }
                 SettingsRow::Shake => {
-                    ui::Row::step(s.menu_shake, format!("{}%", self.shake as u32 * 10))
+                    ui::Row::step(s.menu_shake, format!("{}%", self.opts.shake as u32 * 10))
                 }
                 SettingsRow::Volume => {
-                    ui::Row::step(s.menu_volume, format!("{}%", self.volume as u32 * 10))
+                    ui::Row::step(s.menu_volume, format!("{}%", self.opts.volume as u32 * 10))
                 }
-                SettingsRow::Tells if self.tells == 0 => ui::Row::step(s.menu_tells, s.value_off),
+                SettingsRow::Tells if self.opts.tells == 0 => {
+                    ui::Row::step(s.menu_tells, s.value_off)
+                }
                 SettingsRow::Tells => {
-                    ui::Row::step(s.menu_tells, format!("{}%", self.tells as u32 * 10))
+                    ui::Row::step(s.menu_tells, format!("{}%", self.opts.tells as u32 * 10))
                 }
                 SettingsRow::TellTiming => {
-                    ui::Row::step(s.menu_tell_timing, on_off(self.tell_timing))
+                    ui::Row::step(s.menu_tell_timing, on_off(self.opts.tell_timing))
                 }
                 SettingsRow::LookYaw => ui::Row::step(
                     s.menu_look_yaw,
-                    format!("{}%", crate::prefs::LOOK_SENS[self.look_sens.0 as usize]),
+                    format!(
+                        "{}%",
+                        crate::prefs::LOOK_SENS[self.opts.look_sens.0 as usize]
+                    ),
                 ),
                 SettingsRow::LookPitch => ui::Row::step(
                     s.menu_look_pitch,
-                    format!("{}%", crate::prefs::LOOK_SENS[self.look_sens.1 as usize]),
+                    format!(
+                        "{}%",
+                        crate::prefs::LOOK_SENS[self.opts.look_sens.1 as usize]
+                    ),
                 ),
                 SettingsRow::TouchSize => ui::Row::step(
                     s.menu_touch_size,
-                    format!("{}%", crate::prefs::TOUCH_SIZES[self.touch_size as usize]),
+                    format!(
+                        "{}%",
+                        crate::prefs::TOUCH_SIZES[self.opts.touch_size as usize]
+                    ),
                 ),
                 SettingsRow::MouseAim => ui::Row::step(s.menu_mouse_aim, on_off(mouse.on)),
                 SettingsRow::CursorRest => ui::Row::step(
@@ -127,8 +181,8 @@ impl App {
     fn step_look(&mut self, r: SettingsRow, step: i32, wrap: bool) {
         let n = crate::prefs::LOOK_SENS.len() as i32;
         let v = match r {
-            SettingsRow::LookYaw => &mut self.look_sens.0,
-            _ => &mut self.look_sens.1,
+            SettingsRow::LookYaw => &mut self.opts.look_sens.0,
+            _ => &mut self.opts.look_sens.1,
         };
         let to = *v as i32 + step;
         *v = if wrap {
@@ -142,13 +196,13 @@ impl App {
     /// 터치 버튼 크기 한 걸음(0236): 좌우는 끝에서 멈추고, 확인은 끝에서 첫 단계로 돈다.
     fn step_touch_size(&mut self, step: i32, wrap: bool) {
         let n = crate::prefs::TOUCH_SIZES.len() as i32;
-        let to = self.touch_size as i32 + step;
-        self.touch_size = if wrap {
+        let to = self.opts.touch_size as i32 + step;
+        self.opts.touch_size = if wrap {
             to.rem_euclid(n)
         } else {
             to.clamp(0, n - 1)
         } as u8;
-        crate::touch::set_size(crate::prefs::TOUCH_SIZES[self.touch_size as usize]);
+        crate::touch::set_size(crate::prefs::TOUCH_SIZES[self.opts.touch_size as usize]);
         self.save_prefs();
     }
 
@@ -158,19 +212,19 @@ impl App {
             Out::Step(i, step) => match rows.get(i) {
                 Some(SettingsRow::Language) => self.next_lang(),
                 Some(SettingsRow::Shake) => {
-                    self.shake = (self.shake as i32 + step).clamp(0, 10) as u8;
+                    self.opts.shake = (self.opts.shake as i32 + step).clamp(0, 10) as u8;
                     self.save_prefs();
                 }
                 Some(SettingsRow::Tells) => {
-                    self.tells = (self.tells as i32 + step).clamp(0, 10) as u8;
+                    self.opts.tells = (self.opts.tells as i32 + step).clamp(0, 10) as u8;
                     self.save_prefs();
                 }
                 Some(SettingsRow::TellTiming) => {
-                    self.tell_timing = !self.tell_timing;
+                    self.opts.tell_timing = !self.opts.tell_timing;
                     self.save_prefs();
                 }
                 Some(SettingsRow::Volume) => {
-                    self.set_volume((self.volume as i32 + step).clamp(0, 10) as u8)
+                    self.set_volume((self.opts.volume as i32 + step).clamp(0, 10) as u8)
                 }
                 Some(&r @ (SettingsRow::LookYaw | SettingsRow::LookPitch)) => {
                     self.step_look(r, step, false)
@@ -185,21 +239,29 @@ impl App {
                 SettingsRow::Language => self.next_lang(),
                 SettingsRow::Fullscreen => self.toggle_fullscreen(),
                 SettingsRow::Shake => {
-                    self.shake = if self.shake >= 10 { 0 } else { self.shake + 1 };
+                    self.opts.shake = if self.opts.shake >= 10 {
+                        0
+                    } else {
+                        self.opts.shake + 1
+                    };
                     self.save_prefs();
                 }
                 SettingsRow::Tells => {
-                    self.tells = if self.tells >= 10 { 0 } else { self.tells + 1 };
+                    self.opts.tells = if self.opts.tells >= 10 {
+                        0
+                    } else {
+                        self.opts.tells + 1
+                    };
                     self.save_prefs();
                 }
                 SettingsRow::TellTiming => {
-                    self.tell_timing = !self.tell_timing;
+                    self.opts.tell_timing = !self.opts.tell_timing;
                     self.save_prefs();
                 }
-                SettingsRow::Volume => self.set_volume(if self.volume >= 10 {
+                SettingsRow::Volume => self.set_volume(if self.opts.volume >= 10 {
                     0
                 } else {
-                    self.volume + 1
+                    self.opts.volume + 1
                 }),
                 r @ (SettingsRow::MouseAim | SettingsRow::CursorRest | SettingsRow::Reticle) => {
                     self.step_mouse(r, 1)

@@ -119,7 +119,7 @@ fn every_damage_formula_gives_ten_times_what_the_old_small_numbers_gave() {
                     } else {
                         d
                     };
-                    w.enemies[i].broken = if broken { 1.0 } else { 0.0 };
+                    w.enemies[i].stance.broken = if broken { 1.0 } else { 0.0 };
                     let new = hurt_by(&w.enemies[i], base * HP_UNIT, crit, opened * HP_UNIT, &t);
                     assert_eq!(
                         new,

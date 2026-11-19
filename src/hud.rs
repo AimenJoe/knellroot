@@ -1117,11 +1117,11 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
             let py = by + bh + 2.0 * s;
             let ph = 1.5 * s;
             draw_rectangle(bx - s, py - s * 0.5, bw + 2.0 * s, ph + s, BAR_BG);
-            if b.broken > 0.0 {
+            if b.stance.broken > 0.0 {
                 let on = (w.time * 10.0) as i32 % 2 == 0;
                 draw_rectangle(bx, py, bw, ph, if on { POISE_BROKEN } else { POISE });
             } else {
-                draw_rectangle(bx, py, bw * b.poise_frac, ph, POISE);
+                draw_rectangle(bx, py, bw * b.stance.frac, ph, POISE);
             }
         }
     }

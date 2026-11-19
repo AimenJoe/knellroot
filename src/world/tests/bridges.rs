@@ -124,7 +124,7 @@ fn breaking_beat_hits_a_staggered_foe_harder_on_the_beat() {
         w.player.beat.swing_beat = beat;
         let st = light_at_active(&t, &w, 3);
         strike_once(&mut w, &t, st);
-        w.enemies[i].poise
+        w.enemies[i].stance.poise
     };
     let plain = poise(false, true, true);
     assert!(plain > 0.0);
@@ -151,7 +151,7 @@ fn rooted_riposte_hits_a_snared_foe_harder() {
         let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 990);
         idle(&mut w);
         if snared {
-            w.enemies[i].snare = 1.0;
+            w.enemies[i].marks.snare = 1.0;
         }
         w.player.parry.riposte_swing = if riposte { 5 } else { 0 };
         let st = heavy_at_active(&t, &w, 5);
@@ -218,7 +218,7 @@ fn turn_aside_halves_damage_for_a_moment_after_a_parry() {
     let mut w = mob_swinging_in_front(&t);
     w.tree = tree(&[Cell::Catch], &[], &[Cell::Catch]);
     assert!(parry_once(&mut w, &t));
-    assert_eq!(w.enemies[0].poise, 0.0, "II does not fill the bar");
+    assert_eq!(w.enemies[0].stance.poise, 0.0, "II does not fill the bar");
     assert!(w.player.parry.deflect > 0.0);
     w.enemies.clear();
     // 이어 패링의 창은 닫는다 — 맞는 것을 본다.

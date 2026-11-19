@@ -232,7 +232,7 @@ impl World {
             }
             // 전환 중인 보스(강타는 닿아도 피해가 없다)는 세지 않는다.
             if !en.rising() {
-                bound_hit |= en.ail.bound > 0.0 || en.bind > 0.0;
+                bound_hit |= en.ail.bound > 0.0 || en.marks.bind > 0.0;
                 cracked_hit |= en.ail.rift > 0.0;
             }
             // 패링으로 드러난 적은 한 대가 치명타(0025).
@@ -260,7 +260,7 @@ impl World {
             // 뿌리로 받기(0215 다리): 엉키거나 묶인 적에게 반격 ×1.5.
             let raw = if rooted_riposte
                 && swing == self.player.parry.riposte_swing
-                && (en.snare > 0.0 || en.bind > 0.0)
+                && (en.marks.snare > 0.0 || en.marks.bind > 0.0)
             {
                 (raw as f32 * link::ROOTED_RIPOSTE).round() as i32
             } else {
@@ -306,7 +306,7 @@ impl World {
                 pk *= link::BREAK_POISE;
             }
             // 무너진 틈(0107): 깨진 적에게 다 모은 강타 = 깨짐을 처음부터.
-            let was_broken = en.broken > 0.0;
+            let was_broken = en.stance.broken > 0.0;
             add_poise(en, s.poise * self.stats.poise * pk, primed, t, ev);
             // 모은 맞받기(0107): 모으기 패링으로 튕긴 그 강타가 맞으면 자세가 곧바로 깨진다(문지기는 막대 반).
             if s.heavy.is_some()
@@ -322,7 +322,7 @@ impl World {
                 } else {
                     t[P::PoiseBreak]
                 };
-                en.broken = dur;
+                en.stance.broken = dur;
                 en.exposed = en.exposed.max(dur);
             }
             first_hit.get_or_insert((en.pos, en.radius, dir));

@@ -183,7 +183,7 @@ fn root_spikes(en: &Enemy, p: Vec3, drape: &Drape) {
     };
     if let Some(front) = en
         .roots_front()
-        .or(sink_k.filter(|k| *k > 0.0).map(|_| en.charge_len))
+        .or(sink_k.filter(|k| *k > 0.0).map(|_| en.charge.len))
     {
         let f = en.facing_dir();
         let mut s = en.radius + 0.5;

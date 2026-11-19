@@ -58,7 +58,7 @@ fn might_adds_whole_damage_and_poise_and_stamina_grows_the_bar() {
             }
             w.step(&Actions::default(), &tt);
         }
-        (990 - w.enemies[i].hp, w.enemies[i].poise)
+        (990 - w.enemies[i].hp, w.enemies[i].stance.poise)
     };
     let (d0, p0) = swing(0);
     let (d5, p5) = swing(5);
@@ -171,7 +171,7 @@ fn flowing_beat_sends_a_shock_on_every_third_beat_hit() {
             &t,
         );
         assert_eq!(w.player.beat.chain, 3, "the third beat in a row");
-        w.enemies[i].poise
+        w.enemies[i].stance.poise
     };
     assert_eq!(
         poise(&[]),
@@ -222,7 +222,7 @@ fn closing_blow_keeps_the_combo_after_the_last_hit_and_hits_harder_on_beat() {
         w.player.parry.closing_swing = 4;
         let st = light_at_active(&t, &w, 4, 0);
         strike_once(&mut w, &t, st);
-        w.enemies[i].poise
+        w.enemies[i].stance.poise
     };
     assert!((poise(true) / poise(false) - cell::CLOSING_POISE).abs() < 1e-3);
 }
@@ -240,7 +240,7 @@ fn gap_beat_doubles_poise_on_a_foe_recovering_from_its_swing() {
         w.player.beat.swing_beat = beat;
         let st = light_at_active(&t, &w, 3, 0);
         strike_once(&mut w, &t, st);
-        w.enemies[i].poise
+        w.enemies[i].stance.poise
     };
     assert!((poise(true, true) / poise(false, true) - cell::GAP_POISE).abs() < 1e-3);
     assert!(
@@ -312,7 +312,7 @@ fn catch_makes_a_parry_fill_the_poise_bar() {
                 break;
             }
         }
-        (w.enemies[0].poise, poise_max(&w.enemies[0], &t))
+        (w.enemies[0].stance.poise, poise_max(&w.enemies[0], &t))
     };
     assert_eq!(after_parry(false).0, 0.0);
     let (p, max) = after_parry(true);
@@ -368,11 +368,11 @@ fn open_breach_restarts_the_break_with_a_full_heavy() {
             w.tree = tree_with(&[Cell::OpenBreach]);
         }
         let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), 990);
-        w.enemies[i].broken = 0.1;
-        w.enemies[i].poise_lock = 5.0;
+        w.enemies[i].stance.broken = 0.1;
+        w.enemies[i].stance.lock = 5.0;
         let st = heavy_at_active(&t, &w, 8, true);
         strike_once(&mut w, &t, st);
-        w.enemies[i].broken
+        w.enemies[i].stance.broken
     };
     assert!((broken_after(false) - 0.1).abs() < 1e-4);
     assert!((broken_after(true) - t[P::PoiseBreak]).abs() < 1e-4);
@@ -456,7 +456,7 @@ fn sidestep_marks_a_dodge_that_ends_behind_a_foe_and_doubles_that_dash_attacks_p
         w.player.flank_swing = 6;
         let st = light_at_active(&t, &w, 6, weapons::DASH);
         strike_once(&mut w, &t, st);
-        w.enemies[i].poise
+        w.enemies[i].stance.poise
     };
     assert!((poise(true) / poise(false) - cell::SIDESTEP_POISE).abs() < 1e-3);
 }
