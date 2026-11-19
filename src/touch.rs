@@ -173,8 +173,13 @@ pub struct Read {
     pub aim_hold: bool,
 }
 
-/// 두 손가락을 이만큼(논리 px) 벌리거나 오므리면 시점 거리 한 칸(0181).
+/// 두 손가락을 이만큼(dp) 벌리거나 오므리면 시점 거리 한 칸(0181).
 const PINCH_STEP: f32 = 60.0;
+
+/// dp → 화면 단위(Android는 화소, 그 밖은 1 — `screen::dp`, 2026-11-19: Android에서 상한·탭 범위가 화소로 걸려 큰 폰에서 버튼이 작게 몰렸다).
+fn dp(v: f32) -> f32 {
+    v * crate::screen::dp()
+}
 
 #[derive(Clone, Copy)]
 struct Stick {
@@ -228,17 +233,17 @@ impl Rider {
     /// 흔들지 않게), 넘은 뒤로는 지난 자리에서 끈 만큼.
     fn drag(&mut self, pos: Vec2) -> Vec2 {
         let was = self.moved;
-        self.moved |= (pos - self.from).length() > TAP_SLOP;
+        self.moved |= (pos - self.from).length() > dp(TAP_SLOP);
         let d = if was { pos - self.prev } else { Vec2::ZERO };
         self.prev = pos;
         d
     }
 }
 
-/// 버튼 크기·거리의 기준(짧은 변)의 상한(논리 px) — 태블릿에서 버튼이 너무 커지지 않게.
+/// 버튼 크기·거리의 기준(짧은 변)의 상한(dp) — 태블릿에서 버튼이 너무 커지지 않게.
 const TOUCH_U_MAX: f32 = 520.0;
 
-/// 이보다 덜 움직이고 떼면 탭(논리 px).
+/// 이보다 덜 움직이고 떼면 탭(dp).
 const TAP_SLOP: f32 = 24.0;
 
 /// 엄지 묶음(공격과 둘레 호·스킬·상황 버튼)의 크기(%, 0236 — 설정 "터치 버튼 크기", 앱이 prefs에서 적는다). 자리도 같은 배로
@@ -432,7 +437,7 @@ fn safe_layout(w: f32, h: f32, ctx: Ctx, k: f32, safe: [f32; 4]) -> Vec<Button> 
 
 /// `layout`의 크기 배 `k`를 손으로 주는 꼴(시험).
 fn layout_at(w: f32, h: f32, ctx: Ctx, k: f32) -> Vec<Button> {
-    let u = w.min(h).min(TOUCH_U_MAX) * k;
+    let u = w.min(h).min(dp(TOUCH_U_MAX)) * k;
     let atk = vec2(w - u * 0.238, h - u * 0.21);
     let at = |deg: f32, dist: f32| {
         let a = deg.to_radians();
@@ -547,7 +552,7 @@ fn layout_at(w: f32, h: f32, ctx: Ctx, k: f32) -> Vec<Button> {
 
 /// 멈춤 버튼의 가운데와 반지름(논리 px).
 fn pause_spot(w: f32, h: f32) -> (Vec2, f32) {
-    let s = w.min(h).min(TOUCH_U_MAX) * 0.09 * 0.7;
+    let s = w.min(h).min(dp(TOUCH_U_MAX)) * 0.09 * 0.7;
     (vec2(s * 1.4, s * 1.4), s)
 }
 
@@ -601,7 +606,7 @@ impl Touch {
                 match self.taps.iter_mut().find(|x| x.0 == t.id) {
                     Some(x) => {
                         let was = x.2;
-                        x.2 |= (t.position - x.1).length() > TAP_SLOP;
+                        x.2 |= (t.position - x.1).length() > dp(TAP_SLOP);
                         // 끌기는 탭 범위를 넘은 뒤부터 — 넘는 순간엔 처음 자리부터 센다(손가락과 목록이 같이 간다).
                         if x.2 {
                             let from = if was { x.3 } else { x.1 };
@@ -943,12 +948,12 @@ pub fn look_from(was: &[(u64, Vec2)], now: &[Option<Vec2>], pinch: &mut f32) -> 
         [(w0, n0), (w1, n1)] => {
             *pinch += (*n0 - *n1).length() - (*w0 - *w1).length();
             let mut zoom = 0;
-            while *pinch >= PINCH_STEP {
-                *pinch -= PINCH_STEP;
+            while *pinch >= dp(PINCH_STEP) {
+                *pinch -= dp(PINCH_STEP);
                 zoom += 1;
             }
-            while *pinch <= -PINCH_STEP {
-                *pinch += PINCH_STEP;
+            while *pinch <= -dp(PINCH_STEP) {
+                *pinch += dp(PINCH_STEP);
                 zoom -= 1;
             }
             (Vec2::ZERO, zoom)

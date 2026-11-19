@@ -379,6 +379,9 @@ pub struct Strings {
     /// 기술·큰 기술을 올린 알림 "{이름} {단}단"(0172 — 레벨의 `toast_level`과 가른다: 거기는 기술 점수를 얻고 여기는 쓴다).
     pub toast_rank: &'static str,
     pub verb_close: &'static str,
+    /// 도감 그림 크게 보기·끌어 돌리기(2026-11-19).
+    pub verb_enlarge: &'static str,
+    pub verb_drag_turn: &'static str,
     pub skill_whirl: &'static str,
     pub skill_whirl_d: &'static str,
     pub skill_cut: &'static str,
@@ -1247,6 +1250,8 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.toast_key,
         s.toast_rank,
         s.verb_close,
+        s.verb_enlarge,
+        s.verb_drag_turn,
         s.skill_whirl,
         s.skill_whirl_d,
         s.skill_cut,

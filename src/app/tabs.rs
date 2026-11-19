@@ -29,6 +29,31 @@ const DOLL_DRAG: f32 = 0.025;
 const DOLL_STICK: f32 = 3.0;
 const DOLL_STICK_DEAD: f32 = 0.3;
 
+/// 손으로 돌리기(0235 인형 → 2026-11-19 도감 그림도): `rect` 위에서 시작한 가로 끌기(손가락·마우스)와 패드 오른쪽 스틱의 가로가 `yaw`를
+/// 돌린다(처음 돌리면 저절로 흔들던 각에서 이어). 끌기는 여기서 먹는다(아래 목록·상세가 같이 굴러가지 않게). 돌렸으면 참.
+pub(super) fn turn_by_hand(
+    a: &mut Actions,
+    rect: Option<Rect>,
+    yaw: &mut Option<f32>,
+    u: f32,
+) -> bool {
+    let on = matches!((a.point, rect), (Some(p), Some(r)) if r.contains(p));
+    let mut d = 0.0;
+    if on && a.drag_x != 0.0 {
+        // 돌림판처럼 — 오른쪽으로 끌면 앞면이 손가락을 따라 오른쪽으로(`drag_x`는 손가락이 왼쪽으로 가면 +, 각은 +면 앞면이 오른쪽으로).
+        d -= a.drag_x / u * DOLL_DRAG;
+        (a.drag_x, a.drag) = (0.0, 0.0);
+    }
+    if a.aim.x.abs() > DOLL_STICK_DEAD {
+        d += a.aim.x * DOLL_STICK * TICK_DT;
+    }
+    if d != 0.0 {
+        let now = yaw.unwrap_or_else(|| doll_sway(get_time() as f32));
+        *yaw = Some((now + d).rem_euclid(std::f32::consts::TAU));
+    }
+    d != 0.0
+}
+
 /// 손대지 않은 인형의 흔들림(라디안).
 fn doll_sway(t: f32) -> f32 {
     0.55 * (t * 0.7).sin()
@@ -128,6 +153,10 @@ impl App {
     /// 탭 넘기기 한 틱: 패드 LB·RB / 키보드 Q·E(0175) = 옆 탭, 탭 머리 누르기 = 그 탭. 넘겼으면 참(그 틱은 여기서 끝난다).
     /// 탭 줄이 넘치면(0233) 그 위의 끌기·휠은 탭 줄을 굴린다 — 몸의 목록에는 넘기지 않는다.
     pub(super) fn tab_input(&mut self, a: &mut Actions) -> bool {
+        // 도감 그림을 크게 보는 동안은 탭을 넘기지 않는다(도감의 틱이 돌아오기·돌리기를 받는다).
+        if self.codex_view.zoomed() && matches!(self.scene(), Scene::Codex { .. }) {
+            return false;
+        }
         if self.tab_strip.over(a.point) {
             self.tab_strip.nudge(a.point, a.drag_x, a.wheel);
             (a.drag, a.drag_x, a.wheel) = (0.0, 0.0, 0);
@@ -144,6 +173,7 @@ impl App {
             return false;
         }
         self.show(go);
+        self.codex_view = Default::default();
         self.snd(crate::sfx::Id::UiMove);
         true
     }
@@ -309,6 +339,16 @@ impl App {
 
     /// 머리의 그림 칸에 아이템을: 칸이 넉넉하면 도는 그림(`draw_item`), 좁으면(작은 화면) 찍어 둔 그림(`draw_icon`) — 정수배로만.
     pub(super) fn draw_pane_item(&mut self, item: crate::item_view::Item, r: Rect) {
+        self.draw_pane_item_turned(item, r, None);
+    }
+
+    /// `draw_pane_item` + 손으로 돌린 각(도감 — 없으면 저절로 흔든다). 좁은 칸의 찍어 둔 그림은 돌지 않는다.
+    pub(super) fn draw_pane_item_turned(
+        &mut self,
+        item: crate::item_view::Item,
+        r: Rect,
+        yaw: Option<f32>,
+    ) {
         let (native, spin) = if r.w >= crate::render::ITEM_PX as f32 {
             (crate::render::ITEM_PX, true)
         } else {
@@ -323,7 +363,8 @@ impl App {
         );
         if spin {
             let t = get_time() as f32;
-            self.renderer.draw_item(item, dest, 0.7 * (t * 0.8).sin());
+            self.renderer
+                .draw_item(item, dest, yaw.unwrap_or(0.7 * (t * 0.8).sin()));
         } else {
             self.renderer.draw_icon(item, dest);
         }
@@ -402,22 +443,8 @@ impl App {
     /// 패드 오른쪽 스틱의 가로. 한 번 돌리면 저절로 흔들기는 멈추고 그 각에 머문다(창을 다시 열어도 — 앱이 켜져 있는 동안).
     /// 끌기는 여기서 먹는다(아래 목록·상세가 같이 굴러가지 않게).
     pub(super) fn turn_doll(&mut self, a: &mut Actions) {
-        let on_doll = matches!((a.point, self.doll_rect), (Some(p), Some(r)) if r.contains(p));
-        let mut d = 0.0;
-        if on_doll && a.drag_x != 0.0 {
-            // 돌림판처럼 — 오른쪽으로 끌면 앞면이 손가락을 따라 오른쪽으로(`drag_x`는 손가락이 왼쪽으로 가면 +, 각은 +면 앞면이 오른쪽으로).
-            d -= a.drag_x / self.ui.u(1.0) * DOLL_DRAG;
-            (a.drag_x, a.drag) = (0.0, 0.0);
-        }
-        if a.aim.x.abs() > DOLL_STICK_DEAD {
-            d += a.aim.x * DOLL_STICK * TICK_DT;
-        }
-        if d != 0.0 {
-            let now = self
-                .doll_yaw
-                .unwrap_or_else(|| doll_sway(get_time() as f32));
-            self.doll_yaw = Some((now + d).rem_euclid(std::f32::consts::TAU));
-        }
+        let u = self.ui.u(1.0);
+        turn_by_hand(a, self.doll_rect, &mut self.doll_yaw, u);
     }
 
     /// 인형의 지금 각: 손으로 돌렸으면 그 각, 아니면 천천히 좌우로 흔든다.

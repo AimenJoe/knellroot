@@ -1190,7 +1190,8 @@ impl Input {
         a.drag = t.drag;
         a.drag_x = t.drag_x;
         a.point = a.point.or(t.drag_at);
-        a.look += t.look;
+        // 터치로 끈 거리는 dp로(Android는 화면 단위가 화소 — 같은 손가락 거리에 시점이 2~3배 돌았다, `screen::dp`).
+        a.look += t.look / crate::screen::dp();
         a.zoom += t.zoom;
         a.view |= t.view;
         a.swap |= t.swap;

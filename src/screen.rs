@@ -115,3 +115,23 @@ pub fn safe_insets() -> [f32; 4] {
     #[cfg(not(target_arch = "wasm32"))]
     [0.0; 4]
 }
+
+/// 게임의 화면 단위(`screen_width()`의 1) 하나가 몇 dp인지의 역 — dp 하나가 몇 단위인가(2026-11-19).
+/// 웹·데스크톱·iOS는 miniquad가 dpi 배율을 나눠 주니 단위가 곧 dp(1). Android의 miniquad는 dpi 배율을 늘 1로 두어 단위가 물리
+/// 화소다 — 패치한 miniquad가 받은 `DisplayMetrics.density`(예: 2.75)를 쓴다. 아직 못 받았으면 가로 화면 높이를 400dp로 셈한다.
+pub fn dp() -> f32 {
+    #[cfg(target_os = "android")]
+    {
+        let d = macroquad::miniquad::native::display_density();
+        if d > 0.5 {
+            return d;
+        }
+        let (w, h) = (
+            macroquad::window::screen_width(),
+            macroquad::window::screen_height(),
+        );
+        (w.min(h) / 400.0).max(1.0)
+    }
+    #[cfg(not(target_os = "android"))]
+    1.0
+}

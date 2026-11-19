@@ -178,6 +178,8 @@ pub struct App {
     tab_strip: crate::ui::Strip,
     /// 상태·장비 탭의 인형(0235): 손으로 돌린 각(라디안 — `None`이면 저절로 천천히 좌우로 흔든다)과 그린 자리(끌기가 그 위에서 시작했나).
     doll_yaw: Option<f32>,
+    /// 도감 그림을 손으로 보기(끌어 돌리기·크게 — 2026-11-19).
+    codex_view: codex::CodexView,
     doll_rect: Option<Rect>,
     /// 튜토리얼(0167): 지난 걸음 수(기록 `Progress::tutorial`과 같은 값) + 이 판에서 본 것. 판에 붙는다.
     tutor: crate::tutorial::Tutor,
@@ -390,6 +392,7 @@ impl App {
             pause_tab: flow::Tab::Status,
             tab_strip: crate::ui::Strip::default(),
             doll_yaw: None,
+            codex_view: Default::default(),
             doll_rect: None,
             tutor: crate::tutorial::Tutor::new(progress.tutorial),
             tip: None,

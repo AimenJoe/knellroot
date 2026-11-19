@@ -288,6 +288,8 @@ pub const EN: Strings = Strings {
     toast_key: "{0} — keystone lit",
     toast_rank: "{0} rank {1}",
     verb_close: "Close",
+    verb_enlarge: "Enlarge",
+    verb_drag_turn: "Drag to turn",
     skill_whirl: "Whirl",
     skill_whirl_d: "Spin twice on the spot, cutting all around. Enemies hit are pushed outward.",
     skill_cut: "Cut Through",
