@@ -14,12 +14,29 @@ import sys
 
 import bmesh
 import bpy
+from mathutils import Vector
 
 argv = sys.argv[sys.argv.index("--") + 1:]
+# 0247: `--retarget <동작 원본 리그.glb>` — 동작 없는 새 몸(Meshy 자동 리깅)에 다른 몸의 동작을 뼈 이름으로 옮겨 담는다(아래 `retarget`).
+RETARGET = None
+if "--retarget" in argv:
+    i = argv.index("--retarget")
+    RETARGET = argv[i + 1]
+    argv = argv[:i] + argv[i + 2:]
+TARGET_ARG = None
+if "--target" in argv:  # 0247: 몸의 정점 수(v3은 무기·등잔과 합쳐 `check_glb` 예산 4800 안에 들게 2850)
+    i = argv.index("--target")
+    TARGET_ARG = int(argv[i + 1])
+    argv = argv[:i] + argv[i + 2:]
 dst, srcs = argv[0], argv[1:]
-TARGET = 3000  # 내보낸 glTF 정점(UV 이음매로 갈린 것 포함)
+TARGET = TARGET_ARG or 3000  # 내보낸 glTF 정점(UV 이음매로 갈린 것 포함)
 TEX = 512
 UV_ANGLE = 1.55
+# 얼굴(사장 2026-11-19 "다른 부분은 디테일이 떨어지더라도 얼굴은 디테일 있어야"): 머리 뼈에 묶인 앞쪽 면을 줄일 때 덜 줄이고(`FACE_WEIGHT` —
+# 줄이기 무게), 새 UV에서 그 섬을 `FACE_UV`배로 키워 텍스처 칸을 더 준다(섬을 다시 담으면 다른 섬은 그만큼 작아진다).
+FACE_WEIGHT = float(os.environ.get("FACE_WEIGHT", "0.05"))  # 얼굴 쪽 정점의 줄이기 무게(고르게 줄이면 얼굴이 원본 몫 17% → 7%로 더 줄었다)
+FACE_UV = float(os.environ.get("FACE_UV", "3.2"))
+FACE_FRONT = 0.25  # 몸 앞(−y)과 면 법선의 내적이 이보다 크면 얼굴 쪽
 
 # 묶음마다 남길 동작(Meshy 이름 → 원본 안의 이름). 이름 없는 셋째 묶음은 만든 차례(UUIDv7) = `docs/art/meshy-motion-prompts.md`의 번호.
 KEEP = {
@@ -105,6 +122,96 @@ def select_only(o):
     bpy.context.view_layer.objects.active = o
 
 
+def grow_face_uv(o):
+    """얼굴 쪽 면의 UV 섬을 `FACE_UV`배로 키우고 다시 담는다(담기는 섬끼리의 크기 비를 지킨다)."""
+    face = face_verts(o)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(o.data)
+    uv = bm.loops.layers.uv.active
+    for f in bm.faces:
+        f.select = False
+    picked = [f for f in bm.faces if sum(v.index in face for v in f.verts) >= 2]
+    for f in picked:
+        f.select = True
+    bmesh.update_edit_mesh(o.data)
+    # 고른 면이 닿은 섬 통째로(섬이 반쯤만 커지면 찢어진다) — UV 섬 단위로 고르고 그 가운데를 축으로 키운다.
+    bpy.ops.mesh.select_linked(delimit={"UV"})
+    bm = bmesh.from_edit_mesh(o.data)
+    uv = bm.loops.layers.uv.active
+    sel = [f for f in bm.faces if f.select]
+    # 섬마다 따로 키운다: 연결 요소 찾기
+    seen, islands = set(), []
+    adj = {}
+    for f in sel:
+        for l in f.loops:
+            key = (round(l[uv].uv.x, 6), round(l[uv].uv.y, 6))
+            adj.setdefault(key, []).append(f)
+    for f in sel:
+        if f.index in seen:
+            continue
+        stack, isl = [f], []
+        seen.add(f.index)
+        while stack:
+            g = stack.pop()
+            isl.append(g)
+            for l in g.loops:
+                for h in adj[(round(l[uv].uv.x, 6), round(l[uv].uv.y, 6))]:
+                    if h.index not in seen:
+                        seen.add(h.index)
+                        stack.append(h)
+        islands.append(isl)
+    for isl in islands:
+        pts = [l[uv].uv.copy() for f in isl for l in f.loops]
+        c = sum(pts, Vector((0, 0))) / len(pts)
+        done = set()
+        for f in isl:
+            for l in f.loops:
+                if id(l) in done:
+                    continue
+                l[uv].uv = c + (l[uv].uv - c) * FACE_UV
+                done.add(id(l))
+    bmesh.update_edit_mesh(o.data)
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.select_all(action="SELECT")
+    bpy.ops.uv.pack_islands(rotate=False, margin=0.02)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    print(f"[meshy_rig] face: {len(face)} verts, {len(picked)} faces in {len(islands)} UV islands ×{FACE_UV}")
+
+
+def head_groups(o):
+    """머리 뼈와 그 아래 뼈(두건·귀)의 정점 무리 번호."""
+    names = {"mixamorig:Head"} | {b.name for b in arm.data.bones["mixamorig:Head"].children_recursive}
+    return {g.index for g in o.vertex_groups if g.name in names}
+
+
+def face_verts(o):
+    """얼굴 쪽 정점: 가장 무거운 무리가 머리 쪽이고, 그 정점에 닿은 면들의 평균 법선이 몸 앞(−y)을 본다."""
+    hg = head_groups(o)
+    fwd = Vector((0, -1, 0))
+    nrm = [Vector() for _ in o.data.vertices]
+    for p in o.data.polygons:
+        for vi in p.vertices:
+            nrm[vi] += p.normal * p.area
+    out = set()
+    for v in o.data.vertices:
+        if not v.groups:
+            continue
+        g = max(v.groups, key=lambda g: g.weight)
+        if g.group in hg and nrm[v.index].length > 0 and nrm[v.index].normalized().dot(fwd) > FACE_FRONT:
+            out.add(v.index)
+    return out
+
+
+def decimate(o, ratio, group):
+    select_only(o)
+    md = o.modifiers.new("dec", "DECIMATE")
+    md.decimate_type = "COLLAPSE"
+    md.ratio = min(1.0, ratio)
+    md.use_collapse_triangulate = True
+    md.vertex_group = group
+    bpy.ops.object.modifier_apply(modifier=md.name)
+
+
 def make_low(ratio):
     lo = body.copy()
     lo.data = body.data.copy()
@@ -113,11 +220,13 @@ def make_low(ratio):
     for md in list(lo.modifiers):
         lo.modifiers.remove(md)
     select_only(lo)
-    md = lo.modifiers.new("dec", "DECIMATE")
-    md.decimate_type = "COLLAPSE"
-    md.ratio = ratio
-    md.use_collapse_triangulate = True
-    bpy.ops.object.modifier_apply(modifier=md.name)
+    # 얼굴 쪽 정점의 줄이기 무게를 낮춘다(1 = 고르게, 0 = 하나도 안 줄임 — 0은 목표 수에 닿지 못했다).
+    vg = lo.vertex_groups.new(name="face_keep")
+    face = face_verts(lo)
+    vg.add(list(face), FACE_WEIGHT, "REPLACE")
+    vg.add([v.index for v in lo.data.vertices if v.index not in face], 1.0, "REPLACE")
+    decimate(lo, ratio, vg.name)
+    lo.vertex_groups.remove(lo.vertex_groups["face_keep"])
     while lo.data.uv_layers:
         lo.data.uv_layers.remove(lo.data.uv_layers[0])
     lo.data.uv_layers.new(name="UVMap")
@@ -125,6 +234,7 @@ def make_low(ratio):
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.uv.smart_project(angle_limit=UV_ANGLE, island_margin=0.02)
     bpy.ops.object.mode_set(mode="OBJECT")
+    grow_face_uv(lo)
     am = lo.modifiers.new("rig", "ARMATURE")
     am.object = arm
     return lo
@@ -195,8 +305,132 @@ for im in list(bpy.data.images):
     if im != img:
         bpy.data.images.remove(im)
 arm.data.pose_position = "POSE"
-arm.animation_data.action = None
+if arm.animation_data:
+    arm.animation_data.action = None
+print(f"[meshy_rig] face verts kept {len(face_verts(low))}")
 print(f"[meshy_rig] ratio {best[0]:.4f} glTF verts {gltf_verts(low)} tris {sum(len(p.vertices) - 2 for p in low.data.polygons)}")
+
+
+def retarget(src_path, tgt):
+    """다른 몸(같은 `mixamorig:*` 뼈 이름)의 동작을 이 뼈대로 옮긴다(0247): 매 프레임 대상의 월드 회전 = Ps · Rs⁻¹ · Rt
+    (Ps 원본 자세·Rs 원본 쉬는 자세·Rt 대상 쉬는 자세 — 원본이 쉬는 자세면 대상도 제 쉬는 자세).
+    엉덩이의 움직임은 엉덩이 높이의 비로 줄인다. 원본에 없는 뼈(두건·망토·꼬리 `Bone_*`, 대상의 왼손가락)는 쉬는 자세 그대로."""
+    from mathutils import Matrix, Quaternion, Vector
+
+    before_o, before_a = set(bpy.data.objects), set(bpy.data.actions)
+    bpy.ops.import_scene.gltf(filepath=src_path)
+    new_o = [o for o in bpy.data.objects if o not in before_o]
+    new_a = [a for a in bpy.data.actions if a not in before_a]
+    src = next(o for o in new_o if o.type == "ARMATURE")
+    for o in new_o:
+        if o is not src:
+            bpy.data.objects.remove(o)
+    for a in new_a:
+        a["clip"] = a.name[: -len(src.name) - 1] if a.name.endswith("_" + src.name) else a.name
+    # 엉덩이 뼈의 z는 게임·`wanderer_skin.py`가 읽는 "몸 앞"이다(`own_yaw`) — v3 리깅의 엉덩이 뼈는 몸이 앞을 보는데도 13° 비뚤게
+    # 돌아 있었다(척추·머리는 곧다). 쉬는 자세의 돌림(roll)만 몸 앞(−y)으로 맞춘다 — 몸의 꼴은 그대로(쉬는 자세 = 휨 없음).
+    bpy.context.view_layer.objects.active = tgt
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = tgt.data.edit_bones["mixamorig:Hips"]
+    eb.align_roll(tgt.matrix_world.inverted().to_3x3() @ Vector((0, -1, 0)))
+    bpy.ops.object.mode_set(mode="OBJECT")
+    for pb in src.pose.bones:
+        pb.rotation_mode = "QUATERNION"
+    for pb in tgt.pose.bones:
+        pb.rotation_mode = "QUATERNION"
+    bpy.context.view_layer.update()
+    Sw, Tw = src.matrix_world.copy(), tgt.matrix_world.copy()
+    Tw_q = Tw.to_quaternion()
+    names = [b.name for b in tgt.data.bones if b.name in src.data.bones and b.name.startswith("mixamorig:")]
+
+    def depth(b):
+        d = 0
+        while b.parent:
+            b, d = b.parent, d + 1
+        return d
+
+    order = sorted(tgt.data.bones, key=depth)
+    rest_arm = {b.name: b.matrix_local.copy() for b in tgt.data.bones}
+    rs = {n: (Sw @ src.data.bones[n].matrix_local).to_quaternion() for n in names}
+    rt = {n: (Tw @ rest_arm[n]).to_quaternion() for n in names}
+    # 원본의 쉬는 자세에서 바뀐 몫(월드 회전)만 대상의 쉬는 자세에 얹는다(Pt = Ps · Rs⁻¹ · Rt). 처음에는 뼈 방향을 원본과 같게
+    # 베꼈는데(쉬는 틀 맞춤), v3 리깅은 목뼈가 뒤로 29° 젖혀져 있어(몸통·목은 뼈의 자리가 몸마다 다르다) 목이 앞으로 꺾여 머리가
+    # 가슴 앞으로 쏠렸다(사장 "기본 모션의 머리 각도가 이상해"). 두 몸의 쉬는 자세는 같은 A 자세라(팔 차 10° 안팎) 몫만 옮긴다.
+    align = {n: Quaternion() for n in names}
+    hip = "mixamorig:Hips"
+    hs = (Sw @ src.data.bones[hip].head_local).z - min((Sw @ b.head_local).z for b in src.data.bones)
+    ht = (Tw @ tgt.data.bones[hip].head_local).z - min((Tw @ b.head_local).z for b in tgt.data.bones)
+    k = ht / hs
+    print(f"[meshy_rig] retarget {len(names)} bones, hip ratio {k:.3f}")
+    FEET = [f"mixamorig:{s}{p}" for s in ("Left", "Right") for p in ("Foot", "ToeBase", "Toe_End")]
+
+    def feet_low(o, w):
+        return min((w @ o.pose.bones[n].head).z for n in FEET if n in o.pose.bones)
+
+    bpy.context.view_layer.update()
+    s_feet0 = min((Sw @ src.data.bones[n].head_local).z for n in FEET if n in src.data.bones)
+    t_feet0 = min((Tw @ tgt.data.bones[n].head_local).z for n in FEET if n in tgt.data.bones)
+    sc = bpy.context.scene
+    made = []
+    for a in new_a:
+        f0, f1 = int(a.frame_range[0]), int(a.frame_range[1])
+        src.animation_data.action = a
+        act = bpy.data.actions.new(a["clip"])
+        if not tgt.animation_data:
+            tgt.animation_data_create()
+        tgt.animation_data.action = act
+        last = {}
+        for f in range(f0, f1 + 1):
+            sc.frame_set(f)
+            posed = {}
+            for b in order:
+                n = b.name
+                pb = tgt.pose.bones[n]
+                par = b.parent
+                rel = (rest_arm[par.name].to_quaternion().inverted() @ rest_arm[n].to_quaternion()) if par else rest_arm[n].to_quaternion()
+                ppose = posed[par.name] if par else Quaternion()
+                if n in names:
+                    ps = (Sw @ src.pose.bones[n].matrix).to_quaternion()
+                    want_world = ps @ rs[n].inverted() @ align[n].inverted() @ rt[n]
+                    want_arm = Tw_q.inverted() @ want_world
+                    basis = rel.inverted() @ ppose.inverted() @ want_arm
+                    if n in last:
+                        basis.make_compatible(last[n])
+                    last[n] = basis
+                    pb.rotation_quaternion = basis
+                    pb.keyframe_insert("rotation_quaternion", frame=f, group=n)
+                    posed[n] = want_arm
+                else:
+                    posed[n] = ppose @ rel
+                if n == hip:
+                    sm = Sw @ src.pose.bones[n].matrix
+                    d = sm.translation - (Sw @ src.data.bones[n].matrix_local).translation
+                    want = (Tw @ rest_arm[n]).translation + d * k
+                    loc_arm = Tw.inverted() @ want
+                    pb.location = rest_arm[n].to_quaternion().inverted() @ (loc_arm - rest_arm[n].translation)
+                    pb.keyframe_insert("location", frame=f, group=n)
+            # 발은 땅에(엉덩이 높이의 비만으로는 다리 길이·굽힘이 다른 몸의 발이 땅을 파고들었다 — 내려찍기 착지 −0.3m): 대상의 가장 낮은 발이
+            # 원본의 가장 낮은 발이 쉬는 자세에서 오르내린 만큼(비 k)만 오르내리게 엉덩이를 위아래로 민다.
+            bpy.context.view_layer.update()
+            want_low = t_feet0 + (feet_low(src, Sw) - s_feet0) * k
+            dz = want_low - feet_low(tgt, Tw)
+            hp = tgt.pose.bones[hip]
+            hp.location = hp.location + rest_arm[hip].to_quaternion().inverted() @ (Tw.inverted().to_3x3() @ Vector((0, 0, dz)))
+            hp.keyframe_insert("location", frame=f, group=hip)
+        act.use_fake_user = True
+        made.append(act)
+    tgt.animation_data.action = None
+    bpy.data.objects.remove(src)
+    for a in new_a:
+        bpy.data.actions.remove(a)
+    for pb in tgt.pose.bones:
+        pb.rotation_quaternion = (1, 0, 0, 0)
+        pb.location = (0, 0, 0)
+    print("[meshy_rig] retargeted", sorted(a.name for a in made))
+
+
+if RETARGET:
+    retarget(RETARGET, arm)
 select_only(low)
 arm.select_set(True)
 os.makedirs(os.path.dirname(os.path.abspath(dst)), exist_ok=True)

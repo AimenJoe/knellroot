@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Knellroot</title>
   <!-- PWA(0062, KB reference/web/pwa-install-fullscreen-orientation.md): 홈 화면에 깔면 주소창 없이 가로 전체 화면. -->
   <link rel="manifest" href="manifest.webmanifest">
@@ -44,6 +44,11 @@
 </head>
 <body>
   <canvas id="glcanvas" tabindex="1"></canvas>
+  <!-- 안전 영역 재기(2026-11-19 — 사장 "로딩되기 전에 가로모드일 때 화면이 꽉 차지 않는다"): iPhone 가로에서 viewport-fit=cover가 없으면
+       노치·홈 막대 자리가 검은 띠로 남는다(nail은 처음부터 cover). cover로 캔버스는 화면을 다 쓰고, 터치 버튼·HUD는 이 값만큼 비킨다
+       (knell_safe_inset → src/screen.rs safe_insets → touch::layout). -->
+  <div id="knell-safe" style="position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)"></div>
   <div id="rotate" aria-hidden="true"><div class="arrow"></div><div class="phone"></div></div>
   <div id="knell-load" role="progressbar" aria-label="Knellroot" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
     <img src="icons/bell-128.png" alt=""><div class="bar"><i></i></div>
@@ -164,6 +169,13 @@
       if (window.visualViewport) window.visualViewport.addEventListener("resize", soon);
       if (window.ResizeObserver) new ResizeObserver(check).observe(c);
       window.knellCanvasCheck = check; // 시험(tools/test/touch.js)이 부른다
+      // 0243(사장 설문 k21 "로딩 중에 화면 돌리면 화면 아래가 비어 보일 때가 있다"): 로딩 중에 돌리면 번들의 처리기가 아직 없어
+      // 위의 check가 넘어가고, 번들이 처음 잰 크기가 레이아웃이 끝나기 전 값이면 그 뒤로 바로잡을 일이 없었다 —
+      // 다 그린 순간(knell_loaded)에 몇 번 더 재고, 처음 몇 초는 1초마다 한 번 더 잰다.
+      window.knellCanvasSoon = function () {
+        soon();
+        for (var i = 1; i <= 5; i++) setTimeout(check, i * 1000);
+      };
     })();
     // 처음 장치가 터치인지(폰·태블릿): 아무것도 만지기 전 첫 화면부터 터치 버튼을 보이게(src/input.rs initial_device).
     miniquad_add_plugin({
@@ -247,6 +259,20 @@
           var c = document.getElementById("glcanvas"); if (c) c.focus();
         });
         importObject.env.knell_portrait = function () { return portraitBlocked() ? 1 : 0; };
+        // 안전 영역(노치·홈 막대)의 네 변 — 0 왼쪽, 1 위, 2 오른쪽, 3 아래 — 캔버스 화소로(번들의 dpi_scale과 같은 배).
+        // 돌릴 때마다 env()가 바뀌니 크기가 바뀔 때만 다시 잰다.
+        var safe = [0, 0, 0, 0];
+        function measureSafe() {
+          try {
+            var st = getComputedStyle(document.getElementById("knell-safe"));
+            var k = window.high_dpi ? (window.devicePixelRatio || 1) : 1;
+            safe = [st.paddingLeft, st.paddingTop, st.paddingRight, st.paddingBottom].map(function (v) { return Math.round((parseFloat(v) || 0) * k); });
+          } catch (e) { safe = [0, 0, 0, 0]; }
+        }
+        measureSafe();
+        window.addEventListener("resize", function () { measureSafe(); setTimeout(measureSafe, 300); });
+        window.addEventListener("orientationchange", function () { setTimeout(measureSafe, 300); });
+        importObject.env.knell_safe_inset = function (i) { return safe[i] >>> 0; };
         importObject.env.knell_fs_enabled = function () { return fsEnabled() ? 1 : 0; };
         importObject.env.knell_fs_active = function () { return fsActive() ? 1 : 0; };
         importObject.env.knell_fs_toggle = function () {
@@ -265,7 +291,7 @@
       name: "knell_loading",
       version: 1,
       register_plugin: function (importObject) {
-        importObject.env.knell_loaded = function () { window.knellLoad.done(); };
+        importObject.env.knell_loaded = function () { window.knellLoad.done(); if (window.knellCanvasSoon) window.knellCanvasSoon(); };
       }
     });
     window.knellLoad.watch();

@@ -8,6 +8,9 @@ use macroquad::prelude::*;
 use crate::enemy::EState;
 use crate::world::{Event, PState, World};
 
+/// 타격 별의 크기 배(0242).
+const STAR_SCALE: f32 = 0.7;
+
 /// 입자의 꼴(렌더가 고른다).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shape {
@@ -317,8 +320,9 @@ impl Fx {
         }
     }
 
-    /// 한가운데 번쩍임 하나(네 갈래 별).
+    /// 한가운데 번쩍임 하나(네 갈래 별). 크기는 부르는 값의 `STAR_SCALE`배(0242 — 사장 설문 "별이 너무 두껍다": 1.5~2.6 m의 별이 몸을 덮었다).
     fn star(&mut self, at: Vec3, size: f32, life: f32, col: Color) {
+        let size = size * STAR_SCALE;
         self.push(Part {
             pos: at,
             vel: Vec3::ZERO,

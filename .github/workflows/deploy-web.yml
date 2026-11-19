@@ -157,11 +157,11 @@ jobs:
         run: |
           cp tools/web/wrangler.jsonc .
           npx -y wrangler@4.156.2 deploy
-          sh tools/web/check_live.sh https://knellroot.beardworks.io/play "$GITHUB_SHA"
+          bash tools/web/check_live.sh https://knellroot.beardworks.io/play "$GITHUB_SHA"
           echo "### 운영판: https://knellroot.beardworks.io/play/ (${GITHUB_SHA:0:7})" >> "$GITHUB_STEP_SUMMARY"
       - name: Hand over old address (Netlify production → moved page)
         if: env.NETLIFY_SITE_ID != ''
         run: |
           npx netlify-cli@23 deploy --no-build --dir=dist-moved --prod --message="moved ${{ github.sha }}"
-          sh tools/web/check_live.sh https://knellroot.netlify.app "$GITHUB_SHA"
+          bash tools/web/check_live.sh https://knellroot.netlify.app "$GITHUB_SHA"
           echo "### 옛 주소: https://knellroot.netlify.app → 넘김 페이지" >> "$GITHUB_STEP_SUMMARY"

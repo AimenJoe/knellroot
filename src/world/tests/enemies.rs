@@ -112,6 +112,32 @@ fn pods_hop_away_and_scavengers_ignore_you_until_struck() {
     assert_eq!(w.enemies[s].state, EState::Chase, "struck: fights");
 }
 
+/// 0242(사장 설문 2-3): 청소자는 제자리에 박혀 서 있지 않는다 — 먹다가 둘레 `GRAZE_R` 안의 다른 자리로 옮겨 가고, 그래도 덤비지 않는다.
+#[test]
+fn a_scavenger_shuffles_between_feeding_spots_near_home_without_fighting() {
+    use crate::tuning::{GRAZE_R, GRAZE_STAY};
+    let t = Tuning::default();
+    let mut w = World::new("test", 30.0);
+    let home = vec3(0.0, 0.0, -6.0);
+    let s = w.spawn(Kind::Husk, home);
+    w.enemies[s].place(0.0);
+    w.enemies[s].docile = true;
+    let mut spots = 0;
+    let mut last = w.enemies[s].pos;
+    for _ in 0..(GRAZE_STAY * 5.0 / TICK_DT) as usize {
+        w.step(&Actions::default(), &t);
+        let p = w.enemies[s].pos;
+        let off = vec3(p.x - home.x, 0.0, p.z - home.z).length();
+        assert!(off <= GRAZE_R + 0.05, "stays near home: {off}");
+        if (p - last).length() > 0.3 {
+            spots += 1;
+            last = p;
+        }
+        assert_eq!(w.enemies[s].state, EState::Idle, "still does not fight");
+    }
+    assert!(spots >= 2, "moved between spots: {spots}");
+}
+
 /// 0133: 2단계 전환 — 맞아도 피해가 없고, 터지는 틱에 가까운 방랑자를 밀어낸다(피해 없이 튕긴 꼴로).
 #[test]
 fn a_boss_rise_takes_no_damage_and_its_burst_pushes_you_back_unhurt() {

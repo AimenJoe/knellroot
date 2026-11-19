@@ -131,8 +131,9 @@ const SLEEPER: Color = Color::new(0.27, 0.20, 0.16, 1.0);
 const RAIL: Color = Color::new(0.46, 0.44, 0.46, 1.0);
 /// 바닥 다듬기(0060 W2·0061): 빠진 석판 자리의 흙, 풀 다발 밑동·끝(바랜 청록 — 해 질 녘의 옅은 생명, 0037).
 const DIRT: Color = Color::new(0.22, 0.19, 0.24, 1.0);
-const GRASS_ROOT: Color = Color::new(0.17, 0.27, 0.26, 1.0);
-const GRASS_TIP: Color = Color::new(0.47, 0.66, 0.53, 1.0);
+// 0242(사장 설문 12-6 "풀이 있는지도 잘 모르겠다"): 끝을 노란 연두로 밝게 — 남보라 달빛 아래 바닥과 같은 청록이라 묻혔다.
+const GRASS_ROOT: Color = Color::new(0.19, 0.30, 0.25, 1.0);
+const GRASS_TIP: Color = Color::new(0.66, 0.84, 0.50, 1.0);
 /// 석판 옆면 어둡기, 벽 밑 그늘(세기·닿는 거리 m).
 /// 바닥은 걷는 면(0) 아래로 판다 — 예고·그림자·고리(바닥 위 2~3cm)가 석판에 묻히지 않게. 회반죽 깊이, 석판 꼭대기 범위(음수), 들린 변(0을 넘지 않는다).
 const MORTAR_Y: f32 = -0.08;
@@ -404,8 +405,11 @@ impl Scenery {
                 lm[k + 3] = 255;
             }
         }
+        // 0242(사장 설문 10-2 "그림자가 실제처럼 보이지 않음"): 가장 가까운 픽셀의 계단 경계 → 걷는 칸끼리만 [1 2 1] 흐리기 +
+        // 선형 거르기 — 툰의 두 단은 그대로 두고 경계만 반그림자처럼 부드럽게(0.25m 남짓). 걷지 못하는 칸(검정)은 섞지 않는다.
+        let lm = soften_lightmap(&lm, ow, oh);
         let lightmap = Texture2D::from_rgba8(ow as u16, oh as u16, &lm);
-        lightmap.set_filter(FilterMode::Nearest);
+        lightmap.set_filter(FilterMode::Linear);
         let uv_of = |v: Vec3| {
             vec2(
                 (v.x - origin.x) / (ow as f32 * res),
@@ -629,6 +633,13 @@ impl Scenery {
                         mul(base, (0.94 + 0.12 * r) * (0.90 + 0.20 * patch(x, z)))
                     } else {
                         mul(base, 0.8 + 0.35 * r)
+                    };
+                    // 0242(사장 설문 10-5 "전체 색이 너무 단조롭다"): 큰 얼룩(3칸 묶음)으로 따뜻한 돌(모래빛)을 섞는다 —
+                    // 칸마다의 밝기 차는 키우지 않고(0140) 색의 결만 남보라 하나에서 둘로.
+                    let col = if hash(x / 3, z / 3, 77) > 0.62 {
+                        Color::new(col.r * 1.16, col.g * 1.02, col.b * 0.84, col.a)
+                    } else {
+                        col
                     };
                     let top = SLAB_LOW + (SLAB_HIGH - SLAB_LOW) * hash(x, z, i + 13);
                     // 몇은 한쪽 변이 들린다(빛 띠가 달라지고 모서리가 선다).
@@ -1064,9 +1075,10 @@ fn tuft(p: &mut Piece, at: Vec3, sx: usize, sz: usize, lights: &[Light]) {
         let ang = std::f32::consts::TAU * (b as f32 / 7.0 + hash(sx, sz, 200 + b) * 0.3);
         let (s, c) = ang.sin_cos();
         let dir = vec3(c, 0.0, s);
-        let side = vec3(-s, 0.0, c) * 0.06;
-        let r = 0.03 + 0.1 * hash(sx, sz, 210 + b);
-        let hgt = 0.3 + 0.2 * hash(sx, sz, 220 + b);
+        let side = vec3(-s, 0.0, c) * 0.07;
+        let r = 0.03 + 0.12 * hash(sx, sz, 210 + b);
+        // 0242: 키 30~50cm → 40~65cm(쿼터뷰에서 바닥 결이 아니라 풀로 읽히게).
+        let hgt = 0.4 + 0.25 * hash(sx, sz, 220 + b);
         let lean = 0.08 + 0.12 * hash(sx, sz, 230 + b);
         let foot = at + dir * r;
         let tip = foot + dir * lean + Vec3::Y * hgt;
@@ -1207,8 +1219,112 @@ fn prop_color(k: PropKind) -> Color {
     }
 }
 
+/// 빛 지도 흐리기(0242): 가로·세로 [1 2 1]을 걷는 칸(투명도 255)끼리만. 걷지 못하는 칸은 그대로 0.
+fn soften_lightmap(lm: &[u8], w: usize, h: usize) -> Vec<u8> {
+    let pass = |src: &[u8], dx: usize, dy: usize| -> Vec<u8> {
+        let mut out = src.to_vec();
+        for j in 0..h {
+            for i in 0..w {
+                let k = (j * w + i) * 4;
+                if src[k + 3] == 0 {
+                    continue;
+                }
+                let mut sum = [0u32; 3];
+                let mut wt = 0u32;
+                let taps = [
+                    (i.checked_sub(dx), j.checked_sub(dy), 1u32),
+                    (Some(i), Some(j), 2),
+                    (Some(i + dx), Some(j + dy), 1),
+                ];
+                for (x, y, f) in taps {
+                    let (Some(x), Some(y)) = (x, y) else { continue };
+                    if x >= w || y >= h {
+                        continue;
+                    }
+                    let q = (y * w + x) * 4;
+                    if src[q + 3] == 0 {
+                        continue;
+                    }
+                    for c in 0..3 {
+                        sum[c] += src[q + c] as u32 * f;
+                    }
+                    wt += f;
+                }
+                for c in 0..3 {
+                    out[k + c] = ((sum[c] + wt / 2) / wt) as u8;
+                }
+            }
+        }
+        out
+    };
+    let a = pass(lm, 1, 0);
+    let mut out = pass(&a, 0, 1);
+    // 선형 거르기는 이웃 칸을 섞는다: 걷지 못하는 칸이 검정·투명(바닥 셰이더는 빛 지도의 투명도도 곱한다)이면 바닥 끝이
+    // 어둡고 반투명해진다 — 걷는 칸에 닿은 걷지 못하는 칸은 이웃 걷는 칸의 빛으로 채우고 불투명하게.
+    let src = out.clone();
+    for j in 0..h {
+        for i in 0..w {
+            let k = (j * w + i) * 4;
+            if src[k + 3] != 0 {
+                continue;
+            }
+            let (mut sum, mut n) = ([0u32; 3], 0u32);
+            for (dx, dy) in [
+                (-1i32, 0i32),
+                (1, 0),
+                (0, -1),
+                (0, 1),
+                (-1, -1),
+                (1, -1),
+                (-1, 1),
+                (1, 1),
+            ] {
+                let (x, y) = (i as i32 + dx, j as i32 + dy);
+                if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
+                    continue;
+                }
+                let q = (y as usize * w + x as usize) * 4;
+                if src[q + 3] == 0 {
+                    continue;
+                }
+                for c in 0..3 {
+                    sum[c] += src[q + c] as u32;
+                }
+                n += 1;
+            }
+            for c in 0..3 {
+                if let Some(v) = sum[c].checked_div(n) {
+                    out[k + c] = v as u8;
+                    out[k + 3] = 255;
+                }
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn softening_the_light_map_blurs_edges_but_never_pulls_in_unwalkable_black() {
+        // 3×1: 밝은 칸 · 어두운 칸 · 걷지 못하는 칸(검정, 투명도 0).
+        let lm = [200, 200, 200, 255, 40, 40, 40, 255, 0, 0, 0, 0];
+        let out = soften_lightmap(&lm, 3, 1);
+        assert!(
+            out[0] < 200 && out[0] > 120,
+            "밝은 쪽 경계가 조금 어두워진다: {}",
+            out[0]
+        );
+        assert!(
+            out[4] > 40 && out[4] < 120,
+            "어두운 쪽 경계가 조금 밝아진다: {}",
+            out[4]
+        );
+        // 걷지 못하는 칸의 검정은 어두운 칸에 섞이지 않는다(두 칸만의 평균 = (200 + 2·40)/3 ≈ 93),
+        // 그 칸은 이웃 걷는 칸의 빛으로 채워 불투명하게 — 선형 거르기에서 바닥 끝이 검게·반투명해지지 않게.
+        assert_eq!(&out[8..12], &[out[4], out[5], out[6], 255]);
+        assert_eq!(out[4], 93);
+    }
     use super::*;
 
     /// 0140 조용한 바닥: 석판 색의 큰 얼룩은 0..1 안이고 이웃 칸끼리는 조금씩만 바뀐다(칸마다 튀면 다시 격자 잡음이 된다),

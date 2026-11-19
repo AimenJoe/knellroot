@@ -86,6 +86,17 @@ fn is_edge(a: &Actions) -> bool {
         || a.wheel != 0
 }
 
+/// 누른 자리에 눌린 꼴을 보일까(0207 → 2026-11-19 사장 "컨텍스트 메뉴가 보이는 상태에서 바깥을 터치해서 닫을 때 그 바깥도 눌리는 듯한
+/// 하이라이트가 생김"): 창 밖을 덮는 닫기 칸(`push_outside` — 화면보다 큰 칸)은 닫기일 뿐 단추가 아니고, 작은 창(칸 곁의 목록·묻는 창)이
+/// 떠 있으면 그 창의 줄만 빛난다 — 아래 화면의 칸·탭을 눌러 창을 닫을 때 그 칸이 눌린 듯 보이지 않게. 그런 탭은 붙잡지 않고 바로 넘긴다.
+fn press_shows(popup: bool, h: Hit, r: Rect) -> bool {
+    let outside = r.w > 1.0e4 || r.h > 1.0e4;
+    if popup {
+        return matches!(h, Hit::Row(_));
+    }
+    matches!(h, Hit::Row(_) | Hit::Cell(..) | Hit::Tab(_)) || (h == Hit::Close && !outside)
+}
+
 /// 붙잡아 둔 메뉴 누름(0207).
 #[derive(Clone, Copy, Debug)]
 struct Press {
@@ -187,6 +198,8 @@ pub struct App {
     tell_timing: bool,
     /// 자유 시점 돌리기 민감도(가로, 세로) — `prefs::LOOK_SENS`의 자리(0191).
     look_sens: (u8, u8),
+    /// 터치 버튼 크기 — `prefs::TOUCH_SIZES`의 자리(0236).
+    touch_size: u8,
     sfx: Option<crate::sfx::Sfx>,
     was_dodging: bool,
     /// 그림 이펙트(0141): 월드 사건·상태 변화를 듣고 입자를 낸다 — 월드는 모른다(소리와 같은 길).
@@ -304,6 +317,7 @@ impl App {
         let mut tells = crate::prefs::TELLS_DEFAULT;
         let mut tell_timing = false;
         let mut look_sens = (crate::prefs::LOOK_DEFAULT, crate::prefs::LOOK_DEFAULT);
+        let mut touch_size = crate::prefs::TOUCH_SIZE_DEFAULT;
         if let Some(p) = crate::prefs::load() {
             if let Some(l) = p.lang {
                 i18n::set_lang(l);
@@ -315,8 +329,10 @@ impl App {
             tells = p.tells;
             tell_timing = p.tell_timing;
             look_sens = p.look;
+            touch_size = p.touch_size;
             legacy_weapon = p.weapon;
         }
+        crate::touch::set_size(crate::prefs::TOUCH_SIZES[touch_size as usize]);
         // 기록 슬롯(0066): 마지막으로 쓴 슬롯의 기록. 든 무기는 기록에 — 없으면(옛 슬롯 1) 예전 prefs 칸 21의 값.
         let slot = crate::save::last_slot();
         let progress = crate::save::load(slot);
@@ -402,6 +418,7 @@ impl App {
             tells,
             tell_timing,
             look_sens,
+            touch_size,
             sfx: None,
             was_dodging: false,
             fx: crate::fx::Fx::default(),
@@ -644,6 +661,7 @@ impl App {
             tells: self.tells,
             tell_timing: self.tell_timing,
             look: self.look_sens,
+            touch_size: self.touch_size,
             // PC만 기억한다(0135) — 웹은 브라우저가 Esc로 끌 수 있고 다음에 켤 때 사용자 입력 없이 못 연다.
             fullscreen: crate::DESKTOP && crate::screen::active(),
             // 든 무기는 슬롯 기록으로 옮겼다(0066) — 옛 칸은 처음 읽은 값 그대로 둔다(옛 슬롯 1의 기본값).
@@ -723,6 +741,9 @@ impl App {
             sight_skills: [0, 1].map(|i| {
                 pl.skill.rank[i] > 0 && self.world.skill_eff(pl.skill.worn[i]).skill.form.sighted()
             }),
+            // 0236: 쿼터뷰가 아니면 땅 돌리기를 숨긴다(숄더뷰는 끌기, 락온은 월드가 막는다), 끼운 스킬이 없는 칸도.
+            hide_turn: self.cam.mode != Mode::Quarter || self.world.lock.is_some(),
+            bare: [0, 1].map(|i| pl.skill.known[i] == 0),
         });
         self.input.poll(self.scene().is_menu());
         // F11(PC, 0135): 어느 장면에서나 창 ↔ 전체 화면. 창 일이라 `Actions`(게임 동작)에 넣지 않는다.
@@ -837,15 +858,12 @@ impl App {
         if !scene.is_menu() || matches!(scene, Scene::Controls) {
             return (a, false);
         }
-        let tapped = a.tap.and_then(|p| {
-            self.hits
-                .iter()
-                .find(|(r, _)| r.contains(p))
-                .filter(|(_, h)| {
-                    matches!(h, Hit::Row(_) | Hit::Cell(..) | Hit::Tab(_) | Hit::Close)
-                })
-                .map(|(r, _)| *r)
-        });
+        let popup = scene.is_popup();
+        let tapped = a
+            .tap
+            .and_then(|p| self.hits.iter().find(|(r, _)| r.contains(p)))
+            .filter(|(r, h)| press_shows(popup, *h, *r))
+            .map(|(r, _)| *r);
         if !(a.confirm || tapped.is_some()) {
             return (a, false);
         }
@@ -1351,6 +1369,27 @@ fn weapon_name(id: weapons::Id) -> &'static str {
 #[cfg(test)]
 mod press_tests {
     use super::*;
+
+    /// 2026-11-19: 작은 창 밖을 눌러 닫을 때 그 바깥(아래 화면의 칸·창 밖 전체)은 눌린 꼴을 보이지 않는다 — 작은 창의 줄만.
+    /// 창 밖을 덮는 닫기 칸(화면보다 큰 칸)은 큰 창에서도 단추가 아니다. ✕(작은 칸)는 그대로 눌린다.
+    #[test]
+    fn closing_a_popup_by_tapping_outside_lights_nothing_underneath() {
+        let small = Rect::new(10.0, 10.0, 40.0, 20.0);
+        let outside = Rect::new(-1.0e5, -1.0e5, 2.0e5, 1.0e5 + 10.0);
+        assert!(press_shows(true, Hit::Row(1), small), "the popup's own row");
+        for h in [Hit::Cell(0, 2), Hit::Tab(1), Hit::Close] {
+            assert!(!press_shows(true, h, small), "{h:?} under a popup");
+        }
+        assert!(!press_shows(true, Hit::Close, outside));
+        assert!(
+            !press_shows(false, Hit::Close, outside),
+            "the outside of a big window"
+        );
+        assert!(press_shows(false, Hit::Close, small), "the ✕ button");
+        assert!(press_shows(false, Hit::Cell(0, 2), small));
+        assert!(Scene::EquipPick { slot: 0 }.is_popup() && Scene::BagAct.is_popup());
+        assert!(!Scene::Title.is_popup());
+    }
 
     /// 0207: 누름을 붙잡은 동안 줄 세우는 것은 누르는 순간의 입력뿐 — 쥐고 있는 스틱은 매 틱 같은 값이라 쌓이면 지연이 남는다.
     #[test]

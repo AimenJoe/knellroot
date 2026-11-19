@@ -210,6 +210,29 @@ pub struct Touch {
     lookers: Vec<(u64, Vec2)>,
     /// 꼬집기로 쌓인 거리(논리 px, + = 벌림) — `PINCH_STEP`마다 한 칸씩 빼 간다.
     pinch: f32,
+    /// 숄더뷰에서 버튼을 누른 손가락(0236 — 모바일 TPS의 "쏘기 버튼으로도 돌리기"): 누른 일은 그대로 하고, 탭 범위를 넘게
+    /// 끌면 그 뒤로 끈 만큼 시점이 돈다. 버튼이 오른쪽을 덮어도 시점을 돌릴 자리가 모자라지 않게. (id, 처음 자리, 지난 자리, 넘었나)
+    riders: Vec<Rider>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Rider {
+    id: u64,
+    from: Vec2,
+    prev: Vec2,
+    moved: bool,
+}
+
+impl Rider {
+    /// 손가락이 `pos`로 왔을 때 이번 프레임 시점에 보탤 끈 거리 — 탭 범위(`TAP_SLOP`) 안의 떨림은 버린다(연타하는 엄지가 화면을
+    /// 흔들지 않게), 넘은 뒤로는 지난 자리에서 끈 만큼.
+    fn drag(&mut self, pos: Vec2) -> Vec2 {
+        let was = self.moved;
+        self.moved |= (pos - self.from).length() > TAP_SLOP;
+        let d = if was { pos - self.prev } else { Vec2::ZERO };
+        self.prev = pos;
+        d
+    }
 }
 
 /// 버튼 크기·거리의 기준(짧은 변)의 상한(논리 px) — 태블릿에서 버튼이 너무 커지지 않게.
@@ -217,6 +240,18 @@ const TOUCH_U_MAX: f32 = 520.0;
 
 /// 이보다 덜 움직이고 떼면 탭(논리 px).
 const TAP_SLOP: f32 = 24.0;
+
+/// 엄지 묶음(공격과 둘레 호·스킬·상황 버튼)의 크기(%, 0236 — 설정 "터치 버튼 크기", 앱이 prefs에서 적는다). 자리도 같은 배로
+/// 공격 쪽 모서리에 다가가거나 멀어진다(겹치지 않게). 위 가장자리 줄(멈춤·시점·돌리기)은 그대로.
+static SIZE_PCT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(100);
+
+pub fn set_size(pct: u32) {
+    SIZE_PCT.store(pct, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn size() -> f32 {
+    SIZE_PCT.load(std::sync::atomic::Ordering::Relaxed) as f32 / 100.0
+}
 
 /// 점프 버튼이 지금 하는 일(0166 — 스테이지가 안다, 앱이 옮겨 준다): 버튼의 그림을 고른다.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -272,6 +307,10 @@ pub struct Ctx {
     pub look_aim: bool,
     /// 스킬 칸 둘에 한 대상을 겨누는 스킬(`skills::Form::sighted`)이 있다(0230).
     pub sight_skills: [bool; 2],
+    /// 땅 돌리기 버튼을 숨긴다(0236): 숄더뷰(시점은 끌기)·락온(월드가 돌리기를 막는다) — 쓸 일이 없을 때 자리를 비운다.
+    pub hide_turn: bool,
+    /// 스킬 칸이 비었다(0236 — 끼운 스킬이 없다): 버튼을 숨긴다. 든 무기로 못 쓰는 칸(배운 것은 있다)은 흐린 그림으로 남는다.
+    pub bare: [bool; 2],
 }
 
 impl Ctx {
@@ -290,6 +329,8 @@ impl Ctx {
         ranged: false,
         look_aim: false,
         sight_skills: [false; 2],
+        hide_turn: false,
+        bare: [false; 2],
     };
 
     /// 쥐고 끄는 동안 모으는 탄의 버튼(0217 → 0223).
@@ -376,7 +417,22 @@ pub fn aim_dir(d: Vec2) -> Vec2 {
 /// 오른손 엄지가 쉬는 오른쪽 아래에 공격(지름 ≈ 0.27u), 그 둘레 첫째 호(거리 0.26u)에 자주 쓰는 넷 — 회피·패링·마법·점프 —
 /// 둘째 호(0.44u)에 돌리기 캡슐과 상황 버튼(락온·등잔). 각도는 공격 가운데에서 180° = 왼쪽, 90° = 위.
 pub fn layout(w: f32, h: f32, ctx: Ctx) -> Vec<Button> {
-    let u = w.min(h).min(TOUCH_U_MAX);
+    safe_layout(w, h, ctx, size(), crate::screen::safe_insets())
+}
+
+/// 안전 영역 `[왼쪽, 위, 오른쪽, 아래]` 안에서 짜고 그만큼 옮긴다(2026-11-19 — 웹 cover: 노치·홈 막대 밑에 버튼을 두지 않는다).
+fn safe_layout(w: f32, h: f32, ctx: Ctx, k: f32, safe: [f32; 4]) -> Vec<Button> {
+    let [l, t, r, bt] = safe;
+    let mut b = layout_at((w - l - r).max(1.0), (h - t - bt).max(1.0), ctx, k);
+    for x in &mut b {
+        x.center += vec2(l, t);
+    }
+    b
+}
+
+/// `layout`의 크기 배 `k`를 손으로 주는 꼴(시험).
+fn layout_at(w: f32, h: f32, ctx: Ctx, k: f32) -> Vec<Button> {
+    let u = w.min(h).min(TOUCH_U_MAX) * k;
     let atk = vec2(w - u * 0.238, h - u * 0.21);
     let at = |deg: f32, dist: f32| {
         let a = deg.to_radians();
@@ -413,34 +469,42 @@ pub fn layout(w: f32, h: f32, ctx: Ctx) -> Vec<Button> {
     // 스킬 둘(0151): 예전 돌리기 캡슐 자리(공격 위 바깥 호) — 엄지가 외운 자리를 스킬이 물려받는다.
     let skill = at(118.0, 0.44);
     let sr = u * 0.065;
-    b.push(Button {
-        center: skill - vec2(u * 0.08, 0.0),
-        radius: sr,
-        kind: Kind::Skill1,
-    });
-    b.push(Button {
-        center: skill + vec2(u * 0.08, 0.0),
-        radius: sr,
-        kind: Kind::Skill2,
-    });
-    // 땅 돌리기(0151): 자주 누르지 않으니 엄지 호 밖, 오른쪽 위에 작게(왼쪽 위의 멈춤과 마주 본다).
+    // 빈 칸은 숨긴다(0236 — 자리는 비워 둔다: 배우면 그 자리에 선다).
+    if !ctx.bare[0] {
+        b.push(Button {
+            center: skill - vec2(u * 0.08, 0.0),
+            radius: sr,
+            kind: Kind::Skill1,
+        });
+    }
+    if !ctx.bare[1] {
+        b.push(Button {
+            center: skill + vec2(u * 0.08, 0.0),
+            radius: sr,
+            kind: Kind::Skill2,
+        });
+    }
+    // 위 가장자리 줄(왼쪽 위의 멈춤과 마주 본다). 시점(0184)은 늘 쓸 수 있으니 오른쪽 위 구석에 박아 둔다(0238 — 사장 "시점 변환 버튼은
+    // 늘 쓸수 있으니 구석에 박아둬야지, 저 좌우회전이 없더라도 화면이 비어보이지 않지"). 땅 돌리기 둘(0151)은 그 왼쪽, 한 칸 띄워(시점과
+    // 묶여 보이지 않게) — 쿼터뷰 + 락온 아닐 때만(`Ctx::hide_turn`, 0236): 숨어도 구석은 그대로라 줄이 비어 보이지 않는다.
     let (pc, ps) = pause_spot(w, h);
-    b.push(Button {
-        center: vec2(w - pc.x - ps * 2.5, pc.y),
-        radius: ps,
-        kind: Kind::TurnLeft,
-    });
     b.push(Button {
         center: vec2(w - pc.x, pc.y),
         radius: ps,
-        kind: Kind::TurnRight,
-    });
-    // 시점(0184): 돌리기 둘의 왼쪽, 한 칸 띄워(돌리기 캡슐과 묶여 보이지 않게) — 두 손가락 꼬집기는 숨은 길이라 보이는 버튼이 하나 있어야 한다.
-    b.push(Button {
-        center: vec2(w - pc.x - ps * 5.4, pc.y),
-        radius: ps,
         kind: Kind::View,
     });
+    if !ctx.hide_turn {
+        b.push(Button {
+            center: vec2(w - pc.x - ps * 5.4, pc.y),
+            radius: ps,
+            kind: Kind::TurnLeft,
+        });
+        b.push(Button {
+            center: vec2(w - pc.x - ps * 2.9, pc.y),
+            radius: ps,
+            kind: Kind::TurnRight,
+        });
+    }
     if ctx.ult {
         b.push(Button {
             center: at(118.0, 0.6),
@@ -489,14 +553,16 @@ fn pause_spot(w: f32, h: f32) -> (Vec2, f32) {
 
 /// 터치일 때 오른쪽 위 글(목표 줄)이 버튼 줄(시점·땅 돌리기)을 비키는 높이(논리 px, 0184 — 그 줄 밑으로 내린다).
 pub fn top_right_drop(w: f32, h: f32) -> f32 {
-    let (c, s) = pause_spot(w, h);
-    c.y + s + 6.0
+    let [l, t, r, b] = crate::screen::safe_insets();
+    let (c, s) = pause_spot(w - l - r, h - t - b);
+    t + c.y + s + 6.0
 }
 
 /// 터치일 때 HUD가 왼쪽 위 멈춤 버튼을 비키는 폭(논리 px).
 pub fn hud_inset(w: f32, h: f32) -> f32 {
-    let (c, s) = pause_spot(w, h);
-    c.x + s + 6.0
+    let [l, t, r, b] = crate::screen::safe_insets();
+    let (c, s) = pause_spot(w - l - r, h - t - b);
+    l + c.x + s + 6.0
 }
 
 pub fn stick_radius(w: f32, h: f32) -> f32 {
@@ -524,6 +590,7 @@ impl Touch {
             self.dodge_finger = None;
             self.parry_finger = None;
             self.lookers.clear();
+            self.riders.clear();
             self.pinch = 0.0;
             self.stale.append(&mut self.known);
             for t in &touches {
@@ -573,6 +640,7 @@ impl Touch {
             self.dodge_finger = None;
             self.parry_finger = None;
             self.lookers.clear();
+            self.riders.clear();
             self.pinch = 0.0;
             return a;
         }
@@ -614,6 +682,14 @@ impl Touch {
                         continue;
                     }
                     press(&mut a, b.kind);
+                    if self.ctx.look_aim && !ended && b.kind != Kind::Pause {
+                        self.riders.push(Rider {
+                            id: t.id,
+                            from: t.position,
+                            prev: t.position,
+                            moved: false,
+                        });
+                    }
                     if b.kind == Kind::Attack && !ended {
                         self.attack_finger = Some(t.id);
                     }
@@ -758,7 +834,23 @@ impl Touch {
             })
             .collect();
         let (look, zoom) = look_from(&self.lookers, &now, &mut self.pinch);
-        a.look = look + aim_look;
+        // 버튼을 누른 채 끈 손가락(0236): 숄더뷰를 떠나면(락온·쿼터뷰) 더 돌리지 않는다.
+        let mut ride = Vec2::ZERO;
+        self.riders.retain_mut(|r| {
+            match touches.iter().find(|t| {
+                t.id == r.id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
+            }) {
+                Some(t) => {
+                    ride += r.drag(t.position);
+                    true
+                }
+                None => false,
+            }
+        });
+        if !self.ctx.look_aim {
+            ride = Vec2::ZERO;
+        }
+        a.look = look + aim_look + ride;
         a.zoom = zoom;
         let mut kept = Vec::new();
         for ((id, _), p) in self.lookers.iter().zip(&now) {
@@ -1775,7 +1867,9 @@ pub fn icon_cell(k: Kind, x: usize, y: usize) -> bool {
 
 /// 버튼 반지름 `r`에 맞춘 픽토그램 한 칸의 크기(논리 px, 정수 — 칸이 고르게 떨어지게).
 pub fn icon_px(r: f32) -> f32 {
-    (r * 1.25 / ICON_N as f32).floor().max(1.0)
+    // 0242(사장 설문 14-1 "애들 장난 같다"): 지름의 ~62% → ~45% — 큰 공격 버튼에서 굵은 점이 장난감처럼 컸다.
+    // 반올림이라 작은 버튼(한 칸 2px)은 그대로, 큰 공격 버튼만 칸이 줄어든다.
+    (r * 0.9 / ICON_N as f32).round().max(1.0)
 }
 
 /// 픽토그램 그리기: 어두운 한 칸 테(밝은 바닥·불빛 위에서도 읽히게, KB hud-readability) 위에 밝은 몸. `tint` = 몸의 빛깔.
@@ -1785,8 +1879,9 @@ pub fn icon(k: Kind, c: Vec2, r: f32, dim: f32, tint: Color) {
 
 /// 한 칸의 크기 `px`(화면 px, 정수)를 직접 주는 픽토그램 — 메뉴의 칸 그림(기술 화면, 0161)이 제 칸에 맞춰 쓴다.
 pub fn icon_at(k: Kind, c: Vec2, px: f32, dim: f32, tint: Color) {
-    let body = Color::new(tint.r, tint.g, tint.b, 0.95 * dim);
-    let edge = Color::new(INK.r, INK.g, INK.b, 0.7 * dim);
+    // 0242: 새하얀 몸 → 조금 누른 빛(종이빛, 0.9배), 테는 옅게 — 버튼의 테·HUD 글과 같은 무게로.
+    let body = Color::new(tint.r * 0.9, tint.g * 0.9, tint.b * 0.88, 0.9 * dim);
+    let edge = Color::new(INK.r, INK.g, INK.b, 0.45 * dim);
     crate::icons::draw(|x, y| icon_cell(k, x, y), c, px, body, edge);
 }
 
@@ -1952,8 +2047,9 @@ mod tests {
             (1280.0, 720.0),
             (390.0, 844.0),
         ] {
-            {
-                let b = layout(w, h, Ctx::ALL);
+            // 설정의 크기 단계마다(0236).
+            for pct in crate::prefs::TOUCH_SIZES {
+                let b = layout_at(w, h, Ctx::ALL, pct as f32 / 100.0);
                 for x in &b {
                     assert!(
                         x.center.x - x.radius >= 0.0 && x.center.x + x.radius <= w,
@@ -1983,15 +2079,18 @@ mod tests {
 
     #[test]
     fn attack_is_the_biggest_button_and_meets_the_minimum_touch_size() {
-        // 플랫폼 최소 터치 크기 44pt(지름) — 가장 작은 가로 폰에서도.
-        let b = layout(667.0, 375.0, Ctx::ALL);
-        let atk = b.iter().find(|x| x.kind == Kind::Attack).unwrap();
-        assert!(b.iter().all(|x| x.radius <= atk.radius));
-        assert!(
-            b.iter().all(|x| x.radius * 2.0 >= 44.0 * 0.8),
-            "smallest {:?}",
-            b.iter().map(|x| x.radius).fold(f32::MAX, f32::min)
-        );
+        // 플랫폼 최소 터치 크기 44pt(지름) — 가장 작은 가로 폰에서도, 설정의 가장 작은 크기(0236)에서도.
+        let small = crate::prefs::TOUCH_SIZES[0] as f32 / 100.0;
+        for k in [1.0, small] {
+            let b = layout_at(667.0, 375.0, Ctx::ALL, k);
+            let atk = b.iter().find(|x| x.kind == Kind::Attack).unwrap();
+            assert!(b.iter().all(|x| x.radius <= atk.radius));
+            assert!(
+                b.iter().all(|x| x.radius * 2.0 >= 44.0 * 0.8),
+                "{k}: smallest {:?}",
+                b.iter().map(|x| x.radius).fold(f32::MAX, f32::min)
+            );
+        }
     }
 
     /// 2026-11-06: 멈춤은 왼쪽 위(오른쪽 위엔 아무것도 없다), HUD는 그만큼 비킨다.
@@ -2023,6 +2122,104 @@ mod tests {
             "attack + 4 + skill pair + turn pair + view (0184)"
         );
         assert!(!none.iter().any(|x| x.kind == Kind::Ult));
+    }
+
+    /// 0236: 숄더뷰·락온에서는 땅 돌리기 둘을, 끼운 스킬이 없는 칸은 그 버튼을 숨긴다 — 시점 버튼과 나머지 자리는 그대로.
+    /// 숄더뷰에서 늘 보이는 오른쪽 버튼은 공격 + 첫째 호 넷 + 시점 하나(Fortnite 모바일 지침 "한 번에 5~6개").
+    #[test]
+    fn the_shoulder_view_hides_the_turn_pair_and_empty_skill_slots() {
+        let full = layout_at(844.0, 390.0, Ctx::default(), 1.0);
+        let lean = layout_at(
+            844.0,
+            390.0,
+            Ctx {
+                hide_turn: true,
+                bare: [true, true],
+                ..Ctx::default()
+            },
+            1.0,
+        );
+        for gone in [Kind::TurnLeft, Kind::TurnRight, Kind::Skill1, Kind::Skill2] {
+            assert!(full.iter().any(|x| x.kind == gone));
+            assert!(!lean.iter().any(|x| x.kind == gone), "{gone:?}");
+        }
+        for x in &lean {
+            let y = full.iter().find(|y| y.kind == x.kind).unwrap();
+            assert_eq!(x.center, y.center, "{:?} stays put", x.kind);
+        }
+        // 0238: 시점 버튼은 오른쪽 위 구석 — 돌리기가 숨어도 그 자리(돌리기는 그 왼쪽).
+        let view = lean.iter().find(|x| x.kind == Kind::View).unwrap();
+        let (pc, _) = pause_spot(844.0, 390.0);
+        assert_eq!(view.center, vec2(844.0 - pc.x, pc.y), "the corner");
+        let tr = full.iter().find(|x| x.kind == Kind::TurnRight).unwrap();
+        assert!(tr.center.x < view.center.x && tr.center.y == view.center.y);
+        assert_eq!(
+            lean.iter().filter(|x| x.kind != Kind::Pause).count(),
+            6,
+            "attack + 4 + view"
+        );
+        // 한 칸만 빈 것은 그 칸만.
+        let one = layout_at(
+            844.0,
+            390.0,
+            Ctx {
+                bare: [false, true],
+                ..Ctx::default()
+            },
+            1.0,
+        );
+        assert!(one.iter().any(|x| x.kind == Kind::Skill1));
+        assert!(!one.iter().any(|x| x.kind == Kind::Skill2));
+    }
+
+    /// 0236: 크기 설정은 엄지 묶음을 공격 쪽 모서리로 모으거나 벌린다 — 위 가장자리 줄(멈춤·시점·돌리기)은 그대로.
+    #[test]
+    fn a_smaller_touch_size_shrinks_the_thumb_cluster_toward_the_corner() {
+        let (w, h) = (844.0, 390.0);
+        let big = layout_at(w, h, Ctx::ALL, 1.0);
+        let small = layout_at(w, h, Ctx::ALL, 0.8);
+        let corner = vec2(w, h);
+        for s in &small {
+            let b = big.iter().find(|b| b.kind == s.kind).unwrap();
+            if matches!(
+                s.kind,
+                Kind::Pause | Kind::View | Kind::TurnLeft | Kind::TurnRight
+            ) {
+                assert_eq!((s.center, s.radius), (b.center, b.radius), "{:?}", s.kind);
+            } else {
+                assert!(s.radius < b.radius, "{:?}", s.kind);
+                assert!(
+                    (s.center - corner).length() < (b.center - corner).length(),
+                    "{:?} moves toward the corner",
+                    s.kind
+                );
+            }
+        }
+    }
+
+    /// 0236: 숄더뷰에서 버튼을 누른 손가락은 탭 범위 안의 떨림은 버리고, 넘은 뒤로는 끈 만큼 시점에 보탠다.
+    #[test]
+    fn a_finger_on_a_button_turns_the_view_only_after_it_leaves_the_tap_slop() {
+        let at = vec2(700.0, 300.0);
+        let mut r = Rider {
+            id: 1,
+            from: at,
+            prev: at,
+            moved: false,
+        };
+        assert_eq!(r.drag(at + vec2(10.0, 0.0)), Vec2::ZERO, "jitter");
+        assert_eq!(r.drag(at + vec2(20.0, 0.0)), Vec2::ZERO, "still inside");
+        assert_eq!(r.drag(at + vec2(30.0, 0.0)), Vec2::ZERO, "crosses: no jump");
+        assert_eq!(
+            r.drag(at + vec2(45.0, 5.0)),
+            vec2(15.0, 5.0),
+            "then follows"
+        );
+        assert_eq!(
+            r.drag(at + vec2(10.0, 5.0)),
+            vec2(-35.0, 0.0),
+            "even back inside"
+        );
     }
 
     /// 오른쪽 버튼 = 카메라가 오른쪽으로 = 땅이 화면에서 시계 방향(0017) — 카메라 쪽 뜻은 camera 시험이 본다.
@@ -2151,5 +2348,33 @@ mod tests {
         assert!(ctx.aims(Kind::Cast));
         assert!(ctx.aims(Kind::Skill1) && !ctx.aims(Kind::Skill2));
         assert!(!ctx.aims(Kind::Dodge) && !ctx.aims(Kind::Ult));
+    }
+
+    /// 2026-11-19: 안전 영역(노치·홈 막대)이 있으면 버튼은 모두 그 안에 — 같은 꼴을 안쪽 칸에 짜서 옮긴다.
+    #[test]
+    fn buttons_stay_inside_the_safe_area() {
+        let (w, h) = (844.0, 390.0);
+        let safe = [47.0, 0.0, 47.0, 21.0];
+        for b in safe_layout(w, h, Ctx::ALL, 1.0, safe) {
+            assert!(
+                b.center.x - b.radius >= safe[0] - 0.5,
+                "{:?} under the left notch",
+                b.kind
+            );
+            assert!(
+                b.center.x + b.radius <= w - safe[2] + 0.5,
+                "{:?} under the right notch",
+                b.kind
+            );
+            assert!(
+                b.center.y + b.radius <= h - safe[3] + 0.5,
+                "{:?} under the home bar",
+                b.kind
+            );
+        }
+        // 안전 영역이 없으면 옛 자리 그대로.
+        let plain = layout_at(w, h, Ctx::ALL, 1.0);
+        let same = safe_layout(w, h, Ctx::ALL, 1.0, [0.0; 4]);
+        assert!(plain.iter().zip(&same).all(|(a, b)| a.center == b.center));
     }
 }

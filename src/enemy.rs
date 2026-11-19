@@ -212,6 +212,9 @@ pub struct Enemy {
     /// 청소자(0120 — 마을의 잔재, 0116 ECO-10): 보고도 덤비지 않고 제자리에서 먹는다(먹으면 체력이 찬다). 맞거나 곁의 동료가 싸우면 싸운다.
     pub docile: bool,
     pub eat_t: f32,
+    /// 청소자가 먹는 자리를 옮기는 시계·몇째 자리(0242 — 사장 설문 2-3 "너무 고정적으로 서 있다").
+    pub graze_t: f32,
+    pub graze_n: u32,
     /// 되풀이(0112): 이번 공격이 되풀이한 둘째 번인가.
     pub repeated: bool,
     /// 박자 변주(0128): 이번 공격의 박자, 연속 공격(켜졌나·다음 간격 차례), 페인트(바꿀 공격), 지연 소리를 냈나, 결정적 굴림, 변주 끔(시험).
@@ -309,6 +312,27 @@ pub struct Out {
 }
 
 impl Enemy {
+    /// 청소자의 먹는 자리 옮기기(0242 — 이끼먹이의 `graze`와 다른 일): 머물기 `GRAZE_STAY`초 → 둘레의 다음 자리(제자리 기준, 몇째 자리로 정해진다 — 같은 판 = 같은 길)로 걷기.
+    fn forage(&mut self, home: Vec3, speed: f32, dt: f32) {
+        use crate::tuning::{GRAZE_R, GRAZE_SPEED, GRAZE_STAY};
+        self.graze_t += dt;
+        if self.graze_t < GRAZE_STAY {
+            return;
+        }
+        let k = (self.graze_n as f32 * 2.399 + home.x * 0.71 + home.z * 0.37).sin_cos();
+        let r = GRAZE_R * (0.4 + 0.6 * (self.graze_n as f32 * 1.7 + home.x).sin().abs());
+        let to = home + vec3(k.0, 0.0, k.1) * r - self.pos;
+        let to = vec3(to.x, 0.0, to.z);
+        let l = to.length();
+        if l <= 0.06 {
+            self.graze_t = 0.0;
+            self.graze_n = self.graze_n.wrapping_add(1);
+            return;
+        }
+        self.turn_toward(to / l, 4.0, dt);
+        self.pos += to / l * (speed * GRAZE_SPEED * dt).min(l);
+    }
+
     pub fn new(kind: Kind, pos: Vec3) -> Enemy {
         let d = species::def(kind);
         Enemy {
@@ -355,6 +379,8 @@ impl Enemy {
             hop_cd: 0.0,
             docile: false,
             eat_t: 0.0,
+            graze_t: 0.0,
+            graze_n: 0,
             repeated: false,
             tempo: Tempo::Normal,
             chain_on: false,
@@ -1103,6 +1129,13 @@ impl Enemy {
                     if self.eat_t >= crate::tuning::EAT_TIME {
                         self.eat_t = 0.0;
                         self.hp = (self.hp + crate::tuning::HP_UNIT).min(self.max_hp);
+                    }
+                }
+                // 0242(사장 설문 2-3 "너무 고정적으로 서 있다"): 청소자는 한 자리에서 먹다가(`GRAZE_STAY`) 제자리 둘레
+                // `GRAZE_R` 안의 다음 자리로 느릿느릿 옮겨 간다 — 싸움 규칙(보고도 덤비지 않음)은 그대로.
+                if self.docile {
+                    if let Some((home, _)) = self.home {
+                        self.forage(home, speed, dt);
                     }
                 }
             }

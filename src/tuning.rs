@@ -75,6 +75,10 @@ pub const PARRY_CHAIN_WIDEN_DEG: f32 = 45.0;
 pub const RIPOSTE_WINDOW: f32 = 0.6;
 /// 락온 대상이 쓰러지면 그 자리에서 이 반지름 안의 가장 가까운 적으로 넘어간다(없으면 풀림, 2026-11-06).
 pub const LOCK_HANDOFF: f32 = 8.0;
+/// 락온 고르기(2026-11-19): 가장 가까운 적. 바라보는 쪽은 덤만 — 옆이면 이만큼(m), 등 뒤면 두 배 멀리 친다.
+pub const LOCK_FACE_M: f32 = 1.5;
+/// 락온 고르기: 보스는 이만큼(m) 가까이 친다(보스 아레나의 졸개보다 보스를).
+pub const LOCK_BOSS_M: f32 = 6.0;
 pub const SEC_LEAN_HZ: f32 = 2.5;
 pub const SEC_LEAN_DAMP: f32 = 0.8;
 /// 늦음(m) → 기울기 변위 배율. 몸은 반대쪽(가속하는 쪽)으로.
@@ -358,6 +362,12 @@ pub const HURL_RING: f32 = 7.0;
 pub const HURL_THROW: f32 = 0.55;
 /// 청소자(0120): 싸움이 없을 때 이 초마다 체력 한 눈금(`HP_UNIT`)을 먹는다.
 pub const EAT_TIME: f32 = 2.5;
+/// 이미 쓰러뜨린 적 있는 엘리트가 다시 쓰러질 때 여벌을 떨굴 확률(0244 — 첫 처치는 확정).
+pub const ELITE_REPEAT_SPARE: f32 = 0.25;
+/// 청소자가 한 자리에서 먹는 초·옮겨 가는 둘레(m)·걷는 빠르기 몫(0242 — 서 있기만 하지 않게).
+pub const GRAZE_STAY: f32 = 3.5;
+pub const GRAZE_R: f32 = 1.2;
+pub const GRAZE_SPEED: f32 = 0.35;
 /// 이끼먹이(0185 — 비적대 생명체): 방랑자가 이만큼(m) 다가오면 도망하고, 제자리에서 이만큼(m)까지만 달아난다(그 밖으로는 옆으로 비킨다),
 /// 도망하는 빠르기 배율(종의 `speed`에), 풀 뜯는 자리를 가끔 옮기는 마디(초)·한 걸음(m).
 pub const GRAZE_FLEE_R: f32 = 5.0;

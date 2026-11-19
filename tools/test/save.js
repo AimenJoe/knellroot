@@ -163,9 +163,10 @@ async function main() {
   // 묻는 창의 커서는 "취소"에서 — 그대로 확인하면 아무것도 지우지 않고 슬롯 창으로.
   await press('Enter'); await page.waitForTimeout(300);
   if ((await record()) === null || !/embers=5\n/.test(await record())) fail('cancel must keep slot 1');
-  // 다시 묻고 왼쪽(덮어쓰기) → 확인.
-  await press('Enter'); await page.waitForTimeout(300);
-  await press('ArrowLeft'); await press('Enter'); await page.waitForTimeout(800);
+  // 다시 묻고 왼쪽(덮어쓰기) → 확인. 느린 CI에서 묻는 창이 뜨기 전에 왼쪽이 들어가 덮어쓰기가 빠진 적이 있다(2026-11-19 run 568) —
+  // 창마다 넉넉히 기다리고, 판이 열려 기록을 적을 때까지 기다린다.
+  await press('Enter'); await page.waitForTimeout(700);
+  await press('ArrowLeft'); await page.waitForTimeout(200); await press('Enter'); await page.waitForTimeout(1500);
   r = await record();
   console.log('덮어쓰기 뒤 슬롯 1:', JSON.stringify(r));
   if (r !== null && /embers=5\n/.test(r)) fail('overwrite must clear slot 1');

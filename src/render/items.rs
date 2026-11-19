@@ -145,7 +145,7 @@ impl Renderer {
     /// `spin` = 몸 방향(라디안), `time` = 숨쉬기 동작 시간. 모델이 없으면 아무것도 그리지 않는다(창이 초상 없이 그대로).
     /// 화면 패스 중에 불러도 된다: 카메라를 바꿨다가 기본 카메라로 돌려놓는다.
     pub fn draw_doll(&mut self, weapon: crate::weapons::Id, dest: Rect, spin: f32, time: f32) {
-        self.draw_doll_anim(weapon, dest, spin, "idle", time);
+        self.draw_doll_anim(weapon, dest, spin, "idle", time, false);
     }
 
     /// 인형이 `anim` 동작의 `time`초 자세로(개발 창의 모션 보기 — 없는 동작이면 서기).
@@ -156,20 +156,32 @@ impl Renderer {
         spin: f32,
         anim: &str,
         time: f32,
+        fit: bool,
     ) {
         let (rt, dest, aspect) = self.fit_doll_rt(false, dest);
         let Some(e) = self.lib.get("wanderer") else {
             return;
         };
+        // 모션 보기(`fit`): 동작 내내 몸이 칸 안에 있게 — 쓰러짐·구르기·내려찍기는 서 있는 틀 밖으로 나가 잘렸다(2026-11-19 점검).
+        let frame = fit.then(|| {
+            *self
+                .doll_fit
+                .entry(anim.to_string())
+                .or_insert_with(|| sweep_box(&e.model, e.pick(&[anim, "idle"])))
+        });
         // 든 무기만 보인다(0051): 다른 무기 부위는 크기 0.
         let mut hide: Vec<(usize, Quat, Vec3)> = Vec::new();
         super::hide_unheld(&e.model, weapon, self.shield, false, &mut hide);
         e.model
             .pose_with(e.pick(&[anim, "idle"]), time, &hide, &mut self.pose);
-        // 키 1.8 몸이 칸에 꽉 차게: 가슴 높이를 보고 조금 위에서.
+        // 키 1.8 몸이 칸에 꽉 차게: 가슴 높이를 보고 조금 위에서. 모션 보기는 동작이 쓸고 가는 틀에 맞춰 물러선다.
+        let (position, target) = match frame {
+            Some(b) => doll_eye(b, aspect),
+            None => (vec3(0.0, 1.35, 4.6), vec3(0.0, 0.85, 0.0)),
+        };
         let cam = Camera3D {
-            position: vec3(0.0, 1.35, 4.6),
-            target: vec3(0.0, 0.85, 0.0),
+            position,
+            target,
             up: Vec3::Y,
             fovy: 0.48,
             aspect: Some(aspect),
@@ -300,4 +312,71 @@ impl Renderer {
         set_default_camera();
         blit(&rt, dest);
     }
+}
+
+/// 모션 보기 인형의 쉬는 틀(아래 끝·위 끝·가로 반지름, m)의 바닥값 — 서기(`idle`)가 쓸고 가는 틀과 합쳐 쉬는 틀이 된다.
+/// 서서 하는 동작은 모두 그 틀로 같은 크기에 보인다(줄을 넘겨도 인형이 커졌다 작아졌다 하지 않게).
+const DOLL_BASE: (f32, f32, f32) = (0.0, 1.45, 0.5);
+/// 몸의 겉에서 칸 가장자리까지의 여유(m) — 든 무기의 날이 몸 밖으로 나간다.
+const DOLL_MARGIN: f32 = 0.3;
+
+/// 동작이 쓸고 가는 틀: 동작을 고르게 스물다섯 자리에서 세워 본 몸(스킨 정점)의 높이 범위와 가로 반지름(돌려 보아도 들게 — 원점 둘레),
+/// 쉬는 틀 `DOLL_BASE`와 합친다. 순수 — 시험.
+pub(crate) fn sweep_box(m: &crate::model::Model, anim: Option<usize>) -> (f32, f32, f32) {
+    let rest = sweep_of(m, m.anim("idle"), DOLL_BASE);
+    let b = sweep_of(m, anim, rest);
+    // 쉬는 틀을 조금(`DOLL_SLACK` — 여유 `DOLL_MARGIN` 안)만 넘는 동작은 쉬는 틀 그대로: 서서 휘두르는 동작이 다 같은 크기로.
+    let over = (rest.0 - b.0).max(b.1 - rest.1).max(b.2 - rest.2);
+    if over <= DOLL_SLACK {
+        rest
+    } else {
+        b
+    }
+}
+
+/// 쉬는 틀을 이만큼(m)까지 넘는 동작은 쉬는 틀로 본다.
+const DOLL_SLACK: f32 = 0.15;
+
+fn sweep_of(
+    m: &crate::model::Model,
+    anim: Option<usize>,
+    from: (f32, f32, f32),
+) -> (f32, f32, f32) {
+    let (mut lo, mut hi, mut r) = from;
+    let d = anim
+        .and_then(|i| m.anims.get(i))
+        .map_or(0.0, |a| a.duration);
+    let (mut pose, mut pos, mut nrm) = (Vec::new(), Vec::new(), Vec::new());
+    // 휜 몸의 정점으로 잰다(뼈 자리만으로는 모자랐다 — 쓰러짐은 몸이 땅 밑 0.3m까지 들어가 칸 아래가 잘렸다, 2026-11-19).
+    // 무기·방패 조각은 든 것만 보이니 빼고 스킨 몸만.
+    let skinned: Vec<usize> = (0..m.nodes.len())
+        .filter(|&i| m.nodes[i].skin.is_some())
+        .collect();
+    for k in 0..=24 {
+        m.pose(anim, d * k as f32 / 24.0, &mut pose);
+        for &i in &skinned {
+            if !m.skin_into(i, &pose, &mut pos, &mut nrm) {
+                continue;
+            }
+            for v in &pos {
+                lo = lo.min(v.y);
+                hi = hi.max(v.y);
+                r = r.max(v.x.hypot(v.z));
+            }
+        }
+    }
+    (lo, hi, r)
+}
+
+/// 틀 `(lo, hi, r)`이 가로세로 비 `aspect`의 칸에 들게 하는 눈과 보는 곳: 틀 가운데를 조금 위에서(서 있는 인형과 같은 숙임).
+/// 깊이 쪽 반지름의 반만큼 더 물러선다(가까운 쪽이 원근으로 커져도 들게).
+pub(crate) fn doll_eye(b: (f32, f32, f32), aspect: f32) -> (Vec3, Vec3) {
+    let (lo, hi, r) = b;
+    let half = 0.24_f32.tan(); // fovy 0.48의 반
+    let need_h = (hi - lo) * 0.5 + DOLL_MARGIN;
+    let need_w = r + DOLL_MARGIN;
+    // 깊이 쪽은 반지름의 반만 — 반지름은 원점 둘레의 가장 먼 점(꼬리 끝)이라 앞쪽이 늘 그만큼 다가오지는 않는다.
+    let d = (need_h / half).max(need_w / (half * aspect.max(0.1))) + r * 0.5;
+    let target = vec3(0.0, (lo + hi) * 0.5, 0.0);
+    (target + vec3(0.0, d * 0.11, d), target)
 }
