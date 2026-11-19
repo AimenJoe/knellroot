@@ -31,5 +31,6 @@
 배포에 쓰면 `assets/LICENSES.md`에 "Meshy로 만든 모델(AI), CC BY 4.0"을 적는다.
 | `raccoon_v3.glb`(+ `_low.glb`·`_low_tex.png`) | 2026-11-19 | 방랑자 v3(0246): 그림 `../ai/knellroot/wanderer_v3a_front.png`(나노바나나 pro) → Meshy Image to 3D **7.1**(`latest`, 30 크레딧, 리메시 3만 삼각형·빛 지움). `_low`는 `meshy_convert.py … 1.4 2800 512` |
 | `raccoon_v3_rig.glb` | 2026-11-19 | 위에 Meshy Rigging API(`tools/art/meshy_rigging.py`, 템플릿 mixamo + 손가락, 5 크레딧) — 뼈 65(`mixamorig:*` 몸통 + 두건·망토·꼬리 `Bone_0xx`). 동작은 v2의 49개를 옮겨 쓴다(0246) |
+| `raccoon_v3_rig_walking.glb`·`_running.glb`·`raccoon_v3_{front,left,back,right}.png` | 2026-11-19 | 리깅 작업이 함께 준 기본 걷기·달리기(게임은 v2 동작을 쓴다 — 견줄 원본) · Image to 3D의 네 방향 미리보기 |
 | `raccoon_v3_rig_anim.glb` | 2026-11-19 | 게임이 쓰는 v3 몸(0246): `blender -b -P tools/art/blender/meshy_rig.py -- raccoon_v3_rig_anim.glb raccoon_v3_rig.glb --retarget raccoon_v2_rig.glb --target 2850` — 줄인 몸(glTF 정점 2,825·텍스처 512) + v2 동작 49개를 뼈 이름(`mixamorig:*` 29개)으로 옮겨 담음. 0 크레딧 |
 
