@@ -1,0 +1,53 @@
+<!doctype html>
+<!-- 옛 주소의 넘김 페이지(0246, nail 0294의 꼴). 게임은 https://knellroot.beardworks.io/play/ 로 옮겼다. 이 주소(knellroot.netlify.app)의
+     브라우저 기록(localStorage "knell.*")을 주소의 # 뒤에 실어 새 주소로 넘긴다 — # 뒤는 서버로 가지 않는다. 새 주소의
+     web/index.html이 받아 넣는다(그 주소에 기록이 이미 있으면 덮지 않는다). 옛 서비스 워커·캐시도 여기서 걷는다. -->
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <link rel="canonical" href="https://knellroot.beardworks.io/play/">
+  <title>Knellroot</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #14100c; color: #e8dcc8; font: 16px/1.6 system-ui, sans-serif; }
+    main { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; padding: 0 16px; }
+    a { color: #f0c070; }
+  </style>
+</head>
+<body>
+  <main>
+    <p>새 주소로 옮겼어요. 기록을 가지고 이동하는 중…<br>Moved to a new address. Taking your save along…</p>
+    <p><a id="go" href="https://knellroot.beardworks.io/play/">knellroot.beardworks.io/play</a></p>
+  </main>
+  <script>
+    (function () {
+      "use strict";
+      var TARGET = "https://knellroot.beardworks.io/play/";
+      var data = {}, n = 0;
+      try {
+        var ls = window.localStorage;
+        for (var i = 0; i < ls.length; i++) {
+          var k = ls.key(i);
+          if (/^knell\./.test(k)) { data[k] = ls.getItem(k); n++; }
+        }
+      } catch (e) {}
+      var url = TARGET;
+      if (n > 0) {
+        var bytes = new TextEncoder().encode(JSON.stringify(data)), bin = "";
+        for (var j = 0; j < bytes.length; j++) bin += String.fromCharCode(bytes[j]);
+        url += "#knell-import=" + btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+      }
+      document.getElementById("go").href = url;
+      var go = function () { location.replace(url); };
+      // 옛 게임의 서비스 워커·캐시를 걷는다(새 판이 다시 캐시에서 뜨지 않게). 못 해도 넘어간다.
+      var sw = navigator.serviceWorker;
+      var clear = Promise.all([
+        sw ? sw.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }) : null,
+        window.caches ? caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }) : null
+      ]).catch(function () {});
+      Promise.race([clear, new Promise(function (r) { setTimeout(r, 1500); })]).then(go, go);
+    })();
+  </script>
+</body>
+</html>

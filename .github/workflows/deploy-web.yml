@@ -1,6 +1,6 @@
 name: deploy-web
 # 웹 빌드·배포(nail deploy-web.yml에서 가져옴, Knellroot 0005·0022). 갈래(nail 0193, v0.1.0부터):
-# - main push: 운영판 — 개발 기능을 뺀 빌드(--no-default-features)를 Netlify 운영 주소에.
+# - main push: 운영판 → Cloudflare `knellroot.beardworks.io/play/`(publish 잡, 0246), 옛 Netlify 운영 주소는 기록 넘김 페이지.
 # - release/** push: 개발판 — 개발 기능(랩·개발 항목)을 켠 빌드를 같은 사이트의 별칭 `dev`(dev--knellroot.netlify.app)에.
 #   운영과 주소(= 브라우저 저장소)가 달라 기록이 섞이지 않는다. 올린 뒤 그 주소의 build.txt가 이 커밋인지 확인한다.
 # - PR: 개발판을 pr-<번호> 별칭에(포크 PR은 시크릿이 없어 건너뜀).
@@ -88,10 +88,23 @@ jobs:
           name: shots
           path: shots
 
+      # 운영 주소 /play 판(0246): 같은 빌드를 /play 기준으로 조립하고(_headers 경로만 다르다) 옛 주소의 넘김 페이지도.
+      # Cloudflare 설정은 토큰 없이 dry-run으로 모든 갈래·PR에서 본다 — 토큰은 운영 환경(web-production, main만)에.
+      - name: Assemble /play and moved page, check Cloudflare config
+        run: |
+          sh tools/web/assemble.sh dist-play "$GITHUB_SHA" "$FLAVOR" /play
+          sh tools/web/assemble.sh dist-moved "$GITHUB_SHA" moved
+          cp tools/web/wrangler.jsonc .
+          npx -y wrangler@4.156.2 deploy --dry-run --outdir /tmp/cf-dry
+      - uses: actions/upload-artifact@v7
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: web-play
+          path: |
+            dist-play
+            dist-moved
+
       # Netlify 시크릿이 설정되기 전에는 아래 단계가 건너뛰어진다(빌드 검증만). KB reference/netlify/deploy-from-ci.md.
-      - name: Deploy production
-        if: env.NETLIFY_SITE_ID != '' && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: npx netlify-cli@23 deploy --dir=dist --prod --message="${{ github.sha }}"
       # 개발판(nail 0193): 운영(--prod)은 건드리지 않는다. 올린 뒤 별칭 주소의 build.txt가 이 커밋인지 확인한다(아니면 실패).
       - name: Deploy dev (alias)
         if: env.NETLIFY_SITE_ID != '' && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')
@@ -111,3 +124,44 @@ jobs:
       - name: Deploy PR preview
         if: env.NETLIFY_SITE_ID != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
         run: npx netlify-cli@23 deploy --dir=dist --alias="pr-${{ github.event.number }}"
+
+  # 운영 배포(0246): 게임은 Cloudflare Worker web-game-knellroot = https://knellroot.beardworks.io/play/, 옛 Netlify 운영 주소는
+  # 기록을 들고 새 주소로 보내는 넘김 페이지(web/moved/). 순서가 중요하다 — 새 주소가 이 커밋을 내주는 것을 본 뒤에만 옛 주소를 바꾼다
+  # (앞이 실패하면 옛 주소의 게임이 그대로 남는다). Cloudflare 토큰은 Environment `web-production`(Deployment branches = main)에만.
+  publish:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: web-production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: tools/web
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: web-play
+          path: .
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Require Cloudflare secrets
+        if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
+        run: echo "::error::web-production 환경에 CLOUDFLARE_API_TOKEN·CLOUDFLARE_ACCOUNT_ID가 없다"; exit 1
+      - name: Deploy production (Cloudflare /play)
+        run: |
+          cp tools/web/wrangler.jsonc .
+          npx -y wrangler@4.156.2 deploy
+          sh tools/web/check_live.sh https://knellroot.beardworks.io/play "$GITHUB_SHA"
+          echo "### 운영판: https://knellroot.beardworks.io/play/ (${GITHUB_SHA:0:7})" >> "$GITHUB_STEP_SUMMARY"
+      - name: Hand over old address (Netlify production → moved page)
+        if: env.NETLIFY_SITE_ID != ''
+        run: |
+          npx netlify-cli@23 deploy --no-build --dir=dist-moved --prod --message="moved ${{ github.sha }}"
+          sh tools/web/check_live.sh https://knellroot.netlify.app "$GITHUB_SHA"
+          echo "### 옛 주소: https://knellroot.netlify.app → 넘김 페이지" >> "$GITHUB_STEP_SUMMARY"

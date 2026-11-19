@@ -103,6 +103,35 @@
       window.knellLoad.watch = function () { window.addEventListener("error", function () { if (live) window.knellLoad.fail(); }); };
     })();
   </script>
+  <script>
+    // 옛 주소에서 넘어온 기록 받기(0246, nail 0294와 같은 꼴). 옛 주소(knellroot.netlify.app)의 넘김 페이지(web/moved/)가 그 주소의
+    // localStorage "knell.*"를 주소의 # 뒤에 실어 이리 보낸다 — # 뒤는 서버로 가지 않는다. 출처가 바뀌면 브라우저 저장소가 따로라
+    // (KB reference/web/pwa-install-fullscreen-orientation.md) 이것 없이는 기록이 사라진 것처럼 보인다.
+    // 이 주소에 기록(knell.save.*)이 이미 있으면 덮지 않는다. 게임이 저장소를 읽기 전(아래 load 전)에 끝나야 해서 동기로 한다.
+    (function () {
+      var m = /^#knell-import=([A-Za-z0-9_-]*)$/.exec(location.hash);
+      if (!m) return;
+      try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+      try {
+        var b64 = m[1].replace(/-/g, "+").replace(/_/g, "/");
+        var bin = atob(b64 + "===".slice(0, (4 - b64.length % 4) % 4));
+        var bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        var data = JSON.parse(new TextDecoder().decode(bytes));
+        var ls = window.localStorage;
+        for (var j = 0; j < ls.length; j++) {
+          if (/^knell\.save\./.test(ls.key(j))) { console.log("knell-import: 이 주소에 기록이 있어 넘어온 기록을 덮지 않는다"); return; }
+        }
+        var n = 0;
+        Object.keys(data).forEach(function (k) {
+          if (/^knell\./.test(k) && typeof data[k] === "string") { ls.setItem(k, data[k]); n++; }
+        });
+        console.log("knell-import: " + n + "칸을 받았다");
+      } catch (e) {
+        console.warn("knell-import: 받지 못했다", e);
+      }
+    })();
+  </script>
   <!-- 레포 복사본(핫링크 금지, nail web/README.md). macroquad 0.4.16과 같은 줄기. -->
   <script src="mq_js_bundle.js"></script>
   <!-- gamepads 크레이트 플러그인(nail에서 두 곳 고친 복사본: 버전 정수, 비표준 매핑 허용). -->
