@@ -73,7 +73,12 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     // 왼쪽 위(가장자리에서 돌지 않는다) → 줄 → 그 줄의 왼쪽 끝 → 칸 → 확인(목록) → 확인(첫 줄).
     const wear = async (p, row, col) => {
       await pick(p, 6, 'ArrowLeft'); await pick(p, 6, 'ArrowUp'); await pick(p, row, 'ArrowDown'); await pick(p, 6, 'ArrowLeft'); await pick(p, col);
-      await p.keyboard.press('Enter'); await p.kit.until('SkillAct', '칸 → 할 일 목록'); await p.keyboard.press('Enter'); await p.kit.until('Skills', '끼우기 → 기술 탭');
+      // 칸의 자리(줄·칸)는 판이 바뀌면 낡는다(0214·0215 뒤 — 옛 시간 기다림 스크립트는 그 칸에서 목록 없이 지나가 끼우지 못한 채 찍고 있었다).
+      // 목록이 안 뜨면 크게 알리고 그 스킬은 끼우지 않은 채 간다(이 스크립트는 눈으로 보는 도구 — 멈추지 않는다).
+      await p.keyboard.press('Enter');
+      try { await p.kit.until('SkillAct', '칸 → 할 일 목록', 3000); } catch (e) { console.warn(`! 끼우기 못 함 — 칸 자리 (${row}, ${col})가 낡았다: ${e.message}`); return false; }
+      await p.keyboard.press('Enter'); await p.kit.until('Skills', '끼우기 → 기술 탭');
+      return true;
     };
     // 다섯째 인자로 스킬 이름을 고르면 그것만(예: … skills cut,embers).
     const names = process.argv[5] ? process.argv[5].split(',') : null;
