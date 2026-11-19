@@ -34,6 +34,12 @@ impl Entry {
     }
 }
 
+impl crate::anim::Clips for Entry {
+    fn dur(&self, name: &str) -> Option<f32> {
+        self.model.anim(name).map(|i| self.duration(Some(i)))
+    }
+}
+
 /// 모델 파일 바이트(이름 = 파일 이름) — 시험이 부위 이름을 확인할 때.
 #[cfg(test)]
 pub fn bytes(name: &str) -> Option<&'static [u8]> {

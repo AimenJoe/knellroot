@@ -79,3 +79,7 @@ ECS·플러그인 같은 다시 짜기는 하지 않는다 — 문제는 시험�
 - **R8b**: `save.rs` — `from_record` 387줄 → 233줄, `to_record` 92줄. 읽기는 묶음마다 함수(`read_tree`·`read_list`·`read_board`·
   `read_shields`·`read_forged`), 쓰기는 메서드(`write_tree`·`write_hands`·`write_board`), 짓고 난 뒤의 옛 기록 옮기기(0105·0117·0158·
   0166·0172)는 `Progress::migrate_after_read` 한 곳. 키 이름·읽는 차례는 그대로 — R8a의 왕복 시험과 옛 기록 시험들이 지킨다.
+- **R9**: `anim.rs` — 방랑자의 "상태 → 동작 이름 차례·시각"을 `render/actors.rs player`(413줄 → 그리기만)에서 뺐다. 프레임을 넘어 남는 것
+  (숨 고리·걸음 시계·겨눈 채 머묾·구른 뒤 일어나기)은 `anim::Memory` 한 칸, 모델은 `anim::Clips`(렌더는 `models::Entry`, 시험은 가짜 목록).
+  돌아가는 `move_anim`·`jump_phase`·동작 상수도 같이 옮겼다. 시험 여섯 — 고친 적 있는 것들: 뒤로 뛰기(0197)·구른 뒤 일어나기(0238)·
+  쏜 뒤 겨눈 채(0197)·활의 제 동작(0231)·튕긴 팔은 걸어도 잠깐(0202)·걸음 시계와 뒷걸음 배(0175·0198).

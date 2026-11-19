@@ -226,222 +226,10 @@ impl Renderer {
         self.lock_fade += (want - self.lock_fade) * (1.0 - (-10.0 * get_frame_time()).exp());
         let a = (0.25 + 0.75 * close) * self.lock_fade;
         if let Some(e) = self.lib.get("wanderer") {
-            let speed = (pl.pos - pl.prev).length() / TICK_DT;
-            let wpn = pl.weapon.def();
-            let hv = wpn.heavy;
-            let combo_anim = |hit: u8| wpn.hit(hit).map_or("attack", |h| h.anim);
-            let owned: [&str; 3];
-            // 서 있는 동안(0153): 숨 고리 + 조용할 때 가끔 몸짓. 조용함 = 락온이 아니고 가까이 깨어 있는 적이 없다.
-            // 월드 시계로 지난 초(멈춤 창·히트스톱 동안 0) — 서 있는 몸짓·걸음 시계·섞기가 같이 쓴다.
-            let wdt = (w.time - self.idle_at).clamp(0.0, 0.1);
-            let idle_pose = {
-                use crate::idle::FIDGETS;
-                let dt = wdt;
-                self.idle_at = w.time;
-                let standing = matches!(pl.state, PState::Idle) && speed <= 0.5;
-                let calm = w.lock.is_none()
-                    && !w.enemies.iter().any(|en| {
-                        en.active() && en.pos.distance(pl.pos) < crate::tuning::IDLE_CALM_RADIUS
-                    });
-                let dur_of = |n: &str| e.model.anim(n).map_or(0.0, |i| e.duration(Some(i)));
-                self.idle
-                    .step(dt, standing, calm, dur_of("idle"), FIDGETS.map(dur_of))
-            };
-            // 쇠뇌를 쏜 뒤 겨눈 채 머무는 시계(0197): 쏘는 동안 차고, 서 있는 동안 줄고, 움직이거나 다른 동작이면 없어진다.
-            let shooting = matches!(pl.state, PState::Cast { .. } | PState::CastCharge { .. })
-                && matches!(wpn.rb, crate::weapons::Rb::Shot { .. });
-            self.aim_hold = if shooting {
-                AIM_HOLD
-            } else if matches!(pl.state, PState::Idle) && speed <= 0.5 {
-                (self.aim_hold - wdt).max(0.0)
-            } else {
-                0.0
-            };
-            // 구른 뒤 일어나기(0238): 앞구르기가 끝나 조용한 상태로 들어가면 `dodge_rise`를 잇는다(공격·다시 회피면 바로 그 동작).
-            let roll_now = matches!(pl.state, PState::Dodge { dir, .. } if dir.dot(pl.facing_dir()) >= BACKSTEP_DOT);
-            self.rise = crate::gait::rise_after_roll(
-                self.rise,
-                self.was_roll,
-                matches!(pl.state, PState::Idle),
-                wdt,
-            );
-            self.was_roll = roll_now;
-            let rise = self.rise.filter(|_| e.model.anim("dodge_rise").is_some());
-            // 활(0231)은 활쏘기 원본의 제 동작 — 옆으로 서서 왼손의 활로 겨눈다(없는 모델이면 쇠뇌의 것).
-            let bow = wpn.id == crate::weapons::Id::Bow;
-            let (shoot, draw): (&[&str], &[&str]) = if bow {
-                (
-                    &["bow_shoot", "xbow_shoot", "cast", "attack"],
-                    &["bow_draw", "xbow_charge", "bow_shoot", "cast"],
-                )
-            } else {
-                (
-                    &["xbow_shoot", "cast", "attack"],
-                    &["xbow_charge", "xbow_shoot", "cast"],
-                )
-            };
-            let (names, at): (&[&str], f32) = match pl.state {
-                // 콤보(0051): 무기 표의 타마다 동작(없는 모델이면 평타).
-                // 몰아치기(0158 G2) 동안은 평타의 시계가 빨라진다 — 동작도 같은 배로 돌린다.
-                // 동작 시계는 타의 판정 시작에 동작이 만든 판정 시작이 오게(0195 — 맨손·대시처럼 남의 동작을 빌린 타).
-                PState::Attack { t: e, hit, .. } => {
-                    owned = [combo_anim(hit), "attack", "attack"];
-                    let s0 = crate::world::hit_times(t, wpn, hit).0;
-                    let rate = crate::weapons::clip_rate(combo_anim(hit), s0);
-                    (&owned, e * w.flurry_rate() * rate)
-                }
-                // 강공격(0030): 모으는 동안 칼을 뒤로 끌어 든 자세(없는 모델이면 공격 첫 자세), 떼면 크게 내려친다 — 무기마다(0051).
-                PState::Charging { t: e } => {
-                    owned = [hv.map_or("charge", |h| h.anim_charge), "charge", "attack"];
-                    (&owned, e)
-                }
-                PState::Heavy { t: e, .. } => {
-                    let anim = hv.map_or("heavy", |h| h.anim_heavy);
-                    owned = [anim, "heavy", "attack"];
-                    let s0 = crate::world::heavy_times(t, wpn).0;
-                    (&owned, e * crate::weapons::clip_rate(anim, s0))
-                }
-                // 수류탄(0051): 오른손으로 아래에서 위로 던진다.
-                PState::Throw { t: e, .. } => (&["throw", "cast", "attack"], e),
-                // 등잔(0031): 왼손으로 들어 입에 대고(들기 = `flask.raise s`) 내린다.
-                PState::Drink { t: e, .. } => (&["drink", "idle"], e),
-                // 0197: 몸이 보는 쪽의 반대로 피하면 뒤로 뛰기(구르기는 앞으로 구르는 동작이다).
-                PState::Dodge { t: e, dir } if dir.dot(pl.facing_dir()) < BACKSTEP_DOT => {
-                    (&["dodge_back", "dodge", "walk"], e)
-                }
-                PState::Dodge { t: e, .. } => (&["dodge", "walk"], e),
-                PState::Hurt { t: e, .. } => (&["hurt", "idle"], e),
-                PState::Recoil { t: e } => (&["hurt", "idle"], e),
-                // 0034: 도는 쪽으로 윗몸이 먼저 감긴다(오른쪽 = 요가 준다).
-                PState::Turn { t: e, from, to } => (
-                    if crate::world::turn_is_right(from, to) {
-                        &["turn_r", "turn", "idle"]
-                    } else {
-                        &["turn_l", "turn", "idle"]
-                    },
-                    e,
-                ),
-                PState::Parry { t: e } => (&["parry", "attack"], e),
-                // 방패 막기(0223): 방패를 내민 자리에 머문다(`block` — 끝 자세에서 멈춘다).
-                PState::Block { t: e } => (&["block", "parry", "attack"], e),
-                // 마법(0048): 손을 앞으로 내미는 자세(전용 동작이 생기기 전엔 패링 자세).
-                PState::Cast { t: e, .. } if matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) => {
-                    (shoot, e)
-                }
-                PState::Cast { t: e, .. } => (&["cast", "parry", "attack"], e),
-                // 원거리 강공격 모으기(0056): 쇠뇌는 어깨에 대고 시위를 당긴 채, 마법은 두 손을 모아 빛을 키우는 자세를 쥔다.
-                PState::CastCharge { t: e }
-                    if matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) =>
-                {
-                    (draw, e)
-                }
-                PState::CastCharge { t: e } => (&["cast_charge", "cast", "parry"], e),
-                // 공중(0027): 방랑자의 jump·plunge·land 동작(없는 모델이면 회피·공격 자세로).
-                // 공중 RB(0111): 떠 있는 동안 쏘는 자세(쇠뇌는 겨누고 쏘기, 마법은 손을 내밂).
-                // 0196: 떠 있는 동안 쏜 순간(놓는 자리)부터 흐른다 — 예전엔 한 장을 세워 두었다.
-                PState::Jump { plunge: false, .. }
-                    if pl.ranged.hover > 0.0
-                        && matches!(wpn.rb, crate::weapons::Rb::Shot { .. }) =>
-                {
-                    (
-                        shoot,
-                        XBOW_RELEASE + (crate::tuning::AIR_SHOT_HOVER - pl.ranged.hover),
-                    )
-                }
-                PState::Jump { plunge: false, .. } if pl.ranged.hover > 0.0 => (
-                    &["cast", "jump"],
-                    CAST_RELEASE + (crate::tuning::AIR_SHOT_HOVER - pl.ranged.hover),
-                ),
-                // 점프(0196): 위 속도로 동작의 자리를 고른다 — 오르는 동안 앞 반, 꼭대기 = 가운데, 내려오는 동안 뒤 반(턱에서 떨어지면
-                // 꼭대기에서 시작). 예전엔 꼭대기 한 장을 세워 두었다.
-                PState::Jump { plunge: false, .. } => (
-                    &["jump", "dodge", "idle"],
-                    JUMP_CLIP * jump_phase(pl.vy, crate::tuning::jump_ballistics(t).0),
-                ),
-                // 내려찍기: 높이로 동작의 자리를 고른다 — 꼭대기에서 칼을 들고, 땅에 가까울수록 꽂는 자세로(예전엔 두 장을 바꿔 끼웠다).
-                PState::Jump { plunge: true, .. } => (
-                    &["plunge", "attack"],
-                    PLUNGE_STRIKE * plunge_phase(pl.air, t[crate::tuning::P::JumpHeight]),
-                ),
-                // 0202: 내려찍기로 내려앉으면 칼을 꽂은 웅크림에서 일어난다(예전엔 보통 착지라 내려찍은 자세가 한 틱뿐이었다).
-                PState::Land {
-                    t: e,
-                    dur,
-                    plunge: true,
-                } => (
-                    &["plunge_land", "land", "idle"],
-                    PLUNGE_LAND_CLIP * e / dur.max(1e-3),
-                ),
-                PState::Land { t: e, dur, .. } => {
-                    (&["land", "idle"], LAND_CLIP * e / dur.max(1e-3))
-                }
-                // 스킬·큰 기술(0151 → 0158 G2): 전용 동작(`sk_*`·`ult_*`)이 모델에 있으면 그것을 — 상태의 구간(시동·이어짐·후딜)을
-                // 동작의 구간에 맞춘다(`Clip::at`: 단·고르기가 길이를 바꿔도 판정의 순간에 그 자세). 없으면 빌려 쓰던 동작(표의 `anim`).
-                PState::Skill { id, t: el, .. } => {
-                    let eff = w.skill_eff(id);
-                    let sk = eff.skill;
-                    if e.model.anim(sk.clip.name).is_some() {
-                        owned = [sk.clip.name, sk.anim, "attack"];
-                        let at = sk
-                            .clip
-                            .at(el, sk.startup, eff.active(), clip_period(&sk.form));
-                        (&owned, at)
-                    } else {
-                        owned = [sk.anim, "heavy", "attack"];
-                        (&owned, el)
-                    }
-                }
-                PState::Ult { kind, t: el, .. } => {
-                    let clip = kind.clip();
-                    if e.model.anim(clip.name).is_some() {
-                        // 세계 멈춤 동안은 상태 시계가 0에 머문다 — 멈춤이 지난 몫으로 시동 구간을 돌린다.
-                        let (freeze, ..) = kind.times();
-                        let frozen = 1.0 - (w.hitstop / freeze.max(1e-3)).clamp(0.0, 1.0);
-                        owned = [clip.name, kind.anim(), "attack"];
-                        (&owned, kind.clip_at(el, frozen))
-                    } else {
-                        owned = [kind.anim(), "heavy", "attack"];
-                        (&owned, el)
-                    }
-                }
-                // 달리기(0076): `run` 동작이 없으면 걷기를 빠르게(발 구르기가 속도를 따라간다).
-                // 걸음 시계는 쌓는다(0175 — `w.time × 빠르기`는 가속하는 동안 걸음 주기를 건너뛰었다, `gait.rs`).
-                // 패링이 튕긴 뒤(0199 → 0202): 민 자리에서 거둔다 — 걷기보다 먼저(튕기자마자 걸으면 밀기가 사라져 "방패 동작이
-                // 안 보인다"). 튕기면 월드가 곧장 서기로 돌린다(반격하라고), 그 짧은 동안만.
-                PState::Idle if rise.is_some() => (&["dodge_rise", "idle"], rise.unwrap_or(0.0)),
-                PState::Idle
-                    if pl.parry.since < PARRY_PUSH_FIRM
-                        || (pl.parry.since < PARRY_PUSH_CLIP && speed <= 0.5) =>
-                {
-                    (&["parry_push", "idle"], pl.parry.since)
-                }
-                PState::Idle if pl.running && speed > 0.5 => (
-                    &["run", "walk"],
-                    self.gait.advance(wdt, true, (speed / 4.0).clamp(0.6, 2.2)),
-                ),
-                PState::Idle if speed > 0.5 => {
-                    let (names, _) = move_anim(pl.pos - pl.prev, pl.facing_dir(), pl.faces_away);
-                    let k = if names[0] == "walk_back" {
-                        WALK_BACK_RATE
-                    } else {
-                        1.0
-                    };
-                    (
-                        names,
-                        self.gait
-                            .advance(wdt, true, (speed / 4.0).clamp(0.6, 1.6) * k),
-                    )
-                }
-                // 쇠뇌를 쏜 뒤(0197): 서 있으면 잠깐 겨눈 채(쏘기의 끝 자세).
-                PState::Idle if self.aim_hold > 0.0 => (shoot, XBOW_HOLD_AT),
-                PState::Idle => match idle_pose {
-                    crate::idle::Pose::Loop(t) => (&["idle"], t),
-                    crate::idle::Pose::Fidget(i, t) => {
-                        owned = [crate::idle::FIDGETS[i], "idle", "idle"];
-                        (&owned, t)
-                    }
-                },
-            };
+            // 상태 → 동작 이름·시각은 렌더 밖의 순수한 셈(0251 R9 — `anim.rs`, 시험).
+            let pick = self.anim.pick(w, t, e);
+            let wdt = self.anim.dt;
+            let (names, at) = (pick.names(), pick.at);
             // 장면의 자세(0171 깨어남 · 0175 쓰러짐): 장면의 시계가 그 동작을 튼다. 그 동작이 없는 모델이면 상태대로.
             let scene_clip: [&str; 1];
             let (names, at): (&[&str], f32) = match scene {
@@ -453,10 +241,7 @@ impl Renderer {
             };
             let wake = scene;
             let anim = e.pick(names);
-            if !(matches!(pl.state, PState::Idle) && speed > 0.5) {
-                self.gait.advance(wdt, false, 0.0);
-            }
-            let looped = matches!(pl.state, PState::Idle) && wake.is_none();
+            let looped = pick.looped && wake.is_none();
             let dur = e.duration(anim);
             let at = if looped { at } else { at.min(dur * 0.999) };
             // 키프레임 동작 위에 2차 동작(0039): 꼬리·머리가 늦게 따라오고 몸은 가속하는 쪽으로, 점프·착지에 늘어나고 찌그러진다.
@@ -476,8 +261,8 @@ impl Renderer {
             let away = w.weapon_away();
             super::hide_unheld(&e.model, pl.weapon, pl.shield, away, &mut self.sec_extra);
             // 락온 중 옆·비스듬히 걸을 때(0197): 다리(엉덩이)를 가는 쪽으로 돌리고 윗몸(첫 등뼈)을 되돌려 과녁을 본다 — 부드럽게 따라간다.
-            let leg_want = if matches!(pl.state, PState::Idle) && speed > 0.5 {
-                move_anim(pl.pos - pl.prev, pl.facing_dir(), pl.faces_away).1
+            let leg_want = if crate::anim::walking(w) {
+                crate::anim::move_anim(pl.pos - pl.prev, pl.facing_dir(), pl.faces_away).1
             } else {
                 0.0
             };
@@ -876,46 +661,8 @@ fn windup_hold(en: &Enemy) -> Option<f32> {
     (t >= start).then_some(t - start)
 }
 
-/// 걷는 동작 고르기(0034 → 0235): 몸이 걷는 쪽이 아닌 것을 볼 때(락온 · 쥔 조준 · 막기 — `Player::faces_away`)는 걷는 쪽이 옆이면 게걸음(`strafe_l`·`strafe_r`), 뒤면 뒷걸음.
-/// 아니면 늘 앞으로 걷는다(몸이 걷는 쪽을 본다). 없는 모델이면 `walk`로. 수류탄을 겨눈 채 뒤로 걸으면 앞으로 걷는 동작이
-/// 뒤로 미끄러졌다(사장 "수류탄 조준 중에 뒤로 걷는 모션 이상하다", 0235) — 락온만 보던 것을 `faces_away`로.
-pub fn move_anim(step: Vec3, facing: Vec3, faces_away: bool) -> (&'static [&'static str], f32) {
-    if !faces_away {
-        return (&["walk"], 0.0);
-    }
-    let v = vec3(step.x, 0.0, step.z);
-    let fwd = v.dot(facing);
-    // 오른쪽 = 앞 × 위(카메라·입력과 같은 축). 가는 쪽이 바라보는 쪽에서 오른쪽으로 몇 도인가.
-    let side = v.dot(facing.cross(Vec3::Y));
-    let rho = side.atan2(fwd);
-    // 0197: 게걸음 동작이 없다 — 앞으로 걷는 동작의 다리(엉덩이)를 가는 쪽으로 돌리고 윗몸은 과녁에 둔다(`LEG_TURN_MAX`까지).
-    // 뒤쪽 반은 뒷걸음의 다리를 가는 쪽의 반대로. 모델 공간의 돌림(+ = 왼쪽) = −(오른쪽으로 간 각).
-    if rho.abs() <= BACK_FROM.to_radians() {
-        (&["walk"], -rho.clamp(-LEG_TURN_MAX, LEG_TURN_MAX))
-    } else {
-        let back = (-side).atan2(-fwd);
-        (
-            &["walk_back", "walk"],
-            -back.clamp(-LEG_TURN_MAX, LEG_TURN_MAX),
-        )
-    }
-}
-
-/// 락온 중 이 각(도)보다 뒤로 가면 뒷걸음(0197).
-const BACK_FROM: f32 = 110.0;
-/// 다리(엉덩이)를 가는 쪽으로 돌리는 가장 큰 각(라디안, 0197) — 넘으면 윗몸이 너무 비틀린다.
-pub(crate) const LEG_TURN_MAX: f32 = 1.4;
 /// 다리 돌림이 따라가는 빠르기(1/초).
 const LEG_TURN_RATE: f32 = 12.0;
-/// 뒷걸음의 걸음 시계 배(0197 → 0198): 싸움 자세 뒷걸음(Walk_Fight_Back)은 보폭이 작고 주기가 길어(발 빠르기 0.32 vs 걷기 0.90),
-/// 같은 빠르기로 돌리면 발이 땅을 미끄러진다 — 발이 가는 빠르기를 걷기와 맞춘 배(시험 `walk_back_steps_keep_pace_with_the_ground`).
-pub(crate) const WALK_BACK_RATE: f32 = 2.8;
-/// 이만큼(안쪽 곱)보다 뒤로 피하면 뒤로 뛰기(0197 — 몸이 보는 쪽의 반대로 가는 회피: 입력 없이 누름·락온 뒷걸음).
-pub(crate) const BACKSTEP_DOT: f32 = -0.5;
-/// 쇠뇌를 쏜 뒤 서 있으면 이만큼(초) 겨눈 채 머문다(0197 — 쏠 때마다 정면 ↔ 옆으로 홱 돌지 않게, 끝나면 `AIM_BLEND`로 천천히 내린다).
-pub(crate) const AIM_HOLD: f32 = 0.7;
-/// 겨눈 채 머무는 자세의 시각(쏘기 동작의 끝 바로 앞).
-const XBOW_HOLD_AT: f32 = 0.235;
 /// 겨눈 자세에서 서기로 섞는 초(보통은 `gait::BLEND`).
 const AIM_BLEND: f32 = 0.35;
 
@@ -963,31 +710,8 @@ pub(super) const BLADE_SPIN: f32 = 26.0;
 
 const BLADE_SCALE: f32 = 1.25;
 
-/// 스킬 동작의 이어짐 구간을 되풀이하는 주기(0158 G2): 휘돌이는 바퀴마다, 가로지르기는 길마다(되돌아 베기의 둘째 길).
-fn clip_period(form: &crate::skills::Form) -> Option<f32> {
-    match *form {
-        crate::skills::Form::Ring { gap, .. } => Some(gap),
-        crate::skills::Form::Lane { time, .. } => Some(time),
-        // 제비걸음(0214): 걸음마다 찌름을 되풀이한다.
-        crate::skills::Form::Hop { gap, .. } => Some(gap),
-        _ => None,
-    }
-}
-
-/// 점프 동작의 길이(초, `wanderer_skin.py` — 뜨는 순간부터 닿는 순간까지).
-pub(crate) const JUMP_CLIP: f32 = 0.5;
-/// 닿은 뒤 무릎을 받는 동작의 길이(초) — 착지 상태의 길이에 맞춰 돈다.
-pub(crate) const LAND_CLIP: f32 = 0.15;
-/// 내려찍기 동작에서 칼이 땅에 닿는 자리(초).
-pub(crate) const PLUNGE_STRIKE: f32 = 0.29;
-/// 내려찍고 내려앉은 뒤 웅크렸다 일어나는 동작의 길이(초, 0202) — 착지 상태(`plunge.land s`)에 맞춰 돈다.
-pub(crate) const PLUNGE_LAND_CLIP: f32 = 0.35;
 /// 줍기·상자 열기 몸짓의 길이(초, 0196 — 앱이 이만큼 흐르면 그친다).
 pub const PICKUP_CLIP: f32 = 0.9;
-/// 패링 성공의 밀쳐내기 길이(초, 0199).
-pub(crate) const PARRY_PUSH_CLIP: f32 = 0.4;
-/// 튕긴 뒤 이만큼(초)은 걸어도 거두는 팔을 보인다(0202) — 그 뒤로는 서 있을 때만.
-pub(crate) const PARRY_PUSH_FIRM: f32 = 0.2;
 /// 장치 당기기 몸짓의 길이(초, 0197).
 pub const PULL_CLIP: f32 = 0.65;
 
@@ -998,23 +722,4 @@ pub fn gesture_len(name: &str) -> f32 {
         "pull" => PULL_CLIP,
         _ => 0.0,
     }
-}
-/// 쇠뇌 쏘기·마법 동작의 놓는 자리(초) — 떠 있는 동안 쏠 때 여기서부터.
-pub(crate) const XBOW_RELEASE: f32 = 0.058;
-pub(crate) const CAST_RELEASE: f32 = 0.075;
-
-/// 점프 동작의 자리(0..1, 0196): 오르는 동안 0 → 0.5(꼭대기), 내려오는 동안 0.5 → 1(처음 위 속도만큼 빨라지면 끝 — 다리를 내린 자세).
-pub(crate) fn jump_phase(vy: f32, v0: f32) -> f32 {
-    let v0 = v0.max(1e-3);
-    if vy >= 0.0 {
-        0.5 * (1.0 - vy / v0)
-    } else {
-        0.5 + 0.5 * (-vy / v0)
-    }
-    .clamp(0.0, 1.0)
-}
-
-/// 내려찍기 동작의 자리(0..1, 0196): 점프 높이에서 0(칼을 든다) → 땅에서 1(꽂는다).
-pub(crate) fn plunge_phase(air: f32, height: f32) -> f32 {
-    (1.0 - air / height.max(1e-3)).clamp(0.0, 1.0)
 }

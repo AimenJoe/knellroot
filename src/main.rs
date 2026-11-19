@@ -11,6 +11,7 @@
     windows_subsystem = "windows"
 )]
 
+mod anim;
 mod app;
 mod backdrop;
 mod balance;

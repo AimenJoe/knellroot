@@ -13,9 +13,7 @@ use crate::models::{Entry, Library};
 use crate::scenery::Scenery;
 use crate::secondary::{Rig, Secondary};
 use crate::stage::{Light, Phase, StageRun};
-use crate::tuning::{
-    Tuning, INTERNAL_H, INTERNAL_W, PLAYER_HEIGHT, PLAYER_RADIUS, TICK_DT, UI_REF_H,
-};
+use crate::tuning::{Tuning, INTERNAL_H, INTERNAL_W, PLAYER_HEIGHT, PLAYER_RADIUS, UI_REF_H};
 use crate::world::{Aabb, Atk, EState, Enemy, PState, TeleShape, World};
 
 mod actors;
@@ -99,22 +97,15 @@ pub struct Renderer {
     batch: Batch,
     /// 방랑자의 2차 동작 층(0039): 상태·부위(처음 그릴 때 모델에서 찾음)·이번 프레임 덧붙이기.
     sec: Secondary,
-    /// 서 있는 동안의 몸짓(0153)과 그 시계의 기준(월드 시간 — 멈춤 창 아래에서는 같이 선다).
-    idle: crate::idle::Idle,
-    idle_at: f32,
-    /// 걸음 시계·동작 섞기(0175): 걷기 동작의 시각(쌓는다), 지난 프레임의 동작, 보여 준 자세, 섞기 시작할 때의 자세와 남은 초.
-    gait: crate::gait::Gait,
+    /// 방랑자의 동작 고르기가 프레임을 넘어 쥐는 것(숨 고리·걸음 시계·겨눈 채 머묾·구른 뒤 일어나기 — 0251 R9 `anim.rs`).
+    anim: crate::anim::Memory,
+    /// 동작 섞기(0175): 지난 프레임의 동작, 보여 준 자세, 섞기 시작할 때의 자세와 남은 초.
     shown_anim: Option<usize>,
     shown: Vec<(Vec3, Quat, Vec3)>,
     blend_from: Vec<(Vec3, Quat, Vec3)>,
     blend_left: f32,
     /// 이번 섞기의 길이(초 — 겨눈 자세에서 내릴 때는 길다, 0197).
     blend_len: f32,
-    /// 쇠뇌를 쏜 뒤 겨눈 채 머무는 남은 초(0197).
-    aim_hold: f32,
-    /// 구른 뒤 일어나기(0238 — `gait::rise_after_roll`): 지난 프레임이 앞구르기였나, 일어나기의 시각.
-    was_roll: bool,
-    rise: Option<f32>,
     /// 락온 중 걸을 때 다리를 가는 쪽으로 돌린 각(라디안, 부드럽게 따라간다, 0197).
     leg_turn: f32,
     sec_rig: Option<Rig>,
@@ -241,17 +232,12 @@ impl Renderer {
             pose: Vec::new(),
             batch: Batch::default(),
             sec: Secondary::default(),
-            idle: crate::idle::Idle::default(),
-            idle_at: 0.0,
-            gait: Default::default(),
+            anim: Default::default(),
             shown_anim: None,
             shown: Vec::new(),
             blend_from: Vec::new(),
             blend_left: 0.0,
             blend_len: crate::gait::BLEND,
-            aim_hold: 0.0,
-            was_roll: false,
-            rise: None,
             leg_turn: 0.0,
             sec_rig: None,
             sec_extra: Vec::new(),
@@ -530,42 +516,3 @@ impl Renderer {
 
 /// 이 높이(m)에서 그림자가 가장 작다.
 const JUMP_SHADOW_H: f32 = 1.2;
-
-#[cfg(test)]
-mod move_anim_tests {
-    use super::*;
-
-    /// 0034 → 0197: 락온 중 옆으로 걸으면 걷기의 다리를 가는 쪽으로 돌리고(+ = 모델의 왼쪽, 한도 `LEG_TURN_MAX`), 뒤로 걸으면 뒷걸음
-    /// (다리는 가는 쪽의 반대), 락온이 아니면 늘 걷기·돌림 없음.
-    #[test]
-    fn locked_on_sideways_steps_turn_the_legs_and_backwards_walks_back() {
-        let facing = vec3(0.0, 0.0, -1.0); // 북을 본다 → 오른쪽 = +x
-        let (n, a) = move_anim(vec3(1.0, 0.0, 0.0), facing, true);
-        assert_eq!(n[0], "walk");
-        assert!(
-            (a + LEG_TURN_MAX).abs() < 1e-5,
-            "right: legs turn right (model −) to the limit: {a}"
-        );
-        let (n, a) = move_anim(vec3(-1.0, 0.0, -1.0), facing, true);
-        assert_eq!(n[0], "walk");
-        assert!(
-            (a - std::f32::consts::FRAC_PI_4).abs() < 1e-4,
-            "front-left 45°: {a}"
-        );
-        let (n, a) = move_anim(vec3(0.0, 0.0, 1.0), facing, true);
-        assert!(n[0] == "walk_back" && a.abs() < 1e-5);
-        let (n, a) = move_anim(vec3(0.5, 0.0, 1.0), facing, true);
-        assert!(
-            n[0] == "walk_back" && a > 0.0,
-            "back-right: legs turn so their back points there: {a}"
-        );
-        assert_eq!(
-            move_anim(vec3(0.0, 0.0, -1.0), facing, true),
-            (&["walk"][..], 0.0)
-        );
-        assert_eq!(
-            move_anim(vec3(1.0, 0.0, 0.0), facing, false),
-            (&["walk"][..], 0.0)
-        );
-    }
-}
