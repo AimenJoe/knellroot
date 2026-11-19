@@ -84,6 +84,8 @@ pub struct Renderer {
     /// 내부 해상도 줄 수·2배로 그려 줄이기(0190 — 연구소 `render.rows`·`render.ssaa`, 프레임 들머리에 넣는다).
     rows_target: f32,
     ssaa: bool,
+    /// 메뉴 그림(인형·아이템·도감 생명체)을 화면의 물리 픽셀 × 2로 그려 줄인다(0250 — 연구소 `render.menu fine`, 끄면 게임 도트).
+    menu_fine: bool,
     /// 2배로 그렸을 때 줄여 옮기는 반 크기 타깃.
     half: Option<RenderTarget>,
     /// 시나리오 상자마다 지금 진하기(1 = 불투명). 가리면 부드럽게 옅어지고 풀리면 돌아온다(0008).
@@ -152,7 +154,7 @@ pub struct Renderer {
     /// 도감 생명체(0130).
     creature_rt: Option<RenderTarget>,
     /// 아이템 그림(0068): 아이콘은 아이템마다 한 번 찍어 둔 타깃, 고른 것 하나는 도는 큰 타깃.
-    icons: std::collections::HashMap<&'static str, RenderTarget>,
+    icons: std::collections::HashMap<(&'static str, u32), RenderTarget>,
     item_rt: Option<RenderTarget>,
     /// 지역 사이 전환의 굴(0174) — 전환마다 한 번 짓는다.
     shaft: Option<descent::ShaftMesh>,
@@ -161,6 +163,8 @@ pub struct Renderer {
 /// 아이템 아이콘·도는 그림의 타깃 크기(내부 px, 정사각).
 pub const ICON_PX: u32 = 32;
 pub const ITEM_PX: u32 = 56;
+/// 메뉴 그림 타깃 한 변의 상한(0250 — 4K 화면의 큰 인형이 타깃을 끝없이 키우지 않게).
+pub const MENU_MAX_PX: u32 = 1536;
 
 /// 인형 렌더 타깃 크기(내부 px) — 게임 화면과 같은 도트 굵기로 보이게 작게 굽고 정수배로 늘린다.
 pub const DOLL_W: u32 = 64;
@@ -228,6 +232,7 @@ impl Renderer {
             rt_size: (INTERNAL_W, INTERNAL_H, 1),
             rows_target: INTERNAL_H as f32,
             ssaa: false,
+            menu_fine: true,
             half: None,
             fade: Vec::new(),
             lib: Library::default(),
@@ -452,6 +457,7 @@ impl Renderer {
         self.batch.caster_idx.clear();
         self.rows_target = t[crate::tuning::P::RenderRows];
         self.ssaa = t[crate::tuning::P::RenderSsaa] >= 0.5;
+        self.menu_fine = t[crate::tuning::P::RenderMenuFine] >= 0.5;
         let (iw, ih) = self.fit_screen();
         let aspect = iw as f32 / ih as f32;
         let c3 = cam.to_camera3d(self.rt.clone(), aspect);

@@ -605,6 +605,10 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("render.resident 0off 1on", "지형 GPU 상주(0끔 1켬)"),
     ("render.rows", "내부 해상도 줄 수"),
     ("render.ssaa 0off 1on", "2배로 그려 줄이기(0끔 1켬)"),
+    (
+        "render.menu fine 0off 1on",
+        "메뉴 그림 화면 해상도(0끔 = 게임 도트 1켬)",
+    ),
     ("turn.wobble in deg", "땅 돌리기 시작 휘청(도)"),
     ("turn.wobble out deg", "땅 돌리기 끝 휘청(도)"),
     ("turn.start stagger s", "땅 돌리기 시작 적 휘청(초)"),

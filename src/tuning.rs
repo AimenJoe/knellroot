@@ -572,6 +572,7 @@ pub enum P {
     RenderResident,
     RenderRows,
     RenderSsaa,
+    RenderMenuFine,
     TurnWobbleIn,
     TurnWobbleOut,
     TurnStartStagger,
@@ -628,7 +629,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 168] = [
+pub const SPECS: [Spec; 169] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1786,6 +1787,15 @@ pub const SPECS: [Spec; 168] = [
         RenderSsaa,
         "render.ssaa 0off 1on",
         "RENDER_SSAA",
+        1.0,
+        0.0,
+        1.0,
+        1.0
+    ),
+    spec!(
+        RenderMenuFine,
+        "render.menu fine 0off 1on",
+        "RENDER_MENU_FINE",
         1.0,
         0.0,
         1.0,
