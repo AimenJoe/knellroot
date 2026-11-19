@@ -1,13 +1,23 @@
 #!/usr/bin/env sh
-# 웹 배포 폴더 조립: sh tools/web/assemble.sh dist [빌드 아이디] [release|dev]
+# 웹 배포 폴더 조립: sh tools/web/assemble.sh dist [빌드 아이디] [release|dev|moved] [기준 경로]
 # web/의 페이지·JS·_headers·매니페스트·아이콘 + knellroot.wasm + build.txt(어느 커밋이 올라갔는지 — 배포 확인용), sw.js에 빌드 아이디(0062).
 # dev(개발판 별칭)면 제목에 "(dev)"를 붙이고 검색에 안 잡히게 noindex.
+# 기준 경로(예 /play, 0246): 하위 경로에서 낼 때 _headers의 경로 앞에 붙인다(Cloudflare Workers 정적 파일의 assets.base_path는
+# _headers에 공개 경로 전체를 쓴다). 게임 파일은 서로 상대 경로라 그대로.
+# moved(0246): 게임이 아니라 옛 주소(knellroot.netlify.app)에 둘 기록 넘김 페이지(web/moved/) + build.txt.
 set -e
 out="${1:-dist}"
 build="${2:-local}"
 flavor="${3:-dev}"
+base="${4:-}"
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 rm -rf "$out"; mkdir -p "$out"
+if [ "$flavor" = "moved" ]; then
+  cp -r "$root"/web/moved/. "$out"/
+  echo "$build" > "$out"/build.txt
+  echo "assembled moved page $out ($build)"
+  exit 0
+fi
 cp "$root"/web/index.html "$root"/web/*.js "$root"/web/_headers "$root"/web/manifest.webmanifest "$out"/
 cp -r "$root"/web/icons "$out"/icons
 cp "$root"/target/wasm32-unknown-unknown/release/knellroot.wasm "$out"/
@@ -20,4 +30,9 @@ if [ "$flavor" = "dev" ]; then
   # 설치 이름도 따로 — 운영과 나란히 깔린다(주소가 달라 기록도 따로).
   sed -i -e 's|"name": "Knellroot"|"name": "Knellroot (dev)"|' -e 's|"short_name": "Knellroot"|"short_name": "Knell dev"|' "$out"/manifest.webmanifest
 fi
-echo "assembled $out ($build)"
+if [ -n "$base" ]; then
+  case "$base" in /*) ;; *) echo "기준 경로는 /로 시작한다: $base" >&2; exit 1;; esac
+  base="${base%/}"
+  sed -i -e "s|^/|$base/|" "$out"/_headers
+fi
+echo "assembled $out ($build${base:+, base $base})"

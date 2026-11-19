@@ -5,9 +5,10 @@
 // - skipWaiting을 쓰지 않는다: 새 판은 다음 실행부터(실행 중인 게임에 새 파일이 섞이지 않게).
 // - 페이지·build.txt·매니페스트는 네트워크 먼저(못 받으면 캐시), 나머지는 이 판 캐시 먼저(없으면 받아서 담는다).
 // - 기록(localStorage)은 건드리지 않는다.
+// - 페이지는 "./"로만 담는다(0246): Cloudflare 정적 파일은 index.html을 "./"로 돌려보내(307) 그 응답을 페이지 이동에 쓰면 브라우저가 거절한다.
 const BUILD = "__BUILD__";
 const CACHE = "knell-" + BUILD;
-const PRECACHE = ["./", "index.html", "mq_js_bundle.js", "macroquad-gamepads-0.1.js", "knellroot.wasm", "manifest.webmanifest",
+const PRECACHE = ["./", "mq_js_bundle.js", "macroquad-gamepads-0.1.js", "knellroot.wasm", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png", "icons/bell-128.png"];
 const NETWORK_FIRST = /(\/|index\.html|build\.txt|manifest\.webmanifest)$/;
 
@@ -41,7 +42,7 @@ self.addEventListener("fetch", (e) => {
           }
           return res;
         })
-        .catch(() => caches.match(req, { ignoreSearch: true }).then((hit) => hit || caches.match("index.html")))
+        .catch(() => caches.match(req, { ignoreSearch: true }).then((hit) => hit || caches.match("./")))
     );
     return;
   }

@@ -5,7 +5,7 @@ nail `docs/release.md`를 줄인 것. 웹(Netlify) + Android APK(0022) + PC 묶�
 ## 무엇이 어디로 나가나
 | 대상 | 트리거 | 워크플로 | 결과 |
 |---|---|---|---|
-| 웹(운영) | `main` push | `deploy-web.yml` | fmt·clippy(두 갈래)·test·운영판 wasm(`--no-default-features`)·조립·연기 시험(개발판으로) → https://knellroot.netlify.app. 올린 뒤 `build.txt`가 그 커밋인지 |
+| 웹(운영) | `main` push | `deploy-web.yml` | fmt·clippy(두 갈래)·test·운영판 wasm(`--no-default-features`)·조립·연기 시험(개발판으로) → `publish` 잡(Environment `web-production`)이 Cloudflare Worker `web-game-knellroot` = https://knellroot.beardworks.io/play/ (0246) — 올린 뒤 `build.txt`가 그 커밋인지 본 다음 옛 https://knellroot.netlify.app 를 기록 넘김 페이지로 |
 | 웹(개발판) | `release/**` push | `deploy-web.yml` | 개발 기능 켠 빌드 → 별칭 `dev`(https://dev--knellroot.netlify.app, noindex). 올린 뒤 별칭의 `build.txt`를 확인(아니면 실패) |
 | 웹(PR) | PR | 같은 워크플로 | `pr-<번호>--knellroot.netlify.app` |
 | Release + APK | `main` push에 `Cargo.toml` 버전이 새 값 **그리고** `docs/releases/v<버전>.md`가 있음 | `release.yml` → `build-android.yml` | 태그 `v<버전>`, GitHub Release(본문 = 그 md), `knellroot.apk`(운영판) 첨부 |
