@@ -9,6 +9,7 @@ mod js {
         pub fn knell_fs_toggle();
         pub fn knell_fs_touch_enter();
         pub fn knell_portrait() -> u32;
+        pub fn knell_safe_inset(i: u32) -> u32;
     }
 }
 
@@ -76,4 +77,14 @@ pub fn portrait_blocked() -> bool {
     return unsafe { js::knell_portrait() } != 0;
     #[cfg(not(target_arch = "wasm32"))]
     false
+}
+
+/// 화면의 안전 영역(노치·둥근 모서리·홈 막대 — iPhone 가로) 네 변의 폭: [왼쪽, 위, 오른쪽, 아래], `screen_width()`와 같은 화소.
+/// 웹은 `viewport-fit=cover`로 캔버스가 화면을 다 쓰니(2026-11-19) 터치 버튼·HUD가 이만큼 비킨다. 웹 밖은 0.
+pub fn safe_insets() -> [f32; 4] {
+    #[cfg(target_arch = "wasm32")]
+    // SAFETY: 칸 번호 0..4를 받아 정수를 돌려주는 JS 함수(web/index.html).
+    return [0, 1, 2, 3].map(|i| unsafe { js::knell_safe_inset(i) } as f32);
+    #[cfg(not(target_arch = "wasm32"))]
+    [0.0; 4]
 }

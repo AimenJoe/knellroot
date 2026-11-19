@@ -75,6 +75,10 @@ pub const PARRY_CHAIN_WIDEN_DEG: f32 = 45.0;
 pub const RIPOSTE_WINDOW: f32 = 0.6;
 /// 락온 대상이 쓰러지면 그 자리에서 이 반지름 안의 가장 가까운 적으로 넘어간다(없으면 풀림, 2026-11-06).
 pub const LOCK_HANDOFF: f32 = 8.0;
+/// 락온 고르기(2026-11-19): 가장 가까운 적. 바라보는 쪽은 덤만 — 옆이면 이만큼(m), 등 뒤면 두 배 멀리 친다.
+pub const LOCK_FACE_M: f32 = 1.5;
+/// 락온 고르기: 보스는 이만큼(m) 가까이 친다(보스 아레나의 졸개보다 보스를).
+pub const LOCK_BOSS_M: f32 = 6.0;
 pub const SEC_LEAN_HZ: f32 = 2.5;
 pub const SEC_LEAN_DAMP: f32 = 0.8;
 /// 늦음(m) → 기울기 변위 배율. 몸은 반대쪽(가속하는 쪽)으로.

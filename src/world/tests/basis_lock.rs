@@ -160,3 +160,27 @@ fn a_fallen_lock_target_hands_off_to_the_nearest_enemy_or_lets_go() {
     assert_eq!(w.lock, None);
     assert!(ev.contains(&Event::LockLost));
 }
+
+/// 2026-11-19(사장 "락온 할 때 가장 가까운 적을 고르는 게 아닌 것 같아"): 락온은 가장 가까운 적을 잡는다 — 등 뒤의 가까운 적이
+/// 앞의 먼 적보다 먼저. 바라보는 쪽은 거리가 비슷할 때만 가른다.
+#[test]
+fn lock_on_picks_the_nearest_enemy_even_behind() {
+    let t = Tuning::default();
+    let lock = Actions {
+        lock: true,
+        ..Default::default()
+    };
+    let mut w = World::new("test", 30.0);
+    let f = w.player.facing_dir();
+    w.spawn_mob(w.player.pos + f * 12.0); // 0: 앞의 먼 적
+    w.spawn_mob(w.player.pos - f * 3.0); // 1: 등 뒤의 가까운 적
+    w.step(&lock, &t);
+    assert_eq!(w.lock, Some(1), "the nearest one, even behind");
+    // 거리가 거의 같으면 바라보는 쪽.
+    let mut w = World::new("test", 30.0);
+    let f = w.player.facing_dir();
+    w.spawn_mob(w.player.pos - f * 5.0); // 0: 등 뒤 5m
+    w.spawn_mob(w.player.pos + f * 5.5); // 1: 앞 5.5m
+    w.step(&lock, &t);
+    assert_eq!(w.lock, Some(1), "about the same distance: the one in front");
+}

@@ -32,7 +32,8 @@ HAND_R, HAND_L = "mixamorig:RightHand", "mixamorig:LeftHand"
 FORE_L = "mixamorig:LeftForeArm"
 SHIELD_AT, SHIELD_OFF = 0.55, 0.055  # 방패(0223): 팔뚝의 어디(팔꿈치 0 → 손목 1) · 팔뚝에서 손등 쪽으로 띄운 몫(m)
 TEX = 512  # 0245(사장 "고사양으로" → 텍스처만): 256 → 512 — 숄더뷰·락온·인형에서 몸이 크게 잡힌다
-GRIP_IN = 0.55  # 손목 → 가운데 손가락 뿌리의 이 몫이 주먹 가운데
+GRIP_IN = 0.55  # 손목 → 가운데 손가락 뿌리의 이 몫이 주먹 가운데(손 메시를 못 찾을 때만 — `fist`)
+FIST_R = 0.13  # 쉬는 자세 몸(키 1.4 m)에서 손목으로부터 손 메시를 찾는 반지름(m)
 # 쥔 방향(사장 2026-11-14 "무기가 손에 붙은 위치와 방향"): Meshy 동작의 손은 칼을 쥔 주먹이 아니라 펼친 손이고, 손의 돌림이
 # 동작마다 제각각이다 — 원본 검 동작 열 곳의 닿는 순간을 손뼈 좌표로 재니 날 방향이 평균에서 22~72° 흩어졌다(손에 못 박은 한 방향은
 # 어느 동작에선가 하늘·땅을 본다). 그래서 무기는 손뼈 밑 `weapon` 뼈에 달고 그 돌림을 프레임마다 몸에서 계산해 굽는다(`weapon_pass`):
@@ -258,14 +259,34 @@ def world_pt(arm, bone, which="head"):
     return arm.matrix_world @ (b.head_local if which == "head" else b.tail_local)
 
 
-def knuckle(arm, side):
-    """주먹 쪽 가운데 손가락 뿌리. v3 몸(0247)은 왼손가락 뼈가 없다 — 그때는 손뼈의 꼬리 쪽으로, 오른손의 손목 → 손가락 뿌리 길이만큼."""
-    hand, mid = ("mixamorig:RightHand", "mixamorig:RightHandMiddle1") if side == "R" else ("mixamorig:LeftHand", "mixamorig:LeftHandMiddle1")
-    if mid in arm.data.bones:
-        return world_pt(arm, mid)
-    other = knuckle(arm, "L" if side == "R" else "R") - world_pt(arm, HAND_L if side == "R" else HAND_R)
-    h = world_pt(arm, hand)
-    return h + (world_pt(arm, hand, "tail") - h).normalized() * other.length
+def fist(arm, body, side):
+    """주먹 가운데(무기·등잔·활을 쥐는 자리, 쉬는 자세의 월드 좌표): 손목 너머(아래팔 축으로)·손목에서 `FIST_R` 안의 몸 정점 가운데,
+    그 팔 사슬(아래팔·손·손가락·손에 달린 뼈)에 묶인 것만. 0247 — v3 리깅은 오른손 뼈가 손목에 몰려(길이 6 mm, 가운데 손가락 뿌리 14 mm)
+    뼈로 셈한 쥔 자리가 손목에 머물고 실제 손(메시)은 7 cm 아래였다. 왼손은 손가락 뼈도 없고 손 메시가 아래팔에 묶였다 — 그래서 뼈가
+    아니라 메시로 잰다. 정점이 없으면 옛 셈(손목 → 가운데 손가락 뿌리의 `GRIP_IN`)."""
+    hand = HAND_R if side == "R" else HAND_L
+    fore = "mixamorig:RightForeArm" if side == "R" else FORE_L
+    wrist, elbow = world_pt(arm, hand), world_pt(arm, fore)
+    ax = (wrist - elbow).normalized()
+    chain = {fore, hand} | {b.name for b in arm.data.bones[hand].children_recursive}
+    groups = {g.index: g.name for g in body.vertex_groups}
+    pts = []
+    for v in body.data.vertices:
+        if not v.groups:
+            continue
+        g = max(v.groups, key=lambda g: g.weight)
+        if groups.get(g.group) not in chain:
+            continue
+        p = body.matrix_world @ v.co
+        if (p - wrist).dot(ax) > -0.005 and (p - wrist).length < FIST_R:
+            pts.append(p)
+    if len(pts) >= 6:
+        c = sum(pts, Vector()) / len(pts)
+        print(f"[skin] fist {side}: {len(pts)} verts, {(c - wrist).length * 100:.1f} cm past the wrist")
+        return c
+    mid = "mixamorig:RightHandMiddle1" if side == "R" else "mixamorig:LeftHandMiddle1"
+    print(f"[skin] fist {side}: no hand verts — bone fallback")
+    return wrist.lerp(world_pt(arm, mid) if mid in arm.data.bones else world_pt(arm, hand, "tail"), GRIP_IN)
 
 
 def basis(a, b):
@@ -356,7 +377,7 @@ def add_bone(arm, name, parent, at_world):
     arm.pose.bones[name].rotation_mode = "QUATERNION"
 
 
-def attach(arm, old):
+def attach(arm, body, old):
     """무기 넷은 옛 방향 그대로 주먹 자리의 `weapon` 뼈(오른손 자식)에 — 돌림은 `weapon_pass`가 동작마다 굽는다.
     등잔은 자리만 왼손 밑 `lamp` 뼈로."""
     # 쉬는 자세에서 붙인다 — 가져온 뼈대는 마지막 동작의 자세를 들고 있어서, 그대로 붙이면 그 자세 기준으로 어긋나 붙는다
@@ -365,7 +386,7 @@ def attach(arm, old):
     for pb in arm.pose.bones:
         pb.matrix_basis.identity()
     bpy.context.view_layer.update()
-    grip = world_pt(arm, HAND_R).lerp(knuckle(arm, "R"), GRIP_IN)
+    grip = fist(arm, body, "R")
     add_bone(arm, "weapon", HAND_R, grip)
     xf = Matrix.Translation(grip - old["hand_r"])
     for o in old["weapons"]:
@@ -374,7 +395,7 @@ def attach(arm, old):
         o.parent_type = "BONE"
         o.parent_bone = "weapon"
         o.matrix_world = mw
-    grip_l = world_pt(arm, HAND_L).lerp(knuckle(arm, "L"), GRIP_IN)
+    grip_l = fist(arm, body, "L")
     add_bone(arm, "lamp", HAND_L, grip_l)
     lf = Matrix.Translation(grip_l - old["hand_l"])
     # 활(0231): 왼손 주먹의 `bow` 뼈 — 옛 빌더는 오른손 자리에 지었으니 그 자리에서 왼손 주먹으로 옮긴다. 돌림은 `bow_pass`.
@@ -1086,6 +1107,42 @@ def look_ahead(arm, name, poses):
     print(f"[skin] look {name}: head turned {math.degrees(min(turned)):+.0f}..{math.degrees(max(turned)):+.0f}°")
 
 
+# 서 있는 동안 고개(사장 2026-11-19 "서있을때 고개를 너무 숙이고 있는듯"): 대기 원본(Idle_02)은 얼굴이 쉬는 자세보다 18~20° 아래를
+# 본다 — v2는 두건이 얼굴을 가려 안 보였고, 얼굴이 드러난 v3(0247)에서는 땅만 보는 것처럼 읽힌다. 목·머리를 몸의 옆축으로 들어
+# 올린다(도). 몸짓 둘은 서기의 0초 자세에서 시작해 거기로 돌아오니(0153) 같은 값을 준다 — 이음매가 튀지 않게.
+HEAD_LIFT = {"idle": 15.0, "idle_look": 15.0, "idle_shake": 15.0, "turn_l": 15.0, "turn_r": 15.0}
+LIFT_SHARE = (("mixamorig:Neck", 0.4), ("mixamorig:Head", 0.6))
+
+
+def lift_head(arm, name, poses, deg):
+    """`HEAD_LIFT`: 얼굴이 보는 쪽을 몸의 옆축으로 `deg`만큼 들어 올린다 — 목이 몫 0.4, 머리가 나머지(`look_ahead`와 같은 셈)."""
+    head = arm.pose.bones["mixamorig:Head"]
+    face = arm.data.bones["mixamorig:Head"].matrix_local.to_3x3().inverted() @ Vector((0, -1, 0))
+    for pose in poses:
+        for pb in arm.pose.bones:
+            if pb.name in pose:
+                loc, q, sc_ = pose[pb.name]
+                pb.matrix_basis = Matrix.LocRotScale(loc, q, sc_)
+            else:
+                pb.matrix_basis.identity()
+        bpy.context.view_layer.update()
+        f = (head.matrix.to_3x3() @ face).normalized()
+        side = f.cross(Vector((0, 0, 1)))
+        if side.length < 1e-4:
+            continue
+        side.normalize()
+        for bn, share in LIFT_SHARE:
+            pb = arm.pose.bones[bn]
+            loc, q, sc_ = pb.matrix_basis.decompose()
+            a = pb.matrix.to_3x3() @ pb.matrix_basis.to_3x3().inverted()
+            r = Matrix.Rotation(math.radians(deg) * share, 3, side)
+            pb.matrix_basis = Matrix.LocRotScale(loc, (a.inverted() @ r @ a @ q.to_matrix()).to_quaternion(), sc_)
+            bpy.context.view_layer.update()
+        for bn, _ in LIFT_SHARE:
+            pose[bn] = arm.pose.bones[bn].matrix_basis.decompose()
+    print(f"[skin] lift {name}: head +{deg:.0f}°")
+
+
 def flatten(arm, poses, hips, top):
     """`FLAT`: 엉덩이를 `top`(뼈대 공간 z) 위로 올리지 않는다."""
     r_inv = arm.data.bones["mixamorig:Hips"].matrix_local.to_3x3().inverted()
@@ -1362,6 +1419,8 @@ def make_actions(arm, body):
             face_aim(arm, name, poses, hands, AIM[name])
         if name in BOW_AIM:
             look_ahead(arm, name, poses)
+        if name in HEAD_LIFT:
+            lift_head(arm, name, poses, HEAD_LIFT[name])
         if name in HIT_WINDOWS:
             start = ends.get(CHAIN.get(name), 0.0)
             face_hit(arm, name, poses, hips, hands, HIT_WINDOWS[name], math.atan2(math.sin(start), math.cos(start)))
@@ -1448,7 +1507,7 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, sheet_dir=None):
     if hasattr(body.data, "use_auto_smooth"):  # Blender 4.0: 켜져 있으면 각도로 법선을 갈라 정점이 는다
         body.data.use_auto_smooth = False
     W._flat_where_folded(body.data)  # 줄이며 접힌 작은 면(면 법선 ↔ 매끈한 법선이 반대)은 각지게 — `check_glb` 뒤집힌 면
-    attach(arm, old)
+    attach(arm, body, old)
     texture(body, old)
     craft_actions(arm)
     make_actions(arm, body)

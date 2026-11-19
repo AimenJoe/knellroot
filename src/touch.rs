@@ -417,7 +417,17 @@ pub fn aim_dir(d: Vec2) -> Vec2 {
 /// 오른손 엄지가 쉬는 오른쪽 아래에 공격(지름 ≈ 0.27u), 그 둘레 첫째 호(거리 0.26u)에 자주 쓰는 넷 — 회피·패링·마법·점프 —
 /// 둘째 호(0.44u)에 돌리기 캡슐과 상황 버튼(락온·등잔). 각도는 공격 가운데에서 180° = 왼쪽, 90° = 위.
 pub fn layout(w: f32, h: f32, ctx: Ctx) -> Vec<Button> {
-    layout_at(w, h, ctx, size())
+    safe_layout(w, h, ctx, size(), crate::screen::safe_insets())
+}
+
+/// 안전 영역 `[왼쪽, 위, 오른쪽, 아래]` 안에서 짜고 그만큼 옮긴다(2026-11-19 — 웹 cover: 노치·홈 막대 밑에 버튼을 두지 않는다).
+fn safe_layout(w: f32, h: f32, ctx: Ctx, k: f32, safe: [f32; 4]) -> Vec<Button> {
+    let [l, t, r, bt] = safe;
+    let mut b = layout_at((w - l - r).max(1.0), (h - t - bt).max(1.0), ctx, k);
+    for x in &mut b {
+        x.center += vec2(l, t);
+    }
+    b
 }
 
 /// `layout`의 크기 배 `k`를 손으로 주는 꼴(시험).
@@ -543,14 +553,16 @@ fn pause_spot(w: f32, h: f32) -> (Vec2, f32) {
 
 /// 터치일 때 오른쪽 위 글(목표 줄)이 버튼 줄(시점·땅 돌리기)을 비키는 높이(논리 px, 0184 — 그 줄 밑으로 내린다).
 pub fn top_right_drop(w: f32, h: f32) -> f32 {
-    let (c, s) = pause_spot(w, h);
-    c.y + s + 6.0
+    let [l, t, r, b] = crate::screen::safe_insets();
+    let (c, s) = pause_spot(w - l - r, h - t - b);
+    t + c.y + s + 6.0
 }
 
 /// 터치일 때 HUD가 왼쪽 위 멈춤 버튼을 비키는 폭(논리 px).
 pub fn hud_inset(w: f32, h: f32) -> f32 {
-    let (c, s) = pause_spot(w, h);
-    c.x + s + 6.0
+    let [l, t, r, b] = crate::screen::safe_insets();
+    let (c, s) = pause_spot(w - l - r, h - t - b);
+    l + c.x + s + 6.0
 }
 
 pub fn stick_radius(w: f32, h: f32) -> f32 {
@@ -2336,5 +2348,33 @@ mod tests {
         assert!(ctx.aims(Kind::Cast));
         assert!(ctx.aims(Kind::Skill1) && !ctx.aims(Kind::Skill2));
         assert!(!ctx.aims(Kind::Dodge) && !ctx.aims(Kind::Ult));
+    }
+
+    /// 2026-11-19: 안전 영역(노치·홈 막대)이 있으면 버튼은 모두 그 안에 — 같은 꼴을 안쪽 칸에 짜서 옮긴다.
+    #[test]
+    fn buttons_stay_inside_the_safe_area() {
+        let (w, h) = (844.0, 390.0);
+        let safe = [47.0, 0.0, 47.0, 21.0];
+        for b in safe_layout(w, h, Ctx::ALL, 1.0, safe) {
+            assert!(
+                b.center.x - b.radius >= safe[0] - 0.5,
+                "{:?} under the left notch",
+                b.kind
+            );
+            assert!(
+                b.center.x + b.radius <= w - safe[2] + 0.5,
+                "{:?} under the right notch",
+                b.kind
+            );
+            assert!(
+                b.center.y + b.radius <= h - safe[3] + 0.5,
+                "{:?} under the home bar",
+                b.kind
+            );
+        }
+        // 안전 영역이 없으면 옛 자리 그대로.
+        let plain = layout_at(w, h, Ctx::ALL, 1.0);
+        let same = safe_layout(w, h, Ctx::ALL, 1.0, [0.0; 4]);
+        assert!(plain.iter().zip(&same).all(|(a, b)| a.center == b.center));
     }
 }

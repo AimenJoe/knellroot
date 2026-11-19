@@ -11,10 +11,10 @@ use crate::tuning::{
     BEAT_CUE_MIN, BEAT_CUE_SHOT_ARC, BEAT_CUE_SHOT_REACH, BEAT_WINDOW, BEAT_WINDOW_MIN, BLAST_SHOW,
     BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID, CAST_CHARGES,
     DASH_ATTACK_LATE, ELITE_EMBERS, ELITE_HARD_POISE, ELITE_LINGER_DELAY, ELITE_LINGER_RADIUS,
-    FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, HP_UNIT, LOCK_HANDOFF,
-    P, PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RUN_SPEED_X, RUN_STAMINA, SHARD_R, SHARD_RANGE,
-    SHARD_REFLECT_DAMAGE, SHARD_REFLECT_SPEED, SHARD_SPEED, STAMINA_DENIED_SHOW, STUN_CHAIN_GRACE,
-    STUN_CHAIN_MAX, TICK_DT,
+    FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, HP_UNIT, LOCK_BOSS_M,
+    LOCK_FACE_M, LOCK_HANDOFF, P, PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RUN_SPEED_X,
+    RUN_STAMINA, SHARD_R, SHARD_RANGE, SHARD_REFLECT_DAMAGE, SHARD_REFLECT_SPEED, SHARD_SPEED,
+    STAMINA_DENIED_SHOW, STUN_CHAIN_GRACE, STUN_CHAIN_MAX, TICK_DT,
 };
 use crate::tuning::{ALERT_RADIUS, HEAR_RANGE, LEASH_RANGE, SIGHT_DY, SIGHT_RANGE};
 use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG, RIPOSTE_WINDOW};
@@ -1727,7 +1727,9 @@ impl World {
             ev.push(Event::LockOff);
             return;
         }
-        // 가까움 + 바라보는 쪽 + 보스 우대. 점수가 낮을수록 좋다.
+        // 가장 가까운 적(사장 2026-11-19 "락온 할 때 가장 가까운 적을 고르는 게 아닌 것 같아" — 옛 셈은 등 뒤를 락온 거리
+        // 하나만큼(18m) 벌해 뒤의 3m 적보다 앞의 15m 적을 골랐다). 점수 = 거리(m) + 바라보는 쪽 덤(등 뒤면 `LOCK_FACE_M`의 두 배)
+        // − 보스 우대 `LOCK_BOSS_M`. 낮을수록 좋다.
         let p = self.player.pos;
         let f = self.player.facing_dir();
         let mut best: Option<(f32, usize)> = None;
@@ -1742,8 +1744,7 @@ impl World {
                 continue;
             }
             let cos = if dist > 1e-4 { d.dot(f) / dist } else { 1.0 };
-            let score =
-                dist / self.range_lock() + (1.0 - cos) * 0.5 - if e.boss { 0.5 } else { 0.0 };
+            let score = dist + (1.0 - cos) * LOCK_FACE_M - if e.boss { LOCK_BOSS_M } else { 0.0 };
             if best.is_none_or(|(s, _)| score < s) {
                 best = Some((score, i));
             }
