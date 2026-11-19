@@ -292,11 +292,17 @@ impl Renderer {
         let (rt, dest, aspect, rows) = self.fit_doll_rt(true, dest);
         let d = crate::species::def(kind);
         let h = d.height.max(0.5);
+        // 칸에 맞춰 당긴다(2026-11-19 사장 "모델들이 가로로 더 채워지면"): 키(위아래 반 + 여유)와 몸 둘레(돌려도 들어가게 — 가로 반)
+        // 가운데 더 먼 쪽에 선다. 예전엔 키에 상관없이 멀찍이(키 × 2.3 + 1m) 서서 칸의 반도 안 찼다.
+        let half_tan = (CREATURE_FOVY * 0.5).tan();
+        let need_v = h * 0.56 / half_tan;
+        let need_h = (d.radius * 1.35).max(h * 0.36) / (half_tan * aspect.max(0.1));
+        let dist = need_v.max(need_h) * 1.14;
         let cam = Camera3D {
-            position: vec3(0.0, h * 0.75, h * 2.3 + d.radius * 2.0 + 1.0),
-            target: vec3(0.0, h * 0.48, 0.0),
+            position: vec3(0.0, h * 0.5 + dist * 0.16, dist),
+            target: vec3(0.0, h * 0.47, 0.0),
             up: Vec3::Y,
-            fovy: 0.55,
+            fovy: CREATURE_FOVY,
             aspect: Some(aspect),
             projection: Projection::Perspective,
             render_target: Some(rt.clone()),
@@ -444,3 +450,6 @@ pub(crate) fn doll_eye(b: (f32, f32, f32), aspect: f32) -> (Vec3, Vec3) {
     let target = vec3(0.0, (lo + hi) * 0.5, 0.0);
     (target + vec3(0.0, d * 0.11, d), target)
 }
+
+/// 도감 생물 그림의 세로 시야(라디안).
+const CREATURE_FOVY: f32 = 0.55;

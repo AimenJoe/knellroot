@@ -153,10 +153,6 @@ impl App {
     /// 탭 넘기기 한 틱: 패드 LB·RB / 키보드 Q·E(0175) = 옆 탭, 탭 머리 누르기 = 그 탭. 넘겼으면 참(그 틱은 여기서 끝난다).
     /// 탭 줄이 넘치면(0233) 그 위의 끌기·휠은 탭 줄을 굴린다 — 몸의 목록에는 넘기지 않는다.
     pub(super) fn tab_input(&mut self, a: &mut Actions) -> bool {
-        // 도감 그림을 크게 보는 동안은 탭을 넘기지 않는다(도감의 틱이 돌아오기·돌리기를 받는다).
-        if self.codex_view.zoomed() && matches!(self.scene(), Scene::Codex { .. }) {
-            return false;
-        }
         if self.tab_strip.over(a.point) {
             self.tab_strip.nudge(a.point, a.drag_x, a.wheel);
             (a.drag, a.drag_x, a.wheel) = (0.0, 0.0, 0);

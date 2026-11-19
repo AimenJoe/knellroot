@@ -13,32 +13,23 @@ use flow::Host;
 const GROUPS: usize = 4;
 /// 묶음 머리 줄의 높이(기준 px) — 그 아래부터 목록.
 const GROUP_H: f32 = 18.0;
-/// 오른쪽 칸의 그림 자리(기준 px): 적은 선 몸(이름 아래의 세로로 긴 칸), 장신구는 머리의 그림 칸.
+/// 오른쪽 칸의 그림 자리(기준 px): 적은 이름 아래 오른쪽 칸 폭 전체(2026-11-19 사장 "나오는 곳 설명은 다음 줄로, 모델은 가로로 더
+/// 채워지게" — 전엔 왼쪽 52 폭에 세우고 나오는 곳을 그 오른쪽에 썼다), 나오는 곳·관찰은 그 아래로 흐른다.
 const PIC_TOP: f32 = 17.0;
-const PIC_W: f32 = 60.0;
-const PIC_H: f32 = 84.0;
+const PIC_H: f32 = 100.0;
 /// 도감 묶음 머리 한 칸의 가장 좁은 넓이(0242, 기준 px).
 const GROUP_MIN_W: f32 = 44.0;
 /// 물건 그림 칸(0242 — 머리 곁 30 → 이름 아래 64, 기준 px).
-const ITEM_PIC: f32 = 76.0;
+const ITEM_PIC: f32 = 96.0;
 
 /// 도감 그림을 손으로 보기(2026-11-19, 사장 "도감의 아이템 및 생물들도 잘 안 보임. 드래그로 살펴볼 수 있어야 함"):
-/// 그림 위를 가로로 끌면(패드는 오른쪽 스틱) 돌고, 누르면(확인) 창 가득 크게 — 크게 본 동안도 끌어 돌리고, 누르기·뒤로면 돌아온다.
-/// 고른 줄이 바뀌면 처음(저절로 흔들기)으로.
+/// 그림 위를 가로로 끌면(패드는 오른쪽 스틱) 돈다. 고른 줄이 바뀌면 처음(저절로 흔들기)으로. 크게 보기는 걷었다(사장 "확대 필요없고").
 #[derive(Default)]
 pub(super) struct CodexView {
     /// 손으로 돌린 각(없으면 저절로 흔든다).
     yaw: Option<f32>,
-    /// 지난 프레임에 그림을 그린 자리(끌기·누르기를 받는 곳) — 볼 그림이 없으면(못 가진 물건) 없다.
+    /// 지난 프레임에 그림을 그린 자리(끌기를 받는 곳) — 볼 그림이 없으면(못 가진 물건) 없다.
     rect: Option<Rect>,
-    /// 창 가득 크게 보는 중.
-    zoom: bool,
-}
-
-impl CodexView {
-    pub(super) fn zoomed(&self) -> bool {
-        self.zoom
-    }
 }
 
 impl App {
@@ -48,21 +39,7 @@ impl App {
         let mut a = *a;
         let before = self.cursor;
         let u = self.ui.u(1.0);
-        let turned = tabs::turn_by_hand(&mut a, self.codex_view.rect, &mut self.codex_view.yaw, u);
-        if self.codex_view.zoom {
-            // 크게 보는 동안: 끌기·스틱은 돌리기, 누르기·확인·뒤로는 돌아오기. 목록·탭은 움직이지 않는다.
-            if a.back || a.pause || a.confirm || (a.tap.is_some() && !turned) {
-                self.codex_view.zoom = false;
-                self.snd(crate::sfx::Id::UiBack);
-            }
-            return;
-        }
-        let on_pic = matches!((a.tap, self.codex_view.rect), (Some(p), Some(r)) if r.contains(p));
-        if self.codex_view.rect.is_some() && (on_pic || a.confirm) {
-            self.codex_view.zoom = true;
-            self.snd(crate::sfx::Id::UiConfirm);
-            return;
-        }
+        tabs::turn_by_hand(&mut a, self.codex_view.rect, &mut self.codex_view.yaw, u);
         self.pane_scroll_lines(&mut a);
         let a = &a;
         let tap = a.tap.and_then(|p| self.hit_at(p));
@@ -165,12 +142,11 @@ impl App {
         self.draw_left_list(&w, &rows, GROUP_H);
         // 오른쪽: 고른 것.
         let t = get_time() as f32;
-        let mut zoom: Option<Zoomed> = None;
         let mut lines: Vec<Ln> = Vec::new();
         if tab == 0 {
             let e = &ENTRIES[cursor.min(ENTRIES.len() - 1)];
             let seen = codex::seen(rec, e.kind);
-            // 선 몸은 세로로 길다 — 머리의 그림 칸 대신 이름 아래 왼쪽에 세워 두고, 나오는 곳은 그 오른쪽에, 관찰은 그 아래로 흐른다.
+            // 이름 아래 칸 폭 전체에 몸, 그 아래로 나오는 곳 · 관찰.
             let name = if seen {
                 tr(crate::species::def(e.kind).name)
             } else {
@@ -180,23 +156,12 @@ impl App {
             let fit = self.ui.fit(name, tabs::RIGHT_W * u, tabs::K_NAME * k);
             let ink = if seen { AMBER } else { INK };
             self.ui.text(&fit, p.x, p.y, tabs::K_NAME * k, ink);
-            let pic = w.rect(tabs::RIGHT_X, PIC_TOP, PIC_W, PIC_H);
+            let pic = w.rect(tabs::RIGHT_X, PIC_TOP, tabs::RIGHT_W, PIC_H);
             let spin = self.codex_view.yaw.unwrap_or(0.6 * (t * 0.6).sin());
             self.renderer.draw_creature(e.kind, pic, spin, t, !seen);
             self.codex_view.rect = Some(pic);
-            zoom = Some(Zoomed::Creature(e.kind, !seen));
-            let tx = tabs::RIGHT_X + PIC_W + 6.0;
-            let room = (tabs::RIGHT_X + tabs::RIGHT_W - tx) * u;
-            let kk = tabs::K_KIND * k;
-            let mut y = PIC_TOP + 2.0;
-            for part in ui::wrap(&self.ui, &fill(s.codex_place, &[tr(e.place)]), room, kk)
-                .iter()
-                .take(6)
-            {
-                self.ui
-                    .text(part, w.at(tx, 0.0).x, w.at(0.0, y).y, kk, PLACE);
-                y += 9.5;
-            }
+            lines.extend(self.pane_wrap(&w, &fill(s.codex_place, &[tr(e.place)]), PLACE));
+            lines.push(Ln::Gap);
             if seen {
                 for (guess, l) in codex::open_lines(rec, e) {
                     let head = if guess { "?" } else { "·" };
@@ -246,7 +211,6 @@ impl App {
                 if crate::item_view::has_view(d.item) {
                     self.draw_pane_item_turned(d.item, icon, self.codex_view.yaw);
                     self.codex_view.rect = Some(icon);
-                    zoom = Some(Zoomed::Item(d.item));
                 }
                 lines.extend(self.pane_wrap(&w, tr(d.desc), DIM));
                 if let Some(flavor) = d.flavor {
@@ -268,69 +232,8 @@ impl App {
             self.draw_pane(&w, tabs::HEAD_H - 8.0 + ITEM_PIC + 4.0, &lines);
         }
         let right = w.panel.x + w.panel.w;
-        if self.codex_view.zoom {
-            if let Some(z) = zoom {
-                self.draw_codex_zoom(&w, z, t);
-            }
-            return;
-        }
-        let mut foot = vec![(Act::Walk, s.verb_choose)];
-        if zoom.is_some() {
-            foot.push((Act::Confirm, s.verb_enlarge));
-        }
-        self.tab_foot(f, &w, scene, right, &foot);
+        self.tab_foot(f, &w, scene, right, &[(Act::Walk, s.verb_choose)]);
     }
-
-    /// 크게 보기: 창의 몸을 덮고 그림 하나를 가득 — 끌면 돈다. 아래에 안내 한 줄.
-    fn draw_codex_zoom(&mut self, w: &super::frame::Window, z: Zoomed, t: f32) {
-        let s = s();
-        let p = w.panel;
-        draw_rectangle(p.x, p.y, p.w, p.h, Color::new(0.03, 0.03, 0.05, 0.94));
-        let pad = w.s * 8.0;
-        let hint_h = self.ui.px(w.k) + w.s * 10.0;
-        let big = Rect::new(
-            p.x + pad,
-            p.y + pad,
-            p.w - pad * 2.0,
-            p.h - pad * 2.0 - hint_h,
-        );
-        match z {
-            Zoomed::Creature(kind, dark) => {
-                // 선 몸 — 세로로 긴 칸(가로는 높이의 0.75).
-                let wd = (big.h * 0.75).min(big.w);
-                let r = Rect::new(big.x + (big.w - wd) * 0.5, big.y, wd, big.h);
-                let spin = self.codex_view.yaw.unwrap_or(0.6 * (t * 0.6).sin());
-                self.renderer.draw_creature(kind, r, spin, t, dark);
-            }
-            Zoomed::Item(item) => {
-                let side = big.w.min(big.h);
-                let r = Rect::new(
-                    big.x + (big.w - side) * 0.5,
-                    big.y + (big.h - side) * 0.5,
-                    side,
-                    side,
-                );
-                self.draw_pane_item_turned(item, r, self.codex_view.yaw);
-            }
-        }
-        // 끌기는 크게 본 칸 어디서나.
-        self.codex_view.rect = Some(big);
-        let hint = format!("{} · {}", s.verb_drag_turn, s.verb_close);
-        self.ui.text_center(
-            &hint,
-            p.x + p.w * 0.5,
-            p.y + p.h - pad - hint_h + w.s * 4.0,
-            w.k,
-            DIM,
-        );
-    }
-}
-
-/// 크게 볼 그림.
-#[derive(Clone, Copy)]
-enum Zoomed {
-    Creature(crate::species::Kind, bool),
-    Item(crate::item_view::Item),
 }
 
 /// 도감의 물건 한 줄(장신구·덧옷 0176·무기 0191 — 같은 꼴로 보인다). 무기는 설명에 세계 안의 말이 들어 있어 따로 없다.

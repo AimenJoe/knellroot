@@ -289,8 +289,6 @@ pub const KO: Strings = Strings {
     toast_key: "{0} — 맺음을 켰다",
     toast_rank: "{0} {1}단",
     verb_close: "닫기",
-    verb_enlarge: "크게 보기",
-    verb_drag_turn: "끌어서 돌려 보기",
     skill_whirl: "휘돌이",
     skill_whirl_d: "제자리에서 두 바퀴 돌며 둘레를 벤다. 맞은 적은 바깥으로 밀린다.",
     skill_cut: "가로지르기",
