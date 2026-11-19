@@ -2209,4 +2209,217 @@ forge.sword=3
         let stray = Progress::from_record(Record::parse("garb.worn=bark\n"));
         assert_eq!(stray.garb, None, "not owned — not worn");
     }
+
+    /// 0251 R8: 기록 한 번에 왕복 — 모든 칸이 기본값이 아닌 기록이 한 번 읽고 쓰면 고정점이다(같은 기록을 다시 읽고 쓰면 그대로).
+    /// 칸마다의 왕복 시험(위)은 그 칸을 만든 날 쓴 것이라, "새 칸을 쓰기에만 더하고 읽기에는 잊은" 경우를 잡지 못했다.
+    /// 아래의 풀어 쓰기(`let Progress { … } = …`)는 `..` 없이 모든 칸의 이름을 부른다 — 칸을 더하면 이 시험부터 컴파일이 깨지고,
+    /// 새 칸을 여기 채워 넣어야 한다(기본값이면 아래 `assert_ne!`가 깨진다).
+    #[test]
+    fn every_field_survives_one_full_round_trip() {
+        use crate::items::{Base, Item};
+        use crate::skills::{Board, Id as S, Pick, Ult, Worn};
+        use crate::weapons::Id as W;
+        let mut board = Board::default();
+        for (id, rank, pick) in [
+            (S::Whirl, 3, Pick::B),
+            (S::Cut, 2, Pick::A),
+            (S::Brace, 1, Pick::A),
+        ] {
+            board.rank[id.index()] = rank;
+            board.pick[id.index()] = pick;
+        }
+        board.ult = [2, 1, 0];
+        board.cells.open_cell(crate::progression::Cell::Planted);
+        board.cells.open_link(crate::progression::Link::RiposteBeat);
+        board.cells.open_vein(crate::progression::Vein::Root);
+        board.cells.key = Some(crate::progression::Key::Measure);
+        board.cells.picks = [1, 0, 0];
+        let mut forged = crate::forge::Forged::default();
+        forged.set(W::Sword, 2);
+        let rare = Item::decode("w.sword|r|dmg.1+swift.1|0").expect("item");
+        let mut bag = crate::items::Bag::default();
+        bag.add(rare.clone());
+        let mut p0 = Progress {
+            embers: 321,
+            clears: 2,
+            run: Some(RunAt {
+                rest: 2,
+                gate_open: true,
+                stage: 1,
+                down: 2,
+            }),
+            owned: vec![crate::charms::Id::Ear, crate::charms::Id::Shell],
+            chests: vec![1, 4],
+            growth: crate::growth::Growth {
+                hp: 1,
+                flask: 2,
+                heal: 1,
+                oil: true,
+            },
+            level: crate::progression::Level {
+                life: 2,
+                stamina: 3,
+                might: 1,
+            },
+            finds: [
+                "sanctuary.garb.0",
+                "sanctuary.lamp.0",
+                "sanctuary.stone.0",
+                "sanctuary.stone.1",
+                "sanctuary.stone.2",
+            ]
+            .map(String::from)
+            .to_vec(),
+            elites: vec!["sanctuary.elite.0".into()],
+            runs: 5,
+            residents_seen: vec![("fire".into(), 2)],
+            residents_changed: vec!["water".into()],
+            codex: vec!["husk".into(), "thorn".into()],
+            read: vec!["sanctuary.0".into()],
+            journey: vec!["sanctuary.gates".into()],
+            gates: vec!["sanctuary.gate.0".into()],
+            cores: 1,
+            bell_cores: 2,
+            moss_cores: 1,
+            overseer_cores: 3,
+            weapon: Some(W::Sword),
+            sub: Some(W::Hammer),
+            shields: vec![crate::shield::Id::Pilgrim],
+            weapons: vec![W::Sword, W::Hammer],
+            skills: Worn([S::Cut, S::Whirl]),
+            sub_skills: Worn([S::Brace, S::Whirl]),
+            bag,
+            ground: crate::items::Ground(vec![(
+                1,
+                [3, 0, -4],
+                Item::plain(Base::Charm(crate::charms::Id::Hand)),
+            )]),
+            ult: Ult::Flurry,
+            garb: Some(crate::garb::Id::Cloak),
+            forged,
+            board,
+            gift: 1,
+            ult_gift: 2,
+            tutorial: 4,
+            tips: 0b101,
+            woke: true,
+            lit: true,
+            play: 777,
+            ..Progress::default()
+        };
+        p0.worn = [Some(crate::charms::Id::Ear), None, None];
+        // 한 번 읽고 쓰면 정리(옛 칸 → 가방 · 낀 자리 맞추기 · 칸에 앉히기)가 끝난다 — 그 뒤로는 고정점이어야 한다.
+        let once = Progress::from_record(Record::parse(&p0.to_record().to_text()));
+        let text = once.to_record().to_text();
+        let twice = Progress::from_record(Record::parse(&text));
+        assert_eq!(
+            twice.to_record().to_text(),
+            text,
+            "a record read back must write the same text"
+        );
+        let strip = |mut p: Progress| {
+            p.base = Record::default();
+            p
+        };
+        assert_eq!(
+            strip(twice),
+            strip(once.clone()),
+            "every field must read back as it was written"
+        );
+        // 모든 칸이 기본값이 아니다(기본값이면 "쓰고 안 읽는" 칸을 이 시험이 보지 못한다). 예외는 이름을 대고 까닭을 적는다.
+        let d = Progress::default();
+        let Progress {
+            embers,
+            clears,
+            run,
+            owned,
+            worn,
+            chests,
+            growth,
+            level,
+            finds,
+            elites,
+            runs,
+            residents_seen,
+            residents_changed,
+            codex,
+            read,
+            journey,
+            gates,
+            cores,
+            bell_cores,
+            moss_cores,
+            overseer_cores,
+            weapon,
+            sub,
+            shields,
+            shield,
+            weapons,
+            skills,
+            sub_skills,
+            bag,
+            ground,
+            ult,
+            garb,
+            forged,
+            board,
+            gift,
+            ult_gift,
+            tutorial,
+            tips,
+            woke,
+            lit,
+            play,
+            base: _,
+        } = once;
+        assert_ne!(embers, d.embers, "embers");
+        assert_ne!(clears, d.clears, "clears");
+        assert_ne!(run, d.run, "run");
+        assert_ne!(owned, d.owned, "owned");
+        assert_ne!(worn, d.worn, "worn");
+        assert_ne!(chests, d.chests, "chests");
+        assert_ne!(growth, d.growth, "growth");
+        assert_ne!(level, d.level, "level");
+        assert_ne!(finds, d.finds, "finds");
+        assert_ne!(elites, d.elites, "elites");
+        assert_ne!(runs, d.runs, "runs");
+        assert_ne!(residents_seen, d.residents_seen, "residents_seen");
+        assert_ne!(residents_changed, d.residents_changed, "residents_changed");
+        assert_ne!(codex, d.codex, "codex");
+        assert_ne!(read, d.read, "read");
+        assert_ne!(journey, d.journey, "journey");
+        assert_ne!(gates, d.gates, "gates");
+        assert_ne!(cores, d.cores, "cores");
+        assert_ne!(bell_cores, d.bell_cores, "bell_cores");
+        assert_ne!(moss_cores, d.moss_cores, "moss_cores");
+        assert_ne!(overseer_cores, d.overseer_cores, "overseer_cores");
+        assert_ne!(weapon, d.weapon, "weapon");
+        assert_ne!(sub, d.sub, "sub");
+        assert_ne!(shields, d.shields, "shields");
+        // 방패를 든 것은 보조무기와 같은 칸이라(0224) 부무기를 든 이 기록에서는 늘 None — `shields_and_the_off_weapon_round_trip`이 본다.
+        assert_eq!(
+            shield, None,
+            "shield shares the off-hand with the sub weapon"
+        );
+        assert_ne!(weapons, d.weapons, "weapons");
+        assert_ne!(skills, d.skills, "skills");
+        assert_ne!(sub_skills, d.sub_skills, "sub_skills");
+        assert_ne!(bag, d.bag, "bag");
+        assert!(
+            bag.items.iter().any(|(_, it)| *it == rare),
+            "the rare item keeps its grade and affixes"
+        );
+        assert_ne!(ground, d.ground, "ground");
+        assert_ne!(ult, d.ult, "ult");
+        assert_ne!(garb, d.garb, "garb");
+        assert_ne!(forged, d.forged, "forged");
+        assert_ne!(board, d.board, "board");
+        assert_ne!(gift, d.gift, "gift");
+        assert_ne!(ult_gift, d.ult_gift, "ult_gift");
+        assert_ne!(tutorial, d.tutorial, "tutorial");
+        assert_ne!(tips, d.tips, "tips");
+        assert_ne!(woke, d.woke, "woke");
+        assert_ne!(lit, d.lit, "lit");
+        assert_ne!(play, d.play, "play");
+    }
 }
