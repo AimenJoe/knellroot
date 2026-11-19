@@ -22,7 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 import wanderer as W  # noqa: E402
 
-RIG = os.path.join(C.REPO, "tools", "art", "sources", "meshy", "raccoon_v2_rig.glb")
+# 0246: v3 몸(Meshy 7.1 — 그림 A) + v2 동작을 뼈 이름으로 옮겨 담은 것(`meshy_rig.py --retarget`)
+RIG = os.path.join(C.REPO, "tools", "art", "sources", "meshy", "raccoon_v3_rig_anim.glb")
 NAME = "wanderer"
 HEIGHT = 1.4  # 옛 방랑자와 같은 키(귀 끝까지)
 OUT_FPS = 100  # 옛 동작처럼 — 길이(0.43·0.25 …)가 프레임에 딱 떨어진다. 키는 줄이므로 크기는 늘지 않는다
@@ -257,6 +258,16 @@ def world_pt(arm, bone, which="head"):
     return arm.matrix_world @ (b.head_local if which == "head" else b.tail_local)
 
 
+def knuckle(arm, side):
+    """주먹 쪽 가운데 손가락 뿌리. v3 몸(0246)은 왼손가락 뼈가 없다 — 그때는 손뼈의 꼬리 쪽으로, 오른손의 손목 → 손가락 뿌리 길이만큼."""
+    hand, mid = ("mixamorig:RightHand", "mixamorig:RightHandMiddle1") if side == "R" else ("mixamorig:LeftHand", "mixamorig:LeftHandMiddle1")
+    if mid in arm.data.bones:
+        return world_pt(arm, mid)
+    other = knuckle(arm, "L" if side == "R" else "R") - world_pt(arm, HAND_L if side == "R" else HAND_R)
+    h = world_pt(arm, hand)
+    return h + (world_pt(arm, hand, "tail") - h).normalized() * other.length
+
+
 def basis(a, b):
     a = a.normalized()
     b = (b - a * a.dot(b)).normalized()
@@ -354,7 +365,7 @@ def attach(arm, old):
     for pb in arm.pose.bones:
         pb.matrix_basis.identity()
     bpy.context.view_layer.update()
-    grip = world_pt(arm, HAND_R).lerp(world_pt(arm, "mixamorig:RightHandMiddle1"), GRIP_IN)
+    grip = world_pt(arm, HAND_R).lerp(knuckle(arm, "R"), GRIP_IN)
     add_bone(arm, "weapon", HAND_R, grip)
     xf = Matrix.Translation(grip - old["hand_r"])
     for o in old["weapons"]:
@@ -363,7 +374,7 @@ def attach(arm, old):
         o.parent_type = "BONE"
         o.parent_bone = "weapon"
         o.matrix_world = mw
-    grip_l = world_pt(arm, HAND_L).lerp(world_pt(arm, "mixamorig:LeftHandMiddle1"), GRIP_IN)
+    grip_l = world_pt(arm, HAND_L).lerp(knuckle(arm, "L"), GRIP_IN)
     add_bone(arm, "lamp", HAND_L, grip_l)
     lf = Matrix.Translation(grip_l - old["hand_l"])
     # 활(0231): 왼손 주먹의 `bow` 뼈 — 옛 빌더는 오른손 자리에 지었으니 그 자리에서 왼손 주먹으로 옮긴다. 돌림은 `bow_pass`.
