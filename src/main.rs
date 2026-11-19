@@ -28,6 +28,7 @@ mod forge;
 mod fx;
 mod gait;
 mod garb;
+mod glyph_shards;
 mod ground;
 mod growth;
 mod hud;

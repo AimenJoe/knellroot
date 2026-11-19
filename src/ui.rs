@@ -24,8 +24,9 @@ pub const GLYPH: f32 = 13.0;
 const BAKE: f32 = 48.0;
 
 pub struct Ui {
-    font: Font,
-    bold: Font,
+    /// 본문·굵게 — 글꼴마다 아틀라스 여러 장(0254, `glyph_shards`).
+    font: Face,
+    bold: Face,
     /// 정수 배율(렌더 타깃과 같은 값). 글 크기는 `GLYPH × 배수 × scale`.
     pub scale: f32,
     warmed: (u32, f32),
@@ -169,14 +170,8 @@ fn key_segments(s: &str) -> Vec<(String, bool)> {
 
 impl Ui {
     pub fn new() -> Self {
-        let load = |bytes: &[u8]| {
-            let mut f = load_ttf_font_from_bytes(bytes).expect("UI font");
-            // 명조는 픽셀 격자가 아니라 부드럽게(고밀도 화면의 소수 배율에서도 매끈하게).
-            f.set_filter(FilterMode::Linear);
-            f
-        };
-        let font = load(include_bytes!("../assets/fonts/GowunBatang-UI-Regular.ttf"));
-        let bold = load(include_bytes!("../assets/fonts/GowunBatang-UI-Bold.ttf"));
+        let font = Face::new(include_bytes!("../assets/fonts/GowunBatang-UI-Regular.ttf"));
+        let bold = Face::new(include_bytes!("../assets/fonts/GowunBatang-UI-Bold.ttf"));
         Ui {
             font,
             bold,
@@ -207,12 +202,11 @@ impl Ui {
         let (fs, _) = self.sizing(1.0);
         let dpi = screen_dpi_scale();
         // macroquad는 `ceil(font_size × dpi)`로 굽는다 — 그리는 크기와 같은 셈이어야 구운 것을 쓴다.
-        self.font
-            .populate_font_cache(&chars, (fs as f32 * dpi).ceil() as u16);
+        self.font.warm(&chars, (fs as f32 * dpi).ceil() as u16);
     }
 
     /// 큰 제목(2배 이상)은 굵게.
-    fn face(&self, k: f32) -> &Font {
+    fn face(&self, k: f32) -> &Face {
         if k >= 2.0 {
             &self.bold
         } else {
@@ -230,20 +224,9 @@ impl Ui {
         bake_size(self.px(k), screen_dpi_scale())
     }
 
-    fn params(&self, k: f32, color: Color) -> TextParams<'_> {
-        let (fs, scale) = self.sizing(k);
-        TextParams {
-            font: Some(self.face(k)),
-            font_size: fs,
-            font_scale: scale,
-            color,
-            ..Default::default()
-        }
-    }
-
     fn plain_w(&self, s: &str, k: f32) -> f32 {
         let (fs, scale) = self.sizing(k);
-        measure_text(s, Some(self.face(k)), fs, scale).width
+        self.face(k).width(s, fs, scale)
     }
 
     /// 글 폭(키캡이면 칸 여백까지).
@@ -327,8 +310,10 @@ impl Ui {
     fn plain_text(&self, s: &str, x: f32, y: f32, k: f32, color: Color) {
         let base = y + self.px(k) * 0.85;
         let o = self.scale * k;
-        draw_text_ex(s, x + o, base + o, self.params(k, SHADOW));
-        draw_text_ex(s, x, base, self.params(k, color));
+        let (fs, scale) = self.sizing(k);
+        let face = self.face(k);
+        face.draw(s, x + o, base + o, fs, scale, SHADOW);
+        face.draw(s, x, base, fs, scale, color);
     }
 
     /// 폭에 안 맞으면 뒤를 잘라 "…"를 붙인다(nail `fit`). 언어마다 길이가 달라 고정 칸에서 넘칠 때의 마지막 안전장치.
@@ -1256,6 +1241,78 @@ pub fn menu_input(cursor: &mut usize, n: usize, up: bool, down: bool) {
 pub fn bake_size(want: f32, dpi: f32) -> (u16, f32) {
     let fs = (BAKE / dpi.max(0.01)).round().max(1.0);
     (fs as u16, want / fs)
+}
+
+/// 글꼴 하나 = 같은 글꼴을 읽은 `Font` 여러 장(0254): 장마다 아틀라스 하나가 1024² 안에 머물게 글자를 나눠 담는다
+/// (`glyph_shards::Router`). 글은 장마다의 토막으로 그리고 잰다 — macroquad는 글자마다 advance로 나아가니 토막의 폭을 더하면
+/// 한 번에 그린 것과 같다(장 사이의 커닝만 빠진다).
+struct Face {
+    bytes: &'static [u8],
+    shards: std::cell::RefCell<Vec<Font>>,
+    router: std::cell::RefCell<crate::glyph_shards::Router>,
+}
+
+impl Face {
+    fn new(bytes: &'static [u8]) -> Self {
+        let f = Face {
+            bytes,
+            shards: Default::default(),
+            router: Default::default(),
+        };
+        f.grow(1);
+        f
+    }
+
+    /// 장이 `n`개가 되게 읽는다.
+    fn grow(&self, n: usize) {
+        let mut v = self.shards.borrow_mut();
+        while v.len() < n {
+            let mut f = load_ttf_font_from_bytes(self.bytes).expect("UI font");
+            // 명조는 픽셀 격자가 아니라 부드럽게(고밀도 화면의 소수 배율에서도 매끈하게).
+            f.set_filter(FilterMode::Linear);
+            v.push(f);
+        }
+    }
+
+    /// 미리 굽기 — 글자를 장에 나눠 그 장에 굽는다.
+    fn warm(&self, chars: &[char], size: u16) {
+        let parts = self.router.borrow_mut().split(chars);
+        self.grow(parts.len());
+        let v = self.shards.borrow();
+        for (i, part) in parts.iter().enumerate() {
+            v[i].populate_font_cache(part, size);
+        }
+    }
+
+    fn runs(&self, s: &str) -> Vec<(usize, std::ops::Range<usize>)> {
+        let runs = self.router.borrow_mut().runs(s);
+        self.grow(self.router.borrow().shards());
+        runs
+    }
+
+    fn width(&self, s: &str, fs: u16, scale: f32) -> f32 {
+        let runs = self.runs(s);
+        let v = self.shards.borrow();
+        runs.into_iter()
+            .map(|(i, r)| measure_text(&s[r], Some(&v[i]), fs, scale).width)
+            .sum()
+    }
+
+    fn draw(&self, s: &str, x: f32, y: f32, fs: u16, scale: f32, color: Color) {
+        let runs = self.runs(s);
+        let v = self.shards.borrow();
+        let mut cx = x;
+        for (i, r) in runs {
+            let p = TextParams {
+                font: Some(&v[i]),
+                font_size: fs,
+                font_scale: scale,
+                color,
+                ..Default::default()
+            };
+            cx += draw_text_ex(&s[r], cx, y, p).width;
+        }
+    }
 }
 
 /// 표의 모든 글 + 기호(글자 굽기).
