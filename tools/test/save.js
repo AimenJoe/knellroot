@@ -174,8 +174,15 @@ async function main() {
     // 건너뛴 뒤 조금 걷는다(플레이 시간은 장면 동안 쌓이지 않는다 — 5c는 슬롯 2에 시간이 쌓여 "기록 있음"인 것에 기댄다).
     await press('Escape');
     try { await page.waitForFunction(() => /woke=1\n/.test(localStorage.getItem('knell.save.1') || ''), null, { timeout: 10000, polling: 100 }); } catch (e) { /* 아래 검사 */ }
-    await page.waitForTimeout(2000);
     if (!/woke=1\n/.test((await slot2()) || '')) fail('skipping the waking scene must be recorded in slot 2: ' + JSON.stringify(await slot2()));
+    // 5c는 슬롯 2가 "기록 있음"이어야 ↑↑가 슬롯 1에 닿는다 — 슬롯 창은 플레이 시간 1초 이상(play > 0, save::has_any)만 기록으로 본다.
+    // 예전엔 벽시계로 2~3초 기다렸는데, 느린 CI에서는 그동안 게임 시간이 1초를 못 채워 슬롯 2가 빈 슬롯이 되고, 커서가 슬롯 2에서 시작해
+    // ↑↑가 빈 슬롯 3에 닿아 덮어쓰기 대신 새 판이 열렸다(run 568·582 — 슬롯 1은 그대로·마지막 슬롯 ≠ 0). 기록에 시간이 적힐 때까지 기다린다.
+    try {
+      await page.waitForFunction(() => /(^|\n)play=[1-9]/.test(localStorage.getItem('knell.save.1') || ''), null, { timeout: 60000, polling: 200 });
+    } catch (e) {
+      throw new Error('5b 슬롯 2에 플레이 시간이 쌓이지 않았다: ' + JSON.stringify(await slot2()));
+    }
   }
   // 5c) 다시 타이틀 → 시작하기 → 슬롯 2는 잠깐 했어도 플레이 시간이 쌓여 기록 있음(0081) → 커서는 첫 빈 슬롯(3) → 위로 둘 = 슬롯 1 "덮어쓰기"(두 번) → 슬롯 1이 비워진 채 시작.
   await toTitle();
