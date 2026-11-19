@@ -268,6 +268,11 @@ impl Scene {
         self.layer() != Layer::Game
     }
 
+    /// 다른 화면 위에 잠깐 뜨는 작은 창(칸 곁의 후보·할 일 목록, 묻는 창) — 그 창 밖을 누르면 닫힌다.
+    pub fn is_popup(self) -> bool {
+        self.layer() == Layer::Modal || matches!(self, Scene::EquipPick { .. })
+    }
+
     /// 무엇 위에 그리나(0066, nail 0235 R21 — `_` 없는 match: 새 장면이면 컴파일러가 묻는다).
     pub fn layer(self) -> Layer {
         match self {

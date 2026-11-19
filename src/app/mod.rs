@@ -86,6 +86,17 @@ fn is_edge(a: &Actions) -> bool {
         || a.wheel != 0
 }
 
+/// 누른 자리에 눌린 꼴을 보일까(0207 → 2026-11-19 사장 "컨텍스트 메뉴가 보이는 상태에서 바깥을 터치해서 닫을 때 그 바깥도 눌리는 듯한
+/// 하이라이트가 생김"): 창 밖을 덮는 닫기 칸(`push_outside` — 화면보다 큰 칸)은 닫기일 뿐 단추가 아니고, 작은 창(칸 곁의 목록·묻는 창)이
+/// 떠 있으면 그 창의 줄만 빛난다 — 아래 화면의 칸·탭을 눌러 창을 닫을 때 그 칸이 눌린 듯 보이지 않게. 그런 탭은 붙잡지 않고 바로 넘긴다.
+fn press_shows(popup: bool, h: Hit, r: Rect) -> bool {
+    let outside = r.w > 1.0e4 || r.h > 1.0e4;
+    if popup {
+        return matches!(h, Hit::Row(_));
+    }
+    matches!(h, Hit::Row(_) | Hit::Cell(..) | Hit::Tab(_)) || (h == Hit::Close && !outside)
+}
+
 /// 붙잡아 둔 메뉴 누름(0207).
 #[derive(Clone, Copy, Debug)]
 struct Press {
@@ -847,15 +858,12 @@ impl App {
         if !scene.is_menu() || matches!(scene, Scene::Controls) {
             return (a, false);
         }
-        let tapped = a.tap.and_then(|p| {
-            self.hits
-                .iter()
-                .find(|(r, _)| r.contains(p))
-                .filter(|(_, h)| {
-                    matches!(h, Hit::Row(_) | Hit::Cell(..) | Hit::Tab(_) | Hit::Close)
-                })
-                .map(|(r, _)| *r)
-        });
+        let popup = scene.is_popup();
+        let tapped = a
+            .tap
+            .and_then(|p| self.hits.iter().find(|(r, _)| r.contains(p)))
+            .filter(|(r, h)| press_shows(popup, *h, *r))
+            .map(|(r, _)| *r);
         if !(a.confirm || tapped.is_some()) {
             return (a, false);
         }
@@ -1361,6 +1369,27 @@ fn weapon_name(id: weapons::Id) -> &'static str {
 #[cfg(test)]
 mod press_tests {
     use super::*;
+
+    /// 2026-11-19: 작은 창 밖을 눌러 닫을 때 그 바깥(아래 화면의 칸·창 밖 전체)은 눌린 꼴을 보이지 않는다 — 작은 창의 줄만.
+    /// 창 밖을 덮는 닫기 칸(화면보다 큰 칸)은 큰 창에서도 단추가 아니다. ✕(작은 칸)는 그대로 눌린다.
+    #[test]
+    fn closing_a_popup_by_tapping_outside_lights_nothing_underneath() {
+        let small = Rect::new(10.0, 10.0, 40.0, 20.0);
+        let outside = Rect::new(-1.0e5, -1.0e5, 2.0e5, 1.0e5 + 10.0);
+        assert!(press_shows(true, Hit::Row(1), small), "the popup's own row");
+        for h in [Hit::Cell(0, 2), Hit::Tab(1), Hit::Close] {
+            assert!(!press_shows(true, h, small), "{h:?} under a popup");
+        }
+        assert!(!press_shows(true, Hit::Close, outside));
+        assert!(
+            !press_shows(false, Hit::Close, outside),
+            "the outside of a big window"
+        );
+        assert!(press_shows(false, Hit::Close, small), "the ✕ button");
+        assert!(press_shows(false, Hit::Cell(0, 2), small));
+        assert!(Scene::EquipPick { slot: 0 }.is_popup() && Scene::BagAct.is_popup());
+        assert!(!Scene::Title.is_popup());
+    }
 
     /// 0207: 누름을 붙잡은 동안 줄 세우는 것은 누르는 순간의 입력뿐 — 쥐고 있는 스틱은 매 틱 같은 값이라 쌓이면 지연이 남는다.
     #[test]
