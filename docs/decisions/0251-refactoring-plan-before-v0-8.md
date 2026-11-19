@@ -76,3 +76,6 @@ ECS·플러그인 같은 다시 짜기는 하지 않는다 — 문제는 시험�
   `on_gates_and_elites`·`on_drops`·`on_core`) + 끝(잔불·여정·바닥·저장). 핵의 셈은 첫 지역과 깊은 지역이 따로 쓰던 두 벌을 하나로.
 - 헤드리스가 드러낸 옛 시험의 틀림 하나 더(mouse.js): 놀이터에서 Esc는 타이틀 위에 개발 창 — 닫으면 타이틀이라, 옛 스크립트의 마지막
   "쿼터뷰로 돌아옴" 스크린숏은 타이틀이었다. 차례를 바꿨다.
+- **R8b**: `save.rs` — `from_record` 387줄 → 233줄, `to_record` 92줄. 읽기는 묶음마다 함수(`read_tree`·`read_list`·`read_board`·
+  `read_shields`·`read_forged`), 쓰기는 메서드(`write_tree`·`write_hands`·`write_board`), 짓고 난 뒤의 옛 기록 옮기기(0105·0117·0158·
+  0166·0172)는 `Progress::migrate_after_read` 한 곳. 키 이름·읽는 차례는 그대로 — R8a의 왕복 시험과 옛 기록 시험들이 지킨다.
