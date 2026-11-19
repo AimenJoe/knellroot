@@ -158,50 +158,101 @@ fn band(x: f32, n: f32) -> f32 {
 /// 빛(정점 색에 곱할 rgb): 바탕 + 달빛(고정 방향) + 가까운 화로(거리 제곱으로 준다, 면이 그쪽을 볼수록 밝다).
 /// 툰(0033)이면 달빛은 2단, 화로 세기는 3단으로 끊는다 — 둥근 그러데이션 대신 또렷한 빛 웅덩이.
 pub fn lit(p: Vec3, n: Vec3, lights: &[Light]) -> Vec3 {
-    let toon = look().toon;
-    let l = LIGHT_DIR.normalize();
-    let mut d = n.dot(l).max(0.0);
-    // 지형을 굽는 동안은 달빛 그림자(0044): 막히면 달빛 몫만 뺀다(화로 빛은 그대로).
-    if d > 0.0 {
-        d *= BAKE_SHADE.with(|s| s.borrow().as_ref().map_or(1.0, |o| o.vis(p + n * 0.05, l)));
-    }
-    if toon {
-        d = band(d, 2.0);
-    }
-    d *= MOON_GATE.with(|g| g.get());
-    let (ambient, moon) = ambient_moon();
-    let mut c = ambient + moon * (d * moonlight());
-    for li in lights {
-        // 빛줄기(0124): 기둥 안이면 위에서 — 가운데일수록·위를 볼수록 밝다(둥근 화로 빛과 달리 높이로 줄지 않는다).
-        if li.shaft {
-            let d = vec2(p.x - li.pos.x, p.z - li.pos.z).length();
-            if d < li.radius {
-                let mut k = 1.0 - d / li.radius;
-                k = k * (2.0 - k);
-                if toon {
-                    k = band(k, 2.0);
-                }
-                let up = 0.35 + 0.65 * n.y.max(0.0);
-                c += vec3(li.color.r, li.color.g, li.color.b) * (SHAFT * k * up);
-            }
-            continue;
+    LitCtx::now().lit(p, n, lights)
+}
+
+/// 빛 셈에 드는 프레임 값을 한 번에 꺼내 둔 것(0258 O2): 정점마다 스레드 지역 값(룩·하늘빛·달빛·문·굽기 그늘)을 여섯 번 넘게
+/// 꺼내던 것이 적 그리기의 대부분이었다(부하 80에서 적 6.8ms 중 5.3ms). 모델 하나에 한 번 `now()`하고 정점 루프는 이것만 읽는다.
+/// 셈의 차례는 `lit`·`rim` 그대로 — 그림이 비트까지 같다(시험 `lit_ctx_matches_the_old_per_vertex_reads`).
+#[derive(Clone, Copy, Debug)]
+pub struct LitCtx {
+    toon: bool,
+    l: Vec3,
+    gate: f32,
+    ambient: Vec3,
+    moon: Vec3,
+    moonlight: f32,
+    /// 지형을 굽는 중이면 달빛 가림을 정점마다 본다(굽기는 한 번뿐이라 옛 길 그대로).
+    baking: bool,
+    rim_k: f32,
+    eye: Vec3,
+    rim_c: Vec3,
+}
+
+impl LitCtx {
+    pub fn now() -> LitCtx {
+        let k = look();
+        let (ambient, moon) = ambient_moon();
+        LitCtx {
+            toon: k.toon,
+            l: LIGHT_DIR.normalize(),
+            gate: MOON_GATE.with(|g| g.get()),
+            ambient,
+            moon,
+            moonlight: moonlight(),
+            baking: BAKE_SHADE.with(|s| s.borrow().is_some()),
+            rim_k: k.rim,
+            eye: k.eye,
+            rim_c: sky().rim,
         }
-        let dv = li.pos - p;
-        let dist = dv.length();
-        if dist >= li.radius {
-            continue;
+    }
+
+    pub fn lit(&self, p: Vec3, n: Vec3, lights: &[Light]) -> Vec3 {
+        let toon = self.toon;
+        let l = self.l;
+        let mut d = n.dot(l).max(0.0);
+        // 지형을 굽는 동안은 달빛 그림자(0044): 막히면 달빛 몫만 뺀다(화로 빛은 그대로).
+        if d > 0.0 && self.baking {
+            d *= BAKE_SHADE.with(|s| s.borrow().as_ref().map_or(1.0, |o| o.vis(p + n * 0.05, l)));
         }
-        let mut att = (1.0 - dist / li.radius).powi(2);
         if toon {
-            att = band(att, 3.0);
+            d = band(d, 2.0);
         }
-        let facing = 0.35 + 0.65 * n.dot(dv / dist.max(1e-3)).max(0.0);
-        c += vec3(li.color.r, li.color.g, li.color.b) * (FIRE * att * facing);
+        d *= self.gate;
+        let mut c = self.ambient + self.moon * (d * self.moonlight);
+        for li in lights {
+            // 빛줄기(0124): 기둥 안이면 위에서 — 가운데일수록·위를 볼수록 밝다(둥근 화로 빛과 달리 높이로 줄지 않는다).
+            if li.shaft {
+                let d = vec2(p.x - li.pos.x, p.z - li.pos.z).length();
+                if d < li.radius {
+                    let mut k = 1.0 - d / li.radius;
+                    k = k * (2.0 - k);
+                    if toon {
+                        k = band(k, 2.0);
+                    }
+                    let up = 0.35 + 0.65 * n.y.max(0.0);
+                    c += vec3(li.color.r, li.color.g, li.color.b) * (SHAFT * k * up);
+                }
+                continue;
+            }
+            let dv = li.pos - p;
+            let dist = dv.length();
+            if dist >= li.radius {
+                continue;
+            }
+            let mut att = (1.0 - dist / li.radius).powi(2);
+            if toon {
+                att = band(att, 3.0);
+            }
+            let facing = 0.35 + 0.65 * n.dot(dv / dist.max(1e-3)).max(0.0);
+            c += vec3(li.color.r, li.color.g, li.color.b) * (FIRE * att * facing);
+        }
+        c
     }
-    c
+
+    /// 가장자리 빛(0033) — `rim`과 같은 셈.
+    pub fn rim(&self, p: Vec3, n: Vec3) -> Vec3 {
+        if self.rim_k <= 0.0 {
+            return Vec3::ZERO;
+        }
+        let v = (self.eye - p).normalize_or_zero();
+        let e = 1.0 - n.dot(v).max(0.0);
+        self.rim_c * (self.rim_k * e * e)
+    }
 }
 
 /// 가장자리 빛(0033): 카메라에서 비스듬히 돌아선 면일수록(`1 - n·v`의 제곱) 차가운 빛을 더한다 — 어두운 바닥 위 실루엣.
+#[cfg(test)]
 pub(super) fn rim(p: Vec3, n: Vec3, k: Look) -> Vec3 {
     if k.rim <= 0.0 {
         return Vec3::ZERO;

@@ -142,7 +142,7 @@ impl Batch {
         glow: f32,
         actor: bool,
     ) {
-        let look = look();
+        let ctx = super::light::LitCtx::now();
         for part in parts(e, pose, inst) {
             let (i, mat, mesh) = (part.node, part.mat, part.mesh);
             let base = verts.len() as u16;
@@ -162,8 +162,8 @@ impl Batch {
                 let f = if bright {
                     Vec3::splat(glow)
                 } else {
-                    let r = if actor { rim(p, n, look) } else { Vec3::ZERO };
-                    lit(p, n, lights) + r
+                    let r = if actor { ctx.rim(p, n) } else { Vec3::ZERO };
+                    ctx.lit(p, n, lights) + r
                 };
                 let c = Color::from_rgba(
                     to_u8(tint.r * f.x),
@@ -223,6 +223,7 @@ impl Batch {
             tint.b * ACTOR_LIFT,
             tint.a,
         );
+        let p_bake = crate::prof::span("m.bake(light)");
         MOON_GATE.with(|g| g.set(actor_moon(at)));
         Self::bake_glow(
             &mut self.vertices,
@@ -236,6 +237,8 @@ impl Batch {
             true,
         );
         MOON_GATE.with(|g| g.set(1.0));
+        drop(p_bake);
+        let p_cast = crate::prof::span("m.cast");
         // 그림자 지도는 한 번에 그린다 — 다 차면 그 뒤 배우는 그림자 없이(반쯤 잘린 그림자보다 낫다).
         if self.casting && tint.a > 0.5 && fits(self.casters.len(), self.caster_idx.len(), nv, ni) {
             for part in parts(e, pose, inst) {
@@ -248,6 +251,8 @@ impl Batch {
                     .extend(part.mesh.idx.iter().map(|&j| base + j as u16));
             }
         }
+        drop(p_cast);
+        let _p_hull = crate::prof::span("m.hull");
         let k = look();
         if k.outline_px > 0.0 && tint.a > 0.99 {
             // 화면 1px = 그 거리에서 이만큼(m): 2·거리·tan(시야/2) / 내부 세로.
@@ -333,19 +338,23 @@ impl Batch {
             self.outline_tried = true;
             self.outline_mat = outline_material();
         }
-        let verts = std::mem::take(&mut self.outline);
-        let idx = std::mem::take(&mut self.outline_idx);
         if let Some(mat) = &self.outline_mat {
             gl_use_material(mat);
-            self.this_frame += verts.len();
+            self.this_frame += self.outline.len();
             self.sends += 1;
-            draw_mesh(&Mesh {
-                vertices: verts,
-                indices: idx,
+            // 몸 묶음과 같이 용량째 돌려받는다(0258 O2).
+            let mesh = Mesh {
+                vertices: std::mem::take(&mut self.outline),
+                indices: std::mem::take(&mut self.outline_idx),
                 texture: None,
-            });
+            };
+            draw_mesh(&mesh);
+            self.outline = mesh.vertices;
+            self.outline_idx = mesh.indices;
             gl_use_default_material();
         }
+        self.outline.clear();
+        self.outline_idx.clear();
     }
 
     /// 이미 구운 덩어리(`alpha`를 곱해서 — 가린 벽을 옅게).
@@ -376,15 +385,22 @@ impl Batch {
         }
         self.this_frame += self.vertices.len();
         self.sends += 1;
+        let _p = crate::prof::span("b.send");
         if self.record {
             self.recorded
                 .push((self.vertices.clone(), self.indices.clone()));
         }
-        draw_mesh(&Mesh {
+        // `draw_mesh`는 빌려 읽기만 한다 — 넘긴 배열을 용량째 돌려받아 다음 묶음이 0에서 다시 자라지 않게(0258 O2).
+        let mesh = Mesh {
             vertices: std::mem::take(&mut self.vertices),
             indices: std::mem::take(&mut self.indices),
             texture: self.tex.clone(),
-        });
+        };
+        draw_mesh(&mesh);
+        self.vertices = mesh.vertices;
+        self.indices = mesh.indices;
+        self.vertices.clear();
+        self.indices.clear();
     }
 
     /// 프레임마다 한 번(모은 것을 보내고 수를 개발 줄로).

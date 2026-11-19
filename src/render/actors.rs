@@ -126,7 +126,9 @@ impl Renderer {
                         .map(|n| (n, Quat::IDENTITY, Vec3::ZERO)),
                 );
             }
+            let p_pose = crate::prof::span("e.pose");
             e.model.pose_with(anim, at, &hide, &mut self.pose);
+            drop(p_pose);
             let inst = Mat4::from_translation(p + sink)
                 * Mat4::from_quat(tilt)
                 * Mat4::from_rotation_y(en.facing)
