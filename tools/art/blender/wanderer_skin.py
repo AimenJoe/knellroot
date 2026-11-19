@@ -30,7 +30,7 @@ SRC_FPS = 24  # 원본 프레임 단위(`meshy_rig.py`가 24로 가져온다 —
 HAND_R, HAND_L = "mixamorig:RightHand", "mixamorig:LeftHand"
 FORE_L = "mixamorig:LeftForeArm"
 SHIELD_AT, SHIELD_OFF = 0.55, 0.055  # 방패(0223): 팔뚝의 어디(팔꿈치 0 → 손목 1) · 팔뚝에서 손등 쪽으로 띄운 몫(m)
-TEX = 256
+TEX = 512  # 0245(사장 "고사양으로" → 텍스처만): 256 → 512 — 숄더뷰·락온·인형에서 몸이 크게 잡힌다
 GRIP_IN = 0.55  # 손목 → 가운데 손가락 뿌리의 이 몫이 주먹 가운데
 # 쥔 방향(사장 2026-11-14 "무기가 손에 붙은 위치와 방향"): Meshy 동작의 손은 칼을 쥔 주먹이 아니라 펼친 손이고, 손의 돌림이
 # 동작마다 제각각이다 — 원본 검 동작 열 곳의 닿는 순간을 손뼈 좌표로 재니 날 방향이 평균에서 22~72° 흩어졌다(손에 못 박은 한 방향은
@@ -1372,7 +1372,7 @@ def make_actions(arm, body):
 
 def texture(body, old):
     img = next(n.image for n in body.data.materials[0].node_tree.nodes if n.type == "TEX_IMAGE")
-    img.scale(TEX, TEX)  # 옛 방랑자와 같은 256 — 게임 거리에서 몸은 100px 남짓
+    img.scale(TEX, TEX)  # 쿼터뷰에서 몸은 100px 남짓이지만 숄더뷰·인형은 그 몇 배(0245)
     W.lift_purples(img)
     C.merge_textures([body], img, old["weapons"] + old["lamp"] + [old["shield"], old["bow"]], old["atlas"], NAME)
 
