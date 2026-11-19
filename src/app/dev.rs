@@ -209,6 +209,7 @@ pub(super) fn dev_board_step(
 impl App {
     /// 개발 창 한 틱: 뒤로·✕·창 밖 = 나가기, 좌우·스킬 버튼(Q/E, 0151)·탭 누르기 = 묶음, 위아래·굴리기 = 줄, 확인·줄 누르기 = 시작.
     pub(super) fn tick_dev(&mut self, a: &Actions, tab: usize) {
+        let a = &self.small_strip_input(a);
         let tap = a.tap.and_then(|p| self.hit_at(p));
         if a.back || a.pause || tap == Some(Hit::Close) {
             self.go(Go::Back);
@@ -411,19 +412,16 @@ impl App {
         let x = self.ui.close(panel);
         self.hits.push((x, Hit::Close));
         let (lx, rx_end) = (panel.x + u * 10.0, panel.x + panel.w - u * 10.0);
-        // 묶음 탭: 한 줄에 다 — 고른 탭은 밝은 단추. 폭은 글자에 맞추고 남으면 고르게 나눈다.
+        // 묶음 탭: 고른 탭은 밝은 단추 — 다 들면 꽉 채우고, 넘치면 가로로 굴린다(0257, `ui::button_strip`).
         let tab_h = px * 1.6;
-        let gap = u * 4.0;
-        let widths: Vec<f32> = DEV_CATS
-            .iter()
-            .map(|c| self.ui.width(c.name(), 1.0) + u * 14.0)
-            .collect();
-        let rects = ui::tab_rects(&widths, lx, rx_end, top, tab_h, gap);
-        for (i, c) in DEV_CATS.iter().enumerate() {
-            self.ui.button(rects[i], c.name(), i == tab);
-            self.hits.push((rects[i], Hit::Cell(1, i)));
+        let names: Vec<&str> = DEV_CATS.iter().map(|c| c.name()).collect();
+        let rects =
+            self.ui
+                .button_strip(&mut self.small_strip, &names, tab, lx, rx_end, top, tab_h);
+        for (i, r) in rects.into_iter().enumerate() {
+            self.hits.push((r, Hit::Cell(1, i)));
         }
-        let tabs_end = rects.iter().map(|r| r.y + r.h).fold(top + tab_h, f32::max);
+        let tabs_end = top + tab_h;
         // 왼쪽 줄 목록 · 오른쪽 이름·설명(세로 선으로 가름).
         let body = tabs_end + u * 8.0;
         let hint_y = panel.y + panel.h - u * 8.0 - px;

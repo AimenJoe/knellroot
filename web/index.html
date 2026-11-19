@@ -145,6 +145,35 @@
   <!-- gamepads 크레이트 플러그인(nail에서 두 곳 고친 복사본: 버전 정수, 비표준 매핑 허용). -->
   <script src="macroquad-gamepads-0.1.js"></script>
   <script>
+    // 탭이 숨으면 소리 멈추기(0257, nail 0298 web/nail-host.js 그대로): 번들의 오디오 플러그인은 숨김을 게임에 "포커스 잃음"으로만
+    // 넘기고 소리는 그대로 둔다(Android 네이티브만 엔진이 멈춘다) — 휴대폰 브라우저·홈 화면 앱에서 다른 앱으로 가도 소리가 났다.
+    // 번들은 AudioContext 클래스를 읽어 둔 뒤라 생성자를 바꿀 수 없으니, 소리마다 부르는 createGain에서 컨텍스트를 모아 두고
+    // 숨으면 suspend, 보이면 resume. 돌아와서 resume이 막히면(iOS interrupted) 다음 손길·키에서 다시 깨운다.
+    // 게임은 같은 사건으로 멈춤 창을 연다(src/app/away.rs).
+    (function () {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC || !AC.prototype.createGain) return;
+      var seen = [];
+      var orig = AC.prototype.createGain;
+      AC.prototype.createGain = function () {
+        if (seen.indexOf(this) < 0) seen.push(this);
+        return orig.apply(this, arguments);
+      };
+      window.knellAudioContexts = seen; // 헤드리스 시험(tools/test/pwa.js `bg:`)이 상태를 본다
+      var each = function (f) { seen.forEach(function (c) { try { var p = f(c); if (p && p.catch) p.catch(function () {}); } catch (e) {} }); };
+      var hidden = function () { return document.visibilityState === "hidden"; };
+      var sync = function () { each(function (c) { return hidden() ? c.suspend() : c.resume(); }); };
+      document.addEventListener("visibilitychange", sync);
+      window.addEventListener("pagehide", function () { each(function (c) { return c.suspend(); }); });
+      window.addEventListener("pageshow", sync);
+      ["touchend", "keydown", "mousedown"].forEach(function (t) {
+        window.addEventListener(t, function () {
+          if (!hidden()) each(function (c) { return c.state !== "running" ? c.resume() : null; });
+        }, true);
+      });
+    })();
+  </script>
+  <script>
     // 마우스로 싸울 때(0058): 캔버스 위 오른쪽 클릭(= 마법)에 브라우저 메뉴가 뜨지 않게, 휠 클릭(= 락온)에 자동 스크롤이 켜지지 않게.
     // 번들(mq_js_bundle.js)은 고치지 않는다 — 그 이벤트는 그대로 게임으로 간다.
     (function () {

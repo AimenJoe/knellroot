@@ -36,7 +36,7 @@ impl App {
     /// 도감 한 틱: 뒤로·✕·창 밖 = 닫기, 좌우·묶음 머리 누르기 = 묶음(적 ↔ 장신구 — 위 탭은 스킬 버튼이 넘긴다),
     /// 위아래·굴리기·줄 누르기 = 고르기(고름은 보기만 — 할 일 없음).
     pub(super) fn tick_codex(&mut self, a: &Actions, host: Host, tab: usize) {
-        let mut a = *a;
+        let mut a = self.small_strip_input(a);
         let before = self.cursor;
         let u = self.ui.u(1.0);
         tabs::turn_by_hand(&mut a, self.codex_view.rect, &mut self.codex_view.yaw, u);
@@ -93,16 +93,46 @@ impl App {
         ];
         let tk = 0.85 * k;
         let ty = w.at(0.0, 2.0).y;
-        let mut x = w.at(4.0, 0.0).x;
-        self.ui.text("◀", x, ty, tk, DIM);
-        x += self.ui.width("◀", tk) + u * 6.0;
+        // 0257(사장 "도감 속에 있는 작은 탭도 마찬가지"): 칸이 왼쪽 열에 다 들지 않으면(긴 언어·좁은 화면) 가로로 굴린다 —
+        // ◀ ▶는 늘 그 자리(좌우로 넘긴다는 안내), 넘칠 때는 "더 있다"로 밝아진다.
+        let arrow = self.ui.width("◀", tk) + u * 6.0;
+        let (x0, x1) = (w.at(4.0, 0.0).x, w.at(tabs::LEFT_W - 6.0, 0.0).x);
+        let tws: Vec<f32> = names.iter().map(|n| self.ui.width(n, tk)).collect();
+        // 0242(사장 설문 23-9 "짧은 이름의 버튼도 누르기 쉽게 최소 넓이"): 칸은 `GROUP_MIN_W` 이상, 글은 칸 가운데.
+        let cws: Vec<f32> = tws.iter().map(|tw| tw.max(GROUP_MIN_W * u)).collect();
+        let (at, view) = ui::strip_tabs(
+            &mut self.small_strip,
+            &cws,
+            x0 + arrow,
+            x1 - arrow,
+            w.origin.y,
+            GROUP_H * u,
+            u * 12.0,
+            0.0,
+            tab,
+        );
+        let (more_l, more_r) = self.small_strip.more();
+        let ink = |more: bool| if view.is_some() && more { INK } else { DIM };
+        self.ui.text("◀", x0, ty, tk, ink(more_l));
+        self.ui
+            .text("▶", x1 - self.ui.width("▶", tk), ty, tk, ink(more_r));
+        if let Some(v) = view {
+            ui::clip(Some(Rect::new(v.x - u * 5.0, v.y, v.w + u * 10.0, v.h)));
+        }
         for (i, name) in names.iter().enumerate() {
-            let tw = self.ui.width(name, tk);
-            // 0242(사장 설문 23-9 "짧은 이름의 버튼도 누르기 쉽게 최소 넓이"): 칸은 `GROUP_MIN_W` 이상, 글은 칸 가운데.
-            let cw = tw.max(GROUP_MIN_W * u);
+            let (x, cw) = at[i];
+            if let Some(v) = view {
+                if x + cw <= v.x || x >= v.x + v.w {
+                    continue;
+                }
+            }
+            let tw = tws[i];
             let tx = x + (cw - tw) * 0.5;
             let on = i == tab;
-            self.ui.text(name, tx, ty, tk, if on { AMBER } else { DIM });
+            let whole = view.is_none_or(|v| x >= v.x - 0.5 && x + cw <= v.x + v.w + 0.5);
+            if whole {
+                self.ui.text(name, tx, ty, tk, if on { AMBER } else { DIM });
+            }
             if on {
                 draw_rectangle(
                     x,
@@ -116,9 +146,10 @@ impl App {
                 Rect::new(x - u * 5.0, w.origin.y, cw + u * 10.0, GROUP_H * u),
                 Hit::Cell(1, i),
             ));
-            x += cw + u * 12.0;
         }
-        self.ui.text("▶", x - u * 6.0, ty, tk, DIM);
+        if view.is_some() {
+            ui::clip(None);
+        }
         // 왼쪽 목록: 본 것·가진 것은 이름, 아니면 "???".
         let rec = &self.progress.codex.clone();
         let rows: Vec<ui::Row> = if tab == 0 {

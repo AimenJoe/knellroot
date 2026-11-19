@@ -3,6 +3,7 @@
 //!
 //! 루프: 프레임마다 입력 폴링 → 고정 60Hz 틱 N번(장면 → 월드 → 스테이지 → 카메라) → 가변 렌더(보간) → 글·메뉴(화면 패스).
 mod ask;
+mod away;
 mod bag;
 mod codex;
 pub mod controls;
@@ -176,6 +177,8 @@ pub struct App {
     pause_tab: flow::Tab,
     /// 큰 창의 탭 줄이 넘칠 때의 가로 창(0233 — 탭을 넘겨도 같은 창이라 장면 칸이 아니라 여기 하나).
     tab_strip: crate::ui::Strip,
+    /// 창 안의 작은 탭 줄(개발 창·모션 보기·도감의 묶음, 0257) — 한 번에 하나만 보인다.
+    small_strip: crate::ui::Strip,
     /// 상태·장비 탭의 인형(0235): 손으로 돌린 각(라디안 — `None`이면 저절로 천천히 좌우로 흔든다)과 그린 자리(끌기가 그 위에서 시작했나).
     doll_yaw: Option<f32>,
     /// 도감 그림을 손으로 보기(끌어 돌리기·크게 — 2026-11-19).
@@ -221,6 +224,9 @@ pub struct App {
     sfx: Option<crate::sfx::Sfx>,
     /// 소리가 듣는 상태 변화(시작한 순간만 — 0251 R10).
     heard: Heard,
+    /// 앱이 내려간 것을 엔진에서 듣는 귀(0257)와 아직 싸움 틱이 받지 않은 내려감.
+    away: away::Away,
+    went_away: bool,
     /// 그림 이펙트(0141): 월드 사건·상태 변화를 듣고 입자를 낸다 — 월드는 모른다(소리와 같은 길).
     fx: crate::fx::Fx,
     /// 지난 프레임에 그린 화면 자리(커서 → 땅, 0058).
@@ -391,6 +397,7 @@ impl App {
                 .then(|| interlude::Interlude::Wake(crate::wake::Wake::default())),
             pause_tab: flow::Tab::Status,
             tab_strip: crate::ui::Strip::default(),
+            small_strip: crate::ui::Strip::default(),
             doll_yaw: None,
             codex_view: Default::default(),
             doll_rect: None,
@@ -417,6 +424,8 @@ impl App {
             opts,
             sfx: None,
             heard: Heard::default(),
+            away: away::Away::new(),
+            went_away: false,
             fx: crate::fx::Fx::default(),
             frame: None,
             mouse_hidden: false,
@@ -698,6 +707,16 @@ impl App {
     }
 
     /// 한 프레임.
+    /// 창 안의 작은 탭 줄(0257)이 넘쳐 굴리는 동안, 그 위의 끌기·휠은 탭 줄을 굴린다 — 몸의 목록에는 넘기지 않는다.
+    pub(super) fn small_strip_input(&mut self, a: &Actions) -> Actions {
+        let mut a = *a;
+        if self.small_strip.over(a.point) {
+            self.small_strip.nudge(a.point, a.drag_x, a.wheel);
+            (a.drag, a.drag_x, a.wheel) = (0.0, 0.0, 0);
+        }
+        a
+    }
+
     pub fn frame(&mut self) {
         let cpu_start = get_time();
         // 헤드리스 시험의 기다림(`screen::report_scene`): 맨 위 장면이 바뀐 프레임에만 이름을 알린다.
@@ -754,6 +773,10 @@ impl App {
             bare: [0, 1].map(|i| pl.skill.known[i] == 0),
         });
         self.input.poll(self.scene().is_menu());
+        // 앱이 내려갔으면(0257) 다음 싸움 틱이 멈춤 창을 연다 — 싸움이 아닌 장면은 이미 입력을 기다리니 버린다.
+        if self.away.take() {
+            self.went_away = self.scene().ticks_world();
+        }
         // F11(PC, 0135): 어느 장면에서나 창 ↔ 전체 화면. 창 일이라 `Actions`(게임 동작)에 넣지 않는다.
         if input::fullscreen_pressed() {
             self.toggle_fullscreen();

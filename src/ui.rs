@@ -776,6 +776,60 @@ impl Ui {
     }
 
     /// 눌리는 단추(nail `button`, 0157): 오른쪽 아래 그림자 위에 얹힌 면, 위·왼쪽 밝은 모서리. 고르면 면이 밝고 테두리가 호박색.
+    /// 단추 탭 줄(0257 — 개발 창·모션 보기): `strip_tabs`로 자리를 정하고 단추로 그린다. 넘치면 창으로 자르고 양끝에 ◀▶("더 있다").
+    /// 누를 자리를 돌려준다(보이는 몫만 — 가려진 탭은 화면 밖).
+    #[cfg_attr(not(feature = "dev"), allow(dead_code))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn button_strip(
+        &self,
+        strip: &mut Strip,
+        labels: &[&str],
+        active: usize,
+        x0: f32,
+        x1: f32,
+        top: f32,
+        h: f32,
+    ) -> Vec<Rect> {
+        let u = self.scale;
+        let widths: Vec<f32> = labels
+            .iter()
+            .map(|n| self.width(n, 1.0) + u * 14.0)
+            .collect();
+        let arrow = self.width("◀", 1.0) + u * 6.0;
+        let (at, view) = strip_tabs(strip, &widths, x0, x1, top, h, u * 4.0, arrow, active);
+        let hidden = Rect::new(-1.0e4, -1.0e4, 0.0, 0.0);
+        let mut rects = vec![hidden; labels.len()];
+        if let Some(v) = view {
+            clip(Some(Rect::new(v.x, v.y - u * 2.0, v.w, v.h + u * 6.0)));
+        }
+        for (i, (&(x, w), n)) in at.iter().zip(labels).enumerate() {
+            let r = Rect::new(x, top, w, h);
+            if let Some(v) = view {
+                if x + w <= v.x || x >= v.x + v.w {
+                    continue;
+                }
+                // 가장자리에 걸친 단추: 넘침 검사는 자르기를 모른다 — 글 없이 면만(검사 밖으로).
+                if x < v.x - 0.5 || x + w > v.x + v.w + 0.5 {
+                    self.button(r, "", i == active);
+                    let l = x.max(v.x);
+                    rects[i] = Rect::new(l, top, (x + w).min(v.x + v.w) - l, h);
+                    continue;
+                }
+            }
+            self.button(r, n, i == active);
+            rects[i] = r;
+        }
+        if let Some(v) = view {
+            clip(None);
+            let (l, r) = strip.more();
+            let ink = |more: bool| if more { INK } else { Color { a: 0.35, ..DIM } };
+            let ty = top + (h - self.px(1.0)) * 0.5;
+            self.text_center("◀", x0 + arrow * 0.5, ty, 1.0, ink(l));
+            self.text_center("▶", v.x + v.w + arrow * 0.5, ty, 1.0, ink(r));
+        }
+        rects
+    }
+
     pub fn button(&self, r: Rect, label: &str, sel: bool) {
         let u = self.scale;
         draw_rectangle(
@@ -1147,60 +1201,65 @@ impl ListView {
 /// 넘치나). 넉넉하면 여백 18·글은 창의 배 `k` 그대로. 모자라면 여백을 6까지 줄이고, 그래도 넘치면 **글을 줄이지 않는다** —
 /// 탭 줄을 굴린다(`Strip`, 여백 10). 글을 줄이거나 자르면 무슨 탭인지 모른다(nail 0247 — 일시정지 탭 여덟에서 "メ…").
 /// `u` = 기준 px 하나의 화면 크기(탭 사이 틈 2).
-/// 창 안의 단추 탭 줄(개발 창의 묶음·모션 보기의 무기, 0256): 한 줄에 들면 남는 폭을 고르게 나눠 꽉 채우고, 안 들면
-/// 다음 줄로 넘겨 여러 줄로(줄마다 꽉 채운다) — 창 밖으로 나가지 않는다(모션 보기의 무기 탭이 오른쪽으로 넘쳤다).
-/// `widths` = 글 폭 + 여백, 돌려주는 것 = 탭마다의 자리(차례 그대로).
-#[cfg_attr(not(feature = "dev"), allow(dead_code))]
-pub fn tab_rects(widths: &[f32], x0: f32, x1: f32, top: f32, h: f32, gap: f32) -> Vec<Rect> {
+/// 창 안의 작은 탭 줄(개발 창의 묶음·모션 보기의 무기·도감의 묶음, 0256 → 0257): 다 들면 남는 폭을 고르게 나눠 `x0..x1`을 꽉 채우고,
+/// 넘치면 큰 창의 탭 줄(0233)처럼 **가로로 굴린다** — 양끝에 ◀▶ 자리(`arrow` 폭)를 비우고 `strip`의 창으로 보며, 고른 탭이 바뀌면
+/// 그 탭이 보이게 가장 적게 옮긴다(사장 2026-11-19 "좌우 스크롤되게 할 수 있으면 그게 더 좋은 거지" — 0256의 여러 줄을 걷음).
+/// `widths` = 탭마다 폭(여백 포함). 돌려주는 것 = (탭마다 화면의 왼쪽 x · 폭, 보이는 창 — 넘칠 때만 `Some`).
+/// 끌기·휠은 부른 쪽이 `strip.nudge`로(그 창 위에서만).
+#[allow(clippy::too_many_arguments)]
+pub fn strip_tabs(
+    strip: &mut Strip,
+    widths: &[f32],
+    x0: f32,
+    x1: f32,
+    y: f32,
+    h: f32,
+    gap: f32,
+    arrow: f32,
+    active: usize,
+) -> (Vec<(f32, f32)>, Option<Rect>) {
     let room = (x1 - x0).max(1.0);
-    // 줄 나누기: 앞에서부터 들어가는 만큼.
-    let mut lines: Vec<Vec<usize>> = vec![Vec::new()];
-    let mut used = 0.0;
-    for (i, &w) in widths.iter().enumerate() {
-        let line = lines.last_mut().unwrap();
-        let need = if line.is_empty() { w } else { used + gap + w };
-        if !line.is_empty() && need > room {
-            lines.push(vec![i]);
-            used = w;
-        } else {
-            line.push(i);
-            used = need;
-        }
-    }
-    // 여러 줄이면 줄마다 탭 수를 고르게(앞에서부터 꽉 채우면 마지막 줄에 하나만 남아 길게 늘어난다) — 고르게 나눈 줄이 다 들 때만.
-    if lines.len() > 1 {
-        let per = widths.len().div_ceil(lines.len());
-        let even: Vec<Vec<usize>> = (0..widths.len())
-            .collect::<Vec<_>>()
-            .chunks(per)
-            .map(|c| c.to_vec())
-            .collect();
-        let fits = |l: &Vec<usize>| {
-            l.iter().map(|&i| widths[i]).sum::<f32>() + gap * (l.len() as f32 - 1.0) <= room
-        };
-        if even.len() == lines.len() && even.iter().all(fits) {
-            lines = even;
-        }
-    }
-    let mut out = vec![Rect::new(0.0, 0.0, 0.0, 0.0); widths.len()];
-    for (row, line) in lines.iter().enumerate() {
-        let sum: f32 =
-            line.iter().map(|&i| widths[i]).sum::<f32>() + gap * (line.len() as f32 - 1.0);
-        let scale = (room / sum.max(1.0)).max(0.0);
-        let y = top + row as f32 * (h + gap);
+    let n = widths.len().max(1) as f32;
+    let sum: f32 = widths.iter().sum::<f32>() + gap * (n - 1.0);
+    if sum <= room {
+        strip.fit(0.0, sum, 0.0, Rect::new(x0, y, room, h));
+        let extra = (room - sum) / n;
         let mut x = x0;
-        for &i in line {
-            // 남는 폭은 고르게, 모자라면(한 탭이 혼자 넘치는 경우) 그 줄 폭에 맞춰 줄인다.
-            let w = if sum <= room {
-                widths[i] + (room - sum) / line.len() as f32
-            } else {
-                widths[i] * scale
-            };
-            out[i] = Rect::new(x, y, w, h);
-            x += w + gap;
+        let out = widths
+            .iter()
+            .map(|&w| {
+                let at = (x, w + extra);
+                x += w + extra + gap;
+                at
+            })
+            .collect();
+        return (out, None);
+    }
+    let view = Rect::new(x0 + arrow, y, (room - 2.0 * arrow).max(1.0), h);
+    let mut at = Vec::with_capacity(widths.len());
+    let mut acc = 0.0;
+    for &w in widths {
+        at.push(acc);
+        acc += w + gap;
+    }
+    strip.fit(
+        view.w,
+        sum,
+        widths.iter().copied().fold(0.0, f32::max).max(1.0),
+        view,
+    );
+    if strip.follow(active) {
+        if let (Some(&a0), Some(&w)) = (at.get(active), widths.get(active)) {
+            strip.reveal(a0, a0 + w);
         }
     }
-    out
+    let off = strip.offset();
+    let out = at
+        .iter()
+        .zip(widths)
+        .map(|(&a0, &w)| ((view.x + a0 - off).round(), w))
+        .collect();
+    (out, Some(view))
 }
 
 pub fn window_tabs(widths: &[f32], room: f32, u: f32, k: f32) -> (f32, bool) {
@@ -1384,23 +1443,32 @@ pub fn all_text(s: &Strings) -> String {
 mod tests {
     /// 0164 → 0233: 큰 창의 탭 줄 — 넉넉하면 여백 18, 모자라면 여백부터(6까지), 그래도 넘치면 글을 줄이지 않고 굴린다(여백 10).
     #[test]
-    fn tab_rects_fill_one_line_or_wrap_and_never_leave_the_room() {
-        use super::tab_rects;
-        // 넉넉: 한 줄을 꽉 채운다.
-        let r = tab_rects(&[40.0, 60.0], 0.0, 200.0, 10.0, 12.0, 4.0);
-        assert_eq!(r[0].y, 10.0);
-        assert!((r[1].x + r[1].w - 200.0).abs() < 0.01);
-        // 모자람: 다음 줄로 — 모든 탭이 방 안.
+    fn small_tab_strips_fill_when_they_fit_and_scroll_when_they_do_not() {
+        use super::{strip_tabs, Strip};
+        use macroquad::prelude::vec2;
+        // 다 든다: 남는 폭을 나눠 꽉 채우고 굴리지 않는다.
+        let mut st = Strip::default();
+        let (at, view) = strip_tabs(&mut st, &[40.0, 60.0], 0.0, 200.0, 0.0, 12.0, 4.0, 10.0, 0);
+        assert!(view.is_none());
+        assert!((at[1].0 + at[1].1 - 200.0).abs() < 0.01);
+        assert!(!st.over(Some(vec2(50.0, 5.0))));
+        // 넘친다: 한 줄 그대로(줄을 늘리지 않는다), 양끝 ◀▶ 자리 안이 창 — 마지막 탭을 고르면 그 탭이 창 안으로.
         let w = [70.0; 7];
-        let r = tab_rects(&w, 0.0, 200.0, 0.0, 12.0, 4.0);
-        assert!(r.iter().all(|x| x.x >= 0.0 && x.x + x.w <= 200.01), "{r:?}");
-        assert!(r.iter().any(|x| x.y > 0.0), "wrapped");
-        // 일곱 개 → 넷·셋(마지막 줄에 하나만 남지 않게).
-        let r = tab_rects(&[50.0; 7], 0.0, 300.0, 0.0, 12.0, 4.0);
-        assert_eq!(r.iter().filter(|x| x.y == 0.0).count(), 4);
-        // 혼자 넘치는 탭도 방 폭으로 줄인다.
-        let r = tab_rects(&[300.0], 0.0, 200.0, 0.0, 12.0, 4.0);
-        assert!(r[0].w <= 200.01);
+        let (at, view) = strip_tabs(&mut st, &w, 0.0, 200.0, 0.0, 12.0, 4.0, 10.0, 0);
+        let v = view.expect("scrolls");
+        assert!(at.iter().all(|x| x.0.is_finite()));
+        assert_eq!((v.x, v.w), (10.0, 180.0));
+        assert!(st.over(Some(vec2(50.0, 5.0))));
+        let (at, _) = strip_tabs(&mut st, &w, 0.0, 200.0, 0.0, 12.0, 4.0, 10.0, 6);
+        assert!(
+            at[6].0 >= v.x - 0.5 && at[6].0 + at[6].1 <= v.x + v.w + 0.5,
+            "{:?}",
+            at[6]
+        );
+        // 끌기로 처음으로 돌아간다.
+        assert!(st.nudge(Some(vec2(50.0, 5.0)), -1000.0, 0));
+        let (at, _) = strip_tabs(&mut st, &w, 0.0, 200.0, 0.0, 12.0, 4.0, 10.0, 6);
+        assert_eq!(at[0].0, v.x);
     }
 
     #[test]

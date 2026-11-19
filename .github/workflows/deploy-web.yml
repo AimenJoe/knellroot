@@ -88,6 +88,8 @@ jobs:
           node tools/test/pwa.js $dir shots
           # 기록: 이어하기·처음부터·새로 하기(0064 M2).
           node tools/test/save.js $dir shots
+          # 앱이 내려감(0257): 탭을 숨기면 소리가 멈추고 싸움은 멈춤 창으로.
+          node tools/test/away.js $dir shots
       - uses: actions/upload-artifact@v7
         with:
           name: shots

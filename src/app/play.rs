@@ -12,7 +12,8 @@ impl App {
             return;
         }
         // 세로로 든 폰(0082): 회전 안내가 덮인 동안 싸움이 흐르지 않게 멈춤으로(nail 0269 꼴).
-        if a.pause || crate::screen::portrait_blocked() {
+        // 앱이 내려갔다 오면(0257, nail 0298) 멈춤 창이 열려 있다 — 소리 없이(돌아온 순간 확인음이 나지 않게).
+        if a.pause || crate::screen::portrait_blocked() || std::mem::take(&mut self.went_away) {
             self.show(flow::pause(self.scene(), self.pause_tab));
             return;
         }
