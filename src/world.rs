@@ -1318,10 +1318,10 @@ impl World {
 
     /// 패링 + 평타 = 바꾸기(0223, 사장 "패링+공격 버튼으로 주/부무기 바꿀 수 있음"). 큰 기술의 "함께"(0151)처럼 늦추지 않는다:
     /// 두 누름이 같은 틱이거나 둘째가 첫째 뒤 `WEAPON_CHORD` 안이면, 첫째가 시작한 패링·휘두르기를 아직 시동 안일 때 거두고 바꾼다.
-    /// 단 패링이 튕겨 낸 뒤의 평타는 반격이다(바꾸지 않는다). 평타 버튼 = 근접은 `attack`, 원거리는 `cast`(앱이 맞바꾼 뒤).
+    /// 단 패링이 튕겨 낸 뒤의 공격은 반격이다(바꾸지 않는다). 공격 버튼 = 근접(`attack`)이나 원거리(`cast`) 어느 쪽이든(0255 —
+    /// 패드 X·RB가 무기와 상관없이 근접·원거리라, 무기마다 다른 버튼이 바꾸지 않게 둘 다 받는다).
     fn weapon_chord(&mut self, a: &mut Actions, dt: f32, ev: &mut Vec<Event>) {
-        let ranged = self.player.weapon.is_ranged();
-        let basic = if ranged { a.cast } else { a.attack };
+        let basic = a.attack || a.cast;
         let pl = &mut self.player;
         pl.chord.0 = if a.parry { 0.0 } else { pl.chord.0 + dt };
         pl.chord.1 = if basic { 0.0 } else { pl.chord.1 + dt };
@@ -1359,11 +1359,8 @@ impl World {
         pl.state = PState::Idle;
         pl.chord = (f32::MAX, f32::MAX);
         a.parry = false;
-        if ranged {
-            a.cast = false;
-        } else {
-            a.attack = false;
-        }
+        a.attack = false;
+        a.cast = false;
         if let Some(to) = self.swap_weapons() {
             ev.push(Event::WeaponSwap { to });
         }

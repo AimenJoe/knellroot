@@ -5,10 +5,13 @@
 //! 칸: 0 표식(MAGIC), 1 언어(0 = 저장 전), 2..18 키 배치(`Bindings::encode` — 14..16은 0027에 붙인 점프, 16..18은 0031 등잔, 18..20은 0032 상호작용 → 0048 마법). 0은 "없음". 표식이 다르면 통째로 기본값.
 //! 칸을 뒤에 붙이면 옛 저장은 0 = 기본값으로 읽으니 MAGIC은 그대로, 칸 뜻이 바뀌면 올린다.
 use crate::i18n::Lang;
-use crate::input::{Bindings, MouseAim, REST_SECS, RETICLE_SIZES};
+use crate::input::{Bind, Bindings, MouseAim, Pad, REST_SECS, RETICLE_SIZES};
 
 /// 0x…0002(0048): 18..20 칸이 상호작용 → 마법으로 바뀌고 등잔·마법의 기본 버튼이 바뀌었다. 옛 표식(0x…0001)은 언어만 살리고 배치는 기본값.
-const MAGIC: u32 = 0x4B4E_0004;
+/// 0x…0005(0255): 패드의 근접 공격 = X·원거리 공격 = RB(무기와 상관없이 — 0223의 "평타 = RB"를 되돌림).
+const MAGIC: u32 = 0x4B4E_0005;
+/// 0255 전 표식: 패드 칸 0(공격)·8(특수)이 0223의 기본(RB·X) 그대로면 맞바꾼다(사람이 바꾼 배치·키보드는 그대로).
+const MAGIC_V4: u32 = 0x4B4E_0004;
 /// 0223 전 표식: 패드 평타 = X·특수 = RB였다(지금은 RB·X). 패드의 그 둘이 옛 기본 그대로면 맞바꾸고, 사람이 바꾼 배치는 그대로 둔다.
 const MAGIC_V3: u32 = 0x4B4E_0003;
 const MAGIC_V1: u32 = 0x4B4E_0001;
@@ -22,7 +25,8 @@ const MAGIC_V2: u32 = 0x4B4E_0002;
 /// 29..33 스킬 둘의 (키, 패드)(0151 — 배치 칸은 2..20이 꽉 차 뒤에 잇는다, `Bindings::encode`의 18.. 몫).
 /// 33·34 자유 시점 돌리기 민감도 가로·세로(`LOOK_SENS`의 자리 +1, 0 = 저장 전 = 100%) — 0191, 뒤에 붙인 칸이라 MAGIC 그대로.
 /// 35 터치 버튼 크기(`TOUCH_SIZES`의 자리 +1, 0 = 저장 전 = 100%) — 0236, 뒤에 붙인 칸이라 MAGIC 그대로.
-const CELLS: usize = 36;
+/// 36..40 큰 기술의 따로 붙인 버튼(키 둘·패드 둘, +1 — 0 = 없음) — 0255(`Bindings::encode_ult`).
+const CELLS: usize = 40;
 /// 터치 버튼(엄지 묶음) 크기 단계(%) — 0236, 사장 "숄더뷰에서 화면 돌리기 어렵게 많고 크네"(CoD Mobile·Fortnite식 크기 설정).
 pub const TOUCH_SIZES: [u32; 4] = [80, 90, 100, 115];
 /// 가장 작게(80%)도 가장 작은 가로 폰(667×375)에서 가장 작은 버튼이 최소 터치 크기의 0.8(지름 35px) 위 — `touch` 시험이 본다.
@@ -105,6 +109,7 @@ fn encode(p: &Prefs) -> [u32; CELLS] {
     v[33] = p.look.0 as u32 + 1;
     v[34] = p.look.1 as u32 + 1;
     v[35] = p.touch_size as u32 + 1;
+    v[36..40].copy_from_slice(&p.bindings.encode_ult());
     v
 }
 
@@ -150,7 +155,7 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
             touch_size: TOUCH_SIZE_DEFAULT,
         });
     }
-    if v[0] != MAGIC && v[0] != MAGIC_V2 && v[0] != MAGIC_V3 {
+    if v[0] != MAGIC && v[0] != MAGIC_V2 && v[0] != MAGIC_V3 && v[0] != MAGIC_V4 {
         return None;
     }
     let keys: Vec<u32> = v[2..20].iter().chain(&v[29..33]).copied().collect();
@@ -161,7 +166,13 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
         bindings: if v[0] == MAGIC_V2 || v[0] == MAGIC_V3 {
             Bindings::default_layout()
         } else {
-            Bindings::decode(&keys)
+            let mut b = Bindings::decode(&keys);
+            if v[0] == MAGIC_V4 && b.pad(Bind::Attack) == Pad::R1 && b.pad(Bind::Cast) == Pad::West
+            {
+                b.set_pad(Bind::Attack, Pad::West);
+            }
+            b.ult = Bindings::decode_ult(&v[36..40]);
+            b
         },
         shake: shake_from(v[20]),
         weapon: v[21].saturating_sub(1).min(255) as u8,
@@ -323,8 +334,61 @@ mod tests {
         v[0] = MAGIC_V3;
         let got = decode(&v).unwrap();
         assert_eq!(got.bindings, Bindings::default_layout());
-        assert_eq!(got.bindings.pad(Bind::Attack), Pad::R1);
+        assert_eq!(got.bindings.pad(Bind::Attack), Pad::West);
         assert_eq!((got.lang, got.shake, got.volume), (p.lang, 4, 3));
+    }
+
+    /// 0255: 0x…0004 저장(패드 공격 = RB·특수 = X이던 때)은 그 둘이 옛 기본 그대로면 맞바꾸고(근접 X·원거리 RB), 사람이 바꾼 패드·키보드는 그대로.
+    /// 큰 기술의 따로 붙인 버튼(36..40)은 왕복한다.
+    #[test]
+    fn an_rb_attack_pad_turns_into_x_melee_and_rb_ranged_and_the_ult_cells_round_trip() {
+        use crate::input::UltBind;
+        let mut old = Bindings::default_layout();
+        old.set_pad(Bind::Attack, Pad::R1);
+        old.set_key(Bind::Attack, 5);
+        assert_eq!(old.pad(Bind::Cast), Pad::West);
+        let p = Prefs {
+            lang: Some(Lang::Ko),
+            bindings: old,
+            shake: 4,
+            weapon: 0,
+            mouse: MouseAim::default(),
+            volume: 3,
+            tells: 8,
+            tell_timing: false,
+            fullscreen: false,
+            look: (5, 5),
+            touch_size: TOUCH_SIZE_DEFAULT,
+        };
+        let mut v = encode(&p);
+        v[0] = MAGIC_V4;
+        v[36..40].fill(0);
+        let got = decode(&v).unwrap().bindings;
+        assert_eq!(
+            (got.pad(Bind::Attack), got.pad(Bind::Cast)),
+            (Pad::West, Pad::R1)
+        );
+        assert_eq!(got.keys[Bind::Attack as usize], 5, "the keyboard stays");
+        assert_eq!(got.ult, UltBind::default());
+        // 사람이 바꾼 패드(공격 = Y)는 그대로.
+        let mut mine = old;
+        mine.set_pad(Bind::Attack, Pad::North);
+        let mut v = encode(&Prefs {
+            bindings: mine,
+            ..p
+        });
+        v[0] = MAGIC_V4;
+        assert_eq!(decode(&v).unwrap().bindings.pad(Bind::Attack), Pad::North);
+        // 큰 기술 칸 왕복.
+        let mut b = Bindings::default_layout();
+        b.ult = UltBind {
+            keys: [Some(3), Some(4)],
+            pads: [Some(Pad::L3), None],
+        };
+        let got = decode(&encode(&Prefs { bindings: b, ..p }))
+            .unwrap()
+            .bindings;
+        assert_eq!(got.ult, b.ult);
     }
 
     /// 0151: 표식이 0x…0002인 저장(배치 칸 4·5 = Q·E / LT·RT가 땅 돌리기였다)은 **배치만** 기본으로 되돌린다 — 다른 설정은 그대로.
@@ -482,8 +546,8 @@ mod tests {
         assert_eq!(got.lang, Some(Lang::En));
         assert_eq!(got.bindings, Bindings::default_layout());
         assert_eq!(got.bindings.pad(Bind::Flask), Pad::North);
-        assert_eq!(got.bindings.pad(Bind::Cast), Pad::West);
-        assert_eq!(got.bindings.pad(Bind::Attack), Pad::R1);
+        assert_eq!(got.bindings.pad(Bind::Cast), Pad::R1);
+        assert_eq!(got.bindings.pad(Bind::Attack), Pad::West);
         // 0052 전 저장(흔들림·무기 칸이 0): 흔들림 기본값 10, 무기는 첫째(검).
         let mut old = encode(&p);
         old[20] = 0;

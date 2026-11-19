@@ -196,6 +196,35 @@ pub enum Act {
     Special,
 }
 
+impl Actions {
+    /// 이번 틱의 그 동작 누름을 거둔다(큰 기술 조합을 이룬 버튼의 제 동작, 0255). 쥐고 있음은 그대로.
+    pub fn drop_press(&mut self, b: Bind) {
+        match b {
+            Bind::Attack => self.attack = false,
+            Bind::Dodge => self.dodge = false,
+            Bind::Parry => self.parry = false,
+            Bind::Lock => self.lock = false,
+            Bind::TurnLeft => self.turn_left = false,
+            Bind::TurnRight => self.turn_right = false,
+            Bind::Jump => self.jump = false,
+            Bind::Flask => self.flask = false,
+            Bind::Cast => self.cast = false,
+            Bind::Skill1 => self.skill1 = false,
+            Bind::Skill2 => self.skill2 = false,
+        }
+    }
+
+    fn drop_pads(&mut self, bind: &Bindings, hit: [Option<Pad>; 2]) {
+        for p in hit.into_iter().flatten() {
+            for x in BINDS {
+                if bind.pad(x) == p {
+                    self.drop_press(x);
+                }
+            }
+        }
+    }
+}
+
 /// 지금 장치의 키 그림(ASCII — 글꼴 상관없이). 터치는 화면 버튼이 곧 안내라 빈 글.
 pub fn prompt(act: Act) -> String {
     let b = bindings();
@@ -209,8 +238,8 @@ pub fn prompt(act: Act) -> String {
         (_, Act::Interact) => name(Bind::Jump),
         (Device::Pad, Act::Choose) => "D-PAD".into(),
         (Device::Pad, Act::Confirm) => "A".into(),
-        (_, Act::Swap) if !swap_free() => String::new(),
-        (_, Act::Swap) | (_, Act::Special) => name(Bind::Cast),
+        (_, Act::Swap) => swap_bind().map_or(String::new(), name),
+        (_, Act::Special) => name(Bind::Cast),
         (Device::Pad, Act::Tabs) => format!("{}/{}", Pad::L1.name(), Pad::R1.name()),
         (_, Act::Tabs) => format!("{}/{}", name(Bind::Skill1), name(Bind::Skill2)),
         (Device::Pad, Act::Walk) => "D-PAD".into(),
@@ -233,19 +262,45 @@ pub fn bind_prompt(x: Bind) -> String {
     }
 }
 
-/// 장비 칸 빨리 바꾸기(공격 버튼, 0164)를 지금 장치에서 쓸 수 있나: 공격 버튼이 메뉴에서 이미 다른 일을 하면 못 쓴다 —
-/// 키보드의 J·Space는 확인이고(키보드만 배치의 공격 = J), 마우스 버튼은 누르기(기본 배치의 공격 = 왼쪽 클릭)다. 그때는 확인 →
-/// 후보 목록으로 바꾼다(안내 줄에도 뜨지 않는다). 패드는 기본 배치(공격 = X)에서 된다. 터치는 메뉴에 공격 버튼이 없다.
-pub fn swap_free() -> bool {
-    swap_free_for(device(), &bindings())
+/// 큰 기술의 지금 버튼(0255): 따로 붙인 것이 있으면 그것("L3", "LB+RB"), 없으면 스킬 두 버튼 함께("LT+RT"). 터치는 빈 글.
+pub fn ult_prompt() -> String {
+    let b = bindings();
+    let names: Vec<String> = match device() {
+        Device::Touch => return String::new(),
+        Device::Pad => b
+            .ult
+            .pads
+            .iter()
+            .flatten()
+            .map(|p| p.name().to_string())
+            .collect(),
+        Device::Keys => b
+            .ult
+            .keys
+            .iter()
+            .flatten()
+            .map(|k| key_name(*k).to_string())
+            .collect(),
+    };
+    if names.is_empty() {
+        let (x, y) = (bind_prompt(Bind::Skill1), bind_prompt(Bind::Skill2));
+        return format!("{x}+{y}");
+    }
+    names.join("+")
 }
 
-fn swap_free_for(device: Device, b: &Bindings) -> bool {
-    match device {
+/// 장비 칸 빨리 바꾸기(0164)의 버튼: 원거리 공격 → 근접 공격 차례로, 메뉴에서 다른 일을 하지 않는 첫 버튼(0255 — 패드의
+/// 원거리 공격이 RB(탭 넘기기)로 가서 패드는 근접 공격 X가 바꾼다). 키보드의 J·Space는 확인, 왼쪽 클릭은 누르기, 패드의
+/// A·B·Start·Select·십자 ←→·LB·RB는 메뉴의 일이다. 없으면 확인 → 후보 목록으로 바꾼다(안내 줄에도 뜨지 않는다). 터치는 메뉴에 공격 버튼이 없다.
+pub fn swap_bind() -> Option<Bind> {
+    swap_bind_for(device(), &bindings())
+}
+
+fn swap_bind_for(device: Device, b: &Bindings) -> Option<Bind> {
+    let free = |x: Bind| match device {
         Device::Touch => false,
         Device::Pad => !matches!(
-            b.pad(Bind::Cast),
-            // LB·RB는 큰 창의 탭 넘기기(0175, 물리 고정).
+            b.pad(x),
             Pad::South
                 | Pad::East
                 | Pad::Start
@@ -255,12 +310,13 @@ fn swap_free_for(device: Device, b: &Bindings) -> bool {
                 | Pad::L1
                 | Pad::R1
         ),
-        Device::Keys => match b.key(Bind::Cast) {
+        Device::Keys => match b.key(x) {
             Slot::Key(k) => !matches!(k, KeyCode::J | KeyCode::Space),
             // 왼쪽 클릭은 메뉴의 누르기 — 오른쪽·가운데는 메뉴에서 쓰지 않는다.
             Slot::Mouse(m) => m != MouseButton::Left,
         },
-    }
+    };
+    [Bind::Cast, Bind::Attack].into_iter().find(|x| free(*x))
 }
 
 /// 다시 붙일 수 있는 게임 동작(0024). 이동·확인·뒤로·멈춤은 고정 — 배치를 망쳐도 메뉴로 돌아올 길이 남게
@@ -394,19 +450,39 @@ pub fn key_name(i: u8) -> &'static str {
         .unwrap_or("?")
 }
 
-/// 원거리 무기의 버튼 맞바꾸기(0223): 평타 버튼 = 사격(월드 `cast`), 특수 버튼 = 수류탄(월드 `attack`). 누름·쥠을 함께 바꾼다.
-pub fn weapon_buttons(a: &mut Actions, ranged: bool) {
-    if ranged {
-        std::mem::swap(&mut a.attack, &mut a.cast);
-        std::mem::swap(&mut a.attack_held, &mut a.cast_held);
+/// 큰 기술(필살기)의 따로 붙인 버튼(0255): 버튼 하나 또는 두 버튼 조합(첫째를 쥔 채 둘째를 누른다 — 같은 틱이어도 된다).
+/// 비어 있으면 붙인 것이 없다 — 스킬 두 버튼 "함께"(0151)는 늘 큰 기술이다(이것은 그 위에 더하는 길).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct UltBind {
+    /// 키 칸(키·마우스 버튼의 저장 번호) 하나 또는 둘.
+    pub keys: [Option<u8>; 2],
+    pub pads: [Option<Pad>; 2],
+}
+
+/// 조합이 이번 틱에 이뤄졌나: 버튼 하나면 눌렸을 때, 둘이면 한쪽이 눌리고 다른 쪽이 쥐어져 있을 때. 이룬 버튼(이번에 눌린 쪽들)을 돌려준다 —
+/// 그 버튼의 제 동작은 이번 틱에 거둔다(`Actions::drop_bound`).
+pub fn chord_fired<T: Copy>(
+    c: [Option<T>; 2],
+    pressed: impl Fn(T) -> bool,
+    down: impl Fn(T) -> bool,
+) -> Option<[Option<T>; 2]> {
+    match c {
+        [Some(x), None] | [None, Some(x)] => pressed(x).then_some([Some(x), None]),
+        [Some(x), Some(y)] => {
+            let (px, py) = (pressed(x), pressed(y));
+            ((px && (py || down(y))) || (py && down(x)))
+                .then_some([px.then_some(x), py.then_some(y)])
+        }
+        [None, None] => None,
     }
 }
 
-/// 동작 → (키 하나, 패드 버튼 하나). 겹치면 맞바꾼다(빈 동작이 생기지 않게).
+/// 동작 → (키 하나, 패드 버튼 하나). 겹치면 맞바꾼다(빈 동작이 생기지 않게). 큰 기술은 따로 `ult`(0255 — 조합을 받고 겹쳐도 된다).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Bindings {
     pub keys: [u8; NB],
     pub pads: [Pad; NB],
+    pub ult: UltBind,
 }
 
 impl Bindings {
@@ -431,7 +507,8 @@ impl Bindings {
         }
     }
 
-    /// 키보드만(0024): 소울라이크식 — 회피 B·Space, 패링 LB, 스킬 LT·RT(0151 — 땅 돌리기는 십자 ←·→), 락온 R3, 점프 A·F(0027, 엘든 링). 공격만 X·J(사장: "공격만 우리식").
+    /// 키보드만(0024): 소울라이크식 — 회피 B·Space, 패링 LB, 스킬 LT·RT(0151 — 땅 돌리기는 십자 ←·→), 락온 R3, 점프 A·F(0027, 엘든 링).
+    /// 근접 공격 X·J, 원거리 공격(마법·사격) RB·U(0255).
     /// 오른손은 J·K·L·U(패드의 오른쪽 넷처럼). 조작 설정의 "키보드만 배치로".
     pub fn keyboard_only() -> Bindings {
         Bindings {
@@ -448,8 +525,9 @@ impl Bindings {
                 key_index(KeyCode::Q),
                 key_index(KeyCode::E),
             ],
+            // 0255: 근접 공격 = X, 원거리 공격(마법·사격) = RB — 무기와 상관없이(0223의 "평타 = RB"를 되돌림).
             pads: [
-                Pad::R1,
+                Pad::West,
                 Pad::East,
                 Pad::L1,
                 Pad::R3,
@@ -457,10 +535,11 @@ impl Bindings {
                 Pad::DRight,
                 Pad::South,
                 Pad::North,
-                Pad::West,
+                Pad::R1,
                 Pad::L2,
                 Pad::R2,
             ],
+            ult: UltBind::default(),
         }
     }
 
@@ -494,6 +573,44 @@ impl Bindings {
             self.pads[other] = old;
         }
         self.pads[b as usize] = p;
+    }
+
+    /// 큰 기술 칸(0255)을 저장 칸 넷으로: 키 둘·패드 둘(+1, 0 = 없음).
+    pub fn encode_ult(&self) -> [u32; 4] {
+        let pad_cell = |p: Option<Pad>| {
+            p.and_then(|p| PADS.iter().position(|x| *x == p))
+                .map_or(0, |i| i as u32 + 1)
+        };
+        let key_cell = |k: Option<u8>| k.map_or(0, |k| k as u32 + 1);
+        [
+            key_cell(self.ult.keys[0]),
+            key_cell(self.ult.keys[1]),
+            pad_cell(self.ult.pads[0]),
+            pad_cell(self.ult.pads[1]),
+        ]
+    }
+
+    /// 큰 기술 칸 넷을 읽는다(범위 밖은 없음).
+    pub fn decode_ult(v: &[u32]) -> UltBind {
+        let key = |c: Option<&u32>| match c {
+            Some(&c) if c != 0 && c as usize <= NSLOTS => Some((c - 1) as u8),
+            _ => None,
+        };
+        let pad = |c: Option<&u32>| match c {
+            Some(&c) if c != 0 && c as usize <= PADS.len() => Some(PADS[(c - 1) as usize]),
+            _ => None,
+        };
+        let mut u = UltBind {
+            keys: [key(v.first()), key(v.get(1))],
+            pads: [pad(v.get(2)), pad(v.get(3))],
+        };
+        if u.keys[0] == u.keys[1] {
+            u.keys[1] = None;
+        }
+        if u.pads[0] == u.pads[1] {
+            u.pads[1] = None;
+        }
+        u
     }
 
     /// 저장 칸: 처음 여섯 동작의 키 여섯 + 패드 여섯(0024의 칸 그대로), 그 뒤에 붙인 동작마다 (키, 패드)(0027 점프).
@@ -941,6 +1058,21 @@ impl Input {
         a.turn_right = kp(Bind::TurnRight);
         a.skill1 = kp(Bind::Skill1);
         a.skill2 = kp(Bind::Skill2);
+        // 큰 기술의 따로 붙인 키(0255): 이룬 키의 제 동작은 이번 틱에 거둔다(조합의 둘째 키가 스킬·공격을 같이 내지 않게).
+        if let Some(hit) = chord_fired(
+            bind.ult.keys,
+            |k| Slot::of(k).pressed(),
+            |k| Slot::of(k).down(),
+        ) {
+            a.ult = true;
+            for k in hit.into_iter().flatten() {
+                for x in BINDS {
+                    if bind.keys[x as usize] == k {
+                        a.drop_press(x);
+                    }
+                }
+            }
+        }
         a.tab_prev = a.skill1;
         a.tab_next = a.skill2;
         a.pressed_key = KEYS
@@ -1018,6 +1150,14 @@ impl Input {
                 a.turn_right |= pj(Bind::TurnRight);
                 a.skill1 |= pj(Bind::Skill1);
                 a.skill2 |= pj(Bind::Skill2);
+                if let Some(hit) = chord_fired(
+                    bind.ult.pads,
+                    |p| pad.is_just_pressed(p.button()),
+                    |p| pad.is_currently_pressed(p.button()),
+                ) {
+                    a.ult = true;
+                    a.drop_pads(&bind, hit);
+                }
                 a.tab_prev |= pad.is_just_pressed(Pad::L1.button());
                 a.tab_next |= pad.is_just_pressed(Pad::R1.button());
                 if a.pressed_pad.is_none() {
@@ -1085,6 +1225,10 @@ impl Input {
             a.turn_right |= pj(Bind::TurnRight);
             a.skill1 |= pj(Bind::Skill1);
             a.skill2 |= pj(Bind::Skill2);
+            if let Some(hit) = chord_fired(bind.ult.pads, j, |p| is_key_down(p.key())) {
+                a.ult = true;
+                a.drop_pads(&bind, hit);
+            }
             a.tab_prev |= j(Pad::L1);
             a.tab_next |= j(Pad::R1);
             if a.pressed_pad.is_none() {
@@ -1115,6 +1259,12 @@ impl Input {
         a.tap = t.tap;
         if m == Vec2::ZERO {
             m = t.move_dir;
+        }
+        // 터치의 원거리 무기: 든 무기 그림의 공격 버튼 = 사격, 원거리 버튼 = 수류탄(0223 — 패드·키보드는 맞바꾸지 않는다, 0255).
+        let mut t = t;
+        if self.touch.ctx.ranged {
+            std::mem::swap(&mut t.attack, &mut t.cast);
+            std::mem::swap(&mut t.attack_held, &mut t.cast_held);
         }
         a.attack |= t.attack;
         a.attack_held |= t.attack_held;
@@ -1397,26 +1547,82 @@ mod tests {
         );
     }
 
-    /// 0164 → 0223: 장비 칸 빨리 바꾸기는 특수 버튼(패드 X·U·오른쪽 클릭 — 평타가 RB로 가서 RB는 탭 넘기기와 겹친다) —
-    /// 그 버튼이 메뉴에서 이미 다른 일을 하는 장치·배치에서는 꺼진다(J = 확인·왼쪽 클릭 = 누르기·A·B·LB·RB·터치).
+    /// 0164 → 0255: 장비 칸 빨리 바꾸기는 원거리 공격 → 근접 공격 차례로 메뉴에서 다른 일을 하지 않는 첫 버튼 — 패드는 원거리가
+    /// RB(탭 넘기기)라 근접 공격 X, 키보드는 U·오른쪽 클릭. 둘 다 메뉴의 일과 겹치면 없다(J = 확인·왼쪽 클릭 = 누르기·A·B·LB·RB·터치).
     #[test]
-    fn quick_swap_is_on_the_special_button_and_off_where_that_already_means_something_in_menus() {
+    fn quick_swap_takes_the_first_attack_button_that_means_nothing_in_menus() {
         let (only, mouse) = (Bindings::keyboard_only(), Bindings::default_layout());
-        assert!(swap_free_for(Device::Pad, &only));
-        assert!(swap_free_for(Device::Keys, &only), "U");
-        assert!(swap_free_for(Device::Keys, &mouse), "right click");
-        assert!(!swap_free_for(Device::Touch, &only));
+        assert_eq!(swap_bind_for(Device::Pad, &only), Some(Bind::Attack), "X");
+        assert_eq!(swap_bind_for(Device::Keys, &only), Some(Bind::Cast), "U");
+        assert_eq!(
+            swap_bind_for(Device::Keys, &mouse),
+            Some(Bind::Cast),
+            "right click"
+        );
+        assert_eq!(swap_bind_for(Device::Touch, &only), None);
         let mut j = only;
         j.set_key(Bind::Cast, key_index(KeyCode::J));
-        assert!(!swap_free_for(Device::Keys, &j), "J confirms");
+        assert_eq!(
+            swap_bind_for(Device::Keys, &j),
+            Some(Bind::Attack),
+            "J confirms → U"
+        );
         let mut left = mouse;
         left.set_key(Bind::Cast, mouse_index(MouseButton::Left));
-        assert!(!swap_free_for(Device::Keys, &left), "a click is a tap");
-        for p in [Pad::South, Pad::R1] {
-            let mut pad = only;
-            pad.set_pad(Bind::Cast, p);
-            assert!(!swap_free_for(Device::Pad, &pad), "{p:?}");
-        }
+        assert_eq!(
+            swap_bind_for(Device::Keys, &left),
+            Some(Bind::Attack),
+            "a click is a tap"
+        );
+        let mut pad = only;
+        pad.set_pad(Bind::Attack, Pad::South);
+        assert_eq!(
+            swap_bind_for(Device::Pad, &pad),
+            None,
+            "A confirms, RB turns tabs"
+        );
+    }
+
+    /// 0255: 큰 기술의 조합은 한쪽을 쥔 채 다른 쪽을 누르면(같은 틱도) 이뤄지고, 이룬 버튼(이번에 눌린 쪽)을 돌려준다.
+    #[test]
+    fn an_ult_chord_fires_when_one_is_held_and_the_other_pressed() {
+        let c = [Some(1u8), Some(2u8)];
+        let run = |pressed: &[u8], down: &[u8]| {
+            chord_fired(
+                c,
+                |x| pressed.contains(&x),
+                |x| down.contains(&x) || pressed.contains(&x),
+            )
+        };
+        assert_eq!(run(&[1], &[]), None, "the first alone does nothing");
+        assert_eq!(run(&[2], &[1]), Some([None, Some(2)]));
+        assert_eq!(run(&[1, 2], &[]), Some([Some(1), Some(2)]), "same tick");
+        assert_eq!(run(&[], &[1, 2]), None, "holding both is not a new press");
+        let one = [Some(3u8), None];
+        assert_eq!(
+            chord_fired(one, |x| x == 3, |_| false),
+            Some([Some(3), None])
+        );
+        assert_eq!(chord_fired([None::<u8>, None], |_| true, |_| true), None);
+    }
+
+    /// 0255: 큰 기술 칸은 저장 칸 넷으로 왕복하고, 비면 없음·같은 버튼 둘은 하나로 읽는다.
+    #[test]
+    fn the_ult_binding_round_trips_through_four_cells() {
+        let mut b = Bindings::default_layout();
+        assert_eq!(Bindings::decode_ult(&b.encode_ult()), UltBind::default());
+        b.ult = UltBind {
+            keys: [Some(key_index(KeyCode::V)), None],
+            pads: [Some(Pad::L1), Some(Pad::R1)],
+        };
+        assert_eq!(Bindings::decode_ult(&b.encode_ult()), b.ult);
+        assert_eq!(
+            Bindings::decode_ult(&[0, 0, 0]),
+            UltBind::default(),
+            "old saves"
+        );
+        let same = Bindings::decode_ult(&[3, 3, 6, 6]);
+        assert_eq!((same.keys[1], same.pads[1]), (None, None));
     }
 
     /// 0058: 커서는 마우스 조준이 켜져 있고, 장치가 키보드(+마우스)이고, 만진 지 쉼 시간 안일 때만 조준한다.

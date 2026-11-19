@@ -1,13 +1,34 @@
-//! 조작 설정 화면(0024) — 상태와 입력 규칙(순수, 시험). 그림은 `app/mod.rs`의 `draw_controls`.
+//! 조작 설정 화면(0024) — 상태와 입력 규칙(순수, 시험). 그림은 `controls_screen.rs`.
 //!
-//! 줄 = 다시 붙일 동작 + 배치 둘("키보드+마우스 배치로"(기본) · "키보드만 배치로", 0058 — 키 칸만 바꾸고 패드 칸은 기본값) + "돌아가기".
-//! 칸 = 키보드 | 패드(좌우로). 키보드 칸에는 마우스 버튼(왼쪽·오른쪽·휠 클릭)도 붙는다(0058). 확인 → "누르세요… 5":
-//! 그 칸 장치의 다음 눌림을 붙인다(겹치면 맞바꾸기 — `Bindings::set_*`). 취소: 키보드 칸은 Esc, 패드 칸은 Start, 5초가 지나도.
-//! 확인을 누른 그 틱의 눌림은 잡지 않는다(Space·A는 확인이면서 붙일 수 있는 키라서) — 다음 틱부터.
-use crate::input::{Actions, Bind, Bindings, BINDS};
+//! 줄 = 다시 붙일 동작(하는 일의 차례로 — 공격 둘·몸·기술·큰 기술·땅 돌리기, 0255) + 배치 둘("키보드+마우스 배치로"(기본) ·
+//! "키보드만 배치로", 0058) + "돌아가기". 칸 = 키보드 | 패드(좌우로). 키보드 칸에는 마우스 버튼도 붙는다(0058).
+//! 확인 → "누르세요… 5": 그 칸 장치의 다음 눌림을 붙인다(겹치면 맞바꾸기 — `Bindings::set_*`). 취소: 키보드 칸은 Esc, 패드 칸은
+//! Start, 5초가 지나도. 확인을 누른 그 틱의 눌림은 잡지 않는다(Space·A는 확인이면서 붙일 수 있는 키라서) — 다음 틱부터.
+//! 큰 기술 줄(0255)은 버튼 하나 또는 두 버튼 조합: 첫 눌림 뒤 `CHORD_WAIT` 안에 다른 버튼이 오면 조합, 아니면 하나. 하나는
+//! 다른 동작이 쓰지 않는 버튼만(겹치면 알림 — 조합은 겹쳐도 된다), 스킬 두 버튼 조합이면 비운다(그것은 늘 큰 기술이다).
+use crate::input::{Actions, Bind, Bindings, Pad};
 
 /// 기다리는 초.
 pub const CAPTURE_SECS: f32 = 5.0;
+/// 큰 기술 조합의 둘째 버튼을 기다리는 초(첫 눌림 뒤).
+pub const CHORD_WAIT: f32 = 0.4;
+/// "다른 동작이 쓰는 버튼" 알림이 떠 있는 초.
+pub const NOTE_SECS: f32 = 2.5;
+
+/// 줄의 차례(0255 — 하는 일로 묶는다. 저장 칸 차례 `BINDS`와 다르다).
+pub const ORDER: [Bind; crate::input::NB] = [
+    Bind::Attack,
+    Bind::Cast,
+    Bind::Dodge,
+    Bind::Parry,
+    Bind::Jump,
+    Bind::Flask,
+    Bind::Lock,
+    Bind::Skill1,
+    Bind::Skill2,
+    Bind::TurnLeft,
+    Bind::TurnRight,
+];
 
 /// 통째로 되돌리는 배치(0058).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -30,16 +51,31 @@ impl Preset {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Row {
     Bind(Bind),
+    /// 큰 기술(0255).
+    Ult,
     Preset(Preset),
     Back,
 }
 
 pub fn rows() -> Vec<Row> {
-    let mut v: Vec<Row> = BINDS.iter().map(|b| Row::Bind(*b)).collect();
+    let mut v = Vec::new();
+    for b in ORDER {
+        v.push(Row::Bind(b));
+        if b == Bind::Skill2 {
+            v.push(Row::Ult);
+        }
+    }
     v.push(Row::Preset(Preset::Mouse));
     v.push(Row::Preset(Preset::Keys));
     v.push(Row::Back);
     v
+}
+
+/// 큰 기술 줄의 첫 눌림(조합의 둘째를 기다린다).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum First {
+    Key(u8),
+    Pad(Pad),
 }
 
 /// 칸: 0 = 키보드, 1 = 패드.
@@ -49,6 +85,10 @@ pub struct Controls {
     pub col: usize,
     /// 기다리는 중이면 남은 초.
     pub capture: Option<f32>,
+    /// 큰 기술 줄: 첫 눌림과 둘째를 기다릴 남은 초.
+    pub first: Option<(First, f32)>,
+    /// "다른 동작이 쓰는 버튼" 알림의 남은 초.
+    pub note: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -56,6 +96,30 @@ pub enum Out {
     Stay,
     Changed(Bindings),
     Back,
+}
+
+/// 큰 기술 칸에 키(하나·둘)를 붙인 배치 — 하나가 다른 동작의 키면 `None`.
+pub fn ult_keys(b: Bindings, keys: [Option<u8>; 2]) -> Option<Bindings> {
+    let mut nb = b;
+    let skills = [b.keys[Bind::Skill1 as usize], b.keys[Bind::Skill2 as usize]];
+    nb.ult.keys = match keys {
+        [Some(k), None] if b.keys.contains(&k) => return None,
+        [Some(x), Some(y)] if skills.contains(&x) && skills.contains(&y) => [None, None],
+        k => k,
+    };
+    Some(nb)
+}
+
+/// 큰 기술 칸에 패드 버튼(하나·둘)을 붙인 배치 — 하나가 다른 동작의 버튼이면 `None`.
+pub fn ult_pads(b: Bindings, pads: [Option<Pad>; 2]) -> Option<Bindings> {
+    let mut nb = b;
+    let skills = [b.pad(Bind::Skill1), b.pad(Bind::Skill2)];
+    nb.ult.pads = match pads {
+        [Some(p), None] if b.pads.contains(&p) => return None,
+        [Some(x), Some(y)] if skills.contains(&x) && skills.contains(&y) => [None, None],
+        p => p,
+    };
+    Some(nb)
 }
 
 impl Controls {
@@ -68,8 +132,9 @@ impl Controls {
 
     fn confirm(&mut self, b: Bindings) -> Out {
         match rows().get(self.row) {
-            Some(Row::Bind(_)) => {
+            Some(Row::Bind(_) | Row::Ult) => {
                 self.capture = Some(CAPTURE_SECS);
+                self.first = None;
                 Out::Stay
             }
             Some(Row::Preset(p)) => Out::Changed(p.layout()),
@@ -79,15 +144,72 @@ impl Controls {
         .min_changed(b)
     }
 
+    /// 큰 기술 줄을 붙인 결과: 바뀐 배치, 또는 겹쳐서 알림.
+    fn settle(&mut self, got: Option<Bindings>, b: Bindings) -> Out {
+        self.capture = None;
+        self.first = None;
+        match got {
+            Some(nb) => Out::Changed(nb).min_changed(b),
+            None => {
+                self.note = NOTE_SECS;
+                Out::Stay
+            }
+        }
+    }
+
+    /// 큰 기술 줄의 기다림(0255).
+    fn tick_ult(&mut self, a: &Actions, b: Bindings, dt: f32) -> Out {
+        let cancel = if self.col == 0 { a.back } else { a.pause };
+        if cancel {
+            self.capture = None;
+            self.first = None;
+            return Out::Stay;
+        }
+        let now = match (self.col, a.pressed_key, a.pressed_pad) {
+            (0, Some(k), _) => Some(First::Key(k)),
+            (1, _, Some(p)) => Some(First::Pad(p)),
+            _ => None,
+        };
+        match (self.first, now) {
+            (None, Some(f)) => self.first = Some((f, CHORD_WAIT)),
+            (Some((First::Key(x), _)), Some(First::Key(y))) if x != y => {
+                return self.settle(ult_keys(b, [Some(x), Some(y)]), b);
+            }
+            (Some((First::Pad(x), _)), Some(First::Pad(y))) if x != y => {
+                return self.settle(ult_pads(b, [Some(x), Some(y)]), b);
+            }
+            (Some((f, left)), _) => {
+                let left = left - dt;
+                if left > 0.0 {
+                    self.first = Some((f, left));
+                } else {
+                    let got = match f {
+                        First::Key(k) => ult_keys(b, [Some(k), None]),
+                        First::Pad(p) => ult_pads(b, [Some(p), None]),
+                    };
+                    return self.settle(got, b);
+                }
+            }
+            (None, None) => {}
+        }
+        Out::Stay
+    }
+
     pub fn tick(&mut self, a: &Actions, b: Bindings, dt: f32) -> Out {
         let rows = rows();
+        self.note = (self.note - dt).max(0.0);
         if let Some(left) = self.capture {
-            let Some(Row::Bind(bind)) = rows.get(self.row).copied() else {
-                self.capture = None;
-                return Out::Stay;
-            };
             let left = left - dt;
-            self.capture = (left > 0.0).then_some(left);
+            // 조합의 둘째를 기다리는 동안은 시간이 다 돼도 끝을 맺는다.
+            self.capture = (left > 0.0 || self.first.is_some()).then_some(left.max(0.0));
+            let bind = match rows.get(self.row).copied() {
+                Some(Row::Bind(bind)) => bind,
+                Some(Row::Ult) => return self.tick_ult(a, b, dt),
+                _ => {
+                    self.capture = None;
+                    return Out::Stay;
+                }
+            };
             let mut nb = b;
             if self.col == 0 {
                 if a.back {
@@ -113,7 +235,7 @@ impl Controls {
         if a.menu_down {
             self.row = (self.row + 1) % n;
         }
-        if (a.menu_left || a.menu_right) && matches!(rows[self.row], Row::Bind(_)) {
+        if (a.menu_left || a.menu_right) && matches!(rows[self.row], Row::Bind(_) | Row::Ult) {
             self.col = 1 - self.col;
         }
         if a.back {
@@ -274,6 +396,105 @@ mod tests {
             0.016,
         );
         assert!(matches!(out, Out::Changed(nb) if nb.pads[0] == Pad::R1));
+    }
+
+    /// 0255: 줄은 하는 일의 차례 — 모든 동작이 한 번씩, 첫 줄은 근접 공격, 큰 기술은 기술 2 다음.
+    #[test]
+    fn rows_list_every_bind_once_in_the_order_of_use() {
+        let r = rows();
+        for b in crate::input::BINDS {
+            assert_eq!(r.iter().filter(|x| **x == Row::Bind(b)).count(), 1, "{b:?}");
+        }
+        assert_eq!(r[0], Row::Bind(Bind::Attack));
+        let ult = r.iter().position(|x| *x == Row::Ult).unwrap();
+        assert_eq!(r[ult - 1], Row::Bind(Bind::Skill2));
+    }
+
+    fn ult_row() -> usize {
+        rows().iter().position(|x| *x == Row::Ult).unwrap()
+    }
+
+    fn key(name: &str) -> u8 {
+        KEYS.iter().position(|x| x.1 == name).unwrap() as u8
+    }
+
+    /// 0255: 큰 기술 줄 — 다른 동작이 쓰지 않는 키 하나는 그 키, 둘을 잇달아 누르면 조합, 다른 동작의 키 하나는 알림만.
+    #[test]
+    fn the_ult_row_takes_a_free_key_a_two_key_combo_and_refuses_a_taken_single() {
+        let b = Bindings::keyboard_only();
+        let dt = 1.0 / 60.0;
+        let mut c = Controls::default();
+        c.pick(ult_row(), 0, b);
+        let press = |k: u8| Actions {
+            pressed_key: Some(k),
+            ..Default::default()
+        };
+        // 하나(V — 아무도 안 쓴다): 기다림이 지나면 붙는다.
+        assert_eq!(c.tick(&press(key("V")), b, dt), Out::Stay);
+        let mut out = Out::Stay;
+        for _ in 0..40 {
+            out = c.tick(&Actions::default(), b, dt);
+            if out != Out::Stay {
+                break;
+            }
+        }
+        let Out::Changed(nb) = out else {
+            panic!("{out:?}")
+        };
+        assert_eq!(nb.ult.keys, [Some(key("V")), None]);
+        assert_eq!(nb.keys, b.keys, "nothing else moves");
+        // 조합(K = 패링 + L = 락온): 겹쳐도 된다.
+        c.pick(ult_row(), 0, b);
+        c.tick(&press(key("K")), b, dt);
+        let out = c.tick(&press(key("L")), b, dt);
+        assert!(matches!(out, Out::Changed(nb) if nb.ult.keys == [Some(key("K")), Some(key("L"))]));
+        // 하나인데 다른 동작의 키(J = 근접 공격): 그대로 + 알림.
+        c.pick(ult_row(), 0, b);
+        c.tick(&press(key("J")), b, dt);
+        for _ in 0..40 {
+            assert_eq!(c.tick(&Actions::default(), b, dt), Out::Stay);
+        }
+        assert!(c.note > 0.0 && c.capture.is_none());
+        // 스킬 두 키의 조합(Q+E)이면 비운다 — 그것은 늘 큰 기술이다.
+        let mut set = b;
+        set.ult.keys = [Some(key("V")), None];
+        c.pick(ult_row(), 0, set);
+        c.tick(&press(key("Q")), set, dt);
+        let out = c.tick(&press(key("E")), set, dt);
+        assert!(matches!(out, Out::Changed(nb) if nb.ult.keys == [None, None]));
+    }
+
+    /// 0255: 패드 칸도 같다 — L3(아무도 안 쓴다) 하나, LB+RB 조합, Start는 취소.
+    #[test]
+    fn the_ult_row_on_the_pad_takes_l3_or_a_combo_and_start_cancels() {
+        let b = Bindings::default_layout();
+        let dt = 1.0 / 60.0;
+        let mut c = Controls::default();
+        c.pick(ult_row(), 1, b);
+        let press = |p: Pad| Actions {
+            pressed_pad: Some(p),
+            ..Default::default()
+        };
+        c.tick(&press(Pad::L1), b, dt);
+        let out = c.tick(&press(Pad::R1), b, dt);
+        assert!(matches!(out, Out::Changed(nb) if nb.ult.pads == [Some(Pad::L1), Some(Pad::R1)]));
+        c.pick(ult_row(), 1, b);
+        c.tick(&press(Pad::L3), b, dt);
+        let mut out = Out::Stay;
+        for _ in 0..40 {
+            out = c.tick(&Actions::default(), b, dt);
+            if out != Out::Stay {
+                break;
+            }
+        }
+        assert!(matches!(out, Out::Changed(nb) if nb.ult.pads == [Some(Pad::L3), None]));
+        c.pick(ult_row(), 1, b);
+        let stop = Actions {
+            pause: true,
+            ..Default::default()
+        };
+        assert_eq!(c.tick(&stop, b, dt), Out::Stay);
+        assert!(c.capture.is_none());
     }
 
     #[test]

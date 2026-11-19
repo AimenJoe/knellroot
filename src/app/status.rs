@@ -475,17 +475,10 @@ impl App {
                         Row::Skill(0) => cap(input::Bind::Skill1),
                         Row::Skill(_) => cap(input::Bind::Skill2),
                         // 큰 기술 = 두 버튼 함께(0151) — 키캡 하나에 "Q+E"(사장 "필살기에 대한 입력키가 안 나타나서 불편").
-                        Row::Ult => {
-                            let (a, b) = (
-                                input::bind_prompt(input::Bind::Skill1),
-                                input::bind_prompt(input::Bind::Skill2),
-                            );
-                            if a.is_empty() || b.is_empty() {
-                                String::new()
-                            } else {
-                                ui::key(&format!("{a}+{b}"))
-                            }
-                        }
+                        // 따로 붙인 버튼이 있으면 그것(0255).
+                        Row::Ult => Some(input::ult_prompt())
+                            .filter(|n| !n.is_empty())
+                            .map_or(String::new(), |n| ui::key(&n)),
                         Row::Passives => format!("{}/{}", cells.len(), cell_count()),
                         _ => String::new(),
                     };
