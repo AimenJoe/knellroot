@@ -85,8 +85,9 @@ impl App {
             .iter()
             .map(|r| match r {
                 SettingsRow::Language => ui::Row::step(s.menu_language, s.lang_name),
+                // 다른 켬/끔 줄(예고 타이밍·마우스 조준)과 같은 ◀▶ 줄(0256 — 혼자 화살 없는 줄이었다).
                 SettingsRow::Fullscreen => {
-                    ui::Row::value(s.menu_fullscreen, on_off(crate::screen::active()))
+                    ui::Row::step(s.menu_fullscreen, on_off(crate::screen::active()))
                 }
                 SettingsRow::Shake => {
                     ui::Row::step(s.menu_shake, format!("{}%", self.opts.shake as u32 * 10))
@@ -223,6 +224,7 @@ impl App {
                     self.opts.tell_timing = !self.opts.tell_timing;
                     self.save_prefs();
                 }
+                Some(SettingsRow::Fullscreen) => self.toggle_fullscreen(),
                 Some(SettingsRow::Volume) => {
                     self.set_volume((self.opts.volume as i32 + step).clamp(0, 10) as u8)
                 }

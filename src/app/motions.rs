@@ -225,16 +225,13 @@ impl App {
             .iter()
             .map(|n| self.ui.width(n, 1.0) + u * 14.0)
             .collect();
-        let room = rx_end - lx - gap * (IDS.len() - 1) as f32;
-        let extra = ((room - widths.iter().sum::<f32>()) / IDS.len() as f32).max(0.0);
-        let mut tx = lx;
+        let rects = ui::tab_rects(&widths, lx, rx_end, top, tab_h, gap);
         for (i, n) in names.iter().enumerate() {
-            let r = Rect::new(tx, top, widths[i] + extra, tab_h);
-            self.ui.button(r, n, i == weapon as usize);
-            self.hits.push((r, Hit::Cell(1, i)));
-            tx += r.w + gap;
+            self.ui.button(rects[i], n, i == weapon as usize);
+            self.hits.push((rects[i], Hit::Cell(1, i)));
         }
-        let body = top + tab_h + u * 8.0;
+        let tabs_end = rects.iter().map(|r| r.y + r.h).fold(top + tab_h, f32::max);
+        let body = tabs_end + u * 8.0;
         let hint_y = panel.y + panel.h - u * 8.0 - px;
         let split = panel.x + panel.w * 0.36;
         draw_line(split, body, split, hint_y - u * 4.0, u.max(1.0), ui::BORDER);

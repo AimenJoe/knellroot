@@ -816,7 +816,14 @@ impl App {
         // 나지 않았을 때만 — 뒤로 > 확인(장면이 바뀜) > 커서.
         let quiet = self.sfx.as_ref().map_or(0, |s| s.played()) == played0;
         if scene0.is_menu() && quiet {
-            if self.scene() != scene0 && !(injected && !back0) {
+            // 모션 보기는 재생 시각을 장면에 들고 다녀 틱마다 값이 바뀐다 — 그것은 장면이 바뀐 것이 아니다(0256: 확인 소리가 틱마다 났다).
+            let (now, was) = (self.scene(), scene0);
+            #[cfg(feature = "dev")]
+            let moved =
+                !matches!((now, was), (Scene::Motions { .. }, Scene::Motions { .. })) && now != was;
+            #[cfg(not(feature = "dev"))]
+            let moved = now != was;
+            if moved && !(injected && !back0) {
                 self.snd(if back0 {
                     crate::sfx::Id::UiBack
                 } else {

@@ -753,11 +753,12 @@ pub const SPECS: [Spec; 169] = [
         30.0
     ),
     spec!(DodgeDist, "dodge.dist", "DODGE_DIST", 3.0, 1.0, 8.0, 0.25),
+    // 0256(사장 2026-11-19 "회피는 너무 속도가 빨라"): 0.25 → 0.32초 — 거리 3 m 그대로라 초속 12 → 9.4 m. 무적도 회피 내내라 같이 는다.
     spec!(
         DodgeTime,
         "dodge.time s",
         "DODGE_TIME",
-        0.25,
+        0.32,
         0.1,
         0.6,
         0.01

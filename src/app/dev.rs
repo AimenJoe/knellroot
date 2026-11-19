@@ -418,17 +418,14 @@ impl App {
             .iter()
             .map(|c| self.ui.width(c.name(), 1.0) + u * 14.0)
             .collect();
-        let room = rx_end - lx - gap * (DEV_CATS.len() - 1) as f32;
-        let extra = ((room - widths.iter().sum::<f32>()) / DEV_CATS.len() as f32).max(0.0);
-        let mut tx = lx;
+        let rects = ui::tab_rects(&widths, lx, rx_end, top, tab_h, gap);
         for (i, c) in DEV_CATS.iter().enumerate() {
-            let r = Rect::new(tx, top, widths[i] + extra, tab_h);
-            self.ui.button(r, c.name(), i == tab);
-            self.hits.push((r, Hit::Cell(1, i)));
-            tx += r.w + gap;
+            self.ui.button(rects[i], c.name(), i == tab);
+            self.hits.push((rects[i], Hit::Cell(1, i)));
         }
+        let tabs_end = rects.iter().map(|r| r.y + r.h).fold(top + tab_h, f32::max);
         // 왼쪽 줄 목록 · 오른쪽 이름·설명(세로 선으로 가름).
-        let body = top + tab_h + u * 8.0;
+        let body = tabs_end + u * 8.0;
         let hint_y = panel.y + panel.h - u * 8.0 - px;
         let split = panel.x + panel.w * 0.45;
         draw_line(split, body, split, hint_y - u * 4.0, u.max(1.0), ui::BORDER);

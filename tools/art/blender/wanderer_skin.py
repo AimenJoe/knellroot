@@ -56,7 +56,10 @@ SPINE = ("mixamorig:Spine", "mixamorig:Spine1", "mixamorig:Spine2")
 # 10~13°, 걷기 30°. 원본 프레임마다 같은 규칙이라 1타 → 2타의 이음매(23)가 그대로 이어진다.
 LEAN_CAP = {"attack": (30.0, 30.0), "attack2": (30.0, 30.0),
             # 0238: 모아 베기도(Charged_Slash — 모으기·강타가 같은 원본, 머리 꺾임 58~68°).
-            "charge": (30.0, 30.0), "heavy": (30.0, 30.0)}
+            "charge": (30.0, 30.0), "heavy": (30.0, 30.0),
+            # 0256(사장 2026-11-19 "뒤로 뛰기, 점프는 너무 숙여져 있고"): 뛰어넘기(Jump_Over_Obstacle)·뒤로 뛰기(Back_Jump)는
+            # 몸이 앞으로 엎어질 듯 숙였다 — 공중에서도 몸은 거의 서 있게.
+            "jump": (18.0, 20.0), "dodge_back": (18.0, 20.0)}
 # 판정 구간(초 — 시작, 길이): 게임의 `world::hit_times`·`heavy_times`(랩 평타·강타 시간 × 무기 표의 `time`)와 같은 값.
 # 콤보·돌기 동작의 가운데를 잘라 와서 판정 순간에 몸이 옆·뒤를 보던 것(지팡이 둘째·셋째 타는 엉덩이가 뒤)을, 이 구간 동안 몸 전체를 돌려
 # 주먹(= 칼)이 정면을 지나게 맞춘다(`face_hit` — 시작·끝은 원본 방향 그대로, 사이를 매끄럽게). 판정·초승달은 늘 정면 부채꼴이다.
@@ -166,9 +169,10 @@ CLIPS = [
     # 0238(사장 "지적한 사항 구현" — 0.25초에 한 바퀴라 빠르다): 회피 시간(얼린 값)은 그대로 두고 일어나기를 떼어 냈다 — 회피 0.25초는
     # 구르기만(1 → 5 들어감 → 21 한 바퀴 → 23 닿음, 구르는 몫 0.12 → 0.185초), 일어나기(23 → 38, 0.2초 `dodge_rise`)는 회피가 끝나
     # 서기·걷기·달리기로 갈 때 렌더가 이어 튼다(`render::actors` `ROLL_RISE` — 공격·다시 회피면 바로 그 동작).
-    ("dodge", "Roll_Dodge_3", ("anchors", [(0.0, 1), (0.035, 5), (0.22, 21), (0.25, 23)])),
+    # 0256(사장 "회피는 너무 속도가 빨라"): 회피 0.25 → 0.32초(`tuning::DODGE_TIME`) — 구르기·뒤로 뛰기의 시간표를 같은 배(×1.28)로.
+    ("dodge", "Roll_Dodge_3", ("anchors", [(0.0, 1), (0.045, 5), (0.282, 21), (0.32, 23)])),
     ("dodge_rise", "Roll_Dodge_3", ("anchors", [(0.0, 31), (0.2, 38)])),
-    ("dodge_back", "Back_Jump", ("anchors", [(0.0, 2), (0.04, 4), (0.19, 14), (0.25, 17)])),
+    ("dodge_back", "Back_Jump", ("anchors", [(0.0, 2), (0.051, 4), (0.243, 14), (0.32, 17)])),
     ("hurt", "Dead", ("hit", 0, (2, 6), 12, 0.35, 0.058)),
     ("fall", "Dead", ("span", 4, 71, 1.3)),
     ("wake", "M01", ("span", 0, 71, 4.0)),
@@ -375,6 +379,55 @@ def add_bone(arm, name, parent, at_world):
     b.parent = eb[parent]
     bpy.ops.object.mode_set(mode="OBJECT")
     arm.pose.bones[name].rotation_mode = "QUATERNION"
+
+
+# 팔의 가중치 가두기(0256, 사장 "손이 움직이는 게 아니라 옷이 움직이는 게 있음(맨손으로 확인)"): Meshy 자동 리깅은 망토 자락까지
+# 팔 뼈에 묶었다 — 쉬는 자세에서 오른 위팔 뼈에 묶인 정점 254개의 중앙값이 팔 뼈대에서 0.14 m, 가장 먼 것 0.3 m(키 1.4 m 몸).
+# 그래서 주먹을 뻗으면 손 대신 망토 앞자락이 판자처럼 앞으로 나갔다. 위팔·아래팔 무리의 가중치를 팔 뼈대(위팔 머리 → 손 끝)에서의
+# 거리로 줄이고(`ARM_KEEP` 안은 그대로, `ARM_DROP` 밖은 0, 사이는 매끈하게) 줄인 몫은 가슴(Spine2)으로 — 몸의 합은 그대로.
+# 손·손가락 무리는 그대로(주먹 자체).
+ARM_KEEP, ARM_DROP = 0.07, 0.12
+ARM_GROUPS = ("Arm", "ForeArm")
+
+
+def confine_arms(arm, body):
+    from mathutils.geometry import intersect_point_line
+    names = {g.index: g.name for g in body.vertex_groups}
+    chest = body.vertex_groups.get("mixamorig:Spine2") or body.vertex_groups.new(name="mixamorig:Spine2")
+    mw = body.matrix_world
+    segs = {}
+    for side in ("Left", "Right"):
+        segs[side] = [(arm.matrix_world @ arm.data.bones[f"mixamorig:{side}{b}"].head_local,
+                       arm.matrix_world @ arm.data.bones[f"mixamorig:{side}{b}"].tail_local)
+                      for b in ("Arm", "ForeArm", "Hand")]
+
+    def dist(p, side):
+        best = 1e9
+        for a, b in segs[side]:
+            q, t = intersect_point_line(p, a, b)
+            t = max(0.0, min(1.0, t))
+            best = min(best, (p - (a + (b - a) * t)).length)
+        return best
+
+    moved, verts = 0.0, 0
+    for v in body.data.vertices:
+        p = mw @ v.co
+        give = 0.0
+        for g in list(v.groups):
+            n = names[g.group]
+            for side in ("Left", "Right"):
+                if n in (f"mixamorig:{side}{b}" for b in ARM_GROUPS):
+                    d = dist(p, side)
+                    keep = 1.0 - smooth01((d - ARM_KEEP) / (ARM_DROP - ARM_KEEP))
+                    cut = g.weight * (1.0 - keep)
+                    if cut > 1e-4:
+                        body.vertex_groups[g.group].add([v.index], g.weight - cut, "REPLACE")
+                        give += cut
+        if give > 0.0:
+            chest.add([v.index], give, "ADD")
+            moved += give
+            verts += 1
+    print(f"[skin] confine arms: {verts} verts, weight {moved:.1f} -> Spine2")
 
 
 def attach(arm, body, old):
@@ -586,8 +639,8 @@ TUCK = {}
 ROLL = {
     "name": "dodge", "src": "Roll_Dodge_3", "start": 1.0, "end": 31.0,
     # 초 — 말기 들어감(시작 → 공) · 공 · 풀림(공 → 끝), 한 바퀴의 시간표(몫 0..1, 코사인으로 이음)
-    "curl_in": 0.05, "curl_out": 0.19,
-    "spin": [(0.02, 0.0), (0.21, 1.0)],
+    "curl_in": 0.064, "curl_out": 0.243,  # 0256: 회피 0.32초에 맞춰 ×1.28
+    "spin": [(0.026, 0.0), (0.269, 1.0)],
 }
 BALL_BEND = {"mixamorig:Spine": 25.0, "mixamorig:Spine1": 25.0, "mixamorig:Spine2": 25.0,
              "mixamorig:Neck": 30.0, "mixamorig:Head": 25.0,
@@ -738,7 +791,7 @@ def craft_roll(arm, body, anchors):
     return n, poses, hips, hands
 
 
-def sample(arm, src, anchors, upright=None, cap=None):
+def sample(arm, src, anchors, upright=None, cap=None, end=None):
     """게임 프레임(OUT_FPS)마다 원본을 읽는다 → {뼈: [(loc, quat, scale)]}, 엉덩이 머리(뼈대 공간).
     `upright`(도)면 클립 평균 숙임을 그 각까지 등뼈로 세운다(한 클립에 한 각 — 숨쉬는 흔들림은 남는다)."""
     sc = bpy.context.scene
@@ -767,12 +820,17 @@ def sample(arm, src, anchors, upright=None, cap=None):
         print(f"[skin] {src}: lean fwd/side {math.degrees(sum(b[0] for b in before) / len(before)):.0f}/"
               f"{math.degrees(sum(b[1] for b in before) / len(before)):.0f} -> {got[0]:.0f}/{got[1]:.0f}")
     poses, hips, hands = [], [], []
-    for f in times:
+    for k, f in enumerate(times):
         go(f)
         if corr is not None:
             uprighten(arm, *corr)
         if cap is not None:
             cap_lean(arm, *cap)
+        if end is not None:  # `END_UPRIGHT`: 끝으로 갈수록 상한이 90° → (몸, 머리)
+            ramp = max(1.0, end[0] * OUT_FPS)
+            w = smooth01((k - (n - ramp)) / ramp)
+            if w > 1e-4:
+                cap_lean(arm, 90.0 + (end[1] - 90.0) * w, 90.0 + (end[2] - 90.0) * w)
         tuck_pose(arm, src, f)
         poses.append({pb.name: pb.matrix_basis.decompose() for pb in arm.pose.bones if pb.name not in ("lamp", "weapon", "shield", "bow")})
         hips.append(arm.pose.bones["mixamorig:Hips"].head.copy())
@@ -1111,14 +1169,23 @@ def look_ahead(arm, name, poses):
 # 본다 — v2는 두건이 얼굴을 가려 안 보였고, 얼굴이 드러난 v3(0247)에서는 땅만 보는 것처럼 읽힌다. 목·머리를 몸의 옆축으로 들어
 # 올린다(도). 몸짓 둘은 서기의 0초 자세에서 시작해 거기로 돌아오니(0153) 같은 값을 준다 — 이음매가 튀지 않게.
 HEAD_LIFT = {"idle": 15.0, "idle_look": 15.0, "idle_shake": 15.0, "turn_l": 15.0, "turn_r": 15.0}
+# 끝 자세의 고개(0256, 사장 "내려찍고 일어나기, 줍기는 끝 자세에서 고개가 숙여져 있음"): 끝의 이 초 동안 서기의 고개(`HEAD_LIFT` idle)로
+# 서서히 든다 — 끝 자세가 서기로 이어지는 동작들. 중간(줍는 순간·내려찍은 순간)의 숙임은 그대로.
+HEAD_SETTLE = {"pickup": 0.30, "plunge_land": 0.20, "land": 0.10, "dodge_rise": 0.15}
+# 끝 자세를 세우기(0256): 끝의 이 초 동안 숙임 상한이 90° → (몸, 머리)도로 줄어든다 — 내려찍고 웅크린 몸이 끝에 서기로 일어나게.
+END_UPRIGHT = {"plunge_land": (0.22, 15.0, 15.0), "pickup": (0.30, 15.0, 15.0)}
 LIFT_SHARE = (("mixamorig:Neck", 0.4), ("mixamorig:Head", 0.6))
 
 
-def lift_head(arm, name, poses, deg):
-    """`HEAD_LIFT`: 얼굴이 보는 쪽을 몸의 옆축으로 `deg`만큼 들어 올린다 — 목이 몫 0.4, 머리가 나머지(`look_ahead`와 같은 셈)."""
+def lift_head(arm, name, poses, deg, weights=None):
+    """`HEAD_LIFT`: 얼굴이 보는 쪽을 몸의 옆축으로 `deg`만큼 들어 올린다 — 목이 몫 0.4, 머리가 나머지(`look_ahead`와 같은 셈).
+    `weights`가 있으면 장마다 그 몫만큼(`HEAD_SETTLE` — 끝에서만)."""
     head = arm.pose.bones["mixamorig:Head"]
     face = arm.data.bones["mixamorig:Head"].matrix_local.to_3x3().inverted() @ Vector((0, -1, 0))
-    for pose in poses:
+    for k, pose in enumerate(poses):
+        w = 1.0 if weights is None else weights[k]
+        if w <= 1e-4:
+            continue
         for pb in arm.pose.bones:
             if pb.name in pose:
                 loc, q, sc_ = pose[pb.name]
@@ -1135,7 +1202,7 @@ def lift_head(arm, name, poses, deg):
             pb = arm.pose.bones[bn]
             loc, q, sc_ = pb.matrix_basis.decompose()
             a = pb.matrix.to_3x3() @ pb.matrix_basis.to_3x3().inverted()
-            r = Matrix.Rotation(math.radians(deg) * share, 3, side)
+            r = Matrix.Rotation(math.radians(deg) * share * w, 3, side)
             pb.matrix_basis = Matrix.LocRotScale(loc, (a.inverted() @ r @ a @ q.to_matrix()).to_quaternion(), sc_)
             bpy.context.view_layer.update()
         for bn, _ in LIFT_SHARE:
@@ -1401,7 +1468,7 @@ def make_actions(arm, body):
         if crafted:
             n, poses, hips, hands = craft_roll(arm, body, anchors)
         else:
-            n, poses, hips, hands = sample(arm, src, anchors, UPRIGHT.get(name), LEAN_CAP.get(name))
+            n, poses, hips, hands = sample(arm, src, anchors, UPRIGHT.get(name), LEAN_CAP.get(name), END_UPRIGHT.get(name))
         if name in GROUND_CLEAR.get(src, ()):
             for k in range(len(hips)):
                 hips[k] = hips[k] + up * lift_at(lifts[src], src_at(anchors, k / OUT_FPS))
@@ -1421,6 +1488,11 @@ def make_actions(arm, body):
             look_ahead(arm, name, poses)
         if name in HEAD_LIFT:
             lift_head(arm, name, poses, HEAD_LIFT[name])
+        if name in HEAD_SETTLE:
+            m = len(poses)
+            ramp = max(1.0, HEAD_SETTLE[name] * OUT_FPS)
+            ws = [smooth01((k - (m - 1 - ramp)) / ramp) for k in range(m)]
+            lift_head(arm, name, poses, HEAD_LIFT["idle"], ws)
         if name in HIT_WINDOWS:
             start = ends.get(CHAIN.get(name), 0.0)
             face_hit(arm, name, poses, hips, hands, HIT_WINDOWS[name], math.atan2(math.sin(start), math.cos(start)))
@@ -1507,6 +1579,8 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, sheet_dir=None):
     if hasattr(body.data, "use_auto_smooth"):  # Blender 4.0: 켜져 있으면 각도로 법선을 갈라 정점이 는다
         body.data.use_auto_smooth = False
     W._flat_where_folded(body.data)  # 줄이며 접힌 작은 면(면 법선 ↔ 매끈한 법선이 반대)은 각지게 — `check_glb` 뒤집힌 면
+    if not os.environ.get("KR_NO_CONFINE"):
+        confine_arms(arm, body)
     attach(arm, body, old)
     texture(body, old)
     craft_actions(arm)
@@ -1521,6 +1595,9 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, sheet_dir=None):
     preview(arm, objs, os.path.join(preview_dir, f"{NAME}_guard.png"), "block", 0.2, yaw=-20.0, elev=14.0)
     preview(arm, objs, os.path.join(preview_dir, f"{NAME}_guard_side.png"), "block", 0.2, yaw=-80.0, elev=14.0)
     if sheet_dir:
+        if os.environ.get("KR_SHEET_BARE"):  # 맨손으로(무기·방패·활을 다 숨긴다 — 손과 옷의 움직임을 본다)
+            for o in old["weapons"] + [old["shield"], old["bow"]]:
+                o.hide_render = True
         only = [x for x in os.environ.get("KR_SHEET_ONLY", "").split(",") if x]  # 몇 동작만(이름 쉼표로)
         for name, _, _ in CLIPS:
             if only and name not in only:

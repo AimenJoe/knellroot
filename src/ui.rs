@@ -1147,6 +1147,62 @@ impl ListView {
 /// 넘치나). 넉넉하면 여백 18·글은 창의 배 `k` 그대로. 모자라면 여백을 6까지 줄이고, 그래도 넘치면 **글을 줄이지 않는다** —
 /// 탭 줄을 굴린다(`Strip`, 여백 10). 글을 줄이거나 자르면 무슨 탭인지 모른다(nail 0247 — 일시정지 탭 여덟에서 "メ…").
 /// `u` = 기준 px 하나의 화면 크기(탭 사이 틈 2).
+/// 창 안의 단추 탭 줄(개발 창의 묶음·모션 보기의 무기, 0256): 한 줄에 들면 남는 폭을 고르게 나눠 꽉 채우고, 안 들면
+/// 다음 줄로 넘겨 여러 줄로(줄마다 꽉 채운다) — 창 밖으로 나가지 않는다(모션 보기의 무기 탭이 오른쪽으로 넘쳤다).
+/// `widths` = 글 폭 + 여백, 돌려주는 것 = 탭마다의 자리(차례 그대로).
+#[cfg_attr(not(feature = "dev"), allow(dead_code))]
+pub fn tab_rects(widths: &[f32], x0: f32, x1: f32, top: f32, h: f32, gap: f32) -> Vec<Rect> {
+    let room = (x1 - x0).max(1.0);
+    // 줄 나누기: 앞에서부터 들어가는 만큼.
+    let mut lines: Vec<Vec<usize>> = vec![Vec::new()];
+    let mut used = 0.0;
+    for (i, &w) in widths.iter().enumerate() {
+        let line = lines.last_mut().unwrap();
+        let need = if line.is_empty() { w } else { used + gap + w };
+        if !line.is_empty() && need > room {
+            lines.push(vec![i]);
+            used = w;
+        } else {
+            line.push(i);
+            used = need;
+        }
+    }
+    // 여러 줄이면 줄마다 탭 수를 고르게(앞에서부터 꽉 채우면 마지막 줄에 하나만 남아 길게 늘어난다) — 고르게 나눈 줄이 다 들 때만.
+    if lines.len() > 1 {
+        let per = widths.len().div_ceil(lines.len());
+        let even: Vec<Vec<usize>> = (0..widths.len())
+            .collect::<Vec<_>>()
+            .chunks(per)
+            .map(|c| c.to_vec())
+            .collect();
+        let fits = |l: &Vec<usize>| {
+            l.iter().map(|&i| widths[i]).sum::<f32>() + gap * (l.len() as f32 - 1.0) <= room
+        };
+        if even.len() == lines.len() && even.iter().all(fits) {
+            lines = even;
+        }
+    }
+    let mut out = vec![Rect::new(0.0, 0.0, 0.0, 0.0); widths.len()];
+    for (row, line) in lines.iter().enumerate() {
+        let sum: f32 =
+            line.iter().map(|&i| widths[i]).sum::<f32>() + gap * (line.len() as f32 - 1.0);
+        let scale = (room / sum.max(1.0)).max(0.0);
+        let y = top + row as f32 * (h + gap);
+        let mut x = x0;
+        for &i in line {
+            // 남는 폭은 고르게, 모자라면(한 탭이 혼자 넘치는 경우) 그 줄 폭에 맞춰 줄인다.
+            let w = if sum <= room {
+                widths[i] + (room - sum) / line.len() as f32
+            } else {
+                widths[i] * scale
+            };
+            out[i] = Rect::new(x, y, w, h);
+            x += w + gap;
+        }
+    }
+    out
+}
+
 pub fn window_tabs(widths: &[f32], room: f32, u: f32, k: f32) -> (f32, bool) {
     let n = widths.len().max(1) as f32;
     let text: f32 = widths.iter().sum::<f32>() * k;
@@ -1327,6 +1383,26 @@ pub fn all_text(s: &Strings) -> String {
 #[cfg(test)]
 mod tests {
     /// 0164 → 0233: 큰 창의 탭 줄 — 넉넉하면 여백 18, 모자라면 여백부터(6까지), 그래도 넘치면 글을 줄이지 않고 굴린다(여백 10).
+    #[test]
+    fn tab_rects_fill_one_line_or_wrap_and_never_leave_the_room() {
+        use super::tab_rects;
+        // 넉넉: 한 줄을 꽉 채운다.
+        let r = tab_rects(&[40.0, 60.0], 0.0, 200.0, 10.0, 12.0, 4.0);
+        assert_eq!(r[0].y, 10.0);
+        assert!((r[1].x + r[1].w - 200.0).abs() < 0.01);
+        // 모자람: 다음 줄로 — 모든 탭이 방 안.
+        let w = [70.0; 7];
+        let r = tab_rects(&w, 0.0, 200.0, 0.0, 12.0, 4.0);
+        assert!(r.iter().all(|x| x.x >= 0.0 && x.x + x.w <= 200.01), "{r:?}");
+        assert!(r.iter().any(|x| x.y > 0.0), "wrapped");
+        // 일곱 개 → 넷·셋(마지막 줄에 하나만 남지 않게).
+        let r = tab_rects(&[50.0; 7], 0.0, 300.0, 0.0, 12.0, 4.0);
+        assert_eq!(r.iter().filter(|x| x.y == 0.0).count(), 4);
+        // 혼자 넘치는 탭도 방 폭으로 줄인다.
+        let r = tab_rects(&[300.0], 0.0, 200.0, 0.0, 12.0, 4.0);
+        assert!(r[0].w <= 200.01);
+    }
+
     #[test]
     fn window_tabs_give_up_padding_then_roll_instead_of_shrinking_text() {
         use super::window_tabs;
