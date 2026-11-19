@@ -76,7 +76,7 @@ async function main() {
   await page.mouse.down(); await page.waitForTimeout(40); await page.mouse.up();
   await page.waitForTimeout(150); await shot('m4-attack');
   // 시점(0181): 휠 클릭으로 락온을 풀고(쿼터뷰로), 휠 위 셋 = 거리 둘 + 숄더뷰. 숄더뷰에서는 마우스가 시점(커서를 잡고 조준 표시 없음),
-  // 왼쪽 클릭은 그대로 공격, Esc = 놀이터의 개발 창(커서를 놓는다), 닫고 휠 아래 = 쿼터뷰.
+  // 왼쪽 클릭은 그대로 공격, 휠 아래 = 쿼터뷰, 끝으로 Esc = 놀이터의 개발 창(커서를 놓는다).
   await page.mouse.down({ button: 'middle' }); await page.waitForTimeout(40); await page.mouse.up({ button: 'middle' });
   await page.waitForTimeout(700);
   for (let i = 0; i < 3; i++) { await page.mouse.wheel(0, -120); await page.waitForTimeout(250); }
@@ -84,9 +84,9 @@ async function main() {
   await page.mouse.move(900, 300, { steps: 12 }); await page.waitForTimeout(400); await shot('m6-free-look');
   await page.mouse.down(); await page.waitForTimeout(40); await page.mouse.up();
   await page.waitForTimeout(150); await shot('m7-free-attack');
-  await press('Escape'); await until('Dev {', '숄더뷰에서 Esc(놀이터는 개발 창이 열린다)'); await page.waitForTimeout(200); await shot('m8-free-esc');
-  await press('Escape'); await until('Sandbox', '개발 창 닫기'); await page.waitForTimeout(200);
-  await page.mouse.wheel(0, 120); await page.waitForTimeout(900); await shot('m9-back-quarter');
+  await page.mouse.wheel(0, 120); await page.waitForTimeout(900); await shot('m8-back-quarter');
+  // Esc = 커서를 놓는다 — 놀이터에서는 타이틀 위에 개발 창이 열린다(닫으면 타이틀, 놀이터로 돌아오지 않는다 — 그래서 끝에).
+  await press('Escape'); await until('Dev {', '놀이터에서 Esc = 개발 창'); await page.waitForTimeout(200); await shot('m9-esc-dev');
 
   await browser.close();
   server.close();

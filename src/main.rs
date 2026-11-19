@@ -44,6 +44,7 @@ mod model;
 mod models;
 mod nav;
 mod prefs;
+mod progress_notes;
 mod progression;
 mod render;
 mod residents;

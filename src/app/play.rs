@@ -3,118 +3,12 @@ use super::*;
 
 /// 새긴 돌 글 판이 떠 있는 초(0129).
 const STONE_TIME: f32 = 6.0;
-/// 꺼진 화로에 불이 붙는 것을 보는 초(0171) — 그 뒤에 화로의 창이 열린다.
-const KINDLE_TIME: f32 = 1.5;
 
 impl App {
-    /// 싸움 한 틱: 멈춤 → 월드 → 스테이지 → 기록·가게·소리·알림 → 끝났으면 끝 장면.
+    /// 싸움 한 틱(0251 R5에서 단계로): 연출 → 멈춤·장비 창 → 월드 → 쓰러짐 문 → 스테이지 → 말풍선·새긴 돌 → 스테이지가 낸 것.
     pub(super) fn tick_play(&mut self, a: Actions) {
-        // 지역 사이 전환(0118 → 0174 뿌리 굴): 그동안 월드·멈춤·장비 창은 멈추고, 떠나는 곳이 다 어두워진 순간에 지역을 바꾼다.
-        // 굴을 지나는 동안의 아무 버튼 = 건너뛰기(굴이 어둠으로 들어가는 데로 — 자주 오가는 길에서 지치지 않게).
-        if let Some(mut p) = self.passage.take() {
-            if a.attack || a.jump || a.dodge || a.confirm || a.pause {
-                p.skip();
-            }
-            let tick = p.step(TICK_DT);
-            if tick.swap {
-                self.cross_to(p.to, p.up);
-            }
-            if tick.bell {
-                self.snd(crate::sfx::Id::Knell);
-            }
-            if !tick.done {
-                self.passage = Some(p);
-            }
-            return;
-        }
-        // 마지막 핵의 반응(0216 W3): 세계가 멈춘 채 잔상 둘·먼 종소리 한 번 → 끝 장면. 조작은 없다(짧다).
-        if let Some(t) = self.echo {
-            self.world.player.prev = self.world.player.pos;
-            for e in &mut self.world.enemies {
-                e.prev = e.pos;
-            }
-            self.follow_camera();
-            if crate::core_echo::bell(t, TICK_DT) {
-                self.snd(crate::sfx::Id::Knell);
-            }
-            let t = t + TICK_DT;
-            if crate::core_echo::done(t) {
-                self.echo = None;
-                self.ending = 0.0;
-                self.go(Go::Root(Scene::Ending { won: true }));
-            } else {
-                self.echo = Some(t);
-            }
-            return;
-        }
-        // 쓰러짐(0175): 체력이 다하면 세계가 멈추고 방랑자만 무너진다 → 뿌리가 감겨 들며 어두워진다 → 다 어두울 때 쉼터 곁으로
-        // (그전에는 쓰러진 그 틱에 쉼터 곁에 서 있었다) → 화로 곁에서 일어난다. 조작은 없고, 일어나는 동안만 건너뛸 수 있다.
-        if let Some(mut fl) = self.fall.take() {
-            if a.attack || a.jump || a.dodge || a.confirm || a.pause {
-                fl.skip();
-            }
-            let cue = fl.tick(TICK_DT);
-            if cue.rumble {
-                self.snd(crate::sfx::Id::Wake);
-            }
-            self.cam.close = fl.close();
-            if !fl.moved() {
-                // 세계가 멈춘 동안: 보간이 지난 틱과 이번 틱 사이를 오가지 않게 서 있는 자리로(KB 고정 타임스텝 — 히트스톱과 같다).
-                self.world.player.prev = self.world.player.pos;
-                for e in &mut self.world.enemies {
-                    e.prev = e.pos;
-                }
-                self.follow_camera();
-            } else {
-                self.step_world(&Actions::default());
-            }
-            if cue.moved {
-                self.fall = Some(fl);
-                self.rise_after_fall();
-                if self.scene() != Scene::Play {
-                    // 쉰 적이 없다 — 끝 장면으로 갔다(장면은 거기서 끝).
-                    self.fall = None;
-                }
-                return;
-            }
-            if cue.done || fl.done() {
-                self.cam.close = 0.0;
-            } else {
-                self.fall = Some(fl);
-            }
-            return;
-        }
-        // 깨어나는 첫 장면(0171): 조작 없이 흐른다 — 월드는 빈 입력으로 그냥 간다(방랑자는 서 있고, 그림만 `wake` 동작을
-        // 튼다). 멈춤 버튼 = 건너뛰기. 끝나면 기록에 적고 시작 글이 그제야 흐른다.
-        if let (Some(mut wk), false) = (self.wake, crate::screen::portrait_blocked()) {
-            // 터치는 화면 버튼을 걷어 두었으니(덮개만) 싸움 버튼 자리 어디든 — 안내 글이 선 오른쪽 아래가 공격 버튼 자리다.
-            let touch = crate::input::device() == crate::input::Device::Touch;
-            if a.pause || (touch && (a.attack || a.jump || a.dodge)) {
-                wk.skip();
-            }
-            let cue = wk.tick(TICK_DT);
-            if cue == crate::wake::Cue::Bell {
-                self.snd(crate::sfx::Id::Knell);
-            }
-            self.cam.close = wk.close();
-            self.run.intro = crate::stage::INTRO_TIME;
-            self.wake = Some(wk).filter(|w| !w.done());
-            self.step_world(&Actions::default());
-            if cue == crate::wake::Cue::Done {
-                self.cam.close = 0.0;
-                self.progress.woke = true;
-                self.persist();
-            }
-            return;
-        }
-        // 꺼진 화로에 불이 붙는 순간(0171): 잠깐 보고 나서 화로의 창이 열린다(창이 화면을 다 덮는다 — 바로 열면 못 본다).
-        if self.kindle > 0.0 {
-            self.kindle -= TICK_DT;
-            self.step_world(&Actions::default());
-            let _ = self.run.tick(&mut self.world, TICK_DT);
-            if self.kindle <= 0.0 {
-                self.open_hearth();
-            }
+        // 연출(0251 R5 — 굴·핵의 반응·쓰러짐·깨어남·불 붙음): 그동안 조작이 없다. 깨어나는 장면만 세로 폰이면 멈춤이 먼저(0082).
+        if self.tick_interlude(&a) {
             return;
         }
         // 세로로 든 폰(0082): 회전 안내가 덮인 동안 싸움이 흐르지 않게 멈춤으로(nail 0269 꼴).
@@ -127,6 +21,18 @@ impl App {
             self.show(Go::Open(flow::SELECT_OPENS));
             return;
         }
+        self.play_world(a);
+        if self.play_fell() {
+            return;
+        }
+        self.tell_bag();
+        let out = self.run.tick(&mut self.world, TICK_DT);
+        self.play_talk();
+        self.play_stage_out(out);
+    }
+
+    /// 월드 한 틱 + 줍기 몸짓 + 플레이 시간.
+    fn play_world(&mut self, a: Actions) {
         let a = self.camera_input(a);
         let a = self.cursor_aim(a);
         self.step_world(&a);
@@ -146,13 +52,20 @@ impl App {
                 self.progress.play = self.progress.play.saturating_add(1);
             }
         }
+    }
+
+    /// 체력이 다했으면 쓰러짐을 연다 — 그 틱의 스테이지는 흐르지 않는다.
+    fn play_fell(&mut self) -> bool {
         // 체력이 다했다(0175): 쓰러짐을 연다 — 쉼터로 옮기는 것(스테이지가 하던 것)은 그 장면의 어둠 속에서(`rise_after_fall`).
-        if self.world.player.hp <= 0 && self.fall.is_none() {
-            self.fall = Some(crate::fall::Fall::default());
-            return;
+        if self.world.player.hp <= 0 {
+            self.interlude = Some(interlude::Interlude::Fall(crate::fall::Fall::default()));
+            return true;
         }
-        self.tell_bag();
-        let mut out = self.run.tick(&mut self.world, TICK_DT);
+        false
+    }
+
+    /// 주민 말풍선·새긴 돌 글 판(스테이지가 이 틱에 알린 것).
+    fn play_talk(&mut self) {
         // 주민 말풍선(0122): 같은 주민에게 말풍선이 떠 있는 동안 다시 누르면 다음 말, 아니면 처음 말.
         if let Some(k) = self.run.take_talked() {
             let n = match self.bubble {
@@ -182,6 +95,10 @@ impl App {
             *t -= TICK_DT;
         }
         self.bubble = self.bubble.filter(|b| b.2 > 0.0);
+    }
+
+    /// 스테이지가 낸 것: 다른 지역에서 다시 서기 · 기록 · 뿌리 굴 · 화로 · 문지기 깸 · 끝.
+    fn play_stage_out(&mut self, mut out: crate::stage::StageOut) {
         // 이 지역에서 쉰 적이 없어도 이 판에 다른 지역에서 쉬었으면 거기서 다시 선다(0118).
         if out == crate::stage::StageOut::Defeated && self.respawn_elsewhere() {
             out = crate::stage::StageOut::Respawned;
@@ -195,12 +112,12 @@ impl App {
         };
         if let Some((to, up)) = cross.filter(|&(to, _)| to < crate::stage::STAGES.len()) {
             self.snd(crate::sfx::Id::Wake);
-            self.passage = Some(crate::descent::Passage::new(
+            self.interlude = Some(interlude::Interlude::Passage(crate::descent::Passage::new(
                 to,
                 up,
                 self.run.def.depth_m,
                 crate::stage::STAGES[to].depth_m,
-            ));
+            )));
         }
         // 쉼터 화로(0064 M4 → 0104): 쉬면 화로(레벨·가게)가 열린다. 올릴 단·살 것이 있으면 쉼터가 빛난다.
         self.run.shop_ready = crate::growth::can_buy(
@@ -221,7 +138,7 @@ impl App {
                 if let Some((i, _)) = self.run.rest_at {
                     self.fx.kindle(self.run.rests[i]);
                 }
-                self.kindle = KINDLE_TIME;
+                self.interlude = Some(interlude::Interlude::Kindle(interlude::KINDLE_TIME));
             } else {
                 self.open_hearth();
             }
@@ -238,13 +155,80 @@ impl App {
         }
         // 마지막 핵을 쥐었다(0216 W3): 끝 장면 전에 핵의 반응 — 세계가 멈추고 잔상·먼 종소리.
         if out == crate::stage::StageOut::Cleared {
-            self.echo = Some(0.0);
+            self.interlude = Some(interlude::Interlude::Echo(0.0));
             return;
         }
         if let Some(next) = flow::after_stage(out) {
             self.ending = 0.0;
             self.go(Go::Root(next));
         }
+    }
+
+    /// 연출 칸 한 틱(0251 R5): 무엇을 할지는 순수한 `Interlude::step`이 정하고, 여기서는 그 차례대로 한다.
+    /// 연출이 이 틱을 가졌으면 참(싸움은 흐르지 않는다). 깨어나는 장면은 세로 폰이면 쉬고(멈춤 창이 먼저 — 예전 차례 그대로).
+    fn tick_interlude(&mut self, a: &Actions) -> bool {
+        let Some(now) = self.interlude else {
+            return false;
+        };
+        if now.waits_for_landscape() && crate::screen::portrait_blocked() {
+            return false;
+        }
+        let touch = crate::input::device() == crate::input::Device::Touch;
+        let (next, beat) = now.step(interlude::Input { actions: *a, touch }, TICK_DT);
+        // 다음 칸을 세계를 움직이기 전에 둔다(깨어나는 동안의 튜토리얼·종소리 길 안내가 "깨어나는 중"을 읽는다 — 예전 차례).
+        self.interlude = next;
+        if let Some((to, up)) = beat.cross {
+            self.cross_to(to, up);
+        }
+        if let Some(id) = beat.sound {
+            self.snd(id);
+        }
+        if let Some(c) = beat.close {
+            self.cam.close = c;
+        }
+        if beat.hold_intro {
+            self.run.intro = crate::stage::INTRO_TIME;
+        }
+        match beat.hold {
+            interlude::Hold::Untouched => {}
+            interlude::Hold::Freeze => {
+                // 세계가 멈춘 동안: 보간이 지난 틱과 이번 틱 사이를 오가지 않게 서 있는 자리로(KB 고정 타임스텝 — 히트스톱과 같다).
+                self.world.player.prev = self.world.player.pos;
+                for e in &mut self.world.enemies {
+                    e.prev = e.pos;
+                }
+                self.follow_camera();
+            }
+            interlude::Hold::Idle => self.step_world(&Actions::default()),
+            interlude::Hold::IdleStage => {
+                self.step_world(&Actions::default());
+                let _ = self.run.tick(&mut self.world, TICK_DT);
+            }
+        }
+        match beat.then {
+            interlude::Then::Nothing => {}
+            interlude::Then::Rise => {
+                // 쓰러짐의 어둠 속: 쉼터 곁으로. 쉰 적이 없으면 끝 장면으로 갔다 — 연출은 거기서 끝.
+                self.rise_after_fall();
+                if self.scene() != Scene::Play {
+                    self.interlude = None;
+                }
+                return true;
+            }
+            interlude::Then::Hearth => self.open_hearth(),
+            interlude::Then::Ending => {
+                self.ending = 0.0;
+                self.go(Go::Root(Scene::Ending { won: true }));
+            }
+            interlude::Then::Woke => {
+                self.progress.woke = true;
+                self.persist();
+            }
+        }
+        if beat.release_close {
+            self.cam.close = 0.0;
+        }
+        true
     }
 
     /// 쓰러짐의 어둠 속(0175): 스테이지가 쉼터 곁으로 옮긴다(쉰 적이 없으면 다른 지역의 쉼터 · 거기도 없으면 끝 장면).
@@ -614,7 +598,7 @@ impl App {
     /// 튜토리얼(0167)이 이 판에서 보나: 슬롯의 판이고(개발 창의 판·놀이터가 아니다) 깨어나는 첫 장면(0171)이 끝났다.
     /// 걸음을 다 지났어도 본 것은 쌓인다 — 상황 힌트(0209 T2)가 읽는다.
     fn tutor_live(&self) -> bool {
-        !self.dev_run_now() && self.stack.base() == Scene::Play && self.wake.is_none()
+        !self.dev_run_now() && self.stack.base() == Scene::Play && self.wake().is_none()
     }
 
     /// 튜토리얼의 걸음이 도나: 위 + 걸음이 남았다.
@@ -935,7 +919,7 @@ impl App {
     fn knell_watch(&mut self) {
         let at = self.world.player.pos;
         let lost = self.stack.base() == Scene::Play
-            && self.wake.is_none()
+            && self.wake().is_none()
             && self.run.goal().is_none()
             && self
                 .run

@@ -253,11 +253,13 @@ impl App {
                 self.restart();
                 // 이 판에 첫 문지기를 이긴 셈 — 내려가는 뿌리 굴(0174)부터 보인다.
                 self.down = 1;
-                self.passage = Some(crate::descent::Passage::new(
-                    1,
-                    false,
-                    self.run.def.depth_m,
-                    crate::stage::STAGES[1].depth_m,
+                self.interlude = Some(super::interlude::Interlude::Passage(
+                    crate::descent::Passage::new(
+                        1,
+                        false,
+                        self.run.def.depth_m,
+                        crate::stage::STAGES[1].depth_m,
+                    ),
                 ));
                 self.go(Go::Root(Scene::Play));
             }
@@ -267,11 +269,13 @@ impl App {
                 // 이 판에 두 문지기를 이긴 셈 — 마을에서 내려가는 뿌리 굴부터.
                 self.down = 2;
                 self.cross_to(1, false);
-                self.passage = Some(crate::descent::Passage::new(
-                    2,
-                    false,
-                    crate::stage::STAGES[1].depth_m,
-                    crate::stage::STAGES[2].depth_m,
+                self.interlude = Some(super::interlude::Interlude::Passage(
+                    crate::descent::Passage::new(
+                        2,
+                        false,
+                        crate::stage::STAGES[1].depth_m,
+                        crate::stage::STAGES[2].depth_m,
+                    ),
                 ));
                 self.go(Go::Root(Scene::Play));
             }
@@ -281,11 +285,13 @@ impl App {
                 // 이 판에 세 문지기를 이긴 셈 — 정원에서 내려가는 뿌리 굴부터.
                 self.down = 3;
                 self.cross_to(2, false);
-                self.passage = Some(crate::descent::Passage::new(
-                    3,
-                    false,
-                    crate::stage::STAGES[2].depth_m,
-                    crate::stage::STAGES[3].depth_m,
+                self.interlude = Some(super::interlude::Interlude::Passage(
+                    crate::descent::Passage::new(
+                        3,
+                        false,
+                        crate::stage::STAGES[2].depth_m,
+                        crate::stage::STAGES[3].depth_m,
+                    ),
                 ));
                 self.go(Go::Root(Scene::Play));
             }
