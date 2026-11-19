@@ -7,6 +7,7 @@ const { chromium } = require('playwright');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const sceneKit = require('./scene');
 
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
@@ -36,7 +37,8 @@ async function open(browser, seed, tag) {
   });
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) bad.push(String(e)); });
   const shot = (name, clip) => page.screenshot({ path: path.join(OUT, `items-${tag}-${name}.png`), clip });
-  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(90); } };
+  // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js).
+  const { press, until, flip } = sceneKit(page, 90);
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 60000 });
   await page.goto(`http://localhost:${PORT}/`);
   await ready();
@@ -45,10 +47,13 @@ async function open(browser, seed, tag) {
   await ready();
   await page.waitForTimeout(600);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
+  await until('Title', '타이틀');
   await press('F4');
-  await press('Enter'); await page.waitForTimeout(300);
-  await press('Enter'); await page.waitForTimeout(1500);
-  return { page, shot, press, bad, record: () => page.evaluate((k) => localStorage.getItem(k), KEY) };
+  await press('Enter'); await until('Slots', '이어하기 → 슬롯 창');
+  await press('Enter'); await until('Play', '슬롯 → 판'); await page.waitForTimeout(1500);
+  // 큰 창에서 E를 n번(탭이 넘어갈 때마다 기다린다).
+  const tabs = async (n, want, what) => { for (let i = 0; i < n; i++) await flip('KeyE', `${what} — E ${i + 1}`); await until(want, what); };
+  return { page, shot, press, until, flip, tabs, bad, record: () => page.evaluate((k) => localStorage.getItem(k), KEY) };
 }
 
 // 껐다 켠다(같은 기록으로 이어하기).
@@ -57,9 +62,10 @@ async function again(g) {
   await g.page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 60000 });
   await g.page.waitForTimeout(600);
   await g.page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
+  await g.until('Title', '다시 켠 타이틀');
   await g.press('F4');
-  await g.press('Enter'); await g.page.waitForTimeout(300);
-  await g.press('Enter'); await g.page.waitForTimeout(1500);
+  await g.press('Enter'); await g.until('Slots', '이어하기 → 슬롯 창');
+  await g.press('Enter'); await g.until('Play', '슬롯 → 판'); await g.page.waitForTimeout(1500);
 }
 
 (async () => {
@@ -70,13 +76,13 @@ async function again(g) {
   {
     // 아이템이 든 기록: 장비 탭(Tab — 주무기 칸) → 후보(확인) → 여벌(드문 검, 바탕의 줄 바로 아래) → 낀다.
     const g = await open(browser, ITEMS, 'bag');
-    await g.press('Tab'); await g.page.waitForTimeout(500);
+    await g.press('Tab'); await g.until('Equip {', 'Tab = 장비 탭');
     await g.shot('1-equip');
-    await g.press('Enter'); await g.page.waitForTimeout(300);
+    await g.press('Enter'); await g.until('EquipPick', '주무기 칸 → 후보');
     await g.shot('2-main-pick');
     await g.press('ArrowDown'); await g.page.waitForTimeout(250);
     await g.shot('3-spare-focus');
-    await g.press('Enter'); await g.page.waitForTimeout(400);
+    await g.press('Enter'); await g.until('Equip {', '여벌을 낀다 → 장비 탭'); await g.page.waitForTimeout(200);
     await g.shot('4-spare-worn');
     const r = await g.record();
     if (!/gear\.main=1\n/.test(r)) errors.push(`the rare sword was not worn: ${JSON.stringify(r)}`);
@@ -90,10 +96,10 @@ async function again(g) {
   {
     // 옛 기록(아이템 줄 없음): 장비 탭을 한 번 열고 닫으면(저장) 가진 바탕마다 보통 아이템이 생긴다.
     const g = await open(browser, BASE, 'old');
-    await g.press('Tab'); await g.page.waitForTimeout(500);
-    await g.press('Enter'); await g.page.waitForTimeout(300);
+    await g.press('Tab'); await g.until('Equip {', 'Tab = 장비 탭');
+    await g.press('Enter'); await g.until('EquipPick', '주무기 칸 → 후보');
     await g.shot('1-main-pick');
-    await g.press('ArrowDown'); await g.press('Enter'); await g.page.waitForTimeout(400); // 망치를 든다 → 저장
+    await g.press('ArrowDown'); await g.press('Enter'); await g.until('Equip {', '망치를 든다 → 장비 탭'); await g.page.waitForTimeout(300); // 망치를 든다 → 저장
     const r = await g.record();
     for (const want of ['item.0=w.sword|p||0', 'w.hammer|p||0', 'c.ear|p||0', 'gear.main=']) {
       if (!r.includes(want)) errors.push(`old record: missing ${want}: ${JSON.stringify(r)}`);
@@ -105,8 +111,8 @@ async function again(g) {
     // 가방 탭(0226 — 멈춤 Esc → 탭 둘 넘기기): 칸의 차례는 저절로(무기 → 방패 → 장신구, 값진 것 먼저) — 첫 칸 = 드문 검(여벌).
     // 지킨다 → 기록에 item.lock, 풀고 → 내려놓는다 → 가방에서 빠지고 발치에 떨어진다 → 닫고 주우면(점프 버튼) 다시 든다.
     const g = await open(browser, ITEMS, 'tab');
-    await g.press('Escape'); await g.page.waitForTimeout(500);
-    await g.press('KeyE', 2); await g.page.waitForTimeout(400);
+    await g.press('Escape'); await g.until(/host: Pause/, '멈춤');
+    await g.tabs(2, 'Bag {', '가방 탭');
     await g.shot('1-bag');
     await g.press('ArrowRight'); await g.page.waitForTimeout(200);
     await g.shot('2-worn-sword');
@@ -158,8 +164,8 @@ async function again(g) {
       await g.press('Enter'); await g.page.waitForTimeout(300);
       await g.press('ArrowDown', 2); await g.press('Enter'); await g.page.waitForTimeout(300);
     };
-    await g.press('Escape'); await g.page.waitForTimeout(500);
-    await g.press('KeyE', 2); await g.page.waitForTimeout(400);
+    await g.press('Escape'); await g.until(/host: Pause/, '멈춤');
+    await g.tabs(2, 'Bag {', '가방 탭');
     await g.shot('1-over-the-cap'); // 한도를 넘은 가방(31): 줄이 하나 늘고 칸이 작아진다
     await down();
     await g.shot('2-full');
@@ -170,16 +176,16 @@ async function again(g) {
     // 화로 곁이라 같은 버튼은 쉬기(쉬기가 못 줍는 것보다 앞선다) → 화로의 창이 열린다.
     await again(g);
     await g.shot('3-cannot-pick-up');
-    await g.press('KeyF'); await g.page.waitForTimeout(900);
+    await g.press('KeyF'); await g.until(/host: Hearth/, '가득일 때 같은 버튼 = 쉬기');
     let r = await g.record();
     if (count(r) !== 30) errors.push(`a full bag took an item (${count(r)}): ${JSON.stringify(r)}`);
     if (!/ground\.0=0\|/.test(r)) errors.push(`the item must stay on the ground: ${JSON.stringify(r)}`);
     // 화로의 가방 탭에서 여벌 하나를 잔불로(주무기로 · 지킨다 · 내려놓는다 · 잔불로) → 자리가 났다 → 닫고 줍는다.
-    await g.press('KeyE', 2); await g.page.waitForTimeout(400);
-    await g.press('Enter'); await g.page.waitForTimeout(300);
-    await g.press('ArrowDown', 3); await g.press('Enter'); await g.page.waitForTimeout(300);
-    await g.press('ArrowLeft'); await g.press('Enter'); await g.page.waitForTimeout(400);
-    await g.press('Escape'); await g.page.waitForTimeout(900);
+    await g.tabs(2, 'Bag {', '화로의 가방 탭');
+    await g.press('Enter'); await g.until('BagAct', '칸 → 할 일');
+    await g.press('ArrowDown', 3); await g.press('Enter'); await g.until('Ask(Salvage', '잔불로 → 묻는 창');
+    await g.press('ArrowLeft'); await g.press('Enter'); await g.until('Bag {', '바꾼다 → 가방 탭'); await g.page.waitForTimeout(200);
+    await g.press('Escape'); await g.until('Play', '창 닫기'); await g.page.waitForTimeout(600);
     await g.shot('4-room-made');
     await g.press('KeyF'); await g.page.waitForTimeout(700); // 줍기가 쉬기보다 앞선다
     await g.shot('5-picked-up');
@@ -195,14 +201,14 @@ async function again(g) {
     // 화로의 가방 탭(쉬기 F → 탭 둘): 여벌을 잔불로 — 묻는 창(커서는 취소)에서 바꾸면 가방에서 빠지고 잔불이 는다.
     // 그리고 "여벌 정리": 맨 아랫줄 아래의 단추 — 지키지 않는 여벌을 한꺼번에.
     const g = await open(browser, ITEMS + 'item.4=w.hammer|p||0\nitem.5=c.ear|p||0\nitem.next=6\n', 'hearth');
-    await g.press('KeyF'); await g.page.waitForTimeout(700);
-    await g.press('KeyE', 2); await g.page.waitForTimeout(400);
+    await g.press('KeyF'); await g.until(/host: Hearth/, '화로에서 쉬기');
+    await g.tabs(2, 'Bag {', '가방 탭');
     await g.shot('1-bag');
-    await g.press('Enter'); await g.page.waitForTimeout(300);
+    await g.press('Enter'); await g.until('BagAct', '칸 → 할 일');
     await g.shot('2-acts');
-    await g.press('ArrowDown', 3); await g.press('Enter'); await g.page.waitForTimeout(300);
+    await g.press('ArrowDown', 3); await g.press('Enter'); await g.until('Ask(Salvage', '잔불로 → 묻는 창');
     await g.shot('3-ask');
-    await g.press('ArrowLeft'); await g.press('Enter'); await g.page.waitForTimeout(400);
+    await g.press('ArrowLeft'); await g.press('Enter'); await g.until('Bag {', '바꾼다 → 가방 탭'); await g.page.waitForTimeout(200);
     await g.shot('4-salvaged');
     let r = await g.record();
     if (/item\.1=/.test(r)) errors.push(`the spare was not salvaged: ${JSON.stringify(r)}`);
@@ -210,9 +216,9 @@ async function again(g) {
     if (!r.includes('item.0=w.sword|p||0')) errors.push(`the worn sword must stay: ${JSON.stringify(r)}`);
     await g.press('ArrowDown', 5); await g.page.waitForTimeout(250);
     await g.shot('5-tidy');
-    await g.press('Enter'); await g.page.waitForTimeout(300);
+    await g.press('Enter'); await g.until('Ask(Tidy', '여벌 정리 → 묻는 창');
     await g.shot('6-tidy-ask');
-    await g.press('ArrowLeft'); await g.press('Enter'); await g.page.waitForTimeout(400);
+    await g.press('ArrowLeft'); await g.press('Enter'); await g.until('Bag {', '정리한다 → 가방 탭'); await g.page.waitForTimeout(200);
     await g.shot('7-tidied');
     r = await g.record();
     // 보통 망치·보통 귀가 나가고(4 + 4), 단단한 망치·단단한 귀·낀 검은 남는다.

@@ -7,6 +7,7 @@ const { chromium } = require('playwright');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const sceneKit = require('./scene');
 
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
@@ -29,11 +30,12 @@ async function main() {
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error' && !KNOWN_NOISE.some((k) => k.test(m.text()))) errors.push(m.text()); });
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
+  // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js).
+  const { press, until } = sceneKit(page, 60);
   await page.goto(`http://localhost:${PORT}/`);
-  await page.waitForTimeout(2500);
+  await until('Title', '타이틀', 60000); await page.waitForTimeout(300);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
   const shot = (name) => page.screenshot({ path: path.join(OUT, name + '.png') });
-  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(60); } };
 
   // 브라우저 기본 동작이 막혔나(캔버스에 보낸 이벤트의 defaultPrevented).
   const blocked = await page.evaluate(() => {
@@ -46,13 +48,13 @@ async function main() {
   await page.mouse.up({ button: 'middle' });
 
   // 설정에 마우스 줄이 보이나(타이틀 → 설정).
-  await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowDown'); await press('Enter'); await until('Settings { host: Title', '타이틀 → 설정');
   await shot('m0-settings');
-  await press('Escape'); await page.waitForTimeout(300);
+  await press('Escape'); await until('Title', '설정 → 타이틀');
   // DEV → PoC 첫째(보스 아레나). 타이틀: 시작·설정·개발(0094) — 설정을 닫으면 커서는 "설정"에(0066) → 아래로 하나 = 개발.
-  await press('ArrowDown', 1); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowDown', 1); await press('Enter'); await until('Dev { tab: 0', '타이틀 → 개발 창');
   // 개발 창(0083 → 2026-11-15 정리): 묶음 탭에서 오른쪽 넷 = 전투·적, 첫 줄 = 보스 아레나.
-  await press('ArrowRight', 4); await press('Enter'); await page.waitForTimeout(1200);
+  await press('ArrowRight', 4); await until('Dev { tab: 4', '전투·적 묶음'); await press('Enter'); await until('Sandbox', '보스 아레나'); await page.waitForTimeout(800);
   const cast = async (x, y, name) => {
     // 커서를 옮겨 "만졌다"로 만들고 바로 오른쪽 클릭(쉼 시간 1초 안).
     await page.mouse.move(x - 40, y); await page.waitForTimeout(50);
@@ -74,7 +76,7 @@ async function main() {
   await page.mouse.down(); await page.waitForTimeout(40); await page.mouse.up();
   await page.waitForTimeout(150); await shot('m4-attack');
   // 시점(0181): 휠 클릭으로 락온을 풀고(쿼터뷰로), 휠 위 셋 = 거리 둘 + 숄더뷰. 숄더뷰에서는 마우스가 시점(커서를 잡고 조준 표시 없음),
-  // 왼쪽 클릭은 그대로 공격, Esc = 멈춤 창(커서를 놓는다), 닫고 휠 아래 = 쿼터뷰.
+  // 왼쪽 클릭은 그대로 공격, Esc = 놀이터의 개발 창(커서를 놓는다), 닫고 휠 아래 = 쿼터뷰.
   await page.mouse.down({ button: 'middle' }); await page.waitForTimeout(40); await page.mouse.up({ button: 'middle' });
   await page.waitForTimeout(700);
   for (let i = 0; i < 3; i++) { await page.mouse.wheel(0, -120); await page.waitForTimeout(250); }
@@ -82,8 +84,8 @@ async function main() {
   await page.mouse.move(900, 300, { steps: 12 }); await page.waitForTimeout(400); await shot('m6-free-look');
   await page.mouse.down(); await page.waitForTimeout(40); await page.mouse.up();
   await page.waitForTimeout(150); await shot('m7-free-attack');
-  await press('Escape'); await page.waitForTimeout(400); await shot('m8-free-pause');
-  await press('Escape'); await page.waitForTimeout(400);
+  await press('Escape'); await until('Dev {', '숄더뷰에서 Esc(놀이터는 개발 창이 열린다)'); await page.waitForTimeout(200); await shot('m8-free-esc');
+  await press('Escape'); await until('Sandbox', '개발 창 닫기'); await page.waitForTimeout(200);
   await page.mouse.wheel(0, 120); await page.waitForTimeout(900); await shot('m9-back-quarter');
 
   await browser.close();

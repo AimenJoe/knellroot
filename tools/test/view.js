@@ -5,6 +5,7 @@ const { chromium } = require('playwright');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const sceneKit = require('./scene');
 
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots/view');
@@ -27,20 +28,22 @@ async function main() {
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error' && !KNOWN_NOISE.some((k) => k.test(m.text()))) errors.push(m.text()); });
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
+  // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js). 시점을 보는 동안 적에게 쓰러지지 않게(개발판).
+  const { press, until } = sceneKit(page, 80);
+  await sceneKit.unhurt(page);
   await page.goto(`http://localhost:${PORT}/`);
-  await page.waitForTimeout(2500);
+  await until('Title', '타이틀', 60000); await page.waitForTimeout(300);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
   const shot = (name) => page.screenshot({ path: path.join(OUT, name + '.png') });
-  const press = async (key, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(key); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await page.waitForTimeout(80); } };
   const hold = async (key, ms) => { await page.keyboard.down(key); await page.waitForTimeout(ms); await page.keyboard.up(key); };
   // 키보드만 배치로(shot.js와 같은 길) → 시작하기 → 첫 슬롯 → 깨어나는 장면 건너뛰기.
-  await press('ArrowDown'); await press('Enter'); await page.waitForTimeout(300);
-  await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
+  await press('ArrowDown'); await press('Enter'); await until('Settings { host: Title', '타이틀 → 설정');
+  await press('ArrowUp'); await press('Enter'); await until('Controls', '설정 → 조작');
   await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(200);
-  await press('Escape'); await page.waitForTimeout(200); await press('Escape'); await page.waitForTimeout(300);
+  await press('Escape'); await until('Settings { host: Title', '조작 → 설정'); await press('Escape'); await until('Title', '설정 → 타이틀');
   await press('ArrowUp'); await page.waitForTimeout(100);
-  await press('Enter'); await page.waitForTimeout(300);
-  await press('Enter'); await page.waitForTimeout(1500);
+  await press('Enter'); await until('Slots { load: false', '시작하기 → 슬롯 창');
+  await press('Enter'); await until('Play', '빈 슬롯 → 새 판'); await page.waitForTimeout(1500);
   await press('Escape'); await page.waitForTimeout(6500);
   await shot('v0-quarter-home');
   await press('ArrowDown'); await page.waitForTimeout(700); await shot('v1-quarter-far');

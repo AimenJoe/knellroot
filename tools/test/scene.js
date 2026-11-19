@@ -26,13 +26,26 @@ module.exports = (page, gap = 80) => {
       await page.waitForTimeout(gap);
     }
   };
-  // want: 앞머리 글 또는 그 목록(하나라도 맞으면). 못 오면 지금 장면을 말하며 던진다.
+  // want: 앞머리 글·정규식 또는 그 목록(하나라도 맞으면 — 화로의 큰 창은 /host: Hearth/처럼). 못 오면 지금 장면을 말하며 던진다.
   const until = async (want, what, ms = 20000) => {
-    const list = Array.isArray(want) ? want : [want];
+    const list = (Array.isArray(want) ? want : [want]).map((w) => (w instanceof RegExp ? { re: w.source } : { pre: w }));
     try {
-      await page.waitForFunction((ws) => ws.some((w) => (window.knellScene || '').startsWith(w)), list, { timeout: ms, polling: 50 });
+      await page.waitForFunction((ws) => ws.some((w) => {
+        const s = window.knellScene || '';
+        return w.re !== undefined ? new RegExp(w.re).test(s) : s.startsWith(w.pre);
+      }), list, { timeout: ms, polling: 50 });
     } catch (e) {
-      throw new Error(`${what}: "${list.join('" / "')}" 장면이 오지 않았다 — 지금 "${await scene()}"`);
+      throw new Error(`${what}: "${list.map((w) => w.re || w.pre).join('" / "')}" 장면이 오지 않았다 — 지금 "${await scene()}"`);
+    }
+  };
+  // 키를 누르고 장면이 (무엇으로든) 바뀔 때까지 — 탭 넘기기처럼 어디로 가는지는 알지만 이름을 적기 번거로울 때.
+  const flip = async (key, what, ms = 20000) => {
+    const before = await scene();
+    await press(key);
+    try {
+      await page.waitForFunction((b) => (window.knellScene || '') !== b, before, { timeout: ms, polling: 50 });
+    } catch (e) {
+      throw new Error(`${what || key}: "${before}"에서 바뀌지 않았다`);
     }
   };
   // 지금 장면에서 벗어날 때까지(어디로 가는지 정해지지 않은 누름 — 멈춤이 마지막 탭에서 열린다 등).
@@ -45,7 +58,7 @@ module.exports = (page, gap = 80) => {
   };
   // 누르고 그 장면이 올 때까지.
   const step = async (key, want, what, n = 1) => { await press(key, n); await until(want, what || key); };
-  return { scene, until, leave, step, press, frames };
+  return { scene, until, leave, step, flip, press, frames };
 };
 
 module.exports.throttle = async (ctx, page) => {
