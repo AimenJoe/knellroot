@@ -266,14 +266,14 @@
           var c = document.getElementById("glcanvas"); if (c) c.focus();
         });
         importObject.env.knell_portrait = function () { return portraitBlocked() ? 1 : 0; };
-        // 안전 영역(노치·홈 막대)의 네 변 — 0 왼쪽, 1 위, 2 오른쪽, 3 아래 — 캔버스 화소로(번들의 dpi_scale과 같은 배).
-        // 돌릴 때마다 env()가 바뀌니 크기가 바뀔 때만 다시 잰다.
+        // 안전 영역(노치·홈 막대)의 네 변 — 0 왼쪽, 1 위, 2 오른쪽, 3 아래 — CSS px 그대로(= 게임의 `screen_width()` 단위: 번들이
+        // 캔버스 화소를 dpi로 나눈다). 2026-11-19 고침: 처음엔 devicePixelRatio를 한 번 더 곱해 폰에서 비키는 폭이 2~3배였다 —
+        // 터치 버튼·HUD가 가운데로 몰렸다(Android PWA 가로). 돌릴 때마다 env()가 바뀌니 크기가 바뀔 때만 다시 잰다.
         var safe = [0, 0, 0, 0];
         function measureSafe() {
           try {
             var st = getComputedStyle(document.getElementById("knell-safe"));
-            var k = window.high_dpi ? (window.devicePixelRatio || 1) : 1;
-            safe = [st.paddingLeft, st.paddingTop, st.paddingRight, st.paddingBottom].map(function (v) { return Math.round((parseFloat(v) || 0) * k); });
+            safe = [st.paddingLeft, st.paddingTop, st.paddingRight, st.paddingBottom].map(function (v) { return Math.round(parseFloat(v) || 0); });
           } catch (e) { safe = [0, 0, 0, 0]; }
         }
         measureSafe();
