@@ -14,6 +14,7 @@ import sys
 
 import bmesh
 import bpy
+from mathutils import Vector
 
 argv = sys.argv[sys.argv.index("--") + 1:]
 # 0247: `--retarget <동작 원본 리그.glb>` — 동작 없는 새 몸(Meshy 자동 리깅)에 다른 몸의 동작을 뼈 이름으로 옮겨 담는다(아래 `retarget`).
@@ -31,6 +32,11 @@ dst, srcs = argv[0], argv[1:]
 TARGET = TARGET_ARG or 3000  # 내보낸 glTF 정점(UV 이음매로 갈린 것 포함)
 TEX = 512
 UV_ANGLE = 1.55
+# 얼굴(사장 2026-11-19 "다른 부분은 디테일이 떨어지더라도 얼굴은 디테일 있어야"): 머리 뼈에 묶인 앞쪽 면을 줄일 때 덜 줄이고(`FACE_WEIGHT` —
+# 줄이기 무게), 새 UV에서 그 섬을 `FACE_UV`배로 키워 텍스처 칸을 더 준다(섬을 다시 담으면 다른 섬은 그만큼 작아진다).
+FACE_WEIGHT = float(os.environ.get("FACE_WEIGHT", "0.05"))  # 얼굴 쪽 정점의 줄이기 무게(고르게 줄이면 얼굴이 원본 몫 17% → 7%로 더 줄었다)
+FACE_UV = float(os.environ.get("FACE_UV", "3.2"))
+FACE_FRONT = 0.25  # 몸 앞(−y)과 면 법선의 내적이 이보다 크면 얼굴 쪽
 
 # 묶음마다 남길 동작(Meshy 이름 → 원본 안의 이름). 이름 없는 셋째 묶음은 만든 차례(UUIDv7) = `docs/art/meshy-motion-prompts.md`의 번호.
 KEEP = {
@@ -116,6 +122,96 @@ def select_only(o):
     bpy.context.view_layer.objects.active = o
 
 
+def grow_face_uv(o):
+    """얼굴 쪽 면의 UV 섬을 `FACE_UV`배로 키우고 다시 담는다(담기는 섬끼리의 크기 비를 지킨다)."""
+    face = face_verts(o)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(o.data)
+    uv = bm.loops.layers.uv.active
+    for f in bm.faces:
+        f.select = False
+    picked = [f for f in bm.faces if sum(v.index in face for v in f.verts) >= 2]
+    for f in picked:
+        f.select = True
+    bmesh.update_edit_mesh(o.data)
+    # 고른 면이 닿은 섬 통째로(섬이 반쯤만 커지면 찢어진다) — UV 섬 단위로 고르고 그 가운데를 축으로 키운다.
+    bpy.ops.mesh.select_linked(delimit={"UV"})
+    bm = bmesh.from_edit_mesh(o.data)
+    uv = bm.loops.layers.uv.active
+    sel = [f for f in bm.faces if f.select]
+    # 섬마다 따로 키운다: 연결 요소 찾기
+    seen, islands = set(), []
+    adj = {}
+    for f in sel:
+        for l in f.loops:
+            key = (round(l[uv].uv.x, 6), round(l[uv].uv.y, 6))
+            adj.setdefault(key, []).append(f)
+    for f in sel:
+        if f.index in seen:
+            continue
+        stack, isl = [f], []
+        seen.add(f.index)
+        while stack:
+            g = stack.pop()
+            isl.append(g)
+            for l in g.loops:
+                for h in adj[(round(l[uv].uv.x, 6), round(l[uv].uv.y, 6))]:
+                    if h.index not in seen:
+                        seen.add(h.index)
+                        stack.append(h)
+        islands.append(isl)
+    for isl in islands:
+        pts = [l[uv].uv.copy() for f in isl for l in f.loops]
+        c = sum(pts, Vector((0, 0))) / len(pts)
+        done = set()
+        for f in isl:
+            for l in f.loops:
+                if id(l) in done:
+                    continue
+                l[uv].uv = c + (l[uv].uv - c) * FACE_UV
+                done.add(id(l))
+    bmesh.update_edit_mesh(o.data)
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.select_all(action="SELECT")
+    bpy.ops.uv.pack_islands(rotate=False, margin=0.02)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    print(f"[meshy_rig] face: {len(face)} verts, {len(picked)} faces in {len(islands)} UV islands ×{FACE_UV}")
+
+
+def head_groups(o):
+    """머리 뼈와 그 아래 뼈(두건·귀)의 정점 무리 번호."""
+    names = {"mixamorig:Head"} | {b.name for b in arm.data.bones["mixamorig:Head"].children_recursive}
+    return {g.index for g in o.vertex_groups if g.name in names}
+
+
+def face_verts(o):
+    """얼굴 쪽 정점: 가장 무거운 무리가 머리 쪽이고, 그 정점에 닿은 면들의 평균 법선이 몸 앞(−y)을 본다."""
+    hg = head_groups(o)
+    fwd = Vector((0, -1, 0))
+    nrm = [Vector() for _ in o.data.vertices]
+    for p in o.data.polygons:
+        for vi in p.vertices:
+            nrm[vi] += p.normal * p.area
+    out = set()
+    for v in o.data.vertices:
+        if not v.groups:
+            continue
+        g = max(v.groups, key=lambda g: g.weight)
+        if g.group in hg and nrm[v.index].length > 0 and nrm[v.index].normalized().dot(fwd) > FACE_FRONT:
+            out.add(v.index)
+    return out
+
+
+def decimate(o, ratio, group):
+    select_only(o)
+    md = o.modifiers.new("dec", "DECIMATE")
+    md.decimate_type = "COLLAPSE"
+    md.ratio = min(1.0, ratio)
+    md.use_collapse_triangulate = True
+    md.vertex_group = group
+    bpy.ops.object.modifier_apply(modifier=md.name)
+
+
 def make_low(ratio):
     lo = body.copy()
     lo.data = body.data.copy()
@@ -124,11 +220,13 @@ def make_low(ratio):
     for md in list(lo.modifiers):
         lo.modifiers.remove(md)
     select_only(lo)
-    md = lo.modifiers.new("dec", "DECIMATE")
-    md.decimate_type = "COLLAPSE"
-    md.ratio = ratio
-    md.use_collapse_triangulate = True
-    bpy.ops.object.modifier_apply(modifier=md.name)
+    # 얼굴 쪽 정점의 줄이기 무게를 낮춘다(1 = 고르게, 0 = 하나도 안 줄임 — 0은 목표 수에 닿지 못했다).
+    vg = lo.vertex_groups.new(name="face_keep")
+    face = face_verts(lo)
+    vg.add(list(face), FACE_WEIGHT, "REPLACE")
+    vg.add([v.index for v in lo.data.vertices if v.index not in face], 1.0, "REPLACE")
+    decimate(lo, ratio, vg.name)
+    lo.vertex_groups.remove(lo.vertex_groups["face_keep"])
     while lo.data.uv_layers:
         lo.data.uv_layers.remove(lo.data.uv_layers[0])
     lo.data.uv_layers.new(name="UVMap")
@@ -136,6 +234,7 @@ def make_low(ratio):
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.uv.smart_project(angle_limit=UV_ANGLE, island_margin=0.02)
     bpy.ops.object.mode_set(mode="OBJECT")
+    grow_face_uv(lo)
     am = lo.modifiers.new("rig", "ARMATURE")
     am.object = arm
     return lo
@@ -208,6 +307,7 @@ for im in list(bpy.data.images):
 arm.data.pose_position = "POSE"
 if arm.animation_data:
     arm.animation_data.action = None
+print(f"[meshy_rig] face verts kept {len(face_verts(low))}")
 print(f"[meshy_rig] ratio {best[0]:.4f} glTF verts {gltf_verts(low)} tris {sum(len(p.vertices) - 2 for p in low.data.polygons)}")
 
 
