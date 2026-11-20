@@ -656,7 +656,7 @@ pub const EN: Strings = Strings {
     wake_2: "Only the body remembers something.",
     wake_skip: "Skip",
     forest_name: "The Nameless Wood",
-    zone_glade: "The Waking Glade",
+    zone_woodpath: "The Wood Path",
     obj_follow_bell: "Follow the bell",
     obj_courtyard: "Put down the husks in the courtyard",
     obj_gate_open: "Enter the sanctum through the open gate",

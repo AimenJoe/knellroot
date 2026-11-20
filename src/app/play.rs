@@ -32,8 +32,48 @@ impl App {
         self.play_stage_out(out);
     }
 
+    /// 월드의 수평 방향 → 지금 입력 기준의 스틱(쿼터뷰 위 = `quarter_forward`, 오른쪽 = 앞 × 위 — `world::move_to_world`의 거꾸로).
+    fn stick_toward(&self, want: Vec3) -> Vec2 {
+        let fwd = crate::camera::quarter_forward(self.cam.basis_yaw_deg(&self.t));
+        let right = fwd.cross(Vec3::Y);
+        let want = vec3(want.x, 0.0, want.z).normalize_or_zero();
+        vec2(want.dot(right), want.dot(fwd))
+    }
+
+    /// 헤드리스 시험의 도움(0262 — 개발판, 시험 깃발 4): 서막 숲에서 방랑자가 숲 끝까지 저절로 걷는다 — 적의 길찾기 거리 지도를
+    /// 따라가고 턱 앞에서는 뛴다. 키보드로 숲길(쿼터뷰가 35° 돌아 있다)을 시간으로 걷게 하면 느린 러너에서 어긋난다.
+    #[cfg(feature = "dev")]
+    fn prologue_autopilot(&self, a: &mut Actions) {
+        if crate::screen::test_flags() & 4 == 0 || !self.run.def.prologue {
+            return;
+        }
+        let Some(exit) = self.run.exit_at else { return };
+        let nav = crate::nav::Nav::build(
+            self.world.ground.as_ref(),
+            &self.world.obstacles,
+            self.run.level.half_extent(),
+        );
+        let dist = nav.flow(exit);
+        let p = self.world.player.pos;
+        let r = crate::tuning::PLAYER_RADIUS;
+        let to = match nav.hop(&dist, p, r) {
+            Some((land, _)) => {
+                a.jump = self.world.player.air <= 0.0;
+                land
+            }
+            None => nav.waypoint(&dist, p, r).unwrap_or(exit),
+        };
+        a.move_dir = self.stick_toward(to - p);
+    }
+
     /// 월드 한 틱 + 줍기 몸짓 + 플레이 시간.
     fn play_world(&mut self, a: Actions) {
+        #[cfg(feature = "dev")]
+        let a = {
+            let mut a = a;
+            self.prologue_autopilot(&mut a);
+            a
+        };
         let a = self.camera_input(a);
         let a = self.cursor_aim(a);
         self.step_world(&a);
@@ -224,11 +264,9 @@ impl App {
             }
             interlude::Hold::Idle => self.step_world(&Actions::default()),
             interlude::Hold::Walk(k) => {
-                // 성소 쪽(북, 월드 −z)을 지금 입력 기준의 스틱으로(쿼터뷰 위 = `quarter_forward`, 오른쪽 = 앞 × 위).
-                let fwd = crate::camera::quarter_forward(self.cam.basis_yaw_deg(&self.t));
-                let (want, right) = (Vec3::NEG_Z, fwd.cross(Vec3::Y));
+                // 성소 쪽(북, 월드 −z)으로 걷는다.
                 let a = Actions {
-                    move_dir: vec2(want.dot(right), want.dot(fwd)) * k,
+                    move_dir: self.stick_toward(Vec3::NEG_Z) * k,
                     ..Actions::default()
                 };
                 self.step_world(&a);

@@ -174,11 +174,11 @@ pub const WORKS_FLOOR: FloorLook = FloorLook {
     edge: Color::new(0.615, 0.615, 0.578, 1.0),
 };
 
-/// 서막 숲(0262, 땅 위): 석판은 거의 없다(옛 길의 조각만 — 판의 여덟 할 반이 빠져 흙 + 풀), 남은 판은 이끼. 흙은 어두운 부엽토(채도 낮게 —
+/// 서막 숲(0262, 땅 위): 석판은 옛 길의 조각만(판의 반이 빠져 흙 + 풀), 남은 판은 이끼. 흙은 어두운 부엽토(채도 낮게 —
 /// 호박색대 밖), 바위 단 윗면은 이끼(나무가 선다) — 갈색 길이 초록 둘레와 갈려 읽힌다. 밝기는 성소 값의 휘도 그대로.
 pub const FOREST_FLOOR: FloorLook = FloorLook {
     moss: 0.65,
-    bare: 0.85,
+    bare: 0.5,
     slab: Color::new(0.276, 0.31, 0.296, 1.0),
     moss_slab: Color::new(0.214, 0.31, 0.25, 1.0),
     dirt: Color::new(0.226, 0.204, 0.178, 1.0),
@@ -221,6 +221,25 @@ const WALL_AO: f32 = 0.45;
 const WALL_AO_R: f32 = 0.6;
 /// 식생(0063 E3): 바위 단 칸마다 나무·덤불이 설 몫, 걸을 수 있는 쪽 벽 면마다 뿌리가 탈 몫.
 pub const TREE_SHARE: f32 = 0.22;
+
+/// 지역의 나무(0262 — `backdrop::Env::woods`): 바위 단 칸에 나무가 서는 몫(0 = 없음 — 땅속), 살아 있는(푸른 잎) 나무의 몫.
+/// 빽빽한 숲(`share`가 `TREE_SHARE`보다 크면)은 걷는 땅 바로 곁 칸에 덤불만 — 나무는 한 칸 뒤에 서서 길을 덮지 않고 둘레를 이룬다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Woods {
+    pub share: f32,
+    pub live: f32,
+}
+
+impl Woods {
+    pub const NONE: Woods = Woods {
+        share: 0.0,
+        live: 0.0,
+    };
+
+    pub fn dense(&self) -> bool {
+        self.share > TREE_SHARE
+    }
+}
 const BUSH_SHARE: f32 = 0.35;
 const ROOT_SHARE: f32 = 0.16;
 
@@ -340,7 +359,7 @@ impl Scenery {
         lv: &Level,
         lib: &mut Library,
         flora: bool,
-        woods: f32,
+        woods: Woods,
         floor: &FloorLook,
     ) -> Scenery {
         let look = crate::render::look();
@@ -947,15 +966,24 @@ impl Scenery {
                         c.z + (hash(x, z, 33) - 0.5) * CELL * 0.5,
                     );
                     let seed = (x * 977 + z * 131) as u32;
-                    if !flora || woods <= 0.0 {
-                    } else if hash(x, z, 30) < woods {
-                        let b = crate::flora::tree(&mut p, on, seed, &lights);
+                    // 빽빽한 숲(0262): 걷는 땅 바로 곁(8방향) 칸은 덤불만.
+                    let by_path = woods.dense()
+                        && (-1i32..=1).any(|dz| {
+                            (-1i32..=1).any(|dx| {
+                                let (nx, nz) = (x as i32 + dx, z as i32 + dz);
+                                nx >= 0 && nz >= 0 && lv.walkable(nx as usize, nz as usize)
+                            })
+                        });
+                    if !flora || woods.share <= 0.0 {
+                    } else if !by_path && hash(x, z, 30) < woods.share {
+                        let b = crate::flora::tree(&mut p, on, seed, woods.live, &lights);
                         if let Some(a) = p.aabb.as_mut() {
                             a.min = a.min.min(b.min);
                             a.max = a.max.max(b.max);
                         }
                     } else if hash(x, z, 31) < BUSH_SHARE {
-                        crate::flora::bush(&mut p, on, seed, 0.5 + 0.4 * hash(x, z, 34), &lights);
+                        let size = 0.5 + 0.4 * hash(x, z, 34);
+                        crate::flora::bush(&mut p, on, seed, size, woods.live, &lights);
                     }
                     pieces.push(p);
                 } else {

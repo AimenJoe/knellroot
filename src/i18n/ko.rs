@@ -659,7 +659,7 @@ pub const KO: Strings = Strings {
     wake_2: "몸만이 무언가를 기억한다.",
     wake_skip: "건너뛰기",
     forest_name: "이름 없는 숲",
-    zone_glade: "깨어난 빈터",
+    zone_woodpath: "숲길",
     obj_follow_bell: "종소리를 따라가라",
     obj_courtyard: "뜰의 잔재를 쓰러뜨려라",
     obj_gate_open: "열린 문으로 성소에 들어가라",

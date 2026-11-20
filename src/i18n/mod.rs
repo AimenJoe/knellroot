@@ -781,7 +781,7 @@ pub struct Strings {
     pub wake_skip: &'static str,
     /// 서막 숲(0262): 지역 이름·깨어난 자리의 구역·목표(종소리 길 안내가 숲 끝을 가리킨다).
     pub forest_name: &'static str,
-    pub zone_glade: &'static str,
+    pub zone_woodpath: &'static str,
     pub obj_follow_bell: &'static str,
     pub obj_courtyard: &'static str,
     pub obj_gate_open: &'static str,
@@ -1648,7 +1648,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.wake_2,
         s.wake_skip,
         s.forest_name,
-        s.zone_glade,
+        s.zone_woodpath,
         s.obj_follow_bell,
         s.obj_courtyard,
         s.obj_gate_open,

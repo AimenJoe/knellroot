@@ -70,8 +70,8 @@ pub struct Env {
     pub fireflies: bool,
     pub falling: bool,
     pub trees: bool,
-    /// 바위 단 칸에 나무가 서는 몫(`trees`일 때 — 0262: 서막 숲은 빽빽하게, 성소는 듬성듬성).
-    pub woods: f32,
+    /// 바위 단의 나무(`trees`일 때 — 0262: 서막 숲은 빽빽하고 푸르게, 성소는 듬성듬성 잿빛).
+    pub woods: crate::scenery::Woods,
     /// 땅(0185 — 굽는 지형의 석판·이끼·흙, 0249 — 벽·바위·턱까지).
     pub floor: crate::scenery::FloorLook,
     /// 빛 색(0249 — 바탕빛·달빛·배우 가장자리 빛). 지역마다 분위기를 바꾸되 주인공·생물의 색상대(보라·빨강·짙은 호박)는 피한다.
@@ -111,7 +111,10 @@ pub static SURFACE: Env = Env {
     fireflies: true,
     falling: false,
     trees: true,
-    woods: crate::scenery::TREE_SHARE,
+    woods: crate::scenery::Woods {
+        share: crate::scenery::TREE_SHARE,
+        live: crate::flora::LIVE_SHARE,
+    },
     floor: crate::scenery::SANCTUARY_FLOOR,
     light: crate::render::SkyLight {
         ambient: Vec3::new(0.191, 0.228, 0.28),
@@ -154,7 +157,7 @@ pub static UNDERGROUND: Env = Env {
     fireflies: false,
     falling: true,
     trees: false,
-    woods: 0.0,
+    woods: crate::scenery::Woods::NONE,
     floor: crate::scenery::VILLAGE_FLOOR,
     light: crate::render::SkyLight {
         ambient: Vec3::new(0.245, 0.222, 0.184),
@@ -197,7 +200,7 @@ pub static GARDEN: Env = Env {
     fireflies: false,
     falling: true,
     trees: false,
-    woods: 0.0,
+    woods: crate::scenery::Woods::NONE,
     floor: crate::scenery::GARDEN_FLOOR,
     light: crate::render::SkyLight {
         ambient: Vec3::new(0.167, 0.239, 0.227),
@@ -239,7 +242,7 @@ pub static WORKS: Env = Env {
     fireflies: false,
     falling: true,
     trees: false,
-    woods: 0.0,
+    woods: crate::scenery::Woods::NONE,
     floor: crate::scenery::WORKS_FLOOR,
     light: crate::render::SkyLight {
         ambient: Vec3::new(0.31, 0.33, 0.232),
@@ -282,7 +285,10 @@ pub static FOREST: Env = Env {
     fireflies: true,
     falling: false,
     trees: true,
-    woods: 0.72,
+    woods: crate::scenery::Woods {
+        share: 0.7,
+        live: 0.8,
+    },
     floor: crate::scenery::FOREST_FLOOR,
     light: crate::render::SkyLight {
         ambient: Vec3::new(0.185, 0.235, 0.195),

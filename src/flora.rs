@@ -16,8 +16,8 @@ const TRUNK: Color = Color::new(0.241, 0.212, 0.192, 1.0);
 const LEAF_DEAD: Color = Color::new(0.292, 0.322, 0.356, 1.0);
 const LEAF_LIVE: Color = Color::new(0.34, 0.50, 0.45, 1.0);
 const ROOT: Color = Color::new(0.27, 0.15, 0.34, 1.0);
-/// 살아 있는 나무의 몫.
-const LIVE_SHARE: f32 = 0.3;
+/// 살아 있는 나무의 몫(성소 — 지역마다는 `scenery::Woods::live`).
+pub const LIVE_SHARE: f32 = 0.3;
 
 /// 0..1 값(같은 씨앗 = 같은 모양).
 fn h(seed: u32, k: u32) -> f32 {
@@ -158,7 +158,7 @@ fn strand(p: &mut Piece, pts: &[Vec3], r0: f32, r1: f32, col: Color, lights: &[L
 
 /// 나무 하나(`base` = 뿌리 자리 땅 위): 짧고 굵은 휜 줄기 + 둥근 잎 무더기(가운데 큰 덩어리 위에 하나, 둘레에 둘~넷).
 /// 처음엔 줄기 2.6~4.2m·납작한 갓이라 막대 사탕처럼 보였다(스크린숏) — 줄기를 줄이고 무더기를 위로 쌓는다. 가림 상자를 돌려준다.
-pub fn tree(p: &mut Piece, base: Vec3, seed: u32, lights: &[Light]) -> Aabb {
+pub fn tree(p: &mut Piece, base: Vec3, seed: u32, live: f32, lights: &[Light]) -> Aabb {
     let height = 1.7 + 0.9 * h(seed, 1);
     let lean = vec3(h(seed, 2) - 0.5, 0.0, h(seed, 3) - 0.5) * 0.9;
     let mid = base + Vec3::Y * height * 0.5 + lean * 0.4;
@@ -171,8 +171,11 @@ pub fn tree(p: &mut Piece, base: Vec3, seed: u32, lights: &[Light]) -> Aabb {
         TRUNK,
         lights,
     );
-    let live = h(seed, 4) < LIVE_SHARE;
-    let leaf = if live { LEAF_LIVE } else { LEAF_DEAD };
+    let leaf = if h(seed, 4) < live {
+        LEAF_LIVE
+    } else {
+        LEAF_DEAD
+    };
     let clumps = 3 + (h(seed, 5) * 2.99) as u32;
     let mut lo = base - vec3(0.6, 0.2, 0.6);
     let mut hi = base + vec3(0.6, 0.0, 0.6);
@@ -206,10 +209,13 @@ pub fn tree(p: &mut Piece, base: Vec3, seed: u32, lights: &[Light]) -> Aabb {
 }
 
 /// 덤불: 땅에 붙은 조약돌 둘~셋(`size` = 대략 높이 m). 바랜 잎.
-pub fn bush(p: &mut Piece, base: Vec3, seed: u32, size: f32, lights: &[Light]) {
+pub fn bush(p: &mut Piece, base: Vec3, seed: u32, size: f32, live: f32, lights: &[Light]) {
     let n = 2 + (h(seed, 1) * 1.99) as u32;
-    let live = h(seed, 2) < LIVE_SHARE;
-    let leaf = if live { LEAF_LIVE } else { LEAF_DEAD };
+    let leaf = if h(seed, 2) < live {
+        LEAF_LIVE
+    } else {
+        LEAF_DEAD
+    };
     for k in 0..n {
         let a = h(seed, 10 + k) * std::f32::consts::TAU;
         let d = if k == 0 { 0.0 } else { size * 0.6 };
@@ -283,7 +289,7 @@ mod tests {
     fn only_the_leaves_of_a_tree_sway() {
         let mut p = piece();
         let base = vec3(0.0, 0.0, 0.0);
-        tree(&mut p, base, 3, &[]);
+        tree(&mut p, base, 3, LIVE_SHARE, &[]);
         let swaying: Vec<&Vertex> = p.verts.iter().filter(|v| v.normal.w != 1.0).collect();
         assert!(!swaying.is_empty() && swaying.len() < p.verts.len());
         for v in swaying {
@@ -310,7 +316,7 @@ mod tests {
         for seed in 0..40 {
             let mut p = piece();
             let base = vec3(3.0, 2.0, -5.0);
-            let b = tree(&mut p, base, seed, &[]);
+            let b = tree(&mut p, base, seed, LIVE_SHARE, &[]);
             assert!(p.verts.len() < 500, "{}", p.verts.len());
             let ys: Vec<f32> = p.verts.iter().map(|v| v.position.y).collect();
             let top = ys.iter().cloned().fold(f32::MIN, f32::max);

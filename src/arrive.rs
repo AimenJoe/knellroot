@@ -41,10 +41,10 @@ pub const END: f32 = T0 + CARD_AT + CARD_LEN + BARS_OUT;
 const SKIP_TO: f32 = END - BARS_OUT;
 
 /// 높이·넓게 보는 카메라(방랑자가 닿는 자리 `at`, 성소 쪽 한 점 `far`): 처음 자리(성소 쪽에서 등지고 높이) → 끝 자리(조금 낮게·가까이).
-const EYE_BACK: [f32; 2] = [10.0, 9.0];
-const EYE_UP: [f32; 2] = [21.0, 10.0];
+const EYE_BACK: [f32; 2] = [24.0, 10.0];
+const EYE_UP: [f32; 2] = [14.0, 7.0];
 /// 보는 곳: 닿는 자리에서 성소 쪽으로 이만큼(m), 땅에서 이만큼 위.
-const LOOK_AHEAD: [f32; 2] = [40.0, 10.0];
+const LOOK_AHEAD: [f32; 2] = [30.0, 10.0];
 const LOOK_UP: f32 = 1.5;
 
 fn smooth(x: f32) -> f32 {
@@ -264,7 +264,7 @@ mod tests {
         };
         let (eye, look) = a.eye(at, far);
         assert!(
-            eye.z > at.z && eye.y > at.y + 15.0,
+            eye.z > at.z + 20.0 && eye.y > at.y + 12.0,
             "behind and high: {eye:?}"
         );
         assert!(look.z < at.z - 20.0, "toward the sanctum: {look:?}");

@@ -3,7 +3,7 @@
 
 작게(성소의 1/3쯤): 남쪽 깨어난 빈터(P) → 쓰러진 둥치를 넘는 턱(뛰기 0.5m) → 좁은 숲길 → 잔재 둘(a — 해 보는 상대) →
 북쪽 숲 끝(E — 성소로 가는 길, 옛 길의 기둥 둘이 표지). 숲의 가장자리는 벽이 아니라 바위 단 + 나무(`flora`): 걷는 땅에서
-멀어질수록 높아지는 단(+1 → +2 → +3m)이라 나무가 겹겹이 선다. 벽(`#`)은 없다.
+멀어질수록 높아지는 단(+0.5 → +1.5 → +2.5m)이라 나무가 겹겹이 선다(바로 곁 칸은 덤불만 — `scenery::Woods::dense`). 벽(`#`)은 없다.
 
     python3 tools/maps/forest.py            # 미리보기만(지도 | 높이)
     python3 tools/maps/forest.py --write    # src/stage/forest.rs 의 MAP·HEIGHTS를 바꿔 쓴다
@@ -60,10 +60,12 @@ disc(12, 3, 3.2, 2.0, '5')            # 숲 끝(성소로 가는 길)
 marks = {
     'P': [(12, 34)],                  # 깨어나는 자리(곁에 검이 놓인다 — 0220)
     'E': [(12, 2)],                   # 숲 끝 — 밟으면 "성소에 들다"
-    'a': [(7, 16), (14, 9)],          # 잔재 둘(끈 짧게 — tuning::PROLOGUE_LEASH)
+    # 잔재 둘(끈 짧게 — tuning::PROLOGUE_LEASH). 빈터·길의 동쪽 — 달(서쪽 하늘, `LIGHT_DIR`)을 가리는 나무에서 멀어 그늘에 묻히지 않게
+    # (서쪽 가장자리에 세웠더니 바닥과 같은 밝기였다, 스크린숏 0170).
+    'a': [(10, 17), (15, 9)],
     'i': [(10, 3), (14, 3)],          # 옛 길의 기둥(숲 끝의 표지)
-    'r': [(10, TRUNK), (14, TRUNK)],  # 둥치의 뿌리 끝(길 양옆)
-    'u': [(11, TRUNK), (13, TRUNK), (9, 30), (16, 34)],  # 둥치·빈터의 돌무더기(지나간다)
+    # 둥치·빈터의 돌무더기(지나간다). 뿌리 덩이(`r`)는 두지 않는다 — 어두운 숲 바닥에서 웅크린 짐승으로 읽혔다(스크린숏).
+    'u': [(10, TRUNK), (14, TRUNK), (9, 30), (16, 34)],
 }
 for c, spots in marks.items():
     for x, y in spots:
@@ -71,7 +73,7 @@ for c, spots in marks.items():
             raise SystemExit(f"{c} at ({x},{y}) lands on {M[y][x]!r}")
         M[y][x] = c
 
-# 3. 가장자리: 걷는 땅에서의 칸 거리로 바위 단(+1 · +2 · +3m) — 단 위에 나무가 선다.
+# 3. 가장자리: 걷는 땅에서의 칸 거리로 바위 단(+0.5 · +1.5 · +2.5m) — 단 위에 나무가 선다.
 INF = 99
 dist = [[0 if M[y][x] != ' ' else INF for x in range(W)] for y in range(H)]
 changed = True
@@ -90,7 +92,7 @@ for y in range(H):
             d = dist[y][x]
             # 둥치 북쪽(+0.5m)은 단도 그만큼 높게.
             base = 1 if y < TRUNK else 0
-            HT[y][x] = '6789abc'[min(base + 2 * (d - 1), 6)] if d < INF else 'c'
+            HT[y][x] = '56789ab'[min(base + 2 * (d - 1), 6)] if d < INF else 'b'
 
 # 빈 줄은 `Level::parse`가 건너뛴다(높이 격자와 어긋난다) — 바위만 있는 줄은 양 끝 모서리 칸을 벽 칸으로(바위 단 높이 그대로).
 for y in range(H):

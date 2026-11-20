@@ -199,7 +199,7 @@ impl Renderer {
             let woods = if run.def.env.trees {
                 run.def.env.woods
             } else {
-                0.0
+                crate::scenery::Woods::NONE
             };
             let floor = &run.def.env.floor;
             // 굽는 빛은 그 지역의 것(0249 — 렌더가 프레임 들머리에 넣지만 굽기는 그것에 기대지 않는다).

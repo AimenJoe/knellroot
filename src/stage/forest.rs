@@ -13,7 +13,7 @@ pub static DEF: StageDef = StageDef {
     name: |s| s.forest_name,
     map: MAP,
     heights: Some(HEIGHTS),
-    zones: &[(|s| s.zone_glade, usize::MAX)],
+    zones: &[(|s| s.zone_woodpath, usize::MAX)],
     waves: &[],
     horde: (&[], 0),
     spawns: &[('a', Kind::Husk)],
@@ -49,15 +49,15 @@ const MAP: &str = "
             ....         
              ....        
              ....        
-           ...a..        
+           ....a.        
           .......        
          .......         
         ......           
        .....             
       .....              
      .......             
-     ..a....             
      .......             
+     .....a.             
       .....              
        .....             
         .......          
@@ -65,7 +65,7 @@ const MAP: &str = "
           .....          
           .....          
           .....          
-          ru.ur          
+          u...u          
           .....          
           .....          
          .......         
@@ -82,46 +82,46 @@ const MAP: &str = "
 #                       #
 ";
 
-/// 높낮이(0035·0043): `MAP`과 같은 칸. 둥치 북쪽의 땅은 +0.5m(뛰어 넘는 턱), 걷는 땅에서 멀어질수록 높아지는 바위 단(+1 → +3m) 위에 나무.
+/// 높낮이(0035·0043): `MAP`과 같은 칸. 둥치 북쪽의 땅은 +0.5m(뛰어 넘는 턱), 걷는 땅에서 멀어질수록 높아지는 바위 단(+0.5 → +2.5m) 위에 나무.
 const HEIGHTS: &str = "
-ccccccbb999777999bbcccccc
-ccccccb99777577799bcccccc
-ccccccb97755555779bcccccc
-ccccccb97555555579bcccccc
-ccccccb97755555779bbccccc
-ccccccb997755555799bccccc
-ccccccbb99775555779bccccc
-cccccccbb9977555579bccccc
-ccccccbb99777555579bccccc
-cccccbb997755555579bccccc
-ccccbb9977555555579bccccc
-cccbb99775555555779bccccc
-ccbb997755555577799bccccc
-ccb997755555777999bbccccc
-ccb9775555577999bbbcccccc
-ccb97555555579bbbcccccccc
-ccb97555555579bcccccccccc
-ccb97555555579bbbbccccccc
-ccb97755555779999bccccccc
-ccb99775555577779bccccccc
-ccbb9977555555579bccccccc
-cccbb997755555579bccccccc
-ccccbb99775555579bccccccc
-cccccbb9975555579bccccccc
-ccccccbb975555579bccccccc
-ccccccaa86.....68aacccccc
-cccccaa886.....688aaccccc
-ccccaa8866.....6688aacccc
-cccaa8866.......6688aaccc
-ccca8866.........6688accc
-ccca866...........668accc
-ccca86.............68accc
-ccca86.............68accc
-ccca86.............68accc
-ccca866...........668accc
-ccca8866.........6688accc
-cccaa8866.......6688aaccc
-ccccaa8866666666688aacccc
-cccccaa88888888888aaccccc
-ccccccaaaaaaaaaaaaacccccc
+bbbbbbaa888666888aabbbbbb
+bbbbbba88666566688abbbbbb
+bbbbbba86655555668abbbbbb
+bbbbbba86555555568abbbbbb
+bbbbbba86655555668aabbbbb
+bbbbbba886655555688abbbbb
+bbbbbbaa88665555668abbbbb
+bbbbbbbaa8866555568abbbbb
+bbbbbbaa88666555568abbbbb
+bbbbbaa886655555568abbbbb
+bbbbaa8866555555568abbbbb
+bbbaa88665555555668abbbbb
+bbaa886655555566688abbbbb
+bba886655555666888aabbbbb
+bba8665555566888aaabbbbbb
+bba86555555568aaabbbbbbbb
+bba86555555568abbbbbbbbbb
+bba86555555568aaaabbbbbbb
+bba86655555668888abbbbbbb
+bba88665555566668abbbbbbb
+bbaa8866555555568abbbbbbb
+bbbaa886655555568abbbbbbb
+bbbbaa88665555568abbbbbbb
+bbbbbaa8865555568abbbbbbb
+bbbbbbaa865555568abbbbbbb
+bbbbbb9975.....5799bbbbbb
+bbbbb99775.....57799bbbbb
+bbbb997755.....557799bbbb
+bbb997755.......557799bbb
+bbb97755.........55779bbb
+bbb9755...........5579bbb
+bbb975.............579bbb
+bbb975.............579bbb
+bbb975.............579bbb
+bbb9755...........5579bbb
+bbb97755.........55779bbb
+bbb997755.......557799bbb
+bbbb99775555555557799bbbb
+bbbbb997777777777799bbbbb
+bbbbbb9999999999999bbbbbb
 ";
