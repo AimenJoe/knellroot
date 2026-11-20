@@ -26,7 +26,8 @@ const MAGIC_V2: u32 = 0x4B4E_0002;
 /// 33·34 자유 시점 돌리기 민감도 가로·세로(`LOOK_SENS`의 자리 +1, 0 = 저장 전 = 100%) — 0191, 뒤에 붙인 칸이라 MAGIC 그대로.
 /// 35 터치 버튼 크기(`TOUCH_SIZES`의 자리 +1, 0 = 저장 전 = 100%) — 0236, 뒤에 붙인 칸이라 MAGIC 그대로.
 /// 36..40 큰 기술의 따로 붙인 버튼(키 둘·패드 둘, +1 — 0 = 없음) — 0255(`Bindings::encode_ult`).
-const CELLS: usize = 40;
+/// 40..42 무기 바꾸기의 (키, 패드)(0261 — `Bindings::encode`의 22.. 몫, 뒤에 붙인 칸이라 MAGIC 그대로: 옛 저장은 0 = 기본값).
+const CELLS: usize = 42;
 /// 터치 버튼(엄지 묶음) 크기 단계(%) — 0236, 사장 "숄더뷰에서 화면 돌리기 어렵게 많고 크네"(CoD Mobile·Fortnite식 크기 설정).
 pub const TOUCH_SIZES: [u32; 4] = [80, 90, 100, 115];
 /// 가장 작게(80%)도 가장 작은 가로 폰(667×375)에서 가장 작은 버튼이 최소 터치 크기의 0.8(지름 35px) 위 — `touch` 시험이 본다.
@@ -96,7 +97,8 @@ fn encode(p: &Prefs) -> [u32; CELLS] {
     v[1] = p.lang.map_or(0, lang_code);
     let keys = p.bindings.encode();
     v[2..20].copy_from_slice(&keys[..18]);
-    v[29..33].copy_from_slice(&keys[18..]);
+    v[29..33].copy_from_slice(&keys[18..22]);
+    v[40..42].copy_from_slice(&keys[22..]);
     v[20] = p.shake.min(10) as u32 + 1;
     v[21] = p.weapon as u32 + 1;
     v[22] = p.mouse.on as u32 + 1;
@@ -158,7 +160,12 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
     if v[0] != MAGIC && v[0] != MAGIC_V2 && v[0] != MAGIC_V3 && v[0] != MAGIC_V4 {
         return None;
     }
-    let keys: Vec<u32> = v[2..20].iter().chain(&v[29..33]).copied().collect();
+    let keys: Vec<u32> = v[2..20]
+        .iter()
+        .chain(&v[29..33])
+        .chain(&v[40..42])
+        .copied()
+        .collect();
     Some(Prefs {
         lang: lang_from(v[1]),
         // 옛 표식(…0002·…0003)의 저장은 **배치만** 기본으로 되돌린다(0151 · 0223 — 패드 평타가 RB로 옮겨 갔다). 공개 전이라
@@ -172,6 +179,17 @@ fn decode(v: &[u32; CELLS]) -> Option<Prefs> {
                 b.set_pad(Bind::Attack, Pad::West);
             }
             b.ult = Bindings::decode_ult(&v[36..40]);
+            // 큰 기술의 버튼 하나는 다른 동작이 안 쓰는 것만(0255) — 0261에 새로 붙은 무기 바꾸기(L3·X)가 그 자리를 가져갔으면 비운다.
+            if let [Some(k), None] = b.ult.keys {
+                if b.keys.contains(&k) {
+                    b.ult.keys = [None, None];
+                }
+            }
+            if let [Some(p), None] = b.ult.pads {
+                if b.pads.contains(&p) {
+                    b.ult.pads = [None, None];
+                }
+            }
             b
         },
         shake: shake_from(v[20]),
@@ -383,12 +401,52 @@ mod tests {
         let mut b = Bindings::default_layout();
         b.ult = UltBind {
             keys: [Some(3), Some(4)],
-            pads: [Some(Pad::L3), None],
+            pads: [Some(Pad::L1), Some(Pad::R1)],
         };
         let got = decode(&encode(&Prefs { bindings: b, ..p }))
             .unwrap()
             .bindings;
         assert_eq!(got.ult, b.ult);
+    }
+
+    /// 0261: 무기 바꾸기는 뒤에 붙인 칸(40..42) — 옛 저장(그 칸 0)은 기본 L3·X를 받고 다른 칸은 그대로다. 옛 저장이 큰 기술을
+    /// L3 하나에 붙여 두었으면 그 자리를 무기 바꾸기가 가져가고 큰 기술은 비운다(한 버튼이 두 일을 하지 않게 — 스킬 둘 함께는 남는다).
+    #[test]
+    fn old_prefs_get_the_weapon_swap_on_l3_and_an_ult_on_l3_steps_aside() {
+        use crate::input::{Slot, UltBind};
+        use macroquad::prelude::KeyCode;
+        let mut old = Bindings::keyboard_only();
+        old.set_pad(Bind::Attack, Pad::North);
+        old.ult = UltBind {
+            keys: [None, None],
+            pads: [Some(Pad::L3), None],
+        };
+        let p = Prefs {
+            lang: None,
+            bindings: old,
+            shake: SHAKE_DEFAULT,
+            weapon: 0,
+            mouse: MouseAim::default(),
+            volume: VOLUME_DEFAULT,
+            tells: TELLS_DEFAULT,
+            tell_timing: false,
+            fullscreen: false,
+            look: (LOOK_DEFAULT, LOOK_DEFAULT),
+            touch_size: TOUCH_SIZE_DEFAULT,
+        };
+        let mut v = encode(&p);
+        v[40] = 0;
+        v[41] = 0;
+        let got = decode(&v).unwrap().bindings;
+        assert_eq!(got.pad(Bind::Swap), Pad::L3);
+        assert_eq!(got.key(Bind::Swap), Slot::Key(KeyCode::X));
+        assert_eq!(got.pad(Bind::Attack), Pad::North, "the rest stays");
+        assert_eq!(got.ult.pads, [None, None]);
+        // 새 판은 그대로 왕복한다.
+        assert_eq!(
+            decode(&encode(&p)).unwrap().bindings.pad(Bind::Swap),
+            Pad::L3
+        );
     }
 
     /// 0151: 표식이 0x…0002인 저장(배치 칸 4·5 = Q·E / LT·RT가 땅 돌리기였다)은 **배치만** 기본으로 되돌린다 — 다른 설정은 그대로.

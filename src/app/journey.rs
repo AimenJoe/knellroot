@@ -1,23 +1,14 @@
-//! 큰 창의 여정 탭(0183): 왼쪽 = 닿은 지역의 목표(표 차례 — 지역마다 갈 길 먼저), 오른쪽 = 고른 목표의 이름 · 갈래와 지역 ·
-//! 상태 한 줄 · 풀이 · 받을 것. 이룬 것은 확인 = 받기(멈춤·화로 둘 다 — 받기는 사는 일이 아니다).
+//! 기록 탭의 여정 묶음(0183 여정 탭 → 0261 기록 탭의 묶음): 왼쪽 = 닿은 지역의 목표(표 차례 — 지역마다 갈 길 먼저), 오른쪽 = 고른 목표의
+//! 이름 · 갈래와 지역 · 상태 한 줄 · 풀이 · 받을 것. 이룬 것은 확인 = 받기(멈춤·화로 둘 다 — 받기는 사는 일이 아니다).
 //! 줄 끝의 표지: ◆ = 받을 수 있다 · n/m = 하는 중 · ◇ = 받았다(흐리게).
+use super::frame::Window;
 use super::tabs::{Ln, PaneHead, HEAD_H};
 use super::*;
 use crate::journey::{self, Branch, Reward};
-use flow::Host;
 
 impl App {
-    /// 여정 한 틱: 뒤로·✕·창 밖 = 닫기, 위아래·굴리기·줄 누르기 = 고르기, 확인(또는 고른 줄 다시 누르기) = 받기.
-    pub(super) fn tick_journey(&mut self, a: &Actions, _host: Host) {
-        let mut a = *a;
-        let before = self.cursor;
-        self.pane_scroll_lines(&mut a);
-        let a = &a;
-        let tap = a.tap.and_then(|p| self.hit_at(p));
-        if a.back || a.pause || tap == Some(menu::Hit::Close) {
-            self.go(Go::Back);
-            return;
-        }
+    /// 여정 묶음 한 틱(뒤로·굴리기·묶음 넘기기는 기록 탭이 먼저 받았다): 위아래·줄 누르기 = 고르기, 확인(또는 고른 줄 다시 누르기) = 받기.
+    pub(super) fn journey_pick(&mut self, a: &Actions, before: usize) {
         let goals = journey::visible(&self.progress);
         let picked = self.menu_pick(a, goals.len());
         if self.cursor != before {
@@ -75,11 +66,10 @@ impl App {
         }
     }
 
-    /// 여정 탭 그림: 왼쪽 목표 줄, 오른쪽 고른 목표.
-    pub(super) fn draw_journey(&mut self, f: &Frame, host: Host) {
+    /// 여정 묶음 그림(창 틀·묶음 머리는 기록 탭이 그렸다): 왼쪽 목표 줄(묶음 머리 아래), 오른쪽 고른 목표, 아래 안내.
+    pub(super) fn draw_journey(&mut self, f: &Frame, w: &Window, scene: Scene, top: f32) {
         let s = s();
-        let scene = Scene::Journey { host };
-        let w = self.draw_tab_window(f, scene);
+        let w = *w;
         let p = self.progress.clone();
         let goals = journey::visible(&p);
         let rows: Vec<ui::Row> = goals
@@ -98,7 +88,7 @@ impl App {
                 r
             })
             .collect();
-        self.draw_left_list(&w, &rows, 0.0);
+        self.draw_left_list(&w, &rows, top);
         let cursor = self.cursor.min(goals.len().saturating_sub(1));
         let g = goals[cursor];
         let (have, need) = journey::count(g, &p);

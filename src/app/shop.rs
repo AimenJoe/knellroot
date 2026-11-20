@@ -19,6 +19,8 @@ pub(super) enum ShopRow {
     Ware(usize),
     Forge(weapons::Id),
     Recall(weapons::Id),
+    /// 가방 열기(0261 — 가방 탭이 화로에서 빠져, 여벌을 잔불로 바꾸는 길은 여기서 멈춤 창의 가방을 화로 위에 연다). 늘 맨 끝.
+    Bag,
 }
 
 /// 가게의 줄 차례(순수): 진열 `shelf`개 → 가진 무기 가운데 벼릴 수 있는 것 → 그 가운데 벼린 것.
@@ -42,6 +44,7 @@ pub(super) fn shop_rows(
                 .filter(|&&w| forged.rank(w) > 0)
                 .map(|&w| ShopRow::Recall(w)),
         )
+        .chain(std::iter::once(ShopRow::Bag))
         .collect()
 }
 
@@ -147,6 +150,7 @@ impl App {
                         &[&crate::forge::cost_to(forged.rank(w)).0.to_string()],
                     ),
                 ),
+                ShopRow::Bag => ui::Row::go(s.shop_bag_row),
             })
             .collect();
         Menu::new(s.hearth_shop, tabs::LEFT_W, rows)
@@ -166,6 +170,20 @@ impl App {
             ShopRow::Forge(wp) | ShopRow::Recall(wp) => {
                 self.forge_pane(&w, wp, matches!(row, ShopRow::Recall(_)))
             }
+            ShopRow::Bag => {
+                let s = s();
+                self.draw_pane_head(
+                    &w,
+                    &tabs::PaneHead {
+                        name: s.shop_bag_row,
+                        gold: false,
+                        kind: s.menu_bag.to_string(),
+                        state: (String::new(), DIM),
+                        icon: false,
+                    },
+                );
+                self.pane_wrap(&w, s.shop_bag_d, INK)
+            }
         };
         self.draw_pane(&w, HEAD_H, &lines);
         let s = s();
@@ -173,6 +191,7 @@ impl App {
             ShopRow::Ware(_) => s.ask_buy_yes,
             ShopRow::Forge(_) => s.forge_do,
             ShopRow::Recall(_) => s.forge_recall,
+            ShopRow::Bag => s.shop_bag_open,
         };
         let right = w.panel.x + w.panel.w;
         self.tab_foot(
@@ -358,6 +377,9 @@ impl App {
                 }
             }
             Some(ShopRow::Recall(w)) => self.ask(flow::Ask::Recall(weapon_index(w))),
+            Some(ShopRow::Bag) => self.show(Go::Open(Scene::Bag {
+                host: flow::Host::Pause,
+            })),
             None => {}
         }
     }
@@ -461,14 +483,14 @@ mod tests {
                 ShopRow::Ware(0),
                 ShopRow::Ware(1),
                 ShopRow::Forge(Id::Sword),
-                ShopRow::Forge(Id::Crossbow)
+                ShopRow::Forge(Id::Crossbow),
+                ShopRow::Bag
             ]
         );
         f.set(Id::Crossbow, 2);
-        assert_eq!(
-            shop_rows(0, &arms, &f).last(),
-            Some(&ShopRow::Recall(Id::Crossbow))
-        );
+        let rows = shop_rows(0, &arms, &f);
+        assert_eq!(rows[rows.len() - 2], ShopRow::Recall(Id::Crossbow));
+        assert_eq!(rows.last(), Some(&ShopRow::Bag), "0261: the bag is last");
         assert!(!shop_rows(0, &arms, &f).contains(&ShopRow::Recall(Id::Sword)));
     }
 }

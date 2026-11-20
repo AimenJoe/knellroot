@@ -19,6 +19,7 @@ pub const NOTE_SECS: f32 = 2.5;
 pub const ORDER: [Bind; crate::input::NB] = [
     Bind::Attack,
     Bind::Cast,
+    Bind::Swap,
     Bind::Dodge,
     Bind::Parry,
     Bind::Jump,
@@ -464,9 +465,9 @@ mod tests {
         assert!(matches!(out, Out::Changed(nb) if nb.ult.keys == [None, None]));
     }
 
-    /// 0255: 패드 칸도 같다 — L3(아무도 안 쓴다) 하나, LB+RB 조합, Start는 취소.
+    /// 0255: 패드 칸도 같다 — LB+RB 조합, 다른 동작이 쓰는 버튼 하나는 받지 않는다(0261부터 L3도), Start는 취소.
     #[test]
-    fn the_ult_row_on_the_pad_takes_l3_or_a_combo_and_start_cancels() {
+    fn the_ult_row_on_the_pad_takes_a_combo_and_start_cancels() {
         let b = Bindings::default_layout();
         let dt = 1.0 / 60.0;
         let mut c = Controls::default();
@@ -478,6 +479,7 @@ mod tests {
         c.tick(&press(Pad::L1), b, dt);
         let out = c.tick(&press(Pad::R1), b, dt);
         assert!(matches!(out, Out::Changed(nb) if nb.ult.pads == [Some(Pad::L1), Some(Pad::R1)]));
+        // 0261: L3는 이제 무기 바꾸기의 자리 — 하나로는 받지 않는다(다른 동작이 쓰는 버튼, 알림). 패드는 열둘이 다 찼다.
         c.pick(ult_row(), 1, b);
         c.tick(&press(Pad::L3), b, dt);
         let mut out = Out::Stay;
@@ -487,7 +489,8 @@ mod tests {
                 break;
             }
         }
-        assert!(matches!(out, Out::Changed(nb) if nb.ult.pads == [Some(Pad::L3), None]));
+        assert_eq!(out, Out::Stay);
+        assert!(c.note > 0.0, "told why");
         c.pick(ult_row(), 1, b);
         let stop = Actions {
             pause: true,

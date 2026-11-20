@@ -63,8 +63,8 @@ pub const BLOCK_WALK: f32 = 0.5;
 pub const BLOCK_PUSH: f32 = 0.5;
 pub const BLOCK_BREAK_STUN: f32 = 0.8;
 pub const BLOCK_HITSTOP: f32 = 1.2;
-/// 주/부무기 바꾸기(0223 — 패링 + 평타): 둘째 누름이 첫째 뒤 이 초 안이면 "함께"(큰 기술의 `skill.chord s` 0.12와 같은 폭).
-pub const WEAPON_CHORD: f32 = 0.12;
+/// 주/부무기 바꾸기 버튼(0261)을 다른 동작 중에 눌렀을 때 받아 두는 초 — 공격의 받아 두기(`attack.buffer s` 기본)와 같은 폭.
+pub const SWAP_BUFFER: f32 = 0.3;
 pub const PARRY_CHAIN: f32 = 0.2;
 /// 이어 패링 쌓기(0086, 사장 "연장 중에 또 성공하면 남은 창이 또 늘되 늘어나는 몫은 50%씩 줄고, 범위는 늘어나게 — 둘러싸였을 때도
 /// 빠져나가게"): 이어지는 동안 n번째 더 튕기면 남은 창에 `PARRY_CHAIN × PARRY_CHAIN_DECAY^n`을 더하고(0.2 → +0.1 → +0.05 …),

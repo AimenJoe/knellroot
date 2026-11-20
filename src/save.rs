@@ -39,7 +39,7 @@ pub mod key {
     /// 가진 방패(0223 — 키 목록, 쉼표)와 든 방패(키). 없으면 키가 없다.
     pub const SHIELDS: &str = "shields";
     pub const SHIELD_WORN: &str = "shield.worn";
-    /// 부무기(0223 — 패링 + 평타로 주무기와 바꿔 든다). 없으면 키가 없다.
+    /// 부무기(0223 — 바꾸기 버튼(0261)으로 주무기와 바꿔 든다). 없으면 키가 없다.
     pub const SUB: &str = "weapon.sub";
     /// 끼운 스킬 둘(0151 — 값은 `skills::Id::key`).
     pub const SKILL1: &str = "skill.1";
@@ -863,7 +863,8 @@ impl Progress {
             || self.board.cells.count() > 0
     }
 
-    /// 장비(장신구·덧옷)를 뺀 능력치(성장만) — 장비 창이 "장비가 바꾸는 줄"을 고를 때의 기본값(0104 · 0176).
+    /// 장비(장신구·덧옷)를 뺀 능력치(성장만) — 시험이 덧옷의 몫을 가를 때(0176). 장비 창은 0261부터 지금의 수치를 다 보인다.
+    #[cfg(test)]
     pub fn stats_without_charms(&self) -> crate::stats::Stats {
         crate::stats::Stats::compute(&[
             self.growth.mods(),

@@ -35,14 +35,11 @@ pub enum Scene {
     },
     /// 가방 탭에서 고른 아이템에 할 수 있는 일의 작은 목록(0226 — `SkillAct`와 같은 꼴): 가방 탭 위에 얹는다.
     BagAct,
-    /// 큰 창의 도감 탭(0130 C5 → 0164): 몸 안의 묶음 둘(`tab`: 적 · 장신구), 왼쪽 목록 · 오른쪽 그림과 관찰.
+    /// 큰 창의 기록 탭(0130 C5 → 0164 도감 → 0261 기록): 몸 안의 묶음(`tab`: 적 · 장신구 · 덧옷 · 무기 · 여정 — 여정 0183은
+    /// 0261에 탭에서 묶음으로 들어왔다), 왼쪽 목록 · 오른쪽 그림과 관찰(여정은 풀이와 받을 것, 이룬 것은 확인 = 받기).
     Codex {
         host: Host,
         tab: u8,
-    },
-    /// 큰 창의 여정 탭(0183): 지역마다의 목표 — 왼쪽 목록 · 오른쪽 풀이와 받을 것, 이룬 것은 확인 = 받기(멈춤·화로 둘 다).
-    Journey {
-        host: Host,
     },
     /// 큰 창의 기술 탭(0161 → 0164): 갈래 셋 × 줄 셋의 칸 그림 + 고른 칸의 상세. 화로에서는 올리기·고르기 바꾸기·되돌리기까지
     /// (`Host::edits`), 멈춤에서는 읽기와 끼우기만.
@@ -118,41 +115,38 @@ impl Host {
 /// 큰 창의 탭(0164). 차례는 `tabs`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tab {
+    /// 상태(0164) — 0261부터 화로에만 서는 "성장"(레벨 올리기 · 끼운 기술 묶음 · 지금의 수치).
     Status,
     Equip,
     Bag,
     Skills,
+    /// 기록(0261 — 도감 + 여정 묶음).
     Codex,
-    Journey,
     Shop,
     Settings,
 }
 
-/// 연 곳마다의 탭 줄: 멈춤 = 상태 · 장비 · 기술 · 도감 · 설정, 화로 = 거기에 가게(설정 앞), 타이틀 = 설정 하나.
+/// 연 곳마다의 탭 줄(0261, 사장 "화톳불 메뉴와 일시정지 메뉴의 구성이 달라야 … 메뉴가 너무 많으니까" — Elden Ring 은총·Dark Souls
+/// 화톳불 꼴: 쉬는 곳에는 거기서만 하는 일, 장비·소지품은 멈춤에):
+/// 멈춤 = 장비 · 가방 · 기술(끼우기) · 기록 · 설정, 화로 = 성장 · 기술(배우기·되돌리기) · 가게 · 설정, 타이틀 = 설정 하나.
+/// 화로 창에서 멈춤·Select를 누르면 멈춤 창이 그 위에 열린다(`hearth_menu`) — 닫으면 화로로.
 pub fn tabs(host: Host) -> &'static [Tab] {
     match host {
         Host::Title => &[Tab::Settings],
         #[cfg(feature = "dev")]
         Host::Dev => &[Tab::Skills],
-        Host::Pause => &[
-            Tab::Status,
-            Tab::Equip,
-            Tab::Bag,
-            Tab::Skills,
-            Tab::Codex,
-            Tab::Journey,
-            Tab::Settings,
-        ],
-        Host::Hearth => &[
-            Tab::Status,
-            Tab::Equip,
-            Tab::Bag,
-            Tab::Skills,
-            Tab::Codex,
-            Tab::Journey,
-            Tab::Shop,
-            Tab::Settings,
-        ],
+        Host::Pause => &[Tab::Equip, Tab::Bag, Tab::Skills, Tab::Codex, Tab::Settings],
+        Host::Hearth => &[Tab::Status, Tab::Skills, Tab::Shop, Tab::Settings],
+    }
+}
+
+/// 화로 창 위에서 멈춤(Start)·Select를 눌렀다(0261): 멈춤 창을 그 위에 연다 — 멈춤은 이 판에서 마지막에 본 탭, Select는 장비.
+/// 화로 창이 아니면 `None`.
+pub fn hearth_menu(scene: Scene, pause: bool, select: bool, last: Tab) -> Option<Go> {
+    match tab_of(scene) {
+        Some((Host::Hearth, _)) if select => Some(Go::Open(SELECT_OPENS)),
+        Some((Host::Hearth, _)) if pause => Some(Go::Open(pause_opens(last))),
+        _ => None,
     }
 }
 
@@ -164,7 +158,6 @@ pub fn tab_scene(host: Host, tab: Tab) -> Scene {
         Tab::Bag => Scene::Bag { host },
         Tab::Skills => Scene::Skills { host },
         Tab::Codex => Scene::Codex { host, tab: 0 },
-        Tab::Journey => Scene::Journey { host },
         Tab::Shop => Scene::Shop,
         Tab::Settings => Scene::Settings { host },
     }
@@ -178,7 +171,6 @@ pub fn tab_of(scene: Scene) -> Option<(Host, Tab)> {
         Scene::Bag { host } => Some((host, Tab::Bag)),
         Scene::Skills { host } => Some((host, Tab::Skills)),
         Scene::Codex { host, .. } => Some((host, Tab::Codex)),
-        Scene::Journey { host } => Some((host, Tab::Journey)),
         Scene::Shop => Some((Host::Hearth, Tab::Shop)),
         Scene::Settings { host } => Some((host, Tab::Settings)),
         Scene::Title
@@ -242,12 +234,12 @@ pub fn hearth_opens(knows_a_skill: bool, can_learn: bool) -> Scene {
 }
 pub const SELECT_OPENS: Scene = Scene::Equip { host: Host::Pause };
 
-/// 멈춤이 여는 탭: 이 판에서 멈춤 창이 마지막에 보던 탭(`last` — 판에 붙은 한 칸, 새 판이면 상태). 멈춤에 없는 탭이면 상태.
+/// 멈춤이 여는 탭: 이 판에서 멈춤 창이 마지막에 보던 탭(`last` — 판에 붙은 한 칸, 새 판이면 장비). 멈춤에 없는 탭이면 장비.
 pub fn pause_opens(last: Tab) -> Scene {
     let tab = if tabs(Host::Pause).contains(&last) {
         last
     } else {
-        Tab::Status
+        Tab::Equip
     };
     tab_scene(Host::Pause, tab)
 }
@@ -287,7 +279,6 @@ impl Scene {
             | Scene::Bag { .. }
             | Scene::Skills { .. }
             | Scene::Codex { .. }
-            | Scene::Journey { .. }
             | Scene::Shop
             | Scene::Settings { .. }
             | Scene::Result { .. }
@@ -550,7 +541,8 @@ pub fn settings_rows(fullscreen: bool, mouse: bool, host: Host) -> Vec<SettingsR
         ]);
     }
     v.push(SettingsRow::Controls);
-    if host == Host::Pause {
+    // 판 위에서 연 창(멈춤·화로)의 설정은 같다(0261, 사장 "설정은 공통이어야") — 처음부터·타이틀로는 둘 다 끝 줄에.
+    if matches!(host, Host::Pause | Host::Hearth) {
         #[cfg(feature = "dev")]
         v.push(SettingsRow::Dev);
         v.extend([SettingsRow::Restart, SettingsRow::ToTitle]);
@@ -623,7 +615,6 @@ pub fn back(scene: Scene) -> Go {
         | Scene::Skills { .. }
         | Scene::SkillAct
         | Scene::Codex { .. }
-        | Scene::Journey { .. }
         | Scene::Shop
         | Scene::Ask(_)
         | Scene::Controls
@@ -678,7 +669,8 @@ mod tests {
         // 멈춤 = 큰 창을 바로(0164 — 목록이 없다). 어느 탭에서든 뒤로·멈춤 버튼 한 번에 닫힌다("계속" 줄이 없다).
         assert_eq!(
             pause(Scene::Play, Tab::Status),
-            Go::Open(Scene::Status { host: Host::Pause })
+            Go::Open(Scene::Equip { host: Host::Pause }),
+            "0261: the pause has no status tab — it opens on the gear"
         );
         for &t in tabs(Host::Pause) {
             let sc = tab_scene(Host::Pause, t);
@@ -695,6 +687,21 @@ mod tests {
         assert_eq!(hearth_opens(false, false), HEARTH_OPENS);
         assert_eq!(hearth_opens(true, false), HEARTH_OPENS);
         assert_eq!(pause(Scene::Title, Tab::Status), Go::Stay);
+        // 0261: 화로 창에서 멈춤·Select = 멈춤 창을 그 위에(닫으면 화로로). 멈춤 창·싸움에서는 아니다(그쪽은 `pause`).
+        for &t in tabs(Host::Hearth) {
+            let sc = tab_scene(Host::Hearth, t);
+            assert_eq!(
+                hearth_menu(sc, true, false, Tab::Bag),
+                Some(Go::Open(Scene::Bag { host: Host::Pause }))
+            );
+            assert_eq!(
+                hearth_menu(sc, false, true, Tab::Bag),
+                Some(Go::Open(SELECT_OPENS))
+            );
+            assert_eq!(hearth_menu(sc, false, false, Tab::Bag), None);
+        }
+        assert_eq!(hearth_menu(Scene::Play, true, true, Tab::Bag), None);
+        assert_eq!(hearth_menu(SELECT_OPENS, true, true, Tab::Bag), None);
         // 골라야 끝나는 창은 뒤로로 건너뛰지 않는다.
         assert_eq!(back(Scene::Result { won: false }), Go::Stay);
         assert_eq!(back(Scene::Title), Go::Stay);
@@ -711,7 +718,8 @@ mod tests {
             assert_eq!(remembered(tab_scene(Host::Pause, t)), Some(t));
             assert_eq!(pause(Scene::Play, t), Go::Open(tab_scene(Host::Pause, t)));
         }
-        assert_eq!(pause_opens(Tab::Shop), Scene::Status { host: Host::Pause });
+        assert_eq!(pause_opens(Tab::Shop), Scene::Equip { host: Host::Pause });
+        assert_eq!(pause_opens(Tab::Status), Scene::Equip { host: Host::Pause });
         for &t in tabs(Host::Hearth) {
             assert_eq!(remembered(tab_scene(Host::Hearth, t)), None, "{t:?}");
         }
@@ -727,18 +735,13 @@ mod tests {
         assert_eq!(remembered(SELECT_OPENS), Some(Tab::Equip));
     }
 
-    /// 0164: 탭 줄 — 멈춤 다섯, 화로는 거기에 가게, 타이틀은 설정 하나. 탭마다 장면이 하나고 장면에서 탭이 되읽힌다.
+    /// 0164 → 0261: 탭 줄 — 멈춤 다섯(장비·가방·기술·기록·설정), 화로 넷(성장·기술·가게·설정), 타이틀은 설정 하나.
+    /// 탭마다 장면이 하나고 장면에서 탭이 되읽힌다.
     #[test]
     fn each_host_has_its_tab_row_and_every_tab_maps_to_one_scene() {
         use Tab::*;
-        assert_eq!(
-            tabs(Host::Pause),
-            [Status, Equip, Bag, Skills, Codex, Journey, Settings]
-        );
-        assert_eq!(
-            tabs(Host::Hearth),
-            [Status, Equip, Bag, Skills, Codex, Journey, Shop, Settings]
-        );
+        assert_eq!(tabs(Host::Pause), [Equip, Bag, Skills, Codex, Settings]);
+        assert_eq!(tabs(Host::Hearth), [Status, Skills, Shop, Settings]);
         assert_eq!(tabs(Host::Title), [Settings]);
         for host in [Host::Title, Host::Pause, Host::Hearth] {
             for (i, &t) in tabs(host).iter().enumerate() {
@@ -798,16 +801,16 @@ mod tests {
         assert_eq!(tab_of(codex), Some((Host::Pause, Tab::Codex)));
         assert_eq!(
             tab_step(codex, 1),
-            Go::Swap(Scene::Journey { host: Host::Pause })
+            Go::Swap(Scene::Settings { host: Host::Pause })
         );
         assert_eq!(
             tab_step(codex, -1),
             Go::Swap(Scene::Skills { host: Host::Pause })
         );
-        // 멈춤의 끝(설정)에서 오른쪽 = 처음(상태).
+        // 멈춤의 끝(설정)에서 오른쪽 = 처음(장비).
         assert_eq!(
             tab_step(Scene::Settings { host: Host::Pause }, 1),
-            Go::Swap(Scene::Status { host: Host::Pause })
+            Go::Swap(Scene::Equip { host: Host::Pause })
         );
         // 타이틀의 설정은 탭이 하나 — 넘길 곳이 없다.
         let only = Scene::Settings { host: Host::Title };
@@ -817,7 +820,7 @@ mod tests {
 
     /// 0164: 올리기·사기·되돌리기는 화로에서만 켜진다(멈춤은 읽기·끼우기). 처음부터·타이틀로·개발은 멈춤의 설정 탭 끝에만.
     #[test]
-    fn only_the_hearth_edits_and_only_pause_settings_end_the_run() {
+    fn only_the_hearth_edits_and_settings_on_the_run_end_the_run() {
         assert!(Host::Hearth.edits());
         assert!(!Host::Pause.edits());
         assert!(!Host::Title.edits());
@@ -834,14 +837,14 @@ mod tests {
                 pause[pause.len() - 2..],
                 [SettingsRow::Restart, SettingsRow::ToTitle]
             );
-            for host in [Host::Title, Host::Hearth] {
-                let r = settings_rows(f, m, host);
-                assert_eq!(r.last(), Some(&SettingsRow::Controls), "{host:?}");
-                assert!(!r.contains(&SettingsRow::Restart));
-                assert!(!r.contains(&SettingsRow::ToTitle));
-                // 멈춤의 줄 = 다른 곳의 줄 + 끝 줄들(값 줄의 차례는 어디서 열어도 같다).
-                assert_eq!(pause[..r.len()], r[..]);
-            }
+            // 0261: 화로의 설정 = 멈춤의 설정(판 위에서 연 창은 설정이 같다 — 처음부터·타이틀로까지).
+            assert_eq!(settings_rows(f, m, Host::Hearth), pause);
+            let r = settings_rows(f, m, Host::Title);
+            assert_eq!(r.last(), Some(&SettingsRow::Controls));
+            assert!(!r.contains(&SettingsRow::Restart));
+            assert!(!r.contains(&SettingsRow::ToTitle));
+            // 멈춤의 줄 = 타이틀의 줄 + 끝 줄들(값 줄의 차례는 어디서 열어도 같다).
+            assert_eq!(pause[..r.len()], r[..]);
         }
         assert!(!settings_rows(false, true, Host::Title).contains(&SettingsRow::Fullscreen));
         assert!(!settings_rows(true, false, Host::Title).contains(&SettingsRow::MouseAim));
@@ -1013,9 +1016,7 @@ mod tests {
             choose_settings(SettingsRow::Dev),
             Some(Go::Open(Scene::Dev { tab: 0 }))
         );
-        // 화로·타이틀의 설정에는 개발 줄이 없다(타이틀은 제 줄이 있다).
-        for host in [Host::Title, Host::Hearth] {
-            assert!(!settings_rows(true, true, host).contains(&SettingsRow::Dev));
-        }
+        // 타이틀의 설정에는 개발 줄이 없다(타이틀은 제 줄이 있다). 화로는 멈춤과 같다(0261).
+        assert!(!settings_rows(true, true, Host::Title).contains(&SettingsRow::Dev));
     }
 }

@@ -147,6 +147,8 @@ pub struct App {
     /// 장면 스택(0066): 맨 위가 지금 장면, 아래 칸은 커서·창을 맡아 둔다. 지금 칸의 커서·창은 `cursor`·`view`.
     stack: stack::Stack,
     cursor: usize,
+    /// 기술 탭의 되돌리기 단추로 내려오기 전의 칸(0261 — 단추에서 위로 가면 거기로).
+    respec_from: usize,
     /// 지난 프레임에 그린 메뉴 줄·▲▼ 자리(탭 판정).
     hits: Vec<(Rect, Hit)>,
     /// 붙잡아 둔 메뉴 누름(0207): 눌린 꼴을 `PRESS_HOLD` 동안 보인 뒤 그 확인·탭을 장면에 넘긴다.
@@ -378,6 +380,7 @@ impl App {
         App {
             stack: stack::Stack::new(Scene::Title),
             cursor: 0,
+            respec_from: 0,
             hits: Vec::new(),
             press: None,
             press_queue: std::collections::VecDeque::new(),
@@ -1023,7 +1026,6 @@ impl App {
             Scene::Skills { host } => self.tick_skills(&a, host.edits()),
             Scene::SkillAct => self.tick_skill_act(&a),
             Scene::Codex { host, tab } => self.tick_codex(&a, host, tab as usize),
-            Scene::Journey { host } => self.tick_journey(&a, host),
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
             Scene::Bag { host } => self.tick_bag(&a, host),
             Scene::BagAct => self.tick_bag_act(&a),
@@ -1086,7 +1088,6 @@ impl App {
             | Scene::Skills { .. }
             | Scene::SkillAct
             | Scene::Codex { .. }
-            | Scene::Journey { .. }
             | Scene::Bag { .. }
             | Scene::BagAct
             | Scene::EquipPick { .. } => None,
@@ -1117,7 +1118,6 @@ impl App {
             | Scene::Skills { .. }
             | Scene::SkillAct
             | Scene::Codex { .. }
-            | Scene::Journey { .. }
             | Scene::Bag { .. }
             | Scene::BagAct
             | Scene::EquipPick { .. } => {}
@@ -1351,7 +1351,6 @@ impl App {
             Scene::Skills { host } => self.draw_skills(f, self.cursor, host),
             Scene::SkillAct => self.draw_skill_act(f),
             Scene::Codex { host, tab } => self.draw_codex(f, host, tab as usize),
-            Scene::Journey { host } => self.draw_journey(f, host),
             Scene::Bag { host } => self.draw_bag(f, host, self.cursor),
             Scene::BagAct => self.draw_bag_act(f),
             Scene::Shop => self.draw_shop(f),

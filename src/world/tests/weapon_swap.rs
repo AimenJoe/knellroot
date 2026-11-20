@@ -1,4 +1,4 @@
-//! 주/부무기 바꾸기(0223 — 패링 + 평타를 함께): 같은 틱·창 안의 둘째 누름, 시동 안의 첫 동작 거두기, 튕긴 뒤의 반격, 탄은 무기마다.
+//! 주/부무기 바꾸기(0223 → 0261 — 따로 붙인 바꾸기 버튼): 서 있으면 바로·동작 중엔 받아 두기, 조합은 바꾸지 않음, 튕긴 뒤의 반격, 탄은 무기마다.
 use super::*;
 use crate::weapons::Id;
 
@@ -16,9 +16,9 @@ fn swapped(ev: &[Event]) -> Option<Id> {
     })
 }
 
-/// 같은 틱에 둘 다 = 바로 바꾼다. 패링도 휘두르기도 나가지 않는다.
+/// 0261: 패링 + 평타를 함께 눌러도 이제 바꾸지 않는다 — 바꾸기는 따로 붙인 버튼 하나(패드 L3·키보드 X). 둘은 제 일을 한다.
 #[test]
-fn parry_and_attack_together_swap_the_weapons() {
+fn parry_and_attack_together_no_longer_swap() {
     let t = Tuning::default();
     let mut w = armed(Id::Sword, Id::Hammer);
     let ev = w.step(
@@ -29,72 +29,58 @@ fn parry_and_attack_together_swap_the_weapons() {
         },
         &t,
     );
-    assert_eq!(swapped(&ev), Some(Id::Hammer));
-    assert_eq!(
-        (w.player.weapon, w.player.sub),
-        (Id::Hammer, Some(Id::Sword))
+    assert_eq!(swapped(&ev), None);
+    assert_eq!(w.player.weapon, Id::Sword);
+    assert_ne!(
+        w.player.state,
+        PState::Idle,
+        "the parry or the swing went out"
     );
-    assert_eq!(w.player.state, PState::Idle, "neither a parry nor a swing");
-    // 다시 함께 → 되돌아온다.
-    for _ in 0..10 {
-        w.step(&Actions::default(), &t);
-    }
-    let ev = w.step(
-        &Actions {
-            parry: true,
-            attack: true,
-            ..Default::default()
-        },
-        &t,
-    );
-    assert_eq!(swapped(&ev), Some(Id::Sword));
 }
 
-/// 둘째 누름이 첫째 뒤 `WEAPON_CHORD` 안이면 첫째가 시작한 패링을 거두고 바꾼다. 늦으면 그냥 평타.
+/// 휘두르는 동안 누른 바꾸기 버튼은 사라지지 않고 받아 두었다가(`SWAP_BUFFER`) 서는 순간 바꾼다. 너무 이르면 버린다.
 #[test]
-fn a_second_press_inside_the_chord_takes_back_the_parry_and_swaps() {
+fn a_swap_pressed_mid_swing_waits_for_the_stand() {
     let t = Tuning::default();
     let mut w = armed(Id::Sword, Id::Staff);
     w.step(
         &Actions {
-            parry: true,
-            ..Default::default()
-        },
-        &t,
-    );
-    assert!(matches!(w.player.state, PState::Parry { .. }));
-    w.step(&Actions::default(), &t);
-    let ev = w.step(
-        &Actions {
             attack: true,
             ..Default::default()
         },
         &t,
     );
-    assert_eq!(swapped(&ev), Some(Id::Staff));
-    assert_eq!(w.player.state, PState::Idle);
-    // 늦게 누른 평타는 바꾸지 않는다.
-    let mut w = armed(Id::Sword, Id::Staff);
-    w.step(
+    assert!(matches!(w.player.state, PState::Attack { .. }));
+    let mut ev = w.step(
         &Actions {
-            attack: true,
+            swap: true,
             ..Default::default()
         },
         &t,
     );
-    let late = (crate::tuning::WEAPON_CHORD / TICK_DT).ceil() as usize + 2;
-    for _ in 0..late {
-        w.step(&Actions::default(), &t);
+    assert_eq!(swapped(&ev), None, "not in the middle of a swing");
+    let mut n = 0;
+    while swapped(&ev).is_none() && n < 120 {
+        ev = w.step(&Actions::default(), &t);
+        n += 1;
     }
+    // 받아 둔 바꾸기가 나갔다면 그것은 휘두름이 끝나 선 틱이다.
+    if swapped(&ev).is_some() {
+        assert_eq!(w.player.weapon, Id::Staff);
+        assert_eq!(w.player.state, PState::Idle);
+    } else {
+        // 휘두름이 받아 두기보다 길면 버려진다 — 그때도 무기는 그대로다.
+        assert_eq!(w.player.weapon, Id::Sword);
+    }
+    // 서 있는 동안 누르면 바로.
     let ev = w.step(
         &Actions {
-            parry: true,
+            swap: true,
             ..Default::default()
         },
         &t,
     );
-    assert_eq!(swapped(&ev), None);
-    assert_eq!(w.player.weapon, Id::Sword);
+    assert!(swapped(&ev).is_some());
 }
 
 /// 패링이 튕겨 낸 뒤의 평타는 반격이다 — 바꾸지 않는다(패링 → 반격의 손을 지킨다).
@@ -142,23 +128,6 @@ fn the_attack_after_a_deflect_is_a_riposte_not_a_swap() {
     );
 }
 
-/// 부무기가 없으면 함께 눌러도 바꾸지 않는다(그냥 패링·평타).
-#[test]
-fn without_an_off_weapon_the_chord_is_just_the_two_buttons() {
-    let t = Tuning::default();
-    let mut w = World::new("test", 20.0);
-    let ev = w.step(
-        &Actions {
-            parry: true,
-            attack: true,
-            ..Default::default()
-        },
-        &t,
-    );
-    assert_eq!(swapped(&ev), None);
-    assert_eq!(w.player.weapon, Id::Sword);
-}
-
 /// 탄은 무기마다 남는다: 쇠뇌를 비우고 바꿔 들었다 돌아와도 탄창이 차 있지 않다(바꾸기로 장전을 건너뛰지 못한다).
 #[test]
 fn swapping_back_does_not_refill_the_crossbow() {
@@ -172,7 +141,7 @@ fn swapping_back_does_not_refill_the_crossbow() {
     let _ = t;
 }
 
-/// 터치의 바꾸기 버튼(`Actions::swap`): 서 있으면 바로 바꾼다. 부무기가 없으면 아무 일도 없다.
+/// 바꾸기 버튼(`Actions::swap` — 터치·패드 L3·키보드 X): 서 있으면 바로 바꾼다. 부무기가 없으면 아무 일도 없다.
 #[test]
 fn the_swap_button_swaps_at_once_when_standing() {
     let t = Tuning::default();
@@ -209,14 +178,13 @@ fn swapping_inside_the_riposte_window_ripostes_with_the_new_weapon() {
         ev.iter().any(|e| matches!(e, Event::Parry { .. })),
         "parried"
     );
-    // 히트스톱이 풀릴 때까지 기다렸다가 패링 + 평타를 함께(바꾸기), 그리고 평타.
+    // 히트스톱이 풀릴 때까지 기다렸다가 바꾸기 버튼, 그리고 평타.
     while w.hitstop > 0.0 {
         w.step(&Actions::default(), &t);
     }
     let ev = w.step(
         &Actions {
-            parry: true,
-            attack: true,
+            swap: true,
             ..Default::default()
         },
         &t,

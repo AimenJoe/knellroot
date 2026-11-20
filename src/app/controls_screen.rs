@@ -110,6 +110,7 @@ impl App {
                             input::Bind::Cast => s.verb_cast,
                             input::Bind::Skill1 => s.verb_skill1,
                             input::Bind::Skill2 => s.verb_skill2,
+                            input::Bind::Swap => s.verb_weapon_swap,
                         },
                         _ => s.ctl_ult,
                     };
@@ -205,6 +206,7 @@ impl App {
                     input::Bind::Lock => s.ctl_lock_d,
                     input::Bind::Skill1 | input::Bind::Skill2 => s.ctl_skill_d,
                     input::Bind::TurnLeft | input::Bind::TurnRight => s.ctl_turn_d,
+                    input::Bind::Swap => s.ctl_swap_d,
                 },
                 Some(controls::Row::Ult) => s.ctl_ult_d,
                 Some(controls::Row::Preset(_)) => s.ctl_preset_d,

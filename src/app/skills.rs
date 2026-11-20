@@ -524,14 +524,15 @@ pub(super) fn reveal_span(i: usize) -> (f32, f32) {
 }
 
 /// 십자 한 걸음(0161 — KB `game-menu-scene-stack-and-focus`: 격자는 돌지 않는다): 누른 쪽에 있는 칸 가운데 가장 가깝고 곧은 것으로.
-/// 그쪽에 칸이 없으면 그대로 — 다만 격자의 오른쪽 끝에서 오른쪽·맨 아래에서 아래는 되돌리기 단추(창 아래 오른쪽, `respec`일 때 —
-/// 화로), 단추에서 위·왼쪽은 격자의 오른쪽 아래 칸으로 돌아온다.
-pub(super) fn walk(from: usize, dx: i32, dy: i32, respec: bool) -> usize {
+/// 그쪽에 칸이 없으면 그대로 — 다만 맨 아래에서 **아래**는 되돌리기 단추(창 아래 오른쪽, `respec`일 때 — 화로). 오른쪽 걸음은 격자에서
+/// 끝난다(0261, 사장 "오른쪽 이동은 기술 쪽에서 끝나야 한다" — 단추에서 왼쪽으로 가도 떠난 자리로 돌아오지 않아 길을 잃었다).
+/// 단추에서 위는 `back`(단추로 내려오기 전의 칸)으로, 옆은 그대로.
+pub(super) fn walk(from: usize, dx: i32, dy: i32, respec: bool, back: usize) -> usize {
     if dx == 0 && dy == 0 {
         return from;
     }
     if from >= NE {
-        return if dx < 0 || dy < 0 { NE - 1 } else { from };
+        return if dy < 0 { back.min(NE - 1) } else { from };
     }
     let spots = spots();
     let here = spots[from].c;
@@ -551,7 +552,7 @@ pub(super) fn walk(from: usize, dx: i32, dy: i32, respec: bool) -> usize {
         .map(|(i, _)| i);
     match best {
         Some(i) => i,
-        None if respec && (dx > 0 || dy > 0) => RESPEC,
+        None if respec && dy > 0 => RESPEC,
         None => from,
     }
 }
@@ -922,7 +923,12 @@ impl App {
             a.menu_right as i32 - a.menu_left as i32,
             a.menu_down as i32 - a.menu_up as i32,
             edit,
+            self.respec_from,
         );
+        // 단추로 내려온 칸을 기억한다 — 단추에서 위로 가면 거기로(0261).
+        if self.cursor == RESPEC && before < NE {
+            self.respec_from = before;
+        }
         // 십자로 옮긴 커서는 창을 끈다 — 손가락으로 고른 칸은 이미 보이니 창을 옮기지 않는다(둘째 탭이 같은 자리에 닿게, 0076).
         if self.cursor != before && self.cursor < NE {
             let (y0, y1) = reveal_span(self.cursor);
@@ -932,6 +938,9 @@ impl App {
         let confirm = match tap {
             Some(Hit::Cell(0, i)) => {
                 let again = self.cursor == i || i == RESPEC;
+                if i == RESPEC && self.cursor < NE {
+                    self.respec_from = self.cursor;
+                }
                 self.cursor = i;
                 again
             }
@@ -2070,7 +2079,7 @@ mod tests {
         // 아래로 끝까지: 걸음마다 그 칸이 보인다. 첫 두 줄은 창이 움직이지 않고(이미 보인다) 셋째 줄에서 내려간다.
         let mut moved_at = None;
         for step in 0..14 {
-            let next = walk(at_, 0, 1, false);
+            let next = walk(at_, 0, 1, false, 0);
             if next == at_ {
                 break;
             }
@@ -2096,7 +2105,7 @@ mod tests {
         );
         // 다시 위로: 맨 위 칸에 서면 창도 맨 위(갈래 머리 아래 첫 이름표가 보인다).
         for _ in 0..14 {
-            at_ = walk(at_, 0, -1, false);
+            at_ = walk(at_, 0, -1, false, 0);
             let (y0, y1) = reveal_span(at_);
             view.reveal(y0, y1);
             assert!(visible(&view, at_));
@@ -2111,68 +2120,84 @@ mod tests {
         let cut = at(Entry::Skill(Id::Cut));
         let brace = at(Entry::Skill(Id::Brace));
         let gather = at(Entry::Skill(Id::Gather));
-        assert_eq!(walk(whirl, 1, 0, true), cut);
-        assert_eq!(walk(cut, 1, 0, true), brace);
-        assert_eq!(walk(brace, 1, 0, true), gather);
-        assert_eq!(walk(gather, -1, 0, true), brace);
-        assert_eq!(walk(cut, -1, 0, true), whirl);
+        assert_eq!(walk(whirl, 1, 0, true, 0), cut);
+        assert_eq!(walk(cut, 1, 0, true, 0), brace);
+        assert_eq!(walk(brace, 1, 0, true, 0), gather);
+        assert_eq!(walk(gather, -1, 0, true, 0), brace);
+        assert_eq!(walk(cut, -1, 0, true, 0), whirl);
         // 가장자리: 왼쪽 끝에서 왼쪽·맨 위에서 위·맨 아래에서 아래는 그대로(돌지 않는다).
-        assert_eq!(walk(whirl, -1, 0, true), whirl);
-        assert_eq!(walk(whirl, 0, -1, true), whirl);
+        assert_eq!(walk(whirl, -1, 0, true, 0), whirl);
+        assert_eq!(walk(whirl, 0, -1, true, 0), whirl);
         let flurry = at(Entry::Ult(Ult::Flurry));
         let measure = at(Entry::Key(crate::progression::Key::Measure));
         // 맺음 아래는 결의 줄(0223 11절) — 거기가 맨 아래다.
         let ember = at(Entry::Vein(crate::progression::Vein::Ember));
         let rift = at(Entry::Vein(crate::progression::Vein::Rift));
-        assert_eq!(walk(measure, 0, 1, false), ember);
-        assert_eq!(walk(ember, 0, 1, false), ember);
-        assert_eq!(walk(ember, 0, -1, false), measure);
-        assert_eq!(walk(rift, 1, 0, false), rift);
-        assert_eq!(walk(rift, 1, 0, true), RESPEC);
-        assert_eq!(walk(flurry, -1, 0, true), flurry);
+        assert_eq!(walk(measure, 0, 1, false, 0), ember);
+        assert_eq!(walk(ember, 0, 1, false, 0), ember);
+        assert_eq!(walk(ember, 0, -1, false, 0), measure);
+        assert_eq!(walk(rift, 1, 0, false, 0), rift);
+        assert_eq!(
+            walk(rift, 1, 0, true, 0),
+            rift,
+            "right ends on the board (0261)"
+        );
+        assert_eq!(walk(flurry, -1, 0, true, 0), flurry);
         // 0214: 큰 기술 줄 아래로 넷째 줄(새 스킬 → 그 아래 패시브), 그 아래 맺음.
         let swallow = at(Entry::Skill(Id::Swallow));
         let held = at(Entry::Cell(Cell::HeldBreath));
-        assert_eq!(walk(flurry, 0, 1, true), swallow);
-        assert_eq!(walk(swallow, 0, 1, true), held);
-        assert_eq!(walk(held, 0, 1, true), measure);
-        assert_eq!(walk(measure, 0, -1, true), held);
+        assert_eq!(walk(flurry, 0, 1, true, 0), swallow);
+        assert_eq!(walk(swallow, 0, 1, true, 0), held);
+        assert_eq!(walk(held, 0, 1, true, 0), measure);
+        assert_eq!(walk(measure, 0, -1, true, 0), held);
         assert_eq!(
-            walk(measure, 1, 0, true),
+            walk(measure, 1, 0, true, 0),
             at(Entry::Key(crate::progression::Key::Edge))
         );
         // 아래로: 스킬 → 그 아래 패시브 → 다음 줄의 스킬 → … → 큰 기술.
         let breath = at(Entry::Cell(Cell::EvenBreath));
-        assert_eq!(walk(whirl, 0, 1, true), breath);
-        assert_eq!(walk(breath, 0, -1, true), whirl);
+        assert_eq!(walk(whirl, 0, 1, true, 0), breath);
+        assert_eq!(walk(breath, 0, -1, true, 0), whirl);
         let quake = at(Entry::Skill(Id::Quake));
-        assert_eq!(walk(breath, 0, 1, true), quake);
+        assert_eq!(walk(breath, 0, 1, true, 0), quake);
         let closing = at(Entry::Cell(Cell::ClosingBlow));
-        assert_eq!(walk(quake, 0, 1, true), closing);
-        assert_eq!(walk(closing, 0, 1, true), flurry);
+        assert_eq!(walk(quake, 0, 1, true, 0), closing);
+        assert_eq!(walk(closing, 0, 1, true, 0), flurry);
         assert_eq!(
-            walk(flurry, 1, 0, true),
+            walk(flurry, 1, 0, true, 0),
             at(Entry::Cell(Cell::FinalMeasure))
         );
-        // 되돌리기 단추(창 아래 오른쪽 — 화로에서만): 격자의 오른쪽 끝에서 오른쪽·맨 아래에서 아래로 닿고, 거기서 위·왼쪽은
-        // 격자의 오른쪽 아래 칸. 단추에서 오른쪽·아래는 그대로.
+        // 되돌리기 단추(창 아래 오른쪽 — 화로에서만): 맨 아래에서 **아래**로만 닿는다 — 오른쪽 걸음은 격자에서 끝난다(0261).
+        // 단추에서 위는 내려오기 전의 칸(`back`)으로, 옆·아래는 그대로.
         // 오른쪽 아래 칸은 결의 줄의 끝(0223 11절 — 맺음 줄 아래).
         let step = rift;
         assert_eq!(step, NE - 1);
-        assert_eq!(walk(step, 1, 0, true), RESPEC);
-        assert_eq!(walk(step, 0, 1, true), RESPEC);
-        assert_eq!(walk(ember, 0, 1, true), RESPEC);
+        assert_eq!(walk(step, 1, 0, true, 0), step);
+        assert_eq!(walk(step, 0, 1, true, 0), RESPEC);
+        assert_eq!(walk(ember, 0, 1, true, 0), RESPEC);
         let rooted = at(Entry::Key(crate::progression::Key::Rooted));
-        assert_eq!(walk(rooted, 0, 1, true), rift);
-        assert_eq!(walk(step, 1, 0, false), step, "no button in the pause");
-        assert_eq!(walk(step, 0, 1, false), step);
-        assert_eq!(walk(gather, 1, 0, true), RESPEC);
-        assert_eq!(walk(RESPEC, -1, 0, true), step);
-        assert_eq!(walk(RESPEC, 0, -1, true), step);
-        for (dx, dy) in [(1, 0), (0, 1)] {
-            assert_eq!(walk(RESPEC, dx, dy, true), RESPEC);
+        assert_eq!(walk(rooted, 0, 1, true, 0), rift);
+        assert_eq!(walk(step, 1, 0, false, 0), step, "no button in the pause");
+        assert_eq!(walk(step, 0, 1, false, 0), step);
+        assert_eq!(
+            walk(gather, 1, 0, true, 0),
+            gather,
+            "the right edge is the end"
+        );
+        assert_eq!(
+            walk(RESPEC, 0, -1, true, ember),
+            ember,
+            "back where it came from"
+        );
+        assert_eq!(walk(RESPEC, 0, -1, true, step), step);
+        for (dx, dy) in [(1, 0), (-1, 0), (0, 1)] {
+            assert_eq!(walk(RESPEC, dx, dy, true, ember), RESPEC);
         }
-        assert_eq!(walk(whirl, 0, 0, true), whirl);
+        // 어느 칸에서도 오른쪽으로는 단추에 닿지 않는다.
+        for i in 0..NE {
+            assert_ne!(walk(i, 1, 0, true, 0), RESPEC, "{:?}", ENTRIES[i]);
+        }
+        assert_eq!(walk(whirl, 0, 0, true, 0), whirl);
         // 모든 칸에 닿는다(네 쪽 걸음으로) — 어느 칸에서 떠나도.
         for start in 0..NE {
             let mut seen = vec![false; NE + 1];
@@ -2180,7 +2205,7 @@ mod tests {
             seen[start] = true;
             while let Some(i) = todo.pop() {
                 for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                    let j = walk(i, dx, dy, true);
+                    let j = walk(i, dx, dy, true, 0);
                     assert!(j <= RESPEC);
                     if !seen[j] {
                         seen[j] = true;
