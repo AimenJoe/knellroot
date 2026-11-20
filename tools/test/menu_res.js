@@ -1,4 +1,4 @@
-// 메뉴 그림의 해상도(0250): 폰(844×390, DPR 3)·PC(1920×1080)에서 장비·가방·도감 탭을 찍는다 — 인형·아이템·도감 생물이 도트로
+// 메뉴 그림의 해상도(0250): 폰(844×390, DPR 3)·PC(1920×1080)에서 성장(화로)·장비·가방·기록(도감) 탭을 찍는다 — 인형·아이템·도감 생물이 도트로
 // 뭉개지지 않는지 눈으로 본다. 연구소 `render.menu fine`을 끈 판(옛 꼴)과 견주려면 옛 빌드 dist로 돌린다.
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/menu_res.js dist shots [태그]
 const { chromium } = require('playwright');
@@ -40,13 +40,15 @@ async function run(browser, name, opts) {
   await press('Enter'); await until('Slots', '이어하기 → 슬롯 창');
   await press('Enter'); await until('Play', '슬롯 → 판'); await page.waitForTimeout(1500);
   const shot = (n) => page.screenshot({ path: path.join(OUT, `menu-${TAG}-${name}-${n}.png`) });
-  await press('Escape'); await until('Status', '멈춤 = 상태 탭'); await page.waitForTimeout(400);
+  // 상태(성장) 탭은 0261부터 화로에만 — 쉬어서 찍고(인형), 닫은 뒤 멈춤(장비 탭에서 열린다)의 장비 · 가방 · 기록.
+  await press('KeyF'); await until('Status { host: Hearth', '화로 = 성장 탭'); await page.waitForTimeout(400);
   await shot('1-status');
-  await flip('KeyE', '장비'); await page.waitForTimeout(400);
+  await press('Escape'); await until('Play', '화로 창 닫기');
+  await press('Escape'); await until('Equip { host: Pause', '멈춤 = 장비 탭'); await page.waitForTimeout(400);
   await shot('2-equip');
   await flip('KeyE', '가방'); await page.waitForTimeout(400);
   await shot('3-bag');
-  await flip('KeyE', '기술'); await flip('KeyE', '도감'); await until('Codex', '도감 탭'); await page.waitForTimeout(400);
+  await flip('KeyE', '기술'); await flip('KeyE', '기록'); await until('Codex', '기록 탭'); await page.waitForTimeout(400);
   await shot('4-codex');
   await ctx.close();
   return errors;
