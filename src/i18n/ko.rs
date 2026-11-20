@@ -38,7 +38,7 @@ pub const KO: Strings = Strings {
     cell_turn_it_back_d: "패링 반격이 적중하면 2m 안의 다른 적도 0.35초 동안 휘청인다",
     cell_gathered: "모은 맞받기",
     cell_gathered_d:
-        "모으기 패링으로 튕겨 낸 적에게 이어서 강타를 맞히면 자세가 즉시 무너진다(문지기에게는 절반만 적용된다)",
+        "모으기 패링으로 튕겨 낸 적에게 그때 모았던 강타를 맞히면 자세가 즉시 무너진다(문지기에게는 자세 막대의 절반만 깎는다)",
     cell_open_breach: "무너진 틈",
     cell_open_breach_d: "자세가 무너진 적에게 완전히 모은 강타를 맞히면 자세가 다시 무너진다",
     cell_one_who_stands: "맞서는 자",
