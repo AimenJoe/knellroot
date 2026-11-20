@@ -372,7 +372,7 @@ fn a_leashed_enemy_walks_home_and_heals() {
     let i = w.spawn(Kind::Husk, home);
     w.enemies[i].place(0.0);
     w.enemies[i].notice();
-    w.enemies[i].pos = vec3(0.0, 0.0, -30.0 + LEASH_RANGE + 2.0);
+    w.enemies[i].pos = vec3(0.0, 0.0, -30.0 + crate::tuning::LEASH_RANGE + 2.0);
     w.enemies[i].hp = 10;
     w.player.pos = vec3(0.0, 0.0, 20.0);
     w.step(&Actions::default(), &t);

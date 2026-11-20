@@ -55,6 +55,16 @@ impl App {
         self.cam = self.cam.renew(self.world.player.pos, &self.t);
     }
 
+    /// 서막 숲에서 성소로(0262 "성소에 들다"의 다 어두운 순간): 성소를 세우고 입구 폐허의 남쪽 가장자리에 선다. 숲을 지났다고 적는다
+    /// (개발 창의 판은 기록에 쓰지 않는다 — `persist`가 거른다).
+    pub(super) fn arrive_sanctuary(&mut self) {
+        self.enter_stage(FIRST_STAGE);
+        self.run.arrive_from_prologue(&mut self.world);
+        self.cam = self.cam.renew(self.world.player.pos, &self.t);
+        self.progress.prologue = true;
+        self.persist();
+    }
+
     /// 판에서 기록할 것을 옮기고(쉰 쉼터·끝낸 판), 바뀌었으면 쓴다.
     pub(super) fn sync_progress(&mut self, out: crate::stage::StageOut) {
         self.note_rest(out);

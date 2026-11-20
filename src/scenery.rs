@@ -174,6 +174,25 @@ pub const WORKS_FLOOR: FloorLook = FloorLook {
     edge: Color::new(0.615, 0.615, 0.578, 1.0),
 };
 
+/// 서막 숲(0262, 땅 위): 석판은 거의 없다(옛 길의 조각만 — 판의 여덟 할 반이 빠져 흙 + 풀), 남은 판은 이끼. 흙은 어두운 부엽토(채도 낮게 —
+/// 호박색대 밖), 바위 단 윗면은 이끼(나무가 선다) — 갈색 길이 초록 둘레와 갈려 읽힌다. 밝기는 성소 값의 휘도 그대로.
+pub const FOREST_FLOOR: FloorLook = FloorLook {
+    moss: 0.65,
+    bare: 0.85,
+    slab: Color::new(0.276, 0.31, 0.296, 1.0),
+    moss_slab: Color::new(0.214, 0.31, 0.25, 1.0),
+    dirt: Color::new(0.226, 0.204, 0.178, 1.0),
+    mortar: Color::new(0.088, 0.098, 0.09, 1.0),
+    mortar_calm: Color::new(0.186, 0.205, 0.19, 1.0),
+    wall: Color::new(0.33, 0.37, 0.35, 1.0),
+    wall_top: Color::new(0.2, 0.236, 0.214, 1.0),
+    rock: Color::new(0.235, 0.262, 0.245, 1.0),
+    rock_top: Color::new(0.176, 0.262, 0.2, 1.0),
+    pit: Color::new(0.098, 0.124, 0.114, 1.0),
+    ledge: Color::new(0.3, 0.33, 0.31, 1.0),
+    edge: Color::new(0.57, 0.62, 0.59, 1.0),
+};
+
 /// 고인 물(`~`, 0185): 어둡고 푸른 수면, 가장자리는 젖은 흙.
 const WATER: Color = Color::new(0.13, 0.23, 0.30, 1.0);
 /// 수면의 달빛 결(0185): 칸을 가로지르는 가는 밝은 띠 — 평평한 판이 아니라 물로 읽히게.
@@ -201,7 +220,7 @@ const SLAB_SIDE: f32 = 0.62;
 const WALL_AO: f32 = 0.45;
 const WALL_AO_R: f32 = 0.6;
 /// 식생(0063 E3): 바위 단 칸마다 나무·덤불이 설 몫, 걸을 수 있는 쪽 벽 면마다 뿌리가 탈 몫.
-const TREE_SHARE: f32 = 0.22;
+pub const TREE_SHARE: f32 = 0.22;
 const BUSH_SHARE: f32 = 0.35;
 const ROOT_SHARE: f32 = 0.16;
 
@@ -316,12 +335,12 @@ fn empty(aabb: Option<Aabb>) -> Piece {
 }
 
 impl Scenery {
-    /// `trees` = 이 지역에 나무·덤불이 자라나(0118 T2 — 땅속은 벽 뿌리만).
+    /// `woods` = 바위 단 칸에 나무가 서는 몫(0118 T2 — 땅속은 0: 벽 뿌리만, 0262 — 서막 숲은 빽빽하게).
     pub fn bake(
         lv: &Level,
         lib: &mut Library,
         flora: bool,
-        trees: bool,
+        woods: f32,
         floor: &FloorLook,
     ) -> Scenery {
         let look = crate::render::look();
@@ -928,8 +947,8 @@ impl Scenery {
                         c.z + (hash(x, z, 33) - 0.5) * CELL * 0.5,
                     );
                     let seed = (x * 977 + z * 131) as u32;
-                    if !flora || !trees {
-                    } else if hash(x, z, 30) < TREE_SHARE {
+                    if !flora || woods <= 0.0 {
+                    } else if hash(x, z, 30) < woods {
                         let b = crate::flora::tree(&mut p, on, seed, &lights);
                         if let Some(a) = p.aabb.as_mut() {
                             a.min = a.min.min(b.min);

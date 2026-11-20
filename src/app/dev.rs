@@ -53,6 +53,8 @@ pub(super) enum DevStart {
     Garden,
     /// 넷째 지역 어귀(0208 — 이 판에 세 문지기를 이긴 셈) — 기록은 쓰지 않는다.
     Works,
+    /// 서막(0262): 숲에서 깨어나는 장면부터 — 숲 끝에서 "성소에 들다". 기록은 쓰지 않는다.
+    Prologue,
     /// 둘째 지역의 첫 주민 곁(0122 — 말풍선·돌아봄 판정) — 기록은 쓰지 않는다.
     Residents,
     /// 둘째 지역의 새긴 돌 곁(0129 — 글 판 판정) — 기록은 쓰지 않는다.
@@ -78,7 +80,7 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 38] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 39] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Motion, DevStart::Motion(0)),
@@ -102,6 +104,8 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 38] = [
     (DevCat::Stage, DevStart::Chest),
     (DevCat::Stage, DevStart::Garden),
     (DevCat::Stage, DevStart::Works),
+    // 0262: 묶음의 끝에 둔다(시험 스크립트가 세는 앞 줄을 밀지 않는다).
+    (DevCat::Stage, DevStart::Prologue),
     (DevCat::Combat, DevStart::Scenario(Scenario::Boss)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Pillars)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Duel)),
@@ -139,6 +143,7 @@ impl DevStart {
             DevStart::Village => t(dv::VILLAGE),
             DevStart::Garden => t(dv::GARDEN),
             DevStart::Works => t(dv::WORKS),
+            DevStart::Prologue => t(dv::PROLOGUE),
             DevStart::Residents => t(dv::RESIDENTS),
             DevStart::Stones => t(dv::STONES),
             DevStart::Chest => t(dv::CHEST),
@@ -164,6 +169,7 @@ impl DevStart {
             | DevStart::Village
             | DevStart::Garden
             | DevStart::Works
+            | DevStart::Prologue
             | DevStart::Residents
             | DevStart::Stones
             | DevStart::Chest => t(dv::STAGE_NOTE).to_string(),
@@ -294,6 +300,16 @@ impl App {
                         crate::stage::STAGES[3].depth_m,
                     ),
                 ));
+                self.go(Go::Root(Scene::Play));
+            }
+            DevStart::Prologue => {
+                self.dev.run = true;
+                self.restart();
+                // 서막 숲의 깨어난 빈터에서 — 깨어나는 장면부터(개발 판이라 기록에는 쓰지 않는다).
+                self.enter_stage(crate::stage::PROLOGUE);
+                self.interlude = Some(super::interlude::Interlude::Wake(Default::default()));
+                lay_by_hearth(&self.run, &mut self.world);
+                self.cam = self.cam.renew(self.world.player.pos, &self.t);
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Residents => {

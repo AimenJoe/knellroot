@@ -228,6 +228,8 @@ pub struct Enemy {
     pub load_lost: bool,
     /// 남는 불씨(0158 G2, 잔불 흩기 ㄴ): 지금 선 자리의 불티가 쓰러질 때 더 남기는 잔불 수(월드가 틱마다 적는다, 0 = 없음).
     pub kindled: u32,
+    /// 끈(m, 0113 — 제자리에서 이만큼 넘게 멀어지면 돌아간다). 보통 `LEASH_RANGE`, 서막 숲의 잔재는 짧게(0262 — 해 보는 상대).
+    pub leash: f32,
 }
 
 /// 자세 막대(0051, PoE2 Heavy Stun — 0251 R10에서 묶음).
@@ -447,6 +449,7 @@ impl Enemy {
             ail: crate::status::Ail::default(),
             load_lost: false,
             kindled: 0,
+            leash: crate::tuning::LEASH_RANGE,
         }
     }
 
