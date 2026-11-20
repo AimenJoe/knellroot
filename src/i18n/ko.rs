@@ -24,7 +24,7 @@ pub const KO: Strings = Strings {
     cell_even_breath: "고른 호흡",
     cell_even_breath_d: "정확한 타이밍에 강타를 놓으면 소모한 기력을 돌려받는다",
     cell_flowing_beat: "이어지는 박자",
-    cell_flowing_beat_d: "박자 공격을 세 번 잇달아 적중시키면, 세 번째 공격이 주변 1.5m 안의 적에게 자세 피해 1.5를 준다",
+    cell_flowing_beat_d: "박자 타를 셋 잇달아 맞히면 셋째 타에 작은 충격 — 둘레에 자세 피해 1.5",
     cell_closing_blow: "맺음타",
     cell_closing_blow_d: "콤보 마지막 타에도 박자 창 — 박자에 맞히면 자세 피해 ×1.5",
     cell_gap_beat: "빈틈의 박자",
