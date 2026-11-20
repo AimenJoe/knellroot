@@ -395,6 +395,10 @@ ARM_GROUPS = ("Arm", "ForeArm")
 # 옷) 거리로 가둔다: 뼈마다 (재는 마디, 그대로 둘 거리, 다 뺄 거리)(m).
 # 자동 리깅의 덤 뼈도: 오른손 밑 `Bone_061`(왼손 밑 `Bone_060`은 빈 뼈)에 망토 자락 정점 30개(무게 18.7)가 100% 묶여 주먹을 뻗으면 0.9 m를
 # 따라 나갔다 — 팔 사슬 밑의 mixamo가 아닌 뼈(`stray_arm_bones`)는 색과 상관없이 모두 가슴으로.
+# 구르기 튐(사장 2026-11-20 "구르는게 이제 좀 방방뛰는 느낌이네"): 덤 뼈의 몫만은 가슴이 아니라 엉덩이로(`STRAY_TO`) — 가슴에 묶인 판은 구르기의
+# 공 자세(등뼈 셋 75° 굽힘)에서 지느러미처럼 펴져, 바닥에 닿는 가장 낮은 점이 되어 몸을 0.12 m 들어 올렸다(구르는 0.13~0.16초의 무게중심
+# 0.74 → 0.88 m — 큰 튐 하나가 같은 높이의 튐 둘로). 엉덩이도 팔을 따라가지 않으니 0260의 뜻(망토가 주먹을 따라 나가지 않음)은 그대로.
+STRAY_TO = "mixamorig:Hips"
 CONFINE_MORE = {"Shoulder": (("Shoulder",), 0.10, 0.18)}
 CLOAK_HUE = (0.70, 0.92)  # 보라의 색상(0..1 — 252°~331°)
 CLOAK_SAT = 0.25
@@ -466,16 +470,26 @@ def confine_arms(arm, body):
 
     cloak = cloak_verts(body)
     stray = stray_arm_bones(arm)
-    moved, verts = 0.0, 0
+    low = body.vertex_groups.get(STRAY_TO) or body.vertex_groups.new(name=STRAY_TO)
+    moved, verts, to_low = 0.0, 0, 0.0
     for v in body.data.vertices:
         p = mw @ v.co
         give = 0.0
         for g in list(v.groups):
             n = names[g.group]
-            if n in stray or (v.index in cloak and any(n.startswith(f"mixamorig:{side}{b}") for side in ("Left", "Right") for b in ARM_CHAIN)):
-                if g.weight > 1e-4:
+            # 무게는 0으로 쓰기 전에 읽는다 — `g`는 살아 있는 칸이라 쓴 뒤에 읽으면 0이다(0260은 그래서 덤 뼈·망토 몫을 아무 데도
+            # 주지 않았다: `Bone_061`에만 묶인 정점은 무게 없이 내보내져 `neutral_bone`에 붙어 쉬는 자세로 굳었다).
+            w = g.weight
+            if n in stray:
+                if w > 1e-4:
                     body.vertex_groups[g.group].add([v.index], 0.0, "REPLACE")
-                    give += g.weight
+                    low.add([v.index], w, "ADD")
+                    to_low += w
+                continue
+            if v.index in cloak and any(n.startswith(f"mixamorig:{side}{b}") for side in ("Left", "Right") for b in ARM_CHAIN):
+                if w > 1e-4:
+                    body.vertex_groups[g.group].add([v.index], 0.0, "REPLACE")
+                    give += w
                 continue
             for side in ("Left", "Right"):
                 rule = None
@@ -496,7 +510,8 @@ def confine_arms(arm, body):
             chest.add([v.index], give, "ADD")
             moved += give
             verts += 1
-    print(f"[skin] confine arms: {verts} verts ({len(cloak)} cloak, stray {sorted(stray)}), weight {moved:.1f} -> Spine2")
+    print(f"[skin] confine arms: {verts} verts ({len(cloak)} cloak), weight {moved:.1f} -> Spine2;"
+          f" stray {sorted(stray)} weight {to_low:.1f} -> {STRAY_TO}")
 
 
 def attach(arm, body, old):
@@ -716,11 +731,34 @@ BALL_BEND = {"mixamorig:Spine": 25.0, "mixamorig:Spine1": 25.0, "mixamorig:Spine
              "mixamorig:LeftUpLeg": -80.0, "mixamorig:RightUpLeg": -80.0,
              "mixamorig:LeftLeg": 100.0, "mixamorig:RightLeg": 100.0,
              "mixamorig:LeftArm": -35.0, "mixamorig:RightArm": -35.0}
+# 공에 꼬리도 만다(사장 2026-11-20 "구르는게 이제 좀 방방뛰는 느낌이네"): 꼬리가 곧게 뻗은 채 돌면 공이 길쭉해(무게중심에서 바깥까지
+# 0.46~0.91 m) 꼬리 끝이 바닥에 닿는 순간 가장 낮은 점 붙이기가 몸을 장대처럼 들어 올렸다(0.20초 무게중심 0.93 m · 꼭대기 1.62 m — 서기 1.42).
+# 엉덩이 밑의 mixamo가 아닌 뼈 사슬(`tail_bones` — 자동 리깅의 꼬리)을 마디마다 이 각만큼 앞으로(`BALL_BEND`와 같은 옆축·같은 부호).
+TAIL_TUCK = 60.0
 ROLL_MARGIN = 0.02  # m — 공의 가장 낮은 점을 바닥에서 이만큼(일어나기의 `CLEAR_MARGIN`과 같게 — 이음매)
 # 구르기의 처음·끝 몸 방향(도, 엉덩이 앞 — 정면 0 · 왼쪽 +, 0260 사장 "회피 구른 후 너무 옆이야, 정면과 가깝게"): 원본의 처음·끝 자세는
 # 간 쪽을 앞으로 돌린 뒤에도 −72°·−70°(서기 −24°)라 옆을 보고 일어났다(일어나기 −74°). 말기 들어감·풀림 동안 이 각으로 옮겨 간다 —
 # 일어나기(`dodge_rise`)도 같은 각을 쓴다(`TRAVEL_TURNS`).
 ROLL_FACE = -15.0
+
+
+def tail_bones(arm):
+    """엉덩이 밑에 매달린 mixamo가 아닌 뼈(자동 리깅의 꼬리 사슬) — 부모 → 자식 차례(`stray_arm_bones`와 같은 꼴)."""
+    def depth(b):
+        k = 0
+        while b.parent is not None:
+            b, k = b.parent, k + 1
+        return k
+    out = []
+    for b in arm.data.bones:
+        if b.name.startswith("mixamorig:"):
+            continue
+        p = b.parent
+        while p is not None and not p.name.startswith("mixamorig:"):
+            p = p.parent
+        if p is not None and p.name == "mixamorig:Hips":
+            out.append(b)
+    return [b.name for b in sorted(out, key=depth)]
 
 
 def hips_yaw(arm):
@@ -813,7 +851,8 @@ def craft_roll(arm, body, anchors):
     set_src(arm, src, ROLL["end"])
     c_pose = grab(arm)
     h1 = arm.pose.bones[hips_n].head.copy()
-    for name, deg in BALL_BEND.items():  # 표의 차례 = 부모 → 자식
+    bends = list(BALL_BEND.items()) + [(n, TAIL_TUCK) for n in tail_bones(arm)]
+    for name, deg in bends:  # 표의 차례 = 부모 → 자식
         pb = arm.pose.bones[name]
         lat = pb.matrix.to_3x3() @ arm.data.bones[name].matrix_local.to_3x3().inverted() @ Vector((1.0, 0.0, 0.0))
         turn_bone(arm, name, lat.normalized(), math.radians(deg))
