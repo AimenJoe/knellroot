@@ -389,7 +389,7 @@ pub enum Cell {
     GatheredRiposte,
     /// 무너진 틈: 깨진 적에게 다 모은 강타 = 깨짐을 처음부터.
     OpenBreach,
-    /// 맞서는 자: 이어 패링 셋 동안 못 받는 공격도 패링 = 피해 반.
+    /// 맞서는 자: 이어 패링 셋 동안 못 받는 공격도 막는다(튕기지는 않는다).
     OneWhoStands,
     /// 멈추지 않는 걸음: 달리기 기력 −30%(숫자 칸).
     UnbrokenStride,
