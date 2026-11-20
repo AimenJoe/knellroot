@@ -37,7 +37,7 @@ pub const EN: Strings = Strings {
     cell_turn_it_back: "Turn It Back",
     cell_turn_it_back_d: "A landed riposte also staggers other foes within 2 m for 0.35 s",
     cell_gathered: "Gathered Riposte",
-    cell_gathered_d: "Hit the foe deflected by a charged parry with the follow-up heavy to break its poise at once (half effect on wardens)",
+    cell_gathered_d: "Hit the foe deflected by a charged parry with that charged heavy to break its poise at once (half the poise bar on wardens)",
     cell_open_breach: "Open Breach",
     cell_open_breach_d: "A fully charged heavy on a foe with broken poise breaks its poise again",
     cell_one_who_stands: "One Who Stands",
