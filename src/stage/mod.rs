@@ -183,7 +183,8 @@ pub static STAGES: [&StageDef; 5] = [
 ];
 /// 판의 차례에 드는 지역 수(0262 — 서막 밖).
 pub const REGIONS: usize = 4;
-/// 서막 숲의 자리(`STAGES`의 끝, 0262).
+/// 서막 숲의 자리(`STAGES`의 끝, 0262). 지역이 늘면 새 지역은 숲 **앞에** 끼우고 이 값을 민다 — 숲은 기록에 지역 번호를 남기지
+/// 않는다(쉼터·상자·숨은 물건이 없고, 바닥에 내려놓은 것도 적지 않는다 — `App::note_ground`).
 pub const PROLOGUE: usize = 4;
 /// 서막 숲 끝의 표지(0262 — 성소로 가는 길)와 밟는 거리(m — 길 폭을 다 덮게).
 pub const EXIT_GLYPH: char = 'E';
