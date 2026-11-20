@@ -1269,30 +1269,57 @@ impl App {
                     e.name, mode, e.checks
                 ),
                 f.ox + 10.0,
-                y - 20.0,
+                y - (9.0 * f.ui).max(16.0) * 2.0 - 16.0,
                 16.0,
                 GRAY,
             );
         }
-        draw_text(
+        // 기기에서 읽히게(사장 2026-11-20 "성능줄은 작아서 잘 안 보임"): 크기는 UI 배율을 따르고(폰의 물리 화소에서 16px는 깨알),
+        // 중요한 수(fps·frame·cpu)는 윗줄에 따로, 어두운 판 위에.
+        let size = (9.0 * f.ui).max(16.0);
+        let lines = [
             format!(
-                "{} {mode}{} cam {:.0}deg fps {}  cpu {:.1}ms (max {:.1})  frame {:.1}ms  batches {} (max {})  verts {} (+{} resident)",
-                self.world.name,
-                self.cam.blending().map(|e| format!(" blend {e:.2}s")).unwrap_or_default(),
-                self.cam.azimuth_deg(),
+                "fps {}  frame {:.1}ms  cpu {:.1}ms (max {:.1})",
                 get_fps(),
+                p.frame_avg_ms,
                 p.cpu_avg_ms,
                 p.cpu_max_ms,
-                p.frame_avg_ms,
+            ),
+            format!(
+                "{} {mode}{} cam {:.0}deg  batches {} (max {})  verts {} (+{} resident)",
+                self.world.name,
+                self.cam
+                    .blending()
+                    .map(|e| format!(" blend {e:.2}s"))
+                    .unwrap_or_default(),
+                self.cam.azimuth_deg(),
                 p.draws,
                 p.draws_max,
                 self.renderer.vertices(),
                 self.renderer.resident_vertices()
             ),
-            f.ox + 10.0,
-            y,
-            16.0,
-            YELLOW,
+        ];
+        let pad = size * 0.3;
+        let w = lines
+            .iter()
+            .map(|l| measure_text(l, None, size as u16, 1.0).width)
+            .fold(0.0, f32::max);
+        let top = y - size * lines.len() as f32 - pad + size * 0.25;
+        draw_rectangle(
+            f.ox + 10.0 - pad,
+            top,
+            w + pad * 2.0,
+            size * lines.len() as f32 + pad * 2.0,
+            Color::new(0.0, 0.0, 0.0, 0.6),
         );
+        for (i, l) in lines.iter().enumerate() {
+            draw_text(
+                l,
+                f.ox + 10.0,
+                top + pad + size * (i as f32 + 0.8),
+                size,
+                if i == 0 { YELLOW } else { LIGHTGRAY },
+            );
+        }
     }
 }
