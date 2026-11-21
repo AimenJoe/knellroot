@@ -2114,7 +2114,7 @@ mod tests {
         assert_eq!(KEY_BRANCH, 10);
         let total = 40;
         let mut b = Board::default();
-        // 맞받기의 길(휘돌이 · 가로지르기 · 모으기는 줄만 연다): 막아서기 → 받아내기 → 되울림 → 모은 맞받기 → 줄 긋기 → 막아치기 → 되찾는 살.
+        // 맞받기의 길(휘돌이 · 가로지르기 · 모으기는 줄만 연다): 막아서기 → 받아내기 → 되울림 → 모은 맞받기 → 줄 긋기 → 막아치기 → 되찾는 생기.
         for e in [[S(Id::Whirl); 5], [S(Id::Cut); 5]].concat() {
             assert!(b.buy(e, total));
         }

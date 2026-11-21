@@ -271,7 +271,7 @@ pub enum Event {
     SkillBurst {
         at: Vec3,
     },
-    /// 되찾는 살(0214): 패링 셋으로 체력 한 눈금이 돌아왔다.
+    /// 되찾는 생기(0214): 패링 셋으로 체력 한 눈금이 돌아왔다.
     Mend {
         at: Vec3,
     },
@@ -694,7 +694,7 @@ pub struct ParryState {
     pub primed_heavy: bool,
     pub riposte_swing: u32,
     pub gathered_swing: u32,
-    /// 되찾는 살(0214): 체력으로 바꾸지 않은 패링 수.
+    /// 되찾는 생기(0214): 체력으로 바꾸지 않은 패링 수.
     pub mends: u32,
     /// 받아 넘기기(0215 — 받아내기 II): 패링 뒤 받는 피해가 줄어 있는 남은 초.
     pub deflect: f32,
