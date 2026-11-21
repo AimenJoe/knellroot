@@ -632,13 +632,13 @@ pub const EN: Strings = Strings {
     v01_a: "The fire's still going.",
     v01_b: "If you're cold, shut the door.",
     v01_c: "You again. There's nowhere to sit.",
-    v01_after: "Found a bit more firewood. That should keep us warm tonight.",
-    v02_a: "Don't step there. I'm collecting water."
-    v02_b: "More water drips over here."
+    v01_after: "Found a bit more firewood. That'll get us through tonight.",
+    v02_a: "Don't step there. I'm collecting water.",
+    v02_b: "More water drips over here.",
     v02_c: "One more jar would help.",
     v02_after: "Stood the jar back up. It shouldn't spill now.",
     v03_a: "Yours is fraying too.",
-    v03_b: "The old ones are easier to work with."
+    v03_b: "The old ones are easier to work with.",
     v03_c: "Too good to throw out just yet.",
     v03_after: "Patched the tent a little. Still plenty left to mend.",
     obj_bell_site: "Go deeper, to the bell tower site",
@@ -649,7 +649,7 @@ pub const EN: Strings = Strings {
     intro_1: "Beneath the earth, a bell rings. No one strikes it.",
     intro_2: "Where roots reach, the dead rise.",
     wake_1: "Eyes open. No name. No memory of the road behind.",
-    wake_2: "Only the body remembers."
+    wake_2: "Only the body remembers something.",
     wake_skip: "Skip",
     obj_courtyard: "Put down the husks in the courtyard",
     obj_gate_open: "Enter the sanctum through the open gate",
@@ -802,8 +802,8 @@ pub const EN: Strings = Strings {
     overseer_wakes: "The chain begins to wind",
     overseer_unchained: "The chain snaps",
     card_lift: "The lift lurches into motion",
-    stone_w1: "Two shifts. One at sunrise, one at sunset.\nWhen the signal sounds, hands stop."
-    stone_w2: "When the water reaches knee height, turn the pump.\nThe third pump is loud. Turn it anyway."
+    stone_w1: "Two shifts. One at sunrise, one at sunset.\nWhen the signal sounds, hands stop.",
+    stone_w2: "When the water reaches knee height, turn the pump.\nThe third pump is loud. Turn it anyway.",
     stone_w3: "The signal sounded again today. Hands stopped.\nThe signal came from below.",
     cx_place_winch: "The Unceasing Shafts, The Winch Shaft",
     cx_overseer_1: "Chained to a great winch. It moves only as far as the chain allows.",
