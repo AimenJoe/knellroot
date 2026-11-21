@@ -185,8 +185,6 @@ pub enum Act {
     Swap,
     /// 큰 창의 탭 넘기기(0164 → 0175): 패드 LB·RB, 키보드 스킬 버튼 둘(Q·E).
     Tabs,
-    /// 장비 창 바로 열기(0070 — 패드 Select · 키보드 Tab). 화로 창 위에서는 멈춤 창(장비·가방)을 연다(0261).
-    Gear,
     /// 격자 화면(기술, 0161)의 네 쪽 걷기 — 메뉴의 위·아래·왼·오른.
     Walk,
     /// 뒤로·닫기(고정 — 배치표에 없다).
@@ -242,14 +240,6 @@ pub fn prompt(act: Act) -> String {
         (Device::Pad, Act::Choose) => "D-PAD".into(),
         (Device::Pad, Act::Confirm) => "A".into(),
         (_, Act::Swap) => swap_bind().map_or(String::new(), name),
-        (Device::Pad, Act::Gear) => Pad::Select.name().into(),
-        (_, Act::Gear) => {
-            if b.keys.contains(&key_index(KeyCode::Tab)) {
-                String::new()
-            } else {
-                "TAB".into()
-            }
-        }
         (_, Act::Special) => name(Bind::Cast),
         (Device::Pad, Act::Tabs) => format!("{}/{}", Pad::L1.name(), Pad::R1.name()),
         (_, Act::Tabs) => format!("{}/{}", name(Bind::Skill1), name(Bind::Skill2)),
