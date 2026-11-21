@@ -1950,7 +1950,7 @@ mod tests {
         let levels = LINES.len() as u32 * LEVEL_RANKS as u32;
         let stages = crate::stage::STAGES;
         let elites: u32 = stages.iter().map(|d| d.elites.len() as u32).sum();
-        let cores = stages.len() as u32 * CORE_CAP;
+        let cores = crate::stage::REGIONS as u32 * CORE_CAP;
         let shards: u32 = stages
             .iter()
             .map(|d| {
@@ -1967,7 +1967,7 @@ mod tests {
         let all = points(levels, elites, cores, shards);
         assert_eq!(all, 45);
         // 다 익히는 값(65)에는 못 미친다 — 고르게 한다(0160 2절). 여정의 기술 점수(지역마다 하나, 0183)를 더해도.
-        assert!(all + (crate::stage::STAGES.len() as u32) < Board::maxed(Pick::A).spent());
+        assert!(all + (crate::stage::REGIONS as u32) < Board::maxed(Pick::A).spent());
     }
 
     /// 0161 → 0215: 패시브 칸은 판의 칸이다 — 칸마다 1점. 줄(쓴 점수 합)이 "언제"를, 길(바로 위 줄의 이어진 칸)이 "어디로"를

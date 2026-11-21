@@ -16,7 +16,7 @@ use crate::tuning::{
     RUN_STAMINA, SHARD_R, SHARD_RANGE, SHARD_REFLECT_DAMAGE, SHARD_REFLECT_SPEED, SHARD_SPEED,
     STAMINA_DENIED_SHOW, STUN_CHAIN_GRACE, STUN_CHAIN_MAX, TICK_DT,
 };
-use crate::tuning::{ALERT_RADIUS, HEAR_RANGE, LEASH_RANGE, SIGHT_DY, SIGHT_RANGE};
+use crate::tuning::{ALERT_RADIUS, HEAR_RANGE, SIGHT_DY, SIGHT_RANGE};
 use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG, RIPOSTE_WINDOW};
 use crate::weapons::{self, Rb, Shape};
 
@@ -188,7 +188,7 @@ pub enum Event {
         at: Vec3,
         radius: f32,
     },
-    /// 주무기와 부무기를 바꿔 들었다(0223 — 패링 + 평타). `to` = 새로 든 주무기.
+    /// 주무기와 부무기를 바꿔 들었다(0223 → 0261 바꾸기 버튼). `to` = 새로 든 주무기.
     WeaponSwap {
         to: weapons::Id,
     },
@@ -604,12 +604,12 @@ pub struct Player {
     pub ranged: RangedState,
     /// 든 무기(0051, `weapons.rs` 표) — 주무기.
     pub weapon: weapons::Id,
-    /// 부무기(0223): 패링 + 평타를 함께 누르면 주무기와 바꿔 든다. 없으면 바꾸지 않는다.
+    /// 부무기(0223): 바꾸기 버튼(0261)을 누르면 주무기와 바꿔 든다. 없으면 바꾸지 않는다.
     pub sub: Option<weapons::Id>,
     /// 부무기의 탄·수류탄·장전(바꿔 들 때 남겨 둔 것 — 바꾸기로 탄창을 채우지 못하게). 처음 드는 것이면 없음.
     pub sub_load: Option<(u8, f32, f32)>,
-    /// 두 버튼 바꾸기(0223)의 시계: 패링·평타 버튼을 누른 뒤 흐른 초.
-    pub chord: (f32, f32),
+    /// 받아 둔 바꾸기의 남은 초(0261 — 다른 동작 중에 누른 바꾸기는 서는 순간 나간다).
+    pub swap_buf: f32,
     /// 든 방패(0223 — 한손 무기일 때만 쓰인다, `World::can_block`).
     pub shield: Option<crate::shield::Id>,
     /// 미리 받아 둔 다음 행동과 남은 초(0057 — 후딜레이를 끊는 캔슬 시점에 나간다).
@@ -998,7 +998,7 @@ impl World {
                 weapon: weapons::Id::Sword,
                 sub: None,
                 sub_load: None,
-                chord: (f32::MAX, f32::MAX),
+                swap_buf: 0.0,
                 shield: None,
                 pending: None,
                 pending_left: 0.0,
@@ -1316,51 +1316,24 @@ impl World {
         Some(to)
     }
 
-    /// 패링 + 평타 = 바꾸기(0223, 사장 "패링+공격 버튼으로 주/부무기 바꿀 수 있음"). 큰 기술의 "함께"(0151)처럼 늦추지 않는다:
-    /// 두 누름이 같은 틱이거나 둘째가 첫째 뒤 `WEAPON_CHORD` 안이면, 첫째가 시작한 패링·휘두르기를 아직 시동 안일 때 거두고 바꾼다.
-    /// 단 패링이 튕겨 낸 뒤의 공격은 반격이다(바꾸지 않는다). 공격 버튼 = 근접(`attack`)이나 원거리(`cast`) 어느 쪽이든(0255 —
-    /// 패드 X·RB가 무기와 상관없이 근접·원거리라, 무기마다 다른 버튼이 바꾸지 않게 둘 다 받는다).
-    fn weapon_chord(&mut self, a: &mut Actions, dt: f32, ev: &mut Vec<Event>) {
-        let basic = a.attack || a.cast;
+    /// 주/부무기 바꾸기(0223 → 0261): 배치표의 바꾸기 버튼(패드 L3·키보드 X·터치의 바꾸기 버튼) 하나로. 서 있거나 막는 동안이면 바로,
+    /// 다른 동작 중이면 받아 두었다가(`SWAP_BUFFER`) 서는 순간 바꾼다 — 휘두르는 끝에 누른 바꾸기가 사라지지 않게.
+    /// 0223의 "패링 + 평타 = 바꾸기" 조합은 걷었다(사장 2026-11-20 "조합 할 필요 없는 듯").
+    fn weapon_swap(&mut self, a: &Actions, dt: f32, ev: &mut Vec<Event>) {
         let pl = &mut self.player;
-        pl.chord.0 = if a.parry { 0.0 } else { pl.chord.0 + dt };
-        pl.chord.1 = if basic { 0.0 } else { pl.chord.1 + dt };
-        let (p, b) = pl.chord;
-        // 터치의 바꾸기 버튼(0223): 서 있거나 막는 동안이면 바로.
-        if a.swap && matches!(pl.state, PState::Idle | PState::Block { .. }) && pl.sub.is_some() {
-            pl.state = PState::Idle;
-            if let Some(to) = self.swap_weapons() {
-                ev.push(Event::WeaponSwap { to });
-            }
-            return;
-        }
-        if !(a.parry || basic)
-            || p > crate::tuning::WEAPON_CHORD
-            || b > crate::tuning::WEAPON_CHORD
+        pl.swap_buf = if a.swap {
+            crate::tuning::SWAP_BUFFER
+        } else {
+            (pl.swap_buf - dt).max(0.0)
+        };
+        if pl.swap_buf <= 0.0
             || pl.sub.is_none()
+            || !matches!(pl.state, PState::Idle | PState::Block { .. })
         {
             return;
         }
-        // 패링이 먼저였고 그 뒤에 튕겨 냈다 → 이 평타는 반격.
-        if !a.parry && pl.parry.since <= p {
-            return;
-        }
-        // 첫 누름이 시작한 것이 아직 시동 안이면 거둔다(쓴 기력은 그대로 — 한 대 값). 원거리의 첫 평타는 이미 나간 한 발이다.
-        let busy = match pl.state {
-            PState::Idle => false,
-            PState::Parry { t } | PState::Attack { t, .. } | PState::Cast { t, .. } => {
-                t > crate::tuning::WEAPON_CHORD
-            }
-            _ => true,
-        };
-        if busy {
-            return;
-        }
+        pl.swap_buf = 0.0;
         pl.state = PState::Idle;
-        pl.chord = (f32::MAX, f32::MAX);
-        a.parry = false;
-        a.attack = false;
-        a.cast = false;
         if let Some(to) = self.swap_weapons() {
             ev.push(Event::WeaponSwap { to });
         }
@@ -1630,9 +1603,8 @@ impl World {
             ..merged
         };
         // 무기의 버튼 길(0213 → 0223): 월드의 `attack` = 콤보·수류탄, `cast` = 마법·사격. 평타 버튼(RB)이 어느 쪽인지는 앱이
-        // 넘기기 전에 맞바꾼다(`input::weapon_buttons`). 패링 + 평타 = 주/부무기 바꾸기(`weapon_chord`).
-        let mut merged = merged;
-        self.weapon_chord(&mut merged, dt, &mut ev);
+        // 넘기기 전에 맞바꾼다(`input::weapon_buttons`). 주/부무기 바꾸기는 따로 붙인 버튼(`weapon_swap`, 0261).
+        self.weapon_swap(&merged, dt, &mut ev);
         let a = &merged;
         self.time += dt;
         self.player.prev = self.player.pos;

@@ -73,19 +73,19 @@ async function main() {
   await page.waitForTimeout(1000);
   await shot('save-2-continued-at-gate');
 
-  // 3a) 쉼터 화로(0104 → 0164 큰 창): 곁에서 점프 버튼(F) = 쉬기 → 창이 상태 탭에서 열린다(탭 상태·장비·기술·도감·가게·설정).
-  await press('KeyF'); await until('Status', '3a 화로에서 쉬기');
+  // 3a) 쉼터 화로(0104 → 0164 큰 창 → 0261): 곁에서 점프 버튼(F) = 쉬기 → 창이 성장(상태) 탭에서 열린다(화로 탭 성장·기술·가게·설정).
+  await press('KeyF'); await until('Status { host: Hearth', '3a 화로에서 쉬기');
   await page.waitForTimeout(300);
   await shot('save-2a-hearth');
   // 상태 탭의 첫 줄 = 생명(레벨 0의 값 50 — 0123) → 묻는 창(커서 "올리기") → 올림. 잔불 115 → 65.
   await press('Enter'); await until('Ask(Level', '3a 생명 올리기 묻는 창');
   await shot('save-2a-level-ask');
-  await press('Enter'); await until('Status', '3a 올린 뒤 상태 탭');
+  await press('Enter'); await until('Status { host: Hearth', '3a 올린 뒤 성장 탭');
   await shot('save-2a-level-raised');
   r = await recordUntil("/lv\\.life=1\\n/.test(r || '')");
   console.log('레벨을 올린 뒤 기록:', JSON.stringify(r));
   if (!/lv\.life=1\n/.test(r) || !/embers=65\n/.test(r)) fail('raising Life must spend 50 embers and keep lv.life=1');
-  // 가게 탭: 상태에서 Q 둘(설정 → 가게 — 탭 줄은 끝에서 돈다) → 첫 줄(잔불 주머니 60, 0117) 사기.
+  // 가게 탭: 성장에서 Q 둘(설정 → 가게 — 탭 줄은 끝에서 돈다, 0261 화로 = 성장·기술·가게·설정) → 첫 줄(잔불 주머니 60, 0117) 사기.
   await press('KeyQ', 2); await until('Shop', '3a 가게 탭');
   await shot('save-2a-shop');
   // 사기 전에 묻는 창(nail 가게 — 커서는 "사기"에서).
@@ -99,12 +99,11 @@ async function main() {
   // 창을 닫으면 떠난다(어느 탭에서든 한 번에 — 0164) → 싸움.
   await press('Escape'); await until('Play', '3a 창 닫기');
 
-  // 3b) 장비(0064 M3 → 0164 탭): 멈춤(상태 탭) → E = 장비 탭 → 장신구 칸은 종류마다 하나(0224 — 목걸이 · 반지 · 팔찌): 가진 껍질은 팔찌(셋째 칸),
+  // 3b) 장비(0064 M3 → 0164 탭 → 0261): 멈춤(새 판은 장비 탭에서 열린다 — 멈춤에 상태 탭은 없다) → 장신구 칸은 종류마다 하나(0224 — 목걸이 · 반지 · 팔찌): 가진 껍질은 팔찌(셋째 칸),
   // 산 주머니는 목걸이(첫 칸)에 들어갔다. 첫 칸에 종지기의 귀(목걸이)를 끼면 주머니와 바뀐다 → 기록.
   // 십자는 칸 자리대로 커서만(→ = 무기와 같은 높이의 첫 장신구 칸, 0176), 확인 = 그 칸의 후보 목록(빈 칸 · 종지기의 귀 · 잔불 주머니 —
   // 커서는 지금 것 "잔불 주머니"에서: 위로 하나 = 종지기의 귀). 키보드+마우스 배치에는 빨리 바꾸기가 없다(공격 = 클릭).
-  await press('Escape'); await until('Status', '3b 멈춤(상태 탭)');
-  await press('KeyE'); await until('Equip {', '3b 장비 탭');
+  await press('Escape'); await until('Equip { host: Pause', '3b 멈춤(장비 탭)');
   await press('ArrowRight'); await press('Enter'); await until('EquipPick', '3b 장신구 후보');
   await shot('save-2b-equip-pick');
   await press('ArrowUp'); await press('Enter'); await until('Equip {', '3b 낀 뒤 장비 탭');
@@ -114,9 +113,9 @@ async function main() {
   if (!/charm\.worn=ear,,shell/.test(r)) fail('equipping a charm must be saved in its kind\'s slot (0224): ' + JSON.stringify(r));
   await press('Escape'); await until('Play', '3b 창 닫기');
 
-  // 4) 멈춤 → 처음부터: 창은 마지막에 보던 장비 탭에서 열린다 → Q 둘(상태 → 설정) → 설정 탭의 끝에서 둘째 줄(… 처음부터 · 타이틀로).
-  await press('Escape'); await until('Equip {', '4 멈춤(마지막에 보던 장비 탭)');
-  await press('KeyQ', 2); await until('Settings', '4 설정 탭');
+  // 4) 멈춤 → 처음부터: 창은 마지막에 보던 장비 탭에서 열린다 → Q 하나(장비는 멈춤의 첫 탭 — 끝의 설정으로 돈다, 0261) → 설정 탭의 끝에서 둘째 줄(… 처음부터 · 타이틀로).
+  await press('Escape'); await until('Equip { host: Pause', '4 멈춤(마지막에 보던 장비 탭)');
+  await press('KeyQ'); await until('Settings { host: Pause', '4 설정 탭');
   await press('ArrowUp', 2);
   await press('Enter'); await until('Ask(Restart', '4 처음부터 묻는 창');
   // 처음부터는 묻는 창(커서는 "취소" — 그냥 확인하면 아무 일 없다), 위로 한 번 = "처음부터".
@@ -128,12 +127,12 @@ async function main() {
   if (!/embers=5\n/.test(r) || !/clears=1/.test(r)) fail('restart must keep what stays');
   if (!/future\.key=keep/.test(r)) fail('unknown keys must survive a write');
 
-  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 — 새 판이라 상태 탭 → Q = 설정 탭 → 위로 한 번 = 맨 끝 줄
+  // 5) 기록 슬롯(0066, KB roguelite-save-slots-and-continue). 타이틀로(멈춤 — 새 판이라 장비 탭(0261) → Q = 설정 탭 → 위로 한 번 = 맨 끝 줄
   // → 묻는 창 위로 한 번).
   const slotCell = () => page.evaluate(() => localStorage.getItem('knell.slot'));
   const toTitle = async () => {
-    await press('Escape'); await until('Status', '타이틀로: 멈춤(새 판 = 상태 탭)');
-    await press('KeyQ'); await until('Settings', '타이틀로: 설정 탭');
+    await press('Escape'); await until('Equip { host: Pause', '타이틀로: 멈춤(새 판 = 장비 탭)');
+    await press('KeyQ'); await until('Settings { host: Pause', '타이틀로: 설정 탭');
     await press('ArrowUp'); await press('Enter'); await until('Ask(ToTitle', '타이틀로: 묻는 창');
     await press('ArrowUp'); await press('Enter'); await until('Title', '타이틀로');
   };

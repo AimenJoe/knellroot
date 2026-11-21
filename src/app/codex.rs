@@ -9,8 +9,10 @@ use crate::codex::{self, ENTRIES};
 use crate::i18n::Tr;
 use flow::Host;
 
-/// 몸 안의 묶음 넷(적 · 장신구 · 덧옷 · 무기 — 무기는 0191, 사장 "도감에 무기가 빠졌음").
-const GROUPS: usize = 4;
+/// 몸 안의 묶음 다섯(적 · 장신구 · 덧옷 · 무기 · 여정 — 무기는 0191, 사장 "도감에 무기가 빠졌음", 여정은 0261 탭에서 옮겨 옴).
+const GROUPS: usize = 5;
+/// 여정 묶음의 자리(0261).
+pub(super) const JOURNEY: usize = 4;
 /// 묶음 머리 줄의 높이(기준 px) — 그 아래부터 목록.
 const GROUP_H: f32 = 18.0;
 /// 오른쪽 칸의 그림 자리(기준 px): 적은 이름 아래 오른쪽 칸 폭 전체(2026-11-19 사장 "나오는 곳 설명은 다음 줄로, 모델은 가로로 더
@@ -62,6 +64,10 @@ impl App {
             self.snd(crate::sfx::Id::UiMove);
             return;
         }
+        if tab == JOURNEY {
+            self.journey_pick(a, before);
+            return;
+        }
         let n = match tab {
             0 => ENTRIES.len(),
             1 => crate::charms::TABLE.len(),
@@ -90,6 +96,7 @@ impl App {
             s.codex_tab_charms,
             s.codex_tab_garb,
             s.codex_tab_weapons,
+            s.menu_journey,
         ];
         let tk = 0.85 * k;
         let ty = w.at(0.0, 2.0).y;
@@ -149,6 +156,10 @@ impl App {
         }
         if view.is_some() {
             ui::clip(None);
+        }
+        if tab == JOURNEY {
+            self.draw_journey(f, &w, scene, GROUP_H);
+            return;
         }
         // 왼쪽 목록: 본 것·가진 것은 이름, 아니면 "???".
         let rec = &self.progress.codex.clone();

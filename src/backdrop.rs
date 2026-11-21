@@ -70,6 +70,8 @@ pub struct Env {
     pub fireflies: bool,
     pub falling: bool,
     pub trees: bool,
+    /// 바위 단의 나무(`trees`일 때 — 0262: 서막 숲은 빽빽하고 푸르게, 성소는 듬성듬성 잿빛).
+    pub woods: crate::scenery::Woods,
     /// 땅(0185 — 굽는 지형의 석판·이끼·흙, 0249 — 벽·바위·턱까지).
     pub floor: crate::scenery::FloorLook,
     /// 빛 색(0249 — 바탕빛·달빛·배우 가장자리 빛). 지역마다 분위기를 바꾸되 주인공·생물의 색상대(보라·빨강·짙은 호박)는 피한다.
@@ -109,6 +111,10 @@ pub static SURFACE: Env = Env {
     fireflies: true,
     falling: false,
     trees: true,
+    woods: crate::scenery::Woods {
+        share: crate::scenery::TREE_SHARE,
+        live: crate::flora::LIVE_SHARE,
+    },
     floor: crate::scenery::SANCTUARY_FLOOR,
     light: crate::render::SkyLight {
         ambient: Vec3::new(0.191, 0.228, 0.28),
@@ -151,6 +157,7 @@ pub static UNDERGROUND: Env = Env {
     fireflies: false,
     falling: true,
     trees: false,
+    woods: crate::scenery::Woods::NONE,
     floor: crate::scenery::VILLAGE_FLOOR,
     light: crate::render::SkyLight {
         ambient: Vec3::new(0.245, 0.222, 0.184),
@@ -193,6 +200,7 @@ pub static GARDEN: Env = Env {
     fireflies: false,
     falling: true,
     trees: false,
+    woods: crate::scenery::Woods::NONE,
     floor: crate::scenery::GARDEN_FLOOR,
     light: crate::render::SkyLight {
         ambient: Vec3::new(0.167, 0.239, 0.227),
@@ -234,11 +242,58 @@ pub static WORKS: Env = Env {
     fireflies: false,
     falling: true,
     trees: false,
+    woods: crate::scenery::Woods::NONE,
     floor: crate::scenery::WORKS_FLOOR,
     light: crate::render::SkyLight {
         ambient: Vec3::new(0.31, 0.33, 0.232),
         moon: Vec3::new(0.609, 0.666, 0.677),
         rim: Vec3::new(0.627, 0.634, 0.539),
+    },
+};
+
+/// 서막 숲(0262, 땅 위 — 성소 바깥): 밤 숲의 이끼빛(바탕빛 132° — 성소의 푸른 잿빛 214°·정원의 청록 170°와 갈리게), 하늘은 짙은 물빛,
+/// 산등성이는 겹겹의 검푸른 숲 그림자, 달·반딧불, 바위 단마다 나무가 빽빽하다. 밝기(선형 휘도)는 성소와 같게(0249 — 0.22).
+pub static FOREST: Env = Env {
+    sky: [
+        Color::new(0.128, 0.176, 0.186, 1.0),
+        Color::new(0.219, 0.283, 0.276, 1.0),
+        Color::new(0.181, 0.24, 0.24, 1.0),
+        Color::new(0.14, 0.19, 0.199, 1.0),
+        Color::new(0.102, 0.142, 0.158, 1.0),
+        Color::new(0.069, 0.099, 0.118, 1.0),
+    ],
+    zenith: Color::new(0.052, 0.076, 0.094, 1.0),
+    ridges: [
+        (
+            Color::new(0.142, 0.193, 0.182, 1.0),
+            Color::new(0.205, 0.268, 0.25, 1.0),
+        ),
+        (
+            Color::new(0.099, 0.138, 0.13, 1.0),
+            Color::new(0.158, 0.209, 0.193, 1.0),
+        ),
+        (
+            Color::new(0.066, 0.094, 0.09, 1.0),
+            Color::new(0.115, 0.155, 0.144, 1.0),
+        ),
+    ],
+    ridge_h: 1.3,
+    moon: true,
+    moonlight: 0.95,
+    fog: Color::new(0.2, 0.262, 0.252, 1.0),
+    fog_deep: Color::new(0.128, 0.17, 0.166, 1.0),
+    fireflies: true,
+    falling: false,
+    trees: true,
+    woods: crate::scenery::Woods {
+        share: 0.7,
+        live: 0.8,
+    },
+    floor: crate::scenery::FOREST_FLOOR,
+    light: crate::render::SkyLight {
+        ambient: Vec3::new(0.185, 0.235, 0.195),
+        moon: Vec3::new(0.585, 0.672, 0.66),
+        rim: Vec3::new(0.552, 0.66, 0.602),
     },
 };
 
@@ -1328,6 +1383,7 @@ mod tests {
             ("마을", &UNDERGROUND),
             ("정원", &GARDEN),
             ("작업층", &WORKS),
+            ("숲", &FOREST),
         ] {
             let f = env.floor;
             let l = env.light;
@@ -1389,7 +1445,7 @@ mod tests {
                 60.0 * ((v.x - v.y) / d + 4.0)
             }
         };
-        let envs = [&SURFACE, &UNDERGROUND, &GARDEN, &WORKS];
+        let envs = [&SURFACE, &UNDERGROUND, &GARDEN, &WORKS, &FOREST];
         for (i, a) in envs.iter().enumerate() {
             for b in &envs[i + 1..] {
                 let d = (hue(a.light.ambient) - hue(b.light.ambient)).abs();

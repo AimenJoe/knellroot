@@ -21,10 +21,12 @@ pub enum Interlude {
     Wake(crate::wake::Wake),
     /// 꺼진 화로에 불이 붙는 순간(0171): 남은 초.
     Kindle(f32),
+    /// "성소에 들다"(0262 — 서막 숲 끝에서 한 번): 다 어두울 때 지역을 성소로, 높이 보는 카메라·몇 걸음·이름 카드. 멈춤 버튼 = 건너뛰기.
+    Arrive(crate::arrive::Arrive),
 }
 
 /// 이 틱에 세계를 어떻게 하나.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Hold {
     /// 건드리지 않는다(굴 — 그동안 월드는 그리지도 않는다).
     #[default]
@@ -33,6 +35,8 @@ pub enum Hold {
     Freeze,
     /// 빈 입력으로 한 틱 흘린다(방랑자는 서 있다).
     Idle,
+    /// 성소 쪽(북, 월드 −z)으로 이 세기만큼 걷는 입력으로 한 틱(0262 "성소에 들다" — 앱이 지금 입력 기준의 스틱으로 바꾼다).
+    Walk(f32),
     /// 빈 입력으로 한 틱 + 스테이지도 한 틱(화로 곁 — 불이 붙는 동안 쉼터가 빛난다).
     IdleStage,
 }
@@ -61,6 +65,8 @@ pub struct Beat {
     pub hold_intro: bool,
     /// 지역을 바꾼다(닿을 지역, 오르는 길인가) — 굴이 다 어두운 순간.
     pub cross: Option<(usize, bool)>,
+    /// 서막 숲에서 성소로(0262) — 다 어두운 순간. 기록 `prologue`도 그때.
+    pub arrive: bool,
     pub sound: Option<crate::sfx::Id>,
     pub hold: Hold,
     /// 세계를 움직인 뒤 당김을 푼다(0).
@@ -160,6 +166,19 @@ impl Interlude {
                 };
                 ((!wk.done()).then_some(Interlude::Wake(wk)), beat)
             }
+            Interlude::Arrive(mut ar) => {
+                if a.pause || (input.touch && (a.attack || a.jump || a.dodge)) {
+                    ar.skip();
+                }
+                let cue = ar.tick(dt);
+                let beat = Beat {
+                    arrive: cue.swap,
+                    sound: cue.bell.then_some(crate::sfx::Id::Knell),
+                    hold: Hold::Walk(ar.walk()),
+                    ..Beat::default()
+                };
+                ((!ar.done()).then_some(Interlude::Arrive(ar)), beat)
+            }
             Interlude::Kindle(left) => {
                 let left = left - dt;
                 let beat = Beat {
@@ -183,7 +202,7 @@ impl Interlude {
 
     /// 세로로 든 폰(0082)이면 이 연출은 이 틱을 쉬고 멈춤 창이 먼저인가 — 깨어나는 장면만(예전 차례 그대로: 다른 연출은 세로여도 흐른다).
     pub fn waits_for_landscape(&self) -> bool {
-        matches!(self, Interlude::Wake(_))
+        matches!(self, Interlude::Wake(_) | Interlude::Arrive(_))
     }
 }
 
@@ -293,6 +312,23 @@ mod tests {
         assert!(touched.len() < plain.len());
         assert!(w.waits_for_landscape());
         assert!(!Interlude::Echo(0.0).waits_for_landscape());
+    }
+
+    /// 성소에 들다(0262): 지역은 한 번만 바꾸고(다 어두운 순간), 세계는 걷는 입력으로 흐르고, 종은 한 번. 멈춤 버튼이 건너뛴다.
+    #[test]
+    fn arriving_swaps_once_walks_the_world_and_skips_on_pause() {
+        let a = Interlude::Arrive(crate::arrive::Arrive::default());
+        let (plain, left) = run(a, Input::default(), 100_000);
+        assert!(left.is_none());
+        assert_eq!(plain.iter().filter(|b| b.arrive).count(), 1);
+        assert!(plain.iter().all(|b| matches!(b.hold, Hold::Walk(_))));
+        assert_eq!(plain.iter().filter(|b| b.sound.is_some()).count(), 1);
+        let (keys, _) = run(a, press(|a| a.attack = true), 100_000);
+        assert_eq!(keys.len(), plain.len(), "a keyboard attack does not skip");
+        let (paused, _) = run(a, press(|a| a.pause = true), 100_000);
+        assert!(paused.len() < plain.len());
+        assert_eq!(paused.iter().filter(|b| b.arrive).count(), 1);
+        assert!(a.waits_for_landscape());
     }
 
     /// 불 붙는 순간: 세계와 스테이지가 흐르고, `KINDLE_TIME` 뒤에 한 번 화로의 창.

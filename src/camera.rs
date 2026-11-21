@@ -199,6 +199,8 @@ pub struct Camera {
     zoom: f32,
     /// 장면이 당겨 둔 몫(0171 — 깨어나는 첫 장면): 주시점 쪽으로 거리의 0..1. 앱이 틱마다 적는다(0 = 제 거리). 타격 줌과 곱해진다.
     pub close: f32,
+    /// 장면이 얹은 카메라 자리(0262 "성소에 들다"): (눈, 보는 곳, 몫 0..1) — 계산한 리그를 이 몫만큼 그 자리로 당긴다. 앱이 틱마다 적는다.
+    pub shot: Option<(Vec3, Vec3, f32)>,
     pub freeze: bool,
     /// 땅 돌리기 휘청(0084): (지난 초, 굴림 크기 도 — + = 화면이 시계 방향으로 기욺). 줄어드는 흔들림 몇 개의 합.
     wobbles: Vec<(f32, f32)>,
@@ -238,6 +240,7 @@ impl Camera {
             kick_deg: Vec3::ZERO,
             zoom: 0.0,
             close: 0.0,
+            shot: None,
             freeze: false,
             wobbles: Vec::new(),
             roll: 0.0,
@@ -676,6 +679,12 @@ impl Camera {
             let body = self.follow + Vec3::Y * (PLAYER_HEIGHT * 0.5);
             rig.pos = body + (rig.pos - body) * k;
             rig.look = body + (rig.look - body) * k;
+        }
+        // 장면의 카메라(0262): 높이 보는 자리에서 제 리그로 내려온다(몫이 0이면 그대로).
+        if let Some((eye, look, k)) = self.shot {
+            let k = k.clamp(0.0, 1.0);
+            rig.pos = rig.pos.lerp(eye, k);
+            rig.look = rig.look.lerp(look, k);
         }
         // 흔들림: trauma² 크기의 무작위 오프셋(로직 시계를 쓰므로 히트스톱 중엔 멈춘다).
         self.trauma = (self.trauma - dt * 2.5).max(0.0);

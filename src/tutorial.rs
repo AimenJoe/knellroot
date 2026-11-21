@@ -270,7 +270,7 @@ pub enum Tip {
     Lock,
     /// 평타를 여럿 맞혔는데 아직 모아 친 적이 없다 — 쥐었다 떼기.
     Charge,
-    /// 부무기가 생겼는데 아직 바꿔 든 적이 없다 — 패링 + 평타. (비트 3은 비워 둔다 — 잠깐 있던 "버튼이 바뀌었다" 알림의 자리:
+    /// 부무기가 생겼는데 아직 바꿔 든 적이 없다 — 바꾸기 버튼(0261). (비트 3은 비워 둔다 — 잠깐 있던 "버튼이 바뀌었다" 알림의 자리:
     /// 공개 전이라 옛 손이 없어 걷었다, 0223 10절.)
     Swap = 4,
     /// 한손 무기에 방패를 들었는데 아직 막아 본 적이 없다 — 패링을 쥔다.
@@ -364,7 +364,7 @@ impl Tip {
             Tip::Flask => &[Bind::Flask],
             Tip::Lock => &[Bind::Lock],
             Tip::Charge => &[Bind::Attack],
-            Tip::Swap => &[Bind::Parry, Bind::Attack],
+            Tip::Swap => &[Bind::Swap],
             Tip::Block => &[Bind::Parry],
             Tip::Unfit | Tip::Type | Tip::Spare | Tip::Full => &[],
         }
@@ -605,7 +605,7 @@ mod tests {
         };
         let sub = with(|n| n.has_sub = true);
         assert_eq!(next_tip(0, DONE, &sub, &s), Some(Tip::Swap));
-        assert_eq!(Tip::Swap.binds(), [Bind::Parry, Bind::Attack]);
+        assert_eq!(Tip::Swap.binds(), [Bind::Swap]);
         let swapped = Seen { swaps: 1, ..s };
         assert_eq!(next_tip(0, DONE, &sub, &swapped), None, "already knows");
         assert!(Tip::Swap.done(&sub, &swapped));

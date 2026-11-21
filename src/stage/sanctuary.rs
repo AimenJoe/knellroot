@@ -60,6 +60,7 @@ pub static DEF: StageDef = StageDef {
         ('Z', Kind::Husk, Affix::Lingering),
     ],
     shortcut: false,
+    prologue: false,
 };
 
 const MAP: &str = "
@@ -127,7 +128,7 @@ const MAP: &str = "
           #.....................#          
           #...u.................#          
           #.....................#          
-          #.b...................#          
+          #.b........A..........#          
           #######################          
 ";
 

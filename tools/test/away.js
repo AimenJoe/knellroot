@@ -1,5 +1,5 @@
 // 앱이 내려감 시험(0257, nail 0298 `bg:` 꼴): 싸움 중에 탭을 숨기면(visibilityState를 덮고 사건 — 헤드리스는 진짜로 숨지 않는다)
-//   1) 소리 컨텍스트가 멈추고(web/index.html — `window.knellAudioContexts`), 2) 게임은 멈춤 창을 연다(src/app/away.rs → `Status { host: Pause`),
+//   1) 소리 컨텍스트가 멈추고(web/index.html — `window.knellAudioContexts`), 2) 게임은 멈춤 창을 연다(src/app/away.rs → `Equip { host: Pause` — 0261부터 멈춤의 새 판 첫 탭은 장비),
 //   3) 다시 보이면 소리가 돌아오고 멈춤 창은 그대로(손이 오기 전에 싸움이 흐르지 않는다).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/away.js dist shots
 const { chromium } = require('playwright');
@@ -51,7 +51,7 @@ async function main() {
   await vis('hidden'); await page.waitForTimeout(500);
   const whileHidden = await states();
   await vis('visible');
-  await until('Status { host: Pause', '숨었다 돌아오면 멈춤 창');
+  await until('Equip { host: Pause', '숨었다 돌아오면 멈춤 창');
   await page.waitForTimeout(400);
   const afterBack = await states();
   await page.screenshot({ path: path.join(OUT, 'away-pause.png') });

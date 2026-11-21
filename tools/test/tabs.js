@@ -1,7 +1,8 @@
 // 큰 창의 탭 줄 굴리기(0232 → 0233): 헤드리스 Chromium으로 한국어·영어 × 넓은 화면(1280×720)·폰 가로(844×390) —
-//   쉼터 기록을 심고 이어하기 → 쉬기(화로 = 탭 여덟) → E로 탭을 끝까지, Q로 처음까지 넘기며 화면마다 스크린숏.
+//   쉼터 기록을 심고 이어하기 → 쉬기(화로 = 탭 넷, 0261) → E로 탭을 끝까지, Q로 처음까지 넘기며 화면마다 스크린숏 → 닫고 멈춤(탭 다섯)도 같이.
+//   (0261 전에는 화로가 탭 여덟이라 넘쳤다 — 지금은 넘치지 않을 수 있다: 그래도 탭 줄·◀▶·글이 넘치지 않는지 F4로 본다.)
 //   탭이 넘치면 글을 줄이지 않고 탭 줄을 굴린다(고른 탭이 보이게 따라오고, 양끝 ◀▶는 "더 있다"). 그리고 영어 폰(터치)에서
-//   탭 줄을 손가락으로 왼쪽으로 끌어(CDP 터치) 가려진 탭을 드러내고, 드러난 끝 탭을 눌러 고른다 — 몸의 목록은 굴리지 않는다.
+//   탭 줄(멈춤 창 — 탭이 가장 많다)을 손가락으로 왼쪽으로 끌어(CDP 터치) 가려진 탭을 드러내고, 드러난 끝 탭을 눌러 고른다 — 몸의 목록은 굴리지 않는다.
 //   F4 넘침 검사의 `[ui-check]` 줄이 있으면 실패.
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/tabs.js dist shots
 const { chromium } = require('playwright');
@@ -18,7 +19,8 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
 const SEED = 'v=1\nembers=700\nclears=1\nrun.rest=0\nrun.gate=1\nlv.life=1\nlv.stamina=4\nlv.might=4\ncore.warden=1\nmigrated.v04=1\n';
-const TABS = 8; // 화로: 상태 · 장비 · 가방 · 기술 · 도감 · 여정 · 가게 · 설정
+const HEARTH_TABS = 4; // 화로(0261): 성장 · 기술 · 가게 · 설정
+const PAUSE_TABS = 5; // 멈춤(0261): 장비 · 가방 · 기술 · 기록 · 설정
 
 const server = http.createServer((req, res) => {
   const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
@@ -60,15 +62,22 @@ async function run(browser, lang, size) {
   }
   await press('Enter'); await until('Slots', '이어하기 → 슬롯 창');
   await press('Enter'); await until('Play', '슬롯 → 판'); await page.waitForTimeout(1500);
-  await press('KeyF'); await until(/host: Hearth/, '화로에서 쉬기 → 큰 창'); await page.waitForTimeout(300);
-  for (let i = 0; i < TABS; i++) {
-    await shot(`e${i}`);
-    if (i + 1 < TABS) { await flip('KeyE', `E — 탭 ${i + 1}`); await page.waitForTimeout(150); }
-  }
-  for (let i = TABS - 1; i > 0; i--) {
-    await flip('KeyQ', `Q — 탭 ${i - 1}`); await page.waitForTimeout(150);
-    await shot(`q${i - 1}`);
-  }
+  // 탭 줄 한 바퀴: E로 끝까지, Q로 처음까지.
+  const cycle = async (n, tag) => {
+    for (let i = 0; i < n; i++) {
+      await shot(`${tag}e${i}`);
+      if (i + 1 < n) { await flip('KeyE', `${tag} E — 탭 ${i + 1}`); await page.waitForTimeout(150); }
+    }
+    for (let i = n - 1; i > 0; i--) {
+      await flip('KeyQ', `${tag} Q — 탭 ${i - 1}`); await page.waitForTimeout(150);
+      await shot(`${tag}q${i - 1}`);
+    }
+  };
+  await press('KeyF'); await until('Status { host: Hearth', '화로에서 쉬기 → 큰 창(성장 탭)'); await page.waitForTimeout(300);
+  await cycle(HEARTH_TABS, 'hearth-');
+  await press('Escape'); await until('Play', '화로 창 닫기');
+  await press('Escape'); await until('Equip { host: Pause', '멈춤 = 장비 탭'); await page.waitForTimeout(300);
+  await cycle(PAUSE_TABS, 'pause-');
   await ctx.close();
   return { errors, checks };
 }
@@ -107,7 +116,7 @@ async function touchRun(browser) {
   await press('ArrowUp', 2);
   await press('Enter'); await until('Slots', '이어하기 → 슬롯 창');
   await press('Enter'); await until('Play', '슬롯 → 판'); await page.waitForTimeout(1500);
-  await press('KeyF'); await until(/host: Hearth/, '화로에서 쉬기 → 큰 창'); await page.waitForTimeout(300);
+  await press('Escape'); await until('Equip { host: Pause', '멈춤 → 큰 창(장비 탭)'); await page.waitForTimeout(300);
   await shot('0-open');
   // 탭 줄(창 머리, 화면 위쪽)을 오른쪽 → 왼쪽으로 천천히 끈다.
   const y = 26;
@@ -116,11 +125,11 @@ async function touchRun(browser) {
   await touch('touchEnd', []);
   await page.waitForTimeout(300);
   await shot('1-dragged');
-  // 드러난 오른쪽 끝 탭(설정)을 누른다 — 화살(▶) 바로 왼쪽.
+  // 드러난 오른쪽 끝 탭(설정)을 누른다 — 화살(▶) 바로 왼쪽(넘치지 않으면 그 자리가 끝 탭이다).
   await touch('touchStart', [[455, y]]);
   await page.waitForTimeout(60);
   await touch('touchEnd', []);
-  await until('Settings { host: Hearth', '끌어 드러난 끝 탭(설정)을 누른다');
+  await until('Settings { host: Pause', '끌어 드러난 끝 탭(설정)을 누른다');
   await page.waitForTimeout(200);
   await shot('2-tapped');
   await ctx.close();
