@@ -26,7 +26,7 @@ fn parry_once(w: &mut World, t: &Tuning) -> bool {
     false
 }
 
-/// 숨 고르기: 패링마다 기력 +20. 되찾는 살: 패링 셋마다 체력 한 눈금(가득이면 그대로).
+/// 숨 고르기: 패링마다 기력 +20. 되찾는 생기: 패링 셋마다 체력 한 눈금(가득이면 그대로).
 #[test]
 fn second_wind_and_mend_pay_for_parries() {
     let t = Tuning::default();

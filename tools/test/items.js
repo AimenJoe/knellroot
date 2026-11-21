@@ -1,7 +1,7 @@
 // 아이템 시험(0223 V4): 등급·옵션이 든 아이템이 있는 기록으로 — 장비 탭의 주무기 후보에 여벌이 서고(바탕의 줄 아래), 여벌을 고르면
 //   옵션 줄과 바뀌는 능력치가 보이고, 끼면 기록의 낀 자리(gear.main)가 그 아이템을 가리킨다. 옛 기록(아이템 줄 없음)은 보통 것으로 옮겨진다.
-//   가방 탭(0226): 지키기·내려놓기·줍기, 가득이면 못 줍는다, 화로에서 잔불로·여벌 정리(0261 — 가방은 멈춤 창에만: 화로 위에 Select(Tab)로
-//   연 멈춤 창의 가방, 또는 가게 끝 줄 "가방"이 화로 위에 연 가방에서 잔불로·여벌 정리가 켜진다).
+//   가방 탭(0226): 지키기·내려놓기·줍기, 가득이면 못 줍는다, 화로에서 잔불로·여벌 정리(0263 — 화로 창의 가방 탭에서 잔불로·여벌 정리가
+//   켜진다: 화로 창의 Select(Tab) = 그 창의 장비 탭 → E = 가방, 또는 성장 탭에서 E 둘).
 //   화면마다 스크린숏, 개발판 F4 넘침 검사(`[ui-check]` 줄이 있으면 실패).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/items.js dist shots
 const { chromium } = require('playwright');
@@ -182,14 +182,13 @@ async function again(g) {
     let r = await g.record();
     if (count(r) !== 30) errors.push(`a full bag took an item (${count(r)}): ${JSON.stringify(r)}`);
     if (!/ground\.0=0\|/.test(r)) errors.push(`the item must stay on the ground: ${JSON.stringify(r)}`);
-    // 화로 위의 가방(0261 — 화로 창에서 Select(Tab) = 멈춤 창(장비)이 그 위에 → E = 가방)에서 여벌 하나를 잔불로
-    // (주무기로 · 지킨다 · 내려놓는다 · 잔불로) → 자리가 났다 → 닫고(멈춤 창 → 화로 창 → 싸움) 줍는다.
-    await g.press('Tab'); await g.until('Equip { host: Pause', '화로에서 Select = 멈춤 창(장비)');
-    await g.tabs(1, 'Bag { host: Pause', '화로 위의 가방 탭');
+    // 화로의 가방(0263 — 화로 창에서 Select(Tab) = 그 창의 장비 탭 → E = 가방)에서 여벌 하나를 잔불로
+    // (주무기로 · 지킨다 · 내려놓는다 · 잔불로) → 자리가 났다 → 닫고(화로 창 → 싸움) 줍는다.
+    await g.press('Tab'); await g.until('Equip { host: Hearth', '화로에서 Select = 화로 창의 장비 탭');
+    await g.tabs(1, 'Bag { host: Hearth', '화로의 가방 탭');
     await g.press('Enter'); await g.until('BagAct', '칸 → 할 일');
     await g.press('ArrowDown', 3); await g.press('Enter'); await g.until('Ask(Salvage', '잔불로 → 묻는 창');
     await g.press('ArrowLeft'); await g.press('Enter'); await g.until('Bag {', '바꾼다 → 가방 탭'); await g.page.waitForTimeout(200);
-    await g.press('Escape'); await g.until(/host: Hearth/, '멈춤 창 닫기 → 화로 창');
     await g.press('Escape'); await g.until('Play', '화로 창 닫기'); await g.page.waitForTimeout(600);
     await g.shot('4-room-made');
     await g.press('KeyF'); await g.page.waitForTimeout(700); // 줍기가 쉬기보다 앞선다
@@ -203,14 +202,11 @@ async function again(g) {
     await g.page.context().close();
   }
   {
-    // 화로 위의 가방(0261 — 쉬기 F → 성장 탭에서 E 둘 = 가게 → 위로 한 번 = 끝 줄 "가방" → 화로 위에 멈춤 창의 가방): 여벌을 잔불로 — 묻는 창(커서는 취소)에서 바꾸면 가방에서 빠지고 잔불이 는다.
+    // 화로의 가방(0263 — 쉬기 F → 성장 탭에서 E 둘 = 장비를 지나 가방 탭): 여벌을 잔불로 — 묻는 창(커서는 취소)에서 바꾸면 가방에서 빠지고 잔불이 는다.
     // 그리고 "여벌 정리": 맨 아랫줄 아래의 단추 — 지키지 않는 여벌을 한꺼번에.
     const g = await open(browser, ITEMS + 'item.4=w.hammer|p||0\nitem.5=c.ear|p||0\nitem.next=6\n', 'hearth');
     await g.press('KeyF'); await g.until('Status { host: Hearth', '화로에서 쉬기 = 성장 탭');
-    await g.tabs(2, 'Shop', '가게 탭');
-    await g.press('ArrowUp'); await g.page.waitForTimeout(200);
-    await g.shot('0-shop-bag-row');
-    await g.press('Enter'); await g.until('Bag { host: Pause', '가게 끝 줄 → 가방(화로 위)');
+    await g.tabs(2, 'Bag { host: Hearth', '성장 → 장비 → 가방 탭(화로)'); await g.page.waitForTimeout(200);
     await g.shot('1-bag');
     await g.press('Enter'); await g.until('BagAct', '칸 → 할 일');
     await g.shot('2-acts');

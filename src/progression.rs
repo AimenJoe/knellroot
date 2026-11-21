@@ -377,7 +377,7 @@ pub enum Cell {
     FlowingBeat,
     /// 맺음타: 콤보 마지막 타에도 박자 창, 맞히면 자세 ×1.5.
     ClosingBlow,
-    /// 빈틈의 박자: 헛친 적의 경직 동안 박자 타 자세 ×2.
+    /// 빈틈의 박자: 헛친 적의 경직 동안 박자 타 자세 ×1.5.
     GapBeat,
     /// 끝맺음: 박자 다섯 + 마지막 타 박자 → 다음 강타가 다 모인 강타.
     FinalMeasure,
@@ -389,7 +389,7 @@ pub enum Cell {
     GatheredRiposte,
     /// 무너진 틈: 깨진 적에게 다 모은 강타 = 깨짐을 처음부터.
     OpenBreach,
-    /// 맞서는 자: 이어 패링 셋 동안 못 받는 공격도 패링 = 피해 반.
+    /// 맞서는 자: 이어 패링 셋 동안 못 받는 공격도 막는다(튕기지는 않는다).
     OneWhoStands,
     /// 멈추지 않는 걸음: 달리기 기력 −30%(숫자 칸).
     UnbrokenStride,
@@ -407,7 +407,7 @@ pub enum Cell {
     GatheringBeat,
     /// 숨 고르기(0214): 패링에 성공하면 기력 +`cell::SECOND_WIND`.
     SecondWind,
-    /// 되찾는 살(0214): 패링 `cell::MEND_EVERY`번마다 체력 한 눈금.
+    /// 되찾는 생기(0214): 패링 `cell::MEND_EVERY`번마다 체력 한 눈금.
     Mend,
     /// 디딘 발(0214): 스킬 시동 동안 맞아도 끊기지 않는다(피해는 받는다).
     Planted,
@@ -614,7 +614,7 @@ pub mod cell {
     pub const GATHERING_BEAT: f32 = 0.5;
     /// 숨 고르기(0214): 패링 성공의 기력.
     pub const SECOND_WIND: f32 = 20.0;
-    /// 되찾는 살(0214): 패링 이만큼마다 체력 한 눈금(`HP_UNIT`).
+    /// 되찾는 생기(0214 — 옛 이름 "되찾는 살"): 패링 이만큼마다 체력 한 눈금(`HP_UNIT`).
     pub const MEND_EVERY: u32 = 3;
     /// 엉킨 뿌리(0214): 스킬에 맞은 적의 걸음 배·초.
     pub const SNARE_SLOW: f32 = 0.7;
