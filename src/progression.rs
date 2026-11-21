@@ -407,7 +407,7 @@ pub enum Cell {
     GatheringBeat,
     /// 숨 고르기(0214): 패링에 성공하면 기력 +`cell::SECOND_WIND`.
     SecondWind,
-    /// 되찾는 살(0214): 패링 `cell::MEND_EVERY`번마다 체력 한 눈금.
+    /// 되찾는 생기(0214): 패링 `cell::MEND_EVERY`번마다 체력 한 눈금.
     Mend,
     /// 디딘 발(0214): 스킬 시동 동안 맞아도 끊기지 않는다(피해는 받는다).
     Planted,
@@ -614,7 +614,7 @@ pub mod cell {
     pub const GATHERING_BEAT: f32 = 0.5;
     /// 숨 고르기(0214): 패링 성공의 기력.
     pub const SECOND_WIND: f32 = 20.0;
-    /// 되찾는 살(0214): 패링 이만큼마다 체력 한 눈금(`HP_UNIT`).
+    /// 되찾는 생기(0214 — 옛 이름 "되찾는 살"): 패링 이만큼마다 체력 한 눈금(`HP_UNIT`).
     pub const MEND_EVERY: u32 = 3;
     /// 엉킨 뿌리(0214): 스킬에 맞은 적의 걸음 배·초.
     pub const SNARE_SLOW: f32 = 0.7;
