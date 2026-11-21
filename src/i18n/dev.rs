@@ -112,6 +112,10 @@ pub const WORKS: Pair = (
     "넷째 지역(작업층) 어귀부터",
     "region 4 (the workings) from its edge",
 );
+pub const PROLOGUE: Pair = (
+    "서막(숲에서 깨어나 성소에 들기)부터",
+    "prologue (wake in the wood, enter the sanctuary)",
+);
 pub const RESIDENTS: Pair = (
     "둘째 지역 주민 곁에서(말 걸기)",
     "region 2 beside a resident (talk)",
@@ -211,6 +215,7 @@ pub const PAIRS: &[Pair] = &[
     VILLAGE,
     GARDEN,
     WORKS,
+    PROLOGUE,
     RESIDENTS,
     STONES,
     CHEST,

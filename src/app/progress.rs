@@ -55,6 +55,16 @@ impl App {
         self.cam = self.cam.renew(self.world.player.pos, &self.t);
     }
 
+    /// 서막 숲에서 성소로(0262 "성소에 들다"의 다 어두운 순간): 성소를 세우고 입구 폐허의 남쪽 가장자리에 선다. 숲을 지났다고 적는다
+    /// (개발 창의 판은 기록에 쓰지 않는다 — `persist`가 거른다).
+    pub(super) fn arrive_sanctuary(&mut self) {
+        self.enter_stage(FIRST_STAGE);
+        self.run.arrive_from_prologue(&mut self.world);
+        self.cam = self.cam.renew(self.world.player.pos, &self.t);
+        self.progress.prologue = true;
+        self.persist();
+    }
+
     /// 판에서 기록할 것을 옮기고(쉰 쉼터·끝낸 판), 바뀌었으면 쓴다.
     pub(super) fn sync_progress(&mut self, out: crate::stage::StageOut) {
         self.note_rest(out);
@@ -272,7 +282,8 @@ impl App {
     /// 바닥에 둔 아이템을 기록에 옮긴다(0226): 이 지역의 것을 지금 바닥에 있는 것들로 — 게임을 꺼도, 지역을 떠났다 와도
     /// 그 자리에 있다(`lay_ground`). 개발 창의 판은 적지 않는다.
     pub(super) fn note_ground(&mut self) {
-        if self.dev_run_now() {
+        // 서막 숲(0262)은 한 번 지나는 곳 — 거기 내려놓은 것은 기록하지 않는다(숲의 자리 번호는 지역이 늘면 뒤로 밀린다).
+        if self.dev_run_now() || self.run.def.prologue {
             return;
         }
         let drops = self

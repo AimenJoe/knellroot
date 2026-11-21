@@ -133,6 +133,61 @@ pub fn draw_wake(ui: &Ui, f: &Frame, w: &crate::wake::Wake, lines: [&str; 2], sk
     }
 }
 
+/// "성소에 들다"의 덮개(0262 — HUD 대신): 덮는 어둠(숲이 어두워지고 성소가 드러난다) + 위아래 띠(깨어나는 장면과 같은 몫) +
+/// 이름 카드(가운데 조금 위 — 구역 카드보다 크게, 호박색 가는 줄) + 구석의 건너뛰기 안내. 시간표는 `arrive::Arrive`가 낸다.
+pub fn draw_arrive(ui: &Ui, f: &Frame, a: &crate::arrive::Arrive, name: &str, skip: (&str, &str)) {
+    let s = u(f);
+    let dark = a.dark();
+    if dark > 0.003 {
+        draw_rectangle(f.ox, f.oy, f.w, f.h, Color::new(0.02, 0.015, 0.035, dark));
+    }
+    let bar = a.bars() * crate::arrive::BARS * f.h;
+    if bar > 0.5 {
+        draw_rectangle(f.ox, f.oy, f.w, bar, BLACK);
+        draw_rectangle(f.ox, f.oy + f.h - bar, f.w, bar, BLACK);
+    }
+    let card = a.card();
+    if card > 0.004 {
+        let cx = f.ox + f.w * 0.5;
+        let y = f.oy + f.h * ARRIVE_CARD_Y;
+        // 긴 언어도 화면 가운데 70% 안으로(구역 카드와 같은 셈).
+        let k =
+            (ARRIVE_CARD_K * f.w * 0.7 / ui.width(name, ARRIVE_CARD_K).max(1.0)).min(ARRIVE_CARD_K);
+        ui.text_center(name, cx, y, k, Color::new(INK.r, INK.g, INK.b, card));
+        let tw = ui.width(name, k) * (0.4 + 0.6 * card);
+        draw_rectangle(
+            cx - tw * 0.5,
+            y + ui.px(k) * 1.15,
+            tw,
+            s,
+            Color::new(AMBER.r, AMBER.g, AMBER.b, card * 0.75),
+        );
+    }
+    // 건너뛰기: 아래 띠 안 오른쪽에 작게(깨어나는 장면과 같은 자리).
+    let alpha = a.bars().min(1.0 - dark) * 0.75;
+    if alpha > 0.05 && !skip.1.is_empty() {
+        let k = 0.75;
+        let text = if skip.0.is_empty() {
+            skip.1.to_string()
+        } else {
+            format!("{} {}", crate::ui::key(skip.0), skip.1)
+        };
+        let tw = ui.width(&text, k);
+        let y = f.oy + f.h - (bar + ui.px(k)) * 0.5 - s;
+        ui.text(
+            &text,
+            f.ox + f.w - tw - 8.0 * s,
+            y.min(f.oy + f.h - ui.px(k) - 3.0 * s),
+            k,
+            Color::new(DIM.r, DIM.g, DIM.b, alpha),
+        );
+    }
+}
+
+/// "성소에 들다"의 이름 카드: 자리(화면 높이의 몫 — 방랑자 위 하늘·성소 쪽)·크기.
+const ARRIVE_CARD_Y: f32 = 0.24;
+const ARRIVE_CARD_K: f32 = 2.6;
+
 /// 깨어나는 장면의 서술 글: 자리(화면 높이의 몫)·크기.
 /// 쓰러짐(0175): HUD 대신 — 화면 가장자리에서 뿌리가 감겨 들고(`Fall::roots`), 어둠이 들고(`dark`), 다 어두운 동안 한 줄
 /// ("뿌리가 몸을 감는다…" — 이미 있던 쓰러짐의 글). 쉼터 곁에서 밝아지며 뿌리도 물러난다.

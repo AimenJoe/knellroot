@@ -13,6 +13,7 @@
 
 mod anim;
 mod app;
+mod arrive;
 mod backdrop;
 mod balance;
 mod camera;

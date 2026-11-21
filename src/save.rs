@@ -116,6 +116,8 @@ pub mod key {
     pub const WOKE: &str = "woke";
     /// 깨어난 자리의 화로에 불을 붙였다(0171 — 처음 거기서 쉴 때). 이 키가 없는 옛 기록은 붙인 것으로.
     pub const HEARTH_LIT: &str = "hearth.lit";
+    /// 서막 숲(0262)을 지나 성소에 들었다(1) / 아직(0). 이 키가 없으면 `woke`를 따른다 — 이미 깨어난 기록(옛 판)은 숲을 보지 않는다.
+    pub const PROLOGUE: &str = "prologue";
     /// 기술 나무(0106)의 옛 꼴: 갈래마다 **앞에서부터** 연 칸 수. 0161부터는 `tree.cells.*`가 없을 때만 읽는다("앞에서부터 N칸").
     /// 쓸 때는 앞에서부터 이어 연 수를 적는다(옛 판이 읽어도 가진 것보다 많이 열리지 않는다). 목표 핀 `tree.pin`은 0161에서 걷었다 —
     /// 읽지도 쓰지도 않는다(옛 기록의 줄은 모르는 키처럼 그대로 지닌다).
@@ -290,6 +292,8 @@ pub struct Progress {
     pub woke: bool,
     /// 깨어난 자리의 화로에 불이 붙었다(0171). 새 기록은 거짓 — 그 화로가 꺼진 채 서 있다.
     pub lit: bool,
+    /// 서막 숲을 지나 성소에 들었다(0262). 새 기록은 거짓 — 첫 판이 숲에서 열린다.
+    pub prologue: bool,
     /// 쌓인 플레이 시간(초, 0081).
     pub play: u32,
     /// 원래 기록(모르는 키를 지키려고 — 쓸 때 이 위에 덮는다).
@@ -487,6 +491,12 @@ impl Progress {
             lit: r
                 .num(key::HEARTH_LIT)
                 .map_or(r.num(key::VERSION).is_some(), |n| n > 0),
+            // 0262: 키가 없으면 깨어났나를 따른다 — 이미 깨어난 기록(이 키 전의 판)은 숲을 지난 것으로.
+            prologue: r.num(key::PROLOGUE).map_or(
+                r.num(key::WOKE)
+                    .map_or(r.num(key::VERSION).is_some(), |n| n > 0),
+                |n| n > 0,
+            ),
             ult_gift: if before_ult {
                 crate::skills::ULT_LEARN
             } else {
@@ -802,6 +812,7 @@ impl Progress {
         r.set(key::TIPS, self.tips);
         r.set(key::WOKE, self.woke as u32);
         r.set(key::HEARTH_LIT, self.lit as u32);
+        r.set(key::PROLOGUE, self.prologue as u32);
         if self.gift > 0 {
             r.set(key::SKILL_GIFT, self.gift);
         } else {
@@ -1960,6 +1971,30 @@ forge.sword=3
         assert!(back.woke && !back.lit, "woke up, the hearth still cold");
     }
 
+    /// 0262: 서막 숲은 새 기록의 것 — 새 판은 "아직"을 적고, 키가 없으면 깨어났나를 따른다: 옛 기록(키 없는 판)과 깨어난 뒤 이 키 전의
+    /// 판이 쓴 기록(`woke=1`)은 숲을 지난 것, 깨어나다 만 기록(`woke=0`)과 빈 슬롯은 아직. 깨어났지만 숲을 다 지나지 않은 판은 `woke=1`·
+    /// `prologue=0` 그대로 오간다(다시 열면 깨어나는 장면 없이 숲에서).
+    #[test]
+    fn the_prologue_belongs_to_new_records_and_follows_waking_when_missing() {
+        let fresh = Progress::default();
+        assert!(!fresh.prologue);
+        assert!(fresh.to_record().to_text().contains("prologue=0\n"));
+        let read = |t: &str| Progress::from_record(Record::parse(t)).prologue;
+        assert!(
+            read("v=1\nembers=30\n"),
+            "an old record never sees the wood"
+        );
+        assert!(read("v=1\nwoke=1\n"), "woke before this key: past the wood");
+        assert!(!read("v=1\nwoke=0\n"));
+        assert!(!read(""), "an empty slot is new");
+        let half = Progress {
+            woke: true,
+            ..Progress::default()
+        };
+        let back = Progress::from_record(Record::parse(&half.to_record().to_text()));
+        assert!(back.woke && !back.prologue, "woke in the wood, not out yet");
+    }
+
     /// 0158: 손댄 기록 — 범위 밖의 단은 범위 안으로, 이상한 고르기는 ㄱ,
     /// 가진 점수보다 많이 쓴 판은 통째로 처음으로(터지지 않는다 — 점수는 남아 있다).
     #[test]
@@ -2328,6 +2363,7 @@ forge.sword=3
             tips: 0b101,
             woke: true,
             lit: true,
+            prologue: true,
             play: 777,
             ..Progress::default()
         };
@@ -2393,6 +2429,7 @@ forge.sword=3
             tips,
             woke,
             lit,
+            prologue,
             play,
             base: _,
         } = once;
@@ -2444,6 +2481,7 @@ forge.sword=3
         assert_ne!(tips, d.tips, "tips");
         assert_ne!(woke, d.woke, "woke");
         assert_ne!(lit, d.lit, "lit");
+        assert_ne!(prologue, d.prologue, "prologue");
         assert_ne!(play, d.play, "play");
     }
 }

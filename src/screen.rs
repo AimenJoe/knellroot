@@ -30,6 +30,7 @@ pub fn report_scene(name: &str) {
 }
 
 /// 헤드리스 시험이 페이지에 건 깃발(`window.knellTestFlags`, 웹만 — 그 밖은 0). 1 = 방랑자가 맞지 않는다(`World::unhurt`).
+/// 2 = 새 기록도 서막 숲을 건너뛰고 성소에서 연다(0262 — `tools/test/scene.js`가 기본으로 건다, `sceneKit.prologue`가 푼다).
 /// 개발판에만 있다.
 #[cfg(feature = "dev")]
 pub fn test_flags() -> u32 {
