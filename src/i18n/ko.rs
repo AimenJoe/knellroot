@@ -829,6 +829,8 @@ pub const KO: Strings = Strings {
     verb_take: "받기",
     toast_journey: "여정 — {0}",
     toast_journey_took: "받았다 — {0}",
+    toast_codex_took: "도감 — {0}: 잔불 +{1}",
+    codex_bounty_taken: "받았다: {0}",
     jg_s_gate: "성소 문을 열어라",
     jg_s_gate_d: "뜰 끝의 문은 닫혀 있다. 여는 것은 어딘가 높은 곳에 있다.",
     jg_s_warden: "성소의 문지기를 넘어라",

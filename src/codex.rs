@@ -207,6 +207,16 @@ pub fn charm_place(id: crate::charms::Id) -> Tr {
     }
 }
 
+/// 도감 칸의 보상(0265 — 사장 2026-11-21 "다른 도감들도 해제했을 때 소량의 보상이 있어야해"): 처음 적힌 적·처음 얻은 물건마다
+/// 한 번, 기록 탭에서 확인 = 받기(여정과 같은 꼴). 잔불 조금 — 여정의 작은 목표(20~30)보다 작게.
+pub const FOE_EMBERS: u32 = 10;
+pub const THING_EMBERS: u32 = 15;
+
+/// 받은 칸의 기록 이름(바꾸지 않는다): `<묶음>.<그것의 기록 키>` — 묶음은 `foe`·`charm`·`garb`·`weapon`.
+pub fn paid_key(group: &str, key: &str) -> String {
+    format!("{group}.{key}")
+}
+
 /// 본 것으로 적는 거리(m) — 적 시야(9m)와 같게: 깨어난 적을 이만큼 가까이에서 보면.
 pub const SEE: f32 = 9.0;
 
@@ -227,6 +237,38 @@ pub fn open_lines(record: &[String], e: &Entry) -> Vec<(bool, Tr)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0265: 도감 칸의 보상 이름은 칸마다 하나(묶음이 달라도 겹치지 않는다) — 같은 이름이면 하나를 받으면 다른 칸도 받은 것이 된다.
+    #[test]
+    fn every_codex_bounty_has_its_own_record_name() {
+        let mut keys: Vec<String> = ENTRIES
+            .iter()
+            .map(|e| paid_key("foe", kind_key(e.kind)))
+            .collect();
+        keys.extend(
+            crate::charms::TABLE
+                .iter()
+                .map(|d| paid_key("charm", d.key)),
+        );
+        keys.extend(crate::garb::TABLE.iter().map(|d| paid_key("garb", d.key)));
+        keys.extend(
+            crate::weapons::IDS
+                .iter()
+                .map(|w| paid_key("weapon", w.key())),
+        );
+        let n = keys.len();
+        keys.sort();
+        keys.dedup();
+        assert_eq!(keys.len(), n);
+        assert!(
+            keys.iter().all(|k| !k.contains(',')),
+            "the record list is comma separated"
+        );
+        assert!(
+            FOE_EMBERS > 0 && FOE_EMBERS <= THING_EMBERS && THING_EMBERS < 20,
+            "small — below the smallest journey goal"
+        );
+    }
 
     /// 0130: 모든 종이 도감에 한 번, 줄은 본 만큼 열린다 — 처음 보면 관찰·추측, 청소자·엘리트·깨어남은 그때.
     #[test]

@@ -956,6 +956,10 @@ pub struct Strings {
     pub verb_take: &'static str,
     pub toast_journey: &'static str,
     pub toast_journey_took: &'static str,
+    /// 도감 칸의 보상을 받았다(0265): {0} = 이름, {1} = 잔불.
+    pub toast_codex_took: &'static str,
+    /// 받은 도감 칸의 보상 줄(0265): {0} = "잔불 n".
+    pub codex_bounty_taken: &'static str,
     pub jg_s_gate: &'static str,
     pub jg_s_gate_d: &'static str,
     pub jg_s_warden: &'static str,
@@ -1811,6 +1815,8 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.journey_ready,
         s.journey_claimed,
         s.journey_reward,
+        s.toast_codex_took,
+        s.codex_bounty_taken,
         s.journey_embers,
         s.journey_point,
         s.verb_take,

@@ -225,11 +225,25 @@ impl App {
         if let Some((to, up)) = beat.cross {
             self.cross_to(to, up);
         }
+        // 문 앞(0265): 숲 끝의 성소 바깥 문 — 막는 상자는 열리기 시작할 때 걷고, 여는 동작은 장면의 시계로.
+        if beat.open_gate {
+            self.run.open_for_scene(&mut self.world);
+        }
+        if let Some(k) = beat.gate {
+            self.run.gate_open = k * crate::stage::GATE_OPEN_TIME * 0.999;
+        }
         if beat.arrive {
             self.arrive_sanctuary();
         }
         // "성소에 들다"(0262)의 카메라 자리 — 그 장면이 아니면 없다.
         self.cam.shot = match self.interlude {
+            Some(interlude::Interlude::Arrive(ar)) if !ar.arrived() => {
+                // 문 앞(0265): 표지 뒤 낮은 자리에서 문을 올려다본다.
+                let at = self.run.exit_at.unwrap_or(self.world.player.pos);
+                let gate = self.run.level.gate.map_or(at + Vec3::NEG_Z * 6.0, |g| g.1);
+                let (eye, look) = ar.gate_eye(at, gate);
+                Some((eye, look, ar.gate_weight()))
+            }
             Some(interlude::Interlude::Arrive(ar)) if ar.arrived() => {
                 let at = self
                     .run

@@ -82,6 +82,8 @@ pub mod key {
     pub const READ: &str = "read";
     /// 받은 여정 목표(0183): 목표 아이디, 쉼표. 진행은 다른 기록에서 다시 센다 — 여기는 "받았다"만.
     pub const JOURNEY: &str = "journey";
+    /// 받은 도감 칸의 보상(0265): `codex::paid_key` 이름들, 쉼표.
+    pub const CODEX_PAID: &str = "codex.paid";
     /// 문 장치로 연 문(0113): 스테이지 이름 앞(`find_prefix`)들 — 한 번 열면 판을 넘어 열려 있다(지름길).
     pub const GATES: &str = "gates";
     /// 문지기 핵 점수(0105): 이긴 횟수, `progression::CORE_CAP`까지.
@@ -244,6 +246,8 @@ pub struct Progress {
     pub read: Vec<String>,
     /// 받은 여정 목표(0183).
     pub journey: Vec<String>,
+    /// 받은 도감 칸의 보상(0265 — `codex::paid_key`).
+    pub codex_paid: Vec<String>,
     /// 문 장치로 연 문(0113).
     pub gates: Vec<String>,
     /// 성소 문지기 핵 점수(0105, `CORE_CAP`까지).
@@ -396,6 +400,7 @@ impl Progress {
         let codex = read_list(&r, key::CODEX);
         let read = read_list(&r, key::READ);
         let journey = read_list(&r, key::JOURNEY);
+        let codex_paid = read_list(&r, key::CODEX_PAID);
         let runs = r.num(key::RUNS).unwrap_or(0);
         // 0166 전의 기록: 처음의 둘은 값 없이 가졌다 — 잃지 않게 1단으로(이미 올렸으면 그대로), 그 값은 기록의 몫
         // (`gift` 둘)으로 얹어 남은 점수는 그대로다. 한 번도 쓴 적 없는 기록(빈 슬롯·깨진 글)은 옛 기록이 아니다 — 새 판으로 읽는다.
@@ -426,6 +431,7 @@ impl Progress {
             codex,
             read,
             journey,
+            codex_paid,
             gates,
             cores,
             bell_cores,
@@ -794,6 +800,7 @@ impl Progress {
         r.set(key::CODEX, self.codex.join(","));
         r.set(key::READ, self.read.join(","));
         r.set(key::JOURNEY, self.journey.join(","));
+        r.set(key::CODEX_PAID, self.codex_paid.join(","));
         r.set(key::GATES, self.gates.join(","));
         r.set(key::CORE_WARDEN, self.cores);
         r.set(key::CORE_BELL, self.bell_cores);
@@ -2336,6 +2343,7 @@ forge.sword=3
             codex: vec!["husk".into(), "thorn".into()],
             read: vec!["sanctuary.0".into()],
             journey: vec!["sanctuary.gates".into()],
+            codex_paid: vec!["foe.husk".into()],
             gates: vec!["sanctuary.gate.0".into()],
             cores: 1,
             bell_cores: 2,
@@ -2405,6 +2413,7 @@ forge.sword=3
             codex,
             read,
             journey,
+            codex_paid,
             gates,
             cores,
             bell_cores,
@@ -2449,6 +2458,7 @@ forge.sword=3
         assert_ne!(codex, d.codex, "codex");
         assert_ne!(read, d.read, "read");
         assert_ne!(journey, d.journey, "journey");
+        assert_ne!(codex_paid, d.codex_paid, "codex_paid");
         assert_ne!(gates, d.gates, "gates");
         assert_ne!(cores, d.cores, "cores");
         assert_ne!(bell_cores, d.bell_cores, "bell_cores");

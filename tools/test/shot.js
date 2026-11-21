@@ -89,11 +89,11 @@ async function main() {
   await press('KeyE'); await until('Skills {', 'E = 기술 탭');
   await press('ArrowRight'); await page.waitForTimeout(200); await shot('00h1-skills');
   await press('ArrowLeft'); await page.waitForTimeout(150); await press('Escape'); await until('Play', '기술 탭 닫기');
-  // 설정(0052 → 0164 탭 → 0261): 다시 멈추면 마지막에 보던 기술 탭에서 열린다 → E = 기록(도감 — ← 한 번이면 끝 묶음 여정, 0261) → E = 설정. 조작 설정은 끝에서 넷째
+  // 설정(0052 → 0164 탭 → 0261): 다시 멈추면 마지막에 보던 기술 탭에서 열린다 → E = 기록(첫 묶음 여정 — → 한 번이면 적, 0265) → E = 설정. 조작 설정은 끝에서 넷째
   // (개발·처음부터·타이틀로 위 — 위로 네 번, 전체 화면 줄이 있든 없든).
   await press('Escape'); await until('Skills { host: Pause', '멈춤 = 마지막에 보던 기술 탭');
-  await press('KeyE'); await until('Codex { host: Pause, tab: 0', 'E = 기록 탭(도감)'); await shot('00h1-codex');
-  await press('ArrowLeft'); await until('Codex { host: Pause, tab: 4', '← = 기록 탭의 여정 묶음'); await shot('00h1-journey');
+  await press('KeyE'); await until('Codex { host: Pause, tab: 0', 'E = 기록 탭(첫 묶음 여정, 0265)'); await shot('00h1-journey');
+  await press('ArrowRight'); await until('Codex { host: Pause, tab: 1', '→ = 기록 탭의 적 묶음'); await shot('00h1-codex');
   await press('KeyE'); await until('Settings { host: Pause', 'E = 설정 탭');
   await shot('00h2-settings');
   await press('ArrowUp', 4); await press('Enter'); await until('Controls', '설정 탭 → 조작 설정');

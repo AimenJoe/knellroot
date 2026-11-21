@@ -67,6 +67,10 @@ pub struct Beat {
     pub cross: Option<(usize, bool)>,
     /// 서막 숲에서 성소로(0262) — 다 어두운 순간. 기록 `prologue`도 그때.
     pub arrive: bool,
+    /// 숲 끝의 성소 바깥 문이 열린 몫 0..1(0265 — 문 앞 장면 동안만, 앱이 문의 여는 동작에).
+    pub gate: Option<f32>,
+    /// 그 문이 열리기 시작한다(한 번 — 막는 상자를 걷는다).
+    pub open_gate: bool,
     pub sound: Option<crate::sfx::Id>,
     pub hold: Hold,
     /// 세계를 움직인 뒤 당김을 푼다(0).
@@ -173,7 +177,14 @@ impl Interlude {
                 let cue = ar.tick(dt);
                 let beat = Beat {
                     arrive: cue.swap,
-                    sound: cue.bell.then_some(crate::sfx::Id::Knell),
+                    gate: (!ar.arrived()).then(|| ar.gate()),
+                    open_gate: cue.open,
+                    // 문이 열리는 소리는 땅울림(문지기가 깨는 소리와 같은 낮은 돌 소리), 종은 종.
+                    sound: if cue.open {
+                        Some(crate::sfx::Id::Wake)
+                    } else {
+                        cue.bell.then_some(crate::sfx::Id::Knell)
+                    },
                     hold: Hold::Walk(ar.walk()),
                     ..Beat::default()
                 };
@@ -314,7 +325,7 @@ mod tests {
         assert!(!Interlude::Echo(0.0).waits_for_landscape());
     }
 
-    /// 성소에 들다(0262): 지역은 한 번만 바꾸고(다 어두운 순간), 세계는 걷는 입력으로 흐르고, 종은 한 번. 멈춤 버튼이 건너뛴다.
+    /// 성소에 들다(0262): 지역은 한 번만 바꾸고(다 어두운 순간), 세계는 걷는 입력으로 흐른다. 멈춤 버튼이 건너뛴다.
     #[test]
     fn arriving_swaps_once_walks_the_world_and_skips_on_pause() {
         let a = Interlude::Arrive(crate::arrive::Arrive::default());
@@ -322,7 +333,12 @@ mod tests {
         assert!(left.is_none());
         assert_eq!(plain.iter().filter(|b| b.arrive).count(), 1);
         assert!(plain.iter().all(|b| matches!(b.hold, Hold::Walk(_))));
-        assert_eq!(plain.iter().filter(|b| b.sound.is_some()).count(), 1);
+        // 0265: 문 앞의 종 · 문이 열리는 땅울림 · 성소의 종. 문은 한 번 열리고, 문 앞 동안만 여는 몫을 넘긴다.
+        assert_eq!(plain.iter().filter(|b| b.sound.is_some()).count(), 3);
+        assert_eq!(plain.iter().filter(|b| b.open_gate).count(), 1);
+        let swap = plain.iter().position(|b| b.arrive).unwrap();
+        assert!(plain[..swap].iter().all(|b| b.gate.is_some()));
+        assert!(plain[swap + 1..].iter().all(|b| b.gate.is_none()));
         let (keys, _) = run(a, press(|a| a.attack = true), 100_000);
         assert_eq!(keys.len(), plain.len(), "a keyboard attack does not skip");
         let (paused, _) = run(a, press(|a| a.pause = true), 100_000);

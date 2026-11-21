@@ -102,7 +102,7 @@ pub(super) fn tab_marked(
     journey: bool,
 ) -> bool {
     match tab {
-        // 기록 탭(0261 — 도감 + 여정): 받을 여정이 있으면 멈춤에서도 점(받기는 어디서나).
+        // 기록 탭(0261 — 도감 + 여정): 받을 여정·도감 칸(0265)이 있으면 멈춤에서도 점(받기는 어디서나).
         Tab::Codex => journey,
         Tab::Status => host.edits() && level,
         Tab::Skills => host.edits() && skills,
@@ -207,7 +207,8 @@ impl App {
             &self.progress.shields,
             !self.progress.bag.full(),
         ) || self.can_forge();
-        let journey = crate::journey::any_ready(&self.progress);
+        // 기록 탭의 점(0265): 받을 여정 목표 또는 받을 도감 칸.
+        let journey = crate::journey::any_ready(&self.progress) || self.codex_ready();
         let fresh = self.progress.bag.any_fresh();
         let tabs: Vec<(&str, bool)> = flow::tabs(host)
             .iter()

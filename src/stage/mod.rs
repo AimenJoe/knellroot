@@ -188,6 +188,8 @@ pub const REGIONS: usize = 4;
 pub const PROLOGUE: usize = 4;
 /// 서막 숲 끝의 표지(0262 — 성소로 가는 길)와 밟는 거리(m — 길 폭을 다 덮게).
 pub const EXIT_GLYPH: char = 'E';
+/// 문이 다 열리는 초(`gate_open`이 여기까지 오른다 — 렌더의 `GATE_TIME`과 같은 값).
+pub const GATE_OPEN_TIME: f32 = 1.5;
 pub const EXIT_REACH: f32 = 2.4;
 /// 쓰러진 통나무(0262 — 서막 숲의 뛰어넘는 턱): 지도 `J` 둘이 한 짝(위에서부터 차례로) — 그 둘을 잇는 턱의 낮은 쪽에 통나무를 눕혀
 /// 굽는다(`scenery`, 그림만 — 부딪힘·높이는 높이 격자의 턱 그대로).
@@ -915,6 +917,13 @@ impl StageRun {
         }
     }
 
+    /// 장면이 여는 문(0265 — 서막 숲 끝의 성소 바깥 문): 단계를 바꾸지 않고 막는 상자만 걷는다. 여는 동작(`gate_open`)은 장면이 맡는다
+    /// (장면 동안 스테이지는 흐르지 않는다).
+    pub fn open_for_scene(&mut self, w: &mut World) {
+        self.gate_opened = true;
+        self.set_gate(w, false);
+    }
+
     /// 기록의 문(0113): 이미 열었으면 처음부터 열린 채(지름길).
     pub fn set_gate_opened(&mut self, w: &mut World, open: bool) {
         if !open || self.gate_opened {
@@ -1003,7 +1012,7 @@ impl StageRun {
         if self.gate_closed {
             self.gate_open = (self.gate_open - dt).max(0.0);
         } else {
-            self.gate_open = (self.gate_open + dt).min(1.5);
+            self.gate_open = (self.gate_open + dt).min(GATE_OPEN_TIME);
         }
         self.since_rest = (self.since_rest + dt).min(f32::MAX);
         if w.player.hp <= 0 {

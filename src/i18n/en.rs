@@ -826,6 +826,8 @@ pub const EN: Strings = Strings {
     verb_take: "Take",
     toast_journey: "Journey — {0}",
     toast_journey_took: "Taken — {0}",
+    toast_codex_took: "Codex — {0}: +{1} embers",
+    codex_bounty_taken: "Taken: {0}",
     jg_s_gate: "Open the sanctum gate",
     jg_s_gate_d: "The gate at the end of the courtyard is shut. Whatever opens it lies somewhere high.",
     jg_s_warden: "Overcome the warden",

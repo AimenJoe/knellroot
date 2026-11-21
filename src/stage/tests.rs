@@ -1395,7 +1395,11 @@ fn the_prologue_forest_sits_at_the_end_outside_the_run_order() {
     let (run, w) = StageRun::start(def);
     assert!(run.boss.is_none() && w.enemies.iter().all(|e| !e.boss));
     assert!(run.rests.is_empty() && run.chest.at.is_empty() && run.hidden.list.is_empty());
-    assert!(run.stones.is_empty() && run.lever.is_none() && run.level.gate.is_none());
+    assert!(run.stones.is_empty() && run.lever.is_none());
+    // 0265: 숲 끝의 성소 바깥 문 — 장치 없이 닫혀 있고(문 너머로 못 간다), 장면만 연다(단계는 그대로, 갈 곳의 빛기둥도 없다).
+    let (g, c) = run.level.gate.expect("the sanctum's outer gate");
+    assert!(run.gate_closed && w.obstacles.contains(&g));
+    assert!(c.z < run.exit_at.unwrap().z, "the gate is beyond the mark");
     assert!(run.down_at.is_none() && run.up_at.is_none() && run.horde_at.is_empty());
     assert!(def.elites.is_empty() && def.chest_loot.is_empty() && def.boss_charm.is_none());
     assert_eq!((def.depth_m, def.tier), (0, 1));
@@ -1409,6 +1413,9 @@ fn the_prologue_forest_sits_at_the_end_outside_the_run_order() {
     // 숲 끝은 깨어난 자리에서 멀다(북쪽) — 짧지만 걸어 나오는 길.
     let (start, exit) = (run.level.player_start, run.exit_at.unwrap());
     assert!(exit.z < start.z - 40.0, "{start:?} → {exit:?}");
+    let (mut run, mut w) = (run, w);
+    run.open_for_scene(&mut w);
+    assert!(!w.obstacles.contains(&g) && run.phase == Phase::Entrance && run.goal().is_none());
 }
 
 /// 0262: 숲에서는 입구 단계 그대로 — 목표는 "종소리를 따라가라", 종소리는 숲 끝의 표지에서(갈 곳의 빛기둥은 없다 — 종소리가 맡는다).

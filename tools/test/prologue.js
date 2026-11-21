@@ -3,7 +3,7 @@
 //   2) 숲길을 숲 끝까지 걷는다 — 시험의 도움: 개발판 시험 깃발 4(`App::prologue_autopilot` — 방랑자가 적의 길찾기 거리 지도를 따라
 //      숲 끝으로 저절로 걷고 턱 앞에서 뛴다. 쿼터뷰가 35° 돌아 있어 키를 시간으로 누르면 느린 러너에서 길을 벗어난다). 잔재가 쓰러뜨리지
 //      않게 unhurt(1).
-//   3) 숲 끝 표지를 밟으면 "성소에 들다": 다 어두울 때 성소로 바뀌며 기록에 prologue=1 → 높이 보는 장면 → 내려옴 → 이름 카드 → 조작이
+//   3) 문 앞 표지를 밟으면 "성소에 들다": 성소 바깥 문이 열리고 걸어 든다(0265) → 다 어두울 때 성소로 바뀌며 기록에 prologue=1 → 높이 보는 장면 → 내려옴 → 이름 카드 → 조작이
 //      돌아온다(멈춤 키 = 멈춤 창이 열린다 — 장면 동안이면 건너뛰기일 뿐이다).
 //   4) 다시 빈 기록: 숲 끝에서 장면을 멈춤 키로 건너뛰어도 성소에서 조작이 돌아온다.
 //   5) 옛 기록(키 없는 판, `v=1`)은 숲을 보지 않는다 — 이어하기가 성소에서(prologue=1로 읽힌다).
@@ -89,8 +89,16 @@ async function main() {
       await shot(`${n}-forest-path`);
     }
     await kit.until('Play ~arrive', '숲 끝 → 성소에 들다', 90000);
-    await recorded(/prologue=1\n/, '다 어두울 때 성소로 — 기록');
     await autopilot(false);
+    // 문 앞(0265): 서서 문을 올려다본다 → 종 → 문이 열린다 → 걸어 든다 → 어두워진다.
+    if (/prologue=1\n/.test(await record())) fail('the gate scene comes before the swap: prologue must still be 0');
+    await page.waitForTimeout(1500);
+    await shot('3g-at-the-gate');
+    await page.waitForTimeout(1300);
+    await shot('3h-gate-opening');
+    await page.waitForTimeout(1500);
+    await shot('3i-walking-in');
+    await recorded(/prologue=1\n/, '다 어두울 때 성소로 — 기록');
     await page.waitForTimeout(1300);
     await shot('4-establishing');
     await page.waitForTimeout(1800);

@@ -41,8 +41,14 @@ pub static DEF: StageDef = StageDef {
 
 const MAP: &str = "
 #                       #
-            .            
-          ..E..          
+           ...           
+           b.b           
+           ...           
+           ...           
+           ...           
+           GGG           
+         w.....w         
+         ...E...         
          .i...i.         
           .....          
            .....         
@@ -84,9 +90,15 @@ const MAP: &str = "
 
 /// 높낮이(0035·0043): `MAP`과 같은 칸. 둥치 북쪽의 땅은 +0.5m(뛰어 넘는 턱), 걷는 땅에서 멀어질수록 높아지는 바위 단(+0.5 → +2.5m) 위에 나무.
 const HEIGHTS: &str = "
-bbbbbbaa888666888aabbbbbb
-bbbbbba88666566688abbbbbb
-bbbbbba86655555668abbbbbb
+bbbbbbbba8666668abbbbbbbb
+bbbbbbbba8655568abbbbbbbb
+bbbbbbbba8655568abbbbbbbb
+bbbbbbbba8655568abbbbbbbb
+bbbbbbaaa8655568aaabbbbbb
+bbbbbba88865556888abbbbbb
+bbbbbba86665556668abbbbbb
+bbbbbba86555555568abbbbbb
+bbbbbba86555555568abbbbbb
 bbbbbba86555555568abbbbbb
 bbbbbba86655555668aabbbbb
 bbbbbba886655555688abbbbb
