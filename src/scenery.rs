@@ -222,6 +222,42 @@ const WALL_AO_R: f32 = 0.6;
 /// 식생(0063 E3): 바위 단 칸마다 나무·덤불이 설 몫, 걸을 수 있는 쪽 벽 면마다 뿌리가 탈 몫.
 pub const TREE_SHARE: f32 = 0.22;
 
+/// 쓰러진 통나무(0262)의 반지름·표지 너머로 뻗는 길이(m — 길 양옆 덤불 단에 조금 걸치고 잘린 면은 보이게)·턱 쪽으로 붙는 몫(칸 가장자리에서 m).
+/// 처음 0.36m는 쿼터뷰에서 턱의 테처럼 가늘게 읽혔다(스크린숏).
+const LOG_R: f32 = 0.48;
+const LOG_PAST: f32 = 0.9;
+const LOG_IN: f32 = 0.22;
+
+/// 통나무 자리(0262): 지도 `J` 짝마다 (밑동, 우듬지, 씨앗) — 두 표지를 잇는 줄을 턱(높은 이웃 칸) 쪽 칸 가장자리로 옮기고, 낮은 땅에
+/// 반지름의 0.8만큼 묻히게 눕힌다. 높은 이웃이 없으면 표지 줄 그대로.
+fn log_spans(lv: &Level, gnd: &Ground) -> Vec<(Vec3, Vec3, u32)> {
+    let marks: Vec<Vec3> = lv.marks_of(crate::stage::LOG_GLYPH).collect();
+    let mut out = Vec::new();
+    for (k, pair) in marks.chunks(2).enumerate() {
+        let [a, b] = pair else { continue };
+        let Some((x, z)) = gnd.cell_of(*a) else {
+            continue;
+        };
+        let here = gnd.center(x, z).y;
+        let higher = |nz: usize| lv.walkable(x, nz) && gnd.center(x, nz).y > here + 0.2;
+        let toward = if z > 0 && higher(z - 1) {
+            -1.0
+        } else if higher(z + 1) {
+            1.0
+        } else {
+            0.0
+        };
+        let shift = vec3(0.0, LOG_R * 0.8, toward * (CELL * 0.5 - LOG_IN));
+        let d = (*b - *a).normalize_or_zero();
+        out.push((
+            vec3(a.x, here, a.z) - d * LOG_PAST + shift,
+            vec3(b.x, here, b.z) + d * LOG_PAST + shift,
+            (x * 131 + z * 977 + k) as u32,
+        ));
+    }
+    out
+}
+
 /// 지역의 나무(0262 — `backdrop::Env::woods`): 바위 단 칸에 나무가 서는 몫(0 = 없음 — 땅속), 살아 있는(푸른 잎) 나무의 몫.
 /// 빽빽한 숲(`share`가 `TREE_SHARE`보다 크면)은 걷는 땅 바로 곁 칸에 덤불만 — 나무는 한 칸 뒤에 서서 길을 덮지 않고 둘레를 이룬다.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -426,6 +462,16 @@ impl Scenery {
                 let c = vec2(pr.pos.x, pr.pos.z);
                 occ.raise_box(c - half, c + half, pr.pos.y + pr.kind.height());
             }
+        }
+        // 통나무(0262)도 달빛을 가린다(그림자 · 그 곁에 선 배우).
+        let logs = log_spans(lv, &gnd);
+        for (a, b, _) in &logs {
+            let r = Vec2::splat(LOG_R);
+            let (lo, hi) = (
+                vec2(a.x.min(b.x), a.z.min(b.z)),
+                vec2(a.x.max(b.x), a.z.max(b.z)),
+            );
+            occ.raise_box(lo - r, hi + r, a.y.max(b.y) + LOG_R);
         }
         let prop_boxes: Vec<(Vec2, Vec2)> = lv
             .props
@@ -1116,6 +1162,13 @@ impl Scenery {
             // 가림 상자(0094) = 구운 정점의 실제 범위 — 부딪힘 상자(종류별 반폭)는 회전(yaw)을 모르고 모델보다 좁을 수 있다
             // (벽 조각 깊이 0.4 대 0.83m, 부러진 기둥 조각 0.6 대 1.07m). 지나가는 소품(돌무더기)도 가리면 옅어진다.
             p.aabb = vert_bounds(&p.verts).or(p.aabb);
+            pieces.push(p);
+        }
+        // 쓰러진 통나무(0262): 정점마다 매끈한 법선의 관(`flora::log`) — 식생을 꺼도 굽는다(뛰어넘는 턱의 그림이다).
+        for (a, b, seed) in logs {
+            let mut p = empty(None);
+            crate::flora::log(&mut p, a, b, LOG_R, seed, &lights);
+            p.aabb = vert_bounds(&p.verts);
             pieces.push(p);
         }
         crate::render::set_bake_shade(None);
