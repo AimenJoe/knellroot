@@ -650,7 +650,7 @@ pub const KO: Strings = Strings {
     depth_under: "지하 {0}m",
     depth_surface: "땅 위",
     intro_1: "땅 밑에서 종이 울린다. 치는 이는 없다.",
-    intro_2: "뿌리가 뻗은 곳마다 죽은 것이 일어선다.",
+    intro_2: "뿌리가 뻗은 곳마다 죽은 것들이 일어선다.",
     wake_1: "눈을 뜬다. 이름도, 걸어온 길도 떠오르지 않는다.",
     wake_2: "몸만이 무언가를 기억한다.",
     wake_skip: "건너뛰기",
