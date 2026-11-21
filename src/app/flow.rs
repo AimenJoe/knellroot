@@ -126,26 +126,34 @@ pub enum Tab {
     Settings,
 }
 
-/// 연 곳마다의 탭 줄(0261, 사장 "화톳불 메뉴와 일시정지 메뉴의 구성이 달라야 … 메뉴가 너무 많으니까" — Elden Ring 은총·Dark Souls
-/// 화톳불 꼴: 쉬는 곳에는 거기서만 하는 일, 장비·소지품은 멈춤에):
-/// 멈춤 = 장비 · 가방 · 기술(끼우기) · 기록 · 설정, 화로 = 성장 · 기술(배우기·되돌리기) · 가게 · 설정, 타이틀 = 설정 하나.
-/// 화로 창에서 멈춤·Select를 누르면 멈춤 창이 그 위에 열린다(`hearth_menu`) — 닫으면 화로로.
+/// 연 곳마다의 탭 줄(0261 → 0263): 멈춤 = 장비 · 가방 · 기술(끼우기) · 기록 · 설정, 화로 = 성장 · 장비 · 가방 · 기술(배우기·되돌리기) ·
+/// 가게 · 설정(0263, 사장 "화톳불 메뉴에 장비 정도는 들어가야겠다. 따로 링크로 들어가는게 더 헷갈려" — 0261의 "화로 위에 멈춤 창을
+/// 연다" 링크를 걷고 장비·가방을 화로의 탭으로), 타이틀 = 설정 하나. 화로의 Select(Tab)는 그 창의 장비 탭으로(`hearth_select`).
 pub fn tabs(host: Host) -> &'static [Tab] {
     match host {
         Host::Title => &[Tab::Settings],
         #[cfg(feature = "dev")]
         Host::Dev => &[Tab::Skills],
         Host::Pause => &[Tab::Equip, Tab::Bag, Tab::Skills, Tab::Codex, Tab::Settings],
-        Host::Hearth => &[Tab::Status, Tab::Skills, Tab::Shop, Tab::Settings],
+        Host::Hearth => &[
+            Tab::Status,
+            Tab::Equip,
+            Tab::Bag,
+            Tab::Skills,
+            Tab::Shop,
+            Tab::Settings,
+        ],
     }
 }
 
-/// 화로 창 위에서 멈춤(Start)·Select를 눌렀다(0261): 멈춤 창을 그 위에 연다 — 멈춤은 이 판에서 마지막에 본 탭, Select는 장비.
-/// 화로 창이 아니면 `None`.
-pub fn hearth_menu(scene: Scene, pause: bool, select: bool, last: Tab) -> Option<Go> {
+/// 화로 창에서 Select(Tab)를 눌렀다(0263): 같은 창의 장비 탭으로 넘긴다(이미 장비면 그대로). 화로 창이 아니면 `None`.
+pub fn hearth_select(scene: Scene, select: bool) -> Option<Go> {
     match tab_of(scene) {
-        Some((Host::Hearth, _)) if select => Some(Go::Open(SELECT_OPENS)),
-        Some((Host::Hearth, _)) if pause => Some(Go::Open(pause_opens(last))),
+        Some((Host::Hearth, tab)) if select => Some(if tab == Tab::Equip {
+            Go::Stay
+        } else {
+            Go::Swap(Scene::Equip { host: Host::Hearth })
+        }),
         _ => None,
     }
 }
@@ -688,26 +696,19 @@ mod tests {
         assert_eq!(hearth_opens(false, false), HEARTH_OPENS);
         assert_eq!(hearth_opens(true, false), HEARTH_OPENS);
         assert_eq!(pause(Scene::Title, Tab::Status), Go::Stay);
-        // 0261: 화로 창에서 멈춤·Select = 멈춤 창을 그 위에(닫으면 화로로). 멈춤 창·싸움에서는 아니다(그쪽은 `pause`).
+        // 0263: 화로 창의 Select = 같은 창의 장비 탭(장비면 그대로). 멈춤 창·싸움에서는 아니다(그쪽은 `SELECT_OPENS`).
         for &t in tabs(Host::Hearth) {
             let sc = tab_scene(Host::Hearth, t);
-            assert_eq!(
-                hearth_menu(sc, true, false, Tab::Bag),
-                Some(Go::Open(Scene::Bag { host: Host::Pause }))
-            );
-            assert_eq!(
-                hearth_menu(sc, false, true, Tab::Bag),
-                Some(Go::Open(SELECT_OPENS))
-            );
-            assert_eq!(hearth_menu(sc, false, false, Tab::Bag), None);
+            let want = if t == Tab::Equip {
+                Go::Stay
+            } else {
+                Go::Swap(Scene::Equip { host: Host::Hearth })
+            };
+            assert_eq!(hearth_select(sc, true), Some(want), "{t:?}");
+            assert_eq!(hearth_select(sc, false), None);
         }
-        assert_eq!(hearth_menu(Scene::Play, true, true, Tab::Bag), None);
-        assert_eq!(hearth_menu(SELECT_OPENS, true, true, Tab::Bag), None);
-        // 골라야 끝나는 창은 뒤로로 건너뛰지 않는다.
-        assert_eq!(back(Scene::Result { won: false }), Go::Stay);
-        assert_eq!(back(Scene::Title), Go::Stay);
-        // Select는 장비 탭을 바로(0070).
-        assert_eq!(SELECT_OPENS, Scene::Equip { host: Host::Pause });
+        assert_eq!(hearth_select(Scene::Play, true), None);
+        assert_eq!(hearth_select(SELECT_OPENS, true), None);
     }
 
     /// 0164: 멈춤은 이 판에서 마지막에 보던 탭에서 다시 열린다 — 적어 두는 것은 멈춤의 탭뿐(화로에서 가게를 보았다고
@@ -736,13 +737,16 @@ mod tests {
         assert_eq!(remembered(SELECT_OPENS), Some(Tab::Equip));
     }
 
-    /// 0164 → 0261: 탭 줄 — 멈춤 다섯(장비·가방·기술·기록·설정), 화로 넷(성장·기술·가게·설정), 타이틀은 설정 하나.
+    /// 0164 → 0261 → 0263: 탭 줄 — 멈춤 다섯(장비·가방·기술·기록·설정), 화로 여섯(성장·장비·가방·기술·가게·설정), 타이틀은 설정 하나.
     /// 탭마다 장면이 하나고 장면에서 탭이 되읽힌다.
     #[test]
     fn each_host_has_its_tab_row_and_every_tab_maps_to_one_scene() {
         use Tab::*;
         assert_eq!(tabs(Host::Pause), [Equip, Bag, Skills, Codex, Settings]);
-        assert_eq!(tabs(Host::Hearth), [Status, Skills, Shop, Settings]);
+        assert_eq!(
+            tabs(Host::Hearth),
+            [Status, Equip, Bag, Skills, Shop, Settings]
+        );
         assert_eq!(tabs(Host::Title), [Settings]);
         for host in [Host::Title, Host::Pause, Host::Hearth] {
             for (i, &t) in tabs(host).iter().enumerate() {

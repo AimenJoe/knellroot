@@ -397,12 +397,6 @@ pub struct Strings {
     pub toast_key: &'static str,
     /// 기술·큰 기술을 올린 알림 "{이름} {단}단"(0172 — 레벨의 `toast_level`과 가른다: 거기는 기술 점수를 얻고 여기는 쓴다).
     pub toast_rank: &'static str,
-    /// 가게의 가방 줄(0261): 이름 · 풀이 · 확인 동사.
-    pub shop_bag_row: &'static str,
-    pub shop_bag_d: &'static str,
-    pub shop_bag_open: &'static str,
-    /// 화로 창의 안내(0261): Select = 멈춤 창(장비·가방).
-    pub verb_gear: &'static str,
     pub verb_close: &'static str,
     pub skill_whirl: &'static str,
     pub skill_whirl_d: &'static str,
@@ -1149,9 +1143,6 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.stat_opened,
         s.hearth_shop,
         s.hearth_shop_d,
-        s.shop_bag_row,
-        s.shop_bag_d,
-        s.shop_bag_open,
         s.level_title,
         s.lv_life,
         s.lv_stamina,
@@ -1544,7 +1535,6 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.verb_confirm,
         s.verb_swap,
         s.verb_weapon_swap,
-        s.verb_gear,
         s.verb_tab,
         s.status_name,
         s.status_now,

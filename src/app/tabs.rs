@@ -153,12 +153,12 @@ impl App {
     /// 탭 넘기기 한 틱: 패드 LB·RB / 키보드 Q·E(0175) = 옆 탭, 탭 머리 누르기 = 그 탭. 넘겼으면 참(그 틱은 여기서 끝난다).
     /// 탭 줄이 넘치면(0233) 그 위의 끌기·휠은 탭 줄을 굴린다 — 몸의 목록에는 넘기지 않는다.
     pub(super) fn tab_input(&mut self, a: &mut Actions) -> bool {
-        // 화로 창에서 멈춤(Start·P)·Select(Tab) = 멈춤 창을 그 위에(0261 — 장비·가방은 멈춤에). Esc는 뒤로이기도 해 닫는다.
-        if let Some(go) =
-            flow::hearth_menu(self.scene(), a.pause && !a.back, a.equip, self.pause_tab)
-        {
-            self.show(go);
-            self.snd(crate::sfx::Id::UiMove);
+        // 화로 창의 Select(Tab) = 같은 창의 장비 탭(0263).
+        if let Some(go) = flow::hearth_select(self.scene(), a.equip) {
+            if go != Go::Stay {
+                self.show(go);
+                self.snd(crate::sfx::Id::UiMove);
+            }
             return true;
         }
         if self.tab_strip.over(a.point) {
@@ -180,14 +180,6 @@ impl App {
         self.codex_view = Default::default();
         self.snd(crate::sfx::Id::UiMove);
         true
-    }
-
-    /// 쉬는 중인가(0261): 화로 창이거나, 화로 창 위에 연 멈춤 창(장비·가방) — 가방의 "잔불로"·"여벌 정리"가 켜진다.
-    pub(super) fn at_hearth(&self, host: Host) -> bool {
-        host.edits()
-            || self
-                .stack
-                .any(|sc| flow::tab_of(sc).is_some_and(|(h, _)| h == Host::Hearth))
     }
 
     /// 지갑(창 머리 오른쪽): 판 위의 창은 어느 탭에서나 기술 점수 · 잔불 — 탭을 넘겨도 머리 줄이 움직이지 않는다. 타이틀은 없다.
@@ -269,10 +261,6 @@ impl App {
         }
         let s = s();
         let mut all = pairs.to_vec();
-        // 화로 창(0261): Select(Tab) = 멈춤 창(장비·가방)을 그 위에.
-        if self.scene() == scene && flow::tab_of(scene).is_some_and(|(h, _)| h == Host::Hearth) {
-            all.push((Act::Gear, s.verb_gear));
-        }
         // 탭 넘기기는 탭이 맨 위일 때만 듣는다(작은 목록이 얹혀 있으면 안내하지 않는다) — 탭이 하나면(타이틀의 설정) 없다.
         if self.scene() == scene
             && flow::tab_of(scene).is_some_and(|(h, _)| flow::tabs(h).len() > 1)

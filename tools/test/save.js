@@ -73,7 +73,7 @@ async function main() {
   await page.waitForTimeout(1000);
   await shot('save-2-continued-at-gate');
 
-  // 3a) 쉼터 화로(0104 → 0164 큰 창 → 0261): 곁에서 점프 버튼(F) = 쉬기 → 창이 성장(상태) 탭에서 열린다(화로 탭 성장·기술·가게·설정).
+  // 3a) 쉼터 화로(0104 → 0164 큰 창 → 0261): 곁에서 점프 버튼(F) = 쉬기 → 창이 성장(상태) 탭에서 열린다(화로 탭 성장·장비·가방·기술·가게·설정, 0263).
   await press('KeyF'); await until('Status { host: Hearth', '3a 화로에서 쉬기');
   await page.waitForTimeout(300);
   await shot('save-2a-hearth');
@@ -85,7 +85,7 @@ async function main() {
   r = await recordUntil("/lv\\.life=1\\n/.test(r || '')");
   console.log('레벨을 올린 뒤 기록:', JSON.stringify(r));
   if (!/lv\.life=1\n/.test(r) || !/embers=65\n/.test(r)) fail('raising Life must spend 50 embers and keep lv.life=1');
-  // 가게 탭: 성장에서 Q 둘(설정 → 가게 — 탭 줄은 끝에서 돈다, 0261 화로 = 성장·기술·가게·설정) → 첫 줄(잔불 주머니 60, 0117) 사기.
+  // 가게 탭: 성장에서 Q 둘(설정 → 가게 — 탭 줄은 끝에서 돈다, 0263 화로 = 성장·장비·가방·기술·가게·설정) → 첫 줄(잔불 주머니 60, 0117) 사기.
   await press('KeyQ', 2); await until('Shop', '3a 가게 탭');
   await shot('save-2a-shop');
   // 사기 전에 묻는 창(nail 가게 — 커서는 "사기"에서).

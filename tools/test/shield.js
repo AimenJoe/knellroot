@@ -92,10 +92,10 @@ async function open(browser, seed, tag) {
     errors.push(...g.bad);
   }
   {
-    // 방패가 없는 기록: 쉬기(F) → 가게 탭(성장에서 E 둘 — 0261 화로 = 성장 · 기술 · 가게 · 설정) → 방패 줄 → 산다.
+    // 방패가 없는 기록: 쉬기(F) → 가게 탭(성장에서 Q 둘 — 끝에서 돈다, 0263 화로 = 성장 · 장비 · 가방 · 기술 · 가게 · 설정) → 방패 줄 → 산다.
     const g = await open(browser, BASE, 'buy');
     await g.press('KeyF'); await g.until('Status { host: Hearth', '화로에서 쉬기 → 큰 창(성장 탭)');
-    for (let i = 0; i < 2; i++) await g.flip('KeyE', `E ${i + 1}`);
+    for (let i = 0; i < 2; i++) await g.flip('KeyQ', `Q ${i + 1}`);
     await g.until('Shop', '가게 탭'); await g.page.waitForTimeout(200);
     await g.shot('1-shop');
     await g.press('ArrowDown', 5); await g.page.waitForTimeout(200);
