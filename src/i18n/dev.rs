@@ -603,6 +603,7 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("render.sky 0off 1on", "하늘·원경(0끔 1켬)"),
     ("render.flora 0off 1on", "식생(0끔 1켬)"),
     ("render.resident 0off 1on", "지형 GPU 상주(0끔 1켬)"),
+    ("render.cull 0off 1on", "시야 밖 거르기(0끔 1켬)"),
     ("render.rows", "내부 해상도 줄 수"),
     ("render.ssaa 0off 1on", "2배로 그려 줄이기(0끔 1켬)"),
     (

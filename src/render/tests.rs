@@ -657,3 +657,21 @@ fn the_bow_stands_upright_and_its_arrow_points_where_the_shot_goes() {
         );
     }
 }
+
+/// 0258 O2: 모델마다 한 번 꺼낸 빛 값(`LitCtx`)의 가장자리 빛이 정점마다 룩을 읽던 셈과 같다.
+#[test]
+fn lit_ctx_rim_matches_the_per_vertex_reads() {
+    let mut k = look();
+    k.rim = 0.7;
+    k.eye = vec3(3.0, 6.0, 9.0);
+    set_look(k);
+    let ctx = super::light::LitCtx::now();
+    for (p, n) in [
+        (Vec3::ZERO, Vec3::Y),
+        (vec3(1.0, 0.5, -2.0), vec3(0.6, 0.0, 0.8)),
+        (vec3(-4.0, 1.2, 3.0), vec3(0.0, -1.0, 0.0)),
+    ] {
+        assert_eq!(ctx.rim(p, n), super::light::rim(p, n, k));
+    }
+    set_look(Look::default());
+}

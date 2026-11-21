@@ -172,12 +172,12 @@ async function main() {
   await page.waitForTimeout(600);
   await shot('t09-after-turn');
   // 멈춤(2026-11-06): 버튼을 누른 채 창이 열리고 나서 떼도 창이 남아야 한다(뗀 자리가 "창 밖 탭"이 되어 닫히던 것).
-  await touch('touchStart', [b.pause]); await until('Status', '멈춤 버튼 → 큰 창(상태 탭)');
+  await touch('touchStart', [b.pause]); await until('Equip { host: Pause', '멈춤 버튼 → 큰 창(장비 탭 — 0261)');
   await page.waitForTimeout(200);
   await touch('touchEnd', []); await page.waitForTimeout(400);
-  await until('Status', '멈춤 버튼을 뗀 뒤에도 창이 남는다');
+  await until('Equip { host: Pause', '멈춤 버튼을 뗀 뒤에도 창이 남는다');
   await shot('t10-pause-stays');
-  // 장비 탭 터치(2026-11-06 → 0164): 멈춤 = 큰 창(상태 탭에서 열린다) → 탭 머리 "장비"를 누른다 → 칸은 두 걸음(누르면 고르기,
+  // 장비 탭 터치(2026-11-06 → 0164 → 0261): 멈춤 = 큰 창(새 판은 장비 탭에서 열린다) → 탭 머리 "가방"·"장비"를 차례로 누른다 → 칸은 두 걸음(누르면 고르기,
   // 다시 누르면 그 칸 곁에 후보의 작은 목록) → 후보도 두 걸음(고르기 = 미리 보기, 다시 = 끼우기).
   // 0076·0077 → 0117 → 0220: 새 기록의 무기 후보 = 맨손(착용 중)뿐 — 검도 줍는다. 바꿀 것이 없으면 칸을 다시 눌러도 목록이 뜨지 않는다(후보를 끼우는 길은 여벌이 든 기록으로 키보드 스크립트가 본다).
   // 자리는 코드와 같은 셈(480×270 기준 단위 u): 창 464×228(`app::frame` — 위 6u와 아래 안내 줄(2.8글) 사이 가운데), 머리 줄 22,
@@ -197,8 +197,10 @@ async function main() {
     };
   })();
   const SWORD_BOX = win.weapon, CHARM_BOX = win.charm(0);
-  await shot('t10a-pause-status');
-  await tap(win.tab(1)); await until('Equip {', '탭 머리 "장비"');   // 탭 머리 "장비"(상태 · 장비 · 기술 · 도감 · 설정의 둘째)
+  await shot('t10a-pause-equip');
+  await tap(win.tab(1)); await until('Bag { host: Pause', '탭 머리 "가방"');   // 탭 머리 "가방"(장비 · 가방 · 기술 · 기록 · 설정의 둘째, 0261)
+  await shot('t10a1-bag-tab');
+  await tap(win.tab(0)); await until('Equip { host: Pause', '탭 머리 "장비"');   // 첫째 = 장비
   await shot('t10b-equip-tab');
   await tap(CHARM_BOX); await page.waitForTimeout(300);    // 고르기만(설명이 바뀜)
   await tap(SWORD_BOX); await page.waitForTimeout(300);    // 무기 칸 고르기

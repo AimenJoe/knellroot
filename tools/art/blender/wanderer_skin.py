@@ -388,6 +388,63 @@ def add_bone(arm, name, parent, at_world):
 # 손·손가락 무리는 그대로(주먹 자체).
 ARM_KEEP, ARM_DROP = 0.07, 0.12
 ARM_GROUPS = ("Arm", "ForeArm")
+# 0260(사장 2026-11-20 "망토가 손이랑 같이 움직이는 경우가 많음"): 0256은 위팔·아래팔을 거리로만 가뒀다 — 재 보니 쇄골(Shoulder)에 정점
+# 314개가 뼈에서 중앙값 0.24 m(팔을 들면 쇄골이 돌며 망토가 통째로 끌려간다), 위팔 뼈에서 0.07 m 안쪽(거리 규칙이 남기는 자리)에 위팔을 감싼
+# 망토가 그대로 남아 주먹을 뻗으면 보라 판이 팔을 따라 늘어났다. 거리로는 팔 살과 망토가 갈리지 않는다 — **색**으로 가른다: 텍스처에서 보라인
+# 정점(`is_cloak` — 위팔 100개 중 76개, 쇄골 314개 중 191개, 손은 0개)은 팔 사슬의 무게를 모두 가슴으로. 보라가 아닌 쇄골 정점도 멀면(목·가슴의
+# 옷) 거리로 가둔다: 뼈마다 (재는 마디, 그대로 둘 거리, 다 뺄 거리)(m).
+# 자동 리깅의 덤 뼈도: 오른손 밑 `Bone_061`(왼손 밑 `Bone_060`은 빈 뼈)에 망토 자락 정점 30개(무게 18.7)가 100% 묶여 주먹을 뻗으면 0.9 m를
+# 따라 나갔다 — 팔 사슬 밑의 mixamo가 아닌 뼈(`stray_arm_bones`)는 색과 상관없이 모두 가슴으로.
+# 구르기 튐(사장 2026-11-20 "구르는게 이제 좀 방방뛰는 느낌이네"): 덤 뼈의 몫만은 가슴이 아니라 엉덩이로(`STRAY_TO`) — 가슴에 묶인 판은 구르기의
+# 공 자세(등뼈 셋 75° 굽힘)에서 지느러미처럼 펴져, 바닥에 닿는 가장 낮은 점이 되어 몸을 0.12 m 들어 올렸다(구르는 0.13~0.16초의 무게중심
+# 0.74 → 0.88 m — 큰 튐 하나가 같은 높이의 튐 둘로). 엉덩이도 팔을 따라가지 않으니 0260의 뜻(망토가 주먹을 따라 나가지 않음)은 그대로.
+STRAY_TO = "mixamorig:Hips"
+CONFINE_MORE = {"Shoulder": (("Shoulder",), 0.10, 0.18)}
+CLOAK_HUE = (0.70, 0.92)  # 보라의 색상(0..1 — 252°~331°)
+CLOAK_SAT = 0.25
+ARM_CHAIN = ("Shoulder", "Arm", "ForeArm", "Hand")  # 이 이름으로 시작하는 무리(손가락 포함)
+
+
+def stray_arm_bones(arm):
+    """팔 사슬(어깨·위팔·아래팔·손) 밑에 매달린 mixamo가 아닌 뼈 이름 — 자동 리깅이 망토 자락에 붙인 덤 뼈."""
+    out = set()
+    for b in arm.data.bones:
+        if b.name.startswith("mixamorig:"):
+            continue
+        p = b.parent
+        while p is not None:
+            if any(p.name.startswith(f"mixamorig:{side}{c}") for side in ("Left", "Right") for c in ARM_CHAIN):
+                out.add(b.name)
+                break
+            p = p.parent
+    return out
+
+
+def cloak_verts(body):
+    """텍스처에서 보라인 정점(망토·두건)의 번호 — 정점의 UV들에서 읽은 색의 평균."""
+    import colorsys
+    import numpy as np
+    img = next(n.image for n in body.data.materials[0].node_tree.nodes if n.type == "TEX_IMAGE")
+    w, h = img.size
+    px = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    px = px.reshape(h, w, 4)
+    me = body.data
+    uvl = me.uv_layers.active.data
+    sums = {}
+    for poly in me.polygons:
+        for li in poly.loop_indices:
+            uv = uvl[li].uv
+            x = min(w - 1, max(0, int(uv.x * w)))
+            y = min(h - 1, max(0, int(uv.y * h)))
+            c, k = sums.get(me.loops[li].vertex_index, (np.zeros(3), 0))
+            sums[me.loops[li].vertex_index] = (c + px[y, x, :3], k + 1)
+    out = set()
+    for vi, (c, k) in sums.items():
+        hh, sat, _ = colorsys.rgb_to_hsv(*(c / k))
+        if CLOAK_HUE[0] <= hh <= CLOAK_HUE[1] and sat > CLOAK_SAT:
+            out.add(vi)
+    return out
 
 
 def confine_arms(arm, body):
@@ -395,30 +452,56 @@ def confine_arms(arm, body):
     names = {g.index: g.name for g in body.vertex_groups}
     chest = body.vertex_groups.get("mixamorig:Spine2") or body.vertex_groups.new(name="mixamorig:Spine2")
     mw = body.matrix_world
-    segs = {}
-    for side in ("Left", "Right"):
-        segs[side] = [(arm.matrix_world @ arm.data.bones[f"mixamorig:{side}{b}"].head_local,
-                       arm.matrix_world @ arm.data.bones[f"mixamorig:{side}{b}"].tail_local)
-                      for b in ("Arm", "ForeArm", "Hand")]
 
-    def dist(p, side):
+    def seg(side, b):
+        bone = arm.data.bones[f"mixamorig:{side}{b}"]
+        return arm.matrix_world @ bone.head_local, arm.matrix_world @ bone.tail_local
+
+    segs = {side: [seg(side, b) for b in ("Arm", "ForeArm", "Hand")] for side in ("Left", "Right")}
+    more = {(side, g): ([seg(side, b) for b in on], k, d) for side in ("Left", "Right") for g, (on, k, d) in CONFINE_MORE.items()}
+
+    def dist(p, side, lines=None):
         best = 1e9
-        for a, b in segs[side]:
+        for a, b in lines or segs[side]:
             q, t = intersect_point_line(p, a, b)
             t = max(0.0, min(1.0, t))
             best = min(best, (p - (a + (b - a) * t)).length)
         return best
 
-    moved, verts = 0.0, 0
+    cloak = cloak_verts(body)
+    stray = stray_arm_bones(arm)
+    low = body.vertex_groups.get(STRAY_TO) or body.vertex_groups.new(name=STRAY_TO)
+    moved, verts, to_low = 0.0, 0, 0.0
     for v in body.data.vertices:
         p = mw @ v.co
         give = 0.0
         for g in list(v.groups):
             n = names[g.group]
+            # 무게는 0으로 쓰기 전에 읽는다 — `g`는 살아 있는 칸이라 쓴 뒤에 읽으면 0이다(0260은 그래서 덤 뼈·망토 몫을 아무 데도
+            # 주지 않았다: `Bone_061`에만 묶인 정점은 무게 없이 내보내져 `neutral_bone`에 붙어 쉬는 자세로 굳었다).
+            w = g.weight
+            if n in stray:
+                if w > 1e-4:
+                    body.vertex_groups[g.group].add([v.index], 0.0, "REPLACE")
+                    low.add([v.index], w, "ADD")
+                    to_low += w
+                continue
+            if v.index in cloak and any(n.startswith(f"mixamorig:{side}{b}") for side in ("Left", "Right") for b in ARM_CHAIN):
+                if w > 1e-4:
+                    body.vertex_groups[g.group].add([v.index], 0.0, "REPLACE")
+                    give += w
+                continue
             for side in ("Left", "Right"):
+                rule = None
                 if n in (f"mixamorig:{side}{b}" for b in ARM_GROUPS):
-                    d = dist(p, side)
-                    keep = 1.0 - smooth01((d - ARM_KEEP) / (ARM_DROP - ARM_KEEP))
+                    rule = (None, ARM_KEEP, ARM_DROP)
+                for g_name in CONFINE_MORE:
+                    if n == f"mixamorig:{side}{g_name}":
+                        rule = more[(side, g_name)]
+                if rule is not None:
+                    lines, k0, k1 = rule
+                    d = dist(p, side, lines)
+                    keep = 1.0 - smooth01((d - k0) / (k1 - k0))
                     cut = g.weight * (1.0 - keep)
                     if cut > 1e-4:
                         body.vertex_groups[g.group].add([v.index], g.weight - cut, "REPLACE")
@@ -427,7 +510,8 @@ def confine_arms(arm, body):
             chest.add([v.index], give, "ADD")
             moved += give
             verts += 1
-    print(f"[skin] confine arms: {verts} verts, weight {moved:.1f} -> Spine2")
+    print(f"[skin] confine arms: {verts} verts ({len(cloak)} cloak), weight {moved:.1f} -> Spine2;"
+          f" stray {sorted(stray)} weight {to_low:.1f} -> {STRAY_TO}")
 
 
 def attach(arm, body, old):
@@ -647,7 +731,40 @@ BALL_BEND = {"mixamorig:Spine": 25.0, "mixamorig:Spine1": 25.0, "mixamorig:Spine
              "mixamorig:LeftUpLeg": -80.0, "mixamorig:RightUpLeg": -80.0,
              "mixamorig:LeftLeg": 100.0, "mixamorig:RightLeg": 100.0,
              "mixamorig:LeftArm": -35.0, "mixamorig:RightArm": -35.0}
+# 공에 꼬리도 만다(사장 2026-11-20 "구르는게 이제 좀 방방뛰는 느낌이네"): 꼬리가 곧게 뻗은 채 돌면 공이 길쭉해(무게중심에서 바깥까지
+# 0.46~0.91 m) 꼬리 끝이 바닥에 닿는 순간 가장 낮은 점 붙이기가 몸을 장대처럼 들어 올렸다(0.20초 무게중심 0.93 m · 꼭대기 1.62 m — 서기 1.42).
+# 엉덩이 밑의 mixamo가 아닌 뼈 사슬(`tail_bones` — 자동 리깅의 꼬리)을 마디마다 이 각만큼 앞으로(`BALL_BEND`와 같은 옆축·같은 부호).
+TAIL_TUCK = 60.0
 ROLL_MARGIN = 0.02  # m — 공의 가장 낮은 점을 바닥에서 이만큼(일어나기의 `CLEAR_MARGIN`과 같게 — 이음매)
+# 구르기의 처음·끝 몸 방향(도, 엉덩이 앞 — 정면 0 · 왼쪽 +, 0260 사장 "회피 구른 후 너무 옆이야, 정면과 가깝게"): 원본의 처음·끝 자세는
+# 간 쪽을 앞으로 돌린 뒤에도 −72°·−70°(서기 −24°)라 옆을 보고 일어났다(일어나기 −74°). 말기 들어감·풀림 동안 이 각으로 옮겨 간다 —
+# 일어나기(`dodge_rise`)도 같은 각을 쓴다(`TRAVEL_TURNS`).
+ROLL_FACE = -15.0
+
+
+def tail_bones(arm):
+    """엉덩이 밑에 매달린 mixamo가 아닌 뼈(자동 리깅의 꼬리 사슬) — 부모 → 자식 차례(`stray_arm_bones`와 같은 꼴)."""
+    def depth(b):
+        k = 0
+        while b.parent is not None:
+            b, k = b.parent, k + 1
+        return k
+    out = []
+    for b in arm.data.bones:
+        if b.name.startswith("mixamorig:"):
+            continue
+        p = b.parent
+        while p is not None and not p.name.startswith("mixamorig:"):
+            p = p.parent
+        if p is not None and p.name == "mixamorig:Hips":
+            out.append(b)
+    return [b.name for b in sorted(out, key=depth)]
+
+
+def hips_yaw(arm):
+    """지금 자세의 엉덩이가 보는 쪽(라디안 — `own_yaw`와 같은 셈)."""
+    f = arm.pose.bones["mixamorig:Hips"].matrix.to_3x3() @ Vector((0, 0, 1))
+    return math.atan2(f.x, -f.y)
 
 
 def tuck_pose(arm, src, f):
@@ -734,7 +851,8 @@ def craft_roll(arm, body, anchors):
     set_src(arm, src, ROLL["end"])
     c_pose = grab(arm)
     h1 = arm.pose.bones[hips_n].head.copy()
-    for name, deg in BALL_BEND.items():  # 표의 차례 = 부모 → 자식
+    bends = list(BALL_BEND.items()) + [(n, TAIL_TUCK) for n in tail_bones(arm)]
+    for name, deg in bends:  # 표의 차례 = 부모 → 자식
         pb = arm.pose.bones[name]
         lat = pb.matrix.to_3x3() @ arm.data.bones[name].matrix_local.to_3x3().inverted() @ Vector((1.0, 0.0, 0.0))
         turn_bone(arm, name, lat.normalized(), math.radians(deg))
@@ -745,13 +863,13 @@ def craft_roll(arm, body, anchors):
 
     x_rest = arm.data.bones[hips_n].matrix_local.to_3x3().inverted() @ Vector((1.0, 0.0, 0.0))
 
-    def placed(pa, pb_, u, square=0.0):
-        """섞은 자세 + 엉덩이를 쉬는 자리(수평)로 + 간 쪽을 앞으로 + `square`(0..1)만큼 몸의 옆축을 구르는 옆축(+X)에 맞춘다 — 원본의
-        웅크린 끝 자세는 옆으로 27° 기울어 그대로 말면 공이 옆으로 누운 채(58°) 돌아 비스듬히 굴렀다."""
+    def placed(pa, pb_, u, square=0.0, extra=0.0):
+        """섞은 자세 + 엉덩이를 쉬는 자리(수평)로 + 간 쪽을 앞으로(+ `extra` — `ROLL_FACE`로 옮겨 가는 몫) + `square`(0..1)만큼 몸의 옆축을
+        구르는 옆축(+X)에 맞춘다 — 원본의 웅크린 끝 자세는 옆으로 27° 기울어 그대로 말면 공이 옆으로 누운 채(58°) 돌아 비스듬히 굴렀다."""
         put_pose(arm, pa, pb_, u)
         h = arm.pose.bones[hips_n].head
         shift_bone(arm, hips_n, Vector((rest.x - h.x, rest.y - h.y, 0.0)))
-        turn_bone(arm, hips_n, Vector((0.0, 0.0, 1.0)), turn)
+        turn_bone(arm, hips_n, Vector((0.0, 0.0, 1.0)), turn + extra)
         if square > 1e-4:
             pb = arm.pose.bones[hips_n]
             side = (pb.matrix.to_3x3() @ x_rest).normalized()
@@ -760,6 +878,13 @@ def craft_roll(arm, body, anchors):
             if ang > 1e-5:
                 turn_bone(arm, hips_n, ax, ang * square)
 
+    face = math.radians(ROLL_FACE)
+    placed(a, a, 0.0)
+    corr_a = face - hips_yaw(arm)
+    placed(c_pose, c_pose, 0.0)
+    corr_c = face - hips_yaw(arm)
+    corr_a, corr_c = (math.atan2(math.sin(c), math.cos(c)) for c in (corr_a, corr_c))
+    TRAVEL_TURNS[ROLL["name"]] = turn + corr_c
     placed(ball, ball, 0.0, 1.0)
     _, mid = mesh_box(body)
     cen = inv @ mid
@@ -772,12 +897,12 @@ def craft_roll(arm, body, anchors):
         t = k / OUT_FPS
         if t <= ci:
             u = smooth01(t / ci)
-            placed(a, ball, u, u)
+            placed(a, ball, u, u, corr_a * (1.0 - u))
         elif t < co:
             placed(ball, ball, 0.0, 1.0)
         else:
             u = smooth01((t - co) / max(dur - co, 1e-6))
-            placed(ball, c_pose, u, 1.0 - u)
+            placed(ball, c_pose, u, 1.0 - u, corr_c * u)
         th = 2.0 * math.pi * keyed(ROLL["spin"], t)
         if th > 1e-5:
             rotate_about(arm, hips_n, lat, th, cen)
@@ -787,7 +912,8 @@ def craft_roll(arm, body, anchors):
         hips.append(arm.pose.bones[hips_n].head.copy())
         hands.append((arm.pose.bones[HAND_R].head.copy(), arm.pose.bones["mixamorig:RightArm"].head.copy(),
                       arm.pose.bones[HAND_L].head.copy()))
-    print(f"[skin] roll: ball turned {math.degrees(turn):+.0f}°, centre {mid.z:.2f} m, {n} frames")
+    print(f"[skin] roll: ball turned {math.degrees(turn):+.0f}°, ends turned {math.degrees(corr_a):+.0f}°/{math.degrees(corr_c):+.0f}°"
+          f" to {ROLL_FACE:+.0f}°, centre {mid.z:.2f} m, {n} frames")
     return n, poses, hips, hands
 
 
@@ -1171,6 +1297,26 @@ def look_ahead(arm, name, poses):
 HEAD_LIFT = {"idle": 15.0, "idle_look": 15.0, "idle_shake": 15.0, "turn_l": 15.0, "turn_r": 15.0}
 # 끝 자세의 고개(0256, 사장 "내려찍고 일어나기, 줍기는 끝 자세에서 고개가 숙여져 있음"): 끝의 이 초 동안 서기의 고개(`HEAD_LIFT` idle)로
 # 서서히 든다 — 끝 자세가 서기로 이어지는 동작들. 중간(줍는 순간·내려찍은 순간)의 숙임은 그대로.
+# 걷기·달리기의 쥔 팔(0260, 사장 "걷기, 달리기 무기가 손에 안 붙음"): 원본 걷기는 오른손을 엉덩이 아래(0.36~0.48 m — 서기 0.65 m)로
+# 늘어뜨려 손이 망토 자락 속에 묻히고 칼만 밑으로 삐져나왔다(칼은 손뼈를 따라간다 — 손 메시와 1 cm 안). 오른팔 사슬의 로컬 돌림을
+# 프레임마다 서기의 첫 자세 쪽으로 이 몫만큼 섞는다 — 흔들림은 조금 남는다.
+ARM_HOLD = {"walk": 0.7, "walk_back": 0.7, "run": 0.5}
+HOLD_BONES = ("mixamorig:RightShoulder", "mixamorig:RightArm", "mixamorig:RightForeArm", "mixamorig:RightHand")
+
+
+def hold_arm(poses, ref, w):
+    """`ARM_HOLD`: 오른팔 사슬의 로컬 돌림을 `ref`(서기 첫 자세) 쪽으로 `w`만큼."""
+    for p in poses:
+        for b in HOLD_BONES:
+            if b not in p or b not in ref:
+                continue
+            loc, q, sc = p[b]
+            qr = ref[b][1]
+            if q.dot(qr) < 0:
+                qr = -qr
+            p[b] = (loc, q.slerp(qr, w), sc)
+
+
 HEAD_SETTLE = {"pickup": 0.30, "plunge_land": 0.20, "land": 0.10, "dodge_rise": 0.15}
 # 끝 자세를 세우기(0256): 끝의 이 초 동안 숙임 상한이 90° → (몸, 머리)도로 줄어든다 — 내려찍고 웅크린 몸이 끝에 서기로 일어나게.
 END_UPRIGHT = {"plunge_land": (0.22, 15.0, 15.0), "pickup": (0.30, 15.0, 15.0)}
@@ -1459,6 +1605,7 @@ def make_actions(arm, body):
     print("[skin] bones with channels", len(keep), "of", len(arm.data.bones))
     made = []
     stand = None  # 서기의 엉덩이 높이(첫 줄 `idle`에서 잰다 — `FLAT`이 쓴다)
+    hold_ref = {}  # 서기의 첫 자세(첫 줄 `idle` — `ARM_HOLD`가 쓴다)
     ends = {}  # 동작마다 끝의 몸 쪽(`CHAIN`)
     lifts = {src: clear_curve(arm, body, src) for src in GROUND_CLEAR}
     up = arm.matrix_world.inverted().to_3x3() @ Vector((0.0, 0.0, 1.0))  # 세계 1 m 위 = 뼈대 공간의 이만큼
@@ -1478,6 +1625,9 @@ def make_actions(arm, body):
             strip_travel(arm, poses, hips, name in LOOPS)
         if name == "idle":
             stand = sum(h.z for h in hips) / len(hips)
+            hold_ref = dict(poses[0])
+        if name in ARM_HOLD:
+            hold_arm(poses, hold_ref, ARM_HOLD[name])
         if name in FLAT:
             flatten(arm, poses, hips, stand)
         if name in FACE_STILL:
@@ -1608,7 +1758,7 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, sheet_dir=None):
             for i in range(k):
                 preview(arm, objs, os.path.join(sheet_dir, f"{name}_{i}.png"), name, n * i / (k - 1) / OUT_FPS,
                         yaw=float(os.environ.get("KR_SHEET_YAW", "-60")), elev=float(os.environ.get("KR_SHEET_ELEV", "25")),
-                        frame=(Vector((0, 0, 0.55)), 2.4))
+                        frame=(Vector((0, 0, 0.55)), float(os.environ.get("KR_SHEET_SPAN", "2.4"))))
     return path
 
 

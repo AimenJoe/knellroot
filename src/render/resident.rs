@@ -17,6 +17,19 @@ struct Chunk {
     ib: BufferId,
     n: i32,
     tex: Option<TextureId>,
+    /// 묶음의 시야 거르기 상자(0258) — 덩어리 상자들을 합친 것.
+    lo: Vec3,
+    hi: Vec3,
+}
+
+/// 상주 묶음의 땅 칸(m, 0258): 같은 텍스처라도 이 칸이 다르면 다른 묶음 — 시야 밖 칸의 묶음은 그리지 않는다.
+/// 작을수록 덜 그리지만 그리기 호출이 는다(정원 ≈ 120m 판 → 칸 100개 안팎 × 텍스처 몇).
+pub(super) const CELL_M: f32 = 12.0;
+
+/// 덩어리 상자의 가운데가 든 땅 칸.
+pub(super) fn cell_of(lo: Vec3, hi: Vec3) -> (i32, i32) {
+    let c = (lo + hi) * 0.5;
+    ((c.x / CELL_M).floor() as i32, (c.z / CELL_M).floor() as i32)
 }
 
 struct Pipes {
@@ -185,18 +198,30 @@ impl Resident {
         }
         self.key = Some(key);
         self.verts = 0;
-        let floor: Vec<&crate::scenery::Piece> = sc.pieces.iter().filter(|p| p.lightmap).collect();
-        let still: Vec<&crate::scenery::Piece> = sc
+        let floor: Vec<(&crate::scenery::Piece, (Vec3, Vec3))> = sc
             .pieces
             .iter()
-            .filter(|p| !p.lightmap && is_resident(p))
+            .zip(sc.bounds.iter().copied())
+            .filter(|(p, _)| p.lightmap)
+            .collect();
+        let still: Vec<(&crate::scenery::Piece, (Vec3, Vec3))> = sc
+            .pieces
+            .iter()
+            .zip(sc.bounds.iter().copied())
+            .filter(|(p, _)| !p.lightmap && is_resident(p))
             .collect();
         self.floor = chunks(ctx, &floor, &mut self.verts);
         self.still = chunks(ctx, &still, &mut self.verts);
     }
 
     /// 빛 지도 바닥: 캐릭터 그림자 가림판을 읽는다(없으면 그늘 0 — 원래의 기본 재질과 같은 색).
-    pub(super) fn draw_floor(&self, light_vp: Option<Mat4>, mask: Option<&Texture2D>, shade: f32) {
+    pub(super) fn draw_floor(
+        &self,
+        view: &Frustum,
+        light_vp: Option<Mat4>,
+        mask: Option<&Texture2D>,
+        shade: f32,
+    ) {
         let (Some(p), Some(white)) = (&self.pipes, &self.white) else {
             return;
         };
@@ -207,7 +232,7 @@ impl Resident {
             0.0
         };
         let mask = mask.unwrap_or(white).raw_miniquad_id();
-        self.draw(&p.floor, &self.floor, &[mask], |proj| {
+        self.draw(view, &p.floor, &self.floor, &[mask], |proj| {
             let mut u = Vec::with_capacity(49);
             u.extend(mat(proj));
             u.extend(mat(Mat4::IDENTITY));
@@ -218,9 +243,9 @@ impl Resident {
     }
 
     /// 가리지 않는 덩어리: 바람 재질(풀 끝·잎·불꽃이 흔들린다).
-    pub(super) fn draw_still(&self, wind: Vec4) {
+    pub(super) fn draw_still(&self, view: &Frustum, wind: Vec4) {
         let Some(p) = &self.pipes else { return };
-        self.draw(&p.wind, &self.still, &[], |proj| {
+        self.draw(view, &p.wind, &self.still, &[], |proj| {
             let mut u = Vec::with_capacity(36);
             u.extend(mat(proj));
             u.extend(mat(Mat4::IDENTITY));
@@ -230,7 +255,7 @@ impl Resident {
     }
 
     /// 법선 패스(0061): 상주한 것 모두를 법선·깊이 타깃에.
-    pub(super) fn draw_normals(&self, view: Mat4, wind: Vec4) {
+    pub(super) fn draw_normals(&self, sees: &Frustum, view: Mat4, wind: Vec4) {
         let Some(p) = &self.pipes else { return };
         let u = |proj: Mat4| {
             let mut u = Vec::with_capacity(52);
@@ -240,13 +265,14 @@ impl Resident {
             u.extend(wind.to_array());
             u
         };
-        self.draw(&p.normal, &self.floor, &[], u);
-        self.draw(&p.normal, &self.still, &[], u);
+        self.draw(sees, &p.normal, &self.floor, &[], u);
+        self.draw(sees, &p.normal, &self.still, &[], u);
     }
 
     /// 쌓인 macroquad 그리기를 먼저 보내고, 지금 카메라의 렌더 패스·투영으로 묶음들을 그린다.
     fn draw(
         &self,
+        view: &Frustum,
         pipe: &Pipeline,
         list: &[Chunk],
         extra: &[TextureId],
@@ -277,7 +303,7 @@ impl Resident {
         ctx.apply_scissor_rect(0, 0, w as i32, h as i32);
         let data = uniforms(proj);
         let white = white.raw_miniquad_id();
-        for c in list {
+        for c in list.iter().filter(|c| view.aabb(c.lo, c.hi)) {
             let mut images = vec![c.tex.unwrap_or(white)];
             images.extend_from_slice(extra);
             ctx.apply_bindings(&miniquad::Bindings {
@@ -324,19 +350,31 @@ pub(super) fn plan<T: PartialEq + Copy>(pieces: &[(T, usize)]) -> Vec<(T, Vec<us
 /// 계획대로 이어 붙여 올린다.
 fn chunks(
     ctx: &mut dyn miniquad::RenderingBackend,
-    pieces: &[&crate::scenery::Piece],
+    pieces: &[(&crate::scenery::Piece, (Vec3, Vec3))],
     count: &mut usize,
 ) -> Vec<Chunk> {
-    let keys: Vec<(Option<TextureId>, usize)> = pieces
+    type Key = (Option<TextureId>, (i32, i32));
+    let keys: Vec<(Key, usize)> = pieces
         .iter()
-        .map(|p| (p.tex.as_ref().map(|t| t.raw_miniquad_id()), p.verts.len()))
+        .map(|(p, (lo, hi))| {
+            (
+                (
+                    p.tex.as_ref().map(|t| t.raw_miniquad_id()),
+                    cell_of(*lo, *hi),
+                ),
+                p.verts.len(),
+            )
+        })
         .collect();
     plan(&keys)
         .into_iter()
-        .filter_map(|(tex, list)| {
+        .filter_map(|((tex, _), list)| {
             let (mut vs, mut is): (Vec<Vertex>, Vec<u16>) = (Vec::new(), Vec::new());
+            let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
             for i in list {
-                let p = pieces[i];
+                let (p, (a, b)) = pieces[i];
+                lo = lo.min(a);
+                hi = hi.max(b);
                 let base = vs.len() as u16;
                 vs.extend_from_slice(&p.verts);
                 is.extend(p.idx.iter().map(|&j| base + j));
@@ -358,6 +396,8 @@ fn chunks(
                 ),
                 n: is.len() as i32,
                 tex,
+                lo,
+                hi,
             })
         })
         .collect()

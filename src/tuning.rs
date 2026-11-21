@@ -63,8 +63,8 @@ pub const BLOCK_WALK: f32 = 0.5;
 pub const BLOCK_PUSH: f32 = 0.5;
 pub const BLOCK_BREAK_STUN: f32 = 0.8;
 pub const BLOCK_HITSTOP: f32 = 1.2;
-/// 주/부무기 바꾸기(0223 — 패링 + 평타): 둘째 누름이 첫째 뒤 이 초 안이면 "함께"(큰 기술의 `skill.chord s` 0.12와 같은 폭).
-pub const WEAPON_CHORD: f32 = 0.12;
+/// 주/부무기 바꾸기 버튼(0261)을 다른 동작 중에 눌렀을 때 받아 두는 초 — 공격의 받아 두기(`attack.buffer s` 기본)와 같은 폭.
+pub const SWAP_BUFFER: f32 = 0.3;
 pub const PARRY_CHAIN: f32 = 0.2;
 /// 이어 패링 쌓기(0086, 사장 "연장 중에 또 성공하면 남은 창이 또 늘되 늘어나는 몫은 50%씩 줄고, 범위는 늘어나게 — 둘러싸였을 때도
 /// 빠져나가게"): 이어지는 동안 n번째 더 튕기면 남은 창에 `PARRY_CHAIN × PARRY_CHAIN_DECAY^n`을 더하고(0.2 → +0.1 → +0.05 …),
@@ -598,6 +598,8 @@ pub enum P {
     /// 달빛에 물든 색을 잿빛으로 되돌리는 몫(0 = 그대로 · 1 = 다).
     RenderEnemyLift,
     RenderEnemyAsh,
+    /// 시야 밖 거르기(0258): 카메라에 안 보이는 지형 덩어리·적은 그리지 않는다(0 = 옛 길, A/B 재기).
+    RenderCull,
 }
 
 /// 랩이 읽는 칸(이름·걸음·범위·내보내기 이름)은 개발판에만 쓰인다(운영판에는 랩이 없다, 0070).
@@ -629,7 +631,7 @@ macro_rules! spec {
 }
 
 /// 순서 = 랩 화면 순서. 카메라 → 이동 → 공격 → 락온 → 적.
-pub const SPECS: [Spec; 169] = [
+pub const SPECS: [Spec; 170] = [
     spec!(
         CamQPitch,
         "cam.quarter.pitch deg",
@@ -1982,6 +1984,16 @@ pub const SPECS: [Spec; 169] = [
         0.0,
         1.0,
         0.05
+    ),
+    // 시야 밖 거르기(0258): 지도 전체를 프레임마다 그리던 것을 카메라에 드는 것만(0 = 옛 길 — 같은 판에서 A/B).
+    spec!(
+        RenderCull,
+        "render.cull 0off 1on",
+        "RENDER_CULL",
+        1.0,
+        0.0,
+        1.0,
+        1.0
     ),
 ];
 

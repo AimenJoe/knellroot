@@ -238,10 +238,13 @@ impl Renderer {
                 gl_use_default_material();
             }
             let mask = self.shadow_rt.as_ref().map(|rt| &rt.texture);
-            self.resident.draw_floor(self.light_vp, mask, floor_shade());
+            self.resident
+                .draw_floor(&self.frustum, self.light_vp, mask, floor_shade());
         } else {
-            for p in sc.pieces.iter().filter(|p| p.lightmap) {
-                self.batch.raw(&p.verts, &p.idx, p.tex.as_ref(), 1.0);
+            for (p, (lo, hi)) in sc.pieces.iter().zip(&sc.bounds) {
+                if p.lightmap && self.frustum.aabb(*lo, *hi) {
+                    self.batch.raw(&p.verts, &p.idx, p.tex.as_ref(), 1.0);
+                }
             }
         }
         self.batch.send();
@@ -249,7 +252,7 @@ impl Renderer {
             gl_use_default_material();
         }
         if resident {
-            self.resident.draw_still(self.wind_uniform);
+            self.resident.draw_still(&self.frustum, self.wind_uniform);
         }
         // 바람(0142): 풀 끝·잎·불꽃이 흔들린다 — 그 몫이 실린 정점만 움직이고 나머지 지형은 그대로.
         if let Some(m) = &self.wind_mat {
@@ -257,7 +260,11 @@ impl Renderer {
             gl_use_material(m);
         }
         let mut bi = 0;
-        for p in sc.pieces.iter_mut().filter(|p| !p.lightmap) {
+        let view = self.frustum;
+        for (p, (lo, hi)) in sc.pieces.iter_mut().zip(&sc.bounds) {
+            if p.lightmap {
+                continue;
+            }
             let want = match p.aabb {
                 Some(_) => {
                     let h = hidden.contains(&bi);
@@ -271,7 +278,10 @@ impl Renderer {
                 None => 1.0,
             };
             p.fade += (want - p.fade) * k;
-            if p.fade >= 0.98 && !(resident && super::resident::is_resident(p)) {
+            if p.fade >= 0.98
+                && !(resident && super::resident::is_resident(p))
+                && view.aabb(*lo, *hi)
+            {
                 self.batch.raw(&p.verts, &p.idx, p.tex.as_ref(), 1.0);
             }
         }
@@ -316,14 +326,17 @@ impl Renderer {
         if let Some(m) = &self.wind_mat {
             gl_use_material(m);
         }
-        for p in sc.pieces.iter().filter(|p| p.fade < 0.98) {
-            self.batch.raw(&p.verts, &p.idx, p.tex.as_ref(), p.fade);
+        for (p, (lo, hi)) in sc.pieces.iter().zip(&sc.bounds) {
+            if p.fade < 0.98 && self.frustum.aabb(*lo, *hi) {
+                self.batch.raw(&p.verts, &p.idx, p.tex.as_ref(), p.fade);
+            }
         }
         self.batch.send();
         if self.wind_mat.is_some() {
             gl_use_default_material();
         }
         // 높이 안개(0063 E1): 걷는 땅 아래만 — 카메라가 보는 곳(플레이어) 둘레.
+        let _p = crate::prof::span("fog·motes");
         if t[crate::tuning::P::RenderFog] >= 0.5 {
             self.backdrop.fog(
                 &mut self.batch,

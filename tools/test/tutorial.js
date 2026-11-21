@@ -117,7 +117,7 @@ async function run(browser, lang, size) {
   b = await record();
   if (!/skill\.gift=1\n/.test(b)) errors.push(`the body steps must pay one skill point: ${JSON.stringify(b)}`);
   // 멈춤 창 밑에는 힌트를 그리지 않는다.
-  await press('Escape'); await until('Status { host: Pause', '멈춤 = 상태 탭'); await page.waitForTimeout(200);
+  await press('Escape'); await until('Equip { host: Pause', '멈춤 = 장비 탭(0261)'); await page.waitForTimeout(200);
   await shot('9a-paused');
   // 깨어나는 첫 장면(0171): 빈 기록으로 시작하면 타이틀 바탕부터 방랑자가 꺼진 화로 곁에 엎드려 있고, 판은 그 장면으로 열린다 —
   // 서술 두 줄이 넘치지 않고(F4), 멈춤 버튼으로 건너뛰면 기록에 남고(`woke=1`) 튜토리얼의 첫 걸음이 뜬다. 화로는 아직 꺼져 있다.

@@ -147,6 +147,8 @@ pub struct App {
     /// 장면 스택(0066): 맨 위가 지금 장면, 아래 칸은 커서·창을 맡아 둔다. 지금 칸의 커서·창은 `cursor`·`view`.
     stack: stack::Stack,
     cursor: usize,
+    /// 기술 탭의 되돌리기 단추로 내려오기 전의 칸(0261 — 단추에서 위로 가면 거기로).
+    respec_from: usize,
     /// 지난 프레임에 그린 메뉴 줄·▲▼ 자리(탭 판정).
     hits: Vec<(Rect, Hit)>,
     /// 붙잡아 둔 메뉴 누름(0207): 눌린 꼴을 `PRESS_HOLD` 동안 보인 뒤 그 확인·탭을 장면에 넘긴다.
@@ -378,6 +380,7 @@ impl App {
         App {
             stack: stack::Stack::new(Scene::Title),
             cursor: 0,
+            respec_from: 0,
             hits: Vec::new(),
             press: None,
             press_queue: std::collections::VecDeque::new(),
@@ -718,6 +721,7 @@ impl App {
     }
 
     pub fn frame(&mut self) {
+        crate::prof::frame_start();
         let cpu_start = get_time();
         // 헤드리스 시험의 기다림(`screen::report_scene`): 맨 위 장면이 바뀐 프레임에만 이름을 알린다.
         // 기술 탭은 고른 칸도 붙인다(개발판 — `Skills { host: Dev } @Skill(Embers)`): 칸의 자리는 판이 바뀌면 낡으니 시험이 이름으로 찾는다.
@@ -795,14 +799,20 @@ impl App {
             let a = self.input.take();
             self.tick(a);
         }
-        while self.acc >= TICK_DT {
-            let a = self.input.take();
-            self.tick(a);
-            self.acc -= TICK_DT;
+        {
+            let _p = crate::prof::span("tick");
+            while self.acc >= TICK_DT {
+                let a = self.input.take();
+                self.tick(a);
+                self.acc -= TICK_DT;
+            }
         }
         // 글자 아틀라스를 그리기 전에 다 굽는다(프레임 중간에 키우면 앞서 쌓은 글자가 지워진 텍스처를 가리킨다).
         crate::text::warm();
-        self.draw();
+        {
+            let _p = crate::prof::span("draw");
+            self.draw();
+        }
         // 그리기 호출 수는 우리 배치가 보낸 수로 센다. macroquad `telemetry::capture_frame`은 잡은 프레임의 호출마다
         // 128×128 텍스처를 만들고 지우지 않아(0.4.16 `telemetry::track_drawcall`) 오래 켜 두면 GPU 메모리가 차서 꺼졌다(0020).
         self.perf.draws = self.renderer.batches();
@@ -821,6 +831,7 @@ impl App {
             *cm = 0.0;
             *fs = 0.0;
         }
+        crate::prof::frame_end(|| format!("{:?}", self.scene()));
     }
 
     /// 화면 아래 안내 줄 위까지(메뉴가 굴리는 아래 끝).
@@ -1015,7 +1026,6 @@ impl App {
             Scene::Skills { host } => self.tick_skills(&a, host.edits()),
             Scene::SkillAct => self.tick_skill_act(&a),
             Scene::Codex { host, tab } => self.tick_codex(&a, host, tab as usize),
-            Scene::Journey { host } => self.tick_journey(&a, host),
             Scene::EquipPick { slot } => self.tick_equip_pick(&a, slot as usize),
             Scene::Bag { host } => self.tick_bag(&a, host),
             Scene::BagAct => self.tick_bag_act(&a),
@@ -1078,7 +1088,6 @@ impl App {
             | Scene::Skills { .. }
             | Scene::SkillAct
             | Scene::Codex { .. }
-            | Scene::Journey { .. }
             | Scene::Bag { .. }
             | Scene::BagAct
             | Scene::EquipPick { .. } => None,
@@ -1109,7 +1118,6 @@ impl App {
             | Scene::Skills { .. }
             | Scene::SkillAct
             | Scene::Codex { .. }
-            | Scene::Journey { .. }
             | Scene::Bag { .. }
             | Scene::BagAct
             | Scene::EquipPick { .. } => {}
@@ -1167,6 +1175,7 @@ impl App {
             }),
         };
         self.frame = Some(f);
+        let _p = crate::prof::span("ui·hud");
         self.ui.begin(f.ui);
         let overlay = self.input.overlay().filter(|_| in_shaft.is_none());
         // 눌린 꼴(0207): 키·패드 확인은 고른 줄·단추가 그리고(`Ui::press`), 탭은 누른 자리에 덧그린다.
@@ -1342,7 +1351,6 @@ impl App {
             Scene::Skills { host } => self.draw_skills(f, self.cursor, host),
             Scene::SkillAct => self.draw_skill_act(f),
             Scene::Codex { host, tab } => self.draw_codex(f, host, tab as usize),
-            Scene::Journey { host } => self.draw_journey(f, host),
             Scene::Bag { host } => self.draw_bag(f, host, self.cursor),
             Scene::BagAct => self.draw_bag_act(f),
             Scene::Shop => self.draw_shop(f),

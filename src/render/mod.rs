@@ -18,6 +18,7 @@ use crate::world::{Aabb, Atk, EState, Enemy, PState, TeleShape, World};
 
 mod actors;
 mod batch;
+mod cull;
 mod descent;
 mod drape;
 pub(crate) mod items;
@@ -36,6 +37,7 @@ mod tests;
 
 pub use actors::*;
 pub use batch::*;
+pub use cull::{bounds, Frustum};
 use drape::*;
 pub use light::*;
 pub use overlays::*;
@@ -74,6 +76,10 @@ pub(crate) fn hide_unheld(
 pub struct Renderer {
     /// 상주 지형(0186): 움직이지 않는 지형 덩어리의 GPU 버퍼.
     resident: resident::Resident,
+    /// 이 프레임 카메라의 보기 사다리꼴(0258 — 시야 밖의 지형·적은 그리지 않는다). 프레임 들머리에 넣는다.
+    frustum: Frustum,
+    /// 시야 거르기를 하나(연구소 `render.cull`, 끄면 옛 길 — A/B).
+    cull: bool,
     rt: RenderTarget,
     /// 선·번짐·톤을 내부 해상도에서 한 번 셈해 담는 타깃(0140) — 화면에는 이것을 가장 가까운 픽셀로 키운다.
     post: RenderTarget,
@@ -266,6 +272,8 @@ impl Renderer {
             icons: Default::default(),
             item_rt: None,
             shaft: None,
+            frustum: Frustum::all(),
+            cull: true,
         }
     }
 
@@ -291,7 +299,9 @@ impl Renderer {
     /// 3D 패스를 렌더 타깃에 그리고 화면에 정수 배율로 올린다. 글은 돌려준 `Frame`에 맞춰 바깥에서.
     pub fn draw(&mut self, v: &View) -> Frame {
         let (w, cam, alpha, t) = (v.world, v.cam, v.alpha, v.t);
+        let p_begin = crate::prof::span("begin(shadow·rt)");
         let (iw, ih, c3) = self.begin_frame(v, w, cam, t);
+        drop(p_begin);
         // 원경(0063 E2): 하늘 띠·달·산등성이 — 스테이지에서만, 땅보다 먼저(법선 패스에는 넣지 않는다).
         let fwd = (c3.target - c3.position).normalize_or_zero();
         let cam_right = fwd.cross(Vec3::Y).normalize_or_zero();
@@ -327,6 +337,7 @@ impl Renderer {
         self.batch.record = edges_on;
         self.batch.recorded.clear();
         self.resident.active = false;
+        let p_terrain = crate::prof::span("terrain");
         let lights: Vec<Light> = match v.stage {
             Some(run) => self.terrain(run, w, cam, &pts, k, t),
             None => {
@@ -335,6 +346,8 @@ impl Renderer {
             }
         };
 
+        drop(p_terrain);
+        let p_marks = crate::prof::span("marks·props");
         ground_marks(v, w, alpha);
         linger_tells(v, w);
         cart_tells(v, w);
@@ -361,7 +374,9 @@ impl Renderer {
             self.stage_props(run, w, &lights);
         }
 
+        drop(p_marks);
         // 적·플레이어는 그림자 가림판의 실루엣도 남긴다(0045 — 다음 프레임 가림판).
+        let p_enemies = crate::prof::span("enemies");
         self.batch.casting = true;
         self.shadow_center = w.player.pos;
         // 적.
@@ -374,15 +389,26 @@ impl Renderer {
             if fall >= 1.0 {
                 continue;
             }
+            // 시야 밖이면 자세·정점 복사를 건너뛴다(0258) — 몸 높이만 한 구 + 그림자·흔들림 몫.
+            let r = en.height.max(en.radius * 2.0) + ENEMY_CULL_PAD;
+            if !self.frustum.sphere(en.pos + Vec3::Y * en.height * 0.5, r) {
+                continue;
+            }
             self.enemy(en, w, alpha, v.stage, &lights, fall);
         }
+        drop(p_enemies);
         // 플레이어.
+        let p_player = crate::prof::span("player");
         self.player(w, cam, pp, t, &lights, v.pose);
         // 던진 무기(0158 G2): 날아가는 자리에 돌며.
         self.blades(w, alpha, &lights);
         self.batch.casting = false;
+        drop(p_player);
+        let p_flush = crate::prof::span("batch flush");
         self.batch.flush();
+        drop(p_flush);
         self.batch.record = false;
+        let p_over = crate::prof::span("glows·overlays·fx");
         // 반투명한 스테이지 빛은 배우 뒤에(`stage_glows` — 먼저 그리면 빛 속의 몸이 깊이에 가려졌다).
         if let Some(run) = v.stage {
             self.stage_glows(run, w);
@@ -398,18 +424,26 @@ impl Renderer {
         // 모아 둔 선(윤곽선·예고 옆선)을 한꺼번에 — 옅은 덩어리보다 먼저(그 뒤의 선이 가려지지 않게).
         flush_lines();
 
+        drop(p_over);
         // 옅어진 덩어리는 맨 나중에: 면은 거의 투명하게.
+        let p_faded = crate::prof::span("faded·particles·haze");
         match v.stage {
             Some(run) => {
                 self.faded_terrain(run, w, t, &lights, cam_right, cam_up);
             }
             None => self.sandbox_faded(w, t),
         }
+        let p_parts = crate::prof::span("particles");
         self.particles(v, w, t, &lights, cam_right, cam_up);
-
+        drop(p_parts);
+        let p_haze = crate::prof::span("haze");
         self.horizon_haze(t, fwd, iw, ih);
+        drop(p_haze);
         set_actor_shade(None);
+        drop(p_faded);
+        let p_normal = crate::prof::span("normal pass");
         self.edge_ready = edges_on && self.normal_pass(&c3, (iw, ih));
+        drop(p_normal);
         self.edge_uniform = vec4(
             t[crate::tuning::P::RenderEdgeDepth],
             t[crate::tuning::P::RenderEdgeDark],
@@ -423,6 +457,7 @@ impl Renderer {
             t[crate::tuning::P::RenderVignette],
             if self.edge_ready { 1.0 } else { 0.0 },
         );
+        let _p = crate::prof::span("present(post)");
         self.present()
     }
 
@@ -447,6 +482,12 @@ impl Renderer {
         let (iw, ih) = self.fit_screen();
         let aspect = iw as f32 / ih as f32;
         let c3 = cam.to_camera3d(self.rt.clone(), aspect);
+        self.cull = t[crate::tuning::P::RenderCull] >= 0.5;
+        self.frustum = if self.cull {
+            Frustum::from_matrix(c3.matrix())
+        } else {
+            Frustum::all()
+        };
         set_look(Look {
             toon: t[crate::tuning::P::RenderToon] >= 0.5,
             rim: t[crate::tuning::P::RenderRim],
@@ -513,6 +554,9 @@ impl Renderer {
         );
     }
 }
+
+/// 적 시야 거르기의 덤(m, 0258): 그림자 가림판(달빛에 길게 눕는 그림자)·맞아 밀림·큰 몸짓이 구 밖으로 나가도 그리게.
+const ENEMY_CULL_PAD: f32 = 3.0;
 
 /// 이 높이(m)에서 그림자가 가장 작다.
 const JUMP_SHADOW_H: f32 = 1.2;

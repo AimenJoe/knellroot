@@ -256,7 +256,7 @@ impl App {
         }
         let ids = order(&self.progress.bag);
         let n = cells(ids.len());
-        let tidy = host.edits();
+        let tidy = self.at_hearth(host);
         self.cursor = nav(
             self.cursor.min(if tidy { n } else { n - 1 }),
             a.menu_up as i32 - a.menu_down as i32,
@@ -310,7 +310,7 @@ impl App {
         let Some(&id) = order(&self.progress.bag).get(at) else {
             return self.go(Go::Back);
         };
-        let list = acts(&self.progress.bag, id, self.weapon, host.edits());
+        let list = acts(&self.progress.bag, id, self.weapon, self.at_hearth(host));
         let Some(base) = self.progress.bag.get(id).map(|it| it.base) else {
             return self.go(Go::Back);
         };
@@ -381,7 +381,7 @@ impl App {
         let bag = self.progress.bag.clone();
         let ids = order(&bag);
         let n = cells(ids.len());
-        let tidy = host.edits();
+        let tidy = self.at_hearth(host);
         let cursor = cursor.min(if tidy { n } else { n - 1 });
         for i in 0..n {
             let r = Self::bag_cell(&w, i, n);
@@ -587,7 +587,7 @@ impl App {
             return;
         };
         let value = self.progress.bag.get(id).map_or(0, Item::salvage);
-        let rows: Vec<ui::Row> = acts(&self.progress.bag, id, self.weapon, host.edits())
+        let rows: Vec<ui::Row> = acts(&self.progress.bag, id, self.weapon, self.at_hearth(host))
             .into_iter()
             .map(|d| {
                 let label = match d {

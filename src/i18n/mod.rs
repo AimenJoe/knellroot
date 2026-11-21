@@ -328,6 +328,8 @@ pub struct Strings {
     /// 스킬(0151): 조작 설정의 줄 둘, 끼우는 화면(멈춤 → 기술)의 제목·칸 이름·큰 기술 줄, 스킬 이름과 한 줄 설명.
     pub verb_skill1: &'static str,
     pub verb_skill2: &'static str,
+    /// 조작 설정의 무기 바꾸기 줄(0261).
+    pub verb_weapon_swap: &'static str,
     /// 조작 설정의 줄 이름·설명(0255).
     pub ctl_ult: &'static str,
     pub ctl_attack_d: &'static str,
@@ -338,6 +340,7 @@ pub struct Strings {
     pub ctl_flask_d: &'static str,
     pub ctl_lock_d: &'static str,
     pub ctl_skill_d: &'static str,
+    pub ctl_swap_d: &'static str,
     pub ctl_ult_d: &'static str,
     pub ctl_turn_d: &'static str,
     pub ctl_preset_d: &'static str,
@@ -394,6 +397,12 @@ pub struct Strings {
     pub toast_key: &'static str,
     /// 기술·큰 기술을 올린 알림 "{이름} {단}단"(0172 — 레벨의 `toast_level`과 가른다: 거기는 기술 점수를 얻고 여기는 쓴다).
     pub toast_rank: &'static str,
+    /// 가게의 가방 줄(0261): 이름 · 풀이 · 확인 동사.
+    pub shop_bag_row: &'static str,
+    pub shop_bag_d: &'static str,
+    pub shop_bag_open: &'static str,
+    /// 화로 창의 안내(0261): Select = 멈춤 창(장비·가방).
+    pub verb_gear: &'static str,
     pub verb_close: &'static str,
     pub skill_whirl: &'static str,
     pub skill_whirl_d: &'static str,
@@ -934,6 +943,10 @@ pub struct Strings {
     pub jg_w_elites: &'static str,
     pub jg_w_elites_d: &'static str,
     pub menu_journey: &'static str,
+    /// 화로의 상태 탭 이름(0261 — 레벨 올리기·끼운 기술·지금의 수치).
+    pub menu_growth: &'static str,
+    /// 멈춤의 기록 탭 이름(0261 — 도감 + 여정).
+    pub menu_records: &'static str,
     pub journey_main: &'static str,
     pub journey_find: &'static str,
     pub journey_doing: &'static str,
@@ -1132,6 +1145,9 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.stat_opened,
         s.hearth_shop,
         s.hearth_shop_d,
+        s.shop_bag_row,
+        s.shop_bag_d,
+        s.shop_bag_open,
         s.level_title,
         s.lv_life,
         s.lv_stamina,
@@ -1225,6 +1241,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.ctl_lock_d,
         s.ctl_skill_d,
         s.ctl_ult_d,
+        s.ctl_swap_d,
         s.ctl_turn_d,
         s.ctl_preset_d,
         s.controls_both,
@@ -1522,6 +1539,8 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.verb_choose,
         s.verb_confirm,
         s.verb_swap,
+        s.verb_weapon_swap,
+        s.verb_gear,
         s.verb_tab,
         s.status_name,
         s.status_now,
@@ -1571,6 +1590,8 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.codex_not_seen,
         s.codex_not_owned,
         s.menu_codex,
+        s.menu_records,
+        s.menu_growth,
         s.cx_place_both,
         s.cx_place_warden,
         s.cx_place_village,

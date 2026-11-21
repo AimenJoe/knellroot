@@ -1266,11 +1266,11 @@ impl App {
             lines.extend(self.pane_wrap(w, f, FLAVOR));
         }
         if !picking {
-            // 상태 = 장신구가 바꾸는 줄(+ 늘 보이는 줄) — 레벨 몫은 값에는 들어가되 줄을 늘리지 않는다(상태 탭이 보인다, 0104).
+            // 상태 = 지금의 수치(레벨·장신구·주운 것이 다 든 값 — 보정이 있는 줄 + 늘 보이는 줄). 0261부터 멈춤 창에 상태 탭이 없어
+            // (상태 탭은 화로의 "성장") 여기가 지금의 몸을 보는 곳이다.
             lines.push(Ln::Gap);
             lines.push(Ln::Head(s.equip_status.to_string()));
-            let bare = self.progress.stats_without_charms();
-            for (l, v, _) in crate::stats::lines_from(&bare, &now_stats, None) {
+            for (l, v, _) in crate::stats::lines(&now_stats, None) {
                 lines.push(Ln::Pair(stat_name(l).to_string(), stat_value(l, v), INK));
             }
         }

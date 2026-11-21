@@ -92,7 +92,7 @@ pub struct Actions {
     pub look: Vec2,
     /// 시점 바꾸기(0184 — 터치의 시점 버튼): 쿼터뷰 ↔ 자유 숄더뷰. 틱마다 소비.
     pub view: bool,
-    /// 주/부무기 바꾸기(0223 — 터치의 바꾸기 버튼. 패드·키보드는 패링 + 평타를 함께). 틱마다 소비.
+    /// 주/부무기 바꾸기(0223 — 터치의 바꾸기 버튼 · 배치표의 `Bind::Swap` 0261: 패드 L3·키보드 X). 틱마다 소비.
     pub swap: bool,
     pub attack: bool,
     /// 공격 버튼을 쥐고 있나(상태, 강공격 모으기 0030). 눌림 `attack`과 달리 틱이 지우지 않는다.
@@ -185,6 +185,8 @@ pub enum Act {
     Swap,
     /// 큰 창의 탭 넘기기(0164 → 0175): 패드 LB·RB, 키보드 스킬 버튼 둘(Q·E).
     Tabs,
+    /// 장비 창 바로 열기(0070 — 패드 Select · 키보드 Tab). 화로 창 위에서는 멈춤 창(장비·가방)을 연다(0261).
+    Gear,
     /// 격자 화면(기술, 0161)의 네 쪽 걷기 — 메뉴의 위·아래·왼·오른.
     Walk,
     /// 뒤로·닫기(고정 — 배치표에 없다).
@@ -211,6 +213,7 @@ impl Actions {
             Bind::Cast => self.cast = false,
             Bind::Skill1 => self.skill1 = false,
             Bind::Skill2 => self.skill2 = false,
+            Bind::Swap => self.swap = false,
         }
     }
 
@@ -239,6 +242,14 @@ pub fn prompt(act: Act) -> String {
         (Device::Pad, Act::Choose) => "D-PAD".into(),
         (Device::Pad, Act::Confirm) => "A".into(),
         (_, Act::Swap) => swap_bind().map_or(String::new(), name),
+        (Device::Pad, Act::Gear) => Pad::Select.name().into(),
+        (_, Act::Gear) => {
+            if b.keys.contains(&key_index(KeyCode::Tab)) {
+                String::new()
+            } else {
+                "TAB".into()
+            }
+        }
         (_, Act::Special) => name(Bind::Cast),
         (Device::Pad, Act::Tabs) => format!("{}/{}", Pad::L1.name(), Pad::R1.name()),
         (_, Act::Tabs) => format!("{}/{}", name(Bind::Skill1), name(Bind::Skill2)),
@@ -338,10 +349,13 @@ pub enum Bind {
     /// 스킬 둘(0151, LT·RT / Q·E) — 예전 땅 돌리기의 자리. 돌리기는 십자 ←·→ / Z·C로 갔다. 칸 뜻이 바뀌어 prefs MAGIC을 올렸다.
     Skill1 = 9,
     Skill2 = 10,
+    /// 주/부무기 바꾸기(0261 — 사장 "무기 교체 버튼도 맵핑, 컨트롤러는 L3, 조합 할 필요 없는 듯"): 패드 L3 · 키보드 X.
+    /// 0223의 "패링 + 공격 = 바꾸기" 조합을 걷고 이 버튼 하나로 바꾼다. 저장 칸은 prefs 40..42.
+    Swap = 11,
 }
 
 /// 다시 붙일 수 있는 동작 수.
-pub const NB: usize = 11;
+pub const NB: usize = 12;
 
 pub const BINDS: [Bind; NB] = [
     Bind::Attack,
@@ -355,6 +369,7 @@ pub const BINDS: [Bind; NB] = [
     Bind::Cast,
     Bind::Skill1,
     Bind::Skill2,
+    Bind::Swap,
 ];
 
 /// 배치표에 올릴 수 있는 키(저장 번호 = 이 표의 자리 — 뒤에만 붙인다). 이동(WASD·화살표)·Enter·Esc·Backspace·P(멈춤)·
@@ -502,6 +517,7 @@ impl Bindings {
                 mouse_index(MouseButton::Right),
                 key_index(KeyCode::Q),
                 key_index(KeyCode::E),
+                key_index(KeyCode::X),
             ],
             ..Bindings::keyboard_only()
         }
@@ -524,6 +540,7 @@ impl Bindings {
                 key_index(KeyCode::U),
                 key_index(KeyCode::Q),
                 key_index(KeyCode::E),
+                key_index(KeyCode::X),
             ],
             // 0255: 근접 공격 = X, 원거리 공격(마법·사격) = RB — 무기와 상관없이(0223의 "평타 = RB"를 되돌림).
             pads: [
@@ -538,6 +555,7 @@ impl Bindings {
                 Pad::R1,
                 Pad::L2,
                 Pad::R2,
+                Pad::L3,
             ],
             ult: UltBind::default(),
         }
@@ -1058,6 +1076,7 @@ impl Input {
         a.turn_right = kp(Bind::TurnRight);
         a.skill1 = kp(Bind::Skill1);
         a.skill2 = kp(Bind::Skill2);
+        a.swap = kp(Bind::Swap);
         // 큰 기술의 따로 붙인 키(0255): 이룬 키의 제 동작은 이번 틱에 거둔다(조합의 둘째 키가 스킬·공격을 같이 내지 않게).
         if let Some(hit) = chord_fired(
             bind.ult.keys,
@@ -1150,6 +1169,7 @@ impl Input {
                 a.turn_right |= pj(Bind::TurnRight);
                 a.skill1 |= pj(Bind::Skill1);
                 a.skill2 |= pj(Bind::Skill2);
+                a.swap |= pj(Bind::Swap);
                 if let Some(hit) = chord_fired(
                     bind.ult.pads,
                     |p| pad.is_just_pressed(p.button()),
@@ -1225,6 +1245,7 @@ impl Input {
             a.turn_right |= pj(Bind::TurnRight);
             a.skill1 |= pj(Bind::Skill1);
             a.skill2 |= pj(Bind::Skill2);
+            a.swap |= pj(Bind::Swap);
             if let Some(hit) = chord_fired(bind.ult.pads, j, |p| is_key_down(p.key())) {
                 a.ult = true;
                 a.drop_pads(&bind, hit);

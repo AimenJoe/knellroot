@@ -65,13 +65,14 @@ async function main() {
   await page.waitForTimeout(900); await shot('00c-courtyard');
   for (let i = 0; i < 5; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(260); }
   await shot('00d-fight');
-  await press('Escape'); await until('Status { host: Pause', '멈춤 = 상태 탭'); await shot('00e-pause');
-  // 멈춤 = 큰 창(0164): 탭 상태·장비·기술·도감·여정·설정(Q·E로 넘긴다 — 끝에서 돈다), 이 판에서 마지막에 보던 탭에서 열린다(새 판은 상태).
+  await press('Escape'); await until('Equip { host: Pause', '멈춤 = 장비 탭'); await shot('00e-pause');
+  // 멈춤 = 큰 창(0164 → 0261): 탭 장비·가방·기술·기록(도감 + 여정)·설정(Q·E로 넘긴다 — 끝에서 돈다), 이 판에서 마지막에 보던 탭에서 열린다(새 판은 장비).
+  // 상태(성장) 탭은 화로에만 — 여기서는 찍지 않는다(화로의 성장 탭은 save.js·hearth.js가 찍는다).
   // 설정 탭의 끝 줄들: … 조작 설정·개발(개발판)·처음부터·타이틀로. 타이틀: 시작·설정·개발(0094).
   // 개발 창(0083, nail 구조 → 2026-11-15 정리): 위 묶음 탭(도구 · 모션 · 기술 · 스테이지 · 전투·적 · 성능, 좌우로) + 그 묶음의 줄 — 스테이지 둘째 줄 = 문 앞, 전투·적 첫 줄 = 보스 아레나.
   // 타이틀로는 묻는 창(0064 — 커서가 "취소"에서 시작): 위로 한 번 = "타이틀로".
   // 타이틀의 DEV는 맨 끝 — 기록이 생겨 "이어하기"가 붙어도 위로 한 번(돌아서)이면 DEV(0066).
-  // 상태 탭에서 Q = 설정 탭(끝에서 돈다) → 위로 한 번 = 맨 끝 줄 "타이틀로".
+  // 장비 탭(첫 탭)에서 Q = 설정 탭(끝에서 돈다) → 위로 한 번 = 맨 끝 줄 "타이틀로".
   await press('KeyQ'); await until('Settings { host: Pause', 'Q = 설정 탭'); await shot('00e1-pause-settings');
   await press('ArrowUp'); await press('Enter'); await until('Ask(ToTitle', '타이틀로 → 묻는 창');
   await press('ArrowUp'); await press('Enter'); await until('Title', '묻는 창 → 타이틀');
@@ -82,18 +83,17 @@ async function main() {
   await page.keyboard.down('KeyW'); await page.waitForTimeout(2200); await page.keyboard.up('KeyW');
   await page.waitForTimeout(800); await shot('00g-waking');
   await page.waitForTimeout(1500); await press('KeyL'); await page.waitForTimeout(900); await shot('00h-boss-lock');
-  // 기술(0151 → 0161 기술 화면 → 0164 탭): 멈춤(새 판이라 상태 탭) → E 둘 = 기술 탭 — 칸을 오른쪽으로 한 번 옮겨 본 뒤 되돌리고 닫는다.
-  await press('Escape'); await until('Status { host: Pause', '멈춤 = 상태 탭'); await shot('00h0-status');
-  await press('KeyE'); await until('Equip {', 'E = 장비 탭'); await shot('00h0-equip');
+  // 기술(0151 → 0161 기술 화면 → 0164 탭 → 0261): 멈춤(새 판이라 장비 탭) → E 둘 = 기술 탭 — 칸을 오른쪽으로 한 번 옮겨 본 뒤 되돌리고 닫는다.
+  await press('Escape'); await until('Equip { host: Pause', '멈춤 = 장비 탭'); await shot('00h0-equip');
   await press('KeyE'); await until('Bag {', 'E = 가방 탭'); await shot('00h0-bag');
   await press('KeyE'); await until('Skills {', 'E = 기술 탭');
   await press('ArrowRight'); await page.waitForTimeout(200); await shot('00h1-skills');
   await press('ArrowLeft'); await page.waitForTimeout(150); await press('Escape'); await until('Play', '기술 탭 닫기');
-  // 설정(0052 → 0164 탭): 다시 멈추면 마지막에 보던 기술 탭에서 열린다 → E 셋(도감 → 여정 → 설정). 조작 설정은 끝에서 넷째
+  // 설정(0052 → 0164 탭 → 0261): 다시 멈추면 마지막에 보던 기술 탭에서 열린다 → E = 기록(도감 — ← 한 번이면 끝 묶음 여정, 0261) → E = 설정. 조작 설정은 끝에서 넷째
   // (개발·처음부터·타이틀로 위 — 위로 네 번, 전체 화면 줄이 있든 없든).
   await press('Escape'); await until('Skills { host: Pause', '멈춤 = 마지막에 보던 기술 탭');
-  await press('KeyE'); await until('Codex {', 'E = 도감 탭'); await shot('00h1-codex');
-  await press('KeyE'); await until('Journey {', 'E = 여정 탭'); await shot('00h1-journey');
+  await press('KeyE'); await until('Codex { host: Pause, tab: 0', 'E = 기록 탭(도감)'); await shot('00h1-codex');
+  await press('ArrowLeft'); await until('Codex { host: Pause, tab: 4', '← = 기록 탭의 여정 묶음'); await shot('00h1-journey');
   await press('KeyE'); await until('Settings { host: Pause', 'E = 설정 탭');
   await shot('00h2-settings');
   await press('ArrowUp', 4); await press('Enter'); await until('Controls', '설정 탭 → 조작 설정');

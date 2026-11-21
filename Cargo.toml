@@ -1,6 +1,6 @@
 [package]
 name = "knellroot"
-version = "0.7.3"
+version = "0.7.4"
 authors = ["Beardworks"]
 edition = "2021"
 description = "Knellroot — 레트로 로우폴리 3D ARPG(쿼터뷰 떼싸움 + 락온 보스전)"
@@ -43,7 +43,7 @@ fullscreen = true
 res = "android/res"
 icon = "@mipmap/ic_launcher"
 # 덮어 설치 판정용 정수. 릴리스마다 하나씩 올린다(버전 숫자에서 만들지 않는다 — 작아질 수 있다, nail release.md).
-version_code = 28
+version_code = 29
 
 [package.metadata.android.activity_attributes]
 "android:screenOrientation" = "sensorLandscape"
@@ -51,7 +51,8 @@ version_code = 28
 "android:exported" = "true"
 
 [profile.release]
-opt-level = "z"
+# 속도 우선(0258): "z"(크기 우선)보다 우리 코드 CPU 30~60% 빠르다(틱·방랑자·소품, PC 재기) — 웹 파일은 gzip 4.32 → 4.56MB.
+opt-level = 3
 lto = true
 codegen-units = 1
 
