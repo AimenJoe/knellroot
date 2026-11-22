@@ -1396,10 +1396,26 @@ fn the_prologue_forest_sits_at_the_end_outside_the_run_order() {
     assert!(run.boss.is_none() && w.enemies.iter().all(|e| !e.boss));
     assert!(run.rests.is_empty() && run.chest.at.is_empty() && run.hidden.list.is_empty());
     assert!(run.stones.is_empty() && run.lever.is_none());
-    // 0265: 숲 끝의 성소 바깥 문 — 장치 없이 닫혀 있고(문 너머로 못 간다), 장면만 연다(단계는 그대로, 갈 곳의 빛기둥도 없다).
-    let (g, c) = run.level.gate.expect("the sanctum's outer gate");
-    assert!(run.gate_closed && w.obstacles.contains(&g));
-    assert!(c.z < run.exit_at.unwrap().z, "the gate is beyond the mark");
+    assert!(run.level.gate.is_none());
+    // 0265: 숲 끝의 무너진 아치 — 표지 너머, 설주 둘만 막는다(가운데는 지나간다).
+    let arch = run.level.arch().expect("the ruined arch");
+    assert!(
+        arch.z < run.exit_at.unwrap().z,
+        "the arch is beyond the mark"
+    );
+    let jambs = w
+        .obstacles
+        .iter()
+        .filter(|b| (b.center().z - arch.z).abs() < 1.0)
+        .count();
+    assert_eq!(jambs, 2);
+    assert!(
+        w.obstacles
+            .iter()
+            .all(|b| !(b.min.x..=b.max.x).contains(&arch.x)
+                || !(b.min.z..=b.max.z).contains(&arch.z)),
+        "the way through is open"
+    );
     assert!(run.down_at.is_none() && run.up_at.is_none() && run.horde_at.is_empty());
     assert!(def.elites.is_empty() && def.chest_loot.is_empty() && def.boss_charm.is_none());
     assert_eq!((def.depth_m, def.tier), (0, 1));
@@ -1413,9 +1429,36 @@ fn the_prologue_forest_sits_at_the_end_outside_the_run_order() {
     // 숲 끝은 깨어난 자리에서 멀다(북쪽) — 짧지만 걸어 나오는 길.
     let (start, exit) = (run.level.player_start, run.exit_at.unwrap());
     assert!(exit.z < start.z - 40.0, "{start:?} → {exit:?}");
-    let (mut run, mut w) = (run, w);
-    run.open_for_scene(&mut w);
-    assert!(!w.obstacles.contains(&g) && run.phase == Phase::Entrance && run.goal().is_none());
+}
+
+/// 2026-11-22(사장 "숲의 각종 지형을 그냥 통과할수 있는 버그"): 숲은 벽(`#`) 없이 바위 단(빈칸)으로 두른다 — 빈칸이 막지 않아
+/// 나무·바위 단을 걸어 지났다. 깨어난 자리에서 사방으로 오래 걸어도(뛰어도) 늘 걸을 수 있는 칸 위에 있다.
+#[test]
+fn the_forest_edges_stop_the_wanderer() {
+    let t = Tuning::default();
+    for dir in [
+        vec2(1.0, 0.0),
+        vec2(-1.0, 0.0),
+        vec2(0.0, 1.0),
+        vec2(0.7, -0.7),
+        vec2(-0.7, -0.7),
+    ] {
+        let (run, mut w) = StageRun::start(STAGES[PROLOGUE]);
+        w.unhurt = true;
+        for i in 0..60 * 8 {
+            let a = Actions {
+                move_dir: dir,
+                jump: i % 40 == 0,
+                ..Actions::default()
+            };
+            w.step(&a, &t);
+            let (x, z) = run.level.cell_of(w.player.pos).expect("on the map");
+            assert!(
+                run.level.walkable(x, z),
+                "walked onto a blank cell ({x},{z}) going {dir:?}"
+            );
+        }
+    }
 }
 
 /// 0262: 숲에서는 입구 단계 그대로 — 목표는 "종소리를 따라가라", 종소리는 숲 끝의 표지에서(갈 곳의 빛기둥은 없다 — 종소리가 맡는다).

@@ -1383,6 +1383,7 @@ fn prop_color(k: PropKind) -> Color {
         PropKind::Root => Color::new(0.30, 0.20, 0.25, 1.0),
         PropKind::Brazier => Color::new(0.9, 0.6, 0.25, 1.0),
         PropKind::Bell => Color::new(0.45, 0.42, 0.30, 1.0),
+        PropKind::Arch => Color::new(0.38, 0.36, 0.34, 1.0),
     }
 }
 

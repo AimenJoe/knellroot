@@ -139,10 +139,12 @@ impl Ground {
                     0.0,
                     q.z.clamp(m.y, m.y + self.cell),
                 );
-                let Some(gh) = self.height_in(x, z, near) else {
-                    continue; // 벽 칸은 벽 상자가 막는다.
+                // 걸을 수 없는 칸(벽·빈칸)은 늘 막는다 — 벽 칸은 벽 상자도 막지만, 벽 없이 바위 단으로 두른 서막 숲(0262)의 빈칸은
+                // 이것만 막는다(2026-11-22 사장 "숲의 각종 지형을 그냥 통과할 수 있는 버그" — 예전엔 벽 상자에 맡기고 건너뛰었다).
+                let blocks = match self.height_in(x, z, near) {
+                    None => true,
+                    Some(gh) => gh > feet + step_up || (!can_drop && gh < feet - GROUND_STEP),
                 };
-                let blocks = gh > feet + step_up || (!can_drop && gh < feet - GROUND_STEP);
                 if !blocks {
                     continue;
                 }

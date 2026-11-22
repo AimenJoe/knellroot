@@ -170,6 +170,47 @@ def gate():
     return m, [("open", 1.5, "_open")]
 
 
+def arch_ruin():
+    """성소 바깥 아치(0265 — 사장 2026-11-22 "문은 열리지 않아도 괜찮아. 아치 형태로 출입구라는 게 인식되기만 하면, 아치가 약간 끊어져서
+    오래된 것처럼"): 폭 약 5.6m·높이 약 5.1m, 문짝 없는 둥근 아치. 설주 둘(x ±2.35, 큰 돌 셋씩) 위에 쐐기돌 아홉을 반원(안 반지름 2.0m)으로
+    얹고, 오른쪽 위 둘은 빠져 발치에 굴러 있다 — 이맛돌(가운데)은 남아 살짝 처졌다. 길은 Y로 지난다(앞 = -Y). 부딪힘은 게임이 설주 둘만."""
+    import math
+    m = C.Model("arch_ruin")
+    g = m.geo("arch_ruin")
+    R, zc = 2.35, 2.40  # 쐐기돌 가운데의 반지름, 아치가 솟는 높이
+    for sx in (1, -1):
+        g.stone((R * sx, 0, 0.16), (1.06, 1.18, 0.32), "k_dark", bevel=0.07, drop=GROUND)  # 받침
+        g.stone((R * sx, 0, 0.74), (0.86, 1.00, 0.84), "k_stone", bevel=0.08, drop=("-z", "+z"))
+        g.stone((R * sx + 0.02 * sx, 0, 1.50), (0.82, 0.96, 0.68), "k_dark" if sx > 0 else "k_stone", bevel=0.08, drop=("-z", "+z"))
+        g.stone((R * sx, 0, 2.12), (0.90, 1.02, 0.56), "k_light", bevel=0.08)  # 아치 받침돌(솟는 자리)
+    # 쐐기돌: 0°(오른쪽) → 180°(왼쪽). 6·7째(오른쪽 위)는 빠졌다.
+    n = 9
+    for i in range(n):
+        if i in (1, 2):
+            continue
+        a = 180.0 * i / (n - 1)
+        r = math.radians(a)
+        sag = -0.10 if i == 4 else 0.0  # 이맛돌은 옆이 빠져 조금 처졌다
+        c = (R * math.cos(r), 0, zc + R * math.sin(r) + sag)
+        key = i == 4
+        mat = "k_light" if key else ("k_stone" if i % 2 else "k_dark")
+        g.stone(c, (0.86 if key else 0.78, 1.08 if key else 0.98, 0.70), mat, bevel=0.07, rot=(0, a - 90 + (4 if key else 0), 0),
+                taper=(1.12, 1.0) if key else (1.0, 1.0), edges="tvb")
+    # 빠진 쐐기돌 둘: 오른쪽 발치에 하나는 눕고 하나는 반쯤 묻혔다.
+    g.stone((2.95, -1.05, 0.30), (0.78, 0.98, 0.62), "k_stone", bevel=0.07, rot=(12, 8, 34), edges="tvb")
+    g.stone((1.70, -1.55, 0.18), (0.70, 0.86, 0.50), "k_dark", bevel=0.06, rot=(-20, 64, 10), edges="tvb")
+    g.stone((2.30, -0.80, 0.08), (0.36, 0.30, 0.20), "k_light", bevel=0.04, rot=(0, 0, 25), edges="tvb")  # 부스러기
+    # 이끼(왼쪽 어깨·설주 받침)·뿌리(왼쪽 설주를 감아 아치를 넘는다, 앞 = -Y)
+    g.stone((-1.70, 0.0, 4.40), (0.70, 0.80, 0.06), "k_moss", bevel=0.02, edges="t", rot=(0, -35, 0))
+    g.stone((-2.35, -0.52, 0.33), (0.80, 0.12, 0.05), "k_moss", bevel=0.02, edges="t", drop=GROUND)
+    root(g, [(-2.90, -0.62, 0.02), (-2.70, -0.58, 1.00), (-2.80, -0.56, 2.10), (-2.40, -0.58, 3.30), (-1.60, -0.58, 4.10),
+             (-0.60, -0.56, 4.60)], 0.11)
+    root(g, [(-2.78, -0.56, 2.00), (-3.10, -0.40, 2.70), (-3.05, -0.10, 3.20)], 0.06, tip="k_rootl")
+    root(g, [(0.60, -0.58, 4.62), (1.10, -0.56, 4.30), (1.30, -0.54, 3.70)], 0.05, mat="k_root", tip="k_rootl")
+    m.build()
+    return m, []
+
+
 def core_crystal():
     """보스가 남기는 핵: 뿌리 요람 속 호박빛 결정(glow_core), 높이 0.6m. 동작 pulse 1.0초 고리(살짝 부풀고 뜸).
     결정은 여섯 모 쌍뿔(각진 면 — 밝은 선이 붙는다) + 곁 조각, 요람은 발톱처럼 감아 쥔 뿌리 다섯."""
@@ -399,6 +440,7 @@ PROPS = {
     "root_clump": root_clump,
     "brazier": brazier,
     "gate": gate,
+    "arch_ruin": arch_ruin,
     "core_crystal": core_crystal,
     "bell": bell,
     "rubble": rubble,

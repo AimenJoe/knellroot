@@ -80,6 +80,11 @@ impl Level {
                         pos: p,
                         yaw: 0.0,
                     }),
+                    ARCH_GLYPH => lv.props.push(Prop {
+                        kind: PropKind::Arch,
+                        pos: p,
+                        yaw: 0.0,
+                    }),
                     'L' => lv.props.push(Prop {
                         kind: PropKind::Bell,
                         pos: p,
@@ -430,9 +435,30 @@ impl Level {
     }
 
     /// 부딪힘 상자: 벽 + 소품(+ 닫힌 문은 따로).
+    /// 무너진 아치의 자리(0265 — 지도의 `ARCH_GLYPH`, 땅 높이).
+    pub fn arch(&self) -> Option<Vec3> {
+        self.props
+            .iter()
+            .find(|p| p.kind == PropKind::Arch)
+            .map(|p| p.pos)
+    }
+
     pub fn obstacles(&self) -> Vec<Aabb> {
         let mut v = self.walls.clone();
         for p in &self.props {
+            if p.kind == PropKind::Arch {
+                for sx in [-1.0, 1.0] {
+                    let x = p.pos.x + sx * ARCH_JAMB_X;
+                    v.push(Aabb {
+                        min: vec3(x - ARCH_JAMB_HALF.x, 0.0, p.pos.z - ARCH_JAMB_HALF.y),
+                        max: vec3(
+                            x + ARCH_JAMB_HALF.x,
+                            ARCH_JAMB_H,
+                            p.pos.z + ARCH_JAMB_HALF.y,
+                        ),
+                    });
+                }
+            }
             let h = p.kind.half();
             if h != Vec2::ZERO {
                 v.push(Aabb {

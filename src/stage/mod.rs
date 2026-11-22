@@ -37,6 +37,8 @@ pub enum PropKind {
     Rubble,
     WallPiece,
     Bell,
+    /// 무너진 아치(0265 — 서막 숲 끝·성소 남쪽 벽의 출입구, `ARCH_GLYPH`): 가운데는 지나가고 설주 둘만 막는다(`Level::obstacles`).
+    Arch,
 }
 
 impl PropKind {
@@ -48,6 +50,7 @@ impl PropKind {
             PropKind::Rubble => "rubble",
             PropKind::WallPiece => "wall_segment",
             PropKind::Bell => "bell",
+            PropKind::Arch => "arch_ruin",
         }
     }
 
@@ -60,6 +63,8 @@ impl PropKind {
             PropKind::Rubble => Vec2::ZERO,
             PropKind::WallPiece => vec2(1.0, 0.4),
             PropKind::Bell => vec2(0.8, 0.8),
+            // 가운데는 길 — 설주 둘은 `Level::obstacles`가 따로.
+            PropKind::Arch => Vec2::ZERO,
         }
     }
 
@@ -71,6 +76,7 @@ impl PropKind {
             PropKind::Rubble => 0.6,
             PropKind::WallPiece => 3.0,
             PropKind::Bell => 2.0,
+            PropKind::Arch => 5.1,
         }
     }
 }
@@ -188,6 +194,12 @@ pub const REGIONS: usize = 4;
 pub const PROLOGUE: usize = 4;
 /// 서막 숲 끝의 표지(0262 — 성소로 가는 길)와 밟는 거리(m — 길 폭을 다 덮게).
 pub const EXIT_GLYPH: char = 'E';
+/// 무너진 아치(0265): 지나가는 출입구 — 숲 끝과 성소 남쪽 벽. 아치는 X로 걸쳐 있고 길은 Z(남 ↔ 북)로 지난다.
+pub const ARCH_GLYPH: char = 'n';
+/// 아치의 설주(`arch_ruin.glb` — 가운데에서 X로 이만큼, 반폭·높이).
+pub const ARCH_JAMB_X: f32 = 2.35;
+const ARCH_JAMB_HALF: Vec2 = vec2(0.5, 0.6);
+const ARCH_JAMB_H: f32 = 2.6;
 /// 문이 다 열리는 초(`gate_open`이 여기까지 오른다 — 렌더의 `GATE_TIME`과 같은 값).
 pub const GATE_OPEN_TIME: f32 = 1.5;
 pub const EXIT_REACH: f32 = 2.4;
@@ -915,13 +927,6 @@ impl StageRun {
                 self.elite_ids.push((i, elite_id(self.def.find_prefix, k)));
             }
         }
-    }
-
-    /// 장면이 여는 문(0265 — 서막 숲 끝의 성소 바깥 문): 단계를 바꾸지 않고 막는 상자만 걷는다. 여는 동작(`gate_open`)은 장면이 맡는다
-    /// (장면 동안 스테이지는 흐르지 않는다).
-    pub fn open_for_scene(&mut self, w: &mut World) {
-        self.gate_opened = true;
-        self.set_gate(w, false);
     }
 
     /// 기록의 문(0113): 이미 열었으면 처음부터 열린 채(지름길).
