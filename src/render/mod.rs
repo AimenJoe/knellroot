@@ -538,11 +538,22 @@ impl Renderer {
             .embers(&mut self.batch, &w.drops, cam_right, cam_up, w.time);
         // 이펙트 입자(0141): 사건의 입자·화로 불티는 랩 `render.fx`로 끄고 켠다, 맞힌 자리의 불똥은 늘.
         let fx_on = t[crate::tuning::P::RenderFx] >= 0.5;
-        let braziers: Vec<Vec3> = lights
+        // 꺼진 화로의 빛은 굽는 지형이 이미 뺐다(불티도 없다). 쉬는 곳의 화톳불(0267)은 불이 커서 불티가 두 배.
+        let rests: &[Vec3] = v.stage.map_or(&[], |r| &r.rests);
+        let mut braziers: Vec<Vec3> = Vec::new();
+        for l in lights
             .iter()
             .filter(|l| fx_on && !l.shaft && l.pos.distance(w.player.pos) < 26.0)
-            .map(|l| l.pos - Vec3::Y * BRAZIER_LIGHT_ABOVE_BOWL)
-            .collect();
+        {
+            let at = l.pos - Vec3::Y * BRAZIER_LIGHT_ABOVE_BOWL;
+            braziers.push(at);
+            if rests
+                .iter()
+                .any(|r| vec2(r.x - l.pos.x, r.z - l.pos.z).length() < 0.1)
+            {
+                braziers.push(at);
+            }
+        }
         self.backdrop.fx(
             &mut self.batch,
             if fx_on { &v.fx.parts } else { &[] },

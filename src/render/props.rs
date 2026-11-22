@@ -928,7 +928,7 @@ const GUIDE_BEAM_H: f32 = 9.0;
 pub(super) const GUIDE_LIGHT_R: f32 = 8.0;
 
 /// 문이 다 열리는 초(스테이지가 `gate_open`을 이만큼까지 올린다).
-pub(super) const GATE_TIME: f32 = 1.5;
+pub(super) const GATE_TIME: f32 = crate::stage::GATE_OPEN_TIME;
 
 /// 문 모델의 문틀이 막는 상자보다 앞뒤로 더 나온 만큼(m, `gate.glb` ±0.62 − 상자 ±0.4).
 const GATE_FRAME_EXTRA: f32 = 0.22;

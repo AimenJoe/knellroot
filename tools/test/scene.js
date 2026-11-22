@@ -8,6 +8,9 @@
 const LOG = !!process.env.SCENES;
 
 module.exports = (page, gap = 80) => {
+  // 서막 숲(0262)은 기본으로 건너뛴다 — 새 기록도 성소에서 연다(옛 스크립트의 길). 숲을 보는 스크립트는 `sceneKit.prologue(page)`.
+  // 깃발은 다른 비트와 OR로(unhurt 1과 함께 쓴다), 서막을 켠 페이지(`__knellPrologue`)에는 걸지 않는다 — 부르는 차례와 상관없이.
+  page.addInitScript(() => { if (!window.__knellPrologue) window.knellTestFlags = (window.knellTestFlags | 0) | 2; });
   if (LOG) {
     page.on('console', (m) => { if (m.text().startsWith('[scene] ')) console.log('   ' + m.text()); });
     page.addInitScript(() => { window.knellSceneLog = true; });
@@ -69,4 +72,10 @@ module.exports.throttle = async (ctx, page) => {
 
 // 방랑자가 맞지 않게(개발판만 — src/screen.rs test_flags, World::unhurt): 긴 스크립트가 도중에 쓰러지면 그 뒤의 화면이 모두
 // 엉뚱하다(2026-11-19 touch.js — 멈춤 버튼을 누를 때 이미 결과 화면이었다). 맞는 모습을 찍는 스크립트는 부르지 않는다. goto 전에.
-module.exports.unhurt = (page) => page.addInitScript(() => { window.knellTestFlags = 1; });
+module.exports.unhurt = (page) => page.addInitScript(() => { window.knellTestFlags = (window.knellTestFlags | 0) | 1; });
+
+// 서막 숲부터(0262 — 개발판만, src/screen.rs test_flags 비트 2를 푼다): 새 기록이 숲의 빈터에서 깨어난다. goto 전에, sceneKit(page) 앞이든 뒤든.
+module.exports.prologue = (page) => page.addInitScript(() => {
+  window.__knellPrologue = true;
+  window.knellTestFlags = (window.knellTestFlags | 0) & ~2;
+});

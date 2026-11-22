@@ -580,9 +580,6 @@ mod tests {
             );
         }
         // 문지기는 지역마다 하나(성소 문지기·깨진 종지기·이끼 덮인 문지기 0185).
-        assert_eq!(
-            ALL.iter().filter(|d| d.boss).count(),
-            crate::stage::STAGES.len()
-        );
+        assert_eq!(ALL.iter().filter(|d| d.boss).count(), crate::stage::REGIONS);
     }
 }

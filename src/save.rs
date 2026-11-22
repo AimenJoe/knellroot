@@ -82,6 +82,10 @@ pub mod key {
     pub const READ: &str = "read";
     /// 받은 여정 목표(0183): 목표 아이디, 쉼표. 진행은 다른 기록에서 다시 센다 — 여기는 "받았다"만.
     pub const JOURNEY: &str = "journey";
+    /// 받은 도감 칸의 보상(0265): `codex::paid_key` 이름들, 쉼표.
+    pub const CODEX_PAID: &str = "codex.paid";
+    /// 팔거나 내려놓아 이제는 없는 물건(0266 — 도감이 한 번 가졌던 것으로 기억한다): `codex::paid_key` 이름들, 쉼표.
+    pub const CODEX_HAD: &str = "codex.had";
     /// 문 장치로 연 문(0113): 스테이지 이름 앞(`find_prefix`)들 — 한 번 열면 판을 넘어 열려 있다(지름길).
     pub const GATES: &str = "gates";
     /// 문지기 핵 점수(0105): 이긴 횟수, `progression::CORE_CAP`까지.
@@ -116,6 +120,8 @@ pub mod key {
     pub const WOKE: &str = "woke";
     /// 깨어난 자리의 화로에 불을 붙였다(0171 — 처음 거기서 쉴 때). 이 키가 없는 옛 기록은 붙인 것으로.
     pub const HEARTH_LIT: &str = "hearth.lit";
+    /// 서막 숲(0262)을 지나 성소에 들었다(1) / 아직(0). 이 키가 없으면 `woke`를 따른다 — 이미 깨어난 기록(옛 판)은 숲을 보지 않는다.
+    pub const PROLOGUE: &str = "prologue";
     /// 기술 나무(0106)의 옛 꼴: 갈래마다 **앞에서부터** 연 칸 수. 0161부터는 `tree.cells.*`가 없을 때만 읽는다("앞에서부터 N칸").
     /// 쓸 때는 앞에서부터 이어 연 수를 적는다(옛 판이 읽어도 가진 것보다 많이 열리지 않는다). 목표 핀 `tree.pin`은 0161에서 걷었다 —
     /// 읽지도 쓰지도 않는다(옛 기록의 줄은 모르는 키처럼 그대로 지닌다).
@@ -242,6 +248,10 @@ pub struct Progress {
     pub read: Vec<String>,
     /// 받은 여정 목표(0183).
     pub journey: Vec<String>,
+    /// 받은 도감 칸의 보상(0265 — `codex::paid_key`).
+    pub codex_paid: Vec<String>,
+    /// 팔거나 내려놓아 이제는 없는 물건(0266 — 도감이 그대로 보인다).
+    pub codex_had: Vec<String>,
     /// 문 장치로 연 문(0113).
     pub gates: Vec<String>,
     /// 성소 문지기 핵 점수(0105, `CORE_CAP`까지).
@@ -290,6 +300,8 @@ pub struct Progress {
     pub woke: bool,
     /// 깨어난 자리의 화로에 불이 붙었다(0171). 새 기록은 거짓 — 그 화로가 꺼진 채 서 있다.
     pub lit: bool,
+    /// 서막 숲을 지나 성소에 들었다(0262). 새 기록은 거짓 — 첫 판이 숲에서 열린다.
+    pub prologue: bool,
     /// 쌓인 플레이 시간(초, 0081).
     pub play: u32,
     /// 원래 기록(모르는 키를 지키려고 — 쓸 때 이 위에 덮는다).
@@ -392,6 +404,8 @@ impl Progress {
         let codex = read_list(&r, key::CODEX);
         let read = read_list(&r, key::READ);
         let journey = read_list(&r, key::JOURNEY);
+        let codex_paid = read_list(&r, key::CODEX_PAID);
+        let codex_had = read_list(&r, key::CODEX_HAD);
         let runs = r.num(key::RUNS).unwrap_or(0);
         // 0166 전의 기록: 처음의 둘은 값 없이 가졌다 — 잃지 않게 1단으로(이미 올렸으면 그대로), 그 값은 기록의 몫
         // (`gift` 둘)으로 얹어 남은 점수는 그대로다. 한 번도 쓴 적 없는 기록(빈 슬롯·깨진 글)은 옛 기록이 아니다 — 새 판으로 읽는다.
@@ -422,6 +436,8 @@ impl Progress {
             codex,
             read,
             journey,
+            codex_paid,
+            codex_had,
             gates,
             cores,
             bell_cores,
@@ -487,6 +503,12 @@ impl Progress {
             lit: r
                 .num(key::HEARTH_LIT)
                 .map_or(r.num(key::VERSION).is_some(), |n| n > 0),
+            // 0262: 키가 없으면 깨어났나를 따른다 — 이미 깨어난 기록(이 키 전의 판)은 숲을 지난 것으로.
+            prologue: r.num(key::PROLOGUE).map_or(
+                r.num(key::WOKE)
+                    .map_or(r.num(key::VERSION).is_some(), |n| n > 0),
+                |n| n > 0,
+            ),
             ult_gift: if before_ult {
                 crate::skills::ULT_LEARN
             } else {
@@ -611,6 +633,47 @@ impl Progress {
         owned.extend(self.owned.iter().map(|c| Base::Charm(*c)));
         let worn = self.worn_bases();
         self.bag.settle(&owned, &worn);
+    }
+
+    /// 그 바탕의 마지막 하나를 팔거나 내려놓았다(0266): 가진 바탕에서 빼고(안 빼면 `settle_items`가 보통 것을 다시 만든다), 낀 자리가
+    /// 가리켰으면 비우고, 도감은 한 번 가졌던 것으로 기억한다(`codex_had`). 가방에 같은 바탕이 남았으면 아무 일도 없다.
+    pub fn part_with(&mut self, base: crate::items::Base) {
+        use crate::items::Base;
+        if self.bag.of(base).next().is_some() {
+            return;
+        }
+        let had = match base {
+            Base::Weapon(w) => {
+                self.weapons.retain(|x| *x != w);
+                if self.weapon == Some(w) {
+                    self.weapon = None;
+                }
+                if self.sub == Some(w) {
+                    self.sub = None;
+                }
+                crate::codex::paid_key("weapon", w.key())
+            }
+            Base::Shield(s) => {
+                self.shields.retain(|x| *x != s);
+                if self.shield == Some(s) {
+                    self.shield = None;
+                }
+                crate::codex::paid_key("shield", s.key())
+            }
+            Base::Charm(c) => {
+                self.owned.retain(|x| *x != c);
+                for w in &mut self.worn {
+                    if *w == Some(c) {
+                        *w = None;
+                    }
+                }
+                crate::codex::paid_key("charm", crate::charms::def(c).key)
+            }
+        };
+        if !self.codex_had.contains(&had) {
+            self.codex_had.push(had);
+            self.codex_had.sort();
+        }
     }
 
     pub fn owns_weapon(&self, w: crate::weapons::Id) -> bool {
@@ -784,6 +847,8 @@ impl Progress {
         r.set(key::CODEX, self.codex.join(","));
         r.set(key::READ, self.read.join(","));
         r.set(key::JOURNEY, self.journey.join(","));
+        r.set(key::CODEX_PAID, self.codex_paid.join(","));
+        r.set(key::CODEX_HAD, self.codex_had.join(","));
         r.set(key::GATES, self.gates.join(","));
         r.set(key::CORE_WARDEN, self.cores);
         r.set(key::CORE_BELL, self.bell_cores);
@@ -802,6 +867,7 @@ impl Progress {
         r.set(key::TIPS, self.tips);
         r.set(key::WOKE, self.woke as u32);
         r.set(key::HEARTH_LIT, self.lit as u32);
+        r.set(key::PROLOGUE, self.prologue as u32);
         if self.gift > 0 {
             r.set(key::SKILL_GIFT, self.gift);
         } else {
@@ -1960,6 +2026,30 @@ forge.sword=3
         assert!(back.woke && !back.lit, "woke up, the hearth still cold");
     }
 
+    /// 0262: 서막 숲은 새 기록의 것 — 새 판은 "아직"을 적고, 키가 없으면 깨어났나를 따른다: 옛 기록(키 없는 판)과 깨어난 뒤 이 키 전의
+    /// 판이 쓴 기록(`woke=1`)은 숲을 지난 것, 깨어나다 만 기록(`woke=0`)과 빈 슬롯은 아직. 깨어났지만 숲을 다 지나지 않은 판은 `woke=1`·
+    /// `prologue=0` 그대로 오간다(다시 열면 깨어나는 장면 없이 숲에서).
+    #[test]
+    fn the_prologue_belongs_to_new_records_and_follows_waking_when_missing() {
+        let fresh = Progress::default();
+        assert!(!fresh.prologue);
+        assert!(fresh.to_record().to_text().contains("prologue=0\n"));
+        let read = |t: &str| Progress::from_record(Record::parse(t)).prologue;
+        assert!(
+            read("v=1\nembers=30\n"),
+            "an old record never sees the wood"
+        );
+        assert!(read("v=1\nwoke=1\n"), "woke before this key: past the wood");
+        assert!(!read("v=1\nwoke=0\n"));
+        assert!(!read(""), "an empty slot is new");
+        let half = Progress {
+            woke: true,
+            ..Progress::default()
+        };
+        let back = Progress::from_record(Record::parse(&half.to_record().to_text()));
+        assert!(back.woke && !back.prologue, "woke in the wood, not out yet");
+    }
+
     /// 0158: 손댄 기록 — 범위 밖의 단은 범위 안으로, 이상한 고르기는 ㄱ,
     /// 가진 점수보다 많이 쓴 판은 통째로 처음으로(터지지 않는다 — 점수는 남아 있다).
     #[test]
@@ -2196,6 +2286,37 @@ forge.sword=3
         assert_eq!((st.dmg, st.heavy_dmg), (plain.dmg + more, plain.heavy_dmg));
     }
 
+    /// 0266: 하나뿐인 망치를 팔면 가진 바탕에서 빠진다 — 저장 앞의 맞추기가 보통 망치를 다시 만들지 않고, 도감은 가졌던 것으로 기억한다.
+    /// 같은 바탕이 남아 있으면 아무 일도 없다.
+    #[test]
+    fn parting_with_the_last_of_a_base_forgets_it_but_the_codex_remembers() {
+        use crate::items::Base;
+        use crate::weapons::Id as W;
+        let mut p = Progress {
+            weapons: vec![W::Sword, W::Hammer],
+            weapon: Some(W::Sword),
+            ..Progress::default()
+        };
+        p.settle_items();
+        let hammer = p.bag.of(Base::Weapon(W::Hammer)).next().unwrap().0;
+        let it = p.bag.remove(hammer).unwrap();
+        p.part_with(it.base);
+        p.settle_items();
+        assert_eq!(p.weapons, vec![W::Sword]);
+        assert!(
+            p.bag.of(Base::Weapon(W::Hammer)).next().is_none(),
+            "not made again"
+        );
+        assert_eq!(p.codex_had, vec!["weapon.hammer".to_string()]);
+        // 검의 여벌을 팔아도 검은 남는다.
+        let spare = p.bag.add(crate::items::Item::plain(Base::Weapon(W::Sword)));
+        p.bag.remove(spare);
+        p.part_with(Base::Weapon(W::Sword));
+        assert_eq!(p.weapons, vec![W::Sword]);
+        let back = Progress::from_record(p.to_record());
+        assert_eq!(back.codex_had, p.codex_had);
+    }
+
     /// 0223 V3: 부무기 칸에 끼운 스킬 둘은 기록 `skill.sub.1`·`skill.sub.2`에 남는다 — 처음의 둘이면 쓰지 않는다. 주무기의 칸과는 따로다.
     #[test]
     fn the_off_weapon_skill_slots_round_trip_apart_from_the_main_ones() {
@@ -2301,6 +2422,8 @@ forge.sword=3
             codex: vec!["husk".into(), "thorn".into()],
             read: vec!["sanctuary.0".into()],
             journey: vec!["sanctuary.gates".into()],
+            codex_paid: vec!["foe.husk".into()],
+            codex_had: vec!["weapon.bow".into()],
             gates: vec!["sanctuary.gate.0".into()],
             cores: 1,
             bell_cores: 2,
@@ -2328,6 +2451,7 @@ forge.sword=3
             tips: 0b101,
             woke: true,
             lit: true,
+            prologue: true,
             play: 777,
             ..Progress::default()
         };
@@ -2369,6 +2493,8 @@ forge.sword=3
             codex,
             read,
             journey,
+            codex_paid,
+            codex_had,
             gates,
             cores,
             bell_cores,
@@ -2393,6 +2519,7 @@ forge.sword=3
             tips,
             woke,
             lit,
+            prologue,
             play,
             base: _,
         } = once;
@@ -2412,6 +2539,8 @@ forge.sword=3
         assert_ne!(codex, d.codex, "codex");
         assert_ne!(read, d.read, "read");
         assert_ne!(journey, d.journey, "journey");
+        assert_ne!(codex_paid, d.codex_paid, "codex_paid");
+        assert_ne!(codex_had, d.codex_had, "codex_had");
         assert_ne!(gates, d.gates, "gates");
         assert_ne!(cores, d.cores, "cores");
         assert_ne!(bell_cores, d.bell_cores, "bell_cores");
@@ -2444,6 +2573,7 @@ forge.sword=3
         assert_ne!(tips, d.tips, "tips");
         assert_ne!(woke, d.woke, "woke");
         assert_ne!(lit, d.lit, "lit");
+        assert_ne!(prologue, d.prologue, "prologue");
         assert_ne!(play, d.play, "play");
     }
 }

@@ -597,7 +597,8 @@ pub fn after_stage(out: StageOut) -> Option<Scene> {
         | StageOut::Respawned
         | StageOut::CoreTaken
         | StageOut::Descend
-        | StageOut::Ascend => None,
+        | StageOut::Ascend
+        | StageOut::Onward => None,
         StageOut::Cleared => Some(Scene::Ending { won: true }),
         StageOut::Defeated => Some(Scene::Ending { won: false }),
     }

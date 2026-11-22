@@ -6,7 +6,7 @@ nail `docs/release.md`를 줄인 것. 웹(Netlify) + Android APK(0022) + PC 묶�
 | 대상 | 트리거 | 워크플로 | 결과 |
 |---|---|---|---|
 | 웹(운영) | `main` push | `deploy-web.yml` | fmt·clippy(두 갈래)·test·운영판 wasm(`--no-default-features`)·조립·연기 시험(개발판으로) → `publish` 잡(Environment `web-production`)이 Cloudflare Worker `web-game-knellroot` = https://knellroot.beardworks.io/play/ (0246) — 올린 뒤 `build.txt`가 그 커밋인지 본 다음 옛 https://knellroot.netlify.app 를 기록 넘김 페이지로 |
-| 웹(개발판) | `release/**` push | `deploy-web.yml` | 개발 기능 켠 빌드 → 별칭 `dev`(https://dev--knellroot.netlify.app, noindex). 올린 뒤 별칭의 `build.txt`를 확인(아니면 실패) |
+| 웹(개발판) | `release/**` push(`docs/**`·`*.md`만 바뀐 push는 건너뜀 — main도 같다, 0264) | `deploy-web.yml` | 개발 기능 켠 빌드 → 별칭 `dev`(https://dev--knellroot.netlify.app, noindex). 올린 뒤 별칭의 `build.txt`를 확인(아니면 실패) |
 | 웹(PR) | PR | 같은 워크플로 | `pr-<번호>--knellroot.netlify.app` |
 | Release + APK | `main` push에 `Cargo.toml` 버전이 새 값 **그리고** `docs/releases/v<버전>.md`가 있음 | `release.yml` → `build-android.yml` | 태그 `v<버전>`, GitHub Release(본문 = 그 md), `knellroot.apk`(운영판) 첨부 |
 | APK(개발판) | `release/**` push(`src/`·`assets/`·`android/`·`third_party/`·`Cargo.*`) | `build-android.yml` | 패키지 `io.github.aimenjoe.dev.knellroot`("Knellroot dev" — 마지막 조각은 꼭 `knellroot`: cargo-quad-apk가 라이브러리 이름으로 쓴다, 0070) → 미리 보기 Release `dev`의 `knellroot-dev.apk`를 갈아 끼움 |
@@ -14,10 +14,10 @@ nail `docs/release.md`를 줄인 것. 웹(Netlify) + Android APK(0022) + PC 묶�
 | PC 묶음(운영판) | Release와 같음(APK 잡 뒤) | `release.yml` → `build-desktop.yml` | 같은 Release에 `knellroot-windows-release.zip`·`knellroot-macos-release.zip`(겸용 `.app`, 임시 서명)·`knellroot-linux-release.tar.gz` |
 | PC 묶음(개발판) | `release/**` push(`src/`·`assets/`·`pc/`·`third_party/`·`build.rs`·`Cargo.*`), 또는 Actions → build-desktop → Run workflow | `build-desktop.yml` | Actions 아티팩트 `knellroot-<windows·macos·linux>-dev-<sha>`(7일). macOS 러너가 비싸 main push마다는 돌리지 않는다 |
 | iOS .ipa(서명 안 함) | `main`·`release/**` push(`src/`·`assets/`·`ios/`·`third_party/`·`build.rs`·`Cargo.*`), 또는 Actions → build-ios → Run workflow | `build-ios.yml` | Actions 아티팩트 `knellroot-ios-unsigned-<release·dev>-<sha>`(7일). Release에는 붙이지 않는다 — Sideloadly 등으로 내 Apple ID 서명 뒤 설치(0136) |
-| APK(시험용) | `main` push(같은 경로), 또는 Actions → build-android → Run workflow | `build-android.yml` | Actions 아티팩트 `knellroot-apk-<release·dev>-<sha>` |
+| APK(시험용) | Actions → build-android → Run workflow(main push에는 돌지 않는다 — 운영 APK는 `release.yml`이 만든다, 0264) | `build-android.yml` | Actions 아티팩트 `knellroot-apk-<release·dev>-<sha>` |
 
 ## 갈래(0022, nail 0193)
-- `main` = 운영판, 패치만. `release/v0.7` = 개발판이자 작업 갈래(0216 — v0.7.0 = 넷째 지역 마무리, `release/v0.6`에서 땀. 운영판 v0.6.x 패치는 main에서 `patch/v0.6.x`로 골라 옮긴다), 그 전 `release/v0.6`(작업은 여기에 커밋·push, 0134 — 앞 갈래 `release/v0.5`·`v0.4`·옛 `release/v0.3`은 패치용으로 그대로 둠). 마일스톤을 닫으면 release → main + 버전 올리기, 다음 갈래는 새 main에서.
+- `main` = 운영판, 패치만. `release/v0.8` = 개발판이자 작업 갈래(v0.8.0 서막 0262 — v0.7.4 배포 뒤 새 main에서 땀, 2026-11-21. v0.7.x 패치는 `release/v0.7`에서 하고 여기에 합친다), 그 전 `release/v0.7`(0216 — v0.7.0~v0.7.4), `release/v0.6`(작업은 여기에 커밋·push, 0134 — 앞 갈래 `release/v0.5`·`v0.4`·옛 `release/v0.3`은 패치용으로 그대로 둠). 마일스톤을 닫으면 release → main + 버전 올리기, 다음 갈래는 새 main에서.
 - main에 패치를 넣었으면 release 갈래에도 합친다.
 - **배포(main push·버전 올리기)는 사장이 정한다.** 고친 것을 모아 "이것들을 고쳤는데 v<버전>으로 배포할까요?"
 - **main 룰셋(0092, `.github/rulesets/main.json`·`release.json`)**: 지우기·강제 push 막기, PR 필수, 검사 `build`(웹 CI 잡) 통과, 우회는 레포 관리자만 — 운영 반영은 사장의 Merge로만.

@@ -48,7 +48,9 @@ async function run(browser, name, opts) {
   await shot('2-equip');
   await flip('KeyE', '가방'); await page.waitForTimeout(400);
   await shot('3-bag');
-  await flip('KeyE', '기술'); await flip('KeyE', '기록'); await until('Codex', '기록 탭'); await page.waitForTimeout(400);
+  await flip('KeyE', '기술'); await flip('KeyE', '기록'); await until('Codex', '기록 탭');
+  // 기록 탭은 여정 묶음에서 열린다(0265) — → 한 번이 적(도감 생물 그림).
+  await press('ArrowRight'); await until('Codex { host: Pause, tab: 1', '기록 탭의 적 묶음'); await page.waitForTimeout(400);
   await shot('4-codex');
   await ctx.close();
   return errors;

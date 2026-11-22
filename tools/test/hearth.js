@@ -1,7 +1,7 @@
 // 큰 창(화로·멈춤) 시험(0104 → 0164 "창 하나 + 탭"): 헤드리스 Chromium으로 한국어·영어 두 판 —
 //   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 화로 창(0263 — 성장 · 장비 · 가방 · 기술 · 가게 · 설정; 성장 탭 — 레벨 줄 셋을 차례로
 //   올려 보고 묻는 창, 기술 줄에서 확인 = 기술 탭의 그 칸, 0173) → 화로의 Select(Tab) = 같은 창의 장비 탭 → 가방(잔불로·여벌 정리가 켜진다) →
-//   가게 · 설정(모든 줄) · 기술, 그리고 싸움에서 연 멈춤 창(탭 다섯 — 기록(도감 묶음 넷 + 여정)의 모든 줄은 여기서), 화면마다 스크린숏.
+//   가게 · 설정(모든 줄) · 기술, 그리고 싸움에서 연 멈춤 창(탭 다섯 — 기록(여정 + 도감 묶음 넷)의 모든 줄은 여기서), 화면마다 스크린숏.
 //   기술 탭(0161 — 옛 "나무" 줄과 기술 판이 하나가 되었다): 칸 그림 격자(갈래 셋 × 줄 셋) + 오른쪽 상세.
 //   확인 = 그 칸에 할 수 있는 일의 작은 목록(올리기·열기 / 끼우기 / 고르기 바꾸기) → 사는 일은 묻는 창. 한 단 사기 · 3단 고르기 뒤집기 ·
 //   패시브 칸 열기 · 모든 칸의 상세 · 잠긴 칸 · 되돌리기(묻는 창)를 지나고, 멈춤의 기술 화면(끼우기만)도 본다.
@@ -290,20 +290,10 @@ async function run(browser, lang) {
   await home(); await press('ArrowRight'); await press('Enter'); await page.waitForTimeout(300);
   await shot('16a-pause-skills-away');
   await page.waitForTimeout(1600);
-  // 기록(기술에서 E, 0261 도감 → 기록 — 0263부터 멈춤에만): 묶음 넷(좌우)의 모든 줄 + 다섯째 묶음 여정.
-  await press('KeyE'); await until('Codex { host: Pause, tab: 0', '멈춤: 기록 탭');
-  for (let i = 0; i < 6; i++) { await shot(`8h-codex-foe-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
-  await press('ArrowRight'); await page.waitForTimeout(300);
-  for (let i = 0; i < 9; i++) { await shot(`8i-codex-charm-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
-  // 셋째 묶음 덧옷(0176).
-  await press('ArrowRight'); await page.waitForTimeout(300);
-  for (let i = 0; i < 3; i++) { await shot(`8k-codex-garb-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
-  // 넷째 묶음 무기(0191).
-  await press('ArrowRight'); await page.waitForTimeout(300);
-  for (let i = 0; i < 5; i++) { await shot(`8l-codex-weapon-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
-  // 여정(0183 탭 → 0261 기록 탭의 다섯째 묶음): 줄마다. 심은 기록은 성소의 문지기를 넘었다(core.warden=1) — 둘째 줄 "성소의 문지기를 넘어라"를
+  // 기록(기술에서 E, 0261 도감 → 기록 — 0263부터 멈춤에만): 첫 묶음 여정(0265 — 맨 앞) + 도감 묶음 넷(좌우)의 모든 줄.
+  // 여정: 줄마다. 심은 기록은 성소의 문지기를 넘었다(core.warden=1) — 둘째 줄 "성소의 문지기를 넘어라"를
   // 받으면(확인) 기록에 journey=s.warden, 잔불 +60. 마을의 목표도 보인다.
-  await press('ArrowRight'); await until('Codex { host: Pause, tab: 4', '멈춤: 기록 탭의 여정 묶음');
+  await press('KeyE'); await until('Codex { host: Pause, tab: 0', '멈춤: 기록 탭 = 여정 묶음');
   for (let i = 0; i < 10; i++) { await shot(`8m-journey-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   // 열 줄을 다 지나면 목록은 첫 줄로 돈다 — 한 줄 아래가 문지기 목표.
   await press('ArrowDown'); await page.waitForTimeout(150);
@@ -318,6 +308,29 @@ async function run(browser, lang) {
     await press('Enter'); await page.waitForTimeout(300);
     if (!/journey=s\.warden\n/.test(await record())) errors.push('journey: a taken goal is taken once');
   }
+  await press('ArrowRight'); await until('Codex { host: Pause, tab: 1', '멈춤: 기록 탭의 적 묶음');
+  for (let i = 0; i < 6; i++) { await shot(`8h-codex-foe-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  // 장신구 묶음: 첫 줄(가진 껍질 부적)의 보상을 받는다(0265 — 확인 = 받기, 잔불 +15, 한 번만).
+  await press('ArrowRight'); await until('Codex { host: Pause, tab: 2', '멈춤: 기록 탭의 장신구 묶음');
+  {
+    await shot('8i-codex-charm-bounty');
+    const before = Number(/embers=(\d+)\n/.exec(await record())[1]);
+    await press('Enter'); await page.waitForTimeout(400);
+    await shot('8i-codex-charm-taken');
+    const j = await record();
+    if (!/codex\.paid=charm\.shell\n/.test(j)) errors.push(`codex: taking a bounty must be saved: ${JSON.stringify(j)}`);
+    const after = Number(/embers=(\d+)\n/.exec(j)[1]);
+    if (after !== before + 15) errors.push(`codex: an owned charm gives 15 embers (${before} → ${after})`);
+    await press('Enter'); await page.waitForTimeout(300);
+    if (Number(/embers=(\d+)\n/.exec(await record())[1]) !== after) errors.push('codex: a bounty is taken once');
+  }
+  for (let i = 0; i < 9; i++) { await shot(`8i-codex-charm-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  // 덧옷(0176).
+  await press('ArrowRight'); await page.waitForTimeout(300);
+  for (let i = 0; i < 3; i++) { await shot(`8k-codex-garb-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  // 무기(0191 — 맨손은 없다, 0265).
+  await press('ArrowRight'); await until('Codex { host: Pause, tab: 4', '멈춤: 기록 탭의 무기 묶음');
+  for (let i = 0; i < 5; i++) { await shot(`8l-codex-weapon-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   // 설정(끝에 개발 · 처음부터 · 타이틀로): 줄마다, 끝 줄에서 묻는 창을 열어 보고 취소.
   await press('KeyE'); await until('Settings { host: Pause', '멈춤: 설정 탭');
   for (let i = 0; i < 13; i++) { await shot(`18-pause-settings-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }

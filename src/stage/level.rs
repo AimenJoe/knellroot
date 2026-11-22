@@ -80,24 +80,36 @@ impl Level {
                         pos: p,
                         yaw: 0.0,
                     }),
+                    ARCH_GLYPH => lv.props.push(Prop {
+                        kind: PropKind::Arch,
+                        pos: p,
+                        yaw: 0.0,
+                    }),
                     'L' => lv.props.push(Prop {
                         kind: PropKind::Bell,
                         pos: p,
                         yaw: 0.0,
                     }),
+                    // 조명 화로 `b`와 쉬는 곳의 화톳불 `R`(0267 — 사장 2026-11-22 "화톳불이랑 그냥 조명 불이랑 구분이 안 됨"):
+                    // 쉬는 곳은 땅에 놓인 낮고 넓은 모닥불(`hearth.glb`), 빛도 더 넓다.
                     'b' | 'R' => {
-                        if c == 'R' {
+                        let rest = c == 'R';
+                        if rest {
                             lv.marks.push(('R', p));
                         }
                         lv.props.push(Prop {
-                            kind: PropKind::Brazier,
+                            kind: if rest {
+                                PropKind::Hearth
+                            } else {
+                                PropKind::Brazier
+                            },
                             pos: p,
                             yaw: 0.0,
                         });
                         lv.lights.push(Light {
-                            pos: p + Vec3::Y * 1.2,
+                            pos: p + Vec3::Y * if rest { 1.0 } else { 1.2 },
                             color: Color::new(1.0, 0.62, 0.25, 1.0),
-                            radius: 7.0,
+                            radius: if rest { HEARTH_LIGHT_R } else { 7.0 },
                             shaft: false,
                         });
                     }
@@ -430,9 +442,30 @@ impl Level {
     }
 
     /// 부딪힘 상자: 벽 + 소품(+ 닫힌 문은 따로).
+    /// 무너진 아치의 자리(0265 — 지도의 `ARCH_GLYPH`, 땅 높이).
+    pub fn arch(&self) -> Option<Vec3> {
+        self.props
+            .iter()
+            .find(|p| p.kind == PropKind::Arch)
+            .map(|p| p.pos)
+    }
+
     pub fn obstacles(&self) -> Vec<Aabb> {
         let mut v = self.walls.clone();
         for p in &self.props {
+            if p.kind == PropKind::Arch {
+                for sx in [-1.0, 1.0] {
+                    let x = p.pos.x + sx * ARCH_JAMB_X;
+                    v.push(Aabb {
+                        min: vec3(x - ARCH_JAMB_HALF.x, 0.0, p.pos.z - ARCH_JAMB_HALF.y),
+                        max: vec3(
+                            x + ARCH_JAMB_HALF.x,
+                            ARCH_JAMB_H,
+                            p.pos.z + ARCH_JAMB_HALF.y,
+                        ),
+                    });
+                }
+            }
             let h = p.kind.half();
             if h != Vec2::ZERO {
                 v.push(Aabb {

@@ -328,7 +328,8 @@ mod tests {
             assert!(!crate::i18n::tr(g.title).is_empty());
         }
         // 지역마다 주요 목표가 먼저 하나 이상.
-        for st in 0..STAGES.len() {
+        // 0262: 서막 숲(판의 차례 밖)에는 목표가 없다.
+        for st in 0..crate::stage::REGIONS {
             let mine: Vec<_> = GOALS.iter().filter(|g| g.stage == st).collect();
             assert!(
                 !mine.is_empty() && mine[0].kind == Branch::Main,
@@ -382,7 +383,7 @@ mod tests {
                 );
             }
         }
-        for st in 0..STAGES.len() {
+        for st in 0..crate::stage::REGIONS {
             let pts = GOALS
                 .iter()
                 .filter(|g| g.stage == st && g.reward == Reward::Point)

@@ -1,6 +1,7 @@
 //! 스테이지(0019): 지도(글자 격자) → 레벨(벽·소품·불빛·스폰·문) + 진행 대본(구역·물결·문·보스·핵). 새 스테이지 = 파일 하나
 //! (`StageDef` 한 개). 진행은 월드 밖에서 월드를 지켜보며 적을 세우고 문을 여닫는다 — 월드는 스테이지를 모른다(경계 그대로).
 //! 앱은 `StageRun::tick`의 결과(`StageOut`)로 장면만 바꾼다(흐름은 `app::flow`의 순수 함수).
+pub mod forest;
 pub mod garden;
 mod level;
 pub mod sanctuary;
@@ -33,9 +34,13 @@ pub enum PropKind {
     Pillar,
     Root,
     Brazier,
+    /// 쉬는 곳의 화톳불(0267 — 지도 `R`): 땅에 놓인 낮고 넓은 모닥불. 조명 화로(`Brazier`, 지도 `b`)와 갈린다.
+    Hearth,
     Rubble,
     WallPiece,
     Bell,
+    /// 무너진 아치(0265 — 서막 숲 끝·성소 남쪽 벽의 출입구, `ARCH_GLYPH`): 가운데는 지나가고 설주 둘만 막는다(`Level::obstacles`).
+    Arch,
 }
 
 impl PropKind {
@@ -44,9 +49,11 @@ impl PropKind {
             PropKind::Pillar => "pillar_broken",
             PropKind::Root => "root_clump",
             PropKind::Brazier => "brazier",
+            PropKind::Hearth => "hearth",
             PropKind::Rubble => "rubble",
             PropKind::WallPiece => "wall_segment",
             PropKind::Bell => "bell",
+            PropKind::Arch => "arch_ruin",
         }
     }
 
@@ -56,9 +63,12 @@ impl PropKind {
             PropKind::Pillar => vec2(0.6, 0.6),
             PropKind::Root => vec2(0.5, 0.5),
             PropKind::Brazier => vec2(0.35, 0.35),
+            PropKind::Hearth => vec2(0.75, 0.75),
             PropKind::Rubble => Vec2::ZERO,
             PropKind::WallPiece => vec2(1.0, 0.4),
             PropKind::Bell => vec2(0.8, 0.8),
+            // 가운데는 길 — 설주 둘은 `Level::obstacles`가 따로.
+            PropKind::Arch => Vec2::ZERO,
         }
     }
 
@@ -67,9 +77,11 @@ impl PropKind {
             PropKind::Pillar => 3.0,
             PropKind::Root => 1.0,
             PropKind::Brazier => 1.0,
+            PropKind::Hearth => 0.6,
             PropKind::Rubble => 0.6,
             PropKind::WallPiece => 3.0,
             PropKind::Bell => 2.0,
+            PropKind::Arch => 5.1,
         }
     }
 }
@@ -165,10 +177,44 @@ pub struct StageDef {
     /// 문(`G`)이 지름길일 뿐인 지역(0208 — 작업층의 화물 승강대): 문지기 싸움터의 문이 아니라서 처음부터 문 앞 단계(문지기는 장치와
     /// 상관없이 깬다), 문은 장치를 당겨야만 열리고 연 뒤에는 닫히지 않는다(문지기가 깨도).
     pub shortcut: bool,
+    /// 서막 지역(0262 — 숲): 표의 끝에 붙고 판의 차례(내려가는 `D`·오르는 `U`) 밖이다. 문지기·핵·문·화로·상자·숨은 물건이 없고,
+    /// 끝의 표지(`EXIT_GLYPH`)를 밟으면 "성소에 들다"(`StageOut::Onward`), 쓰러지면 깨어난 자리에서 다시 선다. 종소리는 그 표지에서.
+    pub prologue: bool,
 }
 
 /// 판의 차례(0118, v0.5.0 T1): 성소 → 떠난 마을. 지도 `D`(내려가는 길, 핵을 거둔 뒤)로 다음, `U`(오르는 길)로 앞.
-pub static STAGES: [&StageDef; 4] = [&sanctuary::DEF, &village::DEF, &garden::DEF, &workings::DEF];
+/// 서막 숲(0262)은 표의 **끝**에 붙는다 — 기록의 지역 번호(`run.stage`)·상자 번호(`지역 × 1000`)·바닥 아이템의 지역이 그대로다.
+/// 판의 차례는 앞의 `REGIONS`개뿐(마지막 지역 = `STAGES[REGIONS - 1]`).
+pub static STAGES: [&StageDef; 5] = [
+    &sanctuary::DEF,
+    &village::DEF,
+    &garden::DEF,
+    &workings::DEF,
+    &forest::DEF,
+];
+/// 판의 차례에 드는 지역 수(0262 — 서막 밖).
+pub const REGIONS: usize = 4;
+/// 서막 숲의 자리(`STAGES`의 끝, 0262). 지역이 늘면 새 지역은 숲 **앞에** 끼우고 이 값을 민다 — 숲은 기록에 지역 번호를 남기지
+/// 않는다(쉼터·상자·숨은 물건이 없고, 바닥에 내려놓은 것도 적지 않는다 — `App::note_ground`).
+pub const PROLOGUE: usize = 4;
+/// 서막 숲 끝의 표지(0262 — 성소로 가는 길)와 밟는 거리(m — 길 폭을 다 덮게).
+pub const EXIT_GLYPH: char = 'E';
+/// 무너진 아치(0265): 지나가는 출입구 — 숲 끝과 성소 남쪽 벽. 아치는 X로 걸쳐 있고 길은 Z(남 ↔ 북)로 지난다.
+pub const ARCH_GLYPH: char = 'n';
+/// 쉬는 곳 화톳불의 빛 반지름(m — 조명 화로 7보다 넓게, 0267).
+pub const HEARTH_LIGHT_R: f32 = 9.0;
+/// 아치의 설주(`arch_ruin.glb` — 가운데에서 X로 이만큼, 반폭·높이).
+pub const ARCH_JAMB_X: f32 = 2.35;
+const ARCH_JAMB_HALF: Vec2 = vec2(0.5, 0.6);
+const ARCH_JAMB_H: f32 = 2.6;
+/// 문이 다 열리는 초(`gate_open`이 여기까지 오른다 — 렌더의 `GATE_TIME`과 같은 값).
+pub const GATE_OPEN_TIME: f32 = 1.5;
+pub const EXIT_REACH: f32 = 2.4;
+/// 쓰러진 통나무(0262 — 서막 숲의 뛰어넘는 턱): 지도 `J` 둘이 한 짝(위에서부터 차례로) — 그 둘을 잇는 턱의 낮은 쪽에 통나무를 눕혀
+/// 굽는다(`scenery`, 그림만 — 부딪힘·높이는 높이 격자의 턱 그대로).
+pub const LOG_GLYPH: char = 'J';
+/// 성소에 닿는 자리(0262 — 입구 폐허의 남쪽 가장자리, "성소에 들다"가 여기서 몇 걸음 걸어 들어온다).
+pub const ARRIVE_GLYPH: char = 'A';
 /// 내려가는 길·오르는 길 표지(0118)와 밟는 거리(m). 표지에서 이만큼 벗어난 뒤에야 다시 밟을 수 있다.
 pub const DOWN_GLYPH: char = 'D';
 pub const UP_GLYPH: char = 'U';
@@ -336,6 +382,8 @@ pub enum StageOut {
     Defeated,
     /// 쓰러졌지만 마지막으로 쉰 쉼터에서 다시 일어섰다(0032) — 앱은 카메라만 그 자리로.
     Respawned,
+    /// 서막 숲 끝의 표지를 밟았다(0262) — 앱이 "성소에 들다"(`arrive`)를 연다(다 어두울 때 지역을 성소로 바꾼다).
+    Onward,
 }
 
 /// 쉼터 곁(m): 이 안이면 "쉬기"가 뜬다.
@@ -486,6 +534,8 @@ pub struct StageRun {
     pub up_at: Option<Vec3>,
     pub down_open: bool,
     passage_armed: bool,
+    /// 서막 숲 끝의 표지(0262, 지도 `E`).
+    pub exit_at: Option<Vec3>,
     /// 남은 주민(0122 — `Folk`).
     pub folk: Folk,
 }
@@ -618,6 +668,7 @@ impl StageRun {
             up_at: None,
             down_open: false,
             passage_armed: true,
+            exit_at: None,
             folk: Folk::default(),
         };
         // 주민(0122): 표지마다 — 처음엔 제 일 쪽을 본다(0132), 몸은 방랑자만 밀어낸다.
@@ -632,6 +683,7 @@ impl StageRun {
         run.folk.seen = vec![false; run.folk.list.len()];
         run.down_at = run.level.marks_of(DOWN_GLYPH).next();
         run.up_at = run.level.marks_of(UP_GLYPH).next();
+        run.exit_at = run.level.marks_of(EXIT_GLYPH).next();
         run.rests = run.level.marks_of('R').collect();
         run.chest.at = run.level.marks_of('C').collect();
         run.stones = run.level.marks_of('N').collect();
@@ -697,7 +749,8 @@ impl StageRun {
             run.objective = Some(def.obj_explore);
         }
         // 문 장치도 물결도 없는 지역(0118)은 처음부터 문이 열린 단계. 문이 지름길인 지역(0208)도 — 문은 `set_gate`가 닫아 둔다.
-        if (run.lever.is_none() && def.waves.is_empty()) || def.shortcut {
+        // 서막 숲(0262)은 입구 단계 그대로 — 문도 싸움터도 없다(문 앞 단계는 마지막 구역에서 문지기를 깨운다).
+        if !def.prologue && ((run.lever.is_none() && def.waves.is_empty()) || def.shortcut) {
             run.phase = Phase::GateOpen;
             run.set_gate(&mut w, false);
             run.objective = Some(def.obj_gate);
@@ -716,6 +769,46 @@ impl StageRun {
         w.player.facing = std::f32::consts::PI;
         self.zone = self.zone_at(p);
         self.card = Some((self.def.name, CARD_TIME));
+    }
+
+    /// 서막 숲에서 왔다(0262 "성소에 들다"): 시작 이야기·구역 카드 없이(이름은 장면이 보인다) 입구 폐허 남쪽 가장자리(`A`)에서
+    /// 북쪽(성소 쪽)을 본다. 표지가 없는 지도면 시작 자리.
+    pub fn arrive_from_prologue(&mut self, w: &mut World) {
+        self.intro = 0.0;
+        self.first_card = true;
+        self.passage_armed = false;
+        let p = self
+            .level
+            .marks_of(ARRIVE_GLYPH)
+            .next()
+            .unwrap_or(self.level.player_start);
+        w.player.pos = p;
+        w.player.prev = p;
+        w.player.facing = std::f32::consts::PI;
+        self.zone = self.zone_at(p);
+    }
+
+    /// 서막 숲에서 쓰러졌다(0262 — 쉼터가 없다): 깨어난 자리에서 가득 찬 채 다시 선다. 서 있는 적도 다시.
+    fn respawn_at_start(&mut self, w: &mut World) {
+        w.lingers.clear();
+        w.shards.clear();
+        w.lock = None;
+        w.hitstop = 0.0;
+        let full = w.stats.max_stamina();
+        let pl = &mut w.player;
+        pl.pos = self.level.player_start;
+        pl.prev = pl.pos;
+        pl.vel = Vec3::ZERO;
+        pl.state = PState::Idle;
+        pl.air = 0.0;
+        pl.hurt.left = 1.0;
+        pl.hp = pl.max_hp;
+        pl.flask = pl.flask_max;
+        pl.ranged.mana = crate::tuning::CAST_CHARGES;
+        pl.stamina = full;
+        self.populate(w);
+        self.zone = self.zone_at(w.player.pos);
+        self.card = Some((|s| s.respawned, CARD_TIME));
     }
 
     /// 아래 지역에서 올라왔다(0118): 이 판에 이긴 문지기는 없고 바닥 길은 열린 채, 바닥 길 곁(남쪽)에 선다.
@@ -815,6 +908,9 @@ impl StageRun {
                 w.enemies[i].set_tier(self.def.tier);
                 w.enemies[i].place(face(p));
                 w.enemies[i].docile = self.def.docile.contains(&mark);
+                if self.def.prologue {
+                    w.enemies[i].leash = crate::tuning::PROLOGUE_LEASH;
+                }
             }
         }
         // 떼 마당(0244): 한 등급 아래의 잡몹을 몰아 — 화로에서 쉬면 다시 선다(다른 서 있는 적과 같다).
@@ -928,10 +1024,15 @@ impl StageRun {
         if self.gate_closed {
             self.gate_open = (self.gate_open - dt).max(0.0);
         } else {
-            self.gate_open = (self.gate_open + dt).min(1.5);
+            self.gate_open = (self.gate_open + dt).min(GATE_OPEN_TIME);
         }
         self.since_rest = (self.since_rest + dt).min(f32::MAX);
         if w.player.hp <= 0 {
+            // 서막 숲(0262)은 쉼터가 없다 — 깨어난 자리에서 다시.
+            if self.def.prologue {
+                self.respawn_at_start(w);
+                return StageOut::Respawned;
+            }
             // 쉼터에서 쉰 적이 있으면 거기서 다시(0032) — 없으면 끝.
             return match self.rest_at {
                 Some((i, back)) => {
@@ -1131,6 +1232,10 @@ impl StageRun {
         if z > self.zone {
             self.zone = z;
             self.card = Some((self.def.zones[z].0, CARD_TIME));
+        }
+        // 서막 숲 끝(0262): 표지를 밟으면 성소로.
+        if self.def.prologue && self.exit_at.is_some_and(|e| flat(e) <= EXIT_REACH) {
+            return StageOut::Onward;
         }
         match self.phase {
             // 물결 스테이지(시험·기믹)만 둘째 구역에 들어서면 물결 — 서 있는 적 스테이지는 문 장치가 문을 연다(0113).
@@ -1532,6 +1637,10 @@ impl StageRun {
 
     /// 종소리가 들려오는 곳(0171 — 세계 법칙 D): 닫힌 문의 장치를 찾는 동안은 그 장치. 문이 열리면 갈 곳(`goal`)이 맡는다.
     pub fn bell_from(&self) -> Option<Vec3> {
+        // 서막 숲(0262): 숲 끝의 표지 — 종소리를 따라 성소로 걸어 나온다.
+        if self.def.prologue {
+            return self.exit_at;
+        }
         (self.phase == Phase::Entrance && !self.gate_opened)
             .then_some(self.lever)
             .flatten()

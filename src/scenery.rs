@@ -65,6 +65,43 @@ const PROP_AO: f32 = 0.4;
 const PROP_AO_R: f32 = 0.45;
 const SHADE_RES: f32 = 0.125;
 
+/// 칸 하나(±1m)의 석판들(0268): 칸을 칼질로 나눈다 — 첫 칼은 가로·세로를 칸마다 고르고, 자리는 조각 길이의 36~64%, 남은 조각이
+/// 1.3m를 넘으면 또 자르고(1.2m를 넘으면 가끔), 판 사이에 줄눈 0.05m씩. 이웃 칸과 칼 자리가 달라 줄눈이 바닥 전체로 곧게 이어지지
+/// 않는다(같은 1m 넷이면 1m 격자였다). (판 가운데, 반폭, 판 번호 — 번호는 판마다의 굴림 씨앗).
+fn slab_cuts(x: usize, z: usize) -> Vec<(Vec3, Vec2, u32)> {
+    let mut out = Vec::new();
+    let mut todo = vec![(vec2(-1.0, -1.0), vec2(1.0, 1.0), 0u32)];
+    let mut n = 0u32;
+    while let Some((lo, hi, depth)) = todo.pop() {
+        let size = hi - lo;
+        let long = size.x.max(size.y);
+        let cut = depth < 4 && (long > 1.3 || (long > 1.2 && hash(x, z, 200 + n * 3) < 0.4));
+        if cut {
+            let along_x = if (size.x - size.y).abs() < 0.05 {
+                hash(x, z, 201 + n * 3) < 0.5
+            } else {
+                size.x > size.y
+            };
+            let t = 0.36 + 0.28 * hash(x, z, 202 + n * 3);
+            n += 1;
+            if along_x {
+                let m = lo.x + size.x * t;
+                todo.push((lo, vec2(m, hi.y), depth + 1));
+                todo.push((vec2(m, lo.y), hi, depth + 1));
+            } else {
+                let m = lo.y + size.y * t;
+                todo.push((lo, vec2(hi.x, m), depth + 1));
+                todo.push((vec2(lo.x, m), hi, depth + 1));
+            }
+            continue;
+        }
+        let mid = (lo + hi) * 0.5;
+        let i = out.len() as u32;
+        out.push((vec3(mid.x, 0.0, mid.y), size * 0.5 - vec2(0.05, 0.05), i));
+    }
+    out
+}
+
 /// 여러 칸에 걸쳐 천천히 바뀌는 0..1 값(격자 마디의 `hash`를 부드럽게 이음) — 석판 색의 큰 얼룩.
 fn patch(x: usize, z: usize) -> f32 {
     let (fx, fz) = (x as f32 / PATCH_CELLS, z as f32 / PATCH_CELLS);
@@ -174,6 +211,25 @@ pub const WORKS_FLOOR: FloorLook = FloorLook {
     edge: Color::new(0.615, 0.615, 0.578, 1.0),
 };
 
+/// 서막 숲(0262, 땅 위): 석판은 옛 길의 조각만(판의 반이 빠져 흙 + 풀), 남은 판은 이끼. 흙은 어두운 부엽토(채도 낮게 —
+/// 호박색대 밖), 바위 단 윗면은 이끼(나무가 선다) — 갈색 길이 초록 둘레와 갈려 읽힌다. 밝기는 성소 값의 휘도 그대로.
+pub const FOREST_FLOOR: FloorLook = FloorLook {
+    moss: 0.65,
+    bare: 0.5,
+    slab: Color::new(0.276, 0.31, 0.296, 1.0),
+    moss_slab: Color::new(0.214, 0.31, 0.25, 1.0),
+    dirt: Color::new(0.226, 0.204, 0.178, 1.0),
+    mortar: Color::new(0.088, 0.098, 0.09, 1.0),
+    mortar_calm: Color::new(0.186, 0.205, 0.19, 1.0),
+    wall: Color::new(0.33, 0.37, 0.35, 1.0),
+    wall_top: Color::new(0.2, 0.236, 0.214, 1.0),
+    rock: Color::new(0.235, 0.262, 0.245, 1.0),
+    rock_top: Color::new(0.176, 0.262, 0.2, 1.0),
+    pit: Color::new(0.098, 0.124, 0.114, 1.0),
+    ledge: Color::new(0.3, 0.33, 0.31, 1.0),
+    edge: Color::new(0.57, 0.62, 0.59, 1.0),
+};
+
 /// 고인 물(`~`, 0185): 어둡고 푸른 수면, 가장자리는 젖은 흙.
 const WATER: Color = Color::new(0.13, 0.23, 0.30, 1.0);
 /// 수면의 달빛 결(0185): 칸을 가로지르는 가는 밝은 띠 — 평평한 판이 아니라 물로 읽히게.
@@ -201,7 +257,62 @@ const SLAB_SIDE: f32 = 0.62;
 const WALL_AO: f32 = 0.45;
 const WALL_AO_R: f32 = 0.6;
 /// 식생(0063 E3): 바위 단 칸마다 나무·덤불이 설 몫, 걸을 수 있는 쪽 벽 면마다 뿌리가 탈 몫.
-const TREE_SHARE: f32 = 0.22;
+pub const TREE_SHARE: f32 = 0.22;
+
+/// 쓰러진 통나무(0262)의 반지름·표지 너머로 뻗는 길이(m — 길 양옆 덤불 단에 조금 걸치고 잘린 면은 보이게)·턱 쪽으로 붙는 몫(칸 가장자리에서 m).
+/// 처음 0.36m는 쿼터뷰에서 턱의 테처럼 가늘게 읽혔다(스크린숏).
+const LOG_R: f32 = 0.48;
+const LOG_PAST: f32 = 0.9;
+const LOG_IN: f32 = 0.22;
+
+/// 통나무 자리(0262): 지도 `J` 짝마다 (밑동, 우듬지, 씨앗) — 두 표지를 잇는 줄을 턱(높은 이웃 칸) 쪽 칸 가장자리로 옮기고, 낮은 땅에
+/// 반지름의 0.8만큼 묻히게 눕힌다. 높은 이웃이 없으면 표지 줄 그대로.
+fn log_spans(lv: &Level, gnd: &Ground) -> Vec<(Vec3, Vec3, u32)> {
+    let marks: Vec<Vec3> = lv.marks_of(crate::stage::LOG_GLYPH).collect();
+    let mut out = Vec::new();
+    for (k, pair) in marks.chunks(2).enumerate() {
+        let [a, b] = pair else { continue };
+        let Some((x, z)) = gnd.cell_of(*a) else {
+            continue;
+        };
+        let here = gnd.center(x, z).y;
+        let higher = |nz: usize| lv.walkable(x, nz) && gnd.center(x, nz).y > here + 0.2;
+        let toward = if z > 0 && higher(z - 1) {
+            -1.0
+        } else if higher(z + 1) {
+            1.0
+        } else {
+            0.0
+        };
+        let shift = vec3(0.0, LOG_R * 0.8, toward * (CELL * 0.5 - LOG_IN));
+        let d = (*b - *a).normalize_or_zero();
+        out.push((
+            vec3(a.x, here, a.z) - d * LOG_PAST + shift,
+            vec3(b.x, here, b.z) + d * LOG_PAST + shift,
+            (x * 131 + z * 977 + k) as u32,
+        ));
+    }
+    out
+}
+
+/// 지역의 나무(0262 — `backdrop::Env::woods`): 바위 단 칸에 나무가 서는 몫(0 = 없음 — 땅속), 살아 있는(푸른 잎) 나무의 몫.
+/// 빽빽한 숲(`share`가 `TREE_SHARE`보다 크면)은 걷는 땅 바로 곁 칸에 덤불만 — 나무는 한 칸 뒤에 서서 길을 덮지 않고 둘레를 이룬다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Woods {
+    pub share: f32,
+    pub live: f32,
+}
+
+impl Woods {
+    pub const NONE: Woods = Woods {
+        share: 0.0,
+        live: 0.0,
+    };
+
+    pub fn dense(&self) -> bool {
+        self.share > TREE_SHARE
+    }
+}
 const BUSH_SHARE: f32 = 0.35;
 const ROOT_SHARE: f32 = 0.16;
 
@@ -316,12 +427,12 @@ fn empty(aabb: Option<Aabb>) -> Piece {
 }
 
 impl Scenery {
-    /// `trees` = 이 지역에 나무·덤불이 자라나(0118 T2 — 땅속은 벽 뿌리만).
+    /// `woods` = 바위 단 칸에 나무가 서는 몫(0118 T2 — 땅속은 0: 벽 뿌리만, 0262 — 서막 숲은 빽빽하게).
     pub fn bake(
         lv: &Level,
         lib: &mut Library,
         flora: bool,
-        trees: bool,
+        woods: Woods,
         floor: &FloorLook,
     ) -> Scenery {
         let look = crate::render::look();
@@ -388,6 +499,16 @@ impl Scenery {
                 let c = vec2(pr.pos.x, pr.pos.z);
                 occ.raise_box(c - half, c + half, pr.pos.y + pr.kind.height());
             }
+        }
+        // 통나무(0262)도 달빛을 가린다(그림자 · 그 곁에 선 배우).
+        let logs = log_spans(lv, &gnd);
+        for (a, b, _) in &logs {
+            let r = Vec2::splat(LOG_R);
+            let (lo, hi) = (
+                vec2(a.x.min(b.x), a.z.min(b.z)),
+                vec2(a.x.max(b.x), a.z.max(b.z)),
+            );
+            occ.raise_box(lo - r, hi + r, a.y.max(b.y) + LOG_R);
         }
         let prop_boxes: Vec<(Vec2, Vec2)> = lv
             .props
@@ -631,18 +752,9 @@ impl Scenery {
                 }
                 // 석판(0060 W2·0061): 칸마다 1m 넷 — 짝 둘은 가끔 하나로 붙고(긴 판), 꼭대기는 걷는 면 아래 1.5~5cm로 들쭉날쭉, 몇은 한쪽이 들리고,
                 // 몇은 빠져 흙 + 풀. 옆면이 있어 카메라 쪽 모서리에 밝은 선(0061 화면 공간 선)이 붙는다.
-                let merge_top = hash(x, z, 50) < 0.28;
-                let merge_bot = hash(x, z, 51) < 0.28;
-                let mut slabs: Vec<(Vec3, Vec2, u32)> = Vec::new();
-                for (row, merged) in [(-0.5f32, merge_top), (0.5f32, merge_bot)] {
-                    let k = if row < 0.0 { 0 } else { 2 };
-                    if merged {
-                        slabs.push((vec3(0.0, 0.0, row), vec2(0.95, 0.45), k));
-                    } else {
-                        slabs.push((vec3(-0.5, 0.0, row), vec2(0.45, 0.45), k));
-                        slabs.push((vec3(0.5, 0.0, row), vec2(0.45, 0.45), k + 1));
-                    }
-                }
+                // 0268(사장 2026-11-22 "바닥의 격자… 좀 어떻게 못하나"): 칸마다 같은 1m 넷이면 줄눈이 바닥 전체에 곧은 격자로 이어졌다 —
+                // 칸마다 칼 자리가 다른 크고 작은 판으로(`slab_cuts`).
+                let slabs = slab_cuts(x, z);
                 for (off, half, i) in slabs {
                     let r = hash(x, z, i);
                     let o = c + off;
@@ -928,15 +1040,24 @@ impl Scenery {
                         c.z + (hash(x, z, 33) - 0.5) * CELL * 0.5,
                     );
                     let seed = (x * 977 + z * 131) as u32;
-                    if !flora || !trees {
-                    } else if hash(x, z, 30) < TREE_SHARE {
-                        let b = crate::flora::tree(&mut p, on, seed, &lights);
+                    // 빽빽한 숲(0262): 걷는 땅 바로 곁(8방향) 칸은 덤불만.
+                    let by_path = woods.dense()
+                        && (-1i32..=1).any(|dz| {
+                            (-1i32..=1).any(|dx| {
+                                let (nx, nz) = (x as i32 + dx, z as i32 + dz);
+                                nx >= 0 && nz >= 0 && lv.walkable(nx as usize, nz as usize)
+                            })
+                        });
+                    if !flora || woods.share <= 0.0 {
+                    } else if !by_path && hash(x, z, 30) < woods.share {
+                        let b = crate::flora::tree(&mut p, on, seed, woods.live, &lights);
                         if let Some(a) = p.aabb.as_mut() {
                             a.min = a.min.min(b.min);
                             a.max = a.max.max(b.max);
                         }
                     } else if hash(x, z, 31) < BUSH_SHARE {
-                        crate::flora::bush(&mut p, on, seed, 0.5 + 0.4 * hash(x, z, 34), &lights);
+                        let size = 0.5 + 0.4 * hash(x, z, 34);
+                        crate::flora::bush(&mut p, on, seed, size, woods.live, &lights);
                     }
                     pieces.push(p);
                 } else {
@@ -1037,7 +1158,7 @@ impl Scenery {
             if let Some(e) = lib.get(pr.kind.model()) {
                 e.model.pose(e.pick(&["idle"]), 0.0, &mut pose);
                 let inst = Mat4::from_translation(pr.pos) * Mat4::from_rotation_y(pr.yaw);
-                if pr.kind == PropKind::Brazier && cold(pr.pos) {
+                if matches!(pr.kind, PropKind::Brazier | PropKind::Hearth) && cold(pr.pos) {
                     Batch::bake_model_dark(
                         &mut p.verts,
                         &mut p.idx,
@@ -1069,6 +1190,13 @@ impl Scenery {
             // 가림 상자(0094) = 구운 정점의 실제 범위 — 부딪힘 상자(종류별 반폭)는 회전(yaw)을 모르고 모델보다 좁을 수 있다
             // (벽 조각 깊이 0.4 대 0.83m, 부러진 기둥 조각 0.6 대 1.07m). 지나가는 소품(돌무더기)도 가리면 옅어진다.
             p.aabb = vert_bounds(&p.verts).or(p.aabb);
+            pieces.push(p);
+        }
+        // 쓰러진 통나무(0262): 정점마다 매끈한 법선의 관(`flora::log`) — 식생을 꺼도 굽는다(뛰어넘는 턱의 그림이다).
+        for (a, b, seed) in logs {
+            let mut p = empty(None);
+            crate::flora::log(&mut p, a, b, LOG_R, seed, &lights);
+            p.aabb = vert_bounds(&p.verts);
             pieces.push(p);
         }
         crate::render::set_bake_shade(None);
@@ -1281,8 +1409,9 @@ fn prop_color(k: PropKind) -> Color {
             Color::new(0.38, 0.36, 0.34, 1.0)
         }
         PropKind::Root => Color::new(0.30, 0.20, 0.25, 1.0),
-        PropKind::Brazier => Color::new(0.9, 0.6, 0.25, 1.0),
+        PropKind::Brazier | PropKind::Hearth => Color::new(0.9, 0.6, 0.25, 1.0),
         PropKind::Bell => Color::new(0.45, 0.42, 0.30, 1.0),
+        PropKind::Arch => Color::new(0.38, 0.36, 0.34, 1.0),
     }
 }
 
@@ -1393,6 +1522,49 @@ mod tests {
         assert_eq!(out[4], 93);
     }
     use super::*;
+
+    /// 0268: 칸의 석판들은 칸 안에서 겹치지 않고 줄눈만 남기고 덮으며(넓이), 너무 가는 판이 없고, 이웃 칸과 칼 자리가 대개 다르다
+    /// (곧은 줄눈이 칸을 넘어 이어지지 않게) — 1m 넷의 격자가 아니다.
+    #[test]
+    fn slabs_tile_each_cell_with_offset_cuts() {
+        let (mut same, mut total) = (0, 0);
+        for x in 0..30 {
+            for z in 0..30 {
+                let sl = slab_cuts(x, z);
+                assert!((2..=8).contains(&sl.len()), "{x},{z}: {}", sl.len());
+                let mut area = 0.0;
+                for (i, (c, h, _)) in sl.iter().enumerate() {
+                    assert!(h.x >= 0.15 && h.y >= 0.15, "thin slab {h:?}");
+                    assert!(
+                        c.x.abs() + h.x <= 1.0 && c.z.abs() + h.y <= 1.0,
+                        "inside the cell"
+                    );
+                    area += (h.x + 0.05) * (h.y + 0.05) * 4.0;
+                    for (d, g, _) in &sl[i + 1..] {
+                        let apart =
+                            (c.x - d.x).abs() >= h.x + g.x || (c.z - d.z).abs() >= h.y + g.y;
+                        assert!(apart, "overlap at {x},{z}");
+                    }
+                }
+                assert!((area - 4.0).abs() < 1e-3, "covers the cell: {area}");
+                // 이웃(오른쪽) 칸과 판 모양이 같은가 — 같은 칼 자리가 이어지면 격자가 된다.
+                let key = |v: &Vec<(Vec3, Vec2, u32)>| {
+                    let mut k: Vec<(i32, i32)> = v
+                        .iter()
+                        .map(|(c, _, _)| ((c.x * 20.0) as i32, (c.z * 20.0) as i32))
+                        .collect();
+                    k.sort();
+                    k
+                };
+                total += 1;
+                same += (key(&sl) == key(&slab_cuts(x + 1, z))) as u32;
+            }
+        }
+        assert!(
+            same * 10 < total,
+            "neighbours mostly cut differently: {same}/{total}"
+        );
+    }
 
     /// 0140 조용한 바닥: 석판 색의 큰 얼룩은 0..1 안이고 이웃 칸끼리는 조금씩만 바뀐다(칸마다 튀면 다시 격자 잡음이 된다),
     /// 줄눈은 석판의 반보다 밝다(예전 0.3배 — 화면에서 가장 센 대비가 바닥이었다).

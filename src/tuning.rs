@@ -281,6 +281,8 @@ pub const HEAR_RANGE: f32 = 3.0;
 pub const SIGHT_DY: f32 = 2.5;
 pub const ALERT_RADIUS: f32 = 4.5;
 pub const LEASH_RANGE: f32 = 18.0;
+/// 서막 숲(0262)의 잔재는 끈이 짧다 — 공격·피하기·받아치기를 해 보는 상대라 숲길 끝까지 쫓아오지 않는다.
+pub const PROLOGUE_LEASH: f32 = 8.0;
 /// 엘리트(0112): 체력 배율(올림)·몸 크기 배율·떨구는 잔불 배율, 처음 쓰러뜨렸을 때 더 흩는 잔불.
 pub const ELITE_HP: f32 = 2.0;
 pub const ELITE_SCALE: f32 = 1.25;

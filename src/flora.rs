@@ -16,8 +16,14 @@ const TRUNK: Color = Color::new(0.241, 0.212, 0.192, 1.0);
 const LEAF_DEAD: Color = Color::new(0.292, 0.322, 0.356, 1.0);
 const LEAF_LIVE: Color = Color::new(0.34, 0.50, 0.45, 1.0);
 const ROOT: Color = Color::new(0.27, 0.15, 0.34, 1.0);
-/// 살아 있는 나무의 몫.
-const LIVE_SHARE: f32 = 0.3;
+/// 쓰러진 통나무(0262): 껍질(잿빛 갈색 — 줄기보다 조금 밝게, 바닥 흙과 갈리게)·잘린 면의 겉재·나이테·심재·이끼.
+const BARK: Color = Color::new(0.41, 0.365, 0.322, 1.0);
+const SAP: Color = Color::new(0.56, 0.5, 0.42, 1.0);
+const RING: Color = Color::new(0.42, 0.37, 0.31, 1.0);
+const HEART: Color = Color::new(0.5, 0.44, 0.36, 1.0);
+const MOSS: Color = Color::new(0.25, 0.4, 0.27, 1.0);
+/// 살아 있는 나무의 몫(성소 — 지역마다는 `scenery::Woods::live`).
+pub const LIVE_SHARE: f32 = 0.3;
 
 /// 0..1 값(같은 씨앗 = 같은 모양).
 fn h(seed: u32, k: u32) -> f32 {
@@ -121,6 +127,181 @@ pub fn blob(p: &mut Piece, c: Vec3, r: Vec3, seed: u32, col: Color, lights: &[Li
 /// 잎 무더기가 바람을 받는 몫(풀 끝 = 1).
 const LEAF_SWAY: f32 = 0.3;
 
+/// 쓰러진 통나무(0262 — 서막 숲의 뛰어넘는 턱, 사장 2026-11-21 "코드 도형으로"): 0177 꼴 — 정점마다 매끈한 법선의 둥근 관.
+/// 등뼈는 `a` → `b`를 캣멀-롬으로 살짝 휘고(옆·아래로 씨앗만큼), 굵기는 밑동(`a`) `r`에서 우듬지 쪽으로 가늘어진다. 껍질은 길이로 난
+/// 얕은 골(반지름과 빛이 함께 꺼진다), 두 끝은 잘린 면 — 바깥 껍질 테 · 겉재 · 나이테 한 줄 · 심재. 위에 이끼 몇 덩이(매끈한 법선,
+/// 납작). 밑동 쪽에 부러진 뿌리 셋만 각지다(0037). 바람 몫은 0(밑동·줄기 규칙, 0142) — 흔들리지 않는다.
+pub fn log(p: &mut Piece, a: Vec3, b: Vec3, r: f32, seed: u32, lights: &[Light]) {
+    let axis = b - a;
+    let len = axis.length();
+    if len < 1e-3 {
+        return;
+    }
+    let dir = axis / len;
+    let side = Vec3::Y.cross(dir).normalize_or(Vec3::X);
+    // 등뼈: 넷의 조정점(가운데 둘은 옆·아래로 조금) → 캣멀-롬.
+    let bend = |k: u32, f: f32| {
+        side * (h(seed, k) - 0.5) * 0.5 * r * f - Vec3::Y * h(seed, k + 1) * 0.12 * r
+    };
+    let ctrl = [
+        a,
+        a + axis * 0.33 + bend(1, 1.0),
+        a + axis * 0.66 + bend(3, 1.6),
+        b,
+    ];
+    let cr = |t: f32| -> Vec3 {
+        let seg = (t * 3.0).min(2.999);
+        let i = seg as usize;
+        let u = seg - i as f32;
+        let p0 = if i == 0 {
+            ctrl[0] * 2.0 - ctrl[1]
+        } else {
+            ctrl[i - 1]
+        };
+        let (p1, p2) = (ctrl[i], ctrl[i + 1]);
+        let p3 = if i + 2 < 4 {
+            ctrl[i + 2]
+        } else {
+            ctrl[3] * 2.0 - ctrl[2]
+        };
+        let (u2, u3) = (u * u, u * u * u);
+        0.5 * (2.0 * p1
+            + (p2 - p0) * u
+            + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * u2
+            + (3.0 * p1 - p0 - 3.0 * p2 + p3) * u3)
+    };
+    // 굵기: 밑동은 조금 부풀고(뿌리 쪽) 우듬지 쪽으로 가늘어진다.
+    let rad = |t: f32| r * (1.0 - 0.32 * t + 0.12 * (1.0 - (t * 8.0).min(1.0)));
+    const RINGS: usize = 12;
+    const SIDES: usize = 14;
+    let tau = std::f32::consts::TAU;
+    let groove = |ang: f32, t: f32| {
+        let g = (ang * 7.0 + t * 1.7 + h(seed, 9) * tau).cos();
+        g.max(0.0).powi(3)
+    };
+    let frame = |t: f32| -> (Vec3, Vec3, Vec3) {
+        let e = 0.01;
+        let fwd = (cr((t + e).min(1.0)) - cr((t - e).max(0.0))).normalize_or(dir);
+        let sd = Vec3::Y.cross(fwd).normalize_or(side);
+        (fwd, sd, fwd.cross(sd))
+    };
+    let base = p.verts.len() as u16;
+    let push = |p: &mut Piece, v: Vec3, n: Vec3, col: Color| {
+        let l = lit(v, n, lights);
+        p.verts.push(with_normal(
+            Vertex::new(
+                v.x,
+                v.y,
+                v.z,
+                0.0,
+                0.0,
+                Color::new(col.r * l.x, col.g * l.y, col.b * l.z, 1.0),
+            ),
+            n,
+        ));
+    };
+    for i in 0..=RINGS {
+        let t = i as f32 / RINGS as f32;
+        let (_, sd, up) = frame(t);
+        let c = cr(t);
+        for j in 0..=SIDES {
+            let ang = j as f32 / SIDES as f32 * tau;
+            let out = sd * ang.cos() + up * ang.sin();
+            let g = groove(ang, t);
+            let v = c + out * rad(t) * (1.0 - 0.08 * g);
+            // 껍질 빛: 골은 어둡게, 큰 얼룩(씨앗)으로 조금씩.
+            let k = (0.92 + 0.16 * h(seed, 20 + (i as u32 / 3))) * (1.0 - 0.3 * g);
+            push(p, v, out, mul(BARK, k));
+        }
+    }
+    let row = (SIDES + 1) as u16;
+    for i in 0..RINGS as u16 {
+        for j in 0..SIDES as u16 {
+            let (a0, a1) = (base + i * row + j, base + i * row + j + 1);
+            let (b0, b1) = (a0 + row, a1 + row);
+            // 바깥을 보는 감김(앞 → 옆 둘레 = 바깥).
+            p.idx.extend_from_slice(&[a0, b1, b0, a0, a1, b1]);
+        }
+    }
+    // 잘린 면 둘: 가운데(심재) → 나이테 → 겉재 → 껍질 테, 면 법선은 축 쪽 밖으로.
+    for (t, sign) in [(0.0f32, -1.0f32), (1.0, 1.0)] {
+        let (fwd, sd, up) = frame(t);
+        let n = fwd * sign;
+        let c = cr(t);
+        let r0 = rad(t);
+        let start = p.verts.len() as u16;
+        push(p, c, n, HEART);
+        for (k, col) in [(0.5, RING), (0.62, SAP), (0.86, SAP), (1.0, BARK)] {
+            for j in 0..SIDES {
+                let ang = j as f32 / SIDES as f32 * tau;
+                let v = c + (sd * ang.cos() + up * ang.sin()) * r0 * k + n * 0.002;
+                push(p, v, n, col);
+            }
+        }
+        let s = SIDES as u16;
+        let wind = |x: u16, y: u16, z: u16, idx: &mut Vec<u16>| {
+            if sign > 0.0 {
+                idx.extend_from_slice(&[x, y, z]);
+            } else {
+                idx.extend_from_slice(&[x, z, y]);
+            }
+        };
+        for j in 0..s {
+            let jn = (j + 1) % s;
+            wind(start, start + 1 + j, start + 1 + jn, &mut p.idx);
+            for ring in 0..3u16 {
+                let (o, q) = (start + 1 + ring * s, start + 1 + (ring + 1) * s);
+                wind(o + j, q + j, q + jn, &mut p.idx);
+                wind(o + j, q + jn, o + jn, &mut p.idx);
+            }
+        }
+    }
+    // 이끼 몇 덩이: 등 위에 납작하게(매끈한 법선 — 흔들리지 않는다).
+    let (v12, f20) = icosahedron();
+    for m in 0..4u32 {
+        let t = 0.12 + 0.76 * (m as f32 + h(seed, 30 + m)) / 4.0;
+        let (_, sd, up) = frame(t);
+        let lean = (h(seed, 34 + m) - 0.5) * 0.9;
+        let at = cr(t) + (up * lean.cos() + sd * lean.sin()) * rad(t) * 0.9;
+        let size = rad(t) * (0.55 + 0.3 * h(seed, 38 + m));
+        let start = p.verts.len() as u16;
+        let col = mul(MOSS, 0.9 + 0.2 * h(seed, 42 + m));
+        for q in v12.iter() {
+            let d = vec3(q.x, q.y * 0.45, q.z);
+            push(
+                p,
+                at + d * size,
+                (*q * vec3(1.0, 2.2, 1.0)).normalize(),
+                col,
+            );
+        }
+        for f in f20.iter() {
+            p.idx.extend_from_slice(&[
+                start + f[0] as u16,
+                start + f[1] as u16,
+                start + f[2] as u16,
+            ]);
+        }
+    }
+    // 밑동의 부러진 뿌리 셋(각진 것은 뿌리만).
+    let (fwd, sd, up) = frame(0.0);
+    let c = cr(0.0);
+    for k in 0..3u32 {
+        let ang = (k as f32 / 3.0 + h(seed, 50 + k) * 0.2) * tau;
+        let out = sd * ang.cos() + up * ang.sin().max(-0.2);
+        let from = c + out * rad(0.0) * 0.7 + fwd * 0.05;
+        let to = from - fwd * (0.35 + 0.25 * h(seed, 54 + k)) + out * 0.25 - Vec3::Y * 0.1;
+        strand(
+            p,
+            &[from, (from + to) * 0.5 + out * 0.06, to],
+            0.07,
+            0.025,
+            TRUNK,
+            lights,
+        );
+    }
+}
+
 /// 네모 단면 줄기(뿌리·가지): 점을 따라 굵기 `r0` → `r1`. 각진 것은 뿌리만(0037).
 fn strand(p: &mut Piece, pts: &[Vec3], r0: f32, r1: f32, col: Color, lights: &[Light]) {
     let n = pts.len();
@@ -158,7 +339,7 @@ fn strand(p: &mut Piece, pts: &[Vec3], r0: f32, r1: f32, col: Color, lights: &[L
 
 /// 나무 하나(`base` = 뿌리 자리 땅 위): 짧고 굵은 휜 줄기 + 둥근 잎 무더기(가운데 큰 덩어리 위에 하나, 둘레에 둘~넷).
 /// 처음엔 줄기 2.6~4.2m·납작한 갓이라 막대 사탕처럼 보였다(스크린숏) — 줄기를 줄이고 무더기를 위로 쌓는다. 가림 상자를 돌려준다.
-pub fn tree(p: &mut Piece, base: Vec3, seed: u32, lights: &[Light]) -> Aabb {
+pub fn tree(p: &mut Piece, base: Vec3, seed: u32, live: f32, lights: &[Light]) -> Aabb {
     let height = 1.7 + 0.9 * h(seed, 1);
     let lean = vec3(h(seed, 2) - 0.5, 0.0, h(seed, 3) - 0.5) * 0.9;
     let mid = base + Vec3::Y * height * 0.5 + lean * 0.4;
@@ -171,8 +352,11 @@ pub fn tree(p: &mut Piece, base: Vec3, seed: u32, lights: &[Light]) -> Aabb {
         TRUNK,
         lights,
     );
-    let live = h(seed, 4) < LIVE_SHARE;
-    let leaf = if live { LEAF_LIVE } else { LEAF_DEAD };
+    let leaf = if h(seed, 4) < live {
+        LEAF_LIVE
+    } else {
+        LEAF_DEAD
+    };
     let clumps = 3 + (h(seed, 5) * 2.99) as u32;
     let mut lo = base - vec3(0.6, 0.2, 0.6);
     let mut hi = base + vec3(0.6, 0.0, 0.6);
@@ -206,10 +390,13 @@ pub fn tree(p: &mut Piece, base: Vec3, seed: u32, lights: &[Light]) -> Aabb {
 }
 
 /// 덤불: 땅에 붙은 조약돌 둘~셋(`size` = 대략 높이 m). 바랜 잎.
-pub fn bush(p: &mut Piece, base: Vec3, seed: u32, size: f32, lights: &[Light]) {
+pub fn bush(p: &mut Piece, base: Vec3, seed: u32, size: f32, live: f32, lights: &[Light]) {
     let n = 2 + (h(seed, 1) * 1.99) as u32;
-    let live = h(seed, 2) < LIVE_SHARE;
-    let leaf = if live { LEAF_LIVE } else { LEAF_DEAD };
+    let leaf = if h(seed, 2) < live {
+        LEAF_LIVE
+    } else {
+        LEAF_DEAD
+    };
     for k in 0..n {
         let a = h(seed, 10 + k) * std::f32::consts::TAU;
         let d = if k == 0 { 0.0 } else { size * 0.6 };
@@ -283,7 +470,7 @@ mod tests {
     fn only_the_leaves_of_a_tree_sway() {
         let mut p = piece();
         let base = vec3(0.0, 0.0, 0.0);
-        tree(&mut p, base, 3, &[]);
+        tree(&mut p, base, 3, LIVE_SHARE, &[]);
         let swaying: Vec<&Vertex> = p.verts.iter().filter(|v| v.normal.w != 1.0).collect();
         assert!(!swaying.is_empty() && swaying.len() < p.verts.len());
         for v in swaying {
@@ -293,6 +480,45 @@ mod tests {
                 "a leaf at the foot of the trunk"
             );
         }
+    }
+
+    /// 0262 쓰러진 통나무: 바람 몫 0(흔들리지 않는다) · 관의 면은 바깥을 본다(감김 = 정점 법선 쪽) · 밑동이 우듬지보다 굵다 ·
+    /// 두 끝 사이에 눕는다(높이는 굵기 안 — 솟은 가시·가지가 없다).
+    #[test]
+    fn a_fallen_log_lies_still_round_and_outward() {
+        let mut p = piece();
+        let (a, b) = (vec3(-4.0, 0.3, 0.0), vec3(4.0, 0.3, 0.0));
+        log(&mut p, a, b, 0.36, 7, &[]);
+        assert!(p.verts.len() > 200 && p.verts.len() < u16::MAX as usize);
+        assert!(p.verts.iter().all(|v| v.normal.w == 1.0), "no wind");
+        assert!(p
+            .verts
+            .iter()
+            .all(|v| (v.normal.truncate().length() - 1.0).abs() < 1e-3));
+        let mut outward = 0;
+        for t in p.idx.chunks(3) {
+            let [x, y, z] = [0, 1, 2].map(|k| p.verts[t[k] as usize].position);
+            let n = (y - x).cross(z - x);
+            let vn = p.verts[t[0] as usize].normal.truncate();
+            if n.dot(vn) > 0.0 {
+                outward += 1;
+            }
+        }
+        // 뿌리(면 법선의 네모 줄기)는 제 감김이 따로다 — 거의 모든 면이 바깥.
+        assert!(outward * 10 >= p.idx.len() / 3 * 9, "{outward}");
+        let thick = |x: f32| {
+            p.verts
+                .iter()
+                .filter(|v| (v.position.x - x).abs() < 0.5)
+                .map(|v| -v.position.y)
+                .fold(f32::MIN, f32::max)
+        };
+        // 아랫면의 깊이로 잰다(이끼는 등 위에만 — 윗면은 이끼가 올린다).
+        assert!(thick(-3.0) > thick(3.0), "the butt is thicker");
+        assert!(p
+            .verts
+            .iter()
+            .all(|v| v.position.y < 0.3 + 0.36 * 1.6 && v.position.y > 0.3 - 0.36 * 1.6));
     }
 
     #[test]
@@ -310,7 +536,7 @@ mod tests {
         for seed in 0..40 {
             let mut p = piece();
             let base = vec3(3.0, 2.0, -5.0);
-            let b = tree(&mut p, base, seed, &[]);
+            let b = tree(&mut p, base, seed, LIVE_SHARE, &[]);
             assert!(p.verts.len() < 500, "{}", p.verts.len());
             let ys: Vec<f32> = p.verts.iter().map(|v| v.position.y).collect();
             let top = ys.iter().cloned().fold(f32::MIN, f32::max);

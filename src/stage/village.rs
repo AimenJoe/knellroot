@@ -53,6 +53,7 @@ pub static DEF: StageDef = StageDef {
     tier: 2,
     env: &crate::backdrop::UNDERGROUND,
     shortcut: false,
+    prologue: false,
 };
 
 const MAP: &str = "

@@ -10,6 +10,13 @@ name: deploy-web
 on:
   push:
     branches: [main, 'release/**']
+    # 문서만 바뀐 push는 돌지 않는다(0264). docs/tuning-frozen.txt는 cargo test가 읽으니 다시 넣는다.
+    # pull_request에는 거르개를 두지 않는다 — main 룰셋의 필수 검사 `build`가 문서만 고친 PR에서도 와야 Merge된다.
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!**.md'
+      - 'docs/tuning-frozen.txt'
   pull_request:
 
 concurrency:

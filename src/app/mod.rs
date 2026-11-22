@@ -42,7 +42,7 @@ use crate::lab::Lab;
 use crate::render::{AimShow, Frame, Perf, Renderer, View};
 #[cfg(feature = "dev")]
 use crate::scenario::{self, Scenario};
-use crate::stage::{sanctuary, StageDef, StageRun};
+use crate::stage::StageRun;
 use crate::touch;
 use crate::tuning::{Tuning, MAX_FRAME_DT, TICK_DT};
 use crate::ui::{self, Ui, AMBER, DIM, INK};
@@ -59,8 +59,26 @@ const TITLE_MENU_Y: f32 = 0.37;
 const GOAL_ARROW_DELAY: f32 = 1.0;
 const GOAL_ARROW_INSET: f32 = 0.12;
 
-/// 판의 첫 지역(0118 — 차례는 `stage::STAGES`).
-const FIRST_STAGE: &StageDef = &sanctuary::DEF;
+/// 판의 첫 지역(0118 — 차례는 `stage::STAGES`): 성소. 아직 숲을 지나지 않은 새 기록은 서막 숲에서(0262 — `first_stage`).
+const FIRST_STAGE: usize = 0;
+
+/// 헤드리스 시험이 서막을 건너뛰라고 했나(0262 — 개발판 웹 `window.knellTestFlags` 2, `tools/test/scene.js`가 기본으로 건다:
+/// 옛 스크립트는 성소에서 시작한다). 운영판은 늘 거짓.
+fn skip_prologue() -> bool {
+    #[cfg(feature = "dev")]
+    return crate::screen::test_flags() & 2 != 0;
+    #[cfg(not(feature = "dev"))]
+    false
+}
+
+/// 새 판이 열리는 지역(0262): 숲을 지나지 않은 기록이면 서막 숲, 아니면 성소. 개발 창의 판·시험 깃발은 성소에서.
+fn first_stage(progress: &crate::save::Progress, dev_run: bool) -> usize {
+    if progress.prologue || dev_run || skip_prologue() {
+        FIRST_STAGE
+    } else {
+        crate::stage::PROLOGUE
+    }
+}
 
 /// 메뉴 누름을 붙잡는 시간(초, 0207) — 눌린 꼴이 보이고 장면이 넘어간다. UI 누름 피드백 100~160 ms 안쪽 끝(늦게 느껴지지 않게).
 const PRESS_HOLD: f32 = 0.09;
@@ -111,7 +129,7 @@ struct Press {
 
 thread_local! {
     /// 마지막으로 페이지에 알린 맨 위 장면(`App::frame` — 바뀐 프레임에만 알린다).
-    static REPORTED: std::cell::Cell<Option<(Scene, Option<crate::skills::Entry>)>> = const { std::cell::Cell::new(None) };
+    static REPORTED: std::cell::Cell<Option<(Scene, Option<crate::skills::Entry>, bool)>> = const { std::cell::Cell::new(None) };
 }
 
 /// 개발판만의 칸(0075 · 0158): 개발 창이 고른 시나리오, 개발 창에서 시작한 판(기록 슬롯에 쓰지 않는다 — 슬롯을 고르면
@@ -265,14 +283,15 @@ pub struct App {
 const TOAST_TIME: f32 = 3.5;
 
 /// 깨어나는 첫 장면(0171)의 누운 자리: 몸이 화면에 옆으로 놓이게(뒤통수만 보이면 일어나는 몸짓이 두건에 가린다) — 머리는
-/// 꺼진 화로 쪽 옆으로. 화면 위 = 월드 -z라서 화로까지의 앞뒤 몫을 줄여 거의 옆을 보게 한다.
+/// 꺼진 화로 쪽 옆으로. 화면 위 = 월드 -z라서 화로까지의 앞뒤 몫을 줄여 거의 옆을 보게 한다. 화로가 없는 서막 숲(0262)은 숲 끝 쪽.
 fn lay_by_hearth(run: &StageRun, world: &mut World) {
     let at = world.player.pos;
     let hearth = run
         .rests
         .iter()
         .copied()
-        .min_by(|a, b| a.distance(at).total_cmp(&b.distance(at)));
+        .min_by(|a, b| a.distance(at).total_cmp(&b.distance(at)))
+        .or(run.exit_at);
     if let Some(h) = hearth {
         world.player.facing = (h.x - at.x).atan2((h.z - at.z) * 0.3);
     }
@@ -364,7 +383,8 @@ impl App {
         } else {
             weapons::Id::Fists
         };
-        let (mut run, mut world) = StageRun::start(FIRST_STAGE);
+        let first = first_stage(&progress, false);
+        let (mut run, mut world) = StageRun::start(crate::stage::STAGES[first]);
         // 새 기록(0171): 깨어난 자리의 화로는 꺼져 있다 — 타이틀 바탕부터.
         if !progress.lit {
             run.chill_hearth();
@@ -393,7 +413,7 @@ impl App {
             cam,
             world,
             run,
-            stage: 0,
+            stage: first,
             down: 0,
             rest_at: None,
             interlude: (!progress.woke)
@@ -456,11 +476,12 @@ impl App {
 
     /// 첫 지역을 새로 세운다(판 수는 그대로).
     fn build_run(&mut self) {
-        let (run, world) = StageRun::start(FIRST_STAGE);
+        let first = first_stage(&self.progress, self.dev_run_now());
+        let (run, world) = StageRun::start(crate::stage::STAGES[first]);
         self.run = run;
         self.world = world;
         self.fx.clear();
-        self.stage = 0;
+        self.stage = first;
         self.down = 0;
         self.rest_at = None;
         self.pause_tab = flow::Tab::Status;
@@ -526,9 +547,9 @@ impl App {
             .map(|c| c - base)
             .collect();
         self.run.set_opened(&opened);
-        // 깨어난 자리 곁의 검(0220): 아직 검이 없는 기록의 첫 지역에만.
-        if self.stage == 0 && !self.progress.owns_weapon(weapons::Id::Sword) && !self.dev_run_now()
-        {
+        // 깨어난 자리 곁의 검(0220): 아직 검이 없는 기록의 첫 지역에만 — 서막 숲(0262)에서 깨어나면 거기에도(줍지 않고 지나면 성소에).
+        let woke_here = self.stage == 0 || self.stage == crate::stage::PROLOGUE;
+        if woke_here && !self.progress.owns_weapon(weapons::Id::Sword) && !self.dev_run_now() {
             self.run.lay_start_sword();
         }
         self.run.set_found(&self.progress.finds);
@@ -733,10 +754,13 @@ impl App {
         };
         #[cfg(not(feature = "dev"))]
         let focus: Option<crate::skills::Entry> = None;
-        if REPORTED.with(|r| r.replace(Some((top, focus)))) != Some((top, focus)) {
-            match focus {
-                Some(e) => crate::screen::report_scene(&format!("{top:?} @{e:?}")),
-                None => crate::screen::report_scene(&format!("{top:?}")),
+        // "성소에 들다"(0262)가 흐르는 동안은 싸움 화면 이름 뒤에 ` ~arrive`(앞머리 `Play`로 기다리는 스크립트는 그대로 맞는다).
+        let cut = self.arriving().is_some();
+        if REPORTED.with(|r| r.replace(Some((top, focus, cut)))) != Some((top, focus, cut)) {
+            match (focus, cut) {
+                (Some(e), _) => crate::screen::report_scene(&format!("{top:?} @{e:?}")),
+                (None, true) => crate::screen::report_scene(&format!("{top:?} ~arrive")),
+                (None, false) => crate::screen::report_scene(&format!("{top:?}")),
             }
         }
         // 터치의 상황 버튼(0053): 쉼터 곁이면 점프가 쉬기, 락온할 적이 있거나 락온 중이면 락온, 마실 수 있으면 등잔.
@@ -989,6 +1013,22 @@ impl App {
         }
     }
 
+    /// "성소에 들다"(0262)가 지금 화면에 흐르나 — 싸움 화면이 맨 위일 때만.
+    fn arriving(&self) -> Option<crate::arrive::Arrive> {
+        match self.interlude {
+            Some(interlude::Interlude::Arrive(a)) if self.scene() == Scene::Play => Some(a),
+            _ => None,
+        }
+    }
+
+    /// 보는 장면(깨어남 0171 · 성소에 들다 0262)이 흐르나 — 그동안 스테이지 대본·튜토리얼·종소리의 시계가 멈춘다.
+    fn cutscene(&self) -> bool {
+        matches!(
+            self.interlude,
+            Some(interlude::Interlude::Wake(_) | interlude::Interlude::Arrive(_))
+        )
+    }
+
     fn passage(&self) -> Option<crate::descent::Passage> {
         match self.interlude {
             Some(interlude::Interlude::Passage(p)) => Some(p),
@@ -1215,8 +1255,9 @@ impl App {
             self.draw_toast(&f);
         }
         // 깨어나는 첫 장면(0171) 동안은 싸움 화면의 덧그림(화살·조준점·터치 버튼)을 걷는다 — 덮개만.
-        let waking =
-            self.waking().is_some() || (self.fall().is_some() && self.scene() == Scene::Play);
+        let waking = self.waking().is_some()
+            || self.arriving().is_some()
+            || (self.fall().is_some() && self.scene() == Scene::Play);
         if self.scene() == Scene::Play && !waking && in_shaft.is_none() {
             self.draw_goal_arrow(&f);
             self.draw_knell(&f);
@@ -1303,6 +1344,10 @@ impl App {
                 // 깨어나는 첫 장면(0171): HUD 대신 눈꺼풀·띠·서술 글. 싸움 화면에서만(타이틀 바탕은 그냥 엎드린 방랑자).
                 if let Some(fl) = self.fall().filter(|_| scene == Scene::Play) {
                     hud::draw_fall(&self.ui, f, &fl, crate::i18n::s().defeat_sub);
+                } else if let Some(ar) = self.arriving() {
+                    let st = crate::i18n::s();
+                    let skip = input::prompt(input::Act::Pause);
+                    hud::draw_arrive(&self.ui, f, &ar, st.stage1_name, (&skip, st.wake_skip));
                 } else if let Some(wk) = self.waking() {
                     let st = crate::i18n::s();
                     let skip = input::prompt(input::Act::Pause);

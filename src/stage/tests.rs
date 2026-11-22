@@ -8,7 +8,7 @@ use crate::tuning::{FLASK_CHARGES, PLAYER_HP};
 #[test]
 fn lock_on_takes_the_boss_while_it_is_still_waking() {
     let t = Tuning::default();
-    let (mut run, mut w) = StageRun::start(STAGES[STAGES.len() - 1]);
+    let (mut run, mut w) = StageRun::start(STAGES[REGIONS - 1]);
     let b = run.boss.unwrap();
     let home = run.level.marks_of('W').next().expect("boss mark");
     let lock = Actions {
@@ -100,7 +100,7 @@ fn the_village_bellkeeper_opens_the_way_down_and_the_last_warden_ends_the_run() 
     for (def, kind, last) in [
         (STAGES[1], Kind::Bellkeeper, false),
         (STAGES[2], Kind::Mossward, false),
-        (STAGES[STAGES.len() - 1], Kind::Overseer, true),
+        (STAGES[REGIONS - 1], Kind::Overseer, true),
     ] {
         let (run, w) = StageRun::start(def);
         assert_eq!(run.down_at.is_none(), last);
@@ -355,9 +355,10 @@ fn the_stage_script_runs_from_entrance_to_clear() {
 /// 0118: 판의 차례 — 지역은 깊어지고, 마지막 지역만 바닥 길이 없다(핵 = 판의 끝). 첫 지역 말고는 오르는 길이 있다.
 #[test]
 fn stages_go_deeper_and_link_down_and_up() {
-    for (i, def) in STAGES.iter().enumerate() {
+    // 0262: 서막 숲은 판의 차례 밖 — 앞의 `REGIONS`개만.
+    for (i, def) in STAGES[..REGIONS].iter().enumerate() {
         let (run, _) = StageRun::start(def);
-        let last = i + 1 == STAGES.len();
+        let last = i + 1 == REGIONS;
         assert_eq!(
             run.down_at.is_none(),
             last,
@@ -381,7 +382,8 @@ fn stages_go_deeper_and_link_down_and_up() {
 /// 싸움터에서 떨어져 있고, 서로 몰려 있다(마당 지름 안). 화로에서 쉬어 다시 세워도 같은 자리.
 #[test]
 fn every_stage_has_one_crowded_yard_away_from_rests_start_and_residents() {
-    for def in STAGES {
+    // 0262: 서막 숲에는 떼 마당이 없다(잔재 둘만).
+    for def in STAGES.iter().filter(|d| !d.prologue) {
         let (mut run, mut w) = StageRun::start(def);
         let n = def.horde.1;
         assert_eq!(
@@ -595,7 +597,8 @@ fn residents_talk_glance_and_stay_out_of_the_fight() {
 /// 0112·0116 T3: 구역 등급은 깊을수록 높고, 서 있는 적·엘리트가 그 등급으로 선다(보스는 그대로).
 #[test]
 fn deeper_regions_field_higher_tier_mobs() {
-    for (i, def) in STAGES.iter().enumerate() {
+    // 0262: 등급의 차례는 판의 차례만(서막 숲은 첫 등급 — 아래 시험).
+    for (i, def) in STAGES[..REGIONS].iter().enumerate() {
         if i > 0 {
             assert!(def.tier >= STAGES[i - 1].tier);
         }
@@ -1377,4 +1380,189 @@ fn falling_ends_the_stage() {
     w.player.hp = 0;
     w.step(&Actions::default(), &t);
     assert_eq!(run.tick(&mut w, 1.0 / 60.0), StageOut::Defeated);
+}
+
+/// 0262: 서막 숲은 지역 표의 끝 — 판의 차례(앞의 `REGIONS`개) 밖이고 그것 하나뿐. 문지기·핵·문·장치·화로·상자·숨은 물건·새긴 돌·
+/// 엘리트·떼 마당·내려가는·오르는 길이 없다(기록 키를 늘리지 않는다). 땅 위·첫 등급, 끝의 표지(`E`)가 있다.
+#[test]
+fn the_prologue_forest_sits_at_the_end_outside_the_run_order() {
+    assert_eq!(STAGES.len(), REGIONS + 1);
+    assert_eq!(PROLOGUE, REGIONS);
+    for (i, def) in STAGES.iter().enumerate() {
+        assert_eq!(def.prologue, i == PROLOGUE, "{}", def.find_prefix);
+    }
+    let def = STAGES[PROLOGUE];
+    let (run, w) = StageRun::start(def);
+    assert!(run.boss.is_none() && w.enemies.iter().all(|e| !e.boss));
+    assert!(run.rests.is_empty() && run.chest.at.is_empty() && run.hidden.list.is_empty());
+    assert!(run.stones.is_empty() && run.lever.is_none());
+    assert!(run.level.gate.is_none());
+    // 0265: 숲 끝의 무너진 아치 — 표지 너머, 설주 둘만 막는다(가운데는 지나간다).
+    let arch = run.level.arch().expect("the ruined arch");
+    assert!(
+        arch.z < run.exit_at.unwrap().z,
+        "the arch is beyond the mark"
+    );
+    let jambs = w
+        .obstacles
+        .iter()
+        .filter(|b| (b.center().z - arch.z).abs() < 1.0)
+        .count();
+    assert_eq!(jambs, 2);
+    assert!(
+        w.obstacles
+            .iter()
+            .all(|b| !(b.min.x..=b.max.x).contains(&arch.x)
+                || !(b.min.z..=b.max.z).contains(&arch.z)),
+        "the way through is open"
+    );
+    assert!(run.down_at.is_none() && run.up_at.is_none() && run.horde_at.is_empty());
+    assert!(def.elites.is_empty() && def.chest_loot.is_empty() && def.boss_charm.is_none());
+    assert_eq!((def.depth_m, def.tier), (0, 1));
+    assert!(run.exit_at.is_some(), "the way out of the wood");
+    // 잔재 둘(해 보는 상대) — 끈이 짧다.
+    assert_eq!(w.enemies.len(), 2);
+    assert!(w
+        .enemies
+        .iter()
+        .all(|e| e.leash == crate::tuning::PROLOGUE_LEASH));
+    // 숲 끝은 깨어난 자리에서 멀다(북쪽) — 짧지만 걸어 나오는 길.
+    let (start, exit) = (run.level.player_start, run.exit_at.unwrap());
+    assert!(exit.z < start.z - 40.0, "{start:?} → {exit:?}");
+}
+
+/// 2026-11-22(사장 "숲의 각종 지형을 그냥 통과할수 있는 버그"): 숲은 벽(`#`) 없이 바위 단(빈칸)으로 두른다 — 빈칸이 막지 않아
+/// 나무·바위 단을 걸어 지났다. 깨어난 자리에서 사방으로 오래 걸어도(뛰어도) 늘 걸을 수 있는 칸 위에 있다.
+#[test]
+fn the_forest_edges_stop_the_wanderer() {
+    let t = Tuning::default();
+    for dir in [
+        vec2(1.0, 0.0),
+        vec2(-1.0, 0.0),
+        vec2(0.0, 1.0),
+        vec2(0.7, -0.7),
+        vec2(-0.7, -0.7),
+    ] {
+        let (run, mut w) = StageRun::start(STAGES[PROLOGUE]);
+        w.unhurt = true;
+        for i in 0..60 * 8 {
+            let a = Actions {
+                move_dir: dir,
+                jump: i % 40 == 0,
+                ..Actions::default()
+            };
+            w.step(&a, &t);
+            let (x, z) = run.level.cell_of(w.player.pos).expect("on the map");
+            assert!(
+                run.level.walkable(x, z),
+                "walked onto a blank cell ({x},{z}) going {dir:?}"
+            );
+        }
+    }
+}
+
+/// 0262: 숲에서는 입구 단계 그대로 — 목표는 "종소리를 따라가라", 종소리는 숲 끝의 표지에서(갈 곳의 빛기둥은 없다 — 종소리가 맡는다).
+/// 표지를 밟으면 `Onward`(앱이 "성소에 들다"를 연다). 시작 자리 곁에서는 아니다.
+#[test]
+fn the_forest_bell_rings_from_its_end_and_stepping_there_goes_onward() {
+    let (mut run, mut w) = StageRun::start(STAGES[PROLOGUE]);
+    assert_eq!(run.phase, Phase::Entrance);
+    let want: Tr = |s| s.obj_follow_bell;
+    assert_eq!(
+        run.objective.map(crate::i18n::tr),
+        Some(crate::i18n::tr(want))
+    );
+    assert_eq!(run.bell_from(), run.exit_at);
+    assert_eq!(run.goal(), None);
+    w.enemies.clear();
+    for _ in 0..30 {
+        assert_eq!(
+            tick(&mut run, &mut w, Actions::default()),
+            StageOut::Playing
+        );
+    }
+    let exit = run.exit_at.unwrap();
+    w.player.pos = exit + vec3(0.0, 0.0, 1.0);
+    w.player.prev = w.player.pos;
+    assert_eq!(tick(&mut run, &mut w, Actions::default()), StageOut::Onward);
+}
+
+/// 0262: 숲에서 쓰러지면(쉼터가 없다) 끝 장면이 아니라 깨어난 자리에서 가득 찬 채 다시 선다 — 잔재도 제자리에.
+#[test]
+fn falling_in_the_forest_rises_again_at_the_waking_spot() {
+    let (mut run, mut w) = StageRun::start(STAGES[PROLOGUE]);
+    let start = run.level.player_start;
+    let homes: Vec<Vec3> = w.enemies.iter().map(|e| e.pos).collect();
+    w.player.pos = start + vec3(0.0, 0.0, -20.0);
+    w.enemies[0].pos += vec3(3.0, 0.0, 0.0);
+    w.player.hp = 0;
+    assert_eq!(run.tick(&mut w, 1.0 / 60.0), StageOut::Respawned);
+    assert_eq!(w.player.pos, start);
+    assert_eq!(w.player.hp, w.player.max_hp);
+    let now: Vec<Vec3> = w.enemies.iter().map(|e| e.pos).collect();
+    assert_eq!(now, homes, "the remnants stand at home again");
+}
+
+/// 0262: 성소에 닿는 자리(`A`)는 입구 폐허의 남쪽 가장자리 바닥 — 그 아래 줄은 벽이다. 닿으면 거기서 북쪽(성소 쪽)을 보고, 시작 이야기·
+/// 카드는 없다(이름은 장면이 보인다). 새 글자를 더해도 성소의 번호 있는 것들(상자·화로·숨은 물건·장치·시작·문지기)의 자리와 차례는
+/// 그대로다 — 기록의 상자 번호·숨은 물건 이름·쉰 화로 번호가 가리키는 것이 바뀌지 않게.
+#[test]
+fn the_sanctuary_arrival_mark_keeps_the_numbering_of_everything_else() {
+    let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+    let lv = &run.level;
+    let at = lv.marks_of(ARRIVE_GLYPH).collect::<Vec<_>>();
+    assert_eq!(at.len(), 1);
+    let (x, z) = lv.cell_of(at[0]).unwrap();
+    assert!(lv.walkable(x, z) && lv.cell(x, z + 1) == b'#', "south edge");
+    let cells = |g: char| -> Vec<(usize, usize)> {
+        lv.marks_of(g).map(|p| lv.cell_of(p).unwrap()).collect()
+    };
+    // 0262 전의 지도에서 잰 자리(위에서부터 차례 = 기록 번호).
+    let before: [(char, &[(usize, usize)]); 10] = [
+        ('C', &[(40, 17), (2, 18), (34, 29), (2, 49)]),
+        ('R', &[(30, 14), (8, 47), (25, 59)]),
+        ('F', &[(40, 26)]),
+        ('H', &[(26, 1)]),
+        ('K', &[(16, 1), (1, 32)]),
+        ('M', &[(4, 17), (3, 47)]),
+        ('O', &[(35, 22)]),
+        ('V', &[(2, 13)]),
+        ('W', &[(21, 6)]),
+        ('D', &[(21, 3)]),
+    ];
+    for (g, want) in before {
+        assert_eq!(cells(g), want.to_vec(), "{g}");
+    }
+    assert_eq!(lv.cell_of(lv.player_start), Some((24, 60)));
+    run.arrive_from_prologue(&mut w);
+    assert_eq!(w.player.pos, at[0]);
+    assert_eq!(w.player.facing, std::f32::consts::PI);
+    assert_eq!((run.intro, run.card.is_none()), (0.0, true));
+}
+
+/// 0267(사장 "화톳불이랑 그냥 조명 불이랑 구분이 안 됨"): 쉬는 곳(`R`)은 땅에 놓인 화톳불, 조명(`b`)은 받침 위의 화로 — 같은 자리에 둘이
+/// 겹치지 않고, 쉬는 곳의 빛이 더 넓다.
+#[test]
+fn rest_hearths_and_lamps_are_different_props() {
+    for def in STAGES.iter() {
+        let (run, _) = StageRun::start(def);
+        for r in &run.rests {
+            let here: Vec<PropKind> = run
+                .level
+                .props
+                .iter()
+                .filter(|p| vec2(p.pos.x - r.x, p.pos.z - r.z).length() < 0.1)
+                .map(|p| p.kind)
+                .collect();
+            assert_eq!(here, vec![PropKind::Hearth], "{}", def.find_prefix);
+        }
+        let hearths = run
+            .level
+            .props
+            .iter()
+            .filter(|p| p.kind == PropKind::Hearth)
+            .count();
+        assert_eq!(hearths, run.rests.len(), "{}", def.find_prefix);
+    }
+    assert!(HEARTH_LIGHT_R > 7.0);
 }

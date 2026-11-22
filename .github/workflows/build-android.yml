@@ -1,7 +1,8 @@
 name: build-android
 # Android APK(0022). 첫 게임 nail의 build-android.yml에서 가져옴 — 비공개 에셋·웹 전용 소리 단계는 없다(이 레포엔 없음).
 # cargo-quad-apk로 miniquad의 MainActivity(패치본 third_party/miniquad)를 포함한 APK를 만든다. KB guides/macroquad-android-apk-github-actions.md.
-# - main push(관련 파일이 바뀔 때)·수동 실행: 디버그 키로 서명한 APK를 Actions 아티팩트로.
+# - release/** push(관련 파일이 바뀔 때)·수동 실행: 디버그 키로 서명한 APK를 Actions 아티팩트로.
+#   main push에는 돌지 않는다(0264 — 운영 APK는 release.yml이 이 워크플로를 불러 만든다, 같은 APK를 두 번 만들었다).
 # - release.yml이 부를 때(release_tag): 같은 APK를 GitHub Release에.
 # 갈래(nail 0193): main·release_tag = 운영판(--no-default-features, io.github.aimenjoe.knellroot).
 #   그 밖(release/** push, 작업 브랜치 수동 실행) = 개발판: 개발 기능을 넣고 패키지를 `.dev`로 바꿔 운영 앱과 나란히 깔린다.
@@ -10,7 +11,7 @@ name: build-android
 # 액션 판: node24 메이저(KB reference/github-actions/node24-action-runtime.md).
 on:
   push:
-    branches: [main, 'release/**']
+    branches: ['release/**']
     paths:
       - 'src/**'
       - 'assets/**'

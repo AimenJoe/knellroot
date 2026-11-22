@@ -119,7 +119,7 @@ impl World {
             let d = vec3(p.x - en.pos.x, 0.0, p.z - en.pos.z).length();
             match en.state {
                 EState::Idle | EState::Return => {
-                    let near = from_home <= LEASH_RANGE && (body - en.pos.y).abs() <= SIGHT_DY;
+                    let near = from_home <= en.leash && (body - en.pos.y).abs() <= SIGHT_DY;
                     // 청소자(0120)는 보고 들어도 먹던 일을 한다 — 맞거나 곁의 동료가 깨면 싸운다.
                     let sees = !en.docile
                         && near
@@ -130,7 +130,7 @@ impl World {
                 }
                 EState::Chase => {
                     let gone = vec3(en.pos.x - home.x, 0.0, en.pos.z - home.z).length();
-                    if gone > LEASH_RANGE && from_home > LEASH_RANGE {
+                    if gone > en.leash && from_home > en.leash {
                         en.state = EState::Return;
                     }
                 }

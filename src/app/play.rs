@@ -32,8 +32,48 @@ impl App {
         self.play_stage_out(out);
     }
 
+    /// 월드의 수평 방향 → 지금 입력 기준의 스틱(쿼터뷰 위 = `quarter_forward`, 오른쪽 = 앞 × 위 — `world::move_to_world`의 거꾸로).
+    fn stick_toward(&self, want: Vec3) -> Vec2 {
+        let fwd = crate::camera::quarter_forward(self.cam.basis_yaw_deg(&self.t));
+        let right = fwd.cross(Vec3::Y);
+        let want = vec3(want.x, 0.0, want.z).normalize_or_zero();
+        vec2(want.dot(right), want.dot(fwd))
+    }
+
+    /// 헤드리스 시험의 도움(0262 — 개발판, 시험 깃발 4): 서막 숲에서 방랑자가 숲 끝까지 저절로 걷는다 — 적의 길찾기 거리 지도를
+    /// 따라가고 턱 앞에서는 뛴다. 키보드로 숲길(쿼터뷰가 35° 돌아 있다)을 시간으로 걷게 하면 느린 러너에서 어긋난다.
+    #[cfg(feature = "dev")]
+    fn prologue_autopilot(&self, a: &mut Actions) {
+        if crate::screen::test_flags() & 4 == 0 || !self.run.def.prologue {
+            return;
+        }
+        let Some(exit) = self.run.exit_at else { return };
+        let nav = crate::nav::Nav::build(
+            self.world.ground.as_ref(),
+            &self.world.obstacles,
+            self.run.level.half_extent(),
+        );
+        let dist = nav.flow(exit);
+        let p = self.world.player.pos;
+        let r = crate::tuning::PLAYER_RADIUS;
+        let to = match nav.hop(&dist, p, r) {
+            Some((land, _)) => {
+                a.jump = self.world.player.air <= 0.0;
+                land
+            }
+            None => nav.waypoint(&dist, p, r).unwrap_or(exit),
+        };
+        a.move_dir = self.stick_toward(to - p);
+    }
+
     /// 월드 한 틱 + 줍기 몸짓 + 플레이 시간.
     fn play_world(&mut self, a: Actions) {
+        #[cfg(feature = "dev")]
+        let a = {
+            let mut a = a;
+            self.prologue_autopilot(&mut a);
+            a
+        };
         let a = self.camera_input(a);
         let a = self.cursor_aim(a);
         self.step_world(&a);
@@ -111,7 +151,7 @@ impl App {
             crate::stage::StageOut::Ascend => self.stage.checked_sub(1).map(|s| (s, true)),
             _ => None,
         };
-        if let Some((to, up)) = cross.filter(|&(to, _)| to < crate::stage::STAGES.len()) {
+        if let Some((to, up)) = cross.filter(|&(to, _)| to < crate::stage::REGIONS) {
             self.snd(crate::sfx::Id::Wake);
             self.interlude = Some(interlude::Interlude::Passage(crate::descent::Passage::new(
                 to,
@@ -119,6 +159,10 @@ impl App {
                 self.run.def.depth_m,
                 crate::stage::STAGES[to].depth_m,
             )));
+        }
+        // 서막 숲 끝(0262): "성소에 들다" — 다 어두울 때 지역을 성소로(`arrive_sanctuary`).
+        if out == crate::stage::StageOut::Onward && self.interlude.is_none() {
+            self.interlude = Some(interlude::Interlude::Arrive(Default::default()));
         }
         // 쉼터 화로(0064 M4 → 0104): 쉬면 화로(레벨·가게)가 열린다. 올릴 단·살 것이 있으면 쉼터가 빛난다.
         self.run.shop_ready = crate::growth::can_buy(
@@ -181,6 +225,31 @@ impl App {
         if let Some((to, up)) = beat.cross {
             self.cross_to(to, up);
         }
+        if beat.arrive {
+            self.arrive_sanctuary();
+        }
+        // "성소에 들다"(0262)의 카메라 자리 — 그 장면이 아니면 없다.
+        self.cam.shot = match self.interlude {
+            Some(interlude::Interlude::Arrive(ar)) if !ar.arrived() => {
+                // 아치 앞(0265): 표지 뒤 낮은 자리에서 아치를 올려다본다.
+                let at = self.run.exit_at.unwrap_or(self.world.player.pos);
+                let gate = self.run.level.arch().unwrap_or(at + Vec3::NEG_Z * 4.0);
+                let (eye, look) = ar.gate_eye(at, gate);
+                Some((eye, look, ar.gate_weight()))
+            }
+            Some(interlude::Interlude::Arrive(ar)) if ar.arrived() => {
+                let at = self
+                    .run
+                    .level
+                    .marks_of(crate::stage::ARRIVE_GLYPH)
+                    .next()
+                    .unwrap_or(self.run.level.player_start);
+                let far = self.run.level.gate.map_or(at + Vec3::NEG_Z * 60.0, |g| g.1);
+                let (eye, look) = ar.eye(at, far);
+                Some((eye, look, ar.weight()))
+            }
+            _ => None,
+        };
         if let Some(id) = beat.sound {
             self.snd(id);
         }
@@ -201,6 +270,14 @@ impl App {
                 self.follow_camera();
             }
             interlude::Hold::Idle => self.step_world(&Actions::default()),
+            interlude::Hold::Walk(k) => {
+                // 성소 쪽(북, 월드 −z)으로 걷는다.
+                let a = Actions {
+                    move_dir: self.stick_toward(Vec3::NEG_Z) * k,
+                    ..Actions::default()
+                };
+                self.step_world(&a);
+            }
             interlude::Hold::IdleStage => {
                 self.step_world(&Actions::default());
                 let _ = self.run.tick(&mut self.world, TICK_DT);
@@ -596,7 +673,7 @@ impl App {
     /// 튜토리얼(0167)이 이 판에서 보나: 슬롯의 판이고(개발 창의 판·놀이터가 아니다) 깨어나는 첫 장면(0171)이 끝났다.
     /// 걸음을 다 지났어도 본 것은 쌓인다 — 상황 힌트(0209 T2)가 읽는다.
     fn tutor_live(&self) -> bool {
-        !self.dev_run_now() && self.stack.base() == Scene::Play && self.wake().is_none()
+        !self.dev_run_now() && self.stack.base() == Scene::Play && !self.cutscene()
     }
 
     /// 튜토리얼의 걸음이 도나: 위 + 걸음이 남았다.
@@ -744,7 +821,7 @@ impl App {
             has_sub: pl.sub.is_some(),
             can_block: self.world.can_block(),
             unfit: (0..2).any(|i| pl.skill.rank[i] == 0 && pl.skill.known[i] > 0),
-            spare: !self.progress.bag.spares().is_empty(),
+            spare: !self.progress.bag.extras().is_empty(),
             bag_blocked: self.run.near_blocked,
         };
         // 등잔은 체력이 반 위로 돌아오면 다시 알릴 수 있다(마셔 보기 전까지 — 기록의 비트는 마실 때 선다, 0213).
@@ -917,7 +994,7 @@ impl App {
     fn knell_watch(&mut self) {
         let at = self.world.player.pos;
         let lost = self.stack.base() == Scene::Play
-            && self.wake().is_none()
+            && !self.cutscene()
             && self.run.goal().is_none()
             && self
                 .run

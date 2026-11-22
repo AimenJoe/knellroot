@@ -85,6 +85,8 @@ impl App {
         let Some(it) = self.progress.bag.remove(id) else {
             return;
         };
+        // 그 바탕의 마지막 하나였으면 가진 바탕에서도 뺀다(0266).
+        self.progress.part_with(it.base);
         let n = it.salvage();
         self.world.embers += n;
         self.progress.embers = self.world.embers;
