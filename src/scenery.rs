@@ -65,6 +65,43 @@ const PROP_AO: f32 = 0.4;
 const PROP_AO_R: f32 = 0.45;
 const SHADE_RES: f32 = 0.125;
 
+/// 칸 하나(±1m)의 석판들(0268): 칸을 칼질로 나눈다 — 첫 칼은 가로·세로를 칸마다 고르고, 자리는 조각 길이의 36~64%, 남은 조각이
+/// 1.3m를 넘으면 또 자르고(1.2m를 넘으면 가끔), 판 사이에 줄눈 0.05m씩. 이웃 칸과 칼 자리가 달라 줄눈이 바닥 전체로 곧게 이어지지
+/// 않는다(같은 1m 넷이면 1m 격자였다). (판 가운데, 반폭, 판 번호 — 번호는 판마다의 굴림 씨앗).
+fn slab_cuts(x: usize, z: usize) -> Vec<(Vec3, Vec2, u32)> {
+    let mut out = Vec::new();
+    let mut todo = vec![(vec2(-1.0, -1.0), vec2(1.0, 1.0), 0u32)];
+    let mut n = 0u32;
+    while let Some((lo, hi, depth)) = todo.pop() {
+        let size = hi - lo;
+        let long = size.x.max(size.y);
+        let cut = depth < 4 && (long > 1.3 || (long > 1.2 && hash(x, z, 200 + n * 3) < 0.4));
+        if cut {
+            let along_x = if (size.x - size.y).abs() < 0.05 {
+                hash(x, z, 201 + n * 3) < 0.5
+            } else {
+                size.x > size.y
+            };
+            let t = 0.36 + 0.28 * hash(x, z, 202 + n * 3);
+            n += 1;
+            if along_x {
+                let m = lo.x + size.x * t;
+                todo.push((lo, vec2(m, hi.y), depth + 1));
+                todo.push((vec2(m, lo.y), hi, depth + 1));
+            } else {
+                let m = lo.y + size.y * t;
+                todo.push((lo, vec2(hi.x, m), depth + 1));
+                todo.push((vec2(lo.x, m), hi, depth + 1));
+            }
+            continue;
+        }
+        let mid = (lo + hi) * 0.5;
+        let i = out.len() as u32;
+        out.push((vec3(mid.x, 0.0, mid.y), size * 0.5 - vec2(0.05, 0.05), i));
+    }
+    out
+}
+
 /// 여러 칸에 걸쳐 천천히 바뀌는 0..1 값(격자 마디의 `hash`를 부드럽게 이음) — 석판 색의 큰 얼룩.
 fn patch(x: usize, z: usize) -> f32 {
     let (fx, fz) = (x as f32 / PATCH_CELLS, z as f32 / PATCH_CELLS);
@@ -715,18 +752,9 @@ impl Scenery {
                 }
                 // 석판(0060 W2·0061): 칸마다 1m 넷 — 짝 둘은 가끔 하나로 붙고(긴 판), 꼭대기는 걷는 면 아래 1.5~5cm로 들쭉날쭉, 몇은 한쪽이 들리고,
                 // 몇은 빠져 흙 + 풀. 옆면이 있어 카메라 쪽 모서리에 밝은 선(0061 화면 공간 선)이 붙는다.
-                let merge_top = hash(x, z, 50) < 0.28;
-                let merge_bot = hash(x, z, 51) < 0.28;
-                let mut slabs: Vec<(Vec3, Vec2, u32)> = Vec::new();
-                for (row, merged) in [(-0.5f32, merge_top), (0.5f32, merge_bot)] {
-                    let k = if row < 0.0 { 0 } else { 2 };
-                    if merged {
-                        slabs.push((vec3(0.0, 0.0, row), vec2(0.95, 0.45), k));
-                    } else {
-                        slabs.push((vec3(-0.5, 0.0, row), vec2(0.45, 0.45), k));
-                        slabs.push((vec3(0.5, 0.0, row), vec2(0.45, 0.45), k + 1));
-                    }
-                }
+                // 0268(사장 2026-11-22 "바닥의 격자… 좀 어떻게 못하나"): 칸마다 같은 1m 넷이면 줄눈이 바닥 전체에 곧은 격자로 이어졌다 —
+                // 칸마다 칼 자리가 다른 크고 작은 판으로(`slab_cuts`).
+                let slabs = slab_cuts(x, z);
                 for (off, half, i) in slabs {
                     let r = hash(x, z, i);
                     let o = c + off;
@@ -1494,6 +1522,49 @@ mod tests {
         assert_eq!(out[4], 93);
     }
     use super::*;
+
+    /// 0268: 칸의 석판들은 칸 안에서 겹치지 않고 줄눈만 남기고 덮으며(넓이), 너무 가는 판이 없고, 이웃 칸과 칼 자리가 대개 다르다
+    /// (곧은 줄눈이 칸을 넘어 이어지지 않게) — 1m 넷의 격자가 아니다.
+    #[test]
+    fn slabs_tile_each_cell_with_offset_cuts() {
+        let (mut same, mut total) = (0, 0);
+        for x in 0..30 {
+            for z in 0..30 {
+                let sl = slab_cuts(x, z);
+                assert!((2..=8).contains(&sl.len()), "{x},{z}: {}", sl.len());
+                let mut area = 0.0;
+                for (i, (c, h, _)) in sl.iter().enumerate() {
+                    assert!(h.x >= 0.15 && h.y >= 0.15, "thin slab {h:?}");
+                    assert!(
+                        c.x.abs() + h.x <= 1.0 && c.z.abs() + h.y <= 1.0,
+                        "inside the cell"
+                    );
+                    area += (h.x + 0.05) * (h.y + 0.05) * 4.0;
+                    for (d, g, _) in &sl[i + 1..] {
+                        let apart =
+                            (c.x - d.x).abs() >= h.x + g.x || (c.z - d.z).abs() >= h.y + g.y;
+                        assert!(apart, "overlap at {x},{z}");
+                    }
+                }
+                assert!((area - 4.0).abs() < 1e-3, "covers the cell: {area}");
+                // 이웃(오른쪽) 칸과 판 모양이 같은가 — 같은 칼 자리가 이어지면 격자가 된다.
+                let key = |v: &Vec<(Vec3, Vec2, u32)>| {
+                    let mut k: Vec<(i32, i32)> = v
+                        .iter()
+                        .map(|(c, _, _)| ((c.x * 20.0) as i32, (c.z * 20.0) as i32))
+                        .collect();
+                    k.sort();
+                    k
+                };
+                total += 1;
+                same += (key(&sl) == key(&slab_cuts(x + 1, z))) as u32;
+            }
+        }
+        assert!(
+            same * 10 < total,
+            "neighbours mostly cut differently: {same}/{total}"
+        );
+    }
 
     /// 0140 조용한 바닥: 석판 색의 큰 얼룩은 0..1 안이고 이웃 칸끼리는 조금씩만 바뀐다(칸마다 튀면 다시 격자 잡음이 된다),
     /// 줄눈은 석판의 반보다 밝다(예전 0.3배 — 화면에서 가장 센 대비가 바닥이었다).
