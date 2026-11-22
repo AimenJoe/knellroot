@@ -486,7 +486,8 @@ impl Bag {
         self.seen = self.next;
     }
 
-    /// 내려놓거나 거둘 수 있는 것(0226): 여벌(`spares`) 가운데 지키지 않는 것.
+    /// 내려놓거나 거둘 수 있는 것(0226): 끼지 않은 것(`spares`) 가운데 잠그지 않은 것 — 그 바탕의 마지막 하나도(0266 — 거두면
+    /// 앱이 가진 바탕에서 뺀다 `Progress::part_with`).
     pub fn loose(&self) -> Vec<u32> {
         self.spares()
             .into_iter()
@@ -523,8 +524,27 @@ impl Bag {
         out
     }
 
-    /// 거둘 수 있는 여벌(0223 V4): 낀 자리가 가리키지 않고, 같은 바탕의 다른 아이템이 남는 것 — 거둬도 가진 바탕이 사라지지 않는다.
+    /// 끼지 않은 것(0223 V4 → 0266): 낀 자리가 가리키지 않는 아이템 — 그 바탕의 마지막 하나도 든다(사장 2026-11-22 "장비가 하나밖에
+    /// 없을 때 팔 수 없었던 것"). 같은 바탕의 다른 것이 남는 진짜 여벌은 `extras`.
     pub fn spares(&self) -> Vec<u32> {
+        let g = &self.gear;
+        let worn = [
+            g.main,
+            g.sub,
+            g.shield,
+            g.charms[0],
+            g.charms[1],
+            g.charms[2],
+        ];
+        self.items
+            .iter()
+            .filter(|(id, _)| !worn.contains(&Some(*id)))
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    /// 여벌(0223 V4): 끼지 않았고 같은 바탕의 다른 아이템이 남는 것(상황 힌트·가방 탭의 "여벌" 표지).
+    pub fn extras(&self) -> Vec<u32> {
         let g = &self.gear;
         let worn = [
             g.main,
@@ -1194,9 +1214,9 @@ mod tests {
         assert_eq!(bag.get(bag.gear.charms[0].unwrap()).unwrap().base, hand);
     }
 
-    /// 거둘 수 있는 것은 여벌뿐: 낀 것은 아니고, 그 바탕의 마지막 하나도 아니다(가진 바탕이 사라지지 않는다).
+    /// 거둘 수 있는 것은 끼지 않은 것(0266 — 그 바탕의 마지막 하나도), 진짜 여벌(`extras`)은 같은 바탕의 다른 것이 남는 것.
     #[test]
-    fn only_spares_can_be_salvaged_never_the_worn_or_the_last_of_a_base() {
+    fn anything_unworn_can_be_salvaged_even_the_last_of_a_base() {
         let (sword, hammer) = (
             Base::Weapon(weapons::Id::Sword),
             Base::Weapon(weapons::Id::Hammer),
@@ -1206,18 +1226,20 @@ mod tests {
         let spare = bag.add(roll(sword, Rarity::Sturdy, 1, 3));
         let only = bag.add(Item::plain(hammer));
         bag.gear.main = Some(worn);
-        assert_eq!(bag.spares(), [spare]);
+        assert_eq!(bag.spares(), [spare, only]);
+        assert_eq!(bag.extras(), [spare]);
+        bag.toggle_lock(only);
+        assert_eq!(bag.loose(), [spare], "locked stays");
+        bag.toggle_lock(only);
         assert!(bag.remove(spare).is_some());
-        assert!(
-            bag.spares().is_empty(),
-            "the worn sword and the only hammer stay"
+        assert_eq!(
+            bag.spares(),
+            [only],
+            "the worn sword stays, the only hammer can go"
         );
-        assert!(bag.get(only).is_some() && bag.remove(spare).is_none());
-        // 끼지 않은 바탕이 둘이면 하나는 거둘 수 있고, 거두고 나면 남은 하나는 못 거둔다.
-        let second = bag.add(Item::plain(hammer));
-        assert_eq!(bag.spares(), [only, second]);
-        bag.remove(only);
-        assert!(bag.spares().is_empty());
+        assert!(bag.extras().is_empty());
+        // 여벌 정리는 바탕마다 가장 값진 하나를 남긴다 — 마지막 하나는 정리로 사라지지 않는다.
+        assert!(bag.clearable().is_empty());
     }
 
     /// 가방은 기록에 갔다 와도 같다. 빈 가방은 아무 줄도 쓰지 않고, 없어진 아이템의 옛 줄은 지워진다.

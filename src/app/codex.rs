@@ -418,9 +418,12 @@ impl App {
                 .filter(|&&id| id != crate::weapons::Id::Fists)
                 .map(|&id| {
                     let (name, desc, place) = weapon_texts(id);
+                    let paid = codex::paid_key("weapon", id.key());
                     Thing {
-                        owned: self.progress.weapons.contains(&id),
-                        paid: codex::paid_key("weapon", id.key()),
+                        // 팔거나 내려놓은 것도 도감에는 남는다(0266 — `codex_had`).
+                        owned: self.progress.weapons.contains(&id)
+                            || self.progress.codex_had.contains(&paid),
+                        paid,
                         name,
                         desc,
                         flavor: None,
@@ -434,7 +437,11 @@ impl App {
             crate::charms::TABLE
                 .iter()
                 .map(|d| Thing {
-                    owned: self.progress.owned.contains(&d.id),
+                    owned: self.progress.owned.contains(&d.id)
+                        || self
+                            .progress
+                            .codex_had
+                            .contains(&codex::paid_key("charm", d.key)),
                     paid: codex::paid_key("charm", d.key),
                     name: d.name,
                     desc: d.desc,

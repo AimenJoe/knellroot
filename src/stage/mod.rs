@@ -34,6 +34,8 @@ pub enum PropKind {
     Pillar,
     Root,
     Brazier,
+    /// 쉬는 곳의 화톳불(0267 — 지도 `R`): 땅에 놓인 낮고 넓은 모닥불. 조명 화로(`Brazier`, 지도 `b`)와 갈린다.
+    Hearth,
     Rubble,
     WallPiece,
     Bell,
@@ -47,6 +49,7 @@ impl PropKind {
             PropKind::Pillar => "pillar_broken",
             PropKind::Root => "root_clump",
             PropKind::Brazier => "brazier",
+            PropKind::Hearth => "hearth",
             PropKind::Rubble => "rubble",
             PropKind::WallPiece => "wall_segment",
             PropKind::Bell => "bell",
@@ -60,6 +63,7 @@ impl PropKind {
             PropKind::Pillar => vec2(0.6, 0.6),
             PropKind::Root => vec2(0.5, 0.5),
             PropKind::Brazier => vec2(0.35, 0.35),
+            PropKind::Hearth => vec2(0.75, 0.75),
             PropKind::Rubble => Vec2::ZERO,
             PropKind::WallPiece => vec2(1.0, 0.4),
             PropKind::Bell => vec2(0.8, 0.8),
@@ -73,6 +77,7 @@ impl PropKind {
             PropKind::Pillar => 3.0,
             PropKind::Root => 1.0,
             PropKind::Brazier => 1.0,
+            PropKind::Hearth => 0.6,
             PropKind::Rubble => 0.6,
             PropKind::WallPiece => 3.0,
             PropKind::Bell => 2.0,
@@ -196,6 +201,8 @@ pub const PROLOGUE: usize = 4;
 pub const EXIT_GLYPH: char = 'E';
 /// 무너진 아치(0265): 지나가는 출입구 — 숲 끝과 성소 남쪽 벽. 아치는 X로 걸쳐 있고 길은 Z(남 ↔ 북)로 지난다.
 pub const ARCH_GLYPH: char = 'n';
+/// 쉬는 곳 화톳불의 빛 반지름(m — 조명 화로 7보다 넓게, 0267).
+pub const HEARTH_LIGHT_R: f32 = 9.0;
 /// 아치의 설주(`arch_ruin.glb` — 가운데에서 X로 이만큼, 반폭·높이).
 pub const ARCH_JAMB_X: f32 = 2.35;
 const ARCH_JAMB_HALF: Vec2 = vec2(0.5, 0.6);

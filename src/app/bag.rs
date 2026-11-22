@@ -205,6 +205,8 @@ impl App {
         let Some(item) = self.progress.bag.remove(id) else {
             return;
         };
+        // 그 바탕의 마지막 하나였으면 가진 바탕에서도 뺀다(0266 — 다시 주우면 `take_item`이 되돌린다).
+        self.progress.part_with(item.base);
         // 바라보는 쪽 앞의 땅에(뛰는 중에 멈췄어도) — 한 번 곁을 떠나야 다시 줍는다(`ItemDrop::wait`).
         // 앞이 벽·소품 칸이면 걸을 수 있는 땅까지 물러난다(`floor_toward` — 벽 속·건너편에 놓이지 않게).
         let pl = &self.world.player;
@@ -501,7 +503,8 @@ impl App {
         {
             let slot = slot_of(&bag, id, it.base);
             let worn = bag.worn(id);
-            let spare = bag.spares().contains(&id);
+            let spare = bag.extras().contains(&id);
+            let unworn = bag.spares().contains(&id);
             let state = if worn {
                 (s.equip_worn.to_string(), AMBER)
             } else if bag.fresh(id) {
@@ -533,7 +536,7 @@ impl App {
             } else {
                 self.equip_lines(&w, slot, Cand::Item(id), true)
             };
-            if spare {
+            if unworn {
                 lines.push(Ln::Gap);
                 lines.push(Ln::Pair(
                     s.bag_value.to_string(),
@@ -730,7 +733,7 @@ mod tests {
         assert_eq!(got[0], best, "the rare sword stands before the plain one");
     }
 
-    /// 할 수 있는 일: 낀 것은 끼기가 없고, 여벌만 내려놓고 거둔다 — 지키면 둘 다 사라진다. 잔불로는 화로에서만(멈춤은 흐린 줄).
+    /// 할 수 있는 일: 낀 것은 끼기가 없고, 끼지 않은 것은 내려놓고 거둔다(하나뿐인 것도, 0266) — 지키면 둘 다 사라진다. 잔불로는 화로에서만(멈춤은 흐린 줄).
     #[test]
     fn acts_follow_what_the_item_is() {
         let mut bag = bag_with(&[Base::Weapon(W::Sword), Base::Weapon(W::Hammer)]);
@@ -747,10 +750,10 @@ mod tests {
         let hammer = bag.of(Base::Weapon(W::Hammer)).next().unwrap().0;
         // 낀 검: 지키기뿐.
         assert_eq!(acts(&bag, worn, W::Sword, true), [Do::Keep]);
-        // 하나뿐인 망치: 들 수 있지만 내려놓거나 거둘 수 없다.
+        // 하나뿐인 망치: 들 수 있고, 끼지 않았으니 내려놓거나 거둘 수도 있다(0266 — 사장 "장비가 하나밖에 없을 때 팔 수 없었던 것").
         assert_eq!(
             acts(&bag, hammer, W::Sword, true),
-            [Do::Main, Do::Sub, Do::Keep]
+            [Do::Main, Do::Sub, Do::Keep, Do::Drop, Do::Salvage]
         );
         // 검의 여벌: 주무기로만(든 것과 같은 바탕), 내려놓기, 화로면 잔불로.
         assert_ne!(spare, worn);

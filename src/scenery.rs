@@ -1130,7 +1130,7 @@ impl Scenery {
             if let Some(e) = lib.get(pr.kind.model()) {
                 e.model.pose(e.pick(&["idle"]), 0.0, &mut pose);
                 let inst = Mat4::from_translation(pr.pos) * Mat4::from_rotation_y(pr.yaw);
-                if pr.kind == PropKind::Brazier && cold(pr.pos) {
+                if matches!(pr.kind, PropKind::Brazier | PropKind::Hearth) && cold(pr.pos) {
                     Batch::bake_model_dark(
                         &mut p.verts,
                         &mut p.idx,
@@ -1381,7 +1381,7 @@ fn prop_color(k: PropKind) -> Color {
             Color::new(0.38, 0.36, 0.34, 1.0)
         }
         PropKind::Root => Color::new(0.30, 0.20, 0.25, 1.0),
-        PropKind::Brazier => Color::new(0.9, 0.6, 0.25, 1.0),
+        PropKind::Brazier | PropKind::Hearth => Color::new(0.9, 0.6, 0.25, 1.0),
         PropKind::Bell => Color::new(0.45, 0.42, 0.30, 1.0),
         PropKind::Arch => Color::new(0.38, 0.36, 0.34, 1.0),
     }

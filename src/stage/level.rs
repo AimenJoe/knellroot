@@ -90,19 +90,26 @@ impl Level {
                         pos: p,
                         yaw: 0.0,
                     }),
+                    // 조명 화로 `b`와 쉬는 곳의 화톳불 `R`(0267 — 사장 2026-11-22 "화톳불이랑 그냥 조명 불이랑 구분이 안 됨"):
+                    // 쉬는 곳은 땅에 놓인 낮고 넓은 모닥불(`hearth.glb`), 빛도 더 넓다.
                     'b' | 'R' => {
-                        if c == 'R' {
+                        let rest = c == 'R';
+                        if rest {
                             lv.marks.push(('R', p));
                         }
                         lv.props.push(Prop {
-                            kind: PropKind::Brazier,
+                            kind: if rest {
+                                PropKind::Hearth
+                            } else {
+                                PropKind::Brazier
+                            },
                             pos: p,
                             yaw: 0.0,
                         });
                         lv.lights.push(Light {
-                            pos: p + Vec3::Y * 1.2,
+                            pos: p + Vec3::Y * if rest { 1.0 } else { 1.2 },
                             color: Color::new(1.0, 0.62, 0.25, 1.0),
-                            radius: 7.0,
+                            radius: if rest { HEARTH_LIGHT_R } else { 7.0 },
                             shaft: false,
                         });
                     }

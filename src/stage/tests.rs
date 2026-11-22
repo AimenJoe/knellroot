@@ -1539,3 +1539,30 @@ fn the_sanctuary_arrival_mark_keeps_the_numbering_of_everything_else() {
     assert_eq!(w.player.facing, std::f32::consts::PI);
     assert_eq!((run.intro, run.card.is_none()), (0.0, true));
 }
+
+/// 0267(사장 "화톳불이랑 그냥 조명 불이랑 구분이 안 됨"): 쉬는 곳(`R`)은 땅에 놓인 화톳불, 조명(`b`)은 받침 위의 화로 — 같은 자리에 둘이
+/// 겹치지 않고, 쉬는 곳의 빛이 더 넓다.
+#[test]
+fn rest_hearths_and_lamps_are_different_props() {
+    for def in STAGES.iter() {
+        let (run, _) = StageRun::start(def);
+        for r in &run.rests {
+            let here: Vec<PropKind> = run
+                .level
+                .props
+                .iter()
+                .filter(|p| vec2(p.pos.x - r.x, p.pos.z - r.z).length() < 0.1)
+                .map(|p| p.kind)
+                .collect();
+            assert_eq!(here, vec![PropKind::Hearth], "{}", def.find_prefix);
+        }
+        let hearths = run
+            .level
+            .props
+            .iter()
+            .filter(|p| p.kind == PropKind::Hearth)
+            .count();
+        assert_eq!(hearths, run.rests.len(), "{}", def.find_prefix);
+    }
+    assert!(HEARTH_LIGHT_R > 7.0);
+}

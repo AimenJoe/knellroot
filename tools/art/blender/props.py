@@ -106,7 +106,7 @@ def root_clump():
 
 
 def brazier():
-    """쉼터의 화로: 돌 받침 위 넓은 그릇(테 위 0.86m), 불꽃(glow_flame) 끝 약 1.42m. "아직 색이 타는 곳" — 멀리서도 그릇과 불꽃이 따로 읽히게."""
+    """조명 화로(처음엔 쉼터의 화로 — 0267부터 쉼터는 `hearth`): 돌 받침 위 넓은 그릇(테 위 0.86m), 불꽃(glow_flame) 끝 약 1.42m. "아직 색이 타는 곳" — 멀리서도 그릇과 불꽃이 따로 읽히게."""
     m = C.Model("brazier")
     g = m.geo("brazier")
     g.stone((0, 0, 0.07), (0.62, 0.62, 0.14), "k_dark", bevel=0.05, edges="tv", drop=GROUND)  # 받침돌
@@ -123,6 +123,43 @@ def brazier():
            [0.09, 0.10, 0.055, 0.0], ["k_ember", "k_amber", "k_flame"], sides=5, smooth=True)
     g.limb([(-0.15, -0.10, 0.82), (-0.18, -0.12, 0.90), (-0.22, -0.13, 0.98), (-0.19, -0.11, 1.07)],
            [0.08, 0.09, 0.05, 0.0], ["k_ember", "k_amber", "k_flame"], sides=5, smooth=True)
+    m.build()
+    return m, []
+
+
+def hearth():
+    """쉬는 곳의 화톳불(0267 — 사장 2026-11-22 "화톳불이랑 그냥 조명 불이랑 구분이 안 됨"): 조명(`brazier` — 받침 위의 그릇, 키 큰 실루엣)과
+    갈리게 **땅에 놓인 낮고 넓은 모닥불** — 지름 약 1.9m의 돌 고리(크고 작은 돌 아홉) + 재 + 세워 엮은 장작 다섯(원뿔) + 큰 불꽃(끝 약 1.75m,
+    곁 혀 셋) + 곁에 앉는 넓적한 돌 둘(쉬는 곳이라는 것). 불꽃은 glow_flame(조명과 같은 이름 — 꺼진 화로는 게임이 어둡게 굽는다)."""
+    import math
+    m = C.Model("hearth")
+    g = m.geo("hearth")
+    g.lathe((0, 0, 0), [(0.78, 0.0), (0.70, 0.05), (0.40, 0.07)], "k_deep", sides=10, caps=(False, True))  # 재
+    for i in range(9):
+        a = 360.0 * i / 9 + 12
+        r = math.radians(a)
+        big = i % 3 == 0
+        h = 0.34 if big else 0.24
+        w = 0.40 if big else 0.30
+        rr = 0.86
+        g.stone((math.cos(r) * rr, math.sin(r) * rr, h / 2), (w, 0.30, h), "k_dark" if i % 2 else "k_stone", bevel=0.06,
+                rot=(0, 0, a + 90), taper=(0.82, 0.86), drop=GROUND)
+    # 장작 다섯: 원뿔로 세워 엮었다(끝이 가운데 위에서 만난다)
+    for i in range(5):
+        a = math.radians(360.0 * i / 5 + 30)
+        g.limb([(math.cos(a) * 0.52, math.sin(a) * 0.52, 0.04), (math.cos(a) * 0.10, math.sin(a) * 0.10, 0.78)], [0.075, 0.05],
+               "k_wood" if i % 2 else "k_woodl", sides=5, caps=(True, True))
+    g.limb([(-0.40, -0.18, 0.06), (0.36, 0.22, 0.10)], [0.07, 0.06], "k_wood", sides=5, caps=(True, True))  # 누운 장작
+    # 앉는 돌 둘(쉬는 곳): 불 곁 앞쪽 비스듬히
+    g.stone((-1.45, -0.55, 0.16), (0.70, 0.46, 0.32), "k_stone", bevel=0.07, rot=(0, 0, 25), taper=(0.9, 0.9), drop=GROUND)
+    g.stone((1.40, -0.70, 0.13), (0.60, 0.42, 0.26), "k_dark", bevel=0.07, rot=(0, 0, -30), taper=(0.9, 0.9), drop=GROUND)
+    g = m.geo("glow_flame")
+    # 큰 혀 하나(끝 1.75m) + 곁 혀 셋 — 밑동은 엷은 불씨, 끝은 짙은 호박빛(조명 불꽃의 두 배쯤)
+    g.limb([(0.0, 0.0, 0.10), (0.0, 0.0, 0.30), (0.04, -0.02, 0.62), (0.08, -0.03, 0.98), (0.03, 0.0, 1.36), (-0.06, 0.03, 1.75)],
+           [0.36, 0.42, 0.34, 0.22, 0.10, 0.0], ["k_ember", "k_ember", "k_amber", "k_amber", "k_flame"], sides=7, smooth=True)
+    for (x, y, h, r0) in ((0.30, 0.12, 0.95, 0.16), (-0.28, -0.14, 0.85, 0.15), (0.05, 0.32, 0.75, 0.13)):
+        g.limb([(x * 0.6, y * 0.6, 0.12), (x, y, 0.30), (x * 1.15, y * 1.15, h * 0.7), (x * 1.05, y * 1.05, h)],
+               [r0, r0 * 1.1, r0 * 0.6, 0.0], ["k_ember", "k_amber", "k_flame"], sides=5, smooth=True)
     m.build()
     return m, []
 
@@ -172,36 +209,47 @@ def gate():
 
 def arch_ruin():
     """성소 바깥 아치(0265 — 사장 2026-11-22 "문은 열리지 않아도 괜찮아. 아치 형태로 출입구라는 게 인식되기만 하면, 아치가 약간 끊어져서
-    오래된 것처럼"): 폭 약 5.6m·높이 약 5.1m, 문짝 없는 둥근 아치. 설주 둘(x ±2.35, 큰 돌 셋씩) 위에 쐐기돌 아홉을 반원(안 반지름 2.0m)으로
-    얹고, 오른쪽 위 둘은 빠져 발치에 굴러 있다 — 이맛돌(가운데)은 남아 살짝 처졌다. 길은 Y로 지난다(앞 = -Y). 부딪힘은 게임이 설주 둘만."""
+    오래된 것처럼"): 폭 약 5.6m·높이 약 5.1m, 문짝 없는 둥근 아치. 설주 둘(x ±2.35, 큰 돌 셋씩) 위에 쐐기돌 아홉을 반원(안 반지름 2.0m ·
+    바깥 2.7m)으로 맞붙여 얹었다 — 쐐기꼴(바깥 면이 넓다)이라 이음은 깎인 모서리의 금뿐, 떠 있는 돌이 없다(사장 같은 날 "둥둥 떠 있는 것처럼
+    표현된 부분" — 처음엔 사이가 벌어진 네모 돌이었고 오른쪽 위 둘을 빼 위쪽이 허공에 걸렸다). 낡은 것은: 오른쪽 어깨의 돌 하나가
+    미끄러져 내려앉았고, 왼쪽 위 돌은 바깥 귀가 깨져 작다, 깨진 조각들이 발치에 있다. 길은 Y로 지난다(앞 = -Y). 부딪힘은 게임이 설주 둘만."""
     import math
     m = C.Model("arch_ruin")
     g = m.geo("arch_ruin")
-    R, zc = 2.35, 2.40  # 쐐기돌 가운데의 반지름, 아치가 솟는 높이
+    R, zc, T = 2.35, 2.40, 0.70  # 쐐기돌 가운데의 반지름, 아치가 솟는 높이, 두께(반지름 쪽)
     for sx in (1, -1):
         g.stone((R * sx, 0, 0.16), (1.06, 1.18, 0.32), "k_dark", bevel=0.07, drop=GROUND)  # 받침
         g.stone((R * sx, 0, 0.74), (0.86, 1.00, 0.84), "k_stone", bevel=0.08, drop=("-z", "+z"))
         g.stone((R * sx + 0.02 * sx, 0, 1.50), (0.82, 0.96, 0.68), "k_dark" if sx > 0 else "k_stone", bevel=0.08, drop=("-z", "+z"))
-        g.stone((R * sx, 0, 2.12), (0.90, 1.02, 0.56), "k_light", bevel=0.08)  # 아치 받침돌(솟는 자리)
-    # 쐐기돌: 0°(오른쪽) → 180°(왼쪽). 6·7째(오른쪽 위)는 빠졌다.
+        g.stone((R * sx, 0, 2.06), (0.90, 1.02, 0.44), "k_light", bevel=0.07, drop=("-z",))  # 아치 받침돌(솟는 자리)
+    # 쐐기돌: 0°(오른쪽) → 180°(왼쪽). 안 면의 현 길이 = 안쪽 칸, 바깥 면은 그만큼 넓힌다(taper) — 이웃과 맞닿는다.
     n = 9
+    step = math.pi / (n - 1)
+    inner = 2 * (R - T / 2) * math.sin(step / 2)
+    outer = 2 * (R + T / 2) * math.sin(step / 2)
     for i in range(n):
-        if i in (1, 2):
-            continue
-        a = 180.0 * i / (n - 1)
+        a = math.degrees(step * i)
         r = math.radians(a)
-        sag = -0.10 if i == 4 else 0.0  # 이맛돌은 옆이 빠져 조금 처졌다
-        c = (R * math.cos(r), 0, zc + R * math.sin(r) + sag)
         key = i == 4
+        slip = i == 2  # 오른쪽 어깨: 미끄러져 내려앉았다(이웃에 걸쳐 있다)
+        chip = i == 6  # 왼쪽 위: 바깥 귀가 깨졌다
+        rr = R - (0.10 if slip else 0.0)
+        c = (rr * math.cos(r), 0, zc + rr * math.sin(r) - (0.06 if slip else 0.0))
         mat = "k_light" if key else ("k_stone" if i % 2 else "k_dark")
-        g.stone(c, (0.86 if key else 0.78, 1.08 if key else 0.98, 0.70), mat, bevel=0.07, rot=(0, a - 90 + (4 if key else 0), 0),
-                taper=(1.12, 1.0) if key else (1.0, 1.0), edges="tvb")
-    # 빠진 쐐기돌 둘: 오른쪽 발치에 하나는 눕고 하나는 반쯤 묻혔다.
-    g.stone((2.95, -1.05, 0.30), (0.78, 0.98, 0.62), "k_stone", bevel=0.07, rot=(12, 8, 34), edges="tvb")
-    g.stone((1.70, -1.55, 0.18), (0.70, 0.86, 0.50), "k_dark", bevel=0.06, rot=(-20, 64, 10), edges="tvb")
-    g.stone((2.30, -0.80, 0.08), (0.36, 0.30, 0.20), "k_light", bevel=0.04, rot=(0, 0, 25), edges="tvb")  # 부스러기
-    # 이끼(왼쪽 어깨·설주 받침)·뿌리(왼쪽 설주를 감아 아치를 넘는다, 앞 = -Y)
-    g.stone((-1.70, 0.0, 4.40), (0.70, 0.80, 0.06), "k_moss", bevel=0.02, edges="t", rot=(0, -35, 0))
+        depth = 1.10 if key else 0.98
+        thick = T * (0.78 if chip else 1.0)
+        if chip:
+            c = (c[0] + 0.09 * math.cos(r) * -1, 0, c[2] - 0.09 * math.sin(r))
+        g.stone(c, (inner * 1.02, depth, thick), mat, bevel=0.06, rot=(0, 90 - a + (6 if slip else 0), 0),
+                taper=(outer / inner * 1.02 * (0.92 if chip else 1.0), 1.0), edges="tvb")
+    # 깨진 조각(발치 — 땅에 눕는다): 깨진 귀 하나와 부스러기.
+    g.stone((-2.95, -1.00, 0.17), (0.52, 0.44, 0.34), "k_stone", bevel=0.06, rot=(0, 0, 28), edges="tvb", drop=GROUND)
+    g.stone((2.85, -0.95, 0.12), (0.40, 0.34, 0.24), "k_dark", bevel=0.05, rot=(0, 0, -20), edges="tvb", drop=GROUND)
+    g.stone((2.30, -0.80, 0.08), (0.30, 0.26, 0.16), "k_light", bevel=0.04, rot=(0, 0, 25), edges="tvb", drop=GROUND)
+    # 이끼(왼쪽 어깨 윗면에 붙는다 · 설주 받침)·뿌리(왼쪽 설주를 감아 아치를 넘는다, 앞 = -Y)
+    am = math.radians(150)
+    g.stone(((R + T / 2) * math.cos(am), 0, zc + (R + T / 2) * math.sin(am)), (0.62, 0.84, 0.04), "k_moss", bevel=0.015,
+            edges="t", rot=(0, 90 - 150, 0))
     g.stone((-2.35, -0.52, 0.33), (0.80, 0.12, 0.05), "k_moss", bevel=0.02, edges="t", drop=GROUND)
     root(g, [(-2.90, -0.62, 0.02), (-2.70, -0.58, 1.00), (-2.80, -0.56, 2.10), (-2.40, -0.58, 3.30), (-1.60, -0.58, 4.10),
              (-0.60, -0.56, 4.60)], 0.11)
@@ -439,6 +487,7 @@ PROPS = {
     "pillar_broken": pillar_broken,
     "root_clump": root_clump,
     "brazier": brazier,
+    "hearth": hearth,
     "gate": gate,
     "arch_ruin": arch_ruin,
     "core_crystal": core_crystal,

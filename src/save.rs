@@ -84,6 +84,8 @@ pub mod key {
     pub const JOURNEY: &str = "journey";
     /// 받은 도감 칸의 보상(0265): `codex::paid_key` 이름들, 쉼표.
     pub const CODEX_PAID: &str = "codex.paid";
+    /// 팔거나 내려놓아 이제는 없는 물건(0266 — 도감이 한 번 가졌던 것으로 기억한다): `codex::paid_key` 이름들, 쉼표.
+    pub const CODEX_HAD: &str = "codex.had";
     /// 문 장치로 연 문(0113): 스테이지 이름 앞(`find_prefix`)들 — 한 번 열면 판을 넘어 열려 있다(지름길).
     pub const GATES: &str = "gates";
     /// 문지기 핵 점수(0105): 이긴 횟수, `progression::CORE_CAP`까지.
@@ -248,6 +250,8 @@ pub struct Progress {
     pub journey: Vec<String>,
     /// 받은 도감 칸의 보상(0265 — `codex::paid_key`).
     pub codex_paid: Vec<String>,
+    /// 팔거나 내려놓아 이제는 없는 물건(0266 — 도감이 그대로 보인다).
+    pub codex_had: Vec<String>,
     /// 문 장치로 연 문(0113).
     pub gates: Vec<String>,
     /// 성소 문지기 핵 점수(0105, `CORE_CAP`까지).
@@ -401,6 +405,7 @@ impl Progress {
         let read = read_list(&r, key::READ);
         let journey = read_list(&r, key::JOURNEY);
         let codex_paid = read_list(&r, key::CODEX_PAID);
+        let codex_had = read_list(&r, key::CODEX_HAD);
         let runs = r.num(key::RUNS).unwrap_or(0);
         // 0166 전의 기록: 처음의 둘은 값 없이 가졌다 — 잃지 않게 1단으로(이미 올렸으면 그대로), 그 값은 기록의 몫
         // (`gift` 둘)으로 얹어 남은 점수는 그대로다. 한 번도 쓴 적 없는 기록(빈 슬롯·깨진 글)은 옛 기록이 아니다 — 새 판으로 읽는다.
@@ -432,6 +437,7 @@ impl Progress {
             read,
             journey,
             codex_paid,
+            codex_had,
             gates,
             cores,
             bell_cores,
@@ -629,6 +635,47 @@ impl Progress {
         self.bag.settle(&owned, &worn);
     }
 
+    /// 그 바탕의 마지막 하나를 팔거나 내려놓았다(0266): 가진 바탕에서 빼고(안 빼면 `settle_items`가 보통 것을 다시 만든다), 낀 자리가
+    /// 가리켰으면 비우고, 도감은 한 번 가졌던 것으로 기억한다(`codex_had`). 가방에 같은 바탕이 남았으면 아무 일도 없다.
+    pub fn part_with(&mut self, base: crate::items::Base) {
+        use crate::items::Base;
+        if self.bag.of(base).next().is_some() {
+            return;
+        }
+        let had = match base {
+            Base::Weapon(w) => {
+                self.weapons.retain(|x| *x != w);
+                if self.weapon == Some(w) {
+                    self.weapon = None;
+                }
+                if self.sub == Some(w) {
+                    self.sub = None;
+                }
+                crate::codex::paid_key("weapon", w.key())
+            }
+            Base::Shield(s) => {
+                self.shields.retain(|x| *x != s);
+                if self.shield == Some(s) {
+                    self.shield = None;
+                }
+                crate::codex::paid_key("shield", s.key())
+            }
+            Base::Charm(c) => {
+                self.owned.retain(|x| *x != c);
+                for w in &mut self.worn {
+                    if *w == Some(c) {
+                        *w = None;
+                    }
+                }
+                crate::codex::paid_key("charm", crate::charms::def(c).key)
+            }
+        };
+        if !self.codex_had.contains(&had) {
+            self.codex_had.push(had);
+            self.codex_had.sort();
+        }
+    }
+
     pub fn owns_weapon(&self, w: crate::weapons::Id) -> bool {
         w == crate::weapons::Id::Fists || self.weapons.contains(&w)
     }
@@ -801,6 +848,7 @@ impl Progress {
         r.set(key::READ, self.read.join(","));
         r.set(key::JOURNEY, self.journey.join(","));
         r.set(key::CODEX_PAID, self.codex_paid.join(","));
+        r.set(key::CODEX_HAD, self.codex_had.join(","));
         r.set(key::GATES, self.gates.join(","));
         r.set(key::CORE_WARDEN, self.cores);
         r.set(key::CORE_BELL, self.bell_cores);
@@ -2238,6 +2286,37 @@ forge.sword=3
         assert_eq!((st.dmg, st.heavy_dmg), (plain.dmg + more, plain.heavy_dmg));
     }
 
+    /// 0266: 하나뿐인 망치를 팔면 가진 바탕에서 빠진다 — 저장 앞의 맞추기가 보통 망치를 다시 만들지 않고, 도감은 가졌던 것으로 기억한다.
+    /// 같은 바탕이 남아 있으면 아무 일도 없다.
+    #[test]
+    fn parting_with_the_last_of_a_base_forgets_it_but_the_codex_remembers() {
+        use crate::items::Base;
+        use crate::weapons::Id as W;
+        let mut p = Progress {
+            weapons: vec![W::Sword, W::Hammer],
+            weapon: Some(W::Sword),
+            ..Progress::default()
+        };
+        p.settle_items();
+        let hammer = p.bag.of(Base::Weapon(W::Hammer)).next().unwrap().0;
+        let it = p.bag.remove(hammer).unwrap();
+        p.part_with(it.base);
+        p.settle_items();
+        assert_eq!(p.weapons, vec![W::Sword]);
+        assert!(
+            p.bag.of(Base::Weapon(W::Hammer)).next().is_none(),
+            "not made again"
+        );
+        assert_eq!(p.codex_had, vec!["weapon.hammer".to_string()]);
+        // 검의 여벌을 팔아도 검은 남는다.
+        let spare = p.bag.add(crate::items::Item::plain(Base::Weapon(W::Sword)));
+        p.bag.remove(spare);
+        p.part_with(Base::Weapon(W::Sword));
+        assert_eq!(p.weapons, vec![W::Sword]);
+        let back = Progress::from_record(p.to_record());
+        assert_eq!(back.codex_had, p.codex_had);
+    }
+
     /// 0223 V3: 부무기 칸에 끼운 스킬 둘은 기록 `skill.sub.1`·`skill.sub.2`에 남는다 — 처음의 둘이면 쓰지 않는다. 주무기의 칸과는 따로다.
     #[test]
     fn the_off_weapon_skill_slots_round_trip_apart_from_the_main_ones() {
@@ -2344,6 +2423,7 @@ forge.sword=3
             read: vec!["sanctuary.0".into()],
             journey: vec!["sanctuary.gates".into()],
             codex_paid: vec!["foe.husk".into()],
+            codex_had: vec!["weapon.bow".into()],
             gates: vec!["sanctuary.gate.0".into()],
             cores: 1,
             bell_cores: 2,
@@ -2414,6 +2494,7 @@ forge.sword=3
             read,
             journey,
             codex_paid,
+            codex_had,
             gates,
             cores,
             bell_cores,
@@ -2459,6 +2540,7 @@ forge.sword=3
         assert_ne!(read, d.read, "read");
         assert_ne!(journey, d.journey, "journey");
         assert_ne!(codex_paid, d.codex_paid, "codex_paid");
+        assert_ne!(codex_had, d.codex_had, "codex_had");
         assert_ne!(gates, d.gates, "gates");
         assert_ne!(cores, d.cores, "cores");
         assert_ne!(bell_cores, d.bell_cores, "bell_cores");
