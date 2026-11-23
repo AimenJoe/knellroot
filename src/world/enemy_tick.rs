@@ -501,7 +501,7 @@ impl World {
                 continue;
             }
             en.hp -= SHARD_REFLECT_DAMAGE;
-            en.hurt = 0.15;
+            en.struck();
             ev.push(Event::Hit { at });
             if en.hp <= 0 {
                 en.state = EState::Dead;

@@ -608,6 +608,9 @@ impl App {
                 Event::Toll { .. } => SHAKE_HIT,
                 Event::AilBurst { .. } => SHAKE_PLUNGE,
                 Event::Ail { .. } | Event::Burn { .. } => 0.0,
+                // 0270 B: 깨짐은 툭, 샘·돌아옴은 조용히.
+                Event::Shatter { .. } => SHAKE_HIT,
+                Event::Bleed { .. } | Event::Drain { .. } => 0.0,
                 Event::ThrowTurn { .. }
                 | Event::ThrowBack { .. }
                 | Event::FieldPulse { .. }
@@ -1280,8 +1283,14 @@ impl App {
                     crate::status::Kind::Ember => Id::Ember,
                     crate::status::Kind::Root => Id::Wake,
                     crate::status::Kind::Rift => Id::Parry,
+                    // 0270 B: 기절 = 타격 · 상처 = 휘두름 · 얼어붙음 = 가장 높은 종 · 흡수 = 한 모금.
+                    crate::status::Kind::Shock => Id::Thwack,
+                    crate::status::Kind::Sharp => Id::Swing,
+                    crate::status::Kind::Frost => Id::Beat3,
+                    crate::status::Kind::Drain => Id::Gulp,
                     _ => continue,
                 },
+                Event::Shatter { .. } => Id::Shell,
                 Event::Toll { .. } => Id::Beat,
                 Event::AilBurst { .. } => Id::Hit,
                 Event::Flurry { .. } => Id::Beat3,
@@ -1290,7 +1299,10 @@ impl App {
             // 타입의 일(0223 V2)은 떼에서 한 틱에 여럿이 겹친다(스물이 한꺼번에 울린다) — 같은 소리는 틱에 한 번만.
             if matches!(
                 e,
-                Event::Ail { .. } | Event::Toll { .. } | Event::AilBurst { .. }
+                Event::Ail { .. }
+                    | Event::Toll { .. }
+                    | Event::AilBurst { .. }
+                    | Event::Shatter { .. }
             ) {
                 if typed.contains(&id) {
                     continue;

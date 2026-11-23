@@ -168,6 +168,8 @@ pub struct Enemy {
     /// 이번 돌진·파동이 이미 맞혔다(한 번만).
     pub landed: bool,
     pub hurt: f32,
+    /// 이번 틱에 방랑자의 무엇에 맞았다(0270 B — 얼음 깨기·흡수가 다음 `tick_ails`에서 읽고 지운다). `struck`만 세운다.
+    pub struck_now: bool,
     pub knock: Vec3,
     /// 마지막으로 맞은 스윙 번호(한 스윙에 한 번만).
     pub hit_by: u32,
@@ -454,6 +456,7 @@ impl Enemy {
             landed: false,
             rings_hit: 0,
             hurt: 0.0,
+            struck_now: false,
             knock: Vec3::ZERO,
             hit_by: 0,
             spilling: false,
@@ -604,6 +607,12 @@ impl Enemy {
     /// 2단계 전환 중(0133) — 맞지 않는다(튕긴다), 자세도 안 쌓인다.
     pub fn rising(&self) -> bool {
         matches!(self.state, EState::Rise { .. })
+    }
+
+    /// 방랑자의 무엇(타·탄·스킬·수레)에 맞았다: 흰 번쩍임(`hurt`)과 이번 틱의 표지(0270 B). 맞는 길은 모두 이것을 부른다.
+    pub fn struck(&mut self) {
+        self.hurt = 0.15;
+        self.struck_now = true;
     }
 
     pub fn alive(&self) -> bool {

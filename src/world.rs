@@ -186,6 +186,19 @@ pub enum Event {
     Burn {
         at: Vec3,
     },
+    /// 날카로움의 상처에서 피가 샜다(움직인 만큼 — 0270 B). `dir` = 걸어가던 쪽.
+    Bleed {
+        at: Vec3,
+        dir: Vec3,
+    },
+    /// 언 적이 깨졌다(0270 B 서리).
+    Shatter {
+        at: Vec3,
+    },
+    /// 흡수: 표지가 붙은 적을 쳐서 방랑자에게 돌아왔다(0270 B — `from` = 그 적, 틱에 한 번).
+    Drain {
+        from: Vec3,
+    },
     /// 울렸다(0223 V2): `at` 둘레 `radius` m의 적을 치고 게이지를 나눠 줬다.
     Toll {
         at: Vec3,
@@ -1481,7 +1494,7 @@ impl World {
             en.exposed = 0.0;
             en.hit_by = swing;
             add_poise(en, 2.0 * self.stats.poise, None, t, ev);
-            en.hurt = 0.15;
+            en.struck();
             en.knock = d.normalize_or_zero() * t[P::Knockback] * if en.boss { 0.25 } else { 1.2 };
             if en.hp <= 0 {
                 en.state = EState::Dead;
@@ -1779,7 +1792,7 @@ impl World {
             let crit = en.exposed > 0.0;
             en.hp -= hurt_by(en, self.stats.dmg + damage, crit, self.stats.opened_dmg, t);
             en.exposed = 0.0;
-            en.hurt = 0.15;
+            en.struck();
             en.knock = d.normalize_or_zero() * t[P::Knockback] * if en.boss { 0.2 } else { 1.4 };
             let hit_at = en.pos + Vec3::Y * en.height * 0.6;
             ev.push(if crit {
@@ -1868,7 +1881,7 @@ impl World {
                 t,
             );
             add_poise(en, 2.0 * self.stats.poise, None, t, ev);
-            en.hurt = 0.15;
+            en.struck();
             if en.hp <= 0 {
                 en.state = EState::Dead;
                 self.kills += 1;
@@ -2071,7 +2084,7 @@ impl World {
             en.sway = -en.sway.normalize_or_zero();
             en.sway_t = 0.0;
             en.hp -= t[P::SlamDamage].round() as i32 + std::mem::take(&mut en.slam_bonus);
-            en.hurt = 0.15;
+            en.struck();
             if let EState::Stagger { t: e, dur } = en.state {
                 en.state = EState::Stagger {
                     t: e,
@@ -2348,6 +2361,12 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, t: &Tuning) -> i32 {
         1.0
     };
     let k = frail.max(rift_mult(en));
+    // 언 적(0270 B 서리)을 치면 깨진다: 그 한 대는 크게(금·표지와 곱한다 — 얼음은 한 번뿐이다).
+    let k = if en.ail.frozen > 0.0 {
+        k * crate::tuning::SHATTER_MULT
+    } else {
+        k
+    };
     if k > 1.0 {
         skills::scaled(d, k)
     } else {
@@ -2379,11 +2398,19 @@ fn afflict(en: &mut Enemy, dose: crate::status::Dose, ev: &mut Vec<Event>) {
         elite: en.elite.is_some(),
         mult: en.def().ail,
     };
+    let at = en.pos + Vec3::Y * en.height * 0.6;
     match en.ail.build(dose.0, dose.1, &who) {
-        Some(Proc::Burn(_) | Proc::Bind | Proc::Rift) => ev.push(Event::Ail {
-            at: en.pos + Vec3::Y * en.height * 0.6,
-            kind: dose.0,
-        }),
+        Some(Proc::Burn(_) | Proc::Bind | Proc::Rift | Proc::Bleed | Proc::Drain) => {
+            ev.push(Event::Ail { at, kind: dose.0 })
+        }
+        // 기절·얼어붙음(0270 B): 하던 것을 끊고 그 초만큼 선다(휘청과 같은 상태 — 패링할 것도 없다). 문지기는 휘청이지 않는다 —
+        // 그 짧은 초 동안 느려지기만(묶임과 같은 꼴, `tick_ails`).
+        Some(Proc::Stun(secs) | Proc::Freeze(secs)) => {
+            if !en.boss {
+                en.state = EState::Stagger { t: 0.0, dur: secs };
+            }
+            ev.push(Event::Ail { at, kind: dose.0 });
+        }
         Some(Proc::Toll | Proc::Burst(_)) | None => {}
     }
 }
@@ -2393,12 +2420,18 @@ fn add_poise(en: &mut Enemy, amount: f32, primed: Option<f32>, t: &Tuning, ev: &
     if amount <= 0.0 || en.stance.lock > 0.0 || !en.alive() || en.rising() {
         return;
     }
-    // 묶인 적(0223 V2 뿌리)은 자세가 더 깎인다.
+    // 묶인 적(0223 V2 뿌리)·충격이 쌓인 적(0270 B — 게이지만큼, 기절한 동안은 다)은 자세가 더 깎인다.
     let amount = if en.ail.bound > 0.0 {
         amount * crate::tuning::ROOT_POISE
     } else {
         amount
     };
+    let shock = if en.ail.stun > 0.0 {
+        1.0
+    } else {
+        en.ail.gauge[4].min(1.0)
+    };
+    let amount = amount * (1.0 + (crate::tuning::SHOCK_POISE - 1.0) * shock);
     let max = poise_max(en, t);
     let was_primed = primed.is_some_and(|k| en.stance.poise >= max * k);
     en.stance.poise += amount;

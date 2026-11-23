@@ -1005,24 +1005,63 @@ fn ail_marks(w: &World, alpha: f32, fl: &Drape) {
                 Color::new(ink.r, ink.g, ink.b, (0.3 + 0.5 * a.rift.min(1.0)) * beat),
             );
         }
-        // 머리 위 줄: (빛, 크기, 진하기) — 걸린 것 먼저, 그다음 쌓이는 게이지.
-        let mut pips: Vec<(Color, f32, f32)> = Vec::new();
+        // 0270 B: 언 적은 발밑에 두꺼운 얼음 고리 둘, 흡수 표지는 숨 쉬는 풀빛 고리, 기절한 적은 머리 둘레를 도는 레몬 별 셋.
+        if a.frozen > 0.0 {
+            let ink = ink(6);
+            for (r, k) in [(0.12, 0.85), (0.26, 0.55)] {
+                fl.ring(
+                    p + Vec3::Y * 0.05,
+                    en.radius + r,
+                    0.0,
+                    360.0,
+                    Color::new(ink.r, ink.g, ink.b, k),
+                );
+            }
+        }
+        if a.drain > 0.0 {
+            let ink = ink(7);
+            let beat = 0.6 + 0.4 * (w.time * 4.0).sin().abs();
+            fl.ring(
+                p + Vec3::Y * 0.07,
+                en.radius + 0.36,
+                0.0,
+                360.0,
+                Color::new(ink.r, ink.g, ink.b, (0.25 + 0.4 * a.drain.min(1.0)) * beat),
+            );
+        }
+        if a.stun > 0.0 {
+            let ink = ink(4);
+            let c = p + Vec3::Y * (en.height + 0.25);
+            for k in 0..3 {
+                let ang = w.time * 6.0 + k as f32 * std::f32::consts::TAU / 3.0;
+                let r = en.radius * 0.8 + 0.2;
+                spark4(c + vec3(ang.sin() * r, 0.0, ang.cos() * r), 0.22, ink);
+            }
+        }
+        // 머리 위 줄: (빛, 크기, 진하기, 꼴) — 걸린 것 먼저, 그다음 쌓이는 게이지.
+        use crate::status::{Mark, MARK};
+        let mut pips: Vec<(Color, f32, f32, Mark)> = Vec::new();
         let beat = 1.0 + 0.18 * (w.time * 8.0).sin();
         for _ in 0..a.burn {
-            pips.push((ink(0), 0.26 * beat, 1.0));
+            pips.push((ink(0), 0.26 * beat, 1.0, MARK[0]));
         }
         if a.bound > 0.0 {
-            pips.push((ink(1), 0.26 * beat, 1.0));
+            pips.push((ink(1), 0.26 * beat, 1.0, MARK[1]));
         }
         if a.toll_in.is_some() {
-            pips.push((ink(2), 0.3 * beat, 1.0));
+            pips.push((ink(2), 0.3 * beat, 1.0, MARK[2]));
         }
         if a.rift > 0.0 {
-            pips.push((ink(3), 0.26 * beat, 1.0));
+            pips.push((ink(3), 0.26 * beat, 1.0, MARK[3]));
+        }
+        for (i, on) in [(4, a.stun), (5, a.bleed), (6, a.frozen), (7, a.drain)] {
+            if on > 0.0 {
+                pips.push((ink(i), 0.26 * beat, 1.0, MARK[i]));
+            }
         }
         for (i, g) in a.gauge.iter().enumerate() {
             if *g > 0.02 {
-                pips.push((ink(i), 0.1 + 0.12 * g.min(1.0), 0.6));
+                pips.push((ink(i), 0.1 + 0.12 * g.min(1.0), 0.6, MARK[i]));
             }
         }
         if pips.is_empty() {
@@ -1032,10 +1071,34 @@ fn ail_marks(w: &World, alpha: f32, fl: &Drape) {
         let (right, _) = facing_axes(top);
         let gap = 0.3;
         let x0 = -(pips.len() as f32 - 1.0) * 0.5 * gap;
-        for (i, (ink, size, k)) in pips.into_iter().enumerate() {
+        for (i, (ink, size, k, mark)) in pips.into_iter().enumerate() {
             let at = top + right * (x0 + i as f32 * gap);
-            gem(at, size + 0.07, Color::new(0.07, 0.06, 0.12, 0.8 * k));
-            gem(at, size, Color::new(ink.r, ink.g, ink.b, k));
+            let dark = Color::new(0.07, 0.06, 0.12, 0.8 * k);
+            let col = Color::new(ink.r, ink.g, ink.b, k);
+            match mark {
+                Mark::Gem => {
+                    gem(at, size + 0.07, dark);
+                    gem(at, size, col);
+                }
+                // 별(충격): 네 갈래.
+                Mark::Star => {
+                    spark4(at, size * 1.5 + 0.08, dark);
+                    spark4(at, size * 1.5, col);
+                }
+                // 조각(날카로움·서리): 위아래로 길쭉한 두 마름모.
+                Mark::Shard => {
+                    for dy in [-0.4, 0.4] {
+                        gem(at + Vec3::Y * size * dy, size * 0.7 + 0.06, dark);
+                        gem(at + Vec3::Y * size * dy, size * 0.7, col);
+                    }
+                }
+                // 방울(흡수): 아래가 큰 마름모 + 위의 작은 끝.
+                Mark::Drop => {
+                    gem(at, size + 0.07, dark);
+                    gem(at, size, col);
+                    gem(at + Vec3::Y * size * 0.9, size * 0.4, col);
+                }
+            }
         }
     }
 }

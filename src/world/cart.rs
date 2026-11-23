@@ -144,7 +144,7 @@ impl World {
                 self.carts[k].hit.push(i);
                 let en = &mut self.enemies[i];
                 en.hp -= CART_DAMAGE;
-                en.hurt = 0.15;
+                en.struck();
                 en.knock = head * CART_KNOCK;
                 if !en.rising() {
                     en.state = EState::Stagger {

@@ -155,7 +155,12 @@ impl World {
         };
         // 망치의 물리력(0225): 타입 없는 스킬의 피해·자세 피해에 무기의 배(타입 있는 스킬은 `dosed`가 지팡이의 배를 얹는다).
         let force = pl.weapon.art().force;
-        if eff.skill.kind == crate::status::Kind::Physical && force != 1.0 {
+        // 망치의 힘은 타입 없는 스킬과 망치의 타입 충격(0270 B)에 얹는다.
+        if matches!(
+            eff.skill.kind,
+            crate::status::Kind::Physical | crate::status::Kind::Shock
+        ) && force != 1.0
+        {
             eff.skill.damage = (eff.skill.damage as f32 * force).round() as i32;
             eff.skill.poise *= force;
         }
@@ -839,7 +844,7 @@ impl World {
                 en.exposed = 0.0;
                 ev.push(Event::Crit { at });
             }
-            en.hurt = 0.15;
+            en.struck();
             let mass = if en.boss { 0.25 } else { 1.0 };
             en.knock = dir * (t[P::Knockback] * 0.5 + sw.push * KNOCK_DECAY) * mass;
             en.sway = dir * HEAVY_SWAY;
@@ -1038,7 +1043,7 @@ impl World {
                 en.exposed = 0.0;
                 ev.push(Event::Crit { at });
             }
-            en.hurt = 0.15;
+            en.struck();
             en.knock =
                 dv.normalize_or(dir) * BASH_PUSH * KNOCK_DECAY * if en.boss { 0.25 } else { 1.0 };
             ev.push(Event::Hit { at });
@@ -1134,7 +1139,7 @@ impl World {
                 en.exposed = 0.0;
                 ev.push(Event::Crit { at: hit_at });
             }
-            en.hurt = 0.15;
+            en.struck();
             ev.push(Event::Hit { at: hit_at });
             add_poise(en, s.poise * poise_k, None, t, &mut ev);
             afflict(en, dose, &mut ev);
@@ -1189,7 +1194,7 @@ impl World {
                 en.exposed = 0.0;
                 ev.push(Event::Crit { at });
             }
-            en.hurt = 0.15;
+            en.struck();
             ev.push(Event::Hit { at });
             if en.hp <= 0 {
                 en.state = EState::Dead;

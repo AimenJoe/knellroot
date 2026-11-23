@@ -1511,15 +1511,14 @@ forge.sword=3
         };
         let total = p.skill_points();
         for e in [
+            // 0270 B: 첫 줄의 뿌리 스킬(끌어모으기)이 서리가 되어 뿌리 결은 깊은 줄에서 — 왕복은 균열 하나로 본다.
             Entry::Skill(Id::Cut),
-            Entry::Skill(Id::Gather),
             Entry::Vein(Vein::Rift),
-            Entry::Vein(Vein::Root),
         ] {
             assert!(p.board.buy(e, total), "{e:?}");
         }
         let r = p.to_record();
-        assert_eq!(r.get(key::TREE_VEINS), Some("root,rift"));
+        assert_eq!(r.get(key::TREE_VEINS), Some("rift"));
         let back = Progress::from_record(Record::parse(&r.to_text()));
         assert_eq!(back.board.cells, p.board.cells);
         assert!(back.board.cells.veined(Vein::Rift) && !back.board.cells.veined(Vein::Ember));

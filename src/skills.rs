@@ -713,8 +713,8 @@ pub const SKILLS: [Skill; N] = [
         },
         row: 0,
         hands: ANY,
-        kind: Kind::Root,
-        build: 1.0,
+        kind: Kind::Frost,
+        build: 0.6,
         branch: Branch::Footing,
         picks: [
             Twist::Burst {
@@ -748,8 +748,8 @@ pub const SKILLS: [Skill; N] = [
         },
         row: 1,
         hands: HEAVY,
-        kind: Kind::Physical,
-        build: 0.0,
+        kind: Kind::Shock,
+        build: 1.0,
         branch: Branch::Beat,
         picks: [
             Twist::Leap {
@@ -787,7 +787,7 @@ pub const SKILLS: [Skill; N] = [
         },
         row: 0,
         hands: MELEE,
-        kind: Kind::Ember,
+        kind: Kind::Drain,
         build: 1.0,
         branch: Branch::Riposte,
         picks: [Twist::Walk { speed: 0.45 }, Twist::Reflect],
@@ -902,8 +902,8 @@ pub const SKILLS: [Skill; N] = [
         },
         row: 3,
         hands: DUEL,
-        kind: Kind::Physical,
-        build: 0.0,
+        kind: Kind::Sharp,
+        build: 0.4,
         branch: Branch::Beat,
         picks: [Twist::Focus, Twist::HomeStep],
         cap: Cap::Finale {

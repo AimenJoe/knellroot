@@ -1,6 +1,7 @@
-//! 피해 타입(0223 V2): 물리 + 넷 — 잔불(화상)·뿌리(묶임)·울림(퍼짐)·균열(취약). 타입마다 **동사가 다르다**(숫자만 다른 색이 아니다).
+//! 피해 타입(0223 V2 → 0270 B): 물리 + 여덟 — 잔불(화상)·뿌리(묶임)·울림(퍼짐)·균열(취약) + 충격(기절)·날카로움(움직이면 샌다)·
+//! 서리(느려짐 → 얼어붙음)·흡수(치면 돌아온다). 타입마다 **동사가 다르다**(숫자만 다른 색이 아니다).
 //! 걸리는 법은 하나다: 타입이 있는 타가 적의 **게이지**를 쌓고, 가득 차면(1) 그 타입의 일이 일어난다 — 면역은 없다(배율만),
-//! 보스·엘리트는 덜 쌓이고, 묶임·균열은 걸릴수록 다음이 더디다(되풀이 묶기를 막는다).
+//! 보스·엘리트는 덜 쌓이고, 묶임·균열·기절·얼어붙음은 걸릴수록 다음이 더디다(되풀이 묶기를 막는다).
 //!
 //! 이 파일은 순수한 규칙이다(적 하나의 상태 `Ail` — 쌓기 `build`·시간 `tick`). 이웃에게 번지는 일(울림·터짐)은 월드가 한다
 //! (`world/ail_tick.rs`). 숫자는 `tuning::AIL_*`.
@@ -9,10 +10,14 @@
 //! - 묶인 적에게 붙는 화상은 한 겹 더(`build`).
 //! - 화상 중인 적이 묶이면 터진다 — 겹을 다 쓰고 둘레를 친다(`Proc::Burst`).
 //! - 타는 적이 울리면 둘레에 불이 옮는다 · 금 간 적이 울리면 둘레에도 금이 번진다(월드 `toll`).
+//! - 얼어붙은 적을 치면 깨진다 — 그 한 대가 크게 들어가고 얼음이 풀린다(월드 `hurt_by`·`shatter`).
+//! - 타는 적에게는 서리가 덜 붙고(녹는다), 언 적에게 붙는 불은 얼음을 녹인다 — 둘은 서로 지운다(`build`).
 
 use crate::tuning::{
-    AIL_BOSS, AIL_DECAY, AIL_ELITE, AIL_HOLD, AIL_WEAR, AIL_WEAR_MIN, BURN_BOSS_STACKS, BURN_EVERY,
-    BURN_SECS, BURN_STACKS, RIFT_SECS, ROOT_SECS, TOLL_DELAY, TOLL_REST,
+    AIL_BOSS, AIL_DECAY, AIL_ELITE, AIL_HOLD, AIL_WEAR, AIL_WEAR_MIN, BLEED_SECS, BLEED_STEP,
+    BURN_BOSS_STACKS, BURN_EVERY, BURN_SECS, BURN_STACKS, DRAIN_SECS, FREEZE_BOSS_SECS,
+    FREEZE_SECS, FROST_EMBER, FROST_SLOW, RIFT_SECS, ROOT_SECS, STUN_BOSS_SECS, STUN_SECS,
+    TOLL_DELAY, TOLL_REST,
 };
 
 /// 타의 타입. 물리는 게이지가 없다(자세를 깬다 — 지금 그대로).
@@ -28,10 +33,27 @@ pub enum Kind {
     Knell,
     /// 균열: 금이 가서 모든 피해를 더 받는다.
     Rift,
+    /// 충격(0270 B — 망치): 기절시킨다(잠깐 아무것도 못 한다 — 보스는 짧게), 자세가 더 깎인다.
+    Shock,
+    /// 날카로움(0270 B — 결투): 걸린 동안 움직이는 만큼 피가 샌다(서 있으면 멎는다).
+    Sharp,
+    /// 서리(0270 B — 지팡이·원거리): 쌓일수록 느려지고, 가득 차면 얼어붙는다(얼면 다음 한 대가 크다).
+    Frost,
+    /// 흡수(0270 B — 방패·결투): 걸린 적을 치면 체력·기력이 조금 돌아온다(한 틱에 한 번).
+    Drain,
 }
 
-/// 게이지가 있는 타입 넷(자리 = `Kind::slot`).
-pub const TYPED: [Kind; 4] = [Kind::Ember, Kind::Root, Kind::Knell, Kind::Rift];
+/// 게이지가 있는 타입 여덟(자리 = `Kind::slot`).
+pub const TYPED: [Kind; 8] = [
+    Kind::Ember,
+    Kind::Root,
+    Kind::Knell,
+    Kind::Rift,
+    Kind::Shock,
+    Kind::Sharp,
+    Kind::Frost,
+    Kind::Drain,
+];
 pub const N: usize = TYPED.len();
 
 impl Kind {
@@ -43,16 +65,49 @@ impl Kind {
             Kind::Root => Some(1),
             Kind::Knell => Some(2),
             Kind::Rift => Some(3),
+            Kind::Shock => Some(4),
+            Kind::Sharp => Some(5),
+            Kind::Frost => Some(6),
+            Kind::Drain => Some(7),
         }
+    }
+
+    /// 걸릴수록 다음이 더딘 타입(몸을 붙드는 것 — 되풀이로 묶어 두지 못하게).
+    pub fn wears(self) -> bool {
+        matches!(self, Kind::Root | Kind::Rift | Kind::Shock | Kind::Frost)
     }
 }
 
-/// 타입의 빛(잔불 호박 · 뿌리 민트 · 울림 쇳빛 · 균열 하늘빛 — `TYPED` 순, rgb). 빨강은 쓰지 않는다(위험 예고 전용, 0141).
+/// 타입의 빛(잔불 호박 · 뿌리 민트 · 울림 쇳빛 · 균열 하늘빛 · 충격 레몬 · 날카로움 은백 · 서리 얼음 청록 · 흡수 풀빛 — `TYPED` 순, rgb).
+/// 빨강은 쓰지 않는다(위험 예고 전용, 0141). 빛이 가까운 것끼리는 머리 위 표지의 모양이 다르다(`MARK`).
 pub const INK: [[f32; 3]; N] = [
     [1.0, 0.72, 0.32],
     [0.66, 1.0, 0.86],
     [0.80, 0.84, 0.94],
     [0.50, 0.80, 1.0],
+    [1.0, 0.96, 0.45],
+    [0.95, 0.95, 1.0],
+    [0.55, 0.95, 1.0],
+    [0.55, 0.95, 0.45],
+];
+
+/// 머리 위 표지의 모양(`TYPED` 순) — 색약에도 갈리게(0150).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mark {
+    Gem,
+    Star,
+    Shard,
+    Drop,
+}
+pub const MARK: [Mark; N] = [
+    Mark::Gem,
+    Mark::Gem,
+    Mark::Gem,
+    Mark::Gem,
+    Mark::Star,
+    Mark::Shard,
+    Mark::Shard,
+    Mark::Drop,
 ];
 
 /// 타 하나가 싣는 타입과 쌓는 양(보통 적의 게이지 1 가운데 몫).
@@ -79,7 +134,7 @@ impl Who {
 }
 
 /// 게이지가 가득 차서 일어난 일.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Proc {
     /// 화상이 붙었다(지금 겹).
     Burn(u8),
@@ -91,6 +146,14 @@ pub enum Proc {
     Toll,
     /// 금이 갔다.
     Rift,
+    /// 기절했다(초 — 월드가 휘청으로 세운다).
+    Stun(f32),
+    /// 피가 샌다.
+    Bleed,
+    /// 얼어붙었다(초 — 월드가 휘청으로 세운다).
+    Freeze(f32),
+    /// 흡수 표지가 붙었다.
+    Drain,
 }
 
 /// 한 틱에 적에게서 일어난 일(월드가 피해·번짐으로 옮긴다).
@@ -103,6 +166,9 @@ pub struct Tick {
     /// 화상 중에 묶여 터진다(쓴 겹).
     pub burst: u8,
 }
+
+/// 날카로움이 새는 걸음(`Ail::walked` — 움직인 거리 `BLEED_STEP` m마다 한 번).
+pub type Pulses = u8;
 
 /// 적 하나의 타입 상태.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -127,6 +193,17 @@ pub struct Ail {
     toll_rest: f32,
     /// 터지기를 기다리는 겹(다음 틱에 월드가 둘레를 친다).
     burst: u8,
+    /// 기절한 초(남은 — 0270 B 충격).
+    pub stun: f32,
+    /// 피가 새는 초(남은)와 다음 새기까지 걸은 거리(날카로움).
+    pub bleed: f32,
+    walked: f32,
+    /// 지난번 `walked_to`의 자리(x, z) — 그 사이 걸은 거리를 잰다.
+    last_at: Option<(f32, f32)>,
+    /// 얼어붙은 초(남은 — 서리).
+    pub frozen: f32,
+    /// 흡수 표지의 초(남은).
+    pub drain: f32,
 }
 
 impl Ail {
@@ -142,7 +219,7 @@ impl Ail {
         } else {
             1.0
         };
-        let wear = if matches!(kind, Kind::Root | Kind::Rift) {
+        let wear = if kind.wears() {
             AIL_WEAR.powi(self.procs[i] as i32).max(AIL_WEAR_MIN)
         } else {
             1.0
@@ -156,7 +233,16 @@ impl Ail {
         if amount <= 0.0 {
             return None;
         }
-        self.gauge[i] += amount * self.rate(kind, who);
+        // 서리와 불은 서로 지운다: 타는 적에게는 서리가 덜 붙고, 언 적에게 붙는 불은 얼음을 녹인다.
+        let melt = if kind == Kind::Frost && self.burn > 0 {
+            FROST_EMBER
+        } else {
+            1.0
+        };
+        if kind == Kind::Ember && self.frozen > 0.0 {
+            self.frozen = 0.0;
+        }
+        self.gauge[i] += amount * self.rate(kind, who) * melt;
         self.quiet[i] = 0.0;
         if kind == Kind::Knell && (self.toll_rest > 0.0 || self.toll_in.is_some()) {
             self.gauge[i] = self.gauge[i].min(TOLL_BRIM);
@@ -194,7 +280,66 @@ impl Ail {
                 self.rift = RIFT_SECS;
                 Proc::Rift
             }
+            Kind::Shock => {
+                let secs = if who.boss { STUN_BOSS_SECS } else { STUN_SECS };
+                self.stun = secs;
+                Proc::Stun(secs)
+            }
+            Kind::Sharp => {
+                self.bleed = BLEED_SECS;
+                Proc::Bleed
+            }
+            Kind::Frost => {
+                let secs = if who.boss {
+                    FREEZE_BOSS_SECS
+                } else {
+                    FREEZE_SECS
+                };
+                self.frozen = secs;
+                Proc::Freeze(secs)
+            }
+            Kind::Drain => {
+                self.drain = DRAIN_SECS;
+                Proc::Drain
+            }
         })
+    }
+
+    /// 서리가 걷는 빠르기에 곱하는 배(쌓인 게이지만큼 느려진다 — 얼면 0, 1 = 그대로).
+    pub fn chill(&self) -> f32 {
+        if self.frozen > 0.0 {
+            0.0
+        } else {
+            1.0 - FROST_SLOW * self.gauge[6].min(1.0)
+        }
+    }
+
+    /// 날카로움: 이번 틱에 `dist` m 움직였다 — 피가 새는 동안 `BLEED_STEP` m마다 한 번씩 돌려준다(서 있으면 멎는다).
+    pub fn walked(&mut self, dist: f32) -> Pulses {
+        if self.bleed <= 0.0 {
+            self.walked = 0.0;
+            return 0;
+        }
+        self.walked += dist.max(0.0);
+        let n = (self.walked / BLEED_STEP).floor();
+        self.walked -= n * BLEED_STEP;
+        n.min(3.0) as Pulses
+    }
+
+    /// `walked`를 자리로: 지난번 부른 자리에서 (x, z)까지 걸은 만큼(틱의 차례와 상관없이 — 월드는 걷기 전에 부른다).
+    pub fn walked_to(&mut self, x: f32, z: f32) -> (Pulses, f32, f32) {
+        let (dx, dz) = match self.last_at.replace((x, z)) {
+            Some((px, pz)) => (x - px, z - pz),
+            None => (0.0, 0.0),
+        };
+        (self.walked((dx * dx + dz * dz).sqrt()), dx, dz)
+    }
+
+    /// 언 적이 깨진다(친 한 대가 크게 들어간 뒤 — 월드가 부른다). 얼어 있었으면 참.
+    pub fn shatter(&mut self) -> bool {
+        let was = self.frozen > 0.0;
+        self.frozen = 0.0;
+        was
     }
 
     /// 화상 `more`겹을 붙인다(상한까지 — 보스는 둘) — 남은 시간은 처음부터. 지금 겹을 돌려준다.
@@ -230,6 +375,10 @@ impl Ail {
         }
         self.bound = (self.bound - dt).max(0.0);
         self.rift = (self.rift - dt).max(0.0);
+        self.stun = (self.stun - dt).max(0.0);
+        self.bleed = (self.bleed - dt).max(0.0);
+        self.frozen = (self.frozen - dt).max(0.0);
+        self.drain = (self.drain - dt).max(0.0);
         self.toll_rest = (self.toll_rest - dt).max(0.0);
         out.burst = std::mem::take(&mut self.burst);
         if let Some(left) = self.toll_in {
@@ -395,6 +544,84 @@ mod tests {
         let mut a = Ail::default();
         assert_eq!(a.build(Kind::Root, 1.0, &Who::PLAIN), Some(Proc::Bind));
         assert_eq!(a.build(Kind::Ember, 1.0, &Who::PLAIN), Some(Proc::Burn(2)));
+    }
+
+    #[test]
+    fn shock_stuns_and_a_boss_shakes_it_off_sooner() {
+        let mut a = Ail::default();
+        assert_eq!(
+            a.build(Kind::Shock, 1.0, &Who::PLAIN),
+            Some(Proc::Stun(STUN_SECS))
+        );
+        let boss = Who {
+            boss: true,
+            ..Who::PLAIN
+        };
+        let mut b = Ail::default();
+        while b.build(Kind::Shock, 1.0, &boss).is_none() {}
+        assert!(b.stun < a.stun && b.stun > 0.0);
+        run(&mut a, STUN_SECS + 0.1);
+        assert_eq!(a.stun, 0.0);
+        // 몸을 붙드는 타입은 닳는다.
+        assert!(a.rate(Kind::Shock, &Who::PLAIN) < 1.0);
+    }
+
+    #[test]
+    fn a_bleeding_foe_leaks_as_it_moves_and_stops_when_it_stands() {
+        let mut a = Ail::default();
+        assert_eq!(a.walked(10.0), 0, "no cut, no leak");
+        assert_eq!(a.build(Kind::Sharp, 1.0, &Who::PLAIN), Some(Proc::Bleed));
+        assert_eq!(a.walked(0.0), 0, "standing still");
+        let mut n = 0;
+        for _ in 0..60 {
+            n += a.walked(BLEED_STEP / 20.0) as u32;
+        }
+        assert_eq!(n, 3, "three steps' worth of walking");
+        run(&mut a, BLEED_SECS + 0.1);
+        assert_eq!(a.walked(BLEED_STEP * 2.0), 0, "the cut has closed");
+    }
+
+    #[test]
+    fn frost_slows_as_it_builds_then_freezes_and_shatters_once() {
+        let mut a = Ail::default();
+        assert_eq!(a.chill(), 1.0);
+        a.build(Kind::Frost, 0.5, &Who::PLAIN);
+        let half = a.chill();
+        assert!(half < 1.0 && half > 1.0 - FROST_SLOW);
+        assert_eq!(
+            a.build(Kind::Frost, 0.6, &Who::PLAIN),
+            Some(Proc::Freeze(FREEZE_SECS))
+        );
+        assert_eq!(a.chill(), 0.0, "frozen stiff");
+        assert!(a.shatter());
+        assert!(!a.shatter(), "only once");
+        assert_eq!(a.chill(), 1.0, "the gauge emptied when it froze");
+    }
+
+    #[test]
+    fn fire_and_frost_undo_each_other() {
+        let mut a = Ail::default();
+        a.build(Kind::Ember, 1.0, &Who::PLAIN);
+        a.build(Kind::Frost, 0.5, &Who::PLAIN);
+        assert!(
+            (a.gauge[6] - 0.5 * FROST_EMBER).abs() < 1e-5,
+            "a burning foe chills slower"
+        );
+        let mut b = Ail::default();
+        b.build(Kind::Frost, 1.0, &Who::PLAIN);
+        assert!(b.frozen > 0.0);
+        b.build(Kind::Ember, 0.3, &Who::PLAIN);
+        assert_eq!(b.frozen, 0.0, "fire thaws the ice");
+    }
+
+    #[test]
+    fn drain_marks_a_foe_for_a_while() {
+        let mut a = Ail::default();
+        assert_eq!(a.build(Kind::Drain, 1.0, &Who::PLAIN), Some(Proc::Drain));
+        assert_eq!(a.drain, DRAIN_SECS);
+        run(&mut a, DRAIN_SECS + 0.1);
+        assert_eq!(a.drain, 0.0);
+        assert_eq!(a.rate(Kind::Drain, &Who::PLAIN), 1.0, "drain does not wear");
     }
 
     #[test]

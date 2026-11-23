@@ -417,7 +417,7 @@ impl World {
                     t,
                 );
                 en.exposed = 0.0;
-                en.hurt = 0.15;
+                en.struck();
                 en.knock = b.dir * t[P::Knockback] * if en.boss { 0.1 } else { 0.5 };
                 self.bolt_hit_tick = true;
                 let at = b.pos + b.dir * k;

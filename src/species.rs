@@ -116,7 +116,8 @@ pub struct Def {
     pub boss: bool,
     /// 쓰러지면 떨구는 잔불(0064 M1).
     pub embers: u32,
-    /// 타입 게이지가 쌓이는 배율(0223 V2 — 잔불·뿌리·울림·균열 순, `status::TYPED`): 0.5~1.5, 면역은 없다(시험).
+    /// 타입 게이지가 쌓이는 배율(0223 V2 → 0270 B — 잔불·뿌리·울림·균열·충격·날카로움·서리·흡수 순, `status::TYPED`): 0.5~1.5,
+    /// 면역은 없다(시험).
     /// 1이 아닌 칸은 도감이 한 줄로 알린다.
     pub ail: [f32; crate::status::N],
     /// 모델(`assets/models/<이름>.glb`).
@@ -157,7 +158,7 @@ pub static HUSK: Def = Def {
     behavior: Behavior::Melee,
     boss: false,
     embers: 1,
-    ail: [1.5, 0.75, 1.0, 1.0],
+    ail: [1.5, 0.75, 1.0, 1.0, 1.0, 0.75, 1.25, 1.0],
     model: "root_husk",
 };
 
@@ -195,7 +196,7 @@ pub static THORN: Def = Def {
     behavior: Behavior::Charger,
     boss: false,
     embers: 2,
-    ail: [1.25, 0.5, 1.0, 1.0],
+    ail: [1.25, 0.5, 1.0, 1.0, 1.0, 1.5, 1.0, 1.0],
     model: "thorn_beast",
 };
 
@@ -233,7 +234,7 @@ pub static WARDEN: Def = Def {
     behavior: Behavior::Warden,
     boss: true,
     embers: 30,
-    ail: [1.25, 0.5, 1.0, 1.0],
+    ail: [1.25, 0.5, 1.0, 1.0, 1.0, 1.0, 0.75, 1.0],
     model: "gatekeeper",
 };
 
@@ -273,7 +274,7 @@ pub static SHELL: Def = Def {
     behavior: Behavior::Melee,
     boss: false,
     embers: 3,
-    ail: [0.5, 1.0, 1.25, 1.5],
+    ail: [0.5, 1.0, 1.25, 1.5, 1.5, 0.5, 1.0, 1.0],
     model: "shellback",
 };
 
@@ -307,7 +308,7 @@ pub static POD: Def = Def {
     behavior: Behavior::Planter,
     boss: false,
     embers: 2,
-    ail: [1.5, 0.5, 1.0, 1.0],
+    ail: [1.5, 0.5, 1.0, 1.0, 1.0, 1.25, 1.5, 1.0],
     model: "pod",
 };
 
@@ -347,7 +348,7 @@ pub static BELLKEEPER: Def = Def {
     behavior: Behavior::Bellkeeper,
     boss: true,
     embers: 30,
-    ail: [1.0, 1.0, 0.5, 1.5],
+    ail: [1.0, 1.0, 0.5, 1.5, 0.5, 0.75, 1.25, 1.0],
     model: "bellkeeper",
 };
 
@@ -388,7 +389,7 @@ pub static MOSSWARD: Def = Def {
     behavior: Behavior::Mossward,
     boss: true,
     embers: 30,
-    ail: [0.5, 1.0, 1.0, 1.25],
+    ail: [0.5, 1.0, 1.0, 1.25, 1.25, 1.0, 1.0, 0.75],
     model: "mossward",
 };
 
@@ -421,7 +422,7 @@ pub static MOSSGRAZER: Def = Def {
     behavior: Behavior::Grazer,
     boss: false,
     embers: 0,
-    ail: [0.5, 1.0, 1.0, 1.0],
+    ail: [0.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
     model: "mossgrazer",
 };
 
@@ -463,7 +464,7 @@ pub static OVERSEER: Def = Def {
     behavior: Behavior::Overseer,
     boss: true,
     embers: 30,
-    ail: [1.0, 0.75, 1.5, 1.0],
+    ail: [1.0, 0.75, 1.5, 1.0, 1.0, 1.25, 1.0, 1.0],
     // 0234: 제 몸(늙은 오소리 — 문지기의 두 발 동작 + 갈고리·추).
     model: "winchkeeper",
 };
@@ -490,7 +491,7 @@ pub static REPEATER: Def = Def {
     },
     embers: 2,
     // 같은 박자로 되풀이하는 몸 — 울림이 잘 든다.
-    ail: [1.0, 1.0, 1.5, 1.0],
+    ail: [1.0, 1.0, 1.5, 1.0, 1.0, 1.0, 0.75, 1.25],
     model: "repeater",
     ..HUSK
 };
@@ -518,7 +519,7 @@ pub static PACKBEARER: Def = Def {
         feint: 0.0,
     },
     embers: 3,
-    ail: [1.0, 0.75, 1.0, 1.5],
+    ail: [1.0, 0.75, 1.0, 1.5, 1.5, 1.0, 1.0, 1.0],
     model: "packbearer",
     ..THORN
 };

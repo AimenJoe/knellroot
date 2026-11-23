@@ -168,6 +168,10 @@ const LAVENDER: Color = Color::new(0.82, 0.74, 1.0, 1.0);
 const MINT: Color = Color::new(0.66, 1.0, 0.86, 1.0);
 /// 균열의 하늘빛(0223 V2 — 패링의 `COOL`보다 짙다: 금 간 적의 표지와 같은 빛).
 const SKY: Color = Color::new(0.50, 0.80, 1.0, 1.0);
+// 0270 B 새 타입의 빛(`status::INK`와 같은 값): 충격 레몬 · 서리 얼음 · 흡수 풀빛.
+const SHOCK: Color = Color::new(1.0, 0.96, 0.45, 1.0);
+const ICE: Color = Color::new(0.55, 0.95, 1.0, 1.0);
+const LIFE: Color = Color::new(0.55, 0.95, 0.45, 1.0);
 const HEAL: Color = Color::new(1.0, 0.86, 0.56, 1.0);
 /// 먼지 = 바닥 석판보다 한 단 밝은 남보라 — 바닥과 같은 빛이면(처음 0.50·0.48·0.62) 깔리는 게 아니라 안 보였다.
 const DUST: Color = Color::new(0.63, 0.61, 0.74, 0.72);
@@ -1095,8 +1099,90 @@ impl Fx {
                         self.star(at, 1.7, 0.13, SKY);
                         self.ring_sparks(at, 0.2, 7, 7.5, 0.2, WHITE_HOT, SKY);
                     }
+                    // 0270 B: 기절 = 머리 위 레몬 별 + 사방으로 튀는 짧은 불꽃 · 상처 = 은빛 별 + 진액 · 얼어붙음 = 얼음 조각이
+                    // 몸에서 솟고 발밑에 서리 고리 · 흡수 = 풀빛 고리가 몸으로 조여든다.
+                    Kind::Shock => {
+                        self.star(at + Vec3::Y * 0.5, 1.8, 0.14, SHOCK);
+                        self.ring_sparks(at + Vec3::Y * 0.5, 0.3, 9, 7.0, 0.18, WHITE_HOT, SHOCK);
+                    }
+                    Kind::Sharp => {
+                        self.star(at, 1.4, 0.1, WHITE_HOT);
+                        self.sap(at, Vec3::ZERO, 6, 2.6, 2.0);
+                    }
+                    Kind::Frost => {
+                        self.mark(g, MarkKind::Ring { r0: 0.3, r1: 1.3 }, 0.35, ICE);
+                        self.spray(
+                            at - Vec3::Y * 0.3,
+                            Vec3::Y,
+                            0.7,
+                            10,
+                            3.2,
+                            Shape::Streak,
+                            0.08,
+                            0.4,
+                            6.0,
+                            WHITE_HOT,
+                            ICE,
+                        );
+                    }
+                    Kind::Drain => {
+                        self.mark(g, MarkKind::Ring { r0: 1.6, r1: 0.4 }, 0.3, LIFE);
+                        self.implode(at, 1.2, 8, LIFE);
+                    }
                     Kind::Knell | Kind::Physical => {}
                 }
+            }
+            // 상처에서 샜다(0270 B): 걸어가던 쪽 뒤로 진액이 떨어진다.
+            Event::Bleed { at, dir } => {
+                self.sap(at, -dir, 3, 1.6, 0.8);
+            }
+            // 언 적이 깨졌다: 얼음 조각이 사방으로 + 흰 별.
+            Event::Shatter { at } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                self.star(at, 2.2, 0.12, WHITE_HOT);
+                self.spray(
+                    at,
+                    Vec3::Y,
+                    0.9,
+                    14,
+                    5.5,
+                    Shape::Dot,
+                    0.11,
+                    0.55,
+                    14.0,
+                    WHITE_HOT,
+                    ICE,
+                );
+                self.dust_ring(g, 0.4, 6, 2.4, 0.4, ICE);
+            }
+            // 흡수가 돌아왔다: 친 적에서 방랑자 쪽으로 풀빛 알갱이가 솟는다(방랑자 곁에서도 조금).
+            Event::Drain { from } => {
+                let to = w.player.pos + Vec3::Y * 1.0;
+                let d = (to - from).normalize_or(Vec3::Y);
+                self.spray(
+                    from,
+                    d,
+                    0.25,
+                    5,
+                    5.0,
+                    Shape::Streak,
+                    0.07,
+                    0.3,
+                    0.0,
+                    WHITE_HOT,
+                    LIFE,
+                );
+                self.rise(
+                    to - Vec3::Y * 0.6,
+                    0.3,
+                    4,
+                    Shape::Dot,
+                    (0.07, 0.03),
+                    0.5,
+                    LIFE,
+                    WHITE_HOT,
+                    false,
+                );
             }
             // 화상이 탔다: 몸에서 솟는 불티 몇(꾸밈 — 많으면 건너뛴다).
             Event::Burn { at } => {
@@ -2149,6 +2235,26 @@ mod tests {
                 at,
                 kind: crate::status::Kind::Rift,
             },
+            // 0270 B: 새 타입 넷의 걸림과 그 일(샘·깨짐·돌아옴).
+            Event::Ail {
+                at,
+                kind: crate::status::Kind::Shock,
+            },
+            Event::Ail {
+                at,
+                kind: crate::status::Kind::Sharp,
+            },
+            Event::Ail {
+                at,
+                kind: crate::status::Kind::Frost,
+            },
+            Event::Ail {
+                at,
+                kind: crate::status::Kind::Drain,
+            },
+            Event::Bleed { at, dir },
+            Event::Shatter { at },
+            Event::Drain { from: at },
             Event::Burn { at },
             Event::Toll { at, radius: 4.0 },
             Event::AilBurst { at, radius: 2.5 },

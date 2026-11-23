@@ -171,6 +171,25 @@ pub const TOLL_RIFT_SECS: f32 = 2.0;
 /// 겹침(화상 중에 묶임): 터지는 둘레(m) · 쓴 겹마다의 피해.
 pub const BURST_RADIUS: f32 = 2.5;
 pub const BURST_DMG: i32 = 10;
+/// 충격(0270 B): 기절한 초(보스는 짧게) · 걸린 적이 받는 자세 피해의 배(망치가 큰 적을 꺾는다).
+pub const STUN_SECS: f32 = 1.4;
+pub const STUN_BOSS_SECS: f32 = 0.5;
+pub const SHOCK_POISE: f32 = 1.6;
+/// 날카로움: 피가 새는 초 · 움직인 이 m마다 한 번 · 한 번의 피해(타마다의 덤 없음 — 화상처럼 `flat`).
+pub const BLEED_SECS: f32 = 6.0;
+pub const BLEED_STEP: f32 = 1.5;
+pub const BLEED_DMG: i32 = 4;
+/// 서리: 게이지가 가득일 때 걸음이 이만큼 줄어든다(쌓인 만큼) · 얼어붙은 초(보스는 짧게) · 언 적을 깨는 한 대의 배 ·
+/// 타는 적에게 서리가 붙는 배(녹는다).
+pub const FROST_SLOW: f32 = 0.5;
+pub const FREEZE_SECS: f32 = 1.8;
+pub const FREEZE_BOSS_SECS: f32 = 0.6;
+pub const SHATTER_MULT: f32 = 1.6;
+pub const FROST_EMBER: f32 = 0.5;
+/// 흡수: 표지의 초 · 표지가 붙은 적을 치면 돌아오는 체력(눈금의 몫 — `HP_UNIT` 10 가운데)과 기력, 한 틱에 한 번.
+pub const DRAIN_SECS: f32 = 6.0;
+pub const DRAIN_HP: i32 = 2;
+pub const DRAIN_STAMINA: f32 = 6.0;
 /// 제비걸음(0214): 걸음의 앞 이만큼(몫)이 뛰는 걸음(그 끝에 벤다), 적의 몸에서 이만큼(m) 앞에 선다, 적이 없으면 이만큼(m) 앞으로.
 pub const HOP_DASH: f32 = 0.6;
 pub const HOP_GAP: f32 = 0.5;

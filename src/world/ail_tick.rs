@@ -7,8 +7,8 @@ use super::*;
 use crate::progression::{vein, Vein};
 use crate::status::{Kind, NO_DOSE};
 use crate::tuning::{
-    BURN_DMG, BURST_DMG, BURST_RADIUS, ROOT_BOSS_SLOW, TOLL_DMG, TOLL_RADIUS, TOLL_RIFT_SECS,
-    TOLL_SHARE, TOLL_STACK,
+    BLEED_DMG, BURN_DMG, BURST_DMG, BURST_RADIUS, DRAIN_HP, DRAIN_STAMINA, ROOT_BOSS_SLOW,
+    TOLL_DMG, TOLL_RADIUS, TOLL_RIFT_SECS, TOLL_SHARE, TOLL_STACK,
 };
 
 impl World {
@@ -18,7 +18,24 @@ impl World {
         let mut bursts = Vec::new();
         // 타다가 쓰러진 적의 남은 불(자리·겹) — 옮겨붙는 불(결, 0223 11절)이 쓴다. 쓰러진 몸의 불은 여기서 꺼진다(한 번만 옮는다).
         let mut cinders = Vec::new();
+        // 흡수(0270 B): 표지가 붙은 적을 이번 틱(앞 틱의 타 — 타는 `tick_ails` 뒤에 들어온다)에 쳤나 — 틱에 한 번만 돌아온다.
+        let mut drained: Option<Vec3> = None;
         for (i, en) in self.enemies.iter_mut().enumerate() {
+            let struck = std::mem::take(&mut en.struck_now);
+            if struck && en.alive() {
+                // 언 적은 친 그 틱의 타가 크게 들어간 뒤(`hurt_by`) 깨진다.
+                if en.ail.shatter() {
+                    ev.push(Event::Shatter {
+                        at: en.pos + Vec3::Y * en.height * 0.5,
+                    });
+                    if matches!(en.state, EState::Stagger { .. }) {
+                        en.state = EState::Chase;
+                    }
+                }
+                if en.ail.drain > 0.0 && drained.is_none() {
+                    drained = Some(en.pos + Vec3::Y * en.height * 0.6);
+                }
+            }
             if !en.alive() {
                 if en.ail.burn > 0 {
                     cinders.push((en.pos, std::mem::take(&mut en.ail.burn)));
@@ -26,6 +43,32 @@ impl World {
                 continue;
             }
             let out = en.ail.tick(dt);
+            // 서리(0270 B): 쌓인 만큼 느리다(얼어붙음은 휘청이 세운다). 문지기는 쌓이는 서리에 느려지지 않고, 기절·얼어붙은 짧은 초
+            // 동안만 묶인 것처럼 느려진다(휘청이지 않는다).
+            if en.boss {
+                if en.ail.stun > 0.0 || en.ail.frozen > 0.0 {
+                    en.marks.slow = en.marks.slow.min(ROOT_BOSS_SLOW);
+                }
+            } else {
+                en.marks.slow = en.marks.slow.min(en.ail.chill());
+            }
+            // 날카로움: 움직인 만큼 샌다(맞아 밀린 것도 움직임이다 — 서 있으면 멎는다).
+            let (leaks, dx, dz) = en.ail.walked_to(en.pos.x, en.pos.z);
+            let moved = vec3(dx, 0.0, dz);
+            if leaks > 0 && en.active() {
+                en.hp -= hurt_by(en, BLEED_DMG * leaks as i32, false, 0, t);
+                ev.push(Event::Bleed {
+                    at: en.pos + Vec3::Y * en.height * 0.5,
+                    dir: moved.normalize_or_zero(),
+                });
+                if en.hp <= 0 {
+                    en.state = EState::Dead;
+                    self.kills += 1;
+                    self.skill_hit_tick = true;
+                    ev.push(Event::EnemyDown { at: en.pos });
+                    continue;
+                }
+            }
             // 묶임: 걷지 못한다(공격은 그대로 — 패링할 것은 남는다). 보스는 묶이지 않고 느려지기만.
             if en.ail.bound > 0.0 {
                 en.marks.slow = if en.boss {
@@ -54,6 +97,12 @@ impl World {
             if out.burst > 0 {
                 bursts.push((en.pos, out.burst));
             }
+        }
+        if let Some(from) = drained {
+            let pl = &mut self.player;
+            pl.hp = (pl.hp + DRAIN_HP).min(pl.max_hp);
+            pl.stamina = (pl.stamina + DRAIN_STAMINA).min(t[P::StaminaMax]);
+            ev.push(Event::Drain { from });
         }
         // 한꺼번에 울리는 떼: 한 적이 받는 울림의 피해는 `TOLL_STACK` 번까지(떼가 클수록 한 번의 스킬이 곱절로 세지지 않게 —
         // 게이지 나눔·겹침은 그대로 번진다).

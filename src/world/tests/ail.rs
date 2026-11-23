@@ -273,7 +273,10 @@ fn a_typed_skill_leaves_its_mark_and_a_physical_one_none() {
         1
     );
     let (ail, ev) = cast(Sk::Whirl);
-    assert_eq!((ail.gauge, ail.rift, ail.burn), ([0.0; 4], 0.0, 0));
+    assert_eq!(
+        (ail.gauge, ail.rift, ail.burn),
+        ([0.0; crate::status::N], 0.0, 0)
+    );
     assert_eq!(count(&ev, |e| matches!(e, Event::Ail { .. })), 0);
 }
 
@@ -350,4 +353,138 @@ fn a_foe_the_hit_just_killed_takes_no_affliction() {
     let ev = fill(&mut w, i, Ty::Root);
     assert!(ev.is_empty(), "{ev:?}");
     assert_eq!(w.enemies[i].ail, before);
+}
+
+/// 0270 B 충격: 가득 차면 잡몹은 기절해 선다(휘청 — 하던 것을 끊는다), 문지기는 휘청이지 않고 그 짧은 초 동안 느려지기만.
+/// 기절한 적은 자세가 더 깎인다.
+#[test]
+fn a_shocked_foe_is_stunned_and_a_boss_only_slows_for_a_moment() {
+    use crate::tuning::{SHOCK_POISE, STUN_SECS};
+    let t = Tuning::default();
+    let mut w = World::new("test", 30.0);
+    let a = mob_with(&mut w, vec3(6.0, 0.0, 0.0), 500);
+    let b = foe(&mut w, vec3(-6.0, 0.0, 0.0));
+    let ev = fill(&mut w, a, Ty::Shock);
+    assert!(matches!(
+        ev[..],
+        [Event::Ail {
+            kind: Ty::Shock,
+            ..
+        }]
+    ));
+    assert!(
+        matches!(w.enemies[a].state, EState::Stagger { dur, .. } if (dur - STUN_SECS).abs() < 1e-5)
+    );
+    let mut ev = Vec::new();
+    add_poise(&mut w.enemies[a], 1.0, None, &t, &mut ev);
+    add_poise(&mut w.enemies[b], 1.0, None, &t, &mut ev);
+    assert!((w.enemies[a].stance.poise - w.enemies[b].stance.poise * SHOCK_POISE).abs() < 1e-4);
+
+    let mut w = world_with_boss();
+    fill(&mut w, 0, Ty::Shock);
+    assert!(!matches!(w.enemies[0].state, EState::Stagger { .. }));
+    w.step(&Actions::default(), &t);
+    assert_eq!(w.enemies[0].marks.slow, ROOT_BOSS_SLOW);
+}
+
+/// 0270 B 날카로움: 상처 난 적은 움직이는 만큼 샌다 — 가만히 선 적은 새지 않는다. 새는 피로도 쓰러진다.
+#[test]
+fn a_cut_foe_bleeds_as_it_walks_and_not_while_it_stands() {
+    use crate::tuning::BLEED_DMG;
+    let t = Tuning::default();
+    let mut w = World::new("test", 30.0);
+    let walker = mob_with(&mut w, vec3(9.0, 0.0, 0.0), 500);
+    let stander = foe(&mut w, vec3(-9.0, 0.0, 0.0));
+    fill(&mut w, walker, Ty::Sharp);
+    fill(&mut w, stander, Ty::Sharp);
+    let ev = run(&mut w, &t, 2.0);
+    let lost = 500 - w.enemies[walker].hp;
+    assert!(lost >= BLEED_DMG && lost % BLEED_DMG == 0, "{lost}");
+    assert!(count(&ev, |e| matches!(e, Event::Bleed { .. })) >= 1);
+    assert_eq!(w.enemies[stander].hp, 500, "standing still stops it");
+    w.enemies[walker].hp = 1;
+    run(&mut w, &t, 2.0);
+    assert!(!w.enemies[walker].alive(), "it can bleed out");
+}
+
+/// 0270 B 서리: 쌓이는 만큼 느려지고(문지기는 아니다), 가득 차면 얼어 선다. 언 적을 치면 그 한 대는 크게 들어가고 깨진다(한 번).
+#[test]
+fn frost_slows_then_freezes_and_the_next_blow_shatters_it() {
+    use crate::tuning::{FREEZE_SECS, SHATTER_MULT};
+    let t = Tuning::default();
+    let mut w = World::new("test", 30.0);
+    let i = mob_with(&mut w, vec3(6.0, 0.0, 0.0), 500);
+    let mut ev = Vec::new();
+    afflict(&mut w.enemies[i], (Ty::Frost, 0.5), &mut ev);
+    w.step(&Actions::default(), &t);
+    assert!(w.enemies[i].marks.slow < 1.0, "chilled");
+    fill(&mut w, i, Ty::Frost);
+    assert!(
+        matches!(w.enemies[i].state, EState::Stagger { dur, .. } if (dur - FREEZE_SECS).abs() < 1e-5)
+    );
+    assert_eq!(
+        hurt_by(&w.enemies[i], 100, false, 0, &t),
+        (100.0 * SHATTER_MULT) as i32
+    );
+    w.enemies[i].struck();
+    let ev = w.step(&Actions::default(), &t);
+    assert_eq!(count(&ev, |e| matches!(e, Event::Shatter { .. })), 1);
+    assert_eq!(w.enemies[i].ail.frozen, 0.0);
+    assert!(
+        !matches!(w.enemies[i].state, EState::Stagger { .. }),
+        "free again"
+    );
+    assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, &t), 100);
+
+    let mut b = world_with_boss();
+    afflict(&mut b.enemies[0], (Ty::Frost, 0.5), &mut Vec::new());
+    b.step(&Actions::default(), &t);
+    assert_eq!(
+        b.enemies[0].marks.slow, 1.0,
+        "a boss is not chilled by the gauge"
+    );
+}
+
+/// 0270 B 흡수: 표지가 붙은 적을 치면 체력·기력이 조금 돌아온다 — 표지가 붙은 떼를 한꺼번에 쳐도 틱에 한 번만.
+#[test]
+fn striking_drained_foes_heals_a_little_once_a_tick_however_many() {
+    use crate::tuning::{DRAIN_HP, DRAIN_STAMINA};
+    let t = Tuning::default();
+    let mut w = World::new("test", 30.0);
+    let pack: Vec<usize> = (0..5)
+        .map(|k| foe(&mut w, vec3(4.0 + k as f32, 0.0, 0.0)))
+        .collect();
+    let plain = foe(&mut w, vec3(-4.0, 0.0, 0.0));
+    w.player.hp = 10;
+    w.player.stamina = 0.0;
+    // 표지 없는 적을 쳐도 아무것도.
+    w.enemies[plain].struck();
+    let ev = w.step(&Actions::default(), &t);
+    assert_eq!(count(&ev, |e| matches!(e, Event::Drain { .. })), 0);
+    assert_eq!(w.player.hp, 10);
+    for &i in &pack {
+        fill(&mut w, i, Ty::Drain);
+        w.enemies[i].struck();
+    }
+    let st = w.player.stamina;
+    let ev = w.step(&Actions::default(), &t);
+    assert_eq!(count(&ev, |e| matches!(e, Event::Drain { .. })), 1);
+    assert_eq!(w.player.hp, 10 + DRAIN_HP);
+    assert!(w.player.stamina >= st + DRAIN_STAMINA - 1e-3);
+    // 다음 틱에 안 쳤으면 그대로.
+    w.step(&Actions::default(), &t);
+    assert_eq!(w.player.hp, 10 + DRAIN_HP);
+}
+
+/// 0270 B: 새 타입 넷을 싣는 스킬이 하나씩은 있다(무기의 길 — 판은 0270 C에서 무기마다).
+#[test]
+fn every_new_type_rides_on_some_skill() {
+    for k in [Ty::Shock, Ty::Sharp, Ty::Frost, Ty::Drain] {
+        assert!(
+            crate::skills::SKILLS
+                .iter()
+                .any(|s| s.kind == k && s.build > 0.0),
+            "{k:?}"
+        );
+    }
 }

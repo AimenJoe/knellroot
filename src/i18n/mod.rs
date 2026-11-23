@@ -546,6 +546,15 @@ pub struct Strings {
     pub ail_root_d: &'static str,
     pub ail_knell_d: &'static str,
     pub ail_rift_d: &'static str,
+    /// 0270 B: 충격·날카로움·서리·흡수(이름·풀이).
+    pub ail_shock: &'static str,
+    pub ail_sharp: &'static str,
+    pub ail_frost: &'static str,
+    pub ail_drain: &'static str,
+    pub ail_shock_d: &'static str,
+    pub ail_sharp_d: &'static str,
+    pub ail_frost_d: &'static str,
+    pub ail_drain_d: &'static str,
     pub ail_weak: &'static str,
     pub ail_resist: &'static str,
     /// 무기 갈래와 스킬(0223 V3): 주/부무기 칸에 끼우기 · 안 맞는 까닭 · 갈래 이름 · 상세의 "쓰는 무기" 줄.
@@ -1436,6 +1445,14 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.ail_root_d,
         s.ail_knell_d,
         s.ail_rift_d,
+        s.ail_shock,
+        s.ail_sharp,
+        s.ail_frost,
+        s.ail_drain,
+        s.ail_shock_d,
+        s.ail_sharp_d,
+        s.ail_frost_d,
+        s.ail_drain_d,
         s.ail_weak,
         s.ail_resist,
         s.act_wear_main,
@@ -1906,6 +1923,10 @@ pub fn ail_name(k: crate::status::Kind) -> &'static str {
         Kind::Root => s.ail_root,
         Kind::Knell => s.ail_knell,
         Kind::Rift => s.ail_rift,
+        Kind::Shock => s.ail_shock,
+        Kind::Sharp => s.ail_sharp,
+        Kind::Frost => s.ail_frost,
+        Kind::Drain => s.ail_drain,
     }
 }
 
@@ -1919,6 +1940,10 @@ pub fn ail_desc(k: crate::status::Kind) -> &'static str {
         Kind::Root => s.ail_root_d,
         Kind::Knell => s.ail_knell_d,
         Kind::Rift => s.ail_rift_d,
+        Kind::Shock => s.ail_shock_d,
+        Kind::Sharp => s.ail_sharp_d,
+        Kind::Frost => s.ail_frost_d,
+        Kind::Drain => s.ail_drain_d,
     }
 }
 
