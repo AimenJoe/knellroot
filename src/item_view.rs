@@ -7,7 +7,7 @@ use crate::weapons::Id as Weapon;
 pub enum Item {
     Weapon(Weapon),
     Charm(Charm),
-    /// 덧옷(0176) — `charms.glb`의 `garb_*` 부위.
+    /// 덧옷(0176) — `garbs.glb`의 `garb_*` 부위.
     Garb(crate::garb::Id),
     /// 방패(0223) — 방랑자 모델의 왼팔 부위.
     Shield(crate::shield::Id),
@@ -55,7 +55,7 @@ pub fn view(item: Item) -> View {
             roll: 0.0,
         },
         Item::Garb(g) => View {
-            model: "charms",
+            model: "garbs",
             node: crate::garb::def(g).node,
             yaw: 30.0,
             pitch: 25.0,

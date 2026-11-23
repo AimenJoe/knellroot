@@ -24,14 +24,17 @@ REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 # 0193: 스킨 몸(Meshy 리깅, 줄여 정점 2,963) + 무기 넷·등잔 그대로 — 4,196.
 # charms: 0155에서 돌린 꼴·꺾인 관으로 다시(1,939) — 한 번에 하나만 그린다(아이콘은 캐시).
 BUDGET = {"mossgrazer": 900, "packbearer": 1000, "repeater": 1650, "mossward": 2600, "winchkeeper": 2600, "wanderer": 4800, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
-          # 0068 장신구 여섯이 한 파일(게임은 하나씩만 그린다) — 하나 280 안팎.
-          "charms": 2200,
+          # 0068 장신구 여섯이 한 파일(게임은 하나씩만 그린다) — 하나 280 안팎. 2026-11-23 디테일(사장 "싸구려"): 장신구 아홉 + 덧옷 셋,
+          # 메뉴는 파일 한 벌을 그리기 한 번에 넘긴다(다른 부위 크기 0) — 그래서 덧옷은 `garbs`로 나눴다(뿌리껍질 덧옷 1,500 안팎).
+          "charms": 4200, "garbs": 3400,
           # 0139 다듬은 소품: 깎은 돌 하나가 정점 64(면마다 따로 — 각진 음영), 스테이지에 60개 안쪽이라 넉넉히.
           # 문은 하나뿐이고 널 여덟 + 띠 + 설주 돌이라 크다.
           "wall_segment": 960, "pillar_broken": 560, "root_clump": 480, "brazier": 440, "gate": 1900, "core_crystal": 400,
           "bell": 800, "rubble": 480, "chest": 560, "stone_tablet": 1100,  # 0242: 종 무늬·글 줄·금·이끼·조약돌(맵에 몇 개뿐)
           # 0142 주민의 생활 물건: 주민 하나에 하나(마을에 셋) — 돌 다섯 + 장작 + 불꽃, 장대 둘 + 천 두 벌.
-          "work_fire": 520, "work_tent": 480}
+          "work_fire": 520, "work_tent": 480,
+          # 0265 무너진 아치(지도에 둘 — 숲 끝·성소 남쪽 벽) · 0267 쉬는 곳의 화톳불(지역에 몇 개 — 돌 고리·장작·불꽃).
+          "arch_ruin": 1900, "hearth": 1150}
 PROP_BUDGET = 400
 # 동작 이름과 길이(초) — 명세 그대로인지 본다.
 EXPECT = {
@@ -85,7 +88,7 @@ MUST_NODES = {"mossward": ["glow_core", "glow_eyes", "head_geo", "shell_geo"],
               "core_crystal": ["glow_core"], "bell": ["bell", "bell_frame"],
               "chest": ["lid", "glow_lock"], "stone_tablet": ["glow_carve"], "lever": ["handle", "glow_grip"],
               "work_fire": ["fire", "glow_fire"], "work_jar": ["jar"], "work_tent": ["torn", "whole"],
-              "charms": ["shell", "feet", "ear", "hunger", "hand", "pouch"]}
+              "charms": ["shell", "feet", "ear", "hunger", "hand", "pouch"], "garbs": ["garb_cloak", "garb_bark", "garb_apron"]}
 
 CT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2), 5123: ("H", 2), 5125: ("I", 4), 5126: ("f", 4)}
 NC = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT4": 16}
