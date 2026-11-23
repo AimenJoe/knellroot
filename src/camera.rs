@@ -448,6 +448,19 @@ impl Camera {
         self.blend.map(|(_, e, _, _)| e)
     }
 
+    /// 지평선 아지랑이를 허락하는 몫 0..1(2026-11-23 사장 "숄더뷰에서 시선을 내렸을 때 화면 위쪽이 뿌옇게"): 아지랑이는 화면 위 = 먼 땅인
+    /// 쿼터뷰의 것 — 숄더뷰·락온에서는 숙여도(`FREE_PITCH_MAX`) 0. 쿼터뷰에서 넘어오는 전환 동안은 그 진행만큼 걷힌다(튀지 않게).
+    pub fn haze_weight(&self) -> f32 {
+        if self.mode == Mode::Quarter {
+            return 1.0;
+        }
+        match self.blend {
+            Some((_, e, Some(d), _)) => (1.0 - e / d.max(1e-3)).clamp(0.0, 1.0),
+            Some((_, _, None, _)) => 1.0,
+            None => 0.0,
+        }
+    }
+
     /// 자유 숄더뷰 = 뒤에서 보는 3인칭(0188): 어깨 비킴 없이 바로 뒤·위, 주시점은 앞·위 — 주인공이 좌우 가운데·화면 아래쪽 1/3에 선다
     /// (WoW식). `pitch` = 주시점 둘레로 더 내려다보는 각(플레이어가 돌린다).
     fn chase(&self, t: &Tuning, pitch: f32) -> Rig {
@@ -1025,6 +1038,32 @@ mod tests {
         // 락온 중에는 카메라를 대상이 정한다.
         c.set_mode(Mode::Lock, Some(vec3(0.0, 0.0, -5.0)), p);
         assert!(!c.step_zoom(1, p) && !c.step_zoom(-1, p));
+    }
+
+    /// 2026-11-23(사장 "숄더뷰에서 시선을 내렸을 때 화면 위쪽이 뿌옇게"): 지평선 아지랑이는 쿼터뷰의 것 — 숄더뷰로 넘어가는 전환 동안
+    /// 진행만큼 걷히고(튀지 않게), 다 넘어간 뒤에는 끝까지 숙여도 0.
+    #[test]
+    fn the_horizon_haze_is_for_the_quarter_view_only() {
+        let t = Tuning::default();
+        let p = Vec3::ZERO;
+        let mut c = Camera::new(p, &t);
+        settle(&mut c, &t, p, None);
+        assert_eq!(c.haze_weight(), 1.0);
+        while c.mode == Mode::Quarter {
+            assert!(c.step_zoom(1, p));
+        }
+        let mut seen = vec![c.haze_weight()];
+        for _ in 0..240 {
+            c.update(1.0 / 60.0, &t, p, None, &[]);
+            seen.push(c.haze_weight());
+        }
+        assert!(
+            seen.windows(2).all(|w| w[1] <= w[0] + 1e-6),
+            "fades, never pops back"
+        );
+        assert_eq!(*seen.last().unwrap(), 0.0);
+        c.look(0.0, FREE_PITCH_MAX * 4.0);
+        assert_eq!(c.haze_weight(), 0.0, "tilted all the way down");
     }
 
     /// 0181: 자유 숄더뷰로 들어가도 스틱의 위는 그대로(화면 위였던 쪽이 앞) — 들어가는 순간 걷던 쪽이 꺾이지 않는다.

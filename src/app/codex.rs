@@ -118,6 +118,35 @@ impl App {
         }
     }
 
+    /// 기록 탭에 들어올 때(다른 탭·멈춤에서 — 기록 탭 안의 묶음 넘기기는 아니다) 받을 것이 있는 첫 묶음에서 연다(2026-11-23 사장
+    /// "기록에는 새로운 게 있다는 인디케이터가 있지만 들어가 보면 막상 받을 보상이 없는 경우" — 받을 것이 장신구·적 묶음에 있어도 늘
+    /// 여정 묶음에서 열려 빈손으로 보였다). 받을 것이 없으면 여정.
+    pub(super) fn codex_entry(&self, go: Go) -> Go {
+        let into = |s: Scene| match s {
+            Scene::Codex { host, tab: 0 } if !matches!(self.scene(), Scene::Codex { .. }) => {
+                Scene::Codex {
+                    host,
+                    tab: self.codex_start() as u8,
+                }
+            }
+            s => s,
+        };
+        match go {
+            Go::Open(s) => Go::Open(into(s)),
+            Go::Swap(s) => Go::Swap(into(s)),
+            g => g,
+        }
+    }
+
+    fn codex_start(&self) -> usize {
+        if crate::journey::any_ready(&self.progress) {
+            return JOURNEY;
+        }
+        (FOES..GROUPS)
+            .find(|&t| self.codex_group_ready(t))
+            .unwrap_or(JOURNEY)
+    }
+
     /// 받을 도감 칸이 하나라도 있나(기록 탭 머리의 민트 점, 묶음 머리의 민트 글).
     pub(super) fn codex_ready(&self) -> bool {
         (FOES..GROUPS).any(|t| self.codex_group_ready(t))
@@ -337,13 +366,29 @@ impl App {
                     lines.extend(self.pane_wrap(&w, tr(flavor), GUESS));
                 }
             } else {
-                self.ui.text_center(
-                    "?",
-                    icon.x + icon.w * 0.5,
-                    icon.y + (icon.h - self.ui.px(1.6 * k)) * 0.5,
-                    1.6 * k,
-                    ui::BORDER,
-                );
+                // 못 가진 것도 실루엣(2026-11-23 사장 "어떤 녀석은 실루엣이고 어떤 녀석들은 그냥 물음표" — 생물과 같은 꼴).
+                if crate::item_view::has_view(d.item) {
+                    let side = crate::render::ITEM_PX as f32
+                        * (icon.w / crate::render::ITEM_PX as f32).floor().max(1.0);
+                    let dest = Rect::new(
+                        (icon.x + (icon.w - side) * 0.5).round(),
+                        (icon.y + (icon.h - side) * 0.5).round(),
+                        side,
+                        side,
+                    );
+                    let t = get_time() as f32;
+                    let spin = self.codex_view.yaw.unwrap_or(0.7 * (t * 0.8).sin());
+                    self.renderer.draw_item_shadow(d.item, dest, spin);
+                    self.codex_view.rect = Some(icon);
+                } else {
+                    self.ui.text_center(
+                        "?",
+                        icon.x + icon.w * 0.5,
+                        icon.y + (icon.h - self.ui.px(1.6 * k)) * 0.5,
+                        1.6 * k,
+                        ui::BORDER,
+                    );
+                }
                 lines.extend(self.pane_wrap(&w, s.codex_not_owned, DIM));
             }
             lines.push(Ln::Gap);

@@ -264,7 +264,8 @@ impl Renderer {
     }
 }
 
-/// 아지랑이 세기 배(0063): 카메라 앞 방향의 y(내려다볼수록 −)로 — 쿼터뷰(숙임 ≈ 35°, −0.57) 1, 숄더뷰(≈ 19°, −0.33) 0.
+/// 아지랑이 세기 배(0063): 카메라 앞 방향의 y(내려다볼수록 −)로 — 쿼터뷰(숙임 ≈ 35°, −0.57) 1, 숙이지 않은 숄더뷰 0.
+/// 숄더뷰를 숙이면 이 값이 차오르므로 모드로도 가른다(`Camera::haze_weight`).
 pub(super) fn haze_by_pitch(fwd_y: f32) -> f32 {
     ((-fwd_y - HAZE_PITCH.0) / (HAZE_PITCH.1 - HAZE_PITCH.0)).clamp(0.0, 1.0)
 }
@@ -510,11 +511,12 @@ fn edge_fx(size: (u32, u32)) -> Option<EdgeFx> {
 }
 
 impl Renderer {
-    pub(super) fn horizon_haze(&self, t: &Tuning, fwd: Vec3, iw: u32, ih: u32) {
+    pub(super) fn horizon_haze(&self, t: &Tuning, fwd: Vec3, weight: f32, iw: u32, ih: u32) {
         // 지평선 아지랑이(0012): 렌더 타깃 위쪽을 하늘빛으로 옅게 — 화면에 고정된 수평 띠라 땅 돌리기 중에도 기울지 않는다.
         // 하늘이 보이는 숄더뷰에서는 아지랑이를 걷는다(0063 E2): 화면 위 = 하늘이라 띠가 달·산등성이를 지운다.
         // 내려다보는 쿼터뷰(화면 위 = 먼 땅)에서만 다 — 카메라 숙임으로 부드럽게(전환 중에도 튀지 않게).
-        let haze = t[crate::tuning::P::Haze] * haze_by_pitch(fwd.y);
+        // 숄더뷰·락온은 숙여도 걷는다(`Camera::haze_weight` — 숙인 숄더뷰가 쿼터뷰의 숙임에 닿아 위쪽이 뿌옇게 덮였다, 2026-11-23).
+        let haze = t[crate::tuning::P::Haze] * haze_by_pitch(fwd.y) * weight;
         if haze > 0.0 {
             set_camera(&Camera2D {
                 zoom: vec2(2.0 / iw as f32, 2.0 / ih as f32),

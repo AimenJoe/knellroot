@@ -302,6 +302,15 @@ impl World {
                 continue;
             }
             let out = en.tick(p, dt);
+            // 공격이 풀린 순간(0269): 맞았나와 상관없이 그 자리의 이펙트 — 예고 설정이 끄지 않는다.
+            if let Some((at, blow)) = out.blow {
+                ev.push(Event::EnemyStrike {
+                    at,
+                    dir: en.facing_dir(),
+                    blow,
+                    boss: en.boss,
+                });
+            }
             // 돌진 길이(0076): 벽·기둥·턱·아레나 끝까지 — 예고 띠와 몸이 같은 길이.
             // 뿌리 기둥 줄(0133)도 같은 길이 칸 — 벽·기둥을 뚫고 솟지 않는다.
             if matches!(en.atk, Atk::Charge | Atk::Roots) && matches!(en.state, EState::Tele { .. })

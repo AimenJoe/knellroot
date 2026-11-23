@@ -493,6 +493,8 @@ pub const EN: Strings = Strings {
     bag_do_keep: "Lock",
     bag_do_unkeep: "Unlock",
     bag_do_drop: "Put down",
+    bag_do_don: "Put on",
+    bag_do_doff: "Take off",
     bag_do_salvage: "Turn to embers (+{0})",
     bag_do_away: "Turn to embers — at a hearth",
     bag_tidy: "Clear spares",

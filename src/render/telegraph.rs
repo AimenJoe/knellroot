@@ -9,6 +9,8 @@ pub(super) const TELE: Color = Color::new(0.85, 0.15, 0.1, 1.0);
 const TELE_A: f32 = 0.3;
 /// 설정 "공격 예고"(0074)의 이 값에서 위 투명도 그대로(70%). 기본 50%면 0.3 × 5/7 ≈ 0.21.
 pub(super) const TELLS_BASE: f32 = 0.7;
+/// 수레·남는 엘리트의 예고(몸의 준비 동작이 없다)는 설정이 낮아도 이만큼은 보인다 — 끄면(0) 안 그린다(0269).
+const TELLS_FLOOR: f32 = 0.6;
 
 /// 예고 면 전체에 깔린 바탕(어디까지인지만).
 const TELE_BASE_A: f32 = 0.04;
@@ -155,25 +157,126 @@ pub(super) fn ground_marks(v: &View, w: &World, alpha: f32) {
                 );
             }
         }
+        // 아래 셋은 공격 자체(퍼지는 고리·솟는 뿌리 줄·날아가는 갈고리) — 예고 설정과 상관없이 늘 그린다(0074·0269).
         wave_rings(en, p, &drape);
         root_spikes(en, p, &drape);
+        hook_chain(en, p);
         elite_mark(en, p, w, &drape);
     }
 }
 
 fn wave_rings(en: &Enemy, p: Vec3, drape: &Drape) {
-    // 퍼지는 고리(뿌리 파동 하나·울림 고리 여럿, 0125) — 고리 사이가 설 자리로 읽히게 하나하나 따로.
-    // 종 내던지기(0133)의 고리는 종이 떨어진 자리가 가운데.
+    // 퍼지는 고리(뿌리 파동 하나·울림 고리 여럿, 0125)는 공격 자체다 — 예고가 아니다(0269, 사장 "바닥 웨이브는 나쁜 예"):
+    // 붉은 얇은 고리(예고 빛) 대신 앞머리를 따라 땅에서 낮은 가시가 솟았다 가라앉는다(뿌리 기둥 줄 꼴 — 단단한 3D, 지나간 자리부터 걷힘).
+    // 낮아서 "뛰어넘을 것"으로 읽힌다. 고리 사이가 설 자리로 읽히게 하나하나 따로. 종 내던지기(0133)의 고리는 종이 떨어진 자리가 가운데.
     let wc = if en.atk == crate::enemy::Atk::Hurl {
         en.wave_center()
     } else {
         p
     };
+    // 문지기·권양지기의 뿌리 파동은 뿌리 보라, 종지기의 울림·떨어진 종은 깨진 돌.
+    let (body, tip) = if en.atk == crate::enemy::Atk::Wave {
+        (ROOT_PILLAR, ROOT_PILLAR_TIP)
+    } else {
+        (WAVE_STONE, WAVE_STONE_TIP)
+    };
     for front in en.wave_fronts() {
-        drape.ring(wc, front, 0.0, 360.0, with_a(TELE, 0.45));
-        drape.ring(wc, (front - 0.5).max(0.1), 0.0, 360.0, with_a(TELE, 0.18));
+        // 앞머리의 땅이 들린 띠(옅은 라벤더 흰빛 — 빨강 아님): 가시보다 먼저 눈에 걸린다.
+        drape.ring(wc, front, 0.0, 360.0, with_a(WAVE_BAND, 0.7));
+        drape.ring(
+            wc,
+            (front - 0.14).max(0.1),
+            0.0,
+            360.0,
+            with_a(WAVE_BAND, 0.35),
+        );
+        wave_spikes(wc, front, drape, body, tip);
     }
 }
+
+/// 퍼지는 고리의 가시(0269): 높이(m) — 낮게(뛰어넘을 것), 둘레·바깥쪽 사이(m), 앞머리 뒤로 남는 폭(m), 다 솟기까지의 폭(m).
+const WAVE_SPIKE_H: f32 = 0.6;
+const WAVE_SPIKE_GAP: f32 = 0.75;
+const WAVE_ROW_GAP: f32 = 0.6;
+const WAVE_TRAIL: f32 = 1.5;
+const WAVE_RISE: f32 = 0.25;
+/// 울림 고리·떨어진 종의 고리 가시(깨진 돌, 0269): 바닥 석판보다 밝은 잿빛 라벤더 — 몸빛·예고 빛과 겹치지 않는다.
+const WAVE_STONE: Color = Color::new(0.50, 0.48, 0.60, 1.0);
+const WAVE_STONE_TIP: Color = Color::new(0.80, 0.78, 0.90, 1.0);
+/// 앞머리의 들린 띠(0269).
+const WAVE_BAND: Color = Color::new(0.92, 0.88, 1.0, 1.0);
+
+/// 반지름이 정해진 줄마다(그 자리에 솟고 그 자리에서 가라앉는다 — 미끄러지지 않는다) 앞머리가 지난 만큼 솟았다 걷힌다.
+fn wave_spikes(wc: Vec3, front: f32, drape: &Drape, body: Color, tip: Color) {
+    let first = ((front - WAVE_TRAIL) / WAVE_ROW_GAP).ceil().max(1.0) as i32;
+    let last = (front / WAVE_ROW_GAP).floor() as i32;
+    for j in first..=last {
+        let r = j as f32 * WAVE_ROW_GAP;
+        let d = front - r;
+        let rise = (d / WAVE_RISE).min(1.0)
+            * (1.0 - ((d - WAVE_RISE) / (WAVE_TRAIL - WAVE_RISE)).clamp(0.0, 1.0));
+        if rise <= 0.05 {
+            continue;
+        }
+        let n = ((std::f32::consts::TAU * r / WAVE_SPIKE_GAP).round() as usize).max(6);
+        let off = j as f32 * 0.61;
+        for i in 0..n {
+            let a = off + i as f32 * std::f32::consts::TAU / n as f32;
+            let out = vec3(a.sin(), 0.0, a.cos());
+            let h = WAVE_SPIKE_H * rise * [1.0, 0.7, 0.85][(i + j as usize) % 3];
+            let at = drape.at(wc.x + out.x * r, wc.z + out.z * r, wc.y, 0.0);
+            // 바깥으로 기운다(밀려 나오는 쪽 — 꼴은 +z로 기울이고 `turn`이 바깥으로 돌린다).
+            let (faces, point) = spike_faces(0.14, 0.06, h, 0.25 * rise, Vec3::Z * 0.3);
+            let turn = Quat::from_rotation_y(a);
+            shaded_tris(at, &faces, body, 0.8, turn);
+            shaded_tris(at, &point, tip, 0.9, turn);
+        }
+    }
+}
+
+/// 갈고리(0208)의 사슬(0269 — 날아가는 갈고리가 안 보였다): 손에서 앞머리까지 고리 알 + 앞머리의 갈고리 끝. 거둘 때는 줄어든다.
+fn hook_chain(en: &Enemy, p: Vec3) {
+    let Some(front) = en.hook_front() else {
+        return;
+    };
+    let f = en.facing_dir();
+    let hand = p + f * (en.radius * 0.7) + Vec3::Y * HOOK_HAND_H;
+    let head = p + f * front.max(en.radius * 0.7) + Vec3::Y * HOOK_HEAD_H;
+    let len = (head - hand).length();
+    let links = (len / HOOK_LINK).floor() as usize;
+    let bead = octa_faces(vec2(HOOK_BEAD, HOOK_BEAD), HOOK_BEAD * 1.3, HOOK_BEAD * 1.3);
+    for i in 1..links {
+        let c = hand.lerp(head, i as f32 / links as f32);
+        shaded_tris(
+            c,
+            &bead,
+            HOOK_IRON,
+            0.7,
+            Quat::from_rotation_y(i as f32 * 0.8),
+        );
+    }
+    // 갈고리 끝: 날아가는 쪽으로 누운 뾰족한 쇠 + 뒤로 젖힌 가지 둘.
+    let lie = Quat::from_rotation_arc(Vec3::Y, f);
+    let (body, point) = spike_faces(0.2, 0.1, 0.4, 0.45, Vec3::ZERO);
+    shaded_tris(head, &body, HOOK_IRON, 0.8, lie);
+    shaded_tris(head, &point, HOOK_EDGE, 0.9, lie);
+    let side = vec3(f.z, 0.0, -f.x);
+    for s in [-1.0, 1.0] {
+        let barb = Quat::from_rotation_arc(Vec3::Y, (-f + side * s * 1.2).normalize());
+        let (b, t) = spike_faces(0.08, 0.04, 0.22, 0.22, Vec3::ZERO);
+        let at = head + f * 0.5;
+        shaded_tris(at, &b, HOOK_IRON, 0.8, barb);
+        shaded_tris(at, &t, HOOK_EDGE, 0.9, barb);
+    }
+}
+
+/// 갈고리 사슬(0269): 손·앞머리 높이(m), 고리 알 사이·반지름(m), 쇠빛(어두운 쇠 + 밝은 날 — 붉지 않다).
+const HOOK_HAND_H: f32 = 1.4;
+const HOOK_HEAD_H: f32 = 1.0;
+const HOOK_LINK: f32 = 0.24;
+const HOOK_BEAD: f32 = 0.11;
+const HOOK_IRON: Color = Color::new(0.30, 0.30, 0.36, 1.0);
+const HOOK_EDGE: Color = Color::new(0.86, 0.88, 0.96, 1.0);
 
 fn root_spikes(en: &Enemy, p: Vec3, drape: &Drape) {
     // 뿌리 기둥 줄(0133): 앞머리까지 기둥이 솟고(지나간 자리일수록 다 솟음), 쉬는 동안 가라앉는다.
@@ -243,6 +346,10 @@ pub(super) fn cart_tells(v: &View, w: &World) {
     let drape = Drape {
         ground: w.ground.as_ref(),
     };
+    // 예고다 — 설정을 끄면 그리지 않는다(0269: 켰을 때만 옅게라도 `TELLS_FLOOR`까지 보인다).
+    if v.tells <= 0.0 {
+        return;
+    }
     for c in &w.carts {
         let Some(k) = c.telling() else { continue };
         let head = c.heading();
@@ -257,14 +364,18 @@ pub(super) fn cart_tells(v: &View, w: &World) {
                 len: len + crate::tuning::CART_HALF_L,
                 w: crate::tuning::CART_HALF_W * 2.0,
             },
-            (v.tells / TELLS_BASE).max(0.6),
+            (v.tells / TELLS_BASE).max(TELLS_FLOOR),
             v.tell_timing,
         );
     }
 }
 
 pub(super) fn linger_tells(v: &View, w: &World) {
-    // 남는 엘리트의 고리(0112): 뿌리 파동과 같은 "패링 못 함" 고리 예고(가운데 X), 다 차는 순간 터진다.
+    // 남는 엘리트의 고리(0112): 뿌리 파동과 같은 "패링 못 함" 고리 예고(가운데 X), 다 차는 순간 터진다(터짐 = `Event::Boom`).
+    // 예고다 — 설정을 끄면 그리지 않는다(0269).
+    if v.tells <= 0.0 {
+        return;
+    }
     for l in &w.lingers {
         let drape = Drape {
             ground: w.ground.as_ref(),
@@ -278,7 +389,7 @@ pub(super) fn linger_tells(v: &View, w: &World) {
             TeleShape::Ring {
                 r: crate::tuning::ELITE_LINGER_RADIUS,
             },
-            (v.tells / TELLS_BASE).max(0.6),
+            (v.tells / TELLS_BASE).max(TELLS_FLOOR),
             v.tell_timing,
         );
     }

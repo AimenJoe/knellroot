@@ -271,9 +271,15 @@ impl App {
             }
             interlude::Hold::Idle => self.step_world(&Actions::default()),
             interlude::Hold::Walk(k) => {
-                // 성소 쪽(북, 월드 −z)으로 걷는다.
+                // 성소 쪽(북, 월드 −z)으로 걷는다 — 아치가 있으면 그 가운데로 향해(아치 앞 마당 옆에서 트리거됐어도 설주에 걸리지 않게,
+                // 2026-11-23), 아치를 지나면 곧장 북쪽.
+                let p = self.world.player.pos;
+                let want = match self.run.level.arch() {
+                    Some(a) if p.z > a.z + 0.5 => vec3(a.x - p.x, 0.0, (a.z - 1.0) - p.z),
+                    _ => Vec3::NEG_Z,
+                };
                 let a = Actions {
-                    move_dir: self.stick_toward(Vec3::NEG_Z) * k,
+                    move_dir: self.stick_toward(want) * k,
                     ..Actions::default()
                 };
                 self.step_world(&a);
@@ -541,6 +547,24 @@ impl App {
                     }
                 }
                 Event::CartWarn { .. } => 0.0,
+                // 적의 공격이 풀린 순간(0269): 문지기·보스가 땅을 치는 것만 가까울 때 덜컹 — 잡몹의 타는 그림이 말한다.
+                Event::EnemyStrike {
+                    at,
+                    boss: true,
+                    blow,
+                    ..
+                } if !matches!(
+                    blow,
+                    crate::enemy::Blow::Volley | crate::enemy::Blow::Hook { .. }
+                ) =>
+                {
+                    if at.distance(self.world.player.pos) < 14.0 {
+                        SHAKE_SLAM * 0.6
+                    } else {
+                        0.0
+                    }
+                }
+                Event::EnemyStrike { .. } => 0.0,
                 Event::Rouse { .. } => SHAKE_ROUSE,
                 // 사슬이 끊긴다(0208 — 3단계): 2단계 전환보다 크게.
                 Event::Unchain { .. } => SHAKE_ROUSE * 1.4,

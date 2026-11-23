@@ -47,7 +47,10 @@ pub struct Batch {
 }
 
 /// `bake_glow`의 빛남 값: 이 값이면 스스로 빛나는 부위를 아예 굽지 않는다(꺼진 것).
-const GLOW_OFF: f32 = -1.0;
+/// 꺼져 가는 불씨(2026-11-23 사장 "성소 처음 입장했을 때 화톳불 꺼져 있어서 티가 잘 안 남"): 스스로 빛나는 부위를 이만큼 밝기로,
+/// 밑동에서 `SMOLDER_SQUASH`만큼 눌러(키 큰 불꽃 → 낮은 숯불) 굽는다.
+pub const SMOLDER: f32 = 0.55;
+const SMOLDER_SQUASH: f32 = 0.16;
 
 /// 그릴 부위 하나(0193): 그 행렬과 정점·법선 — 강체 부위는 메시의 것을 빌리고(행렬 = 인스턴스 × 노드),
 /// 스킨 부위는 뼈로 섞은 모델 공간의 것을 가진다(행렬 = 인스턴스).
@@ -117,7 +120,8 @@ impl Batch {
         Self::bake_glow(verts, idx, e, pose, inst, tint, lights, 1.0, false);
     }
 
-    /// 스스로 빛나는 부위(`glow_`)를 빼고 굽는다 — 꺼진 화로(0171: 불꽃 없는 그릇).
+    /// 꺼진 화로(0171): 스스로 빛나는 부위(`glow_`)를 낮게 눌러 어두운 숯불로 굽는다(`SMOLDER` — 2026-11-23, 그 전엔 뺐다 —
+    /// 불 없는 돌 고리는 쉬는 곳으로 읽히지 않았다).
     pub fn bake_model_dark(
         verts: &mut Vec<Vertex>,
         idx: &mut Vec<u16>,
@@ -127,7 +131,7 @@ impl Batch {
         tint: Color,
         lights: &[Light],
     ) {
-        Self::bake_glow(verts, idx, e, pose, inst, tint, lights, GLOW_OFF, false);
+        Self::bake_glow(verts, idx, e, pose, inst, tint, lights, SMOLDER, false);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -147,9 +151,6 @@ impl Batch {
             let (i, mat, mesh) = (part.node, part.mat, part.mesh);
             let base = verts.len() as u16;
             let bright = e.glow.get(i).copied().unwrap_or(false);
-            if bright && glow == GLOW_OFF {
-                continue;
-            }
             // 구운 불꽃(0142): 지형에 굽는 스스로 빛나는 부위(화로 불꽃)는 밑동은 그대로, 끝으로 갈수록 일렁인다(바람 셰이더).
             let (y0, y1) = part
                 .pos
@@ -157,7 +158,10 @@ impl Batch {
                 .map(|q| mat.transform_point3(*q).y)
                 .fold((f32::MAX, f32::MIN), |(a, b), y| (a.min(y), b.max(y)));
             for k in 0..part.pos.len() {
-                let p = mat.transform_point3(part.pos[k]);
+                let mut p = mat.transform_point3(part.pos[k]);
+                if bright && glow == SMOLDER {
+                    p.y = y0 + (p.y - y0) * SMOLDER_SQUASH;
+                }
                 let n = mat.transform_vector3(part.nrm[k]).normalize_or_zero();
                 let f = if bright {
                     Vec3::splat(glow)

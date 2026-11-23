@@ -496,6 +496,8 @@ pub const KO: Strings = Strings {
     bag_do_keep: "잠근다",
     bag_do_unkeep: "잠금을 푼다",
     bag_do_drop: "내려놓는다",
+    bag_do_don: "걸친다",
+    bag_do_doff: "벗는다",
     bag_do_salvage: "잔불로 바꾼다 (+{0})",
     bag_do_away: "잔불로 바꾸기 — 쉼터 화로에서",
     bag_tidy: "여벌 정리",

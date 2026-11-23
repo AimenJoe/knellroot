@@ -28,6 +28,21 @@ const PUT_AHEAD: f32 = 0.9;
 /// 문지기가 떨구는 것이 쓰러진 자리(핵이 남는다)에서 옆으로 비키는 몫.
 pub(super) const BESIDE: Vec3 = Vec3::new(1.3, 0.0, 0.0);
 
+/// 덧옷의 칸(2026-11-23 사장 "갑옷은 장비창에만 나타나고 가방에는 안 나타남"): 가방 아이템 뒤에 가진 덧옷을 세운다. 아이템이
+/// 아니라(숨은 물건 — 한도 밖, 거두기·내려놓기·잠그기 없음) 칸 번호는 이 바닥 위 — 할 일은 걸치기/벗기뿐.
+const GARB_ID: u32 = 1 << 30;
+
+fn garb_of(id: u32) -> Option<crate::garb::Id> {
+    id.checked_sub(GARB_ID)
+        .and_then(|i| crate::garb::TABLE.get(i as usize))
+        .map(|d| d.id)
+}
+
+/// 덧옷 칸의 할 일.
+fn garb_acts(worn: bool) -> Vec<Do> {
+    vec![if worn { Do::Doff } else { Do::Don }]
+}
+
 /// 칸 수: 한도(넘쳤으면 가진 수)를 줄에 맞춰 올린 것.
 pub(super) fn cells(len: usize) -> usize {
     len.max(BAG_CAP).div_ceil(COLS) * COLS
@@ -85,6 +100,9 @@ pub(super) enum Do {
     Salvage,
     /// 잔불로 바꾸기는 화로에서만 — 흐린 줄(못 하는 까닭을 말한다, 0173).
     Away,
+    /// 덧옷을 걸친다 · 벗는다(덧옷 칸).
+    Don,
+    Doff,
 }
 
 /// 그 아이템의 줄들(순수): 끼기(안 낀 것만 — 무기는 주무기·보조무기, 든 무기와 같은 바탕은 주무기만) · 지키기/풀기 ·
@@ -151,6 +169,20 @@ fn slot_name(slot: usize) -> String {
 
 impl App {
     /// 가방 탭을 떠난다: 지금 있는 것은 모두 본 것(새 것의 점이 꺼진다).
+    /// 가방 격자의 칸들: 아이템(`order`) 뒤에 가진 덧옷(`GARB_ID` 위 번호).
+    pub(super) fn bag_entries(&self) -> Vec<u32> {
+        let mut v = order(&self.progress.bag);
+        let have = self.garbs();
+        v.extend(
+            crate::garb::TABLE
+                .iter()
+                .enumerate()
+                .filter(|(_, d)| have.contains(&d.id))
+                .map(|(i, _)| GARB_ID + i as u32),
+        );
+        v
+    }
+
     pub(super) fn leave_bag(&mut self) {
         self.progress.bag.mark_seen();
         self.persist();
@@ -256,7 +288,7 @@ impl App {
             self.go(Go::Back);
             return;
         }
-        let ids = order(&self.progress.bag);
+        let ids = self.bag_entries();
         let n = cells(ids.len());
         let tidy = host.edits();
         self.cursor = nav(
@@ -309,9 +341,21 @@ impl App {
         if a.back || a.pause || tap == Some(Hit::Close) {
             return self.go(Go::Back);
         }
-        let Some(&id) = order(&self.progress.bag).get(at) else {
+        let Some(&id) = self.bag_entries().get(at) else {
             return self.go(Go::Back);
         };
+        // 덧옷 칸: 걸치기/벗기만(장비 탭의 덧옷 칸과 같은 일).
+        if let Some(g) = garb_of(id) {
+            let list = garb_acts(self.progress.garb == Some(g));
+            let Some(i) = self.menu_pick(a, list.len()) else {
+                return;
+            };
+            self.go(Go::Back);
+            self.progress.garb = (list[i] == Do::Don).then_some(g);
+            self.world.apply_stats(self.progress.stats(), false);
+            self.persist();
+            return;
+        }
         let list = acts(&self.progress.bag, id, self.weapon, host.edits());
         let Some(base) = self.progress.bag.get(id).map(|it| it.base) else {
             return self.go(Go::Back);
@@ -345,9 +389,10 @@ impl App {
                 self.toast = Some((s.toast_bag_away.to_string(), 1.4));
                 self.snd(crate::sfx::Id::Deny);
             }
+            Do::Don | Do::Doff => {}
         }
         // 끼면 차례가 그대로여도 낀 표지가 옮겨 간다 — 커서는 그 아이템을 따라간다(내려놓았으면 그 자리).
-        if let Some(to) = order(&self.progress.bag).iter().position(|x| *x == id) {
+        if let Some(to) = self.bag_entries().iter().position(|x| *x == id) {
             if matches!(self.scene(), Scene::Bag { .. }) {
                 self.cursor = to;
             }
@@ -381,13 +426,36 @@ impl App {
         let w = self.draw_tab_window(f, scene);
         let u = w.s;
         let bag = self.progress.bag.clone();
-        let ids = order(&bag);
+        let ids = self.bag_entries();
         let n = cells(ids.len());
         let tidy = host.edits();
         let cursor = cursor.min(if tidy { n } else { n - 1 });
         for i in 0..n {
             let r = Self::bag_cell(&w, i, n);
             let sel = i == cursor;
+            // 덧옷 칸: 그림 + 걸쳤으면 왼쪽 위 금빛 테.
+            if let Some(g) = ids.get(i).and_then(|&id| garb_of(id)) {
+                self.ui.button(r, "", sel);
+                let k = super::equip::icon_scale(crate::render::ICON_PX, r.w - u * 4.0);
+                let side = crate::render::ICON_PX as f32 * k;
+                self.renderer.draw_icon(
+                    crate::item_view::Item::Garb(g),
+                    Rect::new(
+                        (r.x + (r.w - side) * 0.5).round(),
+                        (r.y + (r.h - side) * 0.5).round(),
+                        side,
+                        side,
+                    ),
+                );
+                if self.progress.garb == Some(g) {
+                    let d = (u * 4.0).max(2.0).round();
+                    let (x, y) = (r.x + u, r.y + u);
+                    draw_rectangle(x, y, d + 2.0, d + 2.0, Color::new(0.10, 0.07, 0.08, 1.0));
+                    draw_rectangle(x + 1.0, y + 1.0, d, d, AMBER);
+                }
+                self.hits.push((r, Hit::Row(i)));
+                continue;
+            }
             match ids.get(i).and_then(|id| bag.get(*id).map(|it| (*id, *it))) {
                 Some((id, it)) => {
                     self.ui.button(r, "", sel);
@@ -497,6 +565,30 @@ impl App {
             let lines = self.pane_wrap(&w, s.bag_tidy_d, INK);
             self.draw_pane(&w, HEAD_H, &lines);
             confirm = cnt > 0;
+        } else if let Some(g) = ids.get(cursor).and_then(|&id| garb_of(id)) {
+            // 덧옷: 이름 · 덧옷 · 걸쳤나, 그림, 설명과 세계 안의 말(장비 탭의 덧옷 칸과 같은 글).
+            let d = crate::garb::def(g);
+            let worn = self.progress.garb == Some(g);
+            let icon = self.draw_pane_head(
+                &w,
+                &PaneHead {
+                    name: tr(d.name),
+                    gold: worn,
+                    kind: s.codex_tab_garb.to_string(),
+                    state: if worn {
+                        (s.equip_worn.to_string(), AMBER)
+                    } else {
+                        (String::new(), DIM)
+                    },
+                    icon: true,
+                },
+            );
+            self.draw_pane_item(crate::item_view::Item::Garb(g), icon);
+            let mut lines = self.pane_wrap(&w, tr(d.desc), INK);
+            lines.push(Ln::Gap);
+            lines.extend(self.pane_wrap(&w, tr(d.flavor), DIM));
+            self.draw_pane(&w, HEAD_H, &lines);
+            confirm = true;
         } else if let Some((id, it)) = ids
             .get(cursor)
             .and_then(|id| bag.get(*id).map(|it| (*id, *it)))
@@ -585,12 +677,16 @@ impl App {
         #[cfg(feature = "dev")]
         crate::ui::check::forget();
         let s = s();
-        let ids = order(&self.progress.bag);
+        let ids = self.bag_entries();
         let Some(&id) = ids.get(under.cursor) else {
             return;
         };
         let value = self.progress.bag.get(id).map_or(0, Item::salvage);
-        let rows: Vec<ui::Row> = acts(&self.progress.bag, id, self.weapon, host.edits())
+        let list = match garb_of(id) {
+            Some(g) => garb_acts(self.progress.garb == Some(g)),
+            None => acts(&self.progress.bag, id, self.weapon, host.edits()),
+        };
+        let rows: Vec<ui::Row> = list
             .into_iter()
             .map(|d| {
                 let label = match d {
@@ -602,6 +698,8 @@ impl App {
                     Do::Drop => s.bag_do_drop.to_string(),
                     Do::Salvage => fill(s.bag_do_salvage, &[&value.to_string()]),
                     Do::Away => s.bag_do_away.to_string(),
+                    Do::Don => s.bag_do_don.to_string(),
+                    Do::Doff => s.bag_do_doff.to_string(),
                 };
                 ui::Row {
                     dim: d == Do::Away,
@@ -734,6 +832,19 @@ mod tests {
     }
 
     /// 할 수 있는 일: 낀 것은 끼기가 없고, 끼지 않은 것은 내려놓고 거둔다(하나뿐인 것도, 0266) — 지키면 둘 다 사라진다. 잔불로는 화로에서만(멈춤은 흐린 줄).
+    /// 2026-11-23: 덧옷 칸은 아이템 번호와 겹치지 않는 자리에서 제 덧옷으로 읽히고, 할 일은 걸치기/벗기 하나.
+    #[test]
+    fn garment_cells_read_back_and_only_put_on_or_take_off() {
+        for (i, d) in crate::garb::TABLE.iter().enumerate() {
+            assert_eq!(garb_of(GARB_ID + i as u32), Some(d.id));
+        }
+        assert_eq!(garb_of(0), None);
+        assert_eq!(garb_of(GARB_ID - 1), None);
+        assert_eq!(garb_of(GARB_ID + crate::garb::TABLE.len() as u32), None);
+        assert_eq!(garb_acts(false), [Do::Don]);
+        assert_eq!(garb_acts(true), [Do::Doff]);
+    }
+
     #[test]
     fn acts_follow_what_the_item_is() {
         let mut bag = bag_with(&[Base::Weapon(W::Sword), Base::Weapon(W::Hammer)]);

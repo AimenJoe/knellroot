@@ -21,6 +21,8 @@ const SPREAD_STEER: f32 = 0.8;
 const ROUSED_TELE: f32 = 0.75;
 const ROUSED_RECOVER: f32 = 0.7;
 const ROUSED_SPEED: f32 = 1.15;
+/// 갈고리(0208)가 끝까지 날아간 뒤 감겨 돌아오는 초(그림만 — 0269, 판정 없음).
+pub const HOOK_REEL: f32 = 0.25;
 
 /// 엘리트의 성질(0112, KB — 디아블로식 "있는 종 + 성질 하나"). 이름은 lore 생태(`docs/lore/ecology.md` 3) 관찰과 맞춘다:
 /// 몸이 바뀐 것(변형) · 같은 동작을 되풀이하는 것(재활동) · 끝난 자리에 무언가 남는 것(잔류). 색으로 세기를 말하지 않는다(ecology 2).
@@ -346,9 +348,54 @@ impl Hop {
     }
 }
 
+/// 적의 공격이 풀린 순간의 꼴(0269 — 예고와 따로, 맞든 안 맞든 그 틱에 하나): 이펙트가 모양마다 다른 타격을 고른다.
+/// 크기는 판정과 같은 값(그림이 판정보다 크게 말하지 않는다).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Blow {
+    /// 몸 둘레 내려치기(`Smash`) — `r` = 닿는 거리.
+    Around { r: f32 },
+    /// 앞 부채꼴 내려치기(`Slam`) — `r` = 닿는 거리, `arc` = 벌어짐(°).
+    Cone { r: f32, arc: f32 },
+    /// 한 자리가 터진다(꼬투리가 심은 원판 `Plant`·종이 떨어진 자리 `Hurl`) — 자리는 몸이 아니라 그 자리.
+    Spot { r: f32 },
+    /// 돌진이 몸에 닿았거나(그 자리) 닿지 않고 멈췄다(멈춘 자리) — `Charge`.
+    Ram,
+    /// 땅을 쳐 고리가 퍼지기 시작한다(`Wave`·`Toll`) — `r` = 고리가 닿는 끝.
+    Quake { r: f32 },
+    /// 뿌리 기둥 줄이 솟기 시작한다(`Roots`) — `len` = 줄의 길이.
+    Line { len: f32 },
+    /// 갈고리가 날아가기 시작한다(`Hook`) — `len` = 닿는 끝.
+    Hook { len: f32 },
+    /// 종 조각을 던졌다(`Shards`).
+    Volley,
+}
+
+impl Blow {
+    /// 이 공격이 풀릴 때의 꼴 — 공격이 아닌 수(껍질 `Shell`)만 없다. `_` 없는 match: 새 공격은 여기서 꼴을 정해야 컴파일된다.
+    pub fn of(atk: Atk, d: &Def, reach: f32, len: f32) -> Option<Blow> {
+        Some(match atk {
+            Atk::Smash => Blow::Around { r: d.reach },
+            Atk::Slam => Blow::Cone {
+                r: d.reach,
+                arc: d.arc,
+            },
+            Atk::Plant => Blow::Spot { r: d.plant_r },
+            Atk::Hurl => Blow::Spot { r: HURL_R },
+            Atk::Charge => Blow::Ram,
+            Atk::Wave | Atk::Toll => Blow::Quake { r: reach },
+            Atk::Roots => Blow::Line { len },
+            Atk::Hook => Blow::Hook { len },
+            Atk::Shards => Blow::Volley,
+            Atk::Shell => return None,
+        })
+    }
+}
+
 /// 한 틱의 결과(월드가 피해·이벤트로 바꾼다).
 #[derive(Default, Debug, PartialEq)]
 pub struct Out {
+    /// 공격이 이번 틱에 풀렸다(0269) — 그 자리(바닥)와 꼴. 맞았나와 상관없다(`hit`은 따로).
+    pub blow: Option<(Vec3, Blow)>,
     /// 지연 공격이 곧 풀린다(0128 — 앱이 소리를 낸다).
     pub release: bool,
     /// 플레이어를 쳤다.
@@ -662,6 +709,27 @@ impl Enemy {
         }
     }
 
+    /// 지금 공격이 풀리는 순간의 꼴(0269)과 자리 — `at` = 바닥의 자리(몸·심은 자리·돌진이 닿은 자리).
+    fn blow_at(&self, at: Vec3) -> Option<(Vec3, Blow)> {
+        Blow::of(self.atk, self.def(), self.wave_reach(), self.charge.len).map(|b| (at, b))
+    }
+
+    /// 갈고리(0208)의 앞머리: 몸에서 바라보는 쪽으로 몇 m까지 날아갔나(날아가는 중) · 거두는 중이면 줄어든다(`HOOK_REEL`초). 렌더가 사슬을 그린다(0269).
+    pub fn hook_front(&self) -> Option<f32> {
+        if self.atk != Atk::Hook {
+            return None;
+        }
+        match self.state {
+            EState::Wave { t } => {
+                Some((self.radius + t * crate::tuning::HOOK_SPEED).min(self.charge.len))
+            }
+            EState::Recover { t } if t < HOOK_REEL => {
+                Some(self.charge.len * (1.0 - t / HOOK_REEL).max(0.0))
+            }
+            _ => None,
+        }
+    }
+
     /// 뿌리 기둥 줄(0133)의 앞머리: 몸에서 바라보는 쪽으로 몇 m까지 솟았나(솟는 중일 때만).
     pub fn roots_front(&self) -> Option<f32> {
         match (self.state, self.atk) {
@@ -824,7 +892,9 @@ impl Enemy {
     /// 퍼지는 고리들의 지금 반지름(뿌리 파동 하나, 울림 고리 여럿 — 뒤 고리는 `TOLL_GAP`만큼 늦다). 아직 안 나온 고리는 없다.
     pub fn wave_fronts(&self) -> Vec<f32> {
         match self.state {
-            EState::Wave { t } if self.atk != Atk::Roots => (0..self.ring_count())
+            // 뿌리 기둥 줄·갈고리도 `Wave` 상태를 빌리지만 고리가 아니다(0269 — 갈고리 동안 몸 둘레에 고리가 그려졌다).
+            EState::Wave { .. } if matches!(self.atk, Atk::Roots | Atk::Hook) => Vec::new(),
+            EState::Wave { t } => (0..self.ring_count())
                 .map(|k| t * self.def().wave_speed - k as f32 * crate::tuning::TOLL_GAP)
                 .filter(|&r| r > 0.0 && r <= self.wave_reach())
                 .collect(),
@@ -1286,6 +1356,7 @@ impl Enemy {
                 // 종 조각(0125): 휘두르는 첫 틱에 던진다(탄은 월드가 날린다).
                 if e == 0.0 {
                     out.shards = self.shard_count();
+                    out.blow = self.blow_at(self.pos);
                 }
                 self.state = if e + dt >= 0.25 {
                     self.after_attack()
@@ -1301,6 +1372,7 @@ impl Enemy {
                         {
                             out.hit = true;
                         }
+                        out.blow = self.blow_at(at);
                     }
                 }
                 self.state = if e + dt >= 0.2 {
@@ -1316,6 +1388,7 @@ impl Enemy {
                         if vec2(player.x - at.x, player.z - at.z).length() <= d.plant_r {
                             out.hit = true;
                         }
+                        out.blow = self.blow_at(at);
                     }
                 }
                 self.state = if e + dt >= 0.2 {
@@ -1335,6 +1408,7 @@ impl Enemy {
                     if dist <= d.reach + PLAYER_RADIUS && dir.dot(self.facing_dir()) >= arc {
                         out.hit = true;
                     }
+                    out.blow = self.blow_at(self.pos);
                 }
                 self.state = if e + dt >= 0.2 {
                     self.after_attack()
@@ -1355,9 +1429,16 @@ impl Enemy {
                 if !self.landed && near <= self.touch() {
                     self.landed = true;
                     out.hit = true;
+                    // 닿은 자리(몸 앞, 방랑자 쪽) — 0269.
+                    out.blow = self.blow_at(self.pos + cdir * self.radius);
                 }
                 let done = went + step >= self.charge.len - 1e-4;
-                self.state = if e + dt >= d.charge_time || done {
+                let over = e + dt >= d.charge_time || done;
+                // 닿지 않고 멈췄다 — 멈춘 자리에서 쿵(0269: 빗나간 돌진도 끝이 보인다).
+                if over && !self.landed {
+                    out.blow = self.blow_at(self.pos + cdir * self.radius);
+                }
+                self.state = if over {
                     self.after_attack()
                 } else {
                     EState::Charge {
@@ -1367,6 +1448,9 @@ impl Enemy {
                 };
             }
             EState::Wave { t: e } if self.atk == Atk::Hook => {
+                if e == 0.0 {
+                    out.blow = self.blow_at(self.pos);
+                }
                 // 갈고리(0208): 앞머리가 지나는 자리의 방랑자를 한 번 걸어(`pull` — 월드가 끌어당긴다), 끝까지 가면 거둔다.
                 let f = self.facing_dir();
                 let to = vec3(player.x - self.pos.x, 0.0, player.z - self.pos.z);
@@ -1391,6 +1475,9 @@ impl Enemy {
                 };
             }
             EState::Wave { t: e } if self.atk == Atk::Roots => {
+                if e == 0.0 {
+                    out.blow = self.blow_at(self.pos);
+                }
                 // 뿌리 기둥 줄(0133): 앞머리가 지나는 자리의 방랑자를 한 번 친다 — 바라보는 쪽 줄 위(옆 `ROOTS_R` 안).
                 let f = self.facing_dir();
                 let to = vec3(player.x - self.pos.x, 0.0, player.z - self.pos.z);
@@ -1413,6 +1500,10 @@ impl Enemy {
                 };
             }
             EState::Wave { t: e } => {
+                // 땅을 친 순간(0269) — 종 내던지기의 고리는 떨어진 순간(`Spot`)이 이미 말했다.
+                if e == 0.0 && self.atk != Atk::Hurl {
+                    out.blow = self.blow_at(self.pos);
+                }
                 // 고리마다 한 번(울림 고리는 여럿 — 뒤 고리는 `TOLL_GAP`만큼 늦다, 0125). 마지막 고리가 끝까지 가면 쉰다.
                 let n = self.ring_count();
                 let lead = (e + dt) * d.wave_speed;
@@ -1491,6 +1582,91 @@ mod tests {
         (0..ticks)
             .filter(|_| en.tick(player, 1.0 / 60.0).hit)
             .count()
+    }
+
+    /// 0269: 공격 `atk` 하나를 `player` 쪽으로 처음부터 쉴 때까지 돌려, 풀린 순간(`Out::blow`)과 맞은 틱을 모은다.
+    /// 심기·종 내던지기는 `SPOT`에 심는다.
+    fn blows_of(kind: Kind, atk: Atk, player: Vec3) -> (Vec<(Vec3, Blow)>, usize) {
+        let mut en = Enemy::new(kind, Vec3::ZERO);
+        en.steady = true;
+        en.facing = 0.0; // +z
+        en.start(atk);
+        if matches!(atk, Atk::Plant | Atk::Hurl) {
+            en.plant_at = Some(SPOT);
+        }
+        let (mut blows, mut hits) = (Vec::new(), 0);
+        for _ in 0..600 {
+            let out = en.tick(player, 1.0 / 60.0);
+            blows.extend(out.blow);
+            hits += out.hit as usize;
+            if matches!(en.state, EState::Recover { .. } | EState::Chase) {
+                break;
+            }
+        }
+        (blows, hits)
+    }
+
+    /// 0269(사장 "공격예고와 공격 이펙트는 다른 것 … 켜고 끄고와는 상관없이"): 공격이 아닌 껍질 빼고 모든 공격은 풀리는 순간을
+    /// 한 번 말한다 — 방랑자가 멀리 있어 빗나가도. 꼴은 공격마다 정해져 있고(`Blow::of`), 심은 자리·떨어진 종은 몸이 아니라 그 자리.
+    const SPOT: Vec3 = vec3(0.0, 0.0, 6.0);
+
+    #[test]
+    fn every_attack_announces_the_moment_it_lands_hit_or_miss() {
+        use Atk::*;
+        let cases = [
+            (Kind::Husk, Smash),
+            (Kind::Warden, Slam),
+            (Kind::Thorn, Charge),
+            (Kind::Warden, Wave),
+            (Kind::Pod, Plant),
+            (Kind::Bellkeeper, Toll),
+            (Kind::Bellkeeper, Shards),
+            (Kind::Warden, Roots),
+            (Kind::Bellkeeper, Hurl),
+            (Kind::Overseer, Hook),
+        ];
+        let far = vec3(0.5, 0.0, 40.0);
+        for (kind, atk) in cases {
+            let (blows, hits) = blows_of(kind, atk, far);
+            assert_eq!(hits, 0, "{atk:?}: 멀리 있으면 안 맞는다");
+            assert_eq!(blows.len(), 1, "{atk:?}: 풀린 순간 하나 — {blows:?}");
+            let (at, blow) = blows[0];
+            assert_eq!(
+                Some(blow),
+                Blow::of(atk, Enemy::new(kind, Vec3::ZERO).def(), 0.0, 0.0).map(|b| {
+                    match (b, blow) {
+                        // 크기는 판정의 값(고리의 끝·줄의 길이는 월드가 줄인다) — 꼴만 견준다.
+                        (Blow::Quake { .. }, Blow::Quake { .. })
+                        | (Blow::Line { .. }, Blow::Line { .. })
+                        | (Blow::Hook { .. }, Blow::Hook { .. }) => blow,
+                        _ => b,
+                    }
+                }),
+                "{atk:?}"
+            );
+            if matches!(atk, Plant | Hurl) {
+                assert!(at.distance(SPOT) < 1e-3, "{atk:?}: 심은 자리에서");
+            }
+        }
+        // 가까이 있으면 맞고, 맞아도 풀린 순간은 하나.
+        for (kind, atk) in cases {
+            let near = match atk {
+                Plant | Hurl => SPOT,
+                _ => vec3(0.0, 0.0, 1.6),
+            };
+            let (blows, hits) = blows_of(kind, atk, near);
+            assert_eq!(blows.len(), 1, "{atk:?} 가까이: {blows:?}");
+            // 조각은 월드의 탄이 친다 — 몸의 수는 던지기만.
+            assert!(hits >= 1 || atk == Shards, "{atk:?} 가까이면 맞는다");
+        }
+        // 갈고리가 나는 동안은 고리가 없다(상태는 `Wave`를 빌린다) — 사슬은 `hook_front`.
+        let mut hook = Enemy::new(Kind::Overseer, Vec3::ZERO);
+        hook.start(Hook);
+        hook.state = EState::Wave { t: 0.2 };
+        assert!(hook.wave_fronts().is_empty() && hook.hook_front().is_some());
+        // 껍질 받기는 공격이 아니다 — 아무것도 풀리지 않는다.
+        let (blows, hits) = blows_of(Kind::Mossward, Shell, vec3(0.0, 0.0, 1.6));
+        assert!(blows.is_empty() && hits == 0);
     }
 
     /// 0125: 깨진 종지기 — 가까우면 울림 고리와 종 휘두르기를 번갈아, 멀면 조각과 돌진을 번갈아, 아주 멀면 쫓기만.

@@ -5,7 +5,7 @@
 //! 타격은 짧고 밝게·몸짓(먼지)은 흙빛으로 낮게, 꾸밈은 많으면 건너뛰고 타격은 건너뛰지 않는다, 빨강은 쓰지 않는다(위험 예고 전용).
 use macroquad::prelude::*;
 
-use crate::enemy::EState;
+use crate::enemy::{Atk, Blow, EState};
 use crate::world::{Event, PState, World};
 
 /// 타격 별의 크기 배(0242).
@@ -150,6 +150,9 @@ pub fn field_mote(i: usize, time: f32) -> (Vec3, f32) {
 pub const FIELD_MOTES: usize = 44;
 pub const FIELD_MOTES_MAX: usize = 72;
 
+/// 퍼지는 고리의 앞머리에서 틱마다 튀는 돌 부스러기 수(0269).
+const WAVE_CHIPS: usize = 3;
+
 /// 입자 수 상한: 꾸밈은 `DECOR_CAP`을 넘으면 새로 내지 않고, 타격은 `HARD_CAP`까지(그 뒤엔 가장 오래된 것부터 버린다).
 pub const DECOR_CAP: usize = 220;
 pub const HARD_CAP: usize = 420;
@@ -172,6 +175,14 @@ const DUST: Color = Color::new(0.63, 0.61, 0.74, 0.72);
 const ASH: Color = Color::new(0.72, 0.70, 0.80, 0.75);
 const ROOT: Color = Color::new(0.56, 0.38, 0.70, 1.0);
 const SMOKE: Color = Color::new(0.22, 0.21, 0.30, 0.8);
+/// 적의 힘(0269 — 적의 공격이 풀린 순간): 옅은 라벤더 흰빛. 방랑자 스킬의 금·민트, 패링의 `COOL`과 갈리고 빨강(예고)은 아니다.
+const QUAKE: Color = Color::new(0.92, 0.88, 1.0, 1.0);
+/// 적이 친 땅의 금(0269): 뿌리 보라가 비쳐 오른다 — 식으면 흙빛(렌더의 금 꼴).
+const RIFT_ROOT: Color = Color::new(0.74, 0.52, 0.96, 1.0);
+/// 보스(문지기·종지기·권양지기)의 타는 잡몹의 이만큼 크게(0269).
+const BOSS_BLOW: f32 = 1.45;
+/// 적의 충격파가 남는 초(0269 — 방랑자 땅울림의 0.26보다 조금 길게: 맞은 쪽도 어디까지였나를 읽는다).
+const BLOW_SHOCK_LIFE: f32 = 0.34;
 const STONE: Color = Color::new(0.40, 0.38, 0.50, 1.0);
 /// 뿌리 진액(0182 — "피 튀듯"): 적을 감은 보라 뿌리의 물. 빨강은 예고 전용이라(0037) 피 대신 이것 — 튀는 동안은 밝은 보라,
 /// 식으며 짙어지고, 바닥에는 짙은 자두빛으로 남는다(남보라 바닥보다 어둡고 채도가 높아 얼룩으로 읽힌다).
@@ -200,8 +211,8 @@ pub struct Fx {
     seed: u32,
     was_dodging: bool,
     was_air: bool,
-    /// 적마다: 지난 틱에 돌진 중이었나·예고 중이었나, 돌진 먼지를 낸 뒤 흐른 시간.
-    enemy_was: Vec<(bool, bool, f32)>,
+    /// 적마다: 지난 틱에 돌진 중이었나, 돌진 먼지를 낸 뒤 흐른 시간.
+    enemy_was: Vec<(bool, f32)>,
     run_dist: f32,
     last_pos: Option<Vec3>,
 }
@@ -554,6 +565,32 @@ impl Fx {
         }
     }
 
+    /// 튀어 오르는 돌 부스러기 `n`개: `g`(바닥)에서 `dir` 쪽 `arc_deg`°(360 = 사방) 안, 반지름 `range`의 25~95% 자리에서.
+    fn chips(&mut self, g: Vec3, dir: Vec3, range: f32, arc_deg: f32, n: usize) {
+        let half = (arc_deg * 0.4).to_radians();
+        let yaw = dir.x.atan2(dir.z);
+        for _ in 0..n {
+            let a = yaw + self.rs() * half;
+            let rr = range * (0.25 + 0.7 * self.r());
+            let p = g + vec3(a.sin() * rr, 0.1, a.cos() * rr);
+            let up = 4.0 + 3.5 * self.r();
+            let life = 0.45 + 0.2 * self.r();
+            let size = 0.1 + 0.08 * self.r();
+            self.push(Part {
+                pos: p,
+                vel: vec3(a.sin() * 1.5, up, a.cos() * 1.5),
+                age: 0.0,
+                life,
+                size: (size, size * 0.7),
+                color: (STONE, STONE),
+                gravity: 16.0,
+                drag: 0.6,
+                shape: Shape::Dot,
+                decor: false,
+            });
+        }
+    }
+
     /// 위로 떠오르며 옅어지는 것 `n`개(재·회복의 빛 — 몸 둘레 `r` 안에서).
     #[allow(clippy::too_many_arguments)]
     fn rise(
@@ -833,6 +870,12 @@ impl Fx {
                     false,
                 );
             }
+            Event::EnemyStrike {
+                at,
+                dir,
+                blow,
+                boss,
+            } => self.enemy_blow(at, dir, blow, boss, w),
             // 막아치기가 준비하던 공격을 끊었다(0214): 흰 별 + 금빛 고리 + 바깥으로 튀는 줄.
             Event::Interrupt { at } => {
                 self.star(at, 1.6, 0.12, WHITE_HOT);
@@ -843,6 +886,182 @@ impl Fx {
             _ => return false,
         }
         true
+    }
+
+    /// 적의 공격이 풀린 순간(0269 — 사장 "공격예고와 공격 이펙트는 다른 것 … 공격예고를 켜고 끄고와는 상관없이 보여야 하고
+    /// 비주얼적으로 확실히"): 꼴마다 다른 타격 — 한가운데 별 + 닿는 거리까지 달리는 충격파 + 갈라지는 땅 + 튀는 돌. 크기는 판정과 같은
+    /// 값(그림이 판정보다 크게 말하지 않는다), 보스는 별·부스러기만 `BOSS_BLOW`배. 빛은 적의 것(`QUAKE`·`RIFT_ROOT`·돌) — 빨강 없음.
+    /// 퍼지는 고리·솟는 뿌리 줄의 앞머리는 렌더가(단단한 가시), 앞머리의 돌 부스러기는 `watch`가 그린다.
+    fn enemy_blow(&mut self, at: Vec3, dir: Vec3, blow: Blow, boss: bool, w: &World) {
+        let s = if boss { BOSS_BLOW } else { 1.0 };
+        let n = |k: f32| (k * s).round() as usize;
+        let g = vec3(at.x, w.ground_y(at), at.z);
+        match blow {
+            // 둘레 내려치기: 몸 둘레 사방으로 충격파 + 금 + 돌.
+            Blow::Around { r } => {
+                // 별은 몸 앞(바라보는 쪽 — 방랑자 쪽)에: 몸 가운데면 몸에 가렸다(헤드리스 화면).
+                self.star(
+                    g + dir * (r * 0.55) + Vec3::Y * 0.5,
+                    2.0 * s,
+                    0.12,
+                    WHITE_HOT,
+                );
+                let shock = MarkKind::Shock {
+                    dir,
+                    r0: 0.4,
+                    r1: r,
+                    arc_deg: 360.0,
+                };
+                self.mark(g, shock, BLOW_SHOCK_LIFE, QUAKE);
+                let cracks = MarkKind::Cracks {
+                    dir,
+                    r: r * 0.85,
+                    n: n(6.0) as u8,
+                    arc_deg: 360.0,
+                };
+                self.mark(g, cracks, 0.8, RIFT_ROOT);
+                self.chips(g, dir, r, 360.0, n(9.0));
+                self.dust_ring(g, r * 0.5, n(10.0), 3.5, 0.55, DUST);
+            }
+            // 앞 부채꼴: 부채꼴을 가로질러 달리는 충격파 + 그 안의 금 + 돌(방랑자의 땅울림과 같은 꼴, 빛만 적의 것).
+            Blow::Cone { r, arc } => {
+                let c = g + dir * (r * 0.45);
+                self.star(c + Vec3::Y * 0.4, 2.0 * s, 0.12, WHITE_HOT);
+                let shock = MarkKind::Shock {
+                    dir,
+                    r0: 0.5,
+                    r1: r,
+                    arc_deg: arc,
+                };
+                self.mark(g, shock, BLOW_SHOCK_LIFE, QUAKE);
+                let cracks = MarkKind::Cracks {
+                    dir,
+                    r: r * 0.9,
+                    n: n(4.0) as u8,
+                    arc_deg: arc * 0.8,
+                };
+                self.mark(g, cracks, 0.8, RIFT_ROOT);
+                self.chips(g, dir, r, arc, n(9.0));
+                self.dust_ring(c, 0.6, n(9.0), 3.6, 0.6, DUST);
+            }
+            // 한 자리가 터진다(꼬투리·떨어진 종): 그 자리에서 위로 솟는 빛줄 + 원판 끝까지 퍼지는 고리 + 사방의 금.
+            Blow::Spot { r } => {
+                self.star(g + Vec3::Y * 0.5, 2.2 * s, 0.13, WHITE_HOT);
+                self.mark(g, MarkKind::Ring { r0: 0.3, r1: r }, 0.3, QUAKE);
+                let cracks = MarkKind::Cracks {
+                    dir,
+                    r: r * 0.9,
+                    n: n(6.0) as u8,
+                    arc_deg: 360.0,
+                };
+                self.mark(g, cracks, 0.8, RIFT_ROOT);
+                self.spray(
+                    g + Vec3::Y * 0.2,
+                    Vec3::Y,
+                    0.45,
+                    n(10.0),
+                    6.5,
+                    Shape::Streak,
+                    0.08,
+                    0.35,
+                    9.0,
+                    WHITE_HOT,
+                    QUAKE,
+                );
+                self.chips(g, dir, r, 360.0, n(8.0));
+                self.dust_ring(g, r * 0.6, n(10.0), 3.2, 0.55, DUST);
+            }
+            // 돌진이 닿은·멈춘 자리: 가슴 높이 별 + 가던 쪽으로 터지는 빛줄 + 앞쪽 충격파 호 + 앞으로 밀리는 먼지.
+            Blow::Ram => {
+                let c = g + Vec3::Y * 0.8;
+                self.star(c, 1.8 * s, 0.11, WHITE_HOT);
+                self.spray(
+                    c,
+                    dir,
+                    0.55,
+                    n(10.0),
+                    7.0,
+                    Shape::Streak,
+                    0.08,
+                    0.3,
+                    6.0,
+                    WHITE_HOT,
+                    QUAKE,
+                );
+                let shock = MarkKind::Shock {
+                    dir,
+                    r0: 0.3,
+                    r1: 1.8 * s,
+                    arc_deg: 110.0,
+                };
+                self.mark(g - dir * 0.3, shock, 0.22, QUAKE);
+                self.dust_kick(g, dir, n(5.0), 0.5);
+            }
+            // 땅을 친 고리의 시작: 친 자리의 큰 쿵 + 짧은 고리 + 사방으로 뻗는 금(앞머리는 렌더·`watch`).
+            Blow::Quake { r } => {
+                self.star(g + Vec3::Y * 0.6, 2.4 * s, 0.13, WHITE_HOT);
+                self.mark(g, MarkKind::Ring { r0: 0.5, r1: 3.0 }, 0.3, QUAKE);
+                let cracks = MarkKind::Cracks {
+                    dir,
+                    r: r.min(4.0),
+                    n: n(7.0) as u8,
+                    arc_deg: 360.0,
+                };
+                self.mark(g, cracks, 1.0, RIFT_ROOT);
+                self.chips(g, dir, 2.5, 360.0, n(10.0));
+                self.dust_ring(g, 0.8, n(12.0), 4.5, 0.7, DUST);
+            }
+            // 뿌리 기둥 줄의 시작: 몸 앞의 쿵 + 줄을 따라 뻗는 금(기둥은 렌더).
+            Blow::Line { len } => {
+                let c = g + dir * 1.2;
+                self.star(c + Vec3::Y * 0.4, 1.8 * s, 0.12, WHITE_HOT);
+                let cracks = MarkKind::Cracks {
+                    dir,
+                    r: len,
+                    n: 2,
+                    arc_deg: 8.0,
+                };
+                self.mark(g, cracks, 1.0, RIFT_ROOT);
+                self.chips(c, dir, 1.6, 50.0, n(7.0));
+                self.dust_kick(c, dir, n(6.0), 0.55);
+            }
+            // 갈고리가 손을 떠난다: 손의 번쩍임 + 날아가는 쪽 빛줄(사슬은 렌더).
+            Blow::Hook { .. } => {
+                let hand = g + Vec3::Y * 1.3 + dir * 0.8;
+                self.star(hand, 1.1 * s, 0.08, WHITE_HOT);
+                self.spray(
+                    hand,
+                    dir,
+                    0.2,
+                    n(6.0),
+                    7.0,
+                    Shape::Streak,
+                    0.06,
+                    0.2,
+                    0.0,
+                    WHITE_HOT,
+                    STEEL,
+                );
+            }
+            // 종 조각을 던졌다: 손의 번쩍임 + 던진 쪽 빛줄(조각은 월드의 탄).
+            Blow::Volley => {
+                let hand = g + Vec3::Y * 1.3 + dir * 0.7;
+                self.star(hand, 1.3 * s, 0.09, WHITE_HOT);
+                self.spray(
+                    hand,
+                    dir,
+                    0.4,
+                    n(8.0),
+                    6.5,
+                    Shape::Streak,
+                    0.07,
+                    0.22,
+                    2.0,
+                    WHITE_HOT,
+                    STEEL,
+                );
+            }
+        }
     }
 
     /// 사건 묶음: 피해 타입(0223 V2 — 걸림·화상·울림·터짐)·솟은 뿌리·회복. 이 묶음의 사건이면 참(0251 R11 — `on_events`의 match를 나눴다).
@@ -1496,28 +1715,7 @@ impl Fx {
                 );
                 self.dust_ring(c, 0.8, 12, 4.4, 0.7, DUST);
                 // 돌 부스러기: 부채꼴 안 여러 자리에서 튀어 오른다.
-                let half = (arc_deg * 0.4).to_radians();
-                let yaw = dir.x.atan2(dir.z);
-                for _ in 0..12 {
-                    let a = yaw + self.rs() * half;
-                    let rr = range * (0.25 + 0.7 * self.r());
-                    let p = g + vec3(a.sin() * rr, 0.1, a.cos() * rr);
-                    let up = 4.0 + 3.5 * self.r();
-                    let life = 0.45 + 0.2 * self.r();
-                    let size = 0.1 + 0.08 * self.r();
-                    self.push(Part {
-                        pos: p,
-                        vel: vec3(a.sin() * 1.5, up, a.cos() * 1.5),
-                        age: 0.0,
-                        life,
-                        size: (size, size * 0.7),
-                        color: (STONE, STONE),
-                        gravity: 16.0,
-                        drag: 0.6,
-                        shape: Shape::Dot,
-                        decor: false,
-                    });
-                }
+                self.chips(g, dir, range, arc_deg, 12);
             }
             // 버팀의 터뜨림: 흰 큰 별 + 닿는 거리까지 터지는 고리 둘 + 받아낸 만큼 많아지는 금빛 줄 + 먼지.
             (Sk::Brace, Form::Brace { radius, .. }) => {
@@ -1672,7 +1870,7 @@ impl Fx {
         }
     }
 
-    /// 상태 변화 → 몸짓 먼지(사건이 없는 것): 회피 시작, 뛰어오름·내려앉음, 달리기, 적의 돌진·내리침. 틱마다 한 번.
+    /// 상태 변화 → 몸짓 먼지(사건이 없는 것): 회피 시작, 뛰어오름·내려앉음, 달리기, 적의 돌진, 퍼지는 고리의 앞머리(0269). 틱마다 한 번.
     pub fn watch(&mut self, w: &World, dt: f32) {
         let pl = &w.player;
         let feet = vec3(pl.pos.x, w.ground_y(pl.pos), pl.pos.z);
@@ -1758,12 +1956,11 @@ impl Fx {
                 });
             }
         }
-        // 적: 돌진하는 동안 발밑 먼지(0.09초마다), 내리치는 틱(예고가 끝나고 휘두름·파동으로 넘어간 틱)에 발 앞 먼지.
-        self.enemy_was.resize(w.enemies.len(), (false, false, 0.0));
+        // 적: 돌진하는 동안 발밑 먼지(0.09초마다). 공격이 풀린 순간의 타격은 `Event::EnemyStrike`(0269)가 낸다.
+        self.enemy_was.resize(w.enemies.len(), (false, 0.0));
         for (i, en) in w.enemies.iter().enumerate() {
-            let (was_charge, was_tele, mut since) = self.enemy_was[i];
+            let (was_charge, mut since) = self.enemy_was[i];
             let charge = matches!(en.state, EState::Charge { .. });
-            let tele = matches!(en.state, EState::Tele { .. });
             let g = vec3(en.pos.x, w.ground_y(en.pos), en.pos.z);
             if charge {
                 since += dt;
@@ -1772,19 +1969,46 @@ impl Fx {
                     self.dust_kick(g, -en.facing_dir(), 2, 0.3 + 0.35 * en.radius);
                 }
             }
-            let struck = was_tele && matches!(en.state, EState::Swing { .. } | EState::Wave { .. });
-            if struck && en.alive() {
-                let at = g + en.facing_dir() * (en.radius + 0.5);
-                self.dust_ring(
-                    at,
-                    0.25,
-                    if en.boss { 9 } else { 4 },
-                    2.0 + en.radius,
-                    0.35 + 0.3 * en.radius,
-                    DUST,
-                );
+            self.enemy_was[i] = (charge, since);
+            self.wave_debris(en, w);
+        }
+    }
+
+    /// 퍼지는 고리(뿌리 파동·울림 고리·떨어진 종의 고리 — 0269)의 앞머리를 따라 튀는 돌 부스러기: 고리가 "땅을 뒤집으며 오는 것"으로
+    /// 읽히게(단단한 가시는 렌더). 틱마다 앞머리 둘레 `WAVE_CHIPS`개 — 꾸밈이라 많으면 건너뛴다(가시가 몫을 한다).
+    fn wave_debris(&mut self, en: &crate::enemy::Enemy, w: &World) {
+        if !en.alive() || !matches!(en.atk, Atk::Wave | Atk::Toll | Atk::Hurl) {
+            return;
+        }
+        let c = en.wave_center();
+        let cg = vec3(c.x, w.ground_y(c), c.z);
+        for front in en.wave_fronts() {
+            for _ in 0..WAVE_CHIPS {
+                let a = self.r() * std::f32::consts::TAU;
+                let d = vec3(a.sin(), 0.0, a.cos());
+                let at = cg + d * front;
+                let at = vec3(at.x, w.ground_y(at) + 0.08, at.z);
+                let size = 0.09 + 0.07 * self.r();
+                let rock = self.r() < 0.6;
+                let vel = d * (1.5 + 2.0 * self.r()) + Vec3::Y * (2.5 + 2.5 * self.r());
+                let life = 0.35 + 0.15 * self.r();
+                self.push(Part {
+                    pos: at,
+                    vel,
+                    age: 0.0,
+                    life,
+                    size: (size, size * 0.6),
+                    color: if rock {
+                        (STONE, STONE)
+                    } else {
+                        (QUAKE, fade(DUST))
+                    },
+                    gravity: 15.0,
+                    drag: 0.8,
+                    shape: Shape::Dot,
+                    decor: true,
+                });
             }
-            self.enemy_was[i] = (charge, tele, since);
         }
     }
 
@@ -1872,6 +2096,32 @@ mod tests {
     }
 
     /// 스킬·큰 기술이 내는 모든 사건(0158 G2) — 스킬 여덟의 시동과 판정, 남긴 것들의 사건, 큰 기술 셋.
+    /// 적의 공격이 풀린 순간(0269) — 꼴마다 하나, 잡몹·보스 둘 다.
+    fn enemy_strikes(at: Vec3) -> Vec<Event> {
+        let dir = Vec3::Z;
+        let blows = [
+            Blow::Around { r: 1.6 },
+            Blow::Cone { r: 3.0, arc: 110.0 },
+            Blow::Spot { r: 1.4 },
+            Blow::Ram,
+            Blow::Quake { r: 9.0 },
+            Blow::Line { len: 11.0 },
+            Blow::Hook { len: 9.0 },
+            Blow::Volley,
+        ];
+        blows
+            .iter()
+            .flat_map(|&blow| {
+                [false, true].map(|boss| Event::EnemyStrike {
+                    at,
+                    dir,
+                    blow,
+                    boss,
+                })
+            })
+            .collect()
+    }
+
     fn skill_events() -> Vec<Event> {
         let (at, dir) = (vec3(0.0, 0.0, 1.0), Vec3::Z);
         let mut ev = Vec::new();
@@ -2090,7 +2340,11 @@ mod tests {
             Event::PlayerHurt,
         ];
         let red = |c: Color| c.r > 0.75 && c.g < 0.45 && c.b < 0.45;
-        for e in all.into_iter().chain(skill_events()) {
+        for e in all
+            .into_iter()
+            .chain(skill_events())
+            .chain(enemy_strikes(at))
+        {
             let mut fx = Fx::default();
             fx.on_events(&[e], &w);
             // 늦게 나오는 입자까지 본다.
@@ -2325,6 +2579,7 @@ mod tests {
             Event::Unchain { at },
             Event::PlayerHurt,
         ]);
+        events.extend(enemy_strikes(at));
         for e in &events {
             let mut fx = Fx::default();
             let n = [
@@ -2343,6 +2598,74 @@ mod tests {
                 one.parts.len(),
                 fx.parts.len(),
                 "{e:?}: the dispatcher draws what its group draws"
+            );
+        }
+    }
+
+    /// 0269(사장 "공격에 대한 이펙트는 … 비주얼적으로 확실히 표시되어야 함"): 적의 공격이 풀린 순간은 꼴마다 한가운데 번쩍임(짧게)과
+    /// 건너뛰지 않는 입자를 낸다 — 땅을 치는 꼴은 남는 꼴(충격파·고리·금)도. 보스의 별은 잡몹보다 크다. 빛은 방랑자 스킬의 금·민트가 아니다.
+    #[test]
+    fn every_enemy_strike_flashes_and_shakes_the_ground_and_bosses_hit_bigger() {
+        let w = world();
+        let at = vec3(0.0, 0.0, 2.0);
+        let mut mob_star = Vec::new();
+        for e in enemy_strikes(at) {
+            let Event::EnemyStrike { blow, boss, .. } = e else {
+                unreachable!()
+            };
+            let mut fx = Fx::default();
+            fx.on_events(&[e], &w);
+            let star = fx
+                .parts
+                .iter()
+                .find(|p| p.shape == Shape::Star)
+                .unwrap_or_else(|| panic!("{e:?}: no flash"));
+            assert!(star.life <= 0.15, "{e:?}: the flash lingers");
+            let hard = fx.parts.iter().filter(|p| !p.decor).count();
+            assert!(hard >= 5, "{e:?}: only {hard} parts that always show");
+            let grounded = !matches!(blow, Blow::Hook { .. } | Blow::Volley);
+            assert!(
+                !grounded || !fx.marks.is_empty(),
+                "{e:?}: the ground does not show the blow"
+            );
+            for m in &fx.marks {
+                assert!(
+                    m.color != GOLD && m.color != MINT,
+                    "{e:?}: a skill's colour"
+                );
+            }
+            if boss {
+                let (_, mob) = mob_star.pop().expect("mob first");
+                assert!(star.size.0 > mob, "{e:?}: a boss hits bigger");
+            } else {
+                mob_star.push((blow, star.size.0));
+            }
+        }
+    }
+
+    /// 0269: 퍼지는 고리의 앞머리를 따라 돌 부스러기가 튄다(늘 — 예고 설정은 렌더의 일이라 여기 없다), 고리가 없으면 조용하다.
+    #[test]
+    fn a_spreading_ring_kicks_up_stones_along_its_front() {
+        let mut w = world();
+        w.spawn_boss(vec3(0.0, 0.0, -6.0));
+        let i = w.enemies.len() - 1;
+        let mut fx = Fx::default();
+        fx.watch(&w, 1.0 / 60.0);
+        let quiet = fx.parts.len();
+        w.enemies[i].atk = Atk::Wave;
+        w.enemies[i].state = EState::Wave { t: 0.3 };
+        let fronts = w.enemies[i].wave_fronts();
+        assert_eq!(fronts.len(), 1);
+        fx.watch(&w, 1.0 / 60.0);
+        let c = w.enemies[i].pos;
+        let new: Vec<_> = fx.parts[quiet..].to_vec();
+        assert_eq!(new.len(), WAVE_CHIPS);
+        for p in new {
+            let r = vec2(p.pos.x - c.x, p.pos.z - c.z).length();
+            assert!(
+                (r - fronts[0]).abs() < 0.05,
+                "a chip at {r} m, the front at {}",
+                fronts[0]
             );
         }
     }

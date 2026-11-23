@@ -54,6 +54,9 @@ fn hash(x: usize, z: usize, k: u32) -> f32 {
     (h & 0xffff) as f32 / 65535.0
 }
 
+/// 꺼진 화로의 불씨 빛 반지름 몫(2026-11-23).
+const COLD_REACH: f32 = 0.35;
+
 /// 조용한 바닥(0140): 줄눈(`FloorLook::mortar_calm`)을 석판의 2/3 밝기로(예전 0.3배 — 화면에서 가장 센 대비가 바닥 격자였다),
 /// 석판마다의 밝기 차는 ±6%로 줄이고 대신 여러 칸에 걸친 큰 얼룩(±10%)으로, 석판 옆면도 덜 어둡게.
 const SLAB_SIDE_CALM: f32 = 0.82;
@@ -137,6 +140,21 @@ pub struct FloorLook {
     pub pit: Color,
     pub ledge: Color,
     pub edge: Color,
+    /// 땅(0270 A — 사장 2026-11-23 "바닥은 무조건 타일이 있어야 하는거야?"): 있으면 석판 대신 칸 경계 없이 이어진 땅
+    /// (얼룩 · 섬처럼 남은 석판 · 자갈 · 풀). 없으면 석판(0268).
+    pub ground: Option<Soil>,
+}
+
+/// 타일 없는 땅의 꼴(0270 A): 흙(`FloorLook::dirt`) 위에 이끼 얼룩(`moss` 빛, 몫 `moss_amt`), 자갈(`gravel` 빛, 칸마다 평균 `pebbles`개),
+/// 풀 다발(칸마다 확률 `grass`), 부서진 석판이 남은 칸(확률 `islands` — 그 칸의 판 몇만 남는다).
+#[derive(Clone, Copy, Debug)]
+pub struct Soil {
+    pub moss: Color,
+    pub moss_amt: f32,
+    pub gravel: Color,
+    pub pebbles: f32,
+    pub grass: f32,
+    pub islands: f32,
 }
 
 /// 성소(땅 위, 달빛 해 질 녘): 푸른 잿빛 석판(212°) — 다듬은 석판(0060 W2 그대로 — 이끼 두 칸에 하나쯤, 빠진 판 7%), 이끼는 청록, 흙은 옅은 갈색.
@@ -155,6 +173,14 @@ pub const SANCTUARY_FLOOR: FloorLook = FloorLook {
     pit: Color::new(0.108, 0.128, 0.155, 1.0),
     ledge: Color::new(0.301, 0.336, 0.377, 1.0),
     edge: Color::new(0.58, 0.618, 0.645, 1.0),
+    ground: Some(Soil {
+        moss: Color::new(0.2, 0.29, 0.262, 1.0),
+        moss_amt: 0.4,
+        gravel: Color::new(0.33, 0.35, 0.37, 1.0),
+        pebbles: 0.8,
+        grass: 0.12,
+        islands: 0.45,
+    }),
 };
 
 /// 떠난 마을(지하 40m): 흙빛 동굴 — 바랜 황토 석판(38°, 채도 0.16), 마른 올리브 이끼, 갈색 흙.
@@ -173,6 +199,14 @@ pub const VILLAGE_FLOOR: FloorLook = FloorLook {
     pit: Color::new(0.139, 0.125, 0.106, 1.0),
     ledge: Color::new(0.351, 0.33, 0.295, 1.0),
     edge: Color::new(0.628, 0.611, 0.577, 1.0),
+    ground: Some(Soil {
+        moss: Color::new(0.255, 0.28, 0.215, 1.0),
+        moss_amt: 0.2,
+        gravel: Color::new(0.37, 0.35, 0.31, 1.0),
+        pebbles: 1.6,
+        grass: 0.08,
+        islands: 0.25,
+    }),
 };
 
 /// 잔뿌리의 정원(0185, 지하 75m): 옛 석재는 조각만 남고(판의 반이 빠져 흙·풀), 남은 판의 반 넘게 이끼 — 물기 머금은 청록(155~185°).
@@ -191,6 +225,14 @@ pub const GARDEN_FLOOR: FloorLook = FloorLook {
     pit: Color::new(0.103, 0.132, 0.131, 1.0),
     ledge: Color::new(0.302, 0.34, 0.343, 1.0),
     edge: Color::new(0.573, 0.623, 0.615, 1.0),
+    ground: Some(Soil {
+        moss: Color::new(0.19, 0.3, 0.25, 1.0),
+        moss_amt: 0.65,
+        gravel: Color::new(0.3, 0.33, 0.33, 1.0),
+        pebbles: 0.4,
+        grass: 0.35,
+        islands: 0.15,
+    }),
 };
 
 /// 작업층(0208, 지하 110m): 닳은 철판·돌판 — 올리브빛 쇳빛(70°, 채도 0.08), 이끼 대신 녹(22°)·녹 슨 흙(빛이 없다).
@@ -209,6 +251,14 @@ pub const WORKS_FLOOR: FloorLook = FloorLook {
     pit: Color::new(0.125, 0.129, 0.109, 1.0),
     ledge: Color::new(0.331, 0.335, 0.309, 1.0),
     edge: Color::new(0.615, 0.615, 0.578, 1.0),
+    ground: Some(Soil {
+        moss: Color::new(0.3, 0.262, 0.236, 1.0),
+        moss_amt: 0.25,
+        gravel: Color::new(0.34, 0.34, 0.32, 1.0),
+        pebbles: 2.2,
+        grass: 0.0,
+        islands: 0.2,
+    }),
 };
 
 /// 서막 숲(0262, 땅 위): 석판은 옛 길의 조각만(판의 반이 빠져 흙 + 풀), 남은 판은 이끼. 흙은 어두운 부엽토(채도 낮게 —
@@ -228,6 +278,14 @@ pub const FOREST_FLOOR: FloorLook = FloorLook {
     pit: Color::new(0.098, 0.124, 0.114, 1.0),
     ledge: Color::new(0.3, 0.33, 0.31, 1.0),
     edge: Color::new(0.57, 0.62, 0.59, 1.0),
+    ground: Some(Soil {
+        moss: Color::new(0.2, 0.29, 0.232, 1.0),
+        moss_amt: 0.55,
+        gravel: Color::new(0.33, 0.33, 0.31, 1.0),
+        pebbles: 0.5,
+        grass: 0.4,
+        islands: 0.22,
+    }),
 };
 
 /// 고인 물(`~`, 0185): 어둡고 푸른 수면, 가장자리는 젖은 흙.
@@ -251,6 +309,10 @@ const GRASS_TIP: Color = Color::new(0.66, 0.84, 0.50, 1.0);
 /// 바닥은 걷는 면(0) 아래로 판다 — 예고·그림자·고리(바닥 위 2~3cm)가 석판에 묻히지 않게. 회반죽 깊이, 석판 꼭대기 범위(음수), 들린 변(0을 넘지 않는다).
 const MORTAR_Y: f32 = -0.08;
 const SLAB_LOW: f32 = -0.05;
+/// 땅의 면(0270 A): 줄눈판 위, 석판 꼭대기 아래 — 섬처럼 남은 판이 땅에서 솟는다.
+const GROUND_Y: f32 = -0.056;
+/// 섬(남은 석판 무리)의 얼룩 크기, m(0270 A).
+const ISLAND_SCALE: f32 = 6.0;
 const SLAB_HIGH: f32 = -0.015;
 const SLAB_LIFT: f32 = 0.03;
 const SLAB_SIDE: f32 = 0.62;
@@ -445,14 +507,25 @@ impl Scenery {
         let lights: Vec<Light> = lv
             .lights
             .iter()
-            .filter(|l| !cold(l.pos))
-            .map(|l| Light {
-                radius: if look.key && !l.shaft {
+            .map(|l| {
+                let reach = if look.key && !l.shaft {
                     l.radius * FIRE_REACH
                 } else {
                     l.radius
-                },
-                ..*l
+                };
+                // 꺼진 화로(0171)는 꺼져 가는 불씨의 작은 빛만(2026-11-23 — 그 전엔 빛을 뺐다: 어둠 속의 돌 고리가 보이지 않았다).
+                if cold(l.pos) {
+                    Light {
+                        radius: reach * COLD_REACH,
+                        color: Color::new(l.color.r * 0.8, l.color.g * 0.55, l.color.b * 0.4, 1.0),
+                        ..*l
+                    }
+                } else {
+                    Light {
+                        radius: reach,
+                        ..*l
+                    }
+                }
             })
             .collect();
         let mut pieces = Vec::new();
@@ -750,12 +823,67 @@ impl Scenery {
                     }
                     continue;
                 }
+                // 땅(0270 A): 석판 대신 칸 경계 없이 이어진 얼룩 — 칸을 2×2로 나눠 정점 색을 월드 자리에서 고른다(이웃 칸의 같은 자리 =
+                // 같은 색이라 이음이 없다). 그 위에 자갈 몇·풀 다발, 몇 칸에만 부서진 석판이 섬처럼 남는다(아래 석판 길이 `island`만).
+                let island = match floor.ground {
+                    Some(g) => {
+                        for (i, j) in [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)] {
+                            let (x0, z0) = (-h + i * h, -h + j * h);
+                            let corners = [(x0, z0), (x0 + h, z0), (x0 + h, z0 + h), (x0, z0 + h)]
+                                .map(|(a, b)| on(c + vec3(a, GROUND_Y, b)));
+                            let cols = corners.map(|v| ground_color(floor, &g, v));
+                            quad_lm_cols(&mut p, corners, cols, &uv_of);
+                        }
+                        let n = (g.pebbles * 2.0 * hash(x, z, 210)).round() as u32;
+                        for t in 0..n.min(6) {
+                            let o = c + vec3(
+                                (hash(x, z, 211 + t) - 0.5) * 1.8,
+                                0.0,
+                                (hash(x, z, 217 + t) - 0.5) * 1.8,
+                            );
+                            let r = 0.05 + 0.09 * hash(x, z, 223 + t);
+                            let y = GROUND_Y + 0.02;
+                            quad_lm(
+                                &mut p,
+                                [
+                                    on(o + vec3(0.0, y, -r)),
+                                    on(o + vec3(r, y, 0.0)),
+                                    on(o + vec3(0.0, y, r)),
+                                    on(o + vec3(-r, y, 0.0)),
+                                ],
+                                mul(g.gravel, 0.8 + 0.35 * hash(x, z, 229 + t)),
+                                &uv_of,
+                            );
+                        }
+                        if hash(x, z, 235) < g.grass {
+                            let a = vec3(hash(x, z, 236) - 0.5, 0.0, hash(x, z, 237) - 0.5);
+                            tuft(
+                                &mut sides,
+                                on(c + a * 1.6 + Vec3::Y * GROUND_Y),
+                                x * 13 + 3,
+                                z * 7 + 1,
+                                &lights,
+                            );
+                        }
+                        // 섬은 칸마다 따로가 아니라 큰 얼룩 안에 무리로(폐허의 깔린 터) — 판 하나하나는 아래에서 얼룩 가장자리를 따라 거른다.
+                        field(c.x, c.z, ISLAND_SCALE, 239) > 1.0 - g.islands - 0.06
+                    }
+                    None => true,
+                };
                 // 석판(0060 W2·0061): 칸마다 1m 넷 — 짝 둘은 가끔 하나로 붙고(긴 판), 꼭대기는 걷는 면 아래 1.5~5cm로 들쭉날쭉, 몇은 한쪽이 들리고,
                 // 몇은 빠져 흙 + 풀. 옆면이 있어 카메라 쪽 모서리에 밝은 선(0061 화면 공간 선)이 붙는다.
                 // 0268(사장 2026-11-22 "바닥의 격자… 좀 어떻게 못하나"): 칸마다 같은 1m 넷이면 줄눈이 바닥 전체에 곧은 격자로 이어졌다 —
                 // 칸마다 칼 자리가 다른 크고 작은 판으로(`slab_cuts`).
-                let slabs = slab_cuts(x, z);
+                let slabs = if island { slab_cuts(x, z) } else { Vec::new() };
                 for (off, half, i) in slabs {
+                    // 땅 위의 섬(0270 A): 칸의 판 몇만 남는다(부서진 폐허).
+                    if let Some(g) = floor.ground {
+                        let o = c + off;
+                        let inside = field(o.x, o.z, ISLAND_SCALE, 239) - (1.0 - g.islands);
+                        if inside < 0.1 * hash(x, z, i + 240) || hash(x, z, i + 241) < 0.15 {
+                            continue;
+                        }
+                    }
                     let r = hash(x, z, i);
                     let o = c + off;
                     let g = half - vec2(0.03, 0.03) * hash(x, z, i + 7);
@@ -1305,6 +1433,59 @@ fn tuft(p: &mut Piece, at: Vec3, sx: usize, sz: usize, lights: &[Light]) {
 }
 
 /// 빛 지도를 입은 바닥 판(0044): 정점 색 = 바탕색 × 2(빛 지도가 빛의 반을 담는다), UV = 월드 XZ.
+/// `quad_lm`에 꼭짓점마다의 색(땅의 얼룩 — 0270 A).
+fn quad_lm_cols(p: &mut Piece, corners: [Vec3; 4], cols: [Color; 4], uv: &dyn Fn(Vec3) -> Vec2) {
+    let base = p.verts.len() as u16;
+    let mut n = (corners[1] - corners[0])
+        .cross(corners[2] - corners[0])
+        .normalize_or(Vec3::Y);
+    if n.y < 0.0 {
+        n = -n;
+    }
+    for (c, col) in corners.into_iter().zip(cols) {
+        let t = uv(c);
+        let c2 = Color::new(
+            (col.r * 2.0).min(1.0),
+            (col.g * 2.0).min(1.0),
+            (col.b * 2.0).min(1.0),
+            col.a,
+        );
+        p.verts
+            .push(with_normal(Vertex::new(c.x, c.y, c.z, t.x, t.y, c2), n));
+    }
+    p.idx
+        .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+}
+
+/// 월드 자리의 매끈한 0..1 값(`scale` m 격자의 `hash`를 부드럽게 이음 — 칸과 상관없이 이어진다, 0270 A).
+fn field(x: f32, z: f32, scale: f32, k: u32) -> f32 {
+    let (fx, fz) = (x / scale + 1000.0, z / scale + 1000.0);
+    let (ix, iz) = (fx.floor(), fz.floor());
+    let s = |t: f32| t * t * (3.0 - 2.0 * t);
+    let (tx, tz) = (s(fx - ix), s(fz - iz));
+    let h = |dx: usize, dz: usize| hash(ix as usize + dx, iz as usize + dz, k);
+    let a = h(0, 0) + (h(1, 0) - h(0, 0)) * tx;
+    let b = h(0, 1) + (h(1, 1) - h(0, 1)) * tx;
+    a + (b - a) * tz
+}
+
+/// 땅의 색(0270 A): 흙에 자갈 빛을 조금 섞고, 큰 얼룩으로 이끼(몫 `moss_amt` 남짓), 작은 얼룩으로 밝기 — 칸마다 튀지 않는다(0140).
+fn ground_color(f: &FloorLook, g: &Soil, v: Vec3) -> Color {
+    let lerp = |a: Color, b: Color, t: f32| {
+        Color::new(
+            a.r + (b.r - a.r) * t,
+            a.g + (b.g - a.g) * t,
+            a.b + (b.b - a.b) * t,
+            1.0,
+        )
+    };
+    let base = lerp(f.dirt, g.gravel, 0.3 * field(v.x, v.z, 3.0, 253));
+    let t = field(v.x, v.z, 5.5, 251);
+    let m = ((t - (1.0 - g.moss_amt)) / 0.18 + 0.5).clamp(0.0, 1.0);
+    let m = m * m * (3.0 - 2.0 * m);
+    mul(lerp(base, g.moss, m), 0.9 + 0.2 * field(v.x, v.z, 1.6, 252))
+}
+
 fn quad_lm(p: &mut Piece, corners: [Vec3; 4], col: Color, uv: &dyn Fn(Vec3) -> Vec2) {
     let base = p.verts.len() as u16;
     let c2 = Color::new(

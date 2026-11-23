@@ -12,7 +12,7 @@ impl Renderer {
             Some(rt) => rt.clone(),
             None => {
                 let rt = self.menu_rt(side, side);
-                if !self.render_item(item, &rt, ICON_PX, 0.0) {
+                if !self.render_item(item, &rt, ICON_PX, 0.0, false) {
                     return;
                 }
                 self.icons.insert((key, side), rt.clone());
@@ -42,6 +42,16 @@ impl Renderer {
 
     /// 고른 아이템 하나를 천천히 돌려 크게(0068): 타깃 하나를 매 프레임 다시 그린다(인형과 같은 값싼 패스).
     pub fn draw_item(&mut self, item: crate::item_view::Item, dest: Rect, spin: f32) {
+        self.draw_item_as(item, dest, spin, false);
+    }
+
+    /// 아직 얻지 못한 물건의 그림(2026-11-23 사장 "기록의 어떤 녀석은 실루엣이고 어떤 녀석들은 그냥 물음표" — 도감의 생물처럼
+    /// 검은 실루엣, `draw_creature`의 `dark`와 같은 빛).
+    pub fn draw_item_shadow(&mut self, item: crate::item_view::Item, dest: Rect, spin: f32) {
+        self.draw_item_as(item, dest, spin, true);
+    }
+
+    fn draw_item_as(&mut self, item: crate::item_view::Item, dest: Rect, spin: f32, dark: bool) {
         let side = self.menu_texels(dest.w, ITEM_PX);
         if self
             .item_rt
@@ -51,7 +61,7 @@ impl Renderer {
             self.item_rt = Some(self.menu_rt(side, side));
         }
         let rt = self.item_rt.clone().unwrap();
-        if self.render_item(item, &rt, ITEM_PX, spin) {
+        if self.render_item(item, &rt, ITEM_PX, spin, dark) {
             blit(&rt, dest);
         }
     }
@@ -65,6 +75,7 @@ impl Renderer {
         rt: &RenderTarget,
         px: u32,
         spin: f32,
+        dark: bool,
     ) -> bool {
         let v = crate::item_view::view(item);
         let Some(e) = self.lib.get(v.model) else {
@@ -125,7 +136,11 @@ impl Renderer {
             radius: rad * 8.0 + 2.0,
             shaft: false,
         };
-        self.batch.model(e, &self.pose, inst, WHITE, &[fire], 1.0);
+        if dark {
+            self.batch.model(e, &self.pose, inst, SHADOW_INK, &[], 0.0);
+        } else {
+            self.batch.model(e, &self.pose, inst, WHITE, &[fire], 1.0);
+        }
         self.batch.flush();
         set_look(saved);
         set_sky(saved_sky);
@@ -320,7 +335,7 @@ impl Renderer {
         });
         set_camera(&cam);
         clear_background(Color::new(0.0, 0.0, 0.0, 0.0));
-        let shadow = Color::new(0.04, 0.035, 0.05, 1.0);
+        let shadow = SHADOW_INK;
         let fire = crate::stage::Light {
             pos: vec3(-1.6, h + 1.0, 2.4),
             color: Color::new(1.0, 0.62, 0.25, 1.0),
@@ -453,3 +468,6 @@ pub(crate) fn doll_eye(b: (f32, f32, f32), aspect: f32) -> (Vec3, Vec3) {
 
 /// 도감 생물 그림의 세로 시야(라디안).
 const CREATURE_FOVY: f32 = 0.55;
+
+/// 아직 모르는 것의 실루엣 빛(도감 — 생물·물건이 같다).
+const SHADOW_INK: Color = Color::new(0.04, 0.035, 0.05, 1.0);

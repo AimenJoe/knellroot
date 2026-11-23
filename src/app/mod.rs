@@ -167,6 +167,9 @@ pub struct App {
     cursor: usize,
     /// 기술 탭의 되돌리기 단추로 내려오기 전의 칸(0261 — 단추에서 위로 가면 거기로).
     respec_from: usize,
+    /// 기술 탭 줄의 열림(2026-11-23 사장 "기술을 열었을 때 선이 사라지면서 안내도 없어지는 연출"): 이미 본 열린 줄(비트 — 없으면
+    /// 아직 그린 적 없음: 처음 그릴 때 열린 줄은 연출 없이 숨긴다)과 줄마다 열린 때(`clock`).
+    skill_rows: (Option<u8>, [f32; 6]),
     /// 지난 프레임에 그린 메뉴 줄·▲▼ 자리(탭 판정).
     hits: Vec<(Rect, Hit)>,
     /// 붙잡아 둔 메뉴 누름(0207): 눌린 꼴을 `PRESS_HOLD` 동안 보인 뒤 그 확인·탭을 장면에 넘긴다.
@@ -401,6 +404,7 @@ impl App {
             stack: stack::Stack::new(Scene::Title),
             cursor: 0,
             respec_from: 0,
+            skill_rows: (None, [f32::NEG_INFINITY; 6]),
             hits: Vec::new(),
             press: None,
             press_queue: std::collections::VecDeque::new(),
@@ -720,6 +724,7 @@ impl App {
 
     /// 장면을 바꾼다(0066): 지금 칸의 커서·창을 스택에 맡기고, 새 맨 위의 것(연 창이면 처음 포커스, 닫았으면 연 자리)을 받는다.
     fn go(&mut self, go: Go) {
+        let go = self.codex_entry(go);
         if let Some((cursor, view)) = self.stack.go(go, self.cursor, self.view) {
             self.cursor = cursor;
             self.view = view;
