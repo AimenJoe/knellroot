@@ -92,7 +92,10 @@ async function main() {
   // 설정(0052 → 0164 탭 → 0261): 다시 멈추면 마지막에 보던 기술 탭에서 열린다 → E = 기록(첫 묶음 여정 — → 한 번이면 적, 0265) → E = 설정. 조작 설정은 끝에서 넷째
   // (개발·처음부터·타이틀로 위 — 위로 네 번, 전체 화면 줄이 있든 없든).
   await press('Escape'); await until('Skills { host: Pause', '멈춤 = 마지막에 보던 기술 탭');
-  await press('KeyE'); await until('Codex { host: Pause, tab: 0', 'E = 기록 탭(첫 묶음 여정, 0265)'); await shot('00h1-journey');
+  // 기록 탭은 받을 것이 있는 묶음에서 열린다(2026-11-23) — 여정(첫 묶음)까지 ←로 돌아간다.
+  await press('KeyE'); await until('Codex { host: Pause', 'E = 기록 탭');
+  for (let k = 0; k < 8 && !String(await page.evaluate(() => window.knellScene)).startsWith('Codex { host: Pause, tab: 0'); k++) await press('ArrowLeft');
+  await until('Codex { host: Pause, tab: 0', '← = 기록 탭의 첫 묶음 여정(0265)'); await shot('00h1-journey');
   await press('ArrowRight'); await until('Codex { host: Pause, tab: 1', '→ = 기록 탭의 적 묶음'); await shot('00h1-codex');
   await press('KeyE'); await until('Settings { host: Pause', 'E = 설정 탭');
   await shot('00h2-settings');
