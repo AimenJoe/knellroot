@@ -604,6 +604,9 @@ pub struct Strings {
     pub bag_do_keep: &'static str,
     pub bag_do_unkeep: &'static str,
     pub bag_do_drop: &'static str,
+    /// 덧옷을 걸친다·벗는다(2026-11-23 — 가방의 덧옷 칸).
+    pub bag_do_don: &'static str,
+    pub bag_do_doff: &'static str,
     pub bag_do_salvage: &'static str,
     pub bag_do_away: &'static str,
     pub bag_tidy: &'static str,
@@ -1489,6 +1492,8 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.bag_do_keep,
         s.bag_do_unkeep,
         s.bag_do_drop,
+        s.bag_do_don,
+        s.bag_do_doff,
         s.bag_do_salvage,
         s.bag_do_away,
         s.bag_tidy,

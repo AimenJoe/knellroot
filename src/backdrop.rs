@@ -1418,6 +1418,10 @@ mod tests {
             ] {
                 all.push((k, c.r, c.g, c.b));
             }
+            if let Some(g) = f.ground {
+                all.push(("ground moss", g.moss.r, g.moss.g, g.moss.b));
+                all.push(("gravel", g.gravel.r, g.gravel.g, g.gravel.b));
+            }
             for (k, r, g, b) in all {
                 let (h, s) = hsv(r, g, b);
                 let violet = (250.0..=340.0).contains(&h) && s > 0.12;

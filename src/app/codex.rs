@@ -366,13 +366,29 @@ impl App {
                     lines.extend(self.pane_wrap(&w, tr(flavor), GUESS));
                 }
             } else {
-                self.ui.text_center(
-                    "?",
-                    icon.x + icon.w * 0.5,
-                    icon.y + (icon.h - self.ui.px(1.6 * k)) * 0.5,
-                    1.6 * k,
-                    ui::BORDER,
-                );
+                // 못 가진 것도 실루엣(2026-11-23 사장 "어떤 녀석은 실루엣이고 어떤 녀석들은 그냥 물음표" — 생물과 같은 꼴).
+                if crate::item_view::has_view(d.item) {
+                    let side = crate::render::ITEM_PX as f32
+                        * (icon.w / crate::render::ITEM_PX as f32).floor().max(1.0);
+                    let dest = Rect::new(
+                        (icon.x + (icon.w - side) * 0.5).round(),
+                        (icon.y + (icon.h - side) * 0.5).round(),
+                        side,
+                        side,
+                    );
+                    let t = get_time() as f32;
+                    let spin = self.codex_view.yaw.unwrap_or(0.7 * (t * 0.8).sin());
+                    self.renderer.draw_item_shadow(d.item, dest, spin);
+                    self.codex_view.rect = Some(icon);
+                } else {
+                    self.ui.text_center(
+                        "?",
+                        icon.x + icon.w * 0.5,
+                        icon.y + (icon.h - self.ui.px(1.6 * k)) * 0.5,
+                        1.6 * k,
+                        ui::BORDER,
+                    );
+                }
                 lines.extend(self.pane_wrap(&w, s.codex_not_owned, DIM));
             }
             lines.push(Ln::Gap);
