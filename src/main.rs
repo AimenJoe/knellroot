@@ -46,6 +46,7 @@ mod lab;
 mod model;
 mod models;
 mod nav;
+mod plates;
 mod prefs;
 mod prof;
 mod progress_notes;
