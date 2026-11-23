@@ -437,7 +437,7 @@ impl Renderer {
         self.particles(v, w, t, &lights, cam_right, cam_up);
         drop(p_parts);
         let p_haze = crate::prof::span("haze");
-        self.horizon_haze(t, fwd, iw, ih);
+        self.horizon_haze(t, fwd, cam.haze_weight(), iw, ih);
         drop(p_haze);
         set_actor_shade(None);
         drop(p_faded);

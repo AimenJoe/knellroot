@@ -210,6 +210,8 @@ const ARCH_JAMB_H: f32 = 2.6;
 /// 문이 다 열리는 초(`gate_open`이 여기까지 오른다 — 렌더의 `GATE_TIME`과 같은 값).
 pub const GATE_OPEN_TIME: f32 = 1.5;
 pub const EXIT_REACH: f32 = 2.4;
+/// 서막 숲 끝(0265): 표지 줄을 넘으면(북쪽으로) 이 반폭 안이면 밟은 것으로 — 아치 앞 마당 폭(7칸 = 14m)을 덮는다.
+pub const EXIT_SPAN: f32 = 8.0;
 /// 쓰러진 통나무(0262 — 서막 숲의 뛰어넘는 턱): 지도 `J` 둘이 한 짝(위에서부터 차례로) — 그 둘을 잇는 턱의 낮은 쪽에 통나무를 눕혀
 /// 굽는다(`scenery`, 그림만 — 부딪힘·높이는 높이 격자의 턱 그대로).
 pub const LOG_GLYPH: char = 'J';
@@ -1233,8 +1235,14 @@ impl StageRun {
             self.zone = z;
             self.card = Some((self.def.zones[z].0, CARD_TIME));
         }
-        // 서막 숲 끝(0262): 표지를 밟으면 성소로.
-        if self.def.prologue && self.exit_at.is_some_and(|e| flat(e) <= EXIT_REACH) {
+        // 서막 숲 끝(0262): 표지를 밟으면 성소로. 표지 줄을 넘어 아치 쪽으로 가도(2026-11-23 사장 "입장하려 할 때 트리거 안 되고
+        // 지나가는 스팟이 있음" — 아치 앞 마당이 넓어 표지 둘레를 비껴 아치를 지날 수 있었다).
+        let past_mark = |e: Vec3| pp.z <= e.z && (pp.x - e.x).abs() <= EXIT_SPAN;
+        if self.def.prologue
+            && self
+                .exit_at
+                .is_some_and(|e| flat(e) <= EXIT_REACH || past_mark(e))
+        {
             return StageOut::Onward;
         }
         match self.phase {

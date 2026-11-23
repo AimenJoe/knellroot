@@ -271,9 +271,15 @@ impl App {
             }
             interlude::Hold::Idle => self.step_world(&Actions::default()),
             interlude::Hold::Walk(k) => {
-                // 성소 쪽(북, 월드 −z)으로 걷는다.
+                // 성소 쪽(북, 월드 −z)으로 걷는다 — 아치가 있으면 그 가운데로 향해(아치 앞 마당 옆에서 트리거됐어도 설주에 걸리지 않게,
+                // 2026-11-23), 아치를 지나면 곧장 북쪽.
+                let p = self.world.player.pos;
+                let want = match self.run.level.arch() {
+                    Some(a) if p.z > a.z + 0.5 => vec3(a.x - p.x, 0.0, (a.z - 1.0) - p.z),
+                    _ => Vec3::NEG_Z,
+                };
                 let a = Actions {
-                    move_dir: self.stick_toward(Vec3::NEG_Z) * k,
+                    move_dir: self.stick_toward(want) * k,
                     ..Actions::default()
                 };
                 self.step_world(&a);

@@ -70,17 +70,20 @@ async function run(browser, lang) {
   const rest = async (what) => { await press('KeyF'); await until(/host: Hearth/, what || '화로에서 쉬기'); await page.waitForTimeout(300); };
   const close = async (what) => { await press('Escape'); await until('Play', what || '창 닫기'); await page.waitForTimeout(200); };
   const pause = async (what) => { await press('Escape'); await until(/host: Pause/, what || '멈춤'); await page.waitForTimeout(200); };
-  // 기술 화면의 걸음(0161): 가장자리에서 돌지 않는다 — 왼쪽·위로 넉넉히 누르면 왼쪽 위 칸(휘돌이).
-  const home = async () => { await press('ArrowLeft', 6); await press('ArrowUp', 6); };
+  // 기술 화면의 걸음(0161): 가장자리에서 돌지 않는다 — 왼쪽·위로 넉넉히 누르면 왼쪽 위 칸. 맨 위 띠는 결의 줄(2026-11-23)이라
+  // 거기서 한 줄 내려 다시 왼쪽 끝 = 첫 줄의 왼쪽 칸(휘돌이).
+  const home = async () => {
+    await press('ArrowLeft', 6); await press('ArrowUp', 10); await press('ArrowDown'); await press('ArrowLeft', 6);
+  };
   // 모든 칸을 지난다: 보이는 줄 다섯(스킬 넷 · 패시브 여섯 · 스킬 넷 · 패시브 여섯 · 큰 기술과 패시브 여섯)을 왼쪽에서 오른쪽으로.
   // 오른쪽 끝에서 더 누르지 않는다(0261부터 오른쪽 걸음은 격자에서 끝나지만 — 되돌리기 단추는 맨 아래 줄에서 아래로만). `shots` = 찍을 줄(없으면 모두) — 줄마다 칸 하나씩 돌려 가며.
   // 끝나면 맨 아래 줄의 왼쪽 칸(몰아치기)에 선다.
   const sweep = async (name, shots) => {
-    await home();
+    await home(); await press('ArrowUp'); await press('ArrowLeft', 6);
     // 줄마다의 칸(위 → 아래): 스킬 넷 · 패시브 여섯 · 스킬 넷 · 패시브 여섯 + 다리 둘 · 큰 기술과 패시브 여섯 · 새 스킬 셋 ·
     // 패시브 여섯 + 다리 둘 · 맺음 셋(0214 · 0215).
-    // 맨 아래는 결의 줄(0223 11절 — 타입 넷).
-    const COLS = [4, 6, 4, 8, 6, 3, 8, 3, 4];
+    // 맨 위는 결의 줄(0223 11절 — 타입 넷, 2026-11-23부터 판의 맨 위).
+    const COLS = [4, 4, 6, 4, 8, 6, 3, 8, 3];
     for (let row = 0; row < COLS.length; row++) {
       for (let col = 0; col < COLS[row]; col++) {
         if (!shots || shots.includes(row)) await shot(`${name}-r${row}c${col}`);
@@ -354,7 +357,7 @@ async function run(browser, lang) {
     // 성장 → E 셋 = 기술(장비·가방을 지나, 0263).
     await press('KeyE', 3); await until('Skills { host: Hearth', `${name}: 성장 → 기술 탭`);
     await shot(`20-${name}-skills`);
-    await sweep(`20-${name}`, [0, 4]);
+    await sweep(`20-${name}`, [1, 5]);
     await close(`${name}: 화로 창 닫기`);
     // 멈춤(다시 띄운 판이라 장비 탭, 0261) → E 둘 = 기술(가방을 지나).
     await pause(`${name}: 멈춤`); await until('Equip { host: Pause', `${name}: 멈춤 = 장비 탭`);

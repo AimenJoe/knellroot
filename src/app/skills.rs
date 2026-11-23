@@ -465,8 +465,23 @@ pub(super) mod geo {
     pub const RESPEC_W: f32 = 150.0;
     pub const RESPEC_H: f32 = 16.0;
 
+    /// 띠를 그리는 차례(2026-11-23 사장 "속성 패시브가 가장 위쪽에 올라와서 보이도록"): 결의 줄(타입마다의 패시브)이 맨 위,
+    /// 그 아래로 판의 줄 차례.
+    pub fn band_order(row: usize) -> usize {
+        if row == crate::skills::VEIN_ROW {
+            0
+        } else {
+            row + 1
+        }
+    }
+
     pub fn band_top(row: usize) -> f32 {
-        HEAD_H + BAND_H[..row].iter().sum::<f32>()
+        let me = band_order(row);
+        HEAD_H
+            + (0..BAND_H.len())
+                .filter(|&r| band_order(r) < me)
+                .map(|r| BAND_H[r])
+                .sum::<f32>()
     }
 
     /// 굴리는 내용의 높이(띠 셋).
@@ -474,6 +489,9 @@ pub(super) mod geo {
         BAND_H.iter().sum()
     }
 }
+
+/// 열린 줄의 안내·선이 걷히는 초(2026-11-23).
+const ROW_FADE: f32 = 0.8;
 
 /// 칸 하나의 자리: 가운데와 반 변(반지름).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1287,31 +1305,48 @@ impl App {
         let port = w.rect(0.0, geo::HEAD_H, geo::GRID_W, room);
         let (port_top, port_bottom) = (port.y, port.y + port.h);
         ui::clip(Some(port));
-        // 줄 띠: 가는 선 + 오른쪽 끝의 이름("처음부터" / "쓴 점수 4부터" — 잠겼으면 몇 점 더). 글은 다 보일 때만(잘린 글은 그리지 않는다).
+        // 줄 띠: 가는 선 + 오른쪽 끝의 이름. 잠긴 줄만 "쓴 점수 N부터 · n점 더"(2026-11-23 사장 "열린 후엔 필요 없음") — 열리는 순간
+        // 선이 이름 쪽으로 걷히며 이름과 함께 사라진다(`ROW_FADE`). 결의 줄은 띠 이름 그대로. 글은 다 보일 때만(잘린 글은 그리지 않는다).
         let spent = board.spent();
-        for row in 0..sk::ROW_NEEDS.len() {
-            let need = sk::ROW_NEEDS[row];
+        let open_mask: u8 = (0..sk::ROW_NEEDS.len())
+            .filter(|&r| r != sk::VEIN_ROW && spent >= sk::ROW_NEEDS[r])
+            .fold(0, |m, r| m | (1 << r));
+        let (seen, opened) = &mut self.skill_rows;
+        let was = seen.unwrap_or(open_mask);
+        for (r, t) in opened.iter_mut().enumerate() {
+            if open_mask & !was & (1 << r) != 0 {
+                *t = self.clock;
+            }
+        }
+        *seen = Some(open_mask);
+        let opened_at = *opened;
+        for (row, (&need, &since)) in sk::ROW_NEEDS.iter().zip(opened_at.iter()).enumerate() {
+            let open = open_mask & (1 << row) != 0;
+            // 열린 줄: 열린 뒤 `ROW_FADE`초 동안만 걷히며 보이고 그 뒤엔 없다.
+            let fade = if open {
+                1.0 - ((self.clock - since) / ROW_FADE).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            if fade <= 0.0 {
+                continue;
+            }
             let label = if row == sk::VEIN_ROW {
                 s.sk_row_vein.to_string()
-            } else if need == 0 {
-                s.sk_row_first.to_string()
-            } else if spent < need {
+            } else {
                 fill(
                     s.sk_row_locked,
-                    &[&need.to_string(), &(need - spent).to_string()],
+                    &[&need.to_string(), &(need.saturating_sub(spent)).to_string()],
                 )
-            } else {
-                fill(s.sk_row_from, &[&need.to_string()])
             };
             let top = geo::band_top(row) - off;
             let lk = 0.6 * k;
             let lw = self.ui.width(&label, lk);
             let right = w.at(geo::GRID_W, 0.0).x;
             let y = w.at(0.0, top).y;
-            let ink = if spent < need {
-                Color { a: 0.8, ..DIM }
-            } else {
-                DIM
+            let ink = Color {
+                a: if row == sk::VEIN_ROW { 1.0 } else { 0.8 } * fade,
+                ..DIM
             };
             let shown = y >= port_top - 0.5 && y + self.ui.px(lk) <= port_bottom + 0.5;
             if shown {
@@ -1319,13 +1354,16 @@ impl App {
             }
             let ly = (y + self.ui.px(lk) * 0.55).round();
             let line_end = if shown { right - lw - u * 5.0 } else { right };
+            // 걷힘: 선의 왼끝이 이름 쪽으로 따라간다(빠르게 시작해 느리게).
+            let wipe = 1.0 - fade * fade;
+            let line_start = w.origin.x + (line_end - w.origin.x) * wipe;
             draw_rectangle(
-                w.origin.x,
+                line_start,
                 ly,
-                line_end - w.origin.x,
+                line_end - line_start,
                 1.0,
                 Color {
-                    a: 0.55,
+                    a: 0.55 * fade,
                     ..ui::BORDER
                 },
             );
@@ -2092,11 +2130,10 @@ mod tests {
                 moved_at = Some((step, ENTRIES[at_].row()));
             }
         }
-        assert_eq!(ENTRIES[at_].row(), sk::VEIN_ROW, "down to the veins");
-        assert_eq!(
-            moved_at.map(|m| m.1),
-            Some(2),
-            "the first two bands need no scroll"
+        assert_eq!(ENTRIES[at_].row(), sk::KEY_ROW, "down to the keys");
+        assert!(
+            moved_at.is_some_and(|m| m.1 >= 1),
+            "the veins and the first band need no scroll: {moved_at:?}"
         );
         assert_eq!(
             view.offset(),
@@ -2110,7 +2147,11 @@ mod tests {
             view.reveal(y0, y1);
             assert!(visible(&view, at_));
         }
-        assert_eq!(ENTRIES[at_].row(), 0);
+        assert_eq!(
+            ENTRIES[at_].row(),
+            sk::VEIN_ROW,
+            "the veins are the top band"
+        );
         assert_eq!(view.offset(), 0.0);
     }
 
@@ -2127,15 +2168,17 @@ mod tests {
         assert_eq!(walk(cut, -1, 0, true, 0), whirl);
         // 가장자리: 왼쪽 끝에서 왼쪽·맨 위에서 위·맨 아래에서 아래는 그대로(돌지 않는다).
         assert_eq!(walk(whirl, -1, 0, true, 0), whirl);
-        assert_eq!(walk(whirl, 0, -1, true, 0), whirl);
         let flurry = at(Entry::Ult(Ult::Flurry));
         let measure = at(Entry::Key(crate::progression::Key::Measure));
-        // 맺음 아래는 결의 줄(0223 11절) — 거기가 맨 아래다.
+        // 결의 줄(0223 11절)은 맨 위(2026-11-23 사장 "속성 패시브가 가장 위쪽에") — 첫 줄 위로 오르면 거기, 거기서 위는 그대로.
+        // 맨 아래는 맺음 줄.
         let ember = at(Entry::Vein(crate::progression::Vein::Ember));
         let rift = at(Entry::Vein(crate::progression::Vein::Rift));
-        assert_eq!(walk(measure, 0, 1, false, 0), ember);
-        assert_eq!(walk(ember, 0, 1, false, 0), ember);
-        assert_eq!(walk(ember, 0, -1, false, 0), measure);
+        let up = walk(whirl, 0, -1, true, 0);
+        assert!(matches!(ENTRIES[up], Entry::Vein(_)), "{:?}", ENTRIES[up]);
+        assert_eq!(walk(ember, 0, -1, true, 0), ember);
+        assert!(matches!(ENTRIES[walk(ember, 0, 1, true, 0)].row(), 0));
+        assert_eq!(walk(measure, 0, 1, false, 0), measure);
         assert_eq!(walk(rift, 1, 0, false, 0), rift);
         assert_eq!(
             walk(rift, 1, 0, true, 0),
@@ -2169,14 +2212,12 @@ mod tests {
         );
         // 되돌리기 단추(창 아래 오른쪽 — 화로에서만): 맨 아래에서 **아래**로만 닿는다 — 오른쪽 걸음은 격자에서 끝난다(0261).
         // 단추에서 위는 내려오기 전의 칸(`back`)으로, 옆·아래는 그대로.
-        // 오른쪽 아래 칸은 결의 줄의 끝(0223 11절 — 맺음 줄 아래).
-        let step = rift;
-        assert_eq!(step, NE - 1);
+        // 오른쪽 아래 칸은 맺음 줄의 끝(결의 줄이 맨 위로 간 뒤, 2026-11-23).
+        let rooted = at(Entry::Key(crate::progression::Key::Rooted));
+        let step = rooted;
         assert_eq!(walk(step, 1, 0, true, 0), step);
         assert_eq!(walk(step, 0, 1, true, 0), RESPEC);
-        assert_eq!(walk(ember, 0, 1, true, 0), RESPEC);
-        let rooted = at(Entry::Key(crate::progression::Key::Rooted));
-        assert_eq!(walk(rooted, 0, 1, true, 0), rift);
+        assert_eq!(walk(measure, 0, 1, true, 0), RESPEC);
         assert_eq!(walk(step, 1, 0, false, 0), step, "no button in the pause");
         assert_eq!(walk(step, 0, 1, false, 0), step);
         assert_eq!(
@@ -2185,13 +2226,13 @@ mod tests {
             "the right edge is the end"
         );
         assert_eq!(
-            walk(RESPEC, 0, -1, true, ember),
-            ember,
+            walk(RESPEC, 0, -1, true, measure),
+            measure,
             "back where it came from"
         );
         assert_eq!(walk(RESPEC, 0, -1, true, step), step);
         for (dx, dy) in [(1, 0), (-1, 0), (0, 1)] {
-            assert_eq!(walk(RESPEC, dx, dy, true, ember), RESPEC);
+            assert_eq!(walk(RESPEC, dx, dy, true, measure), RESPEC);
         }
         // 어느 칸에서도 오른쪽으로는 단추에 닿지 않는다.
         for i in 0..NE {

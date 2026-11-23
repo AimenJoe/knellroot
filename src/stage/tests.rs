@@ -741,6 +741,28 @@ fn placed_enemies_stand_at_their_marks_from_the_start() {
 
 /// 0113: 화로 곁은 처음부터 안전하다 — 서 있는 적이 화로 곁의 플레이어를 알아차리지 않는다(쉴 수 있다).
 #[test]
+fn every_hearth_has_room_around_it() {
+    /// 화톳불 둘레를 비우는 거리(m) — 쉬는 거리 `REST_SAFE`보다 조금 넉넉히.
+    const HEARTH_CLEAR: f32 = 10.5;
+    // 2026-11-23(사장 "정원 깊은 곳, 화톳불과 적들이 너무 가까움" — 가시짐승이 화톳불에서 4.5m에 서 있었다): 서 있는 적·엘리트·떼는
+    // 화톳불에서 `HEARTH_CLEAR` 밖에 둔다(쉬는 거리 `REST_SAFE`보다 넉넉히 — 쉬고 일어나 바로 싸움이 되지 않게).
+    let mut close = Vec::new();
+    for def in STAGES {
+        let (run, w) = StageRun::start(def);
+        for r in &run.rests {
+            for e in w.enemies.iter().filter(|e| !e.boss) {
+                let d = vec2(e.pos.x - r.x, e.pos.z - r.z).length();
+                if d < HEARTH_CLEAR {
+                    let cell = run.level.cell_of(e.pos);
+                    close.push(format!("{} {:?} {cell:?} {d:.1}m", def.find_prefix, e.kind));
+                }
+            }
+        }
+    }
+    assert!(close.is_empty(), "too near a hearth: {close:#?}");
+}
+
+#[test]
 fn every_hearth_starts_safe_from_the_placed_enemies() {
     // 0118: 모든 지역.
     for def in STAGES {
@@ -1482,6 +1504,21 @@ fn the_forest_bell_rings_from_its_end_and_stepping_there_goes_onward() {
         );
     }
     let exit = run.exit_at.unwrap();
+    // 표지 둘레를 비껴(옆으로 4m) 표지 줄을 넘어도 — 아치 쪽으로 가는 길은 다 걸린다(2026-11-23 사장 "트리거 안 되고 지나가는 스팟").
+    let (mut side, mut ws) = StageRun::start(STAGES[PROLOGUE]);
+    ws.enemies.clear();
+    ws.player.pos = exit + vec3(4.0, 0.0, 1.0);
+    ws.player.prev = ws.player.pos;
+    assert_eq!(
+        tick(&mut side, &mut ws, Actions::default()),
+        StageOut::Playing
+    );
+    ws.player.pos = exit + vec3(4.0, 0.0, -0.2);
+    ws.player.prev = ws.player.pos;
+    assert_eq!(
+        tick(&mut side, &mut ws, Actions::default()),
+        StageOut::Onward
+    );
     w.player.pos = exit + vec3(0.0, 0.0, 1.0);
     w.player.prev = w.player.pos;
     assert_eq!(tick(&mut run, &mut w, Actions::default()), StageOut::Onward);

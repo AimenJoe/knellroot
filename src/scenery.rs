@@ -54,6 +54,9 @@ fn hash(x: usize, z: usize, k: u32) -> f32 {
     (h & 0xffff) as f32 / 65535.0
 }
 
+/// 꺼진 화로의 불씨 빛 반지름 몫(2026-11-23).
+const COLD_REACH: f32 = 0.35;
+
 /// 조용한 바닥(0140): 줄눈(`FloorLook::mortar_calm`)을 석판의 2/3 밝기로(예전 0.3배 — 화면에서 가장 센 대비가 바닥 격자였다),
 /// 석판마다의 밝기 차는 ±6%로 줄이고 대신 여러 칸에 걸친 큰 얼룩(±10%)으로, 석판 옆면도 덜 어둡게.
 const SLAB_SIDE_CALM: f32 = 0.82;
@@ -445,14 +448,25 @@ impl Scenery {
         let lights: Vec<Light> = lv
             .lights
             .iter()
-            .filter(|l| !cold(l.pos))
-            .map(|l| Light {
-                radius: if look.key && !l.shaft {
+            .map(|l| {
+                let reach = if look.key && !l.shaft {
                     l.radius * FIRE_REACH
                 } else {
                     l.radius
-                },
-                ..*l
+                };
+                // 꺼진 화로(0171)는 꺼져 가는 불씨의 작은 빛만(2026-11-23 — 그 전엔 빛을 뺐다: 어둠 속의 돌 고리가 보이지 않았다).
+                if cold(l.pos) {
+                    Light {
+                        radius: reach * COLD_REACH,
+                        color: Color::new(l.color.r * 0.8, l.color.g * 0.55, l.color.b * 0.4, 1.0),
+                        ..*l
+                    }
+                } else {
+                    Light {
+                        radius: reach,
+                        ..*l
+                    }
+                }
             })
             .collect();
         let mut pieces = Vec::new();

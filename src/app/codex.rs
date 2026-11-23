@@ -118,6 +118,35 @@ impl App {
         }
     }
 
+    /// 기록 탭에 들어올 때(다른 탭·멈춤에서 — 기록 탭 안의 묶음 넘기기는 아니다) 받을 것이 있는 첫 묶음에서 연다(2026-11-23 사장
+    /// "기록에는 새로운 게 있다는 인디케이터가 있지만 들어가 보면 막상 받을 보상이 없는 경우" — 받을 것이 장신구·적 묶음에 있어도 늘
+    /// 여정 묶음에서 열려 빈손으로 보였다). 받을 것이 없으면 여정.
+    pub(super) fn codex_entry(&self, go: Go) -> Go {
+        let into = |s: Scene| match s {
+            Scene::Codex { host, tab: 0 } if !matches!(self.scene(), Scene::Codex { .. }) => {
+                Scene::Codex {
+                    host,
+                    tab: self.codex_start() as u8,
+                }
+            }
+            s => s,
+        };
+        match go {
+            Go::Open(s) => Go::Open(into(s)),
+            Go::Swap(s) => Go::Swap(into(s)),
+            g => g,
+        }
+    }
+
+    fn codex_start(&self) -> usize {
+        if crate::journey::any_ready(&self.progress) {
+            return JOURNEY;
+        }
+        (FOES..GROUPS)
+            .find(|&t| self.codex_group_ready(t))
+            .unwrap_or(JOURNEY)
+    }
+
     /// 받을 도감 칸이 하나라도 있나(기록 탭 머리의 민트 점, 묶음 머리의 민트 글).
     pub(super) fn codex_ready(&self) -> bool {
         (FOES..GROUPS).any(|t| self.codex_group_ready(t))
