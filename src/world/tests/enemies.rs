@@ -620,3 +620,29 @@ fn a_packbearer_without_its_load_walks_slower() {
         "{full} → {light}"
     );
 }
+
+/// 0269: 적의 공격이 풀린 틱에 월드가 `Event::EnemyStrike`를 낸다 — 빗나가도(방랑자가 멀다), 몸의 자리·바라보는 쪽·꼴과 함께.
+#[test]
+fn a_swing_that_misses_still_tells_the_app_where_it_landed() {
+    let t = Tuning::default();
+    let mut w = World::new("test", 20.0);
+    w.spawn_mob(vec3(0.0, 0.0, -8.0));
+    let en = &mut w.enemies[0];
+    en.facing = 0.0;
+    en.atk = Atk::Smash;
+    en.state = EState::Swing { t: 0.0 };
+    let ev = w.step(&Actions::default(), &t);
+    let strikes: Vec<_> = ev
+        .iter()
+        .filter_map(|e| match *e {
+            Event::EnemyStrike { at, blow, boss, .. } => Some((at, blow, boss)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(strikes.len(), 1, "{ev:?}");
+    let (at, blow, boss) = strikes[0];
+    assert!(matches!(blow, crate::enemy::Blow::Around { .. }));
+    assert!(!boss);
+    assert!(at.distance(w.enemies[0].pos) < 0.5);
+    assert!(!ev.iter().any(|e| matches!(e, Event::PlayerHurt)));
+}

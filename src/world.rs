@@ -149,6 +149,14 @@ pub enum Event {
     CartWarn {
         at: Vec3,
     },
+    /// 적의 공격이 풀렸다(0269 — 예고와 따로, 맞든 안 맞든 판정이 나간 틱): `at` = 그 공격이 떨어진 바닥(몸·심은 자리·돌진이 닿은 자리),
+    /// `dir` = 적이 바라보는 쪽, `blow` = 꼴과 크기(판정과 같은 값), `boss` = 문지기·보스(더 크게). 앱이 이펙트로만 쓴다.
+    EnemyStrike {
+        at: Vec3,
+        dir: Vec3,
+        blow: crate::enemy::Blow,
+        boss: bool,
+    },
     /// 지연 공격이 곧 풀린다(0128 — 정점에서 버티던 적이 내리치기 직전, 앱이 소리를 낸다).
     Release {
         at: Vec3,

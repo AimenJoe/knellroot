@@ -547,6 +547,24 @@ impl App {
                     }
                 }
                 Event::CartWarn { .. } => 0.0,
+                // 적의 공격이 풀린 순간(0269): 문지기·보스가 땅을 치는 것만 가까울 때 덜컹 — 잡몹의 타는 그림이 말한다.
+                Event::EnemyStrike {
+                    at,
+                    boss: true,
+                    blow,
+                    ..
+                } if !matches!(
+                    blow,
+                    crate::enemy::Blow::Volley | crate::enemy::Blow::Hook { .. }
+                ) =>
+                {
+                    if at.distance(self.world.player.pos) < 14.0 {
+                        SHAKE_SLAM * 0.6
+                    } else {
+                        0.0
+                    }
+                }
+                Event::EnemyStrike { .. } => 0.0,
                 Event::Rouse { .. } => SHAKE_ROUSE,
                 // 사슬이 끊긴다(0208 — 3단계): 2단계 전환보다 크게.
                 Event::Unchain { .. } => SHAKE_ROUSE * 1.4,
