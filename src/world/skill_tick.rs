@@ -12,20 +12,25 @@ use super::*;
 use crate::skills::{Cap, Eff, Form, Twist, FLURRY, LINE, UPEND};
 use crate::status::{Dose, NO_DOSE};
 use crate::tuning::{
-    BASH_CUT_STAGGER, BASH_PUSH, BLADE_CATCH, BLADE_HEIGHT, ERUPT_RING_MAX, HOP_DASH, HOP_EMPTY,
-    HOP_GAP, SKILL_DENIED_SHOW, SKILL_HITSTOP, SPIRE_DELAY, ULT_HITSTOP, ULT_KILL_WINDOW,
+    BASH_CUT_STAGGER, BASH_PUSH, BELL_CONE, BLADE_CATCH, BLADE_HEIGHT, ERUPT_RING_MAX, HOP_DASH,
+    HOP_EMPTY, HOP_GAP, SKILL_DENIED_SHOW, SKILL_HITSTOP, SPIRE_DELAY, ULT_HITSTOP,
+    ULT_KILL_WINDOW,
 };
 
 mod fields;
 mod ult;
 
-/// 곧 터질 "모인 자리"(끌어모으기 ㄱ): `left`초 뒤 `at` 둘레 `radius` m에 `damage`.
+/// 곧 터질 "모인 자리"(끌어모으기 ㄱ): `left`초 뒤 `at` 둘레 `radius` m에 `damage`. 종 치기(0270 C3)의 종은 `on` = 종을 건 적
+/// (그 적이 서 있는 자리에서 울린다 — 쓰러졌으면 마지막 자리), `dose` = 울림이 싣는 타입, `toll` = 울림으로 그린다(렌더가 종을 그린다).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Burst {
     pub at: Vec3,
     pub left: f32,
     pub radius: f32,
     pub damage: i32,
+    pub on: Option<usize>,
+    pub dose: Dose,
+    pub toll: bool,
 }
 
 /// 갈라진 땅(땅울림 ㄴ): 찍은 부채꼴이 `left`초 남는다 — 그 안의 적은 `slow`배로 걷는다. 렌더가 바닥에 그린다.
@@ -311,8 +316,15 @@ impl World {
                 .or(lock)
                 .or_else(|| self.tap_seek(cx, len))
                 .unwrap_or(facing),
-            // 뿌리 솟기·막아치기(0214): 조준 > 락온 > 닿는 거리의 가장 가까운 적 > 바라보는 쪽.
-            Form::Bash { range, .. } => cx
+            // 뿌리 솟기·막아치기(0214)·바늘땀·종 치기(0270 C3): 조준 > 락온 > 닿는 거리의 가장 가까운 적 > 바라보는 쪽.
+            // 종 치기는 한 대상이라 숄더뷰에서는 크로스헤어가 먼저(0230).
+            Form::Bell { range, .. } => cx
+                .sight
+                .or(cx.aim)
+                .or(lock)
+                .or_else(|| nearest_in_reach(&self.enemies, pl.pos, range + 1.0, None))
+                .unwrap_or(facing),
+            Form::Bash { range, .. } | Form::Stab { range, .. } => cx
                 .aim
                 .or(lock)
                 .or_else(|| nearest_in_reach(&self.enemies, pl.pos, range + 1.0, None))
@@ -420,7 +432,9 @@ impl World {
                     );
                 }
             }
-            Form::Lane { half, time, .. } => {
+            Form::Lane {
+                half, time, push, ..
+            } => {
                 if crossed(s.startup) {
                     self.skill_ev.push(Event::Skill { id, at, dir });
                 }
@@ -435,13 +449,18 @@ impl World {
                     // 스치는 몸(ㄴ): 지나는 동안 맞지 않는다.
                     self.player.skill.ghost = matches!(d.twist, Some(Twist::Ghost));
                     let kills = self.kills;
-                    self.skill_area(
+                    // 방패 돌진의 맺음(0270 C3): 밀려난 적이 휘청인다(보스는 아니다).
+                    let stun = match d.cap {
+                        Some(Cap::Stun { stagger }) => stagger,
+                        _ => 0.0,
+                    };
+                    let n = self.skill_area(
                         t,
                         &Sweep {
                             reach: half,
                             cone: None,
-                            push: 0.0,
-                            stagger: 0.0,
+                            push,
+                            stagger: stun,
                             swing,
                             damage: s.damage,
                             poise: s.poise,
@@ -449,6 +468,15 @@ impl World {
                             dose: self.dosed(s.dose()),
                         },
                     );
+                    // 벽에 박기(방패 돌진 ㄱ): 이 길에 맞아 밀려난 적이 벽·턱에 박히면 덤 피해(쟁반 뒤집기와 같은 길 — 보스는 아니다).
+                    if let (Some(Twist::Slam { damage }), true) = (d.twist, n > 0) {
+                        for en in &mut self.enemies {
+                            if en.hit_by == swing && en.alive() && !en.boss && !en.rising() {
+                                en.spilling = true;
+                                en.slam_bonus = damage;
+                            }
+                        }
+                    }
                     // 맺음: 이 스킬로 쓰러뜨리면 대기의 몫을 돌려받는다(한 번 쓸 때 한 번).
                     if let Some(Cap::Refund { part }) = d.cap {
                         let pl = &mut self.player;
@@ -459,6 +487,100 @@ impl World {
                             let cd = &mut pl.skill.cd[id.index()];
                             *cd = (*cd - back).max(0.0);
                         }
+                    }
+                }
+            }
+            // 바늘땀(0270 C3): 좁은 부채꼴을 `gap`초마다 찌른다 — 찌를 때마다 새 타 번호(같은 적을 땀마다 한 번씩).
+            // 꿰매기(맺음)는 마지막 땀에 휘청.
+            Form::Stab {
+                range,
+                arc_deg,
+                hits,
+                gap,
+            } => {
+                let half = (arc_deg * 0.5).to_radians().cos();
+                for k in 0..hits {
+                    if !crossed(s.startup + gap * k as f32) {
+                        continue;
+                    }
+                    if k > 0 {
+                        self.player.swings += 1;
+                        swing = self.player.swings;
+                    }
+                    let at = self.player.pos;
+                    self.skill_ev.push(Event::Skill { id, at, dir });
+                    let pin = match d.cap {
+                        Some(Cap::Pin { stagger }) if k + 1 == hits => stagger,
+                        _ => 0.0,
+                    };
+                    self.skill_area(
+                        t,
+                        &Sweep {
+                            reach: range,
+                            cone: Some((dir, half)),
+                            push: 0.0,
+                            stagger: pin,
+                            swing,
+                            damage: s.damage,
+                            poise: s.poise,
+                            shatter: 1.0,
+                            dose: self.dosed(s.dose()),
+                        },
+                    );
+                }
+            }
+            // 종 치기(0270 C3): 앞의 가장 가까운 적 하나를 치고 종을 건다 — `delay`초 뒤 그 적이 울린다(두 번 울림 ㄱ이면 한 번 더).
+            Form::Bell {
+                range,
+                delay,
+                radius,
+            } => {
+                if crossed(s.startup) {
+                    self.skill_ev.push(Event::Skill { id, at, dir });
+                    let target = self.bell_target(dir, range);
+                    let dose = self.dosed(s.dose());
+                    let mut spot = at + dir * range * 0.7;
+                    if let Some(i) = target {
+                        let en = &self.enemies[i];
+                        spot = en.pos;
+                        let knock = dir * t[P::Knockback] * if en.boss { 0.25 } else { 0.6 };
+                        let mut ev = std::mem::take(&mut self.skill_ev);
+                        self.skill_touch(
+                            t,
+                            &mut ev,
+                            i,
+                            &Touch {
+                                damage: s.damage,
+                                poise: s.poise,
+                                stagger: 0.0,
+                                knock,
+                                crit: true,
+                                dose,
+                                flat: false,
+                            },
+                        );
+                        self.skill_ev = ev;
+                        self.hitstop = self.hitstop.max(t[P::Hitstop] * SKILL_HITSTOP);
+                    }
+                    let more = match d.cap {
+                        Some(Cap::Toll { damage }) => damage,
+                        _ => 0,
+                    };
+                    let rings = if matches!(d.twist, Some(Twist::Twice)) {
+                        2
+                    } else {
+                        1
+                    };
+                    for k in 1..=rings {
+                        self.skill_bursts.push(Burst {
+                            at: spot,
+                            left: delay * k as f32,
+                            radius,
+                            damage: s.damage + more,
+                            on: target,
+                            dose,
+                            toll: true,
+                        });
                     }
                 }
             }
@@ -487,6 +609,9 @@ impl World {
                             left: delay,
                             radius,
                             damage,
+                            on: None,
+                            dose: NO_DOSE,
+                            toll: false,
                         });
                     }
                 }
@@ -640,6 +765,9 @@ impl World {
                                 left: SPIRE_DELAY,
                                 radius,
                                 damage,
+                                on: None,
+                                dose: NO_DOSE,
+                                toll: false,
                             });
                         }
                     }
@@ -1165,7 +1293,11 @@ impl World {
         self.skill_ev = ev;
     }
 
-    fn skill_burst(&mut self, t: &Tuning, b: Burst) {
+    fn skill_burst(&mut self, t: &Tuning, mut b: Burst) {
+        // 종(0270 C3): 건 적이 서 있는 자리에서 울린다.
+        if let Some(en) = b.on.and_then(|i| self.enemies.get(i)) {
+            b.at = en.pos;
+        }
         let mut ev = std::mem::take(&mut self.skill_ev);
         let snare = self.snare_secs();
         let mut n = 0;
@@ -1200,14 +1332,46 @@ impl World {
                 en.state = EState::Dead;
                 self.kills += 1;
                 ev.push(Event::EnemyDown { at: en.pos });
+            } else {
+                afflict(en, b.dose, &mut ev);
             }
         }
         if n > 0 {
             self.skill_hit_tick = true;
             self.hitstop = self.hitstop.max(t[P::Hitstop] * SKILL_HITSTOP);
         }
-        ev.push(Event::SkillBurst { at: b.at });
+        // 종(0270 C3)은 울림으로 — 울림 타입이 둘레를 치는 그림과 소리를 같이 쓴다.
+        ev.push(if b.toll {
+            Event::Toll {
+                at: b.at,
+                radius: b.radius,
+            }
+        } else {
+            Event::SkillBurst { at: b.at }
+        });
         self.skill_ev = ev;
+    }
+
+    /// 종 치기(0270 C3)가 종을 걸 적: 앞 쪽(`dir` ± 60°) `range` m 안의 가장 가까운 깨어 있는 적.
+    fn bell_target(&self, dir: Vec3, range: f32) -> Option<usize> {
+        let p = self.player.pos;
+        let body = p.y + self.player.air;
+        (0..self.enemies.len())
+            .filter(|&i| {
+                let en = &self.enemies[i];
+                let dv = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+                en.active()
+                    && (en.pos.y - body).abs() <= HIT_DY
+                    && dv.length() - en.radius <= range
+                    && dv.normalize_or(dir).dot(dir) >= BELL_CONE
+            })
+            .min_by(|&a, &b| {
+                let d = |i: usize| {
+                    let v = self.enemies[i].pos - p;
+                    vec3(v.x, 0.0, v.z).length()
+                };
+                d(a).total_cmp(&d(b))
+            })
     }
 
     /// 틱 끝의 셈(0151 5절). **기세**: 이번 틱에 쓰러진 적마다 모든 스킬의 대기가 당겨진다 — 스킬이 아닌 것으로 쓰러뜨렸으면

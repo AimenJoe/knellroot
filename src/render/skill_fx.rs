@@ -254,6 +254,26 @@ impl Renderer {
                 }
             }
         }
+        // 걸린 종(0270 C3 — 종 치기): 울리기까지 그 적의 머리 위에서 흔들리는 금빛 종 + 발밑에서 조여드는 민트 테(울릴 때 둘레).
+        for b in w.skill_bursts.iter().filter(|b| b.toll) {
+            let (at, top) = match b.on.and_then(|i| w.enemies.get(i)) {
+                Some(en) => (en.pos, en.height + 0.5),
+                None => (b.at, 1.4),
+            };
+            let g = vec3(at.x, w.ground_y(at), at.z);
+            let near = (1.0 - b.left / 0.8).clamp(0.0, 1.0);
+            let swing = (w.time * 9.0).sin() * 0.18;
+            let p = g + vec3(swing, top, 0.0);
+            gem(p, 0.34, with_a(gold, 0.75));
+            gem(p - Vec3::Y * 0.12, 0.2, with_a(hot, 0.9));
+            fl.ring(
+                g + Vec3::Y * 0.06,
+                b.radius * (1.0 - 0.6 * near).max(0.3),
+                0.0,
+                360.0,
+                with_a(mint, 0.25 + 0.45 * near),
+            );
+        }
         for f in &w.skill_fields {
             let c = vec3(f.pos.x, w.ground_y(f.pos), f.pos.z);
             // 끝 0.4초에 옅어진다, 타가 가까울수록 테가 밝아진다(다음 타의 박자).

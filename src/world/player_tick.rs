@@ -1192,6 +1192,12 @@ impl World {
                                 diff
                             }
                     }
+                    // 바늘땀의 파고드는 걸음(0270 C3 ㄱ): 찌르는 동안 앞으로 내딛는다.
+                    (Form::Stab { .. }, Some(Twist::Lunge { dist }))
+                        if e >= s.startup && e < s.startup + d.active() =>
+                    {
+                        dir * (dist / d.active().max(1e-3))
+                    }
                     (Form::Cone { .. }, Some(Twist::Leap { .. })) if e < s.startup => {
                         dir * (pl.skill.leap / s.startup.max(1e-3))
                     }

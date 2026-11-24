@@ -61,8 +61,14 @@ pub enum Form {
         gap: f32,
         push: f32,
     },
-    /// 바라보는 쪽으로 `dist` m를 `time`초에 가로지르며 길(반 폭 `half` m) 위의 적을 한 번씩 친다. 적의 몸은 지나간다.
-    Lane { dist: f32, half: f32, time: f32 },
+    /// 바라보는 쪽으로 `dist` m를 `time`초에 가로지르며 길(반 폭 `half` m) 위의 적을 한 번씩 친다. 적의 몸은 지나간다 —
+    /// `push` m 바깥으로 밀어 내며(방패 돌진, 0270 C3 — 가로지르기는 0).
+    Lane {
+        dist: f32,
+        half: f32,
+        time: f32,
+        push: f32,
+    },
     /// 앞 부채꼴(`range` m · `arc_deg`°)의 적을 방랑자 앞 `to` m 한 점으로 끌어 모으고 `stagger`초 휘청이게 한다.
     /// 보스·엘리트는 끌리지 않는다.
     Pull {
@@ -122,6 +128,16 @@ pub enum Form {
         stagger: f32,
         mult: f32,
     },
+    /// 바늘땀(0270 C3): 앞 좁은 부채꼴(`range` m · `arc_deg`°)을 `hits`번 찌른다(`gap`초 사이) — 찌를 때마다 새 타.
+    Stab {
+        range: f32,
+        arc_deg: f32,
+        hits: u8,
+        gap: f32,
+    },
+    /// 종 치기(0270 C3): 앞 `range` m의 가장 가까운 적 하나를 치고 그 적에게 종을 건다 — `delay`초 뒤 그 적이 울려 둘레
+    /// `radius` m를 친다(울림의 피해 = 표의 피해). 앞에 적이 없으면 허공에서 울린다.
+    Bell { range: f32, delay: f32, radius: f32 },
     /// 뿌리 솟기(0214): 앞 `len` m를 `step` m 간격으로 뿌리가 `every`초마다 차례로 솟는다 — 솟은 자리 둘레 `radius` m의 적을 한 번씩
     /// 찌르고 `stagger`초 휘청(보스는 아니다).
     Erupt {
@@ -146,7 +162,10 @@ impl Form {
     /// 크로스헤어로 나간다(던지기 = 곧게 나는 것 · 제비걸음 = 적에게 뛰어든다). 나머지 쪽이 있는 꼴(가로지르기의 길 · 뿌리 솟기의 줄 ·
     /// 부채꼴 셋)은 범위라 숄더뷰에서도 땅 위 표시로 겨눈다.
     pub fn sighted(&self) -> bool {
-        matches!(self, Form::Throw { .. } | Form::Hop { .. })
+        matches!(
+            self,
+            Form::Throw { .. } | Form::Hop { .. } | Form::Bell { .. }
+        )
     }
 }
 
@@ -219,10 +238,16 @@ pub enum Id {
     Bash,
     /// 뿌리 솟기(0214): 앞으로 차례로 솟는 뿌리.
     Roots,
+    /// 바늘땀(0270 C3 — 결투·날카로움): 좁게 거듭 찌른다.
+    Stitch,
+    /// 방패 돌진(0270 C3 — 방패·흡수): 방패를 앞세워 내달려 밀어 낸다.
+    Ram,
+    /// 종 치기(0270 C3 — 방패·망치·울림): 한 적에게 종을 걸어 곧 울린다.
+    Toll,
 }
 
 /// 표 순서(대기 칸 `Player::skill_cd`의 자리 — 뒤에만 붙인다).
-pub const IDS: [Id; 11] = [
+pub const IDS: [Id; 14] = [
     Id::Whirl,
     Id::Cut,
     Id::Gather,
@@ -234,6 +259,9 @@ pub const IDS: [Id; 11] = [
     Id::Swallow,
     Id::Bash,
     Id::Roots,
+    Id::Stitch,
+    Id::Ram,
+    Id::Toll,
 ];
 pub const N: usize = IDS.len();
 
@@ -381,6 +409,16 @@ pub enum Twist {
     Circle,
     /// 뿌리 솟기 ㄴ "묶는 뿌리"(0214): 맞은 적이 `secs`초 묶인다 — 걷지 못한다(보스는 아니다).
     Bind { secs: f32 },
+    /// 바늘땀 ㄱ "파고드는 걸음"(0270 C3): 찌르는 동안 `dist` m 내딛는다.
+    Lunge { dist: f32 },
+    /// 바늘땀 ㄴ "촘촘한 땀"(0270 C3): `more`번 더 찌른다.
+    Stitches { more: u8 },
+    /// 방패 돌진 ㄱ "벽에 박기"(0270 C3): 밀려난 적이 벽·턱에 박히면 덤 피해 `damage`(보스는 밀리기만).
+    Slam { damage: i32 },
+    /// 종 치기 ㄱ "두 번 울림"(0270 C3): 울린 뒤 같은 사이를 두고 한 번 더 울린다.
+    Twice,
+    /// 종 치기 ㄴ "큰 종"(0270 C3): 울림의 둘레가 × `mult`.
+    Loud { mult: f32 },
 }
 
 /// 5단 맺음(0158 마).
@@ -408,6 +446,8 @@ pub enum Cap {
     Break,
     /// 뿌리 솟기 "마지막 가시"(0214): 끝의 뿌리가 둘레 `radius` m를 크게 한 번 더(피해 `damage`).
     Spire { radius: f32, damage: i32 },
+    /// 바늘땀 "꿰매기"(0270 C3): 마지막 땀에 맞은 적이 `stagger`초 휘청인다(보스는 아니다).
+    Pin { stagger: f32 },
 }
 
 /// 그 단·그 고르기의 실제 값(월드가 쓴다): 표의 줄에 단의 숫자를 입힌 것 + 열린 고르기·맺음.
@@ -427,6 +467,7 @@ impl Eff {
             (Form::Lane { time, .. }, Some(Twist::Return)) => time * 2.0,
             // 돌아오는 걸음: 한 걸음 더(처음 자리로).
             (Form::Hop { gap, .. }, Some(Twist::HomeStep)) => self.skill.active() + gap,
+            // 두 번 울림은 판정이 아니라 놓인 종이라 몸의 시간은 그대로다.
             _ => self.skill.active(),
         }
     }
@@ -482,10 +523,45 @@ impl Skill {
                 gap,
                 push,
             },
-            Form::Lane { dist, half, time } => Form::Lane {
+            Form::Lane {
+                dist,
+                half,
+                time,
+                push,
+            } => Form::Lane {
                 dist: dist * size,
                 half,
                 time,
+                push,
+            },
+            Form::Stab {
+                range,
+                arc_deg,
+                hits,
+                gap,
+            } => Form::Stab {
+                range: range * size,
+                arc_deg,
+                hits: hits
+                    + match twist {
+                        Some(Twist::Stitches { more }) => more,
+                        _ => 0,
+                    },
+                gap,
+            },
+            Form::Bell {
+                range,
+                delay,
+                radius,
+            } => Form::Bell {
+                range,
+                delay,
+                radius: radius
+                    * size
+                    * match twist {
+                        Some(Twist::Loud { mult }) => mult,
+                        _ => 1.0,
+                    },
             },
             Form::Pull {
                 range,
@@ -618,7 +694,9 @@ impl Skill {
     /// 판정(움직임)이 이어지는 시간(초).
     pub fn active(&self) -> f32 {
         match self.form {
-            Form::Ring { hits, gap, .. } => gap * hits.saturating_sub(1) as f32,
+            Form::Ring { hits, gap, .. } | Form::Stab { hits, gap, .. } => {
+                gap * hits.saturating_sub(1) as f32
+            }
             Form::Lane { time, .. } => time,
             Form::Brace { hold, .. } => hold,
             Form::Throw { hand, .. } => hand,
@@ -630,7 +708,8 @@ impl Skill {
             | Form::Cone { .. }
             | Form::Echo { .. }
             | Form::Field { .. }
-            | Form::Bash { .. } => 0.0,
+            | Form::Bash { .. }
+            | Form::Bell { .. } => 0.0,
         }
     }
 
@@ -679,6 +758,7 @@ pub const SKILLS: [Skill; N] = [
             dist: 6.0,
             half: 1.2,
             time: 0.2,
+            push: 0.0,
         },
         anim: "attack3",
         clip: Clip {
@@ -973,6 +1053,89 @@ pub const SKILLS: [Skill; N] = [
             damage: 2 * HP_UNIT,
         },
     },
+    // 0270 C3: 무기 판의 빈 자리를 채우는 스킬.
+    Skill {
+        id: Id::Stitch,
+        cooldown: 6.0,
+        startup: 0.10,
+        recover: 0.25,
+        damage: HP_UNIT,
+        poise: 0.6,
+        form: Form::Stab {
+            range: 2.8,
+            arc_deg: 50.0,
+            hits: 3,
+            gap: 0.10,
+        },
+        anim: "attack3",
+        clip: Clip {
+            name: "sk_stitch",
+            seg: [0.10, 0.20, 0.25],
+        },
+        row: 0,
+        hands: DUEL,
+        kind: Kind::Sharp,
+        build: 0.45,
+        branch: Branch::Beat,
+        picks: [Twist::Lunge { dist: 2.5 }, Twist::Stitches { more: 2 }],
+        cap: Cap::Pin { stagger: 0.5 },
+    },
+    Skill {
+        id: Id::Ram,
+        cooldown: 9.0,
+        startup: 0.15,
+        recover: 0.30,
+        damage: HP_UNIT,
+        poise: 2.5,
+        form: Form::Lane {
+            dist: 4.5,
+            half: 1.1,
+            time: 0.25,
+            push: 2.0,
+        },
+        anim: "parry_push",
+        clip: Clip {
+            name: "sk_ram",
+            seg: [0.15, 0.25, 0.30],
+        },
+        row: 1,
+        hands: SHIELD,
+        kind: Kind::Drain,
+        build: 1.0,
+        branch: Branch::Riposte,
+        picks: [
+            Twist::Slam {
+                damage: 2 * HP_UNIT,
+            },
+            Twist::Ghost,
+        ],
+        cap: Cap::Stun { stagger: 0.8 },
+    },
+    Skill {
+        id: Id::Toll,
+        cooldown: 8.0,
+        startup: 0.20,
+        recover: 0.30,
+        damage: HP_UNIT,
+        poise: 2.0,
+        form: Form::Bell {
+            range: 2.8,
+            delay: 0.8,
+            radius: 3.0,
+        },
+        anim: "staff4",
+        clip: Clip {
+            name: "sk_toll",
+            seg: [0.20, 0.0, 0.30],
+        },
+        row: 0,
+        hands: SHIELD | HEAVY,
+        kind: Kind::Knell,
+        build: 0.5,
+        branch: Branch::Riposte,
+        picks: [Twist::Twice, Twist::Loud { mult: 1.5 }],
+        cap: Cap::Toll { damage: HP_UNIT },
+    },
 ];
 
 impl Id {
@@ -997,6 +1160,9 @@ impl Id {
             Id::Swallow => "swallow",
             Id::Bash => "bash",
             Id::Roots => "roots",
+            Id::Stitch => "stitch",
+            Id::Ram => "ram",
+            Id::Toll => "toll",
         }
     }
 
@@ -1261,6 +1427,30 @@ impl Upend {
     }
 }
 
+/// 시험: 앞의 몇만 적은 스킬의 단(나머지 0) — 스킬이 늘어도 시험의 표가 그대로 읽히게.
+#[cfg(test)]
+pub fn ranks<const K: usize>(head: [u8; K]) -> [u8; N] {
+    let mut out = [0; N];
+    out[..K].copy_from_slice(&head);
+    out
+}
+
+/// 시험: 앞의 몇만 적은 큰 기술의 단(나머지 0).
+#[cfg(test)]
+pub fn ult_ranks<const K: usize>(head: [u8; K]) -> [u8; NU] {
+    let mut out = [0; NU];
+    out[..K].copy_from_slice(&head);
+    out
+}
+
+/// 시험: 앞의 몇만 적은 고르기(나머지 ㄱ).
+#[cfg(test)]
+pub fn picks<const K: usize>(head: [Pick; K]) -> [Pick; N] {
+    let mut out = [Pick::A; N];
+    out[..K].copy_from_slice(&head);
+    out
+}
+
 /// 끼운 칸 둘(기록·앱이 들고 다닌다) — 기본은 처음의 둘.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Worn(pub [Id; 2]);
@@ -1375,6 +1565,9 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Gather),
     Entry::Cell(Cell::UnbrokenStride),
     Entry::Cell(Cell::Sidestep),
+    // 0270 C3 — 무기 판의 첫 줄(옛 판의 자리는 갈래의 첫 줄 끝)
+    Entry::Skill(Id::Stitch),
+    Entry::Skill(Id::Toll),
     // 2 — 쓴 점수 4
     Entry::Skill(Id::Quake),
     Entry::Cell(Cell::ClosingBlow),
@@ -1388,6 +1581,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Cell(Cell::LandingBeat),
     Entry::Link(Link::RiposteBeat),
     Entry::Link(Link::ParryStep),
+    // 0270 C3 — 무기 판의 둘째 줄
+    Entry::Skill(Id::Ram),
     // 3 — 쓴 점수 8
     Entry::Ult(Ult::Flurry),
     Entry::Cell(Cell::FinalMeasure),
@@ -1955,7 +2150,7 @@ mod tests {
         assert_eq!(b.rank, [0; N], "0166: no skill is given");
         assert_eq!(
             (b.ult, b.spent()),
-            ([0, 0, 0], 0),
+            (ult_ranks([]), 0),
             "0172: no great skill is given either"
         );
         let total = points(3, 1, 1, 0);
@@ -2221,7 +2416,7 @@ mod tests {
     fn the_board_stands_as_the_0161_table_says() {
         use Branch::{Beat, Footing, Riposte};
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-        let table: [(usize, Branch, &[Entry]); 22] = [
+        let table: [(usize, Branch, &[Entry]); 25] = [
             (
                 0,
                 Beat,
@@ -2242,6 +2437,9 @@ mod tests {
                 Footing,
                 &[S(Id::Gather), C(Cell::UnbrokenStride), C(Cell::Sidestep)],
             ),
+            // 0270 C3: 무기 판을 채운 새 스킬 — 옛 판의 자리는 그 줄의 끝.
+            (0, Beat, &[S(Id::Stitch)]),
+            (0, Riposte, &[S(Id::Toll)]),
             (
                 1,
                 Beat,
@@ -2265,6 +2463,7 @@ mod tests {
             // 다리 칸(0215): 잇는 둘 가운데 왼쪽 갈래로 센다.
             (1, Beat, &[L(Link::RiposteBeat)]),
             (1, Riposte, &[L(Link::ParryStep)]),
+            (1, Riposte, &[S(Id::Ram)]),
             (2, Beat, &[U(Ult::Flurry), C(Cell::FinalMeasure)]),
             (2, Riposte, &[U(Ult::Line), C(Cell::OneWhoStands)]),
             (2, Footing, &[U(Ult::Upend), C(Cell::PathOpeningStep)]),
@@ -2307,7 +2506,7 @@ mod tests {
                 assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
             }
         }
-        assert_eq!(NE, 46);
+        assert_eq!(NE, 49);
         for (i, e) in ENTRIES.iter().enumerate() {
             assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
         }
@@ -2446,8 +2645,12 @@ mod tests {
                 .map(|&e| e.paid(all.rank(e)))
                 .sum()
         };
-        assert_eq!(paid(|e| matches!(e, Entry::Skill(_))), 55);
-        assert_eq!(paid(|e| matches!(e, Entry::Ult(_))), 12);
+        // 0270 C3: 스킬·큰 기술은 무기 판을 채우며 늘었다 — 스킬마다 5, 큰 기술마다 4.
+        assert_eq!(
+            paid(|e| matches!(e, Entry::Skill(_))),
+            N as u32 * MAX_RANK as u32
+        );
+        assert_eq!(paid(|e| matches!(e, Entry::Ult(_))), NU as u32 * 4);
         assert_eq!(paid(|e| matches!(e, Entry::Cell(_))), 21);
         assert_eq!(paid(|e| matches!(e, Entry::Key(_))), 1, "one keystone");
         assert_eq!(
@@ -2455,8 +2658,15 @@ mod tests {
             4,
             "0215: four bridges"
         );
-        assert_eq!(paid(|e| matches!(e, Entry::Vein(_))), 4, "0223: four veins");
-        assert_eq!(all.spent(), 97);
+        assert_eq!(
+            paid(|e| matches!(e, Entry::Vein(_))),
+            VEINS.len() as u32,
+            "0223: a vein per type"
+        );
+        assert_eq!(
+            all.spent(),
+            (N * MAX_RANK as usize + NU * 4 + 21 + 1 + 4 + VEINS.len()) as u32
+        );
         // 판의 칸 순서: 줄 번호가 내려가지 않는다.
         let rows: Vec<usize> = ENTRIES.iter().map(|e| e.row()).collect();
         assert!(rows.windows(2).all(|w| w[0] <= w[1]), "{rows:?}");
@@ -2773,8 +2983,8 @@ mod tests {
     }
 
     /// 0158 마: 고르기와 맺음의 표 — 스킬마다 둘(서로 다르다)과 하나, 값은 결정문의 것. 길이가 달라지는 고르기를 골라도 1초 안에 끝난다.
-    /// 0223 V3 → 0225: 스킬마다 쓸 수 있는 쥔 꼴이 있다 — 꼴마다 고를 것이 넉넉하고(넷 이상), 첫 줄의 스킬(새 판이 가장 먼저 배운다)은
-    /// 방패 없는 한손(처음 줍는 검·맨손)으로 쓸 수 있다 — 처음 배운 스킬이 손에 든 것과 안 맞아 막히는 일이 없다.
+    /// 0223 V3 → 0225: 스킬마다 쓸 수 있는 쥔 꼴이 있다 — 꼴마다 고를 것이 넉넉하고(넷 이상), 첫 줄의 스킬은 꼴마다 둘 이상
+    /// (0270 C3 — 무기 판마다 처음부터 서는 스킬: 그 판을 든 새 판의 첫 스킬이 막히지 않게. 옛 "첫 줄은 결투로"는 판마다로 바뀌었다).
     /// 한손검은 방패로 갈린다: 방패 기술(방패와 함께만)과 결투 기술(방패 없이만)이 둘 이상씩. 망치만의 것·지팡이 쪽의 것도 있다.
     #[test]
     fn every_grip_has_skills_to_choose_and_the_first_row_fits_the_first_sword() {
@@ -2785,9 +2995,10 @@ mod tests {
         }
         for s in &SKILLS {
             assert!(s.hands != 0 && s.hands & !ANY == 0, "{:?}", s.id);
-            if s.row == 0 {
-                assert!(s.fits(Grip::Duel), "{:?}", s.id);
-            }
+        }
+        for g in GRIPS {
+            let first = SKILLS.iter().filter(|s| s.row == 0 && s.fits(g)).count();
+            assert!(first >= 1, "{g:?}: {first} first-row skills");
         }
         // 한손으로는 방패가 있어야만 되는 것(방패 기술)·방패가 없어야만 되는 것(결투 기술).
         let split = |with: Grip, without: Grip| {
@@ -2977,30 +3188,26 @@ mod tests {
     #[test]
     fn a_board_from_a_record_is_made_sane_against_the_points_it_has() {
         let odd = Board {
-            rank: [0, 9, 2, 3, 0, 0, 7, 0, 0, 0, 0],
+            rank: ranks([0, 9, 2, 3, 0, 0, 7]),
             pick: [Pick::B; N],
-            ult: [0, 9, 0],
+            ult: ult_ranks([0, 9]),
             cells: Tree::default(),
         };
         let b = odd.sane(40);
-        assert_eq!(b.rank, [0, MAX_RANK, 2, 3, 0, 0, MAX_RANK, 0, 0, 0, 0]);
+        assert_eq!(b.rank, ranks([0, MAX_RANK, 2, 3, 0, 0, MAX_RANK]));
         assert_eq!(
             b.pick,
-            [
+            picks([
                 Pick::A,
                 Pick::B,
                 Pick::A,
                 Pick::B,
                 Pick::A,
                 Pick::A,
-                Pick::B,
-                Pick::A,
-                Pick::A,
-                Pick::A,
-                Pick::A
-            ]
+                Pick::B
+            ])
         );
-        assert_eq!(b.ult, [0, ULT_MAX_RANK, 0]);
+        assert_eq!(b.ult, ult_ranks([0, ULT_MAX_RANK]));
         assert_eq!(odd.sane(b.spent()), b, "exactly enough points");
         assert_eq!(odd.sane(b.spent() - 1), Board::default(), "one short");
         assert_eq!(Board::default().sane(0), Board::default());
@@ -3137,7 +3344,7 @@ mod tests {
         assert_eq!(b.offer(line, 99), Offer::Ready);
         assert!(b.buy(Entry::Cell(Cell::FlowingBeat), 99) && b.buy(Entry::Cell(Cell::GapBeat), 99));
         assert!(b.buy(line, 16));
-        assert_eq!((b.ult, b.ults_known()), ([0, 3, 1], 2));
+        assert_eq!((b.ult, b.ults_known()), (ult_ranks([0, 3, 1]), 2));
         // 쟁반 뒤집기는 자리의 길 끝(모으기 → 멈추지 않는 걸음 → 던지기 → 기우는 땅).
         for e in [
             Entry::Skill(Id::Gather),
@@ -3148,14 +3355,14 @@ mod tests {
             assert!(b.buy(e, 99), "{e:?}");
         }
         assert!(b.buy(upend, 22));
-        assert_eq!((b.ult, b.spent()), ([1, 3, 1], 22));
+        assert_eq!((b.ult, b.spent()), (ult_ranks([1, 3, 1]), 22));
         // 옛 기록의 꼴: 쟁반 뒤집기를 지닌 판(이미 올린 단은 그대로).
-        assert_eq!(Board::default().with_upend().ult, [1, 0, 0]);
+        assert_eq!(Board::default().with_upend().ult, ult_ranks([1]));
         assert_eq!(b.with_upend(), b);
         // 되돌리면 배운 큰 기술이 모두 돌아간다 — 끼울 것이 없다(자리의 이름은 그대로).
         let mut great = Ult::Line;
         b.respec(&mut great);
-        assert_eq!((b.ult, great), ([0, 0, 0], Ult::Line));
+        assert_eq!((b.ult, great), (ult_ranks([]), Ult::Line));
         assert_eq!(b.loadout(START, great).ult, 0);
     }
 
@@ -3258,7 +3465,7 @@ mod clip_facing {
         Hold,
         Spin,
     }
-    const FACES: [(&str, Face); 14] = [
+    const FACES: [(&str, Face); 17] = [
         ("sk_whirl", Face::Spin),
         ("sk_cut", Face::Tip),
         ("sk_gather", Face::Hips),
@@ -3273,6 +3480,9 @@ mod clip_facing {
         ("sk_swallow", Face::Tip),
         ("sk_bash", Face::Hips),
         ("sk_roots", Face::Tip),
+        ("sk_stitch", Face::Tip),
+        ("sk_ram", Face::Hold),
+        ("sk_toll", Face::Tip),
     ];
 
     fn deg(a: f32) -> f32 {

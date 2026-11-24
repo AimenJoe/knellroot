@@ -55,7 +55,10 @@ EXPECT = {
                  "hammer_dash": 0.69,
                  # 0158 G2 스킬 동작 — 길이 = 시동 + 이어짐 + 후딜(`skills.rs` 표의 바탕값).
                  "sk_whirl": 0.67, "sk_cut": 0.57, "sk_gather": 0.5, "sk_quake": 0.7, "sk_brace": 1.65, "sk_echo": 0.45,
-                 "sk_throw": 0.53, "sk_embers": 0.55, "ult_upend": 1.0, "ult_flurry": 0.5, "ult_line": 0.9},
+                 "sk_throw": 0.53, "sk_embers": 0.55, "ult_upend": 1.0, "ult_flurry": 0.5, "ult_line": 0.9,
+                 # 0270 C3.
+                 "sk_stitch": 0.55, "sk_ram": 0.7, "sk_swat": 0.57, "sk_toll": 0.5, "sk_ripple": 0.9, "sk_snow": 0.55,
+                 "sk_flare": 0.5, "sk_snare": 0.43, "ult_bell": 0.9, "ult_blizzard": 0.9},
     "root_husk": {"idle": 1.6, "walk": 1.0, "attack": 1.3, "hurt": 0.3},
     "thorn_beast": {"idle": 1.4, "run": 0.5, "charge_windup": 0.6, "charge": 0.4, "recover": 0.7, "hurt": 0.3},
     "gatekeeper": {"idle": 2.0, "walk": 1.4, "slam": 1.5, "charge_windup": 0.8, "charge": 0.5,

@@ -1937,6 +1937,80 @@ impl Fx {
                     MINT,
                 );
             }
+            // 바늘땀(0270 C3): 땀마다 — 바늘 끝의 작은 흰 별 + 찌른 줄을 따라 짧게 번쩍이는 흰 띠 + 앞으로 튀는 바늘빛 몇.
+            (Sk::Stitch, Form::Stab { range, .. }) => {
+                let tip = g + Vec3::Y * 0.9 + dir * range * 0.75;
+                self.star(tip, 0.9, 0.07, WHITE_HOT);
+                self.mark(
+                    g,
+                    MarkKind::Streak {
+                        dir,
+                        len: range,
+                        half: 0.16,
+                    },
+                    0.14,
+                    WHITE_HOT,
+                );
+                self.spray(
+                    tip,
+                    dir,
+                    0.2,
+                    4,
+                    7.0,
+                    Shape::Streak,
+                    0.05,
+                    0.14,
+                    0.0,
+                    WHITE_HOT,
+                    COOL,
+                );
+            }
+            // 방패 돌진(0270 C3): 방패 앞의 금빛 별 + 앞으로 터지는 좁은 충격파 + 지나갈 길의 금빛 띠 + 뒤로 차이는 먼지 많이.
+            (Sk::Ram, Form::Lane { dist, half, .. }) => {
+                let front = g + Vec3::Y * 0.8 + dir * 0.7;
+                self.star(front, 1.5, 0.11, GOLD);
+                self.mark(
+                    g,
+                    MarkKind::Shock {
+                        dir,
+                        r0: 0.5,
+                        r1: 1.8,
+                        arc_deg: 110.0,
+                    },
+                    0.22,
+                    GOLD,
+                );
+                self.mark(
+                    g,
+                    MarkKind::Streak {
+                        dir,
+                        len: dist,
+                        half,
+                    },
+                    0.45,
+                    GOLD,
+                );
+                self.dust_kick(g, -dir, 7, 0.55);
+            }
+            // 종 치기(0270 C3): 친 자리의 큰 흰 별 + 그 자리에서 한 번 번지는 민트 고리(종이 걸렸다) + 위로 튀는 금빛 몇.
+            (Sk::Toll, Form::Bell { range, .. }) => {
+                let hit = g + dir * (range * 0.6);
+                self.star(hit + Vec3::Y * 1.0, 1.7, 0.12, WHITE_HOT);
+                self.mark(hit, MarkKind::Ring { r0: 0.2, r1: 1.1 }, 0.3, MINT);
+                self.spray(
+                    hit + Vec3::Y * 1.0,
+                    Vec3::Y,
+                    0.6,
+                    6,
+                    5.0,
+                    Shape::Dot,
+                    0.08,
+                    0.3,
+                    6.0,
+                    GOLD,
+                    MINT,
+                );
+            }
             // 뿌리 솟기(0214): 뿌리가 솟을 길을 따라 먼저 달리는 땅의 금(호박빛) — 뿌리와 흙은 하나씩(`RootSpike`).
             (Sk::Roots, Form::Erupt { len, .. }) => {
                 self.mark(

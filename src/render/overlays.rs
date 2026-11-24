@@ -134,7 +134,15 @@ impl Renderer {
                         }
                     }
                     // 가로지르기: 지나온 길의 빛 띠(머리 = 몸, 꼬리로 사라진다).
-                    Form::Lane { dist, half, time } => {
+                    // 방패 돌진(0270 C3)은 같은 띠를 금빛으로 — 방패의 쇠.
+                    Form::Lane {
+                        dist, half, time, ..
+                    } => {
+                        let mint = if id == crate::skills::Id::Ram {
+                            gold
+                        } else {
+                            mint
+                        };
                         // 되돌아 베기(0158 ㄱ): 둘째 구간은 온 길을 거꾸로 — 띠도 거꾸로 선다.
                         let back = eff.twist == Some(Twist::Return) && e0 >= time;
                         let (e0, dir) = if back { (e0 - time, -dir) } else { (e0, dir) };
@@ -249,7 +257,35 @@ impl Renderer {
                     | Form::Field { .. }
                     | Form::Hop { .. }
                     | Form::Bash { .. }
-                    | Form::Erupt { .. } => {}
+                    | Form::Erupt { .. }
+                    | Form::Bell { .. } => {}
+                    // 바늘땀(0270 C3): 땀마다 좁은 부채꼴이 번쩍이고 곧 사라진다(가운데 흰 바늘 줄).
+                    Form::Stab {
+                        range,
+                        arc_deg,
+                        hits,
+                        gap,
+                    } => {
+                        let k = e0 / gap.max(1e-3);
+                        let since = k - k.floor().min(hits.saturating_sub(1) as f32);
+                        let fade = (1.0 - since * gap / 0.12).clamp(0.0, 1.0);
+                        if fade > 0.0 {
+                            fl.sector(
+                                pp + Vec3::Y * 0.06,
+                                range,
+                                yaw,
+                                arc_deg,
+                                with_a(mint, 0.28 * fade),
+                            );
+                            if fx {
+                                fl.line(
+                                    pp + Vec3::Y * 0.07 + dir * 0.4,
+                                    pp + Vec3::Y * 0.07 + dir * range,
+                                    with_a(WHITE, 0.9 * fade),
+                                );
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1339,7 +1375,9 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
                 Form::Erupt { len, radius, .. } => lane(len, radius * 2.0),
                 Form::Pull { range, arc_deg, .. }
                 | Form::Cone { range, arc_deg, .. }
-                | Form::Bash { range, arc_deg, .. } => fan(range, arc_deg),
+                | Form::Bash { range, arc_deg, .. }
+                | Form::Stab { range, arc_deg, .. } => fan(range, arc_deg),
+                Form::Bell { range, .. } => lane(range, 0.6),
                 Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. } => {
                 }
             }

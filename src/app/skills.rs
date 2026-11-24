@@ -55,6 +55,9 @@ pub(super) fn skill_text(id: sk::Id) -> (&'static str, &'static str) {
         sk::Id::Swallow => (s.skill_swallow, s.skill_swallow_d),
         sk::Id::Bash => (s.skill_bash, s.skill_bash_d),
         sk::Id::Roots => (s.skill_roots, s.skill_roots_d),
+        sk::Id::Stitch => (s.skill_stitch, s.skill_stitch_d),
+        sk::Id::Ram => (s.skill_ram, s.skill_ram_d),
+        sk::Id::Toll => (s.skill_toll, s.skill_toll_d),
     }
 }
 
@@ -123,6 +126,12 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Bash, Pick::B) => (s.pick_bash_b, s.pick_bash_b_d),
         (sk::Id::Roots, Pick::A) => (s.pick_roots_a, s.pick_roots_a_d),
         (sk::Id::Roots, Pick::B) => (s.pick_roots_b, s.pick_roots_b_d),
+        (sk::Id::Stitch, Pick::A) => (s.pick_stitch_a, s.pick_stitch_a_d),
+        (sk::Id::Stitch, Pick::B) => (s.pick_stitch_b, s.pick_stitch_b_d),
+        (sk::Id::Ram, Pick::A) => (s.pick_ram_a, s.pick_ram_a_d),
+        (sk::Id::Ram, Pick::B) => (s.pick_ram_b, s.pick_ram_b_d),
+        (sk::Id::Toll, Pick::A) => (s.pick_toll_a, s.pick_toll_a_d),
+        (sk::Id::Toll, Pick::B) => (s.pick_toll_b, s.pick_toll_b_d),
     };
     (mark, name, desc)
 }
@@ -142,6 +151,9 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Swallow => s.cap_swallow,
         sk::Id::Bash => s.cap_bash,
         sk::Id::Roots => s.cap_roots,
+        sk::Id::Stitch => s.cap_stitch,
+        sk::Id::Ram => s.cap_ram,
+        sk::Id::Toll => s.cap_toll,
     }
 }
 
@@ -173,11 +185,15 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
         r if r == PICK_RANK => s.sk_rank_pick.to_string(),
         r if r == SIZE_RANK => {
             let t = match d.form {
-                Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. } => {
-                    s.rk_radius
-                }
+                Form::Ring { .. }
+                | Form::Brace { .. }
+                | Form::Echo { .. }
+                | Form::Field { .. }
+                | Form::Bell { .. } => s.rk_radius,
                 Form::Lane { .. } | Form::Erupt { .. } => s.rk_length,
-                Form::Pull { .. } | Form::Throw { .. } | Form::Hop { .. } => s.rk_range,
+                Form::Pull { .. } | Form::Throw { .. } | Form::Hop { .. } | Form::Stab { .. } => {
+                    s.rk_range
+                }
                 Form::Cone { .. } | Form::Bash { .. } => s.rk_arc,
             };
             fill(t, &[&pct(sk::RANK4_SIZE)])
@@ -2676,18 +2692,19 @@ mod tests {
     fn a_plate_opens_on_its_first_buyable_cell_or_first_learned_skill() {
         let duel = Plate::Grip(Grip::Duel);
         let b = Board::default();
-        // 결투 판의 첫 줄(읽는 차례: 가운데 휘돌이 · 끌어모으기 · 버팀 → 오른쪽 가로지르기).
-        let whirl = at(Entry::Skill(Id::Whirl));
-        assert_eq!(first_focus_on(duel, &b, 5, true), whirl);
-        assert_eq!(first_focus_on(duel, &b, 0, true), whirl, "nothing to buy");
-        assert_eq!(first_focus_on(duel, &b, 5, false), whirl, "view only");
+        // 결투 판의 첫 줄(읽는 차례: 왼쪽 바늘땀 → 가운데 휘돌이 · 끌어모으기 · 버팀 → 오른쪽 가로지르기 — 0270 C3).
+        let stitch = at(Entry::Skill(Id::Stitch));
+        assert_eq!(first_focus_on(duel, &b, 5, true), stitch);
+        assert_eq!(first_focus_on(duel, &b, 0, true), stitch, "nothing to buy");
+        assert_eq!(first_focus_on(duel, &b, 5, false), stitch, "view only");
         let mut full = Board::default();
+        full.rank[Id::Stitch.index()] = sk::MAX_RANK;
         full.rank[Id::Whirl.index()] = sk::MAX_RANK;
         assert_eq!(
-            first_focus_on(duel, &full, 9, true),
+            first_focus_on(duel, &full, 15, true),
             at(Entry::Skill(Id::Gather))
         );
-        assert_eq!(first_focus_on(duel, &full, 5, true), whirl, "all spent");
+        assert_eq!(first_focus_on(duel, &full, 10, true), stitch, "all spent");
         let mut cut = Board::default();
         cut.rank[Id::Cut.index()] = 1;
         assert_eq!(
@@ -2989,6 +3006,8 @@ mod tests {
         keyless.rank[Id::Brace.index()] = 0;
         keyless.rank[Id::Echo.index()] = 0;
         keyless.rank[Id::Bash.index()] = 0;
+        keyless.rank[Id::Ram.index()] = 0;
+        keyless.rank[Id::Toll.index()] = 0;
         keyless.ult[Ult::Line.index()] = 0;
         let edge = Entry::Key(crate::progression::Key::Edge);
         // 맞받기에 남은 것은 패시브 일곱.

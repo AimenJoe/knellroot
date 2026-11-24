@@ -200,6 +200,8 @@ pub const BASH_CUT_STAGGER: f32 = 2.0;
 /// 뿌리 솟기(0214): 둘레로(ㄱ)의 반지름 상한(m), 마지막 가시가 터지기까지(초).
 pub const ERUPT_RING_MAX: f32 = 3.0;
 pub const SPIRE_DELAY: f32 = 0.12;
+/// 종 치기(0270 C3): 종을 걸 적을 찾는 앞 쪽의 폭(cos — 0.5 = ±60°).
+pub const BELL_CONE: f32 = 0.5;
 /// 던지기(0158 G2): 던진 것이 나는 높이(m — 가슴), 돌아와 손에 잡히는 거리(m).
 pub const BLADE_HEIGHT: f32 = 1.0;
 pub const BLADE_CATCH: f32 = 0.5;

@@ -598,6 +598,11 @@ impl App {
                     id: crate::skills::Id::Echo | crate::skills::Id::Embers,
                     ..
                 } => 0.0,
+                // 바늘땀(0270 C3)은 땀마다 — 가볍게.
+                Event::Skill {
+                    id: crate::skills::Id::Stitch,
+                    ..
+                } => SHAKE_HIT,
                 Event::Skill { .. } | Event::SkillBurst { .. } => SHAKE_PLUNGE,
                 Event::Ult { .. } | Event::LineCut { .. } => SHAKE_ROUSE,
                 // 0158 G2: 터지는 것은 내려찍기만큼, 받아냄·울림·되돎은 가볍게, 불티의 타·손에 돌아옴·몰아치기의 시작은 조용히.
@@ -1242,14 +1247,16 @@ impl App {
                         Sk::Brace => Id::Thwack,
                         Sk::Echo => Id::Beat,
                         Sk::Embers => Id::Ember,
-                        Sk::Bash => Id::Thwack,
+                        Sk::Bash | Sk::Ram => Id::Thwack,
                         Sk::Whirl
                         | Sk::Cut
                         | Sk::Gather
                         | Sk::Quake
                         | Sk::Throw
                         | Sk::Swallow
-                        | Sk::Roots => Id::Swing,
+                        | Sk::Roots
+                        | Sk::Stitch
+                        | Sk::Toll => Id::Swing,
                     }
                 }
                 Event::Skill { id, .. } => {
@@ -1264,6 +1271,10 @@ impl App {
                         Sk::Swallow => Id::Dodge,
                         Sk::Bash => Id::Parry,
                         Sk::Roots => Id::Wake,
+                        // 0270 C3: 바늘땀 = 땀마다 스치는 바람, 방패 돌진 = 둔한 소리, 종 치기 = 가운데 종(울림은 `Toll`이 낸다).
+                        Sk::Stitch => Id::Dodge,
+                        Sk::Ram => Id::Thwack,
+                        Sk::Toll => Id::Beat2,
                     }
                 }
                 Event::SkillDenied => Id::Deny,

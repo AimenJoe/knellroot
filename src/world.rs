@@ -884,7 +884,7 @@ pub struct World {
     skill_hit_tick: bool,
     skill_kill_left: f32,
     /// 스킬이 남긴 것(0158 G1): 곧 터질 "모인 자리"(끌어모으기 ㄱ), 남은 갈라진 땅(땅울림 ㄴ — 렌더가 읽는다).
-    skill_bursts: Vec<skill_tick::Burst>,
+    pub skill_bursts: Vec<skill_tick::Burst>,
     pub skill_zones: Vec<skill_tick::Zone>,
     /// 0158 G2: 던진 무기(던지기 — 렌더가 그 자리에 무기를 그린다), 남은 불티(잔불 흩기), 버티는 동안 받아낸 조각을 던진 적(버팀 ㄴ).
     pub skill_blades: Vec<skill_tick::Blade>,
