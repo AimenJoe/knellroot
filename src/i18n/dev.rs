@@ -309,6 +309,17 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("ult_upend", ("큰 기술 — 쟁반 뒤집기", "ult: upend")),
     ("ult_flurry", ("큰 기술 — 몰아치기", "ult: flurry")),
     ("ult_line", ("큰 기술 — 한 줄기", "ult: line")),
+    // 0270 C3
+    ("sk_stitch", ("기술 — 바늘땀", "skill: needle stitch")),
+    ("sk_ram", ("기술 — 방패 돌진", "skill: shield rush")),
+    ("sk_toll", ("기술 — 종 치기", "skill: toll the bell")),
+    ("sk_swat", ("기술 — 후려치기", "skill: swat")),
+    ("sk_ripple", ("기술 — 파문", "skill: ripple")),
+    ("sk_snow", ("기술 — 눈발", "skill: snowfall")),
+    ("sk_flare", ("기술 — 불길", "skill: flare")),
+    ("sk_snare", ("기술 — 뿌리 덫", "skill: root snare")),
+    ("ult_bell", ("큰 기술 — 큰 종", "ult: great bell")),
+    ("ult_blizzard", ("큰 기술 — 눈보라", "ult: blizzard")),
 ];
 
 /// 동작 이름의 화면 이름(표에 없으면 동작 이름 그대로 — 모델의 동작 이름은 오른쪽 칸에 따로 보인다).

@@ -1431,10 +1431,14 @@ pub enum Ult {
     Flurry,
     /// 한 줄기: 세계를 멈추고 앞의 긴 한 줄을 가른다(보스전의 큰 기술).
     Line,
+    /// 큰 종(0270 C3 — 방패 판): 방패로 땅을 쳐 둘레를 크게 울린다 — 울림과 흡수를 함께 건다.
+    Bell,
+    /// 눈보라(0270 C3 — 지팡이 판): 몸을 따라 도는 큰 눈보라 — 둘레의 떼를 거듭 치며 얼린다.
+    Blizzard,
 }
 
 /// 큰 기술의 표 순서(판의 단 `Board::ult`의 자리 — 뒤에만 붙인다).
-pub const ULTS: [Ult; 3] = [Ult::Upend, Ult::Flurry, Ult::Line];
+pub const ULTS: [Ult; 5] = [Ult::Upend, Ult::Flurry, Ult::Line, Ult::Bell, Ult::Blizzard];
 pub const NU: usize = ULTS.len();
 
 /// 큰 기술을 판에서 배우는 값(기술 점수 — 그 뒤 단마다 1).
@@ -1453,6 +1457,8 @@ impl Ult {
             Ult::Upend => UPEND_KEY,
             Ult::Flurry => "flurry",
             Ult::Line => "line",
+            Ult::Bell => "bell",
+            Ult::Blizzard => "blizzard",
         }
     }
 
@@ -1463,9 +1469,9 @@ impl Ult {
     /// 판의 갈래(0161 "갈래와 줄"): 몰아치기 = 흐름, 한 줄기 = 맞받기, 쟁반 뒤집기 = 자리.
     pub fn branch(self) -> Branch {
         match self {
-            Ult::Upend => Branch::Footing,
+            Ult::Upend | Ult::Blizzard => Branch::Footing,
             Ult::Flurry => Branch::Beat,
-            Ult::Line => Branch::Riposte,
+            Ult::Line | Ult::Bell => Branch::Riposte,
         }
     }
 
@@ -1475,6 +1481,8 @@ impl Ult {
             Ult::Upend => UPEND.anim,
             Ult::Flurry => FLURRY.anim,
             Ult::Line => LINE.anim,
+            Ult::Bell => BELL.anim,
+            Ult::Blizzard => BLIZZARD.anim,
         }
     }
 
@@ -1483,6 +1491,8 @@ impl Ult {
             Ult::Upend => UPEND.clip,
             Ult::Flurry => FLURRY.clip,
             Ult::Line => LINE.clip,
+            Ult::Bell => BELL.clip,
+            Ult::Blizzard => BLIZZARD.clip,
         }
     }
 
@@ -1492,6 +1502,8 @@ impl Ult {
             Ult::Upend => (UPEND.freeze, UPEND.startup, UPEND.recover),
             Ult::Flurry => (0.0, FLURRY.startup, FLURRY.recover),
             Ult::Line => (LINE.freeze, LINE.startup, LINE.recover),
+            Ult::Bell => (BELL.freeze, BELL.startup, BELL.recover),
+            Ult::Blizzard => (BLIZZARD.freeze, BLIZZARD.startup, BLIZZARD.recover),
         }
     }
 
@@ -1634,6 +1646,115 @@ impl Line {
             self.len2
         } else {
             self.len
+        }
+    }
+
+    pub fn damage_at(&self, rank: u8) -> i32 {
+        if rank >= ULT_MAX_RANK {
+            self.damage3
+        } else {
+            self.damage
+        }
+    }
+}
+
+/// 큰 기술 "큰 종"(0270 C3 — 방패 판): 시동의 세계 멈춤 뒤 둘레 `radius` m의 깨어 있는 적을 한 번 친다 — 피해 `damage`·자세 피해
+/// `poise`, 울림과 흡수를 함께(`dose`·`drain` — 큰 기술이라 보스도 한 번에, 닳기 전이면), 잡몹은 `stagger`초 휘청(보스는 아니다).
+/// 2단 = 둘레 `radius2`, 3단 = 피해 `damage3`.
+pub struct Bell {
+    pub freeze: f32,
+    pub startup: f32,
+    pub recover: f32,
+    pub radius: f32,
+    pub radius2: f32,
+    pub damage: i32,
+    pub damage3: i32,
+    pub poise: f32,
+    pub stagger: f32,
+    pub dose: Dose,
+    pub drain: Dose,
+    pub anim: &'static str,
+    pub clip: Clip,
+}
+
+pub const BELL: Bell = Bell {
+    freeze: 0.3,
+    startup: 0.15,
+    recover: 0.45,
+    radius: 8.0,
+    radius2: 10.0,
+    damage: 2 * HP_UNIT,
+    damage3: 3 * HP_UNIT,
+    poise: 6.0,
+    stagger: 0.8,
+    dose: (Kind::Knell, 2.0),
+    drain: (Kind::Drain, 2.0),
+    anim: "hammer_slam",
+    clip: Clip {
+        name: "ult_bell",
+        seg: [0.30, 0.15, 0.45],
+    },
+};
+
+impl Bell {
+    pub fn radius_at(&self, rank: u8) -> f32 {
+        if rank >= 2 {
+            self.radius2
+        } else {
+            self.radius
+        }
+    }
+
+    pub fn damage_at(&self, rank: u8) -> i32 {
+        if rank >= ULT_MAX_RANK {
+            self.damage3
+        } else {
+            self.damage
+        }
+    }
+}
+
+/// 큰 기술 "눈보라"(0270 C3 — 지팡이 판): 시동 뒤 몸을 따라 도는 눈보라(둘레 `radius` m · `secs`초) — `every`초마다 그 안의 적을
+/// 피해 `damage`로 치고 서리를 `build`만큼 쌓는다(잔불 흩기의 불티와 같은 길 — 따르는 마당). 2단 = `secs2`초, 3단 = 피해 `damage3`.
+pub struct Blizzard {
+    pub freeze: f32,
+    pub startup: f32,
+    pub recover: f32,
+    pub radius: f32,
+    pub secs: f32,
+    pub secs2: f32,
+    pub every: f32,
+    pub damage: i32,
+    pub damage3: i32,
+    pub build: f32,
+    pub anim: &'static str,
+    pub clip: Clip,
+}
+
+pub const BLIZZARD: Blizzard = Blizzard {
+    freeze: 0.3,
+    startup: 0.20,
+    recover: 0.40,
+    radius: 6.0,
+    secs: 4.0,
+    secs2: 5.5,
+    every: 0.5,
+    damage: HP_UNIT,
+    damage3: 2 * HP_UNIT,
+    build: 0.35,
+    anim: "staff_charge",
+    clip: Clip {
+        name: "ult_blizzard",
+        seg: [0.30, 0.20, 0.40],
+    },
+};
+
+impl Blizzard {
+    pub fn secs_at(&self, rank: u8) -> f32 {
+        if rank >= 2 {
+            self.secs2
+        } else {
+            self.secs
         }
     }
 
@@ -1838,6 +1959,9 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Cell(Cell::OneWhoStands),
     Entry::Ult(Ult::Upend),
     Entry::Cell(Cell::PathOpeningStep),
+    // 0270 C3 — 무기 판마다 큰 기술 하나: 방패 판·지팡이 판
+    Entry::Ult(Ult::Bell),
+    Entry::Ult(Ult::Blizzard),
     // 4 — 쓴 점수 14(0214)
     Entry::Skill(Id::Swallow),
     Entry::Cell(Cell::HeldBreath),
@@ -2669,7 +2793,7 @@ mod tests {
     fn the_board_stands_as_the_0161_table_says() {
         use Branch::{Beat, Footing, Riposte};
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-        let table: [(usize, Branch, &[Entry]); 31] = [
+        let table: [(usize, Branch, &[Entry]); 33] = [
             (
                 0,
                 Beat,
@@ -2723,6 +2847,8 @@ mod tests {
             (2, Beat, &[U(Ult::Flurry), C(Cell::FinalMeasure)]),
             (2, Riposte, &[U(Ult::Line), C(Cell::OneWhoStands)]),
             (2, Footing, &[U(Ult::Upend), C(Cell::PathOpeningStep)]),
+            (2, Riposte, &[U(Ult::Bell)]),
+            (2, Footing, &[U(Ult::Blizzard)]),
             (
                 3,
                 Beat,
@@ -2769,7 +2895,7 @@ mod tests {
                 assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
             }
         }
-        assert_eq!(NE, 58);
+        assert_eq!(NE, 60);
         for (i, e) in ENTRIES.iter().enumerate() {
             assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
         }
@@ -3555,7 +3681,11 @@ mod tests {
     /// 처음부터 주는 것은 없다). 점수가 1뿐이면 배우지 못한다. 처음 배운 것이 끼울 것이고, 되돌리면 하나도 없다.
     #[test]
     fn the_great_skills_are_learned_for_two_points_once_eight_are_spent() {
-        assert_eq!(ULTS, [Ult::Upend, Ult::Flurry, Ult::Line]);
+        // 0270 C3: 무기 판마다 하나 — 다섯(큰 종·눈보라가 뒤에 붙었다).
+        assert_eq!(
+            ULTS,
+            [Ult::Upend, Ult::Flurry, Ult::Line, Ult::Bell, Ult::Blizzard]
+        );
         for u in ULTS {
             assert_eq!(Ult::by_key(u.key()), Some(u));
             assert!(u.clip().name.starts_with("ult_"));
@@ -3728,7 +3858,7 @@ mod clip_facing {
         Hold,
         Spin,
     }
-    const FACES: [(&str, Face); 22] = [
+    const FACES: [(&str, Face); 24] = [
         ("sk_whirl", Face::Spin),
         ("sk_cut", Face::Tip),
         ("sk_gather", Face::Hips),
@@ -3751,6 +3881,8 @@ mod clip_facing {
         ("sk_snow", Face::Hips),
         ("sk_flare", Face::Hips),
         ("sk_snare", Face::Hips),
+        ("ult_bell", Face::Hips),
+        ("ult_blizzard", Face::Hips),
     ];
 
     fn deg(a: f32) -> f32 {
@@ -3782,7 +3914,7 @@ mod clip_facing {
         let clips = super::SKILLS
             .iter()
             .map(|s| s.clip)
-            .chain([super::Ult::Upend, super::Ult::Flurry, super::Ult::Line].map(|u| u.clip()));
+            .chain(super::ULTS.map(|u| u.clip()));
         let mut pose = Vec::new();
         let mut body = |ai, t: f32| {
             m.pose(Some(ai), t, &mut pose);

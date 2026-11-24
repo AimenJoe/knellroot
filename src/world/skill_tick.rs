@@ -1692,11 +1692,17 @@ impl World {
         }
     }
 
-    /// 몰아치기가 이어지는 몫 0..1(0 = 아니다) — HUD가 큰 기술 게이지를 줄어드는 막대로 그린다.
+    /// 몰아치기(·눈보라, 0270 C3)가 이어지는 몫 0..1(0 = 아니다) — HUD가 큰 기술 게이지를 줄어드는 막대로 그린다.
     pub fn ult_active(&self) -> f32 {
         let pl = &self.player;
         if pl.skill.flurry_left > 0.0 {
             (pl.skill.flurry_left / pl.skill.flurry_total.max(1e-3)).clamp(0.0, 1.0)
+        } else if pl.skill.ult == skills::Ult::Blizzard {
+            self.skill_fields
+                .iter()
+                .filter(|f| f.follow && f.dose.0 == crate::status::Kind::Frost)
+                .map(|f| f.left())
+                .fold(0.0, f32::max)
         } else {
             0.0
         }

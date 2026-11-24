@@ -76,6 +76,9 @@ pub enum Kind {
     Snow,
     Flare,
     Snare,
+    /// 그림만(0270 C3): 큰 기술 둘.
+    GreatBell,
+    Blizzard,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
@@ -946,7 +949,9 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Ripple
         | Kind::Snow
         | Kind::Flare
-        | Kind::Snare => {}
+        | Kind::Snare
+        | Kind::GreatBell
+        | Kind::Blizzard => {}
         Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
@@ -1043,6 +1048,8 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
         Ult::Upend => Kind::Upend,
         Ult::Flurry => Kind::Flurry,
         Ult::Line => Kind::Line,
+        Ult::Bell => Kind::GreatBell,
+        Ult::Blizzard => Kind::Blizzard,
     }
 }
 
@@ -1897,6 +1904,38 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             ".....###.....",
             ".............",
         ],
+        // 큰 기술 큰 종(0270 C3): 커다란 종과 양옆으로 번지는 울림의 호.
+        Kind::GreatBell => [
+            ".....###.....",
+            "....#####....",
+            "..#.#####.#..",
+            ".#..#####..#.",
+            "#..#######..#",
+            "#..#######..#",
+            "#.#########.#",
+            ".###########.",
+            "..#########..",
+            "......#......",
+            ".....###.....",
+            "#...........#",
+            ".#.........#.",
+        ],
+        // 큰 기술 눈보라(0270 C3): 안으로 감겨 드는 소용돌이.
+        Kind::Blizzard => [
+            "..###########",
+            ".#...........",
+            "#..#######...",
+            "#.#.......#..",
+            "#.#..###...#.",
+            "#.#.#...#..#.",
+            "#.#.#.#.#..#.",
+            "#.#..##.#..#.",
+            "#..#....#..#.",
+            ".#..####..#..",
+            "..#......#...",
+            "...######....",
+            ".............",
+        ],
         // 큰 기술 몰아치기: 잇달아 긋는 빗금 셋.
         Kind::Flurry => [
             ".........###.",
@@ -2117,6 +2156,8 @@ mod tests {
             Kind::Snow,
             Kind::Flare,
             Kind::Snare,
+            Kind::GreatBell,
+            Kind::Blizzard,
             Kind::Pick,
             Kind::Open,
             Kind::Pull,

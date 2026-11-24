@@ -2608,3 +2608,115 @@ fn root_snare_waits_for_a_foe_then_springs_once() {
     finish(&mut w, &t, 0);
     assert_eq!(w.skill_fields.len(), 2);
 }
+
+/// 큰 종(0270 C3 — 방패 판): 세계가 멈춘 뒤 둘레를 한 번 울린다 — 둘레의 적은 모두 다치고 울림·흡수가 걸린다, 잡몹은 휘청이고
+/// 보스는 다치되 휘청이지 않는다. 둘레 밖은 아니다. 2단 = 넓게, 3단 = 세게.
+#[test]
+fn great_bell_rings_everyone_around_with_knell_and_drain() {
+    use crate::skills::BELL;
+    let ring = |rank: u8| {
+        let mut w = World::new("test", 30.0);
+        let t = Tuning::default();
+        wear_ult(&mut w, Ult::Bell, rank);
+        w.spawn_mob(vec3(0.0, 0.0, -3.0));
+        w.spawn_mob(vec3(-9.0, 0.0, 0.0));
+        w.spawn_mob(vec3(12.0, 0.0, 0.0));
+        w.spawn_boss(vec3(4.0, 0.0, 2.0));
+        still(&mut w);
+        w.player.skill.gauge = 1.0;
+        w.step(
+            &Actions {
+                ult: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.hitstop >= BELL.freeze - 1e-4, "the world stops");
+        let mut ev = Vec::new();
+        let (mut mob_staggered, mut boss_staggered) = (false, false);
+        for _ in 0..60 {
+            ev.extend(w.step(&Actions::default(), &t));
+            mob_staggered |= matches!(w.enemies[0].state, EState::Stagger { .. });
+            boss_staggered |= matches!(w.enemies[3].state, EState::Stagger { .. });
+        }
+        assert!(ev.iter().any(|e| matches!(e, Event::GreatBell { .. })));
+        assert!(
+            mob_staggered && !boss_staggered,
+            "{mob_staggered} {boss_staggered}"
+        );
+        assert!(w.enemies[0].ail.drain > 0.0, "drained");
+        assert!(w.enemies[3].hp < w.enemies[3].max_hp, "wardens too");
+        assert_eq!(w.player.skill.gauge, 0.0);
+        w.enemies[..3]
+            .iter()
+            .map(|e| 90 - e.hp)
+            .collect::<Vec<i32>>()
+    };
+    let one = ring(1);
+    assert!(
+        one[0] >= BELL.damage && one[1] == 0 && one[2] == 0,
+        "{one:?}"
+    );
+    let two = ring(2);
+    assert!(two[1] > 0 && two[2] == 0, "10 m: {two:?}");
+    let three = ring(3);
+    assert!(three[0] > one[0], "{three:?}");
+}
+
+/// 눈보라(0270 C3 — 지팡이 판): 몸을 따라 도는 눈보라 — 걷는 동안에도 둘레의 적을 거듭 치고 서리를 쌓아 얼린다. 2단 = 길게.
+#[test]
+fn blizzard_follows_the_wanderer_and_freezes_the_pack() {
+    use crate::skills::BLIZZARD;
+    let mut w = World::new("test", 30.0);
+    let t = Tuning::default();
+    wear_ult(&mut w, Ult::Blizzard, 1);
+    w.spawn_mob(vec3(0.0, 0.0, -3.0));
+    w.spawn_mob(vec3(0.0, 0.0, -10.0));
+    still(&mut w);
+    w.player.skill.gauge = 1.0;
+    w.step(
+        &Actions {
+            ult: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    let mut frozen = false;
+    for _ in 0..ticks(2.0) {
+        still_keep(&mut w);
+        w.step(&Actions::default(), &t);
+        frozen |= w.enemies[0].ail.frozen > 0.0;
+    }
+    assert!(frozen, "the pack around freezes");
+    assert_eq!(w.enemies[1].hp, 90, "not yet the far one");
+    assert!(w.ult_active() > 0.0, "the gauge shows it running");
+    assert_eq!(w.skill_fields.len(), 1);
+    assert!((w.skill_fields[0].secs - BLIZZARD.secs).abs() < 1e-5);
+    // 걸어서 먼 적에게 — 눈보라가 따라온다.
+    for _ in 0..ticks(2.0) {
+        still_keep(&mut w);
+        w.step(
+            &Actions {
+                move_dir: vec2(0.0, 1.0),
+                ..Default::default()
+            },
+            &t,
+        );
+    }
+    assert!(w.player.pos.z < -3.0, "walked: {:?}", w.player.pos);
+    assert!(w.enemies[1].hp < 90, "it followed");
+    let mut w2 = World::new("test", 30.0);
+    wear_ult(&mut w2, Ult::Blizzard, 2);
+    w2.player.skill.gauge = 1.0;
+    w2.step(
+        &Actions {
+            ult: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    for _ in 0..30 {
+        w2.step(&Actions::default(), &t);
+    }
+    assert!((w2.skill_fields[0].secs - BLIZZARD.secs2).abs() < 1e-5);
+}

@@ -343,6 +343,16 @@ pub enum Event {
         len: f32,
         half: f32,
     },
+    /// 큰 기술 큰 종(0270 C3)이 둘레 `radius` m를 울렸다.
+    GreatBell {
+        at: Vec3,
+        radius: f32,
+    },
+    /// 큰 기술 눈보라(0270 C3)가 일었다(둘레 `radius` m — 그 뒤는 따르는 마당의 `FieldPulse`).
+    Blizzard {
+        at: Vec3,
+        radius: f32,
+    },
 }
 
 /// 금 간 땅(0051, 망치 여진): `left`초 뒤 둘레를 친다.

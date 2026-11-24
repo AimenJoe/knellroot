@@ -63,8 +63,10 @@ pub fn pair(g: Grip) -> [Kind; 2] {
 pub fn great(g: Grip) -> Ult {
     match g {
         Grip::Duel => Ult::Flurry,
-        Grip::Shield | Grip::Heavy => Ult::Upend,
-        Grip::Focus | Grip::Ranged => Ult::Line,
+        Grip::Shield => Ult::Bell,
+        Grip::Heavy => Ult::Upend,
+        Grip::Focus => Ult::Blizzard,
+        Grip::Ranged => Ult::Line,
     }
 }
 

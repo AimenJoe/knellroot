@@ -122,14 +122,10 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
     ] {
         add!(a, None);
     }
-    let clips = crate::skills::SKILLS.iter().map(|s| s.clip).chain(
-        [
-            crate::skills::Ult::Upend,
-            crate::skills::Ult::Flurry,
-            crate::skills::Ult::Line,
-        ]
-        .map(|u| u.clip()),
-    );
+    let clips = crate::skills::SKILLS
+        .iter()
+        .map(|s| s.clip)
+        .chain(crate::skills::ULTS.map(|u| u.clip()));
     for c in clips {
         let [s, a, _] = c.seg;
         add!(c.name, Some((s, s + a.max(0.03))));

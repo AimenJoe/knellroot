@@ -608,7 +608,8 @@ impl App {
                     ..
                 } => SHAKE_HIT,
                 Event::Skill { .. } | Event::SkillBurst { .. } => SHAKE_PLUNGE,
-                Event::Ult { .. } | Event::LineCut { .. } => SHAKE_ROUSE,
+                Event::Ult { .. } | Event::LineCut { .. } | Event::GreatBell { .. } => SHAKE_ROUSE,
+                Event::Blizzard { .. } => SHAKE_PLUNGE,
                 // 0158 G2: 터지는 것은 내려찍기만큼, 받아냄·울림·되돎은 가볍게, 불티의 타·손에 돌아옴·몰아치기의 시작은 조용히.
                 Event::ThrowBoom { .. } => SHAKE_PLUNGE,
                 Event::Soak { .. } | Event::EchoRing { .. } | Event::Interrupt { .. } => SHAKE_HIT,
@@ -654,7 +655,10 @@ impl App {
                 Event::Parry { .. } => ZOOM_PARRY,
                 Event::Perfect { .. } => ZOOM_PERFECT,
                 // 큰 기술(0151): 시동의 세계 멈춤 동안 당겨 두고(멈춤 동안 머문다), 뒤집히는 순간 한 번 더.
-                Event::UltStart | Event::Ult { .. } | Event::LineCut { .. } => ZOOM_SMASH,
+                Event::UltStart
+                | Event::Ult { .. }
+                | Event::LineCut { .. }
+                | Event::GreatBell { .. } => ZOOM_SMASH,
                 // 0158 G2의 큰 순간: 땅울림이 찍는 순간, 셋을 다 받아낸 버팀의 터뜨림(받아낸 수는 다음 버팀까지 남는다).
                 Event::Skill {
                     id: crate::skills::Id::Quake,
@@ -1303,6 +1307,9 @@ impl App {
                 Event::EchoRing { .. } => Id::Beat2,
                 Event::ThrowTurn { .. } => Id::Swing,
                 Event::ThrowBoom { .. } | Event::LineCut { .. } => Id::Hit,
+                // 0270 C3: 큰 종 = 낮은 종, 눈보라 = 가장 높은 종.
+                Event::GreatBell { .. } => Id::Beat,
+                Event::Blizzard { .. } => Id::Beat3,
                 Event::ThrowBack { .. } => Id::Beat,
                 // 0270 C3: 눈발 = 높은 종, 뿌리 덫 = 뿌리가 깨는 소리.
                 Event::FieldPulse { kind, .. } => match kind {

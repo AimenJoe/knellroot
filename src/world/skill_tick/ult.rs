@@ -49,6 +49,8 @@ impl World {
                     self.skill_ev.push(Event::Flurry { at: pl.pos });
                 }
                 skills::Ult::Line => self.line_cut(cx.t),
+                skills::Ult::Bell => self.great_bell(cx.t),
+                skills::Ult::Blizzard => self.blizzard(),
             }
         }
         self.player.state = if e1 >= startup + recover {
@@ -115,6 +117,80 @@ impl World {
             half: LINE.half,
         });
         self.skill_ev = ev;
+    }
+
+    /// 큰 종(0270 C3): 둘레의 깨어 있는 적을 한 번 친다 — 울림과 흡수를 함께 건다(큰 기술이라 보스도 다치고 걸리지만 휘청이지
+    /// 않는다 — `skill_touch`가 보스의 휘청을 거른다). 2단 = 넓게, 3단 = 세게.
+    pub(super) fn great_bell(&mut self, t: &Tuning) {
+        let mut ev = std::mem::take(&mut self.skill_ev);
+        let p = self.player.pos;
+        let body = p.y + self.player.air;
+        let rank = self.player.skill.ult_rank;
+        let radius = skills::BELL.radius_at(rank);
+        let damage = skills::BELL.damage_at(rank);
+        let (dose, drain) = (
+            self.dosed(skills::BELL.dose),
+            self.dosed(skills::BELL.drain),
+        );
+        for i in 0..self.enemies.len() {
+            let en = &self.enemies[i];
+            if !en.active() || (en.pos.y - body).abs() > HIT_DY {
+                continue;
+            }
+            let dv = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+            if dv.length() - en.radius > radius {
+                continue;
+            }
+            let knock = dv.normalize_or_zero() * t[P::Knockback] * if en.boss { 0.2 } else { 1.0 };
+            let down = self.skill_touch(
+                t,
+                &mut ev,
+                i,
+                &Touch {
+                    damage,
+                    poise: skills::BELL.poise,
+                    stagger: skills::BELL.stagger,
+                    knock,
+                    crit: true,
+                    dose,
+                    flat: false,
+                },
+            );
+            if !down {
+                afflict(&mut self.enemies[i], drain, &mut ev);
+            }
+        }
+        self.hitstop = self.hitstop.max(t[P::Hitstop] * ULT_HITSTOP);
+        ev.push(Event::GreatBell { at: p, radius });
+        self.skill_ev = ev;
+    }
+
+    /// 눈보라(0270 C3): 몸을 따라 도는 눈보라를 일으킨다 — 치는 것은 따르는 마당(`tick_fields` — 잔불 흩기의 따르는 불티와 같은 길).
+    pub(super) fn blizzard(&mut self) {
+        let p = self.player.pos;
+        let rank = self.player.skill.ult_rank;
+        let b = &skills::BLIZZARD;
+        self.skill_fields.push(Field {
+            pos: p,
+            radius: b.radius,
+            age: 0.0,
+            secs: b.secs_at(rank),
+            every: b.every,
+            pulses: 0,
+            damage: b.damage_at(rank),
+            poise: 0.0,
+            dose: self.dosed((crate::status::Kind::Frost, b.build)),
+            follow: true,
+            kindle: 0,
+            drift: Vec3::ZERO,
+            trap: false,
+            spire: None,
+        });
+        self.skill_kill_left = ULT_KILL_WINDOW;
+        self.skill_ev.push(Event::Blizzard {
+            at: p,
+            radius: b.radius,
+        });
     }
 
     /// 쟁반 뒤집기: 둘레의 모든 적이 바깥으로 쏟아진다 — 가까운 적일수록 멀리. 쏟기와 같은 길(`spilling`)이라 벽·기둥·턱에

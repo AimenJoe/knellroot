@@ -814,6 +814,47 @@ fn ult_shape(w: &World, pp: Vec3, fl: &Drape) {
                     spark4(tip, 0.5 + 1.1 * k, Color::new(1.0, 1.0, 0.94, 1.0));
                 }
             }
+            // 큰 종(0270 C3): 세계가 멈춘 동안 둘레 끝에서 발밑으로 조여드는 민트 테(울릴 둘레를 먼저 보인다), 울린 뒤 번지는 테.
+            crate::skills::Ult::Bell => {
+                let u = &crate::skills::BELL;
+                let r = u.radius_at(w.player.skill.ult_rank);
+                let mint = Color::new(0.66, 1.0, 0.86, 1.0);
+                if !done {
+                    let frozen = 1.0 - (w.hitstop / u.freeze.max(1e-3)).clamp(0.0, 1.0);
+                    let k = if e > 0.0 { 1.0 } else { frozen * 0.6 };
+                    fl.ring(pp + Vec3::Y * 0.06, r, 0.0, 360.0, with_a(mint, 0.6));
+                    fl.ring(
+                        pp + Vec3::Y * 0.06,
+                        r * (1.0 - k) + 0.4,
+                        0.0,
+                        360.0,
+                        with_a(gold, 0.9),
+                    );
+                } else {
+                    let k = ((e - u.startup) / u.recover.max(1e-3)).clamp(0.0, 1.0);
+                    fl.sector(
+                        pp + Vec3::Y * 0.05,
+                        r,
+                        0.0,
+                        360.0,
+                        with_a(mint, 0.14 * (1.0 - k)),
+                    );
+                }
+            }
+            // 눈보라(0270 C3): 시동 동안 둘레로 커지는 서리빛 테(일 자리) — 인 뒤는 따르는 마당의 그림.
+            crate::skills::Ult::Blizzard => {
+                let u = &crate::skills::BLIZZARD;
+                if !done {
+                    let k = (e / u.startup.max(1e-3)).clamp(0.0, 1.0);
+                    fl.ring(
+                        pp + Vec3::Y * 0.06,
+                        u.radius * (0.3 + 0.7 * k),
+                        0.0,
+                        360.0,
+                        with_a(Color::new(0.8, 0.95, 1.0, 1.0), 0.85),
+                    );
+                }
+            }
         }
     }
 }

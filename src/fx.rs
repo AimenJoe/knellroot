@@ -1564,6 +1564,80 @@ impl Fx {
                         self.star(pp + Vec3::Y * 1.1, 1.6, 0.3, WHITE_HOT);
                         self.implode(g, 2.4, 12, WHITE_HOT);
                     }
+                    // 0270 C3: 큰 종 = 방패 앞에 모이는 민트빛, 눈보라 = 발밑으로 빨려드는 서리빛.
+                    crate::skills::Ult::Bell => {
+                        self.star(pp + Vec3::Y * 0.9, 1.4, 0.3, MINT);
+                        self.implode(g, 2.6, 12, MINT);
+                    }
+                    crate::skills::Ult::Blizzard => {
+                        self.star(pp + Vec3::Y * 1.2, 1.3, 0.3, ICE);
+                        self.implode(g, 3.0, 14, ICE);
+                    }
+                }
+            }
+            // 큰 종(0270 C3): 큰 흰 별 + 둘레 끝까지 차례로 번지는 고리 셋(흰빛 → 민트) + 위로 솟는 민트·금빛.
+            Event::GreatBell { at, radius } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                self.star(g + Vec3::Y * 1.0, 3.0, 0.15, WHITE_HOT);
+                for i in 0..3 {
+                    self.mark_with(
+                        g,
+                        MarkKind::Ring {
+                            r0: 0.5,
+                            r1: radius * (1.0 - 0.15 * i as f32),
+                        },
+                        0.45,
+                        if i == 0 { WHITE_HOT } else { MINT },
+                        0.1 * i as f32,
+                        true,
+                        false,
+                    );
+                }
+                self.spray(
+                    g + Vec3::Y * 0.6,
+                    Vec3::Y,
+                    1.0,
+                    16,
+                    6.0,
+                    Shape::Dot,
+                    0.1,
+                    0.5,
+                    4.0,
+                    MINT,
+                    GOLD,
+                );
+                self.dust_ring(g, 1.2, 14, 6.0, 0.8, DUST);
+            }
+            // 눈보라(0270 C3): 흰 서리빛 별 + 둘레의 서리빛 고리 + 몸 둘레를 휘감아 오르는 눈송이.
+            Event::Blizzard { at, radius } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                self.star(g + Vec3::Y * 1.0, 2.4, 0.14, ICE);
+                self.mark(
+                    g,
+                    MarkKind::Ring {
+                        r0: 1.0,
+                        r1: radius,
+                    },
+                    0.4,
+                    ICE,
+                );
+                for i in 0..24 {
+                    let a = i as f32 / 24.0 * std::f32::consts::TAU;
+                    let d = vec3(a.sin(), 0.0, a.cos());
+                    let side = vec3(d.z, 0.0, -d.x);
+                    let (life, up) = (0.8 + 0.4 * self.r(), 0.3 + self.r());
+                    self.push(Part {
+                        pos: g + d * radius * 0.6 + Vec3::Y * up,
+                        vel: side * 6.0 + Vec3::Y * 1.5,
+                        age: 0.0,
+                        life,
+                        size: (0.12, 0.06),
+                        color: (WHITE_HOT, fade(COOL)),
+                        gravity: 0.0,
+                        drag: 1.0,
+                        shape: Shape::Dot,
+                        decor: false,
+                    });
                 }
             }
             // 쟁반 뒤집기: 가장 큰 별 + 두 겹 먼지 고리 + 사방의 금빛 줄 — 사방으로 뻗는 땅의 금과 테두리의 먼지 벽(0158 G2).
@@ -2470,6 +2544,9 @@ mod tests {
             },
             Event::UltStart,
             Event::Ult { at },
+            // 0270 C3: 큰 기술 둘.
+            Event::GreatBell { at, radius: 8.0 },
+            Event::Blizzard { at, radius: 6.0 },
         ]);
         ev
     }

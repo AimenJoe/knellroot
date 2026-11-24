@@ -73,6 +73,8 @@ pub(super) fn ult_text(u: sk::Ult) -> (&'static str, &'static str) {
         sk::Ult::Upend => (s.ult_upend, s.ult_upend_d),
         sk::Ult::Flurry => (s.ult_flurry, s.ult_flurry_d),
         sk::Ult::Line => (s.ult_line, s.ult_line_d),
+        sk::Ult::Bell => (s.ult_bell, s.ult_bell_d),
+        sk::Ult::Blizzard => (s.ult_blizzard, s.ult_blizzard_d),
     }
 }
 
@@ -249,6 +251,10 @@ pub(super) fn ult_gives(u: sk::Ult, rank: u8) -> String {
         ),
         (sk::Ult::Line, 2) => fill(s.rk_line_len, &[&num(sk::LINE.len2)]),
         (sk::Ult::Line, _) => fill(s.rk_line_dmg, &[&sk::LINE.damage3.to_string()]),
+        (sk::Ult::Bell, 2) => fill(s.rk_bell_radius, &[&num(sk::BELL.radius2)]),
+        (sk::Ult::Bell, _) => fill(s.rk_line_dmg, &[&sk::BELL.damage3.to_string()]),
+        (sk::Ult::Blizzard, 2) => fill(s.rk_flurry_secs, &[&num(sk::BLIZZARD.secs2)]),
+        (sk::Ult::Blizzard, _) => fill(s.rk_line_dmg, &[&sk::BLIZZARD.damage3.to_string()]),
     }
 }
 
@@ -3034,6 +3040,7 @@ mod tests {
         keyless.rank[Id::Toll.index()] = 0;
         keyless.rank[Id::Ripple.index()] = 0;
         keyless.ult[Ult::Line.index()] = 0;
+        keyless.ult[Ult::Bell.index()] = 0;
         let edge = Entry::Key(crate::progression::Key::Edge);
         // 맞받기에 남은 것은 패시브 일곱.
         assert_eq!(keyless.branch_spent(crate::progression::Branch::Riposte), 7);
@@ -3043,7 +3050,7 @@ mod tests {
         );
         // 큰 기술을 배우는 첫 단은 2점 — 지팡이 판의 셋째 줄(그 판에 쓴 점수 6).
         let staff = Plate::Grip(Grip::Focus);
-        let line = Entry::Ult(Ult::Line);
+        let line = Entry::Ult(Ult::Blizzard);
         let mut open = Board::default();
         open.rank[Id::Gather.index()] = 5;
         assert_eq!(
@@ -3113,10 +3120,7 @@ mod tests {
         assert!(kind_line(&b, Entry::Skill(Id::Whirl)).contains("6.3"));
         assert_eq!(
             kind_line(&b, Entry::Ult(Ult::Upend)),
-            fill(
-                s.sk_kind_ult,
-                &[&format!("{} · {}", s.plate_shield, s.plate_heavy)]
-            )
+            fill(s.sk_kind_ult, &[s.plate_heavy])
         );
         assert_eq!(
             kind_line(&b, Entry::Cell(Cell::TurnItBack)),

@@ -2108,7 +2108,7 @@ forge.sword=3
             board.rank[id.index()] = rank;
             board.pick[id.index()] = pick;
         }
-        board.ult = [1, 2, 1];
+        board.ult = crate::skills::ult_ranks([1, 2, 1]);
         let p = Progress {
             level: crate::progression::Level {
                 life: 5,
@@ -2381,7 +2381,7 @@ forge.sword=3
             board.rank[id.index()] = rank;
             board.pick[id.index()] = pick;
         }
-        board.ult = [2, 1, 0];
+        board.ult = crate::skills::ult_ranks([2, 1, 0]);
         board.cells.open_cell(crate::progression::Cell::Planted);
         board.cells.open_link(crate::progression::Link::RiposteBeat);
         board.cells.open_vein(crate::progression::Vein::Root);
