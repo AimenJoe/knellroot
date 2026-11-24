@@ -528,7 +528,7 @@ pub const EN: Strings = Strings {
     ail_frost: "Frost",
     ail_drain: "Drain",
     ail_shock_d: "Shock — builds until the foe is stunned and can do nothing for a moment. A shocked foe's stance breaks faster.",
-    ail_sharp_d: "Keen — builds until the foe is cut, and for a while it bleeds for every step it takes. Standing still stops it.",
+    ail_sharp_d: "Keen — builds until the foe is cut, and for a while it bleeds for every step it takes (standing still stops it). A duelling hand — no shield — cuts a bleeding foe deeper.",
     ail_frost_d: "Frost — slows the foe as it builds, and freezes it solid when full. Strike a frozen foe to shatter it for a heavy blow.",
     ail_drain_d: "Drain — builds until the foe is marked; for a while every blow on it gives back a little health and stamina.",
     ail_weak: "Takes well: {0}",

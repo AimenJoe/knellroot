@@ -1109,6 +1109,7 @@ impl World {
         let facing = self.player.facing_dir();
         let snare = self.snare_secs();
         let mut n = 0;
+        let keen = self.keen();
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == sw.swing || (en.pos.y - body).abs() > HIT_DY {
                 continue;
@@ -1133,6 +1134,7 @@ impl World {
                 self.stats.dmg + sw.damage,
                 crit,
                 self.stats.opened_dmg,
+                keen,
                 t,
             );
             // 땅울림 맺음: 이미 자세가 깨져 있던 적에게는 배로(이 타로 깨진 적은 다음부터).
@@ -1317,6 +1319,7 @@ impl World {
         let poise_k = self.stats.poise;
         let dose = self.dosed(d.skill.dose());
         let mut n = 0;
+        let keen = self.keen();
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing || (en.pos.y - body).abs() > HIT_DY {
                 continue;
@@ -1338,6 +1341,7 @@ impl World {
                 self.stats.dmg + d.skill.damage,
                 crit,
                 self.stats.opened_dmg,
+                keen,
                 t,
             );
             if crit {
@@ -1413,6 +1417,7 @@ impl World {
         let poise_k = self.stats.poise;
         let dose = self.dosed(s.dose());
         let mut n = 0;
+        let keen = self.keen();
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing || (en.pos.y - at.y).abs() > HIT_DY {
                 continue;
@@ -1434,6 +1439,7 @@ impl World {
                 self.stats.dmg + s.damage,
                 crit,
                 self.stats.opened_dmg,
+                keen,
                 t,
             );
             if crit {
@@ -1474,6 +1480,7 @@ impl World {
         let mut ev = std::mem::take(&mut self.skill_ev);
         let snare = self.snare_secs();
         let mut n = 0;
+        let keen = self.keen();
         for en in &mut self.enemies {
             if !en.active() || (en.pos.y - b.at.y).abs() > HIT_DY {
                 continue;
@@ -1493,6 +1500,7 @@ impl World {
                 self.stats.dmg + b.damage,
                 crit,
                 self.stats.opened_dmg,
+                keen,
                 t,
             );
             if crit {

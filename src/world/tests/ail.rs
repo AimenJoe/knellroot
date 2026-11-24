@@ -90,29 +90,29 @@ fn a_cracked_foe_takes_more_from_every_blow_and_a_boss_less() {
     let t = Tuning::default();
     let mut w = World::new("test", 30.0);
     let i = foe(&mut w, vec3(3.0, 0.0, 0.0));
-    assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, &t), 100);
+    assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, false, &t), 100);
     fill(&mut w, i, Ty::Rift);
     assert_eq!(
-        hurt_by(&w.enemies[i], 100, false, 0, &t),
+        hurt_by(&w.enemies[i], 100, false, 0, false, &t),
         (100.0 * RIFT_MULT) as i32
     );
     w.enemies[i].marks.frail = 1.0;
     w.enemies[i].marks.frail_mult = 1.5;
     assert_eq!(
-        hurt_by(&w.enemies[i], 100, false, 0, &t),
+        hurt_by(&w.enemies[i], 100, false, 0, false, &t),
         150,
         "the larger one, not both"
     );
     let mut b = world_with_boss();
     fill(&mut b, 0, Ty::Rift);
     assert_eq!(
-        hurt_by(&b.enemies[0], 100, false, 0, &t),
+        hurt_by(&b.enemies[0], 100, false, 0, false, &t),
         (100.0 * RIFT_BOSS_MULT).round() as i32
     );
     // 금은 때가 되면 닫힌다.
     run(&mut w, &t, crate::tuning::RIFT_SECS + 0.1);
     w.enemies[i].marks.frail = 0.0;
-    assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, &t), 100);
+    assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, false, &t), 100);
 }
 
 /// 뿌리: 묶인 적은 자세가 더 깎인다.
@@ -423,7 +423,7 @@ fn frost_slows_then_freezes_and_the_next_blow_shatters_it() {
         matches!(w.enemies[i].state, EState::Stagger { dur, .. } if (dur - FREEZE_SECS).abs() < 1e-5)
     );
     assert_eq!(
-        hurt_by(&w.enemies[i], 100, false, 0, &t),
+        hurt_by(&w.enemies[i], 100, false, 0, false, &t),
         (100.0 * SHATTER_MULT) as i32
     );
     // 얼린 그 타는 깨지 않는다(0270 C3) — 한 틱 지나 굳은 얼음을 다음 타가 깬다.
@@ -442,7 +442,7 @@ fn frost_slows_then_freezes_and_the_next_blow_shatters_it() {
         !matches!(w.enemies[i].state, EState::Stagger { .. }),
         "free again"
     );
-    assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, &t), 100);
+    assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, false, &t), 100);
 
     let mut b = world_with_boss();
     afflict(&mut b.enemies[0], (Ty::Frost, 0.5), &mut Vec::new());
@@ -495,4 +495,122 @@ fn every_new_type_rides_on_some_skill() {
             "{k:?}"
         );
     }
+}
+
+/// 0270 C5 날카로움의 덤: 피 흘리는 적을 결투의 손(한손 · 방패 없이)이 치면 그 타는 ×`SHARP_CUT_MULT` — 평타도 스킬도.
+/// 다른 쥔 꼴(망치 · 검과 방패)은 그대로, 새는 피는 덤 없이 `BLEED_DMG` 그대로. 금(균열)과는 곱한다(표지 둘의 큰 하나 × 날카로움).
+#[test]
+fn a_duel_hand_cuts_deeper_into_a_bleeding_foe() {
+    use crate::tuning::{BLEED_DMG, SHARP_CUT_MULT};
+    use crate::weapons::Id as W;
+    let t = Tuning::default();
+    // 셈: 결투의 손 · 피 흘림이 함께일 때만, 금과는 곱한다.
+    let mut w = World::new("test", 30.0);
+    let i = foe(&mut w, vec3(3.0, 0.0, 0.0));
+    assert_eq!(
+        hurt_by(&w.enemies[i], 100, false, 0, true, &t),
+        100,
+        "not bleeding"
+    );
+    fill(&mut w, i, Ty::Sharp);
+    assert!(w.enemies[i].ail.bleed > 0.0);
+    assert_eq!(
+        hurt_by(&w.enemies[i], 100, false, 0, true, &t),
+        crate::skills::scaled(100, SHARP_CUT_MULT)
+    );
+    assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, false, &t), 100);
+    fill(&mut w, i, Ty::Rift);
+    assert_eq!(
+        hurt_by(&w.enemies[i], 100, false, 0, true, &t),
+        crate::skills::scaled(100, RIFT_MULT * SHARP_CUT_MULT)
+    );
+    let mut b = world_with_boss();
+    fill(&mut b, 0, Ty::Sharp);
+    assert!(
+        hurt_by(&b.enemies[0], 100, false, 0, true, &t) > 100,
+        "a boss too"
+    );
+
+    // 월드의 타: 같은 무기로 피 흘리는 적 · 아닌 적을 쳐서 들어간 피해(새는 피는 뺀다)를 견준다.
+    let dealt = |weapon: W, shield: bool, skill: bool, bleeding: bool| {
+        let mut w = World::new("test", 30.0);
+        w.player.facing = std::f32::consts::PI;
+        w.set_weapon(weapon);
+        w.set_shield(shield.then_some(crate::shield::Id::Pilgrim));
+        w.set_skills(Loadout {
+            slots: [
+                Slot {
+                    id: Sk::Whirl,
+                    rank: 1,
+                    pick: Pick::A,
+                },
+                Slot {
+                    id: Sk::Cut,
+                    rank: 1,
+                    pick: Pick::A,
+                },
+            ],
+            ult: 1,
+            great: crate::skills::Ult::Upend,
+        });
+        let i = foe(&mut w, vec3(0.0, 0.0, -1.5));
+        if bleeding {
+            fill(&mut w, i, Ty::Sharp);
+        }
+        let mut ev = w.step(
+            &Actions {
+                attack: !skill,
+                skill1: skill,
+                ..Default::default()
+            },
+            &t,
+        );
+        ev.extend(run(&mut w, &t, 0.6));
+        let leaked = BLEED_DMG * count(&ev, |e| matches!(e, Event::Bleed { .. })) as i32;
+        (
+            500 - w.enemies[i].hp - leaked,
+            count(&ev, |e| matches!(e, Event::Hit { .. })) as i32,
+        )
+    };
+    // 타마다 올림(휘돌이는 두 번 친다): 덤을 받은 피해 = 타의 수 × 한 타의 피해 × 덤.
+    let deeper = |(d, n): (i32, i32)| (n * crate::skills::scaled(d / n.max(1), SHARP_CUT_MULT), n);
+    for skill in [false, true] {
+        let plain = dealt(W::Sword, false, skill, false);
+        assert!(plain.0 > 0 && plain.1 > 0, "skill {skill}: it lands");
+        assert_eq!(
+            dealt(W::Sword, false, skill, true),
+            deeper(plain),
+            "skill {skill}: the duel hand cuts deeper"
+        );
+        let fists = dealt(W::Fists, false, skill, false);
+        assert_eq!(
+            dealt(W::Fists, false, skill, true),
+            deeper(fists),
+            "skill {skill}: fists are a duel hand too"
+        );
+        let hammer = dealt(W::Hammer, false, skill, false);
+        assert!(hammer.0 > 0);
+        assert_eq!(
+            dealt(W::Hammer, false, skill, true),
+            hammer,
+            "skill {skill}: hammer"
+        );
+    }
+    let shielded = dealt(W::Sword, true, false, false);
+    assert_eq!(
+        dealt(W::Sword, true, false, true),
+        shielded,
+        "sword and shield"
+    );
+
+    // 새는 피는 덤 없이: 결투의 손을 든 채 걷는 적이 잃는 피 = 샌 번 × `BLEED_DMG`.
+    let mut w = World::new("test", 30.0);
+    w.set_weapon(W::Sword);
+    assert!(w.keen());
+    let walker = mob_with(&mut w, vec3(9.0, 0.0, 0.0), 500);
+    fill(&mut w, walker, Ty::Sharp);
+    let ev = run(&mut w, &t, 2.0);
+    let leaks = count(&ev, |e| matches!(e, Event::Bleed { .. })) as i32;
+    assert!(leaks > 0);
+    assert_eq!(500 - w.enemies[walker].hp, BLEED_DMG * leaks);
 }

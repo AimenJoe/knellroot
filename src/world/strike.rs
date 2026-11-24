@@ -209,6 +209,7 @@ impl World {
         let (mut bound_hit, mut cracked_hit) = (false, false);
         // 0270 C3: 기절한 적(그 자리) · 피 흘리는 적 · 흡수 걸린 적.
         let (mut stunned_at, mut bled_hit, mut sipped_hit) = (None, false, false);
+        let keen = self.keen();
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing {
                 continue;
@@ -273,7 +274,7 @@ impl World {
             } else {
                 raw
             };
-            en.hp -= hurt_by(en, raw, crit, self.stats.opened_dmg, t);
+            en.hp -= hurt_by(en, raw, crit, self.stats.opened_dmg, keen, t);
             if crit {
                 en.exposed = 0.0;
                 ev.push(Event::Crit {

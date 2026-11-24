@@ -1327,6 +1327,11 @@ impl World {
         self.player.weapon.grip(self.player.shield.is_some())
     }
 
+    /// 결투로 쥐었나(0270 C5 — 날카로움의 덤 `hurt_by`의 `keen`): 한손 무기(맨손도)를 방패 없이.
+    pub fn keen(&self) -> bool {
+        self.grip() == weapons::Grip::Duel
+    }
+
     /// 지금 막을 수 있나(0223): 방패를 들었고 든 무기가 한손이다.
     pub fn can_block(&self) -> bool {
         self.player.shield.is_some() && self.player.weapon.hand() == weapons::Hand::One
@@ -1507,6 +1512,7 @@ impl World {
         self.player.swings += 1;
         let swing = self.player.swings;
         let mut hit = false;
+        let keen = self.keen();
         for en in &mut self.enemies {
             if !en.active() || (en.pos.y - p.y).abs() > HIT_DY {
                 continue;
@@ -1521,6 +1527,7 @@ impl World {
                 self.stats.dmg + t[P::PlungeDamage] as i32,
                 crit,
                 self.stats.opened_dmg,
+                keen,
                 t,
             );
             en.exposed = 0.0;
@@ -1813,6 +1820,7 @@ impl World {
         t: &Tuning,
         ev: &mut Vec<Event>,
     ) {
+        let keen = self.keen();
         for en in &mut self.enemies {
             if !en.active() || (en.pos.y - at.y).abs() > HIT_DY + 0.3 {
                 continue;
@@ -1822,7 +1830,14 @@ impl World {
                 continue;
             }
             let crit = en.exposed > 0.0;
-            en.hp -= hurt_by(en, self.stats.dmg + damage, crit, self.stats.opened_dmg, t);
+            en.hp -= hurt_by(
+                en,
+                self.stats.dmg + damage,
+                crit,
+                self.stats.opened_dmg,
+                keen,
+                t,
+            );
             en.exposed = 0.0;
             en.struck();
             en.knock = d.normalize_or_zero() * t[P::Knockback] * if en.boss { 0.2 } else { 1.4 };
@@ -1897,6 +1912,7 @@ impl World {
     fn outer_ring(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
         let p = self.player.pos;
         let (inner, outer) = (t[P::PlungeRange], t[P::PlungeRange] * cell::LANDING_RANGE);
+        let keen = self.keen();
         for en in &mut self.enemies {
             if !en.active() || (en.pos.y - p.y).abs() > HIT_DY {
                 continue;
@@ -1910,6 +1926,7 @@ impl World {
                 self.stats.dmg + t[P::PlungeDamage] as i32,
                 false,
                 self.stats.opened_dmg,
+                keen,
                 t,
             );
             add_poise(en, 2.0 * self.stats.poise, None, t, ev);
@@ -2374,7 +2391,11 @@ pub fn poise_max(en: &Enemy, t: &Tuning) -> f32 {
 /// 플레이어가 주는 피해(0055): 드러난 적은 치명타 덤, 자세가 깨진 동안은 × `poise.break damage x`(옛 눈금으로 올림 —
 /// `tuning::scale_up`, 0158 N0: 옛 3 × 1.5 → 5가 30 × 1.5 → 50) — 폭딜 창.
 /// `opened` = 열린 틈의 타 덤(장신구 "깨진 종 조각", 0127) — 드러났거나(치명타) 자세가 깨진 적에게만.
-fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, t: &Tuning) -> i32 {
+/// `keen` = 결투로 쥔 손의 타인가(0270 C5 날카로움의 덤 — `World::keen`): 방랑자의 타(평타·강타·내려찍기·탄·스킬·큰 기술)는
+/// `World::keen()`을, 타입이 스스로 낸 피해(새는 피·화상·`Touch::flat`)는 거짓을 넘긴다.
+///
+/// 배의 규칙 하나: `max(표지, 금) × 날카로움 × 얼음` — 더 다치는 적의 표지 둘은 큰 하나만, 날카로움(손의 덤)과 얼음(한 번뿐)은 곱한다.
+fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, keen: bool, t: &Tuning) -> i32 {
     // 보스 2단계 전환(0133) 동안은 들어가지 않는다(근접·탄은 `guards`가 튕긴다 — 나머지 넓은 타도 0).
     if en.rising() {
         return 0;
@@ -2393,6 +2414,12 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, t: &Tuning) -> i32 {
         1.0
     };
     let k = frail.max(rift_mult(en));
+    // 날카로움(0270 C5): 피 흘리는 적을 결투의 손이 치면 ×`SHARP_CUT_MULT` — 타마다 한 번(겹치지 않는다).
+    let k = if keen && en.ail.bleed > 0.0 {
+        k * crate::tuning::SHARP_CUT_MULT
+    } else {
+        k
+    };
     // 언 적(0270 B 서리)을 치면 깨진다: 그 한 대는 크게(금·표지와 곱한다 — 얼음은 한 번뿐이다).
     let k = if en.ail.frozen > 0.0 {
         k * crate::tuning::SHATTER_MULT

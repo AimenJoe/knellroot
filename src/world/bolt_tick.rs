@@ -385,6 +385,7 @@ impl World {
                 if i < 64 {
                     b.hits |= 1 << i;
                 }
+                let keen = self.keen();
                 let en = &mut self.enemies[i];
                 // 등딱지(0120): 앞에서 온 탄도 튕긴다(탄은 거기서 멈춘다 — 방랑자는 튀지 않는다).
                 if en.guards(-b.dir) {
@@ -427,6 +428,7 @@ impl World {
                         },
                     crit,
                     self.stats.opened_dmg,
+                    keen,
                     t,
                 );
                 en.exposed = 0.0;

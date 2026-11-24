@@ -1104,7 +1104,7 @@ fn gather_capstone_makes_the_gathered_take_more_for_two_seconds() {
     still(&mut w);
     run(&mut w, &t, Actions::default(), 90);
     assert_eq!(w.enemies[0].marks.frail, 0.0);
-    assert_eq!(hurt_by(&w.enemies[0], 10, false, 0, &t), 10);
+    assert_eq!(hurt_by(&w.enemies[0], 10, false, 0, false, &t), 10);
     // 4단에는 없다.
     let (mut w, t) = world();
     wear(&mut w, Sk::Gather, 4, Pick::A);

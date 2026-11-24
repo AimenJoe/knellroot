@@ -179,6 +179,9 @@ pub const SHOCK_POISE: f32 = 1.6;
 pub const BLEED_SECS: f32 = 6.0;
 pub const BLEED_STEP: f32 = 1.5;
 pub const BLEED_DMG: i32 = 4;
+/// 날카로움의 덤(0270 C5 — 사장 2026-11-24 "치명타 대신 벤 적에게 더"): 피 흘리는 적을 결투로 쥔 손(한손 · 방패 없이 — 맨손도)이 치면
+/// 그 타의 피해 ×. 보스도(면역 없음). 새는 피(`BLEED_DMG`)·화상 같은 타입이 스스로 낸 피해에는 붙지 않는다(`world::hurt_by`).
+pub const SHARP_CUT_MULT: f32 = 1.15;
 /// 서리: 게이지가 가득일 때 걸음이 이만큼 줄어든다(쌓인 만큼) · 얼어붙은 초(보스는 짧게) · 언 적을 깨는 한 대의 배 ·
 /// 타는 적에게 서리가 붙는 배(녹는다).
 pub const FROST_SLOW: f32 = 0.5;
