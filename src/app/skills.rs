@@ -2745,7 +2745,7 @@ mod tests {
         assert_eq!(acts(&b, 3, flow, true), [Do::Buy]);
         assert_eq!(acts(&b, 3, flow, false), [Do::Away]);
         assert!(
-            acts(&b, 3, Entry::Cell(Cell::Catch), true).is_empty(),
+            acts(&b, 3, Entry::Cell(Cell::ClosingBlow), true).is_empty(),
             "cut off"
         );
         let mut open = b;
@@ -2960,9 +2960,19 @@ mod tests {
             state_line(on(flow), &b, 5, flow, true).0,
             fill(s.sk_st_open, &["1"])
         );
-        // 0215: 길이 끊긴 칸 · 맺음은 그 갈래에 더.
+        // 0215: 길이 끊긴 칸 · 맺음은 그 갈래에 더. 몸의 판의 첫 줄 패시브는 뿌리(0270 C3).
         let catch = Entry::Cell(Cell::Catch);
-        assert_eq!(state_line(on(catch), &b, 5, catch, true).0, s.sk_st_cut);
+        assert_eq!(
+            state_line(on(catch), &b, 5, catch, true).0,
+            fill(s.sk_st_open, &["1"])
+        );
+        let mut deep = b;
+        deep.rank[Id::Whirl.index()] = 4;
+        let closing = Entry::Cell(Cell::ClosingBlow);
+        assert_eq!(
+            state_line(on(closing), &deep, 9, closing, true).0,
+            s.sk_st_cut
+        );
         let all = Board::maxed(Pick::A);
         assert_eq!(state_line(on(whirl), &all, 99, whirl, true).0, s.board_full);
         assert_eq!(
