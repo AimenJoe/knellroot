@@ -2720,3 +2720,31 @@ fn blizzard_follows_the_wanderer_and_freezes_the_pack() {
     }
     assert!((w2.skill_fields[0].secs - BLIZZARD.secs2).abs() < 1e-5);
 }
+
+/// 2026-11-24: 두 스킬 버튼을 한 틱 어긋나게 눌러도 큰 기술이 나간다 — 든 무기로 못 쓰는 칸(시동이 서지 않는 칸)이어도.
+/// 지팡이를 들고 결투 스킬 둘을 낀 채로는 함께 누름이 같은 틱이어야만 나갔다(개발 놀이터에서 큰 기술이 안 나갔다).
+#[test]
+fn the_great_skill_chord_reaches_across_a_tick_even_on_unfit_slots() {
+    let (mut w, t) = world();
+    wear_ult(&mut w, Ult::Upend, 1);
+    w.player.skill.rank = [0, 0];
+    w.player.skill.gauge = 1.0;
+    still(&mut w);
+    let ev = run(&mut w, &t, skill(0), 1);
+    assert!(!ev.iter().any(|e| matches!(e, Event::UltStart)));
+    let ev = run(&mut w, &t, skill(1), 1);
+    assert!(
+        ev.iter().any(|e| matches!(e, Event::UltStart)),
+        "the second button a tick later still makes the chord"
+    );
+    // 창이 지나면 따로 누른 것이다.
+    let (mut w, t) = world();
+    wear_ult(&mut w, Ult::Upend, 1);
+    w.player.skill.rank = [0, 0];
+    w.player.skill.gauge = 1.0;
+    still(&mut w);
+    run(&mut w, &t, skill(0), 1);
+    run(&mut w, &t, Actions::default(), 60);
+    let ev = run(&mut w, &t, skill(1), 1);
+    assert!(!ev.iter().any(|e| matches!(e, Event::UltStart)));
+}

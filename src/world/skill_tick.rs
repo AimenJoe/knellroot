@@ -204,6 +204,17 @@ impl World {
                 return Some(Next::Ult);
             }
         }
+        // 다른 칸을 방금(`skill.chord s` 안에) 눌렀다 — 시동이 서지 않은 칸(못 쓰는·빈 칸)이어도 함께로 본다.
+        if full
+            && pl
+                .skill
+                .chord
+                .is_some_and(|(other, _)| other as usize != slot)
+        {
+            pl.skill.chord = None;
+            return Some(Next::Ult);
+        }
+        pl.skill.chord = Some((slot as u8, t[P::SkillChord]));
         // 빈 칸(0166 — 안 배운 스킬이 놓인 자리, 단 0): 눌러도 아무 일 없다(받아 두지도, 깜빡이지도 않는다).
         if pl.skill.rank[slot] == 0 {
             return None;
