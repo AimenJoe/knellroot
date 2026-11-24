@@ -24,6 +24,11 @@ pub mod key {
     /// 쉰 곳의 지역(0118, `stage::STAGES` 차례)과 이 판에 이긴 문지기 수 — 없으면 0(옛 기록 = 성소).
     pub const RUN_STAGE: &str = "run.stage";
     pub const RUN_DOWN: &str = "run.down";
+    /// 이 판에 쓰러뜨린 필드 보스(0270 D): 지역마다 한 비트(`1 << 지역`) — 쉬어도·지역을 떠났다 와도·이어 해도 그 판에는 다시 서지 않는다.
+    /// 없으면 0.
+    pub const RUN_FIELDS: &str = "run.fields";
+    /// 처음 쓰러뜨린 필드 보스(0270 D): 그 지역의 기록 이름들("sanctuary,…" — `StageDef::find_prefix`). 처음의 확정 떨굼·덤은 한 번만.
+    pub const FIELDS: &str = "fields";
     /// 장신구(M3): 가진 것("shell,ear")·낀 것(세 칸 "shell,,ear") — `charms.rs`의 키.
     pub const CHARMS_OWNED: &str = "charm.owned";
     pub const CHARMS_WORN: &str = "charm.worn";
@@ -220,6 +225,8 @@ pub struct RunAt {
     pub gate_open: bool,
     pub stage: usize,
     pub down: usize,
+    /// 이 판에 쓰러뜨린 필드 보스(0270 D — 지역마다 한 비트).
+    pub fields: u32,
 }
 
 /// 기록에서 게임이 쓰는 것(앱이 들고 있다가 바뀌면 쓴다).
@@ -238,6 +245,8 @@ pub struct Progress {
     pub finds: Vec<String>,
     /// 처음 쓰러뜨린 엘리트의 기록 이름(0112).
     pub elites: Vec<String>,
+    /// 처음 쓰러뜨린 필드 보스의 지역 이름(0270 D — `find_prefix`).
+    pub fields: Vec<String>,
     /// 시작한 판 수·주민을 처음 본 판·바뀐 주민(0122).
     pub runs: u32,
     pub residents_seen: Vec<(String, u32)>,
@@ -315,6 +324,7 @@ impl Progress {
             gate_open: r.num(key::RUN_GATE) == Some(1),
             stage: r.num(key::RUN_STAGE).unwrap_or(0) as usize,
             down: r.num(key::RUN_DOWN).unwrap_or(0) as usize,
+            fields: r.num(key::RUN_FIELDS).unwrap_or(0),
         });
         let owned = crate::charms::decode_owned(r.get(key::CHARMS_OWNED).unwrap_or(""));
         let worn = crate::charms::decode_worn(r.get(key::CHARMS_WORN).unwrap_or(""), &owned);
@@ -363,6 +373,16 @@ impl Progress {
             .collect();
         elites.sort();
         elites.dedup();
+        let mut fields: Vec<String> = r
+            .get(key::FIELDS)
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|f| !f.is_empty())
+            .map(str::to_string)
+            .collect();
+        fields.sort();
+        fields.dedup();
         let mut gates: Vec<String> = r
             .get(key::GATES)
             .unwrap_or("")
@@ -430,6 +450,7 @@ impl Progress {
             level,
             finds,
             elites,
+            fields,
             runs,
             residents_seen,
             residents_changed,
@@ -836,6 +857,7 @@ impl Progress {
         r.set(key::LV_MIGHT, self.level.might);
         r.set(key::FINDS, self.finds.join(","));
         r.set(key::ELITES, self.elites.join(","));
+        r.set(key::FIELDS, self.fields.join(","));
         r.set(key::RUNS, self.runs);
         r.set(
             key::RESIDENTS_SEEN,
@@ -903,12 +925,14 @@ impl Progress {
                 r.set(key::RUN_GATE, at.gate_open as u8);
                 r.set(key::RUN_STAGE, at.stage);
                 r.set(key::RUN_DOWN, at.down);
+                r.set(key::RUN_FIELDS, at.fields);
             }
             None => {
                 r.remove(key::RUN_REST);
                 r.remove(key::RUN_GATE);
                 r.remove(key::RUN_STAGE);
                 r.remove(key::RUN_DOWN);
+                r.remove(key::RUN_FIELDS);
             }
         }
         r
@@ -1399,6 +1423,41 @@ forge.sword=3
         );
     }
 
+    /// 0270 D: 처음 쓰러뜨린 필드 보스는 기록에 남는다(키 `fields` — 지역 이름, 겹치지 않게). 키가 없는 옛 기록 = 없음.
+    /// 이 판에 쓰러뜨린 것은 판의 자리와 함께(`run.fields` — 판이 끝나면 지워진다).
+    #[test]
+    fn beaten_field_bosses_round_trip() {
+        assert!(Progress::from_record(Record::parse("v=1\n"))
+            .fields
+            .is_empty());
+        let mut p = Progress::default();
+        p.fields = vec!["village".into(), "sanctuary".into()];
+        let r = p.to_record();
+        assert_eq!(r.get(key::FIELDS), Some("village,sanctuary"));
+        let back = Progress::from_record(Record::parse(
+            &(r.to_text() + "fields=sanctuary,village,sanctuary\n"),
+        ));
+        assert_eq!(back.fields, vec!["sanctuary", "village"]);
+        // 엘리트의 칸과 섞이지 않는다(엘리트 수는 기술 점수로 센다).
+        assert!(back.elites.is_empty());
+        assert_eq!(back.skill_points(), Progress::default().skill_points());
+        // 판 안: 쉰 곳과 함께 적히고, 판이 끝나면(쉰 곳이 없으면) 지워진다.
+        p.run = Some(RunAt {
+            rest: 1,
+            fields: 0b1,
+            ..RunAt::default()
+        });
+        let r = p.to_record();
+        assert_eq!(r.num(key::RUN_FIELDS), Some(1));
+        let back = Progress::from_record(Record::parse(&r.to_text()));
+        assert_eq!(back.run.map(|at| at.fields), Some(1));
+        p.run = None;
+        assert_eq!(p.to_record().get(key::RUN_FIELDS), None);
+        // `run.fields`가 없는 옛 판 = 0.
+        let old = Progress::from_record(Record::parse("v=1\nrun.rest=0\n"));
+        assert_eq!(old.run.map(|at| at.fields), Some(0));
+    }
+
     #[test]
     fn beaten_elites_round_trip() {
         let mut p = Progress::default();
@@ -1428,6 +1487,7 @@ forge.sword=3
             gate_open: true,
             stage: 1,
             down: 1,
+            fields: 0,
         });
         let back = Progress::from_record(Record::parse(&p.to_record().to_text()));
         assert_eq!(back.run, p.run);
@@ -2402,6 +2462,7 @@ forge.sword=3
                 gate_open: true,
                 stage: 1,
                 down: 2,
+                fields: 0b1,
             }),
             owned: vec![crate::charms::Id::Ear, crate::charms::Id::Shell],
             chests: vec![1, 4],
@@ -2426,6 +2487,7 @@ forge.sword=3
             .map(String::from)
             .to_vec(),
             elites: vec!["sanctuary.elite.0".into()],
+            fields: vec!["sanctuary".into()],
             runs: 5,
             residents_seen: vec![("fire".into(), 2)],
             residents_changed: vec!["water".into()],
@@ -2497,6 +2559,7 @@ forge.sword=3
             level,
             finds,
             elites,
+            fields,
             runs,
             residents_seen,
             residents_changed,
@@ -2543,6 +2606,7 @@ forge.sword=3
         assert_ne!(level, d.level, "level");
         assert_ne!(finds, d.finds, "finds");
         assert_ne!(elites, d.elites, "elites");
+        assert_ne!(fields, d.fields, "fields");
         assert_ne!(runs, d.runs, "runs");
         assert_ne!(residents_seen, d.residents_seen, "residents_seen");
         assert_ne!(residents_changed, d.residents_changed, "residents_changed");

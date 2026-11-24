@@ -347,7 +347,10 @@ fn the_stage_script_runs_from_entrance_to_clear() {
     assert_eq!(run.phase, Phase::Down);
     assert!(!run.gate_closed, "the way back out is open");
     assert_eq!(run.goal(), run.down_at);
-    assert!(w.enemies.iter().all(|e| !e.boss), "the warden is gone");
+    assert!(
+        w.enemies.iter().all(|e| !e.boss || e.field),
+        "the warden is gone"
+    );
     w.player.pos = run.down_at.unwrap();
     assert_eq!(step(&mut run, &mut w), StageOut::Descend);
 }
@@ -674,7 +677,7 @@ fn coming_back_up_finds_the_warden_gone_and_the_floor_open_even_after_a_fall() {
     let (mut run, mut w) = StageRun::start(STAGES[0]);
     run.arrive_from_below(&mut w);
     assert_eq!(run.phase, Phase::Down);
-    assert!(run.boss.is_none() && w.enemies.iter().all(|e| !e.boss));
+    assert!(run.boss.is_none() && w.enemies.iter().all(|e| !e.boss || e.field));
     assert!(!run.gate_closed);
     let d = run.down_at.unwrap();
     assert!(
@@ -685,7 +688,7 @@ fn coming_back_up_finds_the_warden_gone_and_the_floor_open_even_after_a_fall() {
     w.player.hp = 0;
     assert_eq!(run.tick(&mut w, 1.0 / 60.0), StageOut::Respawned);
     assert_eq!(run.phase, Phase::Down);
-    assert!(w.enemies.iter().all(|e| !e.boss), "still gone");
+    assert!(w.enemies.iter().all(|e| !e.boss || e.field), "still gone");
 }
 
 /// 문 장치 곁에서 상호작용(0113).
@@ -1415,7 +1418,7 @@ fn the_prologue_forest_sits_at_the_end_outside_the_run_order() {
     }
     let def = STAGES[PROLOGUE];
     let (run, w) = StageRun::start(def);
-    assert!(run.boss.is_none() && w.enemies.iter().all(|e| !e.boss));
+    assert!(run.boss.is_none() && w.enemies.iter().all(|e| !e.boss || e.field));
     assert!(run.rests.is_empty() && run.chest.at.is_empty() && run.hidden.list.is_empty());
     assert!(run.stones.is_empty() && run.lever.is_none());
     assert!(run.level.gate.is_none());
@@ -1602,4 +1605,243 @@ fn rest_hearths_and_lamps_are_different_props() {
         assert_eq!(hearths, run.rests.len(), "{}", def.find_prefix);
     }
     assert!(HEARTH_LIGHT_R > 7.0);
+}
+
+/// 필드 보스(0270 D)를 찾는다.
+fn field_boss(w: &World) -> Option<&crate::enemy::Enemy> {
+    w.enemies.iter().find(|e| e.field)
+}
+
+/// 0270 D: 성소에만 필드 보스가 있다 — 지도의 `Q` 자리에 엎드려 기다린다(잠든 채: 맞지도 락온에 잡히지도 않는다). 다른 지역에는
+/// 표도 지도 글자도 없다. 문지기의 셈(번호 0·깨어남·핵)은 그대로다.
+#[test]
+fn the_sanctuary_alone_fields_a_boss_lying_at_its_mark() {
+    for (i, def) in STAGES.iter().enumerate() {
+        let (run, w) = StageRun::start(def);
+        let marks = run.level.marks_of(FIELD_GLYPH).count();
+        assert_eq!(marks, def.field.is_some() as usize, "stage {i}");
+        assert_eq!(def.field.is_some(), i == 0, "stage {i}");
+        assert_eq!(field_boss(&w).is_some(), i == 0, "stage {i}");
+        // 문지기는 그대로 번호 0(서막 숲에는 없다).
+        if let Some(b) = run.boss {
+            assert!(w.enemies[b].boss && !w.enemies[b].field);
+        }
+    }
+    let (run, w) = StageRun::start(&sanctuary::DEF);
+    let e = field_boss(&w).unwrap();
+    let home = run.level.marks_of(FIELD_GLYPH).next().unwrap();
+    assert_eq!(e.kind, sanctuary::DEF.field.as_ref().unwrap().kind);
+    assert!(e.lying() && !e.active() && !e.lockable());
+    assert!(e.pos.distance(home) < 1e-3 && e.home.is_some());
+    assert!(run.boss_bar(&w).is_none(), "no bar while it lies");
+}
+
+/// 0270 D: 필드 보스의 터 — 넓고(돌진하는 2.5m 몸: 가운데 둘레 16 × 16m가 다 걷는 평평한 바닥), 길에서 벗어나 있고(진행의
+/// 길목 — 시작·장치·문·문지기 — 에서 멀다), 화로 곁이 아니다. 닿을 수 있는지는 `every_floor_is_reachable…`가 본다.
+#[test]
+fn the_field_boss_waits_in_a_wide_flat_clearing_off_the_route_and_away_from_hearths() {
+    let (run, _) = StageRun::start(&sanctuary::DEF);
+    let lv = &run.level;
+    let home = lv.marks_of(FIELD_GLYPH).next().unwrap();
+    let g = lv.ground();
+    let (cx, cz) = (
+        (home.x / CELL + lv.w as f32 * 0.5 - 0.5).round() as i32,
+        lv.row_of(home).round() as i32,
+    );
+    // 터의 네모: 보스 자리에서 가로·세로로 벽까지 — 그 안이 다 같은 높이의 걷는 바닥이고 16 × 16m(8 × 8칸)를 넘는다.
+    let span = |from: (i32, i32), dx: i32, dz: i32| {
+        let mut n = 0;
+        while lv.walkable(
+            (from.0 + dx * (n + 1)) as usize,
+            (from.1 + dz * (n + 1)) as usize,
+        ) {
+            n += 1;
+        }
+        n
+    };
+    let (z0, z1) = (cz - span((cx, cz), 0, -1), cz + span((cx, cz), 0, 1));
+    // 가로는 맨 윗줄에서 잰다(보스의 줄은 곁길로 이어져 길까지 뚫려 있다).
+    let (x0, x1) = (cx - span((cx, z0), -1, 0), cx + span((cx, z0), 1, 0));
+    assert!(
+        x1 - x0 + 1 >= 8 && z1 - z0 + 1 >= 8,
+        "{x0}..{x1} × {z0}..{z1}"
+    );
+    // 벽에서 떨어져 엎드린다(돌진이 등 뒤 벽에 바로 막히지 않게 — 사방 6m 넘게).
+    assert!(cx - x0 >= 3 && x1 - cx >= 3 && cz - z0 >= 3 && z1 - cz >= 3);
+    for z in z0..=z1 {
+        for x in x0..=x1 {
+            let (xu, zu) = (x as usize, z as usize);
+            assert!(lv.walkable(xu, zu), "({x},{z}) is not floor");
+            let p = lv.at(xu, zu);
+            assert!(
+                (g.height(p) - home.y).abs() < 0.01,
+                "({x},{z}) is not level"
+            );
+            // 부딪히는 소품은 가장자리 줄에만(달릴 자리를 막지 않는다).
+            let edge = x == x0 || x == x1 || z == z0 || z == z1;
+            let blocked = lv.props.iter().any(|q| {
+                q.kind.half() != Vec2::ZERO
+                    && (q.pos.x - p.x).abs() < CELL * 0.5
+                    && (q.pos.z - p.z).abs() < CELL * 0.5
+            });
+            assert!(edge || !blocked, "({x},{z}) holds a prop");
+        }
+    }
+    let flat = |a: Vec3| vec2(a.x - home.x, a.z - home.z).length();
+    for r in &run.rests {
+        assert!(flat(*r) > 30.0, "a hearth {} m away", flat(*r));
+    }
+    // 길목에서 멀다: 깨어난 자리·문 장치·문·문지기 — 일어나는 거리(`FIELD_WAKE_R`)·끈(`FIELD_LEASH`)이 닿지 않는다.
+    let mut route = vec![lv.player_start, lv.gate.unwrap().1];
+    route.extend(run.lever);
+    route.extend(lv.marks_of(sanctuary::DEF.boss.0));
+    for p in route {
+        assert!(flat(p) > crate::tuning::FIELD_LEASH, "{p:?}");
+    }
+    // 떼 마당(0244)도 터를 비킨다.
+    for p in &run.horde_at {
+        assert!(flat(*p) >= 16.0, "the horde stands in the stag's ground");
+    }
+}
+
+/// 0270 D: 필드 보스는 그 판에 한 번 — 쓰러뜨리면 화로에서 쉬어도·쓰러져 다시 서도 다시 서지 않고, 다음 판(새로 세운 지역)에
+/// 다시 엎드려 있다. 쓰러뜨리지 않고 쉬면 처음부터(가득 차 엎드린 채). 앱이 "이 판에 이미 쓰러뜨렸다"고 알려도 서지 않는다.
+#[test]
+fn a_downed_field_boss_stays_down_through_rests_this_run_and_waits_again_next_run() {
+    let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+    let i = entrance_rest(&run);
+    // 다친 채 깨어 있다가 쉬면: 가득 차 엎드린 채 다시.
+    {
+        let e = w.enemies.iter_mut().find(|e| e.field).unwrap();
+        e.hp = e.max_hp / 2;
+        e.state = EState::Chase;
+    }
+    rest_now(&mut run, &mut w, i);
+    let e = field_boss(&w).expect("still there");
+    assert!(e.lying() && e.hp == e.max_hp);
+    // 쓰러뜨린다.
+    w.enemies.iter_mut().find(|e| e.field).unwrap().state = EState::Dead;
+    tick(&mut run, &mut w, Actions::default());
+    assert!(run.field.down);
+    assert!(run.take_field_down().is_some());
+    assert!(run.take_field_down().is_none(), "told once");
+    rest_now(&mut run, &mut w, i);
+    assert!(field_boss(&w).is_none(), "resting does not raise it");
+    // 쓰러져 쉼터에서 다시 서도.
+    w.player.hp = 0;
+    w.player.flask = 0;
+    assert_eq!(
+        tick(&mut run, &mut w, Actions::default()),
+        StageOut::Respawned
+    );
+    assert!(field_boss(&w).is_none(), "nor does falling");
+    // 엘리트·보통 적은 여느 때처럼 다시 섰다.
+    assert_eq!(
+        w.enemies.iter().filter(|e| e.elite.is_some()).count(),
+        sanctuary::DEF.elites.len()
+    );
+    // 다음 판.
+    let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+    assert!(field_boss(&w).is_some_and(|e| e.lying()));
+    // 같은 판을 잇거나 지역에 다시 들어설 때(앱이 알린다): 서지 않는다 — 쉬어도.
+    run.set_field_down(&mut w);
+    assert!(field_boss(&w).is_none());
+    rest_now(&mut run, &mut w, i);
+    assert!(field_boss(&w).is_none());
+}
+
+/// 0270 D: 처음 쓰러뜨리면 잔불을 더 흩고 앱에 "처음"이라 알린다(확정 떨굼·장신구·기록) — 기록에 있으면 덤 없이 "다시".
+#[test]
+fn a_field_boss_pays_extra_and_reports_first_only_once() {
+    let fell = |beaten: bool| {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        run.set_field_beaten(beaten);
+        let at = {
+            let e = w.enemies.iter_mut().find(|e| e.field).unwrap();
+            e.state = EState::Dead;
+            e.pos
+        };
+        w.drops.clear();
+        tick(&mut run, &mut w, Actions::default());
+        let extra = w.drops.iter().map(|d| d.value).sum::<u32>();
+        let told = run.take_field_down().expect("told");
+        assert_eq!(told.0, at);
+        (told.1, extra)
+    };
+    let (first, with_bonus) = fell(false);
+    let (again, plain) = fell(true);
+    assert!(first && !again);
+    assert_eq!(with_bonus - plain, crate::tuning::FIELD_FIRST_EMBERS);
+    // 처음의 합(종의 잔불 + 덤)은 성소 문지기의 것보다 뚜렷이 많다.
+    let stag = crate::species::def(Kind::Stag).embers;
+    let warden = crate::species::def(Kind::Warden).embers;
+    assert!(stag + crate::tuning::FIELD_FIRST_EMBERS >= warden * 2);
+    assert!(stag < warden, "less on later runs");
+}
+
+/// 0270 D: 일어나기 시작하면 카드와 체력 띠(문지기와 같은 띠 — 이름은 그 보스), 다 서서 싸우는 동안에도. 제자리로 돌아가는
+/// 동안·엎드린 뒤에는 띠가 없다. 일어나기 시작한 틱을 앱에 한 번 알린다(낮은 땅울림 — 종은 울리지 않는다).
+#[test]
+fn the_field_boss_shows_its_bar_from_rising_until_it_gives_up_or_falls() {
+    let t = Tuning::default();
+    let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+    run.intro = 0.0;
+    let home = run.level.marks_of(FIELD_GLYPH).next().unwrap();
+    w.player.pos = home + vec3(-6.0, 0.0, 0.0);
+    w.player.prev = w.player.pos;
+    w.unhurt = true;
+    // (걸어서 왔다면 구역 카드는 이미 지났다.)
+    run.first_card = true;
+    run.zone = run.zone_at(w.player.pos);
+    assert!(!run.take_field_woke());
+    for _ in 0..3 {
+        w.step(&Actions::default(), &t);
+        run.tick(&mut w, 1.0 / 60.0);
+    }
+    assert!(field_boss(&w).unwrap().waking);
+    assert!(run.take_field_woke() && !run.take_field_woke(), "told once");
+    assert_eq!(
+        run.card.map(|c| crate::i18n::tr(c.0)),
+        Some(crate::i18n::tr(|s| s.stag_wakes))
+    );
+    let bar = run.bar_boss(&w).expect("a bar while it rises");
+    assert_eq!(bar.kind, Kind::Stag);
+    for _ in 0..(crate::tuning::FIELD_WAKE * 60.0) as usize + 5 {
+        w.step(&Actions::default(), &t);
+        run.tick(&mut w, 1.0 / 60.0);
+    }
+    assert!(field_boss(&w).unwrap().active());
+    assert_eq!(run.boss_bar(&w).map(|b| b.0), Some(1.0));
+    // 돌아가는 동안에는 띠가 없다.
+    w.enemies.iter_mut().find(|e| e.field).unwrap().state = EState::Return;
+    assert!(run.boss_bar(&w).is_none());
+    // 쓰러지면 없다.
+    w.enemies.iter_mut().find(|e| e.field).unwrap().state = EState::Dead;
+    assert!(run.boss_bar(&w).is_none());
+}
+
+/// 문지기를 지우면(핵을 거둔 뒤) 뒤의 적 번호가 하나씩 당겨진다 — 엘리트의 번호도 같이 당겨야 한다: 안 그러면 엘리트 곁의
+/// 보통 적이 쓰러질 때 엘리트가 쓰러진 것으로 셌다. 필드 보스(0270 D)는 문지기가 지워져도 남는다.
+#[test]
+fn taking_the_core_keeps_elite_numbers_and_the_field_boss() {
+    let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+    run.open_down(&mut w);
+    assert!(w.enemies.iter().all(|e| !e.boss || e.field));
+    assert!(field_boss(&w).is_some_and(|e| e.lying()), "the stag stays");
+    // 엘리트가 아닌 적을 다 쓰러뜨려도 엘리트는 쓰러진 것으로 세지 않는다.
+    for e in w
+        .enemies
+        .iter_mut()
+        .filter(|e| e.elite.is_none() && !e.boss)
+    {
+        e.state = EState::Dead;
+    }
+    tick(&mut run, &mut w, Actions::default());
+    assert!(run.take_elites_down().is_empty());
+    assert!(run.take_elites_new().is_empty());
+    // 엘리트 하나를 쓰러뜨리면 그것만.
+    let first = w.enemies.iter().position(|e| e.elite.is_some()).unwrap();
+    w.enemies[first].state = EState::Dead;
+    tick(&mut run, &mut w, Actions::default());
+    assert_eq!(run.take_elites_down().len(), 1);
 }

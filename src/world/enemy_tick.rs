@@ -130,18 +130,58 @@ impl World {
                 }
                 EState::Chase => {
                     let gone = vec3(en.pos.x - home.x, 0.0, en.pos.z - home.z).length();
-                    if gone > en.leash && from_home > en.leash {
+                    // 필드 보스(0270 D)는 제 터를 지킨다: 방랑자가 터에서 끈보다 멀어지면 어디에 있든 돌아가 엎드린다.
+                    let lost = if en.field {
+                        from_home > en.leash
+                    } else {
+                        gone > en.leash && from_home > en.leash
+                    };
+                    if lost {
                         en.state = EState::Return;
+                    }
+                }
+                // 엎드린 필드 보스(0270 D): 보이는 자리에서 `FIELD_WAKE_R` 안으로 다가오면 일어난다(벽 너머·다른 층은 아니다).
+                EState::Dormant if en.lying() => {
+                    let near = from_home <= en.leash && (body - en.pos.y).abs() <= SIGHT_DY;
+                    if near && d <= crate::tuning::FIELD_WAKE_R && nav.clear(en.pos, p, 0.1) {
+                        en.stir();
                     }
                 }
                 _ => {}
             }
         }
+        self.stir_fields(p);
         for at in woke {
             for en in self.enemies.iter_mut() {
                 if en.state == EState::Idle && en.pos.distance(at) <= ALERT_RADIUS {
                     en.notice();
                 }
+            }
+        }
+    }
+
+    /// 엎드린 필드 보스를 쳤다(0270 D "다가가거나 치면 일어난다"): 잠든 몸은 맞지 않는다(`active`가 거짓) — 방랑자의 탄·수류탄·
+    /// 던진 무기가 몸 곁(`FIELD_STIR_R`)에 오면 맞힌 것으로 쳐 깨운다(피해는 없다). 근접은 닿기 전에 `FIELD_WAKE_R`이 먼저 깨운다.
+    /// 방랑자가 터의 끈 밖이면 깨우지 않는다(일어났다 곧 돌아가 눕기만 한다).
+    fn stir_fields(&mut self, p: Vec3) {
+        let reach = crate::tuning::FIELD_STIR_R;
+        let mut shots = self.bolts.iter().map(|b| b.pos).collect::<Vec<_>>();
+        shots.extend(self.bombs.iter().map(|g| g.pos));
+        shots.extend(self.skill_blades.iter().map(|b| b.pos));
+        if shots.is_empty() {
+            return;
+        }
+        for en in self.enemies.iter_mut().filter(|e| e.lying()) {
+            let Some((home, _)) = en.home else { continue };
+            if vec3(p.x - home.x, 0.0, p.z - home.z).length() > en.leash {
+                continue;
+            }
+            let touched = shots.iter().any(|s| {
+                vec3(s.x - en.pos.x, 0.0, s.z - en.pos.z).length() <= en.radius + reach
+                    && s.y - en.pos.y <= en.height + reach
+            });
+            if touched {
+                en.stir();
             }
         }
     }
@@ -310,26 +350,40 @@ impl World {
                     blow,
                     boss: en.boss,
                 });
+                // 뿌리 줄이 여럿이면(0270 D 내려 딛기 2단계) 양옆 줄도 제 쪽으로 — 줄마다 금이 뻗는다.
+                if matches!(blow, crate::enemy::Blow::Line { .. }) {
+                    for (yaw, len) in en.root_lines().into_iter().skip(1) {
+                        ev.push(Event::EnemyStrike {
+                            at,
+                            dir: en.dir_at(yaw),
+                            blow: crate::enemy::Blow::Line { len },
+                            boss: en.boss,
+                        });
+                    }
+                }
             }
             // 돌진 길이(0076): 벽·기둥·턱·아레나 끝까지 — 예고 띠와 몸이 같은 길이.
             // 뿌리 기둥 줄(0133)도 같은 길이 칸 — 벽·기둥을 뚫고 솟지 않는다.
-            if matches!(en.atk, Atk::Charge | Atk::Roots) && matches!(en.state, EState::Tele { .. })
+            if matches!(en.atk, Atk::Charge | Atk::Roots | Atk::Stomp)
+                && matches!(en.state, EState::Tele { .. })
             {
                 let d = en.def();
-                let max = if en.atk == Atk::Roots {
-                    crate::tuning::ROOTS_LEN
-                } else {
+                let max = if en.atk == Atk::Charge {
                     d.charge_speed * d.charge_time
+                } else {
+                    crate::tuning::ROOTS_LEN
                 };
-                let room = nav.charge_room(
-                    &self.obstacles,
-                    self.arena,
-                    en.pos,
-                    en.facing_dir(),
-                    en.radius,
-                    max,
-                );
+                let (at, r) = (en.pos, en.radius);
+                let room_at =
+                    |dir: Vec3| nav.charge_room(&self.obstacles, self.arena, at, dir, r, max);
+                let room = room_at(en.facing_dir());
                 en.set_charge_room(room, p);
+                // 내려 딛기(0270 D)의 양옆 줄도 벽·기둥 앞까지.
+                if en.atk == Atk::Stomp {
+                    let a = crate::tuning::STOMP_FAN_DEG.to_radians();
+                    let (left, right) = (room_at(en.dir_at(-a)), room_at(en.dir_at(a)));
+                    en.set_fan_room(left, right);
+                }
             }
             // 바닥을 훑는 파동은 높이 떠 있으면 넘는다(0027) — 높은 단 위도 마찬가지(0043).
             let above = body - en.pos.y;
@@ -375,10 +429,10 @@ impl World {
                     blocked = true;
                 } else if guarding && en.parryable() && in_front(en.pos) {
                     // 방패(0223): 받을 수 있는 공격을 앞에서 — 체력 대신 기력으로(`guards_land`). 못 받는 공격은 방패도 못 막는다.
-                    guarded.push((en.pos, en.tier));
+                    guarded.push((en.pos, en.blow_tier()));
                 } else {
                     hurt_player.get_or_insert(en.pos);
-                    hurt_tier = hurt_tier.max(en.tier);
+                    hurt_tier = hurt_tier.max(en.blow_tier());
                     if out.pull {
                         pull_to = Some(en.pos);
                     }

@@ -19,8 +19,9 @@ impl App {
         if let Some(at) = self.progress.run {
             // 지역 잇기(0118): 쉰 곳의 지역에서, 이 판에 이긴 문지기는 그대로.
             self.down = at.down;
+            self.fields_down = at.fields;
             self.rest_at = Some(at);
-            if at.stage != self.stage || self.down > self.stage {
+            if at.stage != self.stage || self.down > self.stage || self.fields_down != 0 {
                 self.enter_stage(at.stage);
             }
             self.run.resume(&mut self.world, at);
@@ -96,6 +97,7 @@ impl App {
         }
         if let Some(at) = self.rest_at.as_mut() {
             at.down = self.down;
+            at.fields = self.fields_down;
         }
         self.progress.run = self.rest_at;
     }
@@ -249,6 +251,44 @@ impl App {
                 }
             }
         }
+        self.on_field_down();
+    }
+
+    /// 필드 보스가 쓰러졌다(0270 D): 그 판에는 다시 서지 않는다. 처음이면 기록에 적고 **가장 높은 등급의 여벌 하나를 확정**으로 +
+    /// 그 보스의 장신구(아직 없고 바닥에도 없으면), 그 뒤로는 문지기의 급으로 굴린 여벌 하나 — 모두 쓰러진 자리 곁의 바닥에(0226:
+    /// 주워야 든다, 가방이 가득이면 남는다). 처음의 덤 잔불은 스테이지가 이미 흩었다.
+    fn on_field_down(&mut self) {
+        let Some((at, first)) = self.run.take_field_down() else {
+            return;
+        };
+        self.fields_down |= 1 << self.stage;
+        let Some(field) = &self.run.def.field else {
+            return;
+        };
+        let seed = self.loot_seed(5, 0);
+        let loot = crate::items::field_loot(first);
+        if first {
+            self.progress.note_field(self.run.def.find_prefix);
+            let n = crate::tuning::FIELD_FIRST_EMBERS.to_string();
+            self.toast = Some((fill(s().toast_field, &[&n]), TOAST_TIME));
+        }
+        if let Some(item) = self.roll_spare_of(loot.rarity, loot.luck, seed) {
+            self.lay_drop(at, at + super::bag::BESIDE, item);
+        }
+        if let Some(id) = field.charm.filter(|_| loot.charm) {
+            let base = crate::items::Base::Charm(id);
+            let lying = self.run.item_drops.iter().any(|d| d.item.base == base);
+            if !self.progress.owned.contains(&id) && !lying {
+                let seed = self.loot_seed(6, 0);
+                let item = crate::items::roll(
+                    base,
+                    crate::items::roll_rarity(loot.luck, seed),
+                    crate::items::tier_cap(self.stage),
+                    seed,
+                );
+                self.lay_drop(at, at - super::bag::BESIDE, item);
+            }
+        }
     }
 
     /// 판을 끝냈다 · 핵을 쥐었다.
@@ -364,6 +404,17 @@ impl App {
     /// 여벌을 굴린다(0223 V4c — 엘리트·문지기가 떨군다): 이미 가진 바탕 가운데 하나의 **다른 것**(등급·옵션을 굴린다) — 더 나은 것을
     /// 찾는 재미. 가진 것이 없으면(맨손뿐) 아무것도 없다.
     fn roll_spare(&self, luck: u8, seed: u64) -> Option<crate::items::Item> {
+        self.roll_spare_of(None, luck, seed)
+    }
+
+    /// 여벌을 굴리되 등급을 정해 줄 수 있다(0270 D — 필드 보스의 첫 떨굼은 굴리는 등급 가운데 가장 높은 것으로 확정).
+    /// `rarity`가 없으면 떨군 것의 급(`luck`)으로 굴린다.
+    fn roll_spare_of(
+        &self,
+        rarity: Option<crate::items::Rarity>,
+        luck: u8,
+        seed: u64,
+    ) -> Option<crate::items::Item> {
         use crate::items::{self, Base};
         let p = &self.progress;
         let mut pool: Vec<Base> = p.weapons.iter().map(|w| Base::Weapon(*w)).collect();
@@ -379,7 +430,7 @@ impl App {
         let base = items::pick_base(&pool, &worn, seed)?;
         Some(items::roll(
             base,
-            items::roll_rarity(luck, seed),
+            rarity.unwrap_or_else(|| items::roll_rarity(luck, seed)),
             items::tier_cap(self.stage),
             seed,
         ))

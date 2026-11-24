@@ -194,6 +194,10 @@ impl App {
             self.snd(crate::sfx::Id::Wake);
         }
         self.heard.was_waking = waking;
+        // 필드 보스가 일어난다(0270 D): 같은 낮은 땅울림 — 목의 종은 울리지 않는다(종소리를 내지 않는다, lore ECO-08).
+        if self.run.take_field_woke() {
+            self.snd(crate::sfx::Id::Wake);
+        }
         if out == crate::stage::StageOut::Respawned {
             // 쉼터에서 다시 일어섰다(0032): 카메라를 그 자리로 바로(멀리서 날아오지 않게).
             self.cam = self.cam.renew(self.world.player.pos, &self.t);

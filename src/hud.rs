@@ -1154,7 +1154,8 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
     }
     // 보스 띠(아래 가운데): 이름 + 막대(깨어나면 색이 달아오른다).
     if let Some((k, roused)) = run.boss_bar(w).filter(|_| !under_menu) {
-        let boss = run.boss.and_then(|i| w.enemies.get(i));
+        // 문지기 또는 싸우는 중인 필드 보스(0270 D).
+        let boss = run.bar_boss(w);
         let name = boss.map(|b| tr(b.def().name)).unwrap_or("");
         let bw = f.w * 0.5;
         let bh = 3.0 * s;

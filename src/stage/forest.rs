@@ -37,6 +37,7 @@ pub static DEF: StageDef = StageDef {
     elites: &[],
     shortcut: false,
     prologue: true,
+    field: None,
 };
 
 const MAP: &str = "

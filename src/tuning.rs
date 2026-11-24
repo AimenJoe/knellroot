@@ -2300,3 +2300,27 @@ pub const SHELL_TURN: f32 = 0.7;
 pub const SHELL_OPEN: f32 = 1.4;
 /// 이끼 덮인 문지기의 틈새 돌진 뒤 늦게 도는 쉼(0185) — 종의 `recover`에 곱한다.
 pub const MOSS_DASH_RECOVER: f32 = 1.6;
+
+// 필드 보스(0270 D — 지역마다 하나, 길에서 벗어난 터에 엎드려 기다린다). 종마다의 수치는 `species.rs` 표, 여기는 꼴이 같은 값.
+/// 엎드린 필드 보스가 일어나는 거리(m — 보이는 자리에서, 벽 너머는 아니다) · 일어서는 초(`wake` 동작의 길이) · 제자리로 돌아와
+/// 다시 엎드리는 초 · 끈(m — 방랑자가 터에서 이만큼 멀어지면 제자리로 돌아가 엎드린다: 체력 가득, 타입 게이지 지움).
+pub const FIELD_WAKE_R: f32 = 9.0;
+pub const FIELD_WAKE: f32 = 2.4;
+pub const FIELD_SETTLE: f32 = 1.6;
+pub const FIELD_LEASH: f32 = 24.0;
+/// 엎드린 몸에 방랑자의 탄·던진 것이 이만큼(m, 몸 가장자리부터) 안으로 오면 일어난다(잠든 몸은 맞지 않는다 — 맞힌 것으로 친다).
+pub const FIELD_STIR_R: f32 = 0.6;
+/// 필드 보스가 맞힌 한 대의 무게(구역 등급 — `TIER_HEAVY_HITS`부터 두 눈금): 제 지역의 문지기보다 무겁게 친다.
+pub const FIELD_BLOW_TIER: u8 = 3;
+/// 필드 보스를 처음 쓰러뜨렸을 때 더 흩는 잔불(종의 `embers`에 더해 — 성소 문지기 30보다 뚜렷이 많게).
+pub const FIELD_FIRST_EMBERS: u32 = 45;
+/// 고요한 사슴(0270 D)의 내려 딛기(`Atk::Stomp`): 몸 둘레 원판의 반지름(m, 몸 가운데부터 — 받지 못한다, 물러난다) ·
+/// 2단계의 뿌리 줄 셋이 벌어지는 각(도, 가운데 줄에서 양옆으로) · 딛고 난 뒤의 쉼(종의 `recover`에 곱한다).
+pub const STOMP_R: f32 = 3.4;
+pub const STOMP_FAN_DEG: f32 = 28.0;
+pub const STOMP_RECOVER: f32 = 1.2;
+/// 고요한 사슴의 돌진: 이보다 가까우면 달리지 않는다(m) · 긁는 동안 몸이 도는 빠르기(rad/s — 2단계에 돌아서 한 번 더 이을 때
+/// 뒤로 돌 만큼) · 돌진 뒤의 긴 틈(종의 `recover`에 곱한다).
+pub const STAG_CHARGE_MIN: f32 = 5.0;
+pub const STAG_CHARGE_TURN: f32 = 6.0;
+pub const STAG_DASH_RECOVER: f32 = 1.7;

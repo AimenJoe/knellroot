@@ -1200,6 +1200,14 @@ fn upend_ranks_lengthen_the_stagger_and_harden_the_wall() {
 /// 스킬의 타(되돌아 베기·셋째 바퀴·모인 자리의 터짐까지)는 큰 기술 게이지를 채우지 않고, 스킬은 기력을 쓰지 않는다.
 #[test]
 fn at_max_rank_with_every_pick_a_boss_is_never_pulled_or_staggered_and_skills_stay_free() {
+    // 문지기와 필드 보스(0270 D — 고요한 사슴: 문지기가 아니어도 보스의 규칙은 같다).
+    for boss in [Kind::Warden, Kind::Stag] {
+        boss_rules_hold_for(boss);
+    }
+}
+
+fn boss_rules_hold_for(boss: Kind) {
+    assert!(crate::species::def(boss).boss);
     for id in skills::IDS {
         for pick in [Pick::A, Pick::B] {
             let (mut w, t) = world();
@@ -1207,16 +1215,16 @@ fn at_max_rank_with_every_pick_a_boss_is_never_pulled_or_staggered_and_skills_st
             // 보스는 어느 모양에도 닿는 자리(앞 2.5m), 잡몹 하나는 그 곁. 끌어모으기는 보스가 부채꼴 안·끌려오는 길 밖에
             // 서게(끌려온 잡몹의 몸에 밀리는 것은 끌림이 아니다).
             if id == Sk::Gather {
-                w.spawn_boss(vec3(3.0, 0.0, -5.0));
+                w.spawn(boss, vec3(3.0, 0.0, -5.0));
                 w.spawn_mob(vec3(0.0, 0.0, -3.0));
             } else {
-                w.spawn_boss(vec3(0.6, 0.0, -2.5));
+                w.spawn(boss, vec3(0.6, 0.0, -2.5));
                 w.spawn_mob(vec3(-1.2, 0.0, -2.5));
             }
             still(&mut w);
             let (boss_was, boss_hp) = (w.enemies[0].pos, w.enemies[0].hp);
             let stamina = w.player.stamina;
-            let tag = format!("{id:?} {pick:?}");
+            let tag = format!("{boss:?} {id:?} {pick:?}");
             let mut ev = w.step(&skill(0), &t);
             for k in 0..150 {
                 // 되울림(G2)은 패링이 있어야 울린다: 울림을 두른 뒤 잡몹이 앞에서 내려치게 하고 받아친다(보스는 둘레 안).

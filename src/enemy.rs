@@ -5,6 +5,7 @@ use macroquad::prelude::*;
 use crate::species::{self, Behavior, Def, Kind};
 use crate::tuning::{
     HURL_R, HURL_RING, PLAYER_RADIUS, RISE_BURST, RISE_TIME, ROOTS_LEN, ROOTS_R, ROOTS_SPEED,
+    STOMP_R,
 };
 
 /// 넉백 속도가 초당 이만큼씩 준다(월드와 같은 값).
@@ -63,6 +64,9 @@ pub enum Atk {
     /// 껍질 받기(이끼 덮인 문지기, 0185): 공격이 아니다 — 예고 동안 웅크려 앞을 막고(`Enemy::guards`), 끝나면 풀며 쉰다(틈).
     /// 바닥 예고·소리는 없다(몸이 말한다).
     Shell,
+    /// 내려 딛기(고요한 사슴, 0270 D): 뒷발로 일어섰다 쿵 — 예고 끝에 몸 둘레 원판(`STOMP_R`, 받지 못한다 — 물러난다), 곧이어
+    /// 딛은 자리에서 바라보는 쪽으로 뿌리 기둥 줄(`Roots`와 같은 길 — 옆으로 비킨다). 2단계는 세 줄 부채꼴(`root_lines`).
+    Stomp,
 }
 
 /// 바닥 예고 모양(렌더가 그린다).
@@ -234,6 +238,15 @@ pub struct Enemy {
     pub kindled: u32,
     /// 끈(m, 0113 — 제자리에서 이만큼 넘게 멀어지면 돌아간다). 보통 `LEASH_RANGE`, 서막 숲의 잔재는 짧게(0262 — 해 보는 상대).
     pub leash: f32,
+    /// 필드 보스(0270 D — 종 표의 `field`): 제 터에 엎드려 기다리는 보스(`lie_in_wait`). 스테이지의 문지기 셈(`boss`만 보는
+    /// 자리)에서 빠진다.
+    pub field: bool,
+    /// 필드 보스가 일어선 만큼(0 = 다리를 접고 엎드림 … 1 = 다 섰다 — 렌더가 `wake` 동작의 진행으로): 깨어나는 동안 오르고
+    /// (`waking`), 제자리로 돌아와 엎드리는 동안 내린다.
+    pub stand: f32,
+    /// 내려 딛기 2단계(0270 D)의 양옆 뿌리 줄 길이(m — 왼쪽·오른쪽, 월드가 벽·기둥 앞까지로 줄인다 `set_fan_room`).
+    /// 가운데 줄은 `charge.len`.
+    pub fan: [f32; 2],
 }
 
 /// 자세 막대(0051, PoE2 Heavy Stun — 0251 R10에서 묶음).
@@ -388,6 +401,8 @@ impl Blow {
             Atk::Roots => Blow::Line { len },
             Atk::Hook => Blow::Hook { len },
             Atk::Shards => Blow::Volley,
+            // 내려 딛기(0270 D): 딛는 순간은 둘레 — 이어 솟는 뿌리 줄은 `Line`을 따로 말한다(`Enemy::tick`).
+            Atk::Stomp => Blow::Around { r: STOMP_R },
             Atk::Shell => return None,
         })
     }
@@ -500,6 +515,45 @@ impl Enemy {
             load_lost: false,
             kindled: 0,
             leash: crate::tuning::LEASH_RANGE,
+            field: d.field,
+            stand: 1.0,
+            fan: [ROOTS_LEN; 2],
+        }
+    }
+
+    /// 필드 보스로 세운다(0270 D): 이 자리·이 쪽이 제 터 — 다리를 접고 엎드려 기다린다(`Dormant`: 맞지도, 락온·조준에 잡히지도
+    /// 않는다). 방랑자가 다가오거나 치면 월드가 깨우고(`stir`), 터에서 멀리 달아나면 돌아와 다시 엎드린다(`tick`의 `Return`).
+    pub fn lie_in_wait(&mut self, facing: f32) {
+        self.home = Some((self.pos, facing));
+        self.facing = facing;
+        self.leash = crate::tuning::FIELD_LEASH;
+        self.state = EState::Dormant;
+        self.waking = false;
+        self.stand = 0.0;
+    }
+
+    /// 엎드린 필드 보스를 깨운다(0270 D): 일어서는 동안(`FIELD_WAKE`)은 아직 맞지 않지만 락온에는 잡힌다(`waking` — 0149).
+    /// 이미 깨어나는 중·깨어 있으면 거짓.
+    pub fn stir(&mut self) -> bool {
+        if self.field && self.state == EState::Dormant && !self.waking {
+            self.waking = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 엎드려 기다리는 필드 보스인가(0270 D) — 일어서는 중은 아니다.
+    pub fn lying(&self) -> bool {
+        self.field && self.state == EState::Dormant && !self.waking
+    }
+
+    /// 맞힌 한 대의 무게(구역 등급, 0112 — `TIER_HEAVY_HITS`부터 두 눈금): 필드 보스(0270 D)는 제 지역의 등급과 상관없이 무겁게.
+    pub fn blow_tier(&self) -> u8 {
+        if self.field {
+            self.tier.max(crate::tuning::FIELD_BLOW_TIER)
+        } else {
+            self.tier
         }
     }
 
@@ -600,6 +654,8 @@ impl Enemy {
             (Behavior::Bellkeeper, Atk::Charge) => Some(Atk::Toll),
             // 이끼 덮인 문지기(0185): 쓸기 뒤 곧장 돌진.
             (Behavior::Mossward, Atk::Slam) => Some(Atk::Charge),
+            // 고요한 사슴(0270 D): 돌진 끝에 돌아서 한 번 더.
+            (Behavior::Stag, Atk::Charge) => Some(Atk::Charge),
             _ => None,
         }
     }
@@ -653,7 +709,7 @@ impl Enemy {
     pub fn parryable(&self) -> bool {
         !matches!(
             self.atk,
-            Atk::Wave | Atk::Plant | Atk::Toll | Atk::Roots | Atk::Hurl
+            Atk::Wave | Atk::Plant | Atk::Toll | Atk::Roots | Atk::Hurl | Atk::Stomp
         )
     }
 
@@ -739,14 +795,46 @@ impl Enemy {
         }
     }
 
-    /// 뿌리 기둥 줄(0133)의 앞머리: 몸에서 바라보는 쪽으로 몇 m까지 솟았나(솟는 중일 때만).
+    /// 뿌리 기둥 줄(0133)의 앞머리: 몸에서 바라보는 쪽으로 몇 m까지 솟았나(솟는 중일 때만). 줄이 여럿이면(0270 D 내려 딛기
+    /// 2단계) 가장 긴 줄의 끝까지 — 줄마다의 끝은 `root_lines`.
     pub fn roots_front(&self) -> Option<f32> {
         match (self.state, self.atk) {
-            (EState::Wave { t }, Atk::Roots) => {
-                Some((self.radius + t * ROOTS_SPEED).min(self.charge.len))
+            (EState::Wave { t }, Atk::Roots | Atk::Stomp) => {
+                Some((self.radius + t * ROOTS_SPEED).min(self.roots_reach()))
             }
             _ => None,
         }
+    }
+
+    /// 뿌리 기둥 줄들(0133 · 0270 D): (바라보는 쪽에서 비낀 각 rad, 그 줄의 길이 m). 문지기의 뿌리 줄·사슴의 내려 딛기는 한 줄,
+    /// 사슴 2단계의 내려 딛기는 세 줄 부채꼴(`STOMP_FAN_DEG`). 판정·예고·그림이 같은 줄을 쓴다.
+    pub fn root_lines(&self) -> Vec<(f32, f32)> {
+        let mut v = vec![(0.0, self.charge.len)];
+        if self.atk == Atk::Stomp && self.roused {
+            let a = crate::tuning::STOMP_FAN_DEG.to_radians();
+            v.push((-a, self.fan[0]));
+            v.push((a, self.fan[1]));
+        }
+        v
+    }
+
+    /// 가장 긴 뿌리 줄의 끝(m).
+    fn roots_reach(&self) -> f32 {
+        self.root_lines()
+            .into_iter()
+            .map(|(_, len)| len)
+            .fold(0.0, f32::max)
+    }
+
+    /// 월드가 잰 양옆 뿌리 줄의 길이(0270 D — 벽·기둥 앞까지, 가운데 줄은 `set_charge_room`).
+    pub fn set_fan_room(&mut self, left: f32, right: f32) {
+        self.fan = [left, right];
+    }
+
+    /// 바라보는 쪽에서 `yaw`(rad)만큼 비낀 쪽.
+    pub fn dir_at(&self, yaw: f32) -> Vec3 {
+        let (s, c) = (self.facing + yaw).sin_cos();
+        vec3(s, 0.0, c)
     }
 
     /// 지금 공격의 예고 길이(초) = 들어 올림 + 지연 버팀(0128).
@@ -779,7 +867,7 @@ impl Enemy {
                 Atk::Charge => d.charge_tele,
                 Atk::Wave => d.wave_tele,
                 Atk::Plant | Atk::Shards => d.tele,
-                Atk::Toll | Atk::Roots | Atk::Hurl => d.wave_tele,
+                Atk::Toll | Atk::Roots | Atk::Hurl | Atk::Stomp => d.wave_tele,
                 Atk::Hook => d.charge_tele,
                 Atk::Shell => crate::tuning::SHELL_HOLD,
             }
@@ -791,6 +879,9 @@ impl Enemy {
         let after = match (d.behavior, self.atk) {
             (Behavior::Mossward, Atk::Charge) => crate::tuning::MOSS_DASH_RECOVER,
             (Behavior::Mossward, Atk::Shell) => crate::tuning::SHELL_OPEN,
+            // 고요한 사슴(0270 D): 돌진 끝의 틈이 길고(2단계에 이은 둘째 돌진 뒤도), 내려 딛은 뒤에도 조금 길다.
+            (Behavior::Stag, Atk::Charge) => crate::tuning::STAG_DASH_RECOVER,
+            (Behavior::Stag, Atk::Stomp) => crate::tuning::STOMP_RECOVER,
             _ => 1.0,
         };
         d.recover * after * if self.roused { ROUSED_RECOVER } else { 1.0 }
@@ -823,16 +914,7 @@ impl Enemy {
                 arc: d.arc,
             },
             // 줄지은 원(0133): 플레이어 가운데가 들어가면 맞는 곳 — 원끼리 겹치게(사이로 빠질 틈이 있어 보이지 않게).
-            Atk::Roots => {
-                let r = ROOTS_R + PLAYER_RADIUS;
-                let step = r * 1.3;
-                TeleShape::Row {
-                    n: ((self.charge.len - self.radius) / step).ceil().max(1.0) as u8,
-                    r,
-                    step,
-                    start: self.radius + r * 0.5,
-                }
-            }
+            Atk::Roots => self.row_shape(self.charge.len),
             Atk::Hurl => TeleShape::Disc {
                 r: HURL_R + PLAYER_RADIUS,
             },
@@ -841,9 +923,37 @@ impl Enemy {
                 len: self.charge.len,
                 w: (crate::tuning::HOOK_R + PLAYER_RADIUS) * 2.0,
             },
+            // 내려 딛기(0270 D): 몸 둘레 원판(플레이어 가운데가 들어가면 맞는 곳) — 뿌리 줄은 `tele_more`.
+            Atk::Stomp => TeleShape::Disc {
+                r: STOMP_R + PLAYER_RADIUS,
+            },
             // 껍질은 공격이 아니다 — `telegraph`가 그리지 않는다.
             Atk::Shell => TeleShape::Disc { r: 0.0 },
         }
+    }
+
+    /// 뿌리 기둥 줄 하나의 예고(줄지은 원, 0133): 길이 `len`의 줄 — 원끼리 겹치게(사이로 빠질 틈이 있어 보이지 않게).
+    fn row_shape(&self, len: f32) -> TeleShape {
+        let r = ROOTS_R + PLAYER_RADIUS;
+        let step = r * 1.3;
+        TeleShape::Row {
+            n: ((len - self.radius) / step).ceil().max(1.0) as u8,
+            r,
+            step,
+            start: self.radius + r * 0.5,
+        }
+    }
+
+    /// 예고에 덧그릴 모양들(0270 D — 내려 딛기의 뿌리 줄): (바라보는 쪽에서 비낀 각 rad, 모양). 진행은 `telegraph`와 같다.
+    /// 다른 공격은 없다 — 모양 하나가 한 공격을 말한다.
+    pub fn tele_more(&self) -> Vec<(f32, TeleShape)> {
+        if self.atk != Atk::Stomp || !matches!(self.state, EState::Tele { .. }) {
+            return Vec::new();
+        }
+        self.root_lines()
+            .into_iter()
+            .map(|(yaw, len)| (yaw, self.row_shape(len)))
+            .collect()
     }
 
     /// 예고 진행 0..1과 모양(없으면 None). 렌더가 바닥 예고를 채운다.
@@ -902,7 +1012,9 @@ impl Enemy {
     pub fn wave_fronts(&self) -> Vec<f32> {
         match self.state {
             // 뿌리 기둥 줄·갈고리도 `Wave` 상태를 빌리지만 고리가 아니다(0269 — 갈고리 동안 몸 둘레에 고리가 그려졌다).
-            EState::Wave { .. } if matches!(self.atk, Atk::Roots | Atk::Hook) => Vec::new(),
+            EState::Wave { .. } if matches!(self.atk, Atk::Roots | Atk::Hook | Atk::Stomp) => {
+                Vec::new()
+            }
             EState::Wave { t } => (0..self.ring_count())
                 .map(|k| t * self.def().wave_speed - k as f32 * crate::tuning::TOLL_GAP)
                 .filter(|&r| r > 0.0 && r <= self.wave_reach())
@@ -940,11 +1052,12 @@ impl Enemy {
         self.landed = false;
         self.rings_hit = 0;
         // 돌진 길이 칸은 뿌리 기둥 줄(0133)의 길이로도 쓴다 — 월드가 벽·기둥 앞까지로 줄인다(`set_charge_room`).
-        self.charge.len = if atk == Atk::Roots {
+        self.charge.len = if matches!(atk, Atk::Roots | Atk::Stomp) {
             ROOTS_LEN
         } else {
             d.charge_speed * d.charge_time
         };
+        self.fan = [ROOTS_LEN; 2];
         self.state = EState::Tele { t: 0.0 };
         self.rhythm.tempo = Tempo::Normal;
         self.rhythm.feint = None;
@@ -1086,6 +1199,19 @@ impl Enemy {
                         Atk::Slam
                     })
                 } else if dist <= d.charge_range && dist > 4.5 {
+                    Some(Atk::Charge)
+                } else {
+                    None
+                }
+            }
+            // 고요한 사슴(0270 D): 셋째마다 내려 딛기(뿌리 줄이 닿을 거리면 — 붙어 있든 떨어져 있든), 붙으면 뿔 쓸기,
+            // 떨어지면 돌진.
+            Behavior::Stag => {
+                if self.atk_count % 3 == 2 && dist <= ROOTS_LEN - 1.0 {
+                    Some(Atk::Stomp)
+                } else if dist <= d.reach - 0.5 {
+                    Some(Atk::Slam)
+                } else if dist <= d.charge_range && dist > crate::tuning::STAG_CHARGE_MIN {
                     Some(Atk::Charge)
                 } else {
                     None
@@ -1241,6 +1367,19 @@ impl Enemy {
             ((go + side * SPREAD_STEER).normalize_or(go), slow)
         };
         match self.state {
+            // 엎드린 필드 보스(0270 D): 깨우면(`stir`) `FIELD_WAKE` 동안 일어서 쫓고, 아니면 엎드린 채(돌아와 눕는 중이면 마저 눕는다).
+            EState::Dormant if self.field => {
+                if self.waking {
+                    self.turn_toward(dir, 1.5, dt);
+                    self.stand = (self.stand + dt / crate::tuning::FIELD_WAKE).min(1.0);
+                    if self.stand >= 1.0 {
+                        self.waking = false;
+                        self.state = EState::Chase;
+                    }
+                } else {
+                    self.stand = (self.stand - dt / crate::tuning::FIELD_SETTLE).max(0.0);
+                }
+            }
             EState::Dormant | EState::Dead => {}
             EState::Idle => {
                 if let Some((_, face)) = self.home {
@@ -1284,6 +1423,17 @@ impl Enemy {
                     // 타입 상태(0223 V2)도 걷힌다 — 가득 찬 적이 화상으로 다시 깎이지 않게.
                     self.ail = Default::default();
                     self.rhythm.repeated = false;
+                    // 필드 보스(0270 D)는 서서 기다리지 않는다 — 다시 엎드린다(처음부터: 1단계·공격 차례·드러남도 지운다).
+                    if self.field {
+                        self.state = EState::Dormant;
+                        self.waking = false;
+                        self.roused = false;
+                        self.atk_count = 0;
+                        self.linked = false;
+                        self.exposed = 0.0;
+                        self.stance = Stance::default();
+                        self.knock = Vec3::ZERO;
+                    }
                 }
             }
             EState::Chase => {
@@ -1331,6 +1481,10 @@ impl Enemy {
                 }
                 if e < dur - TELE_LOCK {
                     let rate = match self.atk {
+                        // 고요한 사슴(0270 D): 긁는 동안 빨리 돈다 — 2단계에 지나친 뒤 돌아서 한 번 더 이을 만큼.
+                        Atk::Charge if d.behavior == Behavior::Stag => {
+                            crate::tuning::STAG_CHARGE_TURN
+                        }
                         Atk::Charge => 4.0,
                         // 웅크린 껍질은 느리게 돈다(0185) — 옆으로 돌아 들어갈 틈.
                         Atk::Shell => crate::tuning::SHELL_TURN,
@@ -1347,9 +1501,12 @@ impl Enemy {
                     EState::Tele { t: e + dt }
                 } else {
                     match self.atk {
-                        Atk::Smash | Atk::Slam | Atk::Plant | Atk::Shards | Atk::Hurl => {
-                            EState::Swing { t: 0.0 }
-                        }
+                        Atk::Smash
+                        | Atk::Slam
+                        | Atk::Plant
+                        | Atk::Shards
+                        | Atk::Hurl
+                        | Atk::Stomp => EState::Swing { t: 0.0 },
                         Atk::Toll | Atk::Roots | Atk::Hook => EState::Wave { t: 0.0 },
                         Atk::Charge => EState::Charge {
                             t: 0.0,
@@ -1360,6 +1517,14 @@ impl Enemy {
                         Atk::Shell => EState::Recover { t: 0.0 },
                     }
                 };
+            }
+            EState::Swing { .. } if self.atk == Atk::Stomp => {
+                // 내려 딛기(0270 D): 앞발이 닿는 틱 — 몸 둘레 원판 안이면 맞는다(받지 못한다). 다음 틱부터 뿌리 줄이 솟는다.
+                if dist <= STOMP_R + PLAYER_RADIUS {
+                    out.hit = true;
+                }
+                out.blow = self.blow_at(self.pos);
+                self.state = EState::Wave { t: 0.0 };
             }
             EState::Swing { t: e } if self.atk == Atk::Shards => {
                 // 종 조각(0125): 휘두르는 첫 틱에 던진다(탄은 월드가 날린다).
@@ -1483,26 +1648,42 @@ impl Enemy {
                     EState::Wave { t: e + dt }
                 };
             }
-            EState::Wave { t: e } if self.atk == Atk::Roots => {
+            EState::Wave { t: e } if matches!(self.atk, Atk::Roots | Atk::Stomp) => {
                 if e == 0.0 {
-                    out.blow = self.blow_at(self.pos);
+                    // 내려 딛기(0270 D)의 뿌리 줄: 딛는 순간(`Around`)은 이미 말했다 — 줄이 솟기 시작하는 것을 따로.
+                    out.blow = if self.atk == Atk::Stomp {
+                        Some((
+                            self.pos,
+                            Blow::Line {
+                                len: self.charge.len,
+                            },
+                        ))
+                    } else {
+                        self.blow_at(self.pos)
+                    };
                 }
-                // 뿌리 기둥 줄(0133): 앞머리가 지나는 자리의 방랑자를 한 번 친다 — 바라보는 쪽 줄 위(옆 `ROOTS_R` 안).
-                let f = self.facing_dir();
+                // 뿌리 기둥 줄(0133): 앞머리가 지나는 자리의 방랑자를 한 번 친다 — 줄 위(옆 `ROOTS_R` 안). 줄이 여럿이어도
+                // (0270 D 세 줄 부채꼴) 한 번만.
                 let to = vec3(player.x - self.pos.x, 0.0, player.z - self.pos.z);
-                let along = to.dot(f);
-                let side = (to - f * along).length();
-                let front = (self.radius + (e + dt) * ROOTS_SPEED).min(self.charge.len);
-                if self.rings_hit == 0
-                    && along > 0.0
-                    && side <= ROOTS_R + PLAYER_RADIUS
-                    && along <= front
-                    && along >= front - ROOTS_SPEED * 0.12 - 0.6
-                {
-                    self.rings_hit = 1;
-                    out.hit = true;
+                let reach = self.roots_reach();
+                let raw = self.radius + (e + dt) * ROOTS_SPEED;
+                for (yaw, len) in self.root_lines() {
+                    let f = self.dir_at(yaw);
+                    let along = to.dot(f);
+                    let side = (to - f * along).length();
+                    let front = raw.min(len);
+                    if self.rings_hit == 0
+                        && raw <= len + ROOTS_SPEED * dt
+                        && along > 0.0
+                        && side <= ROOTS_R + PLAYER_RADIUS
+                        && along <= front
+                        && along >= front - ROOTS_SPEED * 0.12 - 0.6
+                    {
+                        self.rings_hit = 1;
+                        out.hit = true;
+                    }
                 }
-                self.state = if front >= self.charge.len {
+                self.state = if raw >= reach {
                     EState::Recover { t: 0.0 }
                 } else {
                     EState::Wave { t: e + dt }
@@ -2463,5 +2644,285 @@ mod works_tests {
         en.load_lost = true;
         assert_eq!(en.choose(6.0), None, "no load to drive");
         assert_eq!(en.choose(1.0), Some(Atk::Smash));
+    }
+}
+
+/// 필드 보스 — 고요한 사슴(0270 D).
+#[cfg(test)]
+mod stag_tests {
+    use super::*;
+    use crate::tuning::{FIELD_SETTLE, FIELD_WAKE, STAG_CHARGE_MIN, STOMP_FAN_DEG};
+
+    const DT: f32 = 1.0 / 60.0;
+
+    fn stag() -> Enemy {
+        let mut en = Enemy::new(Kind::Stag, Vec3::ZERO);
+        en.steady = true;
+        en.facing = 0.0; // +z
+        en
+    }
+
+    /// 수 고르기: 붙으면 뿔 쓸기(부채꼴 — 받아친다), 떨어지면 돌진(띠 — 받아친다), 셋째마다 내려 딛기(원판 + 뿌리 줄 —
+    /// 받지 못한다). 어중간한 거리에서는 다가가고, 돌진이 닿지 않을 만큼 멀면 쫓기만 한다.
+    #[test]
+    fn the_stag_sweeps_up_close_charges_from_afar_and_stomps_every_third() {
+        let mut en = stag();
+        let d = en.def();
+        let near = d.reach - 1.0;
+        // 돌진할 만큼 멀고 뿌리 줄은 닿는 거리.
+        let far = 8.0;
+        assert!(far > STAG_CHARGE_MIN && far < ROOTS_LEN - 1.0 && far < d.charge_range);
+        let mut seen = Vec::new();
+        for dist in [near, far, near, near, far, far, near, near, far] {
+            let a = en.choose(dist).unwrap();
+            seen.push(a);
+            en.start(a);
+        }
+        use Atk::{Charge, Slam, Stomp};
+        assert_eq!(
+            seen,
+            vec![Slam, Charge, Stomp, Slam, Charge, Stomp, Slam, Slam, Stomp]
+        );
+        let mut en = stag();
+        assert_eq!(en.choose(STAG_CHARGE_MIN - 0.2), None, "walks closer");
+        assert_eq!(en.choose(d.charge_range + 1.0), None, "too far to run");
+        // 읽는 법은 있는 꼴 그대로: 부채꼴·띠는 받아치고, 원판(+ 줄지은 원)은 피한다.
+        en.start(Slam);
+        assert!(en.parryable());
+        assert!(matches!(en.tele_shape(), TeleShape::Sector { arc, .. } if arc >= 120.0));
+        assert!(en.tele_more().is_empty());
+        en.start(Charge);
+        assert!(en.parryable());
+        assert!(matches!(en.tele_shape(), TeleShape::Lane { .. }));
+        en.start(Stomp);
+        assert!(!en.parryable());
+        assert_eq!(
+            en.tele_shape(),
+            TeleShape::Disc {
+                r: STOMP_R + PLAYER_RADIUS
+            }
+        );
+        let more = en.tele_more();
+        assert_eq!(more.len(), 1, "one line of roots in phase one");
+        assert!(matches!(more[0], (yaw, TeleShape::Row { .. }) if yaw == 0.0));
+        // 셋째 차례여도 뿌리 줄이 닿지 않을 만큼 멀면 딛지 않는다.
+        let mut en = stag();
+        en.atk_count = 2;
+        assert_eq!(en.choose(ROOTS_LEN + 1.0), Some(Charge));
+    }
+
+    /// 앞발이 막 닿는 틱부터 쉴 때까지, `p`에 선 방랑자가 맞은 횟수(원판 + 뿌리 줄).
+    fn landing_hits(en: &mut Enemy, p: Vec3) -> usize {
+        en.start(Atk::Stomp);
+        en.state = EState::Swing { t: 0.0 };
+        let mut n = 0;
+        while !matches!(en.state, EState::Recover { .. }) {
+            n += en.tick(p, DT).hit as usize;
+        }
+        n
+    }
+
+    /// 내려 딛기를 `player(틱)`의 자리로 처음부터 쉴 때까지 돌린다 — (풀린 순간들, 맞은 틱들, 예고가 끝난 틱).
+    fn stomp(en: &mut Enemy, player: impl Fn(usize) -> Vec3) -> (Vec<Blow>, Vec<usize>, usize) {
+        en.start(Atk::Stomp);
+        let (mut blows, mut hits, mut landed) = (Vec::new(), Vec::new(), 0);
+        for k in 0..600 {
+            let tele = matches!(en.state, EState::Tele { .. });
+            let out = en.tick(player(k), DT);
+            if tele && !matches!(en.state, EState::Tele { .. }) {
+                landed = k + 1;
+            }
+            blows.extend(out.blow.map(|b| b.1));
+            if out.hit {
+                hits.push(k);
+            }
+            if matches!(en.state, EState::Recover { .. }) {
+                break;
+            }
+        }
+        (blows, hits, landed)
+    }
+
+    /// 내려 딛기: 앞발이 닿는 틱에 몸 둘레 원판 안이면 맞고(어느 쪽에 서 있든), 곧이어 딛은 자리에서 바라보는 쪽으로 뿌리 줄이
+    /// 솟아 줄 위의 방랑자를 한 번 친다 — 원판 밖·줄 옆이면 맞지 않는다. 풀린 순간은 둘(둘레 쿵 → 줄).
+    #[test]
+    fn the_stomp_shakes_a_disc_around_the_body_then_roots_rise_in_a_line() {
+        // 원판 밖·줄 옆(멀리): 안 맞는다.
+        let (blows, hits, _) = stomp(&mut stag(), |_| vec3(30.0, 0.0, 30.0));
+        assert!(hits.is_empty());
+        assert!(
+            matches!(
+                blows[..],
+                [Blow::Around { r }, Blow::Line { len }] if r == STOMP_R && len == ROOTS_LEN
+            ),
+            "{blows:?}"
+        );
+        // 등 뒤(−z)의 원판 안: 딛는 틱에 맞는다 — 예고가 끝난 바로 그 틱.
+        let mut en = stag();
+        let behind = vec3(0.0, 0.0, -(STOMP_R - 0.5));
+        // 방랑자 쪽으로 돌지 않게 붙들어 둔다(등 뒤도 원판이다).
+        let (_, hits, landed) = stomp(&mut en, move |_| behind);
+        assert_eq!(hits.first().copied(), Some(landed), "{hits:?} at {landed}");
+        // 원판 바로 밖은 딛는 틱에 안 맞는다.
+        let just_out = vec3(STOMP_R + PLAYER_RADIUS + 0.2, 0.0, 0.0);
+        assert_eq!(landing_hits(&mut stag(), just_out), 0);
+        assert_eq!(landing_hits(&mut stag(), just_out - vec3(0.4, 0.0, 0.0)), 1);
+        // 줄 위(원판 밖 7m 앞): 딛는 틱이 아니라 앞머리가 닿을 때 한 번.
+        let ahead = vec3(0.0, 0.0, 7.0);
+        let (_, hits, landed) = stomp(&mut stag(), move |_| ahead);
+        assert_eq!(hits.len(), 1, "{hits:?}");
+        let want = landed + ((7.0 - 1.8) / ROOTS_SPEED / DT) as usize;
+        assert!(
+            hits[0] > landed && hits[0] <= want + 12,
+            "{hits:?} {landed}"
+        );
+        // 줄에서 옆으로 2m 비켜 서 있으면 안 맞는다 — 옆으로 비킨다.
+        assert_eq!(landing_hits(&mut stag(), vec3(2.0, 0.0, 7.0)), 0);
+        // 고리는 없다(상태는 `Wave`를 빌린다) — 뿌리 줄의 앞머리만.
+        let mut en = stag();
+        en.start(Atk::Stomp);
+        en.state = EState::Wave { t: 0.3 };
+        assert!(en.wave_fronts().is_empty() && en.roots_front().is_some());
+    }
+
+    /// 2단계(체력 반 아래): 쉬는 틈이 짧고, 돌진 끝에 돌아서 한 번 더 잇고(한 번만 — 그 뒤는 긴 틈), 내려 딛기의 뿌리 줄이
+    /// 세 줄 부채꼴이 된다(양옆 `STOMP_FAN_DEG`). 1단계에는 옆 줄이 없다.
+    #[test]
+    fn in_phase_two_the_stag_rests_less_links_a_second_charge_and_fans_three_root_lines() {
+        let mut one = stag();
+        one.atk = Atk::Slam;
+        let mut two = stag();
+        two.atk = Atk::Slam;
+        two.roused = true;
+        assert!(two.recover_dur() < one.recover_dur());
+        // 돌진 뒤의 틈은 길다(쓸기 뒤보다).
+        one.atk = Atk::Charge;
+        assert!(one.recover_dur() > one.def().recover * 1.5);
+        // 잇기: 1단계는 돌진 뒤 쉰다, 2단계는 곧장 돌진 하나 더 — 그 뒤는 쉰다.
+        let mut en = stag();
+        en.start(Atk::Charge);
+        assert_eq!(en.after_attack(), EState::Recover { t: 0.0 });
+        let mut en = stag();
+        en.roused = true;
+        en.start(Atk::Charge);
+        let n = en.atk_count;
+        assert!(matches!(en.after_attack(), EState::Tele { .. }));
+        assert_eq!((en.atk, en.atk_count), (Atk::Charge, n + 1), "a second run");
+        assert_eq!(en.after_attack(), EState::Recover { t: 0.0 }, "only once");
+        // 세 줄 부채꼴: 예고도, 판정도.
+        let fan = STOMP_FAN_DEG.to_radians();
+        let mut en = stag();
+        en.start(Atk::Stomp);
+        assert_eq!(en.root_lines().len(), 1);
+        en.roused = true;
+        let lines = en.root_lines();
+        assert_eq!(lines.len(), 3);
+        assert!((lines[1].0 + fan).abs() < 1e-5 && (lines[2].0 - fan).abs() < 1e-5);
+        assert_eq!(en.tele_more().len(), 3);
+        // 옆 줄 위 7m: 2단계에는 맞고 1단계에는 안 맞는다.
+        let on_side = vec3(fan.sin(), 0.0, fan.cos()) * 7.0;
+        let hit_by = |roused: bool| {
+            let mut en = stag();
+            en.roused = roused;
+            landing_hits(&mut en, on_side)
+        };
+        assert_eq!(hit_by(true), 1);
+        assert_eq!(hit_by(false), 0);
+        // 벽 앞까지만: 월드가 줄인 옆 줄은 그 끝을 넘어 치지 않는다.
+        let mut en = stag();
+        en.roused = true;
+        en.start(Atk::Stomp);
+        en.set_fan_room(4.0, 4.0);
+        en.state = EState::Swing { t: 0.0 };
+        let mut n = 0;
+        while !matches!(en.state, EState::Recover { .. }) {
+            n += en.tick(on_side, DT).hit as usize;
+        }
+        assert_eq!(n, 0, "the side lines stop at the wall");
+    }
+
+    /// 기다림: 제 터에 다리를 접고 엎드려 있다(맞지도 락온에 잡히지도 않는다). 깨우면 일어서는 동안(`FIELD_WAKE`)은 아직
+    /// 맞지 않지만 락온에는 잡히고(0149), 다 서면 쫓는다. 제자리로 돌아오면 다시 엎드린다 — 체력 가득·타입 게이지 지움·1단계부터.
+    #[test]
+    fn the_stag_lies_in_wait_rises_when_stirred_and_lies_down_again_at_home_made_whole() {
+        let home = vec3(4.0, 0.0, -2.0);
+        let mut en = Enemy::new(Kind::Stag, home);
+        assert!(en.field && en.boss);
+        en.lie_in_wait(1.0);
+        let far = home + vec3(0.0, 0.0, 40.0);
+        assert!(en.lying() && !en.active() && !en.lockable());
+        assert_eq!(en.stand, 0.0);
+        // 깨우지 않으면 엎드린 채 — 곁에 와도 제 틱만으로는 일어나지 않는다(월드가 깨운다: 보이는 자리·맞힘).
+        for _ in 0..120 {
+            en.tick(home + vec3(1.0, 0.0, 0.0), DT);
+        }
+        assert!(en.lying() && en.pos == home);
+        assert!(en.stir());
+        assert!(!en.stir(), "already rising");
+        assert!(!en.lying() && !en.active() && en.lockable());
+        let ticks = (FIELD_WAKE / DT).ceil() as usize;
+        for _ in 0..ticks - 2 {
+            en.tick(far, DT);
+        }
+        assert!(
+            en.state == EState::Dormant && en.stand > 0.9,
+            "{}",
+            en.stand
+        );
+        for _ in 0..4 {
+            en.tick(far, DT);
+        }
+        assert_eq!(en.state, EState::Chase);
+        assert!(en.active() && !en.waking && en.stand == 1.0);
+        // 싸우다 다쳐 2단계가 된 뒤, 돌아가게 되면(월드의 끈) 걸어서 제자리로.
+        en.pos = home + vec3(0.0, 0.0, 6.0);
+        en.hp = en.max_hp / 3;
+        en.roused = true;
+        en.atk_count = 7;
+        en.exposed = 1.0;
+        let who = crate::status::Who {
+            boss: true,
+            elite: false,
+            mult: en.def().ail,
+        };
+        en.ail.build(crate::status::Kind::Sharp, 10.0, &who);
+        assert_ne!(en.ail, crate::status::Ail::default());
+        en.state = EState::Return;
+        let mut k = 0;
+        while en.state == EState::Return && k < 2000 {
+            en.tick(far, DT);
+            k += 1;
+        }
+        assert!(en.lying(), "lies down again: {:?}", en.state);
+        assert!(vec3(en.pos.x - home.x, 0.0, en.pos.z - home.z).length() <= 0.4);
+        assert_eq!(en.hp, en.max_hp, "made whole");
+        assert_eq!(en.ail, crate::status::Ail::default(), "ailments cleared");
+        assert!(!en.roused && en.atk_count == 0 && en.exposed == 0.0);
+        assert_eq!(en.facing, 1.0, "faces the way it lay");
+        // 다시 눕는다(`FIELD_SETTLE`) — 그 사이에 깨우면 그 자리에서 다시 일어선다.
+        assert_eq!(en.stand, 1.0);
+        for _ in 0..(FIELD_SETTLE / DT * 0.5) as usize {
+            en.tick(far, DT);
+        }
+        assert!(en.stand > 0.3 && en.stand < 0.7, "{}", en.stand);
+        for _ in 0..(FIELD_SETTLE / DT) as usize {
+            en.tick(far, DT);
+        }
+        assert_eq!(en.stand, 0.0);
+        // 엎드린 채로는 체력 반 아래의 전환(2단계)도 시작하지 않는다.
+        en.hp = 1;
+        en.tick(far, DT);
+        assert!(en.lying() && !en.roused);
+    }
+
+    /// 필드 보스는 제 지역의 등급과 상관없이 무겁게 친다(두 눈금) — 문지기는 등급을 받지 않는다(한 눈금).
+    #[test]
+    fn a_field_boss_hits_heavier_than_a_gate_boss() {
+        use crate::tuning::TIER_HEAVY_HITS;
+        assert!(Enemy::new(Kind::Stag, Vec3::ZERO).blow_tier() >= TIER_HEAVY_HITS);
+        assert!(Enemy::new(Kind::Warden, Vec3::ZERO).blow_tier() < TIER_HEAVY_HITS);
+        let mut husk = Enemy::new(Kind::Husk, Vec3::ZERO);
+        husk.set_tier(2);
+        assert_eq!(husk.blow_tier(), 2);
     }
 }

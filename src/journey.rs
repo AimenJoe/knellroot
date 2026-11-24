@@ -44,6 +44,8 @@ pub enum Need {
     Read,
     /// 도감에 이 관찰이 적혔다(종·관찰).
     Seen(Kind, Obs),
+    /// 이 지역의 필드 보스를 쓰러뜨렸다(0270 D — 기록 `fields`).
+    Field,
 }
 
 pub struct Goal {
@@ -60,7 +62,7 @@ pub struct Goal {
 }
 
 /// 여정 목표(지역 차례 · 주요 먼저). 새 지역 = 이 표에 줄을 더한다(아이디는 `<지역>.<무엇>`).
-pub static GOALS: [Goal; 18] = [
+pub static GOALS: [Goal; 19] = [
     Goal {
         id: "s.gate",
         stage: 0,
@@ -105,6 +107,16 @@ pub static GOALS: [Goal; 18] = [
         hint: |s| s.jg_s_roused_d,
         need: Need::Seen(Kind::Warden, Obs::Roused),
         reward: Reward::Embers(20),
+    },
+    // 필드 보스(0270 D "강함을 시험하라"): 길에는 필요 없는 발견 — 잔불만(기술 점수는 지역마다 하나까지, 성소는 조각이 준다).
+    Goal {
+        id: "s.stag",
+        stage: 0,
+        kind: Branch::Find,
+        title: |s| s.jg_s_stag,
+        hint: |s| s.jg_s_stag_d,
+        need: Need::Field,
+        reward: Reward::Embers(60),
     },
     Goal {
         id: "v.keeper",
@@ -266,6 +278,11 @@ pub fn count(g: &Goal, p: &Progress) -> (u32, u32) {
             (has(n, &|k| read_id(pre, k), &p.read), n)
         }
         Need::Seen(k, o) => (p.codex.contains(&obs_key(k, o)) as u32, 1),
+        // 필드 보스가 없는 지역이면 셀 것이 없다(0 — 시험이 잡는다).
+        Need::Field => (
+            p.fields.iter().any(|x| x == pre) as u32,
+            def.field.is_some() as u32,
+        ),
     }
 }
 
@@ -360,6 +377,14 @@ mod tests {
         assert_eq!(p.skill_points(), before + 1);
         // 성소의 기술 점수 목표만 받아도 하나.
         assert_eq!(points(&["s.shards".into(), "s.gate".into()]), 1);
+        // 0270 D: 필드 보스의 목표는 기록 `fields`에서 센다 — 받아도 기술 점수는 아니다(잔불).
+        let stag = GOALS.iter().find(|g| g.id == "s.stag").unwrap();
+        assert_eq!(count(stag, &p), (0, 1));
+        p.fields.push("sanctuary".into());
+        assert!(ready(stag, &p));
+        let before = p.skill_points();
+        p.journey.push(stag.id.into());
+        assert_eq!(p.skill_points(), before);
     }
 
     /// 마을의 목표는 성소의 문지기를 넘은 뒤에 보인다(내려가는 길이 그때 열린다).

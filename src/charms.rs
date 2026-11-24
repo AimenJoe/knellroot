@@ -15,6 +15,8 @@ pub enum Id {
     Cloth,
     Jar,
     BellShard,
+    /// 고요의 종(0270 D — 성소의 필드 보스 고요한 사슴을 처음 쓰러뜨리면): 스킬 대기가 짧아진다.
+    StillBell,
 }
 
 /// 낄 수 있는 칸 수.
@@ -52,7 +54,8 @@ impl Id {
     /// 종류(`_` 없는 match — 새 장신구는 여기서 종류를 정한다).
     pub fn kind(self) -> Kind {
         match self {
-            Id::Ear | Id::Jar | Id::Pouch => Kind::Neck,
+            // 고요의 종(0270 D)도 목걸이 — 목에 거는 종이고, 다른 목걸이(패링 창·등잔·잔불)와 하는 일이 겹치지 않는다.
+            Id::Ear | Id::Jar | Id::Pouch | Id::StillBell => Kind::Neck,
             Id::Hand | Id::BellShard | Id::Hunger => Kind::Ring,
             Id::Shell | Id::Cloth | Id::Feet => Kind::Bracelet,
         }
@@ -84,7 +87,7 @@ pub struct Def {
 }
 
 /// 표 순서 = 보여 주는 순서.
-pub static TABLE: [Def; 9] = [
+pub static TABLE: [Def; 10] = [
     Def {
         id: Id::Shell,
         key: "shell",
@@ -364,6 +367,39 @@ pub static TABLE: [Def; 9] = [
             ail: 1.0,
         },
     },
+    // 고요의 종(0270 D): 스킬 대기 −10% — 장신구 가운데 스킬 대기를 건드리는 것은 이것뿐이다(아이템 옵션 `affix_cd` 한 줄의
+    // 가장 큰 단과 같은 크기). 받는 피해·패링 창·회피는 건드리지 않는다.
+    Def {
+        id: Id::StillBell,
+        key: "stillbell",
+        name: |s: &Strings| s.charm_stillbell,
+        desc: |s: &Strings| s.charm_stillbell_d,
+        flavor: |s: &Strings| s.charm_stillbell_f,
+        mods: Mods {
+            hp: 0,
+            flask: 0,
+            heal: 0,
+            dmg: 0,
+            taken: 0,
+            atk_speed: 1.0,
+            dodge_cost: 1.0,
+            parry: 0.0,
+            kill_stamina: 0.0,
+            ember: 1.0,
+            stamina_max: 0.0,
+            stamina_regen: 1.0,
+            poise: 1.0,
+            heavy_dmg: 0,
+            light_dmg: 0,
+            opened_dmg: 0,
+            knock: 1.0,
+            flinch: 1.0,
+            shot_dmg: 0,
+            mag: 0,
+            skill_cd: 0.9,
+            ail: 1.0,
+        },
+    },
 ];
 
 pub fn def(id: Id) -> &'static Def {
@@ -452,18 +488,22 @@ mod tests {
         assert_eq!(decode_owned("ear,ear,,zzz,shell"), vec![Id::Shell, Id::Ear]);
     }
 
-    /// 0224: 종류는 셋, 종류마다 칸 하나, 장신구는 종류마다 고르게(셋씩) — 같은 종류 둘은 함께 못 낀다(앞 칸의 것이 남는다).
+    /// 0224: 종류는 셋, 종류마다 칸 하나, 장신구는 종류마다 고르게 — 같은 종류 둘은 함께 못 낀다(앞 칸의 것이 남는다).
     /// 같은 일을 하는 것끼리 한 종류다: 체력을 주는 둘(껍질·천)·피해를 더하는 둘(손·종 조각)은 겹쳐 쌓지 못한다.
+    /// 0270 D: 장신구가 열이 되어(고요의 종) 셋씩 꼭 같을 수 없다 — 종류끼리의 수는 하나까지만 다르다.
     #[test]
     fn charms_have_kinds_and_only_one_of_a_kind_is_worn() {
+        let count = |k: &Kind| TABLE.iter().filter(|d| d.id.kind() == *k).count();
         for (i, k) in SLOT_KINDS.iter().enumerate() {
             assert_eq!(k.slot(), i);
-            assert_eq!(
-                TABLE.iter().filter(|d| d.id.kind() == *k).count(),
-                3,
-                "{k:?}"
-            );
+            assert!(count(k) >= 3, "{k:?}");
         }
+        let (most, least) = (
+            SLOT_KINDS.iter().map(count).max().unwrap(),
+            SLOT_KINDS.iter().map(count).min().unwrap(),
+        );
+        assert!(most - least <= 1, "kinds stay even: {most} vs {least}");
+        assert_eq!(Id::StillBell.kind(), Kind::Neck);
         assert_eq!(Id::Shell.kind(), Id::Cloth.kind());
         assert_eq!(Id::Hand.kind(), Id::BellShard.kind());
         assert_ne!(
@@ -502,6 +542,14 @@ mod tests {
         let jar = Stats::compute(&[def(Id::Jar).mods]);
         assert!(jar.heal == 10 && jar.flask == base.flask - 1);
         assert_eq!(Stats::compute(&[def(Id::BellShard).mods]).opened_dmg, 10);
+        // 고요의 종(0270 D): 스킬 대기만 — 받는 피해·패링 창·회피는 그대로(0095 원칙 2 · 0176), 다른 장신구는 스킬 대기를 안 건드린다.
+        let bell = Stats::compute(&[def(Id::StillBell).mods]);
+        assert!(bell.skill_cd < 1.0 && bell.taken == 0 && bell.parry == base.parry);
+        assert_eq!(bell.dodge_cost, base.dodge_cost);
+        assert!(TABLE
+            .iter()
+            .filter(|d| d.id != Id::StillBell)
+            .all(|d| d.mods.skill_cd == 1.0));
         // 0129 C4: 모든 장신구에 세계 안의 말 한 줄 — 수치 글과 다르다.
         for d in &TABLE {
             let s = crate::i18n::s();

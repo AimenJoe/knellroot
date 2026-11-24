@@ -60,6 +60,8 @@ impl Renderer {
         let model = en.def().model;
         // 문지기가 깨어나는 동안 눈·핵이 밝아진다.
         let mut glow = match (en.state, stage) {
+            // 엎드린 필드 보스(0270 D)의 눈·핵은 일어선 만큼.
+            (EState::Dormant, _) if en.field => 0.15 + 0.85 * en.stand,
             (EState::Dormant, Some(run)) => 0.15 + 0.85 * run.wake_progress(),
             _ if en.roused => 1.0,
             _ => 0.85,
@@ -519,6 +521,8 @@ fn enemy_anim(
         Atk::Hurl => &["hurl", "toll", "throw", "attack"],
         Atk::Hook => &["hook", "charge_windup", "throw", "attack"],
         Atk::Shell => &["shell", "guard", "idle"],
+        // 내려 딛기(0270 D): 뒷발로 일어섰다 앞발로 쿵.
+        Atk::Stomp => &["rear", "slam", "attack"],
     };
     let once = |names: &[&str], k: f32| {
         let a = e.pick(names);
@@ -534,7 +538,12 @@ fn enemy_anim(
     }
     match en.state {
         EState::Dormant => {
-            let w = stage.map(|s| s.wake_progress()).unwrap_or(0.0);
+            // 필드 보스(0270 D)는 제 시계로 일어서고 눕는다(`Enemy::stand`) — 문지기는 스테이지의 깨어남.
+            let w = if en.field {
+                en.stand
+            } else {
+                stage.map(|s| s.wake_progress()).unwrap_or(0.0)
+            };
             match e.pick(&["wake"]) {
                 Some(a) => (Some(a), w.clamp(0.0, 0.999) * e.duration(Some(a))),
                 None => (e.pick(&["idle"]), 0.0),
@@ -623,6 +632,9 @@ pub(super) const STRIKE_KEYS: &[(&str, &str, f32, f32)] = &[
     ("winchkeeper", "wave", 1.0, 1.12),
     ("winchkeeper", "hook", 0.8, 0.9),
     ("winchkeeper", "hurl", 0.9, 1.0),
+    // 고요한 사슴(0270 D): 뿔 쓸기 · 뒷발로 일어섰다 내려 딛기(앞발이 닿는 1.0).
+    ("hushed_stag", "slam", 0.9, 1.0),
+    ("hushed_stag", "rear", 0.9, 1.0),
 ];
 
 fn strike_keys(model: &str, a: Option<usize>, e: &Entry) -> (f32, f32) {

@@ -155,6 +155,18 @@ pub(super) fn ground_marks(v: &View, w: &World, alpha: f32) {
                     v.tells / TELLS_BASE,
                     v.tell_timing,
                 );
+                // 덧그릴 모양(0270 D — 내려 딛기의 뿌리 줄: 한 줄 또는 세 줄 부채꼴).
+                for (yaw, more) in en.tele_more() {
+                    telegraph(
+                        &drape,
+                        at,
+                        en.facing + yaw,
+                        k,
+                        more,
+                        v.tells / TELLS_BASE,
+                        v.tell_timing,
+                    );
+                }
             }
         }
         // 아래 셋은 공격 자체(퍼지는 고리·솟는 뿌리 줄·날아가는 갈고리) — 예고 설정과 상관없이 늘 그린다(0074·0269).
@@ -280,15 +292,19 @@ const HOOK_EDGE: Color = Color::new(0.86, 0.88, 0.96, 1.0);
 
 fn root_spikes(en: &Enemy, p: Vec3, drape: &Drape) {
     // 뿌리 기둥 줄(0133): 앞머리까지 기둥이 솟고(지나간 자리일수록 다 솟음), 쉬는 동안 가라앉는다.
+    use crate::enemy::Atk;
     let sink_k = match (en.state, en.atk) {
-        (EState::Recover { t }, crate::enemy::Atk::Roots) => Some(1.0 - t / ROOTS_SINK),
+        (EState::Recover { t }, Atk::Roots | Atk::Stomp) => Some(1.0 - t / ROOTS_SINK),
         _ => None,
     };
-    if let Some(front) = en
-        .roots_front()
-        .or(sink_k.filter(|k| *k > 0.0).map(|_| en.charge.len))
-    {
-        let f = en.facing_dir();
+    let sinking = sink_k.is_some_and(|k| k > 0.0);
+    let Some(raw) = en.roots_front().or(sinking.then_some(f32::MAX)) else {
+        return;
+    };
+    // 줄마다(0270 D — 내려 딛기 2단계는 세 줄 부채꼴): 그 줄의 끝까지만.
+    for (yaw, len) in en.root_lines() {
+        let front = raw.min(len);
+        let f = en.dir_at(yaw);
         let mut s = en.radius + 0.5;
         let mut i = 0;
         while s <= front {

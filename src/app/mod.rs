@@ -198,6 +198,9 @@ pub struct App {
     stage: usize,
     down: usize,
     rest_at: Option<crate::save::RunAt>,
+    /// 이 판에 쓰러뜨린 필드 보스(0270 D — 지역마다 한 비트): 쉬어도·지역을 떠났다 와도·이어 해도 그 판에는 다시 서지 않는다
+    /// (`RunAt::fields`로 기록에). 새 판이면 0.
+    fields_down: u32,
     /// 싸움 화면의 연출 칸(0251 R5 — `interlude`): 뿌리 굴·핵의 반응·쓰러짐·깨어나는 첫 장면·불 붙는 화로 가운데 하나.
     /// 그동안 조작이 없고 세계는 멈추거나 빈 입력으로 흐른다. 깨어나는 장면은 타이틀 바탕에서 0초에 멈춰 있다(엎드린 방랑자).
     interlude: Option<interlude::Interlude>,
@@ -426,6 +429,7 @@ impl App {
             stage: first,
             down: 0,
             rest_at: None,
+            fields_down: 0,
             interlude: (!progress.woke)
                 .then(|| interlude::Interlude::Wake(crate::wake::Wake::default())),
             pause_tab: flow::Tab::Status,
@@ -494,6 +498,7 @@ impl App {
         self.stage = first;
         self.down = 0;
         self.rest_at = None;
+        self.fields_down = 0;
         self.pause_tab = flow::Tab::Status;
         self.tutor = crate::tutorial::Tutor::new(self.progress.tutorial);
         self.tip = None;
@@ -564,6 +569,13 @@ impl App {
         }
         self.run.set_found(&self.progress.finds);
         self.run.set_beaten(&self.progress.elites);
+        // 필드 보스(0270 D): 기록에서 처음인지, 이 판에 이미 쓰러뜨렸는지(다시 서지 않는다).
+        let felled = |f: &String| f == self.run.def.find_prefix;
+        self.run
+            .set_field_beaten(self.progress.fields.iter().any(felled));
+        if self.fields_down >> self.stage & 1 == 1 {
+            self.run.set_field_down(&mut self.world);
+        }
         self.lay_ground();
         let open = self
             .progress
