@@ -23,7 +23,7 @@ REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 # 0155: 무기 넷·등잔을 상자 조합에서 제 꼴(잎 꼴 날·통 머리·굽은 활)로, 두건 꼭지 — 4,524(무기 넷이 1,233). 색인은 13,668 — 한 호출 15,000 아래를 지킨다.
 # 0193: 스킨 몸(Meshy 리깅, 줄여 정점 2,963) + 무기 넷·등잔 그대로 — 4,196.
 # charms: 0155에서 돌린 꼴·꺾인 관으로 다시(1,939) — 한 번에 하나만 그린다(아이콘은 캐시).
-BUDGET = {"hushed_stag": 4200, "mossgrazer": 900, "packbearer": 1000, "repeater": 1650, "mossward": 2600, "winchkeeper": 2600, "wanderer": 4800, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
+BUDGET = {"hushed_stag": 8800, "mossgrazer": 900, "packbearer": 1000, "repeater": 1650, "mossward": 2600, "winchkeeper": 2600, "wanderer": 4800, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
           # 0068 장신구 여섯이 한 파일(게임은 하나씩만 그린다) — 하나 280 안팎. 2026-11-23 디테일(사장 "싸구려"): 장신구 아홉 + 덧옷 셋,
           # 메뉴는 파일 한 벌을 그리기 한 번에 넘긴다(다른 부위 크기 0) — 그래서 덧옷은 `garbs`로 나눴다(뿌리껍질 덧옷 1,500 안팎).
           "charms": 4600, "garbs": 3400,

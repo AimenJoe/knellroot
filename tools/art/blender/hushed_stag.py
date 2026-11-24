@@ -3,7 +3,8 @@
 Meshy 몸 — 뿌리에 먹힌 큰 사슴: 바랜 잿빛 라벤더 몸, 뿔은 넓게 벌어진 각진 보라 뿌리 왕관(실루엣의 반), 목에는 뿌리 밧줄에 매인
 금 간 청동 종(울리지 않는다), 낮게 둔 호박빛 눈(`glow_eyes`)·옆구리 금 사이의 호박빛 핵(`glow_core`), 발목에서 땅으로 내린 잔뿌리.
 원본 `tools/art/sources/meshy/hushed_stag_v1.glb`(나노바나나 그림 `tools/art/sources/ai/knellroot/hushed_stag_v1_front.png` →
-Meshy 6 API, 30 크레딧) → `meshy_convert.py ... 3.0 2400 256`(1분 44초 — 정점 2,375·삼각형 1,828, 뿔이 삼각형의 반).
+Meshy 6 API, 30 크레딧) → `meshy_convert.py ... 3.0 4200 256`(1분 28초 — 삼각형 3,487, 뿔이 삼각형의 삼분의 일 남짓. 처음의 2400은
+다리가 가늘게 뭉개졌다 — 사장 "Blender로 다듬을건 다듬어"). 부위로 나누기 전에 자를 평면으로 면을 미리 가르고(`_precut`) 잘린 자리를 닫는다(`_close_cuts`).
 줄인 몸은 뿔 끝까지 3.0m·몸 길이 2.1m — 문지기들보다 크게 1.2배로 쓴다(뿔 끝 3.6·머리 2.4·길이 2.5·뿔 폭 3.4).
 가운데가 머리 밑이라(변환이 위 45% = 뿔로 가운데를 잡는다) 몸 가운데로 `SHIFT`만큼 민다.
 
@@ -20,7 +21,9 @@ wake 2.4(0 = 다리를 접고 엎드려 머리를 내린 자세 — 기다리는
     blender --background --python tools/art/blender/hushed_stag.py
 """
 import os
+import shutil
 import sys
+import tempfile
 
 from mathutils import Matrix
 
@@ -52,9 +55,9 @@ def _purple(h, s, v):
     return 0.62 < h < 0.95 and s > 0.3
 
 
-def _colored():
+def _colored(path):
     """호박빛(눈·핵)·청동(종) 면."""
-    for c, (h, s, v) in C.face_colors(MESHY_LOW):
+    for c, (h, s, v) in C.face_colors(path):
         if 0.04 < h < 0.17 and s > 0.45 and v > 0.5:
             if c[2] > 1.55:
                 EYES.append(c)
@@ -90,12 +93,136 @@ def classify(c):
     return "body_geo"
 
 
+def _precut(dst):
+    """줄인 메시를 자를 평면(다리 위 끝 `LEG_Z` · 앞·뒷다리의 y 경계 · 목 평면)으로 **미리 갈라** `dst`에 쓴다(텍스처는 `<dst>_tex.png`).
+    면 가운데 자리로만 나누면 평면을 걸친 긴 삼각형(앞다리 곁에 높이 0.26~0.91짜리)이 한쪽 부위에 통째로 붙어, 다리를 흔들 때 가시처럼
+    뻗는다. 평면에서 면을 쪼개 두면 걸친 면이 없어 이음이 곧다. 색·UV는 쪼갠 자리에서 보간된다."""
+    import shutil
+
+    import bmesh
+    import bpy
+    from mathutils import Vector
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=MESHY_LOW)
+    new = [o for o in bpy.data.objects if o not in before]
+    src = next(o for o in new if o.type == "MESH")
+    bpy.ops.object.select_all(action="DESELECT")
+    src.select_set(True)
+    bpy.context.view_layer.objects.active = src
+    if src.data.has_custom_normals:
+        bpy.ops.mesh.customdata_custom_splitnormals_clear()
+    bm = bmesh.new()
+    bm.from_mesh(src.data)
+    bm.transform(src.matrix_world)
+    y0, z0, k = NECK
+    planes = [((0, 0, LEG_Z), (0, 0, 1)), ((0, FRONT_Y, 0), (0, 1, 0)), ((0, BACK_Y, 0), (0, 1, 0)), ((0, y0, z0), (0, -k, 1))]
+    n0 = len(bm.faces)
+    for co, no in planes:
+        bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], dist=1e-5, plane_co=Vector(co),
+                               plane_no=Vector(no).normalized(), clear_inner=False, clear_outer=False)
+    bmesh.ops.triangulate(bm, faces=bm.faces[:])
+    print(f"[{NAME}] precut faces {n0} -> {len(bm.faces)}")
+    src.matrix_world.identity()
+    bm.to_mesh(src.data)
+    bm.free()
+    bpy.ops.export_scene.gltf(filepath=dst, export_format="GLB", export_yup=True, export_texcoords=True, export_normals=True,
+                              export_materials="EXPORT", export_image_format="AUTO", export_cameras=False, export_lights=False,
+                              export_animations=False, use_selection=True)
+    shutil.copyfile(MESHY_LOW.replace(".glb", "_tex.png"), dst.replace(".glb", "_tex.png"))
+    for o in new:
+        bpy.data.objects.remove(o)
+
+
+def _loops(bm):
+    """열린 가장자리(면 하나에만 붙은 모서리)를 이어진 고리마다: [(모서리들, 정점들)]."""
+    seen, out = set(), []
+    for e in bm.edges:
+        if not e.is_boundary or e in seen:
+            continue
+        comp, stack = [], [e]
+        while stack:
+            x = stack.pop()
+            if x in seen:
+                continue
+            seen.add(x)
+            comp.append(x)
+            for vert in x.verts:
+                stack.extend(y for y in vert.link_edges if y.is_boundary and y not in seen)
+        out.append((comp, {vert for x in comp for vert in x.verts}))
+    return out
+
+
+def _seal(o, pick, inward, near=None):
+    """부위의 잘린 자리(열린 고리 가운데 `pick(가운데, 정점 수)`가 참인 것)를 닫는다 — 고개를 숙이고 다리를 접어도 속이 비어 보이지 않게
+    (뒷면은 그리지 않는다: 쿼터뷰에서 숙인 머리 뒤로 몸 속이 뚫려 보인다). 고리를 한 번 뽑아 가운데에서 `inward`만큼 들어간 한 점에
+    모은다(부채꼴 덮개 — 새 면의 색은 가장자리의 것, 덮개는 몸 안에 있다). `near(자리)`가 있으면 고리 가운데 그 조건에 드는 모서리만
+    (목 구멍은 종을 떼어 낸 구멍과 한 고리로 이어져 있다 — 목 평면 곁의 모서리만 덮는다).
+    정점을 평면에 내려 붙여 이음을 곧게 펴는 것은 하지 않는다: 고리에는 평면에서 먼 정점(긴 삼각형의 꼭짓점 — 높이 0.26~0.91)이 섞여
+    있어 가시가 됐다. 돌려주는 것 = 닫은 고리 수."""
+    import bmesh
+    from mathutils import Vector
+    me = o.data
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)  # UV 이음매로 갈린 정점 — 안 합치면 이음매마다 구멍으로 잡힌다
+    done = 0
+    for edges, verts in _loops(bm):
+        c = sum((v.co for v in verts), Vector()) / len(verts)
+        if not pick(c, len(verts)):
+            continue
+        if near is not None:
+            edges = [e for e in edges if all(near(v.co) for v in e.verts)]
+            if len(edges) < 4:
+                continue
+            verts = {v for e in edges for v in e.verts}
+            c = sum((v.co for v in verts), Vector()) / len(verts)
+        got = bmesh.ops.extrude_edge_only(bm, edges=edges)
+        new = [g for g in got["geom"] if isinstance(g, bmesh.types.BMVert)]
+        for f in (g for g in got["geom"] if isinstance(g, bmesh.types.BMFace)):
+            f.smooth = False
+        bmesh.ops.pointmerge(bm, verts=new, merge_co=c + Vector(inward))
+        # 덮개를 가장자리에서 떼어 낸다(정점을 갈라): 붙여 두면 가장자리의 매끈한 법선이 덮개 쪽으로 끌려 이음 둘레가 밝은 띠로 뜬다.
+        bmesh.ops.split_edges(bm, edges=[e for e in edges if e.is_valid])
+        done += 1
+    bm.to_mesh(me)
+    bm.free()
+    me.update()
+    for poly in me.polygons:  # `common.import_split`과 같은 규칙: 면 법선과 매끈한 정점 법선이 반대면 각지게
+        if poly.use_smooth and any(poly.normal.dot(me.vertices[i].normal) < 0.0 for i in poly.vertices):
+            poly.use_smooth = False
+    return done
+
+
+def _close_cuts(objs):
+    """다리 넷의 위 끝과 목(머리 밑·몸의 목 구멍)을 닫는다. 몸의 다리 구멍은 아래에서만 보여 두었다."""
+    y0, z0, k = NECK
+    n = (0.0, -k / (1 + k * k) ** 0.5, 1 / (1 + k * k) ** 0.5)  # 목 평면의 법선(머리 쪽)
+
+    def off(c):
+        return (c.y - y0) * n[1] + (c.z - z0) * n[2]
+
+    def at_neck(c, count):
+        return count >= 16 and abs(c.x) < 0.1 and c.z > 1.0 and abs(off(c)) < 0.35  # 눈구멍(정점 8, x ±0.18)은 아니다
+
+    def at_leg(c, count):
+        return count >= 5 and abs(c.z - LEG_Z) < 0.12 and (c.y < FRONT_Y or c.y > BACK_Y)
+
+    out = {}
+    for name in ("leg_fl_geo", "leg_fr_geo", "leg_bl_geo", "leg_br_geo"):
+        out[name] = _seal(objs[name], at_leg, (0, 0, 0.10))
+    out["body neck"] = _seal(objs["body_geo"], at_neck, tuple(0.10 * a for a in n), near=lambda c: abs(off(c)) < 0.16 and c.z > 1.25)
+    out["head"] = _seal(objs["head_geo"], at_neck, tuple(-0.12 * a for a in n))
+    print(f"[{NAME}] closed cuts {out}")
+
+
 def make():
     EYES.clear(), CORE.clear(), BRONZE.clear(), PURPLE.clear()
-    _colored()
-    PURPLE.extend(c for c, hsv in C.face_colors(MESHY_LOW) if _purple(*hsv))
+    m = C.Model(NAME)  # 장면을 비운다 — 그 뒤에 미리 가른 메시를 만든다
+    cut = os.path.join(tempfile.mkdtemp(prefix="hushed_stag_"), "cut.glb")
+    _precut(cut)
+    _colored(cut)
+    PURPLE.extend(c for c, hsv in C.face_colors(cut) if _purple(*hsv))
     print(f"[{NAME}] eyes {len(EYES)} core {len(CORE)} bronze {len(BRONZE)} purple {len(PURPLE)}")
-    m = C.Model(NAME)
     s = SCALE
 
     def at(x, y, z):
@@ -109,9 +236,11 @@ def make():
     for n, x, y, parent in (("leg_fl", 0.25, 0.3, "body"), ("leg_fr", -0.25, 0.3, "body"),
                             ("leg_bl", 0.27, 1.27, "root"), ("leg_br", -0.27, 1.27, "root")):
         m.bone(n, at(x, y, LEG_Z + 0.06), parent)
-    objs = m.external(MESHY_LOW, classify, MESHY_PARTS)
+    objs = m.external(cut, classify, MESHY_PARTS)
+    shutil.rmtree(os.path.dirname(cut), ignore_errors=True)
     for name in MESHY_PARTS:
         print(f"[{NAME}] {name}: {len(objs[name].data.polygons) if name in objs else 0} faces")
+    _close_cuts(objs)
     for o in objs.values():
         o.data.transform(Matrix.Translation((0, -SHIFT, 0)))
         o.data.transform(Matrix.Scale(s, 4))
