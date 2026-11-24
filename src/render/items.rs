@@ -306,7 +306,20 @@ impl Renderer {
     ) {
         let (rt, dest, aspect, rows) = self.fit_doll_rt(true, dest);
         let d = crate::species::def(kind);
-        let h = d.height.max(0.5);
+        // 그림의 키: 종의 키(`height` — 판정의 몸)지만, 모델이 그보다 훨씬 크면(고요한 사슴의 뿔 3.6m · 몸 2.4m — 0270 D) 모델의
+        // 꼭대기까지 담는다 — 뿔이 칸 위에서 잘렸다. 조금 삐져나온 것(가시짐승의 등 가시)은 그대로 둔다(보던 그림을 바꾸지 않는다).
+        let top = self.lib.get(d.model).map_or(0.0, |e| {
+            *self
+                .creature_top
+                .entry(d.model)
+                .or_insert_with(|| e.model.rest_top().unwrap_or(0.0))
+        });
+        let h = if top > d.height * TALL_MODEL {
+            top
+        } else {
+            d.height
+        }
+        .max(0.5);
         // 칸에 맞춰 당긴다(2026-11-19 사장 "모델들이 가로로 더 채워지면"): 키(위아래 반 + 여유)와 몸 둘레(돌려도 들어가게 — 가로 반)
         // 가운데 더 먼 쪽에 선다. 예전엔 키에 상관없이 멀찍이(키 × 2.3 + 1m) 서서 칸의 반도 안 찼다.
         let half_tan = (CREATURE_FOVY * 0.5).tan();
@@ -398,6 +411,9 @@ impl Renderer {
         blit(&rt, dest);
     }
 }
+
+/// 모델의 꼭대기가 종의 키의 이만큼을 넘으면 도감 그림을 모델에 맞춘다(`draw_creature`).
+pub(crate) const TALL_MODEL: f32 = 1.25;
 
 /// 모션 보기 인형의 쉬는 틀(아래 끝·위 끝·가로 반지름, m)의 바닥값 — 서기(`idle`)가 쓸고 가는 틀과 합쳐 쉬는 틀이 된다.
 /// 서서 하는 동작은 모두 그 틀로 같은 크기에 보인다(줄을 넘겨도 인형이 커졌다 작아졌다 하지 않게).

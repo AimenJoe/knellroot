@@ -128,6 +128,10 @@ pub const CHEST: Pair = (
     "둘째 지역 상자 곁에서(떨어진 아이템)",
     "region 2 beside a chest (dropped loot)",
 );
+pub const FIELD: Pair = (
+    "첫 지역 필드 보스의 터에서(고요한 사슴)",
+    "region 1 at the field boss's clearing (the Hushed Stag)",
+);
 pub const STAGE_NOTE: Pair = (
     "이 슬롯의 장신구·잔불로 진짜 스테이지를 돈다. 아무것도 저장하지 않는다.",
     "the real stage with this slot's charms and embers; nothing is saved",
@@ -219,6 +223,7 @@ pub const PAIRS: &[Pair] = &[
     RESIDENTS,
     STONES,
     CHEST,
+    FIELD,
     STAGE_NOTE,
     LAB_START,
     LAB_NOTE,

@@ -616,6 +616,27 @@ pub fn def(kind: Kind) -> &'static Def {
 mod tests {
     use super::*;
 
+    /// 0270 D: 고요한 사슴의 모델은 뿔 때문에 판정의 키(머리까지 2.4m)보다 훨씬 크다(뿔 끝 3.6m) — 도감 그림은 모델의 꼭대기에
+    /// 맞춘다(`render::items::TALL_MODEL`). 다른 종의 모델은 판정의 키와 거의 같다(보던 그림이 바뀌지 않는다).
+    #[test]
+    fn only_the_stags_model_towers_over_its_hit_height() {
+        for d in ALL {
+            let top = crate::models::bytes(d.model)
+                .and_then(|b| crate::model::Model::from_bytes(b).ok())
+                .and_then(|m| m.rest_top())
+                .unwrap_or_else(|| panic!("{:?}: no model {}", d.kind, d.model));
+            let tall = top > d.height * crate::render::items::TALL_MODEL;
+            assert_eq!(
+                tall,
+                d.kind == Kind::Stag,
+                "{:?}: {top} vs {}",
+                d.kind,
+                d.height
+            );
+        }
+        assert!((STAG.height - 2.4).abs() < 0.01);
+    }
+
     #[test]
     fn every_kind_has_one_row_with_sane_numbers() {
         for d in ALL {

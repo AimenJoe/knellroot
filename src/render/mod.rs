@@ -148,6 +148,8 @@ pub struct Renderer {
     doll_rt: Option<RenderTarget>,
     /// 모션 보기의 동작마다 담을 틀(`items::sweep_box` — 아래 끝·위 끝·가로 반지름, 개발판).
     doll_fit: std::collections::HashMap<String, (f32, f32, f32)>,
+    /// 도감 그림의 키(0270 D): 모델이 판정의 키보다 훨씬 큰 종(뿔)의 모델 꼭대기 — 종마다 한 번 잰다(`draw_creature`).
+    creature_top: std::collections::HashMap<&'static str, f32>,
     /// 도감 생명체(0130).
     creature_rt: Option<RenderTarget>,
     /// 아이템 그림(0068): 아이콘은 아이템마다 한 번 찍어 둔 타깃, 고른 것 하나는 도는 큰 타깃.
@@ -268,6 +270,7 @@ impl Renderer {
             backdrop: Default::default(),
             doll_rt: None,
             doll_fit: Default::default(),
+            creature_top: Default::default(),
             creature_rt: None,
             icons: Default::default(),
             item_rt: None,

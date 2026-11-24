@@ -366,8 +366,9 @@ async function run(browser, lang) {
   // 여정: 줄마다. 심은 기록은 성소의 문지기를 넘었다(core.warden=1) — 둘째 줄 "성소의 문지기를 넘어라"를
   // 받으면(확인) 기록에 journey=s.warden, 잔불 +60. 마을의 목표도 보인다.
   await press('KeyE'); await until('Codex { host: Pause, tab: 0', '멈춤: 기록 탭 = 여정 묶음');
-  for (let i = 0; i < 10; i++) { await shot(`8m-journey-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
-  // 열 줄을 다 지나면 목록은 첫 줄로 돈다 — 한 줄 아래가 문지기 목표.
+  // 줄은 열하나(성소 여섯 — 0270 D "고요를 깨워라"까지 — + 마을 다섯).
+  for (let i = 0; i < 11; i++) { await shot(`8m-journey-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  // 열한 줄을 다 지나면 목록은 첫 줄로 돈다 — 한 줄 아래가 문지기 목표.
   await press('ArrowDown'); await page.waitForTimeout(150);
   {
     const before = Number(/embers=(\d+)\n/.exec(await record())[1]);
@@ -381,7 +382,8 @@ async function run(browser, lang) {
     if (!/journey=s\.warden\n/.test(await record())) errors.push('journey: a taken goal is taken once');
   }
   await press('ArrowRight'); await until('Codex { host: Pause, tab: 1', '멈춤: 기록 탭의 적 묶음');
-  for (let i = 0; i < 6; i++) { await shot(`8h-codex-foe-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  // 적 묶음의 모든 줄(열둘 — 0270 D 고요한 사슴까지: 못 본 종의 "나오는 곳"도 넘침 검사에 든다).
+  for (let i = 0; i < 12; i++) { await shot(`8h-codex-foe-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   // 장신구 묶음: 첫 줄(가진 껍질 부적)의 보상을 받는다(0265 — 확인 = 받기, 잔불 +15, 한 번만).
   await press('ArrowRight'); await until('Codex { host: Pause, tab: 2', '멈춤: 기록 탭의 장신구 묶음');
   {
@@ -396,7 +398,7 @@ async function run(browser, lang) {
     await press('Enter'); await page.waitForTimeout(300);
     if (Number(/embers=(\d+)\n/.exec(await record())[1]) !== after) errors.push('codex: a bounty is taken once');
   }
-  for (let i = 0; i < 9; i++) { await shot(`8i-codex-charm-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  for (let i = 0; i < 10; i++) { await shot(`8i-codex-charm-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   // 덧옷(0176).
   await press('ArrowRight'); await page.waitForTimeout(300);
   for (let i = 0; i < 3; i++) { await shot(`8k-codex-garb-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }

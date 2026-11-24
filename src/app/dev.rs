@@ -61,6 +61,8 @@ pub(super) enum DevStart {
     Stones,
     /// 둘째 지역의 첫 상자 곁(0131 — 떨어진 아이템·빛기둥 판정) — 기록은 쓰지 않는다.
     Chest,
+    /// 첫 지역의 필드 보스 터 들머리(0270 D — 엎드린 고요한 사슴·끈·떨굼·쉬어도 다시 서지 않음 판정) — 기록은 쓰지 않는다.
+    Field,
     /// PoC·개발 아레나(`scenario::LIST`).
     Scenario(Scenario),
     /// 연구소(메뉴의 설정 아래 줄과 같은 창, 0079).
@@ -80,7 +82,7 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 41] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 42] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Motion, DevStart::Motion(0)),
@@ -106,6 +108,8 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 41] = [
     (DevCat::Stage, DevStart::Works),
     // 0262: 묶음의 끝에 둔다(시험 스크립트가 세는 앞 줄을 밀지 않는다).
     (DevCat::Stage, DevStart::Prologue),
+    // 0270 D: 역시 끝에.
+    (DevCat::Stage, DevStart::Field),
     (DevCat::Combat, DevStart::Scenario(Scenario::Boss)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Pillars)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Duel)),
@@ -150,6 +154,7 @@ impl DevStart {
             DevStart::Residents => t(dv::RESIDENTS),
             DevStart::Stones => t(dv::STONES),
             DevStart::Chest => t(dv::CHEST),
+            DevStart::Field => t(dv::FIELD),
             DevStart::Scenario(sc) => {
                 let e = scenario::entry(sc);
                 scenario_text(e.name, e.checks).0
@@ -175,7 +180,8 @@ impl DevStart {
             | DevStart::Prologue
             | DevStart::Residents
             | DevStart::Stones
-            | DevStart::Chest => t(dv::STAGE_NOTE).to_string(),
+            | DevStart::Chest
+            | DevStart::Field => t(dv::STAGE_NOTE).to_string(),
             DevStart::Scenario(sc) => {
                 let n = scenario::LIST
                     .iter()
@@ -255,6 +261,21 @@ impl App {
                 if e == DevStart::Gate {
                     self.run.dev_skip_to_gate(&mut self.world);
                 }
+                self.cam = self.cam.renew(self.world.player.pos, &self.t);
+                self.go(Go::Root(Scene::Play));
+            }
+            // 필드 보스의 터(0270 D): 첫 지역을 세우고 터의 들머리(보스에서 서쪽 12m — 일어나는 거리 밖)에 동쪽을 보고 선다.
+            DevStart::Field => {
+                self.dev.run = true;
+                self.restart();
+                let home = self.run.level.marks_of(crate::stage::FIELD_GLYPH).next();
+                if let Some(at) = home {
+                    let pl = &mut self.world.player;
+                    pl.pos = at + vec3(-12.0, 0.0, 0.0);
+                    pl.prev = pl.pos;
+                    pl.facing = std::f32::consts::FRAC_PI_2;
+                }
+                self.run.intro = 0.0;
                 self.cam = self.cam.renew(self.world.player.pos, &self.t);
                 self.go(Go::Root(Scene::Play));
             }
