@@ -181,6 +181,35 @@ def bellshard(g, x):
     g.box((x + 0.13, 0.13, 0.025), (0.07, 0.06, 0.025), "amber", rot=(-6, 10, -25), taper=(0.6, 0.5))
 
 
+def stillbell(g, x):
+    """고요의 종(0270 D — 고요한 사슴이 남긴다): 낡은 청동 종 — `ear`(작은 놋쇠 종)보다 낮고 넓게, 빛바랜 청동. 옆구리에 금이 가 있고,
+    보라 뿌리가 아래에서 감아 올라 추를 붙들고 있다(울리지 않는다). 걸이도 뿌리 밧줄 — 각진 것은 뿌리만(0037)."""
+    import math
+    prof = [(0.175, 0.0), (0.186, 0.018), (0.150, 0.052), (0.132, 0.120), (0.112, 0.176), (0.066, 0.214), (0.0, 0.228)]
+    g.lathe((x, 0, 0.0), prof, ["k_bronzel", "k_bronzel", "k_bronze", "k_bronze", "k_bronzel", "k_bronze"], sides=10, smooth=True,
+            hard=(2,), caps=(True, False), cap_mat="k_deep")
+    # 금: 입술에서 어깨로 벌어진 어두운 쐐기(앞쪽 — 아이콘 각도에서 보인다).
+    for (z0, z1, w) in ((0.0, 0.075, 0.034), (0.07, 0.145, 0.018)):
+        r0, r1 = _at(prof, z0) + 0.004, _at(prof, z1) + 0.004
+        a = math.radians(-62)
+        g.limb([(x + r0 * math.cos(a), r0 * math.sin(a), z0), (x + r1 * math.cos(a + 0.10), r1 * math.sin(a + 0.10), z1)], [w, 0.004],
+               "k_deep", sides=4, roll=45, flat=0.35)
+    g.blob((x + 0.012, 0, -0.028), (0.078, 0.078, 0.078), "k_bronze", r=1.0, n=2)  # 추
+    # 감아 오른 뿌리: 추를 붙든 고리에서 입술을 넘어 몸을 한 바퀴 반 돌아 어깨까지.
+    coil = [(x + 0.03, -0.045, -0.050), (x + 0.085, -0.01, -0.018)]
+    for i in range(10):
+        t = i / 9
+        a = math.radians(10 + 520 * t)
+        z = 0.012 + 0.170 * t
+        r = _at(prof, z) + 0.020
+        coil.append((x + r * math.cos(a), r * math.sin(a), z))
+    g.limb(coil, [0.030, 0.034] + [0.034 - 0.020 * i / 9 for i in range(9)] + [0.0], (["k_root", "k_droot"] * 6)[:11], sides=4, roll=45)
+    g.limb([(x - 0.05, 0.03, -0.040), (x - 0.12, 0.07, -0.012), (x - 0.19, 0.06, 0.03)], [0.028, 0.020, 0.0], "k_droot", sides=4,
+           roll=45)  # 아래로 삐친 끝
+    ring = [(x + 0.060 * math.cos(t), 0.0, 0.272 + 0.060 * math.sin(t)) for t in (2 * math.pi * i / 8 for i in range(9))]
+    g.limb(ring, [0.020] * 9, ["k_root", "k_rootl"] * 4, sides=4, roll=45)  # 뿌리 밧줄 고리
+
+
 def _at(profile, z):
     """`lathe` 윤곽의 높이 z에서의 반지름(선형)."""
     for (r0, z0), (r1, z1) in zip(profile, profile[1:]):
@@ -308,7 +337,7 @@ def garb_apron(g, x):
 
 # 이름 = 장신구 기록 키(`src/charms.rs` `key`, 바꾸지 않는다) = 게임이 찾는 부위 이름(`item_view.rs`).
 CHARMS = [("shell", shell), ("feet", feet), ("ear", ear), ("hunger", hunger), ("hand", hand), ("pouch", pouch),
-          ("cloth", cloth), ("jar", jar), ("bellshard", bellshard)]
+          ("cloth", cloth), ("jar", jar), ("bellshard", bellshard), ("stillbell", stillbell)]
 # 덧옷(0176) — 부위 이름 = `src/garb.rs`의 `node`. 파일은 따로(`garbs.glb`, 2026-11-23): 메뉴는 파일 한 벌을 그리기 한 번에 넘기고
 # 다른 부위를 크기 0으로 숨긴다 — 디테일을 넣은 뒤 한 파일로는 그리기 한 번의 색인 한도(0036)를 넘었다.
 GARBS = [("garb_cloak", garb_cloak), ("garb_bark", garb_bark), ("garb_apron", garb_apron)]
