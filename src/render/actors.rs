@@ -145,6 +145,9 @@ impl Renderer {
                 Color::new(1.8, 1.8, 1.8, 1.0)
             } else if en.harmless() {
                 WHITE
+            } else if en.ail.frozen > 0.0 {
+                // 언 적(0270 C5): 몸이 얼음빛으로 — 잿빛보다 밝게(바닥에서 떠 보이게, 0170). 얼음 조각은 `overlays::ice_coats`.
+                frozen_tint(super::light::enemy_tint())
             } else {
                 super::light::enemy_tint()
             };
@@ -489,6 +492,9 @@ const WINDUP_GLINT_GAIN: f32 = 1.2;
 const RECOIL: f32 = 0.35;
 /// 죽은 적이 넘어져 사라지는 데 걸리는 초.
 pub(super) const DEATH_TIME: f32 = 1.2;
+/// 언 몸(0270 C5 — `frozen_tint`): 서리 빛으로 섞는 몫 · 그 빛의 밝기(잿빛보다 밝게 — 0170).
+const ICE_TINT: f32 = 0.8;
+const ICE_LIFT: f32 = 2.0;
 
 /// 적 상태 → (동작, 그 동작의 몇 초). 후보 이름을 차례로 찾고(모델마다 가진 동작이 다르다), 예고 동안은 진행에 맞춰 든다:
 /// `_windup` 동작이면 예고 전체에, 한 동작(`attack`)이면 앞 절반이 예고 · 뒤 절반이 치기.
@@ -724,4 +730,12 @@ pub fn gesture_len(name: &str) -> f32 {
         "pull" => PULL_CLIP,
         _ => 0.0,
     }
+}
+
+/// 언 적의 몸빛(0270 C5): 잿빛 보정(`enemy_tint`)을 밝은 서리 빛(`status::INK` 서리 × `ICE_LIFT`) 쪽으로 `ICE_TINT`만큼 — 빨강은 덜,
+/// 초록·파랑은 더, 밝기는 잿빛보다 위(바닥에서 떠 보여야 한다, 0170).
+fn frozen_tint(ash: Color) -> Color {
+    let [r, g, b] = crate::status::INK[crate::status::Kind::Frost.slot().unwrap_or(6)];
+    let ice = |a: f32, c: f32| a + (c * ICE_LIFT - a) * ICE_TINT;
+    Color::new(ice(ash.r, r), ice(ash.g, g), ice(ash.b, b), 1.0)
 }

@@ -70,6 +70,7 @@ impl Renderer {
         exposed_rings(w, alpha, &fl);
         frail_rings(w, alpha, &fl);
         ail_marks(w, alpha, &fl);
+        ice_coats(w, alpha);
         spill_rings(w, pp, t, &fl);
         stagger_stars(w, alpha);
         lock_mark(w, alpha, &fl);
@@ -1213,6 +1214,56 @@ fn ail_marks(w: &World, alpha: f32, fl: &Drape) {
         }
     }
 }
+
+/// 언 적의 얼음(0270 C5 — 사장 "넣기"): 몸에서 바깥으로 돋은 얼음 조각 다섯과 발치의 낮은 조각 셋 — 면 음영이 있는 길쭉한 팔면체
+/// (`octa_faces` · `shaded_tris`). 몸빛은 `actors::frozen_tint`. 얼음이 풀리는 끝 `ICE_MELT`초에 줄어들고, 깨지는 순간(`Event::Shatter` —
+/// `Ail::shatter`가 `frozen`을 0으로) 사라진다 — 흩어지는 얼음은 이펙트(`fx`)의 몫. 빨강은 쓰지 않는다.
+fn ice_coats(w: &World, alpha: f32) {
+    let [r, g, b] = crate::status::INK[crate::status::Kind::Frost.slot().unwrap_or(6)];
+    let pale = |k: f32| Color::new(r + (1.0 - r) * k, g + (1.0 - g) * k, b + (1.0 - b) * k, 1.0);
+    let (body, tip) = (pale(ICE_PALE), pale(0.85));
+    for (n, en) in w.enemies.iter().enumerate() {
+        if !en.alive() || en.ail.frozen <= 0.0 {
+            continue;
+        }
+        let grow = (en.ail.frozen / ICE_MELT).min(1.0);
+        let p = en.prev.lerp(en.pos, alpha);
+        let scale = en.height.clamp(0.8, 4.0) * grow;
+        // 적마다 다른(그러나 프레임마다 같은) 돌림 — 모든 언 적이 같은 꼴로 보이지 않게.
+        let turn = en.facing + n as f32 * 1.7;
+        for (j, &(ang, up, at, len)) in ICE_SHARDS.iter().enumerate() {
+            let a = turn + ang;
+            let out = vec3(a.cos(), 0.0, -a.sin());
+            let dir = (out + Vec3::Y * up).normalize();
+            // 몸 둘레(반지름의 0.8) · 키의 `at` 높이에서 바깥으로.
+            let root = p + out * en.radius * 0.8 + Vec3::Y * en.height * at;
+            let l = len * scale;
+            let w = l * 0.26;
+            let rot = Quat::from_rotation_arc(Vec3::Y, dir);
+            let faces = octa_faces(vec2(w, w * 0.8), l * 0.75, l * 0.25);
+            shaded_tris(root + dir * l * 0.2, &faces, body, 0.35, rot);
+            // 끝의 빛 한 점(작은 마름모) — 짝수 조각만.
+            if j % 2 == 0 {
+                gem(root + dir * l * 0.9, 0.09 * scale.min(1.6), tip);
+            }
+        }
+    }
+}
+
+/// 얼음 조각(0270 C5 — `ice_coats`): (몸 둘레의 각 · 위로 드는 몫 · 키에서의 높이 · 키 1m당 길이). 바닥 가까이의 셋은 발치의 조각.
+const ICE_SHARDS: [(f32, f32, f32, f32); 8] = [
+    (0.3, 0.5, 0.7, 0.5),
+    (2.2, 0.3, 0.5, 0.45),
+    (4.1, 0.8, 0.8, 0.42),
+    (5.4, 0.2, 0.35, 0.42),
+    (3.0, 0.4, 0.6, 0.45),
+    (1.2, 2.2, 0.05, 0.45),
+    (3.3, 2.6, 0.05, 0.4),
+    (5.0, 2.0, 0.05, 0.42),
+];
+/// 얼음이 풀리기 전 줄어드는 초 · 조각의 빛(서리 빛을 흰빛 쪽으로 이만큼).
+const ICE_MELT: f32 = 0.3;
+const ICE_PALE: f32 = 0.6;
 
 fn spill_rings(w: &World, pp: Vec3, t: &Tuning, fl: &Drape) {
     // 땅 돌리기(0012): 쟁반의 테 — 멈추는 순간 범위 고리가 밝게 떴다 옅어지고, 안쪽 물결이 바깥으로 퍼진다.
