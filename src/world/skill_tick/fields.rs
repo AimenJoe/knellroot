@@ -288,7 +288,7 @@ impl World {
                 en.exposed = 0.0;
                 ev.push(Event::Crit { at });
             }
-            en.hurt = 0.15;
+            en.struck();
             ev.push(Event::Hit { at });
             self.skill_hit_tick = true;
         }

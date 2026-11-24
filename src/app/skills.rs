@@ -2646,10 +2646,11 @@ mod tests {
         assert_eq!(w(cut, 1, 0), cut, "the right edge");
         assert_eq!(w(cut, 0, 1), throw, "the right branch goes down its column");
         assert_eq!(w(swallow, 1, 0), throw);
+        // 0270 C3: 결투 판의 셋째 줄 왼쪽은 날카로움의 결.
         assert_eq!(
             w(swallow, 0, 1),
-            flurry,
-            "an empty column below still leads down"
+            at(Entry::Vein(crate::progression::Vein::Sharp)),
+            "the left branch goes down its column"
         );
         assert_eq!(w(flurry, 0, 1), RESPEC);
         for plate in PLATES {

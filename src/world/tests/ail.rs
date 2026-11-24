@@ -426,6 +426,14 @@ fn frost_slows_then_freezes_and_the_next_blow_shatters_it() {
         hurt_by(&w.enemies[i], 100, false, 0, &t),
         (100.0 * SHATTER_MULT) as i32
     );
+    // 얼린 그 타는 깨지 않는다(0270 C3) — 한 틱 지나 굳은 얼음을 다음 타가 깬다.
+    w.enemies[i].struck();
+    let ev = w.step(&Actions::default(), &t);
+    assert_eq!(count(&ev, |e| matches!(e, Event::Shatter { .. })), 0);
+    assert!(
+        w.enemies[i].ail.frozen > 0.0,
+        "the freezing blow does not break it"
+    );
     w.enemies[i].struck();
     let ev = w.step(&Actions::default(), &t);
     assert_eq!(count(&ev, |e| matches!(e, Event::Shatter { .. })), 1);

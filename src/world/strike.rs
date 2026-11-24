@@ -207,6 +207,8 @@ impl World {
         let mut deflected: Option<Vec3> = None;
         // 결(0223 11절): 이 휘두르기가 묶인 적·금 간 적에 닿았나(맞기 전의 상태로 본다).
         let (mut bound_hit, mut cracked_hit) = (false, false);
+        // 0270 C3: 기절한 적(그 자리) · 피 흘리는 적 · 흡수 걸린 적.
+        let (mut stunned_at, mut bled_hit, mut sipped_hit) = (None, false, false);
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing {
                 continue;
@@ -234,6 +236,11 @@ impl World {
             if !en.rising() {
                 bound_hit |= en.ail.bound > 0.0 || en.marks.bind > 0.0;
                 cracked_hit |= en.ail.rift > 0.0;
+                if en.ail.stun > 0.0 && stunned_at.is_none() {
+                    stunned_at = Some(en.pos);
+                }
+                bled_hit |= en.ail.bleed > 0.0;
+                sipped_hit |= en.ail.drain > 0.0;
             }
             // 패링으로 드러난 적은 한 대가 치명타(0025).
             let crit = en.exposed > 0.0;
@@ -273,7 +280,7 @@ impl World {
                     at: en.pos + Vec3::Y * en.height * 0.6,
                 });
             }
-            en.hurt = 0.15;
+            en.struck();
             en.knock = dir * t[P::Knockback] * s.knock * if en.boss { 0.25 } else { 1.0 };
             // 맞은 쪽으로 몸이 젖는다(패링과 같은 `sway`, 2026-11-06 — 흰 번쩍만으로는 "맞았다"가 아니다, KB).
             en.sway = dir
@@ -363,6 +370,18 @@ impl World {
         if cracked_hit && paid[1] != swing {
             paid[1] = swing;
             self.vein_cracked = true;
+        }
+        if let (Some(at), true) = (stunned_at, paid[2] != swing) {
+            paid[2] = swing;
+            self.vein_rattle = Some(at);
+        }
+        if bled_hit && paid[3] != swing {
+            paid[3] = swing;
+            self.vein_bled = true;
+        }
+        if sipped_hit && paid[4] != swing {
+            paid[4] = swing;
+            self.vein_sipped = true;
         }
         Landed {
             stop,

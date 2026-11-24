@@ -20,6 +20,7 @@ impl World {
         let mut cinders = Vec::new();
         // 흡수(0270 B): 표지가 붙은 적을 이번 틱(앞 틱의 타 — 타는 `tick_ails` 뒤에 들어온다)에 쳤나 — 틱에 한 번만 돌아온다.
         let mut drained: Option<Vec3> = None;
+        let mut shattered: Vec<Vec3> = Vec::new();
         for (i, en) in self.enemies.iter_mut().enumerate() {
             let struck = std::mem::take(&mut en.struck_now);
             if struck && en.alive() {
@@ -28,6 +29,8 @@ impl World {
                     ev.push(Event::Shatter {
                         at: en.pos + Vec3::Y * en.height * 0.5,
                     });
+                    // 얼음 속 불씨(결, 0270 C3): 깨진 자리를 적어 둔다 — 잔불은 아래에서(한 틱에 몇 번까지).
+                    shattered.push(en.pos);
                     if matches!(en.state, EState::Stagger { .. }) {
                         en.state = EState::Chase;
                     }
@@ -36,6 +39,9 @@ impl World {
                     drained = Some(en.pos + Vec3::Y * en.height * 0.6);
                 }
             }
+            // 얼린 그 타(앞 틱)는 얼음을 깨지 않는다 — 깨기를 본 뒤에 굳힌다(0270 C3: 맞음이 모두 `struck`을 지나며 눈발의 타가
+            // 얼리자마자 깨던 것).
+            en.ail.settle_ice();
             if !en.alive() {
                 if en.ail.burn > 0 {
                     cinders.push((en.pos, std::mem::take(&mut en.ail.burn)));
@@ -110,6 +116,21 @@ impl World {
         if self.tree.veined(Vein::Ember) {
             for (at, stacks) in cinders {
                 self.catch_fire(&mut ev, at, stacks);
+            }
+        }
+        // 얼음 속 불씨(결, 0270 C3): 깨진 자리마다 잔불 — 한 틱에 `FROST_SHARDS`번까지(떼를 한꺼번에 깨도 곱절이 되지 않게).
+        if self.tree.veined(Vein::Frost) {
+            for at in shattered
+                .into_iter()
+                .take(crate::progression::vein::FROST_SHARDS as usize)
+            {
+                let seed = (self.time * 1000.0) as u32 ^ (at.x.to_bits() >> 7);
+                self.drops.extend(crate::ember::scatter(
+                    at,
+                    crate::progression::vein::FROST_EMBERS,
+                    seed,
+                ));
+                self.vein_shards = self.vein_shards.saturating_add(1);
             }
         }
         for i in tolls {

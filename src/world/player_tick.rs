@@ -362,6 +362,7 @@ impl World {
             *cd = (*cd - dt).max(0.0);
         }
         pl.skill.denied = (pl.skill.denied - dt).max(0.0);
+        pl.skill.stride = (pl.skill.stride - dt).max(0.0);
         // 되울림·몰아치기(0158 G2)의 남은 시간 — 로직 시계라 히트스톱 동안은 줄지 않는다.
         pl.skill.echo_left = (pl.skill.echo_left - dt).max(0.0);
         pl.skill.flurry_left = (pl.skill.flurry_left - dt).max(0.0);
@@ -1259,7 +1260,13 @@ impl World {
                     PState::Idle if pl.running => RUN_SPEED_X,
                     _ => 1.0,
                 };
-                let want = world_move * t[P::MoveSpeed] * slow;
+                // 흐르는 걸음(결, 0270 C3): 피 흘리는 적을 친 뒤 잠깐 빨리 걷는다.
+                let stride = if pl.skill.stride > 0.0 {
+                    crate::progression::vein::SHARP_STRIDE
+                } else {
+                    1.0
+                };
+                let want = world_move * t[P::MoveSpeed] * slow * stride;
                 let diff = want - pl.vel;
                 let max = t[P::MoveAccel] * dt;
                 pl.vel += if diff.length() > max {

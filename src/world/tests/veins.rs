@@ -181,3 +181,112 @@ fn a_heavy_on_a_boss_mid_transition_pays_no_vein_and_does_not_cut_the_rise() {
     assert!(w.enemies[0].rising(), "still rising");
     assert_eq!(w.player.skill.cd, [9.0; crate::skills::N]);
 }
+
+// ---- 0270 C3: 새 타입 넷의 결 ----
+
+/// 흔들린 머리: 기절한 적을 무기로 맞히면 그 둘레의 다른 적들의 자세가 흔들린다 — 칸을 안 열었거나 기절하지 않았으면 아니다.
+#[test]
+fn shock_vein_rattles_the_posture_of_foes_around_a_stunned_one() {
+    let t = Tuning::default();
+    let after = |open: bool, stunned: bool| {
+        let mut w = World::new("test", 30.0);
+        w.tree = veined(open.then_some(Vein::Shock));
+        let a = foe(&mut w, vec3(0.0, 0.0, -1.5));
+        let b = foe(&mut w, vec3(0.0, 0.0, -4.5));
+        if stunned {
+            fill(&mut w, a, Ty::Shock);
+            assert!(w.enemies[a].ail.stun > 0.0);
+        }
+        swing(&mut w, &t);
+        assert!(w.enemies[a].hp < 500);
+        assert_eq!(w.enemies[b].hp, 500, "out of the blade's reach");
+        w.enemies[b].stance.poise
+    };
+    let base = after(false, true);
+    assert!(after(true, true) > base + vein::SHOCK_RATTLE * 0.5);
+    assert_eq!(after(true, false), after(false, false));
+}
+
+/// 흐르는 걸음: 피 흘리는 적을 무기로 맞히면 잠깐 빨리 걷는다.
+#[test]
+fn sharp_vein_quickens_the_stride_after_a_hit_on_a_bleeding_foe() {
+    let t = Tuning::default();
+    let after = |open: bool| {
+        let mut w = World::new("test", 30.0);
+        w.tree = veined(open.then_some(Vein::Sharp));
+        let a = foe(&mut w, vec3(0.0, 0.0, -1.5));
+        fill(&mut w, a, Ty::Sharp);
+        assert!(w.enemies[a].ail.bleed > 0.0);
+        swing(&mut w, &t);
+        let stride = w.player.skill.stride;
+        // 걸어 본다: 같은 초에 더 멀리.
+        let p0 = w.player.pos;
+        for _ in 0..20 {
+            w.step(
+                &Actions {
+                    move_dir: vec2(1.0, 0.0),
+                    ..Default::default()
+                },
+                &t,
+            );
+        }
+        (stride, (w.player.pos - p0).length())
+    };
+    let (none, slow) = after(false);
+    let (some, fast) = after(true);
+    assert_eq!(none, 0.0);
+    assert!(some > 0.0);
+    assert!(fast > slow * 1.1, "{slow} -> {fast}");
+}
+
+/// 얼음 속 불씨: 언 적이 깨질 때 잔불이 흩어진다.
+#[test]
+fn frost_vein_scatters_an_ember_when_the_ice_shatters() {
+    let t = Tuning::default();
+    let after = |open: bool| {
+        let mut w = World::new("test", 30.0);
+        w.tree = veined(open.then_some(Vein::Frost));
+        let a = foe(&mut w, vec3(0.0, 0.0, -1.5));
+        fill(&mut w, a, Ty::Frost);
+        assert!(w.enemies[a].ail.frozen > 0.0);
+        swing(&mut w, &t);
+        assert!(
+            w.enemies[a].ail.frozen <= 0.0,
+            "shattered: {} {}",
+            w.enemies[a].hp,
+            w.enemies[a].ail.frozen
+        );
+        w.drops.len()
+    };
+    assert_eq!(after(false), 0);
+    assert_eq!(after(true), vein::FROST_EMBERS as usize);
+}
+
+/// 한 모금씩: 흡수가 걸린 적을 무기로 맞힐 때마다 등잔이 조금 찬다 — 다 차면 하나, 가득이면 넘치지 않는다.
+#[test]
+fn drain_vein_fills_the_lamp_sip_by_sip() {
+    let t = Tuning::default();
+    let after = |open: bool, sip: f32, flask: i32| {
+        let mut w = World::new("test", 30.0);
+        w.tree = veined(open.then_some(Vein::Drain));
+        let a = foe(&mut w, vec3(0.0, 0.0, -1.5));
+        fill(&mut w, a, Ty::Drain);
+        assert!(w.enemies[a].ail.drain > 0.0);
+        w.player.skill.sip = sip;
+        w.player.flask = flask;
+        swing(&mut w, &t);
+        (w.player.skill.sip, w.player.flask)
+    };
+    let max = World::new("test", 30.0).player.flask_max;
+    assert_eq!(after(false, 0.0, 0), (0.0, 0));
+    let (sip, flask) = after(true, 0.0, 0);
+    assert!((sip - vein::DRAIN_SIP).abs() < 1e-5 && flask == 0);
+    assert_eq!(
+        after(true, 1.0 - vein::DRAIN_SIP, 0),
+        (0.0, 1),
+        "a full sip is a draught"
+    );
+    let (sip, flask) = after(true, 1.0 - vein::DRAIN_SIP, max);
+    assert_eq!(flask, max, "never over the brim");
+    assert!(sip >= 1.0 - 1e-4, "the sip waits, full");
+}

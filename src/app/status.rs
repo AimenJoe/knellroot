@@ -819,6 +819,7 @@ mod tests {
             skills_cursor(Row::Ult, &old, worn, sk::Ult::Upend),
             at(Entry::Ult(sk::Ult::Upend))
         );
-        assert_eq!(cell_count(), 29);
+        // 패시브 스물하나 · 다리 넷 · 결 여덟(0270 C3).
+        assert_eq!(cell_count(), 33);
     }
 }

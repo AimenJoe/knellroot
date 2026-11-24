@@ -204,6 +204,8 @@ pub struct Ail {
     pub frozen: f32,
     /// 흡수 표지의 초(남은).
     pub drain: f32,
+    /// 이번 틱에 막 얼었다(0270 C3) — 얼린 그 타가 곧바로 얼음을 깨지 않게(다음 타부터 깬다). 월드가 틱마다 `settle_ice`로 걷는다.
+    fresh_ice: bool,
 }
 
 impl Ail {
@@ -296,6 +298,7 @@ impl Ail {
                     FREEZE_SECS
                 };
                 self.frozen = secs;
+                self.fresh_ice = true;
                 Proc::Freeze(secs)
             }
             Kind::Drain => {
@@ -337,9 +340,17 @@ impl Ail {
 
     /// 언 적이 깨진다(친 한 대가 크게 들어간 뒤 — 월드가 부른다). 얼어 있었으면 참.
     pub fn shatter(&mut self) -> bool {
+        if self.fresh_ice {
+            return false;
+        }
         let was = self.frozen > 0.0;
         self.frozen = 0.0;
         was
+    }
+
+    /// 막 언 얼음이 굳는다(틱마다 — `shatter` 뒤에).
+    pub fn settle_ice(&mut self) {
+        self.fresh_ice = false;
     }
 
     /// 화상 `more`겹을 붙인다(상한까지 — 보스는 둘) — 남은 시간은 처음부터. 지금 겹을 돌려준다.
@@ -593,6 +604,9 @@ mod tests {
             Some(Proc::Freeze(FREEZE_SECS))
         );
         assert_eq!(a.chill(), 0.0, "frozen stiff");
+        // 막 언 얼음은 얼린 그 타에 깨지지 않는다(0270 C3) — 굳은 뒤에.
+        assert!(!a.shatter(), "not by the freezing blow");
+        a.settle_ice();
         assert!(a.shatter());
         assert!(!a.shatter(), "only once");
         assert_eq!(a.chill(), 1.0, "the gauge emptied when it froze");

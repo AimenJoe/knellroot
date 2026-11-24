@@ -1582,7 +1582,32 @@ impl World {
         } else {
             0.0
         };
+        // 0270 C3의 결 넷: 흔들린 머리(둘레의 자세) · 흐르는 걸음(빠르기) · 한 모금씩(등잔) — 얼음 속 불씨는 `tick_ails`가 낸다.
+        let rattle =
+            std::mem::take(&mut self.vein_rattle).filter(|_| self.tree.veined(Vein::Shock));
+        let bled = std::mem::take(&mut self.vein_bled) && self.tree.veined(Vein::Sharp);
+        let sipped = std::mem::take(&mut self.vein_sipped) && self.tree.veined(Vein::Drain);
+        self.vein_shards = 0;
+        if let Some(at) = rattle {
+            for en in &mut self.enemies {
+                let d = vec3(en.pos.x - at.x, 0.0, en.pos.z - at.z).length();
+                if en.active() && d > 0.3 && d - en.radius <= vein::SHOCK_REACH {
+                    add_poise(en, vein::SHOCK_RATTLE, None, t, ev);
+                }
+            }
+            ev.push(Event::Aftershock { at });
+        }
         let pl = &mut self.player;
+        if bled {
+            pl.skill.stride = vein::SHARP_SECS;
+        }
+        if sipped {
+            pl.skill.sip = (pl.skill.sip + vein::DRAIN_SIP).min(1.0);
+            if pl.skill.sip >= 1.0 - 1e-4 && pl.flask < pl.flask_max {
+                pl.flask += 1;
+                pl.skill.sip = 0.0;
+            }
+        }
         // 뿌리의 숨: 묶인 적을 맞힌 타 — 기력이 조금 돌아온다. 금을 따라: 금 간 적을 맞힌 타 — 모든 스킬 대기가 조금 당겨진다.
         if bound {
             pl.stamina = (pl.stamina + vein::ROOT_BREATH).min(t[P::StaminaMax]);

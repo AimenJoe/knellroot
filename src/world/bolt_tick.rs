@@ -96,7 +96,7 @@ impl World {
                 left,
                 def,
                 hits: 0,
-                veined: [false; 2],
+                veined: [false; 5],
             });
             ev.push(Event::Cast { at: pos });
         }
@@ -145,7 +145,7 @@ impl World {
                     left: t[P::CastRange] * def.range,
                     def,
                     hits: 0,
-                    veined: [false; 2],
+                    veined: [false; 5],
                 });
             }
             ev.push(Event::Cast { at: from });
@@ -264,7 +264,7 @@ impl World {
             left,
             def,
             hits: 0,
-            veined: [false; 2],
+            veined: [false; 5],
         };
         let step = t[P::CastSpeed] * TICK_DT * def.speed;
         for _ in 0..2000 {
@@ -401,6 +401,19 @@ impl World {
                 if !b.veined[1] && en.ail.rift > 0.0 {
                     b.veined[1] = true;
                     self.vein_cracked = true;
+                }
+                // 0270 C3: 기절한 적 · 피 흘리는 적 · 흡수 걸린 적.
+                if !b.veined[2] && en.ail.stun > 0.0 {
+                    b.veined[2] = true;
+                    self.vein_rattle = Some(en.pos);
+                }
+                if !b.veined[3] && en.ail.bleed > 0.0 {
+                    b.veined[3] = true;
+                    self.vein_bled = true;
+                }
+                if !b.veined[4] && en.ail.drain > 0.0 {
+                    b.veined[4] = true;
+                    self.vein_sipped = true;
                 }
                 let crit = en.exposed > 0.0;
                 en.hp -= hurt_by(

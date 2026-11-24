@@ -1763,7 +1763,7 @@ pub const KEY_ROW: usize = 4;
 /// 결의 줄(0223 11절 — 판의 맨 아래 띠): 쓴 점수로 열리지 않는다(`ROW_NEEDS` 0) — 그 타입의 스킬을 배웠나만 본다
 /// (`Board::reachable`). 가로 자리는 판의 폭을 넷으로 나눈 가운데들.
 pub const VEIN_ROW: usize = 5;
-pub const LANE_VEIN: [f32; 4] = [34.0, 101.0, 169.0, 236.0];
+pub const LANE_VEIN: [f32; 8] = [17.0, 51.0, 84.0, 118.0, 152.0, 186.0, 219.0, 253.0];
 /// 맺음을 켜는 데 그 갈래에 써 둔 점수(0215 A — 갈래의 스킬 단 + 큰 기술 단 + 패시브 칸, 다리 칸은 어느 갈래에도 세지 않는다).
 pub const KEY_BRANCH: u32 = 10;
 /// 판의 가로 자리(0215 B — 화면의 칸 자리 `app::skills::spots`도 이것을 쓴다): 갈래 폭 안에서 칸 둘이면 `LANE_2`, 하나면
@@ -1859,6 +1859,11 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Vein(Vein::Root),
     Entry::Vein(Vein::Knell),
     Entry::Vein(Vein::Rift),
+    // 0270 C3: 새 타입 넷의 결
+    Entry::Vein(Vein::Shock),
+    Entry::Vein(Vein::Sharp),
+    Entry::Vein(Vein::Frost),
+    Entry::Vein(Vein::Drain),
 ];
 
 impl Entry {
@@ -2664,7 +2669,7 @@ mod tests {
     fn the_board_stands_as_the_0161_table_says() {
         use Branch::{Beat, Footing, Riposte};
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-        let table: [(usize, Branch, &[Entry]); 28] = [
+        let table: [(usize, Branch, &[Entry]); 31] = [
             (
                 0,
                 Beat,
@@ -2746,6 +2751,13 @@ mod tests {
             ),
             (5, Riposte, &[Entry::Vein(Vein::Knell)]),
             (5, Beat, &[Entry::Vein(Vein::Rift)]),
+            (
+                5,
+                Beat,
+                &[Entry::Vein(Vein::Shock), Entry::Vein(Vein::Sharp)],
+            ),
+            (5, Footing, &[Entry::Vein(Vein::Frost)]),
+            (5, Riposte, &[Entry::Vein(Vein::Drain)]),
         ];
         let flat: Vec<Entry> = table
             .iter()
@@ -2757,7 +2769,7 @@ mod tests {
                 assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
             }
         }
-        assert_eq!(NE, 54);
+        assert_eq!(NE, 58);
         for (i, e) in ENTRIES.iter().enumerate() {
             assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
         }

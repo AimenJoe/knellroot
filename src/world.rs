@@ -462,8 +462,8 @@ pub struct Bolt {
     pub def: weapons::Bolt,
     /// 이미 맞힌 적(꿰뚫는 탄, 번호 비트).
     pub hits: u64,
-    /// 결(0223 11절)의 몫을 이미 줬다(뿌리의 숨 · 금을 따라 — 꿰뚫는 탄도 탄 하나에 한 번).
-    pub veined: [bool; 2],
+    /// 결(0223 11절)의 몫을 이미 줬다(뿌리의 숨 · 금을 따라 · 흔들린 머리 · 흐르는 걸음 · 한 모금씩 — 꿰뚫는 탄도 탄 하나에 한 번).
+    pub veined: [bool; 5],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -652,7 +652,12 @@ pub struct SkillState {
     pub gauge: f32,
     pub gauge_swing: u32,
     /// 결(0223 11절)의 몫을 준 마지막 휘두르기(한 번 휘두르기에 한 번만 — 뿌리의 숨 · 금을 따라 저마다).
-    pub vein_swing: [u32; 2],
+    /// 0270 C3: + 흔들린 머리 · 흐르는 걸음 · 한 모금씩.
+    pub vein_swing: [u32; 5],
+    /// 흐르는 걸음(결, 0270 C3)의 남은 초 — 걷는 빠르기에 배.
+    pub stride: f32,
+    /// 한 모금씩(결, 0270 C3): 등잔에 찬 몫(1이면 등잔 하나).
+    pub sip: f32,
     pub denied: f32,
     /// 기술 판(0158): 끼운 칸의 단·고르기, 큰 기술의 단 — 앱이 `set_skills`로 넣는다(월드는 기록을 모른다).
     /// `rank`는 **지금 든 무기로 쓸 수 있는** 단이다(0223 V3): 갈래가 안 맞는 스킬이 놓인 칸은 0 = 빈 칸. 배운 단은 `known`.
@@ -902,6 +907,11 @@ pub struct World {
     vein_bound: bool,
     vein_cracked: bool,
     vein_tolls: u8,
+    /// 0270 C3: 이번 틱에 무기의 타가 기절한 적(그 자리)·피 흘리는 적·흡수 걸린 적에 닿았다, 이번 틱에 깨진 얼음 수.
+    vein_rattle: Option<Vec3>,
+    vein_bled: bool,
+    vein_sipped: bool,
+    vein_shards: u8,
     /// 이번 틱에 박자에 맞춘 평타가 나갔다(`Event::Beat`).
     beat_now: bool,
     /// 이번 틱에 등잔을 삼켰다·못 마셨다(사건은 `apply_strike`가 낸다).
@@ -946,7 +956,9 @@ impl World {
                     cd: [0.0; skills::N],
                     gauge: 0.0,
                     gauge_swing: 0,
-                    vein_swing: [0; 2],
+                    vein_swing: [0; 5],
+                    stride: 0.0,
+                    sip: 0.0,
                     denied: 0.0,
                     rank: [1; 2],
                     pick: [skills::Pick::A; 2],
@@ -1051,6 +1063,10 @@ impl World {
             vein_bound: false,
             vein_cracked: false,
             vein_tolls: 0,
+            vein_rattle: None,
+            vein_bled: false,
+            vein_sipped: false,
+            vein_shards: 0,
             time: 0.0,
             kills: 0,
             lock_range: 18.0,
