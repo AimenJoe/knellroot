@@ -23,7 +23,7 @@ REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 # 0155: 무기 넷·등잔을 상자 조합에서 제 꼴(잎 꼴 날·통 머리·굽은 활)로, 두건 꼭지 — 4,524(무기 넷이 1,233). 색인은 13,668 — 한 호출 15,000 아래를 지킨다.
 # 0193: 스킨 몸(Meshy 리깅, 줄여 정점 2,963) + 무기 넷·등잔 그대로 — 4,196.
 # charms: 0155에서 돌린 꼴·꺾인 관으로 다시(1,939) — 한 번에 하나만 그린다(아이콘은 캐시).
-BUDGET = {"mossgrazer": 900, "packbearer": 1000, "repeater": 1650, "mossward": 2600, "winchkeeper": 2600, "wanderer": 4800, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
+BUDGET = {"hushed_stag": 4200, "mossgrazer": 900, "packbearer": 1000, "repeater": 1650, "mossward": 2600, "winchkeeper": 2600, "wanderer": 4800, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
           # 0068 장신구 여섯이 한 파일(게임은 하나씩만 그린다) — 하나 280 안팎. 2026-11-23 디테일(사장 "싸구려"): 장신구 아홉 + 덧옷 셋,
           # 메뉴는 파일 한 벌을 그리기 한 번에 넘긴다(다른 부위 크기 0) — 그래서 덧옷은 `garbs`로 나눴다(뿌리껍질 덧옷 1,500 안팎).
           "charms": 4200, "garbs": 3400,
@@ -81,9 +81,12 @@ EXPECT = {
     "core_crystal": {"pulse": 1.0},
     "bell": {"toll": 2.0},
     "chest": {"open": 0.4},
+    "hushed_stag": {"idle": 2.4, "walk": 1.2, "slam": 1.5, "charge_windup": 0.9, "charge": 0.5, "rear": 1.6,
+                    "recover": 0.9, "hurt": 0.4, "wake": 2.4},
     "lever": {"pull": 0.4},
 }
-MUST_NODES = {"mossward": ["glow_core", "glow_eyes", "head_geo", "shell_geo"],
+MUST_NODES = {"hushed_stag": ["glow_core", "glow_eyes", "head_geo", "antler_geo", "bell_geo", "antlers", "bell"],
+              "mossward": ["glow_core", "glow_eyes", "head_geo", "shell_geo"],
               "winchkeeper": ["glow_core", "glow_eyes", "head_geo", "club"], "packbearer": ["glow_eyes", "head_geo", "load_geo", "load"],
               "repeater": ["glow_eyes", "head_geo", "pick"], "mossgrazer": ["head_geo", "ear_l", "ear_r"], "gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["body", "root", "sword", "w_hammer", "w_staff", "w_crossbow", "w_bow", "bow", "glow_lamp", "lamp", "shield"],
               "root_husk": ["glow_eye"], "thorn_beast": ["glow_eyes"], "shellback": ["glow_eyes", "head_geo"], "pod": ["glow_eyes", "head_geo", "seed_geo"],

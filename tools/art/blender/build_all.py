@@ -14,6 +14,7 @@ import charms  # noqa: E402
 import check_glb  # noqa: E402
 import common as C  # noqa: E402
 import gatekeeper  # noqa: E402
+import hushed_stag  # noqa: E402
 import mossgrazer  # noqa: E402
 import mossward  # noqa: E402
 import packbearer  # noqa: E402
@@ -34,7 +35,7 @@ def main():
     models, previews = C.out_dirs()
     paths = []
     for mod in (wanderer, root_husk, thorn_beast, gatekeeper, shellback, pod, bellkeeper, res_hearth, res_water, res_cloth,
-                mossgrazer, repeater, packbearer, mossward, winchkeeper):
+                mossgrazer, repeater, packbearer, mossward, winchkeeper, hushed_stag):
         paths.append(mod.build(models, previews))
     paths += props.build(models, previews)
     paths.append(charms.build(models, previews))
