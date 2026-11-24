@@ -258,7 +258,9 @@ impl Renderer {
                     | Form::Hop { .. }
                     | Form::Bash { .. }
                     | Form::Erupt { .. }
-                    | Form::Bell { .. } => {}
+                    | Form::Bell { .. }
+                    | Form::Drift { .. }
+                    | Form::Trap { .. } => {}
                     // 파문(0270 C3): 몸에서 번지는 물결의 앞머리(흰 테 + 민트 테), 지나간 안쪽은 옅게.
                     Form::Wave { radius, time } => {
                         let k = (e0 / time.max(1e-3)).clamp(0.0, 1.0);
@@ -1403,6 +1405,14 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
                 | Form::Bash { range, arc_deg, .. }
                 | Form::Stab { range, arc_deg, .. } => fan(range, arc_deg),
                 Form::Bell { range, .. } => lane(range, 0.6),
+                // 놓는 것(0270 C3): 놓일 자리까지의 가는 줄 + 그 자리의 고리.
+                Form::Drift { ahead, radius, .. } | Form::Trap { ahead, radius, .. } => {
+                    lane(ahead, 0.3);
+                    let c = w.player.pos + dir * ahead;
+                    let c = vec3(c.x, w.ground_y(c) + 0.06, c.z);
+                    fl.sector(c, radius, 0.0, 360.0, fill);
+                    fl.ring(c, radius, 0.0, 360.0, edge);
+                }
                 Form::Ring { .. }
                 | Form::Brace { .. }
                 | Form::Echo { .. }

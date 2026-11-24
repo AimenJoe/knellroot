@@ -13,8 +13,8 @@ use crate::skills::{Cap, Eff, Form, Twist, FLURRY, LINE, UPEND};
 use crate::status::{Dose, NO_DOSE};
 use crate::tuning::{
     BASH_CUT_STAGGER, BASH_PUSH, BELL_CONE, BLADE_CATCH, BLADE_HEIGHT, ERUPT_RING_MAX, HOP_DASH,
-    HOP_EMPTY, HOP_GAP, SKILL_DENIED_SHOW, SKILL_HITSTOP, SPIRE_DELAY, ULT_HITSTOP,
-    ULT_KILL_WINDOW,
+    HOP_EMPTY, HOP_GAP, SCORCH_EVERY, SKILL_DENIED_SHOW, SKILL_HITSTOP, SPIRE_DELAY, TRAP_SPIKES,
+    TRAP_TWIN_GAP, ULT_HITSTOP, ULT_KILL_WINDOW,
 };
 
 mod fields;
@@ -100,6 +100,12 @@ pub struct Field {
     pub dose: Dose,
     pub follow: bool,
     pub kindle: u32,
+    /// 흐르는 쪽과 빠르기(눈발 ㄱ, 0270 C3 — m/s, 0이면 제자리).
+    pub drift: Vec3,
+    /// 덫(뿌리 덫, 0270 C3): 때가 아니라 적이 들어서면 한 번 솟고 사라진다.
+    pub trap: bool,
+    /// 덫이 솟을 때 함께 터지는 마지막 가시(뿌리 덫의 맺음 — 둘레·피해).
+    pub spire: Option<(f32, i32)>,
 }
 
 impl Field {
@@ -284,6 +290,13 @@ impl World {
             | Form::Echo { .. }
             | Form::Field { .. }
             | Form::Wave { .. } => facing,
+            // 눈발·뿌리 덫(0270 C3): 놓을 자리 쪽 — 조준 > 락온 > (터치의 톡이면 놓는 거리의 가장 가까운 적) > 바라보는 쪽.
+            // 곁의 적을 찾아 놓으면 앞에 둔 자리가 엉뚱한 쪽으로 간다.
+            Form::Drift { ahead, radius, .. } | Form::Trap { ahead, radius, .. } => cx
+                .aim
+                .or(lock)
+                .or_else(|| self.tap_seek(cx, ahead + radius))
+                .unwrap_or(facing),
             // 던지기: (숄더뷰) 크로스헤어 > 조준 > 락온 > 닿는 거리의 가장 가까운 적 > 바라보는 쪽.
             Form::Throw { dist, .. } => cx
                 .sight
@@ -687,6 +700,34 @@ impl World {
                     if let (Some(Twist::Slam { damage }), true) = (d.twist, n > 0) {
                         self.slam_into_walls(swing, damage);
                     }
+                    // 불길의 맺음(0270 C3): 불에 닿은 적이 잠깐 더 다친다(보스는 아니다 — 끌어모으기의 맺음과 같은 표지).
+                    if let Some(Cap::Frail { secs, mult }) = d.cap {
+                        for en in &mut self.enemies {
+                            if en.hit_by == swing && en.alive() && !en.boss {
+                                en.marks.frail = secs;
+                                en.marks.frail_mult = mult;
+                            }
+                        }
+                    }
+                    // 타는 땅(불길 ㄴ): 부채꼴 가운데에 불티가 남는다.
+                    if let Some(Twist::Scorch { secs }) = d.twist {
+                        self.skill_fields.push(Field {
+                            pos: at + dir * range * 0.5,
+                            radius: range * 0.45,
+                            age: 0.0,
+                            secs,
+                            every: SCORCH_EVERY,
+                            pulses: 0,
+                            damage: s.damage,
+                            poise: 0.0,
+                            dose: self.dosed(s.dose()),
+                            follow: false,
+                            kindle: 0,
+                            drift: Vec3::ZERO,
+                            trap: false,
+                            spire: None,
+                        });
+                    }
                     // 갈라진 땅(ㄴ): 찍은 부채꼴이 남는다.
                     if let Some(Twist::Crack { secs, slow }) = d.twist {
                         self.skill_zones.push(Zone {
@@ -927,6 +968,79 @@ impl World {
                     self.skill_ev.push(Event::Skill { id, at, dir });
                 }
             }
+            // 눈발(0270 C3): 겨눈 쪽 앞에 눈발을 뿌린다 — 치는 것은 `tick_fields`(잔불 흩기의 불티와 같은 길). 흐르는 눈발(ㄱ)은
+            // 겨눈 쪽으로 흘러간다.
+            Form::Drift {
+                ahead,
+                radius,
+                secs,
+                every,
+            } => {
+                if crossed(s.startup) {
+                    let pos = self.place_ahead(at, dir, ahead);
+                    self.skill_fields.push(Field {
+                        pos,
+                        radius,
+                        age: 0.0,
+                        secs,
+                        every,
+                        pulses: 0,
+                        damage: s.damage,
+                        dose: self.dosed(s.dose()),
+                        poise: match d.cap {
+                            Some(Cap::Smolder { poise, .. }) => poise,
+                            _ => 0.0,
+                        },
+                        follow: false,
+                        kindle: 0,
+                        drift: match d.twist {
+                            Some(Twist::Flow { speed }) => dir * speed,
+                            _ => Vec3::ZERO,
+                        },
+                        trap: false,
+                        spire: None,
+                    });
+                    self.skill_ev.push(Event::Skill { id, at: pos, dir });
+                }
+            }
+            // 뿌리 덫(0270 C3): 겨눈 쪽 앞에 씨를 심는다(두 알 ㄱ이면 양옆에 둘) — 적이 들어서면 `tick_fields`가 한 번 솟게 한다.
+            Form::Trap {
+                ahead,
+                radius,
+                secs,
+            } => {
+                if crossed(s.startup) {
+                    let pos = self.place_ahead(at, dir, ahead);
+                    let side = vec3(dir.z, 0.0, -dir.x) * TRAP_TWIN_GAP;
+                    let spots: Vec<Vec3> = if matches!(d.twist, Some(Twist::Twin)) {
+                        vec![pos + side, pos - side]
+                    } else {
+                        vec![pos]
+                    };
+                    for p in spots {
+                        self.skill_fields.push(Field {
+                            pos: p,
+                            radius,
+                            age: 0.0,
+                            secs,
+                            every: secs,
+                            pulses: 0,
+                            damage: s.damage,
+                            dose: self.dosed(s.dose()),
+                            poise: s.poise,
+                            follow: false,
+                            kindle: 0,
+                            drift: Vec3::ZERO,
+                            trap: true,
+                            spire: match d.cap {
+                                Some(Cap::Spire { radius, damage }) => Some((radius, damage)),
+                                _ => None,
+                            },
+                        });
+                    }
+                    self.skill_ev.push(Event::Skill { id, at: pos, dir });
+                }
+            }
             // 잔불 흩기(G2): 선 자리에 불티가 남는다 — 태우는 것은 `tick_skill_fields`.
             Form::Field {
                 radius,
@@ -952,6 +1066,9 @@ impl World {
                             Some(Twist::Kindle { embers }) => embers,
                             _ => 0,
                         },
+                        drift: Vec3::ZERO,
+                        trap: false,
+                        spire: None,
                     });
                     self.skill_ev.push(Event::Skill { id, at, dir });
                 }
@@ -1397,6 +1514,19 @@ impl World {
         self.skill_ev = ev;
     }
 
+    /// 놓는 것(눈발·뿌리 덫, 0270 C3)의 자리: `dir` 쪽 `ahead` m — 벽·기둥 앞에서 멈춘다(벽 너머에 놓지 않는다), 땅 높이에.
+    fn place_ahead(&self, at: Vec3, dir: Vec3, ahead: f32) -> Vec3 {
+        let eye = at + Vec3::Y * (self.player.air + BLADE_HEIGHT);
+        let mut len = ahead;
+        for o in &self.obstacles {
+            if let Some(d) = o.ray(eye, dir) {
+                len = len.min((d - PLAYER_RADIUS).max(0.0));
+            }
+        }
+        let p = at + dir * len;
+        vec3(p.x, self.ground_y(p), p.z)
+    }
+
     /// 벽에 박기(0270 C3 — 방패 돌진·후려치기 ㄱ): 이 타(`swing`)에 맞아 밀려난 적이 벽·턱에 박히면 덤 피해(쟁반 뒤집기와 같은 길
     /// `spilling` — 보스는 밀리기만).
     fn slam_into_walls(&mut self, swing: u32, damage: i32) {
@@ -1519,16 +1649,18 @@ impl World {
         }
     }
 
-    /// 스킬 칸 `slot`의 스킬이 남긴 것이 이어지는 몫 0..1(0 = 없음) — 되울림의 울림·잔불 흩기의 불티(HUD·터치 칸).
+    /// 스킬 칸 `slot`의 스킬이 남긴 것이 이어지는 몫 0..1(0 = 없음) — 되울림의 울림·잔불 흩기의 불티·눈발·덫(HUD·터치 칸).
     pub fn skill_active(&self, slot: usize) -> f32 {
         let pl = &self.player;
         match pl.skill.worn[slot % 2] {
             skills::Id::Echo if pl.skill.echo_left > 0.0 => {
                 (pl.skill.echo_left / pl.skill.echo_total.max(1e-3)).clamp(0.0, 1.0)
             }
-            skills::Id::Embers => self
+            // 놓인 것(0270 C3 — 눈발·뿌리 덫도): 그 스킬의 타입·꼴의 것만.
+            id @ (skills::Id::Embers | skills::Id::Snow | skills::Id::Snare) => self
                 .skill_fields
                 .iter()
+                .filter(|f| f.dose.0 == id.def().kind && f.trap == (id == skills::Id::Snare))
                 .map(|f| f.left())
                 .fold(0.0, f32::max),
             _ => 0.0,

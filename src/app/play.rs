@@ -595,7 +595,11 @@ impl App {
                 // 스킬(0151): 판정이 나간 순간에 한 번, 큰 기술은 깨어나는 보스만큼.
                 // 되울림·잔불 흩기의 시동(몸에 두르는 것·흩는 것)은 흔들지 않는다 — 울림·불티의 타가 제 몫을 낸다.
                 Event::Skill {
-                    id: crate::skills::Id::Echo | crate::skills::Id::Embers,
+                    id:
+                        crate::skills::Id::Echo
+                        | crate::skills::Id::Embers
+                        | crate::skills::Id::Snow
+                        | crate::skills::Id::Snare,
                     ..
                 } => 0.0,
                 // 바늘땀(0270 C3)은 땀마다 — 가볍게.
@@ -1246,7 +1250,9 @@ impl App {
                     match id {
                         Sk::Brace => Id::Thwack,
                         Sk::Echo => Id::Beat,
-                        Sk::Embers => Id::Ember,
+                        Sk::Embers | Sk::Flare => Id::Ember,
+                        // 0270 C3: 눈발 = 가장 높은 종(서리), 뿌리 덫 = 휘두름.
+                        Sk::Snow => Id::Beat3,
                         Sk::Bash | Sk::Ram => Id::Thwack,
                         Sk::Whirl
                         | Sk::Cut
@@ -1258,7 +1264,8 @@ impl App {
                         | Sk::Stitch
                         | Sk::Toll
                         | Sk::Swat
-                        | Sk::Ripple => Id::Swing,
+                        | Sk::Ripple
+                        | Sk::Snare => Id::Swing,
                     }
                 }
                 Event::Skill { id, .. } => {
@@ -1280,6 +1287,10 @@ impl App {
                         // 후려치기 = 타격, 파문 = 낮은 울림.
                         Sk::Swat => Id::Hit,
                         Sk::Ripple => Id::Wake,
+                        // 눈발 = 높은 종, 불길 = 잔불 소리, 뿌리 덫(심음) = 둔한 소리.
+                        Sk::Snow => Id::Beat3,
+                        Sk::Flare => Id::Ember,
+                        Sk::Snare => Id::Thwack,
                     }
                 }
                 Event::SkillDenied => Id::Deny,
@@ -1293,7 +1304,12 @@ impl App {
                 Event::ThrowTurn { .. } => Id::Swing,
                 Event::ThrowBoom { .. } | Event::LineCut { .. } => Id::Hit,
                 Event::ThrowBack { .. } => Id::Beat,
-                Event::FieldPulse { .. } => Id::Ember,
+                // 0270 C3: 눈발 = 높은 종, 뿌리 덫 = 뿌리가 깨는 소리.
+                Event::FieldPulse { kind, .. } => match kind {
+                    crate::status::Kind::Frost => Id::Beat3,
+                    crate::status::Kind::Root => Id::Wake,
+                    _ => Id::Ember,
+                },
                 // 피해 타입(0223 V2): 화상이 붙음·탐 = 잔불 소리, 묶임 = 뿌리가 깨는 소리, 금 = 쇳소리, 울림 = 낮은 종, 터짐 = 타격.
                 Event::Ail { kind, .. } => match kind {
                     crate::status::Kind::Ember => Id::Ember,

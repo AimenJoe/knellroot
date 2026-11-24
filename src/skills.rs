@@ -85,6 +85,17 @@ pub enum Form {
         stagger: f32,
         push: f32,
     },
+    /// 눈발(0270 C3): 겨눈 쪽 `ahead` m 앞에 둘레 `radius` m의 눈발을 `secs`초 뿌린다 — `every`초마다 그 안의 적을 친다
+    /// (잔불 흩기의 불티와 같은 꼴, 자리만 앞에).
+    Drift {
+        ahead: f32,
+        radius: f32,
+        secs: f32,
+        every: f32,
+    },
+    /// 뿌리 덫(0270 C3): 겨눈 쪽 `ahead` m 앞에 씨를 심는다 — `secs`초 동안 둘레 `radius` m에 적이 들어서면 한 번 솟아 그 안의
+    /// 적을 모두 찌른다(그리고 사라진다).
+    Trap { ahead: f32, radius: f32, secs: f32 },
     /// 파문(0270 C3): 몸에서 둘레 `radius` m까지 `time`초에 번지는 물결 — 물결의 앞머리가 지나는 적을 한 번씩 친다.
     Wave { radius: f32, time: f32 },
     /// 버팀(0158 G2): `hold`초 동안 버틴다 — 밀리지도 끊기지도 않고 받는 타마다 피해 −`soak`(0 아래로는 안 내려간다), 받아낸 타를
@@ -256,10 +267,16 @@ pub enum Id {
     Swat,
     /// 파문(0270 C3 — 망치·울림): 둘레로 번지는 물결.
     Ripple,
+    /// 눈발(0270 C3 — 지팡이·원거리·서리): 앞에 뿌리는 눈.
+    Snow,
+    /// 불길(0270 C3 — 지팡이·잔불): 앞으로 내뿜는 불.
+    Flare,
+    /// 뿌리 덫(0270 C3 — 원거리·뿌리): 심어 두는 씨.
+    Snare,
 }
 
 /// 표 순서(대기 칸 `Player::skill_cd`의 자리 — 뒤에만 붙인다).
-pub const IDS: [Id; 16] = [
+pub const IDS: [Id; 19] = [
     Id::Whirl,
     Id::Cut,
     Id::Gather,
@@ -276,6 +293,9 @@ pub const IDS: [Id; 16] = [
     Id::Toll,
     Id::Swat,
     Id::Ripple,
+    Id::Snow,
+    Id::Flare,
+    Id::Snare,
 ];
 pub const N: usize = IDS.len();
 
@@ -435,6 +455,14 @@ pub enum Twist {
     Loud { mult: f32 },
     /// 파문 ㄱ "밀어내는 물결"(0270 C3): 물결에 맞은 적이 바깥으로 `push` m 밀린다.
     Shove { push: f32 },
+    /// 눈발 ㄱ "흐르는 눈발"(0270 C3): 눈발이 겨눈 쪽으로 초속 `speed` m 흘러간다.
+    Flow { speed: f32 },
+    /// 눈발·뿌리 덫 ㄴ "큰 눈송이"·"넓은 덫"(0270 C3): 둘레 × `mult`.
+    Big { mult: f32 },
+    /// 불길 ㄴ "타는 땅"(0270 C3): 불길이 지난 부채꼴의 가운데에 `secs`초 남는 불티(잔불 흩기와 같은 불 — 초마다).
+    Scorch { secs: f32 },
+    /// 뿌리 덫 ㄱ "두 알"(0270 C3): 씨를 둘 — 겨눈 자리의 양옆에.
+    Twin,
 }
 
 /// 5단 맺음(0158 마).
@@ -609,6 +637,40 @@ impl Skill {
                 radius: radius * size,
                 time,
             },
+            Form::Drift {
+                ahead,
+                radius,
+                secs,
+                every,
+            } => Form::Drift {
+                ahead,
+                radius: radius
+                    * size
+                    * match twist {
+                        Some(Twist::Big { mult }) => mult,
+                        _ => 1.0,
+                    },
+                secs: secs
+                    + match cap {
+                        Some(Cap::Smolder { secs, .. }) => secs,
+                        _ => 0.0,
+                    },
+                every,
+            },
+            Form::Trap {
+                ahead,
+                radius,
+                secs,
+            } => Form::Trap {
+                ahead,
+                radius: radius
+                    * size
+                    * match twist {
+                        Some(Twist::Big { mult }) => mult,
+                        _ => 1.0,
+                    },
+                secs,
+            },
             // 버팀: 받아낸 타의 덤도 피해의 배를 같이 받는다(10 → 12 → 13).
             Form::Brace {
                 hold,
@@ -735,7 +797,9 @@ impl Skill {
             | Form::Echo { .. }
             | Form::Field { .. }
             | Form::Bash { .. }
-            | Form::Bell { .. } => 0.0,
+            | Form::Bell { .. }
+            | Form::Drift { .. }
+            | Form::Trap { .. } => 0.0,
         }
     }
 
@@ -1224,6 +1288,92 @@ pub const SKILLS: [Skill; N] = [
         ],
         cap: Cap::Lift { stagger: 0.5 },
     },
+    Skill {
+        id: Id::Snow,
+        cooldown: 10.0,
+        startup: 0.25,
+        recover: 0.30,
+        damage: HP_UNIT,
+        poise: 0.0,
+        form: Form::Drift {
+            ahead: 5.0,
+            radius: 3.0,
+            secs: 3.0,
+            every: 1.0,
+        },
+        anim: "cast",
+        clip: Clip {
+            name: "sk_snow",
+            seg: [0.25, 0.0, 0.30],
+        },
+        row: 1,
+        hands: FOCUS | RANGED,
+        kind: Kind::Frost,
+        build: 0.4,
+        branch: Branch::Footing,
+        picks: [Twist::Flow { speed: 1.5 }, Twist::Big { mult: 1.4 }],
+        cap: Cap::Smolder {
+            secs: 1.0,
+            poise: 1.0,
+        },
+    },
+    Skill {
+        id: Id::Flare,
+        cooldown: 7.0,
+        startup: 0.20,
+        recover: 0.30,
+        damage: HP_UNIT,
+        poise: 1.0,
+        form: Form::Cone {
+            range: 4.2,
+            arc_deg: 70.0,
+            stagger: 0.0,
+            push: 0.5,
+        },
+        anim: "cast",
+        clip: Clip {
+            name: "sk_flare",
+            seg: [0.20, 0.0, 0.30],
+        },
+        row: 0,
+        hands: FOCUS,
+        kind: Kind::Ember,
+        build: 1.0,
+        branch: Branch::Footing,
+        picks: [Twist::Wide { arc_deg: 120.0 }, Twist::Scorch { secs: 2.0 }],
+        cap: Cap::Frail {
+            secs: 2.0,
+            mult: 1.2,
+        },
+    },
+    Skill {
+        id: Id::Snare,
+        cooldown: 8.0,
+        startup: 0.18,
+        recover: 0.25,
+        damage: HP_UNIT,
+        poise: 1.5,
+        form: Form::Trap {
+            ahead: 4.0,
+            radius: 2.0,
+            secs: 8.0,
+        },
+        anim: "throw",
+        clip: Clip {
+            name: "sk_snare",
+            seg: [0.18, 0.0, 0.25],
+        },
+        row: 0,
+        hands: RANGED,
+        kind: Kind::Root,
+        build: 1.0,
+        branch: Branch::Footing,
+        picks: [Twist::Twin, Twist::Big { mult: 1.5 }],
+        cap: Cap::Spire {
+            radius: 2.5,
+            damage: 2 * HP_UNIT,
+        },
+    },
 ];
 
 impl Id {
@@ -1253,6 +1403,9 @@ impl Id {
             Id::Toll => "toll",
             Id::Swat => "swat",
             Id::Ripple => "ripple",
+            Id::Snow => "snow",
+            Id::Flare => "flare",
+            Id::Snare => "snare",
         }
     }
 
@@ -1659,6 +1812,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Stitch),
     Entry::Skill(Id::Toll),
     Entry::Skill(Id::Swat),
+    Entry::Skill(Id::Flare),
+    Entry::Skill(Id::Snare),
     // 2 — 쓴 점수 4
     Entry::Skill(Id::Quake),
     Entry::Cell(Cell::ClosingBlow),
@@ -1675,6 +1830,7 @@ pub const ENTRIES: [Entry; NE] = [
     // 0270 C3 — 무기 판의 둘째 줄
     Entry::Skill(Id::Ram),
     Entry::Skill(Id::Ripple),
+    Entry::Skill(Id::Snow),
     // 3 — 쓴 점수 8
     Entry::Ult(Ult::Flurry),
     Entry::Cell(Cell::FinalMeasure),
@@ -2508,7 +2664,7 @@ mod tests {
     fn the_board_stands_as_the_0161_table_says() {
         use Branch::{Beat, Footing, Riposte};
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-        let table: [(usize, Branch, &[Entry]); 26] = [
+        let table: [(usize, Branch, &[Entry]); 28] = [
             (
                 0,
                 Beat,
@@ -2533,6 +2689,7 @@ mod tests {
             (0, Beat, &[S(Id::Stitch)]),
             (0, Riposte, &[S(Id::Toll)]),
             (0, Beat, &[S(Id::Swat)]),
+            (0, Footing, &[S(Id::Flare), S(Id::Snare)]),
             (
                 1,
                 Beat,
@@ -2557,6 +2714,7 @@ mod tests {
             (1, Beat, &[L(Link::RiposteBeat)]),
             (1, Riposte, &[L(Link::ParryStep)]),
             (1, Riposte, &[S(Id::Ram), S(Id::Ripple)]),
+            (1, Footing, &[S(Id::Snow)]),
             (2, Beat, &[U(Ult::Flurry), C(Cell::FinalMeasure)]),
             (2, Riposte, &[U(Ult::Line), C(Cell::OneWhoStands)]),
             (2, Footing, &[U(Ult::Upend), C(Cell::PathOpeningStep)]),
@@ -2599,7 +2757,7 @@ mod tests {
                 assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
             }
         }
-        assert_eq!(NE, 51);
+        assert_eq!(NE, 54);
         for (i, e) in ENTRIES.iter().enumerate() {
             assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
         }
@@ -3091,7 +3249,7 @@ mod tests {
         }
         for g in GRIPS {
             let first = SKILLS.iter().filter(|s| s.row == 0 && s.fits(g)).count();
-            assert!(first >= 1, "{g:?}: {first} first-row skills");
+            assert!(first >= 2, "{g:?}: {first} first-row skills");
         }
         // 한손으로는 방패가 있어야만 되는 것(방패 기술)·방패가 없어야만 되는 것(결투 기술).
         let split = |with: Grip, without: Grip| {
@@ -3558,7 +3716,7 @@ mod clip_facing {
         Hold,
         Spin,
     }
-    const FACES: [(&str, Face); 19] = [
+    const FACES: [(&str, Face); 22] = [
         ("sk_whirl", Face::Spin),
         ("sk_cut", Face::Tip),
         ("sk_gather", Face::Hips),
@@ -3578,6 +3736,9 @@ mod clip_facing {
         ("sk_toll", Face::Tip),
         ("sk_swat", Face::Tip),
         ("sk_ripple", Face::Hips),
+        ("sk_snow", Face::Hips),
+        ("sk_flare", Face::Hips),
+        ("sk_snare", Face::Hips),
     ];
 
     fn deg(a: f32) -> f32 {

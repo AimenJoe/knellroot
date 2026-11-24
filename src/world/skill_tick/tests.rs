@@ -2492,3 +2492,119 @@ fn ripple_spreads_outward_hitting_near_then_far_once_each() {
     w.step(&Actions::default(), &t);
     assert!(w.enemies[0].marks.slow < 1.0, "slowed behind the ripple");
 }
+
+/// 눈발: 앞에 눈발을 뿌린다 — 그 안의 적이 초마다 맞고 서리가 쌓여 얼어붙는다(보통 적은 셋째 타 안에), 방랑자 곁의 적은 아니다.
+/// 흐르는 눈발(ㄱ)은 겨눈 쪽으로 흘러가고, 큰 눈송이(ㄴ)는 넓다.
+#[test]
+fn snowfall_lands_ahead_and_freezes_who_stands_in_it() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Snow, 1, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -5.0));
+    w.spawn_mob(vec3(1.2, 0.0, 0.0));
+    still(&mut w);
+    let mut ev = finish(&mut w, &t, 0);
+    let mut frozen = false;
+    for _ in 0..ticks(3.2) {
+        still_keep(&mut w);
+        ev.extend(w.step(&Actions::default(), &t));
+        frozen |= w.enemies[0].ail.frozen > 0.0;
+    }
+    let pulses = ev
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                Event::FieldPulse {
+                    kind: crate::status::Kind::Frost,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(pulses, 3, "every second for three seconds");
+    assert!(w.enemies[0].hp < 90);
+    assert!(frozen, "the frost froze it");
+    assert_eq!(w.enemies[1].hp, 90, "not the one beside the wanderer");
+    // 흐르는 눈발(ㄱ — 3단): 놓인 자리에서 앞으로 흘러간다.
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Snow, 3, Pick::A);
+    finish(&mut w, &t, 0);
+    let z0 = w.skill_fields[0].pos.z;
+    for _ in 0..30 {
+        w.step(&Actions::default(), &t);
+    }
+    assert!(w.skill_fields[0].pos.z < z0 - 0.5, "it drifts ahead (-z)");
+    // 큰 눈송이(ㄴ).
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Snow, 3, Pick::B);
+    finish(&mut w, &t, 0);
+    assert!(w.skill_fields[0].radius > 4.0);
+}
+
+/// 불길: 앞 부채꼴에 불을 내뿜는다 — 닿은 적에게 불이 붙는다(보통 적은 한 번에), 뒤는 아니다. 타는 땅(ㄴ)이면 그 자리에 불티가
+/// 남고, 맺음이면 닿은 잡몹이 잠깐 더 다친다.
+#[test]
+fn flare_sets_the_cone_ahead_alight() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Flare, 1, Pick::A);
+    assert_eq!(w.grip(), crate::weapons::Grip::Focus);
+    w.spawn_mob(vec3(0.0, 0.0, -3.0));
+    w.spawn_mob(vec3(0.0, 0.0, 3.0));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    assert!(w.enemies[0].hp < 90);
+    assert!(w.enemies[0].ail.burn > 0, "alight");
+    assert_eq!(w.enemies[1].hp, 90, "not behind");
+    // 타는 땅(ㄴ — 3단) · 맺음(5단).
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Flare, 5, Pick::B);
+    w.spawn_mob(vec3(0.0, 0.0, -3.0));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    assert_eq!(w.skill_fields.len(), 1, "scorched ground");
+    assert!(w.enemies[0].marks.frail > 0.0, "it takes more for a while");
+}
+
+/// 뿌리 덫: 앞에 씨를 심는다 — 적이 들어서야 솟는다(한 번, 둘레의 적을 모두 찌르고 묶는다), 그 전에는 기다린다.
+/// 두 알(ㄱ)이면 씨가 둘.
+#[test]
+fn root_snare_waits_for_a_foe_then_springs_once() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Snare, 1, Pick::A);
+    assert_eq!(w.grip(), crate::weapons::Grip::Ranged);
+    w.spawn_mob(vec3(0.0, 0.0, -9.0));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    assert_eq!(w.skill_fields.len(), 1, "planted");
+    for _ in 0..ticks(1.0) {
+        still_keep(&mut w);
+        w.step(&Actions::default(), &t);
+    }
+    assert_eq!(w.enemies[0].hp, 90, "nobody stepped in yet");
+    assert_eq!(w.skill_fields.len(), 1, "it waits");
+    // 한 적이 걸어 든다.
+    let at = w.skill_fields[0].pos;
+    w.enemies[0].pos = vec3(at.x + 0.5, 0.0, at.z);
+    w.spawn_mob(vec3(at.x - 1.0, 0.0, at.z));
+    still(&mut w);
+    let mut ev = Vec::new();
+    for _ in 0..5 {
+        ev.extend(w.step(&Actions::default(), &t));
+    }
+    assert!(
+        w.enemies[0].hp < 90 && w.enemies[1].hp < 90,
+        "everyone around"
+    );
+    let root = crate::status::Kind::Root.slot().unwrap();
+    assert!(
+        w.enemies[0].ail.bound > 0.0 || w.enemies[0].ail.gauge[root] > 0.5,
+        "the roots take hold"
+    );
+    assert!(w.skill_fields.is_empty(), "sprung once");
+    assert!(ev.iter().any(|e| matches!(e, Event::RootSpike { .. })));
+    // 두 알(ㄱ — 3단).
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Snare, 3, Pick::A);
+    finish(&mut w, &t, 0);
+    assert_eq!(w.skill_fields.len(), 2);
+}

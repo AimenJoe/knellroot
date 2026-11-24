@@ -169,10 +169,27 @@ impl World {
     pub(super) fn tick_fields(&mut self, t: &Tuning, dt: f32) {
         let pp = self.player.pos;
         let mut due: Vec<Field> = Vec::new();
+        let enemies = &self.enemies;
         for f in &mut self.skill_fields {
             f.age += dt;
             if f.follow {
                 f.pos = pp;
+            }
+            // 흐르는 눈발(0270 C3 ㄱ).
+            if f.drift != Vec3::ZERO {
+                f.pos += f.drift * dt;
+            }
+            // 덫(0270 C3 — 뿌리 덫): 깨어 있는 적이 들어서면 한 번 솟고 사라진다.
+            if f.trap {
+                if enemies
+                    .iter()
+                    .any(|en| en.active() && f.holds(en.pos, en.radius))
+                {
+                    f.pulses += 1;
+                    due.push(*f);
+                    f.age = f.secs;
+                }
+                continue;
             }
             let next = f.every * (f.pulses + 1) as f32;
             if f.age + 1e-4 >= next && next <= f.secs + 1e-4 {
@@ -212,10 +229,35 @@ impl World {
                         },
                     );
                 }
+                if f.trap {
+                    // 솟는 덫: 씨 자리와 둘레에서 뿌리가 솟는다(그림 — 뿌리 솟기의 뿌리와 같은 것).
+                    let g = vec3(f.pos.x, self.ground_y(f.pos), f.pos.z);
+                    for k in 0..=TRAP_SPIKES {
+                        let a = k as f32 / TRAP_SPIKES as f32 * std::f32::consts::TAU;
+                        let r = if k == TRAP_SPIKES {
+                            0.0
+                        } else {
+                            f.radius * 0.6
+                        };
+                        self.skill_spikes.push(Spike {
+                            pos: g + vec3(a.sin() * r, 0.0, a.cos() * r),
+                            age: 0.0,
+                            lean: vec3(a.sin() * 0.15, 0.0, a.cos() * 0.15),
+                        });
+                    }
+                    ev.push(Event::RootSpike { at: g });
+                }
                 ev.push(Event::FieldPulse {
                     at: f.pos,
                     radius: f.radius,
+                    kind: f.dose.0,
                 });
+                // 덫의 마지막 가시(뿌리 덫의 맺음): 솟은 자리가 크게 한 번 더.
+                if let Some((radius, damage)) = f.spire {
+                    let at = f.pos;
+                    self.skill_blast(t, &mut ev, at, radius, damage, NO_DOSE, true);
+                    ev.push(Event::RootSpike { at });
+                }
             }
             self.skill_ev = ev;
         }

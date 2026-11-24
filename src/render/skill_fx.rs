@@ -278,13 +278,45 @@ impl Renderer {
             let c = vec3(f.pos.x, w.ground_y(f.pos), f.pos.z);
             // 끝 0.4초에 옅어진다, 타가 가까울수록 테가 밝아진다(다음 타의 박자).
             let fade = ((f.secs - f.age) / 0.4).clamp(0.0, 1.0) * (f.age / 0.15).min(1.0);
+            // 뿌리 덫(0270 C3): 바닥에 묻힌 씨 하나(흙빛 덩이 + 흰 점)와 숨 쉬듯 조여드는 가는 테 — 밟을 자리를 알린다.
+            if f.trap {
+                let breathe = 0.5 + 0.5 * (w.time * 3.0).sin();
+                let root = Color::new(0.74, 0.56, 0.88, 1.0);
+                fl.ring(
+                    c + Vec3::Y * 0.05,
+                    f.radius * (0.85 + 0.15 * breathe),
+                    0.0,
+                    360.0,
+                    with_a(root, (0.35 + 0.25 * breathe) * fade),
+                );
+                fl.ring(
+                    c + Vec3::Y * 0.05,
+                    f.radius * 0.35,
+                    w.time * 40.0,
+                    240.0,
+                    with_a(root, 0.6 * fade),
+                );
+                gem(c + Vec3::Y * 0.18, 0.3, with_a(root, 0.8 * fade));
+                gem(c + Vec3::Y * 0.2, 0.12, with_a(hot, fade));
+                continue;
+            }
+            // 눈발(0270 C3)은 흰 서리빛, 불티는 호박빛.
+            let frost = f.dose.0 == crate::status::Kind::Frost;
+            let (rim, body) = if frost {
+                (
+                    Color::new(0.86, 0.97, 1.0, 1.0),
+                    Color::new(0.55, 0.9, 1.0, 1.0),
+                )
+            } else {
+                (gold, amber)
+            };
             let beat = (f.age / f.every.max(1e-3)).fract();
             fl.sector(
                 c + Vec3::Y * 0.04,
                 f.radius,
                 0.0,
                 360.0,
-                with_a(amber, (0.06 + 0.05 * beat) * fade),
+                with_a(body, (0.06 + 0.05 * beat) * fade),
             );
             for (dr, a) in [(0.0, 0.75), (0.14, 0.4), (0.3, 0.18)] {
                 fl.ring(
@@ -293,7 +325,7 @@ impl Renderer {
                     0.0,
                     360.0,
                     with_a(
-                        if dr == 0.0 { gold } else { amber },
+                        if dr == 0.0 { rim } else { body },
                         a * fade * (0.6 + 0.4 * beat),
                     ),
                 );
@@ -304,6 +336,13 @@ impl Renderer {
                 for i in 0..n {
                     let (off, k) = crate::fx::field_mote(i, w.time);
                     if k <= 0.03 {
+                        continue;
+                    }
+                    if frost {
+                        // 눈송이: 위에서 내려앉는다(불티의 떠오름을 거꾸로), 흰빛 그대로.
+                        let y = 1.8 - off.y * 1.3;
+                        let p = c + vec3(off.x * f.radius, y, off.z * f.radius);
+                        gem(p, 0.11, Color::new(0.92, 0.98, 1.0, k * fade));
                         continue;
                     }
                     let p = c + vec3(off.x * f.radius, off.y, off.z * f.radius);

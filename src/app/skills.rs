@@ -60,6 +60,9 @@ pub(super) fn skill_text(id: sk::Id) -> (&'static str, &'static str) {
         sk::Id::Toll => (s.skill_toll, s.skill_toll_d),
         sk::Id::Swat => (s.skill_swat, s.skill_swat_d),
         sk::Id::Ripple => (s.skill_ripple, s.skill_ripple_d),
+        sk::Id::Snow => (s.skill_snow, s.skill_snow_d),
+        sk::Id::Flare => (s.skill_flare, s.skill_flare_d),
+        sk::Id::Snare => (s.skill_snare, s.skill_snare_d),
     }
 }
 
@@ -138,6 +141,12 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Swat, Pick::B) => (s.pick_swat_b, s.pick_swat_b_d),
         (sk::Id::Ripple, Pick::A) => (s.pick_ripple_a, s.pick_ripple_a_d),
         (sk::Id::Ripple, Pick::B) => (s.pick_ripple_b, s.pick_ripple_b_d),
+        (sk::Id::Snow, Pick::A) => (s.pick_snow_a, s.pick_snow_a_d),
+        (sk::Id::Snow, Pick::B) => (s.pick_snow_b, s.pick_snow_b_d),
+        (sk::Id::Flare, Pick::A) => (s.pick_flare_a, s.pick_flare_a_d),
+        (sk::Id::Flare, Pick::B) => (s.pick_flare_b, s.pick_flare_b_d),
+        (sk::Id::Snare, Pick::A) => (s.pick_snare_a, s.pick_snare_a_d),
+        (sk::Id::Snare, Pick::B) => (s.pick_snare_b, s.pick_snare_b_d),
     };
     (mark, name, desc)
 }
@@ -162,6 +171,9 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Toll => s.cap_toll,
         sk::Id::Swat => s.cap_swat,
         sk::Id::Ripple => s.cap_ripple,
+        sk::Id::Snow => s.cap_snow,
+        sk::Id::Flare => s.cap_flare,
+        sk::Id::Snare => s.cap_snare,
     }
 }
 
@@ -198,7 +210,9 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
                 | Form::Echo { .. }
                 | Form::Field { .. }
                 | Form::Bell { .. }
-                | Form::Wave { .. } => s.rk_radius,
+                | Form::Wave { .. }
+                | Form::Drift { .. }
+                | Form::Trap { .. } => s.rk_radius,
                 Form::Lane { .. } | Form::Erupt { .. } => s.rk_length,
                 Form::Pull { .. } | Form::Throw { .. } | Form::Hop { .. } | Form::Stab { .. } => {
                     s.rk_range

@@ -325,10 +325,12 @@ pub enum Event {
     ThrowBack {
         at: Vec3,
     },
-    /// 잔불 흩기(0158 G2): 불티가 그 안의 적을 한 번 태웠다(`every`초마다).
+    /// 잔불 흩기(0158 G2): 불티가 그 안의 적을 한 번 태웠다(`every`초마다). 눈발·뿌리 덫(0270 C3)도 같은 길 — `kind` = 그 타입
+    /// (그림·소리가 가른다).
     FieldPulse {
         at: Vec3,
         radius: f32,
+        kind: crate::status::Kind,
     },
     /// 큰 기술 몰아치기(0158 G2)가 시작됐다(시동이 끝난 순간).
     Flurry {

@@ -1435,8 +1435,14 @@ impl Fx {
                 );
             }
             // 불티의 타: 가장자리에서 가운데로 훑는 호박빛 고리 + 솟는 불티.
-            Event::FieldPulse { at, radius } => {
+            Event::FieldPulse { at, radius, kind } => {
                 let g = vec3(at.x, w.ground_y(at), at.z);
+                // 불티는 호박빛으로 솟고(잔불), 눈발은 흰 서리빛으로 내리고(0270 C3), 덫은 흙빛 뿌리 부스러기가 튄다.
+                let (ring, from, to, lift, height) = match kind {
+                    crate::status::Kind::Frost => (ICE, WHITE_HOT, fade(COOL), -1.2, 1.6),
+                    crate::status::Kind::Root => (ROOT, STONE, fade(DUST), 3.5, 0.2),
+                    _ => (AMBER, GOLD, fade(AMBER), 2.2, 0.1),
+                };
                 self.mark(
                     g,
                     MarkKind::Ring {
@@ -1444,22 +1450,22 @@ impl Fx {
                         r1: radius * 0.25,
                     },
                     0.3,
-                    AMBER,
+                    ring,
                 );
                 for _ in 0..12 {
                     let a = self.r() * std::f32::consts::TAU;
                     let rr = radius * self.r().sqrt();
-                    let p = g + vec3(a.sin() * rr, 0.1, a.cos() * rr);
+                    let p = g + vec3(a.sin() * rr, height, a.cos() * rr);
                     let life = 0.45 + 0.3 * self.r();
-                    let up = 2.2 + 1.6 * self.r();
+                    let up = lift * (1.0 + 0.7 * self.r());
                     self.push(Part {
                         pos: p,
                         vel: vec3(0.0, up, 0.0),
                         age: 0.0,
                         life,
                         size: (0.1, 0.04),
-                        color: (GOLD, fade(AMBER)),
-                        gravity: -0.5,
+                        color: (from, to),
+                        gravity: if lift > 3.0 { 9.0 } else { -0.5 },
                         drag: 1.5,
                         shape: Shape::Dot,
                         decor: false,
@@ -2011,6 +2017,78 @@ impl Fx {
                     MINT,
                 );
             }
+            // 눈발(0270 C3): 놓인 자리 위에서 퍼지는 흰 서리빛 고리 + 위에서 내려앉는 눈송이(별 없음 — 치는 것은 눈발의 타).
+            (Sk::Snow, Form::Drift { radius, .. }) => {
+                self.mark(
+                    g,
+                    MarkKind::Ring {
+                        r0: 0.3,
+                        r1: radius,
+                    },
+                    0.35,
+                    ICE,
+                );
+                for _ in 0..18 {
+                    let a = self.r() * std::f32::consts::TAU;
+                    let rr = radius * self.r().sqrt();
+                    let p = g + vec3(a.sin() * rr, 2.2 + self.r(), a.cos() * rr);
+                    let (fall, life) = (1.6 + self.r(), 0.9 + 0.4 * self.r());
+                    self.push(Part {
+                        pos: p,
+                        vel: vec3(0.0, -fall, 0.0),
+                        age: 0.0,
+                        life,
+                        size: (0.1, 0.06),
+                        color: (WHITE_HOT, fade(COOL)),
+                        gravity: 0.0,
+                        drag: 0.2,
+                        shape: Shape::Dot,
+                        decor: false,
+                    });
+                }
+            }
+            // 불길(0270 C3): 손끝의 호박빛 별 + 앞으로 내뿜는 부채꼴의 불 줄기(땅의 호박빛 충격파 + 앞으로 흩어지는 불티).
+            (Sk::Flare, Form::Cone { range, arc_deg, .. }) => {
+                let hand = g + Vec3::Y * 1.0 + dir * 0.6;
+                self.star(hand, 1.3, 0.1, AMBER);
+                self.mark(
+                    g,
+                    MarkKind::Shock {
+                        dir,
+                        r0: 0.4,
+                        r1: range,
+                        arc_deg,
+                    },
+                    0.3,
+                    AMBER,
+                );
+                self.spray(
+                    hand,
+                    dir,
+                    (arc_deg * 0.5).to_radians().sin().max(0.2),
+                    16,
+                    range * 2.2,
+                    Shape::Dot,
+                    0.12,
+                    0.4,
+                    -1.0,
+                    GOLD,
+                    fade(AMBER),
+                );
+            }
+            // 뿌리 덫(0270 C3): 심은 자리의 작은 흙빛 고리 + 튀는 흙 몇(씨가 땅에 들었다).
+            (Sk::Snare, Form::Trap { radius, .. }) => {
+                self.mark(
+                    g,
+                    MarkKind::Ring {
+                        r0: radius,
+                        r1: 0.2,
+                    },
+                    0.4,
+                    ROOT,
+                );
+                self.dust_ring(g, 0.2, 6, 1.6, 0.35, DUST);
+            }
             // 후려치기(0270 C3): 휘두른 쪽의 큰 노란 별 + 넓은 부채꼴 충격파 + 옆으로 흩어지는 돌 부스러기.
             (Sk::Swat, Form::Cone { range, arc_deg, .. }) => {
                 let c = g + dir * 1.0;
@@ -2343,7 +2421,11 @@ mod tests {
             Event::ThrowTurn { at },
             Event::ThrowBoom { at, radius: 2.5 },
             Event::ThrowBack { at },
-            Event::FieldPulse { at, radius: 4.0 },
+            Event::FieldPulse {
+                at,
+                radius: 4.0,
+                kind: crate::status::Kind::Ember,
+            },
             Event::Ail {
                 at,
                 kind: crate::status::Kind::Ember,
