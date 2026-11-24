@@ -807,6 +807,14 @@ impl Tree {
         self.cells[b] |= 1 << d;
     }
 
+    /// 칸 하나를 닫는다(0270 C5 — `skills::Board::forget`): 옛 꼴(앞에서부터 연 수)은 칸마다의 비트로 펴고 닫는다, 고르기도 지운다.
+    pub fn close_cell(&mut self, cell: Cell) {
+        let (b, d) = cell.at();
+        self.cells[b] = self.mask(b) & !(1 << d);
+        self.open[b] = 0;
+        self.picks[b] &= !(1 << d);
+    }
+
     /// 이 칸들만 연 나무(시험·월드 시험이 옮겨 올 자리 — 게임은 `open_cell`로 연다).
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn with(cells: &[Cell]) -> Tree {

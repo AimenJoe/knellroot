@@ -2285,6 +2285,26 @@ impl Board {
         }
     }
 
+    /// 칸 하나를 처음(안 배움)으로 — 묻지 않는다(0270 C5: 어느 판에도 서지 않는 칸, `plates::drop_unseated`). 그 칸에 쓴 점수는
+    /// 남은 점수로 돌아간다(`spent`는 산 단만 센다). 스킬의 고르기·숫자 칸의 고르기도 지운다.
+    pub fn forget(&mut self, e: Entry) {
+        match e {
+            Entry::Skill(id) => {
+                self.rank[id.index()] = 0;
+                self.pick[id.index()] = Pick::A;
+            }
+            Entry::Ult(u) => self.ult[u.index()] = 0,
+            Entry::Cell(c) => self.cells.close_cell(c),
+            Entry::Key(k) => {
+                if self.cells.key == Some(k) {
+                    self.cells.key = None;
+                }
+            }
+            Entry::Link(l) => self.cells.links &= !(1 << l.index()),
+            Entry::Vein(v) => self.cells.veins &= !(1 << v.index()),
+        }
+    }
+
     /// 숫자 칸의 고르기를 뒤집는다(0215 D — 값 없이, 화로에서). 연 숫자 칸만.
     pub fn flip_cell(&mut self, c: Cell) -> bool {
         self.cells.flip_cell(c)

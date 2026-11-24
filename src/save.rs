@@ -574,7 +574,9 @@ impl Progress {
         }
         // 기술 판(0158): 가진 점수 안으로 바로잡는다. 안 배운 스킬이 놓인 칸은 빈 칸으로 둔다(0166).
         let total = self.skill_points();
-        self.board = self.board.sane(total);
+        // 0270 C5: 어느 판에도 서지 않는 칸은 처음으로 — 그 점수는 남은 점수로 돌아온다(나머지 산 것은 그대로). 끼운 스킬 칸은
+        // 빈 칸이 되고(안 배운 스킬), 끼운 큰 기술은 아래 `wearable_ult`가 옮긴다.
+        self.board = crate::plates::drop_unseated(self.board).sane(total);
         // 넘쳐서 처음으로 돌아간 옛 기록도 처음의 둘은 지닌다(그 값이 기록의 몫이다).
         if before_v06 {
             let kept = self.board.with_starters();

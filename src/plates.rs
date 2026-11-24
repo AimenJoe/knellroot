@@ -199,6 +199,29 @@ pub fn can_buy(board: &Board, total: u32) -> bool {
     })
 }
 
+/// 칸 `e`가 어느 판에든 서나(몸의 판 또는 무기 판 하나 — 0270 C5).
+pub fn stands(e: Entry) -> bool {
+    PLATES.iter().any(|p| p.has(e))
+}
+
+/// 0270 C5 — 판에 못 서는 칸의 점수 돌려주기: 어느 판에도 서지 않는 칸(판이 바뀌어 자리를 잃은 스킬·큰 기술·패시브·다리·맺음·결)은
+/// 처음으로 되돌려 그 점수가 남은 점수로 돌아가게 한다(`Board::forget`). 나머지 산 것은 그대로. 기록을 읽을 때 한 번(`save`의
+/// `migrate_after_read` — `Board::sane` 앞: 되돌린 스킬의 결은 `sane`이 닫는다). 그 칸이 끼워져 있던 스킬 칸은 빈 칸이 되고
+/// (안 배운 스킬이 놓인 칸 = 빈 칸, 0166), 끼운 큰 기술은 `wearable_ult`가 배운 다른 것으로 옮긴다.
+pub fn drop_unseated(board: Board) -> Board {
+    drop_where(board, stands)
+}
+
+/// `drop_unseated`의 몸: `stands`가 거짓인 칸을 잊는다(시험은 가짜 판으로 부른다 — 지금은 모든 칸이 어느 판에든 선다).
+fn drop_where(mut board: Board, stands: impl Fn(Entry) -> bool) -> Board {
+    for e in ENTRIES {
+        if !stands(e) && board.rank(e) > 0 {
+            board.forget(e);
+        }
+    }
+    board
+}
+
 /// 칸 `e`를 보여 줄 판: `prefer`(든 무기·부무기의 판 차례) 가운데 그 칸이 선 첫 판, 없으면 `PLATES` 차례의 첫 판.
 pub fn home(e: Entry, prefer: &[Plate]) -> Plate {
     prefer
@@ -366,6 +389,77 @@ mod tests {
         assert!(!can_buy(&b, 3), "all spent");
         let all = Board::maxed(crate::skills::Pick::A);
         assert!(!can_buy(&all, 99));
+    }
+
+    /// 0270 C5: 지금은 판의 칸 모두가 어느 판에든 선다 — 돌려줄 것이 없다(새 칸을 표에 더하고 판에 안 앉히면 여기서 걸린다).
+    #[test]
+    fn every_entry_stands_on_some_plate_today() {
+        for e in ENTRIES {
+            assert!(stands(e), "{e:?} stands on no plate");
+        }
+        let all = Board::maxed(crate::skills::Pick::B);
+        assert_eq!(drop_unseated(all), all, "nothing is refunded");
+    }
+
+    /// 0270 C5: 어느 판에도 서지 않는 칸만 처음으로 — 그 점수는 남은 점수로 돌아오고, 나머지 산 것은 그대로.
+    /// 끼운 스킬 칸은 빈 칸이 되고(안 배운 스킬), 끼운 큰 기술은 배운 다른 것으로 옮긴다.
+    #[test]
+    fn entries_standing_on_no_plate_are_refunded_and_the_rest_is_kept() {
+        use crate::progression::{Cell, Key, Link};
+        use crate::skills::{Pick, PICK_RANK};
+        let mut b = Board::default();
+        for _ in 0..PICK_RANK {
+            b.raise(Entry::Skill(Id::Cut));
+            b.raise(Entry::Skill(Id::Whirl));
+        }
+        b.flip(Id::Cut);
+        b.raise(Entry::Ult(Ult::Flurry));
+        b.raise(Entry::Ult(Ult::Bell));
+        b.raise(Entry::Cell(Cell::EvenBreath));
+        b.raise(Entry::Cell(Cell::Catch));
+        b.cells.flip_cell(Cell::EvenBreath);
+        b.raise(Entry::Key(Key::Edge));
+        b.raise(Entry::Link(Link::RiposteBeat));
+        b.raise(Entry::Vein(Vein::Rift));
+        b.raise(Entry::Vein(Vein::Ember));
+        let before = b.spent();
+        // 가짜 판: 가로지르기 · 몰아치기 · 고른 숨 · 날의 맺음 · 다리 · 균열의 결이 자리를 잃었다.
+        let lost = [
+            Entry::Skill(Id::Cut),
+            Entry::Ult(Ult::Flurry),
+            Entry::Cell(Cell::EvenBreath),
+            Entry::Key(Key::Edge),
+            Entry::Link(Link::RiposteBeat),
+            Entry::Vein(Vein::Rift),
+        ];
+        let out = drop_where(b, |e| !lost.contains(&e));
+        for e in lost {
+            assert_eq!(out.rank(e), 0, "{e:?} refunded");
+        }
+        let refund: u32 = lost.iter().map(|&e| e.paid(b.rank(e))).sum();
+        assert_eq!(out.spent(), before - refund);
+        assert_eq!(out.pick[Id::Cut.index()], Pick::A, "its pick is gone too");
+        assert_eq!(out.cells.picks, [0; 3], "and the number cell's pick");
+        // 나머지는 그대로.
+        for e in [
+            Entry::Skill(Id::Whirl),
+            Entry::Ult(Ult::Bell),
+            Entry::Cell(Cell::Catch),
+            Entry::Vein(Vein::Ember),
+        ] {
+            assert_eq!(out.rank(e), b.rank(e), "{e:?} kept");
+        }
+        // 끼운 것: 가로지르기의 칸은 빈 칸(안 배운 스킬), 몰아치기를 끼웠으면 배운 큰 종으로.
+        let load = out.loadout([Id::Cut, Id::Whirl], Ult::Flurry);
+        assert_eq!(load.slots[0].rank, 0, "an empty slot");
+        assert_eq!(load.slots[1].rank, PICK_RANK);
+        assert_eq!(load.great, Ult::Bell);
+        // 옛 꼴(앞에서부터 연 수)로 연 칸도 닫힌다 — 같은 갈래의 다른 칸은 남는다.
+        let mut old = Board::default();
+        old.cells.open = [2, 0, 0];
+        let shut = drop_where(old, |e| e != Entry::Cell(Cell::EvenBreath));
+        assert!(!shut.cells.has(Cell::EvenBreath));
+        assert_eq!(shut.cells.count(), 1);
     }
 
     /// 칸을 보여 줄 판: 든 무기 · 부무기의 판 먼저, 없으면 판의 차례 — 몸의 칸은 몸의 판.
