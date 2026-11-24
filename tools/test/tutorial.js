@@ -52,6 +52,7 @@ async function run(browser, lang, size) {
   const shot = (name) => page.screenshot({ path: path.join(OUT, `tut-${tag}-${name}.png`) });
   // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js). 힌트를 찍는 동안 둘레의 적에게 쓰러지지 않게(개발판).
   const { press, until } = sceneKit(page, 90);
+  await sceneKit.cheap(page);
   await sceneKit.unhurt(page);
   // 기록에 그 줄이 적힐 때까지(장면이 끝나야 적는다 — 느린 러너에서는 고정 시간이 모자란다).
   const recorded = (re, what) => page.waitForFunction(([k, src]) => new RegExp(src).test(localStorage.getItem(k) || ''), [KEY, re.source], { timeout: 20000, polling: 100 })

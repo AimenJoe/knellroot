@@ -38,6 +38,7 @@ async function open(browser, seed, tag) {
   const shot = (name, clip) => page.screenshot({ path: path.join(OUT, `shield-${tag}-${name}.png`), clip });
   // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js).
   const { press, until, flip } = sceneKit(page, 90);
+  await sceneKit.cheap(page);
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 60000 });
   await page.goto(`http://localhost:${PORT}/`);
   await ready();

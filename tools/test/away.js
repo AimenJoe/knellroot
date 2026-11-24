@@ -32,6 +32,7 @@ async function main() {
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
   const fail = (msg) => { console.error('FAIL ' + msg); process.exitCode = 1; };
   const { until, press } = sceneKit(page, 60);
+  await sceneKit.cheap(page);
   await page.goto(`http://localhost:${PORT}/`);
   await until('Title', '타이틀', 60000);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });

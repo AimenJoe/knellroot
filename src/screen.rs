@@ -31,6 +31,8 @@ pub fn report_scene(name: &str) {
 
 /// 헤드리스 시험이 페이지에 건 깃발(`window.knellTestFlags`, 웹만 — 그 밖은 0). 1 = 방랑자가 맞지 않는다(`World::unhurt`).
 /// 2 = 새 기록도 서막 숲을 건너뛰고 성소에서 연다(0262 — `tools/test/scene.js`가 기본으로 건다, `sceneKit.prologue`가 푼다).
+/// 4 = 서막 숲길을 저절로 걷는다(`App::prologue_autopilot`). 8 = 싸게 그리기(줄 수 270·2배 그리기 끔 — `Renderer`의 프레임 들머리,
+/// `sceneKit.cheap`: 흐름만 보는 스크립트용, 그림을 보는 `shot.js`는 걸지 않는다).
 /// 개발판에만 있다.
 #[cfg(feature = "dev")]
 pub fn test_flags() -> u32 {

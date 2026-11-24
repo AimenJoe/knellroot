@@ -68,6 +68,7 @@ async function run(browser, lang) {
   // 누름마다 게임 프레임 둘(창 안의 커서 옮기기는 그것으로 넉넉하다). 판이 서고·화로가 열리고·창이 닫히는 곳은 장면을 기다린다
   // (tools/test/scene.js — 느린 CI에서 판이 서기 전에 F가 들어가 화로 대신 싸움 화면을 찍던 길).
   const { press, until } = sceneKit(page, 90);
+  await sceneKit.cheap(page);
   const toPlay = async () => { await until('Title', '타이틀'); await press('F4'); await press('Enter'); await until('Slots', '이어하기 → 슬롯 창'); await press('Enter'); await until('Play', '슬롯 → 판'); await page.waitForTimeout(1500); };
   const rest = async (what) => { await press('KeyF'); await until(/host: Hearth/, what || '화로에서 쉬기'); await page.waitForTimeout(300); };
   const close = async (what) => { await press('Escape'); await until('Play', what || '창 닫기'); await page.waitForTimeout(200); };

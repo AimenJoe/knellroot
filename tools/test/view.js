@@ -30,6 +30,7 @@ async function main() {
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
   // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js). 시점을 보는 동안 적에게 쓰러지지 않게(개발판).
   const { press, until } = sceneKit(page, 80);
+  await sceneKit.cheap(page);
   await sceneKit.unhurt(page);
   await page.goto(`http://localhost:${PORT}/`);
   await until('Title', '타이틀', 60000); await page.waitForTimeout(300);

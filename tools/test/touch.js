@@ -66,6 +66,7 @@ async function main() {
   if (process.env.THROTTLE) await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.THROTTLE) });
   // 장면이 바뀌는 탭 뒤에는 시간이 아니라 장면을 기다린다(tools/test/scene.js).
   const { until, scene } = sceneKit(page);
+  await sceneKit.cheap(page);
   // 도중에 쓰러지면 멈춤·장비 탭을 못 본다 — 맞지 않게(개발판).
   await sceneKit.unhurt(page);
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i + 1 })) });

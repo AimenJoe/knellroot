@@ -39,6 +39,7 @@ async function main() {
   const fail = (msg) => { console.error('FAIL ' + msg); process.exitCode = 1; };
   const shot = (name) => page.screenshot({ path: path.join(OUT, name + '.png') });
   const { press, until } = sceneKit(page);
+  await sceneKit.cheap(page);
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 20000 });
   const record = () => page.evaluate((k) => localStorage.getItem(k), KEY);
   // 시간 대신 장면을 기다린다(2026-11-19, tools/test/scene.js): 5c의 덮어쓰기가 느린 CI에서 네 번 빠졌다.

@@ -479,6 +479,14 @@ impl Renderer {
         self.rows_target = t[crate::tuning::P::RenderRows];
         self.ssaa = t[crate::tuning::P::RenderSsaa] >= 0.5;
         self.menu_fine = t[crate::tuning::P::RenderMenuFine] >= 0.5;
+        // 헤드리스 시험의 "싸게 그리기"(깃발 8 — 개발판만): 흐름만 보는 스크립트는 화소를 줄인다. CI의 소프트웨어 GL은 화소 수가
+        // 곧 시간이다(1280×720 화면 = 2배 그리기로 패스마다 2560×1440) — 화면 크기·UI 배치는 그대로, 월드의 줄 수만 내린다.
+        #[cfg(feature = "dev")]
+        if crate::screen::test_flags() & 8 != 0 {
+            self.rows_target = 270.0;
+            self.ssaa = false;
+            self.menu_fine = false;
+        }
         let (iw, ih) = self.fit_screen();
         let aspect = iw as f32 / ih as f32;
         let c3 = cam.to_camera3d(self.rt.clone(), aspect);

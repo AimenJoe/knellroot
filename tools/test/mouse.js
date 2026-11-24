@@ -32,6 +32,7 @@ async function main() {
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
   // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js).
   const { press, until } = sceneKit(page, 60);
+  await sceneKit.cheap(page);
   await page.goto(`http://localhost:${PORT}/`);
   await until('Title', '타이틀', 60000); await page.waitForTimeout(300);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });

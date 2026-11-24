@@ -74,6 +74,17 @@ module.exports.throttle = async (ctx, page) => {
 // 엉뚱하다(2026-11-19 touch.js — 멈춤 버튼을 누를 때 이미 결과 화면이었다). 맞는 모습을 찍는 스크립트는 부르지 않는다. goto 전에.
 module.exports.unhurt = (page) => page.addInitScript(() => { window.knellTestFlags = (window.knellTestFlags | 0) | 1; });
 
+// 싸게 그리기(개발판만 — test_flags 비트 8: 월드의 줄 수 270·2배 그리기 끔): 흐름·기록·터치 자리만 보는 스크립트용. 헤드리스의
+// 소프트웨어 GL은 화소 수가 곧 시간이다 — 화면 크기와 UI 배치는 그대로다. 그림을 보는 스크립트(shot.js·fx.js·menu_res.js)는 부르지
+// 않는다. `FULL=1`이면 걸지 않는다(찍힌 그림을 제 화질로 보고 싶을 때). goto 전에.
+module.exports.cheap = (page) => page.addInitScript(() => {
+  if (!window.__knellFull) window.knellTestFlags = (window.knellTestFlags | 0) | 8;
+});
+if (process.env.FULL) {
+  const cheap = module.exports.cheap;
+  module.exports.cheap = (page) => page.addInitScript(() => { window.__knellFull = true; }).then(() => cheap(page));
+}
+
 // 서막 숲부터(0262 — 개발판만, src/screen.rs test_flags 비트 2를 푼다): 새 기록이 숲의 빈터에서 깨어난다. goto 전에, sceneKit(page) 앞이든 뒤든.
 module.exports.prologue = (page) => page.addInitScript(() => {
   window.__knellPrologue = true;
