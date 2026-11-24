@@ -1505,7 +1505,7 @@ impl App {
         let board = self.board();
         let total = self.progress.skill_points();
         let w = self.draw_tab_window(f, scene);
-        self.draw_skill_grid(&w, &board, total, at, edit);
+        self.draw_skill_grid(&w, &board, total, at);
         self.draw_skill_detail(&w, &board, total, at, edit);
         // 창 아래 줄: 왼쪽에 버튼 안내, 오른쪽 끝에 되돌리기 단추(화로). 단추는 창 밖이라 닫기 자리보다 먼저 넣는다.
         // 묻는 창이 위에 있으면 단추를 그리지 않는다 — 그 창의 안내 줄(가운데)이 같은 자리를 쓴다.
@@ -1527,9 +1527,10 @@ impl App {
     }
 
     /// 판 줄(0270 C2): 판 여섯의 이름을 나란히 — 보이는 판은 금빛 글 + 밑줄, 커서가 판 줄에 있으면 그 판에 밝은 테(칸의 포커스와
-    /// 같은 빛). 든 무기의 판은 오른쪽 위에 금빛 점, 부무기의 판은 금빛 고리(칸의 `node_badge`·`sub_badge`와 같은 갈림), 화로에서
-    /// 지금 살 칸이 있는 판은 왼쪽 위에 민트 점(탭 머리의 점과 같은 뜻). 누를 자리는 판마다.
-    fn draw_plate_strip(&mut self, w: &Window, board: &Board, total: u32, at: usize, edit: bool) {
+    /// 같은 빛). 든 무기의 판은 오른쪽 위에 금빛 점, 부무기의 판은 금빛 고리(칸의 `node_badge`·`sub_badge`와 같은 갈림). 살 칸이
+    /// 있다는 민트 점은 판 줄에 두지 않는다(사장 2026-11-24 "기술 서브탭의 new 인디케이터는 필요없을듯" — 탭 머리의 점과 칸의 민트로
+    /// 넉넉하다). 누를 자리는 판마다.
+    fn draw_plate_strip(&mut self, w: &Window, at: usize) {
         let (k, u) = (w.k, w.s);
         let (main, sub) = self.held_plates();
         let cw = geo::GRID_W / PLATES.len() as f32;
@@ -1541,7 +1542,7 @@ impl App {
                 draw_rectangle(r.x, r.y, r.w, r.h, ui::PANEL_LIGHT);
                 draw_rectangle(r.x, r.y + r.h - u, r.w, u.max(1.0), AMBER);
             }
-            // 양쪽 귀퉁이의 점(살 칸 · 든 무기) 자리를 비운다.
+            // 오른쪽 귀퉁이의 점(든 무기) 자리를 비운다.
             let name = self.ui.fit(plate_name(p), r.w - u * 12.0, tk);
             let ink = if shown { AMBER } else { DIM };
             self.ui.text_center(
@@ -1558,14 +1559,6 @@ impl App {
             } else if sub == Some(p) {
                 draw_circle_lines(dx, dy, dot, 1.0, AMBER);
             }
-            let ready = edit
-                && !self.dev_board_on()
-                && ENTRIES
-                    .iter()
-                    .any(|&e| p.has(e) && plates::offer_on(p, board, e, total) == Offer::Ready);
-            if ready {
-                draw_circle(r.x + dot * 1.6, r.y + dot * 1.4, dot * 0.8, ui::MINT);
-            }
             if at == STRIP && shown {
                 let o = Rect::new(r.x - u, r.y - u, r.w + u * 2.0, r.h + u * 2.0);
                 self.ui.edge(o, (u * 1.6).max(2.0), CREAM);
@@ -1575,11 +1568,11 @@ impl App {
     }
 
     /// 왼쪽: 판 줄 · 갈래 머리 · 줄 띠 · 칸들. 누를 자리(판·칸)를 채운다.
-    fn draw_skill_grid(&mut self, w: &Window, board: &Board, total: u32, at: usize, edit: bool) {
+    fn draw_skill_grid(&mut self, w: &Window, board: &Board, total: u32, at: usize) {
         let s = s();
         let (k, u) = (w.k, w.s);
         let plate = self.skill_plate;
-        self.draw_plate_strip(w, board, total, at, edit);
+        self.draw_plate_strip(w, at);
         // 갈래 머리: 몸의 판 = 이름(금빛) + 한 줄, 무기 판 = 대표 타입 둘(그 타입의 빛 `status::INK`)과 가운데 "그 밖".
         let head = geo::STRIP_H;
         match plate {
