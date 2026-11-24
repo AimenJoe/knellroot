@@ -5,6 +5,9 @@ name: deploy-web
 #   운영과 주소(= 브라우저 저장소)가 달라 기록이 섞이지 않는다. 올린 뒤 그 주소의 build.txt가 이 커밋인지 확인한다.
 # - PR: 개발판을 pr-<번호> 별칭에(포크 PR은 시크릿이 없어 건너뜀).
 # 어느 갈래든 fmt·clippy(두 갈래)·test·wasm·조립·헤드리스 연기 시험을 먼저 돈다.
+# 잡 넷(0271): compile(검사·빌드·조립) → smoke(헤드리스 — 스크립트마다 러너 하나씩 나란히) → build(문지기 + 개발판 올리기) → publish(main).
+# 헤드리스는 소프트웨어 GL이라 화소 수만큼 느리고 한 러너(공개 레포 = 4 vCPU·16GB)의 코어를 다 쓴다 — 한 러너에서 나란히 돌리지 않고
+# 잡을 나눈다(잡마다 제 러너). main은 PR 검사에서 긴 시나리오를 이미 돌았으니 **실제로 나가는 운영 빌드**만 띄워 본다(boot·pwa).
 # 배포는 사장이 정한다(main에 push하면 바로 올라간다).
 # 액션 버전: Node 24로 도는 메이저(checkout·setup-node·upload-artifact v7, rust-cache v2 — v7의 깨지는 변경(pull_request_target 포크 checkout 거부, NODE_AUTH_TOKEN 대체값 제거)은 이 워크플로에 해당 없음, upload-artifact v7 archive 기본 true) — Node 20 액션은 2026-06-16부터 강제로 Node 24, 2026-09-23 제거(GitHub changelog 2025-09-19). upload-artifact v5는 아직 node20.
 on:
@@ -24,12 +27,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 잡 이름 = main 룰셋의 필수 검사 이름(0092 — nail `main-only`를 그대로 가져와 `build`).
-  build:
+  compile:
     runs-on: ubuntu-latest
-    env:
-      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+    outputs:
+      smoke: ${{ steps.flavor.outputs.smoke }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/rust
@@ -39,12 +40,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       # 운영판은 개발 기능을 뺀다(nail 0193). 다른 갈래는 기본값(dev).
+      # smoke = 뒤의 헤드리스 잡이 돌 스크립트 묶음(매트릭스). 운영판에는 개발 항목이 없어 긴 시나리오를 못 돈다 — 그 대신 boot.
       - name: Build flavor
+        id: flavor
         run: |
+          echo "runner: $(nproc) vCPU, $(free -g | awk '/^Mem:/{print $2}') GB"
           if [ "$GITHUB_REF" = "refs/heads/main" ]; then
             echo "FEATURES=--no-default-features" >> "$GITHUB_ENV"; echo "FLAVOR=release" >> "$GITHUB_ENV"
+            echo 'smoke=["boot"]' >> "$GITHUB_OUTPUT"
           else
             echo "FEATURES=" >> "$GITHUB_ENV"; echo "FLAVOR=dev" >> "$GITHUB_ENV"
+            echo 'smoke=["shot","touch","save","pwa"]' >> "$GITHUB_OUTPUT"
           fi
 
       - run: cargo fmt --all -- --check
@@ -70,38 +76,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      # 연기 시험(nail 0169 R7): 헤드리스 Chromium으로 시나리오 넷·락온·랩을 돌려 콘솔 에러·패닉을 잡고 스크린숏을 남긴다.
-      # 터치(0006): 가로 폰(844×390, DPR 3)으로 스틱·버튼·랩 터치판.
-      - name: Headless smoke + screenshots
-        run: |
-          npm init -y >/dev/null && npm install --no-audit --no-fund playwright@1.47.2 >/dev/null
-          # Ubuntu 패키지 서버가 가끔 503을 낸다(2026-11-19 R8a 실행이 글꼴 받기에서 멈췄다) — 깔기만 세 번까지 다시 한다.
-          for i in 1 2 3; do
-            npx playwright install --with-deps chromium && break
-            [ "$i" = 3 ] && exit 1
-            echo "playwright install 실패($i) — $((i * 30))초 뒤 다시"; sleep $((i * 30))
-          done
-          # 연기 시험은 개발 항목(문 앞·시나리오)을 쓴다 — 운영판이면 개발판을 따로 빌드해 돈다(배포물은 그대로).
-          if [ "$FLAVOR" = "release" ]; then
-            cargo build --release --target wasm32-unknown-unknown
-            sh tools/web/assemble.sh smoke "$GITHUB_SHA" dev
-            dir=smoke
-          else
-            dir=dist
-          fi
-          node tools/test/shot.js $dir shots
-          node tools/test/touch.js $dir shots
-          # 로딩 화면·매니페스트·서비스 워커·오프라인 다시 읽기(0062).
-          node tools/test/pwa.js $dir shots
-          # 기록: 이어하기·처음부터·새로 하기(0064 M2).
-          node tools/test/save.js $dir shots
-          # 앱이 내려감(0257): 탭을 숨기면 소리가 멈추고 싸움은 멈춤 창으로.
-          node tools/test/away.js $dir shots
-      - uses: actions/upload-artifact@v7
-        with:
-          name: shots
-          path: shots
-
       # 운영 주소 /play 판(0246): 같은 빌드를 /play 기준으로 조립하고(_headers 경로만 다르다) 옛 주소의 넘김 페이지도.
       # Cloudflare 설정은 토큰 없이 dry-run으로 모든 갈래·PR에서 본다 — 토큰은 운영 환경(web-production, main만)에.
       - name: Assemble /play and moved page, check Cloudflare config
@@ -117,6 +91,82 @@ jobs:
           path: |
             dist-play
             dist-moved
+
+  # 연기 시험(nail 0169 R7): 헤드리스 Chromium으로 콘솔 에러·패닉을 잡고 스크린숏을 남긴다. 스크립트 묶음마다 잡 하나.
+  # - shot: 시나리오 넷·락온·랩(그림을 보는 스크립트 — 제 화질). touch: 가로 폰(844×390, DPR 3) 스틱·버튼·랩 터치판(0006).
+  # - save: 기록 — 이어하기·처음부터·새로 하기(0064 M2). pwa: 로딩 화면·매니페스트·서비스 워커·오프라인(0062) + 앱이 내려감(0257).
+  # - boot(main만): 운영 빌드가 타이틀까지 뜨고 개발 메뉴가 없고 새 판이 돈다 + pwa.
+  # shot 밖의 스크립트는 `sceneKit.cheap`(월드 줄 수 270·2배 그리기 끔)으로 돈다 — 같은 러너에서 3배 빠르다.
+  smoke:
+    needs: compile
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        script: ${{ fromJSON(needs.compile.outputs.smoke) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: tools/test
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: web-dist
+          path: dist
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install Playwright
+        run: |
+          npm init -y >/dev/null && npm install --no-audit --no-fund playwright@1.47.2 >/dev/null
+          # Ubuntu 패키지 서버가 가끔 503을 낸다(2026-11-19 R8a 실행이 글꼴 받기에서 멈췄다) — 깔기만 세 번까지 다시 한다.
+          for i in 1 2 3; do
+            npx playwright install --with-deps chromium && break
+            [ "$i" = 3 ] && exit 1
+            echo "playwright install 실패($i) — $((i * 30))초 뒤 다시"; sleep $((i * 30))
+          done
+      - name: Headless smoke (${{ matrix.script }})
+        run: |
+          case "${{ matrix.script }}" in
+            shot) node tools/test/shot.js dist shots ;;
+            touch) node tools/test/touch.js dist shots ;;
+            save) node tools/test/save.js dist shots ;;
+            pwa) node tools/test/pwa.js dist shots && node tools/test/away.js dist shots ;;
+            boot) node tools/test/boot.js dist shots && node tools/test/pwa.js dist shots ;;
+            *) echo "모르는 묶음 ${{ matrix.script }}"; exit 1 ;;
+          esac
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: shots-${{ matrix.script }}
+          path: shots
+          if-no-files-found: ignore
+
+  # 잡 이름 = main 룰셋의 필수 검사 이름(0092 — nail `main-only`를 그대로 가져와 `build`). 앞의 둘이 다 지나야 초록이다 —
+  # 앞이 실패해도 이 잡은 돌아서(건너뛴 필수 검사는 "통과"로 읽힌다) 빨갛게 답한다. 개발판·PR 미리보기도 여기서(시험이 지난 뒤에만).
+  build:
+    needs: [compile, smoke]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+    steps:
+      - name: Gate
+        run: |
+          echo "compile: ${{ needs.compile.result }} · smoke: ${{ needs.smoke.result }}"
+          if [ "${{ needs.compile.result }}" != "success" ] || [ "${{ needs.smoke.result }}" != "success" ]; then
+            echo "::error::검사·빌드(compile) 또는 헤드리스 시험(smoke)이 지나지 않았다"; exit 1
+          fi
+      - uses: actions/download-artifact@v7
+        if: env.NETLIFY_SITE_ID != '' && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/release/'))
+        with:
+          name: web-dist
+          path: dist
+      - uses: actions/setup-node@v7
+        if: env.NETLIFY_SITE_ID != '' && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/release/'))
+        with:
+          node-version: 22
 
       # Netlify 시크릿이 설정되기 전에는 아래 단계가 건너뛰어진다(빌드 검증만). KB reference/netlify/deploy-from-ci.md.
       # 개발판(nail 0193): 운영(--prod)은 건드리지 않는다. 올린 뒤 별칭 주소의 build.txt가 이 커밋인지 확인한다(아니면 실패).
