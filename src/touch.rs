@@ -71,6 +71,8 @@ pub enum Kind {
     Stitch,
     Ram,
     Toll,
+    Swat,
+    Ripple,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
@@ -936,7 +938,9 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Roots
         | Kind::Stitch
         | Kind::Ram
-        | Kind::Toll => {}
+        | Kind::Toll
+        | Kind::Swat
+        | Kind::Ripple => {}
         Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
@@ -1018,6 +1022,8 @@ pub fn skill_icon(id: crate::skills::Id) -> Kind {
         Id::Stitch => Kind::Stitch,
         Id::Ram => Kind::Ram,
         Id::Toll => Kind::Toll,
+        Id::Swat => Kind::Swat,
+        Id::Ripple => Kind::Ripple,
     }
 }
 
@@ -1802,6 +1808,38 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             "......#......",
             ".............",
         ],
+        // 후려치기(0270 C3): 옆으로 휘두르는 망치 머리와 그 호.
+        Kind::Swat => [
+            ".............",
+            "..########...",
+            "..########...",
+            "..########...",
+            ".....##......",
+            ".....##...#..",
+            ".....##....#.",
+            ".....##....#.",
+            ".....##....#.",
+            ".....##...#..",
+            ".....##..#...",
+            ".....##......",
+            ".............",
+        ],
+        // 파문(0270 C3): 땅 위로 번지는 반원 물결과 땅의 금.
+        Kind::Ripple => [
+            ".............",
+            "....#####....",
+            "..##.....##..",
+            ".#.........#.",
+            "#....###....#",
+            "#...#...#...#",
+            "#..#..#..#..#",
+            "#..#.###.#..#",
+            "#############",
+            ".............",
+            ".#.#.#.#.#.#.",
+            ".............",
+            ".............",
+        ],
         // 큰 기술 몰아치기: 잇달아 긋는 빗금 셋.
         Kind::Flurry => [
             ".........###.",
@@ -2017,6 +2055,8 @@ mod tests {
             Kind::Stitch,
             Kind::Ram,
             Kind::Toll,
+            Kind::Swat,
+            Kind::Ripple,
             Kind::Pick,
             Kind::Open,
             Kind::Pull,

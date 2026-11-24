@@ -58,6 +58,8 @@ pub(super) fn skill_text(id: sk::Id) -> (&'static str, &'static str) {
         sk::Id::Stitch => (s.skill_stitch, s.skill_stitch_d),
         sk::Id::Ram => (s.skill_ram, s.skill_ram_d),
         sk::Id::Toll => (s.skill_toll, s.skill_toll_d),
+        sk::Id::Swat => (s.skill_swat, s.skill_swat_d),
+        sk::Id::Ripple => (s.skill_ripple, s.skill_ripple_d),
     }
 }
 
@@ -132,6 +134,10 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Ram, Pick::B) => (s.pick_ram_b, s.pick_ram_b_d),
         (sk::Id::Toll, Pick::A) => (s.pick_toll_a, s.pick_toll_a_d),
         (sk::Id::Toll, Pick::B) => (s.pick_toll_b, s.pick_toll_b_d),
+        (sk::Id::Swat, Pick::A) => (s.pick_swat_a, s.pick_swat_a_d),
+        (sk::Id::Swat, Pick::B) => (s.pick_swat_b, s.pick_swat_b_d),
+        (sk::Id::Ripple, Pick::A) => (s.pick_ripple_a, s.pick_ripple_a_d),
+        (sk::Id::Ripple, Pick::B) => (s.pick_ripple_b, s.pick_ripple_b_d),
     };
     (mark, name, desc)
 }
@@ -154,6 +160,8 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Stitch => s.cap_stitch,
         sk::Id::Ram => s.cap_ram,
         sk::Id::Toll => s.cap_toll,
+        sk::Id::Swat => s.cap_swat,
+        sk::Id::Ripple => s.cap_ripple,
     }
 }
 
@@ -189,7 +197,8 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
                 | Form::Brace { .. }
                 | Form::Echo { .. }
                 | Form::Field { .. }
-                | Form::Bell { .. } => s.rk_radius,
+                | Form::Bell { .. }
+                | Form::Wave { .. } => s.rk_radius,
                 Form::Lane { .. } | Form::Erupt { .. } => s.rk_length,
                 Form::Pull { .. } | Form::Throw { .. } | Form::Hop { .. } | Form::Stab { .. } => {
                     s.rk_range
@@ -3008,6 +3017,7 @@ mod tests {
         keyless.rank[Id::Bash.index()] = 0;
         keyless.rank[Id::Ram.index()] = 0;
         keyless.rank[Id::Toll.index()] = 0;
+        keyless.rank[Id::Ripple.index()] = 0;
         keyless.ult[Ult::Line.index()] = 0;
         let edge = Entry::Key(crate::progression::Key::Edge);
         // 맞받기에 남은 것은 패시브 일곱.

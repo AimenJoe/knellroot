@@ -213,7 +213,11 @@ fn only_skills_with_a_direction_take_the_drag() {
         let (id, form) = (s.id, s.form);
         let round = matches!(
             form,
-            Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. }
+            Form::Ring { .. }
+                | Form::Brace { .. }
+                | Form::Echo { .. }
+                | Form::Field { .. }
+                | Form::Wave { .. }
         );
         assert_eq!(form.aims(), !round, "{id:?}");
     }

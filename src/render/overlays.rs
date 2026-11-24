@@ -259,6 +259,31 @@ impl Renderer {
                     | Form::Bash { .. }
                     | Form::Erupt { .. }
                     | Form::Bell { .. } => {}
+                    // 파문(0270 C3): 몸에서 번지는 물결의 앞머리(흰 테 + 민트 테), 지나간 안쪽은 옅게.
+                    Form::Wave { radius, time } => {
+                        let k = (e0 / time.max(1e-3)).clamp(0.0, 1.0);
+                        let fade = 1.0 - ((e0 - time) / SKILL_GLOW_FADE).clamp(0.0, 1.0);
+                        if fade > 0.0 {
+                            let r = (radius * k).max(0.3);
+                            fl.sector(pp + Vec3::Y * 0.05, r, 0.0, 360.0, with_a(mint, 0.1 * fade));
+                            fl.ring(
+                                pp + Vec3::Y * 0.07,
+                                r,
+                                0.0,
+                                360.0,
+                                with_a(WHITE, 0.85 * fade),
+                            );
+                            if fx {
+                                fl.ring(
+                                    pp + Vec3::Y * 0.07,
+                                    (r - 0.35).max(0.2),
+                                    0.0,
+                                    360.0,
+                                    with_a(mint, 0.6 * fade),
+                                );
+                            }
+                        }
+                    }
                     // 바늘땀(0270 C3): 땀마다 좁은 부채꼴이 번쩍이고 곧 사라진다(가운데 흰 바늘 줄).
                     Form::Stab {
                         range,
@@ -1378,8 +1403,11 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
                 | Form::Bash { range, arc_deg, .. }
                 | Form::Stab { range, arc_deg, .. } => fan(range, arc_deg),
                 Form::Bell { range, .. } => lane(range, 0.6),
-                Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. } => {
-                }
+                Form::Ring { .. }
+                | Form::Brace { .. }
+                | Form::Echo { .. }
+                | Form::Field { .. }
+                | Form::Wave { .. } => {}
             }
         }
     }

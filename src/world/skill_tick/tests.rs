@@ -2409,3 +2409,86 @@ fn toll_hangs_a_bell_on_one_foe_and_it_rings_around_it() {
     assert_eq!(hung(&w), 1, "it rings in the air");
     assert!(w.skill_bursts[0].on.is_none());
 }
+
+/// 후려치기: 망치로 앞 넓은 부채꼴을 친다 — 맞은 적은 멀리 밀리고 충격으로 기절한다(보통 적은 한 번에). 뒤의 적은 아니다.
+/// 크게 휘두르기(ㄴ)면 부채꼴이 넓어진다.
+#[test]
+fn swat_knocks_the_front_far_back_and_stuns() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Swat, 1, Pick::A);
+    assert_eq!(w.grip(), crate::weapons::Grip::Heavy);
+    w.spawn_mob(vec3(0.0, 0.0, -2.0));
+    w.spawn_mob(vec3(0.0, 0.0, 2.0));
+    still(&mut w);
+    let was = w.enemies[0].pos;
+    let mut stunned = false;
+    let mut ev = w.step(&skill(0), &t);
+    for _ in 0..60 {
+        ev.extend(w.step(&Actions::default(), &t));
+        stunned |= w.enemies[0].ail.stun > 0.0;
+    }
+    assert!(w.enemies[0].hp < 90);
+    assert!(stunned, "the shock stuns a plain foe in one swing");
+    assert!(
+        flat(w.enemies[0].pos, was) > 1.5,
+        "knocked back: {:?}",
+        w.enemies[0].pos
+    );
+    assert_eq!(w.enemies[1].hp, 90, "not the one behind");
+    let arc = |w: &World| match w.skill_eff(Sk::Swat).skill.form {
+        Form::Cone { arc_deg, .. } => arc_deg,
+        _ => unreachable!(),
+    };
+    let a = arc(&w);
+    wear(&mut w, Sk::Swat, 3, Pick::B);
+    assert!(arc(&w) > a + 60.0);
+}
+
+/// 파문: 물결이 몸에서 둘레로 번진다 — 가까운 적이 먼저, 먼 적이 나중에(같은 물결에 한 번씩), 둘레 밖은 아니다.
+/// 밀어내는 물결(ㄱ)은 바깥으로 밀고, 갈라진 땅(ㄴ)은 둘레를 남겨 늦춘다.
+#[test]
+fn ripple_spreads_outward_hitting_near_then_far_once_each() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Ripple, 1, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -1.5));
+    w.spawn_mob(vec3(5.0, 0.0, 0.0));
+    w.spawn_mob(vec3(0.0, 0.0, 9.0));
+    still(&mut w);
+    let mut first: [Option<usize>; 3] = [None; 3];
+    w.step(&skill(0), &t);
+    for k in 0..90 {
+        still_keep(&mut w);
+        w.step(&Actions::default(), &t);
+        for (i, f) in first.iter_mut().enumerate() {
+            if f.is_none() && w.enemies[i].hp < 90 {
+                *f = Some(k);
+            }
+        }
+    }
+    let (near, far) = (first[0].unwrap(), first[1].unwrap());
+    assert!(near < far, "near first: {near} {far}");
+    assert_eq!(first[2], None, "beyond the ripple");
+    assert_eq!(
+        90 - w.enemies[0].hp,
+        90 - w.enemies[1].hp,
+        "once each, the same"
+    );
+    // 밀어내는 물결(ㄱ — 3단).
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Ripple, 3, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -2.0));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    for _ in 0..20 {
+        w.step(&Actions::default(), &t);
+    }
+    assert!(flat(w.enemies[0].pos, w.player.pos) > 3.0, "pushed out");
+    // 갈라진 땅(ㄴ): 둘레가 남아 늦춘다.
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Ripple, 3, Pick::B);
+    w.spawn_mob(vec3(3.0, 0.0, 3.0));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    w.step(&Actions::default(), &t);
+    assert!(w.enemies[0].marks.slow < 1.0, "slowed behind the ripple");
+}

@@ -279,9 +279,11 @@ impl World {
             .map(|tg| vec3(tg.x - pl.pos.x, 0.0, tg.z - pl.pos.z).normalize_or_zero())
             .filter(|v| v.length_squared() > 0.5);
         match d.skill.form {
-            Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. } => {
-                facing
-            }
+            Form::Ring { .. }
+            | Form::Brace { .. }
+            | Form::Echo { .. }
+            | Form::Field { .. }
+            | Form::Wave { .. } => facing,
             // 던지기: (숄더뷰) 크로스헤어 > 조준 > 락온 > 닿는 거리의 가장 가까운 적 > 바라보는 쪽.
             Form::Throw { dist, .. } => cx
                 .sight
@@ -468,14 +470,9 @@ impl World {
                             dose: self.dosed(s.dose()),
                         },
                     );
-                    // 벽에 박기(방패 돌진 ㄱ): 이 길에 맞아 밀려난 적이 벽·턱에 박히면 덤 피해(쟁반 뒤집기와 같은 길 — 보스는 아니다).
+                    // 벽에 박기(방패 돌진 ㄱ): 이 길에 맞아 밀려난 적이 벽·턱에 박히면 덤 피해.
                     if let (Some(Twist::Slam { damage }), true) = (d.twist, n > 0) {
-                        for en in &mut self.enemies {
-                            if en.hit_by == swing && en.alive() && !en.boss && !en.rising() {
-                                en.spilling = true;
-                                en.slam_bonus = damage;
-                            }
-                        }
+                        self.slam_into_walls(swing, damage);
                     }
                     // 맺음: 이 스킬로 쓰러뜨리면 대기의 몫을 돌려받는다(한 번 쓸 때 한 번).
                     if let Some(Cap::Refund { part }) = d.cap {
@@ -584,6 +581,49 @@ impl World {
                     }
                 }
             }
+            // 파문(0270 C3): 물결의 앞머리가 몸에서 둘레로 번진다 — 지나는 적을 한 번씩(같은 타 번호). 밀어내는 물결(ㄱ)은
+            // 바깥으로 밀고, 갈라진 땅(ㄴ)은 물결이 지난 둘레가 남아 늦춘다, 맺음은 휘청.
+            Form::Wave { radius, time } => {
+                if crossed(s.startup) {
+                    self.skill_ev.push(Event::Skill { id, at, dir });
+                    if let Some(Twist::Crack { secs, slow }) = d.twist {
+                        self.skill_zones.push(Zone {
+                            pos: at,
+                            dir,
+                            range: radius,
+                            arc_deg: 360.0,
+                            left: secs + time,
+                            total: secs + time,
+                            slow,
+                        });
+                    }
+                }
+                if e1 >= s.startup && e < s.startup + time {
+                    let k = ((e1 - s.startup) / time.max(1e-3)).clamp(0.0, 1.0);
+                    let push = match d.twist {
+                        Some(Twist::Shove { push }) => push,
+                        _ => 0.0,
+                    };
+                    let lift = match d.cap {
+                        Some(Cap::Lift { stagger }) => stagger,
+                        _ => 0.0,
+                    };
+                    self.skill_area(
+                        t,
+                        &Sweep {
+                            reach: radius * k,
+                            cone: None,
+                            push,
+                            stagger: lift,
+                            swing,
+                            damage: s.damage,
+                            poise: s.poise,
+                            shatter: 1.0,
+                            dose: self.dosed(s.dose()),
+                        },
+                    );
+                }
+            }
             Form::Pull {
                 range,
                 arc_deg,
@@ -620,6 +660,7 @@ impl World {
                 range,
                 arc_deg,
                 stagger,
+                push,
             } => {
                 if crossed(s.startup) {
                     self.skill_ev.push(Event::Skill { id, at, dir });
@@ -628,12 +669,12 @@ impl World {
                         Some(Cap::Shatter { mult }) => mult,
                         _ => 1.0,
                     };
-                    self.skill_area(
+                    let n = self.skill_area(
                         t,
                         &Sweep {
                             reach: range,
                             cone: Some((dir, half)),
-                            push: 0.0,
+                            push,
                             stagger,
                             swing,
                             damage: s.damage,
@@ -642,6 +683,10 @@ impl World {
                             dose: self.dosed(s.dose()),
                         },
                     );
+                    // 벽에 박기(후려치기 ㄱ, 0270 C3).
+                    if let (Some(Twist::Slam { damage }), true) = (d.twist, n > 0) {
+                        self.slam_into_walls(swing, damage);
+                    }
                     // 갈라진 땅(ㄴ): 찍은 부채꼴이 남는다.
                     if let Some(Twist::Crack { secs, slow }) = d.twist {
                         self.skill_zones.push(Zone {
@@ -1350,6 +1395,17 @@ impl World {
             Event::SkillBurst { at: b.at }
         });
         self.skill_ev = ev;
+    }
+
+    /// 벽에 박기(0270 C3 — 방패 돌진·후려치기 ㄱ): 이 타(`swing`)에 맞아 밀려난 적이 벽·턱에 박히면 덤 피해(쟁반 뒤집기와 같은 길
+    /// `spilling` — 보스는 밀리기만).
+    fn slam_into_walls(&mut self, swing: u32, damage: i32) {
+        for en in &mut self.enemies {
+            if en.hit_by == swing && en.alive() && !en.boss && !en.rising() {
+                en.spilling = true;
+                en.slam_bonus = damage;
+            }
+        }
     }
 
     /// 종 치기(0270 C3)가 종을 걸 적: 앞 쪽(`dir` ± 60°) `range` m 안의 가장 가까운 깨어 있는 적.

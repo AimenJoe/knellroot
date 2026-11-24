@@ -1256,7 +1256,9 @@ impl App {
                         | Sk::Swallow
                         | Sk::Roots
                         | Sk::Stitch
-                        | Sk::Toll => Id::Swing,
+                        | Sk::Toll
+                        | Sk::Swat
+                        | Sk::Ripple => Id::Swing,
                     }
                 }
                 Event::Skill { id, .. } => {
@@ -1275,6 +1277,9 @@ impl App {
                         Sk::Stitch => Id::Dodge,
                         Sk::Ram => Id::Thwack,
                         Sk::Toll => Id::Beat2,
+                        // 후려치기 = 타격, 파문 = 낮은 울림.
+                        Sk::Swat => Id::Hit,
+                        Sk::Ripple => Id::Wake,
                     }
                 }
                 Event::SkillDenied => Id::Deny,

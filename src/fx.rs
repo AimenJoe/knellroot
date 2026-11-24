@@ -2011,6 +2011,53 @@ impl Fx {
                     MINT,
                 );
             }
+            // 후려치기(0270 C3): 휘두른 쪽의 큰 노란 별 + 넓은 부채꼴 충격파 + 옆으로 흩어지는 돌 부스러기.
+            (Sk::Swat, Form::Cone { range, arc_deg, .. }) => {
+                let c = g + dir * 1.0;
+                self.star(c + Vec3::Y * 0.8, 2.0, 0.12, SHOCK);
+                self.mark(
+                    g,
+                    MarkKind::Shock {
+                        dir,
+                        r0: 0.6,
+                        r1: range,
+                        arc_deg,
+                    },
+                    0.24,
+                    SHOCK,
+                );
+                self.chips(g, dir, range, arc_deg, 8);
+                self.dust_kick(g, dir, 4, 0.5);
+            }
+            // 파문(0270 C3): 내리찍은 자리의 별 + 둘레까지 번지는 흰 고리와 늦게 따라오는 민트 고리 + 둥근 먼지.
+            (Sk::Ripple, Form::Wave { radius, time }) => {
+                self.star(g + Vec3::Y * 0.3, 1.8, 0.12, WHITE_HOT);
+                self.mark_with(
+                    g,
+                    MarkKind::Ring {
+                        r0: 0.4,
+                        r1: radius,
+                    },
+                    time + 0.1,
+                    QUAKE,
+                    0.0,
+                    true,
+                    false,
+                );
+                self.mark_with(
+                    g,
+                    MarkKind::Ring {
+                        r0: 0.3,
+                        r1: radius * 0.9,
+                    },
+                    time + 0.15,
+                    MINT,
+                    0.08,
+                    true,
+                    false,
+                );
+                self.dust_ring(g, 0.6, 14, 5.5, 0.6, DUST);
+            }
             // 뿌리 솟기(0214): 뿌리가 솟을 길을 따라 먼저 달리는 땅의 금(호박빛) — 뿌리와 흙은 하나씩(`RootSpike`).
             (Sk::Roots, Form::Erupt { len, .. }) => {
                 self.mark(

@@ -77,12 +77,16 @@ pub enum Form {
         to: f32,
         stagger: f32,
     },
-    /// 앞 부채꼴(`range` m · `arc_deg`°)을 내리찍는다 — 맞은 적은 `stagger`초 휘청(보스는 휘청이지 않는다).
+    /// 앞 부채꼴(`range` m · `arc_deg`°)을 내리찍는다 — 맞은 적은 `stagger`초 휘청(보스는 휘청이지 않는다), `push` m 바깥으로
+    /// 밀린다(후려치기, 0270 C3 — 땅울림은 0).
     Cone {
         range: f32,
         arc_deg: f32,
         stagger: f32,
+        push: f32,
     },
+    /// 파문(0270 C3): 몸에서 둘레 `radius` m까지 `time`초에 번지는 물결 — 물결의 앞머리가 지나는 적을 한 번씩 친다.
+    Wave { radius: f32, time: f32 },
     /// 버팀(0158 G2): `hold`초 동안 버틴다 — 밀리지도 끊기지도 않고 받는 타마다 피해 −`soak`(0 아래로는 안 내려간다), 받아낸 타를
     /// `most`번까지 센다. 끝에 둘레 `radius` m를 터뜨린다: 표의 피해 + 받아낸 타마다 `more`, 맞은 적은 바깥으로 `push` m.
     /// 회피는 버팀을 터뜨림 없이 끊는다(대기는 쓴 채).
@@ -154,7 +158,11 @@ impl Form {
     pub fn aims(&self) -> bool {
         !matches!(
             self,
-            Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. }
+            Form::Ring { .. }
+                | Form::Brace { .. }
+                | Form::Echo { .. }
+                | Form::Field { .. }
+                | Form::Wave { .. }
         )
     }
 
@@ -244,10 +252,14 @@ pub enum Id {
     Ram,
     /// 종 치기(0270 C3 — 방패·망치·울림): 한 적에게 종을 걸어 곧 울린다.
     Toll,
+    /// 후려치기(0270 C3 — 망치·충격): 넓게 후려쳐 날려 보낸다.
+    Swat,
+    /// 파문(0270 C3 — 망치·울림): 둘레로 번지는 물결.
+    Ripple,
 }
 
 /// 표 순서(대기 칸 `Player::skill_cd`의 자리 — 뒤에만 붙인다).
-pub const IDS: [Id; 14] = [
+pub const IDS: [Id; 16] = [
     Id::Whirl,
     Id::Cut,
     Id::Gather,
@@ -262,6 +274,8 @@ pub const IDS: [Id; 14] = [
     Id::Stitch,
     Id::Ram,
     Id::Toll,
+    Id::Swat,
+    Id::Ripple,
 ];
 pub const N: usize = IDS.len();
 
@@ -419,6 +433,8 @@ pub enum Twist {
     Twice,
     /// 종 치기 ㄴ "큰 종"(0270 C3): 울림의 둘레가 × `mult`.
     Loud { mult: f32 },
+    /// 파문 ㄱ "밀어내는 물결"(0270 C3): 물결에 맞은 적이 바깥으로 `push` m 밀린다.
+    Shove { push: f32 },
 }
 
 /// 5단 맺음(0158 마).
@@ -578,10 +594,20 @@ impl Skill {
                 range,
                 arc_deg,
                 stagger,
+                push,
             } => Form::Cone {
                 range,
-                arc_deg: arc_deg * size,
+                // 넓게 휘두르기(후려치기 ㄴ, 0270 C3).
+                arc_deg: match twist {
+                    Some(Twist::Wide { arc_deg }) => arc_deg,
+                    _ => arc_deg,
+                } * size,
                 stagger,
+                push,
+            },
+            Form::Wave { radius, time } => Form::Wave {
+                radius: radius * size,
+                time,
             },
             // 버팀: 받아낸 타의 덤도 피해의 배를 같이 받는다(10 → 12 → 13).
             Form::Brace {
@@ -697,7 +723,7 @@ impl Skill {
             Form::Ring { hits, gap, .. } | Form::Stab { hits, gap, .. } => {
                 gap * hits.saturating_sub(1) as f32
             }
-            Form::Lane { time, .. } => time,
+            Form::Lane { time, .. } | Form::Wave { time, .. } => time,
             Form::Brace { hold, .. } => hold,
             Form::Throw { hand, .. } => hand,
             Form::Hop { hops, gap, .. } => gap * hops as f32,
@@ -820,6 +846,7 @@ pub const SKILLS: [Skill; N] = [
             range: 5.0,
             arc_deg: 100.0,
             stagger: 0.8,
+            push: 0.0,
         },
         anim: "hammer_slam",
         clip: Clip {
@@ -1136,6 +1163,67 @@ pub const SKILLS: [Skill; N] = [
         picks: [Twist::Twice, Twist::Loud { mult: 1.5 }],
         cap: Cap::Toll { damage: HP_UNIT },
     },
+    Skill {
+        id: Id::Swat,
+        cooldown: 7.0,
+        startup: 0.22,
+        recover: 0.35,
+        damage: HP_UNIT,
+        poise: 3.0,
+        form: Form::Cone {
+            range: 3.2,
+            arc_deg: 150.0,
+            stagger: 0.3,
+            push: 2.5,
+        },
+        anim: "hammer1",
+        clip: Clip {
+            name: "sk_swat",
+            seg: [0.22, 0.0, 0.35],
+        },
+        row: 0,
+        hands: HEAVY,
+        kind: Kind::Shock,
+        build: 1.0,
+        branch: Branch::Beat,
+        picks: [
+            Twist::Slam {
+                damage: 2 * HP_UNIT,
+            },
+            Twist::Wide { arc_deg: 220.0 },
+        ],
+        cap: Cap::Shatter { mult: 1.5 },
+    },
+    Skill {
+        id: Id::Ripple,
+        cooldown: 10.0,
+        startup: 0.25,
+        recover: 0.35,
+        damage: 2 * HP_UNIT,
+        poise: 2.0,
+        form: Form::Wave {
+            radius: 6.5,
+            time: 0.30,
+        },
+        anim: "hammer_slam",
+        clip: Clip {
+            name: "sk_ripple",
+            seg: [0.25, 0.30, 0.35],
+        },
+        row: 1,
+        hands: HEAVY,
+        kind: Kind::Knell,
+        build: 1.0,
+        branch: Branch::Riposte,
+        picks: [
+            Twist::Shove { push: 2.5 },
+            Twist::Crack {
+                secs: 2.0,
+                slow: 0.5,
+            },
+        ],
+        cap: Cap::Lift { stagger: 0.5 },
+    },
 ];
 
 impl Id {
@@ -1163,6 +1251,8 @@ impl Id {
             Id::Stitch => "stitch",
             Id::Ram => "ram",
             Id::Toll => "toll",
+            Id::Swat => "swat",
+            Id::Ripple => "ripple",
         }
     }
 
@@ -1568,6 +1658,7 @@ pub const ENTRIES: [Entry; NE] = [
     // 0270 C3 — 무기 판의 첫 줄(옛 판의 자리는 갈래의 첫 줄 끝)
     Entry::Skill(Id::Stitch),
     Entry::Skill(Id::Toll),
+    Entry::Skill(Id::Swat),
     // 2 — 쓴 점수 4
     Entry::Skill(Id::Quake),
     Entry::Cell(Cell::ClosingBlow),
@@ -1583,6 +1674,7 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Link(Link::ParryStep),
     // 0270 C3 — 무기 판의 둘째 줄
     Entry::Skill(Id::Ram),
+    Entry::Skill(Id::Ripple),
     // 3 — 쓴 점수 8
     Entry::Ult(Ult::Flurry),
     Entry::Cell(Cell::FinalMeasure),
@@ -2416,7 +2508,7 @@ mod tests {
     fn the_board_stands_as_the_0161_table_says() {
         use Branch::{Beat, Footing, Riposte};
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-        let table: [(usize, Branch, &[Entry]); 25] = [
+        let table: [(usize, Branch, &[Entry]); 26] = [
             (
                 0,
                 Beat,
@@ -2440,6 +2532,7 @@ mod tests {
             // 0270 C3: 무기 판을 채운 새 스킬 — 옛 판의 자리는 그 줄의 끝.
             (0, Beat, &[S(Id::Stitch)]),
             (0, Riposte, &[S(Id::Toll)]),
+            (0, Beat, &[S(Id::Swat)]),
             (
                 1,
                 Beat,
@@ -2463,7 +2556,7 @@ mod tests {
             // 다리 칸(0215): 잇는 둘 가운데 왼쪽 갈래로 센다.
             (1, Beat, &[L(Link::RiposteBeat)]),
             (1, Riposte, &[L(Link::ParryStep)]),
-            (1, Riposte, &[S(Id::Ram)]),
+            (1, Riposte, &[S(Id::Ram), S(Id::Ripple)]),
             (2, Beat, &[U(Ult::Flurry), C(Cell::FinalMeasure)]),
             (2, Riposte, &[U(Ult::Line), C(Cell::OneWhoStands)]),
             (2, Footing, &[U(Ult::Upend), C(Cell::PathOpeningStep)]),
@@ -2506,7 +2599,7 @@ mod tests {
                 assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
             }
         }
-        assert_eq!(NE, 49);
+        assert_eq!(NE, 51);
         for (i, e) in ENTRIES.iter().enumerate() {
             assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
         }
@@ -3465,7 +3558,7 @@ mod clip_facing {
         Hold,
         Spin,
     }
-    const FACES: [(&str, Face); 17] = [
+    const FACES: [(&str, Face); 19] = [
         ("sk_whirl", Face::Spin),
         ("sk_cut", Face::Tip),
         ("sk_gather", Face::Hips),
@@ -3483,6 +3576,8 @@ mod clip_facing {
         ("sk_stitch", Face::Tip),
         ("sk_ram", Face::Hold),
         ("sk_toll", Face::Tip),
+        ("sk_swat", Face::Tip),
+        ("sk_ripple", Face::Hips),
     ];
 
     fn deg(a: f32) -> f32 {
