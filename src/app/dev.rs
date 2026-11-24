@@ -80,7 +80,7 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 39] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 41] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Motion, DevStart::Motion(0)),
@@ -120,6 +120,9 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 39] = [
     (DevCat::Combat, DevStart::Scenario(Scenario::Workers)),
     // 0234: 끝에 둔다(시험 스크립트가 세는 앞 줄을 밀지 않는다).
     (DevCat::Combat, DevStart::Scenario(Scenario::Overseer)),
+    // 0270 D: 필드 보스 — 역시 끝에.
+    (DevCat::Combat, DevStart::Scenario(Scenario::Stag)),
+    (DevCat::Combat, DevStart::Scenario(Scenario::StagTwo)),
     (DevCat::Perf, DevStart::PerfLine),
     (DevCat::Perf, DevStart::Scenario(Scenario::Stress40)),
     (DevCat::Perf, DevStart::Scenario(Scenario::Stress80)),

@@ -801,7 +801,8 @@ fn a_field_boss_goes_home_and_lies_down_made_whole_when_the_wanderer_runs_far() 
     assert!(vec3(e.pos.x - home.x, 0.0, e.pos.z - home.z).length() <= 0.5);
 }
 
-/// 0270 D: 필드 보스의 한 대는 두 눈금이다(문지기는 한 눈금) — 뿔 쓸기는 앞에서 받아칠 수 있고, 내려 딛기는 받아칠 수 없다.
+/// 0270 D: 필드 보스의 한 대도 한 눈금이다(문지기와 같다 — 세기는 체력과 수로, 보스 모의) — 뿔 쓸기는 앞에서 받아칠 수 있고,
+/// 내려 딛기는 받아칠 수 없다.
 #[test]
 fn the_stags_sweep_can_be_parried_and_its_stomp_cannot() {
     let t = Tuning::default();
@@ -831,8 +832,8 @@ fn the_stags_sweep_can_be_parried_and_its_stomp_cannot() {
             ev.iter().any(|e| matches!(e, Event::Parry { .. })),
         )
     };
-    assert_eq!(strike(Atk::Slam, false), (2 * HP_UNIT, false));
+    assert_eq!(strike(Atk::Slam, false), (HP_UNIT, false));
     assert_eq!(strike(Atk::Slam, true), (0, true), "the sweep is parried");
     let (lost, parried) = strike(Atk::Stomp, true);
-    assert!(lost == 2 * HP_UNIT && !parried, "the stomp is not");
+    assert!(lost == HP_UNIT && !parried, "the stomp is not");
 }

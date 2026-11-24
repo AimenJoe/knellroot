@@ -548,15 +548,6 @@ impl Enemy {
         self.field && self.state == EState::Dormant && !self.waking
     }
 
-    /// 맞힌 한 대의 무게(구역 등급, 0112 — `TIER_HEAVY_HITS`부터 두 눈금): 필드 보스(0270 D)는 제 지역의 등급과 상관없이 무겁게.
-    pub fn blow_tier(&self) -> u8 {
-        if self.field {
-            self.tier.max(crate::tuning::FIELD_BLOW_TIER)
-        } else {
-            self.tier
-        }
-    }
-
     /// 지도에 세운다(0113): 이 자리·이 쪽이 제자리, 알아차리기 전엔 제 일(`Idle`).
     pub fn place(&mut self, facing: f32) {
         self.home = Some((self.pos, facing));
@@ -2913,16 +2904,5 @@ mod stag_tests {
         en.hp = 1;
         en.tick(far, DT);
         assert!(en.lying() && !en.roused);
-    }
-
-    /// 필드 보스는 제 지역의 등급과 상관없이 무겁게 친다(두 눈금) — 문지기는 등급을 받지 않는다(한 눈금).
-    #[test]
-    fn a_field_boss_hits_heavier_than_a_gate_boss() {
-        use crate::tuning::TIER_HEAVY_HITS;
-        assert!(Enemy::new(Kind::Stag, Vec3::ZERO).blow_tier() >= TIER_HEAVY_HITS);
-        assert!(Enemy::new(Kind::Warden, Vec3::ZERO).blow_tier() < TIER_HEAVY_HITS);
-        let mut husk = Enemy::new(Kind::Husk, Vec3::ZERO);
-        husk.set_tier(2);
-        assert_eq!(husk.blow_tier(), 2);
     }
 }

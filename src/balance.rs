@@ -34,6 +34,8 @@ pub struct Build {
     pub finds: Vec<String>,
     pub tree: Tree,
     pub weapon: crate::weapons::Id,
+    /// 든 무기를 벼린 단(0180 — 0~3). `SIM_FORGE`가 있으면 그것이 앞선다.
+    pub forge: u8,
 }
 
 /// 한 판의 결과.
@@ -77,6 +79,7 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     prog.board.cells = b.tree;
     // 벼린 단 훑기(0180): `SIM_FORGE=2`면 든 무기를 그 단까지 벼린 것으로 잰다.
     prog.weapon = Some(b.weapon);
+    prog.forged.set(b.weapon, b.forge);
     if let Some(r) = std::env::var("SIM_FORGE").ok().and_then(|v| v.parse().ok()) {
         prog.forged.set(b.weapon, r);
     }
@@ -209,6 +212,36 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
                 defending = true;
                 if ok && on_line {
                     a.move_dir = vec2(1.0, 0.0);
+                }
+            }
+            // 내려 딛기(0270 D 고요한 사슴): 성공이면 원판 밖으로 물러나고 뿌리 줄(한 줄·세 줄)에서 옆으로 비킨다(줄 사이의
+            // 빈 데로 — 가까운 줄에서 멀어지는 쪽) — 실패면 맞는다.
+            (EState::Tele { .. } | EState::Swing { .. } | EState::Wave { .. }, Atk::Stomp) => {
+                defending = true;
+                let rel = -to;
+                let inside = matches!(e.state, EState::Tele { .. })
+                    && dist <= crate::tuning::STOMP_R + PLAYER_RADIUS + 0.5;
+                let mut want = if inside {
+                    rel.normalize_or_zero()
+                } else {
+                    Vec3::ZERO
+                };
+                for (yaw, len) in e.root_lines() {
+                    let f = e.dir_at(yaw);
+                    let along = rel.dot(f);
+                    let off = rel - f * along;
+                    if along > 0.0
+                        && along <= len + 1.0
+                        && off.length() <= crate::tuning::ROOTS_R + PLAYER_RADIUS + 0.3
+                    {
+                        want += off.normalize_or(vec3(f.z, 0.0, -f.x));
+                    }
+                }
+                if ok && want.length_squared() > 1e-4 {
+                    // 락온 기준(앞 = 보스 쪽)의 스틱으로.
+                    let fwd = to.normalize_or(Vec3::Z);
+                    let right = fwd.cross(Vec3::Y);
+                    a.move_dir = vec2(want.dot(right), want.dot(fwd)).normalize_or_zero();
                 }
             }
             // 종 내던지기: 떨어질 원판 안이면 빠져나오고(성공이면), 떨어진 자리의 고리는 울림처럼 뛴다.
@@ -374,6 +407,7 @@ pub fn builds() -> Vec<Build> {
             finds: vec![],
             tree: tree(0),
             weapon: W::Sword,
+            forge: 0,
         },
         // 첫 도착(0127): 잔불 ≈ 280 = 레벨 셋, 성소 탑의 귀 + 문지기의 손 + 마을 상자의 꿰맨 천, 등잔·한 모금, 패시브 칸 둘.
         Build {
@@ -387,6 +421,7 @@ pub fn builds() -> Vec<Build> {
             finds: finds(),
             tree: tree(2),
             weapon: W::Sword,
+            forge: 0,
         },
         // 둘째 판 이후(문지기 핵 둘·패시브 칸 넷): 힘 3단(강타 +1).
         Build {
@@ -400,6 +435,7 @@ pub fn builds() -> Vec<Build> {
             finds: finds(),
             tree: tree(4),
             weapon: W::Sword,
+            forge: 0,
         },
         // 정원 도착(0185): 문지기 둘·마을의 잔불 — 레벨 일곱, 패시브 칸 여섯.
         Build {
@@ -413,6 +449,7 @@ pub fn builds() -> Vec<Build> {
             finds: finds(),
             tree: tree(5),
             weapon: W::Sword,
+            forge: 0,
         },
         // 작업층 도달(0216 W1): 문지기 셋 — 레벨 열, 힘 5단(평타 +10), 패시브 칸 여섯.
         Build {
@@ -426,8 +463,85 @@ pub fn builds() -> Vec<Build> {
             finds: finds(),
             tree: tree(6),
             weapon: W::Sword,
+            forge: 0,
         },
     ]
+}
+
+/// 성소에 닿아 문지기 앞에 선 몸(0270 D 필드 보스 모의 — "성소에 갓 닿은 몸"): 잔불 ≈ 150 = 레벨 둘, 탑의 귀, 등잔·한 모금,
+/// 패시브 칸 하나. 첫 도착 몸(B — 마을에 닿은 몸)보다 한 걸음 앞.
+pub fn sanctuary_build() -> Build {
+    Build {
+        name: "S sanctuary, at the gate (Lv2 life1/might1, Ear, lamp+sip, Riposte1)",
+        level: Level {
+            life: 1,
+            stamina: 0,
+            might: 1,
+        },
+        worn: vec![Charm::Ear],
+        finds: vec![
+            "sanctuary.lamp.1".to_string(),
+            "sanctuary.sip.1".to_string(),
+        ],
+        tree: Tree::from_counts([0, 1, 0]),
+        weapon: crate::weapons::Id::Sword,
+        forge: 0,
+    }
+}
+
+/// 필드 보스 모의(0270 D): 고요한 사슴 — 성소에 갓 닿은 몸(S)은 드물게(25~40%), 둘째 지역을 마친 몸(D — 정원 도착)은
+/// 대개(70~85%) 이기게, 싸움은 60~90초. 돌리기: `cargo test stag_fight_length -- --ignored --nocapture`
+/// (`SIM_BOSS_HP`로 체력을 훑는다).
+#[test]
+#[ignore]
+fn stag_fight_length() {
+    let t = Tuning::default();
+    let runs = 120;
+    let all = builds();
+    // 둘째 지역을 마친 몸(D)은 숫돌 넷(성소 1 + 마을 3)을 지나왔다 — 벼림 0·1·2단으로 나눠 본다(0216: 정원 도착 = 벼림 1~2).
+    let forged = |b: &Build, forge: u8, name: &'static str| Build {
+        forge,
+        name,
+        ..b.clone()
+    };
+    let bs = [
+        all[0].clone(),
+        sanctuary_build(),
+        forged(&sanctuary_build(), 1, "S+1 sanctuary, forged once"),
+        all[1].clone(),
+        all[3].clone(),
+        forged(&all[3], 1, "D+1 garden arrival, forged once"),
+        forged(&all[3], 2, "D+2 garden arrival, forged twice"),
+    ];
+    for b in &bs {
+        let dummy = fight_vs(Kind::Stag, true, b, 1.0, 1, &t).secs;
+        println!("\n## Stag — {} (dummy: {dummy:.1}s)", b.name);
+        println!(
+            "p    | win  | secs(win) | taken | flasks | hp left | parries | cut | dmg plain/opened"
+        );
+        let ps: &[f32] = if std::env::var("SIM_QUICK").is_ok() {
+            &[0.5, 0.7]
+        } else {
+            &[0.25, 0.5, 0.7, 0.85, 1.0]
+        };
+        for &p in ps {
+            let m = summary(Kind::Stag, b, p, runs, &t);
+            println!(
+                "{p:.2} | {:>3.0}% | {:>9.1} | {:>5.1} | {:>6.2} | {:>7.1} | {:>7.1} | {:>3.1} | {:.0}%/{:.0}%",
+                m.win * 100.0, m.secs, m.taken, m.flasks, m.left, m.parries, m.interrupted,
+                m.share.0 * 100.0, m.share.1 * 100.0
+            );
+        }
+    }
+}
+
+/// 모의 장치가 사슴의 수를 읽는다: 다 받아내는 봇은 문지기 앞의 몸으로도 이긴다(원판에서 물러나고 뿌리 줄을 비킨다).
+#[test]
+fn a_perfect_bot_beats_the_stag() {
+    let t = Tuning::default();
+    let f = fight_vs(Kind::Stag, false, &sanctuary_build(), 1.0, 1, &t);
+    assert!(f.won, "{f:?}");
+    assert!(f.parries > 0);
 }
 
 #[test]

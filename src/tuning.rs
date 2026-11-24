@@ -2310,14 +2310,13 @@ pub const FIELD_SETTLE: f32 = 1.6;
 pub const FIELD_LEASH: f32 = 24.0;
 /// 엎드린 몸에 방랑자의 탄·던진 것이 이만큼(m, 몸 가장자리부터) 안으로 오면 일어난다(잠든 몸은 맞지 않는다 — 맞힌 것으로 친다).
 pub const FIELD_STIR_R: f32 = 0.6;
-/// 필드 보스가 맞힌 한 대의 무게(구역 등급 — `TIER_HEAVY_HITS`부터 두 눈금): 제 지역의 문지기보다 무겁게 친다.
-pub const FIELD_BLOW_TIER: u8 = 3;
 /// 필드 보스를 처음 쓰러뜨렸을 때 더 흩는 잔불(종의 `embers`에 더해 — 성소 문지기 30보다 뚜렷이 많게).
 pub const FIELD_FIRST_EMBERS: u32 = 45;
 /// 고요한 사슴(0270 D)의 내려 딛기(`Atk::Stomp`): 몸 둘레 원판의 반지름(m, 몸 가운데부터 — 받지 못한다, 물러난다) ·
-/// 2단계의 뿌리 줄 셋이 벌어지는 각(도, 가운데 줄에서 양옆으로) · 딛고 난 뒤의 쉼(종의 `recover`에 곱한다).
+/// 2단계의 뿌리 줄 셋이 벌어지는 각(도, 가운데 줄에서 양옆으로 — 45°면 원판 바로 밖부터 줄 사이에 설 틈이 있다:
+/// 3.8m × sin 45° = 2.7m ≥ 맞는 폭 2.6m) · 딛고 난 뒤의 쉼(종의 `recover`에 곱한다).
 pub const STOMP_R: f32 = 3.4;
-pub const STOMP_FAN_DEG: f32 = 28.0;
+pub const STOMP_FAN_DEG: f32 = 45.0;
 pub const STOMP_RECOVER: f32 = 1.2;
 /// 고요한 사슴의 돌진: 이보다 가까우면 달리지 않는다(m) · 긁는 동안 몸이 도는 빠르기(rad/s — 2단계에 돌아서 한 번 더 이을 때
 /// 뒤로 돌 만큼) · 돌진 뒤의 긴 틈(종의 `recover`에 곱한다).

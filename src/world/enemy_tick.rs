@@ -429,10 +429,10 @@ impl World {
                     blocked = true;
                 } else if guarding && en.parryable() && in_front(en.pos) {
                     // 방패(0223): 받을 수 있는 공격을 앞에서 — 체력 대신 기력으로(`guards_land`). 못 받는 공격은 방패도 못 막는다.
-                    guarded.push((en.pos, en.blow_tier()));
+                    guarded.push((en.pos, en.tier));
                 } else {
                     hurt_player.get_or_insert(en.pos);
-                    hurt_tier = hurt_tier.max(en.blow_tier());
+                    hurt_tier = hurt_tier.max(en.tier);
                     if out.pull {
                         pull_to = Some(en.pos);
                     }

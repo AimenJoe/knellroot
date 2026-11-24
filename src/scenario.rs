@@ -32,6 +32,10 @@ pub enum Scenario {
     Workers,
     /// 스킬 연습(0151 S0 판정): 두 겹으로 둘러싼 떼 + 큰 기술 게이지 가득 — "모으고 → 쓸고"와 쟁반 뒤집기를 바로.
     Skills,
+    /// 고요한 사슴(0270 D — 성소의 필드 보스): 터에 엎드려 기다린다 — 다가가면 일어나 뿔 쓸기·돌진·내려 딛기.
+    Stag,
+    /// 고요한 사슴 2단계(0270 D): 체력 반 — 시작하자마자 전환, 돌진을 돌아서 한 번 더·뿌리 줄 셋.
+    StagTwo,
 }
 
 pub struct Entry {
@@ -41,7 +45,7 @@ pub struct Entry {
     pub checks: &'static str,
 }
 
-pub const LIST: [Entry; 18] = [
+pub const LIST: [Entry; 20] = [
     Entry {
         scenario: Scenario::Boss,
         name: "boss arena",
@@ -133,6 +137,16 @@ pub const LIST: [Entry; 18] = [
         scenario: Scenario::Skills,
         name: "skills: horde 24 + full gauge",
         checks: "0151 gather then sweep, momentum (kills bring skills back), both buttons = great skill",
+    },
+    Entry {
+        scenario: Scenario::Stag,
+        name: "hushed stag",
+        checks: "0270 D lies in wait (walk up or shoot to wake), antler sweep, charge with a long opening, rear-up stomp: disc + root line",
+    },
+    Entry {
+        scenario: Scenario::StagTwo,
+        name: "hushed stag phase two",
+        checks: "0270 D rise at once, shorter rests, a second charge after turning, three root lines in a fan",
     },
 ];
 
@@ -237,16 +251,33 @@ pub fn build(s: Scenario) -> World {
             w.spawn(crate::species::Kind::Overseer, vec3(0.0, 0.0, -9.0));
             w
         }
+        // 고요한 사슴(0270 D): 터(스테이지의 것과 같은 넓이 — 반폭 10m 남짓)의 안쪽에 엎드려 이쪽을 본다. 두 걸음 다가가면
+        // (`FIELD_WAKE_R`) 일어난다 — 멀리 달아날 곳이 없는 아레나라 끈은 닿지 않는다.
+        Scenario::Stag => {
+            let mut w = World::new("hushed stag arena", 14.0);
+            let s = w.spawn(crate::species::Kind::Stag, vec3(0.0, 0.0, -11.0));
+            w.enemies[s].lie_in_wait(0.0);
+            w
+        }
         // 2단계(0133): 같은 아레나, 체력만 반 — 시작하자마자 전환(잠든 문지기는 깨어난 뒤).
-        Scenario::WardenTwo | Scenario::BellkeeperTwo | Scenario::MosswardTwo => {
+        Scenario::WardenTwo
+        | Scenario::BellkeeperTwo
+        | Scenario::MosswardTwo
+        | Scenario::StagTwo => {
             let mut w = build(match s {
                 Scenario::WardenTwo => Scenario::Boss,
                 Scenario::BellkeeperTwo => Scenario::Bellkeeper,
+                Scenario::StagTwo => Scenario::Stag,
                 _ => Scenario::Mossward,
             });
             for en in &mut w.enemies {
                 if en.boss {
                     en.hp = en.max_hp / 2;
+                }
+                // 엎드린 필드 보스(0270 D)는 서서 시작한다 — 전환부터 본다.
+                if en.lying() {
+                    en.state = crate::world::EState::Chase;
+                    en.stand = 1.0;
                 }
             }
             w

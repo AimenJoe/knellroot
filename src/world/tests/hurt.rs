@@ -46,8 +46,8 @@ fn hits_to_die_to_every_species_are_what_they_were_before_the_scale_move() {
                 let tag = format!("{:?} tier {tier} feet {feet}", d.kind);
                 assert!(ev.contains(&Event::PlayerHurt), "{tag}: the blow lands");
                 let lost = full - w.player.hp;
-                // 보스는 등급을 받지 않는다(늘 한 대 = 한 칸) — 필드 보스(0270 D)만은 늘 무겁게 친다(`Enemy::blow_tier`).
-                let old = if d.field || (!d.boss && tier >= crate::tuning::TIER_HEAVY_HITS) {
+                // 보스는 등급을 받지 않는다(늘 한 대 = 한 칸).
+                let old = if !d.boss && tier >= crate::tuning::TIER_HEAVY_HITS {
                     OLD_BLOW_HEAVY_TIER
                 } else {
                     OLD_BLOW
