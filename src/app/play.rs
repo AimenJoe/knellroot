@@ -172,7 +172,7 @@ impl App {
             &self.progress.shields,
             !self.progress.bag.full(),
         ) || self.progress.level.can_raise(self.world.embers)
-            || self.progress.board.can_buy(self.progress.skill_points())
+            || crate::plates::can_buy(&self.progress.board, self.progress.skill_points())
             || self.can_forge();
         if self.run.take_rested() {
             self.snd(crate::sfx::Id::Rest);
@@ -339,7 +339,7 @@ impl App {
         let (board, total) = (self.board(), self.progress.skill_points());
         self.show(Go::Open(flow::hearth_opens(
             board.knows_a_skill(),
-            board.can_buy(total),
+            crate::plates::can_buy(&board, total),
         )));
     }
 
@@ -721,7 +721,7 @@ impl App {
             // 쓸 수 있는 스킬(0225): 배웠어도 지금 쥔 꼴과 안 맞으면 누를 것이 없다 — "쓰기" 걸음이 막히지 않게.
             knows_skill: board.knows_a_skill()
                 && self.world.player.skill.rank.iter().any(|r| *r > 0),
-            can_learn: board.can_buy(self.progress.skill_points()),
+            can_learn: crate::plates::can_buy(&board, self.progress.skill_points()),
             gift: self.progress.gift,
         }
     }

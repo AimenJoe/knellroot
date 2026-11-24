@@ -1660,6 +1660,12 @@ impl Board {
         if !matches!(self.offer(e, total), Offer::Ready | Offer::Swap) {
             return false;
         }
+        self.raise(e);
+        true
+    }
+
+    /// 다음 단을 올린다 — 묻지 않는다(살 수 있나는 부른 쪽이: `buy` · 무기 판의 `plates::buy_on`, 0270 C2). 3단에 닿으면 고르기는 ㄱ.
+    pub fn raise(&mut self, e: Entry) {
         match e {
             Entry::Skill(id) => {
                 let i = id.index();
@@ -1674,7 +1680,6 @@ impl Board {
             Entry::Link(l) => self.cells.open_link(l),
             Entry::Vein(v) => self.cells.open_vein(v),
         }
-        true
     }
 
     /// 숫자 칸의 고르기를 뒤집는다(0215 D — 값 없이, 화로에서). 연 숫자 칸만.
@@ -1682,7 +1687,8 @@ impl Board {
         self.cells.flip_cell(c)
     }
 
-    /// 살 수 있는 칸이 있나(쉼터가 빛난다).
+    /// 살 수 있는 칸이 있나 — 판 하나의 셈(시험). 앱(쉼터의 빛·탭 머리의 점·튜토리얼)은 판마다 보는 `plates::can_buy`(0270 C2).
+    #[cfg(test)]
     pub fn can_buy(&self, total: u32) -> bool {
         ENTRIES
             .iter()
@@ -1832,18 +1838,6 @@ impl Board {
                 ..Tree::full()
             },
         }
-    }
-
-    /// 화면을 열 때 설 칸(0161, `ENTRIES`의 자리): 올릴 수 있는 화면(`edit`)이면 지금 살 수 있는 첫 칸, 없으면(또는 읽기 전용이면)
-    /// 배운 첫 스킬 — 아무것도 안 배웠으면 맨 앞 칸.
-    pub fn first_focus(&self, total: u32, edit: bool) -> usize {
-        let ready = ENTRIES
-            .iter()
-            .position(|&e| edit && self.offer(e, total) == Offer::Ready);
-        let learned = ENTRIES
-            .iter()
-            .position(|&e| matches!(e, Entry::Skill(id) if self.learned(id)));
-        ready.or(learned).unwrap_or(0)
     }
 
     /// 끼운 둘과 끼운 큰 기술을 월드에 넘길 꼴로.
@@ -2290,35 +2284,6 @@ mod tests {
                 assert!(ENTRIES.contains(&C(d.cell)), "{:?}", d.cell);
             }
         }
-    }
-
-    /// 화면을 열 때 설 칸(0161): 화로에서는 지금 살 수 있는 첫 칸, 살 것이 없거나 읽기 전용(멈춤)이면 배운 첫 스킬.
-    #[test]
-    fn the_screen_opens_on_the_first_buyable_cell_or_the_first_learned_skill() {
-        let b = Board::default();
-        let at = |e: Entry| ENTRIES.iter().position(|x| *x == e).unwrap();
-        assert_eq!(b.first_focus(5, true), at(Entry::Skill(Id::Whirl)));
-        assert_eq!(
-            b.first_focus(0, true),
-            at(Entry::Skill(Id::Whirl)),
-            "nothing to buy"
-        );
-        assert_eq!(
-            b.first_focus(5, false),
-            at(Entry::Skill(Id::Whirl)),
-            "view only"
-        );
-        // 첫 칸(휘돌이)을 다 올렸으면 그다음 살 수 있는 칸.
-        let mut full = Board::default();
-        full.rank[Id::Whirl.index()] = MAX_RANK;
-        assert_eq!(full.first_focus(9, true), at(Entry::Skill(Id::Cut)));
-        assert_eq!(
-            full.first_focus(4, true),
-            at(Entry::Skill(Id::Whirl)),
-            "all spent"
-        );
-        // 다 익힌 판: 살 것이 없다 — 배운 첫 스킬.
-        assert_eq!(Board::maxed(Pick::A).first_focus(99, true), 0);
     }
 
     /// 0158 다: 단은 차례로 하나씩·단마다 1점, 다섯에서 멈춘다. 점수가 떨어지면 못 산다. 3단을 사면 고르기는 ㄱ.

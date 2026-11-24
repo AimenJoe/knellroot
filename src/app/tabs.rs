@@ -130,9 +130,8 @@ impl App {
         self.go(go);
         let scene = self.scene();
         if let Scene::Skills { host } = scene {
-            self.cursor = self
-                .board()
-                .first_focus(self.progress.skill_points(), self.can_edit(host));
+            // 든 무기의 판에서 연다(0270 C2).
+            self.open_plate(self.can_edit(host));
         }
         if let Some(tab) = flow::remembered(scene) {
             self.pause_tab = tab;
@@ -193,7 +192,8 @@ impl App {
     pub(super) fn draw_tab_window(&mut self, f: &Frame, scene: Scene) -> Window {
         let (host, _) = flow::tab_of(scene).unwrap_or((Host::Pause, Tab::Status));
         let level = self.progress.level.can_raise(self.world.embers);
-        let skills = !self.dev_board_on() && self.board().can_buy(self.progress.skill_points());
+        let skills = !self.dev_board_on()
+            && crate::plates::can_buy(&self.board(), self.progress.skill_points());
         // 기록 탭의 점(0265): 받을 여정 목표 또는 받을 도감 칸.
         let journey = crate::journey::any_ready(&self.progress) || self.codex_ready();
         let fresh = self.progress.bag.any_fresh();

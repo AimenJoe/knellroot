@@ -3,11 +3,12 @@
 //!
 //! 판은 "칸이 어디에 서나"의 보기다 — 스킬의 단은 하나(`skills::Board::rank` 그대로, 한 스킬이 여러 무기 판에 서도 한 번 배우면 다),
 //! 줄의 열림만 **그 판에 쓴 점수**로 센다(`Plate::spent` · `Plate::row_open`). 화면(C2)과 새 스킬(C3)은 이 표를 읽는다.
-// C2(기술 탭의 판 고르기)가 읽기 전까지는 시험만 부른다.
-#![allow(dead_code)]
+//!
+//! C2(기술 탭의 판 고르기): 살 수 있나는 `offer_on` — 몸의 판은 지금 판 그대로(`Board::offer` — 쓴 점수 합의 줄·길), 무기 판은
+//! 줄·길 대신 **그 판의 줄**(`row_open`)로. 사는 것도 `buy_on` 한 곳을 지나 단·기록은 같은 `Board`에 남는다.
 
 use crate::progression::{Vein, VEINS};
-use crate::skills::{Board, Entry, Id, Ult, IDS};
+use crate::skills::{Board, Entry, Id, Offer, Ult, ENTRIES, IDS};
 use crate::status::Kind;
 use crate::weapons::Grip;
 
@@ -68,6 +69,31 @@ pub fn great(g: Grip) -> Ult {
 }
 
 impl Plate {
+    /// 판의 차례(`PLATES`의 자리).
+    pub fn index(self) -> usize {
+        PLATES.iter().position(|p| *p == self).unwrap_or(0)
+    }
+
+    /// 칸 `e`가 이 판에 서나: 몸의 판 = 패시브·맺음·다리(지금 판의 갈래 셋 — 0270 C 세부 설계), 무기 판 = `seats`.
+    pub fn has(self, e: Entry) -> bool {
+        match self {
+            Plate::Body => matches!(e, Entry::Cell(_) | Entry::Key(_) | Entry::Link(_)),
+            Plate::Grip(_) => self.seats().iter().any(|s| s.entry == e),
+        }
+    }
+
+    /// 이 판에 선 칸(`ENTRIES`의 자리, 그 차례).
+    pub fn entries(self) -> Vec<usize> {
+        (0..ENTRIES.len())
+            .filter(|&i| self.has(ENTRIES[i]))
+            .collect()
+    }
+
+    /// 무기 판의 칸 `e`의 자리.
+    pub fn seat(self, e: Entry) -> Option<Seat> {
+        self.seats().into_iter().find(|s| s.entry == e)
+    }
+
     /// 판의 칸들: 그 꼴로 쓸 수 있는 스킬(타입으로 갈래, 첫 줄 스킬은 줄 0 · 나머지 줄 1) + 셋째 줄의 결(대표 타입의 결이 있으면)과
     /// 큰 기술. 몸의 판은 무기 판의 칸이 없다(지금의 판 — `skills::ENTRIES`의 패시브·다리·맺음).
     pub fn seats(self) -> Vec<Seat> {
@@ -110,18 +136,75 @@ impl Plate {
         out
     }
 
-    /// 이 판에 쓴 점수(판에 선 칸의 산 단 — 여러 판에 선 스킬은 판마다 센다: 줄의 열림만 보는 셈이다).
+    /// 이 판에 쓴 점수(판에 선 칸의 산 단 — 여러 판에 선 스킬은 판마다 센다: 줄의 열림만 보는 셈이다). 몸의 판은 그 패시브·맺음·다리.
     pub fn spent(self, board: &Board) -> u32 {
-        self.seats()
+        ENTRIES
             .iter()
-            .map(|s| s.entry.paid(board.rank(s.entry)))
+            .filter(|&&e| self.has(e))
+            .map(|&e| e.paid(board.rank(e)))
             .sum()
     }
 
-    /// `row`줄이 이 판에서 열렸나.
+    /// `row`줄이 이 판에서 열렸나(무기 판의 줄 — 몸의 판은 쓴 점수 합의 `ROW_NEEDS`로 연다, `offer_on`).
     pub fn row_open(self, board: &Board, row: u8) -> bool {
-        self.spent(board) >= PLATE_ROWS[(row as usize).min(PLATE_ROWS.len() - 1)]
+        self.spent(board) >= row_need(row)
     }
+}
+
+/// 무기 판의 `row`줄이 열리는 그 판의 점수.
+pub fn row_need(row: u8) -> u32 {
+    PLATE_ROWS[(row as usize).min(PLATE_ROWS.len() - 1)]
+}
+
+/// 판 `plate`에서 칸 `e`의 다음 단을 지금 살 수 있나(0270 C2). 몸의 판(또는 그 판에 서지 않은 칸)은 `Board::offer` 그대로.
+/// 무기 판은 쓴 점수 합의 줄(`ROW_NEEDS`)과 판의 길(0215)을 묻지 않고 **그 판의 줄**로 연다 — `Locked(n)` = 이 판에 n점 더.
+/// 결의 칸은 지금 규칙 그대로(그 타입의 스킬을 먼저 배워야 — `Offer::Cut`), 큰 기술은 첫 단의 값 `ULT_LEARN`.
+pub fn offer_on(plate: Plate, board: &Board, e: Entry, total: u32) -> Offer {
+    let Some(seat) = plate.seat(e) else {
+        return board.offer(e, total);
+    };
+    if board.rank(e) >= e.max() {
+        Offer::Full
+    } else if !plate.row_open(board, seat.row) {
+        Offer::Locked(row_need(seat.row) - plate.spent(board))
+    } else if matches!(e, Entry::Vein(_)) && !board.reachable(e) {
+        Offer::Cut
+    } else if board.left(total) < e.price(board.rank(e)) {
+        Offer::Short
+    } else {
+        Offer::Ready
+    }
+}
+
+/// 판 `plate`에서 칸 `e`의 다음 단을 산다(`offer_on`이 살 수 있다고 할 때만) — 단은 같은 `Board`에(기록 키 그대로).
+pub fn buy_on(plate: Plate, board: &mut Board, e: Entry, total: u32) -> bool {
+    if plate.seat(e).is_none() {
+        return board.buy(e, total);
+    }
+    if offer_on(plate, board, e, total) != Offer::Ready {
+        return false;
+    }
+    board.raise(e);
+    true
+}
+
+/// 어느 판에서든 지금 살 수 있는 칸이 있나(쉼터가 빛난다 · 탭 머리의 민트 점 · 튜토리얼의 배우기 걸음).
+pub fn can_buy(board: &Board, total: u32) -> bool {
+    PLATES.iter().any(|&p| {
+        ENTRIES
+            .iter()
+            .any(|&e| p.has(e) && offer_on(p, board, e, total) == Offer::Ready)
+    })
+}
+
+/// 칸 `e`를 보여 줄 판: `prefer`(든 무기·부무기의 판 차례) 가운데 그 칸이 선 첫 판, 없으면 `PLATES` 차례의 첫 판.
+pub fn home(e: Entry, prefer: &[Plate]) -> Plate {
+    prefer
+        .iter()
+        .chain(PLATES.iter())
+        .copied()
+        .find(|p| p.has(e))
+        .unwrap_or(Plate::Body)
 }
 
 #[cfg(test)]
@@ -208,5 +291,96 @@ mod tests {
         assert!(duel.row_open(&b, 1));
         assert_eq!(staff.spent(&b), 0);
         assert!(!staff.row_open(&b, 1));
+    }
+
+    /// 0270 C2: 무기 판의 칸은 쓴 점수 합의 줄·판의 길을 묻지 않고 **그 판의 줄**로 산다 — 둘째 줄은 그 판에 3점, 셋째 줄은 6점.
+    /// 산 단은 같은 판(`Board`)에 남는다(기록 키 그대로).
+    #[test]
+    fn a_weapon_plate_sells_by_its_own_rows_and_the_body_keeps_the_old_rules() {
+        let duel = Plate::Grip(Grip::Duel);
+        let mut b = Board::default();
+        let throw = Entry::Skill(Id::Throw);
+        let flurry = Entry::Ult(Ult::Flurry);
+        // 던지기(둘째 줄): 옛 판은 쓴 점수 합 4부터 — 결투 판은 그 판의 3부터.
+        assert_eq!(offer_on(duel, &b, throw, 9), Offer::Locked(3));
+        for _ in 0..3 {
+            assert!(buy_on(duel, &mut b, Entry::Skill(Id::Cut), 9));
+        }
+        assert_eq!(
+            b.offer(throw, 9),
+            Offer::Locked(1),
+            "the old board still waits"
+        );
+        assert_eq!(offer_on(duel, &b, throw, 9), Offer::Ready);
+        assert!(buy_on(duel, &mut b, throw, 9));
+        assert_eq!(b.rank(throw), 1);
+        // 셋째 줄(결·큰 기술)은 그 판에 6.
+        assert_eq!(offer_on(duel, &b, flurry, 9), Offer::Locked(2));
+        assert!(!buy_on(duel, &mut b, flurry, 9));
+        assert!(buy_on(duel, &mut b, Entry::Skill(Id::Whirl), 9));
+        assert!(buy_on(duel, &mut b, Entry::Skill(Id::Whirl), 9));
+        // 큰 기술의 첫 단은 2점 — 남은 점수 1이면 모자란다.
+        assert_eq!(offer_on(duel, &b, flurry, b.spent() + 1), Offer::Short);
+        let total = b.spent() + 2;
+        assert!(buy_on(duel, &mut b, flurry, total));
+        assert_eq!(b.rank(flurry), 1);
+        // 결은 그 타입의 스킬을 배웠어야(지금 규칙 그대로): 균열의 결은 가로지르기를 안다 — 산다.
+        let rift = Entry::Vein(Vein::Rift);
+        assert_eq!(offer_on(duel, &b, rift, 99), Offer::Ready);
+        let mut fresh = Board::default();
+        fresh.rank[Id::Whirl.index()] = 5;
+        fresh.raise(Entry::Skill(Id::Gather));
+        assert!(duel.row_open(&fresh, 2));
+        assert_eq!(
+            offer_on(duel, &fresh, rift, 99),
+            Offer::Cut,
+            "no rift skill yet"
+        );
+        // 다른 판의 점수는 세지 않는다: 지팡이 판의 둘째 줄은 아직.
+        let staff = Plate::Grip(Grip::Focus);
+        assert_eq!(
+            offer_on(staff, &b, Entry::Skill(Id::Embers), 99),
+            Offer::Locked(3)
+        );
+        // 몸의 판(과 그 판에 서지 않은 칸)은 지금 판 그대로.
+        for e in ENTRIES {
+            assert_eq!(offer_on(Plate::Body, &b, e, 99), b.offer(e, 99), "{e:?}");
+        }
+        assert_eq!(
+            offer_on(staff, &b, Entry::Skill(Id::Cut), 99),
+            b.offer(Entry::Skill(Id::Cut), 99)
+        );
+    }
+
+    /// 살 것이 있나(쉼터의 빛·탭 머리의 점)는 판마다 본다: 옛 판으로는 잠긴 둘째 줄 스킬도 그 판의 줄이 열렸으면 살 것이다.
+    #[test]
+    fn something_to_buy_is_seen_plate_by_plate() {
+        let mut b = Board::default();
+        assert!(!can_buy(&b, 0));
+        assert!(can_buy(&b, 1), "a first skill on any plate");
+        b.rank[Id::Quake.index()] = 3;
+        // 땅울림(망치 판 둘째 줄)만 배운 판: 그 판의 3점 — 망치의 다른 칸·결은 살 수 있다.
+        assert!(can_buy(&b, 4));
+        assert!(!can_buy(&b, 3), "all spent");
+        let all = Board::maxed(crate::skills::Pick::A);
+        assert!(!can_buy(&all, 99));
+    }
+
+    /// 칸을 보여 줄 판: 든 무기 · 부무기의 판 먼저, 없으면 판의 차례 — 몸의 칸은 몸의 판.
+    #[test]
+    fn an_entry_is_shown_on_the_held_plate_first() {
+        let heavy = Plate::Grip(Grip::Heavy);
+        let shield = Plate::Grip(Grip::Shield);
+        let whirl = Entry::Skill(Id::Whirl);
+        assert_eq!(home(whirl, &[heavy]), heavy);
+        assert_eq!(home(whirl, &[]), Plate::Grip(Grip::Duel));
+        assert_eq!(home(Entry::Skill(Id::Quake), &[shield]), heavy);
+        assert_eq!(
+            home(Entry::Cell(crate::progression::Cell::Catch), &[heavy]),
+            Plate::Body
+        );
+        for p in PLATES {
+            assert_eq!(PLATES[p.index()], p);
+        }
     }
 }

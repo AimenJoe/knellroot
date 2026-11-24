@@ -127,9 +127,12 @@ struct Press {
     rect: Option<Rect>,
 }
 
+/// 헤드리스 시험에 알리는 기술 탭의 자리: 보이는 판 · 고른 칸 · 판 줄에 섰나(0270 C2).
+type SkillFocus = (crate::plates::Plate, Option<crate::skills::Entry>, bool);
+
 thread_local! {
     /// 마지막으로 페이지에 알린 맨 위 장면(`App::frame` — 바뀐 프레임에만 알린다).
-    static REPORTED: std::cell::Cell<Option<(Scene, Option<crate::skills::Entry>, bool)>> = const { std::cell::Cell::new(None) };
+    static REPORTED: std::cell::Cell<Option<(Scene, Option<SkillFocus>, bool)>> = const { std::cell::Cell::new(None) };
 }
 
 /// 개발판만의 칸(0075 · 0158): 개발 창이 고른 시나리오, 개발 창에서 시작한 판(기록 슬롯에 쓰지 않는다 — 슬롯을 고르면
@@ -165,8 +168,10 @@ pub struct App {
     /// 장면 스택(0066): 맨 위가 지금 장면, 아래 칸은 커서·창을 맡아 둔다. 지금 칸의 커서·창은 `cursor`·`view`.
     stack: stack::Stack,
     cursor: usize,
-    /// 기술 탭의 되돌리기 단추로 내려오기 전의 칸(0261 — 단추에서 위로 가면 거기로).
+    /// 기술 탭에서 격자를 떠나기 전의 칸(0261 — 되돌리기 단추에서 위·판 줄에서 아래로 가면 거기로, 0270 C2).
     respec_from: usize,
+    /// 기술 탭에 보이는 판(0270 C2 — 탭을 열 때 든 무기의 판, `App::open_plate`).
+    skill_plate: crate::plates::Plate,
     /// 기술 탭 줄의 열림(2026-11-23 사장 "기술을 열었을 때 선이 사라지면서 안내도 없어지는 연출"): 이미 본 열린 줄(비트 — 없으면
     /// 아직 그린 적 없음: 처음 그릴 때 열린 줄은 연출 없이 숨긴다)과 줄마다 열린 때(`clock`).
     skill_rows: (Option<u8>, [f32; 6]),
@@ -404,6 +409,7 @@ impl App {
             stack: stack::Stack::new(Scene::Title),
             cursor: 0,
             respec_from: 0,
+            skill_plate: crate::plates::Plate::Body,
             skill_rows: (None, [f32::NEG_INFINITY; 6]),
             hits: Vec::new(),
             press: None,
@@ -754,16 +760,29 @@ impl App {
         let top = self.scene();
         #[cfg(feature = "dev")]
         let focus = match top {
-            Scene::Skills { .. } => crate::skills::ENTRIES.get(self.cursor).copied(),
+            Scene::Skills { .. } => Some((
+                self.skill_plate,
+                crate::skills::ENTRIES.get(self.cursor).copied(),
+                self.cursor == skills::STRIP,
+            )),
             _ => None,
         };
         #[cfg(not(feature = "dev"))]
-        let focus: Option<crate::skills::Entry> = None;
+        let focus: Option<SkillFocus> = None;
         // "성소에 들다"(0262)가 흐르는 동안은 싸움 화면 이름 뒤에 ` ~arrive`(앞머리 `Play`로 기다리는 스크립트는 그대로 맞는다).
         let cut = self.arriving().is_some();
         if REPORTED.with(|r| r.replace(Some((top, focus, cut)))) != Some((top, focus, cut)) {
             match (focus, cut) {
-                (Some(e), _) => crate::screen::report_scene(&format!("{top:?} @{e:?}")),
+                // 기술 탭(0270 C2): 보이는 판 + 고른 칸(판 줄이면 `@Strip`) — `Skills { host: Hearth } [Grip(Duel)] @Skill(Cut)`.
+                (Some((p, Some(e), _)), _) => {
+                    crate::screen::report_scene(&format!("{top:?} [{p:?}] @{e:?}"))
+                }
+                (Some((p, None, true)), _) => {
+                    crate::screen::report_scene(&format!("{top:?} [{p:?}] @Strip"))
+                }
+                (Some((p, None, false)), _) => {
+                    crate::screen::report_scene(&format!("{top:?} [{p:?}] @Respec"))
+                }
                 (None, true) => crate::screen::report_scene(&format!("{top:?} ~arrive")),
                 (None, false) => crate::screen::report_scene(&format!("{top:?}")),
             }

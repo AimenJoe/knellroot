@@ -2,7 +2,9 @@
 //   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 화로 창(0263 — 성장 · 장비 · 가방 · 기술 · 가게 · 설정; 성장 탭 — 레벨 줄 셋을 차례로
 //   올려 보고 묻는 창, 기술 줄에서 확인 = 기술 탭의 그 칸, 0173) → 화로의 Select(Tab) = 같은 창의 장비 탭 → 가방(잔불로·여벌 정리가 켜진다) →
 //   가게 · 설정(모든 줄) · 기술, 그리고 싸움에서 연 멈춤 창(탭 다섯 — 기록(여정 + 도감 묶음 넷)의 모든 줄은 여기서), 화면마다 스크린숏.
-//   기술 탭(0161 — 옛 "나무" 줄과 기술 판이 하나가 되었다): 칸 그림 격자(갈래 셋 × 줄 셋) + 오른쪽 상세.
+//   기술 탭(0161 — 옛 "나무" 줄과 기술 판이 하나가 되었다 → 0270 C2 판 하나씩): 위의 판 줄(몸 · 결투 · 방패 · 망치 · 지팡이 · 원거리) +
+//   그 판의 칸 그림 격자 + 오른쪽 상세. 장면 이름이 보이는 판과 고른 칸을 말한다(`Skills { host: Hearth } [Grip(Duel)] @Skill(Whirl)`) —
+//   칸은 자리 숫자가 아니라 이름으로 찾고, 모든 판을 돌아 판마다 칸 수를 맞춰 본다.
 //   확인 = 그 칸에 할 수 있는 일의 작은 목록(올리기·열기 / 끼우기 / 고르기 바꾸기) → 사는 일은 묻는 창. 한 단 사기 · 3단 고르기 뒤집기 ·
 //   패시브 칸 열기 · 모든 칸의 상세 · 잠긴 칸 · 되돌리기(묻는 창)를 지나고, 멈춤의 기술 화면(끼우기만)도 본다.
 //   그다음 단을 미리 찍은 기록 열(스킬 여덟이라 점수 23으로는 한 기록에 다 못 올린다 — 첫 넷·새 넷을 다른 단으로 짝지어
@@ -70,27 +72,72 @@ async function run(browser, lang) {
   const rest = async (what) => { await press('KeyF'); await until(/host: Hearth/, what || '화로에서 쉬기'); await page.waitForTimeout(300); };
   const close = async (what) => { await press('Escape'); await until('Play', what || '창 닫기'); await page.waitForTimeout(200); };
   const pause = async (what) => { await press('Escape'); await until(/host: Pause/, what || '멈춤'); await page.waitForTimeout(200); };
-  // 기술 화면의 걸음(0161): 가장자리에서 돌지 않는다 — 왼쪽·위로 넉넉히 누르면 왼쪽 위 칸. 맨 위 띠는 결의 줄(2026-11-23)이라
-  // 거기서 한 줄 내려 다시 왼쪽 끝 = 첫 줄의 왼쪽 칸(휘돌이).
-  const home = async () => {
-    await press('ArrowLeft', 6); await press('ArrowUp', 10); await press('ArrowDown'); await press('ArrowLeft', 6);
+  // 기술 화면의 걸음(0161 → 0270 C2): 가장자리에서 돌지 않는다. 맨 윗줄에서 위 = 판 줄(`@Strip`), 판 줄에서 ← → = 판 바꾸기,
+  // ↓ = 그 판의 맨 윗줄. 칸은 장면 이름 끝의 `@칸`으로 찾는다(자리 숫자는 판이 바뀔 때마다 낡았다).
+  const at = () => page.evaluate(() => window.knellScene || '');
+  // 누를 때마다 장면 이름을 보고 멈춘다(헛누름 없이 — 판을 도는 길이 길어 누름 하나하나가 시간이다).
+  const toStrip = async () => {
+    for (let i = 0; i < 12 && !(await at()).endsWith('@Strip'); i++) await press('ArrowUp');
+    if (!(await at()).endsWith('@Strip')) throw new Error(`판 줄에 못 올랐다 — 지금 "${await at()}"`);
   };
-  // 모든 칸을 지난다: 보이는 줄 다섯(스킬 넷 · 패시브 여섯 · 스킬 넷 · 패시브 여섯 · 큰 기술과 패시브 여섯)을 왼쪽에서 오른쪽으로.
-  // 오른쪽 끝에서 더 누르지 않는다(0261부터 오른쪽 걸음은 격자에서 끝나지만 — 되돌리기 단추는 맨 아래 줄에서 아래로만). `shots` = 찍을 줄(없으면 모두) — 줄마다 칸 하나씩 돌려 가며.
-  // 끝나면 맨 아래 줄의 왼쪽 칸(몰아치기)에 선다.
-  const sweep = async (name, shots) => {
-    await home(); await press('ArrowUp'); await press('ArrowLeft', 6);
-    // 줄마다의 칸(위 → 아래): 스킬 넷 · 패시브 여섯 · 스킬 넷 · 패시브 여섯 + 다리 둘 · 큰 기술과 패시브 여섯 · 새 스킬 셋 ·
-    // 패시브 여섯 + 다리 둘 · 맺음 셋(0214 · 0215).
-    // 맨 위는 결의 줄(0223 11절 — 타입 넷, 2026-11-23부터 판의 맨 위).
-    const COLS = [4, 4, 6, 4, 8, 6, 3, 8, 3];
-    for (let row = 0; row < COLS.length; row++) {
-      for (let col = 0; col < COLS[row]; col++) {
-        if (!shots || shots.includes(row)) await shot(`${name}-r${row}c${col}`);
-        if (col + 1 < COLS[row]) { await press('ArrowRight'); await page.waitForTimeout(120); }
+  const toLeft = async () => {
+    for (let i = 0; i < 10; i++) { const here = await at(); await press('ArrowLeft'); if ((await at()) === here) break; }
+  };
+  const PLATE_ORDER = ['Body', 'Grip(Duel)', 'Grip(Shield)', 'Grip(Heavy)', 'Grip(Focus)', 'Grip(Ranged)'];
+  const toPlate = async (plate) => {
+    await toStrip();
+    const want = PLATE_ORDER.indexOf(plate);
+    for (let i = 0; i < 6; i++) {
+      const s = await at();
+      const now = PLATE_ORDER.findIndex((p) => s.includes(`[${p}]`));
+      if (now === want) break;
+      await press(now < want ? 'ArrowRight' : 'ArrowLeft');
+    }
+    if (!(await at()).includes(`[${plate}]`)) throw new Error(`${plate} 판을 못 골랐다 — 지금 "${await at()}"`);
+  };
+  // 보이는 판의 왼쪽 위 칸: 판 줄로 올라가 ↓(맨 윗줄) → 왼쪽 끝.
+  const home = async () => { await toStrip(); await press('ArrowDown'); await toLeft(); };
+  // 판 하나의 칸을 줄마다 왼쪽 끝 → 오른쪽으로 지난다(끝은 장면 이름이 안 바뀌는 것으로 — 옆 걸음은 줄을 떠나지 않는다). `each(row, col)`을 칸마다 부르고 참이면 거기서 멈춘다.
+  // 지난 칸 이름들을 돌려준다. 맨 아랫줄에서 ↓가 되돌리기 단추(화로)면 한 번 올라와 끝낸다.
+  const walkPlate = async (each) => {
+    await home();
+    const seen = new Set();
+    for (let row = 0; row < 12; row++) {
+      // ↓는 그 줄의 가로로 가장 가까운 칸에 내려선다 — 줄마다 왼쪽 끝부터.
+      if (row > 0) await toLeft();
+      for (let col = 0; col < 10; col++) {
+        const here = await at();
+        seen.add(here.replace(/^.*@/, ''));
+        if (await each(row, col, here)) return { seen, stop: true };
+        await press('ArrowRight');
+        if ((await at()) === here) break;
       }
-      await press('ArrowLeft', 8);
-      if (row + 1 < COLS.length) { await press('ArrowDown'); await page.waitForTimeout(120); }
+      const before = await at();
+      await press('ArrowDown');
+      const next = await at();
+      if (next.endsWith('@Respec')) { await press('ArrowUp'); break; }
+      if (next === before) break;
+    }
+    return { seen, stop: false };
+  };
+  // 보이는 판에서 칸 하나를 이름으로(예: 'Skill(Cut)').
+  const goto = async (target) => {
+    const { stop } = await walkPlate(async (r, c, here) => here.endsWith(`@${target}`));
+    if (!stop) throw new Error(`${target} 칸을 못 찾았다 — 지금 "${await at()}"`);
+  };
+  // 판과 판마다의 칸 수(몸 = 패시브 스물하나 · 맺음 셋 · 다리 넷, 무기 판 = 그 꼴의 스킬 + 결 + 큰 기술 — src/plates.rs).
+  const PLATES = [['Body', 28], ['Grip(Duel)', 8], ['Grip(Shield)', 7], ['Grip(Heavy)', 7], ['Grip(Focus)', 7], ['Grip(Ranged)', 6]];
+  // 모든 판의 모든 칸(0270 C2): 판마다 칸을 다 지나며(상세의 넘침은 F4 넘침 검사가 콘솔로 본다 — 칸마다 찍지 않아도 된다)
+  // 지난 칸 수가 맞는지 본다(빠진 칸 = 걸음이 못 닿는다). `plates`: 'all' · 'weapons'(단을 미리 찍은 기록 — 몸의 판은 단이 없어
+  // 기록마다 같다), `shots`: 'strips'(판마다 판 줄에서 한 장) · 'all'(칸마다도) · 'none'.
+  const sweep = async (name, { plates = 'all', shots = 'strips' } = {}) => {
+    for (const [plate, n] of PLATES) {
+      if (plates === 'weapons' && plate === 'Body') continue;
+      await toPlate(plate);
+      const tag = `${name}-${plate.replace(/[^A-Za-z]/g, '')}`;
+      if (shots !== 'none') await shot(`${tag}-strip`);
+      const { seen } = await walkPlate(async (r, c) => { if (shots === 'all') await shot(`${tag}-r${r}c${c}`); return false; });
+      if (seen.size !== n) errors.push(`${name}: ${plate} — ${seen.size} cells walked, want ${n}: ${[...seen].join(' ')}`);
     }
   };
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 20000 });
@@ -209,9 +256,18 @@ async function run(browser, lang) {
   for (let i = 0; i < 13; i++) { await shot(`8j-settings-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   // 기술 탭(설정에서 Q 둘 — 가게를 지나): 탭 머리의 민트 점 = 남은 기술 점수로 올릴 것이 있다.
   await press('KeyQ', 2); await until('Skills { host: Hearth', '설정 → 기술 탭');
-  // 기술 화면: 처음 서는 칸 = 올릴 수 있는 첫 칸(휘돌이). 왼쪽 위로 가도 같은 칸 — 가장자리에서 돌지 않는다.
+  // 기술 화면(0270 C2): 든 무기(검)의 판 — 결투 — 에서 열리고, 처음 서는 칸 = 그 판에서 올릴 수 있는 첫 칸(휘돌이).
+  await until(/\[Grip\(Duel\)\] @Skill\(Whirl\)$/, '기술 탭은 결투 판의 휘돌이에서 연다');
   await shot('12-skills');
-  await home();
+  // 판 줄: 맨 윗줄에서 ↑ → 판 줄(결투, 오른쪽 위 금빛 점 = 든 무기의 판) → ← = 몸의 판 → ↓ = 그 판의 맨 윗줄(왼쪽 위) → ↑ → 다시 결투.
+  await press('ArrowUp'); await until(/\[Grip\(Duel\)\] @Strip$/, '휘돌이에서 ↑ = 판 줄');
+  await shot('12-plate-strip-duel');
+  await press('ArrowLeft'); await until(/\[Body\] @Strip$/, '판 줄에서 ← = 몸의 판');
+  await shot('12-plate-strip-body');
+  await press('ArrowDown'); await until(/\[Body\] @Cell\(EvenBreath\)$/, '몸의 판에서 ↓ = 왼쪽 위 칸');
+  await shot('12-plate-body');
+  await toPlate('Grip(Duel)'); await press('ArrowDown');
+  await until(/\[Grip\(Duel\)\] @Skill\(Whirl\)$/, '결투 판에서 ↓ = 맨 윗줄');
   // 확인 = 작은 목록(올리기 · 칸 2에 끼우기) → 올리기 = 묻는 창(커서 "올리기") → 2단.
   await press('Enter'); await page.waitForTimeout(300);
   await shot('12a-skills-acts');
@@ -231,8 +287,8 @@ async function run(browser, lang) {
   await shot('12f-skills-flipped');
   let b = await record();
   if (!/skill\.rank\.whirl=3\n/.test(b) || !/skill\.pick\.whirl=b\n/.test(b)) errors.push(`skills not saved: ${JSON.stringify(b)}`);
-  // 패시브 칸(휘돌이 아래 — 고른 호흡): 목록(열기) → 묻는 창 → 열림. 칸마다 따로 남는다(`tree.cells.beat`).
-  await press('ArrowDown'); await page.waitForTimeout(200);
+  // 패시브 칸(몸의 판 — 휘돌이 밑에서 이어지는 고른 호흡): 목록(열기) → 묻는 창 → 열림. 칸마다 따로 남는다(`tree.cells.beat`).
+  await toPlate('Body'); await goto('Cell(EvenBreath)'); await page.waitForTimeout(200);
   await shot('12g-skills-cell');
   await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(300);
   await shot('12h-skills-cell-ask');
@@ -241,13 +297,21 @@ async function run(browser, lang) {
   b = await record();
   if (!/tree\.cells\.beat=1\n/.test(b)) errors.push(`cell not saved: ${JSON.stringify(b)}`);
   await page.waitForTimeout(1800);
-  // 모든 칸의 상세(줄 여덟 — 0214의 넷째·다섯째 줄까지).
+  // 모든 판의 모든 칸의 상세.
   await sweep('13-skills');
-  // 결의 칸(0223 11절 — 맨 아래 줄): 그 타입의 스킬을 배웠으면 연다. 옛 기록은 가로지르기(균열)를 안다 — 균열의 결(줄의 오른쪽 끝):
-  // 목록(열기) → 묻는 창 → 열림(`tree.veins`). 잔불의 결(왼쪽 끝)은 그 타입의 스킬을 몰라 목록이 없다.
+  // 결의 칸(0223 11절 → 0270 C2 — 무기 판의 셋째 줄): 결투 판은 균열의 결. 그 판에 쓴 점수 6부터 — 지금 4(휘돌이 3 · 가로지르기 1):
+  // 확인하면 목록 없이 "이 판에 점수를 2 더 쓰면 열린다".
+  await toPlate('Grip(Duel)'); await goto('Vein(Rift)');
   await press('Enter'); await page.waitForTimeout(300);
-  await shot('13v-vein-needs-skill');
-  await press('ArrowRight', 3); await page.waitForTimeout(200);
+  await shot('13v-vein-plate-locked');
+  await page.waitForTimeout(1600);
+  // 가로지르기를 두 단 올려(1 → 3) 판의 셋째 줄을 연다 — 그 판에 쓴 점수 6.
+  await goto('Skill(Cut)');
+  for (let i = 0; i < 2; i++) { await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(1800); }
+  b = await record();
+  if (!/skill\.rank\.cut=3\n/.test(b)) errors.push(`cut not raised on the duel plate: ${JSON.stringify(b)}`);
+  // 옛 기록은 가로지르기(균열)를 안다 — 균열의 결: 목록(열기) → 묻는 창 → 열림(`tree.veins`).
+  await goto('Vein(Rift)'); await page.waitForTimeout(200);
   await shot('13w-vein');
   await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(300);
   await shot('13x-vein-ask');
@@ -256,13 +320,15 @@ async function run(browser, lang) {
   b = await record();
   if (!/tree\.veins=rift\n/.test(b)) errors.push(`vein not saved: ${JSON.stringify(b)}`);
   await page.waitForTimeout(1800);
-  // 잠긴 줄(맺음 — 쓴 점수 22부터)의 칸은 확인해도 목록이 없다(안 됨 소리만). 결의 줄 바로 위.
-  await press('ArrowUp'); await page.waitForTimeout(200);
+  // 잠긴 줄(몸의 판의 맺음 — 쓴 점수 합 22부터)의 칸은 확인해도 목록이 없다(안 됨 소리만).
+  await toPlate('Body'); await goto('Key(Measure)'); await page.waitForTimeout(200);
   await press('Enter'); await page.waitForTimeout(300);
   await shot('14-skills-locked');
-  // 되돌리기 단추(창 아래 오른쪽 — 맨 아래 줄에서 아래): 묻는 창(커서 "취소") → 왼쪽 = "되돌리기" → 쓴 점수 8(산 것 넷 — 결 하나까지 + 옛 기록이 지닌 처음의 둘 0166 + 쟁반 뒤집기의 배움 2 0172)을 돌려받고 잔불 70(30 + 5 × 8).
+  // 되돌리기 단추(창 아래 오른쪽 — 맨 아래 줄에서 아래): 묻는 창(커서 "취소") → 왼쪽 = "되돌리기" → 쓴 점수 10(휘돌이 3 · 가로지르기 3 —
+  // 옛 기록이 지닌 처음의 둘 0166까지 · 쟁반 뒤집기의 배움 2 0172 · 패시브 하나 · 결 하나)을 돌려받고 잔불 80(30 + 5 × 10).
   const embers = Number(/embers=(\d+)\n/.exec(b)[1]);
-  await press('ArrowDown', 2); await page.waitForTimeout(200);
+  await page.waitForTimeout(1600);
+  await press('ArrowDown'); await until(/@Respec$/, '맺음 줄에서 ↓ = 되돌리기 단추');
   await shot('15-respec-focus');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('15a-respec-ask');
@@ -272,7 +338,7 @@ async function run(browser, lang) {
   await shot('15c-skills-after-respec');
   b = await record();
   if (/skill\.rank\./.test(b) || /skill\.pick\./.test(b) || /tree\.cells\./.test(b) || /tree\.veins/.test(b)) errors.push(`respec must clear the board: ${JSON.stringify(b)}`);
-  if (!new RegExp(`embers=${embers - 70}\\n`).test(b)) errors.push(`respec must cost 70 embers: ${JSON.stringify(b)}`);
+  if (!new RegExp(`embers=${embers - 80}\\n`).test(b)) errors.push(`respec must cost 80 embers: ${JSON.stringify(b)}`);
   if (/ult\.rank\./.test(b)) errors.push(`respec must forget the great skill too (0172): ${JSON.stringify(b)}`);
   // 창을 닫으면 떠난다(한 번에) → 싸움(HUD 기력 막대가 길어졌는지).
   await close('화로 창 닫기');
@@ -287,7 +353,7 @@ async function run(browser, lang) {
   await shot('16-pause-bag');
   // 기술: 같은 화면, 끼우기만(되돌리기 단추 없음).
   await press('KeyE'); await until('Skills { host: Pause', '멈춤: 기술 탭');
-  await shot('16-pause-skills');
+  await until(/\[Grip\(Duel\)\]/, '멈춤의 기술 탭도 든 무기의 판'); await shot('16-pause-skills');
   // 되돌린 뒤라 아는 스킬이 없다(점수는 있다): 안 배운 칸에서 확인 — 목록이 없고 상태 줄 자리에 "올리기는 쉼터 화로에서만" 알림(0173).
   // 여기서 Escape를 누르면 목록이 아니라 창이 닫힌다(예전 길이 그래서 뒤의 도감·설정을 싸움 화면에서 찍고 있었다) — 누르지 않는다.
   await home(); await press('ArrowRight'); await press('Enter'); await page.waitForTimeout(300);
@@ -357,7 +423,7 @@ async function run(browser, lang) {
     // 성장 → E 셋 = 기술(장비·가방을 지나, 0263).
     await press('KeyE', 3); await until('Skills { host: Hearth', `${name}: 성장 → 기술 탭`);
     await shot(`20-${name}-skills`);
-    await sweep(`20-${name}`, [1, 5]);
+    await sweep(`20-${name}`, { plates: 'weapons', shots: 'none' });
     await close(`${name}: 화로 창 닫기`);
     // 멈춤(다시 띄운 판이라 장비 탭, 0261) → E 둘 = 기술(가방을 지나).
     await pause(`${name}: 멈춤`); await until('Equip { host: Pause', `${name}: 멈춤 = 장비 탭`);
@@ -368,8 +434,9 @@ async function run(browser, lang) {
     await shot(`21-${name}-pause-acts`);
     await press('Escape'); await page.waitForTimeout(300);
     // 멈춤의 상세는 상태 줄만 다르다("쉼터 화로에서 올린다") — 모든 칸은 첫 기록에서 한 번만 돈다.
-    if (name === BOARDS[0][0]) await sweep(`21-${name}-pause`, []); else await press('ArrowDown', 4);
-    // 큰 기술 칸에서 확인(배웠고 끼우지 않았으면 "끼우기" 목록, 아니면 아무 일 없음) → 닫기.
+    if (name === BOARDS[0][0]) await sweep(`21-${name}-pause`, { shots: 'none' });
+    // 큰 기술 칸(결투 판의 몰아치기)에서 확인(배웠고 끼우지 않았으면 "끼우기" 목록, 아니면 아무 일 없음) → 닫기.
+    await toPlate('Grip(Duel)'); await goto('Ult(Flurry)');
     await press('Enter'); await page.waitForTimeout(250);
     await shot(`21-${name}-pause-ult`);
     await press('Escape'); await page.waitForTimeout(300);
@@ -394,7 +461,8 @@ async function run(browser, lang) {
   await shot('30a-fresh-press-empty');
   await rest('새 판: 화로'); await until('Skills { host: Hearth', '새 판: 화로 = 기술 탭');
   await shot('31-fresh-rest-skills');
-  // 처음 서는 칸 = 살 수 있는 첫 칸(휘돌이): 목록(배우기뿐) → 묻는 창 → 배움.
+  // 처음 서는 칸 = 든 무기의 판(맨손 = 결투의 꼴, 0270 C2)에서 살 수 있는 첫 칸(휘돌이): 목록(배우기뿐) → 묻는 창 → 배움.
+  await until(/\[Grip\(Duel\)\] @Skill\(Whirl\)$/, '새 판: 결투 판의 휘돌이');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('31a-fresh-acts');
   await press('Enter'); await page.waitForTimeout(300);
@@ -404,14 +472,14 @@ async function run(browser, lang) {
   b = await record();
   if (!/skill\.rank\.whirl=1\n/.test(b) || !/skill\.gift=1\n/.test(b)) errors.push(`fresh: whirl not learned: ${JSON.stringify(b)}`);
   await page.waitForTimeout(1800);
-  // 한 단 올린다(Q 셋 = 가방·장비를 지나 성장 탭, 0263, 잔불 50 → 기술 점수 +1) → 기술 탭에서 오른쪽으로 둘째 칸(맞받기 갈래의 버팀) → 남은 빈 칸(칸 2)에.
+  // 한 단 올린다(Q 셋 = 가방·장비를 지나 성장 탭, 0263, 잔불 50 → 기술 점수 +1) → 기술 탭(결투 판)의 버팀 → 남은 빈 칸(칸 2)에.
   await press('KeyQ', 3); await until('Status { host: Hearth', '새 판: 기술 → 성장 탭');
   await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(500);
   await shot('31d-fresh-level-one');
   b = await record();
   if (!/lv\.life=1\n/.test(b) || !/embers=80\n/.test(b)) errors.push(`fresh: the first level costs 50: ${JSON.stringify(b)}`);
   await press('KeyE', 3); await until('Skills { host: Hearth', '새 판: 성장 → 기술 탭');
-  await home(); await press('ArrowRight', 2); await page.waitForTimeout(200);
+  await goto('Skill(Brace)'); await page.waitForTimeout(200);
   await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(300);
   await press('Enter'); await page.waitForTimeout(2200);
   await shot('31e-fresh-second');

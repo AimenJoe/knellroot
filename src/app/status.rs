@@ -231,6 +231,8 @@ impl App {
                 );
                 self.show(Go::Swap(Scene::Skills { host }));
                 self.cursor = at;
+                // 그 칸이 서는 판으로(0270 C2 — 든 무기의 판 먼저).
+                self.sync_plate();
             }
             Some(Do::Deny(st)) => {
                 // 까닭을 상태 줄 자리에 한 번 밝게(가게와 같다 — 0173: 멈춤에서는 소리만 나서 왜 안 오르는지 몰랐다).

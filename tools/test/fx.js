@@ -73,17 +73,26 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       ['throw', 'Skill(Throw)', null, 900, 'Q', 30], ['embers', 'Skill(Embers)', null, 1300, 'Q', 50, 4],
       ['upend', null, null, 1500, 'ult', 30], ['flurry', null, 'Ult(Flurry)', 1300, 'ult', 14], ['line', null, 'Ult(Line)', 900, 'ult', 30]];
     const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await p.waitForTimeout(90); } };
-    // 이름으로 칸 찾기: 왼쪽 위(가장자리에서 돌지 않는다)에서 줄마다 왼쪽 끝 → 오른쪽으로 훑으며 장면 이름 끝의 `@칸`을 본다 →
+    // 이름으로 칸 찾기(0270 C2 — 판 하나씩): 판 줄로 올라가(위를 넉넉히 — `@Strip`) ↓ = 보이는 판(든 무기의 판)의 맨 윗줄 → 줄마다 왼쪽 끝 →
+    // 오른쪽으로 훑으며 장면 이름 끝의 `@칸`을 본다. 없으면 무기 판을 결투부터 차례로(판 줄에서 → — 몸의 판에는 스킬이 없다).
     // 찾으면 확인(목록) → 확인(첫 줄 "칸 1에 끼우기", 큰 기술은 "끼우기"). 못 찾으면 실패(조용히 지나가 끼우지 않은 채 찍지 않게).
     const at = (p) => p.evaluate(() => window.knellScene || '');
     const wear = async (p, target) => {
       const hit = async () => (await at(p)).endsWith(`@${target}`);
-      await pick(p, 8, 'ArrowLeft'); await pick(p, 12, 'ArrowUp');
-      let found = await hit();
-      for (let row = 0; row < 14 && !found; row++) {
-        if (row > 0) await pick(p, 1, 'ArrowDown');
-        await pick(p, 8, 'ArrowLeft');
-        for (let col = 0; col < 9 && !(found = await hit()); col++) await pick(p, 1);
+      const scan = async () => {
+        await pick(p, 1, 'ArrowDown');
+        for (let row = 0; row < 6; row++) {
+          if (row > 0) await pick(p, 1, 'ArrowDown');
+          await pick(p, 9, 'ArrowLeft');
+          for (let col = 0; col < 9; col++) { if (await hit()) return true; await pick(p, 1); }
+        }
+        return false;
+      };
+      await pick(p, 12, 'ArrowUp');
+      let found = await scan();
+      for (let plate = 1; plate < 6 && !found; plate++) {
+        await pick(p, 12, 'ArrowUp'); await pick(p, 6, 'ArrowLeft'); await pick(p, plate);
+        found = await scan();
       }
       if (!found) throw new Error(`기술 판에서 ${target} 칸을 못 찾았다 — 지금 ${await at(p)}`);
       await p.keyboard.press('Enter');
