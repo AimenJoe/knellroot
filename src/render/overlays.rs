@@ -185,17 +185,24 @@ impl Renderer {
                         }
                     }
                     // 땅울림: 내리찍은 부채꼴 — 바닥의 빛 + 앞으로 터지는 굵은 초승달.
+                    // 불길(0270 C3): 같은 부채꼴을 호박빛으로 — 휘두름이 아니라 내뿜음이라 초승달은 없다.
                     Form::Cone { range, arc_deg, .. } => {
                         let k = (e0 / 0.3).clamp(0.0, 1.0);
+                        let flame = id == crate::skills::Id::Flare;
                         if k < 1.0 {
+                            let ink = if flame {
+                                Color::new(1.0, 0.72, 0.32, 1.0)
+                            } else {
+                                gold
+                            };
                             fl.sector(
                                 pp + Vec3::Y * 0.06,
                                 range,
                                 yaw,
                                 arc_deg,
-                                with_a(gold, 0.3 * (1.0 - k)),
+                                with_a(ink, 0.3 * (1.0 - k)),
                             );
-                            if fx {
+                            if fx && !flame {
                                 crescent(
                                     pp + Vec3::Y * 0.5,
                                     range * (0.5 + 0.5 * k),

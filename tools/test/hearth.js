@@ -126,7 +126,8 @@ async function run(browser, lang) {
     if (!stop) throw new Error(`${target} 칸을 못 찾았다 — 지금 "${await at()}"`);
   };
   // 판과 판마다의 칸 수(몸 = 패시브 스물하나 · 맺음 셋 · 다리 넷, 무기 판 = 그 꼴의 스킬 + 결 + 큰 기술 — src/plates.rs).
-  const PLATES = [['Body', 28], ['Grip(Duel)', 8], ['Grip(Shield)', 7], ['Grip(Heavy)', 7], ['Grip(Focus)', 7], ['Grip(Ranged)', 6]];
+  // 0270 C3: 무기 판마다 스킬이 채워지고(새 스킬 여덟) 결이 둘씩(새 타입 넷의 결), 큰 기술은 판마다 하나.
+  const PLATES = [['Body', 28], ['Grip(Duel)', 10], ['Grip(Shield)', 10], ['Grip(Heavy)', 11], ['Grip(Focus)', 10], ['Grip(Ranged)', 9]];
   // 모든 판의 모든 칸(0270 C2): 판마다 칸을 다 지나며(상세의 넘침은 F4 넘침 검사가 콘솔로 본다 — 칸마다 찍지 않아도 된다)
   // 지난 칸 수가 맞는지 본다(빠진 칸 = 걸음이 못 닿는다). `plates`: 'all' · 'weapons'(단을 미리 찍은 기록 — 몸의 판은 단이 없어
   // 기록마다 같다), `shots`: 'strips'(판마다 판 줄에서 한 장) · 'all'(칸마다도) · 'none'.
@@ -256,18 +257,19 @@ async function run(browser, lang) {
   for (let i = 0; i < 13; i++) { await shot(`8j-settings-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
   // 기술 탭(설정에서 Q 둘 — 가게를 지나): 탭 머리의 민트 점 = 남은 기술 점수로 올릴 것이 있다.
   await press('KeyQ', 2); await until('Skills { host: Hearth', '설정 → 기술 탭');
-  // 기술 화면(0270 C2): 든 무기(검)의 판 — 결투 — 에서 열리고, 처음 서는 칸 = 그 판에서 올릴 수 있는 첫 칸(휘돌이).
-  await until(/\[Grip\(Duel\)\] @Skill\(Whirl\)$/, '기술 탭은 결투 판의 휘돌이에서 연다');
+  // 기술 화면(0270 C2): 든 무기(검)의 판 — 결투 — 에서 열리고, 처음 서는 칸 = 그 판에서 올릴 수 있는 첫 칸(0270 C3 — 왼쪽 갈래의 바늘땀).
+  await until(/\[Grip\(Duel\)\] @Skill\(Stitch\)$/, '기술 탭은 결투 판의 바늘땀에서 연다');
   await shot('12-skills');
   // 판 줄: 맨 윗줄에서 ↑ → 판 줄(결투, 오른쪽 위 금빛 점 = 든 무기의 판) → ← = 몸의 판 → ↓ = 그 판의 맨 윗줄(왼쪽 위) → ↑ → 다시 결투.
-  await press('ArrowUp'); await until(/\[Grip\(Duel\)\] @Strip$/, '휘돌이에서 ↑ = 판 줄');
+  await press('ArrowUp'); await until(/\[Grip\(Duel\)\] @Strip$/, '바늘땀에서 ↑ = 판 줄');
   await shot('12-plate-strip-duel');
   await press('ArrowLeft'); await until(/\[Body\] @Strip$/, '판 줄에서 ← = 몸의 판');
   await shot('12-plate-strip-body');
   await press('ArrowDown'); await until(/\[Body\] @Cell\(EvenBreath\)$/, '몸의 판에서 ↓ = 왼쪽 위 칸');
   await shot('12-plate-body');
   await toPlate('Grip(Duel)'); await press('ArrowDown');
-  await until(/\[Grip\(Duel\)\] @Skill\(Whirl\)$/, '결투 판에서 ↓ = 맨 윗줄');
+  await until(/\[Grip\(Duel\)\] @Skill\(Stitch\)$/, '결투 판에서 ↓ = 맨 윗줄(왼쪽)');
+  await goto('Skill(Whirl)'); await page.waitForTimeout(200);
   // 확인 = 작은 목록(올리기 · 칸 2에 끼우기) → 올리기 = 묻는 창(커서 "올리기") → 2단.
   await press('Enter'); await page.waitForTimeout(300);
   await shot('12a-skills-acts');
@@ -430,7 +432,8 @@ async function run(browser, lang) {
     await press('KeyE', 2); await until('Skills { host: Pause', `${name}: 멈춤의 기술 탭`);
     await shot(`21-${name}-pause-skills`);
     // 배운 스킬(휘돌이 — 칸 1에 끼움)에서 확인: "칸 2에 끼우기" + 올릴 수 있으면 끝에 흐린 "올리기 — 쉼터 화로에서"(0173) → 닫기.
-    await home(); await press('Enter'); await page.waitForTimeout(300);
+    // (0270 C3: 결투 판의 왼쪽 위는 이제 바늘땀 — 배운 휘돌이를 이름으로 찾는다.)
+    await goto('Skill(Whirl)'); await press('Enter'); await page.waitForTimeout(300);
     await shot(`21-${name}-pause-acts`);
     await press('Escape'); await page.waitForTimeout(300);
     // 멈춤의 상세는 상태 줄만 다르다("쉼터 화로에서 올린다") — 모든 칸은 첫 기록에서 한 번만 돈다.
@@ -461,8 +464,8 @@ async function run(browser, lang) {
   await shot('30a-fresh-press-empty');
   await rest('새 판: 화로'); await until('Skills { host: Hearth', '새 판: 화로 = 기술 탭');
   await shot('31-fresh-rest-skills');
-  // 처음 서는 칸 = 든 무기의 판(맨손 = 결투의 꼴, 0270 C2)에서 살 수 있는 첫 칸(휘돌이): 목록(배우기뿐) → 묻는 창 → 배움.
-  await until(/\[Grip\(Duel\)\] @Skill\(Whirl\)$/, '새 판: 결투 판의 휘돌이');
+  // 처음 서는 칸 = 든 무기의 판(맨손 = 결투의 꼴, 0270 C2)에서 살 수 있는 첫 칸(0270 C3 — 바늘땀): 목록(배우기뿐) → 묻는 창 → 배움.
+  await until(/\[Grip\(Duel\)\] @Skill\(Stitch\)$/, '새 판: 결투 판의 바늘땀');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('31a-fresh-acts');
   await press('Enter'); await page.waitForTimeout(300);
@@ -470,7 +473,7 @@ async function run(browser, lang) {
   await press('Enter'); await page.waitForTimeout(400);
   await shot('31c-fresh-learned');
   b = await record();
-  if (!/skill\.rank\.whirl=1\n/.test(b) || !/skill\.gift=1\n/.test(b)) errors.push(`fresh: whirl not learned: ${JSON.stringify(b)}`);
+  if (!/skill\.rank\.stitch=1\n/.test(b) || !/skill\.gift=1\n/.test(b)) errors.push(`fresh: stitch not learned: ${JSON.stringify(b)}`);
   await page.waitForTimeout(1800);
   // 한 단 올린다(Q 셋 = 가방·장비를 지나 성장 탭, 0263, 잔불 50 → 기술 점수 +1) → 기술 탭(결투 판)의 버팀 → 남은 빈 칸(칸 2)에.
   await press('KeyQ', 3); await until('Status { host: Hearth', '새 판: 기술 → 성장 탭');
@@ -501,7 +504,8 @@ async function main() {
   await new Promise((r) => server.listen(PORT, r));
   const browser = await chromium.launch();
   let bad = false;
-  for (const lang of ['ko', 'en']) {
+  // 언어 하나만 돌리려면 `HEARTH_LANGS=en`(한 번에 두 언어는 30분 남짓 걸린다).
+  for (const lang of (process.env.HEARTH_LANGS || 'ko,en').split(',')) {
     const { errors, checks } = await run(browser, lang);
     for (const e of errors) { console.error(`[${lang}] ERROR ${e}`); bad = true; }
     for (const c of checks) { console.error(`[${lang}] ${c}`); bad = true; }

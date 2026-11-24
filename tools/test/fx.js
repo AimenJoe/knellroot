@@ -71,7 +71,12 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     const RUNS = [['whirl', null, null, 1500, 'Q', 22], ['cut', null, null, 1100, 'E', 26], ['gather', 'Skill(Gather)', null, 900, 'Q', 26],
       ['quake', 'Skill(Quake)', null, 1000, 'Q', 26, 3], ['brace', 'Skill(Brace)', null, 1300, 'Q', 40], ['echo', 'Skill(Echo)', null, 1300, 'Q', 16, 4],
       ['throw', 'Skill(Throw)', null, 900, 'Q', 30], ['embers', 'Skill(Embers)', null, 1300, 'Q', 50, 4],
-      ['upend', null, null, 1500, 'ult', 30], ['flurry', null, 'Ult(Flurry)', 1300, 'ult', 14], ['line', null, 'Ult(Line)', 900, 'ult', 30]];
+      ['upend', null, null, 1500, 'ult', 30], ['flurry', null, 'Ult(Flurry)', 1300, 'ult', 14], ['line', null, 'Ult(Line)', 900, 'ult', 30],
+      // 0270 C3: 무기 판의 새 스킬 여덟·큰 기술 둘. "든 무기 바꾸기" 수: 1 활 · 2 검 · 3 망치 · 4 지팡이 · 5 쇠뇌 · 6 검과 방패(맨손 = 결투).
+      ['stitch', 'Skill(Stitch)', null, 900, 'Q', 30], ['ram', 'Skill(Ram)', null, 900, 'Q', 34, 6], ['toll', 'Skill(Toll)', null, 900, 'Q', 80, 3],
+      ['swat', 'Skill(Swat)', null, 1000, 'Q', 30, 3], ['ripple', 'Skill(Ripple)', null, 1000, 'Q', 44, 3],
+      ['snow', 'Skill(Snow)', null, 1100, 'Q', 90, 4], ['flare', 'Skill(Flare)', null, 1000, 'Q', 34, 4], ['snare', 'Skill(Snare)', null, 500, 'Q', 120, 1],
+      ['bell', null, 'Ult(Bell)', 1300, 'ult', 44, 6], ['blizzard', null, 'Ult(Blizzard)', 1300, 'ult', 90, 6]];
     const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await p.waitForTimeout(90); } };
     // 이름으로 칸 찾기(0270 C2 — 판 하나씩): 판 줄로 올라가(위를 넉넉히 — `@Strip`) ↓ = 보이는 판(든 무기의 판)의 맨 윗줄 → 줄마다 왼쪽 끝 →
     // 오른쪽으로 훑으며 장면 이름 끝의 `@칸`을 본다. 없으면 무기 판을 결투부터 차례로(판 줄에서 → — 몸의 판에는 스킬이 없다).

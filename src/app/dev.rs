@@ -373,10 +373,22 @@ impl App {
                 self.snd(crate::sfx::Id::Buy);
             }
             // 든 무기를 표의 다음 것으로(0223 V3) — 이 창에서 시작하는 아레나와 "기술 끼우기"가 그 무기로 선다. 기록은 그대로.
+            // 0270 C3: 쇠뇌 다음은 "검 + 방패"(방패 판의 스킬을 끼워 보게) — 그다음 맨손에서 방패를 내린다. 차례의 앞(활 → 검 → 망치 →
+            // 지팡이)은 그대로다(시험 스크립트가 누르는 수).
             DevStart::Arm => {
                 let ids = crate::weapons::IDS;
-                let at = ids.iter().position(|w| *w == self.weapon).unwrap_or(0);
-                self.weapon = ids[(at + 1) % ids.len()];
+                let shield = crate::shield::Id::Pilgrim;
+                if self.weapon == crate::weapons::Id::Crossbow && self.progress.shield.is_none() {
+                    self.weapon = crate::weapons::Id::Sword;
+                    self.progress.shield = Some(shield);
+                } else if self.progress.shield.is_some() && self.weapon == crate::weapons::Id::Sword
+                {
+                    self.weapon = crate::weapons::Id::Fists;
+                    self.progress.shield = None;
+                } else {
+                    let at = ids.iter().position(|w| *w == self.weapon).unwrap_or(0);
+                    self.weapon = ids[(at + 1) % ids.len()];
+                }
                 self.snd(crate::sfx::Id::Buy);
             }
             DevStart::Motion(w) => self.go(Go::Open(Scene::Motions {
