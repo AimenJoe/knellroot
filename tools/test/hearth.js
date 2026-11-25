@@ -1,16 +1,16 @@
-// 큰 창(화로·멈춤) 시험(0104 → 0164 "창 하나 + 탭"): 헤드리스 Chromium으로 한국어·영어 두 판 —
-//   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 화로 창(0263 — 성장 · 장비 · 가방 · 기술 · 가게 · 설정; 성장 탭 — 레벨 줄 셋을 차례로
-//   올려 보고 묻는 창, 기술 줄에서 확인 = 기술 탭의 그 칸, 0173) → 화로의 Select(Tab) = 같은 창의 장비 탭 → 가방(잔불로·여벌 정리가 켜진다) →
-//   가게 · 설정(모든 줄) · 기술, 그리고 싸움에서 연 멈춤 창(탭 다섯 — 기록(여정 + 도감 묶음 넷)의 모든 줄은 여기서), 화면마다 스크린숏.
-//   기술 탭(0161 — 옛 "나무" 줄과 기술 판이 하나가 되었다 → 0270 C2 판 하나씩): 위의 판 줄(공통 · 한손검 · 망치 · 지팡이 · 쇠뇌 · 활 · 창 · 방패 — 0272: 무기 종류마다 판 하나) +
-//   그 판의 칸 그림 격자 + 오른쪽 상세. 장면 이름이 보이는 판과 고른 칸을 말한다(`Skills { host: Hearth } [Class(Sword)] @Skill(Whirl)`) —
-//   칸은 자리 숫자가 아니라 이름으로 찾고, 모든 판을 돌아 판마다 칸 수를 맞춰 본다.
-//   확인 = 그 칸에 할 수 있는 일의 작은 목록(올리기·열기 / 끼우기 / 고르기 바꾸기) → 사는 일은 묻는 창. 한 단 사기 · 3단 고르기 뒤집기 ·
-//   패시브 칸 열기 · 모든 칸의 상세 · 잠긴 칸 · 되돌리기(묻는 창)를 지나고, 멈춤의 기술 화면(끼우기만)도 본다.
-//   그다음 단을 미리 찍은 기록 열(스킬 여덟이라 점수 23으로는 한 기록에 다 못 올린다 — 첫 넷·새 넷을 다른 단으로 짝지어
-//   2단 · 3·4·5단 × ㄱ/ㄴ을 모두, 큰 기술 셋의 단도)으로 화로·멈춤의 모든 칸을 돌며 상세 칸의 넘침을 본다.
-//   끝으로 새 판의 기록(0166·0167·0169 — 아는 스킬 없음, 튜토리얼의 상 한 점): 빈 스킬 칸 → 쉬기 = 기술 탭 → 배움 = 빈 칸에 끼워짐 → 첫 레벨 = 둘째 점수.
-//   개발판의 F4 넘침 검사(`ui::check`)를 켜 두고 콘솔의 `[ui-check]` 줄(켬/끔 말고)이 있으면 실패(CLAUDE.md "새 화면은 F4").
+// 큰 창(화로·멈춤) 시험(0104 → 0164 "창 하나 + 탭" → 0275 흐름만): 헤드리스 Chromium으로 한국어·영어 두 판 —
+//   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 화로 창(0263 — 성장 · 장비 · 가방 · 기술 · 가게 · 설정; 성장 탭 — 레벨 줄을 올려 보고
+//   묻는 창, 기술 줄에서 확인 = 기술 탭의 그 칸, 0173) → 화로의 Select(Tab) = 같은 창의 장비 탭(후보의 작은 목록) → 가방(작은 목록 ·
+//   여벌 정리) → 가게 · 설정 · 기술, 그리고 싸움에서 연 멈춤 창(장비 · 가방 · 기술 · 기록(여정·도감의 보상 받기) · 설정), 화면마다 스크린숏.
+//   기술 탭(0270 C2): 위의 판 줄(공통 · 한손검 · 망치 · 지팡이 · 쇠뇌 · 활 · 창 · 방패 — 넘치면 가로로 굴린다, 0275) + 그 판의 칸 격자 +
+//   오른쪽 상세. 장면 이름이 보이는 판과 고른 칸을 말한다(`Skills { host: Hearth } [Class(Sword)] @Skill(Whirl)`) — 칸은 이름으로 찾는다.
+//   한 단 사기 · 3단 고르기 뒤집기 · 패시브 칸 열기 · 결 열기 · 잠긴 칸 · 되돌리기(묻는 창), 판마다 판 줄에서 한 장(눈으로 본다),
+//   멈춤의 기술 탭(끼우기만). 끝으로 새 판의 기록(0166·0167·0169 — 아는 스킬 없음, 튜토리얼의 상 한 점): 빈 스킬 칸 → 쉬기 = 기술 탭 →
+//   배움 = 빈 칸에 끼워짐 → 첫 레벨 = 둘째 점수 → 멈춤에서 끼우기, 그리고 맨손(공통 판에서 연다).
+//   0275: 글이 칸에 드는지는 `cargo test`(`app::text_fit` — 고정 칸의 모든 글을 글꼴로 잰다)가 본다. 이 스크립트는 흐름만 — 예전처럼
+//   모든 판의 모든 칸·단을 미리 찍은 기록 넷을 돌며 상세를 F4로 보던 걸음(언어마다 25분)은 걷었다. 칸에 닿는 걸음은 Rust 시험
+//   (`walking_reaches_every_cell_of_every_plate_from_anywhere`). F4 넘침 검사(`ui::check`)는 켜 둔다 — 지나는 화면에서 콘솔의
+//   `[ui-check]` 줄(켬/끔 말고)이 있으면 실패.
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/hearth.js dist shots
 const { chromium } = require('playwright');
 const http = require('http');
@@ -27,25 +27,10 @@ const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
 // 문 앞 쉼터(0)에서 쉰 기록(뿌리껍질 덧옷을 걸쳤다 — 0176), 잔불은 레벨 몇 단 + 가게 + 기술 되돌리기를 볼 만큼. 기력·힘은 이미 4단(다음이 마지막 단 — "다 올림" 줄·평타 +1도 본다).
 const SEED = 'v=1\nembers=700\nclears=1\nrun.rest=0\nrun.gate=1\ncharm.owned=shell\ncharm.worn=shell,,\nlv.life=1\nlv.stamina=4\nlv.might=4\ncore.warden=1\nfinds=sanctuary.garb.1,sanctuary.shard.0,sanctuary.stone.0,village.stone.0\nforge.sword=1\ngarb.worn=bark\nmigrated.v04=1\nweapon=sword\n';
-// 단을 미리 찍은 기록(0158 → 0161): 점수 23(레벨 15 + 엘리트 6 + 핵 둘). 첫 넷(휘돌이·가로지르기·끌어모으기·땅울림)과
-// 새 넷(버팀·되울림·던지기·잔불 흩기, G2)을 따로 같은 단·같은 고르기에, 큰 기술은 (뒤집기, 몰아치기, 한 줄기)의 단.
-// 기술 화면의 상세는 다섯 단의 줄과 고르기 둘을 늘 다 보여 주므로(0161) 단마다 글이 갈리지 않는다 — 기록은 상태 줄과 표지가
-// 갈리는 넷이면 된다: 3단(고르기 ㄱ/ㄴ) · 4단 + 큰 기술 셋 · 5단(다 올림) · 새 넷의 5단 + 몰아치기.
-const RICH = 'v=1\nembers=600\nclears=1\nrun.rest=0\nrun.gate=1\nlv.life=5\nlv.stamina=5\nlv.might=5\ncore.warden=1\ncore.bellkeeper=1\n'
-  + 'elites=t.elite.0,t.elite.1,t.elite.2,t.elite.3,t.elite.4,t.elite.5\nmigrated.v04=1\nweapon=sword\n';
 // 새 판의 기록(0166·0167·0169 — `migrated.v06`이 있다: 처음의 둘을 받지 않는다). 튜토리얼의 몸 걸음 넷을 마쳐 상(기술 점수 1)을
 // 받은 참이다. 문 앞 쉼터에 서 있고 잔불은 첫 레벨 값보다 넉넉히.
 // 0272: 맨손은 무기 판이 없다(기술 탭이 공통 판에서 열린다) — 여기 기록들은 검을 들었다(`weapon=sword`), 맨손의 길은 끝에서 따로 본다.
 const FRESH = 'v=1\nembers=130\nrun.rest=0\nrun.gate=0\nplay=1\nweapons=sword\nweapon=sword\nmigrated.v04=1\nmigrated.v06=1\nmigrated.ult=1\ntut.step=4\nskill.gift=1\n';
-const set = (keys, rank, pick) => keys.map((k) =>
-  (rank > 0 ? `skill.rank.${k}=${rank}\n` : '') + (rank >= 3 ? `skill.pick.${k}=${pick}\n` : '')).join('');
-const OLD = ['whirl', 'cut', 'gather', 'quake'];
-const NEW = ['brace', 'echo', 'throw', 'embers'];
-const board = ([ro, po], [rn, pn], [upend, flurry, line]) => RICH + set(OLD, ro, po) + set(NEW, rn, pn)
-  + `ult.rank.upend=${upend}\n` + (flurry ? `ult.rank.flurry=${flurry}\n` : '') + (line ? `ult.rank.line=${line}\n` : '');
-const BOARDS = [
-  ['o3a-n3b', board([3, 'a'], [3, 'b'], [1, 0, 0])], ['o4b-n1-u', board([4, 'b'], [1, 'a'], [1, 1, 1])],
-  ['o5a-n1', board([5, 'a'], [1, 'a'], [1, 0, 0])], ['n5b-f1', board([1, 'a'], [5, 'b'], [1, 1, 0])]];
 
 const server = http.createServer((req, res) => {
   const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
@@ -127,22 +112,11 @@ async function run(browser, lang) {
     const { stop } = await walkPlate(async (r, c, here) => here.endsWith(`@${target}`));
     if (!stop) throw new Error(`${target} 칸을 못 찾았다 — 지금 "${await at()}"`);
   };
-  // 판과 판마다의 칸 수(몸 = 패시브 스물하나 · 맺음 셋 · 다리 넷, 무기 판 = 그 꼴의 스킬 + 결 + 큰 기술 — src/plates.rs).
-  // 0270 C3: 무기 판마다 스킬이 채워지고(새 스킬 여덟) 결이 둘씩(새 타입 넷의 결), 큰 기술은 판마다 하나.
-  // 0272: 판 = 공통 + 무기 종류 다섯 + 방패. 원거리 판을 쇠뇌(스킬 여섯 — 새 스킬 둘)와 활(다섯 + 새 큰 기술)로 갈랐다.
-  // 0272 2단계: 창(뿌리 · 관통 · 날카로움 — 새 스킬 셋 + 질풍 찌르기, 끌어모으기 · 버팀 · 바늘땀 · 뿌리 솟기도 선다).
-  const PLATES = [['Body', 28], ['Class(Sword)', 10], ['Class(Hammer)', 11], ['Class(Staff)', 10], ['Class(Crossbow)', 9], ['Class(Bow)', 8], ['Class(Spear)', 10], ['Shield', 10]];
-  // 모든 판의 모든 칸(0270 C2): 판마다 칸을 다 지나며(상세의 넘침은 F4 넘침 검사가 콘솔로 본다 — 칸마다 찍지 않아도 된다)
-  // 지난 칸 수가 맞는지 본다(빠진 칸 = 걸음이 못 닿는다). `plates`: 'all' · 'weapons'(단을 미리 찍은 기록 — 공통 판은 단이 없어
-  // 기록마다 같다), `shots`: 'strips'(판마다 판 줄에서 한 장) · 'all'(칸마다도) · 'none'.
-  const sweep = async (name, { plates = 'all', shots = 'strips' } = {}) => {
-    for (const [plate, n] of PLATES) {
-      if (plates === 'weapons' && plate === 'Body') continue;
+  // 판마다 판 줄에서 한 장(0275 — 판 줄이 넘치면 굴린다: 고른 판이 창 안에 보이는지 눈으로 본다).
+  const strips = async (name) => {
+    for (const plate of PLATE_ORDER) {
       await toPlate(plate);
-      const tag = `${name}-${plate.replace(/[^A-Za-z]/g, '')}`;
-      if (shots !== 'none') await shot(`${tag}-strip`);
-      const { seen } = await walkPlate(async (r, c) => { if (shots === 'all') await shot(`${tag}-r${r}c${c}`); return false; });
-      if (seen.size !== n) errors.push(`${name}: ${plate} — ${seen.size} cells walked, want ${n}: ${[...seen].join(' ')}`);
+      await shot(`${name}-${plate.replace(/[^A-Za-z]/g, '')}`);
     }
   };
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 20000 });
@@ -241,8 +215,7 @@ async function run(browser, lang) {
   await press('Escape'); await page.waitForTimeout(300);
   // 가방(0226 — 장비 다음 탭): 칸마다(첫 줄 여섯 + 빈 칸), 아이템의 작은 목록(화로의 가방 = 잔불로 줄, 0263 `Host::edits`), 맨 아랫줄 아래 "여벌 정리".
   await press('KeyE'); await until('Bag { host: Hearth', '장비 → 가방 탭(화로)');
-  for (let i = 0; i < 6; i++) { await shot(`8n-bag-${i}`); await press('ArrowRight'); await page.waitForTimeout(120); }
-  await press('ArrowLeft', 5); await page.waitForTimeout(150);
+  await shot('8n-bag-0');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('8n-bag-acts');
   await press('Escape'); await page.waitForTimeout(300);
@@ -254,11 +227,10 @@ async function run(browser, lang) {
   await press('KeyE'); await until('Skills { host: Hearth', '가방 → 기술 탭');
   // 가게(기술에서 E): 살 것의 줄마다(끝에서 돈다).
   await press('KeyE'); await until('Shop', '화로 → 가게 탭');
-  // 진열 다섯 + 벼리기 넷 + 거두기 하나(0180 — 숫돌 둘·벼린 검 +1을 심었다; 0263에 끝 줄 가방은 걷었다 — 가방은 화로의 탭).
-  for (let i = 0; i < 10; i++) { await shot(`8-shop-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  await shot('8-shop');
   // 설정: 줄마다(0261 — 화로의 설정 = 멈춤의 설정: 끝에 개발 · 처음부터 · 타이틀로).
   await press('KeyE'); await until('Settings { host: Hearth', '가게 → 설정 탭');
-  for (let i = 0; i < 13; i++) { await shot(`8j-settings-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  await shot('8j-settings');
   // 기술 탭(설정에서 Q 둘 — 가게를 지나): 탭 머리의 민트 점 = 남은 기술 점수로 올릴 것이 있다.
   await press('KeyQ', 2); await until('Skills { host: Hearth', '설정 → 기술 탭');
   // 기술 화면(0270 C2): 든 무기(검)의 판 — 한손검 — 에서 열리고, 처음 서는 칸 = 그 판에서 올릴 수 있는 첫 칸(0270 C3 — 왼쪽 갈래의 바늘땀).
@@ -303,8 +275,8 @@ async function run(browser, lang) {
   b = await record();
   if (!/tree\.cells\.beat=1\n/.test(b)) errors.push(`cell not saved: ${JSON.stringify(b)}`);
   await page.waitForTimeout(1800);
-  // 모든 판의 모든 칸의 상세.
-  await sweep('13-skills');
+  // 판마다 판 줄에서 한 장(칸마다의 상세는 `cargo test`의 넘침 시험이 본다, 0275).
+  await strips('13-strip');
   // 결의 칸(0223 11절 → 0270 C2 — 무기 판의 셋째 줄): 한손검 판은 균열의 결. 그 판에 쓴 점수 6부터 — 지금 4(휘돌이 3 · 가로지르기 1):
   // 확인하면 목록 없이 "이 판에 점수를 2 더 쓰면 열린다".
   await toPlate('Class(Sword)'); await goto('Vein(Rift)');
@@ -369,9 +341,8 @@ async function run(browser, lang) {
   // 여정: 줄마다. 심은 기록은 성소의 문지기를 넘었다(core.warden=1) — 둘째 줄 "성소의 문지기를 넘어라"를
   // 받으면(확인) 기록에 journey=s.warden, 잔불 +60. 마을의 목표도 보인다.
   await press('KeyE'); await until('Codex { host: Pause, tab: 0', '멈춤: 기록 탭 = 여정 묶음');
-  // 줄은 열하나(성소 여섯 — 0270 D "고요를 깨워라"까지 — + 마을 다섯).
-  for (let i = 0; i < 11; i++) { await shot(`8m-journey-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
-  // 열한 줄을 다 지나면 목록은 첫 줄로 돈다 — 한 줄 아래가 문지기 목표.
+  await shot('8m-journey');
+  // 한 줄 아래가 문지기 목표.
   await press('ArrowDown'); await page.waitForTimeout(150);
   {
     const before = Number(/embers=(\d+)\n/.exec(await record())[1]);
@@ -385,8 +356,7 @@ async function run(browser, lang) {
     if (!/journey=s\.warden\n/.test(await record())) errors.push('journey: a taken goal is taken once');
   }
   await press('ArrowRight'); await until('Codex { host: Pause, tab: 1', '멈춤: 기록 탭의 적 묶음');
-  // 적 묶음의 모든 줄(열둘 — 0270 D 고요한 사슴까지: 못 본 종의 "나오는 곳"도 넘침 검사에 든다).
-  for (let i = 0; i < 12; i++) { await shot(`8h-codex-foe-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
+  await shot('8h-codex-foe');
   // 장신구 묶음: 첫 줄(가진 껍질 부적)의 보상을 받는다(0265 — 확인 = 받기, 잔불 +15, 한 번만).
   await press('ArrowRight'); await until('Codex { host: Pause, tab: 2', '멈춤: 기록 탭의 장신구 묶음');
   {
@@ -401,55 +371,18 @@ async function run(browser, lang) {
     await press('Enter'); await page.waitForTimeout(300);
     if (Number(/embers=(\d+)\n/.exec(await record())[1]) !== after) errors.push('codex: a bounty is taken once');
   }
-  for (let i = 0; i < 10; i++) { await shot(`8i-codex-charm-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
-  // 덧옷(0176).
-  await press('ArrowRight'); await page.waitForTimeout(300);
-  for (let i = 0; i < 3; i++) { await shot(`8k-codex-garb-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
-  // 무기(0191 — 맨손은 없다, 0265).
+  // 덧옷(0176) · 무기(0191 — 맨손은 없다, 0265).
+  await press('ArrowRight'); await until('Codex { host: Pause, tab: 3', '멈춤: 기록 탭의 덧옷 묶음');
+  await shot('8k-codex-garb');
   await press('ArrowRight'); await until('Codex { host: Pause, tab: 4', '멈춤: 기록 탭의 무기 묶음');
-  for (let i = 0; i < 5; i++) { await shot(`8l-codex-weapon-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
-  // 설정(끝에 개발 · 처음부터 · 타이틀로): 줄마다, 끝 줄에서 묻는 창을 열어 보고 취소.
+  await shot('8l-codex-weapon');
+  // 설정(끝에 개발 · 처음부터 · 타이틀로): 첫 줄에서 ↑ = 끝 줄(타이틀로 — 목록은 돈다) → 묻는 창을 열어 보고 취소.
   await press('KeyE'); await until('Settings { host: Pause', '멈춤: 설정 탭');
-  for (let i = 0; i < 13; i++) { await shot(`18-pause-settings-${i}`); await press('ArrowDown'); await page.waitForTimeout(120); }
-  await press('ArrowUp'); await press('Enter'); await page.waitForTimeout(300);
+  await shot('18-pause-settings');
+  await press('ArrowUp'); await press('Enter'); await until(/Ask/, '멈춤: 타이틀로 → 묻는 창');
   await shot('18a-pause-to-title-ask');
   await press('Escape'); await until(/host: Pause/, '묻는 창 → 설정 탭');
   await close('멈춤 닫기');
-  // 모든 단(0158): 단을 미리 찍은 기록마다 — 화로의 기술 화면에서 모든 칸의 상세를 지나고, 멈춤의 기술 화면에서도 한 번 더
-  // (멈춤은 상태 줄·목록이 다르다 — 끼우기만).
-  for (const [name, text] of BOARDS) {
-    // 게임이 도는 쪽에서 심으면 다시 띄우기 전에 게임이 제 기록을 덮어쓸 수 있다 — 같은 출처의 빈 쪽으로 나가서 심는다.
-    await page.goto(`http://localhost:${PORT}/manifest.webmanifest`);
-    await page.evaluate(([k, v]) => localStorage.setItem(k, v), [KEY, text]);
-    await page.goto(`http://localhost:${PORT}/`);
-    await ready();
-    await page.waitForTimeout(600);
-    await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
-    await toPlay();
-    await rest(`${name}: 화로`);
-    await shot(`20-${name}-status`);
-    // 성장 → E 셋 = 기술(장비·가방을 지나, 0263).
-    await press('KeyE', 3); await until('Skills { host: Hearth', `${name}: 성장 → 기술 탭`);
-    await shot(`20-${name}-skills`);
-    await sweep(`20-${name}`, { plates: 'weapons', shots: 'none' });
-    await close(`${name}: 화로 창 닫기`);
-    // 멈춤(다시 띄운 판이라 장비 탭, 0261) → E 둘 = 기술(가방을 지나).
-    await pause(`${name}: 멈춤`); await until('Equip { host: Pause', `${name}: 멈춤 = 장비 탭`);
-    await press('KeyE', 2); await until('Skills { host: Pause', `${name}: 멈춤의 기술 탭`);
-    await shot(`21-${name}-pause-skills`);
-    // 배운 스킬(휘돌이 — 칸 1에 끼움)에서 확인: "칸 2에 끼우기" + 올릴 수 있으면 끝에 흐린 "올리기 — 쉼터 화로에서"(0173) → 닫기.
-    // (0270 C3: 한손검 판의 왼쪽 위는 이제 바늘땀 — 배운 휘돌이를 이름으로 찾는다.)
-    await goto('Skill(Whirl)'); await press('Enter'); await page.waitForTimeout(300);
-    await shot(`21-${name}-pause-acts`);
-    await press('Escape'); await page.waitForTimeout(300);
-    // 멈춤의 상세는 상태 줄만 다르다("쉼터 화로에서 올린다") — 모든 칸은 첫 기록에서 한 번만 돈다.
-    if (name === BOARDS[0][0]) await sweep(`21-${name}-pause`, { shots: 'none' });
-    // 큰 기술 칸(한손검 판의 몰아치기)에서 확인(배웠고 끼우지 않았으면 "끼우기" 목록, 아니면 아무 일 없음) → 닫기.
-    await toPlate('Class(Sword)'); await goto('Ult(Flurry)');
-    await press('Enter'); await page.waitForTimeout(250);
-    await shot(`21-${name}-pause-ult`);
-    await press('Escape'); await page.waitForTimeout(300);
-  }
   // 새 판(0166 → 0167 → 0169): 스킬 칸 둘이 비어 있다. 튜토리얼의 몸 걸음 넷을 마친 상으로 기술 점수 하나를 들고 있다
   // (기록의 몫 `skill.gift=1`) — 쉬면 기술 탭에서 열리고(아는 스킬이 없고 배울 점수가 있는 동안만), 배우면 빈 칸에 저절로
   // 끼워진다. 둘째 점수는 첫 레벨에서(잔불 50).
@@ -497,6 +430,13 @@ async function run(browser, lang) {
   if (/skill\.rank\.cut=/.test(b)) errors.push(`fresh: cut was never learned: ${JSON.stringify(b)}`);
   await close('새 판: 화로 창 닫기');
   await shot('32-fresh-hud-two');
+  // 멈춤의 기술 탭(끼우기만, 0173): 멈춤(장비 탭) → E 둘 = 기술(가방을 지나). 배운 바늘땀(칸 1)에서 확인 = "칸 2에 끼우기" 목록.
+  await pause('새 판: 멈춤'); await until('Equip { host: Pause', '새 판: 멈춤 = 장비 탭');
+  await press('KeyE', 2); await until('Skills { host: Pause', '새 판: 멈춤의 기술 탭');
+  await goto('Skill(Stitch)'); await press('Enter'); await page.waitForTimeout(300);
+  await shot('32a-fresh-pause-acts');
+  await press('Escape'); await page.waitForTimeout(300);
+  await close('새 판: 멈춤 닫기');
   // 다시 쉬면 성장 탭(아는 스킬이 있다).
   await rest('새 판: 다시 쉬기'); await until('Status { host: Hearth', '새 판: 다시 쉬면 성장 탭');
   await shot('33-fresh-rest-status');
@@ -517,7 +457,7 @@ async function main() {
   await new Promise((r) => server.listen(PORT, r));
   const browser = await chromium.launch();
   let bad = false;
-  // 언어 하나만 돌리려면 `HEARTH_LANGS=en`(한 번에 두 언어는 30분 남짓 걸린다).
+  // 언어 하나만 돌리려면 `HEARTH_LANGS=en`.
   for (const lang of (process.env.HEARTH_LANGS || 'ko,en').split(',')) {
     const { errors, checks } = await run(browser, lang);
     for (const e of errors) { console.error(`[${lang}] ERROR ${e}`); bad = true; }
