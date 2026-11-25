@@ -82,7 +82,9 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       ['fuse', 'Skill(Fuse)', null, 900, 'Q', 90, 5], ['mine', 'Skill(Mine)', null, 500, 'Q', 120, 5], ['rain', null, 'Ult(Rain)', 1300, 'ult', 120, 1],
       // 0272 2단계: 창 판(창 = 일곱 — 검과 방패 다음). 질풍 찌르기는 찌름 여섯이 1.4초 남짓.
       ['skewer', 'Skill(Skewer)', null, 1000, 'Q', 40, 7], ['pole', 'Skill(Pole)', null, 1400, 'Q', 34, 7], ['pin', 'Skill(Pin)', null, 1000, 'Q', 30, 7],
-      ['gale', null, 'Ult(Gale)', 1000, 'ult', 70, 7]];
+      ['gale', null, 'Ult(Gale)', 1000, 'ult', 70, 7],
+      // 0274 ②: 한손검의 전투 기술(검 = 둘).
+      ['pommel', 'Skill(Pommel)', null, 900, 'Q', 26, 2], ['shove', 'Skill(Shove)', null, 900, 'Q', 30, 2], ['rally', 'Skill(Rally)', null, 1000, 'Q', 34, 2]];
     const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await p.waitForTimeout(90); } };
     // 이름으로 칸 찾기(0270 C2 — 판 하나씩): 판 줄로 올라가(위를 넉넉히 — `@Strip`) ↓ = 보이는 판(든 무기의 판)의 맨 윗줄 → 줄마다 왼쪽 끝 →
     // 오른쪽으로 훑으며 장면 이름 끝의 `@칸`을 본다. 없으면 무기 판을 한손검부터 차례로(판 줄에서 → — 공통 판에는 스킬이 없다).

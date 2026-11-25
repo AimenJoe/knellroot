@@ -93,6 +93,37 @@ async function open(browser, seed, tag) {
     errors.push(...g.bad);
   }
   {
+    // 0274 ②: 한손 망치 + 방패(성직자의 메 — 망치도 방패와 든다): 선 채 · 막는 자세 · 3연타(J 셋 — 타마다 한 장) · 장비 탭.
+    const HAMMER = BASE.replace('weapon=sword\n', 'weapons=sword,hammer\nweapon=hammer\n') + 'shields=pilgrim\nshield.worn=pilgrim\n';
+    const g = await open(browser, HAMMER, 'hammer');
+    // 화톳불에서 비켜 서고(왼쪽 아래로), 쿼터뷰를 한 단계 가까이(↑ 하나 — 둘이면 숄더뷰) — 몸과 메가 크게.
+    await g.page.keyboard.down('KeyA'); await g.page.keyboard.down('KeyS'); await g.page.waitForTimeout(900);
+    await g.page.keyboard.up('KeyA'); await g.page.keyboard.up('KeyS');
+    await g.press('ArrowUp');
+    await g.page.keyboard.down('KeyS'); await g.page.waitForTimeout(250); await g.page.keyboard.up('KeyS');
+    await g.page.waitForTimeout(600);
+    await g.shot('1-stand', body);
+    await g.shot('1b-quarter');
+    await g.page.keyboard.down('ShiftLeft');
+    await g.page.waitForTimeout(700);
+    await g.shot('2-guard', body);
+    await g.page.keyboard.up('ShiftLeft');
+    await g.page.waitForTimeout(400);
+    // 공격 = 왼쪽 클릭(새 설치의 기본 배치는 키보드 + 마우스, 0058). 화면 가운데 아래(몸 앞)를 누른다.
+    for (let i = 0; i < 3; i++) {
+      await g.page.mouse.click(640, 420);
+      await g.page.waitForTimeout(i === 2 ? 260 : 200);
+      await g.shot(`3-swing-${i + 1}`, body);
+      await g.page.waitForTimeout(250);
+    }
+    await g.page.waitForTimeout(600);
+    await g.press('Tab'); await g.until('Equip {', 'Tab = 장비 탭'); await g.page.waitForTimeout(300);
+    await g.shot('4-equip');
+    const r = await g.record();
+    if (!/shield\.worn=pilgrim\n/.test(r) || !/weapon=hammer\n/.test(r)) errors.push(`the hammer and the shield were not both held: ${JSON.stringify(r)}`);
+    errors.push(...g.bad);
+  }
+  {
     // 방패가 없는 기록: 쉬기(F) → 가게 탭(성장에서 Q 둘 — 끝에서 돈다, 0263 화로 = 성장 · 장비 · 가방 · 기술 · 가게 · 설정) → 방패 줄 → 산다.
     const g = await open(browser, BASE, 'buy');
     await g.press('KeyF'); await g.until('Status { host: Hearth', '화로에서 쉬기 → 큰 창(성장 탭)');

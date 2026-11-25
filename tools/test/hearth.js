@@ -233,18 +233,18 @@ async function run(browser, lang) {
   await shot('8j-settings');
   // 기술 탭(설정에서 Q 둘 — 가게를 지나): 탭 머리의 민트 점 = 남은 기술 점수로 올릴 것이 있다.
   await press('KeyQ', 2); await until('Skills { host: Hearth', '설정 → 기술 탭');
-  // 기술 화면(0270 C2): 든 무기(검)의 판 — 한손검 — 에서 열리고, 처음 서는 칸 = 그 판에서 올릴 수 있는 첫 칸(0270 C3 — 왼쪽 갈래의 바늘땀).
-  await until(/\[Class\(Sword\)\] @Skill\(Stitch\)$/, '기술 탭은 한손검 판의 바늘땀에서 연다');
+  // 기술 화면(0270 C2): 든 무기(검)의 판 — 한손검 — 에서 열리고, 처음 서는 칸 = 그 판에서 올릴 수 있는 첫 칸(0274 ② — 왼쪽 충격 갈래의 자루 치기).
+  await until(/\[Class\(Sword\)\] @Skill\(Pommel\)$/, '기술 탭은 한손검 판의 자루 치기에서 연다');
   await shot('12-skills');
   // 판 줄: 맨 윗줄에서 ↑ → 판 줄(한손검, 오른쪽 위 금빛 점 = 든 무기의 판) → ← = 공통 판 → ↓ = 그 판의 맨 윗줄(왼쪽 위) → ↑ → 다시 한손검.
-  await press('ArrowUp'); await until(/\[Class\(Sword\)\] @Strip$/, '바늘땀에서 ↑ = 판 줄');
+  await press('ArrowUp'); await until(/\[Class\(Sword\)\] @Strip$/, '자루 치기에서 ↑ = 판 줄');
   await shot('12-plate-strip-sword');
   await press('ArrowLeft'); await until(/\[Body\] @Strip$/, '판 줄에서 ← = 공통 판');
   await shot('12-plate-strip-body');
   await press('ArrowDown'); await until(/\[Body\] @Cell\(EvenBreath\)$/, '공통 판에서 ↓ = 왼쪽 위 칸');
   await shot('12-plate-body');
   await toPlate('Class(Sword)'); await press('ArrowDown');
-  await until(/\[Class\(Sword\)\] @Skill\(Stitch\)$/, '한손검 판에서 ↓ = 맨 윗줄(왼쪽)');
+  await until(/\[Class\(Sword\)\] @Skill\(Pommel\)$/, '한손검 판에서 ↓ = 맨 윗줄(왼쪽)');
   await goto('Skill(Whirl)'); await page.waitForTimeout(200);
   // 확인 = 작은 목록(올리기 · 칸 2에 끼우기) → 올리기 = 묻는 창(커서 "올리기") → 2단.
   await press('Enter'); await page.waitForTimeout(300);
@@ -277,27 +277,30 @@ async function run(browser, lang) {
   await page.waitForTimeout(1800);
   // 판마다 판 줄에서 한 장(칸마다의 상세는 `cargo test`의 넘침 시험이 본다, 0275).
   await strips('13-strip');
-  // 결의 칸(0223 11절 → 0270 C2 — 무기 판의 셋째 줄): 한손검 판은 균열의 결. 그 판에 쓴 점수 6부터 — 지금 4(휘돌이 3 · 가로지르기 1):
-  // 확인하면 목록 없이 "이 판에 점수를 2 더 쓰면 열린다".
-  await toPlate('Class(Sword)'); await goto('Vein(Rift)');
+  // 결의 칸(0223 11절 → 0270 C2 — 무기 판의 셋째 줄): 한손검 판은 충격의 결(0274 ② — 왼쪽 갈래). 그 판에 쓴 점수 6부터 — 지금 4
+  // (휘돌이 3 · 가로지르기 1): 확인하면 목록 없이 "이 판에 점수를 2 더 쓰면 열린다".
+  await toPlate('Class(Sword)'); await goto('Vein(Shock)');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('13v-vein-plate-locked');
   await page.waitForTimeout(1600);
-  // 가로지르기를 두 단 올려(1 → 3) 판의 셋째 줄을 연다 — 그 판에 쓴 점수 6.
-  await goto('Skill(Cut)');
+  // 자루 치기를 두 단 배워(0 → 2) 판의 셋째 줄을 연다 — 그 판에 쓴 점수 6, 충격의 스킬을 안다.
+  await goto('Skill(Pommel)');
   for (let i = 0; i < 2; i++) { await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(1800); }
   b = await record();
-  if (!/skill\.rank\.cut=3\n/.test(b)) errors.push(`cut not raised on the duel plate: ${JSON.stringify(b)}`);
-  // 옛 기록은 가로지르기(균열)를 안다 — 균열의 결: 목록(열기) → 묻는 창 → 열림(`tree.veins`).
-  await goto('Vein(Rift)'); await page.waitForTimeout(200);
+  if (!/skill\.rank\.pommel=2\n/.test(b)) errors.push(`pommel not raised on the sword plate: ${JSON.stringify(b)}`);
+  // 충격의 결: 목록(열기) → 묻는 창 → 열림(`tree.veins`).
+  await goto('Vein(Shock)'); await page.waitForTimeout(200);
   await shot('13w-vein');
   await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(300);
   await shot('13x-vein-ask');
   await press('Enter'); await page.waitForTimeout(400);
   await shot('13y-vein-open');
   b = await record();
-  if (!/tree\.veins=rift\n/.test(b)) errors.push(`vein not saved: ${JSON.stringify(b)}`);
+  if (!/tree\.veins=shock\n/.test(b)) errors.push(`vein not saved: ${JSON.stringify(b)}`);
   await page.waitForTimeout(1800);
+  // 울림의 결(0274 ② — 망치 판의 오른쪽): 고르기 둘(I 울림 모으기 · II 울려서 되찾기)이 상세에 나란히.
+  await toPlate('Class(Hammer)'); await goto('Vein(Knell)'); await page.waitForTimeout(300);
+  await shot('13z-knell-vein-picks');
   // 잠긴 줄(공통 판의 맺음 — 쓴 점수 합 22부터)의 칸은 확인해도 목록이 없다(안 됨 소리만).
   await toPlate('Body'); await goto('Key(Measure)'); await page.waitForTimeout(200);
   await press('Enter'); await page.waitForTimeout(300);
@@ -403,8 +406,8 @@ async function run(browser, lang) {
   await shot('30a-fresh-press-empty');
   await rest('새 판: 화로'); await until('Skills { host: Hearth', '새 판: 화로 = 기술 탭');
   await shot('31-fresh-rest-skills');
-  // 처음 서는 칸 = 든 무기의 판(이 기록은 검을 지닌다 — 맨손이면 공통 판, 0272)에서 살 수 있는 첫 칸(0270 C3 — 바늘땀): 목록(배우기뿐) → 묻는 창 → 배움.
-  await until(/\[Class\(Sword\)\] @Skill\(Stitch\)$/, '새 판: 한손검 판의 바늘땀');
+  // 처음 서는 칸 = 든 무기의 판(이 기록은 검을 지닌다 — 맨손이면 공통 판, 0272)에서 살 수 있는 첫 칸(0274 ② — 자루 치기): 목록(배우기뿐) → 묻는 창 → 배움.
+  await until(/\[Class\(Sword\)\] @Skill\(Pommel\)$/, '새 판: 한손검 판의 자루 치기');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('31a-fresh-acts');
   await press('Enter'); await page.waitForTimeout(300);
@@ -412,7 +415,7 @@ async function run(browser, lang) {
   await press('Enter'); await page.waitForTimeout(400);
   await shot('31c-fresh-learned');
   b = await record();
-  if (!/skill\.rank\.stitch=1\n/.test(b) || !/skill\.gift=1\n/.test(b)) errors.push(`fresh: stitch not learned: ${JSON.stringify(b)}`);
+  if (!/skill\.rank\.pommel=1\n/.test(b) || !/skill\.gift=1\n/.test(b)) errors.push(`fresh: pommel not learned: ${JSON.stringify(b)}`);
   await page.waitForTimeout(1800);
   // 한 단 올린다(Q 셋 = 가방·장비를 지나 성장 탭, 0263, 잔불 50 → 기술 점수 +1) → 기술 탭(한손검 판)의 버팀 → 남은 빈 칸(칸 2)에.
   await press('KeyQ', 3); await until('Status { host: Hearth', '새 판: 기술 → 성장 탭');
@@ -430,10 +433,10 @@ async function run(browser, lang) {
   if (/skill\.rank\.cut=/.test(b)) errors.push(`fresh: cut was never learned: ${JSON.stringify(b)}`);
   await close('새 판: 화로 창 닫기');
   await shot('32-fresh-hud-two');
-  // 멈춤의 기술 탭(끼우기만, 0173): 멈춤(장비 탭) → E 둘 = 기술(가방을 지나). 배운 바늘땀(칸 1)에서 확인 = "칸 2에 끼우기" 목록.
+  // 멈춤의 기술 탭(끼우기만, 0173): 멈춤(장비 탭) → E 둘 = 기술(가방을 지나). 배운 자루 치기(칸 1)에서 확인 = "칸 2에 끼우기" 목록.
   await pause('새 판: 멈춤'); await until('Equip { host: Pause', '새 판: 멈춤 = 장비 탭');
   await press('KeyE', 2); await until('Skills { host: Pause', '새 판: 멈춤의 기술 탭');
-  await goto('Skill(Stitch)'); await press('Enter'); await page.waitForTimeout(300);
+  await goto('Skill(Pommel)'); await press('Enter'); await page.waitForTimeout(300);
   await shot('32a-fresh-pause-acts');
   await press('Escape'); await page.waitForTimeout(300);
   await close('새 판: 멈춤 닫기');
