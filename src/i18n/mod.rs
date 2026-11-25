@@ -41,15 +41,31 @@ impl Lang {
     }
 }
 
+#[cfg(not(test))]
 static LANG: AtomicU8 = AtomicU8::new(0);
+// 시험(0275): 언어는 시험 스레드마다 — 영어로 재는 시험이 같은 때 도는 다른 시험의 한국어를 바꾸지 않게.
+#[cfg(test)]
+thread_local! {
+    static LANG: AtomicU8 = const { AtomicU8::new(0) };
+}
+
+fn lang_index() -> u8 {
+    #[cfg(not(test))]
+    return LANG.load(Ordering::Relaxed);
+    #[cfg(test)]
+    LANG.with(|l| l.load(Ordering::Relaxed))
+}
 
 pub fn lang() -> Lang {
-    Lang::ALL[LANG.load(Ordering::Relaxed) as usize % Lang::ALL.len()]
+    Lang::ALL[lang_index() as usize % Lang::ALL.len()]
 }
 
 pub fn set_lang(l: Lang) {
-    let i = Lang::ALL.iter().position(|x| *x == l).unwrap_or(0);
-    LANG.store(i as u8, Ordering::Relaxed);
+    let i = Lang::ALL.iter().position(|x| *x == l).unwrap_or(0) as u8;
+    #[cfg(not(test))]
+    LANG.store(i, Ordering::Relaxed);
+    #[cfg(test)]
+    LANG.with(|x| x.store(i, Ordering::Relaxed));
 }
 
 /// 지금 언어의 표.
@@ -2206,15 +2222,30 @@ pub fn affix_line(a: &crate::items::Affix) -> String {
 
 /// 아이템의 이름: 등급이 있으면 "단단한 낡은 검", 보통이면 바탕 이름 그대로.
 pub fn item_label(rarity: crate::items::Rarity, base_name: &str) -> String {
+    match rarity_word(rarity) {
+        None => base_name.to_string(),
+        Some(word) => fill(s().item_label, &[word, base_name]),
+    }
+}
+
+/// 등급의 말(보통은 없다) — 큰 창의 머리·후보 줄은 이름과 따로 쓴다(0275: 이름 칸이 "고급 종치기 망치"로 넘쳤다).
+pub fn rarity_word(rarity: crate::items::Rarity) -> Option<&'static str> {
     use crate::items::Rarity;
     let s = s();
-    let word = match rarity {
-        Rarity::Plain => return base_name.to_string(),
-        Rarity::Sturdy => s.rarity_sturdy,
-        Rarity::Rare => s.rarity_rare,
-        Rarity::Unique => s.rarity_unique,
-    };
-    fill(s.item_label, &[word, base_name])
+    match rarity {
+        Rarity::Plain => None,
+        Rarity::Sturdy => Some(s.rarity_sturdy),
+        Rarity::Rare => Some(s.rarity_rare),
+        Rarity::Unique => Some(s.rarity_unique),
+    }
+}
+
+/// 갈래 줄 앞에 등급(0275): "고급 · 주무기" — 보통이면 갈래 그대로.
+pub fn with_rarity(rarity: Option<crate::items::Rarity>, kind: &str) -> String {
+    match rarity.and_then(rarity_word) {
+        Some(word) => format!("{word} · {kind}"),
+        None => kind.to_string(),
+    }
 }
 
 /// 피해 타입의 이름(0223 V2 — 물리는 이름이 없다).

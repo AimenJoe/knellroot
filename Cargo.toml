@@ -25,6 +25,8 @@ gamepads = { version = "0.1.7", default-features = false }
 [dev-dependencies]
 # 시험만: i18n 표의 모든 글자가 글꼴에 있는지(첫 게임 규칙).
 ttf-parser = "0.25"
+# 시험만(0275): 넘침 시험의 자가 macroquad(fontdue)의 셈과 같은지.
+fontdue = "0.9"
 
 # Android APK(0022, KB guides/macroquad-android-apk-github-actions.md). CI(build-android.yml)에서만 cargo-quad-apk로 빌드한다.
 [package.metadata.android]

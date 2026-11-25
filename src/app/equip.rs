@@ -314,7 +314,7 @@ impl WLine {
         matches!(self, WLine::Speed | WLine::Reload)
     }
 
-    fn name(self) -> &'static str {
+    pub(super) fn name(self) -> &'static str {
         let s = s();
         match self {
             WLine::Damage => s.wstat_damage,
@@ -621,16 +621,11 @@ impl App {
         }
     }
 
-    /// 줄·머리에 쓰는 이름: 무기는 벼린 단이 붙는다(0180 "검 +2").
-    fn cand_label(&self, c: Cand) -> String {
-        let name = match self.base_cand(c) {
+    /// 후보 줄의 이름: 무기는 벼린 단이 붙는다(0180 "검 +2"). 등급은 줄의 둘째 줄에(0275).
+    fn cand_base_label(&self, c: Cand) -> String {
+        match self.base_cand(c) {
             Cand::Weapon(w) => self.forged_name(w),
             b => self.cand_name(b).to_string(),
-        };
-        // 등급이 있는 아이템은 이름 앞에(0223 V4d — "단단한 낡은 검").
-        match self.cand_item(c) {
-            Some((_, it)) => crate::i18n::item_label(it.rarity, &name),
-            None => name,
         }
     }
 
@@ -990,23 +985,24 @@ impl App {
             _ => (String::new(), DIM),
         };
         let item = item_of(fbase);
-        let head_name = match inst {
-            Some((_, it)) => crate::i18n::item_label(it.rarity, self.cand_name(fbase)),
-            None => self.cand_name(fbase).to_string(),
-        };
+        // 등급은 이름이 아니라 갈래 줄에(0275 — "고급 종치기 망치"가 머리의 이름 칸을 넘었다).
+        let rarity = inst.map(|(_, it)| it.rarity);
         let icon = self.draw_pane_head(
             &w,
             &PaneHead {
-                name: &head_name,
+                name: self.cand_name(fbase),
                 gold: wears_something(fbase),
                 // 벼린 단(0180)은 갈래 줄에 — 머리의 이름 칸은 긴 무기 이름으로 이미 찬다.
-                kind: match fbase {
-                    Cand::Weapon(w) if self.progress.forged.rank(w) > 0 => fill(
-                        s.forge_named,
-                        &[&slot_name(slot), &self.progress.forged.rank(w).to_string()],
-                    ),
-                    _ => slot_name(slot),
-                },
+                kind: crate::i18n::with_rarity(
+                    rarity,
+                    &match fbase {
+                        Cand::Weapon(w) if self.progress.forged.rank(w) > 0 => fill(
+                            s.forge_named,
+                            &[&slot_name(slot), &self.progress.forged.rank(w).to_string()],
+                        ),
+                        _ => slot_name(slot),
+                    },
+                ),
                 state,
                 icon: item.is_some(),
             },
@@ -1051,29 +1047,37 @@ impl App {
                             .unwrap_or_default(),
                         _ => String::new(),
                     };
-                    ui::Row::value(self.cand_label(c), mark)
+                    // 이름(벼린 단까지) 아래 작은 줄에 등급 · 낀 칸(0275 — 한 줄에 "고급 종치기 망치 +3 … 주무기"가 다 서지 않았다).
+                    let rarity = self
+                        .cand_item(c)
+                        .and_then(|(_, it)| crate::i18n::rarity_word(it.rarity));
+                    let sub: Vec<&str> = rarity
+                        .into_iter()
+                        .chain([mark.as_str()])
+                        .filter(|t| !t.is_empty())
+                        .collect();
+                    ui::Row::plain(self.cand_base_label(c))
                         .with_icon(true)
-                        .tagged()
+                        .with_sub(sub.join(" · "))
                 })
                 .collect();
             let px = self.ui.px(w.k);
-            let row_h = px * 1.75;
-            // 폭: 가장 긴 줄(이름 + 표지)이 잘리지 않게 — 줄의 앞 여백(▶·그림 칸)·뒤 여백은 `ui::list_k`와 같은 셈. 왼쪽 칸을 넘지 않는다.
+            let row_h = self.ui.list_row_h(&rows, w.k);
+            // 폭: 가장 긴 줄(이름 · 둘째 줄)이 잘리지 않게 — 줄의 앞 여백(▶·그림 칸)·뒤 여백은 `ui::list_k`와 같은 셈. 왼쪽 칸을 넘지 않는다.
             let widest = rows
                 .iter()
                 .map(|r| {
-                    let tag = if r.value.is_empty() {
-                        0.0
-                    } else {
-                        self.ui.width(&r.value, 0.8 * w.k) + u * 6.0
-                    };
-                    self.ui.width(&r.label, w.k) + tag
+                    self.ui
+                        .width(&r.label, w.k)
+                        .max(self.ui.width(&r.sub, ui::LIST_SUB_K * w.k))
                 })
                 .fold(0.0, f32::max);
             let pw = (widest + px * 2.5 + u * 24.0)
                 .max(PICK_W * u)
                 .min((tabs::LEFT_W - 4.0) * u);
-            let ph = row_h * rows.len().clamp(1, PICK_ROWS) as f32 + u * 8.0;
+            // 보이는 줄 수: `PICK_ROWS`까지, 두 줄 높이의 줄(0275)이면 몸의 높이 안에 드는 만큼만(넘치면 굴린다).
+            let fit = (((w.body_h * u - u * 8.0) / row_h).floor() as usize).clamp(1, PICK_ROWS);
+            let ph = row_h * rows.len().clamp(1, fit) as f32 + u * 8.0;
             let b = boxes[slot];
             let x = if left_column(slot) {
                 b.x + b.w + u * 5.0

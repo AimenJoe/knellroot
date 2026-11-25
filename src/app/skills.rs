@@ -290,7 +290,7 @@ pub(super) fn plate_name(p: Plate) -> &'static str {
 }
 
 /// 타입의 이름 — 물리도 이름이 있다(무기 판의 갈래 머리·스킬의 종류 줄).
-fn kind_name(k: crate::status::Kind) -> &'static str {
+pub(super) fn kind_name(k: crate::status::Kind) -> &'static str {
     match k {
         crate::status::Kind::Physical => s().sk_physical,
         _ => crate::i18n::ail_name(k),
@@ -513,7 +513,7 @@ fn unfit_toast() -> String {
 }
 
 /// 목록 한 줄의 글.
-fn act_label(board: &Board, e: Entry, d: Do, has_sub: bool) -> String {
+pub(super) fn act_label(board: &Board, e: Entry, d: Do, has_sub: bool) -> String {
     let s = s();
     match (d, e) {
         (Do::Buy, Entry::Cell(_) | Entry::Link(_) | Entry::Vein(_)) => {
@@ -600,42 +600,11 @@ pub(super) mod geo {
     }
 }
 
-/// 판 줄의 칸에서 이름 곁에 비우는 폭(오른쪽 귀퉁이의 금빛 점 자리 — 기준 px). 판이 여덟(0272 2단계)이라 빠듯하면 `STRIP_TIGHT`.
-const STRIP_PAD: f32 = 12.0;
-const STRIP_TIGHT: f32 = 7.0;
-
-/// 판 줄의 글자 배(0272 2단계): 이름들(`text` — 기준 px)과 칸마다의 표지 자리(`pad`)가 `total`에 다 서면 1, 아니면 이름만 줄여
-/// 들어가는 배 — 0.8배 아래로는 줄이지 않는다(그때는 `fit`이 자르고 넘침 검사가 알린다).
-pub(super) fn strip_scale(text: &[f32], pad: f32, total: f32) -> f32 {
-    let room = total - pad * text.len() as f32;
-    let sum: f32 = text.iter().sum();
-    if sum <= room || sum <= 0.0 {
-        1.0
-    } else {
-        // 조금 남겨 둔다(꼭 맞으면 소수점의 어긋남으로 `fit`이 마지막 글자를 자른다).
-        (room * 0.96 / sum).clamp(0.8, 1.0)
-    }
-}
-
-/// 판 줄의 칸들(왼쪽 끝, 폭 — 기준 px): 칸마다 `need`(이름 + 표지 자리)만큼, 남는 폭은 고르게 나눈다. 다 합쳐 `total`을 넘으면
-/// 똑같이 나눈다(그때는 이름이 `fit`으로 잘린다 — 넘침 검사가 알린다).
-pub(super) fn strip_cells(need: &[f32], total: f32) -> Vec<(f32, f32)> {
-    let n = need.len().max(1) as f32;
-    let sum: f32 = need.iter().sum();
-    let mut x = 0.0;
-    need.iter()
-        .map(|&w| {
-            let cw = if sum <= total {
-                w + (total - sum) / n
-            } else {
-                total / n
-            };
-            let at = x;
-            x += cw;
-            (at, cw)
-        })
-        .collect()
-}
+/// 판 줄(0270 C2 → 0275): 이름의 글 배(창의 배 `Window::k`에 곱한다 — 줄이지 않는다), 칸에서 이름 곁에 비우는 폭(양옆 —
+/// 오른쪽 귀퉁이의 금빛 점 자리, 기준 px), 칸 사이 틈. 다 들면 남는 폭을 나눠 채우고, 넘치면 가로로 굴린다(`ui::strip_tabs`).
+pub(super) const STRIP_K: f32 = 0.58;
+pub(super) const STRIP_PAD: f32 = 12.0;
+const STRIP_GAP: f32 = 2.0;
 
 /// 열린 줄의 안내·선이 걷히는 초(2026-11-23).
 const ROW_FADE: f32 = 0.8;
@@ -1102,9 +1071,9 @@ enum Block {
         state: u8,
         cost: Option<(String, bool)>,
     },
-    /// 3단: 두 고르기를 나란히 — (이름 줄, 설명 줄들, 고른 것인가).
+    /// 3단: 두 고르기를 나란히 — (이름 줄들, 설명 줄들, 고른 것인가). 이름도 상자 폭에서 줄을 바꾼다(0275).
     Picks {
-        boxes: [(String, Vec<String>, bool); 2],
+        boxes: [(Vec<String>, Vec<String>, bool); 2],
         open: bool,
     },
     Gap(f32),
@@ -1112,15 +1081,14 @@ enum Block {
 
 /// 상세 칸의 글 크기(본문 1 = 13px 기준)와 줄 높이(기준 px).
 const K_NAME: f32 = super::tabs::K_NAME;
-const K_KIND: f32 = super::tabs::K_KIND;
 const K_BODY: f32 = super::tabs::K_BODY;
-const K_RANK: f32 = 0.68;
-const K_PICK: f32 = 0.62;
+pub(super) const K_RANK: f32 = 0.68;
+pub(super) const K_PICK: f32 = 0.62;
 const LH_BODY: f32 = super::tabs::LH_BODY;
 const LH_RANK: f32 = 9.8;
 const LH_PICK: f32 = 8.8;
 /// 단 줄의 번호 칸 폭.
-const RANK_NUM: f32 = 11.0;
+pub(super) const RANK_NUM: f32 = 11.0;
 
 impl Block {
     /// 덩이의 높이(기준 px).
@@ -1129,8 +1097,10 @@ impl Block {
             Block::Text { lines, k, .. } => lines.len() as f32 * LH_BODY * (k / K_BODY),
             Block::Rank { lines, .. } => lines.len().max(1) as f32 * LH_RANK + 2.0,
             Block::Picks { boxes, .. } => {
-                let n = boxes[0].1.len().max(boxes[1].1.len()) as f32;
-                LH_RANK + n * LH_PICK + 6.0
+                let tall = |b: &(Vec<String>, Vec<String>, bool)| {
+                    b.0.len().max(1) as f32 * LH_RANK + b.1.len() as f32 * LH_PICK
+                };
+                tall(&boxes[0]).max(tall(&boxes[1])) + 6.0
             }
             Block::Gap(h) => *h,
         }
@@ -1206,6 +1176,8 @@ impl App {
     pub(super) fn open_plate(&mut self, edit: bool) {
         let p = self.held_plates().0.unwrap_or(Plate::Body);
         self.set_plate(p);
+        // 판 줄은 처음부터 — 그 판이 보이게(손으로 굴려 둔 창을 이어 가지 않는다, 0275).
+        self.plate_strip = ui::Strip::default();
         self.cursor = first_focus_on(p, &self.board(), self.progress.skill_points(), edit);
     }
 
@@ -1225,7 +1197,8 @@ impl App {
     /// (되돌리기 단추면 묻는 창, 판 줄이면 격자로), 판 줄의 판 누르기 = 그 판, 뒤로·✕·창 밖 = 닫기.
     pub(super) fn tick_skills(&mut self, a: &Actions, edit: bool) {
         self.sync_plate();
-        let mut a = *a;
+        // 판 줄이 넘쳐 굴리는 동안(0275) 그 위의 끌기·휠은 판 줄을.
+        let mut a = super::strip_input(&mut self.plate_strip, a);
         let before = self.cursor;
         // 휠·끌기: 격자 위에서는 격자 창을(0163), 상세 칸 위에서는 그 칸을 굴린다(오른쪽 스틱은 늘 상세 칸).
         self.grid_scroll(&mut a);
@@ -1630,40 +1603,60 @@ impl App {
     fn draw_plate_strip(&mut self, w: &Window, at: usize) {
         let (k, u) = (w.k, w.s);
         let (main, sub) = self.held_plates();
-        // 칸의 폭은 이름대로(0272 — 판이 일곱이 되니 똑같이 나눈 칸에서 영어의 긴 이름 Crossbow·Hammer가 잘렸다): 이름 + 표지 자리.
-        // 여덟(창, 0272 2단계)이면 영어 이름이 다 못 선다 — 글을 자르지 않고 글자를 조금(0.8배까지) 줄인다(`strip_scale`).
-        let base = 0.58 * k;
-        let text: Vec<f32> = PLATES
+        // 칸의 폭은 이름대로(0272): 이름 + 표지 자리. 판이 여덟(창)이 되어 영어 이름이 다 못 서자 글자를 줄였는데(0272 2단계),
+        // 0275부터는 줄이지 않는다 — 큰 창의 탭 줄(0233)처럼 다 들면 남는 폭을 나눠 채우고, 넘치면 가로로 굴린다(끌기·휠,
+        // 보이는 판이 바뀌면 그 판이 보이게 가장 적게, 양끝 ◀▶ = 더 있다). 가장자리에 걸친 이름은 잘린 채로(넘침 검사 밖).
+        let tk = STRIP_K * k;
+        let widths: Vec<f32> = PLATES
             .iter()
-            .map(|&p| self.ui.width(plate_name(p), base) / u)
+            .map(|&p| self.ui.width(plate_name(p), tk) + STRIP_PAD * u)
             .collect();
-        // 표지 자리도 빠듯하면 좁힌다(점은 이름 위 귀퉁이에 걸친다).
-        let pad = if strip_scale(&text, STRIP_PAD + 2.0, geo::GRID_W) >= 0.85 {
-            STRIP_PAD + 2.0
-        } else {
-            STRIP_TIGHT
-        };
-        let tk = base * strip_scale(&text, pad, geo::GRID_W);
-        let need: Vec<f32> = text.iter().map(|t| t * tk / base + pad).collect();
-        let cells = strip_cells(&need, geo::GRID_W);
+        let arrow = self.ui.width("◀", tk) + u * 4.0;
+        let (x0, x1) = (w.at(0.0, 0.0).x, w.at(geo::GRID_W, 0.0).x);
+        let h = (geo::STRIP_H - 3.0) * u;
+        let (cells, view) = ui::strip_tabs(
+            &mut self.plate_strip,
+            &widths,
+            x0,
+            x1,
+            w.origin.y,
+            h,
+            STRIP_GAP * u,
+            arrow,
+            self.skill_plate.index(),
+        );
+        if let Some(v) = view {
+            // 포커스의 테(칸 밖으로 한 칸)가 창 끝에서 잘리지 않을 만큼만 넓혀 자른다.
+            ui::clip(Some(Rect::new(
+                v.x - u * 1.5,
+                v.y - u * 2.0,
+                v.w + u * 3.0,
+                v.h + u * 4.0,
+            )));
+        }
         for (i, &p) in PLATES.iter().enumerate() {
-            let (cx, cw) = cells[i];
-            let r = w.rect(cx + 1.0, 0.0, cw - 2.0, geo::STRIP_H - 3.0);
+            let (x, cw) = cells[i];
+            let r = Rect::new(x, w.origin.y, cw, h);
+            let whole = match view {
+                Some(v) if x + cw <= v.x || x >= v.x + v.w => continue,
+                Some(v) => x >= v.x - 0.5 && x + cw <= v.x + v.w + 0.5,
+                None => true,
+            };
             let shown = p == self.skill_plate;
             if shown {
                 draw_rectangle(r.x, r.y, r.w, r.h, ui::PANEL_LIGHT);
                 draw_rectangle(r.x, r.y + r.h - u, r.w, u.max(1.0), AMBER);
             }
-            // 오른쪽 귀퉁이의 점(든 무기) 자리를 비운다.
-            let name = self.ui.fit(plate_name(p), r.w - u * (pad - 2.0), tk);
             let ink = if shown { AMBER } else { DIM };
-            self.ui.text_center(
-                &name,
-                r.x + r.w * 0.5,
-                r.y + (r.h - self.ui.px(tk)) * 0.5,
-                tk,
-                ink,
-            );
+            let name = plate_name(p);
+            let ty = r.y + (r.h - self.ui.px(tk)) * 0.5;
+            if whole {
+                self.ui.text_center(name, r.x + r.w * 0.5, ty, tk, ink);
+            } else {
+                let tw = self.ui.width(name, tk);
+                self.ui
+                    .plain_text(name, r.x + (r.w - tw) * 0.5, ty, tk, ink);
+            }
             let dot = (u * 2.2).max(2.0);
             let (dx, dy) = (r.x + r.w - dot * 1.6, r.y + dot * 1.4);
             if main == Some(p) {
@@ -1675,7 +1668,24 @@ impl App {
                 let o = Rect::new(r.x - u, r.y - u, r.w + u * 2.0, r.h + u * 2.0);
                 self.ui.edge(o, (u * 1.6).max(2.0), CREAM);
             }
-            self.hits.push((r, Hit::Cell(1, i)));
+            // 누를 자리는 보이는 몫만.
+            let hit = match view {
+                Some(v) => {
+                    let l = x.max(v.x);
+                    Rect::new(l, r.y, (x + cw).min(v.x + v.w) - l, r.h)
+                }
+                None => r,
+            };
+            self.hits.push((hit, Hit::Cell(1, i)));
+        }
+        if let Some(v) = view {
+            ui::clip(None);
+            let (l, r) = self.plate_strip.more();
+            let ink = |more: bool| if more { INK } else { Color { a: 0.35, ..DIM } };
+            let ty = w.origin.y + (h - self.ui.px(tk)) * 0.5;
+            self.ui.text_center("◀", x0 + arrow * 0.5, ty, tk, ink(l));
+            self.ui
+                .text_center("▶", v.x + v.w + arrow * 0.5, ty, tk, ink(r));
         }
     }
 
@@ -1986,8 +1996,6 @@ impl App {
         let (x0, dw) = (geo::DETAIL_X, geo::DETAIL_W);
         let text_x = x0 + geo::DETAIL_ICON + 6.0;
         let text_w = (dw - geo::DETAIL_ICON - 6.0) * u;
-        // 잠깐 뜨는 알림(산 것·되돌린 것·안 되는 까닭)은 상태 줄 자리에.
-        let alert = self.toast.as_ref().map(|(t, _)| t.clone());
         let entry = ENTRIES.get(at).copied();
         let plate = self.skill_plate;
         let (name, kind, state) = match entry {
@@ -2038,15 +2046,8 @@ impl App {
         let p = w.at(name_x, 0.0);
         self.ui
             .text(&name, p.x, p.y, K_NAME * k, if owned { AMBER } else { INK });
-        let kind = self.ui.fit(&kind, name_w, K_KIND * k);
-        self.ui.text(&kind, p.x, w.at(0.0, 15.0).y, K_KIND * k, DIM);
-        let (state, ink) = match alert {
-            Some(t) => (t, AMBER),
-            None => state,
-        };
-        let state = self.ui.fit(&state, name_w, K_KIND * k);
-        self.ui
-            .text(&state, p.x, w.at(0.0, 25.0).y, K_KIND * k, ink);
+        // 갈래 줄 · 상태 줄(알림이 길면 두 줄로 — `draw_head_lines`, 0275).
+        self.draw_head_lines(w, name_x, name_w, &kind, &state);
 
         // 몸: 하는 일 + 단마다 한 줄. 넘치면 덩이 단위로 굴린다.
         let width = dw * u;
@@ -2269,7 +2270,7 @@ impl App {
                         let one = |p: Pick| {
                             let (mark, name, desc) = pick_text(id, p);
                             (
-                                format!("{mark} {name}"),
+                                wrap(&format!("{mark} {name}"), box_w, K_RANK),
                                 wrap(desc, box_w, K_PICK),
                                 rank >= PICK_RANK && board.pick[id.index()] == p,
                             )
@@ -2299,7 +2300,7 @@ impl App {
                 let one = |b: bool| {
                     let (mark, name, desc) = cell_pick_text(c, b);
                     (
-                        format!("{mark} {name}"),
+                        wrap(&format!("{mark} {name}"), box_w, K_RANK),
                         wrap(desc, box_w, K_PICK),
                         open && board.cells.picked_b(c) == b,
                     )
@@ -2393,11 +2394,13 @@ impl App {
                     draw_rectangle(r.x, r.y, r.w, r.h, face);
                     self.ui
                         .edge(r, if *chosen { (u * 1.2).max(2.0) } else { 1.0 }, edge);
-                    let name = self.ui.fit(name, (bw - 6.0) * u, K_RANK * k);
-                    let p = w.at(bx + 3.0, y + 2.0);
-                    self.ui.text(&name, p.x, p.y, K_RANK * k, ink);
+                    for (j, line) in name.iter().enumerate() {
+                        let p = w.at(bx + 3.0, y + 2.0 + LH_RANK * j as f32);
+                        self.ui.text(line, p.x, p.y, K_RANK * k, ink);
+                    }
+                    let top = LH_RANK * name.len().max(1) as f32;
                     for (j, line) in desc.iter().enumerate() {
-                        let p = w.at(bx + 3.0, y + 2.0 + LH_RANK + LH_PICK * j as f32);
+                        let p = w.at(bx + 3.0, y + 2.0 + top + LH_PICK * j as f32);
                         self.ui.text(line, p.x, p.y, K_PICK * k, sub);
                     }
                 }
@@ -2498,28 +2501,6 @@ mod tests {
     use crate::weapons::Class;
 
     const SWORD: Plate = Plate::Class(Class::Sword);
-
-    /// 0272: 판 줄의 칸은 이름의 폭대로 — 다 들어가면 칸마다 제 폭 이상이고 줄을 빈틈없이 채운다, 넘치면 똑같이 나눈다.
-    #[test]
-    fn the_plate_strip_gives_each_name_its_width_and_fills_the_row() {
-        let need = [30.0, 28.0, 30.0, 26.0, 44.0, 20.0, 28.0];
-        let cells = strip_cells(&need, 270.0);
-        let mut x = 0.0;
-        for (&(at, w), &n) in cells.iter().zip(need.iter()) {
-            assert!((at - x).abs() < 1e-3 && w >= n, "{at} {w} {n}");
-            x += w;
-        }
-        assert!((x - 270.0).abs() < 1e-3, "the row is filled: {x}");
-        let tight = strip_cells(&[80.0; 7], 270.0);
-        assert!(tight.iter().all(|&(_, w)| (w - 270.0 / 7.0).abs() < 1e-3));
-        assert!((tight[6].0 + tight[6].1 - 270.0).abs() < 1e-3);
-        // 0272 2단계: 여덟이 안 서면 글자를 조금 줄여 세운다(0.8배까지).
-        assert_eq!(strip_scale(&[19.0; 8], 14.0, 270.0), 1.0);
-        let k = strip_scale(&[22.0; 8], 14.0, 270.0);
-        let used = 22.0 * 8.0 * k + 14.0 * 8.0;
-        assert!(used < 270.0 && used > 262.0 && k < 1.0, "{k} {used}");
-        assert_eq!(strip_scale(&[60.0; 8], 14.0, 270.0), 0.8);
-    }
 
     /// 0272: "쓰는 무기" 줄은 종류의 이름으로 — 한손 종류는 방패로 갈린다(방패 없이만 되면 그렇게, 방패와 함께만 되면 방패),
     /// 쇠뇌와 활은 따로, 모든 종류와 방패에 다 되면 "어느 무기나". 판의 이름도 종류 표에서 온다.

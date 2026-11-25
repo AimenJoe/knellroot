@@ -29,6 +29,8 @@ mod slots;
 mod stack;
 mod status;
 mod tabs;
+#[cfg(test)]
+mod text_fit;
 mod title;
 
 use macroquad::prelude::*;
@@ -213,6 +215,8 @@ pub struct App {
     tab_strip: crate::ui::Strip,
     /// 창 안의 작은 탭 줄(개발 창·모션 보기·도감의 묶음, 0257) — 한 번에 하나만 보인다.
     small_strip: crate::ui::Strip,
+    /// 기술 탭의 판 줄(0275 — 넘치면 굴린다): 기술 탭을 열 때마다 새로(든 무기의 판이 보이게).
+    plate_strip: crate::ui::Strip,
     /// 상태·장비 탭의 인형(0235): 손으로 돌린 각(라디안 — `None`이면 저절로 천천히 좌우로 흔든다)과 그린 자리(끌기가 그 위에서 시작했나).
     doll_yaw: Option<f32>,
     /// 도감 그림을 손으로 보기(끌어 돌리기·크게 — 2026-11-19).
@@ -438,6 +442,7 @@ impl App {
             pause_tab: flow::Tab::Status,
             tab_strip: crate::ui::Strip::default(),
             small_strip: crate::ui::Strip::default(),
+            plate_strip: crate::ui::Strip::default(),
             doll_yaw: None,
             codex_view: Default::default(),
             doll_rect: None,
@@ -759,12 +764,7 @@ impl App {
     /// 한 프레임.
     /// 창 안의 작은 탭 줄(0257)이 넘쳐 굴리는 동안, 그 위의 끌기·휠은 탭 줄을 굴린다 — 몸의 목록에는 넘기지 않는다.
     pub(super) fn small_strip_input(&mut self, a: &Actions) -> Actions {
-        let mut a = *a;
-        if self.small_strip.over(a.point) {
-            self.small_strip.nudge(a.point, a.drag_x, a.wheel);
-            (a.drag, a.drag_x, a.wheel) = (0.0, 0.0, 0);
-        }
-        a
+        strip_input(&mut self.small_strip, a)
     }
 
     pub fn frame(&mut self) {
@@ -1509,6 +1509,16 @@ impl App {
     pub(super) fn forged_name(&self, w: weapons::Id) -> String {
         forged_label(w, self.progress.forged.rank(w))
     }
+}
+
+/// 넘쳐 굴리는 가로 탭 줄(`ui::Strip`) 위의 끌기·휠은 그 줄을 굴린다 — 몸의 목록에는 넘기지 않는다(0257 작은 탭 줄 · 0275 판 줄).
+pub(super) fn strip_input(strip: &mut crate::ui::Strip, a: &Actions) -> Actions {
+    let mut a = *a;
+    if strip.over(a.point) {
+        strip.nudge(a.point, a.drag_x, a.wheel);
+        (a.drag, a.drag_x, a.wheel) = (0.0, 0.0, 0);
+    }
+    a
 }
 
 /// 무기 이름 + 단(0180).

@@ -438,13 +438,17 @@ impl App {
 
     /// 아이템의 이름("단단한 낡은 검").
     pub(super) fn item_label(item: &crate::items::Item) -> String {
+        crate::i18n::item_label(item.rarity, Self::base_name(item))
+    }
+
+    /// 바탕의 이름(등급 없이 — 큰 창의 머리, 0275).
+    pub(super) fn base_name(item: &crate::items::Item) -> &'static str {
         use crate::items::Base;
-        let name = match item.base {
+        match item.base {
             Base::Weapon(w) => weapon_name(w),
             Base::Shield(s) => tr(s.def().name),
             Base::Charm(c) => tr(crate::charms::def(c).name),
-        };
-        crate::i18n::item_label(item.rarity, name)
+        }
     }
 
     /// 여벌이 바닥에 떨어진다(0226 — 사장 "가득이면 못 주워야지, 바닥에 떨어져 있어야지"): 주워야 가방에 든다.

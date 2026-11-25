@@ -20,19 +20,19 @@ pub(super) const SKILL_ROWS: usize = 4;
 pub(super) const ROWS: usize = LV_LINES.len() + SKILL_ROWS;
 
 /// 자리(480×270 기준 px, 몸의 왼쪽 위가 원점): 인형 단(왼쪽)의 폭, 고르는 줄 단의 왼쪽 끝과 폭.
-const DOLL_W: f32 = 92.0;
-const PICK_X: f32 = 100.0;
-const PICK_W: f32 = tabs::LEFT_W - PICK_X - 6.0;
+pub(super) const DOLL_W: f32 = 92.0;
+pub(super) const PICK_X: f32 = 100.0;
+pub(super) const PICK_W: f32 = tabs::LEFT_W - PICK_X - 6.0;
 /// 묶음 머리글(레벨 n · 기술)의 높이, 레벨 줄·기술 줄의 높이, 두 묶음 사이.
 const HEAD: f32 = 14.0;
 const LEVEL_H: f32 = 29.0;
-const CHARM_H: f32 = 19.0;
+pub(super) const CHARM_H: f32 = 19.0;
 const GROUP_GAP: f32 = 4.0;
 /// 단의 점: 한 변, 사이.
-const PIP: f32 = 6.0;
-const PIP_GAP: f32 = 2.0;
+pub(super) const PIP: f32 = 6.0;
+pub(super) const PIP_GAP: f32 = 2.0;
 /// 막대(체력·기력): 폭·높이, 이름표까지 한 묶음의 높이.
-const BAR_W: f32 = 80.0;
+pub(super) const BAR_W: f32 = 80.0;
 const BAR_H: f32 = 5.0;
 const BAR_ROW: f32 = 17.0;
 
@@ -171,7 +171,7 @@ pub(super) fn confirm(i: usize, lv: &Level, embers: u32, edits: bool) -> Option<
 }
 
 /// 레벨 줄 이름 · 그 아래 작은 한마디.
-fn line_name(l: LvLine) -> &'static str {
+pub(super) fn line_name(l: LvLine) -> &'static str {
     let s = s();
     match l {
         LvLine::Life => s.lv_life,
@@ -180,7 +180,7 @@ fn line_name(l: LvLine) -> &'static str {
     }
 }
 
-fn line_sub(l: LvLine) -> &'static str {
+pub(super) fn line_sub(l: LvLine) -> &'static str {
     let s = s();
     match l {
         LvLine::Life => s.lv_life_sub,

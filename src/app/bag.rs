@@ -14,14 +14,14 @@ use flow::Host;
 
 /// 칸의 격자(기준 px): 한 줄 여섯, 칸의 한 변과 틈. 가방이 한도를 넘으면(문지기가 처음 주는 장신구 — `BAG_CAP`의 풀이)
 /// 줄이 하나 늘고 칸이 작아진다.
-const COLS: usize = 6;
-const CELL: f32 = 30.0;
+pub(super) const COLS: usize = 6;
+pub(super) const CELL: f32 = 30.0;
 const CELL_SMALL: f32 = 24.0;
-const GAP: f32 = 4.0;
+pub(super) const GAP: f32 = 4.0;
 const GRID_Y: f32 = 2.0;
 /// 격자 아래 한 줄(수 · 여벌 정리 단추)의 자리.
 const FOOT_Y: f32 = 174.0;
-const TIDY_W: f32 = 84.0;
+pub(super) const TIDY_W: f32 = 84.0;
 const TIDY_H: f32 = 16.0;
 /// 내려놓는 자리: 바라보는 쪽 앞으로 이만큼(m — 몸에 가려 안 보이지 않게, 0131). 그 자리가 벽·턱 위거나 낭떠러지면 발치에.
 const PUT_AHEAD: f32 = 0.9;
@@ -612,9 +612,10 @@ impl App {
             let icon = self.draw_pane_head(
                 &w,
                 &PaneHead {
-                    name: &Self::item_label(&it),
+                    // 등급은 갈래 줄에(0275 — 이름 칸이 넘쳤다).
+                    name: Self::base_name(&it),
                     gold: worn,
-                    kind: slot_name(slot),
+                    kind: crate::i18n::with_rarity(Some(it.rarity), &slot_name(slot)),
                     state,
                     icon: view.is_some(),
                 },

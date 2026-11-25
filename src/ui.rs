@@ -52,6 +52,9 @@ pub const MINT: Color = Color::new(0.50, 0.90, 0.74, 1.0);
 /// 큰 창(0161)의 머리 줄 높이(480×270 기준 px).
 pub const WINDOW_HEAD: f32 = 22.0;
 
+/// 목록 줄의 작은 둘째 줄의 배(`Row::sub`).
+pub const LIST_SUB_K: f32 = 0.7;
+
 /// 창 안 목록의 한 줄(0066, nail `menu_list`·`setting_row`): 이름은 왼쪽, 값은 오른쪽.
 #[derive(Debug, Clone, Default)]
 pub struct Row {
@@ -65,6 +68,8 @@ pub struct Row {
     pub icon: bool,
     /// 오른쪽 값을 작은 표지로(조금 작은 글 — "장비 중" 같은 표시가 이름을 잘라 먹지 않게).
     pub tag: bool,
+    /// 이름 아래 작은 둘째 줄(0275 — 장비 칸의 후보: 등급 · 낀 칸). 줄 하나라도 있으면 목록의 모든 줄이 두 줄 높이(`list_row_h`).
+    pub sub: String,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -110,8 +115,11 @@ impl Row {
     pub fn with_icon(self, icon: bool) -> Self {
         Row { icon, ..self }
     }
-    pub fn tagged(self) -> Self {
-        Row { tag: true, ..self }
+    pub fn with_sub(self, sub: impl Into<String>) -> Self {
+        Row {
+            sub: sub.into(),
+            ..self
+        }
     }
 }
 
@@ -140,6 +148,24 @@ pub fn plain(s: &str) -> String {
     s.chars()
         .filter(|c| *c != KEY_OPEN && *c != KEY_CLOSE)
         .collect()
+}
+
+/// 글 폭의 셈(키캡이면 칸 여백까지): `px` = 글 크기, `plain` = 표식 없는 조각의 폭. 그리는 `Ui::width`와 글꼴만 읽어 재는
+/// 시험(0275 `app::text_fit`)이 같은 셈을 쓴다.
+pub fn width_with(s: &str, px: f32, plain: impl Fn(&str) -> f32) -> f32 {
+    if !s.contains(KEY_OPEN) {
+        return plain(s);
+    }
+    key_segments(s)
+        .iter()
+        .map(|(seg, is_key)| {
+            if *is_key {
+                plain(seg) + px * (2.0 * KEY_PAD + KEY_GAP)
+            } else {
+                plain(seg)
+            }
+        })
+        .sum()
 }
 
 /// (조각, 키캡인가). 닫는 표식이 없으면(잘린 글) 끝까지 키캡.
@@ -231,20 +257,7 @@ impl Ui {
 
     /// 글 폭(키캡이면 칸 여백까지).
     pub fn width(&self, s: &str, k: f32) -> f32 {
-        if !s.contains(KEY_OPEN) {
-            return self.plain_w(s, k);
-        }
-        let px = self.px(k);
-        key_segments(s)
-            .iter()
-            .map(|(seg, is_key)| {
-                if *is_key {
-                    self.plain_w(seg, k) + px * (2.0 * KEY_PAD + KEY_GAP)
-                } else {
-                    self.plain_w(seg, k)
-                }
-            })
-            .sum()
+        width_with(s, self.px(k), |seg| self.plain_w(seg, k))
     }
 
     /// 그림자를 깐 글(어두운 배경·밝은 배경 어디서나 읽히게). `y`는 글줄의 위.
@@ -307,7 +320,8 @@ impl Ui {
         }
     }
 
-    fn plain_text(&self, s: &str, x: f32, y: f32, k: f32, color: Color) {
+    /// 넘침 검사 없이 그리는 글 — 잘라 그리는 가장자리의 글(굴리는 탭 줄에 걸친 이름)만 쓴다. 보통은 `text`.
+    pub fn plain_text(&self, s: &str, x: f32, y: f32, k: f32, color: Color) {
         let base = y + self.px(k) * 0.85;
         let o = self.scale * k;
         let (fs, scale) = self.sizing(k);
@@ -884,7 +898,8 @@ impl Ui {
         let px = self.px(k);
         let u = self.scale * k;
         let n = rows.len();
-        let row_h = px * 1.75;
+        let row_h = self.list_row_h(rows, k);
+        let two = rows.iter().any(|r| !r.sub.is_empty());
         // 넘치면 들어가는 만큼만 — ▲▼는 목록이 아니라 창 제목 줄에(`title_arrows`, nail 0239: 줄 자리를 먹지 않게).
         let fits = ((area.h + 1.0) / row_h).floor().max(1.0) as usize;
         let y0 = area.y;
@@ -898,7 +913,13 @@ impl Ui {
         for (i, row) in rows.iter().enumerate().skip(first).take(fits) {
             let r = Rect::new(area.x, y0 + row_h * (i - first) as f32, area.w, row_h);
             let sel = i == cursor;
-            let ty = r.y + (row_h - px) * 0.5;
+            // 두 줄 목록(0275): 이름은 위로 비키고 그 아래에 작은 둘째 줄.
+            let sk = LIST_SUB_K * k;
+            let ty = if two {
+                r.y + (row_h - px - self.px(sk) * 1.1) * 0.5
+            } else {
+                r.y + (row_h - px) * 0.5
+            };
             if sel {
                 draw_rectangle(r.x, r.y, r.w, r.h, PANEL_LIGHT);
                 self.text("▶", r.x + u * 4.0, ty, k, AMBER);
@@ -943,12 +964,35 @@ impl Ui {
             };
             let label = self.fit(&row.label, value_left - label_x - u * 6.0, k);
             self.text(&label, label_x, ty, k, ink);
+            if !row.sub.is_empty() {
+                let sub = self.fit(&row.sub, right - label_x, sk);
+                self.text(
+                    &sub,
+                    label_x,
+                    ty + px * 1.1,
+                    sk,
+                    Color {
+                        a: ink.a * 0.85,
+                        ..DIM
+                    },
+                );
+            }
             if sel && self.press > 0.0 {
                 self.press_overlay(r);
             }
             hits.rows[i] = r;
         }
         hits
+    }
+
+    /// 목록 한 줄의 높이(화면 px): 둘째 줄(`Row::sub`)이 있는 목록은 두 줄 높이.
+    pub fn list_row_h(&self, rows: &[Row], k: f32) -> f32 {
+        let px = self.px(k);
+        if rows.iter().any(|r| !r.sub.is_empty()) {
+            px * 1.75 + self.px(LIST_SUB_K * k) * 1.1
+        } else {
+            px * 1.75
+        }
     }
 
     /// 창 제목 줄의 ▲▼(nail 0239): 목록이 넘칠 때만, 닫기 단추 왼쪽에. 더 갈 수 없는 쪽은 흐리게. 누를 자리(열린 쪽만).

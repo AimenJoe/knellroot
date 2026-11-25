@@ -13,7 +13,7 @@ pub(super) const LEFT_W: f32 = 270.0;
 pub(super) const RIGHT_X: f32 = 282.0;
 pub(super) const RIGHT_W: f32 = 166.0;
 /// 왼쪽 칸의 줄 목록이 오른쪽 끝에서 들이는 몫(그 틈에 굴림 ▲▼).
-const LIST_GUTTER: f32 = 6.0;
+pub(super) const LIST_GUTTER: f32 = 6.0;
 /// 오른쪽 칸의 머리: 그림 칸의 한 변, 머리의 높이(이름 · 갈래 한 줄 · 상태 한 줄 아래 몸이 시작한다).
 pub(super) const HEAD_ICON: f32 = 30.0;
 pub(super) const HEAD_H: f32 = 37.0;
@@ -107,7 +107,7 @@ pub(super) fn tab_marked(host: Host, tab: Tab, level: bool, skills: bool, journe
 }
 
 impl App {
-    fn tab_name(tab: Tab) -> &'static str {
+    pub(super) fn tab_name(tab: Tab) -> &'static str {
         let s = s();
         match tab {
             Tab::Status => s.menu_growth,
@@ -316,16 +316,42 @@ impl App {
         let name = self.ui.fit(h.name, room, K_NAME * k);
         let ink = if h.gold { AMBER } else { INK };
         self.ui.text(&name, p.x, p.y, K_NAME * k, ink);
-        let kind = self.ui.fit(&h.kind, room, K_KIND * k);
-        self.ui.text(&kind, p.x, w.at(0.0, 15.0).y, K_KIND * k, DIM);
+        self.draw_head_lines(w, x, room, &h.kind, &h.state);
+        icon
+    }
+
+    /// 머리의 갈래 줄과 상태 줄(`x` 기준 px부터 `room` 화면 px). 잠깐 뜨는 알림(산 것·올린 것·안 되는 까닭)은 상태 줄 자리에 —
+    /// 한 줄에 안 들면 자르지 않고 갈래 줄 자리까지 두 줄로 쓴다(0275).
+    pub(super) fn draw_head_lines(
+        &self,
+        w: &Window,
+        x: f32,
+        room: f32,
+        kind: &str,
+        state: &(String, Color),
+    ) {
+        let k = K_KIND * w.k;
+        let px = w.at(x, 0.0).x;
+        let (y1, y2) = (w.at(0.0, 15.0).y, w.at(0.0, 25.0).y);
+        if let Some((t, _)) = &self.toast {
+            if self.ui.width(t, k) > room {
+                let lines = ui::wrap(&self.ui, t, room, k);
+                let rest = lines.get(1..).map(|l| l.join(" ")).unwrap_or_default();
+                let rest = self.ui.fit(&rest, room, k);
+                for (y, line) in [(y1, lines.first().cloned().unwrap_or_default()), (y2, rest)] {
+                    self.ui.text(&line, px, y, k, AMBER);
+                }
+                return;
+            }
+        }
+        let kind = self.ui.fit(kind, room, k);
+        self.ui.text(&kind, px, y1, k, DIM);
         let (state, ink) = match &self.toast {
             Some((t, _)) => (t.clone(), AMBER),
-            None => h.state.clone(),
+            None => state.clone(),
         };
-        let state = self.ui.fit(&state, room, K_KIND * k);
-        self.ui
-            .text(&state, p.x, w.at(0.0, 25.0).y, K_KIND * k, ink);
-        icon
+        let state = self.ui.fit(&state, room, k);
+        self.ui.text(&state, px, y2, k, ink);
     }
 
     /// 머리의 그림 칸에 아이템을: 칸이 넉넉하면 도는 그림(`draw_item`), 좁으면(작은 화면) 찍어 둔 그림(`draw_icon`) — 정수배로만.
