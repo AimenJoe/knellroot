@@ -3198,7 +3198,8 @@ fn shove_drives_the_front_far_back_with_little_harm() {
 }
 
 /// 재기: 시동이 끝나는 순간 체력이 10 돈다(최대를 넘지 않는다) — 곁의 적은 피해 없이 밀려나며 흡수가 걸린다(보스는 거의 밀리지 않는다).
-/// 바닥에서(ㄴ)는 체력이 35% 아래면 곱절, 깊은 숨(ㄱ)은 기력도, 맺음은 10 더. 받는 피해는 건드리지 않는다.
+/// 바닥에서(ㄴ)는 체력이 35% 아래면 곱절, 깊은 숨(ㄱ)은 기력도, 맺음은 밀쳐 낸 적이 휘청인다(체력은 더 돌지 않는다).
+/// 받는 피해는 건드리지 않는다.
 #[test]
 fn rally_mends_a_little_and_shoves_the_near_off_with_drain() {
     let mend = |rank: u8, pick: Pick, hp: i32| {
@@ -3225,7 +3226,7 @@ fn rally_mends_a_little_and_shoves_the_near_off_with_drain() {
     assert_eq!(full.player.hp, full.player.max_hp, "never above the top");
     // 3레벨: 깊은 숨 ㄱ = 기력도, 바닥에서 ㄴ = 낮을 때 곱절.
     let breath = mend(3, Pick::A, 20).0;
-    assert!(breath.player.stamina >= 10.0 + 30.0 - 1e-3);
+    assert!(breath.player.stamina >= 10.0 + 20.0 - 1e-3);
     let low = mend(3, Pick::B, 10).0;
     assert_eq!(
         low.player.hp,
@@ -3237,12 +3238,13 @@ fn rally_mends_a_little_and_shoves_the_near_off_with_drain() {
         high.player.hp,
         30 + skills::scaled(HP_UNIT, skills::RANK2_DAMAGE)
     );
-    // 맺음: 10 더.
-    let cap = mend(5, Pick::A, 10).0;
+    // 맺음: 체력은 5레벨의 배(13)만, 밀쳐 낸 잡몹이 휘청인다.
+    let (cap, _) = mend(5, Pick::A, 10);
     assert_eq!(
         cap.player.hp,
-        10 + skills::scaled(HP_UNIT, skills::RANK5_DAMAGE) + HP_UNIT
+        10 + skills::scaled(HP_UNIT, skills::RANK5_DAMAGE)
     );
+    assert!(cap.enemies[0].alive());
     // 보스는 넷의 하나만큼만 밀린다.
     let (mut w, t) = world();
     wear(&mut w, Sk::Rally, 1, Pick::A);

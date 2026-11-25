@@ -496,7 +496,7 @@ pub enum Twist {
     Scorch { secs: f32 },
     /// 뿌리 덫 ㄱ "두 알"(0270 C3): 씨를 둘 — 겨눈 자리의 양옆에.
     Twin,
-    /// 재기 ㄱ "고른 숨"(0274): 기력도 `stamina` 돈다.
+    /// 재기 ㄱ "깊은 숨"(0274): 기력도 `stamina` 돈다.
     Breath { stamina: f32 },
     /// 재기 ㄴ "바닥에서"(0274): 체력이 `below`(최대의 몫) 아래면 × `mult` 돈다.
     Low { below: f32, mult: f32 },
@@ -529,8 +529,6 @@ pub enum Cap {
     Spire { radius: f32, damage: i32 },
     /// 바늘땀 "꿰매기"(0270 C3): 마지막 땀에 맞은 적이 `stagger`초 휘청인다(보스는 아니다).
     Pin { stagger: f32 },
-    /// 재기 "다시 선 몸"(0274): `more`만큼 더 돈다.
-    Mend { more: i32 },
 }
 
 /// 그 단·그 고르기의 실제 값(월드가 쓴다): 표의 줄에 단의 숫자를 입힌 것 + 열린 고르기·맺음.
@@ -1652,13 +1650,15 @@ pub const SKILLS: [Skill; N] = [
         build: 1.0,
         branch: Branch::Riposte,
         picks: [
-            Twist::Breath { stamina: 30.0 },
+            Twist::Breath { stamina: 20.0 },
             Twist::Low {
                 below: 0.35,
                 mult: 2.0,
             },
         ],
-        cap: Cap::Mend { more: HP_UNIT },
+        // 맺음은 체력을 더 돌리지 않는다(모의: 5레벨에 체력 + 10이면 종지기를 이기는 몫이 70 → 97% — 등잔을 대신했다) — 밀쳐 낸 적이
+        // 잠깐 휘청인다(보스는 아니다, 버팀의 맺음과 같은 꼴).
+        cap: Cap::Stun { stagger: 0.8 },
     },
 ];
 

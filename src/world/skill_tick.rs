@@ -833,11 +833,7 @@ impl World {
                         }
                         _ => 1.0,
                     };
-                    let more = match d.cap {
-                        Some(Cap::Mend { more }) => more,
-                        _ => 0,
-                    };
-                    let gain = skills::scaled(heal, low) + more;
+                    let gain = skills::scaled(heal, low);
                     pl.hp = (pl.hp + gain).min(pl.max_hp);
                     if let Some(Twist::Breath { stamina }) = d.twist {
                         pl.stamina = (pl.stamina + stamina).min(max_st);
@@ -845,7 +841,12 @@ impl World {
                     self.skill_ev.push(Event::Mend {
                         at: pl.pos + Vec3::Y * 1.0,
                     });
-                    self.skill_rally(t, radius, push, self.dosed(s.dose()));
+                    // 맺음: 밀쳐 낸 적이 잠깐 휘청인다(보스는 아니다).
+                    let stun = match d.cap {
+                        Some(Cap::Stun { stagger }) => stagger,
+                        _ => 0.0,
+                    };
+                    self.skill_rally(t, radius, push, stun, self.dosed(s.dose()));
                 }
             }
             Form::Bash {
@@ -1422,7 +1423,7 @@ impl World {
     }
 
     /// 재기(0274)의 밀쳐 냄: 둘레 `radius` m의 깨어 있는 적을 바깥으로 `push` m(보스는 넷의 하나) — 피해·자세 없이 흡수만 건다.
-    fn skill_rally(&mut self, _t: &Tuning, radius: f32, push: f32, dose: Dose) {
+    fn skill_rally(&mut self, _t: &Tuning, radius: f32, push: f32, stun: f32, dose: Dose) {
         let mut ev = std::mem::take(&mut self.skill_ev);
         let p = self.player.pos;
         let body = p.y + self.player.air;
@@ -1439,6 +1440,9 @@ impl World {
             let mass = if en.boss { 0.25 } else { 1.0 };
             en.knock = dir * push * KNOCK_DECAY * mass;
             afflict(en, dose, &mut ev);
+            if stun > 0.0 && !en.boss && !en.rising() && en.alive() {
+                en.state = EState::Stagger { t: 0.0, dur: stun };
+            }
         }
         self.skill_ev = ev;
     }
