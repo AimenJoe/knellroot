@@ -290,3 +290,83 @@ fn drain_vein_fills_the_lamp_sip_by_sip() {
     assert_eq!(flask, max, "never over the brim");
     assert!(sip >= 1.0 - 1e-4, "the sip waits, full");
 }
+
+/// 0274 ② 울려서 되찾기(울림의 결 II — 성직자의 표지): 울림 하나마다 체력이 `KNELL_MEND` 돈다 — 게이지 대신(I과 II는 하나만).
+/// 떼가 한꺼번에 울려도 한 틱에 `KNELL_TOLLS`번까지, 되찾은 뒤 `KNELL_MEND_REST`초는 쉰다(차례로 울리는 큰 떼도 초당 상한 안 —
+/// 떼의 크기로 곱절이 되지 않는다, 0223 8절). 받는 피해는 건드리지 않는다(되찾을 뿐).
+#[test]
+fn knell_vein_pick_b_mends_per_toll_instead_of_the_gauge_and_is_capped() {
+    let t = Tuning::default();
+    let mended = |pick_b: bool, pack: usize| {
+        let mut w = World::new("test", 30.0);
+        let mut tree = veined(Some(Vein::Knell));
+        if pick_b {
+            assert!(tree.flip_vein(Vein::Knell));
+        }
+        w.tree = tree;
+        w.player.hp = 10;
+        for k in 0..pack {
+            let i = foe(&mut w, vec3(8.0 + k as f32, 0.0, 0.0));
+            fill(&mut w, i, Ty::Knell);
+        }
+        run(&mut w, &t, 0.4);
+        (w.player.hp - 10, w.player.skill.gauge)
+    };
+    let hit = t[P::SkillGaugeHit];
+    let (hp, gauge) = mended(false, 1);
+    assert_eq!(hp, 0, "I gathers the gauge, no health");
+    assert!((gauge - hit).abs() < 1e-4);
+    assert_eq!(mended(true, 1), (vein::KNELL_MEND, 0.0), "II mends instead");
+    assert_eq!(
+        mended(true, 5).0,
+        vein::KNELL_MEND * vein::KNELL_TOLLS as i32,
+        "five at once count as {}",
+        vein::KNELL_TOLLS
+    );
+    // 차례로 울리는 큰 떼(셋째 틱마다 하나씩 — 같은 틱이 아니다): 쉬는 초가 초당 되찾기를 묶는다.
+    let mut w = World::new("test", 40.0);
+    let mut tree = veined(Some(Vein::Knell));
+    tree.flip_vein(Vein::Knell);
+    w.tree = tree;
+    w.player.hp = 10;
+    let pack = 16;
+    let mut ticks = 0;
+    for k in 0..pack {
+        let i = foe(
+            &mut w,
+            vec3(6.0 + (k % 4) as f32 * 1.5, 0.0, (k / 4) as f32 * 1.5 - 2.0),
+        );
+        fill(&mut w, i, Ty::Knell);
+        for _ in 0..3 {
+            w.step(&Actions::default(), &t);
+            ticks += 1;
+        }
+    }
+    run(&mut w, &t, 1.0);
+    let secs = ticks as f32 * TICK_DT + 1.0;
+    let most = vein::KNELL_MEND
+        * vein::KNELL_TOLLS as i32
+        * ((secs / vein::KNELL_MEND_REST).ceil() as i32 + 1);
+    let got = w.player.hp - 10;
+    assert!(
+        got > 0 && got <= most,
+        "{got} over {secs:.2}s (at most {most})"
+    );
+    assert!(
+        got < pack as i32 * vein::KNELL_MEND,
+        "not one mend per toll: {got}"
+    );
+    // 다 찬 몸은 넘치지 않는다.
+    let mut w = World::new("test", 30.0);
+    let mut tree = veined(Some(Vein::Knell));
+    tree.flip_vein(Vein::Knell);
+    w.tree = tree;
+    let i = foe(&mut w, vec3(8.0, 0.0, 0.0));
+    fill(&mut w, i, Ty::Knell);
+    run(&mut w, &t, 0.4);
+    assert_eq!(w.player.hp, w.player.max_hp);
+    // 고를 것은 울림에만 — 다른 결은 뒤집히지 않는다.
+    let mut other = veined(Some(Vein::Root));
+    assert!(!other.flip_vein(Vein::Root));
+    assert!(!veined(None).flip_vein(Vein::Knell), "not open yet");
+}

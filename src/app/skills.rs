@@ -113,6 +113,18 @@ pub(super) fn cell_pick_text(c: Cell, b: bool) -> (&'static str, &'static str, &
     }
 }
 
+/// 속성 패시브의 고르기(0274 ② — 울림): 표지·이름·한 줄 — I = 결 자체, II = `Vein::pick_b`.
+pub(super) fn vein_pick_text(
+    v: crate::progression::Vein,
+    b: bool,
+) -> (&'static str, &'static str, &'static str) {
+    let s = s();
+    match (b, v.pick_b()) {
+        (true, Some((name, desc))) => (s.pick_mark_b, tr(name), tr(desc)),
+        _ => (s.pick_mark_a, tr(v.name()), tr(v.desc())),
+    }
+}
+
 /// 고르기의 표지(ㄱ·ㄴ)·이름·한 줄.
 pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'static str) {
     let s = s();
@@ -477,6 +489,10 @@ pub(super) fn node_acts(
         Entry::Ult(u) if board.has_ult(u) && board.wearable_ult(great) != u => v.push(Do::WearUlt),
         // 숫자 칸의 고르기(0215 D): 연 칸이면 화로에서 값 없이 바꾼다.
         Entry::Cell(c) if edit && c.pick_b().is_some() && board.cells.has(c) => v.push(Do::Flip),
+        // 속성 패시브의 고르기(0274 ② — 울림): 연 결이면 화로에서 값 없이 바꾼다.
+        Entry::Vein(vn) if edit && vn.pick_b().is_some() && board.cells.veined(vn) => {
+            v.push(Do::Flip)
+        }
         _ => {}
     }
     // 멈춤(0173): 점수가 있어 올릴 수 있는 칸인데 올리는 줄이 없으면 왜인지 알 수 없었다 — 끝에 흐린 줄로 남긴다.
@@ -557,6 +573,10 @@ pub(super) fn act_label(board: &Board, e: Entry, d: Do, has_sub: bool) -> String
         }
         (Do::Flip, Entry::Cell(c)) => {
             let (mark, name, _) = cell_pick_text(c, !board.cells.picked_b(c));
+            fill(s.act_flip, &[mark, name])
+        }
+        (Do::Flip, Entry::Vein(v)) => {
+            let (mark, name, _) = vein_pick_text(v, !board.cells.vein_picked_b(v));
             fill(s.act_flip, &[mark, name])
         }
         (Do::Flip, _) => String::new(),
@@ -1480,6 +1500,16 @@ impl App {
                 }
                 self.after_wear();
             }
+            (Do::Flip, Entry::Vein(v)) => {
+                #[cfg(feature = "dev")]
+                if let Some(b) = self.dev.board.as_mut() {
+                    b.flip_vein(v);
+                }
+                if !self.dev_board_on() {
+                    self.progress.board.flip_vein(v);
+                }
+                self.after_wear();
+            }
             (Do::Away, _) => {
                 self.toast = Some((s().toast_away.to_string(), ALERT));
                 self.snd(crate::sfx::Id::Deny);
@@ -2226,6 +2256,7 @@ impl App {
         let offer = plates::offer_on(plate, board, e, total);
         let what = match e {
             Entry::Cell(c) if c.pick_b().is_some() => s.sk_cell_pick,
+            Entry::Vein(v) if v.pick_b().is_some() => s.sk_cell_pick,
             _ => entry_text(e).1,
         };
         let mut v = vec![
@@ -2330,6 +2361,23 @@ impl App {
                         wrap(&format!("{mark} {name}"), box_w, K_RANK),
                         wrap(desc, box_w, K_PICK),
                         open && board.cells.picked_b(c) == b,
+                    )
+                };
+                v.push(Block::Picks {
+                    boxes: [one(false), one(true)],
+                    open,
+                });
+            }
+            // 울림의 속성 패시브(0274 ②): 숫자 칸과 같은 그림 — 두 고르기를 나란히, 연 결이면 지금 것에 금빛.
+            Entry::Vein(vn) if vn.pick_b().is_some() => {
+                let box_w = (width - RANK_NUM * u - u * 4.0) * 0.5 - u * 6.0;
+                let open = board.cells.veined(vn);
+                let one = |b: bool| {
+                    let (mark, name, desc) = vein_pick_text(vn, b);
+                    (
+                        wrap(&format!("{mark} {name}"), box_w, K_RANK),
+                        wrap(desc, box_w, K_PICK),
+                        open && board.cells.vein_picked_b(vn) == b,
                     )
                 };
                 v.push(Block::Picks {

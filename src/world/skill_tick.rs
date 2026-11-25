@@ -1657,7 +1657,14 @@ impl World {
         // 탄이 맞은 틱(게이지): 큰 기술이 없어도 여기서 걷는다 — 안 걷으면 배운 뒤의 첫 틱에 옛 것이 한 번 찬다.
         let bolt_hit = std::mem::take(&mut self.bolt_hit_tick);
         let tolls = std::mem::take(&mut self.vein_tolls).min(vein::KNELL_TOLLS);
-        let tolls = if self.tree.veined(Vein::Knell) {
+        // 울림의 결(0274 ②): I = 울림 모으기(궁극기 게이지) · II = 울려서 되찾기(체력 — 쉬는 초 동안은 없다).
+        let mending = self.tree.vein_picked_b(Vein::Knell);
+        let mends = if mending && self.player.skill.mend_rest <= 0.0 {
+            tolls as i32
+        } else {
+            0
+        };
+        let tolls = if self.tree.veined(Vein::Knell) && !mending {
             tolls as f32
         } else {
             0.0
@@ -1678,6 +1685,15 @@ impl World {
             ev.push(Event::Aftershock { at });
         }
         let pl = &mut self.player;
+        if mends > 0 && pl.hp > 0 {
+            if pl.hp < pl.max_hp {
+                pl.hp = (pl.hp + mends * vein::KNELL_MEND).min(pl.max_hp);
+                ev.push(Event::Mend {
+                    at: pl.pos + Vec3::Y * 1.0,
+                });
+            }
+            pl.skill.mend_rest = vein::KNELL_MEND_REST;
+        }
         if bled {
             pl.skill.stride = vein::SHARP_SECS;
         }

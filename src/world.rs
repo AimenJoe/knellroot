@@ -709,6 +709,8 @@ pub struct SkillState {
     pub stride: f32,
     /// 한 모금씩(결, 0270 C3): 등잔에 찬 몫(1이면 등잔 하나).
     pub sip: f32,
+    /// 울려서 되찾기(울림의 결 II, 0274 ②): 다음 되찾기까지 남은 초.
+    pub mend_rest: f32,
     pub denied: f32,
     /// 지난 스킬 버튼 누름(칸, 남은 초 — 2026-11-24): 두 버튼 "함께"를 한 틱 어긋나도 받는다. 시동이 선 스킬이면 시동 안의
     /// 바꿔치기(`skill.chord s`)가 잇지만, 든 무기로 못 쓰는 칸·빈 칸은 시동이 서지 않아 큰 기술이 안 나갔다(지팡이 판).
@@ -1018,6 +1020,7 @@ impl World {
                     vein_swing: [0; 5],
                     stride: 0.0,
                     sip: 0.0,
+                    mend_rest: 0.0,
                     denied: 0.0,
                     chord: None,
                     rank: [1; 2],

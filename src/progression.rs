@@ -265,6 +265,21 @@ impl Vein {
         }
     }
 
+    /// 고르기 II의 이름·한 줄(0274 ② — 0274 "울림이 터질 때 체력이 조금 돈다": 성직자의 표지). I = 결 자체(`name`·`desc`).
+    /// 지금은 울림만 고를 것이 있다.
+    pub fn pick_b(self) -> Option<(Tr, Tr)> {
+        match self {
+            Vein::Knell => Some((|s| s.vein_knell_b, |s| s.vein_knell_b_d)),
+            Vein::Ember
+            | Vein::Root
+            | Vein::Rift
+            | Vein::Shock
+            | Vein::Sharp
+            | Vein::Frost
+            | Vein::Drain => None,
+        }
+    }
+
     pub fn desc(self) -> Tr {
         match self {
             Vein::Ember => |s| s.vein_ember_d,
@@ -300,6 +315,10 @@ pub mod vein {
     pub const FROST_SHARDS: u8 = 3;
     /// 한 모금씩(0270 C3): 흡수 걸린 적을 맞힌 휘두르기 한 번에 차는 등잔의 몫(1 = 등잔 하나).
     pub const DRAIN_SIP: f32 = 0.1;
+    /// 울려서 되찾기(0274 ② — 울림의 고르기 II): 울림 하나마다 도는 체력(한 틱에 `KNELL_TOLLS`번까지 — 게이지와 같은 상한),
+    /// 그리고 되찾은 뒤 다음 되찾기까지 쉬는 초(떼가 차례로 울려도 체력이 줄줄이 돌지 않게 — 초당 상한 = 2 × 2 ÷ 0.5 = 8).
+    pub const KNELL_MEND: i32 = 2;
+    pub const KNELL_MEND_REST: f32 = 0.5;
 }
 
 impl Link {
@@ -735,6 +754,8 @@ pub struct Tree {
     pub picks: [u8; 3],
     /// 연 결의 칸(0223 11절 — 비트 = `Vein::index`, 기록 `tree.veins`).
     pub veins: u8,
+    /// 속성 패시브의 고르기 II(0274 ② — 비트 = `Vein::index`, 기록 `tree.vein_picks`): 고를 것이 있는 결(`Vein::pick_b`)만.
+    pub vein_picks: u8,
 }
 
 impl Tree {
@@ -778,6 +799,20 @@ impl Tree {
     /// 결의 칸을 연다.
     pub fn open_vein(&mut self, v: Vein) {
         self.veins |= 1 << v.index();
+    }
+
+    /// 결을 열었고 그 고르기가 II인가(0274 ② — 울림의 "울려서 되찾기"). 고를 것이 없는 결은 늘 거짓.
+    pub fn vein_picked_b(&self, v: Vein) -> bool {
+        v.pick_b().is_some() && self.veined(v) && self.vein_picks & (1 << v.index()) != 0
+    }
+
+    /// 결의 고르기를 뒤집는다(값 없이 — 연 결 가운데 고를 것이 있는 것만, 숫자 칸과 같은 꼴).
+    pub fn flip_vein(&mut self, v: Vein) -> bool {
+        if v.pick_b().is_none() || !self.veined(v) {
+            return false;
+        }
+        self.vein_picks ^= 1 << v.index();
+        true
     }
 
     /// 숫자 칸을 열었고 그 고르기가 ㄴ인가(0215). 고르기가 없는 칸은 늘 거짓.
@@ -834,6 +869,7 @@ impl Tree {
             links: 0,
             picks: [0; 3],
             veins: 0,
+            vein_picks: 0,
         }
     }
 
@@ -862,6 +898,13 @@ impl Tree {
             key: self.key,
             links: self.links & ((1 << LINKS.len()) - 1),
             veins: self.veins & (u8::MAX >> (8 - VEINS.len())),
+            // 결의 고르기는 연 결 가운데 고를 것이 있는 것에만.
+            vein_picks: VEINS
+                .into_iter()
+                .filter(|v| v.pick_b().is_some())
+                .fold(0u8, |m, v| m | 1 << v.index())
+                & self.veins
+                & self.vein_picks,
             // 고르기는 열린 숫자 칸에만.
             picks: [0, 1, 2].map(|b| {
                 let numbers = TREE[b]
@@ -1058,6 +1101,7 @@ mod tests {
             links: 0,
             picks: [0; 3],
             veins: 0,
+            vein_picks: 0,
         };
         assert_eq!(legacy.sane(), t);
         assert_eq!(legacy.count(), 2 + DEPTH as u32);
@@ -1076,6 +1120,7 @@ mod tests {
             links: 0,
             picks: [0; 3],
             veins: 0,
+            vein_picks: 0,
         };
         assert_eq!(odd.count(), DEPTH as u32);
         assert_eq!(odd.sane().cells[0], 0b111_1111);

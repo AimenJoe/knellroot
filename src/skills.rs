@@ -2770,13 +2770,21 @@ impl Board {
                 }
             }
             Entry::Link(l) => self.cells.links &= !(1 << l.index()),
-            Entry::Vein(v) => self.cells.veins &= !(1 << v.index()),
+            Entry::Vein(v) => {
+                self.cells.veins &= !(1 << v.index());
+                self.cells.vein_picks &= !(1 << v.index());
+            }
         }
     }
 
     /// 숫자 칸의 고르기를 뒤집는다(0215 D — 값 없이, 화로에서). 연 숫자 칸만.
     pub fn flip_cell(&mut self, c: Cell) -> bool {
         self.cells.flip_cell(c)
+    }
+
+    /// 속성 패시브의 고르기를 뒤집는다(0274 ② — 값 없이, 화로에서). 연 결 가운데 고를 것이 있는 것만.
+    pub fn flip_vein(&mut self, v: Vein) -> bool {
+        self.cells.flip_vein(v)
     }
 
     /// 살 수 있는 칸이 있나 — 판 하나의 셈(시험). 앱(쉼터의 빛·탭 머리의 점·튜토리얼)은 판마다 보는 `plates::can_buy`(0270 C2).
@@ -4144,6 +4152,7 @@ mod tests {
                 links: 0,
                 picks: [0; 3],
                 veins: 0,
+                vein_picks: 0,
             },
             ..Board::default()
         };

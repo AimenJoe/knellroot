@@ -382,6 +382,7 @@ impl World {
             .map(|(s, left)| (s, left - dt))
             .filter(|&(_, left)| left > 0.0);
         pl.skill.stride = (pl.skill.stride - dt).max(0.0);
+        pl.skill.mend_rest = (pl.skill.mend_rest - dt).max(0.0);
         // 되울림·몰아치기(0158 G2)의 남은 시간 — 로직 시계라 히트스톱 동안은 줄지 않는다.
         pl.skill.echo_left = (pl.skill.echo_left - dt).max(0.0);
         pl.skill.flurry_left = (pl.skill.flurry_left - dt).max(0.0);

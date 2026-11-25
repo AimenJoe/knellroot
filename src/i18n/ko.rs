@@ -84,6 +84,8 @@ pub const KO: Strings = Strings {
     vein_root_d: "속박된 적을 무기로 맞히면 휘두를 때마다 기력 6을 회복한다",
     vein_knell: "울림 모으기",
     vein_knell_d: "울림이 발동할 때마다 궁극기 게이지가 조금 찬다",
+    vein_knell_b: "울려서 되찾기",
+    vein_knell_b_d: "울림이 발동할 때마다 체력이 2 돈다(0.5초에 두 번까지)",
     vein_rift: "금을 따라",
     vein_rift_d: "균열이 걸린 적을 스킬이 아닌 무기로 맞히면, 휘두를 때마다 모든 스킬의 쿨타임이 0.5초 줄어든다",
     vein_shock: "흔들린 머리",

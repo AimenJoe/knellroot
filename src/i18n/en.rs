@@ -84,6 +84,8 @@ pub const EN: Strings = Strings {
     vein_root_d: "Each weapon swing that hits a bound foe restores 6 stamina",
     vein_knell: "Gathered Tolling",
     vein_knell_d: "Each tolling event adds a little to the ultimate gauge",
+    vein_knell_b: "Mending Toll",
+    vein_knell_b_d: "Each tolling event restores 2 health (twice per 0.5 s at most)",
     vein_rift: "Along the Crack",
     vein_rift_d: "Each non-skill weapon swing that hits a cracked foe reduces all skill cooldowns by 0.5 s",
     vein_shock: "Rattled",

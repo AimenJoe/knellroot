@@ -3112,3 +3112,143 @@ fn gale_of_thrusts_strikes_one_line_again_and_again_then_deep() {
     let c = gale(3);
     assert!(near(&c, [160, 160, 160, 0]), "{c:?}");
 }
+
+// ---- 0274 ②: 한손검 = 전투 기술(자루 치기 · 밀치기 · 재기) ----
+
+/// 자루 치기: 한손검으로만(방패를 들면 방패 트리) — 칼자루가 닿는 좁은 앞의 적이 충격에 가득 차 기절하고, 공격을 준비하던 적은 그 공격이
+/// 끊긴다(막아치기와 같은 꼴). 보스는 끊기지도 휘청이지도 않는다(자세만).
+#[test]
+fn pommel_strike_cuts_off_a_winding_foe_and_stuns_but_not_a_boss() {
+    let run = |boss: bool| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Pommel, 1, Pick::A);
+        assert_eq!(w.player.weapon, crate::weapons::Id::Sword);
+        if boss {
+            w.spawn_boss(vec3(0.0, 0.0, -2.0));
+        } else {
+            w.spawn_mob(vec3(0.0, 0.0, -1.6));
+        }
+        // 옆(70° 부채꼴 밖)의 적은 닿지 않는다.
+        w.spawn_mob(vec3(1.8, 0.0, -0.6));
+        still(&mut w);
+        let en = &mut w.enemies[0];
+        en.facing = 0.0;
+        en.atk = Atk::Smash;
+        en.state = EState::Tele { t: 0.0 };
+        let mut ev = run(&mut w, &t, skill(0), 40);
+        let mut stunned = w.enemies[0].ail.stun > 0.0;
+        for _ in 0..20 {
+            ev.extend(w.step(&Actions::default(), &t));
+            stunned |= w.enemies[0].ail.stun > 0.0;
+        }
+        let cut = ev
+            .iter()
+            .filter(|e| matches!(e, Event::Interrupt { .. }))
+            .count();
+        (w, cut, stunned)
+    };
+    let (w, cut, stunned) = run(false);
+    assert_eq!(cut, 1, "the winding foe is cut off");
+    assert!(stunned, "one blow fills a plain foe's shock");
+    assert!(w.enemies[0].hp < 90);
+    assert_eq!(w.enemies[1].hp, 90, "the narrow front only");
+    let (w, cut, _) = run(true);
+    assert_eq!(cut, 0, "a boss keeps its swing");
+    assert!(!matches!(w.enemies[0].state, EState::Stagger { .. }));
+    // 방패를 들면 한손검의 전투 기술은 쉰다(방패 트리 — 0272 그대로).
+    let (mut w, _) = world();
+    wear(&mut w, Sk::Pommel, 1, Pick::A);
+    w.set_shield(Some(crate::shield::Id::Pilgrim));
+    assert_eq!(
+        w.player.skill.rank[0], 0,
+        "a sword-and-board grip has no pommel"
+    );
+}
+
+/// 밀치기: 앞을 밀어 차 적을 멀리(후려치기보다 멀리) 밀어낸다 — 피해는 작고 충격은 반만 쌓인다(한 번에 기절하지 않는다).
+/// 뒤의 적은 아니다. 벽에 박기(ㄱ)는 후려치기와 같은 덤.
+#[test]
+fn shove_drives_the_front_far_back_with_little_harm() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Shove, 1, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -1.8));
+    w.spawn_mob(vec3(0.0, 0.0, 2.0));
+    still(&mut w);
+    let was = w.enemies[0].pos;
+    run(&mut w, &t, skill(0), 60);
+    let pushed = flat(w.enemies[0].pos, was);
+    assert!(pushed > 2.0, "shoved far: {pushed}");
+    assert!((70..90).contains(&w.enemies[0].hp), "{}", w.enemies[0].hp);
+    assert_eq!(w.enemies[1].hp, 90, "not the one behind");
+    assert!(
+        w.enemies[0].ail.stun == 0.0,
+        "half a shock does not stun at once"
+    );
+    // 후려치기(망치 — 같은 부채꼴 꼴)보다 멀리 민다.
+    let (mut h, _) = world();
+    wear(&mut h, Sk::Swat, 1, Pick::A);
+    h.spawn_mob(vec3(0.0, 0.0, -1.8));
+    still(&mut h);
+    let hw = h.enemies[0].pos;
+    run(&mut h, &t, skill(0), 60);
+    assert!(
+        pushed > flat(h.enemies[0].pos, hw),
+        "a shove makes more room"
+    );
+}
+
+/// 재기: 시동이 끝나는 순간 체력이 10 돈다(최대를 넘지 않는다) — 곁의 적은 피해 없이 밀려나며 흡수가 걸린다(보스는 거의 밀리지 않는다).
+/// 바닥에서(ㄴ)는 체력이 35% 아래면 곱절, 깊은 숨(ㄱ)은 기력도, 맺음은 10 더. 받는 피해는 건드리지 않는다.
+#[test]
+fn rally_mends_a_little_and_shoves_the_near_off_with_drain() {
+    let mend = |rank: u8, pick: Pick, hp: i32| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Rally, rank, pick);
+        w.spawn_mob(vec3(0.0, 0.0, -1.4));
+        w.spawn_mob(vec3(0.0, 0.0, 6.0));
+        still(&mut w);
+        w.player.hp = hp;
+        w.player.stamina = 10.0;
+        let was = w.enemies[0].pos;
+        let ev = run(&mut w, &t, skill(0), 50);
+        assert!(ev.iter().any(|e| matches!(e, Event::Mend { .. })));
+        (w, was)
+    };
+    let (w, was) = mend(1, Pick::A, 20);
+    assert_eq!(w.player.hp, 30, "ten back");
+    assert_eq!(w.enemies[0].hp, 90, "no harm");
+    assert!(flat(w.enemies[0].pos, was) > 1.0, "shoved off");
+    assert!(w.enemies[0].ail.drain > 0.0, "drain is on the near one");
+    assert_eq!(w.enemies[1].hp, 90);
+    assert_eq!(w.enemies[1].ail.drain, 0.0, "the far one is untouched");
+    let full = mend(1, Pick::A, 1000).0;
+    assert_eq!(full.player.hp, full.player.max_hp, "never above the top");
+    // 3레벨: 깊은 숨 ㄱ = 기력도, 바닥에서 ㄴ = 낮을 때 곱절.
+    let breath = mend(3, Pick::A, 20).0;
+    assert!(breath.player.stamina >= 10.0 + 30.0 - 1e-3);
+    let low = mend(3, Pick::B, 10).0;
+    assert_eq!(
+        low.player.hp,
+        10 + 2 * skills::scaled(HP_UNIT, skills::RANK2_DAMAGE)
+    );
+    // 35%(최대 50 — 17.5) 위면 그대로.
+    let high = mend(3, Pick::B, 30).0;
+    assert_eq!(
+        high.player.hp,
+        30 + skills::scaled(HP_UNIT, skills::RANK2_DAMAGE)
+    );
+    // 맺음: 10 더.
+    let cap = mend(5, Pick::A, 10).0;
+    assert_eq!(
+        cap.player.hp,
+        10 + skills::scaled(HP_UNIT, skills::RANK5_DAMAGE) + HP_UNIT
+    );
+    // 보스는 넷의 하나만큼만 밀린다.
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Rally, 1, Pick::A);
+    w.spawn_boss(vec3(0.0, 0.0, -2.0));
+    still(&mut w);
+    let bw = w.enemies[0].pos;
+    run(&mut w, &t, skill(0), 50);
+    assert!(flat(w.enemies[0].pos, bw) < 0.6);
+}

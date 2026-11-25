@@ -636,7 +636,7 @@ fn wrapped(c: &mut Check) {
     }
 }
 
-/// 3단 고르기 둘(스킬)·숫자 칸 고르기 둘(패시브)의 (표지, 이름, 한 줄).
+/// 3단 고르기 둘(스킬)·숫자 칸 고르기 둘(패시브)·울림의 결의 고르기 둘(0274)의 (표지, 이름, 한 줄).
 fn picks(e: Entry) -> Vec<(&'static str, &'static str, &'static str)> {
     match e {
         Entry::Skill(id) => vec![
@@ -647,6 +647,13 @@ fn picks(e: Entry) -> Vec<(&'static str, &'static str, &'static str)> {
             vec![
                 skills::cell_pick_text(cell, false),
                 skills::cell_pick_text(cell, true),
+            ]
+        }
+        // 0274 ②: 울림의 속성 패시브의 고르기 둘.
+        Entry::Vein(v) if v.pick_b().is_some() => {
+            vec![
+                skills::vein_pick_text(v, false),
+                skills::vein_pick_text(v, true),
             ]
         }
         _ => Vec::new(),

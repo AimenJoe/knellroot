@@ -146,6 +146,8 @@ pub mod key {
     pub const TREE_LINKS: &str = "tree.links";
     /// 연 결의 칸(0223 11절 — 키들, 바꾸지 않는다).
     pub const TREE_VEINS: &str = "tree.veins";
+    /// 속성 패시브의 고르기 II(0274 ② — 결의 키들, 쉼표). 없으면 줄이 없다(모두 I).
+    pub const TREE_VEIN_PICKS: &str = "tree.vein_picks";
     /// 숫자 칸의 고르기 II(0215 — 갈래마다 II인 칸의 자리들, `tree.cells.*`와 같은 꼴). 없으면 모두 I.
     pub const TREE_PICKS: [&str; 3] = [
         "tree.picks.beat",
@@ -752,6 +754,16 @@ impl Progress {
         } else {
             r.set(key::TREE_VEINS, veins.join(","));
         }
+        let vein_picks: Vec<&str> = crate::progression::VEINS
+            .into_iter()
+            .filter(|&v| self.board.cells.vein_picked_b(v))
+            .map(|v| v.key())
+            .collect();
+        if vein_picks.is_empty() {
+            r.remove(key::TREE_VEIN_PICKS);
+        } else {
+            r.set(key::TREE_VEIN_PICKS, vein_picks.join(","));
+        }
         for (&picks, k) in self.board.cells.picks.iter().zip(key::TREE_PICKS) {
             let on: Vec<String> = (0..crate::progression::DEPTH)
                 .filter(|d| picks & (1 << d) != 0)
@@ -1178,6 +1190,12 @@ fn read_tree(r: &Record) -> crate::progression::Tree {
         .fold(0, |m, l| m | 1 << l.index());
     t.veins = r
         .get(key::TREE_VEINS)
+        .unwrap_or("")
+        .split(',')
+        .filter_map(|k| crate::progression::Vein::by_key(k.trim()))
+        .fold(0, |m, v| m | 1 << v.index());
+    t.vein_picks = r
+        .get(key::TREE_VEIN_PICKS)
         .unwrap_or("")
         .split(',')
         .filter_map(|k| crate::progression::Vein::by_key(k.trim()))
@@ -1677,6 +1695,44 @@ weapons=sword,bow
         assert_eq!(old.board.cells.veins, 0, "the rift passive is refunded");
         assert_eq!(old.board.rank[Id::Cut.index()], 2, "the rift skill stays");
         assert_eq!(old.board.spent(), 2);
+    }
+
+    /// 0274 ②: 속성 패시브의 고르기 II(`tree.vein_picks` = 결의 키들)가 왕복한다 — 울림만 고를 것이 있고, 닫힌 결·고를 것이 없는
+    /// 결의 키는 걸러진다. I(기본)이면 줄이 없다.
+    #[test]
+    fn vein_picks_round_trip() {
+        use crate::progression::Vein;
+        use crate::skills::{Entry, Id};
+        let mut p = Progress {
+            cores: 3,
+            ..Progress::default()
+        };
+        let total = p.skill_points();
+        for e in [Entry::Skill(Id::Toll), Entry::Vein(Vein::Knell)] {
+            assert!(p.board.buy(e, total), "{e:?}");
+        }
+        assert_eq!(
+            p.to_record().get(key::TREE_VEIN_PICKS),
+            None,
+            "I is no line"
+        );
+        assert!(p.board.flip_vein(Vein::Knell));
+        let r = p.to_record();
+        assert_eq!(r.get(key::TREE_VEIN_PICKS), Some("knell"));
+        let back = Progress::from_record(Record::parse(&r.to_text()));
+        assert!(back.board.cells.vein_picked_b(Vein::Knell));
+        assert_eq!(back.board.cells, p.board.cells);
+        let odd = Progress::from_record(Record::parse(
+            "v=1\ncore.warden=3\nmigrated.v06=1\nmigrated.ult=1\nskill.rank.toll=1\ntree.veins=knell\ntree.vein_picks=knell,root,bogus\n",
+        ));
+        assert_eq!(odd.board.cells.vein_picks, 1 << Vein::Knell.index());
+        let shut = Progress::from_record(Record::parse(
+            "v=1\ncore.warden=3\nmigrated.v06=1\nmigrated.ult=1\ntree.vein_picks=knell\n",
+        ));
+        assert_eq!(
+            shut.board.cells.vein_picks, 0,
+            "a closed passive has no pick"
+        );
     }
 
     /// 0215: 다리 칸(`tree.links` = 키들)과 숫자 칸의 고르기 II(`tree.picks.<갈래>` = 자리들)가 왕복한다. 없으면 줄이 없고,
