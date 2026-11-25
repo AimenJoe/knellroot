@@ -322,7 +322,7 @@ pub const EN: Strings = Strings {
     subtrait_staff: "Skills cause +{0}% elemental buildup",
     subtrait_crossbow: "Reloads on your back — the magazine refills while it is stowed",
     subtrait_bow: "Skill cooldown −{0}%",
-    subtrait_spear: "Max stamina +{0}",
+    subtrait_spear: "Stamina +{0} for each enemy felled",
     sk_physical: "Physical",
     sk_row_plate: "From {0} points on this tree · {1} more",
     sk_st_plate_locked: "{0} more points on this tree",

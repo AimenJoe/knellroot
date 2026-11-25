@@ -859,12 +859,12 @@ impl SubTrait {
     /// 보조특성 글의 `{0}`에 넣는 수(%): 바꾸는 칸의 몫(스킬 쿨타임은 줄어드는 몫). 숫자가 없는 특성(쇠뇌)은 0.
     pub fn percent(self) -> i32 {
         let m = self.mods;
-        // 최대 기력은 더하는 칸이라 바탕(랩 `stamina.max`)에 대한 몫으로.
+        // 쓰러뜨림의 기력은 더하는 칸 — 기력의 바탕(랩 `stamina.max` 100)에 대한 몫으로(= 더하는 수 그대로).
         let base = crate::tuning::SPECS[crate::tuning::idx(crate::tuning::P::StaminaMax)].def;
         let d = [m.stamina_regen, m.poise, m.ail, m.skill_cd]
             .into_iter()
             .map(|x| (x - 1.0).abs())
-            .chain([m.stamina_max / base])
+            .chain([m.kill_stamina / base])
             .fold(0.0, f32::max);
         (d * 100.0).round() as i32
     }
@@ -878,8 +878,11 @@ pub const SUB_REGEN: f32 = 1.04;
 pub const SUB_POISE: f32 = 1.05;
 pub const SUB_AIL: f32 = 1.15;
 pub const SUB_SKILL_CD: f32 = 0.95;
-/// 창의 보조특성(0272 2단계): 최대 기력 +5(바탕 100의 5%) — 보스 모의(`balance::sub_trait_fight_length`)로 잰다.
-pub const SUB_STAMINA: f32 = 5.0;
+/// 창의 보조특성(0272 2단계): 적을 쓰러뜨릴 때마다 기력 +8(장신구 "굶주린 것"의 25의 셋에 하나 — 떼를 줄로 꿰는 종류의 덤).
+/// 처음 안이던 최대 기력은 보스 모의(`balance::sub_knob_probe` `SIM_STAMINA`, 300판)에서 +1부터 문턱이 있었다(망치로 문지기를
+/// 칠 때 −9.5% — 봇이 틈마다 한 타를 더 넣는다, 지팡이는 +5에서 −24%) — 어느 값도 4% 기준 안에 못 든다. 쓰러뜨림의 기력은 보스
+/// 싸움(쓰러뜨릴 것이 없다)을 줄이지 않는다.
+pub const SUB_KILL_STAMINA: f32 = 8.0;
 
 /// 교체 공격(0272 1b)에서 들어오는 무기가 치는 한 타: 근접 = 그 무기의 대시 공격(`Weapon::dash`), 원거리 = 보통 사격 한 발
 /// (`Weapon::rb`의 `Shot` — 탄 하나를 쓴다). 새 동작·새 표 칸이 없다 — 새 무기는 표의 그 칸이 곧 교체 공격이다.
@@ -1025,7 +1028,7 @@ pub const CLASSES: [ClassDef; 6] = [
         main_trait: |s| s.trait_spear,
         sub: SubTrait {
             mods: Mods {
-                stamina_max: SUB_STAMINA,
+                kill_stamina: SUB_KILL_STAMINA,
                 ..Mods::NONE
             },
             stowed_reload: false,
@@ -1207,7 +1210,7 @@ mod tests {
                 got.poise != none.poise,
                 got.ail != none.ail,
                 got.skill_cd != none.skill_cd,
-                got.stamina_max != none.stamina_max,
+                got.kill_stamina != none.kill_stamina,
             ];
             let n = knobs.iter().filter(|k| **k).count();
             assert_eq!(n + c.sub.stowed_reload as usize, 1, "{:?}", c.class);
@@ -1216,12 +1219,12 @@ mod tests {
                 poise: none.poise,
                 ail: none.ail,
                 skill_cd: none.skill_cd,
-                stamina_max: none.stamina_max,
+                kill_stamina: none.kill_stamina,
                 ..got
             };
             assert_eq!(only, none, "{:?}: nothing else moves", c.class);
             assert!(got.stamina_regen >= 1.0 && got.poise >= 1.0 && got.ail >= 1.0);
-            assert!(got.skill_cd <= 1.0 && got.stamina_max >= 0.0);
+            assert!(got.skill_cd <= 1.0 && got.kill_stamina >= 0.0);
             // 작게: 어느 것도 15%를 넘지 않고, 주특성의 배가 있는 종류는 그 반 아래.
             let p = c.sub.percent();
             assert_eq!(p == 0, c.sub.stowed_reload, "{:?}", c.class);
@@ -1234,7 +1237,7 @@ mod tests {
         assert_eq!(Class::Hammer.def().sub.percent(), 5);
         assert_eq!(Class::Staff.def().sub.percent(), 15);
         assert_eq!(Class::Bow.def().sub.percent(), 5);
-        assert_eq!(Class::Spear.def().sub.percent(), 5, "max stamina +5 on 100");
+        assert_eq!(Class::Spear.def().sub.percent(), 8, "stamina +8 per kill");
         assert!(Class::Crossbow.def().sub.stowed_reload);
         assert_eq!(Id::Fists.sub_trait(), None, "bare hands are no class");
         assert_eq!(Id::Hammer.sub_trait(), Some(Class::Hammer.def().sub));

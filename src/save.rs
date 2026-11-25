@@ -1410,7 +1410,7 @@ forge.sword=3
     }
 
     /// 0272 2단계: 창을 가진·든·벼린 기록이 왕복한다(가방에 창 아이템이 서고, 벼린 단은 든 창의 타에 든다, 보조무기 슬롯의 창은
-    /// 보조특성 — 최대 기력 +5). 창이 생기기 전의 기록(키 `weapons`에 창이 없다)은 그대로 읽힌다 — 무기 번호는 뒤에만 붙었다.
+    /// 보조특성 — 쓰러뜨릴 때마다 기력 +8). 창이 생기기 전의 기록(키 `weapons`에 창이 없다)은 그대로 읽힌다 — 무기 번호는 뒤에만 붙었다.
     #[test]
     fn a_record_with_the_spear_round_trips_and_an_older_one_still_reads() {
         use crate::weapons::Id;
@@ -1444,13 +1444,13 @@ forge.sword=3
             10,
             "the held spear's rank 2"
         );
-        // 창을 보조무기로 멘 몸은 최대 기력 +5.
+        // 창을 보조무기로 멘 몸은 쓰러뜨릴 때마다 기력 +8.
         let swapped = Progress {
             weapon: Some(Id::Sword),
             sub: Some(Id::Spear),
             ..back.clone()
         };
-        assert_eq!(swapped.stats().stamina_max - base.stamina_max, 5.0);
+        assert_eq!(swapped.stats().kill_stamina - base.kill_stamina, 8.0);
         // 창이 없던 옛 기록.
         let old = Progress::from_record(Record::parse(
             "v=1

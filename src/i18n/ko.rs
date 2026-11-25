@@ -323,7 +323,7 @@ pub const KO: Strings = Strings {
     subtrait_staff: "스킬이 쌓는 속성 게이지 +{0}%",
     subtrait_crossbow: "등에서도 장전된다 — 메고 있는 동안 탄창이 다시 찬다",
     subtrait_bow: "스킬 쿨타임 −{0}%",
-    subtrait_spear: "최대 기력 +{0}",
+    subtrait_spear: "적을 쓰러뜨릴 때마다 기력 +{0}",
     sk_physical: "물리",
     sk_row_plate: "이 트리에 쓴 포인트 {0}부터 · {1} 더",
     sk_st_plate_locked: "이 트리에 포인트를 {0} 더 쓰면 열린다",

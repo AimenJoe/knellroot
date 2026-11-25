@@ -109,6 +109,13 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     {
         st.poise *= k;
     }
+    // 최대 기력 훑기(0272 2단계 — 창의 보조특성): `SIM_STAMINA=3`이면 최대 기력에 그만큼을 얹어 잰다.
+    if let Some(k) = std::env::var("SIM_STAMINA")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+    {
+        st.stamina_max += k;
+    }
     w.apply_stats(st, true);
     w.tree = b.tree;
     let boss = w.spawn(kind, vec3(0.0, 0.0, -7.0));
@@ -708,7 +715,7 @@ fn jump_curve() {
     }
 }
 
-/// 보조특성의 값 고르기(0272 1b — 한손검의 기력 회복 `SIM_REGEN` · 망치의 자세 피해 `SIM_POISE`): 무기 셋으로, 가장 짧은 싸움
+/// 보조특성의 값 고르기(0272 1b — 한손검의 기력 회복 `SIM_REGEN` · 망치의 자세 피해 `SIM_POISE` · 2단계 창의 최대 기력 `SIM_STAMINA`): 무기 셋으로, 가장 짧은 싸움
 /// (문지기)까지 — 배를 바꿔 가며 같은 씨앗으로 견준다(보조무기 없이 능력치에 바로 얹는다).
 /// 돌리기: `SIM_REGEN=1.04 SIM_RUNS=300 cargo test --release sub_knob_probe -- --ignored --nocapture`
 #[test]
