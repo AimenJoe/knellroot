@@ -144,9 +144,10 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     }
   }
   if (want('spear')) {
-    // 0272 2단계 창: 개발 창 기술 묶음 "든 무기 바꾸기"를 일곱 번(맨손 → … → 검과 방패 → 창) → 전투 묶음의 떼 마당(아홉째 줄) — 쿼터뷰 ·
+    // 0272 2단계 창: 개발 창 기술 묶음 "든 무기 바꾸기"를 일곱 번(맨손 → … → 검과 방패 → 창) → 전투 묶음 끝 줄 "한 줄로 선 잔재"(적은 서 있고 방랑자는 맞지 않는다) — 쿼터뷰 ·
     // 락온 한 장씩, 그다음 틱마다(F6): 찌르기 셋 · 모아 내달려 꿰뚫기 · 달리며 찌르기(회피 뒤 공격).
     p = await ctx.newPage(); const kit = sceneKit(p, 70); p.kit = kit;
+    await sceneKit.unhurt(p); await sceneKit.still(p);
     p.on('pageerror', e => { if (!/register_plugin/.test(String(e))) errors.push(String(e)); });
     await p.goto(`http://localhost:${PORT}/`); await kit.until('Title', '타이틀', 60000); await p.waitForTimeout(300); await p.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
     if (first) { first = false;
@@ -156,8 +157,9 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 2', '기술 묶음'); await kit.press('ArrowDown', 5);
     for (let i = 0; i < 7; i++) { await p.keyboard.press('Enter'); await p.waitForTimeout(150); }
     await p.screenshot({ path: path.join(OUT, 'spear-arm.png') });
-    await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 4', '전투 묶음'); await kit.press('ArrowDown', 8); await kit.press('Enter');
-    await kit.until(['Play', 'Sandbox'], '떼 마당'); await p.waitForTimeout(1200);
+    await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 4', '전투 묶음'); await kit.press('ArrowDown', 14); await kit.press('Enter');
+    await kit.until(['Play', 'Sandbox'], '한 줄로 선 잔재'); await p.waitForTimeout(1200);
+    await p.keyboard.press('ArrowUp'); await p.waitForTimeout(700); // 한 단계 가까운 쿼터뷰
     await p.screenshot({ path: path.join(OUT, 'spear-quarter.png') });
     await p.keyboard.press('KeyL'); await p.waitForTimeout(900); await p.screenshot({ path: path.join(OUT, 'spear-lockon.png') });
     await p.keyboard.press('KeyL'); await p.waitForTimeout(700);

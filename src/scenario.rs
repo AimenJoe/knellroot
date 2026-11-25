@@ -36,6 +36,8 @@ pub enum Scenario {
     Stag,
     /// 고요한 사슴 2단계(0270 D): 체력 반 — 시작하자마자 전환, 돌진을 돌아서 한 번 더·뿌리 줄 셋.
     StagTwo,
+    /// 한 줄(0272 2단계 — 창): 앞으로 줄지어 선 잔재 다섯과 몸 곁의 둘 — 찌르기의 꿰뚫음 · 옆의 빈틈 · 내달려 꿰뚫기.
+    Line,
 }
 
 pub struct Entry {
@@ -45,7 +47,7 @@ pub struct Entry {
     pub checks: &'static str,
 }
 
-pub const LIST: [Entry; 20] = [
+pub const LIST: [Entry; 21] = [
     Entry {
         scenario: Scenario::Boss,
         name: "boss arena",
@@ -147,6 +149,11 @@ pub const LIST: [Entry; 20] = [
         scenario: Scenario::StagTwo,
         name: "hushed stag phase two",
         checks: "0270 D rise at once, shorter rests, a second charge after turning, three root lines in a fan",
+    },
+    Entry {
+        scenario: Scenario::Line,
+        name: "a line of husks",
+        checks: "0272 spear: thrusts pierce the line, the side is open, the lunge drives through",
     },
 ];
 
@@ -279,6 +286,19 @@ pub fn build(s: Scenario) -> World {
                     en.state = crate::world::EState::Chase;
                     en.stand = 1.0;
                 }
+            }
+            w
+        }
+        Scenario::Line => {
+            let mut w = World::new("line", 14.0);
+            for k in 0..5 {
+                w.spawn(
+                    crate::species::Kind::Husk,
+                    vec3(0.0, 0.0, -2.2 - 1.3 * k as f32),
+                );
+            }
+            for x in [-1.6, 1.6] {
+                w.spawn(crate::species::Kind::Husk, vec3(x, 0.0, -0.6));
             }
             w
         }
