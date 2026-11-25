@@ -1779,7 +1779,7 @@ impl World {
     }
 
     pub(super) fn assist_aim(&self, d: Vec3, deg: f32, t: &Tuning) -> Vec3 {
-        let reach = t[P::CastRange] * self.player.weapon.bolts().0.range;
+        let reach = t[P::CastRange] * self.rb_bolts().0.range;
         let cos = deg.to_radians().cos();
         let p = self.player.pos;
         self.enemies

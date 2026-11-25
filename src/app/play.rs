@@ -501,7 +501,7 @@ impl App {
         let rig = &self.cam.rig;
         let dir = crate::camera::screen_ray(rig, f.w / f.h, Vec2::ZERO);
         let w = &self.world;
-        let range = w.player.weapon.bolts().0.range;
+        let range = w.rb_bolts().0.range;
         let reach = self.t[crate::tuning::P::CastRange] * range;
         let pp = w.player.pos;
         w.enemies

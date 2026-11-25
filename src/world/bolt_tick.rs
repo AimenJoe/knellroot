@@ -491,7 +491,7 @@ impl World {
         if n < 1e-3 {
             return true;
         }
-        let def = self.player.weapon.bolts().0;
+        let def = self.rb_bolts().0;
         self.shot_reach(v / n, def, t) + radius >= n - 0.05
     }
 

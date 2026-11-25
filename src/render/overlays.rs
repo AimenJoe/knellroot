@@ -1736,7 +1736,7 @@ pub(super) fn crescent(
 
 /// 든 무기의 모은 탄 색(0056).
 fn wpn_look(w: &World) -> u8 {
-    w.player.weapon.bolts().1.look
+    w.rb_bolts().1.look
 }
 
 /// 터치로 끌어 겨누는 동안의 땅 위 미리보기(0217 — 브롤스타즈 꼴): 떼면 무엇이 어디로 가는지.
