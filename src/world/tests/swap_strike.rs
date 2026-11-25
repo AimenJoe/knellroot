@@ -397,3 +397,56 @@ fn a_stowed_crossbow_reloads_on_the_back_and_a_bow_does_not() {
     w.swap_weapons();
     assert_eq!(w.player.ranged.ammo, mag);
 }
+
+/// 재는 도구(0272 1b): 서 있는 적에게 `secs`초 동안 준 피해(초당) — 평타를 마구 누르며, `swapping`이면 교체 공격이 될 때마다
+/// 바꾸기를 누른다. `cargo test swap_dps_probe -- --ignored --nocapture`
+fn swap_dps(main: Id, sub: Id, secs: f32, swapping: bool) -> f32 {
+    let t = Tuning::default();
+    let mut w = armed(main, sub);
+    let hp0 = 1_000_000;
+    let i = mob_with(&mut w, vec3(0.0, 0.0, -1.2), hp0);
+    for k in 0..(secs / TICK_DT) as usize {
+        idle(&mut w);
+        w.enemies[i].pos = vec3(0.0, 0.0, -1.2);
+        w.enemies[i].stance.poise = 0.0;
+        w.player.pos = Vec3::ZERO;
+        let a = Actions {
+            attack: k % 2 == 0,
+            // 교체 공격이 될 때만 누른다(잠금 동안의 그냥 바꾸기는 콤보를 끊어 손해다 — 가장 잘 쓰는 손).
+            swap: swapping && w.swap_strikes(),
+            ..Default::default()
+        };
+        w.step(&a, &t);
+    }
+    (hp0 - w.enemies[i].hp) as f32 / secs
+}
+
+#[test]
+#[ignore]
+fn swap_dps_probe() {
+    for (a, b) in [
+        (Id::Sword, Id::Hammer),
+        (Id::Sword, Id::Staff),
+        (Id::Hammer, Id::Staff),
+    ] {
+        for secs in [4.0, 20.0] {
+            println!(
+                "{a:?}+{b:?} {secs}s: {a:?} only {:.1}/s · {b:?} only {:.1}/s · swap strike whenever ready {:.1}/s",
+                swap_dps(a, b, secs, false),
+                swap_dps(b, a, secs, false),
+                swap_dps(a, b, secs, true),
+            );
+        }
+    }
+}
+
+/// 잠금의 뜻: 교체 공격을 되는 대로 다 내도 한 무기로 치는 것보다 눈에 띄게 세지 않다 — 둘 가운데 센 무기의 평타 연타의
+/// 1.15배 안(20초). 교체 공격은 초당 피해가 아니라 이어 치기의 한 갈래다.
+#[test]
+fn using_every_swap_strike_does_not_out_damage_one_weapon_by_much() {
+    for (a, b) in [(Id::Sword, Id::Hammer), (Id::Sword, Id::Staff)] {
+        let one = swap_dps(a, b, 20.0, false).max(swap_dps(b, a, 20.0, false));
+        let both = swap_dps(a, b, 20.0, true);
+        assert!(both <= one * 1.15, "{a:?}+{b:?}: {both:.1} vs {one:.1}");
+    }
+}

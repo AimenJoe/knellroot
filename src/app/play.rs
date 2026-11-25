@@ -557,7 +557,18 @@ impl App {
         };
         #[cfg(feature = "dev")]
         {
-            self.world.unhurt = crate::screen::test_flags() & 1 != 0;
+            let flags = crate::screen::test_flags();
+            self.world.unhurt = flags & 1 != 0;
+            // 16: 적을 세워 둔다(동작·이펙트를 틱마다 찍는 스크립트 — 몰려든 적이 방랑자를 가리지 않게, `tools/test/swap.js`).
+            // 휘청이는 적은 그대로 둔다(맞은 반응은 보인다).
+            if flags & 16 != 0 {
+                use crate::world::EState;
+                for e in &mut self.world.enemies {
+                    if e.alive() && !matches!(e.state, EState::Stagger { .. }) {
+                        e.state = EState::Recover { t: -1000.0 };
+                    }
+                }
+            }
         }
         let events = self.world.step(a, t);
         // 바꿔 든 무기를 기록에(0223 — 다음 판·멈춤의 장비 탭도 그것으로).

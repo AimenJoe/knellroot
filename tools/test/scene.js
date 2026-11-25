@@ -74,6 +74,9 @@ module.exports.throttle = async (ctx, page) => {
 // 엉뚱하다(2026-11-19 touch.js — 멈춤 버튼을 누를 때 이미 결과 화면이었다). 맞는 모습을 찍는 스크립트는 부르지 않는다. goto 전에.
 module.exports.unhurt = (page) => page.addInitScript(() => { window.knellTestFlags = (window.knellTestFlags | 0) | 1; });
 
+// 적을 세워 둔다(개발판만 — test_flags 비트 16): 동작·이펙트를 틱마다 찍을 때 몰려든 적이 방랑자를 가리지 않게. 휘청임은 그대로. goto 전에.
+module.exports.still = (page) => page.addInitScript(() => { window.knellTestFlags = (window.knellTestFlags | 0) | 16; });
+
 // 싸게 그리기(개발판만 — test_flags 비트 8: 월드의 줄 수 270·2배 그리기 끔): 흐름·기록·터치 자리만 보는 스크립트용. 헤드리스의
 // 소프트웨어 GL은 화소 수가 곧 시간이다 — 화면 크기와 UI 배치는 그대로다. 그림을 보는 스크립트(shot.js·fx.js·menu_res.js)는 부르지
 // 않는다. `FULL=1`이면 걸지 않는다(찍힌 그림을 제 화질로 보고 싶을 때). goto 전에.
