@@ -79,7 +79,10 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       ['snow', 'Skill(Snow)', null, 1100, 'Q', 90, 4], ['flare', 'Skill(Flare)', null, 1000, 'Q', 34, 4], ['snare', 'Skill(Snare)', null, 500, 'Q', 120, 1],
       ['bell', null, 'Ult(Bell)', 1300, 'ult', 44, 6], ['blizzard', null, 'Ult(Blizzard)', 1300, 'ult', 90, 6],
       // 0272: 쇠뇌 판의 충격 갈래 둘(쇠뇌 = 다섯) · 활 판의 큰 기술(활 = 하나).
-      ['fuse', 'Skill(Fuse)', null, 900, 'Q', 90, 5], ['mine', 'Skill(Mine)', null, 500, 'Q', 120, 5], ['rain', null, 'Ult(Rain)', 1300, 'ult', 120, 1]];
+      ['fuse', 'Skill(Fuse)', null, 900, 'Q', 90, 5], ['mine', 'Skill(Mine)', null, 500, 'Q', 120, 5], ['rain', null, 'Ult(Rain)', 1300, 'ult', 120, 1],
+      // 0272 2단계: 창 판(창 = 일곱 — 검과 방패 다음). 질풍 찌르기는 찌름 여섯이 1.4초 남짓.
+      ['skewer', 'Skill(Skewer)', null, 1000, 'Q', 40, 7], ['pole', 'Skill(Pole)', null, 1400, 'Q', 34, 7], ['pin', 'Skill(Pin)', null, 1000, 'Q', 30, 7],
+      ['gale', null, 'Ult(Gale)', 1000, 'ult', 70, 7]];
     const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await p.waitForTimeout(90); } };
     // 이름으로 칸 찾기(0270 C2 — 판 하나씩): 판 줄로 올라가(위를 넉넉히 — `@Strip`) ↓ = 보이는 판(든 무기의 판)의 맨 윗줄 → 줄마다 왼쪽 끝 →
     // 오른쪽으로 훑으며 장면 이름 끝의 `@칸`을 본다. 없으면 무기 판을 한손검부터 차례로(판 줄에서 → — 공통 판에는 스킬이 없다).
@@ -98,8 +101,8 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       };
       await pick(p, 12, 'ArrowUp');
       let found = await scan();
-      for (let plate = 1; plate < 7 && !found; plate++) {
-        await pick(p, 12, 'ArrowUp'); await pick(p, 7, 'ArrowLeft'); await pick(p, plate);
+      for (let plate = 1; plate < 8 && !found; plate++) {
+        await pick(p, 12, 'ArrowUp'); await pick(p, 8, 'ArrowLeft'); await pick(p, plate);
         found = await scan();
       }
       if (!found) throw new Error(`기술 판에서 ${target} 칸을 못 찾았다 — 지금 ${await at(p)}`);
@@ -139,6 +142,30 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       if (name === 'flurry') for (let k = 0; k < 5; k++) { await p.keyboard.press('KeyJ'); await burst(p, `sk-flurry-hit${k}`, 5); }
       await p.close();
     }
+  }
+  if (want('spear')) {
+    // 0272 2단계 창: 개발 창 기술 묶음 "든 무기 바꾸기"를 일곱 번(맨손 → … → 검과 방패 → 창) → 전투 묶음의 떼 마당(아홉째 줄) — 쿼터뷰 ·
+    // 락온 한 장씩, 그다음 틱마다(F6): 찌르기 셋 · 모아 내달려 꿰뚫기 · 달리며 찌르기(회피 뒤 공격).
+    p = await ctx.newPage(); const kit = sceneKit(p, 70); p.kit = kit;
+    p.on('pageerror', e => { if (!/register_plugin/.test(String(e))) errors.push(String(e)); });
+    await p.goto(`http://localhost:${PORT}/`); await kit.until('Title', '타이틀', 60000); await p.waitForTimeout(300); await p.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
+    if (first) { first = false;
+      await kit.press('ArrowDown'); await kit.press('Enter'); await kit.until('Settings { host: Title', '타이틀 → 설정'); await kit.press('ArrowUp'); await kit.press('Enter'); await kit.until('Controls', '설정 → 조작');
+      await kit.press('ArrowUp', 2); await kit.press('Enter'); await p.waitForTimeout(200); await kit.press('Escape'); await kit.until('Settings { host: Title', '조작 → 설정'); await kit.press('Escape'); await kit.until('Title', '설정 → 타이틀'); await kit.press('ArrowUp'); }
+    await kit.press('ArrowUp'); await kit.press('Enter'); await kit.until('Dev { tab: 0', '타이틀 → 개발 창');
+    await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 2', '기술 묶음'); await kit.press('ArrowDown', 5);
+    for (let i = 0; i < 7; i++) { await p.keyboard.press('Enter'); await p.waitForTimeout(150); }
+    await p.screenshot({ path: path.join(OUT, 'spear-arm.png') });
+    await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 4', '전투 묶음'); await kit.press('ArrowDown', 8); await kit.press('Enter');
+    await kit.until(['Play', 'Sandbox'], '떼 마당'); await p.waitForTimeout(1200);
+    await p.screenshot({ path: path.join(OUT, 'spear-quarter.png') });
+    await p.keyboard.press('KeyL'); await p.waitForTimeout(900); await p.screenshot({ path: path.join(OUT, 'spear-lockon.png') });
+    await p.keyboard.press('KeyL'); await p.waitForTimeout(700);
+    await p.keyboard.press('F6'); await p.waitForTimeout(300);
+    for (let k = 0; k < 3; k++) { await p.keyboard.press('KeyJ'); await burst(p, `spear-hit${k}`, 10); }
+    await p.keyboard.down('KeyJ'); await burst(p, 'spear-charge', 12); await p.keyboard.up('KeyJ'); await burst(p, 'spear-lunge', 16);
+    await p.keyboard.press('Space'); await burst(p, 'spear-dodge', 6); await p.keyboard.press('KeyJ'); await burst(p, 'spear-dash', 14);
+    await p.close();
   }
   if (want('stage')) {
     // 입구: 화로 불티 + 회피·달리기 먼지(진짜 바닥)
