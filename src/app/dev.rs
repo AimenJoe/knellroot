@@ -61,6 +61,8 @@ pub(super) enum DevStart {
     Stones,
     /// 둘째 지역의 첫 상자 곁(0131 — 떨어진 아이템·빛기둥 판정) — 기록은 쓰지 않는다.
     Chest,
+    /// 둘째 지역 파수꾼 곁방의 상자 곁(0272 2단계 — 파수꾼의 창이 나오는 곳 판정) — 기록은 쓰지 않는다.
+    SpearChest,
     /// 첫 지역의 필드 보스 터 들머리(0270 D — 엎드린 고요한 사슴·끈·떨굼·쉬어도 다시 서지 않음 판정) — 기록은 쓰지 않는다.
     Field,
     /// PoC·개발 아레나(`scenario::LIST`).
@@ -84,7 +86,7 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 44] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 45] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Motion, DevStart::Motion(0)),
@@ -115,6 +117,8 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 44] = [
     (DevCat::Stage, DevStart::Prologue),
     // 0270 D: 역시 끝에.
     (DevCat::Stage, DevStart::Field),
+    // 0272 2단계: 역시 끝에.
+    (DevCat::Stage, DevStart::SpearChest),
     (DevCat::Combat, DevStart::Scenario(Scenario::Boss)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Pillars)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Duel)),
@@ -159,6 +163,7 @@ impl DevStart {
             DevStart::Residents => t(dv::RESIDENTS),
             DevStart::Stones => t(dv::STONES),
             DevStart::Chest => t(dv::CHEST),
+            DevStart::SpearChest => t(dv::SPEAR_CHEST),
             DevStart::Field => t(dv::FIELD),
             DevStart::Scenario(sc) => {
                 let e = scenario::entry(sc);
@@ -187,6 +192,7 @@ impl DevStart {
             | DevStart::Residents
             | DevStart::Stones
             | DevStart::Chest
+            | DevStart::SpearChest
             | DevStart::Field => t(dv::STAGE_NOTE).to_string(),
             DevStart::Scenario(sc) => {
                 let n = scenario::LIST
@@ -367,12 +373,18 @@ impl App {
                 }
                 self.go(Go::Root(Scene::Play));
             }
-            DevStart::Chest => {
+            DevStart::Chest | DevStart::SpearChest => {
                 self.dev.run = true;
                 self.restart();
                 self.down = 1;
                 self.cross_to(1, false);
-                if let Some(&at) = self.run.chest.at.first() {
+                let spear = crate::stage::Loot::Weapon(crate::weapons::Id::Spear);
+                let which = if e == DevStart::SpearChest {
+                    self.run.def.chest_loot.iter().position(|l| *l == spear)
+                } else {
+                    Some(0)
+                };
+                if let Some(&at) = which.and_then(|i| self.run.chest.at.get(i)) {
                     self.world.player.pos = at + vec3(-1.2, 0.0, 0.0);
                     self.world.player.prev = self.world.player.pos;
                     self.cam = self.cam.renew(self.world.player.pos, &self.t);

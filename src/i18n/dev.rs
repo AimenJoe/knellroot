@@ -128,6 +128,10 @@ pub const CHEST: Pair = (
     "둘째 지역 상자 곁에서(떨어진 아이템)",
     "region 2 beside a chest (dropped loot)",
 );
+pub const SPEAR_CHEST: Pair = (
+    "둘째 지역 파수꾼 곁방의 상자 곁에서(파수꾼의 창)",
+    "region 2 beside the watch's side-room chest (the Watchman's Spear)",
+);
 pub const FIELD: Pair = (
     "첫 지역 필드 보스의 터에서(고요한 사슴)",
     "region 1 at the field boss's clearing (the Hushed Stag)",
@@ -228,6 +232,7 @@ pub const PAIRS: &[Pair] = &[
     RESIDENTS,
     STONES,
     CHEST,
+    SPEAR_CHEST,
     FIELD,
     STAGE_NOTE,
     LAB_START,

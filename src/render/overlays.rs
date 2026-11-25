@@ -828,11 +828,7 @@ fn ult_shape(w: &World, pp: Vec3, fl: &Drape) {
                 let u = &crate::skills::GALE;
                 let steel = Color::new(0.80, 0.86, 1.0, 1.0);
                 let dir = w.player.facing_dir();
-                let len = w.lane_reach(
-                    pp - Vec3::Y * pp.y + Vec3::Y * w.player.pos.y,
-                    dir,
-                    u.len_at(w.player.skill.ult_rank),
-                );
+                let len = w.lane_reach(w.player.pos, dir, u.len_at(w.player.skill.ult_rank));
                 let at = pp + Vec3::Y * 0.06;
                 if !done {
                     let frozen = 1.0 - (w.hitstop / u.freeze.max(1e-3)).clamp(0.0, 1.0);
