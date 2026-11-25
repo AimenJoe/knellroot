@@ -2460,7 +2460,7 @@ weapons=sword,bow
     /// 슬롯에 방패가 있거나 비었으면 없다. 어느 것도 받는 피해 · 패링 판정 시간 · 회피 기력을 바꾸지 않는다(랩 값까지).
     #[test]
     fn a_sub_trait_applies_only_in_the_sub_slot_and_swaps_with_the_weapons() {
-        use crate::weapons::{Id as W, SUB_AIL, SUB_POISE, SUB_REGEN, SUB_SKILL_CD};
+        use crate::weapons::{Id as W, SUB_AIL, SUB_HEAL, SUB_REGEN, SUB_SKILL_CD};
         let arm = |main: W, sub: Option<W>| {
             let mut p = Progress {
                 weapon: Some(main),
@@ -2473,12 +2473,12 @@ weapons=sword,bow
         let none = arm(W::Sword, None).stats();
         assert_eq!(none, crate::stats::Stats::default());
         assert_eq!(arm(W::Sword, None).sub_trait(), None);
-        // 검을 들고 망치를 멨다: 망치의 것(자세 피해)만 — 검의 것(기력 회복)은 없다.
+        // 검을 들고 망치를 멨다: 망치의 것(등잔 회복량 — 0274 ②)만 — 검의 것(기력 회복)은 없다.
         let a = arm(W::Sword, Some(W::Hammer)).stats();
-        assert_eq!((a.poise, a.stamina_regen), (SUB_POISE, 1.0));
+        assert_eq!((a.heal, a.stamina_regen), (SUB_HEAL, 1.0));
         // 바꿔 들었다(망치를 들고 검을 멨다): 맞바뀐다.
         let b = arm(W::Hammer, Some(W::Sword)).stats();
-        assert_eq!((b.poise, b.stamina_regen), (1.0, SUB_REGEN));
+        assert_eq!((b.heal, b.stamina_regen), (0, SUB_REGEN));
         // 지팡이 = 속성 게이지 · 활 = 스킬 쿨타임 · 쇠뇌 = 숫자 없음(등에서 장전 — 월드의 규칙).
         assert_eq!(arm(W::Sword, Some(W::Staff)).stats().ail, SUB_AIL);
         assert_eq!(arm(W::Sword, Some(W::Bow)).stats().skill_cd, SUB_SKILL_CD);

@@ -1321,7 +1321,7 @@ mod tests {
         let (class, main, sub) = class_text(weapons::Id::Hammer, s.weapon_hammer).unwrap();
         assert_eq!(
             sub,
-            fill(s.subtrait_line, &[&fill(s.subtrait_hammer, &["5"])])
+            fill(s.subtrait_line, &[&fill(s.subtrait_hammer, &["15"])])
         );
         assert_eq!(class, format!("{} · {}", s.class_hammer, s.weapon_hammer));
         assert_eq!(main, fill(s.trait_line, &[&fill(s.trait_hammer, &["30"])]));

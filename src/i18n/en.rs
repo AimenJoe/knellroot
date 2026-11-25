@@ -320,7 +320,7 @@ pub const EN: Strings = Strings {
     trait_spear: "A long shaft — the farthest-reaching melee weapon, and every thrust pierces the whole line",
     subtrait_line: "Off-hand trait · {0}",
     subtrait_sword: "Stamina regeneration +{0}%",
-    subtrait_hammer: "Poise damage +{0}%",
+    subtrait_hammer: "Lamp sip healing +{0}%",
     subtrait_staff: "Skills cause +{0}% elemental buildup",
     subtrait_crossbow: "Reloads on your back — the magazine refills while it is stowed",
     subtrait_bow: "Skill cooldown −{0}%",

@@ -321,7 +321,7 @@ pub const KO: Strings = Strings {
     trait_spear: "긴 자루 — 근접 무기 가운데 가장 멀리 닿고, 찌르기가 한 줄의 적을 모두 꿰뚫는다",
     subtrait_line: "보조특성 · {0}",
     subtrait_sword: "기력 회복 +{0}%",
-    subtrait_hammer: "자세 피해 +{0}%",
+    subtrait_hammer: "등잔 한 모금의 회복 +{0}%",
     subtrait_staff: "스킬이 쌓는 속성 게이지 +{0}%",
     subtrait_crossbow: "등에서도 장전된다 — 메고 있는 동안 탄창이 다시 찬다",
     subtrait_bow: "스킬 쿨타임 −{0}%",

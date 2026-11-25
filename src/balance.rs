@@ -38,6 +38,10 @@ pub struct Build {
     pub forge: u8,
     /// 보조무기 슬롯에 멘 무기(0272 1b — 그 종류의 보조특성이 능력치에 든다). 봇은 바꿔 들지 않는다.
     pub sub: Option<crate::weapons::Id>,
+    /// 왼손의 방패(0274 ② — 망치도 한손이 되어 방패와 든다). 봇은 막지 않는다(패링 버튼을 한 틱만 누른다) — 쥔 꼴만 바뀐다.
+    pub shield: bool,
+    /// 재기(0274 ② — 한손검의 스킬)의 레벨(0 = 없음): 끼워 두고, 틈에 체력이 한 번 돌 만큼 빠졌으면 쓴다.
+    pub rally: u8,
 }
 
 /// 한 판의 결과.
@@ -83,6 +87,28 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     prog.weapon = Some(b.weapon);
     prog.sub = b.sub;
     w.set_sub(b.sub);
+    if b.shield {
+        w.set_shield(Some(crate::shield::Id::Pilgrim));
+    }
+    if b.rally > 0 {
+        use crate::skills::{Id as Sk, Loadout, Pick, Slot, Ult};
+        w.set_skills(Loadout {
+            slots: [
+                Slot {
+                    id: Sk::Rally,
+                    rank: b.rally,
+                    pick: Pick::A,
+                },
+                Slot {
+                    id: Sk::Whirl,
+                    rank: 0,
+                    pick: Pick::A,
+                },
+            ],
+            ult: 0,
+            great: Ult::Flurry,
+        });
+    }
     prog.forged.set(b.weapon, b.forge);
     if let Some(r) = std::env::var("SIM_FORGE").ok().and_then(|v| v.parse().ok()) {
         prog.forged.set(b.weapon, r);
@@ -315,6 +341,16 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
         if opening && gap <= 1.6 && w.player.stamina >= reserve && !busy {
             a.attack = true;
         }
+        // 재기(0274 ②): 틈에 체력이 한 번 돌 만큼(두 눈금) 빠졌고 쿨타임이 끝났으면 — 등잔보다 먼저.
+        let rally_ready = b.rally > 0 && w.player.skill.cd[crate::skills::Id::Rally.index()] <= 0.0;
+        if rally_ready
+            && w.player.hp <= w.player.max_hp - 2 * crate::tuning::HP_UNIT
+            && opening
+            && !busy
+        {
+            a.skill1 = true;
+            a.attack = false;
+        }
         // 등잔: 체력 두 눈금(20) 이하·틈·조금 떨어져 있으면.
         if w.player.hp <= 2 * crate::tuning::HP_UNIT && w.player.flask > 0 && opening && !busy {
             a.flask = true;
@@ -434,6 +470,8 @@ pub fn builds() -> Vec<Build> {
             weapon: W::Sword,
             forge: 0,
             sub: None,
+            shield: false,
+            rally: 0,
         },
         // 첫 도착(0127): 잔불 ≈ 280 = 레벨 셋, 성소 탑의 귀 + 문지기의 손 + 마을 상자의 꿰맨 천, 등잔·한 모금, 패시브 칸 둘.
         Build {
@@ -449,6 +487,8 @@ pub fn builds() -> Vec<Build> {
             weapon: W::Sword,
             forge: 0,
             sub: None,
+            shield: false,
+            rally: 0,
         },
         // 둘째 판 이후(문지기 핵 둘·패시브 칸 넷): 힘 3단(강타 +1).
         Build {
@@ -464,6 +504,8 @@ pub fn builds() -> Vec<Build> {
             weapon: W::Sword,
             forge: 0,
             sub: None,
+            shield: false,
+            rally: 0,
         },
         // 정원 도착(0185): 문지기 둘·마을의 잔불 — 레벨 일곱, 패시브 칸 여섯.
         Build {
@@ -479,6 +521,8 @@ pub fn builds() -> Vec<Build> {
             weapon: W::Sword,
             forge: 0,
             sub: None,
+            shield: false,
+            rally: 0,
         },
         // 작업층 도달(0216 W1): 문지기 셋 — 레벨 열, 힘 5단(평타 +10), 패시브 칸 여섯.
         Build {
@@ -494,6 +538,8 @@ pub fn builds() -> Vec<Build> {
             weapon: W::Sword,
             forge: 0,
             sub: None,
+            shield: false,
+            rally: 0,
         },
     ]
 }
@@ -517,6 +563,8 @@ pub fn sanctuary_build() -> Build {
         weapon: crate::weapons::Id::Sword,
         forge: 0,
         sub: None,
+        shield: false,
+        rally: 0,
     }
 }
 
@@ -753,6 +801,61 @@ fn sub_knob_probe() {
                 })
                 .collect();
             println!("{kind:?} {main:?} dummy {d:.2} | {}", row.join(" | "));
+        }
+    }
+}
+
+/// 0274 ② 종류 모의: 한손검 · 망치(한손 3연타) · 망치와 방패 · 재기를 쓰는 한손검 · 망치를 멘 한손검(보조특성 = 등잔 회복량)을
+/// 같은 몸·같은 씨앗으로 — 문지기(첫 도착 B) · 종지기(B) · 이끼 덮인 문지기(정원 도착 D). 성공률 0.5 · 0.7 · 0.85.
+/// 돌리기: `SIM_RUNS=300 cargo test --release class_fight_probe -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn class_fight_probe() {
+    use crate::weapons::Id as W;
+    let t = Tuning::default();
+    let runs = std::env::var("SIM_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(120);
+    let all = builds();
+    for (kind, bi) in [
+        (Kind::Warden, 1),
+        (Kind::Bellkeeper, 1),
+        (Kind::Mossward, 3),
+    ] {
+        let b = &all[bi];
+        let v = |name: &'static str, weapon: W, sub: Option<W>, shield: bool, rally: u8| Build {
+            name,
+            weapon,
+            sub,
+            shield,
+            rally,
+            ..b.clone()
+        };
+        let variants = [
+            v("sword", W::Sword, None, false, 0),
+            v("sword+rally1", W::Sword, None, false, 1),
+            v("sword+rally5", W::Sword, None, false, 5),
+            v("sword/sub hammer", W::Sword, Some(W::Hammer), false, 0),
+            v("hammer", W::Hammer, None, false, 0),
+            v("hammer+shield", W::Hammer, None, true, 0),
+            v("hammer/sub sword", W::Hammer, Some(W::Sword), false, 0),
+        ];
+        println!("\n## {kind:?} — {}", b.name);
+        println!("variant          | dummy  | p    | win  | secs(win) | taken | flasks");
+        for bv in &variants {
+            let d = fight_vs(kind, true, bv, 1.0, 1, &t).secs;
+            for p in [0.5, 0.7, 0.85] {
+                let m = summary(kind, bv, p, runs, &t);
+                println!(
+                    "{:<16} | {d:>5.1}s | {p:.2} | {:>3.0}% | {:>9.1} | {:>5.1} | {:>5.2}",
+                    bv.name,
+                    m.win * 100.0,
+                    m.secs,
+                    m.taken,
+                    m.flasks
+                );
+            }
         }
     }
 }

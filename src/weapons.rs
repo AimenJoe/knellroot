@@ -871,10 +871,12 @@ impl SubTrait {
         let m = self.mods;
         // 쓰러뜨림의 기력은 더하는 칸 — 기력의 바탕(랩 `stamina.max` 100)에 대한 몫으로(= 더하는 수 그대로).
         let base = crate::tuning::SPECS[crate::tuning::idx(crate::tuning::P::StaminaMax)].def;
+        // 등잔 회복량(0274 ② 망치)도 더하는 칸 — 한 모금의 바탕(랩 `flask.heal` 20)에 대한 몫으로.
+        let sip = crate::tuning::SPECS[crate::tuning::idx(crate::tuning::P::FlaskHeal)].def;
         let d = [m.stamina_regen, m.poise, m.ail, m.skill_cd]
             .into_iter()
             .map(|x| (x - 1.0).abs())
-            .chain([m.kill_stamina / base])
+            .chain([m.kill_stamina / base, m.heal as f32 / sip])
             .fold(0.0, f32::max);
         (d * 100.0).round() as i32
     }
@@ -885,7 +887,12 @@ impl SubTrait {
 /// 있는 값이다(기력 회복 ×1.05부터 망치가 문지기의 틈마다 한 타를 더 넣어 −11% · 자세 피해 ×1.10이면 검이 문지기의 자세를 한 타
 /// 먼저 깨 −6%). 속성 게이지·스킬 쿨타임은 봇이 스킬을 쓰지 않아 재지 못했다(셈으로만 — 0272 "1b 만든 것").
 pub const SUB_REGEN: f32 = 1.04;
+/// 옛 망치의 보조특성(자세 피해 +5% — 0272 1b). 0274 ②에서 등잔 회복량으로 바뀌어 종류 표는 쓰지 않는다(모의의 견줌만).
+#[cfg(test)]
 pub const SUB_POISE: f32 = 1.05;
+/// 망치의 보조특성(0274 ② — 성직자의 맛보기, 치유): 등잔 한 모금 +3(바탕 20의 15% — 주특성 물리력 +30%의 반). 보스 모의
+/// (`balance::class_fight_probe`)로 골랐다 — 싸움을 줄이지 않고(되찾을 뿐) 이김이 조금 는다(0274 "② 만든 것").
+pub const SUB_HEAL: i32 = 3;
 pub const SUB_AIL: f32 = 1.15;
 pub const SUB_SKILL_CD: f32 = 0.95;
 /// 창의 보조특성(0272 2단계): 적을 쓰러뜨릴 때마다 기력 +8(장신구 "굶주린 것"의 25의 셋에 하나 — 떼를 줄로 꿰는 종류의 덤).
@@ -968,7 +975,7 @@ pub const CLASSES: [ClassDef; 6] = [
         main_trait: |s| s.trait_hammer,
         sub: SubTrait {
             mods: Mods {
-                poise: SUB_POISE,
+                heal: SUB_HEAL,
                 ..Mods::NONE
             },
             stowed_reload: false,
@@ -1227,6 +1234,7 @@ mod tests {
                 got.ail != none.ail,
                 got.skill_cd != none.skill_cd,
                 got.kill_stamina != none.kill_stamina,
+                got.heal != none.heal,
             ];
             let n = knobs.iter().filter(|k| **k).count();
             assert_eq!(n + c.sub.stowed_reload as usize, 1, "{:?}", c.class);
@@ -1236,11 +1244,12 @@ mod tests {
                 ail: none.ail,
                 skill_cd: none.skill_cd,
                 kill_stamina: none.kill_stamina,
+                heal: none.heal,
                 ..got
             };
             assert_eq!(only, none, "{:?}: nothing else moves", c.class);
             assert!(got.stamina_regen >= 1.0 && got.poise >= 1.0 && got.ail >= 1.0);
-            assert!(got.skill_cd <= 1.0 && got.kill_stamina >= 0.0);
+            assert!(got.skill_cd <= 1.0 && got.kill_stamina >= 0.0 && got.heal >= 0);
             // 작게: 어느 것도 15%를 넘지 않고, 주특성의 배가 있는 종류는 그 반 아래.
             let p = c.sub.percent();
             assert_eq!(p == 0, c.sub.stowed_reload, "{:?}", c.class);
@@ -1250,7 +1259,9 @@ mod tests {
             }
         }
         assert_eq!(Class::Sword.def().sub.percent(), 4);
-        assert_eq!(Class::Hammer.def().sub.percent(), 5);
+        // 0274 ②: 망치 = 등잔 한 모금 +3(바탕 20의 15%) — 주특성(물리력 +30%)의 반.
+        assert_eq!(Class::Hammer.def().sub.percent(), 15);
+        assert_eq!(Class::Hammer.def().sub.mods.heal, SUB_HEAL);
         assert_eq!(Class::Staff.def().sub.percent(), 15);
         assert_eq!(Class::Bow.def().sub.percent(), 5);
         assert_eq!(Class::Spear.def().sub.percent(), 8, "stamina +8 per kill");
