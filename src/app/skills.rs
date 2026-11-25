@@ -600,8 +600,22 @@ pub(super) mod geo {
     }
 }
 
-/// 판 줄의 칸에서 이름 곁에 비우는 폭(오른쪽 귀퉁이의 금빛 점 자리 — 기준 px).
+/// 판 줄의 칸에서 이름 곁에 비우는 폭(오른쪽 귀퉁이의 금빛 점 자리 — 기준 px). 판이 여덟(0272 2단계)이라 빠듯하면 `STRIP_TIGHT`.
 const STRIP_PAD: f32 = 12.0;
+const STRIP_TIGHT: f32 = 7.0;
+
+/// 판 줄의 글자 배(0272 2단계): 이름들(`text` — 기준 px)과 칸마다의 표지 자리(`pad`)가 `total`에 다 서면 1, 아니면 이름만 줄여
+/// 들어가는 배 — 0.8배 아래로는 줄이지 않는다(그때는 `fit`이 자르고 넘침 검사가 알린다).
+pub(super) fn strip_scale(text: &[f32], pad: f32, total: f32) -> f32 {
+    let room = total - pad * text.len() as f32;
+    let sum: f32 = text.iter().sum();
+    if sum <= room || sum <= 0.0 {
+        1.0
+    } else {
+        // 조금 남겨 둔다(꼭 맞으면 소수점의 어긋남으로 `fit`이 마지막 글자를 자른다).
+        (room * 0.96 / sum).clamp(0.8, 1.0)
+    }
+}
 
 /// 판 줄의 칸들(왼쪽 끝, 폭 — 기준 px): 칸마다 `need`(이름 + 표지 자리)만큼, 남는 폭은 고르게 나눈다. 다 합쳐 `total`을 넘으면
 /// 똑같이 나눈다(그때는 이름이 `fit`으로 잘린다 — 넘침 검사가 알린다).
@@ -1616,12 +1630,21 @@ impl App {
     fn draw_plate_strip(&mut self, w: &Window, at: usize) {
         let (k, u) = (w.k, w.s);
         let (main, sub) = self.held_plates();
-        let tk = 0.58 * k;
         // 칸의 폭은 이름대로(0272 — 판이 일곱이 되니 똑같이 나눈 칸에서 영어의 긴 이름 Crossbow·Hammer가 잘렸다): 이름 + 표지 자리.
-        let need: Vec<f32> = PLATES
+        // 여덟(창, 0272 2단계)이면 영어 이름이 다 못 선다 — 글을 자르지 않고 글자를 조금(0.8배까지) 줄인다(`strip_scale`).
+        let base = 0.58 * k;
+        let text: Vec<f32> = PLATES
             .iter()
-            .map(|&p| self.ui.width(plate_name(p), tk) / u + STRIP_PAD + 2.0)
+            .map(|&p| self.ui.width(plate_name(p), base) / u)
             .collect();
+        // 표지 자리도 빠듯하면 좁힌다(점은 이름 위 귀퉁이에 걸친다).
+        let pad = if strip_scale(&text, STRIP_PAD + 2.0, geo::GRID_W) >= 0.85 {
+            STRIP_PAD + 2.0
+        } else {
+            STRIP_TIGHT
+        };
+        let tk = base * strip_scale(&text, pad, geo::GRID_W);
+        let need: Vec<f32> = text.iter().map(|t| t * tk / base + pad).collect();
         let cells = strip_cells(&need, geo::GRID_W);
         for (i, &p) in PLATES.iter().enumerate() {
             let (cx, cw) = cells[i];
@@ -1632,7 +1655,7 @@ impl App {
                 draw_rectangle(r.x, r.y + r.h - u, r.w, u.max(1.0), AMBER);
             }
             // 오른쪽 귀퉁이의 점(든 무기) 자리를 비운다.
-            let name = self.ui.fit(plate_name(p), r.w - u * STRIP_PAD, tk);
+            let name = self.ui.fit(plate_name(p), r.w - u * (pad - 2.0), tk);
             let ink = if shown { AMBER } else { DIM };
             self.ui.text_center(
                 &name,
@@ -2490,6 +2513,12 @@ mod tests {
         let tight = strip_cells(&[80.0; 7], 270.0);
         assert!(tight.iter().all(|&(_, w)| (w - 270.0 / 7.0).abs() < 1e-3));
         assert!((tight[6].0 + tight[6].1 - 270.0).abs() < 1e-3);
+        // 0272 2단계: 여덟이 안 서면 글자를 조금 줄여 세운다(0.8배까지).
+        assert_eq!(strip_scale(&[19.0; 8], 14.0, 270.0), 1.0);
+        let k = strip_scale(&[22.0; 8], 14.0, 270.0);
+        let used = 22.0 * 8.0 * k + 14.0 * 8.0;
+        assert!(used < 270.0 && used > 262.0 && k < 1.0, "{k} {used}");
+        assert_eq!(strip_scale(&[60.0; 8], 14.0, 270.0), 0.8);
     }
 
     /// 0272: "쓰는 무기" 줄은 종류의 이름으로 — 한손 종류는 방패로 갈린다(방패 없이만 되면 그렇게, 방패와 함께만 되면 방패),
