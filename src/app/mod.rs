@@ -1529,6 +1529,7 @@ fn weapon_name(id: weapons::Id) -> &'static str {
         weapons::Id::Crossbow => s.weapon_crossbow,
         weapons::Id::Fists => s.weapon_fists,
         weapons::Id::Bow => s.weapon_bow,
+        weapons::Id::Spear => s.weapon_spear,
     }
 }
 

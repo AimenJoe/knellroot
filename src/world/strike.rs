@@ -48,6 +48,7 @@ impl World {
                     range: t[P::AttackRange] * h.reach,
                     arc: t[P::AttackArc] * h.arc,
                     circle: h.shape == Shape::Circle,
+                    lane: h.shape.lane_half(),
                     damage: h.damage,
                     poise: h.poise,
                     knock: h.knock,
@@ -76,6 +77,7 @@ impl World {
                     range: t[P::HeavyRange] * h.reach,
                     arc: t[P::HeavyArc] * h.arc,
                     circle: h.shape == Shape::Circle,
+                    lane: h.shape.lane_half(),
                     damage: h.damage
                         + if full {
                             t[P::HeavyFullBonus].round() as i32
@@ -210,6 +212,10 @@ impl World {
         // 0270 C3: 기절한 적(그 자리) · 피 흘리는 적 · 흡수 걸린 적.
         let (mut stunned_at, mut bled_hit, mut sipped_hit) = (None, false, false);
         let keen = self.keen();
+        // 곧은 길(창): 벽·높은 턱에 막힌 곳까지만 닿는다 — 그 너머의 적은 꿰뚫지 않는다.
+        let lane_len = s
+            .lane
+            .map(|_| self.lane_reach(p + Vec3::Y * self.player.air, f, s.range));
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing {
                 continue;
@@ -219,13 +225,22 @@ impl World {
                 continue;
             }
             let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
-            let dist = d.length() - en.radius;
-            if dist > s.range {
-                continue;
-            }
             let dir = if d.length() > 1e-4 { d.normalize() } else { f };
-            if !s.circle && dir.dot(f) < half {
-                continue;
+            if let (Some(w), Some(len)) = (s.lane, lane_len) {
+                // 길 위(앞으로 몸이 걸치고 · 옆으로 반 폭 + 몸 안)의 적을 모두.
+                let along = d.dot(f);
+                let off = (d - f * along).length();
+                if along + en.radius < 0.0 || along - en.radius > len || off > w + en.radius {
+                    continue;
+                }
+            } else {
+                let dist = d.length() - en.radius;
+                if dist > s.range {
+                    continue;
+                }
+                if !s.circle && dir.dot(f) < half {
+                    continue;
+                }
             }
             en.hit_by = swing;
             // 등딱지(0120): 앞에서 든 평타는 튕긴다 — 피해·자세 없음. 강타·옆/뒤·내려찍기(다른 길)는 들어간다.

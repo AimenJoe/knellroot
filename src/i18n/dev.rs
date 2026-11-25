@@ -154,13 +154,13 @@ pub const SKILLS_MAX_NOTE: Pair = (
 pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
 pub const ARM: Pair = ("든 무기 바꾸기", "change the held weapon");
 pub const ARM_NOTE: Pair = (
-    "든 무기를 다음 것으로 바꾼다(검 → 망치 → 지팡이 → 쇠뇌 → 검과 방패 → 맨손 → 활). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다) — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다. 지금: {0}",
-    "cycle the held weapon (sword, hammer, staff, crossbow, sword and shield, fists, bow). Skills go by weapon class (bare hands wield none): wear and enter arenas with this one. nothing is saved. now: {0}",
+    "든 무기를 다음 것으로 바꾼다(검 → 망치 → 지팡이 → 쇠뇌 → 검과 방패 → 맨손 → 활 → 창). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다) — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다. 지금: {0}",
+    "cycle the held weapon (sword, hammer, staff, crossbow, sword and shield, fists, bow, spear). Skills go by weapon class (bare hands wield none): wear and enter arenas with this one. nothing is saved. now: {0}",
 );
 pub const ARM_SUB: Pair = ("보조무기 바꾸기", "change the off-hand weapon");
 pub const ARM_SUB_NOTE: Pair = (
-    "아레나의 보조무기를 다음 것으로 바꾼다(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활). 든 무기와 같으면 비워진다. 보조특성과 교체 공격(맞힌 직후·패링 직후의 무기 바꾸기)을 본다. 저장하지 않는다. 지금: {0}",
-    "cycle the arena's off-hand weapon (none, sword, hammer, staff, crossbow, bow); the same as the held weapon means none. For off-hand traits and the swap attack (swap right after a hit or a parry). nothing is saved. now: {0}",
+    "아레나의 보조무기를 다음 것으로 바꾼다(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활 → 창). 든 무기와 같으면 비워진다. 보조특성과 교체 공격(맞힌 직후·패링 직후의 무기 바꾸기)을 본다. 저장하지 않는다. 지금: {0}",
+    "cycle the arena's off-hand weapon (none, sword, hammer, staff, crossbow, bow, spear); the same as the held weapon means none. For off-hand traits and the swap attack (swap right after a hit or a parry). nothing is saved. now: {0}",
 );
 pub const PERF_LINE: Pair = ("성능 줄 켬/끔", "perf line on/off");
 pub const PERF_LINE_NOTE: Pair = (
@@ -336,6 +336,29 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("sk_fuse", ("기술 — 심지 볼트", "skill: fuse bolt")),
     ("sk_mine", ("기술 — 화약 덫", "skill: powder trap")),
     ("ult_rain", ("큰 기술 — 화살비", "ult: arrow rain")),
+    // 0272 2단계 — 창
+    ("spear1", ("창 — 1타 찌르기", "spear: thrust 1")),
+    ("spear2", ("창 — 2타 찌르기", "spear: thrust 2")),
+    (
+        "spear3",
+        ("창 — 3타 내디뎌 찌르기", "spear: lunging thrust 3"),
+    ),
+    (
+        "spear_dash",
+        ("창 — 달리며 찌르기", "spear: running thrust"),
+    ),
+    ("spear_charge", ("창 — 모으기", "spear: charge")),
+    (
+        "spear_lunge",
+        ("창 — 내달려 꿰뚫기", "spear: piercing lunge"),
+    ),
+    ("sk_skewer", ("기술 — 꿰뚫기", "skill: skewer")),
+    ("sk_pole", ("기술 — 장대 휩쓸기", "skill: pole sweep")),
+    ("sk_pin", ("기술 — 못 박기", "skill: pinning thrust")),
+    (
+        "ult_gale",
+        ("큰 기술 — 질풍 찌르기", "ult: gale of thrusts"),
+    ),
 ];
 
 /// 동작 이름의 화면 이름(표에 없으면 동작 이름 그대로 — 모델의 동작 이름은 오른쪽 칸에 따로 보인다).

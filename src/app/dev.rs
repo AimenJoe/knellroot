@@ -84,7 +84,7 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 43] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 44] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Motion, DevStart::Motion(0)),
@@ -93,6 +93,7 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 43] = [
     (DevCat::Motion, DevStart::Motion(3)),
     (DevCat::Motion, DevStart::Motion(4)),
     (DevCat::Motion, DevStart::Motion(5)),
+    (DevCat::Motion, DevStart::Motion(6)),
     (DevCat::Skills, DevStart::Skills),
     (DevCat::Skills, DevStart::SkillsMax),
     (DevCat::Skills, DevStart::SkillsFlip),
@@ -421,7 +422,7 @@ impl App {
                 }
                 self.snd(crate::sfx::Id::Buy);
             }
-            // 놀이터의 보조무기를 표의 다음 것으로(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활 → 없음 — 맨손은 메지 않는다).
+            // 놀이터의 보조무기를 표의 다음 것으로(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활 → 창 → 없음 — 맨손은 메지 않는다).
             // 아레나에서 든 무기와 같으면 비워진다(`arm_sandbox`). 기록은 그대로.
             DevStart::ArmSub => {
                 let ids: Vec<crate::weapons::Id> = crate::weapons::IDS

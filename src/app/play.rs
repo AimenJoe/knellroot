@@ -662,6 +662,9 @@ impl App {
                 Event::Skill { .. } | Event::SkillBurst { .. } => SHAKE_PLUNGE,
                 Event::Ult { .. } | Event::LineCut { .. } | Event::GreatBell { .. } => SHAKE_ROUSE,
                 Event::Blizzard { .. } | Event::ArrowRain { .. } => SHAKE_PLUNGE,
+                // 질풍 찌르기(0272 2단계): 찌름마다 가볍게, 마지막 찌름은 큰 기술만큼.
+                Event::GaleThrust { last: true, .. } => SHAKE_ROUSE,
+                Event::GaleThrust { .. } => SHAKE_HIT,
                 // 0158 G2: 터지는 것은 내려찍기만큼, 받아냄·울림·되돎은 가볍게, 불티의 타·손에 돌아옴·몰아치기의 시작은 조용히.
                 Event::ThrowBoom { .. } => SHAKE_PLUNGE,
                 Event::Soak { .. } | Event::EchoRing { .. } | Event::Interrupt { .. } => SHAKE_HIT,
@@ -710,7 +713,8 @@ impl App {
                 Event::UltStart
                 | Event::Ult { .. }
                 | Event::LineCut { .. }
-                | Event::GreatBell { .. } => ZOOM_SMASH,
+                | Event::GreatBell { .. }
+                | Event::GaleThrust { last: true, .. } => ZOOM_SMASH,
                 // 0158 G2의 큰 순간: 땅울림이 찍는 순간, 셋을 다 받아낸 버팀의 터뜨림(받아낸 수는 다음 버팀까지 남는다).
                 Event::Skill {
                     id: crate::skills::Id::Quake,
@@ -1325,7 +1329,10 @@ impl App {
                         | Sk::Swat
                         | Sk::Ripple
                         | Sk::Snare
-                        | Sk::Mine => Id::Swing,
+                        | Sk::Mine
+                        | Sk::Skewer
+                        | Sk::Pole
+                        | Sk::Pin => Id::Swing,
                         // 0272: 심지 볼트 = 잔불 소리(심지에 불이 붙는다).
                         Sk::Fuse => Id::Ember,
                     }
@@ -1356,6 +1363,10 @@ impl App {
                         // 0272: 심지 볼트(쏘는 순간) = 스치는 바람, 화약 덫(묻음) = 둔한 소리 — 터짐은 `Boom`이 낸다.
                         Sk::Fuse => Id::Dodge,
                         Sk::Mine => Id::Thwack,
+                        // 0272 2단계(창): 꿰뚫기 = 스치는 바람(내달림), 장대 휩쓸기 = 휘두름, 못 박기 = 타격(박히는 소리).
+                        Sk::Skewer => Id::Dodge,
+                        Sk::Pole => Id::Swing,
+                        Sk::Pin => Id::Hit,
                     }
                 }
                 Event::SkillDenied => Id::Deny,
@@ -1368,6 +1379,9 @@ impl App {
                 Event::EchoRing { .. } => Id::Beat2,
                 Event::ThrowTurn { .. } => Id::Swing,
                 Event::ThrowBoom { .. } | Event::LineCut { .. } => Id::Hit,
+                // 질풍 찌르기(0272 2단계): 찌름마다 스치는 바람, 마지막은 타격.
+                Event::GaleThrust { last: true, .. } => Id::Hit,
+                Event::GaleThrust { .. } => Id::Dodge,
                 // 0270 C3: 큰 종 = 낮은 종, 눈보라 = 가장 높은 종.
                 Event::GreatBell { .. } => Id::Beat,
                 Event::Blizzard { .. } => Id::Beat3,

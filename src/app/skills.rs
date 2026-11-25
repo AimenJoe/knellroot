@@ -65,6 +65,9 @@ pub(super) fn skill_text(id: sk::Id) -> (&'static str, &'static str) {
         sk::Id::Snare => (s.skill_snare, s.skill_snare_d),
         sk::Id::Fuse => (s.skill_fuse, s.skill_fuse_d),
         sk::Id::Mine => (s.skill_mine, s.skill_mine_d),
+        sk::Id::Skewer => (s.skill_skewer, s.skill_skewer_d),
+        sk::Id::Pole => (s.skill_pole, s.skill_pole_d),
+        sk::Id::Pin => (s.skill_pin, s.skill_pin_d),
     }
 }
 
@@ -78,6 +81,7 @@ pub(super) fn ult_text(u: sk::Ult) -> (&'static str, &'static str) {
         sk::Ult::Bell => (s.ult_bell, s.ult_bell_d),
         sk::Ult::Blizzard => (s.ult_blizzard, s.ult_blizzard_d),
         sk::Ult::Rain => (s.ult_rain, s.ult_rain_d),
+        sk::Ult::Gale => (s.ult_gale, s.ult_gale_d),
     }
 }
 
@@ -156,6 +160,12 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Fuse, Pick::B) => (s.pick_fuse_b, s.pick_fuse_b_d),
         (sk::Id::Mine, Pick::A) => (s.pick_mine_a, s.pick_mine_a_d),
         (sk::Id::Mine, Pick::B) => (s.pick_mine_b, s.pick_mine_b_d),
+        (sk::Id::Skewer, Pick::A) => (s.pick_skewer_a, s.pick_skewer_a_d),
+        (sk::Id::Skewer, Pick::B) => (s.pick_skewer_b, s.pick_skewer_b_d),
+        (sk::Id::Pole, Pick::A) => (s.pick_pole_a, s.pick_pole_a_d),
+        (sk::Id::Pole, Pick::B) => (s.pick_pole_b, s.pick_pole_b_d),
+        (sk::Id::Pin, Pick::A) => (s.pick_pin_a, s.pick_pin_a_d),
+        (sk::Id::Pin, Pick::B) => (s.pick_pin_b, s.pick_pin_b_d),
     };
     (mark, name, desc)
 }
@@ -185,6 +195,9 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Snare => s.cap_snare,
         sk::Id::Fuse => s.cap_fuse,
         sk::Id::Mine => s.cap_mine,
+        sk::Id::Skewer => s.cap_skewer,
+        sk::Id::Pole => s.cap_pole,
+        sk::Id::Pin => s.cap_pin,
     }
 }
 
@@ -266,6 +279,8 @@ pub(super) fn ult_gives(u: sk::Ult, rank: u8) -> String {
         (sk::Ult::Blizzard, _) => fill(s.rk_line_dmg, &[&sk::BLIZZARD.damage3.to_string()]),
         (sk::Ult::Rain, 2) => fill(s.rk_flurry_secs, &[&num(sk::RAIN.secs2)]),
         (sk::Ult::Rain, _) => fill(s.rk_line_dmg, &[&sk::RAIN.damage3.to_string()]),
+        (sk::Ult::Gale, 2) => fill(s.rk_line_len, &[&num(sk::GALE.len2)]),
+        (sk::Ult::Gale, _) => fill(s.rk_line_dmg, &[&sk::GALE.last3.to_string()]),
     }
 }
 
@@ -2512,6 +2527,7 @@ mod tests {
                 s.class_staff,
                 s.class_crossbow,
                 s.class_bow,
+                s.class_spear,
                 s.plate_shield
             ]
         );
@@ -2526,6 +2542,7 @@ mod tests {
                 s.attr_slash,
                 s.attr_strike,
                 s.attr_magic,
+                s.attr_pierce,
                 s.attr_pierce,
                 s.attr_pierce,
                 s.attr_guard
@@ -3155,6 +3172,8 @@ mod tests {
         keyless.rank[Id::Ripple.index()] = 0;
         keyless.ult[Ult::Line.index()] = 0;
         keyless.ult[Ult::Bell.index()] = 0;
+        keyless.rank[Id::Pin.index()] = 0;
+        keyless.ult[Ult::Gale.index()] = 0;
         let edge = Entry::Key(crate::progression::Key::Edge);
         // 맞받기에 남은 것은 패시브 일곱.
         assert_eq!(keyless.branch_spent(crate::progression::Branch::Riposte), 7);

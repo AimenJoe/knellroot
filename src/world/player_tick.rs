@@ -1175,6 +1175,17 @@ impl World {
         } else {
             1.0
         };
+        // 내달리는 강타(창 — 길 모양, 0272 2단계)는 벼랑 · 턱 끝에서 멈춘다(떨어지며 꿰뚫지 않는다).
+        let lunge_halts = match self.player.state {
+            PState::Heavy { dir, .. }
+                if wpn.heavy.is_some_and(|h| h.shape.lane_half().is_some()) =>
+            {
+                let step = t[P::HeavyLunge] * wpn.heavy.map_or(1.0, |h| h.lunge);
+                let (s0, a0, _) = heavy_times(t, wpn);
+                self.lunge_stops(dir, step / (s0 + a0).max(1e-3) * dt + 0.05)
+            }
+            _ => false,
+        };
         let pl = &mut self.player;
         match pl.state {
             PState::Dodge { dir, .. } => {
@@ -1271,7 +1282,7 @@ impl World {
                 let (s0, a0, _) = heavy_times(t, wpn);
                 let reach = s0 + a0;
                 let lunge = t[P::HeavyLunge] * wpn.heavy.map_or(1.0, |h| h.lunge);
-                pl.vel = if e < reach {
+                pl.vel = if e < reach && !lunge_halts {
                     dir * (lunge / reach.max(1e-3))
                 } else {
                     Vec3::ZERO

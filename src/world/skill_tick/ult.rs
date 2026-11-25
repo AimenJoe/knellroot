@@ -6,13 +6,17 @@ impl World {
     /// 한 줄기는 가를 쪽을 이 순간에 정한다(조준 > 락온 > 닿는 거리의 가장 가까운 적 > 바라보는 쪽).
     pub(super) fn start_ult(&mut self, cx: &Ctx) {
         let kind = self.player.skill.ult;
-        if kind == skills::Ult::Line {
+        if matches!(kind, skills::Ult::Line | skills::Ult::Gale) {
             let pl = &self.player;
             let lock = cx
                 .target
                 .map(|tg| vec3(tg.x - pl.pos.x, 0.0, tg.z - pl.pos.z).normalize_or_zero())
                 .filter(|v| v.length_squared() > 0.5);
-            let reach = LINE.len_at(pl.skill.ult_rank);
+            let reach = if kind == skills::Ult::Gale {
+                skills::GALE.len_at(pl.skill.ult_rank)
+            } else {
+                LINE.len_at(pl.skill.ult_rank)
+            };
             let dir = cx
                 .aim
                 .or(lock)
@@ -57,6 +61,16 @@ impl World {
                 skills::Ult::Bell => self.great_bell(cx.t),
                 skills::Ult::Blizzard => self.blizzard(),
                 skills::Ult::Rain => self.arrow_rain(),
+                // 질풍 찌르기: 찌름은 아래에서 때마다(첫 찌름이 시동 끝).
+                skills::Ult::Gale => {}
+            }
+        }
+        if kind == skills::Ult::Gale {
+            for k in 0..skills::GALE.thrusts {
+                let at = startup + skills::GALE.thrust_at(k);
+                if e < at && e1 >= at {
+                    self.gale_thrust(cx.t, k);
+                }
             }
         }
         self.player.state = if e1 >= startup + recover {
@@ -121,6 +135,76 @@ impl World {
             dir,
             len,
             half: LINE.half,
+        });
+        self.skill_ev = ev;
+    }
+
+    /// 질풍 찌르기(0272 2단계)의 `k`째 찌름: 바라보는 쪽 한 줄(벽 · 높은 턱 앞에서 끊긴다 — `lane_reach`) 위의 깨어 있는 적을 모두
+    /// 찌른다. 앞의 찌름은 가볍게(밀지 않는다 — 떼가 줄 위에 남는다), 마지막 찌름은 깊게: 큰 피해 · 큰 자세 피해 · 출혈, 잡몹은 밀려나
+    /// 휘청인다(보스는 밀리지도 휘청이지도 않는다 — `skill_touch`가 보스의 휘청을 거르고, 밀기는 여기서 뺀다).
+    pub(super) fn gale_thrust(&mut self, t: &Tuning, k: u8) {
+        let g = &skills::GALE;
+        let mut ev = std::mem::take(&mut self.skill_ev);
+        let p = self.player.pos;
+        let body = p.y + self.player.air;
+        let dir = self.player.facing_dir();
+        let rank = self.player.skill.ult_rank;
+        let last = k + 1 >= g.thrusts;
+        let len = self.lane_reach(p + Vec3::Y * self.player.air, dir, g.len_at(rank));
+        let (light, deep) = g.damage_at(rank);
+        let dose = if last {
+            self.dosed(g.dose)
+        } else {
+            crate::status::NO_DOSE
+        };
+        for i in 0..self.enemies.len() {
+            let en = &self.enemies[i];
+            if !en.active() || (en.pos.y - body).abs() > HIT_DY {
+                continue;
+            }
+            let dv = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+            let along = dv.dot(dir);
+            let off = (dv - dir * along).length();
+            if along < -en.radius || along - en.radius > len || off > g.half + en.radius {
+                continue;
+            }
+            let knock = if last && !en.boss {
+                dir * g.push * KNOCK_DECAY
+            } else {
+                Vec3::ZERO
+            };
+            if last {
+                self.sparks.extend(sparks_at(
+                    en.pos + Vec3::Y * en.height * 0.55,
+                    dir,
+                    self.player.swings,
+                    true,
+                ));
+            }
+            self.skill_touch(
+                t,
+                &mut ev,
+                i,
+                &Touch {
+                    damage: if last { deep } else { light },
+                    poise: if last { g.last_poise } else { g.poise },
+                    stagger: if last { g.stagger } else { 0.0 },
+                    knock,
+                    crit: last,
+                    dose,
+                    flat: false,
+                },
+            );
+        }
+        if last {
+            self.hitstop = self.hitstop.max(t[P::Hitstop] * ULT_HITSTOP);
+        }
+        ev.push(Event::GaleThrust {
+            at: p,
+            dir,
+            len,
+            half: g.half,
+            last,
         });
         self.skill_ev = ev;
     }

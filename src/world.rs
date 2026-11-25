@@ -365,6 +365,14 @@ pub enum Event {
         at: Vec3,
         radius: f32,
     },
+    /// 큰 기술 질풍 찌르기(0272 2단계)의 찌름 하나 — 앞 `len` m(반 폭 `half` m), 마지막 찌름이면 `last`.
+    GaleThrust {
+        at: Vec3,
+        dir: Vec3,
+        len: f32,
+        half: f32,
+        last: bool,
+    },
 }
 
 /// 금 간 땅(0051, 망치 여진): `left`초 뒤 둘레를 친다.
@@ -1628,6 +1636,56 @@ impl World {
         }
     }
 
+    /// 곧은 길(창의 찌르기 · 0272 2단계)이 `from`(발)에서 `dir`(수평) 쪽으로 닿는 거리: `max`까지 가되 벽 상자 · 걸을 수 없는 칸 ·
+    /// 발보다 걸음(`GROUND_STEP`) 넘게 높은 칸에서 멈춘다 — 벽 너머 · 단 위의 적은 꿰뚫지 않는다. 낮은 칸은 막지 않는다(층이 다른
+    /// 적은 `HIT_DY`가 거른다).
+    pub fn lane_reach(&self, from: Vec3, dir: Vec3, max: f32) -> f32 {
+        let dir = vec3(dir.x, 0.0, dir.z).normalize_or_zero();
+        if dir == Vec3::ZERO {
+            return max;
+        }
+        let eye = from + Vec3::Y * 1.0;
+        let mut len = max;
+        for o in &self.obstacles {
+            if let Some(d) = o.ray(eye, dir) {
+                len = len.min(d);
+            }
+        }
+        if let Some(g) = &self.ground {
+            const STEP: f32 = 0.1;
+            let mut k = STEP;
+            while k < len {
+                let q = from + dir * k;
+                let wall = match g.cell_of(q) {
+                    None => true,
+                    Some((x, z)) => g
+                        .height_in(x, z, q)
+                        .is_none_or(|h| h > from.y + GROUND_STEP),
+                };
+                if wall {
+                    len = (k - STEP).max(0.0);
+                    break;
+                }
+                k += STEP;
+            }
+        }
+        len
+    }
+
+    /// 내달리는 강타(창 — 길 모양의 강타, 0272 2단계)가 다음 걸음에 벼랑 · 턱 아래로 떨어지려 하나: 그 앞의 땅이 발보다 걸음 넘게
+    /// 낮으면 참 — 걸음을 멈춘다(벽은 부딪힘이 막는다). 다른 무기의 내딛기는 그대로다.
+    pub fn lunge_stops(&self, dir: Vec3, ahead: f32) -> bool {
+        let Some(g) = &self.ground else {
+            return false;
+        };
+        let p = self.player.pos;
+        let q = p + vec3(dir.x, 0.0, dir.z).normalize_or_zero() * (PLAYER_RADIUS + ahead);
+        match g.cell_of(q) {
+            None => true,
+            Some((x, z)) => g.height_in(x, z, q).is_some_and(|h| h < p.y - GROUND_STEP),
+        }
+    }
+
     /// 내려찍기(0027): 내려앉은 자리 둘레 `plunge.range m` 안의 적을 친다 — 드러난 적이면 치명타도.
     fn plunge(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
         let p = self.player.pos;
@@ -2171,12 +2229,12 @@ impl World {
                 }
             }
             // 회피 중에는 적을 뚫고 지나간다(0020: 떼 사이에 끼어 죽지 않게). 끝났을 때 겹쳐 있으면 다음 틱에 밀려 나온다.
-            // 가로지르기(0151)도 길 위의 적을 뚫고 간다.
+            // 가로지르기(0151)·꿰뚫기(0272 2단계)도 길 위의 적을 뚫고 간다.
             let passing = matches!(
                 self.player.state,
                 PState::Dodge { .. }
                     | PState::Skill {
-                        id: skills::Id::Cut,
+                        id: skills::Id::Cut | skills::Id::Skewer,
                         ..
                     }
             );
@@ -2351,6 +2409,8 @@ struct Strike {
     arc: f32,
     /// 몸 둘레 원(회전·내려찍기, 0051) — 각을 보지 않는다.
     circle: bool,
+    /// 곧은 길(창, 0272 2단계)이면 그 반 폭(m) — 각 대신 길 위의 적을 모두.
+    lane: Option<f32>,
     damage: i32,
     poise: f32,
     knock: f32,
@@ -2459,15 +2519,25 @@ impl World {
         let (left, ripe) = beat_shrink(pl.beat.since_swing, s0, pl.beat.period)?;
         Some(BeatCue {
             reach: t[P::AttackRange] * h.reach,
-            arc: if h.shape == weapons::Shape::Circle {
-                360.0
-            } else {
-                t[P::AttackArc] * h.arc
-            },
+            arc: swing_arc(
+                h.shape,
+                t[P::AttackArc] * h.arc,
+                t[P::AttackRange] * h.reach,
+            ),
             sweep: weapons::sweep_of(h.anim),
             left,
             ripe,
         })
+    }
+}
+
+/// 판정 모양을 그림의 부채꼴 각(도)으로(박자 부채꼴 · 초승달): 원 = 360, 곧은 길 = 닿는 거리 `reach`에서 그 폭이 되는 좁은 각,
+/// 그 밖에는 표의 각 `arc`.
+pub fn swing_arc(shape: weapons::Shape, arc: f32, reach: f32) -> f32 {
+    match shape {
+        weapons::Shape::Circle => 360.0,
+        weapons::Shape::Lane { half } => 2.0 * (half / reach.max(0.1)).atan().to_degrees(),
+        weapons::Shape::Arc => arc,
     }
 }
 

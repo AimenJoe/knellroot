@@ -38,6 +38,8 @@ pub enum Kind {
     Fist,
     /// 잔뿌리 활(0231): 휜 활대 + 당긴 시위 + 화살.
     Bow,
+    /// 파수꾼의 창(0272 2단계): 가로로 누운 긴 자루 + 잎 꼴 촉 + 촉 밑의 천 조각.
+    Spear,
     Lock,
     /// 땅 돌리기(0023): 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면.
     TurnLeft,
@@ -83,6 +85,11 @@ pub enum Kind {
     Fuse,
     Mine,
     Rain,
+    /// 그림만(0272 2단계): 창 판의 스킬 셋 · 큰 기술.
+    Skewer,
+    Pole,
+    Pin,
+    Gale,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
@@ -917,9 +924,13 @@ impl Touch {
 
 fn press(a: &mut Read, k: Kind) {
     match k {
-        Kind::Attack | Kind::Hammer | Kind::Staff | Kind::Crossbow | Kind::Fist | Kind::Bow => {
-            a.attack = true
-        }
+        Kind::Attack
+        | Kind::Hammer
+        | Kind::Staff
+        | Kind::Crossbow
+        | Kind::Fist
+        | Kind::Bow
+        | Kind::Spear => a.attack = true,
         Kind::Dodge => a.dodge = true,
         Kind::Parry => a.parry = true,
         Kind::Jump => a.jump = true,
@@ -958,7 +969,11 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Blizzard
         | Kind::Fuse
         | Kind::Mine
-        | Kind::Rain => {}
+        | Kind::Rain
+        | Kind::Skewer
+        | Kind::Pole
+        | Kind::Pin
+        | Kind::Gale => {}
         Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
@@ -1016,6 +1031,7 @@ pub fn attack_icon(w: crate::weapons::Id) -> Kind {
         Id::Crossbow => Kind::Crossbow,
         Id::Fists => Kind::Fist,
         Id::Bow => Kind::Bow,
+        Id::Spear => Kind::Spear,
     }
 }
 
@@ -1047,6 +1063,9 @@ pub fn skill_icon(id: crate::skills::Id) -> Kind {
         Id::Snare => Kind::Snare,
         Id::Fuse => Kind::Fuse,
         Id::Mine => Kind::Mine,
+        Id::Skewer => Kind::Skewer,
+        Id::Pole => Kind::Pole,
+        Id::Pin => Kind::Pin,
     }
 }
 
@@ -1060,6 +1079,7 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
         Ult::Bell => Kind::GreatBell,
         Ult::Blizzard => Kind::Blizzard,
         Ult::Rain => Kind::Rain,
+        Ult::Gale => Kind::Gale,
     }
 }
 
@@ -1978,6 +1998,86 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             "..#..#.#..#..",
             ".............",
         ],
+        // 파수꾼의 창(0272 2단계): 가로로 누운 두 칸 굵기의 자루 + 오른쪽 끝의 큰 잎 꼴 촉 + 촉 밑에 늘어진 천 조각.
+        Kind::Spear => [
+            ".............",
+            ".............",
+            ".............",
+            ".........#...",
+            "........###..",
+            ".......#####.",
+            "#############",
+            "#############",
+            ".......#####.",
+            "....##..###..",
+            "....##...#...",
+            ".....#.......",
+            ".............",
+        ],
+        // 꿰뚫기(0272 2단계): 한 줄에 선 셋을 꿰뚫고 나가는 자루 + 뒤에 남는 달린 자국.
+        Kind::Skewer => [
+            ".............",
+            ".............",
+            ".............",
+            "..##..##..#..",
+            ".####.###.##.",
+            "#############",
+            ".####.###.##.",
+            "..##..##..#..",
+            ".............",
+            "#.#.#.#......",
+            ".............",
+            ".............",
+            ".............",
+        ],
+        // 장대 휩쓸기(0272 2단계): 온 바퀴의 테와 그 지름을 가로지르는 자루.
+        Kind::Pole => [
+            "....#####....",
+            "..##.....##..",
+            ".#.........#.",
+            ".#.........#.",
+            "#...........#",
+            "#...........#",
+            "#############",
+            "#...........#",
+            "#...........#",
+            ".#.........#.",
+            ".#.........#.",
+            "..##.....##..",
+            "....#####....",
+        ],
+        // 못 박기(0272 2단계): 땅에 내리꽂힌 창과 그 밑으로 뻗는 뿌리.
+        Kind::Pin => [
+            "......#......",
+            "......#......",
+            "......#......",
+            "......#......",
+            "......#......",
+            ".....###.....",
+            ".....###.....",
+            "......#......",
+            "#############",
+            "....#.#.#....",
+            "...#..#..#...",
+            "..#...#...#..",
+            ".#....#....#.",
+        ],
+        // 큰 기술 질풍 찌르기(0272 2단계): 잇달아 내지른 찌름 다섯 — 가운데가 가장 길고 촉이 선다.
+        Kind::Gale => [
+            ".............",
+            ".....######..",
+            ".............",
+            "..#########..",
+            ".............",
+            "..........##.",
+            "#############",
+            "..........##.",
+            ".............",
+            "..#########..",
+            ".............",
+            ".....######..",
+            ".............",
+        ],
         // 큰 기술 화살비(0272): 위에서 내리꽂히는 화살 다섯.
         Kind::Rain => [
             ".#....#....#.",
@@ -2219,6 +2319,11 @@ mod tests {
             Kind::Fuse,
             Kind::Mine,
             Kind::Rain,
+            Kind::Spear,
+            Kind::Skewer,
+            Kind::Pole,
+            Kind::Pin,
+            Kind::Gale,
             Kind::Pick,
             Kind::Open,
             Kind::Pull,

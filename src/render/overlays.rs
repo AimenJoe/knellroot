@@ -583,11 +583,11 @@ fn swing_crescent(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon)
                 // 활성 뒤: 휘두른 쪽으로(세로는 양 끝에서) 줄어들며 옅어진다(0195).
                 let gone = ((e - s0 - a0) / SLASH_FADE).clamp(0.0, 1.0);
                 let fade = 1.0 - gone * gone;
-                let arc = if h.shape == crate::weapons::Shape::Circle {
-                    360.0
-                } else {
-                    t[crate::tuning::P::AttackArc] * h.arc
-                };
+                let arc = crate::world::swing_arc(
+                    h.shape,
+                    t[crate::tuning::P::AttackArc] * h.arc,
+                    t[crate::tuning::P::AttackRange] * h.reach,
+                );
                 let col = if w.player.beat.swing_beat {
                     Color::new(1.0, 0.88, 0.55, 0.95)
                 } else {
@@ -639,11 +639,11 @@ fn beat_fan(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon, fl: &
         let (s0, a0, _) = crate::world::hit_times(t, wpn, hit);
         if let Some(h) = wpn.hit(hit) {
             if e >= s0 && e < s0 + a0 {
-                let arc = if h.shape == crate::weapons::Shape::Circle {
-                    360.0
-                } else {
-                    t[crate::tuning::P::AttackArc] * h.arc
-                };
+                let arc = crate::world::swing_arc(
+                    h.shape,
+                    t[crate::tuning::P::AttackArc] * h.arc,
+                    t[crate::tuning::P::AttackRange] * h.reach,
+                );
                 fl.sector(
                     pp + Vec3::Y * 0.9,
                     t[crate::tuning::P::AttackRange] * h.reach,
@@ -708,11 +708,11 @@ fn heavy_swing(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon, fl
         let (s0, a0, _) = crate::world::heavy_times(t, wpn);
         let (s1, arc) = (
             s0 + a0,
-            if h.shape == crate::weapons::Shape::Circle {
-                360.0
-            } else {
-                t[crate::tuning::P::HeavyArc] * h.arc
-            },
+            crate::world::swing_arc(
+                h.shape,
+                t[crate::tuning::P::HeavyArc] * h.arc,
+                t[crate::tuning::P::HeavyRange] * h.reach,
+            ),
         );
         if e >= s0 && e < s1 {
             fl.sector(
@@ -820,6 +820,34 @@ fn ult_shape(w: &World, pp: Vec3, fl: &Drape) {
                     let tip = pp + Vec3::Y * 1.3 + dir * 0.5;
                     gem(tip, 0.3 + 0.7 * k, with_a(gold, 0.5));
                     spark4(tip, 0.5 + 1.1 * k, Color::new(1.0, 1.0, 0.94, 1.0));
+                }
+            }
+            // 질풍 찌르기(0272 2단계): 세계가 멈춘 동안 찌를 줄의 테가 먼저 선다(한 줄기와 같은 꼴 — 강철빛, 좁게), 찌르는 동안은
+            // 줄의 면이 옅게 남는다(찌름마다의 빛은 이펙트가).
+            crate::skills::Ult::Gale => {
+                let u = &crate::skills::GALE;
+                let steel = Color::new(0.80, 0.86, 1.0, 1.0);
+                let dir = w.player.facing_dir();
+                let len = w.lane_reach(
+                    pp - Vec3::Y * pp.y + Vec3::Y * w.player.pos.y,
+                    dir,
+                    u.len_at(w.player.skill.ult_rank),
+                );
+                let at = pp + Vec3::Y * 0.06;
+                if !done {
+                    let frozen = 1.0 - (w.hitstop / u.freeze.max(1e-3)).clamp(0.0, 1.0);
+                    let k = if e > 0.0 { 1.0 } else { frozen };
+                    fl.lane(
+                        at,
+                        dir,
+                        len * k,
+                        u.half * 2.0,
+                        with_a(steel, 0.10 + 0.1 * k),
+                    );
+                    fl.lane_edge(at, dir, len * k, u.half * 2.0, with_a(steel, 0.75));
+                } else {
+                    let k = ((e - u.startup) / u.recover().max(1e-3)).clamp(0.0, 1.0);
+                    fl.lane_edge(at, dir, len, u.half * 2.0, with_a(steel, 0.5 * (1.0 - k)));
                 }
             }
             // 큰 종(0270 C3): 세계가 멈춘 동안 둘레 끝에서 발밑으로 조여드는 민트 테(울릴 둘레를 먼저 보인다), 울린 뒤 번지는 테.

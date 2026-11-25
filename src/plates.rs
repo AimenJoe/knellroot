@@ -288,6 +288,7 @@ mod tests {
     const STAFF: Plate = Plate::Class(Class::Staff);
     const CROSSBOW: Plate = Plate::Class(Class::Crossbow);
     const BOW: Plate = Plate::Class(Class::Bow);
+    const SPEAR: Plate = Plate::Class(Class::Spear);
 
     #[test]
     fn every_weapon_plate_pairs_two_different_types_and_every_type_has_a_home() {
@@ -317,6 +318,7 @@ mod tests {
                 STAFF,
                 CROSSBOW,
                 BOW,
+                SPEAR,
                 Plate::Shield
             ]
         );

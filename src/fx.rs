@@ -1542,6 +1542,48 @@ impl Fx {
                     GOLD,
                 );
             }
+            // 질풍 찌르기(0272 2단계): 찌름마다 창끝의 작은 흰 별 + 줄을 따라 짧게 번쩍이는 좁은 띠(곧 사라진다 — 잇달아 겹친다),
+            // 마지막 찌름은 큰 별 + 길게 남는 빛의 면(강철빛) + 앞으로 튀는 빛줄 + 뒤로 차이는 먼지.
+            Event::GaleThrust {
+                at,
+                dir,
+                len,
+                half,
+                last,
+            } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                let tip = g + Vec3::Y * 0.95 + dir * 1.6;
+                if last {
+                    self.star(tip, 2.6, 0.13, WHITE_HOT);
+                    self.mark(g, MarkKind::Slash { dir, len, half }, 0.6, STEEL);
+                    self.spray(
+                        tip,
+                        dir,
+                        0.2,
+                        12,
+                        14.0,
+                        Shape::Streak,
+                        0.07,
+                        0.3,
+                        1.0,
+                        WHITE_HOT,
+                        STEEL,
+                    );
+                    self.dust_kick(g, -dir, 6, 0.6);
+                } else {
+                    self.star(tip, 0.9, 0.06, WHITE_HOT);
+                    self.mark(
+                        g,
+                        MarkKind::Streak {
+                            dir,
+                            len,
+                            half: half * 0.35,
+                        },
+                        0.12,
+                        WHITE_HOT,
+                    );
+                }
+            }
             // 한 줄기: 길을 가르는 빛의 면(흰 속 + 금빛 겉, 길게 남는다) + 선 자리의 큰 별 + 길을 따라 늦게 터지는 불똥.
             Event::LineCut { at, dir, len, half } => {
                 let g = vec3(at.x, w.ground_y(at), at.z);
@@ -1602,6 +1644,12 @@ impl Fx {
                     crate::skills::Ult::Rain => {
                         self.star(pp + Vec3::Y * 1.7, 1.3, 0.3, GOLD);
                         self.implode(g, 2.6, 10, RIFT_ROOT);
+                    }
+                    // 0272 2단계: 질풍 찌르기 = 앞으로 겨눈 창끝의 강철빛 + 발밑으로 모이는 흰빛.
+                    crate::skills::Ult::Gale => {
+                        let f = w.player.facing_dir();
+                        self.star(pp + Vec3::Y * 1.1 + f * 1.2, 1.4, 0.3, STEEL);
+                        self.implode(g, 2.4, 12, WHITE_HOT);
                     }
                 }
             }
@@ -2303,6 +2351,96 @@ impl Fx {
                     AMBER,
                 );
             }
+            // 꿰뚫기(0272 2단계 — 창): 떠난 자리의 강철빛 별 + 길 전체에 남는 좁은 흰 띠 + 길 끝의 작은 고리(멈춰 선 자리) +
+            // 앞으로 튀는 강철빛 줄 + 뒤로 차이는 먼지.
+            (Sk::Skewer, Form::Lane { dist, half, .. }) => {
+                self.star(g + Vec3::Y * 0.9, 1.5, 0.1, STEEL);
+                self.mark(
+                    g,
+                    MarkKind::Streak {
+                        dir,
+                        len: dist,
+                        half: half * 0.6,
+                    },
+                    0.45,
+                    WHITE_HOT,
+                );
+                self.mark(
+                    g + dir * dist,
+                    MarkKind::Ring { r0: 0.3, r1: 1.2 },
+                    0.3,
+                    STEEL,
+                );
+                self.spray(
+                    g + Vec3::Y * 0.9 + dir * 0.6,
+                    dir,
+                    0.15,
+                    6,
+                    11.0,
+                    Shape::Streak,
+                    0.06,
+                    0.2,
+                    1.0,
+                    WHITE_HOT,
+                    STEEL,
+                );
+                self.dust_kick(g, -dir, 4, 0.5);
+            }
+            // 장대 휩쓸기(0272 2단계 — 창): 자루가 지난 둘레 끝까지 퍼지는 온 바퀴 충격파(강철빛) + 둘레 끝의 바깥으로 튀는 빛줄 +
+            // 넓은 먼지 고리 — 휘돌이(금빛 고리 둘)와 갈린다.
+            (Sk::Pole, Form::Ring { radius, .. }) => {
+                self.star(g + Vec3::Y * 0.9, 1.6, 0.11, WHITE_HOT);
+                self.mark(
+                    g,
+                    MarkKind::Shock {
+                        dir,
+                        r0: radius * 0.4,
+                        r1: radius,
+                        arc_deg: 360.0,
+                    },
+                    0.3,
+                    STEEL,
+                );
+                self.ring_sparks(
+                    g + Vec3::Y * 0.8,
+                    radius * 0.95,
+                    16,
+                    6.5,
+                    0.24,
+                    WHITE_HOT,
+                    STEEL,
+                );
+                self.dust_ring(g, radius * 0.7, 16, 5.5, 0.6, DUST);
+            }
+            // 못 박기(0272 2단계 — 창·뿌리): 창끝의 흰 별 + 찌른 줄의 짧은 띠 + 꽂힌 자리에서 조여드는 뿌리빛 고리 + 땅으로 튀는 뿌리빛.
+            (Sk::Pin, Form::Stab { range, .. }) => {
+                let tip = g + dir * range * 0.8;
+                self.star(tip + Vec3::Y * 0.9, 1.3, 0.09, WHITE_HOT);
+                self.mark(tip, MarkKind::Ring { r0: 1.1, r1: 0.25 }, 0.4, RIFT_ROOT);
+                self.mark(
+                    g,
+                    MarkKind::Streak {
+                        dir,
+                        len: range,
+                        half: 0.12,
+                    },
+                    0.16,
+                    WHITE_HOT,
+                );
+                self.spray(
+                    tip + Vec3::Y * 0.5,
+                    -Vec3::Y,
+                    0.6,
+                    5,
+                    4.0,
+                    Shape::Dot,
+                    0.07,
+                    0.3,
+                    3.0,
+                    RIFT_ROOT,
+                    ROOT,
+                );
+            }
             // 후려치기(0270 C3): 휘두른 쪽의 큰 노란 별 + 넓은 부채꼴 충격파 + 옆으로 흩어지는 돌 부스러기.
             (Sk::Swat, Form::Cone { range, arc_deg, .. }) => {
                 let c = g + dir * 1.0;
@@ -2692,6 +2830,14 @@ mod tests {
                 from: Vec3::ZERO,
                 at,
                 radius: 4.5,
+            },
+            // 0272 2단계: 창 판의 큰 기술.
+            Event::GaleThrust {
+                at,
+                dir,
+                len: 5.5,
+                half: 0.8,
+                last: true,
             },
         ]);
         ev

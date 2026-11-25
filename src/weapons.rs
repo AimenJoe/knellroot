@@ -17,6 +17,19 @@ pub enum Shape {
     Arc,
     /// 몸 둘레 원(회전 베기·내려찍기).
     Circle,
+    /// 앞으로 곧은 좁은 길(창의 찌르기, 0272 2단계): 바라보는 쪽으로 닿는 거리까지, 반 폭 `half` m(+ 적의 몸) 안의 적을
+    /// **모두** 꿰뚫는다 — 옆의 적에게는 닿지 않는다. 벽에 막힌 곳 너머로는 닿지 않는다(`World::lane_reach`).
+    Lane { half: f32 },
+}
+
+impl Shape {
+    /// 곧은 길이면 그 반 폭(m).
+    pub fn lane_half(self) -> Option<f32> {
+        match self {
+            Shape::Lane { half } => Some(half),
+            Shape::Arc | Shape::Circle => None,
+        }
+    }
 }
 
 /// 휘두르는 쪽(0087): 그 동작의 칼이 어느 쪽에서 어느 쪽으로 지나가나 — 박자 부채꼴(`World::beat_cue`)이 칼이 지나간 쪽부터 사라진다.
@@ -37,7 +50,7 @@ pub enum Sweep {
 /// 구간(시작 s, 길이 s): `tools/art/blender/wanderer_skin.py` `HIT_WINDOWS` 그대로(시험 `swing_windows_match_the_blender_table`) —
 /// 동작 시계는 타의 판정 시작이 이 시작에 오게 돈다(`clip_rate` — 맨손처럼 남의 동작을 빌린 타·대시 공격도 칼이 닿는 순간에 맞는다).
 /// 새 동작을 무기 표에 쓰면 여기에도 한 줄(시험 `every_weapon_motion_has_a_sweep`).
-pub const SWEEPS: [(&str, Sweep, (f32, f32)); 19] = [
+pub const SWEEPS: [(&str, Sweep, (f32, f32)); 24] = [
     ("attack", Sweep::RightToLeft, (0.08, 0.10)),
     ("attack2", Sweep::LeftToRight, (0.08, 0.10)),
     ("attack3", Sweep::Center, (0.10, 0.12)),
@@ -58,6 +71,12 @@ pub const SWEEPS: [(&str, Sweep, (f32, f32)); 19] = [
     ("fist_heavy", Sweep::Center, (0.048, 0.096)),
     ("fist_dash", Sweep::Center, (0.056, 0.07)),
     ("hammer_dash", Sweep::Center, (0.128, 0.16)),
+    // 창(0272 2단계): 찌르기 셋·달려들며 찌르기·내달려 꿰뚫기 — 모두 앞으로 곧게.
+    ("spear1", Sweep::Center, (0.10, 0.12)),
+    ("spear2", Sweep::Center, (0.10, 0.12)),
+    ("spear3", Sweep::Center, (0.12, 0.14)),
+    ("spear_dash", Sweep::Center, (0.10, 0.12)),
+    ("spear_lunge", Sweep::Center, (0.08, 0.16)),
 ];
 
 /// 동작의 휘두르는 쪽(표에 없으면 가운데).
@@ -189,16 +208,19 @@ pub enum Id {
     Fists,
     /// 잔뿌리 활(0231, 사장 "쇠뇌 말고도 원거리 무기 넣어줘"): 빠른 화살·당겨 쏘는 한 발·뿌리 씨앗(묶기).
     Bow,
+    /// 파수꾼의 창(0272 2단계 — 창 종류의 첫 무기): 버려진 마을 파수꾼의 창. 가장 멀리 닿고 한 줄을 꿰뚫는다.
+    Spear,
 }
 
 /// 표 순서. 맨손은 옛 끝에(옛 기록의 무기 번호가 그대로 읽히게 — `app::legacy_weapon`), 그 뒤에 새 무기.
-pub const IDS: [Id; 6] = [
+pub const IDS: [Id; 7] = [
     Id::Sword,
     Id::Hammer,
     Id::Staff,
     Id::Crossbow,
     Id::Fists,
     Id::Bow,
+    Id::Spear,
 ];
 
 impl Id {
@@ -211,6 +233,7 @@ impl Id {
             Id::Crossbow => "crossbow",
             Id::Fists => "fists",
             Id::Bow => "bow",
+            Id::Spear => "spear",
         }
     }
 
@@ -387,7 +410,33 @@ const FISTS_COMBO: [Hit; 3] = [
     },
 ];
 
-pub const WEAPONS: [Weapon; 6] = [
+/// 찌르기의 길 반 폭(m — 적의 몸 반지름이 더해진다): 평타 · 마지막 찌르기 · 대시 · 강타. 좁다 — 옆에 붙은 적에게는 닿지 않는다.
+pub const SPEAR_HALF: f32 = 0.35;
+pub const SPEAR_HALF_WIDE: f32 = 0.45;
+
+/// 파수꾼의 창(0272 2단계) — 가장 멀리 닿는 근접 무기(검 1.8m · 망치 2.1m · 창 2.7m)이고, 찌르기는 좁은 길 위의 적을 **모두**
+/// 꿰뚫는다. 빠르기는 검과 망치 사이(타마다 ×1.15), 피해는 검과 같은 10 · 10 · 20 — 한 적에게 붙어 치면 검보다 느려 덜 낸다.
+/// 셋째는 크게 내디디며 길게 찌른다(넉백 큼). 넓은 휩쓸기가 없어 둘레에 붙은 떼에 약하다(그 답은 스킬 「장대 휩쓸기」).
+const SPEAR_COMBO: [Hit; 3] = [
+    Hit {
+        shape: Shape::Lane { half: SPEAR_HALF },
+        ..hit(1.15, 1.5, 0.25, 0.8, 10, 1.0, "spear1")
+    },
+    Hit {
+        shape: Shape::Lane { half: SPEAR_HALF },
+        ..hit(1.15, 1.5, 0.25, 0.8, 10, 1.0, "spear2")
+    },
+    Hit {
+        shape: Shape::Lane {
+            half: SPEAR_HALF_WIDE,
+        },
+        knock: 1.5,
+        cancel: 0.2,
+        ..hit(1.35, 1.55, 0.25, 2.2, 20, 2.0, "spear3")
+    },
+];
+
+pub const WEAPONS: [Weapon; 7] = [
     Weapon {
         id: Id::Sword,
         combo: &SWORD_COMBO,
@@ -707,6 +756,55 @@ pub const WEAPONS: [Weapon; 6] = [
             },
         ]),
     },
+    // 파수꾼의 창(0272 2단계): 찌르기 셋(좁은 길 · 꿰뚫음) · 달려들며 찌르기 · 강타 = 내달려 꿰뚫기(길 위의 적을 모두 — 벽·턱
+    // 앞에서 멈춘다, `World::lunge_stops`). RB는 다른 근접 무기처럼 마법 탄.
+    Weapon {
+        id: Id::Spear,
+        combo: &SPEAR_COMBO,
+        dash: Some(Hit {
+            shape: Shape::Lane {
+                half: SPEAR_HALF_WIDE,
+            },
+            knock: 1.4,
+            cancel: 0.2,
+            ..hit(1.0, 1.5, 0.25, 2.6, 20, 2.0, "spear_dash")
+        }),
+        heavy: Some(Heavy {
+            time: 1.15,
+            charge: 1.1,
+            reach: 1.25,
+            arc: 0.25,
+            // 랩 `heavy.lunge` 0.6 m × 5 = 3 m를 시동 + 활성 동안 곧게 — 지나는 길과 그 앞 닿는 거리의 적이 모두 맞는다.
+            lunge: 5.0,
+            shape: Shape::Lane {
+                half: SPEAR_HALF_WIDE,
+            },
+            damage: 20,
+            poise: 3.0,
+            walk: 0.9,
+            aftershock: None,
+            breaks_primed: None,
+            anim_charge: "spear_charge",
+            anim_heavy: "spear_lunge",
+            cancel: 0.3,
+        }),
+        rb: Rb::Magic(MAGIC),
+        grenade: None,
+        charged: Bolt {
+            speed: 1.2,
+            range: 1.3,
+            damage: 30,
+            poise: 4.0,
+            pierce: true,
+            stagger: 0.6,
+            scale: 1.8,
+            ..MAGIC
+        },
+        node: "w_spear",
+        // 검(1.0)과 망치(1.7) 사이.
+        stamina: 1.25,
+        forge: Some(MELEE_FORGE),
+    },
 ];
 
 /// 무기 종류(0272): 계열(`Hand` — 화면에 드러내지 않는 묶음) → **종류** → 낱낱의 무기(`Id`). 판 · 물리 속성 · 주특성은 종류에,
@@ -718,6 +816,7 @@ pub enum Class {
     Staff,
     Crossbow,
     Bow,
+    Spear,
 }
 
 /// 무기의 주특성이 스킬에 얹는 배(0225 → 0272 — 종류마다): `force` = 타입 없는(물리) 스킬의 피해·자세 피해, `channel` = 스킬의 타가
@@ -760,9 +859,12 @@ impl SubTrait {
     /// 보조특성 글의 `{0}`에 넣는 수(%): 바꾸는 칸의 몫(스킬 쿨타임은 줄어드는 몫). 숫자가 없는 특성(쇠뇌)은 0.
     pub fn percent(self) -> i32 {
         let m = self.mods;
+        // 최대 기력은 더하는 칸이라 바탕(랩 `stamina.max`)에 대한 몫으로.
+        let base = crate::tuning::SPECS[crate::tuning::idx(crate::tuning::P::StaminaMax)].def;
         let d = [m.stamina_regen, m.poise, m.ail, m.skill_cd]
             .into_iter()
             .map(|x| (x - 1.0).abs())
+            .chain([m.stamina_max / base])
             .fold(0.0, f32::max);
         (d * 100.0).round() as i32
     }
@@ -776,6 +878,8 @@ pub const SUB_REGEN: f32 = 1.04;
 pub const SUB_POISE: f32 = 1.05;
 pub const SUB_AIL: f32 = 1.15;
 pub const SUB_SKILL_CD: f32 = 0.95;
+/// 창의 보조특성(0272 2단계): 최대 기력 +5(바탕 100의 5%) — 보스 모의(`balance::sub_trait_fight_length`)로 잰다.
+pub const SUB_STAMINA: f32 = 5.0;
 
 /// 교체 공격(0272 1b)에서 들어오는 무기가 치는 한 타: 근접 = 그 무기의 대시 공격(`Weapon::dash`), 원거리 = 보통 사격 한 발
 /// (`Weapon::rb`의 `Shot` — 탄 하나를 쓴다). 새 동작·새 표 칸이 없다 — 새 무기는 표의 그 칸이 곧 교체 공격이다.
@@ -815,7 +919,7 @@ pub struct ClassDef {
 }
 
 /// 종류 표(판 줄의 차례 — `plates::PLATES`가 이 차례로 선다). 대검 · 창은 뒤에 한 줄씩(0272 2단계).
-pub const CLASSES: [ClassDef; 5] = [
+pub const CLASSES: [ClassDef; 6] = [
     ClassDef {
         class: Class::Sword,
         hand: Hand::One,
@@ -909,6 +1013,25 @@ pub const CLASSES: [ClassDef; 5] = [
         },
         sub_trait: |s| s.subtrait_bow,
     },
+    // 창(0272 2단계): 양손 근접 · 관통 · 뿌리와 날카로움. 주특성은 무브셋 그 자체(가장 긴 거리 · 한 줄 꿰뚫기) — 스킬에 얹는 배는 없다.
+    ClassDef {
+        class: Class::Spear,
+        hand: Hand::Two,
+        name: |s| s.class_spear,
+        attribute: |s| s.attr_pierce,
+        pair: [Kind::Root, Kind::Sharp],
+        great: Ult::Gale,
+        art: Art::PLAIN,
+        main_trait: |s| s.trait_spear,
+        sub: SubTrait {
+            mods: Mods {
+                stamina_max: SUB_STAMINA,
+                ..Mods::NONE
+            },
+            stowed_reload: false,
+        },
+        sub_trait: |s| s.subtrait_spear,
+    },
 ];
 
 impl Class {
@@ -920,6 +1043,7 @@ impl Class {
             Class::Staff => 2,
             Class::Crossbow => 3,
             Class::Bow => 4,
+            Class::Spear => 5,
         }
     }
 
@@ -949,6 +1073,7 @@ impl Id {
             Id::Staff => Some(Class::Staff),
             Id::Crossbow => Some(Class::Crossbow),
             Id::Bow => Some(Class::Bow),
+            Id::Spear => Some(Class::Spear),
             Id::Fists => None,
         }
     }
@@ -1082,6 +1207,7 @@ mod tests {
                 got.poise != none.poise,
                 got.ail != none.ail,
                 got.skill_cd != none.skill_cd,
+                got.stamina_max != none.stamina_max,
             ];
             let n = knobs.iter().filter(|k| **k).count();
             assert_eq!(n + c.sub.stowed_reload as usize, 1, "{:?}", c.class);
@@ -1090,11 +1216,12 @@ mod tests {
                 poise: none.poise,
                 ail: none.ail,
                 skill_cd: none.skill_cd,
+                stamina_max: none.stamina_max,
                 ..got
             };
             assert_eq!(only, none, "{:?}: nothing else moves", c.class);
             assert!(got.stamina_regen >= 1.0 && got.poise >= 1.0 && got.ail >= 1.0);
-            assert!(got.skill_cd <= 1.0);
+            assert!(got.skill_cd <= 1.0 && got.stamina_max >= 0.0);
             // 작게: 어느 것도 15%를 넘지 않고, 주특성의 배가 있는 종류는 그 반 아래.
             let p = c.sub.percent();
             assert_eq!(p == 0, c.sub.stowed_reload, "{:?}", c.class);
@@ -1107,6 +1234,7 @@ mod tests {
         assert_eq!(Class::Hammer.def().sub.percent(), 5);
         assert_eq!(Class::Staff.def().sub.percent(), 15);
         assert_eq!(Class::Bow.def().sub.percent(), 5);
+        assert_eq!(Class::Spear.def().sub.percent(), 5, "max stamina +5 on 100");
         assert!(Class::Crossbow.def().sub.stowed_reload);
         assert_eq!(Id::Fists.sub_trait(), None, "bare hands are no class");
         assert_eq!(Id::Hammer.sub_trait(), Some(Class::Hammer.def().sub));
@@ -1177,7 +1305,7 @@ mod tests {
         charged: i32,
         grenade: i32,
     }
-    const OLD_WEAPONS: [Old; 6] = [
+    const OLD_WEAPONS: [Old; 7] = [
         Old {
             id: Id::Sword,
             combo: &[1, 1, 2],
@@ -1240,6 +1368,17 @@ mod tests {
             rb: 1,
             charged: 1,
             grenade: 1,
+        },
+        // 0272 2단계: 창도 그 뒤 — 옛 눈금으로.
+        Old {
+            id: Id::Spear,
+            combo: &[1, 1, 2],
+            dash: 2,
+            heavy: 2,
+            aftershock: 0,
+            rb: 1,
+            charged: 3,
+            grenade: 0,
         },
     ];
     /// 옛 랩 값·상수: 다 모은 강타 덤 · 딱 맞춘 떼기 덤 · 내려찍기 · 치명타 덤 · 되받은 종 조각 · 큰 기술의 벽 쿵.

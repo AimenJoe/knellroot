@@ -494,7 +494,7 @@ fn hold_for(w: &mut World, id: Sk) {
     }
     w.set_shield(None);
     // (쇠뇌·활이 지팡이보다 먼저 — 타입 스킬의 시험은 바탕의 게이지로 잰다: 지팡이는 마법력의 배가 붙는다.)
-    for arm in [W::Hammer, W::Crossbow, W::Bow, W::Staff] {
+    for arm in [W::Hammer, W::Crossbow, W::Bow, W::Staff, W::Spear] {
         w.set_weapon(arm);
         if def.fits(w.grip()) {
             return;

@@ -472,6 +472,7 @@ fn weapon_desc(id: weapons::Id) -> &'static str {
         weapons::Id::Crossbow => s.weapon_crossbow_d,
         weapons::Id::Fists => s.weapon_fists_d,
         weapons::Id::Bow => s.weapon_bow_d,
+        weapons::Id::Spear => s.weapon_spear_d,
     }
 }
 

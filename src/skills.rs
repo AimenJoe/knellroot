@@ -36,11 +36,12 @@ pub const HAMMER: Hands = class_bit(Class::Hammer);
 pub const STAFF: Hands = class_bit(Class::Staff);
 pub const CROSSBOW: Hands = class_bit(Class::Crossbow);
 pub const BOW: Hands = class_bit(Class::Bow);
+pub const SPEAR: Hands = class_bit(Class::Spear);
 /// 한손 계열과 방패(방패 판의 기술).
 pub const SHIELD: Hands = 1 << 15;
 /// 묶음: 한손(방패가 있든 없든) · 양손 근접 · 근접 · 원거리 · 어느 것이나.
 pub const ONE: Hands = SWORD | SHIELD;
-pub const TWO: Hands = HAMMER | STAFF;
+pub const TWO: Hands = HAMMER | STAFF | SPEAR;
 pub const MELEE: Hands = ONE | TWO;
 pub const RANGED: Hands = CROSSBOW | BOW;
 pub const ANY: Hands = MELEE | RANGED;
@@ -280,10 +281,16 @@ pub enum Id {
     Fuse,
     /// 화약 덫(0272 — 쇠뇌·충격): 묻어 두는 화약.
     Mine,
+    /// 꿰뚫기(0272 2단계 — 창·관통): 한 줄을 꿰뚫으며 멀리 내달린다.
+    Skewer,
+    /// 장대 휩쓸기(0272 2단계 — 창·관통): 자루를 크게 한 바퀴 휘둘러 둘레의 적을 밀어낸다(에워싸였을 때의 답).
+    Pole,
+    /// 못 박기(0272 2단계 — 창·뿌리): 깊게 한 번 찔러 그 자리에 묶는다.
+    Pin,
 }
 
 /// 표 순서(대기 칸 `Player::skill_cd`의 자리 — 뒤에만 붙인다).
-pub const IDS: [Id; 21] = [
+pub const IDS: [Id; 24] = [
     Id::Whirl,
     Id::Cut,
     Id::Gather,
@@ -305,6 +312,9 @@ pub const IDS: [Id; 21] = [
     Id::Snare,
     Id::Fuse,
     Id::Mine,
+    Id::Skewer,
+    Id::Pole,
+    Id::Pin,
 ];
 pub const N: usize = IDS.len();
 
@@ -1144,7 +1154,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.30, 0.35],
         },
         row: 3,
-        hands: STAFF | BOW,
+        hands: STAFF | BOW | SPEAR,
         kind: Kind::Root,
         build: 1.0,
         branch: Branch::Footing,
@@ -1174,7 +1184,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.10, 0.20, 0.25],
         },
         row: 0,
-        hands: SWORD,
+        hands: SWORD | SPEAR,
         kind: Kind::Sharp,
         build: 0.45,
         branch: Branch::Beat,
@@ -1439,6 +1449,88 @@ pub const SKILLS: [Skill; N] = [
             damage: 2 * HP_UNIT,
         },
     },
+    // 0272 2단계 창 판: 가운데(관통) 둘과 뿌리 갈래 하나 — 있는 모양을 다시 쓴다(가로지르기의 길 · 휘돌이의 고리 · 바늘땀의 찌름).
+    // 꿰뚫기: 좁은 길(반 폭 0.7 m — 가로지르기 1.2)로 더 멀리(7 m — 6) 내달리며 꿰뚫는다. 물리, 적의 몸을 뚫고 지나간다.
+    Skill {
+        id: Id::Skewer,
+        cooldown: 8.0,
+        startup: 0.14,
+        recover: 0.30,
+        damage: 2 * HP_UNIT,
+        poise: 2.5,
+        form: Form::Lane {
+            dist: 7.0,
+            half: 0.7,
+            time: 0.22,
+            push: 0.0,
+        },
+        anim: "spear3",
+        clip: Clip {
+            name: "sk_skewer",
+            seg: [0.14, 0.22, 0.30],
+        },
+        row: 0,
+        hands: SPEAR,
+        kind: Kind::Physical,
+        build: 0.0,
+        branch: Branch::Beat,
+        picks: [Twist::Return, Twist::Ghost],
+        cap: Cap::Refund { part: 0.5 },
+    },
+    // 장대 휩쓸기: 자루를 한 바퀴 크게(3.6 m — 휘돌이 3.0) 휘둘러 둘레의 적을 멀리(3 m) 밀어낸다. 둘레에 붙은 떼에 약한 창의 답.
+    Skill {
+        id: Id::Pole,
+        cooldown: 10.0,
+        startup: 0.20,
+        recover: 0.35,
+        damage: 2 * HP_UNIT,
+        poise: 3.0,
+        form: Form::Ring {
+            radius: 3.6,
+            hits: 1,
+            gap: 0.2,
+            push: 3.0,
+        },
+        anim: "staff4",
+        clip: Clip {
+            name: "sk_pole",
+            seg: [0.20, 0.0, 0.35],
+        },
+        row: 1,
+        hands: SPEAR,
+        kind: Kind::Physical,
+        build: 0.0,
+        branch: Branch::Footing,
+        picks: [Twist::Walk { speed: 0.5 }, Twist::Spins { more: 1 }],
+        cap: Cap::Lift { stagger: 0.6 },
+    },
+    // 못 박기: 좁고 깊게(3.6 m · 24°) 한 번 찔러 뿌리를 가득 — 보통 적은 그 자리에 묶인다(걷지 못함).
+    Skill {
+        id: Id::Pin,
+        cooldown: 8.0,
+        startup: 0.16,
+        recover: 0.30,
+        damage: 2 * HP_UNIT,
+        poise: 2.0,
+        form: Form::Stab {
+            range: 3.6,
+            arc_deg: 24.0,
+            hits: 1,
+            gap: 0.10,
+        },
+        anim: "spear3",
+        clip: Clip {
+            name: "sk_pin",
+            seg: [0.16, 0.0, 0.30],
+        },
+        row: 0,
+        hands: SPEAR,
+        kind: Kind::Root,
+        build: 1.0,
+        branch: Branch::Riposte,
+        picks: [Twist::Lunge { dist: 2.0 }, Twist::Stitches { more: 1 }],
+        cap: Cap::Pin { stagger: 0.6 },
+    },
 ];
 
 impl Id {
@@ -1473,6 +1565,9 @@ impl Id {
             Id::Snare => "snare",
             Id::Fuse => "fuse",
             Id::Mine => "mine",
+            Id::Skewer => "skewer",
+            Id::Pole => "pole",
+            Id::Pin => "pin",
         }
     }
 
@@ -1504,16 +1599,19 @@ pub enum Ult {
     Blizzard,
     /// 화살비(0272 — 활 판): 겨눈 자리에 화살을 쏟아붓는다 — 그 둘레의 떼를 거듭 꿰고 묶는다.
     Rain,
+    /// 질풍 찌르기(0272 2단계 — 창 판): 한 줄을 잇달아 찌르고 마지막에 깊게 꿰뚫는다.
+    Gale,
 }
 
 /// 큰 기술의 표 순서(판의 단 `Board::ult`의 자리 — 뒤에만 붙인다).
-pub const ULTS: [Ult; 6] = [
+pub const ULTS: [Ult; 7] = [
     Ult::Upend,
     Ult::Flurry,
     Ult::Line,
     Ult::Bell,
     Ult::Blizzard,
     Ult::Rain,
+    Ult::Gale,
 ];
 pub const NU: usize = ULTS.len();
 
@@ -1536,6 +1634,7 @@ impl Ult {
             Ult::Bell => "bell",
             Ult::Blizzard => "blizzard",
             Ult::Rain => "rain",
+            Ult::Gale => "gale",
         }
     }
 
@@ -1548,7 +1647,7 @@ impl Ult {
         match self {
             Ult::Upend | Ult::Blizzard | Ult::Rain => Branch::Footing,
             Ult::Flurry => Branch::Beat,
-            Ult::Line | Ult::Bell => Branch::Riposte,
+            Ult::Line | Ult::Bell | Ult::Gale => Branch::Riposte,
         }
     }
 
@@ -1561,6 +1660,7 @@ impl Ult {
             Ult::Bell => BELL.anim,
             Ult::Blizzard => BLIZZARD.anim,
             Ult::Rain => RAIN.anim,
+            Ult::Gale => GALE.anim,
         }
     }
 
@@ -1572,6 +1672,7 @@ impl Ult {
             Ult::Bell => BELL.clip,
             Ult::Blizzard => BLIZZARD.clip,
             Ult::Rain => RAIN.clip,
+            Ult::Gale => GALE.clip,
         }
     }
 
@@ -1584,6 +1685,7 @@ impl Ult {
             Ult::Bell => (BELL.freeze, BELL.startup, BELL.recover),
             Ult::Blizzard => (BLIZZARD.freeze, BLIZZARD.startup, BLIZZARD.recover),
             Ult::Rain => (RAIN.freeze, RAIN.startup, RAIN.recover),
+            Ult::Gale => (GALE.freeze, GALE.startup, GALE.recover()),
         }
     }
 
@@ -1903,6 +2005,87 @@ impl Rain {
     }
 }
 
+/// 큰 기술 "질풍 찌르기"(0272 2단계 — 창 판): 세계 멈춤 뒤 시동, 그 뒤 앞 한 줄(길이 `len` m · 반 폭 `half` m — 벽 · 높은 턱 앞에서
+/// 끊긴다)을 `gap`초마다 `thrusts`번 찌른다 — 앞의 찌름마다 줄 위의 적을 모두 `damage`·`poise`로, 마지막 찌름은 깊게: 피해 `last`·
+/// 자세 피해 `last_poise`, 날카로움(출혈)을 `dose`만큼, 잡몹은 `push` m 밀려나 `stagger`초 휘청(보스는 다치고 자세가 깎이되 밀리지도
+/// 휘청이지도 않는다 — 큰 기술의 규칙). 몸은 서서 찌른다(한 줄기처럼 쪽은 누르는 순간에). 2단 = 길이 `len2`, 3단 = 피해 `damage3`·`last3`.
+pub struct Gale {
+    pub freeze: f32,
+    pub startup: f32,
+    pub thrusts: u8,
+    pub gap: f32,
+    /// 마지막 찌름 뒤의 후딜(초).
+    pub tail: f32,
+    pub len: f32,
+    pub len2: f32,
+    pub half: f32,
+    pub damage: i32,
+    pub damage3: i32,
+    pub last: i32,
+    pub last3: i32,
+    pub poise: f32,
+    pub last_poise: f32,
+    pub push: f32,
+    pub stagger: f32,
+    pub dose: Dose,
+    pub anim: &'static str,
+    pub clip: Clip,
+}
+
+pub const GALE: Gale = Gale {
+    freeze: 0.3,
+    startup: 0.2,
+    thrusts: 6,
+    gap: 0.11,
+    tail: 0.4,
+    len: 5.5,
+    len2: 7.5,
+    half: 0.8,
+    damage: HP_UNIT,
+    damage3: 2 * HP_UNIT,
+    last: 4 * HP_UNIT,
+    last3: 6 * HP_UNIT,
+    poise: 1.0,
+    last_poise: 8.0,
+    push: 2.5,
+    stagger: 0.8,
+    dose: (Kind::Sharp, 2.0),
+    anim: "spear3",
+    clip: Clip {
+        name: "ult_gale",
+        seg: [0.30, 0.20, 0.95],
+    },
+};
+
+impl Gale {
+    /// 후딜(초): 찌름이 모두 이 안에 있다 — 첫 찌름은 시동 끝, 마지막은 `(thrusts - 1) × gap` 뒤.
+    pub const fn recover(&self) -> f32 {
+        (self.thrusts as f32 - 1.0) * self.gap + self.tail
+    }
+
+    /// `k`째 찌름의 때(시동 끝에서 초).
+    pub fn thrust_at(&self, k: u8) -> f32 {
+        k as f32 * self.gap
+    }
+
+    pub fn len_at(&self, rank: u8) -> f32 {
+        if rank >= 2 {
+            self.len2
+        } else {
+            self.len
+        }
+    }
+
+    /// `rank`단의 (앞 찌름의 피해, 마지막 찌름의 피해).
+    pub fn damage_at(&self, rank: u8) -> (i32, i32) {
+        if rank >= ULT_MAX_RANK {
+            (self.damage3, self.last3)
+        } else {
+            (self.damage, self.last)
+        }
+    }
+}
+
 /// 큰 기술의 단(0158 다): 쟁반 뒤집기는 처음부터 1단, 큰 기술 줄이 열리면 2단(휘청 +0.6초 — 보스의 짧은 휘청은 그대로)·
 /// 3단(벽에 박힌 피해 ×1.5). 몰아치기·한 줄기는 줄이 열리면 2점으로 배우고(1단) 2·3단은 1점씩.
 pub const ULT_MAX_RANK: u8 = 3;
@@ -2073,6 +2256,9 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Snare),
     // 0272 — 쇠뇌 판의 충격 갈래 첫 줄
     Entry::Skill(Id::Fuse),
+    // 0272 2단계 — 창 판의 첫 줄(가운데 · 뿌리 갈래)
+    Entry::Skill(Id::Skewer),
+    Entry::Skill(Id::Pin),
     // 2 — 쓴 점수 4
     Entry::Skill(Id::Quake),
     Entry::Cell(Cell::ClosingBlow),
@@ -2092,6 +2278,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Snow),
     // 0272 — 쇠뇌 판의 충격 갈래 둘째 줄
     Entry::Skill(Id::Mine),
+    // 0272 2단계 — 창 판의 둘째 줄(가운데)
+    Entry::Skill(Id::Pole),
     // 3 — 쓴 점수 8
     Entry::Ult(Ult::Flurry),
     Entry::Cell(Cell::FinalMeasure),
@@ -2104,6 +2292,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Ult(Ult::Blizzard),
     // 0272 — 활 판의 큰 기술
     Entry::Ult(Ult::Rain),
+    // 0272 2단계 — 창 판의 큰 기술
+    Entry::Ult(Ult::Gale),
     // 4 — 쓴 점수 14(0214)
     Entry::Skill(Id::Swallow),
     Entry::Cell(Cell::HeldBreath),
@@ -2955,7 +3145,7 @@ mod tests {
     fn the_board_stands_as_the_0161_table_says() {
         use Branch::{Beat, Footing, Riposte};
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-        let table: [(usize, Branch, &[Entry]); 33] = [
+        let table: [(usize, Branch, &[Entry]); 37] = [
             (
                 0,
                 Beat,
@@ -2981,6 +3171,9 @@ mod tests {
             (0, Riposte, &[S(Id::Toll)]),
             (0, Beat, &[S(Id::Swat)]),
             (0, Footing, &[S(Id::Flare), S(Id::Snare), S(Id::Fuse)]),
+            // 0272 2단계: 창 판.
+            (0, Beat, &[S(Id::Skewer)]),
+            (0, Riposte, &[S(Id::Pin)]),
             (
                 1,
                 Beat,
@@ -3006,11 +3199,13 @@ mod tests {
             (1, Riposte, &[L(Link::ParryStep)]),
             (1, Riposte, &[S(Id::Ram), S(Id::Ripple)]),
             (1, Footing, &[S(Id::Snow), S(Id::Mine)]),
+            (1, Footing, &[S(Id::Pole)]),
             (2, Beat, &[U(Ult::Flurry), C(Cell::FinalMeasure)]),
             (2, Riposte, &[U(Ult::Line), C(Cell::OneWhoStands)]),
             (2, Footing, &[U(Ult::Upend), C(Cell::PathOpeningStep)]),
             (2, Riposte, &[U(Ult::Bell)]),
             (2, Footing, &[U(Ult::Blizzard), U(Ult::Rain)]),
+            (2, Riposte, &[U(Ult::Gale)]),
             (
                 3,
                 Beat,
@@ -3057,7 +3252,7 @@ mod tests {
                 assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
             }
         }
-        assert_eq!(NE, 63);
+        assert_eq!(NE, 67);
         for (i, e) in ENTRIES.iter().enumerate() {
             assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
         }
@@ -3874,7 +4069,8 @@ mod tests {
                 Ult::Line,
                 Ult::Bell,
                 Ult::Blizzard,
-                Ult::Rain
+                Ult::Rain,
+                Ult::Gale
             ]
         );
         for u in ULTS {
