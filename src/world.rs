@@ -2230,14 +2230,23 @@ impl World {
             }
             // 회피 중에는 적을 뚫고 지나간다(0020: 떼 사이에 끼어 죽지 않게). 끝났을 때 겹쳐 있으면 다음 틱에 밀려 나온다.
             // 가로지르기(0151)·꿰뚫기(0272 2단계)도 길 위의 적을 뚫고 간다.
-            let passing = matches!(
-                self.player.state,
-                PState::Dodge { .. }
-                    | PState::Skill {
-                        id: skills::Id::Cut | skills::Id::Skewer,
-                        ..
-                    }
-            );
+            // 창의 내달려 꿰뚫기(0272 2단계 — 길 모양 강타)도 내달리는 동안.
+            let lunging = matches!(self.player.state, PState::Heavy { .. })
+                && self
+                    .player
+                    .weapon
+                    .def()
+                    .heavy
+                    .is_some_and(|h| h.shape.lane_half().is_some());
+            let passing = lunging
+                || matches!(
+                    self.player.state,
+                    PState::Dodge { .. }
+                        | PState::Skill {
+                            id: skills::Id::Cut | skills::Id::Skewer,
+                            ..
+                        }
+                );
             if self.enemies[i].alive() && !passing {
                 let d = self.player.pos - self.enemies[i].pos;
                 let d = vec3(d.x, 0.0, d.z);

@@ -1504,7 +1504,7 @@ pub const SKILLS: [Skill; N] = [
         picks: [Twist::Walk { speed: 0.5 }, Twist::Spins { more: 1 }],
         cap: Cap::Lift { stagger: 0.6 },
     },
-    // 못 박기: 좁고 깊게(3.6 m · 24°) 한 번 찔러 뿌리를 가득 — 보통 적은 그 자리에 묶인다(걷지 못함).
+    // 못 박기: 좁고 깊게(3.6 m · 24°) 한 번 찔러 뿌리를 가득(1.0 — 뿌리에 무른 적은 한 번에, 잔재처럼 덜 쌓이는 적은 두 번째 찌름 ㄴ에) — 묶이면 걷지 못한다.
     Skill {
         id: Id::Pin,
         cooldown: 8.0,

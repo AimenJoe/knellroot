@@ -164,20 +164,6 @@ fn a_jump_turns_toward_the_stick() {
     assert!(turned > 1.0, "turned {turned} rad in the air");
 }
 
-/// 높낮이 시험 마당(0043): 5×6칸(2m). 맨 윗줄(가장 -z)은 높이 `ledge`인 단, 나머지는 바닥 0.
-fn ledge_yard(ledge: f32) -> World {
-    use crate::ground::Cell::Flat;
-    let mut cells = vec![Flat(0.0); 5 * 6];
-    for c in cells.iter_mut().take(5) {
-        *c = Flat(ledge);
-    }
-    let mut w = World::new("test", 30.0);
-    w.ground = Some(Ground::new(5, 6, 2.0, cells));
-    w.view_yaw = Some(0.0);
-    w.player.pos = vec3(0.0, 0.0, 3.0);
-    w
-}
-
 /// 걸어서는 0.5m 턱에 막히고, 달려와 뛰면 올라선다(사장: "경사로 + 낮은 턱 점프").
 #[test]
 fn a_low_ledge_blocks_walking_and_a_jump_climbs_it() {

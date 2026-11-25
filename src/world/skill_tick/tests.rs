@@ -2946,3 +2946,169 @@ fn arrow_rain_falls_where_it_is_aimed_and_binds_the_pack() {
     assert!(at.x > 1.0 && at.x < 3.0, "this side of the wall: {at:?}");
     assert!(at.length() < RAIN.ahead - 1.0, "short of the full reach");
 }
+
+// ---- 0272 2단계: 창 판의 셋 · 질풍 찌르기 ----
+
+/// 꿰뚫기: 바라보는 쪽 좁은 길(반 폭 0.7m)을 7m 내달리며 길 위의 적을 한 번씩 꿰뚫는다(20 — 물리, 창은 배가 없다) — 몸은 적을
+/// 뚫고 지나간다. 길 옆(1.5m)의 적은 그대로. 창을 들어야 쓴다(검으로는 빈 칸).
+#[test]
+fn skewer_drives_through_a_line_of_foes() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Skewer, 1, Pick::A);
+    assert_eq!(w.player.weapon, crate::weapons::Id::Spear);
+    for z in [-2.0, -4.0, -6.0] {
+        w.spawn_mob(vec3(0.0, 0.0, z));
+    }
+    w.spawn_mob(vec3(1.6, 0.0, -3.0));
+    still(&mut w);
+    let start = w.player.pos;
+    finish(&mut w, &t, 0);
+    let lost: Vec<i32> = w.enemies.iter().map(|e| 90 - e.hp).collect();
+    assert_eq!(lost, vec![20, 20, 20, 0]);
+    assert!(flat(w.player.pos, start) > 6.0, "through and beyond");
+    let mut s = World::new("test", 30.0);
+    s.set_skills(Loadout::from([Sk::Skewer, Sk::Whirl]));
+    assert!(!Sk::Skewer.def().fits(s.grip()), "the sword cannot");
+}
+
+/// 장대 휩쓸기: 자루를 한 바퀴(둘레 3.6m) 휘둘러 둘레의 적을 모두 치고(20) 멀리 밀어낸다 — 에워싸였을 때의 답. 보스는 다치되
+/// 휘청이지 않는다(맺음 5단의 휘청도 보스는 아니다).
+#[test]
+fn pole_sweep_strikes_all_around_and_throws_them_back() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Pole, 5, Pick::A);
+    let ring = [
+        vec3(2.0, 0.0, 0.0),
+        vec3(-2.0, 0.0, 0.0),
+        vec3(0.0, 0.0, 2.0),
+        vec3(0.0, 0.0, -2.0),
+    ];
+    for p in ring {
+        w.spawn_mob(p);
+    }
+    w.spawn_boss(vec3(1.6, 0.0, 1.6));
+    still(&mut w);
+    w.enemies[4].hp = 2000;
+    let mut boss_staggered = false;
+    let mut ev = w.step(&skill(0), &t);
+    for _ in 0..120 {
+        ev.extend(w.step(&Actions::default(), &t));
+        boss_staggered |= matches!(w.enemies[4].state, EState::Stagger { .. });
+        still_keep(&mut w);
+    }
+    for (i, p) in ring.iter().enumerate() {
+        assert!(w.enemies[i].hp < 90, "{i} hit");
+        assert!(
+            flat(w.enemies[i].pos, w.player.pos) > p.length() + 1.5,
+            "{i} thrown back"
+        );
+    }
+    assert!(w.enemies[4].hp < 2000, "the boss is hurt");
+    assert!(!boss_staggered, "but not staggered");
+}
+
+/// 못 박기: 좁고 깊게(3.6m · 24°) 한 번 찔러 뿌리를 가득 쌓는다 — 두 번 찌르기(ㄴ)면 잔재도 그 자리에 속박된다. 옆으로 비낀 적은
+/// 닿지 않는다.
+#[test]
+fn pinning_thrust_binds_the_foe_it_pierces() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Pin, 1, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -2.2));
+    w.spawn_mob(vec3(-2.4, 0.0, -0.6));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    assert_eq!(90 - w.enemies[0].hp, 20);
+    let root = w.enemies[0].ail.gauge[1];
+    assert!(root >= 0.7, "a full dose of roots: {root}");
+    assert_eq!(w.enemies[1].hp, 90, "the side one is untouched");
+    // 두 번 찌르기(ㄴ): 잔재(뿌리에 덜 쌓인다)도 그 자리에 속박된다.
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Pin, 3, Pick::B);
+    w.spawn_mob(vec3(0.0, 0.0, -2.2));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    assert!(
+        w.enemies[0].ail.bound > 0.0,
+        "pinned: {:?}",
+        w.enemies[0].ail
+    );
+}
+
+/// 큰 기술 질풍 찌르기: 세계가 멈추고(0.3초) 앞 한 줄(5.5m · 반 폭 0.8m)을 여섯 번 찌른다 — 앞의 다섯은 10씩, 마지막은 40(합 90)에
+/// 출혈을 쌓고 잡몹을 밀어낸다. 보스도 다치고 자세가 깎이되 밀리지도 휘청이지도 않는다. 줄 밖·5.5m 너머는 그대로. 2단 7.5m,
+/// 3단 20씩 · 마지막 60(합 160).
+#[test]
+fn gale_of_thrusts_strikes_one_line_again_and_again_then_deep() {
+    let gale = |rank: u8| {
+        let mut w = World::new("test", 30.0);
+        let t = Tuning::default();
+        w.player.facing = PI;
+        w.set_weapon(crate::weapons::Id::Spear);
+        wear_ult(&mut w, Ult::Gale, rank);
+        for z in [-3.2, -4.9, -7.0] {
+            w.spawn_mob(vec3(0.0, 0.0, z));
+        }
+        w.spawn_mob(vec3(2.5, 0.0, -3.0));
+        w.spawn_boss(vec3(0.0, 0.0, -1.6));
+        still(&mut w);
+        for e in &mut w.enemies {
+            e.hp = 900;
+            e.max_hp = 900;
+        }
+        let boss_at = w.enemies[4].pos;
+        w.player.skill.gauge = 1.0;
+        w.step(
+            &Actions {
+                ult: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.hitstop >= skills::GALE.freeze - 1e-4, "the world stops");
+        let mut ev = Vec::new();
+        let mut staggered = false;
+        for _ in 0..150 {
+            ev.extend(w.step(&Actions::default(), &t));
+            staggered |= matches!(w.enemies[4].state, EState::Stagger { .. });
+            still_keep(&mut w);
+        }
+        let thrusts = ev
+            .iter()
+            .filter(|e| matches!(e, Event::GaleThrust { .. }))
+            .count();
+        assert_eq!(thrusts, skills::GALE.thrusts as usize);
+        assert!(!staggered, "a boss is not staggered");
+        assert!(
+            flat(w.enemies[4].pos, boss_at) < 0.3,
+            "nor thrown: {:?} -> {:?} {:?}",
+            boss_at,
+            w.enemies[4].pos,
+            w.enemies[4].state
+        );
+        assert!(
+            w.enemies[0].ail.bleed > 0.0,
+            "the last thrust bleeds: {:?}",
+            w.enemies[0].ail
+        );
+        assert_eq!(w.player.skill.gauge, 0.0);
+        let lost: Vec<i32> = w.enemies.iter().map(|e| 900 - e.hp).collect();
+        lost
+    };
+    // 피해 = 찌름의 합(+ 마지막 찌름이 건 출혈이 움직이는 동안 조금 — 한 눈금 안).
+    let near = |got: &[i32], want: [i32; 4]| {
+        got.iter().zip(want).all(|(g, w)| {
+            if w == 0 {
+                *g == 0
+            } else {
+                (w..w + 10).contains(g)
+            }
+        })
+    };
+    let a = gale(1);
+    assert!(near(&a, [90, 90, 0, 0]), "{a:?}");
+    assert!(a[4] >= 90, "the boss too: {}", a[4]);
+    let b = gale(2);
+    assert!(near(&b, [90, 90, 90, 0]), "7.5 m: {b:?}");
+    let c = gale(3);
+    assert!(near(&c, [160, 160, 160, 0]), "{c:?}");
+}
