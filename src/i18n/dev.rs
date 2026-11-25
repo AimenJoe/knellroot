@@ -276,6 +276,7 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("heavy", ("강타", "heavy")),
     ("hammer1", ("평타 1", "hit 1")),
     ("hammer2", ("평타 2", "hit 2")),
+    ("hammer3", ("평타 3", "hit 3")),
     ("hammer_charge", ("강타 모으기", "heavy charge")),
     ("hammer_slam", ("강타", "heavy")),
     ("staff1", ("평타 1", "hit 1")),
@@ -364,6 +365,10 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
         "ult_gale",
         ("큰 기술 — 질풍 찌르기", "ult: gale of thrusts"),
     ),
+    // 0274 — 한손검의 전투 기술
+    ("sk_pommel", ("기술 — 자루 치기", "skill: pommel strike")),
+    ("sk_shove", ("기술 — 밀치기", "skill: shove")),
+    ("sk_rally", ("기술 — 재기", "skill: rally")),
 ];
 
 /// 동작 이름의 화면 이름(표에 없으면 동작 이름 그대로 — 모델의 동작 이름은 오른쪽 칸에 따로 보인다).

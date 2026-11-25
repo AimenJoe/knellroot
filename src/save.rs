@@ -1651,23 +1651,32 @@ weapons=sword,bow
         };
         let total = p.skill_points();
         for e in [
-            // 0270 B: 첫 줄의 뿌리 스킬(끌어모으기)이 서리가 되어 뿌리 결은 깊은 줄에서 — 왕복은 균열 하나로 본다.
-            Entry::Skill(Id::Cut),
-            Entry::Vein(Vein::Rift),
+            // 0270 B: 첫 줄의 뿌리 스킬(끌어모으기)이 서리가 되어 뿌리 결은 깊은 줄에서 — 왕복은 충격 하나로 본다
+            // (0274 ②: 균열의 결은 단검 트리가 올 때까지 어느 트리에도 서지 않아 읽을 때 돌려받는다 — 아래).
+            Entry::Skill(Id::Pommel),
+            Entry::Vein(Vein::Shock),
         ] {
             assert!(p.board.buy(e, total), "{e:?}");
         }
         let r = p.to_record();
-        assert_eq!(r.get(key::TREE_VEINS), Some("rift"));
+        assert_eq!(r.get(key::TREE_VEINS), Some("shock"));
         let back = Progress::from_record(Record::parse(&r.to_text()));
         assert_eq!(back.board.cells, p.board.cells);
-        assert!(back.board.cells.veined(Vein::Rift) && !back.board.cells.veined(Vein::Ember));
+        assert!(back.board.cells.veined(Vein::Shock) && !back.board.cells.veined(Vein::Ember));
         assert_eq!(Progress::default().to_record().get(key::TREE_VEINS), None);
-        // 손댄 기록: 모르는 키는 버리고, 그 타입의 스킬을 모르는 결은 닫는다(가로지르기 = 균열만 안다).
+        // 손댄 기록: 모르는 키는 버리고, 그 타입의 스킬을 모르는 결은 닫는다(자루 치기 = 충격만 안다).
         let odd = Progress::from_record(Record::parse(
-            "v=1\ncore.warden=3\nmigrated.v06=1\nmigrated.ult=1\nskill.rank.cut=1\ntree.veins=knell,rift,bogus\n",
+            "v=1\ncore.warden=3\nmigrated.v06=1\nmigrated.ult=1\nskill.rank.pommel=1\ntree.veins=knell,shock,bogus\n",
         ));
-        assert_eq!(odd.board.cells.veins, 1 << Vein::Rift.index());
+        assert_eq!(odd.board.cells.veins, 1 << Vein::Shock.index());
+        // 0274 ②: 균열의 결을 산 옛 기록은 읽을 때 그 1포인트를 돌려받는다(어느 트리에도 서지 않는다 — 단검 트리가 오면 다시
+        // 산다). 가로지르기(균열의 스킬)는 한손검 트리에 그대로 남는다.
+        let old = Progress::from_record(Record::parse(
+            "v=1\ncore.warden=3\nmigrated.v06=1\nmigrated.ult=1\nskill.rank.cut=2\ntree.veins=rift\n",
+        ));
+        assert_eq!(old.board.cells.veins, 0, "the rift passive is refunded");
+        assert_eq!(old.board.rank[Id::Cut.index()], 2, "the rift skill stays");
+        assert_eq!(old.board.spent(), 2);
     }
 
     /// 0215: 다리 칸(`tree.links` = 키들)과 숫자 칸의 고르기 II(`tree.picks.<갈래>` = 자리들)가 왕복한다. 없으면 줄이 없고,

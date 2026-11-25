@@ -269,6 +269,19 @@ impl Renderer {
                     | Form::Bell { .. }
                     | Form::Drift { .. }
                     | Form::Trap { .. } => {}
+                    // 재기(0274): 몸에서 밀쳐 내는 거리까지 번지는 민트 고리 — 피해가 아니라 밀어냄과 흡수의 자리.
+                    Form::Rally { radius, .. } => {
+                        let k = (e0 / 0.3).clamp(0.0, 1.0);
+                        if k < 1.0 {
+                            fl.ring(
+                                pp + Vec3::Y * 0.06,
+                                radius * (0.35 + 0.65 * k),
+                                0.0,
+                                360.0,
+                                with_a(mint, 0.85 * (1.0 - k)),
+                            );
+                        }
+                    }
                     // 파문(0270 C3): 몸에서 번지는 물결의 앞머리(흰 테 + 민트 테), 지나간 안쪽은 옅게.
                     Form::Wave { radius, time } => {
                         let k = (e0 / time.max(1e-3)).clamp(0.0, 1.0);
@@ -1559,7 +1572,8 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
                 | Form::Brace { .. }
                 | Form::Echo { .. }
                 | Form::Field { .. }
-                | Form::Wave { .. } => {}
+                | Form::Wave { .. }
+                | Form::Rally { .. } => {}
             }
         }
     }

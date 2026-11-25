@@ -39,9 +39,9 @@ pub const BOW: Hands = class_bit(Class::Bow);
 pub const SPEAR: Hands = class_bit(Class::Spear);
 /// 한손 계열과 방패(방패 판의 기술).
 pub const SHIELD: Hands = 1 << 15;
-/// 묶음: 한손(방패가 있든 없든) · 양손 근접 · 근접 · 원거리 · 어느 것이나.
-pub const ONE: Hands = SWORD | SHIELD;
-pub const TWO: Hands = HAMMER | STAFF | SPEAR;
+/// 묶음: 한손(방패가 있든 없든 — 0274부터 망치도) · 양손 근접 · 근접 · 원거리 · 어느 것이나.
+pub const ONE: Hands = SWORD | HAMMER | SHIELD;
+pub const TWO: Hands = STAFF | SPEAR;
 pub const MELEE: Hands = ONE | TWO;
 pub const RANGED: Hands = CROSSBOW | BOW;
 pub const ANY: Hands = MELEE | RANGED;
@@ -157,6 +157,9 @@ pub enum Form {
     /// 종 치기(0270 C3): 앞 `range` m의 가장 가까운 적 하나를 치고 그 적에게 종을 건다 — `delay`초 뒤 그 적이 울려 둘레
     /// `radius` m를 친다(울림의 피해 = 표의 피해). 앞에 적이 없으면 허공에서 울린다.
     Bell { range: f32, delay: f32, radius: f32 },
+    /// 재기(0274 — 한손검·흡수): 숨을 몰아쉬고 다시 선다 — 체력이 `heal` 돌아오고(받는 피해를 줄이지 않는다 — 되찾을 뿐, 0095
+    /// 원칙 2), 둘레 `radius` m의 적을 피해 없이 `push` m 밀쳐 내며 흡수를 건다(그 적을 치면 더 되찾는다).
+    Rally { heal: i32, radius: f32, push: f32 },
     /// 뿌리 솟기(0214): 앞 `len` m를 `step` m 간격으로 뿌리가 `every`초마다 차례로 솟는다 — 솟은 자리 둘레 `radius` m의 적을 한 번씩
     /// 찌르고 `stagger`초 휘청(보스는 아니다).
     Erupt {
@@ -178,6 +181,7 @@ impl Form {
                 | Form::Echo { .. }
                 | Form::Field { .. }
                 | Form::Wave { .. }
+                | Form::Rally { .. }
         )
     }
 
@@ -287,10 +291,16 @@ pub enum Id {
     Pole,
     /// 못 박기(0272 2단계 — 창·뿌리): 깊게 한 번 찔러 그 자리에 묶는다.
     Pin,
+    /// 자루 치기(0274 — 한손검·충격): 칼자루로 짧게 쳐 준비하던 공격을 끊고 기절을 쌓는다.
+    Pommel,
+    /// 밀치기(0274 — 한손검·충격): 앞을 밀어 차 떼를 떼어 내고 자리를 만든다.
+    Shove,
+    /// 재기(0274 — 한손검·흡수): 숨을 몰아쉬고 다시 선다 — 체력이 조금 돈다.
+    Rally,
 }
 
 /// 표 순서(대기 칸 `Player::skill_cd`의 자리 — 뒤에만 붙인다).
-pub const IDS: [Id; 24] = [
+pub const IDS: [Id; 27] = [
     Id::Whirl,
     Id::Cut,
     Id::Gather,
@@ -315,6 +325,9 @@ pub const IDS: [Id; 24] = [
     Id::Skewer,
     Id::Pole,
     Id::Pin,
+    Id::Pommel,
+    Id::Shove,
+    Id::Rally,
 ];
 pub const N: usize = IDS.len();
 
@@ -483,6 +496,10 @@ pub enum Twist {
     Scorch { secs: f32 },
     /// 뿌리 덫 ㄱ "두 알"(0270 C3): 씨를 둘 — 겨눈 자리의 양옆에.
     Twin,
+    /// 재기 ㄱ "고른 숨"(0274): 기력도 `stamina` 돈다.
+    Breath { stamina: f32 },
+    /// 재기 ㄴ "바닥에서"(0274): 체력이 `below`(최대의 몫) 아래면 × `mult` 돈다.
+    Low { below: f32, mult: f32 },
 }
 
 /// 5단 맺음(0158 마).
@@ -512,6 +529,8 @@ pub enum Cap {
     Spire { radius: f32, damage: i32 },
     /// 바늘땀 "꿰매기"(0270 C3): 마지막 땀에 맞은 적이 `stagger`초 휘청인다(보스는 아니다).
     Pin { stagger: f32 },
+    /// 재기 "다시 선 몸"(0274): `more`만큼 더 돈다.
+    Mend { more: i32 },
 }
 
 /// 그 단·그 고르기의 실제 값(월드가 쓴다): 표의 줄에 단의 숫자를 입힌 것 + 열린 고르기·맺음.
@@ -766,6 +785,12 @@ impl Skill {
                 stagger,
                 mult,
             },
+            // 재기: 도는 체력이 피해의 배를 같이 받는다(10 → 12 → 13), 둘레는 4단의 치수.
+            Form::Rally { heal, radius, push } => Form::Rally {
+                heal: scaled(heal, dmg),
+                radius: radius * size,
+                push,
+            },
             Form::Erupt {
                 len,
                 step,
@@ -819,7 +844,8 @@ impl Skill {
             | Form::Bash { .. }
             | Form::Bell { .. }
             | Form::Drift { .. }
-            | Form::Trap { .. } => 0.0,
+            | Form::Trap { .. }
+            | Form::Rally { .. } => 0.0,
         }
     }
 
@@ -850,7 +876,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.15, 0.22, 0.30],
         },
         row: 0,
-        hands: ONE | HAMMER,
+        hands: ONE,
         kind: Kind::Physical,
         build: 0.0,
         branch: Branch::Beat,
@@ -1531,6 +1557,109 @@ pub const SKILLS: [Skill; N] = [
         picks: [Twist::Lunge { dist: 2.0 }, Twist::Stitches { more: 1 }],
         cap: Cap::Pin { stagger: 0.6 },
     },
+    // ---- 0274: 한손검 = 전투 기술(충격 · 흡수) ----
+    // 자루 치기: 칼자루로 짧고 좁게(2.2 m · 70°) 친다 — 막아치기의 꼴(`Form::Bash`): 준비하던 잡몹의 공격을 끊고 충격(기절)을
+    // 한 번에 쌓는다. 보스는 끊기지 않고 자세만 더 깎인다(보스 규칙 그대로).
+    Skill {
+        id: Id::Pommel,
+        cooldown: 7.0,
+        startup: 0.12,
+        recover: 0.28,
+        damage: HP_UNIT,
+        poise: 2.5,
+        form: Form::Bash {
+            range: 2.2,
+            arc_deg: 70.0,
+            stagger: 0.6,
+            mult: 2.0,
+        },
+        anim: "attack3",
+        clip: Clip {
+            name: "sk_pommel",
+            seg: [0.12, 0.0, 0.28],
+        },
+        row: 0,
+        hands: SWORD,
+        kind: Kind::Shock,
+        build: 1.0,
+        branch: Branch::Riposte,
+        picks: [
+            Twist::Wide { arc_deg: 120.0 },
+            Twist::Expose {
+                secs: 2.0,
+                mult: 1.2,
+            },
+        ],
+        cap: Cap::Break,
+    },
+    // 밀치기: 앞을 밀어 찬다(2.4 m · 140°) — 피해는 작고 멀리(3.5 m) 밀어내 자리를 만든다, 충격을 반쯤 쌓는다.
+    Skill {
+        id: Id::Shove,
+        cooldown: 8.0,
+        startup: 0.14,
+        recover: 0.30,
+        damage: HP_UNIT,
+        poise: 1.5,
+        form: Form::Cone {
+            range: 2.4,
+            arc_deg: 140.0,
+            stagger: 0.5,
+            push: 3.5,
+        },
+        anim: "fist_heavy",
+        clip: Clip {
+            name: "sk_shove",
+            seg: [0.14, 0.0, 0.30],
+        },
+        row: 1,
+        hands: SWORD,
+        kind: Kind::Shock,
+        build: 0.5,
+        branch: Branch::Footing,
+        picks: [
+            Twist::Slam {
+                damage: 2 * HP_UNIT,
+            },
+            Twist::Wide { arc_deg: 220.0 },
+        ],
+        cap: Cap::Frail {
+            secs: 2.0,
+            mult: 1.2,
+        },
+    },
+    // 재기: 숨을 몰아쉬고 다시 선다 — 체력 10(한 눈금 — 등잔 한 모금의 반), 쿨타임은 가장 긴 14초. 곁(2.4 m)의 적은 피해 없이
+    // 밀쳐 내며 흡수를 건다. 받는 피해는 줄이지 않는다(되찾을 뿐 — 0095 원칙 2). 값은 보스 모의로(0274 "② 만든 것").
+    Skill {
+        id: Id::Rally,
+        cooldown: 14.0,
+        startup: 0.20,
+        recover: 0.35,
+        damage: 0,
+        poise: 0.0,
+        form: Form::Rally {
+            heal: HP_UNIT,
+            radius: 2.4,
+            push: 1.5,
+        },
+        anim: "parry",
+        clip: Clip {
+            name: "sk_rally",
+            seg: [0.20, 0.0, 0.35],
+        },
+        row: 1,
+        hands: SWORD,
+        kind: Kind::Drain,
+        build: 1.0,
+        branch: Branch::Riposte,
+        picks: [
+            Twist::Breath { stamina: 30.0 },
+            Twist::Low {
+                below: 0.35,
+                mult: 2.0,
+            },
+        ],
+        cap: Cap::Mend { more: HP_UNIT },
+    },
 ];
 
 impl Id {
@@ -1568,6 +1697,9 @@ impl Id {
             Id::Skewer => "skewer",
             Id::Pole => "pole",
             Id::Pin => "pin",
+            Id::Pommel => "pommel",
+            Id::Shove => "shove",
+            Id::Rally => "rally",
         }
     }
 
@@ -2259,6 +2391,8 @@ pub const ENTRIES: [Entry; NE] = [
     // 0272 2단계 — 창 판의 첫 줄(가운데 · 뿌리 갈래)
     Entry::Skill(Id::Skewer),
     Entry::Skill(Id::Pin),
+    // 0274 — 한손검 판의 충격 갈래 첫 줄
+    Entry::Skill(Id::Pommel),
     // 2 — 쓴 점수 4
     Entry::Skill(Id::Quake),
     Entry::Cell(Cell::ClosingBlow),
@@ -2280,6 +2414,9 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Mine),
     // 0272 2단계 — 창 판의 둘째 줄(가운데)
     Entry::Skill(Id::Pole),
+    // 0274 — 한손검 판의 둘째 줄(충격 · 흡수)
+    Entry::Skill(Id::Shove),
+    Entry::Skill(Id::Rally),
     // 3 — 쓴 점수 8
     Entry::Ult(Ult::Flurry),
     Entry::Cell(Cell::FinalMeasure),
@@ -3145,7 +3282,7 @@ mod tests {
     fn the_board_stands_as_the_0161_table_says() {
         use Branch::{Beat, Footing, Riposte};
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-        let table: [(usize, Branch, &[Entry]); 37] = [
+        let table: [(usize, Branch, &[Entry]); 40] = [
             (
                 0,
                 Beat,
@@ -3174,6 +3311,8 @@ mod tests {
             // 0272 2단계: 창 판.
             (0, Beat, &[S(Id::Skewer)]),
             (0, Riposte, &[S(Id::Pin)]),
+            // 0274: 한손검 판의 전투 기술.
+            (0, Riposte, &[S(Id::Pommel)]),
             (
                 1,
                 Beat,
@@ -3200,6 +3339,8 @@ mod tests {
             (1, Riposte, &[S(Id::Ram), S(Id::Ripple)]),
             (1, Footing, &[S(Id::Snow), S(Id::Mine)]),
             (1, Footing, &[S(Id::Pole)]),
+            (1, Footing, &[S(Id::Shove)]),
+            (1, Riposte, &[S(Id::Rally)]),
             (2, Beat, &[U(Ult::Flurry), C(Cell::FinalMeasure)]),
             (2, Riposte, &[U(Ult::Line), C(Cell::OneWhoStands)]),
             (2, Footing, &[U(Ult::Upend), C(Cell::PathOpeningStep)]),
@@ -3252,7 +3393,7 @@ mod tests {
                 assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
             }
         }
-        assert_eq!(NE, 67);
+        assert_eq!(NE, 70);
         for (i, e) in ENTRIES.iter().enumerate() {
             assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
         }
@@ -4247,7 +4388,7 @@ mod clip_facing {
         /// 활을 겨누는 동작(0272 — 화살비): 겨누는 줄(오른손 → 활을 든 왼손)이 정면 — 몸은 옆으로 선다.
         Aim,
     }
-    const FACES: [(&str, Face); 31] = [
+    const FACES: [(&str, Face); 34] = [
         ("sk_whirl", Face::Spin),
         ("sk_cut", Face::Tip),
         ("sk_gather", Face::Hips),
@@ -4281,6 +4422,10 @@ mod clip_facing {
         ("sk_pin", Face::Tip),
         ("sk_pole", Face::Tip),
         ("ult_gale", Face::Hips),
+        // 0274 한손검.
+        ("sk_pommel", Face::Tip),
+        ("sk_shove", Face::Hips),
+        ("sk_rally", Face::Hold),
     ];
 
     fn deg(a: f32) -> f32 {

@@ -50,13 +50,14 @@ pub enum Sweep {
 /// 구간(시작 s, 길이 s): `tools/art/blender/wanderer_skin.py` `HIT_WINDOWS` 그대로(시험 `swing_windows_match_the_blender_table`) —
 /// 동작 시계는 타의 판정 시작이 이 시작에 오게 돈다(`clip_rate` — 맨손처럼 남의 동작을 빌린 타·대시 공격도 칼이 닿는 순간에 맞는다).
 /// 새 동작을 무기 표에 쓰면 여기에도 한 줄(시험 `every_weapon_motion_has_a_sweep`).
-pub const SWEEPS: [(&str, Sweep, (f32, f32)); 24] = [
+pub const SWEEPS: [(&str, Sweep, (f32, f32)); 25] = [
     ("attack", Sweep::RightToLeft, (0.08, 0.10)),
     ("attack2", Sweep::LeftToRight, (0.08, 0.10)),
     ("attack3", Sweep::Center, (0.10, 0.12)),
     ("heavy", Sweep::LeftToRight, (0.06, 0.12)),
-    ("hammer1", Sweep::RightToLeft, (0.14, 0.17)),
-    ("hammer2", Sweep::Center, (0.16, 0.20)),
+    ("hammer1", Sweep::RightToLeft, (0.092, 0.115)),
+    ("hammer2", Sweep::Center, (0.092, 0.115)),
+    ("hammer3", Sweep::Center, (0.112, 0.14)),
     ("hammer_slam", Sweep::Center, (0.08, 0.16)),
     ("staff1", Sweep::RightToLeft, (0.06, 0.07)),
     ("staff2", Sweep::LeftToRight, (0.06, 0.07)),
@@ -371,18 +372,24 @@ const SWORD_COMBO: [Hit; 3] = [
     },
 ];
 
-/// 종치기 망치 — 느리고 넓은 2타(한 걸음씩 나아감, 자세 피해 큼), 강타는 뛰어올라 둥근 내려찍기 + 여진.
-const HAMMER_COMBO: [Hit; 2] = [
+/// 종치기 망치(0274 — 한 손에 드는 종지기의 메): 한손의 박자 3연타 — 오른쪽에서 후려치고(M11 첫 타) 되받아 치고(둘째 타)
+/// 머리 위에서 내리쳐 둘레의 땅을 울린다(셋째 — 둥근 판정, 자세 피해 큼). 옛 양손의 느린 2타(1.7 · 2.0배)를 걷었다.
+const HAMMER_COMBO: [Hit; 3] = [
     Hit {
-        knock: 1.5,
-        cancel: 0.4,
-        ..hit(1.7, 1.15, 1.25, 1.4, 20, 3.0, "hammer1")
+        knock: 1.3,
+        cancel: 0.25,
+        ..hit(1.15, 1.05, 1.1, 1.1, 10, 2.0, "hammer1")
+    },
+    Hit {
+        knock: 1.3,
+        cancel: 0.3,
+        ..hit(1.15, 1.05, 1.1, 1.1, 10, 2.0, "hammer2")
     },
     Hit {
         shape: Shape::Circle,
-        knock: 2.0,
-        cancel: 0.5,
-        ..hit(2.0, 1.1, 1.0, 1.2, 30, 4.0, "hammer2")
+        knock: 1.8,
+        cancel: 0.45,
+        ..hit(1.4, 1.0, 1.0, 1.2, 30, 4.0, "hammer3")
     },
 ];
 
@@ -490,16 +497,18 @@ pub const WEAPONS: [Weapon; 7] = [
             cancel: 0.45,
             ..hit(1.6, 1.0, 1.0, 2.0, 20, 3.0, "hammer_dash")
         }),
+        // 강공격(0274): 머리 위로 들어 앞을 내리친다 — 옛 뛰어 내려찍기(내딛기 2.2 · 둘레)를 걷고 앞 부채꼴 한 걸음, 여진(땅의 울림)은
+        // 그대로 둘레를 다시 친다.
         heavy: Some(Heavy {
             time: 1.3,
-            charge: 1.4,
-            reach: 1.0,
-            arc: 1.0,
-            lunge: 2.2,
-            shape: Shape::Circle,
+            charge: 1.3,
+            reach: 1.05,
+            arc: 0.8,
+            lunge: 1.0,
+            shape: Shape::Arc,
             damage: 30,
             poise: 6.0,
-            walk: 0.75,
+            walk: 0.85,
             aftershock: Some((1.5, 2.6, 20, 3.0)),
             breaks_primed: Some(0.6),
             anim_charge: "hammer_charge",
@@ -528,7 +537,8 @@ pub const WEAPONS: [Weapon; 7] = [
             ..MAGIC
         },
         node: "w_hammer",
-        stamina: 1.7,
+        // 0274: 한 손에 드는 메라 양손일 때(1.7)보다 가볍다 — 검(1.0)과 창(1.25) 위.
+        stamina: 1.4,
         forge: Some(MELEE_FORGE),
     },
     Weapon {
@@ -928,7 +938,9 @@ pub const CLASSES: [ClassDef; 6] = [
         hand: Hand::One,
         name: |s| s.class_sword,
         attribute: |s| s.attr_slash,
-        pair: [Kind::Sharp, Kind::Rift],
+        // 0274: 전사의 결 — 충격 · 흡수(전투 기술: 자루 치기 · 밀치기 · 재기). 옛 짝 날카로움 · 균열의 스킬은 트리에 그대로 서 있다
+        // (가운데 열 — 단검 트리가 오면(0274 ③) 그리로 옮긴다).
+        pair: [Kind::Shock, Kind::Drain],
         great: Ult::Flurry,
         art: Art::PLAIN,
         main_trait: |s| s.trait_sword,
@@ -941,9 +953,10 @@ pub const CLASSES: [ClassDef; 6] = [
         },
         sub_trait: |s| s.subtrait_sword,
     },
+    // 망치(0274 — 성직자의 결): 한 손에 드는 종지기의 메 — 방패와 함께 든다(한손검처럼, 방패를 들면 방패 트리).
     ClassDef {
         class: Class::Hammer,
-        hand: Hand::Two,
+        hand: Hand::One,
         name: |s| s.class_hammer,
         attribute: |s| s.attr_strike,
         pair: [Kind::Shock, Kind::Knell],
@@ -1159,8 +1172,8 @@ mod tests {
         assert_eq!(Id::Fists.hand(), Hand::One, "bare hands can hold a shield");
         assert_eq!(Id::Fists.art(), Art::PLAIN);
         assert_eq!(
-            (Id::Sword.hand(), Id::Hammer.hand()),
-            (Hand::One, Hand::Two)
+            (Id::Sword.hand(), Id::Hammer.hand(), Id::Spear.hand()),
+            (Hand::One, Hand::One, Hand::Two)
         );
         assert_eq!(Id::Hammer.art().force, ART_FORCE);
         assert_eq!(Id::Staff.art().channel, ART_CHANNEL);
@@ -1170,6 +1183,9 @@ mod tests {
         // 쥔 꼴: 한손 계열만 방패로 갈린다.
         assert_eq!(Id::Sword.grip(false), Grip::Class(Class::Sword));
         assert_eq!(Id::Sword.grip(true), Grip::Shield);
+        // 0274: 망치도 한손 — 방패와 함께면 방패 트리.
+        assert_eq!(Id::Hammer.grip(true), Grip::Shield);
+        assert_eq!(Id::Hammer.grip(false), Grip::Class(Class::Hammer));
         assert_eq!(Id::Fists.grip(false), Grip::Bare);
         assert_eq!(Id::Fists.grip(true), Grip::Shield);
         assert_eq!(Id::Staff.grip(true), Grip::Class(Class::Staff));
@@ -1321,7 +1337,8 @@ mod tests {
         },
         Old {
             id: Id::Hammer,
-            combo: &[2, 3],
+            // 0274: 한손 3연타(옛 2 · 3 → 1 · 1 · 3) — 눈금을 옮긴 것이 아니라 무브셋을 바꾼 것이라 이 줄도 같이 고친다.
+            combo: &[1, 1, 3],
             dash: 2,
             heavy: 3,
             aftershock: 2,

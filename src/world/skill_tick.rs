@@ -300,7 +300,8 @@ impl World {
             | Form::Brace { .. }
             | Form::Echo { .. }
             | Form::Field { .. }
-            | Form::Wave { .. } => facing,
+            | Form::Wave { .. }
+            | Form::Rally { .. } => facing,
             // 눈발·뿌리 덫(0270 C3): 놓을 자리 쪽 — 조준 > 락온 > (터치의 톡이면 놓는 거리의 가장 가까운 적) > 바라보는 쪽.
             // 곁의 적을 찾아 놓으면 앞에 둔 자리가 엉뚱한 쪽으로 간다.
             Form::Drift { ahead, radius, .. } | Form::Trap { ahead, radius, .. } => cx
@@ -817,6 +818,36 @@ impl World {
                 }
             }
             // 막아치기(0214): 앞 부채꼴을 밀어친다 — 공격을 준비하던 적은 그 공격이 끊긴다.
+            // 재기(0274): 시동이 끝나는 순간 체력이 돈다(바닥에서 ㄴ이면 곱절, 맺음이면 더) — 고른 숨 ㄱ이면 기력도. 곁의 적은
+            // 피해 없이 밀쳐 내며 흡수를 건다(보스는 밀리지 않는다 — 걸리기만).
+            Form::Rally { heal, radius, push } => {
+                if crossed(s.startup) {
+                    self.skill_ev.push(Event::Skill { id, at, dir });
+                    let max_st = t[P::StaminaMax];
+                    let pl = &mut self.player;
+                    let low = match d.twist {
+                        Some(Twist::Low { below, mult })
+                            if (pl.hp as f32) < below * pl.max_hp as f32 =>
+                        {
+                            mult
+                        }
+                        _ => 1.0,
+                    };
+                    let more = match d.cap {
+                        Some(Cap::Mend { more }) => more,
+                        _ => 0,
+                    };
+                    let gain = skills::scaled(heal, low) + more;
+                    pl.hp = (pl.hp + gain).min(pl.max_hp);
+                    if let Some(Twist::Breath { stamina }) = d.twist {
+                        pl.stamina = (pl.stamina + stamina).min(max_st);
+                    }
+                    self.skill_ev.push(Event::Mend {
+                        at: pl.pos + Vec3::Y * 1.0,
+                    });
+                    self.skill_rally(t, radius, push, self.dosed(s.dose()));
+                }
+            }
             Form::Bash {
                 range,
                 arc_deg,
@@ -1386,6 +1417,28 @@ impl World {
         if n > 0 {
             self.skill_hit_tick = true;
             self.hitstop = self.hitstop.max(t[P::Hitstop] * SKILL_HITSTOP);
+        }
+        self.skill_ev = ev;
+    }
+
+    /// 재기(0274)의 밀쳐 냄: 둘레 `radius` m의 깨어 있는 적을 바깥으로 `push` m(보스는 넷의 하나) — 피해·자세 없이 흡수만 건다.
+    fn skill_rally(&mut self, _t: &Tuning, radius: f32, push: f32, dose: Dose) {
+        let mut ev = std::mem::take(&mut self.skill_ev);
+        let p = self.player.pos;
+        let body = p.y + self.player.air;
+        let facing = self.player.facing_dir();
+        for en in &mut self.enemies {
+            if !en.active() || (en.pos.y - body).abs() > HIT_DY {
+                continue;
+            }
+            let dv = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+            if dv.length() - en.radius > radius {
+                continue;
+            }
+            let dir = dv.normalize_or(facing);
+            let mass = if en.boss { 0.25 } else { 1.0 };
+            en.knock = dir * push * KNOCK_DECAY * mass;
+            afflict(en, dose, &mut ev);
         }
         self.skill_ev = ev;
     }

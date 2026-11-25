@@ -1392,9 +1392,13 @@ impl World {
         self.player.weapon.grip(self.player.shield.is_some())
     }
 
-    /// 한 손이 비었나(0270 C5 — 날카로움의 덤 `hurt_by`의 `keen`): 한손 계열(맨손도)을 방패 없이.
+    /// 한 손이 비었나(0270 C5 — 날카로움의 덤 `hurt_by`의 `keen`): 한손검(맨손도)을 방패 없이. 0274에서 망치도 한손이 되었지만
+    /// 이 덤은 결투의 손(한손검)의 주특성이다 — 망치는 넣지 않는다(쌍단검이 오면 그 종류로 옮긴다, 0274 ③).
     pub fn keen(&self) -> bool {
-        self.player.weapon.hand() == weapons::Hand::One && self.player.shield.is_none()
+        matches!(
+            self.player.weapon.class(),
+            Some(weapons::Class::Sword) | None
+        ) && self.player.shield.is_none()
     }
 
     /// 지금 막을 수 있나(0223): 방패를 들었고 든 무기가 한손이다.

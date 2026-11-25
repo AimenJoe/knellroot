@@ -68,6 +68,9 @@ pub(super) fn skill_text(id: sk::Id) -> (&'static str, &'static str) {
         sk::Id::Skewer => (s.skill_skewer, s.skill_skewer_d),
         sk::Id::Pole => (s.skill_pole, s.skill_pole_d),
         sk::Id::Pin => (s.skill_pin, s.skill_pin_d),
+        sk::Id::Pommel => (s.skill_pommel, s.skill_pommel_d),
+        sk::Id::Shove => (s.skill_shove, s.skill_shove_d),
+        sk::Id::Rally => (s.skill_rally, s.skill_rally_d),
     }
 }
 
@@ -166,6 +169,12 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Pole, Pick::B) => (s.pick_pole_b, s.pick_pole_b_d),
         (sk::Id::Pin, Pick::A) => (s.pick_pin_a, s.pick_pin_a_d),
         (sk::Id::Pin, Pick::B) => (s.pick_pin_b, s.pick_pin_b_d),
+        (sk::Id::Pommel, Pick::A) => (s.pick_pommel_a, s.pick_pommel_a_d),
+        (sk::Id::Pommel, Pick::B) => (s.pick_pommel_b, s.pick_pommel_b_d),
+        (sk::Id::Shove, Pick::A) => (s.pick_shove_a, s.pick_shove_a_d),
+        (sk::Id::Shove, Pick::B) => (s.pick_shove_b, s.pick_shove_b_d),
+        (sk::Id::Rally, Pick::A) => (s.pick_rally_a, s.pick_rally_a_d),
+        (sk::Id::Rally, Pick::B) => (s.pick_rally_b, s.pick_rally_b_d),
     };
     (mark, name, desc)
 }
@@ -198,6 +207,9 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Skewer => s.cap_skewer,
         sk::Id::Pole => s.cap_pole,
         sk::Id::Pin => s.cap_pin,
+        sk::Id::Pommel => s.cap_pommel,
+        sk::Id::Shove => s.cap_shove,
+        sk::Id::Rally => s.cap_rally,
     }
 }
 
@@ -220,8 +232,11 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
     let s = s();
     let d = id.def();
     let harmless = d.damage == 0;
+    // 재기(0274): 단이 올리는 것은 피해가 아니라 도는 체력.
+    let mends = matches!(d.form, Form::Rally { .. });
     match rank {
         0 | 1 => s.sk_rank_learn.to_string(),
+        2 if mends => fill(s.rk_heal, &[&pct(sk::RANK2_DAMAGE)]),
         // 되울림의 2단은 이어지는 시간(0158 G2).
         2 if matches!(d.form, Form::Echo { .. }) => fill(s.rk_secs, &[&num(sk::RANK2_SECS)]),
         2 if harmless => fill(s.rk_stagger, &[&format!("{:.1}", sk::RANK2_STAGGER)]),
@@ -236,7 +251,8 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
                 | Form::Bell { .. }
                 | Form::Wave { .. }
                 | Form::Drift { .. }
-                | Form::Trap { .. } => s.rk_radius,
+                | Form::Trap { .. }
+                | Form::Rally { .. } => s.rk_radius,
                 Form::Lane { .. } | Form::Erupt { .. } => s.rk_length,
                 Form::Pull { .. } | Form::Throw { .. } | Form::Hop { .. } | Form::Stab { .. } => {
                     s.rk_range
@@ -247,9 +263,11 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
         }
         _ => {
             let mut parts = Vec::new();
-            if !harmless {
-                // 5단의 피해는 2단의 몫에 더한 것(합 +30%).
-                let more = pct(1.0 + sk::RANK5_DAMAGE - sk::RANK2_DAMAGE);
+            // 5단의 피해(재기는 도는 체력)는 2단의 몫에 더한 것(합 +30%).
+            let more = pct(1.0 + sk::RANK5_DAMAGE - sk::RANK2_DAMAGE);
+            if mends {
+                parts.push(fill(s.rk_heal_more, &[&more]));
+            } else if !harmless {
                 parts.push(fill(s.rk_damage_more, &[&more]));
             }
             parts.push(fill(s.rk_cooldown, &[&pct(sk::RANK5_COOLDOWN)]));
@@ -501,7 +519,12 @@ pub(super) fn hands_text(id: sk::Id) -> String {
         }
         names.push(name.to_string());
     }
-    if shield && !one {
+    // 방패 비트는 "한손 무기와 방패"다 — 한손 종류가 다 이름에 들지 않았으면(0274: 망치도 한손) 방패 줄을 따로 적는다.
+    let all_one = CLASSES
+        .iter()
+        .filter(|c| c.hand == Hand::One)
+        .all(|c| h & sk::class_bit(c.class) != 0);
+    if shield && !(one && all_one) {
         names.push(s.hands_shield.to_string());
     }
     names.join(" · ")
@@ -670,7 +693,11 @@ pub(super) fn spots_on(plate: Plate) -> Vec<(usize, Spot)> {
                         Col::Mid => 1.0,
                         Col::Right => 2.0,
                     };
-                    let x = COL_W * col + COL_W * (k as f32 + 0.5) / peers.len() as f32;
+                    // 한 자리에 넷 넘게 서면(0274 — 한손검의 가운데 열) 갈래 폭을 나누면 칸이 겹친다: 칸 사이를 칸 폭 + 2로 벌려
+                    // 갈래의 가운데를 두고 옆 갈래 쪽으로 넘친다(옆 갈래는 그 줄에 하나뿐이라 닿지 않는다 — 시험).
+                    let n = peers.len() as f32;
+                    let step = (COL_W / n).max(SKILL + 2.0);
+                    let x = COL_W * (col + 0.5) + step * (k as f32 - (n - 1.0) * 0.5);
                     let y = band_top(plate, s.row as usize) + CELL_TOP + SKILL * 0.5;
                     let half = match s.entry {
                         Entry::Vein(_) => PASSIVE * 0.5,
@@ -2612,7 +2639,17 @@ mod tests {
                         })
                     }
                 };
-                if let Some(col) = col {
+                // 한 자리에 넷 넘게 선 갈래(0274 — 한손검의 가운데 열)는 옆 갈래 쪽으로 넘친다: 겹침은 아래가 본다.
+                let crowded = matches!(plate, Plate::Class(_) | Plate::Shield)
+                    && plate.seat(e).is_some_and(|me| {
+                        plate
+                            .seats()
+                            .iter()
+                            .filter(|o| o.row == me.row && o.col == me.col)
+                            .count()
+                            > 3
+                    });
+                if let Some(col) = col.filter(|_| !crowded) {
                     let x0 = geo::COL_W * col as f32;
                     assert!(
                         c.x - h >= x0 && c.x + h <= x0 + geo::COL_W,
@@ -2642,11 +2679,11 @@ mod tests {
         }
         // 무기 판의 스킬·큰 기술은 결보다 큰 칸.
         let duel = SWORD;
-        let (cut, rift) = (
+        let (cut, shock) = (
             spot_on(duel, at(Entry::Skill(Id::Cut))).unwrap(),
-            spot_on(duel, at(Entry::Vein(crate::progression::Vein::Rift))).unwrap(),
+            spot_on(duel, at(Entry::Vein(crate::progression::Vein::Shock))).unwrap(),
         );
-        assert!(cut.half > rift.half && cut.c.y < rift.c.y);
+        assert!(cut.half > shock.half && cut.c.y < shock.c.y);
         // 판 줄은 격자 머리 위, 상세 칸은 창 안.
         assert!(geo::TOP == geo::STRIP_H + geo::HEAD_H);
         assert!(geo::DETAIL_X + geo::DETAIL_W <= super::super::frame::WINDOW_W - 16.0);
@@ -2658,6 +2695,11 @@ mod tests {
     fn every_entry_stands_on_some_plate_and_the_body_keeps_the_passives() {
         for (i, &e) in ENTRIES.iter().enumerate() {
             let on: Vec<Plate> = PLATES.into_iter().filter(|p| p.has(e)).collect();
+            // 0274 ②: 균열의 속성 패시브는 단검 트리(③)가 올 때까지 서지 않는다(`plates::HOMELESS`).
+            if matches!(e, Entry::Vein(v) if plates::HOMELESS.contains(&v.kind())) {
+                assert!(on.is_empty(), "{e:?}");
+                continue;
+            }
             assert!(!on.is_empty(), "{e:?} stands on no plate");
             assert_eq!(
                 on.contains(&Plate::Body),
@@ -2791,22 +2833,35 @@ mod tests {
     fn walking_reaches_every_cell_of_every_plate_from_anywhere() {
         let duel = SWORD;
         let w = |from, dx, dy| walk(duel, from, dx, dy, true, 0);
+        // 0274: 한손검 판 = 왼쪽 충격(자루 치기 · 밀치기 · 결) · 가운데(휘돌이 · 가로지르기 · 끌어모으기 · 바늘땀 / 던지기 ·
+        // 제비걸음 / 몰아치기) · 오른쪽 흡수(버팀 · 재기 · 결).
         let (whirl, cut, swallow, throw) = (
             at(Entry::Skill(Id::Whirl)),
             at(Entry::Skill(Id::Cut)),
             at(Entry::Skill(Id::Swallow)),
             at(Entry::Skill(Id::Throw)),
         );
+        let (brace, rally, shove) = (
+            at(Entry::Skill(Id::Brace)),
+            at(Entry::Skill(Id::Rally)),
+            at(Entry::Skill(Id::Shove)),
+        );
         let flurry = at(Entry::Ult(Ult::Flurry));
         assert_eq!(w(whirl, 0, -1), STRIP);
         assert_eq!(w(cut, 0, -1), STRIP);
-        assert_eq!(w(cut, 1, 0), cut, "the right edge");
-        assert_eq!(w(cut, 0, 1), throw, "the right branch goes down its column");
-        assert_eq!(w(swallow, 1, 0), throw);
-        // 0270 C3: 결투 판의 셋째 줄 왼쪽은 날카로움의 결.
+        assert_eq!(w(brace, 1, 0), brace, "the right edge");
         assert_eq!(
-            w(swallow, 0, 1),
-            at(Entry::Vein(crate::progression::Vein::Sharp)),
+            w(brace, 0, 1),
+            rally,
+            "the right branch goes down its column"
+        );
+        assert_eq!(w(shove, 1, 0), throw);
+        assert_eq!(w(throw, 1, 0), swallow);
+        assert_eq!(w(swallow, 1, 0), rally);
+        // 셋째 줄 왼쪽은 충격의 결.
+        assert_eq!(
+            w(shove, 0, 1),
+            at(Entry::Vein(crate::progression::Vein::Shock)),
             "the left branch goes down its column"
         );
         assert_eq!(w(flurry, 0, 1), RESPEC);
@@ -2873,19 +2928,19 @@ mod tests {
     fn a_plate_opens_on_its_first_buyable_cell_or_first_learned_skill() {
         let duel = SWORD;
         let b = Board::default();
-        // 결투 판의 첫 줄(읽는 차례: 왼쪽 바늘땀 → 가운데 휘돌이 · 끌어모으기 · 버팀 → 오른쪽 가로지르기 — 0270 C3).
-        let stitch = at(Entry::Skill(Id::Stitch));
-        assert_eq!(first_focus_on(duel, &b, 5, true), stitch);
-        assert_eq!(first_focus_on(duel, &b, 0, true), stitch, "nothing to buy");
-        assert_eq!(first_focus_on(duel, &b, 5, false), stitch, "view only");
+        // 한손검 판의 첫 줄(읽는 차례: 왼쪽 자루 치기 → 가운데 휘돌이 · 가로지르기 · 끌어모으기 · 바늘땀 → 오른쪽 버팀 — 0274).
+        let pommel = at(Entry::Skill(Id::Pommel));
+        assert_eq!(first_focus_on(duel, &b, 5, true), pommel);
+        assert_eq!(first_focus_on(duel, &b, 0, true), pommel, "nothing to buy");
+        assert_eq!(first_focus_on(duel, &b, 5, false), pommel, "view only");
         let mut full = Board::default();
-        full.rank[Id::Stitch.index()] = sk::MAX_RANK;
+        full.rank[Id::Pommel.index()] = sk::MAX_RANK;
         full.rank[Id::Whirl.index()] = sk::MAX_RANK;
         assert_eq!(
             first_focus_on(duel, &full, 15, true),
-            at(Entry::Skill(Id::Gather))
+            at(Entry::Skill(Id::Cut))
         );
-        assert_eq!(first_focus_on(duel, &full, 10, true), stitch, "all spent");
+        assert_eq!(first_focus_on(duel, &full, 10, true), pommel, "all spent");
         let mut cut = Board::default();
         cut.rank[Id::Cut.index()] = 1;
         assert_eq!(
@@ -3180,6 +3235,9 @@ mod tests {
         keyless.rank[Id::Ram.index()] = 0;
         keyless.rank[Id::Toll.index()] = 0;
         keyless.rank[Id::Ripple.index()] = 0;
+        // 0274: 한손검의 자루 치기 · 재기도 맞받기 갈래.
+        keyless.rank[Id::Pommel.index()] = 0;
+        keyless.rank[Id::Rally.index()] = 0;
         keyless.ult[Ult::Line.index()] = 0;
         keyless.ult[Ult::Bell.index()] = 0;
         keyless.rank[Id::Pin.index()] = 0;

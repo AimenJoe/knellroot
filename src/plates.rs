@@ -42,6 +42,11 @@ pub const PLATES: [Plate; NP] = {
 pub const SHIELD_PAIR: [Kind; 2] = [Kind::Drain, Kind::Knell];
 pub const SHIELD_GREAT: Ult = Ult::Bell;
 
+/// 지금 어느 트리에도 대표 속성으로 서지 않는 속성(0274 ② — 한손검이 충격 · 흡수로 바뀌어 균열의 속성 패시브가 설 곳이 없다).
+/// 쌍단검 트리(0274 ③ — 날카로움 · 균열)가 오면 비운다. 그 속성 패시브를 산 기록은 읽을 때 포인트로 돌려받는다(`drop_unseated`).
+/// 균열의 스킬(가로지르기 · 던지기 · …)은 한손검 트리에 그대로 서 있다(가운데 열).
+pub const HOMELESS: [Kind; 1] = [Kind::Rift];
+
 /// 무기 판의 줄이 열리는 때(그 판에 쓴 점수): 첫 스킬 · 둘째 스킬 · 결과 큰 기술.
 pub const PLATE_ROWS: [u32; 3] = [0, 3, 6];
 
@@ -302,7 +307,11 @@ mod tests {
             homes.extend([a, b]);
         }
         for k in crate::status::TYPED {
-            assert!(homes.contains(&k), "{k:?} belongs to no weapon");
+            assert_eq!(
+                homes.contains(&k),
+                !HOMELESS.contains(&k),
+                "{k:?} belongs to no weapon"
+            );
         }
     }
 
@@ -340,9 +349,53 @@ mod tests {
         assert_eq!(Plate::held(W::Fists.grip(true)), Some(Plate::Shield));
         assert_eq!(Plate::held(W::Sword.grip(false)), Some(SWORD));
         assert_eq!(Plate::held(W::Sword.grip(true)), Some(Plate::Shield));
-        assert_eq!(Plate::held(W::Hammer.grip(true)), Some(HAMMER), "two hands");
+        // 0274: 망치도 한손 — 방패와 함께면 방패 판(한손검과 같다).
+        assert_eq!(Plate::held(W::Hammer.grip(true)), Some(Plate::Shield));
+        assert_eq!(Plate::held(W::Hammer.grip(false)), Some(HAMMER));
+        assert_eq!(Plate::held(W::Spear.grip(true)), Some(SPEAR), "two hands");
         assert_eq!(Plate::held(W::Crossbow.grip(false)), Some(CROSSBOW));
         assert_eq!(Plate::held(W::Bow.grip(false)), Some(BOW));
+    }
+
+    /// 0274 ②: 한손검 판 = 전사의 결 — 왼쪽 충격(자루 치기 · 밀치기 · 결) · 오른쪽 흡수(버팀 · 재기 · 결) · 가운데에 옛 짝(날카로움 ·
+    /// 균열)의 스킬이 그대로 선다(가로지르기 · 바늘땀 · 던지기 · 제비걸음 — 쌍단검 트리가 오면 그리로, ③). 궁극기는 몰아치기 그대로.
+    #[test]
+    fn the_sword_plate_is_shock_and_drain_and_keeps_the_old_arts_in_the_middle() {
+        assert_eq!(SWORD.pair(), Some([Kind::Shock, Kind::Drain]));
+        assert_eq!(SWORD.great(), Some(Ult::Flurry));
+        let at = |col: Col, row: u8| -> Vec<Entry> {
+            SWORD
+                .seats()
+                .into_iter()
+                .filter(|s| s.col == col && s.row == row)
+                .map(|s| s.entry)
+                .collect()
+        };
+        let sk = |ids: &[Id]| ids.iter().map(|&i| Entry::Skill(i)).collect::<Vec<_>>();
+        assert_eq!(at(Col::Left, 0), sk(&[Id::Pommel]));
+        assert_eq!(at(Col::Left, 1), sk(&[Id::Shove]));
+        assert_eq!(at(Col::Right, 0), sk(&[Id::Brace]));
+        assert_eq!(at(Col::Right, 1), sk(&[Id::Rally]));
+        assert_eq!(
+            at(Col::Mid, 0),
+            sk(&[Id::Whirl, Id::Cut, Id::Gather, Id::Stitch])
+        );
+        assert_eq!(at(Col::Mid, 1), sk(&[Id::Throw, Id::Swallow]));
+        assert_eq!(at(Col::Left, 2), [Entry::Vein(Vein::Shock)]);
+        assert_eq!(at(Col::Mid, 2), [Entry::Ult(Ult::Flurry)]);
+        assert_eq!(at(Col::Right, 2), [Entry::Vein(Vein::Drain)]);
+        // 새 셋은 한손검만의 것(방패 없이 — 방패를 들면 방패 트리).
+        for id in [Id::Pommel, Id::Shove, Id::Rally] {
+            assert!(
+                !SHIELD_PLATE_HAS(id) && SWORD.has(Entry::Skill(id)),
+                "{id:?}"
+            );
+        }
+    }
+
+    #[allow(non_snake_case)]
+    fn SHIELD_PLATE_HAS(id: Id) -> bool {
+        Plate::Shield.has(Entry::Skill(id))
     }
 
     /// 0272: 원거리 판을 쇠뇌와 활로 갈랐다 — 종류마다 제 타입 짝과 큰 기술 하나, 타입 갈래마다 첫 줄과 둘째 줄의 스킬.
@@ -389,7 +442,7 @@ mod tests {
                 n(BOW),
                 n(Plate::Shield)
             ],
-            [10, 11, 10, 9, 8, 10]
+            [13, 11, 10, 9, 8, 10]
         );
         // 옛 원거리 판에 섰던 스킬은 모두 두 판 가운데 하나에는 선다(0270 C5 — 돌려줄 것이 없다).
         for id in [
@@ -580,14 +633,26 @@ mod tests {
         assert!(!can_buy(&all, 99));
     }
 
-    /// 0270 C5: 지금은 판의 칸 모두가 어느 판에든 선다 — 돌려줄 것이 없다(새 칸을 표에 더하고 판에 안 앉히면 여기서 걸린다).
+    /// 0270 C5: 판의 칸 모두가 어느 판에든 선다 — 0274 ②의 균열의 속성 패시브(`HOMELESS`)만 빼고(새 칸을 표에 더하고 판에 안 앉히면
+    /// 여기서 걸린다). 다 산 판에서 돌려받는 것은 그 결 하나뿐이다 — 균열의 스킬은 한손검 트리에 그대로.
     #[test]
     fn every_entry_stands_on_some_plate_today() {
+        use crate::progression::Vein;
         for e in ENTRIES {
-            assert!(stands(e), "{e:?} stands on no plate");
+            let homeless = matches!(e, Entry::Vein(v) if HOMELESS.contains(&v.kind()));
+            assert_eq!(stands(e), !homeless, "{e:?} stands on no plate");
         }
         let all = Board::maxed(crate::skills::Pick::B);
-        assert_eq!(drop_unseated(all), all, "nothing is refunded");
+        let mut want = all;
+        want.forget(Entry::Vein(Vein::Rift));
+        assert_eq!(
+            drop_unseated(all),
+            want,
+            "only the rift passive is refunded"
+        );
+        for id in [Id::Cut, Id::Throw, Id::Swallow, Id::Stitch] {
+            assert!(stands(Entry::Skill(id)), "{id:?} stays on the sword tree");
+        }
     }
 
     /// 0270 C5: 어느 판에도 서지 않는 칸만 처음으로 — 그 점수는 남은 점수로 돌아오고, 나머지 산 것은 그대로.

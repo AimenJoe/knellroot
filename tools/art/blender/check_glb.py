@@ -54,6 +54,8 @@ EXPECT = {
                  "fist_dash": 0.3, "parry_push": 0.4, "plunge_land": 0.35,
                  # 0200: 망치 달리기 앞차기(망치 대시 구간 0.688).
                  "hammer_dash": 0.69,
+                 # 0274: 한손 망치 3연타(0.4945 · 0.4945 · 0.602).
+                 "hammer1": 0.49, "hammer2": 0.49, "hammer3": 0.6,
                  # 0158 G2 스킬 동작 — 길이 = 시동 + 이어짐 + 후딜(`skills.rs` 표의 바탕값).
                  "sk_whirl": 0.67, "sk_cut": 0.57, "sk_gather": 0.5, "sk_quake": 0.7, "sk_brace": 1.65, "sk_echo": 0.45,
                  "sk_throw": 0.53, "sk_embers": 0.55, "ult_upend": 1.0, "ult_flurry": 0.5, "ult_line": 0.9,
@@ -64,7 +66,9 @@ EXPECT = {
                  "sk_fuse": 0.5, "sk_mine": 0.43, "ult_rain": 0.95,
                  # 0272 2단계 창: 평타 셋 · 달리며 찌르기 · 모으기 · 강타(판정 구간 + 후딜) · 기술 셋 · 질풍 찌르기.
                  "spear1": 0.5, "spear2": 0.5, "spear3": 0.58, "spear_dash": 0.43, "spear_charge": 0.3, "spear_lunge": 0.67,
-                 "sk_skewer": 0.66, "sk_pin": 0.46, "sk_pole": 0.55, "ult_gale": 1.45},
+                 "sk_skewer": 0.66, "sk_pin": 0.46, "sk_pole": 0.55, "ult_gale": 1.45,
+                 # 0274 한손검: 자루 치기 · 밀치기 · 재기.
+                 "sk_pommel": 0.4, "sk_shove": 0.44, "sk_rally": 0.55},
     "root_husk": {"idle": 1.6, "walk": 1.0, "attack": 1.3, "hurt": 0.3},
     "thorn_beast": {"idle": 1.4, "run": 0.5, "charge_windup": 0.6, "charge": 0.4, "recover": 0.7, "hurt": 0.3},
     "gatekeeper": {"idle": 2.0, "walk": 1.4, "slam": 1.5, "charge_windup": 0.8, "charge": 0.5,

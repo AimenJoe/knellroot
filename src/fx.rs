@@ -2503,6 +2503,53 @@ impl Fx {
                 );
                 self.star(g + dir * 0.8 + Vec3::Y * 0.3, 1.3, 0.1, AMBER);
             }
+            // 자루 치기(0274): 칼자루가 닿는 가까운 자리의 노란 별(충격) + 짧고 좁은 부채꼴 충격파 — 끊긴 적은 따로(`Interrupt`).
+            (Sk::Pommel, Form::Bash { range, arc_deg, .. }) => {
+                self.star(g + dir * 0.7 + Vec3::Y * 1.0, 1.4, 0.09, SHOCK);
+                self.mark(
+                    g,
+                    MarkKind::Shock {
+                        dir,
+                        r0: 0.4,
+                        r1: range,
+                        arc_deg,
+                    },
+                    0.18,
+                    SHOCK,
+                );
+            }
+            // 밀치기(0274): 내지른 발 앞의 흰 별 + 앞으로 밀리는 넓은 충격파(민트) + 앞으로 차이는 먼지.
+            (Sk::Shove, Form::Cone { range, arc_deg, .. }) => {
+                self.star(g + dir * 0.8 + Vec3::Y * 0.5, 1.5, 0.1, WHITE_HOT);
+                self.mark(
+                    g,
+                    MarkKind::Shock {
+                        dir,
+                        r0: 0.5,
+                        r1: range,
+                        arc_deg,
+                    },
+                    0.22,
+                    MINT,
+                );
+                self.dust_kick(g, dir, 5, 0.6);
+            }
+            // 재기(0274): 몸에서 번지는 민트 고리 + 둥근 먼지 — 체력이 도는 빛은 `Mend`가 낸다.
+            (Sk::Rally, Form::Rally { radius, .. }) => {
+                self.mark_with(
+                    g,
+                    MarkKind::Ring {
+                        r0: 0.3,
+                        r1: radius,
+                    },
+                    0.3,
+                    MINT,
+                    0.0,
+                    true,
+                    false,
+                );
+                self.dust_ring(g, 0.4, 8, 3.0, 0.4, DUST);
+            }
             _ => {}
         }
     }

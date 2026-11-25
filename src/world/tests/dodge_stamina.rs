@@ -85,7 +85,11 @@ fn heavier_weapons_spend_more_stamina_per_swing() {
     };
     let sword = spent(weapons::Id::Sword);
     assert!((sword - t[P::StaminaAttack]).abs() < 0.5, "{sword}");
-    assert!((spent(weapons::Id::Hammer) - sword * 1.7).abs() < 0.5);
+    assert!((spent(weapons::Id::Hammer) - sword * weapons::Id::Hammer.def().stamina).abs() < 0.5);
+    assert!(
+        spent(weapons::Id::Hammer) > sword * 1.3,
+        "the hammer is still the heaviest swing"
+    );
     assert!(spent(weapons::Id::Fists) < sword);
 }
 

@@ -1332,7 +1332,11 @@ impl App {
                         | Sk::Mine
                         | Sk::Skewer
                         | Sk::Pole
-                        | Sk::Pin => Id::Swing,
+                        | Sk::Pin
+                        | Sk::Pommel
+                        | Sk::Shove => Id::Swing,
+                        // 0274: 재기 = 발을 딛는 둔한 소리(숨을 몰아쉬고 선다).
+                        Sk::Rally => Id::Thwack,
                         // 0272: 심지 볼트 = 잔불 소리(심지에 불이 붙는다).
                         Sk::Fuse => Id::Ember,
                     }
@@ -1367,6 +1371,10 @@ impl App {
                         Sk::Skewer => Id::Dodge,
                         Sk::Pole => Id::Swing,
                         Sk::Pin => Id::Hit,
+                        // 0274(한손검): 자루 치기 = 타격, 밀치기 = 둔한 소리, 재기 = 가운데 종(체력이 도는 소리는 `Mend`가 낸다).
+                        Sk::Pommel => Id::Hit,
+                        Sk::Shove => Id::Thwack,
+                        Sk::Rally => Id::Beat2,
                     }
                 }
                 Event::SkillDenied => Id::Deny,

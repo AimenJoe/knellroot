@@ -36,9 +36,12 @@ fn a_shield_turns_the_sword_from_duelling_arts_to_shield_arts() {
     assert_eq!(w.player.skill.rank, [1, 1]);
     w.set_shield(Some(crate::shield::Id::Pilgrim));
     assert_eq!(w.player.skill.rank, [1, 1]);
-    // 두 손 무기를 들면 방패는 쉰다 — 쥔 꼴은 그 무기의 것.
+    // 0274: 망치도 한손 — 방패와 함께면 방패 판의 기술(한손검과 같다).
     w.set_weapon(W::Hammer);
-    assert_eq!(w.grip(), Grip::Class(Class::Hammer));
+    assert_eq!(w.grip(), Grip::Shield);
+    // 두 손 무기(창)를 들면 방패는 쉰다 — 쥔 꼴은 그 무기의 것.
+    w.set_weapon(W::Spear);
+    assert_eq!(w.grip(), Grip::Class(Class::Spear));
 }
 
 /// 망치의 물리력: 타입 없는 스킬(휘돌이)의 피해·자세 피해가 무기의 배만큼 — 타입 있는 스킬(던지기)은 그대로. 검은 배가 없다.

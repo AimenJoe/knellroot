@@ -1353,7 +1353,7 @@ mod tests {
         let hammer = weapon_numbers(weapons::Id::Hammer.def(), &t, &none);
         let line = |v: &[WVal], l: WLine| v.iter().find(|x| x.line == l).unwrap().clone();
         assert_eq!(line(&sword, WLine::Damage).text, "10·10·20");
-        assert_eq!(line(&hammer, WLine::Damage).text, "20·30");
+        assert_eq!(line(&hammer, WLine::Damage).text, "10·10·30");
         assert!(line(&hammer, WLine::Speed).score > line(&sword, WLine::Speed).score);
         let cmp = weapon_compare(&sword, &hammer);
         let ch = |l: WLine| cmp.iter().find(|(v, _)| v.line == l).unwrap().1;
