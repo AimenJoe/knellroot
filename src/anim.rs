@@ -77,11 +77,13 @@ impl Memory {
         let pl = &w.player;
         let speed = speed(w);
         let wpn = pl.weapon.def();
-        let hv = wpn.heavy;
+        // 빈 손의 결(0276 — 두 손으로 쥔 한손검은 망치의 내려치기)까지 든 강공격.
+        let hv = w.heavy_of();
         let combo_anim = |hit: u8| wpn.hit(hit).map_or("attack", |h| h.anim);
         let shot = matches!(wpn.rb, crate::weapons::Rb::Shot { .. });
         // 던지는 RB(0274 ②b — 손도끼 · 창 · 돌): 머리 위로 휘둘러 던지는 동작(스킬 던지기의 것).
-        let toss = !shot && pl.weapon.bolts().0.thrown();
+        // 0276: 방패를 든 한손 무기면 방패를 던진다(같은 동작).
+        let toss = !shot && w.rb_bolts().0.thrown();
         // 서 있는 동안(0153): 숨 고리 + 조용할 때 가끔 몸짓. 조용함 = 락온이 아니고 가까이 깨어 있는 적이 없다.
         // 월드 시계로 지난 초(멈춤 창·히트스톱 동안 0) — 서 있는 몸짓·걸음 시계·섞기가 같이 쓴다.
         let wdt = (w.time - self.idle_at).clamp(0.0, 0.1);
@@ -173,6 +175,10 @@ impl Memory {
             PState::Parry { t: e } => Pick::of(&["parry", "attack"], e),
             // 방패 막기(0223): 방패를 내민 자리에 머문다(`block` — 끝 자세에서 멈춘다).
             PState::Block { t: e } => Pick::of(&["block", "parry", "attack"], e),
+            // 들이받기(0276): 방패 돌진(스킬)의 밀기 동작 — 당겨 든 자리(`RUSH_CLIP_FROM`)부터, 내달리는 동안이 미는 구간에 오게.
+            PState::Rush { t: e, .. } => {
+                Pick::of(&["sk_ram", "parry_push", "block"], RUSH_CLIP_FROM + e)
+            }
             // 마법(0048): 손을 앞으로 내미는 자세(전용 동작이 생기기 전엔 패링 자세).
             PState::Cast { t: e, .. } if shot => Pick::of(shoot, e),
             // 던지기(0274 ②b): 손을 떠나는 자리(`TOSS_RELEASE`)가 탄이 나가는 때(`cast.startup s`)에 오게 돌린다.
@@ -341,6 +347,8 @@ pub const WALK_BACK_RATE: f32 = 2.8;
 pub const BACKSTEP_DOT: f32 = -0.5;
 /// 쇠뇌를 쏜 뒤 서 있으면 이만큼(초) 겨눈 채 머문다(0197 — 쏠 때마다 정면 ↔ 옆으로 홱 돌지 않게, 끝나면 `AIM_BLEND`로 천천히 내린다).
 pub const AIM_HOLD: f32 = 0.7;
+/// 들이받기(0276)가 트는 방패 돌진 동작(`sk_ram` — 0.15초에 당겨 든 자리)의 시작 시각.
+pub const RUSH_CLIP_FROM: f32 = 0.15;
 /// 겨눈 채 머무는 자세의 시각(쏘기 동작의 끝 바로 앞).
 pub const XBOW_HOLD_AT: f32 = 0.235;
 

@@ -656,6 +656,9 @@ impl App {
         self.world.set_weapon(self.weapon);
         self.world.set_sub(self.progress.sub);
         self.world.set_shield(self.progress.shield);
+        // 빈 손의 결(0276): 보조무기 슬롯이 비었나 — 장비가 바뀌는 길은 모두 여기를 지난다(들기 · 보조무기 · 방패 · 판 세우기).
+        self.world
+            .set_open_hand(self.progress.sub.is_none() && self.progress.shield.is_none());
         self.renderer.shield = self.progress.shield;
         // 든 것이 바뀌면 능력치도 다시 합친다(벼린 단 0180 · 낀 아이템의 옵션 0223 V4 — 무기는 든 것만).
         self.world.apply_stats(self.progress.stats(), false);
@@ -1350,7 +1353,7 @@ impl App {
                         locked: self.world.lock_target().is_some(),
                         turn: self.world.turn_ready(&self.t),
                         attack: touch::attack_icon(pl.weapon),
-                        cast: touch::cast_icon(pl.weapon),
+                        cast: touch::rb_icon(&self.world),
                         swap: pl.sub.map_or(touch::Kind::Swap, touch::attack_icon),
                         skills: [skill(0), skill(1)],
                         vacant: [0, 1].map(|i| pl.skill.rank[i] == 0),

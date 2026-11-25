@@ -104,6 +104,9 @@ pub enum Kind {
     Slip,
     Ambush,
     Knives,
+    /// 그림만(0276): 던지는 방패(하데스의 방패 — 한손 무기 + 방패의 RB) · 쇠 덫(빈 손의 쇠뇌 — 수류탄 자리).
+    ShieldToss,
+    IronSnare,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
@@ -998,7 +1001,9 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Pebble
         | Kind::Slip
         | Kind::Ambush
-        | Kind::Knives => {}
+        | Kind::Knives
+        | Kind::ShieldToss
+        | Kind::IronSnare => {}
         Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
@@ -1125,12 +1130,25 @@ pub fn cast_icon(w: crate::weapons::Id) -> Kind {
     }
 }
 
+/// 지금 특수 버튼(RB · 원거리 무기의 수류탄 자리)의 그림(0276): 방패가 RB를 맡으면 던지는 방패, 빈 손의 쇠뇌면 쇠 덫, 그 밖에는
+/// 든 무기의 것(`cast_icon`). 터치 버튼과 HUD의 칸이 같이 읽는다.
+pub fn rb_icon(w: &crate::world::World) -> Kind {
+    if w.shield_throws() {
+        Kind::ShieldToss
+    } else if w.bare() == Some(crate::weapons::Bare::Snare) {
+        Kind::IronSnare
+    } else {
+        cast_icon(w.player.weapon)
+    }
+}
+
 /// 종류의 RB 꼴(`weapons::Bolt::look`) → 그림(0274 ②b). 마법 탄(0 · 1 · 2)은 별.
 pub fn toss_icon(look: u8) -> Kind {
-    use crate::weapons::{AXE, JAVELIN, KNIFE, LIGHT, STONE};
+    use crate::weapons::{AXE, JAVELIN, KNIFE, LIGHT, SHIELD, STONE};
     match look {
         AXE => Kind::HandAxe,
         KNIFE => Kind::Knives,
+        SHIELD => Kind::ShieldToss,
         LIGHT => Kind::Smite,
         JAVELIN => Kind::Javelin,
         STONE => Kind::Pebble,
@@ -2235,6 +2253,38 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             ".#....#....#.",
             ".............",
         ],
+        // 던지는 방패(0276): 기운 방패 한 장이 오른쪽 위로 날고, 꼬리에 도는 바람 줄 둘.
+        Kind::ShieldToss => [
+            ".............",
+            "......######.",
+            ".....#######.",
+            ".....##...##.",
+            ".....##.#.##.",
+            ".....##...##.",
+            "......##.##..",
+            ".......###...",
+            "..#.....#....",
+            ".##..........",
+            "##...#.......",
+            "#...##.......",
+            "...##........",
+        ],
+        // 쇠 덫(0276): 바닥에 벌어진 쇠 이빨 두 줄과 가운데 발판.
+        Kind::IronSnare => [
+            ".............",
+            ".............",
+            "#.#.#...#.#.#",
+            "#####...#####",
+            "##.........##",
+            "##...###...##",
+            "##..#####..##",
+            "##...###...##",
+            "##.........##",
+            "#############",
+            ".............",
+            ".............",
+            ".............",
+        ],
         // 창 던지기(0274 ②b): 오른쪽 위로 날아가는 창(촉이 앞) + 꼬리의 바람 줄.
         Kind::Javelin => [
             "..........###",
@@ -2556,6 +2606,8 @@ mod tests {
             Kind::Slip,
             Kind::Ambush,
             Kind::Knives,
+            Kind::ShieldToss,
+            Kind::IronSnare,
             Kind::Pick,
             Kind::Open,
             Kind::Pull,

@@ -65,6 +65,7 @@ impl Renderer {
         carts(w, alpha);
         skill_spikes(w);
         cast_charge(w, pp, t, &fl);
+        rush_charge(w, pp, &fl);
         throw_aim(w, pp, t, &fl);
         cracks(w, &fl);
         blasts(w, &fl);
@@ -659,10 +660,46 @@ fn bombs(w: &World, alpha: f32) {
     }
 }
 
+/// 들이받기에 모인 힘(0276 — 하데스의 방패): 막는 동안 발밑의 쇳빛 테가 둘레를 따라 차오르고, 들이받을 수 있으면(`RUSH_MIN`) 앞으로
+/// 들이받을 길이 옅게 선다(모인 만큼 길다). 가득이면 테가 금빛으로 깜빡인다. 빨강 없음.
+fn rush_charge(w: &World, pp: Vec3, fl: &Drape) {
+    if !matches!(w.player.state, PState::Block { .. }) {
+        return;
+    }
+    let k = w.player.off.rush.clamp(0.0, 1.0);
+    let steel = Color::new(0.86, 0.9, 1.0, 1.0);
+    let gold = Color::new(1.0, 0.86, 0.5, 1.0);
+    let c = pp + Vec3::Y * 0.05;
+    fl.ring(c, 0.95, 0.0, 360.0, with_a(steel, 0.2));
+    let full = k >= 1.0;
+    let blink = full && (w.time * 10.0) as i32 % 2 == 0;
+    let col = if full { gold } else { steel };
+    // 안에서 바깥 테로 자라는 테(모인 만큼).
+    fl.ring(
+        c,
+        0.25 + 0.7 * k,
+        0.0,
+        360.0,
+        with_a(col, if blink { 1.0 } else { 0.4 + 0.4 * k }),
+    );
+    if k >= crate::tuning::RUSH_MIN {
+        let (d0, d1) = crate::tuning::RUSH_DIST;
+        let dist = d0 + (d1 - d0) * k;
+        fl.lane(
+            c,
+            w.player.facing_dir(),
+            dist,
+            0.45,
+            with_a(col, 0.08 + 0.12 * k),
+        );
+    }
+}
+
 fn cast_charge(w: &World, pp: Vec3, t: &Tuning, fl: &Drape) {
     // 원거리 강공격 모으기(0056): 손에 빛이 자라고 발밑 고리가 차오른다(근접 강공격과 같은 문법), 다 모이면 깜빡인다.
     if let PState::CastCharge { t: e } = w.player.state {
-        let full = t[crate::tuning::P::CastCharge].max(1e-3);
+        // 두 손으로 엮는 지팡이(0276)는 빨리 모인다 — 월드와 같은 셈.
+        let full = w.cast_full(t).max(1e-3);
         let k = (e / full).clamp(0.0, 1.0);
         let (core, glow) = BOLT_LOOKS[(wpn_look(w) as usize).min(BOLT_LOOKS.len() - 1)];
         let hand = pp
@@ -766,7 +803,10 @@ fn swing_crescent(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon)
             // 몰아치기(0158 G2) 동안은 평타의 시계가 빨라진다 — 빛도 같은 배로.
             let e = e * w.flurry_rate();
             let (s0, a0, _) = crate::world::hit_times(t, wpn, hit);
-            if let Some(h) = wpn.hit(hit).filter(|_| e >= s0 && e < s0 + a0 + SLASH_FADE) {
+            if let Some(h) = w
+                .hit_of(hit)
+                .filter(|_| e >= s0 && e < s0 + a0 + SLASH_FADE)
+            {
                 let q = ((e - s0) / a0.max(1e-3)).clamp(0.0, 1.0);
                 // 활성 뒤: 휘두른 쪽으로(세로는 양 끝에서) 줄어들며 옅어진다(0195).
                 let gone = ((e - s0 - a0) / SLASH_FADE).clamp(0.0, 1.0);
@@ -825,7 +865,7 @@ fn beat_fan(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon, fl: &
     } else if let PState::Attack { t: e, hit, .. } = w.player.state {
         // 이을 타가 없는 타(마지막 타)는 박자가 없다 — 활성 동안 판정 부채꼴만.
         let (s0, a0, _) = crate::world::hit_times(t, wpn, hit);
-        if let Some(h) = wpn.hit(hit) {
+        if let Some(h) = w.hit_of(hit) {
             if e >= s0 && e < s0 + a0 {
                 let arc = crate::world::swing_arc(
                     h.shape,
@@ -892,7 +932,7 @@ fn heavy_charge(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon, f
 
 /// 강타의 활성 구간: 넓은 부채꼴 + 초승달(0145).
 fn heavy_swing(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon, fl: &Drape) {
-    if let (PState::Heavy { t: e, full, .. }, Some(h)) = (w.player.state, wpn.heavy) {
+    if let (PState::Heavy { t: e, full, .. }, Some(h)) = (w.player.state, w.heavy_of()) {
         let (s0, a0, _) = crate::world::heavy_times(t, wpn);
         let (s1, arc) = (
             s0 + a0,

@@ -358,6 +358,10 @@ impl App {
             self.world.set_sub(Some(sub));
             self.sandbox_stats();
         }
+        // 놀이터의 보조무기 슬롯(0276): 개발 창이 멘 것 · 든 방패가 없으면 빈 손.
+        let pl = &self.world.player;
+        let open = pl.sub.is_none() && pl.shield.is_none();
+        self.world.set_open_hand(open);
     }
 
     /// 놀이터의 능력치: 기록의 것에 놀이터의 보조무기 슬롯만 얹는다(보조특성 — 바꿔 들면 맞바뀐다).
@@ -637,6 +641,9 @@ impl App {
                 // 신성한 빛(0274 ②b)이 꽂히는 순간은 여진만큼, 창이 손에 돌아오는 것은 조용히.
                 Event::Smite { .. } => SHAKE_PLUNGE,
                 Event::JavelinBack { .. } => 0.0,
+                // 0276: 기도하는 손의 고리 · 덫이 무는 순간은 가볍게, 놓기 · 방패가 튕기기 · 들이받기의 출발은 조용히(맞힌 타가 제 몫을 낸다).
+                Event::Prayer { .. } | Event::SnareSnap { .. } => SHAKE_HIT,
+                Event::SnareSet { .. } | Event::ShieldBounce { .. } | Event::Rush { .. } => 0.0,
                 Event::Perfect { .. } => SHAKE_CHARGED,
                 // 락온 대상을 잃으면(0181) 풀린 뒤 자유 숄더뷰에 머문다 — 버튼으로 풀면 락온한 곳(쿼터뷰·자유)으로.
                 Event::LockLost => {
@@ -1414,6 +1421,13 @@ impl App {
                 Event::Cast { look, .. } if *look == crate::weapons::LIGHT => Id::Beat2,
                 Event::Smite { .. } => Id::Beat3,
                 Event::JavelinBack { .. } => Id::Beat,
+                // 0276(있는 소리를 겹친다): 기도하는 손 = 가운데 종 · 덫을 놓음 = 던짐 · 덫이 묾 = 쇳소리 · 방패가 튕김 = 낮은 종 ·
+                // 들이받기의 출발 = 스치는 바람(맞힌 것은 타격 소리가 따로).
+                Event::Prayer { .. } => Id::Beat2,
+                Event::SnareSet { .. } => Id::Swing,
+                Event::SnareSnap { .. } => Id::Parry,
+                Event::ShieldBounce { .. } => Id::Beat,
+                Event::Rush { .. } => Id::Dodge,
                 // 0270 C3: 눈발 = 높은 종, 뿌리 덫 = 뿌리가 깨는 소리.
                 Event::FieldPulse { kind, .. } => match kind {
                     crate::status::Kind::Frost => Id::Beat3,

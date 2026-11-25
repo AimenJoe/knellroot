@@ -266,7 +266,9 @@ impl Renderer {
             // 든 무기만 보인다(0051): 다른 무기 부위는 크기 0.
             // 던진 동안(0158 G2 던지기)은 든 것도 손에 없다 — 날아가는 자리에 그린다(`blades`).
             let away = w.weapon_away();
-            super::hide_unheld(&e.model, pl.weapon, pl.shield, away, &mut self.sec_extra);
+            // 던진 방패(0276)가 날고 있는 동안은 왼손에도 없다 — 날아가는 자리에 그린다(`shields`).
+            let shield = pl.shield.filter(|_| !w.shield_out());
+            super::hide_unheld(&e.model, pl.weapon, shield, away, &mut self.sec_extra);
             // 락온 중 옆·비스듬히 걸을 때(0197): 다리(엉덩이)를 가는 쪽으로 돌리고 윗몸(첫 등뼈)을 되돌려 과녁을 본다 — 부드럽게 따라간다.
             let leg_want = if crate::anim::walking(w) {
                 crate::anim::move_anim(pl.pos - pl.prev, pl.facing_dir(), pl.faces_away).1
@@ -380,9 +382,10 @@ impl Renderer {
                 PState::Heavy { .. } => Color::new(1.0, 0.6, 0.3, 1.0),
                 PState::Drink { .. } => Color::new(0.75, 0.9, 0.6, 1.0),
                 PState::Turn { .. } => Color::new(0.7, 0.95, 0.75, 1.0),
-                PState::Parry { .. } | PState::Recoil { .. } | PState::Block { .. } => {
-                    Color::new(0.7, 0.85, 1.0, 1.0)
-                }
+                PState::Parry { .. }
+                | PState::Recoil { .. }
+                | PState::Block { .. }
+                | PState::Rush { .. } => Color::new(0.7, 0.85, 1.0, 1.0),
                 PState::Cast { .. } | PState::Throw { .. } | PState::CastCharge { .. } => {
                     Color::new(0.75, 0.7, 1.0, 1.0)
                 }
@@ -406,6 +409,7 @@ impl Renderer {
     /// 그리지 않는다 — 빛(`skill_auras`)이 대신 보인다.
     pub(super) fn blades(&mut self, w: &World, alpha: f32, lights: &[Light]) {
         self.javelins(w, alpha, lights);
+        self.shields(w, alpha, lights);
         if w.skill_blades.is_empty() {
             return;
         }
@@ -474,7 +478,11 @@ impl Renderer {
             .collect();
         e.model.pose_with(None, 0.0, &hide, &mut self.pose);
         let undo = e.model.rest_rotation(node).inverse();
-        for b in w.bolts.iter().filter(|b| b.def.returns()) {
+        for b in w
+            .bolts
+            .iter()
+            .filter(|b| b.def.look == crate::weapons::JAVELIN)
+        {
             let p = b.prev.lerp(b.pos, alpha);
             // 돌아오는 길은 꼬리가 앞(촉은 던진 쪽을 본 채 당겨 오듯).
             let tip = if b.back { -b.dir } else { b.dir };
@@ -495,6 +503,61 @@ impl Renderer {
         }
     }
 }
+
+impl Renderer {
+    /// 던진 방패(0276 — 하데스의 방패): 방랑자 모델의 방패 부위(왼손에서는 감춘다)를 날아가는 자리에 눕혀 세로축으로 빠르게 돌린다 —
+    /// 원반처럼. 돌아오는 길도 같다.
+    fn shields(&mut self, w: &World, alpha: f32, lights: &[Light]) {
+        let Some(id) = w.player.shield.filter(|_| w.shield_out()) else {
+            return;
+        };
+        let Some(e) = self.lib.get("wanderer") else {
+            return;
+        };
+        let Some(node) = e.model.node(id.def().node) else {
+            return;
+        };
+        let Some((c, _)) = e.model.rest_bounds_under(node) else {
+            return;
+        };
+        let hide: Vec<(usize, Quat, Vec3)> = e
+            .model
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(n, nd)| nd.mesh.is_some() && !e.model.is_under(*n, node))
+            .map(|(n, _)| (n, Quat::IDENTITY, Vec3::ZERO))
+            .collect();
+        e.model.pose_with(None, 0.0, &hide, &mut self.pose);
+        let undo = e.model.rest_rotation(node).inverse();
+        for b in w
+            .bolts
+            .iter()
+            .filter(|b| b.def.look == crate::weapons::SHIELD)
+        {
+            let p = b.prev.lerp(b.pos, alpha);
+            let rot =
+                Quat::from_rotation_y(w.time * SHIELD_SPIN) * Quat::from_rotation_x(SHIELD_TILT);
+            let inst = Mat4::from_translation(p)
+                * Mat4::from_scale(Vec3::splat(SHIELD_SCALE))
+                * Mat4::from_quat(rot * undo)
+                * Mat4::from_translation(-c);
+            self.batch.model(
+                e,
+                &self.pose,
+                inst,
+                Color::new(1.5, 1.45, 1.35, 1.0),
+                lights,
+                1.0,
+            );
+        }
+    }
+}
+
+/// 던진 방패(0276): 도는 빠르기(라디안/초) · 눕힌 각(라디안 — 원반처럼) · 크기 배.
+const SHIELD_SPIN: f32 = 22.0;
+const SHIELD_TILT: f32 = std::f32::consts::FRAC_PI_2;
+const SHIELD_SCALE: f32 = 1.1;
 
 /// 준비 동작 단서(0073): 예고 끝까지 눈·핵 빛 +, 버티는 동안 떨림(m, 몸 옆으로), 정점 번쩍임 길이(초)·세기.
 const WINDUP_GLOW: f32 = 0.6;

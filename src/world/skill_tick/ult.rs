@@ -462,6 +462,7 @@ impl World {
             kindle: 0,
             drift: Vec3::ZERO,
             trap: false,
+            iron: false,
             spire: None,
         });
         self.skill_kill_left = ULT_KILL_WINDOW;
@@ -514,6 +515,7 @@ impl World {
             kindle: 0,
             drift: Vec3::ZERO,
             trap: false,
+            iron: false,
             spire: None,
         });
         self.skill_kill_left = ULT_KILL_WINDOW;

@@ -237,11 +237,25 @@ impl World {
                             flat: false,
                         },
                     );
+                    // 쇠 덫(0276): 이빨이 문 잡몹은 `SNARE_BIND`초 걷지 못한다(뿌리 솟기의 묶음과 같은 표지), 문지기는 그만큼 느려지기만.
+                    if f.iron {
+                        let en = &mut self.enemies[i];
+                        if en.boss {
+                            en.marks.hamstring = en.marks.hamstring.max(crate::tuning::SNARE_BIND);
+                        } else if en.hp > 0 {
+                            en.marks.bind = en.marks.bind.max(crate::tuning::SNARE_BIND);
+                        }
+                    }
                 }
                 // 화약 덫(0272 — 충격): 뿌리가 아니라 화약이 터진다.
                 let powder = f.dose.0 == crate::status::Kind::Shock;
                 if f.trap && powder {
                     ev.push(Event::Boom { at: f.pos });
+                } else if f.trap && f.iron {
+                    // 쇠 덫(0276): 이빨이 문다 — 뿌리는 솟지 않는다.
+                    ev.push(Event::SnareSnap {
+                        at: vec3(f.pos.x, self.ground_y(f.pos), f.pos.z),
+                    });
                 } else if f.trap {
                     // 솟는 덫: 씨 자리와 둘레에서 뿌리가 솟는다(그림 — 뿌리 솟기의 뿌리와 같은 것).
                     let g = vec3(f.pos.x, self.ground_y(f.pos), f.pos.z);

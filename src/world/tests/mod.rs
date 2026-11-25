@@ -17,6 +17,7 @@ mod growth;
 mod heavy;
 mod hurt;
 mod jump_ledge;
+mod off_hand;
 mod parry;
 mod ranged;
 mod spear;

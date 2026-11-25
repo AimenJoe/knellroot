@@ -6,7 +6,7 @@ use macroquad::prelude::*;
 use crate::i18n::{self, tr};
 use crate::render::Frame;
 use crate::stage::{StageRun, CARD_TIME, INTRO_TIME};
-use crate::tuning::{idx, CAST_CHARGES, P, SPECS};
+use crate::tuning::{idx, P, SPECS};
 use crate::tutorial::Hint;
 use crate::ui::{Ui, AMBER, DIM, INK};
 use crate::weapons::Rb;
@@ -1062,18 +1062,21 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
         }
         (Rb::Toss, _) => {
             // 종류의 RB(0274 ②b): 칸 셋 앞에 그 꼴의 그림(손도끼 · 빛 · 별 · 창 · 돌) — 던진 창이 날고 있으면 흐리게.
-            let away = w.javelin_out();
+            // 방패(0276)가 RB를 맡으면 방패 그림 하나(칸을 쓰지 않는다) — 날아가 있으면 흐리게. 두 손으로 엮는 지팡이는 칸 넷.
+            let away = w.rb_out();
             let c = vec2(mx0 + 3.0 * s, y0 + 20.5 * s);
             let tint = if mblink { DENIED } else { MANA };
             crate::touch::icon(
-                crate::touch::cast_icon(pl.weapon),
+                crate::touch::rb_icon(w),
                 c,
                 crate::touch::ICON_N as f32 * s * 0.5,
                 if away { 0.35 } else { 1.0 },
                 tint,
             );
-            for i in 0..CAST_CHARGES as i32 {
-                pip(i + 1, (pl.ranged.mana - i as f32).clamp(0.0, 1.0), MANA);
+            if !w.shield_throws() {
+                for i in 0..w.cast_charges() as i32 {
+                    pip(i + 1, (pl.ranged.mana - i as f32).clamp(0.0, 1.0), MANA);
+                }
             }
         }
     }

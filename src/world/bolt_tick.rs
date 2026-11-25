@@ -65,9 +65,11 @@ impl World {
     /// 겨눈 자리에 `Smite`로), 사격 무기 = 볼트·화살(활의 반쯤 당긴 화살은 표의 `mid_bolt`).
     fn fire_cast(&mut self, t: &Tuning, ev: &mut Vec<Event>, _wpn: &weapons::Weapon) {
         if let Some((dir, power)) = self.cast_fire.take() {
+            let (plain, c) = self.rb_bolts();
+            // 가벼운 걸음(0276 — 활의 빈 손): 끝까지 당긴 화살의 오금이 길다.
+            let light_step = self.bare() == Some(weapons::Bare::LightStep);
             let pl = &self.player;
             let pos = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT) + dir * (PLAYER_RADIUS + 0.2);
-            let (plain, c) = pl.weapon.bolts();
             let def = match power {
                 0 => plain,
                 // 반쯤 당긴 화살(0274 ②b).
@@ -94,6 +96,14 @@ impl World {
                 },
                 _ => c,
             };
+            let def = if light_step && def.lame > 0.0 {
+                weapons::Bolt {
+                    lame: weapons::BARE_BOW_LAME,
+                    ..def
+                }
+            } else {
+                def
+            };
             if power == 3 {
                 self.player.beat.since_perfect = 0.0;
                 ev.push(Event::Perfect { at: pos });
@@ -111,9 +121,7 @@ impl World {
             let left = t[P::CastRange] * def.range;
             // 좁은 부채꼴(0274 ③ — 투척 단검 셋): 겨눈 쪽을 가운데로 `spread`°씩 벌려 하나씩 — 나머지 종류는 하나.
             let (fan, spread) = self
-                .player
-                .weapon
-                .toss()
+                .rb_toss()
                 .map_or((1, 0.0), |t| (t.fan.max(1), t.spread));
             for k in 0..fan {
                 let off = (k as f32 - (fan - 1) as f32 * 0.5) * spread;
@@ -128,6 +136,7 @@ impl World {
                     hits: 0,
                     veined: [false; 5],
                     back: false,
+                    bounce: 0,
                 });
             }
         }
@@ -157,7 +166,7 @@ impl World {
     /// 지금 떼면(누르면) 나갈 RB의 탄(0274 ②b — 미리보기가 쏠 때와 같은 것을 그리게): 모으는 중이면 모은 것, 활은 당긴 단계
     /// (톡 · 반쯤 · 끝까지), 아니면 보통 한 번.
     pub fn aim_bolt(&self, t: &Tuning) -> weapons::Bolt {
-        let (plain, charged) = self.player.weapon.bolts();
+        let (plain, charged) = self.rb_bolts();
         match self.player.state {
             PState::CastCharge { t: e } => match self.player.weapon.rhythm() {
                 Some(weapons::Rhythm::Draw { mid, mid_bolt, .. }) => {
@@ -177,12 +186,13 @@ impl World {
 
     /// 던진 창이 날고 있나(0274 ②b — 가는 길이든 돌아오는 길이든). 그동안 RB는 못 쓰고 손에는 창이 없다(`weapon_away`).
     pub fn javelin_out(&self) -> bool {
-        self.bolts.iter().any(|b| b.def.returns())
+        self.bolts.iter().any(|b| b.def.look == weapons::JAVELIN)
     }
 
     /// 평타를 누르면 던진 창이 곧바로 손에 돌아온다(0274 ②b — 창이 없는 동안에도 평타를 막지 않는다).
+    /// 던진 방패(0276)도 같은 길로 부른다.
     pub(super) fn recall_javelin(&mut self) {
-        if !self.javelin_out() {
+        if !self.rb_out() {
             return;
         }
         self.bolts.retain(|b| !b.def.returns());
@@ -234,7 +244,7 @@ impl World {
                 .min_by(f32::total_cmp)
                 .unwrap_or(AIR_SHOT_REACH)
                 .max(AIR_SHOT_MIN);
-            let def = pl.weapon.bolts().0;
+            let def = self.rb_bolts().0;
             let count = match wpn.rb {
                 Rb::Toss => 1,
                 Rb::Shot { .. } => AIR_VOLLEY,
@@ -272,6 +282,7 @@ impl World {
                     hits: 0,
                     veined: [false; 5],
                     back: false,
+                    bounce: 0,
                 });
             }
             ev.push(Event::Cast {
@@ -284,10 +295,53 @@ impl World {
     /// 이번 틱에 던진 수류탄(0051)을 세운다.
     fn throw_bomb(&mut self, ev: &mut Vec<Event>, wpn: &weapons::Weapon) {
         if let (Some(to), Some(g)) = (self.throw_to.take(), wpn.grenade) {
+            // 장치를 하나 더(0276 — 쇠뇌의 빈 손): 수류탄 대신 그 자리에 쇠 덫을 놓는다.
+            if self.bare() == Some(weapons::Bare::Snare) {
+                self.set_snare(to, ev);
+                return;
+            }
             let bomb = self.new_bomb(to, &g);
             self.bombs.push(bomb);
             ev.push(Event::Throw);
         }
+    }
+
+    /// 쇠 덫을 놓는다(0276): 덫(`skill_tick::Field` — 뿌리 덫과 같은 길: 깨어 있는 적이 둘레에 들어서면 한 번 물고 사라진다)에
+    /// 쇠(`iron`) — 무는 타는 `SNARE_DAMAGE` · 뿌리 게이지 `SNARE_ROOT`(보통 적은 한 번에 속박, 문지기는 덜 — 종의 배). 놓인 쇠 덫은
+    /// `SNARE_MAX`개까지(넘으면 가장 오래된 것이 사라진다).
+    fn set_snare(&mut self, to: Vec3, ev: &mut Vec<Event>) {
+        use crate::tuning::{
+            SNARE_DAMAGE, SNARE_MAX, SNARE_POISE, SNARE_RADIUS, SNARE_ROOT, SNARE_SECS,
+        };
+        let pos = vec3(to.x, self.ground_y(to), to.z);
+        let mine: Vec<usize> = self
+            .skill_fields
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| f.iron)
+            .map(|(i, _)| i)
+            .collect();
+        if mine.len() >= SNARE_MAX {
+            self.skill_fields.remove(mine[0]);
+        }
+        self.skill_fields.push(skill_tick::Field {
+            pos,
+            radius: SNARE_RADIUS,
+            age: 0.0,
+            secs: SNARE_SECS,
+            every: SNARE_SECS,
+            pulses: 0,
+            damage: SNARE_DAMAGE,
+            dose: (crate::status::Kind::Root, SNARE_ROOT),
+            poise: SNARE_POISE,
+            follow: false,
+            kindle: 0,
+            drift: Vec3::ZERO,
+            trap: true,
+            iron: true,
+            spire: None,
+        });
+        ev.push(Event::SnareSet { at: pos });
     }
 
     /// 손을 떠나는 수류탄(0051): 포물선 — 날아가는 시간을 거리로 정하고(가까우면 낮게·빨리) 그 시간에 `to`에 닿는 속도.
@@ -342,6 +396,10 @@ impl World {
     /// 지금 `to`로 던지면 터지는 자리(0218 — 미리보기가 진실하게): 같은 포물선·같은 튕김을 도화선이 다할 때까지 돌려 본다.
     pub fn grenade_lands(&self, to: Vec3) -> Option<Vec3> {
         let g = self.player.weapon.def().grenade?;
+        // 쇠 덫(0276)은 튕기지 않는다 — 떨군 자리에 놓인다.
+        if self.bare() == Some(weapons::Bare::Snare) {
+            return Some(vec3(to.x, self.ground_y(to), to.z));
+        }
         let mut bomb = self.new_bomb(to, &g);
         while bomb.fuse > 0.0 {
             self.roll_bomb(&mut bomb, TICK_DT);
@@ -399,6 +457,7 @@ impl World {
             hits: 0,
             veined: [false; 5],
             back: false,
+            bounce: 0,
         };
         let step = t[P::CastSpeed] * TICK_DT * def.speed;
         for _ in 0..2000 {
@@ -605,6 +664,44 @@ impl World {
                     self.kills += 1;
                     ev.push(Event::EnemyDown { at: en.pos });
                 }
+            }
+            // 던진 방패(0276 — 하데스의 방패): 맞힌 적에서 둘레 `SHIELD_BOUNCE_R` m 안의 아직 안 맞은 가장 가까운 적으로 튕긴다
+            // (`SHIELD_BOUNCES`번까지) — 더 갈 적이 없으면 거기서 손으로 돌아온다.
+            if b.def.bounces() && !struck.is_empty() {
+                let (_, k) = struck[0];
+                let at = b.pos + b.dir * k;
+                let next = (b.bounce < SHIELD_BOUNCES)
+                    .then(|| {
+                        self.enemies
+                            .iter()
+                            .enumerate()
+                            .filter(|(i, en)| {
+                                en.active()
+                                    && !en.harmless()
+                                    && !(*i < 64 && b.hits & (1 << *i) != 0)
+                                    && (en.pos.y - (at.y - BOLT_HEIGHT)).abs() <= HIT_DY
+                            })
+                            .map(|(_, en)| (vec3(en.pos.x - at.x, 0.0, en.pos.z - at.z), en.radius))
+                            .filter(|(d, r)| d.length() - r <= SHIELD_BOUNCE_R)
+                            .min_by(|a, b| a.0.length().total_cmp(&b.0.length()))
+                    })
+                    .flatten();
+                b.prev = b.pos;
+                b.pos = at;
+                match next {
+                    Some((d, _)) if d.length() > 1e-3 => {
+                        b.dir = d.normalize();
+                        b.left = d.length() + 1.0;
+                        b.bounce += 1;
+                        ev.push(Event::ShieldBounce { at });
+                    }
+                    _ => {
+                        b.back = true;
+                        b.hits = 0;
+                    }
+                }
+                keep.push(b);
+                continue;
             }
             if !b.def.pierce && !struck.is_empty() {
                 continue;

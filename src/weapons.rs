@@ -331,6 +331,9 @@ pub const JAVELIN: u8 = 7;
 pub const STONE: u8 = 8;
 /// 쌍단검의 RB(0274 ③): 투척 단검 셋 — 좁은 부채꼴로 곧게 난다(던지는 것).
 pub const KNIFE: u8 = 9;
+/// 던진 방패(0276 — 하데스의 방패): 한손 무기 + 방패의 RB. 곧게 날아 맞힌 적에서 가까운 적으로 튕기고(`tuning::SHIELD_BOUNCES`)
+/// 손에 돌아온다(창 던지기와 같은 길 — `Bolt::returns`).
+pub const SHIELD: u8 = 10;
 
 /// 쇠뇌의 덧장전(0274 ②b): 쏘지 않고 멈춰 선 지 이 초 뒤부터, 한 발마다 이 초(빈 탄창의 장전은 표의 `reload`).
 pub const XBOW_TOPUP_WAIT: f32 = 0.5;
@@ -374,7 +377,7 @@ impl Bolt {
 
     /// 그 그림 번호가 손으로 던지는 것인가(사건 `Cast`의 `look`을 읽는 쪽 — 소리).
     pub fn look_thrown(look: u8) -> bool {
-        matches!(look, AXE | JAVELIN | STONE | KNIFE)
+        matches!(look, AXE | JAVELIN | STONE | KNIFE | SHIELD)
     }
 
     /// 곧게 나는 탄(볼트·화살·던지는 것) — 마법 탄만 땅을 따라 흐른다(0173 → 0218).
@@ -382,9 +385,14 @@ impl Bolt {
         self.is_shot() || self.thrown()
     }
 
-    /// 멈춘 자리에서 손으로 돌아온다(던진 창).
+    /// 멈춘 자리에서 손으로 돌아온다(던진 창 · 던진 방패 0276).
     pub fn returns(&self) -> bool {
-        self.look == JAVELIN
+        matches!(self.look, JAVELIN | SHIELD)
+    }
+
+    /// 맞힌 적에서 가까운 적으로 튕긴다(던진 방패 0276 — `tuning::SHIELD_BOUNCES`번까지, 그 뒤 돌아온다).
+    pub fn bounces(&self) -> bool {
+        self.look == SHIELD
     }
 
     /// 날지 않고 겨눈 자리에 내려 꽂힌다(신성한 빛 — `World::smite_spot`).
@@ -596,6 +604,33 @@ pub const KNIFE_TOSS: Toss = Toss {
 };
 /// 투척 단검의 부채꼴 — 이웃한 두 날 사이의 각(°).
 pub const KNIFE_SPREAD: f32 = 12.0;
+
+/// 방패 던지기(0276 — 하데스의 방패, 한손 무기 + 방패의 RB): 곧게 9 m를 날아 첫 적을 치고(20 · 자세 3 · 울림 0.35) 가까운 적으로
+/// 튕긴다(`tuning::SHIELD_BOUNCES` · `SHIELD_BOUNCE_R`), 다 튕기거나 더 갈 적이 없으면 손으로 돌아온다. 칸을 쓰지 않고 모으지 않는다 —
+/// 값은 "돌아올 때까지 막지 못한다"(그동안 RB는 막히고, 평타를 누르면 곧바로 손에 돌아온다 `World::recall_javelin`). 종류의
+/// RB 칸보다 앞선다(`World::rb_toss`).
+pub const SHIELD_TOSS: Toss = Toss {
+    bolt: Bolt {
+        speed: 1.3,
+        range: 0.75,
+        damage: 20,
+        poise: 3.0,
+        look: SHIELD,
+        dose: (Kind::Knell, 0.35),
+        ..MAGIC
+    },
+    charged: Bolt {
+        speed: 1.3,
+        range: 0.75,
+        damage: 20,
+        poise: 3.0,
+        look: SHIELD,
+        dose: (Kind::Knell, 0.35),
+        ..MAGIC
+    },
+    fan: 1,
+    spread: 0.0,
+};
 
 /// 순례자의 검 — 기준. 3연타(0201 — Meshy Double_Combo_Attack): 오른쪽 위 → 왼쪽 대각 베기 → 올려 베기(왼 → 오른) →
 /// 오른쪽에서 내리치기(좁고 길게, 자세 피해 큼).
@@ -1209,7 +1244,49 @@ pub struct ClassDef {
     /// 종류의 원거리 수단(0274 ②b — RB를 종류마다): 근접 종류는 제 것(손도끼 · 신성한 빛 · 마법탄 · 창 던지기 …), 사격 종류는
     /// 없다(`None` — 그 무기 표의 `Rb::Shot`). 새 종류 = 이 칸 하나(새 꼴이면 `Bolt::look` 한 갈래와 월드·그림의 한 갈래).
     pub toss: Option<Toss>,
+    /// 빈 손의 결(0276): 보조무기 슬롯이 비었을 때(무기도 방패도 없음) — 하나에 전념하는 쥐는 법 · 그 이름(몸의 말) · 한 줄.
+    /// 새 종류 = 이 셋(새 결이면 `Bare` 한 갈래와 월드의 그 자리 한 줄).
+    pub bare: Bare,
+    pub bare_name: Tr,
+    pub bare_trait: Tr,
 }
+
+/// 빈 손의 결(0276 — BG3 다용도 · 양손 쥐기 · 하데스의 방패를 본 것): 보조무기 슬롯을 비우면 주무기 종류마다 손이 다르게 움직인다 —
+/// 보조무기가 주는 것(보조특성 · 교체 공격 · 둘째 스킬 한 쌍)과 맞바꿀 만한 것. 받는 피해 · 패링 판정 시간 · 회피 거리와 무적은
+/// 건드리지 않는다(0095 원칙 2 — 시험). 월드는 `World::bare`(보조 슬롯이 비었나 = 앱이 넘긴 부무기 · 방패) 한 곳에서 묻는다.
+/// 맨손은 종류가 아니라 결이 없다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Bare {
+    /// 한손검 — 두 손으로 쥔다: 강공격이 두 손 내려베기(동작 = 망치의 내려치기, 자세 피해 × `BARE_SWORD_HEAVY_POISE`),
+    /// 평타 끝 타가 넓어진다(각 × `BARE_SWORD_LAST_ARC`).
+    TwoHands,
+    /// 망치 — 기도하는 손: 등잔 한 모금을 삼키는 순간 둘레에 울림 고리(가까운 적에 울림 게이지 + 밀림, 회복은 그대로).
+    Prayer,
+    /// 지팡이 — 두 손으로 엮는다: RB 칸 +1(`BARE_STAFF_CHARGES`), 모으는 시간 × `BARE_STAFF_CHARGE`.
+    Weave,
+    /// 쇠뇌 — 장치를 하나 더: 공격 버튼(수류탄 자리)이 덫을 놓는다(`world::Snare` — 밟은 잡몹은 묶이고 문지기는 느려진다).
+    Snare,
+    /// 활 — 가벼운 걸음: 당긴 채 걷기 × `BARE_BOW_WALK`(0.6 → 0.85), 끝까지 당긴 화살의 오금 `BARE_BOW_LAME`초.
+    LightStep,
+    /// 창 — 자루를 길게 잡는다: 평타 · 대시 공격의 닿는 거리 × `BARE_SPEAR_REACH`, 내달려 꿰뚫기가 한 번 더 이어진다.
+    LongGrip,
+    /// 쌍단검 — 그림자 걸음: 회피가 끝난 뒤(`SHADOW_STEP_LATE`초 안) 첫 타는 급소로 친다(회피 자체는 그대로).
+    ShadowStep,
+}
+
+/// 빈 손의 결 값(0276 — 처음 값, 판정에서 고친다). 보스 모의(`balance::bare_hand_probe`)로 골랐다 — 어느 싸움도 같은 무기 + 가장
+/// 좋은 보조무기 조합보다 4% 넘게 빨라지지 않게(0276 "만든 것").
+pub const BARE_SWORD_HEAVY_POISE: f32 = 1.6;
+pub const BARE_SWORD_HEAVY_REACH: f32 = 1.1;
+pub const BARE_SWORD_LAST_ARC: f32 = 1.8;
+pub const BARE_STAFF_CHARGES: f32 = 4.0;
+pub const BARE_STAFF_CHARGE: f32 = 0.6;
+/// 활을 당긴 채 걷기(`cast.walk` 0.5에 곱한다 — 0.85): 보통은 `BOW_DRAW_WALK` 1.2(0.6).
+pub const BARE_BOW_WALK: f32 = 1.7;
+pub const BARE_BOW_LAME: f32 = 3.0;
+pub const BARE_SPEAR_REACH: f32 = 1.2;
+/// 그림자 걸음: 회피가 끝난 뒤 첫 타가 급소인 창(초).
+pub const SHADOW_STEP_LATE: f32 = 0.8;
 
 /// 종류 표(판 줄의 차례 — `plates::PLATES`가 이 차례로 선다). 대검 · 창은 뒤에 한 줄씩(0272 2단계).
 pub const CLASSES: [ClassDef; 7] = [
@@ -1233,6 +1310,9 @@ pub const CLASSES: [ClassDef; 7] = [
         },
         sub_trait: |s| s.subtrait_sword,
         toss: Some(AXE_TOSS),
+        bare: Bare::TwoHands,
+        bare_name: |s| s.bare_sword,
+        bare_trait: |s| s.bare_sword_d,
     },
     // 망치(0274 — 성직자의 결): 한 손에 드는 종지기의 메 — 방패와 함께 든다(한손검처럼, 방패를 들면 방패 트리).
     ClassDef {
@@ -1256,6 +1336,9 @@ pub const CLASSES: [ClassDef; 7] = [
         },
         sub_trait: |s| s.subtrait_hammer,
         toss: Some(LIGHT_TOSS),
+        bare: Bare::Prayer,
+        bare_name: |s| s.bare_hammer,
+        bare_trait: |s| s.bare_hammer_d,
     },
     ClassDef {
         class: Class::Staff,
@@ -1278,6 +1361,9 @@ pub const CLASSES: [ClassDef; 7] = [
         },
         sub_trait: |s| s.subtrait_staff,
         toss: Some(MAGIC_TOSS),
+        bare: Bare::Weave,
+        bare_name: |s| s.bare_staff,
+        bare_trait: |s| s.bare_staff_d,
     },
     ClassDef {
         class: Class::Crossbow,
@@ -1294,6 +1380,9 @@ pub const CLASSES: [ClassDef; 7] = [
         },
         sub_trait: |s| s.subtrait_crossbow,
         toss: None,
+        bare: Bare::Snare,
+        bare_name: |s| s.bare_crossbow,
+        bare_trait: |s| s.bare_crossbow_d,
     },
     ClassDef {
         class: Class::Bow,
@@ -1313,6 +1402,9 @@ pub const CLASSES: [ClassDef; 7] = [
         },
         sub_trait: |s| s.subtrait_bow,
         toss: None,
+        bare: Bare::LightStep,
+        bare_name: |s| s.bare_bow,
+        bare_trait: |s| s.bare_bow_d,
     },
     // 창(0272 2단계): 양손 근접 · 관통 · 뿌리와 날카로움. 주특성은 무브셋 그 자체(가장 긴 거리 · 한 줄 꿰뚫기) — 스킬에 얹는 배는 없다.
     ClassDef {
@@ -1333,6 +1425,9 @@ pub const CLASSES: [ClassDef; 7] = [
         },
         sub_trait: |s| s.subtrait_spear,
         toss: Some(JAVELIN_TOSS),
+        bare: Bare::LongGrip,
+        bare_name: |s| s.bare_spear,
+        bare_trait: |s| s.bare_spear_d,
     },
     // 쌍단검(0274 ③ — 도적의 결): 두 손에 날 하나씩이라 방패와 들지 않는다(양손 근접) · 관통(찌르는 날 — D&D · BG3의 단검은 찌름
     // 피해, 한손검(전사)은 참격) · 날카로움과 균열(출혈을 내고 약점을 연다 — 옛 한손검 트리의 넷을 넘겨받았다) · 주특성 급소.
@@ -1357,6 +1452,9 @@ pub const CLASSES: [ClassDef; 7] = [
         },
         sub_trait: |s| s.subtrait_dagger,
         toss: Some(KNIFE_TOSS),
+        bare: Bare::ShadowStep,
+        bare_name: |s| s.bare_dagger,
+        bare_trait: |s| s.bare_dagger_d,
     },
 ];
 
@@ -1429,6 +1527,11 @@ impl Id {
     /// 보조무기 슬롯에 멨을 때의 보조특성(0272 1b) — 맨손은 종류가 아니라 없다.
     pub fn sub_trait(self) -> Option<SubTrait> {
         self.class().map(|c| c.def().sub)
+    }
+
+    /// 보조무기 슬롯이 비었을 때의 결(0276) — 맨손은 종류가 아니라 없다.
+    pub fn bare(self) -> Option<Bare> {
+        self.class().map(|c| c.def().bare)
     }
 
     /// 교체 공격으로 들어올 때의 한 타(0272 1b): 대시 공격이 있으면 그것, 사격 무기면 한 발.

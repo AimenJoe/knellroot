@@ -342,9 +342,10 @@ pub(super) struct WVal {
 
 /// 종류의 원거리 수단(0274 ②b — `weapons::Bolt::look`)의 이름.
 pub(super) fn rb_name(look: u8) -> &'static str {
-    use crate::weapons::{AXE, JAVELIN, KNIFE, LIGHT, STONE};
+    use crate::weapons::{AXE, JAVELIN, KNIFE, LIGHT, SHIELD, STONE};
     let s = s();
     match look {
+        SHIELD => s.rb_shield,
         AXE => s.rb_axe,
         KNIFE => s.rb_knives,
         LIGHT => s.rb_light,
@@ -487,6 +488,13 @@ pub(super) fn class_text(id: weapons::Id, name: &str) -> Option<(String, String,
         fill(s().trait_line, &[&main]),
         fill(s().subtrait_line, &[&sub]),
     ))
+}
+
+/// 빈 손의 결(0276) 한 줄: "두 손으로 쥔다 — 강공격이 …" — 종류의 몸의 말. 맨손은 종류가 아니라 없다. "빈 손"이라는 시스템 말은
+/// 보조무기 슬롯 줄에서만 붙인다(`bare_line`).
+pub(super) fn bare_text(id: weapons::Id) -> Option<String> {
+    let def = id.class()?.def();
+    Some(format!("{} — {}", tr(def.bare_name), tr(def.bare_trait)))
 }
 
 fn weapon_desc(id: weapons::Id) -> &'static str {
@@ -1239,6 +1247,13 @@ impl App {
                 };
                 lines.extend(self.pane_wrap(w, &here, AMBER));
                 lines.extend(self.pane_wrap(w, &there, DIM));
+                // 주무기 슬롯: 보조무기 슬롯을 비우면 얻는 쥐는 법(0276) — 지금 비어 있으면 밝게.
+                if slot != SUB_SLOT {
+                    if let Some(b) = bare_text(id) {
+                        let empty = self.progress.sub.is_none() && self.progress.shield.is_none();
+                        lines.extend(self.pane_wrap(w, &b, if empty { AMBER } else { DIM }));
+                    }
+                }
                 lines.push(Ln::Gap);
             }
             // 견주는 상대는 그 칸에 지금 든 것: 주무기 칸 = 주무기, 부무기 칸 = 부무기(없으면 견줄 것이 없다 — 화살표 없이 값만).
@@ -1310,6 +1325,13 @@ impl App {
             self.cand_desc(focus)
         };
         lines.extend(self.pane_wrap(w, desc, DIM));
+        // 보조무기 슬롯을 비우면(0276): 든 무기 종류의 빈 손의 결 — 무엇을 버리고 무엇을 얻는지 견줘 보게.
+        if slot == SUB_SLOT && focus == Cand::Empty {
+            if let Some(b) = bare_text(self.weapon) {
+                lines.push(Ln::Gap);
+                lines.extend(self.pane_wrap(w, &fill(s.bare_line, &[&b]), AMBER));
+            }
+        }
         // 방패(0223)는 한손 무기일 때만 쓰인다 — 지금 든 무기가 두 손을 쓰면 알린다.
         if matches!(focus, Cand::Shield(_)) && self.weapon.hand() != weapons::Hand::One {
             lines.push(Ln::Gap);

@@ -18,6 +18,7 @@ use crate::tuning::{
 };
 use crate::tuning::{ALERT_RADIUS, HEAR_RANGE, SIGHT_DY, SIGHT_RANGE};
 use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG, RIPOSTE_WINDOW};
+use crate::tuning::{SHIELD_BOUNCES, SHIELD_BOUNCE_R};
 use crate::weapons::{self, Rb, Shape};
 
 /// 날아가는 것·늦게 터지는 것의 틱 — 단계마다 메서드(0159 R2).
@@ -394,6 +395,29 @@ pub enum Event {
         dir: Vec3,
         last: bool,
     },
+    /// 기도하는 손(0276 — 망치의 빈 손): 한 모금을 삼킨 순간 둘레 `radius` m에 울림 고리가 퍼졌다.
+    Prayer {
+        at: Vec3,
+        radius: f32,
+    },
+    /// 덫을 놓았다(0276 — 쇠뇌의 빈 손).
+    SnareSet {
+        at: Vec3,
+    },
+    /// 덫이 물었다(밟은 적이 묶였다).
+    SnareSnap {
+        at: Vec3,
+    },
+    /// 던진 방패가 적에서 다음 적으로 튕겼다(0276 — 하데스의 방패).
+    ShieldBounce {
+        at: Vec3,
+    },
+    /// 들이받기가 나갔다(0276): 방랑자 자리 · 쪽 · 모인 힘 0..1.
+    Rush {
+        at: Vec3,
+        dir: Vec3,
+        power: f32,
+    },
 }
 
 /// 금 간 땅(0051, 망치 여진): `left`초 뒤 둘레를 친다.
@@ -530,6 +554,8 @@ pub struct Bolt {
     pub veined: [bool; 5],
     /// 던진 창(0274 ②b)이 손으로 돌아오는 길이다(치지 않는다 · 벽을 가리지 않는다).
     pub back: bool,
+    /// 던진 방패(0276)가 이미 튕긴 수(`SHIELD_BOUNCES`까지).
+    pub bounce: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -564,6 +590,15 @@ pub enum PState {
     /// 느리게 걷고 기력이 차지 않는다. 기력이 바닥나는 타에 막기가 깨진다(`BLOCK_BREAK_STUN`). `t` = 막은 지.
     Block {
         t: f32,
+    },
+    /// 들이받기(0276 — 하데스의 방패): 막다가 패링 버튼을 놓으면 모인 힘(`power` 0..1 — 막는 동안 `OffHand::rush`)만큼 앞으로
+    /// 내달린다(`tuning::RUSH_*`). 잡몹은 밀려 넘어지고 문지기는 자세만 깎인다(문지기에 닿으면 멈춘다). 무적은 없다 — 받는 피해 그대로.
+    /// `swing` = 한 번 들이받기에 한 적 한 번.
+    Rush {
+        t: f32,
+        dir: Vec3,
+        power: f32,
+        swing: u32,
     },
     /// 공중(0027): 뛰기 전 속도를 잇고 조금만 조종한다. `plunge`면 내려앉을 때 둘레를 친다.
     Jump {
@@ -708,12 +743,29 @@ pub struct Player {
     pub entry: bool,
     /// 든 방패(0223 — 한손 무기일 때만 쓰인다, `World::can_block`).
     pub shield: Option<crate::shield::Id>,
+    /// 보조 손의 일(0276): 빈 손의 결이 기억하는 것(그림자 걸음 · 이어 꿰뚫기)과 방패의 들이받기에 모인 힘.
+    pub off: OffHand,
     /// 미리 받아 둔 다음 행동과 남은 초(0057 — 후딜레이를 끊는 캔슬 시점에 나간다).
     pub pending: Option<Next>,
     pub pending_left: f32,
     /// 콤보: 다음 타 번호와 그 타를 이어 갈 남은 초.
     pub combo_next: u8,
     pub combo_left: f32,
+}
+
+/// 보조 손의 일(0276 — `Player::off`): 빈 손의 결(`World::bare`)이 틱을 넘어 기억하는 것과 방패의 들이받기.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct OffHand {
+    /// 앱이 말한 "보조무기 슬롯이 비었다"(`World::set_open_hand`).
+    pub open: bool,
+    /// 그림자 걸음(쌍단검): 회피가 끝난 뒤 남은 창(초)과 그때의 스윙 번호 — 그 뒤 첫 휘두르기(`shadow_swing`)는 급소로 친다.
+    pub shadow: f32,
+    pub shadow_from: u32,
+    pub shadow_swing: u32,
+    /// 자루를 길게(창): 이어 나간 둘째 꿰뚫기의 스윙 번호(한 번 더만 — 셋째는 없다).
+    pub relunge: u32,
+    /// 들이받기(방패): 막는 동안 모인 힘 0..1(`RUSH_FULL`초에 가득) — 막기를 놓으면 0.
+    pub rush: f32,
 }
 
 /// 멘 무기의 탄(0223 — `Player::sub_load`): 내려놓을 때의 탄창·수류탄·장전. 멘 동안 시계는 흐르지 않는다 — 쇠뇌의 장전만 돈다
@@ -1019,6 +1071,8 @@ pub struct World {
     beat_now: bool,
     /// 이번 틱에 등잔을 삼켰다·못 마셨다(사건은 `apply_strike`가 낸다).
     gulp_now: bool,
+    /// 이번 틱에 기도하는 손(0276 망치의 빈 손)의 한 모금을 삼켰다 — `apply_strike`가 울림 고리를 낸다.
+    prayer_now: bool,
     flask_denied_now: bool,
     /// 히트스톱 동안 들어온 눌림(공격·회피·락온·돌리기). 멈춤이 풀리는 틱에 낸다 — 버리면 멈춘 순간 누른 버튼이 사라진다.
     held: Actions,
@@ -1147,6 +1201,7 @@ impl World {
                 link_swing: 0,
                 entry: false,
                 shield: None,
+                off: OffHand::default(),
                 pending: None,
                 pending_left: 0.0,
                 combo_next: 0,
@@ -1220,6 +1275,7 @@ impl World {
             cast_denied_now: false,
             beat_now: false,
             gulp_now: false,
+            prayer_now: false,
             flask_denied_now: false,
         }
     }
@@ -1265,8 +1321,8 @@ impl World {
             }
             _ => false,
         };
-        // 던진 창이 날고 있으면(0274 ②b) RB를 받아 둘 수 없다.
-        let javelin = self.javelin_out();
+        // 던진 창 · 방패가 날고 있으면(0274 ②b · 0276) RB를 받아 둘 수 없다.
+        let javelin = self.rb_out();
         let pl = &mut self.player;
         // 박자(2026-11-07): 공격을 누른 **그 순간**이 박자 창 안이었나. 받아 뒀다 나중에 나가는 이른 누름은 창 밖으로 친다
         // (연타가 박자를 공짜로 얻지 못하게 — KB melee-light-and-charged-attack-feel "먼저 누른 것이 남아야 창을 긁지 못한다").
@@ -1425,6 +1481,8 @@ impl World {
                 e >= d.skill.startup + d.active()
             }
             PState::Ult { done, .. } => done,
+            // 들이받기(0276): 내달린 뒤.
+            PState::Rush { t: e, .. } => e >= crate::tuning::RUSH_TIME,
             _ => false,
         }
     }
@@ -1458,12 +1516,111 @@ impl World {
         Knack {
             keen: self.keen(),
             sneak: (sneak > 1.0).then_some((self.player.pos, sneak)),
+            sure: false,
         }
     }
 
-    /// 지금 막을 수 있나(0223): 방패를 들었고 든 무기가 한손이다.
+    /// 지금 막을 수 있나(0223): 방패를 들었고 든 무기가 한손이다 — 던진 방패가 날고 있는 동안(0276)은 막지 못한다
+    /// (누르는 순간의 패링은 그대로 — 패링 판정 시간을 건드리지 않는다).
     pub fn can_block(&self) -> bool {
+        self.shield_throws() && !self.shield_out()
+    }
+
+    /// 방패가 RB와 쥐고 막기를 맡나(0223 · 0276): 방패를 들었고 든 무기가 한손이다(두 손 무기면 방패는 쉰다). 날아가 있어도 참이다
+    /// — 그동안 RB는 막히고 평타가 방패를 불러들인다.
+    pub fn shield_throws(&self) -> bool {
         self.player.shield.is_some() && self.player.weapon.hand() == weapons::Hand::One
+    }
+
+    /// 던진 방패가 날고 있나(0276 — 가는 길이든 돌아오는 길이든). 그동안 왼손에는 방패가 없다(렌더 `hide_unheld`).
+    pub fn shield_out(&self) -> bool {
+        self.bolts.iter().any(|b| b.def.look == weapons::SHIELD)
+    }
+
+    /// 손으로 돌아올 RB가 날고 있나(던진 창 0274 ②b · 던진 방패 0276) — 그동안 RB는 막힌다.
+    pub fn rb_out(&self) -> bool {
+        self.bolts.iter().any(|b| b.def.returns())
+    }
+
+    /// 지금 RB의 원거리 수단(0274 ②b → 0276): 방패가 맡으면 방패 던지기(`SHIELD_TOSS` — 종류의 RB 칸보다 앞선다), 아니면 든 무기의 것.
+    pub fn rb_toss(&self) -> Option<weapons::Toss> {
+        if self.shield_throws() {
+            Some(weapons::SHIELD_TOSS)
+        } else {
+            self.player.weapon.toss()
+        }
+    }
+
+    /// 지금 RB의 탄 둘(보통 · 모은 것) — 쏠 때 · 미리보기 · 그림이 같이 읽는다.
+    pub fn rb_bolts(&self) -> (weapons::Bolt, weapons::Bolt) {
+        if self.shield_throws() {
+            (weapons::SHIELD_TOSS.bolt, weapons::SHIELD_TOSS.charged)
+        } else {
+            self.player.weapon.bolts()
+        }
+    }
+
+    /// 빈 손의 결(0276): 앱이 보조무기 슬롯이 비었다고 했고(`set_open_hand`) 부무기(`set_sub`)도 방패(`set_shield`)도 없으면 — 든 무기
+    /// 종류의 결. 월드가 묻는 곳은 여기 하나다(앱은 장비를 바꿀 때마다 `arm_world`로 넘기고, 바꿔 들기는 부무기가 있을 때만 된다 —
+    /// 바꿔 든 뒤에도 부무기 칸에 옛 무기가 있으니 결은 없다). 맨손은 없다.
+    pub fn bare(&self) -> Option<weapons::Bare> {
+        let pl = &self.player;
+        if !pl.off.open || pl.sub.is_some() || pl.shield.is_some() {
+            return None;
+        }
+        pl.weapon.bare()
+    }
+
+    /// 보조무기 슬롯이 비었다고 앱이 말한다(0276 — 장비가 바뀔 때마다 `App::arm_world` 한 곳에서). 월드는 장비를 모르니 처음은
+    /// 거짓이다(시험 · 시나리오의 `World::new`는 빈 손의 결 없이 무기 표 그대로). 참이어도 부무기 · 방패가 있으면 결은 없다(`bare`).
+    pub fn set_open_hand(&mut self, open: bool) {
+        self.player.off.open = open;
+    }
+
+    /// 지금 쥔 꼴의 평타 한 타(무기 표 + 빈 손의 결 0276 — 두 손으로 쥔 한손검의 넓어진 끝 타 · 길게 잡은 창의 닿는 거리).
+    /// 판정(`apply_strike`)과 그림(`overlays`)이 같이 읽는다 — 그림이 판정보다 크지 않게.
+    pub fn hit_of(&self, i: u8) -> Option<weapons::Hit> {
+        let wpn = self.player.weapon.def();
+        let mut h = *wpn.hit(i)?;
+        match self.bare() {
+            Some(weapons::Bare::TwoHands) if i != weapons::DASH && wpn.after(i).is_none() => {
+                h.arc *= weapons::BARE_SWORD_LAST_ARC;
+            }
+            Some(weapons::Bare::LongGrip) => h.reach *= weapons::BARE_SPEAR_REACH,
+            _ => {}
+        }
+        Some(h)
+    }
+
+    /// 지금 쥔 꼴의 강공격(무기 표 + 빈 손의 결 0276 — 두 손으로 쥔 한손검은 두 손 내려베기: 망치의 내려치기 동작, 자세 피해 ↑).
+    pub fn heavy_of(&self) -> Option<weapons::Heavy> {
+        let mut h = self.player.weapon.def().heavy?;
+        if self.bare() == Some(weapons::Bare::TwoHands) {
+            h.poise *= weapons::BARE_SWORD_HEAVY_POISE;
+            h.reach *= weapons::BARE_SWORD_HEAVY_REACH;
+            h.anim_charge = "hammer_charge";
+            h.anim_heavy = "hammer_slam";
+        }
+        Some(h)
+    }
+
+    /// RB 칸의 수(0111 — 두 손으로 엮는 지팡이 0276은 하나 더).
+    pub fn cast_charges(&self) -> f32 {
+        if self.bare() == Some(weapons::Bare::Weave) {
+            weapons::BARE_STAFF_CHARGES
+        } else {
+            CAST_CHARGES
+        }
+    }
+
+    /// RB를 다 모으는 초(0056 `cast.charge s` — 두 손으로 엮는 지팡이 0276은 짧다).
+    pub fn cast_full(&self, t: &Tuning) -> f32 {
+        t[P::CastCharge]
+            * if self.bare() == Some(weapons::Bare::Weave) {
+                weapons::BARE_STAFF_CHARGE
+            } else {
+                1.0
+            }
     }
 
     /// 지금 막고 있나.
@@ -2587,7 +2744,7 @@ impl World {
         if !live {
             return None;
         }
-        let h = wpn.hit(pl.beat.swing_hit)?;
+        let h = self.hit_of(pl.beat.swing_hit)?;
         let (s0, _, _) = hit_times(t, wpn, pl.beat.swing_hit);
         let (left, ripe) = beat_shrink(pl.beat.since_swing, s0, pl.beat.period)?;
         Some(BeatCue {
@@ -2690,7 +2847,11 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, knack: Knack, t: &Tun
     };
     // 급소(0274 ③ — 쌍단검의 주특성): 등 뒤에서 · 드러난 몸(휘청 · 기절 · 묶임)에 × 주특성의 배 — 타마다 한 번.
     let k = match knack.sneak {
-        Some((from, mult)) if sneak_open(en, from) => k * mult,
+        Some((from, mult))
+            if sneak_open(en, from) || (knack.sure && (!en.boss || SHADOW_STEP_BOSS)) =>
+        {
+            k * mult
+        }
         _ => k,
     };
     // 언 적(0270 B 서리)을 치면 깨진다: 그 한 대는 크게(금·표지와 곱한다 — 얼음은 한 번뿐이다).
@@ -2707,10 +2868,12 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, knack: Knack, t: &Tun
 }
 
 /// 손의 덤(`hurt_by`): 날카로움(피 흘리는 적에게 — `World::keen`)과 급소(치는 방랑자의 자리 · 배 — 쌍단검의 `Art::sneak`).
+/// `sure` = 그림자 걸음(0276 — 쌍단검의 빈 손): 이 타는 자리와 상관없이 급소다(문지기는 `SHADOW_STEP_BOSS`일 때만).
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Knack {
     pub keen: bool,
     pub sneak: Option<(Vec3, f32)>,
+    pub sure: bool,
 }
 
 impl Knack {
@@ -2718,14 +2881,20 @@ impl Knack {
     pub const NONE: Knack = Knack {
         keen: false,
         sneak: None,
+        sure: false,
     };
     /// 날카로움만(시험).
     #[cfg(test)]
     pub const KEEN: Knack = Knack {
         keen: true,
         sneak: None,
+        sure: false,
     };
 }
+
+/// 그림자 걸음(0276)의 급소가 문지기에게도 드나(보스의 급소는 등 뒤에서만 — 0274 ③). 모의로 정했다(`balance::bare_hand_probe`,
+/// 0276 "만든 것").
+pub const SHADOW_STEP_BOSS: bool = false;
 
 /// 급소가 열린 적인가(0274 ③): `from`(치는 방랑자의 자리)이 그 적의 등 뒤(보는 쪽에서 `SNEAK_BACK_DEG`° 넘게 돌아선 자리)이거나,
 /// 잡몹이 드러나 있다 — 휘청이거나 · 기절했거나 · 묶였다(뿌리 속박 · 못 박기의 묶임). 보스(문지기)는 **등 뒤에서만**: 보스의 휘청은

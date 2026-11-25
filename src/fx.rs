@@ -1412,6 +1412,80 @@ impl Fx {
                     STEEL,
                 );
             }
+            // 기도하는 손(0276 — 망치의 빈 손): 삼킨 자리에서 바닥으로 퍼지는 금빛 고리 둘 + 손 위의 작은 흰 별 + 오르는 빛줄.
+            Event::Prayer { at, radius } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                self.star(at + Vec3::Y * 1.3, 1.0, 0.09, WHITE_HOT);
+                self.mark(
+                    g,
+                    MarkKind::Ring {
+                        r0: 0.4,
+                        r1: radius,
+                    },
+                    0.4,
+                    GOLD,
+                );
+                self.mark_with(
+                    g,
+                    MarkKind::Ring {
+                        r0: 0.2,
+                        r1: radius * 0.8,
+                    },
+                    0.36,
+                    WHITE_HOT,
+                    0.08,
+                    false,
+                    false,
+                );
+                self.rise(
+                    g,
+                    radius * 0.5,
+                    8,
+                    Shape::Streak,
+                    (0.08, 0.04),
+                    0.45,
+                    WHITE_HOT,
+                    GOLD,
+                    false,
+                );
+            }
+            // 쇠 덫을 놓았다(0276): 땅에 닿는 작은 쇳빛 번쩍 + 먼지 한 줌.
+            Event::SnareSet { at } => {
+                self.star(at + Vec3::Y * 0.2, 0.7, 0.07, STEEL);
+                self.dust_ring(at, 0.3, 5, 2.0, 0.4, DUST);
+            }
+            // 쇠 덫이 물었다: 흰 별 + 조여드는 쇳빛 고리 + 튀는 쇳조각.
+            Event::SnareSnap { at } => {
+                self.star(at + Vec3::Y * 0.4, 1.4, 0.1, WHITE_HOT);
+                self.mark(at, MarkKind::Ring { r0: 1.1, r1: 0.3 }, 0.22, STEEL);
+                self.ring_sparks(at + Vec3::Y * 0.3, 0.35, 8, 5.0, 0.2, WHITE_HOT, STEEL);
+            }
+            // 던진 방패가 튕겼다(0276): 금빛 별 + 작은 고리.
+            Event::ShieldBounce { at } => {
+                self.star(at, 1.1, 0.08, GOLD);
+                self.mark(
+                    vec3(at.x, w.ground_y(at), at.z),
+                    MarkKind::Ring { r0: 0.3, r1: 1.0 },
+                    0.2,
+                    GOLD,
+                );
+            }
+            // 들이받기가 나갔다(0276): 가는 쪽으로 남는 쇳빛 띠 + 발밑 먼지(모인 만큼 길다).
+            Event::Rush { at, dir, power } => {
+                let (d0, d1) = crate::tuning::RUSH_DIST;
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                self.mark(
+                    g,
+                    MarkKind::Streak {
+                        dir,
+                        len: d0 + (d1 - d0) * power,
+                        half: 0.35,
+                    },
+                    0.35,
+                    STEEL,
+                );
+                self.dust_ring(g, 0.4, 6, 3.0, 0.5, DUST);
+            }
             // 마법 탄 발사: 손끝의 작은 라벤더 번쩍임.
             Event::Cast { at, .. } => {
                 self.star(at, 0.8, 0.07, LAVENDER);
@@ -3302,6 +3376,15 @@ mod tests {
             },
             Event::Smite { at, radius: 1.4 },
             Event::JavelinBack { at },
+            Event::Prayer { at, radius: 3.0 },
+            Event::SnareSet { at },
+            Event::SnareSnap { at },
+            Event::ShieldBounce { at },
+            Event::Rush {
+                at,
+                dir: Vec3::Z,
+                power: 0.6,
+            },
             Event::Perfect { at },
             Event::Charged,
             Event::Rouse { at },
@@ -3561,6 +3644,15 @@ mod tests {
             },
             Event::Smite { at, radius: 1.4 },
             Event::JavelinBack { at },
+            Event::Prayer { at, radius: 3.0 },
+            Event::SnareSet { at },
+            Event::SnareSnap { at },
+            Event::ShieldBounce { at },
+            Event::Rush {
+                at,
+                dir: Vec3::Z,
+                power: 0.6,
+            },
             Event::Perfect { at },
             Event::UltStart,
             Event::Ult { at },

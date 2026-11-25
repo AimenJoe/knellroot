@@ -104,6 +104,8 @@ pub struct Field {
     pub drift: Vec3,
     /// 덫(뿌리 덫, 0270 C3): 때가 아니라 적이 들어서면 한 번 솟고 사라진다.
     pub trap: bool,
+    /// 쇠 덫(0276 — 쇠뇌의 빈 손 `World::set_snare`): 뿌리가 솟지 않고 쇠 이빨이 문다(그림 · 소리가 다르다).
+    pub iron: bool,
     /// 덫이 솟을 때 함께 터지는 마지막 가시(뿌리 덫의 맺음 — 둘레·피해).
     pub spire: Option<(f32, i32)>,
 }
@@ -738,6 +740,7 @@ impl World {
                             kindle: 0,
                             drift: Vec3::ZERO,
                             trap: false,
+                            iron: false,
                             spire: None,
                         });
                     }
@@ -1081,6 +1084,7 @@ impl World {
                             _ => Vec3::ZERO,
                         },
                         trap: false,
+                        iron: false,
                         spire: None,
                     });
                     self.skill_ev.push(Event::Skill { id, at: pos, dir });
@@ -1115,6 +1119,7 @@ impl World {
                             kindle: 0,
                             drift: Vec3::ZERO,
                             trap: true,
+                            iron: false,
                             spire: match d.cap {
                                 Some(Cap::Spire { radius, damage }) => Some((radius, damage)),
                                 _ => None,
@@ -1151,6 +1156,7 @@ impl World {
                         },
                         drift: Vec3::ZERO,
                         trap: false,
+                        iron: false,
                         spire: None,
                     });
                     self.skill_ev.push(Event::Skill { id, at, dir });

@@ -63,6 +63,40 @@ pub const BLOCK_WALK: f32 = 0.5;
 pub const BLOCK_PUSH: f32 = 0.5;
 pub const BLOCK_BREAK_STUN: f32 = 0.8;
 pub const BLOCK_HITSTOP: f32 = 1.2;
+
+/// 방패 — 하데스처럼(0276): 던진 방패가 맞힌 적에서 다음 적으로 튕기는 수(첫 적 + 이만큼)와 다음 적을 찾는 둘레(m, 맞힌 자리에서).
+pub const SHIELD_BOUNCES: u8 = 2;
+pub const SHIELD_BOUNCE_R: f32 = 5.0;
+/// 들이받기(0276): 막는 동안 힘이 가득 차는 초 · 놓았을 때 들이받는 데 드는 가장 작은 힘(그 아래는 그냥 내린다 — 톡 막기가
+/// 들이받기로 새지 않게) · 내달리는 거리(m, 가장 작은 힘 → 가득) · 내달리는 초 · 선 뒤의 짧은 굳음(초).
+pub const RUSH_FULL: f32 = 1.0;
+pub const RUSH_MIN: f32 = 0.25;
+pub const RUSH_DIST: (f32, f32) = (2.0, 5.0);
+pub const RUSH_TIME: f32 = 0.32;
+pub const RUSH_RECOVER: f32 = 0.25;
+/// 들이받기의 타(모인 힘 0 → 1로 사이를 잇는다): 피해 · 자세 피해 · 잡몹이 밀려 넘어지는 초 · 밀림(넉백 배). 문지기는 자세만.
+pub const RUSH_DAMAGE: (i32, i32) = (10, 30);
+pub const RUSH_POISE: (f32, f32) = (2.0, 8.0);
+pub const RUSH_TOPPLE: (f32, f32) = (0.6, 1.4);
+pub const RUSH_KNOCK: (f32, f32) = (2.0, 4.0);
+/// 들이받기가 적을 찾는 몸 앞의 덤(m — 내 몸 + 적의 몸 + 이만큼).
+pub const RUSH_REACH: f32 = 0.45;
+
+/// 기도하는 손(0276 — 망치의 빈 손): 한 모금을 삼킨 순간 둘레(m)의 적에게 쌓는 울림 게이지 · 밀림(넉백 배, 문지기는 4분의 1).
+pub const PRAYER_RADIUS: f32 = 3.0;
+pub const PRAYER_KNELL: f32 = 0.6;
+pub const PRAYER_KNOCK: f32 = 2.5;
+
+/// 쇠 덫(0276 — 쇠뇌의 빈 손): 수류탄 자리에 놓는 덫 — 둘레(m) · 놓여 있는 초 · 피해 · 자세 피해 · 뿌리 게이지(덤 — 둘이면 속박),
+/// 한 번에 놓여 있을 수 있는 수(넘으면 가장 오래된 것이 사라진다).
+pub const SNARE_RADIUS: f32 = 1.0;
+pub const SNARE_SECS: f32 = 20.0;
+pub const SNARE_DAMAGE: i32 = 10;
+pub const SNARE_POISE: f32 = 1.0;
+pub const SNARE_ROOT: f32 = 0.5;
+/// 쇠 덫이 문 잡몹이 걷지 못하는 초(문지기는 그만큼 느려지기만 — 오금과 같은 `ROOT_BOSS_SLOW`).
+pub const SNARE_BIND: f32 = 1.5;
+pub const SNARE_MAX: usize = 2;
 /// 주/부무기 바꾸기 버튼(0261)을 다른 동작 중에 눌렀을 때 받아 두는 초 — 공격의 받아 두기(`attack.buffer s` 기본)와 같은 폭.
 pub const SWAP_BUFFER: f32 = 0.3;
 /// 교체 공격(0272 1b — Nioh 2의 섬광 공격 착상): 내 타(평타·강공격·탄)가 닿았거나 받아친 뒤 이 초 안의 바꾸기는 들어오는 무기의

@@ -296,6 +296,30 @@ impl Renderer {
             let fade = ((f.secs - f.age) / 0.4).clamp(0.0, 1.0) * (f.age / 0.15).min(1.0);
             // 뿌리 덫(0270 C3): 바닥에 묻힌 씨 하나(흙빛 덩이 + 흰 점)와 숨 쉬듯 조여드는 가는 테 — 밟을 자리를 알린다.
             // 화약 덫(0272 — 충격): 묻힌 화약 통(어두운 덩이)과 깜빡이는 심지 불꽃, 노란 테 — 밟을 자리를 알린다.
+            // 쇠 덫(0276 — 쇠뇌의 빈 손): 땅에 놓인 쇠 이빨의 둥근 틀(어두운 쇠 덩이 + 둘레의 이빨 여덟)과 숨 쉬는 강철빛 테 —
+            // 밟을 자리를 알린다. 뿌리 덫(보라)과 갈린다.
+            if f.trap && f.iron {
+                let breathe = 0.5 + 0.5 * (w.time * 2.5).sin();
+                let steel = Color::new(0.82, 0.88, 0.98, 1.0);
+                fl.ring(
+                    c + Vec3::Y * 0.05,
+                    f.radius * (0.9 + 0.1 * breathe),
+                    0.0,
+                    360.0,
+                    with_a(steel, (0.3 + 0.25 * breathe) * fade),
+                );
+                gem(
+                    c + Vec3::Y * 0.1,
+                    0.3,
+                    with_a(Color::new(0.34, 0.33, 0.36, 1.0), 0.95 * fade),
+                );
+                for k in 0..8 {
+                    let a = k as f32 / 8.0 * std::f32::consts::TAU;
+                    let q = c + vec3(a.sin() * 0.42, 0.14, a.cos() * 0.42);
+                    spark4(q, 0.12, with_a(steel, 0.9 * fade));
+                }
+                continue;
+            }
             if f.trap && f.dose.0 == crate::status::Kind::Shock {
                 let breathe = 0.5 + 0.5 * (w.time * 3.0).sin();
                 let shock = Color::new(1.0, 0.96, 0.45, 1.0);
