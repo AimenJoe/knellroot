@@ -828,7 +828,7 @@ pub const EN: Strings = Strings {
     cx_weapon_fists: "When the hands hold nothing",
     cx_weapon_crossbow: "The Silent Sanctuary, the chest on the wall walk",
     cx_weapon_bow: "The Rootlet Garden, the chest at the east end of the Split Root Path",
-    cx_weapon_spear: "The Village Left Behind, the chest in the side room by the watchtower",
+    cx_weapon_spear: "The Village Left Behind, the chest in the watch's side room west of the alley",
     cx_weapon_staff: "The Silent Sanctuary, the chest on the courtyard's southeast dais",
     cx_weapon_hammer: "The Silent Sanctuary, the chest in the root burrow",
     cx_garb_cloak: "The Silent Sanctuary, the north end of the wall walk",

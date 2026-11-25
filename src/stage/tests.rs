@@ -1845,3 +1845,34 @@ fn taking_the_core_keeps_elite_numbers_and_the_field_boss() {
     tick(&mut run, &mut w, Actions::default());
     assert_eq!(run.take_elites_down().len(), 1);
 }
+
+/// 0272 2단계: 파수꾼의 창은 떠난 마을의 셋째 상자 — 골목 서쪽 파수꾼의 곁방(본길에서 비켜 둔 곳). 옛 상자 둘의 기록 번호(위 → 아래
+/// 차례)는 그대로다: 0 = 천 · 1 = 항아리 — 그 둘을 연 옛 기록은 창의 상자를 연 것으로 읽히지 않는다. 곁방은 걸어서 닿는다
+/// (`every_floor_is_reachable_and_every_spawn_can_walk_to_the_fight`가 모든 바닥을 본다).
+#[test]
+fn the_watchmans_spear_waits_in_the_villages_third_chest() {
+    use crate::charms::Id as Charm;
+    let def = &village::DEF;
+    assert_eq!(
+        def.chest_loot,
+        &[
+            Loot::Charm(Charm::Cloth),
+            Loot::Charm(Charm::Jar),
+            Loot::Weapon(crate::weapons::Id::Spear),
+        ]
+    );
+    let (mut run, _) = StageRun::start(def);
+    assert_eq!(run.chest.at.len(), 3);
+    let g = run.level.ground();
+    let cell = |p: Vec3| g.cell_of(p).unwrap();
+    assert_eq!(
+        cell(run.chest.at[0]),
+        (40, 23),
+        "the old chests keep their place"
+    );
+    assert_eq!(cell(run.chest.at[1]), (41, 39));
+    let (x, z) = cell(run.chest.at[2]);
+    assert!(x < 8 && (39..47).contains(&z), "west of the alley: {x} {z}");
+    run.set_opened(&[0, 1]);
+    assert_eq!(run.chest.open, vec![true, true, false], "an old record");
+}

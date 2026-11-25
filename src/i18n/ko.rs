@@ -830,7 +830,7 @@ pub const KO: Strings = Strings {
     cx_weapon_fists: "아무것도 쥐지 않으면",
     cx_weapon_crossbow: "침묵의 성소, 성벽길의 상자",
     cx_weapon_bow: "잔뿌리의 정원, 갈라진 뿌리길 동쪽 끝의 상자",
-    cx_weapon_spear: "떠난 마을, 파수꾼 망루 곁방의 상자",
+    cx_weapon_spear: "떠난 마을, 골목 서쪽 파수꾼 곁방의 상자",
     cx_weapon_staff: "침묵의 성소, 뜰 남동쪽 단의 상자",
     cx_weapon_hammer: "침묵의 성소, 뿌리 굴의 상자",
     cx_garb_cloak: "침묵의 성소, 성벽길 북쪽 끝",
