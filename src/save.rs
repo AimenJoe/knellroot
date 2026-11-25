@@ -1687,14 +1687,26 @@ weapons=sword,bow
             "v=1\ncore.warden=3\nmigrated.v06=1\nmigrated.ult=1\nskill.rank.pommel=1\ntree.veins=knell,shock,bogus\n",
         ));
         assert_eq!(odd.board.cells.veins, 1 << Vein::Shock.index());
-        // 0274 ②: 균열의 결을 산 옛 기록은 읽을 때 그 1포인트를 돌려받는다(어느 트리에도 서지 않는다 — 단검 트리가 오면 다시
-        // 산다). 가로지르기(균열의 스킬)는 한손검 트리에 그대로 남는다.
+        // 0274 ②: 한손검의 짝이 충격 · 흡수로 바뀌어도 균열의 결을 산 기록은 그대로 지닌다(한손검 트리에 잠시 더 선다 —
+        // `plates::CARRIED`, ③에서 단검 트리로). 가로지르기(균열의 스킬)도 그대로, 돌려받는 포인트 없음.
         let old = Progress::from_record(Record::parse(
             "v=1\ncore.warden=3\nmigrated.v06=1\nmigrated.ult=1\nskill.rank.cut=2\ntree.veins=rift\n",
         ));
-        assert_eq!(old.board.cells.veins, 0, "the rift passive is refunded");
+        assert_eq!(
+            old.board.cells.veins,
+            1 << Vein::Rift.index(),
+            "the rift passive is kept"
+        );
         assert_eq!(old.board.rank[Id::Cut.index()], 2, "the rift skill stays");
-        assert_eq!(old.board.spent(), 2);
+        assert_eq!(old.board.spent(), 3);
+        assert_eq!(
+            Progress::from_record(Record::parse(&old.to_record().to_text()))
+                .board
+                .cells
+                .veins,
+            1 << Vein::Rift.index(),
+            "and keeps it through a save"
+        );
     }
 
     /// 0274 ②: 속성 패시브의 고르기 II(`tree.vein_picks` = 결의 키들)가 왕복한다 — 울림만 고를 것이 있고, 닫힌 결·고를 것이 없는

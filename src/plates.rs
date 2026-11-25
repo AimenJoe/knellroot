@@ -42,11 +42,14 @@ pub const PLATES: [Plate; NP] = {
 pub const SHIELD_PAIR: [Kind; 2] = [Kind::Drain, Kind::Knell];
 pub const SHIELD_GREAT: Ult = Ult::Bell;
 
-/// 지금 어느 트리에도 대표 속성으로 서지 않는 속성(0274 ② — 한손검이 충격 · 흡수로 바뀌어 균열의 속성 패시브가 설 곳이 없다).
-/// 쌍단검 트리(0274 ③ — 날카로움 · 균열)가 오면 비운다. 그 속성 패시브를 산 기록은 읽을 때 포인트로 돌려받는다(`drop_unseated`).
-/// 균열의 스킬(가로지르기 · 던지기 · …)은 한손검 트리에 그대로 서 있다(가운데 열).
+/// 대표 속성에서 빠졌지만 그 트리에 잠시 더 서는 속성 패시브(0274 ② — 한손검이 날카로움 · 균열에서 충격 · 흡수로 바뀌었다): 균열의
+/// 결은 균열을 대표로 삼는 트리(쌍단검, 0274 ③)가 올 때까지 한손검 트리의 셋째 줄 가운데(궁극기 곁)에 선다 — 산 기록이 돌려받지
+/// 않고 그대로 지닌다. ③에서 이 줄을 걷고 단검 트리의 짝으로 옮긴다(날카로움은 창 트리의 짝이라 여기 없다).
+pub const CARRIED: [(Class, Kind); 1] = [(Class::Sword, Kind::Rift)];
+
+/// 대표 속성으로도 `CARRIED`로도 어느 트리에 서지 않는 속성(비어 있어야 한다 — 시험이 본다).
 #[cfg(test)]
-pub const HOMELESS: [Kind; 1] = [Kind::Rift];
+pub const HOMELESS: [Kind; 0] = [];
 
 /// 무기 판의 줄이 열리는 때(그 판에 쓴 점수): 첫 스킬 · 둘째 스킬 · 결과 큰 기술.
 pub const PLATE_ROWS: [u32; 3] = [0, 3, 6];
@@ -188,6 +191,18 @@ impl Plate {
             row: 2,
             col: Col::Mid,
         });
+        // 잠시 더 서는 결(0274 ② — `CARRIED`): 궁극기 곁.
+        for (c, k) in CARRIED {
+            if self == Plate::Class(c) {
+                if let Some(v) = VEINS.iter().copied().find(|v: &Vein| v.kind() == k) {
+                    out.push(Seat {
+                        entry: Entry::Vein(v),
+                        row: 2,
+                        col: Col::Mid,
+                    });
+                }
+            }
+        }
         out
     }
 
@@ -307,6 +322,7 @@ mod tests {
             );
             homes.extend([a, b]);
         }
+        homes.extend(CARRIED.map(|(_, k)| k));
         for k in crate::status::TYPED {
             assert_eq!(
                 homes.contains(&k),
@@ -383,7 +399,11 @@ mod tests {
         );
         assert_eq!(at(Col::Mid, 1), sk(&[Id::Throw, Id::Swallow]));
         assert_eq!(at(Col::Left, 2), [Entry::Vein(Vein::Shock)]);
-        assert_eq!(at(Col::Mid, 2), [Entry::Ult(Ult::Flurry)]);
+        // 균열의 결은 ③까지 궁극기 곁에(`CARRIED`).
+        assert_eq!(
+            at(Col::Mid, 2),
+            [Entry::Ult(Ult::Flurry), Entry::Vein(Vein::Rift)]
+        );
         assert_eq!(at(Col::Right, 2), [Entry::Vein(Vein::Drain)]);
         // 새 셋은 한손검만의 것(방패 없이 — 방패를 들면 방패 트리).
         for id in [Id::Pommel, Id::Shove, Id::Rally] {
@@ -443,7 +463,7 @@ mod tests {
                 n(BOW),
                 n(Plate::Shield)
             ],
-            [13, 11, 10, 9, 8, 10]
+            [14, 11, 10, 9, 8, 10]
         );
         // 옛 원거리 판에 섰던 스킬은 모두 두 판 가운데 하나에는 선다(0270 C5 — 돌려줄 것이 없다).
         for id in [
@@ -634,22 +654,20 @@ mod tests {
         assert!(!can_buy(&all, 99));
     }
 
-    /// 0270 C5: 판의 칸 모두가 어느 판에든 선다 — 0274 ②의 균열의 속성 패시브(`HOMELESS`)만 빼고(새 칸을 표에 더하고 판에 안 앉히면
-    /// 여기서 걸린다). 다 산 판에서 돌려받는 것은 그 결 하나뿐이다 — 균열의 스킬은 한손검 트리에 그대로.
+    /// 0270 C5: 판의 칸 모두가 어느 판에든 선다 — 돌려줄 것이 없다(새 칸을 표에 더하고 판에 안 앉히면 여기서 걸린다). 0274 ②:
+    /// 한손검의 짝이 바뀌어도 균열의 결은 한손검 트리에 잠시 더 서고(`CARRIED`) 균열의 스킬도 그대로 — 다 산 판에서 돌려받는 것이 없다.
     #[test]
     fn every_entry_stands_on_some_plate_today() {
         use crate::progression::Vein;
+        assert!(HOMELESS.is_empty());
         for e in ENTRIES {
-            let homeless = matches!(e, Entry::Vein(v) if HOMELESS.contains(&v.kind()));
-            assert_eq!(stands(e), !homeless, "{e:?} stands on no plate");
+            assert!(stands(e), "{e:?} stands on no plate");
         }
         let all = Board::maxed(crate::skills::Pick::B);
-        let mut want = all;
-        want.forget(Entry::Vein(Vein::Rift));
-        assert_eq!(
-            drop_unseated(all),
-            want,
-            "only the rift passive is refunded"
+        assert_eq!(drop_unseated(all), all, "nothing is refunded");
+        assert!(
+            SWORD.has(Entry::Vein(Vein::Rift)),
+            "carried on the sword tree"
         );
         for id in [Id::Cut, Id::Throw, Id::Swallow, Id::Stitch] {
             assert!(stands(Entry::Skill(id)), "{id:?} stays on the sword tree");

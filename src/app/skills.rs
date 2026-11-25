@@ -2743,7 +2743,7 @@ mod tests {
     fn every_entry_stands_on_some_plate_and_the_body_keeps_the_passives() {
         for (i, &e) in ENTRIES.iter().enumerate() {
             let on: Vec<Plate> = PLATES.into_iter().filter(|p| p.has(e)).collect();
-            // 0274 ②: 균열의 속성 패시브는 단검 트리(③)가 올 때까지 서지 않는다(`plates::HOMELESS`).
+            // 어느 트리에도 서지 않는 결(`plates::HOMELESS` — 비어 있다: 0274 ②의 균열은 `CARRIED`로 한손검 트리에).
             if matches!(e, Entry::Vein(v) if plates::HOMELESS.contains(&v.kind())) {
                 assert!(on.is_empty(), "{e:?}");
                 continue;
