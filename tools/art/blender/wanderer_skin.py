@@ -85,6 +85,9 @@ SKILL_FACE = {
     "ult_bell": ((0.30, 0.15, 0.45), "hips"), "ult_blizzard": ((0.30, 0.20, 0.40), "hips"),
     # 0272: 쇠뇌 판의 둘(화살비는 겨누는 동작 — `AIM_KEYS`).
     "sk_fuse": ((0.20, 0.0, 0.30), "hips"), "sk_mine": ((0.18, 0.0, 0.25), "hips"),
+    # 0272 2단계 창 판: 꿰뚫기(내지른 채 내달림) · 못 박기(내리꽂음) · 장대 휩쓸기(옆 휘두름 — 게임이 몸을 한 바퀴 돌린다) · 질풍 찌르기.
+    "sk_skewer": ((0.14, 0.22, 0.30), "tip"), "sk_pin": ((0.16, 0.0, 0.30), "tip"),
+    "sk_pole": ((0.20, 0.0, 0.35), "tip"), "ult_gale": ((0.30, 0.20, 0.95), "hips"),
     "throw": ((0.2, 0.0, 0.3), "hips"),  # 0204: 수류탄이 손을 떠나는 순간 몸이 정면(원본 M16은 몸 왼쪽으로 휘둘러 던진다)
     "parry": ((0.08, 0.22, 0.0), "hold"),  # 기술은 아니지만 같은 장치 — 막는 동안 몸이 정면(원본 M15는 들며 옆으로 비튼다)
     "block": ((0.0, 0.2, 0.0), "hold"),  # 방패 막기(0223) — 내내 정면
@@ -106,7 +109,8 @@ FACE_STILL = {"turn_l", "turn_r"}
 # 다른 동작의 이름이면 그 동작이 돈 각을 그대로(0238 — 구르기에서 이어지는 일어나기는 구르기와 같은 각이라야 이음매가 맞는다).
 FACE_TRAVEL = {"dodge": "front", "dodge_back": "back", "dodge_rise": "dodge"}
 # 모아 친 강타는 모으기 동작이 끝난 쪽에서 시작한다(0196 — 망치 모으기는 몸을 −60° 감아 쥔다: 정면에서 시작하면 떼는 순간 홱 돈다).
-CHAIN = {"heavy": "charge", "hammer_slam": "hammer_charge", "staff_release": "staff_charge", "fist_heavy": "fist_charge"}
+CHAIN = {"heavy": "charge", "hammer_slam": "hammer_charge", "staff_release": "staff_charge", "fist_heavy": "fist_charge",
+         "spear_lunge": "spear_charge"}
 # 떠 있는 동안 엉덩이를 올리지 않는 동작(0196): 게임이 몸을 `air`만큼 올린다 — 원본의 뛰어오름(엉덩이 +0.2)을 그대로 두면 두 번 뜬다.
 # 엉덩이 높이를 서기의 높이 위로 올리지 않는다(웅크림은 남는다).
 FLAT = {"jump", "land"}
@@ -130,6 +134,15 @@ XBOW_BLEND = {"throw": [(0.0, 1.0), (0.06, 0.0), (0.38, 0.0), (0.5, 1.0)]}
 # 0203: 평타 1~3타는 한 손으로 크게 휘두르는 Weapon_Combo라 옛 규칙(어깨 → 주먹), 넷째(Attack)는 두 손으로 들어 내려친다.
 TWO_HAND = {"staff4"}  # 0206: 모으기·모아 치기는 한 손 내려찍기(Charged_Axe_Chop)
 TWO_HAND_NEAR, TWO_HAND_FAR = 0.30, 0.55
+# 창(0272 2단계 — `spear_pass`): 앞으로 겨누는 동작 · 자루가 팔과 함께 도는 동작 · 겨눌 때 촉을 숙이는 몫 · 세워 들 때 앞으로 기우는 몫 ·
+# 팔 끝 쪽(엉덩이 → 칼끝 어림)이 몸 앞과 이루는 cos가 −이 값 아래면 몸 앞, +이 값 위면 팔 끝을 다 따른다(사이는 매끄럽게).
+SPEAR_POINT = {"spear1", "spear2", "spear3", "spear_dash", "spear_charge", "spear_lunge", "sk_skewer", "sk_pin", "ult_gale",
+               "sk_stitch"}
+SPEAR_SWEEP = {"sk_pole"}
+SPEAR_DIP = 0.12
+SPEAR_DIP_AT = {"sk_pin": 0.7}  # 내리꽂는 동작은 더 숙인다
+SPEAR_REST = 0.22
+SPEAR_FOLLOW = 0.125
 SPIN = -1.0  # 휘돌이가 도는 쪽(원본 Skill_03은 오른쪽으로 돈다 — 요가 줄어드는 쪽). 이펙트 `render::overlays::WHIRL_CLIP_TURN`과 같아야 한다
 
 HIT_WINDOWS = {
@@ -139,6 +152,9 @@ HIT_WINDOWS = {
     "staff_release": (0.05, 0.11), "sword_dash": (0.08, 0.10),
     "fist1": (0.048, 0.06), "fist2": (0.048, 0.06), "fist3": (0.064, 0.08), "fist_heavy": (0.048, 0.096),
     "fist_dash": (0.056, 0.07), "hammer_dash": (0.128, 0.16),
+    # 0272 2단계 창: 찌르기 둘 · 내디뎌 찌르기 · 달리며 찌르기 · 내달려 꿰뚫기 — 랩 시간에 표의 배 1.15 · 1.35 · 1.0 · 강타 1.15.
+    "spear1": (0.092, 0.115), "spear2": (0.092, 0.115), "spear3": (0.108, 0.135), "spear_dash": (0.08, 0.1),
+    "spear_lunge": (0.069, 0.138),
 }
 # 판정 순간에 무엇을 정면에 두나(0198): 기본은 칼끝(오른손), 왼 잽은 왼손(오른손은 막는 자리 — 원본은 옆으로 선 권투 자세라 엉덩이가
 # −80°를 본다), 발차기는 몸(엉덩이).
@@ -284,6 +300,25 @@ CLIPS = [
     ("sk_fuse", "mage_soell_cast_8", ("anchors", [(0.0, 28), (0.20, 26), (0.30, 8), (0.50, 22)])),
     ("sk_mine", "Collect_Object", ("anchors", [(0.0, 11), (0.18, 29), (0.43, 50)])),
     ("ult_rain", "Archery_Shot", ("anchors", [(0.0, 40), (0.30, 70), (0.50, 72), (0.55, 92), (0.65, 97), (0.95, 80)])),
+    # 0272 2단계 창(있는 원본에서 — 0 크레딧): 찌르기는 모두 내디디며 찌르기(Thrust_Slash — 8 선 자세 · 13 당김 · 17~19 내지름 ·
+    # 21~25 거둠)의 찌름 구간을 창의 판정 구간(`HIT_WINDOWS`)에 맞춘다. 1타 = 선 자세에서 찔러 당긴 자리(13)까지, 2타 = 당긴
+    # 자리에서 다시, 3타 = 크게 내디뎌(6에서) 길게, 달리며 찌르기 = 달려든 기세로(10에서), 모으기 = 당긴 채 버팀(8 → 13),
+    # 강타 = 당긴 자리에서 내달려 꿰뚫음. 창은 `spear` 뼈의 규칙으로 앞을 겨눈다(`spear_pass`).
+    ("spear1", "Thrust_Slash", ("anchors", [(0.0, 8), (0.092, 17), (0.207, 19), (0.38, 15), (0.495, 13)])),
+    ("spear2", "Thrust_Slash", ("anchors", [(0.0, 13), (0.092, 18), (0.207, 19), (0.38, 15), (0.495, 13)])),
+    ("spear3", "Thrust_Slash", ("anchors", [(0.0, 6), (0.108, 17), (0.18, 19), (0.243, 21), (0.58, 25)])),
+    ("spear_dash", "Thrust_Slash", ("anchors", [(0.0, 10), (0.08, 18), (0.18, 19), (0.43, 25)])),
+    ("spear_charge", "Thrust_Slash", ("anchors", [(0.0, 8), (0.3, 13)])),
+    ("spear_lunge", "Thrust_Slash", ("anchors", [(0.0, 13), (0.069, 18), (0.207, 19), (0.30, 21), (0.67, 25)])),
+    # 창 판의 기술: 꿰뚫기 = 내지른 채 내달림(19에 머묾), 못 박기 = 두 손으로 내리꽂음(Attack — 종 치기와 같은 원본, 촉은 땅으로
+    # 숙인다 `SPEAR_DIP_AT`), 장대 휩쓸기 = 망치 첫 타의 옆 휘두름(M11 — 후려치기와 같은 원본, 자루가 팔과 함께 돈다), 질풍 찌르기 =
+    # 세계가 멈춘 동안 당겨(13) 찌름 다섯(18 ↔ 14 — 바늘땀과 같은 꼴, 0.11초마다)과 깊게 당겼다(12) 마지막 찌름(19 → 21).
+    ("sk_skewer", "Thrust_Slash", ("anchors", [(0.0, 8), (0.14, 18), (0.36, 19), (0.66, 25)])),
+    ("sk_pin", "Attack", ("hitseg", 8, (18, 28), 40, [0.16, 0.0, 0.30])),
+    ("sk_pole", "M11", ("hitseg", 10, (18, 30), 40, [0.20, 0.0, 0.35])),
+    ("ult_gale", "Thrust_Slash", ("anchors", [(0.0, 8), (0.30, 13), (0.50, 18), (0.555, 14), (0.61, 18), (0.665, 14), (0.72, 18),
+                                             (0.775, 14), (0.83, 18), (0.885, 14), (0.94, 18), (0.995, 12), (1.05, 19), (1.15, 21),
+                                             (1.45, 25)])),
 ]
 LOOPS = {"idle", "walk", "run", "walk_back"}
 
@@ -344,10 +379,11 @@ def load_old():
         "atlas": m.mat.node_tree.nodes["Image Texture"].image,
         "weapons": [m.objects[n] for n in ("sword", "w_hammer", "w_staff", "w_crossbow")],
         "bow": m.objects["w_bow"],
+        "spear": m.objects["w_spear"],
         "lamp": [m.objects[n] for n in ("lamp_geo", "glow_lamp")],
         "shield": m.objects["shield"],
     }
-    keep = set(old["weapons"] + old["lamp"] + [old["shield"], old["bow"]])
+    keep = set(old["weapons"] + old["lamp"] + [old["shield"], old["bow"], old["spear"]])
     for o in list(bpy.data.objects):
         if o not in keep:
             if o.type == "MESH" and o.parent and o.parent.type == "ARMATURE" and o not in keep:
@@ -562,6 +598,14 @@ def attach(arm, body, old):
         o.parent_type = "BONE"
         o.parent_bone = "weapon"
         o.matrix_world = mw
+    # 창(0272 2단계): 같은 주먹 자리의 `spear` 뼈(오른손 자식) — 칼의 규칙(어깨 → 주먹)이 아니라 창의 규칙으로 돈다(`spear_pass`).
+    add_bone(arm, "spear", HAND_R, grip)
+    o = old["spear"]
+    mw = xf @ o.matrix_world
+    o.parent = arm
+    o.parent_type = "BONE"
+    o.parent_bone = "spear"
+    o.matrix_world = mw
     grip_l = fist(arm, body, "L")
     add_bone(arm, "lamp", HAND_L, grip_l)
     lf = Matrix.Translation(grip_l - old["hand_l"])
@@ -1549,6 +1593,59 @@ def bow_pass(arm, act):
     ad.action = None
 
 
+def spear_pass(arm, act):
+    """`spear` 뼈를 프레임마다 돌린다(0272 2단계 — 창은 칼보다 세 배 길어 칼의 규칙(날 = 어깨 → 주먹)으로 두면 서 있는 동안 촉이
+    땅에 박힌다). 창의 동작(`SPEAR_POINT`)에서는 앞으로 겨눈다 — 몸 앞(엉덩이의 z)과 어깨 → 주먹의 수평 쪽 사이, 주먹이 어깨보다
+    앞에 있을수록 팔을 따른다(당긴 동안은 몸 앞, 내지른 동안은 팔 끝 — `face_hit`이 정면에 맞춘 쪽), 촉은 `SPEAR_DIP`만큼 숙인다.
+    휩쓸기(`SPEAR_SWEEP`)는 어깨 → 주먹의 수평 쪽 그대로(자루가 팔과 함께 돈다). 그 밖의 동작(서기·걷기·회피 …)에서는 파수꾼처럼
+    세워 든다 — 촉이 하늘, 조금 앞으로(`SPEAR_REST`). 넓은 면(창의 +z)은 찌를 때 위, 세워 들 때 앞."""
+    sc = bpy.context.scene
+    ad = arm.animation_data
+    ad.action = act
+    n = int(act.frame_range[1])
+    hand, sh, hips = (arm.pose.bones[k] for k in (HAND_R, "mixamorig:RightArm", "mixamorig:Hips"))
+    hr = arm.data.bones[HAND_R].matrix_local
+    br = arm.data.bones["spear"].matrix_local
+    rb = br.to_3x3().normalized()
+    old_frame = basis(Vector((0, -1, 0)), Vector((1, 0, 0)))
+    up = Vector((0, 0, 1))
+    point, sweep = act.name in SPEAR_POINT, act.name in SPEAR_SWEEP
+    qs, prev = [], None
+    for k in range(n + 1):
+        sc.frame_set(k)
+        q = (hand.matrix @ hr.inverted() @ br).to_3x3().normalized()
+        fwd = hips.matrix.to_3x3() @ Vector((0, 0, 1))  # 엉덩이 뼈의 z = 몸 앞(`own_yaw`와 같은 셈)
+        fwd.z = 0.0
+        fwd = fwd.normalized() if fwd.length > 1e-4 else Vector((0, -1, 0))
+        arm_d = hand.head - sh.head
+        if point or sweep:
+            # 칼끝의 자리와 같은 셈(`hand_yaw` — `face_hit`·`face_skill`이 판정의 순간 이것을 정면에 맞춘다): 엉덩이 → 주먹 +
+            # 어깨 → 주먹 쪽 × `BLADE_REACH`의 수평 쪽. 주먹이 몸 뒤로 빠진 동안(당김)은 몸 앞으로 기운다.
+            sf = arm_d.copy()
+            sf.z *= BLADE_RISE
+            sf = sf.normalized() if sf.length > 1e-4 else fwd
+            v = hand.head + sf * BLADE_REACH - hips.head
+            v.z = 0.0
+            a = v.normalized() if v.length > 1e-4 else fwd
+            if sweep:
+                d = a
+            else:
+                w = smooth01(0.5 + 0.5 * a.dot(fwd) / SPEAR_FOLLOW)
+                d = (fwd * (1 - w) + a * w).normalized()
+            d = (d - up * SPEAR_DIP_AT.get(act.name, SPEAR_DIP)).normalized()
+            e = up.cross(d).normalized()
+        else:
+            d = (up + fwd * SPEAR_REST).normalized()
+            e = (-fwd).cross(d).normalized()
+        rot = (q.inverted() @ basis(d, e) @ old_frame.transposed() @ rb).to_quaternion()
+        if prev is not None and prev.dot(rot) < 0:
+            rot.negate()
+        prev = rot
+        qs.append(tuple(rot))
+    put(act, "spear", "rotation_quaternion", qs, reduce(qs, ROT_TOL))
+    ad.action = None
+
+
 def shield_pass(arm, act):
     """방패를 내미는 동작(`SHIELD_FRONT`)에서 `shield` 뼈를 프레임마다 돌려 판의 앞면이 앞을 보게 — 판 가운데(뼈의 머리)가 돌림 중심."""
     keys = SHIELD_FRONT.get(act.name)
@@ -1702,6 +1799,7 @@ def make_actions(arm, body):
         act = write_action(arm, name, n, poses, 1.0 if name == "drink" else 0.0, keep)
         weapon_pass(arm, act, name in LOOPS)
         bow_pass(arm, act)
+        spear_pass(arm, act)
         shield_pass(arm, act)
         made.append(act)
     for a in list(bpy.data.actions):
@@ -1714,7 +1812,7 @@ def texture(body, old):
     img = next(n.image for n in body.data.materials[0].node_tree.nodes if n.type == "TEX_IMAGE")
     img.scale(TEX, TEX)  # 쿼터뷰에서 몸은 100px 남짓이지만 숄더뷰·인형은 그 몇 배(0245)
     W.lift_purples(img)
-    C.merge_textures([body], img, old["weapons"] + old["lamp"] + [old["shield"], old["bow"]], old["atlas"], NAME)
+    C.merge_textures([body], img, old["weapons"] + old["lamp"] + [old["shield"], old["bow"], old["spear"]], old["atlas"], NAME)
 
 
 def export(arm, objs, out_dir):
@@ -1783,8 +1881,8 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, sheet_dir=None):
     texture(body, old)
     craft_actions(arm)
     make_actions(arm, body)
-    objs = [body] + old["weapons"] + old["lamp"] + [old["shield"], old["bow"]]
-    for o in old["weapons"][1:] + [old["bow"]]:  # 미리보기에서는 칼만
+    objs = [body] + old["weapons"] + old["lamp"] + [old["shield"], old["bow"], old["spear"]]
+    for o in old["weapons"][1:] + [old["bow"], old["spear"]]:  # 미리보기에서는 칼만
         o.hide_render = True
     path = export(arm, objs, models_dir)
     preview(arm, objs, os.path.join(preview_dir, f"{NAME}.png"), "idle", 0.0)
@@ -1794,8 +1892,12 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, sheet_dir=None):
     preview(arm, objs, os.path.join(preview_dir, f"{NAME}_guard_side.png"), "block", 0.2, yaw=-80.0, elev=14.0)
     if sheet_dir:
         if os.environ.get("KR_SHEET_BARE"):  # 맨손으로(무기·방패·활을 다 숨긴다 — 손과 옷의 움직임을 본다)
+            for o in old["weapons"] + [old["shield"], old["bow"], old["spear"]]:
+                o.hide_render = True
+        if os.environ.get("KR_SHEET_SPEAR"):  # 창만(0272 2단계 — 창의 동작을 본다)
             for o in old["weapons"] + [old["shield"], old["bow"]]:
                 o.hide_render = True
+            old["spear"].hide_render = False
         only = [x for x in os.environ.get("KR_SHEET_ONLY", "").split(",") if x]  # 몇 동작만(이름 쉼표로)
         for name, _, _ in CLIPS:
             if only and name not in only:

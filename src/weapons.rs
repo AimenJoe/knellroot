@@ -72,11 +72,11 @@ pub const SWEEPS: [(&str, Sweep, (f32, f32)); 24] = [
     ("fist_dash", Sweep::Center, (0.056, 0.07)),
     ("hammer_dash", Sweep::Center, (0.128, 0.16)),
     // 창(0272 2단계): 찌르기 셋·달려들며 찌르기·내달려 꿰뚫기 — 모두 앞으로 곧게.
-    ("spear1", Sweep::Center, (0.10, 0.12)),
-    ("spear2", Sweep::Center, (0.10, 0.12)),
-    ("spear3", Sweep::Center, (0.12, 0.14)),
-    ("spear_dash", Sweep::Center, (0.10, 0.12)),
-    ("spear_lunge", Sweep::Center, (0.08, 0.16)),
+    ("spear1", Sweep::Center, (0.092, 0.115)),
+    ("spear2", Sweep::Center, (0.092, 0.115)),
+    ("spear3", Sweep::Center, (0.108, 0.135)),
+    ("spear_dash", Sweep::Center, (0.08, 0.1)),
+    ("spear_lunge", Sweep::Center, (0.069, 0.138)),
 ];
 
 /// 동작의 휘두르는 쪽(표에 없으면 가운데).

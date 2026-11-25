@@ -4247,7 +4247,7 @@ mod clip_facing {
         /// 활을 겨누는 동작(0272 — 화살비): 겨누는 줄(오른손 → 활을 든 왼손)이 정면 — 몸은 옆으로 선다.
         Aim,
     }
-    const FACES: [(&str, Face); 27] = [
+    const FACES: [(&str, Face); 31] = [
         ("sk_whirl", Face::Spin),
         ("sk_cut", Face::Tip),
         ("sk_gather", Face::Hips),
@@ -4276,6 +4276,11 @@ mod clip_facing {
         ("sk_fuse", Face::Hips),
         ("sk_mine", Face::Hips),
         ("ult_rain", Face::Aim),
+        // 0272 2단계: 창 판의 셋 · 질풍 찌르기(세계가 멈춘 동안 당긴 채 — 몸이 정면).
+        ("sk_skewer", Face::Tip),
+        ("sk_pin", Face::Tip),
+        ("sk_pole", Face::Tip),
+        ("ult_gale", Face::Hips),
     ];
 
     fn deg(a: f32) -> f32 {
