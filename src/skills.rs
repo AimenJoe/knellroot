@@ -37,11 +37,13 @@ pub const STAFF: Hands = class_bit(Class::Staff);
 pub const CROSSBOW: Hands = class_bit(Class::Crossbow);
 pub const BOW: Hands = class_bit(Class::Bow);
 pub const SPEAR: Hands = class_bit(Class::Spear);
+/// 쌍단검(0274 ③ — 두 손에 날 하나씩: 방패와 들지 않는다).
+pub const DAGGER: Hands = class_bit(Class::Dagger);
 /// 한손 계열과 방패(방패 판의 기술).
 pub const SHIELD: Hands = 1 << 15;
-/// 묶음: 한손(방패가 있든 없든 — 0274부터 망치도) · 양손 근접 · 근접 · 원거리 · 어느 것이나.
+/// 묶음: 한손(방패가 있든 없든 — 0274부터 망치도) · 양손 근접(지팡이 · 창 · 쌍단검 — 두 손이 다 찬다) · 근접 · 원거리 · 어느 것이나.
 pub const ONE: Hands = SWORD | HAMMER | SHIELD;
-pub const TWO: Hands = STAFF | SPEAR;
+pub const TWO: Hands = STAFF | SPEAR | DAGGER;
 pub const MELEE: Hands = ONE | TWO;
 pub const RANGED: Hands = CROSSBOW | BOW;
 pub const ANY: Hands = MELEE | RANGED;
@@ -160,6 +162,14 @@ pub enum Form {
     /// 재기(0274 — 한손검·흡수): 숨을 몰아쉬고 다시 선다 — 체력이 `heal` 돌아오고(받는 피해를 줄이지 않는다 — 되찾을 뿐, 0095
     /// 원칙 2), 둘레 `radius` m의 적을 피해 없이 `push` m 밀쳐 내며 흡수를 건다(그 적을 치면 더 되찾는다).
     Rally { heal: i32, radius: f32, push: f32 },
+    /// 빠지며 베기(0274 ③ — 쌍단검): 시동 끝에 앞 부채꼴(`range` m · `arc_deg`°)을 한 번 베고, 그 기세로 `time`초 동안 `back` m 뒤로
+    /// 물러난다(바라보는 쪽의 반대 — 막히면 거기서 멈춘다). 무적은 없다 — 거리를 벌릴 뿐(0095 원칙 2).
+    Slip {
+        range: f32,
+        arc_deg: f32,
+        back: f32,
+        time: f32,
+    },
     /// 뿌리 솟기(0214): 앞 `len` m를 `step` m 간격으로 뿌리가 `every`초마다 차례로 솟는다 — 솟은 자리 둘레 `radius` m의 적을 한 번씩
     /// 찌르고 `stagger`초 휘청(보스는 아니다).
     Erupt {
@@ -297,10 +307,12 @@ pub enum Id {
     Shove,
     /// 재기(0274 — 한손검·흡수): 숨을 몰아쉬고 다시 선다 — 체력이 조금 돈다.
     Rally,
+    /// 빠지며 베기(0274 ③ — 쌍단검·관통): 앞을 베고 그 기세로 뒤로 물러난다(BG3 도적의 교활한 행동 — 치고 빠지기).
+    Slip,
 }
 
 /// 표 순서(대기 칸 `Player::skill_cd`의 자리 — 뒤에만 붙인다).
-pub const IDS: [Id; 27] = [
+pub const IDS: [Id; 28] = [
     Id::Whirl,
     Id::Cut,
     Id::Gather,
@@ -328,6 +340,7 @@ pub const IDS: [Id; 27] = [
     Id::Pommel,
     Id::Shove,
     Id::Rally,
+    Id::Slip,
 ];
 pub const N: usize = IDS.len();
 
@@ -470,13 +483,13 @@ pub enum Twist {
     HomeStep,
     /// 막아치기 ㄱ "넓은 팔"(0214): 부채꼴이 `arc_deg`°.
     Wide { arc_deg: f32 },
-    /// 막아치기 ㄴ "드러난 틈"(0214): 끊긴 적은 `secs`초 동안 받는 피해 × `mult`.
+    /// 막아치기 ㄴ "드러난 틈"(0214): 끊긴 적은 `secs`초 동안 받는 피해 × `mult`. 빠지며 베기 ㄴ "벌어진 틈"(0274 ③): 베인 적이(보스는 아니다).
     Expose { secs: f32, mult: f32 },
     /// 뿌리 솟기 ㄱ "둘레로"(0214): 앞으로 줄지어 대신 몸 둘레를 돌며 솟는다(반지름 = 길이의 반 · 걸음 0.4).
     Circle,
     /// 뿌리 솟기 ㄴ "묶는 뿌리"(0214): 맞은 적이 `secs`초 묶인다 — 걷지 못한다(보스는 아니다).
     Bind { secs: f32 },
-    /// 바늘땀 ㄱ "파고드는 걸음"(0270 C3): 찌르는 동안 `dist` m 내딛는다.
+    /// 바늘땀 ㄱ "파고드는 걸음"(0270 C3): 찌르는 동안 `dist` m 내딛는다. 빠지며 베기 ㄱ "먼 걸음"(0274 ③): 물러나는 거리가 `dist` m.
     Lunge { dist: f32 },
     /// 바늘땀 ㄴ "촘촘한 땀"(0270 C3): `more`번 더 찌른다.
     Stitches { more: u8 },
@@ -507,7 +520,7 @@ pub enum Twist {
 pub enum Cap {
     /// 휘돌이: 마지막 바퀴에 맞은 적이 `stagger`초 휘청인다(보스는 아니다).
     Lift { stagger: f32 },
-    /// 가로지르기: 이 스킬로 쓰러뜨리면 대기의 `part`를 돌려받는다(한 번 쓸 때 한 번).
+    /// 가로지르기 · 빠지며 베기(0274 ③): 이 스킬로 쓰러뜨리면 대기의 `part`를 돌려받는다(한 번 쓸 때 한 번).
     Refund { part: f32 },
     /// 끌어모으기: 끌려온 적이 `secs`초 동안 받는 피해 × `mult`.
     Frail { secs: f32, mult: f32 },
@@ -789,6 +802,21 @@ impl Skill {
                 radius: radius * size,
                 push,
             },
+            // 빠지며 베기: 4단은 베는 거리, 먼 걸음(ㄱ)은 물러나는 거리.
+            Form::Slip {
+                range,
+                arc_deg,
+                back,
+                time,
+            } => Form::Slip {
+                range: range * size,
+                arc_deg,
+                back: match twist {
+                    Some(Twist::Lunge { dist }) => dist,
+                    _ => back,
+                },
+                time,
+            },
             Form::Erupt {
                 len,
                 step,
@@ -828,7 +856,7 @@ impl Skill {
             Form::Ring { hits, gap, .. } | Form::Stab { hits, gap, .. } => {
                 gap * hits.saturating_sub(1) as f32
             }
-            Form::Lane { time, .. } | Form::Wave { time, .. } => time,
+            Form::Lane { time, .. } | Form::Wave { time, .. } | Form::Slip { time, .. } => time,
             Form::Brace { hold, .. } => hold,
             Form::Throw { hand, .. } => hand,
             Form::Hop { hops, gap, .. } => gap * hops as f32,
@@ -900,7 +928,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.12, 0.20, 0.25],
         },
         row: 0,
-        hands: SWORD,
+        hands: DAGGER,
         kind: Kind::Rift,
         build: 1.0,
         branch: Branch::Beat,
@@ -1001,7 +1029,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.10, 1.20, 0.35],
         },
         row: 0,
-        hands: MELEE,
+        hands: MELEE & !DAGGER,
         kind: Kind::Drain,
         build: 1.0,
         branch: Branch::Riposte,
@@ -1052,7 +1080,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.18, 0.10, 0.25],
         },
         row: 1,
-        hands: SWORD | HAMMER,
+        hands: DAGGER | HAMMER,
         kind: Kind::Rift,
         build: 0.5,
         branch: Branch::Footing,
@@ -1116,7 +1144,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.12, 0.45, 0.25],
         },
         row: 3,
-        hands: SWORD,
+        hands: DAGGER,
         kind: Kind::Sharp,
         build: 0.4,
         branch: Branch::Beat,
@@ -1208,7 +1236,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.10, 0.20, 0.25],
         },
         row: 0,
-        hands: SWORD | SPEAR,
+        hands: DAGGER | SPEAR,
         kind: Kind::Sharp,
         build: 0.45,
         branch: Branch::Beat,
@@ -1660,6 +1688,41 @@ pub const SKILLS: [Skill; N] = [
         // 잠깐 휘청인다(보스는 아니다, 버팀의 맺음과 같은 꼴).
         cap: Cap::Stun { stagger: 0.8 },
     },
+    // 빠지며 베기(0274 ③ — 쌍단검 · 관통, BG3 도적의 교활한 행동): 앞(2.4 m · 90°)을 한 번 베고 그 기세로 0.18초에 3 m 뒤로 물러난다 —
+    // 떼에 붙었다 빠지는 손. 무적은 없다(거리만). 먼 걸음(ㄱ) = 4.5 m · 벌어진 틈(ㄴ) = 베인 적이 2초 피해 +25%(보스는 아니다) ·
+    // 최종 효과 = 이 스킬로 쓰러뜨리면 쿨타임의 반을 돌려받는다.
+    Skill {
+        id: Id::Slip,
+        cooldown: 7.0,
+        startup: 0.10,
+        recover: 0.20,
+        damage: 2 * HP_UNIT,
+        poise: 1.0,
+        form: Form::Slip {
+            range: 2.4,
+            arc_deg: 90.0,
+            back: 3.0,
+            time: 0.18,
+        },
+        anim: "dagger3",
+        clip: Clip {
+            name: "sk_slip",
+            seg: [0.10, 0.18, 0.20],
+        },
+        row: 1,
+        hands: DAGGER,
+        kind: Kind::Physical,
+        build: 0.0,
+        branch: Branch::Beat,
+        picks: [
+            Twist::Lunge { dist: 4.5 },
+            Twist::Expose {
+                secs: 2.0,
+                mult: 1.25,
+            },
+        ],
+        cap: Cap::Refund { part: 0.5 },
+    },
 ];
 
 impl Id {
@@ -1700,6 +1763,7 @@ impl Id {
             Id::Pommel => "pommel",
             Id::Shove => "shove",
             Id::Rally => "rally",
+            Id::Slip => "slip",
         }
     }
 
@@ -1733,10 +1797,12 @@ pub enum Ult {
     Rain,
     /// 질풍 찌르기(0272 2단계 — 창 판): 한 줄을 잇달아 찌르고 마지막에 깊게 꿰뚫는다.
     Gale,
+    /// 그림자 습격(0274 ③ — 쌍단검 판): 한 적의 등 뒤로 숨어들어 잇달아 찌르고 마지막에 깊게 벤다.
+    Ambush,
 }
 
 /// 큰 기술의 표 순서(판의 단 `Board::ult`의 자리 — 뒤에만 붙인다).
-pub const ULTS: [Ult; 7] = [
+pub const ULTS: [Ult; 8] = [
     Ult::Upend,
     Ult::Flurry,
     Ult::Line,
@@ -1744,6 +1810,7 @@ pub const ULTS: [Ult; 7] = [
     Ult::Blizzard,
     Ult::Rain,
     Ult::Gale,
+    Ult::Ambush,
 ];
 pub const NU: usize = ULTS.len();
 
@@ -1767,6 +1834,7 @@ impl Ult {
             Ult::Blizzard => "blizzard",
             Ult::Rain => "rain",
             Ult::Gale => "gale",
+            Ult::Ambush => "ambush",
         }
     }
 
@@ -1778,7 +1846,7 @@ impl Ult {
     pub fn branch(self) -> Branch {
         match self {
             Ult::Upend | Ult::Blizzard | Ult::Rain => Branch::Footing,
-            Ult::Flurry => Branch::Beat,
+            Ult::Flurry | Ult::Ambush => Branch::Beat,
             Ult::Line | Ult::Bell | Ult::Gale => Branch::Riposte,
         }
     }
@@ -1793,6 +1861,7 @@ impl Ult {
             Ult::Blizzard => BLIZZARD.anim,
             Ult::Rain => RAIN.anim,
             Ult::Gale => GALE.anim,
+            Ult::Ambush => AMBUSH.anim,
         }
     }
 
@@ -1805,6 +1874,7 @@ impl Ult {
             Ult::Blizzard => BLIZZARD.clip,
             Ult::Rain => RAIN.clip,
             Ult::Gale => GALE.clip,
+            Ult::Ambush => AMBUSH.clip,
         }
     }
 
@@ -1818,6 +1888,7 @@ impl Ult {
             Ult::Blizzard => (BLIZZARD.freeze, BLIZZARD.startup, BLIZZARD.recover),
             Ult::Rain => (RAIN.freeze, RAIN.startup, RAIN.recover),
             Ult::Gale => (GALE.freeze, GALE.startup, GALE.recover()),
+            Ult::Ambush => (AMBUSH.freeze, AMBUSH.startup, AMBUSH.recover()),
         }
     }
 
@@ -2218,6 +2289,96 @@ impl Gale {
     }
 }
 
+/// 큰 기술 "그림자 습격"(0274 ③ — 쌍단검 판, BG3 도적의 암습): 세계 멈춤 동안 `range` m 안의 한 적(락온 > 조준 쪽 > 가장 가까운)의
+/// **등 뒤로** 숨어든다(벽 · 걸을 수 없는 칸이면 그 적의 이쪽 곁) — 그 뒤 시동 끝부터 `gap`초마다 `stabs`번 그 적을 찌른다: 앞의 찌름은
+/// `damage` · 자세 `poise` · 균열 `light_dose`, 마지막은 깊게 `last` · 자세 `last_poise` · 날카로움 `dose`(출혈), 잡몹은 `stagger`초 휘청.
+/// 등 뒤에서 찌르니 주특성 급소(`Art::sneak`)가 저절로 얹힌다. 보스는 다치고 자세가 깎이되 휘청이지 않는다(큰 기술의 규칙).
+/// 적이 없으면 제자리에서 앞을 찌른다(짧은 부채꼴). 2단 = 닿는 거리 `range2`, 3단 = 피해 `damage3` · `last3`.
+pub struct Ambush {
+    pub freeze: f32,
+    pub startup: f32,
+    pub stabs: u8,
+    pub gap: f32,
+    pub tail: f32,
+    pub range: f32,
+    pub range2: f32,
+    /// 찌름이 닿는 거리(숨어든 자리에서 — 적의 몸 밖으로).
+    pub reach: f32,
+    pub damage: i32,
+    pub damage3: i32,
+    pub last: i32,
+    pub last3: i32,
+    pub poise: f32,
+    pub last_poise: f32,
+    pub stagger: f32,
+    pub light_dose: Dose,
+    pub dose: Dose,
+    pub anim: &'static str,
+    pub clip: Clip,
+}
+
+pub const AMBUSH: Ambush = Ambush {
+    freeze: 0.3,
+    startup: 0.15,
+    stabs: 4,
+    gap: 0.12,
+    tail: 0.4,
+    range: 7.0,
+    range2: 10.0,
+    reach: 1.4,
+    damage: HP_UNIT,
+    damage3: 2 * HP_UNIT,
+    last: 5 * HP_UNIT,
+    last3: 8 * HP_UNIT,
+    poise: 0.5,
+    last_poise: 4.0,
+    stagger: 0.8,
+    light_dose: (Kind::Rift, 0.4),
+    dose: (Kind::Sharp, 2.0),
+    anim: "dagger4",
+    clip: Clip {
+        name: "ult_ambush",
+        seg: [0.30, 0.15, 0.76],
+    },
+};
+
+/// 그림자 습격의 자리 셈: 숨어든 자리와 적의 몸 사이(m) · 조준 쪽에서 이 코사인 안의 적(±45°) · 고른 적이 없을 때 찌르는 앞 부채꼴(°) ·
+/// 마지막 찌름에 잡몹이 밀리는 거리(m) · 앞의 찌름에 잡몹이 휘청이는 초(등 뒤의 급소가 이어지게).
+pub const AMBUSH_GAP: f32 = 0.15;
+pub const AMBUSH_AIM_COS: f32 = std::f32::consts::FRAC_1_SQRT_2;
+pub const AMBUSH_CONE_DEG: f32 = 100.0;
+pub const AMBUSH_PUSH: f32 = 1.5;
+pub const AMBUSH_HOLD: f32 = 0.2;
+
+impl Ambush {
+    /// 후딜(초): 찌름이 모두 이 안에 — 첫 찌름은 시동 끝.
+    pub const fn recover(&self) -> f32 {
+        (self.stabs as f32 - 1.0) * self.gap + self.tail
+    }
+
+    /// `k`째 찌름의 때(시동 끝에서 초).
+    pub fn stab_at(&self, k: u8) -> f32 {
+        k as f32 * self.gap
+    }
+
+    pub fn range_at(&self, rank: u8) -> f32 {
+        if rank >= 2 {
+            self.range2
+        } else {
+            self.range
+        }
+    }
+
+    /// `rank`단의 (앞 찌름의 피해, 마지막 찌름의 피해).
+    pub fn damage_at(&self, rank: u8) -> (i32, i32) {
+        if rank >= ULT_MAX_RANK {
+            (self.damage3, self.last3)
+        } else {
+            (self.damage, self.last)
+        }
+    }
+}
+
 /// 큰 기술의 단(0158 다): 쟁반 뒤집기는 처음부터 1단, 큰 기술 줄이 열리면 2단(휘청 +0.6초 — 보스의 짧은 휘청은 그대로)·
 /// 3단(벽에 박힌 피해 ×1.5). 몰아치기·한 줄기는 줄이 열리면 2점으로 배우고(1단) 2·3단은 1점씩.
 pub const ULT_MAX_RANK: u8 = 3;
@@ -2417,6 +2578,8 @@ pub const ENTRIES: [Entry; NE] = [
     // 0274 — 한손검 판의 둘째 줄(충격 · 흡수)
     Entry::Skill(Id::Shove),
     Entry::Skill(Id::Rally),
+    // 0274 ③ — 쌍단검 판의 둘째 줄(가운데)
+    Entry::Skill(Id::Slip),
     // 3 — 쓴 점수 8
     Entry::Ult(Ult::Flurry),
     Entry::Cell(Cell::FinalMeasure),
@@ -2431,6 +2594,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Ult(Ult::Rain),
     // 0272 2단계 — 창 판의 큰 기술
     Entry::Ult(Ult::Gale),
+    // 0274 ③ — 쌍단검 판의 큰 기술
+    Entry::Ult(Ult::Ambush),
     // 4 — 쓴 점수 14(0214)
     Entry::Skill(Id::Swallow),
     Entry::Cell(Cell::HeldBreath),
@@ -3290,7 +3455,7 @@ mod tests {
     fn the_board_stands_as_the_0161_table_says() {
         use Branch::{Beat, Footing, Riposte};
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-        let table: [(usize, Branch, &[Entry]); 40] = [
+        let table: [(usize, Branch, &[Entry]); 42] = [
             (
                 0,
                 Beat,
@@ -3349,12 +3514,15 @@ mod tests {
             (1, Footing, &[S(Id::Pole)]),
             (1, Footing, &[S(Id::Shove)]),
             (1, Riposte, &[S(Id::Rally)]),
+            // 0274 ③: 쌍단검 판.
+            (1, Beat, &[S(Id::Slip)]),
             (2, Beat, &[U(Ult::Flurry), C(Cell::FinalMeasure)]),
             (2, Riposte, &[U(Ult::Line), C(Cell::OneWhoStands)]),
             (2, Footing, &[U(Ult::Upend), C(Cell::PathOpeningStep)]),
             (2, Riposte, &[U(Ult::Bell)]),
             (2, Footing, &[U(Ult::Blizzard), U(Ult::Rain)]),
             (2, Riposte, &[U(Ult::Gale)]),
+            (2, Beat, &[U(Ult::Ambush)]),
             (
                 3,
                 Beat,
@@ -3401,7 +3569,7 @@ mod tests {
                 assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
             }
         }
-        assert_eq!(NE, 70);
+        assert_eq!(NE, 72);
         for (i, e) in ENTRIES.iter().enumerate() {
             assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
         }
@@ -4220,7 +4388,8 @@ mod tests {
                 Ult::Bell,
                 Ult::Blizzard,
                 Ult::Rain,
-                Ult::Gale
+                Ult::Gale,
+                Ult::Ambush
             ]
         );
         for u in ULTS {
@@ -4397,7 +4566,7 @@ mod clip_facing {
         /// 활을 겨누는 동작(0272 — 화살비): 겨누는 줄(오른손 → 활을 든 왼손)이 정면 — 몸은 옆으로 선다.
         Aim,
     }
-    const FACES: [(&str, Face); 34] = [
+    const FACES: [(&str, Face); 36] = [
         ("sk_whirl", Face::Spin),
         ("sk_cut", Face::Tip),
         ("sk_gather", Face::Hips),
@@ -4435,6 +4604,9 @@ mod clip_facing {
         ("sk_pommel", Face::Tip),
         ("sk_shove", Face::Hips),
         ("sk_rally", Face::Hold),
+        // 0274 ③ 쌍단검.
+        ("sk_slip", Face::Tip),
+        ("ult_ambush", Face::Hips),
     ];
 
     fn deg(a: f32) -> f32 {

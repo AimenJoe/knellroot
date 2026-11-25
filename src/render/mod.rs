@@ -58,8 +58,11 @@ pub(crate) fn hide_unheld(
 ) {
     for w in crate::weapons::WEAPONS.iter() {
         if w.id != weapon || away {
-            if let Some(n) = model.node(w.node) {
-                hide.push((n, Quat::IDENTITY, Vec3::ZERO));
+            // 왼손의 짝(0274 ③ 쌍단검)도 함께 — 빈 이름은 부위가 없다.
+            for name in [w.node, w.off_hand] {
+                if let Some(n) = model.node(name).filter(|_| !name.is_empty()) {
+                    hide.push((n, Quat::IDENTITY, Vec3::ZERO));
+                }
             }
         }
     }

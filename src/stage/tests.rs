@@ -1859,10 +1859,11 @@ fn the_watchmans_spear_waits_in_the_villages_third_chest() {
             Loot::Charm(Charm::Cloth),
             Loot::Charm(Charm::Jar),
             Loot::Weapon(crate::weapons::Id::Spear),
+            Loot::Weapon(crate::weapons::Id::Daggers),
         ]
     );
     let (mut run, _) = StageRun::start(def);
-    assert_eq!(run.chest.at.len(), 3);
+    assert_eq!(run.chest.at.len(), 4);
     let g = run.level.ground();
     let cell = |p: Vec3| g.cell_of(p).unwrap();
     assert_eq!(
@@ -1874,5 +1875,41 @@ fn the_watchmans_spear_waits_in_the_villages_third_chest() {
     let (x, z) = cell(run.chest.at[2]);
     assert!(x < 8 && (39..47).contains(&z), "west of the alley: {x} {z}");
     run.set_opened(&[0, 1]);
-    assert_eq!(run.chest.open, vec![true, true, false], "an old record");
+    assert_eq!(
+        run.chest.open,
+        vec![true, true, false, false],
+        "an old record"
+    );
+}
+
+/// 0274 ③: 빈집의 쌍단검은 떠난 마을의 넷째 상자 — 거주지 동쪽 벽 너머 빈집의 뒷방(도착에서 가깝지만 본길에서 비켜 둔 곳). 옛 상자
+/// 셋의 기록 번호(위 → 아래 차례)는 그대로다: 셋을 연 옛 기록은 쌍단검의 상자를 연 것으로 읽히지 않는다. 뒷방은 걸어서 닿고 거주지와
+/// 같은 높이다(`every_floor_is_reachable_and_every_spawn_can_walk_to_the_fight`가 모든 바닥을 본다).
+#[test]
+fn the_empty_house_daggers_wait_in_the_villages_fourth_chest() {
+    let def = &village::DEF;
+    assert_eq!(
+        def.chest_loot.last(),
+        Some(&Loot::Weapon(crate::weapons::Id::Daggers))
+    );
+    let (mut run, _) = StageRun::start(def);
+    assert_eq!(run.chest.at.len(), 4);
+    let g = run.level.ground();
+    let cell = |p: Vec3| g.cell_of(p).unwrap();
+    assert_eq!(
+        cell(run.chest.at[2]),
+        (3, 42),
+        "the spear's chest keeps its place"
+    );
+    let (x, z) = cell(run.chest.at[3]);
+    assert!(
+        x > 38 && (52..59).contains(&z),
+        "east of the homes: {x} {z}"
+    );
+    run.set_opened(&[0, 1, 2]);
+    assert_eq!(
+        run.chest.open,
+        vec![true, true, true, false],
+        "an old record"
+    );
 }

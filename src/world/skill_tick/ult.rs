@@ -1,5 +1,6 @@
 //! 큰 기술의 몸(0251 R11 — `skill_tick.rs`에서 뺐다): 시작(게이지를 통째로) · 한 줄기 가르기 · 쟁반 뒤집기.
 use super::*;
+use crate::skills::{AMBUSH_AIM_COS, AMBUSH_CONE_DEG, AMBUSH_GAP, AMBUSH_HOLD, AMBUSH_PUSH};
 
 impl World {
     /// 큰 기술 시작(끼운 하나): 게이지를 통째로 쓴다. 쟁반 뒤집기·한 줄기는 세계가 한 번 멈춘다(시동 정지 — "시간"),
@@ -24,6 +25,9 @@ impl World {
             if let Some(d) = dir {
                 self.player.facing = d.x.atan2(d.z);
             }
+        }
+        if kind == skills::Ult::Ambush {
+            self.ambush_blink(cx);
         }
         if kind == skills::Ult::Rain {
             let (dir, dist) = self.rain_aim(cx);
@@ -61,8 +65,8 @@ impl World {
                 skills::Ult::Bell => self.great_bell(cx.t),
                 skills::Ult::Blizzard => self.blizzard(),
                 skills::Ult::Rain => self.arrow_rain(),
-                // 질풍 찌르기: 찌름은 아래에서 때마다(첫 찌름이 시동 끝).
-                skills::Ult::Gale => {}
+                // 질풍 찌르기 · 그림자 습격: 찌름은 아래에서 때마다(첫 찌름이 시동 끝).
+                skills::Ult::Gale | skills::Ult::Ambush => {}
             }
         }
         if kind == skills::Ult::Gale {
@@ -70,6 +74,14 @@ impl World {
                 let at = startup + skills::GALE.thrust_at(k);
                 if e < at && e1 >= at {
                     self.gale_thrust(cx.t, k);
+                }
+            }
+        }
+        if kind == skills::Ult::Ambush {
+            for k in 0..skills::AMBUSH.stabs {
+                let at = startup + skills::AMBUSH.stab_at(k);
+                if e < at && e1 >= at {
+                    self.ambush_stab(cx.t, k);
                 }
             }
         }
@@ -206,6 +218,182 @@ impl World {
             half: g.half,
             last,
         });
+        self.skill_ev = ev;
+    }
+
+    /// 그림자 습격(0274 ③)의 시작: 닿는 거리 안의 한 적(락온 > 조준 쪽 ±45° > 가장 가까운)을 고르고 그 적의 **등 뒤**로 숨어든다 —
+    /// 등 뒤가 막혔으면(벽 · 기둥 · 걸을 수 없는 칸 · 높이가 다른 땅) 옆, 그도 막혔으면 이쪽 곁. 다 막혔으면 제자리에서 그 적 쪽을 본다.
+    /// 숨어든 뒤에는 그 적을 본다. 적이 없으면 제자리(앞을 찌른다).
+    fn ambush_blink(&mut self, cx: &Ctx) {
+        let pl = &self.player;
+        let p = pl.pos;
+        let body = p.y + pl.air;
+        let range = skills::AMBUSH.range_at(pl.skill.ult_rank);
+        let reachable = |en: &crate::enemy::Enemy| {
+            en.active()
+                && !en.harmless()
+                && (en.pos.y - body).abs() <= HIT_DY
+                && vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z).length() - en.radius <= range
+        };
+        let dist = |en: &crate::enemy::Enemy| vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z).length();
+        let locked = cx.target.and_then(|tg| {
+            (0..self.enemies.len()).find(|&i| {
+                let en = &self.enemies[i];
+                reachable(en) && vec3(en.pos.x - tg.x, 0.0, en.pos.z - tg.z).length() < 0.5
+            })
+        });
+        let aimed = cx.aim.and_then(|a| {
+            (0..self.enemies.len())
+                .filter(|&i| {
+                    let en = &self.enemies[i];
+                    let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z).normalize_or_zero();
+                    reachable(en) && d.dot(a) > AMBUSH_AIM_COS
+                })
+                .min_by(|&a, &b| dist(&self.enemies[a]).total_cmp(&dist(&self.enemies[b])))
+        });
+        let nearest = || {
+            (0..self.enemies.len())
+                .filter(|&i| reachable(&self.enemies[i]))
+                .min_by(|&a, &b| dist(&self.enemies[a]).total_cmp(&dist(&self.enemies[b])))
+        };
+        let pick = locked.or(aimed).or_else(nearest);
+        self.player.skill.ambush_on = pick;
+        let Some(i) = pick else {
+            return;
+        };
+        let en = &self.enemies[i];
+        let (q, back) = (en.pos, -en.facing_dir());
+        let gap = en.radius + PLAYER_RADIUS + AMBUSH_GAP;
+        let toward = vec3(p.x - q.x, 0.0, p.z - q.z).normalize_or(back);
+        let turn = |v: Vec3, deg: f32| {
+            let (s, c) = deg.to_radians().sin_cos();
+            vec3(v.x * c + v.z * s, 0.0, -v.x * s + v.z * c)
+        };
+        let spot = [
+            back,
+            turn(back, 60.0),
+            turn(back, -60.0),
+            turn(back, 120.0),
+            turn(back, -120.0),
+            toward,
+        ]
+        .into_iter()
+        .map(|d| q + d * gap)
+        .find(|&s| self.ambush_fits(q, s));
+        let from = self.player.pos;
+        if let Some(s) = spot {
+            let to = if self.ground.is_some() {
+                vec3(s.x, self.ground_y(s), s.z)
+            } else {
+                vec3(s.x, from.y, s.z)
+            };
+            let pl = &mut self.player;
+            pl.pos = to;
+            pl.prev = to;
+            pl.vel = Vec3::ZERO;
+            self.skill_ev.push(Event::Blink { from, to });
+        }
+        let pl = &mut self.player;
+        let d = vec3(q.x - pl.pos.x, 0.0, q.z - pl.pos.z);
+        if d.length_squared() > 1e-4 {
+            pl.facing = d.x.atan2(d.z);
+        }
+    }
+
+    /// 숨어들 자리 `s`가 서는 곳인가: 그 적(`q`)에서 `s`까지 벽 · 기둥에 막히지 않고, 땅이 있는 지역이면 걸을 수 있는 칸이며 그 적과 같은
+    /// 높이(한 걸음 `GROUND_STEP` 안)다.
+    fn ambush_fits(&self, q: Vec3, s: Vec3) -> bool {
+        let d = vec3(s.x - q.x, 0.0, s.z - q.z);
+        let len = d.length();
+        let dir = d / len.max(1e-4);
+        let eye = q + Vec3::Y * BLADE_HEIGHT;
+        if self
+            .obstacles
+            .iter()
+            .any(|o| o.ray(eye, dir).is_some_and(|t| t < len + PLAYER_RADIUS))
+        {
+            return false;
+        }
+        match &self.ground {
+            None => true,
+            Some(g) => g.cell_of(s).is_some_and(|(x, z)| {
+                g.height_in(x, z, s)
+                    .is_some_and(|h| (h - q.y).abs() <= GROUND_STEP)
+            }),
+        }
+    }
+
+    /// 그림자 습격의 `k`째 찌름: 고른 적이 닿는 거리(`AMBUSH.reach` + 몸) 안이면 그 적만 — 아니면(없거나 멀어졌으면) 앞 부채꼴의
+    /// 깨어 있는 적. 앞의 찌름은 가볍게(균열 · 잡몹은 잠깐 휘청 — 등 뒤의 급소가 이어진다), 마지막은 깊게(출혈 · 휘청 · 조금 밀림).
+    /// 보스는 다치고 자세가 깎이되 휘청이지도 밀리지도 않는다(`skill_touch`가 휘청을 거른다).
+    pub(super) fn ambush_stab(&mut self, t: &Tuning, k: u8) {
+        let a = &skills::AMBUSH;
+        let mut ev = std::mem::take(&mut self.skill_ev);
+        let last = k + 1 >= a.stabs;
+        let p = self.player.pos;
+        let body = p.y + self.player.air;
+        let near = |en: &crate::enemy::Enemy| {
+            en.active()
+                && (en.pos.y - body).abs() <= HIT_DY
+                && vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z).length() - en.radius <= a.reach
+        };
+        let held = self
+            .player
+            .skill
+            .ambush_on
+            .filter(|&i| self.enemies.get(i).is_some_and(near));
+        if let Some(i) = held {
+            let q = self.enemies[i].pos;
+            let d = vec3(q.x - p.x, 0.0, q.z - p.z);
+            if d.length_squared() > 1e-4 {
+                self.player.facing = d.x.atan2(d.z);
+            }
+        }
+        let dir = self.player.facing_dir();
+        let cone = (AMBUSH_CONE_DEG * 0.5).to_radians().cos();
+        let targets: Vec<usize> = match held {
+            Some(i) => vec![i],
+            None => (0..self.enemies.len())
+                .filter(|&i| {
+                    let en = &self.enemies[i];
+                    let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z).normalize_or(dir);
+                    near(en) && d.dot(dir) >= cone
+                })
+                .collect(),
+        };
+        let rank = self.player.skill.ult_rank;
+        let (light, deep) = a.damage_at(rank);
+        for i in targets {
+            let boss = self.enemies[i].boss;
+            let at = self.enemies[i].pos + Vec3::Y * self.enemies[i].height * 0.55;
+            if last {
+                self.sparks
+                    .extend(sparks_at(at, dir, self.player.swings, true));
+            }
+            let knock = if last && !boss {
+                dir * AMBUSH_PUSH * KNOCK_DECAY
+            } else {
+                Vec3::ZERO
+            };
+            self.skill_touch(
+                t,
+                &mut ev,
+                i,
+                &Touch {
+                    damage: if last { deep } else { light },
+                    poise: if last { a.last_poise } else { a.poise },
+                    stagger: if last { a.stagger } else { AMBUSH_HOLD },
+                    knock,
+                    crit: last,
+                    dose: self.dosed(if last { a.dose } else { a.light_dose }),
+                    flat: false,
+                },
+            );
+        }
+        if last {
+            self.hitstop = self.hitstop.max(t[P::Hitstop] * ULT_HITSTOP);
+        }
+        ev.push(Event::AmbushStab { at: p, dir, last });
         self.skill_ev = ev;
     }
 

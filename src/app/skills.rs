@@ -71,6 +71,7 @@ pub(super) fn skill_text(id: sk::Id) -> (&'static str, &'static str) {
         sk::Id::Pommel => (s.skill_pommel, s.skill_pommel_d),
         sk::Id::Shove => (s.skill_shove, s.skill_shove_d),
         sk::Id::Rally => (s.skill_rally, s.skill_rally_d),
+        sk::Id::Slip => (s.skill_slip, s.skill_slip_d),
     }
 }
 
@@ -85,6 +86,7 @@ pub(super) fn ult_text(u: sk::Ult) -> (&'static str, &'static str) {
         sk::Ult::Blizzard => (s.ult_blizzard, s.ult_blizzard_d),
         sk::Ult::Rain => (s.ult_rain, s.ult_rain_d),
         sk::Ult::Gale => (s.ult_gale, s.ult_gale_d),
+        sk::Ult::Ambush => (s.ult_ambush, s.ult_ambush_d),
     }
 }
 
@@ -187,6 +189,8 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Shove, Pick::B) => (s.pick_shove_b, s.pick_shove_b_d),
         (sk::Id::Rally, Pick::A) => (s.pick_rally_a, s.pick_rally_a_d),
         (sk::Id::Rally, Pick::B) => (s.pick_rally_b, s.pick_rally_b_d),
+        (sk::Id::Slip, Pick::A) => (s.pick_slip_a, s.pick_slip_a_d),
+        (sk::Id::Slip, Pick::B) => (s.pick_slip_b, s.pick_slip_b_d),
     };
     (mark, name, desc)
 }
@@ -222,6 +226,7 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Pommel => s.cap_pommel,
         sk::Id::Shove => s.cap_shove,
         sk::Id::Rally => s.cap_rally,
+        sk::Id::Slip => s.cap_slip,
     }
 }
 
@@ -266,9 +271,11 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
                 | Form::Trap { .. }
                 | Form::Rally { .. } => s.rk_radius,
                 Form::Lane { .. } | Form::Erupt { .. } => s.rk_length,
-                Form::Pull { .. } | Form::Throw { .. } | Form::Hop { .. } | Form::Stab { .. } => {
-                    s.rk_range
-                }
+                Form::Pull { .. }
+                | Form::Throw { .. }
+                | Form::Hop { .. }
+                | Form::Stab { .. }
+                | Form::Slip { .. } => s.rk_range,
                 Form::Cone { .. } | Form::Bash { .. } => s.rk_arc,
             };
             fill(t, &[&pct(sk::RANK4_SIZE)])
@@ -311,6 +318,8 @@ pub(super) fn ult_gives(u: sk::Ult, rank: u8) -> String {
         (sk::Ult::Rain, _) => fill(s.rk_line_dmg, &[&sk::RAIN.damage3.to_string()]),
         (sk::Ult::Gale, 2) => fill(s.rk_line_len, &[&num(sk::GALE.len2)]),
         (sk::Ult::Gale, _) => fill(s.rk_line_dmg, &[&sk::GALE.last3.to_string()]),
+        (sk::Ult::Ambush, 2) => fill(s.rk_ambush_range, &[&num(sk::AMBUSH.range2)]),
+        (sk::Ult::Ambush, _) => fill(s.rk_line_dmg, &[&sk::AMBUSH.last3.to_string()]),
     }
 }
 
@@ -2583,8 +2592,10 @@ mod tests {
     fn the_hands_line_names_weapon_classes_and_the_plates_are_named_by_class() {
         let s = s();
         assert_eq!(hands_text(Id::Gather), s.hands_any);
+        // 0274 ③: 가로지르기는 쌍단검의 것(두 손이 다 찬 종류라 "방패 없이"를 붙이지 않는다), 자루 치기는 한손검만.
+        assert_eq!(hands_text(Id::Cut), s.class_dagger);
         assert_eq!(
-            hands_text(Id::Cut),
+            hands_text(Id::Pommel),
             fill(s.hands_no_shield, &[s.class_sword])
         );
         assert_eq!(hands_text(Id::Bash), s.hands_shield);
@@ -2613,6 +2624,7 @@ mod tests {
                 s.class_crossbow,
                 s.class_bow,
                 s.class_spear,
+                s.class_dagger,
                 s.plate_shield
             ]
         );
@@ -2627,6 +2639,7 @@ mod tests {
                 s.attr_slash,
                 s.attr_strike,
                 s.attr_magic,
+                s.attr_pierce,
                 s.attr_pierce,
                 s.attr_pierce,
                 s.attr_pierce,
@@ -2728,7 +2741,7 @@ mod tests {
         // 무기 판의 스킬·큰 기술은 결보다 큰 칸.
         let duel = SWORD;
         let (cut, shock) = (
-            spot_on(duel, at(Entry::Skill(Id::Cut))).unwrap(),
+            spot_on(duel, at(Entry::Skill(Id::Pommel))).unwrap(),
             spot_on(duel, at(Entry::Vein(crate::progression::Vein::Shock))).unwrap(),
         );
         assert!(cut.half > shock.half && cut.c.y < shock.c.y);
@@ -2881,14 +2894,8 @@ mod tests {
     fn walking_reaches_every_cell_of_every_plate_from_anywhere() {
         let duel = SWORD;
         let w = |from, dx, dy| walk(duel, from, dx, dy, true, 0);
-        // 0274: 한손검 판 = 왼쪽 충격(자루 치기 · 밀치기 · 결) · 가운데(휘돌이 · 가로지르기 · 끌어모으기 · 바늘땀 / 던지기 ·
-        // 제비걸음 / 몰아치기) · 오른쪽 흡수(버팀 · 재기 · 결).
-        let (whirl, cut, swallow, throw) = (
-            at(Entry::Skill(Id::Whirl)),
-            at(Entry::Skill(Id::Cut)),
-            at(Entry::Skill(Id::Swallow)),
-            at(Entry::Skill(Id::Throw)),
-        );
+        // 0274 ③: 한손검 판 = 왼쪽 충격(자루 치기 · 밀치기 · 결) · 가운데(휘돌이 · 끌어모으기 / — / 몰아치기) · 오른쪽 흡수(버팀 · 재기 · 결).
+        let whirl = at(Entry::Skill(Id::Whirl));
         let (brace, rally, shove) = (
             at(Entry::Skill(Id::Brace)),
             at(Entry::Skill(Id::Rally)),
@@ -2896,16 +2903,12 @@ mod tests {
         );
         let flurry = at(Entry::Ult(Ult::Flurry));
         assert_eq!(w(whirl, 0, -1), STRIP);
-        assert_eq!(w(cut, 0, -1), STRIP);
         assert_eq!(w(brace, 1, 0), brace, "the right edge");
         assert_eq!(
             w(brace, 0, 1),
             rally,
             "the right branch goes down its column"
         );
-        assert_eq!(w(shove, 1, 0), throw);
-        assert_eq!(w(throw, 1, 0), swallow);
-        assert_eq!(w(swallow, 1, 0), rally);
         // 셋째 줄 왼쪽은 충격의 결.
         assert_eq!(
             w(shove, 0, 1),
@@ -2913,6 +2916,28 @@ mod tests {
             "the left branch goes down its column"
         );
         assert_eq!(w(flurry, 0, 1), RESPEC);
+        // 쌍단검 판(0274 ③) = 왼쪽 날카로움(바늘땀 · 제비걸음 · 결) · 가운데(끌어모으기 · 빠지며 베기 · 그림자 습격) · 오른쪽 균열
+        // (가로지르기 · 던지기 · 결) — 옛 한손검 판의 넷이 옮겨 와 세 줄이 다 찬다.
+        let dag = Plate::Class(Class::Dagger);
+        let d = |from, dx, dy| walk(dag, from, dx, dy, true, 0);
+        let (stitch, cut, swallow, throw, slip) = (
+            at(Entry::Skill(Id::Stitch)),
+            at(Entry::Skill(Id::Cut)),
+            at(Entry::Skill(Id::Swallow)),
+            at(Entry::Skill(Id::Throw)),
+            at(Entry::Skill(Id::Slip)),
+        );
+        assert_eq!(d(stitch, 0, -1), STRIP);
+        assert_eq!(d(cut, 0, -1), STRIP);
+        assert_eq!(d(cut, 1, 0), cut, "the right edge");
+        assert_eq!(d(cut, 0, 1), throw);
+        assert_eq!(d(swallow, 1, 0), slip);
+        assert_eq!(d(slip, 1, 0), throw);
+        assert_eq!(
+            d(swallow, 0, 1),
+            at(Entry::Vein(crate::progression::Vein::Sharp))
+        );
+        assert_eq!(d(at(Entry::Ult(Ult::Ambush)), 0, 1), RESPEC);
         for plate in PLATES {
             // 위아래 걸음은 줄을 건너뛰지 않는다: 어느 칸에서든 바로 다음 줄로. 옆 걸음은 줄을 떠나지 않는다.
             let sp = spots_on(plate);
@@ -2976,7 +3001,7 @@ mod tests {
     fn a_plate_opens_on_its_first_buyable_cell_or_first_learned_skill() {
         let duel = SWORD;
         let b = Board::default();
-        // 한손검 판의 첫 줄(읽는 차례: 왼쪽 자루 치기 → 가운데 휘돌이 · 가로지르기 · 끌어모으기 · 바늘땀 → 오른쪽 버팀 — 0274).
+        // 한손검 판의 첫 줄(읽는 차례: 왼쪽 자루 치기 → 가운데 휘돌이 · 끌어모으기 → 오른쪽 버팀 — 0274 ③).
         let pommel = at(Entry::Skill(Id::Pommel));
         assert_eq!(first_focus_on(duel, &b, 5, true), pommel);
         assert_eq!(first_focus_on(duel, &b, 0, true), pommel, "nothing to buy");
@@ -2986,14 +3011,14 @@ mod tests {
         full.rank[Id::Whirl.index()] = sk::MAX_RANK;
         assert_eq!(
             first_focus_on(duel, &full, 15, true),
-            at(Entry::Skill(Id::Cut))
+            at(Entry::Skill(Id::Gather))
         );
         assert_eq!(first_focus_on(duel, &full, 10, true), pommel, "all spent");
-        let mut cut = Board::default();
-        cut.rank[Id::Cut.index()] = 1;
+        let mut gather = Board::default();
+        gather.rank[Id::Gather.index()] = 1;
         assert_eq!(
-            first_focus_on(duel, &cut, 1, false),
-            at(Entry::Skill(Id::Cut))
+            first_focus_on(duel, &gather, 1, false),
+            at(Entry::Skill(Id::Gather))
         );
         // 몸의 판: 길이 이어진 칸이 없으면(스킬을 아직 모른다) 살 것이 없다 — 왼쪽 위 칸.
         let breath = at(Entry::Cell(Cell::EvenBreath));
@@ -3116,7 +3141,7 @@ mod tests {
             at(Id::Brace),
             [Do::Wear(0), Do::Wear(1), Do::Wear(2), Do::Wear(3)]
         );
-        assert_eq!(at(Id::Swallow), [Do::Wear(0), Do::Wear(1)], "one hand only");
+        assert_eq!(at(Id::Pommel), [Do::Wear(0), Do::Wear(1)], "one hand only");
     }
 
     /// 끼우기: 다른 칸에 끼어 있던 스킬이면 맞바꾼다 — 같은 스킬이 두 칸에 서지 않는다.

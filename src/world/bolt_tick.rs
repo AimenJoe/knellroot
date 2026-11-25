@@ -109,17 +109,27 @@ impl World {
                 return;
             }
             let left = t[P::CastRange] * def.range;
-            let dir = self.shot_line(pos, dir, &def, left);
-            self.bolts.push(Bolt {
-                pos,
-                prev: pos,
-                dir,
-                left,
-                def,
-                hits: 0,
-                veined: [false; 5],
-                back: false,
-            });
+            // 좁은 부채꼴(0274 ③ — 투척 단검 셋): 겨눈 쪽을 가운데로 `spread`°씩 벌려 하나씩 — 나머지 종류는 하나.
+            let (fan, spread) = self
+                .player
+                .weapon
+                .toss()
+                .map_or((1, 0.0), |t| (t.fan.max(1), t.spread));
+            for k in 0..fan {
+                let off = (k as f32 - (fan - 1) as f32 * 0.5) * spread;
+                let d = Quat::from_rotation_y(off.to_radians()) * dir;
+                let d = self.shot_line(pos, d, &def, left);
+                self.bolts.push(Bolt {
+                    pos,
+                    prev: pos,
+                    dir: d,
+                    left,
+                    def,
+                    hits: 0,
+                    veined: [false; 5],
+                    back: false,
+                });
+            }
         }
     }
 
@@ -522,7 +532,7 @@ impl World {
                 if i < 64 {
                     b.hits |= 1 << i;
                 }
-                let keen = self.keen();
+                let knack = self.knack();
                 let en = &mut self.enemies[i];
                 // 등딱지(0120): 앞에서 온 탄도 튕긴다(탄은 거기서 멈춘다 — 방랑자는 튀지 않는다).
                 if en.guards(-b.dir) {
@@ -565,7 +575,7 @@ impl World {
                         },
                     crit,
                     self.stats.opened_dmg,
-                    keen,
+                    knack,
                     t,
                 );
                 en.exposed = 0.0;

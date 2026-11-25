@@ -351,7 +351,7 @@ impl World {
                 .or(lock)
                 .or_else(|| nearest_in_reach(&self.enemies, pl.pos, range + 1.0, None))
                 .unwrap_or(facing),
-            Form::Bash { range, .. } | Form::Stab { range, .. } => cx
+            Form::Bash { range, .. } | Form::Stab { range, .. } | Form::Slip { range, .. } => cx
                 .aim
                 .or(lock)
                 .or_else(|| nearest_in_reach(&self.enemies, pl.pos, range + 1.0, None))
@@ -860,6 +860,45 @@ impl World {
                     self.skill_bash(t, &d, dir, swing, range, arc_deg, stagger, mult);
                 }
             }
+            // 빠지며 베기(0274 ③): 시동 끝에 앞 부채꼴을 한 번 벤다 — 물러나는 걸음은 플레이어 틱(`player_tick`)이 `time`초 동안.
+            // 벌어진 틈(ㄴ)이면 베인 적이 한동안 더 다치고(보스는 아니다), 최종 효과면 이 스킬로 쓰러뜨린 때 쿨타임의 몫을 돌려받는다.
+            Form::Slip { range, arc_deg, .. } => {
+                if crossed(s.startup) {
+                    self.skill_ev.push(Event::Skill { id, at, dir });
+                    let kills = self.kills;
+                    let half = (arc_deg * 0.5).to_radians().cos();
+                    self.skill_area(
+                        t,
+                        &Sweep {
+                            reach: range,
+                            cone: Some((dir, half)),
+                            push: 0.0,
+                            stagger: 0.0,
+                            swing,
+                            damage: s.damage,
+                            poise: s.poise,
+                            shatter: 1.0,
+                            dose: self.dosed(s.dose()),
+                        },
+                    );
+                    if let Some(Twist::Expose { secs, mult }) = d.twist {
+                        for en in &mut self.enemies {
+                            if en.hit_by == swing && en.alive() && !en.boss {
+                                en.marks.frail = en.marks.frail.max(secs);
+                                en.marks.frail_mult = mult;
+                            }
+                        }
+                    }
+                    if let Some(Cap::Refund { part }) = d.cap {
+                        if self.kills > kills {
+                            let back =
+                                s.cooldown * t[P::SkillCooldownX] * self.stats.skill_cd * part;
+                            let cd = &mut self.player.skill.cd[id.index()];
+                            *cd = (*cd - back).max(0.0);
+                        }
+                    }
+                }
+            }
             // 뿌리 솟기(0214): 뿌리가 `every`초마다 하나씩 솟는다 — 앞으로 줄지어(또는 ㄱ 둘레로 돌며). 한 번 쓸 때 적마다 한 번.
             Form::Erupt {
                 len,
@@ -1142,7 +1181,7 @@ impl World {
         let facing = self.player.facing_dir();
         let snare = self.snare_secs();
         let mut n = 0;
-        let keen = self.keen();
+        let knack = self.knack();
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == sw.swing || (en.pos.y - body).abs() > HIT_DY {
                 continue;
@@ -1167,7 +1206,7 @@ impl World {
                 self.stats.dmg + sw.damage,
                 crit,
                 self.stats.opened_dmg,
-                keen,
+                knack,
                 t,
             );
             // 땅울림 맺음: 이미 자세가 깨져 있던 적에게는 배로(이 타로 깨진 적은 다음부터).
@@ -1352,7 +1391,7 @@ impl World {
         let poise_k = self.stats.poise;
         let dose = self.dosed(d.skill.dose());
         let mut n = 0;
-        let keen = self.keen();
+        let knack = self.knack();
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing || (en.pos.y - body).abs() > HIT_DY {
                 continue;
@@ -1374,7 +1413,7 @@ impl World {
                 self.stats.dmg + d.skill.damage,
                 crit,
                 self.stats.opened_dmg,
-                keen,
+                knack,
                 t,
             );
             if crit {
@@ -1475,7 +1514,7 @@ impl World {
         let poise_k = self.stats.poise;
         let dose = self.dosed(s.dose());
         let mut n = 0;
-        let keen = self.keen();
+        let knack = self.knack();
         for en in &mut self.enemies {
             if !en.active() || en.hit_by == swing || (en.pos.y - at.y).abs() > HIT_DY {
                 continue;
@@ -1497,7 +1536,7 @@ impl World {
                 self.stats.dmg + s.damage,
                 crit,
                 self.stats.opened_dmg,
-                keen,
+                knack,
                 t,
             );
             if crit {
@@ -1538,7 +1577,7 @@ impl World {
         let mut ev = std::mem::take(&mut self.skill_ev);
         let snare = self.snare_secs();
         let mut n = 0;
-        let keen = self.keen();
+        let knack = self.knack();
         for en in &mut self.enemies {
             if !en.active() || (en.pos.y - b.at.y).abs() > HIT_DY {
                 continue;
@@ -1558,7 +1597,7 @@ impl World {
                 self.stats.dmg + b.damage,
                 crit,
                 self.stats.opened_dmg,
-                keen,
+                knack,
                 t,
             );
             if crit {

@@ -50,8 +50,9 @@ fn an_empty_slot_does_nothing_when_pressed() {
         rank,
         pick: Pick::A,
     };
+    // 0274 ③: 가로지르기는 쌍단검으로 옮겨 검으로는 못 쓴다 — 검이 쓰는 끌어모으기로.
     w.set_skills(Loadout {
-        slots: [slot(Sk::Whirl, 0), slot(Sk::Cut, 1)],
+        slots: [slot(Sk::Whirl, 0), slot(Sk::Gather, 1)],
         ult: 1,
         great: Ult::Upend,
     });
@@ -71,7 +72,7 @@ fn an_empty_slot_does_nothing_when_pressed() {
     let ev = run(&mut w, &t, skill(1), 5);
     assert!(ev
         .iter()
-        .any(|e| matches!(e, Event::SkillStart { id: Sk::Cut })));
+        .any(|e| matches!(e, Event::SkillStart { id: Sk::Gather })));
     // 둘 다 빈 칸이어도 게이지가 차면 "함께" = 큰 기술.
     let (mut w, t) = world();
     w.set_skills(Loadout {
@@ -481,7 +482,7 @@ fn forced(n: i32) -> i32 {
     (n as f32 * crate::weapons::ART_FORCE).round() as i32
 }
 
-/// 스킬 `id`를 쓸 수 있는 것을 든다(0225 — 이미 맞으면 그대로): 방패 → 망치 → 쇠뇌 → 활 → 지팡이 차례로.
+/// 스킬 `id`를 쓸 수 있는 것을 든다(0225 — 이미 맞으면 그대로): 방패 → 망치 → 쇠뇌 → 활 → 지팡이 → 창 → 쌍단검 차례로.
 fn hold_for(w: &mut World, id: Sk) {
     use crate::weapons::Id as W;
     let def = id.def();
@@ -494,7 +495,14 @@ fn hold_for(w: &mut World, id: Sk) {
     }
     w.set_shield(None);
     // (쇠뇌·활이 지팡이보다 먼저 — 타입 스킬의 시험은 바탕의 게이지로 잰다: 지팡이는 마법력의 배가 붙는다.)
-    for arm in [W::Hammer, W::Crossbow, W::Bow, W::Staff, W::Spear] {
+    for arm in [
+        W::Hammer,
+        W::Crossbow,
+        W::Bow,
+        W::Staff,
+        W::Spear,
+        W::Daggers,
+    ] {
         w.set_weapon(arm);
         if def.fits(w.grip()) {
             return;
@@ -711,9 +719,10 @@ fn cut_pick_a_dashes_back_and_cuts_again() {
         "back at the start: {:?}",
         w.player.pos
     );
-    // 가는 길의 타가 금을 내고(균열 타입 — 0223 V2) 오는 길의 타는 그 금에 더 아프다.
+    // 가는 길의 타가 금을 내고(균열 타입 — 0223 V2) 오는 길의 타는 그 금에 더 아프다. 0274 ③: 가로지르기는 쌍단검의 스킬 —
+    // 되돌아오는 길은 적의 등 뒤에서 치니 급소(`Art::sneak`)도 얹힌다(적은 처음 자리 쪽 +z를 본다).
     let dmg = w.skill_eff(Sk::Cut).skill.damage + w.stats.dmg;
-    let back = skills::scaled(dmg, crate::tuning::RIFT_MULT);
+    let back = skills::scaled(dmg, crate::tuning::RIFT_MULT * crate::weapons::ART_SNEAK);
     for e in &w.enemies[..3] {
         assert!(e.ail.rift > 0.0);
         assert_eq!(e.hp, 90 - dmg - back, "cut going and coming");
@@ -1104,7 +1113,7 @@ fn gather_capstone_makes_the_gathered_take_more_for_two_seconds() {
     still(&mut w);
     run(&mut w, &t, Actions::default(), 90);
     assert_eq!(w.enemies[0].marks.frail, 0.0);
-    assert_eq!(hurt_by(&w.enemies[0], 10, false, 0, false, &t), 10);
+    assert_eq!(hurt_by(&w.enemies[0], 10, false, 0, Knack::NONE, &t), 10);
     // 4단에는 없다.
     let (mut w, t) = world();
     wear(&mut w, Sk::Gather, 4, Pick::A);
@@ -3253,4 +3262,174 @@ fn rally_mends_a_little_and_shoves_the_near_off_with_drain() {
     let bw = w.enemies[0].pos;
     run(&mut w, &t, skill(0), 50);
     assert!(flat(w.enemies[0].pos, bw) < 0.6);
+}
+
+// ---- 0274 ③: 쌍단검 — 빠지며 베기 · 그림자 습격 ----
+
+/// 빠지며 베기: 앞 부채꼴(2.4 m · 90°)의 적을 한 번 베고 그 기세로 뒤로 3 m 물러난다(맞지 않게 되는 것은 아니다 — 거리만). 옆 · 뒤의
+/// 적은 베이지 않는다. 먼 걸음(ㄱ)이면 4.5 m, 벌어진 틈(ㄴ)이면 베인 잡몹이 한동안 더 다친다(보스는 아니다).
+#[test]
+fn slip_cuts_ahead_then_springs_back() {
+    let go = |pick: Pick, rank: u8| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Slip, rank, pick);
+        assert_eq!(w.player.weapon, crate::weapons::Id::Daggers);
+        w.spawn_mob(vec3(0.0, 0.0, -1.6));
+        w.spawn_mob(vec3(3.0, 0.0, 0.5));
+        w.spawn_boss(vec3(0.6, 0.0, -1.9));
+        still(&mut w);
+        w.enemies[2].hp = 900;
+        w.enemies[2].max_hp = 900;
+        let ev = run(&mut w, &t, skill(0), 60);
+        (w, ev)
+    };
+    let (w, ev) = go(Pick::A, 1);
+    assert!(w.enemies[0].hp < 90, "the foe ahead is cut");
+    assert_eq!(w.enemies[1].hp, 90, "the one aside is not");
+    assert!(w.enemies[2].hp < 900, "a boss is cut too");
+    assert!(ev
+        .iter()
+        .any(|e| matches!(e, Event::Skill { id: Sk::Slip, .. })));
+    assert!(
+        (w.player.pos.z - 3.0).abs() < 0.35,
+        "sprang 3 m back: {:?}",
+        w.player.pos
+    );
+    let (w, _) = go(Pick::A, 3);
+    assert!(
+        (w.player.pos.z - 4.5).abs() < 0.4,
+        "long step: {:?}",
+        w.player.pos
+    );
+    let (w, _) = go(Pick::B, 3);
+    assert!(w.enemies[0].marks.frail > 0.0 && w.enemies[0].marks.frail_mult > 1.2);
+    assert_eq!(w.enemies[2].marks.frail, 0.0, "not a boss");
+    // 맞을 수 있다: 빠지는 동안 무적이 아니다.
+    assert!(!w.player.skill.ghost);
+}
+
+/// 빠지며 베기의 최종 효과: 이 스킬로 쓰러뜨리면 쿨타임의 반을 돌려받는다.
+#[test]
+fn slip_capstone_returns_half_the_cooldown_on_a_kill() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Slip, MAX_RANK, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -1.6));
+    still(&mut w);
+    w.enemies[0].hp = 1;
+    w.step(&skill(0), &t);
+    let full = w.player.skill.cd[Sk::Slip.index()];
+    run(&mut w, &t, Actions::default(), 20);
+    assert!(w.enemies[0].hp <= 0);
+    let cd = w.player.skill.cd[Sk::Slip.index()];
+    assert!(cd < full * 0.55, "half back on the kill: {cd} of {full}");
+}
+
+/// 그림자 습격: 세계가 멈춘 동안 닿는 거리 안의 한 적(가장 가까운)의 **등 뒤**로 숨어들어 그 적을 본다 — 찌름 넷이 모두 그 적에게
+/// 들어가고(곁의 다른 적은 아니다), 등 뒤라 급소가 얹혀 같은 찌름의 앞보다 세다. 마지막 찌름은 출혈. 보스는 다치되 휘청이지 않는다.
+/// 적이 없으면 제자리.
+#[test]
+fn ambush_slips_behind_one_foe_and_stabs_its_back() {
+    use crate::skills::{Ult, AMBUSH};
+    let go = |boss: bool| {
+        let (mut w, t) = world();
+        w.set_weapon(crate::weapons::Id::Daggers);
+        wear_ult(&mut w, Ult::Ambush, 1);
+        if boss {
+            w.spawn_boss(vec3(0.0, 0.0, -5.0));
+        } else {
+            w.spawn_mob(vec3(0.0, 0.0, -5.0));
+        }
+        w.spawn_mob(vec3(4.0, 0.0, -9.0));
+        still(&mut w);
+        for e in &mut w.enemies {
+            e.hp = 900;
+            e.max_hp = 900;
+            // 방랑자 쪽(+z)을 본다 — 숨어든 자리는 그 등 뒤(-z).
+            e.facing = 0.0;
+        }
+        w.player.skill.gauge = 1.0;
+        let mut ev = w.step(
+            &Actions {
+                ult: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.hitstop >= AMBUSH.freeze - 1e-4, "the world stops");
+        let mut staggered = false;
+        for _ in 0..150 {
+            ev.extend(w.step(&Actions::default(), &t));
+            staggered |= matches!(w.enemies[0].state, EState::Stagger { .. });
+            still_keep(&mut w);
+            for e in &mut w.enemies {
+                e.facing = 0.0;
+            }
+        }
+        (w, ev, staggered)
+    };
+    let (w, ev, staggered) = go(false);
+    assert!(ev.iter().any(|e| matches!(e, Event::Blink { .. })));
+    assert!(w.player.pos.z < -5.4, "behind the foe: {:?}", w.player.pos);
+    assert_eq!(
+        ev.iter()
+            .filter(|e| matches!(e, Event::AmbushStab { .. }))
+            .count(),
+        AMBUSH.stabs as usize
+    );
+    let (light, deep) = AMBUSH.damage_at(1);
+    let front = 3 * light + deep;
+    let lost = 900 - w.enemies[0].hp;
+    assert!(
+        lost as f32 > front as f32 * 1.3,
+        "the sneak attack: {lost} vs {front} from the front"
+    );
+    assert_eq!(w.enemies[1].hp, 900, "only the one");
+    assert!(w.enemies[0].ail.bleed > 0.0, "the last stab bleeds");
+    assert!(staggered, "a mob reels");
+    let (w, _, staggered) = go(true);
+    assert!(w.enemies[0].hp < 900, "a boss is cut");
+    assert!(!staggered, "a boss is not staggered");
+    // 아무도 없으면 제자리에서 앞을 찌른다.
+    let (mut w, t) = world();
+    w.set_weapon(crate::weapons::Id::Daggers);
+    wear_ult(&mut w, Ult::Ambush, 1);
+    w.player.skill.gauge = 1.0;
+    let ev = run(
+        &mut w,
+        &t,
+        Actions {
+            ult: true,
+            ..Default::default()
+        },
+        120,
+    );
+    assert!(!ev.iter().any(|e| matches!(e, Event::Blink { .. })));
+    assert!(flat(w.player.pos, Vec3::ZERO) < 0.1);
+}
+
+/// 그림자 습격의 자리: 적의 등 뒤가 벽(장애물)이면 그 곁(옆 · 이쪽)으로 — 벽 속으로 숨어들지 않는다.
+#[test]
+fn ambush_does_not_slip_into_a_wall() {
+    use crate::skills::Ult;
+    let (mut w, t) = world();
+    w.set_weapon(crate::weapons::Id::Daggers);
+    wear_ult(&mut w, Ult::Ambush, 1);
+    w.spawn_mob(vec3(0.0, 0.0, -5.0));
+    still(&mut w);
+    w.enemies[0].facing = 0.0;
+    w.obstacles.push(crate::world::Aabb {
+        min: vec3(-3.0, 0.0, -8.0),
+        max: vec3(3.0, 3.0, -5.6),
+    });
+    w.player.skill.gauge = 1.0;
+    w.step(
+        &Actions {
+            ult: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    let p = w.player.pos;
+    assert!(p.z > -5.6, "not in the wall: {p:?}");
+    assert!(flat(p, vec3(0.0, 0.0, -5.0)) < 1.6, "beside the foe: {p:?}");
 }

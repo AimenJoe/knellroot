@@ -1414,6 +1414,12 @@ impl World {
                                 diff
                             }
                     }
+                    // 빠지며 베기(0274 ③): 벤 뒤 `time`초 동안 `back` m 뒤로(먼 걸음 ㄱ은 `Skill::at`이 거리를 바꿔 둔다).
+                    (Form::Slip { back, time, .. }, _)
+                        if e >= s.startup && e < s.startup + time =>
+                    {
+                        -dir * (back / time.max(1e-3))
+                    }
                     // 바늘땀의 파고드는 걸음(0270 C3 ㄱ): 찌르는 동안 앞으로 내딛는다.
                     (Form::Stab { .. }, Some(Twist::Lunge { dist }))
                         if e >= s.startup && e < s.startup + d.active() =>

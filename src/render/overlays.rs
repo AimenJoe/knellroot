@@ -325,6 +325,23 @@ impl Renderer {
                             }
                         }
                     }
+                    // 빠지며 베기(0274 ③): 벤 순간 앞 부채꼴이 번쩍이고 물러나는 동안 사라진다 — 벤 자리에 남는다(몸은 물러난다).
+                    Form::Slip {
+                        range,
+                        arc_deg,
+                        back,
+                        time,
+                    } => {
+                        let fade = (1.0 - e0 / (time + 0.1)).clamp(0.0, 1.0);
+                        if fade > 0.0 {
+                            let gone = (e0 / time.max(1e-3)).clamp(0.0, 1.0) * back;
+                            let at = pp + dir * gone + Vec3::Y * 0.06;
+                            fl.sector(at, range, yaw, arc_deg, with_a(mint, 0.26 * fade));
+                            if fx {
+                                fl.ring(at, range, yaw, arc_deg, with_a(WHITE, 0.8 * fade));
+                            }
+                        }
+                    }
                     // 바늘땀(0270 C3): 땀마다 좁은 부채꼴이 번쩍이고 곧 사라진다(가운데 흰 바늘 줄).
                     Form::Stab {
                         range,
@@ -385,7 +402,7 @@ fn bolts(w: &World, alpha: f32) {
 /// 던지는 RB의 몸(0274 ②b): 손도끼 = 쇳빛 날 + 나무 자루를 나는 쪽의 옆 축으로 세로로 돌린다(날이 보이게), 돌 = 굴러 가는 잿빛
 /// 덩이. 꼬리는 옅은 바람 띠 하나(빛 덩이가 아니다 — 마법과 갈린다). 창은 모델 부위로(`Renderer::javelins`) — 여기서는 바람 띠만.
 fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
-    use crate::weapons::{AXE, STONE};
+    use crate::weapons::{AXE, KNIFE, STONE};
     let k = b.def.scale;
     let wind = Color::new(0.92, 0.94, 1.0, 0.28);
     if b.back {
@@ -414,6 +431,27 @@ fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
                 p + vec3(0.0, 0.2, 0.06) * s,
                 vec3(0.05, 0.16, 0.2) * s,
                 Color::new(0.90, 0.92, 0.97, 1.0),
+                0.6,
+                rot,
+                p,
+            );
+        }
+        // 투척 단검(0274 ③): 날을 앞세워 곧게 — 돌지 않는다(쇠 날 + 짧은 가죽 자루).
+        KNIFE => {
+            let rot = Quat::from_rotation_arc(Vec3::Y, b.dir.normalize_or(Vec3::Z));
+            let s = 1.2 * k;
+            shaded_box_rot(
+                p,
+                vec3(0.05, 0.28, 0.02) * s,
+                Color::new(0.90, 0.92, 0.97, 1.0),
+                0.6,
+                rot,
+                p,
+            );
+            shaded_box_rot(
+                p - b.dir * (0.2 * s),
+                vec3(0.035, 0.12, 0.035) * s,
+                Color::new(0.42, 0.30, 0.24, 1.0),
                 0.6,
                 rot,
                 p,
@@ -994,6 +1032,24 @@ fn ult_shape(w: &World, pp: Vec3, fl: &Drape) {
                 } else {
                     let k = ((e - u.startup) / u.recover().max(1e-3)).clamp(0.0, 1.0);
                     fl.lane_edge(at, dir, len, u.half * 2.0, with_a(steel, 0.5 * (1.0 - k)));
+                }
+            }
+            // 그림자 습격(0274 ③): 세계가 멈춘 동안 고른 적의 발밑에 강철빛 테가 조여들고(숨어들 적), 찌르는 동안 그 테가 옅게 남는다.
+            crate::skills::Ult::Ambush => {
+                let u = &crate::skills::AMBUSH;
+                let steel = Color::new(0.80, 0.86, 1.0, 1.0);
+                if let Some(en) = w.player.skill.ambush_on.and_then(|i| w.enemies.get(i)) {
+                    let c = vec3(en.pos.x, w.ground_y(en.pos) + 0.06, en.pos.z);
+                    let r = en.radius + 0.4;
+                    if !done {
+                        let frozen = 1.0 - (w.hitstop / u.freeze.max(1e-3)).clamp(0.0, 1.0);
+                        let k = if e > 0.0 { 1.0 } else { frozen };
+                        fl.ring(c, r + 1.6 * (1.0 - k), 0.0, 360.0, with_a(steel, 0.85));
+                        fl.sector(c, r, 0.0, 360.0, with_a(steel, 0.12 * k));
+                    } else {
+                        let k = ((e - u.startup) / u.recover().max(1e-3)).clamp(0.0, 1.0);
+                        fl.ring(c, r, 0.0, 360.0, with_a(steel, 0.6 * (1.0 - k)));
+                    }
                 }
             }
             // 큰 종(0270 C3): 세계가 멈춘 동안 둘레 끝에서 발밑으로 조여드는 민트 테(울릴 둘레를 먼저 보인다), 울린 뒤 번지는 테.
@@ -1711,7 +1767,8 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
                 Form::Pull { range, arc_deg, .. }
                 | Form::Cone { range, arc_deg, .. }
                 | Form::Bash { range, arc_deg, .. }
-                | Form::Stab { range, arc_deg, .. } => fan(range, arc_deg),
+                | Form::Stab { range, arc_deg, .. }
+                | Form::Slip { range, arc_deg, .. } => fan(range, arc_deg),
                 Form::Bell { range, .. } => lane(range, 0.6),
                 // 놓는 것(0270 C3): 놓일 자리까지의 가는 줄 + 그 자리의 고리.
                 Form::Drift { ahead, radius, .. } | Form::Trap { ahead, radius, .. } => {

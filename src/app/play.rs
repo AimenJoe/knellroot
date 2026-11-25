@@ -665,6 +665,10 @@ impl App {
                 // 질풍 찌르기(0272 2단계): 찌름마다 가볍게, 마지막 찌름은 큰 기술만큼.
                 Event::GaleThrust { last: true, .. } => SHAKE_ROUSE,
                 Event::GaleThrust { .. } => SHAKE_HIT,
+                // 그림자 습격(0274 ③): 숨어드는 순간은 조용히, 찌름마다 가볍게, 마지막은 큰 기술만큼.
+                Event::AmbushStab { last: true, .. } => SHAKE_ROUSE,
+                Event::AmbushStab { .. } => SHAKE_HIT,
+                Event::Blink { .. } => 0.0,
                 // 0158 G2: 터지는 것은 내려찍기만큼, 받아냄·울림·되돎은 가볍게, 불티의 타·손에 돌아옴·몰아치기의 시작은 조용히.
                 Event::ThrowBoom { .. } => SHAKE_PLUNGE,
                 Event::Soak { .. } | Event::EchoRing { .. } | Event::Interrupt { .. } => SHAKE_HIT,
@@ -714,7 +718,8 @@ impl App {
                 | Event::Ult { .. }
                 | Event::LineCut { .. }
                 | Event::GreatBell { .. }
-                | Event::GaleThrust { last: true, .. } => ZOOM_SMASH,
+                | Event::GaleThrust { last: true, .. }
+                | Event::AmbushStab { last: true, .. } => ZOOM_SMASH,
                 // 0158 G2의 큰 순간: 땅울림이 찍는 순간, 셋을 다 받아낸 버팀의 터뜨림(받아낸 수는 다음 버팀까지 남는다).
                 Event::Skill {
                     id: crate::skills::Id::Quake,
@@ -1334,7 +1339,8 @@ impl App {
                         | Sk::Pole
                         | Sk::Pin
                         | Sk::Pommel
-                        | Sk::Shove => Id::Swing,
+                        | Sk::Shove
+                        | Sk::Slip => Id::Swing,
                         // 0274: 재기 = 발을 딛는 둔한 소리(숨을 몰아쉬고 선다).
                         Sk::Rally => Id::Thwack,
                         // 0272: 심지 볼트 = 잔불 소리(심지에 불이 붙는다).
@@ -1375,6 +1381,8 @@ impl App {
                         Sk::Pommel => Id::Hit,
                         Sk::Shove => Id::Thwack,
                         Sk::Rally => Id::Beat2,
+                        // 0274 ③(쌍단검): 빠지며 베기 = 스치는 바람(물러나는 걸음 — 벤 것은 맞힘 소리가 따로).
+                        Sk::Slip => Id::Dodge,
                     }
                 }
                 Event::SkillDenied => Id::Deny,
@@ -1390,6 +1398,10 @@ impl App {
                 // 질풍 찌르기(0272 2단계): 찌름마다 스치는 바람, 마지막은 타격.
                 Event::GaleThrust { last: true, .. } => Id::Hit,
                 Event::GaleThrust { .. } => Id::Dodge,
+                // 그림자 습격(0274 ③): 숨어듦 = 스치는 바람, 찌름마다 휘두름, 마지막은 타격.
+                Event::Blink { .. } => Id::Dodge,
+                Event::AmbushStab { last: true, .. } => Id::Hit,
+                Event::AmbushStab { .. } => Id::Swing,
                 // 0270 C3: 큰 종 = 낮은 종, 눈보라 = 가장 높은 종.
                 Event::GreatBell { .. } => Id::Beat,
                 Event::Blizzard { .. } => Id::Beat3,

@@ -50,7 +50,7 @@ pub enum Sweep {
 /// 구간(시작 s, 길이 s): `tools/art/blender/wanderer_skin.py` `HIT_WINDOWS` 그대로(시험 `swing_windows_match_the_blender_table`) —
 /// 동작 시계는 타의 판정 시작이 이 시작에 오게 돈다(`clip_rate` — 맨손처럼 남의 동작을 빌린 타·대시 공격도 칼이 닿는 순간에 맞는다).
 /// 새 동작을 무기 표에 쓰면 여기에도 한 줄(시험 `every_weapon_motion_has_a_sweep`).
-pub const SWEEPS: [(&str, Sweep, (f32, f32)); 25] = [
+pub const SWEEPS: [(&str, Sweep, (f32, f32)); 31] = [
     ("attack", Sweep::RightToLeft, (0.08, 0.10)),
     ("attack2", Sweep::LeftToRight, (0.08, 0.10)),
     ("attack3", Sweep::Center, (0.10, 0.12)),
@@ -78,6 +78,13 @@ pub const SWEEPS: [(&str, Sweep, (f32, f32)); 25] = [
     ("spear3", Sweep::Center, (0.108, 0.135)),
     ("spear_dash", Sweep::Center, (0.08, 0.1)),
     ("spear_lunge", Sweep::Center, (0.069, 0.138)),
+    // 쌍단검(0274 ③): 왼손 찌르기 · 오른손 찌르기 · 오른쪽에서 가로 베기 · 올려 베기 · 달려들며 찌르기 · 꿰뚫고 지나가기.
+    ("dagger1", Sweep::Center, (0.064, 0.08)),
+    ("dagger2", Sweep::Center, (0.064, 0.08)),
+    ("dagger3", Sweep::RightToLeft, (0.068, 0.085)),
+    ("dagger4", Sweep::Center, (0.084, 0.105)),
+    ("dagger_dash", Sweep::Center, (0.064, 0.08)),
+    ("dagger_lunge", Sweep::Center, (0.048, 0.096)),
 ];
 
 /// 동작의 휘두르는 쪽(표에 없으면 가운데).
@@ -185,6 +192,9 @@ pub enum Rhythm {
 pub struct Toss {
     pub bolt: Bolt,
     pub charged: Bolt,
+    /// 한 번에 나가는 수와 이웃한 둘 사이의 각(°) — 좁은 부채꼴(0274 ③ 쌍단검의 투척 단검 셋). 나머지는 하나(0°).
+    pub fan: u8,
+    pub spread: f32,
 }
 
 /// 날아가는 탄의 모양.
@@ -242,10 +252,12 @@ pub enum Id {
     Bow,
     /// 파수꾼의 창(0272 2단계 — 창 종류의 첫 무기): 버려진 마을 파수꾼의 창. 가장 멀리 닿고 한 줄을 꿰뚫는다.
     Spear,
+    /// 빈집의 쌍단검(0274 ③ — 쌍단검 종류의 첫 무기): 두 손에 하나씩 쥐는 짧은 날 한 벌(아이템 하나). 빠르고, 등 뒤의 적에게 세다.
+    Daggers,
 }
 
 /// 표 순서. 맨손은 옛 끝에(옛 기록의 무기 번호가 그대로 읽히게 — `app::legacy_weapon`), 그 뒤에 새 무기.
-pub const IDS: [Id; 7] = [
+pub const IDS: [Id; 8] = [
     Id::Sword,
     Id::Hammer,
     Id::Staff,
@@ -253,6 +265,7 @@ pub const IDS: [Id; 7] = [
     Id::Fists,
     Id::Bow,
     Id::Spear,
+    Id::Daggers,
 ];
 
 impl Id {
@@ -266,6 +279,7 @@ impl Id {
             Id::Fists => "fists",
             Id::Bow => "bow",
             Id::Spear => "spear",
+            Id::Daggers => "daggers",
         }
     }
 
@@ -285,6 +299,8 @@ pub struct Weapon {
     pub grenade: Option<Grenade>,
     /// 방랑자 모델에서 이 무기 부위 이름(다른 무기 부위는 숨긴다).
     pub node: &'static str,
+    /// 왼손에 쥐는 둘째 부위(0274 ③ — 쌍단검의 왼손 날: 제 뼈 `dagger_l`). 없으면 빈 글. 든 무기의 것만 보인다(`render::hide_unheld`).
+    pub off_hand: &'static str,
     /// 공격 기력 배율(0117, 사장 "큰 무기는 더 많은 기력 — 높은 피해의 보정"): 평타·대시 공격 `stamina.attack`, 강타 `heavy.stamina`,
     /// 원거리 무기는 사격·모은 사격·공중 볼트에 곱한다. 맨손 < 지팡이 < 검 < 쇠뇌 < 망치
     /// (쇠뇌 0173: 0.7 → 0.9 → 0223 사장 "원거리는 기력을 더 많이 소모함": 1.2 — 20초 지속 17 → 14/초, 검의 여섯 할쯤).
@@ -313,6 +329,8 @@ pub const AXE: u8 = 5;
 pub const LIGHT: u8 = 6;
 pub const JAVELIN: u8 = 7;
 pub const STONE: u8 = 8;
+/// 쌍단검의 RB(0274 ③): 투척 단검 셋 — 좁은 부채꼴로 곧게 난다(던지는 것).
+pub const KNIFE: u8 = 9;
 
 /// 쇠뇌의 덧장전(0274 ②b): 쏘지 않고 멈춰 선 지 이 초 뒤부터, 한 발마다 이 초(빈 탄창의 장전은 표의 `reload`).
 pub const XBOW_TOPUP_WAIT: f32 = 0.5;
@@ -356,7 +374,7 @@ impl Bolt {
 
     /// 그 그림 번호가 손으로 던지는 것인가(사건 `Cast`의 `look`을 읽는 쪽 — 소리).
     pub fn look_thrown(look: u8) -> bool {
-        matches!(look, AXE | JAVELIN | STONE)
+        matches!(look, AXE | JAVELIN | STONE | KNIFE)
     }
 
     /// 곧게 나는 탄(볼트·화살·던지는 것) — 마법 탄만 땅을 따라 흐른다(0173 → 0218).
@@ -450,6 +468,8 @@ pub const MAGIC_TOSS: Toss = Toss {
         scale: 1.5,
         ..MAGIC
     },
+    fan: 1,
+    spread: 0.0,
 };
 
 /// 한손검(전사)의 RB — 던지는 손도끼: 짧고(7.2 m) 무겁다 — 피해 20 · 자세 피해 4(마법 탄의 넷 배), 맞은 잡몹이 잠깐 휘청.
@@ -474,6 +494,8 @@ pub const AXE_TOSS: Toss = Toss {
         scale: 1.5,
         ..MAGIC
     },
+    fan: 1,
+    spread: 0.0,
 };
 
 /// 망치(성직자)의 RB — 신성한 빛: 겨눈 자리(9 m 안, 줄 위의 첫 적 또는 탄이 멈추는 데)에 `SMITE_DELAY`초 뒤 빛줄기가 내려 꽂혀
@@ -496,6 +518,8 @@ pub const LIGHT_TOSS: Toss = Toss {
         dose: (Kind::Knell, 1.0),
         ..MAGIC
     },
+    fan: 1,
+    spread: 0.0,
 };
 
 /// 창의 RB — 창 던지기: 곧고 멀리(15.6 m) 날아 줄 위의 적을 모두 꿰뚫고(20), 멈춘 자리에서 손으로 돌아온다(`JAVELIN_BACK` m/s —
@@ -521,6 +545,8 @@ pub const JAVELIN_TOSS: Toss = Toss {
         scale: 1.3,
         ..MAGIC
     },
+    fan: 1,
+    spread: 0.0,
 };
 
 /// 맨손의 RB — 돌 던지기: 약하다(10 · 자세 0.5, 8.4 m). 모으면 20.
@@ -541,7 +567,35 @@ pub const STONE_TOSS: Toss = Toss {
         scale: 1.4,
         ..MAGIC
     },
+    fan: 1,
+    spread: 0.0,
 };
+/// 쌍단검(도적)의 RB — 투척 단검 셋(0274 ③): 좁은 부채꼴(이웃한 둘 사이 `KNIFE_SPREAD`°)로 곧게 난다 — 날마다 피해 10 · 날카로움 0.45
+/// (셋이 다 박히면 덜 쌓이는 잔재(0.75)도 피를 흘린다). 멀수록 부채꼴이 벌어져 한 적에 하나만 박힌다 — 가까이서 셋. 모으면 날마다 20 · 출혈 더.
+pub const KNIFE_TOSS: Toss = Toss {
+    bolt: Bolt {
+        speed: 1.5,
+        range: 0.6,
+        poise: 0.4,
+        look: KNIFE,
+        dose: (Kind::Sharp, 0.45),
+        ..MAGIC
+    },
+    charged: Bolt {
+        speed: 1.7,
+        range: 0.75,
+        damage: 20,
+        poise: 0.8,
+        look: KNIFE,
+        scale: 1.3,
+        dose: (Kind::Sharp, 0.6),
+        ..MAGIC
+    },
+    fan: 3,
+    spread: KNIFE_SPREAD,
+};
+/// 투척 단검의 부채꼴 — 이웃한 두 날 사이의 각(°).
+pub const KNIFE_SPREAD: f32 = 12.0;
 
 /// 순례자의 검 — 기준. 3연타(0201 — Meshy Double_Combo_Attack): 오른쪽 위 → 왼쪽 대각 베기 → 올려 베기(왼 → 오른) →
 /// 오른쪽에서 내리치기(좁고 길게, 자세 피해 큼).
@@ -626,7 +680,23 @@ const SPEAR_COMBO: [Hit; 3] = [
     },
 ];
 
-pub const WEAPONS: [Weapon; 7] = [
+/// 빈집의 쌍단검(0274 ③ — 도적): 두 손의 짧은 날로 빠른 4연타 — 왼손 찌르기 → 오른손 찌르기 → 오른손 가로 베기 → 올려 베기.
+/// 닿는 거리는 짧고(1.4 m 남짓 — 맨손보다 조금 길다) 자세 피해는 작다(타마다 0.5 — 검의 반: 보스의 자세를 깨는 무기가 아니다).
+/// 대신 등 뒤 · 휘청이는 적에게는 주특성 「급소」(`Art::sneak`)가 피해를 키운다 — 혼자 있는 적, 옆을 내준 적에게 가장 세다.
+const DAGGER_COMBO: [Hit; 4] = [
+    hit(0.8, 0.8, 0.55, 0.7, 10, 0.5, "dagger1"),
+    hit(0.8, 0.8, 0.55, 0.7, 10, 0.5, "dagger2"),
+    hit(0.85, 0.85, 0.9, 0.8, 10, 0.5, "dagger3"),
+    Hit {
+        knock: 1.2,
+        cancel: 0.1,
+        ..hit(1.05, 0.9, 0.55, 1.2, 20, 1.0, "dagger4")
+    },
+];
+/// 쌍단검 강공격의 곧은 길 반 폭(m — 적의 몸 반지름이 더해진다): 적을 꿰뚫고 지나 등 뒤에 선다.
+pub const DAGGER_HALF: f32 = 0.4;
+
+pub const WEAPONS: [Weapon; 8] = [
     Weapon {
         id: Id::Sword,
         combo: &SWORD_COMBO,
@@ -655,6 +725,7 @@ pub const WEAPONS: [Weapon; 7] = [
         rb: Rb::Toss,
         grenade: None,
         node: "sword",
+        off_hand: "",
         stamina: 1.0,
         forge: Some(MELEE_FORGE),
     },
@@ -690,6 +761,7 @@ pub const WEAPONS: [Weapon; 7] = [
         rb: Rb::Toss,
         grenade: None,
         node: "w_hammer",
+        off_hand: "",
         // 0274: 한 손에 드는 메라 양손일 때(1.7)보다 가볍다 — 검(1.0)과 창(1.25) 위.
         stamina: 1.4,
         forge: Some(MELEE_FORGE),
@@ -718,6 +790,7 @@ pub const WEAPONS: [Weapon; 7] = [
         rb: Rb::Toss,
         grenade: None,
         node: "w_staff",
+        off_hand: "",
         stamina: 0.75,
         forge: Some(MELEE_FORGE),
     },
@@ -783,6 +856,7 @@ pub const WEAPONS: [Weapon; 7] = [
             root: 0.0,
         }),
         node: "w_crossbow",
+        off_hand: "",
         stamina: 1.2,
         forge: Some([
             Forge {
@@ -829,6 +903,7 @@ pub const WEAPONS: [Weapon; 7] = [
         grenade: None,
         // 든 것이 없다(다른 무기 부위는 모두 숨는다).
         node: "",
+        off_hand: "",
         stamina: 0.6,
         forge: None,
     },
@@ -904,6 +979,7 @@ pub const WEAPONS: [Weapon; 7] = [
             root: 1.0,
         }),
         node: "w_bow",
+        off_hand: "",
         stamina: 1.0,
         // 쇠뇌와 같은 꼴(전통 먼저 · 화살 피해는 뒤에).
         forge: Some([
@@ -959,8 +1035,44 @@ pub const WEAPONS: [Weapon; 7] = [
         rb: Rb::Toss,
         grenade: None,
         node: "w_spear",
+        off_hand: "",
         // 검(1.0)과 망치(1.7) 사이.
         stamina: 1.25,
+        forge: Some(MELEE_FORGE),
+    },
+    // 빈집의 쌍단검(0274 ③): 빠른 4연타(찌르고 · 찌르고 · 베고 · 올려 벤다) · 달려들며 찌르기 · 강공격 = 꿰뚫고 지나가기(곧은 길 —
+    // 창의 내달려 꿰뚫기와 같은 길: 적의 몸을 뚫고 지나 등 뒤에 선다, 벼랑 앞에서 멈춘다 — 다음 타가 급소). RB는 투척 단검 셋.
+    Weapon {
+        id: Id::Daggers,
+        combo: &DAGGER_COMBO,
+        dash: Some(Hit {
+            knock: 1.2,
+            cancel: 0.15,
+            ..hit(0.8, 1.1, 0.5, 2.6, 20, 1.0, "dagger_dash")
+        }),
+        heavy: Some(Heavy {
+            time: 0.8,
+            charge: 0.7,
+            reach: 1.0,
+            arc: 0.3,
+            // 랩 `heavy.lunge` 0.6 m × 4.5 = 2.7 m — 한 걸음 앞의 적을 뚫고 지나 등 뒤에 선다.
+            lunge: 4.5,
+            shape: Shape::Lane { half: DAGGER_HALF },
+            damage: 20,
+            poise: 1.5,
+            walk: 1.2,
+            aftershock: None,
+            breaks_primed: None,
+            anim_charge: "dagger_charge",
+            anim_heavy: "dagger_lunge",
+            cancel: 0.15,
+        }),
+        rb: Rb::Toss,
+        grenade: None,
+        node: "w_daggers",
+        off_hand: "w_dagger_l",
+        // 가벼운 날 넷 — 맨손(0.6)과 지팡이(0.75) 사이.
+        stamina: 0.7,
         forge: Some(MELEE_FORGE),
     },
 ];
@@ -975,32 +1087,42 @@ pub enum Class {
     Crossbow,
     Bow,
     Spear,
+    /// 쌍단검(0274 ③ — 도적).
+    Dagger,
 }
 
-/// 무기의 주특성이 스킬에 얹는 배(0225 → 0272 — 종류마다): `force` = 타입 없는(물리) 스킬의 피해·자세 피해, `channel` = 스킬의 타가
-/// 쌓는 타입 게이지.
+/// 무기의 주특성이 얹는 배(0225 → 0272 — 종류마다): `force` = 타입 없는(물리) 스킬의 피해·자세 피해, `channel` = 스킬의 타가
+/// 쌓는 타입 게이지, `sneak` = 급소(0274 ③ 쌍단검) — 등 뒤에서 · 휘청이거나 기절하거나 묶인 적에게 주는 방랑자의 모든 타(평타 ·
+/// 강공격 · 탄 · 스킬 · 궁극기)의 피해 배(`world::Knack` → `hurt_by` 한 곳). 앞의 둘은 스킬에만, 급소는 손의 타 모두에.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Art {
     pub force: f32,
     pub channel: f32,
+    pub sneak: f32,
 }
 
 impl Art {
-    /// 배 없음(한손검·쇠뇌·활·맨손).
+    /// 배 없음(한손검·쇠뇌·활·창·맨손).
     pub const PLAIN: Art = Art {
         force: 1.0,
         channel: 1.0,
+        sneak: 1.0,
     };
 
-    /// 주특성 글의 `{0}`에 넣는 수(%): 둘 가운데 큰 배의 덤.
+    /// 주특성 글의 `{0}`에 넣는 수(%): 셋 가운데 큰 배의 덤.
     pub fn percent(self) -> i32 {
-        ((self.force.max(self.channel) - 1.0) * 100.0).round() as i32
+        ((self.force.max(self.channel).max(self.sneak) - 1.0) * 100.0).round() as i32
     }
 }
 
 /// 망치의 물리력 · 지팡이의 마법력(0225 — 처음 값, 판정에서 고친다).
 pub const ART_FORCE: f32 = 1.3;
 pub const ART_CHANNEL: f32 = 1.5;
+/// 쌍단검의 급소(0274 ③ — BG3 도적의 급소 공격): 등 뒤(적이 보는 쪽에서 `SNEAK_BACK_DEG`° 넘게 돌아선 자리)에서 · 휘청이는 ·
+/// 기절한 · 묶인 적에게 피해 ×1.5. 처음 값 — 판정에서 고친다.
+pub const ART_SNEAK: f32 = 1.5;
+/// 급소의 "등 뒤": 적의 앞에서 이 각(°)보다 더 돌아선 자리(뒤쪽 140°의 부채꼴).
+pub const SNEAK_BACK_DEG: f32 = 110.0;
 
 /// 보조특성(0272 1b): 보조무기 슬롯에 멘 종류가 **손에 쥐지 않아도** 보태는 한 가지(방패의 막기와 같은 말 — 0224). 주무기로 든
 /// 동안에는 없다 — 바꿔 들면 특성도 맞바뀐다. 숫자는 능력치의 있는 칸(`stats::Mods`)으로만, 능력치를 합치는 한 곳
@@ -1021,7 +1143,7 @@ impl SubTrait {
         let base = crate::tuning::SPECS[crate::tuning::idx(crate::tuning::P::StaminaMax)].def;
         // 등잔 회복량(0274 ② 망치)도 더하는 칸 — 한 모금의 바탕(랩 `flask.heal` 20)에 대한 몫으로.
         let sip = crate::tuning::SPECS[crate::tuning::idx(crate::tuning::P::FlaskHeal)].def;
-        let d = [m.stamina_regen, m.poise, m.ail, m.skill_cd]
+        let d = [m.stamina_regen, m.poise, m.ail, m.skill_cd, m.ember]
             .into_iter()
             .map(|x| (x - 1.0).abs())
             .chain([m.kill_stamina / base, m.heal as f32 / sip])
@@ -1045,6 +1167,9 @@ pub const SUB_SKILL_CD: f32 = 0.95;
 /// 칠 때 −9.5% — 봇이 틈마다 한 타를 더 넣는다, 지팡이는 +5에서 −24%) — 어느 값도 4% 기준 안에 못 든다. 쓰러뜨림의 기력은 보스
 /// 싸움(쓰러뜨릴 것이 없다)을 줄이지 않는다.
 pub const SUB_KILL_STAMINA: f32 = 8.0;
+/// 쌍단검의 보조특성(0274 ③ — 도적의 맛보기, 손버릇): 쓰러뜨린 적이 남기는 잔불 ×1.10(주특성 급소 +50%의 다섯에 하나). 싸움의 수
+/// (피해 · 자세 · 기력 · 회피 · 막기)를 하나도 건드리지 않아 보스 싸움을 줄이지 않는다(모의 0% — 1b의 4% 기준은 저절로).
+pub const SUB_EMBER: f32 = 1.10;
 
 /// 교체 공격(0272 1b)에서 들어오는 무기가 치는 한 타: 근접 = 그 무기의 대시 공격(`Weapon::dash`), 원거리 = 보통 사격 한 발
 /// (`Weapon::rb`의 `Shot` — 탄 하나를 쓴다). 새 동작·새 표 칸이 없다 — 새 무기는 표의 그 칸이 곧 교체 공격이다.
@@ -1087,7 +1212,7 @@ pub struct ClassDef {
 }
 
 /// 종류 표(판 줄의 차례 — `plates::PLATES`가 이 차례로 선다). 대검 · 창은 뒤에 한 줄씩(0272 2단계).
-pub const CLASSES: [ClassDef; 6] = [
+pub const CLASSES: [ClassDef; 7] = [
     ClassDef {
         class: Class::Sword,
         hand: Hand::One,
@@ -1119,7 +1244,7 @@ pub const CLASSES: [ClassDef; 6] = [
         great: Ult::Upend,
         art: Art {
             force: ART_FORCE,
-            channel: 1.0,
+            ..Art::PLAIN
         },
         main_trait: |s| s.trait_hammer,
         sub: SubTrait {
@@ -1140,8 +1265,8 @@ pub const CLASSES: [ClassDef; 6] = [
         pair: [Kind::Frost, Kind::Ember],
         great: Ult::Blizzard,
         art: Art {
-            force: 1.0,
             channel: ART_CHANNEL,
+            ..Art::PLAIN
         },
         main_trait: |s| s.trait_staff,
         sub: SubTrait {
@@ -1209,6 +1334,30 @@ pub const CLASSES: [ClassDef; 6] = [
         sub_trait: |s| s.subtrait_spear,
         toss: Some(JAVELIN_TOSS),
     },
+    // 쌍단검(0274 ③ — 도적의 결): 두 손에 날 하나씩이라 방패와 들지 않는다(양손 근접) · 관통(찌르는 날 — D&D · BG3의 단검은 찌름
+    // 피해, 한손검(전사)은 참격) · 날카로움과 균열(출혈을 내고 약점을 연다 — 옛 한손검 트리의 넷을 넘겨받았다) · 주특성 급소.
+    ClassDef {
+        class: Class::Dagger,
+        hand: Hand::Two,
+        name: |s| s.class_dagger,
+        attribute: |s| s.attr_pierce,
+        pair: [Kind::Sharp, Kind::Rift],
+        great: Ult::Ambush,
+        art: Art {
+            sneak: ART_SNEAK,
+            ..Art::PLAIN
+        },
+        main_trait: |s| s.trait_dagger,
+        sub: SubTrait {
+            mods: Mods {
+                ember: SUB_EMBER,
+                ..Mods::NONE
+            },
+            stowed_reload: false,
+        },
+        sub_trait: |s| s.subtrait_dagger,
+        toss: Some(KNIFE_TOSS),
+    },
 ];
 
 impl Class {
@@ -1221,6 +1370,7 @@ impl Class {
             Class::Crossbow => 3,
             Class::Bow => 4,
             Class::Spear => 5,
+            Class::Dagger => 6,
         }
     }
 
@@ -1251,6 +1401,7 @@ impl Id {
             Id::Crossbow => Some(Class::Crossbow),
             Id::Bow => Some(Class::Bow),
             Id::Spear => Some(Class::Spear),
+            Id::Daggers => Some(Class::Dagger),
             Id::Fists => None,
         }
     }
@@ -1428,6 +1579,7 @@ mod tests {
                 got.skill_cd != none.skill_cd,
                 got.kill_stamina != none.kill_stamina,
                 got.heal != none.heal,
+                got.ember != none.ember,
             ];
             let n = knobs.iter().filter(|k| **k).count();
             assert_eq!(n + c.sub.stowed_reload as usize, 1, "{:?}", c.class);
@@ -1438,11 +1590,13 @@ mod tests {
                 skill_cd: none.skill_cd,
                 kill_stamina: none.kill_stamina,
                 heal: none.heal,
+                ember: none.ember,
                 ..got
             };
             assert_eq!(only, none, "{:?}: nothing else moves", c.class);
             assert!(got.stamina_regen >= 1.0 && got.poise >= 1.0 && got.ail >= 1.0);
             assert!(got.skill_cd <= 1.0 && got.kill_stamina >= 0.0 && got.heal >= 0);
+            assert!(got.ember >= 1.0);
             // 작게: 어느 것도 15%를 넘지 않고, 주특성의 배가 있는 종류는 그 반 아래.
             let p = c.sub.percent();
             assert_eq!(p == 0, c.sub.stowed_reload, "{:?}", c.class);
@@ -1458,6 +1612,9 @@ mod tests {
         assert_eq!(Class::Staff.def().sub.percent(), 15);
         assert_eq!(Class::Bow.def().sub.percent(), 5);
         assert_eq!(Class::Spear.def().sub.percent(), 8, "stamina +8 per kill");
+        // 0274 ③: 쌍단검 = 쓰러뜨린 적의 잔불 +10%(손버릇) — 주특성 급소 +50%의 다섯에 하나.
+        assert_eq!(Class::Dagger.def().sub.percent(), 10);
+        assert_eq!(Class::Dagger.def().art.percent(), 50);
         assert!(Class::Crossbow.def().sub.stowed_reload);
         assert_eq!(Id::Fists.sub_trait(), None, "bare hands are no class");
         assert_eq!(Id::Hammer.sub_trait(), Some(Class::Hammer.def().sub));
@@ -1579,7 +1736,7 @@ mod tests {
         charged: i32,
         grenade: i32,
     }
-    const OLD_WEAPONS: [Old; 7] = [
+    const OLD_WEAPONS: [Old; 8] = [
         Old {
             id: Id::Sword,
             combo: &[1, 1, 2],
@@ -1657,6 +1814,17 @@ mod tests {
             // 0274 ②b: 창 던지기 2(모은 것 3 그대로).
             rb: 2,
             charged: 3,
+            grenade: 0,
+        },
+        // 0274 ③: 쌍단검도 그 뒤 — 옛 눈금으로(투척 단검은 날 하나의 피해).
+        Old {
+            id: Id::Daggers,
+            combo: &[1, 1, 1, 2],
+            dash: 2,
+            heavy: 2,
+            aftershock: 0,
+            rb: 1,
+            charged: 2,
             grenade: 0,
         },
     ];
@@ -1927,9 +2095,9 @@ mod swing_tests {
             }
             for (anim, (s0, a0, _)) in swings {
                 let ai = m.anim(anim).unwrap_or_else(|| panic!("{anim}"));
-                // 0198: 맨손의 왼 잽은 왼손, 앞차기는 오른발이 친다.
+                // 0198: 맨손의 왼 잽은 왼손, 앞차기는 오른발이 친다. 0274 ③: 쌍단검 1타도 왼손의 날이 찌른다.
                 let limb = match anim {
-                    "fist1" => m.node("mixamorig:LeftHand"),
+                    "fist1" | "dagger1" => m.node("mixamorig:LeftHand"),
                     "fist_heavy" | "fist_dash" => m.node("mixamorig:RightFoot"),
                     _ => None,
                 };

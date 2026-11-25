@@ -342,10 +342,11 @@ pub(super) struct WVal {
 
 /// 종류의 원거리 수단(0274 ②b — `weapons::Bolt::look`)의 이름.
 pub(super) fn rb_name(look: u8) -> &'static str {
-    use crate::weapons::{AXE, JAVELIN, LIGHT, STONE};
+    use crate::weapons::{AXE, JAVELIN, KNIFE, LIGHT, STONE};
     let s = s();
     match look {
         AXE => s.rb_axe,
+        KNIFE => s.rb_knives,
         LIGHT => s.rb_light,
         JAVELIN => s.rb_javelin,
         STONE => s.rb_stone,
@@ -498,6 +499,7 @@ fn weapon_desc(id: weapons::Id) -> &'static str {
         weapons::Id::Fists => s.weapon_fists_d,
         weapons::Id::Bow => s.weapon_bow_d,
         weapons::Id::Spear => s.weapon_spear_d,
+        weapons::Id::Daggers => s.weapon_daggers_d,
     }
 }
 

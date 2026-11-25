@@ -99,6 +99,11 @@ pub enum Kind {
     Smite,
     Javelin,
     Pebble,
+    /// 쌍단검(0274 ③): 공격 그림(엇갈린 짧은 날 둘) · 빠지며 베기 · 그림자 습격 · 투척 단검 셋.
+    Daggers,
+    Slip,
+    Ambush,
+    Knives,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
@@ -939,7 +944,8 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Crossbow
         | Kind::Fist
         | Kind::Bow
-        | Kind::Spear => a.attack = true,
+        | Kind::Spear
+        | Kind::Daggers => a.attack = true,
         Kind::Dodge => a.dodge = true,
         Kind::Parry => a.parry = true,
         Kind::Jump => a.jump = true,
@@ -989,7 +995,10 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::HandAxe
         | Kind::Smite
         | Kind::Javelin
-        | Kind::Pebble => {}
+        | Kind::Pebble
+        | Kind::Slip
+        | Kind::Ambush
+        | Kind::Knives => {}
         Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
@@ -1048,6 +1057,7 @@ pub fn attack_icon(w: crate::weapons::Id) -> Kind {
         Id::Fists => Kind::Fist,
         Id::Bow => Kind::Bow,
         Id::Spear => Kind::Spear,
+        Id::Daggers => Kind::Daggers,
     }
 }
 
@@ -1085,6 +1095,7 @@ pub fn skill_icon(id: crate::skills::Id) -> Kind {
         Id::Pommel => Kind::Pommel,
         Id::Shove => Kind::Shove,
         Id::Rally => Kind::Rally,
+        Id::Slip => Kind::Slip,
     }
 }
 
@@ -1099,6 +1110,7 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
         Ult::Blizzard => Kind::Blizzard,
         Ult::Rain => Kind::Rain,
         Ult::Gale => Kind::Gale,
+        Ult::Ambush => Kind::Ambush,
     }
 }
 
@@ -1115,9 +1127,10 @@ pub fn cast_icon(w: crate::weapons::Id) -> Kind {
 
 /// 종류의 RB 꼴(`weapons::Bolt::look`) → 그림(0274 ②b). 마법 탄(0 · 1 · 2)은 별.
 pub fn toss_icon(look: u8) -> Kind {
-    use crate::weapons::{AXE, JAVELIN, LIGHT, STONE};
+    use crate::weapons::{AXE, JAVELIN, KNIFE, LIGHT, STONE};
     match look {
         AXE => Kind::HandAxe,
+        KNIFE => Kind::Knives,
         LIGHT => Kind::Smite,
         JAVELIN => Kind::Javelin,
         STONE => Kind::Pebble,
@@ -2158,6 +2171,70 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             ".............",
             ".............",
         ],
+        // 쌍단검(0274 ③): 엇갈린 짧은 날 둘(날 끝이 위) — 가운데에서 코등이가 만난다.
+        Kind::Daggers => [
+            "##.........##",
+            "###.......###",
+            ".###.....###.",
+            "..###...###..",
+            "...###.###...",
+            "....#####....",
+            ".....###.....",
+            "....#####....",
+            "..####.####..",
+            "..#.#...#.#..",
+            "...#.....#...",
+            "..#.......#..",
+            ".#.........#.",
+        ],
+        // 빠지며 베기(0274 ③): 앞(오른쪽 위)의 벤 자국 + 뒤로 물러나는 화살.
+        Kind::Slip => [
+            ".......####..",
+            "........####.",
+            "..........###",
+            "...........##",
+            "..........##.",
+            ".............",
+            "....#........",
+            "...##........",
+            "..#######....",
+            ".########....",
+            "..#######....",
+            "...##........",
+            "....#........",
+        ],
+        // 그림자 습격(0274 ③): 등(두 어깨) 사이로 내리꽂는 짧은 날.
+        Kind::Ambush => [
+            "......#......",
+            ".....###.....",
+            ".....###.....",
+            ".....###.....",
+            ".....###.....",
+            "...#######...",
+            "......#......",
+            "......#......",
+            ".............",
+            "..#.......#..",
+            ".###.....###.",
+            "#####...#####",
+            "#####...#####",
+        ],
+        // 투척 단검 셋(0274 ③): 위로 부채꼴로 날아가는 날 셋 + 아래의 바람 줄.
+        Kind::Knives => [
+            "#.....#.....#",
+            "##....#....##",
+            ".##..###..##.",
+            "..#..###..#..",
+            "..##.###.##..",
+            "...#..#..#...",
+            "...##.#.##...",
+            "....#.#.#....",
+            ".............",
+            "...#..#..#...",
+            "..#...#...#..",
+            ".#....#....#.",
+            ".............",
+        ],
         // 창 던지기(0274 ②b): 오른쪽 위로 날아가는 창(촉이 앞) + 꼬리의 바람 줄.
         Kind::Javelin => [
             "..........###",
@@ -2475,6 +2552,10 @@ mod tests {
             Kind::Smite,
             Kind::Javelin,
             Kind::Pebble,
+            Kind::Daggers,
+            Kind::Slip,
+            Kind::Ambush,
+            Kind::Knives,
             Kind::Pick,
             Kind::Open,
             Kind::Pull,

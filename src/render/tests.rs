@@ -478,7 +478,12 @@ fn wanderer_clips_start_and_end_facing_front_and_do_not_spin() {
             );
             if !matches!(
                 n,
-                "heavy" | "hammer_slam" | "staff_release" | "fist_heavy" | "spear_lunge"
+                "heavy"
+                    | "hammer_slam"
+                    | "staff_release"
+                    | "fist_heavy"
+                    | "spear_lunge"
+                    | "dagger_lunge"
             ) {
                 assert!(near(ys[0], front, 25.0), "{n} starts facing {:+.0}°", ys[0]);
             }

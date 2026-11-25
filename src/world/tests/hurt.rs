@@ -125,7 +125,7 @@ fn every_damage_formula_gives_ten_times_what_the_old_small_numbers_gave() {
                         base * HP_UNIT,
                         crit,
                         opened * HP_UNIT,
-                        false,
+                        Knack::NONE,
                         &t,
                     );
                     assert_eq!(

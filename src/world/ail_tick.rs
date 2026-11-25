@@ -62,7 +62,7 @@ impl World {
             let (leaks, dx, dz) = en.ail.walked_to(en.pos.x, en.pos.z);
             let moved = vec3(dx, 0.0, dz);
             if leaks > 0 && en.active() {
-                en.hp -= hurt_by(en, BLEED_DMG * leaks as i32, false, 0, false, t);
+                en.hp -= hurt_by(en, BLEED_DMG * leaks as i32, false, 0, Knack::NONE, t);
                 ev.push(Event::Bleed {
                     at: en.pos + Vec3::Y * en.height * 0.5,
                     dir: moved.normalize_or_zero(),
@@ -85,7 +85,7 @@ impl World {
             }
             if out.burn > 0 && en.active() {
                 // 화상: 겹마다 `BURN_DMG` — 타마다의 덤(힘)은 붙지 않고, 금·깨진 자세의 배는 받는다.
-                en.hp -= hurt_by(en, BURN_DMG * out.burn as i32, false, 0, false, t);
+                en.hp -= hurt_by(en, BURN_DMG * out.burn as i32, false, 0, Knack::NONE, t);
                 ev.push(Event::Burn {
                     at: en.pos + Vec3::Y * en.height * 0.6,
                 });

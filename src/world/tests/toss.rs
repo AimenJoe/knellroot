@@ -56,6 +56,14 @@ fn rb_dps_probe() {
                 if boss { " (warden)" } else { "" }
             );
         }
+        // 0274 ③: 투척 단검 셋은 가까울수록 셋이 다 박힌다 — 2 m에서도.
+        if id == weapons::Id::Daggers {
+            let (mash, hold) = (
+                rb_dps(id, 20.0, 2.0, false, false),
+                rb_dps(id, 20.0, 2.0, true, false),
+            );
+            println!("{id:?} 20s at 2 m: RB mash {mash:.1}/s · hold {hold:.1}/s");
+        }
     }
 }
 

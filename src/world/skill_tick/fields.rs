@@ -293,7 +293,7 @@ impl World {
     ) -> bool {
         let snare = self.snare_secs();
         // 날카로움의 덤(0270 C5)은 손의 타에만 — 타입이 스스로 낸 피해(`flat`)는 아니다.
-        let keen = !c.flat && self.keen();
+        let knack = if c.flat { Knack::NONE } else { self.knack() };
         let en = &mut self.enemies[i];
         if !en.boss {
             en.marks.snare = en.marks.snare.max(snare);
@@ -302,7 +302,7 @@ impl World {
         if c.damage > 0 {
             let crit = c.crit && en.exposed > 0.0;
             let bonus = if c.flat { 0 } else { self.stats.dmg };
-            en.hp -= hurt_by(en, bonus + c.damage, crit, self.stats.opened_dmg, keen, t);
+            en.hp -= hurt_by(en, bonus + c.damage, crit, self.stats.opened_dmg, knack, t);
             if crit {
                 en.exposed = 0.0;
                 ev.push(Event::Crit { at });

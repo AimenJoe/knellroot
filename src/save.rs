@@ -1687,8 +1687,8 @@ weapons=sword,bow
             "v=1\ncore.warden=3\nmigrated.v06=1\nmigrated.ult=1\nskill.rank.pommel=1\ntree.veins=knell,shock,bogus\n",
         ));
         assert_eq!(odd.board.cells.veins, 1 << Vein::Shock.index());
-        // 0274 ②: 한손검의 짝이 충격 · 흡수로 바뀌어도 균열의 결을 산 기록은 그대로 지닌다(한손검 트리에 잠시 더 선다 —
-        // `plates::CARRIED`, ③에서 단검 트리로). 가로지르기(균열의 스킬)도 그대로, 돌려받는 포인트 없음.
+        // 0274 ②: 한손검의 짝이 충격 · 흡수로 바뀌어도 균열의 결을 산 기록은 그대로 지닌다 — ③부터는 쌍단검 트리의 짝이다.
+        // 가로지르기(균열의 스킬)도 그대로, 돌려받는 포인트 없음.
         let old = Progress::from_record(Record::parse(
             "v=1\ncore.warden=3\nmigrated.v06=1\nmigrated.ult=1\nskill.rank.cut=2\ntree.veins=rift\n",
         ));
@@ -1707,6 +1707,68 @@ weapons=sword,bow
             1 << Vein::Rift.index(),
             "and keeps it through a save"
         );
+    }
+
+    /// 0274 ③: 한손검 트리의 날카로움 · 균열 스킬 넷(가로지르기 · 바늘땀 · 던지기 · 제비걸음)과 균열의 결이 쌍단검 트리로 옮겨 가도
+    /// 그것을 산 옛 기록(쌍단검을 아직 갖지 않은 기록)은 단 · 고르기 · 결을 그대로 지니고, 끼운 칸도 그대로다 — 돌려받는 포인트 없음
+    /// (어느 트리에든 선다). 쌍단검을 가진 · 든 · 벼린 기록이 왕복하고, 보조무기 슬롯의 쌍단검은 잔불 +10%(손버릇).
+    #[test]
+    fn the_moved_rogue_arts_and_the_daggers_keep_through_a_save() {
+        use crate::progression::Vein;
+        use crate::skills::{Id as Sk, Pick};
+        use crate::weapons::Id;
+        let old = Progress::from_record(Record::parse(
+            "v=1\ncore.warden=3\nlv.life=5\nmigrated.v06=1\nmigrated.ult=1\nweapon=sword\nweapons=sword\n\
+             skill.rank.cut=3\nskill.pick.cut=b\nskill.rank.stitch=2\nskill.rank.throw=1\nskill.rank.swallow=1\n\
+             tree.veins=rift\nskill.1=cut\nskill.2=stitch\n",
+        ));
+        let rank = |p: &Progress, id: Sk| p.board.rank[id.index()];
+        assert_eq!(
+            [Sk::Cut, Sk::Stitch, Sk::Throw, Sk::Swallow].map(|id| rank(&old, id)),
+            [3, 2, 1, 1]
+        );
+        assert_eq!(old.board.pick[Sk::Cut.index()], Pick::B, "the pick too");
+        assert!(old.board.cells.veined(Vein::Rift), "the rift passive");
+        assert_eq!(old.board.spent(), 3 + 2 + 1 + 1 + 1, "nothing refunded");
+        assert_eq!(
+            old.skills.0,
+            [Sk::Cut, Sk::Stitch],
+            "still worn — empty with a sword"
+        );
+        let back = Progress::from_record(Record::parse(&old.to_record().to_text()));
+        assert_eq!(back.board, old.board, "and through a save");
+        // 쌍단검의 기록.
+        let mut p = Progress {
+            finds: vec!["village.stone.0".to_string()],
+            weapons: vec![Id::Sword, Id::Daggers],
+            weapon: Some(Id::Daggers),
+            sub: Some(Id::Sword),
+            ..Progress::default()
+        };
+        p.forged.set(Id::Daggers, 1);
+        p.settle_items();
+        let text = p.to_record().to_text();
+        assert!(
+            text.contains("weapon=daggers") && text.contains("forge.daggers=1"),
+            "{text}"
+        );
+        let mut back = Progress::from_record(Record::parse(&text));
+        back.settle_items();
+        assert_eq!(back.weapons, p.weapons);
+        assert_eq!(back.weapon, Some(Id::Daggers));
+        assert!(back
+            .bag
+            .of(crate::items::Base::Weapon(Id::Daggers))
+            .next()
+            .is_some());
+        let base = Progress::default().stats();
+        let swapped = Progress {
+            weapon: Some(Id::Sword),
+            sub: Some(Id::Daggers),
+            ..back.clone()
+        };
+        assert!((swapped.stats().ember - base.ember * crate::weapons::SUB_EMBER).abs() < 1e-4);
+        assert_eq!(back.stats().ember, base.ember, "not while held");
     }
 
     /// 0274 ②: 속성 패시브의 고르기 II(`tree.vein_picks` = 결의 키들)가 왕복한다 — 울림만 고를 것이 있고, 닫힌 결·고를 것이 없는

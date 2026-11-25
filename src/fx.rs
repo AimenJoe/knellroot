@@ -1301,7 +1301,9 @@ impl Fx {
             // 종류의 RB(0274 ②b): 던지는 것은 손끝의 쇳빛 바람 줄(손도끼·창 — 돌은 먼지 한 줌), 신성한 빛은 손 위로 솟는 금빛 —
             // 내려 꽂히는 순간은 `Smite`.
             Event::Cast { at, look }
-                if look == crate::weapons::AXE || look == crate::weapons::JAVELIN =>
+                if look == crate::weapons::AXE
+                    || look == crate::weapons::JAVELIN
+                    || look == crate::weapons::KNIFE =>
             {
                 let fwd = w.player.facing_dir();
                 self.star(at, 0.7, 0.06, WHITE_HOT);
@@ -1696,6 +1698,71 @@ impl Fx {
                     );
                 }
             }
+            // 그림자 습격(0274 ③): 떠난 자리와 닿은 자리에 그늘빛 연기 한 줌씩 + 두 자리를 잇는 옅은 띠(숨어든 길).
+            Event::Blink { from, to } => {
+                for p in [from, to] {
+                    let g = vec3(p.x, w.ground_y(p), p.z);
+                    self.dust_ring(g, 0.5, 10, 2.4, 0.55, SMOKE);
+                }
+                let way = vec3(to.x - from.x, 0.0, to.z - from.z);
+                let len = way.length();
+                if len > 0.3 {
+                    let g = vec3(to.x, w.ground_y(to), to.z);
+                    self.mark(
+                        g,
+                        MarkKind::Streak {
+                            dir: way / len,
+                            len,
+                            half: 0.25,
+                        },
+                        0.25,
+                        ASH,
+                    );
+                }
+            }
+            // 그림자 습격의 찌름: 날끝의 작은 흰 별 + 짧은 강철빛 띠, 마지막은 큰 별 + 남는 짧은 빛의 면 + 앞으로 튀는 빛줄.
+            Event::AmbushStab { at, dir, last } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                let tip = g + Vec3::Y * 0.9 + dir * 1.0;
+                if last {
+                    self.star(tip, 2.2, 0.12, WHITE_HOT);
+                    self.mark(
+                        g,
+                        MarkKind::Slash {
+                            dir,
+                            len: 1.8,
+                            half: 0.35,
+                        },
+                        0.5,
+                        STEEL,
+                    );
+                    self.spray(
+                        tip,
+                        dir,
+                        0.25,
+                        10,
+                        11.0,
+                        Shape::Streak,
+                        0.06,
+                        0.25,
+                        1.0,
+                        WHITE_HOT,
+                        STEEL,
+                    );
+                } else {
+                    self.star(tip, 0.8, 0.06, WHITE_HOT);
+                    self.mark(
+                        g,
+                        MarkKind::Streak {
+                            dir,
+                            len: 1.5,
+                            half: 0.12,
+                        },
+                        0.1,
+                        STEEL,
+                    );
+                }
+            }
             // 한 줄기: 길을 가르는 빛의 면(흰 속 + 금빛 겉, 길게 남는다) + 선 자리의 큰 별 + 길을 따라 늦게 터지는 불똥.
             Event::LineCut { at, dir, len, half } => {
                 let g = vec3(at.x, w.ground_y(at), at.z);
@@ -1762,6 +1829,12 @@ impl Fx {
                         let f = w.player.facing_dir();
                         self.star(pp + Vec3::Y * 1.1 + f * 1.2, 1.4, 0.3, STEEL);
                         self.implode(g, 2.4, 12, WHITE_HOT);
+                    }
+                    // 0274 ③: 그림자 습격 = 숨어든 자리(등 뒤)에서 날끝의 강철빛 + 발밑으로 빨려드는 그늘빛(연기) — 숨어든 연기는 `Blink`가.
+                    crate::skills::Ult::Ambush => {
+                        let f = w.player.facing_dir();
+                        self.star(pp + Vec3::Y * 1.0 + f * 0.6, 1.2, 0.3, STEEL);
+                        self.implode(g, 2.0, 10, SMOKE);
                     }
                 }
             }
@@ -2646,6 +2719,31 @@ impl Fx {
                 );
                 self.dust_kick(g, dir, 5, 0.6);
             }
+            // 빠지며 베기(0274 ③): 벤 자리의 흰 별 + 앞을 가르는 짧은 강철빛 면 + 뒤로 남는 옅은 걸음 띠와 먼지.
+            (Sk::Slip, Form::Slip { range, back, .. }) => {
+                self.star(g + dir * 0.9 + Vec3::Y * 0.9, 1.2, 0.08, WHITE_HOT);
+                self.mark(
+                    g,
+                    MarkKind::Slash {
+                        dir,
+                        len: range,
+                        half: 0.2,
+                    },
+                    0.25,
+                    STEEL,
+                );
+                self.mark(
+                    g - dir * back,
+                    MarkKind::Streak {
+                        dir: -dir,
+                        len: back,
+                        half: 0.3,
+                    },
+                    0.3,
+                    ASH,
+                );
+                self.dust_kick(g, -dir, 4, 0.5);
+            }
             // 재기(0274): 몸에서 번지는 민트 고리 + 둥근 먼지 — 체력이 도는 빛은 `Mend`가 낸다.
             (Sk::Rally, Form::Rally { radius, .. }) => {
                 self.mark_with(
@@ -2996,6 +3094,21 @@ mod tests {
                 dir,
                 len: 5.5,
                 half: 0.8,
+                last: true,
+            },
+            // 0274 ③: 쌍단검 판의 큰 기술.
+            Event::Blink {
+                from: at - dir * 4.0,
+                to: at,
+            },
+            Event::AmbushStab {
+                at,
+                dir,
+                last: false,
+            },
+            Event::AmbushStab {
+                at,
+                dir,
                 last: true,
             },
         ]);

@@ -17,12 +17,13 @@ fn worn(w: &mut World, a: Sk, b: Sk) {
     });
 }
 
-/// 한손검: 방패를 들면 방패 기술(막아치기)이 살고 결투 기술(가로지르기)이 빈 칸이 된다 — 방패를 내리면 거꾸로. 배운 단은 그대로 남는다.
+/// 한손검: 방패를 들면 방패 기술(막아치기)이 살고 한손검 기술(자루 치기 — 0274 ③부터 가로지르기는 쌍단검의 것)이 빈 칸이 된다 —
+/// 방패를 내리면 거꾸로. 배운 단은 그대로 남는다.
 #[test]
 fn a_shield_turns_the_sword_from_duelling_arts_to_shield_arts() {
     let mut w = World::new("test", 30.0);
     assert_eq!(w.player.weapon, W::Sword);
-    worn(&mut w, Sk::Bash, Sk::Cut);
+    worn(&mut w, Sk::Bash, Sk::Pommel);
     assert_eq!(w.grip(), Grip::Class(Class::Sword));
     assert_eq!(w.player.skill.rank, [0, 1], "no shield: the duel art only");
     w.set_shield(Some(crate::shield::Id::Pilgrim));
@@ -39,9 +40,12 @@ fn a_shield_turns_the_sword_from_duelling_arts_to_shield_arts() {
     // 0274: 망치도 한손 — 방패와 함께면 방패 판의 기술(한손검과 같다).
     w.set_weapon(W::Hammer);
     assert_eq!(w.grip(), Grip::Shield);
-    // 두 손 무기(창)를 들면 방패는 쉰다 — 쥔 꼴은 그 무기의 것.
+    // 두 손 무기(창 · 쌍단검)를 들면 방패는 쉰다 — 쥔 꼴은 그 무기의 것.
     w.set_weapon(W::Spear);
     assert_eq!(w.grip(), Grip::Class(Class::Spear));
+    w.set_weapon(W::Daggers);
+    assert_eq!(w.grip(), Grip::Class(Class::Dagger));
+    assert!(!w.can_block(), "no hand left for the shield");
 }
 
 /// 망치의 물리력: 타입 없는 스킬(휘돌이)의 피해·자세 피해가 무기의 배만큼 — 타입 있는 스킬(던지기)은 그대로. 검은 배가 없다.
@@ -105,6 +109,8 @@ fn the_staff_channels_more_type_gauge_per_skill_hit() {
 fn what_a_skill_leaves_behind_keeps_the_weapon_it_was_cast_with() {
     let t = Tuning::default();
     let mut w = World::new("test", 30.0);
+    // 0274 ③: 던지기는 쌍단검 · 망치의 스킬 — 망치로 던진다(망치에는 마법력이 없다).
+    w.set_weapon(W::Hammer);
     worn(&mut w, Sk::Throw, Sk::Gather);
     let i = mob_with(&mut w, vec3(0.0, 0.0, -2.0), 500);
     w.enemies[i].state = EState::Recover { t: -1000.0 };
@@ -122,7 +128,7 @@ fn what_a_skill_leaves_behind_keeps_the_weapon_it_was_cast_with() {
         }
     }
     let cast = w.skill_blades[0].dose;
-    assert_eq!(cast, w.dosed(Sk::Throw.def().dose()), "the sword's own");
+    assert_eq!(cast, w.dosed(Sk::Throw.def().dose()), "the hammer's own");
     w.set_weapon(W::Staff);
     assert!(
         w.dosed(Sk::Throw.def().dose()).1 > cast.1,

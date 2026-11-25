@@ -183,6 +183,8 @@ fn a_dragged_lane_skill_goes_the_finger_way_not_the_walking_way() {
     let t = Tuning::default();
     let dash = |drag: bool| {
         let mut w = World::new("test", 40.0);
+        // 0274 ③: 가로지르기는 쌍단검의 스킬.
+        w.set_weapon(crate::weapons::Id::Daggers);
         w.set_skills([skills::Id::Cut, skills::Id::Whirl]);
         w.view_yaw = Some(0.0);
         let p0 = w.player.pos;

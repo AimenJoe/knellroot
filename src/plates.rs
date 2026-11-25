@@ -42,12 +42,8 @@ pub const PLATES: [Plate; NP] = {
 pub const SHIELD_PAIR: [Kind; 2] = [Kind::Drain, Kind::Knell];
 pub const SHIELD_GREAT: Ult = Ult::Bell;
 
-/// 대표 속성에서 빠졌지만 그 트리에 잠시 더 서는 속성 패시브(0274 ② — 한손검이 날카로움 · 균열에서 충격 · 흡수로 바뀌었다): 균열의
-/// 결은 균열을 대표로 삼는 트리(쌍단검, 0274 ③)가 올 때까지 한손검 트리의 셋째 줄 가운데(궁극기 곁)에 선다 — 산 기록이 돌려받지
-/// 않고 그대로 지닌다. ③에서 이 줄을 걷고 단검 트리의 짝으로 옮긴다(날카로움은 창 트리의 짝이라 여기 없다).
-pub const CARRIED: [(Class, Kind); 1] = [(Class::Sword, Kind::Rift)];
-
-/// 대표 속성으로도 `CARRIED`로도 어느 트리에 서지 않는 속성(비어 있어야 한다 — 시험이 본다).
+/// 대표 속성으로 어느 트리에도 서지 않는 속성(비어 있어야 한다 — 시험이 본다). 0274 ②에서 한손검이 균열을 내려놓은 동안 그 결은
+/// 한손검 트리에 잠시 더 섰고(`CARRIED`), ③에서 쌍단검 트리(날카로움 · 균열)가 와 그 줄을 걷었다.
 #[cfg(test)]
 pub const HOMELESS: [Kind; 0] = [];
 
@@ -191,18 +187,6 @@ impl Plate {
             row: 2,
             col: Col::Mid,
         });
-        // 잠시 더 서는 결(0274 ② — `CARRIED`): 궁극기 곁.
-        for (c, k) in CARRIED {
-            if self == Plate::Class(c) {
-                if let Some(v) = VEINS.iter().copied().find(|v: &Vein| v.kind() == k) {
-                    out.push(Seat {
-                        entry: Entry::Vein(v),
-                        row: 2,
-                        col: Col::Mid,
-                    });
-                }
-            }
-        }
         out
     }
 
@@ -310,6 +294,7 @@ mod tests {
     const CROSSBOW: Plate = Plate::Class(Class::Crossbow);
     const BOW: Plate = Plate::Class(Class::Bow);
     const SPEAR: Plate = Plate::Class(Class::Spear);
+    const DAGGER: Plate = Plate::Class(Class::Dagger);
 
     #[test]
     fn every_weapon_plate_pairs_two_different_types_and_every_type_has_a_home() {
@@ -322,7 +307,6 @@ mod tests {
             );
             homes.extend([a, b]);
         }
-        homes.extend(CARRIED.map(|(_, k)| k));
         for k in crate::status::TYPED {
             assert_eq!(
                 homes.contains(&k),
@@ -345,6 +329,7 @@ mod tests {
                 CROSSBOW,
                 BOW,
                 SPEAR,
+                DAGGER,
                 Plate::Shield
             ]
         );
@@ -370,14 +355,21 @@ mod tests {
         assert_eq!(Plate::held(W::Hammer.grip(true)), Some(Plate::Shield));
         assert_eq!(Plate::held(W::Hammer.grip(false)), Some(HAMMER));
         assert_eq!(Plate::held(W::Spear.grip(true)), Some(SPEAR), "two hands");
+        // 0274 ③: 쌍단검은 두 손이 다 찬다 — 방패와 들지 않는다(방패를 메어도 단검 트리).
+        assert_eq!(
+            Plate::held(W::Daggers.grip(true)),
+            Some(DAGGER),
+            "two blades"
+        );
         assert_eq!(Plate::held(W::Crossbow.grip(false)), Some(CROSSBOW));
         assert_eq!(Plate::held(W::Bow.grip(false)), Some(BOW));
     }
 
-    /// 0274 ②: 한손검 판 = 전사의 결 — 왼쪽 충격(자루 치기 · 밀치기 · 결) · 오른쪽 흡수(버팀 · 재기 · 결) · 가운데에 옛 짝(날카로움 ·
-    /// 균열)의 스킬이 그대로 선다(가로지르기 · 바늘땀 · 던지기 · 제비걸음 — 쌍단검 트리가 오면 그리로, ③). 궁극기는 몰아치기 그대로.
+    /// 0274 ②: 한손검 판 = 전사의 결 — 왼쪽 충격(자루 치기 · 밀치기 · 결) · 오른쪽 흡수(버팀 · 재기 · 결) · 가운데는 휘돌이 · 끌어모으기.
+    /// 0274 ③: 옛 짝(날카로움 · 균열)의 스킬 넷(가로지르기 · 바늘땀 · 던지기 · 제비걸음)과 균열의 결은 쌍단검 트리로 옮겼다 — 전사의
+    /// 기술만 남는다. 궁극기는 몰아치기 그대로.
     #[test]
-    fn the_sword_plate_is_shock_and_drain_and_keeps_the_old_arts_in_the_middle() {
+    fn the_sword_plate_is_shock_and_drain_and_only_fighter_arts() {
         assert_eq!(SWORD.pair(), Some([Kind::Shock, Kind::Drain]));
         assert_eq!(SWORD.great(), Some(Ult::Flurry));
         let at = |col: Col, row: u8| -> Vec<Entry> {
@@ -393,24 +385,53 @@ mod tests {
         assert_eq!(at(Col::Left, 1), sk(&[Id::Shove]));
         assert_eq!(at(Col::Right, 0), sk(&[Id::Brace]));
         assert_eq!(at(Col::Right, 1), sk(&[Id::Rally]));
-        assert_eq!(
-            at(Col::Mid, 0),
-            sk(&[Id::Whirl, Id::Cut, Id::Gather, Id::Stitch])
-        );
-        assert_eq!(at(Col::Mid, 1), sk(&[Id::Throw, Id::Swallow]));
+        assert_eq!(at(Col::Mid, 0), sk(&[Id::Whirl, Id::Gather]));
+        assert_eq!(at(Col::Mid, 1), sk(&[]));
         assert_eq!(at(Col::Left, 2), [Entry::Vein(Vein::Shock)]);
-        // 균열의 결은 ③까지 궁극기 곁에(`CARRIED`).
-        assert_eq!(
-            at(Col::Mid, 2),
-            [Entry::Ult(Ult::Flurry), Entry::Vein(Vein::Rift)]
-        );
+        assert_eq!(at(Col::Mid, 2), [Entry::Ult(Ult::Flurry)]);
         assert_eq!(at(Col::Right, 2), [Entry::Vein(Vein::Drain)]);
+        for id in [Id::Cut, Id::Stitch, Id::Throw, Id::Swallow] {
+            assert!(!SWORD.has(Entry::Skill(id)), "{id:?} left for the daggers");
+        }
+        assert!(!SWORD.has(Entry::Vein(Vein::Rift)));
+        assert_eq!(SWORD.seats().len(), 9);
         // 새 셋은 한손검만의 것(방패 없이 — 방패를 들면 방패 트리).
         for id in [Id::Pommel, Id::Shove, Id::Rally] {
             assert!(
                 !SHIELD_PLATE_HAS(id) && SWORD.has(Entry::Skill(id)),
                 "{id:?}"
             );
+        }
+    }
+
+    /// 0274 ③: 쌍단검 판 = 도적의 결 — 왼쪽 날카로움(바늘땀 · 제비걸음 · 결), 오른쪽 균열(가로지르기 · 던지기 · 결), 가운데 관통
+    /// (끌어모으기 / 빠지며 베기(새) / 궁극기 그림자 습격). 한손검 트리에서 옮긴 넷이 모두 여기 서고, 버팀(발을 박는 기술)은 서지 않는다.
+    #[test]
+    fn the_dagger_plate_seats_sharp_pierce_and_rift() {
+        assert_eq!(DAGGER.pair(), Some([Kind::Sharp, Kind::Rift]));
+        assert_eq!(DAGGER.great(), Some(Ult::Ambush));
+        let at = |col: Col, row: u8| -> Vec<Entry> {
+            DAGGER
+                .seats()
+                .into_iter()
+                .filter(|s| s.col == col && s.row == row)
+                .map(|s| s.entry)
+                .collect()
+        };
+        let sk = |ids: &[Id]| ids.iter().map(|&i| Entry::Skill(i)).collect::<Vec<_>>();
+        assert_eq!(at(Col::Left, 0), sk(&[Id::Stitch]));
+        assert_eq!(at(Col::Left, 1), sk(&[Id::Swallow]));
+        assert_eq!(at(Col::Left, 2), [Entry::Vein(Vein::Sharp)]);
+        assert_eq!(at(Col::Mid, 0), sk(&[Id::Gather]));
+        assert_eq!(at(Col::Mid, 1), sk(&[Id::Slip]));
+        assert_eq!(at(Col::Mid, 2), [Entry::Ult(Ult::Ambush)]);
+        assert_eq!(at(Col::Right, 0), sk(&[Id::Cut]));
+        assert_eq!(at(Col::Right, 1), sk(&[Id::Throw]));
+        assert_eq!(at(Col::Right, 2), [Entry::Vein(Vein::Rift)]);
+        assert_eq!(DAGGER.seats().len(), 9);
+        assert!(!DAGGER.has(Entry::Skill(Id::Brace)), "rogues don't brace");
+        for p in PLATES {
+            assert_eq!(p.has(Entry::Skill(Id::Slip)), p == DAGGER, "{p:?}");
         }
     }
 
@@ -463,7 +484,7 @@ mod tests {
                 n(BOW),
                 n(Plate::Shield)
             ],
-            [14, 11, 10, 9, 8, 10]
+            [9, 11, 10, 9, 8, 10]
         );
         // 옛 원거리 판에 섰던 스킬은 모두 두 판 가운데 하나에는 선다(0270 C5 — 돌려줄 것이 없다).
         for id in [
@@ -569,9 +590,9 @@ mod tests {
     #[test]
     fn points_spent_on_one_plate_open_its_rows_and_not_anothers() {
         let mut b = Board::default();
-        let duel = SWORD;
+        let duel = DAGGER;
         let staff = STAFF;
-        // 가로지르기(결투만) 셋.
+        // 가로지르기(쌍단검만, 0274 ③) 셋.
         for _ in 0..3 {
             b.rank[Id::Cut.index()] += 1;
         }
@@ -585,10 +606,11 @@ mod tests {
     /// 산 단은 같은 판(`Board`)에 남는다(기록 키 그대로).
     #[test]
     fn a_weapon_plate_sells_by_its_own_rows_and_the_body_keeps_the_old_rules() {
-        let duel = SWORD;
+        // 0274 ③: 가로지르기 · 던지기 · 균열의 결은 쌍단검 판에 — 그 판의 궁극기는 그림자 습격.
+        let duel = DAGGER;
         let mut b = Board::default();
         let throw = Entry::Skill(Id::Throw);
-        let flurry = Entry::Ult(Ult::Flurry);
+        let flurry = Entry::Ult(Ult::Ambush);
         // 던지기(둘째 줄): 옛 판은 쓴 점수 합 4부터 — 결투 판은 그 판의 3부터.
         assert_eq!(offer_on(duel, &b, throw, 9), Offer::Locked(3));
         for _ in 0..3 {
@@ -605,8 +627,8 @@ mod tests {
         // 셋째 줄(결·큰 기술)은 그 판에 6.
         assert_eq!(offer_on(duel, &b, flurry, 9), Offer::Locked(2));
         assert!(!buy_on(duel, &mut b, flurry, 9));
-        assert!(buy_on(duel, &mut b, Entry::Skill(Id::Whirl), 9));
-        assert!(buy_on(duel, &mut b, Entry::Skill(Id::Whirl), 9));
+        assert!(buy_on(duel, &mut b, Entry::Skill(Id::Stitch), 9));
+        assert!(buy_on(duel, &mut b, Entry::Skill(Id::Stitch), 9));
         // 큰 기술의 첫 단은 2점 — 남은 점수 1이면 모자란다.
         assert_eq!(offer_on(duel, &b, flurry, b.spent() + 1), Offer::Short);
         let total = b.spent() + 2;
@@ -616,7 +638,7 @@ mod tests {
         let rift = Entry::Vein(Vein::Rift);
         assert_eq!(offer_on(duel, &b, rift, 99), Offer::Ready);
         let mut fresh = Board::default();
-        fresh.rank[Id::Whirl.index()] = 5;
+        fresh.rank[Id::Stitch.index()] = 5;
         fresh.raise(Entry::Skill(Id::Gather));
         assert!(duel.row_open(&fresh, 2));
         assert_eq!(
@@ -654,8 +676,8 @@ mod tests {
         assert!(!can_buy(&all, 99));
     }
 
-    /// 0270 C5: 판의 칸 모두가 어느 판에든 선다 — 돌려줄 것이 없다(새 칸을 표에 더하고 판에 안 앉히면 여기서 걸린다). 0274 ②:
-    /// 한손검의 짝이 바뀌어도 균열의 결은 한손검 트리에 잠시 더 서고(`CARRIED`) 균열의 스킬도 그대로 — 다 산 판에서 돌려받는 것이 없다.
+    /// 0270 C5: 판의 칸 모두가 어느 판에든 선다 — 돌려줄 것이 없다(새 칸을 표에 더하고 판에 안 앉히면 여기서 걸린다). 0274 ③:
+    /// 한손검이 내려놓은 균열의 결과 날카로움 · 균열의 스킬 넷은 쌍단검 트리에 선다 — 다 산 판에서 돌려받는 것이 없다.
     #[test]
     fn every_entry_stands_on_some_plate_today() {
         use crate::progression::Vein;
@@ -666,11 +688,14 @@ mod tests {
         let all = Board::maxed(crate::skills::Pick::B);
         assert_eq!(drop_unseated(all), all, "nothing is refunded");
         assert!(
-            SWORD.has(Entry::Vein(Vein::Rift)),
-            "carried on the sword tree"
+            Plate::Class(Class::Dagger).has(Entry::Vein(Vein::Rift)),
+            "on the dagger tree"
         );
         for id in [Id::Cut, Id::Throw, Id::Swallow, Id::Stitch] {
-            assert!(stands(Entry::Skill(id)), "{id:?} stays on the sword tree");
+            assert!(
+                Plate::Class(Class::Dagger).has(Entry::Skill(id)),
+                "{id:?} moved to the dagger tree"
+            );
         }
     }
 

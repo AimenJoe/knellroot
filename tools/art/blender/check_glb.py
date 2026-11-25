@@ -24,7 +24,7 @@ REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 # 0193: 스킨 몸(Meshy 리깅, 줄여 정점 2,963) + 무기 넷·등잔 그대로 — 4,196.
 # 0272 2단계: 창(자루·촉·끈·천 조각 — 정점 백 남짓)을 더해 4,800 → 5,000(한 그리기 호출의 상한 10,000 · 색인 15,000은 그대로 지킨다).
 # charms: 0155에서 돌린 꼴·꺾인 관으로 다시(1,939) — 한 번에 하나만 그린다(아이콘은 캐시).
-BUDGET = {"hushed_stag": 8800, "mossgrazer": 900, "packbearer": 1000, "repeater": 1650, "mossward": 2600, "winchkeeper": 2600, "wanderer": 5000, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
+BUDGET = {"hushed_stag": 8800, "mossgrazer": 900, "packbearer": 1000, "repeater": 1650, "mossward": 2600, "winchkeeper": 2600, "wanderer": 5300, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
           # 0068 장신구 여섯이 한 파일(게임은 하나씩만 그린다) — 하나 280 안팎. 2026-11-23 디테일(사장 "싸구려"): 장신구 아홉 + 덧옷 셋,
           # 메뉴는 파일 한 벌을 그리기 한 번에 넘긴다(다른 부위 크기 0) — 그래서 덧옷은 `garbs`로 나눴다(뿌리껍질 덧옷 1,500 안팎).
           "charms": 4600, "garbs": 3400,
@@ -68,7 +68,10 @@ EXPECT = {
                  "spear1": 0.5, "spear2": 0.5, "spear3": 0.58, "spear_dash": 0.43, "spear_charge": 0.3, "spear_lunge": 0.67,
                  "sk_skewer": 0.66, "sk_pin": 0.46, "sk_pole": 0.55, "ult_gale": 1.45,
                  # 0274 한손검: 자루 치기 · 밀치기 · 재기.
-                 "sk_pommel": 0.4, "sk_shove": 0.44, "sk_rally": 0.55},
+                 "sk_pommel": 0.4, "sk_shove": 0.44, "sk_rally": 0.55,
+                 # 0274 ③ 쌍단검: 평타 넷 · 달려들며 찌르기 · 모으기 · 강타 · 빠지며 베기 · 그림자 습격.
+                 "dagger1": 0.34, "dagger2": 0.34, "dagger3": 0.37, "dagger4": 0.45, "dagger_dash": 0.34, "dagger_charge": 0.3,
+                 "dagger_lunge": 0.47, "sk_slip": 0.48, "ult_ambush": 1.21},
     "root_husk": {"idle": 1.6, "walk": 1.0, "attack": 1.3, "hurt": 0.3},
     "thorn_beast": {"idle": 1.4, "run": 0.5, "charge_windup": 0.6, "charge": 0.4, "recover": 0.7, "hurt": 0.3},
     "gatekeeper": {"idle": 2.0, "walk": 1.4, "slam": 1.5, "charge_windup": 0.8, "charge": 0.5,
@@ -98,7 +101,7 @@ EXPECT = {
 MUST_NODES = {"hushed_stag": ["glow_core", "glow_eyes", "head_geo", "antler_geo", "bell_geo", "antlers", "bell"],
               "mossward": ["glow_core", "glow_eyes", "head_geo", "shell_geo"],
               "winchkeeper": ["glow_core", "glow_eyes", "head_geo", "club"], "packbearer": ["glow_eyes", "head_geo", "load_geo", "load"],
-              "repeater": ["glow_eyes", "head_geo", "pick"], "mossgrazer": ["head_geo", "ear_l", "ear_r"], "gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["body", "root", "sword", "w_hammer", "w_staff", "w_crossbow", "w_bow", "bow", "w_spear", "spear", "glow_lamp", "lamp", "shield"],
+              "repeater": ["glow_eyes", "head_geo", "pick"], "mossgrazer": ["head_geo", "ear_l", "ear_r"], "gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["body", "root", "sword", "w_hammer", "w_staff", "w_crossbow", "w_bow", "bow", "w_spear", "spear", "w_daggers", "w_dagger_l", "dagger_l", "glow_lamp", "lamp", "shield"],
               "root_husk": ["glow_eye"], "thorn_beast": ["glow_eyes"], "shellback": ["glow_eyes", "head_geo"], "pod": ["glow_eyes", "head_geo", "seed_geo"],
               "bellkeeper": ["glow_eyes", "glow_core", "bell_geo", "head_geo"], "res_hearth": ["head_geo"], "res_water": ["head_geo"], "res_cloth": ["head_geo"], "brazier": ["glow_flame"],
               "core_crystal": ["glow_core"], "bell": ["bell", "bell_frame"],

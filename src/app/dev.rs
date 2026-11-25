@@ -63,6 +63,8 @@ pub(super) enum DevStart {
     Chest,
     /// 둘째 지역 파수꾼 곁방의 상자 곁(0272 2단계 — 파수꾼의 창이 나오는 곳 판정) — 기록은 쓰지 않는다.
     SpearChest,
+    /// 둘째 지역 빈집 뒷방의 상자 곁(0274 ③ — 빈집의 쌍단검이 나오는 곳 판정) — 기록은 쓰지 않는다.
+    DaggerChest,
     /// 첫 지역의 필드 보스 터 들머리(0270 D — 엎드린 고요한 사슴·끈·떨굼·쉬어도 다시 서지 않음 판정) — 기록은 쓰지 않는다.
     Field,
     /// PoC·개발 아레나(`scenario::LIST`).
@@ -86,7 +88,7 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 46] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 48] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Motion, DevStart::Motion(0)),
@@ -96,6 +98,7 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 46] = [
     (DevCat::Motion, DevStart::Motion(4)),
     (DevCat::Motion, DevStart::Motion(5)),
     (DevCat::Motion, DevStart::Motion(6)),
+    (DevCat::Motion, DevStart::Motion(7)),
     (DevCat::Skills, DevStart::Skills),
     (DevCat::Skills, DevStart::SkillsMax),
     (DevCat::Skills, DevStart::SkillsFlip),
@@ -119,6 +122,8 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 46] = [
     (DevCat::Stage, DevStart::Field),
     // 0272 2단계: 역시 끝에.
     (DevCat::Stage, DevStart::SpearChest),
+    // 0274 ③: 역시 끝에.
+    (DevCat::Stage, DevStart::DaggerChest),
     (DevCat::Combat, DevStart::Scenario(Scenario::Boss)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Pillars)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Duel)),
@@ -166,6 +171,7 @@ impl DevStart {
             DevStart::Stones => t(dv::STONES),
             DevStart::Chest => t(dv::CHEST),
             DevStart::SpearChest => t(dv::SPEAR_CHEST),
+            DevStart::DaggerChest => t(dv::DAGGER_CHEST),
             DevStart::Field => t(dv::FIELD),
             DevStart::Scenario(sc) => {
                 let e = scenario::entry(sc);
@@ -195,6 +201,7 @@ impl DevStart {
             | DevStart::Stones
             | DevStart::Chest
             | DevStart::SpearChest
+            | DevStart::DaggerChest
             | DevStart::Field => t(dv::STAGE_NOTE).to_string(),
             DevStart::Scenario(sc) => {
                 let n = scenario::LIST
@@ -375,16 +382,24 @@ impl App {
                 }
                 self.go(Go::Root(Scene::Play));
             }
-            DevStart::Chest | DevStart::SpearChest => {
+            DevStart::Chest | DevStart::SpearChest | DevStart::DaggerChest => {
                 self.dev.run = true;
                 self.restart();
                 self.down = 1;
                 self.cross_to(1, false);
-                let spear = crate::stage::Loot::Weapon(crate::weapons::Id::Spear);
-                let which = if e == DevStart::SpearChest {
-                    self.run.def.chest_loot.iter().position(|l| *l == spear)
-                } else {
-                    Some(0)
+                let weapon = match e {
+                    DevStart::SpearChest => Some(crate::weapons::Id::Spear),
+                    DevStart::DaggerChest => Some(crate::weapons::Id::Daggers),
+                    _ => None,
+                };
+                let which = match weapon {
+                    Some(w) => self
+                        .run
+                        .def
+                        .chest_loot
+                        .iter()
+                        .position(|l| *l == crate::stage::Loot::Weapon(w)),
+                    None => Some(0),
                 };
                 if let Some(&at) = which.and_then(|i| self.run.chest.at.get(i)) {
                     self.world.player.pos = at + vec3(-1.2, 0.0, 0.0);
@@ -421,16 +436,18 @@ impl App {
             // 0270 C3: 쇠뇌 다음은 "검 + 방패"(방패 판의 스킬을 끼워 보게) — 그다음 맨손에서 방패를 내린다. 차례의 앞(활 → 검 → 망치 →
             // 지팡이)은 그대로다(시험 스크립트가 누르는 수).
             // 0272 2단계: 창은 "검과 방패" 다음·맨손 앞에 — 새 판(맨손)에서 세는 시험 스크립트의 수(맨손 → 활 → 검 …)가 그대로다.
+            // 0274 ③: 쌍단검은 창 다음 · 맨손 앞에(같은 까닭).
             DevStart::Arm => {
                 use crate::weapons::Id as W;
                 let shield = Some(crate::shield::Id::Pilgrim);
-                const CYCLE: [(W, bool); 8] = [
+                const CYCLE: [(W, bool); 9] = [
                     (W::Sword, false),
                     (W::Hammer, false),
                     (W::Staff, false),
                     (W::Crossbow, false),
                     (W::Sword, true),
                     (W::Spear, false),
+                    (W::Daggers, false),
                     (W::Fists, false),
                     (W::Bow, false),
                 ];
@@ -441,7 +458,7 @@ impl App {
                 self.progress.shield = if s { shield } else { None };
                 self.snd(crate::sfx::Id::Buy);
             }
-            // 놀이터의 보조무기를 표의 다음 것으로(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활 → 창 → 없음 — 맨손은 메지 않는다).
+            // 놀이터의 보조무기를 표의 다음 것으로(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활 → 창 → 쌍단검 → 없음 — 맨손은 메지 않는다).
             // 아레나에서 든 무기와 같으면 비워진다(`arm_sandbox`). 기록은 그대로.
             DevStart::ArmSub => {
                 let ids: Vec<crate::weapons::Id> = crate::weapons::IDS

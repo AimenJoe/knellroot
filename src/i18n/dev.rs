@@ -132,6 +132,10 @@ pub const SPEAR_CHEST: Pair = (
     "둘째 지역 파수꾼 곁방의 상자 곁에서(파수꾼의 창)",
     "region 2 beside the watch's side-room chest (the Watchman's Spear)",
 );
+pub const DAGGER_CHEST: Pair = (
+    "둘째 지역 빈집 뒷방의 상자 곁에서(빈집의 쌍단검)",
+    "region 2 beside the chest in the empty house's back room (the Hidden Daggers)",
+);
 pub const FIELD: Pair = (
     "첫 지역 필드 보스의 터에서(고요한 사슴)",
     "region 1 at the field boss's clearing (the Hushed Stag)",
@@ -158,13 +162,13 @@ pub const SKILLS_MAX_NOTE: Pair = (
 pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
 pub const ARM: Pair = ("든 무기 바꾸기", "change the held weapon");
 pub const ARM_NOTE: Pair = (
-    "든 무기를 다음 것으로 바꾼다(검 → 망치 → 지팡이 → 쇠뇌 → 검과 방패 → 창 → 맨손 → 활). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다) — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다. 지금: {0}",
-    "cycle the held weapon (sword, hammer, staff, crossbow, sword and shield, spear, fists, bow). Skills go by weapon class (bare hands wield none): wear and enter arenas with this one. nothing is saved. now: {0}",
+    "든 무기를 다음 것으로 바꾼다(검 → 망치 → 지팡이 → 쇠뇌 → 검과 방패 → 창 → 쌍단검 → 맨손 → 활). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다) — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다. 지금: {0}",
+    "cycle the held weapon (sword, hammer, staff, crossbow, sword and shield, spear, daggers, fists, bow). Skills go by weapon class (bare hands wield none): wear and enter arenas with this one. nothing is saved. now: {0}",
 );
 pub const ARM_SUB: Pair = ("보조무기 바꾸기", "change the off-hand weapon");
 pub const ARM_SUB_NOTE: Pair = (
-    "아레나의 보조무기를 다음 것으로 바꾼다(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활 → 창). 든 무기와 같으면 비워진다. 보조특성과 교체 공격(맞힌 직후·패링 직후의 무기 바꾸기)을 본다. 저장하지 않는다. 지금: {0}",
-    "cycle the arena's off-hand weapon (none, sword, hammer, staff, crossbow, bow, spear); the same as the held weapon means none. For off-hand traits and the swap attack (swap right after a hit or a parry). nothing is saved. now: {0}",
+    "아레나의 보조무기를 다음 것으로 바꾼다(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활 → 창 → 쌍단검). 든 무기와 같으면 비워진다. 보조특성과 교체 공격(맞힌 직후·패링 직후의 무기 바꾸기)을 본다. 저장하지 않는다. 지금: {0}",
+    "cycle the arena's off-hand weapon (none, sword, hammer, staff, crossbow, bow, spear, daggers); the same as the held weapon means none. For off-hand traits and the swap attack (swap right after a hit or a parry). nothing is saved. now: {0}",
 );
 pub const PERF_LINE: Pair = ("성능 줄 켬/끔", "perf line on/off");
 pub const PERF_LINE_NOTE: Pair = (
@@ -233,6 +237,7 @@ pub const PAIRS: &[Pair] = &[
     STONES,
     CHEST,
     SPEAR_CHEST,
+    DAGGER_CHEST,
     FIELD,
     STAGE_NOTE,
     LAB_START,
@@ -369,6 +374,34 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("sk_pommel", ("기술 — 자루 치기", "skill: pommel strike")),
     ("sk_shove", ("기술 — 밀치기", "skill: shove")),
     ("sk_rally", ("기술 — 재기", "skill: rally")),
+    // 0274 ③ — 쌍단검
+    (
+        "dagger1",
+        ("쌍단검 — 1타 왼손 찌르기", "daggers: left stab 1"),
+    ),
+    (
+        "dagger2",
+        ("쌍단검 — 2타 오른손 찌르기", "daggers: right stab 2"),
+    ),
+    ("dagger3", ("쌍단검 — 3타 가로 베기", "daggers: slash 3")),
+    (
+        "dagger4",
+        ("쌍단검 — 4타 올려 베기", "daggers: rising cut 4"),
+    ),
+    (
+        "dagger_dash",
+        ("쌍단검 — 달려들며 찌르기", "daggers: running stab"),
+    ),
+    ("dagger_charge", ("쌍단검 — 모으기", "daggers: charge")),
+    (
+        "dagger_lunge",
+        ("쌍단검 — 꿰뚫고 지나가기", "daggers: lunge through"),
+    ),
+    ("sk_slip", ("기술 — 빠지며 베기", "skill: slip away")),
+    (
+        "ult_ambush",
+        ("큰 기술 — 그림자 습격", "ult: shadow ambush"),
+    ),
 ];
 
 /// 동작 이름의 화면 이름(표에 없으면 동작 이름 그대로 — 모델의 동작 이름은 오른쪽 칸에 따로 보인다).

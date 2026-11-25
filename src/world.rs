@@ -383,6 +383,17 @@ pub enum Event {
         half: f32,
         last: bool,
     },
+    /// 그림자 습격(0274 ③): 방랑자가 `from`에서 `to`(그 적의 등 뒤)로 숨어들었다.
+    Blink {
+        from: Vec3,
+        to: Vec3,
+    },
+    /// 그림자 습격의 찌름 하나 — `at`(방랑자) 앞 `dir`, 마지막 찌름이면 `last`.
+    AmbushStab {
+        at: Vec3,
+        dir: Vec3,
+        last: bool,
+    },
 }
 
 /// 금 간 땅(0051, 망치 여진): `left`초 뒤 둘레를 친다.
@@ -775,6 +786,8 @@ pub struct SkillState {
     pub hop_first: Option<usize>,
     /// 화살비(0272)가 내릴 자리 — 누른 순간에 정한다(세계가 멈춘 동안 그 자리의 테가 먼저 선다).
     pub rain_at: Vec3,
+    /// 그림자 습격(0274 ③)이 찌르는 적(누른 순간에 정한다 — 없으면 앞을 찌른다).
+    pub ambush_on: Option<usize>,
 }
 
 /// 솟은 뿌리 하나(0214 뿌리 솟기 — 그림만): 자리·지난 초·쪽(기울기).
@@ -1075,6 +1088,7 @@ impl World {
                     hop_home: Vec3::ZERO,
                     hop_first: None,
                     rain_at: Vec3::ZERO,
+                    ambush_on: None,
                 },
                 parry: ParryState {
                     since: f32::MAX,
@@ -1428,13 +1442,23 @@ impl World {
         self.player.weapon.grip(self.player.shield.is_some())
     }
 
-    /// 한 손이 비었나(0270 C5 — 날카로움의 덤 `hurt_by`의 `keen`): 한손검(맨손도)을 방패 없이. 0274에서 망치도 한손이 되었지만
-    /// 이 덤은 결투의 손(한손검)의 주특성이다 — 망치는 넣지 않는다(쌍단검이 오면 그 종류로 옮긴다, 0274 ③).
+    /// 날카로움의 덤을 받는 손인가(0270 C5 — `hurt_by`의 `Knack::keen`): 0274 ③부터 날카로움을 대표로 삼는 쌍단검(도적의 손)과 맨손
+    /// (방패 없이). 한손검은 0274 ②에서 전사(충격 · 흡수)가 되어 이 덤을 쌍단검에 넘겼다.
     pub fn keen(&self) -> bool {
         matches!(
             self.player.weapon.class(),
-            Some(weapons::Class::Sword) | None
+            Some(weapons::Class::Dagger) | None
         ) && self.player.shield.is_none()
+    }
+
+    /// 방랑자의 타가 싣는 손의 덤(`hurt_by` 한 곳 — 0270 C5 날카로움 · 0274 ③ 급소): 급소는 든 무기의 주특성(`Art::sneak`, 쌍단검)이
+    /// 있을 때 지금 방랑자의 자리에서 본다(등 뒤인가).
+    pub fn knack(&self) -> Knack {
+        let sneak = self.player.weapon.art().sneak;
+        Knack {
+            keen: self.keen(),
+            sneak: (sneak > 1.0).then_some((self.player.pos, sneak)),
+        }
     }
 
     /// 지금 막을 수 있나(0223): 방패를 들었고 든 무기가 한손이다.
@@ -1732,7 +1756,7 @@ impl World {
         self.player.swings += 1;
         let swing = self.player.swings;
         let mut hit = false;
-        let keen = self.keen();
+        let knack = self.knack();
         for en in &mut self.enemies {
             if !en.active() || (en.pos.y - p.y).abs() > HIT_DY {
                 continue;
@@ -1747,7 +1771,7 @@ impl World {
                 self.stats.dmg + t[P::PlungeDamage] as i32,
                 crit,
                 self.stats.opened_dmg,
-                keen,
+                knack,
                 t,
             );
             en.exposed = 0.0;
@@ -2043,7 +2067,7 @@ impl World {
         t: &Tuning,
         ev: &mut Vec<Event>,
     ) {
-        let keen = self.keen();
+        let knack = self.knack();
         for en in &mut self.enemies {
             if !en.active() || (en.pos.y - at.y).abs() > HIT_DY + 0.3 {
                 continue;
@@ -2058,7 +2082,7 @@ impl World {
                 self.stats.dmg + damage,
                 crit,
                 self.stats.opened_dmg,
-                keen,
+                knack,
                 t,
             );
             en.exposed = 0.0;
@@ -2135,7 +2159,7 @@ impl World {
     fn outer_ring(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
         let p = self.player.pos;
         let (inner, outer) = (t[P::PlungeRange], t[P::PlungeRange] * cell::LANDING_RANGE);
-        let keen = self.keen();
+        let knack = self.knack();
         for en in &mut self.enemies {
             if !en.active() || (en.pos.y - p.y).abs() > HIT_DY {
                 continue;
@@ -2149,7 +2173,7 @@ impl World {
                 self.stats.dmg + t[P::PlungeDamage] as i32,
                 false,
                 self.stats.opened_dmg,
-                keen,
+                knack,
                 t,
             );
             add_poise(en, 2.0 * self.stats.poise, None, t, ev);
@@ -2635,11 +2659,11 @@ pub fn poise_max(en: &Enemy, t: &Tuning) -> f32 {
 /// 플레이어가 주는 피해(0055): 드러난 적은 치명타 덤, 자세가 깨진 동안은 × `poise.break damage x`(옛 눈금으로 올림 —
 /// `tuning::scale_up`, 0158 N0: 옛 3 × 1.5 → 5가 30 × 1.5 → 50) — 폭딜 창.
 /// `opened` = 열린 틈의 타 덤(장신구 "깨진 종 조각", 0127) — 드러났거나(치명타) 자세가 깨진 적에게만.
-/// `keen` = 결투로 쥔 손의 타인가(0270 C5 날카로움의 덤 — `World::keen`): 방랑자의 타(평타·강타·내려찍기·탄·스킬·큰 기술)는
-/// `World::keen()`을, 타입이 스스로 낸 피해(새는 피·화상·`Touch::flat`)는 거짓을 넘긴다.
+/// `knack` = 손의 덤(`World::knack`): 방랑자의 타(평타·강타·내려찍기·탄·스킬·큰 기술)는 `World::knack()`을, 타입이 스스로 낸 피해
+/// (새는 피·화상·`Touch::flat`)는 `Knack::NONE`을 넘긴다 — 날카로움(0270 C5 — 피 흘리는 적) · 급소(0274 ③ — 등 뒤 · 휘청 · 기절 · 묶임).
 ///
-/// 배의 규칙 하나: `max(표지, 금) × 날카로움 × 얼음` — 더 다치는 적의 표지 둘은 큰 하나만, 날카로움(손의 덤)과 얼음(한 번뿐)은 곱한다.
-fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, keen: bool, t: &Tuning) -> i32 {
+/// 배의 규칙 하나: `max(표지, 금) × 날카로움 × 급소 × 얼음` — 더 다치는 적의 표지 둘은 큰 하나만, 손의 덤 둘과 얼음(한 번뿐)은 곱한다.
+fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, knack: Knack, t: &Tuning) -> i32 {
     // 보스 2단계 전환(0133) 동안은 들어가지 않는다(근접·탄은 `guards`가 튕긴다 — 나머지 넓은 타도 0).
     if en.rising() {
         return 0;
@@ -2659,10 +2683,15 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, keen: bool, t: &Tunin
     };
     let k = frail.max(rift_mult(en));
     // 날카로움(0270 C5): 피 흘리는 적을 결투의 손이 치면 ×`SHARP_CUT_MULT` — 타마다 한 번(겹치지 않는다).
-    let k = if keen && en.ail.bleed > 0.0 {
+    let k = if knack.keen && en.ail.bleed > 0.0 {
         k * crate::tuning::SHARP_CUT_MULT
     } else {
         k
+    };
+    // 급소(0274 ③ — 쌍단검의 주특성): 등 뒤에서 · 드러난 몸(휘청 · 기절 · 묶임)에 × 주특성의 배 — 타마다 한 번.
+    let k = match knack.sneak {
+        Some((from, mult)) if sneak_open(en, from) => k * mult,
+        _ => k,
     };
     // 언 적(0270 B 서리)을 치면 깨진다: 그 한 대는 크게(금·표지와 곱한다 — 얼음은 한 번뿐이다).
     let k = if en.ail.frozen > 0.0 {
@@ -2675,6 +2704,42 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, keen: bool, t: &Tunin
     } else {
         d
     }
+}
+
+/// 손의 덤(`hurt_by`): 날카로움(피 흘리는 적에게 — `World::keen`)과 급소(치는 방랑자의 자리 · 배 — 쌍단검의 `Art::sneak`).
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct Knack {
+    pub keen: bool,
+    pub sneak: Option<(Vec3, f32)>,
+}
+
+impl Knack {
+    /// 덤 없음 — 타입이 스스로 낸 피해(새는 피 · 화상 · 터짐).
+    pub const NONE: Knack = Knack {
+        keen: false,
+        sneak: None,
+    };
+    /// 날카로움만(시험).
+    #[cfg(test)]
+    pub const KEEN: Knack = Knack {
+        keen: true,
+        sneak: None,
+    };
+}
+
+/// 급소가 열린 적인가(0274 ③): `from`(치는 방랑자의 자리)이 그 적의 등 뒤(보는 쪽에서 `SNEAK_BACK_DEG`° 넘게 돌아선 자리)이거나,
+/// 그 적이 드러나 있다 — 휘청이거나 · 기절했거나 · 묶였다(뿌리 속박 · 못 박기의 묶임).
+pub fn sneak_open(en: &Enemy, from: Vec3) -> bool {
+    if matches!(en.state, EState::Stagger { .. })
+        || en.ail.stun > 0.0
+        || en.ail.bound > 0.0
+        || en.marks.bind > 0.0
+    {
+        return true;
+    }
+    let d = vec3(from.x - en.pos.x, 0.0, from.z - en.pos.z);
+    d.length_squared() > 1e-6
+        && en.facing_dir().dot(d.normalize()) < weapons::SNEAK_BACK_DEG.to_radians().cos()
 }
 
 /// 금 간 적이 받는 피해의 배(0223 V2 — 보스는 낮게). 금이 없으면 1.

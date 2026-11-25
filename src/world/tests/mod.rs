@@ -8,6 +8,7 @@ mod attack;
 mod basis_lock;
 mod block;
 mod bridges;
+mod daggers;
 mod deep_tree;
 mod dodge_stamina;
 mod enemies;
