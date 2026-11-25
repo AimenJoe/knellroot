@@ -1409,6 +1409,74 @@ forge.sword=3
         assert_eq!(lean.forged.rank(Id::Sword), 1);
     }
 
+    /// 0272 2단계: 창을 가진·든·벼린 기록이 왕복한다(가방에 창 아이템이 서고, 벼린 단은 든 창의 타에 든다, 보조무기 슬롯의 창은
+    /// 보조특성 — 최대 기력 +5). 창이 생기기 전의 기록(키 `weapons`에 창이 없다)은 그대로 읽힌다 — 무기 번호는 뒤에만 붙었다.
+    #[test]
+    fn a_record_with_the_spear_round_trips_and_an_older_one_still_reads() {
+        use crate::weapons::Id;
+        let mut p = Progress {
+            finds: vec!["village.stone.0".to_string(), "village.stone.1".to_string()],
+            weapons: vec![Id::Sword, Id::Spear],
+            weapon: Some(Id::Spear),
+            sub: Some(Id::Sword),
+            ..Progress::default()
+        };
+        p.forged.set(Id::Spear, 2);
+        p.settle_items();
+        let text = p.to_record().to_text();
+        assert!(
+            text.contains("weapon=spear") && text.contains("forge.spear=2"),
+            "{text}"
+        );
+        let mut back = Progress::from_record(Record::parse(&text));
+        back.settle_items();
+        assert_eq!(back.weapons, p.weapons);
+        assert_eq!((back.weapon, back.sub), (Some(Id::Spear), Some(Id::Sword)));
+        assert_eq!(back.forged.rank(Id::Spear), 2);
+        assert!(back
+            .bag
+            .of(crate::items::Base::Weapon(Id::Spear))
+            .next()
+            .is_some());
+        let base = Progress::default().stats();
+        assert_eq!(
+            back.stats().light_dmg - base.light_dmg,
+            10,
+            "the held spear's rank 2"
+        );
+        // 창을 보조무기로 멘 몸은 최대 기력 +5.
+        let swapped = Progress {
+            weapon: Some(Id::Sword),
+            sub: Some(Id::Spear),
+            ..back.clone()
+        };
+        assert_eq!(swapped.stats().stamina_max - base.stamina_max, 5.0);
+        // 창이 없던 옛 기록.
+        let old = Progress::from_record(Record::parse(
+            "v=1
+weapon=bow
+weapons=sword,bow
+",
+        ));
+        assert_eq!(old.weapon, Some(Id::Bow));
+        assert!(
+            old.weapons.contains(&Id::Bow) && !old.weapons.contains(&Id::Spear),
+            "{:?}",
+            old.weapons
+        );
+        assert_eq!(
+            crate::weapons::IDS[..6],
+            [
+                Id::Sword,
+                Id::Hammer,
+                Id::Staff,
+                Id::Crossbow,
+                Id::Fists,
+                Id::Bow
+            ]
+        );
+    }
+
     /// 0122: 판 수·주민을 처음 본 판·바뀐 주민은 기록에 남고, 키가 없는 옛 기록은 0·빈 것(NPC-07).
     #[test]
     fn residents_and_runs_round_trip_and_old_records_start_empty() {

@@ -176,3 +176,76 @@ fn the_heavy_lunge_stops_at_a_ledge() {
     // 같은 자리에서 검의 강타는 내딛기가 짧아 그대로 — 창만 멈추는 규칙이 있어야 하는 길이다(3m).
     assert!(t[P::HeavyLunge] * W::Spear.def().heavy.unwrap().lunge > 2.5);
 }
+
+/// 한 줄에 선 `n`(1 또는 3)의 적에게 `secs`초 동안 준 피해의 합(초당) — 마구 눌러/박자에 맞춰. 적은 1.2m부터 0.8m 간격으로 앞에.
+fn line_dps(id: W, n: usize, secs: f32, on_beat: bool) -> f32 {
+    let t = Tuning::default();
+    let mut w = World::new("test", 40.0);
+    w.set_weapon(id);
+    let hp0 = 1_000_000;
+    let at = |k: usize| vec3(0.0, 0.0, -1.2 - 0.8 * k as f32);
+    for k in 0..n {
+        mob_with(&mut w, at(k), hp0);
+    }
+    for k in 0..(secs / TICK_DT) as usize {
+        idle(&mut w);
+        for (j, e) in w.enemies.iter_mut().enumerate() {
+            e.pos = at(j);
+            e.stance.poise = 0.0;
+        }
+        w.player.pos = Vec3::ZERO;
+        let press = if on_beat {
+            let beat = w.player.beat.period;
+            beat <= 0.0 || w.player.beat.since_swing >= beat - TICK_DT * 0.5
+        } else {
+            k % 2 == 0
+        };
+        w.step(
+            &Actions {
+                attack: press,
+                ..Default::default()
+            },
+            &t,
+        );
+    }
+    w.enemies.iter().map(|e| (hp0 - e.hp) as f32).sum::<f32>() / secs
+}
+
+/// 초당 피해(0272 2단계 — 근접의 띠 안): 한 적에게 붙어 치면 창은 검보다 덜(검의 75% 위 · 100% 아래), 한 줄에 선 셋에게는 검보다
+/// 훨씬 더(꿰뚫음 — 검은 앞의 둘레만). 창의 값은 거리와 줄이다.
+#[test]
+fn the_spear_trades_point_blank_damage_for_the_line() {
+    for beat in [false, true] {
+        let (sword1, spear1) = (
+            line_dps(W::Sword, 1, 20.0, beat),
+            line_dps(W::Spear, 1, 20.0, beat),
+        );
+        assert!(
+            spear1 < sword1 && spear1 > sword1 * 0.75,
+            "one foe (beat {beat}): sword {sword1:.1} spear {spear1:.1}"
+        );
+        let (sword3, spear3) = (
+            line_dps(W::Sword, 3, 20.0, beat),
+            line_dps(W::Spear, 3, 20.0, beat),
+        );
+        assert!(
+            spear3 > sword3 * 1.3,
+            "a line of three (beat {beat}): sword {sword3:.1} spear {spear3:.1}"
+        );
+    }
+}
+
+/// 재는 도구: 무기마다 한 적·한 줄의 셋에게 초당 피해. `cargo test spear_line_probe -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn spear_line_probe() {
+    for id in [W::Sword, W::Hammer, W::Staff, W::Spear] {
+        for n in [1, 3] {
+            println!(
+                "{id:?} ×{n}: mash {:.1}/s · beat {:.1}/s",
+                line_dps(id, n, 20.0, false),
+                line_dps(id, n, 20.0, true)
+            );
+        }
+    }
+}

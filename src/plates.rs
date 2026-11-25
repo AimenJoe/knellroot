@@ -405,6 +405,43 @@ mod tests {
         }
     }
 
+    /// 0272 2단계: 창 판 — 왼쪽 뿌리(못 박기 · 뿌리 솟기 · 뿌리의 속성 패시브), 가운데 관통(꿰뚫기 · 끌어모으기 · 버팀 /
+    /// 장대 휩쓸기 / 궁극기 질풍 찌르기), 오른쪽 날카로움(바늘땀 · 날카로움의 속성 패시브). 새 스킬 셋은 창에만 선다.
+    #[test]
+    fn the_spear_plate_seats_root_pierce_and_sharp() {
+        assert_eq!(SPEAR.pair(), Some([Kind::Root, Kind::Sharp]));
+        assert_eq!(SPEAR.great(), Some(Ult::Gale));
+        let at = |col: Col, row: u8| -> Vec<Entry> {
+            SPEAR
+                .seats()
+                .into_iter()
+                .filter(|s| s.col == col && s.row == row)
+                .map(|s| s.entry)
+                .collect()
+        };
+        let sk = |ids: &[Id]| ids.iter().map(|&i| Entry::Skill(i)).collect::<Vec<_>>();
+        assert_eq!(at(Col::Left, 0), sk(&[Id::Pin]));
+        assert_eq!(at(Col::Left, 1), sk(&[Id::Roots]));
+        assert_eq!(at(Col::Left, 2), [Entry::Vein(Vein::Root)]);
+        assert_eq!(at(Col::Mid, 0), sk(&[Id::Gather, Id::Brace, Id::Skewer]));
+        assert_eq!(at(Col::Mid, 1), sk(&[Id::Pole]));
+        assert_eq!(at(Col::Mid, 2), [Entry::Ult(Ult::Gale)]);
+        assert_eq!(at(Col::Right, 0), sk(&[Id::Stitch]));
+        assert_eq!(at(Col::Right, 1), sk(&[]));
+        assert_eq!(at(Col::Right, 2), [Entry::Vein(Vein::Sharp)]);
+        assert_eq!(SPEAR.seats().len(), 10);
+        for p in PLATES {
+            for id in [Id::Skewer, Id::Pole, Id::Pin] {
+                assert_eq!(p.has(Entry::Skill(id)), p == SPEAR, "{p:?} {id:?}");
+            }
+        }
+        // 무기 판마다 궁극기는 하나, 판끼리 겹치지 않는다.
+        let greats: Vec<Ult> = PLATES.iter().filter_map(|p| p.great()).collect();
+        for (i, g) in greats.iter().enumerate() {
+            assert!(!greats[i + 1..].contains(g), "{g:?}");
+        }
+    }
+
     /// 새 판의 첫 스킬이 막히지 않게(0166 — 판마다): 무기 판마다 처음부터 서는 스킬이 있다.
     #[test]
     fn every_weapon_plate_has_a_skill_open_from_the_start() {

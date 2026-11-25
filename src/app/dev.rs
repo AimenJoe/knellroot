@@ -406,20 +406,25 @@ impl App {
             // 든 무기를 표의 다음 것으로(0223 V3) — 이 창에서 시작하는 아레나와 "기술 끼우기"가 그 무기로 선다. 기록은 그대로.
             // 0270 C3: 쇠뇌 다음은 "검 + 방패"(방패 판의 스킬을 끼워 보게) — 그다음 맨손에서 방패를 내린다. 차례의 앞(활 → 검 → 망치 →
             // 지팡이)은 그대로다(시험 스크립트가 누르는 수).
+            // 0272 2단계: 창은 "검과 방패" 다음·맨손 앞에 — 새 판(맨손)에서 세는 시험 스크립트의 수(맨손 → 활 → 검 …)가 그대로다.
             DevStart::Arm => {
-                let ids = crate::weapons::IDS;
-                let shield = crate::shield::Id::Pilgrim;
-                if self.weapon == crate::weapons::Id::Crossbow && self.progress.shield.is_none() {
-                    self.weapon = crate::weapons::Id::Sword;
-                    self.progress.shield = Some(shield);
-                } else if self.progress.shield.is_some() && self.weapon == crate::weapons::Id::Sword
-                {
-                    self.weapon = crate::weapons::Id::Fists;
-                    self.progress.shield = None;
-                } else {
-                    let at = ids.iter().position(|w| *w == self.weapon).unwrap_or(0);
-                    self.weapon = ids[(at + 1) % ids.len()];
-                }
+                use crate::weapons::Id as W;
+                let shield = Some(crate::shield::Id::Pilgrim);
+                const CYCLE: [(W, bool); 8] = [
+                    (W::Sword, false),
+                    (W::Hammer, false),
+                    (W::Staff, false),
+                    (W::Crossbow, false),
+                    (W::Sword, true),
+                    (W::Spear, false),
+                    (W::Fists, false),
+                    (W::Bow, false),
+                ];
+                let now = (self.weapon, self.progress.shield.is_some());
+                let at = CYCLE.iter().position(|c| *c == now).unwrap_or(0);
+                let (w, s) = CYCLE[(at + 1) % CYCLE.len()];
+                self.weapon = w;
+                self.progress.shield = if s { shield } else { None };
                 self.snd(crate::sfx::Id::Buy);
             }
             // 놀이터의 보조무기를 표의 다음 것으로(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활 → 창 → 없음 — 맨손은 메지 않는다).

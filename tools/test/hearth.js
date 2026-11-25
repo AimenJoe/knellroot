@@ -2,7 +2,7 @@
 //   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 화로 창(0263 — 성장 · 장비 · 가방 · 기술 · 가게 · 설정; 성장 탭 — 레벨 줄 셋을 차례로
 //   올려 보고 묻는 창, 기술 줄에서 확인 = 기술 탭의 그 칸, 0173) → 화로의 Select(Tab) = 같은 창의 장비 탭 → 가방(잔불로·여벌 정리가 켜진다) →
 //   가게 · 설정(모든 줄) · 기술, 그리고 싸움에서 연 멈춤 창(탭 다섯 — 기록(여정 + 도감 묶음 넷)의 모든 줄은 여기서), 화면마다 스크린숏.
-//   기술 탭(0161 — 옛 "나무" 줄과 기술 판이 하나가 되었다 → 0270 C2 판 하나씩): 위의 판 줄(공통 · 한손검 · 망치 · 지팡이 · 쇠뇌 · 활 · 방패 — 0272: 무기 종류마다 판 하나) +
+//   기술 탭(0161 — 옛 "나무" 줄과 기술 판이 하나가 되었다 → 0270 C2 판 하나씩): 위의 판 줄(공통 · 한손검 · 망치 · 지팡이 · 쇠뇌 · 활 · 창 · 방패 — 0272: 무기 종류마다 판 하나) +
 //   그 판의 칸 그림 격자 + 오른쪽 상세. 장면 이름이 보이는 판과 고른 칸을 말한다(`Skills { host: Hearth } [Class(Sword)] @Skill(Whirl)`) —
 //   칸은 자리 숫자가 아니라 이름으로 찾고, 모든 판을 돌아 판마다 칸 수를 맞춰 본다.
 //   확인 = 그 칸에 할 수 있는 일의 작은 목록(올리기·열기 / 끼우기 / 고르기 바꾸기) → 사는 일은 묻는 창. 한 단 사기 · 3단 고르기 뒤집기 ·
@@ -85,7 +85,7 @@ async function run(browser, lang) {
   const toLeft = async () => {
     for (let i = 0; i < 10; i++) { const here = await at(); await press('ArrowLeft'); if ((await at()) === here) break; }
   };
-  const PLATE_ORDER = ['Body', 'Class(Sword)', 'Class(Hammer)', 'Class(Staff)', 'Class(Crossbow)', 'Class(Bow)', 'Shield'];
+  const PLATE_ORDER = ['Body', 'Class(Sword)', 'Class(Hammer)', 'Class(Staff)', 'Class(Crossbow)', 'Class(Bow)', 'Class(Spear)', 'Shield'];
   const toPlate = async (plate) => {
     await toStrip();
     const want = PLATE_ORDER.indexOf(plate);
@@ -130,7 +130,8 @@ async function run(browser, lang) {
   // 판과 판마다의 칸 수(몸 = 패시브 스물하나 · 맺음 셋 · 다리 넷, 무기 판 = 그 꼴의 스킬 + 결 + 큰 기술 — src/plates.rs).
   // 0270 C3: 무기 판마다 스킬이 채워지고(새 스킬 여덟) 결이 둘씩(새 타입 넷의 결), 큰 기술은 판마다 하나.
   // 0272: 판 = 공통 + 무기 종류 다섯 + 방패. 원거리 판을 쇠뇌(스킬 여섯 — 새 스킬 둘)와 활(다섯 + 새 큰 기술)로 갈랐다.
-  const PLATES = [['Body', 28], ['Class(Sword)', 10], ['Class(Hammer)', 11], ['Class(Staff)', 10], ['Class(Crossbow)', 9], ['Class(Bow)', 8], ['Shield', 10]];
+  // 0272 2단계: 창(뿌리 · 관통 · 날카로움 — 새 스킬 셋 + 질풍 찌르기, 끌어모으기 · 버팀 · 바늘땀 · 뿌리 솟기도 선다).
+  const PLATES = [['Body', 28], ['Class(Sword)', 10], ['Class(Hammer)', 11], ['Class(Staff)', 10], ['Class(Crossbow)', 9], ['Class(Bow)', 8], ['Class(Spear)', 10], ['Shield', 10]];
   // 모든 판의 모든 칸(0270 C2): 판마다 칸을 다 지나며(상세의 넘침은 F4 넘침 검사가 콘솔로 본다 — 칸마다 찍지 않아도 된다)
   // 지난 칸 수가 맞는지 본다(빠진 칸 = 걸음이 못 닿는다). `plates`: 'all' · 'weapons'(단을 미리 찍은 기록 — 공통 판은 단이 없어
   // 기록마다 같다), `shots`: 'strips'(판마다 판 줄에서 한 장) · 'all'(칸마다도) · 'none'.

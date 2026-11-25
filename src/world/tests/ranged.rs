@@ -799,6 +799,7 @@ fn forged_dps_probe() {
         weapons::Id::Staff,
         weapons::Id::Crossbow,
         weapons::Id::Bow,
+        weapons::Id::Spear,
     ] {
         let d = if id.is_ranged() { 8.0 } else { 1.2 };
         for rank in 0..=crate::forge::RANKS {

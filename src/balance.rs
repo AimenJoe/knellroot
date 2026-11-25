@@ -623,9 +623,14 @@ fn sub_trait_fight_length() {
     ] {
         let b = &all[bi];
         for (main, subs) in [
-            (W::Sword, &[W::Hammer, W::Staff, W::Bow, W::Crossbow][..]),
-            (W::Hammer, &[W::Sword][..]),
-            (W::Staff, &[W::Sword, W::Hammer][..]),
+            (
+                W::Sword,
+                &[W::Hammer, W::Staff, W::Bow, W::Crossbow, W::Spear][..],
+            ),
+            (W::Hammer, &[W::Sword, W::Spear][..]),
+            (W::Staff, &[W::Sword, W::Hammer, W::Spear][..]),
+            // 0272 2단계: 창(주무기로도).
+            (W::Spear, &[W::Sword, W::Hammer][..]),
         ] {
             let base = with(b, main, None);
             let d0 = fight_vs(kind, true, &base, 1.0, 1, &t).secs;
