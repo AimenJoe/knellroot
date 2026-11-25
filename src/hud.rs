@@ -564,12 +564,20 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
     // 부무기(0223): 스킬 칸 왼쪽에 바꿔 들 무기의 그림(흐리게 — 지금 든 것이 아니다) + 바꾸기 버튼의 키캡(0261).
     if let Some(sub) = pl.sub {
         let x = x0 - 26.0 * s - side;
-        draw_rectangle(x - s, y - s, side + 2.0 * s, side + 2.0 * s, BAR_BG);
+        // 교체 공격의 창(0272 1b — 맞힌 직후·받아친 직후): 지금 바꾸면 들어오는 무기가 친다 — 테가 금빛으로, 그림이 밝게.
+        // (보조특성의 표지는 두지 않는다 — 15px 슬롯 곁의 점 하나는 읽히지 않는다. 특성은 장비 탭이 말한다.)
+        let strikes = w.swap_strikes();
+        let (rim, dim) = if strikes {
+            (GAUGE_FULL, 1.0)
+        } else {
+            (BAR_BG, 0.6)
+        };
+        draw_rectangle(x - s, y - s, side + 2.0 * s, side + 2.0 * s, rim);
         draw_rectangle(x, y, side, side, HP_OFF);
         let c = vec2(x + side * 0.5, y + side * 0.5);
         let r = crate::touch::ICON_N as f32 * s / 1.25 + 0.01;
         let tint = Color::new(1.0, 0.99, 0.95, 1.0);
-        crate::touch::icon(crate::touch::attack_icon(sub), c, r, 0.6, tint);
+        crate::touch::icon(crate::touch::attack_icon(sub), c, r, dim, tint);
         let cap = crate::ui::key(&input::bind_prompt(Bind::Swap));
         ui.text_center(&cap, x + side * 0.5, y + side + 2.5 * s, label, INK);
     } else if pl.shield.is_some() {

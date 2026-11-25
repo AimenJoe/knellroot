@@ -358,10 +358,12 @@ impl App {
             // 무기는 종류부터(0272 — "한손검 · 순례자의 검" + 그 종류의 주특성): 못 얻은 무기도 종류는 보인다(실루엣과 같은 몫).
             if let crate::item_view::Item::Weapon(id) = d.item {
                 let name = if d.owned { tr(d.name) } else { s.codex_unknown };
-                if let Some((class, main)) = super::equip::class_text(id, name) {
+                if let Some((class, main, sub)) = super::equip::class_text(id, name) {
                     lines.extend(self.pane_wrap(&w, &class, ui::INK));
                     if d.owned {
                         lines.extend(self.pane_wrap(&w, &main, ui::AMBER));
+                        // 보조특성(0272 1b): 보조무기 슬롯에 멨을 때의 것 — 한 단 흐리게.
+                        lines.extend(self.pane_wrap(&w, &sub, DIM));
                     }
                     lines.push(Ln::Gap);
                 }

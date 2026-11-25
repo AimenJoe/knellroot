@@ -84,6 +84,8 @@ pub struct Seen {
     pub swaps: u32,
     pub blocks: u32,
     pub ails: u32,
+    /// 0272 1b: 교체 공격을 냈다.
+    pub swap_strikes: u32,
 }
 
 /// 지금의 사실(앱이 기록·월드에서 모은다).
@@ -283,9 +285,11 @@ pub enum Tip {
     Spare,
     /// 가방이 가득이라 떨어진 것을 못 줍는다(0226) — 자리를 만드는 법.
     Full,
+    /// 바꿔 들어 보았고 평타도 여럿 맞혔는데 아직 교체 공격을 낸 적이 없다(0272 1b) — 맞힌 직후·패링 직후의 바꾸기.
+    SwapStrike,
 }
 
-pub const TIPS: [Tip; 9] = [
+pub const TIPS: [Tip; 10] = [
     Tip::Flask,
     Tip::Lock,
     Tip::Charge,
@@ -295,6 +299,7 @@ pub const TIPS: [Tip; 9] = [
     Tip::Type,
     Tip::Spare,
     Tip::Full,
+    Tip::SwapStrike,
 ];
 /// 상황 힌트가 떠 있는 시간(초) — 그 일을 하면 먼저 걷힌다.
 pub const TIP_TIME: f32 = 6.0;
@@ -302,6 +307,9 @@ pub const TIP_TIME: f32 = 6.0;
 pub const TIP_REST: f32 = 5.0;
 /// 모으기 힌트: 이만큼 맞혀도 한 번도 모아 치지 않았으면.
 pub const CHARGE_TIP_HITS: u32 = 12;
+/// 교체 공격 힌트(0272 1b): 바꿔 든 적이 있고 이만큼 맞혔는데 한 번도 교체 공격이 없었으면 — 바꾸기를 배운 바로 뒤가 아니라
+/// 손에 익은 뒤에(바꾸기 힌트와 줄지어 뜨지 않게).
+pub const SWAP_STRIKE_TIP_HITS: u32 = 8;
 
 /// 지금의 상황(앱이 월드에서 모은다).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -341,6 +349,9 @@ impl Tip {
             Tip::Type => s.ails > 0,
             Tip::Spare => now.spare,
             Tip::Full => now.bag_blocked,
+            Tip::SwapStrike => {
+                now.has_sub && s.swaps > 0 && s.hits >= SWAP_STRIKE_TIP_HITS && s.swap_strikes == 0
+            }
         }
     }
 
@@ -355,6 +366,7 @@ impl Tip {
             Tip::Unfit => !now.unfit,
             Tip::Type | Tip::Spare => false,
             Tip::Full => !now.bag_blocked,
+            Tip::SwapStrike => s.swap_strikes > 0,
         }
     }
 
@@ -364,7 +376,7 @@ impl Tip {
             Tip::Flask => &[Bind::Flask],
             Tip::Lock => &[Bind::Lock],
             Tip::Charge => &[Bind::Attack],
-            Tip::Swap => &[Bind::Swap],
+            Tip::Swap | Tip::SwapStrike => &[Bind::Swap],
             Tip::Block => &[Bind::Parry],
             Tip::Unfit | Tip::Type | Tip::Spare | Tip::Full => &[],
         }
@@ -381,6 +393,7 @@ impl Tip {
             Tip::Type => (st.tip_type, st.tip_type_d),
             Tip::Spare => (st.tip_spare, st.tip_spare_d),
             Tip::Full => (st.tip_full, st.tip_full_d),
+            Tip::SwapStrike => (st.tip_swapstrike, st.tip_swapstrike_d),
         }
     }
 
@@ -627,6 +640,44 @@ mod tests {
         assert!(Tip::Full.done(&none, &s) && !Tip::Full.done(&blocked, &s));
         // 몸의 걸음 동안은 모두 기다린다.
         assert_eq!(next_tip(0, AFTER_BASICS - 1, &sub, &s), None);
+    }
+
+    /// 0272 1b: 교체 공격의 힌트 — 바꿔 들 줄 알고(바꾸기 힌트는 걷혔다) 평타도 손에 익었는데 한 번도 교체 공격이 없었을 때 한 번.
+    /// 내면 걷힌다. 보조무기가 없으면 뜨지 않는다. 버튼은 바꾸기.
+    #[test]
+    fn the_swap_attack_tip_waits_for_a_swap_and_some_hits_and_goes_when_done() {
+        let sub = Situation {
+            has_sub: true,
+            ..Default::default()
+        };
+        let knows = Seen {
+            swaps: 1,
+            hits: SWAP_STRIKE_TIP_HITS,
+            ..Default::default()
+        };
+        assert_eq!(next_tip(0, DONE, &sub, &knows), Some(Tip::SwapStrike));
+        assert_eq!(Tip::SwapStrike.binds(), [Bind::Swap]);
+        // 아직 바꿔 든 적이 없으면 바꾸기 힌트가 먼저, 맞힌 수가 모자라면 조용하다.
+        let fresh = Seen { swaps: 0, ..knows };
+        assert_eq!(next_tip(0, DONE, &sub, &fresh), Some(Tip::Swap));
+        let few = Seen { hits: 2, ..knows };
+        assert_eq!(next_tip(0, DONE, &sub, &few), None);
+        assert_eq!(next_tip(0, DONE, &Situation::default(), &knows), None);
+        // 냈다 — 걷힌다. 본 것은 한 번뿐(비트는 다른 힌트와 겹치지 않는다).
+        let did = Seen {
+            swap_strikes: 1,
+            ..knows
+        };
+        assert!(Tip::SwapStrike.done(&sub, &did) && !Tip::SwapStrike.done(&sub, &knows));
+        assert_eq!(next_tip(0, DONE, &sub, &did), None);
+        assert_eq!(next_tip(Tip::SwapStrike.bit(), DONE, &sub, &knows), None);
+        for t in TIPS {
+            assert_eq!(
+                TIPS.iter().filter(|o| o.bit() == t.bit()).count(),
+                1,
+                "{t:?}"
+            );
+        }
     }
 
     /// 패링은 막히지 않는다: 깨어 있는 적 곁에서 `PARRY_GIVE_UP`초를 못 하면 넘어간다(상도 받는다 — 해 본 것으로 친다).

@@ -449,14 +449,17 @@ pub(super) fn weapon_compare(now: &[WVal], then: &[WVal]) -> Vec<(WVal, Option<C
 /// 장신구의 세계 안의 말(0129): 설명보다 옅고 조금 푸르스름하게 — 수치와 섞여 읽히지 않게.
 pub(super) const FLAVOR: Color = Color::new(0.55, 0.56, 0.62, 1.0);
 
-/// 무기의 종류 줄과 주특성 줄(0272 — 장비 탭·도감이 같이 쓴다): ("한손검 · 순례자의 검", "주특성 · …"). `name` = 보일 이름
-/// (도감의 못 얻은 무기는 "???"). 주특성의 수(`{0}`)는 종류 표의 배에서. 맨손은 종류가 아니다.
-pub(super) fn class_text(id: weapons::Id, name: &str) -> Option<(String, String)> {
+/// 무기의 종류 줄과 특성 두 줄(0272 — 장비 탭·도감이 같이 쓴다): ("한손검 · 순례자의 검", "주특성 · …", "보조특성 · …").
+/// `name` = 보일 이름(도감의 못 얻은 무기는 "???"). 주특성 = 손에 든 종류의 것, 보조특성 = 보조무기 슬롯에 멨을 때의 것(1b) —
+/// 수(`{0}`)는 둘 다 종류 표에서. 맨손은 종류가 아니다.
+pub(super) fn class_text(id: weapons::Id, name: &str) -> Option<(String, String, String)> {
     let def = id.class()?.def();
     let main = fill(tr(def.main_trait), &[&def.art.percent().to_string()]);
+    let sub = fill(tr(def.sub_trait), &[&def.sub.percent().to_string()]);
     Some((
         format!("{} · {name}", tr(def.name)),
         fill(s().trait_line, &[&main]),
+        fill(s().subtrait_line, &[&sub]),
     ))
 }
 
@@ -665,16 +668,30 @@ impl App {
         let c = self.base_cand(c);
         if slot == 0 {
             if let Cand::Weapon(w) = c {
+                // 보조무기를 주무기로 고르면 둘이 맞바뀐다(`App::wield`) — 보조특성(0272 1b)도 옛 주무기의 것으로.
+                if p.sub == Some(w) {
+                    p.sub = p.weapon.filter(|&old| old != weapons::Id::Fists);
+                }
                 p.weapon = Some(w);
                 p.bag.gear.main = inst;
             }
         } else if slot == SUB_SLOT {
-            // 보조무기 칸(0224): 방패면 능력치에 든다(옵션) — 무기는 들기 전이라 그대로, 다만 방패는 내린다.
+            // 보조무기 칸(0224): 방패면 능력치에 든다(옵션). 무기의 옵션은 들기 전이라 먹지 않지만 **보조특성은 멘 것만으로
+            // 먹는다**(0272 1b) — 주무기를 고르면 둘이 맞바뀐다(`App::set_sub_weapon`). 무기를 두면 방패는 내린다.
             p.shield = match c {
                 Cand::Shield(id) => Some(id),
                 _ => None,
             };
             p.bag.gear.shield = if p.shield.is_some() { inst } else { None };
+            p.sub = match c {
+                Cand::Weapon(w) => {
+                    if p.weapon == Some(w) {
+                        p.weapon = Some(p.sub.unwrap_or(weapons::Id::Fists));
+                    }
+                    Some(w)
+                }
+                _ => None,
+            };
         } else if slot == GARB_SLOT {
             p.garb = match c {
                 Cand::Garb(id) => Some(id),
@@ -1150,6 +1167,10 @@ impl App {
         // 옵션(0223 V4)도 든 것의 것만 먹는다 — `inst`가 그 아이템(여벌이면 그것, 아니면 그 바탕의 지금 것)이다.
         let numbers = |id: weapons::Id, inst: Option<u32>| {
             let mut p = self.progress.clone();
+            // 멘 무기를 손에 든 것으로 셀 때는 제 보조특성을 빼고(0272 1b — 든 무기의 것은 먹지 않는다).
+            if p.sub == Some(id) {
+                p.sub = None;
+            }
             p.weapon = Some(id);
             p.bag.gear.main = inst.or_else(|| item_at(Cand::Weapon(id), &p.bag).map(|(i, _)| i));
             let st = p.stats();
@@ -1175,10 +1196,17 @@ impl App {
             }
         }
         if let Cand::Weapon(id) = focus {
-            // 종류(0272): "한손검 · 순례자의 검" — 종류가 먼저, 그 아래 종류의 주특성 한 줄. 맨손은 종류가 아니다(줄이 없다).
-            if let Some((class, main)) = class_text(id, weapon_name(id)) {
+            // 종류(0272): "한손검 · 순례자의 검" — 종류가 먼저, 그 아래 특성 두 줄. **이 슬롯에서 먹는 줄이 먼저 · 밝게**(1b):
+            // 주무기 슬롯 = 주특성, 보조무기 슬롯 = 보조특성 — 다른 슬롯에 두면 얻을 것은 흐리게. 맨손은 종류가 아니다(줄이 없다).
+            if let Some((class, main, sub)) = class_text(id, weapon_name(id)) {
                 lines.extend(self.pane_wrap(w, &class, INK));
-                lines.extend(self.pane_wrap(w, &main, AMBER));
+                let (here, there) = if slot == SUB_SLOT {
+                    (sub, main)
+                } else {
+                    (main, sub)
+                };
+                lines.extend(self.pane_wrap(w, &here, AMBER));
+                lines.extend(self.pane_wrap(w, &there, DIM));
                 lines.push(Ln::Gap);
             }
             // 견주는 상대는 그 칸에 지금 든 것: 주무기 칸 = 주무기, 부무기 칸 = 부무기(없으면 견줄 것이 없다 — 화살표 없이 값만).
@@ -1285,14 +1313,22 @@ mod tests {
     #[test]
     fn a_weapon_reads_class_first_then_its_name_and_its_main_trait() {
         let s = s();
-        let (class, main) = class_text(weapons::Id::Hammer, s.weapon_hammer).unwrap();
+        let (class, main, sub) = class_text(weapons::Id::Hammer, s.weapon_hammer).unwrap();
+        assert_eq!(
+            sub,
+            fill(s.subtrait_line, &[&fill(s.subtrait_hammer, &["5"])])
+        );
         assert_eq!(class, format!("{} · {}", s.class_hammer, s.weapon_hammer));
         assert_eq!(main, fill(s.trait_line, &[&fill(s.trait_hammer, &["30"])]));
-        let (class, main) = class_text(weapons::Id::Staff, s.weapon_staff).unwrap();
+        let (class, main, _) = class_text(weapons::Id::Staff, s.weapon_staff).unwrap();
         assert!(class.starts_with(s.class_staff) && main.contains("50"));
         assert_eq!(class_text(weapons::Id::Fists, s.weapon_fists), None);
         for id in weapons::IDS {
-            if let Some((class, main)) = class_text(id, weapon_name(id)) {
+            if let Some((class, main, sub)) = class_text(id, weapon_name(id)) {
+                assert!(
+                    sub.len() > s.subtrait_line.len(),
+                    "{id:?} has an off-hand trait"
+                );
                 assert!(!class.contains('{') && !main.contains('{'), "{id:?}");
                 assert!(main.len() > s.trait_line.len(), "{id:?} has a trait");
             }

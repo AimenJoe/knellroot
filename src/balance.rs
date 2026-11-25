@@ -36,6 +36,8 @@ pub struct Build {
     pub weapon: crate::weapons::Id,
     /// 든 무기를 벼린 단(0180 — 0~3). `SIM_FORGE`가 있으면 그것이 앞선다.
     pub forge: u8,
+    /// 보조무기 슬롯에 멘 무기(0272 1b — 그 종류의 보조특성이 능력치에 든다). 봇은 바꿔 들지 않는다.
+    pub sub: Option<crate::weapons::Id>,
 }
 
 /// 한 판의 결과.
@@ -79,6 +81,8 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     prog.board.cells = b.tree;
     // 벼린 단 훑기(0180): `SIM_FORGE=2`면 든 무기를 그 단까지 벼린 것으로 잰다.
     prog.weapon = Some(b.weapon);
+    prog.sub = b.sub;
+    w.set_sub(b.sub);
     prog.forged.set(b.weapon, b.forge);
     if let Some(r) = std::env::var("SIM_FORGE").ok().and_then(|v| v.parse().ok()) {
         prog.forged.set(b.weapon, r);
@@ -90,6 +94,20 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
         .and_then(|v| v.parse::<i32>().ok())
     {
         st.dmg += d;
+    }
+    // 기력 회복 훑기(0272 1b — 보조특성의 값을 고를 때): `SIM_REGEN=1.05`면 기력 회복에 그 배를 얹어 잰다.
+    if let Some(k) = std::env::var("SIM_REGEN")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+    {
+        st.stamina_regen *= k;
+    }
+    // 자세 피해 훑기(같은 까닭): `SIM_POISE=1.05`.
+    if let Some(k) = std::env::var("SIM_POISE")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+    {
+        st.poise *= k;
     }
     w.apply_stats(st, true);
     w.tree = b.tree;
@@ -408,6 +426,7 @@ pub fn builds() -> Vec<Build> {
             tree: tree(0),
             weapon: W::Sword,
             forge: 0,
+            sub: None,
         },
         // 첫 도착(0127): 잔불 ≈ 280 = 레벨 셋, 성소 탑의 귀 + 문지기의 손 + 마을 상자의 꿰맨 천, 등잔·한 모금, 패시브 칸 둘.
         Build {
@@ -422,6 +441,7 @@ pub fn builds() -> Vec<Build> {
             tree: tree(2),
             weapon: W::Sword,
             forge: 0,
+            sub: None,
         },
         // 둘째 판 이후(문지기 핵 둘·패시브 칸 넷): 힘 3단(강타 +1).
         Build {
@@ -436,6 +456,7 @@ pub fn builds() -> Vec<Build> {
             tree: tree(4),
             weapon: W::Sword,
             forge: 0,
+            sub: None,
         },
         // 정원 도착(0185): 문지기 둘·마을의 잔불 — 레벨 일곱, 패시브 칸 여섯.
         Build {
@@ -450,6 +471,7 @@ pub fn builds() -> Vec<Build> {
             tree: tree(5),
             weapon: W::Sword,
             forge: 0,
+            sub: None,
         },
         // 작업층 도달(0216 W1): 문지기 셋 — 레벨 열, 힘 5단(평타 +10), 패시브 칸 여섯.
         Build {
@@ -464,6 +486,7 @@ pub fn builds() -> Vec<Build> {
             tree: tree(6),
             weapon: W::Sword,
             forge: 0,
+            sub: None,
         },
     ]
 }
@@ -486,6 +509,7 @@ pub fn sanctuary_build() -> Build {
         tree: Tree::from_counts([0, 1, 0]),
         weapon: crate::weapons::Id::Sword,
         forge: 0,
+        sub: None,
     }
 }
 
@@ -571,6 +595,89 @@ fn bellkeeper_fight_length() {
     }
 }
 
+/// 보조특성 모의(0272 1b): 같은 몸·같은 씨앗으로 보조무기 슬롯만 바꿔 싸움 길이를 견준다 — 어느 보조특성도 싸움을 4% 넘게
+/// 줄이지 않아야 한다. 봇은 평타 콤보만 친다(스킬·바꿔 들기 없음): 기력 회복(검)·자세 피해(망치)는 이 모의에 그대로 들고,
+/// 속성 게이지(지팡이)·스킬 쿨타임(활)·등의 장전(쇠뇌)은 0으로 나온다(쓰는 길이 없다 — 상한은 문서에 셈으로 적는다).
+/// 돌리기: `cargo test sub_trait_fight_length -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn sub_trait_fight_length() {
+    use crate::weapons::Id as W;
+    let t = Tuning::default();
+    // 짧은 싸움(문지기 15~20초)은 판마다 한두 번의 주고받음이 몇 %라 60판으로는 흔들린다 — `SIM_RUNS=300`으로 좁힌다.
+    let runs = std::env::var("SIM_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60);
+    let all = builds();
+    let with = |b: &Build, weapon: W, sub: Option<W>| Build {
+        weapon,
+        sub,
+        ..b.clone()
+    };
+    for (kind, bi) in [
+        (Kind::Warden, 1),
+        (Kind::Bellkeeper, 1),
+        (Kind::Bellkeeper, 3),
+        (Kind::Mossward, 3),
+    ] {
+        let b = &all[bi];
+        for (main, subs) in [
+            (W::Sword, &[W::Hammer, W::Staff, W::Bow, W::Crossbow][..]),
+            (W::Hammer, &[W::Sword][..]),
+            (W::Staff, &[W::Sword, W::Hammer][..]),
+        ] {
+            let base = with(b, main, None);
+            let d0 = fight_vs(kind, true, &base, 1.0, 1, &t).secs;
+            println!(
+                "\n## {kind:?} — {} — main {main:?} (dummy {d0:.1}s)",
+                b.name
+            );
+            println!("sub      | dummy    | p    | win  | secs(win) | Δsecs");
+            for p in [0.5, 0.7, 0.85] {
+                let m0 = summary(kind, &base, p, runs, &t);
+                println!(
+                    "none     | {d0:>6.1}s  | {p:.2} | {:>3.0}% | {:>9.1} |",
+                    m0.win * 100.0,
+                    m0.secs
+                );
+                for &sub in subs {
+                    let sb = with(b, main, Some(sub));
+                    let d = fight_vs(kind, true, &sb, 1.0, 1, &t).secs;
+                    let m = summary(kind, &sb, p, runs, &t);
+                    println!(
+                        "{:<8} | {d:>6.1}s {:>+5.1}% | {p:.2} | {:>3.0}% | {:>9.1} | {:>+5.1}%",
+                        format!("{sub:?}"),
+                        (d / d0 - 1.0) * 100.0,
+                        m.win * 100.0,
+                        m.secs,
+                        (m.secs / m0.secs - 1.0) * 100.0
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// 보조특성은 모의에 든다: 망치를 멘 검의 몸은 자세 피해가 늘어 있다(능력치를 합치는 한 곳을 지난다).
+#[test]
+fn the_sim_carries_the_sub_weapons_trait() {
+    let t = Tuning::default();
+    let b = Build {
+        sub: Some(crate::weapons::Id::Hammer),
+        ..builds()[0].clone()
+    };
+    let with = fight_vs(Kind::Warden, true, &b, 1.0, 1, &t);
+    let without = fight_vs(Kind::Warden, true, &builds()[0], 1.0, 1, &t);
+    assert!(with.won && without.won);
+    assert!(
+        with.secs <= without.secs,
+        "{} vs {}",
+        with.secs,
+        without.secs
+    );
+}
+
 /// 모의 장치가 살아 있나: 다 받아내는 봇은 맨몸으로도 이긴다.
 #[test]
 fn a_perfect_bot_beats_the_bellkeeper_bare_handed_with_a_sword() {
@@ -593,5 +700,47 @@ fn jump_curve() {
         w.step(&a, &t);
         a.jump = false;
         println!("{i:>2} {:.3} {:?}", w.player.air, w.player.state);
+    }
+}
+
+/// 보조특성의 값 고르기(0272 1b — 한손검의 기력 회복 `SIM_REGEN` · 망치의 자세 피해 `SIM_POISE`): 무기 셋으로, 가장 짧은 싸움
+/// (문지기)까지 — 배를 바꿔 가며 같은 씨앗으로 견준다(보조무기 없이 능력치에 바로 얹는다).
+/// 돌리기: `SIM_REGEN=1.04 SIM_RUNS=300 cargo test --release sub_knob_probe -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn sub_knob_probe() {
+    use crate::weapons::Id as W;
+    let t = Tuning::default();
+    let runs = std::env::var("SIM_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(120);
+    let all = builds();
+    for (kind, bi) in [
+        (Kind::Warden, 1),
+        (Kind::Bellkeeper, 1),
+        (Kind::Mossward, 3),
+    ] {
+        for main in [W::Sword, W::Hammer, W::Staff] {
+            let b = Build {
+                weapon: main,
+                ..all[bi].clone()
+            };
+            let d = fight_vs(kind, true, &b, 1.0, 1, &t).secs;
+            let row: Vec<String> = [0.5, 0.7, 0.85]
+                .into_iter()
+                .map(|p| {
+                    let m = summary(kind, &b, p, runs, &t);
+                    format!(
+                        "{:.2}/{:.0}% (parries {:.1}, opened {:.0}%)",
+                        m.secs,
+                        m.win * 100.0,
+                        m.parries,
+                        m.share.1 * 100.0
+                    )
+                })
+                .collect();
+            println!("{kind:?} {main:?} dummy {d:.2} | {}", row.join(" | "));
+        }
     }
 }

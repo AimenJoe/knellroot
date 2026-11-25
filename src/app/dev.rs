@@ -75,6 +75,8 @@ pub(super) enum DevStart {
     SkillsFlip,
     /// 든 무기 바꾸기(0223 V3 — 스킬은 무기 갈래를 탄다: 아레나에는 장비 탭이 없어 여기서 든다). 기록에 쓰지 않는다.
     Arm,
+    /// 보조무기 바꾸기(0272 1b — 보조특성·교체 공격을 아레나에서 본다). 기록에 쓰지 않는다.
+    ArmSub,
     /// 성능 줄(F3과 같은 개발 줄) 켬/끔 — 키보드가 없는 기기(Android·iOS)에서 프레임 시간을 본다(0186 상주 지형 A/B).
     PerfLine,
     /// 모션 보기(2026-11-15): 이 무기(`weapons::IDS`의 자리)를 든 방랑자의 동작을 하나씩.
@@ -82,7 +84,7 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 42] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 43] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Motion, DevStart::Motion(0)),
@@ -98,6 +100,8 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 42] = [
     (DevCat::Skills, DevStart::Scenario(Scenario::Tray)),
     // 끝에 둔다 — 시험 스크립트가 세는 앞 줄들의 자리를 밀지 않는다.
     (DevCat::Skills, DevStart::Arm),
+    // 0272 1b: 역시 끝에.
+    (DevCat::Skills, DevStart::ArmSub),
     (DevCat::Stage, DevStart::Entrance),
     (DevCat::Stage, DevStart::Gate),
     (DevCat::Stage, DevStart::Village),
@@ -164,6 +168,7 @@ impl DevStart {
             DevStart::SkillsMax => t(dv::SKILLS_MAX),
             DevStart::SkillsFlip => t(dv::SKILLS_FLIP),
             DevStart::Arm => t(dv::ARM),
+            DevStart::ArmSub => t(dv::ARM_SUB),
             DevStart::PerfLine => t(dv::PERF_LINE),
             // 이름은 무기를 채워야 해서 `App::dev_name`이 만든다 — 여기는 바탕.
             DevStart::Motion(_) => t(dv::MOTION_START),
@@ -199,6 +204,7 @@ impl DevStart {
             DevStart::SkillsFlip => t(dv::SKILLS_FLIP_NOTE).to_string(),
             // 지금 든 무기({0})는 앱이 채운다.
             DevStart::Arm => t(dv::ARM_NOTE).to_string(),
+            DevStart::ArmSub => t(dv::ARM_SUB_NOTE).to_string(),
             DevStart::PerfLine => t(dv::PERF_LINE_NOTE).to_string(),
             DevStart::Motion(_) => t(dv::MOTION_NOTE).to_string(),
         }
@@ -376,7 +382,7 @@ impl App {
                 self.dev.sc = sc;
                 self.world = scenario::build(sc);
                 self.fx.clear();
-                self.arm_world();
+                self.arm_sandbox();
                 self.cam = self.cam.renew(self.world.player.pos, &self.t);
                 self.go(Go::Root(Scene::Sandbox));
                 // 놀이터가 선 뒤에: 판(`App::board`)이 놀이터인지를 보고 처음의 둘을 배운 것으로 친다(0166).
@@ -413,6 +419,22 @@ impl App {
                     let at = ids.iter().position(|w| *w == self.weapon).unwrap_or(0);
                     self.weapon = ids[(at + 1) % ids.len()];
                 }
+                self.snd(crate::sfx::Id::Buy);
+            }
+            // 놀이터의 보조무기를 표의 다음 것으로(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활 → 없음 — 맨손은 메지 않는다).
+            // 아레나에서 든 무기와 같으면 비워진다(`arm_sandbox`). 기록은 그대로.
+            DevStart::ArmSub => {
+                let ids: Vec<crate::weapons::Id> = crate::weapons::IDS
+                    .into_iter()
+                    .filter(|w| w.class().is_some())
+                    .collect();
+                self.dev.sub = match self.dev.sub {
+                    None => ids.first().copied(),
+                    Some(w) => ids
+                        .iter()
+                        .position(|i| *i == w)
+                        .and_then(|at| ids.get(at + 1).copied()),
+                };
                 self.snd(crate::sfx::Id::Buy);
             }
             DevStart::Motion(w) => self.go(Go::Open(Scene::Motions {
@@ -475,6 +497,10 @@ impl App {
                 fill(&e.note(), &[t(state)])
             }
             DevStart::Arm => fill(&e.note(), &[weapon_name(self.weapon)]),
+            DevStart::ArmSub => fill(
+                &e.note(),
+                &[self.dev.sub.map_or(s().slot_empty, weapon_name)],
+            ),
             _ => e.note(),
         }
     }

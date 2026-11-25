@@ -7,6 +7,7 @@
 
 use crate::i18n::Tr;
 use crate::skills::Ult;
+use crate::stats::Mods;
 use crate::status::Kind;
 
 /// 판정 모양.
@@ -744,6 +745,46 @@ impl Art {
 pub const ART_FORCE: f32 = 1.3;
 pub const ART_CHANNEL: f32 = 1.5;
 
+/// 보조특성(0272 1b): 보조무기 슬롯에 멘 종류가 **손에 쥐지 않아도** 보태는 한 가지(방패의 막기와 같은 말 — 0224). 주무기로 든
+/// 동안에는 없다 — 바꿔 들면 특성도 맞바뀐다. 숫자는 능력치의 있는 칸(`stats::Mods`)으로만, 능력치를 합치는 한 곳
+/// (`save::Progress::stats`)이 한 줄로 얹는다. 받는 피해 · 패링 판정 시간 · 회피는 건드리지 않는다(0095 원칙 2 — 시험).
+/// 값은 주특성의 반 아래(망치 주특성 +30% → 보조 +5%, 지팡이 +50% → +15%).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SubTrait {
+    pub mods: Mods,
+    /// 등에서도 장전된다(쇠뇌): 멘 동안 탄창이 다시 찬다 — 능력치가 아니라 월드의 규칙(`World::swap_weapons` · 시계).
+    pub stowed_reload: bool,
+}
+
+impl SubTrait {
+    /// 보조특성 글의 `{0}`에 넣는 수(%): 바꾸는 칸의 몫(스킬 쿨타임은 줄어드는 몫). 숫자가 없는 특성(쇠뇌)은 0.
+    pub fn percent(self) -> i32 {
+        let m = self.mods;
+        let d = [m.stamina_regen, m.poise, m.ail, m.skill_cd]
+            .into_iter()
+            .map(|x| (x - 1.0).abs())
+            .fold(0.0, f32::max);
+        (d * 100.0).round() as i32
+    }
+}
+
+/// 보조특성의 값(0272 1b — 처음 값, 판정에서 고친다): 한손검 = 기력 회복 · 망치 = 자세 피해 · 지팡이 = 속성 게이지 · 활 = 스킬 쿨타임.
+/// 기력 회복·자세 피해는 보스 모의(`balance::sub_knob_probe` 300판)로 골랐다 — 어느 몸의 싸움도 4% 넘게 줄지 않게: 둘 다 문턱이
+/// 있는 값이다(기력 회복 ×1.05부터 망치가 문지기의 틈마다 한 타를 더 넣어 −11% · 자세 피해 ×1.10이면 검이 문지기의 자세를 한 타
+/// 먼저 깨 −6%). 속성 게이지·스킬 쿨타임은 봇이 스킬을 쓰지 않아 재지 못했다(셈으로만 — 0272 "1b 만든 것").
+pub const SUB_REGEN: f32 = 1.04;
+pub const SUB_POISE: f32 = 1.05;
+pub const SUB_AIL: f32 = 1.15;
+pub const SUB_SKILL_CD: f32 = 0.95;
+
+/// 교체 공격(0272 1b)에서 들어오는 무기가 치는 한 타: 근접 = 그 무기의 대시 공격(`Weapon::dash`), 원거리 = 보통 사격 한 발
+/// (`Weapon::rb`의 `Shot` — 탄 하나를 쓴다). 새 동작·새 표 칸이 없다 — 새 무기는 표의 그 칸이 곧 교체 공격이다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Entry {
+    Dash,
+    Shot,
+}
+
 /// 계열(0223 → 0272 — 종류의 윗층, 화면에 드러내지 않는다): 한손 근접은 왼손에 방패를 들 수 있다 · 양손 근접 · 원거리(양손, 장전).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hand {
@@ -752,7 +793,8 @@ pub enum Hand {
     Ranged,
 }
 
-/// 종류 표의 한 줄(0272): 판의 이름 · 가운데 열의 머리(물리 속성) · 대표 타입 둘(판의 왼쪽 · 오른쪽 갈래) · 큰 기술 · 주특성.
+/// 종류 표의 한 줄(0272): 판의 이름 · 가운데 열의 머리(물리 속성) · 대표 타입 둘(판의 왼쪽 · 오른쪽 갈래) · 큰 기술 · 주특성 ·
+/// 보조특성(1b).
 pub struct ClassDef {
     pub class: Class,
     pub hand: Hand,
@@ -767,6 +809,9 @@ pub struct ClassDef {
     /// 주특성: 스킬에 얹는 배와 그것을 말하는 한 줄(`{0}` = `Art::percent`).
     pub art: Art,
     pub main_trait: Tr,
+    /// 보조특성(1b): 보조무기 슬롯에 멨을 때의 한 가지와 그것을 말하는 한 줄(`{0}` = `SubTrait::percent`).
+    pub sub: SubTrait,
+    pub sub_trait: Tr,
 }
 
 /// 종류 표(판 줄의 차례 — `plates::PLATES`가 이 차례로 선다). 대검 · 창은 뒤에 한 줄씩(0272 2단계).
@@ -780,6 +825,14 @@ pub const CLASSES: [ClassDef; 5] = [
         great: Ult::Flurry,
         art: Art::PLAIN,
         main_trait: |s| s.trait_sword,
+        sub: SubTrait {
+            mods: Mods {
+                stamina_regen: SUB_REGEN,
+                ..Mods::NONE
+            },
+            stowed_reload: false,
+        },
+        sub_trait: |s| s.subtrait_sword,
     },
     ClassDef {
         class: Class::Hammer,
@@ -793,6 +846,14 @@ pub const CLASSES: [ClassDef; 5] = [
             channel: 1.0,
         },
         main_trait: |s| s.trait_hammer,
+        sub: SubTrait {
+            mods: Mods {
+                poise: SUB_POISE,
+                ..Mods::NONE
+            },
+            stowed_reload: false,
+        },
+        sub_trait: |s| s.subtrait_hammer,
     },
     ClassDef {
         class: Class::Staff,
@@ -806,6 +867,14 @@ pub const CLASSES: [ClassDef; 5] = [
             channel: ART_CHANNEL,
         },
         main_trait: |s| s.trait_staff,
+        sub: SubTrait {
+            mods: Mods {
+                ail: SUB_AIL,
+                ..Mods::NONE
+            },
+            stowed_reload: false,
+        },
+        sub_trait: |s| s.subtrait_staff,
     },
     ClassDef {
         class: Class::Crossbow,
@@ -816,6 +885,11 @@ pub const CLASSES: [ClassDef; 5] = [
         great: Ult::Line,
         art: Art::PLAIN,
         main_trait: |s| s.trait_crossbow,
+        sub: SubTrait {
+            mods: Mods::NONE,
+            stowed_reload: true,
+        },
+        sub_trait: |s| s.subtrait_crossbow,
     },
     ClassDef {
         class: Class::Bow,
@@ -826,6 +900,14 @@ pub const CLASSES: [ClassDef; 5] = [
         great: Ult::Rain,
         art: Art::PLAIN,
         main_trait: |s| s.trait_bow,
+        sub: SubTrait {
+            mods: Mods {
+                skill_cd: SUB_SKILL_CD,
+                ..Mods::NONE
+            },
+            stowed_reload: false,
+        },
+        sub_trait: |s| s.subtrait_bow,
     },
 ];
 
@@ -891,6 +973,21 @@ impl Id {
         self.class().map_or(Art::PLAIN, |c| c.def().art)
     }
 
+    /// 보조무기 슬롯에 멨을 때의 보조특성(0272 1b) — 맨손은 종류가 아니라 없다.
+    pub fn sub_trait(self) -> Option<SubTrait> {
+        self.class().map(|c| c.def().sub)
+    }
+
+    /// 교체 공격으로 들어올 때의 한 타(0272 1b): 대시 공격이 있으면 그것, 사격 무기면 한 발.
+    pub fn entry(self) -> Option<Entry> {
+        let w = self.def();
+        match w.rb {
+            _ if w.dash.is_some() => Some(Entry::Dash),
+            Rb::Shot { .. } => Some(Entry::Shot),
+            Rb::Magic(_) => None,
+        }
+    }
+
     /// 원거리 무기인가(0223 — 양손, 평타 버튼 = 사격·특수 버튼 = 수류탄).
     pub fn is_ranged(self) -> bool {
         matches!(self.def().rb, Rb::Shot { .. })
@@ -949,6 +1046,84 @@ mod tests {
         assert_eq!(Id::Fists.grip(true), Grip::Shield);
         assert_eq!(Id::Staff.grip(true), Grip::Class(Class::Staff));
         assert_eq!(Id::Bow.grip(true), Grip::Class(Class::Bow));
+    }
+
+    /// 0272 1b: 보조특성 — 종류마다 한 가지(숫자 칸 하나, 또는 쇠뇌의 "등에서도 장전된다"). 받는 피해 · 패링 판정 시간 · 회피 ·
+    /// 밀림을 건드리지 않고(0095 원칙 2 — 방어는 손이다), 능력치를 낫게만 바꾸며, 주특성의 반을 넘지 않는다.
+    #[test]
+    fn every_class_has_one_small_sub_trait_that_leaves_defence_alone() {
+        use crate::stats::Stats;
+        let none = Stats::default();
+        for c in CLASSES.iter() {
+            let got = Stats::compute(&[c.sub.mods]);
+            assert_eq!(
+                (
+                    got.taken,
+                    got.parry,
+                    got.dodge_cost,
+                    got.knock,
+                    got.flinch,
+                    got.max_hp
+                ),
+                (
+                    none.taken,
+                    none.parry,
+                    none.dodge_cost,
+                    none.knock,
+                    none.flinch,
+                    none.max_hp
+                ),
+                "{:?}",
+                c.class
+            );
+            // 한 가지: 숫자 칸이 하나 바뀌거나(나머지는 그대로), 숫자 없이 월드의 규칙 하나.
+            let knobs = [
+                got.stamina_regen != none.stamina_regen,
+                got.poise != none.poise,
+                got.ail != none.ail,
+                got.skill_cd != none.skill_cd,
+            ];
+            let n = knobs.iter().filter(|k| **k).count();
+            assert_eq!(n + c.sub.stowed_reload as usize, 1, "{:?}", c.class);
+            let only = Stats {
+                stamina_regen: none.stamina_regen,
+                poise: none.poise,
+                ail: none.ail,
+                skill_cd: none.skill_cd,
+                ..got
+            };
+            assert_eq!(only, none, "{:?}: nothing else moves", c.class);
+            assert!(got.stamina_regen >= 1.0 && got.poise >= 1.0 && got.ail >= 1.0);
+            assert!(got.skill_cd <= 1.0);
+            // 작게: 어느 것도 15%를 넘지 않고, 주특성의 배가 있는 종류는 그 반 아래.
+            let p = c.sub.percent();
+            assert_eq!(p == 0, c.sub.stowed_reload, "{:?}", c.class);
+            assert!(p <= 15, "{:?}: {p}%", c.class);
+            if c.art.percent() > 0 {
+                assert!(p * 2 <= c.art.percent(), "{:?}", c.class);
+            }
+        }
+        assert_eq!(Class::Sword.def().sub.percent(), 4);
+        assert_eq!(Class::Hammer.def().sub.percent(), 5);
+        assert_eq!(Class::Staff.def().sub.percent(), 15);
+        assert_eq!(Class::Bow.def().sub.percent(), 5);
+        assert!(Class::Crossbow.def().sub.stowed_reload);
+        assert_eq!(Id::Fists.sub_trait(), None, "bare hands are no class");
+        assert_eq!(Id::Hammer.sub_trait(), Some(Class::Hammer.def().sub));
+    }
+
+    /// 0272 1b: 교체 공격의 한 타는 표의 있는 칸이다 — 근접(맨손도) = 대시 공격, 사격 무기 = 보통 한 발. 모든 무기에 있다.
+    #[test]
+    fn every_weapon_has_an_entry_strike_from_its_own_row() {
+        for id in IDS {
+            let want = if id.is_ranged() {
+                Entry::Shot
+            } else {
+                Entry::Dash
+            };
+            assert_eq!(id.entry(), Some(want), "{id:?}");
+            assert_eq!(want == Entry::Dash, id.def().dash.is_some(), "{id:?}");
+        }
     }
 
     #[test]

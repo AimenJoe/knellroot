@@ -1792,6 +1792,27 @@ impl Fx {
                 );
                 self.dust_ring(vec3(at.x, w.ground_y(at), at.z), 1.2, 12, 4.5, 0.8, DUST);
             }
+            // 교체 공격(0272 1b): 발밑에서 조여드는 금빛 고리(등의 것이 손으로 온다) + 손 높이의 금빛 별 + 치는 쪽으로 뻗는 빛줄.
+            // 다 모임(별 하나) · 딱 맞춰 떼기(사방의 알갱이) · 패링(차가운 빛)과 갈린다 — 고리가 **안으로** 오고 빛줄이 한쪽으로 간다.
+            Event::SwapStrike { at, dir, .. } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                let hand = at + Vec3::Y * (w.player.air + 1.0);
+                self.mark(g, MarkKind::Ring { r0: 1.6, r1: 0.5 }, 0.24, GOLD);
+                self.star(hand + dir * 0.4, 1.1, 0.10, GOLD);
+                self.spray(
+                    hand,
+                    dir,
+                    0.35,
+                    7,
+                    8.0,
+                    Shape::Streak,
+                    0.07,
+                    0.18,
+                    3.0,
+                    WHITE_HOT,
+                    GOLD,
+                );
+            }
             // 맞음: 가슴 높이의 흰 별 + 옅은 라벤더 알갱이(빨강은 쓰지 않는다 — 화면의 붉은 테는 HUD의 몫).
             Event::PlayerHurt => {
                 let c = pp + Vec3::Y * 0.9;
@@ -2849,6 +2870,11 @@ mod tests {
             Event::Charged,
             Event::Rouse { at },
             Event::PlayerHurt,
+            Event::SwapStrike {
+                at,
+                dir: Vec3::Z,
+                to: crate::weapons::Id::Hammer,
+            },
         ];
         let red = |c: Color| c.r > 0.75 && c.g < 0.45 && c.b < 0.45;
         for e in all

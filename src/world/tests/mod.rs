@@ -18,6 +18,7 @@ mod hurt;
 mod jump_ledge;
 mod parry;
 mod ranged;
+mod swap_strike;
 mod touch_aim;
 mod turn;
 mod veins;

@@ -965,6 +965,13 @@ impl Progress {
         ])
     }
 
+    /// 지금 먹는 보조특성(0272 1b): 보조무기 슬롯에 멘 무기의 종류의 것. 방패를 들었거나(슬롯에 하나만 — 0224) 슬롯이 비었으면 없다.
+    pub fn sub_trait(&self) -> Option<crate::weapons::SubTrait> {
+        self.sub
+            .filter(|_| self.shield.is_none())
+            .and_then(|w| w.sub_trait())
+    }
+
     /// 낀 장신구 + 성장(핵 고르기·레벨)으로 합친 능력치.
     pub fn stats(&self) -> crate::stats::Stats {
         let mut mods = crate::charms::mods(&self.worn);
@@ -975,6 +982,9 @@ impl Progress {
         }
         // 낀 아이템의 옵션(0223 V4b — 무기는 든 것만).
         mods.extend(self.bag.mods(&self.worn_bases()));
+        // 보조특성(0272 1b): 보조무기 슬롯에 멘 종류의 한 가지 — 손에 든 무기의 것은 아니다(바꿔 들면 맞바뀐다).
+        // 슬롯에 방패가 있으면 무기는 없다(0224 — 방패의 몫은 막기).
+        mods.extend(self.sub_trait().map(|s| s.mods));
         mods.push(self.growth.mods());
         mods.push(self.level.mods());
         mods.push(crate::progression::find_mods(&self.finds));
@@ -2311,6 +2321,68 @@ forge.sword=3
         assert_eq!(back.sub, Some(crate::weapons::Id::Crossbow));
         let stray = Progress::from_record(Record::parse("shield.worn=pilgrim\n"));
         assert_eq!(stray.shield, None, "a shield you do not own is not worn");
+    }
+
+    /// 0272 1b: 보조특성은 **보조무기 슬롯에 멘 종류의 것만** 먹는다 — 손에 든 무기의 것은 아니고, 바꿔 들면 맞바뀐다.
+    /// 슬롯에 방패가 있거나 비었으면 없다. 어느 것도 받는 피해 · 패링 판정 시간 · 회피 기력을 바꾸지 않는다(랩 값까지).
+    #[test]
+    fn a_sub_trait_applies_only_in_the_sub_slot_and_swaps_with_the_weapons() {
+        use crate::weapons::{Id as W, SUB_AIL, SUB_POISE, SUB_REGEN, SUB_SKILL_CD};
+        let arm = |main: W, sub: Option<W>| {
+            let mut p = Progress {
+                weapon: Some(main),
+                sub,
+                ..Default::default()
+            };
+            p.settle_items();
+            p
+        };
+        let none = arm(W::Sword, None).stats();
+        assert_eq!(none, crate::stats::Stats::default());
+        assert_eq!(arm(W::Sword, None).sub_trait(), None);
+        // 검을 들고 망치를 멨다: 망치의 것(자세 피해)만 — 검의 것(기력 회복)은 없다.
+        let a = arm(W::Sword, Some(W::Hammer)).stats();
+        assert_eq!((a.poise, a.stamina_regen), (SUB_POISE, 1.0));
+        // 바꿔 들었다(망치를 들고 검을 멨다): 맞바뀐다.
+        let b = arm(W::Hammer, Some(W::Sword)).stats();
+        assert_eq!((b.poise, b.stamina_regen), (1.0, SUB_REGEN));
+        // 지팡이 = 속성 게이지 · 활 = 스킬 쿨타임 · 쇠뇌 = 숫자 없음(등에서 장전 — 월드의 규칙).
+        assert_eq!(arm(W::Sword, Some(W::Staff)).stats().ail, SUB_AIL);
+        assert_eq!(arm(W::Sword, Some(W::Bow)).stats().skill_cd, SUB_SKILL_CD);
+        assert_eq!(arm(W::Sword, Some(W::Crossbow)).stats(), none);
+        assert!(
+            arm(W::Sword, Some(W::Crossbow))
+                .sub_trait()
+                .unwrap()
+                .stowed_reload
+        );
+        // 주무기로 든 것만으로는 아무것도 없다(종류마다).
+        for w in crate::weapons::IDS {
+            assert_eq!(arm(w, None).stats(), none, "{w:?} in hand");
+        }
+        // 슬롯에 방패(0224 — 하나만): 방패의 몫은 막기, 무기의 보조특성은 없다. 맨손을 멘 것도 없다(종류가 아니다).
+        let mut shielded = arm(W::Sword, Some(W::Hammer));
+        shielded.shield = Some(crate::shield::Id::Pilgrim);
+        assert_eq!(shielded.sub_trait(), None);
+        assert_eq!(arm(W::Sword, Some(W::Fists)).stats(), none);
+        // 방어는 손이다(0095 원칙 2): 어느 종류를 메도 받는 피해 · 패링 판정 시간 · 회피 기력 · 맞을 때의 밀림과 휘청임은 그대로.
+        let t = crate::tuning::Tuning::default();
+        use crate::tuning::P;
+        for sub in crate::weapons::IDS {
+            let s = arm(W::Sword, Some(sub)).stats();
+            assert_eq!((s.taken, s.parry, s.dodge_cost), (0, 0.0, 1.0), "{sub:?}");
+            let bent = s.tune(&t);
+            for p in [
+                P::ParryWindow,
+                P::ParryTime,
+                P::StaminaDodge,
+                P::DodgeTime,
+                P::HitKnock,
+                P::HitStun,
+            ] {
+                assert_eq!(bent[p], t[p], "{sub:?}: {p:?}");
+            }
+        }
     }
 
     /// 0223 V4b: 옛 기록(아이템 줄이 없다)의 무기·방패·장신구는 보통 아이템 하나씩으로 옮겨지고, 다시 써도 그대로다. 새 기록은 아이템

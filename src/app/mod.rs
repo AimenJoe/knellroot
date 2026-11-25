@@ -142,6 +142,8 @@ struct DevState {
     sc: Scenario,
     run: bool,
     board: Option<crate::skills::Board>,
+    /// 놀이터의 보조무기(0272 1b — 개발 창 "보조무기 바꾸기"): 아레나에는 장비 탭이 없다. 기록에 쓰지 않는다.
+    sub: Option<weapons::Id>,
 }
 
 #[cfg(feature = "dev")]
@@ -151,6 +153,7 @@ impl Default for DevState {
             sc: Scenario::Boss,
             run: false,
             board: None,
+            sub: None,
         }
     }
 }

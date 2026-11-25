@@ -347,6 +347,34 @@ impl App {
         )));
     }
 
+    /// 놀이터의 무기(개발 창이 정한 것 — 든 무기 0223 V3 · 보조무기 0272 1b): 든 무기와 같은 보조무기는 비운다. 기록은 그대로.
+    #[cfg(feature = "dev")]
+    pub(super) fn arm_sandbox(&mut self) {
+        self.arm_world();
+        if let Some(sub) = self.dev.sub.filter(|s| *s != self.weapon) {
+            // 보조무기 슬롯에는 하나만(0224): 무기를 메면 방패는 내린다.
+            self.world.set_shield(None);
+            self.renderer.shield = None;
+            self.world.set_sub(Some(sub));
+            self.sandbox_stats();
+        }
+    }
+
+    /// 놀이터의 능력치: 기록의 것에 놀이터의 보조무기 슬롯만 얹는다(보조특성 — 바꿔 들면 맞바뀐다).
+    #[cfg(feature = "dev")]
+    fn sandbox_stats(&mut self) {
+        let mut p = self.progress.clone();
+        p.sub = self.world.player.sub;
+        if p.sub.is_some() {
+            p.shield = None;
+        }
+        let full = self.world.swap_full;
+        let ammo = self.world.player.ranged.ammo;
+        self.world.apply_stats(p.stats(), false);
+        let mag = self.world.mag_of(self.world.player.weapon);
+        self.world.player.ranged.ammo = if full { mag } else { ammo.min(mag) };
+    }
+
     /// 개발 아레나(PoC) 한 틱: 숫자 키로 시나리오, 멈춤 = 개발 메뉴로.
     #[cfg(feature = "dev")]
     pub(super) fn tick_sandbox(&mut self, a: Actions) {
@@ -363,7 +391,7 @@ impl App {
             };
             self.world = scenario::build(self.dev.sc);
             self.fx.clear();
-            self.arm_world();
+            self.arm_sandbox();
             self.apply_board();
             self.cam = self.cam.renew(self.world.player.pos, &self.t);
         }
@@ -488,8 +516,11 @@ impl App {
     fn on_weapon_swap(&mut self, to: crate::weapons::Id) {
         self.weapon = to;
         // 개발 놀이터(아레나): 든 무기는 개발 창이 정한 것(가진 것이 아닐 수 있다) — 기록의 무기·칸·가방을 건드리지 않는다.
+        // 능력치만은 맞춘다(보조특성 0272 1b — 멘 종류가 바뀌었다).
         #[cfg(feature = "dev")]
         if self.stack.base() == Scene::Sandbox {
+            self.dev.sub = self.world.player.sub;
+            self.sandbox_stats();
             self.snd(crate::sfx::Id::UiConfirm);
             return;
         }
@@ -500,7 +531,13 @@ impl App {
         self.progress.bag.swap_weapons();
         // 벼린 단(0180)은 든 무기에만 — 바꿔 든 무기의 것으로 능력치를 다시 합친다(V1b에서 빠뜨렸다: 바꿔 들어도 옛 무기의 단이 남았다).
         // 탄창은 월드가 바꿔 든 그대로(가득이었나를 옛 무기의 능력치로 재면, 벼려 늘린 탄창이 바꿔 들 때마다 차오른다).
-        let ammo = self.world.player.ranged.ammo;
+        // 가득으로 나온 것(처음 드는 것 · 등에서 다 장전된 쇠뇌 — 0272 1b `World::swap_full`)만 새 탄창까지 가득이다.
+        let ammo = if self.world.swap_full {
+            u8::MAX
+        } else {
+            self.world.player.ranged.ammo
+        };
+        // 보조특성(0272 1b)도 여기서 맞바뀐다 — 능력치를 합치는 곳이 보조무기 슬롯의 종류를 본다.
         self.world.apply_stats(self.progress.stats(), false);
         self.world.player.ranged.ammo = ammo.min(self.world.mag_of(to));
         self.persist();
@@ -583,7 +620,7 @@ impl App {
                 | Event::FlaskDenied
                 | Event::Ember { .. } => 0.0,
                 Event::Cast { .. } | Event::CastDenied | Event::Throw => 0.0,
-                Event::WeaponSwap { .. } => 0.0,
+                Event::WeaponSwap { .. } | Event::SwapStrike { .. } => 0.0,
                 Event::Guard { .. } => SHAKE_HIT,
                 Event::GuardBreak { .. } => SHAKE_HURT,
                 Event::StaminaDenied | Event::Release { .. } => 0.0,
@@ -759,6 +796,7 @@ impl App {
                 Event::Charged => self.tutor.seen.charged += 1,
                 // 0223의 새 것들(상황 힌트가 본다): 바꿔 듦 · 방패로 받음 · 타입의 일이 걸림.
                 Event::WeaponSwap { .. } => self.tutor.seen.swaps += 1,
+                Event::SwapStrike { .. } => self.tutor.seen.swap_strikes += 1,
                 Event::Guard { .. } => self.tutor.seen.blocks += 1,
                 Event::Ail { .. } | Event::Toll { .. } => self.tutor.seen.ails += 1,
                 // 등잔을 한 번 마셔 보면 그 뒤로는 알리지 않는다(기록의 비트 — 판을 넘어, 0213).
@@ -1232,6 +1270,8 @@ impl App {
                 // 방패(0223): 받은 타는 둔한 '둥'(튕김의 맑은 소리와 갈린다), 깨지면 맞은 소리.
                 Event::Guard { .. } => Id::Thwack,
                 Event::GuardBreak { .. } => Id::Hurt,
+                // 교체 공격(0272 1b): 바꾸는 딸깍(`on_weapon_swap`) 위에 몸이 달려드는 바람 — 그냥 바꾸기와 귀로 갈린다.
+                Event::SwapStrike { .. } => Id::Dodge,
                 Event::Beat => crate::sfx::beat_id(self.world.player.beat.chain),
                 // 딱 맞춰 떼기(0078): 박자와 같은 "맞췄다" 종 — 가장 높은 음.
                 Event::Perfect { .. } => Id::Beat3,

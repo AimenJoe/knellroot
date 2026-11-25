@@ -65,8 +65,11 @@ impl World {
         self.tick_player_clocks(&mut cx);
         self.try_turn(&cx);
 
+        // 교체 공격(0272 1b): 이 틱에 바꿔 든 무기가 들어오며 친다(`weapon_swap`이 세웠다) — 다른 누름보다 먼저. 이 틱에 못 나가면 버린다.
+        let entry = std::mem::take(&mut self.player.entry);
         // 상태 전이.
         match self.player.state {
+            PState::Idle if entry => self.start_entry(&cx),
             PState::Idle => self.tick_idle(&cx),
             PState::Drink { t: e, gulped } => self.tick_drink(&cx, e, gulped),
             PState::Hurt { t: e, dur } => {
@@ -321,6 +324,17 @@ impl World {
         if let Some(g) = wpn.grenade {
             pl.ranged.grenades =
                 (pl.ranged.grenades + dt / g.cooldown.max(0.1)).min(g.count as f32);
+        }
+        // 멘 쇠뇌(보조특성, 0272 1b): 등에서도 장전이 돈다 — 손에 든 것과 같은 빠르기로, 다 차면 가득(`Stowed::full`).
+        // 다른 무기의 멘 탄창은 그대로 멈춰 있다(0223).
+        if let (Some(sub), Some(l)) = (pl.sub, pl.sub_load.as_mut()) {
+            if l.reload > 0.0 && sub.sub_trait().is_some_and(|s| s.stowed_reload) {
+                l.reload -= dt;
+                if l.reload <= 0.0 {
+                    l.reload = 0.0;
+                    l.full = true;
+                }
+            }
         }
         // 마법 칸(0111): 수류탄처럼 시간으로 찬다 — 한 칸 `cast.cooldown s`.
         if let Rb::Magic(_) = wpn.rb {
@@ -690,6 +704,38 @@ impl World {
                 dir,
                 hit,
             };
+        }
+    }
+
+    /// 교체 공격의 한 타(0272 1b): 막 바꿔 든 무기(`cx.wpn`)가 들어오며 친다 — 근접 = 대시 공격(값은 대시 공격 그대로: 기력을
+    /// 치르고 박자 타가 아니다), 사격 무기 = 지금 겨눈 쪽으로 보통 한 발(탄 하나 · 기력). 반격 대신 나가는 타다 — 반격 창과
+    /// 이어 패링은 닫힌다(패링 하나에 보상 하나). 판정 시간·무적은 없다.
+    fn start_entry(&mut self, cx: &Ctx) {
+        let Some(entry) = self.player.weapon.entry() else {
+            return;
+        };
+        let pl = &mut self.player;
+        pl.parry.since = f32::MAX;
+        pl.parry.chain_left = 0.0;
+        pl.parry.chain_n = 0;
+        pl.beat.on = false;
+        pl.combo_left = 0.0;
+        match entry {
+            weapons::Entry::Dash => {
+                pl.dash_left = DASH_ATTACK_LATE;
+                if self.swing_pays(cx) {
+                    self.start_swing(cx);
+                }
+            }
+            weapons::Entry::Shot => self.start_shot(cx),
+        }
+        let pl = &self.player;
+        if matches!(pl.state, PState::Attack { .. } | PState::Cast { .. }) {
+            self.skill_ev.push(Event::SwapStrike {
+                at: pl.pos,
+                dir: pl.facing_dir(),
+                to: pl.weapon,
+            });
         }
     }
 

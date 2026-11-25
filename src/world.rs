@@ -213,6 +213,12 @@ pub enum Event {
     WeaponSwap {
         to: weapons::Id,
     },
+    /// 교체 공격(0272 1b): 바꿔 든 무기 `to`가 들어오며 한 타를 냈다(`WeaponSwap`과 같은 틱) — 앱이 이펙트·소리·힌트로 쓴다.
+    SwapStrike {
+        at: Vec3,
+        dir: Vec3,
+        to: weapons::Id,
+    },
     /// 패링 성공(0025): 적의 근접 공격을 튕겼다.
     Parry {
         at: Vec3,
@@ -646,9 +652,16 @@ pub struct Player {
     /// 부무기(0223): 바꾸기 버튼(0261)을 누르면 주무기와 바꿔 든다. 없으면 바꾸지 않는다.
     pub sub: Option<weapons::Id>,
     /// 부무기의 탄·수류탄·장전(바꿔 들 때 남겨 둔 것 — 바꾸기로 탄창을 채우지 못하게). 처음 드는 것이면 없음.
-    pub sub_load: Option<(u8, f32, f32)>,
+    pub sub_load: Option<Stowed>,
     /// 받아 둔 바꾸기의 남은 초(0261 — 다른 동작 중에 누른 바꾸기는 서는 순간 나간다).
     pub swap_buf: f32,
+    /// 교체 공격(0272 1b): 내 타가 닿았거나 받아친 뒤 열려 있는 창의 남은 초(`SWAP_LINK`) — 그 안의 바꾸기는 들어오는 무기의 한 타와
+    /// 함께 나간다. `swap_lock` = 교체 공격 뒤 다음 교체 공격까지의 잠금(그동안의 바꾸기는 그냥 바꾼다), `link_swing` = 창을 연 마지막
+    /// 스윙(한 번 휘두르기에 한 번), `entry` = 이번 틱에 들어오는 무기가 칠 차례다(바꾼 틱의 플레이어 단계가 걷는다).
+    pub swap_link: f32,
+    pub swap_lock: f32,
+    pub link_swing: u32,
+    pub entry: bool,
     /// 든 방패(0223 — 한손 무기일 때만 쓰인다, `World::can_block`).
     pub shield: Option<crate::shield::Id>,
     /// 미리 받아 둔 다음 행동과 남은 초(0057 — 후딜레이를 끊는 캔슬 시점에 나간다).
@@ -657,6 +670,20 @@ pub struct Player {
     /// 콤보: 다음 타 번호와 그 타를 이어 갈 남은 초.
     pub combo_next: u8,
     pub combo_left: f32,
+}
+
+/// 멘 무기의 탄(0223 — `Player::sub_load`): 내려놓을 때의 탄창·수류탄·장전. 멘 동안 시계는 흐르지 않는다 — 쇠뇌의 장전만 돈다
+/// (보조특성, 0272 1b).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Stowed {
+    pub ammo: u8,
+    pub grenades: f32,
+    pub reload: f32,
+    /// 등에서 시작한 장전(쇠뇌 — 덜 찬 탄창을 멨다): 다 차기 전에 꺼내면 버린다 — 손에 든 쇠뇌는 비워야 장전되므로
+    /// (두 번 바꿔 손에서 미리 장전하는 길을 막는다). 비워서 시작한 장전은 꺼내도 이어 간다.
+    pub topping: bool,
+    /// 등에서 다 장전됐다 — 꺼내면 가득(탄창의 크기는 그때 정한다: 벼려 늘린 몫은 든 무기의 것).
+    pub full: bool,
 }
 
 /// 끼운 스킬·큰 기술의 상태(0151·0158): 끼운 것과 단, 대기, 게이지, 스킬마다의 진행(버팀·되울림·몰아치기 …). `Player::skill`.
@@ -910,6 +937,9 @@ pub struct World {
     /// (기세의 몫을 가른다 — 스킬로 쓰러뜨리면 덜 당겨진다).
     skill_ev: Vec<Event>,
     skill_hit_tick: bool,
+    /// 방금 바꿔 든 무기가 가득 찬 탄창으로 나왔다(처음 드는 것 · 등에서 다 장전된 쇠뇌 — 0272 1b): 앱이 새 능력치를 넣은 뒤
+    /// 벼려 늘린 탄창까지 가득으로 맞춘다(`on_weapon_swap`). 그 밖에는 바꿔 든 탄 그대로.
+    pub swap_full: bool,
     skill_kill_left: f32,
     /// 스킬이 남긴 것(0158 G1): 곧 터질 "모인 자리"(끌어모으기 ㄱ), 남은 갈라진 땅(땅울림 ㄴ — 렌더가 읽는다).
     pub skill_bursts: Vec<skill_tick::Burst>,
@@ -1057,6 +1087,10 @@ impl World {
                 sub: None,
                 sub_load: None,
                 swap_buf: 0.0,
+                swap_link: 0.0,
+                swap_lock: 0.0,
+                link_swing: 0,
+                entry: false,
                 shield: None,
                 pending: None,
                 pending_left: 0.0,
@@ -1074,6 +1108,7 @@ impl World {
             hitstop: 0.0,
             skill_ev: Vec::new(),
             skill_hit_tick: false,
+            swap_full: false,
             skill_kill_left: 0.0,
             skill_bursts: Vec::new(),
             skill_zones: Vec::new(),
@@ -1164,16 +1199,15 @@ impl World {
         } else {
             None
         };
-        // 스킬의 판정이 끝났나(그 단의 실제 길이로 — 바퀴가 늘거나 길을 되돌아가면 길어진다, 0158).
         // 버팀(0158 G2)은 버티는 동안 회피를 직접 받는다(터뜨림 없이 끊는다).
-        let (skill_done, brace_hold) = match self.player.state {
+        let brace_hold = match self.player.state {
             PState::Skill { id, t: e, .. } => {
                 let d = self.skill_eff(id);
                 let end = d.skill.startup + d.active();
                 let hold = matches!(d.skill.form, skills::Form::Brace { .. });
-                (e >= end, hold && e >= d.skill.startup && e < end)
+                hold && e >= d.skill.startup && e < end
             }
-            _ => (false, false),
+            _ => false,
         };
         let pl = &mut self.player;
         // 박자(2026-11-07): 공격을 누른 **그 순간**이 박자 창 안이었나. 받아 뒀다 나중에 나가는 이른 누름은 창 밖으로 친다
@@ -1270,32 +1304,8 @@ impl World {
             Next::Skill(slot) => pl.skill.cd[pl.skill.worn[slot as usize % 2].index()] <= 0.0,
             Next::Ult => pl.skill.gauge >= 1.0,
         };
-        let ready = match pl.state {
-            PState::Attack { t: e, hit, .. } => {
-                let (s0, a0, r0) = hit_times(t, wpn, hit);
-                let k = wpn.hit(hit).map_or(0.0, |h| h.cancel);
-                let base = s0 + a0 + r0 * k;
-                let last = wpn.after(hit).is_none();
-                if n == Next::Attack && !last {
-                    e >= base.max(s0 + a0 + r0 * t[P::ComboLink])
-                } else {
-                    e >= base
-                }
-            }
-            PState::Heavy { t: e, .. } => {
-                let (s0, a0, r0) = heavy_times(t, wpn);
-                e >= s0 + a0 + r0 * wpn.heavy.map_or(0.0, |h| h.cancel)
-            }
-            PState::Dodge { t: e, .. } => e >= t[P::DodgeTime] * t[P::DodgeCancel],
-            PState::Cast { fired, .. } => fired,
-            PState::Throw { thrown, .. } => thrown,
-            PState::Land { t: e, dur, .. } => e >= dur * t[P::LandCancel],
-            PState::Drink { gulped, .. } => gulped,
-            // 스킬·큰 기술의 후딜(0151): 판정이 끝나면 회피·다른 스킬·평타로 끊는다.
-            PState::Skill { .. } => skill_done,
-            PState::Ult { done, .. } => done,
-            _ => false,
-        };
+        let ready = self.cancel_ready(n, t);
+        let pl = &mut self.player;
         if ready && can {
             if let PState::Attack { hit, .. } = pl.state {
                 // 다음 타로 잇는다(마지막 타 뒤면 처음부터). 맺음타(0107·0108)는 마지막 타 뒤에도 콤보를 기억한다 —
@@ -1321,6 +1331,44 @@ impl World {
             set(&mut out);
         }
         out
+    }
+
+    /// 지금 동작의 **캔슬 시점**이 왔나(0057 — `n`으로 끊으려 할 때): 받아 둔 누름(`cancel_or_buffer`)과 교체 공격(`weapon_swap`)이
+    /// 같은 자리를 읽는다. 평타 = 활성 뒤 + 후딜 × 타의 `cancel`(다음 타는 `combo.link`도), 강타 = 활성 뒤 + 후딜 × 강타의 `cancel`,
+    /// 회피 = `dodge.cancel x`, 쏘기·던지기 = 손을 떠난 뒤, 착지 = `land.cancel x`, 마시기 = 삼킨 뒤, 스킬·큰 기술 = 판정이 끝난 뒤.
+    fn cancel_ready(&self, n: Next, t: &Tuning) -> bool {
+        let pl = &self.player;
+        let wpn = pl.weapon.def();
+        match pl.state {
+            PState::Attack { t: e, hit, .. } => {
+                let (s0, a0, r0) = hit_times(t, wpn, hit);
+                let k = wpn.hit(hit).map_or(0.0, |h| h.cancel);
+                let base = s0 + a0 + r0 * k;
+                let last = wpn.after(hit).is_none();
+                if n == Next::Attack && !last {
+                    e >= base.max(s0 + a0 + r0 * t[P::ComboLink])
+                } else {
+                    e >= base
+                }
+            }
+            PState::Heavy { t: e, .. } => {
+                let (s0, a0, r0) = heavy_times(t, wpn);
+                e >= s0 + a0 + r0 * wpn.heavy.map_or(0.0, |h| h.cancel)
+            }
+            PState::Dodge { t: e, .. } => e >= t[P::DodgeTime] * t[P::DodgeCancel],
+            PState::Cast { fired, .. } => fired,
+            PState::Throw { thrown, .. } => thrown,
+            PState::Land { t: e, dur, .. } => e >= dur * t[P::LandCancel],
+            PState::Drink { gulped, .. } => gulped,
+            // 스킬·큰 기술의 후딜(0151): 판정이 끝나면(그 단의 실제 길이로 — 바퀴가 늘거나 길을 되돌아가면 길어진다, 0158)
+            // 회피·다른 스킬·평타로 끊는다.
+            PState::Skill { id, t: e, .. } => {
+                let d = self.skill_eff(id);
+                e >= d.skill.startup + d.active()
+            }
+            PState::Ult { done, .. } => done,
+            _ => false,
+        }
     }
 
     /// 무기를 바꾼다(0051): 콤보는 처음부터, 원거리 무기는 탄창·수류탄 가득.
@@ -1359,50 +1407,115 @@ impl World {
     }
 
     /// 주무기와 부무기를 바꿔 든다(0223). 내려놓는 무기의 탄·수류탄·장전은 남겨 두고, 드는 무기는 남겨 둔 것이 있으면 그것으로 —
-    /// 바꿔 들어 탄창을 채우는 길이 없게. 장전 시계는 내려놓은 동안 흐르지 않는다.
+    /// 바꿔 들어 탄창을 채우는 길이 없게. 장전 시계는 내려놓은 동안 흐르지 않는다 — **쇠뇌만은 등에서도 장전된다**(보조특성,
+    /// 0272 1b `SubTrait::stowed_reload`): 덜 찬 탄창으로 메면 장전이 돌기 시작하고(이미 돌고 있으면 이어서), 제 장전 시간이 지나면
+    /// 가득이다(`tick_player_clocks`). 손에 든 동안의 장전은 그대로다.
     pub fn swap_weapons(&mut self) -> Option<weapons::Id> {
         let pl = &mut self.player;
         let to = pl.sub?;
         let from = pl.weapon;
-        let keep = (pl.ranged.ammo, pl.ranged.grenades, pl.ranged.reload);
+        let mut keep = Stowed {
+            ammo: pl.ranged.ammo,
+            grenades: pl.ranged.grenades,
+            reload: pl.ranged.reload,
+            topping: false,
+            full: false,
+        };
         let load = pl.sub_load.take();
         // 스킬 칸도 무기를 따라 통째로 바뀐다(0223 V3) — 대기는 스킬마다라 그대로 흐른다.
         let sk = &mut pl.skill;
         std::mem::swap(&mut sk.worn, &mut sk.sub.0);
         std::mem::swap(&mut sk.known, &mut sk.sub.1);
         std::mem::swap(&mut sk.pick, &mut sk.sub.2);
+        if let (true, Rb::Shot { reload, .. }) = (
+            from.sub_trait().is_some_and(|s| s.stowed_reload),
+            from.def().rb,
+        ) {
+            if keep.ammo < self.mag_of(from) && keep.reload <= 0.0 {
+                keep.reload = reload;
+                keep.topping = true;
+            }
+        }
         self.set_weapon(to);
+        // 처음 드는 것(가득) · 등에서 다 장전된 것은 가득 — 앱이 새 능력치의 탄창으로 맞춘다(`swap_full`).
+        self.swap_full = load.is_none_or(|l| l.full);
         let pl = &mut self.player;
-        if let Some((ammo, grenades, reload)) = load {
-            pl.ranged.ammo = ammo;
-            pl.ranged.grenades = grenades;
-            pl.ranged.reload = reload;
+        if let Some(l) = load.filter(|l| !l.full) {
+            pl.ranged.ammo = l.ammo;
+            pl.ranged.grenades = l.grenades;
+            pl.ranged.reload = if l.topping { 0.0 } else { l.reload };
+        } else if let Some(l) = load {
+            // 가득(등에서 다 장전됨): 탄창은 `set_weapon`이 채운 그대로, 수류탄은 내려놓은 그대로.
+            pl.ranged.grenades = l.grenades;
         }
         pl.sub = Some(from);
         pl.sub_load = Some(keep);
         Some(to)
     }
 
+    /// 지금 바꾸면 교체 공격이 나가나(0272 1b): 창이 열려 있고(내 타가 닿은 직후 · 받아친 직후 — `SWAP_LINK`), 잠금이 풀렸고
+    /// (`SWAP_STRIKE_LOCK`), 땅에 서 있고, 한 타의 값을 치를 수 있다(기력 — 사격 무기는 멘 탄창에 탄도). HUD의 보조무기 그림이 같이 읽는다.
+    pub fn swap_strikes(&self) -> bool {
+        let pl = &self.player;
+        let Some(to) = pl.sub else {
+            return false;
+        };
+        if pl.swap_link <= 0.0 || pl.swap_lock > 0.0 || pl.stamina <= 0.0 || pl.air > 0.0 {
+            return false;
+        }
+        match to.entry() {
+            Some(weapons::Entry::Dash) => true,
+            // 멘 탄창(처음 드는 것이면 가득).
+            Some(weapons::Entry::Shot) => pl.sub_load.is_none_or(|l| l.full || l.ammo >= 1),
+            None => false,
+        }
+    }
+
     /// 주/부무기 바꾸기(0223 → 0261): 배치표의 바꾸기 버튼(패드 L3·키보드 X·터치의 바꾸기 버튼) 하나로. 서 있거나 막는 동안이면 바로,
     /// 다른 동작 중이면 받아 두었다가(`SWAP_BUFFER`) 서는 순간 바꾼다 — 휘두르는 끝에 누른 바꾸기가 사라지지 않게.
     /// 0223의 "패링 + 평타 = 바꾸기" 조합은 걷었다(사장 2026-11-20 "조합 할 필요 없는 듯").
-    fn weapon_swap(&mut self, a: &Actions, dt: f32, ev: &mut Vec<Event>) {
+    ///
+    /// **교체 공격(0272 1b)**: 내 타가 닿은 직후나 받아친 직후(`swap_strikes`)의 바꾸기는 들어오는 무기의 한 타와 함께 나간다 —
+    /// 이어 치기의 한 갈래라 내 공격 동작(평타 · 강공격 · 쏘기) 중이면 다음 타로 잇는 그 캔슬 시점(`cancel_ready`)에서 후딜을 끊는다
+    /// (판정 시간 · 무적은 없다, 0095 원칙 2). 그 밖의 바꾸기는 지금까지와 같다. 한 번 나가면 `SWAP_STRIKE_LOCK` 동안은 그냥 바꾼다.
+    fn weapon_swap(&mut self, a: &Actions, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
         let pl = &mut self.player;
-        pl.swap_buf = if a.swap {
-            crate::tuning::SWAP_BUFFER
-        } else {
-            (pl.swap_buf - dt).max(0.0)
-        };
-        if pl.swap_buf <= 0.0
-            || pl.sub.is_none()
-            || !matches!(pl.state, PState::Idle | PState::Block { .. })
-        {
+        pl.swap_link = (pl.swap_link - dt).max(0.0);
+        pl.swap_lock = (pl.swap_lock - dt).max(0.0);
+        pl.swap_buf = (pl.swap_buf - dt).max(0.0);
+        if a.swap {
+            // 교체 공격이 될 누름은 창이 닫힐 때까지 받아 둔다 — 느린 무기(망치)의 캔슬 시점은 맞힌 뒤 0.3초를 넘는다.
+            let link = if self.swap_strikes() {
+                self.player.swap_link
+            } else {
+                0.0
+            };
+            self.player.swap_buf = link.max(crate::tuning::SWAP_BUFFER);
+        }
+        let pl = &mut self.player;
+        if pl.swap_buf <= 0.0 || pl.sub.is_none() {
             return;
         }
+        let standing = matches!(pl.state, PState::Idle | PState::Block { .. });
+        let own_move = matches!(
+            pl.state,
+            PState::Attack { .. } | PState::Heavy { .. } | PState::Cast { .. }
+        );
+        let strike = self.swap_strikes();
+        if !(standing || (strike && own_move && self.cancel_ready(Next::Attack, t))) {
+            return;
+        }
+        let pl = &mut self.player;
         pl.swap_buf = 0.0;
         pl.state = PState::Idle;
         if let Some(to) = self.swap_weapons() {
             ev.push(Event::WeaponSwap { to });
+            if strike {
+                let pl = &mut self.player;
+                pl.entry = true;
+                pl.swap_link = 0.0;
+                pl.swap_lock = crate::tuning::SWAP_STRIKE_LOCK;
+            }
         }
     }
 
@@ -1639,6 +1752,8 @@ impl World {
                 skill1: self.held.skill1 | a.skill1,
                 skill2: self.held.skill2 | a.skill2,
                 ult: self.held.ult | a.ult,
+                // 바꾸기(0272 1b): 맞힌 순간의 멈춤 동안 누른 바꾸기가 교체 공격의 손이다 — 버리지 않는다.
+                swap: self.held.swap | a.swap,
                 ..Actions::default()
             };
             // 보간이 미끄러지지 않게 prev를 지금으로.
@@ -1661,6 +1776,7 @@ impl World {
             skill1: a.skill1 | held.skill1,
             skill2: a.skill2 | held.skill2,
             ult: a.ult | held.ult,
+            swap: a.swap | held.swap,
             ..*a
         };
         let idle = matches!(self.player.state, PState::Idle);
@@ -1673,7 +1789,7 @@ impl World {
         };
         // 무기의 버튼 길(0213 → 0223): 월드의 `attack` = 콤보·수류탄, `cast` = 마법·사격. 평타 버튼(RB)이 어느 쪽인지는 앱이
         // 넘기기 전에 맞바꾼다(`input::weapon_buttons`). 주/부무기 바꾸기는 따로 붙인 버튼(`weapon_swap`, 0261).
-        self.weapon_swap(&merged, dt, &mut ev);
+        self.weapon_swap(&merged, t, dt, &mut ev);
         let a = &merged;
         self.time += dt;
         self.player.prev = self.player.pos;

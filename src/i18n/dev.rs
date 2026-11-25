@@ -157,6 +157,11 @@ pub const ARM_NOTE: Pair = (
     "든 무기를 다음 것으로 바꾼다(검 → 망치 → 지팡이 → 쇠뇌 → 검과 방패 → 맨손 → 활). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다) — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다. 지금: {0}",
     "cycle the held weapon (sword, hammer, staff, crossbow, sword and shield, fists, bow). Skills go by weapon class (bare hands wield none): wear and enter arenas with this one. nothing is saved. now: {0}",
 );
+pub const ARM_SUB: Pair = ("보조무기 바꾸기", "change the off-hand weapon");
+pub const ARM_SUB_NOTE: Pair = (
+    "아레나의 보조무기를 다음 것으로 바꾼다(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활). 든 무기와 같으면 비워진다. 보조특성과 교체 공격(맞힌 직후·패링 직후의 무기 바꾸기)을 본다. 저장하지 않는다. 지금: {0}",
+    "cycle the arena's off-hand weapon (none, sword, hammer, staff, crossbow, bow); the same as the held weapon means none. For off-hand traits and the swap attack (swap right after a hit or a parry). nothing is saved. now: {0}",
+);
 pub const PERF_LINE: Pair = ("성능 줄 켬/끔", "perf line on/off");
 pub const PERF_LINE_NOTE: Pair = (
     "화면 아래에 fps·cpu·프레임 시간·정점 수를 띄운다(F3과 같다). 연구소의 render.resident를 0·1로 바꿔 지형 상주를 견준다.",
@@ -235,6 +240,8 @@ pub const PAIRS: &[Pair] = &[
     SKILLS_FLIP_NOTE,
     ARM,
     ARM_NOTE,
+    ARM_SUB,
+    ARM_SUB_NOTE,
     PERF_LINE,
     PERF_LINE_NOTE,
     BOARD_SLOT,

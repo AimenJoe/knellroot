@@ -53,32 +53,37 @@ pub struct Mods {
     pub ail: f32,
 }
 
+impl Mods {
+    /// 아무것도 안 바꾸는 보정 — 상수 표(종류의 보조특성 `weapons::CLASSES`)가 `..Mods::NONE`으로 쓴다.
+    pub const NONE: Mods = Mods {
+        hp: 0,
+        flask: 0,
+        heal: 0,
+        dmg: 0,
+        taken: 0,
+        atk_speed: 1.0,
+        dodge_cost: 1.0,
+        parry: 0.0,
+        kill_stamina: 0.0,
+        ember: 1.0,
+        stamina_max: 0.0,
+        stamina_regen: 1.0,
+        poise: 1.0,
+        heavy_dmg: 0,
+        light_dmg: 0,
+        opened_dmg: 0,
+        knock: 1.0,
+        flinch: 1.0,
+        shot_dmg: 0,
+        mag: 0,
+        skill_cd: 1.0,
+        ail: 1.0,
+    };
+}
+
 impl Default for Mods {
     fn default() -> Self {
-        Mods {
-            hp: 0,
-            flask: 0,
-            heal: 0,
-            dmg: 0,
-            taken: 0,
-            atk_speed: 1.0,
-            dodge_cost: 1.0,
-            parry: 0.0,
-            kill_stamina: 0.0,
-            ember: 1.0,
-            stamina_max: 0.0,
-            stamina_regen: 1.0,
-            poise: 1.0,
-            heavy_dmg: 0,
-            light_dmg: 0,
-            opened_dmg: 0,
-            knock: 1.0,
-            flinch: 1.0,
-            shot_dmg: 0,
-            mag: 0,
-            skill_cd: 1.0,
-            ail: 1.0,
-        }
+        Mods::NONE
     }
 }
 

@@ -156,12 +156,14 @@ fn the_swap_button_swaps_at_once_when_standing() {
     assert_eq!(swapped(&w.step(&press, &t)), None);
 }
 
-/// 바꿔 치기: 튕겨 낸 뒤 반격 창 안에 바꿔 들고 치면 **새 무기의** 반격(모으지 않은 다 모은 강타)이 나간다 — 바꾸기가 반격 창을 닫지 않는다.
+/// 튕겨 낸 뒤 반격 창 안에 바꿔 들고 치면 **새 무기의** 반격(모으지 않은 다 모은 강타)이 나간다 — 그냥 바꾸기는 반격 창을 닫지
+/// 않는다. 0272 1b부터 받아친 직후의 바꾸기는 교체 공격이 되므로(`swap_strike.rs`), 그냥 바꾸는 때 = 교체 공격의 잠금 동안.
 #[test]
-fn swapping_inside_the_riposte_window_ripostes_with_the_new_weapon() {
+fn a_plain_swap_inside_the_riposte_window_ripostes_with_the_new_weapon() {
     let t = Tuning::default();
     let mut w = mob_swinging_in_front(&t);
     w.set_sub(Some(Id::Hammer));
+    w.player.swap_lock = 1.0;
     let mut ev = w.step(
         &Actions {
             parry: true,
@@ -190,6 +192,7 @@ fn swapping_inside_the_riposte_window_ripostes_with_the_new_weapon() {
         &t,
     );
     assert_eq!(swapped(&ev), Some(Id::Hammer));
+    assert!(!ev.iter().any(|e| matches!(e, Event::SwapStrike { .. })));
     w.step(
         &Actions {
             attack: true,
