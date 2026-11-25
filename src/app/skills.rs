@@ -585,6 +585,29 @@ pub(super) mod geo {
     }
 }
 
+/// 판 줄의 칸에서 이름 곁에 비우는 폭(오른쪽 귀퉁이의 금빛 점 자리 — 기준 px).
+const STRIP_PAD: f32 = 12.0;
+
+/// 판 줄의 칸들(왼쪽 끝, 폭 — 기준 px): 칸마다 `need`(이름 + 표지 자리)만큼, 남는 폭은 고르게 나눈다. 다 합쳐 `total`을 넘으면
+/// 똑같이 나눈다(그때는 이름이 `fit`으로 잘린다 — 넘침 검사가 알린다).
+pub(super) fn strip_cells(need: &[f32], total: f32) -> Vec<(f32, f32)> {
+    let n = need.len().max(1) as f32;
+    let sum: f32 = need.iter().sum();
+    let mut x = 0.0;
+    need.iter()
+        .map(|&w| {
+            let cw = if sum <= total {
+                w + (total - sum) / n
+            } else {
+                total / n
+            };
+            let at = x;
+            x += cw;
+            (at, cw)
+        })
+        .collect()
+}
+
 /// 열린 줄의 안내·선이 걷히는 초(2026-11-23).
 const ROW_FADE: f32 = 0.8;
 
@@ -1578,17 +1601,23 @@ impl App {
     fn draw_plate_strip(&mut self, w: &Window, at: usize) {
         let (k, u) = (w.k, w.s);
         let (main, sub) = self.held_plates();
-        let cw = geo::GRID_W / PLATES.len() as f32;
         let tk = 0.58 * k;
+        // 칸의 폭은 이름대로(0272 — 판이 일곱이 되니 똑같이 나눈 칸에서 영어의 긴 이름 Crossbow·Hammer가 잘렸다): 이름 + 표지 자리.
+        let need: Vec<f32> = PLATES
+            .iter()
+            .map(|&p| self.ui.width(plate_name(p), tk) / u + STRIP_PAD + 2.0)
+            .collect();
+        let cells = strip_cells(&need, geo::GRID_W);
         for (i, &p) in PLATES.iter().enumerate() {
-            let r = w.rect(cw * i as f32 + 1.0, 0.0, cw - 2.0, geo::STRIP_H - 3.0);
+            let (cx, cw) = cells[i];
+            let r = w.rect(cx + 1.0, 0.0, cw - 2.0, geo::STRIP_H - 3.0);
             let shown = p == self.skill_plate;
             if shown {
                 draw_rectangle(r.x, r.y, r.w, r.h, ui::PANEL_LIGHT);
                 draw_rectangle(r.x, r.y + r.h - u, r.w, u.max(1.0), AMBER);
             }
             // 오른쪽 귀퉁이의 점(든 무기) 자리를 비운다.
-            let name = self.ui.fit(plate_name(p), r.w - u * 12.0, tk);
+            let name = self.ui.fit(plate_name(p), r.w - u * STRIP_PAD, tk);
             let ink = if shown { AMBER } else { DIM };
             self.ui.text_center(
                 &name,
@@ -2431,6 +2460,22 @@ mod tests {
     use crate::weapons::Class;
 
     const SWORD: Plate = Plate::Class(Class::Sword);
+
+    /// 0272: 판 줄의 칸은 이름의 폭대로 — 다 들어가면 칸마다 제 폭 이상이고 줄을 빈틈없이 채운다, 넘치면 똑같이 나눈다.
+    #[test]
+    fn the_plate_strip_gives_each_name_its_width_and_fills_the_row() {
+        let need = [30.0, 28.0, 30.0, 26.0, 44.0, 20.0, 28.0];
+        let cells = strip_cells(&need, 270.0);
+        let mut x = 0.0;
+        for (&(at, w), &n) in cells.iter().zip(need.iter()) {
+            assert!((at - x).abs() < 1e-3 && w >= n, "{at} {w} {n}");
+            x += w;
+        }
+        assert!((x - 270.0).abs() < 1e-3, "the row is filled: {x}");
+        let tight = strip_cells(&[80.0; 7], 270.0);
+        assert!(tight.iter().all(|&(_, w)| (w - 270.0 / 7.0).abs() < 1e-3));
+        assert!((tight[6].0 + tight[6].1 - 270.0).abs() < 1e-3);
+    }
 
     /// 0272: "쓰는 무기" 줄은 종류의 이름으로 — 한손 종류는 방패로 갈린다(방패 없이만 되면 그렇게, 방패와 함께만 되면 방패),
     /// 쇠뇌와 활은 따로, 모든 종류와 방패에 다 되면 "어느 무기나". 판의 이름도 종류 표에서 온다.

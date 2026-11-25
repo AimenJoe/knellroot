@@ -262,7 +262,7 @@ pub const EN: Strings = Strings {
     sk_kind_skill: "Skill · {0} · {1}s cooldown",
     sk_kind_ult: "Ultimate · {0}",
     sk_kind_cell: "Passive · {0}",
-    sk_kind_key: "Keystone · {0} · only one active",
+    sk_kind_key: "Keystone · {0} · one active",
     sk_st_key_on: "Active keystone",
     sk_st_key_swap: "Another keystone is active — swap for free",
     sk_st_key_view: "Swap it at a hearth",
