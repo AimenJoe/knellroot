@@ -165,32 +165,31 @@ fn both_hands_on_the_sword_turn_the_heavy_into_a_poise_breaking_downward_cut() {
     let w = bare_world(Id::Sword);
     let h = w.heavy_of().unwrap();
     assert_eq!(h.anim_heavy, "hammer_slam");
-    assert!((h.poise / plain.heavy.unwrap().poise - weapons::BARE_SWORD_HEAVY_POISE).abs() < 1e-4);
+    assert!(h.reach > plain.heavy.unwrap().reach);
     let last = (plain.combo.len() - 1) as u8;
-    assert!(w.hit_of(last).unwrap().arc > plain.hit(last).unwrap().arc * 1.5);
+    assert!(w.hit_of(last).unwrap().arc > plain.hit(last).unwrap().arc * 1.4);
     assert_eq!(
         w.hit_of(0).unwrap().arc,
         plain.hit(0).unwrap().arc,
         "only the last"
     );
     // 같은 강공격을 서 있는 잡몹에 — 슬롯이 빈 쪽이 자세를 더 깎는다.
-    let poise_after = |open: bool| {
+    let poise_after = |open: bool, boss: bool| {
         let mut w = World::new("test", 30.0);
         w.set_weapon(Id::Sword);
         w.set_open_hand(open);
         let i = mob_with(&mut w, vec3(0.0, 0.0, -1.6), 2000);
-        w.enemies[i].boss = false;
+        w.enemies[i].boss = boss;
         idle(&mut w);
         let charge = ((t[P::HeavyCharge] + 0.6) / TICK_DT) as usize;
         hold_attack(&mut w, &t, charge, 60);
         w.enemies[i].stance.poise
     };
-    assert!(
-        poise_after(true) > poise_after(false) * 1.3,
-        "{} vs {}",
-        poise_after(true),
-        poise_after(false)
-    );
+    let (mob, mob0) = (poise_after(true, false), poise_after(false, false));
+    assert!(mob > mob0 * 1.3, "{mob} vs {mob0}");
+    // 문지기의 자세 막대는 조금만(모의의 문턱).
+    let (boss, boss0) = (poise_after(true, true), poise_after(false, true));
+    assert!(boss > boss0 && boss < boss0 * 1.1, "{boss} vs {boss0}");
 }
 
 /// 0276 망치 "기도하는 손": 등잔 한 모금을 삼키는 순간 둘레에 울림이 쌓이고 밀려난다 — 회복은 그대로, 피해는 없다. 멀리 있는 적은 그대로.

@@ -146,6 +146,8 @@ struct DevState {
     board: Option<crate::skills::Board>,
     /// 놀이터의 보조무기(0272 1b — 개발 창 "보조무기 바꾸기"): 아레나에는 장비 탭이 없다. 기록에 쓰지 않는다.
     sub: Option<weapons::Id>,
+    /// 놀이터의 보조무기 슬롯을 비운다(0276 — 개발 창 "보조무기 비우기"): 멘 무기 · 방패를 내리고 빈 손의 결로 선다. 기록에 쓰지 않는다.
+    bare: bool,
 }
 
 #[cfg(feature = "dev")]
@@ -156,6 +158,7 @@ impl Default for DevState {
             run: false,
             board: None,
             sub: None,
+            bare: false,
         }
     }
 }

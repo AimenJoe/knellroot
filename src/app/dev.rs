@@ -81,6 +81,8 @@ pub(super) enum DevStart {
     Arm,
     /// 보조무기 바꾸기(0272 1b — 보조특성·교체 공격을 아레나에서 본다). 기록에 쓰지 않는다.
     ArmSub,
+    /// 보조무기 비우기(0276 — 켬/끔: 아레나의 보조무기 슬롯을 비워 빈 손의 결을 본다). 기록에 쓰지 않는다.
+    ArmBare,
     /// 성능 줄(F3과 같은 개발 줄) 켬/끔 — 키보드가 없는 기기(Android·iOS)에서 프레임 시간을 본다(0186 상주 지형 A/B).
     PerfLine,
     /// 모션 보기(2026-11-15): 이 무기(`weapons::IDS`의 자리)를 든 방랑자의 동작을 하나씩.
@@ -88,7 +90,7 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 48] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 49] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Motion, DevStart::Motion(0)),
@@ -108,6 +110,8 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 48] = [
     (DevCat::Skills, DevStart::Arm),
     // 0272 1b: 역시 끝에.
     (DevCat::Skills, DevStart::ArmSub),
+    // 0276: 역시 끝에.
+    (DevCat::Skills, DevStart::ArmBare),
     (DevCat::Stage, DevStart::Entrance),
     (DevCat::Stage, DevStart::Gate),
     (DevCat::Stage, DevStart::Village),
@@ -183,6 +187,7 @@ impl DevStart {
             DevStart::SkillsFlip => t(dv::SKILLS_FLIP),
             DevStart::Arm => t(dv::ARM),
             DevStart::ArmSub => t(dv::ARM_SUB),
+            DevStart::ArmBare => t(dv::ARM_BARE),
             DevStart::PerfLine => t(dv::PERF_LINE),
             // 이름은 무기를 채워야 해서 `App::dev_name`이 만든다 — 여기는 바탕.
             DevStart::Motion(_) => t(dv::MOTION_START),
@@ -221,6 +226,7 @@ impl DevStart {
             // 지금 든 무기({0})는 앱이 채운다.
             DevStart::Arm => t(dv::ARM_NOTE).to_string(),
             DevStart::ArmSub => t(dv::ARM_SUB_NOTE).to_string(),
+            DevStart::ArmBare => t(dv::ARM_BARE_NOTE).to_string(),
             DevStart::PerfLine => t(dv::PERF_LINE_NOTE).to_string(),
             DevStart::Motion(_) => t(dv::MOTION_NOTE).to_string(),
         }
@@ -474,6 +480,11 @@ impl App {
                 };
                 self.snd(crate::sfx::Id::Buy);
             }
+            // 놀이터의 보조무기 슬롯을 비운다 · 되돌린다(0276). 기록은 그대로.
+            DevStart::ArmBare => {
+                self.dev.bare = !self.dev.bare;
+                self.snd(crate::sfx::Id::Buy);
+            }
             DevStart::Motion(w) => self.go(Go::Open(Scene::Motions {
                 weapon: w,
                 speed: 0,
@@ -537,6 +548,14 @@ impl App {
             DevStart::ArmSub => fill(
                 &e.note(),
                 &[self.dev.sub.map_or(s().slot_empty, weapon_name)],
+            ),
+            DevStart::ArmBare => fill(
+                &e.note(),
+                &[t(if self.dev.bare {
+                    dv::ARM_BARE_ON
+                } else {
+                    dv::ARM_BARE_OFF
+                })],
             ),
             _ => e.note(),
         }

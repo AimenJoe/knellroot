@@ -1257,8 +1257,8 @@ pub struct ClassDef {
 /// 맨손은 종류가 아니라 결이 없다.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Bare {
-    /// 한손검 — 두 손으로 쥔다: 강공격이 두 손 내려베기(동작 = 망치의 내려치기, 자세 피해 × `BARE_SWORD_HEAVY_POISE`),
-    /// 평타 끝 타가 넓어진다(각 × `BARE_SWORD_LAST_ARC`).
+    /// 한손검 — 두 손으로 쥔다: 강공격(패링 반격 포함)이 두 손 내려베기(동작 = 망치의 내려치기, 자세 피해 × `BARE_SWORD_HEAVY_POISE`
+    /// — 문지기는 `BARE_SWORD_HEAVY_BOSS`), 평타 끝 타가 넓어진다(각 × `BARE_SWORD_LAST_ARC`).
     TwoHands,
     /// 망치 — 기도하는 손: 등잔 한 모금을 삼키는 순간 둘레에 울림 고리(가까운 적에 울림 게이지 + 밀림, 회복은 그대로).
     Prayer,
@@ -1276,9 +1276,12 @@ pub enum Bare {
 
 /// 빈 손의 결 값(0276 — 처음 값, 판정에서 고친다). 보스 모의(`balance::bare_hand_probe`)로 골랐다 — 어느 싸움도 같은 무기 + 가장
 /// 좋은 보조무기 조합보다 4% 넘게 빨라지지 않게(0276 "만든 것").
+/// 두 손 내려베기의 자세 피해: 잡몹 · 정예 ×1.6(밀려 넘어지는 손), 문지기 ×1.05 — 문지기의 자세 막대에는 문턱이 있다(모의: ×1.1부터
+/// 종지기와의 싸움이 5% 빨라진다 · 패링 반격도 강공격이라 보통 손의 봇에게도 든다).
 pub const BARE_SWORD_HEAVY_POISE: f32 = 1.6;
+pub const BARE_SWORD_HEAVY_BOSS: f32 = 1.05;
 pub const BARE_SWORD_HEAVY_REACH: f32 = 1.1;
-pub const BARE_SWORD_LAST_ARC: f32 = 1.8;
+pub const BARE_SWORD_LAST_ARC: f32 = 1.5;
 pub const BARE_STAFF_CHARGES: f32 = 4.0;
 pub const BARE_STAFF_CHARGE: f32 = 0.6;
 /// 활을 당긴 채 걷기(`cast.walk` 0.5에 곱한다 — 0.85): 보통은 `BOW_DRAW_WALK` 1.2(0.6).

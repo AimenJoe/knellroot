@@ -325,6 +325,7 @@ impl World {
         let (mut bound_hit, mut cracked_hit) = (false, false);
         // 0270 C3: 기절한 적(그 자리) · 피 흘리는 적 · 흡수 걸린 적.
         let (mut stunned_at, mut bled_hit, mut sipped_hit) = (None, false, false);
+        let two_hands = self.bare() == Some(weapons::Bare::TwoHands);
         // 그림자 걸음(0276 — 쌍단검의 빈 손): 회피가 끝난 뒤 첫 휘두르기는 급소로 친다(`Knack::sure`).
         let knack = Knack {
             sure: swing == self.player.off.shadow_swing
@@ -446,6 +447,14 @@ impl World {
             }
             if s.beat && opened && breaking_beat {
                 pk *= link::BREAK_POISE;
+            }
+            // 두 손 내려베기(0276 — 한손검의 빈 손): 잡몹 · 정예는 크게, 문지기는 조금(자세 막대의 문턱 — 모의).
+            if s.heavy.is_some() && two_hands {
+                pk *= if en.boss {
+                    weapons::BARE_SWORD_HEAVY_BOSS
+                } else {
+                    weapons::BARE_SWORD_HEAVY_POISE
+                };
             }
             // 무너진 틈(0107): 깨진 적에게 다 모은 강타 = 깨짐을 처음부터.
             let was_broken = en.stance.broken > 0.0;

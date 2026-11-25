@@ -1595,8 +1595,8 @@ impl World {
     /// 지금 쥔 꼴의 강공격(무기 표 + 빈 손의 결 0276 — 두 손으로 쥔 한손검은 두 손 내려베기: 망치의 내려치기 동작, 자세 피해 ↑).
     pub fn heavy_of(&self) -> Option<weapons::Heavy> {
         let mut h = self.player.weapon.def().heavy?;
+        // 자세 피해의 배는 적마다(잡몹 · 문지기) — `strike_lands`가 얹는다.
         if self.bare() == Some(weapons::Bare::TwoHands) {
-            h.poise *= weapons::BARE_SWORD_HEAVY_POISE;
             h.reach *= weapons::BARE_SWORD_HEAVY_REACH;
             h.anim_charge = "hammer_charge";
             h.anim_heavy = "hammer_slam";

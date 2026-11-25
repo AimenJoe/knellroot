@@ -358,7 +358,13 @@ impl App {
             self.world.set_sub(Some(sub));
             self.sandbox_stats();
         }
-        // 놀이터의 보조무기 슬롯(0276): 개발 창이 멘 것 · 든 방패가 없으면 빈 손.
+        // 놀이터의 보조무기 슬롯(0276): 개발 창이 멘 것 · 든 방패가 없으면 빈 손 — "보조무기 비우기"를 켜면 둘 다 내린다.
+        if self.dev.bare {
+            self.world.set_sub(None);
+            self.world.set_shield(None);
+            self.renderer.shield = None;
+            self.sandbox_stats();
+        }
         let pl = &self.world.player;
         let open = pl.sub.is_none() && pl.shield.is_none();
         self.world.set_open_hand(open);
