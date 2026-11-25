@@ -68,18 +68,21 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     // 돌림에 끼어 하나씩 밀렸다. 그 전엔 둘·셋이라 망치 대신 검을 들고 "못 쓴다"로 끼우지 못했다).
     // 끼울 칸은 이름(게임이 기술 탭의 고른 칸을 장면 이름 끝에 붙인다 — `… @Skill(Embers)`, 개발판)으로 찾는다: 자리 숫자는 판이 넓어질
     // 때마다 낡았다(0214·0215 뒤 잔불 흩기를 못 찾았다).
-    const RUNS = [['whirl', null, null, 1500, 'Q', 22], ['cut', null, null, 1100, 'E', 26], ['gather', 'Skill(Gather)', null, 900, 'Q', 26],
-      ['quake', 'Skill(Quake)', null, 1000, 'Q', 26, 3], ['brace', 'Skill(Brace)', null, 1300, 'Q', 40], ['echo', 'Skill(Echo)', null, 1300, 'Q', 16, 4],
-      ['throw', 'Skill(Throw)', null, 900, 'Q', 30], ['embers', 'Skill(Embers)', null, 1300, 'Q', 50, 4],
-      ['upend', null, null, 1500, 'ult', 30], ['flurry', null, 'Ult(Flurry)', 1300, 'ult', 14], ['line', null, 'Ult(Line)', 900, 'ult', 30],
-      // 0270 C3: 무기 판의 새 스킬 여덟·큰 기술 둘. "든 무기 바꾸기" 수: 1 활 · 2 검 · 3 망치 · 4 지팡이 · 5 쇠뇌 · 6 검과 방패(맨손 = 결투).
-      ['stitch', 'Skill(Stitch)', null, 900, 'Q', 30], ['ram', 'Skill(Ram)', null, 900, 'Q', 34, 6], ['toll', 'Skill(Toll)', null, 900, 'Q', 80, 3],
+    // 0272: 맨손은 무기 판의 스킬을 쓰지 못한다(새 판은 맨손) — 한손검의 스킬도 검을 든다(둘). 쇠뇌 판·활 판의 새 스킬 둘·큰 기술 하나.
+    const RUNS = [['whirl', null, null, 1500, 'Q', 22, 2], ['cut', null, null, 1100, 'E', 26, 2], ['gather', 'Skill(Gather)', null, 900, 'Q', 26, 2],
+      ['quake', 'Skill(Quake)', null, 1000, 'Q', 26, 3], ['brace', 'Skill(Brace)', null, 1300, 'Q', 40, 2], ['echo', 'Skill(Echo)', null, 1300, 'Q', 16, 4],
+      ['throw', 'Skill(Throw)', null, 900, 'Q', 30, 2], ['embers', 'Skill(Embers)', null, 1300, 'Q', 50, 4],
+      ['upend', null, null, 1500, 'ult', 30, 2], ['flurry', null, 'Ult(Flurry)', 1300, 'ult', 14, 2], ['line', null, 'Ult(Line)', 900, 'ult', 30, 2],
+      // 0270 C3: 무기 판의 새 스킬 여덟·큰 기술 둘. "든 무기 바꾸기" 수: 1 활 · 2 검 · 3 망치 · 4 지팡이 · 5 쇠뇌 · 6 검과 방패.
+      ['stitch', 'Skill(Stitch)', null, 900, 'Q', 30, 2], ['ram', 'Skill(Ram)', null, 900, 'Q', 34, 6], ['toll', 'Skill(Toll)', null, 900, 'Q', 80, 3],
       ['swat', 'Skill(Swat)', null, 1000, 'Q', 30, 3], ['ripple', 'Skill(Ripple)', null, 1000, 'Q', 44, 3],
       ['snow', 'Skill(Snow)', null, 1100, 'Q', 90, 4], ['flare', 'Skill(Flare)', null, 1000, 'Q', 34, 4], ['snare', 'Skill(Snare)', null, 500, 'Q', 120, 1],
-      ['bell', null, 'Ult(Bell)', 1300, 'ult', 44, 6], ['blizzard', null, 'Ult(Blizzard)', 1300, 'ult', 90, 6]];
+      ['bell', null, 'Ult(Bell)', 1300, 'ult', 44, 6], ['blizzard', null, 'Ult(Blizzard)', 1300, 'ult', 90, 6],
+      // 0272: 쇠뇌 판의 충격 갈래 둘(쇠뇌 = 다섯) · 활 판의 큰 기술(활 = 하나).
+      ['fuse', 'Skill(Fuse)', null, 900, 'Q', 90, 5], ['mine', 'Skill(Mine)', null, 500, 'Q', 120, 5], ['rain', null, 'Ult(Rain)', 1300, 'ult', 120, 1]];
     const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await p.waitForTimeout(90); } };
     // 이름으로 칸 찾기(0270 C2 — 판 하나씩): 판 줄로 올라가(위를 넉넉히 — `@Strip`) ↓ = 보이는 판(든 무기의 판)의 맨 윗줄 → 줄마다 왼쪽 끝 →
-    // 오른쪽으로 훑으며 장면 이름 끝의 `@칸`을 본다. 없으면 무기 판을 결투부터 차례로(판 줄에서 → — 몸의 판에는 스킬이 없다).
+    // 오른쪽으로 훑으며 장면 이름 끝의 `@칸`을 본다. 없으면 무기 판을 한손검부터 차례로(판 줄에서 → — 공통 판에는 스킬이 없다).
     // 찾으면 확인(목록) → 확인(첫 줄 "칸 1에 끼우기", 큰 기술은 "끼우기"). 못 찾으면 실패(조용히 지나가 끼우지 않은 채 찍지 않게).
     const at = (p) => p.evaluate(() => window.knellScene || '');
     const wear = async (p, target) => {
@@ -95,8 +98,8 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       };
       await pick(p, 12, 'ArrowUp');
       let found = await scan();
-      for (let plate = 1; plate < 6 && !found; plate++) {
-        await pick(p, 12, 'ArrowUp'); await pick(p, 6, 'ArrowLeft'); await pick(p, plate);
+      for (let plate = 1; plate < 7 && !found; plate++) {
+        await pick(p, 12, 'ArrowUp'); await pick(p, 7, 'ArrowLeft'); await pick(p, plate);
         found = await scan();
       }
       if (!found) throw new Error(`기술 판에서 ${target} 칸을 못 찾았다 — 지금 ${await at(p)}`);

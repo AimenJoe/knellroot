@@ -613,7 +613,7 @@ impl App {
                 } => SHAKE_HIT,
                 Event::Skill { .. } | Event::SkillBurst { .. } => SHAKE_PLUNGE,
                 Event::Ult { .. } | Event::LineCut { .. } | Event::GreatBell { .. } => SHAKE_ROUSE,
-                Event::Blizzard { .. } => SHAKE_PLUNGE,
+                Event::Blizzard { .. } | Event::ArrowRain { .. } => SHAKE_PLUNGE,
                 // 0158 G2: 터지는 것은 내려찍기만큼, 받아냄·울림·되돎은 가볍게, 불티의 타·손에 돌아옴·몰아치기의 시작은 조용히.
                 Event::ThrowBoom { .. } => SHAKE_PLUNGE,
                 Event::Soak { .. } | Event::EchoRing { .. } | Event::Interrupt { .. } => SHAKE_HIT,
@@ -1273,7 +1273,10 @@ impl App {
                         | Sk::Toll
                         | Sk::Swat
                         | Sk::Ripple
-                        | Sk::Snare => Id::Swing,
+                        | Sk::Snare
+                        | Sk::Mine => Id::Swing,
+                        // 0272: 심지 볼트 = 잔불 소리(심지에 불이 붙는다).
+                        Sk::Fuse => Id::Ember,
                     }
                 }
                 Event::Skill { id, .. } => {
@@ -1299,6 +1302,9 @@ impl App {
                         Sk::Snow => Id::Beat3,
                         Sk::Flare => Id::Ember,
                         Sk::Snare => Id::Thwack,
+                        // 0272: 심지 볼트(쏘는 순간) = 스치는 바람, 화약 덫(묻음) = 둔한 소리 — 터짐은 `Boom`이 낸다.
+                        Sk::Fuse => Id::Dodge,
+                        Sk::Mine => Id::Thwack,
                     }
                 }
                 Event::SkillDenied => Id::Deny,
@@ -1314,6 +1320,8 @@ impl App {
                 // 0270 C3: 큰 종 = 낮은 종, 눈보라 = 가장 높은 종.
                 Event::GreatBell { .. } => Id::Beat,
                 Event::Blizzard { .. } => Id::Beat3,
+                // 0272: 화살비 = 스치는 바람(시위를 떠난 화살들) — 내리는 타는 `FieldPulse`의 뿌리 소리.
+                Event::ArrowRain { .. } => Id::Dodge,
                 Event::ThrowBack { .. } => Id::Beat,
                 // 0270 C3: 눈발 = 높은 종, 뿌리 덫 = 뿌리가 깨는 소리.
                 Event::FieldPulse { kind, .. } => match kind {

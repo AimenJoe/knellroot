@@ -83,6 +83,8 @@ SKILL_FACE = {
     "sk_ripple": ((0.25, 0.30, 0.35), "hips"), "sk_snow": ((0.25, 0.0, 0.30), "hips"),
     "sk_flare": ((0.20, 0.0, 0.30), "hips"), "sk_snare": ((0.18, 0.0, 0.25), "hips"),
     "ult_bell": ((0.30, 0.15, 0.45), "hips"), "ult_blizzard": ((0.30, 0.20, 0.40), "hips"),
+    # 0272: 쇠뇌 판의 둘(화살비는 겨누는 동작 — `AIM_KEYS`).
+    "sk_fuse": ((0.20, 0.0, 0.30), "hips"), "sk_mine": ((0.18, 0.0, 0.25), "hips"),
     "throw": ((0.2, 0.0, 0.3), "hips"),  # 0204: 수류탄이 손을 떠나는 순간 몸이 정면(원본 M16은 몸 왼쪽으로 휘둘러 던진다)
     "parry": ((0.08, 0.22, 0.0), "hold"),  # 기술은 아니지만 같은 장치 — 막는 동안 몸이 정면(원본 M15는 들며 옆으로 비튼다)
     "block": ((0.0, 0.2, 0.0), "hold"),  # 방패 막기(0223) — 내내 정면
@@ -113,10 +115,13 @@ FLAT = {"jump", "land"}
 AIM = {"bow_draw": 0.7, "bow_shoot": 0.0}  # 0204: 쇠뇌는 활쏘기 대신 두 손을 앞으로 내민 시전 자세(`XBOW_FWD`) — 활쏘기는 몸이 옆으로 섰다(사장)
 # 0231: 활은 활쏘기 원본 그대로 — 옆으로 서서 왼손을 과녁 쪽으로 뻗는 것이 활이다. 활은 왼손의 `bow` 뼈에(`bow_pass`).
 # 활대는 늘 하늘로 서고, 화살(활의 −y)은 겨누는 동작(`BOW_AIM`)에서는 겨누는 줄(오른손 → 왼손), 그 밖에서는 몸 앞.
-BOW_AIM = {"bow_draw", "bow_shoot"}
+BOW_AIM = {"bow_draw", "bow_shoot", "ult_rain"}
+# 서기에서 겨눴다 서기로 돌아오는 동작(0272 — 큰 기술 화살비): [(초, 몫)] — 몫 0 = 엉덩이가 정면(서기), 1 = 겨누는 줄(오른손 → 활을 든
+# 왼손)이 정면. 기술 동작은 정면에서 시작해 정면으로 끝나야 한다(누르는 순간·끝날 때 몸이 홱 돌지 않게 — `AIM`은 겨눈 채 끝난다).
+AIM_KEYS = {"ult_rain": [(0.0, 0.0), (0.25, 1.0), (0.70, 1.0), (0.95, 0.0)]}
 # 앞으로 겨누기(0204, 쇠뇌): 원본은 두 손을 어깨 높이로 앞에 내민 시전(mage_soell_cast_8) — 몸이 정면을 본다. 쇠뇌는 몸 앞(−Y)을
 # 가리키고 날개는 가로(쉬는 자세의 쇠뇌 그대로 — 0196의 겨누기는 날개 축을 하늘로 세워 "쇠뇌를 세로로 든다").
-XBOW_FWD = {"xbow_charge", "xbow_shoot"}
+XBOW_FWD = {"xbow_charge", "xbow_shoot", "sk_fuse"}
 # 겨눈 자세에서 나갔다 돌아오는 동작(0205): [(초, 몫)] — 몫 1 = `XBOW_FWD`의 방향, 0 = 팔을 따라(어깨 → 주먹). 토스는 처음·끝이 겨눈 자세다.
 XBOW_BLEND = {"throw": [(0.0, 1.0), (0.06, 0.0), (0.38, 0.0), (0.5, 1.0)]}
 # 두 손 쥠(0202, 지팡이 — 원본 M08·M09는 두 손으로 쥔 지팡이 동작): 무기는 오른손 뼈에만 달려 있어 어깨 → 주먹 규칙으로 두면
@@ -274,6 +279,11 @@ CLIPS = [
     # 큰 기술 둘(0270 C3): 큰 종 = 땅 내리찍기, 눈보라 = 도끼 모아 들었다 내리기.
     ("ult_bell", "Charged_Ground_Slam", ("anchors", [(0.0, 4), (0.30, 34), (0.45, 40), (0.90, 62)])),
     ("ult_blizzard", "Charged_Axe_Chop", ("anchors", [(0.0, 74), (0.30, 93), (0.50, 103), (0.90, 124)])),
+    # 0272 쇠뇌 판의 둘(있는 원본에서 — 0 크레딧): 심지 볼트 = 쇠뇌 사격의 시전 자세(두 손을 앞으로 — 0.20초에 쏜다), 화약 덫 = 몸을 숙여
+    # 묻는다(뿌리 덫과 같은 원본). 활 판의 큰 기술 화살비 = 활쏘기(당겨 머물다 0.55초에 놓는다 — 세계가 멈춘 동안 당긴다).
+    ("sk_fuse", "mage_soell_cast_8", ("anchors", [(0.0, 28), (0.20, 26), (0.30, 8), (0.50, 22)])),
+    ("sk_mine", "Collect_Object", ("anchors", [(0.0, 11), (0.18, 29), (0.43, 50)])),
+    ("ult_rain", "Archery_Shot", ("anchors", [(0.0, 40), (0.30, 70), (0.50, 72), (0.55, 92), (0.65, 97), (0.95, 80)])),
 ]
 LOOPS = {"idle", "walk", "run", "walk_back"}
 
@@ -1263,6 +1273,22 @@ def aim_yaw(hand):
     return math.atan2(v.x, -v.y)
 
 
+def face_aim_keys(arm, name, poses, hands, keys):
+    """`AIM_KEYS`(0272): 프레임마다 엉덩이 정면(몫 0)과 겨누는 줄 정면(몫 1) 사이 — 서기에서 겨눴다 서기로 돌아온다."""
+    n = len(poses) - 1
+    own = [own_yaw(arm, p) for p in poses]
+    for k in range(1, n + 1):
+        own[k] = near(own[k], own[k - 1])
+    turns = []
+    for k in range(n + 1):
+        g = keyed(keys, k / OUT_FPS)
+        front = -own[k]
+        aim = near(-aim_yaw(hands[k]), front)
+        turns.append(front + (aim - front) * smooth01(g))
+    turn_body(arm, poses, turns)
+    print(f"[skin] face {name}: aim keys (turned {math.degrees(min(turns)):+.0f}..{math.degrees(max(turns)):+.0f}°)")
+
+
 def face_aim(arm, name, poses, hands, ramp):
     """`AIM`: 겨누는 줄이 정면을 보게 몸을 돌린다 — `ramp` 몫 동안 서기(엉덩이 정면)에서 옮겨 간다."""
     n = len(poses) - 1
@@ -1654,6 +1680,8 @@ def make_actions(arm, body):
             face_still(arm, name, poses)
         if name in AIM:
             face_aim(arm, name, poses, hands, AIM[name])
+        if name in AIM_KEYS:
+            face_aim_keys(arm, name, poses, hands, AIM_KEYS[name])
         if name in BOW_AIM:
             look_ahead(arm, name, poses)
         if name in HEAD_LIFT:

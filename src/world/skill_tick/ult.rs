@@ -21,6 +21,11 @@ impl World {
                 self.player.facing = d.x.atan2(d.z);
             }
         }
+        if kind == skills::Ult::Rain {
+            let (dir, dist) = self.rain_aim(cx);
+            self.player.facing = dir.x.atan2(dir.z);
+            self.player.skill.rain_at = self.place_ahead(self.player.pos, dir, dist);
+        }
         let pl = &mut self.player;
         pl.skill.gauge = 0.0;
         pl.state = PState::Ult {
@@ -51,6 +56,7 @@ impl World {
                 skills::Ult::Line => self.line_cut(cx.t),
                 skills::Ult::Bell => self.great_bell(cx.t),
                 skills::Ult::Blizzard => self.blizzard(),
+                skills::Ult::Rain => self.arrow_rain(),
             }
         }
         self.player.state = if e1 >= startup + recover {
@@ -190,6 +196,59 @@ impl World {
         self.skill_ev.push(Event::Blizzard {
             at: p,
             radius: b.radius,
+        });
+    }
+
+    /// 화살비(0272)를 내릴 쪽과 거리: 조준(그 쪽 `ahead` m) > 락온한 적의 자리 > 닿는 거리의 가장 가까운 적의 자리 >
+    /// 바라보는 쪽 `ahead` m. 적의 자리는 닿는 거리(`ahead` + 둘레)까지만 — 벽 너머로는 놓지 않는다(`place_ahead`).
+    fn rain_aim(&self, cx: &Ctx) -> (Vec3, f32) {
+        let r = &skills::RAIN;
+        let pl = &self.player;
+        let reach = r.ahead + r.radius;
+        let flat = |p: Vec3| vec3(p.x - pl.pos.x, 0.0, p.z - pl.pos.z);
+        if let Some(d) = cx.aim {
+            return (d, r.ahead);
+        }
+        let near = self
+            .enemies
+            .iter()
+            .filter(|e| e.active())
+            .map(|e| flat(e.pos))
+            .filter(|v| v.length() <= reach)
+            .min_by(|a, b| a.length().total_cmp(&b.length()));
+        match cx.target.map(flat).or(near) {
+            Some(v) if v.length() > 0.5 => (v.normalize(), v.length().min(reach)),
+            _ => (pl.facing_dir(), r.ahead),
+        }
+    }
+
+    /// 화살비(0272): 정해 둔 자리에 화살이 내린다 — 치는 것은 놓인 마당(`tick_fields` — 눈보라와 같은 길, 몸을 따르지 않는다).
+    /// 화살마다 뿌리가 쌓여 그 안의 떼가 묶인다(보스는 느려지기만 — 타입의 규칙 그대로, 휘청은 없다).
+    pub(super) fn arrow_rain(&mut self) {
+        let r = &skills::RAIN;
+        let rank = self.player.skill.ult_rank;
+        let at = self.player.skill.rain_at;
+        self.skill_fields.push(Field {
+            pos: at,
+            radius: r.radius,
+            age: 0.0,
+            secs: r.secs_at(rank),
+            every: r.every,
+            pulses: 0,
+            damage: r.damage_at(rank),
+            poise: 0.0,
+            dose: self.dosed((crate::status::Kind::Root, r.build)),
+            follow: false,
+            kindle: 0,
+            drift: Vec3::ZERO,
+            trap: false,
+            spire: None,
+        });
+        self.skill_kill_left = ULT_KILL_WINDOW;
+        self.skill_ev.push(Event::ArrowRain {
+            from: self.player.pos,
+            at,
+            radius: r.radius,
         });
     }
 

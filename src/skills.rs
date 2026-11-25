@@ -21,33 +21,36 @@
 use crate::progression::{Branch, Cell, Key, Link, Tree, Vein, DEPTH, KEYS, LINKS, VEINS};
 use crate::status::{Dose, Kind};
 use crate::tuning::{HP_UNIT, ULT_SLAM_DAMAGE};
+use crate::weapons::{Class, Grip};
 
-/// 손에 쥔 꼴의 모음(0223 V3 → 0225 — 스킬이 "무엇을 들었을 때 되나"): 비트의 합. 한손은 방패로 갈리고(결투 · 방패),
-/// 양손은 무기로 갈린다(망치 · 지팡이).
-pub type Hands = u8;
-/// 한손 무기, 방패 없이(결투 기술).
-pub const DUEL: Hands = 1;
-/// 망치.
-pub const HEAVY: Hands = 2;
-pub const RANGED: Hands = 4;
-/// 한손 무기와 방패(방패 기술).
-pub const SHIELD: Hands = 8;
-/// 지팡이.
-pub const FOCUS: Hands = 16;
-pub const ONE: Hands = DUEL | SHIELD;
-pub const TWO: Hands = HEAVY | FOCUS;
+/// 스킬이 "무엇을 들었을 때 되나"(0223 V3 → 0225 → 0272): 비트의 합 — 무기 종류마다 하나(`class_bit`)와 방패(`SHIELD` — 한손 계열과
+/// 방패를 함께 든 꼴). 한손 종류의 비트는 "방패 없이"다: 방패를 들면 방패 판의 기술만 쓴다.
+pub type Hands = u16;
+/// 종류 하나의 비트(`Class::index`의 자리 — 새 종류는 표에 한 줄이면 비트가 생긴다).
+pub const fn class_bit(c: Class) -> Hands {
+    1 << c.index()
+}
+/// 한손검, 방패 없이.
+pub const SWORD: Hands = class_bit(Class::Sword);
+pub const HAMMER: Hands = class_bit(Class::Hammer);
+pub const STAFF: Hands = class_bit(Class::Staff);
+pub const CROSSBOW: Hands = class_bit(Class::Crossbow);
+pub const BOW: Hands = class_bit(Class::Bow);
+/// 한손 계열과 방패(방패 판의 기술).
+pub const SHIELD: Hands = 1 << 15;
+/// 묶음: 한손(방패가 있든 없든) · 양손 근접 · 근접 · 원거리 · 어느 것이나.
+pub const ONE: Hands = SWORD | SHIELD;
+pub const TWO: Hands = HAMMER | STAFF;
 pub const MELEE: Hands = ONE | TWO;
-pub const ANY: Hands = ONE | TWO | RANGED;
+pub const RANGED: Hands = CROSSBOW | BOW;
+pub const ANY: Hands = MELEE | RANGED;
 
-/// 쥔 꼴 하나의 비트.
-pub const fn grip_bit(g: crate::weapons::Grip) -> Hands {
-    use crate::weapons::Grip;
+/// 쥔 꼴 하나의 비트 — 맨손은 어느 무기 판의 기술도 쓰지 못한다(0272: 무기 판이 없다).
+pub const fn grip_bit(g: Grip) -> Hands {
     match g {
-        Grip::Duel => DUEL,
+        Grip::Bare => 0,
+        Grip::Class(c) => class_bit(c),
         Grip::Shield => SHIELD,
-        Grip::Heavy => HEAVY,
-        Grip::Focus => FOCUS,
-        Grip::Ranged => RANGED,
     }
 }
 
@@ -271,12 +274,16 @@ pub enum Id {
     Snow,
     /// 불길(0270 C3 — 지팡이·잔불): 앞으로 내뿜는 불.
     Flare,
-    /// 뿌리 덫(0270 C3 — 원거리·뿌리): 심어 두는 씨.
+    /// 뿌리 덫(0270 C3 — 활·뿌리): 심어 두는 씨.
     Snare,
+    /// 심지 볼트(0272 — 쇠뇌·충격): 한 적에게 박아 곧 터뜨린다.
+    Fuse,
+    /// 화약 덫(0272 — 쇠뇌·충격): 묻어 두는 화약.
+    Mine,
 }
 
 /// 표 순서(대기 칸 `Player::skill_cd`의 자리 — 뒤에만 붙인다).
-pub const IDS: [Id; 19] = [
+pub const IDS: [Id; 21] = [
     Id::Whirl,
     Id::Cut,
     Id::Gather,
@@ -296,6 +303,8 @@ pub const IDS: [Id; 19] = [
     Id::Snow,
     Id::Flare,
     Id::Snare,
+    Id::Fuse,
+    Id::Mine,
 ];
 pub const N: usize = IDS.len();
 
@@ -327,8 +336,9 @@ pub struct Skill {
     pub clip: Clip,
     /// 판의 줄(0158 라): 쓴 점수 합이 `ROW_NEEDS[row]`에 닿아야 살 수 있다.
     pub row: u8,
-    /// 쓸 수 있는 쥔 꼴(0223 V3 → 0225 — `DUEL`·`SHIELD`·`HEAVY`·`FOCUS`·`RANGED`의 합): 맞지 않는 것을 들면 그 칸은 빈 칸이다.
-    /// 결투 기술 = `DUEL`만 · 방패 기술 = `SHIELD`만.
+    /// 쓸 수 있는 쥔 꼴(0223 V3 → 0225 → 0272 — 종류의 비트 `SWORD`·`HAMMER`·`STAFF`·`CROSSBOW`·`BOW`와 `SHIELD`의 합): 맞지 않는
+    /// 것을 들면 그 칸은 빈 칸이다. 이 비트가 곧 그 스킬이 서는 판이다(`plates::Plate::seats`). 한손검만의 기술 = `SWORD`(방패 없이) ·
+    /// 방패 판의 기술 = `SHIELD`.
     pub hands: Hands,
     /// 타입(0223 V2)과 한 타가 쌓는 게이지(보통 적의 1 가운데 몫 — 물리는 0). 단·고르기는 이 값을 바꾸지 않는다.
     /// 한 번 쓰면 보통 적은 걸리게(한 타짜리 = 1, 여러 타짜리는 나눠서) — 덜 쌓이는 적(엘리트·보스·버티는 종)은 두 번.
@@ -523,7 +533,7 @@ impl Eff {
 
 impl Skill {
     /// 그 갈래의 무기로 쓸 수 있나(0223 V3).
-    pub fn fits(&self, g: crate::weapons::Grip) -> bool {
+    pub fn fits(&self, g: Grip) -> bool {
         self.hands & grip_bit(g) != 0
     }
 
@@ -830,7 +840,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.15, 0.22, 0.30],
         },
         row: 0,
-        hands: ONE | HEAVY,
+        hands: ONE | HAMMER,
         kind: Kind::Physical,
         build: 0.0,
         branch: Branch::Beat,
@@ -856,7 +866,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.12, 0.20, 0.25],
         },
         row: 0,
-        hands: DUEL,
+        hands: SWORD,
         kind: Kind::Rift,
         build: 1.0,
         branch: Branch::Beat,
@@ -918,7 +928,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.30, 0.0, 0.40],
         },
         row: 1,
-        hands: HEAVY,
+        hands: HAMMER,
         kind: Kind::Shock,
         build: 1.0,
         branch: Branch::Beat,
@@ -982,7 +992,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.0, 0.20],
         },
         row: 1,
-        hands: SHIELD | FOCUS | RANGED,
+        hands: SHIELD | STAFF | RANGED,
         kind: Kind::Knell,
         build: 1.0,
         branch: Branch::Riposte,
@@ -1008,7 +1018,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.18, 0.10, 0.25],
         },
         row: 1,
-        hands: DUEL | HEAVY,
+        hands: SWORD | HAMMER,
         kind: Kind::Rift,
         build: 0.5,
         branch: Branch::Footing,
@@ -1042,7 +1052,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.0, 0.30],
         },
         row: 1,
-        hands: FOCUS | RANGED,
+        hands: STAFF | CROSSBOW,
         kind: Kind::Ember,
         build: 0.5,
         branch: Branch::Footing,
@@ -1072,7 +1082,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.12, 0.45, 0.25],
         },
         row: 3,
-        hands: DUEL,
+        hands: SWORD,
         kind: Kind::Sharp,
         build: 0.4,
         branch: Branch::Beat,
@@ -1134,7 +1144,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.30, 0.35],
         },
         row: 3,
-        hands: FOCUS | RANGED,
+        hands: STAFF | BOW,
         kind: Kind::Root,
         build: 1.0,
         branch: Branch::Footing,
@@ -1164,7 +1174,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.10, 0.20, 0.25],
         },
         row: 0,
-        hands: DUEL,
+        hands: SWORD,
         kind: Kind::Sharp,
         build: 0.45,
         branch: Branch::Beat,
@@ -1220,7 +1230,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.20, 0.0, 0.30],
         },
         row: 0,
-        hands: SHIELD | HEAVY,
+        hands: SHIELD | HAMMER,
         kind: Kind::Knell,
         build: 0.5,
         branch: Branch::Riposte,
@@ -1246,7 +1256,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.22, 0.0, 0.35],
         },
         row: 0,
-        hands: HEAVY,
+        hands: HAMMER,
         kind: Kind::Shock,
         build: 1.0,
         branch: Branch::Beat,
@@ -1275,7 +1285,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.30, 0.35],
         },
         row: 1,
-        hands: HEAVY,
+        hands: HAMMER,
         kind: Kind::Knell,
         build: 1.0,
         branch: Branch::Riposte,
@@ -1307,7 +1317,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.0, 0.30],
         },
         row: 1,
-        hands: FOCUS | RANGED,
+        hands: STAFF | BOW,
         kind: Kind::Frost,
         build: 0.4,
         branch: Branch::Footing,
@@ -1336,7 +1346,7 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.20, 0.0, 0.30],
         },
         row: 0,
-        hands: FOCUS,
+        hands: STAFF | CROSSBOW,
         kind: Kind::Ember,
         build: 1.0,
         branch: Branch::Footing,
@@ -1364,13 +1374,68 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.18, 0.0, 0.25],
         },
         row: 0,
-        hands: RANGED,
+        hands: BOW,
         kind: Kind::Root,
         build: 1.0,
         branch: Branch::Footing,
         picks: [Twist::Twin, Twist::Big { mult: 1.5 }],
         cap: Cap::Spire {
             radius: 2.5,
+            damage: 2 * HP_UNIT,
+        },
+    },
+    // 심지 볼트(0272 — 쇠뇌 판의 충격 갈래, 첫 줄): 종 치기의 꼴(`Form::Bell`)을 멀리서 — 볼트를 박고 곧 터뜨린다.
+    Skill {
+        id: Id::Fuse,
+        cooldown: 8.0,
+        startup: 0.20,
+        recover: 0.30,
+        damage: HP_UNIT,
+        poise: 2.0,
+        form: Form::Bell {
+            range: 9.0,
+            delay: 0.8,
+            radius: 2.5,
+        },
+        anim: "xbow_shoot",
+        clip: Clip {
+            name: "sk_fuse",
+            seg: [0.20, 0.0, 0.30],
+        },
+        row: 0,
+        hands: CROSSBOW,
+        kind: Kind::Shock,
+        build: 0.5,
+        branch: Branch::Footing,
+        picks: [Twist::Twice, Twist::Loud { mult: 1.5 }],
+        cap: Cap::Toll { damage: HP_UNIT },
+    },
+    // 화약 덫(0272 — 쇠뇌 판의 충격 갈래, 둘째 줄): 뿌리 덫의 꼴(`Form::Trap`)에 화약 — 밟으면 터진다.
+    Skill {
+        id: Id::Mine,
+        cooldown: 10.0,
+        startup: 0.18,
+        recover: 0.25,
+        damage: 2 * HP_UNIT,
+        poise: 3.0,
+        form: Form::Trap {
+            ahead: 4.0,
+            radius: 2.2,
+            secs: 8.0,
+        },
+        anim: "throw",
+        clip: Clip {
+            name: "sk_mine",
+            seg: [0.18, 0.0, 0.25],
+        },
+        row: 1,
+        hands: CROSSBOW,
+        kind: Kind::Shock,
+        build: 1.0,
+        branch: Branch::Footing,
+        picks: [Twist::Twin, Twist::Big { mult: 1.5 }],
+        cap: Cap::Spire {
+            radius: 3.0,
             damage: 2 * HP_UNIT,
         },
     },
@@ -1406,6 +1471,8 @@ impl Id {
             Id::Snow => "snow",
             Id::Flare => "flare",
             Id::Snare => "snare",
+            Id::Fuse => "fuse",
+            Id::Mine => "mine",
         }
     }
 
@@ -1435,10 +1502,19 @@ pub enum Ult {
     Bell,
     /// 눈보라(0270 C3 — 지팡이 판): 몸을 따라 도는 큰 눈보라 — 둘레의 떼를 거듭 치며 얼린다.
     Blizzard,
+    /// 화살비(0272 — 활 판): 겨눈 자리에 화살을 쏟아붓는다 — 그 둘레의 떼를 거듭 꿰고 묶는다.
+    Rain,
 }
 
 /// 큰 기술의 표 순서(판의 단 `Board::ult`의 자리 — 뒤에만 붙인다).
-pub const ULTS: [Ult; 5] = [Ult::Upend, Ult::Flurry, Ult::Line, Ult::Bell, Ult::Blizzard];
+pub const ULTS: [Ult; 6] = [
+    Ult::Upend,
+    Ult::Flurry,
+    Ult::Line,
+    Ult::Bell,
+    Ult::Blizzard,
+    Ult::Rain,
+];
 pub const NU: usize = ULTS.len();
 
 /// 큰 기술을 판에서 배우는 값(기술 점수 — 그 뒤 단마다 1).
@@ -1459,6 +1535,7 @@ impl Ult {
             Ult::Line => "line",
             Ult::Bell => "bell",
             Ult::Blizzard => "blizzard",
+            Ult::Rain => "rain",
         }
     }
 
@@ -1469,7 +1546,7 @@ impl Ult {
     /// 판의 갈래(0161 "갈래와 줄"): 몰아치기 = 흐름, 한 줄기 = 맞받기, 쟁반 뒤집기 = 자리.
     pub fn branch(self) -> Branch {
         match self {
-            Ult::Upend | Ult::Blizzard => Branch::Footing,
+            Ult::Upend | Ult::Blizzard | Ult::Rain => Branch::Footing,
             Ult::Flurry => Branch::Beat,
             Ult::Line | Ult::Bell => Branch::Riposte,
         }
@@ -1483,6 +1560,7 @@ impl Ult {
             Ult::Line => LINE.anim,
             Ult::Bell => BELL.anim,
             Ult::Blizzard => BLIZZARD.anim,
+            Ult::Rain => RAIN.anim,
         }
     }
 
@@ -1493,6 +1571,7 @@ impl Ult {
             Ult::Line => LINE.clip,
             Ult::Bell => BELL.clip,
             Ult::Blizzard => BLIZZARD.clip,
+            Ult::Rain => RAIN.clip,
         }
     }
 
@@ -1504,6 +1583,7 @@ impl Ult {
             Ult::Line => (LINE.freeze, LINE.startup, LINE.recover),
             Ult::Bell => (BELL.freeze, BELL.startup, BELL.recover),
             Ult::Blizzard => (BLIZZARD.freeze, BLIZZARD.startup, BLIZZARD.recover),
+            Ult::Rain => (RAIN.freeze, RAIN.startup, RAIN.recover),
         }
     }
 
@@ -1767,6 +1847,62 @@ impl Blizzard {
     }
 }
 
+/// 큰 기술 "화살비"(0272 — 활 판): 시동 뒤 겨눈 쪽 `ahead` m 앞(락온·가까운 적이 그 안이면 그 적의 자리)에 둘레 `radius` m의
+/// 화살비가 `secs`초 내린다 — `every`초마다 그 안의 적을 피해 `damage`로 꿰고 뿌리를 `build`만큼 쌓는다(눈보라와 같은 길 — 놓인
+/// 마당이라 몸을 따르지 않는다: 멀리 놓고 물러서는 활의 큰 기술). 2단 = `secs2`초, 3단 = 피해 `damage3`.
+pub struct Rain {
+    pub freeze: f32,
+    pub startup: f32,
+    pub recover: f32,
+    pub ahead: f32,
+    pub radius: f32,
+    pub secs: f32,
+    pub secs2: f32,
+    pub every: f32,
+    pub damage: i32,
+    pub damage3: i32,
+    pub build: f32,
+    pub anim: &'static str,
+    pub clip: Clip,
+}
+
+pub const RAIN: Rain = Rain {
+    freeze: 0.3,
+    startup: 0.25,
+    recover: 0.40,
+    ahead: 7.0,
+    radius: 4.5,
+    secs: 3.2,
+    secs2: 4.4,
+    every: 0.4,
+    damage: HP_UNIT,
+    damage3: 2 * HP_UNIT,
+    build: 0.35,
+    anim: "bow_shoot",
+    clip: Clip {
+        name: "ult_rain",
+        seg: [0.30, 0.25, 0.40],
+    },
+};
+
+impl Rain {
+    pub fn secs_at(&self, rank: u8) -> f32 {
+        if rank >= 2 {
+            self.secs2
+        } else {
+            self.secs
+        }
+    }
+
+    pub fn damage_at(&self, rank: u8) -> i32 {
+        if rank >= ULT_MAX_RANK {
+            self.damage3
+        } else {
+            self.damage
+        }
+    }
+}
+
 /// 큰 기술의 단(0158 다): 쟁반 뒤집기는 처음부터 1단, 큰 기술 줄이 열리면 2단(휘청 +0.6초 — 보스의 짧은 휘청은 그대로)·
 /// 3단(벽에 박힌 피해 ×1.5). 몰아치기·한 줄기는 줄이 열리면 2점으로 배우고(1단) 2·3단은 1점씩.
 pub const ULT_MAX_RANK: u8 = 3;
@@ -1935,6 +2071,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Swat),
     Entry::Skill(Id::Flare),
     Entry::Skill(Id::Snare),
+    // 0272 — 쇠뇌 판의 충격 갈래 첫 줄
+    Entry::Skill(Id::Fuse),
     // 2 — 쓴 점수 4
     Entry::Skill(Id::Quake),
     Entry::Cell(Cell::ClosingBlow),
@@ -1952,6 +2090,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Ram),
     Entry::Skill(Id::Ripple),
     Entry::Skill(Id::Snow),
+    // 0272 — 쇠뇌 판의 충격 갈래 둘째 줄
+    Entry::Skill(Id::Mine),
     // 3 — 쓴 점수 8
     Entry::Ult(Ult::Flurry),
     Entry::Cell(Cell::FinalMeasure),
@@ -1962,6 +2102,8 @@ pub const ENTRIES: [Entry; NE] = [
     // 0270 C3 — 무기 판마다 큰 기술 하나: 방패 판·지팡이 판
     Entry::Ult(Ult::Bell),
     Entry::Ult(Ult::Blizzard),
+    // 0272 — 활 판의 큰 기술
+    Entry::Ult(Ult::Rain),
     // 4 — 쓴 점수 14(0214)
     Entry::Skill(Id::Swallow),
     Entry::Cell(Cell::HeldBreath),
@@ -2838,7 +2980,7 @@ mod tests {
             (0, Beat, &[S(Id::Stitch)]),
             (0, Riposte, &[S(Id::Toll)]),
             (0, Beat, &[S(Id::Swat)]),
-            (0, Footing, &[S(Id::Flare), S(Id::Snare)]),
+            (0, Footing, &[S(Id::Flare), S(Id::Snare), S(Id::Fuse)]),
             (
                 1,
                 Beat,
@@ -2863,12 +3005,12 @@ mod tests {
             (1, Beat, &[L(Link::RiposteBeat)]),
             (1, Riposte, &[L(Link::ParryStep)]),
             (1, Riposte, &[S(Id::Ram), S(Id::Ripple)]),
-            (1, Footing, &[S(Id::Snow)]),
+            (1, Footing, &[S(Id::Snow), S(Id::Mine)]),
             (2, Beat, &[U(Ult::Flurry), C(Cell::FinalMeasure)]),
             (2, Riposte, &[U(Ult::Line), C(Cell::OneWhoStands)]),
             (2, Footing, &[U(Ult::Upend), C(Cell::PathOpeningStep)]),
             (2, Riposte, &[U(Ult::Bell)]),
-            (2, Footing, &[U(Ult::Blizzard)]),
+            (2, Footing, &[U(Ult::Blizzard), U(Ult::Rain)]),
             (
                 3,
                 Beat,
@@ -2915,7 +3057,7 @@ mod tests {
                 assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
             }
         }
-        assert_eq!(NE, 60);
+        assert_eq!(NE, 63);
         for (i, e) in ENTRIES.iter().enumerate() {
             assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
         }
@@ -3392,41 +3534,63 @@ mod tests {
     }
 
     /// 0158 마: 고르기와 맺음의 표 — 스킬마다 둘(서로 다르다)과 하나, 값은 결정문의 것. 길이가 달라지는 고르기를 골라도 1초 안에 끝난다.
-    /// 0223 V3 → 0225: 스킬마다 쓸 수 있는 쥔 꼴이 있다 — 꼴마다 고를 것이 넉넉하고(넷 이상), 첫 줄의 스킬은 꼴마다 둘 이상
-    /// (0270 C3 — 무기 판마다 처음부터 서는 스킬: 그 판을 든 새 판의 첫 스킬이 막히지 않게. 옛 "첫 줄은 결투로"는 판마다로 바뀌었다).
-    /// 한손검은 방패로 갈린다: 방패 기술(방패와 함께만)과 결투 기술(방패 없이만)이 둘 이상씩. 망치만의 것·지팡이 쪽의 것도 있다.
+    /// 0223 V3 → 0225 → 0272: 스킬마다 쓸 수 있는 쥔 꼴이 있다 — 무기 판마다(종류 다섯 + 방패) 고를 것이 넉넉하고(넷 이상),
+    /// 첫 줄의 스킬은 판마다 둘 이상(0270 C3 — 그 판을 든 새 판의 첫 스킬이 막히지 않게). 한손검은 방패로 갈린다: 방패 판의 기술
+    /// (방패와 함께만)과 한손검만의 기술(방패 없이만)이 둘 이상씩. 망치만의 것·지팡이 쪽의 것도 있다. 맨손은 무기 판의 기술을 쓰지 못한다.
     #[test]
     fn every_grip_has_skills_to_choose_and_the_first_row_fits_the_first_sword() {
-        use crate::weapons::{Grip, GRIPS};
-        for g in GRIPS {
+        use crate::weapons::CLASSES;
+        let grips: Vec<Grip> = CLASSES
+            .iter()
+            .map(|c| Grip::Class(c.class))
+            .chain([Grip::Shield])
+            .collect();
+        for &g in &grips {
             let n = SKILLS.iter().filter(|s| s.fits(g)).count();
             assert!(n >= 4, "{g:?}: {n}");
         }
         for s in &SKILLS {
             assert!(s.hands != 0 && s.hands & !ANY == 0, "{:?}", s.id);
+            assert!(!s.fits(Grip::Bare), "{:?} with bare hands", s.id);
         }
-        for g in GRIPS {
+        // 묶음은 종류 표에서 온다: 종류마다 비트 하나(서로 다르다 · 방패의 비트와 겹치지 않는다).
+        let mut all = SHIELD;
+        for c in &CLASSES {
+            let bit = class_bit(c.class);
+            assert_eq!(bit.count_ones(), 1);
+            assert_eq!(all & bit, 0, "{:?}", c.class);
+            all |= bit;
+        }
+        assert_eq!(all, ANY, "ANY is every class and the shield");
+        for &g in &grips {
             let first = SKILLS.iter().filter(|s| s.row == 0 && s.fits(g)).count();
             assert!(first >= 2, "{g:?}: {first} first-row skills");
         }
-        // 한손으로는 방패가 있어야만 되는 것(방패 기술)·방패가 없어야만 되는 것(결투 기술).
+        // 한손으로는 방패가 있어야만 되는 것(방패 판의 기술)·방패가 없어야만 되는 것(한손검만의 기술).
         let split = |with: Grip, without: Grip| {
             SKILLS
                 .iter()
                 .filter(|s| s.fits(with) && !s.fits(without))
                 .count()
         };
-        assert!(split(Grip::Shield, Grip::Duel) >= 2, "shield arts");
-        assert!(split(Grip::Duel, Grip::Shield) >= 2, "duelling arts");
-        assert!(SKILLS.iter().any(|s| s.hands == HEAVY), "the hammer's own");
+        let sword = Grip::Class(Class::Sword);
+        assert!(split(Grip::Shield, sword) >= 2, "shield arts");
+        assert!(split(sword, Grip::Shield) >= 2, "the sword's own");
+        assert!(SKILLS.iter().any(|s| s.hands == HAMMER), "the hammer's own");
         assert!(SKILLS.iter().any(|s| s.hands == SHIELD));
+        // 0272: 쇠뇌와 활은 서로 다른 종류다 — 저마다 제 것만의 스킬이 있다.
+        assert!(
+            SKILLS.iter().any(|s| s.hands == CROSSBOW),
+            "the crossbow's own"
+        );
+        assert!(SKILLS.iter().any(|s| s.hands == BOW), "the bow's own");
         // 망치는 물리 스킬을, 지팡이는 타입 있는 스킬을 쥔다 — 지팡이로 쓰는 스킬에는 타입이 있다.
-        for s in SKILLS.iter().filter(|s| s.fits(Grip::Focus)) {
+        for s in SKILLS.iter().filter(|s| s.fits(Grip::Class(Class::Staff))) {
             assert_ne!(s.kind, Kind::Physical, "{:?} in a staff's hands", s.id);
         }
         assert!(SKILLS
             .iter()
-            .any(|s| s.fits(Grip::Heavy) && s.kind == Kind::Physical));
+            .any(|s| s.fits(Grip::Class(Class::Hammer)) && s.kind == Kind::Physical));
     }
 
     /// 0223 V2: 타입 있는 스킬은 게이지를 쌓고(물리는 0), 네 타입 모두 적어도 한 스킬이 싣는다 — 어느 타입도 판에서 못 고르는 일이 없다.
@@ -3704,7 +3868,14 @@ mod tests {
         // 0270 C3: 무기 판마다 하나 — 다섯(큰 종·눈보라가 뒤에 붙었다).
         assert_eq!(
             ULTS,
-            [Ult::Upend, Ult::Flurry, Ult::Line, Ult::Bell, Ult::Blizzard]
+            [
+                Ult::Upend,
+                Ult::Flurry,
+                Ult::Line,
+                Ult::Bell,
+                Ult::Blizzard,
+                Ult::Rain
+            ]
         );
         for u in ULTS {
             assert_eq!(Ult::by_key(u.key()), Some(u));
@@ -3877,8 +4048,10 @@ mod clip_facing {
         Hips,
         Hold,
         Spin,
+        /// 활을 겨누는 동작(0272 — 화살비): 겨누는 줄(오른손 → 활을 든 왼손)이 정면 — 몸은 옆으로 선다.
+        Aim,
     }
-    const FACES: [(&str, Face); 24] = [
+    const FACES: [(&str, Face); 27] = [
         ("sk_whirl", Face::Spin),
         ("sk_cut", Face::Tip),
         ("sk_gather", Face::Hips),
@@ -3903,6 +4076,10 @@ mod clip_facing {
         ("sk_snare", Face::Hips),
         ("ult_bell", Face::Hips),
         ("ult_blizzard", Face::Hips),
+        // 0272: 쇠뇌 판의 둘 · 활 판의 큰 기술(겨누는 줄 — 활을 든 왼손이 정면).
+        ("sk_fuse", Face::Hips),
+        ("sk_mine", Face::Hips),
+        ("ult_rain", Face::Aim),
     ];
 
     fn deg(a: f32) -> f32 {
@@ -3936,6 +4113,7 @@ mod clip_facing {
             .map(|s| s.clip)
             .chain(super::ULTS.map(|u| u.clip()));
         let mut pose = Vec::new();
+        let mut aim = Vec::new();
         let mut body = |ai, t: f32| {
             m.pose(Some(ai), t, &mut pose);
             let z = pose[hips].z_axis.truncate();
@@ -3968,6 +4146,22 @@ mod clip_facing {
                     clip.name,
                     deg(h)
                 ),
+                Face::Aim => {
+                    let (rh, lh) = (
+                        m.node("mixamorig:RightHand").unwrap(),
+                        m.node("mixamorig:LeftHand").unwrap(),
+                    );
+                    for t in [s, s + a - 0.005] {
+                        m.pose(Some(ai), t, &mut aim);
+                        let d = aim[lh].w_axis.truncate() - aim[rh].w_axis.truncate();
+                        let y = deg(d.x.atan2(d.z));
+                        assert!(
+                            y.abs() < 25.0,
+                            "{}: the bow points ahead from the draw to the loose ({y:.0}°)",
+                            clip.name
+                        );
+                    }
+                }
                 Face::Hold => {
                     for t in [s, s + a - 0.005] {
                         let y = deg(body(ai, t).0);

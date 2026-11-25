@@ -3,7 +3,7 @@
 use super::*;
 use crate::skills::{Id as Sk, Loadout, Pick, Slot};
 use crate::status::Kind as Ty;
-use crate::weapons::{Grip, Id as W, ART_CHANNEL, ART_FORCE};
+use crate::weapons::{Class, Grip, Id as W, ART_CHANNEL, ART_FORCE};
 
 fn worn(w: &mut World, a: Sk, b: Sk) {
     w.set_skills(Loadout {
@@ -23,7 +23,7 @@ fn a_shield_turns_the_sword_from_duelling_arts_to_shield_arts() {
     let mut w = World::new("test", 30.0);
     assert_eq!(w.player.weapon, W::Sword);
     worn(&mut w, Sk::Bash, Sk::Cut);
-    assert_eq!(w.grip(), Grip::Duel);
+    assert_eq!(w.grip(), Grip::Class(Class::Sword));
     assert_eq!(w.player.skill.rank, [0, 1], "no shield: the duel art only");
     w.set_shield(Some(crate::shield::Id::Pilgrim));
     assert_eq!(w.grip(), Grip::Shield);
@@ -38,7 +38,7 @@ fn a_shield_turns_the_sword_from_duelling_arts_to_shield_arts() {
     assert_eq!(w.player.skill.rank, [1, 1]);
     // 두 손 무기를 들면 방패는 쉰다 — 쥔 꼴은 그 무기의 것.
     w.set_weapon(W::Hammer);
-    assert_eq!(w.grip(), Grip::Heavy);
+    assert_eq!(w.grip(), Grip::Class(Class::Hammer));
 }
 
 /// 망치의 물리력: 타입 없는 스킬(휘돌이)의 피해·자세 피해가 무기의 배만큼 — 타입 있는 스킬(던지기)은 그대로. 검은 배가 없다.
@@ -129,4 +129,44 @@ fn what_a_skill_leaves_behind_keeps_the_weapon_it_was_cast_with() {
         w.skill_blades[0].dose, cast,
         "the blade in the air does not change"
     );
+}
+
+/// 0272: 맨손은 무기 종류가 아니다 — 무기 판의 스킬이 놓인 칸은 빈 칸이 된다(배운 단은 남는다). 방패를 들면 방패 판의 것은 쓴다
+/// (맨손도 한손 계열). 빈 손의 덤(날카로움)은 맨손도 받는다.
+#[test]
+fn bare_hands_hold_no_weapon_plate() {
+    let mut w = World::new("test", 30.0);
+    worn(&mut w, Sk::Whirl, Sk::Bash);
+    assert_eq!(w.player.skill.rank, [1, 0]);
+    w.set_weapon(W::Fists);
+    assert_eq!(w.grip(), Grip::Bare);
+    assert_eq!(w.player.skill.rank, [0, 0], "nothing fits bare hands");
+    assert_eq!(w.player.skill.known, [1, 1], "what was learned stays");
+    assert!(w.keen(), "a free hand all the same");
+    w.set_shield(Some(crate::shield::Id::Pilgrim));
+    assert_eq!(w.grip(), Grip::Shield);
+    assert_eq!(w.player.skill.rank, [1, 1], "shield arts with a shield");
+    assert!(!w.keen());
+    w.set_shield(None);
+    w.set_weapon(W::Sword);
+    assert_eq!(w.player.skill.rank, [1, 0], "back in the sword's hands");
+}
+
+/// 0272: 쇠뇌와 활은 다른 종류다 — 스킬 칸이 종류를 따른다(불티는 쇠뇌의 것, 뿌리 솟기는 활의 것, 끌어모으기는 어느 것이나).
+#[test]
+fn the_crossbow_and_the_bow_wield_different_skills() {
+    let mut w = World::new("test", 30.0);
+    w.set_weapon(W::Crossbow);
+    assert_eq!(w.grip(), Grip::Class(Class::Crossbow));
+    worn(&mut w, Sk::Embers, Sk::Roots);
+    assert_eq!(w.player.skill.rank, [1, 0]);
+    w.set_weapon(W::Bow);
+    assert_eq!(w.grip(), Grip::Class(Class::Bow));
+    assert_eq!(w.player.skill.rank, [0, 1]);
+    worn(&mut w, Sk::Gather, Sk::Snare);
+    assert_eq!(w.player.skill.rank, [1, 1]);
+    w.set_weapon(W::Crossbow);
+    assert_eq!(w.player.skill.rank, [1, 0]);
+    worn(&mut w, Sk::Fuse, Sk::Mine);
+    assert_eq!(w.player.skill.rank, [1, 1]);
 }

@@ -146,6 +146,29 @@ pub fn field_mote(i: usize, time: f32) -> (Vec3, f32) {
     let k = (ph / 0.12).min(1.0) * ((1.0 - ph) / 0.35).min(1.0);
     (pos, k)
 }
+/// 화살비의 화살(0272 — 상태 없음, 불티와 같은 꼴): 화살 `i`가 시각 `time`에 있는 자리(반지름 1의 원판 안 — 렌더가 반지름을
+/// 곱한다, y = 남은 높이의 몫 1 → 0)와 진하기. 저마다의 박자로 위에서 곧게 내리꽂히고, 땅에 닿으면 다음 화살이 다른 박자로 온다.
+pub fn rain_arrow(i: usize, time: f32) -> (Vec3, f32) {
+    let h = |n: u32| {
+        let mut x = (i as u32).wrapping_mul(40_503_581) ^ n.wrapping_mul(2_654_435_761) ^ 0x51ed;
+        x ^= x >> 13;
+        x = x.wrapping_mul(0x5bd1_e995);
+        x ^= x >> 15;
+        (x & 0xffff) as f32 / 65535.0
+    };
+    let period = 0.32 + 0.22 * h(1);
+    let t = (time + h(2) * period) / period;
+    let (round, ph) = (t.floor() as u32, t.fract());
+    // 내릴 때마다 자리가 바뀐다(같은 자리에만 꽂히면 무늬로 읽힌다).
+    let j = |n: u32| h(n.wrapping_add(round.wrapping_mul(7)));
+    let a = j(3) * std::f32::consts::TAU;
+    let r = j(4).sqrt() * 0.94;
+    let pos = vec3(a.sin() * r, 1.0 - ph, a.cos() * r);
+    (pos, (ph / 0.15).min(1.0))
+}
+/// 화살비에 한꺼번에 보이는 화살의 수.
+pub const RAIN_ARROWS: usize = 16;
+
 /// 불티 하나의 수(반지름 4m 기준 — 렌더가 넓이에 맞춰 늘린다, 상한 `FIELD_MOTES_MAX`).
 pub const FIELD_MOTES: usize = 44;
 pub const FIELD_MOTES_MAX: usize = 72;
@@ -1441,6 +1464,8 @@ impl Fx {
                 let (ring, from, to, lift, height) = match kind {
                     crate::status::Kind::Frost => (ICE, WHITE_HOT, fade(COOL), -1.2, 1.6),
                     crate::status::Kind::Root => (ROOT, STONE, fade(DUST), 3.5, 0.2),
+                    // 화약 덫(0272): 노란 충격빛 고리와 위로 튀는 흰 불똥.
+                    crate::status::Kind::Shock => (SHOCK, WHITE_HOT, fade(AMBER), 4.5, 0.2),
                     _ => (AMBER, GOLD, fade(AMBER), 2.2, 0.1),
                 };
                 self.mark(
@@ -1573,6 +1598,11 @@ impl Fx {
                         self.star(pp + Vec3::Y * 1.2, 1.3, 0.3, ICE);
                         self.implode(g, 3.0, 14, ICE);
                     }
+                    // 0272: 화살비 = 머리 위로 겨눈 살촉의 금빛 + 발밑으로 모이는 뿌리빛.
+                    crate::skills::Ult::Rain => {
+                        self.star(pp + Vec3::Y * 1.7, 1.3, 0.3, GOLD);
+                        self.implode(g, 2.6, 10, RIFT_ROOT);
+                    }
                 }
             }
             // 큰 종(0270 C3): 큰 흰 별 + 둘레 끝까지 차례로 번지는 고리 셋(흰빛 → 민트) + 위로 솟는 민트·금빛.
@@ -1607,6 +1637,41 @@ impl Fx {
                     GOLD,
                 );
                 self.dust_ring(g, 1.2, 14, 6.0, 0.8, DUST);
+            }
+            // 화살비(0272): 쏜 자리에서 위로 솟는 금빛 살 한 다발 + 내릴 자리에서 둘레 끝까지 번지는 뿌리빛 고리 둘.
+            Event::ArrowRain { from, at, radius } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                let up = (vec3(at.x - from.x, 0.0, at.z - from.z).normalize_or_zero() * 0.35
+                    + Vec3::Y)
+                    .normalize();
+                self.star(from + Vec3::Y * 1.6, 2.0, 0.12, WHITE_HOT);
+                self.spray(
+                    from + Vec3::Y * 1.6,
+                    up,
+                    0.25,
+                    12,
+                    16.0,
+                    Shape::Streak,
+                    0.07,
+                    0.45,
+                    1.0,
+                    WHITE_HOT,
+                    GOLD,
+                );
+                for i in 0..2 {
+                    self.mark_with(
+                        g,
+                        MarkKind::Ring {
+                            r0: 0.6,
+                            r1: radius * (1.0 - 0.2 * i as f32),
+                        },
+                        0.45,
+                        RIFT_ROOT,
+                        0.12 * i as f32,
+                        false,
+                        false,
+                    );
+                }
             }
             // 눈보라(0270 C3): 흰 서리빛 별 + 둘레의 서리빛 고리 + 몸 둘레를 휘감아 오르는 눈송이.
             Event::Blizzard { at, radius } => {
@@ -2163,6 +2228,60 @@ impl Fx {
                 );
                 self.dust_ring(g, 0.2, 6, 1.6, 0.35, DUST);
             }
+            // 심지 볼트(0272): 쇠뇌 끝의 흰 번쩍임 + 날아간 쪽으로 남는 짧은 노란 빛 띠 + 뒤로 튀는 심지 불똥.
+            (Sk::Fuse, Form::Bell { .. }) => {
+                let muzzle = g + Vec3::Y * 1.0 + dir * 0.7;
+                self.star(muzzle, 1.2, 0.1, WHITE_HOT);
+                self.mark(
+                    g + dir * 0.7,
+                    MarkKind::Streak {
+                        dir,
+                        len: 2.4,
+                        half: 0.12,
+                    },
+                    0.25,
+                    SHOCK,
+                );
+                self.spray(
+                    muzzle,
+                    -dir,
+                    0.5,
+                    5,
+                    5.0,
+                    Shape::Dot,
+                    0.07,
+                    0.3,
+                    7.0,
+                    WHITE_HOT,
+                    AMBER,
+                );
+            }
+            // 화약 덫(0272): 묻은 자리로 조여드는 노란 고리 + 튀는 흙 + 심지의 불똥 몇(화약이 땅에 들었다).
+            (Sk::Mine, Form::Trap { radius, .. }) => {
+                self.mark(
+                    g,
+                    MarkKind::Ring {
+                        r0: radius,
+                        r1: 0.2,
+                    },
+                    0.4,
+                    SHOCK,
+                );
+                self.dust_ring(g, 0.2, 6, 1.6, 0.35, DUST);
+                self.spray(
+                    g + Vec3::Y * 0.2,
+                    Vec3::Y,
+                    0.8,
+                    3,
+                    3.0,
+                    Shape::Dot,
+                    0.06,
+                    0.3,
+                    6.0,
+                    WHITE_HOT,
+                    AMBER,
+                );
+            }
             // 후려치기(0270 C3): 휘두른 쪽의 큰 노란 별 + 넓은 부채꼴 충격파 + 옆으로 흩어지는 돌 부스러기.
             (Sk::Swat, Form::Cone { range, arc_deg, .. }) => {
                 let c = g + dir * 1.0;
@@ -2547,6 +2666,12 @@ mod tests {
             // 0270 C3: 큰 기술 둘.
             Event::GreatBell { at, radius: 8.0 },
             Event::Blizzard { at, radius: 6.0 },
+            // 0272: 활 판의 큰 기술.
+            Event::ArrowRain {
+                from: Vec3::ZERO,
+                at,
+                radius: 4.5,
+            },
         ]);
         ev
     }

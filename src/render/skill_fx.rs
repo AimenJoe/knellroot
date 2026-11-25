@@ -262,6 +262,22 @@ impl Renderer {
             };
             let g = vec3(at.x, w.ground_y(at), at.z);
             let near = (1.0 - b.left / 0.8).clamp(0.0, 1.0);
+            // 심지 볼트(0272 — 충격): 종이 아니라 몸에 박힌 볼트의 타 들어가는 심지 — 깜빡이는 불꽃과 조여드는 노란 테.
+            if b.dose.0 == crate::status::Kind::Shock {
+                let shock = Color::new(1.0, 0.96, 0.45, 1.0);
+                let flick = 0.6 + 0.4 * (w.time * (18.0 + 30.0 * near)).sin();
+                let p = g + Vec3::Y * (top * 0.55);
+                spark4(p, 0.5 + 0.35 * near, with_a(hot, flick));
+                gem(p, 0.2, with_a(amber, 0.95));
+                fl.ring(
+                    g + Vec3::Y * 0.06,
+                    b.radius * (1.0 - 0.6 * near).max(0.3),
+                    0.0,
+                    360.0,
+                    with_a(shock, 0.25 + 0.45 * near),
+                );
+                continue;
+            }
             let swing = (w.time * 9.0).sin() * 0.18;
             let p = g + vec3(swing, top, 0.0);
             gem(p, 0.34, with_a(gold, 0.75));
@@ -279,6 +295,68 @@ impl Renderer {
             // 끝 0.4초에 옅어진다, 타가 가까울수록 테가 밝아진다(다음 타의 박자).
             let fade = ((f.secs - f.age) / 0.4).clamp(0.0, 1.0) * (f.age / 0.15).min(1.0);
             // 뿌리 덫(0270 C3): 바닥에 묻힌 씨 하나(흙빛 덩이 + 흰 점)와 숨 쉬듯 조여드는 가는 테 — 밟을 자리를 알린다.
+            // 화약 덫(0272 — 충격): 묻힌 화약 통(어두운 덩이)과 깜빡이는 심지 불꽃, 노란 테 — 밟을 자리를 알린다.
+            if f.trap && f.dose.0 == crate::status::Kind::Shock {
+                let breathe = 0.5 + 0.5 * (w.time * 3.0).sin();
+                let shock = Color::new(1.0, 0.96, 0.45, 1.0);
+                fl.ring(
+                    c + Vec3::Y * 0.05,
+                    f.radius * (0.85 + 0.15 * breathe),
+                    0.0,
+                    360.0,
+                    with_a(shock, (0.3 + 0.25 * breathe) * fade),
+                );
+                gem(
+                    c + Vec3::Y * 0.16,
+                    0.34,
+                    with_a(Color::new(0.30, 0.26, 0.24, 1.0), 0.9 * fade),
+                );
+                let flick = 0.5 + 0.5 * (w.time * 14.0).sin();
+                spark4(
+                    c + Vec3::Y * 0.36,
+                    0.22 + 0.1 * flick,
+                    with_a(hot, (0.6 + 0.4 * flick) * fade),
+                );
+                continue;
+            }
+            // 화살비(0272 — 뿌리, 덫이 아닌 마당): 내릴 자리의 뿌리빛 테와 옅은 면 + 위에서 곧게 내리꽂히는 화살들(금빛 살촉과 꼬리).
+            if !f.trap && f.dose.0 == crate::status::Kind::Root {
+                let root = Color::new(0.82, 0.66, 0.96, 1.0);
+                let beat = (f.age / f.every.max(1e-3)).fract();
+                fl.sector(
+                    c + Vec3::Y * 0.04,
+                    f.radius,
+                    0.0,
+                    360.0,
+                    with_a(root, (0.05 + 0.04 * beat) * fade),
+                );
+                for (dr, a) in [(0.0, 0.7), (0.16, 0.3)] {
+                    fl.ring(
+                        c + Vec3::Y * 0.06,
+                        f.radius - dr,
+                        0.0,
+                        360.0,
+                        with_a(root, a * fade),
+                    );
+                }
+                if fx {
+                    let slant = vec3(0.10, 1.0, 0.04);
+                    for i in 0..crate::fx::RAIN_ARROWS {
+                        let (off, k) = crate::fx::rain_arrow(i, w.time);
+                        let head = c
+                            + vec3(off.x * f.radius, 0.1, off.z * f.radius)
+                            + slant * (off.y * 7.0);
+                        trail(
+                            head,
+                            head + slant * 1.5,
+                            0.16,
+                            with_a(gold, 0.85 * k * fade),
+                        );
+                        gem(head, 0.16, with_a(hot, k * fade));
+                    }
+                }
+                continue;
+            }
             if f.trap {
                 let breathe = 0.5 + 0.5 * (w.time * 3.0).sin();
                 let root = Color::new(0.74, 0.56, 0.88, 1.0);

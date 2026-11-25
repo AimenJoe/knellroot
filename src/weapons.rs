@@ -5,6 +5,10 @@
 //! 무기는 그 위의 모양만 갖는다(코드에 타별 숫자를 박지 않는다). 피해·자세 피해는 정수·점수 그대로(피해의 눈금은 `tuning::HP_UNIT` — 옛 1 = 10, 0158 N0).
 //! 새 무기 = `Id` 한 줄 + `WEAPONS` 한 줄 + 동작(`tools/art/blender/wanderer.py`) + 모델 부위(같은 파일, 오른손 뼈) + 글(i18n).
 
+use crate::i18n::Tr;
+use crate::skills::Ult;
+use crate::status::Kind;
+
 /// 판정 모양.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Shape {
@@ -704,41 +708,43 @@ pub const WEAPONS: [Weapon; 6] = [
     },
 ];
 
-/// 손에 쥔 꼴(0225 — `Id::grip`): 스킬마다 쓸 수 있는 꼴이 있다.
+/// 무기 종류(0272): 계열(`Hand` — 화면에 드러내지 않는 묶음) → **종류** → 낱낱의 무기(`Id`). 판 · 물리 속성 · 주특성은 종류에,
+/// 숫자 · 이름 · 생김새는 낱낱의 무기에. 새 종류 = 여기 한 줄 + `index` 한 갈래 + `CLASSES` 한 줄(+ 글).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Grip {
-    /// 한손 무기, 방패 없이 — 결투 기술.
-    Duel,
-    /// 한손 무기와 방패 — 방패 기술.
-    Shield,
-    /// 망치 — 물리력.
-    Heavy,
-    /// 지팡이 — 마법력.
-    Focus,
-    Ranged,
+pub enum Class {
+    Sword,
+    Hammer,
+    Staff,
+    Crossbow,
+    Bow,
 }
 
-#[cfg(test)]
-pub const GRIPS: [Grip; 5] = [
-    Grip::Duel,
-    Grip::Shield,
-    Grip::Heavy,
-    Grip::Focus,
-    Grip::Ranged,
-];
-
-/// 무기의 특색이 스킬에 얹는 배(0225): `force` = 타입 없는(물리) 스킬의 피해·자세 피해, `channel` = 스킬의 타가 쌓는 타입 게이지.
+/// 무기의 주특성이 스킬에 얹는 배(0225 → 0272 — 종류마다): `force` = 타입 없는(물리) 스킬의 피해·자세 피해, `channel` = 스킬의 타가
+/// 쌓는 타입 게이지.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Art {
     pub force: f32,
     pub channel: f32,
 }
 
+impl Art {
+    /// 배 없음(한손검·쇠뇌·활·맨손).
+    pub const PLAIN: Art = Art {
+        force: 1.0,
+        channel: 1.0,
+    };
+
+    /// 주특성 글의 `{0}`에 넣는 수(%): 둘 가운데 큰 배의 덤.
+    pub fn percent(self) -> i32 {
+        ((self.force.max(self.channel) - 1.0) * 100.0).round() as i32
+    }
+}
+
 /// 망치의 물리력 · 지팡이의 마법력(0225 — 처음 값, 판정에서 고친다).
 pub const ART_FORCE: f32 = 1.3;
 pub const ART_CHANNEL: f32 = 1.5;
 
-/// 무기 갈래(0223): 한손 근접은 왼손에 방패를 들 수 있다 · 양손 근접 · 원거리(양손, 장전).
+/// 계열(0223 → 0272 — 종류의 윗층, 화면에 드러내지 않는다): 한손 근접은 왼손에 방패를 들 수 있다 · 양손 근접 · 원거리(양손, 장전).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hand {
     One,
@@ -746,44 +752,143 @@ pub enum Hand {
     Ranged,
 }
 
+/// 종류 표의 한 줄(0272): 판의 이름 · 가운데 열의 머리(물리 속성) · 대표 타입 둘(판의 왼쪽 · 오른쪽 갈래) · 큰 기술 · 주특성.
+pub struct ClassDef {
+    pub class: Class,
+    pub hand: Hand,
+    /// 종류의 이름(판 줄 · 장비 탭 · 도감).
+    pub name: Tr,
+    /// 물리 속성(참격 · 타격 · 관통 · 마법) — 그 종류의 판에서 타입 둘 사이 가운데 열의 머리.
+    pub attribute: Tr,
+    /// 대표 타입 둘(0270 C — 판의 왼쪽 · 오른쪽 갈래).
+    pub pair: [Kind; 2],
+    /// 그 종류의 큰 기술(판의 셋째 줄 가운데).
+    pub great: Ult,
+    /// 주특성: 스킬에 얹는 배와 그것을 말하는 한 줄(`{0}` = `Art::percent`).
+    pub art: Art,
+    pub main_trait: Tr,
+}
+
+/// 종류 표(판 줄의 차례 — `plates::PLATES`가 이 차례로 선다). 대검 · 창은 뒤에 한 줄씩(0272 2단계).
+pub const CLASSES: [ClassDef; 5] = [
+    ClassDef {
+        class: Class::Sword,
+        hand: Hand::One,
+        name: |s| s.class_sword,
+        attribute: |s| s.attr_slash,
+        pair: [Kind::Sharp, Kind::Rift],
+        great: Ult::Flurry,
+        art: Art::PLAIN,
+        main_trait: |s| s.trait_sword,
+    },
+    ClassDef {
+        class: Class::Hammer,
+        hand: Hand::Two,
+        name: |s| s.class_hammer,
+        attribute: |s| s.attr_strike,
+        pair: [Kind::Shock, Kind::Knell],
+        great: Ult::Upend,
+        art: Art {
+            force: ART_FORCE,
+            channel: 1.0,
+        },
+        main_trait: |s| s.trait_hammer,
+    },
+    ClassDef {
+        class: Class::Staff,
+        hand: Hand::Two,
+        name: |s| s.class_staff,
+        attribute: |s| s.attr_magic,
+        pair: [Kind::Frost, Kind::Ember],
+        great: Ult::Blizzard,
+        art: Art {
+            force: 1.0,
+            channel: ART_CHANNEL,
+        },
+        main_trait: |s| s.trait_staff,
+    },
+    ClassDef {
+        class: Class::Crossbow,
+        hand: Hand::Ranged,
+        name: |s| s.class_crossbow,
+        attribute: |s| s.attr_pierce,
+        pair: [Kind::Ember, Kind::Shock],
+        great: Ult::Line,
+        art: Art::PLAIN,
+        main_trait: |s| s.trait_crossbow,
+    },
+    ClassDef {
+        class: Class::Bow,
+        hand: Hand::Ranged,
+        name: |s| s.class_bow,
+        attribute: |s| s.attr_pierce,
+        pair: [Kind::Root, Kind::Frost],
+        great: Ult::Rain,
+        art: Art::PLAIN,
+        main_trait: |s| s.trait_bow,
+    },
+];
+
+impl Class {
+    /// 표의 자리(`CLASSES` — 스킬의 `hands` 비트 · 판의 차례가 이것을 쓴다). `_` 없는 match — 새 종류는 여기서 자리를 받는다.
+    pub const fn index(self) -> usize {
+        match self {
+            Class::Sword => 0,
+            Class::Hammer => 1,
+            Class::Staff => 2,
+            Class::Crossbow => 3,
+            Class::Bow => 4,
+        }
+    }
+
+    pub fn def(self) -> &'static ClassDef {
+        &CLASSES[self.index()]
+    }
+}
+
+/// 손에 쥔 꼴(0225 → 0272): 스킬과 판이 "지금 무엇을 쥐었나"를 묻는 한 곳. 종류는 `Id::class` 하나에서 오고, 이 꼴은 거기에
+/// **방패를 들었나**만 더한다 — 한손 계열과 방패 = 방패 판의 기술(`Shield`), 그 밖에는 그 종류의 판(`Class`), 맨손 = 무기 판 없음(`Bare`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Grip {
+    /// 맨손, 방패 없이 — 무기 판이 없다(공통 판만).
+    Bare,
+    /// 그 종류의 무기(한손 종류는 방패 없이).
+    Class(Class),
+    /// 한손 계열(한손 종류 · 맨손)과 방패 — 방패 판.
+    Shield,
+}
+
 impl Id {
-    /// 무기 갈래(0223). `_` 없는 match — 새 무기는 여기서 갈래를 고르게 된다.
+    /// 무기의 종류(0272). `_` 없는 match — 새 무기는 여기서 종류를 고르게 된다. 맨손은 종류가 아니다(무기 칸을 비운 것).
+    pub fn class(self) -> Option<Class> {
+        match self {
+            Id::Sword => Some(Class::Sword),
+            Id::Hammer => Some(Class::Hammer),
+            Id::Staff => Some(Class::Staff),
+            Id::Crossbow => Some(Class::Crossbow),
+            Id::Bow => Some(Class::Bow),
+            Id::Fists => None,
+        }
+    }
+
+    /// 계열(0223 → 0272): 종류의 것 — 맨손은 한손.
     pub fn hand(self) -> Hand {
-        match self {
-            Id::Sword | Id::Fists => Hand::One,
-            Id::Hammer | Id::Staff => Hand::Two,
-            Id::Crossbow | Id::Bow => Hand::Ranged,
-        }
+        self.class().map_or(Hand::One, |c| c.def().hand)
     }
 
-    /// 손에 쥔 꼴(0225): 한손 무기는 왼손의 방패로 갈린다 — 방패와 함께(`Shield`)·방패 없이(`Duel`). 양손은 무기마다
-    /// (망치 `Heavy` · 지팡이 `Focus`). 스킬이 이것으로 쓸 수 있나를 가른다(`skills::Skill::fits`).
+    /// 손에 쥔 꼴(0225 → 0272): 한손 계열은 왼손의 방패로 갈린다 — 방패와 함께면 방패 판(`Shield`), 아니면 제 종류의 판.
+    /// 스킬이 이것으로 쓸 수 있나를 가른다(`skills::Skill::fits`), 판 줄의 금빛 점도 이것(`plates::Plate::held`).
     pub fn grip(self, shield: bool) -> Grip {
-        match self {
-            Id::Sword | Id::Fists if shield => Grip::Shield,
-            Id::Sword | Id::Fists => Grip::Duel,
-            Id::Hammer => Grip::Heavy,
-            Id::Staff => Grip::Focus,
-            Id::Crossbow | Id::Bow => Grip::Ranged,
+        match self.class() {
+            _ if shield && self.hand() == Hand::One => Grip::Shield,
+            Some(c) => Grip::Class(c),
+            None => Grip::Bare,
         }
     }
 
-    /// 무기의 특색(0225 — 사장 "망치는 물리력을, 지팡이는 마법력에 대한 특색"): 스킬에 얹는 배. `_` 없는 match.
+    /// 무기의 주특성이 스킬에 얹는 배(0225 — 사장 "망치는 물리력을, 지팡이는 마법력에 대한 특색" → 0272 종류의 것).
     pub fn art(self) -> Art {
-        match self {
-            Id::Hammer => Art {
-                force: ART_FORCE,
-                channel: 1.0,
-            },
-            Id::Staff => Art {
-                force: 1.0,
-                channel: ART_CHANNEL,
-            },
-            Id::Sword | Id::Crossbow | Id::Fists | Id::Bow => Art {
-                force: 1.0,
-                channel: 1.0,
-            },
-        }
+        self.class().map_or(Art::PLAIN, |c| c.def().art)
     }
 
     /// 원거리 무기인가(0223 — 양손, 평타 버튼 = 사격·특수 버튼 = 수류탄).
@@ -802,6 +907,49 @@ impl Id {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0272: 종류 표 — 줄의 자리 = `Class::index`, 무기마다 종류 하나(맨손만 없다), 계열·주특성의 배는 종류의 것.
+    /// 대표 타입 둘은 서로 다른 타입이고, 주특성의 수는 배에서 나온다(망치 +30% · 지팡이 +50% · 나머지는 배가 없다).
+    #[test]
+    fn every_weapon_has_a_class_and_the_class_table_is_in_order() {
+        for (i, c) in CLASSES.iter().enumerate() {
+            assert_eq!(c.class.index(), i, "{:?}", c.class);
+            assert_eq!(c.class.def().class, c.class);
+            let [a, b] = c.pair;
+            assert!(a != b && a != Kind::Physical && b != Kind::Physical);
+            assert!(c.art.force >= 1.0 && c.art.channel >= 1.0);
+        }
+        let greats: Vec<Ult> = CLASSES.iter().map(|c| c.great).collect();
+        for (i, g) in greats.iter().enumerate() {
+            assert!(!greats[i + 1..].contains(g), "{g:?} on two classes");
+        }
+        for id in IDS {
+            assert_eq!(id.class().is_none(), id == Id::Fists, "{id:?}");
+            // 원거리 계열 = 사격 무기(표의 `rb`와 종류 표의 계열이 어긋나지 않는다).
+            assert_eq!(id.hand() == Hand::Ranged, id.is_ranged(), "{id:?}");
+        }
+        assert_eq!(Id::Sword.class(), Some(Class::Sword));
+        assert_eq!(Id::Crossbow.class(), Some(Class::Crossbow));
+        assert_eq!(Id::Bow.class(), Some(Class::Bow));
+        assert_eq!(Id::Fists.hand(), Hand::One, "bare hands can hold a shield");
+        assert_eq!(Id::Fists.art(), Art::PLAIN);
+        assert_eq!(
+            (Id::Sword.hand(), Id::Hammer.hand()),
+            (Hand::One, Hand::Two)
+        );
+        assert_eq!(Id::Hammer.art().force, ART_FORCE);
+        assert_eq!(Id::Staff.art().channel, ART_CHANNEL);
+        assert_eq!(Class::Hammer.def().art.percent(), 30);
+        assert_eq!(Class::Staff.def().art.percent(), 50);
+        assert_eq!(Class::Bow.def().art.percent(), 0);
+        // 쥔 꼴: 한손 계열만 방패로 갈린다.
+        assert_eq!(Id::Sword.grip(false), Grip::Class(Class::Sword));
+        assert_eq!(Id::Sword.grip(true), Grip::Shield);
+        assert_eq!(Id::Fists.grip(false), Grip::Bare);
+        assert_eq!(Id::Fists.grip(true), Grip::Shield);
+        assert_eq!(Id::Staff.grip(true), Grip::Class(Class::Staff));
+        assert_eq!(Id::Bow.grip(true), Grip::Class(Class::Bow));
+    }
 
     #[test]
     fn every_id_has_one_row_and_melee_weapons_have_a_combo() {

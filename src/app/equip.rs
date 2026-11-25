@@ -449,6 +449,17 @@ pub(super) fn weapon_compare(now: &[WVal], then: &[WVal]) -> Vec<(WVal, Option<C
 /// 장신구의 세계 안의 말(0129): 설명보다 옅고 조금 푸르스름하게 — 수치와 섞여 읽히지 않게.
 pub(super) const FLAVOR: Color = Color::new(0.55, 0.56, 0.62, 1.0);
 
+/// 무기의 종류 줄과 주특성 줄(0272 — 장비 탭·도감이 같이 쓴다): ("한손검 · 순례자의 검", "주특성 · …"). `name` = 보일 이름
+/// (도감의 못 얻은 무기는 "???"). 주특성의 수(`{0}`)는 종류 표의 배에서. 맨손은 종류가 아니다.
+pub(super) fn class_text(id: weapons::Id, name: &str) -> Option<(String, String)> {
+    let def = id.class()?.def();
+    let main = fill(tr(def.main_trait), &[&def.art.percent().to_string()]);
+    Some((
+        format!("{} · {name}", tr(def.name)),
+        fill(s().trait_line, &[&main]),
+    ))
+}
+
 fn weapon_desc(id: weapons::Id) -> &'static str {
     let s = s();
     match id {
@@ -1164,23 +1175,11 @@ impl App {
             }
         }
         if let Cand::Weapon(id) = focus {
-            // 무기 갈래(0223): 한손(방패를 들 수 있다)·양손·원거리.
-            let hand = match id.hand() {
-                weapons::Hand::One => s.hand_one,
-                weapons::Hand::Two => s.hand_two,
-                weapons::Hand::Ranged => s.hand_ranged,
-            };
-            lines.push(Ln::Pair(s.hand_label.to_string(), hand.to_string(), INK));
-            // 무기의 특색(0225): 한손 = 방패 기술·결투 기술 · 망치 = 물리력 · 지팡이 = 마법력.
-            let pct = |k: f32| ((k - 1.0) * 100.0).round().to_string();
-            let art = match id {
-                weapons::Id::Sword | weapons::Id::Fists => Some(s.art_sword.to_string()),
-                weapons::Id::Hammer => Some(fill(s.art_hammer, &[&pct(id.art().force)])),
-                weapons::Id::Staff => Some(fill(s.art_staff, &[&pct(id.art().channel)])),
-                weapons::Id::Crossbow | weapons::Id::Bow => None,
-            };
-            if let Some(art) = art {
-                lines.extend(self.pane_wrap(w, &art, AMBER));
+            // 종류(0272): "한손검 · 순례자의 검" — 종류가 먼저, 그 아래 종류의 주특성 한 줄. 맨손은 종류가 아니다(줄이 없다).
+            if let Some((class, main)) = class_text(id, weapon_name(id)) {
+                lines.extend(self.pane_wrap(w, &class, INK));
+                lines.extend(self.pane_wrap(w, &main, AMBER));
+                lines.push(Ln::Gap);
             }
             // 견주는 상대는 그 칸에 지금 든 것: 주무기 칸 = 주무기, 부무기 칸 = 부무기(없으면 견줄 것이 없다 — 화살표 없이 값만).
             let held = if slot == SUB_SLOT {
@@ -1281,6 +1280,29 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0272: 무기는 종류부터 읽힌다 — "한손검 · 순례자의 검", 그 아래 종류의 주특성 한 줄(수는 종류 표의 배에서). 맨손은 종류가 아니다.
+    #[test]
+    fn a_weapon_reads_class_first_then_its_name_and_its_main_trait() {
+        let s = s();
+        let (class, main) = class_text(weapons::Id::Hammer, s.weapon_hammer).unwrap();
+        assert_eq!(class, format!("{} · {}", s.class_hammer, s.weapon_hammer));
+        assert_eq!(main, fill(s.trait_line, &[&fill(s.trait_hammer, &["30"])]));
+        let (class, main) = class_text(weapons::Id::Staff, s.weapon_staff).unwrap();
+        assert!(class.starts_with(s.class_staff) && main.contains("50"));
+        assert_eq!(class_text(weapons::Id::Fists, s.weapon_fists), None);
+        for id in weapons::IDS {
+            if let Some((class, main)) = class_text(id, weapon_name(id)) {
+                assert!(!class.contains('{') && !main.contains('{'), "{id:?}");
+                assert!(main.len() > s.trait_line.len(), "{id:?} has a trait");
+            }
+        }
+        // 종류마다 주특성이 다르다(쇠뇌와 활도).
+        let traits: Vec<&str> = weapons::CLASSES.iter().map(|c| tr(c.main_trait)).collect();
+        for (i, t) in traits.iter().enumerate() {
+            assert!(!traits[i + 1..].contains(t), "{t}");
+        }
+    }
 
     #[test]
     fn weapon_numbers_read_the_table_and_compare_the_right_way() {

@@ -154,8 +154,8 @@ pub const SKILLS_MAX_NOTE: Pair = (
 pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
 pub const ARM: Pair = ("든 무기 바꾸기", "change the held weapon");
 pub const ARM_NOTE: Pair = (
-    "든 무기를 다음 것으로 바꾼다(검 → 망치 → 지팡이 → 쇠뇌 → 검과 방패 → 맨손 → 활). 스킬은 무기 갈래를 탄다 — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다. 지금: {0}",
-    "cycle the held weapon (sword, hammer, staff, crossbow, sword and shield, fists, bow). Skills go by weapon grip: wear and enter arenas with this one. nothing is saved. now: {0}",
+    "든 무기를 다음 것으로 바꾼다(검 → 망치 → 지팡이 → 쇠뇌 → 검과 방패 → 맨손 → 활). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다) — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다. 지금: {0}",
+    "cycle the held weapon (sword, hammer, staff, crossbow, sword and shield, fists, bow). Skills go by weapon class (bare hands wield none): wear and enter arenas with this one. nothing is saved. now: {0}",
 );
 pub const PERF_LINE: Pair = ("성능 줄 켬/끔", "perf line on/off");
 pub const PERF_LINE_NOTE: Pair = (
@@ -325,6 +325,10 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("sk_snare", ("기술 — 뿌리 덫", "skill: root snare")),
     ("ult_bell", ("큰 기술 — 큰 종", "ult: great bell")),
     ("ult_blizzard", ("큰 기술 — 눈보라", "ult: blizzard")),
+    // 0272
+    ("sk_fuse", ("기술 — 심지 볼트", "skill: fuse bolt")),
+    ("sk_mine", ("기술 — 화약 덫", "skill: powder trap")),
+    ("ult_rain", ("큰 기술 — 화살비", "ult: arrow rain")),
 ];
 
 /// 동작 이름의 화면 이름(표에 없으면 동작 이름 그대로 — 모델의 동작 이름은 오른쪽 칸에 따로 보인다).

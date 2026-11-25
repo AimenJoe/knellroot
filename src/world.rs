@@ -353,6 +353,12 @@ pub enum Event {
         at: Vec3,
         radius: f32,
     },
+    /// 큰 기술 화살비(0272)가 `at` 둘레 `radius` m에 내리기 시작했다(`from` = 쏜 자리 — 그 뒤는 놓인 마당의 `FieldPulse`).
+    ArrowRain {
+        from: Vec3,
+        at: Vec3,
+        radius: f32,
+    },
 }
 
 /// 금 간 땅(0051, 망치 여진): `left`초 뒤 둘레를 친다.
@@ -705,6 +711,8 @@ pub struct SkillState {
     pub hop_to: Vec3,
     pub hop_home: Vec3,
     pub hop_first: Option<usize>,
+    /// 화살비(0272)가 내릴 자리 — 누른 순간에 정한다(세계가 멈춘 동안 그 자리의 테가 먼저 선다).
+    pub rain_at: Vec3,
 }
 
 /// 솟은 뿌리 하나(0214 뿌리 솟기 — 그림만): 자리·지난 초·쪽(기울기).
@@ -996,6 +1004,7 @@ impl World {
                     hop_to: Vec3::ZERO,
                     hop_home: Vec3::ZERO,
                     hop_first: None,
+                    rain_at: Vec3::ZERO,
                 },
                 parry: ParryState {
                     since: f32::MAX,
@@ -1322,14 +1331,14 @@ impl World {
         self.refit_skills();
     }
 
-    /// 지금 손에 쥔 꼴(0225): 한손 무기는 방패와 함께인가로 갈린다.
+    /// 지금 손에 쥔 꼴(0225 → 0272): 든 무기의 종류, 한손 계열은 방패와 함께인가로 갈린다(맨손은 무기 판이 없다).
     pub fn grip(&self) -> weapons::Grip {
         self.player.weapon.grip(self.player.shield.is_some())
     }
 
-    /// 결투로 쥐었나(0270 C5 — 날카로움의 덤 `hurt_by`의 `keen`): 한손 무기(맨손도)를 방패 없이.
+    /// 한 손이 비었나(0270 C5 — 날카로움의 덤 `hurt_by`의 `keen`): 한손 계열(맨손도)을 방패 없이.
     pub fn keen(&self) -> bool {
-        self.grip() == weapons::Grip::Duel
+        self.player.weapon.hand() == weapons::Hand::One && self.player.shield.is_none()
     }
 
     /// 지금 막을 수 있나(0223): 방패를 들었고 든 무기가 한손이다.

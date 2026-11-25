@@ -863,6 +863,25 @@ fn ult_shape(w: &World, pp: Vec3, fl: &Drape) {
                     );
                 }
             }
+            // 화살비(0272): 시동 동안 내릴 자리의 테가 먼저 선다(세계가 멈춘 동안 읽힌다) — 바깥 테 + 안에서 차오르는 면.
+            // 내린 뒤는 놓인 마당의 그림.
+            crate::skills::Ult::Rain => {
+                let u = &crate::skills::RAIN;
+                if !done {
+                    let k = (e / u.startup.max(1e-3)).clamp(0.0, 1.0);
+                    let at = w.player.skill.rain_at;
+                    let c = vec3(at.x, w.ground_y(at), at.z);
+                    let root = Color::new(0.82, 0.66, 0.96, 1.0);
+                    fl.ring(c + Vec3::Y * 0.06, u.radius, 0.0, 360.0, with_a(root, 0.9));
+                    fl.sector(
+                        c + Vec3::Y * 0.05,
+                        u.radius * (0.25 + 0.75 * k),
+                        0.0,
+                        360.0,
+                        with_a(root, 0.12),
+                    );
+                }
+            }
         }
     }
 }

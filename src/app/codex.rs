@@ -355,6 +355,17 @@ impl App {
                 ITEM_PIC,
             );
             self.codex_view.rect = None;
+            // 무기는 종류부터(0272 — "한손검 · 순례자의 검" + 그 종류의 주특성): 못 얻은 무기도 종류는 보인다(실루엣과 같은 몫).
+            if let crate::item_view::Item::Weapon(id) = d.item {
+                let name = if d.owned { tr(d.name) } else { s.codex_unknown };
+                if let Some((class, main)) = super::equip::class_text(id, name) {
+                    lines.extend(self.pane_wrap(&w, &class, ui::INK));
+                    if d.owned {
+                        lines.extend(self.pane_wrap(&w, &main, ui::AMBER));
+                    }
+                    lines.push(Ln::Gap);
+                }
+            }
             if d.owned {
                 if crate::item_view::has_view(d.item) {
                     self.draw_pane_item_turned(d.item, icon, self.codex_view.yaw);

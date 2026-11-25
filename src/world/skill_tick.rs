@@ -560,7 +560,8 @@ impl World {
                     self.skill_ev.push(Event::Skill { id, at, dir });
                     let target = self.bell_target(dir, range);
                     let dose = self.dosed(s.dose());
-                    let mut spot = at + dir * range * 0.7;
+                    // 앞이 비면 겨눈 쪽 허공에서(벽 너머에 걸지 않는다 — 심지 볼트는 멀리 간다, 0272).
+                    let mut spot = self.place_ahead(at, dir, range * 0.7);
                     if let Some(i) = target {
                         let en = &self.enemies[i];
                         spot = en.pos;
@@ -1521,14 +1522,14 @@ impl World {
             self.skill_hit_tick = true;
             self.hitstop = self.hitstop.max(t[P::Hitstop] * SKILL_HITSTOP);
         }
-        // 종(0270 C3)은 울림으로 — 울림 타입이 둘레를 치는 그림과 소리를 같이 쓴다.
-        ev.push(if b.toll {
-            Event::Toll {
+        // 종(0270 C3)은 울림으로 — 울림 타입이 둘레를 치는 그림과 소리를 같이 쓴다. 심지 볼트(0272 — 충격)는 화약이 터진다.
+        ev.push(match (b.toll, b.dose.0) {
+            (true, crate::status::Kind::Shock) => Event::Boom { at: b.at },
+            (true, _) => Event::Toll {
                 at: b.at,
                 radius: b.radius,
-            }
-        } else {
-            Event::SkillBurst { at: b.at }
+            },
+            (false, _) => Event::SkillBurst { at: b.at },
         });
         self.skill_ev = ev;
     }
@@ -1557,18 +1558,25 @@ impl World {
         }
     }
 
-    /// 종 치기(0270 C3)가 종을 걸 적: 앞 쪽(`dir` ± 60°) `range` m 안의 가장 가까운 깨어 있는 적.
+    /// 종 치기(0270 C3)·심지 볼트(0272)가 걸 적: 앞 쪽(`dir` ± 60°) `range` m 안의 가장 가까운 깨어 있는 적 — 벽·기둥에
+    /// 가린 적은 아니다(멀리 가는 심지 볼트가 벽을 뚫지 않게).
     fn bell_target(&self, dir: Vec3, range: f32) -> Option<usize> {
         let p = self.player.pos;
         let body = p.y + self.player.air;
+        let eye = p + Vec3::Y * (self.player.air + BLADE_HEIGHT);
         (0..self.enemies.len())
             .filter(|&i| {
                 let en = &self.enemies[i];
                 let dv = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+                let (len, to) = (dv.length(), dv.normalize_or(dir));
                 en.active()
                     && (en.pos.y - body).abs() <= HIT_DY
-                    && dv.length() - en.radius <= range
-                    && dv.normalize_or(dir).dot(dir) >= BELL_CONE
+                    && len - en.radius <= range
+                    && to.dot(dir) >= BELL_CONE
+                    && !self
+                        .obstacles
+                        .iter()
+                        .any(|o| o.ray(eye, to).is_some_and(|d| d < len - en.radius))
             })
             .min_by(|&a, &b| {
                 let d = |i: usize| {
@@ -1700,18 +1708,22 @@ impl World {
             skills::Id::Echo if pl.skill.echo_left > 0.0 => {
                 (pl.skill.echo_left / pl.skill.echo_total.max(1e-3)).clamp(0.0, 1.0)
             }
-            // 놓인 것(0270 C3 — 눈발·뿌리 덫도): 그 스킬의 타입·꼴의 것만.
-            id @ (skills::Id::Embers | skills::Id::Snow | skills::Id::Snare) => self
-                .skill_fields
-                .iter()
-                .filter(|f| f.dose.0 == id.def().kind && f.trap == (id == skills::Id::Snare))
-                .map(|f| f.left())
-                .fold(0.0, f32::max),
+            // 놓인 것(0270 C3 — 눈발·뿌리 덫도, 0272 화약 덫): 그 스킬의 타입·꼴의 것만.
+            id @ (skills::Id::Embers | skills::Id::Snow | skills::Id::Snare | skills::Id::Mine) => {
+                self.skill_fields
+                    .iter()
+                    .filter(|f| {
+                        f.dose.0 == id.def().kind
+                            && f.trap == matches!(id, skills::Id::Snare | skills::Id::Mine)
+                    })
+                    .map(|f| f.left())
+                    .fold(0.0, f32::max)
+            }
             _ => 0.0,
         }
     }
 
-    /// 몰아치기(·눈보라, 0270 C3)가 이어지는 몫 0..1(0 = 아니다) — HUD가 큰 기술 게이지를 줄어드는 막대로 그린다.
+    /// 몰아치기(·눈보라 0270 C3 ·화살비 0272)가 이어지는 몫 0..1(0 = 아니다) — HUD가 큰 기술 게이지를 줄어드는 막대로 그린다.
     pub fn ult_active(&self) -> f32 {
         let pl = &self.player;
         if pl.skill.flurry_left > 0.0 {
@@ -1720,6 +1732,12 @@ impl World {
             self.skill_fields
                 .iter()
                 .filter(|f| f.follow && f.dose.0 == crate::status::Kind::Frost)
+                .map(|f| f.left())
+                .fold(0.0, f32::max)
+        } else if pl.skill.ult == skills::Ult::Rain {
+            self.skill_fields
+                .iter()
+                .filter(|f| !f.follow && !f.trap && f.dose.0 == crate::status::Kind::Root)
                 .map(|f| f.left())
                 .fold(0.0, f32::max)
         } else {

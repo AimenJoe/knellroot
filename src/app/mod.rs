@@ -785,7 +785,7 @@ impl App {
         let cut = self.arriving().is_some();
         if REPORTED.with(|r| r.replace(Some((top, focus, cut)))) != Some((top, focus, cut)) {
             match (focus, cut) {
-                // 기술 탭(0270 C2): 보이는 판 + 고른 칸(판 줄이면 `@Strip`) — `Skills { host: Hearth } [Grip(Duel)] @Skill(Cut)`.
+                // 기술 탭(0270 C2): 보이는 판 + 고른 칸(판 줄이면 `@Strip`) — `Skills { host: Hearth } [Class(Sword)] @Skill(Cut)`.
                 (Some((p, Some(e), _)), _) => {
                     crate::screen::report_scene(&format!("{top:?} [{p:?}] @{e:?}"))
                 }

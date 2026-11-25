@@ -1,33 +1,46 @@
-//! 무기 판(0270 C1 — 순수 규칙): 기술 판을 **몸의 판**(지금의 갈래 셋 — 흐름·맞받기·자리의 패시브·다리·맺음)과 **쥔 꼴마다의 무기 판**
-//! 다섯으로 나눈다. 무기 판은 그 꼴의 대표 타입 둘이 왼쪽·오른쪽 갈래, 물리(또는 다른 타입) 스킬이 가운데.
+//! 무기 판(0270 C1 → 0272 — 순수 규칙): 기술 판을 **공통 판**(갈래 셋 — 흐름·맞받기·자리의 패시브·다리·맺음, 어느 무기든)과
+//! **무기 종류마다의 판**(`weapons::CLASSES` — 한손검·망치·지팡이·쇠뇌·활), 보조 장비 **방패의 판**으로 나눈다. 무기 판은 그 종류의
+//! 대표 타입 둘이 왼쪽·오른쪽 갈래, 가운데는 그 종류의 물리 속성(참격·타격 …)의 열.
 //!
 //! 판은 "칸이 어디에 서나"의 보기다 — 스킬의 단은 하나(`skills::Board::rank` 그대로, 한 스킬이 여러 무기 판에 서도 한 번 배우면 다),
-//! 줄의 열림만 **그 판에 쓴 점수**로 센다(`Plate::spent` · `Plate::row_open`). 화면(C2)과 새 스킬(C3)은 이 표를 읽는다.
+//! 줄의 열림만 **그 판에 쓴 점수**로 센다(`Plate::spent` · `Plate::row_open`). 그래서 판을 가르고 이름을 바꿔도 기록은 그대로다
+//! (판에 쓴 점수는 스킬마다의 단에서 다시 센다 — 못 서게 된 칸만 `drop_unseated`가 돌려준다).
 //!
-//! C2(기술 탭의 판 고르기): 살 수 있나는 `offer_on` — 몸의 판은 지금 판 그대로(`Board::offer` — 쓴 점수 합의 줄·길), 무기 판은
-//! 줄·길 대신 **그 판의 줄**(`row_open`)로. 사는 것도 `buy_on` 한 곳을 지나 단·기록은 같은 `Board`에 남는다.
+//! 살 수 있나는 `offer_on` — 공통 판은 `Board::offer` 그대로(쓴 점수 합의 줄·길), 무기 판은 줄·길 대신 **그 판의 줄**(`row_open`)로.
+//! 사는 것도 `buy_on` 한 곳을 지나 단·기록은 같은 `Board`에 남는다.
 
+use crate::i18n::Tr;
 use crate::progression::{Vein, VEINS};
 use crate::skills::{Board, Entry, Id, Offer, Ult, ENTRIES, IDS};
 use crate::status::Kind;
-use crate::weapons::Grip;
+use crate::weapons::{Class, Grip, CLASSES};
 
-/// 판 하나: 몸 또는 쥔 꼴.
+/// 판 하나: 공통 · 무기 종류 · 방패(보조 장비 — 한손 계열과 함께 든다).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Plate {
     Body,
-    Grip(Grip),
+    Class(Class),
+    Shield,
 }
 
-/// 기술 탭의 판 차례(몸 먼저).
-pub const PLATES: [Plate; 6] = [
-    Plate::Body,
-    Plate::Grip(Grip::Duel),
-    Plate::Grip(Grip::Shield),
-    Plate::Grip(Grip::Heavy),
-    Plate::Grip(Grip::Focus),
-    Plate::Grip(Grip::Ranged),
-];
+/// 판의 수: 공통 + 종류마다 + 방패.
+pub const NP: usize = CLASSES.len() + 2;
+
+/// 기술 탭의 판 차례: 공통 먼저 · 종류(표의 차례) · 방패가 끝(보조 장비). 종류 표에 한 줄을 더하면 판이 하나 는다.
+pub const PLATES: [Plate; NP] = {
+    let mut out = [Plate::Body; NP];
+    let mut i = 0;
+    while i < CLASSES.len() {
+        out[i + 1] = Plate::Class(CLASSES[i].class);
+        i += 1;
+    }
+    out[NP - 1] = Plate::Shield;
+    out
+};
+
+/// 방패 판의 대표 타입 둘 · 큰 기술 · 가운데 열의 머리(0270 C — 종류의 것은 `weapons::CLASSES`).
+pub const SHIELD_PAIR: [Kind; 2] = [Kind::Drain, Kind::Knell];
+pub const SHIELD_GREAT: Ult = Ult::Bell;
 
 /// 무기 판의 줄이 열리는 때(그 판에 쓴 점수): 첫 스킬 · 둘째 스킬 · 결과 큰 기술.
 pub const PLATE_ROWS: [u32; 3] = [0, 3, 6];
@@ -48,39 +61,71 @@ pub struct Seat {
     pub col: Col,
 }
 
-/// 쥔 꼴의 대표 타입 둘(왼쪽 · 오른쪽 — 0270, 사장 2026-11-23 확인).
-pub fn pair(g: Grip) -> [Kind; 2] {
-    match g {
-        Grip::Duel => [Kind::Sharp, Kind::Rift],
-        Grip::Shield => [Kind::Drain, Kind::Knell],
-        Grip::Heavy => [Kind::Shock, Kind::Knell],
-        Grip::Focus => [Kind::Frost, Kind::Ember],
-        Grip::Ranged => [Kind::Frost, Kind::Root],
-    }
-}
-
-/// 쥔 꼴의 큰 기술(판의 셋째 줄 가운데).
-pub fn great(g: Grip) -> Ult {
-    match g {
-        Grip::Duel => Ult::Flurry,
-        Grip::Shield => Ult::Bell,
-        Grip::Heavy => Ult::Upend,
-        Grip::Focus => Ult::Blizzard,
-        Grip::Ranged => Ult::Line,
-    }
-}
-
 impl Plate {
+    /// 쥔 꼴의 판(0272 — 판 줄의 금빛 점·탭을 열 때의 판): 종류의 판 또는 방패 판, 맨손은 무기 판이 없다.
+    pub fn held(g: Grip) -> Option<Plate> {
+        match g {
+            Grip::Bare => None,
+            Grip::Class(c) => Some(Plate::Class(c)),
+            Grip::Shield => Some(Plate::Shield),
+        }
+    }
+
+    /// 이 판을 켜는 쥔 꼴(`held`의 거꾸로 — 공통 판은 쥔 것을 묻지 않는다).
+    pub fn grip(self) -> Option<Grip> {
+        match self {
+            Plate::Body => None,
+            Plate::Class(c) => Some(Grip::Class(c)),
+            Plate::Shield => Some(Grip::Shield),
+        }
+    }
+
+    /// 판의 이름(판 줄).
+    pub fn name(self) -> Tr {
+        match self {
+            Plate::Body => |s| s.plate_common,
+            Plate::Class(c) => c.def().name,
+            Plate::Shield => |s| s.plate_shield,
+        }
+    }
+
+    /// 무기 판의 대표 타입 둘(왼쪽 · 오른쪽 갈래) — 공통 판은 없다.
+    pub fn pair(self) -> Option<[Kind; 2]> {
+        match self {
+            Plate::Body => None,
+            Plate::Class(c) => Some(c.def().pair),
+            Plate::Shield => Some(SHIELD_PAIR),
+        }
+    }
+
+    /// 무기 판의 큰 기술(셋째 줄 가운데).
+    pub fn great(self) -> Option<Ult> {
+        match self {
+            Plate::Body => None,
+            Plate::Class(c) => Some(c.def().great),
+            Plate::Shield => Some(SHIELD_GREAT),
+        }
+    }
+
+    /// 무기 판 가운데 열의 머리: 그 종류의 물리 속성(참격·타격·관통·마법), 방패 판은 방어.
+    pub fn attribute(self) -> Option<Tr> {
+        match self {
+            Plate::Body => None,
+            Plate::Class(c) => Some(c.def().attribute),
+            Plate::Shield => Some(|s| s.attr_guard),
+        }
+    }
+
     /// 판의 차례(`PLATES`의 자리).
     pub fn index(self) -> usize {
         PLATES.iter().position(|p| *p == self).unwrap_or(0)
     }
 
-    /// 칸 `e`가 이 판에 서나: 몸의 판 = 패시브·맺음·다리(지금 판의 갈래 셋 — 0270 C 세부 설계), 무기 판 = `seats`.
+    /// 칸 `e`가 이 판에 서나: 공통 판 = 패시브·맺음·다리(지금 판의 갈래 셋 — 0270 C 세부 설계), 무기 판 = `seats`.
     pub fn has(self, e: Entry) -> bool {
         match self {
             Plate::Body => matches!(e, Entry::Cell(_) | Entry::Key(_) | Entry::Link(_)),
-            Plate::Grip(_) => self.seats().iter().any(|s| s.entry == e),
+            Plate::Class(_) | Plate::Shield => self.seats().iter().any(|s| s.entry == e),
         }
     }
 
@@ -96,13 +141,15 @@ impl Plate {
         self.seats().into_iter().find(|s| s.entry == e)
     }
 
-    /// 판의 칸들: 그 꼴로 쓸 수 있는 스킬(타입으로 갈래, 첫 줄 스킬은 줄 0 · 나머지 줄 1) + 셋째 줄의 결(대표 타입의 결이 있으면)과
-    /// 큰 기술. 몸의 판은 무기 판의 칸이 없다(지금의 판 — `skills::ENTRIES`의 패시브·다리·맺음).
+    /// 판의 칸들: 그 판의 비트를 가진 스킬(타입으로 갈래, 첫 줄 스킬은 줄 0 · 나머지 줄 1) + 셋째 줄의 결(대표 타입의 결이 있으면)과
+    /// 큰 기술. 공통 판은 무기 판의 칸이 없다(`skills::ENTRIES`의 패시브·다리·맺음).
     pub fn seats(self) -> Vec<Seat> {
-        let Plate::Grip(g) = self else {
+        let (Some([a, b]), Some(great)) = (self.pair(), self.great()) else {
             return Vec::new();
         };
-        let [a, b] = pair(g);
+        let Some(grip) = self.grip() else {
+            return Vec::new();
+        };
         let col_of = |k: Kind| {
             if k == a {
                 Col::Left
@@ -114,7 +161,7 @@ impl Plate {
         };
         let mut out: Vec<Seat> = IDS
             .iter()
-            .filter(|id| id.def().fits(g))
+            .filter(|id| id.def().fits(grip))
             .map(|&id: &Id| Seat {
                 entry: Entry::Skill(id),
                 row: u8::from(id.def().row > 0),
@@ -131,14 +178,14 @@ impl Plate {
             }
         }
         out.push(Seat {
-            entry: Entry::Ult(great(g)),
+            entry: Entry::Ult(great),
             row: 2,
             col: Col::Mid,
         });
         out
     }
 
-    /// 이 판에 쓴 점수(판에 선 칸의 산 단 — 여러 판에 선 스킬은 판마다 센다: 줄의 열림만 보는 셈이다). 몸의 판은 그 패시브·맺음·다리.
+    /// 이 판에 쓴 점수(판에 선 칸의 산 단 — 여러 판에 선 스킬은 판마다 센다: 줄의 열림만 보는 셈이다). 공통 판은 그 패시브·맺음·다리.
     pub fn spent(self, board: &Board) -> u32 {
         ENTRIES
             .iter()
@@ -147,7 +194,7 @@ impl Plate {
             .sum()
     }
 
-    /// `row`줄이 이 판에서 열렸나(무기 판의 줄 — 몸의 판은 쓴 점수 합의 `ROW_NEEDS`로 연다, `offer_on`).
+    /// `row`줄이 이 판에서 열렸나(무기 판의 줄 — 공통 판은 쓴 점수 합의 `ROW_NEEDS`로 연다, `offer_on`).
     pub fn row_open(self, board: &Board, row: u8) -> bool {
         self.spent(board) >= row_need(row)
     }
@@ -158,7 +205,7 @@ pub fn row_need(row: u8) -> u32 {
     PLATE_ROWS[(row as usize).min(PLATE_ROWS.len() - 1)]
 }
 
-/// 판 `plate`에서 칸 `e`의 다음 단을 지금 살 수 있나(0270 C2). 몸의 판(또는 그 판에 서지 않은 칸)은 `Board::offer` 그대로.
+/// 판 `plate`에서 칸 `e`의 다음 단을 지금 살 수 있나(0270 C2). 공통 판(또는 그 판에 서지 않은 칸)은 `Board::offer` 그대로.
 /// 무기 판은 쓴 점수 합의 줄(`ROW_NEEDS`)과 판의 길(0215)을 묻지 않고 **그 판의 줄**로 연다 — `Locked(n)` = 이 판에 n점 더.
 /// 결의 칸은 지금 규칙 그대로(그 타입의 스킬을 먼저 배워야 — `Offer::Cut`), 큰 기술은 첫 단의 값 `ULT_LEARN`.
 pub fn offer_on(plate: Plate, board: &Board, e: Entry, total: u32) -> Offer {
@@ -199,7 +246,7 @@ pub fn can_buy(board: &Board, total: u32) -> bool {
     })
 }
 
-/// 칸 `e`가 어느 판에든 서나(몸의 판 또는 무기 판 하나 — 0270 C5).
+/// 칸 `e`가 어느 판에든 서나(공통 판 또는 무기 판 하나 — 0270 C5).
 pub fn stands(e: Entry) -> bool {
     PLATES.iter().any(|p| p.has(e))
 }
@@ -235,21 +282,124 @@ pub fn home(e: Entry, prefer: &[Plate]) -> Plate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::weapons::GRIPS;
+
+    const SWORD: Plate = Plate::Class(Class::Sword);
+    const HAMMER: Plate = Plate::Class(Class::Hammer);
+    const STAFF: Plate = Plate::Class(Class::Staff);
+    const CROSSBOW: Plate = Plate::Class(Class::Crossbow);
+    const BOW: Plate = Plate::Class(Class::Bow);
 
     #[test]
-    fn every_grip_pairs_two_different_types_and_every_type_has_a_home() {
+    fn every_weapon_plate_pairs_two_different_types_and_every_type_has_a_home() {
         let mut homes = Vec::new();
-        for g in GRIPS {
-            let [a, b] = pair(g);
+        for p in PLATES.into_iter().skip(1) {
+            let [a, b] = p.pair().unwrap();
             assert!(
                 a != b && a != Kind::Physical && b != Kind::Physical,
-                "{g:?}"
+                "{p:?}"
             );
             homes.extend([a, b]);
         }
         for k in crate::status::TYPED {
             assert!(homes.contains(&k), "{k:?} belongs to no weapon");
+        }
+    }
+
+    /// 0272: 판 줄 = 공통 · 종류(표의 차례) · 방패. 종류마다 판 하나 — 쥔 꼴과 판은 서로의 거꾸로다(맨손은 무기 판이 없다).
+    #[test]
+    fn the_strip_is_common_then_every_class_then_the_shield() {
+        assert_eq!(
+            PLATES,
+            [
+                Plate::Body,
+                SWORD,
+                HAMMER,
+                STAFF,
+                CROSSBOW,
+                BOW,
+                Plate::Shield
+            ]
+        );
+        assert_eq!(PLATES.len(), CLASSES.len() + 2);
+        for (i, c) in CLASSES.iter().enumerate() {
+            assert_eq!(PLATES[i + 1], Plate::Class(c.class));
+        }
+        for p in PLATES {
+            assert_eq!(PLATES[p.index()], p);
+            assert_eq!(
+                p.grip().and_then(Plate::held),
+                (p != Plate::Body).then_some(p)
+            );
+            assert_eq!(p.attribute().is_some(), p != Plate::Body);
+        }
+        assert_eq!(Plate::held(Grip::Bare), None);
+        use crate::weapons::Id as W;
+        assert_eq!(Plate::held(W::Fists.grip(false)), None, "bare hands");
+        assert_eq!(Plate::held(W::Fists.grip(true)), Some(Plate::Shield));
+        assert_eq!(Plate::held(W::Sword.grip(false)), Some(SWORD));
+        assert_eq!(Plate::held(W::Sword.grip(true)), Some(Plate::Shield));
+        assert_eq!(Plate::held(W::Hammer.grip(true)), Some(HAMMER), "two hands");
+        assert_eq!(Plate::held(W::Crossbow.grip(false)), Some(CROSSBOW));
+        assert_eq!(Plate::held(W::Bow.grip(false)), Some(BOW));
+    }
+
+    /// 0272: 원거리 판을 쇠뇌와 활로 갈랐다 — 종류마다 제 타입 짝과 큰 기술 하나, 타입 갈래마다 첫 줄과 둘째 줄의 스킬.
+    #[test]
+    fn the_crossbow_and_the_bow_have_their_own_plates() {
+        assert_eq!(CROSSBOW.pair(), Some([Kind::Ember, Kind::Shock]));
+        assert_eq!(BOW.pair(), Some([Kind::Root, Kind::Frost]));
+        assert_eq!(CROSSBOW.great(), Some(Ult::Line));
+        assert_eq!(BOW.great(), Some(Ult::Rain));
+        let at = |p: Plate, col: Col, row: u8| -> Vec<Entry> {
+            p.seats()
+                .into_iter()
+                .filter(|s| s.col == col && s.row == row)
+                .map(|s| s.entry)
+                .collect()
+        };
+        let sk = |ids: &[Id]| ids.iter().map(|&i| Entry::Skill(i)).collect::<Vec<_>>();
+        assert_eq!(at(CROSSBOW, Col::Left, 0), sk(&[Id::Flare]));
+        assert_eq!(at(CROSSBOW, Col::Left, 1), sk(&[Id::Embers]));
+        assert_eq!(at(CROSSBOW, Col::Mid, 0), sk(&[Id::Gather]));
+        assert_eq!(at(CROSSBOW, Col::Mid, 1), sk(&[Id::Echo]));
+        assert_eq!(at(CROSSBOW, Col::Right, 0), sk(&[Id::Fuse]));
+        assert_eq!(at(CROSSBOW, Col::Right, 1), sk(&[Id::Mine]));
+        assert_eq!(at(CROSSBOW, Col::Left, 2), [Entry::Vein(Vein::Ember)]);
+        assert_eq!(at(CROSSBOW, Col::Mid, 2), [Entry::Ult(Ult::Line)]);
+        assert_eq!(at(CROSSBOW, Col::Right, 2), [Entry::Vein(Vein::Shock)]);
+        assert_eq!(at(BOW, Col::Left, 0), sk(&[Id::Snare]));
+        assert_eq!(at(BOW, Col::Left, 1), sk(&[Id::Roots]));
+        assert_eq!(at(BOW, Col::Mid, 0), []);
+        assert_eq!(at(BOW, Col::Mid, 1), sk(&[Id::Echo]));
+        assert_eq!(at(BOW, Col::Right, 0), sk(&[Id::Gather]));
+        assert_eq!(at(BOW, Col::Right, 1), sk(&[Id::Snow]));
+        assert_eq!(at(BOW, Col::Left, 2), [Entry::Vein(Vein::Root)]);
+        assert_eq!(at(BOW, Col::Mid, 2), [Entry::Ult(Ult::Rain)]);
+        assert_eq!(at(BOW, Col::Right, 2), [Entry::Vein(Vein::Frost)]);
+        // 판마다의 칸 수(스킬 · 결 · 큰 기술 — `tools/test/hearth.js`가 같은 수를 센다).
+        let n = |p: Plate| p.seats().len();
+        assert_eq!(
+            [
+                n(SWORD),
+                n(HAMMER),
+                n(STAFF),
+                n(CROSSBOW),
+                n(BOW),
+                n(Plate::Shield)
+            ],
+            [10, 11, 10, 9, 8, 10]
+        );
+        // 옛 원거리 판에 섰던 스킬은 모두 두 판 가운데 하나에는 선다(0270 C5 — 돌려줄 것이 없다).
+        for id in [
+            Id::Gather,
+            Id::Echo,
+            Id::Embers,
+            Id::Roots,
+            Id::Snow,
+            Id::Snare,
+        ] {
+            let e = Entry::Skill(id);
+            assert!(CROSSBOW.has(e) || BOW.has(e), "{id:?}");
         }
     }
 
@@ -272,13 +422,13 @@ mod tests {
     #[test]
     fn a_skill_stands_once_on_every_plate_it_fits_on_its_types_side() {
         for p in PLATES.into_iter().skip(1) {
-            let Plate::Grip(g) = p else { unreachable!() };
+            let g = p.grip().unwrap();
             let seats = p.seats();
             for id in IDS {
                 let n = seats.iter().filter(|s| s.entry == Entry::Skill(id)).count();
                 assert_eq!(n, usize::from(id.def().fits(g)), "{g:?} {id:?}");
             }
-            let [a, b] = pair(g);
+            let [a, b] = p.pair().unwrap();
             for s in &seats {
                 if let Entry::Skill(id) = s.entry {
                     let k = id.def().kind;
@@ -306,8 +456,8 @@ mod tests {
     #[test]
     fn points_spent_on_one_plate_open_its_rows_and_not_anothers() {
         let mut b = Board::default();
-        let duel = Plate::Grip(Grip::Duel);
-        let staff = Plate::Grip(Grip::Focus);
+        let duel = SWORD;
+        let staff = STAFF;
         // 가로지르기(결투만) 셋.
         for _ in 0..3 {
             b.rank[Id::Cut.index()] += 1;
@@ -322,7 +472,7 @@ mod tests {
     /// 산 단은 같은 판(`Board`)에 남는다(기록 키 그대로).
     #[test]
     fn a_weapon_plate_sells_by_its_own_rows_and_the_body_keeps_the_old_rules() {
-        let duel = Plate::Grip(Grip::Duel);
+        let duel = SWORD;
         let mut b = Board::default();
         let throw = Entry::Skill(Id::Throw);
         let flurry = Entry::Ult(Ult::Flurry);
@@ -362,12 +512,12 @@ mod tests {
             "no rift skill yet"
         );
         // 다른 판의 점수는 세지 않는다: 지팡이 판의 둘째 줄은 아직.
-        let staff = Plate::Grip(Grip::Focus);
+        let staff = STAFF;
         assert_eq!(
             offer_on(staff, &b, Entry::Skill(Id::Embers), 99),
             Offer::Locked(3)
         );
-        // 몸의 판(과 그 판에 서지 않은 칸)은 지금 판 그대로.
+        // 공통 판(과 그 판에 서지 않은 칸)은 지금 판 그대로.
         for e in ENTRIES {
             assert_eq!(offer_on(Plate::Body, &b, e, 99), b.offer(e, 99), "{e:?}");
         }
@@ -462,14 +612,14 @@ mod tests {
         assert_eq!(shut.cells.count(), 1);
     }
 
-    /// 칸을 보여 줄 판: 든 무기 · 부무기의 판 먼저, 없으면 판의 차례 — 몸의 칸은 몸의 판.
+    /// 칸을 보여 줄 판: 든 무기 · 부무기의 판 먼저, 없으면 판의 차례 — 몸의 칸은 공통 판.
     #[test]
     fn an_entry_is_shown_on_the_held_plate_first() {
-        let heavy = Plate::Grip(Grip::Heavy);
-        let shield = Plate::Grip(Grip::Shield);
+        let heavy = HAMMER;
+        let shield = Plate::Shield;
         let whirl = Entry::Skill(Id::Whirl);
         assert_eq!(home(whirl, &[heavy]), heavy);
-        assert_eq!(home(whirl, &[]), Plate::Grip(Grip::Duel));
+        assert_eq!(home(whirl, &[]), SWORD);
         assert_eq!(home(Entry::Skill(Id::Quake), &[shield]), heavy);
         assert_eq!(
             home(Entry::Cell(crate::progression::Cell::Catch), &[heavy]),

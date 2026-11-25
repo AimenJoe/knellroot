@@ -2408,6 +2408,91 @@ forge.sword=3
         );
     }
 
+    /// 0272: 판을 종류로 가르고 이름을 바꿔도 기록은 그대로다 — 기록에는 스킬마다의 단만 있고 판에 쓴 점수는 거기서 다시 센다.
+    /// 옛 "원거리" 판에서 산 것이 든 기록(가르기 전의 글 그대로)을 읽으면: 산 단·고르기·끼운 칸이 그대로고, 산 칸은 모두 어느 판에든
+    /// 서며(쇠뇌 또는 활 — 못 서는 칸은 `drop_unseated`가 점수로 돌려주는데 여기에는 없다), 쓴 점수는 가진 점수 안이다.
+    /// 다시 적으면 같은 줄이 나온다.
+    #[test]
+    fn an_old_record_with_ranged_plate_purchases_stays_seated_after_the_split() {
+        use crate::plates::{self, Plate};
+        use crate::progression::Vein;
+        use crate::skills::{Entry, Id, Pick, Ult, ENTRIES};
+        use crate::weapons::Class;
+        // 옛 원거리 판(서리 · 뿌리 + 한 줄기)에서 산 것: 끌어모으기 2 · 되울림 1 · 잔불 흩기 2 · 뿌리 솟기 1 · 눈발 3(ㄴ) · 뿌리 덫 2 ·
+        // 결 둘(서리 · 뿌리) · 한 줄기 1단(2점) = 15점, 가진 점수 = 레벨 15.
+        let old = "v=1\nmigrated.v04=1\nmigrated.v06=1\nmigrated.ult=1\nmigrated.sword=1\nplay=1\n\
+                   lv.life=5\nlv.stamina=5\nlv.might=5\nweapons=sword,crossbow,bow\nweapon=crossbow\nweapon.sub=bow\n\
+                   skill.rank.gather=2\nskill.rank.echo=1\nskill.rank.embers=2\nskill.rank.roots=1\n\
+                   skill.rank.snow=3\nskill.pick.snow=b\nskill.rank.snare=2\nult.rank.line=1\nult.worn=line\n\
+                   tree.veins=root,frost\nskill.1=embers\nskill.2=snare\nskill.sub.1=roots\nskill.sub.2=snow\n";
+        let p = Progress::from_record(Record::parse(old));
+        let bought = [
+            (Id::Gather, 2),
+            (Id::Echo, 1),
+            (Id::Embers, 2),
+            (Id::Roots, 1),
+            (Id::Snow, 3),
+            (Id::Snare, 2),
+        ];
+        for (id, rank) in bought {
+            assert_eq!(p.board.rank[id.index()], rank, "{id:?} keeps its rank");
+        }
+        assert_eq!(p.board.pick[Id::Snow.index()], Pick::B);
+        assert_eq!(p.board.rank(Entry::Ult(Ult::Line)), 1);
+        assert!(p.board.cells.veined(Vein::Root) && p.board.cells.veined(Vein::Frost));
+        assert_eq!(
+            (p.board.spent(), p.skill_points()),
+            (15, 15),
+            "nothing refunded"
+        );
+        assert_eq!(p.ult, Ult::Line);
+        assert_eq!(p.skills.0, [Id::Embers, Id::Snare]);
+        assert_eq!(p.sub_skills.0, [Id::Roots, Id::Snow]);
+        // 산 칸은 모두 어느 판에든 선다 — 옛 원거리 판의 스킬은 쇠뇌 판이나 활 판에.
+        let (xbow, bow) = (Plate::Class(Class::Crossbow), Plate::Class(Class::Bow));
+        for e in ENTRIES {
+            assert!(p.board.rank(e) == 0 || plates::stands(e), "{e:?} is seated");
+        }
+        for (id, _) in bought {
+            let e = Entry::Skill(id);
+            assert!(
+                xbow.has(e) || bow.has(e),
+                "{id:?} on the crossbow or the bow"
+            );
+        }
+        // 판에 쓴 점수는 단에서 다시 센다: 쇠뇌 = 끌어모으기 2 + 되울림 1 + 잔불 흩기 2 + 한 줄기 2, 활 = 끌어모으기 2 + 되울림 1 +
+        // 뿌리 솟기 1 + 눈발 3 + 뿌리 덫 2 + 결 둘.
+        assert_eq!((xbow.spent(&p.board), bow.spent(&p.board)), (7, 11));
+        // 다시 적어도 같은 줄(키 이름은 바뀌지 않았다).
+        let text = p.to_record().to_text();
+        for line in [
+            "skill.rank.gather=2\n",
+            "skill.rank.embers=2\n",
+            "skill.rank.snow=3\n",
+            "skill.pick.snow=b\n",
+            "skill.rank.snare=2\n",
+            "ult.rank.line=1\n",
+            "ult.worn=line\n",
+            "skill.1=embers\n",
+            "skill.2=snare\n",
+            "skill.sub.1=roots\n",
+            "skill.sub.2=snow\n",
+        ] {
+            assert!(text.contains(line), "{line:?} in {text}");
+        }
+        let again = Progress::from_record(Record::parse(&text));
+        assert_eq!(
+            (again.board, again.skills, again.sub_skills),
+            (p.board, p.skills, p.sub_skills)
+        );
+        // 가진 점수보다 많이 쓴 기록(손댄 기록)도 돌려받거나 앉는다 — 쓴 점수가 가진 점수를 넘지 않는다.
+        let over = Progress::from_record(Record::parse(&old.replace("lv.might=5", "lv.might=1")));
+        assert!(over.board.spent() <= over.skill_points());
+        for e in ENTRIES {
+            assert!(over.board.rank(e) == 0 || plates::stands(e), "{e:?}");
+        }
+    }
+
     /// 0176: 걸친 덧옷은 기록 `garb.worn`에 남고, 가진 덧옷(주운 숨은 물건)이 아니면 벗은 채로 읽는다. 안 걸쳤으면 키를 쓰지 않는다.
     #[test]
     fn the_worn_garment_round_trips_only_when_owned() {

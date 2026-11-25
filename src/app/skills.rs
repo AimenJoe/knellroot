@@ -63,6 +63,8 @@ pub(super) fn skill_text(id: sk::Id) -> (&'static str, &'static str) {
         sk::Id::Snow => (s.skill_snow, s.skill_snow_d),
         sk::Id::Flare => (s.skill_flare, s.skill_flare_d),
         sk::Id::Snare => (s.skill_snare, s.skill_snare_d),
+        sk::Id::Fuse => (s.skill_fuse, s.skill_fuse_d),
+        sk::Id::Mine => (s.skill_mine, s.skill_mine_d),
     }
 }
 
@@ -75,6 +77,7 @@ pub(super) fn ult_text(u: sk::Ult) -> (&'static str, &'static str) {
         sk::Ult::Line => (s.ult_line, s.ult_line_d),
         sk::Ult::Bell => (s.ult_bell, s.ult_bell_d),
         sk::Ult::Blizzard => (s.ult_blizzard, s.ult_blizzard_d),
+        sk::Ult::Rain => (s.ult_rain, s.ult_rain_d),
     }
 }
 
@@ -149,6 +152,10 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Flare, Pick::B) => (s.pick_flare_b, s.pick_flare_b_d),
         (sk::Id::Snare, Pick::A) => (s.pick_snare_a, s.pick_snare_a_d),
         (sk::Id::Snare, Pick::B) => (s.pick_snare_b, s.pick_snare_b_d),
+        (sk::Id::Fuse, Pick::A) => (s.pick_fuse_a, s.pick_fuse_a_d),
+        (sk::Id::Fuse, Pick::B) => (s.pick_fuse_b, s.pick_fuse_b_d),
+        (sk::Id::Mine, Pick::A) => (s.pick_mine_a, s.pick_mine_a_d),
+        (sk::Id::Mine, Pick::B) => (s.pick_mine_b, s.pick_mine_b_d),
     };
     (mark, name, desc)
 }
@@ -176,6 +183,8 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Snow => s.cap_snow,
         sk::Id::Flare => s.cap_flare,
         sk::Id::Snare => s.cap_snare,
+        sk::Id::Fuse => s.cap_fuse,
+        sk::Id::Mine => s.cap_mine,
     }
 }
 
@@ -255,20 +264,14 @@ pub(super) fn ult_gives(u: sk::Ult, rank: u8) -> String {
         (sk::Ult::Bell, _) => fill(s.rk_line_dmg, &[&sk::BELL.damage3.to_string()]),
         (sk::Ult::Blizzard, 2) => fill(s.rk_flurry_secs, &[&num(sk::BLIZZARD.secs2)]),
         (sk::Ult::Blizzard, _) => fill(s.rk_line_dmg, &[&sk::BLIZZARD.damage3.to_string()]),
+        (sk::Ult::Rain, 2) => fill(s.rk_flurry_secs, &[&num(sk::RAIN.secs2)]),
+        (sk::Ult::Rain, _) => fill(s.rk_line_dmg, &[&sk::RAIN.damage3.to_string()]),
     }
 }
 
-/// 판의 이름(0270 C2).
+/// 판의 이름(0270 C2 → 0272: 공통 · 종류의 이름 · 방패).
 pub(super) fn plate_name(p: Plate) -> &'static str {
-    let s = s();
-    match p {
-        Plate::Body => s.plate_body,
-        Plate::Grip(Grip::Duel) => s.plate_duel,
-        Plate::Grip(Grip::Shield) => s.plate_shield,
-        Plate::Grip(Grip::Heavy) => s.plate_heavy,
-        Plate::Grip(Grip::Focus) => s.plate_focus,
-        Plate::Grip(Grip::Ranged) => s.plate_ranged,
-    }
+    tr(p.name())
 }
 
 /// 타입의 이름 — 물리도 이름이 있다(무기 판의 갈래 머리·스킬의 종류 줄).
@@ -295,7 +298,7 @@ pub(super) fn kind_line(board: &Board, e: Entry) -> String {
         Entry::Ult(u) => {
             let on: Vec<&str> = PLATES
                 .iter()
-                .filter(|p| matches!(p, Plate::Grip(g) if plates::great(*g) == u))
+                .filter(|p| p.great() == Some(u))
                 .map(|&p| plate_name(p))
                 .collect();
             fill(s.sk_kind_ult, &[&on.join(" · ")])
@@ -460,33 +463,31 @@ pub(super) fn wear_skill(worn: [sk::Id; 2], slot: usize, id: sk::Id) -> [sk::Id;
     out
 }
 
-/// 그 스킬을 쓰는 무기 갈래의 이름들(" · "로 이은 글 — 어느 무기나 되면 그 말).
+/// 그 스킬을 쓰는 무기 종류의 이름들(" · "로 이은 글 — 어느 무기나 되면 그 말, 0272). 한손 종류는 방패로 갈린다: 방패를 들어도
+/// 되면 이름만, 방패 없이만 되면 "한손검(방패 없이)", 방패와 함께만 되면 "방패(한손 무기와 함께)".
 pub(super) fn hands_text(id: sk::Id) -> String {
+    use crate::weapons::{Hand, CLASSES};
     let s = s();
     let h = id.def().hands;
-    // 한손검의 두 갈래(0225): 방패와 함께만 쓰는 것 = 방패 기술, 방패 없이만 쓰는 것 = 결투 기술.
-    match h {
-        sk::ANY => return s.hands_any.to_string(),
-        sk::DUEL => return s.hands_duel_art.to_string(),
-        sk::SHIELD => return s.hands_shield_art.to_string(),
-        _ => {}
+    if h == sk::ANY {
+        return s.hands_any.to_string();
     }
-    // 한손 둘(방패가 있든 없든)·양손 둘(망치·지팡이)이 다 되면 묶어서 말한다.
-    let mut names = Vec::new();
-    let mut left = h;
-    for (bits, name) in [
-        (sk::ONE, s.hands_one),
-        (sk::TWO, s.hands_two),
-        (sk::DUEL, s.hands_duel),
-        (sk::SHIELD, s.hands_shield),
-        (sk::HEAVY, s.hands_heavy),
-        (sk::FOCUS, s.hands_focus),
-        (sk::RANGED, s.hands_ranged),
-    ] {
-        if left & bits == bits {
-            names.push(name);
-            left &= !bits;
+    let shield = h & sk::SHIELD != 0;
+    let mut one = false;
+    let mut names: Vec<String> = Vec::new();
+    for c in CLASSES.iter().filter(|c| h & sk::class_bit(c.class) != 0) {
+        let name = tr(c.name);
+        if c.hand == Hand::One {
+            one = true;
+            if !shield {
+                names.push(fill(s.hands_no_shield, &[name]));
+                continue;
+            }
         }
+        names.push(name.to_string());
+    }
+    if shield && !one {
+        names.push(s.hands_shield.to_string());
     }
     names.join(" · ")
 }
@@ -570,7 +571,7 @@ pub(super) mod geo {
     pub fn bands(plate: Plate) -> &'static [f32] {
         match plate {
             Plate::Body => &BODY_BAND,
-            Plate::Grip(_) => &WEAPON_BAND,
+            Plate::Class(_) | Plate::Shield => &WEAPON_BAND,
         }
     }
 
@@ -598,7 +599,7 @@ pub(super) struct Spot {
 pub(super) fn row_on(plate: Plate, e: Entry) -> usize {
     match plate {
         Plate::Body => e.row(),
-        Plate::Grip(_) => plate.seat(e).map_or(0, |s| s.row as usize),
+        Plate::Class(_) | Plate::Shield => plate.seat(e).map_or(0, |s| s.row as usize),
     }
 }
 
@@ -633,7 +634,7 @@ pub(super) fn spots_on(plate: Plate) -> Vec<(usize, Spot)> {
                 )
             })
             .collect(),
-        Plate::Grip(_) => {
+        Plate::Class(_) | Plate::Shield => {
             let seats = plate.seats();
             seats
                 .iter()
@@ -1130,14 +1131,13 @@ impl App {
         !self.dev_board_on() && b.spent() > 0 && self.world.embers >= b.respec_cost()
     }
 
-    /// 든 무기·부무기의 판(0270 C2): 쥔 꼴의 판 — 스킬을 끼우는 셈(`kits`·`World::grip`)과 같은 꼴. 맨손도 결투의 꼴이다(맨손으로
-    /// 쓰는 스킬이 결투 판에 있다 — 몸의 판에서 열면 새 판의 첫 쉼에 배울 칸이 없다: 몸의 패시브는 스킬 밑에서 이어진다).
-    /// 판 줄의 금빛 표지와 판을 고르는 차례가 쓴다.
+    /// 든 무기·보조무기의 판(0270 C2 → 0272): 쥔 꼴의 판(`Plate::held`) — 스킬을 끼우는 셈(`kits`·`World::grip`)과 같은 꼴.
+    /// 맨손은 무기 판이 없다(공통 판에서 연다 — 한손검의 판을 빌려 쓰지 않는다). 판 줄의 금빛 표지와 판을 고르는 차례가 쓴다.
     pub(super) fn held_plates(&self) -> (Option<Plate>, Option<Plate>) {
         let kits = self.kits();
         (
-            Some(Plate::Grip(kits.main.0)),
-            kits.sub.map(|(g, _)| Plate::Grip(g)),
+            Plate::held(kits.main.0),
+            kits.sub.and_then(|(g, _)| Plate::held(g)),
         )
     }
 
@@ -1631,8 +1631,10 @@ impl App {
                         .text_center(&motto, cx, w.at(0.0, head + 14.5).y, 0.62 * k, DIM);
                 }
             }
-            Plate::Grip(g) => {
-                let [a, b] = plates::pair(g);
+            Plate::Class(_) | Plate::Shield => {
+                // 가운데 열의 머리 = 그 종류의 물리 속성(참격 · 타격 · 관통 · 마법 — 방패 판은 방어, 0272).
+                let [a, b] = plate.pair().unwrap_or([crate::status::Kind::Physical; 2]);
+                let mid = plate.attribute().map_or("", tr);
                 for (col, kind) in [(0.0, Some(a)), (1.0, None), (2.0, Some(b))] {
                     let cx = w.at(geo::COL_W * (col + 0.5), 0.0).x;
                     let (name, ink) = match kind.and_then(|k| k.slot().map(|i| (k, i))) {
@@ -1640,7 +1642,7 @@ impl App {
                             let [r, g, b] = crate::status::INK[i];
                             (kind_name(kind), Color::new(r, g, b, 1.0))
                         }
-                        None => (s.sk_plate_other, DIM),
+                        None => (mid, DIM),
                     };
                     let name = self.ui.fit(name, (geo::COL_W - 4.0) * u, k);
                     self.ui
@@ -1664,7 +1666,7 @@ impl App {
         let bands = geo::bands(plate);
         let (spent, needs): (u32, Vec<u32>) = match plate {
             Plate::Body => (board.spent(), sk::ROW_NEEDS[..bands.len()].to_vec()),
-            Plate::Grip(_) => (plate.spent(board), plates::PLATE_ROWS.to_vec()),
+            Plate::Class(_) | Plate::Shield => (plate.spent(board), plates::PLATE_ROWS.to_vec()),
         };
         let open_mask: u8 = (0..bands.len())
             .filter(|&r| spent >= needs[r])
@@ -1692,7 +1694,7 @@ impl App {
             let label = fill(
                 match plate {
                     Plate::Body => s.sk_row_locked,
-                    Plate::Grip(_) => s.sk_row_plate,
+                    Plate::Class(_) | Plate::Shield => s.sk_row_plate,
                 },
                 &[&need.to_string(), &(need.saturating_sub(spent)).to_string()],
             );
@@ -1936,9 +1938,14 @@ impl App {
             None if at == STRIP => {
                 let kind = match plate {
                     Plate::Body => s.sk_plate_kind_body.to_string(),
-                    Plate::Grip(g) => {
-                        let [a, b] = plates::pair(g);
-                        fill(s.sk_plate_kind_grip, &[kind_name(a), kind_name(b)])
+                    Plate::Class(_) | Plate::Shield => {
+                        let [a, b] = plate.pair().unwrap_or([crate::status::Kind::Physical; 2]);
+                        let t = if plate == Plate::Shield {
+                            s.sk_plate_kind_shield
+                        } else {
+                            s.sk_plate_kind_grip
+                        };
+                        fill(t, &[kind_name(a), kind_name(b)])
                     }
                 };
                 let spent = fill(s.sk_plate_spent, &[&plate.spent(board).to_string()]);
@@ -2092,7 +2099,8 @@ impl App {
         if entry.is_none() && at == STRIP {
             let what = match plate {
                 Plate::Body => s.sk_plate_body_d,
-                Plate::Grip(_) => s.sk_plate_grip_d,
+                Plate::Class(_) => s.sk_plate_grip_d,
+                Plate::Shield => s.sk_plate_shield_d,
             };
             let mut v = vec![Block::Text {
                 lines: wrap(what, width, K_BODY),
@@ -2420,6 +2428,75 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::weapons::Class;
+
+    const SWORD: Plate = Plate::Class(Class::Sword);
+
+    /// 0272: "쓰는 무기" 줄은 종류의 이름으로 — 한손 종류는 방패로 갈린다(방패 없이만 되면 그렇게, 방패와 함께만 되면 방패),
+    /// 쇠뇌와 활은 따로, 모든 종류와 방패에 다 되면 "어느 무기나". 판의 이름도 종류 표에서 온다.
+    #[test]
+    fn the_hands_line_names_weapon_classes_and_the_plates_are_named_by_class() {
+        let s = s();
+        assert_eq!(hands_text(Id::Gather), s.hands_any);
+        assert_eq!(
+            hands_text(Id::Cut),
+            fill(s.hands_no_shield, &[s.class_sword])
+        );
+        assert_eq!(hands_text(Id::Bash), s.hands_shield);
+        assert_eq!(
+            hands_text(Id::Whirl),
+            format!("{} · {}", s.class_sword, s.class_hammer)
+        );
+        assert_eq!(
+            hands_text(Id::Toll),
+            format!("{} · {}", s.class_hammer, s.hands_shield)
+        );
+        assert_eq!(hands_text(Id::Snare), s.class_bow);
+        assert_eq!(hands_text(Id::Fuse), s.class_crossbow);
+        assert_eq!(
+            hands_text(Id::Embers),
+            format!("{} · {}", s.class_staff, s.class_crossbow)
+        );
+        let names: Vec<&str> = PLATES.iter().map(|&p| plate_name(p)).collect();
+        assert_eq!(
+            names,
+            [
+                s.plate_common,
+                s.class_sword,
+                s.class_hammer,
+                s.class_staff,
+                s.class_crossbow,
+                s.class_bow,
+                s.plate_shield
+            ]
+        );
+        // 가운데 열의 머리 = 종류의 물리 속성(방패 판은 방어) — "그 밖"은 없다.
+        let mids: Vec<&str> = PLATES[1..]
+            .iter()
+            .map(|p| tr(p.attribute().unwrap()))
+            .collect();
+        assert_eq!(
+            mids,
+            [
+                s.attr_slash,
+                s.attr_strike,
+                s.attr_magic,
+                s.attr_pierce,
+                s.attr_pierce,
+                s.attr_guard
+            ]
+        );
+        // 큰 기술의 종류 줄은 그것이 서는 판의 이름.
+        let b = Board::default();
+        assert_eq!(
+            kind_line(&b, Entry::Ult(Ult::Rain)),
+            fill(s.sk_kind_ult, &[s.class_bow])
+        );
+        assert_eq!(
+            kind_line(&b, Entry::Ult(Ult::Line)),
+            fill(s.sk_kind_ult, &[s.class_crossbow])
+        );
+    }
     use crate::progression::Cell;
     use sk::{Id, Ult};
 
@@ -2429,7 +2506,7 @@ mod tests {
 
     /// 칸이 서는 판(결투 판 먼저 — 시험의 무기는 한손 검).
     fn on(e: Entry) -> Plate {
-        plates::home(e, &[Plate::Grip(Grip::Duel)])
+        plates::home(e, &[SWORD])
     }
 
     /// 처음의 둘을 배운 판(0166: 새 판은 아무것도 모른다 — "배운 스킬"의 규칙은 이 판으로 본다).
@@ -2455,11 +2532,13 @@ mod tests {
                         None
                     }
                     (Plate::Body, _) => Some(e.branch().index()),
-                    (Plate::Grip(_), _) => Some(match plate.seat(e).unwrap().col {
-                        Col::Left => 0,
-                        Col::Mid => 1,
-                        Col::Right => 2,
-                    }),
+                    (Plate::Class(_) | Plate::Shield, _) => {
+                        Some(match plate.seat(e).unwrap().col {
+                            Col::Left => 0,
+                            Col::Mid => 1,
+                            Col::Right => 2,
+                        })
+                    }
                 };
                 if let Some(col) = col {
                     let x0 = geo::COL_W * col as f32;
@@ -2490,7 +2569,7 @@ mod tests {
             assert_eq!(s.c.x, ENTRIES[i].lane(), "{:?}", ENTRIES[i]);
         }
         // 무기 판의 스킬·큰 기술은 결보다 큰 칸.
-        let duel = Plate::Grip(Grip::Duel);
+        let duel = SWORD;
         let (cut, rift) = (
             spot_on(duel, at(Entry::Skill(Id::Cut))).unwrap(),
             spot_on(duel, at(Entry::Vein(crate::progression::Vein::Rift))).unwrap(),
@@ -2638,7 +2717,7 @@ mod tests {
     /// 어느 판에서든 어느 칸·판 줄·단추에서 떠나도 그 판의 모든 칸과 판 줄·단추에 닿는다.
     #[test]
     fn walking_reaches_every_cell_of_every_plate_from_anywhere() {
-        let duel = Plate::Grip(Grip::Duel);
+        let duel = SWORD;
         let w = |from, dx, dy| walk(duel, from, dx, dy, true, 0);
         let (whirl, cut, swallow, throw) = (
             at(Entry::Skill(Id::Whirl)),
@@ -2720,7 +2799,7 @@ mod tests {
     /// 전용(멈춤)이면 배운 첫 스킬, 그것도 없으면 왼쪽 위 칸.
     #[test]
     fn a_plate_opens_on_its_first_buyable_cell_or_first_learned_skill() {
-        let duel = Plate::Grip(Grip::Duel);
+        let duel = SWORD;
         let b = Board::default();
         // 결투 판의 첫 줄(읽는 차례: 왼쪽 바늘땀 → 가운데 휘돌이 · 끌어모으기 · 버팀 → 오른쪽 가로지르기 — 0270 C3).
         let stitch = at(Entry::Skill(Id::Stitch));
@@ -2758,7 +2837,7 @@ mod tests {
     fn the_action_list_holds_only_what_applies_with_the_primary_row_first() {
         let worn = sk::START;
         let kits = Kits {
-            main: (Grip::Duel, worn),
+            main: (Grip::Class(Class::Sword), worn),
             sub: None,
         };
         let b = started();
@@ -2825,7 +2904,7 @@ mod tests {
         assert!(acts(&all, 99, Entry::Ult(Ult::Upend), true).is_empty());
         assert_eq!(acts(&all, 99, Entry::Ult(Ult::Line), false), [Do::WearUlt]);
         assert!(node_acts(
-            Plate::Grip(Grip::Duel),
+            SWORD,
             &all,
             99,
             &kits,
@@ -2838,7 +2917,7 @@ mod tests {
         // 들면 부무기의 칸(2·3)에 끼우는 줄이 서고, 두 무기에 다 되는 스킬은 네 칸 모두.
         assert_eq!(
             node_acts(
-                Plate::Grip(Grip::Duel),
+                SWORD,
                 &all,
                 99,
                 &kits,
@@ -2849,20 +2928,10 @@ mod tests {
             [Do::Unfit]
         );
         let both = Kits {
-            main: (Grip::Duel, worn),
-            sub: Some((Grip::Heavy, [Id::Quake, Id::Gather])),
+            main: (Grip::Class(Class::Sword), worn),
+            sub: Some((Grip::Class(Class::Hammer), [Id::Quake, Id::Gather])),
         };
-        let at = |id| {
-            node_acts(
-                Plate::Grip(Grip::Duel),
-                &all,
-                99,
-                &both,
-                Ult::Upend,
-                Entry::Skill(id),
-                false,
-            )
-        };
+        let at = |id| node_acts(SWORD, &all, 99, &both, Ult::Upend, Entry::Skill(id), false);
         assert_eq!(
             at(Id::Quake),
             [Do::Wear(3)],
@@ -3049,7 +3118,7 @@ mod tests {
             fill(s.sk_st_branch, &["3"])
         );
         // 큰 기술을 배우는 첫 단은 2점 — 지팡이 판의 셋째 줄(그 판에 쓴 점수 6).
-        let staff = Plate::Grip(Grip::Focus);
+        let staff = Plate::Class(Class::Staff);
         let line = Entry::Ult(Ult::Blizzard);
         let mut open = Board::default();
         open.rank[Id::Gather.index()] = 5;
@@ -3120,7 +3189,7 @@ mod tests {
         assert!(kind_line(&b, Entry::Skill(Id::Whirl)).contains("6.3"));
         assert_eq!(
             kind_line(&b, Entry::Ult(Ult::Upend)),
-            fill(s.sk_kind_ult, &[s.plate_heavy])
+            fill(s.sk_kind_ult, &[s.class_hammer])
         );
         assert_eq!(
             kind_line(&b, Entry::Cell(Cell::TurnItBack)),

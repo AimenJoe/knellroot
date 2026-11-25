@@ -79,6 +79,10 @@ pub enum Kind {
     /// 그림만(0270 C3): 큰 기술 둘.
     GreatBell,
     Blizzard,
+    /// 그림만(0272): 쇠뇌 판의 스킬 둘 · 활 판의 큰 기술.
+    Fuse,
+    Mine,
+    Rain,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
@@ -951,7 +955,10 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Flare
         | Kind::Snare
         | Kind::GreatBell
-        | Kind::Blizzard => {}
+        | Kind::Blizzard
+        | Kind::Fuse
+        | Kind::Mine
+        | Kind::Rain => {}
         Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
@@ -1038,6 +1045,8 @@ pub fn skill_icon(id: crate::skills::Id) -> Kind {
         Id::Snow => Kind::Snow,
         Id::Flare => Kind::Flare,
         Id::Snare => Kind::Snare,
+        Id::Fuse => Kind::Fuse,
+        Id::Mine => Kind::Mine,
     }
 }
 
@@ -1050,6 +1059,7 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
         Ult::Line => Kind::Line,
         Ult::Bell => Kind::GreatBell,
         Ult::Blizzard => Kind::Blizzard,
+        Ult::Rain => Kind::Rain,
     }
 }
 
@@ -1936,6 +1946,54 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             "...######....",
             ".............",
         ],
+        // 심지 볼트(0272): 비스듬히 나는 볼트와 꼬리에서 튀는 심지 불꽃.
+        Kind::Fuse => [
+            "..........###",
+            "...........##",
+            "..........#.#",
+            "........##...",
+            ".......##....",
+            "......##.....",
+            ".....##......",
+            ".#.#.#.......",
+            "..###........",
+            ".#####.......",
+            "..###........",
+            ".#.#.#.......",
+            ".............",
+        ],
+        // 화약 덫(0272): 땅에 반쯤 묻힌 화약 통과 그 심지.
+        Kind::Mine => [
+            ".............",
+            "......#.#....",
+            ".......#.....",
+            "......#......",
+            "......#......",
+            "....#####....",
+            "...#######...",
+            "..##.###.##..",
+            "..#########..",
+            "#############",
+            ".............",
+            "..#..#.#..#..",
+            ".............",
+        ],
+        // 큰 기술 화살비(0272): 위에서 내리꽂히는 화살 다섯.
+        Kind::Rain => [
+            ".#....#....#.",
+            ".#....#....#.",
+            ".#....#....#.",
+            ".#....#....#.",
+            "###...#...###",
+            ".#...###...#.",
+            "......#......",
+            "...#.....#...",
+            "...#.....#...",
+            "...#.....#...",
+            "..###...###..",
+            "...#.....#...",
+            ".............",
+        ],
         // 큰 기술 몰아치기: 잇달아 긋는 빗금 셋.
         Kind::Flurry => [
             ".........###.",
@@ -2158,6 +2216,9 @@ mod tests {
             Kind::Snare,
             Kind::GreatBell,
             Kind::Blizzard,
+            Kind::Fuse,
+            Kind::Mine,
+            Kind::Rain,
             Kind::Pick,
             Kind::Open,
             Kind::Pull,

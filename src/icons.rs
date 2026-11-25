@@ -660,6 +660,9 @@ mod tests {
             touch::Kind::Snow,
             touch::Kind::Flare,
             touch::Kind::Snare,
+            touch::Kind::Fuse,
+            touch::Kind::Mine,
+            touch::Kind::Rain,
         ];
         let others: Vec<(String, Vec<bool>)> = touch_kinds
             .iter()

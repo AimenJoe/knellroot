@@ -229,7 +229,11 @@ impl World {
                         },
                     );
                 }
-                if f.trap {
+                // 화약 덫(0272 — 충격): 뿌리가 아니라 화약이 터진다.
+                let powder = f.dose.0 == crate::status::Kind::Shock;
+                if f.trap && powder {
+                    ev.push(Event::Boom { at: f.pos });
+                } else if f.trap {
                     // 솟는 덫: 씨 자리와 둘레에서 뿌리가 솟는다(그림 — 뿌리 솟기의 뿌리와 같은 것).
                     let g = vec3(f.pos.x, self.ground_y(f.pos), f.pos.z);
                     for k in 0..=TRAP_SPIKES {
@@ -256,7 +260,11 @@ impl World {
                 if let Some((radius, damage)) = f.spire {
                     let at = f.pos;
                     self.skill_blast(t, &mut ev, at, radius, damage, NO_DOSE, true);
-                    ev.push(Event::RootSpike { at });
+                    ev.push(if powder {
+                        Event::Boom { at }
+                    } else {
+                        Event::RootSpike { at }
+                    });
                 }
             }
             self.skill_ev = ev;

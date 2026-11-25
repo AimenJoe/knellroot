@@ -582,12 +582,17 @@ fn a_duel_hand_cuts_deeper_into_a_bleeding_foe() {
             deeper(plain),
             "skill {skill}: the duel hand cuts deeper"
         );
+        // 맨손(0272 — 무기 판이 없다): 평타는 빈 손의 덤을 받고, 무기 판의 스킬은 나가지 않는다.
         let fists = dealt(W::Fists, false, skill, false);
-        assert_eq!(
-            dealt(W::Fists, false, skill, true),
-            deeper(fists),
-            "skill {skill}: fists are a duel hand too"
-        );
+        if skill {
+            assert_eq!(fists, (0, 0), "bare hands wield no weapon skill");
+        } else {
+            assert_eq!(
+                dealt(W::Fists, false, false, true),
+                deeper(fists),
+                "fists are a free hand too"
+            );
+        }
         let hammer = dealt(W::Hammer, false, skill, false);
         assert!(hammer.0 > 0);
         assert_eq!(
