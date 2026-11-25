@@ -680,12 +680,21 @@ fn sub_trait_fight_length() {
         for (main, subs) in [
             (
                 W::Sword,
-                &[W::Hammer, W::Staff, W::Bow, W::Crossbow, W::Spear][..],
+                &[
+                    W::Hammer,
+                    W::Staff,
+                    W::Bow,
+                    W::Crossbow,
+                    W::Spear,
+                    W::Daggers,
+                ][..],
             ),
             (W::Hammer, &[W::Sword, W::Spear][..]),
             (W::Staff, &[W::Sword, W::Hammer, W::Spear][..]),
             // 0272 2단계: 창(주무기로도).
             (W::Spear, &[W::Sword, W::Hammer][..]),
+            // 0274 ③: 쌍단검(주무기로) · 쌍단검을 멘 검(손버릇 — 잔불만이라 0%여야 한다).
+            (W::Daggers, &[W::Sword][..]),
         ] {
             let base = with(b, main, None);
             let d0 = fight_vs(kind, true, &base, 1.0, 1, &t).secs;
@@ -805,7 +814,7 @@ fn sub_knob_probe() {
     }
 }
 
-/// 0274 ② 종류 모의: 한손검 · 망치(한손 3연타) · 망치와 방패 · 재기를 쓰는 한손검 · 망치를 멘 한손검(보조특성 = 등잔 회복량)을
+/// 0274 ② 종류 모의: 한손검 · 망치(한손 3연타) · 망치와 방패 · 재기를 쓰는 한손검 · 망치를 멘 한손검(보조특성 = 등잔 회복량) · 쌍단검(0274 ③)을
 /// 같은 몸·같은 씨앗으로 — 문지기(첫 도착 B) · 종지기(B) · 이끼 덮인 문지기(정원 도착 D). 성공률 0.5 · 0.7 · 0.85.
 /// 돌리기: `SIM_RUNS=300 cargo test --release class_fight_probe -- --ignored --nocapture`
 #[test]
@@ -840,6 +849,10 @@ fn class_fight_probe() {
             v("hammer", W::Hammer, None, false, 0),
             v("hammer+shield", W::Hammer, None, true, 0),
             v("hammer/sub sword", W::Hammer, Some(W::Sword), false, 0),
+            // 0274 ③: 쌍단검(주무기 · 보조무기로).
+            v("daggers", W::Daggers, None, false, 0),
+            v("daggers/sub sword", W::Daggers, Some(W::Sword), false, 0),
+            v("sword/sub daggers", W::Sword, Some(W::Daggers), false, 0),
         ];
         println!("\n## {kind:?} — {}", b.name);
         println!("variant          | dummy  | p    | win  | secs(win) | taken | flasks");

@@ -1,6 +1,6 @@
 // 이펙트를 틱마다 찍는다(0141): 헤드리스 Chromium으로 개발 시나리오를 띄우고, 개발 키 F6(한 프레임 = 한 틱)을 켠 뒤
 // 동작마다 연달아 스크린숏 — 0.1초짜리 번쩍임·먼지를 실제 시간으로는 못 잡는다(헤드리스는 초당 8프레임 남짓).
-//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills,spear,rb] [스킬 이름들 · rb면 axe,light,javelin,stone,magic,bow,crossbow]
+//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills,spear,daggers,rb] [스킬 이름들 · rb면 axe,light,javelin,stone,magic,bow,crossbow,knives]
 // skills(0158 G2): 개발 창 기술 탭 "기술 다 올리기"(끝 단 · 고르기 ㄱ, 기록에 안 쓴다) → "기술 끼우기"에서 칸·큰 기술을 고르고 →
 //   전투 탭 "skills" 판에서 Q(칸 1)·E(칸 2)·Q+E(큰 기술)를 틱마다 찍는다 — 스킬·큰 기술마다 새 판(sk-<이름>-<n>.png).
 // 눈으로 볼 것: 맞힌 자리의 별·불똥, 휘두름의 초승달, 쓰러진 적의 재, 뛰기·회피·적 내리침의 먼지, 마법 탄의 마름모, 화로 불티.
@@ -69,12 +69,13 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     // 끼울 칸은 이름(게임이 기술 탭의 고른 칸을 장면 이름 끝에 붙인다 — `… @Skill(Embers)`, 개발판)으로 찾는다: 자리 숫자는 판이 넓어질
     // 때마다 낡았다(0214·0215 뒤 잔불 흩기를 못 찾았다).
     // 0272: 맨손은 무기 판의 스킬을 쓰지 못한다(새 판은 맨손) — 한손검의 스킬도 검을 든다(둘). 쇠뇌 판·활 판의 새 스킬 둘·큰 기술 하나.
-    const RUNS = [['whirl', null, null, 1500, 'Q', 22, 2], ['cut', null, null, 1100, 'E', 26, 2], ['gather', 'Skill(Gather)', null, 900, 'Q', 26, 2],
+    // 0274 ③: 가로지르기 · 던지기 · 바늘땀 · 제비걸음은 쌍단검의 것(쌍단검 = 여덟 — 창 다음) — 가로지르기는 처음 끼워진 둘째 칸(E).
+    const RUNS = [['whirl', null, null, 1500, 'Q', 22, 2], ['cut', null, null, 1100, 'E', 26, 8], ['gather', 'Skill(Gather)', null, 900, 'Q', 26, 2],
       ['quake', 'Skill(Quake)', null, 1000, 'Q', 26, 3], ['brace', 'Skill(Brace)', null, 1300, 'Q', 40, 2], ['echo', 'Skill(Echo)', null, 1300, 'Q', 16, 4],
-      ['throw', 'Skill(Throw)', null, 900, 'Q', 30, 2], ['embers', 'Skill(Embers)', null, 1300, 'Q', 50, 4],
+      ['throw', 'Skill(Throw)', null, 900, 'Q', 30, 8], ['embers', 'Skill(Embers)', null, 1300, 'Q', 50, 4],
       ['upend', null, null, 1500, 'ult', 30, 2], ['flurry', null, 'Ult(Flurry)', 1300, 'ult', 14, 2], ['line', null, 'Ult(Line)', 900, 'ult', 30, 2],
       // 0270 C3: 무기 판의 새 스킬 여덟·큰 기술 둘. "든 무기 바꾸기" 수: 1 활 · 2 검 · 3 망치 · 4 지팡이 · 5 쇠뇌 · 6 검과 방패.
-      ['stitch', 'Skill(Stitch)', null, 900, 'Q', 30, 2], ['ram', 'Skill(Ram)', null, 900, 'Q', 34, 6], ['toll', 'Skill(Toll)', null, 900, 'Q', 80, 3],
+      ['stitch', 'Skill(Stitch)', null, 900, 'Q', 30, 8], ['ram', 'Skill(Ram)', null, 900, 'Q', 34, 6], ['toll', 'Skill(Toll)', null, 900, 'Q', 80, 3],
       ['swat', 'Skill(Swat)', null, 1000, 'Q', 30, 3], ['ripple', 'Skill(Ripple)', null, 1000, 'Q', 44, 3],
       ['snow', 'Skill(Snow)', null, 1100, 'Q', 90, 4], ['flare', 'Skill(Flare)', null, 1000, 'Q', 34, 4], ['snare', 'Skill(Snare)', null, 500, 'Q', 120, 1],
       ['bell', null, 'Ult(Bell)', 1300, 'ult', 44, 6], ['blizzard', null, 'Ult(Blizzard)', 1300, 'ult', 90, 6],
@@ -84,7 +85,10 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       ['skewer', 'Skill(Skewer)', null, 1000, 'Q', 40, 7], ['pole', 'Skill(Pole)', null, 1400, 'Q', 34, 7], ['pin', 'Skill(Pin)', null, 1000, 'Q', 30, 7],
       ['gale', null, 'Ult(Gale)', 1000, 'ult', 70, 7],
       // 0274 ②: 한손검의 전투 기술(검 = 둘).
-      ['pommel', 'Skill(Pommel)', null, 900, 'Q', 26, 2], ['shove', 'Skill(Shove)', null, 900, 'Q', 30, 2], ['rally', 'Skill(Rally)', null, 1000, 'Q', 34, 2]];
+      ['pommel', 'Skill(Pommel)', null, 900, 'Q', 26, 2], ['shove', 'Skill(Shove)', null, 900, 'Q', 30, 2], ['rally', 'Skill(Rally)', null, 1000, 'Q', 34, 2],
+      // 0274 ③: 쌍단검 판(쌍단검 = 여덟) — 제비걸음 · 빠지며 베기 · 그림자 습격(숨어들어 찌름 넷이 1.2초 남짓).
+      ['swallow', 'Skill(Swallow)', null, 1000, 'Q', 40, 8], ['slip', 'Skill(Slip)', null, 900, 'Q', 30, 8],
+      ['ambush', null, 'Ult(Ambush)', 1000, 'ult', 80, 8]];
     const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await p.waitForTimeout(90); } };
     // 이름으로 칸 찾기(0270 C2 — 판 하나씩): 판 줄로 올라가(위를 넉넉히 — `@Strip`) ↓ = 보이는 판(든 무기의 판)의 맨 윗줄 → 줄마다 왼쪽 끝 →
     // 오른쪽으로 훑으며 장면 이름 끝의 `@칸`을 본다. 없으면 무기 판을 한손검부터 차례로(판 줄에서 → — 공통 판에는 스킬이 없다).
@@ -103,7 +107,7 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       };
       await pick(p, 12, 'ArrowUp');
       let found = await scan();
-      for (let plate = 1; plate < 8 && !found; plate++) {
+      for (let plate = 1; plate < 9 && !found; plate++) {
         await pick(p, 12, 'ArrowUp'); await pick(p, 8, 'ArrowLeft'); await pick(p, plate);
         found = await scan();
       }
@@ -171,12 +175,40 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     await p.keyboard.press('Space'); await burst(p, 'spear-dodge', 6); await p.keyboard.press('KeyJ'); await burst(p, 'spear-dash', 14);
     await p.close();
   }
+  if (want('daggers')) {
+    // 0274 ③ 쌍단검: "든 무기 바꾸기"를 여덟 번(맨손 → … → 창 → 쌍단검) → 전투 묶음 끝 줄 "한 줄로 선 잔재" — 쿼터뷰 · 락온 한 장씩, 그다음
+    // 틱마다(F6): 4연타 · 모아 꿰뚫고 지나가기 · 달려들며 찌르기(회피 뒤 공격).
+    p = await ctx.newPage(); const kit = sceneKit(p, 70); p.kit = kit;
+    await sceneKit.unhurt(p); await sceneKit.still(p);
+    p.on('pageerror', e => { if (!/register_plugin/.test(String(e))) errors.push(String(e)); });
+    await p.goto(`http://localhost:${PORT}/`); await kit.until('Title', '타이틀', 60000); await p.waitForTimeout(300); await p.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
+    if (first) { first = false;
+      await kit.press('ArrowDown'); await kit.press('Enter'); await kit.until('Settings { host: Title', '타이틀 → 설정'); await kit.press('ArrowUp'); await kit.press('Enter'); await kit.until('Controls', '설정 → 조작');
+      await kit.press('ArrowUp', 2); await kit.press('Enter'); await p.waitForTimeout(200); await kit.press('Escape'); await kit.until('Settings { host: Title', '조작 → 설정'); await kit.press('Escape'); await kit.until('Title', '설정 → 타이틀'); await kit.press('ArrowUp'); }
+    await kit.press('ArrowUp'); await kit.press('Enter'); await kit.until('Dev { tab: 0', '타이틀 → 개발 창');
+    await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 2', '기술 묶음'); await kit.press('ArrowDown', 5);
+    for (let i = 0; i < 8; i++) { await p.keyboard.press('Enter'); await p.waitForTimeout(150); }
+    await p.screenshot({ path: path.join(OUT, 'daggers-arm.png') });
+    await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 4', '전투 묶음'); await kit.press('ArrowDown', 15); await kit.press('Enter');
+    await kit.until(['Play', 'Sandbox'], '한 줄로 선 잔재'); await p.waitForTimeout(1200);
+    await p.keyboard.press('ArrowUp'); await p.waitForTimeout(700); // 한 단계 가까운 쿼터뷰
+    await p.screenshot({ path: path.join(OUT, 'daggers-quarter.png') });
+    await p.keyboard.press('KeyL'); await p.waitForTimeout(900); await p.screenshot({ path: path.join(OUT, 'daggers-lockon.png') });
+    await p.keyboard.press('KeyL'); await p.waitForTimeout(700);
+    await p.keyboard.press('F6'); await p.waitForTimeout(300);
+    for (let k = 0; k < 4; k++) { await p.keyboard.press('KeyJ'); await burst(p, `daggers-hit${k}`, 8); }
+    await p.keyboard.down('KeyJ'); await burst(p, 'daggers-charge', 12); await p.keyboard.up('KeyJ'); await burst(p, 'daggers-lunge', 16);
+    await p.keyboard.press('Space'); await burst(p, 'daggers-dodge', 6); await p.keyboard.press('KeyJ'); await burst(p, 'daggers-dash', 12);
+    await p.close();
+  }
   if (want('rb')) {
     // 0274 ②b RB를 종류마다: 무기마다 새 판 — 개발 창 기술 묶음 "든 무기 바꾸기"를 `arm`번(0 맨손 · 1 활 · 2 검 · 3 망치 · 4 지팡이 · 5 쇠뇌 ·
     // 7 창) → 전투 묶음 "한 줄로 선 잔재"(서 있는 적 · 방랑자는 맞지 않는다). 쿼터뷰에서 RB(U)를 틱마다(F6) 찍고, 숄더뷰(↑ 넷 — 가장 가까운 단계에서 더)
     // 에서 한 번 더. 활은 당기는 단계(U를 쥔 채 · 뗀 뒤), 쇠뇌는 셋을 쏜 뒤 멈춰 서서 덧장전(HUD 탄창 — 열 틱마다 한 장).
     // 여섯째 인자로 무기를 고르면 그것만(예: … rb axe,light).
-    const ARMS = [['axe', 2, 22], ['light', 3, 40], ['javelin', 7, 70], ['stone', 0, 22], ['magic', 4, 16], ['bow', 1, 0], ['crossbow', 5, 0]];
+    const ARMS = [['axe', 2, 22], ['light', 3, 40], ['javelin', 7, 70], ['stone', 0, 22], ['magic', 4, 16], ['bow', 1, 0], ['crossbow', 5, 0],
+      // 0274 ③: 쌍단검(여덟) — 투척 단검 셋.
+      ['knives', 8, 22]];
     const names = process.argv[5] ? process.argv[5].split(',') : null;
     for (const [name, arm, n] of ARMS) {
       if (names && !names.includes(name)) continue;

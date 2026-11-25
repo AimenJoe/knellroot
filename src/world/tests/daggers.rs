@@ -298,3 +298,27 @@ fn three_knives_fan_out_narrowly() {
     let (_, hits, _) = throw(6.5);
     assert_eq!(hits, 1, "only the middle one far off");
 }
+
+/// 보스(문지기)의 급소는 등 뒤에서만 — 자세가 깨져 휘청이는 동안은 이미 깨진 틈의 배(`poise.break damage x`)라 급소를 겹치지 않는다.
+#[test]
+fn a_boss_opens_its_weak_spot_only_from_behind() {
+    let t = Tuning::default();
+    let mut w = world_with_boss();
+    let en = &mut w.enemies[0];
+    en.facing = 0.0;
+    en.state = EState::Stagger { t: 0.0, dur: 2.0 };
+    let at = en.pos;
+    let front = at + vec3(0.0, 0.0, 3.0);
+    let back = at - vec3(0.0, 0.0, 3.0);
+    assert!(
+        !crate::world::sneak_open(&w.enemies[0], front),
+        "reeling, but a boss"
+    );
+    assert!(crate::world::sneak_open(&w.enemies[0], back));
+    let k = |from| Knack {
+        keen: false,
+        sneak: Some((from, ART_SNEAK)),
+    };
+    let en = &w.enemies[0];
+    assert!(hurt_by(en, 100, false, 0, k(back), &t) > hurt_by(en, 100, false, 0, k(front), &t));
+}

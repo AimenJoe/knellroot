@@ -2728,12 +2728,15 @@ impl Knack {
 }
 
 /// 급소가 열린 적인가(0274 ③): `from`(치는 방랑자의 자리)이 그 적의 등 뒤(보는 쪽에서 `SNEAK_BACK_DEG`° 넘게 돌아선 자리)이거나,
-/// 그 적이 드러나 있다 — 휘청이거나 · 기절했거나 · 묶였다(뿌리 속박 · 못 박기의 묶임).
+/// 잡몹이 드러나 있다 — 휘청이거나 · 기절했거나 · 묶였다(뿌리 속박 · 못 박기의 묶임). 보스(문지기)는 **등 뒤에서만**: 보스의 휘청은
+/// 자세가 깨진 틈이라 이미 × `poise.break damage x`이고, 거기에 급소까지 얹으면 자세를 깎지 못하는 쌍단검이 보스에게 가장 센 무기가
+/// 되었다(모의 — 0274 "③ 만든 것").
 pub fn sneak_open(en: &Enemy, from: Vec3) -> bool {
-    if matches!(en.state, EState::Stagger { .. })
-        || en.ail.stun > 0.0
-        || en.ail.bound > 0.0
-        || en.marks.bind > 0.0
+    if !en.boss
+        && (matches!(en.state, EState::Stagger { .. })
+            || en.ail.stun > 0.0
+            || en.ail.bound > 0.0
+            || en.marks.bind > 0.0)
     {
         return true;
     }

@@ -2,7 +2,7 @@
 //   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 화로 창(0263 — 성장 · 장비 · 가방 · 기술 · 가게 · 설정; 성장 탭 — 레벨 줄을 올려 보고
 //   묻는 창, 기술 줄에서 확인 = 기술 탭의 그 칸, 0173) → 화로의 Select(Tab) = 같은 창의 장비 탭(후보의 작은 목록) → 가방(작은 목록 ·
 //   여벌 정리) → 가게 · 설정 · 기술, 그리고 싸움에서 연 멈춤 창(장비 · 가방 · 기술 · 기록(여정·도감의 보상 받기) · 설정), 화면마다 스크린숏.
-//   기술 탭(0270 C2): 위의 판 줄(공통 · 한손검 · 망치 · 지팡이 · 쇠뇌 · 활 · 창 · 방패 — 넘치면 가로로 굴린다, 0275) + 그 판의 칸 격자 +
+//   기술 탭(0270 C2): 위의 판 줄(공통 · 한손검 · 망치 · 지팡이 · 쇠뇌 · 활 · 창 · 쌍단검 · 방패 — 넘치면 가로로 굴린다, 0275) + 그 판의 칸 격자 +
 //   오른쪽 상세. 장면 이름이 보이는 판과 고른 칸을 말한다(`Skills { host: Hearth } [Class(Sword)] @Skill(Whirl)`) — 칸은 이름으로 찾는다.
 //   한 단 사기 · 3단 고르기 뒤집기 · 패시브 칸 열기 · 결 열기 · 잠긴 칸 · 되돌리기(묻는 창), 판마다 판 줄에서 한 장(눈으로 본다),
 //   멈춤의 기술 탭(끼우기만). 끝으로 새 판의 기록(0166·0167·0169 — 아는 스킬 없음, 튜토리얼의 상 한 점): 빈 스킬 칸 → 쉬기 = 기술 탭 →
@@ -70,7 +70,7 @@ async function run(browser, lang) {
   const toLeft = async () => {
     for (let i = 0; i < 10; i++) { const here = await at(); await press('ArrowLeft'); if ((await at()) === here) break; }
   };
-  const PLATE_ORDER = ['Body', 'Class(Sword)', 'Class(Hammer)', 'Class(Staff)', 'Class(Crossbow)', 'Class(Bow)', 'Class(Spear)', 'Shield'];
+  const PLATE_ORDER = ['Body', 'Class(Sword)', 'Class(Hammer)', 'Class(Staff)', 'Class(Crossbow)', 'Class(Bow)', 'Class(Spear)', 'Class(Dagger)', 'Shield'];
   const toPlate = async (plate) => {
     await toStrip();
     const want = PLATE_ORDER.indexOf(plate);
@@ -277,17 +277,17 @@ async function run(browser, lang) {
   await page.waitForTimeout(1800);
   // 판마다 판 줄에서 한 장(칸마다의 상세는 `cargo test`의 넘침 시험이 본다, 0275).
   await strips('13-strip');
-  // 결의 칸(0223 11절 → 0270 C2 — 무기 판의 셋째 줄): 한손검 판은 충격의 결(0274 ② — 왼쪽 갈래). 그 판에 쓴 점수 6부터 — 지금 4
-  // (휘돌이 3 · 가로지르기 1): 확인하면 목록 없이 "이 판에 점수를 2 더 쓰면 열린다".
+  // 결의 칸(0223 11절 → 0270 C2 — 무기 판의 셋째 줄): 한손검 판은 충격의 결(0274 ② — 왼쪽 갈래). 그 판에 쓴 점수 6부터 — 지금 3
+  // (휘돌이 3 — 0274 ③부터 가로지르기는 쌍단검 판): 확인하면 목록 없이 "이 판에 점수를 3 더 쓰면 열린다".
   await toPlate('Class(Sword)'); await goto('Vein(Shock)');
   await press('Enter'); await page.waitForTimeout(300);
   await shot('13v-vein-plate-locked');
   await page.waitForTimeout(1600);
-  // 자루 치기를 두 단 배워(0 → 2) 판의 셋째 줄을 연다 — 그 판에 쓴 점수 6, 충격의 스킬을 안다.
+  // 자루 치기를 세 단 배워(0 → 3) 판의 셋째 줄을 연다 — 그 판에 쓴 점수 6, 충격의 스킬을 안다.
   await goto('Skill(Pommel)');
-  for (let i = 0; i < 2; i++) { await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(1800); }
+  for (let i = 0; i < 3; i++) { await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(1800); }
   b = await record();
-  if (!/skill\.rank\.pommel=2\n/.test(b)) errors.push(`pommel not raised on the sword plate: ${JSON.stringify(b)}`);
+  if (!/skill\.rank\.pommel=3\n/.test(b)) errors.push(`pommel not raised on the sword plate: ${JSON.stringify(b)}`);
   // 충격의 결: 목록(열기) → 묻는 창 → 열림(`tree.veins`).
   await goto('Vein(Shock)'); await page.waitForTimeout(200);
   await shot('13w-vein');
@@ -305,8 +305,8 @@ async function run(browser, lang) {
   await toPlate('Body'); await goto('Key(Measure)'); await page.waitForTimeout(200);
   await press('Enter'); await page.waitForTimeout(300);
   await shot('14-skills-locked');
-  // 되돌리기 단추(창 아래 오른쪽 — 맨 아래 줄에서 아래): 묻는 창(커서 "취소") → 왼쪽 = "되돌리기" → 쓴 점수 10(휘돌이 3 · 가로지르기 3 —
-  // 옛 기록이 지닌 처음의 둘 0166까지 · 쟁반 뒤집기의 배움 2 0172 · 패시브 하나 · 결 하나)을 돌려받고 잔불 80(30 + 5 × 10).
+  // 되돌리기 단추(창 아래 오른쪽 — 맨 아래 줄에서 아래): 묻는 창(커서 "취소") → 왼쪽 = "되돌리기" → 쓴 점수 11(휘돌이 3 · 가로지르기 1 —
+  // 옛 기록이 지닌 처음의 둘 0166 · 자루 치기 3 · 쟁반 뒤집기의 배움 2 0172 · 패시브 하나 · 결 하나)을 돌려받고 잔불 85(30 + 5 × 11).
   const embers = Number(/embers=(\d+)\n/.exec(b)[1]);
   await page.waitForTimeout(1600);
   await press('ArrowDown'); await until(/@Respec$/, '맺음 줄에서 ↓ = 되돌리기 단추');
@@ -319,7 +319,7 @@ async function run(browser, lang) {
   await shot('15c-skills-after-respec');
   b = await record();
   if (/skill\.rank\./.test(b) || /skill\.pick\./.test(b) || /tree\.cells\./.test(b) || /tree\.veins/.test(b)) errors.push(`respec must clear the board: ${JSON.stringify(b)}`);
-  if (!new RegExp(`embers=${embers - 80}\\n`).test(b)) errors.push(`respec must cost 80 embers: ${JSON.stringify(b)}`);
+  if (!new RegExp(`embers=${embers - 85}\\n`).test(b)) errors.push(`respec must cost 85 embers: ${JSON.stringify(b)}`);
   if (/ult\.rank\./.test(b)) errors.push(`respec must forget the great skill too (0172): ${JSON.stringify(b)}`);
   // 창을 닫으면 떠난다(한 번에) → 싸움(HUD 기력 막대가 길어졌는지).
   await close('화로 창 닫기');
