@@ -157,7 +157,7 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 2', '기술 묶음'); await kit.press('ArrowDown', 5);
     for (let i = 0; i < 7; i++) { await p.keyboard.press('Enter'); await p.waitForTimeout(150); }
     await p.screenshot({ path: path.join(OUT, 'spear-arm.png') });
-    await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 4', '전투 묶음'); await kit.press('ArrowDown', 14); await kit.press('Enter');
+    await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 4', '전투 묶음'); await kit.press('ArrowDown', 15); await kit.press('Enter');
     await kit.until(['Play', 'Sandbox'], '한 줄로 선 잔재'); await p.waitForTimeout(1200);
     await p.keyboard.press('ArrowUp'); await p.waitForTimeout(700); // 한 단계 가까운 쿼터뷰
     await p.screenshot({ path: path.join(OUT, 'spear-quarter.png') });

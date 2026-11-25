@@ -291,14 +291,15 @@ pub fn build(s: Scenario) -> World {
         }
         Scenario::Line => {
             let mut w = World::new("line", 14.0);
+            // 줄의 첫째가 가장 가깝다(평타의 자동 조준이 줄을 고르게) — 곁의 둘은 그보다 조금 멀리, 몸 옆에.
             for k in 0..5 {
                 w.spawn(
                     crate::species::Kind::Husk,
-                    vec3(0.0, 0.0, -2.2 - 1.3 * k as f32),
+                    vec3(0.0, 0.0, -1.5 - 1.3 * k as f32),
                 );
             }
-            for x in [-1.6, 1.6] {
-                w.spawn(crate::species::Kind::Husk, vec3(x, 0.0, -0.6));
+            for x in [-1.7, 1.7] {
+                w.spawn(crate::species::Kind::Husk, vec3(x, 0.0, 0.3));
             }
             w
         }
