@@ -88,7 +88,11 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
         add!(h.anim_heavy, Some((s0, s0 + a0)));
     }
     match w.rb {
-        Rb::Magic(_) => {
+        // 종류의 RB(0274 ②b): 던지는 것은 머리 위로 던지기, 빛·마법은 손을 내민다.
+        Rb::Toss if w.id.bolts().0.thrown() => {
+            add!("sk_throw", None);
+        }
+        Rb::Toss => {
             add!("cast_charge", None);
             add!("cast", None);
         }

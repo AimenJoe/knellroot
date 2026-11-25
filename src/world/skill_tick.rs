@@ -1829,7 +1829,7 @@ impl World {
 
     /// 든 것이 손을 떠나 있나(던지기, G2) — 렌더가 손의 무기를 감추고 날아가는 자리에 그린다.
     pub fn weapon_away(&self) -> bool {
-        !self.skill_blades.is_empty()
+        !self.skill_blades.is_empty() || self.javelin_out()
     }
 
     /// 스킬 둘을 끼운다(같은 것 둘은 바로잡는다) — 그 단·고르기와 큰 기술의 단까지(0158). 스킬 이름만 주면 모두 1단.

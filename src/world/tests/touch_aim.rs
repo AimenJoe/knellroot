@@ -113,7 +113,7 @@ fn holding_a_dragged_cast_charges_without_a_first_shot() {
         &t,
     );
     let b = w.bolts.first().expect("the charged bolt");
-    assert_eq!(b.def, weapons::Id::Sword.def().charged);
+    assert_eq!(b.def, weapons::Id::Sword.bolts().1);
     assert!(b.dir.x > 0.9);
     assert!(w.player.ranged.mana < mana - 0.9, "one charge spent");
     // 쥐지 않은(패드·키보드의) 꾹은 그대로 — 첫 발을 쏜 뒤에 모은다(0056).

@@ -25,6 +25,15 @@ impl World {
             en.marks.slow = 1.0;
             en.marks.snare = (en.marks.snare - dt).max(0.0);
             en.marks.bind = (en.marks.bind - dt).max(0.0);
+            // 오금(0274 ②b): 잡몹은 `HAMSTRING_SLOW`, 문지기는 묶임과 같은 `ROOT_BOSS_SLOW`(휘청이지 않고 느려지기만).
+            en.marks.hamstring = (en.marks.hamstring - dt).max(0.0);
+            if en.marks.hamstring > 0.0 && en.active() {
+                en.marks.slow = en.marks.slow.min(if en.boss {
+                    crate::tuning::ROOT_BOSS_SLOW
+                } else {
+                    crate::tuning::HAMSTRING_SLOW
+                });
+            }
             if en.boss || !en.active() {
                 continue;
             }

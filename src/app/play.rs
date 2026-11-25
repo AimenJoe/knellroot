@@ -491,10 +491,7 @@ impl App {
         let rig = &self.cam.rig;
         let dir = crate::camera::screen_ray(rig, f.w / f.h, Vec2::ZERO);
         let w = &self.world;
-        let range = match w.player.weapon.def().rb {
-            crate::weapons::Rb::Magic(b) => b.range,
-            crate::weapons::Rb::Shot { bolt, .. } => bolt.range,
-        };
+        let range = w.player.weapon.bolts().0.range;
         let reach = self.t[crate::tuning::P::CastRange] * range;
         let pp = w.player.pos;
         w.enemies
@@ -637,6 +634,9 @@ impl App {
                 Event::StaminaDenied | Event::Release { .. } => 0.0,
                 Event::Break { .. } | Event::LoadBreak { .. } => SHAKE_SMASH,
                 Event::Aftershock { .. } | Event::Boom { .. } => SHAKE_PLUNGE,
+                // 신성한 빛(0274 ②b)이 꽂히는 순간은 여진만큼, 창이 손에 돌아오는 것은 조용히.
+                Event::Smite { .. } => SHAKE_PLUNGE,
+                Event::JavelinBack { .. } => 0.0,
                 Event::Perfect { .. } => SHAKE_CHARGED,
                 // 락온 대상을 잃으면(0181) 풀린 뒤 자유 숄더뷰에 머문다 — 버튼으로 풀면 락온한 곳(쿼터뷰·자유)으로.
                 Event::LockLost => {
@@ -1396,6 +1396,12 @@ impl App {
                 // 0272: 화살비 = 스치는 바람(시위를 떠난 화살들) — 내리는 타는 `FieldPulse`의 뿌리 소리.
                 Event::ArrowRain { .. } => Id::Dodge,
                 Event::ThrowBack { .. } => Id::Beat,
+                // 종류의 RB(0274 ②b — 있는 소리를 겹쳐 쓴다): 던지는 것(손도끼 · 창 · 돌) = 휘두름 바람, 신성한 빛을 부름 = 맑은 종
+                // 둘째 음, 꽂힘 = 가장 높은 종(맞은 것은 맞힘 소리가 따로), 창이 손에 돌아옴 = 던지기의 돌아옴과 같은 종. 마법탄은 소리 없이(그대로).
+                Event::Cast { look, .. } if crate::weapons::Bolt::look_thrown(*look) => Id::Swing,
+                Event::Cast { look, .. } if *look == crate::weapons::LIGHT => Id::Beat2,
+                Event::Smite { .. } => Id::Beat3,
+                Event::JavelinBack { .. } => Id::Beat,
                 // 0270 C3: 눈발 = 높은 종, 뿌리 덫 = 뿌리가 깨는 소리.
                 Event::FieldPulse { kind, .. } => match kind {
                     crate::status::Kind::Frost => Id::Beat3,

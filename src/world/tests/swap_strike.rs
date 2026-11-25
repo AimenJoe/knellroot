@@ -361,8 +361,15 @@ fn a_stowed_crossbow_reloads_on_the_back_and_a_bow_does_not() {
     w.swap_weapons();
     assert_eq!((w.player.ranged.ammo, w.player.ranged.reload), (1, 0.0));
     assert!(!w.swap_full);
-    wait(&mut w, reload + 0.5);
-    assert_eq!(w.player.ranged.ammo, 1, "no reload in hand until empty");
+    // 0274 ②b: 손에서는 덧장전(멈춰 서 있으면 한 발씩 — 손의 리듬)이지 등의 장전이 아니다: 걷는 동안은 그대로.
+    let walk = Actions {
+        move_dir: vec2(1.0, 0.0),
+        ..Default::default()
+    };
+    for _ in 0..((reload + 0.5) / TICK_DT) as usize {
+        w.step(&walk, &t);
+    }
+    assert_eq!(w.player.ranged.ammo, 1, "no reload in hand while walking");
     // 손에 든 쇠뇌의 장전은 그대로: 비우면 `reload`초 — 더 빠르지 않다.
     let mut w = armed(Id::Crossbow, Id::Sword);
     w.player.ranged.ammo = 0;

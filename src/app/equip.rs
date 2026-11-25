@@ -307,6 +307,8 @@ pub(super) enum WLine {
     Mag,
     Reload,
     Grenade,
+    /// 근접 무기의 RB(0274 ②b): 이름 = 종류의 원거리 수단(`Bolt::look` — 꼴이 다르면 견주지 않는다), 값 = 피해.
+    Toss(u8),
 }
 
 impl WLine {
@@ -325,6 +327,7 @@ impl WLine {
             WLine::Mag => s.wstat_mag,
             WLine::Reload => s.wstat_reload,
             WLine::Grenade => s.wstat_grenade,
+            WLine::Toss(look) => rb_name(look),
         }
     }
 }
@@ -335,6 +338,19 @@ pub(super) struct WVal {
     pub line: WLine,
     pub text: String,
     pub score: f32,
+}
+
+/// 종류의 원거리 수단(0274 ②b — `weapons::Bolt::look`)의 이름.
+pub(super) fn rb_name(look: u8) -> &'static str {
+    use crate::weapons::{AXE, JAVELIN, LIGHT, STONE};
+    let s = s();
+    match look {
+        AXE => s.rb_axe,
+        LIGHT => s.rb_light,
+        JAVELIN => s.rb_javelin,
+        STONE => s.rb_stone,
+        _ => s.rb_magic,
+    }
 }
 
 /// 무기의 숫자들. `t` = 장신구까지 휜 랩 값(`Stats::tune`), `st` = 장신구·성장의 피해 +
@@ -415,6 +431,15 @@ pub(super) fn weapon_numbers(
             line: WLine::Reload,
             text: secs(reload),
             score: reload,
+        });
+    }
+    // 근접 무기의 RB(0274 ②b — 종류마다): "손도끼  20" 꼴(이름이 줄의 머리).
+    if let Some(toss) = w.id.toss() {
+        let d = toss.bolt.damage + dmg;
+        out.push(WVal {
+            line: WLine::Toss(toss.bolt.look),
+            text: d.to_string(),
+            score: d as f32,
         });
     }
     if let Some(g) = w.grenade {

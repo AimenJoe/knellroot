@@ -310,6 +310,8 @@ pub struct Marks {
     pub snare: f32,
     /// 묶는 뿌리(0214 뿌리 솟기 ㄴ): 걷지 못하는 남은 초.
     pub bind: f32,
+    /// 오금(0274 ②b — 끝까지 당긴 화살): 느리게 걷는 남은 초(문지기도 — 묶임·기절과 같은 `ROOT_BOSS_SLOW`로 덜).
+    pub hamstring: f32,
 }
 
 impl Default for Marks {
@@ -320,6 +322,7 @@ impl Default for Marks {
             slow: 1.0,
             snare: 0.0,
             bind: 0.0,
+            hamstring: 0.0,
         }
     }
 }

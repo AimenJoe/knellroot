@@ -405,6 +405,7 @@ impl Renderer {
     /// 던진 무기(0158 G2, 던지기): 든 무기의 부위만(다른 부위는 크기 0) 날아가는 자리에 눕혀 돌린다. 모델·부위가 없으면(맨손)
     /// 그리지 않는다 — 빛(`skill_auras`)이 대신 보인다.
     pub(super) fn blades(&mut self, w: &World, alpha: f32, lights: &[Light]) {
+        self.javelins(w, alpha, lights);
         if w.skill_blades.is_empty() {
             return;
         }
@@ -442,6 +443,52 @@ impl Renderer {
                 &self.pose,
                 inst,
                 Color::new(1.6, 1.5, 1.3, 1.0),
+                lights,
+                1.0,
+            );
+        }
+    }
+
+    /// 던진 창(0274 ②b): 방랑자 모델의 창 부위(`w_spear` — 손에서는 감춘다 `weapon_away`)를 날아가는 쪽으로 곧게 눕혀 그린다 —
+    /// 촉(부위의 +z)이 앞, 촉 끝이 탄의 자리. 돌아오는 길은 손 쪽을 향해 꼬리부터 날아온다(촉은 여전히 바깥을 본다).
+    fn javelins(&mut self, w: &World, alpha: f32, lights: &[Light]) {
+        if !w.javelin_out() {
+            return;
+        }
+        let Some(e) = self.lib.get("wanderer") else {
+            return;
+        };
+        let Some(node) = e.model.node(crate::weapons::Id::Spear.def().node) else {
+            return;
+        };
+        let Some((c, rad)) = e.model.rest_bounds_under(node) else {
+            return;
+        };
+        let hide: Vec<(usize, Quat, Vec3)> = e
+            .model
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(n, nd)| nd.mesh.is_some() && !e.model.is_under(*n, node))
+            .map(|(n, _)| (n, Quat::IDENTITY, Vec3::ZERO))
+            .collect();
+        e.model.pose_with(None, 0.0, &hide, &mut self.pose);
+        let undo = e.model.rest_rotation(node).inverse();
+        for b in w.bolts.iter().filter(|b| b.def.returns()) {
+            let p = b.prev.lerp(b.pos, alpha);
+            // 돌아오는 길은 꼬리가 앞(촉은 던진 쪽을 본 채 당겨 오듯).
+            let tip = if b.back { -b.dir } else { b.dir };
+            let rot = Quat::from_rotation_arc(Vec3::Z, tip.normalize_or(Vec3::Z));
+            let k = JAVELIN_SCALE * b.def.scale;
+            let inst = Mat4::from_translation(p - tip * rad * k * 0.85)
+                * Mat4::from_scale(Vec3::splat(k))
+                * Mat4::from_quat(rot * undo)
+                * Mat4::from_translation(-c);
+            self.batch.model(
+                e,
+                &self.pose,
+                inst,
+                Color::new(1.4, 1.35, 1.25, 1.0),
                 lights,
                 1.0,
             );
@@ -729,6 +776,8 @@ const HURT_WHITE: f32 = 0.05;
 pub(super) const BLADE_SPIN: f32 = 26.0;
 
 const BLADE_SCALE: f32 = 1.25;
+/// 던진 창(0274 ②b)을 그리는 배 — 손에 든 것과 같은 크기(창은 길어 날아가도 읽힌다).
+const JAVELIN_SCALE: f32 = 1.0;
 
 /// 줍기·상자 열기 몸짓의 길이(초, 0196 — 앱이 이만큼 흐르면 그친다).
 pub const PICKUP_CLIP: f32 = 0.9;

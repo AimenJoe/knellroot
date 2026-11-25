@@ -1298,8 +1298,120 @@ impl Fx {
     fn on_skill_event(&mut self, e: &Event, w: &World) -> bool {
         let pp = w.player.pos;
         match *e {
+            // 종류의 RB(0274 ②b): 던지는 것은 손끝의 쇳빛 바람 줄(손도끼·창 — 돌은 먼지 한 줌), 신성한 빛은 손 위로 솟는 금빛 —
+            // 내려 꽂히는 순간은 `Smite`.
+            Event::Cast { at, look }
+                if look == crate::weapons::AXE || look == crate::weapons::JAVELIN =>
+            {
+                let fwd = w.player.facing_dir();
+                self.star(at, 0.7, 0.06, WHITE_HOT);
+                self.spray(
+                    at,
+                    fwd,
+                    0.35,
+                    5,
+                    6.0,
+                    Shape::Streak,
+                    0.06,
+                    0.18,
+                    3.0,
+                    WHITE_HOT,
+                    STEEL,
+                );
+            }
+            Event::Cast { at, look } if look == crate::weapons::STONE => {
+                self.spray(
+                    at,
+                    w.player.facing_dir(),
+                    0.5,
+                    4,
+                    3.0,
+                    Shape::Dot,
+                    0.06,
+                    0.2,
+                    6.0,
+                    DUST,
+                    ASH,
+                );
+            }
+            Event::Cast { at, look } if look == crate::weapons::LIGHT => {
+                self.star(at + Vec3::Y * 0.4, 0.9, 0.09, GOLD);
+                self.rise(
+                    at,
+                    0.25,
+                    6,
+                    Shape::Streak,
+                    (0.08, 0.04),
+                    0.35,
+                    WHITE_HOT,
+                    GOLD,
+                    false,
+                );
+            }
+            // 신성한 빛이 내려 꽂혔다(0274 ②b): 가운데 큰 흰 별 + 바닥에 퍼지는 금빛 고리 둘 + 위로 솟는 빛줄 + 둘레로 튀는 줄.
+            Event::Smite { at, radius } => {
+                self.star(at + Vec3::Y * 0.8, 2.2, 0.12, WHITE_HOT);
+                self.mark(
+                    at,
+                    MarkKind::Ring {
+                        r0: radius * 0.3,
+                        r1: radius,
+                    },
+                    0.32,
+                    GOLD,
+                );
+                self.mark_with(
+                    at,
+                    MarkKind::Ring {
+                        r0: 0.2,
+                        r1: radius * 0.75,
+                    },
+                    0.3,
+                    WHITE_HOT,
+                    0.05,
+                    false,
+                    false,
+                );
+                self.rise(
+                    at,
+                    radius * 0.6,
+                    10,
+                    Shape::Streak,
+                    (0.1, 0.05),
+                    0.5,
+                    WHITE_HOT,
+                    GOLD,
+                    false,
+                );
+                self.ring_sparks(
+                    at + Vec3::Y * 0.3,
+                    radius * 0.5,
+                    10,
+                    6.0,
+                    0.22,
+                    WHITE_HOT,
+                    GOLD,
+                );
+            }
+            // 던진 창이 손에 돌아왔다(0274 ②b): 손 높이의 작은 쇳빛 별.
+            Event::JavelinBack { at } => {
+                self.star(at, 0.8, 0.07, WHITE_HOT);
+                self.spray(
+                    at,
+                    Vec3::Y,
+                    1.0,
+                    3,
+                    2.5,
+                    Shape::Dot,
+                    0.06,
+                    0.2,
+                    4.0,
+                    WHITE_HOT,
+                    STEEL,
+                );
+            }
             // 마법 탄 발사: 손끝의 작은 라벤더 번쩍임.
-            Event::Cast { at } => {
+            Event::Cast { at, .. } => {
                 self.star(at, 0.8, 0.07, LAVENDER);
                 self.spray(
                     at,
@@ -3058,7 +3170,25 @@ mod tests {
             Event::Slam { at },
             Event::Boom { at },
             Event::Gulp { at },
-            Event::Cast { at },
+            Event::Cast { at, look: 0 },
+            Event::Cast {
+                at,
+                look: crate::weapons::AXE,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::LIGHT,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::JAVELIN,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::STONE,
+            },
+            Event::Smite { at, radius: 1.4 },
+            Event::JavelinBack { at },
             Event::Perfect { at },
             Event::Charged,
             Event::Rouse { at },
@@ -3299,7 +3429,25 @@ mod tests {
             Event::AilBurst { at, radius: 2.0 },
             Event::RootSpike { at },
             Event::Mend { at },
-            Event::Cast { at },
+            Event::Cast { at, look: 0 },
+            Event::Cast {
+                at,
+                look: crate::weapons::AXE,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::LIGHT,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::JAVELIN,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::STONE,
+            },
+            Event::Smite { at, radius: 1.4 },
+            Event::JavelinBack { at },
             Event::Perfect { at },
             Event::UltStart,
             Event::Ult { at },

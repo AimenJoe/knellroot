@@ -20,6 +20,7 @@ mod parry;
 mod ranged;
 mod spear;
 mod swap_strike;
+mod toss;
 mod touch_aim;
 mod turn;
 mod veins;

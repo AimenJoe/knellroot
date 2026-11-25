@@ -309,6 +309,16 @@ pub const AIR_SHOT_REACH: f32 = 4.0;
 pub const AIR_SHOT_MIN: f32 = 1.5;
 pub const AIR_VOLLEY: usize = 3;
 pub const AIR_VOLLEY_SPREAD_DEG: f32 = 18.0;
+/// 신성한 빛(0274 ②b — 망치의 RB): 겨눈 자리에 이 초 뒤 내려 꽂힌다(그동안 바닥에 빛이 모인다 — 피할 틈이 아니라 "온다"는 신호),
+/// 빛기둥의 반지름(m — 탄 표의 `scale`이 곱한다), 겨눈 줄 위의 첫 적을 찾는 반 폭(m, 몸 반지름에 더한다).
+pub const SMITE_DELAY: f32 = 0.35;
+pub const SMITE_RADIUS: f32 = 1.4;
+pub const SMITE_SEEK: f32 = 0.6;
+/// 던진 창(0274 ②b): 멈춘 자리에서 손으로 돌아오는 빠르기(m/s — 오는 길은 치지 않는다), 손에 닿았다고 보는 거리(m).
+pub const JAVELIN_BACK: f32 = 30.0;
+pub const JAVELIN_CATCH: f32 = 0.6;
+/// 오금 쏘기(0274 ②b — 끝까지 당긴 화살): 맞은 잡몹이 걷는 빠르기의 배(문지기는 `ROOT_BOSS_SLOW` — 묶임·기절과 같은 규칙).
+pub const HAMSTRING_SLOW: f32 = 0.5;
 /// 알아차림(0113): 지도에 서 있는 적은 제자리에서 제 일을 하다가 플레이어가 시야(m, 벽·턱 너머는 못 봄) 안에 들거나
 /// 아주 가까이(m, 벽 너머도 — 발소리) 오거나 맞으면 쫓는다. 높이 차가 이보다 크면 못 본다. 깨면 곁(m)의 잠든 동료도 깬다.
 /// 제자리에서 끈(m)보다 멀어지고 플레이어도 그만큼 멀면 제자리로 돌아가 가득 찬다.

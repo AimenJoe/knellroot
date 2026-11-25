@@ -80,6 +80,8 @@ impl Memory {
         let hv = wpn.heavy;
         let combo_anim = |hit: u8| wpn.hit(hit).map_or("attack", |h| h.anim);
         let shot = matches!(wpn.rb, crate::weapons::Rb::Shot { .. });
+        // 던지는 RB(0274 ②b — 손도끼 · 창 · 돌): 머리 위로 휘둘러 던지는 동작(스킬 던지기의 것).
+        let toss = !shot && pl.weapon.bolts().0.thrown();
         // 서 있는 동안(0153): 숨 고리 + 조용할 때 가끔 몸짓. 조용함 = 락온이 아니고 가까이 깨어 있는 적이 없다.
         // 월드 시계로 지난 초(멈춤 창·히트스톱 동안 0) — 서 있는 몸짓·걸음 시계·섞기가 같이 쓴다.
         let wdt = (w.time - self.idle_at).clamp(0.0, 0.1);
@@ -173,9 +175,23 @@ impl Memory {
             PState::Block { t: e } => Pick::of(&["block", "parry", "attack"], e),
             // 마법(0048): 손을 앞으로 내미는 자세(전용 동작이 생기기 전엔 패링 자세).
             PState::Cast { t: e, .. } if shot => Pick::of(shoot, e),
+            // 던지기(0274 ②b): 손을 떠나는 자리(`TOSS_RELEASE`)가 탄이 나가는 때(`cast.startup s`)에 오게 돌린다.
+            PState::Cast { t: e, .. } if toss => Pick::of(
+                &["sk_throw", "throw", "cast"],
+                e * TOSS_RELEASE / t[crate::tuning::P::CastStartup].max(1e-3),
+            ),
             PState::Cast { t: e, .. } => Pick::of(&["cast", "parry", "attack"], e),
             // 원거리 강공격 모으기(0056): 쇠뇌는 어깨에 대고 시위를 당긴 채, 마법은 두 손을 모아 빛을 키우는 자세를 쥔다.
+            // 활(0274 ②b — 당기는 길이를 고른다): 당기는 동작(0.3초)을 끝까지 당기는 시간(`cast.charge s`)에 맞춰 늘인다.
+            PState::CastCharge { t: e } if bow => Pick::of(
+                draw,
+                e * BOW_DRAW_CLIP / t[crate::tuning::P::CastCharge].max(1e-3),
+            ),
             PState::CastCharge { t: e } if shot => Pick::of(draw, e),
+            // 던질 것을 모으는 동안은 머리 위로 든 자세에 머문다.
+            PState::CastCharge { t: e } if toss => {
+                Pick::of(&["sk_throw", "throw", "cast"], e.min(TOSS_WINDUP))
+            }
             PState::CastCharge { t: e } => Pick::of(&["cast_charge", "cast", "parry"], e),
             // 공중(0027): 방랑자의 jump·plunge·land 동작(없는 모델이면 회피·공격 자세로).
             // 공중 RB(0111): 떠 있는 동안 쏘는 자세(쇠뇌는 겨누고 쏘기, 마법은 손을 내밂).
@@ -353,6 +369,10 @@ pub const PARRY_PUSH_CLIP: f32 = 0.4;
 pub const PARRY_PUSH_FIRM: f32 = 0.2;
 /// 쇠뇌 쏘기·마법 동작의 놓는 자리(초) — 떠 있는 동안 쏠 때 여기서부터.
 pub const XBOW_RELEASE: f32 = 0.058;
+/// 던지기(0274 ②b — `sk_throw`): 손을 떠나는 자리(초)와 모으는 동안 머무는 든 자세(초). 활 당기기 동작의 길이(초 — `bow_draw`).
+pub const TOSS_RELEASE: f32 = 0.2;
+pub const TOSS_WINDUP: f32 = 0.12;
+pub const BOW_DRAW_CLIP: f32 = 0.3;
 pub const CAST_RELEASE: f32 = 0.075;
 
 /// 점프 동작의 자리(0..1, 0196): 오르는 동안 0 → 0.5(꼭대기), 내려오는 동안 0.5 → 1(처음 위 속도만큼 빨라지면 끝 — 다리를 내린 자세).

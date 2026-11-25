@@ -1017,6 +1017,14 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
                     1.0
                 } else if pl.ranged.reload > 0.0 {
                     1.0 - (pl.ranged.reload / reload.max(0.01)).clamp(0.0, 1.0)
+                } else if i as u8 == pl.ranged.ammo {
+                    // 쇠뇌의 덧장전(0274 ②b): 멈춰 서 있으면 다음 한 발이 아래에서 차오른다.
+                    match pl.weapon.rhythm() {
+                        Some(crate::weapons::Rhythm::Crank { wait, each }) => {
+                            ((pl.ranged.topup - wait) / each.max(0.01)).clamp(0.0, 1.0)
+                        }
+                        _ => 0.0,
+                    }
                 } else {
                     0.0
                 };
@@ -1052,9 +1060,20 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
                 }
             }
         }
-        (Rb::Magic(_), _) => {
+        (Rb::Toss, _) => {
+            // 종류의 RB(0274 ②b): 칸 셋 앞에 그 꼴의 그림(손도끼 · 빛 · 별 · 창 · 돌) — 던진 창이 날고 있으면 흐리게.
+            let away = w.javelin_out();
+            let c = vec2(mx0 + 3.0 * s, y0 + 20.5 * s);
+            let tint = if mblink { DENIED } else { MANA };
+            crate::touch::icon(
+                crate::touch::cast_icon(pl.weapon),
+                c,
+                crate::touch::ICON_N as f32 * s * 0.5,
+                if away { 0.35 } else { 1.0 },
+                tint,
+            );
             for i in 0..CAST_CHARGES as i32 {
-                pip(i, (pl.ranged.mana - i as f32).clamp(0.0, 1.0), MANA);
+                pip(i + 1, (pl.ranged.mana - i as f32).clamp(0.0, 1.0), MANA);
             }
         }
     }

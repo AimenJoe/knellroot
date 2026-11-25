@@ -94,6 +94,11 @@ pub enum Kind {
     Pommel,
     Shove,
     Rally,
+    /// 그림만(0274 ②b): 종류의 RB — 던지는 손도끼 · 신성한 빛 · 창 던지기 · 돌(마법탄은 `Cast`의 별).
+    HandAxe,
+    Smite,
+    Javelin,
+    Pebble,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
@@ -980,7 +985,11 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Gale
         | Kind::Pommel
         | Kind::Shove
-        | Kind::Rally => {}
+        | Kind::Rally
+        | Kind::HandAxe
+        | Kind::Smite
+        | Kind::Javelin
+        | Kind::Pebble => {}
         Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
@@ -1093,12 +1102,25 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
     }
 }
 
-/// 특수 버튼의 그림(0151 → 0213 → 0223 → 0231): 근접 무기 = 마법 탄의 별, 원거리 무기 = 던지는 것(쇠뇌 = 수류탄 · 활 = 뿌리 씨앗).
+/// 특수 버튼의 그림(0151 → 0213 → 0223 → 0231 → 0274 ②b): 근접 무기 = 종류의 RB(손도끼 · 신성한 빛 · 마법탄의 별 · 창 · 돌),
+/// 원거리 무기 = 던지는 것(쇠뇌 = 수류탄 · 활 = 뿌리 씨앗). 새 RB 꼴 = 그림 하나(`toss_icon`).
 pub fn cast_icon(w: crate::weapons::Id) -> Kind {
     let d = w.def();
     match (d.rb, d.grenade) {
         (crate::weapons::Rb::Shot { .. }, Some(g)) if g.root > 0.0 => Kind::Seed,
         (crate::weapons::Rb::Shot { .. }, _) => Kind::Bomb,
+        (crate::weapons::Rb::Toss, _) => toss_icon(w.bolts().0.look),
+    }
+}
+
+/// 종류의 RB 꼴(`weapons::Bolt::look`) → 그림(0274 ②b). 마법 탄(0 · 1 · 2)은 별.
+pub fn toss_icon(look: u8) -> Kind {
+    use crate::weapons::{AXE, JAVELIN, LIGHT, STONE};
+    match look {
+        AXE => Kind::HandAxe,
+        LIGHT => Kind::Smite,
+        JAVELIN => Kind::Javelin,
+        STONE => Kind::Pebble,
         _ => Kind::Cast,
     }
 }
@@ -2104,6 +2126,70 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             "#....#.....##",
             ".............",
         ],
+        // 던지는 손도끼(0274 ②b): 위 오른쪽의 도끼 머리 + 비스듬한 자루 + 왼쪽 위의 바람 줄 둘.
+        Kind::HandAxe => [
+            ".......####..",
+            "##....######.",
+            "......#######",
+            ".##...###.###",
+            ".....###...#.",
+            "....###......",
+            "...###.......",
+            "..###........",
+            ".###.........",
+            "###..........",
+            "##...........",
+            ".............",
+            ".............",
+        ],
+        // 신성한 빛(0274 ②b): 위에서 내려 꽂히는 빛줄기 + 바닥의 둥근 빛 + 양옆으로 튀는 빛.
+        Kind::Smite => [
+            ".....###.....",
+            ".....###.....",
+            ".....###.....",
+            ".....###.....",
+            "..#..###..#..",
+            "...#.###.#...",
+            ".....###.....",
+            "....#####....",
+            "..#########..",
+            ".###.....###.",
+            "..#########..",
+            ".............",
+            ".............",
+        ],
+        // 창 던지기(0274 ②b): 오른쪽 위로 날아가는 창(촉이 앞) + 꼬리의 바람 줄.
+        Kind::Javelin => [
+            "..........###",
+            ".........####",
+            "........####.",
+            ".......##....",
+            "......##.....",
+            ".....##......",
+            "....##.......",
+            "...##........",
+            "..##...#.....",
+            ".##...#......",
+            "##...#..#....",
+            "#...#..#.....",
+            "......#......",
+        ],
+        // 돌 던지기(0274 ②b — 맨손): 울퉁불퉁한 돌 하나 + 뒤로 남는 바람 줄.
+        Kind::Pebble => [
+            ".............",
+            ".............",
+            "......####...",
+            "....#######..",
+            "...#########.",
+            "##.#########.",
+            "...##########",
+            "##.#########.",
+            "...########..",
+            "##..######...",
+            ".....####....",
+            ".............",
+            ".............",
+        ],
         // 재기(0274): 숨의 고리 안에 선 십자 — 다시 일어선 몸.
         Kind::Rally => [
             ".............",
@@ -2385,6 +2471,10 @@ mod tests {
             Kind::Pommel,
             Kind::Shove,
             Kind::Rally,
+            Kind::HandAxe,
+            Kind::Smite,
+            Kind::Javelin,
+            Kind::Pebble,
             Kind::Pick,
             Kind::Open,
             Kind::Pull,
@@ -2700,7 +2790,16 @@ mod tests {
         use crate::weapons::Id;
         assert_eq!(cast_icon(Id::Crossbow), Kind::Bomb);
         assert_eq!(attack_icon(Id::Crossbow), Kind::Crossbow);
-        assert_eq!(cast_icon(Id::Sword), Kind::Cast);
+        // 0274 ②b: 근접 무기의 RB는 종류마다 다른 그림 — 지팡이만 마법탄의 별.
+        assert_eq!(cast_icon(Id::Sword), Kind::HandAxe);
+        assert_eq!(cast_icon(Id::Hammer), Kind::Smite);
+        assert_eq!(cast_icon(Id::Staff), Kind::Cast);
+        assert_eq!(cast_icon(Id::Spear), Kind::Javelin);
+        assert_eq!(cast_icon(Id::Fists), Kind::Pebble);
+        let rbs: Vec<Kind> = crate::weapons::IDS.iter().map(|w| cast_icon(*w)).collect();
+        for (i, a) in rbs.iter().enumerate() {
+            assert!(!rbs[i + 1..].contains(a), "{a:?} on two weapons");
+        }
     }
 
     #[test]

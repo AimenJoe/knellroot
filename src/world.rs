@@ -243,8 +243,18 @@ pub enum Event {
     Smash {
         at: Vec3,
     },
-    /// 마법 탄이 나갔다(0048).
+    /// RB가 나갔다(0048 마법 탄 → 0274 ②b 종류마다): `look` = 탄의 꼴(`weapons::Bolt::look` — 소리·번쩍임이 꼴로 갈린다).
     Cast {
+        at: Vec3,
+        look: u8,
+    },
+    /// 신성한 빛이 내려 꽂혔다(0274 ②b — 망치의 RB): 그 자리 둘레 `radius` m를 쳤다.
+    Smite {
+        at: Vec3,
+        radius: f32,
+    },
+    /// 던진 창이 손에 돌아왔다(0274 ②b — 날아 돌아왔거나 평타로 불러들였다).
+    JavelinBack {
         at: Vec3,
     },
     /// 칸이 모자라 마법을 못 쐈다(0048) — HUD 칸이 깜빡인다.
@@ -385,6 +395,17 @@ pub struct Crack {
     pub poise: f32,
 }
 
+/// 신성한 빛(0274 ②b — 망치의 RB): 겨눈 자리에 `left`초 뒤 내려 꽂혀 둘레 `radius` m를 친다(울림을 쌓는다). 렌더가 그동안 모이는 빛을 그린다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Smite {
+    pub pos: Vec3,
+    pub left: f32,
+    pub radius: f32,
+    pub damage: i32,
+    pub poise: f32,
+    pub dose: crate::status::Dose,
+}
+
 /// 수류탄(0051): 포물선으로 날아 땅에서 튕기다 도화선이 다하면(또는 쇠뇌 볼트에 맞으면) 터진다.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bomb {
@@ -494,6 +515,8 @@ pub struct Bolt {
     pub hits: u64,
     /// 결(0223 11절)의 몫을 이미 줬다(뿌리의 숨 · 금을 따라 · 흔들린 머리 · 흐르는 걸음 · 한 모금씩 — 꿰뚫는 탄도 탄 하나에 한 번).
     pub veined: [bool; 5],
+    /// 던진 창(0274 ②b)이 손으로 돌아오는 길이다(치지 않는다 · 벽을 가리지 않는다).
+    pub back: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -820,6 +843,8 @@ pub struct RangedState {
     pub ammo: u8,
     pub reload: f32,
     pub grenades: f32,
+    /// 쇠뇌의 덧장전 시계(0274 ②b — `Rhythm::Crank`): 쏘지 않고 멈춰 선 초(`wait`를 넘으면 `each`초마다 한 발).
+    pub topup: f32,
 }
 
 /// 맞은 뒤(0143): 무적 시간, 맞은 뒤 흐른 시간과 그 타의 세기(그림이 읽는다), 이어 맞음. `Player::hurt`.
@@ -929,6 +954,8 @@ pub struct World {
     pub ember_at: f32,
     /// 금 간 땅(망치 여진)·날고 있는 수류탄·폭발 고리(0051).
     pub cracks: Vec<Crack>,
+    /// 곧 내려 꽂힐 신성한 빛(0274 ②b).
+    pub smites: Vec<Smite>,
     pub bombs: Vec<Bomb>,
     pub blasts: Vec<Blast>,
     /// 맞힌 자리의 불똥(2026-11-06).
@@ -1093,6 +1120,7 @@ impl World {
                     ammo: 0,
                     reload: 0.0,
                     grenades: 0.0,
+                    topup: 0.0,
                 },
                 weapon: weapons::Id::Sword,
                 sub: None,
@@ -1165,6 +1193,7 @@ impl World {
             tree: crate::progression::Tree::default(),
             ember_at: f32::MIN,
             cracks: Vec::new(),
+            smites: Vec::new(),
             bombs: Vec::new(),
             blasts: Vec::new(),
             sparks: Vec::new(),
@@ -1220,6 +1249,8 @@ impl World {
             }
             _ => false,
         };
+        // 던진 창이 날고 있으면(0274 ②b) RB를 받아 둘 수 없다.
+        let javelin = self.javelin_out();
         let pl = &mut self.player;
         // 박자(2026-11-07): 공격을 누른 **그 순간**이 박자 창 안이었나. 받아 뒀다 나중에 나가는 이른 누름은 창 밖으로 친다
         // (연타가 박자를 공짜로 얻지 못하게 — KB melee-light-and-charged-attack-feel "먼저 누른 것이 남아야 창을 긁지 못한다").
@@ -1308,7 +1339,7 @@ impl World {
                 }
             }
             Next::Cast => match wpn.rb {
-                Rb::Magic(_) => pl.ranged.mana >= 1.0,
+                Rb::Toss => pl.ranged.mana >= 1.0 && !javelin,
                 Rb::Shot { .. } => pl.ranged.ammo >= 1,
             },
             Next::Flask => pl.flask > 0 && pl.hp < pl.max_hp && pl.flask_lock <= 0.0,
@@ -1571,7 +1602,7 @@ impl World {
     pub fn mag_of(&self, id: weapons::Id) -> u8 {
         match id.def().rb {
             Rb::Shot { mag, .. } => (mag as i32 + self.stats.mag).clamp(1, u8::MAX as i32) as u8,
-            Rb::Magic(_) => 0,
+            Rb::Toss => 0,
         }
     }
 

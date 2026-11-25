@@ -64,6 +64,10 @@ impl World {
         let mut cx = self.player_ctx(cancelled, t, dt);
         self.tick_player_clocks(&mut cx);
         self.try_turn(&cx);
+        // 던진 창(0274 ②b): 평타를 누르면 곧바로 손에 돌아온다 — 창이 없는 동안에도 평타는 막히지 않는다.
+        if cx.a.attack {
+            self.recall_javelin();
+        }
 
         // 교체 공격(0272 1b): 이 틱에 바꿔 든 무기가 들어오며 친다(`weapon_swap`이 세웠다) — 다른 누름보다 먼저. 이 틱에 못 나가면 버린다.
         let entry = std::mem::take(&mut self.player.entry);
@@ -305,6 +309,7 @@ impl World {
     fn tick_player_clocks(&mut self, cx: &mut Ctx) {
         let (a, t, dt, wpn) = (&cx.a, cx.t, cx.dt, cx.wpn);
         let mag = self.mag_of(self.player.weapon);
+        let javelin = self.javelin_out();
         let pl = &mut self.player;
         // 콤보·원거리 무기 시계(0051).
         pl.combo_left = (pl.combo_left - dt).max(0.0);
@@ -318,6 +323,28 @@ impl World {
                 if pl.ranged.reload <= 0.0 {
                     pl.ranged.reload = 0.0;
                     pl.ranged.ammo = mag;
+                }
+            }
+        }
+        // 쇠뇌의 덧장전(0274 ②b — `Rhythm::Crank`): 탄이 남아 있고 쏘지 않고 멈춰 서 있으면 `wait`초 뒤부터 `each`초마다 한 발.
+        // 쏘거나 모으거나·구르거나 뛰거나·맞거나·걸으면 처음부터 — 수류탄을 던지는 동안(서 있다)은 이어 간다.
+        if let Some(weapons::Rhythm::Crank { wait, each }) = pl.weapon.rhythm() {
+            let busy = matches!(
+                pl.state,
+                PState::Cast { .. }
+                    | PState::CastCharge { .. }
+                    | PState::Dodge { .. }
+                    | PState::Jump { .. }
+                    | PState::Hurt { .. }
+                    | PState::Recoil { .. }
+            );
+            if busy || !still || pl.ranged.reload > 0.0 || pl.ranged.ammo >= mag {
+                pl.ranged.topup = 0.0;
+            } else {
+                pl.ranged.topup += dt;
+                if pl.ranged.topup >= wait + each {
+                    pl.ranged.ammo += 1;
+                    pl.ranged.topup = wait;
                 }
             }
         }
@@ -337,7 +364,7 @@ impl World {
             }
         }
         // 마법 칸(0111): 수류탄처럼 시간으로 찬다 — 한 칸 `cast.cooldown s`.
-        if let Rb::Magic(_) = wpn.rb {
+        if let Rb::Toss = wpn.rb {
             pl.ranged.mana = (pl.ranged.mana + dt / t[P::CastCooldown].max(0.1)).min(CAST_CHARGES);
         }
         // 공중 RB(0111): 땅에 서면 다음 점프에 다시 쏠 수 있다.
@@ -399,9 +426,9 @@ impl World {
         } else {
             pl.ranged.cast_hold + dt
         };
-        // 원거리 강공격(0056)을 모을 수 있나 — 떼는 순간 칸(마법)·볼트(쇠뇌) 하나를 쓴다.
+        // 원거리 강공격(0056)을 모을 수 있나 — 떼는 순간 칸(마법)·볼트(쇠뇌) 하나를 쓴다. 던진 창이 날고 있으면 못 한다(0274 ②b).
         cx.can_charge_cast = match wpn.rb {
-            Rb::Magic(_) => pl.ranged.mana >= 1.0,
+            Rb::Toss => pl.ranged.mana >= 1.0 && !javelin,
             Rb::Shot { heavy, .. } => pl.ranged.ammo >= heavy.max(1),
         };
         pl.since_spill = (pl.since_spill + dt).min(f32::MAX);
@@ -531,14 +558,20 @@ impl World {
             && cx.can_charge_cast
         {
             // 터치로 끌어 겨누는 동안(0217)은 쏘지 않고 쥐고 있으니, 쥔 채로 모으기에 든다 — 떼는 순간 모은 탄.
-            let pl = &mut self.player;
-            pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
-            pl.state = PState::CastCharge { t: 0.0 };
+            // 활(0274 ②b)은 누르는 순간부터 당기니 같은 길(`start_shot`)로.
+            if self.player.weapon.draws() {
+                self.start_shot(cx);
+            } else {
+                let pl = &mut self.player;
+                pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+                pl.state = PState::CastCharge { t: 0.0 };
+            }
         } else if a.cast && matches!(wpn.rb, Rb::Shot { .. }) {
             self.start_shot(cx);
         } else if a.cast {
+            let javelin = self.javelin_out();
             let pl = &mut self.player;
-            if pl.ranged.mana >= 1.0 {
+            if pl.ranged.mana >= 1.0 && !javelin {
                 pl.ranged.mana -= 1.0;
                 pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
                 pl.state = PState::Cast {
@@ -728,7 +761,8 @@ impl World {
                     self.start_swing(cx);
                 }
             }
-            weapons::Entry::Shot => self.start_shot(cx),
+            // 교체 공격은 당기지 않고 곧장 한 발(활도 — 0274 ②b).
+            weapons::Entry::Shot => self.start_shot_as(cx, false),
         }
         let pl = &self.player;
         if matches!(pl.state, PState::Attack { .. } | PState::Cast { .. }) {
@@ -740,8 +774,14 @@ impl World {
         }
     }
 
-    /// 원거리 무기의 RB = 사격(0051): 탄창이 비면 장전이 끝날 때까지 못 쏜다.
+    /// 원거리 무기의 RB = 사격(0051): 탄창이 비면 장전이 끝날 때까지 못 쏜다. 활(0274 ②b — `Rhythm::Draw`)은 쏘지 않고 화살을
+    /// 메겨 당기기 시작한다(`CastCharge`) — 화살은 떼는 순간에 쓴다(당기다 구르면 잃지 않는다), 기력과 박자는 누르는 순간에.
     fn start_shot(&mut self, cx: &Ctx) {
+        self.start_shot_as(cx, self.player.weapon.draws());
+    }
+
+    /// `start_shot` — `draws`면 당기기 시작, 아니면 곧장 한 발(쇠뇌 · 교체 공격으로 들어오는 활).
+    fn start_shot_as(&mut self, cx: &Ctx, draws: bool) {
         let Rb::Shot { reload, time, .. } = cx.wpn.rb else {
             return;
         };
@@ -763,20 +803,26 @@ impl World {
                 pl.beat.since = 0.0;
             } else {
                 pl.beat.chain = 0;
-                pl.ranged.ammo -= 1;
-                // 회피로 넣은 한 발을 장전 중에 쏘면 장전은 이어 간다(처음부터 다시 세지 않는다, 0210).
-                if pl.ranged.ammo == 0 && pl.ranged.reload <= 0.0 {
-                    pl.ranged.reload = reload;
+                if !draws {
+                    pl.ranged.ammo -= 1;
+                    // 회피로 넣은 한 발을 장전 중에 쏘면 장전은 이어 간다(처음부터 다시 세지 않는다, 0210).
+                    if pl.ranged.ammo == 0 && pl.ranged.reload <= 0.0 {
+                        pl.ranged.reload = reload;
+                    }
                 }
             }
             pl.beat.swing_beat = free;
             pl.beat.since_swing = 0.0;
             pl.beat.period = cx.t[P::CastTime] * time;
             pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
-            pl.state = PState::Cast {
-                t: 0.0,
-                dir: cx.cast_dir,
-                fired: false,
+            pl.state = if draws {
+                PState::CastCharge { t: 0.0 }
+            } else {
+                PState::Cast {
+                    t: 0.0,
+                    dir: cx.cast_dir,
+                    fired: false,
+                }
             };
         } else {
             pl.ranged.cast_denied = 0.6;
@@ -923,13 +969,15 @@ impl World {
         let mut fired = fired;
         let k = match wpn.rb {
             Rb::Shot { time, .. } => time,
-            Rb::Magic(_) => 1.0,
+            Rb::Toss => 1.0,
         };
         if !fired && e2 >= t[P::CastStartup] * k {
             fired = true;
             cx.fire = Some((dir, 0));
         }
+        // 활(0274 ②b)은 쏜 뒤 쥐어도 다시 당기지 않는다 — 새 누름이 `start_shot`으로 메긴다(기력·화살을 치르고).
         pl.state = if fired
+            && !pl.weapon.draws()
             && a.cast_held
             && pl.ranged.cast_hold >= t[P::CastHoldStart]
             && cx.can_charge_cast
@@ -946,6 +994,10 @@ impl World {
     /// 원거리 강공격 모으기(0056).
     fn tick_cast_charge(&mut self, cx: &mut Ctx, e: f32) {
         if self.try_dodge(cx) {
+            return;
+        }
+        if self.player.weapon.draws() {
+            self.tick_draw(cx, e);
             return;
         }
         let (a, t, dt, wpn) = (&cx.a, cx.t, cx.dt, cx.wpn);
@@ -966,7 +1018,7 @@ impl World {
         }
         // 떼면 모은 탄 — 칸·볼트 하나, 다 모았으면 무기 표의 `charged`, 덜 모았으면 약하게. 쏘는 동작의 뒷부분으로 이어진다.
         match wpn.rb {
-            Rb::Magic(_) => pl.ranged.mana -= 1.0,
+            Rb::Toss => pl.ranged.mana -= 1.0,
             Rb::Shot { reload, heavy, .. } => {
                 // 모은 사격은 볼트 `heavy`발(0210 — 모으기를 잇달아 하면 장전이 곧 온다).
                 pl.ranged.ammo = pl.ranged.ammo.saturating_sub(heavy.max(1));
@@ -996,10 +1048,69 @@ impl World {
         ));
         let k = match wpn.rb {
             Rb::Shot { time, .. } => time,
-            Rb::Magic(_) => 1.0,
+            Rb::Toss => 1.0,
         };
         pl.state = PState::Cast {
             t: t[P::CastStartup] * k,
+            dir: cx.cast_dir,
+            fired: true,
+        };
+    }
+
+    /// 활 당기기(0274 ②b — `Rhythm::Draw`): 쥔 동안 당기고(겨누는 손을 몸이 따른다), 떼면 당긴 시간의 단계로 쏜다 —
+    /// 톡 = 보통 화살(0) · `mid`초 넘게 = 반쯤 당긴 화살(1) · 끝까지 = 끝까지 당긴 화살(2 — 꿰뚫고 오금) · 다 당긴 뒤 창 안에 떼면
+    /// 딱 맞춤(3). 화살은 떼는 순간 하나(박자에 맞춰 메긴 것은 공짜 — `swing_beat`), 끝까지 당긴 것은 강타 값의 기력을 더 쓴다.
+    /// 쏘는 동작의 뒷부분으로 잇는다 — 톡은 보통 사격과 같은 길이(쏘는 자리를 앞당길 뿐), 오래 당긴 것은 놓는 자리부터.
+    fn tick_draw(&mut self, cx: &mut Ctx, e: f32) {
+        let (a, t, dt, wpn) = (&cx.a, cx.t, cx.dt, cx.wpn);
+        let Rb::Shot { reload, time, .. } = wpn.rb else {
+            return;
+        };
+        let Some(weapons::Rhythm::Draw { mid, .. }) = self.player.weapon.rhythm() else {
+            return;
+        };
+        let full = t[P::CastCharge];
+        if a.cast_held {
+            self.charged_now |= e < full && e + dt >= full;
+            if ranged_aim_given(&cx.a) {
+                self.player.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+            }
+            self.player.state = PState::CastCharge { t: e + dt };
+            return;
+        }
+        let pl = &mut self.player;
+        if pl.ranged.ammo == 0 {
+            pl.state = PState::Idle;
+            return;
+        }
+        if !pl.beat.swing_beat {
+            pl.ranged.ammo -= 1;
+            if pl.ranged.ammo == 0 && pl.ranged.reload <= 0.0 {
+                pl.ranged.reload = reload;
+            }
+        }
+        let perfect = e >= full && e <= full + PERFECT_RELEASE;
+        let power = if perfect {
+            3
+        } else if e >= full {
+            2
+        } else if e >= mid {
+            1
+        } else {
+            0
+        };
+        if power >= 2 {
+            // 끝까지 당긴 화살은 강타 값(0117)을 더 낸다 — 옛 "한 발 + 모은 사격"(평타 값 + 강타 값)과 같은 값, 막지 않고 0까지(소울류).
+            let more = t[P::HeavyStamina] * wpn.stamina;
+            pl.stamina = (pl.stamina - more).max(0.0);
+            pl.stamina_idle = 0.0;
+            // 모으기 공격의 패링(0089)과 같은 경계: 끝까지 당겨 놓는 순간부터 패링 창.
+            pl.parry.release_guard = t[P::ParryWindow];
+        }
+        pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+        cx.fire = Some((cx.cast_dir, power));
+        pl.state = PState::Cast {
+            t: e.min(t[P::CastStartup] * time),
             dir: cx.cast_dir,
             fired: true,
         };
@@ -1068,12 +1179,14 @@ impl World {
         } else if cx.a.cast && !plunge && !pl.ranged.air_shot {
             // 공중 RB(0111, 사장 2026-11-08): 근접 무기 = 마법 한 칸을 내려 쏘고, 쇠뇌 = 볼트를 부채꼴로 내려 쏜다(탄창은 안 쓴다).
             // 쏘는 순간 잠깐 떠 있다(체공) — 한 점프에 한 번이라 연타로 떠 있지 못한다.
+            let javelin = self.javelin_out();
+            let pl = &mut self.player;
             let ok = match cx.wpn.rb {
-                Rb::Magic(_) if pl.ranged.mana >= 1.0 => {
+                Rb::Toss if pl.ranged.mana >= 1.0 && !javelin => {
                     pl.ranged.mana -= 1.0;
                     true
                 }
-                Rb::Magic(_) => {
+                Rb::Toss => {
                     pl.ranged.cast_denied = 0.6;
                     self.cast_denied_now = true;
                     false
@@ -1316,9 +1429,12 @@ impl World {
                     PState::Charging { .. } => {
                         t[P::HeavyChargeWalk] * wpn.heavy.map_or(1.0, |h| h.walk) * charge_walk
                     }
-                    PState::Cast { .. } | PState::Throw { .. } | PState::CastCharge { .. } => {
-                        t[P::CastWalk]
-                    }
+                    // 활을 당기는 동안(0274 ②b)은 쇠뇌를 모을 때보다 조금 덜 느리다 — 움직이며 당겨 쏘는 무기.
+                    PState::CastCharge { .. } => match pl.weapon.rhythm() {
+                        Some(weapons::Rhythm::Draw { walk, .. }) => t[P::CastWalk] * walk,
+                        _ => t[P::CastWalk],
+                    },
+                    PState::Cast { .. } | PState::Throw { .. } => t[P::CastWalk],
                     PState::Block { .. } => crate::tuning::BLOCK_WALK,
                     PState::Idle if pl.running => RUN_SPEED_X,
                     _ => 1.0,
@@ -1462,12 +1578,7 @@ impl World {
     }
 
     pub(super) fn assist_aim(&self, d: Vec3, deg: f32, t: &Tuning) -> Vec3 {
-        let wpn = self.player.weapon.def();
-        let range = match wpn.rb {
-            Rb::Magic(b) => b.range,
-            Rb::Shot { bolt, .. } => bolt.range,
-        };
-        let reach = t[P::CastRange] * range;
+        let reach = t[P::CastRange] * self.player.weapon.bolts().0.range;
         let cos = deg.to_radians().cos();
         let p = self.player.pos;
         self.enemies

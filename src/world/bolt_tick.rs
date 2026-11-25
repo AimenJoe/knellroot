@@ -2,7 +2,10 @@
 //!
 //! 순서: 틱이 남긴 알림 → 자세 막대 → 폭발 고리·불똥의 나이 → 쏜 탄·공중 RB·던진 수류탄을 세움 → 탄이 난다 → 수류탄 → 금 간 땅.
 use super::*;
-use crate::tuning::{BOLT_BODY_SLACK, BOLT_FOLLOW, BOLT_STEP};
+use crate::tuning::{
+    BOLT_BODY_SLACK, BOLT_FOLLOW, BOLT_STEP, JAVELIN_BACK, JAVELIN_CATCH, SMITE_DELAY,
+    SMITE_RADIUS, SMITE_SEEK,
+};
 
 impl World {
     /// 날아가는 것·늦게 터지는 것(0048·0051): 마법 탄·쇠뇌 볼트, 수류탄, 금 간 땅(망치 여진), 자세 막대가 줄기, 폭발 고리.
@@ -27,6 +30,7 @@ impl World {
 
         self.tick_bombs(t, dt, ev);
         self.tick_cracks(t, dt, ev);
+        self.tick_smites(t, dt, ev);
     }
 
     fn tick_poise(&mut self, t: &Tuning, dt: f32) {
@@ -57,26 +61,33 @@ impl World {
         self.sparks.retain(|sp| sp.age < SPARK_LIFE);
     }
 
-    /// 이번 틱에 쏜 마법 탄·볼트를 세운다(모은 정도마다 다른 탄, 0056·0078).
-    fn fire_cast(&mut self, t: &Tuning, ev: &mut Vec<Event>, wpn: &weapons::Weapon) {
+    /// 이번 틱에 쏜 RB를 세운다(모은 정도마다 다른 탄, 0056·0078): 근접 무기 = 종류의 원거리 수단(0274 ②b — 신성한 빛은 날지 않고
+    /// 겨눈 자리에 `Smite`로), 사격 무기 = 볼트·화살(활의 반쯤 당긴 화살은 표의 `mid_bolt`).
+    fn fire_cast(&mut self, t: &Tuning, ev: &mut Vec<Event>, _wpn: &weapons::Weapon) {
         if let Some((dir, power)) = self.cast_fire.take() {
             let pl = &self.player;
             let pos = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT) + dir * (PLAYER_RADIUS + 0.2);
-            let c = wpn.charged;
-            let def = match (power, wpn.rb) {
-                (0, Rb::Magic(b)) => b,
-                (0, Rb::Shot { bolt, .. }) => bolt,
+            let (plain, c) = pl.weapon.bolts();
+            let def = match power {
+                0 => plain,
+                // 반쯤 당긴 화살(0274 ②b).
+                1 if pl.weapon.draws() => match pl.weapon.rhythm() {
+                    Some(weapons::Rhythm::Draw { mid_bolt, .. }) => mid_bolt,
+                    _ => plain,
+                },
                 // 덜 모은 탄(0056): 모은 탄의 반(옛 눈금으로 올림, 0158 N0) — 꿰뚫기·휘청 없음.
-                (1, _) => weapons::Bolt {
+                1 => weapons::Bolt {
                     damage: crate::tuning::half_up(c.damage),
                     poise: c.poise * 0.5,
                     pierce: false,
                     stagger: 0.0,
                     scale: 1.0 + (c.scale - 1.0) * 0.4,
+                    dose: (c.dose.0, c.dose.1 * 0.5),
+                    lame: 0.0,
                     ..c
                 },
                 // 딱 맞춰 뗀 모은 탄(0078): 강타의 딱 맞춤과 같은 덤 — 피해 +한 눈금(`HP_UNIT`)·자세 피해 ×1.5.
-                (3, _) => weapons::Bolt {
+                3 => weapons::Bolt {
                     damage: c.damage + HP_UNIT,
                     poise: c.poise * 1.5,
                     ..c
@@ -86,6 +97,16 @@ impl World {
             if power == 3 {
                 self.player.beat.since_perfect = 0.0;
                 ev.push(Event::Perfect { at: pos });
+            }
+            ev.push(Event::Cast {
+                at: pos,
+                look: def.look,
+            });
+            // 신성한 빛(0274 ②b): 날지 않는다 — 겨눈 자리(미리보기와 같은 셈 `smite_spot`)에 내려 꽂힌다.
+            if def.smites() {
+                let at = self.smite_spot(dir, def, t);
+                self.smites.push(smite_of(at, &def));
+                return;
             }
             let left = t[P::CastRange] * def.range;
             let dir = self.shot_line(pos, dir, &def, left);
@@ -97,8 +118,89 @@ impl World {
                 def,
                 hits: 0,
                 veined: [false; 5],
+                back: false,
             });
-            ev.push(Event::Cast { at: pos });
+        }
+    }
+
+    /// 신성한 빛이 내려 꽂힐 자리(0274 ②b — 쏠 때와 미리보기가 같은 셈): `flat` 쪽으로 마법 탄이 가는 길(`shot_reach` — 벽·벼랑에서
+    /// 멈춘다) 위에서 줄(몸 + `SMITE_SEEK` m) 안의 첫 적 발밑, 없으면 그 길이 멈추는 자리. 높이는 그 자리의 땅.
+    pub fn smite_spot(&self, flat: Vec3, def: weapons::Bolt, t: &Tuning) -> Vec3 {
+        let p = self.player.pos;
+        let reach = self.shot_reach(flat, def, t);
+        let first = self
+            .enemies
+            .iter()
+            .filter(|en| en.active() && !en.harmless())
+            .filter_map(|en| {
+                let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+                let along = d.dot(flat);
+                let off = (d - flat * along).length();
+                (along > 0.0 && along <= reach + en.radius && off <= en.radius + SMITE_SEEK)
+                    .then_some((along, en.pos))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        let at = first.map_or(p + flat * reach, |(_, q)| q);
+        vec3(at.x, self.ground_y(at), at.z)
+    }
+
+    /// 지금 떼면(누르면) 나갈 RB의 탄(0274 ②b — 미리보기가 쏠 때와 같은 것을 그리게): 모으는 중이면 모은 것, 활은 당긴 단계
+    /// (톡 · 반쯤 · 끝까지), 아니면 보통 한 번.
+    pub fn aim_bolt(&self, t: &Tuning) -> weapons::Bolt {
+        let (plain, charged) = self.player.weapon.bolts();
+        match self.player.state {
+            PState::CastCharge { t: e } => match self.player.weapon.rhythm() {
+                Some(weapons::Rhythm::Draw { mid, mid_bolt, .. }) => {
+                    if e >= t[P::CastCharge] {
+                        charged
+                    } else if e >= mid {
+                        mid_bolt
+                    } else {
+                        plain
+                    }
+                }
+                _ => charged,
+            },
+            _ => plain,
+        }
+    }
+
+    /// 던진 창이 날고 있나(0274 ②b — 가는 길이든 돌아오는 길이든). 그동안 RB는 못 쓰고 손에는 창이 없다(`weapon_away`).
+    pub fn javelin_out(&self) -> bool {
+        self.bolts.iter().any(|b| b.def.returns())
+    }
+
+    /// 평타를 누르면 던진 창이 곧바로 손에 돌아온다(0274 ②b — 창이 없는 동안에도 평타를 막지 않는다).
+    pub(super) fn recall_javelin(&mut self) {
+        if !self.javelin_out() {
+            return;
+        }
+        self.bolts.retain(|b| !b.def.returns());
+        let pl = &self.player;
+        self.skill_ev.push(Event::JavelinBack {
+            at: pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT),
+        });
+    }
+
+    /// 곧 내려 꽂힐 신성한 빛(0274 ②b): 시간이 되면 둘레를 친다(울림을 쌓는다).
+    fn tick_smites(&mut self, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
+        if self.smites.is_empty() {
+            return;
+        }
+        let mut due = Vec::new();
+        for s in &mut self.smites {
+            s.left -= dt;
+            if s.left <= 0.0 {
+                due.push(*s);
+            }
+        }
+        self.smites.retain(|s| s.left > 0.0);
+        for s in due {
+            self.burst(s.pos, s.radius, s.damage, s.poise, s.dose, t, ev);
+            ev.push(Event::Smite {
+                at: s.pos,
+                radius: s.radius,
+            });
         }
     }
 
@@ -121,10 +223,22 @@ impl World {
                 .min_by(f32::total_cmp)
                 .unwrap_or(AIR_SHOT_REACH)
                 .max(AIR_SHOT_MIN);
-            let (def, count) = match wpn.rb {
-                Rb::Magic(b) => (b, 1),
-                Rb::Shot { bolt, .. } => (bolt, AIR_VOLLEY),
+            let def = pl.weapon.bolts().0;
+            let count = match wpn.rb {
+                Rb::Toss => 1,
+                Rb::Shot { .. } => AIR_VOLLEY,
             };
+            // 신성한 빛(0274 ②b)은 공중에서도 날지 않는다 — 겨눈 자리(내려 쏘는 탄이 가는 땅)에 내려 꽂힌다.
+            if def.smites() {
+                let aim = pl.pos + flat * reach;
+                let at = vec3(aim.x, self.ground_y(aim), aim.z);
+                self.smites.push(smite_of(at, &def));
+                ev.push(Event::Cast {
+                    at: from,
+                    look: def.look,
+                });
+                return;
+            }
             let spread = AIR_VOLLEY_SPREAD_DEG.to_radians();
             for i in 0..count {
                 let k = if count > 1 {
@@ -146,9 +260,13 @@ impl World {
                     def,
                     hits: 0,
                     veined: [false; 5],
+                    back: false,
                 });
             }
-            ev.push(Event::Cast { at: from });
+            ev.push(Event::Cast {
+                at: from,
+                look: def.look,
+            });
         }
     }
 
@@ -230,7 +348,7 @@ impl World {
         def: &weapons::Bolt,
         reach: f32,
     ) -> Vec3 {
-        if !def.is_shot() || flat.y.abs() > 1e-4 {
+        if !def.straight() || flat.y.abs() > 1e-4 {
             return flat;
         }
         let first = self
@@ -245,9 +363,13 @@ impl World {
                     .then_some((along, en.pos.y + en.height * 0.5))
             })
             .min_by(|a, b| a.0.total_cmp(&b.0));
+        // 0274 ②b: 같은 땅의 적이면(몸통이 쏜 높이에서 몸 판정의 여유 안) 기울이지 않는다 — 꿰뚫는 것(던진 창 · 모은 볼트)이 첫 적의
+        // 몸통으로 조금 숙여 날다 그 뒤의 땅에 박히던 것. 높낮이가 다른 적에게만 비스듬히(0218 그대로).
         match first {
-            Some((along, y)) => (flat * along + Vec3::Y * (y - from.y)).normalize_or(flat),
-            None => flat,
+            Some((along, y)) if (y - from.y).abs() > BOLT_BODY_SLACK => {
+                (flat * along + Vec3::Y * (y - from.y)).normalize_or(flat)
+            }
+            _ => flat,
         }
     }
 
@@ -265,6 +387,7 @@ impl World {
             def,
             hits: 0,
             veined: [false; 5],
+            back: false,
         };
         let step = t[P::CastSpeed] * TICK_DT * def.speed;
         for _ in 0..2000 {
@@ -298,10 +421,7 @@ impl World {
         if n < 1e-3 {
             return true;
         }
-        let def = match self.player.weapon.def().rb {
-            weapons::Rb::Magic(b) => b,
-            weapons::Rb::Shot { bolt, .. } => bolt,
-        };
+        let def = self.player.weapon.bolts().0;
         self.shot_reach(v / n, def, t) + radius >= n - 0.05
     }
 
@@ -310,7 +430,7 @@ impl World {
     fn bolt_lands(&self, b: &mut Bolt, len: f32) -> bool {
         if let Some(g) = &self.ground {
             let floor = g.cell_of(b.pos).and_then(|(x, z)| g.height_in(x, z, b.pos));
-            let level = b.dir.y.abs() < 1e-4 && !b.def.is_shot();
+            let level = b.dir.y.abs() < 1e-4 && !b.def.straight();
             match floor {
                 None => true,
                 Some(h) if level => {
@@ -336,9 +456,25 @@ impl World {
     /// 탄이 난다: 벽·기둥·수류탄·적(꿰뚫는 탄은 모두, 아니면 가장 가까운 하나)·땅에 닿으면 사라진다.
     fn fly_bolts(&mut self, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
         let step = t[P::CastSpeed] * dt;
+        let pl = &self.player;
+        let home = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT);
         let mut keep = Vec::with_capacity(self.bolts.len());
         for mut b in std::mem::take(&mut self.bolts) {
             b.prev = b.pos;
+            // 돌아오는 창(0274 ②b): 지금의 방랑자에게 곧게(벽을 가리지 않는다 — 든 것을 잃지 않게), 치지 않는다.
+            if b.back {
+                let to = home - b.pos;
+                let l = to.length();
+                let go = JAVELIN_BACK * dt;
+                if l <= go + JAVELIN_CATCH {
+                    ev.push(Event::JavelinBack { at: home });
+                } else {
+                    b.dir = to / l;
+                    b.pos += b.dir * go;
+                    keep.push(b);
+                }
+                continue;
+            }
             let mut len = (step * b.def.speed).min(b.left);
             // 벽·기둥: 이번 걸음 안에서 먼저 닿는 상자까지만.
             let mut gone = false;
@@ -448,6 +584,11 @@ impl World {
                     };
                 }
                 add_poise(en, b.def.poise * self.stats.poise, None, t, ev);
+                // 종류의 RB가 싣는 속성(0274 ②b)과 끝까지 당긴 화살의 오금.
+                afflict(en, b.def.dose, ev);
+                if b.def.lame > 0.0 && en.hp > 0 {
+                    en.marks.hamstring = en.marks.hamstring.max(b.def.lame);
+                }
                 if en.hp <= 0 {
                     en.state = EState::Dead;
                     self.kills += 1;
@@ -467,6 +608,11 @@ impl World {
                 && b.pos.x.abs() <= self.arena + 2.0
                 && b.pos.z.abs() <= self.arena + 2.0
             {
+                keep.push(b);
+            } else if b.def.returns() {
+                // 던진 창(0274 ②b): 멈춘 자리에서 돌아온다.
+                b.back = true;
+                b.hits = 0;
                 keep.push(b);
             }
         }
@@ -527,5 +673,17 @@ impl World {
             });
             ev.push(Event::Aftershock { at: c.pos });
         }
+    }
+}
+
+/// 신성한 빛 하나(0274 ②b): 탄 표의 피해·자세·속성, 반지름 = `SMITE_RADIUS` × `scale`, `SMITE_DELAY`초 뒤.
+fn smite_of(at: Vec3, def: &weapons::Bolt) -> Smite {
+    Smite {
+        pos: at,
+        left: SMITE_DELAY,
+        radius: SMITE_RADIUS * def.scale,
+        damage: def.damage,
+        poise: def.poise,
+        dose: def.dose,
     }
 }

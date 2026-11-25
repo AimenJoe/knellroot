@@ -42,6 +42,7 @@ impl Renderer {
             ground: w.ground.as_ref(),
         };
         bolts(w, alpha);
+        smites(w, &fl);
         bell_shards(w, &fl);
         bombs(w, alpha);
         carts(w, alpha);
@@ -345,6 +346,11 @@ fn bolts(w: &World, alpha: f32) {
     // 0242(사장 "습작 같다"): 꼬리 마름모 셋 → 가늘어지는 띠 + 둥근 빛무리 + 숨 쉬는 알맹이와 작은 별.
     for b in &w.bolts {
         let p = b.prev.lerp(b.pos, alpha);
+        // 던지는 것(0274 ②b): 빛 덩이가 아니라 몸 — 손도끼는 날을 앞세워 세로로 돌고, 돌은 굴러 간다, 창은 모델로(`javelins`).
+        if b.def.thrown() {
+            thrown(w, b, p);
+            continue;
+        }
         let (core, glow) = BOLT_LOOKS[(b.def.look as usize).min(BOLT_LOOKS.len() - 1)];
         let k = if b.def.is_shot() { 0.6 } else { 1.0 } * b.def.scale;
         let pulse = 1.0 + 0.12 * (w.time * 30.0 + b.left).sin();
@@ -356,6 +362,86 @@ fn bolts(w: &World, alpha: f32) {
         if !b.def.is_shot() {
             spark4(p, 0.62 * k * pulse, with_a(core, 0.9));
         }
+    }
+}
+
+/// 던지는 RB의 몸(0274 ②b): 손도끼 = 쇳빛 날 + 나무 자루를 나는 쪽의 옆 축으로 세로로 돌린다(날이 보이게), 돌 = 굴러 가는 잿빛
+/// 덩이. 꼬리는 옅은 바람 띠 하나(빛 덩이가 아니다 — 마법과 갈린다). 창은 모델 부위로(`Renderer::javelins`) — 여기서는 바람 띠만.
+fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
+    use crate::weapons::{AXE, STONE};
+    let k = b.def.scale;
+    let wind = Color::new(0.92, 0.94, 1.0, 0.28);
+    if b.back {
+        trail(p, p - b.dir * 1.0, 0.12, with_a(wind, 0.18));
+        return;
+    }
+    trail(p, p - b.dir * (1.2 * k), 0.22 * k, wind);
+    let side = vec3(-b.dir.z, 0.0, b.dir.x).normalize_or(Vec3::X);
+    let spin = w.time * 18.0 + b.left;
+    match b.def.look {
+        AXE => {
+            // 자루(나무)와 머리(쇠): 자루 끝을 돌림의 가운데로.
+            let rot = Quat::from_axis_angle(side, spin)
+                * Quat::from_rotation_arc(Vec3::Y, b.dir.normalize_or(Vec3::Z));
+            let s = 0.85 * k;
+            shaded_box_rot(
+                p + rot * vec3(0.0, 0.0, 0.0),
+                vec3(0.05, 0.5, 0.05) * s,
+                Color::new(0.55, 0.40, 0.26, 1.0),
+                0.6,
+                rot,
+                p,
+            );
+            shaded_box_rot(
+                p + vec3(0.0, 0.2, 0.06) * s,
+                vec3(0.05, 0.16, 0.2) * s,
+                Color::new(0.80, 0.82, 0.88, 1.0),
+                0.6,
+                rot,
+                p,
+            );
+        }
+        STONE => {
+            let rot = Quat::from_axis_angle(side, spin * 0.7);
+            shaded_tris(
+                p,
+                &octa_faces(vec2(0.13 * k, 0.11 * k), 0.12 * k, 0.1 * k),
+                Color::new(0.58, 0.55, 0.52, 1.0),
+                0.7,
+                rot,
+            );
+        }
+        _ => {}
+    }
+}
+
+/// 신성한 빛(0274 ②b — 망치의 RB): 내려 꽂히기까지 바닥에 금빛 고리가 조여들고 위에서 가는 빛줄이 짙어진다(`SMITE_DELAY`),
+/// 꽂히는 순간의 번쩍임·튀는 빛은 이펙트(`Event::Smite`). 바닥 표시는 땅을 따라 접는다. 빨강은 쓰지 않는다.
+fn smites(w: &World, fl: &Drape) {
+    let gold = Color::new(1.0, 0.9, 0.6, 1.0);
+    let white = Color::new(1.0, 0.98, 0.9, 1.0);
+    for s in &w.smites {
+        let k = (1.0 - s.left / crate::tuning::SMITE_DELAY).clamp(0.0, 1.0);
+        let g = s.pos + Vec3::Y * 0.06;
+        fl.sector(g, s.radius, 0.0, 360.0, with_a(gold, 0.1 + 0.15 * k));
+        fl.ring(g, s.radius, 0.0, 360.0, with_a(gold, 0.35 + 0.4 * k));
+        fl.ring(
+            g,
+            s.radius * (1.0 - 0.7 * k),
+            0.0,
+            360.0,
+            with_a(white, 0.5 * k),
+        );
+        // 위에서 내려오는 빛줄: 가늘게 시작해 꽂히기 직전 굵어진다(빛 기둥의 높이 = 겨눈 땅 위 7 m).
+        let r = 0.08 + 0.32 * k * k;
+        shaft(
+            s.pos,
+            s.pos + Vec3::Y * 7.0,
+            r,
+            r * 1.4,
+            with_a(white, 0.15 + 0.45 * k),
+            with_a(gold, 0.0),
+        );
     }
 }
 
@@ -515,6 +601,18 @@ fn cast_charge(w: &World, pp: Vec3, t: &Tuning, fl: &Drape) {
         };
         fl.ring(pp + Vec3::Y * 0.05, 0.9, 0.0, 360.0, with_a(glow, 0.25));
         fl.ring(pp + Vec3::Y * 0.05, 0.2 + 0.7 * k, 0.0, 360.0, col);
+        // 활(0274 ②b): 반쯤 당긴 단계의 금 — 차오르는 고리가 넘으면 그 단계(자세 피해·거리), 끝까지면 깜빡임(꿰뚫고 오금).
+        if let Some(crate::weapons::Rhythm::Draw { mid, .. }) = w.player.weapon.rhythm() {
+            let m = (mid / full).clamp(0.0, 1.0);
+            let on = k >= m;
+            fl.ring(
+                pp + Vec3::Y * 0.05,
+                0.2 + 0.7 * m,
+                0.0,
+                360.0,
+                with_a(core, if on { 0.85 } else { 0.35 }),
+            );
+        }
     }
 }
 
@@ -1489,7 +1587,7 @@ pub(super) fn crescent(
 
 /// 든 무기의 모은 탄 색(0056).
 fn wpn_look(w: &World) -> u8 {
-    w.player.weapon.def().charged.look
+    w.player.weapon.bolts().1.look
 }
 
 /// 터치로 끌어 겨누는 동안의 땅 위 미리보기(0217 — 브롤스타즈 꼴): 떼면 무엇이 어디로 가는지.
@@ -1519,20 +1617,22 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
     match show {
         // 진실한 표시(0218): 길이는 탄을 쏠 때와 같은 길·같은 벽·땅 규칙으로 돌려 본 멈추는 자리(`World::shot_reach`), 폭은 탄이
         // 맞히는 폭. 모으는 중이면 모은 탄의 길.
+        // 0274 ②b: 지금 떼면 나갈 것(`World::aim_bolt` — 활은 당긴 단계까지). 신성한 빛은 줄이 아니라 내려 꽂힐 자리의 고리
+        // (`World::smite_spot` — 쏠 때와 같은 셈)와 거기까지의 가는 줄.
         AimShow::Cast => {
-            let wpn = w.player.weapon.def();
-            let def = if matches!(w.player.state, PState::CastCharge { .. }) {
-                wpn.charged
+            let def = w.aim_bolt(t);
+            if def.smites() {
+                let c = w.smite_spot(dir, def, t) + Vec3::Y * 0.06;
+                let r = crate::tuning::SMITE_RADIUS * def.scale;
+                fl.line(foot, c, edge);
+                fl.sector(c, r, 0.0, 360.0, fill);
+                fl.ring(c, r, 0.0, 360.0, edge);
             } else {
-                match wpn.rb {
-                    crate::weapons::Rb::Magic(b) => b,
-                    crate::weapons::Rb::Shot { bolt, .. } => bolt,
-                }
-            };
-            lane(
-                w.shot_reach(dir, def, t),
-                2.0 * crate::tuning::BOLT_RADIUS * def.scale,
-            );
+                lane(
+                    w.shot_reach(dir, def, t),
+                    2.0 * crate::tuning::BOLT_RADIUS * def.scale,
+                );
+            }
         }
         // 터지는 자리(0218): 떨굴 자리가 아니라 같은 포물선·튕김을 돌려 본 도화선 끝의 자리(`World::grenade_lands`).
         AimShow::Grenade => {

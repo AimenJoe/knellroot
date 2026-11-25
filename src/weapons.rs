@@ -1,5 +1,5 @@
 //! 무기 표(0051). 무기 = 공격의 **모양**(KB `concepts/action-rpg-stats-and-equipment.md`): 콤보의 타마다 시간·거리·각·피해·자세 피해,
-//! 강타, RB(근접 무기 = 마법 탄, 원거리 무기 = 사격), 원거리 무기의 X(수류탄). 0048: 무기 한 줄 = (X, RB) 짝.
+//! 강타, RB(근접 무기 = 종류의 원거리 수단 `ClassDef::toss` — 0274 ②b, 원거리 무기 = 사격), 원거리 무기의 X(수류탄). 0048: 무기 한 줄 = (X, RB) 짝.
 //!
 //! 시간·거리·각·내딛기는 랩의 기준값(`attack.*`·`heavy.*`, `tuning.rs`)에 곱하는 **배율** — 손맛의 바탕은 랩 한 곳에서 맞추고,
 //! 무기는 그 위의 모양만 갖는다(코드에 타별 숫자를 박지 않는다). 피해·자세 피해는 정수·점수 그대로(피해의 눈금은 `tuning::HP_UNIT` — 옛 1 = 10, 0158 N0).
@@ -8,7 +8,7 @@
 use crate::i18n::Tr;
 use crate::skills::Ult;
 use crate::stats::Mods;
-use crate::status::Kind;
+use crate::status::{Dose, Kind, NO_DOSE};
 
 /// 판정 모양.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -146,8 +146,9 @@ pub struct Heavy {
 /// RB.
 #[derive(Clone, Copy, Debug)]
 pub enum Rb {
-    /// 근접 무기의 마법 탄(0048: 칸 3, 근접으로 맞히면 찬다).
-    Magic(Bolt),
+    /// 근접 무기(과 맨손)의 RB(0048 → 0274 ②b): 종류의 원거리 수단(`ClassDef::toss` — 맨손은 `STONE_TOSS`). 칸 3(`CAST_CHARGES`)을
+    /// 시간으로 채워 쓴다. 꼴 · 피해 · 속성은 종류의 칸에서(`Id::toss`).
+    Toss,
     /// 원거리 무기의 사격: 탄창, 다 쓰면 `reload` 초 뒤 가득, 회피하면 한 발 장전(PoE2 착상). 칸은 쓰지 않는다.
     Shot {
         bolt: Bolt,
@@ -158,7 +159,32 @@ pub enum Rb {
         /// 모은 사격 한 발이 쓰는 볼트(0210 — 센 한 발은 탄창을 더 쓴다, PoE2의 "한 발짜리 탄창" 꼴).
         /// 이만큼 남아 있어야 모은다.
         heavy: u8,
+        /// 모은 사격(0056)의 탄 — 쇠뇌 = 끝까지 당긴 무거운 볼트, 활 = 끝까지 당긴 화살.
+        charged: Bolt,
+        /// 손의 리듬(0274 ②b — 쇠뇌 = 장전을 다룬다 · 활 = 당기는 길이를 고른다).
+        rhythm: Rhythm,
     },
+}
+
+/// 사격 무기의 손 리듬(0274 ②b "쇠뇌와 활 — 손의 리듬으로 가른다"). 버튼·조준은 같고 쥐었을 때의 박자가 다르다.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Rhythm {
+    /// 쇠뇌(기술자 — 멈춰 서서 장전·설치): 빈 탄창은 `Shot::reload`초 걸려 가득 찬다(길다). 탄이 남아 있으면 쏘지 않고 멈춰 선 지
+    /// `wait`초 뒤부터 `each`초마다 한 발씩 채운다(덧장전 — 비우기 전에 끊으면 빠르다). 장전하는 동안에도 수류탄은 던진다,
+    /// 회피 장전은 한 발 그대로. 쥐면 한 발 쏜 뒤 모은 사격(0056 그대로).
+    Crank { wait: f32, each: f32 },
+    /// 활(레인저 — 움직이며 당겨 쏘기): 누르면 화살 하나를 메겨 당기고(`PState::CastCharge`) 떼면 쏜다 — 당긴 시간으로 단계:
+    /// 톡 = 보통 화살 · `mid`초 넘게 = `mid_bolt`(더 빠르고 멀리, 자세 피해 큼) · 끝까지(`cast.charge s`) = `Shot::charged`
+    /// (꿰뚫고 오금 — `Bolt::lame`). 당기는 동안 걷기는 `cast.walk × walk`. 탄창 대신 화살 묶음(작고 장전이 짧다).
+    Draw { mid: f32, mid_bolt: Bolt, walk: f32 },
+}
+
+/// 종류의 원거리 수단(0274 ②b "RB를 종류마다" — BG3에서 클래스마다 기본 원거리 수단이 다르듯): 보통 한 번 · 쥐어 다 모은 것.
+/// 꼴은 탄의 그림 번호가 가른다(`Bolt::look` — 마법은 땅을 따라 흐르고, 던지는 것은 곧게 날고, 빛은 겨눈 자리에 내려 꽂힌다).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Toss {
+    pub bolt: Bolt,
+    pub charged: Bolt,
 }
 
 /// 날아가는 탄의 모양.
@@ -173,10 +199,15 @@ pub struct Bolt {
     pub pierce: bool,
     /// 맞은 적이 이 초 휘청(0 = 없음).
     pub stagger: f32,
-    /// 그림 색(0 = 마법 라벤더, 1 = 무거운 탄 놋쇠, 2 = 꿰뚫는 탄 민트, 3 = 쇠뇌 볼트, 4 = 활의 화살 — 0231).
+    /// 그림 색·꼴(0 = 마법 라벤더, 1 = 무거운 탄 놋쇠, 2 = 꿰뚫는 탄 민트, 3 = 쇠뇌 볼트, 4 = 활의 화살 — 0231,
+    /// 0274 ②b: `AXE` 손도끼 · `LIGHT` 신성한 빛 · `JAVELIN` 던진 창 · `STONE` 돌).
     pub look: u8,
-    /// 크기 배율(그림·맞는 반지름, 모은 탄은 크다 — 0056).
+    /// 크기 배율(그림·맞는 반지름, 모은 탄은 크다 — 0056). 신성한 빛은 빛기둥의 반지름 배(`tuning::SMITE_RADIUS`).
     pub scale: f32,
+    /// 맞은 적에게 쌓는 속성 게이지(0274 ②b — 신성한 빛 = 울림). 없으면 `NO_DOSE`.
+    pub dose: Dose,
+    /// 오금(0274 ②b — 끝까지 당긴 화살): 맞은 적이 이 초 느리게 걷는다(`tuning::HAMSTRING_SLOW`, 문지기는 `ROOT_BOSS_SLOW`). 0 = 없음.
+    pub lame: f32,
 }
 
 /// 원거리 무기의 X(0048: 근접 무기의 마법 자리를 수류탄이 맞바꾼다).
@@ -252,8 +283,6 @@ pub struct Weapon {
     pub heavy: Option<Heavy>,
     pub rb: Rb,
     pub grenade: Option<Grenade>,
-    /// RB를 쥐어 다 모은 탄(0056): 근접 무기 = 모은 마법, 원거리 무기 = 모은 사격. 덜 모았으면 피해·자세 피해 반, 꿰뚫기·휘청 없음.
-    pub charged: Bolt,
     /// 방랑자 모델에서 이 무기 부위 이름(다른 무기 부위는 숨긴다).
     pub node: &'static str,
     /// 공격 기력 배율(0117, 사장 "큰 무기는 더 많은 기력 — 높은 피해의 보정"): 평타·대시 공격 `stamina.attack`, 강타 `heavy.stamina`,
@@ -278,6 +307,21 @@ pub struct Forge {
 
 /// 활의 화살 그림(`Bolt::look`, 0231) — 원거리 무기의 탄(곧게 난다·벼린 몫을 받는다)이다.
 pub const ARROW: u8 = 4;
+/// 종류의 RB(0274 ②b): 던지는 손도끼(한손검) · 신성한 빛(망치 — 날지 않고 겨눈 자리에 내려 꽂힌다) · 던진 창(곧게 꿰뚫고 손에
+/// 돌아온다) · 돌(맨손). 던지는 것은 곧게 난다(볼트처럼 겨눈 줄 위 첫 적의 몸통으로 — `World::shot_line`).
+pub const AXE: u8 = 5;
+pub const LIGHT: u8 = 6;
+pub const JAVELIN: u8 = 7;
+pub const STONE: u8 = 8;
+
+/// 쇠뇌의 덧장전(0274 ②b): 쏘지 않고 멈춰 선 지 이 초 뒤부터, 한 발마다 이 초(빈 탄창의 장전은 표의 `reload`).
+pub const XBOW_TOPUP_WAIT: f32 = 0.5;
+pub const XBOW_TOPUP_EACH: f32 = 0.45;
+/// 활의 당기기(0274 ②b): 반쯤 당긴 화살이 되는 초(끝까지는 랩 `cast.charge s`), 당기는 동안 걷기(`cast.walk`에 곱한다 — 쇠뇌가
+/// 모으는 동안보다 조금 덜 느리다), 끝까지 당긴 화살의 오금(초).
+pub const BOW_MID_DRAW: f32 = 0.3;
+pub const BOW_DRAW_WALK: f32 = 1.2;
+pub const BOW_LAME: f32 = 2.0;
 
 /// 근접 무기의 벼린 단: 단마다 타의 피해 +5(반 눈금 — 0180: +10은 한 단에 문지기 싸움이 43초 → 18초(허수아비)라 반으로.
 /// +5도 잔재(30)를 쓰러뜨리는 검의 대 수가 셋 → 둘로 준다, KB `weapon-upgrade-design`).
@@ -303,6 +347,31 @@ impl Bolt {
     /// 쇠뇌의 볼트인가(0180 — 벼린 쇠뇌의 피해 몫을 받는다. 근접 무기의 마법 탄은 아니다).
     pub fn is_shot(&self) -> bool {
         self.look == 3 || self.look == ARROW
+    }
+
+    /// 손으로 던지는 것(0274 ②b — 손도끼 · 창 · 돌): 땅을 따라 흐르지 않고 곧게 난다.
+    pub fn thrown(&self) -> bool {
+        Bolt::look_thrown(self.look)
+    }
+
+    /// 그 그림 번호가 손으로 던지는 것인가(사건 `Cast`의 `look`을 읽는 쪽 — 소리).
+    pub fn look_thrown(look: u8) -> bool {
+        matches!(look, AXE | JAVELIN | STONE)
+    }
+
+    /// 곧게 나는 탄(볼트·화살·던지는 것) — 마법 탄만 땅을 따라 흐른다(0173 → 0218).
+    pub fn straight(&self) -> bool {
+        self.is_shot() || self.thrown()
+    }
+
+    /// 멈춘 자리에서 손으로 돌아온다(던진 창).
+    pub fn returns(&self) -> bool {
+        self.look == JAVELIN
+    }
+
+    /// 날지 않고 겨눈 자리에 내려 꽂힌다(신성한 빛 — `World::smite_spot`).
+    pub fn smites(&self) -> bool {
+        self.look == LIGHT
     }
 }
 
@@ -358,6 +427,120 @@ const MAGIC: Bolt = Bolt {
     stagger: 0.0,
     look: 0,
     scale: 1.0,
+    dose: NO_DOSE,
+    lame: 0.0,
+};
+
+/// 지팡이(마법사)의 RB — 마법탄 그대로(0274 ②b 전의 지팡이 값): 빠르고 멀리 꿰뚫는다, 모으면 크게.
+pub const MAGIC_TOSS: Toss = Toss {
+    bolt: Bolt {
+        speed: 1.3,
+        range: 1.2,
+        pierce: true,
+        look: 2,
+        ..MAGIC
+    },
+    charged: Bolt {
+        speed: 1.6,
+        range: 1.7,
+        damage: 30,
+        poise: 3.0,
+        pierce: true,
+        look: 2,
+        scale: 1.5,
+        ..MAGIC
+    },
+};
+
+/// 한손검(전사)의 RB — 던지는 손도끼: 짧고(7.2 m) 무겁다 — 피해 20 · 자세 피해 4(마법 탄의 넷 배), 맞은 잡몹이 잠깐 휘청.
+/// 모으면 더 큰 도끼(30 · 자세 7). 꿰뚫지 않는다(첫 적에 박힌다).
+pub const AXE_TOSS: Toss = Toss {
+    bolt: Bolt {
+        speed: 1.1,
+        range: 0.6,
+        damage: 20,
+        poise: 4.0,
+        stagger: 0.3,
+        look: AXE,
+        ..MAGIC
+    },
+    charged: Bolt {
+        speed: 1.2,
+        range: 0.75,
+        damage: 30,
+        poise: 7.0,
+        stagger: 0.6,
+        look: AXE,
+        scale: 1.5,
+        ..MAGIC
+    },
+};
+
+/// 망치(성직자)의 RB — 신성한 빛: 겨눈 자리(9 m 안, 줄 위의 첫 적 또는 탄이 멈추는 데)에 `SMITE_DELAY`초 뒤 빛줄기가 내려 꽂혀
+/// 둘레(`SMITE_RADIUS` × `scale`)를 친다 — 피해 20 · 자세 3 · 울림 0.5(둘이면 울린다). 모으면 넓고(×1.5) 30 · 울림 가득.
+pub const LIGHT_TOSS: Toss = Toss {
+    bolt: Bolt {
+        range: 0.75,
+        damage: 20,
+        poise: 3.0,
+        look: LIGHT,
+        dose: (Kind::Knell, 0.5),
+        ..MAGIC
+    },
+    charged: Bolt {
+        range: 0.85,
+        damage: 30,
+        poise: 5.0,
+        look: LIGHT,
+        scale: 1.5,
+        dose: (Kind::Knell, 1.0),
+        ..MAGIC
+    },
+};
+
+/// 창의 RB — 창 던지기: 곧고 멀리(15.6 m) 날아 줄 위의 적을 모두 꿰뚫고(20), 멈춘 자리에서 손으로 돌아온다(`JAVELIN_BACK` m/s —
+/// 오는 길은 치지 않는다). 창이 없는 동안 RB는 못 쓰고, 평타를 누르면 창이 곧바로 손에 돌아온다(`World::recall_javelin`).
+pub const JAVELIN_TOSS: Toss = Toss {
+    bolt: Bolt {
+        speed: 1.4,
+        range: 1.3,
+        damage: 20,
+        poise: 2.0,
+        pierce: true,
+        look: JAVELIN,
+        ..MAGIC
+    },
+    charged: Bolt {
+        speed: 1.6,
+        range: 1.5,
+        damage: 30,
+        poise: 4.0,
+        pierce: true,
+        stagger: 0.5,
+        look: JAVELIN,
+        scale: 1.3,
+        ..MAGIC
+    },
+};
+
+/// 맨손의 RB — 돌 던지기: 약하다(10 · 자세 0.5, 8.4 m). 모으면 20.
+pub const STONE_TOSS: Toss = Toss {
+    bolt: Bolt {
+        range: 0.7,
+        poise: 0.5,
+        look: STONE,
+        ..MAGIC
+    },
+    charged: Bolt {
+        speed: 1.1,
+        range: 0.8,
+        damage: 20,
+        poise: 2.0,
+        stagger: 0.3,
+        look: STONE,
+        scale: 1.4,
+        ..MAGIC
+    },
 };
 
 /// 순례자의 검 — 기준. 3연타(0201 — Meshy Double_Combo_Attack): 오른쪽 위 → 왼쪽 대각 베기 → 올려 베기(왼 → 오른) →
@@ -469,19 +652,8 @@ pub const WEAPONS: [Weapon; 7] = [
             anim_heavy: "heavy",
             cancel: 0.2,
         }),
-        rb: Rb::Magic(MAGIC),
+        rb: Rb::Toss,
         grenade: None,
-        // 모은 마법: 크고 꿰뚫는 빛 덩이.
-        charged: Bolt {
-            speed: 1.2,
-            range: 1.3,
-            damage: 30,
-            poise: 4.0,
-            pierce: true,
-            stagger: 0.6,
-            scale: 1.8,
-            ..MAGIC
-        },
         node: "sword",
         stamina: 1.0,
         forge: Some(MELEE_FORGE),
@@ -515,27 +687,8 @@ pub const WEAPONS: [Weapon; 7] = [
             anim_heavy: "hammer_slam",
             cancel: 0.55,
         }),
-        rb: Rb::Magic(Bolt {
-            speed: 0.65,
-            range: 0.6,
-            damage: 20,
-            poise: 3.0,
-            stagger: 0.5,
-            look: 1,
-            ..MAGIC
-        }),
+        rb: Rb::Toss,
         grenade: None,
-        // 모은 무거운 탄: 느리고 크다, 맞으면 오래 휘청·자세 피해 큼.
-        charged: Bolt {
-            speed: 0.6,
-            range: 0.8,
-            damage: 40,
-            poise: 8.0,
-            stagger: 1.0,
-            look: 1,
-            scale: 2.2,
-            ..MAGIC
-        },
         node: "w_hammer",
         // 0274: 한 손에 드는 메라 양손일 때(1.7)보다 가볍다 — 검(1.0)과 창(1.25) 위.
         stamina: 1.4,
@@ -562,25 +715,8 @@ pub const WEAPONS: [Weapon; 7] = [
             anim_heavy: "staff_release",
             cancel: 0.0,
         }),
-        rb: Rb::Magic(Bolt {
-            speed: 1.3,
-            range: 1.2,
-            pierce: true,
-            look: 2,
-            ..MAGIC
-        }),
+        rb: Rb::Toss,
         grenade: None,
-        // 모은 꿰뚫는 탄: 빠르고 멀리, 줄 선 적을 다 꿰뚫는다.
-        charged: Bolt {
-            speed: 1.6,
-            range: 1.7,
-            damage: 30,
-            poise: 3.0,
-            pierce: true,
-            look: 2,
-            scale: 1.5,
-            ..MAGIC
-        },
         node: "w_staff",
         stamina: 0.75,
         forge: Some(MELEE_FORGE),
@@ -598,6 +734,8 @@ pub const WEAPONS: [Weapon; 7] = [
         // 피해 40 → 30, 장전 1.5 → 2.0초. 고친 뒤 모아 쏘기 18/초 · 마구 17 · 박자 14.5(오래, 근접 가장 센 꼴 23~26의 일곱 할 안팎).
         // 0243(사장 설문 k09 "아직도 쎄긴함"): 피해는 눈금(10)이라 그대로 두고 한 발 0.9 → 1.15·장전 2.0 → 2.4 —
         // 오래 쏴도 검의 반 안팎, 처음 4초도 검의 여섯 할 밑.
+        // 0274 ②b(기술자 — 장전을 다룬다): 빈 탄창의 장전 2.4 → 2.8초, 대신 탄이 남았을 때 멈춰 서면 0.5초 뒤부터 0.45초마다 한 발
+        // (덧장전 — 넷을 다 채워도 1.85초). 마구 쏘기만 하면 조금 느려지고, 비우기 전에 끊어 채우는 손이 빠르다.
         rb: Rb::Shot {
             bolt: Bolt {
                 speed: 1.7,
@@ -608,11 +746,31 @@ pub const WEAPONS: [Weapon; 7] = [
                 stagger: 0.0,
                 look: 3,
                 scale: 1.0,
+                dose: NO_DOSE,
+                lame: 0.0,
             },
             mag: 4,
-            reload: 2.4,
+            reload: 2.8,
             time: 1.15,
             heavy: 2,
+            // 모은 사격: 시위를 끝까지 당긴 무거운 볼트 — 꿰뚫고 밀어낸다(수류탄도 맞히면 터진다).
+            // 0243(사장 설문 k09): 30 → 20 — 모아 쏘기만 되풀이하면 오래 17.5/초(검의 가장 센 꼴 23의 여덟 할 가까이)였다.
+            charged: Bolt {
+                speed: 2.2,
+                range: 1.8,
+                damage: 20,
+                poise: 6.0,
+                pierce: true,
+                stagger: 0.4,
+                look: 3,
+                scale: 1.6,
+                dose: NO_DOSE,
+                lame: 0.0,
+            },
+            rhythm: Rhythm::Crank {
+                wait: XBOW_TOPUP_WAIT,
+                each: XBOW_TOPUP_EACH,
+            },
         },
         grenade: Some(Grenade {
             fuse: 1.5,
@@ -624,18 +782,6 @@ pub const WEAPONS: [Weapon; 7] = [
             drop: 2.0,
             root: 0.0,
         }),
-        // 모은 사격: 시위를 끝까지 당긴 무거운 볼트 — 꿰뚫고 밀어낸다(수류탄도 맞히면 터진다).
-        // 0243(사장 설문 k09): 30 → 20 — 모아 쏘기만 되풀이하면 오래 17.5/초(검의 가장 센 꼴 23의 여덟 할 가까이)였다.
-        charged: Bolt {
-            speed: 2.2,
-            range: 1.8,
-            damage: 20,
-            poise: 6.0,
-            pierce: true,
-            stagger: 0.4,
-            look: 3,
-            scale: 1.6,
-        },
         node: "w_crossbow",
         stamina: 1.2,
         forge: Some([
@@ -678,19 +824,9 @@ pub const WEAPONS: [Weapon; 7] = [
             anim_heavy: "fist_heavy",
             cancel: 0.1,
         }),
-        // 마법은 무기가 아니라 방랑자의 것 — 맨손이어도 쏜다.
-        rb: Rb::Magic(MAGIC),
+        // 맨손은 종류가 아니다 — 돌을 던진다(0274 ②b, `STONE_TOSS`).
+        rb: Rb::Toss,
         grenade: None,
-        charged: Bolt {
-            speed: 1.2,
-            range: 1.3,
-            damage: 30,
-            poise: 4.0,
-            pierce: true,
-            stagger: 0.6,
-            scale: 1.8,
-            ..MAGIC
-        },
         // 든 것이 없다(다른 무기 부위는 모두 숨는다).
         node: "",
         stamina: 0.6,
@@ -716,11 +852,46 @@ pub const WEAPONS: [Weapon; 7] = [
                 stagger: 0.0,
                 look: ARROW,
                 scale: 1.0,
+                dose: NO_DOSE,
+                lame: 0.0,
             },
-            mag: 5,
-            reload: 2.2,
+            // 0274 ②b(레인저 — 화살 묶음): 전통 5 · 다시 채우기 2.2초 → 묶음 3 · 1.0초(짧고 잦다).
+            mag: 3,
+            reload: 1.0,
             time: 1.3,
             heavy: 1,
+            // 끝까지 당긴 화살: 빠르고 멀리, 줄 선 적을 꿰뚫고 휘청이게 하고 오금을 쏜다(0274 ②b — 맞은 적이 `BOW_LAME`초 느리게).
+            // 피해는 화살 그대로(10) — 화살 하나로 당기니 모아 쏘기만 되풀이하면 20이던 처음 값이 24/초(검의 가장 센 꼴 23의 여덟 할
+            // 18.4를 넘었다, 탐침 `plan_dps_probe`). 딱 맞춰 떼면 덤 +10은 그대로라 "당겨서 맞히는" 맛은 남는다.
+            charged: Bolt {
+                speed: 2.4,
+                range: 2.1,
+                damage: 10,
+                poise: 3.0,
+                pierce: true,
+                stagger: 0.35,
+                look: ARROW,
+                scale: 1.4,
+                dose: NO_DOSE,
+                lame: BOW_LAME,
+            },
+            // 반쯤 당긴 화살(0274 ②b): 보통 화살보다 빠르고 멀리(20 m), 자세 피해 둘 배 — 꿰뚫지는 않는다.
+            rhythm: Rhythm::Draw {
+                mid: BOW_MID_DRAW,
+                mid_bolt: Bolt {
+                    speed: 2.0,
+                    range: 1.7,
+                    damage: 10,
+                    poise: 1.6,
+                    pierce: false,
+                    stagger: 0.0,
+                    look: ARROW,
+                    scale: 1.2,
+                    dose: NO_DOSE,
+                    lame: 0.0,
+                },
+                walk: BOW_DRAW_WALK,
+            },
         },
         grenade: Some(Grenade {
             fuse: 0.9,
@@ -732,19 +903,6 @@ pub const WEAPONS: [Weapon; 7] = [
             drop: 2.0,
             root: 1.0,
         }),
-        // 당겨 쏘는 한 발: 끝까지 당긴 화살 — 빠르고 멀리, 줄 선 적을 꿰뚫고 휘청이게 한다. 피해는 화살 그대로(10) — 화살 하나로
-        // 당기니 전통이 길어 모아 쏘기만 되풀이하면 20이던 처음 값이 24/초(검의 가장 센 꼴 23의 여덟 할 18.4를 넘었다, 탐침
-        // `plan_dps_probe`). 딱 맞춰 떼면 덤 +10은 그대로라 "당겨서 맞히는" 맛은 남는다.
-        charged: Bolt {
-            speed: 2.4,
-            range: 2.1,
-            damage: 10,
-            poise: 3.0,
-            pierce: true,
-            stagger: 0.35,
-            look: ARROW,
-            scale: 1.4,
-        },
         node: "w_bow",
         stamina: 1.0,
         // 쇠뇌와 같은 꼴(전통 먼저 · 화살 피해는 뒤에).
@@ -767,7 +925,7 @@ pub const WEAPONS: [Weapon; 7] = [
         ]),
     },
     // 파수꾼의 창(0272 2단계): 찌르기 셋(좁은 길 · 꿰뚫음) · 달려들며 찌르기 · 강타 = 내달려 꿰뚫기(길 위의 적을 모두 — 벽·턱
-    // 앞에서 멈춘다, `World::lunge_stops`). RB는 다른 근접 무기처럼 마법 탄.
+    // 앞에서 멈춘다, `World::lunge_stops`). RB는 창 던지기(종류의 칸, 0274 ②b).
     Weapon {
         id: Id::Spear,
         combo: &SPEAR_COMBO,
@@ -798,18 +956,8 @@ pub const WEAPONS: [Weapon; 7] = [
             anim_heavy: "spear_lunge",
             cancel: 0.3,
         }),
-        rb: Rb::Magic(MAGIC),
+        rb: Rb::Toss,
         grenade: None,
-        charged: Bolt {
-            speed: 1.2,
-            range: 1.3,
-            damage: 30,
-            poise: 4.0,
-            pierce: true,
-            stagger: 0.6,
-            scale: 1.8,
-            ..MAGIC
-        },
         node: "w_spear",
         // 검(1.0)과 망치(1.7) 사이.
         stamina: 1.25,
@@ -933,6 +1081,9 @@ pub struct ClassDef {
     /// 보조특성(1b): 보조무기 슬롯에 멨을 때의 한 가지와 그것을 말하는 한 줄(`{0}` = `SubTrait::percent`).
     pub sub: SubTrait,
     pub sub_trait: Tr,
+    /// 종류의 원거리 수단(0274 ②b — RB를 종류마다): 근접 종류는 제 것(손도끼 · 신성한 빛 · 마법탄 · 창 던지기 …), 사격 종류는
+    /// 없다(`None` — 그 무기 표의 `Rb::Shot`). 새 종류 = 이 칸 하나(새 꼴이면 `Bolt::look` 한 갈래와 월드·그림의 한 갈래).
+    pub toss: Option<Toss>,
 }
 
 /// 종류 표(판 줄의 차례 — `plates::PLATES`가 이 차례로 선다). 대검 · 창은 뒤에 한 줄씩(0272 2단계).
@@ -956,6 +1107,7 @@ pub const CLASSES: [ClassDef; 6] = [
             stowed_reload: false,
         },
         sub_trait: |s| s.subtrait_sword,
+        toss: Some(AXE_TOSS),
     },
     // 망치(0274 — 성직자의 결): 한 손에 드는 종지기의 메 — 방패와 함께 든다(한손검처럼, 방패를 들면 방패 트리).
     ClassDef {
@@ -978,6 +1130,7 @@ pub const CLASSES: [ClassDef; 6] = [
             stowed_reload: false,
         },
         sub_trait: |s| s.subtrait_hammer,
+        toss: Some(LIGHT_TOSS),
     },
     ClassDef {
         class: Class::Staff,
@@ -999,6 +1152,7 @@ pub const CLASSES: [ClassDef; 6] = [
             stowed_reload: false,
         },
         sub_trait: |s| s.subtrait_staff,
+        toss: Some(MAGIC_TOSS),
     },
     ClassDef {
         class: Class::Crossbow,
@@ -1014,6 +1168,7 @@ pub const CLASSES: [ClassDef; 6] = [
             stowed_reload: true,
         },
         sub_trait: |s| s.subtrait_crossbow,
+        toss: None,
     },
     ClassDef {
         class: Class::Bow,
@@ -1032,6 +1187,7 @@ pub const CLASSES: [ClassDef; 6] = [
             stowed_reload: false,
         },
         sub_trait: |s| s.subtrait_bow,
+        toss: None,
     },
     // 창(0272 2단계): 양손 근접 · 관통 · 뿌리와 날카로움. 주특성은 무브셋 그 자체(가장 긴 거리 · 한 줄 꿰뚫기) — 스킬에 얹는 배는 없다.
     ClassDef {
@@ -1051,6 +1207,7 @@ pub const CLASSES: [ClassDef; 6] = [
             stowed_reload: false,
         },
         sub_trait: |s| s.subtrait_spear,
+        toss: Some(JAVELIN_TOSS),
     },
 ];
 
@@ -1129,8 +1286,42 @@ impl Id {
         match w.rb {
             _ if w.dash.is_some() => Some(Entry::Dash),
             Rb::Shot { .. } => Some(Entry::Shot),
-            Rb::Magic(_) => None,
+            Rb::Toss => None,
         }
+    }
+
+    /// RB의 원거리 수단(0274 ②b): 근접 무기 = 종류의 칸(`ClassDef::toss`), 맨손 = 돌. 사격 무기는 없다(표의 `Rb::Shot`).
+    pub fn toss(self) -> Option<Toss> {
+        match self.def().rb {
+            Rb::Toss => Some(self.class().map_or(STONE_TOSS, |c| {
+                c.def().toss.expect("a melee class has its own toss")
+            })),
+            Rb::Shot { .. } => None,
+        }
+    }
+
+    /// RB의 탄 둘(0274 ②b — 한 곳에서): 보통 한 번 · 모은 것. 근접 무기 = 종류의 원거리 수단, 사격 무기 = 표의 볼트·모은 사격.
+    pub fn bolts(self) -> (Bolt, Bolt) {
+        match self.def().rb {
+            Rb::Shot { bolt, charged, .. } => (bolt, charged),
+            Rb::Toss => {
+                let t = self.toss().unwrap_or(STONE_TOSS);
+                (t.bolt, t.charged)
+            }
+        }
+    }
+
+    /// 사격 무기의 손 리듬(0274 ②b) — 근접 무기는 없다.
+    pub fn rhythm(self) -> Option<Rhythm> {
+        match self.def().rb {
+            Rb::Shot { rhythm, .. } => Some(rhythm),
+            Rb::Toss => None,
+        }
+    }
+
+    /// 활처럼 누르면 당기는 무기인가(0274 ②b — `Rhythm::Draw`).
+    pub fn draws(self) -> bool {
+        matches!(self.rhythm(), Some(Rhythm::Draw { .. }))
     }
 
     /// 원거리 무기인가(0223 — 양손, 평타 버튼 = 사격·특수 버튼 = 수류탄).
@@ -1281,15 +1472,66 @@ mod tests {
         }
     }
 
+    /// 0274 ②b "RB를 종류마다": 근접 종류는 저마다 제 원거리 수단(꼴이 서로 다르다 — 클래스의 결), 사격 종류는 칸이 비고 무기 표의
+    /// 사격을 쓴다. 맨손은 종류가 아니라 돌 — 가장 약하다. 손도끼는 자세 피해가 가장 크고, 빛은 울림을 싣고, 창은 꿰뚫어 돌아온다.
+    #[test]
+    fn every_melee_kind_has_its_own_rb_and_ranged_kinds_shoot() {
+        let mut looks = Vec::new();
+        for c in CLASSES.iter() {
+            assert_eq!(c.toss.is_some(), c.hand != Hand::Ranged, "{:?}", c.class);
+            if let Some(t) = c.toss {
+                assert_eq!(t.bolt.look, t.charged.look, "{:?}", c.class);
+                assert!(t.charged.damage > t.bolt.damage, "{:?}", c.class);
+                assert!(
+                    !looks.contains(&t.bolt.look),
+                    "{:?}: one form per kind",
+                    c.class
+                );
+                looks.push(t.bolt.look);
+            }
+        }
+        assert!(!looks.contains(&STONE), "bare hands only");
+        for id in IDS {
+            assert_eq!(id.toss().is_some(), !id.is_ranged(), "{id:?}");
+        }
+        assert_eq!(Id::Fists.toss(), Some(STONE_TOSS));
+        assert_eq!(
+            Id::Staff.toss(),
+            Some(MAGIC_TOSS),
+            "the mage keeps the bolt"
+        );
+        let rb = |id: Id| id.bolts().0;
+        for id in [Id::Sword, Id::Hammer, Id::Staff, Id::Spear] {
+            assert!(rb(Id::Fists).damage <= rb(id).damage, "{id:?}");
+            assert!(
+                rb(Id::Sword).poise >= rb(id).poise,
+                "{id:?}: the axe breaks stances"
+            );
+        }
+        assert!(
+            rb(Id::Sword).range < rb(Id::Staff).range,
+            "the axe is short"
+        );
+        assert!(rb(Id::Hammer).smites() && rb(Id::Hammer).dose.0 == Kind::Knell);
+        assert!(rb(Id::Spear).returns() && rb(Id::Spear).pierce);
+        assert!(
+            rb(Id::Spear).range > rb(Id::Sword).range,
+            "the spear flies far"
+        );
+        // 사격 무기의 리듬은 둘이 다르다(쇠뇌 = 장전, 활 = 당기기).
+        assert!(matches!(Id::Crossbow.rhythm(), Some(Rhythm::Crank { .. })));
+        assert!(Id::Bow.draws() && !Id::Crossbow.draws() && !Id::Sword.draws());
+    }
+
     #[test]
     fn every_id_has_one_row_and_melee_weapons_have_a_combo() {
         for id in IDS {
             assert_eq!(WEAPONS.iter().filter(|w| w.id == id).count(), 1, "{id:?}");
             let w = id.def();
             match w.rb {
-                Rb::Magic(_) => assert!(
-                    !w.combo.is_empty() && w.grenade.is_none(),
-                    "{id:?}: melee = X combo + RB magic"
+                Rb::Toss => assert!(
+                    !w.combo.is_empty() && w.grenade.is_none() && id.toss().is_some(),
+                    "{id:?}: melee = X combo + RB toss"
                 ),
                 Rb::Shot { mag, .. } => assert!(
                     mag > 0 && w.grenade.is_some(),
@@ -1339,7 +1581,8 @@ mod tests {
             dash: 2,
             heavy: 2,
             aftershock: 0,
-            rb: 1,
+            // 0274 ②b: RB를 종류마다 — 마법 탄 1 → 던지는 손도끼 2(모은 것은 3 그대로). 값을 바꾼 것이라 이 줄도 같이 고친다.
+            rb: 2,
             charged: 3,
             grenade: 0,
         },
@@ -1350,8 +1593,9 @@ mod tests {
             dash: 2,
             heavy: 3,
             aftershock: 2,
+            // 0274 ②b: 무거운 탄 2 · 4 → 신성한 빛 2 · 3(둘레를 친다).
             rb: 2,
-            charged: 4,
+            charged: 3,
             grenade: 0,
         },
         Old {
@@ -1382,8 +1626,9 @@ mod tests {
             dash: 1,
             heavy: 1,
             aftershock: 0,
+            // 0274 ②b: 돌 던지기 — 모은 것 3 → 2(약하다).
             rb: 1,
-            charged: 3,
+            charged: 2,
             grenade: 0,
         },
         // 0231: 눈금을 옮긴 뒤에 생긴 무기 — 옛 눈금으로 적어 둔다(새 수의 열의 하나).
@@ -1404,7 +1649,8 @@ mod tests {
             dash: 2,
             heavy: 2,
             aftershock: 0,
-            rb: 1,
+            // 0274 ②b: 창 던지기 2(모은 것 3 그대로).
+            rb: 2,
             charged: 3,
             grenade: 0,
         },
@@ -1449,12 +1695,10 @@ mod tests {
         }
         let shock = w.heavy.and_then(|h| h.aftershock).map_or(0, |a| a.2);
         v.push(("aftershock".into(), o.aftershock, shock));
-        let (rb, ranged) = match w.rb {
-            Rb::Magic(b) => (b.damage, false),
-            Rb::Shot { bolt, .. } => (bolt.damage, true),
-        };
-        v.push(("rb".into(), o.rb, rb));
-        let c = w.charged.damage;
+        let ranged = o.id.is_ranged();
+        let (rb, charged) = o.id.bolts();
+        v.push(("rb".into(), o.rb, rb.damage));
+        let c = charged.damage;
         v.push(("charged".into(), o.charged, c));
         v.push(("half charged".into(), (o.charged + 1) / 2, half_up(c)));
         if ranged {
@@ -1599,12 +1843,12 @@ mod tests {
                     whole(d, &format!("{:?} aftershock", w.id));
                 }
             }
-            let rb = match w.rb {
-                Rb::Magic(b) => b.damage,
-                Rb::Shot { bolt, .. } => bolt.damage,
-            };
-            whole(rb, &format!("{:?} rb", w.id));
-            whole(w.charged.damage, &format!("{:?} charged", w.id));
+            let (rb, charged) = w.id.bolts();
+            whole(rb.damage, &format!("{:?} rb", w.id));
+            whole(charged.damage, &format!("{:?} charged", w.id));
+            if let Some(Rhythm::Draw { mid_bolt, .. }) = w.id.rhythm() {
+                whole(mid_bolt.damage, &format!("{:?} mid draw", w.id));
+            }
             if let Some(g) = w.grenade {
                 whole(g.damage, &format!("{:?} grenade", w.id));
             }
