@@ -1,6 +1,6 @@
 // 이펙트를 틱마다 찍는다(0141): 헤드리스 Chromium으로 개발 시나리오를 띄우고, 개발 키 F6(한 프레임 = 한 틱)을 켠 뒤
 // 동작마다 연달아 스크린숏 — 0.1초짜리 번쩍임·먼지를 실제 시간으로는 못 잡는다(헤드리스는 초당 8프레임 남짓).
-//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills] [스킬 이름들]
+//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills,spear,rb] [스킬 이름들 · rb면 axe,light,javelin,stone,magic,bow,crossbow]
 // skills(0158 G2): 개발 창 기술 탭 "기술 다 올리기"(끝 단 · 고르기 ㄱ, 기록에 안 쓴다) → "기술 끼우기"에서 칸·큰 기술을 고르고 →
 //   전투 탭 "skills" 판에서 Q(칸 1)·E(칸 2)·Q+E(큰 기술)를 틱마다 찍는다 — 스킬·큰 기술마다 새 판(sk-<이름>-<n>.png).
 // 눈으로 볼 것: 맞힌 자리의 별·불똥, 휘두름의 초승달, 쓰러진 적의 재, 뛰기·회피·적 내리침의 먼지, 마법 탄의 마름모, 화로 불티.
@@ -170,6 +170,51 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     await p.keyboard.down('KeyJ'); await burst(p, 'spear-charge', 12); await p.keyboard.up('KeyJ'); await burst(p, 'spear-lunge', 16);
     await p.keyboard.press('Space'); await burst(p, 'spear-dodge', 6); await p.keyboard.press('KeyJ'); await burst(p, 'spear-dash', 14);
     await p.close();
+  }
+  if (want('rb')) {
+    // 0274 ②b RB를 종류마다: 무기마다 새 판 — 개발 창 기술 묶음 "든 무기 바꾸기"를 `arm`번(0 맨손 · 1 활 · 2 검 · 3 망치 · 4 지팡이 · 5 쇠뇌 ·
+    // 7 창) → 전투 묶음 "한 줄로 선 잔재"(서 있는 적 · 방랑자는 맞지 않는다). 쿼터뷰에서 RB(U)를 틱마다(F6) 찍고, 숄더뷰(↑ 넷 — 가장 가까운 단계에서 더)
+    // 에서 한 번 더. 활은 당기는 단계(U를 쥔 채 · 뗀 뒤), 쇠뇌는 셋을 쏜 뒤 멈춰 서서 덧장전(HUD 탄창 — 열 틱마다 한 장).
+    // 여섯째 인자로 무기를 고르면 그것만(예: … rb axe,light).
+    const ARMS = [['axe', 2, 22], ['light', 3, 40], ['javelin', 7, 70], ['stone', 0, 22], ['magic', 4, 16], ['bow', 1, 0], ['crossbow', 5, 0]];
+    const names = process.argv[5] ? process.argv[5].split(',') : null;
+    for (const [name, arm, n] of ARMS) {
+      if (names && !names.includes(name)) continue;
+      p = await ctx.newPage(); const kit = sceneKit(p, 70); p.kit = kit;
+      await sceneKit.unhurt(p); await sceneKit.still(p);
+      p.on('pageerror', e => { if (!/register_plugin/.test(String(e))) errors.push(String(e)); });
+      p.on('console', m => { if (m.type() === 'error' && !/register_plugin/.test(m.text())) errors.push(m.text()); });
+      await p.goto(`http://localhost:${PORT}/`); await kit.until('Title', '타이틀', 60000); await p.waitForTimeout(300); await p.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
+      if (first) { first = false;
+        await kit.press('ArrowDown'); await kit.press('Enter'); await kit.until('Settings { host: Title', '타이틀 → 설정'); await kit.press('ArrowUp'); await kit.press('Enter'); await kit.until('Controls', '설정 → 조작');
+        await kit.press('ArrowUp', 2); await kit.press('Enter'); await p.waitForTimeout(200); await kit.press('Escape'); await kit.until('Settings { host: Title', '조작 → 설정'); await kit.press('Escape'); await kit.until('Title', '설정 → 타이틀'); await kit.press('ArrowUp'); }
+      await kit.press('ArrowUp'); await kit.press('Enter'); await kit.until('Dev { tab: 0', '타이틀 → 개발 창');
+      await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 2', '기술 묶음'); await kit.press('ArrowDown', 5);
+      for (let i = 0; i < arm; i++) { await p.keyboard.press('Enter'); await p.waitForTimeout(150); }
+      await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 4', '전투 묶음'); await kit.press('ArrowDown', 15); await kit.press('Enter');
+      await kit.until(['Play', 'Sandbox'], '한 줄로 선 잔재'); await p.waitForTimeout(1200);
+      await p.keyboard.press('ArrowUp'); await p.waitForTimeout(700); // 한 단계 가까운 쿼터뷰
+      await hold(p, 'KeyS', 900); await hold(p, 'KeyW', 120); await p.waitForTimeout(400); // 줄에서 물러나 거리를 두고 다시 줄 쪽을 본다(날아가는 것이 보이게 — 사격은 찾지 않는다)
+      await p.keyboard.press('F6'); await p.waitForTimeout(300);
+      if (name === 'bow') {
+        await p.keyboard.down('KeyU'); await burst(p, 'rb-bow-draw', 50); await p.keyboard.up('KeyU'); await burst(p, 'rb-bow-full', 24);
+        await p.keyboard.press('KeyU'); await burst(p, 'rb-bow-tap', 16);
+      } else if (name === 'crossbow') {
+        for (let k = 0; k < 3; k++) { await p.keyboard.press('KeyU'); await burst(p, `rb-xbow-shot${k}`, 6); }
+        for (let k = 0; k < 12; k++) { await p.screenshot({ path: path.join(OUT, `rb-xbow-topup-${k}.png`) }); for (let j = 0; j < 10; j++) await p.evaluate(() => new Promise((r) => requestAnimationFrame(r))); }
+      } else {
+        await p.keyboard.press('KeyU'); await burst(p, `rb-${name}-q`, n);
+        await p.keyboard.down('KeyU'); await burst(p, `rb-${name}-charge`, 50); await p.keyboard.up('KeyU'); await burst(p, `rb-${name}-charged`, n);
+      }
+      // 숄더뷰: ↑를 더 눌러 자유 숄더뷰(카메라 앞 = 크로스헤어) — 쏘기 전 한 장 · 쏜 뒤 틱마다.
+      await p.keyboard.press('F6'); await p.waitForTimeout(200);
+      for (let k = 0; k < 4; k++) { await p.keyboard.press('ArrowUp'); await p.waitForTimeout(250); }
+      await p.waitForTimeout(900); await hold(p, 'ArrowRight', 350); await p.waitForTimeout(500); /* 줄 쪽으로 시점을 조금 돌린다 */ await p.screenshot({ path: path.join(OUT, `rb-${name}-shoulder.png`) });
+      await p.keyboard.press('F6'); await p.waitForTimeout(300);
+      if (name === 'bow') { await p.keyboard.down('KeyU'); await burst(p, 'rb-bow-s-draw', 46); await p.keyboard.up('KeyU'); await burst(p, 'rb-bow-s', 10); }
+      else { await p.keyboard.press('KeyU'); await burst(p, `rb-${name}-s`, Math.max(n, 12)); }
+      await p.close();
+    }
   }
   if (want('stage')) {
     // 입구: 화로 불티 + 회피·달리기 먼지(진짜 바닥)

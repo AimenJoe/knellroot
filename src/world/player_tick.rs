@@ -570,8 +570,13 @@ impl World {
             self.start_shot(cx);
         } else if a.cast {
             let javelin = self.javelin_out();
+            let winds = self.player.weapon.winds();
             let pl = &mut self.player;
-            if pl.ranged.mana >= 1.0 && !javelin {
+            if winds && pl.ranged.mana >= 1.0 && !javelin {
+                // 창 던지기(0274 ②b): 던지면 손에 창이 없어 "쏜 뒤 쥐어 모으기"를 못 한다 — 누르면 들어 겨누고 떼면 던진다(`tick_wind`).
+                pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+                pl.state = PState::CastCharge { t: 0.0 };
+            } else if pl.ranged.mana >= 1.0 && !javelin {
                 pl.ranged.mana -= 1.0;
                 pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
                 pl.state = PState::Cast {
@@ -1000,6 +1005,10 @@ impl World {
             self.tick_draw(cx, e);
             return;
         }
+        if self.player.weapon.winds() {
+            self.tick_wind(cx, e);
+            return;
+        }
         let (a, t, dt, wpn) = (&cx.a, cx.t, cx.dt, cx.wpn);
         let full = t[P::CastCharge];
         if a.cast_held && cx.can_charge_cast {
@@ -1052,6 +1061,42 @@ impl World {
         };
         pl.state = PState::Cast {
             t: t[P::CastStartup] * k,
+            dir: cx.cast_dir,
+            fired: true,
+        };
+    }
+
+    /// 창 던지기를 들어 겨누기(0274 ②b — `Id::winds`): 쥔 동안 모으고, 떼면 칸 하나로 던진다 — 톡(`cast.hold start s` 전) = 보통 창,
+    /// 그 뒤 = 덜 모은 창, 다 모으면(`cast.charge s`) 모은 창. 근접 무기의 RB라 딱 맞춤 덤은 없다(0077 · 0078 경계 그대로).
+    /// 톡은 보통 RB와 같은 길이(던지는 자리를 앞당길 뿐).
+    fn tick_wind(&mut self, cx: &mut Ctx, e: f32) {
+        let (a, t, dt) = (&cx.a, cx.t, cx.dt);
+        let full = t[P::CastCharge];
+        if a.cast_held && cx.can_charge_cast {
+            self.charged_now |= e < full && e + dt >= full;
+            if ranged_aim_given(&cx.a) {
+                self.player.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+            }
+            self.player.state = PState::CastCharge { t: e + dt };
+            return;
+        }
+        let pl = &mut self.player;
+        if !cx.can_charge_cast {
+            pl.state = PState::Idle;
+            return;
+        }
+        pl.ranged.mana -= 1.0;
+        let power = if e >= full {
+            2
+        } else if e >= t[P::CastHoldStart] {
+            1
+        } else {
+            0
+        };
+        pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+        cx.fire = Some((cx.cast_dir, power));
+        pl.state = PState::Cast {
+            t: e.min(t[P::CastStartup]),
             dir: cx.cast_dir,
             fired: true,
         };

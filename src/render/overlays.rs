@@ -10,7 +10,7 @@ pub const BEAT_RING_LIFE: f32 = 0.35;
 const PERFECT_RING_LIFE: f32 = 0.45;
 /// 휘두름 초승달의 진하기(0242 — 사장 설문 13-8 "조금 더 연해도 좋겠다").
 const SLASH_ALPHA: f32 = 0.7;
-const BOLT_LOOKS: [(Color, Color); 5] = [
+const BOLT_LOOKS: [(Color, Color); 9] = [
     (
         Color::new(0.92, 0.88, 1.0, 1.0),
         Color::new(0.7, 0.6, 1.0, 0.45),
@@ -31,6 +31,23 @@ const BOLT_LOOKS: [(Color, Color); 5] = [
     (
         Color::new(0.88, 1.0, 0.78, 1.0),
         Color::new(0.55, 0.85, 0.5, 0.3),
+    ),
+    // 0274 ②b: 손도끼(쇳빛) · 신성한 빛(금빛) · 던진 창(쇳빛) · 돌(잿빛) — 모으는 손의 빛 덩이·발밑 고리가 쓴다(몸은 `thrown`).
+    (
+        Color::new(0.92, 0.94, 1.0, 1.0),
+        Color::new(0.7, 0.76, 0.9, 0.35),
+    ),
+    (
+        Color::new(1.0, 0.95, 0.78, 1.0),
+        Color::new(1.0, 0.85, 0.45, 0.4),
+    ),
+    (
+        Color::new(0.92, 0.94, 1.0, 1.0),
+        Color::new(0.7, 0.76, 0.9, 0.35),
+    ),
+    (
+        Color::new(0.8, 0.77, 0.72, 1.0),
+        Color::new(0.6, 0.58, 0.55, 0.3),
     ),
 ];
 
@@ -383,7 +400,8 @@ fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
             // 자루(나무)와 머리(쇠): 자루 끝을 돌림의 가운데로.
             let rot = Quat::from_axis_angle(side, spin)
                 * Quat::from_rotation_arc(Vec3::Y, b.dir.normalize_or(Vec3::Z));
-            let s = 0.85 * k;
+            // 게임 거리에서 읽히게 손에 드는 크기보다 조금 크게(0.5 m 자루 × 1.15).
+            let s = 1.15 * k;
             shaded_box_rot(
                 p + rot * vec3(0.0, 0.0, 0.0),
                 vec3(0.05, 0.5, 0.05) * s,
@@ -395,7 +413,7 @@ fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
             shaded_box_rot(
                 p + vec3(0.0, 0.2, 0.06) * s,
                 vec3(0.05, 0.16, 0.2) * s,
-                Color::new(0.80, 0.82, 0.88, 1.0),
+                Color::new(0.90, 0.92, 0.97, 1.0),
                 0.6,
                 rot,
                 p,
@@ -421,6 +439,27 @@ fn smites(w: &World, fl: &Drape) {
     let gold = Color::new(1.0, 0.9, 0.6, 1.0);
     let white = Color::new(1.0, 0.98, 0.9, 1.0);
     for s in &w.smites {
+        // 꽂힌 뒤: 굵은 흰 기둥이 위로 가늘어지며 옅어진다.
+        if s.struck {
+            let f = (1.0 + s.left / crate::tuning::SMITE_SHOW).clamp(0.0, 1.0);
+            let r = s.radius * (0.35 + 0.25 * (1.0 - f));
+            shaft(
+                s.pos,
+                s.pos + Vec3::Y * 9.0,
+                r,
+                r * 0.5,
+                with_a(white, 0.75 * f),
+                with_a(gold, 0.0),
+            );
+            fl.sector(
+                s.pos + Vec3::Y * 0.06,
+                s.radius,
+                0.0,
+                360.0,
+                with_a(gold, 0.35 * f),
+            );
+            continue;
+        }
         let k = (1.0 - s.left / crate::tuning::SMITE_DELAY).clamp(0.0, 1.0);
         let g = s.pos + Vec3::Y * 0.06;
         fl.sector(g, s.radius, 0.0, 360.0, with_a(gold, 0.1 + 0.15 * k));
@@ -1270,6 +1309,20 @@ fn ail_marks(w: &World, alpha: f32, fl: &Drape) {
                 360.0,
                 Color::new(ink.r, ink.g, ink.b, (0.3 + 0.5 * a.rift.min(1.0)) * beat),
             );
+        }
+        // 오금(0274 ②b — 끝까지 당긴 화살): 발밑에 끊긴 연두 고리(활의 화살 빛) — 넷으로 끊겨 절뚝이듯 천천히 돈다, 남은 시간만큼 옅어진다.
+        if en.marks.hamstring > 0.0 {
+            let k = 0.3 + 0.5 * (en.marks.hamstring / 1.0).min(1.0);
+            let turn = w.time * 0.7;
+            for q in 0..4 {
+                fl.ring(
+                    p + Vec3::Y * 0.055,
+                    en.radius + 0.28,
+                    turn + q as f32 * std::f32::consts::FRAC_PI_2,
+                    50.0,
+                    Color::new(0.85, 1.0, 0.72, k),
+                );
+            }
         }
         // 0270 B: 언 적은 발밑에 두꺼운 얼음 고리 둘, 흡수 표지는 숨 쉬는 풀빛 고리, 기절한 적은 머리 둘레를 도는 레몬 별 셋.
         if a.frozen > 0.0 {

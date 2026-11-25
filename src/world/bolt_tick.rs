@@ -4,7 +4,7 @@
 use super::*;
 use crate::tuning::{
     BOLT_BODY_SLACK, BOLT_FOLLOW, BOLT_STEP, JAVELIN_BACK, JAVELIN_CATCH, SMITE_DELAY,
-    SMITE_RADIUS, SMITE_SEEK,
+    SMITE_RADIUS, SMITE_SEEK, SMITE_SHOW,
 };
 
 impl World {
@@ -190,11 +190,12 @@ impl World {
         let mut due = Vec::new();
         for s in &mut self.smites {
             s.left -= dt;
-            if s.left <= 0.0 {
+            if s.left <= 0.0 && !s.struck {
+                s.struck = true;
                 due.push(*s);
             }
         }
-        self.smites.retain(|s| s.left > 0.0);
+        self.smites.retain(|s| s.left > -SMITE_SHOW);
         for s in due {
             self.burst(s.pos, s.radius, s.damage, s.poise, s.dose, t, ev);
             ev.push(Event::Smite {
@@ -685,5 +686,6 @@ fn smite_of(at: Vec3, def: &weapons::Bolt) -> Smite {
         damage: def.damage,
         poise: def.poise,
         dose: def.dose,
+        struck: false,
     }
 }

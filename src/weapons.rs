@@ -1319,6 +1319,11 @@ impl Id {
         }
     }
 
+    /// 누르면 들어 겨누고 떼면 던지는 RB인가(0274 ②b — 창 던지기: 던지면 손이 비어 "쏜 뒤 쥐어 모으기"를 못 한다).
+    pub fn winds(self) -> bool {
+        self.toss().is_some_and(|t| t.bolt.returns())
+    }
+
     /// 활처럼 누르면 당기는 무기인가(0274 ②b — `Rhythm::Draw`).
     pub fn draws(self) -> bool {
         matches!(self.rhythm(), Some(Rhythm::Draw { .. }))

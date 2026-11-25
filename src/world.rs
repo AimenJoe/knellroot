@@ -404,6 +404,8 @@ pub struct Smite {
     pub damage: i32,
     pub poise: f32,
     pub dose: crate::status::Dose,
+    /// 꽂혔다(그 뒤 `SMITE_SHOW`초 동안 빛기둥이 남아 옅어진다 — 그림만, `left`는 음수로 흐른다).
+    pub struck: bool,
 }
 
 /// 수류탄(0051): 포물선으로 날아 땅에서 튕기다 도화선이 다하면(또는 쇠뇌 볼트에 맞으면) 터진다.

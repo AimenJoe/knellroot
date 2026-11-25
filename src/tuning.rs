@@ -314,6 +314,8 @@ pub const AIR_VOLLEY_SPREAD_DEG: f32 = 18.0;
 pub const SMITE_DELAY: f32 = 0.35;
 pub const SMITE_RADIUS: f32 = 1.4;
 pub const SMITE_SEEK: f32 = 0.6;
+/// 꽂힌 빛기둥이 남아 옅어지는 초(그림만).
+pub const SMITE_SHOW: f32 = 0.25;
 /// 던진 창(0274 ②b): 멈춘 자리에서 손으로 돌아오는 빠르기(m/s — 오는 길은 치지 않는다), 손에 닿았다고 보는 거리(m).
 pub const JAVELIN_BACK: f32 = 30.0;
 pub const JAVELIN_CATCH: f32 = 0.6;

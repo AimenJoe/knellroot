@@ -265,8 +265,9 @@ fn the_javelin_pierces_a_line_comes_back_and_answers_the_attack_button() {
         },
         &t,
     );
-    ev.extend(wait(&mut w, &t, 0.4));
+    ev.extend(wait(&mut w, &t, 0.5));
     assert!(w.javelin_out() && w.weapon_away(), "flying");
+    assert!(matches!(w.player.state, PState::Idle));
     let mana = w.player.ranged.mana;
     ev.extend(w.step(
         &Actions {
@@ -625,4 +626,69 @@ fn the_bow_carries_a_small_quiver_that_refills_quickly() {
         mag <= 3 && reload < xbow * 0.5,
         "{mag} arrows, {reload}s vs {xbow}s"
     );
+}
+
+/// 재는 도구(0274 ②b): 쇠뇌를 "덧장전을 쓰는 꼴"로 — 탄이 `keep`발 남으면 멈춰 서 가득 찰 때까지 기다렸다 다시 쏜다(비우지 않는다).
+/// 마구 쏘기(`rb_dps`)와 견준다. `cargo test --release crossbow_topup_probe -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn crossbow_topup_probe() {
+    let t = Tuning::default();
+    for keep in [0u8, 1, 2] {
+        let mut w = World::new("test", 40.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        let i = mob_with(&mut w, vec3(0.0, 0.0, -8.0), 1_000_000);
+        let mag = w.mag_of(weapons::Id::Crossbow);
+        let mut filling = false;
+        let n = (20.0 / TICK_DT) as usize;
+        for k in 0..n {
+            idle(&mut w);
+            w.enemies[i].pos = vec3(0.0, 0.0, -8.0);
+            w.player.pos = Vec3::ZERO;
+            let pl = &w.player;
+            if keep > 0 && pl.ranged.ammo <= keep && pl.ranged.reload <= 0.0 {
+                filling = true;
+            }
+            if filling && pl.ranged.ammo >= mag {
+                filling = false;
+            }
+            let a = Actions {
+                cast: !filling && k % 2 == 0,
+                ..Default::default()
+            };
+            w.step(&a, &t);
+        }
+        println!(
+            "crossbow keep {keep}: {:.1}/s",
+            (1_000_000 - w.enemies[i].hp) as f32 / 20.0
+        );
+    }
+}
+
+/// 0274 ②b: 창 던지기는 누르면 들어 겨누고 떼면 던진다(던진 뒤엔 손이 비어 "쏜 뒤 쥐어 모으기"를 못 하니) — 톡 = 보통 창(칸 하나),
+/// 다 모아 떼면 모은 창(30 · 칸 하나). 다른 RB는 그대로 누르면 나가고 쥐면 한 번 더(0056).
+#[test]
+fn the_javelin_winds_up_while_held_and_flies_on_release() {
+    let t = Tuning::default();
+    let thrown = |secs: f32| {
+        let mut w = World::new("test", 40.0);
+        w.set_weapon(weapons::Id::Spear);
+        let mana = w.player.ranged.mana;
+        let mut ev = hold_release(&mut w, &t, secs);
+        let def = w.bolts.first().map(|b| b.def);
+        ev.extend(wait(&mut w, &t, 0.05));
+        let casts = ev
+            .iter()
+            .filter(|e| matches!(e, Event::Cast { .. }))
+            .count();
+        (def.expect("thrown"), casts, mana - w.player.ranged.mana)
+    };
+    let (plain, charged) = weapons::Id::Spear.bolts();
+    let (tap, n, spent) = thrown(0.0);
+    assert_eq!((tap, n), (plain, 1));
+    assert!((spent - 1.0).abs() < 0.05, "{spent}");
+    let (full, n, spent) = thrown(t[P::CastCharge] + 0.1);
+    assert_eq!((full, n), (charged, 1), "one charged javelin, not two");
+    assert!((spent - 1.0).abs() < 0.05, "{spent}");
+    assert!(weapons::Id::Spear.winds() && !weapons::Id::Sword.winds());
 }
