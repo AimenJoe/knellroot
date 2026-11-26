@@ -3,7 +3,8 @@
 //!
 //! 시간·거리·각·내딛기는 랩의 기준값(`attack.*`·`heavy.*`, `tuning.rs`)에 곱하는 **배율** — 손맛의 바탕은 랩 한 곳에서 맞추고,
 //! 무기는 그 위의 모양만 갖는다(코드에 타별 숫자를 박지 않는다). 피해·자세 피해는 정수·점수 그대로(피해의 눈금은 `tuning::HP_UNIT` — 옛 1 = 10, 0158 N0).
-//! 새 무기 = `Id` 한 줄 + `WEAPONS` 한 줄 + 동작(`tools/art/blender/wanderer.py`) + 모델 부위(같은 파일, 오른손 뼈) + 글(i18n).
+//! 새 무기 = `Id` 한 줄 + `WEAPONS` 한 줄(키 · 종류 · 이름 · 설명 · 나오는 곳 · 터치 그림 · 아이템 그림의 각까지 — 0278 R18 · R19) +
+//! 동작(`tools/art/blender/wanderer.py`) + 모델 부위(같은 파일, 오른손 뼈) + 글(i18n).
 
 use crate::i18n::Tr;
 use crate::skills::Ult;
@@ -326,37 +327,21 @@ pub enum Id {
     Wand,
 }
 
-/// 표 순서. 맨손은 옛 끝에(옛 기록의 무기 번호가 그대로 읽히게 — `app::legacy_weapon`), 그 뒤에 새 무기.
-pub const IDS: [Id; 11] = [
-    Id::Sword,
-    Id::Hammer,
-    Id::Staff,
-    Id::Crossbow,
-    Id::Fists,
-    Id::Bow,
-    Id::Spear,
-    Id::Daggers,
-    Id::Greatsword,
-    Id::Scythe,
-    Id::Wand,
-];
+/// 표 순서(`WEAPONS`의 줄 차례에서 선다). 맨손은 옛 끝에(옛 기록의 무기 번호가 그대로 읽히게 — `app::legacy_weapon`), 그 뒤에 새 무기.
+pub const IDS: [Id; WEAPONS.len()] = {
+    let mut ids = [Id::Sword; WEAPONS.len()];
+    let mut i = 0;
+    while i < ids.len() {
+        ids[i] = WEAPONS[i].id;
+        i += 1;
+    }
+    ids
+};
 
 impl Id {
-    /// 기록 키(0066 — 든 무기는 슬롯 기록에, 키는 바꾸지 않는다).
+    /// 기록 키(0066 — 든 무기는 슬롯 기록에, 키는 바꾸지 않는다 — 무기 표의 줄 `Weapon::key`).
     pub fn key(self) -> &'static str {
-        match self {
-            Id::Sword => "sword",
-            Id::Hammer => "hammer",
-            Id::Staff => "staff",
-            Id::Crossbow => "crossbow",
-            Id::Fists => "fists",
-            Id::Bow => "bow",
-            Id::Spear => "spear",
-            Id::Daggers => "daggers",
-            Id::Greatsword => "greatsword",
-            Id::Scythe => "scythe",
-            Id::Wand => "wand",
-        }
+        self.def().key
     }
 
     pub fn by_key(k: &str) -> Option<Id> {
@@ -366,6 +351,10 @@ impl Id {
 
 pub struct Weapon {
     pub id: Id,
+    /// 기록 키(0066 — 든 무기 · 가진 무기 · 벼린 단 · 아이템의 바탕 · 도감의 키가 쓴다, **바꾸지 않는다**).
+    pub key: &'static str,
+    /// 종류(0272 — 판 · 물리 속성 · 주특성은 종류에). 맨손은 없다(무기 칸을 비운 것).
+    pub class: Option<Class>,
     /// 이름 · 설명(장비 탭 · 가게 · 도감 — 0051, i18n 표) · 도감의 나오는 곳(0191 — 상자 자리는 지역마다 `stage/<지역>.rs`의
     /// `chest_loot` 차례, 무기를 얻는 차례는 0274 ⑦).
     pub name: Tr,
@@ -1110,9 +1099,11 @@ pub const PULL_STOP: f32 = 0.5;
 /// 미끄러짐의 95%가 끝난다.
 pub const PULL_SHOW: f32 = 0.3;
 
-pub const WEAPONS: [Weapon; 11] = [
+pub const WEAPONS: &[Weapon] = &[
     Weapon {
         id: Id::Sword,
+        key: "sword",
+        class: Some(Class::Sword),
         name: |s| s.weapon_sword,
         desc: |s| s.weapon_sword_d,
         place: |s| s.cx_weapon_sword,
@@ -1150,6 +1141,8 @@ pub const WEAPONS: [Weapon; 11] = [
     },
     Weapon {
         id: Id::Hammer,
+        key: "hammer",
+        class: Some(Class::Hammer),
         name: |s| s.weapon_hammer,
         desc: |s| s.weapon_hammer_d,
         place: |s| s.cx_weapon_hammer,
@@ -1194,6 +1187,8 @@ pub const WEAPONS: [Weapon; 11] = [
     },
     Weapon {
         id: Id::Staff,
+        key: "staff",
+        class: Some(Class::Staff),
         name: |s| s.weapon_staff,
         desc: |s| s.weapon_staff_d,
         place: |s| s.cx_weapon_staff,
@@ -1227,6 +1222,8 @@ pub const WEAPONS: [Weapon; 11] = [
     },
     Weapon {
         id: Id::Crossbow,
+        key: "crossbow",
+        class: Some(Class::Crossbow),
         name: |s| s.weapon_crossbow,
         desc: |s| s.weapon_crossbow_d,
         place: |s| s.cx_weapon_crossbow,
@@ -1315,6 +1312,8 @@ pub const WEAPONS: [Weapon; 11] = [
     },
     Weapon {
         id: Id::Fists,
+        key: "fists",
+        class: None,
         name: |s| s.weapon_fists,
         desc: |s| s.weapon_fists_d,
         place: |s| s.cx_weapon_fists,
@@ -1356,6 +1355,8 @@ pub const WEAPONS: [Weapon; 11] = [
     // 활 = 거리·잦은 손·묶어 두고 쏘기. 수치는 처음 값 — 원거리 초당 피해는 근접의 여섯~일곱 할 밑(0173, 시험).
     Weapon {
         id: Id::Bow,
+        key: "bow",
+        class: Some(Class::Bow),
         name: |s| s.weapon_bow,
         desc: |s| s.weapon_bow_d,
         place: |s| s.cx_weapon_bow,
@@ -1452,6 +1453,8 @@ pub const WEAPONS: [Weapon; 11] = [
     // 앞에서 멈춘다, `World::lunge_stops`). RB는 창 던지기(종류의 칸, 0274 ②b).
     Weapon {
         id: Id::Spear,
+        key: "spear",
+        class: Some(Class::Spear),
         name: |s| s.weapon_spear,
         desc: |s| s.weapon_spear_d,
         place: |s| s.cx_weapon_spear,
@@ -1498,6 +1501,8 @@ pub const WEAPONS: [Weapon; 11] = [
     // 창의 내달려 꿰뚫기와 같은 길: 적의 몸을 뚫고 지나 등 뒤에 선다, 벼랑 앞에서 멈춘다 — 다음 타가 급소). RB는 투척 단검 셋.
     Weapon {
         id: Id::Daggers,
+        key: "daggers",
+        class: Some(Class::Dagger),
         name: |s| s.weapon_daggers,
         desc: |s| s.weapon_daggers_d,
         place: |s| s.cx_weapon_daggers,
@@ -1540,6 +1545,8 @@ pub const WEAPONS: [Weapon; 11] = [
     // 부채꼴 · 자세 피해 큼 — 망치처럼 땅을 울리지는 않는다). RB는 땅 내려찍기(종류의 칸).
     Weapon {
         id: Id::Greatsword,
+        key: "greatsword",
+        class: Some(Class::Greatsword),
         name: |s| s.weapon_greatsword,
         desc: |s| s.weapon_greatsword_d,
         place: |s| s.cx_weapon_greatsword,
@@ -1581,6 +1588,8 @@ pub const WEAPONS: [Weapon; 11] = [
     // 거두기(넓은 앞 부채꼴 240° — 맞은 적을 모두 몸 앞으로 끌어온다, 검 강공격의 동작). RB는 가시 씨앗(종류의 칸).
     Weapon {
         id: Id::Scythe,
+        key: "scythe",
+        class: Some(Class::Scythe),
         name: |s| s.weapon_scythe,
         desc: |s| s.weapon_scythe_d,
         place: |s| s.cx_weapon_scythe,
@@ -1622,6 +1631,8 @@ pub const WEAPONS: [Weapon; 11] = [
     // (지팡이의 모으기 · 터뜨림 동작 — 몸 둘레의 적에게 균열 가득). RB는 저주탄(종류의 칸 — 주된 공격).
     Weapon {
         id: Id::Wand,
+        key: "wand",
+        class: Some(Class::Wand),
         name: |s| s.weapon_wand,
         desc: |s| s.weapon_wand_d,
         place: |s| s.cx_weapon_wand,
@@ -1662,7 +1673,8 @@ pub const WEAPONS: [Weapon; 11] = [
 ];
 
 /// 무기 종류(0272): 계열(`Hand` — 화면에 드러내지 않는 묶음) → **종류** → 낱낱의 무기(`Id`). 판 · 물리 속성 · 주특성은 종류에,
-/// 숫자 · 이름 · 생김새는 낱낱의 무기에. 새 종류 = 여기 한 줄 + `index` 한 갈래 + `CLASSES` 한 줄(+ 글).
+/// 숫자 · 이름 · 생김새는 낱낱의 무기에. 새 종류 = 여기 한 줄 + `CLASSES` 한 줄(+ 글) — 자리(`index`)와 계열의 비트(`skills::ONE` …)는
+/// 표에서 선다(0278 R19).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Class {
     Sword,
@@ -1866,6 +1878,27 @@ pub struct ClassDef {
     pub bare: Bare,
     pub bare_name: Tr,
     pub bare_trait: Tr,
+    /// 종류만의 작은 성질(0278 R19 — 월드가 "이 종류인가"를 묻던 것): 대부분 `Quirks::NONE`.
+    pub quirks: Quirks,
+}
+
+/// 종류만의 작은 성질(0278 R19): 월드가 종류의 이름으로 묻지 않고 이 칸을 읽는다(`World::keen` · `World::steady_swing`).
+/// 새 성질 = 칸 하나 + `NONE`의 값 + 그것을 가진 종류의 줄만(`..Quirks::NONE`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Quirks {
+    /// 날카로움의 덤을 받는 손(0270 C5 → 0274 ③ — 날카로움을 대표로 삼는 쌍단검, `hurt_by`의 `Knack::keen`; 맨손도 — 종류가 없어
+    /// `World::keen`이 따로 본다). 방패를 들면 없다.
+    pub keen: bool,
+    /// 휘두르는 동안(평타 · 모으기 · 강공격) 맞으면 휘청 · 밀림의 배(0274 ④ 대검 — `GREATSWORD_FLINCH` · `GREATSWORD_KNOCK`,
+    /// 받는 피해는 그대로 — `wanderer_takes_hit` 한 곳). 없으면 그대로.
+    pub steady_swing: Option<(f32, f32)>,
+}
+
+impl Quirks {
+    pub const NONE: Quirks = Quirks {
+        keen: false,
+        steady_swing: None,
+    };
 }
 
 /// 빈 손의 결(0276 — BG3 다용도 · 양손 쥐기 · 하데스의 방패를 본 것): 보조무기 슬롯을 비우면 주무기 종류마다 손이 다르게 움직인다 —
@@ -1927,7 +1960,7 @@ pub const BARE_PACT_HEAL: i32 = 3;
 pub const BARE_PACT_CHARGE: f32 = 1.0;
 
 /// 종류 표(판 줄의 차례 — `plates::PLATES`가 이 차례로 선다). 대검 · 창은 뒤에 한 줄씩(0272 2단계).
-pub const CLASSES: [ClassDef; 10] = [
+pub const CLASSES: &[ClassDef] = &[
     ClassDef {
         class: Class::Sword,
         hand: Hand::One,
@@ -1951,6 +1984,7 @@ pub const CLASSES: [ClassDef; 10] = [
         bare: Bare::TwoHands,
         bare_name: |s| s.bare_sword,
         bare_trait: |s| s.bare_sword_d,
+        quirks: Quirks::NONE,
     },
     // 망치(0274 — 성직자의 결): 한 손에 드는 종지기의 메 — 방패와 함께 든다(한손검처럼, 방패를 들면 방패 트리).
     ClassDef {
@@ -1977,6 +2011,7 @@ pub const CLASSES: [ClassDef; 10] = [
         bare: Bare::Prayer,
         bare_name: |s| s.bare_hammer,
         bare_trait: |s| s.bare_hammer_d,
+        quirks: Quirks::NONE,
     },
     ClassDef {
         class: Class::Staff,
@@ -2002,6 +2037,7 @@ pub const CLASSES: [ClassDef; 10] = [
         bare: Bare::Weave,
         bare_name: |s| s.bare_staff,
         bare_trait: |s| s.bare_staff_d,
+        quirks: Quirks::NONE,
     },
     ClassDef {
         class: Class::Crossbow,
@@ -2021,6 +2057,7 @@ pub const CLASSES: [ClassDef; 10] = [
         bare: Bare::Snare,
         bare_name: |s| s.bare_crossbow,
         bare_trait: |s| s.bare_crossbow_d,
+        quirks: Quirks::NONE,
     },
     ClassDef {
         class: Class::Bow,
@@ -2043,6 +2080,7 @@ pub const CLASSES: [ClassDef; 10] = [
         bare: Bare::LightStep,
         bare_name: |s| s.bare_bow,
         bare_trait: |s| s.bare_bow_d,
+        quirks: Quirks::NONE,
     },
     // 창(0272 2단계): 양손 근접 · 관통 · 뿌리와 날카로움. 주특성은 무브셋 그 자체(가장 긴 거리 · 한 줄 꿰뚫기) — 스킬에 얹는 배는 없다.
     ClassDef {
@@ -2066,6 +2104,7 @@ pub const CLASSES: [ClassDef; 10] = [
         bare: Bare::LongGrip,
         bare_name: |s| s.bare_spear,
         bare_trait: |s| s.bare_spear_d,
+        quirks: Quirks::NONE,
     },
     // 쌍단검(0274 ③ — 도적의 결): 두 손에 날 하나씩이라 방패와 들지 않는다(양손 근접) · 관통(찌르는 날 — D&D · BG3의 단검은 찌름
     // 피해, 한손검(전사)은 참격) · 날카로움과 균열(출혈을 내고 약점을 연다 — 옛 한손검 트리의 넷을 넘겨받았다) · 주특성 급소.
@@ -2093,6 +2132,10 @@ pub const CLASSES: [ClassDef; 10] = [
         bare: Bare::ShadowStep,
         bare_name: |s| s.bare_dagger,
         bare_trait: |s| s.bare_dagger_d,
+        quirks: Quirks {
+            keen: true,
+            ..Quirks::NONE
+        },
     },
     // 대검(0274 ④ — 광전사의 결): 두 손으로 드는 긴 날(방패와 들지 않는다) · 참격(한손검과 같은 물리 속성 — 둘 다 베는 날이다: 갈리는
     // 것은 속성 짝 · 무브셋 · 주특성) · 균열과 잔불(분노 — 쪼개고 태운다) · 주특성 분노 · 보조특성 힘(강공격 피해).
@@ -2120,6 +2163,10 @@ pub const CLASSES: [ClassDef; 10] = [
         bare: Bare::Reckless,
         bare_name: |s| s.bare_greatsword,
         bare_trait: |s| s.bare_greatsword_d,
+        quirks: Quirks {
+            steady_swing: Some((GREATSWORD_FLINCH, GREATSWORD_KNOCK)),
+            ..Quirks::NONE
+        },
     },
     // 낫(0274 ⑤ — 드루이드의 결): 한 손의 휜 날(한손검 · 망치처럼 방패와 든다 — 방패를 들면 방패 트리, 빈 손이면 땅을 짚는 손) ·
     // 참격(휜 날로 벤다 — 한손검 · 대검과 같은 물리 속성: 갈리는 것은 속성 짝 · 무브셋 · 주특성) · 뿌리와 흡수(묶고 되살아난다) ·
@@ -2148,6 +2195,7 @@ pub const CLASSES: [ClassDef; 10] = [
         bare: Bare::GroundHand,
         bare_name: |s| s.bare_scythe,
         bare_trait: |s| s.bare_scythe_d,
+        quirks: Quirks::NONE,
     },
     // 완드(0274 ⑥ — 흑마법사의 결, 계약 — 방랑자도 모르는 계약): 한 손에 드는 짧은 막대지만 **방패와 들지 않는다**(계열 `Two`):
     // 다른 손은 저주의 꼴을 그리는 손이다 — 방패를 들면 방패가 RB를 맡아(`World::shield_throws`) 주된 공격인 저주탄을 잃고 쥔 꼴도 방패
@@ -2178,24 +2226,22 @@ pub const CLASSES: [ClassDef; 10] = [
         bare: Bare::PactMark,
         bare_name: |s| s.bare_wand,
         bare_trait: |s| s.bare_wand_d,
+        quirks: Quirks::NONE,
     },
 ];
 
 impl Class {
-    /// 표의 자리(`CLASSES` — 스킬의 `hands` 비트 · 판의 차례가 이것을 쓴다). `_` 없는 match — 새 종류는 여기서 자리를 받는다.
+    /// 표의 자리(`CLASSES` — 스킬의 `hands` 비트 · 판의 차례가 이것을 쓴다): 표에서 찾는다 — 새 종류는 표의 한 줄로 자리를 받는다
+    /// (시험 `every_weapon_has_a_class_and_the_class_table_is_in_order` — 표에 없는 종류는 컴파일 때 멈춘다).
     pub const fn index(self) -> usize {
-        match self {
-            Class::Sword => 0,
-            Class::Hammer => 1,
-            Class::Staff => 2,
-            Class::Crossbow => 3,
-            Class::Bow => 4,
-            Class::Spear => 5,
-            Class::Dagger => 6,
-            Class::Greatsword => 7,
-            Class::Scythe => 8,
-            Class::Wand => 9,
+        let mut i = 0;
+        while i < CLASSES.len() {
+            if CLASSES[i].class as u8 == self as u8 {
+                return i;
+            }
+            i += 1;
         }
+        panic!("CLASSES has every Class")
     }
 
     pub fn def(self) -> &'static ClassDef {
@@ -2216,21 +2262,9 @@ pub enum Grip {
 }
 
 impl Id {
-    /// 무기의 종류(0272). `_` 없는 match — 새 무기는 여기서 종류를 고르게 된다. 맨손은 종류가 아니다(무기 칸을 비운 것).
+    /// 무기의 종류(0272 — 무기 표의 줄 `Weapon::class`). 맨손은 종류가 아니다(무기 칸을 비운 것).
     pub fn class(self) -> Option<Class> {
-        match self {
-            Id::Sword => Some(Class::Sword),
-            Id::Hammer => Some(Class::Hammer),
-            Id::Staff => Some(Class::Staff),
-            Id::Crossbow => Some(Class::Crossbow),
-            Id::Bow => Some(Class::Bow),
-            Id::Spear => Some(Class::Spear),
-            Id::Daggers => Some(Class::Dagger),
-            Id::Greatsword => Some(Class::Greatsword),
-            Id::Scythe => Some(Class::Scythe),
-            Id::Wand => Some(Class::Wand),
-            Id::Fists => None,
-        }
+        self.def().class
     }
 
     /// 계열(0223 → 0272): 종류의 것 — 맨손은 한손.
@@ -2336,13 +2370,13 @@ mod tests {
     fn weapon_and_class_rows_match_the_weapon_fixture() {
         const FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/weapon_fixture.txt");
         let mut text = String::new();
-        for w in &WEAPONS {
+        for w in WEAPONS {
             text += &format!(
                 "{:?}\ncombo {:?}\ndash {:?}\nheavy {:?}\nrb {:?}\ngrenade {:?}\nnode {:?} {:?} stamina {:?} forge {:?}\n",
                 w.id, w.combo, w.dash, w.heavy, w.rb, w.grenade, w.node, w.off_hand, w.stamina, w.forge
             );
         }
-        for c in &CLASSES {
+        for c in CLASSES {
             text += &format!(
                 "{:?} {:?} {:?} {:?}\nart {:?}\nsub {:?}\ntoss {:?}\nbare {:?}\n",
                 c.class, c.hand, c.pair, c.great, c.art, c.sub, c.toss, c.bare

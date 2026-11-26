@@ -21,7 +21,7 @@
 use crate::progression::{Branch, Cell, Key, Link, Tree, Vein, DEPTH, KEYS, LINKS, VEINS};
 use crate::status::{Dose, Kind};
 use crate::tuning::{HP_UNIT, ULT_SLAM_DAMAGE};
-use crate::weapons::{Class, Grip};
+use crate::weapons::{Class, Grip, Hand, CLASSES};
 
 /// 스킬이 "무엇을 들었을 때 되나"(0223 V3 → 0225 → 0272): 비트의 합 — 무기 종류마다 하나(`class_bit`)와 방패(`SHIELD` — 한손 계열과
 /// 방패를 함께 든 꼴). 한손 종류의 비트는 "방패 없이"다: 방패를 들면 방패 판의 기술만 쓴다.
@@ -49,10 +49,24 @@ pub const WAND: Hands = class_bit(Class::Wand);
 pub const SHIELD: Hands = 1 << 15;
 /// 묶음: 한손(방패가 있든 없든 — 0274부터 망치도, ⑤부터 낫도) · 양손 근접(지팡이 · 창 · 쌍단검 · 대검 · 완드 — 두 손이 다 찬다) · 근접 ·
 /// 원거리 · 어느 것이나.
-pub const ONE: Hands = SWORD | HAMMER | SCYTHE | SHIELD;
-pub const TWO: Hands = STAFF | SPEAR | DAGGER | GREATSWORD | WAND;
+/// 셋 다 종류 표의 계열(`ClassDef::hand`)에서 선다(0278 R19 — `hand_bits`): 새 종류는 계열을 고르면 그 묶음의 스킬이 그 트리에도 선다.
+pub const ONE: Hands = hand_bits(Hand::One) | SHIELD;
+pub const TWO: Hands = hand_bits(Hand::Two);
 pub const MELEE: Hands = ONE | TWO;
-pub const RANGED: Hands = CROSSBOW | BOW;
+pub const RANGED: Hands = hand_bits(Hand::Ranged);
+
+/// 계열 `h`인 종류들의 비트(종류 표 `CLASSES`를 돈다).
+pub const fn hand_bits(h: Hand) -> Hands {
+    let mut bits = 0;
+    let mut i = 0;
+    while i < CLASSES.len() {
+        if CLASSES[i].hand as u8 == h as u8 {
+            bits |= class_bit(CLASSES[i].class);
+        }
+        i += 1;
+    }
+    bits
+}
 pub const ANY: Hands = MELEE | RANGED;
 
 /// 쥔 꼴 하나의 비트 — 맨손은 어느 무기 판의 기술도 쓰지 못한다(0272: 무기 판이 없다).
@@ -3827,6 +3841,34 @@ impl Board {
 mod tests {
     use super::*;
 
+    /// 0278 R19: 계열의 묶음 비트는 종류 표에서 선다 — 그 전부터 있던 종류에서는 손으로 적던 합(낫은 한손 · 완드는 양손,
+    /// 0274 ⑤ · ⑥)과 같다(뒤에 오는 종류는 제 비트만 더한다 — 이 시험은 고치지 않는다). 셋은 겹치지 않고 모든 종류 + 방패를 덮는다.
+    #[test]
+    fn hand_masks_from_the_class_table_equal_the_old_unions() {
+        let known = SWORD
+            | HAMMER
+            | STAFF
+            | CROSSBOW
+            | BOW
+            | SPEAR
+            | DAGGER
+            | GREATSWORD
+            | SCYTHE
+            | WAND
+            | SHIELD;
+        assert_eq!(ONE & known, SWORD | HAMMER | SCYTHE | SHIELD);
+        assert_eq!(TWO & known, STAFF | SPEAR | DAGGER | GREATSWORD | WAND);
+        assert_eq!(RANGED & known, CROSSBOW | BOW);
+        assert_eq!(ONE & TWO, 0);
+        assert_eq!((ONE | TWO) & RANGED, 0);
+        assert_eq!(MELEE | RANGED, ANY);
+        assert_eq!(
+            ANY.count_ones() as usize,
+            CLASSES.len() + 1,
+            "every class and the shield"
+        );
+    }
+
     #[test]
     fn every_skill_has_one_row_a_key_and_sane_numbers() {
         for id in IDS {
@@ -4782,7 +4824,7 @@ mod tests {
         }
         // 묶음은 종류 표에서 온다: 종류마다 비트 하나(서로 다르다 · 방패의 비트와 겹치지 않는다).
         let mut all = SHIELD;
-        for c in &CLASSES {
+        for c in CLASSES {
             let bit = class_bit(c.class);
             assert_eq!(bit.count_ones(), 1);
             assert_eq!(all & bit, 0, "{:?}", c.class);

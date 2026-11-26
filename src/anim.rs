@@ -117,8 +117,9 @@ impl Memory {
         self.rise = crate::gait::rise_after_roll(self.rise, self.was_roll, idle, wdt);
         self.was_roll = roll_now;
         let rise = self.rise.filter(|_| clips.has("dodge_rise"));
-        // 활(0231)은 활쏘기 원본의 제 동작 — 옆으로 서서 왼손의 활로 겨눈다(없는 모델이면 쇠뇌의 것).
-        let bow = wpn.id == crate::weapons::Id::Bow;
+        // 활(0231)은 활쏘기 원본의 제 동작 — 옆으로 서서 왼손의 활로 겨눈다(없는 모델이면 쇠뇌의 것). 당기는 리듬의 무기가 그것이다
+        // (`Id::draws` — `Rhythm::Draw`).
+        let bow = wpn.id.draws();
         let (shoot, draw): (&[&'static str], &[&'static str]) = if bow {
             (
                 &["bow_shoot", "xbow_shoot", "cast", "attack"],

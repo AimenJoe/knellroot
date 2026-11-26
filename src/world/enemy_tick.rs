@@ -781,24 +781,15 @@ impl World {
                     _ => false,
                 })
                 || self.player.skill.steady > 0.0;
-            // 대검을 휘두르는 동안(0274 ④): 맞아도 덜 휘청이고 덜 밀린다(덧옷 `flinch`와 같은 손잡이 — 받는 피해는 그대로).
-            let (flinch, knocked) = if self.swinging_greatsword() {
+            // 대검을 휘두르는 동안(0274 ④ — 종류 표의 `Quirks::steady_swing`): 맞아도 덜 휘청이고 덜 밀린다(덧옷 `flinch`와 같은 손잡이 — 받는 피해는 그대로).
+            let (flinch, knocked) = match self.steady_swing() {
                 #[cfg(test)]
-                if let Some(k) = self.flinch_probe {
+                Some(_) if self.flinch_probe.is_some() => {
+                    let k = self.flinch_probe.unwrap_or(1.0);
                     (k, k)
-                } else {
-                    (
-                        crate::weapons::GREATSWORD_FLINCH,
-                        crate::weapons::GREATSWORD_KNOCK,
-                    )
                 }
-                #[cfg(not(test))]
-                (
-                    crate::weapons::GREATSWORD_FLINCH,
-                    crate::weapons::GREATSWORD_KNOCK,
-                )
-            } else {
-                (1.0, 1.0)
+                Some(fk) => fk,
+                None => (1.0, 1.0),
             };
             // 뿌리내린 몸(0214 맺음): 서 있으면 덜 다치고 밀리지 않는다.
             let rooted = self.tree.keyed(crate::progression::Key::Rooted)

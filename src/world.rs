@@ -1857,13 +1857,14 @@ impl World {
         self.player.weapon.grip(self.player.shield.is_some())
     }
 
-    /// 날카로움의 덤을 받는 손인가(0270 C5 — `hurt_by`의 `Knack::keen`): 0274 ③부터 날카로움을 대표로 삼는 쌍단검(도적의 손)과 맨손
-    /// (방패 없이). 한손검은 0274 ②에서 전사(충격 · 흡수)가 되어 이 덤을 쌍단검에 넘겼다.
+    /// 날카로움의 덤을 받는 손인가(0270 C5 — `hurt_by`의 `Knack::keen`): 0274 ③부터 날카로움을 대표로 삼는 쌍단검(도적의 손 — 종류
+    /// 표의 `Quirks::keen`)과 맨손(종류가 없다), 방패 없이. 한손검은 0274 ②에서 전사(충격 · 흡수)가 되어 이 덤을 쌍단검에 넘겼다.
     pub fn keen(&self) -> bool {
-        matches!(
-            self.player.weapon.class(),
-            Some(weapons::Class::Dagger) | None
-        ) && self.player.shield.is_none()
+        self.player
+            .weapon
+            .class()
+            .is_none_or(|c| c.def().quirks.keen)
+            && self.player.shield.is_none()
     }
 
     /// 방랑자의 타가 싣는 손의 덤(`hurt_by` 한 곳 — 0270 C5 날카로움 · 0274 ③ 급소): 급소는 든 무기의 주특성(`Art::sneak`, 쌍단검)이
@@ -2466,13 +2467,19 @@ impl World {
         })
     }
 
-    /// 대검을 휘두르는 동안인가(0274 ④ — 맞아도 덜 휘청인다 `GREATSWORD_FLINCH`): 평타 · 모으기 · 강공격.
-    pub fn swinging_greatsword(&self) -> bool {
-        self.player.weapon.class() == Some(weapons::Class::Greatsword)
-            && matches!(
-                self.player.state,
-                PState::Attack { .. } | PState::Charging { .. } | PState::Heavy { .. }
-            )
+    /// 휘두르는 동안 덜 휘청이는 종류가 휘두르는 동안이면 그 (휘청, 밀림)의 배(0274 ④ 대검 — 종류 표의 `Quirks::steady_swing`):
+    /// 평타 · 모으기 · 강공격.
+    pub fn steady_swing(&self) -> Option<(f32, f32)> {
+        self.player
+            .weapon
+            .class()
+            .and_then(|c| c.def().quirks.steady_swing)
+            .filter(|_| {
+                matches!(
+                    self.player.state,
+                    PState::Attack { .. } | PState::Charging { .. } | PState::Heavy { .. }
+                )
+            })
     }
 
     /// 한 틱. 히트스톱 중엔 로직 시계만 멈춘다.

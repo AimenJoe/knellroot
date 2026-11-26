@@ -1,6 +1,6 @@
 //! 개발 창(0083, nail 0269 `Scene::Dev` 구조 그대로): 위에 묶음 탭이 한 줄로 다 보이고(좌우·Q/E·탭), 왼쪽은 그 묶음의 줄(위아래·굴리기),
 //! 오른쪽은 고른 줄의 이름·설명, 아래 안내 한 줄. 줄은 시작할 것만(돌아가기 줄·무기 줄 없음 — 뒤로 = 나가기, 무기는 장비 창).
-//! 줄마다 묶음·시작할 것을 표 한 곳(`DEV_LIST`)에 두고 묶음별 목록은 거기서 거른다(nail `scenario::Entry { cat }`).
+//! 줄마다 묶음·시작할 것을 표 한 곳(`dev_list` — 손으로 적는 `FIXED_ROWS` + 무기마다의 줄)에 두고 묶음별 목록은 거기서 거른다(nail `scenario::Entry { cat }`).
 //! 개발판에만. 여기서 시작한 스테이지 판은 기록 슬롯에 쓰지 않는다(`App::dev_run`, 0075).
 use super::menu::Hit;
 use super::*;
@@ -61,24 +61,13 @@ pub(super) enum DevStart {
     Stones,
     /// 둘째 지역의 첫 상자 곁(0131 — 떨어진 아이템·빛기둥 판정) — 기록은 쓰지 않는다.
     Chest,
-    /// 둘째 지역 파수꾼 곁방의 상자 곁(0272 2단계 — 파수꾼의 창이 나오는 곳 판정) — 기록은 쓰지 않는다.
-    SpearChest,
-    /// 둘째 지역 빈집 뒷방의 상자 곁(0274 ③ — 빈집의 쌍단검이 나오는 곳 판정) — 기록은 쓰지 않는다.
-    DaggerChest,
-    /// 셋째 지역 서쪽 샛길 끝의 상자 곁(0274 ④ — 가지치기 대검이 나오는 곳 판정) — 기록은 쓰지 않는다.
-    GreatswordChest,
-    /// 셋째 지역 낮은터 동쪽 물가의 상자 곁(0274 ⑤ — 정원지기의 낫이 나오는 곳 판정) — 기록은 쓰지 않는다.
-    ScytheChest,
-    /// 넷째 지역 운반 회랑 서쪽 끝 곁방의 상자 곁(0274 ⑥ — 맡겨진 완드가 나오는 곳 판정) — 기록은 쓰지 않는다.
-    WandChest,
+    /// 그 무기가 나오는 상자 곁(0272 2단계 · 0274 ③~⑦ — 나오는 곳 판정): 지역 · 상자는 스테이지 표의 `chest_loot`에서 찾는다
+    /// (`DevStart::chest`), 줄은 상자에 든 무기마다 하나(`dev_list`). 기록은 쓰지 않는다.
+    WeaponChest(crate::weapons::Id),
     /// 첫 지역 성벽길의 상자 곁(0274 ⑦ — 옛 쇠뇌 상자, 이제 숫돌) — 기록은 쓰지 않는다.
     WallChest,
     /// 첫 지역 뜰 남동 단의 상자 곁(0274 ⑦ — 옛 지팡이 상자, 이제 여벌) — 기록은 쓰지 않는다.
     SpareChest,
-    /// 넷째 지역 서쪽 작업대 구석의 상자 곁(0274 ⑦ — 화약 쇠뇌가 나오는 곳 판정) — 기록은 쓰지 않는다.
-    CrossbowChest,
-    /// 넷째 지역 위층 회랑 동쪽 벽 밑의 상자 곁(0274 ⑦ — 순례자 지팡이가 나오는 곳 판정) — 기록은 쓰지 않는다.
-    StaffChest,
     /// 첫 지역의 필드 보스 터 들머리(0270 D — 엎드린 고요한 사슴·끈·떨굼·쉬어도 다시 서지 않음 판정) — 기록은 쓰지 않는다.
     Field,
     /// PoC·개발 아레나(`scenario::LIST`).
@@ -103,22 +92,11 @@ pub(super) enum DevStart {
     Motion(u8),
 }
 
-/// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 시험 스크립트는 줄을 세지 않고 이름으로 부른다(0278 R13 — `DevCmd`,
+/// 손으로 적는 줄(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 무기마다의 줄(모션 보기 · 무기가 나오는 상자)은 표에서 선다(`dev_list`). 시험 스크립트는 줄을 세지 않고 이름으로 부른다(0278 R13 — `DevCmd`,
 /// `tools/test/scene.js` `dev`·`devRow`): 줄을 어디에 끼워도 스크립트의 길은 그대로다(아래 "끝에 둔다"는 그 전의 까닭).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 59] = [
+const FIXED_ROWS: [(DevCat, DevStart); 41] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
-    (DevCat::Motion, DevStart::Motion(0)),
-    (DevCat::Motion, DevStart::Motion(1)),
-    (DevCat::Motion, DevStart::Motion(2)),
-    (DevCat::Motion, DevStart::Motion(3)),
-    (DevCat::Motion, DevStart::Motion(4)),
-    (DevCat::Motion, DevStart::Motion(5)),
-    (DevCat::Motion, DevStart::Motion(6)),
-    (DevCat::Motion, DevStart::Motion(7)),
-    (DevCat::Motion, DevStart::Motion(8)),
-    (DevCat::Motion, DevStart::Motion(9)),
-    (DevCat::Motion, DevStart::Motion(10)),
     (DevCat::Skills, DevStart::Skills),
     (DevCat::Skills, DevStart::SkillsMax),
     (DevCat::Skills, DevStart::SkillsFlip),
@@ -142,21 +120,9 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 59] = [
     (DevCat::Stage, DevStart::Prologue),
     // 0270 D: 역시 끝에.
     (DevCat::Stage, DevStart::Field),
-    // 0272 2단계: 역시 끝에.
-    (DevCat::Stage, DevStart::SpearChest),
-    // 0274 ③: 역시 끝에.
-    (DevCat::Stage, DevStart::DaggerChest),
-    // 0274 ④: 역시 끝에.
-    (DevCat::Stage, DevStart::GreatswordChest),
-    // 0274 ⑤: 역시 끝에.
-    (DevCat::Stage, DevStart::ScytheChest),
-    // 0274 ⑥: 역시 끝에.
-    (DevCat::Stage, DevStart::WandChest),
     // 0274 ⑦: 역시 끝에.
     (DevCat::Stage, DevStart::WallChest),
     (DevCat::Stage, DevStart::SpareChest),
-    (DevCat::Stage, DevStart::CrossbowChest),
-    (DevCat::Stage, DevStart::StaffChest),
     (DevCat::Combat, DevStart::Scenario(Scenario::Boss)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Pillars)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Duel)),
@@ -181,36 +147,62 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 59] = [
     (DevCat::Perf, DevStart::Scenario(Scenario::Stress80)),
 ];
 
-/// 묶음 `tab`의 줄.
-pub(super) fn dev_items(tab: usize) -> Vec<DevStart> {
-    let cat = DEV_CATS[tab.min(DEV_CATS.len() - 1)];
-    DEV_LIST
-        .iter()
-        .filter(|(c, _)| *c == cat)
-        .map(|(_, e)| *e)
+/// 개발 창의 줄 전부: 손으로 적는 줄 + 무기마다의 줄(0278 R19 — 무기 표 `weapons::IDS`의 차례): 모션 보기는 무기마다 하나, 무기가
+/// 나오는 상자는 스테이지 표의 상자에 든 무기마다 하나(스테이지 묶음 끝). 새 무기는 여기에 손대지 않는다.
+pub(super) fn dev_list() -> Vec<(DevCat, DevStart)> {
+    let motions =
+        (0..crate::weapons::IDS.len() as u8).map(|w| (DevCat::Motion, DevStart::Motion(w)));
+    let chests = crate::weapons::IDS
+        .into_iter()
+        .filter(|&w| chest_region(w).is_some())
+        .map(|w| (DevCat::Stage, DevStart::WeaponChest(w)));
+    FIXED_ROWS
+        .into_iter()
+        .chain(motions)
+        .chain(chests)
         .collect()
 }
 
-/// "든 무기 바꾸기"의 차례(0223 V3): (무기, 방패를 드나). 0270 C3: 쇠뇌 다음은 "검 + 방패"(방패 트리의 스킬을 끼워 보게) — 그다음
-/// 맨손에서 방패를 내린다. 차례는 손으로 누르던 시절(새 판 = 맨손에서 센 수)의 것 그대로다 — 이제 시험 스크립트는 세지 않고
-/// 이름(`Arm(Wand)` · `Arm(Sword+Shield)`, `DevCmd`)으로 든다(0278 R13).
-const ARM_CYCLE: [(crate::weapons::Id, bool); 12] = {
-    use crate::weapons::Id as W;
-    [
-        (W::Sword, false),
-        (W::Hammer, false),
-        (W::Staff, false),
-        (W::Crossbow, false),
-        (W::Sword, true),
-        (W::Spear, false),
-        (W::Daggers, false),
-        (W::Greatsword, false),
-        (W::Scythe, false),
-        (W::Wand, false),
-        (W::Fists, false),
-        (W::Bow, false),
-    ]
-};
+/// 무기 `w`가 든 상자의 지역(`stage::STAGES`의 앞 `REGIONS`개 — 서막 숲은 상자가 없다), 없으면 없음.
+fn chest_region(w: crate::weapons::Id) -> Option<usize> {
+    crate::stage::STAGES[..crate::stage::REGIONS]
+        .iter()
+        .position(|d| d.chest_loot.contains(&crate::stage::Loot::Weapon(w)))
+}
+
+/// 묶음 `tab`의 줄.
+pub(super) fn dev_items(tab: usize) -> Vec<DevStart> {
+    let cat = DEV_CATS[tab.min(DEV_CATS.len() - 1)];
+    dev_list()
+        .into_iter()
+        .filter(|(c, _)| *c == cat)
+        .map(|(_, e)| e)
+        .collect()
+}
+
+/// "든 무기 바꾸기"의 차례(0223 V3 → 0278 R19 — 무기 표 `weapons::IDS`에서 선다): 무기마다 그것만, 한손 종류는 바로 뒤에 순례자의
+/// 방패와 함께(방패 트리의 스킬을 끼워 보게, 0270 C3). 시험 스크립트는 세지 않고 이름(`Arm(Wand)` · `Arm(Sword+Shield)`, `DevCmd`)으로
+/// 든다(0278 R13) — 새 무기는 여기에 손대지 않는다.
+fn arm_cycle() -> Vec<(crate::weapons::Id, bool)> {
+    crate::weapons::IDS
+        .into_iter()
+        .flat_map(|w| {
+            let shield = w.class().is_some() && w.hand() == crate::weapons::Hand::One;
+            std::iter::once((w, false)).chain(shield.then_some((w, true)))
+        })
+        .collect()
+}
+
+/// 차례의 이름 줄(개발 창 설명 — `ARM_NOTE`의 `{1}` · `ARM_SUB_NOTE`의 `{1}`): 무기 이름을 화살표로.
+fn arm_names(arms: impl Iterator<Item = Option<(crate::weapons::Id, bool)>>) -> String {
+    arms.map(|a| match a {
+        None => s().slot_empty.to_string(),
+        Some((w, false)) => weapon_name(w).to_string(),
+        Some((w, true)) => format!("{} + {}", weapon_name(w), s().menu_shield),
+    })
+    .collect::<Vec<_>>()
+    .join(" → ")
+}
 
 /// "보조무기 바꾸기"가 도는 무기(종류가 있는 것 — 맨손은 메지 않는다, 표 `weapons::IDS`의 차례).
 fn sub_ids() -> Vec<crate::weapons::Id> {
@@ -223,7 +215,7 @@ fn sub_ids() -> Vec<crate::weapons::Id> {
 /// 이름 있는 개발 명령(0278 R13 — 헤드리스 시험 · 재기가 개발 창을 세어 누르지 않고 이름으로 부른다): 웹은 페이지의
 /// `window.knellDev`(이름의 배열 — 프레임마다 앞에서부터 꺼내 차례로 한다, `screen::dev_command`), PC는 `KNELL_BOOT`(쉼표로 여럿).
 /// 이름은 모두 있는 표의 Debug에서 선다 — 따로 적은 목록이 없다: 개발 창 줄 `DevStart`(`Garden` · `Scenario(Stress80)` — 그 줄을
-/// 고른 것과 같다), `Dev(<줄>)`(개발 창을 그 줄에 커서를 두고 연다 — 시작하지 않는다), `Arm(<무기>)` · `Arm(<무기>+Shield)`(`ARM_CYCLE`의
+/// 고른 것과 같다), `Dev(<줄>)`(개발 창을 그 줄에 커서를 두고 연다 — 시작하지 않는다), `Arm(<무기>)` · `Arm(<무기>+Shield)`(`arm_cycle`의
 /// 한 칸을 바로 든다), `ArmSub(<무기>)` · `ArmSub(None)`(`sub_ids`). 모르는 이름은 콘솔 에러 `knellDev: …`(스크립트가 실패로 본다).
 #[cfg(any(feature = "dev", test))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -238,11 +230,11 @@ pub(super) enum DevCmd {
 impl DevCmd {
     /// 받는 명령 전부(이름의 출처 = 표).
     fn all() -> Vec<DevCmd> {
-        let rows = DEV_LIST.iter().map(|(_, e)| *e);
+        let rows = dev_list().into_iter().map(|(_, e)| e);
         rows.clone()
             .map(DevCmd::Start)
             .chain(rows.map(DevCmd::Show))
-            .chain(ARM_CYCLE.iter().map(|&(w, s)| DevCmd::Arm(w, s)))
+            .chain(arm_cycle().into_iter().map(|(w, s)| DevCmd::Arm(w, s)))
             .chain(std::iter::once(DevCmd::Sub(None)))
             .chain(sub_ids().into_iter().map(|w| DevCmd::Sub(Some(w))))
             .collect()
@@ -265,21 +257,13 @@ impl DevCmd {
 }
 
 impl DevStart {
-    /// 상자 곁 줄이면 (지역, 그 상자의 것 — `None` = 그 지역의 첫 상자)(와일드카드 없이 — 0278 R14). 대검 · 낫의 상자는 셋째 지역
-    /// (두 문지기를 이긴 셈), 완드 · 쇠뇌 · 지팡이는 넷째 지역(작업층 — 셋을 이긴 셈), 성소의 옛 무기 상자 둘(0274 ⑦)은 첫 지역
-    /// (건너지 않는다), 나머지는 둘째 지역.
+    /// 상자 곁 줄이면 (지역, 그 상자의 것 — `None` = 그 지역의 첫 상자)(와일드카드 없이 — 0278 R14). 무기가 나오는 상자는 그 무기를
+    /// 든 지역(`chest_region` — 스테이지 표), 성소의 옛 무기 상자 둘(0274 ⑦)은 첫 지역(건너지 않는다), 첫 상자는 둘째 지역.
     fn chest(self) -> Option<(usize, Option<crate::stage::Loot>)> {
         use crate::stage::Loot;
-        use crate::weapons::Id as W;
         Some(match self {
             DevStart::Chest => (1, None),
-            DevStart::SpearChest => (1, Some(Loot::Weapon(W::Spear))),
-            DevStart::DaggerChest => (1, Some(Loot::Weapon(W::Daggers))),
-            DevStart::GreatswordChest => (2, Some(Loot::Weapon(W::Greatsword))),
-            DevStart::ScytheChest => (2, Some(Loot::Weapon(W::Scythe))),
-            DevStart::WandChest => (3, Some(Loot::Weapon(W::Wand))),
-            DevStart::CrossbowChest => (3, Some(Loot::Weapon(W::Crossbow))),
-            DevStart::StaffChest => (3, Some(Loot::Weapon(W::Staff))),
+            DevStart::WeaponChest(w) => (chest_region(w)?, Some(Loot::Weapon(w))),
             DevStart::WallChest => (0, Some(Loot::Stone)),
             DevStart::SpareChest => (0, Some(Loot::Spare)),
             DevStart::Entrance
@@ -315,15 +299,10 @@ impl DevStart {
             DevStart::Residents => t(dv::RESIDENTS),
             DevStart::Stones => t(dv::STONES),
             DevStart::Chest => t(dv::CHEST),
-            DevStart::SpearChest => t(dv::SPEAR_CHEST),
-            DevStart::DaggerChest => t(dv::DAGGER_CHEST),
-            DevStart::GreatswordChest => t(dv::GREATSWORD_CHEST),
-            DevStart::ScytheChest => t(dv::SCYTHE_CHEST),
-            DevStart::WandChest => t(dv::WAND_CHEST),
+            // 나오는 곳 · 무기 이름은 `App::dev_name`이 채운다(무기 표의 줄 `Weapon::place` · `name`) — 여기는 바탕.
+            DevStart::WeaponChest(_) => t(dv::WEAPON_CHEST),
             DevStart::WallChest => t(dv::WALL_CHEST),
             DevStart::SpareChest => t(dv::SPARE_CHEST),
-            DevStart::CrossbowChest => t(dv::CROSSBOW_CHEST),
-            DevStart::StaffChest => t(dv::STAFF_CHEST),
             DevStart::Field => t(dv::FIELD),
             DevStart::Scenario(sc) => {
                 let e = scenario::entry(sc);
@@ -353,15 +332,9 @@ impl DevStart {
             | DevStart::Residents
             | DevStart::Stones
             | DevStart::Chest
-            | DevStart::SpearChest
-            | DevStart::DaggerChest
-            | DevStart::GreatswordChest
-            | DevStart::ScytheChest
-            | DevStart::WandChest
+            | DevStart::WeaponChest(_)
             | DevStart::WallChest
             | DevStart::SpareChest
-            | DevStart::CrossbowChest
-            | DevStart::StaffChest
             | DevStart::Field => t(dv::STAGE_NOTE).to_string(),
             DevStart::Scenario(sc) => {
                 let n = scenario::LIST
@@ -544,19 +517,12 @@ impl App {
                 self.go(Go::Root(Scene::Play));
             }
             DevStart::Chest
-            | DevStart::SpearChest
-            | DevStart::DaggerChest
-            | DevStart::GreatswordChest
-            | DevStart::ScytheChest
-            | DevStart::WandChest
+            | DevStart::WeaponChest(_)
             | DevStart::WallChest
-            | DevStart::SpareChest
-            | DevStart::CrossbowChest
-            | DevStart::StaffChest => {
+            | DevStart::SpareChest => {
                 self.dev.run = true;
                 self.restart();
-                // 대검 · 낫의 상자는 셋째 지역(두 문지기를 이긴 셈), 완드 · 쇠뇌 · 지팡이는 넷째 지역(작업층 — 셋을 이긴 셈), 성소의 옛 무기
-                // 상자 둘(0274 ⑦)은 첫 지역(건너지 않는다), 나머지는 둘째 지역.
+                // 지역은 그 상자를 든 곳(`DevStart::chest` — 둘째 지역부터는 그 앞 문지기를 이긴 셈으로 건넌다).
                 let Some((region, loot)) = e.chest() else {
                     return;
                 };
@@ -616,11 +582,12 @@ impl App {
                 self.dev_overlay = !self.dev_overlay;
                 self.snd(crate::sfx::Id::Buy);
             }
-            // 든 무기를 표의 다음 것으로(0223 V3 — 차례는 `ARM_CYCLE`) — 이 창에서 시작하는 아레나와 "기술 끼우기"가 그 무기로 선다. 기록은 그대로.
+            // 든 무기를 표의 다음 것으로(0223 V3 — 차례는 `arm_cycle`) — 이 창에서 시작하는 아레나와 "기술 끼우기"가 그 무기로 선다. 기록은 그대로.
             DevStart::Arm => {
                 let now = (self.weapon, self.progress.shield.is_some());
-                let at = ARM_CYCLE.iter().position(|c| *c == now).unwrap_or(0);
-                let (w, s) = ARM_CYCLE[(at + 1) % ARM_CYCLE.len()];
+                let cycle = arm_cycle();
+                let at = cycle.iter().position(|c| *c == now).unwrap_or(0);
+                let (w, s) = cycle[(at + 1) % cycle.len()];
                 self.dev_arm(w, s);
                 self.snd(crate::sfx::Id::Buy);
             }
@@ -691,7 +658,7 @@ impl App {
             DevCmd::Show(e) => {
                 let Some(tab) = DEV_CATS
                     .iter()
-                    .position(|c| DEV_LIST.iter().any(|(k, d)| k == c && *d == e))
+                    .position(|c| dev_list().iter().any(|(k, d)| k == c && *d == e))
                 else {
                     return;
                 };
@@ -720,6 +687,7 @@ impl App {
                     crate::weapons::IDS[w as usize % crate::weapons::IDS.len()],
                 )],
             ),
+            DevStart::WeaponChest(w) => fill(e.name(), &[tr(w.def().place), weapon_name(w)]),
             _ => e.name().to_string(),
         }
     }
@@ -735,10 +703,22 @@ impl App {
                 };
                 fill(&e.note(), &[t(state)])
             }
-            DevStart::Arm => fill(&e.note(), &[weapon_name(self.weapon)]),
+            DevStart::Arm => fill(
+                &e.note(),
+                &[
+                    weapon_name(self.weapon),
+                    &arm_names(arm_cycle().into_iter().map(Some)),
+                ],
+            ),
             DevStart::ArmSub => fill(
                 &e.note(),
-                &[self.dev.sub.map_or(s().slot_empty, weapon_name)],
+                &[
+                    self.dev.sub.map_or(s().slot_empty, weapon_name),
+                    &arm_names(
+                        std::iter::once(None)
+                            .chain(sub_ids().into_iter().map(|w| Some((w, false)))),
+                    ),
+                ],
             ),
             DevStart::ArmBare => fill(
                 &e.note(),
@@ -826,7 +806,7 @@ mod tests {
     #[test]
     fn every_scenario_sits_once_and_no_group_is_empty() {
         for e in scenario::LIST.iter() {
-            let n = DEV_LIST
+            let n = dev_list()
                 .iter()
                 .filter(|(_, d)| *d == DevStart::Scenario(e.scenario))
                 .count();
@@ -856,8 +836,8 @@ mod tests {
             assert_eq!(DevCmd::parse(&n), Some(*c), "{n}");
             assert!(seen.insert(n.clone()), "duplicate name {n}");
         }
-        for (_, e) in DEV_LIST.iter() {
-            assert_eq!(DevCmd::parse(&format!("{e:?}")), Some(DevCmd::Start(*e)));
+        for (_, e) in dev_list() {
+            assert_eq!(DevCmd::parse(&format!("{e:?}")), Some(DevCmd::Start(e)));
         }
         assert_eq!(DevCmd::parse("NoSuchRow"), None);
         // 시험 스크립트가 쓰는 이름(tools/test/*.js — 하나라도 바뀌면 그 스크립트를 같이 고친다).
@@ -898,6 +878,48 @@ mod tests {
         ] {
             assert!(DevCmd::parse(n).is_some(), "{n}");
         }
+    }
+
+    /// 0278 R19: 무기가 나오는 상자의 줄은 스테이지 표에서 선다 — 상자에 든 무기마다 한 줄, 지역은 그 무기를 든 곳(옛 줄
+    /// 일곱의 지역 그대로: 창 · 쌍단검 둘째 · 대검 · 낫 셋째 · 완드 · 쇠뇌 · 지팡이 넷째 — 망치 · 활의 상자도 이제 선다).
+    #[test]
+    fn weapon_chest_rows_come_from_the_stage_tables() {
+        use crate::stage::Loot;
+        use crate::weapons::Id as W;
+        let rows: Vec<W> = dev_items(DEV_CATS.iter().position(|c| *c == DevCat::Stage).unwrap())
+            .into_iter()
+            .filter_map(|e| match e {
+                DevStart::WeaponChest(w) => Some(w),
+                _ => None,
+            })
+            .collect();
+        for (w, region) in [
+            (W::Spear, 1),
+            (W::Daggers, 1),
+            (W::Greatsword, 2),
+            (W::Scythe, 2),
+            (W::Wand, 3),
+            (W::Crossbow, 3),
+            (W::Staff, 3),
+        ] {
+            assert!(rows.contains(&w), "{w:?}");
+            assert_eq!(
+                DevStart::WeaponChest(w).chest(),
+                Some((region, Some(Loot::Weapon(w)))),
+                "{w:?}"
+            );
+        }
+        for w in &rows {
+            let (region, _) = DevStart::WeaponChest(*w).chest().expect("a chest");
+            assert!(crate::stage::STAGES[region]
+                .chest_loot
+                .contains(&Loot::Weapon(*w)));
+        }
+        assert!(!rows.contains(&W::Sword) && !rows.contains(&W::Fists));
+        assert_eq!(
+            DevCmd::parse("WeaponChest(Wand)"),
+            Some(DevCmd::Start(DevStart::WeaponChest(W::Wand)))
+        );
     }
 
     /// 0158: 개발 창의 "다 올리기"는 켬/끔, "고르기 바꾸기"는 끝 단 판의 고르기를 모두 뒤집는다(꺼져 있으면 ㄴ으로 켠다).

@@ -794,7 +794,8 @@ impl App {
             unfit: (0..2).any(|i| pl.skill.rank[i] == 0 && pl.skill.known[i] > 0),
             spare: !self.progress.bag.extras().is_empty(),
             bag_blocked: self.run.near_blocked,
-            wand: pl.weapon == crate::weapons::Id::Wand,
+            // 저주탄이 RB인 무기(0274 ⑥ 완드 — 탄의 꼴로 본다, 종류의 이름이 아니라).
+            wand: pl.weapon.bolts().0.look == crate::weapons::Look::Curse,
         };
         // 등잔은 체력이 반 위로 돌아오면 다시 알릴 수 있다(마셔 보기 전까지 — 기록의 비트는 마실 때 선다, 0213).
         let flask = Tip::Flask.bit();

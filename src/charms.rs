@@ -289,7 +289,7 @@ mod tests {
         }
         let none = crate::garb::mods(None);
         text += &format!("garb none\n{:?}\n{:?}\n", none, Stats::compute(&[none]));
-        for c in &crate::weapons::CLASSES {
+        for c in crate::weapons::CLASSES {
             let m = c.sub.mods;
             text += &format!("sub {:?}\n{:?}\n{:?}\n", c.class, m, Stats::compute(&[m]));
         }

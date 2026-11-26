@@ -96,7 +96,8 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
             add!("cast_charge", None);
             add!("cast", None);
         }
-        Rb::Shot { .. } if w.id == crate::weapons::Id::Bow => {
+        // 당기는 리듬(활 — `Id::draws`)은 활쏘기 원본의 제 동작.
+        Rb::Shot { .. } if w.id.draws() => {
             add!("bow_draw", None);
             add!("bow_shoot", None);
         }

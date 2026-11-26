@@ -128,26 +128,7 @@ pub const CHEST: Pair = (
     "둘째 지역 상자 곁에서(떨어진 아이템)",
     "region 2 beside a chest (dropped loot)",
 );
-pub const SPEAR_CHEST: Pair = (
-    "둘째 지역 파수꾼 곁방의 상자 곁에서(파수꾼의 창)",
-    "region 2 beside the watch's side-room chest (the Watchman's Spear)",
-);
-pub const DAGGER_CHEST: Pair = (
-    "둘째 지역 빈집 뒷방의 상자 곁에서(빈집의 쌍단검)",
-    "region 2 beside the chest in the empty house's back room (the Hidden Daggers)",
-);
-pub const GREATSWORD_CHEST: Pair = (
-    "셋째 지역 서쪽 샛길 끝의 상자 곁에서(가지치기 대검)",
-    "region 3 beside the chest at the end of the western side path (the Pruner's Greatsword)",
-);
-pub const SCYTHE_CHEST: Pair = (
-    "셋째 지역 낮은터 동쪽 물가의 상자 곁에서(정원지기의 낫)",
-    "region 3 beside the chest on the flooded hollow's eastern bank (the Gardener's Sickle)",
-);
-pub const WAND_CHEST: Pair = (
-    "넷째 지역 운반 회랑 서쪽 끝 곁방의 상자 곁에서(맡겨진 완드)",
-    "region 4 beside the chest in the westernmost side room of the haulage gallery (the Pledged Wand)",
-);
+pub const WEAPON_CHEST: Pair = ("{1}의 상자 곁에서({0})", "beside the chest of {1} ({0})");
 pub const WALL_CHEST: Pair = (
     "첫 지역 성벽길의 상자 곁에서(숫돌)",
     "region 1 beside the chest on the wall walk (a whetstone)",
@@ -155,14 +136,6 @@ pub const WALL_CHEST: Pair = (
 pub const SPARE_CHEST: Pair = (
     "첫 지역 뜰 남동쪽 단의 상자 곁에서(여벌)",
     "region 1 beside the chest on the courtyard's southeast dais (a spare)",
-);
-pub const CROSSBOW_CHEST: Pair = (
-    "넷째 지역 서쪽 작업대 구석의 상자 곁에서(화약 쇠뇌)",
-    "region 4 beside the chest in the corner of the west workbench (the Powder Crossbow)",
-);
-pub const STAFF_CHEST: Pair = (
-    "넷째 지역 위층 회랑 동쪽 벽 밑의 상자 곁에서(순례자 지팡이)",
-    "region 4 beside the chest under the upper gallery's east wall (the Pilgrim's Staff)",
 );
 pub const FIELD: Pair = (
     "첫 지역 필드 보스의 터에서(고요한 사슴)",
@@ -190,13 +163,13 @@ pub const SKILLS_MAX_NOTE: Pair = (
 pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
 pub const ARM: Pair = ("든 무기 바꾸기", "change the held weapon");
 pub const ARM_NOTE: Pair = (
-    "든 무기를 다음 것으로 바꾼다(검 → 망치 → 지팡이 → 쇠뇌 → 검과 방패 → 창 → 쌍단검 → 대검 → 낫 → 완드 → 맨손 → 활). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다) — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다. 지금: {0}",
-    "cycle the held weapon (sword, hammer, staff, crossbow, sword and shield, spear, daggers, greatsword, sickle, wand, fists, bow). Skills go by weapon class (bare hands wield none): wear and enter arenas with this one. nothing is saved. now: {0}",
+    "지금: {0}. 든 무기를 다음 것으로 바꾼다({1}). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다) — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다.",
+    "now: {0}. cycle the held weapon ({1}). Skills go by weapon class (bare hands wield none): wear and enter arenas with this one. nothing is saved.",
 );
 pub const ARM_SUB: Pair = ("보조무기 바꾸기", "change the off-hand weapon");
 pub const ARM_SUB_NOTE: Pair = (
-    "아레나의 보조무기를 다음 것으로 바꾼다(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활 → 창 → 쌍단검 → 대검 → 낫 → 완드). 든 무기와 같으면 비워진다. 보조특성과 교체 공격(맞힌 직후·패링 직후의 무기 바꾸기)을 본다. 저장하지 않는다. 지금: {0}",
-    "cycle the arena's off-hand weapon (none, sword, hammer, staff, crossbow, bow, spear, daggers, greatsword, sickle, wand); the same as the held weapon means none. For off-hand traits and the swap attack (swap right after a hit or a parry). nothing is saved. now: {0}",
+    "지금: {0}. 아레나의 보조무기를 다음 것으로 바꾼다({1}). 든 무기와 같으면 비워진다. 보조특성과 교체 공격(맞힌 직후·패링 직후의 무기 바꾸기)을 본다. 저장하지 않는다.",
+    "now: {0}. cycle the arena's off-hand weapon ({1}); the same as the held weapon means none. For off-hand traits and the swap attack (swap right after a hit or a parry). nothing is saved.",
 );
 pub const ARM_BARE: Pair = ("보조무기 비우기(켬/끔)", "empty the off hand (on/off)");
 pub const ARM_BARE_NOTE: Pair = (
@@ -271,15 +244,9 @@ pub const PAIRS: &[Pair] = &[
     RESIDENTS,
     STONES,
     CHEST,
-    SPEAR_CHEST,
-    DAGGER_CHEST,
-    GREATSWORD_CHEST,
-    SCYTHE_CHEST,
-    WAND_CHEST,
+    WEAPON_CHEST,
     WALL_CHEST,
     SPARE_CHEST,
-    CROSSBOW_CHEST,
-    STAFF_CHEST,
     FIELD,
     STAGE_NOTE,
     LAB_START,

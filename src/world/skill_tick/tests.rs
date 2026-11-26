@@ -482,9 +482,9 @@ fn forced(n: i32) -> i32 {
     (n as f32 * crate::weapons::ART_FORCE).round() as i32
 }
 
-/// 스킬 `id`를 쓸 수 있는 것을 든다(0225 — 이미 맞으면 그대로): 방패 → 망치 → 쇠뇌 → 활 → 지팡이 → 창 → 쌍단검 차례로.
+/// 스킬 `id`를 쓸 수 있는 것을 든다(0225 — 이미 맞으면 그대로): 방패 → 무기 표(`weapons::IDS`)의 차례로 종류가 있는 무기 — 단
+/// 마법력의 배(`Art::channel`)가 붙는 종류(지팡이)는 끝에: 타입 스킬의 시험은 바탕의 게이지로 잰다(배 없는 쇠뇌 · 활이 먼저).
 fn hold_for(w: &mut World, id: Sk) {
-    use crate::weapons::Id as W;
     let def = id.def();
     if def.fits(w.grip()) {
         return;
@@ -494,18 +494,12 @@ fn hold_for(w: &mut World, id: Sk) {
         return;
     }
     w.set_shield(None);
-    // (쇠뇌·활이 지팡이보다 먼저 — 타입 스킬의 시험은 바탕의 게이지로 잰다: 지팡이는 마법력의 배가 붙는다.)
-    for arm in [
-        W::Hammer,
-        W::Crossbow,
-        W::Bow,
-        W::Staff,
-        W::Spear,
-        W::Daggers,
-        W::Greatsword,
-        W::Scythe,
-        W::Wand,
-    ] {
+    let mut arms: Vec<crate::weapons::Id> = crate::weapons::IDS
+        .into_iter()
+        .filter(|a| a.class().is_some())
+        .collect();
+    arms.sort_by_key(|a| a.art().channel > 1.0);
+    for arm in arms {
         w.set_weapon(arm);
         if def.fits(w.grip()) {
             return;

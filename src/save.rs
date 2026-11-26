@@ -1711,12 +1711,11 @@ weapons=sword,bow
 
     /// 0274 ③: 한손검 트리의 날카로움 · 균열 스킬 넷(가로지르기 · 바늘땀 · 던지기 · 제비걸음)과 균열의 결이 쌍단검 트리로 옮겨 가도
     /// 그것을 산 옛 기록(쌍단검을 아직 갖지 않은 기록)은 단 · 고르기 · 결을 그대로 지니고, 끼운 칸도 그대로다 — 돌려받는 포인트 없음
-    /// (어느 트리에든 선다). 쌍단검을 가진 · 든 · 벼린 기록이 왕복하고, 보조무기 슬롯의 쌍단검은 잔불 +10%(손버릇).
+    /// (어느 트리에든 선다). 쌍단검의 기록은 `every_class_weapon_and_its_plate_round_trip`이 본다.
     #[test]
-    fn the_moved_rogue_arts_and_the_daggers_keep_through_a_save() {
+    fn the_moved_rogue_arts_keep_through_a_save() {
         use crate::progression::Vein;
         use crate::skills::{Id as Sk, Pick};
-        use crate::weapons::Id;
         let old = Progress::from_record(Record::parse(
             "v=1\ncore.warden=3\nlv.life=5\nmigrated.v06=1\nmigrated.ult=1\nweapon=sword\nweapons=sword\n\
              skill.rank.cut=3\nskill.pick.cut=b\nskill.rank.stitch=2\nskill.rank.throw=1\nskill.rank.swallow=1\n\
@@ -1737,253 +1736,89 @@ weapons=sword,bow
         );
         let back = Progress::from_record(Record::parse(&old.to_record().to_text()));
         assert_eq!(back.board, old.board, "and through a save");
-        // 쌍단검의 기록.
-        let mut p = Progress {
-            finds: vec!["village.stone.0".to_string()],
-            weapons: vec![Id::Sword, Id::Daggers],
-            weapon: Some(Id::Daggers),
-            sub: Some(Id::Sword),
-            ..Progress::default()
-        };
-        p.forged.set(Id::Daggers, 1);
-        p.settle_items();
-        let text = p.to_record().to_text();
-        assert!(
-            text.contains("weapon=daggers") && text.contains("forge.daggers=1"),
-            "{text}"
-        );
-        let mut back = Progress::from_record(Record::parse(&text));
-        back.settle_items();
-        assert_eq!(back.weapons, p.weapons);
-        assert_eq!(back.weapon, Some(Id::Daggers));
-        assert!(back
-            .bag
-            .of(crate::items::Base::Weapon(Id::Daggers))
-            .next()
-            .is_some());
-        let base = Progress::default().stats();
-        let swapped = Progress {
-            weapon: Some(Id::Sword),
-            sub: Some(Id::Daggers),
-            ..back.clone()
-        };
-        assert!((swapped.stats().ember - base.ember * crate::weapons::SUB_EMBER).abs() < 1e-4);
-        assert_eq!(back.stats().ember, base.ember, "not while held");
     }
 
-    /// 0274 ④: 대검의 기록(가진 · 든 · 벼린 · 보조무기)과 대검 판의 새 스킬 · 궁극기가 왕복한다 — 키는 새로 붙인 것뿐(`greatsword` ·
-    /// `sunder` · `sear` · `tempest`). 멘 대검은 다 모은 강공격 피해를 보태고(보조특성), 든 동안에는 없다.
+    /// 0274 ③~⑥ → 0278 R19: 종류마다(종류 표를 돈다 — 새 종류도 저절로 든다) 그 종류의 무기를 가진 · 든 · 벼린 · 보조무기로 멘 기록과
+    /// 그 종류의 트리에서 산 스킬 · 궁극기가 왕복한다 — 키는 무기 표 · 스킬 표의 것 그대로(`weapon=<키>` · `forge.<키>=1`). 멘 종류의
+    /// 보조특성은 보조무기 슬롯에서만 얹힌다(든 동안에는 없다 — 바꿔 들면 맞바뀐다). 옛 시험 넷(쌍단검 · 대검 · 낫 · 완드)을 한 고리로.
     #[test]
-    fn the_greatsword_and_its_arts_round_trip() {
-        use crate::skills::{Entry, Id as Sk, Ult};
-        use crate::weapons::Id;
-        let mut p = Progress {
-            finds: vec!["garden.stone.0".to_string()],
-            weapons: vec![Id::Sword, Id::Greatsword],
-            weapon: Some(Id::Greatsword),
-            sub: Some(Id::Sword),
-            cores: 3,
-            bell_cores: 3,
-            moss_cores: 3,
-            ..Progress::default()
-        };
-        p.forged.set(Id::Greatsword, 1);
-        let total = p.skill_points();
-        // 줄은 그 판에 쓴 포인트로 열린다(0 · 3 · 6).
-        for e in [
-            Entry::Skill(Sk::Sear),
-            Entry::Skill(Sk::Sear),
-            Entry::Skill(Sk::Cut),
-            Entry::Skill(Sk::Sunder),
-            Entry::Skill(Sk::Sunder),
-            Entry::Skill(Sk::Cut),
-            Entry::Ult(Ult::Tempest),
-        ] {
+    fn every_class_weapon_and_its_plate_round_trip() {
+        use crate::plates::{buy_on, Plate};
+        use crate::weapons::{Id, CLASSES, IDS};
+        for c in CLASSES {
+            let w = IDS
+                .into_iter()
+                .find(|w| w.class() == Some(c.class))
+                .expect("every class has a weapon");
+            let other = if w == Id::Sword {
+                Id::Hammer
+            } else {
+                Id::Sword
+            };
+            let mut p = Progress {
+                finds: vec!["garden.stone.0".to_string()],
+                weapons: vec![other, w],
+                weapon: Some(w),
+                sub: Some(other),
+                cores: 3,
+                bell_cores: 3,
+                moss_cores: 3,
+                level: crate::progression::Level {
+                    life: 5,
+                    stamina: 5,
+                    might: 5,
+                },
+                ..Progress::default()
+            };
+            p.forged.set(w, 1);
+            let total = p.skill_points();
+            // 줄은 그 트리에 쓴 포인트로 열린다(0 · 3 · 6) — 살 수 있는 것을 차례로.
+            let plate = Plate::Class(c.class);
+            for _ in 0..3 {
+                for i in plate.entries() {
+                    buy_on(plate, &mut p.board, crate::skills::ENTRIES[i], total);
+                }
+            }
+            assert!(p.board.spent() > 0, "{:?}: bought nothing", c.class);
             assert!(
-                crate::plates::buy_on(
-                    crate::plates::Plate::Class(crate::weapons::Class::Greatsword),
-                    &mut p.board,
-                    e,
-                    total
-                ),
-                "{e:?}"
+                p.board.ult[c.great.index()] > 0,
+                "{:?}: its great skill",
+                c.class
             );
-        }
-        p.settle_items();
-        let text = p.to_record().to_text();
-        assert!(
-            text.contains("weapon=greatsword") && text.contains("forge.greatsword=1"),
-            "{text}"
-        );
-        let mut back = Progress::from_record(Record::parse(&text));
-        back.settle_items();
-        assert_eq!(back.weapons, p.weapons);
-        assert_eq!(back.weapon, Some(Id::Greatsword));
-        assert_eq!(back.forged.rank(Id::Greatsword), 1);
-        assert_eq!(back.board, p.board, "the plate's arts");
-        assert_eq!(back.board.rank[Sk::Sunder.index()], 2);
-        assert!(back
-            .bag
-            .of(crate::items::Base::Weapon(Id::Greatsword))
-            .next()
-            .is_some());
-        let base = Progress::default().stats();
-        let swapped = Progress {
-            weapon: Some(Id::Sword),
-            sub: Some(Id::Greatsword),
-            ..back.clone()
-        };
-        assert_eq!(
-            swapped.stats().charged_dmg,
-            base.charged_dmg + crate::weapons::SUB_CHARGED
-        );
-        let unforged = Progress {
-            forged: Default::default(),
-            ..back.clone()
-        };
-        assert_eq!(
-            unforged.stats().charged_dmg,
-            base.charged_dmg,
-            "not while held"
-        );
-    }
-
-    /// 0274 ⑤: 낫의 기록(가진 · 든 · 벼린 · 보조무기)과 낫 판의 새 스킬 · 궁극기가 왕복한다 — 키는 새로 붙인 것뿐(`scythe` · `reap` ·
-    /// `harvest` · `grove`). 멘 낫은 쓰러뜨릴 때마다의 체력을 보태고(보조특성), 든 동안에는 없다.
-    #[test]
-    fn the_scythe_and_its_arts_round_trip() {
-        use crate::skills::{Entry, Id as Sk, Ult};
-        use crate::weapons::Id;
-        let mut p = Progress {
-            finds: vec!["garden.stone.0".to_string()],
-            weapons: vec![Id::Sword, Id::Scythe],
-            weapon: Some(Id::Scythe),
-            sub: Some(Id::Sword),
-            cores: 3,
-            bell_cores: 3,
-            moss_cores: 3,
-            ..Progress::default()
-        };
-        p.forged.set(Id::Scythe, 1);
-        let total = p.skill_points();
-        // 줄은 그 판에 쓴 포인트로 열린다(0 · 3 · 6).
-        for e in [
-            Entry::Skill(Sk::Reap),
-            Entry::Skill(Sk::Reap),
-            Entry::Skill(Sk::Gather),
-            Entry::Skill(Sk::Harvest),
-            Entry::Skill(Sk::Harvest),
-            Entry::Skill(Sk::Roots),
-            Entry::Ult(Ult::Grove),
-        ] {
+            p.settle_items();
+            let text = p.to_record().to_text();
             assert!(
-                crate::plates::buy_on(
-                    crate::plates::Plate::Class(crate::weapons::Class::Scythe),
-                    &mut p.board,
-                    e,
-                    total
-                ),
-                "{e:?}"
+                text.contains(&format!("weapon={}\n", w.key()))
+                    && text.contains(&format!("forge.{}=1\n", w.key())),
+                "{text}"
             );
+            let mut back = Progress::from_record(Record::parse(&text));
+            back.settle_items();
+            assert_eq!(back.weapons, p.weapons, "{w:?}");
+            assert_eq!(back.weapon, Some(w));
+            assert_eq!(back.forged.rank(w), 1);
+            assert_eq!(back.board, p.board, "{:?}: the plate's arts", c.class);
+            assert!(back.bag.of(crate::items::Base::Weapon(w)).next().is_some());
+            // 보조특성: 멘 동안만.
+            let swapped = Progress {
+                weapon: Some(other),
+                sub: Some(w),
+                ..back.clone()
+            };
+            let unworn = Progress {
+                sub: None,
+                ..swapped.clone()
+            };
+            assert_eq!(swapped.sub_trait(), Some(c.sub), "{w:?}");
+            assert_eq!(back.sub_trait(), other.sub_trait(), "{w:?}: not while held");
+            if c.sub.mods != crate::stats::Mods::NONE {
+                assert_ne!(
+                    swapped.stats(),
+                    unworn.stats(),
+                    "{w:?}: the sub trait counts"
+                );
+            }
         }
-        p.settle_items();
-        let text = p.to_record().to_text();
-        assert!(
-            text.contains("weapon=scythe") && text.contains("forge.scythe=1"),
-            "{text}"
-        );
-        let mut back = Progress::from_record(Record::parse(&text));
-        back.settle_items();
-        assert_eq!(back.weapons, p.weapons);
-        assert_eq!(back.weapon, Some(Id::Scythe));
-        assert_eq!(back.forged.rank(Id::Scythe), 1);
-        assert_eq!(back.board, p.board, "the plate's arts");
-        assert_eq!(back.board.rank[Sk::Harvest.index()], 2);
-        assert!(back
-            .bag
-            .of(crate::items::Base::Weapon(Id::Scythe))
-            .next()
-            .is_some());
-        let base = Progress::default().stats();
-        let swapped = Progress {
-            weapon: Some(Id::Sword),
-            sub: Some(Id::Scythe),
-            ..back.clone()
-        };
-        assert_eq!(
-            swapped.stats().kill_heal,
-            base.kill_heal + crate::weapons::SUB_KILL_HEAL
-        );
-        assert_eq!(back.stats().kill_heal, base.kill_heal, "not while held");
-    }
-
-    /// 0274 ⑥: 완드의 기록(가진 · 든 · 벼린 · 보조무기)과 완드 판의 새 스킬 · 궁극기가 왕복한다 — 키는 새로 붙인 것뿐(`wand` · `hex` ·
-    /// `blight` · `price`). 멘 완드는 원거리 공격 피해를 보태고(보조특성), 든 동안에는 없다.
-    #[test]
-    fn the_wand_and_its_arts_round_trip() {
-        use crate::skills::{Entry, Id as Sk, Ult};
-        use crate::weapons::Id;
-        let mut p = Progress {
-            finds: vec!["works.stone.0".to_string()],
-            weapons: vec![Id::Sword, Id::Wand],
-            weapon: Some(Id::Wand),
-            sub: Some(Id::Sword),
-            cores: 3,
-            bell_cores: 3,
-            moss_cores: 3,
-            ..Progress::default()
-        };
-        p.forged.set(Id::Wand, 1);
-        let total = p.skill_points();
-        // 줄은 그 판에 쓴 포인트로 열린다(0 · 3 · 6).
-        for e in [
-            Entry::Skill(Sk::Hex),
-            Entry::Skill(Sk::Hex),
-            Entry::Skill(Sk::Toll),
-            Entry::Skill(Sk::Blight),
-            Entry::Skill(Sk::Blight),
-            Entry::Skill(Sk::Echo),
-            Entry::Ult(Ult::Price),
-        ] {
-            assert!(
-                crate::plates::buy_on(
-                    crate::plates::Plate::Class(crate::weapons::Class::Wand),
-                    &mut p.board,
-                    e,
-                    total
-                ),
-                "{e:?}"
-            );
-        }
-        p.settle_items();
-        let text = p.to_record().to_text();
-        assert!(
-            text.contains("weapon=wand") && text.contains("forge.wand=1"),
-            "{text}"
-        );
-        let mut back = Progress::from_record(Record::parse(&text));
-        back.settle_items();
-        assert_eq!(back.weapons, p.weapons);
-        assert_eq!(back.weapon, Some(Id::Wand));
-        assert_eq!(back.forged.rank(Id::Wand), 1);
-        assert_eq!(back.board, p.board, "the plate's arts");
-        assert_eq!(back.board.rank[Sk::Blight.index()], 2);
-        assert!(back
-            .bag
-            .of(crate::items::Base::Weapon(Id::Wand))
-            .next()
-            .is_some());
-        let base = Progress::default().stats();
-        let swapped = Progress {
-            weapon: Some(Id::Sword),
-            sub: Some(Id::Wand),
-            ..back.clone()
-        };
-        assert_eq!(
-            swapped.stats().toss_dmg,
-            base.toss_dmg + crate::weapons::SUB_TOSS
-        );
-        assert_eq!(back.stats().toss_dmg, base.toss_dmg, "not while held");
     }
 
     /// 0274 ②: 속성 패시브의 고르기 II(`tree.vein_picks` = 결의 키들)가 왕복한다 — 울림만 고를 것이 있고, 닫힌 결·고를 것이 없는
