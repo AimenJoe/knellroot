@@ -1303,7 +1303,7 @@ impl App {
     /// 되돌리기 단추를 누를 수 있나: 쓴 점수가 있고 잔불이 값만큼 있다(개발 창의 판은 되돌리지 않는다).
     fn respec_ready(&self) -> bool {
         let b = self.progress.board;
-        !self.dev_board_on() && b.spent() > 0 && self.world.embers >= b.respec_cost()
+        !self.dev_board_on() && b.spent() > 0 && self.world.embers() >= b.respec_cost()
     }
 
     /// 든 무기·보조무기의 판(0270 C2 → 0272): 쥔 꼴의 판(`Plate::held`) — 스킬을 끼우는 셈(`kits`·`World::grip`)과 같은 꼴.
@@ -1539,7 +1539,7 @@ impl App {
         } else if board.spent() == 0 {
             self.toast = Some((s.board_respec_none.to_string(), ALERT));
             self.snd(crate::sfx::Id::Deny);
-        } else if self.world.embers < board.respec_cost() {
+        } else if self.world.embers() < board.respec_cost() {
             self.toast = Some((s.shop_poor.to_string(), ALERT));
             self.snd(crate::sfx::Id::Deny);
         } else {
@@ -1688,15 +1688,15 @@ impl App {
     /// 묻는 창에서 "되돌리기": 잔불을 내고 쓴 점수를 모두 돌려받는다(패시브 칸까지) — 스킬 칸은 빈 칸이 된다(0166 — 다시 배우면 그 자리에).
     pub(super) fn respec_skills(&mut self) {
         let mut great = self.progress.ult;
-        if !self
-            .progress
-            .board
-            .respec_paid(&mut self.world.embers, &mut great)
-        {
+        // 지갑은 월드의 것(0278 R24): 셈은 기술 판이 하고(`respec_paid` — 모자라면 그대로), 낸 만큼 월드에서 쓴다.
+        let mut purse = self.world.embers();
+        if !self.progress.board.respec_paid(&mut purse, &mut great) {
             self.snd(crate::sfx::Id::Deny);
             return;
         }
-        self.progress.embers = self.world.embers;
+        let paid = self.world.spend(self.world.embers() - purse);
+        debug_assert!(paid);
+        self.progress.embers = self.world.embers();
         self.progress.ult = great;
         self.snd(crate::sfx::Id::Buy);
         self.toast = Some((s().toast_respec.to_string(), ALERT));
@@ -2216,7 +2216,7 @@ impl App {
                 let cost = fill(s.shop_embers, &[&b.respec_cost().to_string()]);
                 let state = if b.spent() == 0 {
                     (s.board_respec_none.to_string(), DIM)
-                } else if self.world.embers < b.respec_cost() {
+                } else if self.world.embers() < b.respec_cost() {
                     (s.shop_poor.to_string(), DIM)
                 } else {
                     (fill(s.sk_st_respec, &[&b.spent().to_string()]), ui::MINT)

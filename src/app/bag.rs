@@ -383,8 +383,8 @@ impl App {
             self.snd(crate::sfx::Id::Deny);
             return;
         }
-        self.world.embers += embers;
-        self.progress.embers = self.world.embers;
+        self.world.earn(embers);
+        self.progress.embers = self.world.embers();
         self.progress.settle_items();
         self.snd(crate::sfx::Id::Recall);
         self.toast = Some((

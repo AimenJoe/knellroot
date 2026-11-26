@@ -166,12 +166,12 @@ impl App {
         }
         // 쉼터 화로(0064 M4 → 0104): 쉬면 화로(레벨·가게)가 열린다. 올릴 단·살 것이 있으면 쉼터가 빛난다.
         self.run.shop_ready = crate::growth::can_buy(
-            self.world.embers,
+            self.world.embers(),
             &self.progress.owned,
             &self.progress.growth,
             &self.progress.shields,
             !self.progress.bag.full(),
-        ) || self.progress.level.can_raise(self.world.embers)
+        ) || self.progress.level.can_raise(self.world.embers())
             || crate::plates::can_buy(&self.progress.board, self.progress.skill_points())
             || self.can_forge();
         if self.run.take_rested() {
@@ -378,11 +378,8 @@ impl App {
         if p.sub.is_some() {
             p.shield = None;
         }
-        let full = self.world.swap_full;
-        let ammo = self.world.player.ranged.ammo;
-        self.world.apply_stats(p.stats(), false);
-        let mag = self.world.mag_of(self.world.player.weapon);
-        self.world.player.ranged.ammo = if full { mag } else { ammo.min(mag) };
+        let held = self.world.player.weapon;
+        self.world.restat_after_swap(p.stats(), held);
     }
 
     /// 개발 아레나(PoC) 한 틱: 숫자 키로 시나리오, 멈춤 = 개발 메뉴로.
@@ -539,14 +536,8 @@ impl App {
         // 벼린 단(0180)은 든 무기에만 — 바꿔 든 무기의 것으로 능력치를 다시 합친다(V1b에서 빠뜨렸다: 바꿔 들어도 옛 무기의 단이 남았다).
         // 탄창은 월드가 바꿔 든 그대로(가득이었나를 옛 무기의 능력치로 재면, 벼려 늘린 탄창이 바꿔 들 때마다 차오른다).
         // 가득으로 나온 것(처음 드는 것 · 등에서 다 장전된 쇠뇌 — 0272 1b `World::swap_full`)만 새 탄창까지 가득이다.
-        let ammo = if self.world.swap_full {
-            u8::MAX
-        } else {
-            self.world.player.ranged.ammo
-        };
         // 보조특성(0272 1b)도 여기서 맞바뀐다 — 능력치를 합치는 곳이 보조무기 슬롯의 종류를 본다.
-        self.world.apply_stats(self.progress.stats(), false);
-        self.world.player.ranged.ammo = ammo.min(self.world.mag_of(to));
+        self.world.restat_after_swap(self.progress.stats(), to);
         self.persist();
         self.snd(crate::sfx::Id::UiConfirm);
     }
@@ -650,7 +641,7 @@ impl App {
     fn tutor_facts(&self) -> crate::tutorial::Facts {
         let (level, board) = (self.progress.level, self.progress.board);
         crate::tutorial::Facts {
-            embers: self.world.embers,
+            embers: self.world.embers(),
             cost: crate::progression::LINES
                 .iter()
                 .find_map(|&l| level.next_cost(l)),

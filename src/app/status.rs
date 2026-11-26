@@ -219,7 +219,12 @@ impl App {
             return;
         }
         let edits = host.edits();
-        match confirm(self.cursor, &self.progress.level, self.world.embers, edits) {
+        match confirm(
+            self.cursor,
+            &self.progress.level,
+            self.world.embers(),
+            edits,
+        ) {
             Some(Do::Ask(i)) => self.ask(flow::Ask::Level(i)),
             // 기술 줄 → 기술 탭의 그 칸(탭을 바꾼다 — 쌓지 않는다).
             Some(Do::Skills(what)) => {
@@ -343,7 +348,7 @@ impl App {
         let s = s();
         let (k, u) = (w.k, w.s);
         let lv = self.progress.level;
-        let embers = self.world.embers;
+        let embers = self.world.embers();
         let guide = edits && self.tutor_menu() == Some(flow::Tab::Status);
         let kk = tabs::K_KIND * k;
         // 묶음 머리글: 작은 글 + 가는 선.
@@ -529,7 +534,7 @@ impl App {
         let mut lines: Vec<Ln> = Vec::new();
         match row(at) {
             Some(Row::Level(l)) => {
-                let st = level_state(&lv, l, self.world.embers, edits);
+                let st = level_state(&lv, l, self.world.embers(), edits);
                 let state = match st {
                     LevelState::Full => (s.lv_full_d.to_string(), DIM),
                     LevelState::View(_) => (s.sk_st_view.to_string(), INK),
@@ -678,13 +683,15 @@ impl App {
         let Some(cost) = self.progress.level.next_cost(l) else {
             return;
         };
-        if self.world.embers < cost {
+        if self.world.embers() < cost {
             self.toast = Some((s().shop_poor.to_string(), 1.6));
             self.snd(crate::sfx::Id::Deny);
             return;
         }
-        self.world.embers -= cost;
-        self.progress.embers = self.world.embers;
+        // 값은 위에서 견줬다.
+        let paid = self.world.spend(cost);
+        debug_assert!(paid);
+        self.progress.embers = self.world.embers();
         self.progress.level = self.progress.level.raised(l);
         self.world.apply_stats(self.progress.stats(), true);
         self.snd(crate::sfx::Id::Buy);

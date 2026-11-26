@@ -133,8 +133,8 @@ impl App {
     fn take_bounty(&mut self, b: &Bounty) {
         self.progress.codex_paid.push(b.key.clone());
         self.progress.codex_paid.sort();
-        self.world.embers += b.embers;
-        self.progress.embers = self.world.embers;
+        self.world.earn(b.embers);
+        self.progress.embers = self.world.embers();
         self.snd(crate::sfx::Id::Chest);
         self.toast = Some((
             fill(s().toast_codex_took, &[tr(b.name), &b.embers.to_string()]),

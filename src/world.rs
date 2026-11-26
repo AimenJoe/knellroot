@@ -1430,7 +1430,8 @@ pub struct World {
     /// 날고 있는 마법 탄(0048).
     pub bolts: Vec<Bolt>,
     /// 잔불(0064 M1): 가진 수(쓰러져도 잃지 않는다 — 앱이 기록에서 넣고 기록으로 옮긴다)와 바닥에 떨어진 조각.
-    pub embers: u32,
+    /// 지갑은 메서드로만(0278 R24 — 앱 여덟 파일이 칸을 바로 고치던 것): `embers()` · `earn` · `spend` · 기록에서 되놓는 `set_embers`.
+    embers: u32,
     pub drops: Vec<crate::ember::Ember>,
     /// 남는 엘리트의 고리(0112).
     pub lingers: Vec<Linger>,
@@ -2281,6 +2282,43 @@ impl World {
     }
 
     /// 종류 표(`species.rs`)의 적 하나를 세운다.
+    /// 가진 잔불.
+    pub fn embers(&self) -> u32 {
+        self.embers
+    }
+
+    /// 잔불을 얻는다(상자 · 받은 보상 · 거둔 것).
+    pub fn earn(&mut self, n: u32) {
+        self.embers += n;
+    }
+
+    /// 잔불을 쓴다 — 모자라면 쓰지 않고 거짓. 부르는 쪽은 먼저 값을 견주고 알린다(가게 · 레벨 · 벼리기), 이것은 그 뒤의 셈.
+    pub fn spend(&mut self, n: u32) -> bool {
+        if self.embers < n {
+            return false;
+        }
+        self.embers -= n;
+        true
+    }
+
+    /// 기록 · 옛 월드에서 가진 수를 되놓는다(판을 세울 때 · 지역을 옮길 때 — 얻거나 쓰는 것이 아니다).
+    pub fn set_embers(&mut self, n: u32) {
+        self.embers = n;
+    }
+
+    /// 바꿔 든 뒤 능력치를 다시 합친다(0272 1b — 벼린 단 · 보조특성이 바뀐다): 탄창은 바꿔 든 그대로, 가득으로 나온 것
+    /// (처음 드는 것 · 등에서 다 장전된 쇠뇌 — `swap_full`)만 새 탄창까지 가득. `held` = 이제 든 무기(0278 R24 — 앱 두 곳이 같은
+    /// 셈으로 탄창을 바로 고치던 것).
+    pub fn restat_after_swap(&mut self, s: crate::stats::Stats, held: weapons::Id) {
+        let ammo = if self.swap_full {
+            u8::MAX
+        } else {
+            self.player.ranged.ammo
+        };
+        self.apply_stats(s, false);
+        self.player.ranged.ammo = ammo.min(self.mag_of(held));
+    }
+
     /// 능력치를 바꾼다(0064 M3 — 장신구를 갈아 끼우거나 성장했을 때). 체력·등잔은 새 최대를 넘지 않게, `refill`이면 가득.
     pub fn apply_stats(&mut self, s: crate::stats::Stats, refill: bool) {
         // 탄창(0180): 가득이었거나 `refill`이면 새 탄창으로 가득, 아니면 새 탄창 안으로.

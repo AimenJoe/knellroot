@@ -88,8 +88,8 @@ impl App {
         // 그 바탕의 마지막 하나였으면 가진 바탕에서도 뺀다(0266).
         self.progress.part_with(it.base);
         let n = it.salvage();
-        self.world.embers += n;
-        self.progress.embers = self.world.embers;
+        self.world.earn(n);
+        self.progress.embers = self.world.embers();
         self.snd(crate::sfx::Id::Recall);
         self.toast = Some((
             fill(s().toast_salvaged, &[&name, &n.to_string()]),
@@ -104,7 +104,7 @@ impl App {
             crate::forge::can_raise(
                 &self.progress.finds,
                 &self.progress.forged,
-                self.world.embers,
+                self.world.embers(),
                 w,
             )
         })
@@ -119,7 +119,7 @@ impl App {
             &self.progress.growth,
             &self.progress.shields,
         );
-        let have = self.world.embers;
+        let have = self.world.embers();
         let (finds, forged) = (&self.progress.finds, &self.progress.forged);
         let rows: Vec<ui::Row> = self
             .shop_list()
@@ -194,7 +194,7 @@ impl App {
             &self.progress.growth,
             &self.progress.shields,
         );
-        let have = self.world.embers;
+        let have = self.world.embers();
         let (ware, price, sold) = shelf[i];
         let (kind, desc, flavor, item) = match ware {
             crate::growth::Ware::Charm(id) => {
@@ -259,7 +259,7 @@ impl App {
                 Some((st, em)) => {
                     let state = if crate::forge::free(finds, &forged) < st {
                         (s.forge_no_stone.to_string(), DIM)
-                    } else if self.world.embers < em {
+                    } else if self.world.embers() < em {
                         (s.shop_poor.to_string(), DIM)
                     } else {
                         (s.forge_can.to_string(), ui::MINT)
@@ -335,7 +335,7 @@ impl App {
                 );
                 match wares.get(i).copied() {
                     // 모자라면 묻지 않고 알림만(nail 가게와 같다 — 흐린 줄).
-                    Some((_, price)) if self.world.embers < price => {
+                    Some((_, price)) if self.world.embers() < price => {
                         self.toast = Some((s.shop_poor.to_string(), 1.6));
                         self.snd(crate::sfx::Id::Deny);
                     }
@@ -352,7 +352,7 @@ impl App {
                         self.toast = Some((s.forge_no_stone.to_string(), 1.6));
                         self.snd(crate::sfx::Id::Deny);
                     }
-                    Some((_, em)) if self.world.embers < em => {
+                    Some((_, em)) if self.world.embers() < em => {
                         self.toast = Some((s.shop_poor.to_string(), 1.6));
                         self.snd(crate::sfx::Id::Deny);
                     }
@@ -367,14 +367,16 @@ impl App {
     /// 한 단 벼린다(0180 — 묻는 창의 "벼리기"): 숫돌·잔불을 쓰고, 든 무기면 능력치를 바로.
     pub(super) fn forge_weapon(&mut self, w: weapons::Id) {
         let (finds, forged) = (&self.progress.finds, &self.progress.forged);
-        if !crate::forge::can_raise(finds, forged, self.world.embers, w) {
+        if !crate::forge::can_raise(finds, forged, self.world.embers(), w) {
             self.snd(crate::sfx::Id::Deny);
             return;
         }
         let (_, em) = crate::forge::next_cost(forged, w).unwrap_or((0, 0));
         let r = forged.rank(w) + 1;
-        self.world.embers -= em;
-        self.progress.embers = self.world.embers;
+        // `can_raise`가 잔불을 이미 견줬다.
+        let paid = self.world.spend(em);
+        debug_assert!(paid);
+        self.progress.embers = self.world.embers();
         self.progress.forged.set(w, r);
         self.world.apply_stats(self.progress.stats(), false);
         self.snd(crate::sfx::Id::Buy);

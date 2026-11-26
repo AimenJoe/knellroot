@@ -76,7 +76,7 @@ impl App {
         self.on_gates_and_elites();
         self.on_drops();
         self.on_core(out);
-        self.progress.embers = self.world.embers;
+        self.progress.embers = self.world.embers();
         self.journey_watch();
         self.note_ground();
         self.persist();
@@ -160,7 +160,7 @@ impl App {
 
     /// 상자의 것을 이미 가졌다(또는 든 것이 없다): 잔불 `CHEST_EMBERS`.
     fn chest_embers(&mut self) {
-        self.world.embers += crate::stage::CHEST_EMBERS;
+        self.world.earn(crate::stage::CHEST_EMBERS);
         let n = crate::stage::CHEST_EMBERS.to_string();
         self.toast = Some((fill(s().toast_embers, &[&n]), TOAST_TIME));
     }
@@ -555,7 +555,7 @@ impl App {
     /// 화로 가게에서 산다(0064 M4): 잔불이 모자라면 알림만.
     pub(super) fn buy(&mut self, (ware, price): (crate::growth::Ware, u32)) {
         let s = s();
-        if self.world.embers < price {
+        if self.world.embers() < price {
             self.toast = Some((s.shop_poor.to_string(), 1.6));
             self.snd(crate::sfx::Id::Deny);
             return;
@@ -567,8 +567,10 @@ impl App {
             return;
         }
         self.snd(crate::sfx::Id::Buy);
-        self.world.embers -= price;
-        self.progress.embers = self.world.embers;
+        // 값은 위에서 견줬다.
+        let paid = self.world.spend(price);
+        debug_assert!(paid);
+        self.progress.embers = self.world.embers();
         match ware {
             crate::growth::Ware::Charm(id) => self.gain_charm(id, None),
             crate::growth::Ware::Oil => {

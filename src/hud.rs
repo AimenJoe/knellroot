@@ -1017,7 +1017,7 @@ fn draw_flasks(w: &World, x0: f32, y0: f32, s: f32) {
 /// 잔불(0064 M1 — 0278 R25c `draw`의 구역).
 fn draw_embers(ui: &Ui, w: &World, x0: f32, y0: f32, s: f32) {
     // 잔불(0064 M1): 등잔 줄 아래에 호박 마름모 + 수. 주우면 잠깐 커진다. 하나도 없으면 그리지 않는다.
-    if w.embers > 0 {
+    if w.embers() > 0 {
         let pop = 1.0 + 0.35 * (1.0 - ((w.time - w.ember_at) / EMBER_POP).clamp(0.0, 1.0));
         let c = vec2(x0 + 3.0 * s, y0 + 33.0 * s);
         let r = 3.0 * s * pop;
@@ -1035,7 +1035,7 @@ fn draw_embers(ui: &Ui, w: &World, x0: f32, y0: f32, s: f32) {
         );
         let k = 0.8 * pop.min(1.15);
         ui.text(
-            &w.embers.to_string(),
+            &w.embers().to_string(),
             x0 + 9.0 * s,
             c.y - ui.px(k) * 0.55,
             k,

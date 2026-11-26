@@ -29,8 +29,8 @@ impl App {
         self.progress.journey.push(g.id.to_string());
         self.progress.journey.sort();
         if let Reward::Embers(n) = g.reward {
-            self.world.embers += n;
-            self.progress.embers = self.world.embers;
+            self.world.earn(n);
+            self.progress.embers = self.world.embers();
         }
         self.snd(crate::sfx::Id::Chest);
         self.toast = Some((fill(s().toast_journey_took, &[tr(g.title)]), TOAST_TIME));

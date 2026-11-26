@@ -551,7 +551,7 @@ impl App {
         }
         self.cam.close = 0.0;
         // 잔불은 판을 넘어 남는다(0064 M1). 장신구·성장은 능력치로, 연 상자는 비어 있다(M3).
-        self.world.embers = self.progress.embers;
+        self.world.set_embers(self.progress.embers);
         self.world.apply_stats(self.progress.stats(), true);
         self.seed_run();
         self.cam = self.cam.renew(self.world.player.pos, &self.t);
@@ -573,7 +573,7 @@ impl App {
         pl.vel = Vec3::ZERO;
         pl.state = crate::world::PState::Idle;
         pl.air = 0.0;
-        world.embers = self.world.embers;
+        world.set_embers(self.world.embers());
         self.run = run;
         self.world = world;
         self.fx.clear();

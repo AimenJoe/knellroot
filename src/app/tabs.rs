@@ -184,14 +184,14 @@ impl App {
         let left = self.board().left(self.progress.skill_points());
         vec![
             (s.sk_purse_points, left.to_string()),
-            (s.sk_purse_embers, self.world.embers.to_string()),
+            (s.sk_purse_embers, self.world.embers().to_string()),
         ]
     }
 
     /// 탭의 창을 그린다: 틀 · 탭 줄(지금 탭 = 금빛, 할 일이 있는 탭 = 민트 점) · 지갑 · ✕ · 두 칸 사이 세로 선. 몸은 부른 쪽이.
     pub(super) fn draw_tab_window(&mut self, f: &Frame, scene: Scene) -> Window {
         let (host, _) = flow::tab_of(scene).unwrap_or((Host::Pause, Tab::Status));
-        let level = self.progress.level.can_raise(self.world.embers);
+        let level = self.progress.level.can_raise(self.world.embers());
         let skills = !self.dev_board_on()
             && crate::plates::can_buy(&self.board(), self.progress.skill_points());
         // 기록 탭의 점(0265): 받을 여정 목표 또는 받을 도감 칸.
