@@ -3311,6 +3311,17 @@ mod tests {
                 dir,
                 last: false,
             },
+            // 0274 ④: 대검 판의 큰 기술.
+            Event::TempestSweep {
+                at,
+                radius: 3.0,
+                last: false,
+            },
+            Event::TempestSweep {
+                at,
+                radius: 3.0,
+                last: true,
+            },
             Event::AmbushStab {
                 at,
                 dir,
@@ -3496,6 +3507,10 @@ mod tests {
             Event::Cast {
                 at,
                 look: crate::weapons::LIGHT,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::QUAKE,
             },
             Event::Cast {
                 at,
@@ -3764,6 +3779,10 @@ mod tests {
             Event::Cast {
                 at,
                 look: crate::weapons::LIGHT,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::QUAKE,
             },
             Event::Cast {
                 at,

@@ -2,7 +2,7 @@
 //   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 화로 창(0263 — 성장 · 장비 · 가방 · 기술 · 가게 · 설정; 성장 탭 — 레벨 줄을 올려 보고
 //   묻는 창, 기술 줄에서 확인 = 기술 탭의 그 칸, 0173) → 화로의 Select(Tab) = 같은 창의 장비 탭(후보의 작은 목록) → 가방(작은 목록 ·
 //   여벌 정리) → 가게 · 설정 · 기술, 그리고 싸움에서 연 멈춤 창(장비 · 가방 · 기술 · 기록(여정·도감의 보상 받기) · 설정), 화면마다 스크린숏.
-//   기술 탭(0270 C2): 위의 판 줄(공통 · 한손검 · 망치 · 지팡이 · 쇠뇌 · 활 · 창 · 쌍단검 · 방패 — 넘치면 가로로 굴린다, 0275) + 그 판의 칸 격자 +
+//   기술 탭(0270 C2): 위의 판 줄(공통 · 한손검 · 망치 · 지팡이 · 쇠뇌 · 활 · 창 · 쌍단검 · 대검 · 방패 — 넘치면 가로로 굴린다, 0275) + 그 판의 칸 격자 +
 //   오른쪽 상세. 장면 이름이 보이는 판과 고른 칸을 말한다(`Skills { host: Hearth } [Class(Sword)] @Skill(Whirl)`) — 칸은 이름으로 찾는다.
 //   한 단 사기 · 3단 고르기 뒤집기 · 패시브 칸 열기 · 결 열기 · 잠긴 칸 · 되돌리기(묻는 창), 판마다 판 줄에서 한 장(눈으로 본다),
 //   멈춤의 기술 탭(끼우기만). 끝으로 새 판의 기록(0166·0167·0169 — 아는 스킬 없음, 튜토리얼의 상 한 점): 빈 스킬 칸 → 쉬기 = 기술 탭 →
@@ -70,7 +70,7 @@ async function run(browser, lang) {
   const toLeft = async () => {
     for (let i = 0; i < 10; i++) { const here = await at(); await press('ArrowLeft'); if ((await at()) === here) break; }
   };
-  const PLATE_ORDER = ['Body', 'Class(Sword)', 'Class(Hammer)', 'Class(Staff)', 'Class(Crossbow)', 'Class(Bow)', 'Class(Spear)', 'Class(Dagger)', 'Shield'];
+  const PLATE_ORDER = ['Body', 'Class(Sword)', 'Class(Hammer)', 'Class(Staff)', 'Class(Crossbow)', 'Class(Bow)', 'Class(Spear)', 'Class(Dagger)', 'Class(Greatsword)', 'Shield'];
   const toPlate = async (plate) => {
     await toStrip();
     const want = PLATE_ORDER.indexOf(plate);
