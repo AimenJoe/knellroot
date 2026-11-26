@@ -28,7 +28,11 @@ concurrency:
 
 jobs:
   compile:
-    runs-on: ubuntu-latest
+    # 러너 고정(0278): 트레이스 시험(`scenario_traces` · `fx_traces`)의 고정값은 glibc 2.39(Ubuntu 24.04)에서 쓴 것이다.
+    # `ubuntu-latest`가 26.04로 올라가자 `atan2f` · `asinf` · `acosf`의 끝자리가 달라져 15초짜리 판 몇이 갈렸다(두 실행의 해시는
+    # 서로 같았다 — 경합이 아니다). 로직의 수학을 플랫폼 밖으로 빼기 전까지(`libm` 크레이트 — 웹 빌드와 같은 셈) 고정값을 쓴
+    # 곳과 같은 판으로 돌린다. 고정값을 다른 glibc에서 다시 쓰면 이 줄도 같이 올린다.
+    runs-on: ubuntu-24.04
     outputs:
       smoke: ${{ steps.flavor.outputs.smoke }}
     steps:
