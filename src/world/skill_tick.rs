@@ -800,7 +800,7 @@ impl World {
             }
         }
         if n > 0 {
-            self.skill_hit_tick = true;
+            self.notes.skill_hit = true;
             self.hitstop = self.hitstop.max(t[P::Hitstop] * SKILL_HITSTOP);
         }
         self.skill_ev = ev;
@@ -995,7 +995,7 @@ impl World {
             }
         }
         if n > 0 {
-            self.skill_hit_tick = true;
+            self.notes.skill_hit = true;
             self.hitstop = self.hitstop.max(t[P::Hitstop] * SKILL_HITSTOP);
         }
         self.skill_ev = ev;
@@ -1102,7 +1102,7 @@ impl World {
             }
         }
         if n > 0 {
-            self.skill_hit_tick = true;
+            self.notes.skill_hit = true;
             self.hitstop = self.hitstop.max(t[P::Hitstop] * SKILL_HITSTOP);
         }
         self.skill_ev = ev;
@@ -1155,7 +1155,7 @@ impl World {
             }
         }
         if n > 0 {
-            self.skill_hit_tick = true;
+            self.notes.skill_hit = true;
             self.hitstop = self.hitstop.max(t[P::Hitstop] * SKILL_HITSTOP);
         }
         // 종(0270 C3)은 울림으로 — 울림 타입이 둘레를 치는 그림과 소리를 같이 쓴다. 심지 볼트(0272 — 충격)는 화약이 터진다.
@@ -1355,15 +1355,15 @@ impl World {
         let downs = count(|e| matches!(e, Event::EnemyDown { .. }));
         let parries = count(|e| matches!(e, Event::Parry { .. }));
         let perfects = count(|e| matches!(e, Event::Perfect { .. }));
-        let by_skill = self.skill_hit_tick || self.skill_kill_left > 0.0;
+        let by_skill = self.notes.skill_hit || self.skill_kill_left > 0.0;
         let gathering = self.tree.has(crate::progression::Cell::GatheringBeat);
         // 결(0223 11절): 이번 틱에 무기의 타가 묶인 적·금 간 적에 닿았나, 몇이 울렸나 — 칸을 열었을 때만 몫이 있다.
         use crate::progression::{vein, Vein};
-        let bound = std::mem::take(&mut self.vein_bound) && self.tree.veined(Vein::Root);
-        let cracked = std::mem::take(&mut self.vein_cracked) && self.tree.veined(Vein::Rift);
+        let bound = std::mem::take(&mut self.veins.bound) && self.tree.veined(Vein::Root);
+        let cracked = std::mem::take(&mut self.veins.cracked) && self.tree.veined(Vein::Rift);
         // 탄이 맞은 틱(게이지): 큰 기술이 없어도 여기서 걷는다 — 안 걷으면 배운 뒤의 첫 틱에 옛 것이 한 번 찬다.
-        let bolt_hit = std::mem::take(&mut self.bolt_hit_tick);
-        let tolls = std::mem::take(&mut self.vein_tolls).min(vein::KNELL_TOLLS);
+        let bolt_hit = std::mem::take(&mut self.notes.bolt_hit);
+        let tolls = std::mem::take(&mut self.veins.tolls).min(vein::KNELL_TOLLS);
         // 울림의 결(0274 ②): I = 울림 모으기(궁극기 게이지) · II = 울려서 되찾기(체력 — 쉬는 초 동안은 없다).
         let mending = self.tree.vein_picked_b(Vein::Knell);
         let mends = if mending && self.player.skill.mend_rest <= 0.0 {
@@ -1378,10 +1378,10 @@ impl World {
         };
         // 0270 C3의 결 넷: 흔들린 머리(둘레의 자세) · 흐르는 걸음(빠르기) · 한 모금씩(등잔) — 얼음 속 불씨는 `tick_ails`가 낸다.
         let rattle =
-            std::mem::take(&mut self.vein_rattle).filter(|_| self.tree.veined(Vein::Shock));
-        let bled = std::mem::take(&mut self.vein_bled) && self.tree.veined(Vein::Sharp);
-        let sipped = std::mem::take(&mut self.vein_sipped) && self.tree.veined(Vein::Drain);
-        self.vein_shards = 0;
+            std::mem::take(&mut self.veins.rattle).filter(|_| self.tree.veined(Vein::Shock));
+        let bled = std::mem::take(&mut self.veins.bled) && self.tree.veined(Vein::Sharp);
+        let sipped = std::mem::take(&mut self.veins.sipped) && self.tree.veined(Vein::Drain);
+        self.veins.shards = 0;
         if let Some(at) = rattle {
             for en in &mut self.enemies {
                 let d = vec3(en.pos.x - at.x, 0.0, en.pos.z - at.z).length();

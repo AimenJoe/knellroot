@@ -345,7 +345,7 @@ impl World {
             }
             en.struck();
             ev.push(Event::Hit { at });
-            self.skill_hit_tick = true;
+            self.notes.skill_hit = true;
         }
         if c.knock != Vec3::ZERO {
             en.knock = c.knock;

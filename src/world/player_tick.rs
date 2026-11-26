@@ -476,7 +476,7 @@ impl World {
             pl.turn_cd = t[P::TurnCooldown];
             // 쏟는 쪽: 카메라가 도는 쪽(+ = 시계).
             let cw = plan.quarters > 0;
-            self.turn_now = Some((plan.quarters, cw));
+            self.notes.turn = Some((plan.quarters, cw));
             // 쥔 스틱은 곧바로 새 화면 기준 — 몸과 화면이 같이 돌았으니 그대로 새 정면으로 직진한다(0028).
             // 예전엔 돌기 전 기준을 붙잡아(0010) 돌린 뒤 엉뚱한 쪽으로 걸었다.
             self.hold = None;
@@ -627,7 +627,7 @@ impl World {
             // 방패 던지기(0276 — 하데스의 방패): 종류의 RB보다 앞선다. 칸을 쓰지 않고 모으지 않는다 — 날아가 돌아올 때까지 다시 못 던진다.
             if self.rb_out() {
                 self.player.ranged.cast_denied = 0.6;
-                self.cast_denied_now = true;
+                self.notes.cast_denied = true;
             } else {
                 let pl = &mut self.player;
                 pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
@@ -673,7 +673,7 @@ impl World {
                 };
             } else {
                 pl.ranged.cast_denied = 0.6;
-                self.cast_denied_now = true;
+                self.notes.cast_denied = true;
             }
         } else if a.flask && self.player.flask_lock <= 0.0 {
             // 등잔(0031): 가득이거나 0이면 몸짓 없이 깜빡만(빈 병 몸짓으로 묶지 않는다 — 급할 때 연타해도).
@@ -685,7 +685,7 @@ impl World {
                 };
             } else {
                 pl.flask_denied = 0.6;
-                self.flask_denied_now = true;
+                self.notes.flask_denied = true;
             }
         }
     }
@@ -711,7 +711,7 @@ impl World {
             };
         } else {
             pl.ranged.cast_denied = 0.6;
-            self.cast_denied_now = true;
+            self.notes.cast_denied = true;
         }
     }
 
@@ -732,7 +732,7 @@ impl World {
         if go {
             pl.beat.swing_beat = beat;
             if beat {
-                self.beat_now = true;
+                self.notes.beat = true;
                 pl.beat.chain += 1;
                 pl.beat.since = 0.0;
                 let tree = self.tree;
@@ -742,7 +742,7 @@ impl World {
                 }
                 // 이어지는 박자(0107): 박자 타 셋마다 둘레 충격.
                 if tree.has(Cell::FlowingBeat) && pl.beat.chain.is_multiple_of(cell::FLOW_EVERY) {
-                    self.shock_now = true;
+                    self.notes.shock = true;
                 }
                 // 이어지는 숨(0214): 박자 셋을 이으면 다음 회피가 기력 없이.
                 if tree.has(Cell::HeldBreath) && pl.beat.chain >= cell::HELD_BREATH_CHAIN {
@@ -890,7 +890,7 @@ impl World {
         pl.beat.on = false;
         if pl.ranged.ammo > 0 {
             if free {
-                self.beat_now = true;
+                self.notes.beat = true;
                 pl.beat.chain += 1;
                 pl.beat.since = 0.0;
             } else {
@@ -918,7 +918,7 @@ impl World {
             };
         } else {
             pl.ranged.cast_denied = 0.6;
-            self.cast_denied_now = true;
+            self.notes.cast_denied = true;
         }
     }
 
@@ -936,9 +936,9 @@ impl World {
             gulped = true;
             pl.flask -= 1;
             pl.hp = (pl.hp + t[P::FlaskHeal].round() as i32).min(pl.max_hp);
-            self.gulp_now = true;
+            self.notes.gulp = true;
             // 기도하는 손(0276 — 망치의 빈 손): 삼킨 순간 둘레에 울림 고리(`apply_strike`가 낸다).
-            self.prayer_now = prays;
+            self.notes.prayer = prays;
         }
         if e2 >= t[P::FlaskTime] {
             pl.state = PState::Idle;
@@ -994,7 +994,7 @@ impl World {
         let (a, t, dt, wpn) = (&cx.a, cx.t, cx.dt, cx.wpn);
         if a.attack_held {
             let full = t[P::HeavyCharge] * wpn.heavy.map_or(1.0, |h| h.charge);
-            self.charged_now |= e < full && e + dt >= full;
+            self.notes.charged |= e < full && e + dt >= full;
             self.player.state = PState::Charging { t: e + dt };
             return;
         }
@@ -1125,7 +1125,7 @@ impl World {
         // 두 손으로 엮는 지팡이(0276)는 빨리 모은다.
         let full = self.cast_full(t);
         if a.cast_held && cx.can_charge_cast {
-            self.charged_now |= e < full && e + dt >= full;
+            self.notes.charged |= e < full && e + dt >= full;
             if ranged_aim_given(&cx.a) {
                 // 겨누는 손(끌기·스틱·숄더뷰의 카메라, 0217·0219)을 몸이 따라 돈다 — 뗄 때 어디로 갈지 보이게.
                 self.player.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
@@ -1186,7 +1186,7 @@ impl World {
         let (a, t, dt) = (&cx.a, cx.t, cx.dt);
         let full = t[P::CastCharge];
         if a.cast_held && cx.can_charge_cast {
-            self.charged_now |= e < full && e + dt >= full;
+            self.notes.charged |= e < full && e + dt >= full;
             if ranged_aim_given(&cx.a) {
                 self.player.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
             }
@@ -1229,7 +1229,7 @@ impl World {
         };
         let full = t[P::CastCharge];
         if a.cast_held {
-            self.charged_now |= e < full && e + dt >= full;
+            self.notes.charged |= e < full && e + dt >= full;
             if ranged_aim_given(&cx.a) {
                 self.player.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
             }
@@ -1349,7 +1349,7 @@ impl World {
                 }
                 Rb::Toss => {
                     pl.ranged.cast_denied = 0.6;
-                    self.cast_denied_now = true;
+                    self.notes.cast_denied = true;
                     false
                 }
                 // 쇠뇌 내려 쏘기(0111)도 기력(0117) — 볼트는 그대로 안 쓴다.
@@ -1361,7 +1361,7 @@ impl World {
                 pl.ranged.hover = AIR_SHOT_HOVER;
                 pl.vy = pl.vy.max(0.0);
                 pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
-                self.air_fire = Some(cx.cast_dir);
+                self.notes.air_fire = Some(cx.cast_dir);
             }
         }
         let pl = &mut self.player;
@@ -1743,7 +1743,7 @@ impl World {
         started_from: std::mem::Discriminant<PState>,
         was_dodging: bool,
     ) {
-        self.plunge_now |= cx.landed_plunge;
+        self.notes.plunge |= cx.landed_plunge;
         // 그림자 걸음(0276 — 쌍단검의 빈 손): 회피가 끝나면(끊고 나간 공격까지) 창이 열리고, 그 뒤 첫 휘두르기(평타 · 대시 · 강공격)가
         // 그 표지를 받는다 — 헛쳐도 쓴다. 창이 닫히거나 다른 휘두르기가 먼저면 없다.
         if self.bare() == Some(weapons::Bare::ShadowStep) {
@@ -1768,10 +1768,10 @@ impl World {
             self.player.pending = None;
         }
         if cx.fire.is_some() {
-            self.cast_fire = cx.fire;
+            self.notes.cast_fire = cx.fire;
         }
         if cx.thrown.is_some() {
-            self.throw_to = cx.thrown;
+            self.notes.throw_to = cx.thrown;
         }
         // 원거리 무기는 회피하면 한 발 장전(0051, PoE2 착상) — 회피를 공격 리듬에 넣는다.
         if !was_dodging && matches!(self.player.state, PState::Dodge { .. }) {

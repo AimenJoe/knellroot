@@ -229,7 +229,7 @@ fn felling_enemies_brings_skills_back_sooner_and_skill_kills_count_half() {
     let want = 5.0 - 2.0 * t[P::SkillMomentum];
     assert!(w.player.skill.cd.iter().all(|c| (c - want).abs() < 1e-5));
     w.player.skill.cd = [5.0; skills::N];
-    w.skill_hit_tick = true;
+    w.notes.skill_hit = true;
     w.skill_books(&t, &mut vec![down]);
     let want = 5.0 - t[P::SkillMomentumOwn];
     assert!(w.player.skill.cd.iter().all(|c| (c - want).abs() < 1e-5));

@@ -73,7 +73,7 @@ impl World {
                 if en.hp <= 0 {
                     en.state = EState::Dead;
                     self.kills += 1;
-                    self.skill_hit_tick = true;
+                    self.notes.skill_hit = true;
                     ev.push(Event::EnemyDown { at: en.pos });
                     continue;
                 }
@@ -95,7 +95,7 @@ impl World {
                 if en.hp <= 0 {
                     en.state = EState::Dead;
                     self.kills += 1;
-                    self.skill_hit_tick = true;
+                    self.notes.skill_hit = true;
                     ev.push(Event::EnemyDown { at: en.pos });
                     continue;
                 }
@@ -133,13 +133,13 @@ impl World {
                     crate::progression::vein::FROST_EMBERS,
                     seed,
                 ));
-                self.vein_shards = self.vein_shards.saturating_add(1);
+                self.veins.shards = self.veins.shards.saturating_add(1);
             }
         }
         for i in tolls {
             // 울림 모으기(결): 실제로 울린 수 — 틱 끝의 셈이 큰 기술 게이지에 더한다.
             if self.toll(t, &mut ev, i, &mut rung) {
-                self.vein_tolls = self.vein_tolls.saturating_add(1);
+                self.veins.tolls = self.veins.tolls.saturating_add(1);
             }
         }
         // 겹침: 화상 중에 묶인 적은 쓴 겹만큼 둘레를 터뜨린다.

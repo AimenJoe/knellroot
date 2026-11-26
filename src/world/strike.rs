@@ -19,18 +19,18 @@ impl World {
     pub(super) fn apply_strike(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
         self.plunge_and_late_ring(t, ev);
         self.flow_shock(t, ev);
-        if std::mem::take(&mut self.charged_now) {
+        if std::mem::take(&mut self.notes.charged) {
             ev.push(Event::Charged);
         }
-        if std::mem::take(&mut self.gulp_now) {
+        if std::mem::take(&mut self.notes.gulp) {
             ev.push(Event::Gulp {
                 at: self.player.pos + Vec3::Y * 1.2,
             });
         }
-        if std::mem::take(&mut self.flask_denied_now) {
+        if std::mem::take(&mut self.notes.flask_denied) {
             ev.push(Event::FlaskDenied);
         }
-        if std::mem::take(&mut self.prayer_now) {
+        if std::mem::take(&mut self.notes.prayer) {
             self.prayer_ring(t, ev);
         }
         if let PState::Rush {
@@ -252,13 +252,13 @@ impl World {
             } else {
                 self.player.connected
             };
-            self.bolt_hit_tick = true;
+            self.notes.bolt_hit = true;
         }
     }
 
     /// 내려찍기의 착지(0027)와 착지의 순간(0107)의 늦은 바깥 고리.
     fn plunge_and_late_ring(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
-        if std::mem::take(&mut self.plunge_now) {
+        if std::mem::take(&mut self.notes.plunge) {
             self.plunge(t, ev);
             // 착지의 순간(0107): 0.3초 뒤 바깥 고리 한 번 더.
             if self.tree.has(Cell::LandingBeat) {
@@ -277,7 +277,7 @@ impl World {
 
     fn flow_shock(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
         // 이어지는 박자(0107): 박자 셋째 타가 나가는 순간 둘레에 작은 충격(자세 피해만).
-        if std::mem::take(&mut self.shock_now) {
+        if std::mem::take(&mut self.notes.shock) {
             let p = self.player.pos;
             for en in &mut self.enemies {
                 let d = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
@@ -558,23 +558,23 @@ impl World {
         let paid = &mut self.player.skill.vein_swing;
         if bound_hit && paid[0] != swing {
             paid[0] = swing;
-            self.vein_bound = true;
+            self.veins.bound = true;
         }
         if cracked_hit && paid[1] != swing {
             paid[1] = swing;
-            self.vein_cracked = true;
+            self.veins.cracked = true;
         }
         if let (Some(at), true) = (stunned_at, paid[2] != swing) {
             paid[2] = swing;
-            self.vein_rattle = Some(at);
+            self.veins.rattle = Some(at);
         }
         if bled_hit && paid[3] != swing {
             paid[3] = swing;
-            self.vein_bled = true;
+            self.veins.bled = true;
         }
         if sipped_hit && paid[4] != swing {
             paid[4] = swing;
-            self.vein_sipped = true;
+            self.veins.sipped = true;
         }
         Landed {
             stop,

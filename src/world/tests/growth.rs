@@ -496,7 +496,7 @@ fn landing_beat_rings_again_farther_out_a_moment_after_a_plunge() {
         let i = mob_with(&mut w, vec3(0.0, 0.0, -1.0), 990);
         w.enemies[i].pos.z -= r + w.enemies[i].radius - 1.0;
         idle(&mut w);
-        w.plunge_now = true;
+        w.notes.plunge = true;
         for _ in 0..40 {
             w.step(&Actions::default(), &t);
         }

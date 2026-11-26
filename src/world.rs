@@ -1396,6 +1396,52 @@ impl Player {
 pub use crate::enemy::{Affix, Atk, EState, Enemy, TeleShape};
 use crate::species::Kind;
 
+/// 이번 틱의 쪽지(0278 R24 — `World::notes`): 플레이어 단계가 적고 뒤의 단계(`apply_strike` · `tick_bolts` · `apply_turn` ·
+/// `skill_books`)가 걷는다. 걷는 자리는 저마다고 스킬의 타(`skill_hit`)만 틱 들머리에서 지운다 — 옛 칸의 차례 그대로.
+#[derive(Default)]
+struct TickNotes {
+    /// 이번 틱에 땅을 돌렸다(카메라 칸 수, 쏟는 쪽 `cw`) — `apply_turn`이 쏟는다.
+    turn: Option<(i32, bool)>,
+    /// 이번 틱에 내려찍기가 땅에 닿았다 — `apply_strike`가 친다(0027).
+    plunge: bool,
+    /// 이어지는 박자(0107): 이번 틱에 박자 셋째 타가 나갔다 — 둘레 충격.
+    shock: bool,
+    /// 이번 틱에 강공격이 다 모였다(`Event::Charged`를 `apply_strike`가 낸다).
+    charged: bool,
+    cast_denied: bool,
+    /// 이번 틱에 쏜 쪽과 세기(0 = 보통, 1 = 덜 모음, 2 = 다 모음, 0056) — `tick_bolts`가 탄을 세운다.
+    cast_fire: Option<(Vec3, u8)>,
+    /// 공중 RB(0111): 이번 틱에 공중에서 쏜 쪽(수평) — `tick_bolts`가 내려 쏘는 탄을 만든다.
+    air_fire: Option<Vec3>,
+    /// 이번 틱에 손을 떠난 수류탄(던질 자리).
+    throw_to: Option<Vec3>,
+    skill_hit: bool,
+    /// 이번 틱에 방랑자의 탄이 적을 맞혔다(게이지 — `skill_books`).
+    bolt_hit: bool,
+    /// 이번 틱에 박자에 맞춘 평타가 나갔다(`Event::Beat`).
+    beat: bool,
+    /// 이번 틱에 등잔을 삼켰다·못 마셨다(사건은 `apply_strike`가 낸다).
+    gulp: bool,
+    /// 이번 틱에 기도하는 손(0276 망치의 빈 손)의 한 모금을 삼켰다 — `apply_strike`가 울림 고리를 낸다.
+    prayer: bool,
+    flask_denied: bool,
+}
+
+/// 결의 이번 틱(0223 11절 · 0270 C3 — `World::veins`): 무기의 타가 묶인 적 · 금 간 적 · 기절한 적(그 자리) · 피 흘리는 적 ·
+/// 흡수 걸린 적에 닿았나, 울린 수 · 깨진 얼음 수 — `skill_books`가 한꺼번에 걷는다.
+#[derive(Default)]
+struct VeinTick {
+    /// 결(0223 11절): 이번 틱에 무기의 타가 묶인 적·금 간 적에 닿았다, 이번 틱에 울린 수 — `skill_books`가 걷는다.
+    bound: bool,
+    cracked: bool,
+    tolls: u8,
+    /// 0270 C3: 이번 틱에 무기의 타가 기절한 적(그 자리)·피 흘리는 적·흡수 걸린 적에 닿았다, 이번 틱에 깨진 얼음 수.
+    rattle: Option<Vec3>,
+    bled: bool,
+    sipped: bool,
+    shards: u8,
+}
+
 pub struct World {
     pub name: &'static str,
     pub player: Player,
@@ -1432,18 +1478,10 @@ pub struct World {
     last_lock_fwd: Option<Vec3>,
     /// 풀린 뒤 쥔 스틱의 기준(앞, 경과 초). 스틱을 놓거나 `move.hold after unlock s`가 지나면 끝.
     hold: Option<(Vec3, f32)>,
-    /// 이번 틱에 땅을 돌렸다(카메라 칸 수, 쏟는 쪽 `cw`) — `apply_turn`이 쏟는다.
-    turn_now: Option<(i32, bool)>,
     /// 돌리는 중: (방향, 멈추기까지 남은 초). 0이 되는 틱에 쏟는다 — 히트스톱 중에도 줄어든다(카메라 시계와 맞춘다).
     spill_at: Option<(bool, f32)>,
-    /// 이번 틱에 내려찍기가 땅에 닿았다 — `apply_strike`가 친다(0027).
-    plunge_now: bool,
-    /// 이어지는 박자(0107): 이번 틱에 박자 셋째 타가 나갔다 — 둘레 충격.
-    shock_now: bool,
     /// 착지의 순간(0107): 늦은 바깥 고리까지 남은 초.
     late_ring: Option<f32>,
-    /// 이번 틱에 강공격이 다 모였다(`Event::Charged`를 `apply_strike`가 낸다).
-    charged_now: bool,
     /// 이번 틱에 상호작용을 눌렀고 손이 비어 있다(0032) — 스테이지가 읽는다(월드는 쉼터를 모른다).
     pub interact: bool,
     /// 지금 점프 버튼이 상호작용이 되는 자리인가(0048) — 스테이지가 매 틱 적는다(쉼터 곁이고 깨어 있는 적이 가까이 없다).
@@ -1476,20 +1514,12 @@ pub struct World {
     pub blasts: Vec<Blast>,
     /// 맞힌 자리의 불똥(2026-11-06).
     pub sparks: Vec<Spark>,
-    /// 이번 틱에 손을 떠난 수류탄(던질 자리).
-    throw_to: Option<Vec3>,
     /// 원거리가 지금 겨누는 쪽(0217 → 0219 — 수평, 길이 1): 터치로 끈 쪽·패드 스틱(보조를 붙인 뒤)·숄더뷰의 카메라 앞·커서.
     /// 렌더가 땅 위 미리보기를 그린다(무엇을 그릴지는 앱이 `View::aim_show`로). 손이 겨누지 않으면 None.
     pub aim_line: Option<Vec3>,
-    /// 이번 틱에 쏜 쪽과 세기(0 = 보통, 1 = 덜 모음, 2 = 다 모음, 0056) — `tick_bolts`가 탄을 세운다.
-    cast_fire: Option<(Vec3, u8)>,
-    /// 공중 RB(0111): 이번 틱에 공중에서 쏜 쪽(수평) — `tick_bolts`가 내려 쏘는 탄을 만든다.
-    air_fire: Option<Vec3>,
-    cast_denied_now: bool,
     /// 스킬(0151): 플레이어 틱이 낸 사건(틱 끝에 내보낸다), 이번 틱에 스킬의 타가 맞았나·스킬이 남긴 처치로 치는 남은 초
     /// (기세의 몫을 가른다 — 스킬로 쓰러뜨리면 덜 당겨진다).
     skill_ev: Vec<Event>,
-    skill_hit_tick: bool,
     /// 방금 바꿔 든 무기가 가득 찬 탄창으로 나왔다(처음 드는 것 · 등에서 다 장전된 쇠뇌 — 0272 1b): 앱이 새 능력치를 넣은 뒤
     /// 벼려 늘린 탄창까지 가득으로 맞춘다(`on_weapon_swap`). 그 밖에는 바꿔 든 탄 그대로.
     pub swap_full: bool,
@@ -1507,24 +1537,11 @@ pub struct World {
     hop_seen: Vec<usize>,
     /// 뿌리 솟기(0214): 솟은 뿌리(그림).
     pub skill_spikes: Vec<Spike>,
-    /// 이번 틱에 방랑자의 탄이 적을 맞혔다(게이지 — `skill_books`).
-    bolt_hit_tick: bool,
-    /// 결(0223 11절): 이번 틱에 무기의 타가 묶인 적·금 간 적에 닿았다, 이번 틱에 울린 수 — `skill_books`가 걷는다.
-    vein_bound: bool,
-    vein_cracked: bool,
-    vein_tolls: u8,
-    /// 0270 C3: 이번 틱에 무기의 타가 기절한 적(그 자리)·피 흘리는 적·흡수 걸린 적에 닿았다, 이번 틱에 깨진 얼음 수.
-    vein_rattle: Option<Vec3>,
-    vein_bled: bool,
-    vein_sipped: bool,
-    vein_shards: u8,
-    /// 이번 틱에 박자에 맞춘 평타가 나갔다(`Event::Beat`).
-    beat_now: bool,
-    /// 이번 틱에 등잔을 삼켰다·못 마셨다(사건은 `apply_strike`가 낸다).
-    gulp_now: bool,
-    /// 이번 틱에 기도하는 손(0276 망치의 빈 손)의 한 모금을 삼켰다 — `apply_strike`가 울림 고리를 낸다.
-    prayer_now: bool,
-    flask_denied_now: bool,
+    /// 이번 틱의 쪽지(0278 R24 — 한 단계가 적고 뒤의 단계가 걷는 것: 땅 돌리기 · 내려찍기 · 쏜 쪽 · 맞힘 · 박자 · 등잔 …).
+    /// 걷는 자리는 저마다다(`take` — 한 곳에서 지우지 않는다).
+    notes: TickNotes,
+    /// 결(0223 11절 · 0270 C3)의 이번 틱 — 무기의 타가 닿은 것들, `skill_books`가 한꺼번에 걷는다.
+    veins: VeinTick,
     /// 히트스톱 동안 들어온 눌림(공격·회피·락온·돌리기). 멈춤이 풀리는 틱에 낸다 — 버리면 멈춘 순간 누른 버튼이 사라진다.
     held: Actions,
     /// 이 틱에 공격을 쥐고 있나(0120 — 등딱지 튕김이 모으기를 끊지 않게).
@@ -1666,7 +1683,6 @@ impl World {
             arena,
             hitstop: 0.0,
             skill_ev: Vec::new(),
-            skill_hit_tick: false,
             swap_full: false,
             skill_kill_left: 0.0,
             skill_bursts: Vec::new(),
@@ -1677,14 +1693,6 @@ impl World {
             brace_caught: Vec::new(),
             hop_seen: Vec::new(),
             skill_spikes: Vec::new(),
-            bolt_hit_tick: false,
-            vein_bound: false,
-            vein_cracked: false,
-            vein_tolls: 0,
-            vein_rattle: None,
-            vein_bled: false,
-            vein_sipped: false,
-            vein_shards: 0,
             time: 0.0,
             kills: 0,
             lock_range: 18.0,
@@ -1695,14 +1703,12 @@ impl World {
             flinch_probe: None,
             last_lock_fwd: None,
             hold: None,
-            turn_now: None,
             spill_at: None,
+            notes: TickNotes::default(),
+            veins: VeinTick::default(),
             held: Actions::default(),
             attack_down: false,
-            plunge_now: false,
-            shock_now: false,
             late_ring: None,
-            charged_now: false,
             interact: false,
             interact_here: false,
             bolts: Vec::new(),
@@ -1720,15 +1726,7 @@ impl World {
             bombs: Vec::new(),
             blasts: Vec::new(),
             sparks: Vec::new(),
-            throw_to: None,
             aim_line: None,
-            cast_fire: None,
-            air_fire: None,
-            cast_denied_now: false,
-            beat_now: false,
-            gulp_now: false,
-            prayer_now: false,
-            flask_denied_now: false,
         }
     }
 
@@ -2705,7 +2703,7 @@ impl World {
         for e in &mut self.enemies {
             e.prev = e.pos;
         }
-        self.skill_hit_tick = false;
+        self.notes.skill_hit = false;
         self.skill_kill_left = (self.skill_kill_left - dt).max(0.0);
         self.tick_lock(a, &mut ev);
         self.tick_player(a, t, dt);
@@ -2994,7 +2992,7 @@ impl World {
     /// 멈출 때 흔들리는 것"). 축(주인공)에서 멀수록 많이 미끄러진다(속도 = 각속도 × 거리), 바깥 몫(`spill.outward share`)을 섞어
     /// "쏟아지게". 범위 안의 적은 모두 휘청 — 가까운 적은 덜 밀려 바로 칠 수 있고, 먼 적은 멀리 밀려 벽에 부딪힐 수 있다. 보스는 무거워서 덜.
     fn apply_turn(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
-        if let Some((quarters, cw)) = self.turn_now.take() {
+        if let Some((quarters, cw)) = self.notes.turn.take() {
             ev.push(Event::Turn { quarters });
             // 도는 동안 적은 그대로 움직인다(0029: 예전엔 범위 안의 적을 실어 붙잡았다 — 1초 가까이 묶는 CC였다).
             self.spill_at = Some((cw, crate::tuning::turn_land_secs_q(t, quarters)));

@@ -11,10 +11,10 @@ impl World {
     /// 날아가는 것·늦게 터지는 것(0048·0051): 마법 탄·쇠뇌 볼트, 수류탄, 금 간 땅(망치 여진), 자세 막대가 줄기, 폭발 고리.
     /// 탄은 이번 틱에 쏜 것을 세우고 날려 벽·땅·적에 닿으면 지운다(꿰뚫는 탄은 적을 지나간다). 칸은 채우지 않는다(근접만 채운다).
     pub(super) fn tick_bolts(&mut self, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
-        if std::mem::take(&mut self.beat_now) {
+        if std::mem::take(&mut self.notes.beat) {
             ev.push(Event::Beat);
         }
-        if std::mem::take(&mut self.cast_denied_now) {
+        if std::mem::take(&mut self.notes.cast_denied) {
             ev.push(Event::CastDenied);
         }
         if std::mem::take(&mut self.player.denied_new) {
@@ -64,7 +64,7 @@ impl World {
     /// 이번 틱에 쏜 RB를 세운다(모은 정도마다 다른 탄, 0056·0078): 근접 무기 = 종류의 원거리 수단(0274 ②b — 신성한 빛은 날지 않고
     /// 겨눈 자리에 `Smite`로), 사격 무기 = 볼트·화살(활의 반쯤 당긴 화살은 표의 `mid_bolt`).
     fn fire_cast(&mut self, t: &Tuning, ev: &mut Vec<Event>, _wpn: &weapons::Weapon) {
-        if let Some((dir, power)) = self.cast_fire.take() {
+        if let Some((dir, power)) = self.notes.cast_fire.take() {
             let (plain, c) = self.rb_bolts();
             // 가벼운 걸음(0276 — 활의 빈 손): 끝까지 당긴 화살의 오금이 길다.
             let light_step = self.bare() == Some(weapons::Bare::LightStep);
@@ -263,7 +263,7 @@ impl World {
     fn fire_air(&mut self, t: &Tuning, ev: &mut Vec<Event>, wpn: &weapons::Weapon) {
         // 공중 RB(0111): 쏜 높이에서 겨눈 적(쏘는 쪽 ±15°·`cast.range m` 안 가장 가까운)의 몸통으로, 없으면 앞
         // `AIR_SHOT_REACH`m 땅 위 몸통 높이로 비스듬히 내려 쏜다. 쇠뇌는 같은 자리로 볼트 `AIR_VOLLEY`발을 부채꼴로.
-        if let Some(flat) = self.air_fire.take() {
+        if let Some(flat) = self.notes.air_fire.take() {
             let pl = &self.player;
             let from = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT) + flat * (PLAYER_RADIUS + 0.2);
             let cone = 15f32.to_radians().cos();
@@ -329,7 +329,7 @@ impl World {
 
     /// 이번 틱에 던진 수류탄(0051)을 세운다.
     fn throw_bomb(&mut self, ev: &mut Vec<Event>, wpn: &weapons::Weapon) {
-        if let (Some(to), Some(g)) = (self.throw_to.take(), wpn.grenade) {
+        if let (Some(to), Some(g)) = (self.notes.throw_to.take(), wpn.grenade) {
             // 장치를 하나 더(0276 — 쇠뇌의 빈 손): 수류탄 대신 그 자리에 쇠 덫을 놓는다.
             if self.bare() == Some(weapons::Bare::Snare) {
                 self.set_snare(to, ev);
@@ -636,24 +636,24 @@ impl World {
                 // 결(0223 11절): 탄도 무기의 타다 — 묶인 적·금 간 적에 닿았나(탄 하나에 한 번 — 꿰뚫어도).
                 if !b.veined[0] && (en.ail.bound > 0.0 || en.marks.bind > 0.0) {
                     b.veined[0] = true;
-                    self.vein_bound = true;
+                    self.veins.bound = true;
                 }
                 if !b.veined[1] && en.ail.rift > 0.0 {
                     b.veined[1] = true;
-                    self.vein_cracked = true;
+                    self.veins.cracked = true;
                 }
                 // 0270 C3: 기절한 적 · 피 흘리는 적 · 흡수 걸린 적.
                 if !b.veined[2] && en.ail.stun > 0.0 {
                     b.veined[2] = true;
-                    self.vein_rattle = Some(en.pos);
+                    self.veins.rattle = Some(en.pos);
                 }
                 if !b.veined[3] && en.ail.bleed > 0.0 {
                     b.veined[3] = true;
-                    self.vein_bled = true;
+                    self.veins.bled = true;
                 }
                 if !b.veined[4] && en.ail.drain > 0.0 {
                     b.veined[4] = true;
-                    self.vein_sipped = true;
+                    self.veins.sipped = true;
                 }
                 let crit = en.exposed > 0.0;
                 en.hp -= wound(
@@ -674,7 +674,7 @@ impl World {
                 en.exposed = 0.0;
                 en.struck();
                 en.knock = b.dir * t[P::Knockback] * if en.boss { 0.1 } else { 0.5 };
-                self.bolt_hit_tick = true;
+                self.notes.bolt_hit = true;
                 let at = b.pos + b.dir * k;
                 ev.push(if crit {
                     Event::Crit { at }
