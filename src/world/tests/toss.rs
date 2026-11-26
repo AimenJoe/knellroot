@@ -702,3 +702,54 @@ fn the_javelin_winds_up_while_held_and_flies_on_release() {
     assert!((spent - 1.0).abs() < 0.05, "{spent}");
     assert!(weapons::Id::Spear.winds() && !weapons::Id::Sword.winds());
 }
+
+/// 0278 R25c: HUD 탄창의 덧장전 몫(`World::topup_share`)은 월드의 덧장전과 같은 셈이다 — 한 발 쏘고 멈춰 서면 `wait` 동안 0, 그 뒤
+/// 차올라 한 발이 드는 틱 바로 앞에 가득(1에 한 틱 몫 안), 든 틱에 0으로. 활(당기는 리듬)은 늘 0.
+#[test]
+fn the_hud_topup_share_fills_as_the_crossbow_tops_up_a_bolt() {
+    let t = Tuning::default();
+    let mut w = World::new("test", 40.0);
+    w.set_weapon(weapons::Id::Crossbow);
+    let Some(weapons::Rhythm::Crank { wait, each }) = w.player.weapon.rhythm() else {
+        panic!("the crossbow cranks")
+    };
+    let mag = w.mag_of(weapons::Id::Crossbow);
+    w.step(
+        &Actions {
+            cast: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    let mut was = w.player.ranged.ammo;
+    let (mut last, mut rose, mut topped) = (0.0f32, false, false);
+    for k in 0..((wait + each * 2.0 + 2.0) / TICK_DT) as usize {
+        w.step(&Actions::default(), &t);
+        let share = w.topup_share();
+        assert!((0.0..=1.0).contains(&share));
+        let ammo = w.player.ranged.ammo;
+        if ammo > was {
+            assert!(
+                last >= 1.0 - TICK_DT / each - 1e-3,
+                "tick {k}: a bolt went in at {last}"
+            );
+            assert_eq!(share, 0.0, "the next bolt starts empty");
+            topped = true;
+        } else if (k as f32 + 1.0) * TICK_DT < wait - TICK_DT {
+            assert_eq!(share, 0.0, "tick {k}: waits {wait}s first");
+        } else if share > last {
+            rose = true;
+        }
+        if ammo >= mag {
+            break;
+        }
+        (was, last) = (ammo, share);
+    }
+    assert!(rose && topped, "rose {rose} topped {topped}");
+    let mut bow = World::new("test", 40.0);
+    bow.set_weapon(weapons::Id::Bow);
+    for _ in 0..120 {
+        bow.step(&Actions::default(), &t);
+        assert_eq!(bow.topup_share(), 0.0);
+    }
+}

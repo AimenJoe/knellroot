@@ -2267,6 +2267,19 @@ impl World {
         }
     }
 
+    /// 쇠뇌의 덧장전(0274 ②b — `Rhythm::Crank`)이 다음 한 발을 얼마나 채웠나(0..1): 멈춰 선 지 `wait`초 뒤부터 `each`초에 걸쳐
+    /// 차오르고, 한 발이 들면 0으로(틱이 `topup`을 `wait`로 되돌린다 — `player_tick`). 다른 리듬 · 사격 무기가 아니면 0.
+    /// HUD의 탄창이 읽는다(0278 R25c — 그리기가 규칙을 다시 세지 않게).
+    pub fn topup_share(&self) -> f32 {
+        let pl = &self.player;
+        match pl.weapon.rhythm() {
+            Some(weapons::Rhythm::Crank { wait, each }) => {
+                ((pl.ranged.topup - wait) / each.max(0.01)).clamp(0.0, 1.0)
+            }
+            Some(weapons::Rhythm::Draw { .. }) | None => 0.0,
+        }
+    }
+
     /// 종류 표(`species.rs`)의 적 하나를 세운다.
     /// 능력치를 바꾼다(0064 M3 — 장신구를 갈아 끼우거나 성장했을 때). 체력·등잔은 새 최대를 넘지 않게, `refill`이면 가득.
     pub fn apply_stats(&mut self, s: crate::stats::Stats, refill: bool) {
