@@ -426,6 +426,43 @@ fn a_light_step_walks_with_the_string_drawn_and_lames_longer() {
     assert!(light.1 > plain.1 + 0.8, "{} vs {}", light.1, plain.1);
 }
 
+/// 쇠 덫은 스킬의 것이 아니다(0278 고침 — 0278 R21에서 찾음): 뿌리 덫(Snare)을 끼운 칸의 남은 몫(HUD · 터치의 줄어드는 테)은 쇠 덫으로
+/// 차지 않고, 그 스킬이 놓은 뿌리 덫으로만 찬다.
+#[test]
+fn an_iron_snare_does_not_fill_the_root_snare_skill_slot() {
+    let t = Tuning::default();
+    let mut w = bare_world(Id::Crossbow);
+    w.view_yaw = Some(0.0);
+    w.set_skills([crate::skills::Id::Snare, crate::skills::Id::Mine]);
+    press(
+        &t,
+        &mut w,
+        Actions {
+            attack: true,
+            ..Default::default()
+        },
+        (t[P::ThrowTime] / TICK_DT) as usize + 2,
+    );
+    let iron = *w
+        .skill_fields
+        .iter()
+        .find(|f| f.iron())
+        .expect("an iron snare lies");
+    assert_eq!(w.skill_active(0), 0.0, "the iron snare is not the skill's");
+    // 그 스킬의 뿌리 덫(같은 타입 · 덫, 쇠 아님)은 칸을 채운다.
+    w.skill_fields.push(crate::world::skill_tick::Field {
+        kind: crate::world::skill_tick::FieldKind::Trap {
+            iron: false,
+            spire: None,
+        },
+        ..iron
+    });
+    assert!(
+        w.skill_active(0) > 0.0,
+        "the skill's own root snare fills it"
+    );
+}
+
 /// 0276 쇠뇌 "장치를 하나 더": 빈 손이면 공격 버튼(수류탄 자리)이 쇠 덫을 놓는다 — 수류탄 하나를 쓰고, 적이 들어서면 한 번 물어
 /// 묶는다(잡몹은 속박). 놓인 덫은 `SNARE_MAX`개까지.
 #[test]

@@ -1503,10 +1503,11 @@ impl World {
             skills::Leaves::Ground => false,
             skills::Leaves::Snare => true,
         };
-        // 놓인 것(0270 C3 — 눈발·뿌리 덫도, 0272 화약 덫, 0274 ⑥ 시드는 그늘): 그 스킬의 타입·꼴(덫인가)의 것만.
+        // 놓인 것(0270 C3 — 눈발·뿌리 덫도, 0272 화약 덫, 0274 ⑥ 시드는 그늘): 그 스킬의 타입·꼴(덫인가)의 것만. 쇠 덫(0276 — 쇠뇌의
+        // 빈 손이 수류탄 자리에 놓는 것)은 스킬의 것이 아니다 — 뿌리 · 덫이라도 뿌리 덫 칸을 채우지 않는다.
         self.skill_fields
             .iter()
-            .filter(|f| f.dose.0 == id.def().kind && f.is_trap() == trap)
+            .filter(|f| f.dose.0 == id.def().kind && f.is_trap() == trap && !f.iron())
             .map(|f| f.left())
             .fold(0.0, f32::max)
     }
