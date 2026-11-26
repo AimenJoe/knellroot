@@ -950,6 +950,15 @@ fn class_fight_probe() {
                     0,
                 )
             },
+            // 0274 ⑤: 낫(주무기 · 보조무기로 · 방패와 · 빈 손).
+            v("scythe", W::Scythe, None, false, 0),
+            v("scythe+shield", W::Scythe, None, true, 0),
+            v("scythe/sub sword", W::Scythe, Some(W::Sword), false, 0),
+            v("sword/sub scythe", W::Sword, Some(W::Scythe), false, 0),
+            Build {
+                bare: true,
+                ..v("scythe empty", W::Scythe, None, false, 0)
+            },
         ];
         println!("\n## {kind:?} — {}", b.name);
         println!("variant          | dummy  | p    | win  | secs(win) | taken | flasks");
@@ -986,7 +995,7 @@ fn bare_hand_probe() {
     let only = std::env::var("SIM_ONLY").ok();
     let all = builds();
     // (주무기, 봇의 손, 견줄 보조무기 슬롯 — None = 방패)
-    let rows: [(W, Style, &[Option<W>]); 10] = [
+    let rows: [(W, Style, &[Option<W>]); 12] = [
         (
             W::Sword,
             Style::Plain,
@@ -1017,6 +1026,17 @@ fn bare_hand_probe() {
             W::Greatsword,
             Style::Heavy,
             &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers)],
+        ),
+        // 0274 ⑤: 낫(땅을 짚는 손 — 뿌리 스킬 · 가시 씨앗의 범위: 봇은 스킬 · RB를 쓰지 않아 0이어야 한다).
+        (
+            W::Scythe,
+            Style::Plain,
+            &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers), None],
+        ),
+        (
+            W::Scythe,
+            Style::Heavy,
+            &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers), None],
         ),
     ];
     let mut worst: f32 = f32::MIN;

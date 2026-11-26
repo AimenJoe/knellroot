@@ -1341,6 +1341,11 @@ impl Fx {
                 self.dust_ring(g, 0.5, 8, 3.2, 0.5, DUST);
                 let _ = at;
             }
+            // 가시 씨앗을 던졌다(0274 ⑤): 손의 작은 민트 별 + 흩어지는 흙 몇(씨가 날아가는 것은 렌더가 `smites`로).
+            Event::Cast { at, look } if look == crate::weapons::SEED => {
+                self.star(at, 0.8, 0.08, MINT);
+                self.rise(at, 0.2, 4, Shape::Dot, (0.06, 0.03), 0.3, MINT, LIFE, true);
+            }
             Event::Cast { at, look } if look == crate::weapons::STONE => {
                 self.spray(
                     at,
@@ -1414,6 +1419,22 @@ impl Fx {
                     WHITE_HOT,
                     GOLD,
                 );
+            }
+            // 가시 씨앗이 떨어져 뿌리가 솟았다(0274 ⑤): 박히는 작은 흰 별 + 바닥에 번지는 뿌리빛(민트) 고리 + 튀는 흙 + 먼지 — 솟는
+            // 가시 뿌리 자체는 렌더가(`skill_spikes`).
+            Event::Sprout { at, radius } => {
+                self.star(at + Vec3::Y * 0.3, 1.2, 0.1, WHITE_HOT);
+                self.mark(
+                    at,
+                    MarkKind::Ring {
+                        r0: radius * 0.3,
+                        r1: radius,
+                    },
+                    0.35,
+                    MINT,
+                );
+                self.chips(at, Vec3::Z, radius, 360.0, 6);
+                self.dust_ring(at, radius * 0.4, 10, 3.0, 0.5, DUST);
             }
             // 던진 창이 손에 돌아왔다(0274 ②b): 손 높이의 작은 쇳빛 별.
             Event::JavelinBack { at } => {
@@ -1838,6 +1859,51 @@ impl Fx {
                     );
                 }
             }
+            // 깨어나는 숲(0274 ⑤): 고리마다 그 둘레까지 번지는 뿌리빛(민트) 고리 + 둘레의 먼지 + 튀는 흙, 마지막은 큰 흰 별 + 풀빛(흡수)
+            // 고리 + 위로 떠오르는 풀빛 — 솟는 가시 뿌리 자체는 렌더가(`skill_spikes`).
+            Event::GrovePulse { at, radius, last } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                self.mark_with(
+                    g,
+                    MarkKind::Ring {
+                        r0: radius * 0.5,
+                        r1: radius,
+                    },
+                    0.3,
+                    MINT,
+                    0.0,
+                    false,
+                    false,
+                );
+                self.dust_ring(g, radius * 0.9, 14, 2.0, 0.5, DUST);
+                self.chips(g, Vec3::Z, radius, 360.0, 8);
+                if last {
+                    self.star(g + Vec3::Y * 1.0, 2.4, 0.14, WHITE_HOT);
+                    self.mark_with(
+                        g,
+                        MarkKind::Ring {
+                            r0: 0.3,
+                            r1: radius * 1.1,
+                        },
+                        0.5,
+                        LIFE,
+                        0.06,
+                        false,
+                        false,
+                    );
+                    self.rise(
+                        g,
+                        radius * 0.7,
+                        16,
+                        Shape::Dot,
+                        (0.1, 0.05),
+                        0.7,
+                        LIFE,
+                        MINT,
+                        false,
+                    );
+                }
+            }
             // 그림자 습격(0274 ③): 떠난 자리와 닿은 자리에 그늘빛 연기 한 줌씩 + 두 자리를 잇는 옅은 띠(숨어든 길).
             Event::Blink { from, to } => {
                 for p in [from, to] {
@@ -1975,6 +2041,12 @@ impl Fx {
                         let f = w.player.facing_dir();
                         self.star(pp + Vec3::Y * 1.0 + f * 0.6, 1.2, 0.3, STEEL);
                         self.implode(g, 2.0, 10, SMOKE);
+                    }
+                    // 0274 ⑤: 깨어나는 숲 = 땅을 짚는 손의 민트 별 + 발밑으로 모이는 뿌리빛(땅이 깨어나기 전).
+                    crate::skills::Ult::Grove => {
+                        self.star(g + Vec3::Y * 0.3, 1.4, 0.3, MINT);
+                        self.implode(g, 3.0, 14, MINT);
+                        self.dust_ring(g, 2.4, 12, -2.4, 0.45, DUST);
                     }
                     // 0274 ④: 칼바람 = 들어 올린 날의 잔불빛 + 발밑으로 모이는 먼지(분노가 터지기 전).
                     crate::skills::Ult::Tempest => {
@@ -2949,6 +3021,39 @@ impl Fx {
                 );
                 self.dust_kick(g, -dir, 4, 0.5);
             }
+            // 걸어 당기기(0274 ⑤): 날이 지난 넓은 호의 민트(뿌리) 충격파가 **안쪽으로** 조여들고, 끌려오는 흙이 몸 쪽으로 쓸린다.
+            (Sk::Reap, Form::Cone { range, arc_deg, .. }) => {
+                self.star(g + Vec3::Y * 0.9 + dir * range * 0.6, 1.2, 0.1, MINT);
+                self.mark(
+                    g,
+                    MarkKind::Shock {
+                        dir,
+                        r0: range,
+                        r1: 0.6,
+                        arc_deg,
+                    },
+                    0.28,
+                    MINT,
+                );
+                self.dust_kick(g + dir * range * 0.7, -dir, 6, 0.5);
+            }
+            // 생기 거두기(0274 ⑤): 둘레 끝까지 번지는 풀빛(흡수) 고리 + 둘레에서 몸으로 빨려 드는 풀빛 — 체력이 도는 빛은 `Mend`가 낸다.
+            (Sk::Harvest, Form::Reap { radius, .. }) => {
+                self.mark_with(
+                    g,
+                    MarkKind::Ring {
+                        r0: radius * 0.4,
+                        r1: radius,
+                    },
+                    0.3,
+                    LIFE,
+                    0.0,
+                    false,
+                    false,
+                );
+                self.implode(g + Vec3::Y * 0.6, radius, 12, LIFE);
+                self.dust_ring(g, radius * 0.7, 10, 3.0, 0.4, DUST);
+            }
             // 재기(0274): 몸에서 번지는 민트 고리 + 둥근 먼지 — 체력이 도는 빛은 `Mend`가 낸다.
             (Sk::Rally, Form::Rally { radius, .. }) => {
                 self.mark_with(
@@ -3311,6 +3416,17 @@ mod tests {
                 dir,
                 last: false,
             },
+            // 0274 ⑤: 낫 판의 큰 기술.
+            Event::GrovePulse {
+                at,
+                radius: 2.2,
+                last: false,
+            },
+            Event::GrovePulse {
+                at,
+                radius: 4.6,
+                last: true,
+            },
             // 0274 ④: 대검 판의 큰 기술.
             Event::TempestSweep {
                 at,
@@ -3521,6 +3637,11 @@ mod tests {
                 look: crate::weapons::STONE,
             },
             Event::Smite { at, radius: 1.4 },
+            Event::Cast {
+                at,
+                look: crate::weapons::SEED,
+            },
+            Event::Sprout { at, radius: 1.6 },
             Event::JavelinBack { at },
             Event::Prayer { at, radius: 3.0 },
             Event::SnareSet { at },
@@ -3793,6 +3914,11 @@ mod tests {
                 look: crate::weapons::STONE,
             },
             Event::Smite { at, radius: 1.4 },
+            Event::Cast {
+                at,
+                look: crate::weapons::SEED,
+            },
+            Event::Sprout { at, radius: 1.6 },
             Event::JavelinBack { at },
             Event::Prayer { at, radius: 3.0 },
             Event::SnareSet { at },

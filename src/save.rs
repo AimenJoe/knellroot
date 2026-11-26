@@ -1848,6 +1848,75 @@ weapons=sword,bow
         );
     }
 
+    /// 0274 ⑤: 낫의 기록(가진 · 든 · 벼린 · 보조무기)과 낫 판의 새 스킬 · 궁극기가 왕복한다 — 키는 새로 붙인 것뿐(`scythe` · `reap` ·
+    /// `harvest` · `grove`). 멘 낫은 쓰러뜨릴 때마다의 체력을 보태고(보조특성), 든 동안에는 없다.
+    #[test]
+    fn the_scythe_and_its_arts_round_trip() {
+        use crate::skills::{Entry, Id as Sk, Ult};
+        use crate::weapons::Id;
+        let mut p = Progress {
+            finds: vec!["garden.stone.0".to_string()],
+            weapons: vec![Id::Sword, Id::Scythe],
+            weapon: Some(Id::Scythe),
+            sub: Some(Id::Sword),
+            cores: 3,
+            bell_cores: 3,
+            moss_cores: 3,
+            ..Progress::default()
+        };
+        p.forged.set(Id::Scythe, 1);
+        let total = p.skill_points();
+        // 줄은 그 판에 쓴 포인트로 열린다(0 · 3 · 6).
+        for e in [
+            Entry::Skill(Sk::Reap),
+            Entry::Skill(Sk::Reap),
+            Entry::Skill(Sk::Gather),
+            Entry::Skill(Sk::Harvest),
+            Entry::Skill(Sk::Harvest),
+            Entry::Skill(Sk::Roots),
+            Entry::Ult(Ult::Grove),
+        ] {
+            assert!(
+                crate::plates::buy_on(
+                    crate::plates::Plate::Class(crate::weapons::Class::Scythe),
+                    &mut p.board,
+                    e,
+                    total
+                ),
+                "{e:?}"
+            );
+        }
+        p.settle_items();
+        let text = p.to_record().to_text();
+        assert!(
+            text.contains("weapon=scythe") && text.contains("forge.scythe=1"),
+            "{text}"
+        );
+        let mut back = Progress::from_record(Record::parse(&text));
+        back.settle_items();
+        assert_eq!(back.weapons, p.weapons);
+        assert_eq!(back.weapon, Some(Id::Scythe));
+        assert_eq!(back.forged.rank(Id::Scythe), 1);
+        assert_eq!(back.board, p.board, "the plate's arts");
+        assert_eq!(back.board.rank[Sk::Harvest.index()], 2);
+        assert!(back
+            .bag
+            .of(crate::items::Base::Weapon(Id::Scythe))
+            .next()
+            .is_some());
+        let base = Progress::default().stats();
+        let swapped = Progress {
+            weapon: Some(Id::Sword),
+            sub: Some(Id::Scythe),
+            ..back.clone()
+        };
+        assert_eq!(
+            swapped.stats().kill_heal,
+            base.kill_heal + crate::weapons::SUB_KILL_HEAL
+        );
+        assert_eq!(back.stats().kill_heal, base.kill_heal, "not while held");
+    }
+
     /// 0274 ②: 속성 패시브의 고르기 II(`tree.vein_picks` = 결의 키들)가 왕복한다 — 울림만 고를 것이 있고, 닫힌 결·고를 것이 없는
     /// 결의 키는 걸러진다. I(기본)이면 줄이 없다.
     #[test]

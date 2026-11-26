@@ -115,7 +115,7 @@ impl World {
             // 신성한 빛(0274 ②b): 날지 않는다 — 겨눈 자리(미리보기와 같은 셈 `smite_spot`)에 내려 꽂힌다.
             if def.smites() {
                 let at = self.smite_spot(dir, def, t);
-                self.smites.push(smite_of(at, &def));
+                self.smites.push(smite_of(at, pos, &def));
                 return;
             }
             let left = t[P::CastRange] * def.range;
@@ -218,11 +218,44 @@ impl World {
         self.smites.retain(|s| s.left > -SMITE_SHOW);
         for s in due {
             self.burst(s.pos, s.radius, s.damage, s.poise, s.dose, t, ev);
-            ev.push(Event::Smite {
-                at: s.pos,
-                radius: s.radius,
+            if s.look == weapons::SEED {
+                // 가시 씨앗(0274 ⑤): 떨어진 자리 둘레에 가시 뿌리가 솟는다 — 그림은 솟은 뿌리(`skill_spikes`, 뿌리 솟기와 같은 것).
+                self.sprout_ring(s.pos, s.radius);
+                ev.push(Event::Sprout {
+                    at: s.pos,
+                    radius: s.radius,
+                });
+            } else {
+                ev.push(Event::Smite {
+                    at: s.pos,
+                    radius: s.radius,
+                });
+            }
+        }
+    }
+
+    /// 둘레 `radius` m의 고리에 가시 뿌리를 세운다(그림만 — 가시 씨앗 · 깨어나는 숲 0274 ⑤): 가운데 하나 + 둘레에 고르게(둘레 1.1 m마다
+    /// 하나, 여섯에서 스물넷), 바깥으로 기울게.
+    pub(super) fn sprout_ring(&mut self, at: Vec3, radius: f32) {
+        let n = ((std::f32::consts::TAU * radius / 1.1).round() as usize).clamp(6, 24);
+        let phase = (at.x * 1.7 + at.z * 0.9).fract() * std::f32::consts::TAU;
+        let mut spikes = vec![Spike {
+            pos: vec3(at.x, self.ground_y(at), at.z),
+            age: 0.0,
+            lean: Vec3::ZERO,
+        }];
+        for k in 0..n {
+            let a = phase + k as f32 / n as f32 * std::f32::consts::TAU;
+            let out = vec3(a.sin(), 0.0, a.cos());
+            let r = radius * if k % 2 == 0 { 0.85 } else { 0.55 };
+            let p = at + out * r;
+            spikes.push(Spike {
+                pos: vec3(p.x, self.ground_y(p), p.z),
+                age: 0.0,
+                lean: out * 0.2,
             });
         }
+        self.skill_spikes.extend(spikes);
     }
 
     fn fire_air(&mut self, t: &Tuning, ev: &mut Vec<Event>, wpn: &weapons::Weapon) {
@@ -253,7 +286,7 @@ impl World {
             if def.smites() {
                 let aim = pl.pos + flat * reach;
                 let at = vec3(aim.x, self.ground_y(aim), aim.z);
-                self.smites.push(smite_of(at, &def));
+                self.smites.push(smite_of(at, from, &def));
                 ev.push(Event::Cast {
                     at: from,
                     look: def.look,
@@ -785,8 +818,10 @@ impl World {
 }
 
 /// 신성한 빛 하나(0274 ②b): 탄 표의 피해·자세·속성, 반지름 = `SMITE_RADIUS` × `scale`, `SMITE_DELAY`초 뒤.
-fn smite_of(at: Vec3, def: &weapons::Bolt) -> Smite {
+fn smite_of(at: Vec3, from: Vec3, def: &weapons::Bolt) -> Smite {
     Smite {
+        look: def.look,
+        from,
         pos: at,
         left: SMITE_DELAY,
         radius: SMITE_RADIUS * def.scale,

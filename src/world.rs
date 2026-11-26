@@ -254,6 +254,11 @@ pub enum Event {
         at: Vec3,
         radius: f32,
     },
+    /// 가시 씨앗이 떨어져 뿌리가 솟았다(0274 ⑤ — 낫의 RB): 그 자리 둘레 `radius` m를 찔렀다.
+    Sprout {
+        at: Vec3,
+        radius: f32,
+    },
     /// 던진 창이 손에 돌아왔다(0274 ②b — 날아 돌아왔거나 평타로 불러들였다).
     JavelinBack {
         at: Vec3,
@@ -401,6 +406,12 @@ pub enum Event {
         radius: f32,
         last: bool,
     },
+    /// 깨어나는 숲(0274 ⑤)의 고리 하나 — `at`(방랑자) 둘레 `radius` m까지 가시 뿌리가 솟았다, 마지막 고리면 `last`.
+    GrovePulse {
+        at: Vec3,
+        radius: f32,
+        last: bool,
+    },
     /// 기도하는 손(0276 — 망치의 빈 손): 한 모금을 삼킨 순간 둘레 `radius` m에 울림 고리가 퍼졌다.
     Prayer {
         at: Vec3,
@@ -447,6 +458,9 @@ pub struct Smite {
     pub dose: crate::status::Dose,
     /// 꽂혔다(그 뒤 `SMITE_SHOW`초 동안 빛기둥이 남아 옅어진다 — 그림만, `left`는 음수로 흐른다).
     pub struck: bool,
+    /// 탄의 꼴(`weapons::LIGHT` 신성한 빛 · `SEED` 가시 씨앗 0274 ⑤)과 떠난 자리(씨앗이 날아가는 포물선의 처음 — 그림만).
+    pub look: u8,
+    pub from: Vec3,
 }
 
 /// 수류탄(0051): 포물선으로 날아 땅에서 튕기다 도화선이 다하면(또는 쇠뇌 볼트에 맞으면) 터진다.
@@ -1578,12 +1592,21 @@ impl World {
         }
     }
 
-    /// 지금 RB의 탄 둘(보통 · 모은 것) — 쏠 때 · 미리보기 · 그림이 같이 읽는다.
+    /// 지금 RB의 탄 둘(보통 · 모은 것) — 쏠 때 · 미리보기 · 그림이 같이 읽는다. 땅을 짚는 손(0274 ⑤ — 낫의 빈 손)이면 가시 씨앗이
+    /// 솟는 둘레가 넓다(`BARE_GROUND_REACH` — 솟는 둘레는 탄의 `scale`이다).
     pub fn rb_bolts(&self) -> (weapons::Bolt, weapons::Bolt) {
         if self.shield_throws() {
             (weapons::SHIELD_TOSS.bolt, weapons::SHIELD_TOSS.charged)
         } else {
-            self.player.weapon.bolts()
+            let (mut a, mut b) = self.player.weapon.bolts();
+            if self.bare() == Some(weapons::Bare::GroundHand) {
+                for x in [&mut a, &mut b] {
+                    if x.look == weapons::SEED {
+                        x.scale *= weapons::BARE_GROUND_REACH;
+                    }
+                }
+            }
+            (a, b)
         }
     }
 
@@ -2211,6 +2234,11 @@ impl World {
                     let pl = &mut self.player;
                     pl.stamina = (pl.stamina + self.stats.kill_stamina).min(t[P::StaminaMax]);
                 }
+                // 거두는 손(0274 ⑤ — 낫을 멘 보조특성): 쓰러질 때마다 체력(받는 피해는 그대로 — 되찾을 뿐).
+                if self.stats.kill_heal > 0 {
+                    let pl = &mut self.player;
+                    pl.hp = (pl.hp + self.stats.kill_heal).min(pl.max_hp);
+                }
             }
         }
         let to = self.player.pos + Vec3::Y * 0.9;
@@ -2743,6 +2771,8 @@ struct Strike {
     dash: bool,
     /// 쪼개기(0274 ④ 대검): 한 휘두르기가 맞히는 적의 수 상한(가까운 것부터 — 0 = 상한 없음).
     cleave: u8,
+    /// 걸어 당기기(0274 ⑤ 낫): 맞은 적을 이만큼(m) 끌어온다(0 = 넉백 그대로).
+    pull: f32,
 }
 
 /// 콤보 한 타의 선딜·활성·후딜(0051: 랩 평타 × 무기 표의 `time`).
@@ -3140,6 +3170,14 @@ fn nearest_in_reach(
 
 /// 넉백 속도가 초당 이만큼씩 줄어든다(틱마다 `1 - k·dt`) — 그래서 처음 속도 v의 넉백은 모두 합쳐 v/k만큼 민다.
 pub const KNOCK_DECAY: f32 = 10.0;
+
+/// 걸어 당기기(0274 ⑤ — 낫의 셋째 타 · 강공격 · 걸어 당기기 스킬)가 적을 끌어오는 거리(m): 방랑자에게서 `dist` m(가운데끼리), 몸
+/// 반지름 `radius`인 적을 많아야 `pull` m — 몸 앞(`PLAYER_RADIUS` + `weapons::PULL_STOP`)을 넘어서 끌지 않는다.
+pub fn pull_slide(dist: f32, radius: f32, pull: f32) -> f32 {
+    (dist - radius - PLAYER_RADIUS - weapons::PULL_STOP)
+        .max(0.0)
+        .min(pull)
+}
 
 /// 쏟아지는 방향(XZ 단위). `d` = 축(주인공) → 적. 화면 시계 방향 돌리기의 접선은 (−d.z, d.x)라(카메라 요 +90°와 같은 회전),
 /// 멈출 때 관성으로 계속 가는 쪽이 그 접선. 반시계면 반대. 바깥 몫 `out`을 섞는다.

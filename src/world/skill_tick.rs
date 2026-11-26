@@ -162,9 +162,17 @@ impl World {
     /// 스킬 `id`의 지금 값: 끼운 칸의 단·고르기를 입힌 것(끼우지 않은 스킬은 1단 — 시험·바꿔 끼운 직후).
     pub fn skill_eff(&self, id: skills::Id) -> Eff {
         let pl = &self.player;
+        // 땅을 짚는 손(0274 ⑤ — 낫의 빈 손): 뿌리 스킬의 치수가 더 자란다(4레벨의 치수 덤과 같은 칸).
+        let grow = if self.bare() == Some(weapons::Bare::GroundHand)
+            && id.def().kind == crate::status::Kind::Root
+        {
+            weapons::BARE_GROUND_REACH
+        } else {
+            1.0
+        };
         let mut eff = match pl.skill.worn.iter().position(|s| *s == id) {
-            Some(i) => id.def().at(pl.skill.rank[i], pl.skill.pick[i]),
-            None => id.def().at(1, skills::Pick::A),
+            Some(i) => id.def().at_grown(pl.skill.rank[i], pl.skill.pick[i], grow),
+            None => id.def().at_grown(1, skills::Pick::A, grow),
         };
         // 망치의 물리력(0225): 타입 없는 스킬의 피해·자세 피해에 무기의 배(타입 있는 스킬은 `dosed`가 지팡이의 배를 얹는다).
         let force = pl.weapon.art().force;
@@ -303,7 +311,8 @@ impl World {
             | Form::Echo { .. }
             | Form::Field { .. }
             | Form::Wave { .. }
-            | Form::Rally { .. } => facing,
+            | Form::Rally { .. }
+            | Form::Reap { .. } => facing,
             // 눈발·뿌리 덫(0270 C3): 놓을 자리 쪽 — 조준 > 락온 > (터치의 톡이면 놓는 거리의 가장 가까운 적) > 바라보는 쪽.
             // 곁의 적을 찾아 놓으면 앞에 둔 자리가 엉뚱한 쪽으로 간다.
             Form::Drift { ahead, radius, .. } | Form::Trap { ahead, radius, .. } => cx
@@ -863,6 +872,53 @@ impl World {
                     self.skill_bash(t, &d, dir, swing, range, arc_deg, stagger, mult);
                 }
             }
+            // 생기 거두기(0274 ⑤): 날을 몸 둘레로 한 바퀴 두르고(`time`초 — 몸의 한 바퀴는 전용 동작 `sk_harvest`가 담는다: 월드의
+            // 쪽은 돌리지 않는다) 끝에 둘레를 모두 벤다 — 거둔 적마다 체력이 돈다(`most`마리까지, 바닥에서 ㄴ이면 곱절 — 받는 피해는
+            // 그대로다), 흡수를 건다. 맺음이면 거둔 적이 휘청인다(보스는 아니다 — `skill_area`).
+            Form::Reap {
+                radius,
+                heal,
+                most,
+                time,
+            } => {
+                if crossed(s.startup + time) {
+                    self.skill_ev.push(Event::Skill { id, at, dir });
+                    let stun = match d.cap {
+                        Some(Cap::Stun { stagger }) => stagger,
+                        _ => 0.0,
+                    };
+                    let n = self.skill_area(
+                        t,
+                        &Sweep {
+                            reach: radius,
+                            cone: None,
+                            push: 0.0,
+                            stagger: stun,
+                            swing,
+                            damage: s.damage,
+                            poise: s.poise,
+                            shatter: 1.0,
+                            dose: self.dosed(s.dose()),
+                        },
+                    );
+                    if n > 0 {
+                        let pl = &mut self.player;
+                        let low = match d.twist {
+                            Some(Twist::Low { below, mult })
+                                if (pl.hp as f32) < below * pl.max_hp as f32 =>
+                            {
+                                mult
+                            }
+                            _ => 1.0,
+                        };
+                        let gain = skills::scaled(heal * n.min(most as u32) as i32, low);
+                        pl.hp = (pl.hp + gain).min(pl.max_hp);
+                        self.skill_ev.push(Event::Mend {
+                            at: pl.pos + Vec3::Y * 1.0,
+                        });
+                    }
+                }
+            }
             // 빠지며 베기(0274 ③): 시동 끝에 앞 부채꼴을 한 번 벤다 — 물러나는 걸음은 플레이어 틱(`player_tick`)이 `time`초 동안.
             // 벌어진 틈(ㄴ)이면 베인 적이 한동안 더 다치고(보스는 아니다), 최종 효과면 이 스킬로 쓰러뜨린 때 쿨타임의 몫을 돌려받는다.
             Form::Slip { range, arc_deg, .. } => {
@@ -1227,7 +1283,16 @@ impl World {
             }
             en.struck();
             let mass = if en.boss { 0.25 } else { 1.0 };
-            en.knock = dir * (t[P::Knockback] * 0.5 + sw.push * KNOCK_DECAY) * mass;
+            en.knock = if sw.push < 0.0 {
+                // 끌기(0274 ⑤ — 걸어 당기기: 음수 `push`): 몸 앞까지 끌어온다, 문지기는 끌리지 않는다(무겁다).
+                if en.boss {
+                    Vec3::ZERO
+                } else {
+                    -dir * pull_slide(dv.length(), en.radius, -sw.push) * KNOCK_DECAY
+                }
+            } else {
+                dir * (t[P::Knockback] * 0.5 + sw.push * KNOCK_DECAY) * mass
+            };
             en.sway = dir * HEAVY_SWAY;
             en.sway_t = 0.0;
             self.sparks.extend(sparks_at(

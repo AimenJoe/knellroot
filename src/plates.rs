@@ -296,6 +296,7 @@ mod tests {
     const SPEAR: Plate = Plate::Class(Class::Spear);
     const DAGGER: Plate = Plate::Class(Class::Dagger);
     const GREATSWORD: Plate = Plate::Class(Class::Greatsword);
+    const SCYTHE: Plate = Plate::Class(Class::Scythe);
 
     #[test]
     fn every_weapon_plate_pairs_two_different_types_and_every_type_has_a_home() {
@@ -332,6 +333,7 @@ mod tests {
                 SPEAR,
                 DAGGER,
                 GREATSWORD,
+                SCYTHE,
                 Plate::Shield
             ]
         );
@@ -369,6 +371,9 @@ mod tests {
             Some(GREATSWORD),
             "two hands on the hilt"
         );
+        // 0274 ⑤: 낫은 한손 — 방패와 함께면 방패 판(드루이드의 판은 빈 손 또는 보조무기와).
+        assert_eq!(Plate::held(W::Scythe.grip(true)), Some(Plate::Shield));
+        assert_eq!(Plate::held(W::Scythe.grip(false)), Some(SCYTHE));
         assert_eq!(Plate::held(W::Crossbow.grip(false)), Some(CROSSBOW));
         assert_eq!(Plate::held(W::Bow.grip(false)), Some(BOW));
     }
@@ -482,6 +487,49 @@ mod tests {
         );
     }
 
+    /// 0274 ⑤: 낫 판 = 드루이드의 결 — 왼쪽 뿌리(걸어 당기기(새) / 뿌리 솟기 / 결), 가운데 참격(끌어모으기 / 궁극기 깨어나는 숲(새)),
+    /// 오른쪽 흡수(버팀 / 생기 거두기(새) / 결). 8노드 — 첫 줄 스킬 셋. 휘돌이는 한손 묶음이지만 낫 판에 서지 않는다(뿌리 덫은 활만의
+    /// 것으로 남긴다 — 원거리 종류마다 제 것만의 스킬, `every_grip_has_skills_to_choose…`).
+    #[test]
+    fn the_scythe_plate_seats_root_slash_and_drain() {
+        assert_eq!(SCYTHE.pair(), Some([Kind::Root, Kind::Drain]));
+        assert_eq!(SCYTHE.great(), Some(Ult::Grove));
+        let at = |col: Col, row: u8| -> Vec<Entry> {
+            SCYTHE
+                .seats()
+                .into_iter()
+                .filter(|s| s.col == col && s.row == row)
+                .map(|s| s.entry)
+                .collect()
+        };
+        let sk = |ids: &[Id]| ids.iter().map(|&i| Entry::Skill(i)).collect::<Vec<_>>();
+        assert_eq!(at(Col::Left, 0), sk(&[Id::Reap]));
+        assert_eq!(at(Col::Left, 1), sk(&[Id::Roots]));
+        assert_eq!(at(Col::Left, 2), [Entry::Vein(Vein::Root)]);
+        assert_eq!(at(Col::Mid, 0), sk(&[Id::Gather]));
+        assert_eq!(at(Col::Mid, 1), sk(&[]));
+        assert_eq!(at(Col::Mid, 2), [Entry::Ult(Ult::Grove)]);
+        assert_eq!(at(Col::Right, 0), sk(&[Id::Brace]));
+        assert_eq!(at(Col::Right, 1), sk(&[Id::Harvest]));
+        assert_eq!(at(Col::Right, 2), [Entry::Vein(Vein::Drain)]);
+        assert_eq!(SCYTHE.seats().len(), 8);
+        assert!(
+            !SCYTHE.has(Entry::Skill(Id::Whirl)),
+            "the druid does not spin"
+        );
+        for p in PLATES {
+            for id in [Id::Reap, Id::Harvest] {
+                assert_eq!(p.has(Entry::Skill(id)), p == SCYTHE, "{p:?} {id:?}");
+            }
+        }
+        let s = crate::i18n::s();
+        assert_eq!(
+            SCYTHE.attribute().map(|a| a(s)),
+            SWORD.attribute().map(|a| a(s)),
+            "a curved blade still cuts"
+        );
+    }
+
     #[allow(non_snake_case)]
     fn SHIELD_PLATE_HAS(id: Id) -> bool {
         Plate::Shield.has(Entry::Skill(id))
@@ -532,10 +580,11 @@ mod tests {
                 n(Plate::Shield),
                 n(SPEAR),
                 n(DAGGER),
-                n(GREATSWORD)
+                n(GREATSWORD),
+                n(SCYTHE)
             ],
-            // 0274 ④: 한손검 9 → 10(가운데 둘째 줄의 되울림), 대검 9.
-            [10, 11, 10, 9, 8, 10, 10, 9, 9]
+            // 0274 ④: 한손검 9 → 10(가운데 둘째 줄의 되울림), 대검 9. 0274 ⑤: 낫 8.
+            [10, 11, 10, 9, 8, 10, 10, 9, 9, 8]
         );
         // 옛 원거리 판에 섰던 스킬은 모두 두 판 가운데 하나에는 선다(0270 C5 — 돌려줄 것이 없다).
         for id in [

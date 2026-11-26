@@ -41,10 +41,13 @@ pub const SPEAR: Hands = class_bit(Class::Spear);
 pub const DAGGER: Hands = class_bit(Class::Dagger);
 /// 대검(0274 ④ — 두 손으로 드는 긴 날: 방패와 들지 않는다).
 pub const GREATSWORD: Hands = class_bit(Class::Greatsword);
+/// 낫(0274 ⑤ — 한 손의 휜 날: 한손검 · 망치처럼 방패와 든다 — 방패를 들면 방패 판).
+pub const SCYTHE: Hands = class_bit(Class::Scythe);
 /// 한손 계열과 방패(방패 판의 기술).
 pub const SHIELD: Hands = 1 << 15;
-/// 묶음: 한손(방패가 있든 없든 — 0274부터 망치도) · 양손 근접(지팡이 · 창 · 쌍단검 · 대검 — 두 손이 다 찬다) · 근접 · 원거리 · 어느 것이나.
-pub const ONE: Hands = SWORD | HAMMER | SHIELD;
+/// 묶음: 한손(방패가 있든 없든 — 0274부터 망치도, ⑤부터 낫도) · 양손 근접(지팡이 · 창 · 쌍단검 · 대검 — 두 손이 다 찬다) · 근접 ·
+/// 원거리 · 어느 것이나.
+pub const ONE: Hands = SWORD | HAMMER | SCYTHE | SHIELD;
 pub const TWO: Hands = STAFF | SPEAR | DAGGER | GREATSWORD;
 pub const MELEE: Hands = ONE | TWO;
 pub const RANGED: Hands = CROSSBOW | BOW;
@@ -172,6 +175,14 @@ pub enum Form {
         back: f32,
         time: f32,
     },
+    /// 생기 거두기(0274 ⑤ — 낫·흡수): 휜 날을 몸 둘레로 한 바퀴 둘러(`time`초 — 끝에 벤다) 둘레 `radius` m의 적을 모두 베고, 거둔 적마다
+    /// 체력이 `heal` 돈다(`most`마리까지 — 받는 피해를 줄이지 않는다, 되찾을 뿐 0095 원칙 2). 흡수를 걸어 그 뒤의 타도 되돌린다.
+    Reap {
+        radius: f32,
+        heal: i32,
+        most: u8,
+        time: f32,
+    },
     /// 뿌리 솟기(0214): 앞 `len` m를 `step` m 간격으로 뿌리가 `every`초마다 차례로 솟는다 — 솟은 자리 둘레 `radius` m의 적을 한 번씩
     /// 찌르고 `stagger`초 휘청(보스는 아니다).
     Erupt {
@@ -194,6 +205,7 @@ impl Form {
                 | Form::Field { .. }
                 | Form::Wave { .. }
                 | Form::Rally { .. }
+                | Form::Reap { .. }
         )
     }
 
@@ -315,10 +327,14 @@ pub enum Id {
     Sunder,
     /// 불씨 휩쓸기(0274 ④ — 대검·잔불): 달군 날로 둘레를 크게 휩쓴다.
     Sear,
+    /// 걸어 당기기(0274 ⑤ — 낫·뿌리): 휜 날을 크게 걸어 베며 앞의 적을 몸 앞으로 끌어온다(BG3 드루이드의 덩굴 휘감기 결).
+    Reap,
+    /// 생기 거두기(0274 ⑤ — 낫·흡수): 몸 둘레를 한 바퀴 거두며 벤 적마다 체력을 되찾는다.
+    Harvest,
 }
 
 /// 표 순서(대기 칸 `Player::skill_cd`의 자리 — 뒤에만 붙인다).
-pub const IDS: [Id; 30] = [
+pub const IDS: [Id; 32] = [
     Id::Whirl,
     Id::Cut,
     Id::Gather,
@@ -349,6 +365,8 @@ pub const IDS: [Id; 30] = [
     Id::Slip,
     Id::Sunder,
     Id::Sear,
+    Id::Reap,
+    Id::Harvest,
 ];
 pub const N: usize = IDS.len();
 
@@ -592,6 +610,12 @@ impl Skill {
 
     /// `rank`단(1~5로 맞춘다 — 끼운 스킬은 배운 스킬이다)·`pick` 고르기의 실제 값.
     pub fn at(&self, rank: u8, pick: Pick) -> Eff {
+        self.at_grown(rank, pick, 1.0)
+    }
+
+    /// `at` + 제 치수(4단의 치수 덤과 같은 칸 — 반지름 · 길이 · 사거리 · 각)를 `grow`배 더 — 땅을 짚는 손(0274 ⑤ 낫의 빈 손)이
+    /// 뿌리 스킬에 얹는다(`World::skill_eff`).
+    pub fn at_grown(&self, rank: u8, pick: Pick, grow: f32) -> Eff {
         let rank = rank.clamp(1, MAX_RANK);
         let twist = (rank >= PICK_RANK).then(|| self.picks[pick.index()]);
         let cap = (rank >= CAP_RANK).then_some(self.cap);
@@ -602,7 +626,7 @@ impl Skill {
         } else {
             1.0
         };
-        let size = if rank >= SIZE_RANK { RANK4_SIZE } else { 1.0 };
+        let size = if rank >= SIZE_RANK { RANK4_SIZE } else { 1.0 } * grow;
         // 피해 없는 스킬(끌어모으기)의 2단은 휘청 시간.
         let hold = if rank >= 2 && self.damage == 0 {
             RANK2_STAGGER
@@ -804,6 +828,23 @@ impl Skill {
                 stagger,
                 mult,
             },
+            // 생기 거두기(0274 ⑤): 거둔 적마다 도는 체력이 피해의 배를 같이 받는다(4 → 5 → 5), 둘레는 4단의 치수 · 넓은 낫(ㄱ).
+            Form::Reap {
+                radius,
+                heal,
+                most,
+                time,
+            } => Form::Reap {
+                radius: radius
+                    * size
+                    * match twist {
+                        Some(Twist::Big { mult }) => mult,
+                        _ => 1.0,
+                    },
+                heal: scaled(heal, dmg),
+                most,
+                time,
+            },
             // 재기: 도는 체력이 피해의 배를 같이 받는다(10 → 12 → 13), 둘레는 4단의 치수.
             Form::Rally { heal, radius, push } => Form::Rally {
                 heal: scaled(heal, dmg),
@@ -864,7 +905,10 @@ impl Skill {
             Form::Ring { hits, gap, .. } | Form::Stab { hits, gap, .. } => {
                 gap * hits.saturating_sub(1) as f32
             }
-            Form::Lane { time, .. } | Form::Wave { time, .. } | Form::Slip { time, .. } => time,
+            Form::Lane { time, .. }
+            | Form::Wave { time, .. }
+            | Form::Slip { time, .. }
+            | Form::Reap { time, .. } => time,
             Form::Brace { hold, .. } => hold,
             Form::Throw { hand, .. } => hand,
             Form::Hop { hops, gap, .. } => gap * hops as f32,
@@ -910,8 +954,9 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.15, 0.22, 0.30],
         },
         row: 0,
-        // 0274 ④: 대검도 휘돈다(광전사의 휩쓸기 — 대검 판의 가운데 열).
-        hands: ONE | GREATSWORD,
+        // 0274 ④: 대검도 휘돈다(광전사의 휩쓸기 — 대검 판의 가운데 열). 0274 ⑤: 낫은 한손이지만 휘돌지 않는다(드루이드의 판에 서지
+        // 않게 묶음에서 뺀다 — 낫의 둘레 베기는 생기 거두기).
+        hands: (ONE & !SCYTHE) | GREATSWORD,
         kind: Kind::Physical,
         build: 0.0,
         branch: Branch::Beat,
@@ -1217,7 +1262,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.30, 0.35],
         },
         row: 3,
-        hands: STAFF | BOW | SPEAR,
+        // 0274 ⑤: 낫(드루이드)도 — 땅을 다스리는 손(낫 판의 뿌리 계열 둘째 줄).
+        hands: STAFF | BOW | SPEAR | SCYTHE,
         kind: Kind::Root,
         build: 1.0,
         branch: Branch::Footing,
@@ -1800,6 +1846,79 @@ pub const SKILLS: [Skill; N] = [
         picks: [Twist::Wide { arc_deg: 300.0 }, Twist::Scorch { secs: 3.0 }],
         cap: Cap::Shatter { mult: 1.5 },
     },
+    // ---- 0274 ⑤: 낫 = 드루이드(뿌리 · 흡수) ----
+    // 걸어 당기기: 휜 날을 앞으로 크게 걸어(3.2 m · 150°) 베며 맞은 적을 몸 앞으로 끌어온다(부채꼴의 `push`가 음수 = 끌기 — 몸 앞
+    // `weapons::PULL_STOP`에서 멈춘다, 문지기는 끌리지 않는다) · 뿌리를 반 남짓 쌓는다. 넓게 걸기(ㄱ 240°) · 엉킨 땅(ㄴ — 걸어 당긴
+    // 부채꼴이 2.5초 남아 그 안의 적이 반 빠르기로 걷는다: 땅울림 ㄴ과 같은 꼴) · 최종 효과 = 끌려온 적이 2초 동안 피해를 더 받는다.
+    Skill {
+        id: Id::Reap,
+        cooldown: 7.0,
+        startup: 0.18,
+        recover: 0.30,
+        damage: HP_UNIT,
+        poise: 1.5,
+        form: Form::Cone {
+            range: 3.2,
+            arc_deg: 150.0,
+            stagger: 0.4,
+            push: -1.6,
+        },
+        anim: "scythe3",
+        clip: Clip {
+            name: "sk_reap",
+            seg: [0.18, 0.0, 0.30],
+        },
+        row: 0,
+        hands: SCYTHE,
+        kind: Kind::Root,
+        build: 0.6,
+        branch: Branch::Footing,
+        picks: [
+            Twist::Wide { arc_deg: 240.0 },
+            Twist::Crack {
+                secs: 2.5,
+                slow: 0.5,
+            },
+        ],
+        cap: Cap::Frail {
+            secs: 2.0,
+            mult: 1.2,
+        },
+    },
+    // 생기 거두기: 휜 날을 몸 둘레로 한 바퀴 둘러(2.6 m) 거둔다 — 거둔 적마다 체력 4(넷까지 — 많아야 16), 흡수를 가득 걸어 그 뒤의 타도
+    // 되돌린다. 넓은 낫(ㄱ — 둘레 ×1.3) · 바닥에서(ㄴ — 체력 35% 아래면 두 배: 재기의 ㄴ과 같은 꼴) · 최종 효과 = 거둔 적이 0.6초 휘청인다.
+    Skill {
+        id: Id::Harvest,
+        cooldown: 11.0,
+        startup: 0.15,
+        recover: 0.30,
+        damage: HP_UNIT,
+        poise: 1.0,
+        form: Form::Reap {
+            radius: 2.6,
+            heal: 4,
+            most: 4,
+            time: 0.22,
+        },
+        anim: "sk_whirl",
+        clip: Clip {
+            name: "sk_harvest",
+            seg: [0.15, 0.22, 0.30],
+        },
+        row: 1,
+        hands: SCYTHE,
+        kind: Kind::Drain,
+        build: 1.0,
+        branch: Branch::Riposte,
+        picks: [
+            Twist::Big { mult: 1.3 },
+            Twist::Low {
+                below: 0.35,
+                mult: 2.0,
+            },
+        ],
+        cap: Cap::Stun { stagger: 0.6 },
+    },
 ];
 
 impl Id {
@@ -1843,6 +1962,8 @@ impl Id {
             Id::Slip => "slip",
             Id::Sunder => "sunder",
             Id::Sear => "sear",
+            Id::Reap => "reap",
+            Id::Harvest => "harvest",
         }
     }
 
@@ -1880,10 +2001,12 @@ pub enum Ult {
     Ambush,
     /// 칼바람(0274 ④ — 대검 판): 제자리에서 잇달아 휘돌며 둘레를 거듭 베고 마지막에 크게 휩쓴다 — 그동안과 그 뒤 잠깐 맞아도 휘청이지 않는다.
     Tempest,
+    /// 깨어나는 숲(0274 ⑤ — 낫 판): 빈 손으로 땅을 짚어 가시 뿌리의 고리를 잇달아 바깥으로 솟게 한다 — 묶고, 마지막 고리에 거둔 만큼 되살아난다.
+    Grove,
 }
 
 /// 큰 기술의 표 순서(판의 단 `Board::ult`의 자리 — 뒤에만 붙인다).
-pub const ULTS: [Ult; 9] = [
+pub const ULTS: [Ult; 10] = [
     Ult::Upend,
     Ult::Flurry,
     Ult::Line,
@@ -1893,6 +2016,7 @@ pub const ULTS: [Ult; 9] = [
     Ult::Gale,
     Ult::Ambush,
     Ult::Tempest,
+    Ult::Grove,
 ];
 pub const NU: usize = ULTS.len();
 
@@ -1918,6 +2042,7 @@ impl Ult {
             Ult::Gale => "gale",
             Ult::Ambush => "ambush",
             Ult::Tempest => "tempest",
+            Ult::Grove => "grove",
         }
     }
 
@@ -1928,7 +2053,7 @@ impl Ult {
     /// 판의 갈래(0161 "갈래와 줄"): 몰아치기 = 흐름, 한 줄기 = 맞받기, 쟁반 뒤집기 = 자리.
     pub fn branch(self) -> Branch {
         match self {
-            Ult::Upend | Ult::Blizzard | Ult::Rain => Branch::Footing,
+            Ult::Upend | Ult::Blizzard | Ult::Rain | Ult::Grove => Branch::Footing,
             Ult::Flurry | Ult::Ambush | Ult::Tempest => Branch::Beat,
             Ult::Line | Ult::Bell | Ult::Gale => Branch::Riposte,
         }
@@ -1946,6 +2071,7 @@ impl Ult {
             Ult::Gale => GALE.anim,
             Ult::Ambush => AMBUSH.anim,
             Ult::Tempest => TEMPEST.anim,
+            Ult::Grove => GROVE.anim,
         }
     }
 
@@ -1960,6 +2086,7 @@ impl Ult {
             Ult::Gale => GALE.clip,
             Ult::Ambush => AMBUSH.clip,
             Ult::Tempest => TEMPEST.clip,
+            Ult::Grove => GROVE.clip,
         }
     }
 
@@ -1975,6 +2102,7 @@ impl Ult {
             Ult::Gale => (GALE.freeze, GALE.startup, GALE.recover()),
             Ult::Ambush => (AMBUSH.freeze, AMBUSH.startup, AMBUSH.recover()),
             Ult::Tempest => (TEMPEST.freeze, TEMPEST.startup, TEMPEST.recover()),
+            Ult::Grove => (GROVE.freeze, GROVE.startup, GROVE.recover()),
         }
     }
 
@@ -2559,6 +2687,88 @@ impl Tempest {
     }
 }
 
+/// 큰 기술 "깨어나는 숲"(0274 ⑤ — 낫 판, 드루이드의 결 "뿌리를 부려 묶고 되살아난다"): 세계 멈춤 뒤 빈 손으로 땅을 짚어(시동) 시동 끝부터
+/// `gap`초마다 가시 뿌리의 고리가 몸에서 바깥으로 솟는다 — k째 고리는 둘레 `radii[k]` m(2단 × `grow2`) 안의 깨어 있는 적을 모두 찌른다
+/// (가까운 적일수록 여러 번 — 한가운데의 떼를 묶는다): 앞의 고리는 `damage` · 자세 `poise` · 뿌리 `dose`(밀지 않는다 — 둘이면 묶인다,
+/// 뿌리에 덜 걸리는 잔재 ×0.75도),
+/// 마지막 고리는 `last`(3단 `last3`) · 자세 `last_poise` · 흡수 `last_dose`(그 뒤의 타가 되돌린다). 마지막 고리에 닿은 적마다 체력
+/// `heal_each`가 돈다(많아야 `heal_most` — 받는 피해는 그대로, 되찾을 뿐 0095 원칙 2). 보스는 다치고 묶이되(느려지기만) 휘청이지 않는다.
+pub struct Grove {
+    pub freeze: f32,
+    pub startup: f32,
+    pub gap: f32,
+    pub tail: f32,
+    pub radii: [f32; 3],
+    pub grow2: f32,
+    pub damage: i32,
+    pub last: i32,
+    pub last3: i32,
+    pub poise: f32,
+    pub last_poise: f32,
+    pub dose: Dose,
+    pub last_dose: Dose,
+    pub heal_each: i32,
+    pub heal_most: i32,
+    pub anim: &'static str,
+    pub clip: Clip,
+}
+
+pub const GROVE: Grove = Grove {
+    freeze: 0.3,
+    startup: 0.25,
+    gap: 0.22,
+    tail: 0.5,
+    radii: [2.2, 3.4, 4.6],
+    grow2: 1.2,
+    damage: HP_UNIT,
+    last: 3 * HP_UNIT,
+    last3: 5 * HP_UNIT,
+    poise: 1.0,
+    last_poise: 4.0,
+    dose: (Kind::Root, 0.7),
+    last_dose: (Kind::Drain, 1.0),
+    heal_each: 4,
+    heal_most: 2 * HP_UNIT,
+    anim: "pickup",
+    // 웅크려 빈 손으로 땅을 짚는 동작(줍기 원본 Collect_Object) — 멈춤 · 시동 · 후딜(고리가 솟는 동안 짚고 있다가 일어선다).
+    clip: Clip {
+        name: "ult_grove",
+        seg: [0.30, 0.25, 0.94],
+    },
+};
+
+impl Grove {
+    /// 고리의 수.
+    pub const fn pulses(&self) -> u8 {
+        self.radii.len() as u8
+    }
+
+    /// 후딜(초): 고리가 모두 이 안에 — 첫 고리는 시동 끝.
+    pub const fn recover(&self) -> f32 {
+        (self.pulses() as f32 - 1.0) * self.gap + self.tail
+    }
+
+    /// `k`째 고리의 때(시동 끝에서 초).
+    pub fn pulse_at(&self, k: u8) -> f32 {
+        k as f32 * self.gap
+    }
+
+    /// `k`째 고리의 둘레(m) — 2단부터 넓다.
+    pub fn radius_at(&self, k: u8, rank: u8) -> f32 {
+        self.radii[(k as usize).min(self.radii.len() - 1)]
+            * if rank >= 2 { self.grow2 } else { 1.0 }
+    }
+
+    /// `rank`단의 마지막 고리 피해.
+    pub fn last_at(&self, rank: u8) -> i32 {
+        if rank >= ULT_MAX_RANK {
+            self.last3
+        } else {
+            self.last
+        }
+    }
+}
+
 /// 큰 기술의 단(0158 다): 쟁반 뒤집기는 처음부터 1단, 큰 기술 줄이 열리면 2단(휘청 +0.6초 — 보스의 짧은 휘청은 그대로)·
 /// 3단(벽에 박힌 피해 ×1.5). 몰아치기·한 줄기는 줄이 열리면 2점으로 배우고(1단) 2·3단은 1점씩.
 pub const ULT_MAX_RANK: u8 = 3;
@@ -2736,6 +2946,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Pommel),
     // 0274 ④ — 대검 판의 잔불 갈래 첫 줄
     Entry::Skill(Id::Sear),
+    // 0274 ⑤ — 낫 판의 뿌리 갈래 첫 줄
+    Entry::Skill(Id::Reap),
     // 2 — 쓴 점수 4
     Entry::Skill(Id::Quake),
     Entry::Cell(Cell::ClosingBlow),
@@ -2764,6 +2976,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Slip),
     // 0274 ④ — 대검 판의 둘째 줄(균열)
     Entry::Skill(Id::Sunder),
+    // 0274 ⑤ — 낫 판의 둘째 줄(흡수)
+    Entry::Skill(Id::Harvest),
     // 3 — 쓴 점수 8
     Entry::Ult(Ult::Flurry),
     Entry::Cell(Cell::FinalMeasure),
@@ -2782,6 +2996,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Ult(Ult::Ambush),
     // 0274 ④ — 대검 판의 큰 기술
     Entry::Ult(Ult::Tempest),
+    // 0274 ⑤ — 낫 판의 큰 기술
+    Entry::Ult(Ult::Grove),
     // 4 — 쓴 점수 14(0214)
     Entry::Skill(Id::Swallow),
     Entry::Cell(Cell::HeldBreath),
@@ -3641,7 +3857,7 @@ mod tests {
     fn the_board_stands_as_the_0161_table_says() {
         use Branch::{Beat, Footing, Riposte};
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-        let table: [(usize, Branch, &[Entry]); 45] = [
+        let table: [(usize, Branch, &[Entry]); 48] = [
             (
                 0,
                 Beat,
@@ -3674,6 +3890,8 @@ mod tests {
             (0, Riposte, &[S(Id::Pommel)]),
             // 0274 ④: 대검 판.
             (0, Beat, &[S(Id::Sear)]),
+            // 0274 ⑤: 낫 판.
+            (0, Footing, &[S(Id::Reap)]),
             (
                 1,
                 Beat,
@@ -3705,6 +3923,7 @@ mod tests {
             // 0274 ③: 쌍단검 판.
             (1, Beat, &[S(Id::Slip)]),
             (1, Footing, &[S(Id::Sunder)]),
+            (1, Riposte, &[S(Id::Harvest)]),
             (2, Beat, &[U(Ult::Flurry), C(Cell::FinalMeasure)]),
             (2, Riposte, &[U(Ult::Line), C(Cell::OneWhoStands)]),
             (2, Footing, &[U(Ult::Upend), C(Cell::PathOpeningStep)]),
@@ -3713,6 +3932,7 @@ mod tests {
             (2, Riposte, &[U(Ult::Gale)]),
             (2, Beat, &[U(Ult::Ambush)]),
             (2, Beat, &[U(Ult::Tempest)]),
+            (2, Footing, &[U(Ult::Grove)]),
             (
                 3,
                 Beat,
@@ -3759,7 +3979,7 @@ mod tests {
                 assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
             }
         }
-        assert_eq!(NE, 75);
+        assert_eq!(NE, 78);
         for (i, e) in ENTRIES.iter().enumerate() {
             assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
         }
@@ -4580,7 +4800,8 @@ mod tests {
                 Ult::Rain,
                 Ult::Gale,
                 Ult::Ambush,
-                Ult::Tempest
+                Ult::Tempest,
+                Ult::Grove
             ]
         );
         for u in ULTS {
@@ -4757,7 +4978,7 @@ mod clip_facing {
         /// 활을 겨누는 동작(0272 — 화살비): 겨누는 줄(오른손 → 활을 든 왼손)이 정면 — 몸은 옆으로 선다.
         Aim,
     }
-    const FACES: [(&str, Face); 39] = [
+    const FACES: [(&str, Face); 42] = [
         ("sk_whirl", Face::Spin),
         ("sk_cut", Face::Tip),
         ("sk_gather", Face::Hips),
@@ -4802,6 +5023,10 @@ mod clip_facing {
         ("sk_sunder", Face::Tip),
         ("sk_sear", Face::Tip),
         ("ult_tempest", Face::Spin),
+        // 0274 ⑤ 낫.
+        ("sk_reap", Face::Hips),
+        ("sk_harvest", Face::Spin),
+        ("ult_grove", Face::Hips),
     ];
 
     fn deg(a: f32) -> f32 {

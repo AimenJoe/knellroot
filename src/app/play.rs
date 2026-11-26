@@ -648,6 +648,8 @@ impl App {
                 Event::Aftershock { .. } | Event::Boom { .. } => SHAKE_PLUNGE,
                 // 신성한 빛(0274 ②b)이 꽂히는 순간은 여진만큼, 창이 손에 돌아오는 것은 조용히.
                 Event::Smite { .. } => SHAKE_PLUNGE,
+                // 가시 씨앗(0274 ⑤): 뿌리가 솟는 만큼 가볍게.
+                Event::Sprout { .. } => SHAKE_HIT,
                 Event::JavelinBack { .. } => 0.0,
                 // 0276: 기도하는 손의 고리 · 덫이 무는 순간은 가볍게, 놓기 · 방패가 튕기기 · 들이받기의 출발은 조용히(맞힌 타가 제 몫을 낸다).
                 Event::Prayer { .. } | Event::SnareSnap { .. } => SHAKE_HIT,
@@ -687,6 +689,9 @@ impl App {
                 // 칼바람(0274 ④): 휩쓸기마다 가볍게, 마지막은 큰 기술만큼.
                 Event::TempestSweep { last: true, .. } => SHAKE_ROUSE,
                 Event::TempestSweep { .. } => SHAKE_HIT,
+                // 깨어나는 숲(0274 ⑤): 고리마다 가볍게, 마지막은 큰 기술만큼.
+                Event::GrovePulse { last: true, .. } => SHAKE_ROUSE,
+                Event::GrovePulse { .. } => SHAKE_HIT,
                 // 0158 G2: 터지는 것은 내려찍기만큼, 받아냄·울림·되돎은 가볍게, 불티의 타·손에 돌아옴·몰아치기의 시작은 조용히.
                 Event::ThrowBoom { .. } => SHAKE_PLUNGE,
                 Event::Soak { .. } | Event::EchoRing { .. } | Event::Interrupt { .. } => SHAKE_HIT,
@@ -738,7 +743,8 @@ impl App {
                 | Event::GreatBell { .. }
                 | Event::GaleThrust { last: true, .. }
                 | Event::AmbushStab { last: true, .. }
-                | Event::TempestSweep { last: true, .. } => ZOOM_SMASH,
+                | Event::TempestSweep { last: true, .. }
+                | Event::GrovePulse { last: true, .. } => ZOOM_SMASH,
                 // 0158 G2의 큰 순간: 땅울림이 찍는 순간, 셋을 다 받아낸 버팀의 터뜨림(받아낸 수는 다음 버팀까지 남는다).
                 Event::Skill {
                     id: crate::skills::Id::Quake,
@@ -1360,7 +1366,9 @@ impl App {
                         | Sk::Pommel
                         | Sk::Shove
                         | Sk::Slip
-                        | Sk::Sunder => Id::Swing,
+                        | Sk::Sunder
+                        | Sk::Reap
+                        | Sk::Harvest => Id::Swing,
                         // 0274 ④: 불씨 휩쓸기 = 잔불 소리(달군 날).
                         Sk::Sear => Id::Ember,
                         // 0274: 재기 = 발을 딛는 둔한 소리(숨을 몰아쉬고 선다).
@@ -1408,6 +1416,9 @@ impl App {
                         // 0274 ④(대검): 땅 가르기 = 낮은 울림(땅이 갈라진다), 불씨 휩쓸기 = 휘두름(불은 `SkillStart`의 잔불 소리).
                         Sk::Sunder => Id::Wake,
                         Sk::Sear => Id::Swing,
+                        // 0274 ⑤(낫): 걸어 당기기 = 둔한 소리(끌려오는 몸), 생기 거두기 = 휘두름(되찾는 소리는 `Mend`가 낸다).
+                        Sk::Reap => Id::Thwack,
+                        Sk::Harvest => Id::Swing,
                     }
                 }
                 Event::SkillDenied => Id::Deny,
@@ -1430,6 +1441,9 @@ impl App {
                 // 칼바람(0274 ④): 휩쓸기마다 휘두름, 마지막은 타격.
                 Event::TempestSweep { last: true, .. } => Id::Hit,
                 Event::TempestSweep { .. } => Id::Swing,
+                // 깨어나는 숲(0274 ⑤): 고리마다 낮은 울림(땅이 솟는다), 마지막은 둔한 소리(되찾는 소리는 `Mend`가 낸다).
+                Event::GrovePulse { last: true, .. } => Id::Thwack,
+                Event::GrovePulse { .. } => Id::Wake,
                 // 0270 C3: 큰 종 = 낮은 종, 눈보라 = 가장 높은 종.
                 Event::GreatBell { .. } => Id::Beat,
                 Event::Blizzard { .. } => Id::Beat3,
@@ -1443,6 +1457,8 @@ impl App {
                 // 땅 내려찍기(0274 ④): 낮은 울림(땅이 갈라진다).
                 Event::Cast { look, .. } if *look == crate::weapons::QUAKE => Id::Wake,
                 Event::Smite { .. } => Id::Beat3,
+                // 가시 씨앗(0274 ⑤): 뿌리가 솟는 낮은 울림.
+                Event::Sprout { .. } => Id::Wake,
                 Event::JavelinBack { .. } => Id::Beat,
                 // 0276(있는 소리를 겹친다): 기도하는 손 = 가운데 종 · 덫을 놓음 = 던짐 · 덫이 묾 = 쇳소리 · 방패가 튕김 = 낮은 종 ·
                 // 들이받기의 출발 = 스치는 바람(맞힌 것은 타격 소리가 따로).

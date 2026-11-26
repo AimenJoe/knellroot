@@ -50,7 +50,7 @@ pub enum Sweep {
 /// 구간(시작 s, 길이 s): `tools/art/blender/wanderer_skin.py` `HIT_WINDOWS` 그대로(시험 `swing_windows_match_the_blender_table`) —
 /// 동작 시계는 타의 판정 시작이 이 시작에 오게 돈다(`clip_rate` — 맨손처럼 남의 동작을 빌린 타·대시 공격도 칼이 닿는 순간에 맞는다).
 /// 새 동작을 무기 표에 쓰면 여기에도 한 줄(시험 `every_weapon_motion_has_a_sweep`).
-pub const SWEEPS: [(&str, Sweep, (f32, f32)); 38] = [
+pub const SWEEPS: [(&str, Sweep, (f32, f32)); 40] = [
     ("attack", Sweep::RightToLeft, (0.08, 0.10)),
     ("attack2", Sweep::LeftToRight, (0.08, 0.10)),
     ("attack3", Sweep::Center, (0.10, 0.12)),
@@ -94,6 +94,10 @@ pub const SWEEPS: [(&str, Sweep, (f32, f32)); 38] = [
     ("gs5", Sweep::Center, (0.128, 0.16)),
     ("gs_dash", Sweep::RightToLeft, (0.088, 0.11)),
     ("gs_heavy", Sweep::Center, (0.084, 0.168)),
+    // 낫(0274 ⑤): 셋째 타 = 걸어 당기며 베기(M13 — 뻗어 걸고 몸으로 당긴다) — 랩 시간에 표의 배 1.3 · 강공격 = 검의 모아 베기(같은
+    // 배 — 휜 날의 끝이 정면을 지나게 몸만 조금 더 돌린 제 동작). 앞의 두 타 · 대시는 검의 동작을 같은 배(1.0)로 빌린다.
+    ("scythe3", Sweep::Center, (0.104, 0.13)),
+    ("scythe_heavy", Sweep::Center, (0.06, 0.12)),
 ];
 
 /// 동작의 휘두르는 쪽(표에 없으면 가운데).
@@ -134,6 +138,9 @@ pub struct Hit {
     pub cancel: f32,
     /// 쪼개기(0274 ④ — 대검, BG3 대검의 Cleave "앞의 셋까지"): 한 휘두르기가 맞히는 적의 수 상한(가까운 것부터). 0 = 상한 없음.
     pub cleave: u8,
+    /// 걸어 당기기(0274 ⑤ — 낫, "휜 날이 끌어당기듯 벤다"): 맞은 적을 방랑자 쪽으로 이만큼(m) 끌어온다 — 몸 앞 `PULL_STOP` m에서
+    /// 멈춘다(넉백 대신). 문지기는 끌리지 않는다(무겁다 — 끌어모으기와 같은 규칙). 0 = 넉백 그대로.
+    pub pull: f32,
 }
 
 /// 강타(공격 꾹, 0030).
@@ -159,6 +166,8 @@ pub struct Heavy {
     pub anim_heavy: &'static str,
     /// 캔슬 시점(0057): 강타의 활성 뒤 후딜레이 비율.
     pub cancel: f32,
+    /// 걸어 당기기(0274 ⑤ — 낫의 강공격): 맞은 적을 이만큼(m) 끌어온다(`Hit::pull`과 같은 규칙). 0 = 넉백 그대로.
+    pub pull: f32,
 }
 
 /// RB.
@@ -267,10 +276,12 @@ pub enum Id {
     Daggers,
     /// 가지치기 대검(0274 ④ — 대검 종류의 첫 무기): 잔뿌리의 정원을 돌보던 이가 뿌리를 쳐내던 긴 날. 멈추지 않고 넓게 휩쓴다.
     Greatsword,
+    /// 정원지기의 낫(0274 ⑤ — 낫 종류의 첫 무기): 잔뿌리의 정원지기가 풀과 잔뿌리를 걷던 한 손의 휜 날. 걸어 당기며 벤다.
+    Scythe,
 }
 
 /// 표 순서. 맨손은 옛 끝에(옛 기록의 무기 번호가 그대로 읽히게 — `app::legacy_weapon`), 그 뒤에 새 무기.
-pub const IDS: [Id; 9] = [
+pub const IDS: [Id; 10] = [
     Id::Sword,
     Id::Hammer,
     Id::Staff,
@@ -280,6 +291,7 @@ pub const IDS: [Id; 9] = [
     Id::Spear,
     Id::Daggers,
     Id::Greatsword,
+    Id::Scythe,
 ];
 
 impl Id {
@@ -295,6 +307,7 @@ impl Id {
             Id::Spear => "spear",
             Id::Daggers => "daggers",
             Id::Greatsword => "greatsword",
+            Id::Scythe => "scythe",
         }
     }
 
@@ -348,6 +361,9 @@ pub const STONE: u8 = 8;
 pub const KNIFE: u8 = 9;
 /// 대검의 RB(0274 ④): 땅 내려찍기 — 날지 않고 땅을 따라 앞으로 달리는 짧은 충격파(마법 탄처럼 땅을 탄다 · 길 위를 모두 친다).
 pub const QUAKE: u8 = 11;
+/// 낫의 RB(0274 ⑤): 가시 씨앗 — 겨눈 자리로 던져져(날지 않는 탄 — 신성한 빛과 같은 길 `World::smite_spot`) 땅에 떨어지면 둘레에
+/// 가시 뿌리가 솟는다(뿌리 게이지 — 둘이면 묶인다).
+pub const SEED: u8 = 12;
 /// 던진 방패(0276 — 하데스의 방패): 한손 무기 + 방패의 RB. 곧게 날아 맞힌 적에서 가까운 적으로 튕기고(`tuning::SHIELD_BOUNCES`)
 /// 손에 돌아온다(창 던지기와 같은 길 — `Bolt::returns`).
 pub const SHIELD: u8 = 10;
@@ -412,9 +428,9 @@ impl Bolt {
         self.look == SHIELD
     }
 
-    /// 날지 않고 겨눈 자리에 내려 꽂힌다(신성한 빛 — `World::smite_spot`).
+    /// 날지 않고 겨눈 자리에 내려 꽂힌다(신성한 빛 — `World::smite_spot`) · 떨어져 솟는다(가시 씨앗 0274 ⑤ — 같은 길, 그림과 솟는 것만 다르다).
     pub fn smites(&self) -> bool {
-        self.look == LIGHT
+        matches!(self.look, LIGHT | SEED)
     }
 }
 
@@ -439,6 +455,7 @@ const fn hit(
         anim,
         cancel: 0.0,
         cleave: 0,
+        pull: 0.0,
     }
 }
 
@@ -680,6 +697,32 @@ pub const SHIELD_TOSS: Toss = Toss {
     spread: 0.0,
 };
 
+/// 낫(드루이드)의 RB — 가시 씨앗(0274 ⑤): 겨눈 자리(9 m 안, 줄 위의 첫 적 또는 탄이 멈추는 데 — 신성한 빛과 같은 셈)에 `SMITE_DELAY`초 뒤
+/// 떨어져 둘레(`SMITE_RADIUS` × `scale` = 1.6 m)에 가시 뿌리가 솟는다 — 피해 10 · 자세 1.5 · 뿌리 0.5(둘이면 묶인다). 모으면 넓고(2.2 m)
+/// 20 · 자세 3 · 뿌리 가득(한 번에 묶인다). 한 적에게는 신성한 빛의 반 — 묶어 두는 손이다(묶인 적은 주특성으로 되살아나는 몫이 된다).
+pub const SEED_TOSS: Toss = Toss {
+    bolt: Bolt {
+        range: 0.75,
+        damage: 10,
+        poise: 1.5,
+        look: SEED,
+        scale: 1.15,
+        dose: (Kind::Root, 0.5),
+        ..MAGIC
+    },
+    charged: Bolt {
+        range: 0.85,
+        damage: 20,
+        poise: 3.0,
+        look: SEED,
+        scale: 1.6,
+        dose: (Kind::Root, 1.0),
+        ..MAGIC
+    },
+    fan: 1,
+    spread: 0.0,
+};
+
 /// 순례자의 검 — 기준. 3연타(0201 — Meshy Double_Combo_Attack): 오른쪽 위 → 왼쪽 대각 베기 → 올려 베기(왼 → 오른) →
 /// 오른쪽에서 내리치기(좁고 길게, 자세 피해 큼).
 const SWORD_COMBO: [Hit; 3] = [
@@ -813,7 +856,26 @@ const GREATSWORD_COMBO: [Hit; 5] = [
     },
 ];
 
-pub const WEAPONS: [Weapon; 9] = [
+/// 정원지기의 낫(0274 ⑤ — 드루이드, "휜 날이 끌어당기듯 벤다"): 한 손의 휜 날로 3연타 — 오른쪽 위에서 걸어 베고(검 1타의 동작),
+/// 되받아 올려 걸고(검 2타), 셋째는 멀리 뻗어 걸어 **당기며** 벤다(앞의 적을 몸 앞으로 끌어온다 — 넉백 대신 `pull`). 한 타는 검과
+/// 같은 10 · 10 · 20, 앞의 둘은 조금 넓고(×1.15) 셋째는 넓고 길게(1.4 · 1.3) 느리다(×1.3) — 한 적에게는 검과 같거나 조금 아래, 붙은
+/// 떼에는 셋째가 다 걸어 검의 1.6배쯤(대검 · 망치 아래). 자세 피해는 검과 같다(자세를 부수는 무기가 아니다 — 묶고 되살아나는 손).
+const SCYTHE_COMBO: [Hit; 3] = [
+    hit(1.0, 1.05, 1.15, 1.0, 10, 1.0, "attack"),
+    hit(1.0, 1.05, 1.15, 1.0, 10, 1.0, "attack2"),
+    Hit {
+        knock: 0.0,
+        cancel: 0.2,
+        pull: SCYTHE_PULL,
+        ..hit(1.3, 1.3, 1.4, 0.8, 20, 2.0, "scythe3")
+    },
+];
+/// 낫의 셋째 타 · 강공격이 끌어오는 거리(m)와 끌려온 적이 멈추는 자리(방랑자의 몸 + 적의 몸 밖으로 m).
+pub const SCYTHE_PULL: f32 = 1.2;
+pub const SCYTHE_HEAVY_PULL: f32 = 1.6;
+pub const PULL_STOP: f32 = 0.5;
+
+pub const WEAPONS: [Weapon; 10] = [
     Weapon {
         id: Id::Sword,
         combo: &SWORD_COMBO,
@@ -838,6 +900,7 @@ pub const WEAPONS: [Weapon; 9] = [
             anim_charge: "charge",
             anim_heavy: "heavy",
             cancel: 0.2,
+            pull: 0.0,
         }),
         rb: Rb::Toss,
         grenade: None,
@@ -874,6 +937,7 @@ pub const WEAPONS: [Weapon; 9] = [
             anim_charge: "hammer_charge",
             anim_heavy: "hammer_slam",
             cancel: 0.55,
+            pull: 0.0,
         }),
         rb: Rb::Toss,
         grenade: None,
@@ -903,6 +967,7 @@ pub const WEAPONS: [Weapon; 9] = [
             anim_charge: "staff_charge",
             anim_heavy: "staff_release",
             cancel: 0.0,
+            pull: 0.0,
         }),
         rb: Rb::Toss,
         grenade: None,
@@ -1014,6 +1079,7 @@ pub const WEAPONS: [Weapon; 9] = [
             anim_charge: "fist_charge",
             anim_heavy: "fist_heavy",
             cancel: 0.1,
+            pull: 0.0,
         }),
         // 맨손은 종류가 아니다 — 돌을 던진다(0274 ②b, `STONE_TOSS`).
         rb: Rb::Toss,
@@ -1148,6 +1214,7 @@ pub const WEAPONS: [Weapon; 9] = [
             anim_charge: "spear_charge",
             anim_heavy: "spear_lunge",
             cancel: 0.3,
+            pull: 0.0,
         }),
         rb: Rb::Toss,
         grenade: None,
@@ -1183,6 +1250,7 @@ pub const WEAPONS: [Weapon; 9] = [
             anim_charge: "dagger_charge",
             anim_heavy: "dagger_lunge",
             cancel: 0.15,
+            pull: 0.0,
         }),
         rb: Rb::Toss,
         grenade: None,
@@ -1218,6 +1286,7 @@ pub const WEAPONS: [Weapon; 9] = [
             anim_charge: "gs_charge",
             anim_heavy: "gs_heavy",
             cancel: 0.4,
+            pull: 0.0,
         }),
         rb: Rb::Toss,
         grenade: None,
@@ -1225,6 +1294,41 @@ pub const WEAPONS: [Weapon; 9] = [
         off_hand: "",
         // 창(1.25)과 망치(1.4) 사이 — 긴 날을 쉬지 않고 휘두르는 값.
         stamina: 1.3,
+        forge: Some(MELEE_FORGE),
+    },
+    // 정원지기의 낫(0274 ⑤): 걸어 베기 둘 · 걸어 당기며 베기(셋째 — 끌어온다) · 달려들며 올려 베기(검의 것) · 강공격 = 크게 휘감아
+    // 거두기(넓은 앞 부채꼴 240° — 맞은 적을 모두 몸 앞으로 끌어온다, 검 강공격의 동작). RB는 가시 씨앗(종류의 칸).
+    Weapon {
+        id: Id::Scythe,
+        combo: &SCYTHE_COMBO,
+        dash: Some(Hit {
+            knock: 1.4,
+            cancel: 0.2,
+            ..hit(1.0, 1.25, 0.5, 2.4, 20, 2.0, "sword_dash")
+        }),
+        heavy: Some(Heavy {
+            time: 1.0,
+            charge: 1.0,
+            reach: 1.15,
+            arc: 1.5,
+            lunge: 0.8,
+            shape: Shape::Arc,
+            damage: 20,
+            poise: 3.0,
+            walk: 1.0,
+            aftershock: None,
+            breaks_primed: None,
+            anim_charge: "scythe_charge",
+            anim_heavy: "scythe_heavy",
+            cancel: 0.25,
+            pull: SCYTHE_HEAVY_PULL,
+        }),
+        rb: Rb::Toss,
+        grenade: None,
+        node: "w_scythe",
+        off_hand: "",
+        // 검(1.0)과 같다 — 한 손의 가벼운 날.
+        stamina: 1.0,
         forge: Some(MELEE_FORGE),
     },
 ];
@@ -1243,18 +1347,23 @@ pub enum Class {
     Dagger,
     /// 대검(0274 ④ — 광전사).
     Greatsword,
+    /// 낫(0274 ⑤ — 드루이드).
+    Scythe,
 }
 
 /// 무기의 주특성이 얹는 배(0225 → 0272 — 종류마다): `force` = 타입 없는(물리) 스킬의 피해·자세 피해, `channel` = 스킬의 타가
 /// 쌓는 타입 게이지, `sneak` = 급소(0274 ③ 쌍단검) — 등 뒤에서 · 휘청이거나 기절하거나 묶인 적에게 주는 방랑자의 모든 타(평타 ·
 /// 강공격 · 탄 · 스킬 · 궁극기)의 피해 배(`world::Knack` → `hurt_by` 한 곳). 앞의 둘은 스킬에만, 급소는 손의 타 모두에.
 /// `fury` = 분노(0274 ④ 대검): 둘레의 적이 많고 잃은 체력이 클수록 평타가 빨라진다 — 가장 빠를 때의 배(`World::fury`).
+/// `sap` = 되살아나는 숨(0274 ⑤ 낫): 흡수가 돌려주는 체력 · 기력의 배 — 그리고 뿌리에 묶인 적도 흡수처럼 친 손에 돌려준다
+/// (`World::tick_ails`의 흡수 한 곳). 받는 피해는 건드리지 않는다(되찾을 뿐 — 0095 원칙 2).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Art {
     pub force: f32,
     pub channel: f32,
     pub sneak: f32,
     pub fury: f32,
+    pub sap: f32,
 }
 
 impl Art {
@@ -1264,11 +1373,20 @@ impl Art {
         channel: 1.0,
         sneak: 1.0,
         fury: 1.0,
+        sap: 1.0,
     };
 
-    /// 주특성 글의 `{0}`에 넣는 수(%): 넷 가운데 큰 배의 덤.
+    /// 주특성 글의 `{0}`에 넣는 수(%): 다섯 가운데 큰 배의 덤.
     pub fn percent(self) -> i32 {
-        ((self.force.max(self.channel).max(self.sneak).max(self.fury) - 1.0) * 100.0).round() as i32
+        ((self
+            .force
+            .max(self.channel)
+            .max(self.sneak)
+            .max(self.fury)
+            .max(self.sap)
+            - 1.0)
+            * 100.0)
+            .round() as i32
     }
 }
 
@@ -1289,6 +1407,9 @@ pub const FURY_CROWD: f32 = 4.0;
 /// 대검을 휘두르는 동안(평타 · 강공격 · 모으기) 맞으면 휘청이는 시간의 배(0274 ④ — 덧옷의 `Mods::flinch`와 같은 손잡이 `hurt.stun s`,
 /// 밀림은 `GREATSWORD_KNOCK`). 받는 피해는 그대로다(0095 원칙 2 — 시험).
 pub const GREATSWORD_FLINCH: f32 = 0.4;
+/// 낫의 되살아나는 숨(0274 ⑤ — 드루이드의 "되살아난다"): 흡수가 돌려주는 체력 · 기력 ×1.5(체력 2 → 3 · 기력 6 → 9), 뿌리에 묶인 적을
+/// 쳐도 그만큼 돌아온다(한 틱에 한 번 — 흡수와 같은 셈). 문지기도 묶이면(느려지기만 해도) 돌려준다.
+pub const ART_SAP: f32 = 1.5;
 pub const GREATSWORD_KNOCK: f32 = 0.5;
 
 /// 보조특성(0272 1b): 보조무기 슬롯에 멘 종류가 **손에 쥐지 않아도** 보태는 한 가지(방패의 막기와 같은 말 — 0224). 주무기로 든
@@ -1317,6 +1438,7 @@ impl SubTrait {
                 m.kill_stamina / base,
                 m.heal as f32 / sip,
                 m.charged_dmg as f32 / SUB_CHARGED_BASE,
+                m.kill_heal as f32 / sip,
             ])
             .fold(0.0, f32::max);
         (d * 100.0).round() as i32
@@ -1344,6 +1466,9 @@ pub const SUB_KILL_STAMINA: f32 = 8.0;
 pub const SUB_CHARGED: i32 = 3;
 /// 보조특성 글의 몫의 바탕(검의 다 모은 강공격 — `{0}%`의 분모).
 pub const SUB_CHARGED_BASE: f32 = 30.0;
+/// 낫의 보조특성(0274 ⑤ — 드루이드의 맛보기, 거두는 손): 적을 쓰러뜨릴 때마다 체력 +2(등잔 한 모금 20의 10% — 주특성 되살아나는 숨
+/// +50%의 다섯에 하나). 쓰러뜨릴 것이 없는 보스 싸움을 줄이지 않는다(창의 쓰러뜨림 기력과 같은 꼴 — 모의 0%).
+pub const SUB_KILL_HEAL: i32 = 2;
 /// 쌍단검의 보조특성(0274 ③ — 도적의 맛보기, 손버릇): 쓰러뜨린 적이 남기는 잔불 ×1.10(주특성 급소 +50%의 다섯에 하나). 싸움의 수
 /// (피해 · 자세 · 기력 · 회피 · 막기)를 하나도 건드리지 않아 보스 싸움을 줄이지 않는다(모의 0% — 1b의 4% 기준은 저절로).
 pub const SUB_EMBER: f32 = 1.10;
@@ -1417,6 +1542,9 @@ pub enum Bare {
     /// 대검 — 남김없이 휘두른다(0274 ④ — BG3 광전사의 무모한 공격): 분노가 곱절로 빨리 차고(`BARE_FURY_RATE`), 가득 차 있으면 평타
     /// 다섯의 끝에서 멈추지 않고 둘째 타로 되돌아 이어진다(`World::next_hit`).
     Reckless,
+    /// 낫 — 땅을 짚는 손(0274 ⑤ — 빈 손이 땅을 짚어 주문을 넓힌다): 뿌리 속성 스킬의 범위 × `BARE_GROUND_REACH`(4레벨의 치수 덤과
+    /// 같은 칸 — `World::skill_eff`), 가시 씨앗(RB)이 솟는 둘레도 같은 배(`World::rb_bolts`).
+    GroundHand,
 }
 
 /// 빈 손의 결 값(0276 — 처음 값, 판정에서 고친다). 보스 모의(`balance::bare_hand_probe`)로 골랐다 — 어느 싸움도 같은 무기 + 가장
@@ -1437,9 +1565,11 @@ pub const BARE_SPEAR_REACH: f32 = 1.2;
 pub const SHADOW_STEP_LATE: f32 = 0.8;
 /// 남김없이 휘두른다(대검의 빈 손): 분노가 차는 배(둘레의 적 · 잃은 체력의 몫에 곱한다).
 pub const BARE_FURY_RATE: f32 = 2.0;
+/// 땅을 짚는 손(낫의 빈 손): 뿌리 스킬 · 가시 씨앗의 범위 배.
+pub const BARE_GROUND_REACH: f32 = 1.25;
 
 /// 종류 표(판 줄의 차례 — `plates::PLATES`가 이 차례로 선다). 대검 · 창은 뒤에 한 줄씩(0272 2단계).
-pub const CLASSES: [ClassDef; 8] = [
+pub const CLASSES: [ClassDef; 9] = [
     ClassDef {
         class: Class::Sword,
         hand: Hand::One,
@@ -1633,6 +1763,34 @@ pub const CLASSES: [ClassDef; 8] = [
         bare_name: |s| s.bare_greatsword,
         bare_trait: |s| s.bare_greatsword_d,
     },
+    // 낫(0274 ⑤ — 드루이드의 결): 한 손의 휜 날(한손검 · 망치처럼 방패와 든다 — 방패를 들면 방패 트리, 빈 손이면 땅을 짚는 손) ·
+    // 참격(휜 날로 벤다 — 한손검 · 대검과 같은 물리 속성: 갈리는 것은 속성 짝 · 무브셋 · 주특성) · 뿌리와 흡수(묶고 되살아난다) ·
+    // 주특성 되살아나는 숨 · 보조특성 거두는 손 · RB 가시 씨앗.
+    ClassDef {
+        class: Class::Scythe,
+        hand: Hand::One,
+        name: |s| s.class_scythe,
+        attribute: |s| s.attr_slash,
+        pair: [Kind::Root, Kind::Drain],
+        great: Ult::Grove,
+        art: Art {
+            sap: ART_SAP,
+            ..Art::PLAIN
+        },
+        main_trait: |s| s.trait_scythe,
+        sub: SubTrait {
+            mods: Mods {
+                kill_heal: SUB_KILL_HEAL,
+                ..Mods::NONE
+            },
+            stowed_reload: false,
+        },
+        sub_trait: |s| s.subtrait_scythe,
+        toss: Some(SEED_TOSS),
+        bare: Bare::GroundHand,
+        bare_name: |s| s.bare_scythe,
+        bare_trait: |s| s.bare_scythe_d,
+    },
 ];
 
 impl Class {
@@ -1647,6 +1805,7 @@ impl Class {
             Class::Spear => 5,
             Class::Dagger => 6,
             Class::Greatsword => 7,
+            Class::Scythe => 8,
         }
     }
 
@@ -1679,6 +1838,7 @@ impl Id {
             Id::Spear => Some(Class::Spear),
             Id::Daggers => Some(Class::Dagger),
             Id::Greatsword => Some(Class::Greatsword),
+            Id::Scythe => Some(Class::Scythe),
             Id::Fists => None,
         }
     }
@@ -1819,6 +1979,11 @@ mod tests {
         // 0274: 망치도 한손 — 방패와 함께면 방패 트리.
         assert_eq!(Id::Hammer.grip(true), Grip::Shield);
         assert_eq!(Id::Hammer.grip(false), Grip::Class(Class::Hammer));
+        // 0274 ⑤: 낫도 한손 — 방패와 함께면 방패 트리, 빈 손이면 낫 트리.
+        assert_eq!(Id::Scythe.hand(), Hand::One);
+        assert_eq!(Id::Scythe.grip(true), Grip::Shield);
+        assert_eq!(Id::Scythe.grip(false), Grip::Class(Class::Scythe));
+        assert_eq!(Id::Scythe.art().sap, ART_SAP);
         assert_eq!(Id::Fists.grip(false), Grip::Bare);
         assert_eq!(Id::Fists.grip(true), Grip::Shield);
         assert_eq!(Id::Staff.grip(true), Grip::Class(Class::Staff));
@@ -1863,6 +2028,7 @@ mod tests {
                 got.heal != none.heal,
                 got.ember != none.ember,
                 got.charged_dmg != none.charged_dmg,
+                got.kill_heal != none.kill_heal,
             ];
             let n = knobs.iter().filter(|k| **k).count();
             assert_eq!(n + c.sub.stowed_reload as usize, 1, "{:?}", c.class);
@@ -1875,12 +2041,13 @@ mod tests {
                 heal: none.heal,
                 ember: none.ember,
                 charged_dmg: none.charged_dmg,
+                kill_heal: none.kill_heal,
                 ..got
             };
             assert_eq!(only, none, "{:?}: nothing else moves", c.class);
             assert!(got.stamina_regen >= 1.0 && got.poise >= 1.0 && got.ail >= 1.0);
             assert!(got.skill_cd <= 1.0 && got.kill_stamina >= 0.0 && got.heal >= 0);
-            assert!(got.ember >= 1.0 && got.charged_dmg >= 0);
+            assert!(got.ember >= 1.0 && got.charged_dmg >= 0 && got.kill_heal >= 0);
             // 작게: 어느 것도 15%를 넘지 않고, 주특성의 배가 있는 종류는 그 반 아래.
             let p = c.sub.percent();
             assert_eq!(p == 0, c.sub.stowed_reload, "{:?}", c.class);
@@ -1903,6 +2070,10 @@ mod tests {
         assert_eq!(Class::Greatsword.def().sub.percent(), 10);
         assert_eq!(Class::Greatsword.def().sub.mods.charged_dmg, SUB_CHARGED);
         assert_eq!(Class::Greatsword.def().art.percent(), 20);
+        // 0274 ⑤: 낫 = 쓰러뜨릴 때마다 체력 +2(등잔 한 모금 20의 10% — 거두는 손) · 주특성 되살아나는 숨 +50%의 다섯에 하나.
+        assert_eq!(Class::Scythe.def().sub.percent(), 10);
+        assert_eq!(Class::Scythe.def().sub.mods.kill_heal, SUB_KILL_HEAL);
+        assert_eq!(Class::Scythe.def().art.percent(), 50);
         assert!(Class::Crossbow.def().sub.stowed_reload);
         assert_eq!(Id::Fists.sub_trait(), None, "bare hands are no class");
         assert_eq!(Id::Hammer.sub_trait(), Some(Class::Hammer.def().sub));
@@ -1963,6 +2134,12 @@ mod tests {
             "the axe is short"
         );
         assert!(rb(Id::Hammer).smites() && rb(Id::Hammer).dose.0 == Kind::Knell);
+        // 0274 ⑤: 가시 씨앗도 날지 않고 겨눈 자리에 떨어진다(신성한 빛과 같은 길) — 뿌리를 싣는다.
+        assert!(rb(Id::Scythe).smites() && rb(Id::Scythe).dose.0 == Kind::Root);
+        assert!(
+            rb(Id::Scythe).damage < rb(Id::Hammer).damage,
+            "the seed binds, the light strikes"
+        );
         assert!(rb(Id::Spear).returns() && rb(Id::Spear).pierce);
         assert!(
             rb(Id::Spear).range > rb(Id::Sword).range,
@@ -2024,7 +2201,7 @@ mod tests {
         charged: i32,
         grenade: i32,
     }
-    const OLD_WEAPONS: [Old; 9] = [
+    const OLD_WEAPONS: [Old; 10] = [
         Old {
             id: Id::Sword,
             combo: &[1, 1, 2],
@@ -2121,6 +2298,17 @@ mod tests {
             combo: &[1, 1, 1, 2, 2],
             dash: 2,
             heavy: 3,
+            aftershock: 0,
+            rb: 1,
+            charged: 2,
+            grenade: 0,
+        },
+        // 0274 ⑤: 낫도 그 뒤 — 옛 눈금으로(가시 씨앗은 솟는 뿌리 한 번의 피해).
+        Old {
+            id: Id::Scythe,
+            combo: &[1, 1, 2],
+            dash: 2,
+            heavy: 2,
             aftershock: 0,
             rb: 1,
             charged: 2,

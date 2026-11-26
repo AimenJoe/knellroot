@@ -70,7 +70,11 @@ impl World {
                 skills::Ult::Blizzard => self.blizzard(),
                 skills::Ult::Rain => self.arrow_rain(),
                 // 질풍 찌르기 · 그림자 습격: 찌름은 아래에서 때마다(첫 찌름이 시동 끝).
-                skills::Ult::Gale | skills::Ult::Ambush | skills::Ult::Tempest => {}
+                // 깨어나는 숲(0274 ⑤): 고리도 아래에서 때마다.
+                skills::Ult::Gale
+                | skills::Ult::Ambush
+                | skills::Ult::Tempest
+                | skills::Ult::Grove => {}
             }
         }
         if kind == skills::Ult::Gale {
@@ -86,6 +90,14 @@ impl World {
                 let at = startup + skills::TEMPEST.sweep_at(k);
                 if e < at && e1 >= at {
                     self.tempest_sweep(cx.t, k);
+                }
+            }
+        }
+        if kind == skills::Ult::Grove {
+            for k in 0..skills::GROVE.pulses() {
+                let at = startup + skills::GROVE.pulse_at(k);
+                if e < at && e1 >= at {
+                    self.grove_pulse(cx.t, k);
                 }
             }
         }
@@ -289,6 +301,74 @@ impl World {
             self.hitstop = self.hitstop.max(t[P::Hitstop] * ULT_HITSTOP);
         }
         ev.push(Event::TempestSweep {
+            at: p,
+            radius,
+            last,
+        });
+        self.skill_ev = ev;
+    }
+
+    /// 깨어나는 숲(0274 ⑤)의 `k`째 고리: 몸 둘레(`GROVE.radius_at`) 안의 깨어 있는 적을 모두 찌른다 — 앞의 고리는 가볍게(뿌리 —
+    /// 밀지 않는다, 둘이면 묶인다), 마지막 고리는 크게: 큰 피해 · 큰 자세 피해 · 흡수, 그리고 닿은 적마다 체력이 돈다(`heal_most`까지 —
+    /// 받는 피해는 그대로, 되찾을 뿐). 보스는 다치고 묶이되(느려지기만) 휘청이지 않는다(`skill_touch`가 거른다). 고리마다 새 타 번호.
+    /// 솟는 뿌리는 그림(`sprout_ring`).
+    pub(super) fn grove_pulse(&mut self, t: &Tuning, k: u8) {
+        let g = &skills::GROVE;
+        let mut ev = std::mem::take(&mut self.skill_ev);
+        let p = self.player.pos;
+        let body = p.y + self.player.air;
+        let rank = self.player.skill.ult_rank;
+        let last = k + 1 >= g.pulses();
+        let radius = g.radius_at(k, rank);
+        let dose = self.dosed(if last { g.last_dose } else { g.dose });
+        self.player.swings += 1;
+        let mut reached = 0;
+        for i in 0..self.enemies.len() {
+            let en = &self.enemies[i];
+            if !en.active() || (en.pos.y - body).abs() > HIT_DY {
+                continue;
+            }
+            let dv = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+            if dv.length() - en.radius > radius {
+                continue;
+            }
+            reached += 1;
+            if last {
+                self.sparks.extend(sparks_at(
+                    en.pos + Vec3::Y * en.height * 0.4,
+                    Vec3::Y,
+                    self.player.swings,
+                    true,
+                ));
+            }
+            self.skill_touch(
+                t,
+                &mut ev,
+                i,
+                &Touch {
+                    damage: if last { g.last_at(rank) } else { g.damage },
+                    poise: if last { g.last_poise } else { g.poise },
+                    stagger: 0.0,
+                    knock: Vec3::ZERO,
+                    crit: last,
+                    dose,
+                    flat: false,
+                },
+            );
+        }
+        self.sprout_ring(p, radius);
+        if last {
+            self.hitstop = self.hitstop.max(t[P::Hitstop] * ULT_HITSTOP);
+            let gain = (g.heal_each * reached).min(g.heal_most);
+            if gain > 0 {
+                let pl = &mut self.player;
+                pl.hp = (pl.hp + gain).min(pl.max_hp);
+                ev.push(Event::Mend {
+                    at: pl.pos + Vec3::Y * 1.0,
+                });
+            }
+        }
+        ev.push(Event::GrovePulse {
             at: p,
             radius,
             last,

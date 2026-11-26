@@ -221,6 +221,7 @@ fn only_skills_with_a_direction_take_the_drag() {
                 | Form::Field { .. }
                 | Form::Wave { .. }
                 | Form::Rally { .. }
+                | Form::Reap { .. }
         );
         assert_eq!(form.aims(), !round, "{id:?}");
     }

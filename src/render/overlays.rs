@@ -301,6 +301,31 @@ impl Renderer {
                             );
                         }
                     }
+                    // 생기 거두기(0274 ⑤): 몸과 함께 도는 날이 지나간 둘레가 풀빛으로 차오르고(한 바퀴 = `time`), 벤 순간 둘레의 테가 남는다.
+                    Form::Reap { radius, time, .. } => {
+                        let life = Color::new(0.55, 0.95, 0.45, 1.0);
+                        let k = (e0 / time.max(1e-3)).clamp(0.0, 1.0);
+                        let fade = 1.0 - ((e0 - time) / SKILL_GLOW_FADE).clamp(0.0, 1.0);
+                        if fade > 0.0 {
+                            let arc = 360.0 * k;
+                            fl.sector(
+                                pp + Vec3::Y * 0.05,
+                                radius,
+                                yaw + crate::skills::WHIRL_CLIP_TURN * arc.to_radians() * 0.5,
+                                arc,
+                                with_a(life, 0.14 * fade),
+                            );
+                            if k >= 1.0 {
+                                fl.ring(
+                                    pp + Vec3::Y * 0.07,
+                                    radius,
+                                    0.0,
+                                    360.0,
+                                    with_a(life, 0.8 * fade),
+                                );
+                            }
+                        }
+                    }
                     // 파문(0270 C3): 몸에서 번지는 물결의 앞머리(흰 테 + 민트 테), 지나간 안쪽은 옅게.
                     Form::Wave { radius, time } => {
                         let k = (e0 / time.max(1e-3)).clamp(0.0, 1.0);
@@ -517,6 +542,10 @@ fn smites(w: &World, fl: &Drape) {
     let gold = Color::new(1.0, 0.9, 0.6, 1.0);
     let white = Color::new(1.0, 0.98, 0.9, 1.0);
     for s in &w.smites {
+        if s.look == crate::weapons::SEED {
+            seed(w, s, fl);
+            continue;
+        }
         // 꽂힌 뒤: 굵은 흰 기둥이 위로 가늘어지며 옅어진다.
         if s.struck {
             let f = (1.0 + s.left / crate::tuning::SMITE_SHOW).clamp(0.0, 1.0);
@@ -560,6 +589,45 @@ fn smites(w: &World, fl: &Drape) {
             with_a(gold, 0.0),
         );
     }
+}
+
+/// 가시 씨앗(0274 ⑤ — 낫의 RB): 손에서 겨눈 자리로 포물선을 그리며 나는 가시 돋친 씨(흙빛 몸 + 민트 가시)와 떨어질 자리의 조여드는
+/// 민트 고리. 떨어진 뒤는 옅어지는 민트 판 — 솟는 가시 뿌리는 `skill_spikes`, 번쩍임은 이펙트(`Event::Sprout`). 빨강은 쓰지 않는다.
+fn seed(w: &World, s: &crate::world::Smite, fl: &Drape) {
+    let mint = Color::new(0.66, 1.0, 0.86, 1.0);
+    let g = s.pos + Vec3::Y * 0.06;
+    if s.struck {
+        let f = (1.0 + s.left / crate::tuning::SMITE_SHOW).clamp(0.0, 1.0);
+        fl.sector(g, s.radius, 0.0, 360.0, with_a(mint, 0.25 * f));
+        return;
+    }
+    let k = (1.0 - s.left / crate::tuning::SMITE_DELAY).clamp(0.0, 1.0);
+    fl.sector(g, s.radius, 0.0, 360.0, with_a(mint, 0.08 + 0.12 * k));
+    fl.ring(g, s.radius, 0.0, 360.0, with_a(mint, 0.35 + 0.4 * k));
+    fl.ring(
+        g,
+        s.radius * (1.0 - 0.7 * k),
+        0.0,
+        360.0,
+        with_a(WHITE, 0.4 * k),
+    );
+    // 나는 씨: 손(떠난 자리)에서 떨어질 자리로 — 높이는 포물선(가운데에서 1.6 m 더 높다).
+    let at = s.from.lerp(s.pos + Vec3::Y * 0.3, k) + Vec3::Y * (4.0 * k * (1.0 - k) * 1.6);
+    let rot = Quat::from_rotation_y(w.time * 9.0) * Quat::from_rotation_x(w.time * 6.0);
+    shaded_tris(
+        at,
+        &ball_faces(0.13),
+        Color::new(0.46, 0.34, 0.22, 1.0),
+        0.8,
+        rot,
+    );
+    shaded_tris(
+        at,
+        &octa_faces(vec2(0.05, 0.05), 0.22, 0.22),
+        mint,
+        0.9,
+        rot,
+    );
 }
 
 fn bell_shards(w: &World, fl: &Drape) {
@@ -1111,6 +1179,28 @@ fn ult_shape(w: &World, pp: Vec3, fl: &Drape) {
                 } else {
                     let k = ((e - u.startup) / u.recover().max(1e-3)).clamp(0.0, 1.0);
                     fl.lane_edge(at, dir, len, u.half * 2.0, with_a(steel, 0.5 * (1.0 - k)));
+                }
+            }
+            // 깨어나는 숲(0274 ⑤): 세계가 멈춘 동안 고리 셋의 자리(뿌리빛 테)가 몸에서 바깥으로 차례로 서고, 솟는 동안 아직 솟지 않은
+            // 고리의 테가 남는다(솟는 순간의 빛 · 뿌리는 이펙트 · `skill_spikes`가).
+            crate::skills::Ult::Grove => {
+                let u = &crate::skills::GROVE;
+                let mint = Color::new(0.66, 1.0, 0.86, 1.0);
+                let rank = w.player.skill.ult_rank;
+                let at = pp + Vec3::Y * 0.06;
+                let frozen = 1.0 - (w.hitstop / u.freeze.max(1e-3)).clamp(0.0, 1.0);
+                for k in 0..u.pulses() {
+                    let r = u.radius_at(k, rank);
+                    let due = u.startup + u.pulse_at(k);
+                    if e > due + 0.05 {
+                        continue;
+                    }
+                    let grow = if e > 0.0 {
+                        1.0
+                    } else {
+                        (frozen * u.pulses() as f32 - k as f32).clamp(0.0, 1.0)
+                    };
+                    fl.ring(at, r * grow, 0.0, 360.0, with_a(mint, 0.7 * grow));
                 }
             }
             // 칼바람(0274 ④): 세계가 멈춘 동안 휩쓸 둘레의 잔불빛 테가 몸에서 바깥으로 자라고, 휘도는 동안 그 테가 옅게 남는다
@@ -1879,7 +1969,8 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
                 | Form::Echo { .. }
                 | Form::Field { .. }
                 | Form::Wave { .. }
-                | Form::Rally { .. } => {}
+                | Form::Rally { .. }
+                | Form::Reap { .. } => {}
             }
         }
     }

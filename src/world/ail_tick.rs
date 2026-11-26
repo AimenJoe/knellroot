@@ -21,6 +21,8 @@ impl World {
         // 흡수(0270 B): 표지가 붙은 적을 이번 틱(앞 틱의 타 — 타는 `tick_ails` 뒤에 들어온다)에 쳤나 — 틱에 한 번만 돌아온다.
         let mut drained: Option<Vec3> = None;
         let mut shattered: Vec<Vec3> = Vec::new();
+        // 되살아나는 숨(0274 ⑤ — 낫의 주특성 `Art::sap`): 묶인 적을 쳐도 흡수처럼 되돌아온다, 되돌아오는 몫 × 배.
+        let sap = self.player.weapon.art().sap;
         for (i, en) in self.enemies.iter_mut().enumerate() {
             let struck = std::mem::take(&mut en.struck_now);
             if struck && en.alive() {
@@ -35,7 +37,8 @@ impl World {
                         en.state = EState::Chase;
                     }
                 }
-                if en.ail.drain > 0.0 && drained.is_none() {
+                let bound = sap > 1.0 && (en.ail.bound > 0.0 || en.marks.bind > 0.0);
+                if (en.ail.drain > 0.0 || bound) && drained.is_none() {
                     drained = Some(en.pos + Vec3::Y * en.height * 0.6);
                 }
             }
@@ -106,8 +109,8 @@ impl World {
         }
         if let Some(from) = drained {
             let pl = &mut self.player;
-            pl.hp = (pl.hp + DRAIN_HP).min(pl.max_hp);
-            pl.stamina = (pl.stamina + DRAIN_STAMINA).min(t[P::StaminaMax]);
+            pl.hp = (pl.hp + (DRAIN_HP as f32 * sap).round() as i32).min(pl.max_hp);
+            pl.stamina = (pl.stamina + DRAIN_STAMINA * sap).min(t[P::StaminaMax]);
             ev.push(Event::Drain { from });
         }
         // 한꺼번에 울리는 떼: 한 적이 받는 울림의 피해는 `TOLL_STACK` 번까지(떼가 클수록 한 번의 스킬이 곱절로 세지지 않게 —

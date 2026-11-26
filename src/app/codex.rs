@@ -571,6 +571,11 @@ fn weapon_texts(id: crate::weapons::Id) -> (Tr, Tr, Tr) {
             |s| s.weapon_greatsword_d,
             |s| s.cx_weapon_greatsword,
         ),
+        W::Scythe => (
+            |s| s.weapon_scythe,
+            |s| s.weapon_scythe_d,
+            |s| s.cx_weapon_scythe,
+        ),
     }
 }
 

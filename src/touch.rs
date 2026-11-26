@@ -113,6 +113,12 @@ pub enum Kind {
     Sear,
     Tempest,
     Quake2,
+    /// 낫(0274 ⑤): 공격 그림(휜 날) · 걸어 당기기 · 생기 거두기 · 깨어나는 숲 · 가시 씨앗(RB).
+    Sickle,
+    Reap,
+    Harvest,
+    Grove,
+    ThornSeed,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
@@ -955,7 +961,8 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Bow
         | Kind::Spear
         | Kind::Daggers
-        | Kind::Greatsword => a.attack = true,
+        | Kind::Greatsword
+        | Kind::Sickle => a.attack = true,
         Kind::Dodge => a.dodge = true,
         Kind::Parry => a.parry = true,
         Kind::Jump => a.jump = true,
@@ -1014,7 +1021,11 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Sunder
         | Kind::Sear
         | Kind::Tempest
-        | Kind::Quake2 => {}
+        | Kind::Quake2
+        | Kind::Reap
+        | Kind::Harvest
+        | Kind::Grove
+        | Kind::ThornSeed => {}
         Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
@@ -1075,6 +1086,7 @@ pub fn attack_icon(w: crate::weapons::Id) -> Kind {
         Id::Spear => Kind::Spear,
         Id::Daggers => Kind::Daggers,
         Id::Greatsword => Kind::Greatsword,
+        Id::Scythe => Kind::Sickle,
     }
 }
 
@@ -1115,6 +1127,8 @@ pub fn skill_icon(id: crate::skills::Id) -> Kind {
         Id::Slip => Kind::Slip,
         Id::Sunder => Kind::Sunder,
         Id::Sear => Kind::Sear,
+        Id::Reap => Kind::Reap,
+        Id::Harvest => Kind::Harvest,
     }
 }
 
@@ -1131,6 +1145,7 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
         Ult::Gale => Kind::Gale,
         Ult::Ambush => Kind::Ambush,
         Ult::Tempest => Kind::Tempest,
+        Ult::Grove => Kind::Grove,
     }
 }
 
@@ -1159,10 +1174,11 @@ pub fn rb_icon(w: &crate::world::World) -> Kind {
 
 /// 종류의 RB 꼴(`weapons::Bolt::look`) → 그림(0274 ②b). 마법 탄(0 · 1 · 2)은 별.
 pub fn toss_icon(look: u8) -> Kind {
-    use crate::weapons::{AXE, JAVELIN, KNIFE, LIGHT, QUAKE, SHIELD, STONE};
+    use crate::weapons::{AXE, JAVELIN, KNIFE, LIGHT, QUAKE, SEED, SHIELD, STONE};
     match look {
         AXE => Kind::HandAxe,
         QUAKE => Kind::Quake2,
+        SEED => Kind::ThornSeed,
         KNIFE => Kind::Knives,
         SHIELD => Kind::ShieldToss,
         LIGHT => Kind::Smite,
@@ -2301,6 +2317,86 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             "#############",
             "#############",
         ],
+        // 낫(0274 ⑤): 위에서 오른쪽으로 크게 휜 날 + 아래 왼쪽으로 내려가는 짧은 자루 — 검(곧은 대각선의 날)과 갈린다.
+        Kind::Sickle => [
+            "...######....",
+            ".###....###..",
+            "##........##.",
+            "#..........#.",
+            "...........##",
+            "..........##.",
+            ".........##..",
+            "........##...",
+            ".......#.....",
+            "......###....",
+            ".....###.....",
+            "....###......",
+            "...###.......",
+        ],
+        // 걸어 당기기(0274 ⑤): 위의 휜 날(거는 갈고리) + 아래(몸 쪽)로 끌어오는 화살 + 몸의 줄.
+        Kind::Reap => [
+            "..#######....",
+            ".#.......#...",
+            "#.........#..",
+            "#..........#.",
+            "............#",
+            "......#.....#",
+            "......#....#.",
+            "......#...#..",
+            "....#.#.#....",
+            ".....###.....",
+            "......#......",
+            ".............",
+            "..#########..",
+        ],
+        // 생기 거두기(0274 ⑤): 몸 둘레를 두른 날의 고리 + 가운데의 되찾는 표(더하기).
+        Kind::Harvest => [
+            "....#####....",
+            "..##.....##..",
+            ".#.........#.",
+            ".#....#....#.",
+            "#.....#.....#",
+            "#...#####...#",
+            "#.....#.....#",
+            "#.....#.....#",
+            ".#.........#.",
+            ".#.........#.",
+            "..##.....##..",
+            "....#####....",
+            ".............",
+        ],
+        // 깨어나는 숲(0274 ⑤): 땅에서 솟는 가시 뿌리 다섯(가운데가 가장 높다) + 땅 + 퍼지는 고리.
+        Kind::Grove => [
+            "......#......",
+            ".....###.....",
+            "..#..###..#..",
+            ".###.###.###.",
+            ".###.###.###.",
+            "#.#..###..#.#",
+            "#.#..###..#.#",
+            "#.#...#...#.#",
+            "#.#...#...#.#",
+            "#############",
+            ".............",
+            "#.#.#.#.#.#.#",
+            ".#.#.#.#.#.#.",
+        ],
+        // 가시 씨앗(0274 ⑤ — 낫의 RB): 가시가 돋친 둥근 씨 + 그것이 떨어질 땅.
+        Kind::ThornSeed => [
+            "......#......",
+            "..#...#...#..",
+            "...#.###.#...",
+            "....#####....",
+            "...#######...",
+            "##.#######.##",
+            "...#######...",
+            "....#####....",
+            "...#.###.#...",
+            "..#...#...#..",
+            "......#......",
+            ".............",
+            "#############",
+        ],
         // 빠지며 베기(0274 ③): 앞(오른쪽 위)의 벤 자국 + 뒤로 물러나는 화살.
         Kind::Slip => [
             ".......####..",
@@ -2709,6 +2805,11 @@ mod tests {
             Kind::Sear,
             Kind::Tempest,
             Kind::Quake2,
+            Kind::Sickle,
+            Kind::Reap,
+            Kind::Harvest,
+            Kind::Grove,
+            Kind::ThornSeed,
             Kind::Pick,
             Kind::Open,
             Kind::Pull,

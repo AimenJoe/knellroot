@@ -21,6 +21,7 @@ mod jump_ledge;
 mod off_hand;
 mod parry;
 mod ranged;
+mod scythe;
 mod spear;
 mod swap_strike;
 mod toss;

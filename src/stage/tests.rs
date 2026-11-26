@@ -1919,16 +1919,17 @@ fn the_empty_house_daggers_wait_in_the_villages_fourth_chest() {
 #[test]
 fn the_pruners_greatsword_waits_in_the_gardens_third_chest() {
     let def = &garden::DEF;
+    // 0274 ⑤: 넷째 상자(정원지기의 낫)가 그 뒤에 붙었다 — 앞의 셋은 그대로.
     assert_eq!(
-        def.chest_loot,
-        &[
+        def.chest_loot[..3],
+        [
             Loot::Charm(crate::charms::Id::Feet),
             Loot::Weapon(crate::weapons::Id::Bow),
             Loot::Weapon(crate::weapons::Id::Greatsword),
         ]
     );
     let (mut run, _) = StageRun::start(def);
-    assert_eq!(run.chest.at.len(), 3);
+    assert_eq!(run.chest.at.len(), 4);
     let g = run.level.ground();
     let cell = |p: Vec3| g.cell_of(p).unwrap();
     assert_eq!(
@@ -1947,5 +1948,56 @@ fn the_pruners_greatsword_waits_in_the_gardens_third_chest() {
         "the end of the west side path"
     );
     run.set_opened(&[0, 1]);
-    assert_eq!(run.chest.open, vec![true, true, false], "an old record");
+    assert_eq!(
+        run.chest.open,
+        vec![true, true, false, false],
+        "an old record"
+    );
+}
+
+/// 0274 ⑤: 정원지기의 낫은 잔뿌리의 정원의 넷째 상자 — 물 고인 낮은터 동쪽 물웅덩이 너머 구석(이끼먹이가 뜯는 물가, 적대 개체가 없다).
+/// 옛 상자 셋(장신구 · 잔뿌리 활 · 가지치기 대검)의 기록 번호(위 → 아래 차례)는 그대로다: 셋을 연 옛 기록은 낫의 상자를 연 것으로
+/// 읽히지 않는다.
+#[test]
+fn the_gardeners_sickle_waits_in_the_gardens_fourth_chest() {
+    let def = &garden::DEF;
+    assert_eq!(
+        def.chest_loot,
+        &[
+            Loot::Charm(crate::charms::Id::Feet),
+            Loot::Weapon(crate::weapons::Id::Bow),
+            Loot::Weapon(crate::weapons::Id::Greatsword),
+            Loot::Weapon(crate::weapons::Id::Scythe),
+        ]
+    );
+    let (mut run, _) = StageRun::start(def);
+    assert_eq!(run.chest.at.len(), 4);
+    let g = run.level.ground();
+    let cell = |p: Vec3| g.cell_of(p).unwrap();
+    assert_eq!(
+        cell(run.chest.at[0]),
+        (3, 23),
+        "the charm's chest keeps its place"
+    );
+    assert_eq!(
+        cell(run.chest.at[1]),
+        (40, 34),
+        "the bow's chest keeps its place"
+    );
+    assert_eq!(
+        cell(run.chest.at[2]),
+        (3, 44),
+        "the greatsword's chest keeps its place"
+    );
+    assert_eq!(
+        cell(run.chest.at[3]),
+        (39, 50),
+        "the flooded hollow's eastern bank"
+    );
+    run.set_opened(&[0, 1, 2]);
+    assert_eq!(
+        run.chest.open,
+        vec![true, true, true, false],
+        "an old record"
+    );
 }

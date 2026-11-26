@@ -503,6 +503,7 @@ fn hold_for(w: &mut World, id: Sk) {
         W::Spear,
         W::Daggers,
         W::Greatsword,
+        W::Scythe,
     ] {
         w.set_weapon(arm);
         if def.fits(w.grip()) {
@@ -3530,4 +3531,183 @@ fn tempest_spins_and_cuts_all_around_without_flinching() {
     assert!(plain.0 > 0 && plain.1, "an ordinary blow staggers");
     assert_eq!(steady.0, plain.0, "the same damage");
     assert!(!steady.1, "no flinch while steady");
+}
+
+/// 0274 ⑤ 걸어 당기기: 앞 부채꼴(3.2 m · 150°)의 적을 베며 몸 앞으로 끌어온다(넘어서 끌지 않는다 — 몸 앞 `PULL_STOP`) · 뿌리를 쌓는다 ·
+/// 등 뒤의 적은 아니다 · 문지기는 다치되 끌리지 않는다(무겁다).
+#[test]
+fn hook_and_drag_cuts_the_fan_and_pulls_foes_to_the_feet_but_not_a_warden() {
+    use crate::weapons::PULL_STOP;
+    let go = |boss: bool| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Reap, 1, Pick::A);
+        let at = vec3(0.0, 0.0, -2.9);
+        if boss {
+            w.spawn_boss(at);
+        } else {
+            w.spawn_mob(at);
+        }
+        // 등 뒤의 적(앞의 적보다 멀다 — 겨누는 쪽은 가장 가까운 적).
+        w.spawn_mob(vec3(0.0, 0.0, 3.1));
+        still(&mut w);
+        for e in &mut w.enemies {
+            e.hp = 900;
+            e.max_hp = 900;
+        }
+        let ev = w.step(&skill(0), &t);
+        let mut ev = ev;
+        for _ in 0..60 {
+            still_keep(&mut w);
+            ev.extend(w.step(&Actions::default(), &t));
+        }
+        (w, ev, at)
+    };
+    let (w, ev, at) = go(false);
+    assert!(ev
+        .iter()
+        .any(|e| matches!(e, Event::Skill { id: Sk::Reap, .. })));
+    let en = &w.enemies[0];
+    assert!(en.hp < 900, "cut");
+    let gap = flat(en.pos, w.player.pos);
+    let feet = crate::world::PLAYER_RADIUS + en.radius + PULL_STOP;
+    assert!(
+        gap < flat(at, Vec3::ZERO) - 0.6 && (gap - feet).abs() < 0.2,
+        "dragged to the feet: {gap:.2} (feet {feet:.2})"
+    );
+    assert!(en.ail.gauge[crate::status::Kind::Root.slot().unwrap()] > 0.0);
+    assert_eq!(w.enemies[1].hp, 900, "not behind");
+    let (w, _, at) = go(true);
+    assert!(w.enemies[0].hp < 900, "a warden is cut");
+    assert!(
+        (w.enemies[0].pos - at).length() < 0.1,
+        "a warden is not dragged: {:?}",
+        w.enemies[0].pos
+    );
+}
+
+/// 0274 ⑤ 생기 거두기: 몸 둘레(2.6 m)의 적을 모두 베고 거둔 적마다 체력 `heal` — 넷까지(받는 피해는 줄지 않는다, 되찾을 뿐) · 흡수를
+/// 건다. 둘레 밖의 적은 아니다.
+#[test]
+fn reap_life_cuts_all_around_and_heals_for_each_foe_up_to_four() {
+    use crate::skills::Form;
+    let Form::Reap { heal, most, .. } = Sk::Harvest.def().form else {
+        panic!("reap life is a reap")
+    };
+    for n in [1usize, 2, 6] {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Harvest, 1, Pick::A);
+        for k in 0..n {
+            let a = k as f32 / n as f32 * std::f32::consts::TAU;
+            w.spawn_mob(vec3(a.sin() * 1.6, 0.0, a.cos() * 1.6));
+        }
+        w.spawn_mob(vec3(0.0, 0.0, -6.0));
+        still(&mut w);
+        w.player.hp = 10;
+        let mut ev = w.step(&skill(0), &t);
+        for _ in 0..60 {
+            still_keep(&mut w);
+            ev.extend(w.step(&Actions::default(), &t));
+        }
+        let want = heal * n.min(most as usize) as i32;
+        // 거둔 그 틱에 흡수가 걸린 적을 쳤으니 한 모금(낫의 되살아나는 숨 — 한 틱에 한 번)이 더 들 수 있다.
+        let sip = (crate::tuning::DRAIN_HP as f32 * crate::weapons::ART_SAP).round() as i32;
+        let gain = w.player.hp - 10;
+        assert!(
+            gain >= want && gain <= want + sip,
+            "{n} foes: +{gain} (want {want})"
+        );
+        assert!(ev.iter().any(|e| matches!(e, Event::Mend { .. })));
+        for e in &w.enemies[..n] {
+            assert!(e.hp < 90 && e.ail.drain > 0.0, "reaped and drained");
+        }
+        assert_eq!(w.enemies[n].hp, 90, "out of reach");
+    }
+}
+
+/// 0274 ⑤ 깨어나는 숲(낫 판의 궁극기): 세계가 멈춘 뒤 고리 셋이 차례로 바깥으로 솟는다 — 가까운 적은 고리마다 찔려(뿌리 둘 = 속박)
+/// 마지막 고리까지, 바깥 고리의 적은 마지막 고리만, 밖의 적은 아니다. 마지막 고리에 닿은 적마다 체력(많아야 `heal_most`). 문지기는
+/// 다치되 휘청이지 않는다.
+#[test]
+fn waking_grove_raises_three_rings_that_bind_the_near_and_heal_for_each_foe_reached() {
+    use crate::skills::{Ult, GROVE};
+    let go = |boss: bool| {
+        let (mut w, t) = world();
+        w.set_weapon(crate::weapons::Id::Scythe);
+        wear_ult(&mut w, Ult::Grove, 1);
+        for (k, at) in [
+            vec3(0.0, 0.0, -1.5),
+            vec3(3.0, 0.0, 0.0),
+            vec3(0.0, 0.0, 4.1),
+            vec3(0.0, 0.0, -9.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if boss && k == 0 {
+                w.spawn_boss(at);
+            } else {
+                w.spawn_mob(at);
+            }
+        }
+        still(&mut w);
+        for e in &mut w.enemies {
+            e.hp = 900;
+            e.max_hp = 900;
+        }
+        w.player.hp = 10;
+        w.player.skill.gauge = 1.0;
+        let mut ev = w.step(
+            &Actions {
+                ult: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.hitstop >= GROVE.freeze - 1e-4, "the world stops");
+        let (mut staggered, mut bound) = (false, false);
+        for _ in 0..150 {
+            ev.extend(w.step(&Actions::default(), &t));
+            staggered |= matches!(w.enemies[0].state, EState::Stagger { .. });
+            bound |= w.enemies[0].ail.bound > 0.0;
+            still_keep(&mut w);
+        }
+        (w, ev, staggered, bound)
+    };
+    let (w, ev, _, bound) = go(false);
+    assert_eq!(
+        ev.iter()
+            .filter(|e| matches!(e, Event::GrovePulse { .. }))
+            .count(),
+        GROVE.pulses() as usize
+    );
+    let hurt = |i: usize| 900 - w.enemies[i].hp;
+    let (light, deep) = (GROVE.damage, GROVE.last_at(1));
+    assert!(
+        hurt(0) >= 2 * light + deep,
+        "near: every ring ({})",
+        hurt(0)
+    );
+    assert!(bound, "two rings of roots bind the near one");
+    assert!(
+        hurt(1) >= light + deep && hurt(1) < 2 * light + deep,
+        "middle: two rings ({})",
+        hurt(1)
+    );
+    assert!(
+        hurt(2) >= deep && hurt(2) < light + deep,
+        "outer: the last ring ({})",
+        hurt(2)
+    );
+    assert_eq!(w.enemies[3].hp, 900, "out of reach");
+    // 마지막 고리에 닿은 셋 — 체력 4씩(많아야 20), 흡수 · 속박을 친 틱마다 한 모금이 더 들 수 있다.
+    let want = (GROVE.heal_each * 3).min(GROVE.heal_most);
+    let sip = (crate::tuning::DRAIN_HP as f32 * crate::weapons::ART_SAP).round() as i32;
+    let gain = w.player.hp - 10;
+    assert!(
+        gain >= want && gain <= want + 2 * sip,
+        "+{gain} (want {want})"
+    );
+    let (w, _, staggered, _) = go(true);
+    assert!(w.enemies[0].hp < 900, "a warden is hurt");
+    assert!(!staggered, "a warden is not staggered");
 }

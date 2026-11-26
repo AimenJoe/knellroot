@@ -73,6 +73,7 @@ impl World {
                     beat: self.player.beat.swing_beat,
                     dash: hit == weapons::DASH,
                     cleave: h.cleave,
+                    pull: h.pull,
                 }
             }
             PState::Heavy {
@@ -116,6 +117,7 @@ impl World {
                     beat: swing == self.player.parry.riposte_swing && self.player.beat.swing_beat,
                     dash: false,
                     cleave: 0,
+                    pull: h.pull,
                 }
             }
             _ => return,
@@ -444,7 +446,16 @@ impl World {
                 });
             }
             en.struck();
-            en.knock = dir * t[P::Knockback] * s.knock * if en.boss { 0.25 } else { 1.0 };
+            en.knock = if s.pull > 0.0 {
+                // 걸어 당기기(0274 ⑤ 낫): 넉백 대신 몸 앞(`PULL_STOP`)까지 끌어온다 — 문지기는 끌리지 않는다(무겁다).
+                if en.boss {
+                    Vec3::ZERO
+                } else {
+                    -dir * pull_slide(d.length(), en.radius, s.pull) * KNOCK_DECAY
+                }
+            } else {
+                dir * t[P::Knockback] * s.knock * if en.boss { 0.25 } else { 1.0 }
+            };
             // 맞은 쪽으로 몸이 젖는다(패링과 같은 `sway`, 2026-11-06 — 흰 번쩍만으로는 "맞았다"가 아니다, KB).
             en.sway = dir
                 * if s.heavy.is_some() {

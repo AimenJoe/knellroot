@@ -74,6 +74,8 @@ pub(super) fn skill_text(id: sk::Id) -> (&'static str, &'static str) {
         sk::Id::Slip => (s.skill_slip, s.skill_slip_d),
         sk::Id::Sunder => (s.skill_sunder, s.skill_sunder_d),
         sk::Id::Sear => (s.skill_sear, s.skill_sear_d),
+        sk::Id::Reap => (s.skill_reap, s.skill_reap_d),
+        sk::Id::Harvest => (s.skill_harvest, s.skill_harvest_d),
     }
 }
 
@@ -90,6 +92,7 @@ pub(super) fn ult_text(u: sk::Ult) -> (&'static str, &'static str) {
         sk::Ult::Gale => (s.ult_gale, s.ult_gale_d),
         sk::Ult::Ambush => (s.ult_ambush, s.ult_ambush_d),
         sk::Ult::Tempest => (s.ult_tempest, s.ult_tempest_d),
+        sk::Ult::Grove => (s.ult_grove, s.ult_grove_d),
     }
 }
 
@@ -198,6 +201,10 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Sunder, Pick::B) => (s.pick_sunder_b, s.pick_sunder_b_d),
         (sk::Id::Sear, Pick::A) => (s.pick_sear_a, s.pick_sear_a_d),
         (sk::Id::Sear, Pick::B) => (s.pick_sear_b, s.pick_sear_b_d),
+        (sk::Id::Reap, Pick::A) => (s.pick_reap_a, s.pick_reap_a_d),
+        (sk::Id::Reap, Pick::B) => (s.pick_reap_b, s.pick_reap_b_d),
+        (sk::Id::Harvest, Pick::A) => (s.pick_harvest_a, s.pick_harvest_a_d),
+        (sk::Id::Harvest, Pick::B) => (s.pick_harvest_b, s.pick_harvest_b_d),
     };
     (mark, name, desc)
 }
@@ -236,6 +243,8 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Slip => s.cap_slip,
         sk::Id::Sunder => s.cap_sunder,
         sk::Id::Sear => s.cap_sear,
+        sk::Id::Reap => s.cap_reap,
+        sk::Id::Harvest => s.cap_harvest,
     }
 }
 
@@ -258,8 +267,8 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
     let s = s();
     let d = id.def();
     let harmless = d.damage == 0;
-    // 재기(0274): 단이 올리는 것은 피해가 아니라 도는 체력.
-    let mends = matches!(d.form, Form::Rally { .. });
+    // 재기(0274) · 생기 거두기(0274 ⑤): 단이 올리는 것은 도는 체력(거두기는 피해도 같은 배로).
+    let mends = matches!(d.form, Form::Rally { .. } | Form::Reap { .. });
     match rank {
         0 | 1 => s.sk_rank_learn.to_string(),
         2 if mends => fill(s.rk_heal, &[&pct(sk::RANK2_DAMAGE)]),
@@ -278,7 +287,8 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
                 | Form::Wave { .. }
                 | Form::Drift { .. }
                 | Form::Trap { .. }
-                | Form::Rally { .. } => s.rk_radius,
+                | Form::Rally { .. }
+                | Form::Reap { .. } => s.rk_radius,
                 Form::Lane { .. } | Form::Erupt { .. } => s.rk_length,
                 Form::Pull { .. }
                 | Form::Throw { .. }
@@ -295,7 +305,8 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
             let more = pct(1.0 + sk::RANK5_DAMAGE - sk::RANK2_DAMAGE);
             if mends {
                 parts.push(fill(s.rk_heal_more, &[&more]));
-            } else if !harmless {
+            }
+            if !harmless {
                 parts.push(fill(s.rk_damage_more, &[&more]));
             }
             parts.push(fill(s.rk_cooldown, &[&pct(sk::RANK5_COOLDOWN)]));
@@ -331,6 +342,9 @@ pub(super) fn ult_gives(u: sk::Ult, rank: u8) -> String {
         (sk::Ult::Ambush, _) => fill(s.rk_line_dmg, &[&sk::AMBUSH.last3.to_string()]),
         (sk::Ult::Tempest, 2) => fill(s.rk_tempest_radius, &[&num(sk::TEMPEST.radius2)]),
         (sk::Ult::Tempest, _) => fill(s.rk_line_dmg, &[&sk::TEMPEST.last3.to_string()]),
+        // 깨어나는 숲(0274 ⑤): 2단 = 가장 바깥 고리의 둘레, 3단 = 마지막 고리의 피해.
+        (sk::Ult::Grove, 2) => fill(s.rk_bell_radius, &[&num(sk::GROVE.radius_at(2, 2))]),
+        (sk::Ult::Grove, _) => fill(s.rk_line_dmg, &[&sk::GROVE.last3.to_string()]),
     }
 }
 
@@ -2614,11 +2628,12 @@ mod tests {
             fill(s.hands_no_shield, &[s.class_sword])
         );
         assert_eq!(hands_text(Id::Bash), s.hands_shield);
+        // 0274 ⑤: 낫은 한손이지만 휘돌지 않는다 — 한손 종류가 다 들지 않아 방패 줄이 따로 선다(방패를 들면 낫으로도 방패 판의 휘돌이).
         assert_eq!(
             hands_text(Id::Whirl),
             format!(
-                "{} · {} · {}",
-                s.class_sword, s.class_hammer, s.class_greatsword
+                "{} · {} · {} · {}",
+                s.class_sword, s.class_hammer, s.class_greatsword, s.hands_shield
             )
         );
         assert_eq!(
@@ -2626,6 +2641,17 @@ mod tests {
             format!("{} · {}", s.class_hammer, s.hands_shield)
         );
         assert_eq!(hands_text(Id::Snare), s.class_bow);
+        // 0274 ⑤: 뿌리 솟기는 낫(드루이드)도 — 한손 종류라 "방패 없이".
+        assert_eq!(
+            hands_text(Id::Roots),
+            format!(
+                "{} · {} · {} · {}",
+                s.class_staff,
+                s.class_bow,
+                s.class_spear,
+                fill(s.hands_no_shield, &[s.class_scythe])
+            )
+        );
         assert_eq!(hands_text(Id::Fuse), s.class_crossbow);
         assert_eq!(
             hands_text(Id::Embers),
@@ -2644,6 +2670,7 @@ mod tests {
                 s.class_spear,
                 s.class_dagger,
                 s.class_greatsword,
+                s.class_scythe,
                 s.plate_shield
             ]
         );
@@ -2662,6 +2689,7 @@ mod tests {
                 s.attr_pierce,
                 s.attr_pierce,
                 s.attr_pierce,
+                s.attr_slash,
                 s.attr_slash,
                 s.attr_guard
             ]
@@ -3331,6 +3359,8 @@ mod tests {
         // 0274: 한손검의 자루 치기 · 재기도 맞받기 갈래.
         keyless.rank[Id::Pommel.index()] = 0;
         keyless.rank[Id::Rally.index()] = 0;
+        // 0274 ⑤: 낫의 생기 거두기도 맞받기 갈래.
+        keyless.rank[Id::Harvest.index()] = 0;
         keyless.ult[Ult::Line.index()] = 0;
         keyless.ult[Ult::Bell.index()] = 0;
         keyless.rank[Id::Pin.index()] = 0;
