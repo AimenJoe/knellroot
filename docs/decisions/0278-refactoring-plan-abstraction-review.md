@@ -147,3 +147,41 @@
   `fx`의 묶음 넷(묶음마다 "내 사건이면 참" — 설계대로, 덮개 시험이 지킨다). 탄의 꼴 `u8` 셋(`overlays::bolts`의 던지는 것 그림 · 이름 · 그림의
   `None` — R17). 개발 창의 줄 이름 · 설명의 기본 글 둘, `Entry`(스킬 트리 칸)의 match 다섯 — 내용 enum 목록 밖.
   시험 1,018 → 1,026(무시 20 포함).
+- **R13**(헤드리스 길을 이름으로): 개발 창의 줄 · 든 무기 · 큰 창의 탭을 세어 누르지 않는다.
+  - **개발 명령**(`app/dev.rs` `DevCmd` — 웹 개발판만): 페이지의 `window.knellDev`(이름 배열)를 `App::frame`이 프레임마다 앞에서 꺼내
+    차례로 한다(`screen::dev_command` ↔ `web/index.html` `knell_dev_next`). 이름은 모두 있는 표의 Debug — 개발 창 줄 `DevStart`
+    (`Gate` · `Scenario(Line)` — 그 줄을 고른 것과 같다, PC `KNELL_BOOT`와 같은 이름) · `Dev(<줄>)`(개발 창을 그 줄에 커서를 두고 연다 —
+    설명을 찍는 스크립트용) · `Arm(<무기>)` · `Arm(Sword+Shield)`(`ARM_CYCLE` — 옛 `CYCLE`을 모듈로) · `ArmSub(<무기>|None)`(`sub_ids`).
+    모르는 이름은 콘솔 에러 `knellDev: …`(스크립트의 `dev`가 던진다). `KNELL_BOOT`도 같은 해석(쉼표로 여럿). 운영판(`--no-default-features`)
+    wasm에는 `knell_dev_next` 가져오기 · `knellDev` 글이 없다(grep 0 — 개발판 2). 시험 `every_dev_command_name_round_trips`(이름 → 명령 →
+    이름, 겹침 없음, 스크립트가 쓰는 이름 33개를 박아 둔다 — 줄 · 무기 이름을 바꾸면 스크립트가 아니라 이 시험이 깨진다). 개발 창 ·
+    모션 보기는 고른 줄을 장면 이름 끝에 붙인다(`Dev { tab: 3 } @Gate` · `Motions { … } @attack`, 개발판 — `RowFocus`).
+    옛 시험의 줄 자리 고정(전투 첫 줄 = 보스 아레나 …)은 걷었다 — 줄의 자리는 자유다.
+  - **`tools/test/scene.js`**: `dev(…이름)`(쌓고 다 꺼낼 때까지 + 프레임 둘) · `boot(page, …이름)`(goto 전 — 첫 프레임에) ·
+    `openTab(장면 이름, 무엇, 키)`(Q/E로 넘기며 장면 이름을 기다린다 — 한 바퀴에 안 오면 지금 장면을 말하며 던진다) · `devRow(줄 이름)`
+    (개발 창을 메뉴로 지나는 길 — →로 묶음의 첫 줄들을 한 바퀴 본 뒤, 없으면 묶음마다 ↓로 훑는다) · `keyboardOnly()` · `serve(dist, {port, drip})` · `launch(args)` ·
+    `watch(page, errors)`. 스크립트 열아홉이 서버 · 띄우기를 `serve` · `launch`로(베낀 `http.createServer` 19 → 0, 3,449줄 → 3,225줄).
+    개발 창을 메뉴로 지나는 길은 `shot.js` 하나에 남겼다(`devRow('Gate')` · `devRow('Motion(0)')` · `devRow('Scenario(Boss)')` — 창 자체를 지킨다,
+    그리고 `mouse.js`의 놀이터 Esc = 개발 창). 나머지(`fx` · `swap` · `leak` · `mouse` · `stress`)는 `dev`로.
+  - **세어 누르기**(`press('<길 키>', N≥2)` · 고정 횟수 고리 · `open(묶음, 줄)`): 개발 창 · 무기 길 43 → 0(`grep`: `until('Dev { tab: N' …
+    press('Arrow…', N)` 23 · "든/보조무기 바꾸기" Enter 고리 11(프레임을 안 기다리던 150 ms 고리 — `fx` 9 · `swap` 2) · `open(n, n)`/`pick(p, 4 …)`
+    8 · 보조무기 비우기 줄 설명으로 ↓2 1). 큰 창의 탭 넘기기 Q/E × N 8 → `openTab`. 남긴 세어 누르기 41(넓은 grep 118 → 41)은 모두 개발 창 밖의 짧은 목록이고 장면을
+    기다리거나 화면을 찍는다: 타이틀 → 설정(↓2 · 언어 스크립트 넷) · 조작 설정의 "키보드만 배치로"(↑2 — `keyboardOnly` 한 곳 + `view`/`shot`가
+    부른다) · 설정 탭 끝 줄(`shot` ↑4/↓3 · `save` ↑2) · 큰 창 탭 안의 칸 커서(`hearth` · `items` · `shield`의 장비 칸 ↓2~5 — 장면 이름에 칸이 없다) ·
+    연구소 창(F1 — `shot` →4 · ↓2) · 카메라 거리(`view` ↑2 · `fx` ↑4) · 기술 트리 칸 찾기(`fx` `wear` — 장면 이름 `@Skill(…)`을 보며 훑는다).
+  - **잡은 것**(세던 길이 조용히 엉뚱한 화면을 찍고 있었다): ① `fx.js horde`는 전투 묶음 아홉째 줄을 눌러 **이끼 덮인 문지기 아레나**를
+    찍고 있었다(줄이 늘어 떼가 열한째로 밀렸다) — 이제 `Scenario(Horde)`. ② `stress.js`는 타이틀에서 숫자 키 6·7을 눌러 `s40.png`·`s80.png`에
+    **타이틀**을 찍고 있었다(숫자 키는 놀이터에서만 듣는다) — 이제 `Scenario(Stress40/80)`. ③ `fx.js`의 무기 바꾸기 고리 · `swap.js`의 보조무기
+    고리는 프레임을 안 기다렸다(150 ms) — 이번 실행에서는 우연히 맞았다(찍힌 설명 칸의 무기 이름이 앞뒤로 같다).
+  - **"그대로" 증명**: CI 넷(`shot` · `touch` · `save` · `pwa` + `away`)을 바꾸기 전 두 번 · 뒤 세 번(`shot`) — 모두 종료 0. 바꾸기 전 두 번 사이에
+    바이트가 같았던 화면 10장(타이틀 · 슬롯 창 · 깨어남의 어둠 · 회전 뒤 · 로딩 · 오프라인)은 뒤에도 모두 바이트가 같다(`pwa_loading`은 한 번
+    달랐고 — 로딩 막대의 때 — 다시 돌리니 같았다. 옛 스크립트 + 새 wasm, 새 스크립트 + 옛 wasm도 같다). 월드가 보이는 화면은 앞뒤를 눈으로
+    (`00f-gate` · `00j2-motions-hit` · `horde0-0` · `spear-arm` · `sk-arm-echo` · `swap-sword-bow-arm`). 운영판에 `boot.js` · `pwa.js` 종료 0.
+  - **시간(초, 로컬 4코어 — 소프트웨어 GL, 한 번에 하나)**: CI 넷 — `shot` 269·304 → 306(처음엔 328·359 — `devRow`가 묶음마다 ↓로 훑어
+    보스 아레나까지 마흔 남짓을 눌렀다, 첫 줄들을 먼저 보게 고쳐 셋으로) · `touch` 123·131 → 109·120 · `save` 54 → 49·52 · `pwa` 16 → 15 · `away` 11 → 10·11. 나머지 — `fx` duel,horde 125 → 122 · spear 91 → 82 ·
+    rb curse 136 → 126 · skills echo 115 → 105 · bare shield 135 → 128 · `swap` 319 → 310 · `leak` stress/stage(30초) 54/52 → 50/52 · `mouse` 24 → 28 ·
+    `hearth` ko 307 → 288 · `items` 278 → 228 · `shield` 246 → 197 · `tabs` 215 → 192 · `view` 39 → 37 · `tutorial` 623 → 603 · `menu_res` 114 → 119 ·
+    `prologue` 147 → 150 · `stress` → 13. 모두 종료 0, **`tabs.js`만 앞뒤로 1**(영어 844 px의 탭 안내 줄 `[ui-check] cut` — 이 일 전부터,
+    그대로 둔다). `fx.js`의 다른 판(skills 마흔셋 전부 · daggers · greatsword · scythe · pull · wand · rb 나머지 · bare 나머지 · boss · stage)은
+    돌리지 않았다 — 같은 `armed`/`open`을 지나는 길이다.
+  - 시험 1,026 → 1,027(무시 20 포함). 골든 트레이스 · 월드 코드는 건드리지 않았다.
