@@ -1,6 +1,6 @@
 // 이펙트를 틱마다 찍는다(0141): 헤드리스 Chromium으로 개발 시나리오를 띄우고, 개발 키 F6(한 프레임 = 한 틱)을 켠 뒤
 // 동작마다 연달아 스크린숏 — 0.1초짜리 번쩍임·먼지를 실제 시간으로는 못 잡는다(헤드리스는 초당 8프레임 남짓).
-//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills,spear,daggers,greatsword,rb,bare] [스킬 이름들 · rb면 axe,light,javelin,stone,magic,bow,crossbow,knives,quake · bare면 sword,hammer,staff,crossbow,bow,spear,daggers,greatsword,shield]
+//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills,spear,daggers,greatsword,scythe,rb,bare] [스킬 이름들 · rb면 axe,light,javelin,stone,magic,bow,crossbow,knives,quake,seed · bare면 sword,hammer,staff,crossbow,bow,spear,daggers,greatsword,scythe,shield]
 // skills(0158 G2): 개발 창 기술 탭 "기술 다 올리기"(끝 단 · 고르기 ㄱ, 기록에 안 쓴다) → "기술 끼우기"에서 칸·큰 기술을 고르고 →
 //   전투 탭 "skills" 판에서 Q(칸 1)·E(칸 2)·Q+E(큰 기술)를 틱마다 찍는다 — 스킬·큰 기술마다 새 판(sk-<이름>-<n>.png).
 // 눈으로 볼 것: 맞힌 자리의 별·불똥, 휘두름의 초승달, 쓰러진 적의 재, 뛰기·회피·적 내리침의 먼지, 마법 탄의 마름모, 화로 불티.
@@ -91,7 +91,10 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       ['ambush', null, 'Ult(Ambush)', 1000, 'ult', 80, 8],
       // 0274 ④: 대검 판(대검 = 아홉 — 쌍단검 다음) — 땅 가르기 · 불씨 휩쓸기 · 칼바람(휩쓸기 다섯이 0.8초 남짓).
       ['sunder', 'Skill(Sunder)', null, 1000, 'Q', 34, 9], ['sear', 'Skill(Sear)', null, 900, 'Q', 30, 9],
-      ['tempest', null, 'Ult(Tempest)', 1000, 'ult', 80, 9]];
+      ['tempest', null, 'Ult(Tempest)', 1000, 'ult', 80, 9],
+      // 0274 ⑤: 낫 판(낫 = 열 — 대검 다음) — 걸어 당기기 · 생기 거두기 · 깨어나는 숲(고리 셋이 1초 남짓).
+      ['reap', 'Skill(Reap)', null, 1000, 'Q', 30, 10], ['harvest', 'Skill(Harvest)', null, 1000, 'Q', 36, 10],
+      ['grove', null, 'Ult(Grove)', 1300, 'ult', 100, 10]];
     const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await p.waitForTimeout(90); } };
     // 이름으로 칸 찾기(0270 C2 — 판 하나씩): 판 줄로 올라가(위를 넉넉히 — `@Strip`) ↓ = 보이는 판(든 무기의 판)의 맨 윗줄 → 줄마다 왼쪽 끝 →
     // 오른쪽으로 훑으며 장면 이름 끝의 `@칸`을 본다. 없으면 무기 판을 한손검부터 차례로(판 줄에서 → — 공통 판에는 스킬이 없다).
@@ -110,7 +113,7 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       };
       await pick(p, 12, 'ArrowUp');
       let found = await scan();
-      for (let plate = 1; plate < 10 && !found; plate++) {
+      for (let plate = 1; plate < 11 && !found; plate++) {
         await pick(p, 12, 'ArrowUp'); await pick(p, 8, 'ArrowLeft'); await pick(p, plate);
         found = await scan();
       }
@@ -232,6 +235,36 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     await p.keyboard.press('KeyU'); await burst(p, 'gs-rb', 30);
     await p.close();
   }
+  if (want('scythe')) {
+    // 0274 ⑤ 낫: "든 무기 바꾸기"를 열 번(맨손 → … → 대검 → 낫) → 전투 묶음 끝 줄 "한 줄로 선 잔재" — 쿼터뷰 · 락온 한 장씩, 그다음
+    // 틱마다(F6): 걸어 베기 둘 · 걸어 당기며 베기(줄의 앞이 끌려온다) · 모아 크게 걸어 끌어오기 · 달려들며 올려 베기(회피 뒤 공격) · RB 가시 씨앗(락온을 풀고).
+    p = await ctx.newPage(); const kit = sceneKit(p, 70); p.kit = kit;
+    await sceneKit.unhurt(p); await sceneKit.still(p);
+    p.on('pageerror', e => { if (!/register_plugin/.test(String(e))) errors.push(String(e)); });
+    await p.goto(`http://localhost:${PORT}/`); await kit.until('Title', '타이틀', 60000); await p.waitForTimeout(300); await p.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
+    if (first) { first = false;
+      await kit.press('ArrowDown'); await kit.press('Enter'); await kit.until('Settings { host: Title', '타이틀 → 설정'); await kit.press('ArrowUp'); await kit.press('Enter'); await kit.until('Controls', '설정 → 조작');
+      await kit.press('ArrowUp', 2); await kit.press('Enter'); await p.waitForTimeout(200); await kit.press('Escape'); await kit.until('Settings { host: Title', '조작 → 설정'); await kit.press('Escape'); await kit.until('Title', '설정 → 타이틀'); await kit.press('ArrowUp'); }
+    await kit.press('ArrowUp'); await kit.press('Enter'); await kit.until('Dev { tab: 0', '타이틀 → 개발 창');
+    await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 2', '기술 묶음'); await kit.press('ArrowDown', 5);
+    for (let i = 0; i < 10; i++) { await p.keyboard.press('Enter'); await p.waitForTimeout(150); }
+    await p.screenshot({ path: path.join(OUT, 'sc-arm.png') });
+    await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 4', '전투 묶음'); await kit.press('ArrowDown', 15); await kit.press('Enter');
+    await kit.until(['Play', 'Sandbox'], '한 줄로 선 잔재'); await p.waitForTimeout(1200);
+    await p.keyboard.press('ArrowUp'); await p.waitForTimeout(700); // 한 단계 가까운 쿼터뷰
+    await p.screenshot({ path: path.join(OUT, 'sc-quarter.png') });
+    await p.keyboard.press('KeyL'); await p.waitForTimeout(900); await p.screenshot({ path: path.join(OUT, 'sc-lockon.png') });
+    await p.keyboard.press('F6'); await p.waitForTimeout(300);
+    for (let k = 0; k < 3; k++) { await p.keyboard.press('KeyJ'); await burst(p, `sc-lock-hit${k}`, 12); }
+    await p.keyboard.press('F6'); await p.keyboard.press('KeyL'); await p.waitForTimeout(700); await p.keyboard.press('F6'); await p.waitForTimeout(300);
+    for (let k = 0; k < 3; k++) { await p.keyboard.press('KeyJ'); await burst(p, `sc-hit${k}`, 12); }
+    await p.keyboard.down('KeyJ'); await burst(p, 'sc-charge', 16); await p.keyboard.up('KeyJ'); await burst(p, 'sc-heavy', 24);
+    await p.keyboard.press('Space'); await burst(p, 'sc-dodge', 6); await p.keyboard.press('KeyJ'); await burst(p, 'sc-dash', 12);
+    // 줄에서 물러나 다시 줄 쪽을 본다(RB의 판과 같은 걸음) — 씨앗이 날아가 떨어지는 것이 보이게.
+    await p.keyboard.press('F6'); await hold(p, 'KeyS', 900); await hold(p, 'KeyW', 120); await p.waitForTimeout(400); await p.keyboard.press('F6'); await p.waitForTimeout(300);
+    await p.keyboard.press('KeyU'); await burst(p, 'sc-rb', 36);
+    await p.close();
+  }
   if (want('rb')) {
     // 0274 ②b RB를 종류마다: 무기마다 새 판 — 개발 창 기술 묶음 "든 무기 바꾸기"를 `arm`번(0 맨손 · 1 활 · 2 검 · 3 망치 · 4 지팡이 · 5 쇠뇌 ·
     // 7 창) → 전투 묶음 "한 줄로 선 잔재"(서 있는 적 · 방랑자는 맞지 않는다). 쿼터뷰에서 RB(U)를 틱마다(F6) 찍고, 숄더뷰(↑ 넷 — 가장 가까운 단계에서 더)
@@ -241,7 +274,9 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       // 0274 ③: 쌍단검(여덟) — 투척 단검 셋.
       ['knives', 8, 22],
       // 0274 ④: 대검(아홉) — 땅 내려찍기.
-      ['quake', 9, 30]];
+      ['quake', 9, 30],
+      // 0274 ⑤: 낫(열) — 가시 씨앗(떨어지기까지 0.35초 + 솟는 뿌리).
+      ['seed', 10, 40]];
     const names = process.argv[5] ? process.argv[5].split(',') : null;
     for (const [name, arm, n] of ARMS) {
       if (names && !names.includes(name)) continue;
@@ -289,7 +324,9 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     const BARE = [['sword', 2, true], ['hammer', 3, false], ['staff', 4, true], ['crossbow', 5, true], ['bow', 1, true],
       ['spear', 7, true], ['daggers', 8, true], ['shield', 6, true],
       // 0274 ④: 대검(아홉) — 남김없이 휘두른다(체력이 바닥이 아니라 둘레의 넷으로 분노를 채운다 — 줄 안으로 걸어 들어가 휘두른다).
-      ['greatsword', 9, true]];
+      ['greatsword', 9, true],
+      // 0274 ⑤: 낫(열) — 땅을 짚는 손(가시 씨앗이 솟는 둘레가 넓다 — 보통 씨앗 · 모은 씨앗).
+      ['scythe', 10, true]];
     const names = process.argv[5] ? process.argv[5].split(',') : null;
     for (const [name, arm, quiet] of BARE) {
       if (names && !names.includes(name)) continue;
@@ -343,6 +380,9 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
           // 줄 안으로 걸어 들어가(둘레의 적 — 분노가 두 배로 차 가득) 쉬지 않고 휘두른다: 끝 타 뒤에 둘째 타로 되돌아 이어진다.
           await p.keyboard.press('F6'); await hold(p, 'KeyW', 700); await p.keyboard.press('F6'); await p.waitForTimeout(300);
           for (let k = 0; k < 8; k++) { await p.keyboard.press('KeyJ'); await burst(p, `bare-gs-hit${k}`, 7); }
+        } else if (name === 'scythe') {
+          await p.keyboard.press('KeyU'); await burst(p, 'bare-scythe-seed', 36);
+          await p.keyboard.down('KeyU'); await burst(p, 'bare-scythe-charge', 50); await p.keyboard.up('KeyU'); await burst(p, 'bare-scythe-charged', 36);
         } else if (name === 'shield') {
           await p.keyboard.press('KeyU'); await burst(p, 'bare-shield-throw', 60);
           await p.keyboard.down('KeyK'); await burst(p, 'bare-shield-guard', 70); await p.keyboard.up('KeyK'); await burst(p, 'bare-shield-rush', 30);
