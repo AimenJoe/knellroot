@@ -415,6 +415,52 @@
   하나도 다시 쓰지 않았다(기록의 키 · 글 그대로). 시험 이름은 더함만 열둘 — 1,041 → 1,053(무시 20 포함). 검사: fmt · clippy 다섯(wasm 둘 ·
   Android · Windows · iOS) · `cargo test` · wasm 운영 빌드, 헤드리스(한 번에 하나, R24d 뒤): CI 넷(`shot` 253초 · `touch` 103 · `pwa` 14 · `save` 47 — 슬롯 · 덮어쓰기 · 이어하기) · `hearth.js` ko(287) ·
   `items.js`(224) · `shield.js`(187 — 들이받기 · 던진 방패) · `swap.js`(270 — 교체 공격) 모두 종료 0.
+- **R23**(입력 나누기 — 4단계 묶음, 8절 차례 4): **`Input::poll` 445 → 19줄**. `src/input.rs` → `input/mod.rs`(겉 그대로) + `input/collect.rs`:
+  장치마다 평범한 값 — `keys_frame`(116줄 — 키보드) · `pad_frames`(데스크톱 `gamepads` 패드마다 한 장 72줄 / `cfg(pad_keys)` Android · iOS 한 장 65줄) ·
+  `touch_frame`(터치 + 공격/사격 맞바꿈 `ranged_swap` — 합치기 앞) · `mouse_frame`(78줄 — 터치 다음: 터치가 있었는지 · 탭을 냈는지를 받는다) —
+  과 순수한 합치기 둘 `merge`(94줄 → `(Actions, 만진 장치)`) · `fold_latch`(래치). **차례 · 래치 그대로**: 패드의 큰 기술 조합은 **그때까지 모은**
+  눌림(앞의 키보드 · 앞 패드)에서 그 버튼의 동작을 거둔다(`Frame::chord` → `drop_chord`, 옛 `drop_pads`가 고리 안에서 하던 차례 — 패드마다 한 장이라
+  뒤 패드의 눌림은 남는다), 키보드의 조합은 제 장 안에서(탭 넘기기가 거둔 뒤의 스킬 1을 읽는 것까지), 굴리기 자리는 휠 > 터치 끌기 > 마우스 끌기
+  (옛 줄의 차례를 칸 둘 `wheel_at` · `drag_at`로), 지금 쓰는 장치는 합친 뒤 · 커서는 그 장치로. `KeyCode` · 패드 버튼은 `input/` 안에만.
+  **터치**: `src/touch.rs` → `touch/mod.rs`. 몸은 엔진 없는 `Touch::read_fingers(&[Finger], Surface, menu)`(`Finger` = 엔진의 손가락,
+  `Surface` = 논리 px 크기 · dp · 엄지 묶음 배 · 안전 영역 — `Surface::now()`) + 얇은 `read`(손가락 · 화면을 엔진에서). 탭 범위 · 꼬집기 한 칸은 받은
+  dp로(`Rider::drag` · `look_from`의 인자 — 0252), 버튼 배치의 상한(`TOUCH_U_MAX`)은 그대로 전역 dp(기기에서 같은 값 — 시험은 배치를 1로 본다).
+  `read` 293 → `read_fingers` 183줄 + 메뉴 화면 `read_menu` · 끌어 조준 손가락 `read_aimer`(몸 그대로).
+  **시험 열하나**: 합치기 여섯(`presses_from_two_devices_in_one_frame_both_count_and_the_pad_is_the_device` ·
+  `a_pad_chord_takes_back_the_bound_presses_gathered_so_far_but_not_later_ones` · `the_touch_stick_moves_only_when_keys_and_pads_stand_still_and_the_last_stick_wins` ·
+  `the_wheel_point_beats_the_touch_drag_and_the_mouse_tap_waits_for_no_touch_tap` · `the_ranged_touch_layout_swaps_attack_and_cast_only_with_a_ranged_weapon` ·
+  `the_latch_keeps_presses_until_a_tick_takes_them_and_holds_follow_the_frame`), 손가락을 손으로 짓는 터치 다섯(`a_tap_on_a_button_presses_it_once_and_holding_keeps_it_held` ·
+  `letting_go_of_an_aiming_button_taps_the_nearest_fires_the_drag_or_cancels_at_the_centre` ·
+  `in_the_shoulder_view_a_button_finger_turns_the_view_past_the_tap_slop_while_the_press_stays` ·
+  `two_fingers_on_the_empty_right_half_pinch_one_zoom_step_per_sixty_dp` · `the_tap_slop_and_the_pinch_step_are_in_dp` — dp를 무시하면 깨진다).
+  남긴 것: 모으는 함수들은 엔진을 부른다(시험 밖 — 헤드리스가 본다), 패드의 버튼 읽기는 두 cfg에 나란히(데스크톱 · `pad_keys` — 읽는 API가 다르다).
+- **R25b**(파일 나누기 — 몸 그대로): **`skills.rs` 5,504줄 → `skills/` 아홉**(`pub use` — 부르는 곳은 하나도 안 고쳤다): `hands` 92 · `form` 272 ·
+  `clip` 303(몸 방향 시험 `clip_facing` 포함) · `table` 1,579(그 1,050은 `SKILLS`) · `ranks` 504 · `ult` 931 · `loadout` 131 · `entries` 296 · `board` 372
+  + `board/tests.rs` 940. 시험은 다루는 파일 곁으로(이름 그대로 — 경로만 `skills::<파일>::tests::…`). 나눈 뒤 비어 있지 않은 줄을 앞뒤로 세어
+  같다(가져오기 · 경로 넷 빼고). **`at_grown` 296 → 41줄**: 모양마다 `Form { … }`를 다시 짓던 match(갈래 스물, 갈래마다 칸 하나 · 둘을 곱하는 수의 표)를
+  `Form::grown(&Growth)`의 칸 고치기(82줄)로 — 갈래마다 함수로 가르지 않았다(갈래가 2~4줄이라 함수 스물이 읽기를 덜어 주지 않는다). 나란하던
+  고르기 찾기 넷 · 둘 · 둘은 `Growth::big` · `wide` · `smolder`. 값 · 곱의 차례 그대로: 스킬 34 × 단 0~6 × 고르기 둘 × 땅 짚는 배 셋의 `Eff` Debug
+  1,428줄이 앞뒤로 바이트까지 같다(레포 밖 시험). **터치 그림 데이터** `icon_mask` 1,328줄 → `touch/icons.rs`(`pub use`), `src/icons.rs`의
+  `cell_mask`(340줄)는 그대로(작은 파일 하나의 데이터 — 옮겨도 읽기가 나아지지 않는다). 도구 주석의 경로 넷(`touch.js` · `check_glb.py` · `wanderer.py` ·
+  `wanderer_skin.py`) — 경로로 읽는 스크립트는 없었다(`include_*`는 레포 안의 상대 경로만 고쳤다). **바로잡기 하나**: 나눈 커밋에서 `board.rs`의 `KEYS`
+  가져오기가 운영판(`--no-default-features` — 개발 창의 `Board::maxed`만 쓴다)에서 쓰이지 않아 clippy가 깨졌다 — 따로 된 커밋으로 고쳤다
+  (`9ee88ae` · `1bc887f` 하나만으로는 운영판 clippy가 깨진다).
+- **고침 둘**(따로 된 커밋 — 동작이 바뀐다): ① **쇠 덫이 뿌리 덫 스킬 칸을 채우던 것**(R21에서 찾음): `World::skill_active`가 `!f.iron()`을 더 본다 —
+  시험 `an_iron_snare_does_not_fill_the_root_snare_skill_slot`(고치기 전 0.985). ② **쉬기 · 다시 서기가 놓인 것을 치운다**(R24에서 찾음):
+  `World::clear_placed` — 탄(던진 창 · 방패 — 날고 있는 것을 지우면 손에 있다, `rb_out` · `shield_out`은 날고 있는 탄을 볼 뿐이라 따로 되돌릴 상태가
+  없다) · 신성한 빛 · 수류탄 · 폭발 고리(남는 엘리트가 터뜨린 것도) · 금 간 땅 · 불똥 · 스킬이 남긴 다섯과 그 스킬이 기억하던 적 번호(`brace_caught` ·
+  `hop_seen` — 다시 세운 적은 번호가 바뀐다). 부르는 곳: `populate`(쉬기 — 물결 스테이지는 전처럼 일찍 돌아가 치우지 않는다) · 서막 숲 · 쉰 화로에서
+  다시 서기(남는 고리 · 종 조각을 지우던 줄 곁). 적의 탄은 종 조각뿐이라 전처럼 지워지고, 적의 예고는 다시 세우기가 처음으로. 시험
+  `clearing_what_the_wanderer_placed_leaves_nothing_and_brings_thrown_weapons_home`(스킬 ㄱ/ㄴ · 궁극기 · 무기마다 RB · 평타 · 강타를 다섯 때에 치움 —
+  가짓수 열하나가 모두 한 번은 놓여 있었다) · `resting_and_rising_again_clear_what_the_wanderer_threw`(세 길 — 고치기 전: 쉰 뒤 신성한 빛 · 수류탄이 남았다).
+  **두 고침 모두 골든 102 · 시나리오 65 · `fx_traces` 429 · Cue 스냅샷을 바꾸지 않았다**(칸의 남은 몫은 HUD만 읽고, 고정 마당 · 시나리오는 쉬지 않는다) — 다시 쓴 파일 없음.
+- **잰 것(R23 · R25b 뒤)**: 200줄 넘는 함수 30 → **27**(150 넘는 것 49 → 47 — 빠진 셋: `poll` 445 · `touch::read` 293 · `at_grown` 296). 남은 큰 것(그림 데이터
+  `icon_mask` · 글 표 `i18n::all` 빼고): `scenery::bake` 855 · `sfx::synth` 386 · `balance::fight_vs` 371 · `skill_fx::skill_auras` 338 · `stage::tick` 336.
+  시험 1,053 → **1,067**(무시 20 포함 — 입력 여섯 · 터치 다섯 · 고침 셋). 이름이 바뀐 시험 없음(옮긴 것은 경로만).
+  **"그대로"**: 골든 · 시나리오 · `fx_traces` · Cue 스냅샷 · 기록/무기/장신구 고정 파일 · `app::text_fit` — 어느 커밋에서도 다시 쓰지 않았다. 검사: fmt · clippy
+  여섯(wasm 둘 · Android 둘(CI의 `--no-default-features`까지) · Windows · iOS) · `cargo test` · wasm 운영 빌드. 헤드리스(한 번에 하나, 마지막 커밋 뒤): CI 넷(`shot` 236초 ·
+  `touch` 94 · `save` 41 · `pwa` 14 + `away` 9) · `view` 32 · `tabs` 161(ui-check 0) · `mouse` 21 · `swap` 242 모두 종료 0. `touch.js`의 `layout()` 베낌은 배치 셈을
+  건드리지 않아 그대로 맞는다(끌어 조준 · 숄더뷰 끌기 · 회전 뒤 화면을 눈으로).
 
 ## 8. 다시 잰 것(2026-11-26, 0~2단계 뒤 `9e60393`) — 3~4단계의 차례
 
