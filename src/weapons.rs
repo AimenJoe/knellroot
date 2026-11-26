@@ -175,6 +175,29 @@ pub struct Heavy {
     pub dose: Dose,
 }
 
+impl Heavy {
+    /// 표의 줄이 `..Heavy::BASE`로 받는 바탕(0278 R18): 여진 · 깨기 · 끌기 · 속성은 그 무기만의 것이라 없는 것이 바탕이다.
+    /// 시간 · 거리 · 피해 · 동작은 줄마다 적는다(바탕의 값은 배 1 · 피해 0 — 빠뜨리면 바로 보이게).
+    pub const BASE: Heavy = Heavy {
+        time: 1.0,
+        charge: 1.0,
+        reach: 1.0,
+        arc: 1.0,
+        lunge: 1.0,
+        shape: Shape::Arc,
+        damage: 0,
+        poise: 0.0,
+        walk: 1.0,
+        aftershock: None,
+        breaks_primed: None,
+        anim_charge: "charge",
+        anim_heavy: "heavy",
+        cancel: 0.0,
+        pull: 0.0,
+        dose: NO_DOSE,
+    };
+}
+
 /// RB.
 #[derive(Clone, Copy, Debug)]
 pub enum Rb {
@@ -224,6 +247,19 @@ pub struct Toss {
     /// 나머지는 `CAST_CHARGES` · 1). 두 손으로 엮는 지팡이(0276)의 칸 +1은 `World::cast_charges`가 얹는다.
     pub charges: f32,
     pub refill: f32,
+}
+
+impl Toss {
+    /// 종류의 RB 칸이 `..Toss::BASE`로 받는 바탕(0278 R18): 하나씩(부채꼴 없음) · 칸 `CAST_CHARGES` · 차는 배 1 — 부채꼴은 쌍단검,
+    /// 칸 · 차는 배는 완드만 다르다. 탄 둘은 줄마다 적는다(바탕은 마법 탄).
+    pub const BASE: Toss = Toss {
+        bolt: MAGIC,
+        charged: MAGIC,
+        fan: 1,
+        spread: 0.0,
+        charges: CAST_CHARGES,
+        refill: 1.0,
+    };
 }
 
 /// 날아가는 탄의 모양.
@@ -330,6 +366,19 @@ impl Id {
 
 pub struct Weapon {
     pub id: Id,
+    /// 이름 · 설명(장비 탭 · 가게 · 도감 — 0051, i18n 표) · 도감의 나오는 곳(0191 — 상자 자리는 지역마다 `stage/<지역>.rs`의
+    /// `chest_loot` 차례, 무기를 얻는 차례는 0274 ⑦).
+    pub name: Tr,
+    pub desc: Tr,
+    pub place: Tr,
+    /// 공격 버튼에 그릴 그림(0147 — 사장 "어차피 종류는 정해졌으니까": 든 무기마다 하나, `touch::attack_icon`). 탄의 꼴
+    /// `LookDef::icon`(0278 R17)과 같은 꼴로 표에 둔다.
+    pub icon: crate::touch::Kind,
+    /// 아이템 그림의 각(도 — 돌기 · 숙이기 · 눕히기, 0068 `item_view::view`): 방랑자 모델의 오른손 부위(`node`)를 앞으로 세워
+    /// (숙이기 −80°: 넓은 면이 카메라 쪽) 대각선으로 눕힌다 — 모델 공간에서 날 · 자루는 +z로 길고 넓은 면이 위(+y)를 본다.
+    pub view: (f32, f32, f32),
+    /// 아이템 그림을 짝으로(0277 — 같은 부위를 눕힌 각만 거울로 한 번 더).
+    pub twin: bool,
     /// X 연타(근접 무기). 원거리 무기는 비어 있고 X가 수류탄.
     pub combo: &'static [Hit],
     /// 대시 공격(2026-11-06): 회피 끝무렵·직후에 공격 — 회피의 기세로 멀리 내딛는 한 타. 맞힌 뒤 콤보는 둘째 타부터.
@@ -650,10 +699,7 @@ pub const MAGIC_TOSS: Toss = Toss {
         scale: 1.5,
         ..MAGIC
     },
-    fan: 1,
-    spread: 0.0,
-    charges: CAST_CHARGES,
-    refill: 1.0,
+    ..Toss::BASE
 };
 
 /// 한손검(전사)의 RB — 던지는 손도끼: 짧고(7.2 m) 무겁다 — 피해 20 · 자세 피해 4(마법 탄의 넷 배), 맞은 잡몹이 잠깐 휘청.
@@ -678,10 +724,7 @@ pub const AXE_TOSS: Toss = Toss {
         scale: 1.5,
         ..MAGIC
     },
-    fan: 1,
-    spread: 0.0,
-    charges: CAST_CHARGES,
-    refill: 1.0,
+    ..Toss::BASE
 };
 
 /// 망치(성직자)의 RB — 신성한 빛: 겨눈 자리(9 m 안, 줄 위의 첫 적 또는 탄이 멈추는 데)에 `SMITE_DELAY`초 뒤 빛줄기가 내려 꽂혀
@@ -704,10 +747,7 @@ pub const LIGHT_TOSS: Toss = Toss {
         dose: (Kind::Knell, 1.0),
         ..MAGIC
     },
-    fan: 1,
-    spread: 0.0,
-    charges: CAST_CHARGES,
-    refill: 1.0,
+    ..Toss::BASE
 };
 
 /// 창의 RB — 창 던지기: 곧고 멀리(15.6 m) 날아 줄 위의 적을 모두 꿰뚫고(20), 멈춘 자리에서 손으로 돌아온다(`JAVELIN_BACK` m/s —
@@ -733,10 +773,7 @@ pub const JAVELIN_TOSS: Toss = Toss {
         scale: 1.3,
         ..MAGIC
     },
-    fan: 1,
-    spread: 0.0,
-    charges: CAST_CHARGES,
-    refill: 1.0,
+    ..Toss::BASE
 };
 
 /// 맨손의 RB — 돌 던지기: 약하다(10 · 자세 0.5, 8.4 m). 모으면 20.
@@ -757,10 +794,7 @@ pub const STONE_TOSS: Toss = Toss {
         scale: 1.4,
         ..MAGIC
     },
-    fan: 1,
-    spread: 0.0,
-    charges: CAST_CHARGES,
-    refill: 1.0,
+    ..Toss::BASE
 };
 /// 쌍단검(도적)의 RB — 투척 단검 셋(0274 ③): 좁은 부채꼴(이웃한 둘 사이 `KNIFE_SPREAD`°)로 곧게 난다 — 날마다 피해 10 · 날카로움 0.45
 /// (셋이 다 박히면 덜 쌓이는 잔재(0.75)도 피를 흘린다). 멀수록 부채꼴이 벌어져 한 적에 하나만 박힌다 — 가까이서 셋. 모으면 날마다 20 · 출혈 더.
@@ -785,8 +819,7 @@ pub const KNIFE_TOSS: Toss = Toss {
     },
     fan: 3,
     spread: KNIFE_SPREAD,
-    charges: CAST_CHARGES,
-    refill: 1.0,
+    ..Toss::BASE
 };
 /// 투척 단검의 부채꼴 — 이웃한 두 날 사이의 각(°).
 pub const KNIFE_SPREAD: f32 = 12.0;
@@ -817,10 +850,7 @@ pub const QUAKE_TOSS: Toss = Toss {
         dose: (Kind::Rift, 0.7),
         ..MAGIC
     },
-    fan: 1,
-    spread: 0.0,
-    charges: CAST_CHARGES,
-    refill: 1.0,
+    ..Toss::BASE
 };
 
 /// 방패 던지기(0276 — 하데스의 방패, 한손 무기 + 방패의 RB): 곧게 9 m를 날아 첫 적을 치고(20 · 자세 3 · 울림 0.35) 가까운 적으로
@@ -846,10 +876,7 @@ pub const SHIELD_TOSS: Toss = Toss {
         dose: (Kind::Knell, 0.35),
         ..MAGIC
     },
-    fan: 1,
-    spread: 0.0,
-    charges: CAST_CHARGES,
-    refill: 1.0,
+    ..Toss::BASE
 };
 
 /// 낫(드루이드)의 RB — 가시 씨앗(0274 ⑤): 겨눈 자리(9 m 안, 줄 위의 첫 적 또는 탄이 멈추는 데 — 신성한 빛과 같은 셈)에 `SMITE_DELAY`초 뒤
@@ -874,10 +901,7 @@ pub const SEED_TOSS: Toss = Toss {
         dose: (Kind::Root, 1.0),
         ..MAGIC
     },
-    fan: 1,
-    spread: 0.0,
-    charges: CAST_CHARGES,
-    refill: 1.0,
+    ..Toss::BASE
 };
 
 /// 완드(흑마법사)의 RB — 저주탄(0274 ⑥, BG3 흑마법사의 엘드리치 블라스트 결 — 완드의 **주된 공격**): 곧게 빨리(×1.5) 12 m를 날아 첫
@@ -909,10 +933,9 @@ pub const CURSE_TOSS: Toss = Toss {
         dose: (Kind::Rift, 1.0),
         ..MAGIC
     },
-    fan: 1,
-    spread: 0.0,
     charges: WAND_CHARGES,
     refill: WAND_REFILL,
+    ..Toss::BASE
 };
 /// 완드의 RB 칸 수와 한 칸이 차는 시간의 배(랩 `cast.cooldown s` 3초 × 0.5 = 1.5초에 하나).
 pub const WAND_CHARGES: f32 = 5.0;
@@ -1090,6 +1113,12 @@ pub const PULL_SHOW: f32 = 0.3;
 pub const WEAPONS: [Weapon; 11] = [
     Weapon {
         id: Id::Sword,
+        name: |s| s.weapon_sword,
+        desc: |s| s.weapon_sword_d,
+        place: |s| s.cx_weapon_sword,
+        icon: crate::touch::Kind::Attack,
+        view: (0.0, -80.0, -45.0),
+        twin: false,
         combo: &SWORD_COMBO,
         // 달려들며 올려 베기(0206 — Charged_Upward_Slash, 예전엔 1타를 빌렸다 0201): 판정은 좁고 길게, 회피 거리만큼 더 내딛는다.
         dash: Some(Hit {
@@ -1107,13 +1136,10 @@ pub const WEAPONS: [Weapon; 11] = [
             damage: 20,
             poise: 3.0,
             walk: 1.0,
-            aftershock: None,
-            breaks_primed: None,
             anim_charge: "charge",
             anim_heavy: "heavy",
             cancel: 0.2,
-            pull: 0.0,
-            dose: NO_DOSE,
+            ..Heavy::BASE
         }),
         rb: Rb::Toss,
         grenade: None,
@@ -1124,6 +1150,12 @@ pub const WEAPONS: [Weapon; 11] = [
     },
     Weapon {
         id: Id::Hammer,
+        name: |s| s.weapon_hammer,
+        desc: |s| s.weapon_hammer_d,
+        place: |s| s.cx_weapon_hammer,
+        icon: crate::touch::Kind::Hammer,
+        view: (0.0, -75.0, -40.0),
+        twin: false,
         combo: &HAMMER_COMBO,
         // 달려들며 몸 전체로 내려치기(0203 — 0200의 앞차기는 발이 작아 안 보였다, 사장): 웅크리며 땅을 쳐 둘레를 친다(앞차기 때 앞
         // 부채꼴로 바꾼 것을 되돌림). 0200 전엔 둘째 타의 한 바퀴 내려치기를 빌려 달리기 공격 뒤 같은 내려치기를 두 번 했다.
@@ -1150,8 +1182,7 @@ pub const WEAPONS: [Weapon; 11] = [
             anim_charge: "hammer_charge",
             anim_heavy: "hammer_slam",
             cancel: 0.55,
-            pull: 0.0,
-            dose: NO_DOSE,
+            ..Heavy::BASE
         }),
         rb: Rb::Toss,
         grenade: None,
@@ -1163,6 +1194,12 @@ pub const WEAPONS: [Weapon; 11] = [
     },
     Weapon {
         id: Id::Staff,
+        name: |s| s.weapon_staff,
+        desc: |s| s.weapon_staff_d,
+        place: |s| s.cx_weapon_staff,
+        icon: crate::touch::Kind::Staff,
+        view: (0.0, -80.0, -45.0),
+        twin: false,
         combo: &STAFF_COMBO,
         // 달려들며 올려 베기(0203 — 1타 동작이라 다음 누름의 2타로 원본 그대로 이어진다): 빠르고 가볍다.
         dash: Some(hit(0.8, 1.3, 0.6, 2.2, 10, 1.0, "staff1")),
@@ -1176,13 +1213,10 @@ pub const WEAPONS: [Weapon; 11] = [
             damage: 20,
             poise: 2.5,
             walk: 1.2,
-            aftershock: None,
-            breaks_primed: None,
             anim_charge: "staff_charge",
             anim_heavy: "staff_release",
             cancel: 0.0,
-            pull: 0.0,
-            dose: NO_DOSE,
+            ..Heavy::BASE
         }),
         rb: Rb::Toss,
         grenade: None,
@@ -1193,6 +1227,14 @@ pub const WEAPONS: [Weapon; 11] = [
     },
     Weapon {
         id: Id::Crossbow,
+        name: |s| s.weapon_crossbow,
+        desc: |s| s.weapon_crossbow_d,
+        place: |s| s.cx_weapon_crossbow,
+        // 쇠뇌의 평타는 사격(0223 — 수류탄은 특수, `touch::cast_icon`).
+        icon: crate::touch::Kind::Crossbow,
+        // 아이템 그림: 쇠뇌는 T자(개머리 세로 · 활 가로)가 읽히게 눕히지 않는다.
+        view: (0.0, -70.0, 0.0),
+        twin: false,
         combo: &[],
         dash: None,
         heavy: None,
@@ -1216,8 +1258,7 @@ pub const WEAPONS: [Weapon; 11] = [
                 stagger: 0.0,
                 look: Look::Bolt,
                 scale: 1.0,
-                dose: NO_DOSE,
-                lame: 0.0,
+                ..MAGIC
             },
             mag: 4,
             reload: 2.8,
@@ -1234,8 +1275,7 @@ pub const WEAPONS: [Weapon; 11] = [
                 stagger: 0.4,
                 look: Look::Bolt,
                 scale: 1.6,
-                dose: NO_DOSE,
-                lame: 0.0,
+                ..MAGIC
             },
             rhythm: Rhythm::Crank {
                 wait: XBOW_TOPUP_WAIT,
@@ -1275,6 +1315,13 @@ pub const WEAPONS: [Weapon; 11] = [
     },
     Weapon {
         id: Id::Fists,
+        name: |s| s.weapon_fists,
+        desc: |s| s.weapon_fists_d,
+        place: |s| s.cx_weapon_fists,
+        icon: crate::touch::Kind::Fist,
+        // 맨손은 그림이 없다(부위가 비어 `item_view::has_view` 거짓 — 장비 창이 빈 칸처럼 둔다).
+        view: (0.0, 0.0, 0.0),
+        twin: false,
         combo: &FISTS_COMBO,
         // 달려들며 앞차기(0199).
         dash: Some(hit(0.7, 0.8, 0.6, 2.0, 10, 1.0, "fist_dash")),
@@ -1289,13 +1336,10 @@ pub const WEAPONS: [Weapon; 11] = [
             damage: 10,
             poise: 2.0,
             walk: 1.2,
-            aftershock: None,
-            breaks_primed: None,
             anim_charge: "fist_charge",
             anim_heavy: "fist_heavy",
             cancel: 0.1,
-            pull: 0.0,
-            dose: NO_DOSE,
+            ..Heavy::BASE
         }),
         // 맨손은 종류가 아니다 — 돌을 던진다(0274 ②b, `STONE_TOSS`).
         rb: Rb::Toss,
@@ -1312,6 +1356,13 @@ pub const WEAPONS: [Weapon; 11] = [
     // 활 = 거리·잦은 손·묶어 두고 쏘기. 수치는 처음 값 — 원거리 초당 피해는 근접의 여섯~일곱 할 밑(0173, 시험).
     Weapon {
         id: Id::Bow,
+        name: |s| s.weapon_bow,
+        desc: |s| s.weapon_bow_d,
+        place: |s| s.cx_weapon_bow,
+        icon: crate::touch::Kind::Bow,
+        // 아이템 그림(0231): 활대가 세로로 길다 — 옆으로 눕혀 활대의 휨과 시위가 보이게.
+        view: (0.0, -80.0, -90.0),
+        twin: false,
         combo: &[],
         dash: None,
         heavy: None,
@@ -1326,8 +1377,7 @@ pub const WEAPONS: [Weapon; 11] = [
                 stagger: 0.0,
                 look: Look::Arrow,
                 scale: 1.0,
-                dose: NO_DOSE,
-                lame: 0.0,
+                ..MAGIC
             },
             // 0274 ②b(레인저 — 화살 묶음): 전통 5 · 다시 채우기 2.2초 → 묶음 3 · 1.0초(짧고 잦다).
             mag: 3,
@@ -1346,8 +1396,8 @@ pub const WEAPONS: [Weapon; 11] = [
                 stagger: 0.35,
                 look: Look::Arrow,
                 scale: 1.4,
-                dose: NO_DOSE,
                 lame: BOW_LAME,
+                ..MAGIC
             },
             // 반쯤 당긴 화살(0274 ②b): 보통 화살보다 빠르고 멀리(20 m), 자세 피해 둘 배 — 꿰뚫지는 않는다.
             rhythm: Rhythm::Draw {
@@ -1361,8 +1411,7 @@ pub const WEAPONS: [Weapon; 11] = [
                     stagger: 0.0,
                     look: Look::Arrow,
                     scale: 1.2,
-                    dose: NO_DOSE,
-                    lame: 0.0,
+                    ..MAGIC
                 },
                 walk: BOW_DRAW_WALK,
             },
@@ -1403,6 +1452,13 @@ pub const WEAPONS: [Weapon; 11] = [
     // 앞에서 멈춘다, `World::lunge_stops`). RB는 창 던지기(종류의 칸, 0274 ②b).
     Weapon {
         id: Id::Spear,
+        name: |s| s.weapon_spear,
+        desc: |s| s.weapon_spear_d,
+        place: |s| s.cx_weapon_spear,
+        icon: crate::touch::Kind::Spear,
+        // 아이템 그림(0272 2단계): 가장 긴 무기 — 대각선으로 길게(잎 꼴 촉이 위).
+        view: (0.0, -80.0, -45.0),
+        twin: false,
         combo: &SPEAR_COMBO,
         dash: Some(Hit {
             shape: Shape::Lane {
@@ -1425,13 +1481,10 @@ pub const WEAPONS: [Weapon; 11] = [
             damage: 20,
             poise: 3.0,
             walk: 0.9,
-            aftershock: None,
-            breaks_primed: None,
             anim_charge: "spear_charge",
             anim_heavy: "spear_lunge",
             cancel: 0.3,
-            pull: 0.0,
-            dose: NO_DOSE,
+            ..Heavy::BASE
         }),
         rb: Rb::Toss,
         grenade: None,
@@ -1445,6 +1498,14 @@ pub const WEAPONS: [Weapon; 11] = [
     // 창의 내달려 꿰뚫기와 같은 길: 적의 몸을 뚫고 지나 등 뒤에 선다, 벼랑 앞에서 멈춘다 — 다음 타가 급소). RB는 투척 단검 셋.
     Weapon {
         id: Id::Daggers,
+        name: |s| s.weapon_daggers,
+        desc: |s| s.weapon_daggers_d,
+        place: |s| s.cx_weapon_daggers,
+        icon: crate::touch::Kind::Daggers,
+        // 아이템 그림(0274 ③): 오른손의 날을 검처럼 대각선으로 — 0277부터 거울로 한 번 더(`twin`, 두 날이 엇갈린다 —
+        // 날 하나로는 한손검 · 완드와 갈리지 않았다, 터치 그림 `Kind::Daggers`와 같은 꼴).
+        view: (0.0, -80.0, -45.0),
+        twin: true,
         combo: &DAGGER_COMBO,
         dash: Some(Hit {
             knock: 1.2,
@@ -1462,13 +1523,10 @@ pub const WEAPONS: [Weapon; 11] = [
             damage: 20,
             poise: 1.5,
             walk: 1.2,
-            aftershock: None,
-            breaks_primed: None,
             anim_charge: "dagger_charge",
             anim_heavy: "dagger_lunge",
             cancel: 0.15,
-            pull: 0.0,
-            dose: NO_DOSE,
+            ..Heavy::BASE
         }),
         rb: Rb::Toss,
         grenade: None,
@@ -1482,6 +1540,13 @@ pub const WEAPONS: [Weapon; 11] = [
     // 부채꼴 · 자세 피해 큼 — 망치처럼 땅을 울리지는 않는다). RB는 땅 내려찍기(종류의 칸).
     Weapon {
         id: Id::Greatsword,
+        name: |s| s.weapon_greatsword,
+        desc: |s| s.weapon_greatsword_d,
+        place: |s| s.cx_weapon_greatsword,
+        icon: crate::touch::Kind::Greatsword,
+        // 아이템 그림(0274 ④): 긴 날 — 창처럼 대각선으로 길게(날끝이 위).
+        view: (0.0, -80.0, -45.0),
+        twin: false,
         combo: &GREATSWORD_COMBO,
         dash: Some(Hit {
             cleave: GREATSWORD_CLEAVE,
@@ -1499,13 +1564,10 @@ pub const WEAPONS: [Weapon; 11] = [
             damage: 30,
             poise: 4.0,
             walk: 0.8,
-            aftershock: None,
-            breaks_primed: None,
             anim_charge: "gs_charge",
             anim_heavy: "gs_heavy",
             cancel: 0.4,
-            pull: 0.0,
-            dose: NO_DOSE,
+            ..Heavy::BASE
         }),
         rb: Rb::Toss,
         grenade: None,
@@ -1519,6 +1581,13 @@ pub const WEAPONS: [Weapon; 11] = [
     // 거두기(넓은 앞 부채꼴 240° — 맞은 적을 모두 몸 앞으로 끌어온다, 검 강공격의 동작). RB는 가시 씨앗(종류의 칸).
     Weapon {
         id: Id::Scythe,
+        name: |s| s.weapon_scythe,
+        desc: |s| s.weapon_scythe_d,
+        place: |s| s.cx_weapon_scythe,
+        icon: crate::touch::Kind::Sickle,
+        // 아이템 그림(0274 ⑤): 휜 날이 옆으로 굽는다 — 망치처럼 덜 숙여 날의 굽음이 보이게.
+        view: (0.0, -75.0, -40.0),
+        twin: false,
         combo: &SCYTHE_COMBO,
         dash: Some(Hit {
             knock: 1.4,
@@ -1535,13 +1604,11 @@ pub const WEAPONS: [Weapon; 11] = [
             damage: 20,
             poise: 3.0,
             walk: 1.0,
-            aftershock: None,
-            breaks_primed: None,
             anim_charge: "scythe_charge",
             anim_heavy: "scythe_heavy",
             cancel: 0.25,
             pull: SCYTHE_HEAVY_PULL,
-            dose: NO_DOSE,
+            ..Heavy::BASE
         }),
         rb: Rb::Toss,
         grenade: None,
@@ -1555,6 +1622,13 @@ pub const WEAPONS: [Weapon; 11] = [
     // (지팡이의 모으기 · 터뜨림 동작 — 몸 둘레의 적에게 균열 가득). RB는 저주탄(종류의 칸 — 주된 공격).
     Weapon {
         id: Id::Wand,
+        name: |s| s.weapon_wand,
+        desc: |s| s.weapon_wand_d,
+        place: |s| s.cx_weapon_wand,
+        icon: crate::touch::Kind::Wand,
+        // 아이템 그림(0274 ⑥): 짧은 막대 끝의 잿빛 돌 — 쌍단검처럼 대각선으로(돌이 위).
+        view: (0.0, -80.0, -45.0),
+        twin: false,
         combo: &WAND_COMBO,
         dash: Some(Hit {
             knock: 1.0,
@@ -1571,13 +1645,11 @@ pub const WEAPONS: [Weapon; 11] = [
             damage: 20,
             poise: 1.5,
             walk: 1.2,
-            aftershock: None,
-            breaks_primed: None,
             anim_charge: "staff_charge",
             anim_heavy: "staff_release",
             cancel: 0.0,
-            pull: 0.0,
             dose: (Kind::Rift, 1.0),
+            ..Heavy::BASE
         }),
         rb: Rb::Toss,
         grenade: None,
@@ -2256,6 +2328,36 @@ impl Id {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0278 R18 · R19: 무기 표 · 종류 표의 수(콤보 · 대시 · 강공격 · RB · 수류탄 · 부위 · 기력 · 벼린 단 · 종류의 계열 · 짝 ·
+    /// 궁극기 · 주특성 · 보조특성 · RB 칸 · 빈 손)를 `..Toss::BASE`·`..Heavy::BASE`로 줄여 쓰고 칸을 옮겨도 값이 그대로다 —
+    /// Debug 글이 고정 파일과 같다. 일부러 값을 바꿨으면 `WEAPON_FIXTURE_WRITE=1 cargo test weapon_fixture`.
+    #[test]
+    fn weapon_and_class_rows_match_the_weapon_fixture() {
+        const FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/weapon_fixture.txt");
+        let mut text = String::new();
+        for w in &WEAPONS {
+            text += &format!(
+                "{:?}\ncombo {:?}\ndash {:?}\nheavy {:?}\nrb {:?}\ngrenade {:?}\nnode {:?} {:?} stamina {:?} forge {:?}\n",
+                w.id, w.combo, w.dash, w.heavy, w.rb, w.grenade, w.node, w.off_hand, w.stamina, w.forge
+            );
+        }
+        for c in &CLASSES {
+            text += &format!(
+                "{:?} {:?} {:?} {:?}\nart {:?}\nsub {:?}\ntoss {:?}\nbare {:?}\n",
+                c.class, c.hand, c.pair, c.great, c.art, c.sub, c.toss, c.bare
+            );
+        }
+        for (name, t) in [("stone", STONE_TOSS), ("shield", SHIELD_TOSS)] {
+            text += &format!("{name} {t:?}\n");
+        }
+        if std::env::var("WEAPON_FIXTURE_WRITE").is_ok() {
+            std::fs::write(FILE, &text).expect("write weapon_fixture.txt");
+            return;
+        }
+        let was = std::fs::read_to_string(FILE).expect("weapon_fixture.txt");
+        assert_eq!(text, was, "a weapon or class row changed");
+    }
 
     /// 0272: 종류 표 — 줄의 자리 = `Class::index`, 무기마다 종류 하나(맨손만 없다), 계열·주특성의 배는 종류의 것.
     /// 대표 타입 둘은 서로 다른 타입이고, 주특성의 수는 배에서 나온다(망치 +30% · 지팡이 +50% · 나머지는 배가 없다).

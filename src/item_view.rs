@@ -27,37 +27,17 @@ pub struct View {
 
 pub fn view(item: Item) -> View {
     match item {
-        // 무기는 방랑자 모델의 오른손 부위(0051). 모델 공간에서 날·자루는 +z로 길고 넓은 면이 위(+y)를 본다
-        // (`wanderer.py`: 블렌더 -y로 긴 상자, 내보내면 glTF +z) — 앞으로 세워(숙이기 −80°: 넓은 면이 카메라 쪽) 대각선으로 눕힌다.
-        // 쇠뇌는 T자(개머리 세로 · 활 가로)가 읽히게 눕히지 않는다.
+        // 무기는 방랑자 모델의 오른손 부위(0051) — 각과 짝은 무기 표의 줄(`Weapon::view` · `twin`).
         Item::Weapon(w) => {
-            let (yaw, pitch, roll) = match w {
-                Weapon::Sword | Weapon::Staff => (0.0, -80.0, -45.0),
-                Weapon::Hammer => (0.0, -75.0, -40.0),
-                Weapon::Crossbow => (0.0, -70.0, 0.0),
-                // 활(0231): 활대가 세로로 길다 — 옆으로 눕혀 활대의 휨과 시위가 보이게.
-                Weapon::Bow => (0.0, -80.0, -90.0),
-                // 창(0272 2단계): 가장 긴 무기 — 대각선으로 길게(잎 꼴 촉이 위).
-                Weapon::Spear => (0.0, -80.0, -45.0),
-                // 쌍단검(0274 ③): 오른손의 날을 검처럼 대각선으로 — 0277부터 거울로 한 번 더(`twin`, 두 날이 엇갈린다).
-                Weapon::Daggers => (0.0, -80.0, -45.0),
-                // 대검(0274 ④): 긴 날 — 창처럼 대각선으로 길게(날끝이 위).
-                Weapon::Greatsword => (0.0, -80.0, -45.0),
-                // 낫(0274 ⑤): 휜 날이 옆으로 굽는다 — 망치처럼 덜 숙여 날의 굽음이 보이게.
-                Weapon::Scythe => (0.0, -75.0, -40.0),
-                // 완드(0274 ⑥): 짧은 막대 끝의 잿빛 돌 — 쌍단검처럼 대각선으로(돌이 위).
-                Weapon::Wand => (0.0, -80.0, -45.0),
-                // 맨손은 그림이 없다(`has_view` 거짓 — 장비 창이 빈 칸처럼 둔다).
-                Weapon::Fists => (0.0, 0.0, 0.0),
-            };
+            let d = w.def();
+            let (yaw, pitch, roll) = d.view;
             View {
                 model: "wanderer",
-                node: w.def().node,
+                node: d.node,
                 yaw,
                 pitch,
                 roll,
-                // 쌍단검(0277): 날 하나로는 한손검 · 완드와 갈리지 않았다 — 두 날을 엇갈려(터치 그림 `Kind::Daggers`와 같은 꼴).
-                twin: w == Weapon::Daggers,
+                twin: d.twin,
             }
         }
         // 장신구는 `charms.glb`의 부위 하나씩(이름 = 기록 키) — 위에서 비스듬히.

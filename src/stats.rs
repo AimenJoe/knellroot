@@ -60,7 +60,7 @@ pub struct Mods {
 }
 
 impl Mods {
-    /// 아무것도 안 바꾸는 보정 — 상수 표(종류의 보조특성 `weapons::CLASSES`)가 `..Mods::NONE`으로 쓴다.
+    /// 아무것도 안 바꾸는 보정 — 상수 표(장신구 `charms::TABLE` · 덧옷 `garb::TABLE` · 종류의 보조특성 `weapons::CLASSES`)가 `..Mods::NONE`으로 쓴다.
     pub const NONE: Mods = Mods {
         hp: 0,
         flask: 0,

@@ -500,23 +500,6 @@ pub(super) fn bare_text(id: weapons::Id) -> Option<String> {
     Some(fill(s().bare_line, &[&b]))
 }
 
-fn weapon_desc(id: weapons::Id) -> &'static str {
-    let s = s();
-    match id {
-        weapons::Id::Sword => s.weapon_sword_d,
-        weapons::Id::Hammer => s.weapon_hammer_d,
-        weapons::Id::Staff => s.weapon_staff_d,
-        weapons::Id::Crossbow => s.weapon_crossbow_d,
-        weapons::Id::Fists => s.weapon_fists_d,
-        weapons::Id::Bow => s.weapon_bow_d,
-        weapons::Id::Spear => s.weapon_spear_d,
-        weapons::Id::Daggers => s.weapon_daggers_d,
-        weapons::Id::Greatsword => s.weapon_greatsword_d,
-        weapons::Id::Scythe => s.weapon_scythe_d,
-        weapons::Id::Wand => s.weapon_wand_d,
-    }
-}
-
 /// 칸 후보 → 그림으로 보일 아이템(빈 칸은 없음).
 fn item_of(c: Cand) -> Option<crate::item_view::Item> {
     match c {
@@ -686,7 +669,7 @@ impl App {
     fn cand_desc(&self, c: Cand) -> &'static str {
         let s = s();
         match c {
-            Cand::Weapon(w) => weapon_desc(w),
+            Cand::Weapon(w) => tr(w.def().desc),
             Cand::Empty if self.progress.owned.is_empty() => s.equip_none_yet,
             Cand::Empty => s.equip_empty_d,
             Cand::Charm(id) => tr(charms::def(id).desc),

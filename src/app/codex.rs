@@ -475,17 +475,17 @@ impl App {
                 .iter()
                 .filter(|&&id| id != crate::weapons::Id::Fists)
                 .map(|&id| {
-                    let (name, desc, place) = weapon_texts(id);
+                    let w = id.def();
                     let paid = codex::paid_key("weapon", id.key());
                     Thing {
                         // 팔거나 내려놓은 것도 도감에는 남는다(0266 — `codex_had`).
                         owned: self.progress.weapons.contains(&id)
                             || self.progress.codex_had.contains(&paid),
                         paid,
-                        name,
-                        desc,
+                        name: w.name,
+                        desc: w.desc,
                         flavor: None,
-                        place,
+                        place: w.place,
                         item: crate::item_view::Item::Weapon(id),
                     }
                 })
@@ -523,60 +523,6 @@ impl App {
                 })
                 .collect()
         }
-    }
-}
-
-/// 무기의 이름·설명·나오는 곳(0191 — 상자 자리는 지역마다 `stage/<지역>.rs`의 `chest_loot` 차례, 무기를 얻는 차례는 0274 ⑦).
-fn weapon_texts(id: crate::weapons::Id) -> (Tr, Tr, Tr) {
-    use crate::weapons::Id as W;
-    match id {
-        W::Sword => (
-            |s| s.weapon_sword,
-            |s| s.weapon_sword_d,
-            |s| s.cx_weapon_sword,
-        ),
-        W::Hammer => (
-            |s| s.weapon_hammer,
-            |s| s.weapon_hammer_d,
-            |s| s.cx_weapon_hammer,
-        ),
-        W::Staff => (
-            |s| s.weapon_staff,
-            |s| s.weapon_staff_d,
-            |s| s.cx_weapon_staff,
-        ),
-        W::Crossbow => (
-            |s| s.weapon_crossbow,
-            |s| s.weapon_crossbow_d,
-            |s| s.cx_weapon_crossbow,
-        ),
-        W::Fists => (
-            |s| s.weapon_fists,
-            |s| s.weapon_fists_d,
-            |s| s.cx_weapon_fists,
-        ),
-        W::Bow => (|s| s.weapon_bow, |s| s.weapon_bow_d, |s| s.cx_weapon_bow),
-        W::Spear => (
-            |s| s.weapon_spear,
-            |s| s.weapon_spear_d,
-            |s| s.cx_weapon_spear,
-        ),
-        W::Daggers => (
-            |s| s.weapon_daggers,
-            |s| s.weapon_daggers_d,
-            |s| s.cx_weapon_daggers,
-        ),
-        W::Greatsword => (
-            |s| s.weapon_greatsword,
-            |s| s.weapon_greatsword_d,
-            |s| s.cx_weapon_greatsword,
-        ),
-        W::Scythe => (
-            |s| s.weapon_scythe,
-            |s| s.weapon_scythe_d,
-            |s| s.cx_weapon_scythe,
-        ),
-        W::Wand => (|s| s.weapon_wand, |s| s.weapon_wand_d, |s| s.cx_weapon_wand),
     }
 }
 

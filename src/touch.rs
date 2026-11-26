@@ -1085,23 +1085,9 @@ pub fn stick_vector(d: Vec2, radius: f32) -> Vec2 {
 const INK: Color = Color::new(0.07, 0.05, 0.1, 1.0);
 const WARM: Color = Color::new(1.0, 0.8, 0.42, 1.0);
 
-/// 공격 버튼에 그릴 그림(0147 — 사장 "어차피 종류는 정해졌으니까"): 든 무기마다 하나. `_` 없는 match라 새 무기는 여기서 그림을 고르게 된다.
+/// 공격 버튼에 그릴 그림(0147 — 사장 "어차피 종류는 정해졌으니까"): 든 무기마다 하나, 무기 표의 줄(`Weapon::icon`).
 pub fn attack_icon(w: crate::weapons::Id) -> Kind {
-    use crate::weapons::Id;
-    match w {
-        Id::Sword => Kind::Attack,
-        Id::Hammer => Kind::Hammer,
-        Id::Staff => Kind::Staff,
-        // 쇠뇌의 평타는 사격(0223 — 수류탄은 특수, `cast_icon`).
-        Id::Crossbow => Kind::Crossbow,
-        Id::Fists => Kind::Fist,
-        Id::Bow => Kind::Bow,
-        Id::Spear => Kind::Spear,
-        Id::Daggers => Kind::Daggers,
-        Id::Greatsword => Kind::Greatsword,
-        Id::Scythe => Kind::Sickle,
-        Id::Wand => Kind::Wand,
-    }
+    w.def().icon
 }
 
 /// 터치 오버레이 그리기(화면 패스). `attack` = 공격 버튼의 그림(`attack_icon`). `locked`면 락온 버튼을 채운다. `turn` = 땅 돌리기 준비 0..1 — 차오르는 동안 옅고, 다 차면 밝다.

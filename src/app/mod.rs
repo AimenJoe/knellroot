@@ -1586,22 +1586,9 @@ fn forged_label(w: weapons::Id, rank: u8) -> String {
     }
 }
 
-/// 무기 이름(0051, i18n 표).
+/// 무기 이름(0051 — 무기 표의 줄 `Weapon::name`).
 fn weapon_name(id: weapons::Id) -> &'static str {
-    let s = s();
-    match id {
-        weapons::Id::Sword => s.weapon_sword,
-        weapons::Id::Hammer => s.weapon_hammer,
-        weapons::Id::Staff => s.weapon_staff,
-        weapons::Id::Crossbow => s.weapon_crossbow,
-        weapons::Id::Fists => s.weapon_fists,
-        weapons::Id::Bow => s.weapon_bow,
-        weapons::Id::Spear => s.weapon_spear,
-        weapons::Id::Daggers => s.weapon_daggers,
-        weapons::Id::Greatsword => s.weapon_greatsword,
-        weapons::Id::Scythe => s.weapon_scythe,
-        weapons::Id::Wand => s.weapon_wand,
-    }
+    tr(id.def().name)
 }
 
 #[cfg(test)]

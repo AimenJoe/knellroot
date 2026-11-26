@@ -96,30 +96,7 @@ pub static TABLE: [Def; 10] = [
         flavor: |s: &Strings| s.charm_shell_f,
         mods: Mods {
             hp: 10,
-            flask: 0,
-            heal: 0,
-            dmg: 0,
-            taken: 0,
-            atk_speed: 1.0,
-            dodge_cost: 1.0,
-            parry: 0.0,
-            kill_stamina: 0.0,
-            ember: 1.0,
-            stamina_max: 0.0,
-            stamina_regen: 1.0,
-            poise: 1.0,
-            heavy_dmg: 0,
-            charged_dmg: 0,
-            kill_heal: 0,
-            toss_dmg: 0,
-            light_dmg: 0,
-            opened_dmg: 0,
-            knock: 1.0,
-            flinch: 1.0,
-            shot_dmg: 0,
-            mag: 0,
-            skill_cd: 1.0,
-            ail: 1.0,
+            ..Mods::NONE
         },
     },
     Def {
@@ -129,31 +106,9 @@ pub static TABLE: [Def; 10] = [
         desc: |s: &Strings| s.charm_feet_d,
         flavor: |s: &Strings| s.charm_feet_f,
         mods: Mods {
-            hp: 0,
-            flask: 0,
-            heal: 0,
-            dmg: 0,
             taken: 10,
-            atk_speed: 1.0,
             dodge_cost: 0.8,
-            parry: 0.0,
-            kill_stamina: 0.0,
-            ember: 1.0,
-            stamina_max: 0.0,
-            stamina_regen: 1.0,
-            poise: 1.0,
-            heavy_dmg: 0,
-            charged_dmg: 0,
-            kill_heal: 0,
-            toss_dmg: 0,
-            light_dmg: 0,
-            opened_dmg: 0,
-            knock: 1.0,
-            flinch: 1.0,
-            shot_dmg: 0,
-            mag: 0,
-            skill_cd: 1.0,
-            ail: 1.0,
+            ..Mods::NONE
         },
     },
     Def {
@@ -163,31 +118,8 @@ pub static TABLE: [Def; 10] = [
         desc: |s: &Strings| s.charm_ear_d,
         flavor: |s: &Strings| s.charm_ear_f,
         mods: Mods {
-            hp: 0,
-            flask: 0,
-            heal: 0,
-            dmg: 0,
-            taken: 0,
-            atk_speed: 1.0,
-            dodge_cost: 1.0,
             parry: 0.04,
-            kill_stamina: 0.0,
-            ember: 1.0,
-            stamina_max: 0.0,
-            stamina_regen: 1.0,
-            poise: 1.0,
-            heavy_dmg: 0,
-            charged_dmg: 0,
-            kill_heal: 0,
-            toss_dmg: 0,
-            light_dmg: 0,
-            opened_dmg: 0,
-            knock: 1.0,
-            flinch: 1.0,
-            shot_dmg: 0,
-            mag: 0,
-            skill_cd: 1.0,
-            ail: 1.0,
+            ..Mods::NONE
         },
     },
     Def {
@@ -197,31 +129,9 @@ pub static TABLE: [Def; 10] = [
         desc: |s: &Strings| s.charm_hunger_d,
         flavor: |s: &Strings| s.charm_hunger_f,
         mods: Mods {
-            hp: 0,
             flask: -1,
-            heal: 0,
-            dmg: 0,
-            taken: 0,
-            atk_speed: 1.0,
-            dodge_cost: 1.0,
-            parry: 0.0,
             kill_stamina: 25.0,
-            ember: 1.0,
-            stamina_max: 0.0,
-            stamina_regen: 1.0,
-            poise: 1.0,
-            heavy_dmg: 0,
-            charged_dmg: 0,
-            kill_heal: 0,
-            toss_dmg: 0,
-            light_dmg: 0,
-            opened_dmg: 0,
-            knock: 1.0,
-            flinch: 1.0,
-            shot_dmg: 0,
-            mag: 0,
-            skill_cd: 1.0,
-            ail: 1.0,
+            ..Mods::NONE
         },
     },
     Def {
@@ -231,31 +141,8 @@ pub static TABLE: [Def; 10] = [
         desc: |s: &Strings| s.charm_hand_d,
         flavor: |s: &Strings| s.charm_hand_f,
         mods: Mods {
-            hp: 0,
-            flask: 0,
-            heal: 0,
-            dmg: 0,
-            taken: 0,
-            atk_speed: 1.0,
-            dodge_cost: 1.0,
-            parry: 0.0,
-            kill_stamina: 0.0,
-            ember: 1.0,
-            stamina_max: 0.0,
-            stamina_regen: 1.0,
-            poise: 1.0,
             heavy_dmg: 10,
-            charged_dmg: 0,
-            kill_heal: 0,
-            toss_dmg: 0,
-            light_dmg: 0,
-            opened_dmg: 0,
-            knock: 1.0,
-            flinch: 1.0,
-            shot_dmg: 0,
-            mag: 0,
-            skill_cd: 1.0,
-            ail: 1.0,
+            ..Mods::NONE
         },
     },
     Def {
@@ -265,31 +152,8 @@ pub static TABLE: [Def; 10] = [
         desc: |s: &Strings| s.charm_pouch_d,
         flavor: |s: &Strings| s.charm_pouch_f,
         mods: Mods {
-            hp: 0,
-            flask: 0,
-            heal: 0,
-            dmg: 0,
-            taken: 0,
-            atk_speed: 1.0,
-            dodge_cost: 1.0,
-            parry: 0.0,
-            kill_stamina: 0.0,
             ember: 1.25,
-            stamina_max: 0.0,
-            stamina_regen: 1.0,
-            poise: 1.0,
-            heavy_dmg: 0,
-            charged_dmg: 0,
-            kill_heal: 0,
-            toss_dmg: 0,
-            light_dmg: 0,
-            opened_dmg: 0,
-            knock: 1.0,
-            flinch: 1.0,
-            shot_dmg: 0,
-            mag: 0,
-            skill_cd: 1.0,
-            ail: 1.0,
+            ..Mods::NONE
         },
     },
     Def {
@@ -300,30 +164,8 @@ pub static TABLE: [Def; 10] = [
         flavor: |s: &Strings| s.charm_cloth_f,
         mods: Mods {
             hp: 10,
-            flask: 0,
-            heal: 0,
-            dmg: 0,
-            taken: 0,
-            atk_speed: 1.0,
-            dodge_cost: 1.0,
-            parry: 0.0,
-            kill_stamina: 0.0,
-            ember: 1.0,
-            stamina_max: 0.0,
             stamina_regen: 0.9,
-            poise: 1.0,
-            heavy_dmg: 0,
-            charged_dmg: 0,
-            kill_heal: 0,
-            toss_dmg: 0,
-            light_dmg: 0,
-            opened_dmg: 0,
-            knock: 1.0,
-            flinch: 1.0,
-            shot_dmg: 0,
-            mag: 0,
-            skill_cd: 1.0,
-            ail: 1.0,
+            ..Mods::NONE
         },
     },
     Def {
@@ -333,31 +175,9 @@ pub static TABLE: [Def; 10] = [
         desc: |s: &Strings| s.charm_jar_d,
         flavor: |s: &Strings| s.charm_jar_f,
         mods: Mods {
-            hp: 0,
             flask: -1,
             heal: 10,
-            dmg: 0,
-            taken: 0,
-            atk_speed: 1.0,
-            dodge_cost: 1.0,
-            parry: 0.0,
-            kill_stamina: 0.0,
-            ember: 1.0,
-            stamina_max: 0.0,
-            stamina_regen: 1.0,
-            poise: 1.0,
-            heavy_dmg: 0,
-            charged_dmg: 0,
-            kill_heal: 0,
-            toss_dmg: 0,
-            light_dmg: 0,
-            opened_dmg: 0,
-            knock: 1.0,
-            flinch: 1.0,
-            shot_dmg: 0,
-            mag: 0,
-            skill_cd: 1.0,
-            ail: 1.0,
+            ..Mods::NONE
         },
     },
     Def {
@@ -367,31 +187,8 @@ pub static TABLE: [Def; 10] = [
         desc: |s: &Strings| s.charm_bellshard_d,
         flavor: |s: &Strings| s.charm_bellshard_f,
         mods: Mods {
-            hp: 0,
-            flask: 0,
-            heal: 0,
-            dmg: 0,
-            taken: 0,
-            atk_speed: 1.0,
-            dodge_cost: 1.0,
-            parry: 0.0,
-            kill_stamina: 0.0,
-            ember: 1.0,
-            stamina_max: 0.0,
-            stamina_regen: 1.0,
-            poise: 1.0,
-            heavy_dmg: 0,
-            charged_dmg: 0,
-            kill_heal: 0,
-            toss_dmg: 0,
-            light_dmg: 0,
             opened_dmg: 10,
-            knock: 1.0,
-            flinch: 1.0,
-            shot_dmg: 0,
-            mag: 0,
-            skill_cd: 1.0,
-            ail: 1.0,
+            ..Mods::NONE
         },
     },
     // 고요의 종(0270 D): 스킬 대기 −10% — 장신구 가운데 스킬 대기를 건드리는 것은 이것뿐이다(아이템 옵션 `affix_cd` 한 줄의
@@ -403,31 +200,8 @@ pub static TABLE: [Def; 10] = [
         desc: |s: &Strings| s.charm_stillbell_d,
         flavor: |s: &Strings| s.charm_stillbell_f,
         mods: Mods {
-            hp: 0,
-            flask: 0,
-            heal: 0,
-            dmg: 0,
-            taken: 0,
-            atk_speed: 1.0,
-            dodge_cost: 1.0,
-            parry: 0.0,
-            kill_stamina: 0.0,
-            ember: 1.0,
-            stamina_max: 0.0,
-            stamina_regen: 1.0,
-            poise: 1.0,
-            heavy_dmg: 0,
-            charged_dmg: 0,
-            kill_heal: 0,
-            toss_dmg: 0,
-            light_dmg: 0,
-            opened_dmg: 0,
-            knock: 1.0,
-            flinch: 1.0,
-            shot_dmg: 0,
-            mag: 0,
             skill_cd: 0.9,
-            ail: 1.0,
+            ..Mods::NONE
         },
     },
 ];
@@ -489,6 +263,43 @@ pub fn decode_worn(s: &str, owned: &[Id]) -> [Option<Id>; SLOTS] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0278 R18: 장신구 · 덧옷 · 종류의 보조특성 표의 보정을 `..Mods::NONE`으로 줄여 써도 값이 그대로다 — 줄마다의 `Mods`와
+    /// `Stats::compute`의 결과(Debug 글)가 고정 파일과 같다. 일부러 값을 바꿨으면 `CHARM_FIXTURE_WRITE=1 cargo test charm_fixture`.
+    #[test]
+    fn charm_and_garb_mods_match_the_charm_fixture() {
+        use crate::stats::Stats;
+        const FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/charm_fixture.txt");
+        let mut text = String::new();
+        for d in &TABLE {
+            text += &format!(
+                "charm {}\n{:?}\n{:?}\n",
+                d.key,
+                d.mods,
+                Stats::compute(&[d.mods])
+            );
+        }
+        for d in &crate::garb::TABLE {
+            text += &format!(
+                "garb {}\n{:?}\n{:?}\n",
+                d.key,
+                d.mods,
+                Stats::compute(&[d.mods])
+            );
+        }
+        let none = crate::garb::mods(None);
+        text += &format!("garb none\n{:?}\n{:?}\n", none, Stats::compute(&[none]));
+        for c in &crate::weapons::CLASSES {
+            let m = c.sub.mods;
+            text += &format!("sub {:?}\n{:?}\n{:?}\n", c.class, m, Stats::compute(&[m]));
+        }
+        if std::env::var("CHARM_FIXTURE_WRITE").is_ok() {
+            std::fs::write(FILE, &text).expect("write charm_fixture.txt");
+            return;
+        }
+        let was = std::fs::read_to_string(FILE).expect("charm_fixture.txt");
+        assert_eq!(text, was, "a table's mods changed");
+    }
 
     #[test]
     fn the_table_has_unique_keys_and_every_id_once() {

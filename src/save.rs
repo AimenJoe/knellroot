@@ -3050,6 +3050,83 @@ migrated.ult=1
     /// 칸마다의 왕복 시험(위)은 그 칸을 만든 날 쓴 것이라, "새 칸을 쓰기에만 더하고 읽기에는 잊은" 경우를 잡지 못했다.
     /// 아래의 풀어 쓰기(`let Progress { … } = …`)는 `..` 없이 모든 칸의 이름을 부른다 — 칸을 더하면 이 시험부터 컴파일이 깨지고,
     /// 새 칸을 여기 채워 넣어야 한다(기본값이면 아래 `assert_ne!`가 깨진다).
+    /// 0278 R18 · R19: 모든 칸이 찬 기록(무기 열하나 · 장신구 열 · 방패 · 덧옷 · 무기마다 벼린 단 · 스킬 단과 고르기 · 궁극기 ·
+    /// 주/부무기와 그 스킬 칸)이 쓰는 글이 고정 파일과 바이트까지 같다 — 무기 · 종류의 글과 목록을 표의 줄로 옮겨도 기록 키(무기 키 ·
+    /// 장신구 키 · 스킬 키 …)와 차례는 그대로. 일부러 기록을 바꿨으면 `SAVE_FIXTURE_WRITE=1 cargo test save_fixture`로 다시 쓴다.
+    #[test]
+    fn a_full_record_matches_the_save_fixture() {
+        use crate::skills::{Pick, Ult, Worn};
+        use crate::weapons::{Id as W, IDS};
+        const FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/save_fixture.txt");
+        let mut forged = crate::forge::Forged::default();
+        for (i, id) in IDS.into_iter().enumerate() {
+            if id.def().forge.is_some() {
+                forged.set(id, 1 + (i % 3) as u8);
+            }
+        }
+        let mut p = Progress {
+            embers: 4321,
+            cores: 3,
+            bell_cores: 3,
+            moss_cores: 3,
+            overseer_cores: 1,
+            owned: crate::charms::TABLE.iter().map(|d| d.id).collect(),
+            shields: crate::shield::TABLE.iter().map(|d| d.id).collect(),
+            weapons: IDS.into_iter().filter(|&w| w != W::Fists).collect(),
+            weapon: Some(W::Wand),
+            sub: Some(W::Greatsword),
+            finds: crate::garb::TABLE
+                .iter()
+                .map(|d| d.find.to_string())
+                .chain((0..30).map(|n| format!("sanctuary.stone.{n}")))
+                .collect(),
+            gift: crate::skills::GIFT_POINTS,
+            elites: (0..40).map(|n| format!("sanctuary.elite.{n}")).collect(),
+            level: crate::progression::Level {
+                life: 5,
+                stamina: 5,
+                might: 5,
+            },
+            codex_had: IDS.iter().map(|w| format!("weapon.{}", w.key())).collect(),
+            skills: Worn([crate::skills::Id::Hex, crate::skills::Id::Blight]),
+            sub_skills: Worn([crate::skills::Id::Sunder, crate::skills::Id::Sear]),
+            ult: Ult::Price,
+            garb: Some(crate::garb::Id::Apron),
+            forged,
+            woke: true,
+            lit: true,
+            prologue: true,
+            ..Progress::default()
+        };
+        // 판마다 살 수 있는 것을 차례로 산다(줄은 그 판에 쓴 포인트로 열린다) — 종류마다의 판 · 스킬 단 · 궁극기가 기록에 든다.
+        let total = p.skill_points();
+        for _ in 0..4 {
+            for plate in crate::plates::PLATES {
+                for i in plate.entries() {
+                    crate::plates::buy_on(plate, &mut p.board, crate::skills::ENTRIES[i], total);
+                }
+            }
+        }
+        for (i, id) in crate::skills::IDS.into_iter().enumerate() {
+            p.board.pick[id.index()] = if i % 2 == 0 { Pick::A } else { Pick::B };
+        }
+        p.worn = [
+            Some(crate::charms::TABLE[0].id),
+            Some(crate::charms::TABLE[1].id),
+            Some(crate::charms::TABLE[2].id),
+        ];
+        p.settle_items();
+        let text = Progress::from_record(Record::parse(&p.to_record().to_text()))
+            .to_record()
+            .to_text();
+        if std::env::var("SAVE_FIXTURE_WRITE").is_ok() {
+            std::fs::write(FILE, &text).expect("write save_fixture.txt");
+            return;
+        }
+        let was = std::fs::read_to_string(FILE).expect("save_fixture.txt");
+        assert_eq!(text, was, "the full record's text changed");
+    }
+
     #[test]
     fn every_field_survives_one_full_round_trip() {
         use crate::items::{Base, Item};
