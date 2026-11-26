@@ -199,6 +199,44 @@
   `Event`의 와일드카드(앱 · fx): 10 → 7 — 남은 것은 무기 바꾸기 찾기(`find_map` — 한 갈래만 거른다) · 튜토리얼의 셈 둘(본 것만 센다) ·
   `fx`의 묶음 넷(묶음마다 "내 사건이면 참" — 덮개 시험이 한 사건 한 묶음을 지킨다). 시험 1,027 → 1,030(무시 20 포함 — 소리 하나 · 안내 줄 하나 · 반응 표 하나).
   CI 넷(`shot` 287초 · `touch` 108 · `save` 49 · `pwa` 15 + `away` 10) · `tabs` 180 · `fx.js throw`(새 판 — 활의 수류탄) 모두 종료 0.
+- **R16**(`Form::info()` — 2.2 C): `skills.rs`의 `impl Form { pub const fn info(&self) -> FormInfo }` — 와일드카드 없는 match 하나가
+  수(payload)와 상관없는 성질을 돌려준다: `aim: Aim`(`Round` 몸 둘레 · `Area` 쪽이 있는 범위 · `Sighted` 한 대상) · `grows: Grow`(4단에서 커지는
+  치수 `Radius`/`Length`/`Range`/`Arc`) · `leaves: Leaves`(`Nothing` · `Aura` 되울림 · `Ground` 불티/눈발/그늘 · `Snare` 덫) · `mends`(재기 ·
+  생기 거두기). 읽는 곳: `Form::aims`·`sighted`(얇은 메서드 — 부르는 곳 그대로) · `World::skill_active`(남은 몫 — 되울림 · 놓인 것 · 덫인가를
+  `leaves`의 match 하나로) · `cue::skill_kick`(시동 흔들림 = `leaves != Nothing`) · 기술 탭 `app/skills.rs`의 4단 글(`grows`)과 재기/거두기 글(`mends`).
+  `leaves_field`는 지웠다. 수에 따라 바뀌는 동작의 주기는 `anim.rs`에서 `Form::clip_period`(같은 impl)로 옮겼다. 쓰지 않는 칸은 두지 않았다 —
+  움직임(`player_tick`) · 쪽(`skill_dir`) · 판정 시간(`Skill::active`·`Eff::active`)은 수와 고르기(`Twist`)를 쓰는 동작이라 빠짐없는 match 그대로(2.3).
+  **셈**: 모양의 성질을 따로 말하던 match 9(`aims` · `sighted` · `leaves_field` · 4단 글 · `mends`의 `matches!` · 흔들림의 되울림 `matches!` ·
+  `skill_active`의 되울림 `if let`과 덫 `matches!` · `anim::clip_period`) → 2(`info` · `clip_period`). **새 모양이 손댈 곳**: 컴파일러가 짚는 것 —
+  `Form::info`의 한 줄 · `clip_period` · `Skill::active` · `Eff::active` · `skill_dir` · 움직임(`player_tick`) · 틱(`tick_skill`)과 미리보기 ·
+  이펙트 · `Skill::at`의 4단 치수; 손으로 — `SKILLS`의 줄 · 이펙트의 서명 · 시험(아래 둘이 표가 아니라 월드에 묻는다).
+  시험: 놓는다고 적힌 모양만 바닥에 무엇을 둔다(`every_skill_that_leaves_a_field_reports_its_remaining_share`에 더함) · 한 대상 모양만 숄더뷰
+  크로스헤어 쪽으로 나간다(`only_sighted_skills_follow_the_shoulder_crosshair` — `aims`는 R14의 끌기 시험이 이미 월드에 묻는다). 골든 · 신호 표 그대로.
+- **R17**(탄의 꼴 `Look` — 2.2 D): `Bolt::look` · `Smite::look` · `Event::Cast::look`이 `u8`(상수 열 + 마법 수 `2` · `3`)에서
+  `weapons::Look`(Magic · Bolt · Arrow · Axe · Light · Javelin · Stone · Knife · Shield · Quake · Seed · Curse)으로. 성질은 `Look::def() -> LookDef`
+  한 곳: `flight: Flight`(`Ground` 땅을 탄다 · `Straight` 곧게 · `Smite` 겨눈 자리에 내려 꽂힌다) · `shot`(사격 — 벼린 몫) · `thrown` · `returns` ·
+  `bounces` · `name: Tr`(RB 이름) · `icon: touch::Kind`. `Bolt::is_shot`·`thrown`·`straight`·`returns`·`bounces`·`smites`는 `def()`를 읽고,
+  `look_thrown` · `rb_name_of` · `toss_icon_of`는 지웠다. 소리(`cue::cast_sound`) · 빛(`overlays::bolt_colors` — 옛 수 차례 표 + 끝 줄에서 멈춤)
+  · 던지는 몸(`overlays::thrown`)은 앱 · 렌더의 것이라 `LookDef`에 넣지 않고 그 자리의 빠짐없는 match로(월드 표에 소리를 두지 않는다 — CLAUDE.md).
+  옛 수 0(라벤더) · 1(놋쇠)은 낼 줄이 없어 갈래를 두지 않았다. `Debug` = 옛 수(`Look::code`) — 사건의 글이 그대로라 **골든 102 해시 그대로**.
+  **신호 표는 16줄만 빠졌다**: 시험이 돌던 수 0 · 1 · 14 · 255(대시 타 번호 `DASH`를 꼴로 넣던 것) × 맥락 넷의 `Cast` 줄 — 모두 "소리 없음 ·
+  흔들림 0"이었고 이제 만들 수 없는 사건이다, 남은 줄은 바이트가 같다(`git diff --stat`: 16 deletions).
+  **이행 증명**: 바꾸기 전, 옛 `u8` 술어(`is_shot` · `thrown` · `straight` · `smites` · `returns` · `bounces`) · `toss_icon` · `rb_name`과 새 `def()`를
+  꼴 열둘에서 견준 시험 둘이 통과한 뒤 옛 것을 지웠고, 그 값을 `look_defs_keep_the_old_behaviour`에 표로 박았다(옛 수 · `Debug`까지).
+  `every_toss_look_has_a_name_and_an_icon`(R14)은 만들어서 참이 되어 `every_look_is_thrown_by_some_row`(꼴마다 그것을 내는 무기 · 돌 · 방패 줄이
+  있다 — 죽은 갈래 없음)로 바꿨다.
+  **셈**: `u8` 꼴 비교 32곳(마법 수 2) + 수 → 값 표 셋(이름 · 그림 · 던지는 몸)의 넘어감 셋(`None` 둘 · `_ => {}`) + 빛 표의 끝 줄 멈춤 → `u8` 비교 0 ·
+  넘어감 0. 남은 것은 타입이 있는 꼴 하나의 비교 20(던진 창/방패가 날고 있나 · 땅 내려찍기 · 저주탄 · 씨앗 · 볼트가 수류탄을 맞힘 · 이펙트 갈래 다섯 —
+  성질이 아니라 그 꼴 자체를 묻는 곳)과 빠짐없는 match 다섯(`code` · `def` · `cast_sound` · `bolt_colors` · `thrown`).
+  **새 꼴이 손댈 곳**: `Look` 갈래 + `ALL`(시험) + 컴파일러가 짚는 `code` · `def` · `cast_sound` · `bolt_colors` · `thrown`(던지는 꼴이면 몸); 손으로 —
+  그것을 내는 무기 줄(`Toss`/`Shot`), 번쩍임을 낼 꼴이면 `fx`의 갈래, 터치 그림 마스크(새 `Kind`면). 시험 1,030 → 1,033(무시 20 포함 — R16 +1, R17 +2 −1, 아래 글꼴 +1).
+  헤드리스(한 번에 하나): CI 넷(`shot` 291초 · `touch` 109 · `save` 50 · `pwa` 15 + `away` 10) · `fx.js rb`(꼴 열하나 전부 — 1,238초) ·
+  `bare shield`(방패 던지기 114) · `throw`(36) · `tabs`(186) 모두 종료 0. 꼴마다 틱 사진을 눈으로 — 손도끼 · 창 · 단검 · 돌의 몸, 마법 탄 민트 ·
+  저주탄 하늘빛, 땅 내려찍기의 물결, 신성한 빛 · 가시 씨앗의 고리와 솟는 뿌리, 볼트 · 화살의 빛 띠, 튕기는 방패가 그대로 그려진다.
+- 함께(R16 · R17과 따로 된 커밋): **가로 줄 기호가 작은 글에서 빈칸처럼 보이던 것**(`tabs.js` 영어 844 px 멈춤 창 아래 줄 "View only — raise at a
+  hearth"). 글자가 없거나 `Face`를 비껴간 것이 아니었다 — 고운바탕 원본의 엠 대시 · 엔 대시는 0.05 em(굵게 0.065) 두께라 9~11 px 글에서
+  반 화소 밑으로 녹았다. `subset_ui.py`의 `thicken_rules`가 — – −를 가운데 그대로 0.09 em으로(원본을 받아 다시 만들었다 — 그 단계 전까지는 레포의
+  파일과 바이트가 같았다), 시험 `rules_are_thick_enough_to_draw`.
 - 함께(리팩터링이 아닌 따로 된 커밋 둘): **빠진 소리 다섯**(다 모임 · 2단계 · 벽 쿵 · 수류탄 던짐 · 흡수 — R12 덮개가 찾은 것, 사장 "넣자"
   — 합성음, 흡수는 0.25초에 한 번, 수류탄 던짐의 이펙트도 — 소리 없는 사건 15 → 10, 이펙트 없는 사건 16 → 15) · **`tabs.js` 넘침 고침**
   (키 안내 줄을 꼭 맞게 줄이던 배가 반올림으로 칸을 넘어 끝 낱말이 잘렸다 — `ui::hint_scale`이 반 px를 남긴다).
