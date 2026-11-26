@@ -667,21 +667,16 @@ impl World {
         let rank = self.player.skill.ult_rank;
         let b = &skills::BLIZZARD;
         self.skill_fields.push(Field {
-            pos: p,
-            radius: b.radius,
-            age: 0.0,
-            secs: b.secs_at(rank),
-            every: b.every,
-            pulses: 0,
-            damage: b.damage_at(rank),
-            poise: 0.0,
-            dose: self.dosed((crate::status::Kind::Frost, b.build)),
             follow: true,
-            kindle: 0,
-            drift: Vec3::ZERO,
-            trap: false,
-            iron: false,
-            spire: None,
+            ..Field::lay(
+                p,
+                b.radius,
+                b.secs_at(rank),
+                b.every,
+                b.damage_at(rank),
+                0.0,
+                self.dosed((crate::status::Kind::Frost, b.build)),
+            )
         });
         self.skill_kill_left = ULT_KILL_WINDOW;
         self.skill_ev.push(Event::Blizzard {
@@ -719,23 +714,15 @@ impl World {
         let r = &skills::RAIN;
         let rank = self.player.skill.ult_rank;
         let at = self.player.skill.rain_at;
-        self.skill_fields.push(Field {
-            pos: at,
-            radius: r.radius,
-            age: 0.0,
-            secs: r.secs_at(rank),
-            every: r.every,
-            pulses: 0,
-            damage: r.damage_at(rank),
-            poise: 0.0,
-            dose: self.dosed((crate::status::Kind::Root, r.build)),
-            follow: false,
-            kindle: 0,
-            drift: Vec3::ZERO,
-            trap: false,
-            iron: false,
-            spire: None,
-        });
+        self.skill_fields.push(Field::lay(
+            at,
+            r.radius,
+            r.secs_at(rank),
+            r.every,
+            r.damage_at(rank),
+            0.0,
+            self.dosed((crate::status::Kind::Root, r.build)),
+        ));
         self.skill_kill_left = ULT_KILL_WINDOW;
         self.skill_ev.push(Event::ArrowRain {
             from: self.player.pos,

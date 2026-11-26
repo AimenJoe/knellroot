@@ -1517,7 +1517,11 @@ impl World {
             // 휘돌이의 도는 걸음(ㄱ)은 돌면서 느리게 걷고, 땅울림의 멀리 뛰기(ㄱ)는 시동 동안 정해 둔 거리를 뛰어든다.
             PState::Skill { id, t: e, dir, .. } => {
                 use crate::skills::{Form, Twist};
-                let d = d_skill.unwrap_or_else(|| id.def().at(1, crate::skills::Pick::A));
+                // 스킬이면 위에서 `skill_eff`로 센 값이 늘 있다(이 사이에 상태를 바꾸지 않는다 — 0278 R20: 옛 "1레벨 표의 값"으로
+                // 떨어지는 길은 닿지 않는 길이었다).
+                let Some(d) = d_skill else {
+                    unreachable!("skill {id:?} without its values")
+                };
                 let s = d.skill;
                 // 모양마다 한 갈래(와일드카드 없이 — 0278 R14): 걷지 않는 모양·때가 아닌 틱은 선다.
                 let walk = |pl: &Player, speed: f32| {

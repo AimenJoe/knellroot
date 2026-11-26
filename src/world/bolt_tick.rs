@@ -360,21 +360,17 @@ impl World {
             self.skill_fields.remove(mine[0]);
         }
         self.skill_fields.push(skill_tick::Field {
-            pos,
-            radius: SNARE_RADIUS,
-            age: 0.0,
-            secs: SNARE_SECS,
-            every: SNARE_SECS,
-            pulses: 0,
-            damage: SNARE_DAMAGE,
-            dose: (crate::status::Kind::Root, SNARE_ROOT),
-            poise: SNARE_POISE,
-            follow: false,
-            kindle: 0,
-            drift: Vec3::ZERO,
             trap: true,
             iron: true,
-            spire: None,
+            ..skill_tick::Field::lay(
+                pos,
+                SNARE_RADIUS,
+                SNARE_SECS,
+                SNARE_SECS,
+                SNARE_DAMAGE,
+                SNARE_POISE,
+                (crate::status::Kind::Root, SNARE_ROOT),
+            )
         });
         ev.push(Event::SnareSet { at: pos });
     }

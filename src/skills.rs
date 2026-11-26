@@ -711,6 +711,14 @@ pub struct Eff {
 }
 
 impl Eff {
+    /// 맺음의 휘청(`Cap::Stun` — 방패 돌진 · 재기 · 생기 거두기 · 버팀)의 초, 그 맺음이 아니면 0(0278 R20 — 네 곳의 같은 match).
+    pub fn cap_stagger(&self) -> f32 {
+        match self.cap {
+            Some(Cap::Stun { stagger }) => stagger,
+            _ => 0.0,
+        }
+    }
+
     /// 판정(움직임)이 이어지는 시간(초) — 되돌아 베기는 길을 두 번 간다.
     pub fn active(&self) -> f32 {
         // 모양마다(와일드카드 없이 — 0278 R14). 두 번 울림은 판정이 아니라 놓인 종이라 몸의 시간은 그대로다.
