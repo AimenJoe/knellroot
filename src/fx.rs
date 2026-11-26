@@ -3713,6 +3713,9 @@ pub fn brazier_ember(k: usize, i: usize, time: f32) -> (Vec3, f32) {
 pub const BRAZIER_EMBERS: usize = 5;
 
 #[cfg(test)]
+mod traces;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

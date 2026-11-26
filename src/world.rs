@@ -729,6 +729,90 @@ impl Event {
         ]
     }
 
+    /// 시험의 표본(0278 R15 · R25 준비): 표본(`samples`) + 반응이 실린 값으로 갈리는 것들(스킬 34 · 타입 · 탄의 꼴 · 적의 큰 타 ·
+    /// 여러 타의 마지막) — 소리 표(`app::cue`)와 이펙트 트레이스(`fx::traces`)가 같이 쓴다.
+    #[cfg(test)]
+    pub fn varied() -> Vec<Event> {
+        use crate::enemy::Blow;
+        use Event as E;
+        let at = vec3(1.0, 0.0, -2.0);
+        let dir = Vec3::Z;
+        let mut events = Event::samples();
+        for id in crate::skills::IDS {
+            events.push(E::SkillStart { id });
+            events.push(E::Skill { id, at, dir });
+        }
+        let kinds = [
+            crate::status::Kind::Physical,
+            crate::status::Kind::Ember,
+            crate::status::Kind::Root,
+            crate::status::Kind::Knell,
+            crate::status::Kind::Rift,
+            crate::status::Kind::Shock,
+            crate::status::Kind::Sharp,
+            crate::status::Kind::Frost,
+            crate::status::Kind::Drain,
+        ];
+        for kind in kinds {
+            events.push(E::Ail { at, kind });
+            events.push(E::FieldPulse {
+                at,
+                radius: 4.0,
+                kind,
+            });
+        }
+        for look in crate::weapons::Look::ALL {
+            events.push(E::Cast { at, look });
+        }
+        let blows = [
+            Blow::Around { r: 1.6 },
+            Blow::Cone { r: 2.0, arc: 90.0 },
+            Blow::Spot { r: 1.2 },
+            Blow::Ram,
+            Blow::Quake { r: 4.0 },
+            Blow::Line { len: 6.0 },
+            Blow::Hook { len: 5.0 },
+            Blow::Volley,
+        ];
+        for blow in blows {
+            for boss in [false, true] {
+                events.push(E::EnemyStrike {
+                    at,
+                    dir,
+                    blow,
+                    boss,
+                });
+            }
+        }
+        for last in [false, true] {
+            events.push(E::GaleThrust {
+                at,
+                dir,
+                len: 6.0,
+                half: 0.8,
+                last,
+            });
+            events.push(E::AmbushStab { at, dir, last });
+            events.push(E::TempestSweep {
+                at,
+                radius: 3.0,
+                last,
+            });
+            events.push(E::GrovePulse {
+                at,
+                radius: 3.0,
+                last,
+            });
+            events.push(E::PricePulse {
+                at,
+                radius: 3.0,
+                last,
+            });
+        }
+        events.push(E::Turn { quarters: -2 });
+        events
+    }
+
     /// 갈래의 이름(Debug의 머리) — 덮개 시험의 목록이 읽는다.
     pub fn variant(&self) -> String {
         let d = format!("{self:?}");

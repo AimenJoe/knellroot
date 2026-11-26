@@ -466,7 +466,6 @@ pub(super) fn skill_kick(id: Sk) -> f32 {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
-    use crate::status::Kind;
     use macroquad::prelude::vec3;
 
     /// 사건마다의 반응을 적어 둔 표(0278 R15 — 옛 match 넷에서 만든 것: `the_cue_table_matches_its_snapshot`).
@@ -477,83 +476,7 @@ pub(super) mod tests {
     /// 견줄 표본: 사건의 표본(`Event::samples`) + 반응이 실린 값으로 갈리는 것들(스킬 34 · 타입 · 탄의 꼴 · 적의 큰 타 · 여러 타의
     /// 마지막) × 맥락 넷(박자 이음 0·1·2·3, 가까이·14~18m·멀리, 버팀을 다 받아냄).
     pub(in crate::app) fn cases() -> Vec<(Event, CueCtx)> {
-        use crate::enemy::Blow;
-        use crate::world::Event as E;
-        let at = vec3(1.0, 0.0, -2.0);
-        let dir = Vec3::Z;
-        let mut events = Event::samples();
-        for id in crate::skills::IDS {
-            events.push(E::SkillStart { id });
-            events.push(E::Skill { id, at, dir });
-        }
-        let kinds = [
-            Kind::Physical,
-            Kind::Ember,
-            Kind::Root,
-            Kind::Knell,
-            Kind::Rift,
-            Kind::Shock,
-            Kind::Sharp,
-            Kind::Frost,
-            Kind::Drain,
-        ];
-        for kind in kinds {
-            events.push(E::Ail { at, kind });
-            events.push(E::FieldPulse {
-                at,
-                radius: 4.0,
-                kind,
-            });
-        }
-        for look in crate::weapons::Look::ALL {
-            events.push(E::Cast { at, look });
-        }
-        let blows = [
-            Blow::Around { r: 1.6 },
-            Blow::Cone { r: 2.0, arc: 90.0 },
-            Blow::Spot { r: 1.2 },
-            Blow::Ram,
-            Blow::Quake { r: 4.0 },
-            Blow::Line { len: 6.0 },
-            Blow::Hook { len: 5.0 },
-            Blow::Volley,
-        ];
-        for blow in blows {
-            for boss in [false, true] {
-                events.push(E::EnemyStrike {
-                    at,
-                    dir,
-                    blow,
-                    boss,
-                });
-            }
-        }
-        for last in [false, true] {
-            events.push(E::GaleThrust {
-                at,
-                dir,
-                len: 6.0,
-                half: 0.8,
-                last,
-            });
-            events.push(E::AmbushStab { at, dir, last });
-            events.push(E::TempestSweep {
-                at,
-                radius: 3.0,
-                last,
-            });
-            events.push(E::GrovePulse {
-                at,
-                radius: 3.0,
-                last,
-            });
-            events.push(E::PricePulse {
-                at,
-                radius: 3.0,
-                last,
-            });
-        }
-        events.push(E::Turn { quarters: -2 });
+        let events = Event::varied();
         let ctxs = [
             CueCtx {
                 chain: 0,
