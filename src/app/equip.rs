@@ -505,11 +505,12 @@ pub(super) fn class_text(id: weapons::Id, name: &str) -> Option<(String, String,
     ))
 }
 
-/// 빈 손의 결(0276) 한 줄: "두 손으로 쥔다 — 강공격이 …" — 종류의 몸의 말. 맨손은 종류가 아니라 없다. "빈 손"이라는 시스템 말은
-/// 보조무기 슬롯 줄에서만 붙인다(`bare_line`).
+/// 빈 손의 결(0276) 한 줄: "보조무기 미장착 시 — 두 손으로 쥔다 — 강공격이 …" — 시스템의 머리(`bare_line`, 0273 사장 2026-11-26)
+/// + 종류의 결 이름과 하는 일. 맨손은 종류가 아니라 없다. 주무기 상세와 보조무기 슬롯의 빈 줄이 같이 쓴다.
 pub(super) fn bare_text(id: weapons::Id) -> Option<String> {
     let def = id.class()?.def();
-    Some(format!("{} — {}", tr(def.bare_name), tr(def.bare_trait)))
+    let b = format!("{} — {}", tr(def.bare_name), tr(def.bare_trait));
+    Some(fill(s().bare_line, &[&b]))
 }
 
 fn weapon_desc(id: weapons::Id) -> &'static str {
@@ -1347,7 +1348,7 @@ impl App {
         if slot == SUB_SLOT && focus == Cand::Empty {
             if let Some(b) = bare_text(self.weapon) {
                 lines.push(Ln::Gap);
-                lines.extend(self.pane_wrap(w, &fill(s.bare_line, &[&b]), AMBER));
+                lines.extend(self.pane_wrap(w, &b, AMBER));
             }
         }
         // 방패(0223)는 한손 무기일 때만 쓰인다 — 지금 든 무기가 두 손을 쓰면 알린다.
