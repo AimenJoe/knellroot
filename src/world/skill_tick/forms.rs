@@ -379,8 +379,7 @@ impl World {
             if let Some(Cap::Frail { secs, mult }) = d.cap {
                 for en in &mut self.enemies {
                     if en.hit_by == swing && en.alive() && !en.boss {
-                        en.marks.frail = secs;
-                        en.marks.frail_mult = mult;
+                        en.marks.mark_frail(secs, mult);
                     }
                 }
             }
@@ -601,8 +600,7 @@ impl World {
             if let Some(Twist::Expose { secs, mult }) = d.twist {
                 for en in &mut self.enemies {
                     if en.hit_by == swing && en.alive() && !en.boss {
-                        en.marks.frail = en.marks.frail.max(secs);
-                        en.marks.frail_mult = mult;
+                        en.marks.mark_frail(secs, mult);
                     }
                 }
             }

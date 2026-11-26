@@ -3921,3 +3921,43 @@ fn every_skill_that_leaves_a_field_reports_its_remaining_share() {
     }
     assert_eq!(placers, 5, "embers · snow · snare · mine · blight");
 }
+
+/// 더 다치는 표지(0158 `frail`)는 여러 스킬이 건다 — 끌어모으기 · 부채꼴의 맺음(`Cap::Frail`), 막아치기 · 빠지며 베기의 드러난 틈
+/// (`Twist::Expose`). 규칙은 하나(0278 R20에서 고정): **남은 초는 긴 쪽이 남고**(다른 표지 — 엉킴 · 묶임 · 오금 · 저주 — 와 같다),
+/// 배는 마지막에 건 것. 옛 부채꼴 · 끌어모으기는 초를 덮어써 더 긴 표지를 줄였다.
+#[test]
+fn a_frail_mark_keeps_the_longer_time() {
+    use crate::skills::Pick;
+    for id in [Sk::Shove, Sk::Gather, Sk::Pommel, Sk::Slip] {
+        let (mut w, t) = world();
+        w.spawn_mob(vec3(0.0, 0.0, -1.3));
+        still(&mut w);
+        let pick = if matches!(id, Sk::Pommel | Sk::Slip) {
+            Pick::B
+        } else {
+            Pick::A
+        };
+        wear(&mut w, id, skills::MAX_RANK, pick);
+        // 막아치기의 드러난 틈은 공격을 준비하던 적에게만.
+        if id == Sk::Pommel {
+            let en = &mut w.enemies[0];
+            en.facing = 0.0;
+            en.atk = Atk::Smash;
+            en.state = EState::Tele { t: 0.0 };
+        }
+        w.enemies[0].marks.frail = 5.0;
+        w.enemies[0].marks.frail_mult = 1.05;
+        run(&mut w, &t, skill(0), 40);
+        let m = w.enemies[0].marks;
+        assert!(
+            m.frail > 4.0,
+            "{id:?}: the longer mark was cut to {}",
+            m.frail
+        );
+        assert!(
+            m.frail_mult > 1.1,
+            "{id:?}: the latest multiplier: {}",
+            m.frail_mult
+        );
+    }
+}

@@ -320,6 +320,15 @@ pub struct Marks {
     pub pact: f32,
 }
 
+impl Marks {
+    /// 더 다치는 표지를 건다(끌어모으기 · 부채꼴의 맺음, 막아치기 · 빠지며 베기의 드러난 틈): 남은 초는 긴 쪽이 남고(다른 표지와
+    /// 같다 — 짧은 것이 긴 것을 줄이지 않는다), 배는 이번 것(0278 R20 — 둘은 덮어쓰고 둘은 긴 쪽이던 것을 하나로).
+    pub fn mark_frail(&mut self, secs: f32, mult: f32) {
+        self.frail = self.frail.max(secs);
+        self.frail_mult = mult;
+    }
+}
+
 impl Default for Marks {
     fn default() -> Self {
         Marks {

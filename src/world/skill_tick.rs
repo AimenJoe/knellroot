@@ -780,8 +780,7 @@ impl World {
                 dur: stagger,
             };
             if let Some((secs, mult)) = frail {
-                en.marks.frail = secs;
-                en.marks.frail_mult = mult;
+                en.marks.mark_frail(secs, mult);
             }
             afflict(en, dose, &mut self.skill_ev);
         }
@@ -916,8 +915,7 @@ impl World {
                 };
                 ev.push(Event::Interrupt { at });
                 if let Some(Twist::Expose { secs, mult }) = d.twist {
-                    en.marks.frail = en.marks.frail.max(secs);
-                    en.marks.frail_mult = mult;
+                    en.marks.mark_frail(secs, mult);
                 }
                 if matches!(d.cap, Some(Cap::Break)) {
                     add_poise(en, poise_max(en, t), None, t, &mut ev);
