@@ -5,8 +5,6 @@
 //   판에 상(기술 점수 1)이 오는지를 본다. 공격·패링 걸음의 셈은 단위 시험이 본다(0209 T5 — 헤드리스의 손 싸움은 화면의
 //   고정 자리를 눌러 헛치거나 맞아 쓰러졌다: 게임이 아니라 시험의 문제).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/tutorial.js dist shots
-const { chromium } = require('playwright');
-const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const sceneKit = require('./scene');
@@ -14,8 +12,6 @@ const sceneKit = require('./scene');
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
 const PORT = 8143;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm',
-  '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.txt': 'text/plain' };
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
 // 문 앞 쉼터에 선 새 판의 기록(처음의 둘도 기술 점수도 없다) + 걸음마다의 사실.
@@ -28,13 +24,6 @@ const STEPS = [
   ['7-level', 'tut.step=6\nskill.gift=1\nskill.rank.whirl=1\nembers=60\n'],
   ['7q-level-gather', 'tut.step=6\nskill.gift=1\nskill.rank.whirl=1\nembers=30\n'],
 ];
-
-const server = http.createServer((req, res) => {
-  const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
-  if (!f.startsWith(DIST) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
-  fs.createReadStream(f).pipe(res);
-});
 
 async function run(browser, lang, size) {
   const [w, h] = size;
@@ -147,10 +136,11 @@ async function run(browser, lang, size) {
   return { tag, errors, checks };
 }
 
+let server = null;
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
-  await new Promise((r) => server.listen(PORT, r));
-  const browser = await chromium.launch();
+  server = await sceneKit.serve(DIST, { port: PORT });
+  const browser = await sceneKit.launch();
   let bad = false;
   for (const lang of ['ko', 'en']) {
     for (const size of [[1280, 720], [844, 390]]) {
@@ -165,4 +155,4 @@ async function main() {
   process.exitCode = bad ? 1 : 0;
 }
 
-main().catch((e) => { console.error(e); process.exitCode = 1; server.close(); });
+main().catch((e) => { console.error(e); process.exitCode = 1; if (server) server.close(); });

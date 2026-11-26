@@ -1,8 +1,6 @@
 // 헤드리스 Chromium으로 웹 빌드를 띄워 시나리오마다 키를 넣고 스크린숏을 남긴다(nail tools/test/smoke.js를 줄인 것).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/shot.js dist shots
 // 콘솔 에러·패닉이 있으면 종료 코드 1. 눈으로 볼 것: 첫 스테이지(타이틀·이야기·뜰·멈춤·문지기), 카메라 전환, 예고, 랩 패널.
-const { chromium } = require('playwright');
-const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const sceneKit = require('./scene');
@@ -10,25 +8,17 @@ const sceneKit = require('./scene');
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
 const PORT = 8131;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm' };
 // 알려진 잡음: mq_js_bundle의 quad_net 플러그인이 strict 모드에서 register_plugin= 대입(무해, nail web/README.md).
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 
-const server = http.createServer((req, res) => {
-  const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
-  if (!f.startsWith(DIST) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
-  fs.createReadStream(f).pipe(res);
-});
-
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
-  await new Promise((r) => server.listen(PORT, r));
-  const browser = await chromium.launch();
+  const server = await sceneKit.serve(DIST, { port: PORT });
+  const browser = await sceneKit.launch();
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   const errors = [];
   // 장면이 바뀌는 누름 뒤에는 시간이 아니라 장면을 기다린다(tools/test/scene.js — 느린 CI에서 창이 뜨기 전에 키가 들어가 길을 잃는다).
-  const { until, press } = sceneKit(page, 60);
+  const { until, press, scene, devRow, keyboardOnly } = sceneKit(page, 60);
   await sceneKit.throttle(page.context(), page);   // THROTTLE=10 — 느린 CI 흉내
   page.on('console', (m) => { if (m.type() === 'error' && !KNOWN_NOISE.some((k) => k.test(m.text()))) errors.push(m.text()); });
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
@@ -41,15 +31,8 @@ async function main() {
   const shot = (name) => page.screenshot({ path: path.join(OUT, name + '.png') });
   // 키보드만 배치로(0058 — 이 스크립트는 J·K·L로 싸운다. 새로 설치한 판의 기본은 키보드+마우스):
   // 타이틀 → 설정(둘째) → 조작(타이틀의 설정에서는 맨 끝 줄 — 위로 한 번, 0164) → "키보드만 배치로"(끝에서 둘째) → 돌아가기 둘.
-  const keyboardOnly = async () => {
-    await press('ArrowDown'); await press('Enter'); await until('Settings { host: Title', '타이틀 → 설정');
-    await press('ArrowUp'); await press('Enter'); await until('Controls', '설정 → 조작');
-    await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(200);
-    await press('Escape'); await until('Settings { host: Title', '조작 → 설정'); await press('Escape'); await until('Title', '설정 → 타이틀');
-    // 닫으면 연 줄로 돌아온다(0066 장면 스택): 타이틀 커서는 "설정"에 있다 → 위로 한 번 = 시작.
-    await press('ArrowUp'); await page.waitForTimeout(100);
-  };
-  await keyboardOnly();
+  // (tools/test/scene.js `keyboardOnly`) 닫으면 연 줄로 돌아온다(0066 장면 스택): 타이틀 커서는 "설정"에 있다 → 위로 한 번 = 시작.
+  await keyboardOnly(); await press('ArrowUp'); await page.waitForTimeout(100);
   // 0 첫 스테이지(0019): 타이틀 → 시작 이야기 → 입구 → 뜰(첫 물결) → 멈춤 → 타이틀 → 개발: 문 앞 → 깨어남 → 결투(락온) → 멈춤 → 조작 설정.
   await shot('00-title');
   // 시작하기 → 슬롯 창(0066, 커서는 첫 빈 슬롯) → "시작".
@@ -78,7 +61,8 @@ async function main() {
   await press('ArrowUp'); await press('Enter'); await until('Title', '묻는 창 → 타이틀');
   await shot('00e2-title-continue');
   await press('ArrowUp'); await press('Enter'); await until('Dev { tab: 0', '타이틀 → 개발 창');
-  await press('ArrowRight', 3); await until('Dev { tab: 3', '스테이지 묶음'); await press('ArrowDown', 1); await press('Enter'); await until('Play', '개발 창 → 문 앞');
+  // 개발 창은 메뉴로 지난다(이 스크립트가 창 자체를 지킨다) — 줄은 세지 않고 이름으로(0278 R13 `devRow`: 게임이 고른 줄을 장면 이름 끝에 붙인다).
+  await devRow('Gate'); await press('Enter'); await until('Play', '개발 창 → 문 앞');
   await page.waitForTimeout(800); await shot('00f-gate');
   await page.keyboard.down('KeyW'); await page.waitForTimeout(2200); await page.keyboard.up('KeyW');
   await page.waitForTimeout(800); await shot('00g-waking');
@@ -108,12 +92,14 @@ async function main() {
   await press('ArrowUp'); await press('Enter'); await until('Title', '묻는 창 → 타이틀');
   await press('ArrowUp'); await press('Enter'); await until('Dev { tab: 0', '타이틀 → 개발 창');
   await shot('00j-dev');
-  // 모션 보기(2026-11-15): 모션 묶음(둘째) 첫 줄 = 검 → 서기 → 아래로 여덟 = 평타 1(서기·몸짓 둘·걷기·달리기·뒷걸음·땅 돌리기 둘 다음) → 나가기.
-  await press('ArrowRight', 1); await until('Dev { tab: 1', '모션 묶음'); await press('Enter'); await until('Motions', '모션 보기');
+  // 모션 보기(2026-11-15): 모션 묶음 첫 줄 = 검 → 서기 → 아래로 평타 1(서기·몸짓 둘·걷기·달리기·뒷걸음·땅 돌리기 둘 다음) → 나가기.
+  await devRow('Motion(0)'); await press('Enter'); await until('Motions', '모션 보기');
   await page.waitForTimeout(700); await shot('00j1-motions');
-  await press('ArrowDown', 8); await page.waitForTimeout(500); await shot('00j2-motions-hit');
+  // 평타 1(`attack` — 모션 보기도 고른 줄을 장면 이름 끝에 붙인다 `@attack`, 개발판)까지 ↓로.
+  for (let k = 0; k < 40 && !/ @attack$/.test(await scene()); k++) await press('ArrowDown');
+  await until(/ @attack$/, '모션 보기 → 평타 1'); await page.waitForTimeout(500); await shot('00j2-motions-hit');
   await press('Escape'); await until('Dev { tab: 1', '모션 보기 → 개발 창');
-  await press('ArrowRight', 3); await until('Dev { tab: 4', '전투·적 묶음'); await press('Enter'); await until('Sandbox', '보스 아레나(개발 놀이터)'); await page.waitForTimeout(400);  // 개발 창: 전투·적(다섯째 묶음) 첫 줄 = 보스 아레나(0083)
+  await devRow('Scenario(Boss)'); await press('Enter'); await until('Sandbox', '보스 아레나(개발 놀이터)'); await page.waitForTimeout(400);  // 개발 창: 보스 아레나(0083)
   // 1 보스 아레나: 쿼터뷰 → 앞으로 걷기 → 락온 → 전환 중·전환 뒤 → 공격 → 회피 → 해제.
   await page.keyboard.press('Digit1'); await page.waitForTimeout(400);
   await shot('01-quarter');

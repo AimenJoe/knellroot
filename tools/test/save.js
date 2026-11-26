@@ -5,31 +5,20 @@
 //   5) 기록 슬롯(0066): 이어하기·시작하기 → 슬롯 창, 지우기·덮어쓰기는 묻는 창(0192 — 커서는 취소에서), 다른 슬롯에서 시작해도 슬롯 1은 그대로, 마지막 슬롯 칸.
 //   처음부터·타이틀로·사기는 묻는 창. 그 사이 장비 창에서 장신구를 끼면 기록에 남는지(0064 M3).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/save.js dist shots
-const { chromium } = require('playwright');
 const sceneKit = require('./scene');
-const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
 const PORT = 8135;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm',
-  '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.txt': 'text/plain' };
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
 
-const server = http.createServer((req, res) => {
-  const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
-  if (!f.startsWith(DIST) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
-  fs.createReadStream(f).pipe(res);
-});
-
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
-  await new Promise((r) => server.listen(PORT, r));
-  const browser = await chromium.launch();
+  const server = await sceneKit.serve(DIST, { port: PORT });
+  const browser = await sceneKit.launch();
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const page = await ctx.newPage();
   await sceneKit.throttle(ctx, page);
@@ -38,7 +27,7 @@ async function main() {
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
   const fail = (msg) => { console.error('FAIL ' + msg); process.exitCode = 1; };
   const shot = (name) => page.screenshot({ path: path.join(OUT, name + '.png') });
-  const { press, until } = sceneKit(page);
+  const { press, until, openTab } = sceneKit(page);
   await sceneKit.cheap(page);
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 20000 });
   const record = () => page.evaluate((k) => localStorage.getItem(k), KEY);
@@ -87,7 +76,7 @@ async function main() {
   console.log('레벨을 올린 뒤 기록:', JSON.stringify(r));
   if (!/lv\.life=1\n/.test(r) || !/embers=65\n/.test(r)) fail('raising Life must spend 50 embers and keep lv.life=1');
   // 가게 탭: 성장에서 Q 둘(설정 → 가게 — 탭 줄은 끝에서 돈다, 0263 화로 = 성장·장비·가방·기술·가게·설정) → 첫 줄(잔불 주머니 60, 0117) 사기.
-  await press('KeyQ', 2); await until('Shop', '3a 가게 탭');
+  await openTab('Shop', '3a 가게 탭', 'KeyQ');
   await shot('save-2a-shop');
   // 사기 전에 묻는 창(nail 가게 — 커서는 "사기"에서).
   await press('Enter'); await until('Ask(Buy', '3a 사기 묻는 창');

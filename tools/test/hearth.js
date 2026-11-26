@@ -12,8 +12,6 @@
 //   (`walking_reaches_every_cell_of_every_plate_from_anywhere`). F4 넘침 검사(`ui::check`)는 켜 둔다 — 지나는 화면에서 콘솔의
 //   `[ui-check]` 줄(켬/끔 말고)이 있으면 실패.
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/hearth.js dist shots
-const { chromium } = require('playwright');
-const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const sceneKit = require('./scene');
@@ -21,8 +19,6 @@ const sceneKit = require('./scene');
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
 const PORT = 8137;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm',
-  '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.txt': 'text/plain' };
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
 // 문 앞 쉼터(0)에서 쉰 기록(뿌리껍질 덧옷을 걸쳤다 — 0176), 잔불은 레벨 몇 단 + 가게 + 기술 되돌리기를 볼 만큼. 기력·힘은 이미 4단(다음이 마지막 단 — "다 올림" 줄·평타 +1도 본다).
@@ -31,13 +27,6 @@ const SEED = 'v=1\nembers=700\nclears=1\nrun.rest=0\nrun.gate=1\ncharm.owned=she
 // 받은 참이다. 문 앞 쉼터에 서 있고 잔불은 첫 레벨 값보다 넉넉히.
 // 0272: 맨손은 무기 판이 없다(기술 탭이 공통 판에서 열린다) — 여기 기록들은 검을 들었다(`weapon=sword`), 맨손의 길은 끝에서 따로 본다.
 const FRESH = 'v=1\nembers=130\nrun.rest=0\nrun.gate=0\nplay=1\nweapons=sword\nweapon=sword\nmigrated.v04=1\nmigrated.v06=1\nmigrated.ult=1\ntut.step=4\nskill.gift=1\n';
-
-const server = http.createServer((req, res) => {
-  const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
-  if (!f.startsWith(DIST) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
-  fs.createReadStream(f).pipe(res);
-});
 
 async function run(browser, lang) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
@@ -53,7 +42,7 @@ async function run(browser, lang) {
   const shot = (name) => page.screenshot({ path: path.join(OUT, `hearth-${lang}-${name}.png`) });
   // 누름마다 게임 프레임 둘(창 안의 커서 옮기기는 그것으로 넉넉하다). 판이 서고·화로가 열리고·창이 닫히는 곳은 장면을 기다린다
   // (tools/test/scene.js — 느린 CI에서 판이 서기 전에 F가 들어가 화로 대신 싸움 화면을 찍던 길).
-  const { press, until } = sceneKit(page, 90);
+  const { press, until, openTab } = sceneKit(page, 90);
   await sceneKit.cheap(page);
   const toPlay = async () => { await until('Title', '타이틀'); await press('F4'); await press('Enter'); await until('Slots', '이어하기 → 슬롯 창'); await press('Enter'); await until('Play', '슬롯 → 판'); await page.waitForTimeout(1500); };
   const rest = async (what) => { await press('KeyF'); await until(/host: Hearth/, what || '화로에서 쉬기'); await page.waitForTimeout(300); };
@@ -232,7 +221,7 @@ async function run(browser, lang) {
   await press('KeyE'); await until('Settings { host: Hearth', '가게 → 설정 탭');
   await shot('8j-settings');
   // 기술 탭(설정에서 Q 둘 — 가게를 지나): 탭 머리의 민트 점 = 남은 기술 점수로 올릴 것이 있다.
-  await press('KeyQ', 2); await until('Skills { host: Hearth', '설정 → 기술 탭');
+  await openTab('Skills { host: Hearth', '설정 → 기술 탭', 'KeyQ');
   // 기술 화면(0270 C2): 든 무기(검)의 판 — 한손검 — 에서 열리고, 처음 서는 칸 = 그 판에서 올릴 수 있는 첫 칸(0274 ② — 왼쪽 충격 갈래의 자루 치기).
   await until(/\[Class\(Sword\)\] @Skill\(Pommel\)$/, '기술 탭은 한손검 판의 자루 치기에서 연다');
   await shot('12-skills');
@@ -418,12 +407,12 @@ async function run(browser, lang) {
   if (!/skill\.rank\.pommel=1\n/.test(b) || !/skill\.gift=1\n/.test(b)) errors.push(`fresh: pommel not learned: ${JSON.stringify(b)}`);
   await page.waitForTimeout(1800);
   // 한 단 올린다(Q 셋 = 가방·장비를 지나 성장 탭, 0263, 잔불 50 → 기술 점수 +1) → 기술 탭(한손검 판)의 버팀 → 남은 빈 칸(칸 2)에.
-  await press('KeyQ', 3); await until('Status { host: Hearth', '새 판: 기술 → 성장 탭');
+  await openTab('Status { host: Hearth', '새 판: 기술 → 성장 탭', 'KeyQ');
   await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(500);
   await shot('31d-fresh-level-one');
   b = await record();
   if (!/lv\.life=1\n/.test(b) || !/embers=80\n/.test(b)) errors.push(`fresh: the first level costs 50: ${JSON.stringify(b)}`);
-  await press('KeyE', 3); await until('Skills { host: Hearth', '새 판: 성장 → 기술 탭');
+  await openTab('Skills { host: Hearth', '새 판: 성장 → 기술 탭');
   await goto('Skill(Brace)'); await page.waitForTimeout(200);
   await press('Enter'); await page.waitForTimeout(300); await press('Enter'); await page.waitForTimeout(300);
   await press('Enter'); await page.waitForTimeout(2200);
@@ -435,7 +424,7 @@ async function run(browser, lang) {
   await shot('32-fresh-hud-two');
   // 멈춤의 기술 탭(끼우기만, 0173): 멈춤(장비 탭) → E 둘 = 기술(가방을 지나). 배운 자루 치기(칸 1)에서 확인 = "칸 2에 끼우기" 목록.
   await pause('새 판: 멈춤'); await until('Equip { host: Pause', '새 판: 멈춤 = 장비 탭');
-  await press('KeyE', 2); await until('Skills { host: Pause', '새 판: 멈춤의 기술 탭');
+  await openTab('Skills { host: Pause', '새 판: 멈춤의 기술 탭');
   await goto('Skill(Pommel)'); await press('Enter'); await page.waitForTimeout(300);
   await shot('32a-fresh-pause-acts');
   await press('Escape'); await page.waitForTimeout(300);
@@ -457,8 +446,8 @@ async function run(browser, lang) {
 
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
-  await new Promise((r) => server.listen(PORT, r));
-  const browser = await chromium.launch();
+  const server = await sceneKit.serve(DIST, { port: PORT });
+  const browser = await sceneKit.launch();
   let bad = false;
   // 언어 하나만 돌리려면 `HEARTH_LANGS=en`.
   for (const lang of (process.env.HEARTH_LANGS || 'ko,en').split(',')) {

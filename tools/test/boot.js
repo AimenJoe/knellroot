@@ -3,8 +3,6 @@
 //   node tools/test/boot.js dist shots
 // 보는 것: 1) 타이틀까지 뜬다, 2) 개발 메뉴가 없다(타이틀의 끝 줄이 설정이다), 3) 새 판이 열리고 깨어나는 장면을 넘겨 몇 초 돈다,
 // 4) 그동안 콘솔 에러·패닉이 없다. 긴 시나리오(shot·touch·save)는 개발판 빌드로 PR 검사에서 이미 돌았다 — 여기는 실제로 나가는 것만.
-const { chromium } = require('playwright');
-const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const sceneKit = require('./scene');
@@ -12,21 +10,12 @@ const sceneKit = require('./scene');
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
 const PORT = 8163;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm',
-  '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.txt': 'text/plain' };
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
-
-const server = http.createServer((req, res) => {
-  const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
-  if (!f.startsWith(DIST) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
-  fs.createReadStream(f).pipe(res);
-});
 
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
-  await new Promise((r) => server.listen(PORT, r));
-  const browser = await chromium.launch();
+  const server = await sceneKit.serve(DIST, { port: PORT });
+  const browser = await sceneKit.launch();
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   const errors = [];
   const { until, press, scene } = sceneKit(page, 60);

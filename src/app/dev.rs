@@ -103,7 +103,8 @@ pub(super) enum DevStart {
     Motion(u8),
 }
 
-/// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
+/// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 시험 스크립트는 줄을 세지 않고 이름으로 부른다(0278 R13 — `DevCmd`,
+/// `tools/test/scene.js` `dev`·`devRow`): 줄을 어디에 끼워도 스크립트의 길은 그대로다(아래 "끝에 둔다"는 그 전의 까닭).
 pub(super) const DEV_LIST: [(DevCat, DevStart); 59] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
@@ -188,6 +189,79 @@ pub(super) fn dev_items(tab: usize) -> Vec<DevStart> {
         .filter(|(c, _)| *c == cat)
         .map(|(_, e)| *e)
         .collect()
+}
+
+/// "든 무기 바꾸기"의 차례(0223 V3): (무기, 방패를 드나). 0270 C3: 쇠뇌 다음은 "검 + 방패"(방패 트리의 스킬을 끼워 보게) — 그다음
+/// 맨손에서 방패를 내린다. 차례는 손으로 누르던 시절(새 판 = 맨손에서 센 수)의 것 그대로다 — 이제 시험 스크립트는 세지 않고
+/// 이름(`Arm(Wand)` · `Arm(Sword+Shield)`, `DevCmd`)으로 든다(0278 R13).
+const ARM_CYCLE: [(crate::weapons::Id, bool); 12] = {
+    use crate::weapons::Id as W;
+    [
+        (W::Sword, false),
+        (W::Hammer, false),
+        (W::Staff, false),
+        (W::Crossbow, false),
+        (W::Sword, true),
+        (W::Spear, false),
+        (W::Daggers, false),
+        (W::Greatsword, false),
+        (W::Scythe, false),
+        (W::Wand, false),
+        (W::Fists, false),
+        (W::Bow, false),
+    ]
+};
+
+/// "보조무기 바꾸기"가 도는 무기(종류가 있는 것 — 맨손은 메지 않는다, 표 `weapons::IDS`의 차례).
+fn sub_ids() -> Vec<crate::weapons::Id> {
+    crate::weapons::IDS
+        .into_iter()
+        .filter(|w| w.class().is_some())
+        .collect()
+}
+
+/// 이름 있는 개발 명령(0278 R13 — 헤드리스 시험 · 재기가 개발 창을 세어 누르지 않고 이름으로 부른다): 웹은 페이지의
+/// `window.knellDev`(이름의 배열 — 프레임마다 앞에서부터 꺼내 차례로 한다, `screen::dev_command`), PC는 `KNELL_BOOT`(쉼표로 여럿).
+/// 이름은 모두 있는 표의 Debug에서 선다 — 따로 적은 목록이 없다: 개발 창 줄 `DevStart`(`Garden` · `Scenario(Stress80)` — 그 줄을
+/// 고른 것과 같다), `Dev(<줄>)`(개발 창을 그 줄에 커서를 두고 연다 — 시작하지 않는다), `Arm(<무기>)` · `Arm(<무기>+Shield)`(`ARM_CYCLE`의
+/// 한 칸을 바로 든다), `ArmSub(<무기>)` · `ArmSub(None)`(`sub_ids`). 모르는 이름은 콘솔 에러 `knellDev: …`(스크립트가 실패로 본다).
+#[cfg(any(feature = "dev", test))]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum DevCmd {
+    Start(DevStart),
+    Show(DevStart),
+    Arm(crate::weapons::Id, bool),
+    Sub(Option<crate::weapons::Id>),
+}
+
+#[cfg(any(feature = "dev", test))]
+impl DevCmd {
+    /// 받는 명령 전부(이름의 출처 = 표).
+    fn all() -> Vec<DevCmd> {
+        let rows = DEV_LIST.iter().map(|(_, e)| *e);
+        rows.clone()
+            .map(DevCmd::Start)
+            .chain(rows.map(DevCmd::Show))
+            .chain(ARM_CYCLE.iter().map(|&(w, s)| DevCmd::Arm(w, s)))
+            .chain(std::iter::once(DevCmd::Sub(None)))
+            .chain(sub_ids().into_iter().map(|w| DevCmd::Sub(Some(w))))
+            .collect()
+    }
+
+    fn name(self) -> String {
+        match self {
+            DevCmd::Start(e) => format!("{e:?}"),
+            DevCmd::Show(e) => format!("Dev({e:?})"),
+            DevCmd::Arm(w, false) => format!("Arm({w:?})"),
+            DevCmd::Arm(w, true) => format!("Arm({w:?}+Shield)"),
+            DevCmd::Sub(None) => "ArmSub(None)".to_string(),
+            DevCmd::Sub(Some(w)) => format!("ArmSub({w:?})"),
+        }
+    }
+
+    fn parse(s: &str) -> Option<DevCmd> {
+        Self::all().into_iter().find(|c| c.name() == s.trim())
+    }
 }
 
 impl DevStart {
@@ -542,44 +616,18 @@ impl App {
                 self.dev_overlay = !self.dev_overlay;
                 self.snd(crate::sfx::Id::Buy);
             }
-            // 든 무기를 표의 다음 것으로(0223 V3) — 이 창에서 시작하는 아레나와 "기술 끼우기"가 그 무기로 선다. 기록은 그대로.
-            // 0270 C3: 쇠뇌 다음은 "검 + 방패"(방패 판의 스킬을 끼워 보게) — 그다음 맨손에서 방패를 내린다. 차례의 앞(활 → 검 → 망치 →
-            // 지팡이)은 그대로다(시험 스크립트가 누르는 수).
-            // 0272 2단계: 창은 "검과 방패" 다음·맨손 앞에 — 새 판(맨손)에서 세는 시험 스크립트의 수(맨손 → 활 → 검 …)가 그대로다.
-            // 0274 ⑥: 완드는 낫 다음 · 맨손 앞에(새 판에서 열한 번 — 낫까지의 수는 그대로).
-            // 0274 ③: 쌍단검은 창 다음 · 맨손 앞에(같은 까닭). 0274 ④: 대검은 쌍단검 다음 · 맨손 앞에. 0274 ⑤: 낫은 대검 다음 · 맨손 앞에
-            // (새 판에서 열 번 — 대검까지의 수는 그대로).
+            // 든 무기를 표의 다음 것으로(0223 V3 — 차례는 `ARM_CYCLE`) — 이 창에서 시작하는 아레나와 "기술 끼우기"가 그 무기로 선다. 기록은 그대로.
             DevStart::Arm => {
-                use crate::weapons::Id as W;
-                let shield = Some(crate::shield::Id::Pilgrim);
-                const CYCLE: [(W, bool); 12] = [
-                    (W::Sword, false),
-                    (W::Hammer, false),
-                    (W::Staff, false),
-                    (W::Crossbow, false),
-                    (W::Sword, true),
-                    (W::Spear, false),
-                    (W::Daggers, false),
-                    (W::Greatsword, false),
-                    (W::Scythe, false),
-                    (W::Wand, false),
-                    (W::Fists, false),
-                    (W::Bow, false),
-                ];
                 let now = (self.weapon, self.progress.shield.is_some());
-                let at = CYCLE.iter().position(|c| *c == now).unwrap_or(0);
-                let (w, s) = CYCLE[(at + 1) % CYCLE.len()];
-                self.weapon = w;
-                self.progress.shield = if s { shield } else { None };
+                let at = ARM_CYCLE.iter().position(|c| *c == now).unwrap_or(0);
+                let (w, s) = ARM_CYCLE[(at + 1) % ARM_CYCLE.len()];
+                self.dev_arm(w, s);
                 self.snd(crate::sfx::Id::Buy);
             }
-            // 놀이터의 보조무기를 표의 다음 것으로(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활 → 창 → 쌍단검 → 대검 → 낫 → 없음 — 맨손은 메지 않는다).
+            // 놀이터의 보조무기를 표의 다음 것으로(없음 → `sub_ids()`의 차례 → 없음 — 맨손은 메지 않는다).
             // 아레나에서 든 무기와 같으면 비워진다(`arm_sandbox`). 기록은 그대로.
             DevStart::ArmSub => {
-                let ids: Vec<crate::weapons::Id> = crate::weapons::IDS
-                    .into_iter()
-                    .filter(|w| w.class().is_some())
-                    .collect();
+                let ids = sub_ids();
                 self.dev.sub = match self.dev.sub {
                     None => ids.first().copied(),
                     Some(w) => ids
@@ -603,9 +651,10 @@ impl App {
         }
     }
 
-    /// 재기용 바로 시작(0258 — PC 개발판): 환경 변수 `KNELL_BOOT`가 개발 창 줄의 이름(`Garden`·`Scenario(Stress80)` …)이면
-    /// 타이틀을 거치지 않고 그 줄로 연다. 구간 시간 재기(`prof`)를 같은 장면에서 되풀이하려고.
-    #[cfg(not(target_arch = "wasm32"))]
+    /// 재기용 바로 시작(0258 — PC 개발판): 환경 변수 `KNELL_BOOT`가 개발 명령의 이름(`Garden`·`Scenario(Stress80)` … — 쉼표로
+    /// 여럿, `DevCmd`)이면 타이틀을 거치지 않고 차례로 한다. 구간 시간 재기(`prof`)를 같은 장면에서 되풀이하려고. 웹의 짝은
+    /// `window.knellDev`(`App::frame`이 프레임마다 꺼낸다, 0278 R13).
+    #[cfg(all(feature = "dev", not(target_arch = "wasm32")))]
     pub fn dev_boot(&mut self) {
         // 연구소 값 덮어쓰기(`KNELL_LAB=render.cull=0,render.ssaa=0`) — 이름은 연구소 줄의 머리(빈칸 앞)로 찾는다.
         for kv in std::env::var("KNELL_LAB").unwrap_or_default().split(',') {
@@ -623,10 +672,43 @@ impl App {
         let Ok(want) = std::env::var("KNELL_BOOT") else {
             return;
         };
-        match DEV_LIST.iter().find(|(_, e)| format!("{e:?}") == want) {
-            Some((_, e)) => self.dev_start(*e),
-            None => eprintln!("KNELL_BOOT: 모르는 줄 {want}"),
+        for name in want.split(',') {
+            self.dev_command(name);
         }
+    }
+
+    /// 이름 있는 개발 명령 하나(0278 R13 — `DevCmd`). 모르는 이름은 콘솔 에러 한 줄(웹 스크립트가 실패로 본다).
+    #[cfg(feature = "dev")]
+    pub(super) fn dev_command(&mut self, name: &str) {
+        let Some(c) = DevCmd::parse(name) else {
+            macroquad::logging::error!("knellDev: 모르는 명령 {name}");
+            return;
+        };
+        match c {
+            DevCmd::Start(e) => self.dev_start(e),
+            DevCmd::Arm(w, s) => self.dev_arm(w, s),
+            DevCmd::Sub(w) => self.dev.sub = w,
+            DevCmd::Show(e) => {
+                let Some(tab) = DEV_CATS
+                    .iter()
+                    .position(|c| DEV_LIST.iter().any(|(k, d)| k == c && *d == e))
+                else {
+                    return;
+                };
+                let row = dev_items(tab).iter().position(|d| *d == e).unwrap_or(0);
+                if matches!(self.scene(), Scene::Dev { .. }) {
+                    self.go(Go::Back);
+                }
+                self.go(Go::Open(Scene::Dev { tab: tab as u8 }));
+                self.cursor = row;
+            }
+        }
+    }
+
+    /// 든 무기를 정한다(개발 창 — 기록은 그대로): 방패는 "검과 방패"의 칸에서만.
+    fn dev_arm(&mut self, w: crate::weapons::Id, shield: bool) {
+        self.weapon = w;
+        self.progress.shield = shield.then_some(crate::shield::Id::Pilgrim);
     }
 
     /// 줄 이름 — 모션 보기 줄은 무기 이름을 채운다.
@@ -753,27 +835,7 @@ mod tests {
         for (i, c) in DEV_CATS.iter().enumerate() {
             assert!(!dev_items(i).is_empty(), "{c:?} is empty");
         }
-        // 시험 스크립트(shot·mouse·leak·fx)의 길: 전투(다섯째 묶음) 첫 줄 = 보스 아레나, 성능(여섯째) = 성능 줄 · 부하 40 · 부하 80,
-        // 기술(셋째) = 끼우기 · 다 올리기 · 고르기 바꾸기 · 기술 아레나, 스테이지(넷째) 첫 줄 = 입구.
-        assert_eq!(dev_items(4)[0], DevStart::Scenario(Scenario::Boss));
-        assert_eq!(
-            dev_items(5),
-            [
-                DevStart::PerfLine,
-                DevStart::Scenario(Scenario::Stress40),
-                DevStart::Scenario(Scenario::Stress80)
-            ]
-        );
-        assert_eq!(
-            dev_items(2)[0..4],
-            [
-                DevStart::Skills,
-                DevStart::SkillsMax,
-                DevStart::SkillsFlip,
-                DevStart::Scenario(Scenario::Skills)
-            ]
-        );
-        assert_eq!(dev_items(3)[0], DevStart::Entrance);
+        // 줄의 자리는 자유다 — 시험 스크립트는 줄을 세지 않고 이름으로 찾는다(0278 R13 — `every_dev_command_name_round_trips`).
         // 모션: 무기마다 한 줄(무기 표의 차례).
         assert_eq!(
             dev_items(1),
@@ -781,6 +843,61 @@ mod tests {
                 .map(DevStart::Motion)
                 .collect::<Vec<_>>()
         );
+    }
+
+    /// 0278 R13: 이름 있는 개발 명령은 모두 이름 → 명령 → 이름으로 돌아오고 이름이 겹치지 않는다 — 줄·무기의 이름을 바꾸면
+    /// 헤드리스 스크립트가 아니라 이 시험이 먼저 깨진다. 스크립트가 부르는 이름은 여기 박아 둔다(`tools/test/*.js`).
+    #[test]
+    fn every_dev_command_name_round_trips() {
+        let all = DevCmd::all();
+        let mut seen = std::collections::HashSet::new();
+        for c in &all {
+            let n = c.name();
+            assert_eq!(DevCmd::parse(&n), Some(*c), "{n}");
+            assert!(seen.insert(n.clone()), "duplicate name {n}");
+        }
+        for (_, e) in DEV_LIST.iter() {
+            assert_eq!(DevCmd::parse(&format!("{e:?}")), Some(DevCmd::Start(*e)));
+        }
+        assert_eq!(DevCmd::parse("NoSuchRow"), None);
+        // 시험 스크립트가 쓰는 이름(tools/test/*.js — 하나라도 바뀌면 그 스크립트를 같이 고친다).
+        for n in [
+            "Gate",
+            "Entrance",
+            "Lab",
+            "Skills",
+            "SkillsMax",
+            "Scenario(Skills)",
+            "Scenario(Boss)",
+            "Scenario(Duel)",
+            "Scenario(Elites)",
+            "Scenario(Horde)",
+            "Scenario(Line)",
+            "Scenario(Stress40)",
+            "Scenario(Stress80)",
+            "Motion(0)",
+            "Dev(Arm)",
+            "Dev(ArmSub)",
+            "Dev(ArmBare)",
+            "ArmBare",
+            "Arm(Fists)",
+            "Arm(Bow)",
+            "Arm(Sword)",
+            "Arm(Hammer)",
+            "Arm(Staff)",
+            "Arm(Crossbow)",
+            "Arm(Sword+Shield)",
+            "Arm(Spear)",
+            "Arm(Daggers)",
+            "Arm(Greatsword)",
+            "Arm(Scythe)",
+            "Arm(Wand)",
+            "ArmSub(None)",
+            "ArmSub(Hammer)",
+            "ArmSub(Bow)",
+        ] {
+            assert!(DevCmd::parse(n).is_some(), "{n}");
+        }
     }
 
     /// 0158: 개발 창의 "다 올리기"는 켬/끔, "고르기 바꾸기"는 끝 단 판의 고르기를 모두 뒤집는다(꺼져 있으면 ㄴ으로 켠다).

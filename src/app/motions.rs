@@ -152,6 +152,13 @@ fn speed_label(speed: u8) -> String {
 }
 
 impl App {
+    /// 모션 보기의 고른 줄(헤드리스 시험에 알린다 — 0278 R13): (동작 이름, 달리기 공격 줄인가).
+    #[cfg(feature = "dev")]
+    pub(super) fn motion_focus(&self, weapon: u8) -> Option<(&'static str, bool)> {
+        let w = IDS[weapon as usize % IDS.len()].def();
+        rows(w, &self.t).get(self.cursor).map(|r| (r.anim, r.dash))
+    }
+
     /// 모션 보기 한 틱: 뒤로·✕·창 밖 = 나가기, 탭 넘기기·탭 누르기 = 무기, 위아래·굴리기·줄 누르기 = 동작, 좌우 = 돌리기,
     /// 확인 = 빠르기(1 → ½ → ¼ → 멈춤). 동작을 바꾸면 처음부터.
     pub(super) fn tick_motions(&mut self, a: &Actions, weapon: u8, speed: u8, spin: i8, t_ms: u32) {

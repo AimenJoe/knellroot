@@ -13,6 +13,8 @@ mod js {
         pub fn knell_scene(ptr: *const u8, len: usize);
         #[cfg(feature = "dev")]
         pub fn knell_test_flags() -> u32;
+        #[cfg(feature = "dev")]
+        pub fn knell_dev_next(ptr: *mut u8, cap: usize) -> usize;
     }
 }
 
@@ -42,6 +44,21 @@ pub fn test_flags() -> u32 {
     return unsafe { js::knell_test_flags() };
     #[cfg(not(target_arch = "wasm32"))]
     0
+}
+
+/// 헤드리스 시험이 페이지에 쌓은 개발 명령 하나(`window.knellDev`의 앞에서 꺼낸다 — 웹 개발판만, 그 밖은 늘 없음). 이름의 뜻은
+/// `app::dev::DevCmd`(0278 R13 — 개발 창을 세어 누르지 않고 이름으로 연다). PC의 짝은 환경 변수 `KNELL_BOOT`.
+#[cfg(feature = "dev")]
+pub fn dev_command() -> Option<String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut buf = [0u8; 128];
+        // SAFETY: JS 함수(web/index.html)가 넘긴 칸 안에만 바이트를 쓰고 그 길이를 돌려준다(넘치면 0).
+        let n = unsafe { js::knell_dev_next(buf.as_mut_ptr(), buf.len()) }.min(buf.len());
+        (n > 0).then(|| String::from_utf8_lossy(&buf[..n]).into_owned())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    None
 }
 
 #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]

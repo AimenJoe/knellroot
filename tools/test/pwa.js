@@ -2,34 +2,20 @@
 //   1) 로딩 화면이 보이다가 첫 프레임 뒤 사라지는가(막대가 거꾸로 가지 않는가), 2) 매니페스트·아이콘이 읽히는가,
 //   3) 서비스 워커가 켜지고 캐시 이름에 빌드 아이디가 들어가는가, 4) 네트워크를 끊고 다시 읽어도 게임이 뜨는가.
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/pwa.js dist shots
-const { chromium } = require('playwright');
-const http = require('http');
 const fs = require('fs');
+const sceneKit = require('./scene');
 const path = require('path');
 
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
 const PORT = 8134;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm',
-  '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.txt': 'text/plain' };
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
-
-// wasm을 천천히 흘려 로딩 막대가 움직이는 것을 본다(64 KB씩, 조각 사이 15 ms ≈ 2.6 MB에 0.6초).
-const server = http.createServer((req, res) => {
-  const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
-  if (!f.startsWith(DIST) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
-  const body = fs.readFileSync(f);
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream', 'Content-Length': body.length });
-  if (!f.endsWith('.wasm')) return res.end(body);
-  let at = 0;
-  const step = () => { if (at >= body.length) return res.end(); res.write(body.subarray(at, at + 65536)); at += 65536; setTimeout(step, 15); };
-  step();
-});
 
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
-  await new Promise((r) => server.listen(PORT, r));
-  const browser = await chromium.launch();
+  // wasm을 천천히 흘려 로딩 막대가 움직이는 것을 본다(64 KB씩, 조각 사이 15 ms ≈ 2.6 MB에 0.6초).
+  const server = await sceneKit.serve(DIST, { port: PORT, drip: { size: 65536, ms: 15 } });
+  const browser = await sceneKit.launch();
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const page = await ctx.newPage();
   const errors = [];

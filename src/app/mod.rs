@@ -132,9 +132,36 @@ struct Press {
 /// 헤드리스 시험에 알리는 기술 탭의 자리: 보이는 판 · 고른 칸 · 판 줄에 섰나(0270 C2).
 type SkillFocus = (crate::plates::Plate, Option<crate::skills::Entry>, bool);
 
+/// 헤드리스 시험에 알리는 목록 창의 고른 줄(0278 R13 — 개발판): 개발 창은 줄(`DevStart`의 Debug), 모션 보기는 동작 이름(달리기
+/// 공격 줄은 `dash:` 앞머리). 스크립트가 줄을 세지 않고 이름으로 찾는다(`tools/test/scene.js` `devRow`).
+#[cfg(feature = "dev")]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RowFocus {
+    Dev(dev::DevStart),
+    Motion(&'static str, bool),
+}
+
+#[cfg(feature = "dev")]
+impl RowFocus {
+    /// 장면 이름 끝에 붙는 말(`@Gate` · `@attack` · `@dash:attack`).
+    fn tag(self) -> String {
+        match self {
+            RowFocus::Dev(e) => format!("{e:?}"),
+            RowFocus::Motion(a, dash) => format!("{}{a}", if dash { "dash:" } else { "" }),
+        }
+    }
+}
+
+/// 운영판에는 개발 창이 없다 — 고른 줄도 없다.
+#[cfg(not(feature = "dev"))]
+type RowFocus = ();
+
+/// 페이지에 알린 것: 맨 위 장면 · 기술 탭의 자리 · 목록 창의 고른 줄 · "성소에 들다"가 흐르나.
+type Reported = (Scene, Option<SkillFocus>, Option<RowFocus>, bool);
+
 thread_local! {
     /// 마지막으로 페이지에 알린 맨 위 장면(`App::frame` — 바뀐 프레임에만 알린다).
-    static REPORTED: std::cell::Cell<Option<(Scene, Option<SkillFocus>, bool)>> = const { std::cell::Cell::new(None) };
+    static REPORTED: std::cell::Cell<Option<Reported>> = const { std::cell::Cell::new(None) };
 }
 
 /// 개발판만의 칸(0075 · 0158): 개발 창이 고른 시나리오, 개발 창에서 시작한 판(기록 슬롯에 쓰지 않는다 — 슬롯을 고르면
@@ -775,6 +802,11 @@ impl App {
 
     pub fn frame(&mut self) {
         crate::prof::frame_start();
+        // 헤드리스 시험의 개발 명령(0278 R13 — 웹 개발판 `window.knellDev`, 쌓인 것을 이 프레임에 차례로).
+        #[cfg(feature = "dev")]
+        while let Some(name) = crate::screen::dev_command() {
+            self.dev_command(&name);
+        }
         let cpu_start = get_time();
         // 헤드리스 시험의 기다림(`screen::report_scene`): 맨 위 장면이 바뀐 프레임에만 이름을 알린다.
         // 기술 탭은 고른 칸도 붙인다(개발판 — `Skills { host: Dev } @Skill(Embers)`): 칸의 자리는 판이 바뀌면 낡으니 시험이 이름으로 찾는다.
@@ -790,23 +822,40 @@ impl App {
         };
         #[cfg(not(feature = "dev"))]
         let focus: Option<SkillFocus> = None;
+        #[cfg(feature = "dev")]
+        let row = match top {
+            Scene::Dev { tab } => dev::dev_items(tab as usize)
+                .get(self.cursor)
+                .map(|e| RowFocus::Dev(*e)),
+            Scene::Motions { weapon, .. } => self
+                .motion_focus(weapon)
+                .map(|(a, d)| RowFocus::Motion(a, d)),
+            _ => None,
+        };
+        #[cfg(not(feature = "dev"))]
+        let row: Option<RowFocus> = None;
         // "성소에 들다"(0262)가 흐르는 동안은 싸움 화면 이름 뒤에 ` ~arrive`(앞머리 `Play`로 기다리는 스크립트는 그대로 맞는다).
         let cut = self.arriving().is_some();
-        if REPORTED.with(|r| r.replace(Some((top, focus, cut)))) != Some((top, focus, cut)) {
-            match (focus, cut) {
+        if REPORTED.with(|r| r.replace(Some((top, focus, row, cut))))
+            != Some((top, focus, row, cut))
+        {
+            let base = match (focus, cut) {
                 // 기술 탭(0270 C2): 보이는 판 + 고른 칸(판 줄이면 `@Strip`) — `Skills { host: Hearth } [Class(Sword)] @Skill(Cut)`.
-                (Some((p, Some(e), _)), _) => {
-                    crate::screen::report_scene(&format!("{top:?} [{p:?}] @{e:?}"))
-                }
-                (Some((p, None, true)), _) => {
-                    crate::screen::report_scene(&format!("{top:?} [{p:?}] @Strip"))
-                }
-                (Some((p, None, false)), _) => {
-                    crate::screen::report_scene(&format!("{top:?} [{p:?}] @Respec"))
-                }
-                (None, true) => crate::screen::report_scene(&format!("{top:?} ~arrive")),
-                (None, false) => crate::screen::report_scene(&format!("{top:?}")),
-            }
+                (Some((p, Some(e), _)), _) => format!("{top:?} [{p:?}] @{e:?}"),
+                (Some((p, None, true)), _) => format!("{top:?} [{p:?}] @Strip"),
+                (Some((p, None, false)), _) => format!("{top:?} [{p:?}] @Respec"),
+                (None, true) => format!("{top:?} ~arrive"),
+                (None, false) => format!("{top:?}"),
+            };
+            // 목록 창의 고른 줄(0278 R13): `Dev { tab: 3 } @Gate` · `Motions { … } @attack`.
+            #[cfg(feature = "dev")]
+            let name = match row {
+                Some(r) => format!("{base} @{}", r.tag()),
+                None => base,
+            };
+            #[cfg(not(feature = "dev"))]
+            let name = base;
+            crate::screen::report_scene(&name);
         }
         // 터치의 상황 버튼(0053): 쉼터 곁이면 점프가 쉬기, 락온할 적이 있거나 락온 중이면 락온, 마실 수 있으면 등잔.
         let play = self.scene().ticks_world();
