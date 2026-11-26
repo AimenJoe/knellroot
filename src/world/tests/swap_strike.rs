@@ -167,7 +167,7 @@ fn swap_strikes_do_not_chain_inside_the_lockout() {
         }
     }
     assert_eq!(w.player.connected, swing);
-    assert!(w.player.swap_link > 0.0, "the entry strike landed too");
+    assert!(w.player.swap.link > 0.0, "the entry strike landed too");
     assert!(!w.swap_strikes(), "but the lock holds");
     // 곧바로 다시 바꾸기: 망치 휘두름이 끝나 설 때까지 기다렸다(받아 두기 안이면) 그냥 바꾸거나, 버려진다 — 교체 공격은 아니다.
     let mut ev = w.step(&swap_press(), &t);
@@ -179,7 +179,7 @@ fn swap_strikes_do_not_chain_inside_the_lockout() {
     for _ in 0..(SWAP_STRIKE_LOCK / TICK_DT) as usize {
         w.step(&Actions::default(), &t);
     }
-    assert_eq!(w.player.swap_lock, 0.0);
+    assert_eq!(w.player.swap.lock, 0.0);
     swing_until_hit(&mut w, &t);
     let (_, ev) = swap_and_wait(&mut w, &t);
     assert!(has(&ev, struck), "after the lock: {ev:?}");
@@ -245,7 +245,7 @@ fn an_incoming_ranged_weapon_fires_one_shot_and_an_empty_one_just_swaps() {
     assert_eq!(w.swap_weapons(), Some(Id::Sword));
     swing_until_hit(&mut w, &t);
     assert!(
-        w.player.swap_link > 0.0 && !w.swap_strikes(),
+        w.player.swap.link > 0.0 && !w.swap_strikes(),
         "nothing to shoot"
     );
     // 휘두르는 동안 누른 바꾸기는 지금까지처럼(설 때까지 받아 두거나 버려진다) — 끊고 들어오지 않는다.
@@ -258,7 +258,7 @@ fn an_incoming_ranged_weapon_fires_one_shot_and_an_empty_one_just_swaps() {
     // 맞힌 직후 서서 눌러도(창 안) 그냥 바꾼다.
     w.set_weapon(Id::Sword);
     w.player.sub = Some(Id::Bow);
-    w.player.swap_link = SWAP_LINK;
+    w.player.swap.link = SWAP_LINK;
     let ev = w.step(&swap_press(), &t);
     assert!(has(&ev, swapped) && !has(&ev, struck), "{ev:?}");
     assert_eq!(w.player.weapon, Id::Bow);

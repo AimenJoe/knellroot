@@ -1005,7 +1005,7 @@ pub enum PState {
     Block {
         t: f32,
     },
-    /// 들이받기(0276 — 하데스의 방패): 막다가 패링 버튼을 놓으면 모인 힘(`power` 0..1 — 막는 동안 `OffHand::rush`)만큼 앞으로
+    /// 들이받기(0276 — 하데스의 방패): 막다가 패링 버튼을 놓으면 모인 힘(`power` 0..1 — 막는 동안 `ClassState::rush`)만큼 앞으로
     /// 내달린다(`tuning::RUSH_*`). 잡몹은 밀려 넘어지고 문지기는 자세만 깎인다(문지기에 닿으면 멈춘다). 무적은 없다 — 받는 피해 그대로.
     /// `swing` = 한 번 들이받기에 한 적 한 번.
     Rush {
@@ -1146,32 +1146,25 @@ pub struct Player {
     pub sub: Option<weapons::Id>,
     /// 부무기의 탄·수류탄·장전(바꿔 들 때 남겨 둔 것 — 바꾸기로 탄창을 채우지 못하게). 처음 드는 것이면 없음.
     pub sub_load: Option<Stowed>,
-    /// 받아 둔 바꾸기의 남은 초(0261 — 다른 동작 중에 누른 바꾸기는 서는 순간 나간다).
-    pub swap_buf: f32,
-    /// 교체 공격(0272 1b): 내 타가 닿았거나 받아친 뒤 열려 있는 창의 남은 초(`SWAP_LINK`) — 그 안의 바꾸기는 들어오는 무기의 한 타와
-    /// 함께 나간다. `swap_lock` = 교체 공격 뒤 다음 교체 공격까지의 잠금(그동안의 바꾸기는 그냥 바꾼다), `link_swing` = 창을 연 마지막
-    /// 스윙(한 번 휘두르기에 한 번), `entry` = 이번 틱에 들어오는 무기가 칠 차례다(바꾼 틱의 플레이어 단계가 걷는다).
-    pub swap_link: f32,
-    pub swap_lock: f32,
-    pub link_swing: u32,
-    pub entry: bool,
+    /// 무기 바꾸기(0261)와 교체 공격(0272 1b — 0278 R24에서 한 묶음으로).
+    pub swap: SwapState,
     /// 든 방패(0223 — 한손 무기일 때만 쓰인다, `World::can_block`).
     pub shield: Option<crate::shield::Id>,
-    /// 보조 손의 일(0276): 빈 손의 결이 기억하는 것(그림자 걸음 · 이어 꿰뚫기)과 방패의 들이받기에 모인 힘.
-    pub off: OffHand,
+    /// 빈 손의 결(0276): 앱이 말한 "보조무기 슬롯이 비었다"와 결이 틱을 넘어 기억하는 것(그림자 걸음 · 이어 꿰뚫기).
+    pub bare: BareHand,
+    /// 종류마다의 손이 틱을 넘어 기억하는 것(0278 R24): 대검의 분노 · 쪼개기, 방패의 들이받기에 모인 힘.
+    pub class: ClassState,
     /// 미리 받아 둔 다음 행동과 남은 초(0057 — 후딜레이를 끊는 캔슬 시점에 나간다).
     pub pending: Option<Next>,
     pub pending_left: f32,
     /// 콤보: 다음 타 번호와 그 타를 이어 갈 남은 초.
     pub combo_next: u8,
     pub combo_left: f32,
-    /// 쪼개기(0274 ④ 대검): 지금 휘두르기의 번호와 그것이 이미 맞힌 적의 수(`Hit::cleave`까지).
-    pub cleaved: (u32, u8),
 }
 
-/// 보조 손의 일(0276 — `Player::off`): 빈 손의 결(`World::bare`)이 틱을 넘어 기억하는 것과 방패의 들이받기.
+/// 빈 손의 결(0276 — `Player::bare`): 앱이 말한 빈 보조무기 슬롯과 결(`World::bare`)이 틱을 넘어 기억하는 것.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct OffHand {
+pub struct BareHand {
     /// 앱이 말한 "보조무기 슬롯이 비었다"(`World::set_open_hand`).
     pub open: bool,
     /// 그림자 걸음(쌍단검): 회피가 끝난 뒤 남은 창(초)과 그때의 스윙 번호 — 그 뒤 첫 휘두르기(`shadow_swing`)는 급소로 친다.
@@ -1180,8 +1173,41 @@ pub struct OffHand {
     pub shadow_swing: u32,
     /// 자루를 길게(창): 이어 나간 둘째 꿰뚫기의 스윙 번호(한 번 더만 — 셋째는 없다).
     pub relunge: u32,
-    /// 들이받기(방패): 막는 동안 모인 힘 0..1(`RUSH_FULL`초에 가득) — 막기를 놓으면 0.
+}
+
+/// 종류마다의 손이 틱을 넘어 기억하는 것(0278 R24 — `Player::class`, 전엔 박자 · 보조 손 · 플레이어에 흩어져 있었다).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ClassState {
+    /// 분노(0274 ④ 대검).
+    pub fury: Fury,
+    /// 쪼개기(0274 ④ 대검): 지금 휘두르기의 번호와 그것이 이미 맞힌 적의 수(`Hit::cleave`까지).
+    pub cleaved: (u32, u8),
+    /// 들이받기(방패 0276): 막는 동안 모인 힘 0..1(`RUSH_FULL`초에 가득) — 막기를 놓으면 0.
     pub rush: f32,
+}
+
+/// 분노(0274 ④ 대검 — `ClassState::fury`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Fury {
+    /// 이 휘두르기의 평타 빠르기에 얹힌 덤(0 = 그대로, 0.2 = ×1.2) — 휘두르기를 시작한 틱에 정하고 그 휘두르기 동안 머문다
+    /// (`World::latch_fury`).
+    pub boost: f32,
+    /// 가득 찼다고 알렸다(0277 — `World::watch_fury`): 분노가 `weapons::FURY_REARM` 밑으로 내려가야 다시 알린다.
+    pub full: bool,
+}
+
+/// 무기 바꾸기(0261)와 교체 공격(0272 1b — `Player::swap`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SwapState {
+    /// 받아 둔 바꾸기의 남은 초(0261 — 다른 동작 중에 누른 바꾸기는 서는 순간 나간다).
+    pub buf: f32,
+    /// 교체 공격: 내 타가 닿았거나 받아친 뒤 열려 있는 창의 남은 초(`SWAP_LINK`) — 그 안의 바꾸기는 들어오는 무기의 한 타와
+    /// 함께 나간다. `lock` = 교체 공격 뒤 다음 교체 공격까지의 잠금(그동안의 바꾸기는 그냥 바꾼다), `link_swing` = 창을 연 마지막
+    /// 스윙(한 번 휘두르기에 한 번), `entry` = 이번 틱에 들어오는 무기가 칠 차례다(바꾼 틱의 플레이어 단계가 걷는다).
+    pub link: f32,
+    pub lock: f32,
+    pub link_swing: u32,
+    pub entry: bool,
 }
 
 /// 멘 무기의 탄(0223 — `Player::sub_load`): 내려놓을 때의 탄창·수류탄·장전. 멘 동안 시계는 흐르지 않는다 — 쇠뇌의 장전만 돈다
@@ -1312,11 +1338,6 @@ pub struct BeatState {
     pub since_perfect: f32,
     /// 이어지는 숨(0214): 다음 회피가 기력을 쓰지 않는다.
     pub free_dodge: bool,
-    /// 분노(0274 ④ 대검): 이 휘두르기의 평타 빠르기에 얹힌 덤(0 = 그대로, 0.2 = ×1.2) — 휘두르기를 시작한 틱에 정하고 그 휘두르기
-    /// 동안 머문다(`World::latch_fury`).
-    pub fury: f32,
-    /// 분노가 가득 찼다고 알렸다(0277 — `World::watch_fury`): 분노가 `weapons::FURY_REARM` 밑으로 내려가야 다시 알린다.
-    pub fury_full: bool,
 }
 
 /// 마법·사격·수류탄(0048·0051·0111): 마법 칸, 공중 사격과 체공, 쇠뇌의 탄과 재장전, 수류탄. `Player::ranged`.
@@ -1602,8 +1623,6 @@ impl World {
                     swing_beat: false,
                     since_perfect: f32::MAX,
                     free_dodge: false,
-                    fury: 0.0,
-                    fury_full: false,
                 },
                 running: false,
                 faces_away: false,
@@ -1628,18 +1647,14 @@ impl World {
                 weapon: weapons::Id::Sword,
                 sub: None,
                 sub_load: None,
-                swap_buf: 0.0,
-                swap_link: 0.0,
-                swap_lock: 0.0,
-                link_swing: 0,
-                entry: false,
+                swap: SwapState::default(),
                 shield: None,
-                off: OffHand::default(),
+                bare: BareHand::default(),
+                class: ClassState::default(),
                 pending: None,
                 pending_left: 0.0,
                 combo_next: 0,
                 combo_left: 0.0,
-                cleaved: (0, 0),
             },
             enemies: Vec::new(),
             lock: None,
@@ -2030,7 +2045,7 @@ impl World {
     /// 바꿔 든 뒤에도 부무기 칸에 옛 무기가 있으니 결은 없다). 맨손은 없다.
     pub fn bare(&self) -> Option<weapons::Bare> {
         let pl = &self.player;
-        if !pl.off.open || pl.sub.is_some() || pl.shield.is_some() {
+        if !pl.bare.open || pl.sub.is_some() || pl.shield.is_some() {
             return None;
         }
         pl.weapon.bare()
@@ -2039,7 +2054,7 @@ impl World {
     /// 보조무기 슬롯이 비었다고 앱이 말한다(0276 — 장비가 바뀔 때마다 `App::arm_world` 한 곳에서). 월드는 장비를 모르니 처음은
     /// 거짓이다(시험 · 시나리오의 `World::new`는 빈 손의 결 없이 무기 표 그대로). 참이어도 부무기 · 방패가 있으면 결은 없다(`bare`).
     pub fn set_open_hand(&mut self, open: bool) {
-        self.player.off.open = open;
+        self.player.bare.open = open;
     }
 
     /// 지금 쥔 꼴의 평타 한 타(무기 표 + 빈 손의 결 0276 — 두 손으로 쥔 한손검의 넓어진 끝 타 · 길게 잡은 창의 닿는 거리).
@@ -2168,7 +2183,7 @@ impl World {
         let Some(to) = pl.sub else {
             return false;
         };
-        if pl.swap_link <= 0.0 || pl.swap_lock > 0.0 || pl.stamina <= 0.0 || pl.air > 0.0 {
+        if pl.swap.link <= 0.0 || pl.swap.lock > 0.0 || pl.stamina <= 0.0 || pl.air > 0.0 {
             return false;
         }
         match to.entry() {
@@ -2188,20 +2203,20 @@ impl World {
     /// (판정 시간 · 무적은 없다, 0095 원칙 2). 그 밖의 바꾸기는 지금까지와 같다. 한 번 나가면 `SWAP_STRIKE_LOCK` 동안은 그냥 바꾼다.
     fn weapon_swap(&mut self, a: &Actions, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
         let pl = &mut self.player;
-        pl.swap_link = (pl.swap_link - dt).max(0.0);
-        pl.swap_lock = (pl.swap_lock - dt).max(0.0);
-        pl.swap_buf = (pl.swap_buf - dt).max(0.0);
+        pl.swap.link = (pl.swap.link - dt).max(0.0);
+        pl.swap.lock = (pl.swap.lock - dt).max(0.0);
+        pl.swap.buf = (pl.swap.buf - dt).max(0.0);
         if a.swap {
             // 교체 공격이 될 누름은 창이 닫힐 때까지 받아 둔다 — 느린 무기(망치)의 캔슬 시점은 맞힌 뒤 0.3초를 넘는다.
             let link = if self.swap_strikes() {
-                self.player.swap_link
+                self.player.swap.link
             } else {
                 0.0
             };
-            self.player.swap_buf = link.max(crate::tuning::SWAP_BUFFER);
+            self.player.swap.buf = link.max(crate::tuning::SWAP_BUFFER);
         }
         let pl = &mut self.player;
-        if pl.swap_buf <= 0.0 || pl.sub.is_none() {
+        if pl.swap.buf <= 0.0 || pl.sub.is_none() {
             return;
         }
         let standing = matches!(pl.state, PState::Idle | PState::Block { .. });
@@ -2214,15 +2229,15 @@ impl World {
             return;
         }
         let pl = &mut self.player;
-        pl.swap_buf = 0.0;
+        pl.swap.buf = 0.0;
         pl.state = PState::Idle;
         if let Some(to) = self.swap_weapons() {
             ev.push(Event::WeaponSwap { to });
             if strike {
                 let pl = &mut self.player;
-                pl.entry = true;
-                pl.swap_link = 0.0;
-                pl.swap_lock = crate::tuning::SWAP_STRIKE_LOCK;
+                pl.swap.entry = true;
+                pl.swap.link = 0.0;
+                pl.swap.lock = crate::tuning::SWAP_STRIKE_LOCK;
             }
         }
     }
@@ -2534,7 +2549,7 @@ impl World {
         } else {
             1.0
         };
-        flurry * (1.0 + self.player.beat.fury)
+        flurry * (1.0 + self.player.class.fury.boost)
     }
 
     /// 분노(0274 ④ — 대검의 주특성 `Art::fury`) 0..1: 둘레 `FURY_RADIUS` m의 깨어 있는 적 수 ÷ `FURY_CROWD` + 잃은 체력의 몫, 1에서
@@ -2572,7 +2587,7 @@ impl World {
             return;
         }
         let k = self.player.weapon.art().fury() - 1.0;
-        self.player.beat.fury = if k > 0.0 { k * self.fury() } else { 0.0 };
+        self.player.class.fury.boost = if k > 0.0 { k * self.fury() } else { 0.0 };
     }
 
     /// 분노가 가득 찬 순간을 알린다(0277): 아래에서 1로 넘어선 틱에 `Event::FuryFull` 한 번 — `weapons::FURY_REARM` 밑으로 내려가야 다시
@@ -2580,12 +2595,12 @@ impl World {
     fn watch_fury(&mut self, ev: &mut Vec<Event>) {
         let f = self.fury();
         let at = self.player.pos;
-        let b = &mut self.player.beat;
-        if f >= 1.0 && !b.fury_full {
-            b.fury_full = true;
+        let fury = &mut self.player.class.fury;
+        if f >= 1.0 && !fury.full {
+            fury.full = true;
             ev.push(Event::FuryFull { at });
         } else if f < weapons::FURY_REARM {
-            b.fury_full = false;
+            fury.full = false;
         }
     }
 

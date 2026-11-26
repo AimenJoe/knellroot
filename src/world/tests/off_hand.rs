@@ -647,7 +647,7 @@ fn holding_the_guard_gathers_a_bash_that_goes_as_far_as_it_gathered() {
             w.step(&hold, &t);
         }
         assert!(w.player.stamina <= stamina, "no regen while guarding");
-        let power = w.player.off.rush;
+        let power = w.player.class.rush;
         let p0 = w.player.pos;
         let mut ev = w.step(&Actions::default(), &t);
         let rushed = matches!(w.player.state, PState::Rush { .. });

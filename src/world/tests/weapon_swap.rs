@@ -163,7 +163,7 @@ fn a_plain_swap_inside_the_riposte_window_ripostes_with_the_new_weapon() {
     let t = Tuning::default();
     let mut w = mob_swinging_in_front(&t);
     w.set_sub(Some(Id::Hammer));
-    w.player.swap_lock = 1.0;
+    w.player.swap.lock = 1.0;
     let mut ev = w.step(
         &Actions {
             parry: true,

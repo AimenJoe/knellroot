@@ -1441,12 +1441,12 @@ impl World {
         }
         // 교체 공격의 창(0272 1b): 내 무기의 타(평타·강공격 — 휘두르기 한 번에 한 번 · 탄)가 닿았거나 받아친 틱에 열린다.
         // 스킬의 타는 열지 않는다(`connected`를 건드리지 않는다 — 게이지와 같은 셈).
-        let linked = pl.connected != 0 && pl.connected != pl.link_swing;
+        let linked = pl.connected != 0 && pl.connected != pl.swap.link_swing;
         if linked {
-            pl.link_swing = pl.connected;
+            pl.swap.link_swing = pl.connected;
         }
         if linked || bolt_hit || parries > 0.0 {
-            pl.swap_link = crate::tuning::SWAP_LINK;
+            pl.swap.link = crate::tuning::SWAP_LINK;
         }
         // 큰 기술을 안 배웠으면(0172 — 단 0) 게이지는 없다: 차지 않으니 가득도·발동도 없다.
         if pl.skill.ult_rank == 0 {

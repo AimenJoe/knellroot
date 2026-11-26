@@ -947,7 +947,7 @@ fn rush_charge(w: &World, pp: Vec3, fl: &Drape) {
     if !matches!(w.player.state, PState::Block { .. }) {
         return;
     }
-    let k = w.player.off.rush.clamp(0.0, 1.0);
+    let k = w.player.class.rush.clamp(0.0, 1.0);
     let steel = Color::new(0.86, 0.9, 1.0, 1.0);
     let gold = Color::new(1.0, 0.86, 0.5, 1.0);
     let c = pp + Vec3::Y * 0.05;

@@ -346,7 +346,7 @@ impl World {
         let two_hands = self.bare() == Some(weapons::Bare::TwoHands);
         // 그림자 걸음(0276 — 쌍단검의 빈 손): 회피가 끝난 뒤 첫 휘두르기는 급소로 친다(`Knack::sure`).
         let knack = Knack {
-            sure: swing == self.player.off.shadow_swing
+            sure: swing == self.player.bare.shadow_swing
                 && self.bare() == Some(weapons::Bare::ShadowStep),
             ..self.knack()
         };
@@ -354,11 +354,11 @@ impl World {
         let lane_len = s
             .lane
             .map(|_| self.lane_reach(p + Vec3::Y * self.player.air, f, s.range));
-        // 쪼개기(0274 ④ — 대검): 한 휘두르기에 앞의 `cleave`까지 — 가까운 적부터 센다(틱을 넘어 `Player::cleaved`에).
+        // 쪼개기(0274 ④ — 대검): 한 휘두르기에 앞의 `cleave`까지 — 가까운 적부터 센다(틱을 넘어 `ClassState::cleaved`에).
         let mut order: Vec<usize> = (0..self.enemies.len()).collect();
         if s.cleave > 0 {
-            if self.player.cleaved.0 != swing {
-                self.player.cleaved = (swing, 0);
+            if self.player.class.cleaved.0 != swing {
+                self.player.class.cleaved = (swing, 0);
             }
             let dist = |i: usize| {
                 let q = self.enemies[i].pos;
@@ -394,10 +394,10 @@ impl World {
                 }
             }
             if s.cleave > 0 {
-                if self.player.cleaved.1 >= s.cleave {
+                if self.player.class.cleaved.1 >= s.cleave {
                     continue;
                 }
-                self.player.cleaved.1 += 1;
+                self.player.class.cleaved.1 += 1;
             }
             en.hit_by = swing;
             // 등딱지(0120): 앞에서 든 평타는 튕긴다 — 피해·자세 없음. 강타·옆/뒤·내려찍기(다른 길)는 들어간다.

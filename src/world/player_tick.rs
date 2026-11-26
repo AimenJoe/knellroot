@@ -70,7 +70,7 @@ impl World {
         }
 
         // 교체 공격(0272 1b): 이 틱에 바꿔 든 무기가 들어오며 친다(`weapon_swap`이 세웠다) — 다른 누름보다 먼저. 이 틱에 못 나가면 버린다.
-        let entry = std::mem::take(&mut self.player.entry);
+        let entry = std::mem::take(&mut self.player.swap.entry);
         // 상태 전이.
         match self.player.state {
             PState::Idle if entry => self.start_entry(&cx),
@@ -323,7 +323,7 @@ impl World {
         let refill = self.rb_toss().map_or(1.0, |r| r.refill);
         let pl = &mut self.player;
         // 그림자 걸음(0276)의 창.
-        pl.off.shadow = (pl.off.shadow - dt).max(0.0);
+        pl.bare.shadow = (pl.bare.shadow - dt).max(0.0);
         // 콤보·원거리 무기 시계(0051).
         pl.combo_left = (pl.combo_left - dt).max(0.0);
         // 뿌리내린 몸(0214): 땅에 서서 움직이지 않은 시간 — 걷거나 구르거나 뜨면 처음부터.
@@ -531,11 +531,11 @@ impl World {
     }
 
     /// 방패 막기(0223): 쥔 동안 머문다. 떼거나 다른 것을 누르면 그 틱에 그 동작으로(막다가 치기·피하기가 늦지 않게).
-    /// 들이받기(0276 — 하데스의 방패): 막는 동안 힘이 모이고(`OffHand::rush`, `RUSH_FULL`초에 가득), 다른 것을 누르지 않고 패링
+    /// 들이받기(0276 — 하데스의 방패): 막는 동안 힘이 모이고(`ClassState::rush`, `RUSH_FULL`초에 가득), 다른 것을 누르지 않고 패링
     /// 버튼만 놓으면 모인 만큼 앞으로 들이받는다(`RUSH_MIN`보다 덜 모였으면 그냥 내린다 — 톡 막기가 새지 않게). 막기의 기력 셈은 그대로.
     fn tick_block(&mut self, cx: &Ctx, e: f32) {
         if !cx.a.parry_held || block_breaks(&cx.a) || !self.can_block() {
-            let power = std::mem::take(&mut self.player.off.rush);
+            let power = std::mem::take(&mut self.player.class.rush);
             if !cx.a.parry_held
                 && !block_breaks(&cx.a)
                 && self.can_block()
@@ -552,9 +552,9 @@ impl World {
         let pl = &mut self.player;
         pl.stamina_idle = 0.0;
         if e <= 0.0 {
-            pl.off.rush = 0.0;
+            pl.class.rush = 0.0;
         }
-        pl.off.rush = (pl.off.rush + cx.dt / crate::tuning::RUSH_FULL).min(1.0);
+        pl.class.rush = (pl.class.rush + cx.dt / crate::tuning::RUSH_FULL).min(1.0);
         pl.state = PState::Block { t: e + cx.dt };
     }
 
@@ -1042,14 +1042,14 @@ impl World {
         let lane = cx.wpn.heavy.is_some_and(|h| h.shape.lane_half().is_some());
         if lane
             && self.bare() == Some(weapons::Bare::LongGrip)
-            && swing != self.player.off.relunge
+            && swing != self.player.bare.relunge
             && e < s0 + a0
             && e + cx.dt >= s0 + a0
             && !self.lunge_stops(dir, 0.3)
         {
             let pl = &mut self.player;
             pl.swings += 1;
-            pl.off.relunge = pl.swings;
+            pl.bare.relunge = pl.swings;
             pl.state = PState::Heavy {
                 t: 0.0,
                 swing: pl.swings,
@@ -1749,17 +1749,17 @@ impl World {
         if self.bare() == Some(weapons::Bare::ShadowStep) {
             let pl = &mut self.player;
             if was_dodging && !matches!(pl.state, PState::Dodge { .. }) {
-                pl.off.shadow = weapons::SHADOW_STEP_LATE;
-                pl.off.shadow_from = match pl.state {
+                pl.bare.shadow = weapons::SHADOW_STEP_LATE;
+                pl.bare.shadow_from = match pl.state {
                     PState::Attack { swing, .. } | PState::Heavy { swing, .. } => swing - 1,
                     _ => pl.swings,
                 };
             }
-            if pl.off.shadow > 0.0 && pl.swings > pl.off.shadow_from {
+            if pl.bare.shadow > 0.0 && pl.swings > pl.bare.shadow_from {
                 if let PState::Attack { swing, .. } | PState::Heavy { swing, .. } = pl.state {
-                    pl.off.shadow_swing = swing;
+                    pl.bare.shadow_swing = swing;
                 }
-                pl.off.shadow = 0.0;
+                pl.bare.shadow = 0.0;
             }
         }
         // 받아 둔 행동이 쓰였다(새 동작이 시작됐다) — 끝나서 서게 된 것(`Idle`)이면 남겨 둔다(다음 틱에 나간다).
