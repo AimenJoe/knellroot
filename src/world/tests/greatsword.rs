@@ -40,8 +40,8 @@ fn the_greatsword_sweeps_wide_long_and_cleaves_three() {
     assert_eq!(W::Greatsword.hand(), weapons::Hand::Two);
     assert!(g.stamina > s.stamina);
     let art = W::Greatsword.art();
-    assert_eq!((art.fury, art.force, art.sneak), (ART_FURY, 1.0, 1.0));
-    assert_eq!(W::Sword.art().fury, 1.0, "only the greatsword");
+    assert_eq!((art.fury(), art.force(), art.sneak()), (ART_FURY, 1.0, 1.0));
+    assert_eq!(W::Sword.art().fury(), 1.0, "only the greatsword");
 }
 
 /// 쪼개기: 앞의 부채꼴에 다섯이 서 있어도 한 휘두르기는 가까운 셋만 벤다 — 먼 둘은 다음 휘두르기에(다른 무기는 상한이 없다 — 표의

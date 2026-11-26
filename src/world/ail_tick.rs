@@ -22,7 +22,7 @@ impl World {
         let mut drained: Option<Vec3> = None;
         let mut shattered: Vec<Vec3> = Vec::new();
         // 되살아나는 숨(0274 ⑤ — 낫의 주특성 `Art::sap`): 묶인 적을 쳐도 흡수처럼 되돌아온다, 되돌아오는 몫 × 배.
-        let sap = self.player.weapon.art().sap;
+        let sap = self.player.weapon.art().sap();
         for (i, en) in self.enemies.iter_mut().enumerate() {
             let struck = std::mem::take(&mut en.struck_now);
             if struck && en.alive() {

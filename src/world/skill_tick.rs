@@ -28,17 +28,44 @@ mod fields;
 mod forms;
 mod ult;
 
-/// 곧 터질 "모인 자리"(끌어모으기 ㄱ): `left`초 뒤 `at` 둘레 `radius` m에 `damage`. 종 치기(0270 C3)의 종은 `on` = 종을 건 적
-/// (그 적이 서 있는 자리에서 울린다 — 쓰러졌으면 마지막 자리), `dose` = 울림이 싣는 타입, `toll` = 울림으로 그린다(렌더가 종을 그린다).
+/// 곧 터질 자리(끌어모으기 ㄱ의 모인 자리 · 뿌리 솟기의 마지막 가시 · 종 치기의 종 · 옮는 저주의 울림): `left`초 뒤 `at` 둘레
+/// `radius` m에 `damage`, `dose` = 싣는 타입. 무엇이 터지나는 `kind`(그림 · 소리가 다르다).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Burst {
     pub at: Vec3,
     pub left: f32,
     pub radius: f32,
     pub damage: i32,
-    pub on: Option<usize>,
     pub dose: Dose,
-    pub toll: bool,
+    pub kind: BurstKind,
+}
+
+/// 터지는 것의 꼴(0278 R21 — 옛 `toll: bool` + 종만 쓰던 `on: Option<usize>`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum BurstKind {
+    /// 그냥 터진다(모인 자리 · 마지막 가시) — `Event::SkillBurst`.
+    Blast,
+    /// 울림(종 치기 0270 C3 · 심지 볼트 0272 · 옮는 저주의 최종 효과): 울림으로 그리고 소리 낸다(충격이면 화약). `on` = 종을 건 적 —
+    /// 그 적이 서 있는 자리에서 울린다(쓰러졌으면 마지막 자리), 없으면 `at`에서.
+    Toll { on: Option<usize> },
+}
+
+impl Burst {
+    /// 울림인가(렌더가 종을 그린다).
+    pub fn toll(&self) -> bool {
+        match self.kind {
+            BurstKind::Toll { .. } => true,
+            BurstKind::Blast => false,
+        }
+    }
+
+    /// 종을 건 적(울림만).
+    pub fn on(&self) -> Option<usize> {
+        match self.kind {
+            BurstKind::Toll { on } => on,
+            BurstKind::Blast => None,
+        }
+    }
 }
 
 /// 갈라진 땅(땅울림 ㄴ): 찍은 부채꼴이 `left`초 남는다 — 그 안의 적은 `slow`배로 걷는다. 렌더가 바닥에 그린다.
@@ -92,8 +119,8 @@ pub struct Blade {
     pub age: f32,
 }
 
-/// 남은 불티(0158 G2, 잔불 흩기): `pos` 둘레 `radius` m에 `secs`초 — `every`초마다 그 안의 적을 태운다(`pulses` = 지금까지 태운 수).
-/// `follow` = 방랑자를 따라온다, `kindle` = 그 안에서 쓰러진 적이 더 남기는 잔불 수. 렌더가 바닥에 그린다.
+/// 놓인 마당(0158 G2 잔불 흩기의 불티에서 — 타는 땅 · 눈발 · 덫 · 눈보라 · 화살비 · 쇠 덫도): `pos` 둘레 `radius` m에 `secs`초 —
+/// `every`초마다 그 안의 적을 친다(`pulses` = 지금까지 친 수), 덫이면 들어선 적에게 한 번. 꼴마다의 것은 `kind`. 렌더가 바닥에 그린다.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Field {
     pub pos: Vec3,
@@ -106,21 +133,31 @@ pub struct Field {
     pub poise: f32,
     /// 타가 쌓는 타입 게이지 — 흩은 순간에 든 무기의 것(0225).
     pub dose: Dose,
-    pub follow: bool,
-    pub kindle: u32,
-    /// 흐르는 쪽과 빠르기(눈발 ㄱ, 0270 C3 — m/s, 0이면 제자리).
-    pub drift: Vec3,
-    /// 덫(뿌리 덫, 0270 C3): 때가 아니라 적이 들어서면 한 번 솟고 사라진다.
-    pub trap: bool,
-    /// 쇠 덫(0276 — 쇠뇌의 빈 손 `World::set_snare`): 뿌리가 솟지 않고 쇠 이빨이 문다(그림 · 소리가 다르다).
-    pub iron: bool,
-    /// 덫이 솟을 때 함께 터지는 마지막 가시(뿌리 덫의 맺음 — 둘레·피해).
-    pub spire: Option<(f32, i32)>,
+    pub kind: FieldKind,
+}
+
+/// 마당의 꼴(0278 R21 — 한 꼴만 쓰던 칸 여섯 `follow` · `kindle` · `drift` · `trap` · `iron` · `spire`을 꼴 안으로).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FieldKind {
+    /// 제자리에서 때마다 친다(불길 ㄴ의 타는 땅 · 화살비 · 시드는 그늘의 모양이 아닌 것).
+    Still,
+    /// 잔불 흩기의 불티(와 같은 길을 쓰는 눈보라): `follow` = 방랑자를 따라온다(따르는 불티 ㄱ · 눈보라), `kindle` = 그 안에서
+    /// 쓰러진 적이 더 남기는 잔불 수(남는 불씨 ㄴ).
+    Embers { follow: bool, kindle: u32 },
+    /// 눈발(0270 C3) · 시드는 그늘(0274 ⑥): `flow` = 흐르는 쪽과 빠르기(흐르는 눈발 ㄱ — m/s, 0이면 제자리).
+    Drift { flow: Vec3 },
+    /// 덫(뿌리 덫 · 화약 덫 0270 C3 · 0272, 쇠 덫 0276): 때가 아니라 적이 들어서면 한 번 솟고 사라진다. `iron` = 쇠뇌의 빈 손이
+    /// 놓은 쇠 덫(`World::set_snare` — 뿌리가 솟지 않고 쇠 이빨이 문다, 그림 · 소리가 다르다), `spire` = 솟을 때 함께 터지는 마지막
+    /// 가시(뿌리 덫의 맺음 — 둘레 · 피해).
+    Trap {
+        iron: bool,
+        spire: Option<(f32, i32)>,
+    },
 }
 
 impl Field {
     /// 제자리에 놓인 마당(0278 R20 — 칸 열다섯의 글이 일곱 곳에 있었다): `pos` 둘레 `radius` m에 `secs`초, `every`초마다
-    /// `damage` · `poise` · `dose`로 친다. 따르기 · 남는 불씨 · 흐름 · 덫은 없다 — 쓰는 곳이 그 칸만 적는다.
+    /// `damage` · `poise` · `dose`로 친다(`FieldKind::Still`) — 다른 꼴은 쓰는 곳이 `kind`만 적는다.
     pub fn lay(
         pos: Vec3,
         radius: f32,
@@ -140,12 +177,39 @@ impl Field {
             damage,
             poise,
             dose,
-            follow: false,
-            kindle: 0,
-            drift: Vec3::ZERO,
-            trap: false,
-            iron: false,
-            spire: None,
+            kind: FieldKind::Still,
+        }
+    }
+
+    /// 방랑자를 따라오나(따르는 불티 · 눈보라).
+    pub fn follows(&self) -> bool {
+        match self.kind {
+            FieldKind::Embers { follow, .. } => follow,
+            FieldKind::Still | FieldKind::Drift { .. } | FieldKind::Trap { .. } => false,
+        }
+    }
+
+    /// 덫인가(들어서면 한 번).
+    pub fn is_trap(&self) -> bool {
+        match self.kind {
+            FieldKind::Trap { .. } => true,
+            FieldKind::Still | FieldKind::Embers { .. } | FieldKind::Drift { .. } => false,
+        }
+    }
+
+    /// 쇠 덫인가(0276 — 쇠뇌의 빈 손).
+    pub fn iron(&self) -> bool {
+        match self.kind {
+            FieldKind::Trap { iron, .. } => iron,
+            FieldKind::Still | FieldKind::Embers { .. } | FieldKind::Drift { .. } => false,
+        }
+    }
+
+    /// 그 안에서 쓰러진 적이 더 남기는 잔불 수(남는 불씨 — 불티만).
+    pub fn kindle(&self) -> u32 {
+        match self.kind {
+            FieldKind::Embers { kindle, .. } => kindle,
+            FieldKind::Still | FieldKind::Drift { .. } | FieldKind::Trap { .. } => 0,
         }
     }
 
@@ -224,7 +288,10 @@ impl World {
     /// 타가 싣는 타입 게이지에 아이템 옵션의 배(`Stats::ail`)를 입힌다(0223 V4) — 스킬의 타가 나가는 자리마다.
     pub(super) fn dosed(&self, d: Dose) -> Dose {
         // 지팡이의 마법력(0225): 스킬의 타가 쌓는 타입 게이지에 무기의 배.
-        (d.0, d.1 * self.stats.ail * self.player.weapon.art().channel)
+        (
+            d.0,
+            d.1 * self.stats.ail * self.player.weapon.art().channel(),
+        )
     }
 
     /// 스킬 `id`의 지금 값: 끼운 칸의 단·고르기를 입힌 것(끼우지 않은 스킬은 1단 — 시험·바꿔 끼운 직후).
@@ -243,7 +310,7 @@ impl World {
             None => id.def().at_grown(1, skills::Pick::A, grow),
         };
         // 망치의 물리력(0225): 타입 없는 스킬의 피해·자세 피해에 무기의 배(타입 있는 스킬은 `dosed`가 지팡이의 배를 얹는다).
-        let force = pl.weapon.art().force;
+        let force = pl.weapon.art().force();
         // 망치의 힘은 타입 없는 스킬과 망치의 타입 충격(0270 B)에 얹는다.
         if matches!(
             eff.skill.kind,
@@ -1043,7 +1110,7 @@ impl World {
 
     fn skill_burst(&mut self, t: &Tuning, mut b: Burst) {
         // 종(0270 C3): 건 적이 서 있는 자리에서 울린다.
-        if let Some(en) = b.on.and_then(|i| self.enemies.get(i)) {
+        if let Some(en) = b.on().and_then(|i| self.enemies.get(i)) {
             b.at = en.pos;
         }
         let mut ev = std::mem::take(&mut self.skill_ev);
@@ -1092,13 +1159,13 @@ impl World {
             self.hitstop = self.hitstop.max(t[P::Hitstop] * SKILL_HITSTOP);
         }
         // 종(0270 C3)은 울림으로 — 울림 타입이 둘레를 치는 그림과 소리를 같이 쓴다. 심지 볼트(0272 — 충격)는 화약이 터진다.
-        ev.push(match (b.toll, b.dose.0) {
-            (true, crate::status::Kind::Shock) => Event::Boom { at: b.at },
-            (true, _) => Event::Toll {
+        ev.push(match (b.kind, b.dose.0) {
+            (BurstKind::Toll { .. }, crate::status::Kind::Shock) => Event::Boom { at: b.at },
+            (BurstKind::Toll { .. }, _) => Event::Toll {
                 at: b.at,
                 radius: b.radius,
             },
-            (false, _) => Event::SkillBurst { at: b.at },
+            (BurstKind::Blast, _) => Event::SkillBurst { at: b.at },
         });
         self.skill_ev = ev;
     }
@@ -1168,7 +1235,7 @@ impl World {
             return;
         }
         let fallen = std::mem::take(&mut self.fallen);
-        let knell = self.player.weapon.art().hex > 1.0;
+        let knell = self.player.weapon.art().hex() > 1.0;
         let pact = self.bare() == Some(weapons::Bare::PactMark);
         let mut knells: Vec<Vec3> = Vec::new();
         let mut hexes: Vec<(Vec3, f32)> = Vec::new();
@@ -1262,9 +1329,8 @@ impl World {
                         left: 0.0,
                         radius: HEX_TOLL_RADIUS,
                         damage,
-                        on: None,
                         dose: (crate::status::Kind::Knell, 0.5),
-                        toll: true,
+                        kind: BurstKind::Toll { on: None },
                     });
                 }
             }
@@ -1440,7 +1506,7 @@ impl World {
         // 놓인 것(0270 C3 — 눈발·뿌리 덫도, 0272 화약 덫, 0274 ⑥ 시드는 그늘): 그 스킬의 타입·꼴(덫인가)의 것만.
         self.skill_fields
             .iter()
-            .filter(|f| f.dose.0 == id.def().kind && f.trap == trap)
+            .filter(|f| f.dose.0 == id.def().kind && f.is_trap() == trap)
             .map(|f| f.left())
             .fold(0.0, f32::max)
     }
@@ -1453,13 +1519,13 @@ impl World {
         } else if pl.skill.ult == skills::Ult::Blizzard {
             self.skill_fields
                 .iter()
-                .filter(|f| f.follow && f.dose.0 == crate::status::Kind::Frost)
+                .filter(|f| f.follows() && f.dose.0 == crate::status::Kind::Frost)
                 .map(|f| f.left())
                 .fold(0.0, f32::max)
         } else if pl.skill.ult == skills::Ult::Rain {
             self.skill_fields
                 .iter()
-                .filter(|f| !f.follow && !f.trap && f.dose.0 == crate::status::Kind::Root)
+                .filter(|f| !f.follows() && !f.is_trap() && f.dose.0 == crate::status::Kind::Root)
                 .map(|f| f.left())
                 .fold(0.0, f32::max)
         } else {

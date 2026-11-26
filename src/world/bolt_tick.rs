@@ -353,15 +353,17 @@ impl World {
             .skill_fields
             .iter()
             .enumerate()
-            .filter(|(_, f)| f.iron)
+            .filter(|(_, f)| f.iron())
             .map(|(i, _)| i)
             .collect();
         if mine.len() >= SNARE_MAX {
             self.skill_fields.remove(mine[0]);
         }
         self.skill_fields.push(skill_tick::Field {
-            trap: true,
-            iron: true,
+            kind: skill_tick::FieldKind::Trap {
+                iron: true,
+                spire: None,
+            },
             ..skill_tick::Field::lay(
                 pos,
                 SNARE_RADIUS,

@@ -28,8 +28,8 @@ fn the_daggers_are_quick_short_and_light_on_poise() {
     assert!(reach(W::Fists) < reach(W::Daggers) && reach(W::Daggers) < reach(W::Sword));
     assert_eq!(W::Daggers.hand(), weapons::Hand::Two);
     assert!(d.heavy.unwrap().shape.lane_half().is_some());
-    assert_eq!(W::Daggers.art().sneak, ART_SNEAK);
-    assert_eq!(W::Sword.art().sneak, 1.0, "only the daggers");
+    assert_eq!(W::Daggers.art().sneak(), ART_SNEAK);
+    assert_eq!(W::Sword.art().sneak(), 1.0, "only the daggers");
 }
 
 /// 급소(`hurt_by` 한 곳): 쌍단검의 손(`Knack::sneak`)이 친 자리가 적의 등 뒤면 × 주특성의 배 — 앞 · 옆은 그대로. 휘청 · 기절 · 묶인

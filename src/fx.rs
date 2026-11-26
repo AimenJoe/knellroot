@@ -95,6 +95,17 @@ pub enum MarkKind {
     Slash { dir: Vec3, len: f32, half: f32 },
 }
 
+/// 남는 빛이 어디에 붙나(0278 R21 — `mark_with`의 bool 둘 `follow` · `hold`; 셋째 짝 "버티되 따르지 않음"은 없다).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Stick {
+    /// 놓인 자리에 남는다.
+    Ground,
+    /// 방랑자를 따라간다(몸에 두른 것).
+    Body,
+    /// 몸을 따라가되 버티는 동안에만(버팀이 끊기면 지운다).
+    Bracing,
+}
+
 /// 남는 빛 하나. `delay` 뒤에 나타나 `life` 동안 산다. `follow` = 방랑자를 따라간다(몸에 두른 것),
 /// `hold` = 버티는 동안에만(버팀이 끊기면 지운다).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -285,10 +296,9 @@ impl Fx {
     }
 
     fn mark(&mut self, pos: Vec3, kind: MarkKind, life: f32, color: Color) {
-        self.mark_with(pos, kind, life, color, 0.0, false, false);
+        self.mark_with(pos, kind, life, color, 0.0, Stick::Ground);
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn mark_with(
         &mut self,
         pos: Vec3,
@@ -296,9 +306,13 @@ impl Fx {
         life: f32,
         color: Color,
         delay: f32,
-        follow: bool,
-        hold: bool,
+        stick: Stick,
     ) {
+        let (follow, hold) = match stick {
+            Stick::Ground => (false, false),
+            Stick::Body => (true, false),
+            Stick::Bracing => (true, true),
+        };
         if self.marks.len() >= MARK_CAP {
             self.marks.remove(0);
         }
@@ -1285,8 +1299,7 @@ impl Fx {
                         0.3,
                         col,
                         0.08 * i as f32,
-                        false,
-                        false,
+                        Stick::Ground,
                     );
                 }
                 self.ring_sparks(g + Vec3::Y * 0.9, 0.5, 8, 8.0, 0.2, WHITE_HOT, STEEL);
@@ -1499,8 +1512,7 @@ impl Fx {
                     0.3,
                     WHITE_HOT,
                     0.05,
-                    false,
-                    false,
+                    Stick::Ground,
                 );
                 self.rise(
                     at,
@@ -1578,8 +1590,7 @@ impl Fx {
                     0.36,
                     WHITE_HOT,
                     0.08,
-                    false,
-                    false,
+                    Stick::Ground,
                 );
                 self.rise(
                     g,
@@ -1721,8 +1732,7 @@ impl Fx {
                         0.34,
                         col,
                         0.07 * i as f32,
-                        false,
-                        false,
+                        Stick::Ground,
                     );
                 }
                 self.ring_sparks(g + Vec3::Y * 0.9, 0.8, 12, 9.0, 0.24, WHITE_HOT, MINT);
@@ -1754,8 +1764,7 @@ impl Fx {
                     0.3,
                     WHITE_HOT,
                     0.05,
-                    false,
-                    false,
+                    Stick::Ground,
                 );
                 self.spray(
                     g + Vec3::Y * 0.5,
@@ -1855,8 +1864,7 @@ impl Fx {
                     0.32,
                     WHITE_HOT,
                     0.08,
-                    false,
-                    false,
+                    Stick::Ground,
                 );
             }
             // 몰아치기 동안의 평타: 휘두를 때마다 바라보는 쪽으로 금빛 줄이 흩어진다.
@@ -1934,8 +1942,7 @@ impl Fx {
                             0.45,
                             if i == 0 { WHITE_HOT } else { AMBER },
                             0.08 * i as f32,
-                            false,
-                            false,
+                            Stick::Ground,
                         );
                     }
                     self.ring_sparks(g + Vec3::Y * 0.9, radius * 0.8, 18, 9.0, 0.3, AMBER, GOLD);
@@ -1950,8 +1957,7 @@ impl Fx {
                         0.16,
                         STEEL,
                         0.0,
-                        false,
-                        false,
+                        Stick::Ground,
                     );
                     self.ring_sparks(
                         g + Vec3::Y * 0.9,
@@ -1977,8 +1983,7 @@ impl Fx {
                             life,
                             STEEL,
                             0.06,
-                            false,
-                            false,
+                            Stick::Ground,
                         );
                     }
                     self.rise(
@@ -2002,8 +2007,7 @@ impl Fx {
                         0.35,
                         SKY,
                         0.0,
-                        false,
-                        false,
+                        Stick::Ground,
                     );
                     self.dust_ring(g, radius * 0.6, 14, 3.0, 0.5, SMOKE);
                 }
@@ -2045,8 +2049,7 @@ impl Fx {
                     0.35,
                     STEEL,
                     0.0,
-                    false,
-                    false,
+                    Stick::Ground,
                 );
             }
             // 깨어나는 숲(0274 ⑤): 고리마다 그 둘레까지 번지는 뿌리빛(민트) 고리 + 둘레의 먼지 + 튀는 흙, 마지막은 큰 흰 별 + 풀빛(흡수)
@@ -2062,8 +2065,7 @@ impl Fx {
                     0.3,
                     MINT,
                     0.0,
-                    false,
-                    false,
+                    Stick::Ground,
                 );
                 self.dust_ring(g, radius * 0.9, 14, 2.0, 0.5, DUST);
                 self.chips(g, Vec3::Z, radius, 360.0, 8);
@@ -2078,8 +2080,7 @@ impl Fx {
                         0.5,
                         LIFE,
                         0.06,
-                        false,
-                        false,
+                        Stick::Ground,
                     );
                     self.rise(
                         g,
@@ -2265,8 +2266,7 @@ impl Fx {
                         0.45,
                         if i == 0 { WHITE_HOT } else { MINT },
                         0.1 * i as f32,
-                        true,
-                        false,
+                        Stick::Body,
                     );
                 }
                 self.spray(
@@ -2314,8 +2314,7 @@ impl Fx {
                         0.45,
                         RIFT_ROOT,
                         0.12 * i as f32,
-                        false,
-                        false,
+                        Stick::Ground,
                     );
                 }
             }
@@ -2542,8 +2541,7 @@ impl Fx {
                         d.skill.startup + hold - delay,
                         col,
                         delay,
-                        true,
-                        true,
+                        Stick::Bracing,
                     );
                 }
                 self.dust_ring(g, 0.4, 6, 1.6, 0.45, DUST);
@@ -2606,8 +2604,7 @@ impl Fx {
                     gap,
                     GOLD,
                     0.0,
-                    true,
-                    false,
+                    Stick::Body,
                 );
                 self.ring_sparks(
                     g + Vec3::Y * 0.9,
@@ -2724,8 +2721,7 @@ impl Fx {
                     0.3,
                     GOLD,
                     0.05,
-                    false,
-                    false,
+                    Stick::Ground,
                 );
                 self.ring_sparks(
                     g + Vec3::Y * 0.7,
@@ -2754,8 +2750,7 @@ impl Fx {
                         0.4,
                         if i == 0 { WHITE_HOT } else { MINT },
                         0.09 * i as f32,
-                        true,
-                        false,
+                        Stick::Body,
                     );
                 }
             }
@@ -3309,8 +3304,7 @@ impl Fx {
                     time + 0.1,
                     QUAKE,
                     0.0,
-                    true,
-                    false,
+                    Stick::Body,
                 );
                 self.mark_with(
                     g,
@@ -3321,8 +3315,7 @@ impl Fx {
                     time + 0.15,
                     MINT,
                     0.08,
-                    true,
-                    false,
+                    Stick::Body,
                 );
                 self.dust_ring(g, 0.6, 14, 5.5, 0.6, DUST);
             }
@@ -3442,8 +3435,7 @@ impl Fx {
                     0.3,
                     LIFE,
                     0.0,
-                    false,
-                    false,
+                    Stick::Ground,
                 );
                 self.implode(g + Vec3::Y * 0.6, radius, 12, LIFE);
                 self.dust_ring(g, radius * 0.7, 10, 3.0, 0.4, DUST);
@@ -3462,8 +3454,7 @@ impl Fx {
                     0.3,
                     MINT,
                     0.0,
-                    true,
-                    false,
+                    Stick::Body,
                 );
                 self.dust_ring(g, 0.4, 8, 3.0, 0.4, DUST);
             }

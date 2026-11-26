@@ -46,10 +46,16 @@ fn the_sickle_is_one_handed_and_its_third_cut_and_charge_hook_foes_in() {
     assert_eq!(k.stamina, s.stamina);
     let art = W::Scythe.art();
     assert_eq!(
-        (art.sap, art.force, art.sneak, art.fury, art.channel),
+        (
+            art.sap(),
+            art.force(),
+            art.sneak(),
+            art.fury(),
+            art.channel()
+        ),
         (ART_SAP, 1.0, 1.0, 1.0, 1.0)
     );
-    assert_eq!(W::Sword.art().sap, 1.0, "only the sickle");
+    assert_eq!(W::Sword.art().sap(), 1.0, "only the sickle");
 }
 
 /// 끌어오기: 몸 앞(방랑자 · 적의 몸 반지름 + `PULL_STOP`)까지 — 넘어서 끌지 않는다, 멀리서는 많아야 `pull` m.

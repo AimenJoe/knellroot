@@ -667,7 +667,10 @@ impl World {
         let rank = self.player.skill.ult_rank;
         let b = &skills::BLIZZARD;
         self.skill_fields.push(Field {
-            follow: true,
+            kind: FieldKind::Embers {
+                follow: true,
+                kindle: 0,
+            },
             ..Field::lay(
                 p,
                 b.radius,

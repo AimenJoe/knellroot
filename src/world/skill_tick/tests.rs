@@ -498,7 +498,7 @@ fn hold_for(w: &mut World, id: Sk) {
         .into_iter()
         .filter(|a| a.class().is_some())
         .collect();
-    arms.sort_by_key(|a| a.art().channel > 1.0);
+    arms.sort_by_key(|a| a.art().channel() > 1.0);
     for arm in arms {
         w.set_weapon(arm);
         if def.fits(w.grip()) {
@@ -2394,7 +2394,7 @@ fn toll_hangs_a_bell_on_one_foe_and_it_rings_around_it() {
     w.spawn_mob(vec3(0.0, 0.0, -2.0));
     still(&mut w);
     finish(&mut w, &t, 0);
-    let hung = |w: &World| w.skill_bursts.iter().filter(|b| b.toll).count();
+    let hung = |w: &World| w.skill_bursts.iter().filter(|b| b.toll()).count();
     assert_eq!(hung(&w), 2, "two rings hang on it");
     for _ in 0..ticks(2.0) {
         still_keep(&mut w);
@@ -2421,7 +2421,7 @@ fn toll_hangs_a_bell_on_one_foe_and_it_rings_around_it() {
     wear(&mut w, Sk::Toll, 1, Pick::A);
     finish(&mut w, &t, 0);
     assert_eq!(hung(&w), 1, "it rings in the air");
-    assert!(w.skill_bursts[0].on.is_none());
+    assert!(w.skill_bursts[0].on().is_none());
 }
 
 /// 후려치기: 망치로 앞 넓은 부채꼴을 친다 — 맞은 적은 멀리 밀리고 충격으로 기절한다(보통 적은 한 번에). 뒤의 적은 아니다.
@@ -2819,7 +2819,7 @@ fn fuse_bolt_lodges_in_a_far_foe_and_bursts_around_it() {
     finish(&mut w, &t, 0);
     assert_eq!(w.enemies[0].hp, 90, "no bolt through the wall");
     assert_eq!(w.skill_bursts.len(), 1);
-    assert!(w.skill_bursts[0].on.is_none() && w.skill_bursts[0].at.z > -3.5);
+    assert!(w.skill_bursts[0].on().is_none() && w.skill_bursts[0].at.z > -3.5);
     // 두 번 터짐(ㄱ — 3단).
     let (mut w, t) = world();
     wear(&mut w, Sk::Fuse, 3, Pick::A);

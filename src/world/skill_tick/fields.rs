@@ -184,24 +184,31 @@ impl World {
         let enemies = &self.enemies;
         for f in &mut self.skill_fields {
             f.age += dt;
-            if f.follow {
-                f.pos = pp;
-            }
-            // 흐르는 눈발(0270 C3 ㄱ).
-            if f.drift != Vec3::ZERO {
-                f.pos += f.drift * dt;
-            }
-            // 덫(0270 C3 — 뿌리 덫): 깨어 있는 적이 들어서면 한 번 솟고 사라진다.
-            if f.trap {
-                if enemies
-                    .iter()
-                    .any(|en| en.active() && f.holds(en.pos, en.radius))
-                {
-                    f.pulses += 1;
-                    due.push(*f);
-                    f.age = f.secs;
+            match f.kind {
+                FieldKind::Embers { follow, .. } => {
+                    if follow {
+                        f.pos = pp;
+                    }
                 }
-                continue;
+                // 흐르는 눈발(0270 C3 ㄱ).
+                FieldKind::Drift { flow } => {
+                    if flow != Vec3::ZERO {
+                        f.pos += flow * dt;
+                    }
+                }
+                // 덫(0270 C3 — 뿌리 덫): 깨어 있는 적이 들어서면 한 번 솟고 사라진다.
+                FieldKind::Trap { .. } => {
+                    if enemies
+                        .iter()
+                        .any(|en| en.active() && f.holds(en.pos, en.radius))
+                    {
+                        f.pulses += 1;
+                        due.push(*f);
+                        f.age = f.secs;
+                    }
+                    continue;
+                }
+                FieldKind::Still => {}
             }
             let next = f.every * (f.pulses + 1) as f32;
             if f.age + 1e-4 >= next && next <= f.secs + 1e-4 {
@@ -214,7 +221,7 @@ impl World {
                 .skill_fields
                 .iter()
                 .filter(|f| f.holds(en.pos, en.radius))
-                .map(|f| f.kindle)
+                .map(|f| f.kindle())
                 .max()
                 .unwrap_or(0);
         }
@@ -241,7 +248,7 @@ impl World {
                         },
                     );
                     // 쇠 덫(0276): 이빨이 문 잡몹은 `SNARE_BIND`초 걷지 못한다(뿌리 솟기의 묶음과 같은 표지), 문지기는 그만큼 느려지기만.
-                    if f.iron {
+                    if f.iron() {
                         let en = &mut self.enemies[i];
                         if en.boss {
                             en.marks.hamstring = en.marks.hamstring.max(crate::tuning::SNARE_BIND);
@@ -252,14 +259,14 @@ impl World {
                 }
                 // 화약 덫(0272 — 충격): 뿌리가 아니라 화약이 터진다.
                 let powder = f.dose.0 == crate::status::Kind::Shock;
-                if f.trap && powder {
+                if f.is_trap() && powder {
                     ev.push(Event::Boom { at: f.pos });
-                } else if f.trap && f.iron {
+                } else if f.iron() {
                     // 쇠 덫(0276): 이빨이 문다 — 뿌리는 솟지 않는다.
                     ev.push(Event::SnareSnap {
                         at: vec3(f.pos.x, self.ground_y(f.pos), f.pos.z),
                     });
-                } else if f.trap {
+                } else if f.is_trap() {
                     // 솟는 덫: 씨 자리와 둘레에서 뿌리가 솟는다(그림 — 뿌리 솟기의 뿌리와 같은 것).
                     let g = vec3(f.pos.x, self.ground_y(f.pos), f.pos.z);
                     for k in 0..=TRAP_SPIKES {
@@ -283,7 +290,11 @@ impl World {
                     kind: f.dose.0,
                 });
                 // 덫의 마지막 가시(뿌리 덫의 맺음): 솟은 자리가 크게 한 번 더.
-                if let Some((radius, damage)) = f.spire {
+                if let FieldKind::Trap {
+                    spire: Some((radius, damage)),
+                    ..
+                } = f.kind
+                {
                     let at = f.pos;
                     self.skill_blast(t, &mut ev, at, radius, damage, NO_DOSE, true);
                     ev.push(if powder {

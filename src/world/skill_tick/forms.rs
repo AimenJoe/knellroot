@@ -204,9 +204,8 @@ impl World {
                     left: delay * i as f32,
                     radius,
                     damage: s.damage + more,
-                    on: target,
                     dose,
-                    toll: true,
+                    kind: BurstKind::Toll { on: target },
                 });
             }
         }
@@ -326,9 +325,8 @@ impl World {
                     left: delay,
                     radius,
                     damage,
-                    on: None,
                     dose: NO_DOSE,
-                    toll: false,
+                    kind: BurstKind::Blast,
                 });
             }
         }
@@ -651,9 +649,8 @@ impl World {
                         left: SPIRE_DELAY,
                         radius,
                         damage,
-                        on: None,
                         dose: NO_DOSE,
-                        toll: false,
+                        kind: BurstKind::Blast,
                     });
                 }
             }
@@ -809,9 +806,11 @@ impl World {
                 _ => 0.0,
             };
             self.skill_fields.push(Field {
-                drift: match d.twist {
-                    Some(Twist::Flow { speed }) => dir * speed,
-                    _ => Vec3::ZERO,
+                kind: FieldKind::Drift {
+                    flow: match d.twist {
+                        Some(Twist::Flow { speed }) => dir * speed,
+                        _ => Vec3::ZERO,
+                    },
                 },
                 ..Field::lay(
                     pos,
@@ -843,10 +842,12 @@ impl World {
             };
             for p in spots {
                 self.skill_fields.push(Field {
-                    trap: true,
-                    spire: match d.cap {
-                        Some(Cap::Spire { radius, damage }) => Some((radius, damage)),
-                        _ => None,
+                    kind: FieldKind::Trap {
+                        iron: false,
+                        spire: match d.cap {
+                            Some(Cap::Spire { radius, damage }) => Some((radius, damage)),
+                            _ => None,
+                        },
                     },
                     ..Field::lay(
                         p,
@@ -875,10 +876,12 @@ impl World {
                 _ => 0.0,
             };
             self.skill_fields.push(Field {
-                follow: matches!(d.twist, Some(Twist::Follow)),
-                kindle: match d.twist {
-                    Some(Twist::Kindle { embers }) => embers,
-                    _ => 0,
+                kind: FieldKind::Embers {
+                    follow: matches!(d.twist, Some(Twist::Follow)),
+                    kindle: match d.twist {
+                        Some(Twist::Kindle { embers }) => embers,
+                        _ => 0,
+                    },
                 },
                 ..Field::lay(
                     at,

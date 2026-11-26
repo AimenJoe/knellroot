@@ -1693,47 +1693,132 @@ pub enum Class {
     Wand,
 }
 
-/// 무기의 주특성이 얹는 배(0225 → 0272 — 종류마다): `force` = 타입 없는(물리) 스킬의 피해·자세 피해, `channel` = 스킬의 타가
+/// 무기의 주특성이 얹는 배(0225 → 0272 — 종류마다 하나, 0278 R21부터 합 타입: 읽는 쪽은 `art.force()` 같은 접근자 — 그 종류가 아니면
+/// 1 = 배 없음): `force` = 타입 없는(물리) 스킬의 피해·자세 피해, `channel` = 스킬의 타가
 /// 쌓는 타입 게이지, `sneak` = 급소(0274 ③ 쌍단검) — 등 뒤에서 · 휘청이거나 기절하거나 묶인 적에게 주는 방랑자의 모든 타(평타 ·
 /// 강공격 · 탄 · 스킬 · 궁극기)의 피해 배(`world::Knack` → `hurt_by` 한 곳). 앞의 둘은 스킬에만, 급소는 손의 타 모두에.
 /// `fury` = 분노(0274 ④ 대검): 둘레의 적이 많고 잃은 체력이 클수록 평타가 빨라진다 — 가장 빠를 때의 배(`World::fury`).
 /// `sap` = 되살아나는 숨(0274 ⑤ 낫): 흡수가 돌려주는 체력 · 기력의 배 — 그리고 뿌리에 묶인 적도 흡수처럼 친 손에 돌려준다
 /// (`World::tick_ails`의 흡수 한 곳). 받는 피해는 건드리지 않는다(되찾을 뿐 — 0095 원칙 2).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Art {
-    pub force: f32,
-    pub channel: f32,
-    pub sneak: f32,
-    pub fury: f32,
-    pub sap: f32,
-    /// `hex` = 치른 값(0274 ⑥ 완드): 균열(금)이 키우는 받는 피해의 덤 × 배(`hurt_by` 한 곳 — 금 간 적 ×1.3 → ×1.45), 그리고 금 간 채
+#[derive(Clone, Copy, PartialEq)]
+pub enum Art {
+    /// 배 없음(한손검 · 쇠뇌 · 활 · 창 · 맨손).
+    Plain,
+    Force(f32),
+    Channel(f32),
+    Sneak(f32),
+    Fury(f32),
+    Sap(f32),
+    /// 치른 값(0274 ⑥ 완드): 균열(금)이 키우는 받는 피해의 덤 × 배(`hurt_by` 한 곳 — 금 간 적 ×1.3 → ×1.45), 그리고 금 간 채
     /// 쓰러진 적은 둘레의 적에게 울림을 남긴다(`World::tick_embers` — 죽음의 울림). 받는 피해는 건드리지 않는다.
-    pub hex: f32,
+    Hex(f32),
 }
 
 impl Art {
-    /// 배 없음(한손검·쇠뇌·활·창·맨손).
-    pub const PLAIN: Art = Art {
-        force: 1.0,
-        channel: 1.0,
-        sneak: 1.0,
-        fury: 1.0,
-        sap: 1.0,
-        hex: 1.0,
-    };
+    /// 망치의 물리력(그 밖은 1 — 배 없음).
+    pub fn force(self) -> f32 {
+        match self {
+            Art::Force(k) => k,
+            Art::Plain
+            | Art::Channel(_)
+            | Art::Sneak(_)
+            | Art::Fury(_)
+            | Art::Sap(_)
+            | Art::Hex(_) => 1.0,
+        }
+    }
 
-    /// 주특성 글의 `{0}`에 넣는 수(%): 다섯 가운데 큰 배의 덤.
+    /// 지팡이의 마법력(그 밖은 1).
+    pub fn channel(self) -> f32 {
+        match self {
+            Art::Channel(k) => k,
+            Art::Plain
+            | Art::Force(_)
+            | Art::Sneak(_)
+            | Art::Fury(_)
+            | Art::Sap(_)
+            | Art::Hex(_) => 1.0,
+        }
+    }
+
+    /// 쌍단검의 급소(그 밖은 1).
+    pub fn sneak(self) -> f32 {
+        match self {
+            Art::Sneak(k) => k,
+            Art::Plain
+            | Art::Force(_)
+            | Art::Channel(_)
+            | Art::Fury(_)
+            | Art::Sap(_)
+            | Art::Hex(_) => 1.0,
+        }
+    }
+
+    /// 대검의 분노(그 밖은 1).
+    pub fn fury(self) -> f32 {
+        match self {
+            Art::Fury(k) => k,
+            Art::Plain
+            | Art::Force(_)
+            | Art::Channel(_)
+            | Art::Sneak(_)
+            | Art::Sap(_)
+            | Art::Hex(_) => 1.0,
+        }
+    }
+
+    /// 낫의 되살아나는 숨(그 밖은 1).
+    pub fn sap(self) -> f32 {
+        match self {
+            Art::Sap(k) => k,
+            Art::Plain
+            | Art::Force(_)
+            | Art::Channel(_)
+            | Art::Sneak(_)
+            | Art::Fury(_)
+            | Art::Hex(_) => 1.0,
+        }
+    }
+
+    /// 완드의 치른 값(그 밖은 1).
+    pub fn hex(self) -> f32 {
+        match self {
+            Art::Hex(k) => k,
+            Art::Plain
+            | Art::Force(_)
+            | Art::Channel(_)
+            | Art::Sneak(_)
+            | Art::Fury(_)
+            | Art::Sap(_) => 1.0,
+        }
+    }
+
+    /// 주특성 글의 `{0}`에 넣는 수(%): 배의 덤(배 없음은 0).
     pub fn percent(self) -> i32 {
         ((self
-            .force
-            .max(self.channel)
-            .max(self.sneak)
-            .max(self.fury)
-            .max(self.sap)
-            .max(self.hex)
+            .force()
+            .max(self.channel())
+            .max(self.sneak())
+            .max(self.fury())
+            .max(self.sap())
+            .max(self.hex())
             - 1.0)
             * 100.0)
             .round() as i32
+    }
+}
+
+/// Debug는 옛 구조체의 꼴 그대로(배 여섯 — 고정 파일 `weapon_fixture.txt`가 이 글을 바이트로 본다, 0278 R21).
+impl std::fmt::Debug for Art {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Art")
+            .field("force", &self.force())
+            .field("channel", &self.channel())
+            .field("sneak", &self.sneak())
+            .field("fury", &self.fury())
+            .field("sap", &self.sap())
+            .field("hex", &self.hex())
+            .finish()
     }
 }
 
@@ -1970,7 +2055,7 @@ pub const CLASSES: &[ClassDef] = &[
         // (가운데 열 — 단검 트리가 오면(0274 ③) 그리로 옮긴다).
         pair: [Kind::Shock, Kind::Drain],
         great: Ult::Flurry,
-        art: Art::PLAIN,
+        art: Art::Plain,
         main_trait: |s| s.trait_sword,
         sub: SubTrait {
             mods: Mods {
@@ -1994,10 +2079,7 @@ pub const CLASSES: &[ClassDef] = &[
         attribute: |s| s.attr_strike,
         pair: [Kind::Shock, Kind::Knell],
         great: Ult::Upend,
-        art: Art {
-            force: ART_FORCE,
-            ..Art::PLAIN
-        },
+        art: Art::Force(ART_FORCE),
         main_trait: |s| s.trait_hammer,
         sub: SubTrait {
             mods: Mods {
@@ -2020,10 +2102,7 @@ pub const CLASSES: &[ClassDef] = &[
         attribute: |s| s.attr_magic,
         pair: [Kind::Frost, Kind::Ember],
         great: Ult::Blizzard,
-        art: Art {
-            channel: ART_CHANNEL,
-            ..Art::PLAIN
-        },
+        art: Art::Channel(ART_CHANNEL),
         main_trait: |s| s.trait_staff,
         sub: SubTrait {
             mods: Mods {
@@ -2046,7 +2125,7 @@ pub const CLASSES: &[ClassDef] = &[
         attribute: |s| s.attr_pierce,
         pair: [Kind::Ember, Kind::Shock],
         great: Ult::Line,
-        art: Art::PLAIN,
+        art: Art::Plain,
         main_trait: |s| s.trait_crossbow,
         sub: SubTrait {
             mods: Mods::NONE,
@@ -2066,7 +2145,7 @@ pub const CLASSES: &[ClassDef] = &[
         attribute: |s| s.attr_pierce,
         pair: [Kind::Root, Kind::Frost],
         great: Ult::Rain,
-        art: Art::PLAIN,
+        art: Art::Plain,
         main_trait: |s| s.trait_bow,
         sub: SubTrait {
             mods: Mods {
@@ -2090,7 +2169,7 @@ pub const CLASSES: &[ClassDef] = &[
         attribute: |s| s.attr_pierce,
         pair: [Kind::Root, Kind::Sharp],
         great: Ult::Gale,
-        art: Art::PLAIN,
+        art: Art::Plain,
         main_trait: |s| s.trait_spear,
         sub: SubTrait {
             mods: Mods {
@@ -2115,10 +2194,7 @@ pub const CLASSES: &[ClassDef] = &[
         attribute: |s| s.attr_pierce,
         pair: [Kind::Sharp, Kind::Rift],
         great: Ult::Ambush,
-        art: Art {
-            sneak: ART_SNEAK,
-            ..Art::PLAIN
-        },
+        art: Art::Sneak(ART_SNEAK),
         main_trait: |s| s.trait_dagger,
         sub: SubTrait {
             mods: Mods {
@@ -2146,10 +2222,7 @@ pub const CLASSES: &[ClassDef] = &[
         attribute: |s| s.attr_slash,
         pair: [Kind::Rift, Kind::Ember],
         great: Ult::Tempest,
-        art: Art {
-            fury: ART_FURY,
-            ..Art::PLAIN
-        },
+        art: Art::Fury(ART_FURY),
         main_trait: |s| s.trait_greatsword,
         sub: SubTrait {
             mods: Mods {
@@ -2178,10 +2251,7 @@ pub const CLASSES: &[ClassDef] = &[
         attribute: |s| s.attr_slash,
         pair: [Kind::Root, Kind::Drain],
         great: Ult::Grove,
-        art: Art {
-            sap: ART_SAP,
-            ..Art::PLAIN
-        },
+        art: Art::Sap(ART_SAP),
         main_trait: |s| s.trait_scythe,
         sub: SubTrait {
             mods: Mods {
@@ -2209,10 +2279,7 @@ pub const CLASSES: &[ClassDef] = &[
         attribute: |s| s.attr_magic,
         pair: [Kind::Rift, Kind::Knell],
         great: Ult::Price,
-        art: Art {
-            hex: ART_HEX,
-            ..Art::PLAIN
-        },
+        art: Art::Hex(ART_HEX),
         main_trait: |s| s.trait_wand,
         sub: SubTrait {
             mods: Mods {
@@ -2284,7 +2351,7 @@ impl Id {
 
     /// 무기의 주특성이 스킬에 얹는 배(0225 — 사장 "망치는 물리력을, 지팡이는 마법력에 대한 특색" → 0272 종류의 것).
     pub fn art(self) -> Art {
-        self.class().map_or(Art::PLAIN, |c| c.def().art)
+        self.class().map_or(Art::Plain, |c| c.def().art)
     }
 
     /// 보조무기 슬롯에 멨을 때의 보조특성(0272 1b) — 맨손은 종류가 아니라 없다.
@@ -2402,7 +2469,7 @@ mod tests {
             assert_eq!(c.class.def().class, c.class);
             let [a, b] = c.pair;
             assert!(a != b && a != Kind::Physical && b != Kind::Physical);
-            assert!(c.art.force >= 1.0 && c.art.channel >= 1.0);
+            assert!(c.art.force() >= 1.0 && c.art.channel() >= 1.0);
         }
         let greats: Vec<Ult> = CLASSES.iter().map(|c| c.great).collect();
         for (i, g) in greats.iter().enumerate() {
@@ -2417,13 +2484,13 @@ mod tests {
         assert_eq!(Id::Crossbow.class(), Some(Class::Crossbow));
         assert_eq!(Id::Bow.class(), Some(Class::Bow));
         assert_eq!(Id::Fists.hand(), Hand::One, "bare hands can hold a shield");
-        assert_eq!(Id::Fists.art(), Art::PLAIN);
+        assert_eq!(Id::Fists.art(), Art::Plain);
         assert_eq!(
             (Id::Sword.hand(), Id::Hammer.hand(), Id::Spear.hand()),
             (Hand::One, Hand::One, Hand::Two)
         );
-        assert_eq!(Id::Hammer.art().force, ART_FORCE);
-        assert_eq!(Id::Staff.art().channel, ART_CHANNEL);
+        assert_eq!(Id::Hammer.art().force(), ART_FORCE);
+        assert_eq!(Id::Staff.art().channel(), ART_CHANNEL);
         assert_eq!(Class::Hammer.def().art.percent(), 30);
         assert_eq!(Class::Staff.def().art.percent(), 50);
         assert_eq!(Class::Bow.def().art.percent(), 0);
@@ -2437,7 +2504,7 @@ mod tests {
         assert_eq!(Id::Scythe.hand(), Hand::One);
         assert_eq!(Id::Scythe.grip(true), Grip::Shield);
         assert_eq!(Id::Scythe.grip(false), Grip::Class(Class::Scythe));
-        assert_eq!(Id::Scythe.art().sap, ART_SAP);
+        assert_eq!(Id::Scythe.art().sap(), ART_SAP);
         assert_eq!(Id::Fists.grip(false), Grip::Bare);
         assert_eq!(Id::Fists.grip(true), Grip::Shield);
         assert_eq!(Id::Staff.grip(true), Grip::Class(Class::Staff));

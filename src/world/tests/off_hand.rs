@@ -449,7 +449,7 @@ fn an_empty_handed_crossbow_sets_iron_snares_that_bind() {
     let snare = *w
         .skill_fields
         .iter()
-        .find(|f| f.iron)
+        .find(|f| f.iron())
         .expect("a snare lies");
     // 잡몹이 덫 위로 걸어 든다.
     let i = mob_with(&mut w, snare.pos + vec3(3.0, 0.0, 0.0), 500);
@@ -459,7 +459,10 @@ fn an_empty_handed_crossbow_sets_iron_snares_that_bind() {
     assert!(ev.iter().any(|e| matches!(e, Event::SnareSnap { .. })));
     assert!(w.enemies[i].marks.bind > 0.0, "bound");
     assert!(w.enemies[i].hp < 500);
-    assert!(!w.skill_fields.iter().any(|f| f.iron), "a snare bites once");
+    assert!(
+        !w.skill_fields.iter().any(|f| f.iron()),
+        "a snare bites once"
+    );
     // 덫은 둘까지 — 셋째를 놓으면 가장 오래된 것이 사라진다(걸어 들 적은 멀리).
     w.enemies[i].pos = vec3(25.0, 0.0, 25.0);
     for k in 0..3 {
@@ -477,7 +480,7 @@ fn an_empty_handed_crossbow_sets_iron_snares_that_bind() {
         );
     }
     assert_eq!(
-        w.skill_fields.iter().filter(|f| f.iron).count(),
+        w.skill_fields.iter().filter(|f| f.iron()).count(),
         crate::tuning::SNARE_MAX
     );
     // 보조무기가 있으면 수류탄 그대로.

@@ -255,8 +255,8 @@ impl Renderer {
             }
         }
         // 걸린 종(0270 C3 — 종 치기): 울리기까지 그 적의 머리 위에서 흔들리는 금빛 종 + 발밑에서 조여드는 민트 테(울릴 때 둘레).
-        for b in w.skill_bursts.iter().filter(|b| b.toll) {
-            let (at, top) = match b.on.and_then(|i| w.enemies.get(i)) {
+        for b in w.skill_bursts.iter().filter(|b| b.toll()) {
+            let (at, top) = match b.on().and_then(|i| w.enemies.get(i)) {
                 Some(en) => (en.pos, en.height + 0.5),
                 None => (b.at, 1.4),
             };
@@ -298,7 +298,7 @@ impl Renderer {
             // 화약 덫(0272 — 충격): 묻힌 화약 통(어두운 덩이)과 깜빡이는 심지 불꽃, 노란 테 — 밟을 자리를 알린다.
             // 쇠 덫(0276 — 쇠뇌의 빈 손): 땅에 놓인 쇠 이빨의 둥근 틀(어두운 쇠 덩이 + 둘레의 이빨 여덟)과 숨 쉬는 강철빛 테 —
             // 밟을 자리를 알린다. 뿌리 덫(보라)과 갈린다.
-            if f.trap && f.iron {
+            if f.is_trap() && f.iron() {
                 let breathe = 0.5 + 0.5 * (w.time * 2.5).sin();
                 let steel = Color::new(0.82, 0.88, 0.98, 1.0);
                 fl.ring(
@@ -320,7 +320,7 @@ impl Renderer {
                 }
                 continue;
             }
-            if f.trap && f.dose.0 == crate::status::Kind::Shock {
+            if f.is_trap() && f.dose.0 == crate::status::Kind::Shock {
                 let breathe = 0.5 + 0.5 * (w.time * 3.0).sin();
                 let shock = Color::new(1.0, 0.96, 0.45, 1.0);
                 fl.ring(
@@ -344,7 +344,7 @@ impl Renderer {
                 continue;
             }
             // 화살비(0272 — 뿌리, 덫이 아닌 마당): 내릴 자리의 뿌리빛 테와 옅은 면 + 위에서 곧게 내리꽂히는 화살들(금빛 살촉과 꼬리).
-            if !f.trap && f.dose.0 == crate::status::Kind::Root {
+            if !f.is_trap() && f.dose.0 == crate::status::Kind::Root {
                 let root = Color::new(0.82, 0.66, 0.96, 1.0);
                 let beat = (f.age / f.every.max(1e-3)).fract();
                 fl.sector(
@@ -381,7 +381,7 @@ impl Renderer {
                 }
                 continue;
             }
-            if f.trap {
+            if f.is_trap() {
                 let breathe = 0.5 + 0.5 * (w.time * 3.0).sin();
                 let root = Color::new(0.74, 0.56, 0.88, 1.0);
                 fl.ring(
@@ -404,7 +404,7 @@ impl Renderer {
             }
             // 시드는 그늘(0274 ⑥ — 완드 · 균열): 바닥에 드리운 어두운 잿빛 면 + 하늘빛(균열) 테 + 테 안쪽으로 금 셋(넓어졌다 좁아지며 숨
             // 쉰다) + 천천히 가라앉는 잿빛 부스러기. 보라 · 빨강은 쓰지 않는다(그늘은 생물의 색이 아니다).
-            if !f.trap && f.dose.0 == crate::status::Kind::Rift {
+            if !f.is_trap() && f.dose.0 == crate::status::Kind::Rift {
                 let sky = Color::new(0.50, 0.80, 1.0, 1.0);
                 let shade = Color::new(0.16, 0.16, 0.20, 1.0);
                 let ash = Color::new(0.64, 0.63, 0.60, 1.0);

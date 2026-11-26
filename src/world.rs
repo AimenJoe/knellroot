@@ -1870,12 +1870,12 @@ impl World {
     /// 방랑자의 타가 싣는 손의 덤(`hurt_by` 한 곳 — 0270 C5 날카로움 · 0274 ③ 급소): 급소는 든 무기의 주특성(`Art::sneak`, 쌍단검)이
     /// 있을 때 지금 방랑자의 자리에서 본다(등 뒤인가).
     pub fn knack(&self) -> Knack {
-        let sneak = self.player.weapon.art().sneak;
+        let sneak = self.player.weapon.art().sneak();
         Knack {
             keen: self.keen(),
             sneak: (sneak > 1.0).then_some((self.player.pos, sneak)),
             sure: false,
-            hex: self.player.weapon.art().hex,
+            hex: self.player.weapon.art().hex(),
         }
     }
 
@@ -2406,7 +2406,7 @@ impl World {
     /// 멈춘다. 남김없이 휘두르는 손(빈 손의 결 — `Bare::Reckless`)은 곱절로 찬다. 분노가 없는 종류는 0.
     pub fn fury(&self) -> f32 {
         let pl = &self.player;
-        if pl.weapon.art().fury <= 1.0 {
+        if pl.weapon.art().fury() <= 1.0 {
             return 0.0;
         }
         let p = pl.pos;
@@ -2436,7 +2436,7 @@ impl World {
         if matches!(self.player.state, PState::Attack { t, .. } if t > 0.0) {
             return;
         }
-        let k = self.player.weapon.art().fury - 1.0;
+        let k = self.player.weapon.art().fury() - 1.0;
         self.player.beat.fury = if k > 0.0 { k * self.fury() } else { 0.0 };
     }
 

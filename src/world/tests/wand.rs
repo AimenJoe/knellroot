@@ -50,16 +50,16 @@ fn the_wand_is_short_and_its_third_jab_and_charge_etch_a_crack() {
     let art = W::Wand.art();
     assert_eq!(
         (
-            art.hex,
-            art.force,
-            art.sneak,
-            art.fury,
-            art.channel,
-            art.sap
+            art.hex(),
+            art.force(),
+            art.sneak(),
+            art.fury(),
+            art.channel(),
+            art.sap()
         ),
         (ART_HEX, 1.0, 1.0, 1.0, 1.0, 1.0)
     );
-    assert_eq!(W::Sword.art().hex, 1.0, "only the wand");
+    assert_eq!(W::Sword.art().hex(), 1.0, "only the wand");
     let (bolt, charged) = W::Wand.bolts();
     assert_eq!((bolt.look, charged.look), (Look::Curse, Look::Curse));
     assert!(bolt.straight() && !bolt.thrown() && !bolt.smites() && !bolt.is_shot());

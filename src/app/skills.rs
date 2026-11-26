@@ -1095,9 +1095,16 @@ pub(super) fn draw_node(e: Entry, c: Vec2, half: f32, s: f32, look: Look, focus:
     }
 }
 
-/// 단의 점: `n`개 가운데 `have`개가 금빛, 다음 것(`next`)은 민트 테, 나머지는 흐린 테. 큰 기술은 마름모.
+/// 단의 점의 꼴(0278 R21 — 옛 `diamond: bool`): 스킬은 네모, 큰 기술은 마름모.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pip {
+    Square,
+    Diamond,
+}
+
+/// 단의 점: `n`개 가운데 `have`개가 금빛, 다음 것(`next`)은 민트 테, 나머지는 흐린 테. 꼴은 `pip`.
 #[allow(clippy::too_many_arguments)]
-fn draw_pips(cx: f32, y: f32, n: u8, have: u8, next: bool, diamond: bool, size: f32, fade: f32) {
+fn draw_pips(cx: f32, y: f32, n: u8, have: u8, next: bool, pip: Pip, size: f32, fade: f32) {
     let gap = (size * 0.4).max(1.0).round();
     let size = size.round().max(2.0);
     let w = n as f32 * size + (n as f32 - 1.0) * gap;
@@ -1116,7 +1123,7 @@ fn draw_pips(cx: f32, y: f32, n: u8, have: u8, next: bool, diamond: bool, size: 
                 ..ui::BORDER
             }
         };
-        if diamond {
+        if pip == Pip::Diamond {
             let pts = [
                 c + vec2(0.0, -h - 1.0),
                 c + vec2(h + 1.0, 0.0),
@@ -1927,7 +1934,16 @@ impl App {
             match e {
                 Entry::Skill(id) => {
                     let py = w.at(0.0, pips_top).y.round();
-                    draw_pips(c.x, py, e.max(), board.rank(e), ready, false, u * 3.0, fade);
+                    draw_pips(
+                        c.x,
+                        py,
+                        e.max(),
+                        board.rank(e),
+                        ready,
+                        Pip::Square,
+                        u * 3.0,
+                        fade,
+                    );
                     // 끼운 칸 번호는 배운 스킬에만(안 배운 스킬이 놓인 칸은 빈 칸이다, 0166).
                     let slot = worn.iter().position(|x| *x == id);
                     if let (Some(slot), true) = (slot.filter(|_| board.learned(id)), whole) {
@@ -1946,7 +1962,16 @@ impl App {
                 }
                 Entry::Ult(ult) => {
                     let py = w.at(0.0, pips_top).y.round();
-                    draw_pips(c.x, py, e.max(), board.rank(e), ready, true, u * 3.0, fade);
+                    draw_pips(
+                        c.x,
+                        py,
+                        e.max(),
+                        board.rank(e),
+                        ready,
+                        Pip::Diamond,
+                        u * 3.0,
+                        fade,
+                    );
                     // 끼운 큰 기술의 표시(0172 — "큰" 글은 걷었다): 고를 것이 있을 때만(둘 이상 배웠다) 금빛 마름모.
                     // 하나만 배웠으면 그것이 끼운 것이다 — 표시가 없다.
                     if ult == great && board.ults_known() > 1 && whole {
