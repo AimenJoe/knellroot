@@ -244,6 +244,42 @@ fn only_skills_with_a_direction_take_the_drag() {
     }
 }
 
+/// 0278 R16: 한 대상의 모양(`Form::info().aim == Aim::Sighted`)만 숄더뷰의 크로스헤어 쪽으로 나간다 — 표를 베끼지 않고 월드에
+/// 묻는다. 바라보는 쪽(+z 근처)과 다른 카메라 앞(-z)에서, 손이 겨누지 않고(끌기·스틱 없음) 쓰면 `sighted`인 모양만 -z로 시작한다.
+#[test]
+fn only_sighted_skills_follow_the_shoulder_crosshair() {
+    let t = Tuning::default();
+    for s in &skills::SKILLS {
+        let id = s.id;
+        let mut w = World::new("test", 40.0);
+        w.player.facing = 0.0;
+        w.view_yaw = Some(0.0); // 카메라 앞 = -z
+        hold_for_skill(&mut w, id);
+        w.set_skills(skills::Loadout::from([id, skills::sane([id, id])[1]]));
+        let face = w.player.facing_dir();
+        assert!(face.z > 0.9, "faces +z: {face:?}");
+        w.step(
+            &Actions {
+                skill1: true,
+                aim_ahead: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        let PState::Skill { dir, .. } = w.player.state else {
+            panic!("{id:?} did not start: {:?}", w.player.state)
+        };
+        let took = dir.z < -0.9;
+        assert!(took || dir.dot(face) > 0.9, "{id:?}: neither: {dir:?}");
+        assert_eq!(
+            s.form.info().aim == skills::Aim::Sighted,
+            took,
+            "{id:?}: info().aim {:?} vs the way it went {dir:?}",
+            s.form.info().aim
+        );
+    }
+}
+
 /// 스킬 `id`를 쓸 수 있는 것을 든다: 검 → 검과 방패 → 무기 표의 차례.
 fn hold_for_skill(w: &mut World, id: skills::Id) {
     let def = id.def();

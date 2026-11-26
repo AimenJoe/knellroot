@@ -2067,24 +2067,24 @@ impl World {
         }
     }
 
-    /// 스킬 칸 `slot`의 스킬이 남긴 것이 이어지는 몫 0..1(0 = 없음) — 되울림의 울림, 바닥에 놓는 모양(`Form::leaves_field` —
+    /// 스킬 칸 `slot`의 스킬이 남긴 것이 이어지는 몫 0..1(0 = 없음) — 되울림의 울림, 바닥에 놓는 모양(`Form::info().leaves` —
     /// 잔불 흩기의 불티 · 눈발 · 시드는 그늘 · 뿌리 덫 · 화약 덫)의 남은 것(HUD·터치 칸). 이름 목록이 아니라 모양에서 — 0278 R14
     /// 앞에는 시드는 그늘이 목록에 없어 늘 0이었다.
     pub fn skill_active(&self, slot: usize) -> f32 {
         let pl = &self.player;
         let id = pl.skill.worn[slot % 2];
-        let form = id.def().form;
-        if let skills::Form::Echo { .. } = form {
-            if pl.skill.echo_left > 0.0 {
-                return (pl.skill.echo_left / pl.skill.echo_total.max(1e-3)).clamp(0.0, 1.0);
+        let trap = match id.def().form.info().leaves {
+            skills::Leaves::Nothing => return 0.0,
+            skills::Leaves::Aura => {
+                if pl.skill.echo_left > 0.0 {
+                    return (pl.skill.echo_left / pl.skill.echo_total.max(1e-3)).clamp(0.0, 1.0);
+                }
+                return 0.0;
             }
-            return 0.0;
-        }
-        if !form.leaves_field() {
-            return 0.0;
-        }
+            skills::Leaves::Ground => false,
+            skills::Leaves::Snare => true,
+        };
         // 놓인 것(0270 C3 — 눈발·뿌리 덫도, 0272 화약 덫, 0274 ⑥ 시드는 그늘): 그 스킬의 타입·꼴(덫인가)의 것만.
-        let trap = matches!(form, skills::Form::Trap { .. });
         self.skill_fields
             .iter()
             .filter(|f| f.dose.0 == id.def().kind && f.trap == trap)

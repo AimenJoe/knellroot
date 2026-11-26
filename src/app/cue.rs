@@ -454,12 +454,12 @@ fn skill_zoom(id: Sk, brace_full: bool) -> f32 {
     }
 }
 
-/// 스킬의 판정이 나간 순간의 흔들림(0151). 몸에 두르는 것(되울림)·바닥에 놓는 것(`Form::leaves_field` — 불티 · 눈발 · 그늘 · 덫)은
+/// 스킬의 판정이 나간 순간의 흔들림(0151). 몸에 두르는 것(되울림)·바닥에 놓는 것(`Form::info().leaves` — 불티 · 눈발 · 그늘 · 덫)은
 /// 흔들지 않는다 — 울림·불티·덫의 타가 제 몫을 낸다(0278 R14: 이름 목록이던 때 화약 덫 · 시드는 그늘이 빠져 있었다). 바늘땀(0270 C3)은
 /// 땀마다 — 가볍게.
 pub(super) fn skill_kick(id: Sk) -> f32 {
     let form = id.def().form;
-    if matches!(form, crate::skills::Form::Echo { .. }) || form.leaves_field() {
+    if form.info().leaves != crate::skills::Leaves::Nothing {
         0.0
     } else if id == Sk::Stitch {
         SHAKE_HIT

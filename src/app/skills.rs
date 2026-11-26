@@ -277,7 +277,7 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
     let d = id.def();
     let harmless = d.damage == 0;
     // 재기(0274) · 생기 거두기(0274 ⑤): 단이 올리는 것은 도는 체력(거두기는 피해도 같은 배로).
-    let mends = matches!(d.form, Form::Rally { .. } | Form::Reap { .. });
+    let mends = d.form.info().mends;
     match rank {
         0 | 1 => s.sk_rank_learn.to_string(),
         2 if mends => fill(s.rk_heal, &[&pct(sk::RANK2_DAMAGE)]),
@@ -287,25 +287,11 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
         2 => fill(s.rk_damage, &[&pct(sk::RANK2_DAMAGE)]),
         r if r == PICK_RANK => s.sk_rank_pick.to_string(),
         r if r == SIZE_RANK => {
-            let t = match d.form {
-                Form::Ring { .. }
-                | Form::Brace { .. }
-                | Form::Echo { .. }
-                | Form::Field { .. }
-                | Form::Bell { .. }
-                | Form::Wave { .. }
-                | Form::Drift { .. }
-                | Form::Trap { .. }
-                | Form::Rally { .. }
-                | Form::Reap { .. } => s.rk_radius,
-                Form::Lane { .. } | Form::Erupt { .. } => s.rk_length,
-                Form::Pull { .. }
-                | Form::Throw { .. }
-                | Form::Hop { .. }
-                | Form::Stab { .. }
-                | Form::Slip { .. }
-                | Form::Hex { .. } => s.rk_range,
-                Form::Cone { .. } | Form::Bash { .. } => s.rk_arc,
+            let t = match d.form.info().grows {
+                sk::Grow::Radius => s.rk_radius,
+                sk::Grow::Length => s.rk_length,
+                sk::Grow::Range => s.rk_range,
+                sk::Grow::Arc => s.rk_arc,
             };
             fill(t, &[&pct(sk::RANK4_SIZE)])
         }

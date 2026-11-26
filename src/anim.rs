@@ -251,7 +251,7 @@ impl Memory {
                 if clips.has(sk.clip.name) {
                     let at = sk
                         .clip
-                        .at(el, sk.startup, eff.active(), clip_period(&sk.form));
+                        .at(el, sk.startup, eff.active(), sk.form.clip_period());
                     Pick::of(&[sk.clip.name, sk.anim, "attack"], at)
                 } else {
                     Pick::of(&[sk.anim, "heavy", "attack"], el)
@@ -361,35 +361,6 @@ pub const AIM_HOLD: f32 = 0.7;
 pub const RUSH_CLIP_FROM: f32 = 0.15;
 /// 겨눈 채 머무는 자세의 시각(쏘기 동작의 끝 바로 앞).
 pub const XBOW_HOLD_AT: f32 = 0.235;
-
-/// 스킬 동작의 이어짐 구간을 되풀이하는 주기(0158 G2): 휘돌이는 바퀴마다, 가로지르기는 길마다(되돌아 베기의 둘째 길).
-/// 나머지 모양은 이어짐 구간 전체에 늘인다(와일드카드 없이 — 0278 R14).
-fn clip_period(form: &crate::skills::Form) -> Option<f32> {
-    use crate::skills::Form;
-    match *form {
-        Form::Ring { gap, .. } => Some(gap),
-        Form::Lane { time, .. } => Some(time),
-        // 제비걸음(0214): 걸음마다 찌름을 되풀이한다.
-        Form::Hop { gap, .. } => Some(gap),
-        Form::Pull { .. }
-        | Form::Cone { .. }
-        | Form::Drift { .. }
-        | Form::Trap { .. }
-        | Form::Wave { .. }
-        | Form::Brace { .. }
-        | Form::Echo { .. }
-        | Form::Throw { .. }
-        | Form::Field { .. }
-        | Form::Bash { .. }
-        | Form::Stab { .. }
-        | Form::Bell { .. }
-        | Form::Rally { .. }
-        | Form::Slip { .. }
-        | Form::Reap { .. }
-        | Form::Hex { .. }
-        | Form::Erupt { .. } => None,
-    }
-}
 
 /// 점프 동작의 길이(초, `wanderer_skin.py` — 뜨는 순간부터 닿는 순간까지).
 pub const JUMP_CLIP: f32 = 0.5;

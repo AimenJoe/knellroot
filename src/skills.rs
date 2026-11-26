@@ -200,73 +200,124 @@ pub enum Form {
     },
 }
 
+/// 모양이 겨누는 법(0278 R16 — `FormInfo::aim`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Aim {
+    /// 몸 둘레 — 쪽이 없다(바라보는 쪽 그대로, 터치에서 끌지 않는다).
+    Round,
+    /// 쪽이 있는 범위(길·줄·부채꼴·놓는 자리): 숄더뷰에서도 땅 위 표시로 겨눈다(0217).
+    Area,
+    /// 한 대상(0230): 숄더뷰에서 크로스헤어로 나간다.
+    Sighted,
+}
+
+/// 4단(`SIZE_RANK`)에서 커지는 치수(0278 R16 — 기술 탭의 글 한 줄).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Grow {
+    Radius,
+    Length,
+    Range,
+    Arc,
+}
+
+/// 쓴 뒤 남는 것(0278 R16 — `FormInfo::leaves`): HUD·터치 칸의 남은 몫(`World::skill_active`)과 시동 흔들림(`app::cue`)이 읽는다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Leaves {
+    Nothing,
+    /// 몸에 두르는 것(되울림의 울림).
+    Aura,
+    /// 바닥에 놓인 것(`World::skill_fields` — 불티 · 눈발/그늘, 고르기가 덤으로 남기는 것(불길 ㄴ의 타는 땅)은 그 스킬의
+    /// 모양이 아니다): 놓인 동안 친다.
+    Ground,
+    /// 바닥에 심은 덫(`Field::trap`): 밟으면 한 번.
+    Snare,
+}
+
+/// 모양의 값 — 수(payload)와 상관없는 성질 한 줄(0278 R16). 수에 따라 바뀌는 성질(판정 시간 `Skill::active`, 동작의 주기
+/// `Form::clip_period`)은 바로 아래의 메서드, 동작(틱 · 미리보기 · 움직임)은 쓰는 자리의 빠짐없는 match.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FormInfo {
+    /// 겨누는 법 — `Form::aims`(터치 끌기) · `Form::sighted`(크로스헤어).
+    pub aim: Aim,
+    /// 4단에서 커지는 치수.
+    pub grows: Grow,
+    /// 쓴 뒤 남는 것.
+    pub leaves: Leaves,
+    /// 체력을 되돌리는 꼴(재기 · 생기 거두기) — 기술 탭의 2단 · 5단 글.
+    pub mends: bool,
+}
+
 impl Form {
-    /// 쪽이 있는 모양인가(0217 — 터치에서 끌어 겨눈다): 몸 둘레(고리·버팀·되울림·불티·파문·재기·생기 거두기)는 쪽이 없다.
-    /// 와일드카드 없이(0278 R14) — 새 모양은 여기서 컴파일이 깨진다.
-    pub fn aims(&self) -> bool {
-        match self {
-            Form::Ring { .. }
-            | Form::Brace { .. }
-            | Form::Echo { .. }
-            | Form::Field { .. }
-            | Form::Wave { .. }
-            | Form::Rally { .. }
-            | Form::Reap { .. } => false,
-            Form::Lane { .. }
-            | Form::Pull { .. }
-            | Form::Cone { .. }
-            | Form::Drift { .. }
-            | Form::Trap { .. }
-            | Form::Throw { .. }
-            | Form::Hop { .. }
-            | Form::Bash { .. }
-            | Form::Stab { .. }
-            | Form::Bell { .. }
-            | Form::Slip { .. }
-            | Form::Hex { .. }
-            | Form::Erupt { .. } => true,
+    /// 모양의 성질(0278 R16): 와일드카드 없는 한 곳 — 새 모양은 여기서 컴파일이 깨지고, 이 줄을 채우면 겨누기 · 남는 몫 ·
+    /// 흔들림 · 기술 탭의 글이 따라온다.
+    pub const fn info(&self) -> FormInfo {
+        const fn row(aim: Aim, grows: Grow, leaves: Leaves) -> FormInfo {
+            FormInfo {
+                aim,
+                grows,
+                leaves,
+                mends: false,
+            }
         }
+        use Aim::{Area, Round, Sighted};
+        use Grow::{Arc, Length, Radius, Range};
+        match self {
+            Form::Ring { .. } => row(Round, Radius, Leaves::Nothing),
+            Form::Lane { .. } => row(Area, Length, Leaves::Nothing),
+            Form::Pull { .. } => row(Area, Range, Leaves::Nothing),
+            Form::Cone { .. } => row(Area, Arc, Leaves::Nothing),
+            Form::Drift { .. } => row(Area, Radius, Leaves::Ground),
+            Form::Trap { .. } => row(Area, Radius, Leaves::Snare),
+            Form::Wave { .. } => row(Round, Radius, Leaves::Nothing),
+            Form::Brace { .. } => row(Round, Radius, Leaves::Nothing),
+            Form::Echo { .. } => row(Round, Radius, Leaves::Aura),
+            Form::Throw { .. } => row(Sighted, Range, Leaves::Nothing),
+            Form::Field { .. } => row(Round, Radius, Leaves::Ground),
+            Form::Hop { .. } => row(Sighted, Range, Leaves::Nothing),
+            Form::Bash { .. } => row(Area, Arc, Leaves::Nothing),
+            Form::Stab { .. } => row(Area, Range, Leaves::Nothing),
+            Form::Bell { .. } => row(Sighted, Radius, Leaves::Nothing),
+            Form::Rally { .. } => FormInfo {
+                mends: true,
+                ..row(Round, Radius, Leaves::Nothing)
+            },
+            Form::Slip { .. } => row(Area, Range, Leaves::Nothing),
+            Form::Reap { .. } => FormInfo {
+                mends: true,
+                ..row(Round, Radius, Leaves::Nothing)
+            },
+            Form::Hex { .. } => row(Sighted, Range, Leaves::Nothing),
+            Form::Erupt { .. } => row(Area, Length, Leaves::Nothing),
+        }
+    }
+
+    /// 쪽이 있는 모양인가(0217 — 터치에서 끌어 겨눈다): 몸 둘레는 쪽이 없다(`Aim::Round`).
+    pub const fn aims(&self) -> bool {
+        !matches!(self.info().aim, Aim::Round)
     }
 
     /// 한 대상을 겨누는 모양인가(0230 — 사장 "범위공격이면 바닥 표시가 맞고 단일타겟이라면 크로스헤어 방식"): 숄더뷰에서
-    /// 크로스헤어로 나간다(던지기 = 곧게 나는 것 · 제비걸음 = 적에게 뛰어든다). 나머지 쪽이 있는 꼴(가로지르기의 길 · 뿌리 솟기의 줄 ·
-    /// 부채꼴 셋)은 범위라 숄더뷰에서도 땅 위 표시로 겨눈다. 와일드카드 없이(0278 R14).
-    pub fn sighted(&self) -> bool {
-        match self {
-            Form::Throw { .. } | Form::Hop { .. } | Form::Bell { .. } | Form::Hex { .. } => true,
-            Form::Ring { .. }
-            | Form::Lane { .. }
-            | Form::Pull { .. }
+    /// 크로스헤어로 나간다. 범위(길 · 줄 · 부채꼴)는 숄더뷰에서도 땅 위 표시로 겨눈다.
+    pub const fn sighted(&self) -> bool {
+        matches!(self.info().aim, Aim::Sighted)
+    }
+
+    /// 스킬 동작의 이어짐 구간을 되풀이하는 주기(0158 G2): 휘돌이는 바퀴마다, 가로지르기는 길마다(되돌아 베기의 둘째 길),
+    /// 제비걸음(0214)은 걸음마다. 나머지 모양은 이어짐 구간 전체에 늘인다(수에 따라 바뀌어 `info`가 아니라 여기 — 0278 R16).
+    pub fn clip_period(&self) -> Option<f32> {
+        match *self {
+            Form::Ring { gap, .. } => Some(gap),
+            Form::Lane { time, .. } => Some(time),
+            Form::Hop { gap, .. } => Some(gap),
+            Form::Pull { .. }
             | Form::Cone { .. }
             | Form::Drift { .. }
             | Form::Trap { .. }
             | Form::Wave { .. }
             | Form::Brace { .. }
             | Form::Echo { .. }
-            | Form::Field { .. }
-            | Form::Bash { .. }
-            | Form::Stab { .. }
-            | Form::Rally { .. }
-            | Form::Slip { .. }
-            | Form::Reap { .. }
-            | Form::Erupt { .. } => false,
-        }
-    }
-
-    /// 바닥에 놓인 것(`World::skill_fields`)을 남기는 모양인가(0278 R14): 불티(잔불 흩기) · 눈발/그늘(`Drift`) · 덫. HUD·터치 칸의
-    /// 남은 몫(`World::skill_active`)과 시동 흔들림이 읽는다. 고르기가 덤으로 남기는 것(불길 ㄴ의 타는 땅)은 그 스킬의 모양이 아니다.
-    pub fn leaves_field(&self) -> bool {
-        match self {
-            Form::Field { .. } | Form::Drift { .. } | Form::Trap { .. } => true,
-            Form::Ring { .. }
-            | Form::Lane { .. }
-            | Form::Pull { .. }
-            | Form::Cone { .. }
-            | Form::Wave { .. }
-            | Form::Brace { .. }
-            | Form::Echo { .. }
             | Form::Throw { .. }
-            | Form::Hop { .. }
+            | Form::Field { .. }
             | Form::Bash { .. }
             | Form::Stab { .. }
             | Form::Bell { .. }
@@ -274,7 +325,7 @@ impl Form {
             | Form::Slip { .. }
             | Form::Reap { .. }
             | Form::Hex { .. }
-            | Form::Erupt { .. } => false,
+            | Form::Erupt { .. } => None,
         }
     }
 }

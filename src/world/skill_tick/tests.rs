@@ -3884,7 +3884,7 @@ fn the_price_paid_cracks_everyone_around_then_tolls_harder_for_it() {
     assert!(!staggered, "a warden is not staggered");
 }
 
-/// 0278 R14: 바닥에 놓는 모양(`Form::leaves_field` — 불티 · 눈발 · 그늘 · 덫)의 스킬은 놓은 바로 뒤 칸의 남은 몫(`skill_active`)이
+/// 0278 R14: 바닥에 놓는 모양(`Form::info().leaves` — R16 — 불티 · 눈발 · 그늘 · 덫)의 스킬은 놓은 바로 뒤 칸의 남은 몫(`skill_active`)이
 /// 0보다 크다 — 이름 목록이던 때 시드는 그늘(`Blight`)이 빠져 늘 0이었다. 놓지 않는 스킬은 0.
 #[test]
 fn every_skill_that_leaves_a_field_reports_its_remaining_share() {
@@ -3906,12 +3906,24 @@ fn every_skill_that_leaves_a_field_reports_its_remaining_share() {
         }
         assert!(landed, "{id:?} never landed");
         let left = w.skill_active(0);
-        if id.def().form.leaves_field() {
+        if matches!(
+            id.def().form.info().leaves,
+            skills::Leaves::Ground | skills::Leaves::Snare
+        ) {
             placers += 1;
             assert!(left > 0.0, "{id:?} placed something but reports {left}");
         } else if id != Sk::Echo {
             assert_eq!(left, 0.0, "{id:?} places nothing");
         }
+        // 0278 R16: 서술자(`Form::info().leaves`)는 표가 아니라 월드가 말한다 — 놓는다고 적힌 모양만 바닥에 무엇을 둔다.
+        assert_eq!(
+            !w.skill_fields.is_empty(),
+            matches!(
+                id.def().form.info().leaves,
+                skills::Leaves::Ground | skills::Leaves::Snare
+            ),
+            "{id:?}: info().leaves vs what lies on the ground"
+        );
     }
     assert_eq!(placers, 5, "embers · snow · snare · mine · blight");
 }
