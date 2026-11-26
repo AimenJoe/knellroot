@@ -551,20 +551,223 @@ pub(super) fn rarity_ink(r: crate::items::Rarity) -> Color {
 /// 나빠지는 값의 색(붉은 계열 — 화살표 ▼와 함께, 색만으로 말하지 않는다).
 const WORSE: Color = Color::new(0.88, 0.42, 0.36, 1.0);
 
+/// 칸의 이름: 무기 칸 둘 · 덧옷, 장신구 칸은 그 칸의 종류(0224). 가방 탭도 쓴다.
+pub(super) fn slot_name(slot: usize) -> String {
+    let s = s();
+    if slot == 0 {
+        s.menu_weapon.to_string()
+    } else if slot == SUB_SLOT {
+        s.menu_sub_weapon.to_string()
+    } else if slot == GARB_SLOT {
+        s.menu_garb.to_string()
+    } else {
+        tr(charms::SLOT_KINDS[(slot - 1).min(charms::SLOTS - 1)].name()).to_string()
+    }
+}
+
+/// 칸의 지금 것(순수 — 0278 R22): 기록과 든 무기에서.
+pub(super) fn slot_now_of(p: &crate::save::Progress, weapon: weapons::Id, slot: usize) -> Cand {
+    match slot {
+        0 => Cand::Weapon(weapon),
+        // 보조무기 칸(0224): 무기가 먼저, 없으면 방패.
+        SUB_SLOT => match (p.sub, p.shield) {
+            (Some(w), _) => Cand::Weapon(w),
+            (None, Some(s)) => Cand::Shield(s),
+            (None, None) => Cand::Empty,
+        },
+        GARB_SLOT => p.garb.map_or(Cand::Bare, Cand::Garb),
+        i => p.worn[i - 1].map_or(Cand::Empty, Cand::Charm),
+    }
+}
+
+/// 그 장신구가 낀 장비 칸(1..=3) — 머리의 상태 글과 후보 줄의 표지가 같이 읽는다(0278 R22: 둘이 따로 찾던 것).
+pub(super) fn charm_slot(worn: &[Option<Charm>; charms::SLOTS], id: Charm) -> Option<usize> {
+    worn.iter().position(|x| *x == Some(id)).map(|j| j + 1)
+}
+
+/// 고른 것·후보 줄에 붙는 표지(0278 R22 — 그리기 밖에서 정한다): 낀 것 · 여벌 · 다른 칸에 든 것(그 칸의 이름).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Mark {
+    None,
+    Worn,
+    Spare,
+    Slot(usize),
+}
+
+impl Mark {
+    pub(super) fn text(self) -> String {
+        match self {
+            Mark::None => String::new(),
+            Mark::Worn => s().equip_worn.to_string(),
+            Mark::Spare => s().equip_spare.to_string(),
+            Mark::Slot(n) => slot_name(n),
+        }
+    }
+    /// 머리의 상태 줄 빛: 낀 것만 호박.
+    pub(super) fn ink(self) -> Color {
+        match self {
+            Mark::Worn => AMBER,
+            Mark::None | Mark::Spare | Mark::Slot(_) => DIM,
+        }
+    }
+}
+
+/// 후보 목록의 한 줄(0278 R22).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(super) struct PickRow {
+    pub cand: Cand,
+    /// 이름 · 그림의 바탕(여벌이면 그 바탕의 여느 후보).
+    pub base: Cand,
+    pub rarity: Option<crate::items::Rarity>,
+    pub mark: Mark,
+}
+
+/// 장비 탭이 그리는 것(0278 R22 — 순수: 기록 · 든 무기 · 커서에서, GL 없이). 그리기는 이것을 받아 그리기만 한다.
+#[derive(Clone, PartialEq, Debug)]
+pub(super) struct EquipView {
+    /// 오른쪽 칸이 보이는 칸(후보 목록이 열렸으면 그 칸).
+    pub slot: usize,
+    /// 그 칸에 지금 든 것.
+    pub here: Cand,
+    /// 오른쪽 칸의 것(후보 목록이 열렸으면 커서의 후보 — 여벌이면 `Cand::Item` 그대로).
+    pub focus: Cand,
+    /// `focus`의 바탕(이름 · 그림 · 갈래).
+    pub base: Cand,
+    /// `focus`가 가리키는 아이템(등급 · 옵션).
+    pub item: Option<(u32, crate::items::Item)>,
+    /// 머리의 상태 줄.
+    pub state: Mark,
+    /// 바탕이 무기면 그 벼린 단(0180).
+    pub forged: u8,
+    /// 후보 목록(열렸으면).
+    pub rows: Option<Vec<PickRow>>,
+}
+
+impl EquipView {
+    /// `pick` = (열린 칸, 그 칸의 후보 — `App::cands`), `cursor` = 후보 목록의 커서.
+    pub(super) fn build(
+        p: &crate::save::Progress,
+        weapon: weapons::Id,
+        slot_cursor: usize,
+        pick: Option<(usize, &[Cand])>,
+        cursor: usize,
+    ) -> EquipView {
+        let slot = pick.map_or(slot_cursor, |(s, _)| s);
+        let here = slot_now_of(p, weapon, slot);
+        let focus = match pick {
+            Some((_, l)) => l.get(cursor).copied().unwrap_or(Cand::Empty),
+            None => here,
+        };
+        let base = base_cand_of(focus, &p.bag);
+        let state = match (pick.is_some(), base) {
+            (true, _) if matches!(focus, Cand::Item(_)) => Mark::Spare,
+            (true, c) if c == here && wears_something(c) => Mark::Worn,
+            (true, Cand::Charm(id)) => charm_slot(&p.worn, id).map_or(Mark::None, Mark::Slot),
+            _ => Mark::None,
+        };
+        let forged = match base {
+            Cand::Weapon(w) => p.forged.rank(w),
+            _ => 0,
+        };
+        let rows = pick.map(|(slot, list)| {
+            list.iter()
+                .map(|&c| PickRow {
+                    cand: c,
+                    base: base_cand_of(c, &p.bag),
+                    rarity: item_at(c, &p.bag).map(|(_, it)| it.rarity),
+                    mark: pick_mark(p, weapon, slot, here, c),
+                })
+                .collect()
+        });
+        EquipView {
+            slot,
+            here,
+            focus,
+            base,
+            item: item_at(focus, &p.bag),
+            state,
+            forged,
+            rows,
+        }
+    }
+}
+
+/// 후보 줄의 표지(순수): "착용 중"은 낀 물건에만(사장 2026-11-07, 0085) — 빈 칸·맨손은 "아무것도 안 낌"이라 커서만 거기 둔다.
+/// 무기 칸 둘(0223): 다른 칸에 든 것은 그 칸의 이름 — 고르면 둘이 맞바뀐다는 것이 읽힌다(장신구 칸과 같은 꼴).
+pub(super) fn pick_mark(
+    p: &crate::save::Progress,
+    weapon: weapons::Id,
+    slot: usize,
+    here: Cand,
+    c: Cand,
+) -> Mark {
+    match c {
+        _ if c == here && wears_something(c) => Mark::Worn,
+        Cand::Weapon(w) if slot == 0 && p.sub == Some(w) => Mark::Slot(SUB_SLOT),
+        Cand::Weapon(w) if slot == SUB_SLOT && w == weapon && wears_something(c) => Mark::Slot(0),
+        Cand::Charm(id) => charm_slot(&p.worn, id).map_or(Mark::None, Mark::Slot),
+        _ => Mark::None,
+    }
+}
+
+/// 여벌을 그 바탕의 여느 후보로(이름·그림·설명·숫자는 바탕의 것) — 다른 후보는 그대로.
+pub(super) fn base_cand_of(c: Cand, bag: &crate::items::Bag) -> Cand {
+    use crate::items::Base;
+    match c {
+        Cand::Item(_) => match base_of(c, bag) {
+            Some(Base::Weapon(w)) => Cand::Weapon(w),
+            Some(Base::Charm(id)) => Cand::Charm(id),
+            Some(Base::Shield(id)) => Cand::Shield(id),
+            None => Cand::Empty,
+        },
+        c => c,
+    }
+}
+
+/// 후보 목록 판의 자리(순수 — 0278 R22): 고른 칸 곁(왼쪽 열의 칸은 오른쪽에, 장신구 칸은 왼쪽에 — 인형 위), 몸 안으로.
+/// 폭은 가장 긴 줄이 잘리지 않게(`widest` + 줄의 앞뒤 여백 — `ui::list_k`와 같은 셈, 왼쪽 칸을 넘지 않는다), 높이는 `PICK_ROWS`줄까지
+/// (두 줄 높이의 줄이면 몸 안에 드는 만큼만 — 넘치면 굴린다).
+#[derive(Clone, Copy, Debug)]
+pub(super) struct PickRoom {
+    /// 몸의 왼끝 · 왼쪽 칸의 오른끝 · 위 · 아래(화면 px), 몸의 높이(px).
+    pub left: f32,
+    pub right: f32,
+    pub top: f32,
+    pub bottom: f32,
+    pub body: f32,
+    /// 기준 px 하나.
+    pub u: f32,
+}
+
+/// `b` = 고른 칸의 상자, `row_px` = (가장 긴 줄의 폭, 글 높이, 줄 높이), `rows` = 줄 수.
+pub(super) fn pick_panel(
+    b: Rect,
+    left: bool,
+    row_px: (f32, f32, f32),
+    rows: usize,
+    r: PickRoom,
+) -> Rect {
+    let (widest, px, row_h) = row_px;
+    let u = r.u;
+    let pw = (widest + px * 2.5 + u * 24.0)
+        .max(PICK_W * u)
+        .min((tabs::LEFT_W - 4.0) * u);
+    let fit = (((r.body - u * 8.0) / row_h).floor() as usize).clamp(1, PICK_ROWS);
+    let ph = row_h * rows.clamp(1, fit) as f32 + u * 8.0;
+    let x = if left {
+        b.x + b.w + u * 5.0
+    } else {
+        b.x - u * 5.0 - pw
+    };
+    let x = x.min(r.right - pw).max(r.left);
+    let y = b.y.min(r.bottom - ph).max(r.top).round();
+    Rect::new(x.round(), y, pw, ph)
+}
+
 impl App {
     /// 칸의 지금 것.
     pub(super) fn slot_now(&self, slot: usize) -> Cand {
-        match slot {
-            0 => Cand::Weapon(self.weapon),
-            // 보조무기 칸(0224): 무기가 먼저, 없으면 방패.
-            SUB_SLOT => match (self.progress.sub, self.progress.shield) {
-                (Some(w), _) => Cand::Weapon(w),
-                (None, Some(s)) => Cand::Shield(s),
-                (None, None) => Cand::Empty,
-            },
-            GARB_SLOT => self.progress.garb.map_or(Cand::Bare, Cand::Garb),
-            i => self.progress.worn[i - 1].map_or(Cand::Empty, Cand::Charm),
-        }
+        slot_now_of(&self.progress, self.weapon, slot)
     }
 
     /// 가진 덧옷(0176 — 주운 숨은 물건에서).
@@ -584,23 +787,9 @@ impl App {
         with_spares(list, &self.progress.bag)
     }
 
-    /// 후보의 바탕(아이템이 되는 것만 — 맨손·빈 칸·덧옷은 없다).
-    fn cand_base(&self, c: Cand) -> Option<crate::items::Base> {
-        base_of(c, &self.progress.bag)
-    }
-
     /// 여벌을 그 바탕의 여느 후보로(이름·그림·설명·숫자는 바탕의 것) — 다른 후보는 그대로.
     fn base_cand(&self, c: Cand) -> Cand {
-        use crate::items::Base;
-        match c {
-            Cand::Item(_) => match self.cand_base(c) {
-                Some(Base::Weapon(w)) => Cand::Weapon(w),
-                Some(Base::Charm(id)) => Cand::Charm(id),
-                Some(Base::Shield(id)) => Cand::Shield(id),
-                None => Cand::Empty,
-            },
-            c => c,
-        }
+        base_cand_of(c, &self.progress.bag)
     }
 
     /// 후보가 가리키는 아이템: 여벌이면 그것, 바탕의 후보면 그 바탕의 "지금 것"(낀 자리가 가리키는 것 — 없으면 가방의 첫 것).
@@ -971,46 +1160,21 @@ impl App {
         }
 
         // 오른쪽: 고른 것(후보 목록이 열렸으면 그 후보) — 머리(도는 그림 · 이름 · 칸 · 낀 곳) + 숫자·바뀌는 줄 + 설명.
+        // 무엇을 보이나(상태 글 · 표지 · 후보 줄)는 그리기 밖의 `EquipView`가 정한다(0278 R22).
         let list = pick.map(|slot| self.cands(slot));
-        let slot = pick.unwrap_or(slot_cursor);
-        let here = self.slot_now(slot);
-        let focus = match &list {
-            Some(l) => l.get(self.cursor).copied().unwrap_or(Cand::Empty),
-            None => here,
-        };
-        let slot_name = |slot: usize| {
-            if slot == 0 {
-                s.menu_weapon.to_string()
-            } else if slot == SUB_SLOT {
-                s.menu_sub_weapon.to_string()
-            } else if slot == GARB_SLOT {
-                s.menu_garb.to_string()
-            } else {
-                // 장신구 칸의 이름 = 그 칸의 종류(0224).
-                tr(charms::SLOT_KINDS[(slot - 1).min(charms::SLOTS - 1)].name()).to_string()
-            }
-        };
+        let view = EquipView::build(
+            &self.progress,
+            self.weapon,
+            slot_cursor,
+            pick.zip(list.as_deref()),
+            self.cursor,
+        );
+        let slot = view.slot;
         // 여벌(0223 V4d)의 이름·그림·갈래는 바탕의 것, 등급·옵션은 그 아이템의 것.
-        let inst = self.cand_item(focus);
-        let spare = matches!(focus, Cand::Item(_));
-        let fbase = self.base_cand(focus);
-        let state = match (pick, fbase) {
-            (Some(_), _) if spare => (s.equip_spare.to_string(), DIM),
-            (Some(_), c) if c == here && wears_something(c) => (s.equip_worn.to_string(), AMBER),
-            (Some(_), Cand::Charm(id)) => (
-                self.progress
-                    .worn
-                    .iter()
-                    .position(|x| *x == Some(id))
-                    .map(|j| slot_name(j + 1))
-                    .unwrap_or_default(),
-                DIM,
-            ),
-            _ => (String::new(), DIM),
-        };
+        let fbase = view.base;
         let item = item_of(fbase);
         // 등급은 이름이 아니라 갈래 줄에(0275 — "고급 종치기 망치"가 머리의 이름 칸을 넘었다).
-        let rarity = inst.map(|(_, it)| it.rarity);
+        let rarity = view.item.map(|(_, it)| it.rarity);
         let icon = self.draw_pane_head(
             &w,
             &PaneHead {
@@ -1019,22 +1183,20 @@ impl App {
                 // 벼린 단(0180)은 갈래 줄에 — 머리의 이름 칸은 긴 무기 이름으로 이미 찬다.
                 kind: crate::i18n::with_rarity(
                     rarity,
-                    &match fbase {
-                        Cand::Weapon(w) if self.progress.forged.rank(w) > 0 => fill(
-                            s.forge_named,
-                            &[&slot_name(slot), &self.progress.forged.rank(w).to_string()],
-                        ),
-                        _ => slot_name(slot),
+                    &if view.forged > 0 {
+                        fill(s.forge_named, &[&slot_name(slot), &view.forged.to_string()])
+                    } else {
+                        slot_name(slot)
                     },
                 ),
-                state,
+                state: (view.state.text(), view.state.ink()),
                 icon: item.is_some(),
             },
         );
         if let Some(item) = item {
             self.draw_pane_item(item, icon);
         }
-        let lines = self.equip_lines(&w, slot, focus, pick.is_some());
+        let lines = self.equip_lines(&w, slot, view.focus, pick.is_some());
         self.draw_pane(&w, HEAD_H, &lines);
 
         // 아래 안내: 칸 고르기에는 빨리 바꾸기(공격 버튼 — 쓸 수 있는 장치에서만 뜬다).
@@ -1046,48 +1208,25 @@ impl App {
         self.tab_foot(f, &w, scene, right, &acts);
 
         // 후보의 작은 목록: 고른 칸 곁(무기 칸은 오른쪽에, 장신구 칸은 왼쪽에 — 인형 위), 몸 안으로.
-        if let (Some(slot), Some(list)) = (pick, list) {
-            let rows: Vec<ui::Row> = list
+        if let (Some(slot), Some(pick_rows)) = (pick, view.rows) {
+            let rows: Vec<ui::Row> = pick_rows
                 .iter()
-                .map(|&c| {
-                    // "착용 중"은 낀 물건에만(사장 2026-11-07, 0085) — 빈 칸·맨손은 "아무것도 안 낌"이라 커서만 거기 둔다.
-                    let mark = match c {
-                        _ if c == here && wears_something(c) => s.equip_worn.to_string(),
-                        // 무기 칸 둘(0223): 다른 칸에 든 것은 그 칸의 이름 — 고르면 둘이 맞바뀐다는 것이 읽힌다(장신구 칸과 같은 꼴).
-                        Cand::Weapon(w) if slot == 0 && self.progress.sub == Some(w) => {
-                            s.menu_sub_weapon.to_string()
-                        }
-                        Cand::Weapon(w)
-                            if slot == SUB_SLOT && w == self.weapon && wears_something(c) =>
-                        {
-                            s.menu_weapon.to_string()
-                        }
-                        Cand::Charm(id) => self
-                            .progress
-                            .worn
-                            .iter()
-                            .position(|x| *x == Some(id))
-                            .map(|j| slot_name(j + 1))
-                            .unwrap_or_default(),
-                        _ => String::new(),
-                    };
+                .map(|pr| {
+                    let mark = pr.mark.text();
                     // 이름(벼린 단까지) 아래 작은 줄에 등급 · 낀 칸(0275 — 한 줄에 "고급 종치기 망치 +3 … 주무기"가 다 서지 않았다).
-                    let rarity = self
-                        .cand_item(c)
-                        .and_then(|(_, it)| crate::i18n::rarity_word(it.rarity));
+                    let rarity = pr.rarity.and_then(crate::i18n::rarity_word);
                     let sub: Vec<&str> = rarity
                         .into_iter()
                         .chain([mark.as_str()])
                         .filter(|t| !t.is_empty())
                         .collect();
-                    ui::Row::plain(self.cand_base_label(c))
+                    ui::Row::plain(self.cand_base_label(pr.cand))
                         .with_icon(true)
                         .with_sub(sub.join(" · "))
                 })
                 .collect();
             let px = self.ui.px(w.k);
             let row_h = self.ui.list_row_h(&rows, w.k);
-            // 폭: 가장 긴 줄(이름 · 둘째 줄)이 잘리지 않게 — 줄의 앞 여백(▶·그림 칸)·뒤 여백은 `ui::list_k`와 같은 셈. 왼쪽 칸을 넘지 않는다.
             let widest = rows
                 .iter()
                 .map(|r| {
@@ -1096,22 +1235,21 @@ impl App {
                         .max(self.ui.width(&r.sub, ui::LIST_SUB_K * w.k))
                 })
                 .fold(0.0, f32::max);
-            let pw = (widest + px * 2.5 + u * 24.0)
-                .max(PICK_W * u)
-                .min((tabs::LEFT_W - 4.0) * u);
-            // 보이는 줄 수: `PICK_ROWS`까지, 두 줄 높이의 줄(0275)이면 몸의 높이 안에 드는 만큼만(넘치면 굴린다).
-            let fit = (((w.body_h * u - u * 8.0) / row_h).floor() as usize).clamp(1, PICK_ROWS);
-            let ph = row_h * rows.len().clamp(1, fit) as f32 + u * 8.0;
-            let b = boxes[slot];
-            let x = if left_column(slot) {
-                b.x + b.w + u * 5.0
-            } else {
-                b.x - u * 5.0 - pw
-            };
-            let x = x.min(w.at(tabs::LEFT_W, 0.0).x - pw).max(w.origin.x);
-            let (top, bottom) = (w.origin.y, w.origin.y + w.body_h * u);
-            let y = b.y.min(bottom - ph).max(top).round();
-            let panel = Rect::new(x.round(), y, pw, ph);
+            let panel = pick_panel(
+                boxes[slot],
+                left_column(slot),
+                (widest, px, row_h),
+                rows.len(),
+                PickRoom {
+                    left: w.origin.x,
+                    right: w.at(tabs::LEFT_W, 0.0).x,
+                    top: w.origin.y,
+                    bottom: w.origin.y + w.body_h * u,
+                    body: w.body_h * u,
+                    u,
+                },
+            );
+            let (pw, ph) = (panel.w, panel.h);
             draw_rectangle(
                 panel.x + u * 2.0,
                 panel.y + u * 2.0,
@@ -1157,7 +1295,7 @@ impl App {
                 }
             }
             // 줄마다 아이템 그림(빈 칸은 비워 둔다) — 아이콘은 한 번 찍어 둔 것(0068).
-            let bases: Vec<Cand> = list.iter().map(|c| self.base_cand(*c)).collect();
+            let bases: Vec<Cand> = pick_rows.iter().map(|pr| pr.base).collect();
             for (r, c) in hits.rows.iter().zip(bases.iter()) {
                 if let (true, Some(item)) = (r.w > 0.0, item_of(*c)) {
                     let slot_r = self.ui.list_icon(*r, w.k);
@@ -1662,5 +1800,151 @@ mod pane_tests {
         assert_eq!(pane_step(1.0, 0.0, 0.0, 0, 1.5, 3), 2.5);
         // 넘치지 않으면(0줄) 움직이지 않는다.
         assert_eq!(pane_step(0.0, -1.0, 1.0, 2, 4.0, 0), 0.0);
+    }
+
+    /// 0278 R22: 장비 탭의 표지는 그리기 밖에서 — 무기 칸 둘은 다른 칸에 든 무기에 그 칸의 이름(고르면 맞바뀐다), 지금 든 것은
+    /// "착용 중", 맨손 · 빈 칸은 표지가 없다. 머리의 상태 줄도 같은 규칙(후보 목록이 열렸을 때만).
+    #[test]
+    fn the_equip_view_marks_worn_and_the_other_weapon_slot_and_nothing_for_fists() {
+        use weapons::Id;
+        let mut p = crate::save::Progress::default();
+        p.sub = Some(Id::Hammer);
+        let main = candidates(0, &[], &[Id::Sword, Id::Hammer], &[], &[]);
+        let v = EquipView::build(&p, Id::Sword, 0, Some((0, &main)), 2);
+        let marks: Vec<Mark> = v.rows.as_ref().unwrap().iter().map(|r| r.mark).collect();
+        assert_eq!(marks, [Mark::None, Mark::Worn, Mark::Slot(SUB_SLOT)]);
+        // 커서는 망치(보조무기 칸에 든 것) — 머리에는 칸 이름을 쓰지 않는다(그건 줄의 표지뿐).
+        assert_eq!(
+            (v.slot, v.focus, v.state),
+            (0, Cand::Weapon(Id::Hammer), Mark::None)
+        );
+        let v = EquipView::build(&p, Id::Sword, 0, Some((0, &main)), 1);
+        assert_eq!(v.state, Mark::Worn);
+        // 보조무기 칸: 비우기 · 맨손 — 표지 없음, 검(주무기 칸에 든 것) · 망치(지금 것).
+        let sub = candidates(SUB_SLOT, &[], &[Id::Sword, Id::Hammer], &[], &[]);
+        let v = EquipView::build(&p, Id::Sword, 0, Some((SUB_SLOT, &sub)), 0);
+        let mark = |c: Cand| {
+            v.rows
+                .as_ref()
+                .unwrap()
+                .iter()
+                .find(|r| r.cand == c)
+                .unwrap()
+                .mark
+        };
+        assert_eq!(mark(Cand::Empty), Mark::None);
+        assert_eq!(mark(Cand::Weapon(Id::Fists)), Mark::None);
+        assert_eq!(mark(Cand::Weapon(Id::Sword)), Mark::Slot(0));
+        assert_eq!(mark(Cand::Weapon(Id::Hammer)), Mark::Worn);
+        assert_eq!(v.here, Cand::Weapon(Id::Hammer));
+        // 맨손을 든 판: 보조무기 칸의 맨손 줄은 "주무기"라 하지 않는다(낀 것이 아니다).
+        let p0 = crate::save::Progress::default();
+        let v = EquipView::build(&p0, Id::Fists, 0, Some((SUB_SLOT, &sub)), 0);
+        assert!(v.rows.unwrap().iter().all(|r| r.mark == Mark::None));
+        // 목록이 닫혔으면 머리의 상태 줄은 비고, 줄도 없다 — 칸의 지금 것을 본다.
+        let v = EquipView::build(&p, Id::Sword, SUB_SLOT, None, 0);
+        assert_eq!(
+            (v.focus, v.state, v.rows),
+            (Cand::Weapon(Id::Hammer), Mark::None, None)
+        );
+    }
+
+    /// 0278 R22: 여벌은 머리에 "여벌", 이름 · 그림은 바탕의 것, 등급은 그 아이템의 것 — 줄의 표지는 없다(바탕 줄이 "착용 중").
+    /// 벼린 단은 바탕이 무기일 때만.
+    #[test]
+    fn a_spare_reads_as_spare_with_its_base_and_its_own_rarity() {
+        use crate::items::{Base, Rarity, Worn};
+        use weapons::Id;
+        let mut p = crate::save::Progress::default();
+        p.bag.settle(
+            &[Base::Weapon(Id::Sword)],
+            &Worn {
+                main: Some(Id::Sword),
+                ..Worn::default()
+            },
+        );
+        let rare = p.bag.add(crate::items::roll(
+            Base::Weapon(Id::Sword),
+            Rarity::Rare,
+            3,
+            5,
+        ));
+        p.forged = crate::forge::Forged::default();
+        let list = with_spares(candidates(0, &[], &[Id::Sword], &[], &[]), &p.bag);
+        assert_eq!(list[2], Cand::Item(rare));
+        let v = EquipView::build(&p, Id::Sword, 0, Some((0, &list)), 2);
+        assert_eq!((v.state, v.base), (Mark::Spare, Cand::Weapon(Id::Sword)));
+        assert_eq!(
+            v.item.map(|(i, it)| (i, it.rarity)),
+            Some((rare, Rarity::Rare))
+        );
+        let rows = v.rows.unwrap();
+        assert_eq!(
+            rows.iter().map(|r| r.mark).collect::<Vec<_>>(),
+            [Mark::None, Mark::Worn, Mark::None]
+        );
+        assert_eq!(rows[2].base, Cand::Weapon(Id::Sword));
+        assert_eq!(rows[2].rarity, Some(Rarity::Rare));
+        assert_eq!(rows[1].rarity, Some(Rarity::Plain));
+        assert_eq!(rows[0].rarity, None);
+        assert_eq!(v.forged, 0);
+    }
+
+    /// 0278 R22: 장신구가 낀 칸은 한 곳에서 찾는다(머리의 상태 줄 · 후보 줄의 표지) — 칸 번호는 장비 칸(1..=3).
+    #[test]
+    fn a_charm_reads_the_slot_it_sits_in_from_one_place() {
+        let worn = [None, Some(Charm::Hand), Some(Charm::Shell)];
+        assert_eq!(charm_slot(&worn, Charm::Hand), Some(2));
+        assert_eq!(charm_slot(&worn, Charm::Shell), Some(3));
+        assert_eq!(charm_slot(&worn, Charm::Ear), None);
+        let mut p = crate::save::Progress::default();
+        p.worn = worn;
+        // 지금 칸에 든 것은 "착용 중", 다른 칸에 든 것은 그 칸의 이름.
+        let here = Cand::Charm(Charm::Hand);
+        assert_eq!(pick_mark(&p, weapons::Id::Sword, 2, here, here), Mark::Worn);
+        assert_eq!(
+            pick_mark(&p, weapons::Id::Sword, 2, here, Cand::Charm(Charm::Shell)),
+            Mark::Slot(3)
+        );
+        assert_eq!(
+            pick_mark(&p, weapons::Id::Sword, 2, here, Cand::Empty),
+            Mark::None
+        );
+        assert_eq!(Mark::Slot(3).text(), slot_name(3));
+        assert_eq!(Mark::Worn.ink(), AMBER);
+    }
+
+    /// 0278 R22: 후보 목록의 판은 몸 안에 — 왼쪽 열의 칸은 오른쪽에, 장신구 칸은 왼쪽에 서고, 줄이 많으면 `PICK_ROWS`줄 높이에서 멈춘다.
+    #[test]
+    fn the_pick_panel_stands_beside_its_box_and_stays_in_the_body() {
+        let u = 2.0;
+        let room = PickRoom {
+            left: 10.0,
+            right: 10.0 + tabs::LEFT_W * u,
+            top: 20.0,
+            bottom: 20.0 + 200.0 * u,
+            body: 200.0 * u,
+            u,
+        };
+        let inside = |r: Rect| {
+            r.x >= room.left
+                && r.x + r.w <= room.right + 0.5
+                && r.y >= room.top
+                && r.y + r.h <= room.bottom + 0.5
+        };
+        let b = Rect::new(30.0, 60.0, 68.0, 68.0);
+        let p = pick_panel(b, true, (50.0, 10.0, 24.0), 3, room);
+        assert!(p.x >= b.x + b.w && inside(p));
+        assert_eq!(p.w, PICK_W * u);
+        assert_eq!(p.h, 24.0 * 3.0 + u * 8.0);
+        // 장신구 칸(오른쪽 열): 칸의 왼쪽, 칸 아래쪽이면 몸 안으로 올린다.
+        let b = Rect::new(room.right - 80.0, room.bottom - 40.0, 68.0, 68.0);
+        let p = pick_panel(b, false, (50.0, 10.0, 24.0), 40, room);
+        assert!(p.x + p.w <= b.x && inside(p));
+        assert_eq!(p.h, 24.0 * PICK_ROWS as f32 + u * 8.0);
+        // 아주 긴 줄도 왼쪽 칸을 넘지 않는다.
+        let p = pick_panel(b, false, (5000.0, 10.0, 24.0), 1, room);
+        assert_eq!(p.w, (tabs::LEFT_W - 4.0) * u);
+        assert!(inside(p));
     }
 }

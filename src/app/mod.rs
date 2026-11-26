@@ -208,9 +208,8 @@ pub struct App {
     respec_from: usize,
     /// 기술 탭에 보이는 판(0270 C2 — 탭을 열 때 든 무기의 판, `App::open_plate`).
     skill_plate: crate::plates::Plate,
-    /// 기술 탭 줄의 열림(2026-11-23 사장 "기술을 열었을 때 선이 사라지면서 안내도 없어지는 연출"): 이미 본 열린 줄(비트 — 없으면
-    /// 아직 그린 적 없음: 처음 그릴 때 열린 줄은 연출 없이 숨긴다)과 줄마다 열린 때(`clock`).
-    skill_rows: (Option<u8>, [f32; 6]),
+    /// 기술 탭 줄의 열림 연출(`skills::RowFades` — 그리기 전에 `ready_skill_rows`가 본다).
+    skill_rows: skills::RowFades,
     /// 지난 프레임에 그린 메뉴 줄·▲▼ 자리(탭 판정).
     hits: Vec<(Rect, Hit)>,
     /// 붙잡아 둔 메뉴 누름(0207): 눌린 꼴을 `PRESS_HOLD` 동안 보인 뒤 그 확인·탭을 장면에 넘긴다.
@@ -451,7 +450,7 @@ impl App {
             cursor: 0,
             respec_from: 0,
             skill_plate: crate::plates::Plate::Body,
-            skill_rows: (None, [f32::NEG_INFINITY; 6]),
+            skill_rows: skills::RowFades::default(),
             hits: Vec::new(),
             press: None,
             press_queue: std::collections::VecDeque::new(),
@@ -863,16 +862,10 @@ impl App {
         let pl = &self.world.player;
         self.input.set_touch_ctx(crate::touch::Ctx {
             rest: play && self.world.interact_here,
-            near: match self.run.near() {
-                Some(crate::stage::Near::Pick) => crate::touch::Near::Pick,
-                Some(crate::stage::Near::Open) => crate::touch::Near::Open,
-                Some(crate::stage::Near::Pull) => crate::touch::Near::Pull,
-                Some(crate::stage::Near::Talk) => crate::touch::Near::Talk,
-                Some(crate::stage::Near::Read) => crate::touch::Near::Read,
-                Some(crate::stage::Near::Rest { .. } | crate::stage::Near::Full) | None => {
-                    crate::touch::Near::Rest
-                }
-            },
+            near: self
+                .run
+                .near()
+                .map_or(crate::touch::Near::Rest, |n| hud::near_button(n).icon),
             lock: play && (self.world.lock.is_some() || self.world.lock_candidate()),
             flask: play && pl.flask > 0 && pl.hp < pl.max_hp,
             ult: play && pl.skill.gauge >= 1.0,
@@ -1262,6 +1255,9 @@ impl App {
     }
 
     fn draw(&mut self) {
+        self.clock += get_frame_time();
+        // 그리기 전에 정할 것(0278 R22): 기술 탭의 판과 줄의 열림 — 그리기는 읽기만.
+        self.ready_skill_rows();
         // 멈춤 창 아래의 세계는 틱이 없다 — 틱 사이를 오가지 않게 끝에 세운다(0173).
         let alpha = if self.paused() {
             1.0
@@ -1275,7 +1271,6 @@ impl App {
         let in_shaft = self
             .passage()
             .filter(|p| self.scene() == Scene::Play && p.phase() == crate::descent::Phase::Shaft);
-        self.clock += get_frame_time();
         let f = match in_shaft {
             Some(p) => {
                 // 굴의 위·아래 지역(얕은 쪽·깊은 쪽)의 환경: 달이 있나 · 닿을 곳의 안개 빛.

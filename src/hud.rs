@@ -1150,16 +1150,7 @@ fn draw_near(
         let y = f.oy + f.h * 0.78;
         let y = hint_top.map_or(y, |top| y.min(top - ui.px(1.0) - 3.0 * s));
         let cx = f.ox + f.w * 0.5;
-        let verb = match near {
-            Near::Pick => Some(i18n::s().find_verb),
-            Near::Open => Some(i18n::s().chest_verb),
-            Near::Pull => Some(i18n::s().lever_verb),
-            Near::Talk => Some(i18n::s().talk_verb),
-            Near::Read => Some(i18n::s().read_verb),
-            Near::Rest { safe: true } => Some(s_rest()),
-            Near::Rest { safe: false } | Near::Full => None,
-        };
-        match verb {
+        match near_button(near).verb {
             Some(verb) => {
                 let key = crate::input::prompt(crate::input::Act::Interact);
                 // 0209 T1: 몸의 걸음(걷기~패링) 동안 화로 곁의 "쉬기"는 흐리게 — 둘을 동시에 시키지 않는다(누르면 여전히 된다).
@@ -1171,6 +1162,30 @@ fn draw_near(
             None => ui.text_center(i18n::s().rest_blocked, cx, y, 1.0, DIM),
         }
     }
+}
+
+/// 곁의 할 일에서 상호작용 버튼이 되는 것(0278 R22 — HUD의 글과 터치의 그림이 같이 읽는 한 곳, `_` 없이): 할 수 있으면 그 동사,
+/// 못 하면(적이 가까워 못 쉰다 · 가방이 가득이라 못 줍는다) 동사 없이 — 터치 버튼은 그때 쉬기 그림의 점프 그대로.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct NearButton {
+    pub verb: Option<&'static str>,
+    pub icon: crate::touch::Near,
+}
+
+pub fn near_button(near: crate::stage::Near) -> NearButton {
+    use crate::stage::Near;
+    use crate::touch::Near as Icon;
+    let s = i18n::s();
+    let (verb, icon) = match near {
+        Near::Pick => (Some(s.find_verb), Icon::Pick),
+        Near::Open => (Some(s.chest_verb), Icon::Open),
+        Near::Pull => (Some(s.lever_verb), Icon::Pull),
+        Near::Talk => (Some(s.talk_verb), Icon::Talk),
+        Near::Read => (Some(s.read_verb), Icon::Read),
+        Near::Rest { safe: true } => (Some(s_rest()), Icon::Rest),
+        Near::Rest { safe: false } | Near::Full => (None, Icon::Rest),
+    };
+    NearButton { verb, icon }
 }
 
 /// 목표 줄(오른쪽 위 — 0278 R25c `draw`의 구역).
@@ -1368,5 +1383,26 @@ mod tests {
         assert_eq!(fade_in_out(3.0, 3.0, 0.5), 0.0);
         assert_eq!(fade_in_out(1.5, 3.0, 0.5), 1.0);
         assert!(fade_in_out(0.1, 3.0, 0.5) < 0.3);
+    }
+
+    /// 0278 R22: 곁의 할 일 → 버튼은 한 곳(HUD의 동사 · 터치의 그림) — 할 수 있는 일마다 제 동사와 그림, 못 하는 일(적이 가까운 쉼터 ·
+    /// 가득 찬 가방)은 동사 없이 쉬기 그림(점프).
+    #[test]
+    fn each_near_thing_gives_the_button_one_verb_and_one_icon() {
+        use crate::stage::Near;
+        use crate::touch::Near as Icon;
+        let s = i18n::s();
+        for (near, verb, icon) in [
+            (Near::Pick, Some(s.find_verb), Icon::Pick),
+            (Near::Open, Some(s.chest_verb), Icon::Open),
+            (Near::Pull, Some(s.lever_verb), Icon::Pull),
+            (Near::Talk, Some(s.talk_verb), Icon::Talk),
+            (Near::Read, Some(s.read_verb), Icon::Read),
+            (Near::Rest { safe: true }, Some(s.rest_verb), Icon::Rest),
+            (Near::Rest { safe: false }, None, Icon::Rest),
+            (Near::Full, None, Icon::Rest),
+        ] {
+            assert_eq!(near_button(near), NearButton { verb, icon }, "{near:?}");
+        }
     }
 }

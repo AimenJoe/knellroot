@@ -685,6 +685,72 @@ const STRIP_GAP: f32 = 2.0;
 /// 열린 줄의 안내·선이 걷히는 초(2026-11-23).
 const ROW_FADE: f32 = 0.8;
 
+/// 줄 띠의 열림(0278 R22 — 순수, 그리기가 읽기만 한다): 지금 쓴 점수, 줄마다 여는 점수, 열린 줄의 비트. 몸의 판은 쓴 점수 합
+/// (`ROW_NEEDS`), 무기 판은 그 판에 쓴 점수(`plates::PLATE_ROWS`, 0270 C2).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub(super) struct SkillRows {
+    pub spent: u32,
+    pub needs: Vec<u32>,
+    pub open: u8,
+}
+
+pub(super) fn skill_rows(plate: Plate, board: &Board) -> SkillRows {
+    let bands = geo::bands(plate);
+    let (spent, needs): (u32, Vec<u32>) = match plate {
+        Plate::Body => (board.spent(), sk::ROW_NEEDS[..bands.len()].to_vec()),
+        Plate::Class(_) | Plate::Shield => (plate.spent(board), plates::PLATE_ROWS.to_vec()),
+    };
+    let open = (0..bands.len())
+        .filter(|&r| spent >= needs[r])
+        .fold(0, |m, r| m | (1 << r));
+    SkillRows { spent, needs, open }
+}
+
+/// 줄 열림 연출의 기억(2026-11-23 사장 "기술을 열었을 때 선이 사라지면서 안내도 없어지는 연출" — 0278 R22에서 그리기 밖으로):
+/// 이미 본 열린 줄(비트 — 없으면 아직 본 적 없음: 처음 볼 때 열린 줄은 연출 없이 숨긴다)과 줄마다 열린 때(앱의 `clock`).
+/// 앱이 그리기 전에 `note`하고(`App::ready_skill_rows`), 그리기는 `fade`만 읽는다.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(super) struct RowFades {
+    seen: Option<u8>,
+    opened: [f32; 6],
+}
+
+impl Default for RowFades {
+    fn default() -> Self {
+        RowFades {
+            seen: None,
+            opened: [f32::NEG_INFINITY; 6],
+        }
+    }
+}
+
+impl RowFades {
+    /// 판이 바뀌었다 — 다음에 보는 열린 줄은 연출 없이.
+    pub(super) fn reset(&mut self) {
+        self.seen = None;
+    }
+
+    /// 지금 열린 줄을 본다: 새로 열린 줄은 지금(`clock`)부터 걷힌다.
+    pub(super) fn note(&mut self, open: u8, clock: f32) {
+        let was = self.seen.unwrap_or(open);
+        for (r, t) in self.opened.iter_mut().enumerate() {
+            if open & !was & (1 << r) != 0 {
+                *t = clock;
+            }
+        }
+        self.seen = Some(open);
+    }
+
+    /// 줄 `row`의 띠가 보이는 몫(1 = 다, 0 = 없음): 잠긴 줄은 늘 다, 열린 줄은 열린 뒤 `ROW_FADE`초 동안만 걷히며.
+    pub(super) fn fade(&self, row: usize, open: bool, clock: f32) -> f32 {
+        if open {
+            1.0 - ((clock - self.opened[row]) / ROW_FADE).clamp(0.0, 1.0)
+        } else {
+            1.0
+        }
+    }
+}
+
 /// 칸 하나의 자리: 가운데와 반 변(반지름).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Spot {
@@ -1255,7 +1321,7 @@ impl App {
         if self.skill_plate != p {
             self.skill_plate = p;
             self.view = ui::ListView::default();
-            self.skill_rows.0 = None;
+            self.skill_rows.reset();
         }
     }
 
@@ -1270,7 +1336,11 @@ impl App {
 
     /// 커서의 칸이 보이는 판에 없으면(성장 탭의 기술 줄에서 넘어온 칸 등) 그 칸이 서는 판으로 — 든 무기 · 부무기의 판 먼저.
     pub(super) fn sync_plate(&mut self) {
-        let Some(&e) = ENTRIES.get(self.cursor) else {
+        self.sync_plate_at(self.cursor);
+    }
+
+    fn sync_plate_at(&mut self, cursor: usize) {
+        let Some(&e) = ENTRIES.get(cursor) else {
             return;
         };
         if !self.skill_plate.has(e) {
@@ -1664,11 +1734,27 @@ impl App {
     }
 
     /// 기술 탭 그림. `at` = 고른 칸(되돌리기 단추면 `RESPEC`).
+    /// 그리기 전(0278 R22 — 그리는 중에 상태를 바꾸지 않게): 이 프레임에 기술 탭의 격자가 그려지면(맨 위 · 작은 목록이나 묻는 창
+    /// 밑) 그 커서의 판을 맞추고 줄의 열림을 본다(`RowFades::note`). 그리기는 읽기만 한다.
+    pub(super) fn ready_skill_rows(&mut self) {
+        let cursor = match (self.scene(), self.stack.under()) {
+            (Scene::Skills { .. }, _) => self.cursor,
+            (Scene::SkillAct | Scene::Ask(_), Some(e))
+                if matches!(e.scene, Scene::Skills { .. }) =>
+            {
+                e.cursor
+            }
+            _ => return,
+        };
+        self.sync_plate_at(cursor);
+        let open = skill_rows(self.skill_plate, &self.board()).open;
+        self.skill_rows.note(open, self.clock);
+    }
+
     pub(super) fn draw_skills(&mut self, f: &Frame, at: usize, host: flow::Host) {
         let s = s();
         let edit = host.edits();
         let scene = Scene::Skills { host };
-        self.sync_plate();
         let board = self.board();
         let total = self.progress.skill_points();
         let w = self.draw_tab_window(f, scene);
@@ -1837,31 +1923,15 @@ impl App {
         // 줄 띠: 가는 선 + 오른쪽 끝의 이름. 잠긴 줄만 "쓴 점수 N부터 · n점 더"(2026-11-23 사장 "열린 후엔 필요 없음") — 열리는 순간
         // 선이 이름 쪽으로 걷히며 이름과 함께 사라진다(`ROW_FADE`). 몸의 판은 쓴 점수 합(`ROW_NEEDS`), 무기 판은 그 판에 쓴 점수
         // (`plates::PLATE_ROWS`, 0270 C2). 글은 다 보일 때만(잘린 글은 그리지 않는다).
-        let bands = geo::bands(plate);
-        let (spent, needs): (u32, Vec<u32>) = match plate {
-            Plate::Body => (board.spent(), sk::ROW_NEEDS[..bands.len()].to_vec()),
-            Plate::Class(_) | Plate::Shield => (plate.spent(board), plates::PLATE_ROWS.to_vec()),
-        };
-        let open_mask: u8 = (0..bands.len())
-            .filter(|&r| spent >= needs[r])
-            .fold(0, |m, r| m | (1 << r));
-        let (seen, opened) = &mut self.skill_rows;
-        let was = seen.unwrap_or(open_mask);
-        for (r, t) in opened.iter_mut().enumerate() {
-            if open_mask & !was & (1 << r) != 0 {
-                *t = self.clock;
-            }
-        }
-        *seen = Some(open_mask);
-        let opened_at = *opened;
-        for (row, (&need, &since)) in needs.iter().zip(opened_at.iter()).enumerate() {
+        let SkillRows {
+            spent,
+            needs,
+            open: open_mask,
+        } = skill_rows(plate, board);
+        for (row, &need) in needs.iter().enumerate() {
             let open = open_mask & (1 << row) != 0;
             // 열린 줄: 열린 뒤 `ROW_FADE`초 동안만 걷히며 보이고 그 뒤엔 없다.
-            let fade = if open {
-                1.0 - ((self.clock - since) / ROW_FADE).clamp(0.0, 1.0)
-            } else {
-                1.0
-            };
+            let fade = self.skill_rows.fade(row, open, self.clock);
             if fade <= 0.0 {
                 continue;
             }
@@ -3494,5 +3564,66 @@ mod tests {
             assert!(!n.is_empty() && !entry_text(ENTRIES[i]).1.is_empty());
             assert!(!names[i + 1..].contains(n), "{n} twice");
         }
+    }
+
+    /// 0278 R22: 줄 띠의 열림은 그리기 밖의 순수한 셈 — 몸의 판은 쓴 점수 합이 `ROW_NEEDS`에, 무기 판은 그 판에 쓴 점수가
+    /// `PLATE_ROWS`(0 · 3 · 6)에 닿은 줄.
+    #[test]
+    fn skill_rows_open_where_the_spent_points_reach_each_rows_need() {
+        let body = skill_rows(Plate::Body, &Board::default());
+        let n = geo::bands(Plate::Body).len();
+        assert_eq!(body.needs, sk::ROW_NEEDS[..n]);
+        assert_eq!(body.spent, 0);
+        for (r, &need) in body.needs.iter().enumerate() {
+            assert_eq!(body.open & (1 << r) != 0, need == 0, "row {r}");
+        }
+        let full = skill_rows(Plate::Body, &Board::maxed(Pick::A));
+        assert_eq!(full.open, (1u8 << n) - 1);
+        // 지팡이 판: 그 판에 쓴 점수로 셋째 줄까지 차례로.
+        let staff = Plate::Class(Class::Staff);
+        let mut b = Board::default();
+        let mask = |spent: u32| {
+            plates::PLATE_ROWS
+                .iter()
+                .enumerate()
+                .filter(|(_, &need)| spent >= need)
+                .fold(0u8, |m, (r, _)| m | 1 << r)
+        };
+        let mut seen = Vec::new();
+        for (id, rank) in [
+            (Id::Gather, 1),
+            (Id::Gather, 3),
+            (Id::Gather, 5),
+            (Id::Brace, 1),
+        ] {
+            b.rank[id.index()] = rank;
+            let rows = skill_rows(staff, &b);
+            assert_eq!(rows.needs, plates::PLATE_ROWS);
+            assert_eq!(rows.spent, staff.spent(&b));
+            assert_eq!(rows.open, mask(rows.spent), "spent {}", rows.spent);
+            seen.push(rows.open);
+        }
+        assert_eq!(seen.first(), Some(&0b001));
+        assert_eq!(seen.last(), Some(&0b111));
+    }
+
+    /// 0278 R22: 줄 열림 연출의 기억 — 처음 본 판의 열린 줄은 연출 없이 숨고(0), 새로 열린 줄만 그때부터 `ROW_FADE`초 동안 걷힌다,
+    /// 잠긴 줄은 늘 보인다. 판이 바뀌면(`reset`) 다시 연출 없이.
+    #[test]
+    fn a_row_that_opens_fades_out_once_and_rows_open_at_first_sight_stay_hidden() {
+        let mut f = RowFades::default();
+        f.note(0b001, 1.0);
+        assert_eq!(f.fade(0, true, 1.0), 0.0);
+        assert_eq!(f.fade(1, false, 1.0), 1.0);
+        f.note(0b011, 2.0);
+        assert_eq!(f.fade(1, true, 2.0), 1.0);
+        assert!((f.fade(1, true, 2.0 + ROW_FADE * 0.5) - 0.5).abs() < 1e-5);
+        assert_eq!(f.fade(1, true, 2.0 + ROW_FADE + 0.01), 0.0);
+        // 다시 봐도 열린 때는 그대로.
+        f.note(0b011, 2.5);
+        assert!((f.fade(1, true, 2.5) - (1.0 - 0.5 / ROW_FADE)).abs() < 1e-5);
+        f.reset();
+        f.note(0b111, 9.0);
+        assert_eq!(f.fade(2, true, 9.0), 0.0);
     }
 }
