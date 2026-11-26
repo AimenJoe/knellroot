@@ -13,7 +13,7 @@ const W = 844, H = 390;
 // 둘째: CDP로 오래 누른 touchStart에 Chromium이 다는 개입 경고(우리 코드가 아니라 브라우저의 스크롤 판정, 무해).
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/, /Ignored attempt to cancel a touchstart event with cancelable=false/];
 
-// src/touch.rs layout()과 같은 식(논리 px, 0053). 바꾸면 함께. 락온·등잔은 상황 버튼(뜰 때만) — 자리는 늘 같다.
+// src/touch/mod.rs layout()과 같은 식(논리 px, 0053). 바꾸면 함께. 락온·등잔은 상황 버튼(뜰 때만) — 자리는 늘 같다.
 function layout() {
   const u = Math.min(W, H, 520), r = u * 0.09;
   const atk = [W - u * 0.238, H - u * 0.21];

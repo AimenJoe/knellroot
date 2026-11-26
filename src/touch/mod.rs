@@ -289,11 +289,11 @@ struct Rider {
 }
 
 impl Rider {
-    /// 손가락이 `pos`로 왔을 때 이번 프레임 시점에 보탤 끈 거리 — 탭 범위(`TAP_SLOP`) 안의 떨림은 버린다(연타하는 엄지가 화면을
-    /// 흔들지 않게), 넘은 뒤로는 지난 자리에서 끈 만큼.
-    fn drag(&mut self, pos: Vec2) -> Vec2 {
+    /// 손가락이 `pos`로 왔을 때 이번 프레임 시점에 보탤 끈 거리 — 탭 범위(`TAP_SLOP`, dp — `dp`는 화면 단위로 바꾸는 배) 안의
+    /// 떨림은 버린다(연타하는 엄지가 화면을 흔들지 않게), 넘은 뒤로는 지난 자리에서 끈 만큼.
+    fn drag(&mut self, pos: Vec2, dp: f32) -> Vec2 {
         let was = self.moved;
-        self.moved |= (pos - self.from).length() > dp(TAP_SLOP);
+        self.moved |= (pos - self.from).length() > TAP_SLOP * dp;
         let d = if was { pos - self.prev } else { Vec2::ZERO };
         self.prev = pos;
         d
@@ -634,19 +634,53 @@ pub fn stick_radius(w: f32, h: f32) -> f32 {
     w.min(h) * 0.14
 }
 
+/// 엔진의 손가락 하나(id · 단계 · 자리) — `Touch::read_fingers`가 받는다(시험은 손으로 짓는다).
+pub use macroquad::input::Touch as Finger;
+
+/// 터치를 읽을 때의 화면 값(0278 R23 — 엔진 밖에서 받아 시험이 손으로 준다): 논리 px 크기, dp 하나가 화면 단위 몇인가(0252 —
+/// 탭 범위 · 꼬집기 한 칸), 엄지 묶음의 배(설정 "터치 버튼 크기"), 안전 영역 `[왼쪽, 위, 오른쪽, 아래]`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Surface {
+    pub w: f32,
+    pub h: f32,
+    pub dp: f32,
+    pub size: f32,
+    pub safe: [f32; 4],
+}
+
+impl Surface {
+    /// 지금 화면(엔진 · 설정에서).
+    pub fn now() -> Surface {
+        Surface {
+            w: screen_width(),
+            h: screen_height(),
+            dp: crate::screen::dp(),
+            size: size(),
+            safe: crate::screen::safe_insets(),
+        }
+    }
+}
+
 impl Touch {
-    /// `menu`면 스틱·버튼 없이 탭만(메뉴 화면).
+    /// `menu`면 스틱·버튼 없이 탭만(메뉴 화면). 엔진에서 손가락 · 화면을 읽어 `read_fingers`에 넘긴다.
     pub fn read(&mut self, menu: bool) -> Read {
-        let mut a = Read::default();
         let dpi = screen_dpi_scale().max(0.01);
-        let touches: Vec<macroquad::input::Touch> = touches()
+        let touches: Vec<Finger> = touches()
             .into_iter()
             .map(|mut t| {
                 t.position /= dpi;
                 t
             })
             .collect();
-        a.active = !touches.is_empty();
+        self.read_fingers(&touches, Surface::now(), menu)
+    }
+
+    /// 이번 프레임의 손가락(논리 px)과 화면 값으로 — 엔진을 부르지 않는다(시험).
+    pub fn read_fingers(&mut self, touches: &[Finger], at: Surface, menu: bool) -> Read {
+        let mut a = Read {
+            active: !touches.is_empty(),
+            ..Read::default()
+        };
         if menu {
             self.stick = None;
             self.aimer = None;
@@ -658,7 +692,7 @@ impl Touch {
             self.riders.clear();
             self.pinch = 0.0;
             self.stale.append(&mut self.known);
-            for t in &touches {
+            for t in touches {
                 let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
                 if self.stale.contains(&t.id) {
                     continue;
@@ -666,7 +700,7 @@ impl Touch {
                 match self.taps.iter_mut().find(|x| x.0 == t.id) {
                     Some(x) => {
                         let was = x.2;
-                        x.2 |= (t.position - x.1).length() > dp(TAP_SLOP);
+                        x.2 |= (t.position - x.1).length() > TAP_SLOP * at.dp;
                         // 끌기는 탭 범위를 넘은 뒤부터 — 넘는 순간엔 처음 자리부터 센다(손가락과 목록이 같이 간다).
                         if x.2 {
                             let from = if was { x.3 } else { x.1 };
@@ -709,9 +743,9 @@ impl Touch {
             self.pinch = 0.0;
             return a;
         }
-        let (w, h) = (screen_width(), screen_height());
-        let buttons = layout(w, h, self.ctx);
-        for t in &touches {
+        let (w, h) = (at.w, at.h);
+        let buttons = safe_layout(w, h, self.ctx, at.size, at.safe);
+        for t in touches {
             let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
             if !self.known.contains(&t.id) {
                 if !ended {
@@ -898,7 +932,7 @@ impl Touch {
                     .map(|t| t.position)
             })
             .collect();
-        let (look, zoom) = look_from(&self.lookers, &now, &mut self.pinch);
+        let (look, zoom) = look_from(&self.lookers, &now, &mut self.pinch, at.dp);
         // 버튼을 누른 채 끈 손가락(0236): 숄더뷰를 떠나면(락온·쿼터뷰) 더 돌리지 않는다.
         let mut ride = Vec2::ZERO;
         self.riders.retain_mut(|r| {
@@ -906,7 +940,7 @@ impl Touch {
                 t.id == r.id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
             }) {
                 Some(t) => {
-                    ride += r.drag(t.position);
+                    ride += r.drag(t.position, at.dp);
                     true
                 }
                 None => false,
@@ -1047,7 +1081,12 @@ fn press(a: &mut Read, k: Kind) {
 /// 손가락이 중심에서 벗어난 만큼 → 스틱 값(x 오른쪽, y 위). 화면 y는 아래가 +라 뒤집는다. 데드존 뒤 0..1로 다시 편다.
 /// 시점 손가락의 지난 자리 `was`와 지금 자리 `now`(뗀 손가락은 `None`)로 (끈 거리, 거리 단계) — 순수(시험). 둘이 다 있으면 꼬집기만
 /// (돌리지 않는다 — 두 손가락을 벌리는데 화면이 같이 돌면 어지럽다), 하나면 끌기만. `pinch`에 벌어진 거리를 쌓고 `PINCH_STEP`마다 한 칸.
-pub fn look_from(was: &[(u64, Vec2)], now: &[Option<Vec2>], pinch: &mut f32) -> (Vec2, i32) {
+pub fn look_from(
+    was: &[(u64, Vec2)],
+    now: &[Option<Vec2>],
+    pinch: &mut f32,
+    dp: f32,
+) -> (Vec2, i32) {
     let both: Vec<(Vec2, Vec2)> = was
         .iter()
         .zip(now)
@@ -1057,12 +1096,12 @@ pub fn look_from(was: &[(u64, Vec2)], now: &[Option<Vec2>], pinch: &mut f32) -> 
         [(w0, n0), (w1, n1)] => {
             *pinch += (*n0 - *n1).length() - (*w0 - *w1).length();
             let mut zoom = 0;
-            while *pinch >= dp(PINCH_STEP) {
-                *pinch -= dp(PINCH_STEP);
+            while *pinch >= PINCH_STEP * dp {
+                *pinch -= PINCH_STEP * dp;
                 zoom += 1;
             }
-            while *pinch <= -dp(PINCH_STEP) {
-                *pinch += dp(PINCH_STEP);
+            while *pinch <= -(PINCH_STEP * dp) {
+                *pinch += PINCH_STEP * dp;
                 zoom -= 1;
             }
             (Vec2::ZERO, zoom)
@@ -3153,16 +3192,24 @@ mod tests {
             prev: at,
             moved: false,
         };
-        assert_eq!(r.drag(at + vec2(10.0, 0.0)), Vec2::ZERO, "jitter");
-        assert_eq!(r.drag(at + vec2(20.0, 0.0)), Vec2::ZERO, "still inside");
-        assert_eq!(r.drag(at + vec2(30.0, 0.0)), Vec2::ZERO, "crosses: no jump");
+        assert_eq!(r.drag(at + vec2(10.0, 0.0), 1.0), Vec2::ZERO, "jitter");
         assert_eq!(
-            r.drag(at + vec2(45.0, 5.0)),
+            r.drag(at + vec2(20.0, 0.0), 1.0),
+            Vec2::ZERO,
+            "still inside"
+        );
+        assert_eq!(
+            r.drag(at + vec2(30.0, 0.0), 1.0),
+            Vec2::ZERO,
+            "crosses: no jump"
+        );
+        assert_eq!(
+            r.drag(at + vec2(45.0, 5.0), 1.0),
             vec2(15.0, 5.0),
             "then follows"
         );
         assert_eq!(
-            r.drag(at + vec2(10.0, 5.0)),
+            r.drag(at + vec2(10.0, 5.0), 1.0),
             vec2(-35.0, 0.0),
             "even back inside"
         );
@@ -3229,16 +3276,17 @@ mod tests {
         let mut pinch = 0.0;
         // 한 손가락: 끈 만큼.
         let was = [(1, vec2(700.0, 300.0))];
-        let (l, z) = look_from(&was, &[Some(vec2(730.0, 290.0))], &mut pinch);
+        let (l, z) = look_from(&was, &[Some(vec2(730.0, 290.0))], &mut pinch, 1.0);
         assert_eq!((l, z), (vec2(30.0, -10.0), 0));
         // 뗀 손가락은 돌리지 않는다.
-        assert_eq!(look_from(&was, &[None], &mut pinch), (Vec2::ZERO, 0));
+        assert_eq!(look_from(&was, &[None], &mut pinch, 1.0), (Vec2::ZERO, 0));
         // 두 손가락: 벌리면 + 한 칸(돌리지는 않는다), 오므리면 −, 조금씩 벌린 것도 쌓인다.
         let two = [(1, vec2(600.0, 300.0)), (2, vec2(800.0, 300.0))];
         let (l, z) = look_from(
             &two,
             &[Some(vec2(560.0, 300.0)), Some(vec2(840.0, 300.0))],
             &mut pinch,
+            1.0,
         );
         assert_eq!((l, z), (Vec2::ZERO, 1));
         let mut pinch = 0.0;
@@ -3246,16 +3294,18 @@ mod tests {
             &two,
             &[Some(vec2(640.0, 300.0)), Some(vec2(760.0, 300.0))],
             &mut pinch,
+            1.0,
         );
         assert_eq!(z, -1);
         let mut pinch = 0.0;
         let small = [Some(vec2(580.0, 300.0)), Some(vec2(820.0, 300.0))];
-        assert_eq!(look_from(&two, &small, &mut pinch).1, 0);
+        assert_eq!(look_from(&two, &small, &mut pinch, 1.0).1, 0);
         let wider = [(1, vec2(580.0, 300.0)), (2, vec2(820.0, 300.0))];
         let (_, z) = look_from(
             &wider,
             &[Some(vec2(560.0, 300.0)), Some(vec2(840.0, 300.0))],
             &mut pinch,
+            1.0,
         );
         assert_eq!(z, 1, "40 + 40 = 80 px");
     }
@@ -3360,5 +3410,232 @@ mod tests {
         for k in [Kind::Attack, Kind::Dodge, Kind::Parry, Kind::Jump] {
             assert!(!lit(k, &view(true, true)), "{k:?}");
         }
+    }
+
+    // --- 손가락을 손으로 짓는 시험(0278 R23 — `Touch::read_fingers`는 엔진을 부르지 않는다) ---
+
+    const PHONE: Surface = Surface {
+        w: 1280.0,
+        h: 720.0,
+        dp: 1.0,
+        size: 1.0,
+        safe: [0.0; 4],
+    };
+
+    fn finger(id: u64, phase: TouchPhase, at: Vec2) -> Finger {
+        Finger {
+            id,
+            phase,
+            position: at,
+        }
+    }
+
+    fn button(ctx: Ctx, k: Kind) -> Vec2 {
+        safe_layout(PHONE.w, PHONE.h, ctx, PHONE.size, PHONE.safe)
+            .iter()
+            .find(|b| b.kind == k)
+            .unwrap()
+            .center
+    }
+
+    /// 화면 오른쪽 반에서 어느 버튼에서도 `room`보다 먼 자리(시점 손가락이 닿을 빈 자리).
+    fn empty_right(ctx: Ctx, room: f32) -> Vec2 {
+        let b = safe_layout(PHONE.w, PHONE.h, ctx, PHONE.size, PHONE.safe);
+        (0..72)
+            .flat_map(|y| {
+                (0..64).map(move |x| vec2(PHONE.w * 0.5 + x as f32 * 10.0, y as f32 * 10.0))
+            })
+            .find(|p| {
+                p.x - room >= PHONE.w * 0.5
+                    && p.x + room < PHONE.w
+                    && b.iter()
+                        .all(|b| (*p - b.center).length() > b.radius * 1.25 + room)
+            })
+            .expect("an empty spot on the right half")
+    }
+
+    #[test]
+    fn a_tap_on_a_button_presses_it_once_and_holding_keeps_it_held() {
+        let mut t = Touch::default();
+        let at = button(t.ctx, Kind::Dodge);
+        let a = t.read_fingers(&[finger(1, TouchPhase::Started, at)], PHONE, false);
+        assert!(a.active && a.dodge && a.dodge_held);
+        let a = t.read_fingers(&[finger(1, TouchPhase::Stationary, at)], PHONE, false);
+        assert!(!a.dodge && a.dodge_held, "held, not pressed again");
+        let a = t.read_fingers(&[finger(1, TouchPhase::Ended, at)], PHONE, false);
+        assert!(!a.dodge && !a.dodge_held);
+        let a = t.read_fingers(&[], PHONE, false);
+        assert_eq!(a, Read::default());
+    }
+
+    #[test]
+    fn letting_go_of_an_aiming_button_taps_the_nearest_fires_the_drag_or_cancels_at_the_centre() {
+        let ctx = Ctx {
+            aim_cast: true,
+            ..Ctx::default()
+        };
+        let r = stick_radius(PHONE.w, PHONE.h);
+        let run = |path: &[Vec2]| -> Vec<Read> {
+            let mut t = Touch {
+                ctx,
+                ..Touch::default()
+            };
+            path.iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let phase = match i {
+                        0 => TouchPhase::Started,
+                        i if i + 1 == path.len() => TouchPhase::Ended,
+                        _ => TouchPhase::Moved,
+                    };
+                    t.read_fingers(&[finger(7, phase, *p)], PHONE, false)
+                })
+                .collect()
+        };
+        let c = button(ctx, Kind::Cast);
+        // 톡: 짚는 동안은 누름 없이 가까운 적, 떼면 그 일 + 가까운 적.
+        let tap = run(&[c, c]);
+        assert!(!tap[0].cast && tap[0].auto_aim && tap[0].aim_hold);
+        assert!(tap[1].cast && tap[1].auto_aim && !tap[1].aim_drag);
+        // 끌기: 끄는 동안은 그 쪽(누름 없이), 떼면 그 쪽으로.
+        let right = c + vec2(r, 0.0);
+        let drag = run(&[c, right, right]);
+        let east = |v: Vec2| (v - vec2(1.0, 0.0)).length() < 1e-5;
+        assert!(!drag[1].cast && drag[1].aim_drag && east(drag[1].aim));
+        assert!(drag[2].cast && drag[2].aim_drag && east(drag[2].aim));
+        // 끌었다가 가운데로 되돌려 떼면 하지 않는다.
+        let back = c + vec2(r * 0.1, 0.0);
+        let cancel = run(&[c, right, back, back]);
+        assert!(!cancel[3].cast && !cancel[3].aim_drag && !cancel[3].auto_aim);
+    }
+
+    #[test]
+    fn in_the_shoulder_view_a_button_finger_turns_the_view_past_the_tap_slop_while_the_press_stays()
+    {
+        let ctx = Ctx {
+            look_aim: true,
+            ..Ctx::default()
+        };
+        let mut t = Touch {
+            ctx,
+            ..Touch::default()
+        };
+        let at = button(ctx, Kind::Dodge);
+        let mut step =
+            |phase, dx: f32| t.read_fingers(&[finger(3, phase, at + vec2(dx, 0.0))], PHONE, false);
+        let a = step(TouchPhase::Started, 0.0);
+        assert!(a.dodge && a.look == Vec2::ZERO);
+        let a = step(TouchPhase::Moved, 10.0);
+        assert!(
+            a.look == Vec2::ZERO && a.dodge_held,
+            "jitter inside the slop"
+        );
+        let a = step(TouchPhase::Moved, 30.0);
+        assert_eq!(a.look, Vec2::ZERO, "crossing does not jump");
+        let a = step(TouchPhase::Moved, 45.0);
+        assert_eq!(a.look, vec2(15.0, 0.0));
+        assert!(
+            a.dodge_held && !a.dodge,
+            "the press stays held, not repeated"
+        );
+        // 쿼터뷰(숄더뷰가 아니면)에는 같은 손가락이 시점을 돌리지 않는다.
+        let mut q = Touch::default();
+        q.read_fingers(&[finger(3, TouchPhase::Started, at)], PHONE, false);
+        let a = q.read_fingers(
+            &[finger(3, TouchPhase::Moved, at + vec2(80.0, 0.0))],
+            PHONE,
+            false,
+        );
+        assert_eq!(a.look, Vec2::ZERO);
+    }
+
+    /// 빈 오른쪽 반의 두 손가락을 `spread`만큼(양쪽 반씩) 벌린 뒤의 거리 단계.
+    fn pinch_by(spread: f32, at: Surface) -> i32 {
+        let ctx = Ctx::default();
+        let s = empty_right(ctx, 100.0);
+        let mut t = Touch::default();
+        let (l, r) = (s - vec2(50.0, 0.0), s + vec2(50.0, 0.0));
+        let a = t.read_fingers(
+            &[
+                finger(1, TouchPhase::Started, l),
+                finger(2, TouchPhase::Started, r),
+            ],
+            at,
+            false,
+        );
+        assert_eq!((a.look, a.zoom), (Vec2::ZERO, 0));
+        let h = vec2(spread * 0.5, 0.0);
+        let a = t.read_fingers(
+            &[
+                finger(1, TouchPhase::Moved, l - h),
+                finger(2, TouchPhase::Moved, r + h),
+            ],
+            at,
+            false,
+        );
+        assert_eq!(a.look, Vec2::ZERO, "pinching does not turn");
+        a.zoom
+    }
+
+    #[test]
+    fn two_fingers_on_the_empty_right_half_pinch_one_zoom_step_per_sixty_dp() {
+        assert_eq!(pinch_by(80.0, PHONE), 1);
+        assert_eq!(pinch_by(-80.0, PHONE), -1);
+        assert_eq!(pinch_by(40.0, PHONE), 0);
+        // 한 손가락은 끈 만큼 돌린다.
+        let s = empty_right(Ctx::default(), 100.0);
+        let mut t = Touch::default();
+        t.read_fingers(&[finger(1, TouchPhase::Started, s)], PHONE, false);
+        let a = t.read_fingers(
+            &[finger(1, TouchPhase::Moved, s + vec2(-20.0, 5.0))],
+            PHONE,
+            false,
+        );
+        assert_eq!((a.look, a.zoom), (vec2(-20.0, 5.0), 0));
+    }
+
+    /// 0252: 탭 범위 · 꼬집기 한 칸은 dp다 — Android(화면 단위 = 화소)에서는 같은 손가락 거리가 화소로 dp배.
+    #[test]
+    fn the_tap_slop_and_the_pinch_step_are_in_dp() {
+        let dense = Surface { dp: 2.0, ..PHONE };
+        // 꼬집기: dp 1이면 한 칸인 80 px가 dp 2에서는 모자라다(120 px).
+        assert_eq!(pinch_by(80.0, dense), 0);
+        assert_eq!(pinch_by(130.0, dense), 1);
+        // 메뉴의 탭: 30 px 움직이고 떼면 dp 1에서는 끌기(탭 아님), dp 2에서는 탭.
+        let tap_after = |at: Surface| {
+            let mut t = Touch::default();
+            let p = vec2(400.0, 300.0);
+            t.read_fingers(&[finger(1, TouchPhase::Started, p)], at, true);
+            let a = t.read_fingers(
+                &[finger(1, TouchPhase::Ended, p + vec2(30.0, 0.0))],
+                at,
+                true,
+            );
+            a.tap
+        };
+        assert_eq!(tap_after(PHONE), None);
+        assert_eq!(tap_after(dense), Some(vec2(430.0, 300.0)));
+        // 숄더뷰의 버튼 손가락: 30 px는 dp 2의 탭 범위(48) 안이다.
+        let ctx = Ctx {
+            look_aim: true,
+            ..Ctx::default()
+        };
+        let mut t = Touch {
+            ctx,
+            ..Touch::default()
+        };
+        let at = button(ctx, Kind::Dodge);
+        t.read_fingers(&[finger(3, TouchPhase::Started, at)], dense, false);
+        t.read_fingers(
+            &[finger(3, TouchPhase::Moved, at + vec2(30.0, 0.0))],
+            dense,
+            false,
+        );
+        let a = t.read_fingers(
+            &[finger(3, TouchPhase::Moved, at + vec2(45.0, 0.0))],
+            dense,
+            false,
+        );
+        assert_eq!(a.look, Vec2::ZERO);
     }
 }
