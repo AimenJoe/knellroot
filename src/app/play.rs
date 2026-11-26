@@ -1317,208 +1317,12 @@ impl App {
         use crate::sfx::Id;
         let mut typed: Vec<Id> = Vec::new();
         for e in events {
-            let id = match e {
-                Event::Swing => Id::Swing,
-                Event::Hit { .. } | Event::Crit { .. } => Id::Hit,
-                Event::Plunge { .. } | Event::Smash { .. } | Event::Aftershock { .. } => Id::Hit,
-                Event::Break { .. } | Event::Boom { .. } | Event::LoadBreak { .. } => Id::Hit,
-                Event::EnemyDown { .. } => Id::Die,
-                Event::PlayerHurt => Id::Hurt,
-                // 등딱지 튕김(0120)은 패링의 거울 — 같은 쇳소리.
-                Event::Parry { .. } | Event::Deflect { .. } => Id::Parry,
-                // 방패(0223): 받은 타는 둔한 '둥'(튕김의 맑은 소리와 갈린다), 깨지면 맞은 소리.
-                Event::Guard { .. } => Id::Thwack,
-                Event::GuardBreak { .. } => Id::Hurt,
-                // 교체 공격(0272 1b): 바꾸는 딸깍(`on_weapon_swap`) 위에 몸이 달려드는 바람 — 그냥 바꾸기와 귀로 갈린다.
-                Event::SwapStrike { .. } => Id::Dodge,
-                Event::Beat => crate::sfx::beat_id(self.world.player.beat.chain),
-                // 딱 맞춰 떼기(0078): 박자와 같은 "맞췄다" 종 — 가장 높은 음.
-                Event::Perfect { .. } => Id::Beat3,
-                Event::Ember { .. } => Id::Ember,
-                Event::Gulp { .. } | Event::Mend { .. } => Id::Gulp,
-                // 지연 공격이 풀린다(0128): 짧게 들이쉬는 소리 — 이 뒤 `RELEASE_LEAD`초에 맞는다.
-                Event::Release { .. } => Id::TeleRelease,
-                // 수레가 떠난다(0208): 둔한 덜컹 — 가까울 때만(멀리서 내내 울리지 않게).
-                Event::CartGo { at } if at.distance(self.world.player.pos) < 18.0 => Id::Thwack,
-                Event::CartWarn { at } if at.distance(self.world.player.pos) < 18.0 => Id::TeleLane,
-                // 사슬이 끊긴다(0208 3단계): 깊은 울림 + 글 한 줄.
-                Event::Unchain { .. } => {
-                    self.run.card = Some((|s| s.overseer_unchained, crate::stage::CARD_TIME));
-                    Id::Wake
-                }
-                Event::FlaskDenied | Event::CastDenied | Event::StaminaDenied => Id::Deny,
-                // 스킬(0151 — S0는 있는 소리를 겹쳐 쓴다, 전용 소리는 S1): 시동 = 휘두름, 큰 기술 시동 = 깊은 울림, 터짐 = 타격,
-                // 게이지 가득 = 가장 높은 종.
-                // 0158 G2: 스킬마다 다른 짝(있는 소리를 겹친다). 시동 — 버팀은 발을 딛는 둔한 소리, 되울림은 낮은 종,
-                // 잔불 흩기는 잔불 소리, 나머지는 휘두름. 판정 — 휘돌이 = 휘두름(바퀴마다), 가로지르기·던지기 = 스치는 바람,
-                // 끌어모으기·버팀의 터뜨림 = 둔한 소리, 땅울림 = 낮은 울림, 되울림 = 가운데 종, 잔불 흩기 = 잔불 소리.
-                Event::SkillStart { id } => {
-                    use crate::skills::Id as Sk;
-                    match id {
-                        Sk::Brace => Id::Thwack,
-                        Sk::Echo => Id::Beat,
-                        Sk::Embers | Sk::Flare => Id::Ember,
-                        // 0270 C3: 눈발 = 가장 높은 종(서리), 뿌리 덫 = 휘두름.
-                        Sk::Snow => Id::Beat3,
-                        Sk::Bash | Sk::Ram => Id::Thwack,
-                        Sk::Whirl
-                        | Sk::Cut
-                        | Sk::Gather
-                        | Sk::Quake
-                        | Sk::Throw
-                        | Sk::Swallow
-                        | Sk::Roots
-                        | Sk::Stitch
-                        | Sk::Toll
-                        | Sk::Swat
-                        | Sk::Ripple
-                        | Sk::Snare
-                        | Sk::Mine
-                        | Sk::Skewer
-                        | Sk::Pole
-                        | Sk::Pin
-                        | Sk::Pommel
-                        | Sk::Shove
-                        | Sk::Slip
-                        | Sk::Sunder
-                        | Sk::Reap
-                        | Sk::Harvest
-                        | Sk::Hex => Id::Swing,
-                        // 0274 ⑥: 시드는 그늘 = 낮은 울림.
-                        Sk::Blight => Id::Wake,
-                        // 0274 ④: 불씨 휩쓸기 = 잔불 소리(달군 날).
-                        Sk::Sear => Id::Ember,
-                        // 0274: 재기 = 발을 딛는 둔한 소리(숨을 몰아쉬고 선다).
-                        Sk::Rally => Id::Thwack,
-                        // 0272: 심지 볼트 = 잔불 소리(심지에 불이 붙는다).
-                        Sk::Fuse => Id::Ember,
-                    }
-                }
-                Event::Skill { id, .. } => {
-                    use crate::skills::Id as Sk;
-                    match id {
-                        Sk::Whirl => Id::Swing,
-                        Sk::Cut | Sk::Throw => Id::Dodge,
-                        Sk::Gather | Sk::Brace => Id::Thwack,
-                        Sk::Quake => Id::Wake,
-                        Sk::Echo => Id::Beat2,
-                        Sk::Embers => Id::Ember,
-                        Sk::Swallow => Id::Dodge,
-                        Sk::Bash => Id::Parry,
-                        Sk::Roots => Id::Wake,
-                        // 0270 C3: 바늘땀 = 땀마다 스치는 바람, 방패 돌진 = 둔한 소리, 종 치기 = 가운데 종(울림은 `Toll`이 낸다).
-                        Sk::Stitch => Id::Dodge,
-                        Sk::Ram => Id::Thwack,
-                        Sk::Toll => Id::Beat2,
-                        // 후려치기 = 타격, 파문 = 낮은 울림.
-                        Sk::Swat => Id::Hit,
-                        Sk::Ripple => Id::Wake,
-                        // 눈발 = 높은 종, 불길 = 잔불 소리, 뿌리 덫(심음) = 둔한 소리.
-                        Sk::Snow => Id::Beat3,
-                        Sk::Flare => Id::Ember,
-                        Sk::Snare => Id::Thwack,
-                        // 0272: 심지 볼트(쏘는 순간) = 스치는 바람, 화약 덫(묻음) = 둔한 소리 — 터짐은 `Boom`이 낸다.
-                        Sk::Fuse => Id::Dodge,
-                        Sk::Mine => Id::Thwack,
-                        // 0272 2단계(창): 꿰뚫기 = 스치는 바람(내달림), 장대 휩쓸기 = 휘두름, 못 박기 = 타격(박히는 소리).
-                        Sk::Skewer => Id::Dodge,
-                        Sk::Pole => Id::Swing,
-                        Sk::Pin => Id::Hit,
-                        // 0274(한손검): 자루 치기 = 타격, 밀치기 = 둔한 소리, 재기 = 가운데 종(체력이 도는 소리는 `Mend`가 낸다).
-                        Sk::Pommel => Id::Hit,
-                        Sk::Shove => Id::Thwack,
-                        Sk::Rally => Id::Beat2,
-                        // 0274 ③(쌍단검): 빠지며 베기 = 스치는 바람(물러나는 걸음 — 벤 것은 맞힘 소리가 따로).
-                        Sk::Slip => Id::Dodge,
-                        // 0274 ④(대검): 땅 가르기 = 낮은 울림(땅이 갈라진다), 불씨 휩쓸기 = 휘두름(불은 `SkillStart`의 잔불 소리).
-                        Sk::Sunder => Id::Wake,
-                        Sk::Sear => Id::Swing,
-                        // 0274 ⑤(낫): 걸어 당기기 = 둔한 소리(끌려오는 몸), 생기 거두기 = 휘두름(되찾는 소리는 `Mend`가 낸다).
-                        Sk::Reap => Id::Thwack,
-                        Sk::Harvest => Id::Swing,
-                        // 0274 ⑥(완드): 저주 새기기 = 쇳소리(금이 가는 소리), 시드는 그늘 = 낮은 울림(그늘이 드리운다).
-                        Sk::Hex => Id::Parry,
-                        Sk::Blight => Id::Wake,
-                    }
-                }
-                Event::SkillDenied => Id::Deny,
-                Event::UltStart => Id::Wake,
-                Event::Ult { .. } | Event::SkillBurst { .. } => Id::Hit,
-                Event::UltReady => Id::Beat3,
-                // 0158 G2(새 소리 파일 없이 있는 것을 겹친다 — 스킬마다 다른 짝): 받아냄 = 쇳소리, 울림 = 가운데 종,
-                // 되돎 = 휘두름, 터짐·한 줄기 = 타격, 손에 돌아옴 = 낮은 종, 불티의 타 = 잔불 소리, 몰아치기 = 가장 높은 종.
-                Event::Soak { .. } | Event::Interrupt { .. } => Id::Parry,
-                Event::EchoRing { .. } => Id::Beat2,
-                Event::ThrowTurn { .. } => Id::Swing,
-                Event::ThrowBoom { .. } | Event::LineCut { .. } => Id::Hit,
-                // 질풍 찌르기(0272 2단계): 찌름마다 스치는 바람, 마지막은 타격.
-                Event::GaleThrust { last: true, .. } => Id::Hit,
-                Event::GaleThrust { .. } => Id::Dodge,
-                // 그림자 습격(0274 ③): 숨어듦 = 스치는 바람, 찌름마다 휘두름, 마지막은 타격.
-                Event::Blink { .. } => Id::Dodge,
-                Event::AmbushStab { last: true, .. } => Id::Hit,
-                Event::AmbushStab { .. } => Id::Swing,
-                // 칼바람(0274 ④): 휩쓸기마다 휘두름, 마지막은 타격.
-                Event::TempestSweep { last: true, .. } => Id::Hit,
-                Event::TempestSweep { .. } => Id::Swing,
-                // 깨어나는 숲(0274 ⑤): 고리마다 낮은 울림(땅이 솟는다), 마지막은 둔한 소리(되찾는 소리는 `Mend`가 낸다).
-                Event::GrovePulse { last: true, .. } => Id::Thwack,
-                Event::GrovePulse { .. } => Id::Wake,
-                // 치른 값(0274 ⑥): 번지는 저주 = 쇳소리(금), 터지는 울림 = 낮은 종. 저주가 옮음 = 스치는 바람, 죽음의 울림 = 가운데 종.
-                Event::PricePulse { last: true, .. } => Id::Beat,
-                Event::PricePulse { .. } => Id::Parry,
-                Event::HexJump { .. } => Id::Dodge,
-                Event::DeathKnell { .. } => Id::Beat2,
-                // 0270 C3: 큰 종 = 낮은 종, 눈보라 = 가장 높은 종.
-                Event::GreatBell { .. } => Id::Beat,
-                Event::Blizzard { .. } => Id::Beat3,
-                // 0272: 화살비 = 스치는 바람(시위를 떠난 화살들) — 내리는 타는 `FieldPulse`의 뿌리 소리.
-                Event::ArrowRain { .. } => Id::Dodge,
-                Event::ThrowBack { .. } => Id::Beat,
-                // 종류의 RB(0274 ②b — 있는 소리를 겹쳐 쓴다): 던지는 것(손도끼 · 창 · 돌) = 휘두름 바람, 신성한 빛을 부름 = 맑은 종
-                // 둘째 음, 꽂힘 = 가장 높은 종(맞은 것은 맞힘 소리가 따로), 창이 손에 돌아옴 = 던지기의 돌아옴과 같은 종. 마법탄은 소리 없이(그대로).
-                Event::Cast { look, .. } if crate::weapons::Bolt::look_thrown(*look) => Id::Swing,
-                Event::Cast { look, .. } if *look == crate::weapons::LIGHT => Id::Beat2,
-                // 땅 내려찍기(0274 ④): 낮은 울림(땅이 갈라진다).
-                Event::Cast { look, .. } if *look == crate::weapons::QUAKE => Id::Wake,
-                Event::Smite { .. } => Id::Beat3,
-                // 가시 씨앗(0274 ⑤): 뿌리가 솟는 낮은 울림.
-                Event::Sprout { .. } => Id::Wake,
-                Event::JavelinBack { .. } => Id::Beat,
-                // 0276(있는 소리를 겹친다): 기도하는 손 = 가운데 종 · 덫을 놓음 = 던짐 · 덫이 묾 = 쇳소리 · 방패가 튕김 = 낮은 종 ·
-                // 들이받기의 출발 = 스치는 바람(맞힌 것은 타격 소리가 따로).
-                Event::Prayer { .. } => Id::Beat2,
-                Event::SnareSet { .. } => Id::Swing,
-                Event::SnareSnap { .. } => Id::Parry,
-                Event::ShieldBounce { .. } => Id::Beat,
-                Event::Rush { .. } => Id::Dodge,
-                // 0277: 급소 = 짧고 높은 쇳빛 '칭', 분노가 가득 = 낮게 차오르는 숨, 걸어 당김 = 덩굴이 감겨 끌리는 소리.
-                Event::Sneak { .. } => Id::Sneak,
-                Event::FuryFull { .. } => Id::Fury,
-                Event::Pull { .. } => Id::Pull,
-                // 0270 C3: 눈발 = 높은 종, 뿌리 덫 = 뿌리가 깨는 소리.
-                Event::FieldPulse { kind, .. } => match kind {
-                    crate::status::Kind::Frost => Id::Beat3,
-                    crate::status::Kind::Root => Id::Wake,
-                    _ => Id::Ember,
-                },
-                // 피해 타입(0223 V2): 화상이 붙음·탐 = 잔불 소리, 묶임 = 뿌리가 깨는 소리, 금 = 쇳소리, 울림 = 낮은 종, 터짐 = 타격.
-                Event::Ail { kind, .. } => match kind {
-                    crate::status::Kind::Ember => Id::Ember,
-                    crate::status::Kind::Root => Id::Wake,
-                    crate::status::Kind::Rift => Id::Parry,
-                    // 0270 B: 기절 = 타격 · 상처 = 휘두름 · 얼어붙음 = 가장 높은 종 · 흡수 = 한 모금.
-                    crate::status::Kind::Shock => Id::Thwack,
-                    crate::status::Kind::Sharp => Id::Swing,
-                    crate::status::Kind::Frost => Id::Beat3,
-                    crate::status::Kind::Drain => Id::Gulp,
-                    _ => continue,
-                },
-                Event::Shatter { .. } => Id::Shell,
-                Event::Toll { .. } => Id::Beat,
-                Event::AilBurst { .. } => Id::Hit,
-                Event::Flurry { .. } => Id::Beat3,
-                _ => continue,
+            // 사슬이 끊긴다(0208 3단계): 깊은 울림(`sound_of`) + 글 한 줄.
+            if matches!(e, Event::Unchain { .. }) {
+                self.run.card = Some((|s| s.overseer_unchained, crate::stage::CARD_TIME));
+            }
+            let Some(id) = sound_of(e, self.world.player.beat.chain, self.world.player.pos) else {
+                continue;
             };
             // 타입의 일(0223 V2)은 떼에서 한 틱에 여럿이 겹친다(스물이 한꺼번에 울린다) — 같은 소리는 틱에 한 번만.
             if matches!(
@@ -1658,6 +1462,265 @@ impl App {
                 top + pad + size * (i as f32 + 0.8),
                 size,
                 if i == 0 { YELLOW } else { LIGHTGRAY },
+            );
+        }
+    }
+}
+
+/// 월드 사건 → 소리(0278 R12 — `App::world_sounds`에서 떼어 낸 순수한 갈래: 사건 덮개 시험이 부른다). `chain` = 박자 타의 이음,
+/// `player` = 방랑자 자리(수레 소리는 가까울 때만). 소리 없는 사건은 `None` — 일부러 없는 것은 시험의 `SILENT` 목록이 말한다.
+/// (R15에서 와일드카드 없는 `Cue` 표로 바뀐다.)
+pub(super) fn sound_of(e: &Event, chain: u32, player: Vec3) -> Option<crate::sfx::Id> {
+    use crate::sfx::Id;
+    Some(match e {
+        Event::Swing => Id::Swing,
+        Event::Hit { .. } | Event::Crit { .. } => Id::Hit,
+        Event::Plunge { .. } | Event::Smash { .. } | Event::Aftershock { .. } => Id::Hit,
+        Event::Break { .. } | Event::Boom { .. } | Event::LoadBreak { .. } => Id::Hit,
+        Event::EnemyDown { .. } => Id::Die,
+        Event::PlayerHurt => Id::Hurt,
+        // 등딱지 튕김(0120)은 패링의 거울 — 같은 쇳소리.
+        Event::Parry { .. } | Event::Deflect { .. } => Id::Parry,
+        // 방패(0223): 받은 타는 둔한 '둥'(튕김의 맑은 소리와 갈린다), 깨지면 맞은 소리.
+        Event::Guard { .. } => Id::Thwack,
+        Event::GuardBreak { .. } => Id::Hurt,
+        // 교체 공격(0272 1b): 바꾸는 딸깍(`on_weapon_swap`) 위에 몸이 달려드는 바람 — 그냥 바꾸기와 귀로 갈린다.
+        Event::SwapStrike { .. } => Id::Dodge,
+        Event::Beat => crate::sfx::beat_id(chain),
+        // 딱 맞춰 떼기(0078): 박자와 같은 "맞췄다" 종 — 가장 높은 음.
+        Event::Perfect { .. } => Id::Beat3,
+        Event::Ember { .. } => Id::Ember,
+        Event::Gulp { .. } | Event::Mend { .. } => Id::Gulp,
+        // 지연 공격이 풀린다(0128): 짧게 들이쉬는 소리 — 이 뒤 `RELEASE_LEAD`초에 맞는다.
+        Event::Release { .. } => Id::TeleRelease,
+        // 수레가 떠난다(0208): 둔한 덜컹 — 가까울 때만(멀리서 내내 울리지 않게).
+        Event::CartGo { at } if at.distance(player) < 18.0 => Id::Thwack,
+        Event::CartWarn { at } if at.distance(player) < 18.0 => Id::TeleLane,
+        // 사슬이 끊긴다(0208 3단계): 깊은 울림 + 글 한 줄.
+        Event::Unchain { .. } => Id::Wake,
+        Event::FlaskDenied | Event::CastDenied | Event::StaminaDenied => Id::Deny,
+        // 스킬(0151 — S0는 있는 소리를 겹쳐 쓴다, 전용 소리는 S1): 시동 = 휘두름, 큰 기술 시동 = 깊은 울림, 터짐 = 타격,
+        // 게이지 가득 = 가장 높은 종.
+        // 0158 G2: 스킬마다 다른 짝(있는 소리를 겹친다). 시동 — 버팀은 발을 딛는 둔한 소리, 되울림은 낮은 종,
+        // 잔불 흩기는 잔불 소리, 나머지는 휘두름. 판정 — 휘돌이 = 휘두름(바퀴마다), 가로지르기·던지기 = 스치는 바람,
+        // 끌어모으기·버팀의 터뜨림 = 둔한 소리, 땅울림 = 낮은 울림, 되울림 = 가운데 종, 잔불 흩기 = 잔불 소리.
+        Event::SkillStart { id } => {
+            use crate::skills::Id as Sk;
+            match id {
+                Sk::Brace => Id::Thwack,
+                Sk::Echo => Id::Beat,
+                Sk::Embers | Sk::Flare => Id::Ember,
+                // 0270 C3: 눈발 = 가장 높은 종(서리), 뿌리 덫 = 휘두름.
+                Sk::Snow => Id::Beat3,
+                Sk::Bash | Sk::Ram => Id::Thwack,
+                Sk::Whirl
+                | Sk::Cut
+                | Sk::Gather
+                | Sk::Quake
+                | Sk::Throw
+                | Sk::Swallow
+                | Sk::Roots
+                | Sk::Stitch
+                | Sk::Toll
+                | Sk::Swat
+                | Sk::Ripple
+                | Sk::Snare
+                | Sk::Mine
+                | Sk::Skewer
+                | Sk::Pole
+                | Sk::Pin
+                | Sk::Pommel
+                | Sk::Shove
+                | Sk::Slip
+                | Sk::Sunder
+                | Sk::Reap
+                | Sk::Harvest
+                | Sk::Hex => Id::Swing,
+                // 0274 ⑥: 시드는 그늘 = 낮은 울림.
+                Sk::Blight => Id::Wake,
+                // 0274 ④: 불씨 휩쓸기 = 잔불 소리(달군 날).
+                Sk::Sear => Id::Ember,
+                // 0274: 재기 = 발을 딛는 둔한 소리(숨을 몰아쉬고 선다).
+                Sk::Rally => Id::Thwack,
+                // 0272: 심지 볼트 = 잔불 소리(심지에 불이 붙는다).
+                Sk::Fuse => Id::Ember,
+            }
+        }
+        Event::Skill { id, .. } => {
+            use crate::skills::Id as Sk;
+            match id {
+                Sk::Whirl => Id::Swing,
+                Sk::Cut | Sk::Throw => Id::Dodge,
+                Sk::Gather | Sk::Brace => Id::Thwack,
+                Sk::Quake => Id::Wake,
+                Sk::Echo => Id::Beat2,
+                Sk::Embers => Id::Ember,
+                Sk::Swallow => Id::Dodge,
+                Sk::Bash => Id::Parry,
+                Sk::Roots => Id::Wake,
+                // 0270 C3: 바늘땀 = 땀마다 스치는 바람, 방패 돌진 = 둔한 소리, 종 치기 = 가운데 종(울림은 `Toll`이 낸다).
+                Sk::Stitch => Id::Dodge,
+                Sk::Ram => Id::Thwack,
+                Sk::Toll => Id::Beat2,
+                // 후려치기 = 타격, 파문 = 낮은 울림.
+                Sk::Swat => Id::Hit,
+                Sk::Ripple => Id::Wake,
+                // 눈발 = 높은 종, 불길 = 잔불 소리, 뿌리 덫(심음) = 둔한 소리.
+                Sk::Snow => Id::Beat3,
+                Sk::Flare => Id::Ember,
+                Sk::Snare => Id::Thwack,
+                // 0272: 심지 볼트(쏘는 순간) = 스치는 바람, 화약 덫(묻음) = 둔한 소리 — 터짐은 `Boom`이 낸다.
+                Sk::Fuse => Id::Dodge,
+                Sk::Mine => Id::Thwack,
+                // 0272 2단계(창): 꿰뚫기 = 스치는 바람(내달림), 장대 휩쓸기 = 휘두름, 못 박기 = 타격(박히는 소리).
+                Sk::Skewer => Id::Dodge,
+                Sk::Pole => Id::Swing,
+                Sk::Pin => Id::Hit,
+                // 0274(한손검): 자루 치기 = 타격, 밀치기 = 둔한 소리, 재기 = 가운데 종(체력이 도는 소리는 `Mend`가 낸다).
+                Sk::Pommel => Id::Hit,
+                Sk::Shove => Id::Thwack,
+                Sk::Rally => Id::Beat2,
+                // 0274 ③(쌍단검): 빠지며 베기 = 스치는 바람(물러나는 걸음 — 벤 것은 맞힘 소리가 따로).
+                Sk::Slip => Id::Dodge,
+                // 0274 ④(대검): 땅 가르기 = 낮은 울림(땅이 갈라진다), 불씨 휩쓸기 = 휘두름(불은 `SkillStart`의 잔불 소리).
+                Sk::Sunder => Id::Wake,
+                Sk::Sear => Id::Swing,
+                // 0274 ⑤(낫): 걸어 당기기 = 둔한 소리(끌려오는 몸), 생기 거두기 = 휘두름(되찾는 소리는 `Mend`가 낸다).
+                Sk::Reap => Id::Thwack,
+                Sk::Harvest => Id::Swing,
+                // 0274 ⑥(완드): 저주 새기기 = 쇳소리(금이 가는 소리), 시드는 그늘 = 낮은 울림(그늘이 드리운다).
+                Sk::Hex => Id::Parry,
+                Sk::Blight => Id::Wake,
+            }
+        }
+        Event::SkillDenied => Id::Deny,
+        Event::UltStart => Id::Wake,
+        Event::Ult { .. } | Event::SkillBurst { .. } => Id::Hit,
+        Event::UltReady => Id::Beat3,
+        // 0158 G2(새 소리 파일 없이 있는 것을 겹친다 — 스킬마다 다른 짝): 받아냄 = 쇳소리, 울림 = 가운데 종,
+        // 되돎 = 휘두름, 터짐·한 줄기 = 타격, 손에 돌아옴 = 낮은 종, 불티의 타 = 잔불 소리, 몰아치기 = 가장 높은 종.
+        Event::Soak { .. } | Event::Interrupt { .. } => Id::Parry,
+        Event::EchoRing { .. } => Id::Beat2,
+        Event::ThrowTurn { .. } => Id::Swing,
+        Event::ThrowBoom { .. } | Event::LineCut { .. } => Id::Hit,
+        // 질풍 찌르기(0272 2단계): 찌름마다 스치는 바람, 마지막은 타격.
+        Event::GaleThrust { last: true, .. } => Id::Hit,
+        Event::GaleThrust { .. } => Id::Dodge,
+        // 그림자 습격(0274 ③): 숨어듦 = 스치는 바람, 찌름마다 휘두름, 마지막은 타격.
+        Event::Blink { .. } => Id::Dodge,
+        Event::AmbushStab { last: true, .. } => Id::Hit,
+        Event::AmbushStab { .. } => Id::Swing,
+        // 칼바람(0274 ④): 휩쓸기마다 휘두름, 마지막은 타격.
+        Event::TempestSweep { last: true, .. } => Id::Hit,
+        Event::TempestSweep { .. } => Id::Swing,
+        // 깨어나는 숲(0274 ⑤): 고리마다 낮은 울림(땅이 솟는다), 마지막은 둔한 소리(되찾는 소리는 `Mend`가 낸다).
+        Event::GrovePulse { last: true, .. } => Id::Thwack,
+        Event::GrovePulse { .. } => Id::Wake,
+        // 치른 값(0274 ⑥): 번지는 저주 = 쇳소리(금), 터지는 울림 = 낮은 종. 저주가 옮음 = 스치는 바람, 죽음의 울림 = 가운데 종.
+        Event::PricePulse { last: true, .. } => Id::Beat,
+        Event::PricePulse { .. } => Id::Parry,
+        Event::HexJump { .. } => Id::Dodge,
+        Event::DeathKnell { .. } => Id::Beat2,
+        // 0270 C3: 큰 종 = 낮은 종, 눈보라 = 가장 높은 종.
+        Event::GreatBell { .. } => Id::Beat,
+        Event::Blizzard { .. } => Id::Beat3,
+        // 0272: 화살비 = 스치는 바람(시위를 떠난 화살들) — 내리는 타는 `FieldPulse`의 뿌리 소리.
+        Event::ArrowRain { .. } => Id::Dodge,
+        Event::ThrowBack { .. } => Id::Beat,
+        // 종류의 RB(0274 ②b — 있는 소리를 겹쳐 쓴다): 던지는 것(손도끼 · 창 · 돌) = 휘두름 바람, 신성한 빛을 부름 = 맑은 종
+        // 둘째 음, 꽂힘 = 가장 높은 종(맞은 것은 맞힘 소리가 따로), 창이 손에 돌아옴 = 던지기의 돌아옴과 같은 종. 마법탄은 소리 없이(그대로).
+        Event::Cast { look, .. } if crate::weapons::Bolt::look_thrown(*look) => Id::Swing,
+        Event::Cast { look, .. } if *look == crate::weapons::LIGHT => Id::Beat2,
+        // 땅 내려찍기(0274 ④): 낮은 울림(땅이 갈라진다).
+        Event::Cast { look, .. } if *look == crate::weapons::QUAKE => Id::Wake,
+        Event::Smite { .. } => Id::Beat3,
+        // 가시 씨앗(0274 ⑤): 뿌리가 솟는 낮은 울림.
+        Event::Sprout { .. } => Id::Wake,
+        Event::JavelinBack { .. } => Id::Beat,
+        // 0276(있는 소리를 겹친다): 기도하는 손 = 가운데 종 · 덫을 놓음 = 던짐 · 덫이 묾 = 쇳소리 · 방패가 튕김 = 낮은 종 ·
+        // 들이받기의 출발 = 스치는 바람(맞힌 것은 타격 소리가 따로).
+        Event::Prayer { .. } => Id::Beat2,
+        Event::SnareSet { .. } => Id::Swing,
+        Event::SnareSnap { .. } => Id::Parry,
+        Event::ShieldBounce { .. } => Id::Beat,
+        Event::Rush { .. } => Id::Dodge,
+        // 0277: 급소 = 짧고 높은 쇳빛 '칭', 분노가 가득 = 낮게 차오르는 숨, 걸어 당김 = 덩굴이 감겨 끌리는 소리.
+        Event::Sneak { .. } => Id::Sneak,
+        Event::FuryFull { .. } => Id::Fury,
+        Event::Pull { .. } => Id::Pull,
+        // 0270 C3: 눈발 = 높은 종, 뿌리 덫 = 뿌리가 깨는 소리.
+        Event::FieldPulse { kind, .. } => match kind {
+            crate::status::Kind::Frost => Id::Beat3,
+            crate::status::Kind::Root => Id::Wake,
+            _ => Id::Ember,
+        },
+        // 피해 타입(0223 V2): 화상이 붙음·탐 = 잔불 소리, 묶임 = 뿌리가 깨는 소리, 금 = 쇳소리, 울림 = 낮은 종, 터짐 = 타격.
+        Event::Ail { kind, .. } => match kind {
+            crate::status::Kind::Ember => Id::Ember,
+            crate::status::Kind::Root => Id::Wake,
+            crate::status::Kind::Rift => Id::Parry,
+            // 0270 B: 기절 = 타격 · 상처 = 휘두름 · 얼어붙음 = 가장 높은 종 · 흡수 = 한 모금.
+            crate::status::Kind::Shock => Id::Thwack,
+            crate::status::Kind::Sharp => Id::Swing,
+            crate::status::Kind::Frost => Id::Beat3,
+            crate::status::Kind::Drain => Id::Gulp,
+            _ => return None,
+        },
+        Event::Shatter { .. } => Id::Shell,
+        Event::Toll { .. } => Id::Beat,
+        Event::AilBurst { .. } => Id::Hit,
+        Event::Flurry { .. } => Id::Beat3,
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 0278 R12: 일부러 소리가 없는 사건(표본 그대로 — 갈래의 이름). 소리는 다른 길이 내거나(무기 바꾸기 = `on_weapon_swap`의 딸깍,
+    /// 회피·예고 = 상태 변화) 이펙트·HUD만 쓰는 것. R15의 `Cue` 표가 이 목록을 대신한다.
+    const SILENT: &[&str] = &[
+        "LockOn",
+        "LockOff",
+        "LockLost",
+        "Turn",
+        "Slam",
+        "EnemyStrike",
+        "Rouse",
+        "Bleed",
+        "Drain",
+        "WeaponSwap",
+        "Charged",
+        "Throw",
+        "RootSpike",
+        // 화상이 타는 틱(초마다 — 떼에서 겹친다): 걸린 순간의 `Ail`이 잔불 소리를 낸다.
+        "Burn",
+        // 저주의 표가 새겨짐: 저주 새기기의 판정 `Skill`이 쇳소리를 낸다.
+        "Hexed",
+    ];
+
+    /// 0278 R12 사건 덮개(소리): 모든 사건은 소리가 나거나 `SILENT`에 있다 — 그리고 `SILENT`의 것은 정말 소리가 없다.
+    #[test]
+    fn every_event_sounds_or_is_silent_on_purpose() {
+        let mut bad = Vec::new();
+        for e in Event::samples() {
+            let name = e.variant();
+            let sound = sound_of(&e, 1, Vec3::ZERO);
+            let silent = SILENT.contains(&name.as_str());
+            if sound.is_some() == silent {
+                bad.push(format!("{name}: sound {sound:?}, listed silent {silent}"));
+            }
+        }
+        assert!(
+            bad.is_empty(),
+            "give these a sound or list them in SILENT:\n{}",
+            bad.join("\n")
+        );
+        for n in SILENT {
+            assert!(
+                Event::samples().iter().any(|e| e.variant() == *n),
+                "{n} is no event"
             );
         }
     }

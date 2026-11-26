@@ -4135,6 +4135,61 @@ mod tests {
         );
     }
 
+    /// 0278 R12: 일부러 이펙트가 없는 사건(갈래의 이름) — 소리 · HUD · 카메라만 쓰거나 다른 사건이 그림을 맡는다.
+    const NO_FX: &[&str] = &[
+        "Swing",
+        "LockOn",
+        "LockOff",
+        "LockLost",
+        "Turn",
+        "CartGo",
+        "CartWarn",
+        "Release",
+        "Ember",
+        "WeaponSwap",
+        "FlaskDenied",
+        "CastDenied",
+        "StaminaDenied",
+        "Throw",
+        "Beat",
+        "SkillDenied",
+    ];
+
+    /// 0278 R12 사건 덮개(이펙트): 모든 사건은 묶음 하나가 맡거나 `NO_FX`에 있다 — 그리고 `NO_FX`의 것은 정말 어느 묶음에도 없다.
+    #[test]
+    fn every_event_has_one_fx_group_or_none_on_purpose() {
+        let w = world();
+        let mut bad = Vec::new();
+        for e in Event::samples() {
+            let name = e.variant();
+            let mut fx = Fx::default();
+            let n = [
+                fx.on_strike(&e, &w),
+                fx.on_ail(&e, &w),
+                fx.on_skill_event(&e, &w),
+                fx.on_body(&e, &w),
+            ]
+            .iter()
+            .filter(|b| **b)
+            .count();
+            let none = NO_FX.contains(&name.as_str());
+            if (n == 1) == none || n > 1 {
+                bad.push(format!("{name}: {n} groups, listed no-fx {none}"));
+            }
+        }
+        assert!(
+            bad.is_empty(),
+            "give these one fx group or list them in NO_FX:\n{}",
+            bad.join("\n")
+        );
+        for n in NO_FX {
+            assert!(
+                Event::samples().iter().any(|e| e.variant() == *n),
+                "{n} is no event"
+            );
+        }
+    }
+
     /// 0251 R11: `on_events`를 묶음 넷으로 나눴다 — 어느 사건도 두 묶음에 들지 않고, 그림을 내는 사건은 한 묶음이 맡는다.
     #[test]
     fn every_event_belongs_to_at_most_one_group() {

@@ -469,6 +469,284 @@ pub enum Event {
     },
 }
 
+#[cfg(test)]
+impl Event {
+    /// 갈래의 수(0278 R12 — 사건 덮개 시험).
+    pub const COUNT: usize = 86;
+
+    /// 갈래의 번호(0278 R12): 와일드카드 없는 match라 새 갈래는 여기서 컴파일이 깨진다 — 다음 번호 + `samples`에 표본 한 줄 +
+    /// `COUNT`. 사건 덮개 시험(소리 `app::play` · 이펙트 `fx`)이 표본을 돈다.
+    pub fn ordinal(&self) -> usize {
+        match self {
+            Event::Swing => 0,
+            Event::Deflect { .. } => 1,
+            Event::Hit { .. } => 2,
+            Event::EnemyDown { .. } => 3,
+            Event::PlayerHurt => 4,
+            Event::LockOn => 5,
+            Event::LockOff => 6,
+            Event::LockLost => 7,
+            Event::Turn { .. } => 8,
+            Event::Slam { .. } => 9,
+            Event::CartGo { .. } => 10,
+            Event::Unchain { .. } => 11,
+            Event::CartWarn { .. } => 12,
+            Event::EnemyStrike { .. } => 13,
+            Event::Release { .. } => 14,
+            Event::Rouse { .. } => 15,
+            Event::Ember { .. } => 16,
+            Event::Guard { .. } => 17,
+            Event::GuardBreak { .. } => 18,
+            Event::Ail { .. } => 19,
+            Event::Burn { .. } => 20,
+            Event::Bleed { .. } => 21,
+            Event::Shatter { .. } => 22,
+            Event::Drain { .. } => 23,
+            Event::Toll { .. } => 24,
+            Event::AilBurst { .. } => 25,
+            Event::WeaponSwap { .. } => 26,
+            Event::SwapStrike { .. } => 27,
+            Event::Parry { .. } => 28,
+            Event::Crit { .. } => 29,
+            Event::Plunge { .. } => 30,
+            Event::Charged => 31,
+            Event::Gulp { .. } => 32,
+            Event::FlaskDenied => 33,
+            Event::Smash { .. } => 34,
+            Event::Cast { .. } => 35,
+            Event::Smite { .. } => 36,
+            Event::Sprout { .. } => 37,
+            Event::JavelinBack { .. } => 38,
+            Event::CastDenied => 39,
+            Event::StaminaDenied => 40,
+            Event::Break { .. } => 41,
+            Event::LoadBreak { .. } => 42,
+            Event::Aftershock { .. } => 43,
+            Event::Boom { .. } => 44,
+            Event::Perfect { .. } => 45,
+            Event::Throw => 46,
+            Event::Beat => 47,
+            Event::SkillStart { .. } => 48,
+            Event::Skill { .. } => 49,
+            Event::SkillDenied => 50,
+            Event::UltStart => 51,
+            Event::Ult { .. } => 52,
+            Event::UltReady => 53,
+            Event::SkillBurst { .. } => 54,
+            Event::Mend { .. } => 55,
+            Event::Interrupt { .. } => 56,
+            Event::RootSpike { .. } => 57,
+            Event::Soak { .. } => 58,
+            Event::EchoRing { .. } => 59,
+            Event::ThrowTurn { .. } => 60,
+            Event::ThrowBoom { .. } => 61,
+            Event::ThrowBack { .. } => 62,
+            Event::FieldPulse { .. } => 63,
+            Event::Flurry { .. } => 64,
+            Event::LineCut { .. } => 65,
+            Event::GreatBell { .. } => 66,
+            Event::Blizzard { .. } => 67,
+            Event::ArrowRain { .. } => 68,
+            Event::GaleThrust { .. } => 69,
+            Event::Blink { .. } => 70,
+            Event::AmbushStab { .. } => 71,
+            Event::TempestSweep { .. } => 72,
+            Event::GrovePulse { .. } => 73,
+            Event::PricePulse { .. } => 74,
+            Event::Hexed { .. } => 75,
+            Event::HexJump { .. } => 76,
+            Event::DeathKnell { .. } => 77,
+            Event::Prayer { .. } => 78,
+            Event::SnareSet { .. } => 79,
+            Event::SnareSnap { .. } => 80,
+            Event::ShieldBounce { .. } => 81,
+            Event::Rush { .. } => 82,
+            Event::Sneak { .. } => 83,
+            Event::FuryFull { .. } => 84,
+            Event::Pull { .. } => 85,
+        }
+    }
+
+    /// 갈래마다 표본 하나(0278 R12) — 번호 차례로.
+    pub fn samples() -> Vec<Event> {
+        let at = vec3(1.0, 0.0, -2.0);
+        let dir = Vec3::Z;
+        vec![
+            Event::Swing,
+            Event::Deflect { at },
+            Event::Hit { at },
+            Event::EnemyDown { at },
+            Event::PlayerHurt,
+            Event::LockOn,
+            Event::LockOff,
+            Event::LockLost,
+            Event::Turn { quarters: 1 },
+            Event::Slam { at },
+            Event::CartGo { at },
+            Event::Unchain { at },
+            Event::CartWarn { at },
+            Event::EnemyStrike {
+                at,
+                dir,
+                blow: crate::enemy::Blow::Around { r: 1.6 },
+                boss: false,
+            },
+            Event::Release { at },
+            Event::Rouse { at },
+            Event::Ember { value: 3 },
+            Event::Guard { at },
+            Event::GuardBreak { at },
+            Event::Ail {
+                at,
+                kind: crate::status::Kind::Ember,
+            },
+            Event::Burn { at },
+            Event::Bleed { at, dir },
+            Event::Shatter { at },
+            Event::Drain { from: at },
+            Event::Toll { at, radius: 3.0 },
+            Event::AilBurst { at, radius: 2.5 },
+            Event::WeaponSwap {
+                to: weapons::Id::Hammer,
+            },
+            Event::SwapStrike {
+                at,
+                dir,
+                to: weapons::Id::Hammer,
+            },
+            Event::Parry { at },
+            Event::Crit { at },
+            Event::Plunge { at },
+            Event::Charged,
+            Event::Gulp { at },
+            Event::FlaskDenied,
+            Event::Smash { at },
+            Event::Cast {
+                at,
+                look: weapons::AXE,
+            },
+            Event::Smite { at, radius: 1.4 },
+            Event::Sprout { at, radius: 1.6 },
+            Event::JavelinBack { at },
+            Event::CastDenied,
+            Event::StaminaDenied,
+            Event::Break { at },
+            Event::LoadBreak { at },
+            Event::Aftershock { at },
+            Event::Boom { at },
+            Event::Perfect { at },
+            Event::Throw,
+            Event::Beat,
+            Event::SkillStart {
+                id: skills::Id::Whirl,
+            },
+            Event::Skill {
+                id: skills::Id::Whirl,
+                at,
+                dir,
+            },
+            Event::SkillDenied,
+            Event::UltStart,
+            Event::Ult { at },
+            Event::UltReady,
+            Event::SkillBurst { at },
+            Event::Mend { at },
+            Event::Interrupt { at },
+            Event::RootSpike { at },
+            Event::Soak { at, n: 2 },
+            Event::EchoRing { at, radius: 4.0 },
+            Event::ThrowTurn { at },
+            Event::ThrowBoom { at, radius: 2.5 },
+            Event::ThrowBack { at },
+            Event::FieldPulse {
+                at,
+                radius: 4.0,
+                kind: crate::status::Kind::Ember,
+            },
+            Event::Flurry { at },
+            Event::LineCut {
+                at,
+                dir,
+                len: 12.0,
+                half: 1.2,
+            },
+            Event::GreatBell { at, radius: 6.0 },
+            Event::Blizzard { at, radius: 5.0 },
+            Event::ArrowRain {
+                from: Vec3::ZERO,
+                at,
+                radius: 3.0,
+            },
+            Event::GaleThrust {
+                at,
+                dir,
+                len: 6.0,
+                half: 0.8,
+                last: false,
+            },
+            Event::Blink {
+                from: Vec3::ZERO,
+                to: at,
+            },
+            Event::AmbushStab {
+                at,
+                dir,
+                last: false,
+            },
+            Event::TempestSweep {
+                at,
+                radius: 3.0,
+                last: false,
+            },
+            Event::GrovePulse {
+                at,
+                radius: 3.0,
+                last: false,
+            },
+            Event::PricePulse {
+                at,
+                radius: 3.0,
+                last: false,
+            },
+            Event::Hexed { at },
+            Event::HexJump {
+                from: Vec3::ZERO,
+                to: at,
+            },
+            Event::DeathKnell { at },
+            Event::Prayer { at, radius: 3.0 },
+            Event::SnareSet { at },
+            Event::SnareSnap { at },
+            Event::ShieldBounce { at },
+            Event::Rush {
+                at,
+                dir,
+                power: 0.6,
+            },
+            Event::Sneak { at },
+            Event::FuryFull { at },
+            Event::Pull { at },
+        ]
+    }
+
+    /// 갈래의 이름(Debug의 머리) — 덮개 시험의 목록이 읽는다.
+    pub fn variant(&self) -> String {
+        let d = format!("{self:?}");
+        d.split([' ', '{', '(']).next().unwrap_or("").to_string()
+    }
+}
+
+/// 0278 R12: 표본이 갈래마다 하나씩, 번호 차례로 빠짐없이 있다.
+#[cfg(test)]
+#[test]
+fn event_samples_cover_every_variant_once() {
+    let s = Event::samples();
+    assert_eq!(s.len(), Event::COUNT, "one sample per variant");
+    for (i, e) in s.iter().enumerate() {
+        assert_eq!(e.ordinal(), i, "{e:?} out of order");
+    }
+}
+
 /// 금 간 땅(0051, 망치 여진): `left`초 뒤 둘레를 친다.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Crack {
