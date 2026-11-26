@@ -1191,8 +1191,15 @@ pub fn rb_icon(w: &crate::world::World) -> Kind {
 
 /// 종류의 RB 꼴(`weapons::Bolt::look`) → 그림(0274 ②b). 마법 탄(0 · 1 · 2)은 별.
 pub fn toss_icon(look: u8) -> Kind {
+    toss_icon_of(look).unwrap_or(Kind::Cast)
+}
+
+/// 꼴마다의 그림 — `None` = 표에 없는 꼴(별로 넘어간다). 꼴은 아직 수라 와일드카드가 남는다(R17에서 enum) — 쓰이는 꼴은 모두 제
+/// 갈래가 있는지 시험이 본다(`app::equip`의 `every_toss_look_has_a_name_and_an_icon`, 0278 R14).
+pub fn toss_icon_of(look: u8) -> Option<Kind> {
     use crate::weapons::{AXE, CURSE, JAVELIN, KNIFE, LIGHT, QUAKE, SEED, SHIELD, STONE};
-    match look {
+    Some(match look {
+        0..=2 => Kind::Cast,
         CURSE => Kind::CurseBolt,
         AXE => Kind::HandAxe,
         QUAKE => Kind::Quake2,
@@ -1202,8 +1209,8 @@ pub fn toss_icon(look: u8) -> Kind {
         LIGHT => Kind::Smite,
         JAVELIN => Kind::Javelin,
         STONE => Kind::Pebble,
-        _ => Kind::Cast,
-    }
+        _ => return None,
+    })
 }
 
 pub fn draw(o: &Overlay, v: &View) {

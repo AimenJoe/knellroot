@@ -207,24 +207,61 @@ fn a_dragged_lane_skill_goes_the_finger_way_not_the_walking_way() {
     assert!(d.y.abs() > d.x.abs() * 3.0, "walking way: {d:?}");
 }
 
-/// 둥근 꼴(쟁반·버티기·되울림·불티)은 쪽이 없다 — 그 스킬이 끼워진 버튼은 끌지 않는다(톡 = 바로).
+/// 둥근 꼴(쟁반·버티기·되울림·불티)은 쪽이 없다 — 그 스킬이 끼워진 버튼은 끌지 않는다(톡 = 바로). 0278 R14: 목록을 베껴 쓰지 않고
+/// 월드에 묻는다 — 바라보는 쪽(-z)과 다른 쪽(+x)으로 끌어 쓰면, `aims`인 모양만 시작하는 쪽이 끈 쪽을 따른다(`skill_dir`).
 #[test]
 fn only_skills_with_a_direction_take_the_drag() {
-    use skills::Form;
+    let t = Tuning::default();
     for s in &skills::SKILLS {
-        let (id, form) = (s.id, s.form);
-        let round = matches!(
-            form,
-            Form::Ring { .. }
-                | Form::Brace { .. }
-                | Form::Echo { .. }
-                | Form::Field { .. }
-                | Form::Wave { .. }
-                | Form::Rally { .. }
-                | Form::Reap { .. }
+        let id = s.id;
+        let mut w = World::new("test", 40.0);
+        w.player.facing = std::f32::consts::PI; // -z
+        hold_for_skill(&mut w, id);
+        w.set_skills(skills::Loadout::from([id, skills::sane([id, id])[1]]));
+        w.step(
+            &Actions {
+                skill1: true,
+                aim: vec2(1.0, 0.0),
+                aim_drag: true,
+                ..Default::default()
+            },
+            &t,
         );
-        assert_eq!(form.aims(), !round, "{id:?}");
+        let PState::Skill { dir, .. } = w.player.state else {
+            panic!("{id:?} did not start: {:?}", w.player.state)
+        };
+        // 끈 쪽으로 돈다(한 틱에 다 돌지 않는 모양도 있다 — 가로지르기) · 바라보는 쪽 그대로는 -z 그대로.
+        let took = dir.x > 0.5;
+        assert!(
+            took || dir.z < -0.9,
+            "{id:?}: neither the drag nor the facing: {dir:?}"
+        );
+        assert_eq!(
+            s.form.aims(),
+            took,
+            "{id:?}: aims() vs the way it went {dir:?}"
+        );
     }
+}
+
+/// 스킬 `id`를 쓸 수 있는 것을 든다: 검 → 검과 방패 → 무기 표의 차례.
+fn hold_for_skill(w: &mut World, id: skills::Id) {
+    let def = id.def();
+    if def.fits(w.grip()) {
+        return;
+    }
+    w.set_shield(Some(crate::shield::Id::Pilgrim));
+    if def.fits(w.grip()) {
+        return;
+    }
+    w.set_shield(None);
+    for arm in weapons::IDS {
+        w.set_weapon(arm);
+        if def.fits(w.grip()) {
+            return;
+        }
+    }
+    panic!("{id:?} fits nothing");
 }
 
 /// 쇠뇌의 첫 볼트 쪽(수평).

@@ -1861,9 +1861,11 @@ impl World {
         }
         if !hexes.is_empty() {
             let d = self.skill_eff(skills::Id::Hex);
-            let spread = match d.skill.form {
-                Form::Hex { spread, .. } => spread,
-                _ => 0.0,
+            // 저주 새기기의 모양에서(그 스킬의 것 — 다른 모양이면 옮지 않는다).
+            let spread = if let Form::Hex { spread, .. } = d.skill.form {
+                spread
+            } else {
+                0.0
             };
             let n = if matches!(d.twist, Some(Twist::Twice)) {
                 2
@@ -2065,26 +2067,29 @@ impl World {
         }
     }
 
-    /// 스킬 칸 `slot`의 스킬이 남긴 것이 이어지는 몫 0..1(0 = 없음) — 되울림의 울림·잔불 흩기의 불티·눈발·덫(HUD·터치 칸).
+    /// 스킬 칸 `slot`의 스킬이 남긴 것이 이어지는 몫 0..1(0 = 없음) — 되울림의 울림, 바닥에 놓는 모양(`Form::leaves_field` —
+    /// 잔불 흩기의 불티 · 눈발 · 시드는 그늘 · 뿌리 덫 · 화약 덫)의 남은 것(HUD·터치 칸). 이름 목록이 아니라 모양에서 — 0278 R14
+    /// 앞에는 시드는 그늘이 목록에 없어 늘 0이었다.
     pub fn skill_active(&self, slot: usize) -> f32 {
         let pl = &self.player;
-        match pl.skill.worn[slot % 2] {
-            skills::Id::Echo if pl.skill.echo_left > 0.0 => {
-                (pl.skill.echo_left / pl.skill.echo_total.max(1e-3)).clamp(0.0, 1.0)
+        let id = pl.skill.worn[slot % 2];
+        let form = id.def().form;
+        if let skills::Form::Echo { .. } = form {
+            if pl.skill.echo_left > 0.0 {
+                return (pl.skill.echo_left / pl.skill.echo_total.max(1e-3)).clamp(0.0, 1.0);
             }
-            // 놓인 것(0270 C3 — 눈발·뿌리 덫도, 0272 화약 덫): 그 스킬의 타입·꼴의 것만.
-            id @ (skills::Id::Embers | skills::Id::Snow | skills::Id::Snare | skills::Id::Mine) => {
-                self.skill_fields
-                    .iter()
-                    .filter(|f| {
-                        f.dose.0 == id.def().kind
-                            && f.trap == matches!(id, skills::Id::Snare | skills::Id::Mine)
-                    })
-                    .map(|f| f.left())
-                    .fold(0.0, f32::max)
-            }
-            _ => 0.0,
+            return 0.0;
         }
+        if !form.leaves_field() {
+            return 0.0;
+        }
+        // 놓인 것(0270 C3 — 눈발·뿌리 덫도, 0272 화약 덫, 0274 ⑥ 시드는 그늘): 그 스킬의 타입·꼴(덫인가)의 것만.
+        let trap = matches!(form, skills::Form::Trap { .. });
+        self.skill_fields
+            .iter()
+            .filter(|f| f.dose.0 == id.def().kind && f.trap == trap)
+            .map(|f| f.left())
+            .fold(0.0, f32::max)
     }
 
     /// 몰아치기(·눈보라 0270 C3 ·화살비 0272)가 이어지는 몫 0..1(0 = 아니다) — HUD가 큰 기술 게이지를 줄어드는 막대로 그린다.

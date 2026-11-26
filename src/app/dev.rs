@@ -191,6 +191,45 @@ pub(super) fn dev_items(tab: usize) -> Vec<DevStart> {
 }
 
 impl DevStart {
+    /// 상자 곁 줄이면 (지역, 그 상자의 것 — `None` = 그 지역의 첫 상자)(와일드카드 없이 — 0278 R14). 대검 · 낫의 상자는 셋째 지역
+    /// (두 문지기를 이긴 셈), 완드 · 쇠뇌 · 지팡이는 넷째 지역(작업층 — 셋을 이긴 셈), 성소의 옛 무기 상자 둘(0274 ⑦)은 첫 지역
+    /// (건너지 않는다), 나머지는 둘째 지역.
+    fn chest(self) -> Option<(usize, Option<crate::stage::Loot>)> {
+        use crate::stage::Loot;
+        use crate::weapons::Id as W;
+        Some(match self {
+            DevStart::Chest => (1, None),
+            DevStart::SpearChest => (1, Some(Loot::Weapon(W::Spear))),
+            DevStart::DaggerChest => (1, Some(Loot::Weapon(W::Daggers))),
+            DevStart::GreatswordChest => (2, Some(Loot::Weapon(W::Greatsword))),
+            DevStart::ScytheChest => (2, Some(Loot::Weapon(W::Scythe))),
+            DevStart::WandChest => (3, Some(Loot::Weapon(W::Wand))),
+            DevStart::CrossbowChest => (3, Some(Loot::Weapon(W::Crossbow))),
+            DevStart::StaffChest => (3, Some(Loot::Weapon(W::Staff))),
+            DevStart::WallChest => (0, Some(Loot::Stone)),
+            DevStart::SpareChest => (0, Some(Loot::Spare)),
+            DevStart::Entrance
+            | DevStart::Gate
+            | DevStart::Village
+            | DevStart::Garden
+            | DevStart::Works
+            | DevStart::Prologue
+            | DevStart::Residents
+            | DevStart::Stones
+            | DevStart::Field
+            | DevStart::Scenario(_)
+            | DevStart::Lab
+            | DevStart::Skills
+            | DevStart::SkillsMax
+            | DevStart::SkillsFlip
+            | DevStart::Arm
+            | DevStart::ArmSub
+            | DevStart::ArmBare
+            | DevStart::PerfLine
+            | DevStart::Motion(_) => return None,
+        })
+    }
+
     fn name(self) -> &'static str {
         match self {
             DevStart::Entrance => t(dv::ENTRANCE),
@@ -440,34 +479,17 @@ impl App {
             | DevStart::SpareChest
             | DevStart::CrossbowChest
             | DevStart::StaffChest => {
-                use crate::stage::Loot;
-                use crate::weapons::Id as W;
                 self.dev.run = true;
                 self.restart();
                 // 대검 · 낫의 상자는 셋째 지역(두 문지기를 이긴 셈), 완드 · 쇠뇌 · 지팡이는 넷째 지역(작업층 — 셋을 이긴 셈), 성소의 옛 무기
                 // 상자 둘(0274 ⑦)은 첫 지역(건너지 않는다), 나머지는 둘째 지역.
-                let region = match e {
-                    DevStart::GreatswordChest | DevStart::ScytheChest => 2,
-                    DevStart::WandChest | DevStart::CrossbowChest | DevStart::StaffChest => 3,
-                    DevStart::WallChest | DevStart::SpareChest => 0,
-                    _ => 1,
+                let Some((region, loot)) = e.chest() else {
+                    return;
                 };
                 if region > 0 {
                     self.down = region;
                     self.cross_to(region, false);
                 }
-                let loot = match e {
-                    DevStart::SpearChest => Some(Loot::Weapon(W::Spear)),
-                    DevStart::DaggerChest => Some(Loot::Weapon(W::Daggers)),
-                    DevStart::GreatswordChest => Some(Loot::Weapon(W::Greatsword)),
-                    DevStart::ScytheChest => Some(Loot::Weapon(W::Scythe)),
-                    DevStart::WandChest => Some(Loot::Weapon(W::Wand)),
-                    DevStart::CrossbowChest => Some(Loot::Weapon(W::Crossbow)),
-                    DevStart::StaffChest => Some(Loot::Weapon(W::Staff)),
-                    DevStart::WallChest => Some(Loot::Stone),
-                    DevStart::SpareChest => Some(Loot::Spare),
-                    _ => None,
-                };
                 let which = match loot {
                     Some(l) => self.run.def.chest_loot.iter().position(|x| *x == l),
                     None => Some(0),

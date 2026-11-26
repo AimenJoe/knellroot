@@ -1959,12 +1959,26 @@ impl World {
     pub fn hit_of(&self, i: u8) -> Option<weapons::Hit> {
         let wpn = self.player.weapon.def();
         let mut h = *wpn.hit(i)?;
+        // 결마다(와일드카드 없이 — 0278 R14): 타의 꼴을 바꾸는 결만 여기, 나머지는 제 동사의 자리에서.
+        use weapons::Bare;
         match self.bare() {
-            Some(weapons::Bare::TwoHands) if i != weapons::DASH && wpn.after(i).is_none() => {
-                h.arc *= weapons::BARE_SWORD_LAST_ARC;
+            Some(Bare::TwoHands) => {
+                if i != weapons::DASH && wpn.after(i).is_none() {
+                    h.arc *= weapons::BARE_SWORD_LAST_ARC;
+                }
             }
-            Some(weapons::Bare::LongGrip) => h.reach *= weapons::BARE_SPEAR_REACH,
-            _ => {}
+            Some(Bare::LongGrip) => h.reach *= weapons::BARE_SPEAR_REACH,
+            Some(
+                Bare::Prayer
+                | Bare::Weave
+                | Bare::Snare
+                | Bare::LightStep
+                | Bare::ShadowStep
+                | Bare::Reckless
+                | Bare::GroundHand
+                | Bare::PactMark,
+            )
+            | None => {}
         }
         Some(h)
     }

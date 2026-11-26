@@ -2479,8 +2479,11 @@ impl Fx {
         let pp = w.player.pos;
         let g = vec3(pp.x, w.ground_y(pp), pp.z);
         let d = w.skill_eff(id);
-        match (id, d.skill.form) {
-            (Sk::Brace, Form::Brace { hold, radius, .. }) => {
+        match id {
+            Sk::Brace => {
+                let Form::Brace { hold, radius, .. } = d.skill.form else {
+                    return;
+                };
                 // 반짝이며 조여드는 고리 둘(버티는 동안 몸을 따라간다 — 끊기면 지운다).
                 for (delay, col) in [(0.0, GOLD), (hold * 0.5, WHITE_HOT)] {
                     self.mark_with(
@@ -2498,10 +2501,40 @@ impl Fx {
                 }
                 self.dust_ring(g, 0.4, 6, 1.6, 0.45, DUST);
             }
-            (Sk::Echo, _) => self.implode(g, 1.8, 8, MINT),
-            (Sk::Embers, _) => self.implode(g, 1.6, 8, AMBER),
-            (Sk::Gather, Form::Pull { .. }) => {}
-            _ => {}
+            Sk::Echo => self.implode(g, 1.8, 8, MINT),
+            Sk::Embers => self.implode(g, 1.6, 8, AMBER),
+            // 나머지는 시동의 조짐이 없다 — 판정의 서명(`on_skill`)만(와일드카드 없이, 0278 R14).
+            Sk::Whirl
+            | Sk::Cut
+            | Sk::Gather
+            | Sk::Quake
+            | Sk::Throw
+            | Sk::Swallow
+            | Sk::Bash
+            | Sk::Roots
+            | Sk::Stitch
+            | Sk::Ram
+            | Sk::Toll
+            | Sk::Swat
+            | Sk::Ripple
+            | Sk::Snow
+            | Sk::Flare
+            | Sk::Snare
+            | Sk::Fuse
+            | Sk::Mine
+            | Sk::Skewer
+            | Sk::Pole
+            | Sk::Pin
+            | Sk::Pommel
+            | Sk::Shove
+            | Sk::Rally
+            | Sk::Slip
+            | Sk::Sunder
+            | Sk::Sear
+            | Sk::Reap
+            | Sk::Harvest
+            | Sk::Hex
+            | Sk::Blight => {}
         }
     }
 
@@ -2510,9 +2543,13 @@ impl Fx {
         use crate::skills::{Form, Id as Sk};
         let g = vec3(at.x, w.ground_y(at), at.z);
         let d = w.skill_eff(id);
-        match (id, d.skill.form) {
+        // 스킬마다 한 갈래(와일드카드 없이 — 0278 R14): 모양은 그 스킬의 것이라 갈래 안에서 풀어 쓴다.
+        match id {
             // 휘돌이: 바퀴마다 닿는 거리까지 번지는 금빛 고리 + 둘레에서 바깥으로 튀는 빛줄 + 먼지 고리.
-            (Sk::Whirl, Form::Ring { radius, gap, .. }) => {
+            Sk::Whirl => {
+                let Form::Ring { radius, gap, .. } = d.skill.form else {
+                    return;
+                };
                 self.mark_with(
                     g,
                     MarkKind::Ring {
@@ -2537,7 +2574,10 @@ impl Fx {
                 self.dust_ring(g, radius * 0.55, 12, 5.0, 0.55, DUST);
             }
             // 가로지르기: 떠난 자리의 잔상(큰 민트 별) + 길 전체에 오래 남는 빛 띠 + 뒤로 차이는 먼지.
-            (Sk::Cut, Form::Lane { dist, half, .. }) => {
+            Sk::Cut => {
+                let Form::Lane { dist, half, .. } = d.skill.form else {
+                    return;
+                };
                 self.star(g + Vec3::Y * 0.9, 1.9, 0.12, MINT);
                 self.star(g + Vec3::Y * 0.9, 1.0, 0.09, WHITE_HOT);
                 self.mark(
@@ -2553,7 +2593,10 @@ impl Fx {
                 self.dust_kick(g, -dir, 5, 0.5);
             }
             // 끌어모으기: 모이는 점으로 빨려드는 빛줄 + 조여드는 고리 + 한가운데의 작은 민트빛 터짐.
-            (Sk::Gather, Form::Pull { range, .. }) => {
+            Sk::Gather => {
+                let Form::Pull { range, .. } = d.skill.form else {
+                    return;
+                };
                 self.mark(
                     g,
                     MarkKind::Converge {
@@ -2577,7 +2620,10 @@ impl Fx {
                 self.dust_ring(g, 2.4, 10, -3.2, 0.5, DUST);
             }
             // 땅울림: 찍은 자리의 별 + 부채꼴을 가로질러 달리는 충격파 + 갈라지는 땅 + 튀어 오르는 돌과 먼지.
-            (Sk::Quake, Form::Cone { range, arc_deg, .. }) => {
+            Sk::Quake => {
+                let Form::Cone { range, arc_deg, .. } = d.skill.form else {
+                    return;
+                };
                 let c = g + dir * 1.2;
                 self.star(c + Vec3::Y * 0.3, 2.2, 0.13, WHITE_HOT);
                 self.mark(
@@ -2607,7 +2653,10 @@ impl Fx {
                 self.chips(g, dir, range, arc_deg, 12);
             }
             // 버팀의 터뜨림: 흰 큰 별 + 닿는 거리까지 터지는 고리 둘 + 받아낸 만큼 많아지는 금빛 줄 + 먼지.
-            (Sk::Brace, Form::Brace { radius, .. }) => {
+            Sk::Brace => {
+                let Form::Brace { radius, .. } = d.skill.form else {
+                    return;
+                };
                 let n = w.player.skill.brace_soaked as usize;
                 self.star(g + Vec3::Y * 0.8, 2.0 + 0.4 * n as f32, 0.13, WHITE_HOT);
                 self.mark(
@@ -2643,7 +2692,10 @@ impl Fx {
                 self.dust_ring(g, 0.8, 10, 4.5, 0.6, DUST);
             }
             // 되울림을 둘렀다: 가운데에서 번지는 잔물결 셋(작게 — 닿는 거리의 반까지) + 가슴 높이의 민트빛 별.
-            (Sk::Echo, Form::Echo { radius, .. }) => {
+            Sk::Echo => {
+                let Form::Echo { radius, .. } = d.skill.form else {
+                    return;
+                };
                 self.star(g + Vec3::Y * 1.1, 1.4, 0.13, MINT);
                 for i in 0..3 {
                     self.mark_with(
@@ -2661,7 +2713,7 @@ impl Fx {
                 }
             }
             // 던지기: 손을 떠나는 순간의 흰 별 + 던진 쪽으로 튀는 금빛 줄.
-            (Sk::Throw, _) => {
+            Sk::Throw => {
                 let hand = g + Vec3::Y * 1.0 + dir * 0.6;
                 self.star(hand, 1.2, 0.09, WHITE_HOT);
                 self.spray(
@@ -2680,7 +2732,10 @@ impl Fx {
                 self.dust_kick(g, -dir, 3, 0.4);
             }
             // 잔불 흩기: 가운데에서 가장자리로 번지는 호박빛 고리 + 사방으로 흩어지는 불티.
-            (Sk::Embers, Form::Field { radius, .. }) => {
+            Sk::Embers => {
+                let Form::Field { radius, .. } = d.skill.form else {
+                    return;
+                };
                 self.star(g + Vec3::Y * 0.6, 1.5, 0.12, GOLD);
                 self.mark(
                     g,
@@ -2711,7 +2766,10 @@ impl Fx {
                 }
             }
             // 제비걸음(0214): 걸음마다 떠나는 자리의 흰 별 + 뛰어드는 쪽으로 짧은 금빛 띠 + 차이는 먼지.
-            (Sk::Swallow, Form::Hop { .. }) => {
+            Sk::Swallow => {
+                let Form::Hop { .. } = d.skill.form else {
+                    return;
+                };
                 self.star(g + Vec3::Y * 0.9, 1.2, 0.09, WHITE_HOT);
                 self.mark(
                     g,
@@ -2726,7 +2784,10 @@ impl Fx {
                 self.dust_kick(g, -dir, 3, 0.4);
             }
             // 막아치기(0214): 내민 자리의 흰 별 + 짧은 부채꼴 충격파(민트) — 끊긴 적은 따로(`Interrupt`).
-            (Sk::Bash, Form::Bash { range, arc_deg, .. }) => {
+            Sk::Bash => {
+                let Form::Bash { range, arc_deg, .. } = d.skill.form else {
+                    return;
+                };
                 self.star(g + dir * 0.9 + Vec3::Y * 0.9, 1.6, 0.1, WHITE_HOT);
                 self.mark(
                     g,
@@ -2741,7 +2802,10 @@ impl Fx {
                 );
             }
             // 바늘땀(0270 C3): 땀마다 — 바늘 끝의 작은 흰 별 + 찌른 줄을 따라 짧게 번쩍이는 흰 띠 + 앞으로 튀는 바늘빛 몇.
-            (Sk::Stitch, Form::Stab { range, .. }) => {
+            Sk::Stitch => {
+                let Form::Stab { range, .. } = d.skill.form else {
+                    return;
+                };
                 let tip = g + Vec3::Y * 0.9 + dir * range * 0.75;
                 self.star(tip, 0.9, 0.07, WHITE_HOT);
                 self.mark(
@@ -2769,7 +2833,10 @@ impl Fx {
                 );
             }
             // 방패 돌진(0270 C3): 방패 앞의 금빛 별 + 앞으로 터지는 좁은 충격파 + 지나갈 길의 금빛 띠 + 뒤로 차이는 먼지 많이.
-            (Sk::Ram, Form::Lane { dist, half, .. }) => {
+            Sk::Ram => {
+                let Form::Lane { dist, half, .. } = d.skill.form else {
+                    return;
+                };
                 let front = g + Vec3::Y * 0.8 + dir * 0.7;
                 self.star(front, 1.5, 0.11, GOLD);
                 self.mark(
@@ -2796,7 +2863,10 @@ impl Fx {
                 self.dust_kick(g, -dir, 7, 0.55);
             }
             // 종 치기(0270 C3): 친 자리의 큰 흰 별 + 그 자리에서 한 번 번지는 민트 고리(종이 걸렸다) + 위로 튀는 금빛 몇.
-            (Sk::Toll, Form::Bell { range, .. }) => {
+            Sk::Toll => {
+                let Form::Bell { range, .. } = d.skill.form else {
+                    return;
+                };
                 let hit = g + dir * (range * 0.6);
                 self.star(hit + Vec3::Y * 1.0, 1.7, 0.12, WHITE_HOT);
                 self.mark(hit, MarkKind::Ring { r0: 0.2, r1: 1.1 }, 0.3, MINT);
@@ -2815,7 +2885,10 @@ impl Fx {
                 );
             }
             // 저주 새기기(0274 ⑥): 내민 완드 끝의 하늘빛 별 + 앞으로 곧게 뻗는 가는 잿빛 줄(새김은 맞은 적의 `Hexed`가).
-            (Sk::Hex, Form::Hex { .. }) => {
+            Sk::Hex => {
+                let Form::Hex { .. } = d.skill.form else {
+                    return;
+                };
                 let hand = g + Vec3::Y * 1.1 + dir * 0.6;
                 self.star(hand, 1.0, 0.08, SKY);
                 self.spray(
@@ -2833,7 +2906,10 @@ impl Fx {
                 );
             }
             // 시드는 그늘(0274 ⑥): 놓인 자리에서 퍼지는 하늘빛 고리 + 둘레에서 가라앉는 잿빛(그늘이 드리운다 — 치는 것은 그늘의 타).
-            (Sk::Blight, Form::Drift { radius, .. }) => {
+            Sk::Blight => {
+                let Form::Drift { radius, .. } = d.skill.form else {
+                    return;
+                };
                 self.mark(
                     g,
                     MarkKind::Ring {
@@ -2846,7 +2922,10 @@ impl Fx {
                 self.dust_ring(g, radius * 0.8, 12, 1.5, 0.5, SMOKE);
             }
             // 눈발(0270 C3): 놓인 자리 위에서 퍼지는 흰 서리빛 고리 + 위에서 내려앉는 눈송이(별 없음 — 치는 것은 눈발의 타).
-            (Sk::Snow, Form::Drift { radius, .. }) => {
+            Sk::Snow => {
+                let Form::Drift { radius, .. } = d.skill.form else {
+                    return;
+                };
                 self.mark(
                     g,
                     MarkKind::Ring {
@@ -2876,7 +2955,10 @@ impl Fx {
                 }
             }
             // 불길(0270 C3): 손끝의 호박빛 별 + 앞으로 내뿜는 부채꼴의 불 줄기(땅의 호박빛 충격파 + 앞으로 흩어지는 불티).
-            (Sk::Flare, Form::Cone { range, arc_deg, .. }) => {
+            Sk::Flare => {
+                let Form::Cone { range, arc_deg, .. } = d.skill.form else {
+                    return;
+                };
                 let hand = g + Vec3::Y * 1.0 + dir * 0.6;
                 self.star(hand, 1.3, 0.1, AMBER);
                 self.mark(
@@ -2906,7 +2988,10 @@ impl Fx {
             }
             // 땅 가르기(0274 ④): 내리친 자리의 흰 별 + 좁게 앞으로 달리는 충격파 + 길게 갈라지는 땅(균열의 보랏빛 — 생물의 색이 아니라
             // 이펙트) + 튀는 돌.
-            (Sk::Sunder, Form::Cone { range, arc_deg, .. }) => {
+            Sk::Sunder => {
+                let Form::Cone { range, arc_deg, .. } = d.skill.form else {
+                    return;
+                };
                 let c = g + dir * 0.9;
                 self.star(c + Vec3::Y * 0.3, 2.0, 0.12, WHITE_HOT);
                 self.mark(
@@ -2935,7 +3020,10 @@ impl Fx {
                 self.chips(g, dir, range, arc_deg, 8);
             }
             // 불씨 휩쓸기(0274 ④): 날이 지난 넓은 호의 잔불빛 충격파 + 날을 따라 흩어지는 불씨.
-            (Sk::Sear, Form::Cone { range, arc_deg, .. }) => {
+            Sk::Sear => {
+                let Form::Cone { range, arc_deg, .. } = d.skill.form else {
+                    return;
+                };
                 let hand = g + Vec3::Y * 0.9 + dir * 0.8;
                 self.star(hand, 1.2, 0.1, AMBER);
                 self.mark(
@@ -2964,7 +3052,10 @@ impl Fx {
                 );
             }
             // 뿌리 덫(0270 C3): 심은 자리의 작은 흙빛 고리 + 튀는 흙 몇(씨가 땅에 들었다).
-            (Sk::Snare, Form::Trap { radius, .. }) => {
+            Sk::Snare => {
+                let Form::Trap { radius, .. } = d.skill.form else {
+                    return;
+                };
                 self.mark(
                     g,
                     MarkKind::Ring {
@@ -2977,7 +3068,10 @@ impl Fx {
                 self.dust_ring(g, 0.2, 6, 1.6, 0.35, DUST);
             }
             // 심지 볼트(0272): 쇠뇌 끝의 흰 번쩍임 + 날아간 쪽으로 남는 짧은 노란 빛 띠 + 뒤로 튀는 심지 불똥.
-            (Sk::Fuse, Form::Bell { .. }) => {
+            Sk::Fuse => {
+                let Form::Bell { .. } = d.skill.form else {
+                    return;
+                };
                 let muzzle = g + Vec3::Y * 1.0 + dir * 0.7;
                 self.star(muzzle, 1.2, 0.1, WHITE_HOT);
                 self.mark(
@@ -3005,7 +3099,10 @@ impl Fx {
                 );
             }
             // 화약 덫(0272): 묻은 자리로 조여드는 노란 고리 + 튀는 흙 + 심지의 불똥 몇(화약이 땅에 들었다).
-            (Sk::Mine, Form::Trap { radius, .. }) => {
+            Sk::Mine => {
+                let Form::Trap { radius, .. } = d.skill.form else {
+                    return;
+                };
                 self.mark(
                     g,
                     MarkKind::Ring {
@@ -3032,7 +3129,10 @@ impl Fx {
             }
             // 꿰뚫기(0272 2단계 — 창): 떠난 자리의 강철빛 별 + 길 전체에 남는 좁은 흰 띠 + 길 끝의 작은 고리(멈춰 선 자리) +
             // 앞으로 튀는 강철빛 줄 + 뒤로 차이는 먼지.
-            (Sk::Skewer, Form::Lane { dist, half, .. }) => {
+            Sk::Skewer => {
+                let Form::Lane { dist, half, .. } = d.skill.form else {
+                    return;
+                };
                 self.star(g + Vec3::Y * 0.9, 1.5, 0.1, STEEL);
                 self.mark(
                     g,
@@ -3067,7 +3167,10 @@ impl Fx {
             }
             // 장대 휩쓸기(0272 2단계 — 창): 자루가 지난 둘레 끝까지 퍼지는 온 바퀴 충격파(강철빛) + 둘레 끝의 바깥으로 튀는 빛줄 +
             // 넓은 먼지 고리 — 휘돌이(금빛 고리 둘)와 갈린다.
-            (Sk::Pole, Form::Ring { radius, .. }) => {
+            Sk::Pole => {
+                let Form::Ring { radius, .. } = d.skill.form else {
+                    return;
+                };
                 self.star(g + Vec3::Y * 0.9, 1.6, 0.11, WHITE_HOT);
                 self.mark(
                     g,
@@ -3092,7 +3195,10 @@ impl Fx {
                 self.dust_ring(g, radius * 0.7, 16, 5.5, 0.6, DUST);
             }
             // 못 박기(0272 2단계 — 창·뿌리): 창끝의 흰 별 + 찌른 줄의 짧은 띠 + 꽂힌 자리에서 조여드는 뿌리빛 고리 + 땅으로 튀는 뿌리빛.
-            (Sk::Pin, Form::Stab { range, .. }) => {
+            Sk::Pin => {
+                let Form::Stab { range, .. } = d.skill.form else {
+                    return;
+                };
                 let tip = g + dir * range * 0.8;
                 self.star(tip + Vec3::Y * 0.9, 1.3, 0.09, WHITE_HOT);
                 self.mark(tip, MarkKind::Ring { r0: 1.1, r1: 0.25 }, 0.4, RIFT_ROOT);
@@ -3121,7 +3227,10 @@ impl Fx {
                 );
             }
             // 후려치기(0270 C3): 휘두른 쪽의 큰 노란 별 + 넓은 부채꼴 충격파 + 옆으로 흩어지는 돌 부스러기.
-            (Sk::Swat, Form::Cone { range, arc_deg, .. }) => {
+            Sk::Swat => {
+                let Form::Cone { range, arc_deg, .. } = d.skill.form else {
+                    return;
+                };
                 let c = g + dir * 1.0;
                 self.star(c + Vec3::Y * 0.8, 2.0, 0.12, SHOCK);
                 self.mark(
@@ -3139,7 +3248,10 @@ impl Fx {
                 self.dust_kick(g, dir, 4, 0.5);
             }
             // 파문(0270 C3): 내리찍은 자리의 별 + 둘레까지 번지는 흰 고리와 늦게 따라오는 민트 고리 + 둥근 먼지.
-            (Sk::Ripple, Form::Wave { radius, time }) => {
+            Sk::Ripple => {
+                let Form::Wave { radius, time } = d.skill.form else {
+                    return;
+                };
                 self.star(g + Vec3::Y * 0.3, 1.8, 0.12, WHITE_HOT);
                 self.mark_with(
                     g,
@@ -3168,7 +3280,10 @@ impl Fx {
                 self.dust_ring(g, 0.6, 14, 5.5, 0.6, DUST);
             }
             // 뿌리 솟기(0214): 뿌리가 솟을 길을 따라 먼저 달리는 땅의 금(호박빛) — 뿌리와 흙은 하나씩(`RootSpike`).
-            (Sk::Roots, Form::Erupt { len, .. }) => {
+            Sk::Roots => {
+                let Form::Erupt { len, .. } = d.skill.form else {
+                    return;
+                };
                 self.mark(
                     g,
                     MarkKind::Cracks {
@@ -3183,7 +3298,10 @@ impl Fx {
                 self.star(g + dir * 0.8 + Vec3::Y * 0.3, 1.3, 0.1, AMBER);
             }
             // 자루 치기(0274): 칼자루가 닿는 가까운 자리의 노란 별(충격) + 짧고 좁은 부채꼴 충격파 — 끊긴 적은 따로(`Interrupt`).
-            (Sk::Pommel, Form::Bash { range, arc_deg, .. }) => {
+            Sk::Pommel => {
+                let Form::Bash { range, arc_deg, .. } = d.skill.form else {
+                    return;
+                };
                 self.star(g + dir * 0.7 + Vec3::Y * 1.0, 1.4, 0.09, SHOCK);
                 self.mark(
                     g,
@@ -3198,7 +3316,10 @@ impl Fx {
                 );
             }
             // 밀치기(0274): 내지른 발 앞의 흰 별 + 앞으로 밀리는 넓은 충격파(민트) + 앞으로 차이는 먼지.
-            (Sk::Shove, Form::Cone { range, arc_deg, .. }) => {
+            Sk::Shove => {
+                let Form::Cone { range, arc_deg, .. } = d.skill.form else {
+                    return;
+                };
                 self.star(g + dir * 0.8 + Vec3::Y * 0.5, 1.5, 0.1, WHITE_HOT);
                 self.mark(
                     g,
@@ -3214,7 +3335,10 @@ impl Fx {
                 self.dust_kick(g, dir, 5, 0.6);
             }
             // 빠지며 베기(0274 ③): 벤 자리의 흰 별 + 앞을 가르는 짧은 강철빛 면 + 뒤로 남는 옅은 걸음 띠와 먼지.
-            (Sk::Slip, Form::Slip { range, back, .. }) => {
+            Sk::Slip => {
+                let Form::Slip { range, back, .. } = d.skill.form else {
+                    return;
+                };
                 self.star(g + dir * 0.9 + Vec3::Y * 0.9, 1.2, 0.08, WHITE_HOT);
                 self.mark(
                     g,
@@ -3239,7 +3363,10 @@ impl Fx {
                 self.dust_kick(g, -dir, 4, 0.5);
             }
             // 걸어 당기기(0274 ⑤): 날이 지난 넓은 호의 민트(뿌리) 충격파가 **안쪽으로** 조여들고, 끌려오는 흙이 몸 쪽으로 쓸린다.
-            (Sk::Reap, Form::Cone { range, arc_deg, .. }) => {
+            Sk::Reap => {
+                let Form::Cone { range, arc_deg, .. } = d.skill.form else {
+                    return;
+                };
                 self.star(g + Vec3::Y * 0.9 + dir * range * 0.6, 1.2, 0.1, MINT);
                 self.mark(
                     g,
@@ -3255,7 +3382,10 @@ impl Fx {
                 self.dust_kick(g + dir * range * 0.7, -dir, 6, 0.5);
             }
             // 생기 거두기(0274 ⑤): 둘레 끝까지 번지는 풀빛(흡수) 고리 + 둘레에서 몸으로 빨려 드는 풀빛 — 체력이 도는 빛은 `Mend`가 낸다.
-            (Sk::Harvest, Form::Reap { radius, .. }) => {
+            Sk::Harvest => {
+                let Form::Reap { radius, .. } = d.skill.form else {
+                    return;
+                };
                 self.mark_with(
                     g,
                     MarkKind::Ring {
@@ -3272,7 +3402,10 @@ impl Fx {
                 self.dust_ring(g, radius * 0.7, 10, 3.0, 0.4, DUST);
             }
             // 재기(0274): 몸에서 번지는 민트 고리 + 둥근 먼지 — 체력이 도는 빛은 `Mend`가 낸다.
-            (Sk::Rally, Form::Rally { radius, .. }) => {
+            Sk::Rally => {
+                let Form::Rally { radius, .. } = d.skill.form else {
+                    return;
+                };
                 self.mark_with(
                     g,
                     MarkKind::Ring {
@@ -3287,7 +3420,6 @@ impl Fx {
                 );
                 self.dust_ring(g, 0.4, 8, 3.0, 0.4, DUST);
             }
-            _ => {}
         }
     }
 

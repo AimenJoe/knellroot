@@ -664,22 +664,9 @@ impl App {
                     0.0
                 }
                 Event::Swing | Event::LockOn | Event::LockOff | Event::Beat => 0.0,
-                // 스킬(0151): 판정이 나간 순간에 한 번, 큰 기술은 깨어나는 보스만큼.
-                // 되울림·잔불 흩기의 시동(몸에 두르는 것·흩는 것)은 흔들지 않는다 — 울림·불티의 타가 제 몫을 낸다.
-                Event::Skill {
-                    id:
-                        crate::skills::Id::Echo
-                        | crate::skills::Id::Embers
-                        | crate::skills::Id::Snow
-                        | crate::skills::Id::Snare,
-                    ..
-                } => 0.0,
-                // 바늘땀(0270 C3)은 땀마다 — 가볍게.
-                Event::Skill {
-                    id: crate::skills::Id::Stitch,
-                    ..
-                } => SHAKE_HIT,
-                Event::Skill { .. } | Event::SkillBurst { .. } => SHAKE_PLUNGE,
+                // 스킬(0151): 판정이 나간 순간에 한 번(`skill_kick`), 큰 기술은 깨어나는 보스만큼.
+                Event::Skill { id, .. } => skill_kick(id),
+                Event::SkillBurst { .. } => SHAKE_PLUNGE,
                 Event::Ult { .. } | Event::LineCut { .. } | Event::GreatBell { .. } => SHAKE_ROUSE,
                 Event::Blizzard { .. } | Event::ArrowRain { .. } => SHAKE_PLUNGE,
                 // 질풍 찌르기(0272 2단계): 찌름마다 가볍게, 마지막 찌름은 큰 기술만큼.
@@ -1467,6 +1454,20 @@ impl App {
     }
 }
 
+/// 스킬의 판정이 나간 순간의 흔들림(0151). 몸에 두르는 것(되울림)·바닥에 놓는 것(`Form::leaves_field` — 불티 · 눈발 · 그늘 · 덫)은
+/// 흔들지 않는다 — 울림·불티·덫의 타가 제 몫을 낸다(0278 R14: 이름 목록이던 때 화약 덫 · 시드는 그늘이 빠져 있었다). 바늘땀(0270 C3)은
+/// 땀마다 — 가볍게.
+fn skill_kick(id: crate::skills::Id) -> f32 {
+    let form = id.def().form;
+    if matches!(form, crate::skills::Form::Echo { .. }) || form.leaves_field() {
+        0.0
+    } else if id == crate::skills::Id::Stitch {
+        crate::tuning::SHAKE_HIT
+    } else {
+        crate::tuning::SHAKE_PLUNGE
+    }
+}
+
 /// 월드 사건 → 소리(0278 R12 — `App::world_sounds`에서 떼어 낸 순수한 갈래: 사건 덮개 시험이 부른다). `chain` = 박자 타의 이음,
 /// `player` = 방랑자 자리(수레 소리는 가까울 때만). 소리 없는 사건은 `None` — 일부러 없는 것은 시험의 `SILENT` 목록이 말한다.
 /// (R15에서 와일드카드 없는 `Cue` 표로 바뀐다.)
@@ -1722,6 +1723,27 @@ mod tests {
                 Event::samples().iter().any(|e| e.variant() == *n),
                 "{n} is no event"
             );
+        }
+    }
+
+    /// 0278 R14: 바닥에 놓는 스킬(불티 · 눈발 · 덫 · 화약 덫 · 시드는 그늘)과 되울림의 판정은 화면을 흔들지 않는다 — 이름 목록이던 때
+    /// 화약 덫 · 시드는 그늘이 빠져 놓는 순간 흔들렸다.
+    #[test]
+    fn placing_skills_do_not_shake_the_screen() {
+        use crate::skills::Id as Sk;
+        for id in [
+            Sk::Echo,
+            Sk::Embers,
+            Sk::Snow,
+            Sk::Snare,
+            Sk::Mine,
+            Sk::Blight,
+        ] {
+            assert_eq!(skill_kick(id), 0.0, "{id:?}");
+        }
+        assert_eq!(skill_kick(Sk::Stitch), crate::tuning::SHAKE_HIT);
+        for id in [Sk::Whirl, Sk::Quake, Sk::Hex, Sk::Flare] {
+            assert_eq!(skill_kick(id), crate::tuning::SHAKE_PLUNGE, "{id:?}");
         }
     }
 }

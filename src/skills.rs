@@ -201,28 +201,81 @@ pub enum Form {
 }
 
 impl Form {
-    /// 쪽이 있는 모양인가(0217 — 터치에서 끌어 겨눈다): 몸 둘레(고리·버팀·되울림·불티)는 쪽이 없다.
+    /// 쪽이 있는 모양인가(0217 — 터치에서 끌어 겨눈다): 몸 둘레(고리·버팀·되울림·불티·파문·재기·생기 거두기)는 쪽이 없다.
+    /// 와일드카드 없이(0278 R14) — 새 모양은 여기서 컴파일이 깨진다.
     pub fn aims(&self) -> bool {
-        !matches!(
-            self,
+        match self {
             Form::Ring { .. }
-                | Form::Brace { .. }
-                | Form::Echo { .. }
-                | Form::Field { .. }
-                | Form::Wave { .. }
-                | Form::Rally { .. }
-                | Form::Reap { .. }
-        )
+            | Form::Brace { .. }
+            | Form::Echo { .. }
+            | Form::Field { .. }
+            | Form::Wave { .. }
+            | Form::Rally { .. }
+            | Form::Reap { .. } => false,
+            Form::Lane { .. }
+            | Form::Pull { .. }
+            | Form::Cone { .. }
+            | Form::Drift { .. }
+            | Form::Trap { .. }
+            | Form::Throw { .. }
+            | Form::Hop { .. }
+            | Form::Bash { .. }
+            | Form::Stab { .. }
+            | Form::Bell { .. }
+            | Form::Slip { .. }
+            | Form::Hex { .. }
+            | Form::Erupt { .. } => true,
+        }
     }
 
     /// 한 대상을 겨누는 모양인가(0230 — 사장 "범위공격이면 바닥 표시가 맞고 단일타겟이라면 크로스헤어 방식"): 숄더뷰에서
     /// 크로스헤어로 나간다(던지기 = 곧게 나는 것 · 제비걸음 = 적에게 뛰어든다). 나머지 쪽이 있는 꼴(가로지르기의 길 · 뿌리 솟기의 줄 ·
-    /// 부채꼴 셋)은 범위라 숄더뷰에서도 땅 위 표시로 겨눈다.
+    /// 부채꼴 셋)은 범위라 숄더뷰에서도 땅 위 표시로 겨눈다. 와일드카드 없이(0278 R14).
     pub fn sighted(&self) -> bool {
-        matches!(
-            self,
-            Form::Throw { .. } | Form::Hop { .. } | Form::Bell { .. } | Form::Hex { .. }
-        )
+        match self {
+            Form::Throw { .. } | Form::Hop { .. } | Form::Bell { .. } | Form::Hex { .. } => true,
+            Form::Ring { .. }
+            | Form::Lane { .. }
+            | Form::Pull { .. }
+            | Form::Cone { .. }
+            | Form::Drift { .. }
+            | Form::Trap { .. }
+            | Form::Wave { .. }
+            | Form::Brace { .. }
+            | Form::Echo { .. }
+            | Form::Field { .. }
+            | Form::Bash { .. }
+            | Form::Stab { .. }
+            | Form::Rally { .. }
+            | Form::Slip { .. }
+            | Form::Reap { .. }
+            | Form::Erupt { .. } => false,
+        }
+    }
+
+    /// 바닥에 놓인 것(`World::skill_fields`)을 남기는 모양인가(0278 R14): 불티(잔불 흩기) · 눈발/그늘(`Drift`) · 덫. HUD·터치 칸의
+    /// 남은 몫(`World::skill_active`)과 시동 흔들림이 읽는다. 고르기가 덤으로 남기는 것(불길 ㄴ의 타는 땅)은 그 스킬의 모양이 아니다.
+    pub fn leaves_field(&self) -> bool {
+        match self {
+            Form::Field { .. } | Form::Drift { .. } | Form::Trap { .. } => true,
+            Form::Ring { .. }
+            | Form::Lane { .. }
+            | Form::Pull { .. }
+            | Form::Cone { .. }
+            | Form::Wave { .. }
+            | Form::Brace { .. }
+            | Form::Echo { .. }
+            | Form::Throw { .. }
+            | Form::Hop { .. }
+            | Form::Bash { .. }
+            | Form::Stab { .. }
+            | Form::Bell { .. }
+            | Form::Rally { .. }
+            | Form::Slip { .. }
+            | Form::Reap { .. }
+            | Form::Hex { .. }
+            | Form::Erupt { .. } => false,
+        }
     }
 }
 
@@ -595,12 +648,33 @@ pub struct Eff {
 impl Eff {
     /// 판정(움직임)이 이어지는 시간(초) — 되돌아 베기는 길을 두 번 간다.
     pub fn active(&self) -> f32 {
-        match (self.skill.form, self.twist) {
-            (Form::Lane { time, .. }, Some(Twist::Return)) => time * 2.0,
+        // 모양마다(와일드카드 없이 — 0278 R14). 두 번 울림은 판정이 아니라 놓인 종이라 몸의 시간은 그대로다.
+        match self.skill.form {
+            Form::Lane { time, .. } if self.twist == Some(Twist::Return) => time * 2.0,
             // 돌아오는 걸음: 한 걸음 더(처음 자리로).
-            (Form::Hop { gap, .. }, Some(Twist::HomeStep)) => self.skill.active() + gap,
-            // 두 번 울림은 판정이 아니라 놓인 종이라 몸의 시간은 그대로다.
-            _ => self.skill.active(),
+            Form::Hop { gap, .. } if self.twist == Some(Twist::HomeStep) => {
+                self.skill.active() + gap
+            }
+            Form::Lane { .. }
+            | Form::Hop { .. }
+            | Form::Ring { .. }
+            | Form::Pull { .. }
+            | Form::Cone { .. }
+            | Form::Drift { .. }
+            | Form::Trap { .. }
+            | Form::Wave { .. }
+            | Form::Brace { .. }
+            | Form::Echo { .. }
+            | Form::Throw { .. }
+            | Form::Field { .. }
+            | Form::Bash { .. }
+            | Form::Stab { .. }
+            | Form::Bell { .. }
+            | Form::Rally { .. }
+            | Form::Slip { .. }
+            | Form::Reap { .. }
+            | Form::Hex { .. }
+            | Form::Erupt { .. } => self.skill.active(),
         }
     }
 

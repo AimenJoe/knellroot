@@ -342,9 +342,17 @@ pub(super) struct WVal {
 
 /// 종류의 원거리 수단(0274 ②b — `weapons::Bolt::look`)의 이름.
 pub(super) fn rb_name(look: u8) -> &'static str {
+    rb_name_of(look).unwrap_or(s().rb_magic)
+}
+
+/// 꼴마다의 이름 — `None` = 표에 없는 꼴(마법탄 이름으로 넘어간다). 꼴은 아직 수(`u8`)라 와일드카드가 남는다(R17에서 enum) —
+/// 종류의 RB · 방패 · 돌의 꼴은 모두 제 갈래가 있는지 시험 `every_toss_look_has_a_name_and_an_icon`이 본다(0278 R14).
+fn rb_name_of(look: u8) -> Option<&'static str> {
     use crate::weapons::{AXE, CURSE, JAVELIN, KNIFE, LIGHT, QUAKE, SEED, SHIELD, STONE};
     let s = s();
-    match look {
+    Some(match look {
+        // 마법탄(0 라벤더 · 1 놋쇠 · 2 민트).
+        0..=2 => s.rb_magic,
         CURSE => s.rb_curse,
         SHIELD => s.rb_shield,
         QUAKE => s.rb_quake,
@@ -354,8 +362,8 @@ pub(super) fn rb_name(look: u8) -> &'static str {
         LIGHT => s.rb_light,
         JAVELIN => s.rb_javelin,
         STONE => s.rb_stone,
-        _ => s.rb_magic,
-    }
+        _ => return None,
+    })
 }
 
 /// 평타의 타마다 피해(0274 ④): "10·10·20" — 같은 수가 셋 넘게 이으면 "10×3"으로 줄인다(대검의 다섯 타가 칸에 들게).
@@ -1692,5 +1700,33 @@ mod pane_tests {
         assert_eq!(pane_step(1.0, 0.0, 0.0, 0, 1.5, 3), 2.5);
         // 넘치지 않으면(0줄) 움직이지 않는다.
         assert_eq!(pane_step(0.0, -1.0, 1.0, 2, 4.0, 0), 0.0);
+    }
+}
+
+#[cfg(test)]
+mod rb_look_tests {
+    use super::*;
+
+    /// 0278 R14: 종류의 RB(톡 · 모은 것) · 맨손의 돌 · 방패 던지기가 쓰는 꼴은 모두 이름과 터치 그림의 제 갈래가 있다 — 표에 없는 꼴이
+    /// 마법탄의 이름 · 별 그림을 조용히 받지 않게.
+    #[test]
+    fn every_toss_look_has_a_name_and_an_icon() {
+        use crate::weapons::{CLASSES, SHIELD_TOSS, STONE_TOSS};
+        let tosses = CLASSES
+            .iter()
+            .filter_map(|c| c.toss)
+            .chain([STONE_TOSS, SHIELD_TOSS]);
+        let mut n = 0;
+        for t in tosses {
+            for look in [t.bolt.look, t.charged.look] {
+                n += 1;
+                assert!(rb_name_of(look).is_some(), "look {look}: no name");
+                assert!(
+                    crate::touch::toss_icon_of(look).is_some(),
+                    "look {look}: no icon"
+                );
+            }
+        }
+        assert!(n >= 20, "{n}");
     }
 }

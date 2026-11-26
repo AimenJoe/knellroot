@@ -75,7 +75,7 @@ impl World {
                 // 반쯤 당긴 화살(0274 ②b).
                 1 if pl.weapon.draws() => match pl.weapon.rhythm() {
                     Some(weapons::Rhythm::Draw { mid_bolt, .. }) => mid_bolt,
-                    _ => plain,
+                    Some(weapons::Rhythm::Crank { .. }) | None => plain,
                 },
                 // 덜 모은 탄(0056): 모은 탄의 반(옛 눈금으로 올림, 0158 N0) — 꿰뚫기·휘청 없음.
                 1 => weapons::Bolt {
@@ -178,7 +178,7 @@ impl World {
                         plain
                     }
                 }
-                _ => charged,
+                Some(weapons::Rhythm::Crank { .. }) | None => charged,
             },
             _ => plain,
         }

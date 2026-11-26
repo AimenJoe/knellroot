@@ -1519,50 +1519,60 @@ impl World {
                 use crate::skills::{Form, Twist};
                 let d = d_skill.unwrap_or_else(|| id.def().at(1, crate::skills::Pick::A));
                 let s = d.skill;
-                pl.vel = match (s.form, d.twist) {
-                    (Form::Lane { dist, time, .. }, twist) if e >= s.startup => {
+                // 모양마다 한 갈래(와일드카드 없이 — 0278 R14): 걷지 않는 모양·때가 아닌 틱은 선다.
+                let walk = |pl: &Player, speed: f32| {
+                    let want = world_move * t[P::MoveSpeed] * speed;
+                    let diff = want - pl.vel;
+                    let max = t[P::MoveAccel] * dt;
+                    pl.vel
+                        + if diff.length() > max {
+                            diff.normalize() * max
+                        } else {
+                            diff
+                        }
+                };
+                let acting = e >= s.startup && e < s.startup + d.active();
+                pl.vel = match s.form {
+                    Form::Lane { dist, time, .. } if e >= s.startup => {
                         let v = dist / time.max(1e-3);
                         if e < s.startup + time {
                             dir * v
-                        } else if twist == Some(Twist::Return) && e < s.startup + time * 2.0 {
+                        } else if d.twist == Some(Twist::Return) && e < s.startup + time * 2.0 {
                             -dir * v
                         } else {
                             Vec3::ZERO
                         }
                     }
-                    // 버팀의 버티는 걸음(0158 G2 ㄱ)도 같은 걸음 — 버티는 동안만.
-                    (Form::Ring { .. }, Some(Twist::Walk { speed }))
-                    | (Form::Brace { .. }, Some(Twist::Walk { speed }))
-                        if !matches!(s.form, Form::Brace { .. })
-                            || (e >= s.startup && e < s.startup + d.active()) =>
-                    {
-                        let want = world_move * t[P::MoveSpeed] * speed;
-                        let diff = want - pl.vel;
-                        let max = t[P::MoveAccel] * dt;
-                        pl.vel
-                            + if diff.length() > max {
-                                diff.normalize() * max
-                            } else {
-                                diff
-                            }
-                    }
+                    Form::Lane { .. } => Vec3::ZERO,
+                    // 휘돌이의 도는 걸음(ㄱ) — 버팀의 버티는 걸음(0158 G2 ㄱ)도 같은 걸음, 버티는 동안만.
+                    Form::Ring { .. } => match d.twist {
+                        Some(Twist::Walk { speed }) => walk(pl, speed),
+                        _ => Vec3::ZERO,
+                    },
+                    Form::Brace { .. } => match d.twist {
+                        Some(Twist::Walk { speed }) if acting => walk(pl, speed),
+                        _ => Vec3::ZERO,
+                    },
                     // 빠지며 베기(0274 ③): 벤 뒤 `time`초 동안 `back` m 뒤로(먼 걸음 ㄱ은 `Skill::at`이 거리를 바꿔 둔다).
-                    (Form::Slip { back, time, .. }, _)
-                        if e >= s.startup && e < s.startup + time =>
-                    {
+                    Form::Slip { back, time, .. } if e >= s.startup && e < s.startup + time => {
                         -dir * (back / time.max(1e-3))
                     }
+                    Form::Slip { .. } => Vec3::ZERO,
                     // 바늘땀의 파고드는 걸음(0270 C3 ㄱ): 찌르는 동안 앞으로 내딛는다.
-                    (Form::Stab { .. }, Some(Twist::Lunge { dist }))
-                        if e >= s.startup && e < s.startup + d.active() =>
-                    {
-                        dir * (dist / d.active().max(1e-3))
-                    }
-                    (Form::Cone { .. }, Some(Twist::Leap { .. })) if e < s.startup => {
-                        dir * (pl.skill.leap / s.startup.max(1e-3))
-                    }
+                    Form::Stab { .. } => match d.twist {
+                        Some(Twist::Lunge { dist }) if acting => {
+                            dir * (dist / d.active().max(1e-3))
+                        }
+                        _ => Vec3::ZERO,
+                    },
+                    Form::Cone { .. } => match d.twist {
+                        Some(Twist::Leap { .. }) if e < s.startup => {
+                            dir * (pl.skill.leap / s.startup.max(1e-3))
+                        }
+                        _ => Vec3::ZERO,
+                    },
                     // 제비걸음(0214): 걸음마다 앞 6할 동안 닿을 자리로 뛴다.
-                    (Form::Hop { gap, .. }, _) if e >= s.startup && e < s.startup + d.active() => {
+                    Form::Hop { gap, .. } if acting => {
                         let into = (e - s.startup) % gap.max(1e-3);
                         let dash = gap * crate::tuning::HOP_DASH;
                         if into < dash {
@@ -1572,7 +1582,20 @@ impl World {
                             Vec3::ZERO
                         }
                     }
-                    _ => Vec3::ZERO,
+                    Form::Hop { .. }
+                    | Form::Pull { .. }
+                    | Form::Drift { .. }
+                    | Form::Trap { .. }
+                    | Form::Wave { .. }
+                    | Form::Echo { .. }
+                    | Form::Throw { .. }
+                    | Form::Field { .. }
+                    | Form::Bash { .. }
+                    | Form::Bell { .. }
+                    | Form::Rally { .. }
+                    | Form::Reap { .. }
+                    | Form::Hex { .. }
+                    | Form::Erupt { .. } => Vec3::ZERO,
                 };
             }
             PState::Heavy { t: e, dir, .. } => {
@@ -1619,7 +1642,7 @@ impl World {
                             t[P::CastWalk] * weapons::BARE_BOW_WALK
                         }
                         Some(weapons::Rhythm::Draw { walk, .. }) => t[P::CastWalk] * walk,
-                        _ => t[P::CastWalk],
+                        Some(weapons::Rhythm::Crank { .. }) | None => t[P::CastWalk],
                     },
                     PState::Cast { .. } | PState::Throw { .. } => t[P::CastWalk],
                     PState::Block { .. } => crate::tuning::BLOCK_WALK,

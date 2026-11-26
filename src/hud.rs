@@ -1023,7 +1023,7 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
                         Some(crate::weapons::Rhythm::Crank { wait, each }) => {
                             ((pl.ranged.topup - wait) / each.max(0.01)).clamp(0.0, 1.0)
                         }
-                        _ => 0.0,
+                        Some(crate::weapons::Rhythm::Draw { .. }) | None => 0.0,
                     }
                 } else {
                     0.0

@@ -3883,3 +3883,35 @@ fn the_price_paid_cracks_everyone_around_then_tolls_harder_for_it() {
     assert!(w.enemies[0].hp < 900, "a warden is hurt");
     assert!(!staggered, "a warden is not staggered");
 }
+
+/// 0278 R14: 바닥에 놓는 모양(`Form::leaves_field` — 불티 · 눈발 · 그늘 · 덫)의 스킬은 놓은 바로 뒤 칸의 남은 몫(`skill_active`)이
+/// 0보다 크다 — 이름 목록이던 때 시드는 그늘(`Blight`)이 빠져 늘 0이었다. 놓지 않는 스킬은 0.
+#[test]
+fn every_skill_that_leaves_a_field_reports_its_remaining_share() {
+    let mut placers = 0;
+    for id in skills::IDS {
+        let (mut w, t) = world();
+        wear(&mut w, id, 1, Pick::A);
+        let mut landed = false;
+        for k in 0..120 {
+            let a = if k == 0 { skill(0) } else { Actions::default() };
+            let ev = w.step(&a, &t);
+            if ev
+                .iter()
+                .any(|e| matches!(e, Event::Skill { id: i, .. } if *i == id))
+            {
+                landed = true;
+                break;
+            }
+        }
+        assert!(landed, "{id:?} never landed");
+        let left = w.skill_active(0);
+        if id.def().form.leaves_field() {
+            placers += 1;
+            assert!(left > 0.0, "{id:?} placed something but reports {left}");
+        } else if id != Sk::Echo {
+            assert_eq!(left, 0.0, "{id:?} places nothing");
+        }
+    }
+    assert_eq!(placers, 5, "embers · snow · snare · mine · blight");
+}
