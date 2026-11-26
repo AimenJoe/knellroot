@@ -19,13 +19,13 @@ const EXPECTED: &str = include_str!("golden.txt");
 const TICKS: usize = 360;
 
 /// FNV-1a 64.
-struct Fnv(u64);
+pub(super) struct Fnv(pub(super) u64);
 
 impl Fnv {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Fnv(0xcbf2_9ce4_8422_2325)
     }
-    fn put(&mut self, s: &str) {
+    pub(super) fn put(&mut self, s: &str) {
         for b in s.bytes().chain(std::iter::once(0xff)) {
             self.0 ^= b as u64;
             self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
@@ -33,7 +33,7 @@ impl Fnv {
     }
 }
 
-fn q(x: f32) -> i64 {
+pub(super) fn q(x: f32) -> i64 {
     let v = (x as f64 * 1000.0).round() as i64;
     // -0 → 0
     if v == 0 {
@@ -44,7 +44,7 @@ fn q(x: f32) -> i64 {
 }
 
 /// 사건의 Debug 글에서 수(소수점 · 지수가 든 것)를 1e-3으로 반올림한다 — 갈래 이름 · id · bool · 정수는 그대로.
-fn quantized(s: &str) -> String {
+pub(super) fn quantized(s: &str) -> String {
     let b = s.as_bytes();
     let mut out = String::with_capacity(s.len());
     let mut i = 0;
