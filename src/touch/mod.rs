@@ -682,53 +682,7 @@ impl Touch {
             ..Read::default()
         };
         if menu {
-            self.stick = None;
-            self.aimer = None;
-            self.attack_finger = None;
-            self.cast_finger = None;
-            self.dodge_finger = None;
-            self.parry_finger = None;
-            self.lookers.clear();
-            self.riders.clear();
-            self.pinch = 0.0;
-            self.stale.append(&mut self.known);
-            for t in touches {
-                let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
-                if self.stale.contains(&t.id) {
-                    continue;
-                }
-                match self.taps.iter_mut().find(|x| x.0 == t.id) {
-                    Some(x) => {
-                        let was = x.2;
-                        x.2 |= (t.position - x.1).length() > TAP_SLOP * at.dp;
-                        // 끌기는 탭 범위를 넘은 뒤부터 — 넘는 순간엔 처음 자리부터 센다(손가락과 목록이 같이 간다).
-                        if x.2 {
-                            let from = if was { x.3 } else { x.1 };
-                            a.drag += from.y - t.position.y;
-                            a.drag_x += from.x - t.position.x;
-                            a.drag_at = Some(x.1);
-                        }
-                        x.3 = t.position;
-                        if ended {
-                            if !x.2 {
-                                a.tap = Some(t.position);
-                            }
-                            let id = t.id;
-                            self.taps.retain(|x| x.0 != id);
-                        }
-                    }
-                    None if !ended => self.taps.push((t.id, t.position, false, t.position)),
-                    None => a.tap = Some(t.position),
-                }
-            }
-            self.taps.retain(|x| touches.iter().any(|t| t.id == x.0));
-            // 뗀 손가락은 묵은 목록에서 뺀다(같은 id가 다시 쓰여도 새 탭은 받게).
-            self.stale.retain(|id| {
-                touches.iter().any(|t| {
-                    t.id == *id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
-                })
-            });
-            return a;
+            return self.read_menu(touches, at, a);
         }
         self.taps.clear();
         self.stale.clear();
@@ -842,66 +796,7 @@ impl Touch {
         };
         // 끌어 조준(0217): 쥐고 있는 동안은 끈 쪽(끌기 전에는 가까운 적), 떼면 그 일 — 원거리를 모으던 중이면 누름 없이(월드가 뗀
         // 것을 보고 모은 탄을 낸다).
-        let mut aim_look = Vec2::ZERO;
-        if let Some(m) = self.aimer {
-            let r = stick_radius(w, h);
-            let d = m.pos - m.center;
-            let out = m.out || d.length() > r * AIM_OUT;
-            let still = alive(Some(m.id)).is_some();
-            let charging = m.kind == self.ctx.shot() && self.ctx.charging;
-            if self.ctx.looks(m.kind) {
-                // 숄더뷰(0229): 끈 만큼 시점(`look` — 화면 오른쪽 반 끌기와 같은 셈), 겨누는 쪽은 크로스헤어.
-                aim_look = m.pos - m.prev;
-                if still {
-                    a.aim_hold = m.kind == self.ctx.shot();
-                    self.aimer = Some(Aimer {
-                        out,
-                        prev: m.pos,
-                        ..m
-                    });
-                } else {
-                    self.aimer = None;
-                    // 모으던 탄은 누름 없이 — 월드가 뗀 것을 보고 낸다. 쪽은 월드가 크로스헤어로(`aim_sight`·`aim_ahead`).
-                    if !charging {
-                        press(&mut a, m.kind);
-                    }
-                }
-            } else if still {
-                let mut m = Aimer { out, ..m };
-                if out && d.length() > r * AIM_CANCEL {
-                    m.last = aim_dir(d);
-                    a.aim = m.last;
-                    a.aim_drag = true;
-                } else if !out {
-                    a.auto_aim = true;
-                }
-                a.aim_hold = m.kind == self.ctx.shot();
-                self.aimer = Some(m);
-            } else {
-                self.aimer = None;
-                match aim_end(out, d, r) {
-                    AimEnd::Tap => {
-                        if !charging {
-                            press(&mut a, m.kind);
-                        }
-                        a.auto_aim = true;
-                    }
-                    AimEnd::Fire(dir) => {
-                        if !charging {
-                            press(&mut a, m.kind);
-                        }
-                        a.aim = dir;
-                        a.aim_drag = true;
-                    }
-                    // 모으던 탄은 거둘 수 없다 — 마지막으로 겨눈 쪽으로 나간다.
-                    AimEnd::Cancel if charging => {
-                        a.aim = m.last;
-                        a.aim_drag = m.last != Vec2::ZERO;
-                    }
-                    AimEnd::Cancel => {}
-                }
-            }
-        }
+        let aim_look = self.read_aimer(touches, w, h, &mut a);
         self.attack_finger = alive(self.attack_finger);
         self.cast_finger = alive(self.cast_finger);
         self.dodge_finger = alive(self.dodge_finger);
@@ -964,6 +859,129 @@ impl Touch {
         a
     }
 
+    /// 메뉴 화면(0199): 스틱 · 버튼 없이 탭과 끌기만 — 싸움 중에 닿아 있던 손가락은 떼도 탭이 아니다(`stale`).
+    fn read_menu(&mut self, touches: &[Finger], at: Surface, mut a: Read) -> Read {
+        self.stick = None;
+        self.aimer = None;
+        self.attack_finger = None;
+        self.cast_finger = None;
+        self.dodge_finger = None;
+        self.parry_finger = None;
+        self.lookers.clear();
+        self.riders.clear();
+        self.pinch = 0.0;
+        self.stale.append(&mut self.known);
+        for t in touches {
+            let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
+            if self.stale.contains(&t.id) {
+                continue;
+            }
+            match self.taps.iter_mut().find(|x| x.0 == t.id) {
+                Some(x) => {
+                    let was = x.2;
+                    x.2 |= (t.position - x.1).length() > TAP_SLOP * at.dp;
+                    // 끌기는 탭 범위를 넘은 뒤부터 — 넘는 순간엔 처음 자리부터 센다(손가락과 목록이 같이 간다).
+                    if x.2 {
+                        let from = if was { x.3 } else { x.1 };
+                        a.drag += from.y - t.position.y;
+                        a.drag_x += from.x - t.position.x;
+                        a.drag_at = Some(x.1);
+                    }
+                    x.3 = t.position;
+                    if ended {
+                        if !x.2 {
+                            a.tap = Some(t.position);
+                        }
+                        let id = t.id;
+                        self.taps.retain(|x| x.0 != id);
+                    }
+                }
+                None if !ended => self.taps.push((t.id, t.position, false, t.position)),
+                None => a.tap = Some(t.position),
+            }
+        }
+        self.taps.retain(|x| touches.iter().any(|t| t.id == x.0));
+        // 뗀 손가락은 묵은 목록에서 뺀다(같은 id가 다시 쓰여도 새 탭은 받게).
+        self.stale.retain(|id| {
+            touches.iter().any(|t| {
+                t.id == *id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
+            })
+        });
+        a
+    }
+
+    /// 끌어 조준하는 손가락(0217): 쥐고 있는 동안은 끈 쪽(끌기 전에는 가까운 적), 떼면 그 일 — 원거리를 모으던 중이면 누름 없이.
+    /// 숄더뷰의 한 대상 버튼(0229)이면 끈 만큼을 시점으로 돌려준다.
+    fn read_aimer(&mut self, touches: &[Finger], w: f32, h: f32, a: &mut Read) -> Vec2 {
+        let alive = |f: Option<u64>| {
+            f.filter(|id| {
+                touches.iter().any(|t| {
+                    t.id == *id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
+                })
+            })
+        };
+        let mut aim_look = Vec2::ZERO;
+        if let Some(m) = self.aimer {
+            let r = stick_radius(w, h);
+            let d = m.pos - m.center;
+            let out = m.out || d.length() > r * AIM_OUT;
+            let still = alive(Some(m.id)).is_some();
+            let charging = m.kind == self.ctx.shot() && self.ctx.charging;
+            if self.ctx.looks(m.kind) {
+                // 숄더뷰(0229): 끈 만큼 시점(`look` — 화면 오른쪽 반 끌기와 같은 셈), 겨누는 쪽은 크로스헤어.
+                aim_look = m.pos - m.prev;
+                if still {
+                    a.aim_hold = m.kind == self.ctx.shot();
+                    self.aimer = Some(Aimer {
+                        out,
+                        prev: m.pos,
+                        ..m
+                    });
+                } else {
+                    self.aimer = None;
+                    // 모으던 탄은 누름 없이 — 월드가 뗀 것을 보고 낸다. 쪽은 월드가 크로스헤어로(`aim_sight`·`aim_ahead`).
+                    if !charging {
+                        press(a, m.kind);
+                    }
+                }
+            } else if still {
+                let mut m = Aimer { out, ..m };
+                if out && d.length() > r * AIM_CANCEL {
+                    m.last = aim_dir(d);
+                    a.aim = m.last;
+                    a.aim_drag = true;
+                } else if !out {
+                    a.auto_aim = true;
+                }
+                a.aim_hold = m.kind == self.ctx.shot();
+                self.aimer = Some(m);
+            } else {
+                self.aimer = None;
+                match aim_end(out, d, r) {
+                    AimEnd::Tap => {
+                        if !charging {
+                            press(a, m.kind);
+                        }
+                        a.auto_aim = true;
+                    }
+                    AimEnd::Fire(dir) => {
+                        if !charging {
+                            press(a, m.kind);
+                        }
+                        a.aim = dir;
+                        a.aim_drag = true;
+                    }
+                    // 모으던 탄은 거둘 수 없다 — 마지막으로 겨눈 쪽으로 나간다.
+                    AimEnd::Cancel if charging => {
+                        a.aim = m.last;
+                        a.aim_drag = m.last != Vec2::ZERO;
+                    }
+                    AimEnd::Cancel => {}
+                }
+            }
+        }
+        aim_look
+    }
     /// 끌어 겨누는 중인 버튼(0217 — 끈 뒤, 취소 자리 밖) — 렌더가 땅 위 미리보기를 그린다.
     pub fn aiming(&self) -> Option<Kind> {
         let r = stick_radius(screen_width(), screen_height());
