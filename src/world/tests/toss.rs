@@ -130,7 +130,7 @@ fn the_hand_axe_is_short_and_heavy() {
     assert_eq!(hit(9.0).0, 0, "short: 7.2 m");
 }
 
-/// 0274 ②b · CLAUDE.md "새 탄·던지는 것을 만들면 높낮이가 다른 마당에서": 던지는 것(손도끼 · 창 · 돌)은 곧게 날아 겨눈 줄 위 첫 적의
+/// 0274 ②b · `docs/guide/weapons.md` "새 탄·던지는 것을 만들면 높낮이가 다른 마당에서": 던지는 것(손도끼 · 창 · 돌)은 곧게 날아 겨눈 줄 위 첫 적의
 /// 몸통으로 비스듬히 간다 — 한 단 아래·위의 적도 맞는다. 벼랑 위(3 m)의 적에게는 벼랑 면에 막힌다.
 #[test]
 fn thrown_rbs_fly_straight_to_foes_above_and_below() {
