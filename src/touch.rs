@@ -154,6 +154,8 @@ pub struct View {
     pub active: [f32; 2],
     /// 큰 기술 버튼의 그림(끼운 하나, 0158 G2).
     pub ult: Kind,
+    /// 교체 공격의 창이 열려 있다(0277 — `World::swap_strikes`, HUD의 부무기 칸 금빛 테와 같은 때): 바꾸기 버튼이 금빛으로 켜진다.
+    pub swap_strike: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1205,7 +1207,7 @@ pub fn toss_icon(look: u8) -> Kind {
 }
 
 pub fn draw(o: &Overlay, v: &View) {
-    let (locked, turn, attack) = (v.locked, v.turn, v.attack);
+    let (turn, attack) = (v.turn, v.attack);
     let line = Color::new(1.0, 1.0, 1.0, 0.5);
     let back = Color::new(INK.r, INK.g, INK.b, 0.42);
     if let Some((origin, pos)) = o.stick {
@@ -1260,7 +1262,7 @@ pub fn draw(o: &Overlay, v: &View) {
         draw_arc_left_right(l.center, r.center, rr, soft);
     }
     for b in &o.buttons {
-        let on = b.kind == Kind::Lock && locked;
+        let on = lit(b.kind, v);
         let is_turn = matches!(b.kind, Kind::TurnLeft | Kind::TurnRight);
         draw_circle(b.center.x, b.center.y, b.radius, back);
         if on {
@@ -1366,6 +1368,16 @@ pub fn draw(o: &Overlay, v: &View) {
         }
     }
     draw_aim(o.aim);
+}
+
+/// 버튼이 금빛으로 켜지나(채움 · 테 · 그림): 락온 중의 락온 버튼, 교체 공격의 창이 열린 동안의 바꾸기 버튼(0277 — 지금 바꾸면
+/// 들어오는 무기가 친다). 큰 기술 버튼은 늘 금빛이라 따로 본다.
+fn lit(kind: Kind, v: &View) -> bool {
+    match kind {
+        Kind::Lock => v.locked,
+        Kind::Swap => v.swap_strike,
+        _ => false,
+    }
 }
 
 /// 든 무기로 못 쓰는 스킬의 그림 밝기(대기 중보다 어둡게 — `hud`의 같은 값).
@@ -3345,5 +3357,34 @@ mod tests {
         let plain = layout_at(w, h, Ctx::ALL, 1.0);
         let same = safe_layout(w, h, Ctx::ALL, 1.0, [0.0; 4]);
         assert!(plain.iter().zip(&same).all(|(a, b)| a.center == b.center));
+    }
+
+    /// 0277: 교체 공격의 창이 열린 동안(`World::swap_strikes`)만 바꾸기 버튼이 금빛으로 켜진다 — HUD의 부무기 칸 테와 같은 때.
+    /// 다른 버튼은 그 창과 상관없다(락온 버튼은 락온 때만).
+    #[test]
+    fn the_swap_button_lights_gold_only_while_a_swap_strike_is_open() {
+        let view = |swap_strike: bool, locked: bool| View {
+            locked,
+            turn: 1.0,
+            attack: Kind::Attack,
+            cast: Kind::Cast,
+            swap: Kind::Hammer,
+            skills: [(Kind::Whirl, 1.0); 2],
+            vacant: [false; 2],
+            unfit: [false; 2],
+            active: [0.0; 2],
+            ult: Kind::Upend,
+            swap_strike,
+        };
+        assert!(lit(Kind::Swap, &view(true, false)));
+        assert!(!lit(Kind::Swap, &view(false, true)));
+        assert!(
+            !lit(Kind::Lock, &view(true, false)),
+            "the swap window lights only the swap"
+        );
+        assert!(lit(Kind::Lock, &view(false, true)));
+        for k in [Kind::Attack, Kind::Dodge, Kind::Parry, Kind::Jump] {
+            assert!(!lit(k, &view(true, true)), "{k:?}");
+        }
     }
 }

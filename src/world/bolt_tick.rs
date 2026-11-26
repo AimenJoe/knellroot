@@ -656,7 +656,7 @@ impl World {
                     self.vein_sipped = true;
                 }
                 let crit = en.exposed > 0.0;
-                en.hp -= hurt_by(
+                en.hp -= wound(
                     en,
                     self.stats.dmg
                         + b.def.damage
@@ -669,6 +669,7 @@ impl World {
                     self.stats.opened_dmg,
                     knack,
                     t,
+                    ev,
                 );
                 en.exposed = 0.0;
                 en.struck();

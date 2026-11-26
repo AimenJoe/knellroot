@@ -1363,6 +1363,7 @@ impl App {
                         unfit: [0, 1].map(|i| pl.skill.rank[i] == 0 && pl.skill.known[i] > 0),
                         active: [0, 1].map(|i| self.world.skill_active(i)),
                         ult: touch::ult_icon(pl.skill.ult),
+                        swap_strike: pl.sub.is_some() && self.world.swap_strikes(),
                     },
                 );
             }

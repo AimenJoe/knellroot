@@ -319,7 +319,15 @@ impl World {
         if c.damage > 0 {
             let crit = c.crit && en.exposed > 0.0;
             let bonus = if c.flat { 0 } else { self.stats.dmg };
-            en.hp -= hurt_by(en, bonus + c.damage, crit, self.stats.opened_dmg, knack, t);
+            en.hp -= wound(
+                en,
+                bonus + c.damage,
+                crit,
+                self.stats.opened_dmg,
+                knack,
+                t,
+                ev,
+            );
             if crit {
                 en.exposed = 0.0;
                 ev.push(Event::Crit { at });

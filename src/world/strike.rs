@@ -206,13 +206,14 @@ impl World {
             en.hit_by = swing;
             hit_any = true;
             let crit = en.exposed > 0.0;
-            en.hp -= hurt_by(
+            en.hp -= wound(
                 en,
                 self.stats.dmg + self.stats.heavy_dmg + damage,
                 crit,
                 self.stats.opened_dmg,
                 knack,
                 t,
+                ev,
             );
             if crit {
                 en.exposed = 0.0;
@@ -445,7 +446,7 @@ impl World {
             } else {
                 raw
             };
-            en.hp -= hurt_by(en, raw, crit, self.stats.opened_dmg, knack, t);
+            en.hp -= wound(en, raw, crit, self.stats.opened_dmg, knack, t, ev);
             if crit {
                 en.exposed = 0.0;
                 ev.push(Event::Crit {
@@ -458,6 +459,7 @@ impl World {
                 if en.boss {
                     Vec3::ZERO
                 } else {
+                    tug(en, pull_slide(d.length(), en.radius, s.pull), ev);
                     -dir * pull_slide(d.length(), en.radius, s.pull) * KNOCK_DECAY
                 }
             } else {

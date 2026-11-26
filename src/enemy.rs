@@ -184,6 +184,8 @@ pub struct Enemy {
     /// 휘청 몸짓(렌더가 기울인다).
     pub sway: Vec3,
     pub sway_t: f32,
+    /// 걸어 당겨지는 중(0277 — 낫): 남은 초(`weapons::PULL_SHOW`에서 0으로) — 렌더가 방랑자와 이 적을 덩굴로 잇는다. 그림만 읽는다.
+    pub tug: f32,
     /// 죽은 뒤 지난 초(렌더가 쓰러뜨리고 지운다).
     /// 잔불을 떨궜나(0064 M1 — 쓰러진 틱에 한 번).
     pub dropped: bool,
@@ -487,6 +489,7 @@ impl Enemy {
             slam_bonus: 0,
             sway: Vec3::ZERO,
             sway_t: 0.0,
+            tug: 0.0,
             dead_t: 0.0,
             dropped: false,
             exposed: 0.0,
@@ -1296,6 +1299,7 @@ impl Enemy {
         self.exposed = (self.exposed - dt).max(0.0);
         self.marks.frail = (self.marks.frail - dt).max(0.0);
         self.sway_t += dt;
+        self.tug = (self.tug - dt).max(0.0);
         // 넉백은 빠르게 줄어든다. 굳은 엘리트(0112)는 덜 밀린다.
         let budge = if self.elite == Some(Affix::Hardened) {
             crate::tuning::ELITE_HARD_KNOCK

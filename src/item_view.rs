@@ -21,6 +21,8 @@ pub struct View {
     pub yaw: f32,
     pub pitch: f32,
     pub roll: f32,
+    /// 짝으로 그린다(0277 — 쌍단검): 같은 부위를 눕힌 각만 거울로(`-roll`) 한 번 더 — 두 날이 가운데에서 엇갈린다.
+    pub twin: bool,
 }
 
 pub fn view(item: Item) -> View {
@@ -37,7 +39,7 @@ pub fn view(item: Item) -> View {
                 Weapon::Bow => (0.0, -80.0, -90.0),
                 // 창(0272 2단계): 가장 긴 무기 — 대각선으로 길게(잎 꼴 촉이 위).
                 Weapon::Spear => (0.0, -80.0, -45.0),
-                // 쌍단검(0274 ③): 오른손의 날 하나(왼손의 짝은 따로 — 같은 꼴)를 검처럼 대각선으로.
+                // 쌍단검(0274 ③): 오른손의 날을 검처럼 대각선으로 — 0277부터 거울로 한 번 더(`twin`, 두 날이 엇갈린다).
                 Weapon::Daggers => (0.0, -80.0, -45.0),
                 // 대검(0274 ④): 긴 날 — 창처럼 대각선으로 길게(날끝이 위).
                 Weapon::Greatsword => (0.0, -80.0, -45.0),
@@ -54,6 +56,8 @@ pub fn view(item: Item) -> View {
                 yaw,
                 pitch,
                 roll,
+                // 쌍단검(0277): 날 하나로는 한손검 · 완드와 갈리지 않았다 — 두 날을 엇갈려(터치 그림 `Kind::Daggers`와 같은 꼴).
+                twin: w == Weapon::Daggers,
             }
         }
         // 장신구는 `charms.glb`의 부위 하나씩(이름 = 기록 키) — 위에서 비스듬히.
@@ -63,6 +67,7 @@ pub fn view(item: Item) -> View {
             yaw: 30.0,
             pitch: 25.0,
             roll: 0.0,
+            twin: false,
         },
         Item::Garb(g) => View {
             model: "garbs",
@@ -70,6 +75,7 @@ pub fn view(item: Item) -> View {
             yaw: 30.0,
             pitch: 25.0,
             roll: 0.0,
+            twin: false,
         },
         // 방패는 넓은 면이 카메라를 보게(납작한 물건 — KB `action-rpg-stats-and-equipment` "넓은 면이 카메라를").
         Item::Shield(s) => View {
@@ -78,6 +84,7 @@ pub fn view(item: Item) -> View {
             yaw: SHIELD_VIEW.0,
             pitch: SHIELD_VIEW.1,
             roll: SHIELD_VIEW.2,
+            twin: false,
         },
     }
 }
@@ -145,6 +152,19 @@ mod tests {
                 .node(v.node)
                 .unwrap_or_else(|| panic!("{item:?}: no part {} in {}", v.node, v.model));
             assert!(m.rest_bounds_under(i).is_some(), "{item:?} has no mesh");
+        }
+    }
+
+    /// 0277: 쌍단검만 짝으로(두 날이 엇갈린다 — 거울로 눕힐 각이 있어야 X가 된다), 다른 아이템은 하나.
+    #[test]
+    fn only_the_daggers_draw_as_a_crossed_pair() {
+        for item in all() {
+            let v = view(item);
+            let pair = item == Item::Weapon(Weapon::Daggers);
+            assert_eq!(v.twin, pair, "{item:?}");
+            if pair {
+                assert!(v.roll.abs() >= 30.0, "a pair needs a slant to cross");
+            }
         }
     }
 }

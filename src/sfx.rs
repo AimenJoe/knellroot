@@ -55,6 +55,12 @@ pub enum Id {
     Knell,
     /// 껍질 받기(0185 — 이끼 덮인 문지기가 웅크린다): 돌이 갈리며 닫히는 낮은 소리 + 끝의 둔한 탁. 예고가 아니다(치지 않는다).
     Shell,
+    /// 급소(0277 — 쌍단검): 날이 급소에 든 순간의 짧고 높은 쇳빛 '칭'(패링의 맑은 쇳소리보다 높고 짧다) + 처음 2ms 날 긁힘.
+    Sneak,
+    /// 분노가 가득(0277 — 대검): 낮게 차오르는 숨(걸러 낸 숨소리가 부풀고 밑에 낮은 웅이 오른다) — 한 번, 0.55초.
+    Fury,
+    /// 걸어 당김(0277 — 낫): 덩굴이 감겨 끌리는 소리 — 내려가는 휘익(채찍처럼) + 끝의 둔한 덜컥.
+    Pull,
 }
 
 /// 잇단 박자 수(1부터) → 종소리(셋째부터는 가장 높은 것).
@@ -170,11 +176,17 @@ fn synth_gain(id: Id) -> f32 {
         // 0175: 0.65 → 0.95 — 길 안내의 종은 들려야 한다(폰 스피커에서 화면의 물결만 보였다).
         Id::Knell => 0.95,
         Id::Shell => 0.6,
+        Id::Sneak => 0.45,
+        Id::Fury => 0.55,
+        Id::Pull => 0.45,
         _ => 0.5,
     }
 }
 
-const SYNTHS: [Id; 16] = [
+const SYNTHS: [Id; 19] = [
+    Id::Sneak,
+    Id::Fury,
+    Id::Pull,
     Id::Shell,
     Id::Recall,
     Id::Knell,
@@ -565,6 +577,64 @@ pub fn synth(id: Id) -> Vec<i16> {
                 })
                 .collect()
         }
+        // 급소: 높은 쇳빛 배음 셋(2,640 · 3,960 · 5,280Hz 어긋나게)이 0.16초에 사라지는 '칭' + 처음 2ms 긁힘 — 패링(1,320Hz · 0.5초)보다
+        // 높고 짧아 귀로 갈린다.
+        Id::Sneak => (0..len(0.18))
+            .map(|i| {
+                let t = i as f32 / SR as f32;
+                let e = (-t * 26.0).exp();
+                let ring = (TAU * 2640.0 * t).sin()
+                    + 0.5 * (TAU * 3987.0 * t).sin()
+                    + 0.3 * (TAU * 5310.0 * t).sin() * (-t * 50.0).exp();
+                let scrape = if t < 0.002 { rng(&mut seed) * 0.9 } else { 0.0 };
+                ring * e + scrape
+            })
+            .collect(),
+        // 분노: 걸러 낸 숨이 0.35초 부풀었다 잦아들고, 밑에서 낮은 웅(65 → 95Hz)이 함께 오른다 — 숨을 몰아쉬는 소리.
+        Id::Fury => {
+            let n = len(0.55);
+            let (mut lp, mut lp2, mut ph) = (0.0f32, 0.0f32, 0.0f32);
+            (0..n)
+                .map(|i| {
+                    let k = i as f32 / n as f32;
+                    // 두 번 거른 숨(바람 같은 낮은 잡음 — 쉿 소리가 아니라 몰아쉼).
+                    lp += (rng(&mut seed) - lp) * 0.02;
+                    lp2 += (lp - lp2) * 0.02;
+                    ph += (65.0 + 30.0 * k) / SR as f32;
+                    let swell =
+                        (k / 0.64).min(1.0).powf(1.5) * (1.0 - ((k - 0.64) / 0.36).max(0.0));
+                    let growl = ((ph.fract() * 2.0 - 1.0) * 0.5 + (TAU * ph).sin() * 0.5) * 0.7;
+                    (lp2 * 12.0 + growl) * swell
+                })
+                .collect()
+        }
+        // 걸어 당김: 1,100 → 260Hz로 떨어지는 휘익(거친 잡음 섞음, 0.16초) + 0.17초에 둔한 덜컥(120Hz).
+        Id::Pull => {
+            let n = len(0.3);
+            let mut ph = 0.0f32;
+            (0..n)
+                .map(|i| {
+                    let t = i as f32 / SR as f32;
+                    let k = (t / 0.16).min(1.0);
+                    ph += (1100.0 - 840.0 * k) / SR as f32;
+                    let whip = if t < 0.16 {
+                        ((TAU * ph).sin() * 0.6 + rng(&mut seed) * 0.25)
+                            * (t / 0.02).min(1.0)
+                            * (1.0 - k * 0.5)
+                    } else {
+                        0.0
+                    };
+                    let d = t - 0.17;
+                    let thunk = if d >= 0.0 {
+                        ((TAU * 120.0 * d).sin() + 0.3 * (TAU * 380.0 * d).sin())
+                            * (-d * 30.0).exp()
+                    } else {
+                        0.0
+                    };
+                    whip + thunk
+                })
+                .collect()
+        }
         _ => vec![0.0; 64],
     };
     // 끝 5ms를 줄인다(딸깍 없이).
@@ -735,6 +805,37 @@ mod tests {
         );
         assert!(ring.1 < lane.1, "the ripple is low");
         assert!(disk.0 < fan.0, "the husk ticks are short");
+    }
+
+    /// 0277: 급소 · 분노 · 걸어 당김의 소리는 서로, 그리고 가까운 옛 소리(패링 · 문지기 깨어남 · 맞힘 둘째 층)와 귀로 갈린다 — 급소는
+    /// 패링보다 높고 짧다, 분노는 낮고 길다(깨어남보다는 짧다), 걸어 당김은 그 사이.
+    #[test]
+    fn the_sneak_fury_and_pull_cues_sound_apart() {
+        let feat = |id| {
+            let s = synth(id);
+            let crossings = s.windows(2).filter(|w| (w[0] < 0) != (w[1] < 0)).count() as f32;
+            let secs = s.len() as f32 / SR as f32;
+            (secs, crossings / secs)
+        };
+        let (sneak, fury, pull, parry, wake) = (
+            feat(Id::Sneak),
+            feat(Id::Fury),
+            feat(Id::Pull),
+            feat(Id::Parry),
+            feat(Id::Wake),
+        );
+        assert!(
+            sneak.1 > parry.1 * 1.5 && sneak.0 < parry.0,
+            "the sneak glint is higher and shorter than a parry"
+        );
+        assert!(
+            fury.0 > sneak.0 && fury.0 < wake.0,
+            "the fury breath is long but not a boss waking"
+        );
+        assert!(
+            sneak.1 > pull.1 && pull.1 > fury.1,
+            "high glint · middle whip · low breath: {sneak:?} {pull:?} {fury:?}"
+        );
     }
 
     #[test]

@@ -107,6 +107,14 @@ impl Renderer {
             _ => Quat::IDENTITY,
         };
         let inst = Mat4::from_quat(rot * undo) * Mat4::from_translation(-c);
+        // 짝(0277 — 쌍단검): 눕힌 각만 거울로 한 번 더 — 가운데에서 엇갈린다(경계 구는 같다).
+        let twin = v.twin.then(|| {
+            let rot = Quat::from_rotation_y(spin)
+                * Quat::from_rotation_z(-v.roll.to_radians())
+                * Quat::from_rotation_x(v.pitch.to_radians())
+                * Quat::from_rotation_y(v.yaw.to_radians());
+            Mat4::from_quat(rot * undo) * Mat4::from_translation(-c)
+        });
         let fovy: f32 = 0.5;
         let cam = Camera3D {
             position: vec3(0.0, 0.0, rad.max(0.01) / (fovy * 0.5).sin() * 1.02),
@@ -136,10 +144,12 @@ impl Renderer {
             radius: rad * 8.0 + 2.0,
             shaft: false,
         };
-        if dark {
-            self.batch.model(e, &self.pose, inst, SHADOW_INK, &[], 0.0);
-        } else {
-            self.batch.model(e, &self.pose, inst, WHITE, &[fire], 1.0);
+        for inst in std::iter::once(inst).chain(twin) {
+            if dark {
+                self.batch.model(e, &self.pose, inst, SHADOW_INK, &[], 0.0);
+            } else {
+                self.batch.model(e, &self.pose, inst, WHITE, &[fire], 1.0);
+            }
         }
         self.batch.flush();
         set_look(saved);

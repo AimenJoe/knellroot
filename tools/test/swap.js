@@ -2,7 +2,7 @@
 //   견줌(멘 것만으로 먹는 능력치 줄), 한국어·영어 + 개발판 F4 넘침 검사(`[ui-check]` 줄이 있으면 실패). ② 개발 아레나에서 교체 공격을
 //   틱마다(F6 — 한 프레임 = 한 틱): 개발 창 기술 묶음의 "든 무기 바꾸기"·"보조무기 바꾸기"로 무기 둘을 정하고, 평타가 닿은 직후
 //   바꾸기(X)를 눌러 들어오는 무기의 한 타를 찍는다(검 → 망치 = 대시 공격 · 검 → 활 = 한 발).
-//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/swap.js dist shots [equip,strike]
+//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/swap.js dist shots [equip,strike,icon,touch]
 // 눈으로 볼 것: 보조특성 줄이 밝게·주특성 줄이 흐리게(보조무기 슬롯), 교체 공격의 조여드는 금빛 고리·별·빛줄, HUD 보조무기 그림의 금빛 테.
 const { chromium } = require('playwright');
 const http = require('http');
@@ -40,17 +40,17 @@ const watch = (page, bad) => {
 const ready = (page) => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 60000 });
 
 // ① 장비 탭: 주무기 슬롯 → 보조무기 슬롯 → 후보 목록(망치 → 다른 무기들).
-async function equip(browser, lang, errors) {
+async function equip(browser, lang, errors, seed = SEED, tag = '') {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 });
   const page = await ctx.newPage();
   const bad = [];
   watch(page, bad);
-  const shot = (name) => page.screenshot({ path: path.join(OUT, `swap-equip-${lang}-${name}.png`) });
+  const shot = (name) => page.screenshot({ path: path.join(OUT, `swap-equip${tag}-${lang}-${name}.png`) });
   const { press, until } = sceneKit(page, 90);
   await sceneKit.cheap(page);
   await page.goto(`http://localhost:${PORT}/`);
   await ready(page);
-  await page.evaluate(([k, v]) => localStorage.setItem(k, v), [KEY, SEED]);
+  await page.evaluate(([k, v]) => localStorage.setItem(k, v), [KEY, seed]);
   await page.reload();
   await ready(page);
   await page.waitForTimeout(600);
@@ -85,7 +85,7 @@ async function equip(browser, lang, errors) {
 
 // ② 교체 공격을 틱마다. arm = "든 무기 바꾸기"를 누를 수(맨손 → 활 → 검 = 둘), sub = "보조무기 바꾸기"를 누를 수(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활).
 // 판마다 새 페이지, 컨텍스트는 하나(처음에 고른 "키보드만 배치"가 설정에 남는다).
-async function strike(ctx, name, arm, sub, errors, first) {
+async function strike(ctx, name, arm, sub, errors, first, touchy = false) {
   const page = await ctx.newPage();
   const bad = [];
   watch(page, bad);
@@ -124,6 +124,17 @@ async function strike(ctx, name, arm, sub, errors, first) {
   const burst = async (tag, n) => { for (let i = 0; i < n; i++) await page.screenshot({ path: path.join(OUT, `swap-${name}-${tag}-${String(i).padStart(2, '0')}.jpg`), type: 'jpeg', quality: 92 }); };
   // 평타가 닿은 직후(금빛 테가 켜진 동안) 바꾸기 → 들어오는 한 타 → 그 뒤.
   await page.keyboard.press('KeyJ'); await burst('b-hit', 3);
+  if (touchy) {
+    // 0277: 화면의 빈 자리(오른쪽 위)를 톡 — 장치가 터치가 되어 터치 버튼이 뜬다. 교체 공격의 창 동안 바꾸기 버튼이 금빛, 창이 닫히면 흰 테.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 900, y: 150, id: 1 }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await burst('t-gold', 6); await burst('t-after', 14);
+    await page.close();
+    for (const b of bad) errors.push(`[strike ${name}] ${b}`);
+    console.log(`[strike ${name}] errors ${bad.length}`);
+    return;
+  }
   await page.keyboard.press('KeyX'); await burst('c-swap', 22);
   // 잠금 동안의 바꾸기 = 그냥 바꾼다(돌아온다).
   await page.keyboard.press('KeyX'); await burst('d-plain', 6);
@@ -138,6 +149,14 @@ async function strike(ctx, name, arm, sub, errors, first) {
   const browser = await chromium.launch();
   const errors = [];
   if (want('equip')) for (const lang of (process.env.SWAP_LANGS || 'ko,en').split(',')) await equip(browser, lang, errors);
+  // 0277: 쌍단검을 멘 기록의 장비 탭 — 보조무기 슬롯의 아이템 그림이 엇갈린 두 날인가.
+  if (want('icon')) await equip(browser, 'ko', errors, SEED.replace('weapons=sword,hammer,staff,crossbow,bow', 'weapons=sword,hammer,staff,crossbow,bow,daggers').replace('weapon.sub=hammer', 'weapon.sub=daggers'), '-daggers');
+  // 0277: 터치에서 교체 공격의 창 = 바꾸기 버튼이 금빛(키보드로 치고 화면을 톡 — 장치를 터치로).
+  if (want('touch')) {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, hasTouch: true });
+    await strike(ctx, 'touch', 2, 2, errors, true, true);
+    await ctx.close();
+  }
   if (want('strike')) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     let first = true;

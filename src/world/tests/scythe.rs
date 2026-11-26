@@ -82,6 +82,8 @@ fn the_third_cut_drags_a_mob_in_but_not_a_warden() {
         w.enemies[0].max_hp = 100_000;
         let mut before = None;
         let mut hits = Vec::new();
+        // 0277: 끌려오는 동안 덩굴의 표지(`Enemy::tug`)와 소리 · 이펙트의 사건.
+        let (mut pulls, mut tugged) = (0, 0.0f32);
         for k in 0..240 {
             idle(&mut w);
             w.player.stamina = t[P::StaminaMax];
@@ -93,13 +95,18 @@ fn the_third_cut_drags_a_mob_in_but_not_a_warden() {
             } else if before.is_none() {
                 before = Some(flat_gap(&w, 0));
             }
-            w.step(
+            let ev = w.step(
                 &Actions {
                     attack: k % 2 == 0 && !third,
                     ..Default::default()
                 },
                 &t,
             );
+            pulls += ev
+                .iter()
+                .filter(|e| matches!(e, Event::Pull { .. }))
+                .count();
+            tugged = tugged.max(w.enemies[0].tug);
             if let PState::Attack { hit, .. } = w.player.state {
                 if hits.last() != Some(&hit) {
                     hits.push(hit);
@@ -114,14 +121,22 @@ fn the_third_cut_drags_a_mob_in_but_not_a_warden() {
             idle(&mut w);
             w.step(&Actions::default(), &t);
         }
+        // 덩굴은 미끄러짐 동안만 — 반 초 뒤에는 남지 않는다.
+        assert_eq!(w.enemies[0].tug, 0.0, "the vine lets go");
         (
             before.unwrap(),
             flat_gap(&w, 0),
             w.enemies[0].radius,
             w.enemies[0].pos,
+            (pulls, tugged),
         )
     };
-    let (was, now, r, _) = go(false);
+    let (was, now, r, _, (pulls, tugged)) = go(false);
+    // 0277: 끌린 잡몹에는 덩굴이 걸리고(`PULL_SHOW`초) 사건이 하나 이상 — 셋째 타 한 번에 한 번.
+    assert!(pulls >= 1, "the hook says so");
+    assert!(
+        tugged > crate::weapons::PULL_SHOW - 2.0 * TICK_DT && tugged <= crate::weapons::PULL_SHOW
+    );
     // (방랑자도 휘두르며 내딛는다 — 셋째 타가 시작할 때 이미 가깝다.) 끌려와 몸 앞에 멈춘다.
     let feet = PLAYER_RADIUS + r + PULL_STOP;
     assert!(now < was - 0.3, "dragged in: {was:.2} -> {now:.2}");
@@ -130,8 +145,13 @@ fn the_third_cut_drags_a_mob_in_but_not_a_warden() {
         "stops at the feet ({feet:.2}): {now:.2}"
     );
     // 문지기: 방랑자가 내딛어 가까워질 뿐 몸은 제자리(방랑자 쪽으로 오지 않는다).
-    let (_, _, _, pos) = go(true);
+    let (_, _, _, pos, (pulls, tugged)) = go(true);
     assert!(pos.z <= -2.3 + 0.05, "a warden stays: {pos:?}");
+    assert_eq!(
+        (pulls, tugged),
+        (0, 0.0),
+        "no vine on a warden that does not move"
+    );
 }
 
 /// 되살아나는 숨(주특성): 묶인 적을 치면 흡수처럼 체력 · 기력이 돌아오고(다른 무기는 아니다), 흡수가 걸린 적을 치면 다른 무기보다

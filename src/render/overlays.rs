@@ -79,6 +79,7 @@ impl Renderer {
         skill_spikes(w);
         cast_charge(w, pp, t, &fl);
         rush_charge(w, pp, &fl);
+        fury_glow(w, pp, &fl);
         throw_aim(w, pp, t, &fl);
         cracks(w, &fl);
         blasts(w, &fl);
@@ -105,6 +106,7 @@ impl Renderer {
         ice_coats(w, alpha);
         spill_rings(w, pp, t, &fl);
         stagger_stars(w, alpha);
+        pull_vines(w, pp, alpha);
         lock_mark(w, alpha, &fl);
     }
 
@@ -450,6 +452,32 @@ fn bolts(w: &World, alpha: f32) {
     }
 }
 
+/// 던지는 손도끼의 몸(0277 — 키웠다): (가운데, 크기, 빛) — 크기 배 1에서. 자루 가운데가 돌림의 가운데라 도는 몸이 그리는 가장 먼 데는
+/// `drawn_reach`이고, 그것이 탄의 맞는 반지름(`tuning::BOLT_RADIUS`) 안이다(시험 — 그림이 판정보다 크지 않게).
+pub(super) const AXE_PARTS: [(Vec3, Vec3, Color); 2] = [
+    (
+        Vec3::new(0.0, -0.04, 0.0),
+        Vec3::new(0.07, 0.46, 0.07),
+        Color::new(0.55, 0.40, 0.26, 1.0),
+    ),
+    (
+        Vec3::new(0.0, 0.17, 0.07),
+        Vec3::new(0.07, 0.20, 0.28),
+        Color::new(0.90, 0.92, 0.97, 1.0),
+    ),
+];
+/// 손도끼를 감싸는 옅은 빛무리의 반지름(크기 배 1).
+pub(super) const AXE_GLOW: f32 = 0.34;
+
+/// 상자들(가운데 · 크기)이 원점 둘레로 어떻게 돌아도 닿는 가장 먼 거리 — 모서리까지(시험이 판정과 견준다).
+#[cfg(test)]
+pub(super) fn drawn_reach(parts: &[(Vec3, Vec3)]) -> f32 {
+    parts
+        .iter()
+        .map(|(c, s)| (c.abs() + *s * 0.5).length())
+        .fold(0.0, f32::max)
+}
+
 /// 던지는 RB의 몸(0274 ②b): 손도끼 = 쇳빛 날 + 나무 자루를 나는 쪽의 옆 축으로 세로로 돌린다(날이 보이게), 돌 = 굴러 가는 잿빛
 /// 덩이. 꼬리는 옅은 바람 띠 하나(빛 덩이가 아니다 — 마법과 갈린다). 창은 모델 부위로(`Renderer::javelins`) — 여기서는 바람 띠만.
 fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
@@ -465,27 +493,14 @@ fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
     let spin = w.time * 18.0 + b.left;
     match b.def.look {
         AXE => {
-            // 자루(나무)와 머리(쇠): 자루 끝을 돌림의 가운데로.
+            // 자루(나무)와 머리(쇠): 자루 가운데를 돌림의 가운데로. 0277: 게임 거리에서 읽히게 키웠다 — 굵은 자루 · 넓은 날, 그래도 도는
+            // 몸 전체가 탄의 맞는 반지름(`BOLT_RADIUS` × 크기 배) 안이다(`AXE_PARTS` — 시험). 옅은 쇳빛 빛무리가 날을 감싼다.
             let rot = Quat::from_axis_angle(side, spin)
                 * Quat::from_rotation_arc(Vec3::Y, b.dir.normalize_or(Vec3::Z));
-            // 게임 거리에서 읽히게 손에 드는 크기보다 조금 크게(0.5 m 자루 × 1.15).
-            let s = 1.15 * k;
-            shaded_box_rot(
-                p + rot * vec3(0.0, 0.0, 0.0),
-                vec3(0.05, 0.5, 0.05) * s,
-                Color::new(0.55, 0.40, 0.26, 1.0),
-                0.6,
-                rot,
-                p,
-            );
-            shaded_box_rot(
-                p + vec3(0.0, 0.2, 0.06) * s,
-                vec3(0.05, 0.16, 0.2) * s,
-                Color::new(0.90, 0.92, 0.97, 1.0),
-                0.6,
-                rot,
-                p,
-            );
+            glow_disc(p, AXE_GLOW * k, Color::new(0.86, 0.9, 1.0, 0.24));
+            for (at, size, col) in AXE_PARTS {
+                shaded_box_rot(p + at * k, size * k, col, 0.6, rot, p);
+            }
         }
         // 투척 단검(0274 ③): 날을 앞세워 곧게 — 돌지 않는다(쇠 날 + 짧은 가죽 자루).
         KNIFE => {
@@ -548,38 +563,150 @@ fn curse_bolt(w: &World, b: &crate::world::Bolt, p: Vec3) {
     spark4(p, 0.38 * k * pulse, with_a(core, 0.95));
 }
 
-/// 땅 내려찍기의 물결(0274 ④): 땅 높이에서 나는 쪽의 가로로 선 앞머리(넓은 흙빛 띠 + 흰 속) + 뒤로 남는 금(가는 띠) + 앞머리 양옆에서
-/// 솟았다 가라앉는 돌 조각 셋. 빨강은 쓰지 않는다.
+/// 분노(0277 — 대검의 주특성 `World::fury`): 반(`FURY_GLOW_FROM`)부터 몸에 숨 쉬는 주황 빛무리 + 발밑의 옅은 주황 고리, 분노만큼 짙다 —
+/// 가득이면 숨이 빨라지고 고리가 또렷하다(솟는 불씨는 이펙트 `Fx::watch`). 빨강은 쓰지 않는다(초록 0.5 넘게).
+fn fury_glow(w: &World, pp: Vec3, fl: &Drape) {
+    let f = w.fury();
+    if f < FURY_GLOW_FROM {
+        return;
+    }
+    let k = (f - FURY_GLOW_FROM) / (1.0 - FURY_GLOW_FROM);
+    let full = f >= 1.0;
+    let breath = 0.75 + 0.25 * (w.time * if full { 7.0 } else { 4.0 }).sin();
+    let ember = Color::new(1.0, 0.6, 0.28, 1.0);
+    let chest = pp + Vec3::Y * (w.player.air + 0.7);
+    glow_disc(
+        chest,
+        0.75 + 0.15 * breath,
+        with_a(ember, (0.10 + 0.18 * k) * breath),
+    );
+    fl.ring(
+        pp + Vec3::Y * 0.05,
+        0.62,
+        0.0,
+        360.0,
+        with_a(ember, (0.18 + 0.32 * k) * breath),
+    );
+}
+
+/// 분노의 빛무리가 보이기 시작하는 분노(0..1 — 적 둘에 에워싸이면 0.5, `Fx`의 불씨와 같은 문턱).
+const FURY_GLOW_FROM: f32 = 0.5;
+
+/// 걸어 당김의 덩굴(0277 — 낫의 셋째 타 · 강공격 · 걸어 당기기): 끌려오는 적(`Enemy::tug` — 미끄러지는 동안)과 방랑자의 손을 잇는
+/// 흙빛 뿌리 줄 + 연한 새순의 속, 가운데가 처지며 꿈틀대고 남은 몫만큼 옅어진다. 마디에 새순 둘. 빨강 · 보라(생물의 빛)는 쓰지 않는다.
+fn pull_vines(w: &World, pp: Vec3, alpha: f32) {
+    for (i, en) in w.enemies.iter().enumerate() {
+        if en.tug <= 0.0 || !en.alive() {
+            continue;
+        }
+        let k = (en.tug / crate::weapons::PULL_SHOW).clamp(0.0, 1.0);
+        let hand = pp + Vec3::Y * (w.player.air + 0.75);
+        let body = en.prev.lerp(en.pos, alpha) + Vec3::Y * en.height * 0.5;
+        let phase = w.time * 18.0 + i as f32 * 1.7;
+        let a = 0.35 + 0.65 * k;
+        vine(hand, body, 0.17, with_a(VINE_DARK, 0.95 * a), phase);
+        vine(hand, body, 0.065, with_a(VINE_LIGHT, 0.9 * a), phase);
+        for f in [0.35f32, 0.7] {
+            gem(vine_at(hand, body, f, phase), 0.14, with_a(VINE_LIGHT, a));
+        }
+    }
+}
+
+const VINE_DARK: Color = Color::new(0.46, 0.34, 0.23, 1.0);
+const VINE_LIGHT: Color = Color::new(0.72, 0.93, 0.60, 1.0);
+/// 덩굴이 처지고(m) 꿈틀대는(m) 몫.
+const VINE_SAG: f32 = 0.18;
+const VINE_WIGGLE: f32 = 0.10;
+
+/// 덩굴의 한 점(`f` = 0 손 → 1 적): 곧은 줄에서 가운데가 처지고, 옆으로 1.5 물결 꿈틀댄다.
+fn vine_at(a: Vec3, b: Vec3, f: f32, phase: f32) -> Vec3 {
+    let along = b - a;
+    let side = vec3(-along.z, 0.0, along.x).normalize_or(Vec3::X);
+    let bend = (f * std::f32::consts::PI).sin();
+    a + along * f - Vec3::Y * (VINE_SAG * bend)
+        + side * ((f * std::f32::consts::TAU * 1.5 + phase).sin() * VINE_WIGGLE * bend)
+}
+
+/// 덩굴 띠(카메라를 보는 굵기 `w` — 적 쪽으로 조금 가늘어진다).
+fn vine(a: Vec3, b: Vec3, w: f32, col: Color, phase: f32) {
+    const N: usize = 12;
+    let view = (a - look().eye).normalize_or(Vec3::NEG_Z);
+    let mut pts = Vec::with_capacity((N + 1) * 2);
+    let mut idx = Vec::with_capacity(N * 6);
+    for i in 0..=N {
+        let f = i as f32 / N as f32;
+        let c = vine_at(a, b, f, phase);
+        let next =
+            vine_at(a, b, (f + 0.02).min(1.0), phase) - vine_at(a, b, (f - 0.02).max(0.0), phase);
+        let side = next.cross(view).normalize_or(Vec3::X);
+        let half = w * 0.5 * (1.0 - 0.35 * f);
+        pts.push((c + side * half, col));
+        pts.push((c - side * half, col));
+    }
+    for i in 0..N {
+        let q = (i * 2) as u16;
+        idx.extend_from_slice(&[q, q + 1, q + 2, q + 1, q + 3, q + 2]);
+    }
+    flat_mesh(&pts, &idx);
+}
+
+/// 땅 내려찍기의 물결(0274 ④): 땅 높이에서 나는 쪽의 가로로 선 앞머리(흙빛 띠 + 흰 속) + 뒤로 남는 금(가는 띠) + 앞머리에서 솟았다
+/// 가라앉는 돌 조각 셋. 빨강은 쓰지 않는다.
+///
+/// 0277(사장 판정 123-5 "작다"): 옛 앞머리는 옆으로 0.75 m × 크기 배 — 판정(탄의 맞는 반지름 `BOLT_RADIUS` 0.35 × 크기 배)의 두 배라
+/// 맞지 않은 적 위로도 지나갔다. 폭은 판정 안으로 줄이고(`QUAKE_HALF`), 대신 **높이와 밝기로** 키운다 — 앞머리에서 흙이 솟는 기둥
+/// (`QUAKE_CREST`), 더 크고 높이 튀는 돌 조각, 굵어진 흰 속.
 fn quake_wave(w: &World, b: &crate::world::Bolt, p: Vec3) {
     let k = b.def.scale;
     let g = vec3(p.x, w.ground_y(p) + 0.08, p.z);
     let dir = vec3(b.dir.x, 0.0, b.dir.z).normalize_or(Vec3::Z);
     let side = vec3(-dir.z, 0.0, dir.x);
-    let dust = Color::new(0.86, 0.80, 0.70, 0.55);
-    let core = Color::new(1.0, 0.97, 0.9, 0.85);
-    let half = 0.75 * k;
-    trail(g + side * half, g - side * half, 0.34 * k, dust);
+    let dust = Color::new(0.86, 0.80, 0.70, 0.62);
+    let core = Color::new(1.0, 0.97, 0.9, 0.9);
+    let half = QUAKE_HALF * k;
+    trail(g + side * half, g - side * half, 0.40 * k, dust);
     trail(
-        g + side * half * 0.7 + dir * 0.05,
-        g - side * half * 0.7 + dir * 0.05,
-        0.12 * k,
+        g + side * half * 0.8 + dir * 0.05,
+        g - side * half * 0.8 + dir * 0.05,
+        0.18 * k,
         core,
     );
-    trail(g, g - dir * (1.6 * k), 0.10 * k, with_a(dust, 0.4));
-    let rock = Color::new(0.62, 0.58, 0.55, 1.0);
-    for (j, off) in [-0.55f32, 0.0, 0.55].into_iter().enumerate() {
-        let bob = ((w.time * 14.0 + b.left * 9.0 + j as f32 * 2.1).sin() * 0.5 + 0.5) * 0.35 * k;
+    // 솟는 흙: 앞머리 가운데에서 위로 가늘어지는 흙빛 기둥(흔들리며 숨 쉰다).
+    let breathe = 0.85 + 0.15 * (w.time * 22.0 + b.left * 5.0).sin();
+    trail(
+        g + Vec3::Y * (QUAKE_CREST * k * breathe),
+        g,
+        QUAKE_HALF * 1.6 * k,
+        with_a(dust, 0.5),
+    );
+    trail(g, g - dir * (1.8 * k), 0.14 * k, with_a(dust, 0.45));
+    let rock = Color::new(0.66, 0.62, 0.58, 1.0);
+    for (j, off) in QUAKE_ROCKS.into_iter().enumerate() {
+        let bob = ((w.time * 14.0 + b.left * 9.0 + j as f32 * 2.1).sin() * 0.5 + 0.5)
+            * QUAKE_CREST
+            * 0.8
+            * k;
         let at = g + side * off * k + Vec3::Y * bob - dir * 0.1;
         let rot = Quat::from_rotation_y(w.time * 6.0 + j as f32);
         shaded_tris(
             at,
-            &octa_faces(vec2(0.11 * k, 0.09 * k), 0.16 * k, 0.06 * k),
+            &octa_faces(
+                vec2(QUAKE_ROCK * k, QUAKE_ROCK * 0.8 * k),
+                QUAKE_ROCK * 1.4 * k,
+                QUAKE_ROCK * 0.6 * k,
+            ),
             rock,
             0.7,
             rot,
         );
     }
 }
+
+/// 땅 내려찍기의 앞머리 반 폭 · 솟는 흙의 높이 · 돌 조각의 옆 자리와 반지름(크기 배 1, m — 0277). 옆으로는 판정(`BOLT_RADIUS`) 안(시험).
+pub(super) const QUAKE_HALF: f32 = 0.33;
+pub(super) const QUAKE_CREST: f32 = 0.85;
+pub(super) const QUAKE_ROCKS: [f32; 3] = [-0.2, 0.0, 0.2];
+pub(super) const QUAKE_ROCK: f32 = 0.13;
 
 /// 신성한 빛(0274 ②b — 망치의 RB): 내려 꽂히기까지 바닥에 금빛 고리가 조여들고 위에서 가는 빛줄이 짙어진다(`SMITE_DELAY`),
 /// 꽂히는 순간의 번쩍임·튀는 빛은 이펙트(`Event::Smite`). 바닥 표시는 땅을 따라 접는다. 빨강은 쓰지 않는다.

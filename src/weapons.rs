@@ -961,6 +961,9 @@ const WAND_COMBO: [Hit; 3] = [
 ];
 pub const SCYTHE_HEAVY_PULL: f32 = 1.6;
 pub const PULL_STOP: f32 = 0.5;
+/// 걸어 당긴 적과 방랑자를 잇는 덩굴(0277 — 렌더 `pull_vines`)이 보이는 초: 끌기는 넉백과 같은 길이라(`world::KNOCK_DECAY` 10/s) 0.3초면
+/// 미끄러짐의 95%가 끝난다.
+pub const PULL_SHOW: f32 = 0.3;
 
 pub const WEAPONS: [Weapon; 11] = [
     Weapon {
@@ -1542,6 +1545,9 @@ pub const SNEAK_BACK_DEG: f32 = 110.0;
 pub const ART_FURY: f32 = 1.2;
 pub const FURY_RADIUS: f32 = 3.5;
 pub const FURY_CROWD: f32 = 4.0;
+/// 분노가 가득 찬 알림(0277 — `World::watch_fury`)을 다시 걸 문턱: 가득(1) 뒤 이 밑으로 내려가야 다음 가득이 또 울린다(적 하나 = 0.25 —
+/// 넷이 셋이 되는 것만으로는 다시 울리지 않는다).
+pub const FURY_REARM: f32 = 0.7;
 /// 대검을 휘두르는 동안(평타 · 강공격 · 모으기) 맞으면 휘청이는 시간의 배(0274 ④ — 덧옷의 `Mods::flinch`와 같은 손잡이 `hurt.stun s`,
 /// 밀림은 `GREATSWORD_KNOCK`). 받는 피해는 그대로다(0095 원칙 2 — 시험).
 pub const GREATSWORD_FLINCH: f32 = 0.4;

@@ -173,6 +173,9 @@ pub const RAIN_ARROWS: usize = 16;
 pub const FIELD_MOTES: usize = 44;
 pub const FIELD_MOTES_MAX: usize = 72;
 
+/// 분노의 불씨(0277)가 보이기 시작하는 분노(0..1 — 적 둘에 에워싸이면 0.5).
+const FURY_MOTES_FROM: f32 = 0.5;
+
 /// 퍼지는 고리의 앞머리에서 틱마다 튀는 돌 부스러기 수(0269).
 const WAVE_CHIPS: usize = 3;
 
@@ -196,6 +199,15 @@ const SHOCK: Color = Color::new(1.0, 0.96, 0.45, 1.0);
 const ICE: Color = Color::new(0.55, 0.95, 1.0, 1.0);
 const LIFE: Color = Color::new(0.55, 0.95, 0.45, 1.0);
 const HEAL: Color = Color::new(1.0, 0.86, 0.56, 1.0);
+/// 급소의 번쩍임(0277 — 쌍단검): 날 끝의 서늘한 은빛(살짝 연보라) — 평타의 따뜻한 흰빛 · 패링의 하늘빛 `COOL` · 치명타의 금과 갈린다.
+const SNEAK: Color = Color::new(0.88, 0.86, 1.0, 1.0);
+/// 분노의 불씨(0277 — 대검): 달군 쇠의 주황 → 식은 흙빛 금. 몰아치기의 `GOLD`보다 붉게, 빨강(예고)은 아니게(초록 0.5 넘게).
+const FURY: Color = Color::new(1.0, 0.58, 0.26, 1.0);
+const FURY_COOL: Color = Color::new(0.86, 0.70, 0.52, 1.0);
+const FURY_HOT: Color = Color::new(1.0, 0.78, 0.45, 1.0);
+/// 걸어 당김의 덩굴(0277 — 낫): 흙빛 뿌리 + 연한 새순(렌더 `pull_vines`와 같은 빛).
+const VINE: Color = Color::new(0.58, 0.44, 0.30, 1.0);
+const SPROUT: Color = Color::new(0.70, 0.92, 0.58, 1.0);
 /// 먼지 = 바닥 석판보다 한 단 밝은 남보라 — 바닥과 같은 빛이면(처음 0.50·0.48·0.62) 깔리는 게 아니라 안 보였다.
 const DUST: Color = Color::new(0.63, 0.61, 0.74, 0.72);
 /// 쓰러진 적에게서 풀려나는 재(바랜 잿빛 라벤더, 0037)와 뿌리의 보라.
@@ -242,6 +254,8 @@ pub struct Fx {
     enemy_was: Vec<(bool, f32)>,
     run_dist: f32,
     last_pos: Option<Vec3>,
+    /// 분노의 불씨를 낸 뒤 흐른 시간(0277).
+    fury_t: f32,
 }
 
 impl Fx {
@@ -676,6 +690,42 @@ impl Fx {
                 self.sap(at, d, 10, 4.2, 3.6);
                 self.sap(at, d, 4, 1.4, 1.6);
                 self.star(at, 0.95, 0.07, WHITE_HOT);
+            }
+            // 급소(0277 — 쌍단검): 은빛의 날카로운 번쩍임(평타 별보다 크고 가늘게 짧다) + 맞은 쪽에 직각으로 엇갈리는 빛줄 넷(X — 날이
+            // 지나간 자국). 치명타(금 · 사방의 알갱이) · 패링(하늘빛 · 사방의 빛줄)과 갈린다.
+            Event::Sneak { at } => {
+                let d = from_player(at);
+                let side = vec3(-d.z, 0.0, d.x);
+                self.star(at, 1.7, 0.13, SNEAK);
+                for (sx, sy) in [(1.0, 1.0), (-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0)] {
+                    let v = (side * sx + Vec3::Y * sy).normalize();
+                    self.push(Part {
+                        pos: at + v * 0.1,
+                        vel: v * 5.0,
+                        age: 0.0,
+                        life: 0.24,
+                        size: (0.13, 0.04),
+                        color: (WHITE_HOT, fade(SNEAK)),
+                        gravity: 0.0,
+                        drag: 5.0,
+                        shape: Shape::Streak,
+                        decor: false,
+                    });
+                }
+                // 남는 반짝임: 맞은 자리에서 천천히 떠오르는 은빛 알갱이 여섯(별 · 빛줄이 사라진 뒤에도 몇 프레임 "급소였다"가 남는다).
+                self.spray(
+                    at,
+                    Vec3::Y,
+                    0.8,
+                    6,
+                    1.6,
+                    Shape::Dot,
+                    0.09,
+                    0.45,
+                    -0.5,
+                    WHITE_HOT,
+                    SNEAK,
+                );
             }
             // 치명타: 더 크고 금빛, 금 알갱이가 사방으로.
             Event::Crit { at } => {
@@ -2362,6 +2412,44 @@ impl Fx {
                     GOLD,
                 );
             }
+            // 분노가 가득(0277 — 대검): 머리 위로 몰아쉬는 숨(불씨 빛줄이 위로 솟는다) + 발밑에서 밖으로 번지는 주황 고리 — 그 뒤는
+            // 분노가 남는 동안의 불씨(`watch`).
+            Event::FuryFull { at } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                self.mark(g, MarkKind::Ring { r0: 0.4, r1: 1.5 }, 0.32, FURY);
+                self.spray(
+                    at + Vec3::Y * 1.1,
+                    Vec3::Y,
+                    0.45,
+                    9,
+                    5.0,
+                    Shape::Streak,
+                    0.08,
+                    0.32,
+                    -1.0,
+                    WHITE_HOT,
+                    FURY,
+                );
+            }
+            // 걸어 당김(0277 — 낫): 끌려오는 적의 발밑에서 흙과 새순 부스러기가 방랑자 쪽으로 쓸린다(덩굴 자체는 렌더 `pull_vines`).
+            Event::Pull { at } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                let toward = vec3(pp.x - at.x, 0.0, pp.z - at.z).normalize_or(Vec3::Z);
+                self.dust_kick(g, toward, 3, 0.4);
+                self.spray(
+                    g + Vec3::Y * 0.2,
+                    toward + Vec3::Y * 0.5,
+                    0.5,
+                    5,
+                    3.5,
+                    Shape::Dot,
+                    0.08,
+                    0.35,
+                    9.0,
+                    SPROUT,
+                    VINE,
+                );
+            }
             // 맞음: 가슴 높이의 흰 별 + 옅은 라벤더 알갱이(빨강은 쓰지 않는다 — 화면의 붉은 테는 HUD의 몫).
             Event::PlayerHurt => {
                 let c = pp + Vec3::Y * 0.9;
@@ -3289,6 +3377,40 @@ impl Fx {
                 });
             }
         }
+        // 분노(0277 — 대검): 차오른 만큼 몸에서 불씨가 솟는다 — 반쯤(0.5)부터 보이고, 가득이면 0.06초마다 하나(가득 = 흰 속의 주황, 그
+        // 밑은 식은 흙빛 금). 몰아치기의 금빛 알갱이(아래에서 고르게)와 달리 어깨 높이에서 위로 빠르게 · 옆으로 흔들리며 — 숨 쉬는 열기.
+        let fury = w.fury();
+        if fury >= FURY_MOTES_FROM {
+            self.fury_t += dt;
+            let every = 0.045 + 0.15 * (1.0 - fury) / (1.0 - FURY_MOTES_FROM);
+            if self.fury_t >= every {
+                self.fury_t = 0.0;
+                let a = self.r() * std::f32::consts::TAU;
+                let rr = 0.25 + 0.2 * self.r();
+                let h = 0.6 + 0.6 * self.r();
+                let full = fury >= 1.0;
+                let side = vec3(a.cos(), 0.0, -a.sin()) * (self.rs() * 0.6);
+                let up = 2.2 + 1.4 * self.r();
+                self.push(Part {
+                    pos: feet + vec3(a.sin() * rr, h, a.cos() * rr),
+                    vel: vec3(0.0, up, 0.0) + side,
+                    age: 0.0,
+                    life: 0.45,
+                    size: (if full { 0.17 } else { 0.13 }, 0.04),
+                    color: if full {
+                        (FURY_HOT, fade(FURY))
+                    } else {
+                        (FURY, fade(FURY_COOL))
+                    },
+                    gravity: -1.0,
+                    drag: 1.2,
+                    shape: Shape::Dot,
+                    decor: false,
+                });
+            }
+        } else {
+            self.fury_t = 0.0;
+        }
         // 적: 돌진하는 동안 발밑 먼지(0.09초마다). 공격이 풀린 순간의 타격은 `Event::EnemyStrike`(0269)가 낸다.
         self.enemy_was.resize(w.enemies.len(), (false, 0.0));
         for (i, en) in w.enemies.iter().enumerate() {
@@ -3811,6 +3933,9 @@ mod tests {
                 dir: Vec3::Z,
                 to: crate::weapons::Id::Hammer,
             },
+            Event::Sneak { at },
+            Event::FuryFull { at },
+            Event::Pull { at },
         ];
         let red = |c: Color| c.r > 0.75 && c.g < 0.45 && c.b < 0.45;
         for e in all
@@ -4073,6 +4198,9 @@ mod tests {
                 at,
                 look: crate::weapons::CURSE,
             },
+            Event::Sneak { at },
+            Event::FuryFull { at },
+            Event::Pull { at },
             Event::JavelinBack { at },
             Event::Prayer { at, radius: 3.0 },
             Event::SnareSet { at },
@@ -4181,5 +4309,69 @@ mod tests {
                 fronts[0]
             );
         }
+    }
+
+    /// 0277: 급소는 평타와 다른 번쩍임이다 — 별의 빛이 서늘한 은빛(평타는 따뜻한 흰빛)이고, 직각으로 엇갈리는 빛줄 넷이 함께 나간다.
+    /// 같은 틱의 평타 번쩍임 위에 얹혀도(사건 둘) 갈려 읽힌다.
+    #[test]
+    fn a_sneak_hit_glints_cold_and_crossed_apart_from_a_plain_hit() {
+        let w = world();
+        let at = vec3(0.0, 1.0, 2.0);
+        let look = |e: Event| {
+            let mut fx = Fx::default();
+            fx.on_events(&[e], &w);
+            fx.parts
+        };
+        let hit = look(Event::Hit { at });
+        let sneak = look(Event::Sneak { at });
+        let star = |ps: &[Part]| *ps.iter().find(|p| p.shape == Shape::Star).unwrap();
+        let (h, k) = (star(&hit), star(&sneak));
+        assert!(
+            k.color.0.b > k.color.0.r && h.color.0.r > h.color.0.b,
+            "cold glint vs warm flash"
+        );
+        assert!(k.size.0 > h.size.0 && k.life <= 0.15);
+        let streaks: Vec<&Part> = sneak.iter().filter(|p| p.shape == Shape::Streak).collect();
+        assert!(
+            sneak.iter().any(|p| p.shape == Shape::Dot && p.life > 0.3),
+            "a lingering glitter"
+        );
+        assert_eq!(streaks.len(), 4, "an X of four streaks");
+        // 엇갈림: 위로 둘 · 아래로 둘, 맞은 쪽(z)으로는 가지 않는다.
+        assert_eq!(streaks.iter().filter(|p| p.vel.y > 0.0).count(), 2);
+        assert!(streaks.iter().all(|p| p.vel.z.abs() < 1e-3));
+    }
+
+    /// 0277: 분노의 불씨는 분노만큼 — 분노가 없는 종류(검) · 둘레가 빈 대검에는 없고, 넷에 에워싸인 대검은 1초에 열 남짓이 솟는다.
+    #[test]
+    fn fury_embers_rise_only_while_the_greatsword_is_furious() {
+        let count = |weapon: crate::weapons::Id, foes: usize| {
+            let mut w = world();
+            w.set_weapon(weapon);
+            for i in 0..foes {
+                let a = i as f32 * std::f32::consts::FRAC_PI_2;
+                let at = w.player.pos + vec3(a.sin(), 0.0, a.cos()) * 1.5;
+                let k = w.spawn(crate::species::Kind::Husk, at);
+                w.enemies[k].state = EState::Recover { t: -1000.0 };
+            }
+            let mut fx = Fx::default();
+            let mut n = 0;
+            for _ in 0..60 {
+                fx.watch(&w, crate::tuning::TICK_DT);
+                n += fx
+                    .parts
+                    .iter()
+                    .filter(|p| p.age == 0.0 && p.shape == Shape::Dot)
+                    .count();
+                fx.tick(crate::tuning::TICK_DT);
+            }
+            n
+        };
+        use crate::weapons::Id;
+        assert_eq!(count(Id::Sword, 4), 0, "no fury, no embers");
+        assert_eq!(count(Id::Greatsword, 0), 0, "alone, calm");
+        let full = count(Id::Greatsword, 4);
+        assert!((10..=25).contains(&full), "{full} a second");
+        assert!(count(Id::Greatsword, 2) < full, "half fury burns slower");
     }
 }

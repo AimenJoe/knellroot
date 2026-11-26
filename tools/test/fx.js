@@ -1,6 +1,6 @@
 // 이펙트를 틱마다 찍는다(0141): 헤드리스 Chromium으로 개발 시나리오를 띄우고, 개발 키 F6(한 프레임 = 한 틱)을 켠 뒤
 // 동작마다 연달아 스크린숏 — 0.1초짜리 번쩍임·먼지를 실제 시간으로는 못 잡는다(헤드리스는 초당 8프레임 남짓).
-//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills,spear,daggers,greatsword,scythe,wand,rb,bare] [스킬 이름들 · rb면 axe,light,javelin,stone,magic,bow,crossbow,knives,quake,seed,curse · bare면 sword,hammer,staff,crossbow,bow,spear,daggers,greatsword,scythe,wand,shield]
+//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills,spear,daggers,greatsword,scythe,pull,wand,rb,bare] [스킬 이름들 · rb면 axe,light,javelin,stone,magic,bow,crossbow,knives,quake,seed,curse · bare면 sword,hammer,staff,crossbow,bow,spear,daggers,greatsword,scythe,wand,shield]
 // skills(0158 G2): 개발 창 기술 탭 "기술 다 올리기"(끝 단 · 고르기 ㄱ, 기록에 안 쓴다) → "기술 끼우기"에서 칸·큰 기술을 고르고 →
 //   전투 탭 "skills" 판에서 Q(칸 1)·E(칸 2)·Q+E(큰 기술)를 틱마다 찍는다 — 스킬·큰 기술마다 새 판(sk-<이름>-<n>.png).
 // 눈으로 볼 것: 맞힌 자리의 별·불똥, 휘두름의 초승달, 쓰러진 적의 재, 뛰기·회피·적 내리침의 먼지, 마법 탄의 마름모, 화로 불티.
@@ -93,7 +93,7 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
       ['sunder', 'Skill(Sunder)', null, 1000, 'Q', 34, 9], ['sear', 'Skill(Sear)', null, 900, 'Q', 30, 9],
       ['tempest', null, 'Ult(Tempest)', 1000, 'ult', 80, 9],
       // 0274 ⑤: 낫 판(낫 = 열 — 대검 다음) — 걸어 당기기 · 생기 거두기 · 깨어나는 숲(고리 셋이 1초 남짓).
-      ['reap', 'Skill(Reap)', null, 1000, 'Q', 30, 10], ['harvest', 'Skill(Harvest)', null, 1000, 'Q', 36, 10],
+      ['reap', 'Skill(Reap)', null, 2400, 'Q', 30, 10], ['harvest', 'Skill(Harvest)', null, 1000, 'Q', 36, 10],
       ['grove', null, 'Ult(Grove)', 1300, 'ult', 100, 10],
       // 0274 ⑥: 완드 판(완드 = 열하나 — 낫 다음) — 저주 새기기 · 시드는 그늘(4초 — 앞의 1.6초) · 치른 값(두 박이 1초 남짓).
       ['hex', 'Skill(Hex)', null, 1000, 'Q', 34, 11], ['blight', 'Skill(Blight)', null, 1000, 'Q', 60, 11],
@@ -266,6 +266,31 @@ const server = http.createServer((req, res) => { const f = path.join(DIST, req.u
     // 줄에서 물러나 다시 줄 쪽을 본다(RB의 판과 같은 걸음) — 씨앗이 날아가 떨어지는 것이 보이게.
     await p.keyboard.press('F6'); await hold(p, 'KeyS', 900); await hold(p, 'KeyW', 120); await p.waitForTimeout(400); await p.keyboard.press('F6'); await p.waitForTimeout(300);
     await p.keyboard.press('KeyU'); await burst(p, 'sc-rb', 36);
+    await p.close();
+  }
+  if (want('pull')) {
+    // 0277 걸어 당김의 덩굴: 낫으로 엘리트 아레나의 굳은 잔재 앞에서 한 걸음 물러나(앞의 두 타는 허공) 셋째 타 · 강공격이 줄의 앞을 끌어오는 동안 손과 적을 잇는 덩굴을 틱마다.
+    p = await ctx.newPage(); const kit = sceneKit(p, 70); p.kit = kit;
+    await sceneKit.unhurt(p); await sceneKit.still(p);
+    p.on('pageerror', e => { if (!/register_plugin/.test(String(e))) errors.push(String(e)); });
+    await p.goto(`http://localhost:${PORT}/`); await kit.until('Title', '타이틀', 60000); await p.waitForTimeout(300); await p.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
+    if (first) { first = false;
+      await kit.press('ArrowDown'); await kit.press('Enter'); await kit.until('Settings { host: Title', '타이틀 → 설정'); await kit.press('ArrowUp'); await kit.press('Enter'); await kit.until('Controls', '설정 → 조작');
+      await kit.press('ArrowUp', 2); await kit.press('Enter'); await p.waitForTimeout(200); await kit.press('Escape'); await kit.until('Settings { host: Title', '조작 → 설정'); await kit.press('Escape'); await kit.until('Title', '설정 → 타이틀'); await kit.press('ArrowUp'); }
+    await kit.press('ArrowUp'); await kit.press('Enter'); await kit.until('Dev { tab: 0', '타이틀 → 개발 창');
+    await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 2', '기술 묶음'); await kit.press('ArrowDown', 5);
+    for (let i = 0; i < 10; i++) { await p.keyboard.press('Enter'); await p.waitForTimeout(150); }
+    await p.screenshot({ path: path.join(OUT, 'pull-arm.png') });
+    // 엘리트 아레나(전투 묶음 넷째 줄 — 앞의 굳은 잔재는 여러 대를 받아도 서 있다: 한 줄의 잔재는 셋째 타 전에 쓰러져 끌 것이 남지 않았다).
+    await kit.press('ArrowRight', 2); await kit.until('Dev { tab: 4', '전투 묶음'); await kit.press('ArrowDown', 3); await kit.press('Enter');
+    await kit.until(['Play', 'Sandbox'], '엘리트 아레나'); await p.waitForTimeout(700);
+    // 락온한 채 다가갔다가 그대로 뒷걸음(굳은 잔재를 본 채 2 m 남짓)으로 물러나 락온을 푼다 — 쿼터뷰에서 그 쪽을 보고 친다.
+    await p.keyboard.press('KeyL'); await p.waitForTimeout(500); await hold(p, 'KeyW', 1500); await hold(p, 'KeyS', 320);
+    await p.keyboard.press('KeyL'); await p.waitForTimeout(900);
+    await p.keyboard.press('F6'); await p.waitForTimeout(300);
+    for (let k = 0; k < 3; k++) { await p.keyboard.press('KeyJ'); await burst(p, `pull-hit${k}`, 10); }
+    await p.keyboard.press('F6'); await p.keyboard.press('KeyL'); await p.waitForTimeout(500); await hold(p, 'KeyS', 320); await p.keyboard.press('KeyL'); await p.waitForTimeout(900); await p.keyboard.press('F6'); await p.waitForTimeout(300);
+    await p.keyboard.down('KeyJ'); await burst(p, 'pull-charge', 16); await p.keyboard.up('KeyJ'); await burst(p, 'pull-heavy', 16);
     await p.close();
   }
   if (want('wand')) {

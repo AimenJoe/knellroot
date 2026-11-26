@@ -685,3 +685,43 @@ fn lit_ctx_rim_matches_the_per_vertex_reads() {
     }
     set_look(Look::default());
 }
+
+/// 0277: 키운 작은 것들도 그림이 판정보다 크지 않다(0145 "바깥 변은 닿는 거리") — 던지는 손도끼의 도는 몸 · 빛무리, 땅 내려찍기의
+/// 앞머리 폭 · 돌 조각, 던진 방패의 도는 판이 모두 탄의 맞는 반지름(`BOLT_RADIUS` × 그 탄의 크기 배 — 적의 몸 겉에서 잰 거리) 안이다.
+/// 옛 그림은 손도끼 0.37 m · 물결 앞머리 0.75 m × 크기 배로 판정(0.35 × 크기 배) 밖이었다.
+#[test]
+fn enlarged_throws_still_draw_no_wider_than_they_hit() {
+    use crate::tuning::BOLT_RADIUS;
+    use crate::weapons::{AXE_TOSS, QUAKE_TOSS, SHIELD_TOSS};
+    // 손도끼(크기 배는 그림 · 판정에 같이 곱한다 — 배 1에서 견준다).
+    let axe: Vec<(Vec3, Vec3)> = AXE_PARTS.iter().map(|(c, s, _)| (*c, *s)).collect();
+    let reach = drawn_reach(&axe);
+    assert!(
+        reach <= BOLT_RADIUS && AXE_GLOW <= BOLT_RADIUS,
+        "axe {reach}"
+    );
+    assert!(reach > 0.3, "big enough to read: {reach}");
+    for b in [AXE_TOSS.bolt, AXE_TOSS.charged] {
+        assert!(reach * b.scale <= BOLT_RADIUS * b.scale + 1e-6);
+    }
+    // 땅 내려찍기: 옆으로(앞머리 반 폭 · 돌 조각의 바깥 변).
+    let side = QUAKE_ROCKS
+        .iter()
+        .map(|o| o.abs() + QUAKE_ROCK)
+        .fold(QUAKE_HALF, f32::max);
+    assert!(side <= BOLT_RADIUS, "quake front {side}");
+    assert!(QUAKE_CREST > 2.0 * QUAKE_HALF, "it grew up, not out");
+    for b in [QUAKE_TOSS.bolt, QUAKE_TOSS.charged] {
+        assert_eq!(b.look, crate::weapons::QUAKE);
+    }
+    // 던진 방패: 모델의 방패 부위(쉬는 자세의 경계 구) × 크기 배.
+    let m = crate::model::Model::from_bytes(crate::models::bytes("wanderer").unwrap()).unwrap();
+    let node = m.node(crate::shield::Id::Pilgrim.def().node).unwrap();
+    let (_, r) = m.rest_bounds_under(node).unwrap();
+    let drawn = r * SHIELD_SCALE;
+    assert!(
+        drawn <= BOLT_RADIUS * SHIELD_TOSS.bolt.scale,
+        "shield {drawn}"
+    );
+    assert!(drawn > 0.3, "big enough to read: {drawn}");
+}

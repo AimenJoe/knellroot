@@ -654,6 +654,9 @@ impl App {
                 // 0276: 기도하는 손의 고리 · 덫이 무는 순간은 가볍게, 놓기 · 방패가 튕기기 · 들이받기의 출발은 조용히(맞힌 타가 제 몫을 낸다).
                 Event::Prayer { .. } | Event::SnareSnap { .. } => SHAKE_HIT,
                 Event::SnareSet { .. } | Event::ShieldBounce { .. } | Event::Rush { .. } => 0.0,
+                // 0277: 급소는 맞힌 타만큼 가볍게 한 번 더, 분노가 차는 것 · 걸어 당기는 것은 조용히(그림 · 소리가 말한다).
+                Event::Sneak { .. } => SHAKE_HIT,
+                Event::FuryFull { .. } | Event::Pull { .. } => 0.0,
                 Event::Perfect { .. } => SHAKE_CHARGED,
                 // 락온 대상을 잃으면(0181) 풀린 뒤 자유 숄더뷰에 머문다 — 버튼으로 풀면 락온한 곳(쿼터뷰·자유)으로.
                 Event::LockLost => {
@@ -1489,6 +1492,10 @@ impl App {
                 Event::SnareSnap { .. } => Id::Parry,
                 Event::ShieldBounce { .. } => Id::Beat,
                 Event::Rush { .. } => Id::Dodge,
+                // 0277: 급소 = 짧고 높은 쇳빛 '칭', 분노가 가득 = 낮게 차오르는 숨, 걸어 당김 = 덩굴이 감겨 끌리는 소리.
+                Event::Sneak { .. } => Id::Sneak,
+                Event::FuryFull { .. } => Id::Fury,
+                Event::Pull { .. } => Id::Pull,
                 // 0270 C3: 눈발 = 높은 종, 뿌리 덫 = 뿌리가 깨는 소리.
                 Event::FieldPulse { kind, .. } => match kind {
                     crate::status::Kind::Frost => Id::Beat3,

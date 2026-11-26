@@ -326,3 +326,44 @@ fn a_boss_opens_its_weak_spot_only_from_behind() {
     let en = &w.enemies[0];
     assert!(hurt_by(en, 100, false, 0, k(back), &t) > hurt_by(en, 100, false, 0, k(front), &t));
 }
+
+/// 0277: 급소가 든 타는 그 자리에 `Event::Sneak`를 낸다(앱의 번쩍임 · 소리) — 등을 돌린 적을 쌍단검으로 치면 나오고, 마주 본 적 · 검으로는
+/// 나오지 않는다. 사건은 급소가 실린 타의 수만큼이다(맞힌 타보다 많지 않다).
+#[test]
+fn a_sneak_hit_says_so_and_a_plain_hit_does_not() {
+    let t = Tuning::default();
+    let sneaks = |id: W, behind: bool| {
+        let mut w = World::new("test", 40.0);
+        w.set_weapon(id);
+        let at = vec3(0.0, 0.0, -1.2);
+        let i = mob_with(&mut w, at, 1_000_000);
+        let (mut sneak, mut hits) = (0, 0);
+        for k in 0..60 {
+            idle(&mut w);
+            let en = &mut w.enemies[i];
+            en.pos = at;
+            en.facing = if behind { std::f32::consts::PI } else { 0.0 };
+            w.player.pos = Vec3::ZERO;
+            let ev = w.step(
+                &Actions {
+                    attack: k % 2 == 0,
+                    ..Default::default()
+                },
+                &t,
+            );
+            sneak += ev
+                .iter()
+                .filter(|e| matches!(e, Event::Sneak { .. }))
+                .count();
+            hits += ev
+                .iter()
+                .filter(|e| matches!(e, Event::Hit { .. } | Event::Crit { .. }))
+                .count();
+        }
+        (sneak, hits)
+    };
+    let (back, hits) = sneaks(W::Daggers, true);
+    assert!(back >= 2 && back <= hits, "{back} sneaks of {hits} hits");
+    assert_eq!(sneaks(W::Daggers, false).0, 0, "face to face");
+    assert_eq!(sneaks(W::Sword, true).0, 0, "only the daggers' hand");
+}

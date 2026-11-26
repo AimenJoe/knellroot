@@ -1307,13 +1307,14 @@ impl World {
             }
             let at = en.pos + Vec3::Y * en.height * 0.6;
             let crit = en.exposed > 0.0;
-            let dmg = hurt_by(
+            let dmg = wound(
                 en,
                 self.stats.dmg + sw.damage,
                 crit,
                 self.stats.opened_dmg,
                 knack,
                 t,
+                &mut ev,
             );
             // 땅울림 맺음: 이미 자세가 깨져 있던 적에게는 배로(이 타로 깨진 적은 다음부터).
             en.hp -= if en.stance.broken > 0.0 {
@@ -1332,6 +1333,7 @@ impl World {
                 if en.boss {
                     Vec3::ZERO
                 } else {
+                    tug(en, pull_slide(dv.length(), en.radius, -sw.push), &mut ev);
                     -dir * pull_slide(dv.length(), en.radius, -sw.push) * KNOCK_DECAY
                 }
             } else {
@@ -1523,13 +1525,14 @@ impl World {
             let at = en.pos + Vec3::Y * en.height * 0.6;
             let winding = en.telegraph().is_some() && !en.rising();
             let crit = en.exposed > 0.0;
-            en.hp -= hurt_by(
+            en.hp -= wound(
                 en,
                 self.stats.dmg + d.skill.damage,
                 crit,
                 self.stats.opened_dmg,
                 knack,
                 t,
+                &mut ev,
             );
             if crit {
                 en.exposed = 0.0;
@@ -1646,13 +1649,14 @@ impl World {
             }
             let hit_at = en.pos + Vec3::Y * en.height * 0.6;
             let crit = en.exposed > 0.0;
-            en.hp -= hurt_by(
+            en.hp -= wound(
                 en,
                 self.stats.dmg + s.damage,
                 crit,
                 self.stats.opened_dmg,
                 knack,
                 t,
+                &mut ev,
             );
             if crit {
                 en.exposed = 0.0;
@@ -1707,13 +1711,14 @@ impl World {
             }
             let at = en.pos + Vec3::Y * en.height * 0.6;
             let crit = en.exposed > 0.0;
-            en.hp -= hurt_by(
+            en.hp -= wound(
                 en,
                 self.stats.dmg + b.damage,
                 crit,
                 self.stats.opened_dmg,
                 knack,
                 t,
+                &mut ev,
             );
             if crit {
                 en.exposed = 0.0;

@@ -315,3 +315,51 @@ fn greatsword_probe() {
         }
     }
 }
+
+/// 0277: 분노가 가득 찬 것은 한 번만 알린다 — 넷에 에워싸여 가득 차는 틱에 `FuryFull` 하나, 가득인 동안 · 셋으로 줄어도(0.75) 조용하고,
+/// `FURY_REARM` 밑으로 내려갔다가 다시 차면 또 하나. 분노가 없는 검은 에워싸여도 조용하다.
+#[test]
+fn fury_full_rings_once_per_crossing() {
+    let t = Tuning::default();
+    let fulls = |w: &mut World, secs: f32| {
+        wait(w, &t, secs)
+            .iter()
+            .filter(|e| matches!(e, Event::FuryFull { .. }))
+            .count()
+    };
+    let mut w = World::new("test", 30.0);
+    w.set_weapon(W::Greatsword);
+    assert_eq!(fulls(&mut w, 0.2), 0, "alone");
+    let ring: Vec<usize> = (0..4)
+        .map(|k| {
+            let a = k as f32 * std::f32::consts::FRAC_PI_2;
+            mob_with(&mut w, vec3(a.sin(), 0.0, a.cos()) * 1.6, 500)
+        })
+        .collect();
+    assert_eq!(fulls(&mut w, 0.5), 1, "once on the way up, not every tick");
+    // 하나가 물러나 셋(0.75) — 문턱 위라 다시 걸리지 않는다, 돌아와도 조용하다.
+    let back = w.enemies[ring[0]].pos;
+    w.enemies[ring[0]].pos = vec3(0.0, 0.0, 12.0);
+    assert_eq!(fulls(&mut w, 0.2), 0);
+    w.enemies[ring[0]].pos = back;
+    assert_eq!(fulls(&mut w, 0.2), 0, "still full from before");
+    // 둘이 물러나 반(0.5) — 문턱 밑이라 다시 걸린다, 돌아오면 또 한 번.
+    for &i in &ring[..2] {
+        w.enemies[i].pos = vec3(0.0, 0.0, 12.0 + i as f32);
+    }
+    assert_eq!(fulls(&mut w, 0.2), 0);
+    assert!(w.fury() < crate::weapons::FURY_REARM);
+    for (k, &i) in ring[..2].iter().enumerate() {
+        let a = k as f32 * std::f32::consts::FRAC_PI_2;
+        w.enemies[i].pos = vec3(a.sin(), 0.0, a.cos()) * 1.6;
+    }
+    assert_eq!(fulls(&mut w, 0.2), 1, "a second crossing rings again");
+    // 검은 분노가 없다.
+    let mut s = World::new("test", 30.0);
+    s.set_weapon(W::Sword);
+    for k in 0..4 {
+        let a = k as f32 * std::f32::consts::FRAC_PI_2;
+        mob_with(&mut s, vec3(a.sin(), 0.0, a.cos()) * 1.6, 500);
+    }
+    assert_eq!(fulls(&mut s, 0.5), 0);
+}

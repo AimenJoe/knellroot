@@ -454,6 +454,19 @@ pub enum Event {
         dir: Vec3,
         power: f32,
     },
+    /// 급소가 들었다(0277 — 쌍단검의 주특성 `Art::sneak` · 그림자 걸음): `at`의 적에게 이 타가 급소로 들어갔다(`wound` 한 곳).
+    /// 앱이 맞은 자리의 날카로운 번쩍임과 짧은 소리로.
+    Sneak {
+        at: Vec3,
+    },
+    /// 분노가 가득 찼다(0277 — 대검의 주특성 `Art::fury`): 아래에서 1로 넘어선 틱에 한 번, `FURY_REARM` 밑으로 내려가야 다시(`watch_fury`).
+    FuryFull {
+        at: Vec3,
+    },
+    /// 걸어 당겼다(0277 — 낫의 셋째 타 · 강공격 · 걸어 당기기): `at`의 적이 방랑자 쪽으로 끌려온다(그동안 `Enemy::tug`).
+    Pull {
+        at: Vec3,
+    },
 }
 
 /// 금 간 땅(0051, 망치 여진): `left`초 뒤 둘레를 친다.
@@ -940,6 +953,8 @@ pub struct BeatState {
     /// 분노(0274 ④ 대검): 이 휘두르기의 평타 빠르기에 얹힌 덤(0 = 그대로, 0.2 = ×1.2) — 휘두르기를 시작한 틱에 정하고 그 휘두르기
     /// 동안 머문다(`World::latch_fury`).
     pub fury: f32,
+    /// 분노가 가득 찼다고 알렸다(0277 — `World::watch_fury`): 분노가 `weapons::FURY_REARM` 밑으로 내려가야 다시 알린다.
+    pub fury_full: bool,
 }
 
 /// 마법·사격·수류탄(0048·0051·0111): 마법 칸, 공중 사격과 체공, 쇠뇌의 탄과 재장전, 수류탄. `Player::ranged`.
@@ -1225,6 +1240,7 @@ impl World {
                     since_perfect: f32::MAX,
                     free_dodge: false,
                     fury: 0.0,
+                    fury_full: false,
                 },
                 running: false,
                 faces_away: false,
@@ -2006,13 +2022,14 @@ impl World {
                 continue;
             }
             let crit = en.exposed > 0.0;
-            en.hp -= hurt_by(
+            en.hp -= wound(
                 en,
                 self.stats.dmg + t[P::PlungeDamage] as i32,
                 crit,
                 self.stats.opened_dmg,
                 knack,
                 t,
+                ev,
             );
             en.exposed = 0.0;
             en.hit_by = swing;
@@ -2128,6 +2145,20 @@ impl World {
         self.player.beat.fury = if k > 0.0 { k * self.fury() } else { 0.0 };
     }
 
+    /// 분노가 가득 찬 순간을 알린다(0277): 아래에서 1로 넘어선 틱에 `Event::FuryFull` 한 번 — `weapons::FURY_REARM` 밑으로 내려가야 다시
+    /// 울린다(둘레의 적이 끈 가장자리를 드나들어도 되풀이되지 않게). 분노가 없는 종류는 늘 0이라 조용하다.
+    fn watch_fury(&mut self, ev: &mut Vec<Event>) {
+        let f = self.fury();
+        let at = self.player.pos;
+        let b = &mut self.player.beat;
+        if f >= 1.0 && !b.fury_full {
+            b.fury_full = true;
+            ev.push(Event::FuryFull { at });
+        } else if f < weapons::FURY_REARM {
+            b.fury_full = false;
+        }
+    }
+
     /// 평타 `hit` 다음에 이을 타(마지막이면 None): 무기 표 그대로 — 남김없이 휘두르는 대검(빈 손의 결 `Bare::Reckless`)은 분노가 가득
     /// 차 있으면 끝 타 뒤에 둘째 타로 되돌아 이어진다(평타가 끝나지 않는다).
     pub fn next_hit(&self, hit: u8) -> Option<u8> {
@@ -2158,6 +2189,7 @@ impl World {
         let tuned = self.tuned(t);
         let t = &tuned;
         let mut ev = Vec::new();
+        self.watch_fury(&mut ev);
         let dt = TICK_DT;
         self.attack_down = a.attack_held;
         if let Some((_, left)) = &mut self.spill_at {
@@ -2391,13 +2423,14 @@ impl World {
                 continue;
             }
             let crit = en.exposed > 0.0;
-            en.hp -= hurt_by(
+            en.hp -= wound(
                 en,
                 self.stats.dmg + damage,
                 crit,
                 self.stats.opened_dmg,
                 knack,
                 t,
+                ev,
             );
             en.exposed = 0.0;
             en.struck();
@@ -2482,13 +2515,14 @@ impl World {
             if d <= inner || d > outer {
                 continue;
             }
-            en.hp -= hurt_by(
+            en.hp -= wound(
                 en,
                 self.stats.dmg + t[P::PlungeDamage] as i32,
                 false,
                 self.stats.opened_dmg,
                 knack,
                 t,
+                ev,
             );
             add_poise(en, 2.0 * self.stats.poise, None, t, ev);
             en.struck();
@@ -3012,11 +3046,7 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, knack: Knack, t: &Tun
     };
     // 급소(0274 ③ — 쌍단검의 주특성): 등 뒤에서 · 드러난 몸(휘청 · 기절 · 묶임)에 × 주특성의 배 — 타마다 한 번.
     let k = match knack.sneak {
-        Some((from, mult))
-            if sneak_open(en, from) || (knack.sure && (!en.boss || SHADOW_STEP_BOSS)) =>
-        {
-            k * mult
-        }
+        Some((_, mult)) if sneak_lands(en, knack) => k * mult,
         _ => k,
     };
     // 언 적(0270 B 서리)을 치면 깨진다: 그 한 대는 크게(금·표지와 곱한다 — 얼음은 한 번뿐이다).
@@ -3030,6 +3060,35 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, knack: Knack, t: &Tun
     } else {
         d
     }
+}
+
+/// 이 손의 덤에 급소가 들어가나(0274 ③ — `hurt_by`의 급소 갈래와 같은 셈): 등 뒤 · 드러난 몸(`sneak_open`)이거나, 그림자 걸음(`sure`)의
+/// 타다(문지기는 `SHADOW_STEP_BOSS`일 때만).
+pub fn sneak_lands(en: &Enemy, knack: Knack) -> bool {
+    match knack.sneak {
+        Some((from, _)) => sneak_open(en, from) || (knack.sure && (!en.boss || SHADOW_STEP_BOSS)),
+        None => false,
+    }
+}
+
+/// 방랑자의 손의 타가 주는 피해(`hurt_by`) — 급소가 들었으면 그 자리에 `Event::Sneak`(0277: 급소가 화면 · 귀에 읽히게). 손의 덤을 싣는
+/// 타는 모두 이것을 지난다(타입이 스스로 낸 피해 `Knack::NONE`은 `hurt_by` 그대로).
+fn wound(
+    en: &Enemy,
+    base: i32,
+    crit: bool,
+    opened: i32,
+    knack: Knack,
+    t: &Tuning,
+    ev: &mut Vec<Event>,
+) -> i32 {
+    let d = hurt_by(en, base, crit, opened, knack, t);
+    if d > 0 && knack.sneak.is_some_and(|(_, m)| m > 1.0) && sneak_lands(en, knack) {
+        ev.push(Event::Sneak {
+            at: en.pos + Vec3::Y * en.height * 0.6,
+        });
+    }
+    d
 }
 
 /// 손의 덤(`hurt_by`): 날카로움(피 흘리는 적에게 — `World::keen`)과 급소(치는 방랑자의 자리 · 배 — 쌍단검의 `Art::sneak`).
@@ -3224,6 +3283,19 @@ pub fn pull_slide(dist: f32, radius: f32, pull: f32) -> f32 {
         .max(0.0)
         .min(pull)
 }
+
+/// 걸어 당김의 표지(0277): 끌려오는 거리가 있으면(`MIN_TUG` m 넘게) 그 적에 `Enemy::tug`를 걸고 `Event::Pull` — 몸 앞에 이미 붙은 적은 조용하다.
+pub fn tug(en: &mut Enemy, slide: f32, ev: &mut Vec<Event>) {
+    if slide > MIN_TUG {
+        en.tug = weapons::PULL_SHOW;
+        ev.push(Event::Pull {
+            at: en.pos + Vec3::Y * en.height * 0.5,
+        });
+    }
+}
+
+/// 이보다 짧게 끌리면(m) 덩굴 · 소리를 내지 않는다(이미 몸 앞).
+const MIN_TUG: f32 = 0.05;
 
 /// 쏟아지는 방향(XZ 단위). `d` = 축(주인공) → 적. 화면 시계 방향 돌리기의 접선은 (−d.z, d.x)라(카메라 요 +90°와 같은 회전),
 /// 멈출 때 관성으로 계속 가는 쪽이 그 접선. 반시계면 반대. 바깥 몫 `out`을 섞는다.
