@@ -496,7 +496,7 @@ pub(super) fn class_text(id: weapons::Id, name: &str) -> Option<(String, String,
 /// + 종류의 결 이름과 하는 일. 맨손은 종류가 아니라 없다. 주무기 상세와 보조무기 슬롯의 빈 줄이 같이 쓴다.
 pub(super) fn bare_text(id: weapons::Id) -> Option<String> {
     let def = id.class()?.def();
-    let b = format!("{} — {}", tr(def.bare_name), tr(def.bare_trait));
+    let b = format!("{}: {}", tr(def.bare_name), tr(def.bare_trait));
     Some(fill(s().bare_line, &[&b]))
 }
 

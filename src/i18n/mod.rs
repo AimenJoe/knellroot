@@ -2556,6 +2556,17 @@ mod tests {
         }
     }
 
+    /// 화면의 글에는 줄표(—)를 쓰지 않는다(0273, 사장 2026-11-26): 이름과 풀이 사이는 콜론, 문장 사이는 마침표나 쉼표.
+    /// 개발 창의 글(`dev.rs`)은 밖이다.
+    #[test]
+    fn screen_text_has_no_em_dash() {
+        for l in Lang::ALL {
+            for t in all(l.strings()) {
+                assert!(!t.contains('—'), "{l:?}: {t:?}");
+            }
+        }
+    }
+
     /// 자리표시자({0}…)가 언어끼리 같다.
     #[test]
     fn placeholders_match_across_languages() {
