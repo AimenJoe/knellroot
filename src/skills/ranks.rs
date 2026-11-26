@@ -240,268 +240,14 @@ impl Skill {
         } else {
             0.0
         };
-        let form = match self.form {
-            Form::Ring {
-                radius,
-                hits,
-                gap,
-                push,
-            } => Form::Ring {
-                radius: radius * size,
-                hits: hits
-                    + match twist {
-                        Some(Twist::Spins { more }) => more,
-                        _ => 0,
-                    },
-                gap,
-                push,
-            },
-            Form::Lane {
-                dist,
-                half,
-                time,
-                push,
-            } => Form::Lane {
-                dist: dist * size,
-                half,
-                time,
-                push,
-            },
-            Form::Stab {
-                range,
-                arc_deg,
-                hits,
-                gap,
-            } => Form::Stab {
-                range: range * size,
-                arc_deg,
-                hits: hits
-                    + match twist {
-                        Some(Twist::Stitches { more }) => more,
-                        _ => 0,
-                    },
-                gap,
-            },
-            Form::Bell {
-                range,
-                delay,
-                radius,
-            } => Form::Bell {
-                range,
-                delay,
-                radius: radius
-                    * size
-                    * match twist {
-                        Some(Twist::Loud { mult }) => mult,
-                        _ => 1.0,
-                    },
-            },
-            // 저주 새기기(0274 ⑥): 4단의 치수는 닿는 거리 · 옮는 둘레에, 멀리 옮는 저주(ㄱ)는 옮는 둘레에.
-            Form::Hex {
-                range,
-                secs,
-                spread,
-            } => Form::Hex {
-                range: range * size,
-                secs,
-                spread: spread
-                    * size
-                    * match twist {
-                        Some(Twist::Big { mult }) => mult,
-                        _ => 1.0,
-                    },
-            },
-            Form::Pull {
-                range,
-                arc_deg,
-                to,
-                stagger,
-            } => Form::Pull {
-                range: range * size,
-                arc_deg,
-                to,
-                stagger: stagger + hold,
-            },
-            Form::Cone {
-                range,
-                arc_deg,
-                stagger,
-                push,
-            } => Form::Cone {
-                range,
-                // 넓게 휘두르기(후려치기 ㄴ, 0270 C3).
-                arc_deg: match twist {
-                    Some(Twist::Wide { arc_deg }) => arc_deg,
-                    _ => arc_deg,
-                } * size,
-                stagger,
-                push,
-            },
-            Form::Wave { radius, time } => Form::Wave {
-                radius: radius * size,
-                time,
-            },
-            Form::Drift {
-                ahead,
-                radius,
-                secs,
-                every,
-            } => Form::Drift {
-                ahead,
-                radius: radius
-                    * size
-                    * match twist {
-                        Some(Twist::Big { mult }) => mult,
-                        _ => 1.0,
-                    },
-                secs: secs
-                    + match cap {
-                        Some(Cap::Smolder { secs, .. }) => secs,
-                        _ => 0.0,
-                    },
-                every,
-            },
-            Form::Trap {
-                ahead,
-                radius,
-                secs,
-            } => Form::Trap {
-                ahead,
-                radius: radius
-                    * size
-                    * match twist {
-                        Some(Twist::Big { mult }) => mult,
-                        _ => 1.0,
-                    },
-                secs,
-            },
-            // 버팀: 받아낸 타의 덤도 피해의 배를 같이 받는다(10 → 12 → 13).
-            Form::Brace {
-                hold,
-                radius,
-                soak,
-                most,
-                more,
-                push,
-            } => Form::Brace {
-                hold,
-                radius: radius * size,
-                soak,
-                most,
-                more: scaled(more, dmg),
-                push,
-            },
-            // 되울림의 2단은 이어지는 시간(피해도 휘청도 아니다).
-            Form::Echo {
-                secs,
-                radius,
-                stagger,
-            } => Form::Echo {
-                secs: secs + if rank >= 2 { RANK2_SECS } else { 0.0 },
-                radius: radius * size,
-                stagger,
-            },
-            Form::Throw {
-                dist,
-                half,
-                speed,
-                hand,
-            } => Form::Throw {
-                dist: dist * size,
-                half,
-                speed,
-                hand,
-            },
-            Form::Field {
-                radius,
-                secs,
-                every,
-            } => Form::Field {
-                radius: radius * size,
-                secs: secs
-                    + match cap {
-                        Some(Cap::Smolder { secs, .. }) => secs,
-                        _ => 0.0,
-                    },
-                every,
-            },
-            Form::Hop {
-                range,
-                hops,
-                gap,
-                reach,
-            } => Form::Hop {
-                range: range * size,
-                hops,
-                gap,
-                reach,
-            },
-            Form::Bash {
-                range,
-                arc_deg,
-                stagger,
-                mult,
-            } => Form::Bash {
-                range,
-                arc_deg: match twist {
-                    Some(Twist::Wide { arc_deg }) => arc_deg,
-                    _ => arc_deg,
-                } * size,
-                stagger,
-                mult,
-            },
-            // 생기 거두기(0274 ⑤): 거둔 적마다 도는 체력이 피해의 배를 같이 받는다(4 → 5 → 5), 둘레는 4단의 치수 · 넓은 낫(ㄱ).
-            Form::Reap {
-                radius,
-                heal,
-                most,
-                time,
-            } => Form::Reap {
-                radius: radius
-                    * size
-                    * match twist {
-                        Some(Twist::Big { mult }) => mult,
-                        _ => 1.0,
-                    },
-                heal: scaled(heal, dmg),
-                most,
-                time,
-            },
-            // 재기: 도는 체력이 피해의 배를 같이 받는다(10 → 12 → 13), 둘레는 4단의 치수.
-            Form::Rally { heal, radius, push } => Form::Rally {
-                heal: scaled(heal, dmg),
-                radius: radius * size,
-                push,
-            },
-            // 빠지며 베기: 4단은 베는 거리, 먼 걸음(ㄱ)은 물러나는 거리.
-            Form::Slip {
-                range,
-                arc_deg,
-                back,
-                time,
-            } => Form::Slip {
-                range: range * size,
-                arc_deg,
-                back: match twist {
-                    Some(Twist::Lunge { dist }) => dist,
-                    _ => back,
-                },
-                time,
-            },
-            Form::Erupt {
-                len,
-                step,
-                every,
-                radius,
-                stagger,
-            } => Form::Erupt {
-                len: len * size,
-                step,
-                every,
-                radius,
-                stagger,
-            },
-        };
+        let form = self.form.grown(&Growth {
+            rank,
+            size,
+            dmg,
+            hold,
+            twist,
+            cap,
+        });
         Eff {
             skill: Skill {
                 damage: scaled(self.damage, dmg),
@@ -517,6 +263,132 @@ impl Skill {
             twist,
             cap,
         }
+    }
+}
+
+/// 단 · 고르기 · 맺음이 모양의 치수에 얹는 것(`Skill::at_grown`이 셈해 `Form::grown`에 넘긴다).
+struct Growth {
+    rank: u8,
+    /// 4단의 제 치수 × 땅을 짚는 손.
+    size: f32,
+    /// 단의 피해 배(2단 · 5단).
+    dmg: f32,
+    /// 피해 없는 스킬의 2단 휘청 덤(초).
+    hold: f32,
+    twist: Option<Twist>,
+    cap: Option<Cap>,
+}
+
+impl Growth {
+    /// 크게(`Twist::Big`)의 배, 아니면 1.
+    fn big(&self) -> f32 {
+        match self.twist {
+            Some(Twist::Big { mult }) => mult,
+            _ => 1.0,
+        }
+    }
+
+    /// 넓게 휘두르기(`Twist::Wide` — 후려치기 ㄴ, 0270 C3)면 그 각, 아니면 `arc`.
+    fn wide(&self, arc: f32) -> f32 {
+        match self.twist {
+            Some(Twist::Wide { arc_deg }) => arc_deg,
+            _ => arc,
+        }
+    }
+
+    /// 오래 타는 맺음(`Cap::Smolder`)의 덤 초.
+    fn smolder(&self) -> f32 {
+        match self.cap {
+            Some(Cap::Smolder { secs, .. }) => secs,
+            _ => 0.0,
+        }
+    }
+}
+
+impl Form {
+    /// 이 모양에 단 · 고르기 · 맺음을 입힌 것(0278 R25b — 옛 `at_grown`의 모양마다 다시 짓던 match를 칸 고치기로: 값 · 셈의 차례는
+    /// 그대로, 곱은 왼쪽부터). 모양마다 무엇이 크나는 `Form::info().grows`가 화면에 말한다.
+    fn grown(self, g: &Growth) -> Form {
+        let size = g.size;
+        let mut f = self;
+        match &mut f {
+            Form::Ring { radius, hits, .. } => {
+                *radius *= size;
+                *hits += match g.twist {
+                    Some(Twist::Spins { more }) => more,
+                    _ => 0,
+                };
+            }
+            Form::Lane { dist, .. } => *dist *= size,
+            Form::Stab { range, hits, .. } => {
+                *range *= size;
+                *hits += match g.twist {
+                    Some(Twist::Stitches { more }) => more,
+                    _ => 0,
+                };
+            }
+            Form::Bell { radius, .. } => {
+                *radius = *radius
+                    * size
+                    * match g.twist {
+                        Some(Twist::Loud { mult }) => mult,
+                        _ => 1.0,
+                    };
+            }
+            // 저주 새기기(0274 ⑥): 4단의 치수는 닿는 거리 · 옮는 둘레에, 멀리 옮는 저주(ㄱ)는 옮는 둘레에.
+            Form::Hex { range, spread, .. } => {
+                *range *= size;
+                *spread = *spread * size * g.big();
+            }
+            Form::Pull { range, stagger, .. } => {
+                *range *= size;
+                *stagger += g.hold;
+            }
+            Form::Cone { arc_deg, .. } | Form::Bash { arc_deg, .. } => {
+                *arc_deg = g.wide(*arc_deg) * size
+            }
+            Form::Wave { radius, .. } => *radius *= size,
+            Form::Drift { radius, secs, .. } => {
+                *radius = *radius * size * g.big();
+                *secs += g.smolder();
+            }
+            Form::Trap { radius, .. } => *radius = *radius * size * g.big(),
+            // 버팀: 받아낸 타의 덤도 피해의 배를 같이 받는다(10 → 12 → 13).
+            Form::Brace { radius, more, .. } => {
+                *radius *= size;
+                *more = scaled(*more, g.dmg);
+            }
+            // 되울림의 2단은 이어지는 시간(피해도 휘청도 아니다).
+            Form::Echo { secs, radius, .. } => {
+                *secs += if g.rank >= 2 { RANK2_SECS } else { 0.0 };
+                *radius *= size;
+            }
+            Form::Throw { dist, .. } => *dist *= size,
+            Form::Field { radius, secs, .. } => {
+                *radius *= size;
+                *secs += g.smolder();
+            }
+            Form::Hop { range, .. } => *range *= size,
+            // 생기 거두기(0274 ⑤): 거둔 적마다 도는 체력이 피해의 배를 같이 받는다(4 → 5 → 5), 둘레는 4단의 치수 · 넓은 낫(ㄱ).
+            Form::Reap { radius, heal, .. } => {
+                *radius = *radius * size * g.big();
+                *heal = scaled(*heal, g.dmg);
+            }
+            // 재기: 도는 체력이 피해의 배를 같이 받는다(10 → 12 → 13), 둘레는 4단의 치수.
+            Form::Rally { heal, radius, .. } => {
+                *heal = scaled(*heal, g.dmg);
+                *radius *= size;
+            }
+            // 빠지며 베기: 4단은 베는 거리, 먼 걸음(ㄱ)은 물러나는 거리.
+            Form::Slip { range, back, .. } => {
+                *range *= size;
+                if let Some(Twist::Lunge { dist }) = g.twist {
+                    *back = dist;
+                }
+            }
+            Form::Erupt { len, .. } => *len *= size,
+        }
+        f
     }
 }
 
