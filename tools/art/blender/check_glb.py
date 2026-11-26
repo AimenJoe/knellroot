@@ -62,7 +62,7 @@ EXPECT = {
                  "hammer_dash": 0.69,
                  # 0274: 한손 망치 3연타(0.4945 · 0.4945 · 0.602).
                  "hammer1": 0.49, "hammer2": 0.49, "hammer3": 0.6,
-                 # 0158 G2 스킬 동작 — 길이 = 시동 + 이어짐 + 후딜(`skills.rs` 표의 바탕값).
+                 # 0158 G2 스킬 동작 — 길이 = 시동 + 이어짐 + 후딜(`skills/table.rs` 표의 바탕값).
                  "sk_whirl": 0.67, "sk_cut": 0.57, "sk_gather": 0.5, "sk_quake": 0.7, "sk_brace": 1.65, "sk_echo": 0.45,
                  "sk_throw": 0.53, "sk_embers": 0.55, "ult_upend": 1.0, "ult_flurry": 0.5, "ult_line": 0.9,
                  # 0270 C3.
